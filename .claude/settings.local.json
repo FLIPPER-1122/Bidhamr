@@ -3,7 +3,13 @@
     "allow": [
       "Bash(npx --yes create-next-app@latest . --ts --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm --no-turbopack)",
       "Bash(mkdir -p \"C:\\\\Users\\\\jeppe\\\\Desktop\\\\hamr_old\")",
-      "Bash(mv \"C:\\\\Users\\\\jeppe\\\\Desktop\\\\hamr\\\\index.html.bak\" \"C:\\\\Users\\\\jeppe\\\\Desktop\\\\hamr_old\\\\index.html\")"
+      "Bash(mv \"C:\\\\Users\\\\jeppe\\\\Desktop\\\\hamr\\\\index.html.bak\" \"C:\\\\Users\\\\jeppe\\\\Desktop\\\\hamr_old\\\\index.html\")",
+      "Bash(npm install *)",
+      "Bash(npx --yes supabase --version)",
+      "Bash(npx --yes supabase init --workdir .)",
+      "Bash(npx tsc *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git add *)"
     ]
   }
 }
