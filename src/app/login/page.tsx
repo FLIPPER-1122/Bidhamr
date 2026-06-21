@@ -38,56 +38,66 @@ function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10">
+    <main className="flex flex-1 items-center justify-center bg-white px-4 py-10">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-semibold">Log ind</h1>
-        <p className="mt-1 text-sm text-neutral-600">
-          Velkommen tilbage til Hamr.
-        </p>
+        <div className="rounded-xl border border-neutral-200 p-6 sm:p-8">
+          <h1 className="text-2xl font-semibold text-neutral-900">
+            Log ind
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Velkommen tilbage til Hamr.
+          </p>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand"
-            />
-          </div>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            <div>
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-neutral-900"
+              >
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+              />
+            </div>
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium">
-              Adgangskode
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand"
-            />
-          </div>
+            <div>
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-neutral-900"
+              >
+                Adgangskode
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+              />
+            </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
-          >
-            {loading ? "Logger ind…" : "Log ind"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38] disabled:opacity-50"
+            >
+              {loading ? "Logger ind…" : "Log ind"}
+            </button>
+          </form>
+        </div>
 
-        <p className="mt-6 text-center text-sm text-neutral-600">
+        <p className="mt-6 text-center text-sm text-neutral-500">
           Ny på Hamr?{" "}
-          <Link href="/signup" className="font-medium text-brand underline">
+          <Link href="/signup" className="font-medium text-brand">
             Opret konto
           </Link>
         </p>

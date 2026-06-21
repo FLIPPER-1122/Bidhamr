@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import LogoutButton from "@/components/LogoutButton";
 
 export default async function OpretAuktionPage() {
   const supabase = await createClient();
@@ -11,15 +10,16 @@ export default async function OpretAuktionPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center px-4 py-10">
+    <main className="flex flex-1 items-center justify-center bg-white px-4 py-10">
       <div className="w-full max-w-sm">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Opret auktion</h1>
-          <LogoutButton />
+        <div className="rounded-xl border border-neutral-200 p-6 sm:p-8">
+          <h1 className="text-2xl font-semibold text-neutral-900">
+            Opret auktion
+          </h1>
+          <p className="mt-4 text-sm text-neutral-500">
+            Formularen til at oprette en auktion kommer her.
+          </p>
         </div>
-        <p className="mt-4 text-sm text-neutral-600">
-          Formularen til at oprette en auktion kommer her.
-        </p>
       </div>
     </main>
   );

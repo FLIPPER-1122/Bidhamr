@@ -17,29 +17,33 @@ export default async function ProfilPage() {
     .single();
 
   return (
-    <main className="flex min-h-screen flex-col items-center px-4 py-10">
+    <main className="flex flex-1 items-center justify-center bg-white px-4 py-10">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-semibold">Min profil</h1>
+        <div className="rounded-xl border border-neutral-200 p-6 sm:p-8">
+          <h1 className="text-2xl font-semibold text-neutral-900">
+            Min profil
+          </h1>
 
-        <div className="mt-6 space-y-3 text-sm">
-          <p>
-            <span className="font-medium">Navn:</span> {profile?.navn}
-          </p>
-          <p>
-            <span className="font-medium">Email:</span> {profile?.email}
-          </p>
-          <p>
-            <span className="font-medium">Telefon:</span>{" "}
-            {profile?.telefon || "—"}
-          </p>
-          <p>
-            <span className="font-medium">Rating:</span>{" "}
-            {profile?.rating ?? 0} ⭐
-          </p>
-        </div>
+          <div className="mt-6 space-y-3 text-sm text-neutral-900">
+            <p>
+              <span className="font-medium">Navn:</span> {profile?.navn}
+            </p>
+            <p>
+              <span className="font-medium">Email:</span> {profile?.email}
+            </p>
+            <p>
+              <span className="font-medium">Telefon:</span>{" "}
+              {profile?.telefon || "—"}
+            </p>
+            <p>
+              <span className="font-medium">Rating:</span>{" "}
+              {profile?.rating ?? 0} ⭐
+            </p>
+          </div>
 
-        <div className="mt-8">
-          <LogoutButton />
+          <div className="mt-8">
+            <LogoutButton />
+          </div>
         </div>
       </div>
     </main>
