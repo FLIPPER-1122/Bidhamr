@@ -1,34 +1,48 @@
-import Link from "next/link";
+import AuctionCard from "@/components/AuctionCard";
+import { dummyAuctions } from "@/lib/dummyAuctions";
 
 export default function Home() {
-  return (
-    <main className="flex flex-1 flex-col items-center px-4 py-16 text-center sm:py-24">
-      <h1 className="max-w-2xl text-4xl font-bold tracking-tight sm:text-5xl">
-        Køb og sælg lokalt på <span className="text-brand">Hamr</span>
-      </h1>
-      <p className="mt-4 max-w-md text-lg text-neutral-600">
-        Find gode tilbud i dit lokalområde, eller sæt dine egne ting på
-        auktion på få minutter.
-      </p>
+  const lokationer = Array.from(
+    new Set(dummyAuctions.map((a) => a.lokation)),
+  );
 
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-        <Link
-          href="/opret-auktion"
-          className="rounded-md bg-brand px-6 py-3 text-sm font-medium text-white transition hover:opacity-90"
-        >
-          Opret en auktion
-        </Link>
-        <Link
-          href="/signup"
-          className="rounded-md border border-brand px-6 py-3 text-sm font-medium text-brand transition hover:bg-brand hover:text-white"
-        >
-          Opret konto
-        </Link>
+  return (
+    <main className="flex flex-1 flex-col bg-white px-4 py-6 sm:px-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold text-neutral-900 sm:text-3xl">
+          Alle auktioner lige nu:{" "}
+          <span className="text-brand">{dummyAuctions.length}</span>
+        </h1>
+
+        <div className="flex gap-2">
+          <select
+            defaultValue=""
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          >
+            <option value="">Alle lokationer</option>
+            {lokationer.map((lokation) => (
+              <option key={lokation} value={lokation}>
+                {lokation}
+              </option>
+            ))}
+          </select>
+
+          <select
+            defaultValue="udløber"
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          >
+            <option value="udløber">Udløber snart</option>
+            <option value="hoejest">Højeste bud</option>
+            <option value="nyeste">Nyeste</option>
+          </select>
+        </div>
       </div>
 
-      <section className="mt-20 w-full max-w-2xl rounded-lg border border-dashed border-neutral-300 px-6 py-12 text-neutral-500">
-        <p>Aktive auktioner kommer her snart.</p>
-      </section>
+      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        {dummyAuctions.map((auktion) => (
+          <AuctionCard key={auktion.id} auktion={auktion} />
+        ))}
+      </div>
     </main>
   );
 }
