@@ -24,6 +24,8 @@ export interface Auction {
   status: AuctionStatus;
   slutter_kl: string;
   oprettet: string;
+  kategori: string | null;
+  postnummer: string | null;
 }
 
 export interface Bid {

@@ -9,6 +9,7 @@ export interface DummyAuction {
   nuværendeBud: number;
   antalBud: number;
   tidTilbage: string;
+  procentForløbet: number;
   farve: string;
 }
 
@@ -16,7 +17,7 @@ export default function AuctionCard({ auktion }: { auktion: DummyAuction }) {
   const [gemt, setGemt] = useState(false);
 
   return (
-    <div className="group overflow-hidden rounded-lg border border-neutral-200">
+    <div className="group overflow-hidden border border-neutral-200">
       <div
         className="relative aspect-square w-full"
         style={{ backgroundColor: auktion.farve }}
@@ -40,9 +41,16 @@ export default function AuctionCard({ auktion }: { auktion: DummyAuction }) {
           </svg>
         </button>
 
-        <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-1 text-xs font-medium text-white">
+        <span className="absolute bottom-2 left-2 bg-white px-2 py-1 text-xs font-semibold text-brand">
           {auktion.tidTilbage}
         </span>
+      </div>
+
+      <div className="h-1 w-full bg-neutral-200">
+        <div
+          className="h-full bg-brand"
+          style={{ width: `${auktion.procentForløbet}%` }}
+        />
       </div>
 
       <div className="p-3">
@@ -61,12 +69,12 @@ export default function AuctionCard({ auktion }: { auktion: DummyAuction }) {
           {auktion.lokation}
         </p>
 
-        <div className="mt-2 flex items-baseline justify-between">
+        <div className="mt-2 flex items-center justify-between">
           <span className="text-base font-bold text-neutral-900">
             {auktion.nuværendeBud.toLocaleString("da-DK")} kr
           </span>
-          <span className="text-xs text-neutral-500">
-            {auktion.antalBud} bud
+          <span className="bg-brand px-1.5 py-0.5 text-xs font-semibold text-white">
+            {auktion.antalBud}
           </span>
         </div>
       </div>
