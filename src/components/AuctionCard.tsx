@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 export interface DummyAuction {
@@ -10,20 +11,37 @@ export interface DummyAuction {
   antalBud: number;
   tidTilbage: string;
   procentForløbet: number;
-  farve: string;
+  farve?: string;
+  billede?: string | null;
 }
 
 export default function AuctionCard({ auktion }: { auktion: DummyAuction }) {
   const [gemt, setGemt] = useState(false);
 
   return (
-    <div className="group overflow-hidden border border-neutral-200">
+    <Link
+      href={`/auktion/${auktion.id}`}
+      className="group block overflow-hidden border border-neutral-200"
+    >
       <div
-        className="relative aspect-square w-full"
-        style={{ backgroundColor: auktion.farve }}
+        className="relative aspect-square w-full bg-neutral-100"
+        style={auktion.billede ? undefined : { backgroundColor: auktion.farve }}
       >
+        {auktion.billede && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={auktion.billede}
+            alt={auktion.titel}
+            className="h-full w-full object-cover"
+          />
+        )}
+
         <button
-          onClick={() => setGemt(!gemt)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setGemt(!gemt);
+          }}
           aria-label="Gem auktion"
           className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90"
         >
@@ -78,6 +96,6 @@ export default function AuctionCard({ auktion }: { auktion: DummyAuction }) {
           </span>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

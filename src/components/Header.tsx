@@ -86,7 +86,7 @@ export default async function Header() {
           {data.user ? (
             <>
               <Link
-                href="/profil"
+                href="/profil/mig"
                 className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"
               >
                 <svg

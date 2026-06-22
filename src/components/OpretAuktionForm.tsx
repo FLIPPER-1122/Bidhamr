@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { kategorier } from "@/lib/kategorier";
 
@@ -12,6 +12,16 @@ const VARIGHEDER = [
   { label: "3 dage", dage: 3 },
   { label: "7 dage", dage: 7 },
 ];
+
+// crypto.randomUUID() findes kun i sikre kontekster (https eller localhost) –
+// adgang via en LAN-IP over http (fx fra en telefon på samme netværk) ville
+// ellers fejle her med en kryptisk TypeError.
+function lavId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const router = useRouter();
@@ -26,9 +36,41 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const [varighed, setVarighed] = useState(3);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
   const [postnummer, setPostnummer] = useState("");
+  const [by, setBy] = useState<string | null>(null);
+  const [byStatus, setByStatus] = useState<"idle" | "henter" | "fundet" | "ikke-fundet">("idle");
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!/^\d{4}$/.test(postnummer)) {
+      setBy(null);
+      setByStatus("idle");
+      return;
+    }
+
+    const controller = new AbortController();
+    setByStatus("henter");
+
+    fetch(`https://api.dataforsyningen.dk/postnumre/${postnummer}`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Postnummer ikke fundet");
+        return res.json();
+      })
+      .then((data) => {
+        setBy(data.navn);
+        setByStatus("fundet");
+      })
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        setBy(null);
+        setByStatus("ikke-fundet");
+      });
+
+    return () => controller.abort();
+  }, [postnummer]);
 
   function tilføjBilleder(files: FileList | null) {
     if (!files) return;
@@ -61,8 +103,12 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       setError("Tilføj mindst ét billede.");
       return;
     }
-    if (!postnummer.trim()) {
-      setError("Udfyld postnummer.");
+    if (!/^\d{4}$/.test(postnummer)) {
+      setError("Indtast et gyldigt postnummer (4 cifre).");
+      return;
+    }
+    if (byStatus !== "fundet" || !by) {
+      setError("Postnummeret kunne ikke findes – tjek at det er korrekt.");
       return;
     }
 
@@ -70,15 +116,39 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
     const supabase = createClient();
 
     try {
+      // Brug den faktiske browser-session som autoritet for bruger-id'et,
+      // i stedet for blindt at stole på prop'en fra serverkomponenten – hvis
+      // sessionen er udløbet/mangler i browseren, fanger vi det her med en
+      // klar besked, frem for at RLS bare afviser inserts/uploads tavst.
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getUser();
+
+      if (sessionError || !sessionData.user) {
+        throw new Error(
+          "Du er ikke logget ind længere. Log ind igen og prøv en gang til.",
+        );
+      }
+
+      const aktuelBrugerId = sessionData.user.id;
+
+      if (aktuelBrugerId !== brugerId) {
+        console.warn(
+          "Bruger-id fra server matcher ikke bruger-id fra browser-session.",
+          { brugerIdFraServer: brugerId, brugerIdFraSession: aktuelBrugerId },
+        );
+      }
+
       const billedeUrls: string[] = [];
 
       for (const file of billeder) {
-        const filnavn = `${brugerId}/${crypto.randomUUID()}-${file.name}`;
+        const filnavn = `${aktuelBrugerId}/${lavId()}-${file.name}`;
         const { error: uploadError } = await supabase.storage
           .from("auktion-billeder")
           .upload(filnavn, file);
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          throw new Error(`Billede-upload fejlede: ${uploadError.message}`);
+        }
 
         const { data: publicUrlData } = supabase.storage
           .from("auktion-billeder")
@@ -90,27 +160,37 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       const slutterKl = new Date();
       slutterKl.setDate(slutterKl.getDate() + varighed);
 
+      const payload = {
+        bruger_id: aktuelBrugerId,
+        titel,
+        beskrivelse: beskrivelse || null,
+        billeder: billedeUrls,
+        startpris,
+        kategori,
+        postnummer,
+        lokation: by,
+        forsendelse_mulig: forsendelseMulig,
+        slutter_kl: slutterKl.toISOString(),
+      };
+
+      console.log("Gemmer auktion i Supabase:", payload);
+
       const { data, error: insertError } = await supabase
         .from("auctions")
-        .insert({
-          bruger_id: brugerId,
-          titel,
-          beskrivelse: beskrivelse || null,
-          billeder: billedeUrls,
-          startpris,
-          kategori,
-          postnummer,
-          forsendelse_mulig: forsendelseMulig,
-          slutter_kl: slutterKl.toISOString(),
-        })
+        .insert(payload)
         .select("id")
         .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        throw new Error(
+          `Kunne ikke gemme auktionen: ${insertError.message} (${insertError.code ?? "ukendt fejlkode"})`,
+        );
+      }
 
       router.push(`/auktion/${data.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Noget gik galt.");
+      console.error("Fejl ved oprettelse af auktion:", err);
+      setError(err instanceof Error ? err.message : "Noget gik galt. Se konsollen for detaljer.");
       setLoading(false);
     }
   }
@@ -314,15 +394,34 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         </label>
         <input
           id="postnummer"
-          type="number"
+          type="text"
+          inputMode="numeric"
+          maxLength={4}
           required
           value={postnummer}
-          onChange={(e) => setPostnummer(e.target.value)}
+          onChange={(e) => setPostnummer(e.target.value.replace(/\D/g, "").slice(0, 4))}
+          placeholder="f.eks. 8000"
           className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
         />
+
+        {byStatus === "henter" && (
+          <p className="mt-1.5 text-sm text-neutral-500">Henter by…</p>
+        )}
+        {byStatus === "fundet" && by && (
+          <p className="mt-1.5 text-sm text-neutral-700">📍 {by}</p>
+        )}
+        {byStatus === "ikke-fundet" && (
+          <p className="mt-1.5 text-sm text-red-600">
+            Postnummeret kunne ikke findes.
+          </p>
+        )}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <button
         type="submit"

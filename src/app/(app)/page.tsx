@@ -1,15 +1,29 @@
 import AuctionCard from "@/components/AuctionCard";
-import { dummyAuctions } from "@/lib/dummyAuctions";
+import { createClient } from "@/lib/supabase/server";
+import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 
-export default function Home() {
+export default async function Home() {
+  const supabase = await createClient();
+
+  const { data: auktioner, error } = await supabase
+    .from("auctions")
+    .select("*, bids(count)")
+    .eq("status", "aktiv")
+    .gt("slutter_kl", new Date().toISOString())
+    .order("oprettet", { ascending: false });
+
+  console.log("Auktioner hentet fra Supabase:", { auktioner, error });
+
+  const visteAuktioner = (auktioner ?? []).map(mapAuctionTilKort);
+
   const lokationer = Array.from(
-    new Set(dummyAuctions.map((a) => a.lokation)),
+    new Set(visteAuktioner.map((a) => a.lokation)),
   );
 
   return (
     <main className="flex flex-1 flex-col bg-white px-4 py-6 sm:px-8">
       <h1 className="flex items-center gap-3 border-l-4 border-brand pl-3 text-2xl font-bold text-neutral-900 sm:text-3xl">
-        Alle auktioner lige nu: {dummyAuctions.length}
+        Alle auktioner lige nu: {visteAuktioner.length}
       </h1>
 
       <div className="mt-4 flex flex-col gap-3 bg-[#F3F4F6] px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
@@ -35,11 +49,17 @@ export default function Home() {
         </select>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-        {dummyAuctions.map((auktion) => (
-          <AuctionCard key={auktion.id} auktion={auktion} />
-        ))}
-      </div>
+      {visteAuktioner.length === 0 ? (
+        <p className="mt-10 text-center text-sm text-neutral-500">
+          Ingen aktive auktioner lige nu.
+        </p>
+      ) : (
+        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          {visteAuktioner.map((auktion) => (
+            <AuctionCard key={auktion.id} auktion={auktion} />
+          ))}
+        </div>
+      )}
     </main>
   );
 }
