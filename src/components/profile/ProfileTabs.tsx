@@ -6,7 +6,7 @@ import { useState } from "react";
 import AuctionCard, { type DummyAuction } from "@/components/AuctionCard";
 import SettingsForm from "@/components/profile/SettingsForm";
 
-export type BudStatus = "vinder" | "taber" | "aktiv";
+export type BudStatus = "vinder" | "overbud" | "aktiv";
 
 export interface MitBud {
   auktionId: string;
@@ -18,13 +18,13 @@ export interface MitBud {
 
 const STATUS_STYLE: Record<BudStatus, string> = {
   vinder: "bg-green-100 text-green-700",
-  taber: "bg-neutral-200 text-neutral-600",
-  aktiv: "bg-brand text-white",
+  overbud: "bg-red-100 text-red-700",
+  aktiv: "bg-neutral-200 text-neutral-600",
 };
 
 const STATUS_LABEL: Record<BudStatus, string> = {
   vinder: "Vinder",
-  taber: "Taber",
+  overbud: "Overbud",
   aktiv: "Aktiv",
 };
 
@@ -37,6 +37,7 @@ export default function ProfileTabs({
   navn,
   telefon,
   email,
+  avatarUrl,
 }: {
   egneAuktioner: DummyAuction[];
   mineBud: MitBud[];
@@ -44,6 +45,7 @@ export default function ProfileTabs({
   navn: string;
   telefon: string | null;
   email: string;
+  avatarUrl: string | null;
 }) {
   const searchParams = useSearchParams();
   const initialFane = searchParams.get("fane");
@@ -140,6 +142,7 @@ export default function ProfileTabs({
             navn={navn}
             telefon={telefon}
             email={email}
+            avatarUrl={avatarUrl}
           />
         )}
       </div>

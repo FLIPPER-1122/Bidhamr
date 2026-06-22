@@ -16,7 +16,7 @@ export default async function Header() {
 
         <nav className="hidden items-center gap-6 sm:flex">
           <Link
-            href="/"
+            href="/auktioner"
             className="text-sm text-[#6B7280] hover:text-brand"
           >
             Auktioner
@@ -44,23 +44,30 @@ export default async function Header() {
           </div>
         </nav>
 
-        <div className="relative flex-1 px-2">
-          <svg
-            viewBox="0 0 24 24"
-            className="pointer-events-none absolute top-1/2 left-5 h-4.5 w-4.5 -translate-y-1/2 text-brand"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
+        <form action="/auktioner" method="GET" className="relative flex-1 px-2">
+          <button
+            type="submit"
+            aria-label="Søg"
+            className="absolute top-1/2 left-5 -translate-y-1/2 text-brand"
           >
-            <circle cx="11" cy="11" r="7" />
-            <path strokeLinecap="round" d="M21 21l-4.3-4.3" />
-          </svg>
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4.5 w-4.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path strokeLinecap="round" d="M21 21l-4.3-4.3" />
+            </svg>
+          </button>
           <input
             type="search"
+            name="q"
             placeholder="Søg efter varer…"
             className="w-full rounded-full border border-brand bg-white py-2.5 pl-11 pr-5 text-sm text-neutral-900 outline-none placeholder:text-[#6B7280] focus:ring-2 focus:ring-brand"
           />
-        </div>
+        </form>
 
         <div className="flex items-center gap-6">
           <a

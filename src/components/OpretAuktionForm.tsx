@@ -37,6 +37,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
   const [postnummer, setPostnummer] = useState("");
   const [by, setBy] = useState<string | null>(null);
+  const [koordinater, setKoordinater] = useState<{ lat: number; lng: number } | null>(null);
   const [byStatus, setByStatus] = useState<"idle" | "henter" | "fundet" | "ikke-fundet">("idle");
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -45,6 +46,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   useEffect(() => {
     if (!/^\d{4}$/.test(postnummer)) {
       setBy(null);
+      setKoordinater(null);
       setByStatus("idle");
       return;
     }
@@ -61,11 +63,15 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       })
       .then((data) => {
         setBy(data.navn);
+        if (Array.isArray(data.visueltcenter)) {
+          setKoordinater({ lng: data.visueltcenter[0], lat: data.visueltcenter[1] });
+        }
         setByStatus("fundet");
       })
       .catch((err) => {
         if (err.name === "AbortError") return;
         setBy(null);
+        setKoordinater(null);
         setByStatus("ikke-fundet");
       });
 
@@ -169,6 +175,8 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         kategori,
         postnummer,
         lokation: by,
+        lat: koordinater?.lat ?? null,
+        lng: koordinater?.lng ?? null,
         forsendelse_mulig: forsendelseMulig,
         slutter_kl: slutterKl.toISOString(),
       };

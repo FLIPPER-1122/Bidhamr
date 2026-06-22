@@ -3,17 +3,20 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import AvatarUpload from "@/components/profile/AvatarUpload";
 
 export default function SettingsForm({
   brugerId,
   navn: initialNavn,
   telefon: initialTelefon,
   email,
+  avatarUrl,
 }: {
   brugerId: string;
   navn: string;
   telefon: string | null;
   email: string;
+  avatarUrl: string | null;
 }) {
   const router = useRouter();
   const [navn, setNavn] = useState(initialNavn);
@@ -46,7 +49,17 @@ export default function SettingsForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-sm space-y-4">
+    <div className="max-w-sm space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-neutral-900">
+          Profilbillede
+        </label>
+        <div className="mt-1.5">
+          <AvatarUpload brugerId={brugerId} avatarUrl={avatarUrl} />
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-neutral-900">
           Email
@@ -105,6 +118,7 @@ export default function SettingsForm({
       >
         {loading ? "Gemmer…" : "Gem ændringer"}
       </button>
-    </form>
+      </form>
+    </div>
   );
 }

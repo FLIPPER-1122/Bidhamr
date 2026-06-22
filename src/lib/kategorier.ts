@@ -1,9 +1,10 @@
 export const kategorier = [
-  "Møbler",
   "Elektronik",
-  "Tøj",
-  "Køretøjer",
+  "Møbler",
+  "Tøj & sko",
+  "Biler",
+  "Legetøj",
   "Sport",
-  "Værktøj",
-  "Alt andet",
+  "Havemøbler",
+  "Andet",
 ];

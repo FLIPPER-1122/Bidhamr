@@ -38,20 +38,32 @@ export default async function ProfilPage({
   });
 
   if (erEgenProfil) {
-    const [{ data: egneAuktionerRaw }, { data: mineBidsRaw }, { data: egenEmail }] =
-      await Promise.all([
-        supabase
-          .from("auctions")
-          .select("*, bids(count)")
-          .eq("bruger_id", id)
-          .order("oprettet", { ascending: false }),
-        supabase
-          .from("bids")
-          .select("*")
-          .eq("bruger_id", id)
-          .order("oprettet", { ascending: false }),
-        supabase.from("users").select("email, telefon").eq("id", id).single(),
-      ]);
+    const [
+      { data: egneAuktionerRaw },
+      { data: mineBidsRaw },
+      { data: egenEmail },
+      { data: egneRatings },
+    ] = await Promise.all([
+      supabase
+        .from("auctions")
+        .select("*, bids(count)")
+        .eq("bruger_id", id)
+        .order("oprettet", { ascending: false }),
+      supabase
+        .from("bids")
+        .select("*")
+        .eq("bruger_id", id)
+        .order("oprettet", { ascending: false }),
+      supabase.from("users").select("email, telefon").eq("id", id).single(),
+      supabase.from("ratings").select("stjerner").eq("til_bruger_id", id),
+    ]);
+
+    const antalEgneRatings = egneRatings?.length ?? 0;
+    const gennemsnitEgneRatings =
+      antalEgneRatings > 0
+        ? (egneRatings ?? []).reduce((sum, r) => sum + r.stjerner, 0) /
+          antalEgneRatings
+        : 0;
 
     const egneAuktioner = (egneAuktionerRaw ?? []).map(mapAuctionTilKort);
 
@@ -96,7 +108,7 @@ export default async function ProfilPage({
           ? "aktiv"
           : førende?.bruger_id === id
             ? "vinder"
-            : "taber";
+            : "overbud";
 
         return {
           auktionId: auktion.id,
@@ -121,6 +133,12 @@ export default async function ProfilPage({
               <p className="text-sm text-neutral-500">
                 Medlem siden {medlemSiden}
               </p>
+              <div className="mt-1">
+                <StarRating
+                  gennemsnit={gennemsnitEgneRatings}
+                  antal={antalEgneRatings}
+                />
+              </div>
             </div>
 
             <Link
@@ -140,6 +158,7 @@ export default async function ProfilPage({
                 navn={profil.navn}
                 telefon={egenEmail?.telefon ?? null}
                 email={egenEmail?.email ?? ""}
+                avatarUrl={profil.avatar_url}
               />
             </Suspense>
           </div>

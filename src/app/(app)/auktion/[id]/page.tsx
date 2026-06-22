@@ -46,7 +46,7 @@ export default async function AuktionPage({
         {/* Zone 1 – top */}
         <div className="flex items-center justify-between gap-3">
           <nav className="text-xs text-neutral-500">
-            <Link href="/" className="hover:text-brand">
+            <Link href="/auktioner" className="hover:text-brand">
               Alle auktioner
             </Link>
             {" > "}
