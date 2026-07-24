@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { suspendUser } from "@/app/actions/adminActions";
+import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
 
 export default async function AdminBrugerDetalje({
   params,
@@ -12,7 +13,7 @@ export default async function AdminBrugerDetalje({
 
   const [{ data: user }, { data: auctions }, { data: ratings }] = await Promise.all([
     supabase.from("users").select("*").eq("id", id).single(),
-    supabase.from("auctions").select("id, titel, status, oprettet, nuværende_bud").eq("bruger_id", id).order("oprettet", { ascending: false }),
+    supabase.from("auctions").select("id, titel, status, oprettet, nuværende_bud").eq("bruger_id", id).order("oprettet", { ascending: false }).overrideTypes<BrugerAuktionRow[], { merge: false }>(),
     supabase.from("ratings").select("stjerner, kommentar, oprettet, fra_bruger_id").eq("til_bruger_id", id).order("oprettet", { ascending: false }),
   ]);
 

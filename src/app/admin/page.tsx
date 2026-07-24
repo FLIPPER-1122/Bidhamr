@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import StatCard from "@/components/admin/StatCard";
 import BarChart from "@/components/admin/BarChart";
+import type { TransaktionBeløbRow } from "@/lib/adminRowTypes";
 
 function formatKr(value: number) {
   return value.toLocaleString("da-DK", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " kr";
@@ -48,7 +49,7 @@ export default async function AdminDashboard() {
     supabase.from("users").select("id", { count: "exact", head: true }),
     supabase.from("auctions").select("id", { count: "exact", head: true }).eq("status", "aktiv"),
     supabase.from("auctions").select("id", { count: "exact", head: true }).eq("status", "afsluttet"),
-    supabase.from("transactions").select("beløb, gebyr").eq("status", "frigivet"),
+    supabase.from("transactions").select("beløb, gebyr").eq("status", "frigivet").overrideTypes<TransaktionBeløbRow[], { merge: false }>(),
     supabase.from("users").select("oprettet").gte("oprettet", thirtyDaysAgoISO),
     supabase.from("transactions").select("oprettet").gte("oprettet", thirtyDaysAgoISO).eq("status", "frigivet"),
     supabase.from("auctions").select("id, titel, bruger_id, status, oprettet").order("oprettet", { ascending: false }).limit(5),

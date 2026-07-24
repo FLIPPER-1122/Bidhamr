@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { deleteAuction, cancelAuction } from "@/app/actions/adminActions";
+import type { AdminAuktionRow } from "@/lib/adminRowTypes";
 
 const statusOptions = ["alle", "aktiv", "afsluttet", "annulleret"] as const;
 
@@ -21,7 +22,7 @@ export default async function AdminAuktioner({
     query = query.eq("status", status);
   }
 
-  const { data: auctions } = await query;
+  const { data: auctions } = await query.overrideTypes<AdminAuktionRow[], { merge: false }>();
 
   // Fetch user info for sælgere
   const brugerIds = [...new Set((auctions ?? []).map((a) => a.bruger_id))];

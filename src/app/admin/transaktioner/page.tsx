@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { anonymUsername } from "@/lib/anonymUsername";
+import type { TransaktionRow } from "@/lib/adminRowTypes";
 
 export default async function AdminTransaktioner() {
   const supabase = await createClient();
@@ -7,7 +8,8 @@ export default async function AdminTransaktioner() {
   const { data: transactions } = await supabase
     .from("transactions")
     .select("id, auktion_id, køber_id, sælger_id, beløb, gebyr, status, oprettet")
-    .order("oprettet", { ascending: false });
+    .order("oprettet", { ascending: false })
+    .overrideTypes<TransaktionRow[], { merge: false }>();
 
   // Fetch auction titles
   const auktionIds = [...new Set((transactions ?? []).map((t) => t.auktion_id))];
