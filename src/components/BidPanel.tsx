@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { anonymUsername } from "@/lib/anonymUsername";
+import { kortNavn } from "@/lib/kortNavn";
 import { formatNedtælling } from "@/lib/auctionTid";
 
 export interface BidPanelBud {
@@ -11,6 +11,7 @@ export interface BidPanelBud {
   bruger_id: string;
   beløb: number;
   oprettet: string;
+  navn?: string | null;
 }
 
 const VIST_SOM_STANDARD = 5;
@@ -37,6 +38,9 @@ export default function BidPanel({
   const [beløb, setBeløb] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [auktionStatus, setAuktionStatus] = useState<string>("aktiv");
+  const [vinderNavn, setVinderNavn] = useState<string | null>(null);
   const [nedtælling, setNedtælling] = useState(() =>
     formatNedtælling(initialSlutterKl),
   );
@@ -64,9 +68,14 @@ export default function BidPanel({
           table: "bids",
           filter: `auktion_id=eq.${auktionId}`,
         },
-        (payload) => {
+        async (payload) => {
           const nytBud = payload.new as BidPanelBud;
-          setBudListe((prev) => [nytBud, ...prev]);
+          const { data: bruger } = await supabase
+            .from("users")
+            .select("navn")
+            .eq("id", nytBud.bruger_id)
+            .single();
+          setBudListe((prev) => [{ ...nytBud, navn: bruger?.navn ?? null }, ...prev]);
           if (nytBud.beløb > nuværendeBudRef.current) {
             setNuværendeBud(nytBud.beløb);
           }
@@ -80,15 +89,28 @@ export default function BidPanel({
           table: "auctions",
           filter: `id=eq.${auktionId}`,
         },
-        (payload) => {
+        async (payload) => {
           const opdateret = payload.new as {
-            nuværende_bud: number | null;
+            "nuværende_bud": number | null;
             slutter_kl: string;
+            status: string;
+            vinder_id: string | null;
           };
-          if (opdateret.nuværende_bud != null) {
-            setNuværendeBud(opdateret.nuværende_bud);
+          if (opdateret["nuværende_bud"] != null) {
+            setNuværendeBud(opdateret["nuværende_bud"]);
           }
           setSlutterKl(opdateret.slutter_kl);
+          if (opdateret.status && opdateret.status !== "aktiv") {
+            setAuktionStatus(opdateret.status);
+            if (opdateret.vinder_id) {
+              const { data: vinder } = await createClient()
+                .from("users")
+                .select("navn")
+                .eq("id", opdateret.vinder_id)
+                .single();
+              setVinderNavn(kortNavn(vinder?.navn ?? null));
+            }
+          }
         },
       )
       .subscribe();
@@ -98,21 +120,23 @@ export default function BidPanel({
     };
   }, [auktionId]);
 
+  const minimumBud = Math.ceil(nuværendeBud * 1.1);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
     const beløbTal = Number(beløb);
 
-    if (!beløbTal || beløbTal <= nuværendeBud) {
-      setError(
-        `Buddet skal være højere end nuværende bud (${nuværendeBud.toLocaleString("da-DK")} kr).`,
-      );
+    if (!brugerId) {
+      setError("Du skal være logget ind for at byde.");
       return;
     }
 
-    if (!brugerId) {
-      setError("Du skal være logget ind for at byde.");
+    if (!beløbTal || beløbTal < minimumBud) {
+      setError(
+        `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`,
+      );
       return;
     }
 
@@ -125,17 +149,34 @@ export default function BidPanel({
       beløb: beløbTal,
     });
 
-    setLoading(false);
-
     if (insertError) {
-      setError(insertError.message);
+      setLoading(false);
+      if (insertError.message.includes("minimum_bid")) {
+        setError(
+          `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`,
+        );
+      } else {
+        setError(insertError.message);
+      }
       return;
     }
 
+    // Anti-sniping: forlæng auktion med 2 min hvis den slutter inden for 2 min
+    const mstilbage = new Date(slutterKl).getTime() - Date.now();
+    if (mstilbage > 0 && mstilbage < 2 * 60 * 1000) {
+      const nySlutterKl = new Date(new Date(slutterKl).getTime() + 2 * 60 * 1000).toISOString();
+      await supabase
+        .from("auctions")
+        .update({ slutter_kl: nySlutterKl })
+        .eq("id", auktionId);
+      setInfo("Auktionen er forlænget med 2 minutter!");
+      setTimeout(() => setInfo(null), 6000);
+    }
+
+    setLoading(false);
     setBeløb("");
   }
 
-  const næsteBud = nuværendeBud + 1;
   const visteBud = visAlle ? budListe : budListe.slice(0, VIST_SOM_STANDARD);
 
   return (
@@ -164,15 +205,30 @@ export default function BidPanel({
         {nuværendeBud.toLocaleString("da-DK")} kr
       </p>
 
-      {brugerId ? (
+      {auktionStatus !== "aktiv" ? (
+        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-5 py-4 text-center">
+          {auktionStatus === "afsluttet" ? (
+            <>
+              <p className="text-base font-semibold text-neutral-800">Auktionen er afsluttet</p>
+              {vinderNavn ? (
+                <p className="mt-1 text-sm text-neutral-500">
+                  Vinder: <span className="font-semibold text-neutral-700">{vinderNavn}</span>
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-base font-semibold text-neutral-500">Ingen bud – auktionen er lukket</p>
+          )}
+        </div>
+      ) : brugerId ? (
         <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-2 sm:flex-row">
           <input
             type="number"
-            min={næsteBud}
+            min={minimumBud}
             step={1}
             value={beløb}
             onChange={(e) => setBeløb(e.target.value)}
-            placeholder={`Mindst ${næsteBud.toLocaleString("da-DK")} kr`}
+            placeholder={`Mindst ${minimumBud.toLocaleString("da-DK")} kr`}
             className="flex-1 rounded-lg border border-neutral-300 px-3 py-3 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
           />
           <button
@@ -197,6 +253,15 @@ export default function BidPanel({
         <p className="text-xs text-neutral-500">
           Sælger tilbyder forsendelse mod betaling.
         </p>
+      )}
+
+      {info && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
+            <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 8v4m0 4h.01" />
+          </svg>
+          {info}
+        </div>
       )}
 
       {error && (
@@ -239,7 +304,12 @@ export default function BidPanel({
                       })}
                     </td>
                     <td className={`py-2 text-right ${fed}`}>
-                      {anonymUsername(bud.bruger_id)}
+                      <Link
+                        href={`/profil/${bud.bruger_id}`}
+                        className="hover:text-brand hover:underline"
+                      >
+                        {kortNavn(bud.navn)}
+                      </Link>
                     </td>
                   </tr>
                 );

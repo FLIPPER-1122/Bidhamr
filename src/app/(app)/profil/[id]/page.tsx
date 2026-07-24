@@ -2,12 +2,32 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { anonymUsername } from "@/lib/anonymUsername";
+import { kortNavn } from "@/lib/kortNavn";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import AuctionCard from "@/components/AuctionCard";
-import AvatarUpload from "@/components/profile/AvatarUpload";
-import ProfileTabs, { type MitBud } from "@/components/profile/ProfileTabs";
-import StarRating from "@/components/profile/StarRating";
+import ProfileHeader from "@/components/profile/ProfileHeader";
+import ProfileTabs, {
+  type MitBud,
+  type EgenAuktion,
+  type Rating,
+} from "@/components/profile/ProfileTabs";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const [{ data: authData }, { data: profil }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from("users").select("navn").eq("id", id).single(),
+  ]);
+  if (!profil) return { title: "Profil" };
+  const erEgen = authData.user?.id === id;
+  const visNavn = erEgen ? (profil.navn ?? "") : kortNavn(profil.navn);
+  return { title: `${visNavn}s profil – BidHamr` };
+}
 
 export default async function ProfilPage({
   params,
@@ -37,12 +57,14 @@ export default async function ProfilPage({
     year: "numeric",
   });
 
+  // ── Egen profil ────────────────────────────────────────────────────────────
   if (erEgenProfil) {
     const [
       { data: egneAuktionerRaw },
       { data: mineBidsRaw },
       { data: egenEmail },
       { data: egneRatings },
+      { data: gennemforteHandlerRaw },
     ] = await Promise.all([
       supabase
         .from("auctions")
@@ -55,24 +77,39 @@ export default async function ProfilPage({
         .eq("bruger_id", id)
         .order("oprettet", { ascending: false }),
       supabase.from("users").select("email, telefon").eq("id", id).single(),
-      supabase.from("ratings").select("stjerner").eq("til_bruger_id", id),
+      supabase
+        .from("ratings")
+        .select("id, fra_bruger_id, stjerner, kommentar, oprettet")
+        .eq("til_bruger_id", id)
+        .order("oprettet", { ascending: false }),
+      supabase
+        .from("transactions")
+        .select("id")
+        .or(`køber_id.eq.${id},sælger_id.eq.${id}`)
+        .eq("status", "frigivet"),
     ]);
 
-    const antalEgneRatings = egneRatings?.length ?? 0;
-    const gennemsnitEgneRatings =
-      antalEgneRatings > 0
+    const antalRatings = egneRatings?.length ?? 0;
+    const gennemsnitRating =
+      antalRatings > 0
         ? (egneRatings ?? []).reduce((sum, r) => sum + r.stjerner, 0) /
-          antalEgneRatings
+          antalRatings
         : 0;
 
-    const egneAuktioner = (egneAuktionerRaw ?? []).map(mapAuctionTilKort);
+    // Byg egne auktioner med slutter_kl til status-badge
+    const egneAuktioner: EgenAuktion[] = (egneAuktionerRaw ?? []).map(
+      (auktion) => ({
+        ...mapAuctionTilKort(auktion),
+        slutterKl: auktion.slutter_kl,
+      }),
+    );
 
-    // Find unikke auktion-id'er brugeren har budt på, og deres højeste eget bud.
+    // Find unikke auktions-id'er brugeren har budt på og højeste eget bud
     const egneBudPerAuktion = new Map<string, number>();
     for (const bud of mineBidsRaw ?? []) {
       const nuværende = egneBudPerAuktion.get(bud.auktion_id) ?? 0;
       if (bud.beløb > nuværende) {
-        egneBudPerAuktion.set(bud.auktion_id, bud.beløb);
+        egneBudPerAuktion.set(bud.auktion_id, Number(bud.beløb));
       }
     }
     const budAuktionIds = Array.from(egneBudPerAuktion.keys());
@@ -92,8 +129,10 @@ export default async function ProfilPage({
             .in("auktion_id", budAuktionIds),
         ]);
 
-      // Find den førende budgiver pr. auktion (kun relevant for afsluttede auktioner).
-      const førendePerAuktion = new Map<string, { bruger_id: string; beløb: number }>();
+      const førendePerAuktion = new Map<
+        string,
+        { bruger_id: string; beløb: number }
+      >();
       for (const bud of alleBudPåDisse ?? []) {
         const nuværende = førendePerAuktion.get(bud.auktion_id);
         if (!nuværende || bud.beløb > nuværende.beløb) {
@@ -104,71 +143,74 @@ export default async function ProfilPage({
       mineBud = (relevanteAuktioner ?? []).map((auktion) => {
         const erSlut = new Date(auktion.slutter_kl) <= new Date();
         const førende = førendePerAuktion.get(auktion.id);
-        const status = !erSlut
+        const status: MitBud["status"] = !erSlut
           ? "aktiv"
           : førende?.bruger_id === id
             ? "vinder"
             : "overbud";
+
+        const højesteBud = Number(førende?.beløb ?? 0);
 
         return {
           auktionId: auktion.id,
           titel: auktion.titel,
           billede: auktion.billeder?.[0] ?? null,
           egetBud: egneBudPerAuktion.get(auktion.id) ?? 0,
+          højesteBud,
           status,
         };
       });
     }
 
+    const egenFraIds = [...new Set((egneRatings ?? []).map((r) => r.fra_bruger_id))];
+    const { data: egenFraNavne } = egenFraIds.length > 0
+      ? await supabase.from("users").select("id, navn").in("id", egenFraIds)
+      : { data: [] };
+    const egenNavnMap = Object.fromEntries((egenFraNavne ?? []).map((u) => [u.id, u.navn as string | null]));
+
+    const ratings: Rating[] = (egneRatings ?? []).map((r) => ({
+      ...r,
+      fra_bruger_navn: kortNavn(egenNavnMap[r.fra_bruger_id]),
+    }));
+
     return (
-      <main className="flex-1 bg-white px-4 py-8 sm:px-8">
+      <main className="flex-1 bg-neutral-50 px-4 py-8 sm:px-8">
         <div className="mx-auto max-w-5xl">
-          <div className="flex flex-wrap items-center gap-4">
-            <AvatarUpload brugerId={id} avatarUrl={profil.avatar_url} />
+          <ProfileHeader
+            navn={profil.navn ?? ""}
+            email={egenEmail?.email}
+            avatarUrl={profil.avatar_url}
+            medlemSiden={medlemSiden}
+            gennemsnitRating={gennemsnitRating}
+            antalRatings={antalRatings}
+            stats={{
+              auktionerOprettet: egneAuktioner.length,
+              budAfgivet: budAuktionIds.length,
+              gennemforteHandler: gennemforteHandlerRaw?.length ?? 0,
+            }}
+            erEgenProfil={true}
+            brugerId={id}
+          />
 
-            <div>
-              <h1 className="text-xl font-bold text-neutral-900">
-                {profil.navn}
-              </h1>
-              <p className="text-sm text-neutral-500">
-                Medlem siden {medlemSiden}
-              </p>
-              <div className="mt-1">
-                <StarRating
-                  gennemsnit={gennemsnitEgneRatings}
-                  antal={antalEgneRatings}
-                />
-              </div>
-            </div>
-
-            <Link
-              href={`/profil/${id}?fane=indstillinger`}
-              className="ml-auto rounded-lg border border-brand px-4 py-2 text-sm font-medium text-brand hover:bg-brand hover:text-white"
-            >
-              Rediger profil
-            </Link>
-          </div>
-
-          <div className="mt-8">
-            <Suspense>
-              <ProfileTabs
-                egneAuktioner={egneAuktioner}
-                mineBud={mineBud}
-                brugerId={id}
-                navn={profil.navn}
-                telefon={egenEmail?.telefon ?? null}
-                email={egenEmail?.email ?? ""}
-                avatarUrl={profil.avatar_url}
-              />
-            </Suspense>
-          </div>
+          <Suspense>
+            <ProfileTabs
+              egneAuktioner={egneAuktioner}
+              mineBud={mineBud}
+              ratings={ratings}
+              brugerId={id}
+              navn={profil.navn}
+              telefon={egenEmail?.telefon ?? null}
+              email={egenEmail?.email ?? ""}
+              avatarUrl={profil.avatar_url}
+            />
+          </Suspense>
         </div>
       </main>
     );
   }
 
-  // Offentlig profil
-  const [{ data: aktiveAuktionerRaw }, { data: ratings }] = await Promise.all([
+  // ── Offentlig profil ───────────────────────────────────────────────────────
+  const [{ data: aktiveAuktionerRaw }, { data: ratingsRaw }] = await Promise.all([
     supabase
       .from("auctions")
       .select("*, bids(count)")
@@ -178,12 +220,23 @@ export default async function ProfilPage({
       .order("oprettet", { ascending: false }),
     supabase
       .from("ratings")
-      .select("*")
+      .select("id, fra_bruger_id, stjerner, kommentar, oprettet")
       .eq("til_bruger_id", id)
       .order("oprettet", { ascending: false }),
   ]);
 
   const aktiveAuktioner = (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort);
+
+  const fraIds = [...new Set((ratingsRaw ?? []).map((r) => r.fra_bruger_id))];
+  const { data: fraNavne } = fraIds.length > 0
+    ? await supabase.from("users").select("id, navn").in("id", fraIds)
+    : { data: [] };
+  const fraNavnMap = Object.fromEntries((fraNavne ?? []).map((u) => [u.id, u.navn as string | null]));
+
+  const ratings = (ratingsRaw ?? []).map((r) => ({
+    ...r,
+    fra_bruger_navn: kortNavn(fraNavnMap[r.fra_bruger_id]),
+  }));
 
   const antalRatings = ratings?.length ?? 0;
   const gennemsnitRating =
@@ -192,57 +245,34 @@ export default async function ProfilPage({
       : 0;
 
   return (
-    <main className="flex-1 bg-white px-4 py-8 sm:px-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="h-24 w-24 overflow-hidden rounded-full border border-neutral-200 bg-neutral-100">
-            {profil.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={profil.avatar_url}
-                alt={profil.navn}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <svg
-                viewBox="0 0 24 24"
-                className="h-full w-full p-5 text-neutral-400"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"
-                />
-              </svg>
-            )}
-          </div>
+    <main className="flex-1 bg-neutral-50 px-4 py-8 sm:px-8">
+      <div className="mx-auto max-w-5xl space-y-6">
+        <ProfileHeader
+          navn={kortNavn(profil.navn)}
+          avatarUrl={profil.avatar_url}
+          medlemSiden={medlemSiden}
+          gennemsnitRating={gennemsnitRating}
+          antalRatings={antalRatings}
+          stats={{
+            auktionerOprettet: aktiveAuktioner.length,
+            budAfgivet: 0,
+            gennemforteHandler: 0,
+          }}
+          erEgenProfil={false}
+          brugerId={id}
+        />
 
-          <div>
-            <h1 className="text-xl font-bold text-neutral-900">
-              {profil.navn}
-            </h1>
-            <p className="text-sm text-neutral-500">
-              Medlem siden {medlemSiden}
-            </p>
-            <div className="mt-1">
-              <StarRating gennemsnit={gennemsnitRating} antal={antalRatings} />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-8 border-t border-neutral-200 pt-6">
+        {/* Aktive auktioner */}
+        <div className="rounded-xl border border-neutral-200 bg-white p-6">
           <h2 className="text-sm font-semibold text-neutral-900">
             Aktive auktioner
           </h2>
           {aktiveAuktioner.length === 0 ? (
-            <p className="mt-2 text-sm text-neutral-500">
+            <p className="mt-3 text-sm text-neutral-500">
               Ingen aktive auktioner lige nu.
             </p>
           ) : (
-            <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
               {aktiveAuktioner.map((auktion) => (
                 <AuctionCard key={auktion.id} auktion={auktion} />
               ))}
@@ -250,34 +280,41 @@ export default async function ProfilPage({
           )}
         </div>
 
-        <div className="mt-8 border-t border-neutral-200 pt-6">
+        {/* Bedømmelser */}
+        <div className="rounded-xl border border-neutral-200 bg-white p-6">
           <h2 className="text-sm font-semibold text-neutral-900">
             Bedømmelser
           </h2>
           {!ratings || ratings.length === 0 ? (
-            <p className="mt-2 text-sm text-neutral-500">
+            <p className="mt-3 text-sm text-neutral-500">
               Ingen bedømmelser endnu.
             </p>
           ) : (
-            <ul className="mt-3 space-y-4">
+            <ul className="mt-4 space-y-3">
               {ratings.map((rating) => (
-                <li key={rating.id} className="border-b border-neutral-100 pb-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-neutral-900">
-                      {anonymUsername(rating.fra_bruger_id)}
-                    </span>
-                    <span className="text-xs text-neutral-400">
+                <li
+                  key={rating.id}
+                  className="rounded-xl border border-neutral-100 bg-neutral-50 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <Link
+                      href={`/profil/${rating.fra_bruger_id}`}
+                      className="text-sm font-medium text-neutral-900 hover:text-brand hover:underline"
+                    >
+                      {rating.fra_bruger_navn}
+                    </Link>
+                    <span className="shrink-0 text-xs text-neutral-400">
                       {new Date(rating.oprettet).toLocaleDateString("da-DK", {
                         dateStyle: "medium",
                       })}
                     </span>
                   </div>
-                  <div className="mt-1 flex">
+                  <div className="mt-1.5 flex gap-0.5">
                     {[1, 2, 3, 4, 5].map((i) => (
                       <svg
                         key={i}
                         viewBox="0 0 24 24"
-                        className={`h-3.5 w-3.5 ${
+                        className={`h-4 w-4 ${
                           i <= rating.stjerner
                             ? "fill-brand text-brand"
                             : "fill-neutral-200 text-neutral-200"
@@ -288,7 +325,7 @@ export default async function ProfilPage({
                     ))}
                   </div>
                   {rating.kommentar && (
-                    <p className="mt-1 text-sm text-neutral-700">
+                    <p className="mt-2 text-sm text-neutral-600">
                       {rating.kommentar}
                     </p>
                   )}

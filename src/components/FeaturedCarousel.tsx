@@ -13,9 +13,9 @@ export default function FeaturedCarousel({
 
   return (
     <div className="w-full overflow-hidden">
-      <div className="flex w-max animate-[scroll-karussel_45s_linear_infinite] gap-4 hover:[animation-play-state:paused]">
+      <div className="flex w-max animate-[scroll-karussel_25s_linear_infinite] gap-4 hover:[animation-play-state:paused]">
         {items.map((auktion, i) => (
-          <div key={`${auktion.id}-${i}`} className="w-72 shrink-0">
+          <div key={`${auktion.id}-${i}`} className="w-[220px] shrink-0">
             <AuctionCard auktion={auktion} />
           </div>
         ))}

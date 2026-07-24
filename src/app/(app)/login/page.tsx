@@ -14,11 +14,16 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emailIkkeBekraeftet, setEmailIkkeBekraeftet] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setEmailIkkeBekraeftet(false);
+    setResendSuccess(false);
 
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({
@@ -29,12 +34,38 @@ function LoginForm() {
     setLoading(false);
 
     if (error) {
-      setError(error.message);
+      if (error.code === "email_not_confirmed" || error.message.toLowerCase().includes("email not confirmed")) {
+        setError("Din email er ikke bekræftet endnu. Tjek din indbakke.");
+        setEmailIkkeBekraeftet(true);
+      } else {
+        setError(error.message);
+      }
       return;
     }
 
     router.push(redirectTo);
     router.refresh();
+  }
+
+  async function handleResend() {
+    if (!email) return;
+    setResendLoading(true);
+    setResendSuccess(false);
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+    });
+
+    setResendLoading(false);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    setResendSuccess(true);
   }
 
   return (
@@ -45,7 +76,7 @@ function LoginForm() {
             Log ind
           </h1>
           <p className="mt-1 text-sm text-neutral-500">
-            Velkommen tilbage til Hamr.
+            Velkommen tilbage til BidHamr.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -67,12 +98,20 @@ function LoginForm() {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-neutral-900"
-              >
-                Adgangskode
-              </label>
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="password"
+                  className="block text-sm font-medium text-neutral-900"
+                >
+                  Adgangskode
+                </label>
+                <Link
+                  href="/glemt-adgangskode"
+                  className="text-xs font-medium text-brand hover:underline"
+                >
+                  Glemt adgangskode?
+                </Link>
+              </div>
               <input
                 id="password"
                 type="password"
@@ -85,6 +124,25 @@ function LoginForm() {
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
+            {emailIkkeBekraeftet && (
+              <div>
+                {resendSuccess ? (
+                  <p className="text-sm text-green-600">
+                    Bekræftelsesmail sendt igen – tjek din indbakke.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resendLoading}
+                    className="text-sm font-medium text-brand hover:underline disabled:opacity-50"
+                  >
+                    {resendLoading ? "Sender…" : "Send bekræftelsesmail igen"}
+                  </button>
+                )}
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -96,7 +154,7 @@ function LoginForm() {
         </div>
 
         <p className="mt-6 text-center text-sm text-neutral-500">
-          Ny på Hamr?{" "}
+          Ny på BidHamr?{" "}
           <Link href="/signup" className="font-medium text-brand">
             Opret konto
           </Link>

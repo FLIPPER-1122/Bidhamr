@@ -84,7 +84,7 @@ export default async function BetalPage({
             </div>
 
             <p className="mt-3 text-xs text-neutral-500">
-              Beløbet opbevares sikkert af Hamr (escrow), indtil du har
+              Beløbet opbevares sikkert af BidHamr (escrow), indtil du har
               modtaget og godkendt varen.
             </p>
 

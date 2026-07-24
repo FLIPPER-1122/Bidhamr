@@ -7,11 +7,21 @@ export default async function Header() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
 
+  let erAdmin = false;
+  if (data.user) {
+    const { data: profil } = await supabase
+      .from("users")
+      .select("rolle")
+      .eq("id", data.user.id)
+      .single();
+    erAdmin = profil?.rolle === "admin";
+  }
+
   return (
     <header className="bg-white shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
       <div className="flex min-h-[78px] items-center gap-8 px-8 py-4">
         <Link href="/" className="text-3xl font-extrabold tracking-tight text-brand">
-          hamr
+          BidHamr
         </Link>
 
         <nav className="hidden items-center gap-6 sm:flex">
@@ -19,29 +29,9 @@ export default async function Header() {
             href="/auktioner"
             className="text-sm text-[#6B7280] hover:text-brand"
           >
-            Auktioner
+            Alle auktioner
           </Link>
 
-          <div className="group relative">
-            <button className="flex items-center gap-1 text-sm text-[#6B7280] hover:text-brand">
-              Kategorier
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor">
-                <path d="M7 10l5 5 5-5z" />
-              </svg>
-            </button>
-
-            <div className="invisible absolute left-0 z-10 mt-2 w-44 rounded-lg border border-neutral-200 bg-white py-2 opacity-0 shadow-lg group-hover:visible group-hover:opacity-100">
-              {kategorier.map((kategori) => (
-                <a
-                  key={kategori}
-                  href="#"
-                  className="block px-4 py-2 text-sm text-[#6B7280] hover:bg-neutral-50 hover:text-brand"
-                >
-                  {kategori}
-                </a>
-              ))}
-            </div>
-          </div>
         </nav>
 
         <form action="/auktioner" method="GET" className="relative flex-1 px-2">
@@ -92,6 +82,17 @@ export default async function Header() {
 
           {data.user ? (
             <>
+              {erAdmin && (
+                <Link
+                  href="/admin"
+                  className="hidden items-center gap-1.5 text-sm font-medium text-brand hover:underline sm:flex"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  Admin
+                </Link>
+              )}
               <Link
                 href="/profil/mig"
                 className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"

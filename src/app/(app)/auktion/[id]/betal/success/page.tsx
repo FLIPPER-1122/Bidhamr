@@ -14,7 +14,7 @@ export default async function BetalSuccessPage({
           Tak for din betaling!
         </h1>
         <p className="mt-3 text-sm text-neutral-600">
-          Beløbet opbevares sikkert af Hamr, indtil du har modtaget og
+          Beløbet opbevares sikkert af BidHamr, indtil du har modtaget og
           godkendt varen. Sælger får først pengene udbetalt herefter.
         </p>
 

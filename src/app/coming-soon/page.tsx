@@ -7,7 +7,7 @@ export default function ComingSoonPage() {
       {/* Let header – ingen adgang til resten af appen, kun et diskret login-link */}
       <header className="flex items-center justify-between px-4 py-4 sm:px-8">
         <Link href="/coming-soon" className="text-2xl font-extrabold tracking-tight text-brand">
-          hamr
+          BidHamr
         </Link>
 
         <div className="flex items-center gap-5">
@@ -54,7 +54,7 @@ export default function ComingSoonPage() {
               </h1>
 
               <p className="mt-5 max-w-lg text-[17px] leading-relaxed text-neutral-500">
-                Hamr er en app og hjemmeside, hvor du sælger dine ting på
+                BidHamr er en app og hjemmeside, hvor du sælger dine ting på
                 auktion til folk i nærheden. Upload det du vil af med, sæt en
                 startpris — eller start fra 0 — og lad folk byde. Vinderen
                 henter det hos dig.
@@ -65,7 +65,7 @@ export default function ComingSoonPage() {
               <ul className="mt-8 flex flex-col gap-2.5 text-sm font-medium text-neutral-500">
                 {[
                   "Gratis at oprette auktion",
-                  "Sikker betaling via Hamr Escrow",
+                  "Sikker betaling via BidHamr Escrow",
                   "Kun købere i dit nærområde",
                 ].map((punkt) => (
                   <li key={punkt} className="flex items-center gap-2">
@@ -82,7 +82,7 @@ export default function ComingSoonPage() {
               <div className="w-full max-w-[300px] rounded-[2rem] bg-neutral-900 p-3 shadow-[0_20px_50px_rgba(17,24,39,0.1)]">
                 <div className="rounded-[1.5rem] bg-neutral-50 p-4">
                   <div className="mb-3.5 flex items-center justify-between text-sm font-bold text-brand">
-                    <span>hamr</span>
+                    <span>BidHamr</span>
                     <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   </div>
 
@@ -180,7 +180,7 @@ export default function ComingSoonPage() {
                   num: "03",
                   titel: "Handel i hus",
                   tekst:
-                    "Vinderen afhenter hos dig — eller får varen sendt, hvis du tilbyder det. Betaling sker sikkert via Hamr, uanset hvad.",
+                    "Vinderen afhenter hos dig — eller får varen sendt, hvis du tilbyder det. Betaling sker sikkert via BidHamr, uanset hvad.",
                 },
               ].map((trin) => (
                 <li
@@ -205,15 +205,15 @@ export default function ComingSoonPage() {
           </div>
         </section>
 
-        {/* Hvorfor Hamr */}
+        {/* Hvorfor BidHamr */}
         <section id="hvorfor" className="border-y border-neutral-200 bg-neutral-50 px-4 py-16 sm:px-8 sm:py-20">
           <div className="mx-auto max-w-6xl">
             <div className="mx-auto mb-12 max-w-2xl text-center">
               <p className="mb-2.5 text-xs font-bold tracking-[0.1em] text-brand uppercase">
-                Hvorfor Hamr
+                Hvorfor BidHamr
               </p>
               <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                Hvad gør Hamr anderledes?
+                Hvad gør BidHamr anderledes?
               </h2>
               <p className="mt-3 text-[17px] text-neutral-500">
                 Bygget til det lokale marked — med sikkerhed og tillid i
@@ -224,7 +224,7 @@ export default function ComingSoonPage() {
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {[
                 {
-                  titel: "Hamr Escrow",
+                  titel: "BidHamr Escrow",
                   tekst:
                     "Pengene holdes af platformen, indtil køber godkender varen. Ingen risiko for hverken køber eller sælger.",
                   ikon: <path d="M5 11h14v10H5z M8 11V8a4 4 0 0 1 8 0v3" />,
@@ -296,7 +296,7 @@ export default function ComingSoonPage() {
                 Auktioner er tilbage — og bedre end nogensinde
               </h2>
               <p className="mt-3 max-w-xl text-[17px] leading-relaxed text-white/85">
-                Husk QXL? Hamr er den moderne efterfølger: lokalt, nemt og
+                Husk QXL? BidHamr er den moderne efterfølger: lokalt, nemt og
                 bygget til 2026. Sælg alt fra møbler til elektronik — til folk
                 der faktisk bor i nærheden.
               </p>
@@ -314,16 +314,16 @@ export default function ComingSoonPage() {
 
       <footer className="border-t border-neutral-200 px-4 py-8 sm:px-8">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
-          <span className="text-lg font-bold text-brand">hamr</span>
+          <span className="text-lg font-bold text-brand">BidHamr</span>
           <p className="text-[13px] text-neutral-500">
-            &copy; 2026 Hamr. Alle rettigheder forbeholdes.
+            &copy; 2026 BidHamr. Alle rettigheder forbeholdes.
           </p>
           <nav className="flex gap-6 text-[13px] font-medium text-neutral-500">
             <a href="#saadan" className="hover:text-neutral-900">
               Sådan virker det
             </a>
             <a href="#hvorfor" className="hover:text-neutral-900">
-              Hvorfor Hamr
+              Hvorfor BidHamr
             </a>
             <a href="#venteliste" className="hover:text-neutral-900">
               Venteliste

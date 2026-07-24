@@ -5,7 +5,8 @@ import AuctionGallery from "@/components/AuctionGallery";
 import AuctionTitleActions from "@/components/AuctionTitleActions";
 import BidPanel from "@/components/BidPanel";
 import Accordion from "@/components/Accordion";
-import { anonymUsername } from "@/lib/anonymUsername";
+import RatingForm from "@/components/RatingForm";
+import { kortNavn } from "@/lib/kortNavn";
 
 const MAKS_BUD_HENTET = 50;
 
@@ -17,7 +18,7 @@ export default async function AuktionPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: auktion }, { data: bud }, { data: authData }] =
+  const [{ data: auktion }, { data: budRaw }, { data: authData }] =
     await Promise.all([
       supabase.from("auctions").select("*").eq("id", id).single(),
       supabase
@@ -33,12 +34,44 @@ export default async function AuktionPage({
     notFound();
   }
 
+  // Hent navne til sælger og alle budgivere i ét opkald
+  const budBrugerIds = [...new Set((budRaw ?? []).map((b) => b.bruger_id))];
+  const alleIds = [...new Set([auktion.bruger_id, ...budBrugerIds])];
+  const { data: brugerNavne } = await supabase
+    .from("users")
+    .select("id, navn")
+    .in("id", alleIds);
+  const navnMap = Object.fromEntries(
+    (brugerNavne ?? []).map((u) => [u.id, u.navn as string | null]),
+  );
+
+  const bud = (budRaw ?? []).map((b) => ({ ...b, navn: navnMap[b.bruger_id] ?? null }));
+  const sælgerNavn = kortNavn(navnMap[auktion.bruger_id]);
+
   const varenummer = auktion.id.slice(-6).toUpperCase();
   const auktionErSlut = new Date(auktion.slutter_kl) <= new Date();
   const vinderBud = bud?.[0] ?? null;
+  const bruger = authData.user ?? null;
   const erVinder = Boolean(
-    auktionErSlut && vinderBud && authData.user?.id === vinderBud.bruger_id,
+    auktionErSlut && vinderBud && bruger?.id === vinderBud.bruger_id,
   );
+  const erSælger = bruger?.id === auktion.bruger_id;
+  const erKøber = Boolean(vinderBud && bruger?.id === vinderBud.bruger_id);
+
+  // Brugeren kan bedømme hvis: auktion er slut, der er en vinder, og brugeren
+  // er enten køber eller sælger (de kan ikke være begge, da man ikke kan byde på egne auktioner)
+  const erInvolveret = auktionErSlut && !!vinderBud && !!bruger && (erKøber || erSælger);
+
+  let harBedømt = false;
+  if (erInvolveret && bruger) {
+    const { data: eksisterendeRating } = await supabase
+      .from("ratings")
+      .select("id")
+      .eq("fra_bruger_id", bruger.id)
+      .eq("auktion_id", id)
+      .maybeSingle();
+    harBedømt = !!eksisterendeRating;
+  }
 
   return (
     <main className="flex-1 bg-white px-4 py-6 sm:px-8">
@@ -94,8 +127,13 @@ export default async function AuktionPage({
               </div>
               <div>
                 <dt className="text-neutral-500">Sælger</dt>
-                <dd className="text-[#111]">
-                  {anonymUsername(auktion.bruger_id)}
+                <dd>
+                  <Link
+                    href={`/profil/${auktion.bruger_id}`}
+                    className="font-medium text-brand hover:underline"
+                  >
+                    {sælgerNavn}
+                  </Link>
                 </dd>
               </div>
               <div>
@@ -148,6 +186,26 @@ export default async function AuktionPage({
               />
             </div>
 
+            {/* Rating-sektion – vises når auktion er slut og bruger er involveret */}
+            {erInvolveret && !harBedømt && bruger && vinderBud && (
+              <div className="mt-4">
+                <RatingForm
+                  auktionId={auktion.id}
+                  tilBrugerId={erKøber ? auktion.bruger_id : vinderBud.bruger_id}
+                  rolle={erKøber ? "sælger" : "køber"}
+                />
+              </div>
+            )}
+
+            {erInvolveret && harBedømt && (
+              <div className="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Du har allerede afgivet en bedømmelse for denne handel.
+              </div>
+            )}
+
             <div className="mt-4 space-y-2">
               <Accordion title="Sådan fungerer afhentning">
                 Varen kan afhentes i{" "}
@@ -164,8 +222,8 @@ export default async function AuktionPage({
                   : "Ikke tilbudt – varen skal afhentes."}
               </Accordion>
 
-              <Accordion title="Sikker handel med Hamr">
-                Hamr opbevarer betalingen sikkert, indtil du har modtaget og
+              <Accordion title="Sikker handel med BidHamr">
+                BidHamr opbevarer betalingen sikkert, indtil du har modtaget og
                 godkendt varen, så både køber og sælger er beskyttet under
                 handlen.
               </Accordion>

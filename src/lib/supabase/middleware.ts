@@ -4,7 +4,14 @@ import { NextResponse, type NextRequest } from "next/server";
 // Routes der er tilgængelige uden login, mens resten af appen er bag
 // venteliste-gaten. "/api" undtages så fx /api/venteliste stadig kan kaldes
 // fra splash-siden af besøgende uden session.
-const OFFENTLIGE_RUTER = ["/coming-soon", "/login", "/signup", "/api"];
+const OFFENTLIGE_RUTER = [
+  "/coming-soon",
+  "/login",
+  "/signup",
+  "/glemt-adgangskode",
+  "/nulstil-adgangskode",
+  "/api",
+];
 
 function erOffentligRute(pathname: string) {
   return OFFENTLIGE_RUTER.some(
@@ -36,17 +43,18 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const { data } = await supabase.auth.getUser();
   const { pathname } = request.nextUrl;
 
-  // Logget ind bruger på splash-siden skal videre til den rigtige forside.
-  if (pathname === "/coming-soon" && data.user) {
-    return NextResponse.redirect(new URL("/", request.url));
+  // Offentlige ruter skal aldrig redirecte, uanset login-status.
+  if (erOffentligRute(pathname)) {
+    return supabaseResponse;
   }
+
+  const { data } = await supabase.auth.getUser();
 
   // Ikke logget ind og forsøger at tilgå noget andet end de offentlige ruter
   // -> hele appen er bag venteliste-gaten, ingen adgang uden login.
-  if (!erOffentligRute(pathname) && !data.user) {
+  if (!data.user) {
     return NextResponse.redirect(new URL("/coming-soon", request.url));
   }
 

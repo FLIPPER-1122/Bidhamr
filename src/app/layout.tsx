@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hamr – lokal auktionsplatform",
-  description: "Køb og sælg lokalt på Hamr.",
+  title: "BidHamr – lokal auktionsplatform",
+  description: "Køb og sælg lokalt på BidHamr.",
 };
 
 export default function RootLayout({
