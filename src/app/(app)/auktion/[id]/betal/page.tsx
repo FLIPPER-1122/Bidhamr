@@ -83,6 +83,33 @@ export default async function BetalPage({
               </div>
             </div>
 
+            {(() => {
+              // Samme øre-beregning som checkout-routen, så totalen matcher Stripe.
+              const budØre = Math.round(Number(højesteBud.beløb) * 100);
+              const gebyrØre = Math.round(budØre * 0.05);
+              const kr = (øre: number) =>
+                (øre / 100).toLocaleString("da-DK", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                });
+              return (
+                <div className="mt-4 border border-neutral-200 p-4 text-sm">
+                  <div className="flex justify-between text-neutral-600">
+                    <span>Vindende bud</span>
+                    <span>{kr(budØre)} kr</span>
+                  </div>
+                  <div className="mt-2 flex justify-between text-neutral-600">
+                    <span>Hamr gebyr (5%)</span>
+                    <span>{kr(gebyrØre)} kr</span>
+                  </div>
+                  <div className="mt-3 flex justify-between border-t border-neutral-200 pt-3 font-bold text-neutral-900">
+                    <span>I alt</span>
+                    <span>{kr(budØre + gebyrØre)} kr</span>
+                  </div>
+                </div>
+              );
+            })()}
+
             <p className="mt-3 text-xs text-neutral-500">
               Beløbet opbevares sikkert af BidHamr (escrow), indtil du har
               modtaget og godkendt varen.

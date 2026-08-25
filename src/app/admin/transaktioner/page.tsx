@@ -1,9 +1,16 @@
-import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { getStaffRole } from "@/lib/adminAuth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { anonymUsername } from "@/lib/anonymUsername";
 import type { TransaktionRow } from "@/lib/adminRowTypes";
 
 export default async function AdminTransaktioner() {
-  const supabase = await createClient();
+  const rolle = await getStaffRole();
+  if (rolle !== "chef") {
+    redirect("/admin/brugere");
+  }
+
+  const supabase = createAdminClient();
 
   const { data: transactions } = await supabase
     .from("transactions")

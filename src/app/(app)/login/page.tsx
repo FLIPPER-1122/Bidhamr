@@ -43,6 +43,32 @@ function LoginForm() {
       return;
     }
 
+    // Suspenderede konti logges ud igen med besked om årsagen.
+    const { data: sessionData } = await supabase.auth.getUser();
+    if (sessionData.user) {
+      const { data: profil } = await supabase
+        .from("users")
+        .select("suspenderet, suspenderet_aarsag, suspenderet_til")
+        .eq("id", sessionData.user.id)
+        .single();
+
+      // Udløbet suspension ignoreres (ryddes af en medarbejder i admin-panelet).
+      const aktivSuspension =
+        profil?.suspenderet &&
+        (!profil.suspenderet_til || new Date(profil.suspenderet_til) > new Date());
+
+      if (aktivSuspension) {
+        await supabase.auth.signOut();
+        const varighed = profil.suspenderet_til
+          ? `indtil d. ${new Date(profil.suspenderet_til).toLocaleDateString("da-DK")}`
+          : "permanent";
+        setError(
+          `Din konto er suspenderet ${varighed}. Årsag: ${profil.suspenderet_aarsag ?? "Ingen begrundelse angivet"}. Kontakt support@bidhamr.dk hvis du mener, det er en fejl.`,
+        );
+        return;
+      }
+    }
+
     router.push(redirectTo);
     router.refresh();
   }

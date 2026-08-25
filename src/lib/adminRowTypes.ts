@@ -13,6 +13,7 @@ export type AdminAuktionRow = {
   slutter_kl: string | null;
   oprettet: string;
   bruger_id: string;
+  skjult: boolean;
 };
 
 export type BrugerAuktionRow = {

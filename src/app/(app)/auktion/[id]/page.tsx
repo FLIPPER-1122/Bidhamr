@@ -6,6 +6,7 @@ import AuctionTitleActions from "@/components/AuctionTitleActions";
 import BidPanel from "@/components/BidPanel";
 import Accordion from "@/components/Accordion";
 import RatingForm from "@/components/RatingForm";
+import BekræftModtagelseKnap from "@/components/BekræftModtagelseKnap";
 import { kortNavn } from "@/lib/kortNavn";
 
 const MAKS_BUD_HENTET = 50;
@@ -30,7 +31,7 @@ export default async function AuktionPage({
       supabase.auth.getUser(),
     ]);
 
-  if (!auktion) {
+  if (!auktion || auktion.skjult) {
     notFound();
   }
 
@@ -50,13 +51,39 @@ export default async function AuktionPage({
 
   const varenummer = auktion.id.slice(-6).toUpperCase();
   const auktionErSlut = new Date(auktion.slutter_kl) <= new Date();
-  const vinderBud = bud?.[0] ?? null;
+  // Vinderen er det højeste bud (ikke det seneste) – samme logik som
+  // betal-siden og checkout-API'et.
+  const vinderBud =
+    (bud ?? []).reduce<(typeof bud)[number] | null>(
+      (bedste, b) =>
+        !bedste || Number(b.beløb) > Number(bedste.beløb) ? b : bedste,
+      null,
+    ) ?? null;
   const bruger = authData.user ?? null;
   const erVinder = Boolean(
     auktionErSlut && vinderBud && bruger?.id === vinderBud.bruger_id,
   );
   const erSælger = bruger?.id === auktion.bruger_id;
   const erKøber = Boolean(vinderBud && bruger?.id === vinderBud.bruger_id);
+
+  // Escrow-tilstand: findes der en betalt/frigivet transaktion for auktionen?
+  let transaktion: {
+    status: string;
+    udbetaling_beløb: number | null;
+  } | null = null;
+  if (auktionErSlut && vinderBud && (erVinder || erSælger)) {
+    const { data } = await supabase
+      .from("transactions")
+      .select("status, udbetaling_beløb")
+      .eq("auktion_id", id)
+      .in("status", ["betalt", "frigivet"])
+      .maybeSingle()
+      .overrideTypes<
+        { status: string; udbetaling_beløb: number | null },
+        { merge: false }
+      >();
+    transaktion = data;
+  }
 
   // Brugeren kan bedømme hvis: auktion er slut, der er en vinder, og brugeren
   // er enten køber eller sælger (de kan ikke være begge, da man ikke kan byde på egne auktioner)
@@ -159,7 +186,7 @@ export default async function AuktionPage({
 
           {/* Højre kolonne (40%) */}
           <div className="lg:col-span-2">
-            {erVinder && (
+            {erVinder && !transaktion && (
               <div className="mb-4 border border-brand bg-red-50 p-4">
                 <p className="font-semibold text-brand">
                   🎉 Du har vundet denne auktion!
@@ -170,6 +197,59 @@ export default async function AuktionPage({
                 >
                   Gå til betaling
                 </Link>
+              </div>
+            )}
+
+            {erVinder && transaktion?.status === "betalt" && (
+              <div className="mb-4 border border-brand bg-red-50 p-4">
+                <p className="font-semibold text-brand">
+                  Betaling gennemført
+                </p>
+                <p className="mt-1 text-sm text-neutral-700">
+                  Beløbet opbevares sikkert af BidHamr. Tryk på knappen, når du
+                  har modtaget varen – så frigives pengene til sælgeren.
+                </p>
+                <div className="mt-3">
+                  <BekræftModtagelseKnap auktionId={auktion.id} />
+                </div>
+              </div>
+            )}
+
+            {erVinder && transaktion?.status === "frigivet" && (
+              <div className="mb-4 border border-green-300 bg-green-50 p-4">
+                <p className="font-semibold text-green-700">
+                  Handel afsluttet
+                </p>
+                <p className="mt-1 text-sm text-green-700">
+                  Du har bekræftet modtagelsen, og beløbet er frigivet til
+                  sælgeren. God fornøjelse med varen!
+                </p>
+              </div>
+            )}
+
+            {erSælger && transaktion?.status === "betalt" && (
+              <div className="mb-4 border border-brand bg-red-50 p-4">
+                <p className="font-semibold text-brand">
+                  Din auktion er vundet – afvent købers bekræftelse
+                </p>
+                <p className="mt-1 text-sm text-neutral-700">
+                  Køberen har betalt, og beløbet står i sikker forvaring hos
+                  BidHamr. Pengene frigives til dig, når køberen har bekræftet
+                  modtagelsen.
+                </p>
+              </div>
+            )}
+
+            {erSælger && transaktion?.status === "frigivet" && (
+              <div className="mb-4 border border-green-300 bg-green-50 p-4">
+                <p className="font-semibold text-green-700">
+                  Handel afsluttet
+                </p>
+                <p className="mt-1 text-sm text-green-700">
+                  Køberen har bekræftet modtagelsen.
+                  {transaktion.udbetaling_beløb != null &&
+                    ` ${Number(transaktion.udbetaling_beløb).toLocaleString("da-DK")} kr udbetales til dig (fratrukket 10% sælgergebyr).`}
+                </p>
               </div>
             )}
 

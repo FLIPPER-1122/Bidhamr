@@ -68,18 +68,33 @@ export async function POST(req: NextRequest) {
   const origin = req.nextUrl.origin;
   const beløb = Number(højesteBud.beløb);
 
+  // Gebyrer beregnes i øre for at undgå float-afrunding; DB-kolonnerne er i kr.
+  const budØre = Math.round(beløb * 100);
+  const køberGebyrØre = Math.round(budØre * 0.05);
+  const sælgerGebyrØre = Math.round(budØre * 0.1);
+
   const session = await getStripe().checkout.sessions.create({
     mode: "payment",
-    payment_method_types: ["card"],
+    payment_method_types: ["card", "mobilepay"],
     line_items: [
       {
         price_data: {
           currency: "dkk",
           product_data: {
-            name: auktion.titel,
+            name: `Vindende bud: ${auktion.titel}`,
             images: auktion.billeder?.[0] ? [auktion.billeder[0]] : undefined,
           },
-          unit_amount: Math.round(beløb * 100),
+          unit_amount: budØre,
+        },
+        quantity: 1,
+      },
+      {
+        price_data: {
+          currency: "dkk",
+          product_data: {
+            name: "BidHamr købergebyr (5%)",
+          },
+          unit_amount: køberGebyrØre,
         },
         quantity: 1,
       },
@@ -94,11 +109,22 @@ export async function POST(req: NextRequest) {
     cancel_url: `${origin}/auktion/${auktionId}/betal`,
   });
 
+  // Forladte checkout-forsøg efterlader 'afventer'-rækker; markér dem
+  // annulleret, så webhookens statusguard kun rammer den aktuelle række.
+  await supabase
+    .from("transactions")
+    .update({ status: "annulleret" })
+    .eq("auktion_id", auktionId)
+    .eq("køber_id", authData.user.id)
+    .eq("status", "afventer");
+
   const { error: insertError } = await supabase.from("transactions").insert({
     auktion_id: auktionId,
     køber_id: authData.user.id,
     sælger_id: auktion.bruger_id,
     beløb,
+    køber_gebyr: køberGebyrØre / 100,
+    sælger_gebyr: sælgerGebyrØre / 100,
     gebyr: 0,
     status: "afventer",
     stripe_checkout_session_id: session.id,

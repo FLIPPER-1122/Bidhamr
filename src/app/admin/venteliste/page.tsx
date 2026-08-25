@@ -1,8 +1,15 @@
-import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { getStaffRole } from "@/lib/adminAuth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import CsvExportButton from "@/components/admin/CsvExportButton";
 
 export default async function AdminVenteliste() {
-  const supabase = await createClient();
+  const rolle = await getStaffRole();
+  if (rolle !== "chef") {
+    redirect("/admin/brugere");
+  }
+
+  const supabase = createAdminClient();
 
   const { data: venteliste, count } = await supabase
     .from("venteliste")

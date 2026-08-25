@@ -11,6 +11,7 @@ export default async function Home() {
     .from("auctions")
     .select("*, bids(count)")
     .eq("status", "aktiv")
+    .eq("skjult", false)
     .gt("slutter_kl", new Date().toISOString())
     .order("oprettet", { ascending: false })
     .limit(8);

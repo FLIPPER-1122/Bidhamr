@@ -146,6 +146,7 @@ export default function AuctionBrowser({
       .from("auctions")
       .select("*, bids(count)")
       .eq("status", "aktiv")
+      .eq("skjult", false)
       .gt("slutter_kl", new Date().toISOString());
 
     if (søgetekst.trim()) {

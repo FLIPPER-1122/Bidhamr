@@ -16,13 +16,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .eq("id", user.id)
     .single();
 
-  if (!profile || profile.rolle !== "admin") {
+  if (
+    !profile ||
+    (profile.rolle !== "chef" &&
+      profile.rolle !== "admin" &&
+      profile.rolle !== "medarbejder")
+  ) {
     redirect("/");
   }
 
   return (
     <div className="flex h-screen bg-neutral-50">
-      <AdminSidebar />
+      <AdminSidebar rolle={profile.rolle as "chef" | "admin" | "medarbejder"} />
       <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">
         {children}
       </main>

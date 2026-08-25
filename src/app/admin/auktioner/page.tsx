@@ -1,38 +1,91 @@
-import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import { deleteAuction, cancelAuction } from "@/app/actions/adminActions";
+import { Suspense } from "react";
+import { redirect } from "next/navigation";
+import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { deleteAuction, cancelAuction, hideAuction, unhideAuction } from "@/app/actions/adminActions";
+import AdminSearchInput from "@/components/admin/AdminSearchInput";
+import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import type { AdminAuktionRow } from "@/lib/adminRowTypes";
 
-const statusOptions = ["alle", "aktiv", "afsluttet", "annulleret"] as const;
+const statusOptions = [
+  { value: "alle", label: "Alle" },
+  { value: "aktiv", label: "Aktiv" },
+  { value: "afsluttet", label: "Afsluttet" },
+  { value: "ingen_bud", label: "Ingen bud" },
+  { value: "annulleret", label: "Annulleret" },
+] as const;
+
+// Matcher et fuldt UUID hvor som helst i teksten, så et indsat auktions-link
+// (…/auktion/<id>) også virker som søgning.
+const UUID_REGEX =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+// PostgREST bruger komma og parenteser som syntaks i .or(), så værdien
+// citeres og indlejrede citationstegn escapes.
+function orVaerdi(tekst: string) {
+  return `"%${tekst.replace(/["\\]/g, "\\$&")}%"`;
+}
 
 export default async function AdminAuktioner({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; q?: string }>;
 }) {
-  const { status } = await searchParams;
-  const supabase = await createClient();
+  const rolle = await getStaffRole();
+  if (!rolle || !harMindstRolle(rolle, "admin")) {
+    redirect("/admin/brugere");
+  }
+
+  const { status, q } = await searchParams;
+  const søgetekst = q?.trim() ?? "";
+  const aktivStatus = status ?? "alle";
+  const supabase = createAdminClient();
+
+  // Sælger-søgning kræver et opslag i users først, da PostgREST ikke kan
+  // filtrere auktioner på en joinet tabels felter i et .or().
+  let sælgerTræf: string[] = [];
+  if (søgetekst) {
+    const { data } = await supabase
+      .from("users")
+      .select("id")
+      .or(`navn.ilike.${orVaerdi(søgetekst)},email.ilike.${orVaerdi(søgetekst)}`)
+      .limit(200);
+    sælgerTræf = (data ?? []).map((u) => u.id);
+  }
 
   let query = supabase
     .from("auctions")
-    .select("id, titel, billeder, startpris, nuværende_bud, status, slutter_kl, oprettet, bruger_id")
-    .order("oprettet", { ascending: false });
+    .select("id, titel, billeder, startpris, nuværende_bud, status, slutter_kl, oprettet, bruger_id, skjult")
+    .order("oprettet", { ascending: false })
+    .limit(200);
 
-  if (status && status !== "alle") {
-    query = query.eq("status", status);
+  if (aktivStatus === "ingen_bud") {
+    // nuværende_bud sættes først af bud-triggeren, så null = ingen bud.
+    query = query.is("nuværende_bud", null);
+  } else if (aktivStatus !== "alle") {
+    query = query.eq("status", aktivStatus);
+  }
+
+  if (søgetekst) {
+    const orDele = [`titel.ilike.${orVaerdi(søgetekst)}`];
+    const uuid = søgetekst.match(UUID_REGEX)?.[0];
+    if (uuid) orDele.push(`id.eq.${uuid}`);
+    if (sælgerTræf.length) orDele.push(`bruger_id.in.(${sælgerTræf.join(",")})`);
+    query = query.or(orDele.join(","));
   }
 
   const { data: auctions } = await query.overrideTypes<AdminAuktionRow[], { merge: false }>();
 
-  // Fetch user info for sælgere
+  // Sælgerinfo til de viste auktioner
   const brugerIds = [...new Set((auctions ?? []).map((a) => a.bruger_id))];
   const { data: sælgere } = brugerIds.length
     ? await supabase.from("users").select("id, navn, email").in("id", brugerIds)
     : { data: [] };
 
-  const sælgerMap: Record<string, string> = {};
+  const sælgerMap: Record<string, { navn: string | null; email: string }> = {};
   (sælgere ?? []).forEach((u) => {
-    sælgerMap[u.id] = u.navn ?? u.email ?? u.id;
+    sælgerMap[u.id] = { navn: u.navn, email: u.email };
   });
 
   const statusBadge = (s: string) => {
@@ -41,28 +94,41 @@ export default async function AdminAuktioner({
     return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Annulleret</span>;
   };
 
+  // Bevar søgetekst når man skifter statusfilter
+  const filterHref = (s: string) => {
+    const params = new URLSearchParams();
+    if (s !== "alle") params.set("status", s);
+    if (søgetekst) params.set("q", søgetekst);
+    const qs = params.toString();
+    return `/admin/auktioner${qs ? `?${qs}` : ""}`;
+  };
+
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Auktioner</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">Alle auktioner</h1>
         <span className="text-sm text-neutral-500">{auctions?.length ?? 0} resultater</span>
       </div>
+
+      <Suspense>
+        <AdminSearchInput placeholder="Søg på auktions-ID, titel, sælgers navn eller e-mail..." />
+      </Suspense>
 
       {/* Status filter tabs */}
       <div className="flex gap-2 flex-wrap">
         {statusOptions.map((s) => {
-          const active = (status ?? "alle") === s;
+          const active = aktivStatus === s.value;
           return (
             <Link
-              key={s}
-              href={`/admin/auktioner${s === "alle" ? "" : `?status=${s}`}`}
+              key={s.value}
+              href={filterHref(s.value)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 active
                   ? "bg-[#E63946] text-white"
                   : "bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
               }`}
             >
-              {s.charAt(0).toUpperCase() + s.slice(1)}
+              {s.label}
             </Link>
           );
         })}
@@ -77,19 +143,21 @@ export default async function AdminAuktioner({
                 <th className="px-5 py-3 text-left font-medium">Titel</th>
                 <th className="px-5 py-3 text-left font-medium">Sælger</th>
                 <th className="px-5 py-3 text-left font-medium">Startpris</th>
-                <th className="px-5 py-3 text-left font-medium">Nuv. bud</th>
+                <th className="px-5 py-3 text-left font-medium">Højeste bud</th>
                 <th className="px-5 py-3 text-left font-medium">Status</th>
-                <th className="px-5 py-3 text-left font-medium">Slutter</th>
+                <th className="px-5 py-3 text-left font-medium">Slutdato</th>
                 <th className="px-5 py-3 text-left font-medium">Handlinger</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {(auctions ?? []).map((a) => {
                 const img = Array.isArray(a.billeder) ? a.billeder[0] : null;
+                const sælger = sælgerMap[a.bruger_id];
                 return (
                   <tr key={a.id} className="hover:bg-neutral-50">
                     <td className="px-5 py-3">
                       {img ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img src={img} alt={a.titel} className="w-10 h-10 rounded-lg object-cover" />
                       ) : (
                         <div className="w-10 h-10 rounded-lg bg-neutral-100 flex items-center justify-center">
@@ -99,36 +167,89 @@ export default async function AdminAuktioner({
                         </div>
                       )}
                     </td>
-                    <td className="px-5 py-3 font-medium text-neutral-800 max-w-[160px] truncate">{a.titel}</td>
-                    <td className="px-5 py-3 text-neutral-600">{sælgerMap[a.bruger_id] ?? "—"}</td>
+                    <td className="px-5 py-3 font-medium text-neutral-800 max-w-[200px] truncate">{a.titel}</td>
+                    <td className="px-5 py-3">
+                      {sælger ? (
+                        <Link
+                          href={`/admin/brugere/${a.bruger_id}`}
+                          className="block max-w-[180px] hover:underline"
+                        >
+                          <span className="block truncate text-neutral-800">
+                            {sælger.navn ?? "Uden navn"}
+                          </span>
+                          <span className="block truncate text-xs text-neutral-500">
+                            {sælger.email}
+                          </span>
+                        </Link>
+                      ) : (
+                        <span className="text-neutral-400">—</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-neutral-600">{a.startpris?.toLocaleString("da-DK")} kr</td>
-                    <td className="px-5 py-3 text-neutral-600">{a["nuværende_bud"] != null ? `${a["nuværende_bud"].toLocaleString("da-DK")} kr` : "—"}</td>
-                    <td className="px-5 py-3">{statusBadge(a.status)}</td>
+                    <td className="px-5 py-3">
+                      {a["nuværende_bud"] != null ? (
+                        <span className="font-medium text-neutral-800">
+                          {a["nuværende_bud"].toLocaleString("da-DK")} kr
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400">Ingen bud</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="inline-flex gap-1.5">
+                        {statusBadge(a.status)}
+                        {a.skjult && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-neutral-600">Skjult</span>
+                        )}
+                      </span>
+                    </td>
                     <td className="px-5 py-3 text-neutral-500">
                       {a["slutter_kl"] ? new Date(a["slutter_kl"]).toLocaleDateString("da-DK") : "—"}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex gap-2">
                         {a.status === "aktiv" && (
-                          <form action={cancelAuction}>
-                            <input type="hidden" name="auktionId" value={a.id} />
-                            <button
-                              type="submit"
-                              className="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded-md hover:bg-amber-200 transition-colors"
-                            >
-                              Annullér
-                            </button>
-                          </form>
+                          <ConfirmDialog
+                            triggerLabel="Annullér"
+                            triggerClassName="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded-md hover:bg-amber-200 transition-colors"
+                            title="Er du sikker på, at du vil annullere auktionen?"
+                            description="Auktionen stoppes, og der kan ikke bydes længere."
+                            confirmLabel="Ja, annullér auktionen"
+                            action={cancelAuction}
+                            hiddenFields={{ auktionId: a.id }}
+                          />
                         )}
-                        <form action={deleteAuction}>
-                          <input type="hidden" name="auktionId" value={a.id} />
-                          <button
-                            type="submit"
-                            className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
-                          >
-                            Slet
-                          </button>
-                        </form>
+                        <ConfirmDialog
+                          triggerLabel={a.skjult ? "Vis igen" : "Skjul"}
+                          triggerClassName="px-2 py-1 text-xs bg-neutral-100 text-neutral-600 rounded-md hover:bg-neutral-200 transition-colors"
+                          title={
+                            a.skjult
+                              ? "Er du sikker på, at du vil vise auktionen igen?"
+                              : "Er du sikker på, at du vil skjule auktionen?"
+                          }
+                          description={
+                            a.skjult
+                              ? "Auktionen bliver synlig for alle igen."
+                              : "Auktionen bliver usynlig for brugerne, men slettes ikke."
+                          }
+                          confirmLabel={a.skjult ? "Ja, vis auktionen" : "Ja, skjul auktionen"}
+                          action={a.skjult ? unhideAuction : hideAuction}
+                          hiddenFields={{ auktionId: a.id }}
+                        />
+                        <ConfirmDialog
+                          triggerLabel="Slet"
+                          triggerClassName="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
+                          title="Er du sikker på, at du vil slette auktionen?"
+                          description="Handlingen kan ikke fortrydes."
+                          confirmLabel="Ja, slet auktionen"
+                          action={deleteAuction}
+                          hiddenFields={{ auktionId: a.id }}
+                          aarsagField={{
+                            label: "Årsag",
+                            placeholder: "Skriv hvorfor auktionen slettes...",
+                            required: true,
+                          }}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -137,7 +258,9 @@ export default async function AdminAuktioner({
               {(auctions ?? []).length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-5 py-10 text-center text-neutral-400">
-                    Ingen auktioner fundet
+                    {søgetekst
+                      ? `Ingen auktioner matcher "${søgetekst}"`
+                      : "Ingen auktioner fundet"}
                   </td>
                 </tr>
               )}

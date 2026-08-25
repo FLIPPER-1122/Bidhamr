@@ -17,6 +17,7 @@ export default async function AuktionerPage({
     .from("auctions")
     .select("*, bids(count)")
     .eq("status", "aktiv")
+    .eq("skjult", false)
     .gt("slutter_kl", new Date().toISOString())
     .order("slutter_kl", { ascending: true });
 

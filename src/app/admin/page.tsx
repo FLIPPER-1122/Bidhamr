@@ -1,4 +1,6 @@
-import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { getStaffRole } from "@/lib/adminAuth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import StatCard from "@/components/admin/StatCard";
 import BarChart from "@/components/admin/BarChart";
 import type { TransaktionBeløbRow } from "@/lib/adminRowTypes";
@@ -30,7 +32,12 @@ function groupByDate(rows: { oprettet: string }[]) {
 }
 
 export default async function AdminDashboard() {
-  const supabase = await createClient();
+  const rolle = await getStaffRole();
+  if (rolle !== "chef") {
+    redirect("/admin/brugere");
+  }
+
+  const supabase = createAdminClient();
 
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);

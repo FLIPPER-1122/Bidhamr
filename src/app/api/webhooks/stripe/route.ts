@@ -55,5 +55,31 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (event.type === "payment_intent.canceled") {
+    const paymentIntent = event.data.object as Stripe.PaymentIntent;
+    const auktionId = paymentIntent.metadata?.auktion_id;
+
+    if (!auktionId) {
+      console.error("payment_intent.canceled uden auktion_id i metadata");
+      return NextResponse.json({ received: true });
+    }
+
+    const supabase = createAdminClient();
+
+    const { error } = await supabase
+      .from("transactions")
+      .update({
+        status: "annulleret",
+        stripe_payment_intent_id: paymentIntent.id,
+      })
+      .eq("auktion_id", auktionId)
+      .eq("status", "afventer");
+
+    if (error) {
+      console.error("Kunne ikke annullere transaction:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  }
+
   return NextResponse.json({ received: true });
 }

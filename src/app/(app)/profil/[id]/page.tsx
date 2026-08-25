@@ -81,6 +81,7 @@ export default async function ProfilPage({
         .from("ratings")
         .select("id, fra_bruger_id, stjerner, kommentar, oprettet")
         .eq("til_bruger_id", id)
+        .eq("skjult", false)
         .order("oprettet", { ascending: false }),
       supabase
         .from("transactions")
@@ -222,6 +223,7 @@ export default async function ProfilPage({
       .from("ratings")
       .select("id, fra_bruger_id, stjerner, kommentar, oprettet")
       .eq("til_bruger_id", id)
+      .eq("skjult", false)
       .order("oprettet", { ascending: false }),
   ]);
 

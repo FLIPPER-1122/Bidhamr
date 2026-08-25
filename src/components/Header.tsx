@@ -14,7 +14,10 @@ export default async function Header() {
       .select("rolle")
       .eq("id", data.user.id)
       .single();
-    erAdmin = profil?.rolle === "admin";
+    erAdmin =
+      profil?.rolle === "chef" ||
+      profil?.rolle === "admin" ||
+      profil?.rolle === "medarbejder";
   }
 
   return (

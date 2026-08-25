@@ -12,7 +12,10 @@ export default async function Footer() {
       .select("rolle")
       .eq("id", authData.user.id)
       .single();
-    erAdmin = data?.rolle === "admin";
+    erAdmin =
+      data?.rolle === "chef" ||
+      data?.rolle === "admin" ||
+      data?.rolle === "medarbejder";
   }
 
   return (
