@@ -1,9 +1,12 @@
 import Link from "next/link";
 import WaitlistForm from "@/components/landing/WaitlistForm";
+import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
 
 export default function ComingSoonPage() {
   return (
     <div className="flex flex-1 flex-col bg-white text-neutral-900">
+      {/* Fanger auth-tokens der lander her som hash-fragment */}
+      <AuthHashRedirect />
       {/* Let header – ingen adgang til resten af appen, kun et diskret login-link */}
       <header className="flex items-center justify-between px-4 py-4 sm:px-8">
         <Link href="/coming-soon" className="text-2xl font-extrabold tracking-tight text-brand">
