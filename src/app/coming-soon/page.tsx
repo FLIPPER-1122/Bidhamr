@@ -66,7 +66,6 @@ export default function ComingSoonPage() {
                 {[
                   "Gratis at oprette auktion",
                   "Sikker betaling via BidHamr Escrow",
-                  "Kun købere i dit nærområde",
                 ].map((punkt) => (
                   <li key={punkt} className="flex items-center gap-2">
                     <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0 text-brand" fill="currentColor" aria-hidden>
@@ -295,11 +294,6 @@ export default function ComingSoonPage() {
               <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
                 Auktioner er tilbage — og bedre end nogensinde
               </h2>
-              <p className="mt-3 max-w-xl text-[17px] leading-relaxed text-white/85">
-                Husk QXL? BidHamr er den moderne efterfølger: lokalt, nemt og
-                bygget til 2026. Sælg alt fra møbler til elektronik — til folk
-                der faktisk bor i nærheden.
-              </p>
             </div>
 
             <a
