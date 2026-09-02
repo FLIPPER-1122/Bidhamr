@@ -9,6 +9,8 @@ const OFFENTLIGE_RUTER = [
   "/login",
   "/glemt-adgangskode",
   "/nulstil-adgangskode",
+  "/reset-password",
+  "/auth",
   "/api",
 ];
 

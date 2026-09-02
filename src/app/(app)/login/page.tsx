@@ -9,6 +9,8 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") || "/auktioner";
+  // Auth-callbacket sender fejl hertil, fx når et nulstillingslink er udløbet.
+  const callbackFejl = searchParams.get("fejl");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -148,7 +150,9 @@ function LoginForm() {
               />
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {(error ?? callbackFejl) && (
+              <p className="text-sm text-red-600">{error ?? callbackFejl}</p>
+            )}
 
             {emailIkkeBekraeftet && (
               <div>

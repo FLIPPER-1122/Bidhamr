@@ -19,7 +19,7 @@ export default function GlemtAdgangskodePage() {
     const { error } = await supabase.auth.resetPasswordForEmail(
       email.trim().toLowerCase(),
       {
-        redirectTo: `${window.location.origin}/nulstil-adgangskode`,
+        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
       },
     );
 
