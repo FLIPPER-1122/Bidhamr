@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Routes der er tilgængelige uden login, mens resten af appen er bag
-// venteliste-gaten. "/api" undtages så fx /api/venteliste stadig kan kaldes
+// venteliste-gaten. "/api" undtages så fx /api/waitlist stadig kan kaldes
 // fra splash-siden af besøgende uden session.
 const OFFENTLIGE_RUTER = [
   "/coming-soon",

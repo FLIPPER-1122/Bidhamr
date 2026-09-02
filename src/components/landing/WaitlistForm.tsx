@@ -21,7 +21,7 @@ export default function WaitlistForm() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/venteliste", {
+      const res = await fetch("/api/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
