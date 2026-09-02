@@ -7,11 +7,14 @@ import { NextResponse, type NextRequest } from "next/server";
 const OFFENTLIGE_RUTER = [
   "/coming-soon",
   "/login",
-  "/signup",
   "/glemt-adgangskode",
   "/nulstil-adgangskode",
   "/api",
 ];
+
+// Inden launch er appen lukket for almindelige brugere. Kun disse roller
+// slipper igennem - alle andre (også indloggede) sendes til splash-siden.
+const ROLLER_MED_ADGANG = ["chef", "admin", "medarbejder"];
 
 function erOffentligRute(pathname: string) {
   return OFFENTLIGE_RUTER.some(
@@ -55,6 +58,17 @@ export async function updateSession(request: NextRequest) {
   // Ikke logget ind og forsøger at tilgå noget andet end de offentlige ruter
   // -> hele appen er bag venteliste-gaten, ingen adgang uden login.
   if (!data.user) {
+    return NextResponse.redirect(new URL("/coming-soon", request.url));
+  }
+
+  // Logget ind er ikke nok inden launch: rollen skal give adgang.
+  const { data: profil } = await supabase
+    .from("users")
+    .select("rolle")
+    .eq("id", data.user.id)
+    .single();
+
+  if (!profil || !ROLLER_MED_ADGANG.includes(profil.rolle)) {
     return NextResponse.redirect(new URL("/coming-soon", request.url));
   }
 

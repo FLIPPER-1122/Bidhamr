@@ -11,12 +11,6 @@ export default function ComingSoonPage() {
         </Link>
 
         <div className="flex items-center gap-5">
-          <Link
-            href="/login"
-            className="text-sm font-medium text-neutral-400 hover:text-brand"
-          >
-            Log ind
-          </Link>
           <a
             href="#top"
             className="rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#c62832]"

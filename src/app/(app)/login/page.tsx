@@ -180,9 +180,9 @@ function LoginForm() {
         </div>
 
         <p className="mt-6 text-center text-sm text-neutral-500">
-          Ny på BidHamr?{" "}
-          <Link href="/signup" className="font-medium text-brand">
-            Opret konto
+          BidHamr åbner snart.{" "}
+          <Link href="/coming-soon" className="font-medium text-brand">
+            Tilmeld ventelisten
           </Link>
         </p>
       </div>
