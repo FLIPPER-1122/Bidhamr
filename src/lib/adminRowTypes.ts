@@ -37,5 +37,6 @@ export type TransaktionRow = {
 
 export type TransaktionBeløbRow = {
   beløb: number | null;
-  gebyr: number | null;
+  køber_gebyr: number | null;
+  sælger_gebyr: number | null;
 };

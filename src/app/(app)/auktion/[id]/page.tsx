@@ -7,6 +7,7 @@ import BidPanel from "@/components/BidPanel";
 import Accordion from "@/components/Accordion";
 import RatingForm from "@/components/RatingForm";
 import BekræftModtagelseKnap from "@/components/BekræftModtagelseKnap";
+import AnmeldOpslagKnap from "@/components/AnmeldOpslagKnap";
 import { kortNavn } from "@/lib/kortNavn";
 
 const MAKS_BUD_HENTET = 50;
@@ -182,6 +183,17 @@ export default async function AuktionPage({
                 </p>
               </>
             )}
+
+            {/* Sælgeren har ingen grund til at anmelde sit eget opslag */}
+            {!erSælger && (
+              <>
+                <div className="my-4 border-t border-neutral-200" />
+                <AnmeldOpslagKnap
+                  auktionId={auktion.id}
+                  brugerId={bruger?.id ?? null}
+                />
+              </>
+            )}
           </div>
 
           {/* Højre kolonne (40%) */}
@@ -262,6 +274,7 @@ export default async function AuktionPage({
                 initialSlutterKl={auktion.slutter_kl}
                 initialBud={bud ?? []}
                 brugerId={authData.user?.id ?? null}
+                saelgerId={auktion.bruger_id}
                 forsendelseMulig={auktion.forsendelse_mulig}
               />
             </div>

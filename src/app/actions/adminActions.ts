@@ -1,6 +1,6 @@
 "use server";
 
-import { assertRole } from "@/lib/adminAuth";
+import { assertRole, harMindstRolle } from "@/lib/adminAuth";
 import { revalidatePath } from "next/cache";
 
 // --- Brugere ---------------------------------------------------------------
@@ -285,4 +285,206 @@ export async function unhideRating(formData: FormData) {
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin/bedommelser");
+}
+
+
+// --- Rapporter -------------------------------------------------------------
+// Tre udfald af en rapport. Kun "markér som behandlet" rører ikke auktionen og
+// er derfor tilladt for medarbejdere; de to øvrige ændrer et opslag og kræver
+// admin, som resten af auktions-moderationen.
+
+async function afslutRapport(
+  admin: AdminClient,
+  staffId: string,
+  rapportId: string,
+  status: "behandlet" | "under_behandling" | "fjernet",
+  note: string,
+) {
+  const { error } = await admin
+    .from("reports")
+    .update({
+      status,
+      handled_by: staffId,
+      handled_note: note,
+      handled_at: new Date().toISOString(),
+    })
+    .eq("id", rapportId);
+  if (error) throw new Error(error.message);
+}
+
+async function hentRapport(admin: AdminClient, rapportId: string) {
+  const { data } = await admin
+    .from("reports")
+    .select("id, auction_id")
+    .eq("id", rapportId)
+    .single();
+  if (!data) throw new Error("Rapporten findes ikke.");
+  return data;
+}
+
+// Afslut uden handling - auktionen forbliver aktiv. Noten er obligatorisk og
+// dokumenterer hvad der blev tjekket, og hvad konklusionen blev.
+// Feltet hedder "aarsag" i formularen, fordi ConfirmDialog bruger det navn.
+export async function rapportMarkerBehandlet(formData: FormData) {
+  const rapportId = formData.get("rapportId") as string;
+  const note = ((formData.get("aarsag") as string) ?? "").trim();
+  const { admin, userId: staffId } = await assertRole("medarbejder");
+
+  if (!note) {
+    throw new Error("Skriv en note om hvad du har tjekket, og hvad konklusionen er.");
+  }
+
+  await afslutRapport(admin, staffId, rapportId, "behandlet", note);
+  revalidatePath("/admin/rapporter");
+  revalidatePath("/admin/opklarede-rapporter");
+}
+
+// Skjul opslaget midlertidigt mens sagen undersøges.
+export async function rapportSletMidlertidigt(formData: FormData) {
+  const rapportId = formData.get("rapportId") as string;
+  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
+  const { admin, userId: staffId } = await assertRole("admin");
+
+  if (!aarsag) throw new Error("Angiv en årsag.");
+  const rapport = await hentRapport(admin, rapportId);
+
+  const { data: auktion } = await admin
+    .from("auctions")
+    .select("bruger_id")
+    .eq("id", rapport.auction_id)
+    .single();
+  if (!auktion) throw new Error("Auktionen findes ikke.");
+
+  const { error } = await admin
+    .from("auctions")
+    .update({ skjult: true })
+    .eq("id", rapport.auction_id);
+  if (error) throw new Error(error.message);
+
+  await logModeration(admin, {
+    medarbejder_id: staffId,
+    handling: "slet_auktion",
+    maal_type: "auktion",
+    maal_id: rapport.auction_id,
+    bruger_id: auktion.bruger_id,
+    aarsag: `Midlertidigt skjult efter anmeldelse: ${aarsag}`,
+  });
+
+  await afslutRapport(admin, staffId, rapportId, "under_behandling", aarsag);
+  revalidatePath("/admin/rapporter");
+  revalidatePath("/admin/auktioner");
+  revalidatePath(`/auktion/${rapport.auction_id}`);
+}
+
+// Fjern opslaget permanent fra platformen. Auktionen annulleres og skjules i
+// stedet for at blive slettet: reports.auction_id har ON DELETE CASCADE, så en
+// hård sletning ville også fjerne selve rapporten og dermed dokumentationen.
+export async function rapportFjernOpslag(formData: FormData) {
+  const rapportId = formData.get("rapportId") as string;
+  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
+  const { admin, userId: staffId } = await assertRole("admin");
+
+  if (!aarsag) throw new Error("Angiv en årsag.");
+  const rapport = await hentRapport(admin, rapportId);
+
+  const { data: auktion } = await admin
+    .from("auctions")
+    .select("bruger_id")
+    .eq("id", rapport.auction_id)
+    .single();
+  if (!auktion) throw new Error("Auktionen findes ikke.");
+
+  const { error } = await admin
+    .from("auctions")
+    .update({ status: "annulleret", skjult: true })
+    .eq("id", rapport.auction_id);
+  if (error) throw new Error(error.message);
+
+  await logModeration(admin, {
+    medarbejder_id: staffId,
+    handling: "slet_auktion",
+    maal_type: "auktion",
+    maal_id: rapport.auction_id,
+    bruger_id: auktion.bruger_id,
+    aarsag: `Opslag fjernet efter anmeldelse: ${aarsag}`,
+  });
+
+  await afslutRapport(admin, staffId, rapportId, "fjernet", aarsag);
+  revalidatePath("/admin/rapporter");
+  revalidatePath("/admin/auktioner");
+  revalidatePath(`/auktion/${rapport.auction_id}`);
+}
+
+// Fortryd. Skal også gøre opslaget synligt igen - ellers bliver auktionen ved
+// med at give 404 for brugerne, selvom rapporten står som afventende.
+export async function rapportGenaabn(formData: FormData) {
+  const rapportId = formData.get("rapportId") as string;
+  const { admin, rolle, userId: staffId } = await assertRole("medarbejder");
+
+  const { data: rapport } = await admin
+    .from("reports")
+    .select("id, auction_id, status")
+    .eq("id", rapportId)
+    .single();
+  if (!rapport) throw new Error("Rapporten findes ikke.");
+
+  // 'handled' rørte aldrig opslaget, så der er intet at fortryde.
+  const opslagetBlevAendret =
+    rapport.status === "under_behandling" || rapport.status === "fjernet";
+
+  if (opslagetBlevAendret) {
+    if (!harMindstRolle(rolle, "admin")) {
+      throw new Error(
+        "Kun admin kan gøre et skjult eller fjernet opslag synligt igen.",
+      );
+    }
+
+    const { data: auktion } = await admin
+      .from("auctions")
+      .select("bruger_id, slutter_kl")
+      .eq("id", rapport.auction_id)
+      .single();
+
+    if (auktion) {
+      const opdatering: { skjult: boolean; status?: string } = { skjult: false };
+
+      // 'fjernet' satte status til 'annulleret' - den skal tilbage. En auktion
+      // hvis sluttid er passeret genoplives som afsluttet, ikke som aktiv.
+      if (rapport.status === "fjernet") {
+        opdatering.status =
+          new Date(auktion.slutter_kl) > new Date() ? "aktiv" : "afsluttet";
+      }
+
+      const { error: opdateringFejl } = await admin
+        .from("auctions")
+        .update(opdatering)
+        .eq("id", rapport.auction_id);
+      if (opdateringFejl) throw new Error(opdateringFejl.message);
+
+      await logModeration(admin, {
+        medarbejder_id: staffId,
+        handling: "annuller_auktion",
+        maal_type: "auktion",
+        maal_id: rapport.auction_id,
+        bruger_id: auktion.bruger_id,
+        aarsag: "Opslag gjort synligt igen da anmeldelsen blev genåbnet",
+      });
+    }
+  }
+
+  const { error } = await admin
+    .from("reports")
+    .update({
+      status: "pending",
+      handled_by: null,
+      handled_note: null,
+      handled_at: null,
+    })
+    .eq("id", rapportId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/rapporter");
+  revalidatePath("/admin/opklarede-rapporter");
+  revalidatePath("/admin/auktioner");
+  revalidatePath(`/auktion/${rapport.auction_id}`);
 }

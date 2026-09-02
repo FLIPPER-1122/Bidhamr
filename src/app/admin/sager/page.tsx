@@ -1,3 +1,5 @@
+// Sager er bevidst adskilt fra rapporter: en indsendt rapport bliver ikke til
+// en sag. Rapporter håndteres udelukkende under /admin/rapporter.
 export default function AdminSager() {
   return (
     <div className="p-6 space-y-5">
@@ -12,7 +14,7 @@ export default function AdminSager() {
         <h2 className="text-lg font-semibold text-neutral-900">Kommer snart</h2>
         <p className="mt-1 text-sm text-neutral-500">
           Her vil du kunne oprette og følge sager om brugere, auktioner og
-          tvister.
+          tvister. Indsendte anmeldelser findes under Rapporter.
         </p>
       </div>
     </div>

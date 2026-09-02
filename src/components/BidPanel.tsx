@@ -22,6 +22,7 @@ export default function BidPanel({
   initialSlutterKl,
   initialBud,
   brugerId,
+  saelgerId,
   forsendelseMulig,
 }: {
   auktionId: string;
@@ -29,6 +30,7 @@ export default function BidPanel({
   initialSlutterKl: string;
   initialBud: BidPanelBud[];
   brugerId: string | null;
+  saelgerId: string;
   forsendelseMulig: boolean;
 }) {
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
@@ -44,6 +46,9 @@ export default function BidPanel({
   const [nedtælling, setNedtælling] = useState(() =>
     formatNedtælling(initialSlutterKl),
   );
+
+  // Sælgere må ikke byde på egen auktion - databasen afviser det også.
+  const erSælger = Boolean(brugerId && brugerId === saelgerId);
 
   const nuværendeBudRef = useRef(nuværendeBud);
   nuværendeBudRef.current = nuværendeBud;
@@ -133,6 +138,11 @@ export default function BidPanel({
       return;
     }
 
+    if (erSælger) {
+      setError("Du kan ikke byde på din egen auktion.");
+      return;
+    }
+
     if (!beløbTal || beløbTal < minimumBud) {
       setError(
         `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`,
@@ -151,7 +161,9 @@ export default function BidPanel({
 
     if (insertError) {
       setLoading(false);
-      if (insertError.message.includes("minimum_bid")) {
+      if (insertError.message.includes("own_auction")) {
+        setError("Du kan ikke byde på din egen auktion.");
+      } else if (insertError.message.includes("minimum_bid")) {
         setError(
           `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`,
         );
@@ -220,6 +232,10 @@ export default function BidPanel({
             <p className="text-base font-semibold text-neutral-500">Ingen bud – auktionen er lukket</p>
           )}
         </div>
+      ) : erSælger ? (
+        <p className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-center text-sm text-neutral-600">
+          Det er din egen auktion – du kan ikke byde på den.
+        </p>
       ) : brugerId ? (
         <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-2 sm:flex-row">
           <input

@@ -2,33 +2,10 @@ import { redirect } from "next/navigation";
 import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import StatCard from "@/components/admin/StatCard";
-import BarChart from "@/components/admin/BarChart";
 import type { TransaktionBeløbRow } from "@/lib/adminRowTypes";
 
 function formatKr(value: number) {
   return value.toLocaleString("da-DK", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " kr";
-}
-
-function groupByDate(rows: { oprettet: string }[]) {
-  // Nøgle: "YYYY-MM-DD", label: "d/M" (f.eks. "28/6")
-  const counts: Record<string, { label: string; value: number }> = {};
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
-
-  for (let i = 0; i < 30; i++) {
-    const d = new Date(thirtyDaysAgo);
-    d.setDate(thirtyDaysAgo.getDate() + i);
-    const key = d.toISOString().slice(0, 10);
-    const label = `${d.getDate()}/${d.getMonth() + 1}`;
-    counts[key] = { label, value: 0 };
-  }
-
-  rows.forEach((row) => {
-    const key = row.oprettet.slice(0, 10);
-    if (key in counts) counts[key].value++;
-  });
-
-  return Object.values(counts);
 }
 
 export default async function AdminDashboard() {
@@ -42,38 +19,37 @@ export default async function AdminDashboard() {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
+  const nuISO = new Date().toISOString();
 
   const [
     { count: totalUsers },
     { count: activeAuctions },
     { count: finishedAuctions },
     { data: transactions },
-    { data: newUsersRaw },
-    { data: newTransactionsRaw },
-    { data: latestAuctions },
-    { data: latestVenteliste },
+    { count: newUsers },
+    { count: newTransactions },
   ] = await Promise.all([
     supabase.from("users").select("id", { count: "exact", head: true }),
-    supabase.from("auctions").select("id", { count: "exact", head: true }).eq("status", "aktiv"),
-    supabase.from("auctions").select("id", { count: "exact", head: true }).eq("status", "afsluttet"),
-    supabase.from("transactions").select("beløb, gebyr").eq("status", "frigivet").overrideTypes<TransaktionBeløbRow[], { merge: false }>(),
-    supabase.from("users").select("oprettet").gte("oprettet", thirtyDaysAgoISO),
-    supabase.from("transactions").select("oprettet").gte("oprettet", thirtyDaysAgoISO).eq("status", "frigivet"),
-    supabase.from("auctions").select("id, titel, bruger_id, status, oprettet").order("oprettet", { ascending: false }).limit(5),
-    supabase.from("venteliste").select("email, oprettet").order("oprettet", { ascending: false }).limit(5),
+    // Aktiv = status 'aktiv' OG slutdato i fremtiden. Uden tidsfilteret talte
+    // udloebne auktioner med, fordi intet job saetter status til 'afsluttet'.
+    supabase.from("auctions").select("id", { count: "exact", head: true }).eq("status", "aktiv").gt("slutter_kl", nuISO),
+    // Afsluttet = eksplicit markeret afsluttet, eller udloebet uden at vaere annulleret.
+    supabase.from("auctions").select("id", { count: "exact", head: true }).or(`status.eq.afsluttet,and(status.eq.aktiv,slutter_kl.lte."${nuISO}")`),
+    supabase.from("transactions").select("beløb, køber_gebyr, sælger_gebyr").eq("status", "frigivet").overrideTypes<TransaktionBeløbRow[], { merge: false }>(),
+    supabase.from("users").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO),
+    supabase.from("transactions").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO).eq("status", "frigivet"),
   ]);
 
-  const totalRevenue = (transactions ?? []).reduce((sum, t) => sum + (t.beløb ?? 0), 0);
-  const totalFees = (transactions ?? []).reduce((sum, t) => sum + (t.gebyr ?? 0), 0);
-
-  const userChartData = groupByDate((newUsersRaw ?? []) as { oprettet: string }[]);
-  const txChartData = groupByDate((newTransactionsRaw ?? []) as { oprettet: string }[]);
-
-  const statusBadge = (status: string) => {
-    if (status === "aktiv") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Aktiv</span>;
-    if (status === "afsluttet") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600">Afsluttet</span>;
-    return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Annulleret</span>;
-  };
+  // Gebyrindtaegt = 5% koebergebyr + 10% saelgergebyr. Den gamle `gebyr`-kolonne
+  // staar altid paa 0 efter escrow-omlaegningen og maa ikke bruges her.
+  const totalRevenue = (transactions ?? []).reduce(
+    (sum, t) => sum + Number(t.beløb ?? 0),
+    0,
+  );
+  const totalFees = (transactions ?? []).reduce(
+    (sum, t) => sum + Number(t.køber_gebyr ?? 0) + Number(t.sælger_gebyr ?? 0),
+    0,
+  );
 
   return (
     <div className="p-6 space-y-6">
@@ -112,67 +88,20 @@ export default async function AdminDashboard() {
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <BarChart data={userChartData} title="Nye brugere (30 dage)" />
-        <BarChart data={txChartData} title="Gennemførte handler (30 dage)" />
-      </div>
-
-      {/* Latest tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Latest auctions */}
-        <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-neutral-100">
-            <h2 className="font-semibold text-neutral-800 text-sm">Seneste auktioner</h2>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-neutral-50 text-xs text-neutral-500 uppercase">
-                <th className="px-5 py-3 text-left font-medium">Titel</th>
-                <th className="px-5 py-3 text-left font-medium">Status</th>
-                <th className="px-5 py-3 text-left font-medium">Oprettet</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {(latestAuctions ?? []).map((a) => (
-                <tr key={a.id} className="hover:bg-neutral-50">
-                  <td className="px-5 py-3 text-neutral-700 truncate max-w-[180px]">{a.titel}</td>
-                  <td className="px-5 py-3">{statusBadge(a.status)}</td>
-                  <td className="px-5 py-3 text-neutral-500">{new Date(a.oprettet).toLocaleDateString("da-DK")}</td>
-                </tr>
-              ))}
-              {(latestAuctions ?? []).length === 0 && (
-                <tr><td colSpan={3} className="px-5 py-6 text-center text-neutral-400">Ingen auktioner</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Latest waitlist */}
-        <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-neutral-100">
-            <h2 className="font-semibold text-neutral-800 text-sm">Seneste ventelisteindmeldinger</h2>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-neutral-50 text-xs text-neutral-500 uppercase">
-                <th className="px-5 py-3 text-left font-medium">Email</th>
-                <th className="px-5 py-3 text-left font-medium">Oprettet</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {(latestVenteliste ?? []).map((v, i) => (
-                <tr key={i} className="hover:bg-neutral-50">
-                  <td className="px-5 py-3 text-neutral-700">{v.email}</td>
-                  <td className="px-5 py-3 text-neutral-500">{new Date(v.oprettet).toLocaleDateString("da-DK")}</td>
-                </tr>
-              ))}
-              {(latestVenteliste ?? []).length === 0 && (
-                <tr><td colSpan={2} className="px-5 py-6 text-center text-neutral-400">Ingen indmeldinger</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      {/* Tal for de seneste 30 dage */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <StatCard
+          title="Nye brugere (30 dage)"
+          value={newUsers ?? 0}
+          icon="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM3 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 019.374 21c-2.331 0-4.512-.645-6.374-1.766z"
+          color="#0ea5e9"
+        />
+        <StatCard
+          title="Gennemførte handler (30 dage)"
+          value={newTransactions ?? 0}
+          icon="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"
+          color="#8b5cf6"
+        />
       </div>
     </div>
   );
