@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/afslut-auktioner",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}

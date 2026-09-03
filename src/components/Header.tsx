@@ -97,25 +97,6 @@ export default async function Header() {
                 </Link>
               )}
               <Link
-                href="/mine-handler"
-                className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M16 11V7a4 4 0 0 0-8 0v4M5 9h14l1 12H4L5 9z"
-                  />
-                </svg>
-                Mine handler
-              </Link>
-              <Link
                 href="/profil/mig"
                 className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"
               >
