@@ -12,6 +12,8 @@ import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { StatusBadge, brugerStatus, erSuspensionAktiv, RolleBadge } from "@/components/admin/StatusBadge";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
+import { justerSaldo } from "@/app/actions/adminActions";
+import { kr } from "@/lib/wallet";
 import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
 
 const FANER = [
@@ -195,7 +197,7 @@ export default async function AdminBrugerDetalje({
       </div>
 
       {fane === "oversigt" && (
-        <OversigtFane user={user} advarsler={advarsler ?? []} supabase={supabase} />
+        <OversigtFane user={user} advarsler={advarsler ?? []} supabase={supabase} staffRolle={staffRolle} />
       )}
       {fane === "auktioner" && (
         <AuktionerFane userId={id} supabase={supabase} kanModerere={kanModerereIndhold} />
@@ -222,21 +224,30 @@ async function OversigtFane({
   user,
   advarsler,
   supabase,
+  staffRolle,
 }: {
   user: { id: string; rating: number | null; rolle: string | null; oprettet: string };
   advarsler: { id: string; aarsag: string; oprettet_kl: string; oprettet_af: string | null }[];
   supabase: Admin;
+  staffRolle?: string | null;
 }) {
   const [{ count: antalAuktioner }, { count: antalBud }, { count: antalHandler }] =
     await Promise.all([
       supabase.from("auctions").select("id", { count: "exact", head: true }).eq("bruger_id", user.id),
       supabase.from("bids").select("id", { count: "exact", head: true }).eq("bruger_id", user.id),
       supabase
-        .from("transactions")
+        .from("trades")
         .select("id", { count: "exact", head: true })
-        .or(`køber_id.eq.${user.id},sælger_id.eq.${user.id}`)
-        .eq("status", "frigivet"),
+        .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`),
     ]);
+
+  const { data: walletRow } = await supabase
+    .from("wallets")
+    .select("balance, reserved")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const saldo = Number(walletRow?.balance ?? 0);
+  const reserveret = Number(walletRow?.reserved ?? 0);
 
   const forfatterIds = [...new Set(advarsler.map((a) => a.oprettet_af).filter(Boolean))] as string[];
   const { data: forfattere } = forfatterIds.length
@@ -272,6 +283,73 @@ async function OversigtFane({
           <span className="ml-4 text-neutral-500">Rolle:</span>{" "}
           <span className="font-medium text-neutral-800">{user.rolle ?? "bruger"}</span>
         </p>
+      </div>
+
+      <div className="rounded-xl border border-neutral-200 bg-white p-5">
+        <h2 className="text-sm font-semibold text-neutral-800">BidHamr-konto</h2>
+        <div className="mt-3 flex flex-wrap gap-6 text-sm">
+          <div>
+            <p className="text-xs uppercase text-neutral-500">Til rådighed</p>
+            <p className="text-lg font-bold text-neutral-900">
+              {kr(saldo - reserveret)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-neutral-500">Reserveret</p>
+            <p className="text-lg font-bold text-neutral-900">{kr(reserveret)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-neutral-500">Samlet saldo</p>
+            <p className="text-lg font-bold text-neutral-900">{kr(saldo)}</p>
+          </div>
+        </div>
+
+        {staffRolle === "chef" && (
+          <form action={justerSaldo} className="mt-5 border-t border-neutral-100 pt-4">
+            <input type="hidden" name="userId" value={user.id} />
+            <p className="mb-2 text-xs font-medium uppercase text-neutral-500">
+              Justér saldo
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <label htmlFor="beloeb" className="block text-xs text-neutral-500">
+                  Beløb (negativt for træk)
+                </label>
+                <input
+                  id="beloeb"
+                  name="beloeb"
+                  type="number"
+                  step="0.01"
+                  required
+                  placeholder="1000"
+                  className="mt-1 w-36 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-brand"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label htmlFor="aarsag" className="block text-xs text-neutral-500">
+                  Begrundelse
+                </label>
+                <input
+                  id="aarsag"
+                  name="aarsag"
+                  type="text"
+                  required
+                  placeholder="Testpenge / fejlrettelse"
+                  className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-brand"
+                />
+              </div>
+              <button
+                type="submit"
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-[#d62b38]"
+              >
+                Bogfør
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-neutral-500">
+              Justeringen bogføres i hovedbogen og logges i moderationsloggen.
+            </p>
+          </form>
+        )}
       </div>
 
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">

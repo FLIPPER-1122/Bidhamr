@@ -97,6 +97,25 @@ export default async function Header() {
                 </Link>
               )}
               <Link
+                href="/konto"
+                className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M3 10h18M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2M3 10v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8M16 15h2"
+                  />
+                </svg>
+                Min konto
+              </Link>
+              <Link
                 href="/mine-handler"
                 className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"
               >

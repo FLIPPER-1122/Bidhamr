@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import StatCard from "@/components/admin/StatCard";
-import type { TransaktionBeløbRow } from "@/lib/adminRowTypes";
 
 function formatKr(value: number) {
   return value.toLocaleString("da-DK", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " kr";
@@ -25,7 +24,7 @@ export default async function AdminDashboard() {
     { count: totalUsers },
     { count: activeAuctions },
     { count: finishedAuctions },
-    { data: transactions },
+    { data: handler },
     { count: newUsers },
     { count: newTransactions },
   ] = await Promise.all([
@@ -35,19 +34,28 @@ export default async function AdminDashboard() {
     supabase.from("auctions").select("id", { count: "exact", head: true }).eq("status", "aktiv").gt("slutter_kl", nuISO),
     // Afsluttet = eksplicit markeret afsluttet, eller udloebet uden at vaere annulleret.
     supabase.from("auctions").select("id", { count: "exact", head: true }).or(`status.eq.afsluttet,and(status.eq.aktiv,slutter_kl.lte."${nuISO}")`),
-    supabase.from("transactions").select("beløb, køber_gebyr, sælger_gebyr").eq("status", "frigivet").overrideTypes<TransaktionBeløbRow[], { merge: false }>(),
+    // Omsaetning og gebyrer kommer nu fra e-money-afregningen. En handel
+    // oprettes foerst naar pengene faktisk er flyttet mellem konti.
+    supabase.from("trades").select("amount"),
     supabase.from("users").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO),
-    supabase.from("transactions").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO).eq("status", "frigivet"),
+    supabase.from("trades").select("id", { count: "exact", head: true }).gte("created_at", thirtyDaysAgoISO),
   ]);
 
-  // Gebyrindtaegt = 5% koebergebyr + 10% saelgergebyr. Den gamle `gebyr`-kolonne
-  // staar altid paa 0 efter escrow-omlaegningen og maa ikke bruges her.
-  const totalRevenue = (transactions ?? []).reduce(
-    (sum, t) => sum + Number(t.beløb ?? 0),
+  // Omsaetning = summen af alle gennemfoerte handler. Gebyrindtaegten er de
+  // to gebyrlinjer i hovedbogen (5% koeber + 10% saelger), som staar med
+  // negativt fortegn hos brugeren og derfor vendes her.
+  const totalRevenue = (handler ?? []).reduce(
+    (sum, t) => sum + Number(t.amount ?? 0),
     0,
   );
-  const totalFees = (transactions ?? []).reduce(
-    (sum, t) => sum + Number(t.køber_gebyr ?? 0) + Number(t.sælger_gebyr ?? 0),
+
+  const { data: gebyrLinjer } = await supabase
+    .from("wallet_entries")
+    .select("amount")
+    .in("kind", ["koebergebyr", "saelgergebyr"]);
+
+  const totalFees = (gebyrLinjer ?? []).reduce(
+    (sum, l) => sum + Math.abs(Number(l.amount ?? 0)),
     0,
   );
 

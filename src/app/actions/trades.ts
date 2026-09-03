@@ -103,13 +103,18 @@ export async function bekraeftModtagelse(tradeId: string) {
     return { fejl: "Handlen er ikke klar til at blive bekræftet." };
   }
 
-  const { error } = await supabase
-    .from("trades")
-    .update({ status: "leveret" })
-    .eq("id", tradeId)
-    .eq("status", "pakke_sendt");
+  // Statusskiftet OG udbetalingen til sælgeren sker i samme transaktion i
+  // databasen. Funktionen er idempotent, så et dobbeltklik ikke kan udbetale
+  // to gange.
+  const { data: udbetalt, error } = await supabase.rpc("wallet_udbetal_saelger", {
+    p_trade: tradeId,
+    p_koeber: user.id,
+  });
 
   if (error) return { fejl: error.message };
+  if (!udbetalt) {
+    return { fejl: "Handlen er allerede bekræftet." };
+  }
 
   revalidatePath(`/mine-handler/${tradeId}`);
   revalidatePath("/mine-handler");

@@ -488,3 +488,54 @@ export async function rapportGenaabn(formData: FormData) {
   revalidatePath("/admin/auktioner");
   revalidatePath(`/auktion/${rapport.auction_id}`);
 }
+
+// --- E-money ---------------------------------------------------------------
+
+// Justerer en brugers saldo manuelt. Bruges til fejlrettelser og til at lægge
+// testpenge ind, mens platformen køres i testtilstand.
+//
+// Kun 'chef': det er den eneste handling i systemet, der skaber eller
+// fjerner penge, og den bogføres derfor altid med en begrundelse.
+export async function justerSaldo(formData: FormData) {
+  const userId = formData.get("userId") as string;
+  const beløb = Number(formData.get("beloeb"));
+  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
+
+  const { admin, userId: staffId } = await assertRole("chef");
+
+  if (!userId || !Number.isFinite(beløb) || beløb === 0) {
+    throw new Error("Angiv et beløb forskelligt fra nul.");
+  }
+  if (!aarsag) {
+    throw new Error("Angiv en begrundelse for justeringen.");
+  }
+
+  const { error } = await admin.rpc("wallet_bogfoer", {
+    p_user: userId,
+    p_amount: beløb,
+    p_kind: "justering",
+    p_auction: null,
+    p_note: aarsag,
+    p_stripe_session: null,
+  });
+
+  // Saldoen må ikke kunne gå i minus; check-constrainten afviser det.
+  if (error) {
+    if (error.message.includes("wallets_balance_check")) {
+      throw new Error("Justeringen ville sende saldoen under nul.");
+    }
+    throw new Error(error.message);
+  }
+
+  await logModeration(admin, {
+    medarbejder_id: staffId,
+    handling: beløb > 0 ? "saldo_tilfoert" : "saldo_traukket",
+    maal_type: "bruger",
+    maal_id: userId,
+    bruger_id: userId,
+    aarsag: `${beløb > 0 ? "+" : ""}${beløb} kr — ${aarsag}`,
+  });
+
+  revalidatePath(`/admin/brugere/${userId}`);
+  revalidatePath("/admin/transaktioner");
+}

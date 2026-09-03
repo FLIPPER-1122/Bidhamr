@@ -1,8 +1,29 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { anonymUsername } from "@/lib/anonymUsername";
-import type { TransaktionRow } from "@/lib/adminRowTypes";
+import { kindLabel, kr } from "@/lib/wallet";
+
+// Viser hovedbogen for e-money. Escrow-tabellen `transactions` bruges ikke
+// laengere - penge flyttes nu mellem brugerkonti ved auktionsluk.
+type EntryRow = {
+  id: string;
+  user_id: string;
+  amount: number;
+  kind: string;
+  auction_id: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+const KIND_FARVE: Record<string, string> = {
+  indbetaling: "bg-green-100 text-green-800",
+  koeb: "bg-blue-100 text-blue-800",
+  salg: "bg-blue-100 text-blue-800",
+  koebergebyr: "bg-yellow-100 text-yellow-800",
+  saelgergebyr: "bg-yellow-100 text-yellow-800",
+  justering: "bg-neutral-200 text-neutral-800",
+};
 
 export default async function AdminTransaktioner() {
   const rolle = await getStaffRole();
@@ -12,97 +33,175 @@ export default async function AdminTransaktioner() {
 
   const supabase = createAdminClient();
 
-  const { data: transactions } = await supabase
-    .from("transactions")
-    .select("id, auktion_id, køber_id, sælger_id, beløb, gebyr, status, oprettet")
-    .order("oprettet", { ascending: false })
-    .overrideTypes<TransaktionRow[], { merge: false }>();
+  const { data: entriesData } = await supabase
+    .from("wallet_entries")
+    .select("id, user_id, amount, kind, auction_id, note, created_at")
+    .order("created_at", { ascending: false })
+    .limit(500);
 
-  // Fetch auction titles
-  const auktionIds = [...new Set((transactions ?? []).map((t) => t.auktion_id))];
-  const { data: auctions } = auktionIds.length
-    ? await supabase.from("auctions").select("id, titel").in("id", auktionIds)
-    : { data: [] };
+  const entries = (entriesData ?? []) as EntryRow[];
 
-  const auktionMap: Record<string, string> = {};
-  (auctions ?? []).forEach((a) => {
-    auktionMap[a.id] = a.titel;
+  const brugerIds = [...new Set(entries.map((e) => e.user_id))];
+  const auktionIds = [
+    ...new Set(entries.map((e) => e.auction_id).filter(Boolean)),
+  ] as string[];
+
+  const [{ data: brugere }, { data: auktioner }] = await Promise.all([
+    brugerIds.length
+      ? supabase.from("users").select("id, navn, email").in("id", brugerIds)
+      : Promise.resolve({ data: [] as { id: string; navn: string | null; email: string }[] }),
+    auktionIds.length
+      ? supabase.from("auctions").select("id, titel").in("id", auktionIds)
+      : Promise.resolve({ data: [] as { id: string; titel: string }[] }),
+  ]);
+
+  const brugerMap: Record<string, { navn: string | null; email: string }> = {};
+  (brugere ?? []).forEach((u) => {
+    brugerMap[u.id] = { navn: u.navn, email: u.email };
+  });
+  const titelMap: Record<string, string> = {};
+  (auktioner ?? []).forEach((a) => {
+    titelMap[a.id] = a.titel;
   });
 
-  const totalRevenue = (transactions ?? [])
-    .filter((t) => t.status === "frigivet")
-    .reduce((sum, t) => sum + (t.beløb ?? 0), 0);
+  const indbetalt = entries
+    .filter((e) => e.kind === "indbetaling")
+    .reduce((s, e) => s + Number(e.amount), 0);
 
-  const statusBadge = (s: string) => {
-    if (s === "frigivet") return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Frigivet</span>;
-    if (s === "refunderet") return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Refunderet</span>;
-    return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Afventer</span>;
-  };
+  const gebyrIndtaegt = entries
+    .filter((e) => e.kind === "koebergebyr" || e.kind === "saelgergebyr")
+    .reduce((s, e) => s + Math.abs(Number(e.amount)), 0);
+
+  const { data: saldi } = await supabase.from("wallets").select("balance");
+  const samletIndestaaende = (saldi ?? []).reduce(
+    (s, w) => s + Number(w.balance ?? 0),
+    0,
+  );
 
   return (
-    <div className="p-6 space-y-5">
-      <h1 className="text-2xl font-bold text-neutral-900">Transaktioner</h1>
+    <div className="space-y-5 p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-neutral-900">Kontobevægelser</h1>
+        <span className="text-sm text-neutral-500">
+          {entries.length} seneste linjer
+        </span>
+      </div>
 
-      {/* Revenue card */}
-      <div className="bg-white rounded-xl border border-neutral-200 p-5 inline-flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl bg-[#E6394618] flex items-center justify-center">
-          <svg className="w-6 h-6" fill="none" stroke="#E63946" strokeWidth={1.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
-          </svg>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-xl border border-neutral-200 bg-white p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+            Indbetalt i alt
+          </p>
+          <p className="mt-1 text-2xl font-bold text-neutral-900">
+            {kr(indbetalt)}
+          </p>
         </div>
-        <div>
-          <p className="text-xs text-neutral-500 uppercase font-medium">Total omsætning (frigivet)</p>
-          <p className="text-2xl font-bold text-neutral-900">
-            {totalRevenue.toLocaleString("da-DK")} kr
+        <div className="rounded-xl border border-neutral-200 bg-white p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+            Gebyrindtægt
+          </p>
+          <p className="mt-1 text-2xl font-bold text-neutral-900">
+            {kr(gebyrIndtaegt)}
+          </p>
+        </div>
+        <div className="rounded-xl border border-brand bg-red-50 p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-brand">
+            Brugernes indestående
+          </p>
+          <p className="mt-1 text-2xl font-bold text-neutral-900">
+            {kr(samletIndestaaende)}
+          </p>
+          <p className="mt-1 text-xs text-neutral-600">
+            Beløb BidHamr skylder brugerne
           </p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-neutral-50 text-xs text-neutral-500 uppercase">
-                <th className="px-5 py-3 text-left font-medium">Auktion</th>
-                <th className="px-5 py-3 text-left font-medium">Køber</th>
-                <th className="px-5 py-3 text-left font-medium">Sælger</th>
-                <th className="px-5 py-3 text-left font-medium">Beløb</th>
-                <th className="px-5 py-3 text-left font-medium">Gebyr</th>
-                <th className="px-5 py-3 text-left font-medium">Status</th>
+              <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
                 <th className="px-5 py-3 text-left font-medium">Dato</th>
+                <th className="px-5 py-3 text-left font-medium">Bruger</th>
+                <th className="px-5 py-3 text-left font-medium">Type</th>
+                <th className="px-5 py-3 text-left font-medium">Auktion</th>
+                <th className="px-5 py-3 text-right font-medium">Beløb</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
-              {(transactions ?? []).map((t) => (
-                <tr key={t.id} className="hover:bg-neutral-50">
-                  <td className="px-5 py-3 text-neutral-700 max-w-[180px] truncate">
-                    {auktionMap[t.auktion_id] ?? t.auktion_id}
-                  </td>
-                  <td className="px-5 py-3 text-neutral-600 font-mono text-xs">
-                    {anonymUsername(t["køber_id"])}
-                  </td>
-                  <td className="px-5 py-3 text-neutral-600 font-mono text-xs">
-                    {anonymUsername(t["sælger_id"])}
-                  </td>
-                  <td className="px-5 py-3 text-neutral-800 font-medium">
-                    {t["beløb"]?.toLocaleString("da-DK")} kr
-                  </td>
-                  <td className="px-5 py-3 text-neutral-600">
-                    {t.gebyr?.toLocaleString("da-DK")} kr
-                  </td>
-                  <td className="px-5 py-3">{statusBadge(t.status)}</td>
-                  <td className="px-5 py-3 text-neutral-500">
-                    {new Date(t.oprettet).toLocaleDateString("da-DK")}
-                  </td>
-                </tr>
-              ))}
-              {(transactions ?? []).length === 0 && (
+              {entries.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-neutral-400">
-                    Ingen transaktioner endnu
+                  <td
+                    colSpan={5}
+                    className="px-5 py-10 text-center text-neutral-500"
+                  >
+                    Der er endnu ingen kontobevægelser.
                   </td>
                 </tr>
               )}
+              {entries.map((e) => {
+                const bruger = brugerMap[e.user_id];
+                const beløb = Number(e.amount);
+                return (
+                  <tr key={e.id} className="hover:bg-neutral-50">
+                    <td className="whitespace-nowrap px-5 py-3 text-neutral-500">
+                      {new Date(e.created_at).toLocaleDateString("da-DK")}
+                    </td>
+                    <td className="px-5 py-3">
+                      {bruger ? (
+                        <Link
+                          href={`/admin/brugere/${e.user_id}`}
+                          className="block max-w-[180px] hover:underline"
+                        >
+                          <span className="block truncate text-neutral-800">
+                            {bruger.navn ?? "Uden navn"}
+                          </span>
+                          <span className="block truncate text-xs text-neutral-500">
+                            {bruger.email}
+                          </span>
+                        </Link>
+                      ) : (
+                        <span className="text-neutral-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
+                          KIND_FARVE[e.kind] ?? "bg-neutral-200 text-neutral-800"
+                        }`}
+                      >
+                        {kindLabel(e.kind)}
+                      </span>
+                      {e.note && (
+                        <span className="mt-0.5 block max-w-[240px] truncate text-xs text-neutral-500">
+                          {e.note}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      {e.auction_id ? (
+                        <Link
+                          href={`/auktion/${e.auction_id}`}
+                          className="block max-w-[200px] truncate text-neutral-700 hover:text-brand hover:underline"
+                        >
+                          {titelMap[e.auction_id] ?? "(slettet)"}
+                        </Link>
+                      ) : (
+                        <span className="text-neutral-400">—</span>
+                      )}
+                    </td>
+                    <td
+                      className={`whitespace-nowrap px-5 py-3 text-right font-medium ${
+                        beløb < 0 ? "text-neutral-800" : "text-green-700"
+                      }`}
+                    >
+                      {beløb > 0 ? "+" : ""}
+                      {kr(beløb)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -76,7 +76,7 @@ export function koeberVandtMail(titel: string, beloeb: number, tradeId: string) 
       overskrift: "Tillykke — du vandt!",
       afsnit: [
         `Du har vundet auktionen <strong>${titel}</strong> til ${beloeb.toLocaleString("da-DK")} kr.`,
-        "Beløbet er trukket fra din konto og holdes sikkert, indtil du har modtaget varen. Sælgeren pakker og sender nu.",
+        "Beløbet er trukket fra din BidHamr-konto og holdes af os, indtil du bekræfter, at du har modtaget varen. Først da får sælgeren pengene.",
         "Du kan følge handlen og skrive direkte til sælgeren på siden nedenfor.",
       ],
       knapTekst: "Se handlen",
@@ -92,7 +92,7 @@ export function saelgerSolgtMail(titel: string, beloeb: number, tradeId: string)
       overskrift: "Din auktion er solgt",
       afsnit: [
         `<strong>${titel}</strong> blev solgt for ${beloeb.toLocaleString("da-DK")} kr.`,
-        "Køberen har betalt, og beløbet frigives til dig, når varen er bekræftet modtaget.",
+        "Køberen har betalt, og beløbet står klar. Det sættes ind på din BidHamr-konto — fratrukket 10% sælgergebyr — så snart køberen har bekræftet modtagelsen.",
         "Send varen af sted og indtast sporingsnummeret på handelssiden, så køberen kan følge med.",
       ],
       knapTekst: "Se handlen",

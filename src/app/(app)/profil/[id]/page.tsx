@@ -84,10 +84,9 @@ export default async function ProfilPage({
         .eq("skjult", false)
         .order("oprettet", { ascending: false }),
       supabase
-        .from("transactions")
+        .from("trades")
         .select("id")
-        .or(`køber_id.eq.${id},sælger_id.eq.${id}`)
-        .eq("status", "frigivet"),
+        .or(`buyer_id.eq.${id},seller_id.eq.${id}`),
     ]);
 
     const antalRatings = egneRatings?.length ?? 0;

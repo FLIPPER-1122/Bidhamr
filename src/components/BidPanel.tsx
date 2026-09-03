@@ -38,6 +38,7 @@ export default function BidPanel({
   const [budListe, setBudListe] = useState<BidPanelBud[]>(initialBud);
   const [visAlle, setVisAlle] = useState(false);
   const [beløb, setBeløb] = useState("");
+  const [manglerSaldo, setManglerSaldo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -151,6 +152,7 @@ export default function BidPanel({
     }
 
     setLoading(true);
+    setManglerSaldo(false);
 
     const supabase = createClient();
     const { error: insertError } = await supabase.from("bids").insert({
@@ -167,6 +169,18 @@ export default function BidPanel({
         setError(
           `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`,
         );
+      } else if (insertError.message.includes("utilstraekkelig_saldo")) {
+        // Triggeren melder praecis hvor meget der mangler; vi viser det
+        // sammen med vejen videre.
+        const mangler = insertError.message.match(/mangler ([\d.]+) kr/)?.[1];
+        setError(
+          mangler
+            ? `Du mangler ${Number(mangler).toLocaleString("da-DK")} kr på din konto. Bud reserverer beløbet plus 5% købergebyr.`
+            : "Du har ikke nok på din konto til dette bud.",
+        );
+        setManglerSaldo(true);
+      } else if (insertError.message.includes("wallet_mangler")) {
+        setError("Din konto er ikke klar endnu. Prøv at logge ud og ind igen.");
       } else {
         setError(insertError.message);
       }
@@ -283,6 +297,14 @@ export default function BidPanel({
       {error && (
         <div className="mt-3 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+          {manglerSaldo && (
+            <a
+              href="/konto"
+              className="mt-2 block font-semibold text-brand underline"
+            >
+              Indbetal til din konto
+            </a>
+          )}
         </div>
       )}
 
