@@ -539,3 +539,50 @@ export async function justerSaldo(formData: FormData) {
   revalidatePath(`/admin/brugere/${userId}`);
   revalidatePath("/admin/transaktioner");
 }
+
+// Sætter en brugers saldo til et præcist beløb (bruges til testpenge).
+// Forskellen bogføres som en justering, så hovedbogen altid stemmer med
+// saldoen — vi skriver aldrig et tal direkte ind på kontoen.
+//
+// 'admin' og opefter; medarbejdere kan ikke røre penge.
+export async function saetSaldo(formData: FormData) {
+  const userId = formData.get("userId") as string;
+  const nySaldo = Number(formData.get("saldo"));
+
+  const { admin, userId: staffId } = await assertRole("admin");
+
+  if (!userId || !Number.isFinite(nySaldo) || nySaldo < 0) {
+    throw new Error("Angiv et beløb på 0 eller derover.");
+  }
+
+  const { error } = await admin.rpc("wallet_saet_saldo", {
+    p_user: userId,
+    p_ny_saldo: nySaldo,
+    p_note: "Saldo sat af administrator",
+  });
+
+  if (error) {
+    if (error.message.includes("under_reserveret")) {
+      throw new Error(
+        "Beløbet er lavere end det, brugeren har bundet i aktive bud.",
+      );
+    }
+    if (error.message.includes("wallet_mangler")) {
+      throw new Error("Brugeren har ingen konto.");
+    }
+    throw new Error(error.message);
+  }
+
+  await logModeration(admin, {
+    medarbejder_id: staffId,
+    handling: "saldo_sat",
+    maal_type: "bruger",
+    maal_id: userId,
+    bruger_id: userId,
+    aarsag: `Saldo sat til ${nySaldo} kr`,
+  });
+
+  revalidatePath("/admin/brugere");
+  revalidatePath(`/admin/brugere/${userId}`);
+  revalidatePath("/admin/transaktioner");
+}

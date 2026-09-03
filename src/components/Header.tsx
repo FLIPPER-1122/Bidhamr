@@ -2,18 +2,26 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/LogoutButton";
 import { kategorier } from "@/lib/kategorier";
+import { kr } from "@/lib/wallet";
 
 export default async function Header() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
 
   let erAdmin = false;
+  let saldo: number | null = null;
   if (data.user) {
-    const { data: profil } = await supabase
-      .from("users")
-      .select("rolle")
-      .eq("id", data.user.id)
-      .single();
+    // RLS lader kun brugeren se sin egen konto, saa der er ingen filtrering
+    // at glemme her.
+    const [{ data: profil }, { data: wallet }] = await Promise.all([
+      supabase.from("users").select("rolle").eq("id", data.user.id).single(),
+      supabase
+        .from("wallets")
+        .select("balance")
+        .eq("user_id", data.user.id)
+        .maybeSingle(),
+    ]);
+    saldo = wallet ? Number(wallet.balance) : null;
     erAdmin =
       profil?.rolle === "chef" ||
       profil?.rolle === "admin" ||
@@ -96,9 +104,19 @@ export default async function Header() {
                   Admin
                 </Link>
               )}
+              {saldo !== null && (
+                <Link
+                  href="/konto"
+                  title="Din saldo — klik for at indbetale"
+                  className="flex items-center gap-1.5 rounded-full border border-brand bg-red-50 px-3 py-1.5 text-sm font-semibold text-brand hover:bg-brand hover:text-white"
+                >
+                  <span aria-hidden="true">💰</span>
+                  {kr(saldo)}
+                </Link>
+              )}
               <Link
                 href="/konto"
-                className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"
+                className="hidden items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand sm:flex"
               >
                 <svg
                   viewBox="0 0 24 24"
