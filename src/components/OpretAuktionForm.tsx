@@ -8,6 +8,7 @@ import { kategorier } from "@/lib/kategorier";
 const MAKS_BILLEDER = 10;
 const MAKS_BESKRIVELSE = 500;
 const VARIGHEDER = [
+  { label: "30 sekunder", dage: 0 },
   { label: "1 dag", dage: 1 },
   { label: "3 dage", dage: 3 },
   { label: "7 dage", dage: 7 },
@@ -164,7 +165,11 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       }
 
       const slutterKl = new Date();
-      slutterKl.setDate(slutterKl.getDate() + varighed);
+      if (varighed === 0) {
+        slutterKl.setTime(slutterKl.getTime() + 30 * 1000);
+      } else {
+        slutterKl.setDate(slutterKl.getDate() + varighed);
+      }
 
       const payload = {
         bruger_id: aktuelBrugerId,
