@@ -93,30 +93,62 @@ export async function sendPakke(tradeId: string, tracking: string) {
   return { ok: true };
 }
 
-// Køber bekræfter at varen er modtaget.
-export async function bekraeftModtagelse(tradeId: string) {
+// TRIN 1: Køberen kvitterer for at pakken er kommet frem. Ingen penge
+// flyttes her - det giver køberen tid til at tjekke varen, før beløbet er
+// ude af døren.
+export async function markerModtaget(tradeId: string) {
   const resultat = await hentHandel(tradeId);
   if ("fejl" in resultat) return resultat;
   const { supabase, user, handel } = resultat;
 
   if (handel.buyer_id !== user.id) {
-    return { fejl: "Kun køberen kan bekræfte modtagelsen." };
+    return { fejl: "Kun køberen kan kvittere for pakken." };
   }
   if (handel.status !== "pakke_sendt") {
-    return { fejl: "Handlen er ikke klar til at blive bekræftet." };
+    return { fejl: "Handlen er ikke klar til at blive kvitteret." };
   }
 
-  // Statusskiftet OG udbetalingen til sælgeren sker i samme transaktion i
-  // databasen. Funktionen er idempotent, så et dobbeltklik ikke kan udbetale
-  // to gange.
-  const { data: udbetalt, error } = await supabase.rpc("wallet_udbetal_saelger", {
-    p_trade: tradeId,
-    p_koeber: user.id,
-  });
+  // Køberen udledes af auth.uid() inde i funktionen og sendes IKKE med som
+  // parameter - ellers kunne enhver kalde den på en andens vegne.
+  const { data: markeret, error } = await supabase.rpc(
+    "trade_marker_modtaget",
+    { p_trade: tradeId },
+  );
+
+  if (error) return { fejl: error.message };
+  if (!markeret) {
+    return { fejl: "Pakken er allerede kvitteret." };
+  }
+
+  revalidatePath(`/mine-handler/${tradeId}`);
+  revalidatePath("/mine-handler");
+  return { ok: true };
+}
+
+// TRIN 2: Køberen godkender varen, og beløbet udbetales til sælgeren.
+// Uigenkaldeligt - derfor bekræftelsesdialogen i brugerfladen.
+export async function godkendPakke(tradeId: string) {
+  const resultat = await hentHandel(tradeId);
+  if ("fejl" in resultat) return resultat;
+  const { supabase, user, handel } = resultat;
+
+  if (handel.buyer_id !== user.id) {
+    return { fejl: "Kun køberen kan godkende pakken." };
+  }
+  if (handel.status !== "modtaget") {
+    return { fejl: "Kvittér for pakken, før du godkender den." };
+  }
+
+  // Statusskiftet OG udbetalingen sker i samme transaktion i databasen.
+  // Funktionen er idempotent, så et dobbeltklik ikke kan udbetale to gange.
+  const { data: udbetalt, error } = await supabase.rpc(
+    "wallet_udbetal_saelger",
+    { p_trade: tradeId },
+  );
 
   if (error) return { fejl: error.message };
   if (!udbetalt) {
-    return { fejl: "Handlen er allerede bekræftet." };
+    return { fejl: "Pakken er allerede godkendt." };
   }
 
   revalidatePath(`/mine-handler/${tradeId}`);

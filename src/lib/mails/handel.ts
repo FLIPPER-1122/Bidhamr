@@ -108,7 +108,7 @@ export function pakkeSendtMail(titel: string, tracking: string, tradeId: string)
       overskrift: "Pakken er på vej",
       afsnit: [
         `Sælgeren har sendt <strong>${titel}</strong>.`,
-        "Når du har modtaget varen, skal du bekræfte modtagelsen på handelssiden — så frigives beløbet til sælgeren.",
+        "Når pakken er kommet frem, kvitterer du for den på handelssiden. Derefter tjekker du varen og godkender den — først da frigives beløbet til sælgeren.",
       ],
       ekstra: `<p style="margin:0 0 20px 0;padding:12px 16px;background-color:#f5f5f5;border-radius:10px;font-size:14px;color:#171717;">
         Sporingsnummer: <strong>${tracking}</strong>

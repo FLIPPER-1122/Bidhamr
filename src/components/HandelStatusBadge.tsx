@@ -1,20 +1,26 @@
 // Trinnene i tidslinjen. 'leveret' er slutpunktet: det er dér, sælgeren får
 // pengene udbetalt.
 //
+// 'modtaget' ligger imellem: køberen har kvitteret for pakken, men endnu
+// ikke godkendt varen, og der er ikke flyttet penge.
+//
 // Check-constrainten på trades.status tillader også 'afsluttet'. Den værdi
 // sættes ikke af noget i dag og er reserveret til et senere trin efter
 // udbetaling (fx udløbet klagefrist) - derfor står den ikke her.
 export const HANDEL_STATUS = [
   { vaerdi: "betaling_modtaget", label: "Betaling modtaget" },
   { vaerdi: "pakke_sendt", label: "Pakke sendt" },
-  { vaerdi: "leveret", label: "Modtaget og afregnet" },
+  { vaerdi: "modtaget", label: "Modtaget" },
+  { vaerdi: "leveret", label: "Godkendt og afregnet" },
 ] as const;
 
-export const AKTIVE_STATUSSER = ["betaling_modtaget", "pakke_sendt"];
+// Handlen er i gang, indtil køberen har godkendt.
+export const AKTIVE_STATUSSER = ["betaling_modtaget", "pakke_sendt", "modtaget"];
 
 const STIL: Record<string, string> = {
   betaling_modtaget: "bg-amber-100 text-amber-800",
   pakke_sendt: "bg-blue-100 text-blue-800",
+  modtaget: "bg-indigo-100 text-indigo-800",
   leveret: "bg-green-100 text-green-800",
   // Reserveret; se kommentaren ved HANDEL_STATUS.
   afsluttet: "bg-neutral-100 text-neutral-600",

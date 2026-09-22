@@ -3,7 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import HandelStatusBadge, { HANDEL_STATUS } from "@/components/HandelStatusBadge";
 import HandelChat, { type Besked } from "@/components/HandelChat";
-import { SendPakkeForm, BekraeftModtagelseKnap } from "@/components/HandelHandlinger";
+import {
+  SendPakkeForm,
+  MarkerModtagetKnap,
+  GodkendPakkeKnap,
+} from "@/components/HandelHandlinger";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +19,7 @@ type HandelRaekke = {
   amount: number | string;
   status: string;
   tracking_number: string | null;
+  received_at: string | null;
   created_at: string;
 };
 
@@ -39,7 +44,7 @@ export default async function HandelDetaljePage({
   // Handlen ses i admin-panelet, ikke her.
   const { data: handel } = await supabase
     .from("trades")
-    .select("id, auction_id, seller_id, buyer_id, amount, status, tracking_number, created_at")
+    .select("id, auction_id, seller_id, buyer_id, amount, status, tracking_number, received_at, created_at")
     .eq("id", trade_id)
     .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
     .maybeSingle<HandelRaekke>();
@@ -145,15 +150,43 @@ export default async function HandelDetaljePage({
           </div>
         )}
 
+        {/* TRIN 1: kvittering for pakken. Ingen penge flyttes her. */}
         {erKoeber && handel.status === "pakke_sendt" && (
           <div className="rounded-xl border border-neutral-200 bg-white p-6">
             <h2 className="text-sm font-semibold text-neutral-900">
-              Har du modtaget varen?
+              Har du modtaget pakken?
             </h2>
             <p className="mt-1 mb-4 text-sm text-neutral-500">
-              Når du bekræfter, frigives beløbet til sælgeren.
+              Kvittér når pakken er kommet frem. Du skal godkende varen
+              bagefter — først da får sælgeren pengene.
             </p>
-            <BekraeftModtagelseKnap tradeId={handel.id} />
+            <MarkerModtagetKnap tradeId={handel.id} />
+          </div>
+        )}
+
+        {/* TRIN 2: godkendelse udbetaler til sælgeren. */}
+        {erKoeber && handel.status === "modtaget" && (
+          <div className="rounded-xl border border-brand bg-red-50 p-6">
+            <h2 className="text-sm font-semibold text-neutral-900">
+              Tjek varen
+            </h2>
+            <p className="mt-1 mb-4 text-sm text-neutral-700">
+              Kontrollér at varen svarer til beskrivelsen og ikke er
+              beskadiget. Når du godkender, frigives beløbet til sælgeren.
+            </p>
+            <GodkendPakkeKnap tradeId={handel.id} />
+          </div>
+        )}
+
+        {erSaelger && handel.status === "modtaget" && (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
+            <p className="font-semibold text-indigo-900">
+              Køberen har modtaget pakken
+            </p>
+            <p className="mt-1 text-sm text-indigo-900">
+              Køberen har modtaget pakken og tjekker varen. Du får pengene, når
+              køberen godkender.
+            </p>
           </div>
         )}
 

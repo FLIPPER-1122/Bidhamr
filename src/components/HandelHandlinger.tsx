@@ -2,7 +2,8 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { sendPakke, bekraeftModtagelse } from "@/app/actions/trades";
+import { sendPakke, markerModtaget, godkendPakke } from "@/app/actions/trades";
+import BekraeftDialog from "@/components/BekraeftDialog";
 
 export function SendPakkeForm({ tradeId }: { tradeId: string }) {
   const router = useRouter();
@@ -47,7 +48,9 @@ export function SendPakkeForm({ tradeId }: { tradeId: string }) {
   );
 }
 
-export function BekraeftModtagelseKnap({ tradeId }: { tradeId: string }) {
+// TRIN 1: kvittering for pakken. Ingen penge flyttes, så ingen dialog -
+// handlingen kan ikke gøre skade og skal være let at komme videre fra.
+export function MarkerModtagetKnap({ tradeId }: { tradeId: string }) {
   const router = useRouter();
   const [fejl, setFejl] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -55,7 +58,7 @@ export function BekraeftModtagelseKnap({ tradeId }: { tradeId: string }) {
   function handleClick() {
     setFejl(null);
     startTransition(async () => {
-      const resultat = await bekraeftModtagelse(tradeId);
+      const resultat = await markerModtaget(tradeId);
       if (resultat?.fejl) setFejl(resultat.fejl);
       else router.refresh();
     });
@@ -69,9 +72,26 @@ export function BekraeftModtagelseKnap({ tradeId }: { tradeId: string }) {
         disabled={pending}
         className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38] disabled:opacity-50"
       >
-        {pending ? "Bekræfter…" : "Bekræft modtagelse"}
+        {pending ? "Gemmer…" : "Jeg har modtaget pakken"}
       </button>
       {fejl && <p className="mt-2 text-sm text-red-600">{fejl}</p>}
     </div>
+  );
+}
+
+// TRIN 2: godkendelse udbetaler til sælgeren og kan ikke fortrydes - derfor
+// bekræftelsesdialogen.
+export function GodkendPakkeKnap({ tradeId }: { tradeId: string }) {
+  const router = useRouter();
+
+  return (
+    <BekraeftDialog
+      triggerLabel="Godkend pakke"
+      title="Bekræft dit valg"
+      description="Når du godkender pakken, udbetales beløbet til sælgeren. Dette kan ikke trækkes tilbage."
+      confirmLabel="Ja, godkend pakken"
+      onConfirm={() => godkendPakke(tradeId)}
+      onSuccess={() => router.refresh()}
+    />
   );
 }

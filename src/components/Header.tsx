@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/LogoutButton";
-import { kategorier } from "@/lib/kategorier";
 import { kr } from "@/lib/wallet";
 
 export default async function Header() {
