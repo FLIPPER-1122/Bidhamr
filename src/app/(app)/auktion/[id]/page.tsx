@@ -7,6 +7,7 @@ import BidPanel from "@/components/BidPanel";
 import Accordion from "@/components/Accordion";
 import RatingForm from "@/components/RatingForm";
 import AnmeldOpslagKnap from "@/components/AnmeldOpslagKnap";
+import StartChatKnap from "@/components/StartChatKnap";
 import { kortNavn } from "@/lib/kortNavn";
 
 const MAKS_BUD_HENTET = 50;
@@ -199,32 +200,29 @@ export default async function AuktionPage({
                   Beløbet er trukket fra din BidHamr-konto. Aftal det
                   praktiske med sælgeren i handelschatten.
                 </p>
-                {handel && (
-                  <Link
-                    href={`/mine-handler/${handel.id}`}
-                    className="mt-3 inline-block rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38]"
-                  >
-                    Gå til handlen
-                  </Link>
-                )}
+                {/* Knappen vises altid; findes handlen endnu ikke, venter
+                    komponenten på at pg_cron opretter den. */}
+                <StartChatKnap
+                  auktionId={auktion.id}
+                  tradeId={handel?.id ?? null}
+                />
               </div>
             )}
 
-            {erSælger && handel && (
+            {erSælger && auktionErSlut && vinderBud && (
               <div className="mb-4 border border-brand bg-red-50 p-4">
                 <p className="font-semibold text-brand">
                   Din auktion er solgt
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
-                  Beløbet er indsat på din BidHamr-konto fratrukket 10%
-                  sælgergebyr. Aftal levering med køberen i handelschatten.
+                  Køberen har betalt. Beløbet udbetales til din BidHamr-konto,
+                  når køberen har bekræftet modtagelsen. Aftal levering med
+                  køberen i handelschatten.
                 </p>
-                <Link
-                  href={`/mine-handler/${handel.id}`}
-                  className="mt-3 inline-block rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38]"
-                >
-                  Gå til handlen
-                </Link>
+                <StartChatKnap
+                  auktionId={auktion.id}
+                  tradeId={handel?.id ?? null}
+                />
               </div>
             )}
 

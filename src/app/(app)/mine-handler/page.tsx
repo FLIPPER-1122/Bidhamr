@@ -60,6 +60,25 @@ function HandelKort({
           {Number(handel.amount).toLocaleString("da-DK")} kr
         </span>
         <HandelStatusBadge status={handel.status} />
+        {/* Hele kortet er linket til handelssiden; dette er en synlig
+            markering af, at chatten ligger derinde. Et <Link> her ville
+            være et link inde i et link. */}
+        <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-brand">
+          <svg
+            viewBox="0 0 24 24"
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 11.5a8.38 8.38 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.38 8.38 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0z"
+            />
+          </svg>
+          Start chat
+        </span>
       </div>
     </Link>
   );
@@ -75,7 +94,8 @@ export default async function MineHandlerPage() {
     redirect("/login?redirect=/mine-handler");
   }
 
-  // RLS begrænser allerede til egne handler; or-filteret gør det eksplicit.
+  // or-filteret er det, der begrænser til egne handler. RLS alene ville ikke
+  // gøre det: policyen tillader også staff at se alt.
   const { data } = await supabase
     .from("trades")
     .select("id, status, amount, created_at, buyer_id, seller_id, auctions(titel, billeder)")

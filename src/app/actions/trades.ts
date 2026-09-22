@@ -20,11 +20,14 @@ async function hentHandel(tradeId: string) {
   } = await supabase.auth.getUser();
   if (!user) return { fejl: "Du skal være logget ind." as const };
 
-  // RLS sikrer at kun handlens parter (og staff) får en række tilbage.
+  // Medlemskab filtreres eksplicit. RLS ville også slippe staff igennem, og
+  // selv om kaldere nedenfor tjekker køber/sælger hver for sig, skal rækken
+  // slet ikke hentes for uvedkommende.
   const { data: handel } = await supabase
     .from("trades")
     .select("id, auction_id, seller_id, buyer_id, status")
     .eq("id", tradeId)
+    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
     .maybeSingle<HandelRaekke>();
 
   if (!handel) return { fejl: "Handlen findes ikke." as const };

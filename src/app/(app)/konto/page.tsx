@@ -29,7 +29,9 @@ export default async function KontoSide({
     redirect("/login?redirect=/konto");
   }
 
-  // RLS sørger for, at man kun kan se sin egen konto.
+  // Vi filtrerer eksplicit på bruger. RLS er IKKE nok her: policyen tillader
+  // "auth.uid() = user_id or er_staff()", så en medarbejder, admin eller chef
+  // ville ellers få hele platformens data at se på sin egen kontoside.
   const { data: walletData } = await supabase
     .from("wallets")
     .select("balance, reserved")
@@ -45,6 +47,7 @@ export default async function KontoSide({
   const { data: entriesData } = await supabase
     .from("wallet_entries")
     .select("id, amount, kind, note, balance_after, created_at")
+    .eq("user_id", authData.user.id)
     .order("created_at", { ascending: false })
     .limit(100);
 

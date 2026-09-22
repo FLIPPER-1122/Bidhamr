@@ -33,11 +33,15 @@ export default async function HandelDetaljePage({
     redirect(`/login?redirect=/mine-handler/${trade_id}`);
   }
 
-  // RLS returnerer intet til uvedkommende, så dette dækker også adgangskontrol.
+  // Medlemskab tjekkes eksplicit. RLS er ikke nok: policyen tillader også
+  // staff, og uden dette filter kunne en medarbejder åbne en hvilken som
+  // helst handel og læse den private chat mellem køber og sælger.
+  // Handlen ses i admin-panelet, ikke her.
   const { data: handel } = await supabase
     .from("trades")
     .select("id, auction_id, seller_id, buyer_id, amount, status, tracking_number, created_at")
     .eq("id", trade_id)
+    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
     .maybeSingle<HandelRaekke>();
 
   if (!handel) notFound();
@@ -49,6 +53,9 @@ export default async function HandelDetaljePage({
     await Promise.all([
       supabase.from("auctions").select("titel, billeder").eq("id", handel.auction_id).maybeSingle(),
       supabase.from("users").select("navn, email").eq("id", modpartId).maybeSingle(),
+      // Sikker uden medlemskabsfilter, fordi notFound() ovenfor allerede har
+      // afvist alle andre end køber og sælger. Flyttes denne query op over
+      // det tjek, lækker den chatten til staff.
       supabase
         .from("messages")
         .select("id, sender_id, content, created_at")

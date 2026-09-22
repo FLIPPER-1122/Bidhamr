@@ -14,8 +14,8 @@ export default async function Header() {
   // og se ud som om reservationen ikke virkede.
   let saldo: number | null = null;
   if (data.user) {
-    // RLS lader kun brugeren se sin egen konto, saa der er ingen filtrering
-    // at glemme her.
+    // Filtreret eksplicit på user_id. RLS alene er ikke nok: policyen
+    // tillader også staff at se alle konti.
     const [{ data: profil }, { data: wallet }] = await Promise.all([
       supabase.from("users").select("rolle").eq("id", data.user.id).single(),
       supabase

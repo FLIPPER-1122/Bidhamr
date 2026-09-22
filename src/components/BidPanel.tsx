@@ -59,12 +59,26 @@ export default function BidPanel({
   const nuværendeBudRef = useRef(nuværendeBud);
   nuværendeBudRef.current = nuværendeBud;
 
+  // Sættes når nedtællingen er kørt i nul, så genindlæsningen kun sker én
+  // gang - også selv om auktionen forlænges og tælleren starter forfra.
+  const harLukketRef = useRef(false);
+
   useEffect(() => {
     const id = setInterval(() => {
       setNedtælling(formatNedtælling(slutterKl));
+
+      const slut = new Date(slutterKl).getTime() - Date.now() <= 0;
+      if (!slut || harLukketRef.current) return;
+
+      harLukketRef.current = true;
+
+      // Siden er server-renderet, så vinder- og sælgerboksen dukker ikke op
+      // af sig selv, når tiden løber ud. pg_cron lukker auktionen inden for
+      // et minut; vi venter lidt, så vinderen er sat, før vi henter igen.
+      setTimeout(() => router.refresh(), 2000);
     }, 1000);
     return () => clearInterval(id);
-  }, [slutterKl]);
+  }, [slutterKl, router]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -120,6 +134,11 @@ export default function BidPanel({
             setNuværendeBud(opdateret["nuværende_bud"]);
           }
           setSlutterKl(opdateret.slutter_kl);
+          // Anti-sniping kan forlænge auktionen efter at tælleren er nået
+          // nul; så skal den kunne udløse en genindlæsning igen.
+          if (new Date(opdateret.slutter_kl).getTime() > Date.now()) {
+            harLukketRef.current = false;
+          }
           if (opdateret.status && opdateret.status !== "aktiv") {
             setAuktionStatus(opdateret.status);
             if (opdateret.vinder_id) {
