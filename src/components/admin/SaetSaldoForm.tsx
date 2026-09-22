@@ -24,12 +24,18 @@ export default function SaetSaldoForm({
       data.set("userId", userId);
       data.set("saldo", vaerdi);
 
-      try {
-        await saetSaldo(data);
-        setGemt(true);
-      } catch (err) {
-        setFejl(err instanceof Error ? err.message : "Kunne ikke sætte saldoen.");
+      // Actionen returnerer fejlen frem for at kaste den. Et kast ville
+      // blive skjult af Next.js i produktion og ende som den generiske
+      // "An error occurred in the Server Components render".
+      const svar = await saetSaldo(data);
+
+      if ("fejl" in svar) {
+        setFejl(svar.fejl);
+        return;
       }
+
+      setGemt(true);
+      if (svar.saldo !== undefined) setVaerdi(String(svar.saldo));
     });
   }
 

@@ -12,7 +12,7 @@ import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { StatusBadge, brugerStatus, erSuspensionAktiv, RolleBadge } from "@/components/admin/StatusBadge";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
-import { justerSaldo } from "@/app/actions/adminActions";
+import JusterSaldoForm from "@/components/admin/JusterSaldoForm";
 import { kr } from "@/lib/wallet";
 import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
 
@@ -304,52 +304,7 @@ async function OversigtFane({
           </div>
         </div>
 
-        {staffRolle === "chef" && (
-          <form action={justerSaldo} className="mt-5 border-t border-neutral-100 pt-4">
-            <input type="hidden" name="userId" value={user.id} />
-            <p className="mb-2 text-xs font-medium uppercase text-neutral-500">
-              Justér saldo
-            </p>
-            <div className="flex flex-wrap items-end gap-2">
-              <div>
-                <label htmlFor="beloeb" className="block text-xs text-neutral-500">
-                  Beløb (negativt for træk)
-                </label>
-                <input
-                  id="beloeb"
-                  name="beloeb"
-                  type="number"
-                  step="0.01"
-                  required
-                  placeholder="1000"
-                  className="mt-1 w-36 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-brand"
-                />
-              </div>
-              <div className="flex-1 min-w-[200px]">
-                <label htmlFor="aarsag" className="block text-xs text-neutral-500">
-                  Begrundelse
-                </label>
-                <input
-                  id="aarsag"
-                  name="aarsag"
-                  type="text"
-                  required
-                  placeholder="Testpenge / fejlrettelse"
-                  className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-brand"
-                />
-              </div>
-              <button
-                type="submit"
-                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-[#d62b38]"
-              >
-                Bogfør
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-neutral-500">
-              Justeringen bogføres i hovedbogen og logges i moderationsloggen.
-            </p>
-          </form>
-        )}
+        {staffRolle === "chef" && <JusterSaldoForm userId={user.id} />}
       </div>
 
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">

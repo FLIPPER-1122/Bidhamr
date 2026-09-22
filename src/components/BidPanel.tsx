@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { kortNavn } from "@/lib/kortNavn";
@@ -39,6 +40,10 @@ export default function BidPanel({
   const [visAlle, setVisAlle] = useState(false);
   const [beløb, setBeløb] = useState("");
   const [manglerSaldo, setManglerSaldo] = useState(false);
+  const router = useRouter();
+  // Hvem der fører lige nu. Reservationen følger det seneste bud, fordi
+  // minimumsbud-triggeren kræver at hvert bud er højere end det forrige.
+  const førendeRef = useRef<string | null>(initialBud[0]?.bruger_id ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -85,6 +90,15 @@ export default function BidPanel({
           if (nytBud.beløb > nuværendeBudRef.current) {
             setNuværendeBud(nytBud.beløb);
           }
+
+          // Blev jeg lige overbudt, er min reservation frigivet, og saldoen i
+          // headeren er forældet. Andres bud på hinanden rører ikke mine
+          // penge, så der opdaterer vi ikke.
+          const varJegFørende = førendeRef.current === brugerId;
+          førendeRef.current = nytBud.bruger_id;
+          if (varJegFørende && nytBud.bruger_id !== brugerId) {
+            router.refresh();
+          }
         },
       )
       .on(
@@ -124,7 +138,7 @@ export default function BidPanel({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [auktionId]);
+  }, [auktionId, brugerId, router]);
 
   const minimumBud = Math.ceil(nuværendeBud * 1.1);
 
@@ -201,6 +215,12 @@ export default function BidPanel({
 
     setLoading(false);
     setBeløb("");
+
+    førendeRef.current = brugerId;
+
+    // Saldoen i headeren renderes på serveren og ville ellers stå med det
+    // gamle tal, indtil man navigerede et andet sted hen.
+    router.refresh();
   }
 
   const visteBud = visAlle ? budListe : budListe.slice(0, VIST_SOM_STANDARD);

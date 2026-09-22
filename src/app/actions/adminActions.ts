@@ -22,6 +22,26 @@ async function logModeration(
   if (error) throw new Error(error.message);
 }
 
+// Som logModeration, men returnerer fejlen i stedet for at kaste den. Bruges
+// hvor den egentlige handling allerede er gennemfoert, og en fejlet logning
+// derfor ikke maa se ud som om intet skete.
+async function logModerationBloedt(
+  admin: AdminClient,
+  entry: {
+    medarbejder_id: string;
+    handling: string;
+    maal_type: "auktion" | "anmeldelse" | "bruger";
+    maal_id: string;
+    bruger_id: string | null;
+    aarsag: string;
+  },
+): Promise<string | null> {
+  const { error } = await admin.from("moderation_log").insert(entry);
+  if (!error) return null;
+  console.error("Kunne ikke skrive til moderation_log:", error);
+  return error.message;
+}
+
 export async function suspendUser(formData: FormData) {
   const userId = formData.get("userId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
@@ -491,23 +511,62 @@ export async function rapportGenaabn(formData: FormData) {
 
 // --- E-money ---------------------------------------------------------------
 
-// Justerer en brugers saldo manuelt. Bruges til fejlrettelser og til at lægge
-// testpenge ind, mens platformen køres i testtilstand.
+// Saldo-handlingerne RETURNERER fejl i stedet for at kaste dem.
 //
-// Kun 'chef': det er den eneste handling i systemet, der skaber eller
-// fjerner penge, og den bogføres derfor altid med en begrundelse.
-export async function justerSaldo(formData: FormData) {
+// En server action, der kaster, faar Next.js til at skjule beskeden i
+// produktion ("An error occurred in the Server Components render") - og saa
+// staar man uden at vide, hvad der gik galt. Returnerede vaerdier naar frem
+// uaendret i baade dev og produktion.
+export type SaldoResultat = { ok: true; saldo?: number } | { fejl: string };
+
+// Teknisk detalje er nyttig under udvikling, men skal ikke laekke DB-interne
+// beskeder ud i produktion.
+function medDetalje(besked: string, detalje: string): string {
+  return process.env.NODE_ENV === "development"
+    ? `${besked} (${detalje})`
+    : besked;
+}
+
+function oversaetSaldoFejl(besked: string): string {
+  if (besked.includes("under_reserveret")) {
+    return "Beløbet er lavere end det, brugeren har bundet i aktive bud.";
+  }
+  if (besked.includes("wallets_balance_check") || besked.includes("negativ_saldo")) {
+    return "Saldoen kan ikke gå under nul.";
+  }
+  if (besked.includes("wallet_mangler")) {
+    return "Brugeren har ingen konto.";
+  }
+  if (besked.includes("moderation_log")) {
+    // Saldoen er allerede aendret paa dette tidspunkt - sig det, saa ingen
+    // proever igen i den tro at intet skete.
+    return medDetalje(
+      "Saldoen blev ændret, men handlingen kunne ikke logges.",
+      besked,
+    );
+  }
+  return medDetalje("Kunne ikke ændre saldoen.", besked);
+}
+
+// Justerer en brugers saldo med et beloeb (positivt eller negativt).
+// Forskellen bogfoeres, saa hovedbogen altid stemmer med saldoen.
+export async function justerSaldo(formData: FormData): Promise<SaldoResultat> {
   const userId = formData.get("userId") as string;
   const beløb = Number(formData.get("beloeb"));
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
 
-  const { admin, userId: staffId } = await assertRole("chef");
+  let admin, staffId;
+  try {
+    ({ admin, userId: staffId } = await assertRole("chef"));
+  } catch {
+    return { fejl: "Du har ikke adgang til at ændre saldi." };
+  }
 
   if (!userId || !Number.isFinite(beløb) || beløb === 0) {
-    throw new Error("Angiv et beløb forskelligt fra nul.");
+    return { fejl: "Angiv et beløb forskelligt fra nul." };
   }
   if (!aarsag) {
-    throw new Error("Angiv en begrundelse for justeringen.");
+    return { fejl: "Angiv en begrundelse for justeringen." };
   }
 
   const { error } = await admin.rpc("wallet_bogfoer", {
@@ -519,15 +578,9 @@ export async function justerSaldo(formData: FormData) {
     p_stripe_session: null,
   });
 
-  // Saldoen må ikke kunne gå i minus; check-constrainten afviser det.
-  if (error) {
-    if (error.message.includes("wallets_balance_check")) {
-      throw new Error("Justeringen ville sende saldoen under nul.");
-    }
-    throw new Error(error.message);
-  }
+  if (error) return { fejl: oversaetSaldoFejl(error.message) };
 
-  await logModeration(admin, {
+  const logFejl = await logModerationBloedt(admin, {
     medarbejder_id: staffId,
     handling: beløb > 0 ? "saldo_tilfoert" : "saldo_traukket",
     maal_type: "bruger",
@@ -536,44 +589,42 @@ export async function justerSaldo(formData: FormData) {
     aarsag: `${beløb > 0 ? "+" : ""}${beløb} kr — ${aarsag}`,
   });
 
+  revalidatePath("/admin/brugere");
   revalidatePath(`/admin/brugere/${userId}`);
   revalidatePath("/admin/transaktioner");
+
+  if (logFejl) return { fejl: oversaetSaldoFejl(logFejl) };
+  return { ok: true };
 }
 
-// Sætter en brugers saldo til et præcist beløb (bruges til testpenge).
-// Forskellen bogføres som en justering, så hovedbogen altid stemmer med
-// saldoen — vi skriver aldrig et tal direkte ind på kontoen.
-//
-// 'admin' og opefter; medarbejdere kan ikke røre penge.
-export async function saetSaldo(formData: FormData) {
+// Saetter en brugers saldo til et praecist beloeb (bruges til testpenge).
+// 'admin' og opefter; medarbejdere kan ikke roere penge.
+export async function saetSaldo(formData: FormData): Promise<SaldoResultat> {
   const userId = formData.get("userId") as string;
   const nySaldo = Number(formData.get("saldo"));
 
-  const { admin, userId: staffId } = await assertRole("admin");
-
-  if (!userId || !Number.isFinite(nySaldo) || nySaldo < 0) {
-    throw new Error("Angiv et beløb på 0 eller derover.");
+  let admin, staffId;
+  try {
+    ({ admin, userId: staffId } = await assertRole("admin"));
+  } catch {
+    return { fejl: "Du har ikke adgang til at ændre saldi." };
   }
 
-  const { error } = await admin.rpc("wallet_saet_saldo", {
+  if (!userId || !Number.isFinite(nySaldo) || nySaldo < 0) {
+    return { fejl: "Angiv et beløb på 0 eller derover." };
+  }
+
+  const { data, error } = await admin.rpc("wallet_saet_saldo", {
     p_user: userId,
     p_ny_saldo: nySaldo,
     p_note: "Saldo sat af administrator",
   });
 
-  if (error) {
-    if (error.message.includes("under_reserveret")) {
-      throw new Error(
-        "Beløbet er lavere end det, brugeren har bundet i aktive bud.",
-      );
-    }
-    if (error.message.includes("wallet_mangler")) {
-      throw new Error("Brugeren har ingen konto.");
-    }
-    throw new Error(error.message);
-  }
+  if (error) return { fejl: oversaetSaldoFejl(error.message) };
 
-  await logModeration(admin, {
+  // Logningen maa ikke kunne rulle en gennemfoert saldoaendring tilbage, men
+  // den maa heller ikke fejle i stilhed - derfor rapporteres den separat.
+  const logFejl = await logModerationBloedt(admin, {
     medarbejder_id: staffId,
     handling: "saldo_sat",
     maal_type: "bruger",
@@ -585,4 +636,7 @@ export async function saetSaldo(formData: FormData) {
   revalidatePath("/admin/brugere");
   revalidatePath(`/admin/brugere/${userId}`);
   revalidatePath("/admin/transaktioner");
+
+  if (logFejl) return { fejl: oversaetSaldoFejl(logFejl) };
+  return { ok: true, saldo: Number(data ?? nySaldo) };
 }

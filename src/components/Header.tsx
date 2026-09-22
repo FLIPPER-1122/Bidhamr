@@ -9,6 +9,9 @@ export default async function Header() {
   const { data } = await supabase.auth.getUser();
 
   let erAdmin = false;
+  // Chippen viser det, der KAN bruges - altså saldo minus det, der er
+  // reserveret af aktive bud. Bruttosaldoen ville stå stille, når man byder,
+  // og se ud som om reservationen ikke virkede.
   let saldo: number | null = null;
   if (data.user) {
     // RLS lader kun brugeren se sin egen konto, saa der er ingen filtrering
@@ -17,11 +20,11 @@ export default async function Header() {
       supabase.from("users").select("rolle").eq("id", data.user.id).single(),
       supabase
         .from("wallets")
-        .select("balance")
+        .select("balance, reserved")
         .eq("user_id", data.user.id)
         .maybeSingle(),
     ]);
-    saldo = wallet ? Number(wallet.balance) : null;
+    saldo = wallet ? Number(wallet.balance) - Number(wallet.reserved) : null;
     erAdmin =
       profil?.rolle === "chef" ||
       profil?.rolle === "admin" ||
@@ -107,7 +110,7 @@ export default async function Header() {
               {saldo !== null && (
                 <Link
                   href="/konto"
-                  title="Din saldo — klik for at indbetale"
+                  title="Til rådighed — klik for at indbetale"
                   className="flex items-center gap-1.5 rounded-full border border-brand bg-red-50 px-3 py-1.5 text-sm font-semibold text-brand hover:bg-brand hover:text-white"
                 >
                   <span aria-hidden="true">💰</span>
