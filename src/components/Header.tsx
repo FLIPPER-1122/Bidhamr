@@ -71,8 +71,8 @@ export default async function Header() {
         </form>
 
         <div className="flex items-center gap-6">
-          <a
-            href="#"
+          <Link
+            href="/favoritter"
             className="hidden items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand sm:flex"
           >
             <svg
@@ -89,7 +89,7 @@ export default async function Header() {
               />
             </svg>
             Favoritter
-          </a>
+          </Link>
 
           {data.user ? (
             <>

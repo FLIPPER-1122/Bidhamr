@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useFavoritter } from "@/components/FavoritterProvider";
 
 export interface DummyAuction {
   id: string;
@@ -16,7 +16,8 @@ export interface DummyAuction {
 }
 
 export default function AuctionCard({ auktion }: { auktion: DummyAuction }) {
-  const [gemt, setGemt] = useState(false);
+  const favoritter = useFavoritter();
+  const gemt = favoritter?.erFavorit(auktion.id) ?? false;
 
   return (
     <Link
@@ -38,16 +39,21 @@ export default function AuctionCard({ auktion }: { auktion: DummyAuction }) {
 
         <button
           onClick={(e) => {
+            // Kortet er ét stort <Link>; uden dette navigerer klikket væk.
             e.preventDefault();
             e.stopPropagation();
-            setGemt(!gemt);
+            favoritter?.toggle(auktion.id);
           }}
-          aria-label="Gem auktion"
+          aria-label={gemt ? "Fjern fra favoritter" : "Gem som favorit"}
+          aria-pressed={gemt}
+          title={gemt ? "Fjern fra favoritter" : "Gem som favorit"}
           className="absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/90"
         >
           <svg
             viewBox="0 0 24 24"
-            className={`h-4 w-4 ${gemt ? "fill-brand text-brand" : "fill-none text-neutral-700"}`}
+            className={`h-4 w-4 transition-colors ${
+              gemt ? "fill-brand text-brand" : "fill-none text-neutral-700"
+            }`}
             stroke="currentColor"
             strokeWidth={2}
           >
