@@ -62,7 +62,7 @@ export default function ComingSoonPage() {
               <ul className="mt-8 flex flex-col gap-2.5 text-sm font-medium text-neutral-500">
                 {[
                   "Gratis at oprette auktion",
-                  "Sikker betaling via BidHamr Escrow",
+                  "Sikker betaling med BidHamr Beskyttelse",
                 ].map((punkt) => (
                   <li key={punkt} className="flex items-center gap-2">
                     <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0 text-brand" fill="currentColor" aria-hidden>
@@ -131,7 +131,7 @@ export default function ComingSoonPage() {
                 <svg viewBox="0 0 24 24" width={18} height={18} className="text-brand" fill="currentColor" aria-hidden>
                   <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 15l-4-4 1.41-1.41L11 13.17l6.59-6.59L19 8l-8 8z" />
                 </svg>
-                Escrow sikret
+                Beskyttet handel
               </div>
             </div>
           </div>
@@ -220,7 +220,7 @@ export default function ComingSoonPage() {
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {[
                 {
-                  titel: "BidHamr Escrow",
+                  titel: "BidHamr Beskyttelse",
                   tekst:
                     "Pengene holdes af platformen, indtil køber godkender varen. Ingen risiko for hverken køber eller sælger.",
                   ikon: <path d="M5 11h14v10H5z M8 11V8a4 4 0 0 1 8 0v3" />,
