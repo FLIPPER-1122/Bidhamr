@@ -12,7 +12,7 @@ async function logModeration(
   entry: {
     medarbejder_id: string;
     handling: string;
-    maal_type: "auktion" | "anmeldelse" | "bruger";
+    maal_type: "auktion" | "anmeldelse" | "bruger" | "handel";
     maal_id: string;
     bruger_id: string | null;
     aarsag: string;
@@ -30,7 +30,7 @@ async function logModerationBloedt(
   entry: {
     medarbejder_id: string;
     handling: string;
-    maal_type: "auktion" | "anmeldelse" | "bruger";
+    maal_type: "auktion" | "anmeldelse" | "bruger" | "handel";
     maal_id: string;
     bruger_id: string | null;
     aarsag: string;
@@ -639,4 +639,136 @@ export async function saetSaldo(formData: FormData): Promise<SaldoResultat> {
 
   if (logFejl) return { fejl: oversaetSaldoFejl(logFejl) };
   return { ok: true, saldo: Number(data ?? nySaldo) };
+}
+
+// --- Sager (handler) ---------------------------------------------------------
+
+const AKTIVE_HANDEL_STATUSSER = ["betaling_modtaget", "pakke_sendt", "modtaget"];
+
+async function hentHandelTilSag(admin: AdminClient, tradeId: string) {
+  const { data: handel } = await admin
+    .from("trades")
+    .select("id, auction_id, buyer_id, seller_id, status, sag_aaben")
+    .eq("id", tradeId)
+    .single();
+  if (!handel) throw new Error("Handlen findes ikke.");
+  return handel;
+}
+
+function revaliderSag(tradeId: string) {
+  revalidatePath("/admin/sager");
+  revalidatePath("/admin/transaktioner");
+  revalidatePath(`/mine-handler/${tradeId}`);
+  revalidatePath("/mine-handler");
+}
+
+// Flag en handel som sag. Medarbejdere maa godt - det flytter ingen penge.
+export async function sagAabn(formData: FormData) {
+  const tradeId = formData.get("tradeId") as string;
+  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
+  const { admin, userId: staffId } = await assertRole("medarbejder");
+  if (!aarsag) throw new Error("Beskriv hvorfor sagen åbnes.");
+
+  const handel = await hentHandelTilSag(admin, tradeId);
+  if (!AKTIVE_HANDEL_STATUSSER.includes(handel.status)) {
+    throw new Error("Handlen er allerede afsluttet.");
+  }
+
+  const { error } = await admin
+    .from("trades")
+    .update({
+      sag_aaben: true,
+      sag_note: aarsag,
+      sag_aabnet_af: staffId,
+      sag_aabnet_at: new Date().toISOString(),
+    })
+    .eq("id", tradeId);
+  if (error) throw new Error(error.message);
+
+  await logModeration(admin, {
+    medarbejder_id: staffId,
+    handling: "sag_aabnet",
+    maal_type: "handel",
+    maal_id: tradeId,
+    bruger_id: null,
+    aarsag,
+  });
+  revaliderSag(tradeId);
+}
+
+// Luk sagen uden at flytte penge - handlen fortsaetter normalt.
+export async function sagLuk(formData: FormData) {
+  const tradeId = formData.get("tradeId") as string;
+  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
+  const { admin, userId: staffId } = await assertRole("medarbejder");
+  if (!aarsag) throw new Error("Skriv en afsluttende note.");
+
+  const { error } = await admin
+    .from("trades")
+    .update({ sag_aaben: false })
+    .eq("id", tradeId);
+  if (error) throw new Error(error.message);
+
+  await logModeration(admin, {
+    medarbejder_id: staffId,
+    handling: "sag_lukket",
+    maal_type: "handel",
+    maal_id: tradeId,
+    bruger_id: null,
+    aarsag,
+  });
+  revaliderSag(tradeId);
+}
+
+// Afregn saelgeren uden koeberens godkendelse. Kun admin og opefter.
+export async function handelFrigiv(formData: FormData) {
+  const tradeId = formData.get("tradeId") as string;
+  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
+  const { admin, userId: staffId } = await assertRole("admin");
+  if (!aarsag) throw new Error("Angiv en begrundelse.");
+
+  const handel = await hentHandelTilSag(admin, tradeId);
+
+  const { data: frigivet, error } = await admin.rpc("admin_frigiv_handel", {
+    p_trade: tradeId,
+  });
+  if (error) throw new Error(error.message);
+  if (!frigivet) throw new Error("Handlen er allerede afsluttet.");
+
+  // Pengene er flyttet - logfejl maa ikke se ud som om intet skete.
+  await logModerationBloedt(admin, {
+    medarbejder_id: staffId,
+    handling: "handel_frigivet",
+    maal_type: "handel",
+    maal_id: tradeId,
+    bruger_id: handel.seller_id,
+    aarsag,
+  });
+  revaliderSag(tradeId);
+}
+
+// Refunder koeberen (koeb + koebergebyr) og annuller handlen. Kun admin og opefter.
+export async function handelRefunder(formData: FormData) {
+  const tradeId = formData.get("tradeId") as string;
+  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
+  const { admin, userId: staffId } = await assertRole("admin");
+  if (!aarsag) throw new Error("Angiv en begrundelse.");
+
+  const handel = await hentHandelTilSag(admin, tradeId);
+
+  const { data: retur, error } = await admin.rpc("admin_refunder_handel", {
+    p_trade: tradeId,
+  });
+  if (error) throw new Error(error.message);
+  if (retur === null) throw new Error("Handlen er allerede afsluttet.");
+
+  await logModerationBloedt(admin, {
+    medarbejder_id: staffId,
+    handling: "handel_refunderet",
+    maal_type: "handel",
+    maal_id: tradeId,
+    bruger_id: handel.buyer_id,
+    aarsag: `${Number(retur)} kr refunderet — ${aarsag}`,
+  });
+  revaliderSag(tradeId);
 }
