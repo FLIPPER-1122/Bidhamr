@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agenternes git-worktrees er fulde kopier af repoet og ligger inde i
+    // projektmappen. Uden dette linter vi hver fil to gange.
+    ".claude/worktrees/**",
   ]),
 ]);
 
