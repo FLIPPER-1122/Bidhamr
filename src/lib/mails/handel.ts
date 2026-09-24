@@ -92,7 +92,7 @@ export function saelgerSolgtMail(titel: string, beloeb: number, tradeId: string)
       overskrift: "Din auktion er solgt",
       afsnit: [
         `<strong>${titel}</strong> blev solgt for ${beloeb.toLocaleString("da-DK")} kr.`,
-        "Køberen har betalt, og beløbet står klar. Det sættes ind på din BidHamr-konto — fratrukket 10% sælgergebyr — så snart køberen har bekræftet modtagelsen.",
+        "Køberen har betalt, og beløbet står klar. Det sættes ind på din BidHamr-konto — fratrukket 5% sælgergebyr — så snart køberen har bekræftet modtagelsen.",
         "Send varen af sted og indtast sporingsnummeret på handelssiden, så køberen kan følge med.",
       ],
       knapTekst: "Se handlen",

@@ -270,7 +270,7 @@ export default async function AdminSager({
                                 triggerLabel="Frigiv til sælger"
                                 triggerClassName="whitespace-nowrap rounded-md bg-green-100 px-2 py-1 text-xs text-green-800 transition-colors hover:bg-green-200"
                                 title={`Frigiv ${kr(h.amount)} til sælgeren?`}
-                                description="Sælgeren afregnes (minus 10% gebyr), som om køberen havde godkendt varen. Kan ikke fortrydes."
+                                description="Sælgeren afregnes (minus 5% gebyr), som om køberen havde godkendt varen. Kan ikke fortrydes."
                                 confirmLabel="Ja, frigiv pengene"
                                 action={handelFrigiv}
                                 hiddenFields={{ tradeId: h.id }}

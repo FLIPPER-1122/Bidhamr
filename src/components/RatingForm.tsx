@@ -4,14 +4,15 @@ import { useState, useTransition } from "react";
 import { submitRating } from "@/app/actions/submitRating";
 import { anonymUsername } from "@/lib/anonymUsername";
 
+// Kun køberen bedømmer sælgeren (ROADMAP-BESLUTNINGER.md afsnit 6), så rollen
+// er altid "sælger". Prop'en beholdes, så kaldstedet er eksplicit.
 export default function RatingForm({
   auktionId,
   tilBrugerId,
-  rolle, // "køber" | "sælger" — hvem der bedømmes
 }: {
   auktionId: string;
   tilBrugerId: string;
-  rolle: "køber" | "sælger";
+  rolle?: "sælger";
 }) {
   const [valgtStjerner, setValgtStjerner] = useState(0);
   const [hoveredStjerner, setHoveredStjerner] = useState(0);
@@ -54,7 +55,7 @@ export default function RatingForm({
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-5">
       <h3 className="text-sm font-semibold text-neutral-900">
-        Bedøm {rolle === "sælger" ? "sælgeren" : "køberen"}{" "}
+        Bedøm sælgeren{" "}
         <span className="font-normal text-neutral-500">
           ({anonymUsername(tilBrugerId)})
         </span>

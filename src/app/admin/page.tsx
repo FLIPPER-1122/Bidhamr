@@ -42,7 +42,7 @@ export default async function AdminDashboard() {
   ]);
 
   // Omsaetning = summen af alle gennemfoerte handler. Gebyrindtaegten er de
-  // to gebyrlinjer i hovedbogen (5% koeber + 10% saelger), som staar med
+  // to gebyrlinjer i hovedbogen (5% koeber + 5% saelger), som staar med
   // negativt fortegn hos brugeren og derfor vendes her.
   const totalRevenue = (handler ?? []).reduce(
     (sum, t) => sum + Number(t.amount ?? 0),

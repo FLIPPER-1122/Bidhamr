@@ -69,22 +69,31 @@ export default async function AuktionPage({
 
   // Handelstilstand: e-money-afregningen opretter en handel ved auktionsluk.
   // Betalingen er dermed allerede sket - der er intet "betal nu"-trin.
-  let handel: { id: string; status: string } | null = null;
+  let handel: {
+    id: string;
+    status: string;
+    buyer_id: string;
+    seller_id: string;
+  } | null = null;
   if (auktionErSlut && vinderBud && (erVinder || erSælger)) {
     const { data } = await supabase
       .from("trades")
-      .select("id, status")
+      .select("id, status, buyer_id, seller_id")
       .eq("auction_id", id)
       .maybeSingle();
     handel = data;
   }
 
-  // Brugeren kan bedømme hvis: auktion er slut, der er en vinder, og brugeren
-  // er enten køber eller sælger (de kan ikke være begge, da man ikke kan byde på egne auktioner)
-  const erInvolveret = auktionErSlut && !!vinderBud && !!bruger && (erKøber || erSælger);
+  // Kun køberen i handlen må bedømme, og kun sælgeren. Sælgeren bedømmer
+  // ikke køberen (ROADMAP-BESLUTNINGER.md afsnit 6). Sandheden om hvem der
+  // handlede er trades-rækken – ikke budlisten – så formularen vises kun, når
+  // der findes en handel, hvor brugeren er køber.
+  const maaBedømme = Boolean(
+    bruger && handel && handel.buyer_id === bruger.id && handel.seller_id === auktion.bruger_id,
+  );
 
   let harBedømt = false;
-  if (erInvolveret && bruger) {
+  if (maaBedømme && bruger) {
     const { data: eksisterendeRating } = await supabase
       .from("ratings")
       .select("id")
@@ -240,18 +249,18 @@ export default async function AuktionPage({
               />
             </div>
 
-            {/* Rating-sektion – vises når auktion er slut og bruger er involveret */}
-            {erInvolveret && !harBedømt && bruger && vinderBud && (
+            {/* Rating-sektion – kun køberen i handlen kan bedømme sælgeren */}
+            {maaBedømme && !harBedømt && (
               <div className="mt-4">
                 <RatingForm
                   auktionId={auktion.id}
-                  tilBrugerId={erKøber ? auktion.bruger_id : vinderBud.bruger_id}
-                  rolle={erKøber ? "sælger" : "køber"}
+                  tilBrugerId={auktion.bruger_id}
+                  rolle="sælger"
                 />
               </div>
             )}
 
-            {erInvolveret && harBedømt && (
+            {maaBedømme && harBedømt && (
               <div className="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
                 <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />

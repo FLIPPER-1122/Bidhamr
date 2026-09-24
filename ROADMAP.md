@@ -162,6 +162,7 @@ Formål: alt det juridiske og praktiske er på plads.
   - Henvisning til klagemuligheder (fx Forbrugerklagenævnet) i handelsbetingelserne
   - Tilgængelighedsloven (European Accessibility Act): tjek om BidHamr som lille virksomhed er undtaget
 - [ ] **EU's Digital Services Act (DSA)**: markedspladser skal have en måde at anmelde ulovligt indhold, give brugeren en begrundelse, når en auktion fjernes, og udgive en årlig gennemsigtighedsrapport (Tradera og Vinted gør det begge). Afklar omfanget med advokat – det meste bygger videre på det eksisterende rapport-system
+- [ ] **Hastighedsgennemgang**: Lighthouse på forside, auktionsside, søgning, opret auktion og mine handler. Mål: Performance-score 90+ og LCP under 2,5 sek. på mobil. Ret de største syndere (billeder, databaseforespørgsler, JavaScript)
 - [ ] Fejlovervågning (fx Sentry) og besked til Filip, hvis siden går ned
 - [ ] Backup af databasen er slået til og testet
 - [ ] **Beta-test med 10-20 rigtige, fremmede personer**, der køber og sælger med testpenge. Ret det, de støder på
