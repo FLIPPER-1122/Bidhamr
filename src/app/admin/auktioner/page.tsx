@@ -124,7 +124,7 @@ export default async function AdminAuktioner({
               href={filterHref(s.value)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 active
-                  ? "bg-[#E63946] text-white"
+                  ? "bg-orange text-white"
                   : "bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
               }`}
             >

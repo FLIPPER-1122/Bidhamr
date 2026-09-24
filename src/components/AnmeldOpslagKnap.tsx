@@ -109,7 +109,7 @@ export default function AnmeldOpslagKnap({
                 <button
                   type="button"
                   onClick={luk}
-                  className="mt-5 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38]"
+                  className="mt-5 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork"
                 >
                   Luk
                 </button>
@@ -131,7 +131,7 @@ export default function AnmeldOpslagKnap({
                         key={k.vaerdi}
                         className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                           kategori === k.vaerdi
-                            ? "border-brand bg-[#FDECEE] text-neutral-900"
+                            ? "border-brand bg-orange-lys text-neutral-900"
                             : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
                         }`}
                       >
@@ -179,7 +179,7 @@ export default function AnmeldOpslagKnap({
                     <button
                       type="submit"
                       disabled={sender}
-                      className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38] disabled:opacity-50"
+                      className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
                     >
                       {sender ? "Sender…" : "Send anmeldelse"}
                     </button>

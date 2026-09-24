@@ -119,7 +119,7 @@ export default function ProfileTabs({
               </p>
               <Link
                 href="/opret-auktion"
-                className="mt-4 inline-block rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38]"
+                className="mt-4 inline-block rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork"
               >
                 Opret din første auktion
               </Link>
@@ -152,7 +152,7 @@ export default function ProfileTabs({
               </p>
               <Link
                 href="/auktioner"
-                className="mt-4 inline-block rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38]"
+                className="mt-4 inline-block rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork"
               >
                 Se alle auktioner
               </Link>

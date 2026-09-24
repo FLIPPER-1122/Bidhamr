@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getResend } from "@/lib/resend";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const BRAND = "#E63946";
+// Mails kan ikke bruge CSS-variabler, så farverne fra DESIGN.md staves ud her.
+const GROEN = "#1E5E4A";
 
 // Kræver at bidhamr.dk er verificeret i Resend (DNS-records under Domains).
 // Er domænet ikke verificeret, afviser Resend afsendelsen med en 403 - selve
@@ -19,7 +20,7 @@ function velkomstMail(email: string) {
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);">
             <tr>
-              <td align="center" style="background-color:${BRAND};padding:28px 24px;">
+              <td align="center" style="background-color:${GROEN};padding:28px 24px;">
                 <span style="font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.02em;">BidHamr</span>
               </td>
             </tr>

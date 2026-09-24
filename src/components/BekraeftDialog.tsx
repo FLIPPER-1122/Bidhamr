@@ -85,7 +85,7 @@ export default function BekraeftDialog({
         onClick={() => setOpen(true)}
         className={
           triggerClassName ??
-          "inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#d62b38]"
+          "inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-mork"
         }
       >
         {triggerIcon}
@@ -134,7 +134,7 @@ export default function BekraeftDialog({
                 type="button"
                 onClick={bekraeft}
                 disabled={pending}
-                className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#d62b38] disabled:opacity-50"
+                className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-mork disabled:opacity-50"
               >
                 {pending ? "Arbejder…" : confirmLabel}
               </button>

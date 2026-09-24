@@ -147,7 +147,7 @@ export default function HandelChat({
         <button
           type="submit"
           disabled={sender || !tekst.trim()}
-          className="shrink-0 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38] disabled:opacity-50"
+          className="shrink-0 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
         >
           {sender ? "Sender…" : "Send"}
         </button>

@@ -303,7 +303,7 @@ export default function BidPanel({
           <button
             type="submit"
             disabled={loading}
-            className="rounded-lg bg-brand px-6 py-3 text-base font-semibold text-white hover:bg-[#d62b38] disabled:opacity-50"
+            className="rounded-lg bg-brand px-6 py-3 text-base font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
           >
             {loading ? "Afgiver…" : "Afgiv bud"}
           </button>
@@ -311,7 +311,7 @@ export default function BidPanel({
       ) : (
         <Link
           href="/login"
-          className="mt-4 block w-full rounded-lg bg-brand px-6 py-3 text-center text-base font-semibold text-white hover:bg-[#d62b38]"
+          className="mt-4 block w-full rounded-lg bg-brand px-6 py-3 text-center text-base font-semibold text-white hover:bg-orange-mork"
         >
           Log ind for at byde
         </Link>

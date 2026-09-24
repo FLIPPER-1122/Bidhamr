@@ -1,7 +1,9 @@
 // Mailskabeloner til handelsflowet. Deles af cron-ruten (auktion afsluttet)
 // og server actions (pakke sendt), så layoutet kun findes ét sted.
 
-const BRAND = "#E63946";
+// Mails kan ikke bruge CSS-variabler, så farverne fra DESIGN.md staves ud her.
+const GROEN = "#1E5E4A";
+const ORANGE = "#E8772E";
 
 export const HANDEL_AFSENDER = "BidHamr <noreply@bidhamr.dk>";
 
@@ -31,7 +33,7 @@ function skabelon({
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);">
             <tr>
-              <td align="center" style="background-color:${BRAND};padding:28px 24px;">
+              <td align="center" style="background-color:${GROEN};padding:28px 24px;">
                 <span style="font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.02em;">BidHamr</span>
               </td>
             </tr>
@@ -47,7 +49,7 @@ function skabelon({
                 ${ekstra ?? ""}
                 <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:8px;">
                   <tr>
-                    <td align="center" style="border-radius:12px;background-color:${BRAND};">
+                    <td align="center" style="border-radius:12px;background-color:${ORANGE};">
                       <a href="${knapUrl}" target="_blank" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:12px;">${knapTekst}</a>
                     </td>
                   </tr>

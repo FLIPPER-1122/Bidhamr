@@ -149,7 +149,7 @@ export default function AdminSidebar({ rolle }: { rolle: StaffRole }) {
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="px-6 py-5 border-b border-white/10">
-        <span className="text-2xl font-extrabold tracking-tight" style={{ color: "#E63946" }}>
+        <span className="text-2xl font-extrabold tracking-tight" style={{ color: "var(--color-orange)" }}>
           BidHamr
         </span>
         <span className="ml-2 text-xs text-neutral-400 font-medium uppercase tracking-widest">
@@ -168,7 +168,7 @@ export default function AdminSidebar({ rolle }: { rolle: StaffRole }) {
               onClick={() => setOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 active
-                  ? "bg-[#1f2937] text-white border-l-2 border-[#E63946] pl-[10px]"
+                  ? "bg-[#1f2937] text-white border-l-2 border-orange pl-[10px]"
                   : "text-neutral-400 hover:text-white hover:bg-white/5"
               }`}
             >
@@ -206,7 +206,7 @@ export default function AdminSidebar({ rolle }: { rolle: StaffRole }) {
     <>
       {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-[#111827] border-b border-white/10 px-4 py-3 flex items-center justify-between">
-        <span className="text-xl font-extrabold" style={{ color: "#E63946" }}>BidHamr</span>
+        <span className="text-xl font-extrabold" style={{ color: "var(--color-orange)" }}>BidHamr</span>
         <button
           onClick={() => setOpen(!open)}
           className="text-neutral-400 hover:text-white p-1"

@@ -1,23 +1,235 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --brand: #e63946;
-}
+/*
+  BidHamrs designsystem – facit er DESIGN.md.
+  Alle farver, radier og afstande kommer herfra. Skriv ikke hex-værdier
+  ude i komponenterne; brug tokens, så en farveændring kun sker ét sted.
+*/
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-brand: var(--brand);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@theme {
+  /* Brand */
+  --color-groen: #1e5e4a;
+  --color-groen-mork: #154537;
+  --color-groen-lys: #e8f2ee;
+  --color-orange: #e8772e;
+  --color-orange-mork: #c75f1c;
+  --color-orange-lys: #fbefe6;
+
+  /* Neutrale */
+  --color-flade: #ffffff;
+  --color-tekst: #1a1a1a;
+  --color-tekst-daempet: #555555;
+  --color-tekst-svag: #777777;
+  --color-pladsholder: #888888;
+  --color-kant: #eeeeee;
+  --color-kant-staerk: #d6d6d6;
+  --color-skelet: #dddddd;
+
+  /* Status */
+  --color-succes-bg: #e8f2ee;
+  --color-succes-kant: #b9d8cc;
+  --color-succes-tekst: #154537;
+  --color-advarsel-bg: #fef3e2;
+  --color-advarsel-kant: #f5d9b0;
+  --color-advarsel-tekst: #8a4210;
+  --color-fejl-bg: #fdecec;
+  --color-fejl-kant: #f3c4c4;
+  --color-fejl-tekst: #a32020;
+  --color-fejl-fyldt: #a32020;
+  --color-fejl-fyldt-mork: #8a1a1a;
+  --color-info-bg: #edf3f8;
+  --color-info-kant: #c9dceb;
+  --color-info-tekst: #1f4e79;
+
+  /*
+    Overgang: 45 filer bruger endnu bg-brand/text-brand fra den gamle røde.
+    De peger nu på orange (handling), så de følger designsystemet, indtil
+    siderne redesignes i fase 3.
+  */
+  --color-brand: #e8772e;
+  --color-background: #ffffff;
+  --color-foreground: #1a1a1a;
+
+  /* Skrifttyper – variablerne sættes af next/font i layout.tsx */
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), Georgia, serif;
+
+  /* Radier (DESIGN.md afsnit 5) */
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-kort: 14px;
+  --radius-flade: 18px;
+
+  /* Skygger */
+  --shadow-kort: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.1);
+  --shadow-flyder: 0 8px 30px rgba(0, 0, 0, 0.13);
+  --shadow-stor: 0 10px 40px rgba(0, 0, 0, 0.13);
+
+  /* 4px-afstandsskala (Tailwinds standard er allerede 4px pr. trin) */
+  --spacing: 4px;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-flade);
+  color: var(--color-tekst);
+  /* Ingen font-family her: den skal komme fra font-sans, ellers slår
+     next/font-variablerne ikke igennem. */
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+}
+
+/* ---------- Knapper (DESIGN.md afsnit 6) ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding-inline: 20px;
+  border-radius: var(--radius-lg);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease-out,
+    color 160ms ease-out,
+    border-color 160ms ease-out,
+    transform 160ms ease-out;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-groen);
+  outline-offset: 2px;
+}
+
+.btn-lille {
+  height: 36px;
+  padding-inline: 16px;
+  font-size: 14px;
+}
+
+.btn-stor {
+  height: 52px;
+  padding-inline: 24px;
+}
+
+/* Primær – orange. Én pr. skærmområde. */
+.btn-primaer {
+  background-color: var(--color-orange);
+  color: #fff;
+}
+.btn-primaer:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--color-orange-mork);
+}
+.btn-primaer:active:not(:disabled) {
+  background-color: var(--color-orange-mork);
+  transform: scale(0.99);
+}
+.btn-primaer:disabled,
+.btn-primaer[aria-disabled="true"] {
+  background-color: color-mix(in srgb, var(--color-orange) 40%, white);
+  color: rgba(255, 255, 255, 0.8);
+  cursor: not-allowed;
+}
+
+/* Sekundær – grøn kant */
+.btn-sekundaer {
+  background-color: #fff;
+  color: var(--color-groen);
+  border: 1px solid var(--color-groen);
+}
+.btn-sekundaer:hover:not(:disabled) {
+  background-color: var(--color-groen-lys);
+}
+.btn-sekundaer:disabled {
+  color: var(--color-tekst-svag);
+  border-color: var(--color-kant-staerk);
+  cursor: not-allowed;
+}
+
+/* På grøn flade (hero) */
+.btn-paa-groen {
+  background-color: #fff;
+  color: var(--color-groen);
+}
+.btn-paa-groen:hover:not(:disabled) {
+  background-color: var(--color-groen-lys);
+}
+.btn-paa-groen:focus-visible {
+  outline-color: #fff;
+}
+
+/* Tertiær / tekstknap */
+.btn-tekst {
+  height: auto;
+  padding-inline: 0;
+  background: none;
+  color: var(--color-groen);
+  font-weight: 500;
+}
+.btn-tekst:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* Fare / destruktiv */
+.btn-fare {
+  background-color: #fff;
+  color: var(--color-fejl-tekst);
+  border: 1px solid var(--color-fejl-kant);
+}
+.btn-fare:hover:not(:disabled) {
+  background-color: var(--color-fejl-bg);
+}
+.btn-fare:focus-visible {
+  outline-color: var(--color-fejl-fyldt);
+}
+.btn-fare:disabled {
+  color: var(--color-tekst-svag);
+  border-color: var(--color-kant-staerk);
+  cursor: not-allowed;
+}
+
+.btn-fare-fyldt {
+  background-color: var(--color-fejl-fyldt);
+  color: #fff;
+}
+.btn-fare-fyldt:hover:not(:disabled) {
+  background-color: var(--color-fejl-fyldt-mork);
+}
+.btn-fare-fyldt:focus-visible {
+  outline-color: var(--color-fejl-fyldt);
+}
+.btn-fare-fyldt:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Loading: teksten bliver stående, spinneren lægges ved siden af, så
+   knappen ikke skifter bredde. */
+.btn-spinner {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: btn-spin 700ms linear infinite;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes scroll-karussel {
@@ -26,5 +238,15 @@ body {
   }
   to {
     transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
