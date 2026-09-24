@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import WaitlistForm from "@/components/landing/WaitlistForm";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
 
 const TRIN = [
@@ -135,12 +136,20 @@ export default function ComingSoonPage() {
                 </p>
 
                 <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <a href="#saadan" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
+                  <a href="#venteliste" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
+                    Tilmeld venteliste
+                  </a>
+                  <a href="#saadan" className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/12">
                     Se hvordan det virker
                   </a>
-                  <a href="#hvorfor" className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/12">
-                    Læs mere
-                  </a>
+                </div>
+
+                <div className="mt-8 max-w-md rounded-xl bg-white p-5 text-tekst">
+                  <h2 className="text-[17px] font-semibold">Kom med fra dag ét</h2>
+                  <p className="mt-1 text-sm text-tekst-daempet">
+                    Skriv dig op, og få besked, når vi er klar til launch.
+                  </p>
+                  <WaitlistForm />
                 </div>
 
                 <ul className="mt-8 flex flex-wrap gap-2">
@@ -313,14 +322,14 @@ export default function ComingSoonPage() {
           <div className="flex flex-col items-start gap-6 rounded-[22px] bg-groen p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-10">
             <div>
               <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/75">
-                Kom tættere på
+                Bliv en af de første
               </p>
               <h2 className="mt-2 max-w-[30ch] text-xl font-semibold text-white lg:text-[22px]">
-                Se, hvordan købere og sælgere får mere værdi ud af deres ting.
+                Vær blandt dem, der får adgang til BidHamr, når vi lancerer.
               </h2>
             </div>
-            <a href="#saadan" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
-              Se hvordan det virker
+            <a href="#top" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
+              Tilmeld venteliste
             </a>
           </div>
         </section>
@@ -346,6 +355,9 @@ export default function ComingSoonPage() {
             </a>
             <a href="#hvorfor" className="text-groen hover:underline">
               Hvorfor BidHamr
+            </a>
+            <a href="#venteliste" className="text-groen hover:underline">
+              Venteliste
             </a>
           </nav>
         </div>
