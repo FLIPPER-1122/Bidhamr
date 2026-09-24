@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import WaitlistForm from "@/components/landing/WaitlistForm";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
 
 const TRIN = [
@@ -136,11 +135,11 @@ export default function ComingSoonPage() {
                 </p>
 
                 <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <a href="#venteliste" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
-                    Tilmeld venteliste
-                  </a>
-                  <a href="#saadan" className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/12">
+                  <a href="#saadan" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
                     Se hvordan det virker
+                  </a>
+                  <a href="#hvorfor" className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/12">
+                    Læs mere
                   </a>
                 </div>
 
@@ -185,27 +184,18 @@ export default function ComingSoonPage() {
                         🎮
                       </div>
 
-                      <div className="flex-1 space-y-2">
+                      <div className="flex-1 space-y-3">
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-tekst-daempet">Nuværende bud</span>
                           <span className="font-semibold text-groen-mork">1.950 kr.</span>
                         </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-tekst-daempet">Fragt</span>
-                          <span className="font-medium text-tekst">149 kr.</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-tekst-daempet">Gebyr</span>
-                          <span className="font-medium text-tekst">39 kr.</span>
+                        <div className="rounded-lg bg-groen-lys p-2.5">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-groen-mork">
+                            Pris
+                          </p>
+                          <p className="mt-1 text-2xl font-semibold text-groen-mork">1.950 kr.</p>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="mt-4 rounded-xl bg-groen-lys p-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-groen-mork">
-                        Totalpris
-                      </p>
-                      <p className="mt-1 text-2xl font-semibold text-groen-mork">2.138 kr.</p>
                     </div>
                   </div>
 
@@ -323,14 +313,14 @@ export default function ComingSoonPage() {
           <div className="flex flex-col items-start gap-6 rounded-[22px] bg-groen p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-10">
             <div>
               <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/75">
-                Bliv en af de første
+                Kom tættere på
               </p>
               <h2 className="mt-2 max-w-[30ch] text-xl font-semibold text-white lg:text-[22px]">
-                Vær blandt dem, der får adgang først
+                Se, hvordan købere og sælgere får mere værdi ud af deres ting.
               </h2>
             </div>
-            <a href="#top" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
-              Tilmeld venteliste
+            <a href="#saadan" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
+              Se hvordan det virker
             </a>
           </div>
         </section>
@@ -356,9 +346,6 @@ export default function ComingSoonPage() {
             </a>
             <a href="#hvorfor" className="text-groen hover:underline">
               Hvorfor BidHamr
-            </a>
-            <a href="#venteliste" className="text-groen hover:underline">
-              Venteliste
             </a>
           </nav>
         </div>
