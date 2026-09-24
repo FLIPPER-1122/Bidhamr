@@ -44,3 +44,16 @@ Du (hoved-Claude) er teamleder. Når Filip siger fx "tag næste punkt på roadma
 9. Markér punktet som `[~]` (i gang) i `ROADMAP.md`. Filip sætter `[x]`, når han har godkendt og pushet.
 
 Tag ét roadmap-punkt ad gangen. Hellere færdigt og sikkert end hurtigt.
+
+## Autonom arbejdsgang
+
+Når Filip siger **"kør roadmappen"**, arbejder du dig igennem `ROADMAP.md` punkt for punkt uden at spørge, indtil du rammer et stop. Du uddelegerer, lader reviewer og tester godkende, retter deres fund og går videre til næste punkt. Du samler alt til én rapport, når du stopper.
+
+Du må træffe tekniske valg selv (filnavne, struktur, biblioteker inden for samme stack), så længe de følger `ROADMAP-BESLUTNINGER.md` og `DESIGN.md`.
+
+Du **stopper og spørger** kun, når:
+- en migration skal køres på produktionsdatabasen – saml dem, så Filip kan godkende flere på én gang
+- noget kræver en forretningsbeslutning, der ikke står i `ROADMAP-BESLUTNINGER.md`
+- reviewer finder noget kritisk, du ikke kan løse
+- du rammer et punkt, der starter med "Filip:"
+- en fase er færdig, så Filip kan teste og pushe
