@@ -65,7 +65,6 @@ export default async function AuktionPage({
     auktionErSlut && vinderBud && bruger?.id === vinderBud.bruger_id,
   );
   const erSælger = bruger?.id === auktion.bruger_id;
-  const erKøber = Boolean(vinderBud && bruger?.id === vinderBud.bruger_id);
 
   // Handelstilstand: e-money-afregningen opretter en handel ved auktionsluk.
   // Betalingen er dermed allerede sket - der er intet "betal nu"-trin.
