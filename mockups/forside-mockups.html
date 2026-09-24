@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<title>BidHamr – forside-mockups</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Inter, system-ui, sans-serif; background: #e9e9ec; color: #1a1a1a; }
+  .label { max-width: 1280px; margin: 48px auto 12px; padding: 0 24px; }
+  .label h2 { font-size: 22px; }
+  .label p { color: #555; margin-top: 4px; }
+  .swatches { display: flex; gap: 8px; margin-top: 10px; }
+  .swatches span { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #0002; }
+  .site { max-width: 1280px; margin: 0 auto; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 40px #0002; }
+
+  header { display: flex; align-items: center; gap: 24px; padding: 16px 32px; border-bottom: 1px solid #eee; }
+  .logo { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: var(--p); }
+  .search { flex: 1; display: flex; align-items: center; border: 1.5px solid #d6d6d6; border-radius: 999px; padding: 10px 18px; color: #888; font-size: 15px; }
+  .search b { margin-left: auto; width: 34px; height: 34px; border-radius: 50%; background: var(--p); display: grid; place-items: center; color: #fff; font-size: 16px; margin-right: -10px; }
+  .login { font-size: 14px; font-weight: 500; color: #333; }
+  .sell { background: var(--p); color: #fff; padding: 11px 20px; border-radius: 10px; font-weight: 600; font-size: 14px; }
+  nav { display: flex; gap: 28px; padding: 12px 32px; font-size: 14px; color: #444; border-bottom: 1px solid #eee; }
+
+  .hero { position: relative; height: 460px; background: var(--heroBg) center/cover no-repeat; display: flex; align-items: center; padding: 0 64px; }
+  .hero-box { background: #fff; border-radius: 16px; padding: 36px; width: 420px; box-shadow: 0 8px 30px #0002; }
+  .hero-box h1 { font-size: 30px; line-height: 1.2; font-weight: 700; letter-spacing: -0.5px; }
+  .hero-box p { color: #555; margin: 12px 0 22px; line-height: 1.5; }
+  .btn { display: block; text-align: center; background: var(--p); color: #fff; padding: 14px; border-radius: 10px; font-weight: 600; }
+  .link { display: block; text-align: center; color: var(--p); margin-top: 14px; font-weight: 500; font-size: 14px; }
+
+  .trust { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--soft); }
+  .trust div { padding: 20px 24px; display: flex; gap: 12px; align-items: center; font-size: 14px; color: var(--pd); }
+  .trust i { width: 38px; height: 38px; flex: none; border-radius: 10px; background: #fff; display: grid; place-items: center; font-style: normal; font-size: 18px; }
+  .trust b { display: block; font-size: 15px; }
+
+  section { padding: 40px 32px 8px; }
+  section h3 { font-size: 22px; margin-bottom: 18px; display: flex; align-items: baseline; gap: 12px; }
+  section h3 a { font-size: 14px; color: var(--p); font-weight: 500; margin-left: auto; }
+  .cats { display: grid; grid-template-columns: repeat(8, 1fr); gap: 12px; }
+  .cat { text-align: center; font-size: 13px; color: #333; }
+  .cat i { display: grid; place-items: center; height: 64px; border-radius: 14px; background: var(--soft); color: var(--pd); font-style: normal; font-size: 24px; margin-bottom: 8px; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; padding-bottom: 32px; }
+  .card { border-radius: 14px; overflow: hidden; border: 1px solid #eee; }
+  .img { height: 190px; background: #ddd center/cover; position: relative; }
+  .timer { position: absolute; left: 10px; bottom: 10px; background: #fff; color: #111; font-size: 12px; font-weight: 600; padding: 5px 9px; border-radius: 999px; }
+  .timer.urgent { background: var(--p); color: #fff; }
+  .card .body { padding: 12px 14px 16px; }
+  .card .t { font-size: 14px; color: #333; }
+  .card .pr { font-size: 18px; font-weight: 700; margin-top: 6px; }
+  .card .b { font-size: 12px; color: #777; margin-top: 2px; }
+
+  .v2 .hero { padding: 0; align-items: stretch; height: 440px; margin: 24px 32px 0; border-radius: 18px; overflow: hidden; }
+  .v2 .hero-split { flex: 1; background: var(--p); color: #fff; padding: 56px; display: flex; flex-direction: column; justify-content: center; }
+  .v2 .hero-split h1 { font-family: Fraunces, serif; font-size: 44px; line-height: 1.1; font-weight: 600; }
+  .v2 .hero-split p { opacity: .85; margin: 16px 0 26px; font-size: 17px; line-height: 1.5; }
+  .v2 .hero-split .btn { background: #fff; color: var(--p); width: 200px; border-radius: 999px; }
+  .v2 .hero-img { flex: 1; background: var(--heroBg) center/cover; }
+  .v2 .trust { margin: 20px 32px 0; border-radius: 14px; }
+
+  .v3 .hero { justify-content: center; text-align: center; height: 400px; background-color: #333; }
+  .v3 .hero::before { content: ""; position: absolute; inset: 0; background: #0006; }
+  .v3 .hero-center { position: relative; color: #fff; width: 720px; }
+  .v3 .hero-center h1 { font-size: 44px; font-weight: 700; letter-spacing: -1px; }
+  .v3 .hero-center p { margin: 10px 0 24px; font-size: 18px; opacity: .9; }
+  .v3 .bigsearch { background: #fff; border-radius: 12px; padding: 16px 20px; color: #888; text-align: left; display: flex; }
+  .v3 .bigsearch b { margin-left: auto; background: var(--p); color: #fff; padding: 0 18px; border-radius: 8px; display: grid; place-items: center; margin: -8px -12px -8px auto; }
+  .v3 .chips { display: flex; gap: 8px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+  .v3 .chips span { background: #ffffffdd; color: #222; font-size: 13px; padding: 6px 12px; border-radius: 999px; }
+
+  .v4 .hero { padding: 0; align-items: stretch; height: 460px; margin: 24px 32px 0; border-radius: 18px; overflow: hidden; }
+  .v4 .hero-split { flex: 1.1; background: var(--panel); color: #fff; padding: 52px; display: flex; flex-direction: column; justify-content: center; }
+  .v4 .hero-split h1 { font-family: Fraunces, serif; font-size: 42px; line-height: 1.1; font-weight: 600; }
+  .v4 .hero-split p { opacity: .85; margin: 14px 0 22px; font-size: 17px; line-height: 1.5; }
+  .v4 .bigsearch { background: #fff; border-radius: 12px; padding: 16px 20px; color: #888; display: flex; }
+  .v4 .bigsearch b { background: var(--p); color: #fff; padding: 0 18px; border-radius: 8px; display: grid; place-items: center; margin: -8px -12px -8px auto; }
+  .v4 .chips { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .v4 .chips span { background: #ffffff22; border: 1px solid #ffffff44; color: #fff; font-size: 13px; padding: 6px 12px; border-radius: 999px; }
+  .v4 .hero-sell { margin-top: 22px; font-size: 14px; opacity: .9; }
+  .v4 .hero-sell a { color: #fff; font-weight: 600; text-decoration: underline; }
+  .v4 .hero-img { flex: 1; background: var(--heroBg) center/cover; }
+  .v4 .trust { margin: 20px 32px 0; border-radius: 14px; }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script>
+const IMG = {
+  hero1: "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=1600&q=70",
+  hero2: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1200&q=70",
+  hero3: "https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=1600&q=70",
+};
+const VARER = [
+  ["Vintage Omega Seamaster", "2.450 kr", "14 bud", "2t 12m", true, "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=600&q=70"],
+  ["Sony PlayStation 5 + 2 controllere", "3.100 kr", "22 bud", "5t 40m", false, "https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=600&q=70"],
+  ["Hans Wegner stol, eg", "1.875 kr", "9 bud", "1d 3t", false, "https://images.unsplash.com/photo-1503602642458-232111445657?w=600&q=70"],
+  ["Canon AE-1 analogt kamera", "980 kr", "11 bud", "34m", true, "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600&q=70"],
+];
+const ic = (n) => `<span class="ti ti-${n}"></span>`;
+const KAT = [[ic("car"),"Biler"],[ic("shirt"),"Tøj"],[ic("building-castle"),"Antik"],[ic("sofa"),"Bolig"],[ic("device-gamepad-2"),"Gaming"],[ic("clock"),"Ure"],[ic("camera"),"Elektronik"],[ic("horse-toy"),"Børn"]];
+
+const header = () => `
+  <header>
+    <div class="logo">BidHamr</div>
+    <div class="search">Søg efter alt fra ure til sofaer…<b>${ic("search")}</b></div>
+    <span class="login">Log ind</span>
+    <span class="sell">Sælg nu</span>
+  </header>
+  <nav><span>Alle kategorier ▾</span><span>Slutter snart</span><span>Nye auktioner</span><span>Elektronik</span><span>Bolig</span><span>Mode</span><span>Samlerobjekter</span><span>Sådan virker det</span></nav>`;
+
+const trust = () => `
+  <div class="trust">
+    <div><i>${ic("shield-check")}</i><span><b>Købersikring</b>Pengene holdes, til du har godkendt varen</span></div>
+    <div><i>${ic("id-badge-2")}</i><span><b>MitID-verificeret</b>Alle brugere er ægte personer</span></div>
+    <div><i>${ic("truck-delivery")}</i><span><b>Fragt med sporing</b>Label direkte i appen</span></div>
+    <div><i>${ic("clock-check")}</i><span><b>Fair budgivning</b>Ingen sniping i sidste sekund</span></div>
+  </div>`;
+
+const cats = () => `
+  <section><h3>Udforsk kategorier</h3>
+    <div class="cats">${KAT.map(([i,n]) => `<div class="cat"><i>${i}</i>${n}</div>`).join("")}</div>
+  </section>`;
+
+const cards = (titel) => `
+  <section><h3>${titel}<a>Se alle →</a></h3>
+    <div class="cards">${VARER.map(([t,p,b,tid,u,img]) => `
+      <div class="card"><div class="img" style="background-image:url(${img})"><span class="timer ${u?'urgent':''}">${ic("clock")} ${tid}</span></div>
+      <div class="body"><div class="t">${t}</div><div class="pr">${p}</div><div class="b">${b}</div></div></div>`).join("")}
+    </div>
+  </section>`;
+
+const blandHero = (titel, tekst) => `<div class="hero"><div class="hero-split">
+  <h1>${titel}</h1><p>${tekst}</p>
+  <div class="bigsearch">Hvad leder du efter?<b>Søg</b></div>
+  <div class="chips"><span>PlayStation 5</span><span>Omega</span><span>Wegner</span><span>Lego</span><span>Royal Copenhagen</span></div>
+  <div class="hero-sell">Har du noget at sælge? <a>Opret en auktion på 2 minutter</a></div>
+  </div><div class="hero-img" style="--heroBg:#d8e3dc url(${IMG.hero2})"></div></div>` + trust();
+
+const V = [
+  {
+    navn: "F · Blanding B+C, lilla", beskrivelse: "Samme opbygning som D og E, men hele vejen i lilla: dyb lilla flade, klar lilla på knapper og lys lilla i baggrunde.",
+    p: "#6D4AE8", pd: "#3F2A91", soft: "#F1EDFD", panel: "#2B1D5C", farver: ["#2B1D5C","#6D4AE8","#F1EDFD","#1a1a1a"], cls: "v4",
+    hero: () => blandHero("Gode ting fortjener et nyt hjem", "Byd, vind og handl trygt med verificerede danskere."),
+  },
+  {
+    navn: "D · Blanding B+C, grøn", beskrivelse: "Delt hero fra B med søgefelt og populære søgninger fra C. Skovgrøn med varm orange som knapfarve.",
+    p: "#E8772E", pd: "#154537", soft: "#E8F2EE", panel: "#1E5E4A", farver: ["#1E5E4A","#E8772E","#E8F2EE","#1a1a1a"], cls: "v4",
+    hero: () => blandHero("Gode ting fortjener et nyt hjem", "Byd, vind og handl trygt med verificerede danskere."),
+  },
+  {
+    navn: "E · Blanding B+C, mørk", beskrivelse: "Samme opbygning, men med det mørke, professionelle udtryk fra C.",
+    p: "#E8772E", pd: "#8A4210", soft: "#FBEFE6", panel: "#1C1C22", farver: ["#1C1C22","#E8772E","#FBEFE6","#ffffff"], cls: "v4",
+    hero: () => blandHero("Danmarks trygge auktionshus", "Tusindvis af auktioner. Købersikring på hver eneste handel."),
+  },
+  {
+    navn: "A · Nordisk blå", beskrivelse: "Vinted-agtig: fotografisk hero med hvid boks. Dyb blå signalerer tillid som en bank.",
+    p: "#1F4E79", pd: "#163A5A", soft: "#EAF1F8", farver: ["#1F4E79","#EAF1F8","#F4B942","#1a1a1a"],
+    hero: () => `<div class="hero" style="--heroBg:#cfd8e3 url(${IMG.hero1})">
+      <div class="hero-box"><h1>Sælg det, du ikke bruger – trygt og nemt</h1>
+      <p>Læg din vare på auktion på 2 minutter. Vi holder pengene, til køberen har fået den.</p>
+      <a class="btn">Sælg nu</a><a class="link">Sådan virker det</a></div></div>` + trust(),
+  },
+  {
+    navn: "B · Skovgrøn", beskrivelse: "Etsy-agtig: delt hero med farveflade og billede. Grøn signalerer genbrug og ro.",
+    p: "#1E5E4A", pd: "#154537", soft: "#E8F2EE", farver: ["#1E5E4A","#E8F2EE","#F2E8DA","#1a1a1a"], cls: "v2",
+    hero: () => `<div class="hero"><div class="hero-split"><h1>Gode ting fortjener et nyt hjem</h1>
+      <p>Byd, vind og handl trygt med verificerede danskere.</p><a class="btn">Se auktioner</a></div>
+      <div class="hero-img" style="--heroBg:#d8e3dc url(${IMG.hero2})"></div></div>` + trust(),
+  },
+  {
+    navn: "C · Blæk og orange", beskrivelse: "Tradera-agtig: søgning i centrum af hero. Mørk og professionel med varm orange accent.",
+    p: "#E8772E", pd: "#8A4210", soft: "#FBEFE6", farver: ["#1C1C22","#E8772E","#FBEFE6","#ffffff"], cls: "v3",
+    hero: () => `<div class="hero" style="--heroBg:url(${IMG.hero3})"><div class="hero-center">
+      <h1>Danmarks trygge auktionshus</h1><p>Tusindvis af auktioner. Købersikring på hver eneste handel.</p>
+      <div class="bigsearch">Hvad leder du efter?<b>Søg</b></div>
+      <div class="chips"><span>PlayStation 5</span><span>Omega</span><span>Wegner</span><span>Lego</span><span>Royal Copenhagen</span></div>
+      </div></div>` + trust(),
+  },
+];
+
+document.getElementById("root").innerHTML = V.map(v => `
+  <div class="label"><h2>${v.navn}</h2><p>${v.beskrivelse}</p>
+    <div class="swatches">${v.farver.map(f => `<span style="background:${f}"></span>`).join("")}</div></div>
+  <div class="site ${v.cls||''}" style="--p:${v.p};--pd:${v.pd};--soft:${v.soft};--panel:${v.panel||v.p}">
+    ${header()}${v.hero()}${cats()}${cards("Slutter snart")}
+  </div>`).join("") + `<div style="height:60px"></div>`;
+</script>
+</body>
+</html>
