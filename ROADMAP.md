@@ -16,10 +16,10 @@ Formål: rydde op, så agent-teamet kan arbejde sikkert og ens.
 - [ ] Erstat den ødelagte `CLAUDE.md` i hamr (indeholder PDF-data) med en ren markdown-fil
 - [ ] Skriv `PRODUKT.md` (produktretning: Tradera for auktionen, Vinted for handlen, egne regler)
 - [ ] Skriv `DESIGN.md` (designsystem ud fra mockup D: farver, skrifttyper, knapper, kort, afstande)
-- [ ] Sæt agent-team op i `.claude/agents/` (backend, frontend, reviewer, tester) + chef-rolle i CLAUDE.md
+- [ ] Sæt agent-team op i `.claude/agents/` (backend, betaling, frontend, indhold, reviewer, tester) + chef-rolle i CLAUDE.md
 - [ ] Agenterne arbejder på egne git-branches – Filip merger og pusher
 - [ ] Ret fejl: bedømmelser kan i dag gives af alle til alle (kun køber → sælger efter handel)
-- [ ] Ret gebyr i koden: sælgergebyr fra 10% til 5% (`wallet_udbetal_saelger`, `admin_frigiv_handel`)
+- [ ] Ret sælgergebyr fra 10% til 5% i `admin_frigiv_handel` og alle steder, **brugerne kan se det** (mail til sælger, bekræftelsesdialog på Sager-siden, kommentar i admin-dashboard). Wallet-koden (`wallet_udbetal_saelger`, `src/lib/wallet.ts`) rettes IKKE – den fjernes i fase 1
 - [ ] **Filip – afklar TIDLIGT med rådgiver/advokat (kan ændre hvordan pengeflowet bygges):**
   - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – køber betaler med gemt kort, når han vinder.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Afventer svar fra Stripes team på den præcise opsætning. Tag derefter svaret med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
   - BESLUTTET: Det hedder **"BidHamr Beskyttelse"** – aldrig "forsikring" nogen steder på siden, i mails eller i koden
