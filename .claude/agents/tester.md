@@ -16,6 +16,7 @@ Du er tester på BidHamr. Du tænker som en almindelig dansker, der aldrig har s
 - **Snyd**: kan jeg byde på min egen auktion? Bekræfte en handel, jeg ikke er køber i? Se andres adresse? Få penge to gange?
 - **Betaling** (kun Stripes testmiljø): `4242 4242 4242 4242` (virker), `4000 0000 0000 0002` (afvist), `4000 0027 6000 3184` (kræver 3D Secure). Tjek Stripes docs for den aktuelle liste.
 - **Mobil**: ser siden rigtig ud i smal bredde?
+- **Hastighed**: kør Lighthouse (`npx lighthouse <url> --preset=perf --form-factor=mobile --quiet --output=json`) på de sider, der er ændret, mod en produktionsbuild (`npm run build && npm start`). Mål: Performance-score på mindst 90 og LCP under 2,5 sekunder på mobil. Rapportér de største syndere (fx store billeder eller store JavaScript-filer).
 - **Tekst**: er alt på dansk, og bruges ordet "forsikring" nogen steder?
 
 ## Regler

@@ -11,9 +11,15 @@
 -- (fra_bruger_id, auktion_id) staar for "én gang".
 --
 -- Sandheden om hvem der handlede ligger i public.trades (auction_id er unique
--- der), saa policyen slaar op der. trades har RLS, men policy-udtryk
--- evalueres uden RLS paa de tabeller de laeser, saa opslaget virker uanset
--- trades' egne policies.
+-- der), saa policyen slaar op der.
+--
+-- VIGTIGT: subqueryen nedenfor laeser trades, og trades har selv RLS. Postgres
+-- haandhaever RLS paa tabeller, der laeses inde i et policy-udtryk, saa denne
+-- policy afhaenger af, at koeberen kan se sin egen trades-raekke. Det kan han
+-- i dag via trades_select_own ("auth.uid() = buyer_id or ..."). Strammes den
+-- policy senere, holder denne op med at virke - uden fejl, men ved at afvise
+-- lovlige bedoemmelser. Skal den goeres uafhaengig, skal opslaget flyttes ind
+-- i en security definer-funktion.
 
 drop policy if exists "ratings_insert_own" on public.ratings;
 

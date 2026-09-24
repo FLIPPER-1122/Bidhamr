@@ -28,3 +28,11 @@ Du er frontend-udvikler på BidHamr (Next.js 16, React 19, Tailwind 4).
 
 ## Når du er færdig
 Fortæl chefen hvilke sider du har ændret, og hvordan man ser dem (URL). Nævn hvis noget ikke er testet på mobil.
+
+## Hastighed (skal overholdes fra starten)
+- Brug altid Next.js' billedkomponent (next/image) med korrekt størrelse og lazy loading. Billeder uploadet af brugere komprimeres og skaleres ned, før de vises.
+- Lister (auktioner, handler, bud) hentes med sidetal/"vis flere" – hent aldrig hundredvis af rækker, når der vises 20.
+- Hent kun de kolonner, siden bruger (ingen select("*")).
+- Foretræk server-komponenter. Brug kun "use client", hvor der er brug for interaktion, så der sendes mindst muligt JavaScript til browseren.
+- Tunge biblioteker indlæses kun på de sider, der bruger dem.
+- Omskriv ikke kode, der virker, kun for at gøre den "smartere" – optimér kun, hvor der er et målt problem.
