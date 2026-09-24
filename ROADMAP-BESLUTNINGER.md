@@ -3,7 +3,7 @@
 > **VIGTIGT – gælder hele dokumentet:**
 > - **Stripe holder brugernes penge (Stripe Connect), ikke BidHamr.**
 > - **Der er INGEN købersaldo/wallet.** Køber gemmer et kort ved oprettelse, og kortet trækkes automatisk, når han vinder. Fejler betalingen, har han 24 timer. Hvor der står "wallet" nedenfor, er det forældet.
-> - Ordet "forsikring"/"købsforsikring" bruges IKKE. Det hedder **"BidHamr Beskyttelse"** overalt (ikke "garanti" og ikke "forsikring").
+> - Tilkøbet for køberen hedder **"BidHamr Beskyttelse"** overalt.
 
 Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md og PRODUKT.md.
 
@@ -23,22 +23,22 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 
 ## 3. Gebyrer
 - **5% for sælger og 5% for køber**, altid. Intet minimum eller maksimum.
-- Koden skal rettes: sælgergebyret er i dag 10% (wallet_udbetal_saelger og admin_frigiv_handel).
+- Rettet: sælgergebyret er nu 5% i koden.
 
-## 4. Købsforsikring (tilkøb for køber)
+## 4. BidHamr Beskyttelse (tilkøb for køber)
 - Frivilligt tilkøb på **3%** oveni købergebyret, **minimum 20 kr og maksimum 250 kr**.
 - Dækker, hvis varen er **gået i stykker under forsendelsen**: køberen kan oprette en sag og sende varen retur.
-- Uden forsikring: en vare, der går i stykker undervejs, kan ikke sendes retur.
+- Uden BidHamr Beskyttelse: en vare, der går i stykker undervejs, kan ikke sendes retur.
 - Prisen på 3% er midlertidig. Der skal laves et bedre prissystem senere.
-- **Uden forsikring hjælper BidHamr ikke med retur**, heller ikke hvis varen ikke er som beskrevet. Så må køber og sælger selv løse det.
-- **Med forsikring** går BidHamr ind og håndterer sagen for køberen.
-- **Svindel-undtagelse:** Åbenlys svindel (tom pakke, helt anden vare, falsk kopi solgt som ægte, vare aldrig sendt) giver altid en sag, med eller uden forsikring. Pengene fryses.
+- **Uden BidHamr Beskyttelse hjælper BidHamr ikke med retur**, heller ikke hvis varen ikke er som beskrevet. Så må køber og sælger selv løse det.
+- **Med BidHamr Beskyttelse** går BidHamr ind og håndterer sagen for køberen.
+- **Svindel-undtagelse:** Åbenlys svindel (tom pakke, helt anden vare, falsk kopi solgt som ægte, vare aldrig sendt) giver altid en sag, med eller uden BidHamr Beskyttelse. Pengene fryses.
 - **Køber-svindel:** Køber skal uploade billeder af pakke, label og indhold inden for 48 timer for at oprette en sag. BidHamr vurderer ud fra beviser og historik. Står ord mod ord, og sporingen viser levering: sælger får pengene, og køber henvises til politiet.
 - Svindlere (køber eller sælger) får kontoen lukket permanent. MitID forhindrer ny profil.
 - **Pakkebilleder (krævet):** I "Send pakke"-trinnet tager sælgeren billeder med kameraet direkte i appen/på siden (ikke fra kamerarullen) af varen pakket ind i den åbne kasse og af den lukkede kasse med label. Formålet er at dokumentere **indpakningen** – billederne beviser ikke, at varen blev i kassen.
 - **Sælgeren har altid ansvaret for at pakke varen forsvarligt** (fx bobleplast om en telefon).
-- Skadet vare **uden forsikring**: køber og sælger må selv blive enige. BidHamr blander sig ikke.
-- Skadet vare **med forsikring**: BidHamr løser sagen for køberen. Det er præcis det, forsikringen betales for. Pakkebillederne bruges til at vurdere, om sælgeren har pakket ordentligt.
+- Skadet vare **uden BidHamr Beskyttelse**: køber og sælger må selv blive enige. BidHamr blander sig ikke.
+- Skadet vare **med BidHamr Beskyttelse**: BidHamr løser sagen for køberen. Det er præcis det, beskyttelsen betales for. Pakkebillederne bruges til at vurdere, om sælgeren har pakket ordentligt.
 - Ingen af parterne hæftes for ekstra penge.
 - **Advarselssystem for dårlig indpakning:** 1. gang = påmindelse til sælgeren. 2. gang og derefter = en advarsel hver gang. **3 advarsler = profilen lukkes permanent.**
 - ÅBENT: Kan GLS' målte vægt bruges som bevis? Spørges på møde med GLS/Shipmondo.
@@ -93,7 +93,7 @@ Brugeren får besked når:
 ## 9. Hele flowet efter auktionen (lanceringsklart)
 - Alt fra auktionen slutter til handlen er afsluttet skal være **helt færdigt og lanceringsklart**.
 - **Sikkerheden skal i top**: ingen huller i pengestrømmen, ingen handlinger en bruger kan lave på andres vegne. Gennemgås af reviewer-agent.
-- Pengene skal flyde korrekt igennem hele vejen (køb, gebyrer, forsikring, frigivelse, refusion). **Vi kører stadig med testpenge.**
+- Pengene skal flyde korrekt igennem hele vejen (køb, gebyrer, BidHamr Beskyttelse, frigivelse, refusion). **Vi kører stadig med testpenge.**
 - Mails ved alle trin skal være på plads og hænge sammen med notifikationsindstillingerne (punkt 5).
 - **Appen** skal have det samme flow som hjemmesiden, inkl. **statistikker** for brugeren.
 - **Live statistikker under profilen** (web og app):
