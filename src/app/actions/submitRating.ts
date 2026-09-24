@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
 // Kun køberen i en handel må bedømme, og kun handlens sælger, én gang.
-// Samme regel håndhæves i RLS (migration 20260925000000_stram_ratings_rls.sql).
+// Samme regel håndhæves i RLS (migration 20260925010000_stram_ratings_rls.sql).
 // Tjekket her findes for at give en pæn dansk fejlbesked i stedet for en rå
 // RLS-fejl – det er ikke sikkerhedslaget.
 export async function submitRating(formData: FormData) {
