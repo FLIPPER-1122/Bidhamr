@@ -128,7 +128,7 @@ export default function RatingForm({
         <button
           type="submit"
           disabled={isPending || valgtStjerner === 0}
-          className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38] disabled:opacity-50"
+          className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
         >
           {isPending ? "Gemmer…" : "Afgiv bedømmelse"}
         </button>

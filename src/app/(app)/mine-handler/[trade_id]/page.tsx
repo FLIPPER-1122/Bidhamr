@@ -121,7 +121,7 @@ export default async function HandelDetaljePage({
                   key={trin.vaerdi}
                   className={`flex-1 rounded-lg border px-3 py-2 text-center text-xs font-medium ${
                     naaet
-                      ? "border-brand bg-[#FDECEE] text-brand"
+                      ? "border-brand bg-orange-lys text-brand"
                       : "border-neutral-200 text-neutral-400"
                   }`}
                 >

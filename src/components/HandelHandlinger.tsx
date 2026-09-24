@@ -39,7 +39,7 @@ export function SendPakkeForm({ tradeId }: { tradeId: string }) {
       <button
         type="submit"
         disabled={pending || !tracking.trim()}
-        className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38] disabled:opacity-50"
+        className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
       >
         {pending ? "Gemmer…" : "Send pakke"}
       </button>
@@ -70,7 +70,7 @@ export function MarkerModtagetKnap({ tradeId }: { tradeId: string }) {
         type="button"
         onClick={handleClick}
         disabled={pending}
-        className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38] disabled:opacity-50"
+        className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
       >
         {pending ? "Gemmer…" : "Jeg har modtaget pakken"}
       </button>

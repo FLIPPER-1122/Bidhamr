@@ -38,7 +38,7 @@ export default function BarChart({ data, title }: BarChartProps) {
                     y={y}
                     width={barWidth}
                     height={barH}
-                    fill="#E63946"
+                    fill="var(--color-orange)"
                     rx={2}
                     opacity={0.85}
                   />

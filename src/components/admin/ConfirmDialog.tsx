@@ -131,7 +131,7 @@ export default function ConfirmDialog({
                 <button
                   type="submit"
                   disabled={pending}
-                  className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38] transition-colors disabled:opacity-50"
+                  className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork transition-colors disabled:opacity-50"
                 >
                   {pending ? "Arbejder…" : confirmLabel}
                 </button>

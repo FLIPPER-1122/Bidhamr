@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/LogoutButton";
 import { kr } from "@/lib/wallet";
@@ -31,16 +32,28 @@ export default async function Header() {
   }
 
   return (
-    <header className="bg-white shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
-      <div className="flex min-h-[78px] items-center gap-8 px-8 py-4">
-        <Link href="/" className="text-3xl font-extrabold tracking-tight text-brand">
-          BidHamr
+    <header className="border-b border-kant bg-white">
+      <div className="mx-auto flex min-h-[78px] max-w-[1280px] flex-wrap items-center gap-4 px-4 py-4 sm:gap-8 sm:px-6 lg:px-8">
+        <Link
+          href="/"
+          aria-label="BidHamr - til forsiden"
+          className="shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+        >
+          <Image
+            src="/brand/bidhamr-logo.svg"
+            alt="BidHamr"
+            width={230}
+            height={60}
+            priority
+            unoptimized
+            className="h-9 w-auto"
+          />
         </Link>
 
         <nav className="hidden items-center gap-6 sm:flex">
           <Link
             href="/auktioner"
-            className="text-sm text-[#6B7280] hover:text-brand"
+            className="text-sm font-medium text-tekst-daempet hover:text-groen"
           >
             Alle auktioner
           </Link>
@@ -51,7 +64,7 @@ export default async function Header() {
           <button
             type="submit"
             aria-label="Søg"
-            className="absolute top-1/2 left-5 -translate-y-1/2 text-brand"
+            className="absolute top-1/2 left-5 -translate-y-1/2 text-groen"
           >
             <svg
               viewBox="0 0 24 24"
@@ -68,14 +81,14 @@ export default async function Header() {
             type="search"
             name="q"
             placeholder="Søg efter varer…"
-            className="w-full rounded-full border border-brand bg-white py-2.5 pl-11 pr-5 text-sm text-neutral-900 outline-none placeholder:text-[#6B7280] focus:ring-2 focus:ring-brand"
+            className="h-11 w-full rounded-full border-[1.5px] border-kant-staerk bg-white py-2.5 pl-11 pr-5 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:outline-2 focus:outline-groen/25"
           />
         </form>
 
         <div className="flex items-center gap-6">
           <Link
             href="/favoritter"
-            className="hidden items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand sm:flex"
+            className="hidden items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen sm:flex"
           >
             <svg
               viewBox="0 0 24 24"
@@ -98,7 +111,7 @@ export default async function Header() {
               {erAdmin && (
                 <Link
                   href="/admin"
-                  className="hidden items-center gap-1.5 text-sm font-medium text-brand hover:underline sm:flex"
+                  className="hidden items-center gap-1.5 text-sm font-medium text-groen hover:underline sm:flex"
                 >
                   <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -110,7 +123,7 @@ export default async function Header() {
                 <Link
                   href="/konto"
                   title="Til rådighed — klik for at indbetale"
-                  className="flex items-center gap-1.5 rounded-full border border-brand bg-red-50 px-3 py-1.5 text-sm font-semibold text-brand hover:bg-brand hover:text-white"
+                  className="flex items-center gap-1.5 rounded-full border border-groen bg-groen-lys px-3 py-1.5 text-sm font-semibold text-groen hover:bg-groen hover:text-white"
                 >
                   <span aria-hidden="true">💰</span>
                   {kr(saldo)}
@@ -118,7 +131,7 @@ export default async function Header() {
               )}
               <Link
                 href="/konto"
-                className="hidden items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand sm:flex"
+                className="hidden items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen sm:flex"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -137,7 +150,7 @@ export default async function Header() {
               </Link>
               <Link
                 href="/mine-handler"
-                className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"
+                className="flex items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -156,7 +169,7 @@ export default async function Header() {
               </Link>
               <Link
                 href="/profil/mig"
-                className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"
+                className="flex items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -178,7 +191,7 @@ export default async function Header() {
           ) : (
             <Link
               href="/login"
-              className="flex items-center gap-1.5 text-sm text-[#6B7280] hover:text-brand"
+              className="flex items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -199,7 +212,7 @@ export default async function Header() {
 
           <Link
             href="/opret-auktion"
-            className="bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38]"
+            className="btn btn-primaer shrink-0"
           >
             Opret auktion
           </Link>

@@ -439,7 +439,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-lg bg-brand px-4 py-3 text-sm font-semibold text-white hover:bg-[#d62b38] disabled:opacity-50"
+        className="w-full rounded-lg bg-brand px-4 py-3 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
       >
         {loading ? "Opretter auktion…" : "Opret auktion"}
       </button>

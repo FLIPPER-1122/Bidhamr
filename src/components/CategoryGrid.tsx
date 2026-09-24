@@ -60,7 +60,7 @@ export default function CategoryGrid({
         const aktiv = valgt === kategori;
         const fælles = `flex flex-col items-center gap-2 rounded-xl border p-4 text-center transition-colors ${
           aktiv
-            ? "border-brand bg-[#FDECEE] text-brand"
+            ? "border-brand bg-orange-lys text-brand"
             : "border-neutral-200 text-neutral-700 hover:border-brand hover:text-brand"
         }`;
 

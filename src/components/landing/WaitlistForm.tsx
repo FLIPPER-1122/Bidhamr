@@ -60,30 +60,41 @@ export default function WaitlistForm() {
             setError(null);
             setSuccess(false);
           }}
-          className={`min-w-0 flex-1 rounded-full border px-4 py-3.5 text-sm text-neutral-900 outline-none transition-colors focus:ring-2 focus:ring-brand ${
-            error ? "border-brand" : "border-neutral-200 focus:border-brand"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "email-fejl" : "email-hjaelp"}
+          className={`h-13 min-w-0 flex-1 rounded-xl border bg-white px-4 text-[15px] text-tekst outline-none transition-colors placeholder:text-pladsholder focus:border-groen focus:outline-2 focus:outline-groen/25 ${
+            error ? "border-fejl-kant" : "border-kant-staerk hover:border-[#BFBFBF]"
           }`}
         />
         <button
           type="submit"
           disabled={loading}
-          className="shrink-0 rounded-full bg-brand px-6 py-3.5 text-sm font-semibold text-white hover:bg-[#c62832] disabled:opacity-50"
+          aria-busy={loading}
+          className="btn btn-primaer btn-stor shrink-0"
         >
-          {loading ? "Tilmelder…" : "Tilmeld venteliste"}
+          {loading && <span className="btn-spinner" aria-hidden />}
+          Tilmeld venteliste
         </button>
       </div>
 
-      <p className="mt-3 text-[13px] text-neutral-400">
+      <p id="email-hjaelp" className="mt-3 text-[13px] text-tekst-daempet">
         Ingen spam. Vi skriver kun, når vi er klar til launch.
       </p>
 
       {success && (
-        <p className="mt-3 text-sm font-semibold text-emerald-600" role="status">
+        <p
+          className="mt-3 rounded-xl border border-succes-kant bg-succes-bg px-4 py-3 text-sm font-medium text-succes-tekst"
+          role="status"
+        >
           Tak — du er på ventelisten!
         </p>
       )}
       {error && (
-        <p className="mt-3 text-[13px] text-brand" role="alert">
+        <p
+          id="email-fejl"
+          className="mt-3 text-[13px] font-medium text-fejl-tekst"
+          role="alert"
+        >
           {error}
         </p>
       )}

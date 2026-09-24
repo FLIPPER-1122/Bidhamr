@@ -37,7 +37,7 @@ export default function AdminFilters({ sortOptions, searchPlaceholder = "Søg...
         onChange={(e) => {
           router.push(pathname + "?" + createQueryString({ q: e.target.value }));
         }}
-        className="border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E63946] flex-1"
+        className="border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange flex-1"
       />
       {sortOptions.length > 0 && (
         <select
@@ -45,7 +45,7 @@ export default function AdminFilters({ sortOptions, searchPlaceholder = "Søg...
           onChange={(e) => {
             router.push(pathname + "?" + createQueryString({ sort: e.target.value }));
           }}
-          className="border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E63946] bg-white"
+          className="border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange bg-white"
         >
           <option value="">Sorter</option>
           {sortOptions.map((opt) => (

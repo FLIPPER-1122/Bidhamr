@@ -81,7 +81,7 @@ export default function NulstilAdgangskodePage() {
           </p>
           <Link
             href="/login"
-            className="mt-6 inline-block rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38]"
+            className="mt-6 inline-block rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork"
           >
             Gå til login nu
           </Link>
@@ -162,7 +162,7 @@ export default function NulstilAdgangskodePage() {
             <button
               type="submit"
               disabled={loading || !klar || (!!passwordGentag && password !== passwordGentag)}
-              className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38] disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? "Gemmer…" : "Gem ny adgangskode"}
             </button>

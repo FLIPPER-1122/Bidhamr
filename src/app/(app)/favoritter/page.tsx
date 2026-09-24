@@ -87,7 +87,7 @@ export default async function FavoritterSide() {
           </p>
           <Link
             href="/auktioner"
-            className="mt-6 inline-block rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#d62b38]"
+            className="mt-6 inline-block rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork"
           >
             Find auktioner
           </Link>
