@@ -3,12 +3,16 @@ import Link from "next/link";
 import WaitlistForm from "@/components/landing/WaitlistForm";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
 
+// Server-komponent: ingen interaktion ud over ventelisteformularen, som er
+// sin egen klientkomponent. TODO indhold-agenten: alle længere tekster her
+// er pladsholdere og skal skrives igennem.
+
 const TRIN = [
   {
     num: "01",
     titel: "Opret en auktion",
     tekst:
-      "Upload billeder, skriv en kort beskrivelse og vælg, om du vil sende varen eller lade køberen hente den selv.",
+      "Tag billeder, sæt en startpris — eller start fra 0 kr. Du vælger selv, om du sender varen eller kun tilbyder afhentning.",
     ikon: (
       <path
         strokeLinecap="round"
@@ -19,18 +23,18 @@ const TRIN = [
   },
   {
     num: "02",
-    titel: "Købere byder live",
+    titel: "Køberne byder",
     tekst:
-      "Buddene stiger i realtid, og den samlede pris — bud, gebyr og fragt — er altid tydelig, før du byder.",
+      "Købere byder mod hinanden, indtil tiden løber ud. Totalprisen — bud, gebyr og fragt — står altid tydeligt, før man byder.",
     ikon: (
       <path strokeLinecap="round" strokeLinejoin="round" d="M13 2 3 14h8l-1 8 10-12h-8l1-8z" />
     ),
   },
   {
     num: "03",
-    titel: "Handel i trygge hænder",
+    titel: "Handel i hus",
     tekst:
-      "Når varen er accepteret, bliver betalingen håndteret sikkert, og pengene frigives først, når alt er i orden.",
+      "Køber betaler med det samme, og pengene frigives til dig, når varen er modtaget og godkendt.",
     ikon: (
       <path strokeLinecap="round" strokeLinejoin="round" d="M8 12l3 3 5-6M3 4h18v16H3V4z" />
     ),
@@ -62,7 +66,7 @@ const TRYGHED = [
   },
   {
     titel: "Fragt eller afhentning",
-    tekst: "Vælg pakkelabel eller udlevering direkte til køber.",
+    tekst: "Send med pakkelabel, eller lad vinderen hente hos dig.",
     ikon: (
       <path
         strokeLinecap="round"
@@ -73,7 +77,7 @@ const TRYGHED = [
   },
   {
     titel: "Bedømmelser",
-    tekst: "Køb og salg bliver mere trygt, når både køber og sælger kan stole på hinanden.",
+    tekst: "Køber og sælger bedømmer hinanden efter hver handel.",
     ikon: (
       <path
         strokeLinecap="round"
@@ -87,8 +91,10 @@ const TRYGHED = [
 export default function ComingSoonPage() {
   return (
     <div className="flex flex-1 flex-col bg-white text-tekst">
+      {/* Fanger auth-tokens der lander her som hash-fragment. Må ikke fjernes. */}
       <AuthHashRedirect />
 
+      {/* Let header – ingen adgang til resten af appen endnu */}
       <header className="border-b border-kant bg-white">
         <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <Link
@@ -114,121 +120,58 @@ export default function ComingSoonPage() {
       </header>
 
       <main className="flex-1">
-        <section id="top" className="mx-auto max-w-[1280px] px-4 pt-6 sm:px-6 lg:px-8">
-          <div className="relative overflow-hidden rounded-[22px] bg-groen p-6 text-white shadow-[0_30px_80px_rgba(35,80,58,0.18)] sm:p-8 lg:p-10 xl:p-14">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.18),_transparent_38%),radial-gradient(circle_at_bottom_right,_rgba(255,255,255,0.10),_transparent_30%)]" />
+        {/* Hero */}
+        <section
+          id="top"
+          className="mx-auto max-w-[1280px] px-4 pt-6 sm:px-6 lg:px-8"
+        >
+          <div className="overflow-hidden rounded-[18px] bg-groen p-6 text-white sm:p-10 lg:p-14">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] font-semibold">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" />
+              </svg>
+              Åbner snart i Danmark
+            </span>
 
-            <div className="relative grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
-              <div>
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] font-semibold">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" />
-                  </svg>
-                  Launch i Danmark
-                </span>
+            <h1 className="mt-4 max-w-[22ch] text-[30px] leading-[1.1] font-semibold text-white lg:text-[42px]">
+              Auktioner mellem private
+            </h1>
 
-                <h1 className="mt-5 max-w-[16ch] text-[32px] leading-[1.02] font-semibold text-white lg:text-[52px]">
-                  Den smartere måde at sælge det, du ikke bruger.
-                </h1>
+            <p className="mt-4 max-w-[52ch] text-base leading-relaxed text-white/85 lg:text-[17px]">
+              Sælg det, du ikke bruger, og byd på andres ting. Du ser altid
+              totalprisen — bud, gebyr og fragt — før du byder, og hver handel er
+              dækket af BidHamr Beskyttelse.
+            </p>
 
-                <p className="mt-4 max-w-[52ch] text-base leading-relaxed text-white/85 lg:text-[17px]">
-                  BidHamr gør det nemt at købe og sælge brugte ting mellem private — med klare priser, trygge handler og en launch-oplevelse, der er bygget til at gøre handel lettere.
-                </p>
-
-                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <a href="#venteliste" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
-                    Tilmeld venteliste
-                  </a>
-                  <a href="#saadan" className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/12">
-                    Se hvordan det virker
-                  </a>
-                </div>
-
-                <div className="mt-8 max-w-md rounded-xl bg-white p-5 text-tekst">
-                  <h2 className="text-[17px] font-semibold">Vær med i launch-gruppen</h2>
-                  <p className="mt-1 text-sm text-tekst-daempet">
-                    Få besked, når vi åbner, og vær blandt de første til at handle på BidHamr.
-                  </p>
-                  <WaitlistForm />
-                </div>
-
-                <ul className="mt-8 flex flex-wrap gap-2">
-                  {[
-                    "Gratis at oprette auktion",
-                    "Ingen abonnement",
-                    "Tryg handel hver gang",
-                  ].map((punkt) => (
-                    <li
-                      key={punkt}
-                      className="rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] font-medium"
-                    >
-                      {punkt}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="relative">
-                <div className="absolute -left-6 top-10 hidden h-28 w-28 rounded-full bg-white/12 blur-2xl lg:block" />
-                <div className="absolute -right-4 bottom-2 hidden h-32 w-32 rounded-full bg-groen-lys/15 blur-3xl lg:block" />
-
-                <div className="relative overflow-hidden rounded-[22px] border border-white/20 bg-[#edf9ef] p-4 text-tekst shadow-[0_25px_50px_rgba(17,59,39,0.28)] sm:p-5">
-                  <div className="rounded-[18px] bg-white p-4 shadow-kort">
-                    <div className="flex items-center justify-between gap-3 border-b border-kant pb-3">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tekst-svag">
-                          Live auktion
-                        </p>
-                        <h3 className="mt-1 text-lg font-semibold text-tekst">
-                          Fjernbetjening Sony
-                        </h3>
-                      </div>
-                      <span className="rounded-full bg-groen-lys px-2.5 py-1 text-[11px] font-semibold text-groen-mork">
-                        4 bud
-                      </span>
-                    </div>
-
-                    <div className="mt-4 flex items-center gap-4">
-                      <div className="grid h-24 w-24 place-items-center rounded-2xl bg-gradient-to-br from-groen-lys via-groen-lys to-white text-3xl shadow-inner ">
-                        🎮
-                      </div>
-
-                      <div className="flex-1 space-y-3">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-tekst-daempet">Nuværende bud</span>
-                          <span className="font-semibold text-groen-mork">1.950 kr.</span>
-                        </div>
-                        <div className="rounded-lg bg-groen-lys p-2.5">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-groen-mork">
-                            Pris
-                          </p>
-                          <p className="mt-1 text-2xl font-semibold text-groen-mork">1.950 kr.</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 rounded-[18px] bg-white/70 p-4 backdrop-blur-sm">
-                    <div className="flex items-center justify-between text-sm text-tekst-daempet">
-                      <span>Tryg handel</span>
-                      <span className="font-semibold text-groen-mork">✓</span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between text-sm text-tekst-daempet">
-                      <span>Dansk support</span>
-                      <span className="font-semibold text-groen-mork">Live</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <div className="mt-8 max-w-md rounded-xl bg-white p-5 text-tekst">
+              <h2 className="text-[17px] font-semibold">Kom med fra dag ét</h2>
+              <p className="mt-1 text-sm text-tekst-daempet">
+                Skriv dig op, og få besked, når vi åbner.
+              </p>
+              <WaitlistForm />
             </div>
+
+            <ul className="mt-8 flex flex-wrap gap-2">
+              {["Gratis at oprette auktion", "Ingen abonnement", "Dansk support"].map(
+                (punkt) => (
+                  <li
+                    key={punkt}
+                    className="rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] font-medium"
+                  >
+                    {punkt}
+                  </li>
+                ),
+              )}
+            </ul>
           </div>
         </section>
 
+        {/* Tryghedsstribe */}
         <section className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-          <div className="grid gap-px overflow-hidden rounded-[16px] bg-groen-lys sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-px overflow-hidden rounded-[14px] bg-groen-lys sm:grid-cols-2 lg:grid-cols-4">
             {TRYGHED.map((t) => (
-              <div key={t.titel} className="flex items-start gap-3 bg-white p-5">
-                <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-groen-lys">
+              <div key={t.titel} className="flex items-start gap-3 p-5">
+                <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-white">
                   <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] text-groen-mork" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>
                     {t.ikon}
                   </svg>
@@ -244,21 +187,23 @@ export default function ComingSoonPage() {
           </div>
         </section>
 
-        <section id="saadan" className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold lg:text-[22px]">Sådan virker det</h2>
-              <p className="mt-2 max-w-[65ch] text-[15px] text-tekst-daempet">
-                Fra ting i kælderen til en trygg, engageret handel — på få minutter.
-              </p>
-            </div>
-          </div>
+        {/* Sådan virker det */}
+        <section
+          id="saadan"
+          className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10"
+        >
+          <h2 className="text-xl font-semibold lg:text-[22px]">
+            Sådan virker det
+          </h2>
+          <p className="mt-2 max-w-[65ch] text-[15px] text-tekst-daempet">
+            Tre trin fra billede til betaling.
+          </p>
 
           <ol className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {TRIN.map((trin) => (
               <li
                 key={trin.num}
-                className="rounded-[16px] border border-kant bg-white p-6 shadow-kort transition hover:-translate-y-1 hover:shadow-lg"
+                className="rounded-[14px] border border-kant bg-white p-6 shadow-kort"
               >
                 <span className="grid h-11 w-11 place-items-center rounded-lg bg-groen-lys">
                   <svg viewBox="0 0 24 24" className="h-6 w-6 text-groen-mork" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>
@@ -279,32 +224,33 @@ export default function ComingSoonPage() {
           </ol>
         </section>
 
+        {/* Hvorfor BidHamr */}
         <section id="hvorfor" className="border-y border-kant bg-groen-lys">
           <div className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
             <h2 className="text-xl font-semibold text-groen-mork lg:text-[22px]">
-              Hvorfor folk bliver hooked
+              Hvorfor BidHamr?
             </h2>
             <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {[
                 {
                   titel: "Prisen finder sig selv",
                   tekst:
-                    "Når ingen ved præcis, hvad ting er værd, skaber buddene en fair markedspris i realtid.",
+                    "Ved du ikke, hvad tingen er værd? Start fra 0 kr og lad buddene bestemme.",
                 },
                 {
                   titel: "Totalprisen står frem",
                   tekst:
-                    "Ingen overraskelser. Bud, gebyr og fragt er tydeligt vist, før du vælger at byde.",
+                    "Bud, købergebyr og fragt vises hver for sig — og summen nederst, før du byder.",
                 },
                 {
-                  titel: "Det hele føles trygt",
+                  titel: "App og hjemmeside",
                   tekst:
-                    "Fra auktion til betaling er processen bygget til at gøre handel mellem private mere tryg og mere bekvem.",
+                    "Samme auktioner, samme konto. Byd fra mobilen, og følg med på computeren.",
                 },
               ].map((k) => (
                 <article
                   key={k.titel}
-                  className="rounded-[16px] bg-white p-6 shadow-kort"
+                  className="rounded-[14px] bg-white p-6 shadow-kort"
                 >
                   <h3 className="text-[17px] font-semibold lg:text-lg">
                     {k.titel}
@@ -318,16 +264,15 @@ export default function ComingSoonPage() {
           </div>
         </section>
 
-        <section id="venteliste" className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8 lg:py-16">
-          <div className="flex flex-col items-start gap-6 rounded-[22px] bg-groen p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-10">
-            <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/75">
-                Bliv en af de første
-              </p>
-              <h2 className="mt-2 max-w-[30ch] text-xl font-semibold text-white lg:text-[22px]">
-                Vær blandt de første, der får adgang, når BidHamr går live.
-              </h2>
-            </div>
+        {/* CTA */}
+        <section
+          id="venteliste"
+          className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8 lg:py-16"
+        >
+          <div className="flex flex-col items-start gap-6 rounded-[18px] bg-groen p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-10">
+            <h2 className="max-w-[30ch] text-xl font-semibold text-white lg:text-[22px]">
+              Vær blandt de første, der byder på BidHamr
+            </h2>
             <a href="#top" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
               Tilmeld venteliste
             </a>
