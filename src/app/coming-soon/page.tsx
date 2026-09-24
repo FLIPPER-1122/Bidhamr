@@ -124,15 +124,15 @@ export default function ComingSoonPage() {
                   <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" />
                   </svg>
-                  Åbner snart i Danmark
+                  Launch i Danmark
                 </span>
 
                 <h1 className="mt-5 max-w-[16ch] text-[32px] leading-[1.02] font-semibold text-white lg:text-[52px]">
-                  Nyt liv til det, du ikke bruger.
+                  Den smartere måde at sælge det, du ikke bruger.
                 </h1>
 
                 <p className="mt-4 max-w-[52ch] text-base leading-relaxed text-white/85 lg:text-[17px]">
-                  Køb og sælg brugte ting på en smartere måde. Her får du klare priser, trygge handler og en uforudsigelig god oplevelse — alt i ét sted.
+                  BidHamr gør det nemt at købe og sælge brugte ting mellem private — med klare priser, trygge handler og en launch-oplevelse, der er bygget til at gøre handel lettere.
                 </p>
 
                 <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -145,9 +145,9 @@ export default function ComingSoonPage() {
                 </div>
 
                 <div className="mt-8 max-w-md rounded-xl bg-white p-5 text-tekst">
-                  <h2 className="text-[17px] font-semibold">Kom med fra dag ét</h2>
+                  <h2 className="text-[17px] font-semibold">Vær med i launch-gruppen</h2>
                   <p className="mt-1 text-sm text-tekst-daempet">
-                    Skriv dig op, og få besked, når vi er klar til launch.
+                    Få besked, når vi åbner, og vær blandt de første til at handle på BidHamr.
                   </p>
                   <WaitlistForm />
                 </div>
@@ -325,7 +325,7 @@ export default function ComingSoonPage() {
                 Bliv en af de første
               </p>
               <h2 className="mt-2 max-w-[30ch] text-xl font-semibold text-white lg:text-[22px]">
-                Vær blandt dem, der får adgang til BidHamr, når vi lancerer.
+                Vær blandt de første, der får adgang, når BidHamr går live.
               </h2>
             </div>
             <a href="#top" className="btn btn-paa-groen btn-stor w-full sm:w-auto">
