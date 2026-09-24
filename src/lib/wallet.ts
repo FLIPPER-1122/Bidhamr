@@ -1,7 +1,7 @@
 // Fælles formatering og etiketter for e-money-kontoen.
 
 export const KOEBERGEBYR = 0.05;
-export const SAELGERGEBYR = 0.1;
+export const SAELGERGEBYR = 0.05;
 
 export type WalletKind =
   | "indbetaling"
