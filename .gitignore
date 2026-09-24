@@ -43,3 +43,6 @@ next-env.d.ts
 .vercel
 .env*
 BidHamr/
+
+# Agenternes git-worktrees - fulde kopier af repoet
+.claude/worktrees/
