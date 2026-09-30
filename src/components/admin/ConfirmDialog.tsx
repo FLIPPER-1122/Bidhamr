@@ -9,7 +9,7 @@ type Props = {
   title: string;
   description?: string;
   confirmLabel: string;
-  action: (formData: FormData) => Promise<void>;
+  action: (formData: FormData) => Promise<void | { fejl: string } | { ok: true }>;
   hiddenFields: Record<string, string>;
   aarsagField?: { label: string; placeholder: string; required: boolean };
   varighedField?: boolean;
@@ -29,6 +29,7 @@ export default function ConfirmDialog({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [fejl, setFejl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -41,7 +42,12 @@ export default function ConfirmDialog({
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
-      await action(formData);
+      setFejl(null);
+      const res = await action(formData);
+      if (res && "fejl" in res) {
+        setFejl(res.fejl);
+        return;
+      }
       setOpen(false);
     });
   }
@@ -75,6 +81,12 @@ export default function ConfirmDialog({
             )}
 
             <form action={handleSubmit} className="mt-4 space-y-4">
+              {fejl && (
+                <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {fejl}
+                </p>
+              )}
+
               {Object.entries(hiddenFields).map(([name, value]) => (
                 <input key={name} type="hidden" name={name} value={value} />
               ))}

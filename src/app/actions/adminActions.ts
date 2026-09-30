@@ -180,34 +180,70 @@ export async function setRolle(formData: FormData) {
 
 // --- Auktioner -------------------------------------------------------------
 
-export async function deleteAuction(formData: FormData) {
+// "Slet" arkiverer: handelsdata (bud, handler, bedoemmelser, anmeldelser)
+// maa aldrig slettes (bogfoeringsloven/DAC7). Auktionen annulleres og skjules.
+// Har auktionen en handel, afvises det - den skal loeses som en sag.
+export async function deleteAuction(
+  formData: FormData,
+): Promise<{ ok: true } | { fejl: string }> {
   const auktionId = formData.get("auktionId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
-  const { admin, userId: staffId } = await assertRole("admin");
 
-  if (!aarsag) throw new Error("Angiv en årsag for sletningen.");
+  let admin, staffId;
+  try {
+    ({ admin, userId: staffId } = await assertRole("admin"));
+  } catch {
+    return { fejl: "Du har ikke adgang til at fjerne auktioner." };
+  }
+
+  if (!aarsag) return { fejl: "Angiv en årsag for fjernelsen." };
 
   const { data: auktion } = await admin
     .from("auctions")
-    .select("bruger_id")
+    .select("bruger_id, status, skjult")
     .eq("id", auktionId)
-    .single();
-  if (!auktion) throw new Error("Auktionen findes ikke.");
+    .maybeSingle();
+  if (!auktion) return { fejl: "Auktionen findes ikke." };
 
-  await logModeration(admin, {
-    medarbejder_id: staffId,
-    handling: "slet_auktion",
-    maal_type: "auktion",
-    maal_id: auktionId,
-    bruger_id: auktion.bruger_id,
-    aarsag,
-  });
+  const { count: antalHandler } = await admin
+    .from("trades")
+    .select("id", { count: "exact", head: true })
+    .eq("auction_id", auktionId);
+  if ((antalHandler ?? 0) > 0) {
+    return {
+      fejl: "Auktionen har en handel og kan ikke fjernes. Håndter den som en sag.",
+    };
+  }
+  if (auktion.status === "afsluttet") {
+    return { fejl: "Auktionen er afsluttet og kan ikke fjernes. Skjul den i stedet." };
+  }
 
-  const { error } = await admin.from("auctions").delete().eq("id", auktionId);
-  if (error) throw new Error(error.message);
+  // Idempotent: kun en aktiv/annulleret auktion, der ikke allerede er fjernet.
+  const { data: opdateret, error } = await admin
+    .from("auctions")
+    .update({ status: "annulleret", skjult: true })
+    .eq("id", auktionId)
+    .in("status", ["aktiv", "annulleret"])
+    .select("id");
+  if (error) return { fejl: "Auktionen kunne ikke fjernes. Prøv igen." };
+  if (!opdateret || opdateret.length === 0) {
+    return { fejl: "Auktionens status er ændret. Genindlæs siden." };
+  }
+
+  if (!(auktion.status === "annulleret" && auktion.skjult)) {
+    await logModerationBloedt(admin, {
+      medarbejder_id: staffId,
+      handling: "slet_auktion",
+      maal_type: "auktion",
+      maal_id: auktionId,
+      bruger_id: auktion.bruger_id,
+      aarsag,
+    });
+  }
 
   revalidatePath("/admin/auktioner");
   revalidatePath(`/admin/brugere/${auktion.bruger_id}`);
+  return { ok: true };
 }
 
 export async function cancelAuction(formData: FormData) {

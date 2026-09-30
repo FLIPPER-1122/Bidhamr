@@ -88,8 +88,13 @@ begin
   new.skjult          := false;
   new.oprettet        := now();
 
-  if new.slutter_kl <= now() then
+  if new.slutter_kl is null or new.slutter_kl <= now() then
     raise exception 'Sluttidspunktet skal ligge i fremtiden.'
+      using errcode = '22023';
+  end if;
+
+  if new.slutter_kl > now() + interval '30 days' then
+    raise exception 'En auktion kan hoejst vare 30 dage.'
       using errcode = '22023';
   end if;
 

@@ -239,9 +239,9 @@ export default async function AdminAuktioner({
                         <ConfirmDialog
                           triggerLabel="Slet"
                           triggerClassName="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
-                          title="Er du sikker på, at du vil slette auktionen?"
-                          description="Handlingen kan ikke fortrydes."
-                          confirmLabel="Ja, slet auktionen"
+                          title="Er du sikker på, at du vil fjerne auktionen?"
+                          description="Auktionen annulleres og skjules. Data bevares af hensyn til bogføringen."
+                          confirmLabel="Ja, fjern auktionen"
                           action={deleteAuction}
                           hiddenFields={{ auktionId: a.id }}
                           aarsagField={{
