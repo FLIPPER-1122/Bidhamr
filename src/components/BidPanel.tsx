@@ -220,14 +220,19 @@ export default function BidPanel({
       return;
     }
 
-    // Anti-sniping: forlæng auktion med 2 min hvis den slutter inden for 2 min
-    const mstilbage = new Date(slutterKl).getTime() - Date.now();
-    if (mstilbage > 0 && mstilbage < 2 * 60 * 1000) {
-      const nySlutterKl = new Date(new Date(slutterKl).getTime() + 2 * 60 * 1000).toISOString();
-      await supabase
-        .from("auctions")
-        .update({ slutter_kl: nySlutterKl })
-        .eq("id", auktionId);
+    // Anti-sniping sker på serveren (handle_new_bid-triggeren forlænger
+    // slutter_kl i samme transaktion som buddet). Klienten læser kun det
+    // nye sluttidspunkt og fortæller brugeren, hvis auktionen blev forlænget.
+    const { data: efterBud } = await supabase
+      .from("auctions")
+      .select("slutter_kl")
+      .eq("id", auktionId)
+      .maybeSingle();
+    if (
+      efterBud?.slutter_kl &&
+      new Date(efterBud.slutter_kl).getTime() > new Date(slutterKl).getTime()
+    ) {
+      setSlutterKl(efterBud.slutter_kl);
       setInfo("Auktionen er forlænget med 2 minutter!");
       setTimeout(() => setInfo(null), 6000);
     }
