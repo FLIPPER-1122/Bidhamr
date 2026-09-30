@@ -91,6 +91,9 @@ export default async function AuktionPage({
     bruger && handel && handel.buyer_id === bruger.id && handel.seller_id === auktion.bruger_id,
   );
 
+  const handelGodkendt =
+    handel?.status === "leveret" || handel?.status === "afsluttet";
+
   let harBedømt = false;
   if (maaBedømme && bruger) {
     const { data: eksisterendeRating } = await supabase
@@ -249,7 +252,13 @@ export default async function AuktionPage({
             </div>
 
             {/* Rating-sektion – kun køberen i handlen kan bedømme sælgeren */}
-            {maaBedømme && !harBedømt && (
+            {maaBedømme && !handelGodkendt && (
+              <p className="mt-4 text-sm text-neutral-600">
+                Du kan bedømme sælgeren, når du har godkendt varen.
+              </p>
+            )}
+
+            {maaBedømme && handelGodkendt && !harBedømt && (
               <div className="mt-4">
                 <RatingForm
                   auktionId={auktion.id}

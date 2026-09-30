@@ -95,6 +95,7 @@ h3 {
   font-weight: 600;
 }
 
+@layer components {
 /* ---------- Knapper (DESIGN.md afsnit 6) ---------- */
 
 .btn {
@@ -236,6 +237,7 @@ h3 {
   border-top-color: transparent;
   border-radius: 999px;
   animation: btn-spin 700ms linear infinite;
+}
 }
 
 @keyframes btn-spin {

@@ -154,7 +154,8 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           .upload(filnavn, file);
 
         if (uploadError) {
-          throw new Error(`Billede-upload fejlede: ${uploadError.message}`);
+          console.error("Billede-upload fejlede:", uploadError.message);
+          throw new Error("Billedet kunne ikke uploades. Prøv igen om lidt.");
         }
 
         const { data: publicUrlData } = supabase.storage
@@ -186,8 +187,6 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         slutter_kl: slutterKl.toISOString(),
       };
 
-      console.log("Gemmer auktion i Supabase:", payload);
-
       const { data, error: insertError } = await supabase
         .from("auctions")
         .insert(payload)
@@ -195,15 +194,17 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         .single();
 
       if (insertError) {
-        throw new Error(
-          `Kunne ikke gemme auktionen: ${insertError.message} (${insertError.code ?? "ukendt fejlkode"})`,
-        );
+        // Fx 42501 (trigger afviser låste felter) – brugeren får samme faste besked.
+        console.error("Fejl ved oprettelse af auktion:", insertError.code, insertError.message);
+        setError("Auktionen kunne ikke oprettes. Prøv igen om lidt.");
+        setLoading(false);
+        return;
       }
 
       router.push(`/auktion/${data.id}`);
     } catch (err) {
       console.error("Fejl ved oprettelse af auktion:", err);
-      setError(err instanceof Error ? err.message : "Noget gik galt. Se konsollen for detaljer.");
+      setError(err instanceof Error ? err.message : "Auktionen kunne ikke oprettes. Prøv igen om lidt.");
       setLoading(false);
     }
   }
