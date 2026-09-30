@@ -2,6 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 
+const GENERISK_FEJL = "Vi kunne ikke skrive dig op lige nu. Prøv igen om lidt.";
+
 export default function WaitlistForm() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -27,16 +29,23 @@ export default function WaitlistForm() {
         body: JSON.stringify({ email }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        throw new Error(data.error ?? "Indtast en gyldig e-mailadresse.");
+        // Kun serverens egne, faste valideringsbeskeder (400) vises. Alt andet
+        // giver en fast besked, så rå fejltekst aldrig når brugeren.
+        let besked = GENERISK_FEJL;
+        if (res.status === 400) {
+          const data = await res.json().catch(() => null);
+          if (data && typeof data.error === "string") besked = data.error;
+        }
+        setError(besked);
+        return;
       }
 
       setSuccess(true);
       setEmail("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Noget gik galt.");
+      console.error("Venteliste-tilmelding fejlede:", err);
+      setError(GENERISK_FEJL);
     } finally {
       setLoading(false);
     }
@@ -78,7 +87,7 @@ export default function WaitlistForm() {
       </div>
 
       <p id="email-hjaelp" className="mt-3 text-[13px] text-tekst-daempet">
-        Ingen spam. Vi skriver kun, når vi er klar til launch.
+        Ingen spam. Vi skriver kun, når vi åbner.
       </p>
 
       {success && (

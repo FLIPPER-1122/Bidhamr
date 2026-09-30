@@ -11,6 +11,9 @@ const GROEN = "#1E5E4A";
 // tilmeldingen gemmes stadig, og fejlen logges på serveren.
 const AFSENDER = "BidHamr <noreply@bidhamr.dk>";
 
+// Fast besked til klienten - den rigtige fejl logges kun på serveren.
+const SERVERFEJL = "Vi kunne ikke skrive dig op lige nu. Prøv igen om lidt.";
+
 function velkomstMail(email: string) {
   return `<!DOCTYPE html>
 <html lang="da">
@@ -79,16 +82,22 @@ export async function POST(req: NextRequest) {
   }
 
   const renEmail = email.trim().toLowerCase();
-  const supabase = await createClient();
-
-  const { error } = await supabase.from("venteliste").insert({ email: renEmail });
+  let error: { code?: string; message?: string } | null;
+  try {
+    const supabase = await createClient();
+    ({ error } = await supabase.from("venteliste").insert({ email: renEmail }));
+  } catch (err) {
+    console.error("Venteliste: kunne ikke gemme tilmelding:", err);
+    return NextResponse.json({ error: SERVERFEJL }, { status: 500 });
+  }
 
   // 23505 = unik-constraint: allerede tilmeldt. Det behandles som succes (vi
   // røber ikke om en e-mail er på listen), men vi sender ikke velkomstmailen
   // igen.
   const alleredeTilmeldt = error?.code === "23505";
   if (error && !alleredeTilmeldt) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Venteliste: kunne ikke gemme tilmelding:", error);
+    return NextResponse.json({ error: SERVERFEJL }, { status: 500 });
   }
 
   // Mailen sendes kun ved en ny tilmelding. Fejler afsendelsen, må det ikke
@@ -98,14 +107,18 @@ export async function POST(req: NextRequest) {
     if (!resend) {
       console.warn("RESEND_API_KEY mangler - velkomstmail blev ikke sendt.");
     } else {
-      const { error: mailFejl } = await resend.emails.send({
-        from: AFSENDER,
-        to: renEmail,
-        subject: "Velkommen til BidHamr ventelisten 🎉",
-        html: velkomstMail(renEmail),
-      });
-      if (mailFejl) {
-        console.error("Kunne ikke sende velkomstmail:", mailFejl);
+      try {
+        const { error: mailFejl } = await resend.emails.send({
+          from: AFSENDER,
+          to: renEmail,
+          subject: "Velkommen til BidHamr ventelisten 🎉",
+          html: velkomstMail(renEmail),
+        });
+        if (mailFejl) {
+          console.error("Kunne ikke sende velkomstmail:", mailFejl);
+        }
+      } catch (err) {
+        console.error("Kunne ikke sende velkomstmail:", err);
       }
     }
   }
