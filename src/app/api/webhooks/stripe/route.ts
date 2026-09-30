@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       // 500 får Stripe til at prøve igen - det er det, vi vil have, hvis
       // krediteringen fejlede af forbigående årsager.
       console.error("Kunne ikke kreditere wallet:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "Intern fejl." }, { status: 500 });
     }
 
     console.log(

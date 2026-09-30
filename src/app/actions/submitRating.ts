@@ -36,7 +36,7 @@ export async function submitRating(formData: FormData) {
   // Var brugeren køber i netop denne handel, og er den bedømte handlens sælger?
   const { data: handel } = await supabase
     .from("trades")
-    .select("buyer_id, seller_id")
+    .select("buyer_id, seller_id, status")
     .eq("auction_id", auktionId)
     .maybeSingle();
 
@@ -48,6 +48,11 @@ export async function submitRating(formData: FormData) {
 
   if (handel.seller_id !== tilId) {
     return { error: "Du kan kun bedømme sælgeren på handlen." };
+  }
+
+  // Samme regel som RLS (20260930020000): først når køberen har godkendt varen.
+  if (handel.status !== "leveret" && handel.status !== "afsluttet") {
+    return { error: "Du kan bedømme sælgeren, når du har godkendt varen." };
   }
 
   const { error } = await supabase.from("ratings").insert({
@@ -69,7 +74,8 @@ export async function submitRating(formData: FormData) {
         error: "Du kan kun bedømme sælgeren på en handel, du selv har købt.",
       };
     }
-    return { error: error.message };
+    console.error("Kunne ikke gemme bedømmelse:", error);
+    return { error: "Bedømmelsen kunne ikke gemmes. Prøv igen om lidt." };
   }
 
   revalidatePath(`/auktion/${auktionId}`);
