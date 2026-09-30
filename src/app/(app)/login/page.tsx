@@ -48,11 +48,11 @@ function LoginForm() {
     // Suspenderede konti logges ud igen med besked om årsagen.
     const { data: sessionData } = await supabase.auth.getUser();
     if (sessionData.user) {
-      const { data: profil } = await supabase
-        .from("users")
-        .select("suspenderet, suspenderet_aarsag, suspenderet_til")
-        .eq("id", sessionData.user.id)
-        .single();
+      // Suspensionsfelterne er ikke laesbare direkte; min_profil() bruger auth.uid().
+      const { data: profilRaekker } = await supabase.rpc("min_profil");
+      const profil = (profilRaekker as
+        | { suspenderet: boolean; suspenderet_aarsag: string | null; suspenderet_til: string | null }[]
+        | null)?.[0];
 
       // Udløbet suspension ignoreres (ryddes af en medarbejder i admin-panelet).
       const aktivSuspension =

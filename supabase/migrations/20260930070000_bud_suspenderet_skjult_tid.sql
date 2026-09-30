@@ -1,7 +1,10 @@
--- M2: handle_new_bid (eneste definition: 20260623000000) afviste ikke bud
+-- M2: handle_new_bid (seneste definition: 20260623000000) afviste ikke bud
 -- fra suspenderede brugere eller paa skjulte auktioner. Desuden kunne
 -- klienten selv saette bids.oprettet (fx bagdatere et bud).
 -- Kroppen herunder er 20260623000000's med de nye tjek tilfoejet.
+-- NB: bids har ogsaa BEFORE INSERT-triggeren trg_check_minimum_bid
+-- (check_minimum_bid, minimum 10% over), som laa i produktion uden
+-- migration. Den er indfanget i 20260930090000.
 
 create or replace function public.handle_new_bid()
 returns trigger

@@ -1,6 +1,7 @@
 "use server";
 
 import { assertRole, harMindstRolle } from "@/lib/adminAuth";
+import type { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 
 // --- Brugere ---------------------------------------------------------------
@@ -178,6 +179,17 @@ export async function setRolle(formData: FormData) {
   revalidatePath("/admin/brugere");
 }
 
+// Frigiver den hoejestbydendes wallet-reservation, naar en auktion annulleres.
+// wallet_frigiv er en no-op, hvis der ingen reservation er. Fejl logges, men
+// vaelter ikke annulleringen (status er allerede skiftet).
+async function frigivReservation(
+  admin: ReturnType<typeof createAdminClient>,
+  auktionId: string,
+) {
+  const { error } = await admin.rpc("wallet_frigiv", { p_auction: auktionId });
+  if (error) console.error("wallet_frigiv fejlede ved annullering:", auktionId, error);
+}
+
 // --- Auktioner -------------------------------------------------------------
 
 // "Slet" arkiverer: handelsdata (bud, handler, bedoemmelser, anmeldelser)
@@ -230,6 +242,8 @@ export async function deleteAuction(
     return { fejl: "Auktionens status er ændret. Genindlæs siden." };
   }
 
+  await frigivReservation(admin, auktionId);
+
   if (!(auktion.status === "annulleret" && auktion.skjult)) {
     await logModerationBloedt(admin, {
       medarbejder_id: staffId,
@@ -250,11 +264,18 @@ export async function cancelAuction(formData: FormData) {
   const auktionId = formData.get("auktionId") as string;
   const { admin } = await assertRole("admin");
 
-  const { error } = await admin
+  // Idempotent: kun en aktiv auktion annulleres. En afsluttet auktion har en
+  // vinder/handel og skal loeses som en sag.
+  const { data: opdateret, error } = await admin
     .from("auctions")
     .update({ status: "annulleret" })
-    .eq("id", auktionId);
+    .eq("id", auktionId)
+    .eq("status", "aktiv")
+    .select("id");
   if (error) throw new Error(error.message);
+  if (opdateret && opdateret.length > 0) {
+    await frigivReservation(admin, auktionId);
+  }
 
   revalidatePath("/admin/auktioner");
 }
@@ -310,7 +331,12 @@ export async function deleteRating(formData: FormData) {
     aarsag,
   });
 
-  const { error } = await admin.from("ratings").delete().eq("id", ratingId);
+  // Handelsdata slettes aldrig: "slet" arkiverer ved at skjule bedoemmelsen.
+  // Skjulte bedoemmelser er filtreret fra i visning og gennemsnit.
+  const { error } = await admin
+    .from("ratings")
+    .update({ skjult: true })
+    .eq("id", ratingId);
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin/bedommelser");

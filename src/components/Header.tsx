@@ -16,8 +16,8 @@ export default async function Header() {
   if (data.user) {
     // Filtreret eksplicit på user_id. RLS alene er ikke nok: policyen
     // tillader også staff at se alle konti.
-    const [{ data: profil }, { data: wallet }] = await Promise.all([
-      supabase.from("users").select("rolle").eq("id", data.user.id).single(),
+    const [{ data: rolle }, { data: wallet }] = await Promise.all([
+      supabase.rpc("min_rolle"),
       supabase
         .from("wallets")
         .select("balance, reserved")
@@ -26,9 +26,9 @@ export default async function Header() {
     ]);
     saldo = wallet ? Number(wallet.balance) - Number(wallet.reserved) : null;
     erAdmin =
-      profil?.rolle === "chef" ||
-      profil?.rolle === "admin" ||
-      profil?.rolle === "medarbejder";
+      rolle === "chef" ||
+      rolle === "admin" ||
+      rolle === "medarbejder";
   }
 
   return (

@@ -30,13 +30,10 @@ export async function getStaffRole(): Promise<StaffRole | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data } = await supabase
-    .from("users")
-    .select("rolle")
-    .eq("id", user.id)
-    .single();
+  // rolle er ikke laesbar via kolonne-grants; min_rolle() udleder brugeren af auth.uid().
+  const { data: minRolle } = await supabase.rpc("min_rolle");
 
-  return somStaffRole(data?.rolle);
+  return somStaffRole(minRolle);
 }
 
 // Til server actions og admin-only sider. Returnerer service-role-klienten til
@@ -48,13 +45,10 @@ export async function assertRole(min: StaffRole) {
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Ikke logget ind");
 
-  const { data } = await supabase
-    .from("users")
-    .select("rolle")
-    .eq("id", user.id)
-    .single();
+  // rolle er ikke laesbar via kolonne-grants; min_rolle() udleder brugeren af auth.uid().
+  const { data: minRolle } = await supabase.rpc("min_rolle");
 
-  const rolle = somStaffRole(data?.rolle);
+  const rolle = somStaffRole(minRolle);
   if (!rolle || !harMindstRolle(rolle, min)) throw new Error("Ingen adgang");
 
   return { userId: user.id, rolle, admin: createAdminClient() };

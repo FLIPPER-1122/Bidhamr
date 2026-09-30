@@ -57,7 +57,7 @@ export default async function HandelDetaljePage({
   const [{ data: auktion }, { data: modpart }, { data: beskeder }] =
     await Promise.all([
       supabase.from("auctions").select("titel, billeder").eq("id", handel.auction_id).maybeSingle(),
-      supabase.from("users").select("navn, email").eq("id", modpartId).maybeSingle(),
+      supabase.from("users").select("navn").eq("id", modpartId).maybeSingle(),
       // Sikker uden medlemskabsfilter, fordi notFound() ovenfor allerede har
       // afvist alle andre end køber og sælger. Flyttes denne query op over
       // det tjek, lækker den chatten til staff.

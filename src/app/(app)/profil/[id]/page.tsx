@@ -76,7 +76,9 @@ export default async function ProfilPage({
         .select("*")
         .eq("bruger_id", id)
         .order("oprettet", { ascending: false }),
-      supabase.from("users").select("email, telefon").eq("id", id).single(),
+      // Egen profil (erEgenProfil): email/telefon via min_profil(), da
+      // kolonnerne ikke er laesbare direkte.
+      supabase.rpc("min_profil").maybeSingle<{ email: string; telefon: string | null }>(),
       supabase
         .from("ratings")
         .select("id, fra_bruger_id, stjerner, kommentar, oprettet")

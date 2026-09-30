@@ -68,13 +68,10 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Logget ind er ikke nok inden launch: rollen skal give adgang.
-  const { data: profil } = await supabase
-    .from("users")
-    .select("rolle")
-    .eq("id", data.user.id)
-    .single();
+  // rolle er ikke laesbar via kolonne-grants; min_rolle() bruger auth.uid().
+  const { data: rolle } = await supabase.rpc("min_rolle");
 
-  if (!profil || !ROLLER_MED_ADGANG.includes(profil.rolle)) {
+  if (typeof rolle !== "string" || !ROLLER_MED_ADGANG.includes(rolle)) {
     return NextResponse.redirect(new URL("/coming-soon", request.url));
   }
 

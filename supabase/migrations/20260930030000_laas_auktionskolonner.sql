@@ -110,14 +110,8 @@ create trigger auctions_beskyt_ny
   for each row execute function public.auctions_beskyt_ny();
 
 -- ---------------------------------------------------------
--- DELETE: handelsdata maa ikke slettes. Ejeren maa kun slette en aktiv
--- auktion uden bud (bids cascader ellers vaek sammen med auktionen).
+-- DELETE: handelsdata maa ikke slettes (bids cascader ellers vaek sammen
+-- med auktionen). Policyen fjernes helt; ejeren annullerer i stedet via
+-- public.annuller_egen_auktion (20260930080000).
 -- ---------------------------------------------------------
 drop policy if exists "auctions_delete_own" on public.auctions;
-create policy "auctions_delete_own" on public.auctions
-  for delete using (
-    auth.uid() = bruger_id
-    and status = 'aktiv'
-    and "nuværende_bud" is null
-    and not exists (select 1 from public.bids b where b.auktion_id = auctions.id)
-  );

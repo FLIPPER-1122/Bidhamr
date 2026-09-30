@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getResend } from "@/lib/resend";
 import { HANDEL_AFSENDER, pakkeSendtMail } from "@/lib/mails/handel";
 
@@ -71,7 +72,9 @@ export async function sendPakke(tradeId: string, tracking: string) {
     if (resend) {
       const [{ data: auktion }, { data: koeber }] = await Promise.all([
         supabase.from("auctions").select("titel").eq("id", handel.auction_id).single(),
-        supabase.from("users").select("email").eq("id", handel.buyer_id).single(),
+        // Koeberens email er ikke laesbar med brugerklienten (kolonne-grants).
+        // Saelgeren er allerede verificeret af trade_marker_sendt ovenfor.
+        createAdminClient().from("users").select("email").eq("id", handel.buyer_id).single(),
       ]);
       if (koeber?.email) {
         const mail = pakkeSendtMail(
