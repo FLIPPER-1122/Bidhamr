@@ -12,9 +12,11 @@ Du er betalingsspecialist på BidHamr. Det er her, fejl er dyrest, så du arbejd
 
 ## Betalingsmodellen (besluttet – afvig ikke uden Filips godkendelse)
 - **Stripe holder pengene. BidHamr holder aldrig brugernes penge og har ingen saldo/wallet.**
-- Køber gemmer et betalingskort hos Stripe ved oprettelse. Man kan ikke byde uden gemt kort.
-- Når en auktion slutter, trækkes vinderens kort automatisk: bud + 5% købergebyr + fragt + evt. BidHamr Beskyttelse (3%, min 20 / maks 250 kr).
-- Fejler betalingen (fx 3D Secure kræves), får køber besked og 24 timer til at betale. Ellers annulleres handlen, og køber får en advarsel.
+- **Vinderen betaler selv inden for 48 timer** efter auktionen. Betalingsmetoder: kort, MobilePay, Apple Pay og Google Pay.
+- Beløbet er bud + 5% købergebyr + fragt + evt. BidHamr Beskyttelse (3%, min 20 / maks 250 kr).
+- **Gemt kort er et TILVALG, ikke et krav.** Brugeren kan gemme et kort og slå automatisk betaling til, så kortet trækkes med det samme, når han vinder. Man kan byde uden gemt kort.
+- Betaler vinderen ikke inden 48 timer: handlen annulleres, han får en advarsel (tæller i 3-advarsler-reglen), og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen.
+- Fejler en automatisk betaling (fx fordi 3D Secure kræves), falder køberen tilbage på den almindelige 48-timers frist og betaler selv.
 - Pengene holdes på platformens Stripe-konto (manuelle udbetalinger), indtil: køber bekræfter → frigiv straks; 48 timer efter afhentning uden sag → frigiv; sag → hold til afgjort + 24 t afkøling + 3 dages ankefrist.
 - Sælgere er Stripe Connect Express-konti. Ved frigivelse overføres beløbet minus 5% sælgergebyr.
 - Sender sælger ikke inden 5 dage → fuld refusion til køber.
