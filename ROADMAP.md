@@ -21,7 +21,7 @@ Formål: rydde op, så agent-teamet kan arbejde sikkert og ens.
 - [ ] Ret fejl: bedømmelser kan i dag gives af alle til alle (kun køber → sælger efter handel)
 - [ ] Ret gebyr i koden: sælgergebyr fra 10% til 5% (`wallet_udbetal_saelger`, `admin_frigiv_handel`)
 - [ ] **Filip – afklar TIDLIGT med rådgiver/advokat (kan ændre hvordan pengeflowet bygges):**
-  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – køber betaler med gemt kort, når han vinder.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Afventer svar fra Stripes team på den præcise opsætning. Tag derefter svaret med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
+  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 48 timer, og gemt kort med automatisk betaling er et tilvalg.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Afventer svar fra Stripes team på den præcise opsætning. Tag derefter svaret med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
   - BESLUTTET: Det hedder **"BidHamr Beskyttelse"** – aldrig "forsikring" nogen steder på siden, i mails eller i koden
   - **Hvidvaskloven**: gælder den for BidHamr, når I håndterer betalinger (kundekendskab ved store beløb)?
 
@@ -30,8 +30,8 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 
 - [ ] **Ny betalingsmodel: betal når du vinder – ingen saldo** (stort punkt – tages først i fasen). Stripe har bekræftet, at en købersaldo ikke passer til Stripe Connect og kan kræve e-penge-tilladelse. Derfor:
   - Den nuværende wallet med indbetaling før bud, låsning af beløb og wallet-tabel **fjernes**
-  - Køber **gemmer et betalingskort** hos Stripe ved oprettelse af profil (intet trækkes). Man kan ikke byde uden gemt kort
-  - Når auktionen slutter, **trækkes vinderens kort automatisk** (bud + købergebyr + fragt + evt. BidHamr Beskyttelse)
+  - Når auktionen slutter, har vinderen **48 timer til selv at betale** (bud + købergebyr + fragt + evt. BidHamr Beskyttelse) med kort, **MobilePay**, Apple Pay eller Google Pay. Påmindelser efter fx 24 og 40 timer
+  - **Valgfrit: automatisk betaling.** Brugeren kan i sine indstillinger gemme et kort og slå "Betal automatisk, når jeg vinder" til. Så trækkes kortet med det samme, når auktionen slutter. Det er et tilvalg, ikke et krav
   - Pengene ligger på BidHamrs Stripe-konto (manuelle udbetalinger), indtil køber bekræfter / 48 timer uden sag / sag er afgjort
   - Sælger oprettes som **Stripe Connect-konto** (Express), og Stripe tjekker sælgerens identitet. Pengene overføres minus sælgergebyr, og Stripe udbetaler til sælgerens bank
   - Opsætning: destination charges eller separate charges and transfers – afventer endelig anbefaling fra Stripes team
@@ -41,7 +41,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - Opret falske sælgerkonti i Stripe Connect test mode til at teste udbetalinger
   - **Fjern** admin-værktøjerne "Sæt saldo" og "Justér saldo" og siden med wallet-transaktioner – de hører til den gamle model
   - **Fjern** wallet-tabellerne og wallet-funktionerne i databasen (`wallets`, `wallet_entries`, `bid_reservations`, `wallet_*`-funktionerne) med en migration, når det nye flow virker
-- [ ] **Hvis betalingen fejler** (spærret kort, ingen dækning, banken kræver godkendelse med MitID/3D Secure): køber får besked og **24 timer** til at betale. Betaler han ikke, annulleres handlen, køber får en advarsel (tæller med i 3-advarsler-reglen), og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen
+- [ ] **Hvis vinderen ikke betaler inden 48 timer** (eller den automatiske betaling fejler og han ikke betaler selv inden for fristen): handlen annulleres, køber får en advarsel (tæller med i 3-advarsler-reglen), og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen
 - [ ] Gennemgang af hele pengestrømmen (reviewer): køb, gebyrer, frigivelse, refusion, ingen huller
 - [ ] Gebyrer: 5% køber + 5% sælger, altid
 - [ ] **BidHamr Beskyttelse**: 3% tilkøb for køber (min 20 / maks 250 kr), vælges ved køb
@@ -137,7 +137,7 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 - [ ] Filip: flyt den færdige app-kode fra MacBook til den stationære (via GitHub)
 - [ ] Sammenlign app og hjemmeside skærm for skærm – lav en liste over forskelle
 - [ ] Ret forskellene, så funktioner, tekster og design er ens (DESIGN.md gælder også appen)
-- [ ] Appen bruger samme Supabase-database og samme Stripe-betalingsflow som hjemmesiden (gemt kort, ingen saldo)
+- [ ] Appen bruger samme Supabase-database og samme Stripe-betalingsflow som hjemmesiden (vinderen betaler selv inden for 48 timer, valgfrit gemt kort, ingen saldo)
 - [ ] Push-notifikationer
 - [ ] Statistikker i appen
 - [ ] Nyt design og app-ikon (7B)

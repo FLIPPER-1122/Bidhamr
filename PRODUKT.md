@@ -48,9 +48,9 @@ Den svære bruger er den nye sælger. Han skal turde lægge sin ting op hos en p
 ## Pengemodellen kort
 
 - **Stripe holder pengene.** BidHamr har ingen saldo og intet wallet. Findes der tekst eller kode med en BidHamr-saldo, er det den gamle model, som er droppet.
-- Køberen **gemmer et betalingskort** ved oprettelse af profil. Der trækkes intet. Man kan ikke byde uden et gemt kort.
-- Når auktionen slutter, **trækkes vinderens kort automatisk**: bud + købergebyr + fragt + evt. BidHamr Beskyttelse.
-- Fejler betalingen, har køberen **24 timer**. Betaler han ikke, annulleres handlen, køberen får en advarsel, og sælgeren kan tilbyde varen til næsthøjeste byder eller sætte den op igen.
+- **Vinderen betaler selv inden for 48 timer** efter auktionen: bud + købergebyr + fragt + evt. BidHamr Beskyttelse. Betalingsmetoder: kort, MobilePay, Apple Pay og Google Pay.
+- **Gemt kort er et tilvalg.** Brugeren kan gemme et kort og slå "Betal automatisk, når jeg vinder" til, så kortet trækkes med det samme. Man kan byde uden et gemt kort.
+- Betaler vinderen ikke inden **48 timer**, annulleres handlen, køberen får en advarsel, og sælgeren kan tilbyde varen til næsthøjeste byder eller sætte den op igen.
 - **Gebyrer: 5% til køberen og 5% til sælgeren.** Altid, uden minimum eller maksimum.
 - **BidHamr Beskyttelse** er et frivilligt tilkøb på **3%** oveni købergebyret, mindst 20 kr. og højst 250 kr. Den dækker, hvis varen er gået i stykker under forsendelsen: køberen kan oprette en sag og sende varen retur, og BidHamr håndterer sagen. De 3% er en midlertidig pris – der skal laves et bedre prissystem senere.
 - Ordet **"forsikring"** bruges aldrig – hverken i UI, mails, kode eller dokumenter. Det hedder **BidHamr Beskyttelse**. Heller ikke "garanti".
@@ -63,7 +63,7 @@ Den svære bruger er den nye sælger. Han skal turde lægge sin ting op hos en p
 
 - **"Køb nu" findes ikke.** BidHamr er en ren auktionsside. Alt sælges ved bud. Det kan tages op igen efter lancering, men er ikke med ved lanceringen.
 - **Ingen fortrydelsesret.** Sælgeren er privatperson, så forbrugerreglerne om 14 dages fortrydelsesret gælder ikke. Et køb kan ikke fortrydes. Det skal stå tydeligt på hver auktion.
-- **Ingen saldo, intet wallet, ingen indbetaling før bud.** Køberen betaler med gemt kort, når han vinder.
+- **Ingen saldo, intet wallet, ingen indbetaling før bud.** Vinderen betaler først, når han har vundet.
 - **Ingen skjult mindstepris.** Sælgeren sætter én synlig startpris, som er mindsteprisen.
 - **Ingen bedømmelse af køberen.** Kun køberen bedømmer sælgeren.
 
