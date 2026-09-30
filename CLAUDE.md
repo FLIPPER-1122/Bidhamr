@@ -14,11 +14,30 @@ BidHamr er en dansk C2C-auktionsplatform (bidhamr.dk), hvor privatpersoner sælg
 1. **Claude pusher ALDRIG til git.** Filip pusher selv. Resultatet skal ligge på `main` – efterlad ikke agent-branches.
    - **Agenter køres altid i en git worktree** (`isolation: "worktree"`), så de har deres egen mappe. Uden det arbejder flere agenter og Filip i samme arbejdstræ samtidig, og git har intet værn mod det: HEAD kan skifte midt i en agents kommandoer, og `git reset` kan ramme den forkerte branch. Det er sket.
    - En worktree kræver en branch – git tillader ikke to worktrees på `main` samtidig. Den branch er teknik, ikke noget Filip skal forholde sig til: den flettes ind i `main` og slettes, før opgaven meldes færdig.
-2. **Ingen ændringer i produktionsdatabasen** uden Filips udtrykkelige "ja". Skriv migrationer som filer i `supabase/migrations/`.
+2. **Ingen ændringer i produktionsdatabasen** uden Filips udtrykkelige "ja". Skriv migrationer som filer i `supabase/migrations/`. På **testdatabasen** må agenter frit køre migrationer og testdata (se "Databaser" nedenfor).
 3. **Stripe holder alle penge. BidHamr har ingen saldo/wallet.** Vinderen betaler selv inden for 48 timer (kort, MobilePay, Apple Pay, Google Pay). Gemt kort med automatisk betaling er et tilvalg – man kan byde uden. Kun Stripes testmiljø indtil fase 6.
 4. Ordet **"forsikring"** bruges aldrig – det hedder **"BidHamr Beskyttelse"**.
 5. Al tekst i UI er på **dansk**.
 6. Handelsdata slettes aldrig (bogføringsloven/DAC7) – arkivér i stedet.
+
+## Databaser
+
+Der er to Supabase-projekter. Tjek altid projekt-ref'en, før du kører noget:
+
+| | Produktion | Test |
+|---|---|---|
+| Navn i Supabase | **Hamr** | **Bidhamr Test** |
+| Projekt-ref / `project_id` | `lkifkrexeldimmghnsie` | `pjiigmzqwlfepxnjdvug` |
+| URL | `https://lkifkrexeldimmghnsie.supabase.co` | `https://pjiigmzqwlfepxnjdvug.supabase.co` |
+| Region | eu-west-1 | eu-west-2 |
+| Bruges af | bidhamr.dk, Vercel, `.env.production.local` (`next build`/`next start`) | `npm run dev` via `.env.local` |
+| Migrationer og testdata | **Kun med Filips udtrykkelige "ja"** | Frit – ingen tilladelse nødvendig |
+
+- **Testdatabasen** må agenter frit køre migrationer, `supabase/seed.sql` og anden testdata på. Nye migrationer køres først her. Testbrugerne og deres adgangskoder står øverst i `supabase/seed.sql`; tester-agenten bruger `tester@test.bidhamr.dk`.
+- **Produktionsdatabasen** kræver stadig Filips udtrykkelige "ja" for hver ændring. Læse-forespørgsler (select) må gerne køres for at undersøge noget.
+- Er du i tvivl om, hvilken database du rammer, så tjek `NEXT_PUBLIC_SUPABASE_URL` i den env-fil, der bruges, eller `project_id` i MCP-kaldet. Produktionsdata indeholder rigtige brugere (fx `test@t.com`); testdata har kun `@test.bidhamr.dk`-brugere.
+- Rør aldrig Vercels miljøvariabler – Vercel skal altid bruge produktionsdatabasen.
+- Alt, der ændres i produktion uden for en migration, skal indfanges i en migrationsfil, ellers kommer testdatabasen ud af trit (se `20260930130000_indfang_prod_drift.sql`).
 
 ## Du er chef for et agent-team
 
