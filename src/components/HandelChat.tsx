@@ -111,7 +111,7 @@ export default function HandelChat({
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${
                   erMig
-                    ? "bg-brand text-white"
+                    ? "bg-orange-knap text-white"
                     : "bg-neutral-100 text-neutral-800"
                 }`}
               >
@@ -147,7 +147,7 @@ export default function HandelChat({
         <button
           type="submit"
           disabled={sender || !tekst.trim()}
-          className="shrink-0 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
+          className="shrink-0 rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
         >
           {sender ? "Sender…" : "Send"}
         </button>

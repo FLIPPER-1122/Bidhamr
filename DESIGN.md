@@ -21,8 +21,10 @@ Markeringer i dokumentet:
 | Skovgrøn (panel) | `#1E5E4A` | `--color-groen` | Store flader: hero-panel, footer, mørke sektioner. Tekst på skovgrøn er hvid. **[MOCKUP]** |
 | Mørk skovgrøn | `#154537` | `--color-groen-mork` | Tekst/ikoner på lys grøn baggrund, hover på grønne flader, overskrifter i tryghedsstriben. **[MOCKUP]** |
 | Lys grøn | `#E8F2EE` | `--color-groen-lys` | Rolige baggrunde: tryghedsstribe, kategori-ikoner, sektionsbaggrunde, badges. **[MOCKUP]** |
-| Orange | `#E8772E` | `--color-orange` | Primær handling: knapper, søgeknap, accenter, "slutter snart"-timer. **[MOCKUP]** |
-| Orange mørk | `#C75F1C` | `--color-orange-mork` | Hover/active på orange knapper. **[FORSLAG]** (ikke i mockup) |
+| Orange | `#E8772E` | `--color-orange` | **Kun dekorativ flade uden tekst ovenpå**: accenter, striber, ikonflader. Målt 2,95:1 mod hvid. **[MOCKUP]** |
+| Orange mørk | `#C75F1C` | `--color-orange-mork` | Hover på dekorative orange flader. Består **ikke** som tekstbærer (4,13:1 mod hvid). **[FORSLAG]** |
+| **Orange knap** | **`#B85518`** | `--color-orange-knap` | **Primær handling: knapper, søgeknap, badges med hvid tekst.** Hvid på denne = 4,83:1 → WCAG AA. |
+| Orange knap mørk | `#9C4413` | `--color-orange-knap-mork` | Hover/active på primære knapper. Mørkere end `#B85518`, så kontrasten kun bliver bedre. |
 | Orange lys | `#FBEFE6` | `--color-orange-lys` | Sjælden: baggrund bag orange ikon/badge. **[MOCKUP]** (fra variant C/E) |
 
 Orange bruges **sparsomt** – én primær knap pr. sektion. Grøn er fladen, orange er handlingen.
@@ -34,7 +36,7 @@ Orange bruges **sparsomt** – én primær knap pr. sektion. Grøn er fladen, or
 | Hvid | `#FFFFFF` | `--color-flade` | Sidens baggrund, kort, felter **[MOCKUP]** |
 | Tekst | `#1A1A1A` | `--color-tekst` | Brødtekst og overskrifter **[MOCKUP]** |
 | Tekst dæmpet | `#555555` | `--color-tekst-daempet` | Underrubrikker, beskrivelser **[MOCKUP]** |
-| Tekst svag | `#777777` | `--color-tekst-svag` | Metatekst, "14 bud", tidsstempler **[MOCKUP]** |
+| Tekst svag | `#666666` | `--color-tekst-svag` | Metatekst, "14 bud", tidsstempler. Målt 5,74:1 på hvid og 5,02:1 på `#E8F2EE`. (Var `#777777`, som fejlede begge: 4,48:1 / 3,92:1.) |
 | Pladsholder | `#888888` | `--color-pladsholder` | Pladsholdertekst i søgefelt/inputs **[MOCKUP]** |
 | Kant | `#EEEEEE` | `--color-kant` | Kort-kant, sektionsskel, header-bund **[MOCKUP]** |
 | Kant stærk | `#D6D6D6` | `--color-kant-staerk` | Inputkant, søgefeltets kant **[MOCKUP]** |
@@ -78,14 +80,16 @@ Læg dette i `src/app/globals.css` (erstatter det nuværende `--brand`-tema):
   --color-groen:          #1E5E4A;
   --color-groen-mork:     #154537;
   --color-groen-lys:      #E8F2EE;
-  --color-orange:         #E8772E;
+  --color-orange:         #E8772E;  /* dekorativ flade – aldrig tekst ovenpå */
   --color-orange-mork:    #C75F1C;
+  --color-orange-knap:      #B85518;  /* hvid tekst ovenpå: 4,83:1 */
+  --color-orange-knap-mork: #9C4413;
   --color-orange-lys:     #FBEFE6;
 
   --color-flade:          #FFFFFF;
   --color-tekst:          #1A1A1A;
   --color-tekst-daempet:  #555555;
-  --color-tekst-svag:     #777777;
+  --color-tekst-svag:     #666666;
   --color-pladsholder:    #888888;
   --color-kant:           #EEEEEE;
   --color-kant-staerk:    #D6D6D6;
@@ -216,11 +220,11 @@ knapper på mobil). Vandret padding: `px-5` normal, `px-6` stor.
 ### 6.1 Primær (orange) – én pr. skærmområde
 | Tilstand | Værdi |
 |---|---|
-| Normal | `bg-orange text-white` |
-| Hover | `bg-orange-mork` |
+| Normal | `bg-orange-knap text-white` (#B85518 – **ikke** `bg-orange`, som kun giver 2,95:1) |
+| Hover | `bg-orange-knap-mork` |
 | Fokus | `focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen` |
-| Aktiv (tryk) | `bg-orange-mork scale-[.99]` |
-| Deaktiveret | `bg-orange/40 text-white/80 cursor-not-allowed`, ingen hover |
+| Aktiv (tryk) | `bg-orange-knap-mork scale-[.99]` |
+| Deaktiveret | `bg-orange-knap/40 text-white/80 cursor-not-allowed`, ingen hover |
 | Loading | 16px spinner til venstre for teksten, teksten bliver stående, `disabled` + `aria-busy="true"` |
 
 ### 6.2 Sekundær (kant)
@@ -322,7 +326,8 @@ Felthøjde på mobil må ikke gå under 44px.
 
 ### 8.4 Søgefelt **[MOCKUP]**
 - Header: `rounded-full border-[1.5px] border-kant-staerk px-[18px] py-2.5 text-[15px]`, med rund orange
-  knap yderst til højre (34px, `bg-orange text-white rounded-full`).
+  knap yderst til højre (synlig cirkel 34px, `bg-orange-knap text-white rounded-full`). Selve `<button>`
+  skal være mindst 44×44px, så touch-målet holder – den synlige cirkel ligger som et `span` indeni.
 - Hero: `bg-white rounded-xl px-5 py-4` med orange "Søg"-knap i højre side (`rounded-md px-[18px]`).
 
 ### 8.5 Afkrydsning og radio
@@ -381,10 +386,23 @@ Regler:
 - **Kontrast**: brødtekst og ikoner, der bærer betydning, skal have mindst **4,5:1**. Store overskrifter
   (≥24px, eller ≥19px fed) mindst **3:1**.
   - Godkendt: hvid på `#1E5E4A`, `#154537` på `#E8F2EE`, `#1A1A1A` og `#555` på hvid, hvid på `#A32020`.
-  - **Pas på:** hvid tekst på `#E8772E` giver kun ca. 3:1. Det er **kun** tilladt på knapper og badges med
-    tekst på mindst 15px fed – aldrig til brødtekst eller små links. Orange tekst på hvid baggrund er forbudt;
-    brug `#C75F1C` eller grøn.
-  - `#777777` på hvid ligger lige på grænsen (4,5:1) – gå ikke lysere.
+  - **Målte tal (brug dem, regn ikke om):**
+
+    | Farve | På hvid | På lys grøn `#E8F2EE` |
+    |---|---|---|
+    | `#E8772E` orange | 2,95:1 FAIL | – |
+    | `#C75F1C` orange mørk | 4,13:1 FAIL | – |
+    | **`#B85518` orange knap** | **4,83:1 OK** | – |
+    | `#1E5E4A` skovgrøn | 7,62:1 OK | 6,67:1 OK |
+    | `#777777` | 4,48:1 FAIL | 3,92:1 FAIL |
+    | **`#666666`** | **5,74:1 OK** | **5,02:1 OK** |
+
+  - **Hvid tekst på `#E8772E` er 2,95:1 og må aldrig forekomme.** Der er ingen undtagelse for "15px fed":
+    WCAG regner først tekst som stor ved 18,66px/700 eller 24px, og vores knaptekst er 15px/600, så kravet
+    er 4,5:1. Skal en orange flade bære hvid tekst, er farven `#B85518` (4,83:1).
+  - **Orange tekst på hvid baggrund er forbudt** – også `#C75F1C`, der kun giver 4,13:1. Brug skovgrøn
+    `#1E5E4A` (7,62:1). Derfor peger `--color-brand` på skovgrøn, så alle gamle `text-brand`-links er lovlige.
+  - Dæmpet tekst går aldrig lysere end `#666666`. `#777777` består ikke og må ikke bruges.
 - **Fokus skal altid være synligt**:
   `focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen`
   (hvid outline på grøn flade). Fjern aldrig `outline` uden at sætte noget i stedet.
@@ -420,8 +438,8 @@ Faste mobilregler:
 ## 13. Hvad Filip skal beslutte
 
 1. Statusfarverne i 1.4 – især fejlfarven `#A32020` i stedet for den gamle `#E63946`.
-2. `#C75F1C` som mørkere orange til hover/active.
-3. At orange kun må bruges til store, fede knaptekster på grund af kontrast (afsnit 11).
+2. `#B85518` som orange knapfarve og `#9C4413` til hover/active (måling i afsnit 11).
+3. At `#E8772E` kun bruges som dekorativ flade uden tekst ovenpå (afsnit 11).
 4. Radier som standard: 14px på kort, 18px på store flader.
 5. Hvid logovariant + favicon og PNG'er fra designer (afsnit 10).
 6. Tabler Icons som officielt ikonsæt.

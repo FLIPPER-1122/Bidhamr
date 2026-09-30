@@ -69,7 +69,7 @@ export default function StartChatKnap({
     return (
       <Link
         href={`/mine-handler/${id}`}
-        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork"
+        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork"
       >
         <svg
           viewBox="0 0 24 24"

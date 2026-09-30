@@ -50,7 +50,7 @@ export default function GlemtAdgangskodePage() {
           </p>
           <Link
             href="/login"
-            className="mt-6 inline-block rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork"
+            className="btn btn-primaer btn-stor mt-6 w-full sm:w-auto"
           >
             Tilbage til login
           </Link>
@@ -87,7 +87,7 @@ export default function GlemtAdgangskodePage() {
                 placeholder="din@email.dk"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-brand focus:ring-1 focus:ring-brand"
+                className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:ring-1 focus:ring-groen"
               />
             </div>
 
@@ -96,7 +96,7 @@ export default function GlemtAdgangskodePage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
+              className="btn btn-primaer btn-stor w-full"
             >
               {loading ? "Sender…" : "Send nulstillingslink"}
             </button>

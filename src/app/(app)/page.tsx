@@ -43,7 +43,7 @@ export default async function Home() {
       <div className="mt-10 flex justify-center">
         <Link
           href="/auktioner"
-          className="rounded-full bg-brand px-8 py-4 text-base font-semibold text-white hover:bg-orange-mork"
+          className="rounded-full bg-orange-knap px-8 py-4 text-base font-semibold text-white hover:bg-orange-knap-mork"
         >
           Se alle auktioner →
         </Link>

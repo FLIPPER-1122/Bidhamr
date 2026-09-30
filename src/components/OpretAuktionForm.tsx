@@ -268,7 +268,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
                   className="h-full w-full object-cover"
                 />
                 {index === 0 && (
-                  <span className="absolute bottom-1 left-1 bg-brand px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  <span className="absolute bottom-1 left-1 bg-orange-knap px-1.5 py-0.5 text-[10px] font-semibold text-white">
                     Forside
                   </span>
                 )}
@@ -367,7 +367,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
               onClick={() => setVarighed(v.dage)}
               className={`rounded-lg border px-4 py-2 text-sm font-medium ${
                 varighed === v.dage
-                  ? "border-brand bg-brand text-white"
+                  ? "border-brand bg-orange-knap text-white"
                   : "border-neutral-300 text-neutral-700"
               }`}
             >
@@ -439,7 +439,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-lg bg-brand px-4 py-3 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
+        className="w-full rounded-lg bg-orange-knap px-4 py-3 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
       >
         {loading ? "Opretter auktion…" : "Opret auktion"}
       </button>

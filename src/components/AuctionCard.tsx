@@ -97,7 +97,7 @@ export default function AuctionCard({ auktion }: { auktion: DummyAuction }) {
           <span className="text-sm font-bold text-neutral-900">
             {auktion.nuværendeBud.toLocaleString("da-DK")} kr
           </span>
-          <span className="bg-brand px-1.5 py-0.5 text-[11px] font-semibold text-white">
+          <span className="bg-orange-knap px-1.5 py-0.5 text-[11px] font-semibold text-white">
             {auktion.antalBud}
           </span>
         </div>

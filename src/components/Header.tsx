@@ -61,28 +61,33 @@ export default async function Header() {
         </nav>
 
         <form action="/auktioner" method="GET" className="relative flex-1 px-2">
-          <button
-            type="submit"
-            aria-label="Søg"
-            className="absolute top-1/2 left-5 -translate-y-1/2 text-groen"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-4.5 w-4.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <circle cx="11" cy="11" r="7" />
-              <path strokeLinecap="round" d="M21 21l-4.3-4.3" />
-            </svg>
-          </button>
           <input
             type="search"
             name="q"
             placeholder="Søg efter varer…"
-            className="h-11 w-full rounded-full border-[1.5px] border-kant-staerk bg-white py-2.5 pl-11 pr-5 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:outline-2 focus:outline-groen/25"
+            className="h-11 w-full rounded-full border-[1.5px] border-kant-staerk bg-white py-2.5 pl-5 pr-14 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:outline-2 focus:outline-groen/25"
           />
+          {/* DESIGN.md 8.4: rund orange knap yderst til højre. Knappen fylder
+              44x44px for touch, mens den synlige cirkel er 34px. */}
+          <button
+            type="submit"
+            aria-label="Søg"
+            className="absolute top-1/2 right-3 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+          >
+            <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-orange-knap text-white transition-colors hover:bg-orange-knap-mork">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4.5 w-4.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path strokeLinecap="round" d="M21 21l-4.3-4.3" />
+              </svg>
+            </span>
+          </button>
         </form>
 
         <div className="flex items-center gap-6">

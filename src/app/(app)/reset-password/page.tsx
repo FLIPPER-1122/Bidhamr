@@ -81,7 +81,7 @@ export default function NulstilAdgangskodePage() {
           </p>
           <Link
             href="/login"
-            className="mt-6 inline-block rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork"
+            className="btn btn-primaer btn-stor mt-6 w-full sm:w-auto"
           >
             Gå til login nu
           </Link>
@@ -129,7 +129,7 @@ export default function NulstilAdgangskodePage() {
                 placeholder="Mindst 6 tegn"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-brand focus:ring-1 focus:ring-brand"
+                className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:ring-1 focus:ring-groen"
               />
             </div>
 
@@ -148,7 +148,7 @@ export default function NulstilAdgangskodePage() {
                 placeholder="Gentag adgangskode"
                 value={passwordGentag}
                 onChange={(e) => setPasswordGentag(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-brand focus:ring-1 focus:ring-brand"
+                className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:ring-1 focus:ring-groen"
               />
               {passwordGentag && password !== passwordGentag && (
                 <p className="mt-1.5 text-xs text-red-500">
@@ -162,7 +162,7 @@ export default function NulstilAdgangskodePage() {
             <button
               type="submit"
               disabled={loading || !klar || (!!passwordGentag && password !== passwordGentag)}
-              className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn btn-primaer btn-stor w-full"
             >
               {loading ? "Gemmer…" : "Gem ny adgangskode"}
             </button>

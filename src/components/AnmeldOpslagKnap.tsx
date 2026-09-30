@@ -109,7 +109,7 @@ export default function AnmeldOpslagKnap({
                 <button
                   type="button"
                   onClick={luk}
-                  className="mt-5 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork"
+                  className="mt-5 rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork"
                 >
                   Luk
                 </button>
@@ -179,7 +179,7 @@ export default function AnmeldOpslagKnap({
                     <button
                       type="submit"
                       disabled={sender}
-                      className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
+                      className="rounded-lg bg-orange-knap px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
                     >
                       {sender ? "Sender…" : "Send anmeldelse"}
                     </button>

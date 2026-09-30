@@ -305,7 +305,7 @@ export default function AuctionBrowser({
               onClick={() => setRadiusKm(RADIUS_MAX)}
               className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${
                 erHeleDanmark
-                  ? "bg-brand text-white"
+                  ? "bg-orange-knap text-white"
                   : "border border-neutral-300 text-neutral-600 hover:border-brand hover:text-brand"
               }`}
             >
