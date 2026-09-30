@@ -77,7 +77,7 @@ const TRYGHED = [
   },
   {
     titel: "Bedømmelser",
-    tekst: "Køber og sælger bedømmer hinanden efter hver handel.",
+    tekst: "Køberen bedømmer sælgeren, når handlen godkendes.",
     ikon: (
       <path
         strokeLinecap="round"
