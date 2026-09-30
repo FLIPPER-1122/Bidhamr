@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
-import LogoutButton from "@/components/LogoutButton";
+import KontoMenu from "@/components/KontoMenu";
 import { kr } from "@/lib/wallet";
 
 export default async function Header() {
@@ -33,7 +33,7 @@ export default async function Header() {
 
   return (
     <header className="border-b border-kant bg-white">
-      <div className="mx-auto flex min-h-[78px] max-w-[1280px] flex-wrap items-center gap-4 px-4 py-4 sm:gap-8 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-[1280px] flex-wrap items-center gap-x-3 gap-y-3 px-4 py-3 sm:px-6 lg:flex-nowrap lg:gap-x-6 lg:px-8 lg:py-4">
         <Link
           href="/"
           aria-label="BidHamr - til forsiden"
@@ -46,38 +46,39 @@ export default async function Header() {
             height={60}
             priority
             unoptimized
-            className="h-9 w-auto"
+            className="h-8 w-auto lg:h-9"
           />
         </Link>
 
-        <nav className="hidden items-center gap-6 sm:flex">
-          <Link
-            href="/auktioner"
-            className="text-sm font-medium text-tekst-daempet hover:text-groen"
-          >
-            Alle auktioner
-          </Link>
+        <Link
+          href="/auktioner"
+          className="hidden shrink-0 text-sm font-medium text-tekst-daempet hover:text-groen xl:block"
+        >
+          Alle auktioner
+        </Link>
 
-        </nav>
-
-        <form action="/auktioner" method="GET" className="relative flex-1 px-2">
+        {/* Mobil: søgefeltet i fuld bredde under logo-linjen */}
+        <form
+          action="/auktioner"
+          method="GET"
+          role="search"
+          className="relative order-last w-full lg:order-none lg:w-auto lg:min-w-0 lg:flex-1"
+        >
+          <label htmlFor="header-soeg" className="sr-only">
+            Søg efter varer
+          </label>
           <button
             type="submit"
             aria-label="Søg"
-            className="absolute top-1/2 left-5 -translate-y-1/2 text-groen"
+            className="absolute top-1/2 left-1 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-groen"
           >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-4.5 w-4.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
+            <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <circle cx="11" cy="11" r="7" />
               <path strokeLinecap="round" d="M21 21l-4.3-4.3" />
             </svg>
           </button>
           <input
+            id="header-soeg"
             type="search"
             name="q"
             placeholder="Søg efter varer…"
@@ -85,137 +86,41 @@ export default async function Header() {
           />
         </form>
 
-        <div className="flex items-center gap-6">
-          <Link
-            href="/favoritter"
-            className="hidden items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen sm:flex"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 21s-7.5-4.5-9.5-9C1 8.5 2.5 5 6 5c2 0 3.5 1 4 2 0.5-1 2-2 4-2 3.5 0 5 3.5 3.5 7-2 4.5-9.5 9-9.5 9z"
-              />
+        <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0">
+          <Link href="/favoritter" aria-label="Favoritter" title="Favoritter" className="hidden h-11 w-11 items-center justify-center rounded-full text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7.5-4.5-9.5-9C1 8.5 2.5 5 6 5c2 0 3.5 1 4 2 0.5-1 2-2 4-2 3.5 0 5 3.5 3.5 7-2 4.5-9.5 9-9.5 9z" />
             </svg>
-            Favoritter
           </Link>
-
           {data.user ? (
-            <>
-              {erAdmin && (
-                <Link
-                  href="/admin"
-                  className="hidden items-center gap-1.5 text-sm font-medium text-groen hover:underline sm:flex"
-                >
-                  <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                  Admin
-                </Link>
-              )}
-              {saldo !== null && (
-                <Link
-                  href="/konto"
-                  title="Til rådighed — klik for at indbetale"
-                  className="flex items-center gap-1.5 rounded-full border border-groen bg-groen-lys px-3 py-1.5 text-sm font-semibold text-groen hover:bg-groen hover:text-white"
-                >
-                  <span aria-hidden="true">💰</span>
-                  {kr(saldo)}
-                </Link>
-              )}
-              <Link
-                href="/konto"
-                className="hidden items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen sm:flex"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M3 10h18M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2M3 10v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8M16 15h2"
-                  />
-                </svg>
-                Min konto
-              </Link>
-              <Link
-                href="/mine-handler"
-                className="flex items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M16 11V7a4 4 0 0 0-8 0v4M5 9h14l1 12H4L5 9z"
-                  />
-                </svg>
-                Mine handler
-              </Link>
-              <Link
-                href="/profil/mig"
-                className="flex items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"
-                  />
-                </svg>
-                Min profil
-              </Link>
-              <LogoutButton />
-            </>
+            <Link href="/mine-handler" aria-label="Mine handler" title="Mine handler" className="hidden h-11 w-11 items-center justify-center rounded-full text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 0 0-8 0v4M5 9h14l1 12H4L5 9z" />
+            </svg>
+            </Link>
           ) : (
             <Link
               href="/login"
-              className="flex items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-groen"
+              className="hidden h-11 items-center px-2 text-sm font-medium text-tekst-daempet hover:text-groen lg:flex"
             >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"
-                />
-              </svg>
               Log ind
             </Link>
           )}
 
-          <Link
-            href="/opret-auktion"
-            className="btn btn-primaer shrink-0"
-          >
-            Opret auktion
-          </Link>
+          {/* .btn er ulagdelt CSS og ville overtrumfe "hidden" – derfor en wrapper */}
+          <div className="hidden shrink-0 lg:block">
+            <Link href="/opret-auktion" className="btn btn-primaer">
+              Opret auktion
+            </Link>
+          </div>
+
+          <div className={data.user ? "" : "lg:hidden"}>
+            <KontoMenu
+              logget_ind={!!data.user}
+              erAdmin={erAdmin}
+              saldoTekst={saldo !== null ? kr(saldo) : null}
+            />
+          </div>
         </div>
       </div>
     </header>
