@@ -25,7 +25,9 @@ export const metadata: Metadata = {
   icons: {
     icon: [{ url: "/brand/bidhamr-app-ikon.svg", type: "image/svg+xml" }],
     shortcut: "/brand/bidhamr-app-ikon.svg",
-    apple: "/brand/bidhamr-app-ikon.svg",
+    apple: [
+      { url: "/brand/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
 };
 
