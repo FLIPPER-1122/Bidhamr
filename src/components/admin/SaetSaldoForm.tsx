@@ -63,7 +63,7 @@ export default function SaetSaldoForm({
           type="button"
           onClick={gem}
           disabled={venter}
-          className="whitespace-nowrap rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
+          className="whitespace-nowrap rounded-lg bg-orange-knap px-3 py-2 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
         >
           {venter ? "Gemmer…" : "Sæt saldo"}
         </button>

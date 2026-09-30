@@ -3,7 +3,7 @@
 
 // Mails kan ikke bruge CSS-variabler, så farverne fra DESIGN.md staves ud her.
 const GROEN = "#1E5E4A";
-const ORANGE = "#E8772E";
+const ORANGE = "#B85518"; // 4,83:1 mod hvid tekst (WCAG AA); #E8772E gav kun 2,95:1
 
 export const HANDEL_AFSENDER = "BidHamr <noreply@bidhamr.dk>";
 

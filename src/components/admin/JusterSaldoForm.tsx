@@ -80,7 +80,7 @@ export default function JusterSaldoForm({ userId }: { userId: string }) {
           type="button"
           onClick={gem}
           disabled={venter}
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
+          className="rounded-lg bg-orange-knap px-4 py-2 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
         >
           {venter ? "Bogfører…" : "Bogfør"}
         </button>

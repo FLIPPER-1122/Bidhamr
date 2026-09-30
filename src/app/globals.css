@@ -11,15 +11,24 @@
   --color-groen: #1e5e4a;
   --color-groen-mork: #154537;
   --color-groen-lys: #e8f2ee;
+  /*
+    --color-orange er en DEKORATIV flade: 2,95:1 mod hvid. Der må aldrig
+    stå tekst på den, og den må aldrig bruges som tekstfarve på lys bund.
+    Skal der tekst ovenpå (knapper, badges), bruges --color-orange-knap:
+    hvid på #b85518 = 4,83:1 → WCAG AA.
+  */
   --color-orange: #e8772e;
   --color-orange-mork: #c75f1c;
+  --color-orange-knap: #b85518;
+  --color-orange-knap-mork: #9c4413;
   --color-orange-lys: #fbefe6;
 
   /* Neutrale */
   --color-flade: #ffffff;
   --color-tekst: #1a1a1a;
   --color-tekst-daempet: #555555;
-  --color-tekst-svag: #777777;
+  /* #666666: 5,74:1 på hvid, 5,02:1 på lys grøn. #777777 fejlede begge. */
+  --color-tekst-svag: #666666;
   --color-pladsholder: #888888;
   --color-kant: #eeeeee;
   --color-kant-staerk: #d6d6d6;
@@ -42,11 +51,12 @@
   --color-info-tekst: #1f4e79;
 
   /*
-    Overgang: 45 filer bruger endnu bg-brand/text-brand fra den gamle røde.
-    De peger nu på orange (handling), så de følger designsystemet, indtil
-    siderne redesignes i fase 3.
+    Overgang: mange filer bruger endnu bg-brand/text-brand fra den gamle røde.
+    Tokenet peger på skovgrøn, fordi text-brand oftest er links og tal på hvid
+    bund: grøn giver 7,62:1 på hvid og 6,67:1 på lys grøn, mens orange kun gav
+    2,95:1. Skal en flade have hvid tekst, bruges bg-orange-knap.
   */
-  --color-brand: #e8772e;
+  --color-brand: #1e5e4a;
   --color-background: #ffffff;
   --color-foreground: #1a1a1a;
 
@@ -123,21 +133,23 @@ h3 {
   padding-inline: 24px;
 }
 
-/* Primær – orange. Én pr. skærmområde. */
+/* Primær – orange. Én pr. skærmområde.
+   Baggrunden er #b85518 (ikke #e8772e): hvid tekst på 15px/600 er ikke
+   "large text" i WCAG, så kravet er 4,5:1. #b85518 giver 4,83:1. */
 .btn-primaer {
-  background-color: var(--color-orange);
+  background-color: var(--color-orange-knap);
   color: #fff;
 }
 .btn-primaer:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--color-orange-mork);
+  background-color: var(--color-orange-knap-mork);
 }
 .btn-primaer:active:not(:disabled) {
-  background-color: var(--color-orange-mork);
+  background-color: var(--color-orange-knap-mork);
   transform: scale(0.99);
 }
 .btn-primaer:disabled,
 .btn-primaer[aria-disabled="true"] {
-  background-color: color-mix(in srgb, var(--color-orange) 40%, white);
+  background-color: color-mix(in srgb, var(--color-orange-knap) 40%, white);
   color: rgba(255, 255, 255, 0.8);
   cursor: not-allowed;
 }

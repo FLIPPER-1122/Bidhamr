@@ -48,7 +48,7 @@ export default function IndbetalForm() {
             onClick={() => setBeløb(String(v))}
             className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
               beløb === String(v)
-                ? "border-brand bg-brand text-white"
+                ? "border-brand bg-orange-knap text-white"
                 : "border-neutral-300 text-neutral-700 hover:border-brand"
             }`}
           >
@@ -85,7 +85,7 @@ export default function IndbetalForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
+        className="w-full rounded-lg bg-orange-knap px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
       >
         {loading ? "Åbner betaling…" : "Indbetal med kort eller MobilePay"}
       </button>

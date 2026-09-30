@@ -121,7 +121,7 @@ function LoginForm() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+                className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none focus:border-groen focus:ring-1 focus:ring-groen"
               />
             </div>
 
@@ -146,7 +146,7 @@ function LoginForm() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+                className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none focus:border-groen focus:ring-1 focus:ring-groen"
               />
             </div>
 
@@ -176,7 +176,7 @@ function LoginForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-mork disabled:opacity-50"
+              className="btn btn-primaer btn-stor w-full"
             >
               {loading ? "Logger ind…" : "Log ind"}
             </button>

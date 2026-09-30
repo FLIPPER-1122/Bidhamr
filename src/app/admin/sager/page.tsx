@@ -161,7 +161,7 @@ export default async function AdminSager({
               href={`/admin/sager?${params}`}
               className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
                 aktiv
-                  ? "bg-brand text-white"
+                  ? "bg-orange-knap text-white"
                   : "bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-100"
               }`}
             >
