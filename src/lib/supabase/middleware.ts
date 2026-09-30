@@ -2,8 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Routes der er tilgængelige uden login, mens resten af appen er bag
-// venteliste-gaten. "/api" undtages så fx /api/waitlist stadig kan kaldes
-// fra splash-siden af besøgende uden session.
+// venteliste-gaten. Kun API-ruter med egen adgangskontrol undtages:
+// /api/waitlist (offentlig tilmelding fra splash-siden), /api/webhooks
+// (Stripe-signatur) og /api/cron (CRON_SECRET, fail closed). Alle andre
+// /api-ruter kræver login + rolle som resten af appen.
 const OFFENTLIGE_RUTER = [
   "/coming-soon",
   "/login",
@@ -11,7 +13,9 @@ const OFFENTLIGE_RUTER = [
   "/nulstil-adgangskode",
   "/reset-password",
   "/auth",
-  "/api",
+  "/api/waitlist",
+  "/api/webhooks",
+  "/api/cron",
 ];
 
 // Inden launch er appen lukket for almindelige brugere. Kun disse roller

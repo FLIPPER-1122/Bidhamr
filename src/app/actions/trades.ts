@@ -50,14 +50,20 @@ export async function sendPakke(tradeId: string, tracking: string) {
   const renTracking = tracking.trim();
   if (!renTracking) return { fejl: "Indtast et sporingsnummer." };
 
-  // Statusguard gør handlingen idempotent ved dobbeltklik.
-  const { error } = await supabase
-    .from("trades")
-    .update({ status: "pakke_sendt", tracking_number: renTracking })
-    .eq("id", tradeId)
-    .eq("status", "betaling_modtaget");
+  if (renTracking.length > 100) return { fejl: "Sporingsnummeret er for langt." };
 
-  if (error) return { fejl: error.message };
+  // Sælgeren udledes af auth.uid() i funktionen. Statusguard i samme update
+  // gør handlingen idempotent ved dobbeltklik.
+  const { data: sendt, error } = await supabase.rpc("trade_marker_sendt", {
+    p_trade: tradeId,
+    p_tracking: renTracking,
+  });
+
+  if (error) {
+    console.error("trade_marker_sendt fejlede:", error);
+    return { fejl: "Noget gik galt. Prøv igen om lidt." };
+  }
+  if (!sendt) return { fejl: "Pakken er allerede markeret som sendt." };
 
   // Mail til køberen. Fejler den, må det ikke vælte forsendelsen.
   try {
@@ -115,7 +121,10 @@ export async function markerModtaget(tradeId: string) {
     { p_trade: tradeId },
   );
 
-  if (error) return { fejl: error.message };
+  if (error) {
+    console.error("trade_marker_modtaget fejlede:", error);
+    return { fejl: "Noget gik galt. Prøv igen om lidt." };
+  }
   if (!markeret) {
     return { fejl: "Pakken er allerede kvitteret." };
   }
@@ -146,7 +155,10 @@ export async function godkendPakke(tradeId: string) {
     { p_trade: tradeId },
   );
 
-  if (error) return { fejl: error.message };
+  if (error) {
+    console.error("wallet_udbetal_saelger fejlede:", error);
+    return { fejl: "Noget gik galt. Prøv igen om lidt." };
+  }
   if (!udbetalt) {
     return { fejl: "Pakken er allerede godkendt." };
   }
