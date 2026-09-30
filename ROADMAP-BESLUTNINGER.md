@@ -2,7 +2,7 @@
 
 > **VIGTIGT – gælder hele dokumentet:**
 > - **Stripe holder brugernes penge (Stripe Connect), ikke BidHamr.**
-> - **Der er INGEN købersaldo/wallet.** Køber gemmer et kort ved oprettelse, og kortet trækkes automatisk, når han vinder. Fejler betalingen, har han 24 timer. Hvor der står "wallet" nedenfor, er det forældet.
+> - **Der er INGEN købersaldo/wallet.** Vinderen betaler selv inden for **48 timer** efter auktionen (kort, MobilePay, Apple Pay, Google Pay). Som **tilvalg** kan brugeren gemme et kort og slå automatisk betaling til, så kortet trækkes med det samme, når han vinder. Betaler han ikke inden 48 timer: handlen annulleres, han får en advarsel, og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen. Hvor der står "wallet" nedenfor, er det forældet.
 > - Tilkøbet for køberen hedder **"BidHamr Beskyttelse"** overalt.
 
 Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md og PRODUKT.md.

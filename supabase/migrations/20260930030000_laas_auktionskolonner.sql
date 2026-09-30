@@ -43,7 +43,7 @@ begin
   or new.startpris       is distinct from old.startpris
   or new.skjult          is distinct from old.skjult
   or new.oprettet        is distinct from old.oprettet then
-    raise exception 'Du maa ikke aendre denne oplysning.'
+    raise exception 'Du må ikke ændre denne oplysning.'
       using errcode = '42501';
   end if;
 
@@ -94,7 +94,7 @@ begin
   end if;
 
   if new.slutter_kl > now() + interval '30 days' then
-    raise exception 'En auktion kan hoejst vare 30 dage.'
+    raise exception 'En auktion kan højst vare 30 dage.'
       using errcode = '22023';
   end if;
 

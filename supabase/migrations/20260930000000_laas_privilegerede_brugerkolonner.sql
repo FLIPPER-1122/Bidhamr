@@ -34,7 +34,7 @@ begin
   or new.suspenderet_til    is distinct from old.suspenderet_til
   or new.rating             is distinct from old.rating
   or new.oprettet           is distinct from old.oprettet then
-    raise exception 'Du maa ikke aendre denne oplysning.'
+    raise exception 'Du må ikke ændre denne oplysning.'
       using errcode = '42501';
   end if;
 

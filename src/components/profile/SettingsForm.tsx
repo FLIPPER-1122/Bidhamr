@@ -40,7 +40,8 @@ export default function SettingsForm({
     setLoading(false);
 
     if (updateError) {
-      setError(updateError.message);
+      console.error("Profil kunne ikke gemmes:", updateError);
+      setError("Dine oplysninger kunne ikke gemmes. Prøv igen om lidt.");
       return;
     }
 
