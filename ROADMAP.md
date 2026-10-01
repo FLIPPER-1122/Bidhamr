@@ -47,8 +47,8 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - **Fjern** wallet-tabellerne og wallet-funktionerne i databasen (`wallets`, `wallet_entries`, `bid_reservations`, `wallet_*`-funktionerne) med en migration, når det nye flow virker
 - [ ] **Hvis vinderen ikke betaler inden 24 timer** (eller den automatiske betaling fejler og han ikke betaler selv inden for fristen): handlen annulleres, køber får en advarsel (tæller med i 3-advarsler-reglen), og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen
 - [ ] Gennemgang af hele pengestrømmen (reviewer): køb, gebyrer, frigivelse, refusion, ingen huller
-- [ ] Gebyrer: 5% køber + 5% sælger, altid
-- [ ] **BidHamr Beskyttelse**: 5% tilkøb for køber (min 25 / maks 250 kr), vælges ved køb
+- [~] Gebyrer: 5% køber + 5% sælger, altid
+- [~] **BidHamr Beskyttelse**: 5% tilkøb for køber (min 25 / maks 250 kr), vælges ved bud (låst)
 - [ ] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
 - [ ] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen
 - [ ] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem
@@ -118,6 +118,8 @@ Formål: siden bliver troværdig, professionel, tryg og moderne.
 - [ ] Blokering af brugere – inkl. at sælger kan spærre bestemte brugere fra at byde på sine auktioner
 - [ ] Rapportér en besked/bruger i chatten + automatisk spamfilter i beskeder
 - [ ] SEO (titler, beskrivelser, sitemap) og besøgsstatistik (cookie-venlig)
+- [ ] Filip: find en skabelon til **privatlivspolitik** og **brugerbetingelser/handelsbetingelser** (fx fra Erhvervsstyrelsen/Virk, Datatilsynet, din rådgiver eller en dansk skabelontjeneste for markedspladser) og læg den i projektet som `jura/privatlivspolitik-skabelon.md` og `jura/brugerbetingelser-skabelon.md`
+- [ ] Implementér privatlivspolitik og brugerbetingelser ud fra Filips skabeloner, tilpasset BidHamr og `ROADMAP-BESLUTNINGER.md` (indhold-agenten). Vises som egne sider og linkes fra footer, oprettelse af profil og betaling. Tydeligt markeret **"UDKAST – skal godkendes af advokat"**, indtil advokaten har gennemgået dem i fase 6. Brugeren skal acceptere brugerbetingelserne ved oprettelse
 - [ ] Footer og faste sider: Om BidHamr, Kontakt/kundeservice, Handelsbetingelser, Privatlivspolitik, Cookies
 - [ ] Kontaktformular til kundeservice, som lander i admin
 - [ ] Pæne fejlsider (404/500) og loading-tilstande overalt
@@ -200,7 +202,12 @@ Fundet i gennemgang af Tradera, Vinted og Etsy. Gode, men ikke nødvendige for a
 - Automatisk deling af auktioner på Facebook/Instagram
 - Automatisk risikoscoring, der fanger mistænkelige auktioner og beskeder
 - "Køb nu" (se nedenfor)
+- **Virksomheder som sælgere** (se åbne spørgsmål). Stripe-delen er klar, fordi Stripes onboarding allerede håndterer både private og virksomheder (CVR, ejere). Det, der mangler, er forretningsreglerne:
+  - [ ] Filip: idéer til, hvordan virksomheder skal bruge platformen (fx genbrugsbutikker, dødsbo, overskudslager)
+  - [ ] Filip: afklar med rådgiver, hvad der gælder, når en virksomhed sælger til en privatperson: købeloven, forbrugeraftaleloven (14 dages fortrydelsesret ved fjernsalg), reklamationsret, moms på salget og priser vist inkl. moms
+  - [ ] Bygges ud fra rådgiverens svar: markering af erhvervssælgere på auktionen, deres egne vilkår og fortrydelsesret, moms på varen og evt. andre gebyrer
 
 ## Åbne spørgsmål
 - BidHamr Beskyttelse: bedre prismodel end fast 5%
+- Virksomheder som sælgere: hvilke typer virksomheder, samme gebyrer som private, og hvordan fortrydelsesret og moms håndteres
 - "Køb nu": IKKE med ved lancering – BidHamr er en ren auktionsside. Kan tages op igen senere.
