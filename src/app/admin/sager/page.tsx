@@ -280,7 +280,7 @@ export default async function AdminSager({
                                 triggerLabel="Refundér køber"
                                 triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"
                                 title="Refundér køberen og annullér handlen?"
-                                description="Køberen får købsbeløb + købergebyr tilbage i sin wallet. Sælgeren får intet. Kan ikke fortrydes."
+                                description="Køberen får hele det betalte beløb (bud, købergebyr, fragt og evt. BidHamr Beskyttelse) tilbage via Stripe. Er handlen ikke betalt endnu, annulleres betalingen. Sælgeren får intet. Kan ikke fortrydes."
                                 confirmLabel="Ja, refundér"
                                 action={handelRefunder}
                                 hiddenFields={{ tradeId: h.id }}

@@ -97,7 +97,7 @@ export default async function AuktionPage({
   );
   const erSælger = bruger?.id === auktion.bruger_id;
 
-  // Handelstilstand: e-money-afregningen opretter en handel ved auktionsluk.
+  // Handelstilstand: cron-jobbet opretter handel + betaling ved auktionsluk.
   // Betalingen er dermed allerede sket - der er intet "betal nu"-trin.
   let handel: {
     id: string;

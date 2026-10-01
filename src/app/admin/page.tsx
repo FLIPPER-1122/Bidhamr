@@ -34,30 +34,25 @@ export default async function AdminDashboard() {
     supabase.from("auctions").select("id", { count: "exact", head: true }).eq("status", "aktiv").gt("slutter_kl", nuISO),
     // Afsluttet = eksplicit markeret afsluttet, eller udloebet uden at vaere annulleret.
     supabase.from("auctions").select("id", { count: "exact", head: true }).or(`status.eq.afsluttet,and(status.eq.aktiv,slutter_kl.lte."${nuISO}")`),
-    // Omsaetning og gebyrer kommer nu fra e-money-afregningen. En handel
-    // oprettes foerst naar pengene faktisk er flyttet mellem konti.
-    supabase.from("trades").select("amount"),
+    // Omsaetning og gebyrer kommer fra Stripe-betalingerne (kun betalte).
+    supabase
+      .from("betalinger")
+      .select("bud_oere, koebergebyr_oere, saelgergebyr_oere")
+      .eq("status", "betalt"),
     supabase.from("users").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO),
     supabase.from("trades").select("id", { count: "exact", head: true }).gte("created_at", thirtyDaysAgoISO),
   ]);
 
-  // Omsaetning = summen af alle gennemfoerte handler. Gebyrindtaegten er de
-  // to gebyrlinjer i hovedbogen (5% koeber + 5% saelger), som staar med
-  // negativt fortegn hos brugeren og derfor vendes her.
-  const totalRevenue = (handler ?? []).reduce(
-    (sum, t) => sum + Number(t.amount ?? 0),
-    0,
-  );
-
-  const { data: gebyrLinjer } = await supabase
-    .from("wallet_entries")
-    .select("amount")
-    .in("kind", ["koebergebyr", "saelgergebyr"]);
-
-  const totalFees = (gebyrLinjer ?? []).reduce(
-    (sum, l) => sum + Math.abs(Number(l.amount ?? 0)),
-    0,
-  );
+  // Omsaetning = summen af buddene i betalte handler. Gebyrindtaegten er
+  // 5% koebergebyr + 5% saelgergebyr. Beloeb staar i oere.
+  const totalRevenue =
+    (handler ?? []).reduce((sum, b) => sum + Number(b.bud_oere ?? 0), 0) / 100;
+  const totalFees =
+    (handler ?? []).reduce(
+      (sum, b) =>
+        sum + Number(b.koebergebyr_oere ?? 0) + Number(b.saelgergebyr_oere ?? 0),
+      0,
+    ) / 100;
 
   return (
     <div className="p-6 space-y-6">
