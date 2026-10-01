@@ -38,7 +38,8 @@ export default async function AdminDashboard() {
     supabase
       .from("betalinger")
       .select("bud_oere, koebergebyr_oere, saelgergebyr_oere")
-      .eq("status", "betalt"),
+      .eq("status", "betalt")
+      .is("refusion_anmodet_kl", null),
     supabase.from("users").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO),
     supabase.from("trades").select("id", { count: "exact", head: true }).gte("created_at", thirtyDaysAgoISO),
   ]);
