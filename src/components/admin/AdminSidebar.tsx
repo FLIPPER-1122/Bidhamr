@@ -51,6 +51,16 @@ const navItems: {
     ),
   },
   {
+    href: "/admin/ubetalte",
+    label: "Ubetalte vindere",
+    minRolle: "medarbejder",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/auktioner",
     label: "Alle auktioner",
     minRolle: "admin",
@@ -112,7 +122,20 @@ const navItems: {
   },
 ];
 
-export default function AdminSidebar({ rolle }: { rolle: StaffRole }) {
+// Røde tal ved menupunkter, fx afventende ubetalte vindere.
+const BADGES: Record<string, keyof AdminTaellere> = {
+  "/admin/ubetalte": "ubetalte",
+};
+
+type AdminTaellere = { ubetalte: number };
+
+export default function AdminSidebar({
+  rolle,
+  taellere = { ubetalte: 0 },
+}: {
+  rolle: StaffRole;
+  taellere?: AdminTaellere;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -163,7 +186,15 @@ export default function AdminSidebar({ rolle }: { rolle: StaffRole }) {
               }`}
             >
               {item.icon}
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {BADGES[item.href] && taellere[BADGES[item.href]] > 0 && (
+                <span
+                  className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white"
+                  aria-label={`${taellere[BADGES[item.href]]} afventer`}
+                >
+                  ! {taellere[BADGES[item.href]]}
+                </span>
+              )}
             </Link>
           );
         })}

@@ -11,7 +11,7 @@ type Props = {
   confirmLabel: string;
   action: (formData: FormData) => Promise<void | { fejl: string } | { ok: true }>;
   hiddenFields: Record<string, string>;
-  aarsagField?: { label: string; placeholder: string; required: boolean };
+  aarsagField?: { label: string; placeholder: string; required: boolean; name?: string };
   varighedField?: boolean;
 };
 
@@ -122,7 +122,7 @@ export default function ConfirmDialog({
                   </label>
                   <textarea
                     id="aarsag"
-                    name="aarsag"
+                    name={aarsagField.name ?? "aarsag"}
                     required={aarsagField.required}
                     rows={3}
                     placeholder={aarsagField.placeholder}

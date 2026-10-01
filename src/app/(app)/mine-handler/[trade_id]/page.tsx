@@ -11,6 +11,9 @@ import {
 import { hentBetalingsstatus } from "@/app/actions/betaling";
 import BetalingSektion from "@/components/betaling/BetalingSektion";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
+import { hentAndenchanceStatus } from "@/app/actions/andenchance";
+import { erAnnulleretUbetalt } from "@/app/actions/andenchanceBruger";
+import SaelgerUbetaltBoks from "@/components/andenchance/SaelgerUbetaltBoks";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +72,7 @@ export default async function HandelDetaljePage({
 
   const [{ data: auktion }, { data: modpart }, { data: beskeder }] =
     await Promise.all([
-      supabase.from("auctions").select("titel, billeder").eq("id", handel.auction_id).maybeSingle(),
+      supabase.from("auctions").select("titel, billeder, startpris").eq("id", handel.auction_id).maybeSingle(),
       supabase.from("users").select("navn").eq("id", modpartId).maybeSingle(),
       // Sikker uden medlemskabsfilter, fordi notFound() ovenfor allerede har
       // afvist alle andre end køber og sælger. Flyttes denne query op over
@@ -93,6 +96,13 @@ export default async function HandelDetaljePage({
     returBetaling ??
     (handel.status === "afventer_betaling" ? await hentBetalingsstatus(handel.id) : null);
   const betalingsstatus = betaling && "ok" in betaling ? betaling : null;
+
+  // Vinderen betalte ikke: sælgeren vælger næste skridt, køberen får besked.
+  const annulleret = handel.status === "annulleret";
+  const [andenchance, koeberUbetalt] = await Promise.all([
+    annulleret && erSaelger ? hentAndenchanceStatus(handel.id) : Promise.resolve(null),
+    annulleret && erKoeber ? erAnnulleretUbetalt(handel.id) : Promise.resolve(false),
+  ]);
 
   return (
     <main className="flex-1 bg-white px-4 py-8 sm:px-8">
@@ -232,6 +242,28 @@ export default async function HandelDetaljePage({
             ) : (
               <p className="mt-1">Køberen har 24 timer til at betale. Send ikke varen før.</p>
             )}
+          </div>
+        )}
+
+        {andenchance && "fejl" in andenchance && (
+          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+            Mulighederne for varen kunne ikke hentes lige nu. {andenchance.fejl}
+          </div>
+        )}
+
+        {andenchance && "ok" in andenchance && andenchance.ubetalt && (
+          <SaelgerUbetaltBoks
+            tradeId={handel.id}
+            auktionId={handel.auction_id}
+            status={andenchance}
+            standardStartpris={Math.round(Number(auktion?.startpris ?? 0))}
+          />
+        )}
+
+        {koeberUbetalt && (
+          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+            <p className="font-semibold">Handlen er annulleret</p>
+            <p className="mt-1">Du betalte ikke inden fristen, så handlen er annulleret.</p>
           </div>
         )}
 
