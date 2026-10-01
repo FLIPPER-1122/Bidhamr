@@ -73,15 +73,26 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
   // fx MobilePay) håndteres nedenfor efter et tjek hos Stripe.
   const { data: forfaldne, error } = await admin
     .from("betalinger")
-    .select("trade_id")
+    .select("trade_id, stripe_payment_intent_id, betal_senest")
     .eq("status", "afventer")
     .lt("betal_senest", new Date().toISOString())
-    .limit(200);
+    .order("betal_senest", { ascending: true })
+    .limit(200)
+    .overrideTypes<BetalingRaekke[], { merge: false }>();
   if (error) console.error("Kunne ikke hente forfaldne betalinger:", error);
 
   annulleret += await afklarBehandlede(admin);
 
-  for (const { trade_id } of forfaldne ?? []) {
+  for (const b of forfaldne ?? []) {
+    const trade_id = b.trade_id;
+    // En køber, der har betalt, må aldrig annulleres: spørg Stripe først.
+    if (b.stripe_payment_intent_id) {
+      const udfald = await stripeUdfald(b.stripe_payment_intent_id, trade_id);
+      if (udfald !== "fejlet") {
+        if (udfald === "vent") await markerUafklaret(admin, b);
+        continue;
+      }
+    }
     const { data, error: rpcFejl } = await admin.rpc("ubetalt_vinder_annuller", {
       p_trade: trade_id,
     });
@@ -133,11 +144,63 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
   return { annulleret, mails };
 }
 
-// Betalinger i gang ('behandles') efter fristen: Stripe er sandheden.
-//   succeeded                         -> spejles (køberen betalte til tiden)
-//   requires_payment_method/canceled  -> efter betal_senest + 1 time behandles
-//                                        handlen som ubetalt
-//   processing m.fl.                  -> vent til næste kørsel
+type BetalingRaekke = {
+  trade_id: string;
+  stripe_payment_intent_id: string | null;
+  betal_senest: string;
+};
+
+// Stripe er sandheden. Udfald for et PaymentIntent:
+//   "betalt" -> succeeded, spejlet i databasen (køberen betalte)
+//   "fejlet" -> requires_payment_method/requires_action/requires_confirmation/canceled
+//   "vent"   -> processing, anden status, eller Stripe-kaldet fejlede
+async function stripeUdfald(piId: string, tradeId: string): Promise<"betalt" | "fejlet" | "vent"> {
+  try {
+    const pi = await getStripe().paymentIntents.retrieve(piId);
+    if (pi.status === "succeeded") {
+      await spejlPaymentIntent(pi);
+      return "betalt";
+    }
+    if (
+      pi.status === "requires_payment_method" ||
+      pi.status === "requires_action" ||
+      pi.status === "requires_confirmation" ||
+      pi.status === "canceled"
+    ) {
+      return "fejlet";
+    }
+    return "vent";
+  } catch (err) {
+    console.error("Stripe-tjek af betaling fejlede (springes over):", tradeId, err);
+    return "vent";
+  }
+}
+
+// En betaling, der ikke har kunnet afklares 7 dage efter fristen, markeres til
+// admin. Idempotent: rammer kun rækker, der ikke allerede er markeret.
+const UAFKLARET_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function markerUafklaret(admin: Admin, b: BetalingRaekke): Promise<void> {
+  if (Date.now() < new Date(b.betal_senest).getTime() + UAFKLARET_MS) return;
+  const { error } = await admin
+    .from("betalinger")
+    .update({
+      kraever_opmaerksomhed: true,
+      sidste_fejl: "Betaling kunne ikke afklares hos Stripe",
+      opdateret: new Date().toISOString(),
+    })
+    .eq("trade_id", b.trade_id)
+    .in("status", ["afventer", "behandles"])
+    .eq("kraever_opmaerksomhed", false);
+  if (error) console.error("Kunne ikke markere uafklaret betaling:", b.trade_id, error);
+}
+
+// Betalinger i gang ('behandles') efter fristen:
+//   succeeded                    -> spejles (køberen betalte til tiden)
+//   requires_*/canceled          -> efter betal_senest + 1 time behandles
+//                                   handlen som ubetalt
+//   processing / Stripe-fejl     -> vent til næste kørsel; efter 7 dage
+//                                   markeres betalingen til admin
 const EKSTRA_FRIST_MS = 60 * 60 * 1000;
 
 async function afklarBehandlede(admin: Admin): Promise<number> {
@@ -147,39 +210,31 @@ async function afklarBehandlede(admin: Admin): Promise<number> {
     .select("trade_id, stripe_payment_intent_id, betal_senest")
     .eq("status", "behandles")
     .lt("betal_senest", new Date().toISOString())
+    .order("betal_senest", { ascending: true })
     .limit(200)
-    .overrideTypes<
-      { trade_id: string; stripe_payment_intent_id: string | null; betal_senest: string }[],
-      { merge: false }
-    >();
+    .overrideTypes<BetalingRaekke[], { merge: false }>();
   if (error) console.error("Kunne ikke hente betalinger i gang:", error);
 
   for (const b of behandles ?? []) {
-    try {
-      let fejlet = !b.stripe_payment_intent_id;
-      if (b.stripe_payment_intent_id) {
-        const pi = await getStripe().paymentIntents.retrieve(b.stripe_payment_intent_id);
-        if (pi.status === "succeeded") {
-          await spejlPaymentIntent(pi);
-          continue;
-        }
-        fejlet = pi.status === "requires_payment_method" || pi.status === "canceled";
-      }
-      if (!fejlet) continue;
-      if (Date.now() < new Date(b.betal_senest).getTime() + EKSTRA_FRIST_MS) continue;
-
-      const { data, error: rpcFejl } = await admin.rpc("ubetalt_vinder_annuller", {
-        p_trade: b.trade_id,
-        p_stripe_fejlet: true,
-      });
-      if (rpcFejl) {
-        console.error("ubetalt_vinder_annuller (behandles) fejlede:", b.trade_id, rpcFejl);
+    if (b.stripe_payment_intent_id) {
+      const udfald = await stripeUdfald(b.stripe_payment_intent_id, b.trade_id);
+      if (udfald === "betalt") continue;
+      if (udfald === "vent") {
+        await markerUafklaret(admin, b);
         continue;
       }
-      if ((data as { annulleret?: boolean } | null)?.annulleret) annulleret++;
-    } catch (err) {
-      console.error("Stripe-tjek af betaling i gang fejlede:", b.trade_id, err);
     }
+    if (Date.now() < new Date(b.betal_senest).getTime() + EKSTRA_FRIST_MS) continue;
+
+    const { data, error: rpcFejl } = await admin.rpc("ubetalt_vinder_annuller", {
+      p_trade: b.trade_id,
+      p_stripe_fejlet: true,
+    });
+    if (rpcFejl) {
+      console.error("ubetalt_vinder_annuller (behandles) fejlede:", b.trade_id, rpcFejl);
+      continue;
+    }
+    if ((data as { annulleret?: boolean } | null)?.annulleret) annulleret++;
   }
   return annulleret;
 }
