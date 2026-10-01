@@ -1,6 +1,6 @@
 // Tekster til siden /bidhamr-beskyttelse og til budfeltet (BidPanel).
 // Bygger på ROADMAP-BESLUTNINGER.md, afsnit 1, 2 og 4 (inkl. "Pakke kommer ikke frem" og "Visning", 1. okt. 2026).
-// Ordet "forsikring" må aldrig bruges. Procenter må kun stå på siden, ikke ved budfeltet.
+// Brug altid navnet "BidHamr Beskyttelse". Procenter må kun stå på siden, ikke ved budfeltet.
 
 export type Sektion = {
   overskrift: string;

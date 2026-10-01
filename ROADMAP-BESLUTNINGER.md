@@ -115,7 +115,8 @@ Brugeren får besked når:
 - FEJL at rette: submitRating tjekker ikke, at man faktisk var køber i handlen. I dag kan enhver bedømme enhver. Skal låses, så kun køberen på en handel kan bedømme den handels sælger, én gang.
 
 ## Midlertidige beslutninger (1. oktober 2026)
-- **Fragt: fast 35 kr** pr. handel, når auktionen tilbyder forsendelse (køber kan ikke vælge afhentning i stedet; kun-afhentning-auktioner = 0 kr), betalt af køber, indtil priser er forhandlet med fragtfirmaerne. Fragten udbetales til sælger sammen med salgsbeløbet (sælger betaler selv forsendelsen indtil fragtintegrationen i fase 2). Sælgergebyret på 5% beregnes kun af buddet, ikke af fragten.
+- **Fragt: fast 35 kr** pr. handel, når auktionen tilbyder forsendelse (køber kan ikke vælge afhentning i stedet; kun-afhentning-auktioner = 0 kr), betalt af køber, indtil priser er forhandlet med fragtfirmaerne. Fragten udbetales IKKE til sælger – den bliver hos BidHamr og går videre til fragtfirmaet, som Filip laver aftale med (Filip, 1. oktober 2026). Sælger får bud minus 5 %. Sælgergebyret på 5% beregnes kun af buddet, ikke af fragten.
+- **Udbetaling til sælger** sker automatisk via Stripe (dagligt; nye konti har Stripes ventetid på ca. 7 dage).
 - **Cron**: kører hvert 5. minut via pg_cron + pg_net i Supabase (gratis). Vercel Pro overvejes tættere på lancering.
 - **Moms:** Alle beløb, køberen ser, er **inkl. moms**. BidHamr afregner selv moms af sine gebyrer; køberen betaler aldrig moms oveni (Filip, 1. oktober 2026).
 - **Første bud** må være lig startprisen. Budstigningen derefter (i dag 10 %) er ikke fastlagt endnu – Filip beslutter senere.
