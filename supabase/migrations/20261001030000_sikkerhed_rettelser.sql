@@ -1,35 +1,22 @@
--- Sikkerhedsrettelser efter sikkerhedsgennemgangen og testrapporten 2026-10-01,
--- samt betalingsfrist 24 timer (Filips beslutning 2026-10-01).
+-- Sikkerhedsrettelser efter sikkerhedsgennemgangen og testrapporten 2026-10-01.
 --
 -- Filen er idempotent og kan koeres sikkert i produktion senere. Produktion
 -- har IKKE wallet-tabellerne/-funktionerne (og maaske endnu ikke betalinger),
 -- saa alt, der roerer dem, er bag to_regclass/to_regprocedure-tjek.
+-- Filens regel: intet nyt, der oprettes her, kan kaldes af anon.
+--
+-- H1 (push_tokens with check) ligger i 20261001025000_push_tokens_with_check.sql.
 --
 -- Indhold:
---   H1  push_tokens: update-policy faar with check.
 --   H2  Pengetal (betalinger, betaling_afvigelser, wallets) kun for chef.
---   T4  Saelger/koeber kan kun laese ufarlige kolonner i betalinger.
+--   T4  Koeber/saelger kan kun laese ufarlige kolonner i betalinger.
 --   M2  Execute lukkes paa trigger-funktioner; visningsfunktioner kun for
 --       indloggede.
---   24t Betalingsfrist 24 timer i stedet for 48.
-
--- =============================================================== H1 push_tokens
--- Tabellen og dens RLS er indfanget i 20260930130000_indfang_prod_drift.sql.
--- Update-policyen manglede with check, saa en bruger kunne flytte sin raekke
--- (user_id) over paa en anden bruger.
-do $$
-begin
-  if to_regclass('public.push_tokens') is not null then
-    execute 'alter table public.push_tokens enable row level security';
-    execute 'drop policy if exists push_tokens_update_own on public.push_tokens';
-    execute 'create policy push_tokens_update_own on public.push_tokens
-               for update using (auth.uid() = user_id) with check (auth.uid() = user_id)';
-    -- Insert-policyen har allerede with check; genskabes for at vaere sikker.
-    execute 'drop policy if exists push_tokens_insert_own on public.push_tokens';
-    execute 'create policy push_tokens_insert_own on public.push_tokens
-               for insert with check (auth.uid() = user_id)';
-  end if;
-end $$;
+--   L2  Visningstal: kraever login, hoejst een visning pr. bruger pr. auktion,
+--       ejerens egne visninger taeller ikke. Taellerne kan ikke saettes af brugere.
+--   L3  Postgres-baseret rate limiter (kun service_role).
+--   L6  Bydernes og foelgernes privatliv: bids og seller_follows kan kun
+--       laeses af brugeren selv. Antal bud ligger paa auctions.antal_bud.
 
 -- =============================================================== H2 + T4 betalinger
 -- min_rolle() (20260930100000) er security definer og udleder brugeren af
@@ -85,6 +72,9 @@ begin
   foreach f in array array[
     'public.handle_new_user()',
     'public.check_ikke_egen_auktion()',
+    'public.check_minimum_bid()',
+    'public.handle_new_bid()',
+    'public.bids_tving_tidspunkt()',
     'public.bids_reserver_midler()',
     'public.opret_wallet_til_ny_bruger()',
     'public.rls_auto_enable()'
@@ -95,27 +85,57 @@ begin
   end loop;
 end $$;
 
--- =============================================================== M2/L2 visninger
--- oeg_auktion_visning: kun indloggede, og funktionen kraever selv auth.uid(),
--- saa visningstallet ikke kan pumpes op anonymt.
+-- =============================================================== L2 visninger
+-- Hvem har set hvilken auktion (kun til at taelle hver bruger een gang).
+-- Ingen adgang for anon/authenticated; skrives kun af oeg_auktion_visning.
+create table if not exists public.auktion_visere (
+  auction_id uuid not null references public.auctions(id) on delete cascade,
+  user_id    uuid not null references public.users(id) on delete cascade,
+  oprettet   timestamptz not null default now(),
+  primary key (auction_id, user_id)
+);
+alter table public.auktion_visere enable row level security;
+revoke all on public.auktion_visere from anon, authenticated;
+grant all on public.auktion_visere to service_role;
+
 create or replace function public.oeg_auktion_visning(p_auktion_id uuid)
 returns void
-language sql
+language plpgsql
 security definer
 set search_path = public
 as $function$
-  update public.auctions
-     set visninger = visninger + 1
-   where id = p_auktion_id
-     and auth.uid() is not null;
+declare
+  mig uuid := auth.uid();
+begin
+  if mig is null then
+    return;
+  end if;
+
+  -- Ejerens egne visninger taeller ikke.
+  if exists (select 1 from public.auctions a where a.id = p_auktion_id and a.bruger_id = mig) then
+    return;
+  end if;
+
+  insert into public.auktion_visere (auction_id, user_id)
+  values (p_auktion_id, mig)
+  on conflict do nothing;
+
+  -- Kun foerste visning pr. bruger taeller.
+  if found then
+    update public.auctions set visninger = visninger + 1 where id = p_auktion_id;
+  end if;
+exception
+  when foreign_key_violation then
+    return; -- ukendt auktion
+end;
 $function$;
 revoke execute on function public.oeg_auktion_visning(uuid) from public, anon;
 grant execute on function public.oeg_auktion_visning(uuid) to authenticated;
 
--- registrer_auktion_visning / hent_mine_visninger findes kun i produktion
--- (appen). Definitionerne er IKKE indfanget her (ingen katalogadgang ved
--- skrivning). Uanset signatur lukkes de for anon, men forbliver aabne for
--- indloggede, saa appen virker.
+-- registrer_auktion_visning / hent_mine_visninger / auction_views findes kun i
+-- produktion (appen). Definitionerne er IKKE indfanget her - agenten havde
+-- ingen katalogadgang. Uanset signatur lukkes funktionerne for anon, men
+-- forbliver aabne for indloggede, saa appen virker. (no-op, hvis de ikke findes.)
 do $$
 declare
   p regprocedure;
@@ -130,132 +150,143 @@ begin
   end loop;
 end $$;
 
--- =============================================================== 24 timers betalingsfrist
--- afslut_udloebne_auktioner er uaendret fra 20261001020000 bortset fra, at
--- betal_senest nu er now() + 24 timer.
-create or replace function public.afslut_udloebne_auktioner()
-returns integer
-language plpgsql security definer set search_path = public as $fn$
-declare
-  antal integer;
-  r     record;
-  bud   bigint;
-  koeb  bigint;
-  saelg bigint;
-  fragt bigint;
-  besk_valg boolean;
-  besk  bigint;
-  t_id  uuid;
+-- =============================================================== L6 antal bud
+-- Bud er ikke laengere offentlige, saa bids(count) kan ikke bruges til
+-- auktionskort. Antallet vedligeholdes i stedet paa auktionen.
+alter table public.auctions
+  add column if not exists antal_bud integer not null default 0;
+
+update public.auctions a
+   set antal_bud = sub.n
+  from (select auktion_id, count(*)::int as n from public.bids group by auktion_id) sub
+ where sub.auktion_id = a.id
+   and a.antal_bud is distinct from sub.n;
+
+create or replace function public.bids_oeg_antal()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $fn$
 begin
-  update public.auctions a
-     set status = 'afsluttet',
-         vinder_id = (
-           select b.bruger_id
-             from public.bids b
-            where b.auktion_id = a.id
-            order by b.beløb desc, b.oprettet asc
-            limit 1
-         )
-   where a.status = 'aktiv'
-     and a.slutter_kl <= now();
-
-  get diagnostics antal = row_count;
-
-  -- Handel + betaling for afsluttede auktioner med vinder og uden handel.
-  -- Begraenset til de seneste 7 dage, saa gamle auktioner ikke backfilles.
-  for r in
-    select a.id, a.bruger_id, a.vinder_id, a.forsendelse_mulig
-      from public.auctions a
-     where a.status = 'afsluttet'
-       and a.vinder_id is not null
-       and a.slutter_kl >= now() - interval '7 days'
-       and not exists (select 1 from public.trades t where t.auction_id = a.id)
-  loop
-    begin
-      t_id := null;
-      select round(max(b.beløb) * 100)::bigint into bud
-        from public.bids b
-       where b.auktion_id = r.id and b.bruger_id = r.vinder_id;
-
-      if bud is null or bud <= 0 then
-        raise warning 'ingen gyldigt vinderbud for auktion %', r.id;
-        continue;
-      end if;
-
-      -- Vinderens seneste bud afgoer, om han oensker BidHamr Beskyttelse.
-      select coalesce(b.beskyttelse, false) into besk_valg
-        from public.bids b
-       where b.auktion_id = r.id and b.bruger_id = r.vinder_id
-       order by b.oprettet desc, b.beløb desc
-       limit 1;
-      besk_valg := coalesce(besk_valg, false);
-
-      koeb  := round(bud * 5 / 100.0)::bigint;
-      saelg := round(bud * 5 / 100.0)::bigint;
-      fragt := case when coalesce(r.forsendelse_mulig, false) then 3500 else 0 end;
-      besk  := case when besk_valg then public.beregn_beskyttelse_oere(bud) else 0 end;
-
-      insert into public.trades (auction_id, seller_id, buyer_id, amount, status)
-      values (r.id, r.bruger_id, r.vinder_id, bud / 100.0, 'afventer_betaling')
-      on conflict (auction_id) do nothing
-      returning id into t_id;
-
-      if t_id is null then continue; end if;
-
-      insert into public.betalinger (
-        trade_id, auction_id, buyer_id, seller_id,
-        bud_oere, koebergebyr_oere, fragt_oere, beskyttelse, beskyttelse_oere,
-        total_oere, saelgergebyr_oere, udbetaling_oere, betal_senest)
-      values (
-        t_id, r.id, r.vinder_id, r.bruger_id,
-        bud, koeb, fragt, besk_valg, besk,
-        bud + koeb + fragt + besk, saelg, bud - saelg + fragt,
-        now() + interval '24 hours')
-      on conflict (trade_id) do nothing;
-    exception when others then
-      raise warning 'handel/betaling fejlede for auktion %: %', r.id, sqlerrm;
-    end;
-  end loop;
-
-  -- Gamle reservationer fra saldo-modellen maa ikke holde paa penge.
-  if to_regclass('public.bid_reservations') is not null then
-    for r in
-      select br.auction_id as id
-        from public.bid_reservations br
-        join public.auctions a on a.id = br.auction_id
-       where a.status <> 'aktiv'
-    loop
-      begin
-        perform public.wallet_frigiv(r.id);
-      exception when others then
-        raise warning 'wallet_frigiv fejlede for auktion %: %', r.id, sqlerrm;
-      end;
-    end loop;
-  end if;
-
-  return antal;
+  update public.auctions set antal_bud = antal_bud + 1 where id = new.auktion_id;
+  return null;
 end;
 $fn$;
+revoke execute on function public.bids_oeg_antal() from public, anon, authenticated;
 
-revoke all on function public.afslut_udloebne_auktioner() from public, anon, authenticated;
-grant execute on function public.afslut_udloebne_auktioner() to service_role;
+drop trigger if exists bids_oeg_antal on public.bids;
+create trigger bids_oeg_antal
+  after insert on public.bids
+  for each row execute function public.bids_oeg_antal();
 
--- Ventende betalinger med en frist laengere end 24 timer fra oprettelse
--- forkortes. Idempotent; i praksis kun relevant paa testdatabasen.
+-- Taellerne (antal_bud, visninger) kan kun aendres af databasen selv
+-- (security definer-funktioner ejet af postgres) og service_role.
+create or replace function public.auctions_beskyt_taellere()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $fn$
+begin
+  if coalesce(auth.role(), '') = 'service_role'
+     or current_user in ('postgres', 'supabase_admin', 'service_role') then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    new.antal_bud := 0;
+    new.visninger := 0;
+    return new;
+  end if;
+
+  if new.antal_bud is distinct from old.antal_bud
+     or new.visninger is distinct from old.visninger then
+    raise exception 'Du må ikke ændre denne oplysning.'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$fn$;
+revoke execute on function public.auctions_beskyt_taellere() from public, anon, authenticated;
+
+drop trigger if exists auctions_beskyt_taellere on public.auctions;
+create trigger auctions_beskyt_taellere
+  before insert or update on public.auctions
+  for each row execute function public.auctions_beskyt_taellere();
+
+-- =============================================================== L6 bids
+-- Byderes bruger-id'er maa ikke kunne hentes af andre. Hjemmesiden viser en
+-- anonymiseret budhistorik ("Byder 3"/"Dig"), som serveren bygger med
+-- service-role. Realtime paa bids respekterer RLS, saa andre byderes bud
+-- sendes ikke laengere ud; klienten lytter i stedet paa auctions.
+drop policy if exists "bids_select_all" on public.bids;
+drop policy if exists bids_select_all on public.bids;
+drop policy if exists bids_select_own on public.bids;
+create policy bids_select_own on public.bids
+  for select to authenticated using (bruger_id = auth.uid());
+revoke select on public.bids from anon;
+
+-- =============================================================== L6 seller_follows
+-- Kun brugeren selv kan se, hvem han foelger.
 do $$
 begin
-  if to_regclass('public.betalinger') is not null then
-    update public.betalinger
-       set betal_senest = oprettet + interval '24 hours',
-           opdateret = now()
-     where status = 'afventer'
-       and betal_senest > now()
-       and betal_senest > oprettet + interval '24 hours';
-
-    -- Kolonnenavnene er bevaret, men daekker nu 12 og 20 timer efter start.
-    execute $c$comment on column public.betalinger.paamindelse_24_sendt_kl is
-      'Foerste paamindelse: 12 timer efter start (12 timer foer fristen). Navnet stammer fra 48-timers-fristen.'$c$;
-    execute $c$comment on column public.betalinger.paamindelse_40_sendt_kl is
-      'Sidste paamindelse: 20 timer efter start (4 timer foer fristen). Navnet stammer fra 48-timers-fristen.'$c$;
+  if to_regclass('public.seller_follows') is not null then
+    execute 'drop policy if exists seller_follows_select_all on public.seller_follows';
+    execute 'drop policy if exists seller_follows_select_own on public.seller_follows';
+    execute 'create policy seller_follows_select_own on public.seller_follows
+               for select to authenticated using (follower_id = auth.uid())';
+    execute 'revoke select on public.seller_follows from anon';
   end if;
 end $$;
+
+-- =============================================================== L3 rate limiting
+-- Fast tidsvindue pr. noegle (fx 'login_ip:1.2.3.4'). Kun service_role
+-- (server-kode via createAdminClient) kan kalde funktionen.
+-- Ikke handelsdata - gamle raekker ryddes loebende.
+create table if not exists public.rate_limits (
+  noegle        text not null,
+  vindue_start  timestamptz not null,
+  antal         integer not null default 0,
+  primary key (noegle, vindue_start)
+);
+alter table public.rate_limits enable row level security;
+revoke all on public.rate_limits from anon, authenticated;
+grant all on public.rate_limits to service_role;
+
+create or replace function public.rate_limit_tjek(
+  p_noegle text,
+  p_maks integer,
+  p_vindue_sek integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  start timestamptz;
+  n integer;
+begin
+  if p_noegle is null or length(p_noegle) > 400 or p_maks < 1 or p_vindue_sek < 1 then
+    raise exception 'Ugyldige parametre';
+  end if;
+
+  start := to_timestamp(floor(extract(epoch from now()) / p_vindue_sek) * p_vindue_sek);
+
+  insert into public.rate_limits as r (noegle, vindue_start, antal)
+  values (p_noegle, start, 1)
+  on conflict (noegle, vindue_start)
+  do update set antal = r.antal + 1
+  returning r.antal into n;
+
+  -- Ryd op en gang imellem (ca. 1 af 100 kald).
+  if random() < 0.01 then
+    delete from public.rate_limits where vindue_start < now() - interval '1 day';
+  end if;
+
+  return n <= p_maks;
+end;
+$fn$;
+revoke execute on function public.rate_limit_tjek(text, integer, integer) from public, anon, authenticated;
+grant execute on function public.rate_limit_tjek(text, integer, integer) to service_role;

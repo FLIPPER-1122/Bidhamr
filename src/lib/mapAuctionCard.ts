@@ -11,7 +11,9 @@ interface AuctionRowMedBudCount {
   oprettet: string;
   slutter_kl: string;
   billeder: string[] | null;
-  bids?: { count: number }[] | null;
+  // Vedligeholdes af en trigger paa bids (bud kan ikke taelles direkte, da
+  // de ikke er offentlige).
+  antal_bud?: number | null;
 }
 
 export function mapAuctionTilKort(
@@ -22,7 +24,7 @@ export function mapAuctionTilKort(
     titel: auktion.titel,
     lokation: auktion.lokation ?? auktion.postnummer ?? "Ukendt",
     nuværendeBud: Number(auktion.nuværende_bud ?? auktion.startpris),
-    antalBud: auktion.bids?.[0]?.count ?? 0,
+    antalBud: auktion.antal_bud ?? 0,
     tidTilbage: formatTidTilbage(auktion.slutter_kl),
     procentForløbet: beregnProcentForløbet(auktion.oprettet, auktion.slutter_kl),
     billede: auktion.billeder?.[0] ?? null,

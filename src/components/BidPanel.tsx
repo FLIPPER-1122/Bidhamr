@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { afgivBud } from "@/app/actions/bud";
 import { kortNavn } from "@/lib/kortNavn";
 import { formatNedtælling } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
@@ -14,12 +15,14 @@ import {
   totalOere,
 } from "@/lib/betaling/beregn";
 
+// Budhistorikken er anonymiseret paa serveren: ingen bruger-id'er eller navne
+// i browseren - kun "Byder 3" eller "Dig".
 export interface BidPanelBud {
   id: string;
-  bruger_id: string;
   beløb: number;
   oprettet: string;
-  navn?: string | null;
+  byder: string;
+  erMig: boolean;
 }
 
 const VIST_SOM_STANDARD = 5;
@@ -44,14 +47,17 @@ export default function BidPanel({
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
   const [slutterKl, setSlutterKl] = useState(initialSlutterKl);
   const [budListe, setBudListe] = useState<BidPanelBud[]>(initialBud);
+  // Ny budhistorik kommer fra serveren ved router.refresh().
+  const [forrigeInitialBud, setForrigeInitialBud] = useState(initialBud);
+  if (initialBud !== forrigeInitialBud) {
+    setForrigeInitialBud(initialBud);
+    setBudListe(initialBud);
+  }
   const [visAlle, setVisAlle] = useState(false);
   const [beløb, setBeløb] = useState("");
   // BidHamr Beskyttelse: ikke valgt på forhånd. Gemmes med buddet.
   const [beskyttelse, setBeskyttelse] = useState(false);
   const router = useRouter();
-  // Hvem der fører lige nu. Reservationen følger det seneste bud, fordi
-  // minimumsbud-triggeren kræver at hvert bud er højere end det forrige.
-  const førendeRef = useRef<string | null>(initialBud[0]?.bruger_id ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -91,36 +97,11 @@ export default function BidPanel({
   useEffect(() => {
     const supabase = createClient();
 
+    // Bud kan ikke laeses direkte (bydernes privatliv), saa der lyttes paa
+    // auktionen: aendres det foerende bud, hentes den anonymiserede
+    // budhistorik og min status igen fra serveren.
     const channel = supabase
       .channel(`auktion-${auktionId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "bids",
-          filter: `auktion_id=eq.${auktionId}`,
-        },
-        async (payload) => {
-          const nytBud = payload.new as BidPanelBud;
-          const { data: bruger } = await supabase
-            .from("users")
-            .select("navn")
-            .eq("id", nytBud.bruger_id)
-            .single();
-          setBudListe((prev) => [{ ...nytBud, navn: bruger?.navn ?? null }, ...prev]);
-          if (nytBud.beløb > nuværendeBudRef.current) {
-            setNuværendeBud(nytBud.beløb);
-          }
-
-          // Blev jeg lige overbudt, opdateres siden, så min status passer.
-          const varJegFørende = førendeRef.current === brugerId;
-          førendeRef.current = nytBud.bruger_id;
-          if (varJegFørende && nytBud.bruger_id !== brugerId) {
-            router.refresh();
-          }
-        },
-      )
       .on(
         "postgres_changes",
         {
@@ -136,8 +117,12 @@ export default function BidPanel({
             status: string;
             vinder_id: string | null;
           };
-          if (opdateret["nuværende_bud"] != null) {
+          if (
+            opdateret["nuværende_bud"] != null &&
+            opdateret["nuværende_bud"] !== nuværendeBudRef.current
+          ) {
             setNuværendeBud(opdateret["nuværende_bud"]);
+            router.refresh();
           }
           setSlutterKl(opdateret.slutter_kl);
           // Anti-sniping kan forlænge auktionen efter at tælleren er nået
@@ -212,50 +197,28 @@ export default function BidPanel({
 
     setLoading(true);
 
-    const supabase = createClient();
-    const { error: insertError } = await supabase.from("bids").insert({
-      auktion_id: auktionId,
-      bruger_id: brugerId,
-      beløb: beløbTal,
-      // Kun et ønske - beløbet beregnes i databasen, når auktionen slutter.
-      beskyttelse,
-    });
+    // Afgives paa serveren (rate limit). RLS og triggere gaelder uaendret.
+    const svar = await afgivBud(auktionId, beløbTal, beskyttelse);
 
-    if (insertError) {
+    if ("fejl" in svar) {
       setLoading(false);
-      if (insertError.message.includes("own_auction")) {
-        setError("Du kan ikke byde på din egen auktion.");
-      } else if (insertError.message.includes("minimum_bid")) {
-        setError(
-          `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`,
-        );
-      } else {
-        setError(insertError.message);
-      }
+      setError(svar.fejl);
       return;
     }
 
     // Anti-sniping sker på serveren (handle_new_bid-triggeren forlænger
-    // slutter_kl i samme transaktion som buddet). Klienten læser kun det
-    // nye sluttidspunkt og fortæller brugeren, hvis auktionen blev forlænget.
-    const { data: efterBud } = await supabase
-      .from("auctions")
-      .select("slutter_kl")
-      .eq("id", auktionId)
-      .maybeSingle();
+    // slutter_kl i samme transaktion som buddet).
     if (
-      efterBud?.slutter_kl &&
-      new Date(efterBud.slutter_kl).getTime() > new Date(slutterKl).getTime()
+      svar.slutterKl &&
+      new Date(svar.slutterKl).getTime() > new Date(slutterKl).getTime()
     ) {
-      setSlutterKl(efterBud.slutter_kl);
+      setSlutterKl(svar.slutterKl);
       setInfo("Auktionen er forlænget med 2 minutter!");
       setTimeout(() => setInfo(null), 6000);
     }
 
     setLoading(false);
     setBeløb("");
-
-    førendeRef.current = brugerId;
 
     router.refresh();
   }
@@ -422,12 +385,7 @@ export default function BidPanel({
                       })}
                     </td>
                     <td className={`py-2 text-right ${fed}`}>
-                      <Link
-                        href={`/profil/${bud.bruger_id}`}
-                        className="hover:text-brand hover:underline"
-                      >
-                        {kortNavn(bud.navn)}
-                      </Link>
+                      {bud.byder}
                     </td>
                   </tr>
                 );

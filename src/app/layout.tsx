@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Inter, Fraunces } from "next/font/google";
 import "./globals.css";
 
@@ -31,11 +32,14 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // CSP med nonce (src/proxy.ts) kraever dynamisk rendering: statiske sider
+  // bygges uden request og ville faa scripts uden nonce, som browseren afviser.
+  await connection();
   return (
     <html
       lang="da"

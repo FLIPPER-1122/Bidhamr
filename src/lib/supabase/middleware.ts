@@ -29,8 +29,18 @@ function erOffentligRute(pathname: string) {
   );
 }
 
-export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+// ekstraHeadere (fx CSP-nonce fra src/proxy.ts) sendes med til renderingen.
+// Headerne bygges fra request.headers hver gang, saa opdaterede cookies kommer med.
+export async function updateSession(
+  request: NextRequest,
+  ekstraHeadere: Record<string, string> = {},
+) {
+  const naeste = () => {
+    const headers = new Headers(request.headers);
+    for (const [k, v] of Object.entries(ekstraHeadere)) headers.set(k, v);
+    return NextResponse.next({ request: { headers } });
+  };
+  let supabaseResponse = naeste();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,7 +54,7 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = naeste();
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),
           );

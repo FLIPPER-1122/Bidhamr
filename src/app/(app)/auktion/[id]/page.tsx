@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { BidPanelBud } from "@/components/BidPanel";
 import AuctionGallery from "@/components/AuctionGallery";
 import AuctionTitleActions from "@/components/AuctionTitleActions";
 import BidPanel from "@/components/BidPanel";
@@ -20,35 +22,51 @@ export default async function AuktionPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: auktion }, { data: budRaw }, { data: authData }] =
-    await Promise.all([
-      supabase.from("auctions").select("*").eq("id", id).single(),
-      supabase
-        .from("bids")
-        .select("*")
-        .eq("auktion_id", id)
-        .order("oprettet", { ascending: false })
-        .limit(MAKS_BUD_HENTET),
-      supabase.auth.getUser(),
-    ]);
+  const [{ data: auktion }, { data: authData }] = await Promise.all([
+    supabase.from("auctions").select("*").eq("id", id).single(),
+    supabase.auth.getUser(),
+  ]);
 
   if (!auktion || auktion.skjult) {
     notFound();
   }
 
-  // Hent navne til sælger og alle budgivere i ét opkald
-  const budBrugerIds = [...new Set((budRaw ?? []).map((b) => b.bruger_id))];
-  const alleIds = [...new Set([auktion.bruger_id, ...budBrugerIds])];
-  const { data: brugerNavne } = await supabase
-    .from("users")
-    .select("id, navn")
-    .in("id", alleIds);
-  const navnMap = Object.fromEntries(
-    (brugerNavne ?? []).map((u) => [u.id, u.navn as string | null]),
-  );
+  // Bud kan ikke laeses af andre end byderen selv (bydernes privatliv). Siden
+  // henter dem med service-role, men kun til serverens egne beregninger
+  // (vinder) og en anonymiseret budhistorik - bruger-id'er og navne sendes
+  // aldrig til browseren.
+  const { data: budRaw } = await createAdminClient()
+    .from("bids")
+    .select("id, bruger_id, beløb, oprettet")
+    .eq("auktion_id", id)
+    .order("oprettet", { ascending: false })
+    .limit(MAKS_BUD_HENTET)
+    .overrideTypes<
+      { id: string; bruger_id: string; beløb: number; oprettet: string }[],
+      { merge: false }
+    >();
+  const bud = budRaw ?? [];
 
-  const bud = (budRaw ?? []).map((b) => ({ ...b, navn: navnMap[b.bruger_id] ?? null }));
-  const sælgerNavn = kortNavn(navnMap[auktion.bruger_id]);
+  const { data: saelger } = await supabase
+    .from("users")
+    .select("navn")
+    .eq("id", auktion.bruger_id)
+    .maybeSingle();
+  const sælgerNavn = kortNavn(saelger?.navn ?? null);
+
+  // "Byder 1", "Byder 2" ... i den raekkefoelge, de foerst bød. Egne bud vises som "Dig".
+  const byderNr = new Map<string, number>();
+  for (const b of [...bud].reverse()) {
+    if (!byderNr.has(b.bruger_id)) byderNr.set(b.bruger_id, byderNr.size + 1);
+  }
+  const mitId = authData.user?.id ?? null;
+  const anonymeBud: BidPanelBud[] = bud.map((b) => ({
+    id: b.id,
+    beløb: Number(b.beløb),
+    oprettet: b.oprettet,
+    erMig: b.bruger_id === mitId,
+    byder: b.bruger_id === mitId ? "Dig" : `Byder ${byderNr.get(b.bruger_id)}`,
+  }));
 
   const varenummer = auktion.id.slice(-6).toUpperCase();
   const auktionErSlut = new Date(auktion.slutter_kl) <= new Date();
@@ -244,7 +262,7 @@ export default async function AuktionPage({
                   auktion.nuværende_bud ?? auktion.startpris,
                 )}
                 initialSlutterKl={auktion.slutter_kl}
-                initialBud={bud ?? []}
+                initialBud={anonymeBud}
                 brugerId={authData.user?.id ?? null}
                 saelgerId={auktion.bruger_id}
                 forsendelseMulig={auktion.forsendelse_mulig}

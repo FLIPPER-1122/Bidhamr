@@ -68,7 +68,7 @@ export default async function ProfilPage({
     ] = await Promise.all([
       supabase
         .from("auctions")
-        .select("*, bids(count)")
+        .select("*")
         .eq("bruger_id", id)
         .order("oprettet", { ascending: false }),
       supabase
@@ -119,39 +119,36 @@ export default async function ProfilPage({
     let mineBud: MitBud[] = [];
 
     if (budAuktionIds.length > 0) {
-      const [{ data: relevanteAuktioner }, { data: alleBudPåDisse }] =
-        await Promise.all([
-          supabase
-            .from("auctions")
-            .select("id, titel, billeder, slutter_kl")
-            .in("id", budAuktionIds),
-          supabase
-            .from("bids")
-            .select("*")
-            .in("auktion_id", budAuktionIds),
-        ]);
-
-      const førendePerAuktion = new Map<
-        string,
-        { bruger_id: string; beløb: number }
-      >();
-      for (const bud of alleBudPåDisse ?? []) {
-        const nuværende = førendePerAuktion.get(bud.auktion_id);
-        if (!nuværende || bud.beløb > nuværende.beløb) {
-          førendePerAuktion.set(bud.auktion_id, bud);
-        }
-      }
+      // Andres bud kan ikke laeses (bydernes privatliv). Foerende bud staar
+      // paa auktionen; har jeg budt mindst det, er det mit.
+      const { data: relevanteAuktioner } = await supabase
+        .from("auctions")
+        .select("*")
+        .in("id", budAuktionIds)
+        .overrideTypes<
+          {
+            id: string;
+            titel: string;
+            billeder: string[] | null;
+            slutter_kl: string;
+            nuværende_bud: number | string | null;
+            vinder_id: string | null;
+          }[],
+          { merge: false }
+        >();
 
       mineBud = (relevanteAuktioner ?? []).map((auktion) => {
         const erSlut = new Date(auktion.slutter_kl) <= new Date();
-        const førende = førendePerAuktion.get(auktion.id);
+        const højesteBud = Number(auktion.nuværende_bud ?? 0);
+        const egetBud = egneBudPerAuktion.get(auktion.id) ?? 0;
+        const jegFører = auktion.vinder_id
+          ? auktion.vinder_id === id
+          : egetBud > 0 && egetBud >= højesteBud;
         const status: MitBud["status"] = !erSlut
           ? "aktiv"
-          : førende?.bruger_id === id
+          : jegFører
             ? "vinder"
             : "overbud";
-
-        const højesteBud = Number(førende?.beløb ?? 0);
 
         return {
           auktionId: auktion.id,
@@ -215,7 +212,7 @@ export default async function ProfilPage({
   const [{ data: aktiveAuktionerRaw }, { data: ratingsRaw }] = await Promise.all([
     supabase
       .from("auctions")
-      .select("*, bids(count)")
+      .select("*")
       .eq("bruger_id", id)
       .eq("status", "aktiv")
       .gt("slutter_kl", new Date().toISOString())

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getResend } from "@/lib/resend";
+import { FOR_MANGE_FORSOEG, indenForGraense, klientIp } from "@/lib/rateLimit";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Mails kan ikke bruge CSS-variabler, så farverne fra DESIGN.md staves ud her.
@@ -67,6 +68,11 @@ function velkomstMail(email: string) {
 }
 
 export async function POST(req: NextRequest) {
+  // Hoejst et par tilmeldinger pr. IP i timen, saa listen og Resend ikke kan spammes.
+  if (!(await indenForGraense("venteliste_ip", await klientIp()))) {
+    return NextResponse.json({ error: FOR_MANGE_FORSOEG }, { status: 429 });
+  }
+
   let email: unknown;
   try {
     ({ email } = await req.json());

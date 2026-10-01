@@ -26,7 +26,7 @@ interface AuctionRow {
   kategori: string | null;
   lat: number | null;
   lng: number | null;
-  bids?: { count: number }[] | null;
+  antal_bud?: number | null;
 }
 
 interface Koordinat {
@@ -144,7 +144,7 @@ export default function AuctionBrowser({
     const supabase = createClient();
     let queryBuilder = supabase
       .from("auctions")
-      .select("*, bids(count)")
+      .select("*")
       .eq("status", "aktiv")
       .eq("skjult", false)
       .gt("slutter_kl", new Date().toISOString());

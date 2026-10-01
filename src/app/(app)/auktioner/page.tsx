@@ -15,7 +15,7 @@ export default async function AuktionerPage({
 
   let query = supabase
     .from("auctions")
-    .select("*, bids(count)")
+    .select("*")
     .eq("status", "aktiv")
     .eq("skjult", false)
     .gt("slutter_kl", new Date().toISOString())

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { nulstilAdgangskode } from "@/app/actions/auth";
 
 export default function GlemtAdgangskodePage() {
   const [email, setEmail] = useState("");
@@ -15,18 +15,13 @@ export default function GlemtAdgangskodePage() {
     setLoading(true);
     setError(null);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(
-      email.trim().toLowerCase(),
-      {
-        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-      },
-    );
+    // Sendes fra serveren, saa det kan rate-limites (src/app/actions/auth.ts).
+    const svar = await nulstilAdgangskode(email);
 
     setLoading(false);
 
-    if (error) {
-      setError(error.message);
+    if ("fejl" in svar) {
+      setError(svar.fejl);
       return;
     }
 

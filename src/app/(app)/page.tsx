@@ -9,7 +9,7 @@ export default async function Home() {
 
   const { data: udvalgteRaw } = await supabase
     .from("auctions")
-    .select("*, bids(count)")
+    .select("*")
     .eq("status", "aktiv")
     .eq("skjult", false)
     .gt("slutter_kl", new Date().toISOString())

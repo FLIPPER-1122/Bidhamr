@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { gensendBekraeftelse, logInd } from "@/app/actions/auth";
 
 function LoginForm() {
   const router = useRouter();
@@ -34,23 +35,18 @@ function LoginForm() {
     setEmailIkkeBekraeftet(false);
     setResendSuccess(false);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    // Login sker paa serveren, saa det kan rate-limites (src/app/actions/auth.ts).
+    const svar = await logInd(email, password);
 
     setLoading(false);
 
-    if (error) {
-      if (error.code === "email_not_confirmed" || error.message.toLowerCase().includes("email not confirmed")) {
-        setError("Din email er ikke bekræftet endnu. Tjek din indbakke.");
-        setEmailIkkeBekraeftet(true);
-      } else {
-        setError(error.message);
-      }
+    if ("fejl" in svar) {
+      setError(svar.fejl);
+      if (svar.kode === "email_ikke_bekraeftet") setEmailIkkeBekraeftet(true);
       return;
     }
+
+    const supabase = createClient();
 
     // Suspenderede konti logges ud igen med besked om årsagen.
     const { data: sessionData } = await supabase.auth.getUser();
@@ -87,16 +83,12 @@ function LoginForm() {
     setResendLoading(true);
     setResendSuccess(false);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.resend({
-      type: "signup",
-      email,
-    });
+    const svar = await gensendBekraeftelse(email);
 
     setResendLoading(false);
 
-    if (error) {
-      setError(error.message);
+    if ("fejl" in svar) {
+      setError(svar.fejl);
       return;
     }
 
