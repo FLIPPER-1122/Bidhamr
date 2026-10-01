@@ -71,15 +71,64 @@ function skabelon({
 </html>`;
 }
 
-export function koeberVandtMail(titel: string, beloeb: number, tradeId: string) {
+// Brugerindtastet tekst (fx auktionstitel) må aldrig indsættes rå i HTML.
+export function escapeHtml(tekst: string) {
+  return tekst
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function kronerFraOere(oere: number) {
+  return (oere / 100).toLocaleString("da-DK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function fristTekst(betalSenest: string) {
+  return new Date(betalSenest).toLocaleString("da-DK", {
+    timeZone: "Europe/Copenhagen",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Vinderen skal selv betale inden for 48 timer.
+export function koeberVandtMail(
+  titel: string,
+  totalOere: number,
+  tradeId: string,
+  betalSenest: string,
+) {
   return {
     subject: `Du vandt auktionen: ${titel}`,
     html: skabelon({
       overskrift: "Tillykke — du vandt!",
       afsnit: [
-        `Du har vundet auktionen <strong>${titel}</strong> til ${beloeb.toLocaleString("da-DK")} kr.`,
-        "Beløbet er trukket fra din BidHamr-konto og holdes af os, indtil du bekræfter, at du har modtaget varen. Først da får sælgeren pengene.",
-        "Du kan følge handlen og skrive direkte til sælgeren på siden nedenfor.",
+        `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Du skal betale ${kronerFraOere(totalOere)} kr inkl. købergebyr.`,
+        `Betal senest <strong>${fristTekst(betalSenest)}</strong>. Du kan betale med kort, MobilePay, Apple Pay eller Google Pay, og du kan tilvælge BidHamr Beskyttelse.`,
+        "Pengene holdes af Stripe, indtil du har bekræftet, at varen er som den skal være. Først da får sælgeren dem.",
+      ],
+      knapTekst: "Betal nu",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}
+
+// Vinderens gemte kort blev trukket automatisk.
+export function koeberAutobetaltMail(titel: string, totalOere: number, tradeId: string) {
+  return {
+    subject: `Du vandt og har betalt: ${titel}`,
+    html: skabelon({
+      overskrift: "Tillykke — du vandt!",
+      afsnit: [
+        `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>, og ${kronerFraOere(totalOere)} kr er trukket automatisk på dit gemte kort.`,
+        "Pengene holdes af Stripe, indtil du har bekræftet, at varen er som den skal være.",
       ],
       knapTekst: "Se handlen",
       knapUrl: sideUrl(`/mine-handler/${tradeId}`),
@@ -87,15 +136,50 @@ export function koeberVandtMail(titel: string, beloeb: number, tradeId: string) 
   };
 }
 
-export function saelgerSolgtMail(titel: string, beloeb: number, tradeId: string) {
+export function betalingsPaamindelseMail(
+  titel: string,
+  totalOere: number,
+  tradeId: string,
+  betalSenest: string,
+) {
+  return {
+    subject: `Husk at betale: ${titel}`,
+    html: skabelon({
+      overskrift: "Du mangler at betale",
+      afsnit: [
+        `Du har vundet <strong>${escapeHtml(titel)}</strong>, men vi har endnu ikke modtaget din betaling på ${kronerFraOere(totalOere)} kr.`,
+        `Betal senest <strong>${fristTekst(betalSenest)}</strong>. Betaler du ikke, annulleres handlen, og du får en advarsel.`,
+      ],
+      knapTekst: "Betal nu",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}
+
+export function saelgerSolgtMail(titel: string, buddetOere: number, tradeId: string) {
   return {
     subject: `Din auktion er solgt: ${titel}`,
     html: skabelon({
       overskrift: "Din auktion er solgt",
       afsnit: [
-        `<strong>${titel}</strong> blev solgt for ${beloeb.toLocaleString("da-DK")} kr.`,
-        "Køberen har betalt, og beløbet står klar. Det sættes ind på din BidHamr-konto — fratrukket 5% sælgergebyr — så snart køberen har bekræftet modtagelsen.",
-        "Send varen af sted og indtast sporingsnummeret på handelssiden, så køberen kan følge med.",
+        `<strong>${escapeHtml(titel)}</strong> blev solgt for ${kronerFraOere(buddetOere)} kr.`,
+        "Køberen har 48 timer til at betale. Vi giver dig besked, så snart betalingen er modtaget — send først varen derefter.",
+        "Når køberen har bekræftet varen, overføres beløbet fratrukket 5% sælgergebyr til din udbetalingskonto hos Stripe.",
+      ],
+      knapTekst: "Se handlen",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}
+
+export function saelgerBetaltMail(titel: string, tradeId: string) {
+  return {
+    subject: `Køberen har betalt: ${titel}`,
+    html: skabelon({
+      overskrift: "Betalingen er modtaget",
+      afsnit: [
+        `Køberen har betalt for <strong>${escapeHtml(titel)}</strong>.`,
+        "Send varen af sted og indtast sporingsnummeret på handelssiden.",
       ],
       knapTekst: "Se handlen",
       knapUrl: sideUrl(`/mine-handler/${tradeId}`),
@@ -109,11 +193,11 @@ export function pakkeSendtMail(titel: string, tracking: string, tradeId: string)
     html: skabelon({
       overskrift: "Pakken er på vej",
       afsnit: [
-        `Sælgeren har sendt <strong>${titel}</strong>.`,
+        `Sælgeren har sendt <strong>${escapeHtml(titel)}</strong>.`,
         "Når pakken er kommet frem, kvitterer du for den på handelssiden. Derefter tjekker du varen og godkender den — først da frigives beløbet til sælgeren.",
       ],
       ekstra: `<p style="margin:0 0 20px 0;padding:12px 16px;background-color:#f5f5f5;border-radius:10px;font-size:14px;color:#171717;">
-        Sporingsnummer: <strong>${tracking}</strong>
+        Sporingsnummer: <strong>${escapeHtml(tracking)}</strong>
       </p>`,
       knapTekst: "Se handlen",
       knapUrl: sideUrl(`/mine-handler/${tradeId}`),

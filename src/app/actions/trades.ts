@@ -5,6 +5,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getResend } from "@/lib/resend";
 import { HANDEL_AFSENDER, pakkeSendtMail } from "@/lib/mails/handel";
+import {
+  hentBetalingForHandel,
+  overfoerTilSaelger,
+} from "@/lib/betaling/stripeBetaling";
 
 type HandelRaekke = {
   id: string;
@@ -151,19 +155,33 @@ export async function godkendPakke(tradeId: string) {
     return { fejl: "Kvittér for pakken, før du godkender den." };
   }
 
-  // Statusskiftet OG udbetalingen sker i samme transaktion i databasen.
-  // Funktionen er idempotent, så et dobbeltklik ikke kan udbetale to gange.
-  const { data: udbetalt, error } = await supabase.rpc(
-    "wallet_udbetal_saelger",
-    { p_trade: tradeId },
-  );
+  // Statusskiftet og frigivelsen (frigivet_kl) sker i samme transaktion i
+  // databasen. Idempotent: et dobbeltklik finder ingen række anden gang.
+  const { data: godkendt, error } = await supabase.rpc("handel_godkend", {
+    p_trade: tradeId,
+  });
 
   if (error) {
-    console.error("wallet_udbetal_saelger fejlede:", error);
+    console.error("handel_godkend fejlede:", error);
     return { fejl: "Noget gik galt. Prøv igen om lidt." };
   }
-  if (!udbetalt) {
+  if (!godkendt) {
     return { fejl: "Pakken er allerede godkendt." };
+  }
+
+  // Pengene overføres til sælgerens Stripe Connect-konto. Fejler det (eller
+  // har sælgeren ingen aktiv konto endnu), prøver cron og account.updated-
+  // webhooken igen - godkendelsen står fast uanset.
+  try {
+    const betaling = await hentBetalingForHandel(tradeId);
+    if (betaling) {
+      const r = await overfoerTilSaelger(betaling.id);
+      if (r !== "overfoert" && r !== "allerede_overfoert") {
+        console.warn("Overførsel ikke gennemført endnu:", tradeId, r);
+      }
+    }
+  } catch (err) {
+    console.error("Overførsel til sælger fejlede (prøves igen af cron):", tradeId, err);
   }
 
   revalidatePath(`/mine-handler/${tradeId}`);

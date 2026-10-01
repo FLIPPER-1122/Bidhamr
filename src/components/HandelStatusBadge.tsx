@@ -8,6 +8,7 @@
 // sættes ikke af noget i dag og er reserveret til et senere trin efter
 // udbetaling (fx udløbet klagefrist) - derfor står den ikke her.
 export const HANDEL_STATUS = [
+  { vaerdi: "afventer_betaling", label: "Afventer betaling" },
   { vaerdi: "betaling_modtaget", label: "Betaling modtaget" },
   { vaerdi: "pakke_sendt", label: "Pakke sendt" },
   { vaerdi: "modtaget", label: "Modtaget" },
@@ -15,9 +16,15 @@ export const HANDEL_STATUS = [
 ] as const;
 
 // Handlen er i gang, indtil køberen har godkendt.
-export const AKTIVE_STATUSSER = ["betaling_modtaget", "pakke_sendt", "modtaget"];
+export const AKTIVE_STATUSSER = [
+  "afventer_betaling",
+  "betaling_modtaget",
+  "pakke_sendt",
+  "modtaget",
+];
 
 const STIL: Record<string, string> = {
+  afventer_betaling: "bg-orange-100 text-orange-800",
   betaling_modtaget: "bg-amber-100 text-amber-800",
   pakke_sendt: "bg-blue-100 text-blue-800",
   modtaget: "bg-indigo-100 text-indigo-800",
