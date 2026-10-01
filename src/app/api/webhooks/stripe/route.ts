@@ -7,6 +7,7 @@ import {
   registrerGemtKort,
   spejlConnectKonto,
   spejlPaymentIntent,
+  spejlRefusion,
 } from "@/lib/betaling/stripeBetaling";
 
 // Stripe-webhook for den nye betalingsmodel. Spejler Stripes status i
@@ -52,6 +53,16 @@ async function haandter(event: Stripe.Event): Promise<void> {
       const pi = await getStripe().paymentIntents.retrieve(fraEvent.id);
       const resultat = await spejlPaymentIntent(pi);
       console.log(`Stripe ${event.type}: ${pi.id} -> ${resultat}`);
+      return;
+    }
+
+    case "charge.refunded": {
+      // Hent den aktuelle charge (events kan komme i forkert rækkefølge).
+      const fraEvent = event.data.object as Stripe.Charge;
+      if (!fraEvent.payment_intent) return;
+      const charge = await getStripe().charges.retrieve(fraEvent.id);
+      const resultat = await spejlRefusion(charge);
+      console.log(`Stripe ${event.type}: ${charge.id} -> ${resultat}`);
       return;
     }
 
