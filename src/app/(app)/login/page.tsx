@@ -10,7 +10,14 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") || "/auktioner";
   // Auth-callbacket sender fejl hertil, fx når et nulstillingslink er udløbet.
-  const callbackFejl = searchParams.get("fejl");
+  // Kun faste koder fra /auth/callback vises - aldrig fri tekst fra URL'en.
+  const fejlKode = searchParams.get("fejl");
+  const callbackFejl =
+    fejlKode === "link_udloebet"
+      ? "Linket er udløbet. Bed om et nyt og prøv igen."
+      : fejlKode
+        ? "Linket virker ikke. Bed om et nyt og prøv igen."
+        : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

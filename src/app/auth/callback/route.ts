@@ -17,20 +17,25 @@ function sikkerSti(next: string | null, fallback: string) {
   return next;
 }
 
+// Fejl sendes videre som en fast kode - aldrig Supabase' egen fejltekst, som
+// kan indeholde interne detaljer. Login-siden oversaetter koden til dansk.
+function tilLogin(origin: string, kode: "link_udloebet" | "link_ugyldigt") {
+  const url = new URL("/login", origin);
+  url.searchParams.set("fejl", kode);
+  return NextResponse.redirect(url);
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams, origin } = req.nextUrl;
 
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const fejlBeskrivelse =
-    searchParams.get("error_description") ?? searchParams.get("error");
+  const fejlKode = searchParams.get("error_code") ?? searchParams.get("error");
 
   // Supabase kan selv melde fejl tilbage, fx hvis linket er udløbet.
-  if (fejlBeskrivelse) {
-    const url = new URL("/login", origin);
-    url.searchParams.set("fejl", fejlBeskrivelse);
-    return NextResponse.redirect(url);
+  if (fejlKode) {
+    return tilLogin(origin, fejlKode.includes("expired") ? "link_udloebet" : "link_ugyldigt");
   }
 
   // Recovery-links skal ende på formularen til ny adgangskode.
@@ -42,9 +47,8 @@ export async function GET(req: NextRequest) {
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
-      const url = new URL("/login", origin);
-      url.searchParams.set("fejl", error.message);
-      return NextResponse.redirect(url);
+      console.error("auth/callback fejlede:", error.message);
+      return tilLogin(origin, "link_ugyldigt");
     }
     return NextResponse.redirect(new URL(maal, origin));
   }
@@ -52,9 +56,8 @@ export async function GET(req: NextRequest) {
   if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
     if (error) {
-      const url = new URL("/login", origin);
-      url.searchParams.set("fejl", error.message);
-      return NextResponse.redirect(url);
+      console.error("auth/callback fejlede:", error.message);
+      return tilLogin(origin, "link_ugyldigt");
     }
     return NextResponse.redirect(new URL(maal, origin));
   }

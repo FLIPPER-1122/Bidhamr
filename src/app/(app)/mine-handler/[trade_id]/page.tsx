@@ -44,6 +44,13 @@ export default async function HandelDetaljePage({
     redirect(`/login?redirect=/mine-handler/${trade_id}`);
   }
 
+  // Vender køberen tilbage fra Stripe, spejles betalingen FØR handlen hentes.
+  // hentBetalingsstatus spørger Stripe og opdaterer handlens status, så
+  // statusmærket og trinlinjen nedenfor viser den nye status med det samme.
+  // (Funktionen tjekker selv, at brugeren er køber eller sælger.)
+  const returBetaling =
+    betalingParam === "retur" ? await hentBetalingsstatus(trade_id) : null;
+
   // Medlemskab tjekkes eksplicit. RLS er ikke nok: policyen tillader også
   // staff, og uden dette filter kunne en medarbejder åbne en hvilken som
   // helst handel og læse den private chat mellem køber og sælger.
@@ -83,9 +90,8 @@ export default async function HandelDetaljePage({
   // Betalingen hentes kun, når den er relevant: mens der ventes på den, og
   // når køberen lige er vendt tilbage fra Stripe.
   const betaling =
-    handel.status === "afventer_betaling" || betalingParam === "retur"
-      ? await hentBetalingsstatus(handel.id)
-      : null;
+    returBetaling ??
+    (handel.status === "afventer_betaling" ? await hentBetalingsstatus(handel.id) : null);
   const betalingsstatus = betaling && "ok" in betaling ? betaling : null;
 
   return (
@@ -193,11 +199,17 @@ export default async function HandelDetaljePage({
                   })}{" "}
                   · <span className="font-semibold text-[#8A4210]"><Nedtaelling til={betalingsstatus.betalSenest} /></span>
                 </p>
-                {betalingsstatus.sidsteFejl && (
+                {/* Kun når en automatisk betaling med gemt kort faktisk er
+                    forsøgt og fejlet - ikke efter et afvist manuelt kort. */}
+                {betalingsstatus.autobetalingResultat?.startsWith("fejlet_") ? (
                   <p className="mb-4 rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
                     Den automatiske betaling gik ikke igennem. Betal herunder.
                   </p>
-                )}
+                ) : betalingsstatus.sidsteFejl ? (
+                  <p className="mb-4 rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+                    Betalingen gik ikke igennem. Prøv igen, eller vælg en anden betalingsmetode.
+                  </p>
+                ) : null}
                 <BetalingSektion status={betalingsstatus} />
               </>
             )}

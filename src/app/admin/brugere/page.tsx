@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { createAdminClient } from "@/lib/supabase/admin";
 import Avatar from "@/components/Avatar";
 import BrugerSearch from "@/components/admin/BrugerSearch";
 import { StatusBadge, brugerStatus, RolleBadge } from "@/components/admin/StatusBadge";
 import SaetSaldoForm from "@/components/admin/SaetSaldoForm";
-import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
+import { assertRole } from "@/lib/adminAuth";
 import { kr } from "@/lib/wallet";
 
 export default async function AdminBrugere({
@@ -14,7 +13,10 @@ export default async function AdminBrugere({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q } = await searchParams;
-  const supabase = createAdminClient();
+  // Rollen tjekkes paa selve siden (ikke kun i layoutet), foer service-role bruges.
+  const { rolle: staffRolle, admin: supabase } = await assertRole("medarbejder");
+  // Pengetal (saldo) maa kun chef se.
+  const erChef = staffRolle === "chef";
 
   let query = supabase
     .from("users")
@@ -33,7 +35,7 @@ export default async function AdminBrugere({
 
   // Saldoen bor i wallets - der findes bevidst ingen saldo-kolonne paa users,
   // saa der kun er ét sted at laese den rigtige vaerdi.
-  const { data: saldi } = userIds.length
+  const { data: saldi } = erChef && userIds.length
     ? await supabase.from("wallets").select("user_id, balance, reserved").in("user_id", userIds)
     : { data: [] as { user_id: string; balance: number; reserved: number }[] };
   const saldoMap: Record<string, { balance: number; reserved: number }> = {};
@@ -44,8 +46,7 @@ export default async function AdminBrugere({
     };
   });
 
-  const staffRolle = await getStaffRole();
-  const maaSaetteSaldo = staffRolle ? harMindstRolle(staffRolle, "admin") : false;
+  const maaSaetteSaldo = erChef;
   const { data: advarsler } = userIds.length
     ? await supabase.from("advarsler").select("bruger_id").in("bruger_id", userIds)
     : { data: [] };
@@ -109,6 +110,7 @@ export default async function AdminBrugere({
               </svg>
             </Link>
 
+            {erChef && (
             <div className="flex w-full items-center justify-between gap-3 border-t border-neutral-100 pt-3 sm:w-auto sm:border-0 sm:pt-0">
               <div className="text-right">
                 <p className="text-xs uppercase text-neutral-500">Saldo</p>
@@ -128,6 +130,7 @@ export default async function AdminBrugere({
                 />
               )}
             </div>
+            )}
           </div>
         ))}
         {(users ?? []).length === 0 && (

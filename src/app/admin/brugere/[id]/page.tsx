@@ -11,7 +11,7 @@ import {
 import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { StatusBadge, brugerStatus, erSuspensionAktiv, RolleBadge } from "@/components/admin/StatusBadge";
-import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
+import { assertRole, harMindstRolle } from "@/lib/adminAuth";
 import JusterSaldoForm from "@/components/admin/JusterSaldoForm";
 import { kr } from "@/lib/wallet";
 import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
@@ -47,8 +47,8 @@ export default async function AdminBrugerDetalje({
     ? (faneParam as Fane)
     : "oversigt";
 
-  const supabase = createAdminClient();
-  const staffRolle = await getStaffRole();
+  // Rollen tjekkes paa selve siden (ikke kun i layoutet), foer service-role bruges.
+  const { rolle: staffRolle, admin: supabase } = await assertRole("medarbejder");
   // Sletning af auktioner/anmeldelser kræver admin+; medarbejdere ser ikke knapperne.
   const kanModerereIndhold = !!staffRolle && harMindstRolle(staffRolle, "admin");
 
@@ -241,11 +241,15 @@ async function OversigtFane({
         .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`),
     ]);
 
-  const { data: walletRow } = await supabase
-    .from("wallets")
-    .select("balance, reserved")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  // Pengetal (saldo) maa kun chef se.
+  const erChef = staffRolle === "chef";
+  const { data: walletRow } = erChef
+    ? await supabase
+        .from("wallets")
+        .select("balance, reserved")
+        .eq("user_id", user.id)
+        .maybeSingle()
+    : { data: null };
   const saldo = Number(walletRow?.balance ?? 0);
   const reserveret = Number(walletRow?.reserved ?? 0);
 
@@ -285,6 +289,7 @@ async function OversigtFane({
         </p>
       </div>
 
+      {erChef && (
       <div className="rounded-xl border border-neutral-200 bg-white p-5">
         <h2 className="text-sm font-semibold text-neutral-800">BidHamr-konto</h2>
         <div className="mt-3 flex flex-wrap gap-6 text-sm">
@@ -304,8 +309,9 @@ async function OversigtFane({
           </div>
         </div>
 
-        {staffRolle === "chef" && <JusterSaldoForm userId={user.id} />}
+        <JusterSaldoForm userId={user.id} />
       </div>
+      )}
 
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
         <div className="border-b border-neutral-100 px-5 py-4">

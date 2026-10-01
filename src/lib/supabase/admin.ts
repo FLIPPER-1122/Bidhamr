@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createClient } from "@supabase/supabase-js";
 
 // Bruger service-role-nøglen og omgår derfor RLS. Må KUN importeres i

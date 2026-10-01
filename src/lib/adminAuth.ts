@@ -1,3 +1,5 @@
+import "server-only";
+
 // Må KUN importeres i server-kode (server components/actions) — returnerer
 // service-role-klienten, som aldrig må ende i klient-bundlen.
 import { createClient } from "@/lib/supabase/server";
