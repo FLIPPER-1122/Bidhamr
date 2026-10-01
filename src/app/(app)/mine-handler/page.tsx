@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import HandelStatusBadge, { AKTIVE_STATUSSER } from "@/components/HandelStatusBadge";
+import { hentMineAktiveTilbud } from "@/app/actions/andenchanceBruger";
+import Nedtaelling from "@/components/betaling/Nedtaelling";
 
 export const dynamic = "force-dynamic";
 
@@ -96,12 +98,15 @@ export default async function MineHandlerPage() {
 
   // or-filteret er det, der begrænser til egne handler. RLS alene ville ikke
   // gøre det: policyen tillader også staff at se alt.
-  const { data } = await supabase
+  const [{ data }, tilbud] = await Promise.all([
+    supabase
     .from("trades")
     .select("id, status, amount, created_at, buyer_id, seller_id, auctions(titel, billeder)")
     .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
     .order("created_at", { ascending: false })
-    .overrideTypes<HandelRaekke[], { merge: false }>();
+    .overrideTypes<HandelRaekke[], { merge: false }>(),
+    hentMineAktiveTilbud(),
+  ]);
 
   const handler = data ?? [];
   const aktive = handler.filter((h) => AKTIVE_STATUSSER.includes(h.status));
@@ -114,6 +119,29 @@ export default async function MineHandlerPage() {
         <p className="mt-1 text-sm text-neutral-500">
           Handler hvor du er køber eller sælger.
         </p>
+
+        {tilbud.length > 0 && (
+          <section className="mt-8">
+            <h2 className="text-sm font-semibold text-neutral-900">Tilbud til dig</h2>
+            <div className="mt-3 space-y-2">
+              {tilbud.map((t) => (
+                <Link
+                  key={t.id}
+                  href={`/andenchance/${t.id}`}
+                  className="flex flex-col gap-2 rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] p-4 text-[#8A4210] transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold">{t.titel}</span>
+                    <span className="block text-sm">
+                      Du kan købe varen for dit bud · <Nedtaelling til={t.udloeber} />
+                    </span>
+                  </span>
+                  <span className="btn btn-primaer btn-lille shrink-0">Se tilbud</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         {handler.length === 0 ? (
           <div className="mt-8 rounded-xl border border-neutral-200 bg-white p-10 text-center text-neutral-400">

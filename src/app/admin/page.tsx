@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import StatCard from "@/components/admin/StatCard";
+import Link from "next/link";
 
 function formatKr(value: number) {
   return value.toLocaleString("da-DK", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " kr";
@@ -27,6 +28,7 @@ export default async function AdminDashboard() {
     { data: handler },
     { count: newUsers },
     { count: newTransactions },
+    { count: ubetalte },
   ] = await Promise.all([
     supabase.from("users").select("id", { count: "exact", head: true }),
     // Aktiv = status 'aktiv' OG slutdato i fremtiden. Uden tidsfilteret talte
@@ -42,6 +44,7 @@ export default async function AdminDashboard() {
       .is("refusion_anmodet_kl", null),
     supabase.from("users").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO),
     supabase.from("trades").select("id", { count: "exact", head: true }).gte("created_at", thirtyDaysAgoISO),
+    supabase.from("ubetalte_vindere").select("id", { count: "exact", head: true }).eq("status", "afventer"),
   ]);
 
   // Omsaetning = summen af buddene i betalte handler. Gebyrindtaegten er
@@ -58,6 +61,16 @@ export default async function AdminDashboard() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold text-neutral-900">Dashboard</h1>
+
+      {(ubetalte ?? 0) > 0 && (
+        <Link
+          href="/admin/ubetalte"
+          className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 hover:bg-red-100"
+        >
+          <span>Ubetalte vindere venter på behandling</span>
+          <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">! {ubetalte}</span>
+        </Link>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
