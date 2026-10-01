@@ -23,8 +23,9 @@ Formål: rydde op, så agent-teamet kan arbejde sikkert og ens.
 - [x] Ret gebyr i koden: sælgergebyr fra 10% til 5% (`wallet_udbetal_saelger`, `admin_frigiv_handel`)
 - [x] Nyt design (farver, skrifttyper, logo, favicon) og ny coming-soon-side
 - [x] Next.js opgraderet til 16.3.6 (sikkerhedshuller lukket)
+- [ ] **Sikkerhed-agent** oprettet og første fulde sikkerhedsgennemgang af hele systemet (RLS på alle tabeller inkl. dem lavet direkte i Supabase, funktioner, storage, nøgler, login, admin-adgang). Kritiske fund rettes, før fase 1 fortsætter. Agenten køres derefter efter hver fase
 - [ ] **Filip – afklar med rådgiver/advokat (blokerer IKKE fase 1 – agenterne bygger videre i testmiljøet):**
-  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 48 timer, og gemt kort med automatisk betaling er et tilvalg.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Opsætningen er besluttet: separate charges and transfers. Tag Stripes svar med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
+  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 24 timer, og gemt kort med automatisk betaling er et tilvalg.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Opsætningen er besluttet: separate charges and transfers. Tag Stripes svar med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
   - BESLUTTET: Det hedder **"BidHamr Beskyttelse"** – aldrig "forsikring" nogen steder på siden, i mails eller i koden
   - **Hvidvaskloven**: gælder den for BidHamr, når I håndterer betalinger (kundekendskab ved store beløb)?
 
@@ -33,7 +34,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 
 - [~] **Ny betalingsmodel: betal når du vinder – ingen saldo** (stort punkt – tages først i fasen). Stripe har bekræftet, at en købersaldo ikke passer til Stripe Connect og kan kræve e-penge-tilladelse. Derfor:
   - Den nuværende wallet med indbetaling før bud, låsning af beløb og wallet-tabel **fjernes**
-  - Når auktionen slutter, har vinderen **48 timer til selv at betale** (bud + købergebyr + fragt + evt. BidHamr Beskyttelse) med kort, **MobilePay**, Apple Pay eller Google Pay. Påmindelser efter fx 24 og 40 timer
+  - Når auktionen slutter, har vinderen **24 timer til selv at betale** (bud + købergebyr + fragt + evt. BidHamr Beskyttelse) med kort, **MobilePay**, Apple Pay eller Google Pay. Påmindelser efter 12 og 20 timer
   - **Valgfrit: automatisk betaling.** Brugeren kan i sine indstillinger gemme et kort og slå "Betal automatisk, når jeg vinder" til. Så trækkes kortet med det samme, når auktionen slutter. Det er et tilvalg, ikke et krav
   - Pengene ligger på BidHamrs Stripe-konto (manuelle udbetalinger), indtil køber bekræfter / 48 timer uden sag / sag er afgjort
   - Sælger oprettes som **Stripe Connect-konto** (Express), og Stripe tjekker sælgerens identitet. Pengene overføres minus sælgergebyr, og Stripe udbetaler til sælgerens bank
@@ -44,10 +45,10 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - Opret falske sælgerkonti i Stripe Connect test mode til at teste udbetalinger
   - **Fjern** admin-værktøjerne "Sæt saldo" og "Justér saldo" og siden med wallet-transaktioner – de hører til den gamle model
   - **Fjern** wallet-tabellerne og wallet-funktionerne i databasen (`wallets`, `wallet_entries`, `bid_reservations`, `wallet_*`-funktionerne) med en migration, når det nye flow virker
-- [ ] **Hvis vinderen ikke betaler inden 48 timer** (eller den automatiske betaling fejler og han ikke betaler selv inden for fristen): handlen annulleres, køber får en advarsel (tæller med i 3-advarsler-reglen), og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen
+- [ ] **Hvis vinderen ikke betaler inden 24 timer** (eller den automatiske betaling fejler og han ikke betaler selv inden for fristen): handlen annulleres, køber får en advarsel (tæller med i 3-advarsler-reglen), og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen
 - [ ] Gennemgang af hele pengestrømmen (reviewer): køb, gebyrer, frigivelse, refusion, ingen huller
 - [ ] Gebyrer: 5% køber + 5% sælger, altid
-- [ ] **BidHamr Beskyttelse**: 3% tilkøb for køber (min 20 / maks 250 kr), vælges ved køb
+- [ ] **BidHamr Beskyttelse**: 5% tilkøb for køber (min 25 / maks 250 kr), vælges ved køb
 - [ ] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
 - [ ] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen
 - [ ] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem
@@ -60,7 +61,9 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [ ] Mails ved alle trin i handlen
 - [ ] **Udbetaling til sælgers bankkonto** via Stripe Connect (testmiljø – ingen rigtige penge endnu)
 - [ ] **DAC7**: brug Stripes "Platform Tax Reporting" til at indsamle og indberette sælgeroplysninger
-- [ ] Kvittering til køber og sælger efter handel med opdeling af pris, gebyr, BidHamr Beskyttelse og fragt
+- [ ] Kvittering til køber og sælger efter handel med opdeling af pris, gebyr, BidHamr Beskyttelse og fragt (kvittering/handelsbekræftelse for selve varen – IKKE en faktura, fordi varen sælges mellem private)
+- [ ] Filip: spørg revisor, om **Dinero** er et godkendt digitalt bogføringssystem, og vælg regnskabsprogram (Dinero, Billy eller e-conomic)
+- [ ] **Automatiske fakturaer på BidHamrs egne gebyrer** med moms: køber får faktura på købergebyr + evt. BidHamr Beskyttelse, sælger får faktura på sælgergebyr. Oprettes automatisk i det valgte regnskabsprogram via API, så alle fakturaer ligger samlet ét sted. Fakturaerne vises også under brugerens profil. **Venter på Filips valg af regnskabsprogram** – byg kvitteringen først
 - [ ] Sælger kan redigere eller annullere sin auktion, så længe der ikke er bud
 - [ ] **Startpris = mindstepris**: sælger sætter én synlig startpris, som alle kan se. Første bud skal mindst være startprisen. Ingen skjult mindstepris
 - [ ] Ved oprettelse vises en tydelig anbefaling: "Sæt startprisen lidt under det, du regner med at få – er den for høj, byder ingen"
@@ -73,6 +76,16 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [ ] Efter første bud kan sælger ikke redigere, kun tilføje et synligt **tillæg** til beskrivelsen
 - [ ] Sælger kan give køber en **delvis refusion/rabat** i handlen, hvis de bliver enige (fx ved en lille skade)
 - [ ] **Anke**: den, der taber en sag, kan anke. **Anke-knappen åbner først 24 timer efter afgørelsen** (afkølingsperiode), og derefter er der **3 dage** til at anke. Kræver begrundelse og gerne ny dokumentation. Behandles af en anden medarbejder end den, der afgjorde sagen (admin/chef). Afgørelsen på anken er endelig. Pengene er frosset, til ankefristen er udløbet (i alt 4 dage efter afgørelsen). Gælder kun handler med en sag
+
+## Fase 1B – Nyt admin-dashboard
+Formål: ét samlet sted, hvor staff kan styre hele BidHamr. Bygges efter fase 1, fordi pengetallene afhænger af den nye Stripe-model.
+
+- [ ] **Forside med fokus på brugere**: antal brugere i alt, nye brugere i dag / denne uge / denne måned, graf over tilvækst. Derudover nye auktioner og solgte varer
+- [ ] **"Kræver handling nu"** øverst på forsiden: åbne sager, nye rapporter, handler der hænger, ubetalte vindere, fejlede betalinger
+- [ ] **Penge – KUN for rollen chef**: omsætning, BidHamrs indtjening (købergebyr, sælgergebyr, BidHamr Beskyttelse), betalinger, udbetalinger og refusioner fra Stripe, penge der holdes lige nu og hvornår de frigives. Medarbejdere og admins må ikke kunne se indtjeningstal – heller ikke via URL eller API (tjekkes på serveren)
+- [ ] **Brugere og sikkerhed**: søgning, advarsler, suspenderinger, MitID-status, mistænkelig aktivitet (fx mange sager eller mange ubetalte auktioner)
+- [ ] **Drift**: fejlede cron-jobs, mails der ikke er sendt, fejl på siden
+- [ ] **Medarbejder-log**: hvad hver medarbejder har gjort (bygger videre på moderation_log)
 
 ## Fase 2 – Fragt og automatisk frigivelse
 Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel indgriben.
@@ -140,7 +153,7 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 - [ ] Filip: flyt den færdige app-kode fra MacBook til den stationære (via GitHub)
 - [ ] Sammenlign app og hjemmeside skærm for skærm – lav en liste over forskelle
 - [ ] Ret forskellene, så funktioner, tekster og design er ens (DESIGN.md gælder også appen)
-- [ ] Appen bruger samme Supabase-database og samme Stripe-betalingsflow som hjemmesiden (vinderen betaler selv inden for 48 timer, valgfrit gemt kort, ingen saldo)
+- [ ] Appen bruger samme Supabase-database og samme Stripe-betalingsflow som hjemmesiden (vinderen betaler selv inden for 24 timer, valgfrit gemt kort, ingen saldo)
 - [ ] Push-notifikationer
 - [ ] Statistikker i appen
 - [ ] Nyt design og app-ikon (7B)
@@ -169,7 +182,8 @@ Formål: alt det juridiske og praktiske er på plads.
 - [ ] Fejlovervågning (fx Sentry) og besked til Filip, hvis siden går ned
 - [ ] Backup af databasen er slået til og testet
 - [ ] **Beta-test med 10-20 rigtige, fremmede personer**, der køber og sælger med testpenge. Ret det, de støder på
-- [ ] Endelig sikkerhedsgennemgang og test af hele flowet
+- [ ] Endelig sikkerhedsgennemgang og test af hele flowet (sikkerhed-agenten kører en fuld gennemgang)
+- [ ] **Ekstern pentest**: et professionelt sikkerhedsfirma tester siden, før der skiftes til rigtige penge
 - [ ] Erstat coming-soon-siden med den rigtige forside
 - [ ] Logo finpudset af designer, favicon og app store-billeder
 - [ ] **Lancering**
@@ -188,5 +202,5 @@ Fundet i gennemgang af Tradera, Vinted og Etsy. Gode, men ikke nødvendige for a
 - "Køb nu" (se nedenfor)
 
 ## Åbne spørgsmål
-- BidHamr Beskyttelse: bedre prismodel end fast 3%
+- BidHamr Beskyttelse: bedre prismodel end fast 5%
 - "Køb nu": IKKE med ved lancering – BidHamr er en ren auktionsside. Kan tages op igen senere.

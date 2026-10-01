@@ -2,8 +2,10 @@
 
 > **VIGTIGT – gælder hele dokumentet:**
 > - **Stripe holder brugernes penge (Stripe Connect), ikke BidHamr.**
-> - **Der er INGEN købersaldo/wallet.** Vinderen betaler selv inden for **48 timer** efter auktionen (kort, MobilePay, Apple Pay, Google Pay). Som **tilvalg** kan brugeren gemme et kort og slå automatisk betaling til, så kortet trækkes med det samme, når han vinder. Betaler han ikke inden 48 timer: handlen annulleres, han får en advarsel, og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen. Hvor der står "wallet" nedenfor, er det forældet.
+> - **Der er INGEN købersaldo/wallet.** Vinderen betaler selv inden for **24 timer** efter auktionen (kort, MobilePay, Apple Pay, Google Pay – og de øvrige metoder Stripe tilbyder, fx Klarna, Revolut Pay og Link; Filip 1. okt. 2026: må gerne være slået til). Som **tilvalg** kan brugeren gemme et kort og slå automatisk betaling til, så kortet trækkes med det samme, når han vinder. Betaler han ikke inden 24 timer: handlen annulleres, han får en advarsel, og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen. Hvor der står "wallet" nedenfor, er det forældet.
 > - **Stripe-opsætning: "separate charges and transfers"** med manuelle udbetalinger. Køber betaler til BidHamrs platformskonto; beløbet minus sælgergebyr overføres til sælgerens Stripe Connect Express-konto, når pengene frigives (bekræftelse, 48 timer uden sag, eller afgjort sag + ankefrist). Valgt fordi pengene ofte skal holdes i dage og kunne fryses ved sager.
+> - **Faktura og kvittering:** BidHamr laver kun faktura på sine egne gebyrer (købergebyr, sælgergebyr, BidHamr Beskyttelse) – med moms. Selve varen sælges mellem private, så køber og sælger får en kvittering/handelsbekræftelse, ikke en faktura. Fakturaerne oprettes automatisk i et dansk regnskabsprogram (sandsynligvis Dinero – afventer revisor) og vises også på brugerens profil.
+> - **Admin-dashboard:** Kun rollen **chef** må se pengetal og indtjeningsstatistik. Medarbejdere og admins ser alt andet. Forsiden fokuserer på brugere (antal i alt og nye brugere).
 > - Tilkøbet for køberen hedder **"BidHamr Beskyttelse"** overalt.
 
 Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md og PRODUKT.md.
@@ -27,10 +29,10 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 - Rettet: sælgergebyret er nu 5% i koden.
 
 ## 4. BidHamr Beskyttelse (tilkøb for køber)
-- Frivilligt tilkøb på **3%** oveni købergebyret, **minimum 20 kr og maksimum 250 kr**.
+- Frivilligt tilkøb på **5%** oveni købergebyret, **minimum 25 kr og maksimum 250 kr** (Filip, 1. oktober 2026). Vælges af køber på auktionssiden, når han byder (ikke forvalgt). Er den valgt, indgår den i betalingen – også ved automatisk betaling. Valget låses ved buddet og kan ikke ændres bagefter.
 - Dækker, hvis varen er **gået i stykker under forsendelsen**: køberen kan oprette en sag og sende varen retur.
 - Uden BidHamr Beskyttelse: en vare, der går i stykker undervejs, kan ikke sendes retur.
-- Prisen på 3% er midlertidig. Der skal laves et bedre prissystem senere.
+- Prisen på 5% er midlertidig. Der skal laves et bedre prissystem senere.
 - **Uden BidHamr Beskyttelse hjælper BidHamr ikke med retur**, heller ikke hvis varen ikke er som beskrevet. Så må køber og sælger selv løse det.
 - **Med BidHamr Beskyttelse** går BidHamr ind og håndterer sagen for køberen.
 - **Svindel-undtagelse:** Åbenlys svindel (tom pakke, helt anden vare, falsk kopi solgt som ægte, vare aldrig sendt) giver altid en sag, med eller uden BidHamr Beskyttelse. Pengene fryses.
@@ -109,3 +111,7 @@ Brugeren får besked når:
 - Bedømmelse kan **kun** gives i forbindelse med godkendelse af en handel. Ingen andre steder eller tidspunkter.
 - Frigives pengene automatisk (køber godkender aldrig), får sælgeren **ingen bedømmelse** for den handel.
 - FEJL at rette: submitRating tjekker ikke, at man faktisk var køber i handlen. I dag kan enhver bedømme enhver. Skal låses, så kun køberen på en handel kan bedømme den handels sælger, én gang.
+
+## Midlertidige beslutninger (1. oktober 2026)
+- **Fragt: fast 35 kr** pr. handel, når auktionen tilbyder forsendelse (køber kan ikke vælge afhentning i stedet; kun-afhentning-auktioner = 0 kr), betalt af køber, indtil priser er forhandlet med fragtfirmaerne. Fragten udbetales til sælger sammen med salgsbeløbet (sælger betaler selv forsendelsen indtil fragtintegrationen i fase 2). Sælgergebyret på 5% beregnes kun af buddet, ikke af fragten.
+- **Cron**: kører hvert 5. minut via pg_cron + pg_net i Supabase (gratis). Vercel Pro overvejes tættere på lancering.
