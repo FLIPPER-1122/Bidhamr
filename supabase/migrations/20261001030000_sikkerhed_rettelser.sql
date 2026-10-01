@@ -15,8 +15,10 @@
 --   L2  Visningstal: kraever login, hoejst een visning pr. bruger pr. auktion,
 --       ejerens egne visninger taeller ikke. antal_bud kan ikke saettes af brugere.
 --   L3  Postgres-baseret rate limiter (kun service_role).
---   L6  Bydernes og foelgernes privatliv: bids og seller_follows kan kun
---       laeses af brugeren selv. Antal bud ligger paa auctions.antal_bud.
+--   L6  Antal bud ligger paa auctions.antal_bud. Selve privatlivsdelen
+--       (bids/seller_follows kun for brugeren selv) ligger i
+--       20261001035000_privatliv_bud_foelgere.sql, saa den kan holdes
+--       tilbage i produktion, indtil appen er tilpasset.
 
 -- =============================================================== H2 + T4 betalinger
 -- min_rolle() (20260930100000) er security definer og udleder brugeren af
@@ -218,31 +220,6 @@ drop trigger if exists auctions_beskyt_taellere on public.auctions;
 create trigger auctions_beskyt_taellere
   before insert or update on public.auctions
   for each row execute function public.auctions_beskyt_taellere();
-
--- =============================================================== L6 bids
--- Byderes bruger-id'er maa ikke kunne hentes af andre. Hjemmesiden viser en
--- anonymiseret budhistorik ("Byder 3"/"Dig"), som serveren bygger med
--- service-role. Realtime paa bids respekterer RLS, saa andre byderes bud
--- sendes ikke laengere ud; klienten lytter i stedet paa auctions.
-drop policy if exists "bids_select_all" on public.bids;
-drop policy if exists bids_select_all on public.bids;
-drop policy if exists bids_select_own on public.bids;
-create policy bids_select_own on public.bids
-  for select to authenticated using (bruger_id = auth.uid());
-revoke select on public.bids from anon;
-
--- =============================================================== L6 seller_follows
--- Kun brugeren selv kan se, hvem han foelger.
-do $$
-begin
-  if to_regclass('public.seller_follows') is not null then
-    execute 'drop policy if exists seller_follows_select_all on public.seller_follows';
-    execute 'drop policy if exists seller_follows_select_own on public.seller_follows';
-    execute 'create policy seller_follows_select_own on public.seller_follows
-               for select to authenticated using (follower_id = auth.uid())';
-    execute 'revoke select on public.seller_follows from anon';
-  end if;
-end $$;
 
 -- =============================================================== L3 rate limiting
 -- Fast tidsvindue pr. noegle (fx 'login_ip:1.2.3.4'). Kun service_role

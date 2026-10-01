@@ -5,6 +5,10 @@
 // Stripe: script fra js.stripe.com (loades af et nonce'et script, saa
 // 'strict-dynamic' tillader det), iframes til Payment Element, 3DS og
 // MobilePay, og API-kald til api.stripe.com.
+// Google Pay i Payment Element loader pay.google.com (script, iframe, kald).
+// Apple Pay-knappen tegnes af Stripe i deres iframe, men Apple anbefaler
+// applepay.cdn-apple.com til knap-scriptet, saa det er tilladt for en
+// sikkerheds skyld.
 
 export function lavNonce(): string {
   return btoa(crypto.randomUUID());
@@ -17,13 +21,13 @@ export function lavCsp(nonce: string): string {
 
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com${isDev ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com https://pay.google.com https://applepay.cdn-apple.com${isDev ? " 'unsafe-eval'" : ""}`,
     // React-style-attributter og Stripe kraever inline-styles.
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' blob: data: ${supabaseUrl} https://*.stripe.com`,
+    `img-src 'self' blob: data: ${supabaseUrl} https://*.stripe.com https://*.gstatic.com https://*.googleusercontent.com`,
     "font-src 'self'",
-    `connect-src 'self' ${supabaseUrl} ${supabaseWss} https://api.stripe.com https://*.stripe.com https://api.dataforsyningen.dk`,
-    "frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network",
+    `connect-src 'self' ${supabaseUrl} ${supabaseWss} https://api.stripe.com https://*.stripe.com https://api.dataforsyningen.dk https://pay.google.com https://google.com/pay https://www.google.com/pay`,
+    "frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network https://pay.google.com",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
