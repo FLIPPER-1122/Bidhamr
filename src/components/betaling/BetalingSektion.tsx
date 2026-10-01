@@ -33,7 +33,7 @@ export default function BetalingSektion({ status }: { status: Betalingsstatus })
     <div className="space-y-5">
       <dl className="space-y-2 text-sm">
         <Linje navn="Dit bud" vaerdi={kroner(status.budOere)} />
-        <Linje navn="Købergebyr (5%)" vaerdi={kroner(status.koebergebyrOere)} />
+        <Linje navn="Købergebyr" vaerdi={kroner(status.koebergebyrOere)} />
         {status.fragtOere > 0 && <Linje navn="Fragt" vaerdi={kroner(status.fragtOere)} />}
         {status.beskyttelse && (
           <Linje

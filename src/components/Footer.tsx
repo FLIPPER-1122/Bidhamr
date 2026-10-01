@@ -40,6 +40,12 @@ export default function Footer() {
             >
               Opret auktion
             </Link>
+            <Link
+              href="/bidhamr-beskyttelse"
+              className="font-medium text-groen hover:underline"
+            >
+              BidHamr Beskyttelse
+            </Link>
             <a
               href="mailto:support@bidhamr.dk"
               className="font-medium text-groen hover:underline"
