@@ -154,7 +154,9 @@ export default function BidPanel({
     };
   }, [auktionId, brugerId, router]);
 
-  const minimumBud = Math.ceil(nuværendeBud * 1.1);
+  // Første bud må være lig startprisen; derefter mindst 10 % over nuværende bud.
+  const harBud = budListe.length > 0;
+  const minimumBud = harBud ? Math.ceil(nuværendeBud * 1.1) : Math.ceil(nuværendeBud);
 
   // Kun visning: hvad vinderen kommer til at betale. Det endelige beløb
   // beregnes på serveren, når auktionen slutter.
@@ -194,7 +196,9 @@ export default function BidPanel({
 
     if (!Number.isFinite(beløbTal) || !Number.isInteger(beløbTal) || beløbTal < minimumBud) {
       setError(
-        `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`,
+        harBud
+          ? `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`
+          : `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (startprisen).`,
       );
       return;
     }

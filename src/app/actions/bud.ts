@@ -57,7 +57,7 @@ export async function afgivBud(
       const kr = besked.match(/mindst\s+([\d.,]+)\s*kr/)?.[1];
       return {
         fejl: kr
-          ? `Dit bud skal være mindst ${kr} kr (10% over nuværende bud).`
+          ? `Dit bud skal være mindst ${kr} kr.`
           : "Dit bud er for lavt.",
       };
     }

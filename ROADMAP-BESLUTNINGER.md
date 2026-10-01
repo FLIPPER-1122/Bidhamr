@@ -115,3 +115,6 @@ Brugeren får besked når:
 ## Midlertidige beslutninger (1. oktober 2026)
 - **Fragt: fast 35 kr** pr. handel, når auktionen tilbyder forsendelse (køber kan ikke vælge afhentning i stedet; kun-afhentning-auktioner = 0 kr), betalt af køber, indtil priser er forhandlet med fragtfirmaerne. Fragten udbetales til sælger sammen med salgsbeløbet (sælger betaler selv forsendelsen indtil fragtintegrationen i fase 2). Sælgergebyret på 5% beregnes kun af buddet, ikke af fragten.
 - **Cron**: kører hvert 5. minut via pg_cron + pg_net i Supabase (gratis). Vercel Pro overvejes tættere på lancering.
+- **Moms:** Alle beløb, køberen ser, er **inkl. moms**. BidHamr afregner selv moms af sine gebyrer; køberen betaler aldrig moms oveni (Filip, 1. oktober 2026).
+- **Første bud** må være lig startprisen. Budstigningen derefter (i dag 10 %) er ikke fastlagt endnu – Filip beslutter senere.
+- **Medarbejdere** må gerne kunne se alle handler (beløb og status), fordi de skal bruge det til sager. Pengetal og indtjening er stadig kun for chef.
