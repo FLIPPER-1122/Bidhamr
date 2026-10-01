@@ -10,10 +10,10 @@
 -- Indhold:
 --   H2  Pengetal (betalinger, betaling_afvigelser, wallets) kun for chef.
 --   T4  Koeber/saelger kan kun laese ufarlige kolonner i betalinger.
---   M2  Execute lukkes paa trigger-funktioner; visningsfunktioner kun for
---       indloggede.
+--   M2  Execute lukkes paa trigger-funktioner. auction_views og
+--       visningsfunktionerne (appen) indfanges fra produktion.
 --   L2  Visningstal: kraever login, hoejst een visning pr. bruger pr. auktion,
---       ejerens egne visninger taeller ikke. Taellerne kan ikke saettes af brugere.
+--       ejerens egne visninger taeller ikke. antal_bud kan ikke saettes af brugere.
 --   L3  Postgres-baseret rate limiter (kun service_role).
 --   L6  Bydernes og foelgernes privatliv: bids og seller_follows kan kun
 --       laeses af brugeren selv. Antal bud ligger paa auctions.antal_bud.
@@ -86,68 +86,71 @@ begin
 end $$;
 
 -- =============================================================== L2 visninger
--- Hvem har set hvilken auktion (kun til at taelle hver bruger een gang).
--- Ingen adgang for anon/authenticated; skrives kun af oeg_auktion_visning.
-create table if not exists public.auktion_visere (
-  auction_id uuid not null references public.auctions(id) on delete cascade,
-  user_id    uuid not null references public.users(id) on delete cascade,
-  oprettet   timestamptz not null default now(),
-  primary key (auction_id, user_id)
+-- Produktion (appen) taeller visninger i auction_views via
+-- registrer_auktion_visning og viser dem for ejeren via hent_mine_visninger.
+-- Kolonnen auctions.visninger og oeg_auktion_visning er udgaaet i produktion
+-- (findes kun paa testdatabasen fra 20260930130000). Definitionerne herunder
+-- er hentet ordret fra produktion 2026-10-01, med een aendring: visninger
+-- taeller KUN for indloggede (en "enhed" kunne foerhen opdigtes frit, saa
+-- tallet kunne pumpes op). Een visning pr. bruger pr. auktion (primary key),
+-- ejerens egne visninger taeller ikke.
+create table if not exists public.auction_views (
+  auktion_id      uuid not null references public.auctions(id) on delete cascade,
+  seer            text not null check (char_length(seer) between 1 and 80),
+  foerste_visning timestamptz not null default now(),
+  primary key (auktion_id, seer)
 );
-alter table public.auktion_visere enable row level security;
-revoke all on public.auktion_visere from anon, authenticated;
-grant all on public.auktion_visere to service_role;
+alter table public.auction_views enable row level security;
+drop policy if exists auction_views_select_ejer on public.auction_views;
+create policy auction_views_select_ejer on public.auction_views
+  for select using (exists (
+    select 1 from public.auctions a
+     where a.id = auction_views.auktion_id and a.bruger_id = auth.uid()));
+revoke insert, update, delete, truncate on public.auction_views from anon, authenticated;
 
-create or replace function public.oeg_auktion_visning(p_auktion_id uuid)
+-- Signaturen (p_auktion_id, p_enhed) bevares, saa appen ikke skal aendres;
+-- p_enhed ignoreres nu.
+create or replace function public.registrer_auktion_visning(p_auktion_id uuid, p_enhed text)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path to 'public'
 as $function$
 declare
-  mig uuid := auth.uid();
+  v_ejer uuid;
+  mig    uuid := auth.uid();
 begin
-  if mig is null then
-    return;
-  end if;
-
-  -- Ejerens egne visninger taeller ikke.
-  if exists (select 1 from public.auctions a where a.id = p_auktion_id and a.bruger_id = mig) then
-    return;
-  end if;
-
-  insert into public.auktion_visere (auction_id, user_id)
-  values (p_auktion_id, mig)
+  if mig is null then return; end if;
+  select bruger_id into v_ejer from public.auctions where id = p_auktion_id;
+  if not found or v_ejer = mig then return; end if;
+  insert into public.auction_views (auktion_id, seer)
+  values (p_auktion_id, mig::text)
   on conflict do nothing;
-
-  -- Kun foerste visning pr. bruger taeller.
-  if found then
-    update public.auctions set visninger = visninger + 1 where id = p_auktion_id;
-  end if;
-exception
-  when foreign_key_violation then
-    return; -- ukendt auktion
 end;
 $function$;
-revoke execute on function public.oeg_auktion_visning(uuid) from public, anon;
-grant execute on function public.oeg_auktion_visning(uuid) to authenticated;
+revoke execute on function public.registrer_auktion_visning(uuid, text) from public, anon;
+grant execute on function public.registrer_auktion_visning(uuid, text) to authenticated;
 
--- registrer_auktion_visning / hent_mine_visninger / auction_views findes kun i
--- produktion (appen). Definitionerne er IKKE indfanget her - agenten havde
--- ingen katalogadgang. Uanset signatur lukkes funktionerne for anon, men
--- forbliver aabne for indloggede, saa appen virker. (no-op, hvis de ikke findes.)
+create or replace function public.hent_mine_visninger(p_ids uuid[])
+returns table(auktion_id uuid, antal bigint)
+language sql
+stable security definer
+set search_path to 'public'
+as $function$
+  select v.auktion_id, count(*)::bigint
+  from public.auction_views v join public.auctions a on a.id = v.auktion_id
+  where v.auktion_id = any (p_ids) and a.bruger_id = auth.uid()
+  group by v.auktion_id;
+$function$;
+revoke execute on function public.hent_mine_visninger(uuid[]) from public, anon;
+grant execute on function public.hent_mine_visninger(uuid[]) to authenticated;
+
+-- Den gamle taeller (kun testdatabasen): kan ikke laengere kaldes af brugere.
 do $$
-declare
-  p regprocedure;
 begin
-  for p in
-    select oid::regprocedure from pg_proc
-     where pronamespace = 'public'::regnamespace
-       and proname in ('registrer_auktion_visning', 'hent_mine_visninger')
-  loop
-    execute format('revoke execute on function %s from public, anon', p);
-    execute format('grant execute on function %s to authenticated', p);
-  end loop;
+  if to_regprocedure('public.oeg_auktion_visning(uuid)') is not null then
+    revoke execute on function public.oeg_auktion_visning(uuid) from public, anon, authenticated;
+  end if;
 end $$;
 
 -- =============================================================== L6 antal bud
@@ -196,12 +199,13 @@ begin
 
   if tg_op = 'INSERT' then
     new.antal_bud := 0;
-    new.visninger := 0;
     return new;
   end if;
 
+  -- visninger findes kun paa testdatabasen; tjekkes via jsonb, saa
+  -- triggeren ogsaa virker i produktion uden kolonnen.
   if new.antal_bud is distinct from old.antal_bud
-     or new.visninger is distinct from old.visninger then
+     or (to_jsonb(new) -> 'visninger') is distinct from (to_jsonb(old) -> 'visninger') then
     raise exception 'Du må ikke ændre denne oplysning.'
       using errcode = '42501';
   end if;
