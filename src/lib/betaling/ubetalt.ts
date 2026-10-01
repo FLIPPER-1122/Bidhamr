@@ -92,6 +92,9 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
         if (udfald === "vent") await markerUafklaret(admin, b);
         continue;
       }
+      // Køberen har startet en betaling (fx midt i 3D Secure): samme ekstra
+      // time som for 'behandles', før handlen annulleres.
+      if (Date.now() < new Date(b.betal_senest).getTime() + EKSTRA_FRIST_MS) continue;
     }
     const { data, error: rpcFejl } = await admin.rpc("ubetalt_vinder_annuller", {
       p_trade: trade_id,
