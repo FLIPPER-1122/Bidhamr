@@ -12,8 +12,6 @@ import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { StatusBadge, brugerStatus, erSuspensionAktiv, RolleBadge } from "@/components/admin/StatusBadge";
 import { assertRole, harMindstRolle } from "@/lib/adminAuth";
-import JusterSaldoForm from "@/components/admin/JusterSaldoForm";
-import { kr } from "@/lib/wallet";
 import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
 
 const FANER = [
@@ -197,7 +195,7 @@ export default async function AdminBrugerDetalje({
       </div>
 
       {fane === "oversigt" && (
-        <OversigtFane user={user} advarsler={advarsler ?? []} supabase={supabase} staffRolle={staffRolle} />
+        <OversigtFane user={user} advarsler={advarsler ?? []} supabase={supabase} />
       )}
       {fane === "auktioner" && (
         <AuktionerFane userId={id} supabase={supabase} kanModerere={kanModerereIndhold} />
@@ -224,12 +222,10 @@ async function OversigtFane({
   user,
   advarsler,
   supabase,
-  staffRolle,
 }: {
   user: { id: string; rating: number | null; rolle: string | null; oprettet: string };
   advarsler: { id: string; aarsag: string; oprettet_kl: string; oprettet_af: string | null }[];
   supabase: Admin;
-  staffRolle?: string | null;
 }) {
   const [{ count: antalAuktioner }, { count: antalBud }, { count: antalHandler }] =
     await Promise.all([
@@ -240,18 +236,6 @@ async function OversigtFane({
         .select("id", { count: "exact", head: true })
         .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`),
     ]);
-
-  // Pengetal (saldo) maa kun chef se.
-  const erChef = staffRolle === "chef";
-  const { data: walletRow } = erChef
-    ? await supabase
-        .from("wallets")
-        .select("balance, reserved")
-        .eq("user_id", user.id)
-        .maybeSingle()
-    : { data: null };
-  const saldo = Number(walletRow?.balance ?? 0);
-  const reserveret = Number(walletRow?.reserved ?? 0);
 
   const forfatterIds = [...new Set(advarsler.map((a) => a.oprettet_af).filter(Boolean))] as string[];
   const { data: forfattere } = forfatterIds.length
@@ -288,30 +272,6 @@ async function OversigtFane({
           <span className="font-medium text-neutral-800">{user.rolle ?? "bruger"}</span>
         </p>
       </div>
-
-      {erChef && (
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-sm font-semibold text-neutral-800">BidHamr-konto</h2>
-        <div className="mt-3 flex flex-wrap gap-6 text-sm">
-          <div>
-            <p className="text-xs uppercase text-neutral-500">Til rådighed</p>
-            <p className="text-lg font-bold text-neutral-900">
-              {kr(saldo - reserveret)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-neutral-500">Reserveret</p>
-            <p className="text-lg font-bold text-neutral-900">{kr(reserveret)}</p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-neutral-500">Samlet saldo</p>
-            <p className="text-lg font-bold text-neutral-900">{kr(saldo)}</p>
-          </div>
-        </div>
-
-        <JusterSaldoForm userId={user.id} />
-      </div>
-      )}
 
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
         <div className="border-b border-neutral-100 px-5 py-4">

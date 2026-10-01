@@ -1,7 +1,6 @@
 "use server";
 
 import { assertRole, harMindstRolle } from "@/lib/adminAuth";
-import type { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import {
   annullerBetaling,
@@ -185,17 +184,6 @@ export async function setRolle(formData: FormData) {
   revalidatePath("/admin/brugere");
 }
 
-// Frigiver den hoejestbydendes wallet-reservation, naar en auktion annulleres.
-// wallet_frigiv er en no-op, hvis der ingen reservation er. Fejl logges, men
-// vaelter ikke annulleringen (status er allerede skiftet).
-async function frigivReservation(
-  admin: ReturnType<typeof createAdminClient>,
-  auktionId: string,
-) {
-  const { error } = await admin.rpc("wallet_frigiv", { p_auction: auktionId });
-  if (error) console.error("wallet_frigiv fejlede ved annullering:", auktionId, error);
-}
-
 // --- Auktioner -------------------------------------------------------------
 
 // "Slet" arkiverer: handelsdata (bud, handler, bedoemmelser, anmeldelser)
@@ -248,8 +236,6 @@ export async function deleteAuction(
     return { fejl: "Auktionens status er ændret. Genindlæs siden." };
   }
 
-  await frigivReservation(admin, auktionId);
-
   if (!(auktion.status === "annulleret" && auktion.skjult)) {
     await logModerationBloedt(admin, {
       medarbejder_id: staffId,
@@ -272,16 +258,12 @@ export async function cancelAuction(formData: FormData) {
 
   // Idempotent: kun en aktiv auktion annulleres. En afsluttet auktion har en
   // vinder/handel og skal loeses som en sag.
-  const { data: opdateret, error } = await admin
+  const { error } = await admin
     .from("auctions")
     .update({ status: "annulleret" })
     .eq("id", auktionId)
-    .eq("status", "aktiv")
-    .select("id");
+    .eq("status", "aktiv");
   if (error) throw new Error(error.message);
-  if (opdateret && opdateret.length > 0) {
-    await frigivReservation(admin, auktionId);
-  }
 
   revalidatePath("/admin/auktioner");
 }
@@ -577,31 +559,6 @@ export async function rapportGenaabn(formData: FormData) {
   revalidatePath(`/auktion/${rapport.auction_id}`);
 }
 
-// --- E-money ---------------------------------------------------------------
-
-// Saldo-handlingerne RETURNERER fejl i stedet for at kaste dem.
-//
-// En server action, der kaster, faar Next.js til at skjule beskeden i
-// produktion ("An error occurred in the Server Components render") - og saa
-// staar man uden at vide, hvad der gik galt. Returnerede vaerdier naar frem
-// uaendret i baade dev og produktion.
-export type SaldoResultat = { ok: true; saldo?: number } | { fejl: string };
-
-// BidHamr har ingen saldo laengere (Stripe holder pengene). Saldo-handlingerne
-// afvises altid; UI'en fjernes i naeste roadmap-punkt. Wallet-funktionerne er
-// ogsaa lukket for service_role i databasen (20261001010000).
-const SALDO_LUKKET = "Saldo findes ikke længere. Penge styres via Stripe.";
-
-export async function justerSaldo(_formData: FormData): Promise<SaldoResultat> {
-  void _formData;
-  return { fejl: SALDO_LUKKET };
-}
-
-export async function saetSaldo(_formData: FormData): Promise<SaldoResultat> {
-  void _formData;
-  return { fejl: SALDO_LUKKET };
-}
-
 // --- Sager (handler) ---------------------------------------------------------
 
 const AKTIVE_HANDEL_STATUSSER = ["betaling_modtaget", "pakke_sendt", "modtaget"];
@@ -618,7 +575,6 @@ async function hentHandelTilSag(admin: AdminClient, tradeId: string) {
 
 function revaliderSag(tradeId: string) {
   revalidatePath("/admin/sager");
-  revalidatePath("/admin/transaktioner");
   revalidatePath(`/mine-handler/${tradeId}`);
   revalidatePath("/mine-handler");
 }
@@ -692,7 +648,7 @@ function kr(oere: number): string {
 // Afregn saelgeren uden koeberens godkendelse. Kun admin og opefter.
 // Handler med en Stripe-betaling: frigivet_kl saettes i databasen, og
 // beloebet (bud minus 5% saelgergebyr) overfoeres til saelgerens Connect-konto.
-// Gamle handler fra saldo-modellen afregnes som foer i databasen.
+// Handler uden betaling kan ikke frigives.
 export async function handelFrigiv(formData: FormData) {
   const tradeId = formData.get("tradeId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
@@ -701,7 +657,8 @@ export async function handelFrigiv(formData: FormData) {
 
   const handel = await hentHandelTilSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
-  if (betaling && betaling.status !== "betalt") {
+  if (!betaling) throw new Error("Handlen har ingen betaling og kan ikke frigives.");
+  if (betaling.status !== "betalt") {
     throw new Error("Handlen er ikke betalt og kan ikke frigives.");
   }
 
@@ -711,23 +668,19 @@ export async function handelFrigiv(formData: FormData) {
   if (error) throw new Error(error.message);
   if (!frigivet) throw new Error("Handlen er allerede afsluttet.");
 
-  let overfoersel = "";
-  if (betaling) {
-    try {
-      const r = await overfoerTilSaelger(betaling.id);
-      overfoersel =
-        r === "overfoert" || r === "allerede_overfoert"
-          ? " (overført via Stripe)"
-          : ` (overførsel venter: ${r})`;
-    } catch (err) {
-      console.error("Overførsel efter admin-frigivelse fejlede (prøves igen af cron):", err);
-      overfoersel = " (overførsel fejlede - prøves igen automatisk)";
-    }
+  let overfoersel: string;
+  try {
+    const r = await overfoerTilSaelger(betaling.id);
+    overfoersel =
+      r === "overfoert" || r === "allerede_overfoert"
+        ? " (overført via Stripe)"
+        : ` (overførsel venter: ${r})`;
+  } catch (err) {
+    console.error("Overførsel efter admin-frigivelse fejlede (prøves igen af cron):", err);
+    overfoersel = " (overførsel fejlede - prøves igen automatisk)";
   }
 
-  const beloeb = betaling
-    ? `${kr(Number(betaling.udbetaling_oere))} kr til sælger${overfoersel}`
-    : "afregnet (gammel handel)";
+  const beloeb = `${kr(Number(betaling.udbetaling_oere))} kr til sælger${overfoersel}`;
 
   // Pengene er frigivet - logfejl maa ikke se ud som om intet skete.
   await logModerationBloedt(admin, {
@@ -747,7 +700,7 @@ export async function handelFrigiv(formData: FormData) {
 //     koeberen betalte (bud + koebergebyr + fragt + evt. BidHamr Beskyttelse).
 //   - ikke betalt endnu: betalingen annulleres, og PaymentIntenten annulleres
 //     hos Stripe.
-// Gamle handler fra saldo-modellen refunderes som foer i databasen.
+// Handler uden betaling kan ikke refunderes.
 export async function handelRefunder(formData: FormData) {
   const tradeId = formData.get("tradeId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
@@ -757,43 +710,35 @@ export async function handelRefunder(formData: FormData) {
   const handel = await hentHandelTilSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
 
-  let logTekst: string;
+  if (!betaling) throw new Error("Handlen har ingen betaling og kan ikke refunderes.");
 
-  if (betaling) {
-    if (betaling.status === "afventer" || betaling.status === "behandles") {
-      if (!(await annullerBetaling(tradeId))) {
-        throw new Error("Betalingen kan ikke annulleres.");
-      }
-      logTekst = "Ikke betalt - betalingen annulleret, 0 kr refunderet";
-    } else {
-      const { data: beloeb, error } = await admin.rpc("betaling_paabegynd_refusion", {
-        p_trade: tradeId,
-        p_aarsag: "admin",
-      });
-      if (error) throw new Error(error.message);
-      if (beloeb === null) {
-        throw new Error(
-          "Handlen kan ikke refunderes: den er ikke betalt, allerede refunderet eller pengene er frigivet til sælger.",
-        );
-      }
-      let resultat: string;
-      try {
-        resultat = await refunderBetaling(betaling.id);
-      } catch (err) {
-        console.error("Refusion fejlede:", tradeId, err);
-        throw new Error(
-          "Refusionen fejlede hos Stripe. Handlen er annulleret og markeret - prøv igen.",
-        );
-      }
-      logTekst = `${kr(Number(beloeb))} kr refunderet via Stripe (${resultat})`;
+  let logTekst: string;
+  if (betaling.status === "afventer" || betaling.status === "behandles") {
+    if (!(await annullerBetaling(tradeId))) {
+      throw new Error("Betalingen kan ikke annulleres.");
     }
+    logTekst = "Ikke betalt - betalingen annulleret, 0 kr refunderet";
   } else {
-    const { data: retur, error } = await admin.rpc("admin_refunder_handel", {
+    const { data: beloeb, error } = await admin.rpc("betaling_paabegynd_refusion", {
       p_trade: tradeId,
+      p_aarsag: "admin",
     });
     if (error) throw new Error(error.message);
-    if (retur === null) throw new Error("Handlen er allerede afsluttet.");
-    logTekst = `${Number(retur)} kr refunderet (gammel handel)`;
+    if (beloeb === null) {
+      throw new Error(
+        "Handlen kan ikke refunderes: den er ikke betalt, allerede refunderet eller pengene er frigivet til sælger.",
+      );
+    }
+    let resultat: string;
+    try {
+      resultat = await refunderBetaling(betaling.id);
+    } catch (err) {
+      console.error("Refusion fejlede:", tradeId, err);
+      throw new Error(
+        "Refusionen fejlede hos Stripe. Handlen er annulleret og markeret - prøv igen.",
+      );
+    }
+    logTekst = `${kr(Number(beloeb))} kr refunderet via Stripe (${resultat})`;
   }
 
   await logModerationBloedt(admin, {
