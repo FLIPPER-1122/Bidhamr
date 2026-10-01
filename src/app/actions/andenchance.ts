@@ -379,6 +379,15 @@ export async function svarAndenchance(
       return { fejl: GENERISK };
     }
     const r = data as { kode: string; trade_id?: string };
+    if (r.kode === "suspenderet") {
+      // Tilbuddet er lukket i databasen; sælgeren får besked og kan gå videre.
+      try {
+        await sendSaelgerSvarMail(tilbudId, true);
+      } catch (err) {
+        console.error("Mail til sælger om lukket tilbud fejlede:", err);
+      }
+      revalidatePath(`/andenchance/${tilbudId}`);
+    }
     if (r.kode !== "ok") return { fejl: SVAR_FEJL[r.kode] ?? GENERISK };
 
     try {
@@ -401,6 +410,8 @@ export async function svarAndenchance(
 const GENOPSAET_FEJL: Record<string, string> = {
   ikke_fundet: "Auktionen findes ikke.",
   ikke_saelger: "Auktionen findes ikke.",
+  suspenderet: "Din konto er suspenderet, og du kan ikke sætte varer op.",
+  ikke_ubetalt: "Kun varer, hvor vinderen ikke betalte, kan sættes op igen her.",
   ikke_afsluttet: "Kun afsluttede auktioner kan sættes op igen.",
   skjult: "Auktionen er fjernet og kan ikke sættes op igen.",
   solgt: "Varen er solgt og kan ikke sættes op igen.",

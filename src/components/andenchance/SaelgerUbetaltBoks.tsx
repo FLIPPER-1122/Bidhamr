@@ -32,8 +32,8 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
   const router = useRouter();
   const [visGenopsaet, setVisGenopsaet] = useState(false);
 
-  // Næste byders bud kendes først, når tilbuddet er oprettet (databasen
-  // vælger byderen); hentAndenchanceStatus returnerer det ikke på forhånd.
+  // naesteBudOere er næste byders bud (fra andenchance_naeste_bud), så
+  // sælgeren ser beløbet før tilbuddet sendes. null = ingen flere bydere.
   const tidligere = status.tilbud.filter((t) => t.status !== "afventer");
   const harHistorik = tidligere.length > 0;
   const afsluttet = Boolean(status.nyHandelId || status.genopsatAuktionId);
@@ -77,9 +77,9 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
         </div>
       )}
 
-      {!afsluttet && !status.aktivtTilbud && harHistorik && !status.harFlereBydere && (
+      {!afsluttet && !status.aktivtTilbud && !status.harFlereBydere && (
         <p className="mt-4 rounded-xl bg-neutral-50 px-4 py-3 text-sm text-tekst-daempet">
-          Der er ikke flere bydere.
+          Der er ikke flere bydere at tilbyde varen til.
         </p>
       )}
 

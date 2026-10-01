@@ -264,6 +264,7 @@ export default async function HandelDetaljePage({
           <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
             <p className="font-semibold">Handlen er annulleret</p>
             <p className="mt-1">Du betalte ikke inden fristen, så handlen er annulleret.</p>
+            <p className="mt-1">En medarbejder ser på sagen, og du kan få en advarsel.</p>
           </div>
         )}
 

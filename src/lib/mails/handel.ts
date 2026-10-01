@@ -277,17 +277,28 @@ export function saelgerAndenchanceAccepteretMail(titel: string, nyTradeId: strin
 export function saelgerAndenchanceAfslaaetMail(
   titel: string,
   tradeId: string,
-  aarsag: "afvist" | "udloebet",
+  aarsag: "afvist" | "udloebet" | "kan_ikke_koebe",
 ) {
   return {
     subject:
-      aarsag === "afvist" ? `Byderen sagde nej: ${titel}` : `Byderen svarede ikke: ${titel}`,
+      aarsag === "afvist"
+        ? `Byderen sagde nej: ${titel}`
+        : aarsag === "kan_ikke_koebe"
+          ? `Byderen kan ikke købe: ${titel}`
+          : `Byderen svarede ikke: ${titel}`,
     html: skabelon({
-      overskrift: aarsag === "afvist" ? "Byderen sagde nej" : "Byderen svarede ikke",
+      overskrift:
+        aarsag === "afvist"
+          ? "Byderen sagde nej"
+          : aarsag === "kan_ikke_koebe"
+            ? "Byderen kan ikke købe"
+            : "Byderen svarede ikke",
       afsnit: [
         aarsag === "afvist"
           ? `Byderen har sagt nej tak til <strong>${escapeHtml(titel)}</strong>.`
-          : `Byderen svarede ikke på dit tilbud om <strong>${escapeHtml(titel)}</strong> inden for 24 timer.`,
+          : aarsag === "kan_ikke_koebe"
+            ? `Byderen kan ikke købe <strong>${escapeHtml(titel)}</strong> lige nu, så tilbuddet er lukket.`
+            : `Byderen svarede ikke på dit tilbud om <strong>${escapeHtml(titel)}</strong> inden for 24 timer.`,
         "Du kan sende tilbuddet videre til den næste byder i rækken eller sætte varen op igen gratis.",
       ],
       knapTekst: "Vælg næste skridt",

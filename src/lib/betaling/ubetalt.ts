@@ -5,7 +5,8 @@ import "server-only";
 // fra NULL) FØR afsendelse, så den aldrig sendes to gange.
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { annullerBetaling } from "@/lib/betaling/stripeBetaling";
+import { annullerBetaling, spejlPaymentIntent } from "@/lib/betaling/stripeBetaling";
+import { getStripe } from "@/lib/stripe";
 import { sendHandelMail } from "@/lib/mails/send";
 import {
   andenchanceTilbudMail,
@@ -68,13 +69,17 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
   let annulleret = 0;
   let mails = 0;
 
+  // Kun betalinger, der ikke er sat i gang. En betaling i gang ('behandles',
+  // fx MobilePay) håndteres nedenfor efter et tjek hos Stripe.
   const { data: forfaldne, error } = await admin
     .from("betalinger")
     .select("trade_id")
-    .in("status", ["afventer", "behandles"])
+    .eq("status", "afventer")
     .lt("betal_senest", new Date().toISOString())
     .limit(200);
   if (error) console.error("Kunne ikke hente forfaldne betalinger:", error);
+
+  annulleret += await afklarBehandlede(admin);
 
   for (const { trade_id } of forfaldne ?? []) {
     const { data, error: rpcFejl } = await admin.rpc("ubetalt_vinder_annuller", {
@@ -128,6 +133,57 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
   return { annulleret, mails };
 }
 
+// Betalinger i gang ('behandles') efter fristen: Stripe er sandheden.
+//   succeeded                         -> spejles (køberen betalte til tiden)
+//   requires_payment_method/canceled  -> efter betal_senest + 1 time behandles
+//                                        handlen som ubetalt
+//   processing m.fl.                  -> vent til næste kørsel
+const EKSTRA_FRIST_MS = 60 * 60 * 1000;
+
+async function afklarBehandlede(admin: Admin): Promise<number> {
+  let annulleret = 0;
+  const { data: behandles, error } = await admin
+    .from("betalinger")
+    .select("trade_id, stripe_payment_intent_id, betal_senest")
+    .eq("status", "behandles")
+    .lt("betal_senest", new Date().toISOString())
+    .limit(200)
+    .overrideTypes<
+      { trade_id: string; stripe_payment_intent_id: string | null; betal_senest: string }[],
+      { merge: false }
+    >();
+  if (error) console.error("Kunne ikke hente betalinger i gang:", error);
+
+  for (const b of behandles ?? []) {
+    try {
+      let fejlet = !b.stripe_payment_intent_id;
+      if (b.stripe_payment_intent_id) {
+        const pi = await getStripe().paymentIntents.retrieve(b.stripe_payment_intent_id);
+        if (pi.status === "succeeded") {
+          await spejlPaymentIntent(pi);
+          continue;
+        }
+        fejlet = pi.status === "requires_payment_method" || pi.status === "canceled";
+      }
+      if (!fejlet) continue;
+      if (Date.now() < new Date(b.betal_senest).getTime() + EKSTRA_FRIST_MS) continue;
+
+      const { data, error: rpcFejl } = await admin.rpc("ubetalt_vinder_annuller", {
+        p_trade: b.trade_id,
+        p_stripe_fejlet: true,
+      });
+      if (rpcFejl) {
+        console.error("ubetalt_vinder_annuller (behandles) fejlede:", b.trade_id, rpcFejl);
+        continue;
+      }
+      if ((data as { annulleret?: boolean } | null)?.annulleret) annulleret++;
+    } catch (err) {
+      console.error("Stripe-tjek af betaling i gang fejlede:", b.trade_id, err);
+    }
+  }
+  return annulleret;
+}
+
 // --- Andenchance-tilbud --------------------------------------------------------
 
 type TilbudRaekke = {
@@ -166,7 +222,12 @@ export async function sendTilbudMail(tilbudId: string): Promise<boolean> {
 
 // Mail til sælgeren, når et tilbud er accepteret, afvist eller udløbet.
 // Annullerede tilbud (sælger satte varen op igen) giver ingen mail.
-export async function sendSaelgerSvarMail(tilbudId: string): Promise<boolean> {
+// Med byderKanIkkeKoebe = true sendes også for et annulleret tilbud
+// (byderen er suspenderet). Årsagen nævnes ikke for sælgeren (privatliv).
+export async function sendSaelgerSvarMail(
+  tilbudId: string,
+  byderKanIkkeKoebe = false,
+): Promise<boolean> {
   const admin = createAdminClient();
   const { data: t } = await admin
     .from("andenchance_tilbud")
@@ -174,7 +235,8 @@ export async function sendSaelgerSvarMail(tilbudId: string): Promise<boolean> {
     .eq("id", tilbudId)
     .maybeSingle<TilbudRaekke>();
   if (!t || t.saelger_mail_sendt_kl) return false;
-  if (!["accepteret", "afvist", "udloebet"].includes(t.status)) return false;
+  const annulleretSendes = byderKanIkkeKoebe && t.status === "annulleret";
+  if (!annulleretSendes && !["accepteret", "afvist", "udloebet"].includes(t.status)) return false;
   if (!(await claimFelt(admin, "andenchance_tilbud", t.id, "saelger_mail_sendt_kl"))) return false;
   const o = await titelOgEmails(admin, t.auction_id, [t.seller_id]);
   const mail =
@@ -183,7 +245,7 @@ export async function sendSaelgerSvarMail(tilbudId: string): Promise<boolean> {
       : saelgerAndenchanceAfslaaetMail(
           o.titel,
           t.oprindelig_trade_id,
-          t.status === "afvist" ? "afvist" : "udloebet",
+          annulleretSendes ? "kan_ikke_koebe" : t.status === "afvist" ? "afvist" : "udloebet",
         );
   return sendHandelMail(o.email.get(t.seller_id), mail);
 }
