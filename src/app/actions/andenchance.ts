@@ -61,6 +61,8 @@ export type AndenchanceStatus = {
   }[];
   // Der er mindst én byder tilbage, der kan få tilbuddet.
   harFlereBydere: boolean;
+  // Beløbet for den byder, andenchance_opret ville vælge nu (uden byder-id).
+  naesteBudOere: number | null;
   kanTilbyde: boolean;
   kanGenopsaette: boolean;
 };
@@ -121,6 +123,17 @@ export async function hentAndenchanceStatus(tradeId: string): Promise<Andenchanc
         : false;
 
     const aaben = ubetalt && !nyHandelId && !genopsatAuktionId && !ventende;
+
+    // Samme udvælgelse som andenchance_opret (delt SQL i andenchance_naeste_bud).
+    let naesteBudOere: number | null = null;
+    if (aaben && harFlereBydere) {
+      const { data: naeste, error: naesteFejl } = await admin.rpc("andenchance_naeste_bud", {
+        p_trade: tradeId,
+      });
+      if (naesteFejl) console.error("andenchance_naeste_bud fejlede:", naesteFejl);
+      else if (naeste !== null && naeste !== undefined) naesteBudOere = Number(naeste);
+    }
+
     return {
       ok: true,
       ubetalt,
@@ -131,6 +144,7 @@ export async function hentAndenchanceStatus(tradeId: string): Promise<Andenchanc
         : null,
       tilbud: alle,
       harFlereBydere,
+      naesteBudOere,
       kanTilbyde: aaben && harFlereBydere,
       kanGenopsaette:
         aaben && auktion?.status === "afsluttet" && auktion?.skjult === false,
@@ -250,6 +264,8 @@ export type MitTilbud = {
     totalOere: number;
     // Sat, når byderen har sagt ja: handlen, der skal betales.
     nyTradeId: string | null;
+    // Kun ved status 'annulleret': solgt til en anden, eller sat op igen.
+    annulleretAarsag: "solgt" | "genopsat" | null;
   };
 };
 
@@ -286,6 +302,27 @@ export async function hentMitTilbud(tilbudId: string): Promise<MitTilbud | Fejl>
         ? "udloebet"
         : (t.status as AndenchanceTilbudStatus);
 
+    let annulleretAarsag: "solgt" | "genopsat" | null = null;
+    if (status === "annulleret") {
+      const admin = createAdminClient();
+      const [{ data: aktivHandel }, { data: genopsat }] = await Promise.all([
+        admin
+          .from("trades")
+          .select("id")
+          .eq("auction_id", t.auction_id)
+          .neq("status", "annulleret")
+          .limit(1)
+          .maybeSingle(),
+        admin
+          .from("genopsaetninger")
+          .select("ny_auction_id")
+          .eq("gammel_auction_id", t.auction_id)
+          .maybeSingle(),
+      ]);
+      if (aktivHandel) annulleretAarsag = "solgt";
+      else if (genopsat) annulleretAarsag = "genopsat";
+    }
+
     return {
       ok: true,
       tilbud: {
@@ -303,6 +340,7 @@ export async function hentMitTilbud(tilbudId: string): Promise<MitTilbud | Fejl>
         beskyttelseOere: besk,
         totalOere: bud + koeb + fragt + besk,
         nyTradeId: (t.ny_trade_id as string | null) ?? null,
+        annulleretAarsag,
       },
     };
   } catch (err) {

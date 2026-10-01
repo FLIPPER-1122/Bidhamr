@@ -89,8 +89,12 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
             <BekraeftDialog
               triggerLabel={harHistorik ? "Send til næste byder" : "Tilbyd til næsthøjeste byder"}
               triggerClassName="btn btn-primaer w-full sm:w-auto"
-              title="Tilbyd varen til næste byder?"
-              description="Varen tilbydes til den næsthøjeste byder for det beløb, personen selv bød. Byderen har 24 timer til at svare. Beløbet vises, når tilbuddet er sendt."
+              title={
+                status.naesteBudOere !== null
+                  ? `Tilbyd varen til næste byder for ${kroner(status.naesteBudOere)}?`
+                  : "Tilbyd varen til næste byder?"
+              }
+              description="Varen tilbydes til den næsthøjeste byder for det beløb, personen selv bød. Byderen har 24 timer til at svare."
               confirmLabel="Send tilbud"
               onConfirm={async () => {
                 const svar = await sendAndenchanceTilbud(tradeId);

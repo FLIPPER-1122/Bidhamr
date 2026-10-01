@@ -111,7 +111,16 @@ function TilbudVisning({ t }: { t: Extract<Awaited<ReturnType<typeof hentMitTilb
     return (
       <div className="space-y-6">
         {vare}
-        <Besked titel="Tilbuddet gælder ikke længere" tekst="Varen er solgt til en anden eller trukket tilbage af sælgeren." />
+        {t.annulleretAarsag === "genopsat" ? (
+          <Besked
+            titel="Tilbuddet gælder ikke længere"
+            tekst="Sælgeren har sat varen op på auktion igen. Du kan byde på den nye auktion."
+          />
+        ) : t.annulleretAarsag === "solgt" ? (
+          <Besked titel="Varen er solgt" tekst="Varen er solgt til en anden byder, og tilbuddet gælder ikke længere." />
+        ) : (
+          <Besked titel="Tilbuddet gælder ikke længere" tekst="Sælgeren har trukket tilbuddet tilbage." />
+        )}
       </div>
     );
   }
