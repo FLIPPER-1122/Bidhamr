@@ -73,11 +73,25 @@ export default function AuctionBrowser({
   const [query, setQuery] = useState(initialQuery);
   const [sortering, setSortering] = useState<Sortering>("slutter_snart");
   const [postnummer, setPostnummer] = useState("");
-  const [postBy, setPostBy] = useState<string | null>(null);
-  const [postKoordinat, setPostKoordinat] = useState<Koordinat | null>(null);
-  const [postStatus, setPostStatus] = useState<
-    "idle" | "henter" | "fundet" | "ikke-fundet"
-  >("idle");
+  // Opslaget gemmes med det postnummer, det hører til; by, koordinat og
+  // status udledes ved render (ingen synkron setState i effekten).
+  const [postOpslag, setPostOpslag] = useState<{
+    postnummer: string;
+    by: string | null;
+    koordinat: Koordinat | null;
+  } | null>(null);
+  const gyldigtPostnummer = /^\d{4}$/.test(postnummer);
+  const aktueltOpslag =
+    gyldigtPostnummer && postOpslag?.postnummer === postnummer ? postOpslag : null;
+  const postBy = aktueltOpslag?.by ?? null;
+  const postKoordinat = aktueltOpslag?.koordinat ?? null;
+  const postStatus: "idle" | "henter" | "fundet" | "ikke-fundet" = !gyldigtPostnummer
+    ? "idle"
+    : !aktueltOpslag
+      ? "henter"
+      : aktueltOpslag.koordinat
+        ? "fundet"
+        : "ikke-fundet";
   const [radiusKm, setRadiusKm] = useState(50);
   const [auktioner, setAuktioner] = useState<DummyAuction[]>(initialAuktioner);
   const [loading, setLoading] = useState(false);
@@ -88,48 +102,19 @@ export default function AuctionBrowser({
   // Slå postnummeret op hos DAWA og vis bynavnet som bekræftelse, så snart
   // brugeren har skrevet 4 cifre.
   useEffect(() => {
-    if (!/^\d{4}$/.test(postnummer)) {
-      setPostBy(null);
-      setPostKoordinat(null);
-      setPostStatus("idle");
-      return;
-    }
+    if (!/^\d{4}$/.test(postnummer)) return;
 
     let aktiv = true;
-    setPostStatus("henter");
 
     slåPostnummerOp(postnummer).then(({ by, koordinat }) => {
       if (!aktiv) return;
-      setPostBy(by);
-      setPostKoordinat(koordinat);
-      setPostStatus(koordinat ? "fundet" : "ikke-fundet");
+      setPostOpslag({ postnummer, by, koordinat });
     });
 
     return () => {
       aktiv = false;
     };
   }, [postnummer]);
-
-  // Søg/filtrer, når noget ændrer sig. Hele Danmark (radius i top) eller
-  // tomt postnummer betyder ingen radius-filtrering.
-  useEffect(() => {
-    const erHeleDanmark = radiusKm >= RADIUS_MAX;
-    const aktivtCenter = !erHeleDanmark && postKoordinat ? postKoordinat : null;
-
-    // Vent med at søge til postnummer-opslaget er færdigt, så vi ikke søger
-    // med et "halvt" filter, mens DAWA stadig svarer.
-    if (postnummer && postStatus === "henter") return;
-
-    const timeout = setTimeout(
-      () => {
-        harSøgt.current = true;
-        søg(query, kategori, sortering, aktivtCenter, erHeleDanmark ? null : radiusKm);
-      },
-      harSøgt.current ? 300 : 0,
-    );
-    return () => clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, kategori, sortering, postKoordinat, postStatus, radiusKm]);
 
   async function søg(
     søgetekst: string,
@@ -180,7 +165,8 @@ export default function AuctionBrowser({
     const { data, error } = await queryBuilder;
 
     if (error) {
-      setFejl(error.message);
+      console.error("Søgning fejlede:", error.message);
+      setFejl("Auktionerne kunne ikke hentes. Prøv igen.");
       setLoading(false);
       return;
     }
@@ -226,6 +212,27 @@ export default function AuctionBrowser({
     setAuktioner(rows.map(mapAuctionTilKort));
     setLoading(false);
   }
+
+  // Søg/filtrer, når noget ændrer sig. Hele Danmark (radius i top) eller
+  // tomt postnummer betyder ingen radius-filtrering.
+  useEffect(() => {
+    const erHeleDanmark = radiusKm >= RADIUS_MAX;
+    const aktivtCenter = !erHeleDanmark && postKoordinat ? postKoordinat : null;
+
+    // Vent med at søge til postnummer-opslaget er færdigt, så vi ikke søger
+    // med et "halvt" filter, mens DAWA stadig svarer.
+    if (postnummer && postStatus === "henter") return;
+
+    const timeout = setTimeout(
+      () => {
+        harSøgt.current = true;
+        søg(query, kategori, sortering, aktivtCenter, erHeleDanmark ? null : radiusKm);
+      },
+      harSøgt.current ? 300 : 0,
+    );
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, kategori, sortering, postKoordinat, postStatus, radiusKm]);
 
   const erHeleDanmark = radiusKm >= RADIUS_MAX;
 

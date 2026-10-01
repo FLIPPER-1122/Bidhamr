@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { afgivBud } from "@/app/actions/bud";
-import { kortNavn } from "@/lib/kortNavn";
 import { formatNedtælling } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
 import {
@@ -35,6 +34,8 @@ export default function BidPanel({
   brugerId,
   saelgerId,
   forsendelseMulig,
+  status,
+  vinderVisning,
 }: {
   auktionId: string;
   initialNuværendeBud: number;
@@ -43,6 +44,9 @@ export default function BidPanel({
   brugerId: string | null;
   saelgerId: string;
   forsendelseMulig: boolean;
+  status: string;
+  // Anonym vinderbetegnelse fra serveren ("Dig" / "Byder 2") - aldrig navn/id.
+  vinderVisning: string | null;
 }) {
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
   const [slutterKl, setSlutterKl] = useState(initialSlutterKl);
@@ -61,25 +65,29 @@ export default function BidPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [auktionStatus, setAuktionStatus] = useState<string>("aktiv");
-  const [vinderNavn, setVinderNavn] = useState<string | null>(null);
-  const [nedtælling, setNedtælling] = useState(() =>
-    formatNedtælling(initialSlutterKl),
-  );
+  const [realtimeStatus, setRealtimeStatus] = useState<string>("aktiv");
+  const auktionStatus = status !== "aktiv" ? status : realtimeStatus;
+  // Nedtællingen afhænger af klokken og beregnes først efter mount, så
+  // server- og klient-render er ens (ingen hydration-mismatch).
+  const [nedtælling, setNedtælling] = useState<string | null>(null);
 
   // Sælgere må ikke byde på egen auktion - databasen afviser det også.
   const erSælger = Boolean(brugerId && brugerId === saelgerId);
 
   const nuværendeBudRef = useRef(nuværendeBud);
-  nuværendeBudRef.current = nuværendeBud;
+  useEffect(() => {
+    nuværendeBudRef.current = nuværendeBud;
+  }, [nuværendeBud]);
 
   // Sættes når nedtællingen er kørt i nul, så genindlæsningen kun sker én
   // gang - også selv om auktionen forlænges og tælleren starter forfra.
   const harLukketRef = useRef(false);
 
   useEffect(() => {
+    const opdater = () => setNedtælling(formatNedtælling(slutterKl));
+    const foerste = setTimeout(opdater, 0);
     const id = setInterval(() => {
-      setNedtælling(formatNedtælling(slutterKl));
+      opdater();
 
       const slut = new Date(slutterKl).getTime() - Date.now() <= 0;
       if (!slut || harLukketRef.current) return;
@@ -91,7 +99,10 @@ export default function BidPanel({
       // et minut; vi venter lidt, så vinderen er sat, før vi henter igen.
       setTimeout(() => router.refresh(), 2000);
     }, 1000);
-    return () => clearInterval(id);
+    return () => {
+      clearTimeout(foerste);
+      clearInterval(id);
+    };
   }, [slutterKl, router]);
 
   useEffect(() => {
@@ -110,12 +121,11 @@ export default function BidPanel({
           table: "auctions",
           filter: `id=eq.${auktionId}`,
         },
-        async (payload) => {
+        (payload) => {
           const opdateret = payload.new as {
             "nuværende_bud": number | null;
             slutter_kl: string;
             status: string;
-            vinder_id: string | null;
           };
           if (
             opdateret["nuværende_bud"] != null &&
@@ -131,15 +141,9 @@ export default function BidPanel({
             harLukketRef.current = false;
           }
           if (opdateret.status && opdateret.status !== "aktiv") {
-            setAuktionStatus(opdateret.status);
-            if (opdateret.vinder_id) {
-              const { data: vinder } = await createClient()
-                .from("users")
-                .select("navn")
-                .eq("id", opdateret.vinder_id)
-                .single();
-              setVinderNavn(kortNavn(vinder?.navn ?? null));
-            }
+            setRealtimeStatus(opdateret.status);
+            // Vinderen hentes anonymt fra serveren (vinderVisning-prop).
+            router.refresh();
           }
         },
       )
@@ -188,7 +192,7 @@ export default function BidPanel({
       return;
     }
 
-    if (!beløbTal || beløbTal < minimumBud) {
+    if (!Number.isFinite(beløbTal) || !Number.isInteger(beløbTal) || beløbTal < minimumBud) {
       setError(
         `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`,
       );
@@ -237,7 +241,7 @@ export default function BidPanel({
           })}
         </p>
         <p className="text-2xl font-bold text-[#111] tabular-nums">
-          {nedtælling}
+          {nedtælling ?? "–"}
         </p>
       </div>
 
@@ -256,9 +260,9 @@ export default function BidPanel({
           {auktionStatus === "afsluttet" ? (
             <>
               <p className="text-base font-semibold text-neutral-800">Auktionen er afsluttet</p>
-              {vinderNavn ? (
+              {vinderVisning ? (
                 <p className="mt-1 text-sm text-neutral-500">
-                  Vinder: <span className="font-semibold text-neutral-700">{vinderNavn}</span>
+                  Vinder: <span className="font-semibold text-neutral-700">{vinderVisning}</span>
                 </p>
               ) : null}
             </>
@@ -271,10 +275,11 @@ export default function BidPanel({
           Det er din egen auktion – du kan ikke byde på den.
         </p>
       ) : brugerId ? (
-        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3">
           <div className="flex flex-col gap-2 sm:flex-row">
           <input
             type="number"
+            inputMode="numeric"
             min={minimumBud}
             step={1}
             value={beløb}
@@ -328,7 +333,7 @@ export default function BidPanel({
       <p className="mt-3 text-xs text-neutral-500">
         Vinder du, betaler du dit bud + 5 % købergebyr
         {forsendelseMulig ? ` + ${kroner(FRAGT_OERE)} fragt` : ""} + evt. BidHamr Beskyttelse.
-        Du ser totalprisen, før du betaler, og har 24 timer til det. 25% moms tillægges ikke.
+        Du ser totalprisen, før du betaler, og har 24 timer til det. Alle beløb er inkl. moms.
       </p>
       {!forsendelseMulig && (
         <p className="text-xs text-neutral-500">

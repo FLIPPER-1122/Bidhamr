@@ -37,23 +37,34 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const [varighed, setVarighed] = useState(3);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
   const [postnummer, setPostnummer] = useState("");
-  const [by, setBy] = useState<string | null>(null);
-  const [koordinater, setKoordinater] = useState<{ lat: number; lng: number } | null>(null);
-  const [byStatus, setByStatus] = useState<"idle" | "henter" | "fundet" | "ikke-fundet">("idle");
+  // Opslaget gemmes sammen med det postnummer, det hører til. By, koordinater
+  // og status udledes ved render, så effekten kun sætter state i callbacks.
+  const [opslag, setOpslag] = useState<{
+    postnummer: string;
+    by: string | null;
+    koordinater: { lat: number; lng: number } | null;
+    fundet: boolean;
+  } | null>(null);
+  const gyldigtPostnummer = /^\d{4}$/.test(postnummer);
+  const aktueltOpslag =
+    gyldigtPostnummer && opslag?.postnummer === postnummer ? opslag : null;
+  const by = aktueltOpslag?.by ?? null;
+  const koordinater = aktueltOpslag?.koordinater ?? null;
+  const byStatus: "idle" | "henter" | "fundet" | "ikke-fundet" = !gyldigtPostnummer
+    ? "idle"
+    : !aktueltOpslag
+      ? "henter"
+      : aktueltOpslag.fundet
+        ? "fundet"
+        : "ikke-fundet";
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!/^\d{4}$/.test(postnummer)) {
-      setBy(null);
-      setKoordinater(null);
-      setByStatus("idle");
-      return;
-    }
+    if (!/^\d{4}$/.test(postnummer)) return;
 
     const controller = new AbortController();
-    setByStatus("henter");
 
     fetch(`https://api.dataforsyningen.dk/postnumre/${postnummer}`, {
       signal: controller.signal,
@@ -63,17 +74,18 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         return res.json();
       })
       .then((data) => {
-        setBy(data.navn);
-        if (Array.isArray(data.visueltcenter)) {
-          setKoordinater({ lng: data.visueltcenter[0], lat: data.visueltcenter[1] });
-        }
-        setByStatus("fundet");
+        setOpslag({
+          postnummer,
+          by: data.navn ?? null,
+          koordinater: Array.isArray(data.visueltcenter)
+            ? { lng: data.visueltcenter[0], lat: data.visueltcenter[1] }
+            : null,
+          fundet: true,
+        });
       })
       .catch((err) => {
         if (err.name === "AbortError") return;
-        setBy(null);
-        setKoordinater(null);
-        setByStatus("ikke-fundet");
+        setOpslag({ postnummer, by: null, koordinater: null, fundet: false });
       });
 
     return () => controller.abort();

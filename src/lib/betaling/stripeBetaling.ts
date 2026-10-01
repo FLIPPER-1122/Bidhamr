@@ -17,6 +17,20 @@ import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { totalOere } from "@/lib/betaling/beregn";
 import { getResend } from "@/lib/resend";
+
+// Offentlig https-adresse til Stripes business_profile.url. Lokalt
+// (http/localhost) bruges produktionsdomaenet, da Stripe afviser andet.
+function offentligSideUrl(): string {
+  const url = sideUrl("/");
+  try {
+    const u = new URL(url);
+    const lokal = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"].includes(u.hostname);
+    if (u.protocol === "https:" && !lokal) return url;
+  } catch {
+    // falder igennem
+  }
+  return "https://bidhamr.dk";
+}
 import {
   HANDEL_AFSENDER,
   saelgerBetaltMail,
@@ -948,7 +962,9 @@ export async function onboardingLink(userId: string): Promise<string> {
         capabilities: { transfers: { requested: true } },
         business_profile: {
           product_description: "Privat salg af brugte ting på BidHamr",
-          url: sideUrl("/"),
+          // Stripe afviser http- og localhost-adresser som virksomheds-URL.
+          // refresh_url/return_url maa gerne vaere http://localhost i testmode.
+          url: offentligSideUrl(),
         },
         metadata: { bruger_id: userId },
       },

@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { sikkerSti } from "@/lib/sikkerSti";
 import { gensendBekraeftelse, logInd } from "@/app/actions/auth";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") || "/auktioner";
+  // Kun relative stier - ellers kan ?redirect bruges til phishing-omdirigering.
+  const redirectTo = sikkerSti(searchParams.get("redirect"), "/auktioner");
   // Auth-callbacket sender fejl hertil, fx når et nulstillingslink er udløbet.
   // Kun faste koder fra /auth/callback vises - aldrig fri tekst fra URL'en.
   const fejlKode = searchParams.get("fejl");

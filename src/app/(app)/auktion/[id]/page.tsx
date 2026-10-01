@@ -78,6 +78,19 @@ export default async function AuktionPage({
         !bedste || Number(b.beløb) > Number(bedste.beløb) ? b : bedste,
       null,
     ) ?? null;
+  // Vinderen vises anonymt som i budhistorikken ("Dig" / "Byder 2") - aldrig
+  // navn eller bruger-id (bydernes privatliv).
+  const vinderId: string | null =
+    (auktion.vinder_id as string | null | undefined) ??
+    (auktion.status !== "aktiv" ? (vinderBud?.bruger_id ?? null) : null);
+  const vinderVisning =
+    vinderId && auktion.status !== "aktiv"
+      ? vinderId === mitId
+        ? "Dig"
+        : byderNr.has(vinderId)
+          ? `Byder ${byderNr.get(vinderId)}`
+          : null
+      : null;
   const bruger = authData.user ?? null;
   const erVinder = Boolean(
     auktionErSlut && vinderBud && bruger?.id === vinderBud.bruger_id,
@@ -266,6 +279,8 @@ export default async function AuktionPage({
                 brugerId={authData.user?.id ?? null}
                 saelgerId={auktion.bruger_id}
                 forsendelseMulig={auktion.forsendelse_mulig}
+                status={auktion.status}
+                vinderVisning={vinderVisning}
               />
             </div>
 

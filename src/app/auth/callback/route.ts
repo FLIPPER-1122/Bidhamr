@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
+import { sikkerSti } from "@/lib/sikkerSti";
 
 // Fælles landingspunkt for Supabase auth-links (nulstilling af adgangskode,
 // e-mailbekræftelse, magic links). Supabase sender brugeren hertil med enten
@@ -11,11 +12,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 // brugeren videre til målsiden, hvor Supabase-klienten selv læser fragmentet.
 
 // Kun interne stier accepteres som mål, så ?next= ikke kan bruges til at
-// videresende brugeren til et fremmed domæne (open redirect).
-function sikkerSti(next: string | null, fallback: string) {
-  if (!next || !next.startsWith("/") || next.startsWith("//")) return fallback;
-  return next;
-}
+// videresende brugeren til et fremmed domæne (open redirect). Se src/lib/sikkerSti.ts.
 
 // Fejl sendes videre som en fast kode - aldrig Supabase' egen fejltekst, som
 // kan indeholde interne detaljer. Login-siden oversaetter koden til dansk.

@@ -103,10 +103,11 @@ export default function ProfileHeader({
         </div>
 
         {/* Statistik-række */}
-        <div className="mt-5 grid grid-cols-3 gap-3">
+        {/* Budaktivitet vises kun paa egen profil (bydernes privatliv). */}
+        <div className={`mt-5 grid gap-3 ${erEgenProfil ? "grid-cols-3" : "grid-cols-2"}`}>
           {[
             { tal: stats.auktionerOprettet, label: "Auktioner oprettet" },
-            { tal: stats.budAfgivet, label: "Bud afgivet" },
+            ...(erEgenProfil ? [{ tal: stats.budAfgivet, label: "Bud afgivet" }] : []),
             { tal: stats.gennemforteHandler, label: "Gennemførte handler" },
           ].map(({ tal, label }) => (
             <div

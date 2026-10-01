@@ -17,6 +17,7 @@ const KENDTE_BUDFEJL = [
   "Buddet skal være højere end nuværende bud",
   "Din konto er suspenderet, og du kan ikke byde.",
   "Du skal være logget ind.",
+  "Du har prøvet for mange gange. Vent lidt, og prøv så igen.",
 ];
 
 export async function afgivBud(

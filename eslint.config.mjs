@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     // Agenternes git-worktrees er fulde kopier af repoet og ligger inde i
     // projektmappen. Uden dette linter vi hver fil to gange.
     ".claude/worktrees/**",
+    // Loest Node-script (laver statusrapporten i Word), ikke en del af appen.
+    "gen_status.js",
   ]),
 ]);
 

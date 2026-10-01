@@ -110,7 +110,7 @@ export function koeberVandtMail(
     html: skabelon({
       overskrift: "Tillykke — du vandt!",
       afsnit: [
-        `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Du skal betale ${kronerFraOere(totalOere)} kr inkl. købergebyr.`,
+        `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Du skal betale ${kronerFraOere(totalOere)} kr i alt inkl. købergebyr, fragt og evt. BidHamr Beskyttelse.`,
         `Betal senest <strong>${fristTekst(betalSenest)}</strong>. Du kan betale med kort, MobilePay, Apple Pay eller Google Pay, og du kan tilvælge BidHamr Beskyttelse.`,
         "Pengene holdes af Stripe, indtil du har bekræftet, at varen er som den skal være. Først da får sælgeren dem.",
       ],
