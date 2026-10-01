@@ -2,29 +2,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import KontoMenu from "@/components/KontoMenu";
-import { kr } from "@/lib/wallet";
 
 export default async function Header() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
 
   let erAdmin = false;
-  // Chippen viser det, der KAN bruges - altså saldo minus det, der er
-  // reserveret af aktive bud. Bruttosaldoen ville stå stille, når man byder,
-  // og se ud som om reservationen ikke virkede.
-  let saldo: number | null = null;
   if (data.user) {
-    // Filtreret eksplicit på user_id. RLS alene er ikke nok: policyen
-    // tillader også staff at se alle konti.
-    const [{ data: rolle }, { data: wallet }] = await Promise.all([
-      supabase.rpc("min_rolle"),
-      supabase
-        .from("wallets")
-        .select("balance, reserved")
-        .eq("user_id", data.user.id)
-        .maybeSingle(),
-    ]);
-    saldo = wallet ? Number(wallet.balance) - Number(wallet.reserved) : null;
+    const { data: rolle } = await supabase.rpc("min_rolle");
     erAdmin =
       rolle === "chef" ||
       rolle === "admin" ||
@@ -118,7 +103,6 @@ export default async function Header() {
             <KontoMenu
               logget_ind={!!data.user}
               erAdmin={erAdmin}
-              saldoTekst={saldo !== null ? kr(saldo) : null}
             />
           </div>
         </div>

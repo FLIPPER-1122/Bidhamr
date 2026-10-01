@@ -8,6 +8,9 @@ import {
   MarkerModtagetKnap,
   GodkendPakkeKnap,
 } from "@/components/HandelHandlinger";
+import { hentBetalingsstatus } from "@/app/actions/betaling";
+import BetalingSektion from "@/components/betaling/BetalingSektion";
+import Nedtaelling from "@/components/betaling/Nedtaelling";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +28,13 @@ type HandelRaekke = {
 
 export default async function HandelDetaljePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ trade_id: string }>;
+  searchParams: Promise<{ betaling?: string }>;
 }) {
   const { trade_id } = await params;
+  const { betaling: betalingParam } = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -73,6 +79,14 @@ export default async function HandelDetaljePage({
   const erKoeber = handel.buyer_id === user.id;
   const aktivtTrin = HANDEL_STATUS.findIndex((s) => s.vaerdi === handel.status);
   const billede = (auktion?.billeder as string[] | null)?.[0] ?? null;
+
+  // Betalingen hentes kun, når den er relevant: mens der ventes på den, og
+  // når køberen lige er vendt tilbage fra Stripe.
+  const betaling =
+    handel.status === "afventer_betaling" || betalingParam === "retur"
+      ? await hentBetalingsstatus(handel.id)
+      : null;
+  const betalingsstatus = betaling && "ok" in betaling ? betaling : null;
 
   return (
     <main className="flex-1 bg-white px-4 py-8 sm:px-8">
@@ -138,6 +152,76 @@ export default async function HandelDetaljePage({
             </p>
           )}
         </div>
+
+        {/* Betaling */}
+        {betaling && "fejl" in betaling && handel.status === "afventer_betaling" && (
+          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+            Betalingen kunne ikke hentes lige nu. {betaling.fejl}
+          </div>
+        )}
+
+        {betalingsstatus && betalingsstatus.status === "betalt" && betalingParam === "retur" && (
+          <div className="rounded-xl border border-[#B9D8CC] bg-groen-lys p-6">
+            <p className="font-semibold text-groen-mork">Tak – din betaling er gennemført</p>
+            <p className="mt-1 text-sm text-groen-mork">
+              Sælgeren får besked og sender varen. Pengene frigives først, når du har godkendt den.
+            </p>
+          </div>
+        )}
+
+        {betalingsstatus && betalingsstatus.status === "behandles" && erKoeber && (
+          <div className="rounded-xl border border-[#C9DCEB] bg-[#EDF3F8] p-6 text-sm text-[#1F4E79]">
+            <p className="font-semibold">Din betaling behandles</p>
+            <p className="mt-1">Det tager normalt kun et øjeblik. Genindlæs siden om lidt.</p>
+          </div>
+        )}
+
+        {erKoeber && handel.status === "afventer_betaling" && betalingsstatus?.status === "afventer" && (
+          <section className="rounded-xl border border-kant bg-white p-6">
+            <h2 className="font-serif text-xl font-semibold text-tekst">Betal for din vare</h2>
+            {betalingsstatus.fristOverskredet ? (
+              <p className="mt-2 text-sm text-[#A32020]">
+                Fristen for at betale er overskredet. Kontakt os, hvis du mener, det er en fejl.
+              </p>
+            ) : (
+              <>
+                <p className="mt-1 mb-5 text-sm text-tekst-daempet">
+                  Betal senest{" "}
+                  {new Date(betalingsstatus.betalSenest).toLocaleString("da-DK", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}{" "}
+                  · <span className="font-semibold text-[#8A4210]"><Nedtaelling til={betalingsstatus.betalSenest} /></span>
+                </p>
+                {betalingsstatus.sidsteFejl && (
+                  <p className="mb-4 rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+                    Den automatiske betaling gik ikke igennem. Betal herunder.
+                  </p>
+                )}
+                <BetalingSektion status={betalingsstatus} />
+              </>
+            )}
+          </section>
+        )}
+
+        {erSaelger && handel.status === "afventer_betaling" && (
+          <div className="rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] p-6 text-sm text-[#8A4210]">
+            <p className="font-semibold">Afventer købers betaling</p>
+            {betalingsstatus ? (
+              <p className="mt-1">
+                Køberen skal betale senest{" "}
+                {new Date(betalingsstatus.betalSenest).toLocaleString("da-DK", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}{" "}
+                (<Nedtaelling til={betalingsstatus.betalSenest} />). Send ikke varen, før
+                betalingen er modtaget.
+              </p>
+            ) : (
+              <p className="mt-1">Køberen har 48 timer til at betale. Send ikke varen før.</p>
+            )}
+          </div>
+        )}
 
         {/* Handlinger */}
         {erSaelger && handel.status === "betaling_modtaget" && (

@@ -208,7 +208,7 @@ export default async function AuktionPage({
                   🎉 Du har vundet denne auktion!
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
-                  Beløbet er trukket fra din BidHamr-konto. Aftal det
+                  Betal inden for 48 timer under handlen. Aftal det
                   praktiske med sælgeren i handelschatten.
                 </p>
                 {/* Knappen vises altid; findes handlen endnu ikke, venter
@@ -226,8 +226,8 @@ export default async function AuktionPage({
                   Din auktion er solgt
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
-                  Køberen har betalt. Beløbet udbetales til din BidHamr-konto,
-                  når køberen har bekræftet modtagelsen. Aftal levering med
+                  Køberen har 48 timer til at betale. Du får pengene udbetalt,
+                  når køberen har godkendt varen. Aftal levering med
                   køberen i handelschatten.
                 </p>
                 <StartChatKnap

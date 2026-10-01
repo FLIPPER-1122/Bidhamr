@@ -8,14 +8,12 @@ import { createClient } from "@/lib/supabase/client";
 type Props = {
   logget_ind: boolean;
   erAdmin: boolean;
-  /** Formateret saldo (fjernes i fase 1, hvor wallet udgår). */
-  saldoTekst: string | null;
 };
 
 const punkt =
   "flex min-h-11 w-full items-center rounded-lg px-3 text-left text-[15px] font-medium text-tekst hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen";
 
-export default function KontoMenu({ logget_ind, erAdmin, saldoTekst }: Props) {
+export default function KontoMenu({ logget_ind, erAdmin }: Props) {
   const [aaben, setAaben] = useState(false);
   const [loggerUd, setLoggerUd] = useState(false);
   const rodRef = useRef<HTMLDivElement>(null);
@@ -100,16 +98,6 @@ export default function KontoMenu({ logget_ind, erAdmin, saldoTekst }: Props) {
 
               {logget_ind ? (
                 <>
-                  {saldoTekst !== null && (
-                    <li>
-                      <Link href="/konto" onClick={luk} className={`${punkt} justify-between`}>
-                        <span>Til rådighed</span>
-                        <span className="rounded-full bg-groen-lys px-2.5 py-0.5 text-sm font-semibold text-groen">
-                          {saldoTekst}
-                        </span>
-                      </Link>
-                    </li>
-                  )}
                   <li><Link href="/konto" onClick={luk} className={punkt}>Min konto</Link></li>
                   <li><Link href="/mine-handler" onClick={luk} className={punkt}>Mine handler</Link></li>
                   <li><Link href="/profil/mig" onClick={luk} className={punkt}>Min profil</Link></li>
