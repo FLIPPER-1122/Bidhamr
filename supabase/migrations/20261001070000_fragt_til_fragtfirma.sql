@@ -19,6 +19,7 @@ update public.betalinger
    set udbetaling_oere = bud_oere - saelgergebyr_oere,
        opdateret = now()
  where stripe_transfer_id is null
+   and overfoersel_paabegyndt_kl is null
    and udbetaling_oere <> bud_oere - saelgergebyr_oere;
 
 -- Historiske raekker, der allerede er overfoert med fragt, tillades udtrykkeligt
