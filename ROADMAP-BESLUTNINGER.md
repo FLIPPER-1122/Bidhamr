@@ -3,6 +3,7 @@
 > **VIGTIGT – gælder hele dokumentet:**
 > - **Stripe holder brugernes penge (Stripe Connect), ikke BidHamr.**
 > - **Der er INGEN købersaldo/wallet.** Vinderen betaler selv inden for **48 timer** efter auktionen (kort, MobilePay, Apple Pay, Google Pay). Som **tilvalg** kan brugeren gemme et kort og slå automatisk betaling til, så kortet trækkes med det samme, når han vinder. Betaler han ikke inden 48 timer: handlen annulleres, han får en advarsel, og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen. Hvor der står "wallet" nedenfor, er det forældet.
+> - **Stripe-opsætning: "separate charges and transfers"** med manuelle udbetalinger. Køber betaler til BidHamrs platformskonto; beløbet minus sælgergebyr overføres til sælgerens Stripe Connect Express-konto, når pengene frigives (bekræftelse, 48 timer uden sag, eller afgjort sag + ankefrist). Valgt fordi pengene ofte skal holdes i dage og kunne fryses ved sager.
 > - Tilkøbet for køberen hedder **"BidHamr Beskyttelse"** overalt.
 
 Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md og PRODUKT.md.

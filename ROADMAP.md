@@ -13,16 +13,18 @@ Status: `[ ]` ikke startet · `[~]` i gang · `[x]` færdig
 ## Fase 0 – Fundament
 Formål: rydde op, så agent-teamet kan arbejde sikkert og ens.
 
-- [~] Erstat den ødelagte `CLAUDE.md` i hamr (indeholder PDF-data) med en ren markdown-fil
-- [~] Skriv `PRODUKT.md` (produktretning: Tradera for auktionen, Vinted for handlen, egne regler)
-- [~] Skriv `DESIGN.md` (designsystem ud fra mockup D: farver, skrifttyper, knapper, kort, afstande)
-- [~] Sæt agent-team op i `.claude/agents/` (backend, frontend, reviewer, tester) + chef-rolle i CLAUDE.md
-- [~] Agenterne arbejder i egne git worktrees og fletter ind i `main` – Filip pusher (se regel 1 i CLAUDE.md)
-- [~] Testdatabase "Bidhamr Test" sat op: `npm run dev` bruger test, bidhamr.dk bruger produktion
-- [~] Ret fejl: bedømmelser kan i dag gives af alle til alle (kun køber → sælger efter handel)
-- [~] Ret gebyr i koden: sælgergebyr fra 10% til 5% (`wallet_udbetal_saelger`, `admin_frigiv_handel`)
-- [ ] **Filip – afklar TIDLIGT med rådgiver/advokat (kan ændre hvordan pengeflowet bygges):**
-  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 48 timer, og gemt kort med automatisk betaling er et tilvalg.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Afventer svar fra Stripes team på den præcise opsætning. Tag derefter svaret med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
+- [x] Erstat den ødelagte `CLAUDE.md` i hamr (indeholder PDF-data) med en ren markdown-fil
+- [x] Skriv `PRODUKT.md` (produktretning: Tradera for auktionen, Vinted for handlen, egne regler)
+- [x] Skriv `DESIGN.md` (designsystem ud fra mockup D: farver, skrifttyper, knapper, kort, afstande)
+- [x] Sæt agent-team op i `.claude/agents/` (backend, betaling, frontend, indhold, reviewer, tester) + chef-rolle i CLAUDE.md
+- [x] Agenterne arbejder i egne git worktrees og fletter ind i `main` – Filip pusher (se regel 1 i CLAUDE.md)
+- [x] Testdatabase "Bidhamr Test" sat op: `npm run dev` bruger test, bidhamr.dk bruger produktion
+- [x] Ret fejl: bedømmelser kan i dag gives af alle til alle (kun køber → sælger efter handel)
+- [x] Ret gebyr i koden: sælgergebyr fra 10% til 5% (`wallet_udbetal_saelger`, `admin_frigiv_handel`)
+- [x] Nyt design (farver, skrifttyper, logo, favicon) og ny coming-soon-side
+- [x] Next.js opgraderet til 16.3.6 (sikkerhedshuller lukket)
+- [ ] **Filip – afklar med rådgiver/advokat (blokerer IKKE fase 1 – agenterne bygger videre i testmiljøet):**
+  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 48 timer, og gemt kort med automatisk betaling er et tilvalg.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Opsætningen er besluttet: separate charges and transfers. Tag Stripes svar med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
   - BESLUTTET: Det hedder **"BidHamr Beskyttelse"** – aldrig "forsikring" nogen steder på siden, i mails eller i koden
   - **Hvidvaskloven**: gælder den for BidHamr, når I håndterer betalinger (kundekendskab ved store beløb)?
 
@@ -35,7 +37,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - **Valgfrit: automatisk betaling.** Brugeren kan i sine indstillinger gemme et kort og slå "Betal automatisk, når jeg vinder" til. Så trækkes kortet med det samme, når auktionen slutter. Det er et tilvalg, ikke et krav
   - Pengene ligger på BidHamrs Stripe-konto (manuelle udbetalinger), indtil køber bekræfter / 48 timer uden sag / sag er afgjort
   - Sælger oprettes som **Stripe Connect-konto** (Express), og Stripe tjekker sælgerens identitet. Pengene overføres minus sælgergebyr, og Stripe udbetaler til sælgerens bank
-  - Opsætning: destination charges eller separate charges and transfers – afventer endelig anbefaling fra Stripes team
+  - Opsætning: **BESLUTTET – "separate charges and transfers"** med manuelle udbetalinger. Køber betaler til BidHamrs platformskonto, og pengene overføres til sælgerens Connect-konto, når de frigives. Bekræftes med Stripes team, når de svarer, men der bygges videre på det nu
 - [ ] **Testmiljøet flyttes til Stripe**: al test af penge sker i **Stripes testmiljø** (test mode), ikke med testsaldoer i BidHamrs egen database
   - Opret Stripe-testnøgler (`sk_test_` / `pk_test_`) på Filips Stripe-konto og læg dem i Vercel + `.env.local` i stedet for de gamle nøgler
   - Test med Stripes testkort (fx 4242 4242 4242 4242) og testkort, der bliver afvist eller kræver 3D Secure
