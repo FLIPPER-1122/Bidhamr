@@ -52,6 +52,13 @@ export type BetalingRaekke = {
   frigivet_kl: string | null;
   stripe_transfer_id: string | null;
   overfoert_kl: string | null;
+  refusion_anmodet_kl: string | null;
+  refusion_aarsag: string | null;
+  stripe_refund_id: string | null;
+  refunderet_kl: string | null;
+  overfoersel_paabegyndt_kl: string | null;
+  annulleret_kl: string | null;
+  kraever_opmaerksomhed: boolean;
 };
 
 export type ProfilRaekke = {
@@ -258,8 +265,17 @@ export async function spejlPaymentIntent(pi: Stripe.PaymentIntent): Promise<stri
     });
     if (error) throw new Error(`betaling_registrer_betalt: ${error.message}`);
     const resultat = String(data);
-    if (resultat === "beloeb_afviger") {
-      console.error("KRITISK: betalt beløb stemmer ikke med betalingen:", pi.id);
+    if (resultat === "beloeb_afviger" || resultat === "sen_betaling") {
+      // Databasen har markeret betalingen (kraever_opmaerksomhed, sidste_fejl)
+      // og claimet refusionen. Pengene sendes tilbage automatisk. Kaster
+      // refusionen, får webhooken 500, og Stripe prøver igen.
+      console.error(`Betaling ${pi.id}: ${resultat} - refunderes automatisk.`);
+      const { data: b } = await admin
+        .from("betalinger")
+        .select("id")
+        .eq("stripe_payment_intent_id", pi.id)
+        .single<{ id: string }>();
+      if (b) await refunderBetaling(b.id);
     }
     if (resultat === "betalt") await efterBetalt(pi.id);
     return resultat;
@@ -406,10 +422,20 @@ export async function forsoegAutobetaling(betalingId: string): Promise<string> {
 export async function overfoerTilSaelger(betalingId: string): Promise<string> {
   const b = await hentBetaling(betalingId);
   if (b.stripe_transfer_id) return "allerede_overfoert";
+  if (b.status === "refunderet" || b.refusion_anmodet_kl) return "refunderet";
   if (b.status !== "betalt" || !b.frigivet_kl || !b.stripe_charge_id) {
     return "ikke_klar";
   }
   if (b.udbetaling_oere <= 0) return "intet_at_overfoere";
+
+  const admin = createAdminClient();
+  const { data: handel } = await admin
+    .from("trades")
+    .select("status, sag_aaben")
+    .eq("id", b.trade_id)
+    .single<{ status: string; sag_aaben: boolean | null }>();
+  if (!handel || handel.status === "annulleret") return "annulleret";
+  if (handel.sag_aaben) return "sag_aaben";
 
   const profil = await hentProfil(b.seller_id);
   if (!profil?.stripe_account_id || !profil.connect_overfoersler_aktiv) {
@@ -417,6 +443,15 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
     // når account.updated viser, at kontoen er klar (webhook/cron).
     return "afventer_saelgerkonto";
   }
+
+  // Atomisk claim i databasen: afviser åben sag, annulleret handel og
+  // igangsat refusion, og blokerer en samtidig refusion fra admin.
+  const { data: claimet, error: claimFejl } = await admin.rpc(
+    "betaling_claim_overfoersel",
+    { p_betaling: b.id },
+  );
+  if (claimFejl) throw new Error(`betaling_claim_overfoersel: ${claimFejl.message}`);
+  if (!claimet) return "ikke_tilladt";
 
   const stripe = getStripe();
   const transferGroup = `handel_${b.trade_id}`;
@@ -438,6 +473,7 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
         currency: b.valuta,
         destination: profil.stripe_account_id,
         source_transaction: b.stripe_charge_id,
+        transfer_group: transferGroup,
         description: `BidHamr handel ${b.trade_id}`,
         metadata: {
           betaling_id: b.id,
@@ -449,7 +485,7 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
     );
   }
 
-  await createAdminClient()
+  await admin
     .from("betalinger")
     .update({
       stripe_transfer_id: transfer.id,
@@ -460,6 +496,151 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
     .is("stripe_transfer_id", null);
 
   return "overfoert";
+}
+
+// ------------------------------------------------------------------ refusion
+
+// Fuld refusion af en betaling hos Stripe. Kræver, at refusionen allerede er
+// claimet i databasen (refusion_anmodet_kl - sat af betaling_paabegynd_refusion
+// eller af betaling_registrer_betalt ved sen betaling / afvigende beløb), så
+// en overførsel til sælger aldrig kan ske samtidig.
+//
+// Idempotent: fast idempotency key pr. betaling, og en allerede refunderet
+// charge behandles som gennemført. Status 'refunderet' spejles af webhooken
+// (charge.refunded) - og her med det samme, hvis Stripe svarer "succeeded".
+export async function refunderBetaling(betalingId: string): Promise<string> {
+  const admin = createAdminClient();
+  const b = await hentBetaling(betalingId);
+  if (b.status === "refunderet") return "allerede_refunderet";
+  if (!b.refusion_anmodet_kl) throw new Error("Refusion er ikke claimet.");
+  if (b.stripe_transfer_id || b.overfoersel_paabegyndt_kl) {
+    throw new Error("Betalingen er overført til sælger - refusion afvist.");
+  }
+  if (!b.stripe_payment_intent_id) throw new Error("Ingen PaymentIntent at refundere.");
+
+  const stripe = getStripe();
+  let refund: Stripe.Refund | null = null;
+  try {
+    refund = await stripe.refunds.create(
+      {
+        payment_intent: b.stripe_payment_intent_id,
+        reason: "requested_by_customer",
+        metadata: {
+          betaling_id: b.id,
+          handel_id: b.trade_id,
+          aarsag: b.refusion_aarsag ?? "",
+        },
+      },
+      { idempotencyKey: `bidhamr-refusion-${b.id}` },
+    );
+  } catch (err) {
+    if (err instanceof Stripe.errors.StripeError && err.code === "charge_already_refunded") {
+      refund = null; // allerede refunderet - spejles nedenfor
+    } else {
+      await admin
+        .from("betalinger")
+        .update({
+          kraever_opmaerksomhed: true,
+          sidste_fejl: `Refusion fejlede: ${
+            err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt"
+          }`,
+          opdateret: new Date().toISOString(),
+        })
+        .eq("id", b.id);
+      throw err;
+    }
+  }
+
+  if (refund) {
+    await admin
+      .from("betalinger")
+      .update({ stripe_refund_id: refund.id, opdateret: new Date().toISOString() })
+      .eq("id", b.id)
+      .is("stripe_refund_id", null);
+    if (refund.status === "failed" || refund.status === "canceled") {
+      await admin
+        .from("betalinger")
+        .update({
+          kraever_opmaerksomhed: true,
+          sidste_fejl: `Refusion ${refund.status} hos Stripe`,
+          opdateret: new Date().toISOString(),
+        })
+        .eq("id", b.id);
+      return `refusion_${refund.status}`;
+    }
+    if (refund.status === "succeeded") {
+      await registrerRefunderet(b.stripe_payment_intent_id, refund.id);
+      return "refunderet";
+    }
+    return "refusion_afventer"; // pending: charge.refunded/refund.updated følger
+  }
+
+  const pi = await stripe.paymentIntents.retrieve(b.stripe_payment_intent_id, {
+    expand: ["latest_charge"],
+  });
+  const charge = pi.latest_charge;
+  if (charge && typeof charge !== "string" && charge.refunded) {
+    await registrerRefunderet(b.stripe_payment_intent_id, null);
+  }
+  return "refunderet";
+}
+
+export async function registrerRefunderet(
+  paymentIntentId: string,
+  refundId: string | null,
+): Promise<string> {
+  const { data, error } = await createAdminClient().rpc("betaling_registrer_refunderet", {
+    p_payment_intent: paymentIntentId,
+    p_refund: refundId,
+  });
+  if (error) throw new Error(`betaling_registrer_refunderet: ${error.message}`);
+  return String(data);
+}
+
+// Spejler charge.refunded. Kun fuld refusion sætter status 'refunderet';
+// en delvis refusion (fx lavet i Stripe Dashboard) markeres til admin.
+export async function spejlRefusion(charge: Stripe.Charge): Promise<string> {
+  const piId =
+    typeof charge.payment_intent === "string"
+      ? charge.payment_intent
+      : (charge.payment_intent?.id ?? null);
+  if (!piId) return "ingen_payment_intent";
+  if (charge.refunded) return registrerRefunderet(piId, null);
+  const { error } = await createAdminClient().rpc("betaling_marker_opmaerksomhed", {
+    p_payment_intent: piId,
+    p_besked: `Delvis refusion hos Stripe (${charge.amount_refunded} af ${charge.amount} øre)`,
+  });
+  if (error) throw new Error(`betaling_marker_opmaerksomhed: ${error.message}`);
+  return "delvis_refusion";
+}
+
+// Annullerer en ikke-betalt betaling: først i databasen (atomisk), derefter
+// PaymentIntenten hos Stripe, så den ikke kan betales. Går en betaling
+// alligevel igennem, giver spejlingen 'sen_betaling' og automatisk refusion.
+// Bruges af admin nu og af 48-timers-fristen senere.
+export async function annullerBetaling(tradeId: string): Promise<boolean> {
+  const { data, error } = await createAdminClient().rpc("betaling_annuller", {
+    p_trade: tradeId,
+  });
+  if (error) throw new Error(`betaling_annuller: ${error.message}`);
+  if (!data) return false;
+  const piId = (data as { payment_intent: string | null }).payment_intent;
+  if (piId) {
+    const stripe = getStripe();
+    try {
+      await stripe.paymentIntents.cancel(
+        piId,
+        { cancellation_reason: "abandoned" },
+        { idempotencyKey: `bidhamr-annuller-${piId}` },
+      );
+    } catch (err) {
+      // Allerede annulleret, eller betalt i mellemtiden (så refunderes den).
+      console.warn("Kunne ikke annullere PaymentIntent:", piId, err);
+      const pi = await stripe.paymentIntents.retrieve(piId);
+      if (pi.status === "succeeded") await spejlPaymentIntent(pi);
+    }
+  }
+  return true;
 }
 
 // Prøver alle frigivne, ikke-overførte betalinger for en sælger (eller alle).

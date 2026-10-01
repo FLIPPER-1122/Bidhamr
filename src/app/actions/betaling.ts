@@ -210,13 +210,35 @@ export async function startGemKort(): Promise<{ ok: true; clientSecret: string }
   if (!user) return { fejl: "Du skal være logget ind." };
   try {
     const kunde = await sikrStripeKunde(user.id);
-    const si = await getStripe().setupIntents.create({
-      customer: kunde,
-      usage: "off_session",
-      // Kort (inkl. Apple Pay / Google Pay, som gemmes som kort).
-      payment_method_types: ["card"],
-      metadata: { bruger_id: user.id },
-    });
+    const stripe = getStripe();
+
+    // Genbrug en åben SetupIntent for kunden, så gentagne klik ikke opretter
+    // en ny hver gang.
+    const aabne = await stripe.setupIntents.list({ customer: kunde, limit: 10 });
+    const aaben = aabne.data.find(
+      (s) =>
+        s.usage === "off_session" &&
+        s.metadata?.bruger_id === user.id &&
+        (s.status === "requires_payment_method" ||
+          s.status === "requires_confirmation" ||
+          s.status === "requires_action"),
+    );
+    if (aaben?.client_secret) return { ok: true, clientSecret: aaben.client_secret };
+
+    // Idempotency key bygget på kundens seneste SetupIntent: samtidige kald
+    // ser samme liste og får samme SetupIntent. Når den er brugt, er den selv
+    // den seneste, så næste "skift kort" får en ny nøgle.
+    const vindue = aabne.data[0]?.id ?? "foerste";
+    const si = await stripe.setupIntents.create(
+      {
+        customer: kunde,
+        usage: "off_session",
+        // Kort (inkl. Apple Pay / Google Pay, som gemmes som kort).
+        payment_method_types: ["card"],
+        metadata: { bruger_id: user.id },
+      },
+      { idempotencyKey: `bidhamr-gemkort-${user.id}-${vindue}` },
+    );
     if (!si.client_secret) return { fejl: GENERISK };
     return { ok: true, clientSecret: si.client_secret };
   } catch (err) {

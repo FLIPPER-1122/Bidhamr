@@ -3,6 +3,12 @@
 import { assertRole, harMindstRolle } from "@/lib/adminAuth";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
+import {
+  annullerBetaling,
+  hentBetalingForHandel,
+  overfoerTilSaelger,
+  refunderBetaling,
+} from "@/lib/betaling/stripeBetaling";
 
 // --- Brugere ---------------------------------------------------------------
 
@@ -581,126 +587,19 @@ export async function rapportGenaabn(formData: FormData) {
 // uaendret i baade dev og produktion.
 export type SaldoResultat = { ok: true; saldo?: number } | { fejl: string };
 
-// Teknisk detalje er nyttig under udvikling, men skal ikke laekke DB-interne
-// beskeder ud i produktion.
-function medDetalje(besked: string, detalje: string): string {
-  return process.env.NODE_ENV === "development"
-    ? `${besked} (${detalje})`
-    : besked;
+// BidHamr har ingen saldo laengere (Stripe holder pengene). Saldo-handlingerne
+// afvises altid; UI'en fjernes i naeste roadmap-punkt. Wallet-funktionerne er
+// ogsaa lukket for service_role i databasen (20261001010000).
+const SALDO_LUKKET = "Saldo findes ikke længere. Penge styres via Stripe.";
+
+export async function justerSaldo(_formData: FormData): Promise<SaldoResultat> {
+  void _formData;
+  return { fejl: SALDO_LUKKET };
 }
 
-function oversaetSaldoFejl(besked: string): string {
-  if (besked.includes("under_reserveret")) {
-    return "Beløbet er lavere end det, brugeren har bundet i aktive bud.";
-  }
-  if (besked.includes("wallets_balance_check") || besked.includes("negativ_saldo")) {
-    return "Saldoen kan ikke gå under nul.";
-  }
-  if (besked.includes("wallet_mangler")) {
-    return "Brugeren har ingen konto.";
-  }
-  if (besked.includes("moderation_log")) {
-    // Saldoen er allerede aendret paa dette tidspunkt - sig det, saa ingen
-    // proever igen i den tro at intet skete.
-    return medDetalje(
-      "Saldoen blev ændret, men handlingen kunne ikke logges.",
-      besked,
-    );
-  }
-  return medDetalje("Kunne ikke ændre saldoen.", besked);
-}
-
-// Justerer en brugers saldo med et beloeb (positivt eller negativt).
-// Forskellen bogfoeres, saa hovedbogen altid stemmer med saldoen.
-export async function justerSaldo(formData: FormData): Promise<SaldoResultat> {
-  const userId = formData.get("userId") as string;
-  const beløb = Number(formData.get("beloeb"));
-  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
-
-  let admin, staffId;
-  try {
-    ({ admin, userId: staffId } = await assertRole("chef"));
-  } catch {
-    return { fejl: "Du har ikke adgang til at ændre saldi." };
-  }
-
-  if (!userId || !Number.isFinite(beløb) || beløb === 0) {
-    return { fejl: "Angiv et beløb forskelligt fra nul." };
-  }
-  if (!aarsag) {
-    return { fejl: "Angiv en begrundelse for justeringen." };
-  }
-
-  const { error } = await admin.rpc("wallet_bogfoer", {
-    p_user: userId,
-    p_amount: beløb,
-    p_kind: "justering",
-    p_auction: null,
-    p_note: aarsag,
-    p_stripe_session: null,
-  });
-
-  if (error) return { fejl: oversaetSaldoFejl(error.message) };
-
-  const logFejl = await logModerationBloedt(admin, {
-    medarbejder_id: staffId,
-    handling: beløb > 0 ? "saldo_tilfoert" : "saldo_traukket",
-    maal_type: "bruger",
-    maal_id: userId,
-    bruger_id: userId,
-    aarsag: `${beløb > 0 ? "+" : ""}${beløb} kr — ${aarsag}`,
-  });
-
-  revalidatePath("/admin/brugere");
-  revalidatePath(`/admin/brugere/${userId}`);
-  revalidatePath("/admin/transaktioner");
-
-  if (logFejl) return { fejl: oversaetSaldoFejl(logFejl) };
-  return { ok: true };
-}
-
-// Saetter en brugers saldo til et praecist beloeb (bruges til testpenge).
-// 'admin' og opefter; medarbejdere kan ikke roere penge.
-export async function saetSaldo(formData: FormData): Promise<SaldoResultat> {
-  const userId = formData.get("userId") as string;
-  const nySaldo = Number(formData.get("saldo"));
-
-  let admin, staffId;
-  try {
-    ({ admin, userId: staffId } = await assertRole("admin"));
-  } catch {
-    return { fejl: "Du har ikke adgang til at ændre saldi." };
-  }
-
-  if (!userId || !Number.isFinite(nySaldo) || nySaldo < 0) {
-    return { fejl: "Angiv et beløb på 0 eller derover." };
-  }
-
-  const { data, error } = await admin.rpc("wallet_saet_saldo", {
-    p_user: userId,
-    p_ny_saldo: nySaldo,
-    p_note: "Saldo sat af administrator",
-  });
-
-  if (error) return { fejl: oversaetSaldoFejl(error.message) };
-
-  // Logningen maa ikke kunne rulle en gennemfoert saldoaendring tilbage, men
-  // den maa heller ikke fejle i stilhed - derfor rapporteres den separat.
-  const logFejl = await logModerationBloedt(admin, {
-    medarbejder_id: staffId,
-    handling: "saldo_sat",
-    maal_type: "bruger",
-    maal_id: userId,
-    bruger_id: userId,
-    aarsag: `Saldo sat til ${nySaldo} kr`,
-  });
-
-  revalidatePath("/admin/brugere");
-  revalidatePath(`/admin/brugere/${userId}`);
-  revalidatePath("/admin/transaktioner");
-
-  if (logFejl) return { fejl: oversaetSaldoFejl(logFejl) };
-  return { ok: true, saldo: Number(data ?? nySaldo) };
+export async function saetSaldo(_formData: FormData): Promise<SaldoResultat> {
+  void _formData;
+  return { fejl: SALDO_LUKKET };
 }
 
 // --- Sager (handler) ---------------------------------------------------------
@@ -782,7 +681,18 @@ export async function sagLuk(formData: FormData) {
   revaliderSag(tradeId);
 }
 
+// Kroner til visning i moderationsloggen ud fra oere (heltal).
+function kr(oere: number): string {
+  return (oere / 100).toLocaleString("da-DK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 // Afregn saelgeren uden koeberens godkendelse. Kun admin og opefter.
+// Handler med en Stripe-betaling: frigivet_kl saettes i databasen, og
+// beloebet (bud minus 5% saelgergebyr) overfoeres til saelgerens Connect-konto.
+// Gamle handler fra saldo-modellen afregnes som foer i databasen.
 export async function handelFrigiv(formData: FormData) {
   const tradeId = formData.get("tradeId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
@@ -790,6 +700,10 @@ export async function handelFrigiv(formData: FormData) {
   if (!aarsag) throw new Error("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
+  const betaling = await hentBetalingForHandel(tradeId);
+  if (betaling && betaling.status !== "betalt") {
+    throw new Error("Handlen er ikke betalt og kan ikke frigives.");
+  }
 
   const { data: frigivet, error } = await admin.rpc("admin_frigiv_handel", {
     p_trade: tradeId,
@@ -797,19 +711,43 @@ export async function handelFrigiv(formData: FormData) {
   if (error) throw new Error(error.message);
   if (!frigivet) throw new Error("Handlen er allerede afsluttet.");
 
-  // Pengene er flyttet - logfejl maa ikke se ud som om intet skete.
+  let overfoersel = "";
+  if (betaling) {
+    try {
+      const r = await overfoerTilSaelger(betaling.id);
+      overfoersel =
+        r === "overfoert" || r === "allerede_overfoert"
+          ? " (overført via Stripe)"
+          : ` (overførsel venter: ${r})`;
+    } catch (err) {
+      console.error("Overførsel efter admin-frigivelse fejlede (prøves igen af cron):", err);
+      overfoersel = " (overførsel fejlede - prøves igen automatisk)";
+    }
+  }
+
+  const beloeb = betaling
+    ? `${kr(Number(betaling.udbetaling_oere))} kr til sælger${overfoersel}`
+    : "afregnet (gammel handel)";
+
+  // Pengene er frigivet - logfejl maa ikke se ud som om intet skete.
   await logModerationBloedt(admin, {
     medarbejder_id: staffId,
     handling: "handel_frigivet",
     maal_type: "handel",
     maal_id: tradeId,
     bruger_id: handel.seller_id,
-    aarsag,
+    aarsag: `${beloeb} — ${aarsag}`,
   });
   revaliderSag(tradeId);
 }
 
-// Refunder koeberen (koeb + koebergebyr) og annuller handlen. Kun admin og opefter.
+// Refunder koeberen og annuller handlen. Kun admin og opefter.
+// Handler med en Stripe-betaling:
+//   - betalt (og ikke frigivet/overfoert): fuld refusion hos Stripe af det,
+//     koeberen betalte (bud + koebergebyr + fragt + evt. BidHamr Beskyttelse).
+//   - ikke betalt endnu: betalingen annulleres, og PaymentIntenten annulleres
+//     hos Stripe.
+// Gamle handler fra saldo-modellen refunderes som foer i databasen.
 export async function handelRefunder(formData: FormData) {
   const tradeId = formData.get("tradeId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
@@ -817,12 +755,46 @@ export async function handelRefunder(formData: FormData) {
   if (!aarsag) throw new Error("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
+  const betaling = await hentBetalingForHandel(tradeId);
 
-  const { data: retur, error } = await admin.rpc("admin_refunder_handel", {
-    p_trade: tradeId,
-  });
-  if (error) throw new Error(error.message);
-  if (retur === null) throw new Error("Handlen er allerede afsluttet.");
+  let logTekst: string;
+
+  if (betaling) {
+    if (betaling.status === "afventer" || betaling.status === "behandles") {
+      if (!(await annullerBetaling(tradeId))) {
+        throw new Error("Betalingen kan ikke annulleres.");
+      }
+      logTekst = "Ikke betalt - betalingen annulleret, 0 kr refunderet";
+    } else {
+      const { data: beloeb, error } = await admin.rpc("betaling_paabegynd_refusion", {
+        p_trade: tradeId,
+        p_aarsag: "admin",
+      });
+      if (error) throw new Error(error.message);
+      if (beloeb === null) {
+        throw new Error(
+          "Handlen kan ikke refunderes: den er ikke betalt, allerede refunderet eller pengene er frigivet til sælger.",
+        );
+      }
+      let resultat: string;
+      try {
+        resultat = await refunderBetaling(betaling.id);
+      } catch (err) {
+        console.error("Refusion fejlede:", tradeId, err);
+        throw new Error(
+          "Refusionen fejlede hos Stripe. Handlen er annulleret og markeret - prøv igen.",
+        );
+      }
+      logTekst = `${kr(Number(beloeb))} kr refunderet via Stripe (${resultat})`;
+    }
+  } else {
+    const { data: retur, error } = await admin.rpc("admin_refunder_handel", {
+      p_trade: tradeId,
+    });
+    if (error) throw new Error(error.message);
+    if (retur === null) throw new Error("Handlen er allerede afsluttet.");
+    logTekst = `${Number(retur)} kr refunderet (gammel handel)`;
+  }
 
   await logModerationBloedt(admin, {
     medarbejder_id: staffId,
@@ -830,7 +802,7 @@ export async function handelRefunder(formData: FormData) {
     maal_type: "handel",
     maal_id: tradeId,
     bruger_id: handel.buyer_id,
-    aarsag: `${Number(retur)} kr refunderet — ${aarsag}`,
+    aarsag: `${logTekst} — ${aarsag}`,
   });
   revaliderSag(tradeId);
 }
