@@ -226,7 +226,7 @@ export default async function AuktionPage({
                   🎉 Du har vundet denne auktion!
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
-                  Betal inden for 48 timer under handlen. Aftal det
+                  Betal inden for 24 timer under handlen. Aftal det
                   praktiske med sælgeren i handelschatten.
                 </p>
                 {/* Knappen vises altid; findes handlen endnu ikke, venter
@@ -244,7 +244,7 @@ export default async function AuktionPage({
                   Din auktion er solgt
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
-                  Køberen har 48 timer til at betale. Du får pengene udbetalt,
+                  Køberen har 24 timer til at betale. Du får pengene udbetalt,
                   når køberen har godkendt varen. Aftal levering med
                   køberen i handelschatten.
                 </p>

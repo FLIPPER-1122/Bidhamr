@@ -1,9 +1,9 @@
 // Server-only: cron-kørslen for betalingsmodellen.
 //
 //   1. Luk udløbne auktioner (samme SQL-funktion som pg_cron kører hvert
-//      minut). Den opretter handel + betaling med 48 timers frist.
+//      minut). Den opretter handel + betaling med 24 timers frist.
 //   2. Nye betalinger: forsøg autobetaling (tilvalg), send "du vandt"-mails.
-//   3. Påmindelser 24 og 40 timer efter fristens start.
+//   3. Påmindelser 12 og 20 timer efter fristens start.
 //   4. Overfør frigivne beløb, der ventede på sælgerens Connect-konto.
 //
 // Hver mail "claimes" atomisk i databasen FØR afsendelse, så samme mail aldrig
@@ -144,13 +144,16 @@ export async function koerBetalingsCron() {
     }
   }
 
-  // 3) Påmindelser. Fristen er 48 t: 24 t efter start = 24 t før frist,
-  //    40 t efter start = 8 t før frist. Den sene tages først, så en kørsel
+  // 3) Påmindelser. Fristen er 24 t: 12 t efter start = 12 t før frist,
+  //    20 t efter start = 4 t før frist. Den sene tages først, så en kørsel
   //    efter nedetid ikke sender begge på én gang.
+  //    Kolonnenavnene er historiske (fra 48-timers-fristen):
+  //    paamindelse_24_sendt_kl dækker nu påmindelsen efter 12 t, og
+  //    paamindelse_40_sendt_kl dækker nu påmindelsen efter 20 t.
   const nu = Date.now();
   for (const [felt, timerFoerFrist] of [
-    ["paamindelse_40_sendt_kl", 8],
-    ["paamindelse_24_sendt_kl", 24],
+    ["paamindelse_40_sendt_kl", 4],
+    ["paamindelse_24_sendt_kl", 12],
   ] as const) {
     const { data: mangler } = await admin
       .from("betalinger")

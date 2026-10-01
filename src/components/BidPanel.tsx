@@ -328,7 +328,7 @@ export default function BidPanel({
       <p className="mt-3 text-xs text-neutral-500">
         Vinder du, betaler du dit bud + 5 % købergebyr
         {forsendelseMulig ? ` + ${kroner(FRAGT_OERE)} fragt` : ""} + evt. BidHamr Beskyttelse.
-        Du ser totalprisen, før du betaler, og har 48 timer til det. 25% moms tillægges ikke.
+        Du ser totalprisen, før du betaler, og har 24 timer til det. 25% moms tillægges ikke.
       </p>
       {!forsendelseMulig && (
         <p className="text-xs text-neutral-500">

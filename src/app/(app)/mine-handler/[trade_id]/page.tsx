@@ -230,7 +230,7 @@ export default async function HandelDetaljePage({
                 betalingen er modtaget.
               </p>
             ) : (
-              <p className="mt-1">Køberen har 48 timer til at betale. Send ikke varen før.</p>
+              <p className="mt-1">Køberen har 24 timer til at betale. Send ikke varen før.</p>
             )}
           </div>
         )}

@@ -98,7 +98,7 @@ function fristTekst(betalSenest: string) {
   });
 }
 
-// Vinderen skal selv betale inden for 48 timer.
+// Vinderen skal selv betale inden for 24 timer.
 export function koeberVandtMail(
   titel: string,
   totalOere: number,
@@ -163,7 +163,7 @@ export function saelgerSolgtMail(titel: string, buddetOere: number, tradeId: str
       overskrift: "Din auktion er solgt",
       afsnit: [
         `<strong>${escapeHtml(titel)}</strong> blev solgt for ${kronerFraOere(buddetOere)} kr.`,
-        "Køberen har 48 timer til at betale. Vi giver dig besked, så snart betalingen er modtaget — send først varen derefter.",
+        "Køberen har 24 timer til at betale. Vi giver dig besked, så snart betalingen er modtaget — send først varen derefter.",
         "Når køberen har bekræftet varen, overføres beløbet fratrukket 5% sælgergebyr til din udbetalingskonto hos Stripe.",
       ],
       knapTekst: "Se handlen",

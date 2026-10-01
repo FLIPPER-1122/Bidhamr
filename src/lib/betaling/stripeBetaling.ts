@@ -342,7 +342,7 @@ async function efterBetalt(paymentIntentId: string) {
 // Forsøger at trække vinderens gemte kort off-session. Kører højst én gang
 // pr. betaling (atomisk claim i databasen + idempotency key hos Stripe).
 // Fejler det (fx 3D Secure kræves), står PaymentIntenten tilbage som
-// requires_payment_method, og køberen betaler selv inden for 48 timer med
+// requires_payment_method, og køberen betaler selv inden for 24 timer med
 // samme PaymentIntent.
 export async function forsoegAutobetaling(betalingId: string): Promise<string> {
   const admin = createAdminClient();
@@ -404,7 +404,7 @@ export async function forsoegAutobetaling(betalingId: string): Promise<string> {
     return resultat;
   } catch (err) {
     // Typisk authentication_required eller card_declined. Køberen falder
-    // tilbage til den almindelige 48-timers betaling.
+    // tilbage til den almindelige 24-timers betaling.
     const kode =
       err instanceof Stripe.errors.StripeError
         ? (err.code ?? err.decline_code ?? err.type)
@@ -811,7 +811,7 @@ export async function spejlRefusion(charge: Stripe.Charge): Promise<string> {
 // Annullerer en ikke-betalt betaling: først i databasen (atomisk), derefter
 // PaymentIntenten hos Stripe, så den ikke kan betales. Går en betaling
 // alligevel igennem, giver spejlingen 'sen_betaling' og automatisk refusion.
-// Bruges af admin nu og af 48-timers-fristen senere.
+// Bruges af admin nu og af 24-timers-betalingsfristen senere.
 export async function annullerBetaling(tradeId: string): Promise<boolean> {
   const { data, error } = await createAdminClient().rpc("betaling_annuller", {
     p_trade: tradeId,

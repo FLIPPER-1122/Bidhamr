@@ -34,7 +34,7 @@ const TRIN = [
     num: "03",
     titel: "Handel i hus",
     tekst:
-      "Vinderen betaler inden for 48 timer, og pengene frigives til dig, når varen er modtaget og godkendt.",
+      "Vinderen betaler inden for 24 timer, og pengene frigives til dig, når varen er modtaget og godkendt.",
     ikon: (
       <path strokeLinecap="round" strokeLinejoin="round" d="M8 12l3 3 5-6M3 4h18v16H3V4z" />
     ),

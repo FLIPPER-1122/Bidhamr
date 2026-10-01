@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { koerBetalingsCron } from "@/lib/betaling/cron";
 
-// Lukker auktioner, opretter handel + betaling (48 timers frist), forsøger
+// Lukker auktioner, opretter handel + betaling (24 timers frist), forsøger
 // autobetaling, sender "du vandt"-mails og betalingspåmindelser og overfører
 // frigivne beløb til sælgere. Se src/lib/betaling/cron.ts.
 //
