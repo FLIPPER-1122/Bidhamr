@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { erTestdatabase } from "@/lib/miljoe";
 
 // Routes der er tilgængelige uden login, mens resten af appen er bag
 // venteliste-gaten. Kun API-ruter med egen adgangskontrol undtages:
@@ -65,6 +66,14 @@ export async function updateSession(request: NextRequest) {
   // -> hele appen er bag venteliste-gaten, ingen adgang uden login.
   if (!data.user) {
     return NextResponse.redirect(new URL("/coming-soon", request.url));
+  }
+
+  // På testdatabasen (kun npm run dev via .env.local) må alle indloggede
+  // brugere komme forbi gaten, så almindelige testbrugere kan bruge siden.
+  // Admin er stadig beskyttet af rolle-tjekket i src/app/admin/layout.tsx.
+  // erTestdatabase() er fail closed, så produktion er uændret.
+  if (erTestdatabase()) {
+    return supabaseResponse;
   }
 
   // Logget ind er ikke nok inden launch: rollen skal give adgang.
