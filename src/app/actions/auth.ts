@@ -29,7 +29,7 @@ export async function logInd(emailInput: string, password: string): Promise<Resu
   }
 
   const ip = await klientIp();
-  if (!(await tjekGraenser([["login_ip", ip], ["login_email", email]]))) {
+  if (!(await tjekGraenser([["login_ip", ip], ["login_email_ip", `${email}|${ip}`]]))) {
     return { fejl: FOR_MANGE_FORSOEG };
   }
 

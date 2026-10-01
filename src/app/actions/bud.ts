@@ -8,6 +8,17 @@ import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 // (bids_insert_own) og triggerne (minimumsbud, egen auktion, suspension,
 // anti-sniping) gaelder uaendret. Fejl RETURNERES.
 
+// Danske fejltekster fra bud-triggerne, som maa vises ordret.
+const KENDTE_BUDFEJL = [
+  "Auktionen er allerede slut",
+  "Auktionen er ikke aktiv længere",
+  "Auktionen er ikke tilgængelig",
+  "Auktionen findes ikke",
+  "Buddet skal være højere end nuværende bud",
+  "Din konto er suspenderet, og du kan ikke byde.",
+  "Du skal være logget ind.",
+];
+
 export async function afgivBud(
   auktionId: string,
   beloeb: number,
@@ -38,14 +49,21 @@ export async function afgivBud(
 
   if (error) {
     const besked = error.message ?? "";
+    // Databasens fejltekst sendes aldrig ordret til brugeren - kun kendte
+    // beskeder (whitelist). Alt andet logges og giver en generisk besked.
     if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
     if (besked.includes("minimum_bid")) {
-      return { fejl: besked.replace(/^.*minimum_bid:\s*/, "") };
+      const kr = besked.match(/mindst\s+([\d.,]+)\s*kr/)?.[1];
+      return {
+        fejl: kr
+          ? `Dit bud skal være mindst ${kr} kr (10% over nuværende bud).`
+          : "Dit bud er for lavt.",
+      };
     }
-    // Triggerne kaster danske fejltekster (fx suspension/afsluttet auktion).
-    if (error.code === "P0001" || error.code === "42501") return { fejl: besked };
+    const kendt = KENDTE_BUDFEJL.find((k) => besked.includes(k));
+    if (kendt) return { fejl: kendt };
     console.error("afgivBud fejlede:", error.code, besked);
-    return { fejl: "Buddet kunne ikke afgives. Prøv igen." };
+    return { fejl: "Dit bud kunne ikke afgives. Prøv igen." };
   }
 
   // Anti-sniping sker i handle_new_bid; returnér det nye sluttidspunkt.

@@ -16,7 +16,9 @@ export type Graense = { maks: number; vindueSek: number };
 
 export const GRAENSER = {
   login_ip: { maks: 20, vindueSek: 15 * 60 },
-  login_email: { maks: 8, vindueSek: 15 * 60 },
+  // Noeglen er e-mail + IP, saa en fremmed ikke kan laase en bruger ude ved
+  // at hamre loes paa hans e-mail fra sin egen IP.
+  login_email_ip: { maks: 8, vindueSek: 15 * 60 },
   opret_ip: { maks: 5, vindueSek: 60 * 60 },
   nulstil_ip: { maks: 5, vindueSek: 60 * 60 },
   nulstil_email: { maks: 3, vindueSek: 60 * 60 },
@@ -28,13 +30,20 @@ export const GRAENSER = {
 
 export type GraenseNavn = keyof typeof GRAENSER;
 
-// Klientens IP. Paa Vercel saettes x-forwarded-for af platformen; foerste
-// vaerdi er klienten.
+// Klientens IP.
+// KUN SIKKERT BAG VERCEL: Vercel overskriver x-vercel-forwarded-for og
+// x-real-ip med den rigtige klient-IP, saa klienten ikke kan forfalske dem.
+// x-forwarded-for bruges kun som sidste udvej (foerste vaerdi), da en klient
+// selv kan saette vaerdier i den. Koerer siden et andet sted (egen proxy),
+// skal denne funktion gennemgaas igen.
 export async function klientIp(): Promise<string> {
   const h = await headers();
-  const fwd = h.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
-  return h.get("x-real-ip")?.trim() || "ukendt";
+  const vercel = h.get("x-vercel-forwarded-for")?.split(",")[0].trim();
+  if (vercel) return vercel;
+  const real = h.get("x-real-ip")?.trim();
+  if (real) return real;
+  const fwd = h.get("x-forwarded-for")?.split(",")[0].trim();
+  return fwd || "ukendt";
 }
 
 // Returnerer true, hvis forespoergslen er inden for graensen.
@@ -47,12 +56,12 @@ export async function indenForGraense(navn: GraenseNavn, id: string): Promise<bo
       p_vindue_sek: g.vindueSek,
     });
     if (error) {
-      console.error("rate_limit_tjek fejlede:", error.message);
+      console.error(`[rate-limit] fejl – slipper igennem (${navn}):`, error.message);
       return true;
     }
     return data !== false;
   } catch (err) {
-    console.error("rate_limit_tjek fejlede:", err);
+    console.error(`[rate-limit] fejl – slipper igennem (${navn}):`, err);
     return true;
   }
 }
