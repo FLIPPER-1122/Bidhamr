@@ -122,3 +122,10 @@ Brugeren får besked når:
 - **Moms:** Alle beløb, køberen ser, er **inkl. moms**. BidHamr afregner selv moms af sine gebyrer; køberen betaler aldrig moms oveni (Filip, 1. oktober 2026).
 - **Første bud** må være lig startprisen. Budstigningen derefter (i dag 10 %) er ikke fastlagt endnu – Filip beslutter senere.
 - **Medarbejdere** må gerne kunne se alle handler (beløb og status), fordi de skal bruge det til sager. Pengetal og indtjening er stadig kun for chef.
+
+## Vinderen betaler ikke (Filip, 2. oktober 2026)
+- Efter 24 timer uden betaling annulleres handlen automatisk (og Stripe-betalingen annulleres).
+- **Advarsel til køberen gives IKKE automatisk.** Der oprettes en sag "Ubetalt vinder", som en medarbejder skal godkende eller afvise. I admin-menuen vises et ! med antallet af sager, der venter (fx "! 11").
+- **Sælger bestemmer selv** næste skridt på handelssiden:
+  - **Tilbyd til næsthøjeste byder** – til byderens eget højeste bud. Byderen har 24 timer til at sige ja/nej. Siger han ja, oprettes en ny handel med ny 24-timers betalingsfrist. Siger han nej, eller går tiden, kan sælger vælge at sende tilbuddet videre til den næste byder i rækken.
+  - **Sæt varen op igen** – gratis. Ny auktion med samme titel, billeder og beskrivelse; sælger kan rette startpris og varighed.
