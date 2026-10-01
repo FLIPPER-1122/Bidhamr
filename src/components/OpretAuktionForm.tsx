@@ -4,15 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { kategorier } from "@/lib/kategorier";
+import { VARIGHEDER, slutterKlFraVarighed, type VarighedDage } from "@/lib/auktionRegler";
 
 const MAKS_BILLEDER = 10;
 const MAKS_BESKRIVELSE = 500;
-const VARIGHEDER = [
-  { label: "30 sekunder", dage: 0 },
-  { label: "1 dag", dage: 1 },
-  { label: "3 dage", dage: 3 },
-  { label: "7 dage", dage: 7 },
-];
 
 // crypto.randomUUID() findes kun i sikre kontekster (https eller localhost) –
 // adgang via en LAN-IP over http (fx fra en telefon på samme netværk) ville
@@ -34,7 +29,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const [kategori, setKategori] = useState(kategorier[0]);
   const [beskrivelse, setBeskrivelse] = useState("");
   const [startpris, setStartpris] = useState(0);
-  const [varighed, setVarighed] = useState(3);
+  const [varighed, setVarighed] = useState<VarighedDage>(3);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
   const [postnummer, setPostnummer] = useState("");
   // Opslaget gemmes sammen med det postnummer, det hører til. By, koordinater
@@ -177,12 +172,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         billedeUrls.push(publicUrlData.publicUrl);
       }
 
-      const slutterKl = new Date();
-      if (varighed === 0) {
-        slutterKl.setTime(slutterKl.getTime() + 30 * 1000);
-      } else {
-        slutterKl.setDate(slutterKl.getDate() + varighed);
-      }
+      const slutterKl = slutterKlFraVarighed(varighed);
 
       const payload = {
         bruger_id: aktuelBrugerId,

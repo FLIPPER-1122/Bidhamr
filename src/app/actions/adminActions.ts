@@ -857,3 +857,65 @@ export async function handelFrigiv(formData: FormData) {
 export async function handelRefunder(formData: FormData) {
   return koer("handelRefunder", () => handelRefunderImpl(formData));
 }
+
+// --- Ubetalt vinder ------------------------------------------------------------
+// Sag oprettes af cron, når vinderen ikke betaler inden fristen. Advarslen
+// gives IKKE automatisk: en medarbejder giver den eller afviser sagen.
+
+const UBETALT_FEJL: Record<string, string> = {
+  ikke_fundet: "Sagen findes ikke.",
+  ingen_adgang: "Du har ikke adgang til at behandle sagen.",
+  behandlet: "Sagen er allerede behandlet.",
+  begrundelse_mangler: "Skriv en begrundelse for at afvise sagen.",
+};
+
+async function behandlUbetalt(
+  sagId: string,
+  giv: boolean,
+  begrundelse: string,
+): Promise<{ ok: true }> {
+  const { admin, userId: staffId } = await assertRole("medarbejder");
+  if (!sagId) throw new BrugerFejl(UBETALT_FEJL.ikke_fundet);
+  if (!giv && !begrundelse) throw new BrugerFejl(UBETALT_FEJL.begrundelse_mangler);
+  if (begrundelse.length > 1000) throw new BrugerFejl("Begrundelsen er for lang.");
+
+  const { data, error } = await admin.rpc("advarsel_ubetalt", {
+    p_sag: sagId,
+    p_medarbejder: staffId,
+    p_giv: giv,
+    p_begrundelse: begrundelse || null,
+  });
+  if (error) throw new Error(error.message);
+  const kode = (data as { kode: string }).kode;
+  if (kode !== "ok") throw new BrugerFejl(UBETALT_FEJL[kode] ?? GENERISK_FEJL);
+
+  revalidatePath("/admin", "layout");
+  return { ok: true };
+}
+
+// formData: sagId, begrundelse (valgfri - standard er "Betalte ikke for vundet auktion").
+export async function ubetaltGivAdvarsel(formData: FormData) {
+  const sagId = ((formData.get("sagId") as string) ?? "").trim();
+  const begrundelse = ((formData.get("begrundelse") as string) ?? "").trim();
+  return koer("ubetaltGivAdvarsel", () => behandlUbetalt(sagId, true, begrundelse));
+}
+
+// formData: sagId, begrundelse (påkrævet).
+export async function ubetaltAfvis(formData: FormData) {
+  const sagId = ((formData.get("sagId") as string) ?? "").trim();
+  const begrundelse = ((formData.get("begrundelse") as string) ?? "").trim();
+  return koer("ubetaltAfvis", () => behandlUbetalt(sagId, false, begrundelse));
+}
+
+// Antal sager, der venter på en medarbejder (badge "! 11" i admin-menuen).
+export async function hentAntalUbetalte() {
+  return koer("hentAntalUbetalte", async () => {
+    const { admin } = await assertRole("medarbejder");
+    const { count, error } = await admin
+      .from("ubetalte_vindere")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "afventer");
+    if (error) throw new Error(error.message);
+    return { ok: true as const, antal: count ?? 0 };
+  });
+}

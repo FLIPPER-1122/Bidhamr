@@ -38,6 +38,9 @@ export async function submitRating(formData: FormData) {
     .from("trades")
     .select("buyer_id, seller_id, status")
     .eq("auction_id", auktionId)
+    // Flere handler pr. auktion er mulige (ubetalt vinder -> næste byder).
+    .eq("buyer_id", fraId)
+    .neq("status", "annulleret")
     .maybeSingle();
 
   if (!handel || handel.buyer_id !== fraId) {

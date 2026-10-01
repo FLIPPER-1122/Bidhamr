@@ -5,15 +5,21 @@
 //   2. Nye betalinger: forsøg autobetaling (tilvalg), send "du vandt"-mails.
 //   3. Påmindelser 12 og 20 timer efter fristens start.
 //   4. Overfør frigivne beløb, der ventede på sælgerens Connect-konto.
+//   5. Refundér betalinger med afvigende beløb.
+//   6. Fristen overskredet: annullér handlen (+ Stripe), opret sag til admin,
+//      mail til køber og sælger.
+//   7. Andenchance-tilbud: udløb efter 24 t, mails til sælger/byder.
 //
 // Hver mail "claimes" atomisk i databasen FØR afsendelse, så samme mail aldrig
 // sendes to gange, selv hvis to kørsler overlapper.
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getResend } from "@/lib/resend";
+import { sendHandelMail as sendMail } from "@/lib/mails/send";
+import { annullerUbetalte, behandlAndenchance } from "@/lib/betaling/ubetalt";
 import {
-  HANDEL_AFSENDER,
   betalingsPaamindelseMail,
+  koeberAndenchanceAutobetaltMail,
+  koeberAndenchanceBetalMail,
   koeberAutobetaltMail,
   koeberVandtMail,
   saelgerSolgtMail,
@@ -26,33 +32,6 @@ import {
 } from "@/lib/betaling/stripeBetaling";
 
 const TIME = 60 * 60 * 1000;
-
-type Mail = { subject: string; html: string };
-
-async function sendMail(til: string | undefined, mail: Mail): Promise<boolean> {
-  if (!til) return false;
-  const resend = getResend();
-  if (!resend) {
-    console.warn("RESEND_API_KEY mangler - mail ikke sendt:", mail.subject);
-    return false;
-  }
-  try {
-    const { error } = await resend.emails.send({
-      from: HANDEL_AFSENDER,
-      to: til,
-      subject: mail.subject,
-      html: mail.html,
-    });
-    if (error) {
-      console.error("Mail fejlede:", error);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error("Mail kastede:", err);
-    return false;
-  }
-}
 
 // Sætter et tidsstempel-felt, hvis det er tomt. true = denne kørsel vandt.
 async function claim(
@@ -91,6 +70,10 @@ export async function koerBetalingsCron() {
     paamindelser: 0,
     overfoersler: 0,
     afvigelsesrefusioner: 0,
+    ubetalteAnnulleret: 0,
+    ubetaltMails: 0,
+    andenchanceUdloebne: 0,
+    andenchanceMails: 0,
   };
 
   // 1) Luk auktioner og opret handel + betaling.
@@ -126,16 +109,33 @@ export async function koerBetalingsCron() {
       .in("id", ids)
       .overrideTypes<BetalingRaekke[], { merge: false }>();
     const o = await opslag(friske ?? []);
+    // Handler fra et accepteret andenchance-tilbud: køberen vandt ikke selv
+    // auktionen, og sælgeren har fået "byderen sagde ja"-mailen.
+    const { data: fraTilbud } = await admin
+      .from("andenchance_tilbud")
+      .select("ny_trade_id")
+      .in("ny_trade_id", (friske ?? []).map((b) => b.trade_id));
+    const andenchance = new Set((fraTilbud ?? []).map((t) => t.ny_trade_id as string));
     for (const b of friske ?? []) {
       if (!(await claim(b.id, "vundet_mail_sendt_kl"))) continue;
       const titel = o.titel.get(b.auction_id) ?? "din auktion";
+      const erAndenchance = andenchance.has(b.trade_id);
       const koeberMail =
         b.status === "betalt"
-          ? koeberAutobetaltMail(titel, Number(b.total_oere), b.trade_id)
-          : koeberVandtMail(titel, Number(b.total_oere), b.trade_id, b.betal_senest);
+          ? (erAndenchance ? koeberAndenchanceAutobetaltMail : koeberAutobetaltMail)(
+              titel,
+              Number(b.total_oere),
+              b.trade_id,
+            )
+          : (erAndenchance ? koeberAndenchanceBetalMail : koeberVandtMail)(
+              titel,
+              Number(b.total_oere),
+              b.trade_id,
+              b.betal_senest,
+            );
       if (await sendMail(o.email.get(b.buyer_id), koeberMail)) resultat.vundetMails++;
       // Er der allerede betalt, har sælgeren fået "køberen har betalt"-mailen.
-      if (b.status !== "betalt") {
+      if (b.status !== "betalt" && !erAndenchance) {
         await sendMail(
           o.email.get(b.seller_id),
           saelgerSolgtMail(titel, Number(b.bud_oere), b.trade_id),
@@ -188,6 +188,24 @@ export async function koerBetalingsCron() {
 
   // 5) Betalinger med afvigende beløb, der endnu ikke er refunderet.
   resultat.afvigelsesrefusioner = await refunderAfvigelserVentende();
+
+  // 6) Fristen overskredet: annullér handel + Stripe, opret sag, send mails.
+  try {
+    const r = await annullerUbetalte();
+    resultat.ubetalteAnnulleret = r.annulleret;
+    resultat.ubetaltMails = r.mails;
+  } catch (err) {
+    console.error("Annullering af ubetalte handler fejlede:", err);
+  }
+
+  // 7) Andenchance-tilbud: udløb og mails.
+  try {
+    const r = await behandlAndenchance();
+    resultat.andenchanceUdloebne = r.udloebne;
+    resultat.andenchanceMails = r.mails;
+  } catch (err) {
+    console.error("Andenchance-trinnet fejlede:", err);
+  }
 
   return resultat;
 }

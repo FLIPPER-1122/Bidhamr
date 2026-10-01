@@ -34,6 +34,9 @@ export default function StartChatKnap({
         .from("trades")
         .select("id")
         .eq("auction_id", auktionId)
+        // Flere handler pr. auktion er mulige (ubetalt vinder -> næste byder).
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (afbrudt) return;

@@ -148,7 +148,7 @@ export function betalingsPaamindelseMail(
       overskrift: "Du mangler at betale",
       afsnit: [
         `Du har vundet <strong>${escapeHtml(titel)}</strong>, men vi har endnu ikke modtaget din betaling på ${kronerFraOere(totalOere)} kr.`,
-        `Betal senest <strong>${fristTekst(betalSenest)}</strong>. Betaler du ikke, annulleres handlen, og du får en advarsel.`,
+        `Betal senest <strong>${fristTekst(betalSenest)}</strong>. Betaler du ikke, annulleres handlen, og du kan få en advarsel.`,
       ],
       knapTekst: "Betal nu",
       knapUrl: sideUrl(`/mine-handler/${tradeId}`),
@@ -199,6 +199,133 @@ export function pakkeSendtMail(titel: string, tracking: string, tradeId: string)
       ekstra: `<p style="margin:0 0 20px 0;padding:12px 16px;background-color:#f5f5f5;border-radius:10px;font-size:14px;color:#171717;">
         Sporingsnummer: <strong>${escapeHtml(tracking)}</strong>
       </p>`,
+      knapTekst: "Se handlen",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}
+
+// --- Vinderen betaler ikke ---------------------------------------------------
+
+// Køberen betalte ikke inden fristen. Advarsel gives ikke automatisk.
+export function koeberUbetaltAnnulleretMail(titel: string, tradeId: string) {
+  return {
+    subject: `Handlen er annulleret: ${titel}`,
+    html: skabelon({
+      overskrift: "Handlen er annulleret",
+      afsnit: [
+        `Vi modtog ikke din betaling for <strong>${escapeHtml(titel)}</strong> inden fristen, så handlen er annulleret. Der er ikke trukket penge.`,
+        "Når du byder, forpligter du dig til at betale, hvis du vinder. Vores team ser på sagen og kan give en advarsel.",
+      ],
+      knapTekst: "Se handlen",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}
+
+export function saelgerUbetaltAnnulleretMail(titel: string, tradeId: string) {
+  return {
+    subject: `Køberen betalte ikke: ${titel}`,
+    html: skabelon({
+      overskrift: "Køberen betalte ikke",
+      afsnit: [
+        `Køberen af <strong>${escapeHtml(titel)}</strong> betalte ikke inden fristen, så handlen er annulleret. Send ikke varen.`,
+        "Du kan tilbyde varen til den næsthøjeste byder eller sætte den op igen gratis.",
+      ],
+      knapTekst: "Vælg næste skridt",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}
+
+// Næste byder får tilbudt varen til sit eget højeste bud.
+export function andenchanceTilbudMail(
+  titel: string,
+  budOere: number,
+  tilbudId: string,
+  udloeber: string,
+) {
+  return {
+    subject: `Du kan købe ${titel}`,
+    html: skabelon({
+      overskrift: "Du får tilbudt varen",
+      afsnit: [
+        `Vinderen af <strong>${escapeHtml(titel)}</strong> betalte ikke. Sælgeren tilbyder dig varen til dit højeste bud på ${kronerFraOere(budOere)} kr plus købergebyr, evt. fragt og evt. BidHamr Beskyttelse.`,
+        `Svar senest <strong>${fristTekst(udloeber)}</strong>. Siger du ja, har du 24 timer til at betale.`,
+      ],
+      knapTekst: "Se tilbuddet",
+      knapUrl: sideUrl(`/andenchance/${tilbudId}`),
+    }),
+  };
+}
+
+export function saelgerAndenchanceAccepteretMail(titel: string, nyTradeId: string) {
+  return {
+    subject: `Byderen sagde ja: ${titel}`,
+    html: skabelon({
+      overskrift: "Byderen vil købe varen",
+      afsnit: [
+        `Byderen har sagt ja til at købe <strong>${escapeHtml(titel)}</strong>.`,
+        "Køberen har 24 timer til at betale. Vi giver dig besked, når betalingen er modtaget — send først varen derefter.",
+      ],
+      knapTekst: "Se handlen",
+      knapUrl: sideUrl(`/mine-handler/${nyTradeId}`),
+    }),
+  };
+}
+
+export function saelgerAndenchanceAfslaaetMail(
+  titel: string,
+  tradeId: string,
+  aarsag: "afvist" | "udloebet",
+) {
+  return {
+    subject:
+      aarsag === "afvist" ? `Byderen sagde nej: ${titel}` : `Byderen svarede ikke: ${titel}`,
+    html: skabelon({
+      overskrift: aarsag === "afvist" ? "Byderen sagde nej" : "Byderen svarede ikke",
+      afsnit: [
+        aarsag === "afvist"
+          ? `Byderen har takket nej til <strong>${escapeHtml(titel)}</strong>.`
+          : `Byderen svarede ikke på dit tilbud om <strong>${escapeHtml(titel)}</strong> inden for 24 timer.`,
+        "Du kan sende tilbuddet videre til den næste byder eller sætte varen op igen gratis.",
+      ],
+      knapTekst: "Vælg næste skridt",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}
+
+// Erstatter "du vandt"-mailen, når handlen kommer fra et accepteret tilbud.
+export function koeberAndenchanceBetalMail(
+  titel: string,
+  totalOere: number,
+  tradeId: string,
+  betalSenest: string,
+) {
+  return {
+    subject: `Betal for ${titel}`,
+    html: skabelon({
+      overskrift: "Husk at betale",
+      afsnit: [
+        `Du har sagt ja til at købe <strong>${escapeHtml(titel)}</strong>. Du skal betale ${kronerFraOere(totalOere)} kr i alt inkl. købergebyr, fragt og evt. BidHamr Beskyttelse.`,
+        `Betal senest <strong>${fristTekst(betalSenest)}</strong> med kort, MobilePay, Apple Pay eller Google Pay.`,
+      ],
+      knapTekst: "Betal nu",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}
+
+export function koeberAndenchanceAutobetaltMail(titel: string, totalOere: number, tradeId: string) {
+  return {
+    subject: `Du har købt og betalt: ${titel}`,
+    html: skabelon({
+      overskrift: "Du har købt varen",
+      afsnit: [
+        `Du har købt <strong>${escapeHtml(titel)}</strong>, og ${kronerFraOere(totalOere)} kr er trukket automatisk på dit gemte kort.`,
+        "Pengene holdes af Stripe, indtil du har bekræftet, at varen er som den skal være.",
+      ],
       knapTekst: "Se handlen",
       knapUrl: sideUrl(`/mine-handler/${tradeId}`),
     }),

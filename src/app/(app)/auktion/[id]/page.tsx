@@ -92,9 +92,9 @@ export default async function AuktionPage({
           : null
       : null;
   const bruger = authData.user ?? null;
-  const erVinder = Boolean(
-    auktionErSlut && vinderBud && bruger?.id === vinderBud.bruger_id,
-  );
+  // auctions.vinder_id er sandheden: den flyttes til næste byder, hvis
+  // vinderen ikke betalte, og byderen sagde ja til at købe varen.
+  const erVinder = Boolean(auktionErSlut && vinderBud && bruger && bruger.id === vinderId);
   const erSælger = bruger?.id === auktion.bruger_id;
 
   // Handelstilstand: cron-jobbet opretter handel + betaling ved auktionsluk.
@@ -106,10 +106,15 @@ export default async function AuktionPage({
     seller_id: string;
   } | null = null;
   if (auktionErSlut && vinderBud && (erVinder || erSælger)) {
+    // En auktion kan have flere handler, hvis vinderen ikke betalte og varen
+    // gik videre til næste byder (kun én er ikke-annulleret). Den nyeste er
+    // den gældende; RLS viser kun handler, brugeren selv er part i.
     const { data } = await supabase
       .from("trades")
       .select("id, status, buyer_id, seller_id")
       .eq("auction_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
     handel = data;
   }
