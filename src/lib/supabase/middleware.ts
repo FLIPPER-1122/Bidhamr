@@ -9,6 +9,7 @@ import { erTestdatabase } from "@/lib/miljoe";
 // /api-ruter kræver login + rolle som resten af appen.
 const OFFENTLIGE_RUTER = [
   "/coming-soon",
+  "/bidhamr-beskyttelse",
   "/login",
   "/glemt-adgangskode",
   "/nulstil-adgangskode",

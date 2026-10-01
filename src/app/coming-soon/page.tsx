@@ -186,6 +186,11 @@ export default function ComingSoonPage() {
               </div>
             ))}
           </div>
+          <p className="mt-4 text-sm">
+            <Link href="/bidhamr-beskyttelse" className="font-medium text-groen hover:underline">
+              Læs om BidHamr Beskyttelse – og hvad vi altid hjælper med →
+            </Link>
+          </p>
         </section>
 
         {/* Sådan virker det */}
@@ -305,6 +310,9 @@ export default function ComingSoonPage() {
             <a href="#venteliste" className="text-groen hover:underline">
               Venteliste
             </a>
+            <Link href="/bidhamr-beskyttelse" className="text-groen hover:underline">
+              BidHamr Beskyttelse
+            </Link>
           </nav>
         </div>
       </footer>
