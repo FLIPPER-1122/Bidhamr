@@ -8,7 +8,8 @@
 //   man byder, og kan ikke ændres bagefter.
 //   Fragt: fast 35 kr pr. handel, betalt af køber, når auktionen tilbyder
 //   forsendelse. Kun afhentning = 0 kr.
-//   Udbetaling til sælger = bud - sælgergebyr + fragt.
+//   Udbetaling til sælger = bud - sælgergebyr. Fragten bliver på BidHamrs
+//   platformskonto og går videre til fragtfirmaet.
 
 export const KOEBERGEBYR_PROCENT = 5;
 export const SAELGERGEBYR_PROCENT = 5;
@@ -33,8 +34,8 @@ export function fragtOere(forsendelseMulig: boolean): number {
   return forsendelseMulig ? FRAGT_OERE : 0;
 }
 
-export function udbetalingOere(budOere: number, fragt: number): number {
-  return budOere - procentAf(budOere, SAELGERGEBYR_PROCENT) + fragt;
+export function udbetalingOere(budOere: number): number {
+  return budOere - procentAf(budOere, SAELGERGEBYR_PROCENT);
 }
 
 export type BetalingsBeloeb = {

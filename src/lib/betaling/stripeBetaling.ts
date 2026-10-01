@@ -6,7 +6,8 @@
 //      (ingen transfer_data / on_behalf_of). transfer_group = handel_<id>.
 //   2. Webhooken spejler payment_intent.succeeded til tabellen betalinger.
 //   3. Ved frigivelse oprettes en Transfer til sælgerens Connect Express-konto
-//      på udbetaling_oere (bud minus 5% sælgergebyr plus fragt) med
+//      på udbetaling_oere (bud minus 5% sælgergebyr; fragten bliver på
+//      platformskontoen og går til fragtfirmaet) med
 //      source_transaction = chargen.
 //
 // Alle kald, der flytter penge, har en idempotency key. Databasen spejler
