@@ -259,7 +259,7 @@ export async function hentMitTilbud(tilbudId: string): Promise<MitTilbud | Fejl>
     const uid = await indloggetBrugerId();
     if (!uid) return { fejl: "Du skal være logget ind." };
 
-    // RLS lader byderen (og sælgeren) læse rækken; byderen filtreres eksplicit.
+    // RLS lader kun byderen selv læse rækken; byderen filtreres også eksplicit.
     const supabase = await createClient();
     const { data: t } = await supabase
       .from("andenchance_tilbud")

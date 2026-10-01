@@ -227,9 +227,12 @@ comment on table public.andenchance_tilbud is
 alter table public.andenchance_tilbud enable row level security;
 
 drop policy if exists andenchance_select_part on public.andenchance_tilbud;
+-- Kun byderen selv (og staff) kan laese raekken direkte. Saelgeren ser
+-- status via serveren (hentAndenchanceStatus) uden byderens id - bydere er
+-- anonyme for andre (privatliv, se 20261001035000).
 create policy andenchance_select_part on public.andenchance_tilbud
   for select to authenticated using (
-    seller_id = auth.uid() or byder_id = auth.uid() or public.er_staff());
+    byder_id = auth.uid() or public.er_staff());
 
 revoke all on public.andenchance_tilbud from public, anon, authenticated;
 grant select on public.andenchance_tilbud to authenticated;
