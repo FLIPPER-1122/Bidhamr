@@ -23,7 +23,7 @@ Formål: rydde op, så agent-teamet kan arbejde sikkert og ens.
 - [x] Ret gebyr i koden: sælgergebyr fra 10% til 5% (`wallet_udbetal_saelger`, `admin_frigiv_handel`)
 - [x] Nyt design (farver, skrifttyper, logo, favicon) og ny coming-soon-side
 - [x] Next.js opgraderet til 16.3.6 (sikkerhedshuller lukket)
-- [~] **Sikkerhed-agent** oprettet og første fulde sikkerhedsgennemgang af hele systemet (RLS på alle tabeller inkl. dem lavet direkte i Supabase, funktioner, storage, nøgler, login, admin-adgang). Kritiske fund rettes, før fase 1 fortsætter. Agenten køres derefter efter hver fase
+- [x] **Sikkerhed-agent** oprettet og første fulde sikkerhedsgennemgang af hele systemet (RLS på alle tabeller inkl. dem lavet direkte i Supabase, funktioner, storage, nøgler, login, admin-adgang). Kritiske fund rettes, før fase 1 fortsætter. Agenten køres derefter efter hver fase
 - [ ] **Filip – afklar med rådgiver/advokat (blokerer IKKE fase 1 – agenterne bygger videre i testmiljøet):**
   - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 24 timer, og gemt kort med automatisk betaling er et tilvalg.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Opsætningen er besluttet: separate charges and transfers. Tag Stripes svar med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
   - BESLUTTET: Det hedder **"BidHamr Beskyttelse"** – aldrig "forsikring" nogen steder på siden, i mails eller i koden
@@ -32,7 +32,7 @@ Formål: rydde op, så agent-teamet kan arbejde sikkert og ens.
 ## Fase 1 – Handelsflowet færdigt og sikkert
 Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top.
 
-- [~] **Ny betalingsmodel: betal når du vinder – ingen saldo** (stort punkt – tages først i fasen). Stripe har bekræftet, at en købersaldo ikke passer til Stripe Connect og kan kræve e-penge-tilladelse. Derfor:
+- [x] **Ny betalingsmodel: betal når du vinder – ingen saldo** (stort punkt – tages først i fasen). Stripe har bekræftet, at en købersaldo ikke passer til Stripe Connect og kan kræve e-penge-tilladelse. Derfor:
   - Den nuværende wallet med indbetaling før bud, låsning af beløb og wallet-tabel **fjernes**
   - Når auktionen slutter, har vinderen **24 timer til selv at betale** (bud + købergebyr + fragt + evt. BidHamr Beskyttelse) med kort, **MobilePay**, Apple Pay eller Google Pay. Påmindelser efter 12 og 20 timer
   - **Valgfrit: automatisk betaling.** Brugeren kan i sine indstillinger gemme et kort og slå "Betal automatisk, når jeg vinder" til. Så trækkes kortet med det samme, når auktionen slutter. Det er et tilvalg, ikke et krav
@@ -47,8 +47,8 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - **Fjern** wallet-tabellerne og wallet-funktionerne i databasen (`wallets`, `wallet_entries`, `bid_reservations`, `wallet_*`-funktionerne) med en migration, når det nye flow virker
 - [ ] **Hvis vinderen ikke betaler inden 24 timer** (eller den automatiske betaling fejler og han ikke betaler selv inden for fristen): handlen annulleres, køber får en advarsel (tæller med i 3-advarsler-reglen), og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen
 - [ ] Gennemgang af hele pengestrømmen (reviewer): køb, gebyrer, frigivelse, refusion, ingen huller
-- [~] Gebyrer: 5% køber + 5% sælger, altid
-- [~] **BidHamr Beskyttelse**: 5% tilkøb for køber (min 25 / maks 250 kr), vælges ved bud (låst)
+- [x] Gebyrer: 5% køber + 5% sælger, altid
+- [x] **BidHamr Beskyttelse**: 5% tilkøb for køber (min 25 / maks 250 kr), vælges ved bud (låst)
 - [ ] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
 - [ ] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen
 - [ ] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem
