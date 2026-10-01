@@ -8,11 +8,12 @@ import { afgivBud } from "@/app/actions/bud";
 import { formatNedtælling } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
 import {
-  FRAGT_OERE,
   KOEBERGEBYR_PROCENT,
+  beskyttelseOere,
   fragtOere,
   totalOere,
 } from "@/lib/betaling/beregn";
+import { BIDPANEL } from "@/lib/tekster/beskyttelse";
 
 // Budhistorikken er anonymiseret paa serveren: ingen bruger-id'er eller navne
 // i browseren - kun "Byder 3" eller "Dig".
@@ -178,6 +179,12 @@ export default function BidPanel({
         })()
       : null;
 
+  // Kun visning: prisen for BidHamr Beskyttelse på det indtastede bud.
+  const beskyttelsePrisOere =
+    beløb.trim() !== "" && Number.isFinite(budTal) && budTal > 0
+      ? beskyttelseOere(Math.round(budTal * 100))
+      : null;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -300,22 +307,31 @@ export default function BidPanel({
           </button>
           </div>
 
-          <label className="flex cursor-pointer gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-            <input
-              type="checkbox"
-              checked={beskyttelse}
-              onChange={(e) => setBeskyttelse(e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
-            />
-            <span className="text-xs text-neutral-600">
-              <span className="block text-sm font-semibold text-neutral-800">
-                Tilføj BidHamr Beskyttelse (5 %, min. 25 / maks. 250 kr)
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                checked={beskyttelse}
+                onChange={(e) => setBeskyttelse(e.target.checked)}
+                className="h-4 w-4 shrink-0 accent-[#1E5E4A]"
+              />
+              <span className="text-sm font-semibold text-neutral-800">
+                {BIDPANEL.beskyttelseLabel}
+                {beskyttelsePrisOere !== null && (
+                  <span className="ml-1 font-normal text-neutral-600">
+                    + {kroner(beskyttelsePrisOere)}
+                  </span>
+                )}
               </span>
-              Får du ikke varen, eller er den væsentligt anderledes end beskrevet,
-              får du pengene tilbage. Valget gælder, hvis du vinder, og kan ikke
-              ændres bagefter.
-            </span>
-          </label>
+            </label>
+            {/* Uden for label, så et klik ikke slår afkrydsningen til/fra. */}
+            <Link
+              href={BIDPANEL.laesMereHref}
+              className="text-sm font-medium text-groen underline-offset-2 hover:underline"
+            >
+              {BIDPANEL.laesMere}
+            </Link>
+          </div>
 
           {estimatOere !== null && (
             <p className="text-xs text-neutral-600">
@@ -335,9 +351,7 @@ export default function BidPanel({
       )}
 
       <p className="mt-3 text-xs text-neutral-500">
-        Vinder du, betaler du dit bud + 5 % købergebyr
-        {forsendelseMulig ? ` + ${kroner(FRAGT_OERE)} fragt` : ""} + evt. BidHamr Beskyttelse.
-        Du ser totalprisen, før du betaler, og har 24 timer til det. Alle beløb er inkl. moms.
+        {BIDPANEL.prisLinje}
       </p>
       {!forsendelseMulig && (
         <p className="text-xs text-neutral-500">
