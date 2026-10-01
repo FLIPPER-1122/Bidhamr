@@ -12,7 +12,7 @@ import {
 } from "@/lib/tekster/beskyttelse";
 
 export const metadata: Metadata = {
-  title: `${SIDETITEL} – BidHamr`,
+  title: SIDETITEL,
   description: METABESKRIVELSE,
 };
 
