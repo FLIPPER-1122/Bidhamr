@@ -8,6 +8,33 @@ import {
   overfoerTilSaelger,
   refunderBetaling,
 } from "@/lib/betaling/stripeBetaling";
+import { unstable_rethrow } from "next/navigation";
+
+// --- Fejlhaandtering ---------------------------------------------------------
+// Next skjuler beskeden fra fejl, der kastes i server actions, i produktion.
+// Derfor kastes forventelige brugerfejl som BrugerFejl internt og omsaettes af
+// koer() til { fejl } med den danske tekst. Alle andre fejl (databasefejl,
+// adgangsfejl fra assertRole osv.) logges paa serveren og giver en generisk
+// besked, saa intet internt afsloeres.
+
+class BrugerFejl extends Error {}
+
+const GENERISK_FEJL = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
+
+async function koer<T>(
+  navn: string,
+  fn: () => Promise<T>,
+): Promise<T | { fejl: string }> {
+  try {
+    return await fn();
+  } catch (err) {
+    // redirect()/notFound() o.l. skal slippe igennem til Next.
+    unstable_rethrow(err);
+    if (err instanceof BrugerFejl) return { fejl: err.message };
+    console.error(`Admin-handling ${navn} fejlede:`, err);
+    return { fejl: GENERISK_FEJL };
+  }
+}
 
 // --- Brugere ---------------------------------------------------------------
 
@@ -48,15 +75,15 @@ async function logModerationBloedt(
   return error.message;
 }
 
-export async function suspendUser(formData: FormData) {
+async function suspendUserImpl(formData: FormData): Promise<void> {
   const userId = formData.get("userId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const varighed = (formData.get("varighed") as string) ?? "permanent";
   const { admin, userId: staffId } = await assertRole("medarbejder");
 
-  if (!aarsag) throw new Error("Angiv en årsag for suspensionen.");
+  if (!aarsag) throw new BrugerFejl("Angiv en årsag for suspensionen.");
   if (!["1", "7", "permanent"].includes(varighed)) {
-    throw new Error("Ugyldig varighed.");
+    throw new BrugerFejl("Ugyldig varighed.");
   }
 
   const { data: target } = await admin
@@ -64,9 +91,9 @@ export async function suspendUser(formData: FormData) {
     .select("rolle")
     .eq("id", userId)
     .single();
-  if (!target) throw new Error("Brugeren findes ikke.");
+  if (!target) throw new BrugerFejl("Brugeren findes ikke.");
   if (target.rolle === "admin" || target.rolle === "chef") {
-    throw new Error("Admins og chefer kan ikke suspenderes.");
+    throw new BrugerFejl("Admins og chefer kan ikke suspenderes.");
   }
 
   const suspenderetTil =
@@ -98,7 +125,7 @@ export async function suspendUser(formData: FormData) {
   revalidatePath(`/admin/brugere/${userId}`);
 }
 
-export async function unsuspendUser(formData: FormData) {
+async function unsuspendUserImpl(formData: FormData): Promise<void> {
   const userId = formData.get("userId") as string;
   const { admin, userId: staffId } = await assertRole("medarbejder");
 
@@ -126,12 +153,12 @@ export async function unsuspendUser(formData: FormData) {
   revalidatePath(`/admin/brugere/${userId}`);
 }
 
-export async function advarUser(formData: FormData) {
+async function advarUserImpl(formData: FormData): Promise<void> {
   const userId = formData.get("userId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("medarbejder");
 
-  if (!aarsag) throw new Error("Angiv en årsag for advarslen.");
+  if (!aarsag) throw new BrugerFejl("Angiv en årsag for advarslen.");
 
   const { error } = await admin.from("advarsler").insert({
     bruger_id: userId,
@@ -154,24 +181,24 @@ export async function advarUser(formData: FormData) {
 
 // Kun chef: skift rolle mellem 'bruger', 'medarbejder' og 'admin'.
 // Chef-rollen kan ikke tildeles eller fjernes herfra.
-export async function setRolle(formData: FormData) {
+async function setRolleImpl(formData: FormData): Promise<void> {
   const userId = formData.get("userId") as string;
   const nyRolle = formData.get("rolle") as string;
   const { admin, userId: staffId } = await assertRole("chef");
 
   if (!["bruger", "medarbejder", "admin"].includes(nyRolle)) {
-    throw new Error("Ugyldig rolle.");
+    throw new BrugerFejl("Ugyldig rolle.");
   }
-  if (userId === staffId) throw new Error("Du kan ikke ændre din egen rolle.");
+  if (userId === staffId) throw new BrugerFejl("Du kan ikke ændre din egen rolle.");
 
   const { data: target } = await admin
     .from("users")
     .select("rolle")
     .eq("id", userId)
     .single();
-  if (!target) throw new Error("Brugeren findes ikke.");
+  if (!target) throw new BrugerFejl("Brugeren findes ikke.");
   if (target.rolle === "chef") {
-    throw new Error("Chefer kan ikke ændres herfra.");
+    throw new BrugerFejl("Chefer kan ikke ændres herfra.");
   }
 
   const { error } = await admin
@@ -189,7 +216,7 @@ export async function setRolle(formData: FormData) {
 // "Slet" arkiverer: handelsdata (bud, handler, bedoemmelser, anmeldelser)
 // maa aldrig slettes (bogfoeringsloven/DAC7). Auktionen annulleres og skjules.
 // Har auktionen en handel, afvises det - den skal loeses som en sag.
-export async function deleteAuction(
+async function deleteAuctionImpl(
   formData: FormData,
 ): Promise<{ ok: true } | { fejl: string }> {
   const auktionId = formData.get("auktionId") as string;
@@ -252,7 +279,7 @@ export async function deleteAuction(
   return { ok: true };
 }
 
-export async function cancelAuction(formData: FormData) {
+async function cancelAuctionImpl(formData: FormData): Promise<void> {
   const auktionId = formData.get("auktionId") as string;
   const { admin } = await assertRole("admin");
 
@@ -268,7 +295,7 @@ export async function cancelAuction(formData: FormData) {
   revalidatePath("/admin/auktioner");
 }
 
-export async function hideAuction(formData: FormData) {
+async function hideAuctionImpl(formData: FormData): Promise<void> {
   const auktionId = formData.get("auktionId") as string;
   const { admin } = await assertRole("admin");
 
@@ -281,7 +308,7 @@ export async function hideAuction(formData: FormData) {
   revalidatePath("/admin/auktioner");
 }
 
-export async function unhideAuction(formData: FormData) {
+async function unhideAuctionImpl(formData: FormData): Promise<void> {
   const auktionId = formData.get("auktionId") as string;
   const { admin } = await assertRole("admin");
 
@@ -296,19 +323,19 @@ export async function unhideAuction(formData: FormData) {
 
 // --- Bedømmelser -----------------------------------------------------------
 
-export async function deleteRating(formData: FormData) {
+async function deleteRatingImpl(formData: FormData): Promise<void> {
   const ratingId = formData.get("ratingId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("admin");
 
-  if (!aarsag) throw new Error("Angiv en årsag for sletningen.");
+  if (!aarsag) throw new BrugerFejl("Angiv en årsag for sletningen.");
 
   const { data: rating } = await admin
     .from("ratings")
     .select("fra_bruger_id, til_bruger_id")
     .eq("id", ratingId)
     .single();
-  if (!rating) throw new Error("Anmeldelsen findes ikke.");
+  if (!rating) throw new BrugerFejl("Anmeldelsen findes ikke.");
 
   await logModeration(admin, {
     medarbejder_id: staffId,
@@ -331,7 +358,7 @@ export async function deleteRating(formData: FormData) {
   revalidatePath(`/admin/brugere/${rating.fra_bruger_id}`);
 }
 
-export async function hideRating(formData: FormData) {
+async function hideRatingImpl(formData: FormData): Promise<void> {
   const ratingId = formData.get("ratingId") as string;
   const { admin } = await assertRole("admin");
 
@@ -344,7 +371,7 @@ export async function hideRating(formData: FormData) {
   revalidatePath("/admin/bedommelser");
 }
 
-export async function unhideRating(formData: FormData) {
+async function unhideRatingImpl(formData: FormData): Promise<void> {
   const ratingId = formData.get("ratingId") as string;
   const { admin } = await assertRole("admin");
 
@@ -388,20 +415,20 @@ async function hentRapport(admin: AdminClient, rapportId: string) {
     .select("id, auction_id")
     .eq("id", rapportId)
     .single();
-  if (!data) throw new Error("Rapporten findes ikke.");
+  if (!data) throw new BrugerFejl("Rapporten findes ikke.");
   return data;
 }
 
 // Afslut uden handling - auktionen forbliver aktiv. Noten er obligatorisk og
 // dokumenterer hvad der blev tjekket, og hvad konklusionen blev.
 // Feltet hedder "aarsag" i formularen, fordi ConfirmDialog bruger det navn.
-export async function rapportMarkerBehandlet(formData: FormData) {
+async function rapportMarkerBehandletImpl(formData: FormData): Promise<void> {
   const rapportId = formData.get("rapportId") as string;
   const note = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("medarbejder");
 
   if (!note) {
-    throw new Error("Skriv en note om hvad du har tjekket, og hvad konklusionen er.");
+    throw new BrugerFejl("Skriv en note om hvad du har tjekket, og hvad konklusionen er.");
   }
 
   await afslutRapport(admin, staffId, rapportId, "behandlet", note);
@@ -410,12 +437,12 @@ export async function rapportMarkerBehandlet(formData: FormData) {
 }
 
 // Skjul opslaget midlertidigt mens sagen undersøges.
-export async function rapportSletMidlertidigt(formData: FormData) {
+async function rapportSletMidlertidigtImpl(formData: FormData): Promise<void> {
   const rapportId = formData.get("rapportId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("admin");
 
-  if (!aarsag) throw new Error("Angiv en årsag.");
+  if (!aarsag) throw new BrugerFejl("Angiv en årsag.");
   const rapport = await hentRapport(admin, rapportId);
 
   const { data: auktion } = await admin
@@ -423,7 +450,7 @@ export async function rapportSletMidlertidigt(formData: FormData) {
     .select("bruger_id")
     .eq("id", rapport.auction_id)
     .single();
-  if (!auktion) throw new Error("Auktionen findes ikke.");
+  if (!auktion) throw new BrugerFejl("Auktionen findes ikke.");
 
   const { error } = await admin
     .from("auctions")
@@ -449,12 +476,12 @@ export async function rapportSletMidlertidigt(formData: FormData) {
 // Fjern opslaget permanent fra platformen. Auktionen annulleres og skjules i
 // stedet for at blive slettet: reports.auction_id har ON DELETE CASCADE, så en
 // hård sletning ville også fjerne selve rapporten og dermed dokumentationen.
-export async function rapportFjernOpslag(formData: FormData) {
+async function rapportFjernOpslagImpl(formData: FormData): Promise<void> {
   const rapportId = formData.get("rapportId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("admin");
 
-  if (!aarsag) throw new Error("Angiv en årsag.");
+  if (!aarsag) throw new BrugerFejl("Angiv en årsag.");
   const rapport = await hentRapport(admin, rapportId);
 
   const { data: auktion } = await admin
@@ -462,7 +489,7 @@ export async function rapportFjernOpslag(formData: FormData) {
     .select("bruger_id")
     .eq("id", rapport.auction_id)
     .single();
-  if (!auktion) throw new Error("Auktionen findes ikke.");
+  if (!auktion) throw new BrugerFejl("Auktionen findes ikke.");
 
   const { error } = await admin
     .from("auctions")
@@ -487,7 +514,7 @@ export async function rapportFjernOpslag(formData: FormData) {
 
 // Fortryd. Skal også gøre opslaget synligt igen - ellers bliver auktionen ved
 // med at give 404 for brugerne, selvom rapporten står som afventende.
-export async function rapportGenaabn(formData: FormData) {
+async function rapportGenaabnImpl(formData: FormData): Promise<void> {
   const rapportId = formData.get("rapportId") as string;
   const { admin, rolle, userId: staffId } = await assertRole("medarbejder");
 
@@ -496,7 +523,7 @@ export async function rapportGenaabn(formData: FormData) {
     .select("id, auction_id, status")
     .eq("id", rapportId)
     .single();
-  if (!rapport) throw new Error("Rapporten findes ikke.");
+  if (!rapport) throw new BrugerFejl("Rapporten findes ikke.");
 
   // 'handled' rørte aldrig opslaget, så der er intet at fortryde.
   const opslagetBlevAendret =
@@ -504,7 +531,7 @@ export async function rapportGenaabn(formData: FormData) {
 
   if (opslagetBlevAendret) {
     if (!harMindstRolle(rolle, "admin")) {
-      throw new Error(
+      throw new BrugerFejl(
         "Kun admin kan gøre et skjult eller fjernet opslag synligt igen.",
       );
     }
@@ -569,7 +596,7 @@ async function hentHandelTilSag(admin: AdminClient, tradeId: string) {
     .select("id, auction_id, buyer_id, seller_id, status, sag_aaben")
     .eq("id", tradeId)
     .single();
-  if (!handel) throw new Error("Handlen findes ikke.");
+  if (!handel) throw new BrugerFejl("Handlen findes ikke.");
   return handel;
 }
 
@@ -580,15 +607,15 @@ function revaliderSag(tradeId: string) {
 }
 
 // Flag en handel som sag. Medarbejdere maa godt - det flytter ingen penge.
-export async function sagAabn(formData: FormData) {
+async function sagAabnImpl(formData: FormData): Promise<void> {
   const tradeId = formData.get("tradeId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("medarbejder");
-  if (!aarsag) throw new Error("Beskriv hvorfor sagen åbnes.");
+  if (!aarsag) throw new BrugerFejl("Beskriv hvorfor sagen åbnes.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
   if (!AKTIVE_HANDEL_STATUSSER.includes(handel.status)) {
-    throw new Error("Handlen er allerede afsluttet.");
+    throw new BrugerFejl("Handlen er allerede afsluttet.");
   }
 
   const { error } = await admin
@@ -614,11 +641,11 @@ export async function sagAabn(formData: FormData) {
 }
 
 // Luk sagen uden at flytte penge - handlen fortsaetter normalt.
-export async function sagLuk(formData: FormData) {
+async function sagLukImpl(formData: FormData): Promise<void> {
   const tradeId = formData.get("tradeId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("medarbejder");
-  if (!aarsag) throw new Error("Skriv en afsluttende note.");
+  if (!aarsag) throw new BrugerFejl("Skriv en afsluttende note.");
 
   const { error } = await admin
     .from("trades")
@@ -649,24 +676,24 @@ function kr(oere: number): string {
 // Handler med en Stripe-betaling: frigivet_kl saettes i databasen, og
 // beloebet (bud minus 5% saelgergebyr) overfoeres til saelgerens Connect-konto.
 // Handler uden betaling kan ikke frigives.
-export async function handelFrigiv(formData: FormData) {
+async function handelFrigivImpl(formData: FormData): Promise<void> {
   const tradeId = formData.get("tradeId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("admin");
-  if (!aarsag) throw new Error("Angiv en begrundelse.");
+  if (!aarsag) throw new BrugerFejl("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
-  if (!betaling) throw new Error("Handlen har ingen betaling og kan ikke frigives.");
+  if (!betaling) throw new BrugerFejl("Handlen har ingen betaling og kan ikke frigives.");
   if (betaling.status !== "betalt") {
-    throw new Error("Handlen er ikke betalt og kan ikke frigives.");
+    throw new BrugerFejl("Handlen er ikke betalt og kan ikke frigives.");
   }
 
   const { data: frigivet, error } = await admin.rpc("admin_frigiv_handel", {
     p_trade: tradeId,
   });
   if (error) throw new Error(error.message);
-  if (!frigivet) throw new Error("Handlen er allerede afsluttet.");
+  if (!frigivet) throw new BrugerFejl("Handlen er allerede afsluttet.");
 
   let overfoersel: string;
   try {
@@ -701,21 +728,21 @@ export async function handelFrigiv(formData: FormData) {
 //   - ikke betalt endnu: betalingen annulleres, og PaymentIntenten annulleres
 //     hos Stripe.
 // Handler uden betaling kan ikke refunderes.
-export async function handelRefunder(formData: FormData) {
+async function handelRefunderImpl(formData: FormData): Promise<void> {
   const tradeId = formData.get("tradeId") as string;
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("admin");
-  if (!aarsag) throw new Error("Angiv en begrundelse.");
+  if (!aarsag) throw new BrugerFejl("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
 
-  if (!betaling) throw new Error("Handlen har ingen betaling og kan ikke refunderes.");
+  if (!betaling) throw new BrugerFejl("Handlen har ingen betaling og kan ikke refunderes.");
 
   let logTekst: string;
   if (betaling.status === "afventer" || betaling.status === "behandles") {
     if (!(await annullerBetaling(tradeId))) {
-      throw new Error("Betalingen kan ikke annulleres.");
+      throw new BrugerFejl("Betalingen kan ikke annulleres.");
     }
     logTekst = "Ikke betalt - betalingen annulleret, 0 kr refunderet";
   } else {
@@ -725,7 +752,7 @@ export async function handelRefunder(formData: FormData) {
     });
     if (error) throw new Error(error.message);
     if (beloeb === null) {
-      throw new Error(
+      throw new BrugerFejl(
         "Handlen kan ikke refunderes: den er ikke betalt, allerede refunderet eller pengene er frigivet til sælger.",
       );
     }
@@ -734,7 +761,7 @@ export async function handelRefunder(formData: FormData) {
       resultat = await refunderBetaling(betaling.id);
     } catch (err) {
       console.error("Refusion fejlede:", tradeId, err);
-      throw new Error(
+      throw new BrugerFejl(
         "Refusionen fejlede hos Stripe. Handlen er annulleret og markeret - prøv igen.",
       );
     }
@@ -750,4 +777,83 @@ export async function handelRefunder(formData: FormData) {
     aarsag: `${logTekst} — ${aarsag}`,
   });
   revaliderSag(tradeId);
+}
+
+// --- Eksporterede server actions ---------------------------------------------
+// Tynde indpakninger: returnerer { fejl } i stedet for at kaste.
+
+export async function suspendUser(formData: FormData) {
+  return koer("suspendUser", () => suspendUserImpl(formData));
+}
+
+export async function unsuspendUser(formData: FormData) {
+  return koer("unsuspendUser", () => unsuspendUserImpl(formData));
+}
+
+export async function advarUser(formData: FormData) {
+  return koer("advarUser", () => advarUserImpl(formData));
+}
+
+export async function setRolle(formData: FormData) {
+  return koer("setRolle", () => setRolleImpl(formData));
+}
+
+export async function deleteAuction(formData: FormData) {
+  return koer("deleteAuction", () => deleteAuctionImpl(formData));
+}
+
+export async function cancelAuction(formData: FormData) {
+  return koer("cancelAuction", () => cancelAuctionImpl(formData));
+}
+
+export async function hideAuction(formData: FormData) {
+  return koer("hideAuction", () => hideAuctionImpl(formData));
+}
+
+export async function unhideAuction(formData: FormData) {
+  return koer("unhideAuction", () => unhideAuctionImpl(formData));
+}
+
+export async function deleteRating(formData: FormData) {
+  return koer("deleteRating", () => deleteRatingImpl(formData));
+}
+
+export async function hideRating(formData: FormData) {
+  return koer("hideRating", () => hideRatingImpl(formData));
+}
+
+export async function unhideRating(formData: FormData) {
+  return koer("unhideRating", () => unhideRatingImpl(formData));
+}
+
+export async function rapportMarkerBehandlet(formData: FormData) {
+  return koer("rapportMarkerBehandlet", () => rapportMarkerBehandletImpl(formData));
+}
+
+export async function rapportSletMidlertidigt(formData: FormData) {
+  return koer("rapportSletMidlertidigt", () => rapportSletMidlertidigtImpl(formData));
+}
+
+export async function rapportFjernOpslag(formData: FormData) {
+  return koer("rapportFjernOpslag", () => rapportFjernOpslagImpl(formData));
+}
+
+export async function rapportGenaabn(formData: FormData) {
+  return koer("rapportGenaabn", () => rapportGenaabnImpl(formData));
+}
+
+export async function sagAabn(formData: FormData) {
+  return koer("sagAabn", () => sagAabnImpl(formData));
+}
+
+export async function sagLuk(formData: FormData) {
+  return koer("sagLuk", () => sagLukImpl(formData));
+}
+
+export async function handelFrigiv(formData: FormData) {
+  return koer("handelFrigiv", () => handelFrigivImpl(formData));
+}
+
+export async function handelRefunder(formData: FormData) {
+  return koer("handelRefunder", () => handelRefunderImpl(formData));
 }

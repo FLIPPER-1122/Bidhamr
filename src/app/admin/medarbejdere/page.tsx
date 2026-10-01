@@ -1,3 +1,4 @@
+import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getStaffRole } from "@/lib/adminAuth";
@@ -52,16 +53,13 @@ export default async function AdminMedarbejdere({
     return (
       <div className="flex flex-wrap gap-2">
         {muligheder.map((m) => (
-          <form key={m.rolle} action={setRolle}>
-            <input type="hidden" name="userId" value={user.id} />
-            <input type="hidden" name="rolle" value={m.rolle} />
-            <button
-              type="submit"
-              className={`px-2 py-1 text-xs rounded-md transition-colors ${m.klasse}`}
-            >
-              {m.label}
-            </button>
-          </form>
+          <AdminActionKnap
+            key={m.rolle}
+            action={setRolle}
+            hiddenFields={{ userId: user.id, rolle: m.rolle }}
+            label={m.label}
+            className={`px-2 py-1 text-xs rounded-md transition-colors ${m.klasse}`}
+          />
         ))}
       </div>
     );

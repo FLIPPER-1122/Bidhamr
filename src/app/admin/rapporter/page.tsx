@@ -1,3 +1,4 @@
+import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import Link from "next/link";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
@@ -178,15 +179,12 @@ export default async function AdminRapporter({
                     </td>
                     <td className="px-5 py-3">
                       {afsluttet ? (
-                        <form action={rapportGenaabn}>
-                          <input type="hidden" name="rapportId" value={r.id} />
-                          <button
-                            type="submit"
-                            className="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-200"
-                          >
-                            Genåbn
-                          </button>
-                        </form>
+                        <AdminActionKnap
+                          action={rapportGenaabn}
+                          hiddenFields={{ rapportId: r.id }}
+                          label="Genåbn"
+                          className="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-200"
+                        />
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           {kanModerereOpslag && (
