@@ -16,7 +16,6 @@ import {
   hentProfil,
   onboardingLink,
   registrerGemtKort,
-  saetBeskyttelse,
   sikrPaymentIntent,
   sikrStripeKunde,
   spejlConnectKonto,
@@ -124,15 +123,14 @@ export async function hentBetalingsstatus(
 // ------------------------------------------------------------------ betal
 
 // Starter (eller genoptager) betalingen for en vundet auktion og returnerer
-// client_secret til Stripes Payment Element. Kaldes igen, hvis køberen slår
-// BidHamr Beskyttelse til/fra - beløbet opdateres på samme PaymentIntent.
+// client_secret til Stripes Payment Element. Beløbet kommer udelukkende fra
+// betalingsrækken (BidHamr Beskyttelse er låst ved buddet) - klienten sender
+// intet, der påvirker beløbet.
 export async function startBetaling(
   handelId: string,
-  valg: { beskyttelse: boolean },
 ): Promise<{ ok: true; clientSecret: string; totalOere: number } | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
-  if (typeof valg?.beskyttelse !== "boolean") return { fejl: "Ugyldigt valg." };
 
   try {
     const b = await hentBetalingForHandel(handelId);
@@ -146,14 +144,13 @@ export async function startBetaling(
       return { fejl: "Fristen for at betale er overskredet." };
     }
 
-    let pi = await sikrPaymentIntent(b);
+    const pi = await sikrPaymentIntent(b);
     if (pi.status === "succeeded" || pi.status === "processing") {
       await spejlPaymentIntent(pi);
       return { fejl: "Betalingen er allerede i gang eller gennemført." };
     }
     if (pi.status === "canceled") return { fejl: "Handlen kan ikke længere betales." };
-
-    pi = await saetBeskyttelse(b, pi, valg.beskyttelse);
+    if (pi.amount !== Number(b.total_oere)) return { fejl: GENERISK };
     if (!pi.client_secret) return { fejl: GENERISK };
 
     return { ok: true, clientSecret: pi.client_secret, totalOere: pi.amount };

@@ -5,9 +5,11 @@ import { koerBetalingsCron } from "@/lib/betaling/cron";
 // autobetaling, sender "du vandt"-mails og betalingspåmindelser og overfører
 // frigivne beløb til sælgere. Se src/lib/betaling/cron.ts.
 //
-// NB: Påmindelser efter 24/40 timer og autobetaling "med det samme" kræver,
-// at ruten kaldes ofte (fx hvert 5.-15. minut). Vercel Hobby tillader kun
-// daglig cron - se rapporten til Filip.
+// Kaldes hvert 5. minut af pg_cron + pg_net (job 'betalings-cron', se migration
+// 20261001020000) og dagligt kl. 03 af Vercel Cron som backup. Ruten er
+// idempotent: mails, autobetaling og overførsler claimes atomisk i databasen,
+// og alle Stripe-kald har idempotency keys - samtidige kald giver ingen
+// dobbelt effekt.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 

@@ -8,39 +8,25 @@ import { kroner } from "@/lib/kroner";
 
 // Køberens betaling af en vundet auktion. Alle beløb kommer fra serveren -
 // klienten lægger aldrig noget sammen.
+// BidHamr Beskyttelse er valgt (eller fravalgt) ved buddet og kan ikke ændres
+// her - den vises kun som en linje i opdelingen.
 export default function BetalingSektion({ status }: { status: Betalingsstatus }) {
-  const [beskyttelse, setBeskyttelse] = useState(status.beskyttelse);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [totalOere, setTotalOere] = useState(status.totalOere);
-  // Totalen passer kun til valget, når den kommer fra serveren for netop det valg.
-  const [totalErForValg, setTotalErForValg] = useState(true);
   const [henter, setHenter] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
 
-  async function hent(medBeskyttelse: boolean) {
+  async function hent() {
     setHenter(true);
     setFejl(null);
-    const svar = await startBetaling(status.handelId, { beskyttelse: medBeskyttelse });
+    const svar = await startBetaling(status.handelId);
     setHenter(false);
     if ("fejl" in svar) {
       setFejl(svar.fejl);
-      return false;
+      return;
     }
     setClientSecret(svar.clientSecret);
     setTotalOere(svar.totalOere);
-    setTotalErForValg(true);
-    return true;
-  }
-
-  async function skiftBeskyttelse(til: boolean) {
-    const foer = beskyttelse;
-    setBeskyttelse(til);
-    setTotalErForValg(false);
-    const ok = await hent(til);
-    if (!ok) {
-      setBeskyttelse(foer);
-      setTotalErForValg(true);
-    }
   }
 
   return (
@@ -49,40 +35,24 @@ export default function BetalingSektion({ status }: { status: Betalingsstatus })
         <Linje navn="Dit bud" vaerdi={kroner(status.budOere)} />
         <Linje navn="Købergebyr (5%)" vaerdi={kroner(status.koebergebyrOere)} />
         {status.fragtOere > 0 && <Linje navn="Fragt" vaerdi={kroner(status.fragtOere)} />}
-        {beskyttelse && (
-          <Linje navn="BidHamr Beskyttelse" vaerdi={kroner(status.beskyttelsePrisOere)} />
+        {status.beskyttelse && (
+          <Linje
+            navn="BidHamr Beskyttelse (valgt ved bud)"
+            vaerdi={kroner(status.beskyttelseOere)}
+          />
         )}
         <div className="flex justify-between border-t border-kant pt-3 text-base font-semibold text-tekst">
           <dt>I alt</dt>
-          <dd className="tabular-nums">{totalErForValg ? kroner(totalOere) : "Beregnes…"}</dd>
+          <dd className="tabular-nums">{kroner(totalOere)}</dd>
         </div>
       </dl>
-
-      <label className="flex cursor-pointer gap-3 rounded-xl border border-kant bg-groen-lys p-4">
-        <input
-          type="checkbox"
-          checked={beskyttelse}
-          disabled={henter}
-          onChange={(e) => skiftBeskyttelse(e.target.checked)}
-          className="mt-0.5 h-5 w-5 shrink-0 accent-[#1E5E4A]"
-        />
-        <span className="text-sm">
-          <span className="font-semibold text-groen-mork">
-            Tilføj BidHamr Beskyttelse (+{kroner(status.beskyttelsePrisOere)})
-          </span>
-          <span className="mt-1 block text-tekst-daempet">
-            Får du ikke varen, eller er den væsentligt anderledes end beskrevet,
-            får du pengene tilbage. Valgfrit.
-          </span>
-        </span>
-      </label>
 
       {fejl && <FejlBoks tekst={fejl} />}
 
       {!clientSecret ? (
         <button
           type="button"
-          onClick={() => hent(beskyttelse)}
+          onClick={() => hent()}
           disabled={henter}
           className="btn btn-primaer w-full"
         >
@@ -98,7 +68,7 @@ export default function BetalingSektion({ status }: { status: Betalingsstatus })
           <BetalForm
             handelId={status.handelId}
             totalOere={totalOere}
-            laast={henter || !totalErForValg}
+            laast={henter}
           />
         </Elements>
       )}

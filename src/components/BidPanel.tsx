@@ -6,6 +6,13 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { kortNavn } from "@/lib/kortNavn";
 import { formatNedtælling } from "@/lib/auctionTid";
+import { kroner } from "@/lib/kroner";
+import {
+  FRAGT_OERE,
+  KOEBERGEBYR_PROCENT,
+  fragtOere,
+  totalOere,
+} from "@/lib/betaling/beregn";
 
 export interface BidPanelBud {
   id: string;
@@ -39,6 +46,8 @@ export default function BidPanel({
   const [budListe, setBudListe] = useState<BidPanelBud[]>(initialBud);
   const [visAlle, setVisAlle] = useState(false);
   const [beløb, setBeløb] = useState("");
+  // BidHamr Beskyttelse: ikke valgt på forhånd. Gemmes med buddet.
+  const [beskyttelse, setBeskyttelse] = useState(false);
   const router = useRouter();
   // Hvem der fører lige nu. Reservationen følger det seneste bud, fordi
   // minimumsbud-triggeren kræver at hvert bud er højere end det forrige.
@@ -158,6 +167,26 @@ export default function BidPanel({
 
   const minimumBud = Math.ceil(nuværendeBud * 1.1);
 
+  // Kun visning: hvad vinderen kommer til at betale. Det endelige beløb
+  // beregnes på serveren, når auktionen slutter.
+  const budTal = Number(beløb);
+  const estimatOere =
+    Number.isFinite(budTal) && budTal >= minimumBud
+      ? (() => {
+          const budOere = Math.round(budTal * 100);
+          return (
+            totalOere(
+              {
+                bud_oere: budOere,
+                koebergebyr_oere: Math.round((budOere * KOEBERGEBYR_PROCENT) / 100),
+                fragt_oere: fragtOere(forsendelseMulig),
+              },
+              beskyttelse,
+            )
+          );
+        })()
+      : null;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -188,6 +217,8 @@ export default function BidPanel({
       auktion_id: auktionId,
       bruger_id: brugerId,
       beløb: beløbTal,
+      // Kun et ønske - beløbet beregnes i databasen, når auktionen slutter.
+      beskyttelse,
     });
 
     if (insertError) {
@@ -277,7 +308,8 @@ export default function BidPanel({
           Det er din egen auktion – du kan ikke byde på den.
         </p>
       ) : brugerId ? (
-        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-2 sm:flex-row">
+        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row">
           <input
             type="number"
             min={minimumBud}
@@ -294,6 +326,32 @@ export default function BidPanel({
           >
             {loading ? "Afgiver…" : "Afgiv bud"}
           </button>
+          </div>
+
+          <label className="flex cursor-pointer gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <input
+              type="checkbox"
+              checked={beskyttelse}
+              onChange={(e) => setBeskyttelse(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
+            />
+            <span className="text-xs text-neutral-600">
+              <span className="block text-sm font-semibold text-neutral-800">
+                Tilføj BidHamr Beskyttelse (5 %, min. 25 / maks. 250 kr)
+              </span>
+              Får du ikke varen, eller er den væsentligt anderledes end beskrevet,
+              får du pengene tilbage. Valget gælder, hvis du vinder, og kan ikke
+              ændres bagefter.
+            </span>
+          </label>
+
+          {estimatOere !== null && (
+            <p className="text-xs text-neutral-600">
+              Vinder du med dette bud, betaler du{" "}
+              <span className="font-semibold text-neutral-800">{kroner(estimatOere)}</span>{" "}
+              i alt.
+            </p>
+          )}
         </form>
       ) : (
         <Link
@@ -305,12 +363,13 @@ export default function BidPanel({
       )}
 
       <p className="mt-3 text-xs text-neutral-500">
-        Vinder du, betaler du dit bud + 5% købergebyr{forsendelseMulig ? " + evt. fragt" : ""}.
+        Vinder du, betaler du dit bud + 5 % købergebyr
+        {forsendelseMulig ? ` + ${kroner(FRAGT_OERE)} fragt` : ""} + evt. BidHamr Beskyttelse.
         Du ser totalprisen, før du betaler, og har 48 timer til det. 25% moms tillægges ikke.
       </p>
-      {forsendelseMulig && (
+      {!forsendelseMulig && (
         <p className="text-xs text-neutral-500">
-          Sælger tilbyder forsendelse mod betaling.
+          Kun afhentning – ingen fragt.
         </p>
       )}
 

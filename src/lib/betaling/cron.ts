@@ -22,6 +22,7 @@ import {
   type BetalingRaekke,
   forsoegAutobetaling,
   overfoerVentende,
+  refunderAfvigelserVentende,
 } from "@/lib/betaling/stripeBetaling";
 
 const TIME = 60 * 60 * 1000;
@@ -89,6 +90,7 @@ export async function koerBetalingsCron() {
     vundetMails: 0,
     paamindelser: 0,
     overfoersler: 0,
+    afvigelsesrefusioner: 0,
   };
 
   // 1) Luk auktioner og opret handel + betaling.
@@ -180,6 +182,9 @@ export async function koerBetalingsCron() {
 
   // 4) Frigivne beløb, der ventede på sælgerens konto (eller fejlede).
   resultat.overfoersler = await overfoerVentende();
+
+  // 5) Betalinger med afvigende beløb, der endnu ikke er refunderet.
+  resultat.afvigelsesrefusioner = await refunderAfvigelserVentende();
 
   return resultat;
 }

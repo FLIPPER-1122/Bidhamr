@@ -6,7 +6,7 @@
 //      (ingen transfer_data / on_behalf_of). transfer_group = handel_<id>.
 //   2. Webhooken spejler payment_intent.succeeded til tabellen betalinger.
 //   3. Ved frigivelse oprettes en Transfer til sælgerens Connect Express-konto
-//      på udbetaling_oere (bud minus 5% sælgergebyr) med
+//      på udbetaling_oere (bud minus 5% sælgergebyr plus fragt) med
 //      source_transaction = chargen.
 //
 // Alle kald, der flytter penge, har en idempotency key. Databasen spejler
@@ -59,6 +59,9 @@ export type BetalingRaekke = {
   overfoersel_paabegyndt_kl: string | null;
   annulleret_kl: string | null;
   kraever_opmaerksomhed: boolean;
+  overfoersel_forsoeg: number;
+  refusion_forsoeg: number;
+  pi_forsoeg: number;
 };
 
 export type ProfilRaekke = {
@@ -154,19 +157,41 @@ export async function sikrPaymentIntent(
   betaling: BetalingRaekke,
 ): Promise<Stripe.PaymentIntent> {
   const stripe = getStripe();
+  const beloeb = Number(betaling.total_oere);
   if (betaling.stripe_payment_intent_id) {
-    return stripe.paymentIntents.retrieve(betaling.stripe_payment_intent_id);
+    const eksisterende = await stripe.paymentIntents.retrieve(
+      betaling.stripe_payment_intent_id,
+    );
+    // Sikkerhedsnet for PaymentIntents oprettet før beskyttelsen blev låst ved
+    // buddet: beløbet bringes i trit med databasens total. Klienten har
+    // aldrig indflydelse på beløbet.
+    if (eksisterende.amount !== beloeb && OPDATERBARE.includes(eksisterende.status)) {
+      return stripe.paymentIntents.update(eksisterende.id, {
+        amount: beloeb,
+        metadata: { beskyttelse: betaling.beskyttelse ? "ja" : "nej" },
+      });
+    }
+    return eksisterende;
+  }
+  if (totalOere(betaling, betaling.beskyttelse) !== beloeb) {
+    // Databasen og TS-beregningen er uenige - betal aldrig et forkert beløb.
+    throw new Error(`Beløb stemmer ikke for betaling ${betaling.id}`);
   }
 
   const kunde = await sikrStripeKunde(betaling.buyer_id);
 
-  // PaymentIntenten oprettes altid UDEN beskyttelse; beskyttelsen lægges på
-  // bagefter med en update. Så er parametrene ens ved et gentaget kald, og
-  // idempotency key'en giver præcis samme PaymentIntent tilbage.
-  const basis = totalOere(betaling, false);
+  // PaymentIntenten oprettes én gang med det fulde beløb fra databasen
+  // (bud + købergebyr + fragt + evt. BidHamr Beskyttelse valgt ved buddet).
+  // pi_forsoeg > 0 betyder, at en tidligere PaymentIntent er kasseret pga.
+  // afvigende beløb - så skal der en ny key til, ellers giver Stripe den
+  // gamle tilbage.
+  const nøgle =
+    betaling.pi_forsoeg > 0
+      ? `bidhamr-pi-${betaling.id}-${betaling.pi_forsoeg}`
+      : `bidhamr-pi-${betaling.id}`;
   const pi = await stripe.paymentIntents.create(
     {
-      amount: basis,
+      amount: beloeb,
       currency: betaling.valuta,
       customer: kunde,
       // Kort, MobilePay, Apple Pay, Google Pay - styres fra Stripe Dashboard.
@@ -178,10 +203,10 @@ export async function sikrPaymentIntent(
         handel_id: betaling.trade_id,
         auktion_id: betaling.auction_id,
         koeber_id: betaling.buyer_id,
-        beskyttelse: "nej",
+        beskyttelse: betaling.beskyttelse ? "ja" : "nej",
       },
     },
-    { idempotencyKey: `bidhamr-pi-${betaling.id}` },
+    { idempotencyKey: nøgle },
   );
 
   const admin = createAdminClient();
@@ -210,39 +235,6 @@ const OPDATERBARE: Stripe.PaymentIntent.Status[] = [
   "requires_confirmation",
 ];
 
-// Sætter BidHamr Beskyttelse til/fra på en ikke-betalt PaymentIntent.
-// Stripe opdateres FØRST; databasen spejler bagefter.
-export async function saetBeskyttelse(
-  betaling: BetalingRaekke,
-  pi: Stripe.PaymentIntent,
-  beskyttelse: boolean,
-): Promise<Stripe.PaymentIntent> {
-  const nyTotal = totalOere(betaling, beskyttelse);
-  const harBeskyttelse = pi.metadata?.beskyttelse === "ja";
-  if (pi.amount === nyTotal && harBeskyttelse === beskyttelse) return pi;
-
-  if (!OPDATERBARE.includes(pi.status)) {
-    throw new BetalingsFejl(
-      "Betalingen er allerede i gang og kan ikke ændres lige nu.",
-    );
-  }
-
-  const opdateret = await getStripe().paymentIntents.update(pi.id, {
-    amount: nyTotal,
-    metadata: { beskyttelse: beskyttelse ? "ja" : "nej" },
-  });
-
-  const { data, error } = await createAdminClient().rpc("betaling_saet_beskyttelse", {
-    p_betaling: betaling.id,
-    p_beskyttelse: beskyttelse,
-  });
-  if (error) throw new Error(`betaling_saet_beskyttelse: ${error.message}`);
-  if (Number(data) !== nyTotal) {
-    throw new Error(`Beløb afviger efter beskyttelse: db=${data} stripe=${nyTotal}`);
-  }
-  return opdateret;
-}
-
 // Fejl, hvis tekst må vises for brugeren.
 export class BetalingsFejl extends Error {}
 
@@ -265,7 +257,16 @@ export async function spejlPaymentIntent(pi: Stripe.PaymentIntent): Promise<stri
     });
     if (error) throw new Error(`betaling_registrer_betalt: ${error.message}`);
     const resultat = String(data);
-    if (resultat === "beloeb_afviger" || resultat === "sen_betaling") {
+    if (resultat === "beloeb_afviger") {
+      // Databasen har flyttet PaymentIntenten til betaling_afvigelser og sat
+      // betalingen tilbage til 'afventer' (handlen fortsætter, køberen betaler
+      // igen med en ny PaymentIntent). Den afvigende betaling refunderes her.
+      // Kaster refusionen, får webhooken 500, og Stripe prøver igen; cron
+      // prøver også igen (refunderAfvigelserVentende).
+      console.error(`Betaling ${pi.id}: beløb afviger - refunderes automatisk.`);
+      await refunderAfvigelse(pi.id);
+    }
+    if (resultat === "sen_betaling") {
       // Databasen har markeret betalingen (kraever_opmaerksomhed, sidste_fejl)
       // og claimet refusionen. Pengene sendes tilbage automatisk. Kaster
       // refusionen, får webhooken 500, og Stripe prøver igen.
@@ -467,22 +468,34 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
   );
 
   if (!transfer) {
-    transfer = await stripe.transfers.create(
-      {
-        amount: b.udbetaling_oere,
-        currency: b.valuta,
-        destination: profil.stripe_account_id,
-        source_transaction: b.stripe_charge_id,
-        transfer_group: transferGroup,
-        description: `BidHamr handel ${b.trade_id}`,
-        metadata: {
-          betaling_id: b.id,
-          handel_id: b.trade_id,
-          saelger_id: b.seller_id,
+    // Stripe gemmer også fejlsvar under en idempotency key (24 t). Efter en
+    // endelig fejl tælles overfoersel_forsoeg op, så næste forsøg får en ny
+    // key. Forsøg 0 bruger den oprindelige key.
+    const nøgle =
+      b.overfoersel_forsoeg > 0
+        ? `bidhamr-overfoersel-${b.id}-${b.overfoersel_forsoeg}`
+        : `bidhamr-overfoersel-${b.id}`;
+    try {
+      transfer = await stripe.transfers.create(
+        {
+          amount: b.udbetaling_oere,
+          currency: b.valuta,
+          destination: profil.stripe_account_id,
+          source_transaction: b.stripe_charge_id,
+          transfer_group: transferGroup,
+          description: `BidHamr handel ${b.trade_id}`,
+          metadata: {
+            betaling_id: b.id,
+            handel_id: b.trade_id,
+            saelger_id: b.seller_id,
+          },
         },
-      },
-      { idempotencyKey: `bidhamr-overfoersel-${b.id}` },
-    );
+        { idempotencyKey: nøgle },
+      );
+    } catch (err) {
+      await registrerOverfoerselsfejl(b.id, err);
+      throw err;
+    }
   }
 
   await admin
@@ -498,6 +511,41 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
   return "overfoert";
 }
 
+// En fejl fra transfers.create. Er den ENDELIG (Stripe afviste anmodningen -
+// 4xx: invalid_request, permission, card), er der med
+// sikkerhed ikke oprettet en overførsel: claimet frigives (så admin fx kan
+// refundere), forsøgstælleren tælles op og betalingen markeres til admin.
+// Er fejlen USIKKER (netværk, 5xx, rate limit, idempotency-konflikt), kan
+// overførslen være oprettet:
+// claimet beholdes, og næste kørsel prøver igen med samme key - og finder en
+// evt. oprettet overførsel via transfers.list først.
+async function registrerOverfoerselsfejl(betalingId: string, err: unknown) {
+  const admin = createAdminClient();
+  const endelig =
+    err instanceof Stripe.errors.StripeInvalidRequestError ||
+    err instanceof Stripe.errors.StripePermissionError ||
+    err instanceof Stripe.errors.StripeCardError;
+  const kode =
+    err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt_fejl";
+  if (endelig) {
+    const { error } = await admin.rpc("betaling_overfoersel_fejlet", {
+      p_betaling: betalingId,
+      p_fejl: `Overførsel til sælger afvist af Stripe: ${kode}`,
+    });
+    if (error) console.error("betaling_overfoersel_fejlet:", error.message);
+  } else {
+    await admin
+      .from("betalinger")
+      .update({
+        kraever_opmaerksomhed: true,
+        sidste_fejl: `Overførsel til sælger usikker (${kode}) - prøves igen`,
+        opdateret: new Date().toISOString(),
+      })
+      .eq("id", betalingId)
+      .is("stripe_transfer_id", null);
+  }
+}
+
 // ------------------------------------------------------------------ refusion
 
 // Fuld refusion af en betaling hos Stripe. Kræver, at refusionen allerede er
@@ -505,7 +553,7 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
 // eller af betaling_registrer_betalt ved sen betaling / afvigende beløb), så
 // en overførsel til sælger aldrig kan ske samtidig.
 //
-// Idempotent: fast idempotency key pr. betaling, og en allerede refunderet
+// Idempotent: idempotency key pr. betaling og forsøg, og en allerede refunderet
 // charge behandles som gennemført. Status 'refunderet' spejles af webhooken
 // (charge.refunded) - og her med det samme, hvis Stripe svarer "succeeded".
 export async function refunderBetaling(betalingId: string): Promise<string> {
@@ -519,6 +567,32 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
   if (!b.stripe_payment_intent_id) throw new Error("Ingen PaymentIntent at refundere.");
 
   const stripe = getStripe();
+
+  // Findes der allerede en refusion, oprettes der kun en ny, hvis den forrige
+  // endeligt er failed/canceled. Så tælles forsøget op (atomisk), og den nye
+  // refusion får en ny idempotency key - ellers ville Stripe bare returnere
+  // den fejlede refusion igen.
+  let forsoeg = b.refusion_forsoeg;
+  if (b.stripe_refund_id) {
+    const forrige = await stripe.refunds.retrieve(b.stripe_refund_id);
+    if (forrige.status === "succeeded") {
+      await registrerRefunderet(b.stripe_payment_intent_id, forrige.id);
+      return "refunderet";
+    }
+    if (forrige.status !== "failed" && forrige.status !== "canceled") {
+      return "refusion_afventer"; // pending/requires_action - vent på Stripe
+    }
+    const { data: n, error } = await admin.rpc("betaling_refusion_nyt_forsoeg", {
+      p_betaling: b.id,
+      p_gammel_refund: forrige.id,
+    });
+    if (error) throw new Error(`betaling_refusion_nyt_forsoeg: ${error.message}`);
+    if (Number(n) < 0) throw new Error("Refusionen blev ændret samtidig - prøv igen.");
+    forsoeg = Number(n);
+  }
+  const nøgle =
+    forsoeg > 0 ? `bidhamr-refusion-${b.id}-${forsoeg}` : `bidhamr-refusion-${b.id}`;
+
   let refund: Stripe.Refund | null = null;
   try {
     refund = await stripe.refunds.create(
@@ -531,7 +605,7 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
           aarsag: b.refusion_aarsag ?? "",
         },
       },
-      { idempotencyKey: `bidhamr-refusion-${b.id}` },
+      { idempotencyKey: nøgle },
     );
   } catch (err) {
     if (err instanceof Stripe.errors.StripeError && err.code === "charge_already_refunded") {
@@ -583,6 +657,126 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
     await registrerRefunderet(b.stripe_payment_intent_id, null);
   }
   return "refunderet";
+}
+
+// Refunderer en kasseret PaymentIntent med afvigende beløb (betaling_afvigelser).
+// Rører aldrig handlen eller den nye betaling. Idempotent: key pr.
+// PaymentIntent og forsøg; ny key kun når forrige refusion er failed/canceled.
+type AfvigelseRaekke = {
+  id: string;
+  betaling_id: string;
+  trade_id: string;
+  stripe_payment_intent_id: string;
+  stripe_refund_id: string | null;
+  refusion_forsoeg: number;
+  refunderet_kl: string | null;
+};
+
+export async function refunderAfvigelse(paymentIntentId: string): Promise<string> {
+  const admin = createAdminClient();
+  const { data: a, error } = await admin
+    .from("betaling_afvigelser")
+    .select("*")
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .maybeSingle<AfvigelseRaekke>();
+  if (error) throw new Error(`betaling_afvigelser: ${error.message}`);
+  if (!a) return "ukendt";
+  if (a.refunderet_kl) return "allerede_refunderet";
+
+  const stripe = getStripe();
+  let forsoeg = a.refusion_forsoeg;
+  if (a.stripe_refund_id) {
+    const forrige = await stripe.refunds.retrieve(a.stripe_refund_id);
+    if (forrige.status === "succeeded") {
+      await registrerRefunderet(paymentIntentId, forrige.id);
+      return "refunderet";
+    }
+    if (forrige.status !== "failed" && forrige.status !== "canceled") {
+      return "refusion_afventer";
+    }
+    const { data: n, error: fejl } = await admin.rpc("afvigelse_refusion_nyt_forsoeg", {
+      p_payment_intent: paymentIntentId,
+      p_gammel_refund: forrige.id,
+    });
+    if (fejl) throw new Error(`afvigelse_refusion_nyt_forsoeg: ${fejl.message}`);
+    if (Number(n) < 0) throw new Error("Afvigelsen blev ændret samtidig - prøv igen.");
+    forsoeg = Number(n);
+  }
+  const nøgle =
+    forsoeg > 0
+      ? `bidhamr-afvigelse-refusion-${paymentIntentId}-${forsoeg}`
+      : `bidhamr-afvigelse-refusion-${paymentIntentId}`;
+
+  let refund: Stripe.Refund | null = null;
+  try {
+    refund = await stripe.refunds.create(
+      {
+        payment_intent: paymentIntentId,
+        reason: "requested_by_customer",
+        metadata: {
+          betaling_id: a.betaling_id,
+          handel_id: a.trade_id,
+          aarsag: "beloeb_afviger",
+        },
+      },
+      { idempotencyKey: nøgle },
+    );
+  } catch (err) {
+    if (err instanceof Stripe.errors.StripeError && err.code === "charge_already_refunded") {
+      await registrerRefunderet(paymentIntentId, null);
+      return "refunderet";
+    }
+    await admin
+      .from("betaling_afvigelser")
+      .update({
+        sidste_fejl: `Refusion fejlede: ${
+          err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt"
+        }`,
+        opdateret: new Date().toISOString(),
+      })
+      .eq("id", a.id);
+    throw err;
+  }
+
+  await admin
+    .from("betaling_afvigelser")
+    .update({ stripe_refund_id: refund.id, opdateret: new Date().toISOString() })
+    .eq("id", a.id)
+    .is("stripe_refund_id", null);
+  if (refund.status === "succeeded") {
+    await registrerRefunderet(paymentIntentId, refund.id);
+    return "refunderet";
+  }
+  if (refund.status === "failed" || refund.status === "canceled") {
+    await admin
+      .from("betaling_afvigelser")
+      .update({
+        sidste_fejl: `Refusion ${refund.status} hos Stripe`,
+        opdateret: new Date().toISOString(),
+      })
+      .eq("id", a.id);
+    return `refusion_${refund.status}`;
+  }
+  return "refusion_afventer";
+}
+
+// Cron: prøver igen på afvigelser, der endnu ikke er refunderet.
+export async function refunderAfvigelserVentende(): Promise<number> {
+  const { data } = await createAdminClient()
+    .from("betaling_afvigelser")
+    .select("stripe_payment_intent_id")
+    .is("refunderet_kl", null)
+    .lt("refusion_forsoeg", 5)
+    .limit(100);
+  let antal = 0;
+  for (const { stripe_payment_intent_id } of data ?? []) {
+    try {
+      if ((await refunderAfvigelse(stripe_payment_intent_id)) === "refunderet") antal++;
+    } catch (err) {
+      console.error("Refusion af afvigelse fejlede:", stripe_payment_intent_id, err);
+    }
+  }
+  return antal;
 }
 
 export async function registrerRefunderet(
@@ -652,7 +846,10 @@ export async function overfoerVentende(saelgerId?: string): Promise<number> {
     .not("frigivet_kl", "is", null)
     .is("stripe_transfer_id", null)
     .limit(100);
+  // Cron giver op efter 3 endeligt afviste forsøg (betalingen er markeret til
+  // admin). account.updated for sælgeren prøver altid igen.
   if (saelgerId) q = q.eq("seller_id", saelgerId);
+  else q = q.lt("overfoersel_forsoeg", 3);
   const { data } = await q;
   let antal = 0;
   for (const { id } of data ?? []) {
