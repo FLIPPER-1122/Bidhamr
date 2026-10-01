@@ -7,6 +7,7 @@
 > - **Faktura og kvittering:** BidHamr laver kun faktura på sine egne gebyrer (købergebyr, sælgergebyr, BidHamr Beskyttelse) – med moms. Selve varen sælges mellem private, så køber og sælger får en kvittering/handelsbekræftelse, ikke en faktura. Fakturaerne oprettes automatisk i et dansk regnskabsprogram (sandsynligvis Dinero – afventer revisor) og vises også på brugerens profil.
 > - **Admin-dashboard:** Kun rollen **chef** må se pengetal og indtjeningsstatistik. Medarbejdere og admins ser alt andet. Forsiden fokuserer på brugere (antal i alt og nye brugere).
 > - Tilkøbet for køberen hedder **"BidHamr Beskyttelse"** overalt.
+> - **Formulering om betaling (Filip, 1. oktober 2026):** BidHamr er ikke en betalingsplatform og hæfter ikke økonomisk. Tekster må aldrig sige, at BidHamr modtager, opbevarer eller holder pengene. Skriv i stedet, at betalingen håndteres af vores betalingspartner **Stripe**.
 
 Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md og PRODUKT.md.
 
