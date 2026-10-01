@@ -33,6 +33,8 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 - Dækker, hvis varen er **gået i stykker under forsendelsen**: køberen kan oprette en sag og sende varen retur.
 - Uden BidHamr Beskyttelse: en vare, der går i stykker undervejs, kan ikke sendes retur.
 - Prisen på 5% er midlertidig. Der skal laves et bedre prissystem senere.
+- **Pakke kommer ikke frem** (bortkommet under forsendelse): BidHamr hjælper altid – med eller uden BidHamr Beskyttelse (Filip, 1. oktober 2026).
+- **Visning (Filip, 1. oktober 2026):** Procentsatser for gebyr og BidHamr Beskyttelse vises IKKE ved budfeltet. Der vises beløb i kroner (fx "+ 25 kr") og den samlede pris. Afkrydsningen for BidHamr Beskyttelse har kun et "Læs mere"-link til en egen side, der forklarer, hvad BidHamr hjælper med uden og med BidHamr Beskyttelse.
 - **Uden BidHamr Beskyttelse hjælper BidHamr ikke med retur**, heller ikke hvis varen ikke er som beskrevet. Så må køber og sælger selv løse det.
 - **Med BidHamr Beskyttelse** går BidHamr ind og håndterer sagen for køberen.
 - **Svindel-undtagelse:** Åbenlys svindel (tom pakke, helt anden vare, falsk kopi solgt som ægte, vare aldrig sendt) giver altid en sag, med eller uden BidHamr Beskyttelse. Pengene fryses.
