@@ -25,9 +25,9 @@ export const SEKTION_ALTID: Sektion = {
   overskrift: "Det hjælper BidHamr altid med",
   tekst: "Det gælder alle køb – også uden BidHamr Beskyttelse.",
   punkter: [
-    "Dine penge holdes sikkert, indtil du har godkendt varen. Sælgeren får dem først, når du har bekræftet, at varen er i orden, eller når fristen for at oprette en sag er gået.",
+    "Betalingen håndteres af vores betalingspartner Stripe, som holder pengene, indtil du har godkendt varen. Sælgeren får dem først, når du har bekræftet, at varen er i orden, eller når fristen for at oprette en sag er gået.",
     "Pakken kommer ikke frem. Forsvinder pakken under forsendelsen, hjælper vi dig.",
-    "Åbenlys svindel. Er pakken tom, er det en helt anden vare, er det en falsk kopi solgt som ægte, eller er varen aldrig sendt, kan du altid oprette en sag. Pengene holdes tilbage, mens vi ser på sagen.",
+    "Åbenlys svindel. Er pakken tom, er det en helt anden vare, er det en falsk kopi solgt som ægte, eller er varen aldrig sendt, kan du altid oprette en sag. Pengene holdes tilbage hos Stripe, mens vi ser på sagen.",
   ],
 };
 

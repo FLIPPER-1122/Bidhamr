@@ -327,9 +327,9 @@ export default async function AuktionPage({
               </Accordion>
 
               <Accordion title="Sikker handel med BidHamr">
-                BidHamr opbevarer betalingen sikkert, indtil du har modtaget og
-                godkendt varen, så både køber og sælger er beskyttet under
-                handlen.
+                Betalingen håndteres af vores betalingspartner Stripe, som
+                holder pengene, indtil du har modtaget og godkendt varen. Først
+                da går de videre til sælgeren.
               </Accordion>
             </div>
           </div>

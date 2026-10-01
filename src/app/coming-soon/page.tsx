@@ -44,7 +44,7 @@ const TRIN = [
 const TRYGHED = [
   {
     titel: "Sikker betaling",
-    tekst: "Pengene frigives først, når køber har godkendt varen.",
+    tekst: "Betalingen håndteres af Stripe, og sælgeren får først pengene, når køber har godkendt varen.",
     ikon: (
       <path
         strokeLinecap="round"

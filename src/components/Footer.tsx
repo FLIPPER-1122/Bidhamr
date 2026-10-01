@@ -59,7 +59,7 @@ export default function Footer() {
         <div className="flex flex-col gap-2 border-t border-kant pt-6 text-xs text-tekst-svag sm:flex-row sm:items-center sm:justify-between">
           <span>&copy; {new Date().getFullYear()} BidHamr</span>
           {/* TODO indhold-agenten: handelsbetingelser, privatliv og cookies */}
-          <span>Bud er bindende. Betaling sker via BidHamr.</span>
+          <span>Bud er bindende. Betalingen håndteres af Stripe.</span>
         </div>
       </div>
     </footer>
