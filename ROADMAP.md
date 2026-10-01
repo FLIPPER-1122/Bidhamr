@@ -17,7 +17,8 @@ Formål: rydde op, så agent-teamet kan arbejde sikkert og ens.
 - [~] Skriv `PRODUKT.md` (produktretning: Tradera for auktionen, Vinted for handlen, egne regler)
 - [~] Skriv `DESIGN.md` (designsystem ud fra mockup D: farver, skrifttyper, knapper, kort, afstande)
 - [~] Sæt agent-team op i `.claude/agents/` (backend, frontend, reviewer, tester) + chef-rolle i CLAUDE.md
-- [ ] Agenterne arbejder på egne git-branches – Filip merger og pusher
+- [~] Agenterne arbejder i egne git worktrees og fletter ind i `main` – Filip pusher (se regel 1 i CLAUDE.md)
+- [~] Testdatabase "Bidhamr Test" sat op: `npm run dev` bruger test, bidhamr.dk bruger produktion
 - [~] Ret fejl: bedømmelser kan i dag gives af alle til alle (kun køber → sælger efter handel)
 - [~] Ret gebyr i koden: sælgergebyr fra 10% til 5% (`wallet_udbetal_saelger`, `admin_frigiv_handel`)
 - [ ] **Filip – afklar TIDLIGT med rådgiver/advokat (kan ændre hvordan pengeflowet bygges):**

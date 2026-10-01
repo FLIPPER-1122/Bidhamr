@@ -34,7 +34,7 @@ const TRIN = [
     num: "03",
     titel: "Handel i hus",
     tekst:
-      "Køber betaler med det samme, og pengene frigives til dig, når varen er modtaget og godkendt.",
+      "Vinderen betaler inden for 48 timer, og pengene frigives til dig, når varen er modtaget og godkendt.",
     ikon: (
       <path strokeLinecap="round" strokeLinejoin="round" d="M8 12l3 3 5-6M3 4h18v16H3V4z" />
     ),
@@ -43,7 +43,7 @@ const TRIN = [
 
 const TRYGHED = [
   {
-    titel: "BidHamr Beskyttelse",
+    titel: "Sikker betaling",
     tekst: "Pengene frigives først, når køber har godkendt varen.",
     ikon: (
       <path
@@ -139,8 +139,9 @@ export default function ComingSoonPage() {
 
             <p className="mt-4 max-w-[52ch] text-base leading-relaxed text-white/85 lg:text-[17px]">
               Sælg det, du ikke bruger, og byd på andres ting. Du ser altid
-              totalprisen — bud, gebyr og fragt — før du byder, og hver handel er
-              dækket af BidHamr Beskyttelse.
+              totalprisen — bud, gebyr og fragt — før du byder, og pengene
+              holdes sikkert, til køberen har godkendt varen. Vil du være ekstra
+              dækket, kan du tilkøbe BidHamr Beskyttelse.
             </p>
 
             <div className="mt-8 max-w-md rounded-xl bg-white p-5 text-tekst">
@@ -152,7 +153,7 @@ export default function ComingSoonPage() {
             </div>
 
             <ul className="mt-8 flex flex-wrap gap-2">
-              {["Gratis at oprette auktion", "Ingen abonnement", "Dansk support"].map(
+              {["Gratis at oprette auktion", "Ingen abonnement", "Support på dansk og engelsk"].map(
                 (punkt) => (
                   <li
                     key={punkt}
