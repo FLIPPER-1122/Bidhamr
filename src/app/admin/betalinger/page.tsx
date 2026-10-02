@@ -7,6 +7,7 @@ import {
   type BetalingBeloeb,
   type Person,
 } from "@/app/actions/adminBetalinger";
+import { prøvOverfoerselIgenForm } from "@/app/actions/adminActions";
 
 // Betalinger, der kræver handling: markeret af webhook/cron (kraever_opmaerksomhed)
 // eller modtaget med forkert beløb (betaling_afvigelser). Beløb vises kun for chef.
@@ -34,9 +35,6 @@ const kr = (oere: number) =>
 function fejlPaaDansk(tekst: string | null): string {
   if (!tekst) return "Ingen fejlbeskrivelse.";
   return tekst
-    .replace(/\bBeloeb\b/g, "Beløb")
-    .replace(/\bbeloeb\b/g, "beløb")
-    .replace(/\boere\b/g, "øre")
     .replace(/\bkoeber(en)?\b/g, "køber$1")
     .replace(/\bsaelger(en)?\b/g, "sælger$1")
     .replace(/\boverfoersel\b/g, "overførsel")
@@ -111,8 +109,8 @@ export default async function AdminBetalinger({
   const res = await hentBetalingerTilHandling(Number(side) || 1, fane);
   if ("fejl" in res) throw new Error(res.fejl);
 
-  const { betalinger, afvigelser, antalSider, side: s, kanLoese, antalAabne } = res;
-  const tom = betalinger.length === 0 && afvigelser.length === 0;
+  const { betalinger, afvigelser, udenHandel, antalSider, side: s, kanLoese, antalAabne } = res;
+  const tom = betalinger.length === 0 && afvigelser.length === 0 && udenHandel.length === 0;
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
@@ -186,6 +184,33 @@ export default async function AdminBetalinger({
             </section>
           )}
 
+          {udenHandel.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold text-neutral-700">Auktioner uden handel</h2>
+              <p className="text-xs text-neutral-500">
+                Afsluttede auktioner med en vinder, hvor der ikke er oprettet en handel.
+              </p>
+              <ul className="divide-y divide-neutral-100 rounded-xl border border-neutral-200 bg-white">
+                {udenHandel.map((a) => (
+                  <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
+                    <Link
+                      href={`/auktion/${a.id}`}
+                      className="min-w-0 flex-1 truncate font-medium text-neutral-800 hover:underline"
+                    >
+                      {a.titel ?? "(uden titel)"}
+                    </Link>
+                    <span className="text-xs text-neutral-500">Sluttede {dato(a.slutter_kl)}</span>
+                    {a.for_gammel_til_automatik && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        for gammel til automatik
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {betalinger.length > 0 && (
             <ul className="space-y-3">
               {betalinger.map((b) => (
@@ -230,7 +255,18 @@ export default async function AdminBetalinger({
                   ) : (
                     kanLoese &&
                     fane === "aaben" && (
-                      <div className="mt-4">
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {b.kanProeveOverfoersel && (
+                          <ConfirmDialog
+                            triggerLabel="Prøv overførsel igen"
+                            triggerClassName="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition-colors hover:bg-neutral-100"
+                            title="Prøv overførslen til sælger igen?"
+                            description="Overførslen får nye forsøg og prøves med det samme. Betalingen forbliver markeret, indtil pengene faktisk er overført."
+                            confirmLabel="Prøv igen"
+                            action={prøvOverfoerselIgenForm}
+                            hiddenFields={{ tradeId: b.trade_id }}
+                          />
+                        )}
                         <ConfirmDialog
                           triggerLabel="Markér som løst"
                           triggerClassName="rounded-lg bg-orange-knap px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-orange-knap-mork"

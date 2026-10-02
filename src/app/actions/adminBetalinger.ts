@@ -3,6 +3,7 @@
 import { assertRole } from "@/lib/adminAuth";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
+import { indsigelseBlokerer } from "@/lib/betaling/stripeBetaling";
 
 // Admin: betalinger, der kræver handling (betalinger.kraever_opmaerksomhed og
 // åbne betaling_afvigelser). Medarbejder og admin ser kun hvem/hvad/status/fejl.
@@ -26,6 +27,23 @@ async function koer<T>(navn: string, fn: () => Promise<T>): Promise<T | { fejl: 
 
 const PR_SIDE = 25;
 const MAX_AFVIGELSER = 50;
+const MAX_UDEN_HANDEL = 50;
+
+// sidste_fejl må aldrig vise beløb for andre end chef. Nye tekster skrives
+// uden tal, men ældre rækker (og evt. tekster fra Stripe) kan indeholde
+// beløb. For ikke-chef fjernes derfor parenteser med tal, og alle øvrige tal
+// skjules - bortset fra antal dage/timer/forsøg.
+const SKJULT = "[skjult]";
+function rensBeloeb(tekst: string | null): string | null {
+  if (!tekst) return tekst;
+  return tekst
+    .replace(/\([^()]*\d[^()]*\)/g, "")
+    .replace(/\d[\d.,]*\s*(kr\.?|kroner|øre|oere|dkk)(?![a-zæøå])/gi, SKJULT)
+    .replace(/\d[\d.,]*(?![\d.,]|\s*(dage|dag|timer|time|forsøg)(?![a-zæøå]))/gi, SKJULT)
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.,])/g, "$1")
+    .trim();
+}
 
 export type Person = { id: string; navn: string | null };
 
@@ -49,6 +67,9 @@ export type BetalingTilHandling = {
   sidste_fejl: string | null;
   dato: string;
   indsigelse_kl: string | null;
+  // Admin/chef kan prøve overførslen igen (frigivet, ikke overført, ikke
+  // refunderet, ingen blokerende indsigelse, handel ikke annulleret, ingen sag).
+  kanProeveOverfoersel: boolean;
   // Kun for løste: hvem/hvornår/note.
   loest?: { kl: string; note: string; af: string | null } | null;
   // Kun sat for chef.
@@ -70,6 +91,13 @@ export type AfvigelseTilHandling = {
   beloeb?: { modtaget_oere: number; forventet_oere: number };
 };
 
+export type AuktionUdenHandel = {
+  id: string;
+  titel: string | null;
+  slutter_kl: string;
+  for_gammel_til_automatik: boolean;
+};
+
 export type BetalingerResultat = {
   ok: true;
   fane: "aaben" | "loest";
@@ -80,10 +108,11 @@ export type BetalingerResultat = {
   kanLoese: boolean;
   betalinger: BetalingTilHandling[];
   afvigelser: AfvigelseTilHandling[];
+  udenHandel: AuktionUdenHandel[];
 };
 
 const BASIS_KOLONNER =
-  "id, trade_id, auction_id, buyer_id, seller_id, status, sidste_fejl, opdateret";
+  "id, trade_id, auction_id, buyer_id, seller_id, status, sidste_fejl, opdateret, frigivet_kl, stripe_transfer_id, refusion_anmodet_kl";
 const BELOEB_KOLONNER =
   "total_oere, udbetaling_oere, fragt_oere, koebergebyr_oere, saelgergebyr_oere, beskyttelse_oere";
 
@@ -97,7 +126,7 @@ function manglerKolonne(err: { code?: string; message?: string } | null) {
   return (
     err.code === "42703" ||
     err.code === "PGRST204" ||
-    /indsigelse_kl/.test(err.message ?? "")
+    /indsigelse_(kl|status)/.test(err.message ?? "")
   );
 }
 
@@ -111,7 +140,9 @@ async function hentBetalingRaekker(
   }>,
 ): Promise<{ data: Raekke[]; count: number }> {
   const medIndsigelse = await byg(
-    admin.from("betalinger").select(`${kolonner}, indsigelse_kl`, { count: "exact" }),
+    admin
+      .from("betalinger")
+      .select(`${kolonner}, indsigelse_kl, indsigelse_status`, { count: "exact" }),
   );
   if (!medIndsigelse.error) {
     return { data: (medIndsigelse.data ?? []) as Raekke[], count: medIndsigelse.count ?? 0 };
@@ -233,9 +264,64 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
     ]);
     if (bErr) throw new Error(bErr.message);
     if (aErr) throw new Error(aErr.message);
+    // Handlernes status (til "Prøv overførsel igen").
+    const tradeIdsAlle = [...new Set(raekker.map((r) => r.trade_id as string))];
+    const { data: handler, error: hErr } = tradeIdsAlle.length
+      ? await admin.from("trades").select("id, status, sag_aaben").in("id", tradeIdsAlle)
+      : { data: [] as { id: string; status: string; sag_aaben: boolean | null }[], error: null };
+    if (hErr) throw new Error(hErr.message);
+    const handelMap = new Map(
+      (handler ?? []).map((h) => [
+        h.id as string,
+        { status: h.status as string, sag_aaben: !!h.sag_aaben },
+      ]),
+    );
+
+    // Afsluttede auktioner med vinder, men uden handel (kun på fanen "Kræver handling").
+    let udenHandel: AuktionUdenHandel[] = [];
+    if (fane === "aaben") {
+      const { data: uh, error: uhErr } = await admin
+        .from("auktioner_uden_handel")
+        .select("id, titel, slutter_kl, for_gammel_til_automatik")
+        .order("slutter_kl", { ascending: false })
+        .limit(MAX_UDEN_HANDEL);
+      if (uhErr) {
+        // Viewet kommer fra 20261002040000 - mangler det, vises sektionen ikke.
+        console.error("auktioner_uden_handel:", uhErr.message);
+      } else {
+        udenHandel = (uh ?? []).map((a) => ({
+          id: a.id as string,
+          titel: (a.titel as string | null) ?? null,
+          slutter_kl: a.slutter_kl as string,
+          for_gammel_til_automatik: !!a.for_gammel_til_automatik,
+        }));
+      }
+    }
+
     const navn = new Map((brugere ?? []).map((u) => [u.id as string, (u.navn as string | null) ?? null]));
     const titel = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
     const person = (id: unknown): Person => ({ id: id as string, navn: navn.get(id as string) ?? null });
+
+    const renset = (t: unknown) => {
+      const tekst = (t as string | null) ?? null;
+      return visBeloeb ? tekst : rensBeloeb(tekst);
+    };
+    const kanProeve = (r: Raekke) => {
+      const h = handelMap.get(r.trade_id as string);
+      return (
+        r.status === "betalt" &&
+        !!r.frigivet_kl &&
+        !r.stripe_transfer_id &&
+        !r.refusion_anmodet_kl &&
+        !indsigelseBlokerer({
+          indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
+          indsigelse_status: (r.indsigelse_status as string | null | undefined) ?? null,
+        }) &&
+        !!h &&
+        h.status !== "annulleret" &&
+        !h.sag_aaben
+      );
+    };
 
     const betalinger: BetalingTilHandling[] = raekker.map((r) => {
       const b: BetalingTilHandling = {
@@ -246,9 +332,10 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
         koeber: person(r.buyer_id),
         saelger: person(r.seller_id),
         status: r.status as string,
-        sidste_fejl: (r.sidste_fejl as string | null) ?? null,
+        sidste_fejl: renset(r.sidste_fejl),
         dato: r.opdateret as string,
         indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
+        kanProeveOverfoersel: kanLoese && kanProeve(r),
         loest: fane === "loest" ? loestMap.get(r.trade_id as string) ?? null : null,
       };
       if (visBeloeb) {
@@ -276,7 +363,7 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
               auktion_titel: bet ? titel.get(bet.auction_id as string) ?? null : null,
               koeber: bet ? person(bet.buyer_id) : null,
               saelger: bet ? person(bet.seller_id) : null,
-              sidste_fejl: (a.sidste_fejl as string | null) ?? null,
+              sidste_fejl: renset(a.sidste_fejl),
               refusion_forsoeg: Number(a.refusion_forsoeg ?? 0),
               dato: a.oprettet as string,
             };
@@ -300,6 +387,7 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
       kanLoese,
       betalinger,
       afvigelser,
+      udenHandel,
     };
   });
 }
@@ -313,16 +401,39 @@ export async function markerBetalingLøst(betalingId: string, note: string) {
     if (!n) throw new BrugerFejl("Skriv en note om, hvad der er gjort.");
     if (n.length > 2000) throw new BrugerFejl("Noten er for lang (højst 2000 tegn).");
 
-    // Atomisk: kun rækker, der stadig kræver opmærksomhed, ændres.
+    const INDSIGELSE_FEJL =
+      "Der er en åben indsigelse hos køberens bank. Betalingen kan ikke markeres som løst, før indsigelsen er afgjort.";
+    type Indsigelse = { indsigelse_kl: string | null; indsigelse_status: string | null };
+    const { data: nu, error: nuErr } = await admin
+      .from("betalinger")
+      .select("indsigelse_kl, indsigelse_status")
+      .eq("id", id)
+      .maybeSingle<Indsigelse>();
+    if (nuErr) throw new Error(nuErr.message);
+    if (!nu) throw new BrugerFejl("Betalingen blev ikke fundet.");
+    if (indsigelseBlokerer(nu)) throw new BrugerFejl(INDSIGELSE_FEJL);
+
+    // Atomisk: kun rækker, der stadig kræver opmærksomhed og ikke har en
+    // blokerende indsigelse (samme regel som betaling_indsigelse_blokerer), ændres.
     const { data, error } = await admin
       .from("betalinger")
       .update({ kraever_opmaerksomhed: false })
       .eq("id", id)
       .eq("kraever_opmaerksomhed", true)
+      .or("indsigelse_kl.is.null,indsigelse_status.in.(won,warning_closed,prevented)")
       .select("trade_id, buyer_id")
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!data) throw new BrugerFejl("Betalingen er allerede markeret som løst.");
+    if (!data) {
+      // Enten allerede løst, eller en indsigelse kom imellem.
+      const { data: igen } = await admin
+        .from("betalinger")
+        .select("indsigelse_kl, indsigelse_status")
+        .eq("id", id)
+        .maybeSingle<Indsigelse>();
+      if (igen && indsigelseBlokerer(igen)) throw new BrugerFejl(INDSIGELSE_FEJL);
+      throw new BrugerFejl("Betalingen er allerede markeret som løst.");
+    }
 
     const { error: logErr } = await admin.from("moderation_log").insert({
       medarbejder_id: userId,

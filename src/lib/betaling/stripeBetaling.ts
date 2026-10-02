@@ -848,7 +848,8 @@ export async function spejlRefusion(charge: Stripe.Charge): Promise<string> {
   // Markeres til admin og blokerer overførsel (refusion_anmodet_kl sættes).
   const { error } = await createAdminClient().rpc("betaling_registrer_delvis_refusion", {
     p_payment_intent: piId,
-    p_besked: `Delvis refusion hos Stripe (${charge.amount_refunded} af ${charge.amount} øre)`,
+    // Aldrig beløb i sidste_fejl - den vises for medarbejdere.
+    p_besked: "Delvis refusion hos Stripe",
   });
   if (error) throw new Error(`betaling_registrer_delvis_refusion: ${error.message}`);
   return "delvis_refusion";
@@ -895,56 +896,94 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
 // Annullerer en ikke-betalt betaling: først i databasen (atomisk), derefter
 // PaymentIntenten hos Stripe, så den ikke kan betales. Går en betaling
 // alligevel igennem, giver spejlingen 'sen_betaling' og automatisk refusion.
-// Bruges af admin nu og af 24-timers-betalingsfristen senere.
-export async function annullerBetaling(tradeId: string): Promise<boolean> {
+// Bruges af admin og af betalingsfristen (cron). Idempotent: betaling_annuller
+// returnerer PaymentIntent-id'et igen for en allerede annulleret betaling.
+//
+// Resultat:
+//   "ikke_annullerbar" - databasen afviste (fx allerede betalt). Intet at gøre hos Stripe.
+//   "annulleret"       - annulleret hos Stripe (eller ingen PaymentIntent, eller
+//                        betalt i mellemtiden - så refunderes den via spejlingen).
+//   "stripe_fejlede"   - Stripe-annulleringen lykkedes ikke. Kalderen må IKKE
+//                        sætte stripe_annulleret_kl, så cron prøver igen.
+export type AnnullerResultat = "ikke_annullerbar" | "annulleret" | "stripe_fejlede";
+
+export async function annullerBetaling(tradeId: string): Promise<AnnullerResultat> {
   const { data, error } = await createAdminClient().rpc("betaling_annuller", {
     p_trade: tradeId,
   });
   if (error) throw new Error(`betaling_annuller: ${error.message}`);
-  if (!data) return false;
+  if (!data) return "ikke_annullerbar";
   const piId = (data as { payment_intent: string | null }).payment_intent;
-  if (piId) {
-    const stripe = getStripe();
+  if (!piId) return "annulleret";
+
+  const stripe = getStripe();
+  try {
+    await stripe.paymentIntents.cancel(
+      piId,
+      { cancellation_reason: "abandoned" },
+      { idempotencyKey: `bidhamr-annuller-${piId}` },
+    );
+    return "annulleret";
+  } catch (err) {
+    // Allerede annulleret, eller betalt i mellemtiden (så refunderes den).
+    console.warn("Kunne ikke annullere PaymentIntent:", piId, err);
     try {
-      await stripe.paymentIntents.cancel(
-        piId,
-        { cancellation_reason: "abandoned" },
-        { idempotencyKey: `bidhamr-annuller-${piId}` },
-      );
-    } catch (err) {
-      // Allerede annulleret, eller betalt i mellemtiden (så refunderes den).
-      console.warn("Kunne ikke annullere PaymentIntent:", piId, err);
       const pi = await stripe.paymentIntents.retrieve(piId);
-      if (pi.status === "succeeded") await spejlPaymentIntent(pi);
+      if (pi.status === "canceled") return "annulleret";
+      if (pi.status === "succeeded") {
+        await spejlPaymentIntent(pi);
+        return "annulleret";
+      }
+    } catch (err2) {
+      console.error("Kunne ikke hente PaymentIntent efter fejlet annullering:", piId, err2);
     }
+    return "stripe_fejlede";
   }
-  return true;
 }
 
 // Prøver alle frigivne, ikke-overførte betalinger for en sælger (eller alle).
+// Hele køen gennemløbes side for side (sorteret på id, så rækkefølgen er
+// stabil, mens rækker forsvinder fra køen undervejs), så gamle betalinger, der
+// venter på en sælgerkonto, aldrig kan sulte nye ud. Et loft på antal sider
+// beskytter cron-kørslens tid; resten tages ved næste kørsel.
+const OVERFOERSEL_SIDE = 100;
+const OVERFOERSEL_MAKS_SIDER = 20;
+
 export async function overfoerVentende(saelgerId?: string): Promise<number> {
-  let q = createAdminClient()
-    .from("betalinger")
-    .select("id")
-    .eq("status", "betalt")
-    .not("frigivet_kl", "is", null)
-    .is("stripe_transfer_id", null)
-    .is("refusion_anmodet_kl", null)
-    .order("frigivet_kl", { ascending: true })
-    .limit(100);
-  // Cron giver op, når forsøgene er brugt op (overfoersel_forsoeg >=
-  // overfoersel_graense - betalingen er markeret til admin, som kan give nye
-  // forsøg). account.updated for sælgeren prøver altid igen.
-  if (saelgerId) q = q.eq("seller_id", saelgerId);
-  else q = q.eq("overfoersel_opbrugt", false);
-  const { data } = await q;
+  const admin = createAdminClient();
   let antal = 0;
-  for (const { id } of data ?? []) {
-    try {
-      if ((await overfoerTilSaelger(id)) === "overfoert") antal++;
-    } catch (err) {
-      console.error("Overførsel til sælger fejlede:", id, err);
+  let efterId: string | null = null;
+  for (let side = 0; side < OVERFOERSEL_MAKS_SIDER; side++) {
+    let q = admin
+      .from("betalinger")
+      .select("id")
+      .eq("status", "betalt")
+      .not("frigivet_kl", "is", null)
+      .is("stripe_transfer_id", null)
+      .is("refusion_anmodet_kl", null)
+      .order("id", { ascending: true })
+      .limit(OVERFOERSEL_SIDE);
+    if (efterId) q = q.gt("id", efterId);
+    // Cron giver op, når forsøgene er brugt op (overfoersel_forsoeg >=
+    // overfoersel_graense - betalingen er markeret til admin, som kan give nye
+    // forsøg). account.updated for sælgeren prøver altid igen.
+    if (saelgerId) q = q.eq("seller_id", saelgerId);
+    else q = q.eq("overfoersel_opbrugt", false);
+    const { data, error } = await q;
+    if (error) {
+      console.error("Hentning af ventende overførsler fejlede:", error.message);
+      break;
     }
+    const raekker = (data ?? []) as { id: string }[];
+    for (const { id } of raekker) {
+      try {
+        if ((await overfoerTilSaelger(id)) === "overfoert") antal++;
+      } catch (err) {
+        console.error("Overførsel til sælger fejlede:", id, err);
+      }
+    }
+    if (raekker.length < OVERFOERSEL_SIDE) break;
+    efterId = raekker[raekker.length - 1].id;
   }
   return antal;
 }
@@ -1142,5 +1181,19 @@ export async function proevOverfoerselIgen(betalingId: string): Promise<string> 
   });
   if (error) throw new Error(`betaling_overfoersel_nulstil: ${error.message}`);
   if (!data) return "ikke_tilladt";
-  return overfoerTilSaelger(betalingId);
+  const r = await overfoerTilSaelger(betalingId);
+  // Markeringen ryddes først, når overførslen faktisk er gennemført.
+  if (r === "overfoert" || r === "allerede_overfoert") {
+    const { error: rydFejl } = await createAdminClient()
+      .from("betalinger")
+      .update({
+        kraever_opmaerksomhed: false,
+        sidste_fejl: null,
+        opdateret: new Date().toISOString(),
+      })
+      .eq("id", betalingId)
+      .not("stripe_transfer_id", "is", null);
+    if (rydFejl) console.error("Rydning af markering efter overførsel fejlede:", betalingId, rydFejl.message);
+  }
+  return r;
 }

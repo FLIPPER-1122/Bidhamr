@@ -150,7 +150,11 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
       try {
         // Idempotent: betaling_annuller returnerer PaymentIntent-id'et igen for
         // en allerede annulleret betaling, og Stripe-kaldet har idempotensnøgle.
-        await annullerBetaling(s.trade_id);
+        // stripe_annulleret_kl sættes kun, når annulleringen lykkedes -
+        // ellers prøves der igen ved næste kørsel.
+        if ((await annullerBetaling(s.trade_id)) === "stripe_fejlede") {
+          throw new Error("Stripe-annullering lykkedes ikke");
+        }
         await admin
           .from("ubetalte_vindere")
           .update({ stripe_annulleret_kl: new Date().toISOString() })

@@ -666,13 +666,8 @@ async function sagLukImpl(formData: FormData): Promise<void> {
   revaliderSag(tradeId);
 }
 
-// Kroner til visning i moderationsloggen ud fra oere (heltal).
-function kr(oere: number): string {
-  return (oere / 100).toLocaleString("da-DK", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+// Moderationsloggen ses af medarbejdere og indeholder derfor aldrig beløb -
+// beløb ses kun af chef i betalingernes beløbskolonner.
 
 // Afregn saelgeren uden koeberens godkendelse. Kun admin og opefter.
 // Handler med en Stripe-betaling: frigivet_kl saettes i databasen, og
@@ -714,7 +709,7 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
     overfoersel = " (overførsel fejlede - prøves igen automatisk)";
   }
 
-  const beloeb = `${kr(Number(betaling.udbetaling_oere))} kr til sælger${overfoersel}`;
+  const beloeb = `Frigivet til sælger${overfoersel}`;
 
   // Pengene er frigivet - logfejl maa ikke se ud som om intet skete.
   await logModerationBloedt(admin, {
@@ -767,24 +762,41 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
     }
     // PaymentIntenten annulleres hos Stripe. Fejler det, prøver cron igen
     // (stripe_annulleret_kl er tom) og markerer til admin efter 7 dage.
+    // stripe_annulleret_kl sættes kun, når annulleringen faktisk lykkedes.
     try {
-      await annullerBetaling(tradeId);
-      await admin
-        .from("ubetalte_vindere")
-        .update({ stripe_annulleret_kl: new Date().toISOString() })
-        .eq("trade_id", tradeId)
-        .is("stripe_annulleret_kl", null);
+      const r = await annullerBetaling(tradeId);
+      if (r === "stripe_fejlede") {
+        console.error("Stripe-annullering efter admin-annullering fejlede (cron prøver igen):", tradeId);
+      } else {
+        await admin
+          .from("ubetalte_vindere")
+          .update({ stripe_annulleret_kl: new Date().toISOString() })
+          .eq("trade_id", tradeId)
+          .is("stripe_annulleret_kl", null);
+      }
     } catch (err) {
       console.error("Stripe-annullering efter admin-annullering fejlede (cron prøver igen):", err);
     }
     logTekst = "Ikke betalt - betalingen annulleret, 0 kr refunderet";
   } else {
+    if (indsigelseBlokerer(betaling)) {
+      throw new BrugerFejl(
+        "Der er en åben indsigelse hos køberens bank. Refusion afgøres af indsigelsen.",
+      );
+    }
     const { data: beloeb, error } = await admin.rpc("betaling_paabegynd_refusion", {
       p_trade: tradeId,
       p_aarsag: "admin",
     });
     if (error) throw new Error(error.message);
     if (beloeb === null) {
+      // Indsigelsen kan være kommet, efter betalingen blev hentet.
+      const frisk = await hentBetalingForHandel(tradeId);
+      if (frisk && indsigelseBlokerer(frisk)) {
+        throw new BrugerFejl(
+          "Der er en åben indsigelse hos køberens bank. Refusion afgøres af indsigelsen.",
+        );
+      }
       throw new BrugerFejl(
         "Handlen kan ikke refunderes: den er ikke betalt, allerede refunderet eller pengene er overført til sælger.",
       );
@@ -798,7 +810,7 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
         "Refusionen fejlede hos Stripe. Handlen er annulleret og markeret - prøv igen.",
       );
     }
-    logTekst = `${kr(Number(beloeb))} kr refunderet via Stripe (${resultat})`;
+    logTekst = `Fuld refusion via Stripe (${resultat})`;
   }
 
   await logModerationBloedt(admin, {
@@ -961,37 +973,49 @@ export async function hentAntalUbetalte() {
 const OVERFOERSEL_TEKST: Record<string, string> = {
   overfoert: "Pengene er overført til sælger.",
   allerede_overfoert: "Pengene var allerede overført til sælger.",
-  afventer_saelgerkonto: "Sælger har ikke en aktiv udbetalingskonto endnu. Sælger har fået en mail.",
-  indsigelse: "Der er en åben indsigelse på betalingen.",
-  sag_aaben: "Handlen har en åben sag.",
+  afventer_saelgerkonto:
+    "Overførslen afventer sælgerens udbetalingskonto. Sælger har fået en mail, og betalingen forbliver markeret.",
+  indsigelse: "Der er en åben indsigelse hos køberens bank. Overførslen afventer indsigelsen.",
+  sag_aaben: "Handlen har en åben sag. Overførslen afventer, at sagen afgøres.",
+  annulleret: "Handlen er annulleret og kan ikke overføres.",
+  intet_at_overfoere: "Der er intet at overføre til sælger.",
 };
 
+type OverfoerselUdfald = { ok: true; overfoert: boolean; besked: string };
+
 export async function prøvOverfoerselIgen(tradeId: string) {
-  return koer("prøvOverfoerselIgen", async (): Promise<{ ok: true; besked: string }> => {
+  return koer("prøvOverfoerselIgen", async (): Promise<OverfoerselUdfald> => {
     const { admin, userId: staffId } = await assertRole("admin");
     if (!tradeId) throw new BrugerFejl("Handlen findes ikke.");
+
+    // Handlen tjekkes før nye forsøg gives (databasen tjekker det igen atomisk).
+    const handel = await hentHandelTilSag(admin, tradeId);
+    if (handel.status === "annulleret") throw new BrugerFejl(OVERFOERSEL_TEKST.annulleret);
+    if (handel.sag_aaben) throw new BrugerFejl(OVERFOERSEL_TEKST.sag_aaben);
+
     const betaling = await hentBetalingForHandel(tradeId);
     if (!betaling) throw new BrugerFejl("Handlen har ingen betaling.");
     if (betaling.stripe_transfer_id) {
-      return { ok: true, besked: OVERFOERSEL_TEKST.allerede_overfoert };
+      return { ok: true, overfoert: true, besked: OVERFOERSEL_TEKST.allerede_overfoert };
     }
+    if (indsigelseBlokerer(betaling)) throw new BrugerFejl(OVERFOERSEL_TEKST.indsigelse);
 
     let r: string;
     try {
       r = await proevOverfoerselIgen(betaling.id);
     } catch (err) {
       console.error("Admin: overførsel fejlede igen:", tradeId, err);
-      throw new BrugerFejl("Overførslen fejlede igen hos Stripe. Se fejlen på betalingen.");
-    }
-    if (r === "ikke_tilladt" || r === "refunderet" || r === "ikke_klar" || r === "annulleret") {
       throw new BrugerFejl(
-        "Overførslen kan ikke prøves igen: betalingen er ikke frigivet, er refunderet eller har en indsigelse.",
+        "Overførslen fejlede igen hos Stripe. Betalingen forbliver markeret - se fejlen på betalingen.",
       );
     }
-    if (r !== "overfoert" && r !== "allerede_overfoert" && !(r in OVERFOERSEL_TEKST)) {
-      throw new BrugerFejl(`Overførslen blev ikke gennemført (${r}).`);
+    if (r === "ikke_tilladt" || r === "refunderet" || r === "ikke_klar") {
+      throw new BrugerFejl(
+        "Overførslen kan ikke prøves igen: betalingen er ikke frigivet, er refunderet, har en indsigelse, eller handlen er annulleret eller har en åben sag.",
+      );
     }
 
+    const overfoert = r === "overfoert" || r === "allerede_overfoert";
     await logModerationBloedt(admin, {
       medarbejder_id: staffId,
       handling: "overfoersel_proevet_igen",
@@ -1001,6 +1025,23 @@ export async function prøvOverfoerselIgen(tradeId: string) {
       aarsag: `Overførsel prøvet igen: ${r}`,
     });
     revaliderSag(tradeId);
-    return { ok: true, besked: OVERFOERSEL_TEKST[r] };
+    revalidatePath("/admin/betalinger");
+    return {
+      ok: true,
+      overfoert,
+      besked:
+        OVERFOERSEL_TEKST[r] ??
+        "Overførslen blev ikke gennemført. Betalingen forbliver markeret.",
+    };
   });
+}
+
+// Til ConfirmDialog på /admin/betalinger. formData: tradeId.
+// Er overførslen ikke gennemført, returneres udfaldet som { fejl }, så
+// dialogen bliver stående og viser beskeden.
+export async function prøvOverfoerselIgenForm(formData: FormData) {
+  const res = await prøvOverfoerselIgen(((formData.get("tradeId") as string) ?? "").trim());
+  if ("fejl" in res) return res;
+  if (!res.overfoert) return { fejl: res.besked };
+  return { ok: true as const };
 }
