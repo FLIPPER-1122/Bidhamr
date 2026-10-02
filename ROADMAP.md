@@ -55,7 +55,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - Brugeren ser samtalen under "Beskeder" og kan svare, så længe chatten er åben. Staff har **til hver en tid** en knap "Afslut chat" i samtalen; derefter kan brugeren ikke skrive mere (samtalen kan stadig læses)
   - Beskeder fra BidHamr er tydeligt markeret. Alle samtaler logges og gemmes (slettes aldrig)
   - **Ved en sag:** staff skriver med køber og sælger hver for sig i separate interne samtaler, der knyttes til sagen. Admin kan desuden skrive en fællesbesked til begge i den eksisterende chat mellem køber og sælger (tydeligt markeret som besked fra BidHamr)
-- [ ] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
+- [~] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
 - [ ] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen
 - [ ] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem
 - [ ] Afhentning hos sælger: køber giver stjerner og viser koden → pengene frigives med det samme

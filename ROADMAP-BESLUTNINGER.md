@@ -157,3 +157,9 @@ Brugeren får besked når:
 - Når staff giver en advarsel, skrives **to tekster**: en **intern note** (kun staff ser den) og en **begrundelse til brugeren** (kræves). Brugeren ser begrundelsen i notifikationen/mailen og på sin konto (DSA: brugeren skal vide hvorfor, da 3 advarsler giver permanent lukning).
 - Gælder alle steder, hvor advarsler gives (ubetalte vindere, Betalinger, brugersiden i admin).
 - **Pakken er kommet frem:** køberen får besked, når GLS melder pakken leveret (bygges med GLS-integrationen).
+
+## Sager (Filip, 3. oktober 2026)
+- **48-timers uret** starter, når køberen trykker "modtaget" (indtil GLS-sporing er bygget – derefter ved GLS-afhentning). Trykker køberen aldrig, gælder den eksisterende automatiske frigivelse.
+- **Refusion ved medhold:** køberen får alt retur **undtagen BidHamr Beskyttelse** (vare, købergebyr og fragt refunderes; Beskyttelsen er "brugt").
+- **Returfragt** ved skadet vare med BidHamr Beskyttelse: **BidHamr betaler altid**.
+- **Retur før refusion:** ved skadet / ikke som beskrevet sender køberen varen retur (label fra BidHamr), og refunderes, når pakken er afleveret. Ved svindel (tom pakke, aldrig sendt, helt anden vare) og bortkommet pakke refunderes straks.
