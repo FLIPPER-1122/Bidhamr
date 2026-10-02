@@ -17,7 +17,6 @@ import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { totalOere } from "@/lib/betaling/beregn";
-import { getResend } from "@/lib/resend";
 
 // Offentlig https-adresse til Stripes business_profile.url. Lokalt
 // (http/localhost) bruges produktionsdomaenet, da Stripe afviser andet.
@@ -33,12 +32,11 @@ function offentligSideUrl(): string {
   return "https://bidhamr.dk";
 }
 import {
-  HANDEL_AFSENDER,
   saelgerBetaltMail,
   saelgerOpretUdbetalingskontoMail,
   sideUrl,
 } from "@/lib/mails/handel";
-import { sendHandelMail } from "@/lib/mails/send";
+import { send } from "@/lib/notifikationer/send";
 
 export type BetalingRaekke = {
   id: string;
@@ -360,19 +358,17 @@ async function efterBetalt(paymentIntentId: string) {
       .eq("stripe_payment_intent_id", paymentIntentId)
       .single<{ trade_id: string; auction_id: string; seller_id: string }>();
     if (!b) return;
-    const resend = getResend();
-    if (!resend) return;
-    const [{ data: a }, { data: s }] = await Promise.all([
-      admin.from("auctions").select("titel").eq("id", b.auction_id).single(),
-      admin.from("users").select("email").eq("id", b.seller_id).single(),
-    ]);
-    if (!s?.email) return;
-    const mail = saelgerBetaltMail(a?.titel ?? "din vare", b.trade_id);
-    await resend.emails.send({
-      from: HANDEL_AFSENDER,
-      to: s.email,
-      subject: mail.subject,
-      html: mail.html,
+    const { data: a } = await admin.from("auctions").select("titel").eq("id", b.auction_id).single();
+    const titel = (a?.titel as string | undefined) ?? "din vare";
+    // Nøglen sikrer, at webhook + autobetaling + retur fra betaling ikke giver
+    // flere beskeder for samme handel.
+    await send(b.seller_id, "betaling_modtaget", {
+      titel: "Køberen har betalt",
+      tekst: `Køberen har betalt for "${titel}". Send varen, og indtast sporingsnummeret på handelssiden.`,
+      link: `/mine-handler/${b.trade_id}`,
+      data: { trade_id: b.trade_id },
+      mail: saelgerBetaltMail(titel, b.trade_id),
+      noegle: `betalt:${b.trade_id}`,
     });
   } catch (err) {
     console.error("Mail om modtaget betaling fejlede:", err);
@@ -552,6 +548,21 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
     })
     .eq("id", b.id)
     .is("stripe_transfer_id", null);
+
+  // Kaster aldrig; nøglen forhindrer dobbelt besked ved gentagne forsøg.
+  const { data: a } = await admin
+    .from("auctions")
+    .select("titel")
+    .eq("id", b.auction_id)
+    .maybeSingle();
+  const titel = (a?.titel as string | undefined) ?? "din vare";
+  await send(b.seller_id, "udbetaling", {
+    titel: "Pengene er på vej",
+    tekst: `Pengene for "${titel}" er sendt til din udbetalingskonto. Betalingen håndteres af vores betalingspartner Stripe.`,
+    link: `/mine-handler/${b.trade_id}`,
+    data: { trade_id: b.trade_id },
+    noegle: `udbetalt:${b.id}`,
+  });
 
   return "overfoert";
 }
@@ -1167,18 +1178,20 @@ async function paamindSaelgerkonto(b: BetalingRaekke): Promise<void> {
     }
     if (!claimet || claimet.length === 0) return;
 
-    const [{ data: a }, { data: s }] = await Promise.all([
-      admin.from("auctions").select("titel").eq("id", b.auction_id).maybeSingle(),
-      admin.from("users").select("email").eq("id", b.seller_id).maybeSingle(),
-    ]);
-    await sendHandelMail(
-      s?.email as string | undefined,
-      saelgerOpretUdbetalingskontoMail(
-        (a?.titel as string | undefined) ?? "din vare",
-        Number(b.udbetaling_oere),
-        trin > 0,
-      ),
-    );
+    const { data: a } = await admin
+      .from("auctions")
+      .select("titel")
+      .eq("id", b.auction_id)
+      .maybeSingle();
+    const titel = (a?.titel as string | undefined) ?? "din vare";
+    await send(b.seller_id, "udbetaling", {
+      titel: "Opret din udbetalingskonto",
+      tekst: `Køberen har godkendt "${titel}". Opret din udbetalingskonto, så vi kan sende pengene til dig.`,
+      link: "/konto",
+      data: { betaling_id: b.id },
+      mail: saelgerOpretUdbetalingskontoMail(titel, Number(b.udbetaling_oere), trin > 0),
+      noegle: `saelgerkonto:${b.id}:${trin}`,
+    });
   } catch (err) {
     console.error("Påmindelse om udbetalingskonto fejlede:", b.id, err);
   }

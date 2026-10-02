@@ -31,8 +31,42 @@ const testKlient = {
   },
 } as unknown as Resend;
 
+// Kun på testdatabasen: er MAIL_TEST_MODTAGER sat (og RESEND_API_KEY), sendes
+// ALLE mails rigtigt, men til MAIL_TEST_MODTAGER i stedet for den rigtige
+// modtager. Emnet får præfikset "[TEST til <oprindelig modtager>] ".
+// erTestdatabase() er fail closed, så det kan aldrig slå til i produktion.
+let omdirigeringsKlient: Resend | null = null;
+
+function testOmdirigering(): Resend | null {
+  const modtager = process.env.MAIL_TEST_MODTAGER?.trim();
+  const key = process.env.RESEND_API_KEY;
+  if (!modtager || !key || !erTestdatabase()) return null;
+  if (omdirigeringsKlient) return omdirigeringsKlient;
+  const rigtig = new Resend(key);
+  omdirigeringsKlient = {
+    emails: {
+      send(input: SendInput, ...rest: unknown[]) {
+        const i = input as { to?: string | string[]; subject?: string; cc?: unknown; bcc?: unknown };
+        const oprindelig = [i.to].flat().filter(Boolean).join(", ");
+        const omdirigeret = {
+          ...input,
+          to: modtager,
+          cc: undefined,
+          bcc: undefined,
+          subject: `[TEST til ${oprindelig}] ${i.subject ?? ""}`,
+        } as SendInput;
+        return (rigtig.emails.send as (...a: unknown[]) => ReturnType<Resend["emails"]["send"]>)(
+          omdirigeret,
+          ...rest,
+        );
+      },
+    },
+  } as unknown as Resend;
+  return omdirigeringsKlient;
+}
+
 export function getResend(): Resend | null {
-  if (erTestdatabase()) return testKlient;
+  if (erTestdatabase()) return testOmdirigering() ?? testKlient;
   if (client) return client;
 
   const key = process.env.RESEND_API_KEY;

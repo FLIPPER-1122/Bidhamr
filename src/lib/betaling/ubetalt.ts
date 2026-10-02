@@ -7,7 +7,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { annullerBetaling, spejlPaymentIntent } from "@/lib/betaling/stripeBetaling";
 import { getStripe } from "@/lib/stripe";
-import { sendHandelMail } from "@/lib/mails/send";
+import { send } from "@/lib/notifikationer/send";
 import {
   andenchanceTilbudMail,
   koeberAdminAnnulleretMail,
@@ -171,11 +171,31 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
     const o = await titelOgEmails(admin, s.auction_id, [s.buyer_id, s.seller_id]);
     if (!s.koeber_mail_sendt_kl && (await claimFelt(admin, "ubetalte_vindere", s.id, "koeber_mail_sendt_kl"))) {
       const mail = (adminAnnulleret ? koeberAdminAnnulleretMail : koeberUbetaltAnnulleretMail)(o.titel, s.trade_id);
-      if (await sendHandelMail(o.email.get(s.buyer_id), mail)) mails++;
+      const r = await send(s.buyer_id, adminAnnulleret ? "sag" : "betalingsfrist", {
+        titel: "Handlen er annulleret",
+        tekst: adminAnnulleret
+          ? `BidHamr har annulleret handlen om "${o.titel}".`
+          : `Vi modtog ikke din betaling for "${o.titel}" inden fristen, så handlen er annulleret.`,
+        link: `/mine-handler/${s.trade_id}`,
+        data: { trade_id: s.trade_id },
+        mail,
+        noegle: `ubetalt_koeber:${s.id}`,
+      });
+      if (r.mail) mails++;
     }
     if (!s.saelger_mail_sendt_kl && (await claimFelt(admin, "ubetalte_vindere", s.id, "saelger_mail_sendt_kl"))) {
       const mail = (adminAnnulleret ? saelgerAdminAnnulleretMail : saelgerUbetaltAnnulleretMail)(o.titel, s.trade_id);
-      if (await sendHandelMail(o.email.get(s.seller_id), mail)) mails++;
+      const r = await send(s.seller_id, adminAnnulleret ? "sag" : "andenchance", {
+        titel: adminAnnulleret ? "Handlen er annulleret" : "Køberen betalte ikke",
+        tekst: adminAnnulleret
+          ? `BidHamr har annulleret handlen om "${o.titel}". Du skal ikke sende varen.`
+          : `Køberen af "${o.titel}" betalte ikke. Du kan tilbyde varen til næste byder eller sætte den op igen.`,
+        link: `/mine-handler/${s.trade_id}`,
+        data: { trade_id: s.trade_id },
+        mail,
+        noegle: `ubetalt_saelger:${s.id}`,
+      });
+      if (r.mail) mails++;
     }
   }
 
@@ -307,10 +327,15 @@ export async function sendTilbudMail(tilbudId: string): Promise<boolean> {
   if (!t || t.status !== "afventer" || t.byder_mail_sendt_kl) return false;
   if (!(await claimFelt(admin, "andenchance_tilbud", t.id, "byder_mail_sendt_kl"))) return false;
   const o = await titelOgEmails(admin, t.auction_id, [t.byder_id]);
-  return sendHandelMail(
-    o.email.get(t.byder_id),
-    andenchanceTilbudMail(o.titel, Number(t.bud_oere), t.id, t.udloeber),
-  );
+  const r = await send(t.byder_id, "andenchance", {
+    titel: "Du får tilbudt en vare",
+    tekst: `Du kan købe "${o.titel}" til dit eget højeste bud. Du har 24 timer til at svare.`,
+    link: `/andenchance/${t.id}`,
+    data: { tilbud_id: t.id, auction_id: t.auction_id },
+    mail: andenchanceTilbudMail(o.titel, Number(t.bud_oere), t.id, t.udloeber),
+    noegle: `andenchance_tilbud:${t.id}`,
+  });
+  return r.mail;
 }
 
 // Mail til sælgeren, når et tilbud er accepteret, afvist eller udløbet.
@@ -340,7 +365,18 @@ export async function sendSaelgerSvarMail(
           t.oprindelig_trade_id,
           annulleretSendes ? "kan_ikke_koebe" : t.status === "afvist" ? "afvist" : "udloebet",
         );
-  return sendHandelMail(o.email.get(t.seller_id), mail);
+  const accepteret = t.status === "accepteret" && !!t.ny_trade_id;
+  const r = await send(t.seller_id, "andenchance", {
+    titel: accepteret ? "Byderen sagde ja" : "Byderen købte ikke",
+    tekst: accepteret
+      ? `Byderen vil købe "${o.titel}". Vent med at sende varen, til køberen har betalt.`
+      : `Byderen købte ikke "${o.titel}". Du kan sende tilbuddet videre eller sætte varen op igen.`,
+    link: `/mine-handler/${accepteret ? t.ny_trade_id : t.oprindelig_trade_id}`,
+    data: { tilbud_id: t.id },
+    mail,
+    noegle: `andenchance_svar:${t.id}`,
+  });
+  return r.mail;
 }
 
 // Cron-trin: udløb tilbud og send de mails, der mangler (også efter fejl).

@@ -11,6 +11,8 @@ import {
   refunderBetaling,
 } from "@/lib/betaling/stripeBetaling";
 import { unstable_rethrow } from "next/navigation";
+import { after } from "next/server";
+import { notificerAdvarsler } from "@/lib/notifikationer/cron";
 
 // --- Fejlhaandtering ---------------------------------------------------------
 // Next skjuler beskeden fra fejl, der kastes i server actions, i produktion.
@@ -177,6 +179,9 @@ async function advarUserImpl(formData: FormData): Promise<void> {
     bruger_id: userId,
     aarsag,
   });
+
+  // Brugeren får besked (klokke/mail/push). Cron samler op, hvis det fejler.
+  after(() => notificerAdvarsler());
 
   revalidatePath(`/admin/brugere/${userId}`);
 }
@@ -933,6 +938,7 @@ async function behandlUbetalt(
   if (error) throw new Error(error.message);
   const kode = (data as { kode: string }).kode;
   if (kode !== "ok") throw new BrugerFejl(UBETALT_FEJL[kode] ?? GENERISK_FEJL);
+  if (giv) after(() => notificerAdvarsler());
 
   revalidatePath("/admin", "layout");
   return { ok: true };

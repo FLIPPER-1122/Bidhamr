@@ -17,7 +17,8 @@
 // sendes to gange, selv hvis to kørsler overlapper.
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendHandelMail as sendMail } from "@/lib/mails/send";
+import { send } from "@/lib/notifikationer/send";
+import { koerNotifikationsCron } from "@/lib/notifikationer/cron";
 import { annullerUbetalte, behandlAndenchance } from "@/lib/betaling/ubetalt";
 import {
   betalingsPaamindelseMail,
@@ -137,13 +138,34 @@ export async function koerBetalingsCron() {
               b.trade_id,
               b.betal_senest,
             );
-      if (await sendMail(o.email.get(b.buyer_id), koeberMail)) resultat.vundetMails++;
-      // Er der allerede betalt, har sælgeren fået "køberen har betalt"-mailen.
+      const link = `/mine-handler/${b.trade_id}`;
+      const k = await send(b.buyer_id, "vundet", {
+        titel:
+          b.status === "betalt"
+            ? "Du vandt, og der er betalt"
+            : erAndenchance
+              ? "Du har fået varen"
+              : "Du vandt auktionen",
+        tekst:
+          b.status === "betalt"
+            ? `Du har fået "${titel}". Beløbet er trukket automatisk på dit gemte kort.`
+            : `Du har fået "${titel}". Husk at betale inden for 24 timer.`,
+        link,
+        data: { trade_id: b.trade_id, auction_id: b.auction_id },
+        mail: koeberMail,
+        noegle: `vundet:${b.id}`,
+      });
+      if (k.mail) resultat.vundetMails++;
+      // Er der allerede betalt, har sælgeren fået "køberen har betalt"-beskeden.
       if (b.status !== "betalt" && !erAndenchance) {
-        await sendMail(
-          o.email.get(b.seller_id),
-          saelgerSolgtMail(titel, Number(b.bud_oere), b.trade_id),
-        );
+        await send(b.seller_id, "vundet", {
+          titel: "Din auktion er solgt",
+          tekst: `"${titel}" er solgt. Vent med at sende varen, til køberen har betalt.`,
+          link,
+          data: { trade_id: b.trade_id, auction_id: b.auction_id },
+          mail: saelgerSolgtMail(titel, Number(b.bud_oere), b.trade_id),
+          noegle: `solgt:${b.id}`,
+        });
       }
     }
   }
@@ -177,13 +199,16 @@ export async function koerBetalingsCron() {
       if (felt === "paamindelse_40_sendt_kl" && !b.paamindelse_24_sendt_kl) {
         await claim(b.id, "paamindelse_24_sendt_kl");
       }
-      const mail = betalingsPaamindelseMail(
-        o.titel.get(b.auction_id) ?? "din auktion",
-        Number(b.total_oere),
-        b.trade_id,
-        b.betal_senest,
-      );
-      if (await sendMail(o.email.get(b.buyer_id), mail)) resultat.paamindelser++;
+      const titel = o.titel.get(b.auction_id) ?? "din auktion";
+      const p = await send(b.buyer_id, "betalingsfrist", {
+        titel: "Husk at betale",
+        tekst: `Du mangler at betale for "${titel}". Fristen udløber om højst ${timerFoerFrist} timer.`,
+        link: `/mine-handler/${b.trade_id}`,
+        data: { trade_id: b.trade_id },
+        mail: betalingsPaamindelseMail(titel, Number(b.total_oere), b.trade_id, b.betal_senest),
+        noegle: `paamindelse:${felt}:${b.id}`,
+      });
+      if (p.mail) resultat.paamindelser++;
     }
   }
 
@@ -218,5 +243,9 @@ export async function koerBetalingsCron() {
     console.error("Andenchance-trinnet fejlede:", err);
   }
 
-  return resultat;
+  // 9) Notifikationer om likes, beskeder, favoritter der slutter snart, nye
+  //    auktioner fra fulgte sælgere og advarsler. Kaster aldrig.
+  const notifikationer = await koerNotifikationsCron();
+
+  return { ...resultat, notifikationer };
 }
