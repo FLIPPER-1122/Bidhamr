@@ -26,10 +26,14 @@ export type NotifikationInput = {
   tekst: string;
   // Intern sti, fx `/mine-handler/<id>`. Ugyldige stier droppes.
   link?: string | null;
+  // Gemmes i klokken og sendes med push - modtageren kan læse det. Må ALDRIG
+  // indeholde en anden brugers id (fx byder, liker, følger). Kun id'er på
+  // auktioner, handler, betalinger o.l., som modtageren selv har adgang til.
   data?: Record<string, unknown>;
   // Egen mailskabelon. Uden den bygges en simpel mail af titel/tekst/link.
   mail?: Mail;
-  // Idempotensnøgle, fx `overbudt:<bud-id>:<bruger-id>`.
+  // Idempotensnøgle, fx `overbudt:<bud-id>`. Gemmes kun i
+  // notifikation_afsendelser (service-role) - aldrig hos modtageren.
   noegle?: string;
 };
 
@@ -95,7 +99,9 @@ async function gemIKlokke(
     titel: input.titel.slice(0, 200),
     tekst: input.tekst.slice(0, 2000),
     link,
-    data: { ...(input.data ?? {}), ...(input.noegle ? { noegle: input.noegle } : {}) },
+    // Kun input.data - aldrig nøglen: den kan indeholde andre brugeres id
+    // (fx likerens), og modtageren kan læse sin egen klokke-række.
+    data: input.data ?? {},
   });
   if (error) {
     console.error("Notifikation: klokke fejlede:", type, error.message);

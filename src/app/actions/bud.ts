@@ -2,52 +2,8 @@
 
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
-import { send } from "@/lib/notifikationer/send";
-
-// Overbudt (forrige førende byder) og bud på egen auktion (sælgeren).
-// Byderens identitet nævnes aldrig (bydere er private). Kaster aldrig.
-async function notificerOmBud(
-  auktionId: string,
-  byderId: string,
-  forrigeByder: string | null,
-  beloeb: number,
-) {
-  try {
-    const { data: a } = await createAdminClient()
-      .from("auctions")
-      .select("titel, bruger_id")
-      .eq("id", auktionId)
-      .maybeSingle<{ titel: string; bruger_id: string }>();
-    if (!a) return;
-    const kr = beloeb.toLocaleString("da-DK");
-    const link = `/auktion/${auktionId}`;
-    const data = { auction_id: auktionId };
-    await Promise.all([
-      forrigeByder && forrigeByder !== byderId
-        ? send(forrigeByder, "overbudt", {
-            titel: "Du er blevet overbudt",
-            tekst: `Der er budt ${kr} kr på "${a.titel}". Byd igen, hvis du stadig vil have den.`,
-            link,
-            data,
-            noegle: `overbudt:${auktionId}:${forrigeByder}:${beloeb}`,
-          })
-        : null,
-      a.bruger_id !== byderId
-        ? send(a.bruger_id, "bud_paa_egen", {
-            titel: "Nyt bud på din auktion",
-            tekst: `Der er budt ${kr} kr på "${a.titel}".`,
-            link,
-            data,
-            noegle: `bud_paa_egen:${auktionId}:${beloeb}`,
-          })
-        : null,
-    ]);
-  } catch (err) {
-    console.error("Bud-notifikationer fejlede:", err);
-  }
-}
+import { notificerEgetNyesteBud } from "@/lib/notifikationer/bud";
 
 // Bud afgives paa serveren, saa det kan rate-limites pr. bruger og pr. IP.
 // Selve buddet indsaettes stadig med brugerens egen session, saa RLS
@@ -86,17 +42,6 @@ export async function afgivBud(
     return { fejl: FOR_MANGE_FORSOEG };
   }
 
-  // Hvem førte før dette bud? Bud skal altid være højere end det forrige, så
-  // det seneste bud er det førende. Hentes med service-role (bydere er
-  // private) og bruges kun til notifikationen - sendes aldrig til browseren.
-  const { data: forrige } = await createAdminClient()
-    .from("bids")
-    .select("bruger_id")
-    .eq("auktion_id", auktionId)
-    .order("oprettet", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ bruger_id: string }>();
-
   const { error } = await supabase.from("bids").insert({
     auktion_id: auktionId,
     bruger_id: user.id,
@@ -131,10 +76,12 @@ export async function afgivBud(
     .eq("id", auktionId)
     .maybeSingle<{ slutter_kl: string }>();
 
-  // Notifikationer sendes efter svaret, så budgiveren ikke venter på mail/push.
-  const forrigeByder = forrige?.bruger_id ?? null;
+  // Overbudt + bud på egen auktion sendes efter svaret, så budgiveren ikke
+  // venter på mail/push. Den forrige førende findes ud fra bud-rækkefølgen
+  // (efter insert). Notifikations-cron'en bruger samme nøgler og opsamler bud
+  // fra appen og fejlede afsendelser - intet sendes dobbelt.
   const byder = user.id;
-  after(() => notificerOmBud(auktionId, byder, forrigeByder, beloeb));
+  after(() => notificerEgetNyesteBud(auktionId, byder));
 
   return { ok: true, slutterKl: efter?.slutter_kl ?? null };
 }

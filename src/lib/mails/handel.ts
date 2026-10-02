@@ -50,7 +50,7 @@ function skabelon({
                 <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:8px;">
                   <tr>
                     <td align="center" style="border-radius:12px;background-color:${ORANGE};">
-                      <a href="${knapUrl}" target="_blank" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:12px;">${knapTekst}</a>
+                      <a href="${escapeHtml(knapUrl)}" target="_blank" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:12px;">${knapTekst}</a>
                     </td>
                   </tr>
                 </table>
