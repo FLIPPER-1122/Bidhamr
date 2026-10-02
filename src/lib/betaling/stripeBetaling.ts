@@ -999,7 +999,7 @@ export async function spejlRefusionsfejl(refundId: string): Promise<string> {
     .eq("stripe_payment_intent_id", piId)
     .maybeSingle<{ id: string; status: string; stripe_refund_id: string | null }>();
   if (b) {
-    if (b.status === "refunderet") return "allerede_refunderet";
+    if (b.status === "refunderet") return refusionFejletEfterRefunderet(b, refund, piId);
     // En gammel, fejlet refusion, der allerede er erstattet af et nyt forsøg.
     if (b.stripe_refund_id && b.stripe_refund_id !== refund.id) return "erstattet";
     const { error } = await admin.rpc("betaling_marker_opmaerksomhed", {
@@ -1016,6 +1016,47 @@ export async function spejlRefusionsfejl(refundId: string): Promise<string> {
     .is("refunderet_kl", null)
     .select("id");
   return (afv ?? []).length > 0 ? "afvigelse_markeret" : "ukendt";
+}
+
+// Betalingen står som 'refunderet', men en refusion er bagefter fejlet hos
+// Stripe (fx køberens kort er lukket). Er det vores refusion, og er pengene
+// ikke stadig refunderet hos Stripe, sættes betalingen tilbage til 'betalt'
+// med refusionen stadig claimet (betaling_refusion_fejlet), så cron prøver
+// igen (refunderSagerVentende) og admin ser den. Ellers ignoreres hændelsen.
+async function refusionFejletEfterRefunderet(
+  b: { id: string; stripe_refund_id: string | null },
+  refund: Stripe.Refund,
+  piId: string,
+): Promise<string> {
+  // Vores refusion: den gemte (stripe_refund_id), eller - når ingen er gemt
+  // (refunderet registreret via charge.refunded) - den, der fejlede. En gammel
+  // refusion, der allerede er erstattet af et nyt, gennemført forsøg, ignoreres
+  // (også selvom metadata.betaling_id er vores).
+  if (b.stripe_refund_id && b.stripe_refund_id !== refund.id) return "allerede_refunderet";
+
+  // Er chargen stadig (fuldt eller med det bestilte beløb) refunderet hos
+  // Stripe - fx af en anden refusion - er der intet at gøre.
+  const pi = await getStripe().paymentIntents.retrieve(piId, { expand: ["latest_charge"] });
+  const charge = pi.latest_charge;
+  if (!charge || typeof charge === "string") return "allerede_refunderet";
+  const { data: bestilt } = await createAdminClient()
+    .from("betalinger")
+    .select("refusion_oere")
+    .eq("id", b.id)
+    .maybeSingle<{ refusion_oere: number | null }>();
+  const stadigRefunderet =
+    charge.refunded ||
+    (bestilt?.refusion_oere !== null &&
+      bestilt?.refusion_oere !== undefined &&
+      Number(charge.amount_refunded) >= Number(bestilt.refusion_oere));
+  if (stadigRefunderet) return "allerede_refunderet";
+
+  const { data, error } = await createAdminClient().rpc("betaling_refusion_fejlet", {
+    p_betaling: b.id,
+    p_refund: refund.id,
+  });
+  if (error) throw new Error(`betaling_refusion_fejlet: ${error.message}`);
+  return String(data) === "genaabnet" ? "refusion_genaabnet" : "allerede_refunderet";
 }
 
 // Spejler en indsigelse (chargeback) fra Stripe. Disputen hentes frisk, så

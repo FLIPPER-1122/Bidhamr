@@ -105,6 +105,7 @@ const KODE_FEJL: Record<string, string> = {
   staff: "Medarbejdere, admins og chefer kan ikke lukkes herfra.",
   allerede_lukket: "Kontoen er allerede lukket permanent.",
   ugyldig_sag: "Brugeren er ikke part i sagen.",
+  inhabil: "Du kan ikke behandle en sag, hvor du selv er køber eller sælger.",
 };
 
 function kodeFejl(kode: string | undefined): string {

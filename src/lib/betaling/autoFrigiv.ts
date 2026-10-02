@@ -13,6 +13,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
 import { overfoerTilSaelger } from "@/lib/betaling/stripeBetaling";
+import { SAG_AUTO_FRIGIV_EFTER_DAGE } from "@/lib/sager";
 
 type AutoFrigivet = {
   betaling_id: string;
@@ -58,4 +59,92 @@ export async function frigivAutomatisk(): Promise<number> {
     });
   }
   return liste.length;
+}
+
+const DAG = 24 * 60 * 60 * 1000;
+// Påmindelsen sendes 12 dage efter afsendelse - 2 dage før den automatiske
+// frigivelse (SAG_AUTO_FRIGIV_EFTER_DAGE).
+const PAAMIND_EFTER_DAGE = 12;
+
+function datoTekst(ms: number): string {
+  return new Date(ms).toLocaleDateString("da-DK", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Europe/Copenhagen",
+  });
+}
+
+// Påmindelse til køberen 12 dage efter afsendelse, når pakken ikke er
+// markeret som modtaget, og der ikke er oprettet en sag: ellers udbetales
+// pengene automatisk til sælgeren (handel_auto_frigiv, dag 14). Kun handler,
+// hvor betalingen er betalt og hverken frigivet, overført eller under
+// refusion. Idempotent: nøglen `paamind_modtaget:<handel>` sendes kun én gang.
+// Kaster aldrig.
+export async function paamindKoeberOmModtagelse(): Promise<number> {
+  try {
+    const admin = createAdminClient();
+    const nu = Date.now();
+    const { data: handler, error } = await admin
+      .from("trades")
+      .select("id, buyer_id, auction_id, sendt_kl")
+      .eq("status", "pakke_sendt")
+      .not("sendt_kl", "is", null)
+      .lte("sendt_kl", new Date(nu - PAAMIND_EFTER_DAGE * DAG).toISOString())
+      .gt("sendt_kl", new Date(nu - SAG_AUTO_FRIGIV_EFTER_DAGE * DAG).toISOString())
+      .or("sag_aaben.is.null,sag_aaben.eq.false")
+      .limit(200);
+    if (error) {
+      console.error("Hentning af handler til påmindelse om modtagelse fejlede:", error.message);
+      return 0;
+    }
+    const liste = (handler ?? []) as {
+      id: string;
+      buyer_id: string;
+      auction_id: string;
+      sendt_kl: string;
+    }[];
+    if (liste.length === 0) return 0;
+    const ids = liste.map((t) => t.id);
+
+    const [{ data: sager }, { data: betalinger }, { data: auktioner }] = await Promise.all([
+      admin.from("sager").select("trade_id").in("trade_id", ids),
+      admin
+        .from("betalinger")
+        .select("trade_id")
+        .in("trade_id", ids)
+        .eq("status", "betalt")
+        .is("frigivet_kl", null)
+        .is("refusion_anmodet_kl", null)
+        .is("overfoersel_paabegyndt_kl", null)
+        .is("stripe_transfer_id", null),
+      admin
+        .from("auctions")
+        .select("id, titel")
+        .in("id", [...new Set(liste.map((t) => t.auction_id))]),
+    ]);
+    const medSag = new Set((sager ?? []).map((s) => s.trade_id as string));
+    const betalt = new Set((betalinger ?? []).map((b) => b.trade_id as string));
+    const titler = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
+
+    let antal = 0;
+    for (const t of liste) {
+      if (medSag.has(t.id) || !betalt.has(t.id)) continue;
+      const sendt = Date.parse(t.sendt_kl);
+      if (Number.isNaN(sendt)) continue;
+      const titel = titler.get(t.auction_id) ?? "din vare";
+      const r = await send(t.buyer_id, "pakke_sendt", {
+        titel: "Har du modtaget din vare?",
+        tekst: `Har du modtaget "${titel}"? Markér den som modtaget, eller meld den bortkommet – ellers udbetales pengene til sælgeren ${datoTekst(sendt + SAG_AUTO_FRIGIV_EFTER_DAGE * DAG)}.`,
+        link: `/mine-handler/${t.id}`,
+        data: { trade_id: t.id },
+        noegle: `paamind_modtaget:${t.id}`,
+      });
+      if (!r.dublet && (r.klokke || r.mail || r.push)) antal++;
+    }
+    return antal;
+  } catch (err) {
+    console.error("Påmindelse om modtagelse fejlede:", err);
+    return 0;
+  }
 }

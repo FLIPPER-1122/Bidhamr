@@ -7,7 +7,8 @@
 //   3b. Sager, hvor ankefristen (4 dage efter afgørelsen) er udløbet: refusion
 //       til køber / frigivelse til sælger / frysningen fjernes.
 //   3c. Automatisk frigivelse: 48 t efter "modtaget" uden sag, eller 14 dage
-//       efter afsendelse uden "modtaget" og uden sag.
+//       efter afsendelse uden "modtaget" og uden sag. Køberen får en
+//       påmindelse på dag 12.
 //   4. Overfør frigivne beløb, der ventede på sælgerens Connect-konto.
 //   5. Refundér betalinger med afvigende beløb.
 //   5b. Sagsrefusioner, der er claimet, men ikke gennemført hos Stripe.
@@ -27,7 +28,7 @@ import { send } from "@/lib/notifikationer/send";
 import { koerNotifikationsCron } from "@/lib/notifikationer/cron";
 import { annullerUbetalte, behandlAndenchance } from "@/lib/betaling/ubetalt";
 import { afviklForfaldneSager, notificerNyeSager } from "@/lib/sagerServer";
-import { frigivAutomatisk } from "@/lib/betaling/autoFrigiv";
+import { frigivAutomatisk, paamindKoeberOmModtagelse } from "@/lib/betaling/autoFrigiv";
 import {
   betalingsPaamindelseMail,
   koeberAndenchanceAutobetaltMail,
@@ -87,6 +88,7 @@ export async function koerBetalingsCron() {
     sagsbeskeder: 0,
     sagsafviklinger: 0,
     autoFrigivet: 0,
+    paamindelserModtaget: 0,
     ubetalteAnnulleret: 0,
     ubetaltMails: 0,
     andenchanceUdloebne: 0,
@@ -235,6 +237,8 @@ export async function koerBetalingsCron() {
   }
 
   // 3c) Automatisk frigivelse (48 t efter "modtaget" / 14 dage efter afsendelse).
+  //     Først påmindelsen til køberen på dag 12 (kaster aldrig).
+  resultat.paamindelserModtaget = await paamindKoeberOmModtagelse();
   try {
     resultat.autoFrigivet = await frigivAutomatisk();
   } catch (err) {
