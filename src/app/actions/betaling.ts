@@ -14,6 +14,7 @@ import {
   BetalingsFejl,
   hentBetalingForHandel,
   hentProfil,
+  erOnboardingRetur,
   onboardingLink,
   registrerGemtKort,
   sikrPaymentIntent,
@@ -344,11 +345,13 @@ export async function fjernGemtKort(): Promise<{ ok: true } | Fejl> {
 
 // Opretter (én gang) sælgerens Stripe Connect Express-konto og returnerer et
 // onboarding-link. Linket må kun vises for den indloggede bruger (ikke mailes).
-export async function startSaelgerOnboarding(): Promise<{ ok: true; url: string } | Fejl> {
+export async function startSaelgerOnboarding(
+  retur: unknown = "konto",
+): Promise<{ ok: true; url: string } | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
   try {
-    const url = await onboardingLink(user.id);
+    const url = await onboardingLink(user.id, erOnboardingRetur(retur) ? retur : "konto");
     return { ok: true, url };
   } catch (err) {
     console.error("startSaelgerOnboarding fejlede:", err);
@@ -366,6 +369,7 @@ export async function opdaterSaelgerStatus(): Promise<{ ok: true } | Fejl> {
     const konto = await getStripe().accounts.retrieve(p.stripe_account_id);
     await spejlConnectKonto(konto);
     revalidatePath("/konto");
+    revalidatePath("/opret-auktion");
     return { ok: true };
   } catch (err) {
     console.error("opdaterSaelgerStatus fejlede:", err);

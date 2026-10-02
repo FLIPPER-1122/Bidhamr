@@ -13,6 +13,8 @@ type Props = {
   hiddenFields: Record<string, string>;
   aarsagField?: { label: string; placeholder: string; required: boolean; name?: string };
   varighedField?: boolean;
+  // Påkrævet valg mellem nogle muligheder (radioknapper), fx Køber/Sælger.
+  valgField?: { name: string; label: string; valg: { value: string; label: string }[] };
 };
 
 export default function ConfirmDialog({
@@ -26,6 +28,7 @@ export default function ConfirmDialog({
   hiddenFields,
   aarsagField,
   varighedField,
+  valgField,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -110,6 +113,22 @@ export default function ConfirmDialog({
                     <option value="permanent">Permanent</option>
                   </select>
                 </div>
+              )}
+
+              {valgField && (
+                <fieldset>
+                  <legend className="block text-sm font-medium text-neutral-700">
+                    {valgField.label}
+                  </legend>
+                  <div className="mt-1.5 flex flex-wrap gap-4">
+                    {valgField.valg.map((v) => (
+                      <label key={v.value} className="inline-flex items-center gap-2 text-sm text-neutral-800">
+                        <input type="radio" name={valgField.name} value={v.value} required />
+                        {v.label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
               )}
 
               {aarsagField && (

@@ -4,6 +4,7 @@ import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import {
   hentBetalingerTilHandling,
   markerBetalingLøstForm,
+  givAdvarselBetalingForm,
   type BetalingBeloeb,
   type Person,
 } from "@/app/actions/adminBetalinger";
@@ -77,21 +78,24 @@ function AuktionLink({ id, titel, tradeId }: { id: string | null; titel: string 
   );
 }
 
-function Beloeb({ b }: { b: BetalingBeloeb }) {
-  const linjer: [string, number][] = [
+function Beloeb({ b, annulleret }: { b: BetalingBeloeb; annulleret: boolean }) {
+  const linjer: [string, number, string?][] = [
     ["Total", b.total_oere],
     ["Udbetaling", b.udbetaling_oere],
-    ["Fragt", b.fragt_oere],
+    ["Fragt", b.fragt_oere, annulleret && b.fragt_oere > 0 ? " (refunderes ved annullering)" : undefined],
     ["Købergebyr", b.koebergebyr_oere],
     ["Sælgergebyr", b.saelgergebyr_oere],
   ];
   if (b.beskyttelse_oere > 0) linjer.push(["BidHamr Beskyttelse", b.beskyttelse_oere]);
   return (
     <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg bg-neutral-50 px-3 py-2 text-xs sm:grid-cols-3 lg:grid-cols-6">
-      {linjer.map(([l, v]) => (
+      {linjer.map(([l, v, note]) => (
         <div key={l}>
           <dt className="text-neutral-500">{l}</dt>
-          <dd className="font-medium text-neutral-800">{kr(v)}</dd>
+          <dd className="font-medium text-neutral-800">
+            {kr(v)}
+            {note}
+          </dd>
         </div>
       ))}
     </dl>
@@ -239,7 +243,7 @@ export default async function AdminBetalinger({
                     {fejlPaaDansk(b.sidste_fejl)}
                   </p>
 
-                  {b.beloeb && <Beloeb b={b.beloeb} />}
+                  {b.beloeb && <Beloeb b={b.beloeb} annulleret={b.handel_status === "annulleret"} />}
 
                   {b.loest ? (
                     <div className="mt-3 rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
@@ -279,6 +283,29 @@ export default async function AdminBetalinger({
                             name: "note",
                             label: "Note",
                             placeholder: "Fx: Refunderet manuelt i Stripe",
+                            required: true,
+                          }}
+                        />
+                        <ConfirmDialog
+                          triggerLabel="Giv advarsel"
+                          triggerClassName="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition-colors hover:bg-neutral-100"
+                          title="Giv advarsel og luk sagen?"
+                          description="Advarslen tæller med i reglen om 3 advarsler. Betalingen markeres som løst."
+                          confirmLabel="Giv advarsel"
+                          action={givAdvarselBetalingForm}
+                          hiddenFields={{ betalingId: b.id }}
+                          valgField={{
+                            name: "modtager",
+                            label: "Hvem får advarslen?",
+                            valg: [
+                              { value: "koeber", label: b.koeber.navn ? `Køber (${b.koeber.navn})` : "Køber" },
+                              { value: "saelger", label: b.saelger.navn ? `Sælger (${b.saelger.navn})` : "Sælger" },
+                            ],
+                          }}
+                          aarsagField={{
+                            name: "begrundelse",
+                            label: "Begrundelse",
+                            placeholder: "Fx: Sendte ikke varen trods flere påmindelser",
                             required: true,
                           }}
                         />

@@ -70,6 +70,8 @@ export type BetalingTilHandling = {
   // Admin/chef kan prøve overførslen igen (frigivet, ikke overført, ikke
   // refunderet, ingen blokerende indsigelse, handel ikke annulleret, ingen sag).
   kanProeveOverfoersel: boolean;
+  // Handlens status (fx 'annulleret' - så vises fragten som refunderet).
+  handel_status: string | null;
   // Kun for løste: hvem/hvornår/note.
   loest?: { kl: string; note: string; af: string | null } | null;
   // Kun sat for chef.
@@ -336,6 +338,7 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
         dato: r.opdateret as string,
         indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
         kanProeveOverfoersel: kanLoese && kanProeve(r),
+        handel_status: handelMap.get(r.trade_id as string)?.status ?? null,
         loest: fane === "loest" ? loestMap.get(r.trade_id as string) ?? null : null,
       };
       if (visBeloeb) {
@@ -457,6 +460,56 @@ export async function markerBetalingLøstForm(formData: FormData) {
   return markerBetalingLøst(
     ((formData.get("betalingId") as string) ?? "").trim(),
     ((formData.get("note") as string) ?? "").trim(),
+  );
+}
+
+const ADVARSEL_FEJL: Record<string, string> = {
+  ingen_adgang: "Du har ikke adgang til at give advarsler.",
+  ugyldig_modtager: "Vælg, om advarslen gives til køber eller sælger.",
+  begrundelse_mangler: "Skriv en begrundelse for advarslen.",
+  begrundelse_for_lang: "Begrundelsen er for lang (højst 2000 tegn).",
+  ikke_fundet: "Betalingen blev ikke fundet.",
+  indsigelse:
+    "Der er en åben indsigelse hos køberens bank. Der kan ikke gives advarsel, før indsigelsen er afgjort.",
+  allerede_loest: "Betalingen er allerede markeret som løst.",
+};
+
+// "Giv advarsel": advarsel til køber eller sælger (tæller med i
+// 3-advarsler-reglen), logges og lukker sagen. Atomisk i admin_advarsel_betaling.
+export async function givAdvarselBetaling(betalingId: string, modtager: string, begrundelse: string) {
+  return koer("givAdvarselBetaling", async () => {
+    const { admin, userId } = await assertRole("admin");
+    const id = (betalingId ?? "").trim();
+    const m = (modtager ?? "").trim();
+    const grund = (begrundelse ?? "").trim();
+    if (!id) throw new BrugerFejl(ADVARSEL_FEJL.ikke_fundet);
+    if (m !== "koeber" && m !== "saelger") throw new BrugerFejl(ADVARSEL_FEJL.ugyldig_modtager);
+    if (!grund) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_mangler);
+    if (grund.length > 2000) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_for_lang);
+
+    const { data, error } = await admin.rpc("admin_advarsel_betaling", {
+      p_betaling: id,
+      p_medarbejder: userId,
+      p_modtager: m,
+      p_begrundelse: grund,
+    });
+    if (error) throw new Error(error.message);
+    const kode = (data as { kode?: string } | null)?.kode;
+    if (kode !== "ok") {
+      if (kode && ADVARSEL_FEJL[kode]) throw new BrugerFejl(ADVARSEL_FEJL[kode]);
+      throw new Error(`admin_advarsel_betaling returnerede ${kode}`);
+    }
+    revalidatePath("/admin", "layout");
+    return { ok: true as const };
+  });
+}
+
+// Til ConfirmDialog. formData: betalingId, modtager ('koeber'|'saelger'), begrundelse.
+export async function givAdvarselBetalingForm(formData: FormData) {
+  return givAdvarselBetaling(
+    ((formData.get("betalingId") as string) ?? "").trim(),
+    ((formData.get("modtager") as string) ?? "").trim(),
+    ((formData.get("begrundelse") as string) ?? "").trim(),
   );
 }
 

@@ -74,6 +74,9 @@ update public.users set rolle = 'medarbejder' where id = '11111111-1111-4111-811
 
 -- ---------------------------------------------------------
 -- Auktioner (sælger)
+-- Seed koerer som postgres uden JWT og er derfor undtaget fra
+-- auctions_kraev_udbetalingskonto. Via UI/appen kraever oprettelse en
+-- udbetalingskonto (saelger@ har en rigtig Stripe-testkonto paa testdatabasen).
 -- ---------------------------------------------------------
 insert into public.auctions
   (id, bruger_id, titel, beskrivelse, billeder, startpris, kategori, postnummer,
