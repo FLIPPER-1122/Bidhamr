@@ -14,6 +14,9 @@ import { indsigelseBlokerer } from "@/lib/betaling/stripeBetaling";
 
 class BrugerFejl extends Error {}
 
+// Ingen medarbejder må behandle en betaling, hvor han selv er køber eller sælger.
+const INHABIL = "Du kan ikke behandle en handel, hvor du selv er køber eller sælger.";
+
 const GENERISK_FEJL = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
 
 async function koer<T>(navn: string, fn: () => Promise<T>): Promise<T | { fejl: string }> {
@@ -411,11 +414,12 @@ export async function markerBetalingLøst(betalingId: string, note: string) {
     type Indsigelse = { indsigelse_kl: string | null; indsigelse_status: string | null };
     const { data: nu, error: nuErr } = await admin
       .from("betalinger")
-      .select("indsigelse_kl, indsigelse_status")
+      .select("indsigelse_kl, indsigelse_status, buyer_id, seller_id")
       .eq("id", id)
-      .maybeSingle<Indsigelse>();
+      .maybeSingle<Indsigelse & { buyer_id: string | null; seller_id: string | null }>();
     if (nuErr) throw new Error(nuErr.message);
     if (!nu) throw new BrugerFejl("Betalingen blev ikke fundet.");
+    if (userId === nu.buyer_id || userId === nu.seller_id) throw new BrugerFejl(INHABIL);
     if (indsigelseBlokerer(nu)) throw new BrugerFejl(INDSIGELSE_FEJL);
 
     // Atomisk: kun rækker, der stadig kræver opmærksomhed og ikke har en
@@ -475,6 +479,7 @@ const ADVARSEL_FEJL: Record<string, string> = {
   indsigelse:
     "Der er en åben indsigelse hos køberens bank. Der kan ikke gives advarsel, før indsigelsen er afgjort.",
   allerede_loest: "Betalingen er allerede markeret som løst.",
+  inhabil: INHABIL,
 };
 
 // "Giv advarsel": advarsel til køber eller sælger (tæller med i
@@ -498,6 +503,16 @@ export async function givAdvarselBetaling(
     if (!tilBruger) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_bruger_mangler);
     if (tilBruger.length > 1000) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_bruger_for_lang);
     if (note.length > 2000) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_for_lang);
+
+    // Inhabilitet tjekkes også i admin_advarsel_betaling (20261003012000_inhabil_handel.sql).
+    const { data: parter, error: parterErr } = await admin
+      .from("betalinger")
+      .select("buyer_id, seller_id")
+      .eq("id", id)
+      .maybeSingle<{ buyer_id: string | null; seller_id: string | null }>();
+    if (parterErr) throw new Error(parterErr.message);
+    if (!parter) throw new BrugerFejl(ADVARSEL_FEJL.ikke_fundet);
+    if (userId === parter.buyer_id || userId === parter.seller_id) throw new BrugerFejl(INHABIL);
 
     const { data, error } = await admin.rpc("admin_advarsel_betaling", {
       p_betaling: id,

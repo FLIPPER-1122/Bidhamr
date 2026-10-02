@@ -679,6 +679,21 @@ async function afvisVedAabenKoeberSag(admin: AdminClient, tradeId: string) {
   if (data === true) throw new BrugerFejl(AABEN_KOEBERSAG);
 }
 
+// Ingen medarbejder må behandle en handel, hvor han selv er køber eller
+// sælger. Databasen afviser det også, hvor funktionen kender medarbejderen
+// (20261003012000_inhabil_handel.sql); admin_frigiv_handel og
+// betaling_paabegynd_refusion gør ikke, så tjekket her er værnet.
+const INHABIL_HANDEL = "Du kan ikke behandle en handel, hvor du selv er køber eller sælger.";
+
+function afvisInhabil(
+  staffId: string,
+  parter: { buyer_id: string | null; seller_id: string | null },
+) {
+  if (staffId === parter.buyer_id || staffId === parter.seller_id) {
+    throw new BrugerFejl(INHABIL_HANDEL);
+  }
+}
+
 function revaliderSag(tradeId: string) {
   revalidatePath("/admin/sager");
   revalidatePath("/admin/handler");
@@ -694,6 +709,7 @@ async function sagAabnImpl(formData: FormData): Promise<void> {
   if (!aarsag) throw new BrugerFejl("Beskriv hvorfor sagen åbnes.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
+  afvisInhabil(staffId, handel);
   if (!AKTIVE_HANDEL_STATUSSER.includes(handel.status)) {
     throw new BrugerFejl("Handlen er allerede afsluttet.");
   }
@@ -726,6 +742,7 @@ async function sagLukImpl(formData: FormData): Promise<void> {
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("medarbejder");
   if (!aarsag) throw new BrugerFejl("Skriv en afsluttende note.");
+  afvisInhabil(staffId, await hentHandelTilSag(admin, tradeId));
   await afvisVedAabenKoeberSag(admin, tradeId);
 
   const { error } = await admin
@@ -759,6 +776,7 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
   if (!aarsag) throw new BrugerFejl("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
+  afvisInhabil(staffId, handel);
   await afvisVedAabenKoeberSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
   if (!betaling) throw new BrugerFejl("Handlen har ingen betaling og kan ikke frigives.");
@@ -817,6 +835,7 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
   if (!aarsag) throw new BrugerFejl("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
+  afvisInhabil(staffId, handel);
   await afvisVedAabenKoeberSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
 
@@ -838,7 +857,9 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
       throw new BrugerFejl(
         kode === "ingen_adgang"
           ? "Du har ikke adgang til at annullere handlen."
-          : "Betalingen kan ikke annulleres.",
+          : kode === "inhabil"
+            ? INHABIL_HANDEL
+            : "Betalingen kan ikke annulleres.",
       );
     }
     // PaymentIntenten annulleres hos Stripe. Fejler det, prøver cron igen
@@ -994,6 +1015,7 @@ const UBETALT_FEJL: Record<string, string> = {
   ikke_fundet: "Sagen findes ikke.",
   ingen_adgang: "Du har ikke adgang til at behandle sagen.",
   behandlet: "Sagen er allerede behandlet.",
+  inhabil: "Du kan ikke behandle en sag, hvor du selv er køber eller sælger.",
   begrundelse_mangler: "Skriv en begrundelse for at afvise sagen.",
 };
 
@@ -1014,6 +1036,18 @@ async function behandlUbetalt(
     if (begrundelse.length > INTERN_NOTE_MAKS) {
       throw new BrugerFejl(`Begrundelsen er for lang (højst ${INTERN_NOTE_MAKS} tegn).`);
     }
+  }
+
+  // Inhabilitet tjekkes også i advarsel_ubetalt (20261003012000_inhabil_handel.sql).
+  const { data: sag, error: sagErr } = await admin
+    .from("ubetalte_vindere")
+    .select("buyer_id, seller_id")
+    .eq("id", sagId)
+    .maybeSingle();
+  if (sagErr) throw new Error(sagErr.message);
+  if (!sag) throw new BrugerFejl(UBETALT_FEJL.ikke_fundet);
+  if (staffId === sag.buyer_id || staffId === sag.seller_id) {
+    throw new BrugerFejl(UBETALT_FEJL.inhabil);
   }
 
   const { data, error } = await admin.rpc("advarsel_ubetalt", {
@@ -1088,6 +1122,7 @@ export async function prøvOverfoerselIgen(tradeId: string) {
 
     // Handlen tjekkes før nye forsøg gives (databasen tjekker det igen atomisk).
     const handel = await hentHandelTilSag(admin, tradeId);
+    afvisInhabil(staffId, handel);
     if (handel.status === "annulleret") throw new BrugerFejl(OVERFOERSEL_TEKST.annulleret);
     if (handel.sag_aaben) throw new BrugerFejl(OVERFOERSEL_TEKST.sag_aaben);
 

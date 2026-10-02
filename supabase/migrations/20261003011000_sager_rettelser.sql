@@ -24,9 +24,15 @@
 
 -- ============================================================ L-1 backfill
 
--- Handler sendt foer trades.sendt_kl fandtes. Tidspunktet kendes ikke, saa
--- uret starter nu: bortkommet-sag tidligst om 7 dage, automatisk frigivelse
--- tidligst om 14 dage - til koeberens fordel.
+-- Handler sendt foer trades.sendt_kl fandtes. Det rigtige afsendelsestidspunkt
+-- kendes ikke, saa sendt_kl saettes til tidspunktet, hvor denne migration
+-- koeres, og uret starter forfra derfra - for begge parter:
+--   - koeberen skal vente 7 dage fra migrationens koersel, foer der kan
+--     oprettes en bortkommet-sag (ogsaa selvom pakken reelt blev sendt
+--     tidligere),
+--   - saelgeren kan komme til at vente op til 14 dage fra migrationens
+--     koersel paa automatisk frigivelse (hvis koeberen ikke trykker
+--     "modtaget" eller opretter en sag inden da).
 update public.trades
    set sendt_kl = now()
  where status = 'pakke_sendt'

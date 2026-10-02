@@ -12,7 +12,7 @@ import "server-only";
 // påmindelsen om udbetalingskonto). Kaster aldrig.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
-import { overfoerTilSaelger } from "@/lib/betaling/stripeBetaling";
+import { indsigelseBlokerer, overfoerTilSaelger } from "@/lib/betaling/stripeBetaling";
 import { SAG_AUTO_FRIGIV_EFTER_DAGE } from "@/lib/sager";
 
 type AutoFrigivet = {
@@ -79,7 +79,9 @@ function datoTekst(ms: number): string {
 // markeret som modtaget, og der ikke er oprettet en sag: ellers udbetales
 // pengene automatisk til sælgeren (handel_auto_frigiv, dag 14). Kun handler,
 // hvor betalingen er betalt og hverken frigivet, overført eller under
-// refusion. Idempotent: nøglen `paamind_modtaget:<handel>` sendes kun én gang.
+// refusion, og uden en blokerende indsigelse hos køberens bank (samme regel
+// som betaling_indsigelse_blokerer - så frigives intet automatisk, og
+// påmindelsen ville være forkert). Idempotent: nøglen `paamind_modtaget:<handel>` sendes kun én gang.
 // Kaster aldrig.
 export async function paamindKoeberOmModtagelse(): Promise<number> {
   try {
@@ -111,7 +113,7 @@ export async function paamindKoeberOmModtagelse(): Promise<number> {
       admin.from("sager").select("trade_id").in("trade_id", ids),
       admin
         .from("betalinger")
-        .select("trade_id")
+        .select("trade_id, indsigelse_kl, indsigelse_status")
         .in("trade_id", ids)
         .eq("status", "betalt")
         .is("frigivet_kl", null)
@@ -124,7 +126,17 @@ export async function paamindKoeberOmModtagelse(): Promise<number> {
         .in("id", [...new Set(liste.map((t) => t.auction_id))]),
     ]);
     const medSag = new Set((sager ?? []).map((s) => s.trade_id as string));
-    const betalt = new Set((betalinger ?? []).map((b) => b.trade_id as string));
+    const betalt = new Set(
+      (betalinger ?? [])
+        .filter(
+          (b) =>
+            !indsigelseBlokerer({
+              indsigelse_kl: b.indsigelse_kl as string | null,
+              indsigelse_status: b.indsigelse_status as string | null,
+            }),
+        )
+        .map((b) => b.trade_id as string),
+    );
     const titler = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
 
     let antal = 0;
@@ -139,7 +151,7 @@ export async function paamindKoeberOmModtagelse(): Promise<number> {
         link: `/mine-handler/${t.id}`,
         data: { trade_id: t.id },
         noegle: `paamind_modtaget:${t.id}`,
-      });
+      }, { springOverVedClaimFejl: true });
       if (!r.dublet && (r.klokke || r.mail || r.push)) antal++;
     }
     return antal;
