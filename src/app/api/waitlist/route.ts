@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getResend } from "@/lib/resend";
+import { velkomstMail } from "@/lib/mails/venteliste";
 import { FOR_MANGE_FORSOEG, indenForGraense, klientIp } from "@/lib/rateLimit";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// Mails kan ikke bruge CSS-variabler, så farverne fra DESIGN.md staves ud her.
-const GROEN = "#1E5E4A";
 
 // Kræver at bidhamr.dk er verificeret i Resend (DNS-records under Domains).
 // Er domænet ikke verificeret, afviser Resend afsendelsen med en 403 - selve
@@ -14,58 +13,6 @@ const AFSENDER = "BidHamr <noreply@bidhamr.dk>";
 
 // Fast besked til klienten - den rigtige fejl logges kun på serveren.
 const SERVERFEJL = "Vi kunne ikke skrive dig op lige nu. Prøv igen om lidt.";
-
-function velkomstMail(email: string) {
-  return `<!DOCTYPE html>
-<html lang="da">
-  <body style="margin:0;padding:0;background-color:#f5f5f5;font-family:Arial,Helvetica,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:32px 16px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);">
-            <tr>
-              <td align="center" style="background-color:${GROEN};padding:28px 24px;">
-                <span style="font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.02em;">BidHamr</span>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:36px 32px 28px 32px;">
-                <h1 style="margin:0 0 16px 0;font-size:20px;font-weight:700;color:#171717;">
-                  Tak for din tilmelding!
-                </h1>
-                <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#525252;">
-                  Du er nu på ventelisten til BidHamr — Danmarks nye lokale
-                  auktionsplatform.
-                </p>
-                <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#525252;">
-                  Vi giver dig besked, så snart vi lancerer, så du kan være med
-                  fra dag ét. Du hører først fra os igen, når der er nyt — vi
-                  sender ikke spam.
-                </p>
-                <p style="margin:0;font-size:15px;line-height:1.6;color:#525252;">
-                  Vi glæder os til at have dig med.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:20px 32px 28px 32px;border-top:1px solid #f0f0f0;">
-                <p style="margin:0;font-size:12px;line-height:1.6;color:#a3a3a3;">
-                  Du modtager denne mail, fordi ${email} blev tilmeldt ventelisten
-                  på bidhamr.dk. Har du ikke selv tilmeldt dig, kan du roligt
-                  ignorere denne mail.
-                </p>
-                <p style="margin:12px 0 0 0;font-size:12px;color:#a3a3a3;">
-                  BidHamr · <a href="mailto:support@bidhamr.dk" style="color:#a3a3a3;">support@bidhamr.dk</a>
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
-}
 
 export async function POST(req: NextRequest) {
   // Hoejst et par tilmeldinger pr. IP i timen, saa listen og Resend ikke kan spammes.
@@ -114,11 +61,13 @@ export async function POST(req: NextRequest) {
       console.warn("RESEND_API_KEY mangler - velkomstmail blev ikke sendt.");
     } else {
       try {
+        const mail = velkomstMail(renEmail);
         const { error: mailFejl } = await resend.emails.send({
           from: AFSENDER,
           to: renEmail,
-          subject: "Velkommen til BidHamr ventelisten 🎉",
-          html: velkomstMail(renEmail),
+          subject: mail.subject,
+          html: mail.html,
+          text: mail.text,
         });
         if (mailFejl) {
           console.error("Kunne ikke sende velkomstmail:", mailFejl);
