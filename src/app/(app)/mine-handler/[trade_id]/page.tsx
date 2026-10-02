@@ -14,6 +14,14 @@ import Nedtaelling from "@/components/betaling/Nedtaelling";
 import { hentAndenchanceStatus } from "@/app/actions/andenchance";
 import { erAnnulleretUbetalt } from "@/app/actions/andenchanceBruger";
 import SaelgerUbetaltBoks from "@/components/andenchance/SaelgerUbetaltBoks";
+import { hentSagForHandel, hentSagMuligheder } from "@/app/actions/sager";
+import SagVisning from "@/components/sager/SagVisning";
+import OpretSagForm from "@/components/sager/OpretSagForm";
+import { sagTid } from "@/components/sager/visning";
+
+// En sag kan tidligst oprettes, når pakken er sendt, og vises også efter
+// afgørelsen (handlen kan da være leveret eller annulleret).
+const SAG_STATUSSER_HANDEL = ["pakke_sendt", "modtaget", "leveret", "afsluttet", "annulleret"];
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +111,20 @@ export default async function HandelDetaljePage({
     annulleret && erSaelger ? hentAndenchanceStatus(handel.id) : Promise.resolve(null),
     annulleret && erKoeber ? erAnnulleretUbetalt(handel.id) : Promise.resolve(null),
   ]);
+
+  // Sag fra køberen: vises for både køber og sælger. Køberen kan oprette en,
+  // hvis der ingen er (mulighederne afgøres på serveren).
+  const sagRes = SAG_STATUSSER_HANDEL.includes(handel.status)
+    ? await hentSagForHandel(handel.id)
+    : null;
+  const sag = sagRes && "sag" in sagRes ? sagRes.sag : null;
+  const sagFejl = sagRes && "fejl" in sagRes ? sagRes.fejl : null;
+  const sagAktiv = sag?.status === "aaben" || sag?.status === "afventer_retur";
+  const mulighederRes =
+    erKoeber && !sag && !sagFejl && (handel.status === "pakke_sendt" || handel.status === "modtaget")
+      ? await hentSagMuligheder(handel.id)
+      : null;
+  const muligheder = mulighederRes && !("fejl" in mulighederRes) ? mulighederRes : null;
 
   return (
     <main className="flex-1 bg-white px-4 py-8 sm:px-8">
@@ -300,8 +322,8 @@ export default async function HandelDetaljePage({
         )}
 
         {/* TRIN 2: godkendelse udbetaler til sælgeren. */}
-        {erKoeber && handel.status === "modtaget" && (
-          <div className="rounded-xl border border-brand bg-red-50 p-6">
+        {erKoeber && handel.status === "modtaget" && !sagAktiv && (
+          <div className="rounded-xl border border-succes-kant bg-groen-lys p-6">
             <h2 className="text-sm font-semibold text-neutral-900">
               Tjek varen
             </h2>
@@ -313,7 +335,7 @@ export default async function HandelDetaljePage({
           </div>
         )}
 
-        {erSaelger && handel.status === "modtaget" && (
+        {erSaelger && handel.status === "modtaget" && !sagAktiv && (
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
             <p className="font-semibold text-indigo-900">
               Køberen har modtaget pakken
@@ -333,6 +355,26 @@ export default async function HandelDetaljePage({
             </p>
           </div>
         )}
+
+        {/* Sag fra køberen */}
+        {sagFejl && (
+          <div className="rounded-xl border border-fejl-kant bg-fejl-bg p-6 text-sm text-fejl-tekst">
+            Sagen kunne ikke hentes lige nu. Genindlæs siden om lidt.
+          </div>
+        )}
+        {sag && <SagVisning sag={sag} brugerId={user.id} />}
+        {muligheder && !muligheder.harSag && (muligheder.typer.length > 0 || muligheder.kraeverBeskyttelse.length > 0) && (
+          <OpretSagForm tradeId={handel.id} koeberId={user.id} muligheder={muligheder} />
+        )}
+        {muligheder &&
+          muligheder.typer.length === 0 &&
+          // Typerne er tomme, men datoen er sat: fristen for "bortkommet" er
+          // ikke nået endnu (ellers ville typen være mulig).
+          muligheder.bortkommetFraKl && (
+            <p className="rounded-xl border border-kant bg-neutral-50 px-4 py-3 text-sm text-tekst-daempet">
+              Er pakken ikke kommet frem, kan du melde den bortkommet fra {sagTid(muligheder.bortkommetFraKl)}.
+            </p>
+          )}
 
         <HandelChat
           tradeId={handel.id}

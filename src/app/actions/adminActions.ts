@@ -682,6 +682,7 @@ async function afvisVedAabenKoeberSag(admin: AdminClient, tradeId: string) {
 
 function revaliderSag(tradeId: string) {
   revalidatePath("/admin/sager");
+  revalidatePath("/admin/handler");
   revalidatePath(`/mine-handler/${tradeId}`);
   revalidatePath("/mine-handler");
 }
