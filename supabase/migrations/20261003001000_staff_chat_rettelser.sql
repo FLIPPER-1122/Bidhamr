@@ -154,7 +154,8 @@ begin
   -- Fjern usynlige tegn (zero-width, bloed bindestreg, BOM) og goer haarde
   -- mellemrum til almindelige, saa de ikke kan bruges til at snyde tjekket.
   v_tekst := regexp_replace(coalesce(new.content, ''),
-                            '[­​-‏⁠-⁤﻿]', '', 'g');
+                            '[' || chr(173) || chr(8203) || '-' || chr(8207)
+                                || chr(8288) || '-' || chr(8292) || chr(65279) || ']', '', 'g');
   v_tekst := translate(v_tekst, chr(160) || chr(8199) || chr(8239), '   ');
   -- Tegnsaetning/emoji foran ("** Besked fra BidHamr", en emoji foran osv.)
   -- taeller ogsaa.
