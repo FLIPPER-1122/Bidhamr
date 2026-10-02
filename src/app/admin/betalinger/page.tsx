@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { assertRole } from "@/lib/adminAuth";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import { advarselFelter } from "@/components/admin/advarselFelter";
 import {
   hentBetalingerTilHandling,
   markerBetalingLøstForm,
@@ -302,12 +303,11 @@ export default async function AdminBetalinger({
                               { value: "saelger", label: b.saelger.navn ? `Sælger (${b.saelger.navn})` : "Sælger" },
                             ],
                           }}
-                          aarsagField={{
-                            name: "begrundelse",
-                            label: "Begrundelse",
-                            placeholder: "Fx: Sendte ikke varen trods flere påmindelser",
-                            required: true,
-                          }}
+                          tekstFelter={advarselFelter({
+                            internNavn: "begrundelse",
+                            brugerPlaceholder: "Fx: Du sendte ikke varen, selvom køberen havde betalt.",
+                            internPlaceholder: "Fx: Sendte ikke varen trods flere påmindelser",
+                          })}
                         />
                       </div>
                     )

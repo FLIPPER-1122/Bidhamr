@@ -157,17 +157,45 @@ async function unsuspendUserImpl(formData: FormData): Promise<void> {
   revalidatePath(`/admin/brugere/${userId}`);
 }
 
+// --- Advarsler: to tekster (ROADMAP-BESLUTNINGER, "Advarsler og begrundelse") ---
+// begrundelse_bruger vises for brugeren (klokke/mail/push og /konto) og kræves.
+// Den interne note (aarsag) ser kun staff og er valgfri.
+
+const BEGRUNDELSE_BRUGER_MAKS = 1000;
+const INTERN_NOTE_MAKS = 2000;
+
+const ADVARSEL_TEKST_FEJL = {
+  begrundelse_bruger_mangler: "Skriv en begrundelse til brugeren. Den vises for brugeren.",
+  begrundelse_bruger_for_lang: `Begrundelsen til brugeren er for lang (højst ${BEGRUNDELSE_BRUGER_MAKS} tegn).`,
+  begrundelse_for_lang: `Den interne note er for lang (højst ${INTERN_NOTE_MAKS} tegn).`,
+} as const;
+
+// Kaster BrugerFejl med dansk tekst, hvis teksterne er ugyldige.
+function validerAdvarselTekster(begrundelseBruger: string, internNote: string) {
+  if (!begrundelseBruger) throw new BrugerFejl(ADVARSEL_TEKST_FEJL.begrundelse_bruger_mangler);
+  if (begrundelseBruger.length > BEGRUNDELSE_BRUGER_MAKS) {
+    throw new BrugerFejl(ADVARSEL_TEKST_FEJL.begrundelse_bruger_for_lang);
+  }
+  if (internNote.length > INTERN_NOTE_MAKS) {
+    throw new BrugerFejl(ADVARSEL_TEKST_FEJL.begrundelse_for_lang);
+  }
+}
+
+// formData: userId, begrundelse_bruger (påkrævet), aarsag (intern note, valgfri).
 async function advarUserImpl(formData: FormData): Promise<void> {
-  const userId = formData.get("userId") as string;
-  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
+  const userId = ((formData.get("userId") as string) ?? "").trim();
+  const begrundelseBruger = ((formData.get("begrundelse_bruger") as string) ?? "").trim();
+  const internNote = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("medarbejder");
 
-  if (!aarsag) throw new BrugerFejl("Angiv en årsag for advarslen.");
+  if (!userId) throw new BrugerFejl("Brugeren blev ikke fundet.");
+  validerAdvarselTekster(begrundelseBruger, internNote);
 
   const { error } = await admin.from("advarsler").insert({
     bruger_id: userId,
     oprettet_af: staffId,
-    aarsag,
+    aarsag: internNote || null,
+    begrundelse_bruger: begrundelseBruger,
   });
   if (error) throw new Error(error.message);
 
@@ -177,7 +205,7 @@ async function advarUserImpl(formData: FormData): Promise<void> {
     maal_type: "bruger",
     maal_id: userId,
     bruger_id: userId,
-    aarsag,
+    aarsag: `${internNote ? `${internNote} | ` : ""}Til brugeren: ${begrundelseBruger}`,
   });
 
   // Brugeren får besked (klokke/mail/push). Cron samler op, hvis det fejler.
@@ -913,27 +941,38 @@ export async function handelRefunder(formData: FormData) {
 // gives IKKE automatisk: en medarbejder giver den eller afviser sagen.
 
 const UBETALT_FEJL: Record<string, string> = {
+  ...ADVARSEL_TEKST_FEJL,
   ikke_fundet: "Sagen findes ikke.",
   ingen_adgang: "Du har ikke adgang til at behandle sagen.",
   behandlet: "Sagen er allerede behandlet.",
   begrundelse_mangler: "Skriv en begrundelse for at afvise sagen.",
 };
 
+// giv = true: begrundelse er den interne note (valgfri), begrundelseBruger kræves.
+// giv = false: begrundelse er begrundelsen for at afvise (påkrævet).
 async function behandlUbetalt(
   sagId: string,
   giv: boolean,
   begrundelse: string,
+  begrundelseBruger: string,
 ): Promise<{ ok: true }> {
   const { admin, userId: staffId } = await assertRole("medarbejder");
   if (!sagId) throw new BrugerFejl(UBETALT_FEJL.ikke_fundet);
-  if (!giv && !begrundelse) throw new BrugerFejl(UBETALT_FEJL.begrundelse_mangler);
-  if (begrundelse.length > 1000) throw new BrugerFejl("Begrundelsen er for lang.");
+  if (giv) {
+    validerAdvarselTekster(begrundelseBruger, begrundelse);
+  } else {
+    if (!begrundelse) throw new BrugerFejl(UBETALT_FEJL.begrundelse_mangler);
+    if (begrundelse.length > INTERN_NOTE_MAKS) {
+      throw new BrugerFejl(`Begrundelsen er for lang (højst ${INTERN_NOTE_MAKS} tegn).`);
+    }
+  }
 
   const { data, error } = await admin.rpc("advarsel_ubetalt", {
     p_sag: sagId,
     p_medarbejder: staffId,
     p_giv: giv,
     p_begrundelse: begrundelse || null,
+    p_begrundelse_bruger: giv ? begrundelseBruger : null,
   });
   if (error) throw new Error(error.message);
   const kode = (data as { kode: string }).kode;
@@ -944,18 +983,22 @@ async function behandlUbetalt(
   return { ok: true };
 }
 
-// formData: sagId, begrundelse (valgfri - standard er "Betalte ikke for vundet auktion").
+// formData: sagId, begrundelse_bruger (påkrævet, vises for køberen),
+// begrundelse (intern note, valgfri - standard er "Betalte ikke for vundet auktion").
 export async function ubetaltGivAdvarsel(formData: FormData) {
   const sagId = ((formData.get("sagId") as string) ?? "").trim();
   const begrundelse = ((formData.get("begrundelse") as string) ?? "").trim();
-  return koer("ubetaltGivAdvarsel", () => behandlUbetalt(sagId, true, begrundelse));
+  const begrundelseBruger = ((formData.get("begrundelse_bruger") as string) ?? "").trim();
+  return koer("ubetaltGivAdvarsel", () =>
+    behandlUbetalt(sagId, true, begrundelse, begrundelseBruger),
+  );
 }
 
 // formData: sagId, begrundelse (påkrævet).
 export async function ubetaltAfvis(formData: FormData) {
   const sagId = ((formData.get("sagId") as string) ?? "").trim();
   const begrundelse = ((formData.get("begrundelse") as string) ?? "").trim();
-  return koer("ubetaltAfvis", () => behandlUbetalt(sagId, false, begrundelse));
+  return koer("ubetaltAfvis", () => behandlUbetalt(sagId, false, begrundelse, ""));
 }
 
 // Antal sager, der venter på en medarbejder (badge "! 11" i admin-menuen).

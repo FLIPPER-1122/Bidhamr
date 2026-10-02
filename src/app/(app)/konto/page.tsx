@@ -7,6 +7,8 @@ import KontoUdbetaling from "@/components/betaling/KontoUdbetaling";
 
 export const dynamic = "force-dynamic";
 
+type MinAdvarsel = { id: string; begrundelse_bruger: string | null; oprettet_kl: string };
+
 export default async function KontoSide({
   searchParams,
 }: {
@@ -20,11 +22,52 @@ export default async function KontoSide({
     redirect("/login?redirect=/konto");
   }
 
-  const indstillinger = await hentBetalingsindstillinger();
+  // Brugerens egne advarsler: kun begrundelse til brugeren og dato
+  // (mine_advarsler() udleder brugeren af auth.uid(); den interne note
+  // kan ikke læses herfra).
+  const [indstillinger, { data: advarselData, error: advarselFejl }] = await Promise.all([
+    hentBetalingsindstillinger(),
+    supabase.rpc("mine_advarsler"),
+  ]);
+  if (advarselFejl) console.error("Konto: advarsler kunne ikke hentes:", advarselFejl.message);
+  const advarsler = (advarselData ?? []) as MinAdvarsel[];
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
       <h1 className="font-serif text-3xl font-semibold text-tekst">Min konto</h1>
+
+      {advarsler.length > 0 && (
+        <section
+          id="advarsler"
+          className="mt-6 scroll-mt-24 rounded-2xl border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6"
+        >
+          <h2 className="font-serif text-xl font-semibold text-advarsel-tekst">
+            Advarsler ({advarsler.length})
+          </h2>
+          <p className="mt-1 text-sm text-advarsel-tekst">
+            Du har fået {advarsler.length === 1 ? "1 advarsel" : `${advarsler.length} advarsler`}.
+            Efter 3 advarsler lukkes din profil permanent. Kontakt support@bidhamr.dk, hvis du
+            har spørgsmål.
+          </p>
+          <ul className="mt-4 space-y-3">
+            {advarsler.map((a) => (
+              <li key={a.id} className="rounded-xl border border-advarsel-kant bg-white p-4">
+                <p className="text-xs font-medium text-tekst-daempet">
+                  {new Date(a.oprettet_kl).toLocaleDateString("da-DK", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                    timeZone: "Europe/Copenhagen",
+                  })}
+                </p>
+                <p className="mt-1 whitespace-pre-line text-sm text-tekst">
+                  {a.begrundelse_bruger ?? "Der er ikke angivet en begrundelse for denne advarsel."}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {"fejl" in indstillinger ? (
         <p

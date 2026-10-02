@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { assertRole } from "@/lib/adminAuth";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import { advarselFelter } from "@/components/admin/advarselFelter";
 import { ubetaltAfvis, ubetaltGivAdvarsel } from "@/app/actions/adminActions";
 
 // Sager "Ubetalt vinder": oprettes af cron, når vinderen ikke betaler inden
@@ -171,16 +172,15 @@ export default async function AdminUbetalte({
                       triggerLabel="Giv advarsel"
                       triggerClassName="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
                       title="Giv køberen en advarsel?"
-                      description="Advarslen registreres på køberens konto."
+                      description="Advarslen registreres på køberens konto, og køberen får besked med begrundelsen."
                       confirmLabel="Giv advarsel"
                       action={ubetaltGivAdvarsel}
                       hiddenFields={{ sagId: s.id }}
-                      aarsagField={{
-                        name: "begrundelse",
-                        label: "Begrundelse (valgfri)",
-                        placeholder: "Betalte ikke for vundet auktion",
-                        required: false,
-                      }}
+                      tekstFelter={advarselFelter({
+                        internNavn: "begrundelse",
+                        brugerPlaceholder: "Fx: Du betalte ikke for en auktion, du vandt, inden for fristen.",
+                        internPlaceholder: "Betalte ikke for vundet auktion",
+                      })}
                     />
                     <ConfirmDialog
                       triggerLabel="Afvis"

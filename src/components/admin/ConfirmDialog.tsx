@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useId, useState, useTransition, type ReactNode } from "react";
 
 type Props = {
   triggerLabel: string;
@@ -15,6 +15,19 @@ type Props = {
   varighedField?: boolean;
   // Påkrævet valg mellem nogle muligheder (radioknapper), fx Køber/Sælger.
   valgField?: { name: string; label: string; valg: { value: string; label: string }[] };
+  // Flere tekstfelter, fx "Begrundelse til brugeren" + "Intern note" ved advarsler.
+  // Vises i den angivne rækkefølge efter aarsagField.
+  tekstFelter?: TekstFelt[];
+};
+
+export type TekstFelt = {
+  name: string;
+  label: string;
+  placeholder?: string;
+  required: boolean;
+  maxLength?: number;
+  // Kort forklaring under feltet, fx hvem der kan se teksten.
+  hjaelp?: string;
 };
 
 export default function ConfirmDialog({
@@ -29,7 +42,9 @@ export default function ConfirmDialog({
   aarsagField,
   varighedField,
   valgField,
+  tekstFelter,
 }: Props) {
+  const id = useId();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [fejl, setFejl] = useState<string | null>(null);
@@ -75,7 +90,7 @@ export default function ConfirmDialog({
           onClick={() => !pending && setOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-lg font-bold text-neutral-900">{title}</h2>
@@ -149,6 +164,33 @@ export default function ConfirmDialog({
                   />
                 </div>
               )}
+
+              {tekstFelter?.map((f) => {
+                const feltId = `${id}-${f.name}`;
+                return (
+                  <div key={f.name}>
+                    <label htmlFor={feltId} className="block text-sm font-medium text-neutral-700">
+                      {f.label}
+                      {!f.required && <span className="font-normal text-neutral-500"> (valgfri)</span>}
+                    </label>
+                    <textarea
+                      id={feltId}
+                      name={f.name}
+                      required={f.required}
+                      maxLength={f.maxLength}
+                      rows={3}
+                      placeholder={f.placeholder}
+                      aria-describedby={f.hjaelp ? `${feltId}-hjaelp` : undefined}
+                      className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                    />
+                    {f.hjaelp && (
+                      <p id={`${feltId}-hjaelp`} className="mt-1 text-xs text-neutral-500">
+                        {f.hjaelp}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
 
               <div className="flex justify-end gap-3 pt-1">
                 <button

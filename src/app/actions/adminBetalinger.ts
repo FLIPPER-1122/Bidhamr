@@ -468,8 +468,9 @@ export async function markerBetalingLøstForm(formData: FormData) {
 const ADVARSEL_FEJL: Record<string, string> = {
   ingen_adgang: "Du har ikke adgang til at give advarsler.",
   ugyldig_modtager: "Vælg, om advarslen gives til køber eller sælger.",
-  begrundelse_mangler: "Skriv en begrundelse for advarslen.",
-  begrundelse_for_lang: "Begrundelsen er for lang (højst 2000 tegn).",
+  begrundelse_bruger_mangler: "Skriv en begrundelse til brugeren. Den vises for brugeren.",
+  begrundelse_bruger_for_lang: "Begrundelsen til brugeren er for lang (højst 1000 tegn).",
+  begrundelse_for_lang: "Den interne note er for lang (højst 2000 tegn).",
   ikke_fundet: "Betalingen blev ikke fundet.",
   indsigelse:
     "Der er en åben indsigelse hos køberens bank. Der kan ikke gives advarsel, før indsigelsen er afgjort.",
@@ -478,22 +479,32 @@ const ADVARSEL_FEJL: Record<string, string> = {
 
 // "Giv advarsel": advarsel til køber eller sælger (tæller med i
 // 3-advarsler-reglen), logges og lukker sagen. Atomisk i admin_advarsel_betaling.
-export async function givAdvarselBetaling(betalingId: string, modtager: string, begrundelse: string) {
+// begrundelseBruger vises for brugeren (påkrævet, højst 1000 tegn).
+// internNote ser kun staff (valgfri, højst 2000 tegn).
+export async function givAdvarselBetaling(
+  betalingId: string,
+  modtager: string,
+  begrundelseBruger: string,
+  internNote: string,
+) {
   return koer("givAdvarselBetaling", async () => {
     const { admin, userId } = await assertRole("admin");
     const id = (betalingId ?? "").trim();
     const m = (modtager ?? "").trim();
-    const grund = (begrundelse ?? "").trim();
+    const tilBruger = (begrundelseBruger ?? "").trim();
+    const note = (internNote ?? "").trim();
     if (!id) throw new BrugerFejl(ADVARSEL_FEJL.ikke_fundet);
     if (m !== "koeber" && m !== "saelger") throw new BrugerFejl(ADVARSEL_FEJL.ugyldig_modtager);
-    if (!grund) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_mangler);
-    if (grund.length > 2000) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_for_lang);
+    if (!tilBruger) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_bruger_mangler);
+    if (tilBruger.length > 1000) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_bruger_for_lang);
+    if (note.length > 2000) throw new BrugerFejl(ADVARSEL_FEJL.begrundelse_for_lang);
 
     const { data, error } = await admin.rpc("admin_advarsel_betaling", {
       p_betaling: id,
       p_medarbejder: userId,
       p_modtager: m,
-      p_begrundelse: grund,
+      p_begrundelse: note || null,
+      p_begrundelse_bruger: tilBruger,
     });
     if (error) throw new Error(error.message);
     const kode = (data as { kode?: string } | null)?.kode;
@@ -507,11 +518,13 @@ export async function givAdvarselBetaling(betalingId: string, modtager: string, 
   });
 }
 
-// Til ConfirmDialog. formData: betalingId, modtager ('koeber'|'saelger'), begrundelse.
+// Til ConfirmDialog. formData: betalingId, modtager ('koeber'|'saelger'),
+// begrundelse_bruger (påkrævet), begrundelse (intern note, valgfri).
 export async function givAdvarselBetalingForm(formData: FormData) {
   return givAdvarselBetaling(
     ((formData.get("betalingId") as string) ?? "").trim(),
     ((formData.get("modtager") as string) ?? "").trim(),
+    ((formData.get("begrundelse_bruger") as string) ?? "").trim(),
     ((formData.get("begrundelse") as string) ?? "").trim(),
   );
 }

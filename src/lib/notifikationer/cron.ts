@@ -108,13 +108,29 @@ export async function notificerAdvarsler(): Promise<number> {
   }
 }
 
+// Teksten til brugeren. Kun begrundelse_bruger - ALDRIG aarsag (intern note).
+// Mailen escaper teksten (notifikationMail), klokke/push er ren tekst.
+export function advarselTekst(begrundelseBruger: string | null): string {
+  const slut =
+    "Efter 3 advarsler lukkes din profil permanent. Kontakt support@bidhamr.dk, hvis du har spørgsmål.";
+  const b = (begrundelseBruger ?? "").trim();
+  if (!b) return `Du har fået en advarsel fra BidHamr.\n${slut}`;
+  const punktum = /[.!?]$/.test(b) ? "" : ".";
+  return `Du har fået en advarsel: ${b}${punktum}\n${slut}`;
+}
+
 async function advarsler(admin: Admin, start: Date): Promise<number> {
-  const { data } = await admin
+  // Vælg kun de felter, der må vises for brugeren (+ id og modtager).
+  const { data, error } = await admin
     .from("advarsler")
-    .select("id, bruger_id")
+    .select("id, bruger_id, begrundelse_bruger")
     .gte("oprettet_kl", fraTid(start, 48))
     .order("oprettet_kl", { ascending: false })
     .limit(MAKS);
+  if (error) {
+    console.error("Notifikationer: advarsler kunne ikke hentes:", error.message);
+    return 0;
+  }
   return sendNye(
     admin,
     (data ?? []).map((a) => ({
@@ -122,9 +138,8 @@ async function advarsler(admin: Admin, start: Date): Promise<number> {
       type: "advarsel" as const,
       input: {
         titel: "Du har fået en advarsel",
-        // Årsagen er medarbejderens interne begrundelse og vises ikke her.
-        tekst: "Du har fået en advarsel fra BidHamr. Tre advarsler betyder, at din profil lukkes. Kontakt support@bidhamr.dk, hvis du har spørgsmål.",
-        link: "/konto",
+        tekst: advarselTekst(a.begrundelse_bruger as string | null),
+        link: "/konto#advarsler",
         data: { advarsel_id: a.id },
         noegle: `advarsel:${a.id}`,
       },

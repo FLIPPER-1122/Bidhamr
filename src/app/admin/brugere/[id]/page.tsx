@@ -10,6 +10,7 @@ import {
 } from "@/app/actions/adminActions";
 import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import { advarselFelter } from "@/components/admin/advarselFelter";
 import { StatusBadge, brugerStatus, erSuspensionAktiv, RolleBadge } from "@/components/admin/StatusBadge";
 import { assertRole, harMindstRolle } from "@/lib/adminAuth";
 import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
@@ -54,7 +55,7 @@ export default async function AdminBrugerDetalje({
     supabase.from("users").select("*").eq("id", id).single(),
     supabase
       .from("advarsler")
-      .select("id, aarsag, oprettet_kl, oprettet_af")
+      .select("id, aarsag, begrundelse_bruger, oprettet_kl, oprettet_af")
       .eq("bruger_id", id)
       .order("oprettet_kl", { ascending: false }),
   ]);
@@ -125,15 +126,15 @@ export default async function AdminBrugerDetalje({
               </svg>
             }
             title={`Er du sikker på, at du vil sende en advarsel til ${user.navn ?? "brugeren"}?`}
-            description="Advarslen gemmes på brugerens profil og kan ses af alle medarbejdere."
+            description="Advarslen gemmes på brugerens profil. Brugeren får besked med begrundelsen. Efter 3 advarsler lukkes profilen permanent."
             confirmLabel="Ja, send advarslen"
             action={advarUser}
             hiddenFields={{ userId: user.id }}
-            aarsagField={{
-              label: "Besked",
-              placeholder: "Skriv hvad advarslen handler om...",
-              required: true,
-            }}
+            tekstFelter={advarselFelter({
+              internNavn: "aarsag",
+              brugerPlaceholder: "Skriv, hvorfor brugeren får advarslen...",
+              internPlaceholder: "Fx: henvisning til rapport eller sag",
+            })}
           />
 
           {user.rolle !== "admin" &&
@@ -224,7 +225,13 @@ async function OversigtFane({
   supabase,
 }: {
   user: { id: string; rating: number | null; rolle: string | null; oprettet: string };
-  advarsler: { id: string; aarsag: string; oprettet_kl: string; oprettet_af: string | null }[];
+  advarsler: {
+    id: string;
+    aarsag: string | null;
+    begrundelse_bruger: string | null;
+    oprettet_kl: string;
+    oprettet_af: string | null;
+  }[];
   supabase: Admin;
 }) {
   const [{ count: antalAuktioner }, { count: antalBud }, { count: antalHandler }] =
@@ -290,7 +297,16 @@ async function OversigtFane({
                   {new Date(a.oprettet_kl).toLocaleDateString("da-DK")}
                 </span>
               </div>
-              <p className="text-sm text-neutral-700">{a.aarsag}</p>
+              <p className="text-xs font-medium text-neutral-500">Til brugeren</p>
+              <p className="whitespace-pre-line text-sm text-neutral-700">
+                {a.begrundelse_bruger ?? "Ingen begrundelse til brugeren (gammel advarsel)."}
+              </p>
+              {a.aarsag && (
+                <>
+                  <p className="mt-2 text-xs font-medium text-neutral-500">Intern note</p>
+                  <p className="whitespace-pre-line text-sm text-neutral-700">{a.aarsag}</p>
+                </>
+              )}
             </div>
           ))}
           {advarsler.length === 0 && (
