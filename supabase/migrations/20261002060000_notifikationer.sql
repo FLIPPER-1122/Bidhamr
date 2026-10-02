@@ -231,8 +231,8 @@ grant execute on function public.notifikation_gem_indstillinger(jsonb) to authen
 -- server actions og kan bruges af appen), der ogsaa haandhaever hoejst
 -- 10 enheder pr. bruger.
 
--- Et token hoerer til een enhed: logger en anden bruger ind paa samme enhed,
--- flyttes tokenet til ham.
+-- Et token hoerer til een enhed. Tilhoerer det allerede en anden bruger,
+-- aendres intet (appen fjerner det ved log ud).
 -- Returnerer {"kode": "ok"} eller ikke_logget_ind / ugyldigt_token / ugyldig_platform.
 create or replace function public.push_token_registrer(p_token text, p_platform text)
 returns jsonb
@@ -257,7 +257,11 @@ begin
   on conflict (token) do update
     set user_id = excluded.user_id,
         platform = excluded.platform,
-        updated_at = now();
+        updated_at = now()
+    -- Et token, der tilhoerer en anden bruger, overtages ikke (ellers kunne
+    -- den, der kender tokenet, kapre push-beskeder). Appen fjerner tokenet
+    -- ved log ud (push_token_fjern).
+    where push_tokens.user_id = v_bruger;
 
   -- Hoejst 10 enheder pr. bruger: de aeldste (sidst opdateret) fjernes.
   delete from public.push_tokens
