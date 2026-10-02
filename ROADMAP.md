@@ -99,6 +99,7 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 - [ ] Byg og test fragt mod **GLS' testmiljø** (kræver ikke firmaaftale) – skal være færdigt inden nytår
 - [ ] Filip: møde med Shipmondo om den bedste løsning
 - [ ] Filip: spørg GLS/Shipmondo, om fragtfirmaet selv **vejer pakken**, og om den målte vægt kan hentes via API (bruges som bevis i svindelsager)
+- [ ] Når GLS melder pakken leveret: notifikation "Pakken er kommet frem" til **køberen** (type pakke_leveret, påkrævet) – sælgeren får fortsat besked, når køberen bekræfter
 - [ ] Byg koden, så fragtfirmaet kan skiftes (GLS nu, evt. Shipmondo senere) uden at omskrive handelsflowet
 - [ ] Sælger får fragtlabel/QR-kode direkte i BidHamr
 - [ ] Køber betaler fragt og ser prisen, før han byder

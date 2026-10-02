@@ -152,3 +152,8 @@ Brugeren får besked når:
 - Udbetaling sker først, når køberen har godkendt pakken (eller fristen er udløbet). Opretter køberen en sag, refunderes køberen direkte – pengene når aldrig sælgeren.
 - Indsigelse **efter** udbetaling: **BidHamr bærer tabet.** En udbetaling trækkes aldrig tilbage fra sælgeren. BidHamr forsvarer sagen over for banken med sporing og leveringskvittering.
 - Viser indsigelsen sig at være falsk (køberen fik varen), kan staff give køberen en advarsel via "Giv advarsel".
+
+## Advarsler og begrundelse (Filip, 2. oktober 2026)
+- Når staff giver en advarsel, skrives **to tekster**: en **intern note** (kun staff ser den) og en **begrundelse til brugeren** (kræves). Brugeren ser begrundelsen i notifikationen/mailen og på sin konto (DSA: brugeren skal vide hvorfor, da 3 advarsler giver permanent lukning).
+- Gælder alle steder, hvor advarsler gives (ubetalte vindere, Betalinger, brugersiden i admin).
+- **Pakken er kommet frem:** køberen får besked, når GLS melder pakken leveret (bygges med GLS-integrationen).
