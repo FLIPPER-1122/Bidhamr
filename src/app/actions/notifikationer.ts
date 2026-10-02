@@ -10,7 +10,9 @@
 //       efter login og ved hver opstart (token fra getExpoPushTokenAsync).
 //   supabase.rpc("push_token_fjern", { p_token })          ved log ud.
 //   (Appen kan også skrive direkte i push_tokens via RLS; RPC'en håndhæver
-//   desuden højst 10 enheder pr. bruger. Kun Expo-tokens får push.)
+//   desuden højst 10 enheder pr. bruger. Kun Expo-tokens får push.
+//   Sidste registrering vinder: logger en anden bruger ind på enheden,
+//   overtager han tokenet, så push går til den, der er logget ind nu.)
 //   supabase.from("notifikationer").select(...)             indbakken (RLS: kun egne).
 //   supabase.rpc("notifikationer_antal_ulaeste")            rødt tal.
 //   supabase.rpc("notifikationer_marker_laest", { p_ids }) / ("notifikationer_marker_alle_laest")

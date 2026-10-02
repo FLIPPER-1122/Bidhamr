@@ -5,6 +5,8 @@ export function sikkerSti(sti: string | null | undefined, fallback = "/"): strin
   if (sti.startsWith("//") || sti.startsWith("/\\")) return fallback;
   if (sti.includes("://")) return fallback;
   // Backslash og kontroltegn (fx tab/linjeskift) kan snyde browserens URL-parser.
-  if (/[\u0000-\u001f\u007f\\]/.test(sti)) return fallback;
+  // Mellemrum (alle slags), anførselstegn og < > hører aldrig hjemme i en
+  // intern sti (de skal være URL-kodede) og kan bryde ud af en HTML-attribut.
+  if (/[\u0000-\u001f\u007f\\"<>\s]/.test(sti)) return fallback;
   return sti;
 }
