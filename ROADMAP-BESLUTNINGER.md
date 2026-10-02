@@ -149,6 +149,6 @@ Brugeren får besked når:
 
 ## Indsigelse fra køberens bank efter udbetaling (Filip, 2. oktober 2026)
 - Før udbetaling: indsigelsen blokerer udbetaling og refusion, til den er afgjort (bygget).
-- Efter udbetaling bærer BidHamr som udgangspunkt tabet. BidHamr forsvarer sagen over for banken med sporing og leveringskvittering.
-- Vurderer en medarbejder, at sælgeren har snydt (tom pakke, forkert vare), kan **chefen** klikke "Træk udbetaling tilbage fra sælger" (Stripe transfer reversal). Sælgeren får samtidig en advarsel. Kun chef, begrundelse kræves og logges.
-- Viser indsigelsen sig at være falsk (køberen fik varen), får køberen en advarsel.
+- Udbetaling sker først, når køberen har godkendt pakken (eller fristen er udløbet). Opretter køberen en sag, refunderes køberen direkte – pengene når aldrig sælgeren.
+- Indsigelse **efter** udbetaling: **BidHamr bærer tabet.** En udbetaling trækkes aldrig tilbage fra sælgeren. BidHamr forsvarer sagen over for banken med sporing og leveringskvittering.
+- Viser indsigelsen sig at være falsk (køberen fik varen), kan staff give køberen en advarsel via "Giv advarsel".
