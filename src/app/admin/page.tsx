@@ -29,6 +29,8 @@ export default async function AdminDashboard() {
     { count: newUsers },
     { count: newTransactions },
     { count: ubetalte },
+    { count: betalingerTilHandling },
+    { count: aabneAfvigelser },
   ] = await Promise.all([
     supabase.from("users").select("id", { count: "exact", head: true }),
     // Aktiv = status 'aktiv' OG slutdato i fremtiden. Uden tidsfilteret talte
@@ -45,7 +47,10 @@ export default async function AdminDashboard() {
     supabase.from("users").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO),
     supabase.from("trades").select("id", { count: "exact", head: true }).gte("created_at", thirtyDaysAgoISO),
     supabase.from("ubetalte_vindere").select("id", { count: "exact", head: true }).eq("status", "afventer"),
+    supabase.from("betalinger").select("id", { count: "exact", head: true }).eq("kraever_opmaerksomhed", true),
+    supabase.from("betaling_afvigelser").select("id", { count: "exact", head: true }).is("refunderet_kl", null),
   ]);
+  const antalBetalinger = (betalingerTilHandling ?? 0) + (aabneAfvigelser ?? 0);
 
   // Omsaetning = summen af buddene i betalte handler. Gebyrindtaegten er
   // 5% koebergebyr + 5% saelgergebyr. Beloeb staar i oere.
@@ -69,6 +74,16 @@ export default async function AdminDashboard() {
         >
           <span>Ubetalte vindere venter på behandling</span>
           <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">! {ubetalte}</span>
+        </Link>
+      )}
+
+      {antalBetalinger > 0 && (
+        <Link
+          href="/admin/betalinger"
+          className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 hover:bg-red-100"
+        >
+          <span>Betalinger kræver handling</span>
+          <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">! {antalBetalinger}</span>
         </Link>
       )}
 
