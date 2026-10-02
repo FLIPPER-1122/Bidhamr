@@ -14,6 +14,9 @@ import { advarselFelter } from "@/components/admin/advarselFelter";
 import { StatusBadge, brugerStatus, erSuspensionAktiv, RolleBadge } from "@/components/admin/StatusBadge";
 import { assertRole, harMindstRolle } from "@/lib/adminAuth";
 import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
+import { hentSamtalerForBruger } from "@/app/actions/staffChat";
+import AabnChatKnap from "@/components/admin/staffchat/AabnChatKnap";
+import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 
 const FANER = [
   { id: "oversigt", label: "Oversigt" },
@@ -21,6 +24,7 @@ const FANER = [
   { id: "bud", label: "Bud" },
   { id: "anmeldelser", label: "Anmeldelser" },
   { id: "sager", label: "Sager" },
+  { id: "chats", label: "Chats" },
 ] as const;
 
 type Fane = (typeof FANER)[number]["id"];
@@ -117,6 +121,7 @@ export default async function AdminBrugerDetalje({
 
         {/* Handlingsknapper */}
         <div className="mt-4 flex flex-wrap gap-3">
+          <AabnChatKnap brugerId={user.id} brugerNavn={user.navn ?? "brugeren"} />
           <ConfirmDialog
             triggerLabel="Send advarsel"
             triggerClassName="inline-flex items-center gap-2 rounded-lg bg-yellow-100 px-4 py-2.5 text-sm font-semibold text-yellow-800 hover:bg-yellow-200 transition-colors"
@@ -205,6 +210,7 @@ export default async function AdminBrugerDetalje({
       {fane === "anmeldelser" && (
         <AnmeldelserFane userId={id} supabase={supabase} kanModerere={kanModerereIndhold} />
       )}
+      {fane === "chats" && <ChatsFane userId={id} />}
       {fane === "sager" && (
         <div className="rounded-xl border border-neutral-200 bg-white p-10 text-center">
           <h2 className="text-lg font-semibold text-neutral-900">Kommer snart</h2>
@@ -218,6 +224,24 @@ export default async function AdminBrugerDetalje({
 }
 
 type Admin = ReturnType<typeof createAdminClient>;
+
+async function ChatsFane({ userId }: { userId: string }) {
+  const res = await hentSamtalerForBruger(userId);
+  if ("fejl" in res) {
+    return (
+      <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+        Chats kunne ikke hentes: {res.fejl}
+      </p>
+    );
+  }
+  return (
+    <StaffSamtaleListe
+      samtaler={res.samtaler}
+      visBruger={false}
+      tom="Ingen chats med brugeren endnu. Brug knappen Åbn chat ovenfor."
+    />
+  );
+}
 
 async function OversigtFane({
   user,

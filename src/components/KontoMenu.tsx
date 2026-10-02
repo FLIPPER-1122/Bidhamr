@@ -4,16 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { badgeTekst } from "@/lib/notifikationer/visning";
+import { useUlaesteBeskeder } from "@/components/staffchat/useUlaesteBeskeder";
 
 type Props = {
   logget_ind: boolean;
   erAdmin: boolean;
+  // Ulæste beskeder fra BidHamr (fra serveren ved første visning).
+  ulaesteBeskeder?: number;
 };
 
 const punkt =
   "flex min-h-11 w-full items-center rounded-lg px-3 text-left text-[15px] font-medium text-tekst hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen";
 
-export default function KontoMenu({ logget_ind, erAdmin }: Props) {
+export default function KontoMenu({ logget_ind, erAdmin, ulaesteBeskeder = 0 }: Props) {
+  const antalBeskeder = useUlaesteBeskeder(ulaesteBeskeder, logget_ind);
+  const beskederTekst =
+    antalBeskeder === 1 ? "1 ulæst besked fra BidHamr" : `${antalBeskeder} ulæste beskeder fra BidHamr`;
   const [aaben, setAaben] = useState(false);
   const [loggerUd, setLoggerUd] = useState(false);
   const rodRef = useRef<HTMLDivElement>(null);
@@ -59,9 +66,11 @@ export default function KontoMenu({ logget_ind, erAdmin }: Props) {
         type="button"
         aria-expanded={aaben}
         aria-controls={menuId}
-        aria-label={logget_ind ? "Konto-menu" : "Menu"}
+        aria-label={
+          logget_ind ? (antalBeskeder > 0 ? `Konto-menu, ${beskederTekst}` : "Konto-menu") : "Menu"
+        }
         onClick={() => setAaben((v) => !v)}
-        className="flex h-11 min-w-11 items-center justify-center gap-2 rounded-full border-[1.5px] border-kant-staerk px-2.5 text-sm font-medium text-tekst hover:border-groen hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:px-3.5"
+        className="relative flex h-11 min-w-11 items-center justify-center gap-2 rounded-full border-[1.5px] border-kant-staerk px-2.5 text-sm font-medium text-tekst hover:border-groen hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:px-3.5"
       >
         {/* Burger på mobil */}
         <svg viewBox="0 0 24 24" className="h-5 w-5 lg:hidden" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
@@ -75,6 +84,14 @@ export default function KontoMenu({ logget_ind, erAdmin }: Props) {
         <svg viewBox="0 0 24 24" className="hidden h-4 w-4 lg:block" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
         </svg>
+        {logget_ind && antalBeskeder > 0 && (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-fejl-fyldt px-1 text-[11px] leading-none font-semibold text-white ring-2 ring-white"
+          >
+            {badgeTekst(antalBeskeder)}
+          </span>
+        )}
       </button>
 
       {aaben && (
@@ -101,6 +118,24 @@ export default function KontoMenu({ logget_ind, erAdmin }: Props) {
                   <li><Link href="/konto" onClick={luk} className={punkt}>Min konto</Link></li>
                   <li><Link href="/konto/notifikationer" onClick={luk} className={punkt}>Notifikationsindstillinger</Link></li>
                   <li><Link href="/mine-handler" onClick={luk} className={punkt}>Mine handler</Link></li>
+                  <li>
+                    <Link
+                      href="/beskeder"
+                      onClick={luk}
+                      className={`${punkt} justify-between gap-2`}
+                      aria-label={antalBeskeder > 0 ? `Beskeder, ${beskederTekst}` : undefined}
+                    >
+                      Beskeder
+                      {antalBeskeder > 0 && (
+                        <span
+                          aria-hidden="true"
+                          className="flex h-[20px] min-w-[20px] items-center justify-center rounded-full bg-fejl-fyldt px-1.5 text-[12px] leading-none font-semibold text-white"
+                        >
+                          {badgeTekst(antalBeskeder)}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
                   <li><Link href="/profil/mig" onClick={luk} className={punkt}>Min profil</Link></li>
                   <li><Link href="/favoritter" onClick={luk} className={punkt}>Favoritter</Link></li>
                   {erAdmin && (

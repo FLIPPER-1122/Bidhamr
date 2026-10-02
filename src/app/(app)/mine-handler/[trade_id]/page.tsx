@@ -79,7 +79,7 @@ export default async function HandelDetaljePage({
       // det tjek, lækker den chatten til staff.
       supabase
         .from("messages")
-        .select("id, sender_id, content, created_at")
+        .select("id, sender_id, content, created_at, fra_bidhamr")
         .eq("trade_id", trade_id)
         .order("created_at", { ascending: true })
         .overrideTypes<Besked[], { merge: false }>(),

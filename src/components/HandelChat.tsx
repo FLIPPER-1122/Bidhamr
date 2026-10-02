@@ -2,12 +2,17 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { fjernFaellesPraefiks } from "@/lib/staffChat";
+import { BidhamrMaerke } from "@/components/staffchat/visning";
 
 export interface Besked {
   id: string;
   sender_id: string;
   content: string;
   created_at: string;
+  // true = fællesbesked fra BidHamr til begge parter. Kun denne kolonne
+  // afgør markeringen - aldrig teksten.
+  fra_bidhamr: boolean;
 }
 
 export default function HandelChat({
@@ -40,7 +45,14 @@ export default function HandelChat({
           filter: `trade_id=eq.${tradeId}`,
         },
         (payload) => {
-          const ny = payload.new as Besked;
+          const r = payload.new as Besked;
+          const ny: Besked = {
+            id: r.id,
+            sender_id: r.sender_id,
+            content: r.content,
+            created_at: r.created_at,
+            fra_bidhamr: r.fra_bidhamr === true,
+          };
           // Dedup: egne beskeder kan nå frem både via insert-svaret og realtime.
           setBeskeder((tidligere) =>
             tidligere.some((b) => b.id === ny.id) ? tidligere : [...tidligere, ny],
@@ -72,8 +84,8 @@ export default function HandelChat({
     const { data, error } = await supabase
       .from("messages")
       .insert({ trade_id: tradeId, sender_id: brugerId, content: renTekst })
-      .select("id, sender_id, content, created_at")
-      .single();
+      .select("id, sender_id, content, created_at, fra_bidhamr")
+      .single<Besked>();
 
     setSender(false);
 
@@ -105,6 +117,28 @@ export default function HandelChat({
           </p>
         )}
         {beskeder.map((b) => {
+          if (b.fra_bidhamr) {
+            // Fællesbesked: vises som BidHamr, aldrig med afsenderens navn.
+            return (
+              <div key={b.id} className="flex flex-col items-start gap-1.5">
+                <BidhamrMaerke lille />
+                <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-[#B9D8CC] bg-groen-lys px-4 py-2.5 text-sm text-tekst sm:max-w-[75%]">
+                  <p className="whitespace-pre-wrap break-words">
+                    <span className="sr-only">Besked fra BidHamr: </span>
+                    {fjernFaellesPraefiks(b.content)}
+                  </p>
+                  <p className="mt-1 text-[12px] text-tekst-svag">
+                    {new Date(b.created_at).toLocaleString("da-DK", {
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </div>
+              </div>
+            );
+          }
           const erMig = b.sender_id === brugerId;
           return (
             <div key={b.id} className={`flex ${erMig ? "justify-end" : "justify-start"}`}>

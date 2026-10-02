@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import HandelStatusBadge from "@/components/HandelStatusBadge";
+import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
 import {
   sagAabn,
   sagLuk,
@@ -69,6 +70,8 @@ export default async function AdminSager({
   const rolle = await getStaffRole();
   if (!rolle) redirect("/");
   const kanFlyttePenge = harMindstRolle(rolle, "admin");
+  // Fællesbesked til køber og sælger: kun admin og chef.
+  const kanSkriveFaelles = harMindstRolle(rolle, "admin");
 
   const { q, vis } = await searchParams;
   const fane = FANER.some((f) => f.key === vis) ? vis! : "sager";
@@ -237,6 +240,11 @@ export default async function AdminSager({
                       )}
                     </td>
                     <td className="px-5 py-3">
+                      {kanSkriveFaelles && (
+                        <div className="mb-2">
+                          <FaellesbeskedKnap tradeId={h.id} />
+                        </div>
+                      )}
                       {!aktiv ? (
                         <span className="text-xs text-neutral-400">Afsluttet</span>
                       ) : (

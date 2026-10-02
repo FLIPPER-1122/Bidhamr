@@ -427,6 +427,31 @@ export async function hentAabneStaffSamtaler(): Promise<
   });
 }
 
+// Afsluttede samtaler til admin-oversigten, senest afsluttet først.
+// "Vis flere" øger antal; der hentes antal+1 for at vide, om der er flere.
+export async function hentLukkedeStaffSamtaler(
+  antal = 20,
+): Promise<{ samtaler: StaffSamtaleAdmin[]; flere: boolean } | { fejl: string }> {
+  return koer("hentLukkedeStaffSamtaler", async () => {
+    const { admin } = await staff("medarbejder");
+    const n = Number.isInteger(antal) && antal > 0 ? Math.min(antal, 200) : 20;
+    const { data, error } = await admin
+      .from("staff_samtaler")
+      .select(SAMTALE_KOLONNER)
+      .not("lukket_kl", "is", null)
+      .order("lukket_kl", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(n + 1)
+      .overrideTypes<SamtaleRaekke[], { merge: false }>();
+    if (error) throw new Error(error.message);
+    const raekker = data ?? [];
+    return {
+      samtaler: await berigSamtaler(admin, raekker.slice(0, n)),
+      flere: raekker.length > n,
+    };
+  });
+}
+
 // Én samtale med alle beskeder (admin-visningen).
 export async function hentStaffSamtale(
   samtaleId: string,

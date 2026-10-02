@@ -10,11 +10,14 @@ export default async function Header() {
 
   let erAdmin = false;
   let ulaeste = 0;
+  let ulaesteBeskeder = 0;
   if (data.user) {
-    const [{ data: rolle }, { data: antal }] = await Promise.all([
+    const [{ data: rolle }, { data: antal }, { data: antalBeskeder }] = await Promise.all([
       supabase.rpc("min_rolle"),
       supabase.rpc("notifikationer_antal_ulaeste"),
+      supabase.rpc("antal_ulaeste_staff_beskeder"),
     ]);
+    ulaesteBeskeder = Number(antalBeskeder ?? 0) || 0;
     erAdmin =
       rolle === "chef" ||
       rolle === "admin" ||
@@ -112,6 +115,7 @@ export default async function Header() {
             <KontoMenu
               logget_ind={!!data.user}
               erAdmin={erAdmin}
+              ulaesteBeskeder={ulaesteBeskeder}
             />
           </div>
         </div>
