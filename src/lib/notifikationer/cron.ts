@@ -15,7 +15,11 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send, type NotifikationInput } from "@/lib/notifikationer/send";
 import type { NotifikationType } from "@/lib/notifikationer/typer";
-import { budPaaEgenNoegle, notificerBud } from "@/lib/notifikationer/bud";
+import {
+  budPaaEgenNoegle,
+  markerBudBehandlet,
+  notificerBud,
+} from "@/lib/notifikationer/bud";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -73,8 +77,10 @@ async function sendNye(admin: Admin, opgaver: Opgave[]): Promise<number> {
   let antal = 0;
   for (const o of opgaver) {
     if (sendt.has(o.input.noegle)) continue;
-    const r = await send(o.brugerId, o.type, o.input);
-    if (!r.dublet) antal++;
+    // Valgfrie typer springes over, hvis nøglen ikke kan claimes - ellers
+    // sendes samme hændelse ved hver kørsel. Påkrævede (advarsel) sendes stadig.
+    const r = await send(o.brugerId, o.type, o.input, { springOverVedClaimFejl: true });
+    if (!r.dublet && !r.sprunget) antal++;
   }
   return antal;
 }
@@ -283,7 +289,16 @@ async function bud(admin: Admin, start: Date): Promise<number> {
     const a = amap.get(b.auktion_id as string);
     if (!a) continue;
     // Når auktionen er slut, er "byd igen" misvisende; vundet/solgt dækker det.
-    if (a.status !== "aktiv" || !a.slutter_kl || new Date(a.slutter_kl as string).getTime() <= nu) {
+    // Buddet markeres som behandlet uden afsendelse, så det ikke hentes igen
+    // ved hver kørsel. Samme for sælgerens eget bud (notificerBud sender intet
+    // og sætter derfor ingen markør).
+    if (
+      a.status !== "aktiv" ||
+      !a.slutter_kl ||
+      new Date(a.slutter_kl as string).getTime() <= nu ||
+      a.bruger_id === b.bruger_id
+    ) {
+      await markerBudBehandlet(admin, b.id, a.bruger_id as string);
       continue;
     }
     try {
@@ -296,6 +311,7 @@ async function bud(admin: Admin, start: Date): Promise<number> {
           beloeb: Number(b.beløb),
         },
         { titel: a.titel as string, bruger_id: a.bruger_id as string },
+        { springOverVedClaimFejl: true },
       );
       antal++;
     } catch (err) {

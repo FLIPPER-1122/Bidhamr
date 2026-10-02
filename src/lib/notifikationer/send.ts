@@ -42,6 +42,16 @@ export type SendResultat = {
   mail: boolean;
   push: boolean;
   dublet?: true;
+  // Nøglen kunne ikke claimes (ukendt fejl), og intet blev sendt.
+  sprunget?: true;
+};
+
+export type SendOptions = {
+  // Til cron: kan nøglen ikke claimes af ukendt årsag (ikke dublet), sendes en
+  // VALGFRI type ikke - ellers sendes samme hændelse igen ved hver kørsel, da
+  // nøglen aldrig bliver gemt. Påkrævede typer sendes stadig (hellere to gange
+  // end aldrig). Næste kørsel prøver igen.
+  springOverVedClaimFejl?: boolean;
 };
 
 const INGEN: SendResultat = { klokke: false, mail: false, push: false };
@@ -55,16 +65,16 @@ async function claimNoegle(
   noegle: string,
   brugerId: string,
   type: NotifikationType,
-): Promise<"ok" | "dublet"> {
+): Promise<"ok" | "dublet" | "fejl"> {
   const { error } = await admin
     .from("notifikation_afsendelser")
     .insert({ noegle: noegle.slice(0, 300), bruger_id: brugerId, type });
   if (!error) return "ok";
   if (error.code === "23505") return "dublet";
-  // Ukendt fejl (fx databasen svarer ikke): hellere sende end tabe en
-  // påkrævet besked. Kilderne har i forvejen egne claims på de vigtige mails.
+  // Ukendt fejl (fx databasen svarer ikke). send() afgør, om der alligevel
+  // sendes (se SendOptions.springOverVedClaimFejl).
   console.error("Notifikation: claim af nøgle fejlede:", noegle, error.message);
-  return "ok";
+  return "fejl";
 }
 
 export async function hentKanaler(
@@ -216,12 +226,20 @@ export async function send(
   brugerId: string | null | undefined,
   type: NotifikationType,
   input: NotifikationInput,
+  opts: SendOptions = {},
 ): Promise<SendResultat> {
   if (!brugerId) return INGEN;
   try {
     const admin = createAdminClient();
-    if (input.noegle && (await claimNoegle(admin, input.noegle, brugerId, type)) === "dublet") {
-      return { ...INGEN, dublet: true };
+    if (input.noegle) {
+      const claim = await claimNoegle(admin, input.noegle, brugerId, type);
+      if (claim === "dublet") return { ...INGEN, dublet: true };
+      // Ukendt fejl: påkrævede typer sendes alligevel (hellere sende end tabe
+      // beskeden - kilderne har egne claims på de vigtige mails). Valgfrie
+      // typer fra cron springes over, så de ikke sendes ved hver kørsel.
+      if (claim === "fejl" && opts.springOverVedClaimFejl && !erPaakraevet(type)) {
+        return { ...INGEN, sprunget: true };
+      }
     }
     const link = input.link ? sikkerSti(input.link, "") || null : null;
     const kanaler = await hentKanaler(admin, brugerId, type);
