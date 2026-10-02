@@ -77,10 +77,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [ ] Oprydning: afsluttede auktioner **skjules/arkiveres** 48 timer efter afsluttet handel – de må IKKE slettes, fordi kvitteringer, bedømmelser, DAC7 og bogføringsloven kræver, at handelsdata gemmes i 5 år
 - [ ] **Afsendelsesfrist**: sælger skal sende inden 5 dage. Sendes der ikke, annulleres handlen, og køber refunderes fuldt (som Vinted/Tradera)
 - [ ] **Bindende bud**: bud kan ikke trækkes tilbage – vises tydeligt, før man byder
-- [ ] **Autobud (maksimalbud)**: køber angiver sit maksimum, og BidHamr byder automatisk op til det (som Tradera). Maksimum kan sænkes, men ikke under nuværende bud
 - [ ] Minimum budstigning (fx +10 kr / +5%) og valg af auktionsvarighed ved oprettelse
-- [ ] Efter første bud kan sælger ikke redigere, kun tilføje et synligt **tillæg** til beskrivelsen
-- [ ] Sælger kan give køber en **delvis refusion/rabat** i handlen, hvis de bliver enige (fx ved en lille skade)
 - [ ] **Anke**: den, der taber en sag, kan anke. **Anke-knappen åbner først 24 timer efter afgørelsen** (afkølingsperiode), og derefter er der **3 dage** til at anke. Kræver begrundelse og gerne ny dokumentation. Behandles af en anden medarbejder end den, der afgjorde sagen (admin/chef). Afgørelsen på anken er endelig. Pengene er frosset, til ankefristen er udløbet (i alt 4 dage efter afgørelsen). Gælder kun handler med en sag
 
 ## Fase 1B – Nyt admin-dashboard
@@ -145,9 +142,9 @@ Formål: brugerne har overblik og styr på deres beskeder.
 - [ ] Live statistikker under profil: antal auktioner, indtjening (uge/måned/år/lifetime), auktioner man har budt på
 - [ ] Følg sælgere
 - [ ] **Gemte søgninger med besked**: få besked, når der kommer nye auktioner, der matcher en søgning (fx "Omega ur")
-- [ ] Notifikationer: overbudt, ny auktion fra fulgt sælger, bud på egen auktion, vundet, pakke kommet frem
-- [ ] Side med notifikationsindstillinger (mail / app / begge / fra, pr. type)
-- [ ] Notifikations-indbakke på siden (klokke i topbaren)
+- [x] Notifikationer: overbudt, ny auktion fra fulgt sælger, bud på egen auktion, vundet, pakke kommet frem
+- [x] Side med notifikationsindstillinger (mail / app / begge / fra, pr. type)
+- [x] Notifikations-indbakke på siden (klokke i topbaren)
 - [ ] Bekræftelse af e-mail ved oprettelse
 - [ ] GDPR: brugeren kan slette sin konto og downloade sine data
 - [ ] Kontosikkerhed: mail ved login fra ny enhed, mulighed for to-trins-login, krav til stærk adgangskode
@@ -201,6 +198,9 @@ Formål: alt det juridiske og praktiske er på plads.
 
 ## Senere – efter lancering
 Fundet i gennemgang af Tradera, Vinted og Etsy. Gode, men ikke nødvendige for at lancere.
+- [ ] **Autobud (maksimalbud)**: køber angiver sit maksimum, og BidHamr byder automatisk op til det (som Tradera). Maksimum kan sænkes, men ikke under nuværende bud *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
+- [ ] Efter første bud kan sælger ikke redigere, kun tilføje et synligt **tillæg** til beskrivelsen *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
+- [ ] Sælger kan give køber en **delvis refusion/rabat** i handlen, hvis de bliver enige (fx ved en lille skade) *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
 - Samlet fragt, når man vinder flere auktioner fra samme sælger
 - Ægthedstjek af dyre mærkevarer (som Vinteds "Artikelbekræftelse")
 - Brugerforum/fællesskab
