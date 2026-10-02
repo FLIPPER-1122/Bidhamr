@@ -82,7 +82,7 @@ Brugeren får besked når:
   - **Hero (Vinted + Tradera):** stort billede i fuld bredde med en hvid boks/overskrift ovenpå, fx "Sælg det, du ikke bruger – trygt" + "Sælg nu" + "Sådan virker det". Evt. søgefelt og populære søgninger som hos Tradera.
   - **Kategorier med ikoner (Tradera):** vandret række under hero.
   - **Store billedkort (Etsy):** "Udvalgte" og "Slutter snart" som flotte kort med store billeder.
-  - **Tryghed synligt (eget):** en stribe om købersikring, MitID-verificerede brugere og at pengene holdes af BidHamr, til varen er godkendt.
+  - **Tryghed synligt (eget):** en stribe om købersikring, MitID-verificerede brugere og at Stripe holder pengene, til varen er godkendt.
 - **VALGT RETNING: Mockup D** (blanding af B og C) i `mockups/forside-mockups.html`:
   - Delt hero: skovgrøn flade (#1E5E4A) til venstre med overskrift, stort søgefelt, populære søgninger og et link til sælgere. Billede til højre.
   - Knapper og accenter i varm orange (#E8772E). Lys grøn (#E8F2EE) bag tryghedsstribe og kategori-ikoner.
