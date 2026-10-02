@@ -90,7 +90,7 @@ export async function notificerBud(
       "overbudt",
       {
         titel: "Du er blevet overbudt",
-        tekst: `Der er budt ${kr} kr på "${auktion.titel}". Byd igen, hvis du stadig vil have den.`,
+        tekst: `Det højeste bud på "${auktion.titel}" er nu ${kr} kr. Byd igen, hvis du stadig vil have varen.`,
         link,
         data,
         noegle: overbudtNoegle(bud.id),
@@ -104,7 +104,7 @@ export async function notificerBud(
       "bud_paa_egen",
       {
         titel: "Nyt bud på din auktion",
-        tekst: `Der er budt ${kr} kr på "${auktion.titel}".`,
+        tekst: `Der er afgivet et bud på ${kr} kr på "${auktion.titel}".`,
         link,
         data,
         noegle: budPaaEgenNoegle(bud.id),

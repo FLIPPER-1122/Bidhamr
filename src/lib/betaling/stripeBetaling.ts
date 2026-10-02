@@ -557,8 +557,8 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
     .maybeSingle();
   const titel = (a?.titel as string | undefined) ?? "din vare";
   await send(b.seller_id, "udbetaling", {
-    titel: "Pengene er på vej",
-    tekst: `Pengene for "${titel}" er sendt til din udbetalingskonto. Betalingen håndteres af vores betalingspartner Stripe.`,
+    titel: "Din udbetaling er på vej",
+    tekst: `Udbetalingen for "${titel}" er sendt til din udbetalingskonto hos vores betalingspartner Stripe.`,
     link: `/mine-handler/${b.trade_id}`,
     data: { trade_id: b.trade_id },
     noegle: `udbetalt:${b.id}`,
@@ -1186,7 +1186,7 @@ async function paamindSaelgerkonto(b: BetalingRaekke): Promise<void> {
     const titel = (a?.titel as string | undefined) ?? "din vare";
     await send(b.seller_id, "udbetaling", {
       titel: "Opret din udbetalingskonto",
-      tekst: `Køberen har godkendt "${titel}". Opret din udbetalingskonto, så vi kan sende pengene til dig.`,
+      tekst: `Handlen om "${titel}" er afsluttet. Opret din udbetalingskonto hos vores betalingspartner Stripe, så du kan få pengene udbetalt.`,
       link: "/konto",
       data: { betaling_id: b.id },
       mail: saelgerOpretUdbetalingskontoMail(titel, Number(b.udbetaling_oere), trin > 0),

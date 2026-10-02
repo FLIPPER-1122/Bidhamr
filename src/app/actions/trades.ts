@@ -79,7 +79,7 @@ export async function sendPakke(tradeId: string, tracking: string) {
     .maybeSingle();
   const titel = (auktion?.titel as string | undefined) ?? "din vare";
   await send(handel.buyer_id, "pakke_sendt", {
-    titel: "Din pakke er sendt",
+    titel: "Din pakke er på vej",
     tekst: `Sælgeren har sendt "${titel}". Sporingsnummer: ${renTracking}`,
     link: `/mine-handler/${tradeId}`,
     data: { trade_id: tradeId },
@@ -130,7 +130,7 @@ export async function markerModtaget(tradeId: string) {
     .maybeSingle();
   await send(handel.seller_id, "pakke_leveret", {
     titel: "Pakken er kommet frem",
-    tekst: `Køberen har modtaget "${(auktion?.titel as string | undefined) ?? "din vare"}" og tjekker nu varen. Pengene frigives, når køberen godkender den.`,
+    tekst: `Køberen har modtaget "${(auktion?.titel as string | undefined) ?? "din vare"}" og tjekker nu varen. Du får pengene, når køberen har godkendt varen, eller efter 48 timer, hvis der ikke er oprettet en sag.`,
     link: `/mine-handler/${tradeId}`,
     data: { trade_id: tradeId },
     noegle: `pakke_leveret:${tradeId}`,

@@ -174,7 +174,7 @@ export function mailTekst(input: MailLayoutInput): string {
   if (input.sekundaer) dele.push(`${input.sekundaer.tekst}: ${input.sekundaer.url}`);
   dele.push("", "--", input.aarsag);
   if (input.indstillingsLink) {
-    dele.push(`Vælg hvilke beskeder du får: ${sideUrl("/konto/notifikationer")}`);
+    dele.push(`Vælg, hvilke beskeder du får: ${sideUrl("/konto/notifikationer")}`);
   }
   dele.push("BidHamr · support@bidhamr.dk");
   return dele.join("\n");
@@ -200,7 +200,7 @@ export function mailLayout(input: MailLayoutInput): string {
     : "";
 
   const indstillinger = input.indstillingsLink
-    ? ` <a href="${escapeHtml(sideUrl("/konto/notifikationer"))}" target="_blank" style="color:${FARVE.tekstSvag};text-decoration:underline;">Vælg hvilke beskeder du får</a>.`
+    ? ` <a href="${escapeHtml(sideUrl("/konto/notifikationer"))}" target="_blank" style="color:${FARVE.tekstSvag};text-decoration:underline;">Vælg, hvilke beskeder du får</a>.`
     : "";
 
   // Fylder forhåndsvisningen ud, så klienten ikke viser brødtekst efter preheaderen.

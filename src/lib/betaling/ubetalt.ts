@@ -174,8 +174,8 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
       const r = await send(s.buyer_id, adminAnnulleret ? "sag" : "betalingsfrist", {
         titel: "Handlen er annulleret",
         tekst: adminAnnulleret
-          ? `BidHamr har annulleret handlen om "${o.titel}".`
-          : `Vi modtog ikke din betaling for "${o.titel}" inden fristen, så handlen er annulleret.`,
+          ? `BidHamr har annulleret handlen om "${o.titel}". Du er ikke blevet opkrævet noget.`
+          : `Du betalte ikke for "${o.titel}" inden fristen, så handlen er annulleret.`,
         link: `/mine-handler/${s.trade_id}`,
         data: { trade_id: s.trade_id },
         mail,
@@ -189,7 +189,7 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
         titel: adminAnnulleret ? "Handlen er annulleret" : "Køberen betalte ikke",
         tekst: adminAnnulleret
           ? `BidHamr har annulleret handlen om "${o.titel}". Du skal ikke sende varen.`
-          : `Køberen af "${o.titel}" betalte ikke. Du kan tilbyde varen til næste byder eller sætte den op igen.`,
+          : `Køberen af "${o.titel}" betalte ikke, og du skal ikke sende varen. Du kan tilbyde varen til næste byder eller sætte den op igen gratis.`,
         link: `/mine-handler/${s.trade_id}`,
         data: { trade_id: s.trade_id },
         mail,
@@ -329,7 +329,7 @@ export async function sendTilbudMail(tilbudId: string): Promise<boolean> {
   const o = await titelOgEmails(admin, t.auction_id, [t.byder_id]);
   const r = await send(t.byder_id, "andenchance", {
     titel: "Du får tilbudt en vare",
-    tekst: `Du kan købe "${o.titel}" til dit eget højeste bud. Du har 24 timer til at svare.`,
+    tekst: `Du kan købe "${o.titel}" til dit eget højeste bud. Svar inden for 24 timer.`,
     link: `/andenchance/${t.id}`,
     data: { tilbud_id: t.id, auction_id: t.auction_id },
     mail: andenchanceTilbudMail(o.titel, Number(t.bud_oere), t.id, t.udloeber),
@@ -370,7 +370,7 @@ export async function sendSaelgerSvarMail(
     titel: accepteret ? "Byderen sagde ja" : "Byderen købte ikke",
     tekst: accepteret
       ? `Byderen vil købe "${o.titel}". Vent med at sende varen, til køberen har betalt.`
-      : `Byderen købte ikke "${o.titel}". Du kan sende tilbuddet videre eller sætte varen op igen.`,
+      : `Byderen købte ikke "${o.titel}". Du kan sende tilbuddet videre eller sætte varen op igen gratis.`,
     link: `/mine-handler/${accepteret ? t.ny_trade_id : t.oprindelig_trade_id}`,
     data: { tilbud_id: t.id },
     mail,

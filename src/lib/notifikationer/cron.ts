@@ -122,7 +122,7 @@ export function advarselTekst(begrundelseBruger: string | null): string {
   const b = (begrundelseBruger ?? "").trim();
   if (!b) return `Du har fået en advarsel fra BidHamr.\n${slut}`;
   const punktum = /[.!?]$/.test(b) ? "" : ".";
-  return `Du har fået en advarsel: ${b}${punktum}\n${slut}`;
+  return `Du har fået en advarsel fra BidHamr. Begrundelse: ${b}${punktum}\n${slut}`;
 }
 
 async function advarsler(admin: Admin, start: Date): Promise<number> {
@@ -173,7 +173,7 @@ async function likes(admin: Admin, start: Date): Promise<number> {
       type: "like",
       input: {
         titel: "Nogen har liket din auktion",
-        tekst: `"${auk.titel}" er gemt som favorit.`,
+        tekst: `En bruger har gemt "${auk.titel}" som favorit.`,
         link: `/auktion/${f.auction_id}`,
         data: { auction_id: f.auction_id },
         noegle: `like:${f.auction_id}:${f.user_id}`,
@@ -209,7 +209,7 @@ async function slutterSnart(admin: Admin): Promise<number> {
       type: "fulgt_slutter_snart",
       input: {
         titel: "En favorit slutter snart",
-        tekst: `"${a.titel}" slutter om under en time.`,
+        tekst: `"${a.titel}" slutter om under en time. Byd nu, hvis du vil være med.`,
         link: `/auktion/${a.id}`,
         data: { auction_id: a.id },
         noegle: `slutter:${a.id}:${f.user_id}`,
@@ -243,7 +243,7 @@ async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
         type: "ny_auktion_fulgt_saelger",
         input: {
           titel: "Ny auktion fra en sælger, du følger",
-          tekst: `"${a.titel}" er sat til salg.`,
+          tekst: `"${a.titel}" er lige sat på auktion.`,
           link: `/auktion/${a.id}`,
           data: { auction_id: a.id },
           noegle: `ny_auktion:${a.id}:${f.follower_id}`,
@@ -406,7 +406,7 @@ async function beskeder(admin: Admin, start: Date): Promise<number> {
           }
         : {
             titel: `${mine.length} nye beskeder`,
-            tekst: `${mine.length} nye beskeder om "${titel}".`,
+            tekst: `Du har ${mine.length} nye beskeder om "${titel}".`,
             link,
             data,
           };

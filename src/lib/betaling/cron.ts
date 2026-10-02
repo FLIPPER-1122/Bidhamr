@@ -142,14 +142,14 @@ export async function koerBetalingsCron() {
       const k = await send(b.buyer_id, "vundet", {
         titel:
           b.status === "betalt"
-            ? "Du vandt, og der er betalt"
+            ? "Du vandt og har betalt"
             : erAndenchance
-              ? "Du har fået varen"
+              ? "Betal for din vare"
               : "Du vandt auktionen",
         tekst:
           b.status === "betalt"
-            ? `Du har fået "${titel}". Beløbet er trukket automatisk på dit gemte kort.`
-            : `Du har fået "${titel}". Husk at betale inden for 24 timer.`,
+            ? `Du har købt "${titel}", og beløbet er trukket automatisk på dit gemte kort.`
+            : `Du har købt "${titel}". Betal inden for 24 timer, ellers bliver handlen annulleret.`,
         link,
         data: { trade_id: b.trade_id, auction_id: b.auction_id },
         mail: koeberMail,
@@ -202,7 +202,7 @@ export async function koerBetalingsCron() {
       const titel = o.titel.get(b.auction_id) ?? "din auktion";
       const p = await send(b.buyer_id, "betalingsfrist", {
         titel: "Husk at betale",
-        tekst: `Du mangler at betale for "${titel}". Fristen udløber om højst ${timerFoerFrist} timer.`,
+        tekst: `Du har endnu ikke betalt for "${titel}". Fristen udløber om under ${timerFoerFrist} timer.`,
         link: `/mine-handler/${b.trade_id}`,
         data: { trade_id: b.trade_id },
         mail: betalingsPaamindelseMail(titel, Number(b.total_oere), b.trade_id, b.betal_senest),
