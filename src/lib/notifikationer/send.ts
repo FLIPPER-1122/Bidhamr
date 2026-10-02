@@ -123,6 +123,8 @@ async function sendMailTil(
   return sendHandelMail(u.email, input.mail ?? notifikationMail(input.titel, input.tekst, link));
 }
 
+const EXPO_TOKEN = /^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/;
+
 type ExpoTicket = {
   status: "ok" | "error";
   id?: string;
@@ -140,12 +142,16 @@ export async function sendPushTil(
   const { data: tokens, error } = await admin
     .from("push_tokens")
     .select("token")
-    .eq("bruger_id", brugerId);
+    .eq("user_id", brugerId);
   if (error) {
     console.error("Notifikation: push tokens kunne ikke hentes:", error.message);
     return false;
   }
-  const liste = (tokens ?? []).map((t) => t.token as string);
+  // Tabellen har ingen formatkrav (appen skriver selv i den, og platform kan
+  // være 'web'). Expo accepterer kun Expo-tokens, så resten springes over.
+  const liste = (tokens ?? [])
+    .map((t) => t.token as string)
+    .filter((t) => typeof t === "string" && EXPO_TOKEN.test(t));
   if (liste.length === 0) return false;
 
   const beskeder = liste.map((to) => ({

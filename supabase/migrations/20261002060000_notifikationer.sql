@@ -11,11 +11,12 @@
 -- Tabeller:
 --   notifikationer             - klokken/indbakken. Slettes ikke.
 --   notifikation_indstillinger - kanalvalg pr. (bruger, type).
---   push_tokens                - Expo push tokens fra appen.
+--   push_tokens                - findes allerede (appen); kun funktioner her.
 --   notifikation_afsendelser   - idempotens: en noegle sendes hoejst een gang.
 --
 -- Skrivning sker KUN via security definer-funktioner (bruger) eller
 -- service_role (server). Ingen insert/update/delete-grants til browseren.
+-- Undtagelse: push_tokens, som appen selv skriver i via sine RLS-policies.
 --
 -- Idempotent: if not exists / create or replace / drop policy if exists.
 
@@ -215,74 +216,67 @@ grant execute on function public.notifikation_gem_indstillinger(jsonb) to authen
 
 -- ============================================================ Push tokens
 
-create table if not exists public.push_tokens (
-  id           uuid primary key default gen_random_uuid(),
-  bruger_id    uuid not null references public.users(id) on delete cascade,
-  token        text not null unique,
-  platform     text not null,
-  oprettet_kl  timestamptz not null default now(),
-  sidst_set_kl timestamptz not null default now(),
-  constraint push_tokens_platform check (platform in ('ios', 'android')),
-  constraint push_tokens_format check (
-    char_length(token) <= 200
-    and token ~ '^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$')
-);
+-- public.push_tokens findes allerede (lavet af appen; indfanget i
+-- 20260930130000_indfang_prod_drift.sql, with check i
+-- 20261001025000_push_tokens_with_check.sql):
+--   push_tokens(id, user_id, token unique, platform in ('ios','android','web'),
+--               created_at, updated_at)
+-- med RLS-policies push_tokens_select_own/insert_own/update_own/delete_own
+-- (auth.uid() = user_id). Appen skriver direkte i den, saa tabellen, dens
+-- kolonner, policies og grants roeres IKKE her. Der er bevidst ingen
+-- format-check paa token: serveren sender kun Expo-push til tokens i
+-- Expo-format (src/lib/notifikationer/send.ts) og springer resten over.
+--
+-- Funktionerne nedenfor er en ekstra, valgfri indgang (bruges af
+-- server actions og kan bruges af appen), der ogsaa haandhaever hoejst
+-- 10 enheder pr. bruger.
 
-create index if not exists push_tokens_bruger_idx on public.push_tokens (bruger_id);
-
-alter table public.push_tokens enable row level security;
-
-drop policy if exists push_tokens_select_own on public.push_tokens;
-create policy push_tokens_select_own on public.push_tokens
-  for select to authenticated using (bruger_id = auth.uid());
-
-revoke all on public.push_tokens from anon, authenticated;
-grant select on public.push_tokens to authenticated;
-grant all on public.push_tokens to service_role;
-
--- Appen kalder denne efter login og ved hver opstart. Et token hoerer til een
--- enhed: logger en anden bruger ind paa samme enhed, flyttes tokenet til ham.
+-- Et token hoerer til een enhed: logger en anden bruger ind paa samme enhed,
+-- flyttes tokenet til ham.
 -- Returnerer {"kode": "ok"} eller ikke_logget_ind / ugyldigt_token / ugyldig_platform.
 create or replace function public.push_token_registrer(p_token text, p_platform text)
 returns jsonb
 language plpgsql security definer set search_path = public as $fn$
 declare
   v_bruger uuid := auth.uid();
+  v_token  text := btrim(p_token);
 begin
   if v_bruger is null then return jsonb_build_object('kode', 'ikke_logget_ind'); end if;
-  if p_token is null or char_length(p_token) > 200
-     or p_token !~ '^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$' then
+  -- Ingen formatkrav (web-tokens er ikke Expo-tokens), kun fornuftig laengde
+  -- og ingen whitespace/kontroltegn.
+  if v_token is null or char_length(v_token) not between 1 and 2000
+     or v_token ~ '[[:space:][:cntrl:]]' then
     return jsonb_build_object('kode', 'ugyldigt_token');
   end if;
-  if p_platform is null or p_platform not in ('ios', 'android') then
+  if p_platform is null or p_platform not in ('ios', 'android', 'web') then
     return jsonb_build_object('kode', 'ugyldig_platform');
   end if;
 
-  insert into public.push_tokens (bruger_id, token, platform)
-  values (v_bruger, p_token, p_platform)
+  insert into public.push_tokens (user_id, token, platform)
+  values (v_bruger, v_token, p_platform)
   on conflict (token) do update
-    set bruger_id = excluded.bruger_id,
+    set user_id = excluded.user_id,
         platform = excluded.platform,
-        sidst_set_kl = now();
+        updated_at = now();
 
-  -- Hoejst 10 enheder pr. bruger: de aeldste (sidst set) fjernes.
+  -- Hoejst 10 enheder pr. bruger: de aeldste (sidst opdateret) fjernes.
   delete from public.push_tokens
-   where bruger_id = v_bruger
+   where user_id = v_bruger
      and id not in (select id from public.push_tokens
-                     where bruger_id = v_bruger
-                     order by sidst_set_kl desc limit 10);
+                     where user_id = v_bruger
+                     order by updated_at desc, created_at desc limit 10);
 
   return jsonb_build_object('kode', 'ok');
 end;
 $fn$;
 
--- Appen kalder denne ved log ud. Kun eget token kan fjernes.
+-- Ved log ud. Kun eget token kan fjernes.
 create or replace function public.push_token_fjern(p_token text)
 returns jsonb
 language plpgsql security definer set search_path = public as $fn$
 begin
   if auth.uid() is null then return jsonb_build_object('kode', 'ikke_logget_ind'); end if;
-  delete from public.push_tokens where token = p_token and bruger_id = auth.uid();
+  delete from public.push_tokens where token = btrim(p_token) and user_id = auth.uid();
   return jsonb_build_object('kode', 'ok');
 end;
 $fn$;

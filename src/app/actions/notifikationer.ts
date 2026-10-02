@@ -6,9 +6,11 @@
 // Fejl RETURNERES som { fejl } (Next skjuler kastede fejl i produktion).
 //
 // Appen (Expo) kalder de samme ting direkte med supabase-js og brugerens session:
-//   supabase.rpc("push_token_registrer", { p_token, p_platform: "ios" | "android" })
+//   supabase.rpc("push_token_registrer", { p_token, p_platform: "ios" | "android" | "web" })
 //       efter login og ved hver opstart (token fra getExpoPushTokenAsync).
 //   supabase.rpc("push_token_fjern", { p_token })          ved log ud.
+//   (Appen kan også skrive direkte i push_tokens via RLS; RPC'en håndhæver
+//   desuden højst 10 enheder pr. bruger. Kun Expo-tokens får push.)
 //   supabase.from("notifikationer").select(...)             indbakken (RLS: kun egne).
 //   supabase.rpc("notifikationer_antal_ulaeste")            rødt tal.
 //   supabase.rpc("notifikationer_marker_laest", { p_ids }) / ("notifikationer_marker_alle_laest")
@@ -187,7 +189,7 @@ export async function gemIndstillinger(
 // push_token_registrer direkte (se øverst i filen).
 export async function registrerPushToken(
   token: string,
-  platform: "ios" | "android",
+  platform: "ios" | "android" | "web",
 ): Promise<{ ok: true } | { fejl: string }> {
   const { supabase, user } = await bruger();
   if (!user) return { fejl: IKKE_LOGGET_IND };
