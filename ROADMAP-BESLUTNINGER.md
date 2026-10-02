@@ -135,3 +135,8 @@ Brugeren får besked når:
 - Ved sager: separate interne samtaler med køber og sælger knyttet til sagen + admin kan skrive en markeret fællesbesked i køber/sælger-chatten.
 - Beskeder fra BidHamr markeres tydeligt. Alle samtaler gemmes og slettes aldrig.
 - **Admin annullerer en ikke-betalt handel manuelt (Filip, 2. oktober 2026):** sælgeren får de samme to knapper som ved ubetalt vinder ("Tilbyd til næsthøjeste byder" og "Sæt varen op igen (gratis)"). Køberen får ingen knapper og ser kun "Handlen er annulleret af BidHamr." Der oprettes ingen advarselssag – admin har allerede taget stilling.
+
+## Udbetalingskonto og advarsler fra admin (Filip, 2. oktober 2026)
+- **Man skal have en udbetalingskonto (Stripe Connect) for at oprette en auktion.** Uden konto kan man byde og købe, men ikke sælge. Opret-siden sender sælgeren til opsætningen hos Stripe først.
+- På admin-siden "Betalinger" har hver sag to knapper: **"Markér som løst"** (ingen advarsel) og **"Giv advarsel"** (begrundelse påkrævet, tæller med i 3-advarsler-reglen, lukker sagen). Admin vælger, om advarslen gives til køber eller sælger.
+- Ved annullerede handler vises fragten som "(refunderes ved annullering)" – køberen får altid hele beløbet inkl. fragt tilbage ved refusion.
