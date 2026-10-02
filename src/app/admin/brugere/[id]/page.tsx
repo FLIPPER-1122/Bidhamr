@@ -15,6 +15,7 @@ import { StatusBadge, brugerStatus, erSuspensionAktiv, RolleBadge } from "@/comp
 import { assertRole, harMindstRolle } from "@/lib/adminAuth";
 import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
 import { hentSamtalerForBruger } from "@/app/actions/staffChat";
+import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import AabnChatKnap from "@/components/admin/staffchat/AabnChatKnap";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 
@@ -45,6 +46,8 @@ export default async function AdminBrugerDetalje({
   searchParams: Promise<{ fane?: string }>;
 }) {
   const { id } = await params;
+  // Systembrugeren "BidHamr" er ikke en rigtig bruger og kan ikke administreres.
+  if (id.toLowerCase() === BIDHAMR_SYSTEM_ID) notFound();
   const { fane: faneParam } = await searchParams;
   const fane: Fane = FANER.some((f) => f.id === faneParam)
     ? (faneParam as Fane)

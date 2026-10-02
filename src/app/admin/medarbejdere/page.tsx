@@ -1,4 +1,5 @@
 import AdminActionKnap from "@/components/admin/AdminActionKnap";
+import { orVaerdi } from "@/lib/postgrest";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getStaffRole } from "@/lib/adminAuth";
@@ -35,7 +36,7 @@ export default async function AdminMedarbejdere({
     const { data } = await supabase
       .from("users")
       .select("id, navn, email, rolle, oprettet")
-      .or(`navn.ilike.%${q}%,email.ilike.%${q}%`)
+      .or(`navn.ilike.${orVaerdi(q)},email.ilike.${orVaerdi(q)}`)
       .neq("id", BIDHAMR_SYSTEM_ID)
       .order("navn", { ascending: true })
       .limit(20);
