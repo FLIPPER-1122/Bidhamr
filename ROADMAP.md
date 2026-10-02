@@ -56,13 +56,13 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - Beskeder fra BidHamr er tydeligt markeret. Alle samtaler logges og gemmes (slettes aldrig)
   - **Ved en sag:** staff skriver med køber og sælger hver for sig i separate interne samtaler, der knyttes til sagen. Admin kan desuden skrive en fællesbesked til begge i den eksisterende chat mellem køber og sælger (tydeligt markeret som besked fra BidHamr)
 - [~] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
-- [ ] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen
+- [~] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen
 - [ ] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem
 - [ ] Afhentning hos sælger: køber giver stjerner og viser koden → pengene frigives med det samme
 - [ ] Krævede pakkebilleder i "Send pakke" (kamera direkte, ikke kamerarulle): varen indpakket i åben kasse + lukket kasse med label
-- [ ] Sag kræver billeder fra køber (pakke, label, indhold) inden for 48 timer
-- [ ] Svindel-undtagelse: åbenlys svindel giver altid en sag, med eller uden beskyttelse
-- [ ] Permanent lukning af konti ved svindel (køber eller sælger)
+- [~] Sag kræver billeder fra køber (pakke, label, indhold) inden for 48 timer
+- [~] Svindel-undtagelse: åbenlys svindel giver altid en sag, med eller uden beskyttelse
+- [~] Permanent lukning af konti ved svindel (køber eller sælger)
 - [ ] Advarselssystem: dårlig indpakning giver påmindelse første gang, derefter en advarsel pr. gang. 3 advarsler = permanent lukning (byg videre på den eksisterende advarsel-funktion i admin)
 - [ ] Mails ved alle trin i handlen
 - [ ] **Udbetaling til sælgers bankkonto** via Stripe Connect (testmiljø – ingen rigtige penge endnu)
