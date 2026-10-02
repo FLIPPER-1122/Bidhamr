@@ -60,6 +60,16 @@ export default async function KontoSide({
         </>
       )}
 
+      <section className="mt-6 rounded-2xl border border-kant bg-white p-5 sm:p-6">
+        <h2 className="font-serif text-xl font-semibold text-tekst">Notifikationer</h2>
+        <p className="mt-1 text-sm text-tekst-daempet">
+          Vælg, hvilke beskeder du vil have i klokken, på mail og i appen.
+        </p>
+        <Link href="/konto/notifikationer" className="btn btn-sekundaer mt-4">
+          Notifikationsindstillinger
+        </Link>
+      </section>
+
       <p className="mt-6 text-sm text-tekst-daempet">
         Se dine køb og salg under{" "}
         <Link href="/mine-handler" className="font-medium text-groen hover:underline">

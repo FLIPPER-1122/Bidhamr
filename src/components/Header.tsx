@@ -2,22 +2,29 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import KontoMenu from "@/components/KontoMenu";
+import Klokke from "@/components/notifikationer/Klokke";
 
 export default async function Header() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
 
   let erAdmin = false;
+  let ulaeste = 0;
   if (data.user) {
-    const { data: rolle } = await supabase.rpc("min_rolle");
+    const [{ data: rolle }, { data: antal }] = await Promise.all([
+      supabase.rpc("min_rolle"),
+      supabase.rpc("notifikationer_antal_ulaeste"),
+    ]);
     erAdmin =
       rolle === "chef" ||
       rolle === "admin" ||
       rolle === "medarbejder";
+    ulaeste = Number(antal ?? 0) || 0;
   }
 
   return (
-    <header className="border-b border-kant bg-white">
+    // relative: klokke-panelet lægger sig i fuld bredde under headeren på mobil.
+    <header className="relative border-b border-kant bg-white">
       <div className="mx-auto flex max-w-[1280px] flex-wrap items-center gap-x-3 gap-y-3 px-4 py-3 sm:px-6 lg:flex-nowrap lg:gap-x-6 lg:px-8 lg:py-4">
         <Link
           href="/"
@@ -98,6 +105,8 @@ export default async function Header() {
               Opret auktion
             </Link>
           </div>
+
+          {data.user && <Klokke startAntal={ulaeste} />}
 
           <div className={data.user ? "" : "lg:hidden"}>
             <KontoMenu

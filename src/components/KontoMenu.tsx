@@ -99,6 +99,7 @@ export default function KontoMenu({ logget_ind, erAdmin }: Props) {
               {logget_ind ? (
                 <>
                   <li><Link href="/konto" onClick={luk} className={punkt}>Min konto</Link></li>
+                  <li><Link href="/konto/notifikationer" onClick={luk} className={punkt}>Notifikationsindstillinger</Link></li>
                   <li><Link href="/mine-handler" onClick={luk} className={punkt}>Mine handler</Link></li>
                   <li><Link href="/profil/mig" onClick={luk} className={punkt}>Min profil</Link></li>
                   <li><Link href="/favoritter" onClick={luk} className={punkt}>Favoritter</Link></li>
