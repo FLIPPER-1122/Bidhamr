@@ -40,7 +40,7 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "pakke_sendt", navn: "Pakken er sendt", beskrivelse: "Når sælgeren har sendt din vare.", paakraevet: true },
   { type: "pakke_leveret", navn: "Pakken er kommet frem", beskrivelse: "Når pakken er kommet frem til køberen.", paakraevet: true },
   { type: "udbetaling", navn: "Udbetaling", beskrivelse: "Når pengene er sendt til din udbetalingskonto, eller du mangler at oprette den.", paakraevet: true },
-  { type: "sag", navn: "Sager", beskrivelse: "Nyt i en sag om en handel.", paakraevet: true },
+  { type: "sag", navn: "Sager", beskrivelse: "Nyt i en sag om en handel, og når BidHamr åbner en samtale med dig.", paakraevet: true },
   { type: "advarsel", navn: "Advarsler", beskrivelse: "Når du får en advarsel fra BidHamr.", paakraevet: true },
   { type: "andenchance", navn: "Tilbud til næste byder", beskrivelse: "Når du får tilbudt en vare, eller når byderen svarer på dit tilbud.", paakraevet: true },
   { type: "overbudt", navn: "Du er overbudt", beskrivelse: "Når en anden byder mere end dig.", paakraevet: false },
@@ -48,7 +48,7 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "like", navn: "Nogen har liket din auktion", beskrivelse: "Når nogen gemmer din auktion som favorit.", paakraevet: false },
   { type: "fulgt_slutter_snart", navn: "Favorit slutter snart", beskrivelse: "En time før en auktion, du har gemt, slutter.", paakraevet: false },
   { type: "ny_auktion_fulgt_saelger", navn: "Ny auktion fra en sælger, du følger", beskrivelse: "Når en sælger, du følger, sætter en ny vare til salg.", paakraevet: false },
-  { type: "ny_besked", navn: "Nye beskeder", beskrivelse: "Når du får en ny besked i en handel.", paakraevet: false },
+  { type: "ny_besked", navn: "Nye beskeder", beskrivelse: "Når du får en ny besked i en handel eller fra BidHamr.", paakraevet: false },
 ] as const;
 
 export const ALLE_TYPER: readonly NotifikationType[] = NOTIFIKATION_TYPER.map((t) => t.type);
