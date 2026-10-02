@@ -49,6 +49,11 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [~] Gennemgang af hele pengestrømmen (reviewer): køb, gebyrer, frigivelse, refusion, ingen huller
 - [x] Gebyrer: 5% køber + 5% sælger, altid
 - [x] **BidHamr Beskyttelse**: 5% tilkøb for køber (min 25 / maks 250 kr), vælges ved bud (låst)
+- [ ] **Chat mellem staff og brugere** (bygges før sagerne, fordi de bruger den):
+  - Medarbejder, admin og chef kan klikke **"Åbn chat"** med en bruger fra admin (brugersiden eller en sag). Først derefter kan brugeren skrive i den samtale. Brugere kan IKKE selv starte en samtale med BidHamr – vil de kontakte os, skriver de en mail
+  - Brugeren ser samtalen under "Beskeder" og kan svare, så længe chatten er åben. Staff kan lukke chatten igen
+  - Beskeder fra BidHamr er tydeligt markeret. Alle samtaler logges og gemmes (slettes aldrig)
+  - **Ved en sag:** staff skriver med køber og sælger hver for sig i separate interne samtaler, der knyttes til sagen. Admin kan desuden skrive en fællesbesked til begge i den eksisterende chat mellem køber og sælger (tydeligt markeret som besked fra BidHamr)
 - [ ] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
 - [ ] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen
 - [ ] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem

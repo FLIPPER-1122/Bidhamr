@@ -129,3 +129,8 @@ Brugeren får besked når:
 - **Sælger bestemmer selv** næste skridt på handelssiden:
   - **Tilbyd til næsthøjeste byder** – til byderens eget højeste bud. Byderen har 24 timer til at sige ja/nej. Siger han ja, oprettes en ny handel med ny 24-timers betalingsfrist. Siger han nej, eller går tiden, kan sælger vælge at sende tilbuddet videre til den næste byder i rækken.
   - **Sæt varen op igen** – gratis. Ny auktion med samme titel, billeder og beskrivelse; sælger kan rette startpris og varighed.
+
+## Chat mellem staff og brugere (Filip, 2. oktober 2026)
+- Kun staff (medarbejder/admin/chef) kan åbne en samtale med en bruger ("Åbn chat"). Brugeren kan først skrive, når chatten er åbnet, og kun indtil staff lukker den. Brugere kontakter selv BidHamr via mail.
+- Ved sager: separate interne samtaler med køber og sælger knyttet til sagen + admin kan skrive en markeret fællesbesked i køber/sælger-chatten.
+- Beskeder fra BidHamr markeres tydeligt. Alle samtaler gemmes og slettes aldrig.
