@@ -35,8 +35,10 @@ function offentligSideUrl(): string {
 import {
   HANDEL_AFSENDER,
   saelgerBetaltMail,
+  saelgerOpretUdbetalingskontoMail,
   sideUrl,
 } from "@/lib/mails/handel";
+import { sendHandelMail } from "@/lib/mails/send";
 
 export type BetalingRaekke = {
   id: string;
@@ -77,7 +79,25 @@ export type BetalingRaekke = {
   overfoersel_forsoeg: number;
   refusion_forsoeg: number;
   pi_forsoeg: number;
+  overfoersel_graense: number;
+  saelgerkonto_mail_1_kl: string | null;
+  saelgerkonto_mail_2_kl: string | null;
+  saelgerkonto_mail_3_kl: string | null;
+  saelgerkonto_markeret_kl: string | null;
+  indsigelse_kl: string | null;
+  indsigelse_status: string | null;
+  stripe_dispute_id: string | null;
+  ikke_afsluttet_markeret_kl: string | null;
 };
+
+// Samme regel som betaling_indsigelse_blokerer i databasen: en åben eller
+// tabt indsigelse (chargeback) blokerer frigivelse og overførsel.
+const INDSIGELSE_AFSLUTTET = ["won", "warning_closed", "prevented"];
+export function indsigelseBlokerer(
+  b: Pick<BetalingRaekke, "indsigelse_kl" | "indsigelse_status">,
+): boolean {
+  return !!b.indsigelse_kl && !INDSIGELSE_AFSLUTTET.includes(b.indsigelse_status ?? "");
+}
 
 export type ProfilRaekke = {
   user_id: string;
@@ -225,11 +245,18 @@ export async function sikrPaymentIntent(
   );
 
   const admin = createAdminClient();
-  await admin
+  const { error: gemFejl } = await admin
     .from("betalinger")
     .update({ stripe_payment_intent_id: pi.id, opdateret: new Date().toISOString() })
     .eq("id", betaling.id)
     .is("stripe_payment_intent_id", null);
+  if (gemFejl) {
+    // PaymentIntenten findes hos Stripe, men er ikke gemt. Næste kald får den
+    // samme tilbage via idempotency key'en (24 t). Betal aldrig en intent,
+    // databasen ikke kender.
+    console.error("Kunne ikke gemme PaymentIntent:", betaling.id, pi.id, gemFejl.message);
+    throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
+  }
 
   const efter = await hentBetaling(betaling.id);
   if (efter.stripe_payment_intent_id !== pi.id) {
@@ -442,6 +469,7 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
   if (b.status !== "betalt" || !b.frigivet_kl || !b.stripe_charge_id) {
     return "ikke_klar";
   }
+  if (indsigelseBlokerer(b)) return "indsigelse";
   if (b.udbetaling_oere <= 0) return "intet_at_overfoere";
 
   const admin = createAdminClient();
@@ -457,6 +485,8 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
   if (!profil?.stripe_account_id || !profil.connect_overfoersler_aktiv) {
     // Sælgeren har ikke en aktiv udbetalingskonto endnu. Overførslen laves,
     // når account.updated viser, at kontoen er klar (webhook/cron).
+    // Sælgeren får en mail nu og igen efter 3 og 7 dage.
+    await paamindSaelgerkonto(b);
     return "afventer_saelgerkonto";
   }
 
@@ -815,12 +845,51 @@ export async function spejlRefusion(charge: Stripe.Charge): Promise<string> {
       : (charge.payment_intent?.id ?? null);
   if (!piId) return "ingen_payment_intent";
   if (charge.refunded) return registrerRefunderet(piId, null);
-  const { error } = await createAdminClient().rpc("betaling_marker_opmaerksomhed", {
+  // Markeres til admin og blokerer overførsel (refusion_anmodet_kl sættes).
+  const { error } = await createAdminClient().rpc("betaling_registrer_delvis_refusion", {
     p_payment_intent: piId,
     p_besked: `Delvis refusion hos Stripe (${charge.amount_refunded} af ${charge.amount} øre)`,
   });
-  if (error) throw new Error(`betaling_marker_opmaerksomhed: ${error.message}`);
+  if (error) throw new Error(`betaling_registrer_delvis_refusion: ${error.message}`);
   return "delvis_refusion";
+}
+
+// Spejler en indsigelse (chargeback) fra Stripe. Disputen hentes frisk, så
+// events i forkert rækkefølge giver den aktuelle status. Åben eller tabt
+// indsigelse blokerer frigivelse og overførsel og markeres til admin. Er den
+// vundet/lukket, prøves en ventende overførsel med det samme.
+export async function spejlIndsigelse(disputeId: string): Promise<string> {
+  const stripe = getStripe();
+  const d = await stripe.disputes.retrieve(disputeId);
+  const piId =
+    typeof d.payment_intent === "string" ? d.payment_intent : (d.payment_intent?.id ?? null);
+  const chId = typeof d.charge === "string" ? d.charge : d.charge.id;
+  const { data, error } = await createAdminClient().rpc("betaling_registrer_indsigelse", {
+    p_payment_intent: piId,
+    p_charge: chId,
+    p_dispute: d.id,
+    p_status: d.status,
+  });
+  if (error) throw new Error(`betaling_registrer_indsigelse: ${error.message}`);
+  const resultat = String(data);
+  if (resultat === "ukendt") {
+    console.error("Indsigelse på ukendt betaling:", d.id, piId, chId);
+  }
+  if (resultat === "afsluttet" && piId) {
+    const { data: b } = await createAdminClient()
+      .from("betalinger")
+      .select("id")
+      .eq("stripe_payment_intent_id", piId)
+      .maybeSingle<{ id: string }>();
+    if (b) {
+      try {
+        await overfoerTilSaelger(b.id);
+      } catch (err) {
+        console.error("Overførsel efter afsluttet indsigelse fejlede (cron prøver igen):", err);
+      }
+    }
+  }
+  return resultat;
 }
 
 // Annullerer en ikke-betalt betaling: først i databasen (atomisk), derefter
@@ -860,11 +929,14 @@ export async function overfoerVentende(saelgerId?: string): Promise<number> {
     .eq("status", "betalt")
     .not("frigivet_kl", "is", null)
     .is("stripe_transfer_id", null)
+    .is("refusion_anmodet_kl", null)
+    .order("frigivet_kl", { ascending: true })
     .limit(100);
-  // Cron giver op efter 3 endeligt afviste forsøg (betalingen er markeret til
-  // admin). account.updated for sælgeren prøver altid igen.
+  // Cron giver op, når forsøgene er brugt op (overfoersel_forsoeg >=
+  // overfoersel_graense - betalingen er markeret til admin, som kan give nye
+  // forsøg). account.updated for sælgeren prøver altid igen.
   if (saelgerId) q = q.eq("seller_id", saelgerId);
-  else q = q.lt("overfoersel_forsoeg", 3);
+  else q = q.eq("overfoersel_opbrugt", false);
   const { data } = await q;
   let antal = 0;
   for (const { id } of data ?? []) {
@@ -987,4 +1059,88 @@ export async function onboardingLink(userId: string): Promise<string> {
     type: "account_onboarding",
   });
   return link.url;
+}
+
+// ------------------------------------------------------------------ sælgerkonto
+
+const DAG = 24 * 60 * 60 * 1000;
+
+// Påmindelser til en sælger, der ikke har oprettet en udbetalingskonto:
+// første mail med det samme ved frigivelse, derefter efter 3 og 7 dage (regnet
+// fra frigivet_kl). Hver mail claimes atomisk før afsendelse. Efter 7 dage
+// markeres betalingen til admin (én gang). Kaster aldrig - overførslen må ikke
+// fejle pga. en mail.
+async function paamindSaelgerkonto(b: BetalingRaekke): Promise<void> {
+  try {
+    if (!b.frigivet_kl) return;
+    const admin = createAdminClient();
+    const alder = Date.now() - new Date(b.frigivet_kl).getTime();
+
+    if (alder >= 7 * DAG && !b.saelgerkonto_markeret_kl) {
+      const nu = new Date().toISOString();
+      const { error } = await admin
+        .from("betalinger")
+        .update({
+          saelgerkonto_markeret_kl: nu,
+          kraever_opmaerksomhed: true,
+          sidste_fejl: "Sælger har ikke oprettet udbetalingskonto",
+          opdateret: nu,
+        })
+        .eq("id", b.id)
+        .is("saelgerkonto_markeret_kl", null)
+        .is("stripe_transfer_id", null);
+      if (error) console.error("Markering (sælgerkonto) fejlede:", b.id, error.message);
+    }
+
+    // Den seneste skyldige mail sendes; tidligere, ikke-sendte claimes samtidig,
+    // så en kørsel efter nedetid ikke sender flere på én gang.
+    const felter = [
+      "saelgerkonto_mail_1_kl",
+      "saelgerkonto_mail_2_kl",
+      "saelgerkonto_mail_3_kl",
+    ] as const;
+    const trin = alder >= 7 * DAG ? 2 : alder >= 3 * DAG ? 1 : 0;
+    if (b[felter[trin]]) return;
+
+    const nu = new Date().toISOString();
+    const opdatering: Record<string, string> = {};
+    for (let i = 0; i <= trin; i++) if (!b[felter[i]]) opdatering[felter[i]] = nu;
+    const { data: claimet, error } = await admin
+      .from("betalinger")
+      .update(opdatering)
+      .eq("id", b.id)
+      .is(felter[trin], null)
+      .select("id");
+    if (error) {
+      console.error("Claim af sælgerkonto-mail fejlede:", b.id, error.message);
+      return;
+    }
+    if (!claimet || claimet.length === 0) return;
+
+    const [{ data: a }, { data: s }] = await Promise.all([
+      admin.from("auctions").select("titel").eq("id", b.auction_id).maybeSingle(),
+      admin.from("users").select("email").eq("id", b.seller_id).maybeSingle(),
+    ]);
+    await sendHandelMail(
+      s?.email as string | undefined,
+      saelgerOpretUdbetalingskontoMail(
+        (a?.titel as string | undefined) ?? "din vare",
+        Number(b.udbetaling_oere),
+        trin > 0,
+      ),
+    );
+  } catch (err) {
+    console.error("Påmindelse om udbetalingskonto fejlede:", b.id, err);
+  }
+}
+
+// Admin: giv en fejlet overførsel nye forsøg og prøv med det samme.
+// Kaldes kun fra en admin-server-action (assertRole).
+export async function proevOverfoerselIgen(betalingId: string): Promise<string> {
+  const { data, error } = await createAdminClient().rpc("betaling_overfoersel_nulstil", {
+    p_betaling: betalingId,
+  });
+  if (error) throw new Error(`betaling_overfoersel_nulstil: ${error.message}`);
+  if (!data) return "ikke_tilladt";
+  return overfoerTilSaelger(betalingId);
 }

@@ -10,7 +10,9 @@ import { getStripe } from "@/lib/stripe";
 import { sendHandelMail } from "@/lib/mails/send";
 import {
   andenchanceTilbudMail,
+  koeberAdminAnnulleretMail,
   koeberUbetaltAnnulleretMail,
+  saelgerAdminAnnulleretMail,
   saelgerAndenchanceAccepteretMail,
   saelgerAndenchanceAfslaaetMail,
   saelgerUbetaltAnnulleretMail,
@@ -59,7 +61,12 @@ type SagRaekke = {
   stripe_annulleret_kl: string | null;
   koeber_mail_sendt_kl: string | null;
   saelger_mail_sendt_kl: string | null;
+  oprettet: string;
+  aarsag: "ubetalt" | "admin_annulleret";
+  stripe_annullering_markeret_kl: string | null;
 };
+
+const SYV_DAGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Cron-trin: annullerer betalinger med overskreden frist, opretter sagen,
 // annullerer PaymentIntent hos Stripe og sender mails. Alt er idempotent og
@@ -107,19 +114,39 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
   }
 
   // Sager, hvor Stripe-annullering eller mails mangler (også fra tidligere
-  // kørsler, der blev afbrudt).
+  // kørsler, der blev afbrudt). Mails forsøges i 7 dage. Stripe-annulleringen
+  // forsøges, til den lykkes - efter 7 dage markeres betalingen til admin.
+  const graense = new Date(Date.now() - SYV_DAGE_MS).toISOString();
   const { data: sager } = await admin
     .from("ubetalte_vindere")
     .select(
-      "id, trade_id, auction_id, buyer_id, seller_id, stripe_annulleret_kl, koeber_mail_sendt_kl, saelger_mail_sendt_kl",
+      "id, trade_id, auction_id, buyer_id, seller_id, stripe_annulleret_kl, koeber_mail_sendt_kl, saelger_mail_sendt_kl, oprettet, aarsag, stripe_annullering_markeret_kl",
     )
-    .or("stripe_annulleret_kl.is.null,koeber_mail_sendt_kl.is.null,saelger_mail_sendt_kl.is.null")
-    .gte("oprettet", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+    .or(
+      `stripe_annulleret_kl.is.null,and(oprettet.gte.${graense},or(koeber_mail_sendt_kl.is.null,saelger_mail_sendt_kl.is.null))`,
+    )
+    .order("oprettet", { ascending: true })
     .limit(200)
     .overrideTypes<SagRaekke[], { merge: false }>();
 
   for (const s of sager ?? []) {
     if (!s.stripe_annulleret_kl) {
+      // Efter 7 dage uden held: til admin (én gang), men fortsæt forsøgene.
+      if (
+        !s.stripe_annullering_markeret_kl &&
+        Date.now() - new Date(s.oprettet).getTime() >= SYV_DAGE_MS &&
+        (await claimFelt(admin, "ubetalte_vindere", s.id, "stripe_annullering_markeret_kl"))
+      ) {
+        const { error: mFejl } = await admin
+          .from("betalinger")
+          .update({
+            kraever_opmaerksomhed: true,
+            sidste_fejl: "Stripe-annullering af betalingen er ikke lykkedes efter 7 dage",
+            opdateret: new Date().toISOString(),
+          })
+          .eq("trade_id", s.trade_id);
+        if (mFejl) console.error("Markering (Stripe-annullering) fejlede:", s.trade_id, mFejl);
+      }
       try {
         // Idempotent: betaling_annuller returnerer PaymentIntent-id'et igen for
         // en allerede annulleret betaling, og Stripe-kaldet har idempotensnøgle.
@@ -135,12 +162,16 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
     }
 
     if (s.koeber_mail_sendt_kl && s.saelger_mail_sendt_kl) continue;
+    if (Date.now() - new Date(s.oprettet).getTime() >= SYV_DAGE_MS) continue;
+    const adminAnnulleret = s.aarsag === "admin_annulleret";
     const o = await titelOgEmails(admin, s.auction_id, [s.buyer_id, s.seller_id]);
     if (!s.koeber_mail_sendt_kl && (await claimFelt(admin, "ubetalte_vindere", s.id, "koeber_mail_sendt_kl"))) {
-      if (await sendHandelMail(o.email.get(s.buyer_id), koeberUbetaltAnnulleretMail(o.titel, s.trade_id))) mails++;
+      const mail = (adminAnnulleret ? koeberAdminAnnulleretMail : koeberUbetaltAnnulleretMail)(o.titel, s.trade_id);
+      if (await sendHandelMail(o.email.get(s.buyer_id), mail)) mails++;
     }
     if (!s.saelger_mail_sendt_kl && (await claimFelt(admin, "ubetalte_vindere", s.id, "saelger_mail_sendt_kl"))) {
-      if (await sendHandelMail(o.email.get(s.seller_id), saelgerUbetaltAnnulleretMail(o.titel, s.trade_id))) mails++;
+      const mail = (adminAnnulleret ? saelgerAdminAnnulleretMail : saelgerUbetaltAnnulleretMail)(o.titel, s.trade_id);
+      if (await sendHandelMail(o.email.get(s.seller_id), mail)) mails++;
     }
   }
 

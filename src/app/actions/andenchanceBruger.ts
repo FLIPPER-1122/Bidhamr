@@ -51,24 +51,28 @@ export async function hentMineAktiveTilbud(): Promise<AktivtTilbud[]> {
 
 // Til køberen af en annulleret handel: blev den annulleret, fordi køberen
 // ikke betalte? Sagstabellen er kun for service-role, så det tjekkes her.
-export async function erAnnulleretUbetalt(tradeId: string): Promise<boolean> {
+// Returnerer årsagen ("ubetalt" | "admin_annulleret"), eller null.
+export async function erAnnulleretUbetalt(
+  tradeId: string,
+): Promise<"ubetalt" | "admin_annulleret" | null> {
   try {
-    if (!UUID.test(tradeId)) return false;
+    if (!UUID.test(tradeId)) return null;
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return false;
+    if (!user) return null;
 
     const { data } = await createAdminClient()
       .from("ubetalte_vindere")
-      .select("id")
+      .select("id, aarsag")
       .eq("trade_id", tradeId)
       .eq("buyer_id", user.id)
       .maybeSingle();
-    return Boolean(data);
+    if (!data) return null;
+    return data.aarsag === "admin_annulleret" ? "admin_annulleret" : "ubetalt";
   } catch (err) {
     console.error("erAnnulleretUbetalt fejlede:", err);
-    return false;
+    return null;
   }
 }

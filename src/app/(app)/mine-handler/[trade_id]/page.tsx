@@ -101,7 +101,7 @@ export default async function HandelDetaljePage({
   const annulleret = handel.status === "annulleret";
   const [andenchance, koeberUbetalt] = await Promise.all([
     annulleret && erSaelger ? hentAndenchanceStatus(handel.id) : Promise.resolve(null),
-    annulleret && erKoeber ? erAnnulleretUbetalt(handel.id) : Promise.resolve(false),
+    annulleret && erKoeber ? erAnnulleretUbetalt(handel.id) : Promise.resolve(null),
   ]);
 
   return (
@@ -263,8 +263,14 @@ export default async function HandelDetaljePage({
         {koeberUbetalt && (
           <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
             <p className="font-semibold">Handlen er annulleret</p>
-            <p className="mt-1">Du betalte ikke inden fristen, så handlen er annulleret.</p>
-            <p className="mt-1">En medarbejder ser på sagen, og du kan få en advarsel.</p>
+            {koeberUbetalt === "admin_annulleret" ? (
+              <p className="mt-1">Handlen er annulleret af BidHamr.</p>
+            ) : (
+              <>
+                <p className="mt-1">Du betalte ikke inden fristen, så handlen er annulleret.</p>
+                <p className="mt-1">En medarbejder ser på sagen, og du kan få en advarsel.</p>
+              </>
+            )}
           </div>
         )}
 
