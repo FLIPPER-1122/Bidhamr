@@ -147,13 +147,14 @@ const BADGES: Record<string, keyof AdminTaellere> = {
   "/admin/ubetalte": "ubetalte",
   "/admin/betalinger": "betalinger",
   "/admin/chats": "chats",
+  "/admin/sager": "sager",
 };
 
-type AdminTaellere = { ubetalte: number; betalinger: number; chats: number };
+type AdminTaellere = { ubetalte: number; betalinger: number; chats: number; sager: number };
 
 export default function AdminSidebar({
   rolle,
-  taellere = { ubetalte: 0, betalinger: 0, chats: 0 },
+  taellere = { ubetalte: 0, betalinger: 0, chats: 0, sager: 0 },
 }: {
   rolle: StaffRole;
   taellere?: AdminTaellere;

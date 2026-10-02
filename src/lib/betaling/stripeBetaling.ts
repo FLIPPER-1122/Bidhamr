@@ -69,6 +69,8 @@ export type BetalingRaekke = {
   overfoert_kl: string | null;
   refusion_anmodet_kl: string | null;
   refusion_aarsag: string | null;
+  // Delvis refusion (sag: alt undtagen BidHamr Beskyttelse). null = fuld.
+  refusion_oere: number | null;
   stripe_refund_id: string | null;
   refunderet_kl: string | null;
   overfoersel_paabegyndt_kl: string | null;
@@ -604,7 +606,8 @@ async function registrerOverfoerselsfejl(betalingId: string, err: unknown) {
 
 // ------------------------------------------------------------------ refusion
 
-// Fuld refusion af en betaling hos Stripe. Kræver, at refusionen allerede er
+// Refusion af en betaling hos Stripe. Fuld, medmindre refusion_oere er sat
+// (sag med medhold: alt undtagen BidHamr Beskyttelse). Kræver, at refusionen allerede er
 // claimet i databasen (refusion_anmodet_kl - sat af betaling_paabegynd_refusion
 // eller af betaling_registrer_betalt ved sen betaling / afvigende beløb), så
 // en overførsel til sælger aldrig kan ske samtidig.
@@ -649,11 +652,28 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
   const nøgle =
     forsoeg > 0 ? `bidhamr-refusion-${b.id}-${forsoeg}` : `bidhamr-refusion-${b.id}`;
 
+  // Delvis refusion: beløbet er sat af databasen (sag_claim_refusion) og er
+  // altid > 0 og <= total_oere (CHECK-constraint). Tjekkes igen her, så et
+  // forkert beløb aldrig sendes til Stripe.
+  const delvis = refusionsbeloeb(b);
+  if (delvis === "ugyldigt") {
+    await admin
+      .from("betalinger")
+      .update({
+        kraever_opmaerksomhed: true,
+        sidste_fejl: "Refusionsbeløbet er ugyldigt - refusion stoppet",
+        opdateret: new Date().toISOString(),
+      })
+      .eq("id", b.id);
+    throw new Error(`Ugyldigt refusionsbeløb for betaling ${b.id}`);
+  }
+
   let refund: Stripe.Refund | null = null;
   try {
     refund = await stripe.refunds.create(
       {
         payment_intent: b.stripe_payment_intent_id,
+        ...(delvis !== null ? { amount: delvis } : {}),
         reason: "requested_by_customer",
         metadata: {
           betaling_id: b.id,
@@ -713,6 +733,49 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
     await registrerRefunderet(b.stripe_payment_intent_id, null);
   }
   return "refunderet";
+}
+
+// null = fuld refusion. Et tal = delvis refusion i øre (aldrig over det betalte).
+function refusionsbeloeb(
+  b: Pick<BetalingRaekke, "refusion_oere" | "total_oere">,
+): number | null | "ugyldigt" {
+  if (b.refusion_oere === null || b.refusion_oere === undefined) return null;
+  const beloeb = Number(b.refusion_oere);
+  const total = Number(b.total_oere);
+  if (!Number.isInteger(beloeb) || beloeb <= 0 || beloeb > total) return "ugyldigt";
+  return beloeb === total ? null : beloeb;
+}
+
+// Cron: sagsrefusioner, der er claimet (sag_claim_refusion), men hvor kaldet
+// til Stripe fejlede eller aldrig blev lavet (fx serveren døde midt i
+// afgørelsen). Kun betalinger, der er claimet for mindst 10 minutter siden,
+// så cron ikke kører samtidig med afgørelsen. refunderBetaling er idempotent
+// (idempotency key + eksisterende refund tjekkes først).
+export async function refunderSagerVentende(): Promise<number> {
+  const { data, error } = await createAdminClient()
+    .from("betalinger")
+    .select("id")
+    .eq("status", "betalt")
+    .eq("refusion_aarsag", "sag")
+    .not("refusion_anmodet_kl", "is", null)
+    .lt("refusion_anmodet_kl", new Date(Date.now() - 10 * 60 * 1000).toISOString())
+    .is("stripe_transfer_id", null)
+    .is("overfoersel_paabegyndt_kl", null)
+    .lt("refusion_forsoeg", 5)
+    .limit(50);
+  if (error) {
+    console.error("Hentning af ventende sagsrefusioner fejlede:", error.message);
+    return 0;
+  }
+  let antal = 0;
+  for (const { id } of (data ?? []) as { id: string }[]) {
+    try {
+      if ((await refunderBetaling(id)) === "refunderet") antal++;
+    } catch (err) {
+      console.error("Sagsrefusion fejlede (prøves igen):", id, err);
+    }
+  }
+  return antal;
 }
 
 // Refunderer en kasseret PaymentIntent med afvigende beløb (betaling_afvigelser).
@@ -847,8 +910,10 @@ export async function registrerRefunderet(
   return String(data);
 }
 
-// Spejler charge.refunded. Kun fuld refusion sætter status 'refunderet';
-// en delvis refusion (fx lavet i Stripe Dashboard) markeres til admin.
+// Spejler charge.refunded. Fuld refusion sætter status 'refunderet'. Det gør
+// også en delvis refusion, som BidHamr selv har bestilt (refusion_oere sat af
+// en sag), når mindst det beløb er refunderet. Anden delvis refusion (fx lavet
+// i Stripe Dashboard) markeres til admin.
 export async function spejlRefusion(charge: Stripe.Charge): Promise<string> {
   const piId =
     typeof charge.payment_intent === "string"
@@ -856,6 +921,18 @@ export async function spejlRefusion(charge: Stripe.Charge): Promise<string> {
       : (charge.payment_intent?.id ?? null);
   if (!piId) return "ingen_payment_intent";
   if (charge.refunded) return registrerRefunderet(piId, null);
+  const { data: bestilt } = await createAdminClient()
+    .from("betalinger")
+    .select("refusion_oere, refusion_anmodet_kl")
+    .eq("stripe_payment_intent_id", piId)
+    .maybeSingle<{ refusion_oere: number | null; refusion_anmodet_kl: string | null }>();
+  if (
+    bestilt?.refusion_anmodet_kl &&
+    bestilt.refusion_oere !== null &&
+    Number(charge.amount_refunded) >= Number(bestilt.refusion_oere)
+  ) {
+    return registrerRefunderet(piId, null);
+  }
   // Markeres til admin og blokerer overførsel (refusion_anmodet_kl sættes).
   const { error } = await createAdminClient().rpc("betaling_registrer_delvis_refusion", {
     p_payment_intent: piId,

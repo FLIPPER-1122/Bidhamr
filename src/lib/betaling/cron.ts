@@ -6,6 +6,8 @@
 //   3. Påmindelser 12 og 20 timer efter fristens start.
 //   4. Overfør frigivne beløb, der ventede på sælgerens Connect-konto.
 //   5. Refundér betalinger med afvigende beløb.
+//   5b. Sagsrefusioner, der er claimet, men ikke gennemført hos Stripe.
+//   5c. "Sag oprettet"-beskeder for sager, der ikke er notificeret (fx fra appen).
 //   6. Fristen overskredet: annullér handlen (+ Stripe), opret sag til admin,
 //      mail til køber og sælger.
 //   7. Andenchance-tilbud: udløb efter 24 t, mails til sælger/byder.
@@ -20,6 +22,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
 import { koerNotifikationsCron } from "@/lib/notifikationer/cron";
 import { annullerUbetalte, behandlAndenchance } from "@/lib/betaling/ubetalt";
+import { notificerNyeSager } from "@/lib/sagerServer";
 import {
   betalingsPaamindelseMail,
   koeberAndenchanceAutobetaltMail,
@@ -33,6 +36,7 @@ import {
   forsoegAutobetaling,
   overfoerVentende,
   refunderAfvigelserVentende,
+  refunderSagerVentende,
 } from "@/lib/betaling/stripeBetaling";
 
 const TIME = 60 * 60 * 1000;
@@ -74,6 +78,8 @@ export async function koerBetalingsCron() {
     paamindelser: 0,
     overfoersler: 0,
     afvigelsesrefusioner: 0,
+    sagsrefusioner: 0,
+    sagsbeskeder: 0,
     ubetalteAnnulleret: 0,
     ubetaltMails: 0,
     andenchanceUdloebne: 0,
@@ -217,6 +223,12 @@ export async function koerBetalingsCron() {
 
   // 5) Betalinger med afvigende beløb, der endnu ikke er refunderet.
   resultat.afvigelsesrefusioner = await refunderAfvigelserVentende();
+
+  // 5b) Sagsrefusioner (medhold til køber), hvor Stripe-kaldet fejlede.
+  resultat.sagsrefusioner = await refunderSagerVentende();
+
+  // 5c) Nye sager, hvor køber og sælger ikke har fået besked endnu.
+  resultat.sagsbeskeder = await notificerNyeSager();
 
   // 6) Fristen overskredet: annullér handel + Stripe, opret sag, send mails.
   try {

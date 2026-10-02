@@ -103,12 +103,16 @@ async function suspendUserImpl(formData: FormData): Promise<void> {
 
   const { data: target } = await admin
     .from("users")
-    .select("rolle")
+    .select("rolle, konto_lukket_kl")
     .eq("id", userId)
     .single();
   if (!target) throw new BrugerFejl("Brugeren findes ikke.");
   if (target.rolle === "admin" || target.rolle === "chef") {
     throw new BrugerFejl("Admins og chefer kan ikke suspenderes.");
+  }
+  // En permanent lukket konto er allerede suspenderet uden slutdato.
+  if (target.konto_lukket_kl) {
+    throw new BrugerFejl("Kontoen er allerede lukket permanent.");
   }
 
   const suspenderetTil =
@@ -144,6 +148,17 @@ async function unsuspendUserImpl(formData: FormData): Promise<void> {
   const userId = formData.get("userId") as string;
   const { admin, userId: staffId } = await assertRole("medarbejder");
   afvisSystembruger(userId);
+
+  // En permanent lukket konto (fx svindel) kan ikke åbnes igen herfra.
+  // Databasen afviser det også (users_beskyt_lukket_konto).
+  const { data: konto } = await admin
+    .from("users")
+    .select("konto_lukket_kl")
+    .eq("id", userId)
+    .maybeSingle<{ konto_lukket_kl: string | null }>();
+  if (konto?.konto_lukket_kl) {
+    throw new BrugerFejl("Kontoen er lukket permanent og kan ikke åbnes igen.");
+  }
 
   const { error } = await admin
     .from("users")
@@ -649,6 +664,22 @@ async function hentHandelTilSag(admin: AdminClient, tradeId: string) {
   return handel;
 }
 
+// En sag fra køberen (tabellen sager) skal afgøres under Sager -> sagen
+// (src/app/actions/adminSager.ts), ikke med de generelle handelsknapper.
+// Databasen afviser det også (trigger trades_beskyt_sagsfrys).
+const AABEN_KOEBERSAG =
+  "Handlen har en åben sag fra køberen. Afgør sagen under Sager, så køber og sælger får en begrundelse.";
+
+async function afvisVedAabenKoeberSag(admin: AdminClient, tradeId: string) {
+  const { count, error } = await admin
+    .from("sager")
+    .select("id", { count: "exact", head: true })
+    .eq("trade_id", tradeId)
+    .in("status", ["aaben", "afventer_retur"]);
+  if (error) throw new Error(error.message);
+  if ((count ?? 0) > 0) throw new BrugerFejl(AABEN_KOEBERSAG);
+}
+
 function revaliderSag(tradeId: string) {
   revalidatePath("/admin/sager");
   revalidatePath(`/mine-handler/${tradeId}`);
@@ -695,6 +726,7 @@ async function sagLukImpl(formData: FormData): Promise<void> {
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("medarbejder");
   if (!aarsag) throw new BrugerFejl("Skriv en afsluttende note.");
+  await afvisVedAabenKoeberSag(admin, tradeId);
 
   const { error } = await admin
     .from("trades")
@@ -727,6 +759,7 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
   if (!aarsag) throw new BrugerFejl("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
+  await afvisVedAabenKoeberSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
   if (!betaling) throw new BrugerFejl("Handlen har ingen betaling og kan ikke frigives.");
   if (betaling.status !== "betalt") {
@@ -784,6 +817,7 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
   if (!aarsag) throw new BrugerFejl("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
+  await afvisVedAabenKoeberSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
 
   if (!betaling) throw new BrugerFejl("Handlen har ingen betaling og kan ikke refunderes.");
