@@ -163,3 +163,7 @@ Brugeren får besked når:
 - **Refusion ved medhold:** køberen får alt retur **undtagen BidHamr Beskyttelse** (vare, købergebyr og fragt refunderes; Beskyttelsen er "brugt").
 - **Returfragt** ved skadet vare med BidHamr Beskyttelse: **BidHamr betaler altid**.
 - **Retur før refusion:** ved skadet / ikke som beskrevet sender køberen varen retur (label fra BidHamr), og refunderes, når pakken er afleveret. Ved svindel (tom pakke, aldrig sendt, helt anden vare) og bortkommet pakke refunderes straks.
+- **Hvem afgør:** medarbejder, admin og chef må afgøre sager, også når pengene flyttes. Alt logges; admin kan genåbne.
+- **Bortkommet / aldrig sendt** kan meldes 7 dage efter afsendelse.
+- **Automatisk frigivelse:** 48 timer efter "modtaget" uden sag frigives pengene til sælger. Har køberen hverken trykket "modtaget" eller oprettet en sag **14 dage efter afsendelse**, frigives pengene også (indtil GLS-sporing erstatter det). Staff tjekker sporingsnummeret hos GLS før medhold i "bortkommet".
+- **Ankefrist:** efter en afgørelse flyttes pengene (refusion eller udbetaling) først **4 dage** efter afgørelsen. Staff kan genåbne sagen imens. Anke-knappen bygges senere.
