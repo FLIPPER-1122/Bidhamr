@@ -104,18 +104,18 @@ begin
   v := translate(v,
     '1l|!@4'
     || chr(1072) || chr(1040) || chr(913)  || chr(945)  || chr(593)  || chr(7424)   -- a
-    || chr(1042) || chr(1068) || chr(1100) || chr(914)  || chr(665)                 -- b
+    || chr(1042) || chr(1068) || chr(1100) || chr(914)  || chr(665)  || chr(1074)   -- b (1074 = lille kyrillisk ve, efter lower())
     || chr(1280) || chr(1281) || chr(7429)                                          -- d
-    || chr(1053) || chr(1210) || chr(1211) || chr(919)  || chr(668)                 -- h
+    || chr(1053) || chr(1210) || chr(1211) || chr(919)  || chr(668)  || chr(1085)   -- h (1085 = lille kyrillisk en)
     || chr(1030) || chr(1110) || chr(1216) || chr(1231) || chr(921)  || chr(953)
     || chr(305)  || chr(618)                                                        -- i
     || chr(1052) || chr(1084) || chr(924)  || chr(7437)                             -- m
     || chr(1075) || chr(640),                                                       -- r
     'iiiiaa'
     || 'aaaaaa'
-    || 'bbbbb'
+    || 'bbbbbb'
     || 'ddd'
-    || 'hhhhh'
+    || 'hhhhhh'
     || 'iiiiii'
     || 'ii'
     || 'mmmm'
