@@ -11,4 +11,4 @@ alter table public.moderation_log
     'advarsel','annuller_auktion',
     'saldo_sat','saldo_tilfoert','saldo_traukket',
     'sag_aabnet','sag_lukket','handel_frigivet','handel_refunderet',
-    'ubetalt_afvist','betaling_loest'));
+    'ubetalt_afvist','overfoersel_proevet_igen','betaling_loest'));
