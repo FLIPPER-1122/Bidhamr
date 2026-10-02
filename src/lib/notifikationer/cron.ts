@@ -329,6 +329,8 @@ async function beskeder(admin: Admin, start: Date): Promise<number> {
   const { data: besk } = await admin
     .from("messages")
     .select("id, trade_id, sender_id, content, created_at")
+    // Fællesbeskeder fra BidHamr notificeres af sendFaellesbesked() som 'sag'.
+    .eq("fra_bidhamr", false)
     .gte("created_at", fraTid(start, 24))
     .order("created_at", { ascending: false })
     .limit(MAKS);

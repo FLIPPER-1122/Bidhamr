@@ -145,6 +145,8 @@ function kodeFejl(kode: string): string {
       return "Du har sendt mange beskeder på kort tid. Vent lidt, og prøv så igen.";
     case "ikke_logget_ind":
       return IKKE_LOGGET_IND;
+    case "proev_igen":
+      return "Samtalen blev ændret samtidig. Prøv igen.";
     default:
       return GENERISK;
   }
@@ -154,11 +156,38 @@ function forkort(t: string, n = 120): string {
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 }
 
+// Notifikation om en ny staff-besked i en eksisterende samtale. Samtaler om
+// en sag eller handel sendes som 'sag' (påkrævet), resten som 'ny_besked'.
+// Skriver staff flere i træk, og er den forrige stadig ulæst og under 5
+// minutter gammel, sendes der ikke igen.
+function notificerStaffBesked(
+  brugerId: string,
+  samtaleId: string,
+  beskedId: string,
+  tekst: string,
+  forrigeUlaestKl: string | null,
+  omSag: boolean,
+) {
+  const nyligUlaest =
+    forrigeUlaestKl !== null && Date.now() - Date.parse(forrigeUlaestKl) < NOTIFIKATION_PAUSE_MS;
+  if (nyligUlaest) return;
+  after(() =>
+    send(brugerId, omSag ? "sag" : "ny_besked", {
+      titel: "Ny besked fra BidHamr",
+      tekst: forkort(tekst),
+      link: staffSamtaleSti(samtaleId),
+      data: { staff_samtale_id: samtaleId },
+      noegle: `staffbesked:${beskedId}`,
+    }),
+  );
+}
+
 // ------------------------------------------------------------------ Staff
 
 // "Åbn chat" (medarbejder, admin, chef). Findes der allerede en åben samtale
 // med brugeren om samme sag (eller en åben generel samtale), returneres den
-// (fandtes: true) - dobbeltklik giver ikke to samtaler.
+// (fandtes: true) - dobbeltklik giver ikke to samtaler. Er der en besked,
+// lægges den i den eksisterende samtale.
 export async function aabnChat(
   brugerId: string,
   emne: string,
@@ -193,6 +222,17 @@ export async function aabnChat(
     const svar = data as Kode;
     if (svar.kode !== "ok" && svar.kode !== "findes") throw new BrugerFejl(kodeFejl(svar.kode));
     const samtaleId = svar.samtale_id as string;
+
+    if (svar.kode === "findes" && besked && typeof svar.besked_id === "string") {
+      notificerStaffBesked(
+        brugerId,
+        samtaleId,
+        svar.besked_id,
+        besked,
+        (svar.forrige_ulaest_kl as string | null | undefined) ?? null,
+        svar.om_sag === true,
+      );
+    }
 
     if (svar.kode === "ok") {
       // Påkrævet besked: brugeren skal vide, at BidHamr vil i kontakt.
@@ -234,21 +274,14 @@ export async function sendStaffBesked(
     if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
     const beskedId = svar.besked_id as string;
     const brugerId = svar.bruger_id as string;
-    const forrige = svar.forrige_ulaest_kl as string | null;
-
-    const nyligUlaest =
-      forrige !== null && Date.now() - Date.parse(forrige) < NOTIFIKATION_PAUSE_MS;
-    if (!nyligUlaest) {
-      after(() =>
-        send(brugerId, "ny_besked", {
-          titel: "Ny besked fra BidHamr",
-          tekst: forkort(ren),
-          link: staffSamtaleSti(samtaleId),
-          data: { staff_samtale_id: samtaleId },
-          noegle: `staffbesked:${beskedId}`,
-        }),
-      );
-    }
+    notificerStaffBesked(
+      brugerId,
+      samtaleId,
+      beskedId,
+      ren,
+      (svar.forrige_ulaest_kl as string | null | undefined) ?? null,
+      svar.om_sag === true,
+    );
 
     revalidatePath("/admin", "layout");
     return { ok: true as const, beskedId };
@@ -509,7 +542,9 @@ export async function antalUbesvaredeStaffSamtaler(): Promise<{ antal: number } 
 }
 
 // Fællesbesked til køber og sælger i deres chat (admin og chef). Markeres
-// fra_bidhamr og får præfikset "Besked fra BidHamr:".
+// fra_bidhamr og får præfikset "Besked fra BidHamr:". Afsender (sender_id)
+// er systembrugeren BidHamr, så parterne ikke kan se, hvilken admin der
+// skrev; den rigtige admin står i moderation_log.
 export async function sendFaellesbesked(
   tradeId: string,
   tekst: string,
