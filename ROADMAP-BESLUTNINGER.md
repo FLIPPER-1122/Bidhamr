@@ -134,3 +134,4 @@ Brugeren får besked når:
 - Kun staff (medarbejder/admin/chef) kan åbne en samtale med en bruger ("Åbn chat"). Brugeren kan først skrive, når chatten er åbnet, og kun indtil staff lukker den. Brugere kontakter selv BidHamr via mail.
 - Ved sager: separate interne samtaler med køber og sælger knyttet til sagen + admin kan skrive en markeret fællesbesked i køber/sælger-chatten.
 - Beskeder fra BidHamr markeres tydeligt. Alle samtaler gemmes og slettes aldrig.
+- **Admin annullerer en ikke-betalt handel manuelt (Filip, 2. oktober 2026):** sælgeren får de samme to knapper som ved ubetalt vinder ("Tilbyd til næsthøjeste byder" og "Sæt varen op igen (gratis)"). Køberen får ingen knapper og ser kun "Handlen er annulleret af BidHamr." Der oprettes ingen advarselssag – admin har allerede taget stilling.
