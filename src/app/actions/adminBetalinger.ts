@@ -1,0 +1,370 @@
+"use server";
+
+import { assertRole } from "@/lib/adminAuth";
+import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
+
+// Admin: betalinger, der kræver handling (betalinger.kraever_opmaerksomhed og
+// åbne betaling_afvigelser). Medarbejder og admin ser kun hvem/hvad/status/fejl.
+// Beløb hentes KUN fra databasen, når rollen er chef – de må aldrig ende i
+// klienten for andre roller.
+
+class BrugerFejl extends Error {}
+
+const GENERISK_FEJL = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
+
+async function koer<T>(navn: string, fn: () => Promise<T>): Promise<T | { fejl: string }> {
+  try {
+    return await fn();
+  } catch (err) {
+    unstable_rethrow(err);
+    if (err instanceof BrugerFejl) return { fejl: err.message };
+    console.error(`Admin-handling ${navn} fejlede:`, err);
+    return { fejl: GENERISK_FEJL };
+  }
+}
+
+const PR_SIDE = 25;
+const MAX_AFVIGELSER = 50;
+
+export type Person = { id: string; navn: string | null };
+
+export type BetalingBeloeb = {
+  total_oere: number;
+  udbetaling_oere: number;
+  fragt_oere: number;
+  koebergebyr_oere: number;
+  saelgergebyr_oere: number;
+  beskyttelse_oere: number;
+};
+
+export type BetalingTilHandling = {
+  id: string;
+  trade_id: string;
+  auction_id: string;
+  auktion_titel: string | null;
+  koeber: Person;
+  saelger: Person;
+  status: string;
+  sidste_fejl: string | null;
+  dato: string;
+  indsigelse_kl: string | null;
+  // Kun for løste: hvem/hvornår/note.
+  loest?: { kl: string; note: string; af: string | null } | null;
+  // Kun sat for chef.
+  beloeb?: BetalingBeloeb;
+};
+
+export type AfvigelseTilHandling = {
+  id: string;
+  betaling_id: string;
+  trade_id: string;
+  auction_id: string | null;
+  auktion_titel: string | null;
+  koeber: Person | null;
+  saelger: Person | null;
+  sidste_fejl: string | null;
+  refusion_forsoeg: number;
+  dato: string;
+  // Kun sat for chef.
+  beloeb?: { modtaget_oere: number; forventet_oere: number };
+};
+
+export type BetalingerResultat = {
+  ok: true;
+  fane: "aaben" | "loest";
+  side: number;
+  antalSider: number;
+  antalAabne: number;
+  visBeloeb: boolean;
+  kanLoese: boolean;
+  betalinger: BetalingTilHandling[];
+  afvigelser: AfvigelseTilHandling[];
+};
+
+const BASIS_KOLONNER =
+  "id, trade_id, auction_id, buyer_id, seller_id, status, sidste_fejl, opdateret";
+const BELOEB_KOLONNER =
+  "total_oere, udbetaling_oere, fragt_oere, koebergebyr_oere, saelgergebyr_oere, beskyttelse_oere";
+
+type Raekke = Record<string, unknown>;
+type AdminClient = Awaited<ReturnType<typeof assertRole>>["admin"];
+
+// indsigelse_kl tilføjes af en anden migration. Findes kolonnen ikke endnu
+// (Postgres 42703 / PostgREST PGRST204), hentes uden den.
+function manglerKolonne(err: { code?: string; message?: string } | null) {
+  if (!err) return false;
+  return (
+    err.code === "42703" ||
+    err.code === "PGRST204" ||
+    /indsigelse_kl/.test(err.message ?? "")
+  );
+}
+
+async function hentBetalingRaekker(
+  admin: AdminClient,
+  kolonner: string,
+  byg: (q: ReturnType<ReturnType<AdminClient["from"]>["select"]>) => PromiseLike<{
+    data: unknown;
+    count: number | null;
+    error: { code?: string; message?: string } | null;
+  }>,
+): Promise<{ data: Raekke[]; count: number }> {
+  const medIndsigelse = await byg(
+    admin.from("betalinger").select(`${kolonner}, indsigelse_kl`, { count: "exact" }),
+  );
+  if (!medIndsigelse.error) {
+    return { data: (medIndsigelse.data ?? []) as Raekke[], count: medIndsigelse.count ?? 0 };
+  }
+  if (!manglerKolonne(medIndsigelse.error)) throw new Error(medIndsigelse.error.message);
+  const uden = await byg(admin.from("betalinger").select(kolonner, { count: "exact" }));
+  if (uden.error) throw new Error(uden.error.message);
+  return { data: (uden.data ?? []) as Raekke[], count: uden.count ?? 0 };
+}
+
+export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "loest" = "aaben") {
+  return koer("hentBetalingerTilHandling", async (): Promise<BetalingerResultat> => {
+    const { admin, rolle } = await assertRole("medarbejder");
+    const visBeloeb = rolle === "chef";
+    const kanLoese = rolle === "chef" || rolle === "admin";
+    const kolonner = visBeloeb ? `${BASIS_KOLONNER}, ${BELOEB_KOLONNER}` : BASIS_KOLONNER;
+    const s = Math.max(1, Math.floor(Number(side)) || 1);
+    const fra = (s - 1) * PR_SIDE;
+    const til = s * PR_SIDE - 1;
+
+    let raekker: Raekke[] = [];
+    let total = 0;
+    const loestMap = new Map<string, { kl: string; note: string; af: string | null }>();
+
+    if (fane === "aaben") {
+      const res = await hentBetalingRaekker(admin, kolonner, (q) =>
+        q.eq("kraever_opmaerksomhed", true).order("opdateret", { ascending: true }).range(fra, til),
+      );
+      raekker = res.data;
+      total = res.count;
+    } else {
+      // Løste = betalinger med en 'betaling_loest'-logning (maal_id = trade_id).
+      const { data: log, count, error } = await admin
+        .from("moderation_log")
+        .select("maal_id, aarsag, oprettet_kl, medarbejder_id", { count: "exact" })
+        .eq("handling", "betaling_loest")
+        .order("oprettet_kl", { ascending: false })
+        .range(fra, til);
+      if (error) throw new Error(error.message);
+      total = count ?? 0;
+      const tradeIds = [...new Set((log ?? []).map((l) => l.maal_id as string))];
+      const medarbejderIds = [...new Set((log ?? []).map((l) => l.medarbejder_id as string))];
+      const { data: medarbejdere } = medarbejderIds.length
+        ? await admin.from("users").select("id, navn").in("id", medarbejderIds)
+        : { data: [] as { id: string; navn: string | null }[] };
+      const mNavn = new Map((medarbejdere ?? []).map((m) => [m.id as string, m.navn as string | null]));
+      for (const l of log ?? []) {
+        if (loestMap.has(l.maal_id as string)) continue; // nyeste vinder
+        loestMap.set(l.maal_id as string, {
+          kl: l.oprettet_kl as string,
+          note: l.aarsag as string,
+          af: mNavn.get(l.medarbejder_id as string) ?? null,
+        });
+      }
+      if (tradeIds.length) {
+        const res = await hentBetalingRaekker(admin, kolonner, (q) => q.in("trade_id", tradeIds));
+        // Bevar logrækkefølgen (nyeste løst først).
+        const efterTrade = new Map(res.data.map((r) => [r.trade_id as string, r]));
+        raekker = tradeIds.map((t) => efterTrade.get(t)).filter((r): r is Raekke => !!r);
+      }
+    }
+
+    // Åbne afvigelser (forkert beløb, venter på refusion) vises kun på fanen
+    // "Kræver handling". Der er normalt få; vis højst MAX_AFVIGELSER.
+    let afvigRaekker: Raekke[] = [];
+    let antalAfvigelser = 0;
+    {
+      const afvKol = visBeloeb
+        ? "id, betaling_id, trade_id, sidste_fejl, refusion_forsoeg, oprettet, modtaget_oere, forventet_oere"
+        : "id, betaling_id, trade_id, sidste_fejl, refusion_forsoeg, oprettet";
+      const q = admin
+        .from("betaling_afvigelser")
+        .select(afvKol, { count: "exact", head: fane !== "aaben" })
+        .is("refunderet_kl", null);
+      const { data, count, error } =
+        fane === "aaben" ? await q.order("oprettet", { ascending: true }).limit(MAX_AFVIGELSER) : await q;
+      if (error) throw new Error(error.message);
+      afvigRaekker = (data ?? []) as unknown as Raekke[];
+      antalAfvigelser = count ?? 0;
+    }
+
+    // Antal åbne betalinger (til fanen), hvis vi ikke allerede har det.
+    let antalAabneBetalinger = fane === "aaben" ? total : 0;
+    if (fane !== "aaben") {
+      const { count, error } = await admin
+        .from("betalinger")
+        .select("id", { count: "exact", head: true })
+        .eq("kraever_opmaerksomhed", true);
+      if (error) throw new Error(error.message);
+      antalAabneBetalinger = count ?? 0;
+    }
+
+    // Afvigelsernes betalinger (for auktion, køber, sælger).
+    const afvBetalingIds = [...new Set(afvigRaekker.map((a) => a.betaling_id as string))];
+    const { data: afvBetalinger, error: afvBetErr } = afvBetalingIds.length
+      ? await admin
+          .from("betalinger")
+          .select("id, auction_id, buyer_id, seller_id")
+          .in("id", afvBetalingIds)
+      : { data: [] as Raekke[], error: null };
+    if (afvBetErr) throw new Error(afvBetErr.message);
+    const afvBetMap = new Map((afvBetalinger ?? []).map((b) => [b.id as string, b as Raekke]));
+
+    const brugerIds = new Set<string>();
+    const auktionIds = new Set<string>();
+    for (const r of [...raekker, ...(afvBetalinger ?? [])] as Raekke[]) {
+      brugerIds.add(r.buyer_id as string);
+      brugerIds.add(r.seller_id as string);
+      auktionIds.add(r.auction_id as string);
+    }
+
+    const [{ data: brugere, error: bErr }, { data: auktioner, error: aErr }] = await Promise.all([
+      brugerIds.size
+        ? admin.from("users").select("id, navn").in("id", [...brugerIds])
+        : Promise.resolve({ data: [] as { id: string; navn: string | null }[], error: null }),
+      auktionIds.size
+        ? admin.from("auctions").select("id, titel").in("id", [...auktionIds])
+        : Promise.resolve({ data: [] as { id: string; titel: string }[], error: null }),
+    ]);
+    if (bErr) throw new Error(bErr.message);
+    if (aErr) throw new Error(aErr.message);
+    const navn = new Map((brugere ?? []).map((u) => [u.id as string, (u.navn as string | null) ?? null]));
+    const titel = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
+    const person = (id: unknown): Person => ({ id: id as string, navn: navn.get(id as string) ?? null });
+
+    const betalinger: BetalingTilHandling[] = raekker.map((r) => {
+      const b: BetalingTilHandling = {
+        id: r.id as string,
+        trade_id: r.trade_id as string,
+        auction_id: r.auction_id as string,
+        auktion_titel: titel.get(r.auction_id as string) ?? null,
+        koeber: person(r.buyer_id),
+        saelger: person(r.seller_id),
+        status: r.status as string,
+        sidste_fejl: (r.sidste_fejl as string | null) ?? null,
+        dato: r.opdateret as string,
+        indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
+        loest: fane === "loest" ? loestMap.get(r.trade_id as string) ?? null : null,
+      };
+      if (visBeloeb) {
+        b.beloeb = {
+          total_oere: Number(r.total_oere),
+          udbetaling_oere: Number(r.udbetaling_oere),
+          fragt_oere: Number(r.fragt_oere),
+          koebergebyr_oere: Number(r.koebergebyr_oere),
+          saelgergebyr_oere: Number(r.saelgergebyr_oere),
+          beskyttelse_oere: Number(r.beskyttelse_oere),
+        };
+      }
+      return b;
+    });
+
+    const afvigelser: AfvigelseTilHandling[] =
+      fane === "aaben"
+        ? afvigRaekker.map((a) => {
+            const bet = afvBetMap.get(a.betaling_id as string);
+            const v: AfvigelseTilHandling = {
+              id: a.id as string,
+              betaling_id: a.betaling_id as string,
+              trade_id: a.trade_id as string,
+              auction_id: (bet?.auction_id as string | undefined) ?? null,
+              auktion_titel: bet ? titel.get(bet.auction_id as string) ?? null : null,
+              koeber: bet ? person(bet.buyer_id) : null,
+              saelger: bet ? person(bet.seller_id) : null,
+              sidste_fejl: (a.sidste_fejl as string | null) ?? null,
+              refusion_forsoeg: Number(a.refusion_forsoeg ?? 0),
+              dato: a.oprettet as string,
+            };
+            if (visBeloeb) {
+              v.beloeb = {
+                modtaget_oere: Number(a.modtaget_oere),
+                forventet_oere: Number(a.forventet_oere),
+              };
+            }
+            return v;
+          })
+        : [];
+
+    return {
+      ok: true,
+      fane,
+      side: s,
+      antalSider: Math.max(1, Math.ceil(total / PR_SIDE)),
+      antalAabne: antalAabneBetalinger + antalAfvigelser,
+      visBeloeb,
+      kanLoese,
+      betalinger,
+      afvigelser,
+    };
+  });
+}
+
+export async function markerBetalingLøst(betalingId: string, note: string) {
+  return koer("markerBetalingLøst", async () => {
+    const { admin, userId } = await assertRole("admin");
+    const id = (betalingId ?? "").trim();
+    const n = (note ?? "").trim();
+    if (!id) throw new BrugerFejl("Betalingen blev ikke fundet.");
+    if (!n) throw new BrugerFejl("Skriv en note om, hvad der er gjort.");
+    if (n.length > 2000) throw new BrugerFejl("Noten er for lang (højst 2000 tegn).");
+
+    // Atomisk: kun rækker, der stadig kræver opmærksomhed, ændres.
+    const { data, error } = await admin
+      .from("betalinger")
+      .update({ kraever_opmaerksomhed: false })
+      .eq("id", id)
+      .eq("kraever_opmaerksomhed", true)
+      .select("trade_id, buyer_id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new BrugerFejl("Betalingen er allerede markeret som løst.");
+
+    const { error: logErr } = await admin.from("moderation_log").insert({
+      medarbejder_id: userId,
+      handling: "betaling_loest",
+      maal_type: "handel",
+      maal_id: data.trade_id as string,
+      bruger_id: (data.buyer_id as string | null) ?? null,
+      aarsag: n,
+    });
+    revalidatePath("/admin", "layout");
+    if (logErr) {
+      console.error("Kunne ikke logge betaling_loest:", logErr);
+      throw new BrugerFejl("Betalingen er markeret som løst, men noten blev ikke gemt i loggen.");
+    }
+    return { ok: true as const };
+  });
+}
+
+// Til ConfirmDialog. formData: betalingId, note (påkrævet).
+export async function markerBetalingLøstForm(formData: FormData) {
+  return markerBetalingLøst(
+    ((formData.get("betalingId") as string) ?? "").trim(),
+    ((formData.get("note") as string) ?? "").trim(),
+  );
+}
+
+// Antal betalinger + åbne afvigelser, der kræver handling (badge i menuen).
+export async function hentAntalBetalingerTilHandling() {
+  return koer("hentAntalBetalingerTilHandling", async () => {
+    const { admin } = await assertRole("medarbejder");
+    const [b, a] = await Promise.all([
+      admin
+        .from("betalinger")
+        .select("id", { count: "exact", head: true })
+        .eq("kraever_opmaerksomhed", true),
+      admin
+        .from("betaling_afvigelser")
+        .select("id", { count: "exact", head: true })
+        .is("refunderet_kl", null),
+    ]);
+    if (b.error) throw new Error(b.error.message);
+    if (a.error) throw new Error(a.error.message);
+    return { ok: true as const, antal: (b.count ?? 0) + (a.count ?? 0) };
+  });
+}

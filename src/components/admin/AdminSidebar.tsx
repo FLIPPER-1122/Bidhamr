@@ -61,6 +61,16 @@ const navItems: {
     ),
   },
   {
+    href: "/admin/betalinger",
+    label: "Betalinger",
+    minRolle: "medarbejder",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/auktioner",
     label: "Alle auktioner",
     minRolle: "admin",
@@ -125,13 +135,14 @@ const navItems: {
 // Røde tal ved menupunkter, fx afventende ubetalte vindere.
 const BADGES: Record<string, keyof AdminTaellere> = {
   "/admin/ubetalte": "ubetalte",
+  "/admin/betalinger": "betalinger",
 };
 
-type AdminTaellere = { ubetalte: number };
+type AdminTaellere = { ubetalte: number; betalinger: number };
 
 export default function AdminSidebar({
   rolle,
-  taellere = { ubetalte: 0 },
+  taellere = { ubetalte: 0, betalinger: 0 },
 }: {
   rolle: StaffRole;
   taellere?: AdminTaellere;
