@@ -115,9 +115,10 @@ begin
     || chr(1030) || chr(1110) || chr(1216) || chr(1231) || chr(921)  || chr(953)
     || chr(305)  || chr(618)                                                        -- i
     || chr(1052) || chr(1084) || chr(924)  || chr(7437) || chr(956)                 -- m
-    || chr(1075) || chr(640);                                                       -- r
+    || chr(1075) || chr(640)                                                        -- r
+    || chr(273) || chr(272) || chr(295) || chr(294) || chr(384) || chr(579) || chr(616);  -- streg: đ Đ ħ Ħ ƀ Ƀ ɨ
   til := 'iiiiaa' || 'oo' || 'aaaaaa' || 'bbbbbbb' || 'ddd' || 'hhhhhhh'
-    || 'iiiiii' || 'ii' || 'mmmmm' || 'rr';
+    || 'iiiiii' || 'ii' || 'mmmmm' || 'rr' || 'ddhhbbi';
 
   v := translate(v, fra, til);
   v := lower(v);
