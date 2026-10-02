@@ -13,6 +13,7 @@ import {
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
+import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 
 // --- Fejlhaandtering ---------------------------------------------------------
 // Next skjuler beskeden fra fejl, der kastes i server actions, i produktion.
@@ -41,6 +42,15 @@ async function koer<T>(
 }
 
 // --- Brugere ---------------------------------------------------------------
+
+// Systembrugeren "BidHamr" (afsender af faellesbeskeder) er ikke en rigtig
+// bruger og kan ikke advares, suspenderes eller faa en anden rolle. Databasen
+// afviser det ogsaa (20261003002000_systembruger_vaern.sql).
+function afvisSystembruger(userId: string) {
+  if (userId === BIDHAMR_SYSTEM_ID) {
+    throw new BrugerFejl("BidHamr-systembrugeren kan ikke ændres herfra.");
+  }
+}
 
 type AdminClient = Awaited<ReturnType<typeof assertRole>>["admin"];
 
@@ -85,6 +95,7 @@ async function suspendUserImpl(formData: FormData): Promise<void> {
   const varighed = (formData.get("varighed") as string) ?? "permanent";
   const { admin, userId: staffId } = await assertRole("medarbejder");
 
+  afvisSystembruger(userId);
   if (!aarsag) throw new BrugerFejl("Angiv en årsag for suspensionen.");
   if (!["1", "7", "permanent"].includes(varighed)) {
     throw new BrugerFejl("Ugyldig varighed.");
@@ -132,6 +143,7 @@ async function suspendUserImpl(formData: FormData): Promise<void> {
 async function unsuspendUserImpl(formData: FormData): Promise<void> {
   const userId = formData.get("userId") as string;
   const { admin, userId: staffId } = await assertRole("medarbejder");
+  afvisSystembruger(userId);
 
   const { error } = await admin
     .from("users")
@@ -189,6 +201,7 @@ async function advarUserImpl(formData: FormData): Promise<void> {
   const { admin, userId: staffId } = await assertRole("medarbejder");
 
   if (!userId) throw new BrugerFejl("Brugeren blev ikke fundet.");
+  afvisSystembruger(userId);
   validerAdvarselTekster(begrundelseBruger, internNote);
 
   const { error } = await admin.from("advarsler").insert({
@@ -225,6 +238,7 @@ async function setRolleImpl(formData: FormData): Promise<void> {
     throw new BrugerFejl("Ugyldig rolle.");
   }
   if (userId === staffId) throw new BrugerFejl("Du kan ikke ændre din egen rolle.");
+  afvisSystembruger(userId);
 
   const { data: target } = await admin
     .from("users")

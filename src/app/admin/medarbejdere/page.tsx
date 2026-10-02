@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { setRolle } from "@/app/actions/adminActions";
 import AdminFilters from "@/components/admin/AdminFilters";
 import { RolleBadge } from "@/components/admin/StatusBadge";
+import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 
 export default async function AdminMedarbejdere({
   searchParams,
@@ -35,6 +36,7 @@ export default async function AdminMedarbejdere({
       .from("users")
       .select("id, navn, email, rolle, oprettet")
       .or(`navn.ilike.%${q}%,email.ilike.%${q}%`)
+      .neq("id", BIDHAMR_SYSTEM_ID)
       .order("navn", { ascending: true })
       .limit(20);
     søgeresultater = data;

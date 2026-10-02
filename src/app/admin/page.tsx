@@ -3,6 +3,7 @@ import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import StatCard from "@/components/admin/StatCard";
 import Link from "next/link";
+import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 
 function formatKr(value: number) {
   return value.toLocaleString("da-DK", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " kr";
@@ -32,7 +33,8 @@ export default async function AdminDashboard() {
     { count: betalingerTilHandling },
     { count: aabneAfvigelser },
   ] = await Promise.all([
-    supabase.from("users").select("id", { count: "exact", head: true }),
+    // Systembrugeren "BidHamr" taeller ikke som bruger.
+    supabase.from("users").select("id", { count: "exact", head: true }).neq("id", BIDHAMR_SYSTEM_ID),
     // Aktiv = status 'aktiv' OG slutdato i fremtiden. Uden tidsfilteret talte
     // udloebne auktioner med, fordi intet job saetter status til 'afsluttet'.
     supabase.from("auctions").select("id", { count: "exact", head: true }).eq("status", "aktiv").gt("slutter_kl", nuISO),
@@ -44,7 +46,7 @@ export default async function AdminDashboard() {
       .select("bud_oere, koebergebyr_oere, saelgergebyr_oere")
       .eq("status", "betalt")
       .is("refusion_anmodet_kl", null),
-    supabase.from("users").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO),
+    supabase.from("users").select("id", { count: "exact", head: true }).gte("oprettet", thirtyDaysAgoISO).neq("id", BIDHAMR_SYSTEM_ID),
     supabase.from("trades").select("id", { count: "exact", head: true }).gte("created_at", thirtyDaysAgoISO),
     supabase.from("ubetalte_vindere").select("id", { count: "exact", head: true }).eq("status", "afventer"),
     supabase.from("betalinger").select("id", { count: "exact", head: true }).eq("kraever_opmaerksomhed", true),
