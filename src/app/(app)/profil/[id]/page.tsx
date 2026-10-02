@@ -19,6 +19,8 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Systembrugeren har ingen offentlig profil (siden giver 404).
+  if (id.toLowerCase() === BIDHAMR_SYSTEM_ID) return { title: "Siden findes ikke" };
   const supabase = await createClient();
   const [{ data: authData }, { data: profil }] = await Promise.all([
     supabase.auth.getUser(),
@@ -27,7 +29,7 @@ export async function generateMetadata({
   if (!profil) return { title: "Profil" };
   const erEgen = authData.user?.id === id;
   const visNavn = erEgen ? (profil.navn ?? "") : kortNavn(profil.navn);
-  return { title: `${visNavn}s profil – BidHamr` };
+  return { title: `${visNavn}s profil` };
 }
 
 export default async function ProfilPage({

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { orVaerdi } from "@/lib/postgrest";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
@@ -20,12 +21,6 @@ const statusOptions = [
 // (…/auktion/<id>) også virker som søgning.
 const UUID_REGEX =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
-
-// PostgREST bruger komma og parenteser som syntaks i .or(), så værdien
-// citeres og indlejrede citationstegn escapes.
-function orVaerdi(tekst: string) {
-  return `"%${tekst.replace(/["\\]/g, "\\$&")}%"`;
-}
 
 export default async function AdminAuktioner({
   searchParams,

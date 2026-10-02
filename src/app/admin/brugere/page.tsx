@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { orVaerdi } from "@/lib/postgrest";
 import { Suspense } from "react";
 import Avatar from "@/components/Avatar";
 import BrugerSearch from "@/components/admin/BrugerSearch";
@@ -24,7 +25,7 @@ export default async function AdminBrugere({
     .limit(50);
 
   if (q) {
-    query = query.or(`navn.ilike.%${q}%,email.ilike.%${q}%,telefon.ilike.%${q}%`);
+    query = query.or(`navn.ilike.${orVaerdi(q)},email.ilike.${orVaerdi(q)},telefon.ilike.${orVaerdi(q)}`);
   }
 
   const { data: users } = await query;

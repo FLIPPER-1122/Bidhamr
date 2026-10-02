@@ -41,7 +41,11 @@ export default function SettingsForm({
 
     if (updateError) {
       console.error("Profil kunne ikke gemmes:", updateError);
-      setError("Dine oplysninger kunne ikke gemmes. Prøv igen om lidt.");
+      setError(
+        updateError.code === "BHN01"
+          ? 'Navnet må ikke indeholde "BidHamr".'
+          : "Dine oplysninger kunne ikke gemmes. Prøv igen om lidt."
+      );
       return;
     }
 

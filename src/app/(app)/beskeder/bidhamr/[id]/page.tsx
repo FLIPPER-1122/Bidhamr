@@ -9,7 +9,7 @@ import { AfsluttetMaerke, BidhamrMaerke, dato } from "@/components/staffchat/vis
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Besked fra BidHamr · BidHamr",
+  title: "Besked fra BidHamr",
 };
 
 // Svaret fra hentMinStaffSamtale, når samtalen ikke findes eller er en andens.
