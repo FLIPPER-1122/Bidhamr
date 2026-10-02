@@ -71,7 +71,11 @@ security invoker
 set search_path = public
 as $fn$
 declare
-  v text := normalize(coalesce(p_tekst, ''), NFKC);
+  -- NFKD (ikke NFKC): fuldbredde/matematiske bogstaver foldes OG accenter
+  -- skilles fra, saa de kan fjernes nedenfor (BidHåmr, BídHamr).
+  v    text := normalize(coalesce(p_tekst, ''), NFKD);
+  fra  text;
+  til  text;
 begin
   -- Usynlige/format-tegn:
   --   00AD bloed bindestreg, 034F CGJ, 061C ALM, 115F-1160 + 3164 + FFA0
@@ -97,29 +101,27 @@ begin
   -- Saerlige mellemrum -> almindelige (NFKC tager de fleste).
   v := translate(v, chr(160) || chr(5760) || chr(8199) || chr(8239), '    ');
 
-  v := lower(v);
+  -- Kombinerende tegn (accenter) fjernes: aa-ring, accent aigu osv.
+  v := regexp_replace(v, '[' || chr(768) || '-' || chr(879) || ']', '', 'g');
 
-  -- Look-alikes. Om lower() ogsaa goer ikke-ASCII-bogstaver smaa, afhaenger
-  -- af databasens locale, saa baade store og smaa staar med.
-  v := translate(v,
-    '1l|!@4'
+  -- Look-alikes (kyrillisk, graesk, small caps, 1/l/|/! for i, @/4 for a,
+  -- ø for o). Koeres baade FOER og EFTER lower(), fordi lower() goer fx
+  -- graesk store bogstaver til smaa, der ellers ville slippe igennem.
+  fra := '1l|!@4' || chr(248) || chr(216)
     || chr(1072) || chr(1040) || chr(913)  || chr(945)  || chr(593)  || chr(7424)   -- a
-    || chr(1042) || chr(1068) || chr(1100) || chr(914)  || chr(665)  || chr(1074)   -- b (1074 = lille kyrillisk ve, efter lower())
+    || chr(1042) || chr(1068) || chr(1100) || chr(914)  || chr(665)  || chr(1074) || chr(946)  -- b
     || chr(1280) || chr(1281) || chr(7429)                                          -- d
-    || chr(1053) || chr(1210) || chr(1211) || chr(919)  || chr(668)  || chr(1085)   -- h (1085 = lille kyrillisk en)
+    || chr(1053) || chr(1210) || chr(1211) || chr(919)  || chr(668)  || chr(1085) || chr(951)  -- h
     || chr(1030) || chr(1110) || chr(1216) || chr(1231) || chr(921)  || chr(953)
     || chr(305)  || chr(618)                                                        -- i
-    || chr(1052) || chr(1084) || chr(924)  || chr(7437)                             -- m
-    || chr(1075) || chr(640),                                                       -- r
-    'iiiiaa'
-    || 'aaaaaa'
-    || 'bbbbbb'
-    || 'ddd'
-    || 'hhhhhh'
-    || 'iiiiii'
-    || 'ii'
-    || 'mmmm'
-    || 'rr');
+    || chr(1052) || chr(1084) || chr(924)  || chr(7437) || chr(956)                 -- m
+    || chr(1075) || chr(640);                                                       -- r
+  til := 'iiiiaa' || 'oo' || 'aaaaaa' || 'bbbbbbb' || 'ddd' || 'hhhhhhh'
+    || 'iiiiii' || 'ii' || 'mmmmm' || 'rr';
+
+  v := translate(v, fra, til);
+  v := lower(v);
+  v := translate(v, fra, til);
 
   return v;
 end;
