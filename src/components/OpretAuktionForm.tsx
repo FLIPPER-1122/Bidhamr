@@ -198,7 +198,12 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       if (insertError) {
         // Fx 42501 (trigger afviser låste felter) – brugeren får samme faste besked.
         console.error("Fejl ved oprettelse af auktion:", insertError.code, insertError.message);
-        setError("Auktionen kunne ikke oprettes. Prøv igen om lidt.");
+        // BHU01: databasen kræver en udbetalingskonto (auctions_kraev_udbetalingskonto).
+        setError(
+          insertError.code === "BHU01"
+            ? "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg."
+            : "Auktionen kunne ikke oprettes. Prøv igen om lidt.",
+        );
         setLoading(false);
         return;
       }

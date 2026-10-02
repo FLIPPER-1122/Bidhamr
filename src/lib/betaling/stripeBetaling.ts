@@ -1052,7 +1052,16 @@ export async function spejlConnectKonto(konto: Stripe.Account): Promise<string |
 // Opretter (én gang) sælgerens Connect Express-konto og returnerer et
 // onboarding-link. Kaldes KUN med en id fra en verificeret session (server
 // action og GET /api/stripe/connect/onboarding).
-export async function onboardingLink(userId: string): Promise<string> {
+// retur: hvor sælgeren sendes hen bagefter (fast liste - aldrig fri URL).
+export type OnboardingRetur = "konto" | "opret-auktion";
+export function erOnboardingRetur(v: unknown): v is OnboardingRetur {
+  return v === "konto" || v === "opret-auktion";
+}
+
+export async function onboardingLink(
+  userId: string,
+  retur: OnboardingRetur = "konto",
+): Promise<string> {
   const stripe = getStripe();
   await sikrStripeKunde(userId); // sikrer profilrækken
   let profil = await hentProfil(userId);
@@ -1093,8 +1102,10 @@ export async function onboardingLink(userId: string): Promise<string> {
 
   const link = await stripe.accountLinks.create({
     account: profil!.stripe_account_id!,
-    refresh_url: sideUrl("/api/stripe/connect/onboarding"),
-    return_url: sideUrl("/konto?stripe=retur"),
+    refresh_url: sideUrl(
+      retur === "konto" ? "/api/stripe/connect/onboarding" : `/api/stripe/connect/onboarding?retur=${retur}`,
+    ),
+    return_url: sideUrl(`/${retur}?stripe=retur`),
     type: "account_onboarding",
   });
   return link.url;

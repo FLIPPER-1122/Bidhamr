@@ -422,6 +422,7 @@ const GENOPSAET_FEJL: Record<string, string> = {
   allerede_genopsat: "Varen er allerede sat op igen.",
   ugyldig_startpris: "Startprisen er ugyldig.",
   ugyldig_slutdato: "Varigheden er ugyldig.",
+  mangler_udbetalingskonto: "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.",
 };
 
 export async function genopsaetAuktion(
