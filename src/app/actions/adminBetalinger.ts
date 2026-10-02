@@ -3,6 +3,8 @@
 import { assertRole } from "@/lib/adminAuth";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
+import { after } from "next/server";
+import { notificerAdvarsler } from "@/lib/notifikationer/cron";
 import { indsigelseBlokerer } from "@/lib/betaling/stripeBetaling";
 
 // Admin: betalinger, der kræver handling (betalinger.kraever_opmaerksomhed og
@@ -499,6 +501,7 @@ export async function givAdvarselBetaling(betalingId: string, modtager: string, 
       if (kode && ADVARSEL_FEJL[kode]) throw new BrugerFejl(ADVARSEL_FEJL[kode]);
       throw new Error(`admin_advarsel_betaling returnerede ${kode}`);
     }
+    after(() => notificerAdvarsler());
     revalidatePath("/admin", "layout");
     return { ok: true as const };
   });

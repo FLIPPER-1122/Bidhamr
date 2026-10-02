@@ -2,9 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getResend } from "@/lib/resend";
-import { HANDEL_AFSENDER, pakkeSendtMail } from "@/lib/mails/handel";
+import { pakkeSendtMail } from "@/lib/mails/handel";
+import { send } from "@/lib/notifikationer/send";
 import {
   hentBetalingForHandel,
   indsigelseBlokerer,
@@ -71,36 +70,22 @@ export async function sendPakke(tradeId: string, tracking: string) {
   }
   if (!sendt) return { fejl: "Pakken er allerede markeret som sendt." };
 
-  // Mail til køberen. Fejler den, må det ikke vælte forsendelsen.
-  try {
-    const resend = getResend();
-    if (resend) {
-      const [{ data: auktion }, { data: koeber }] = await Promise.all([
-        supabase.from("auctions").select("titel").eq("id", handel.auction_id).single(),
-        // Koeberens email er ikke laesbar med brugerklienten (kolonne-grants).
-        // Saelgeren er allerede verificeret af trade_marker_sendt ovenfor.
-        createAdminClient().from("users").select("email").eq("id", handel.buyer_id).single(),
-      ]);
-      if (koeber?.email) {
-        const mail = pakkeSendtMail(
-          auktion?.titel ?? "din vare",
-          renTracking,
-          tradeId,
-        );
-        const { error: mailFejl } = await resend.emails.send({
-          from: HANDEL_AFSENDER,
-          to: koeber.email,
-          subject: mail.subject,
-          html: mail.html,
-        });
-        if (mailFejl) console.error("Kunne ikke sende pakke-mail:", mailFejl);
-      }
-    } else {
-      console.warn("RESEND_API_KEY mangler - pakke-mail blev ikke sendt.");
-    }
-  } catch (err) {
-    console.error("Pakke-mail kastede:", err);
-  }
+  // Besked til køberen. send() kaster aldrig, så forsendelsen står fast.
+  // Sælgeren er allerede verificeret af trade_marker_sendt ovenfor.
+  const { data: auktion } = await supabase
+    .from("auctions")
+    .select("titel")
+    .eq("id", handel.auction_id)
+    .maybeSingle();
+  const titel = (auktion?.titel as string | undefined) ?? "din vare";
+  await send(handel.buyer_id, "pakke_sendt", {
+    titel: "Din pakke er sendt",
+    tekst: `Sælgeren har sendt "${titel}". Sporingsnummer: ${renTracking}`,
+    link: `/mine-handler/${tradeId}`,
+    data: { trade_id: tradeId },
+    mail: pakkeSendtMail(titel, renTracking, tradeId),
+    noegle: `pakke_sendt:${tradeId}`,
+  });
 
   revalidatePath(`/mine-handler/${tradeId}`);
   revalidatePath("/mine-handler");
@@ -136,6 +121,20 @@ export async function markerModtaget(tradeId: string) {
   if (!markeret) {
     return { fejl: "Pakken er allerede kvitteret." };
   }
+
+  // Sælgeren får besked om, at pakken er kommet frem.
+  const { data: auktion } = await supabase
+    .from("auctions")
+    .select("titel")
+    .eq("id", handel.auction_id)
+    .maybeSingle();
+  await send(handel.seller_id, "pakke_leveret", {
+    titel: "Pakken er kommet frem",
+    tekst: `Køberen har modtaget "${(auktion?.titel as string | undefined) ?? "din vare"}" og tjekker nu varen. Pengene frigives, når køberen godkender den.`,
+    link: `/mine-handler/${tradeId}`,
+    data: { trade_id: tradeId },
+    noegle: `pakke_leveret:${tradeId}`,
+  });
 
   revalidatePath(`/mine-handler/${tradeId}`);
   revalidatePath("/mine-handler");

@@ -307,6 +307,20 @@ export function saelgerAndenchanceAfslaaetMail(
   };
 }
 
+// Fælles mail for notifikationer uden egen skabelon (fx overbudt, ny besked).
+// titel og tekst er ren tekst og escapes her.
+export function notifikationMail(titel: string, tekst: string, link: string | null) {
+  return {
+    subject: titel,
+    html: skabelon({
+      overskrift: escapeHtml(titel),
+      afsnit: tekst.split("\n").filter(Boolean).map(escapeHtml),
+      knapTekst: "Gå til BidHamr",
+      knapUrl: sideUrl(link ?? "/"),
+    }),
+  };
+}
+
 // Erstatter "du vandt"-mailen, når handlen kommer fra et accepteret tilbud.
 export function koeberAndenchanceBetalMail(
   titel: string,
