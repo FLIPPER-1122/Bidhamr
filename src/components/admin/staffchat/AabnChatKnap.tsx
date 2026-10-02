@@ -1,12 +1,11 @@
 "use client";
 
 // "Åbn chat" med en bruger (admin-brugersiden). Emne er påkrævet, første
-// besked valgfri. Findes der allerede en åben samtale, sendes beskeden i den,
-// og staff får det at vide.
-import Link from "next/link";
+// besked valgfri. Findes der allerede en åben samtale, lægger aabnChat()
+// beskeden i den (ingen ekstra afsendelse her), og staff får det at vide.
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { aabnChat, sendStaffBesked } from "@/app/actions/staffChat";
+import { aabnChat } from "@/app/actions/staffChat";
 import { STAFF_CHAT_MAKS_EMNE, STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
 
 export default function AabnChatKnap({
@@ -25,7 +24,6 @@ export default function AabnChatKnap({
   const [besked, setBesked] = useState("");
   const [sender, setSender] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
-  const [fundetId, setFundetId] = useState<string | null>(null);
   const emneRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -42,7 +40,6 @@ export default function AabnChatKnap({
     if (sender) return;
     setAaben(false);
     setFejl(null);
-    setFundetId(null);
   }
 
   async function opret(e: FormEvent) {
@@ -50,7 +47,6 @@ export default function AabnChatKnap({
     if (sender) return;
     setSender(true);
     setFejl(null);
-    setFundetId(null);
     const ren = besked.trim();
     const res = await aabnChat(brugerId, emne, { tradeId: tradeId ?? null, besked: ren || null });
     if ("fejl" in res) {
@@ -58,16 +54,7 @@ export default function AabnChatKnap({
       setFejl(res.fejl);
       return;
     }
-    if (res.fandtes && ren) {
-      // Den eksisterende samtale fik ikke beskeden - send den nu.
-      const sendt = await sendStaffBesked(res.samtaleId, ren);
-      if ("fejl" in sendt) {
-        setSender(false);
-        setFundetId(res.samtaleId);
-        setFejl(`Der var allerede en åben chat med brugeren, men beskeden blev ikke sendt: ${sendt.fejl}`);
-        return;
-      }
-    }
+    // sender forbliver true, indtil siden skifter, så der ikke kan klikkes igen.
     router.push(`/admin/chats/${res.samtaleId}${res.fandtes ? "?fandtes=1" : ""}`);
   }
 
@@ -102,14 +89,9 @@ export default function AabnChatKnap({
 
             <form onSubmit={opret} className="mt-4 space-y-4">
               {fejl && (
-                <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
                   {fejl}
-                  {fundetId && (
-                    <Link href={`/admin/chats/${fundetId}`} className="mt-1 block font-semibold underline">
-                      Gå til chatten
-                    </Link>
-                  )}
-                </div>
+                </p>
               )}
               <div>
                 <label htmlFor={`${id}-emne`} className="block text-sm font-medium text-neutral-700">

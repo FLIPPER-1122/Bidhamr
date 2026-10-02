@@ -167,7 +167,7 @@ export default async function BeskederPage() {
                 const erKoeber = h.buyer_id === user.id;
                 let forhaandsvisning = "Ingen beskeder endnu.";
                 if (b) {
-                  const tekst = b.fra_bidhamr ? fjernFaellesPraefiks(b.content) : b.content;
+                  const tekst = fjernFaellesPraefiks(b.content, b.fra_bidhamr);
                   const fra = b.fra_bidhamr ? "BidHamr: " : b.sender_id === user.id ? "Dig: " : "";
                   forhaandsvisning = fra + forkort(tekst);
                 }

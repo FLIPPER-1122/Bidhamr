@@ -38,7 +38,7 @@ export default async function AdminChat({
 
       {fandtes === "1" && (
         <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Der var allerede en åben chat med brugeren, så du er sendt til den. En evt. første besked er sendt her.
+          Der var allerede en åben chat med brugeren, så du er sendt til den. Har du skrevet en besked, er den lagt i denne chat.
         </p>
       )}
 

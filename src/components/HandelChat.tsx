@@ -125,7 +125,7 @@ export default function HandelChat({
                 <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-[#B9D8CC] bg-groen-lys px-4 py-2.5 text-sm text-tekst sm:max-w-[75%]">
                   <p className="whitespace-pre-wrap break-words">
                     <span className="sr-only">Besked fra BidHamr: </span>
-                    {fjernFaellesPraefiks(b.content)}
+                    {fjernFaellesPraefiks(b.content, b.fra_bidhamr)}
                   </p>
                   <p className="mt-1 text-[12px] text-tekst-svag">
                     {new Date(b.created_at).toLocaleString("da-DK", {
