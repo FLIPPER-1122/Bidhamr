@@ -137,7 +137,7 @@ Brugeren får besked når:
   - **Sæt varen op igen** – gratis. Ny auktion med samme titel, billeder og beskrivelse; sælger kan rette startpris og varighed.
 
 ## Chat mellem staff og brugere (Filip, 2. oktober 2026)
-- Kun staff (medarbejder/admin/chef) kan åbne en samtale med en bruger ("Åbn chat"). Brugeren kan først skrive, når chatten er åbnet, og kun indtil staff lukker den. Brugere kontakter selv BidHamr via mail.
+- Kun staff (medarbejder/admin/chef) kan åbne en samtale med en bruger ("Åbn chat"). Brugeren kan først skrive, når chatten er åbnet, og kun indtil staff lukker den. Staff har til hver en tid en knap "Afslut chat" i samtalen (også i sagschats); derefter kan brugeren ikke skrive mere, men kan stadig læse samtalen. Brugere kontakter selv BidHamr via mail.
 - Ved sager: separate interne samtaler med køber og sælger knyttet til sagen + admin kan skrive en markeret fællesbesked i køber/sælger-chatten.
 - Beskeder fra BidHamr markeres tydeligt. Alle samtaler gemmes og slettes aldrig.
 - **Admin annullerer en ikke-betalt handel manuelt (Filip, 2. oktober 2026):** sælgeren får de samme to knapper som ved ubetalt vinder ("Tilbyd til næsthøjeste byder" og "Sæt varen op igen (gratis)"). Køberen får ingen knapper og ser kun "Handlen er annulleret af BidHamr." Der oprettes ingen advarselssag – admin har allerede taget stilling.
