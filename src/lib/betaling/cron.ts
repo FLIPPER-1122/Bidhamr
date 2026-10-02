@@ -9,6 +9,9 @@
 //   6. Fristen overskredet: annullér handlen (+ Stripe), opret sag til admin,
 //      mail til køber og sælger.
 //   7. Andenchance-tilbud: udløb efter 24 t, mails til sælger/byder.
+//   8. Betalte handler, der ikke er afsluttet efter 14 dage: markeres til admin.
+//   Trin 4 sender også påmindelser til sælgere uden udbetalingskonto
+//   (straks, efter 3 og 7 dage) og markerer til admin efter 7 dage.
 //
 // Hver mail "claimes" atomisk i databasen FØR afsendelse, så samme mail aldrig
 // sendes to gange, selv hvis to kørsler overlapper.
@@ -74,6 +77,7 @@ export async function koerBetalingsCron() {
     ubetaltMails: 0,
     andenchanceUdloebne: 0,
     andenchanceMails: 0,
+    ikkeAfsluttet: 0,
   };
 
   // 1) Luk auktioner og opret handel + betaling.
@@ -197,6 +201,13 @@ export async function koerBetalingsCron() {
   } catch (err) {
     console.error("Annullering af ubetalte handler fejlede:", err);
   }
+
+  // 8) Betalte handler, der ikke er afsluttet efter 14 dage: til admin.
+  const { data: haengende, error: haengFejl } = await admin.rpc(
+    "betaling_marker_ikke_afsluttet",
+  );
+  if (haengFejl) console.error("betaling_marker_ikke_afsluttet fejlede:", haengFejl);
+  resultat.ikkeAfsluttet = Number(haengende ?? 0);
 
   // 7) Andenchance-tilbud: udløb og mails.
   try {

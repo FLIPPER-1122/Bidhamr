@@ -7,6 +7,7 @@ import { getResend } from "@/lib/resend";
 import { HANDEL_AFSENDER, pakkeSendtMail } from "@/lib/mails/handel";
 import {
   hentBetalingForHandel,
+  indsigelseBlokerer,
   overfoerTilSaelger,
 } from "@/lib/betaling/stripeBetaling";
 
@@ -153,6 +154,15 @@ export async function godkendPakke(tradeId: string) {
   }
   if (handel.status !== "modtaget") {
     return { fejl: "Kvittér for pakken, før du godkender den." };
+  }
+
+  // En åben indsigelse (chargeback) blokerer frigivelsen - databasen afviser
+  // den også, men så får køberen en forståelig besked.
+  const forud = await hentBetalingForHandel(tradeId);
+  if (forud && indsigelseBlokerer(forud)) {
+    return {
+      fejl: "Handlen kan ikke godkendes, mens din bank behandler en indsigelse mod betalingen. Kontakt support@bidhamr.dk.",
+    };
   }
 
   // Statusskiftet og frigivelsen (frigivet_kl) sker i samme transaktion i

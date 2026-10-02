@@ -40,10 +40,21 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
 
   return (
     <section className="rounded-2xl border border-kant bg-white p-5 sm:p-6">
-      <h2 className="font-serif text-xl font-semibold text-tekst">Køberen betalte ikke</h2>
-      <p className="mt-1 text-sm text-tekst-daempet">
-        Køberen betalte ikke inden fristen. Handlen er annulleret.
-      </p>
+      {status.aarsag === "admin_annulleret" ? (
+        <>
+          <h2 className="font-serif text-xl font-semibold text-tekst">Handlen er annulleret</h2>
+          <p className="mt-1 text-sm text-tekst-daempet">
+            Handlen er annulleret af BidHamr. Du kan tilbyde varen til næste byder eller sætte den op igen.
+          </p>
+        </>
+      ) : (
+        <>
+          <h2 className="font-serif text-xl font-semibold text-tekst">Køberen betalte ikke</h2>
+          <p className="mt-1 text-sm text-tekst-daempet">
+            Køberen betalte ikke inden fristen. Handlen er annulleret.
+          </p>
+        </>
+      )}
 
       {status.nyHandelId && (
         <div className="mt-4 rounded-xl border border-[#B9D8CC] bg-groen-lys p-4 text-sm text-groen-mork">

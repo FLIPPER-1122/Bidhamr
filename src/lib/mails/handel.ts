@@ -343,3 +343,56 @@ export function koeberAndenchanceAutobetaltMail(titel: string, totalOere: number
     }),
   };
 }
+
+// Sælgeren har ikke oprettet en udbetalingskonto, så beløbet kan ikke
+// overføres. Sendes ved frigivelse og igen efter 3 og 7 dage.
+export function saelgerOpretUdbetalingskontoMail(
+  titel: string,
+  udbetalingOere: number,
+  paamindelse: boolean,
+) {
+  return {
+    subject: paamindelse
+      ? "Påmindelse: opret din udbetalingskonto"
+      : `Opret din udbetalingskonto: ${titel}`,
+    html: skabelon({
+      overskrift: "Opret din udbetalingskonto",
+      afsnit: [
+        `Handlen om <strong>${escapeHtml(titel)}</strong> er afsluttet, og du skal have ${kronerFraOere(udbetalingOere)} kr.`,
+        "Vi kan først sende pengene til dig, når du har oprettet en udbetalingskonto. Det tager et par minutter.",
+      ],
+      knapTekst: "Opret udbetalingskonto",
+      knapUrl: sideUrl("/konto"),
+    }),
+  };
+}
+
+// BidHamr har annulleret en ikke-betalt handel. Ingen advarsel til køberen.
+export function koeberAdminAnnulleretMail(titel: string, tradeId: string) {
+  return {
+    subject: `Handlen er annulleret: ${titel}`,
+    html: skabelon({
+      overskrift: "Handlen er annulleret",
+      afsnit: [
+        `Handlen om <strong>${escapeHtml(titel)}</strong> er annulleret af BidHamr. Du er ikke blevet trukket for noget.`,
+      ],
+      knapTekst: "Se handlen",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}
+
+export function saelgerAdminAnnulleretMail(titel: string, tradeId: string) {
+  return {
+    subject: `Handlen er annulleret: ${titel}`,
+    html: skabelon({
+      overskrift: "Handlen er annulleret",
+      afsnit: [
+        `Handlen om <strong>${escapeHtml(titel)}</strong> er annulleret af BidHamr. Du skal ikke sende varen.`,
+        "Du kan tilbyde varen til den næsthøjeste byder til byderens eget højeste bud. Eller du kan sætte varen op igen gratis.",
+      ],
+      knapTekst: "Vælg næste skridt",
+      knapUrl: sideUrl(`/mine-handler/${tradeId}`),
+    }),
+  };
+}

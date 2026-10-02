@@ -6,6 +6,7 @@ import {
   overfoerVentende,
   registrerGemtKort,
   spejlConnectKonto,
+  spejlIndsigelse,
   spejlPaymentIntent,
   spejlRefusion,
 } from "@/lib/betaling/stripeBetaling";
@@ -63,6 +64,17 @@ async function haandter(event: Stripe.Event): Promise<void> {
       const charge = await getStripe().charges.retrieve(fraEvent.id);
       const resultat = await spejlRefusion(charge);
       console.log(`Stripe ${event.type}: ${charge.id} -> ${resultat}`);
+      return;
+    }
+
+    case "charge.dispute.created":
+    case "charge.dispute.updated":
+    case "charge.dispute.closed": {
+      // Indsigelse (chargeback). Disputen hentes frisk fra Stripe i
+      // spejlIndsigelse, så rækkefølgen af events er ligegyldig.
+      const dispute = event.data.object as Stripe.Dispute;
+      const resultat = await spejlIndsigelse(dispute.id);
+      console.log(`Stripe ${event.type}: ${dispute.id} -> ${resultat}`);
       return;
     }
 

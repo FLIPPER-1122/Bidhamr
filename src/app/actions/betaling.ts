@@ -111,8 +111,23 @@ export async function hentBetalingsstatus(
       betaltKl: b.betalt_kl,
       frigivetKl: b.frigivet_kl,
       overfoertKl: b.overfoert_kl,
-      sidsteFejl: erKoeber ? b.sidste_fejl : null,
-      autobetalingResultat: erKoeber ? b.autobetaling_resultat : null,
+      // Aldrig den interne fejltekst: kun en fast dansk tekst, og kun for et
+      // mislykket betalingsforsøg (ikke for interne markeringer til admin).
+      sidsteFejl:
+        erKoeber &&
+        b.sidste_fejl &&
+        !b.kraever_opmaerksomhed &&
+        (b.status === "afventer" || b.status === "behandles")
+          ? "Betalingen kunne ikke gennemføres."
+          : null,
+      // Stripes fejlkode sendes ikke til klienten - kun "fejlet_" eller "betalt".
+      autobetalingResultat: !erKoeber
+        ? null
+        : b.autobetaling_resultat?.startsWith("fejlet_")
+          ? "fejlet_autobetaling"
+          : b.autobetaling_resultat === "betalt"
+            ? "betalt"
+            : null,
     };
   } catch (err) {
     console.error("hentBetalingsstatus fejlede:", err);

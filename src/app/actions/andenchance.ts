@@ -42,8 +42,11 @@ export type AndenchanceTilbudStatus =
 
 export type AndenchanceStatus = {
   ok: true;
-  // Handlen blev annulleret, fordi køberen ikke betalte.
+  // Handlen blev annulleret, fordi køberen ikke betalte (eller BidHamr
+  // annullerede den, før der var betalt).
   ubetalt: boolean;
+  // Hvorfor handlen blev annulleret (null = ingen sag).
+  aarsag: "ubetalt" | "admin_annulleret" | null;
   // Der findes en ikke-annulleret handel på auktionen (fx fra et accepteret tilbud).
   nyHandelId: string | null;
   // Auktionen er sat op igen som en ny auktion.
@@ -84,7 +87,7 @@ export async function hentAndenchanceStatus(tradeId: string): Promise<Andenchanc
 
     const [{ data: sag }, { data: aktiv }, { data: tilbud }, { data: genopsat }, { data: auktion }] =
       await Promise.all([
-        admin.from("ubetalte_vindere").select("id").eq("trade_id", tradeId).maybeSingle(),
+        admin.from("ubetalte_vindere").select("id, aarsag").eq("trade_id", tradeId).maybeSingle(),
         admin
           .from("trades")
           .select("id")
@@ -137,6 +140,7 @@ export async function hentAndenchanceStatus(tradeId: string): Promise<Andenchanc
     return {
       ok: true,
       ubetalt,
+      aarsag: sag ? ((sag.aarsag as "ubetalt" | "admin_annulleret" | null) ?? "ubetalt") : null,
       nyHandelId,
       genopsatAuktionId,
       aktivtTilbud: ventende
