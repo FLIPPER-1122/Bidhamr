@@ -64,6 +64,12 @@ Brugeren får besked når:
 - NY SIDE: **Notifikationsindstillinger**, hvor brugeren selv vælger for hver type, om den skal komme på mail, i appen, begge eller slet ikke.
 - Standard: alle typerne ovenfor er slået til.
 
+**Udvidet (Filip, 2. oktober 2026):**
+- Kanaler: klokke på siden (rødt tal), mail og push i appen. Brugeren vælger selv kanal(er) **pr. type** (fx "overbudt: kun push").
+- **Påkrævede** (kan ikke slås helt fra, men kanal kan vælges – mindst én skal være til): du har vundet, betalingsfrist og påmindelser, køber har betalt/send varen, pakke sendt/leveret, udbetaling, sager, advarsler, tilbud til næste byder.
+- **Valgfrie** (til/fra): overbudt, bud på egen auktion, nogen har liket din auktion, fulgt auktion slutter snart, ny auktion fra fulgt sælger, nye beskeder.
+- Bygges samlet **før** staff-chatten og sagerne, så de kan bruge det.
+
 ## 7. Lancering og jura
 - **Mål for lancering: juni 2027.**
 - Cookie-banner skal laves.
