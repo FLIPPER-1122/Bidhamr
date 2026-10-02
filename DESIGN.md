@@ -58,7 +58,7 @@ Rød må kun forekomme som fejlfarven i 1.4 – og det er en anden, mørkere rø
 | Fejl | `#FDECEC` | `#F3C4C4` | `#A32020` | Valideringsfejl, afvist betaling. Bevidst **mørkere og mindre mættet end `#E63946`**, så farven læses som en fejl og ikke som et brand. |
 | Info | `#EDF3F8` | `#C9DCEB` | `#1F4E79` | Neutrale oplysninger, "Bud er bindende". |
 
-Fejlfarven bruges **kun** til fejl – aldrig til knapper, tags eller priser.
+Fejlfarven bruges **kun** til fejl – aldrig til knapper, tags eller priser. **Undtagelse (Filip, 2. oktober 2026):** tal-badgen for ulæste notifikationer på klokken er rød (`#A32020`) med vilje.
 
 ### 1.5 Semantiske roller i auktions-UI **[FORSLAG]**
 
