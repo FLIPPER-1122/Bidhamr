@@ -4,6 +4,7 @@ import Avatar from "@/components/Avatar";
 import BrugerSearch from "@/components/admin/BrugerSearch";
 import { StatusBadge, brugerStatus, RolleBadge } from "@/components/admin/StatusBadge";
 import { assertRole } from "@/lib/adminAuth";
+import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 
 export default async function AdminBrugere({
   searchParams,
@@ -17,6 +18,8 @@ export default async function AdminBrugere({
   let query = supabase
     .from("users")
     .select("id, navn, email, telefon, rating, rolle, oprettet, avatar_url, suspenderet, suspenderet_til")
+    // Systembrugeren "BidHamr" (afsender af faellesbeskeder) er ikke en bruger.
+    .neq("id", BIDHAMR_SYSTEM_ID)
     .order("oprettet", { ascending: false })
     .limit(50);
 
