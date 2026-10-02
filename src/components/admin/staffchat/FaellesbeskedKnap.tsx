@@ -14,6 +14,7 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
   const [fejl, setFejl] = useState<string | null>(null);
   const [sendt, setSendt] = useState(false);
   const feltRef = useRef<HTMLTextAreaElement>(null);
+  const senderLaas = useRef(false);
 
   useEffect(() => {
     if (!aaben) return;
@@ -38,11 +39,20 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
 
   async function send(e: FormEvent) {
     e.preventDefault();
-    if (sender || !tekst.trim()) return;
+    // Ref-lås: sender-state fra en gammel closure stopper ikke et hurtigt dobbeltklik.
+    if (senderLaas.current || sender || !tekst.trim()) return;
+    senderLaas.current = true;
     setSender(true);
     setFejl(null);
-    const res = await sendFaellesbesked(tradeId, tekst);
-    setSender(false);
+    let res: Awaited<ReturnType<typeof sendFaellesbesked>>;
+    try {
+      res = await sendFaellesbesked(tradeId, tekst);
+    } catch {
+      res = { fejl: "Noget gik galt. Prøv igen om lidt." };
+    } finally {
+      senderLaas.current = false;
+      setSender(false);
+    }
     if ("fejl" in res) {
       setFejl(res.fejl);
       return;

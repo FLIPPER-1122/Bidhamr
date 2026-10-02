@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { kortNavn } from "@/lib/kortNavn";
+import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import AuctionCard from "@/components/AuctionCard";
 import ProfileHeader from "@/components/profile/ProfileHeader";
@@ -35,6 +36,8 @@ export default async function ProfilPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Systembrugeren "BidHamr" (afsender af fællesbeskeder) har ingen profil.
+  if (id.toLowerCase() === BIDHAMR_SYSTEM_ID) notFound();
   const supabase = await createClient();
 
   const [{ data: authData }, { data: profil }] = await Promise.all([

@@ -90,7 +90,12 @@ export default function HandelChat({
     setSender(false);
 
     if (error) {
-      setFejl("Beskeden kunne ikke sendes.");
+      // BHM01: databasen afviser beskeder, der udgiver sig for at være fra BidHamr.
+      setFejl(
+        error.code === "BHM01"
+          ? "Beskeder må ikke starte med 'Besked fra BidHamr'."
+          : "Beskeden kunne ikke sendes.",
+      );
       return;
     }
 
