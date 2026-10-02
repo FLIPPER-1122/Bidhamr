@@ -17,9 +17,15 @@ const TONE: Record<Boks["tone"], string> = {
 
 const STRIPE = "Betalingen håndteres af vores betalingspartner Stripe.";
 
-// TODO(indhold): gennemse teksterne til køber og sælger.
+/// TODO(indhold): gennemse teksterne til køber og sælger.
+// Ankefrist: efter en afgørelse flyttes pengene tidligst
+// sag.pengeFlyttesEfterKl (afgjort + 4 dage). Indtil da kan BidHamr genoptage
+// sagen. sag.afvikletKl er sat, når pengene er flyttet.
 function statusBoks(sag: MinSag): Boks {
   const k = sag.erKoeber;
+  const venter = !sag.afvikletKl && !!sag.pengeFlyttesEfterKl;
+  const dato = sag.pengeFlyttesEfterKl ? sagTid(sag.pengeFlyttesEfterKl) : "";
+  const undtagen = sag.beskyttelse ? " – alt undtagen BidHamr Beskyttelse" : "";
   switch (sag.status) {
     case "aaben":
       return k
@@ -47,7 +53,9 @@ function statusBoks(sag: MinSag): Boks {
             titel: "Send varen retur",
             tekst: [
               "Send varen retur – BidHamr betaler returfragten. Du får besked om label.",
-              "Du får pengene tilbage, når returpakken er afleveret.",
+              dato
+                ? `Du får pengene tilbage${undtagen}, når returpakken er afleveret – tidligst ${dato}, medmindre sagen genoptages.`
+                : "Du får pengene tilbage, når returpakken er afleveret.",
             ],
           }
         : {
@@ -55,10 +63,28 @@ function statusBoks(sag: MinSag): Boks {
             titel: "Køberen sender varen retur",
             tekst: [
               "Køberen har fået medhold og sender varen retur til dig. BidHamr betaler returfragten.",
-              "Pengene er stadig frosset, indtil returpakken er afleveret.",
+              dato
+                ? `Pengene er stadig frosset. Køberen får dem tilbage, når returpakken er afleveret – tidligst ${dato}, medmindre sagen genoptages.`
+                : "Pengene er stadig frosset, indtil returpakken er afleveret.",
             ],
           };
     case "afgjort_koeber":
+      if (venter) {
+        return k
+          ? {
+              tone: "succes",
+              titel: "Du har fået medhold",
+              tekst: [
+                `Pengene refunderes${undtagen} tidligst ${dato}, medmindre sagen genoptages.`,
+                `${STRIPE} Det kan tage nogle dage, før pengene står på din konto.`,
+              ],
+            }
+          : {
+              tone: "neutral",
+              titel: "Køberen har fået medhold",
+              tekst: [`Køberen får pengene tilbage tidligst ${dato}, medmindre sagen genoptages. Derefter annulleres handlen.`],
+            };
+      }
       return k
         ? {
             tone: "succes",
@@ -76,11 +102,24 @@ function statusBoks(sag: MinSag): Boks {
             tekst: ["Køberen får pengene tilbage, og handlen er afsluttet."],
           };
     case "afgjort_saelger":
+      if (venter) {
+        return k
+          ? {
+              tone: "neutral",
+              titel: "Sælgeren har fået medhold",
+              tekst: [`Pengene udbetales til sælgeren tidligst ${dato}, medmindre sagen genoptages.`],
+            }
+          : {
+              tone: "succes",
+              titel: "Du har fået medhold",
+              tekst: [`Pengene udbetales til dig tidligst ${dato}, medmindre sagen genoptages.`, STRIPE],
+            };
+      }
       return k
         ? {
             tone: "neutral",
             titel: "Sælgeren har fået medhold",
-            tekst: ["Sagen er afgjort, og pengene udbetales til sælgeren."]
+            tekst: ["Sagen er afgjort, og pengene udbetales til sælgeren."],
           }
         : {
             tone: "succes",
@@ -91,7 +130,11 @@ function statusBoks(sag: MinSag): Boks {
       return {
         tone: "neutral",
         titel: "Sagen er lukket",
-        tekst: ["Handlen fortsætter som normalt."],
+        tekst: [
+          venter
+            ? `Pengene holdes tilbage til ${dato}, medmindre sagen genoptages. Derefter fortsætter handlen som normalt.`
+            : "Handlen fortsætter som normalt.",
+        ],
       };
   }
 }

@@ -668,21 +668,36 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
     throw new Error(`Ugyldigt refusionsbeløb for betaling ${b.id}`);
   }
 
-  let refund: Stripe.Refund | null = null;
+  // Idempotency keys hos Stripe udløber efter 24 timer. Tjek derfor først,
+  // om en refusion for denne betaling allerede findes (samme mønster som
+  // transfers.list i overfoerTilSaelger) - ellers kunne et forsøg efter 24 t
+  // (fx cron efter nedetid) give en ekstra delvis refusion oveni. Kun
+  // refusioner, der ikke er endeligt fejlet, genbruges.
+  const eksisterende = await stripe.refunds.list({
+    payment_intent: b.stripe_payment_intent_id,
+    limit: 100,
+  });
+  let refund: Stripe.Refund | null =
+    eksisterende.data.find(
+      (r) =>
+        r.metadata?.betaling_id === b.id && r.status !== "failed" && r.status !== "canceled",
+    ) ?? null;
   try {
-    refund = await stripe.refunds.create(
-      {
-        payment_intent: b.stripe_payment_intent_id,
-        ...(delvis !== null ? { amount: delvis } : {}),
-        reason: "requested_by_customer",
-        metadata: {
-          betaling_id: b.id,
-          handel_id: b.trade_id,
-          aarsag: b.refusion_aarsag ?? "",
+    if (!refund) {
+      refund = await stripe.refunds.create(
+        {
+          payment_intent: b.stripe_payment_intent_id,
+          ...(delvis !== null ? { amount: delvis } : {}),
+          reason: "requested_by_customer",
+          metadata: {
+            betaling_id: b.id,
+            handel_id: b.trade_id,
+            aarsag: b.refusion_aarsag ?? "",
+          },
         },
-      },
-      { idempotencyKey: nøgle },
-    );
+        { idempotencyKey: nøgle },
+      );
+    }
   } catch (err) {
     if (err instanceof Stripe.errors.StripeError && err.code === "charge_already_refunded") {
       refund = null; // allerede refunderet - spejles nedenfor
@@ -920,18 +935,34 @@ export async function spejlRefusion(charge: Stripe.Charge): Promise<string> {
       ? charge.payment_intent
       : (charge.payment_intent?.id ?? null);
   if (!piId) return "ingen_payment_intent";
-  if (charge.refunded) return registrerRefunderet(piId, null);
   const { data: bestilt } = await createAdminClient()
     .from("betalinger")
     .select("refusion_oere, refusion_anmodet_kl")
     .eq("stripe_payment_intent_id", piId)
     .maybeSingle<{ refusion_oere: number | null; refusion_anmodet_kl: string | null }>();
+  // Der er refunderet MERE end sagens afgørelse (fx en ekstra refusion i
+  // Stripe Dashboard, eller BidHamr Beskyttelse refunderet ved en fejl):
+  // registreres som refunderet, men markeres til admin. Ingen beløb i teksten.
+  const merEndBestilt =
+    bestilt?.refusion_oere !== null &&
+    bestilt?.refusion_oere !== undefined &&
+    Number(charge.amount_refunded) > Number(bestilt.refusion_oere);
+  const marker = async (resultat: string) => {
+    if (!merEndBestilt) return resultat;
+    const { error } = await createAdminClient().rpc("betaling_marker_opmaerksomhed", {
+      p_payment_intent: piId,
+      p_besked: "Der er refunderet mere end sagens afgørelse - kontrollér refusionen hos Stripe",
+    });
+    if (error) throw new Error(`betaling_marker_opmaerksomhed: ${error.message}`);
+    return resultat;
+  };
+  if (charge.refunded) return marker(await registrerRefunderet(piId, null));
   if (
     bestilt?.refusion_anmodet_kl &&
     bestilt.refusion_oere !== null &&
     Number(charge.amount_refunded) >= Number(bestilt.refusion_oere)
   ) {
-    return registrerRefunderet(piId, null);
+    return marker(await registrerRefunderet(piId, null));
   }
   // Markeres til admin og blokerer overførsel (refusion_anmodet_kl sættes).
   const { error } = await createAdminClient().rpc("betaling_registrer_delvis_refusion", {
@@ -941,6 +972,50 @@ export async function spejlRefusion(charge: Stripe.Charge): Promise<string> {
   });
   if (error) throw new Error(`betaling_registrer_delvis_refusion: ${error.message}`);
   return "delvis_refusion";
+}
+
+// Spejler refund.updated / refund.failed (og charge.refund.updated). Refusionen
+// hentes frisk (events kan komme i forkert rækkefølge). Er den endeligt
+// fejlet hos Stripe (failed/canceled), markeres betalingen til admin - eller
+// afvigelsen, hvis det er en kasseret PaymentIntent. Ingen beløb i teksten.
+// Sagsrefusioner prøves igen af cron (refunderSagerVentende opretter en ny
+// refusion med ny idempotency key, når den forrige er failed/canceled).
+export async function spejlRefusionsfejl(refundId: string): Promise<string> {
+  const refund = await getStripe().refunds.retrieve(refundId);
+  if (refund.status !== "failed" && refund.status !== "canceled") return refund.status ?? "ukendt";
+  const piId =
+    typeof refund.payment_intent === "string"
+      ? refund.payment_intent
+      : (refund.payment_intent?.id ?? null);
+  if (!piId) return "ingen_payment_intent";
+
+  const admin = createAdminClient();
+  const besked = `Refusion ${refund.status === "failed" ? "fejlede" : "blev annulleret"} hos Stripe${
+    refund.failure_reason ? ` (${refund.failure_reason})` : ""
+  } - tjek betalingen`;
+  const { data: b } = await admin
+    .from("betalinger")
+    .select("id, status, stripe_refund_id")
+    .eq("stripe_payment_intent_id", piId)
+    .maybeSingle<{ id: string; status: string; stripe_refund_id: string | null }>();
+  if (b) {
+    if (b.status === "refunderet") return "allerede_refunderet";
+    // En gammel, fejlet refusion, der allerede er erstattet af et nyt forsøg.
+    if (b.stripe_refund_id && b.stripe_refund_id !== refund.id) return "erstattet";
+    const { error } = await admin.rpc("betaling_marker_opmaerksomhed", {
+      p_payment_intent: piId,
+      p_besked: besked,
+    });
+    if (error) throw new Error(`betaling_marker_opmaerksomhed: ${error.message}`);
+    return "markeret";
+  }
+  const { data: afv } = await admin
+    .from("betaling_afvigelser")
+    .update({ sidste_fejl: besked, opdateret: new Date().toISOString() })
+    .eq("stripe_payment_intent_id", piId)
+    .is("refunderet_kl", null)
+    .select("id");
+  return (afv ?? []).length > 0 ? "afvigelse_markeret" : "ukendt";
 }
 
 // Spejler en indsigelse (chargeback) fra Stripe. Disputen hentes frisk, så

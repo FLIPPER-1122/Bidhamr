@@ -18,8 +18,15 @@ const LOG_NAVN: Record<string, string> = {
   sag_lukket: "Sagen er lukket",
   sag_retur_afleveret: "Returpakke afleveret",
   sag_genaabnet: "Sagen er genåbnet",
+  sag_afviklet: "Ankefristen er udløbet – pengene er flyttet",
   konto_lukket: "Konto lukket permanent",
 };
+
+const PENGE_HANDLING_NAVN = {
+  refunder: "Refusion til køber",
+  frigiv: "Udbetaling til sælger",
+  ingen: "Frysningen fjernes – handlen fortsætter",
+} as const;
 
 function logNavn(h: string) {
   return LOG_NAVN[h] ?? h.replace(/_/g, " ");
@@ -101,6 +108,21 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
           {SAG_STATUS_NAVN[sag.status]} · Oprettet {sagTid(sag.oprettetKl)}
         </p>
 
+        {sag.tjekSporing && (
+          <div className="mt-3 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
+            <p className="font-semibold">Tjek sporingen hos GLS før afgørelse</p>
+            <p className="mt-0.5">
+              Sagen er oprettet, før køberen markerede pakken som modtaget (
+              {sag.type === "svindel" ? "varen er aldrig sendt / falsk sporing" : "pakken er ikke kommet frem"}
+              ). Der kræves ingen billeder.
+            </p>
+            <p className="mt-1">
+              Sporingsnummer:{" "}
+              <span className="select-all font-mono text-base font-semibold">{sag.trackingNumber ?? "mangler"}</span>
+              {sag.sendtKl && <> · Sendt {sagTid(sag.sendtKl)}</>}
+            </p>
+          </div>
+        )}
         {b?.indsigelse && (
           <p className="mt-3 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
             Køberen har en åben indsigelse hos sin bank. Pengene kan ikke flyttes, før den er afgjort.
@@ -149,6 +171,18 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
               {sag.internNote && (
                 <Felt navn="Intern note">
                   <span className="whitespace-pre-wrap">{sag.internNote}</span>
+                </Felt>
+              )}
+              {sag.pengeHandling && sag.pengeFlyttesEfterKl && (
+                <Felt navn="Ankefrist (4 dage)">
+                  {PENGE_HANDLING_NAVN[sag.pengeHandling]}
+                  {sag.afvikletKl
+                    ? ` · gennemført ${sagTid(sag.afvikletKl)}`
+                    : ` · tidligst ${sagTid(sag.pengeFlyttesEfterKl)}, medmindre sagen genåbnes`}
+                  {!sag.afvikletKl && sag.status === "afventer_retur" && " (og først når returpakken er afleveret)"}
+                  {sag.pengeFejl && (
+                    <span className="mt-1 block text-fejl-tekst">Kan ikke gennemføres: {sag.pengeFejl}.</span>
+                  )}
                 </Felt>
               )}
               {sag.returKraeves && (
@@ -215,7 +249,14 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
               {sag.saelgerLukket && <span className="ml-1 text-xs text-fejl-tekst">(lukket)</span>}
             </Felt>
             <Felt navn="Status da sagen blev oprettet">{statusLabel(sag.handelStatusVedOprettelse)}</Felt>
-            <Felt navn="Sporingsnummer">{sag.trackingNumber ?? "–"}</Felt>
+            <Felt navn="Sporingsnummer">
+              <span className="select-all font-mono">{sag.trackingNumber ?? "–"}</span>
+              {sag.tjekSporing && (
+                <span className="mt-0.5 block text-xs font-semibold text-advarsel-tekst">
+                  Tjek sporingen hos GLS før afgørelse
+                </span>
+              )}
+            </Felt>
             <Felt navn="Sendt">{sag.sendtKl ? sagTid(sag.sendtKl) : "–"}</Felt>
             <Felt navn="Modtaget">{sag.modtagetKl ? sagTid(sag.modtagetKl) : "–"}</Felt>
           </dl>

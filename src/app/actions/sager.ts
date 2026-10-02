@@ -19,9 +19,13 @@
 //   supabase.rpc("sag_opret", { p_trade, p_type, p_beskrivelse, p_billeder: [{ sti, kategori }] })
 //       -> { kode: "ok", sag_id } | { kode: <fejlkode> } (se SAG_OPRET_FEJL)
 //   supabase.rpc("sag_tilfoej_billeder", { p_sag, p_billeder })
-//   supabase.from("sager").select("id, trade_id, type, beskrivelse, status, beskyttelse,
+//   supabase.from("sager").select("id, trade_id, type, beskrivelse, status,
 //       oprettet_kl, afgjort_kl, begrundelse, retur_kraeves, returfragt_betaler,
-//       retur_afleveret_kl, genaabnet_kl")   (OBS: ikke "*")
+//       retur_afleveret_kl, genaabnet_kl, penge_handling, penge_flyttes_efter_kl,
+//       afviklet_kl")   (OBS: ikke "*". beskyttelse kan IKKE vælges - sælgeren
+//       må ikke se den; køberen har den på sin egen betaling)
+//   Ankefrist: efter en afgørelse flyttes pengene tidligst penge_flyttes_efter_kl
+//   (afgjort + 4 dage); afviklet_kl er sat, når det er sket.
 //   supabase.from("sag_billeder").select("id, sag_id, sti, kategori, oprettet_kl")
 //   supabase.storage.from("sag-billeder").createSignedUrls(stier, 3600)
 //   Notifikationen "sag oprettet" sendes af cron for sager oprettet fra appen
@@ -33,6 +37,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notificerSagOprettet } from "@/lib/sagerServer";
 import {
+  SAG_AUTO_FRIGIV_EFTER_DAGE,
   SAG_BESKRIVELSE_MAKS,
   SAG_BESKRIVELSE_MIN,
   SAG_BORTKOMMET_EFTER_DAGE,
@@ -41,6 +46,7 @@ import {
   SAG_MAKS_BILLEDER,
   SAG_OPRET_FEJL,
   type SagBilledeKategori,
+  type SagPengeHandling,
   type SagStatus,
   type SagType,
   erSagBilledeKategori,
@@ -62,6 +68,7 @@ export type MinSag = {
   type: SagType;
   beskrivelse: string;
   status: SagStatus;
+  // Kun for køberen (sælgeren får altid false - han må ikke se det).
   beskyttelse: boolean;
   oprettetKl: string;
   afgjortKl: string | null;
@@ -71,6 +78,10 @@ export type MinSag = {
   returfragtBetaler: "bidhamr" | null;
   returAfleveretKl: string | null;
   genaabnetKl: string | null;
+  // Ankefrist: hvad der sker med pengene, tidligst hvornår, og om det er sket.
+  pengeHandling: SagPengeHandling | null;
+  pengeFlyttesEfterKl: string | null;
+  afvikletKl: string | null;
   erKoeber: boolean;
   billeder: { id: string; kategori: SagBilledeKategori; url: string | null; oprettetKl: string }[];
 };
@@ -83,7 +94,9 @@ export type SagMuligheder = {
   beskyttelse: boolean;
   // Billeder af pakke, label og indhold kræves (pakken er modtaget).
   billederKraeves: boolean;
-  // Sidste frist for skadet/ikke som beskrevet/svindel efter "modtaget".
+  // Sidste frist for at oprette en sag: 48 timer efter "modtaget", eller -
+  // når pakken er sendt - 14 dage efter afsendelse (så frigives pengene
+  // automatisk).
   fristKl: string | null;
   // Hvornår "Pakken er ikke kommet frem" kan vælges (pakke sendt).
   bortkommetFraKl: string | null;
@@ -198,7 +211,7 @@ export async function tilfoejSagBilleder(
 }
 
 const SAG_KOLONNER =
-  "id, trade_id, type, beskrivelse, status, beskyttelse, oprettet_kl, afgjort_kl, begrundelse, retur_kraeves, returfragt_betaler, retur_afleveret_kl, genaabnet_kl";
+  "id, trade_id, type, beskrivelse, status, oprettet_kl, afgjort_kl, begrundelse, retur_kraeves, returfragt_betaler, retur_afleveret_kl, genaabnet_kl, penge_handling, penge_flyttes_efter_kl, afviklet_kl";
 
 type SagRaekke = {
   id: string;
@@ -206,8 +219,10 @@ type SagRaekke = {
   type: SagType;
   beskrivelse: string;
   status: SagStatus;
-  beskyttelse: boolean;
   oprettet_kl: string;
+  penge_handling: SagPengeHandling | null;
+  penge_flyttes_efter_kl: string | null;
+  afviklet_kl: string | null;
   afgjort_kl: string | null;
   begrundelse: string | null;
   retur_kraeves: boolean;
@@ -255,6 +270,19 @@ export async function hentSagForHandel(
       .order("oprettet_kl", { ascending: true })
       .overrideTypes<{ id: string; sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[], { merge: false }>();
 
+    // BidHamr Beskyttelse må kun ses af køberen selv (kolonnen er ikke
+    // læsbar for brugere). Hentes med service-role, kun når kalderen er køber.
+    const erKoeber = handel.buyer_id === user.id;
+    let beskyttelse = false;
+    if (erKoeber) {
+      const { data: b } = await createAdminClient()
+        .from("sager")
+        .select("beskyttelse")
+        .eq("id", sag.id)
+        .maybeSingle<{ beskyttelse: boolean }>();
+      beskyttelse = !!b?.beskyttelse;
+    }
+
     const stier = (billeder ?? []).map((b) => b.sti);
     const urls = new Map<string, string>();
     if (stier.length > 0) {
@@ -273,7 +301,7 @@ export async function hentSagForHandel(
         type: sag.type,
         beskrivelse: sag.beskrivelse,
         status: sag.status,
-        beskyttelse: sag.beskyttelse,
+        beskyttelse,
         oprettetKl: sag.oprettet_kl,
         afgjortKl: sag.afgjort_kl,
         begrundelse: sag.begrundelse,
@@ -281,7 +309,10 @@ export async function hentSagForHandel(
         returfragtBetaler: sag.returfragt_betaler,
         returAfleveretKl: sag.retur_afleveret_kl,
         genaabnetKl: sag.genaabnet_kl,
-        erKoeber: handel.buyer_id === user.id,
+        pengeHandling: sag.penge_handling,
+        pengeFlyttesEfterKl: sag.penge_flyttes_efter_kl,
+        afvikletKl: sag.afviklet_kl,
+        erKoeber,
         billeder: (billeder ?? []).map((b) => ({
           id: b.id,
           kategori: b.kategori,
@@ -376,8 +407,11 @@ export async function hentSagMuligheder(
       const sendt = t.sendt_kl ?? b.betalt_kl;
       if (sendt) {
         const fra = new Date(sendt).getTime() + SAG_BORTKOMMET_EFTER_DAGE * DAG;
+        // Efter 14 dage frigives pengene automatisk (handel_auto_frigiv).
+        const til = new Date(sendt).getTime() + SAG_AUTO_FRIGIV_EFTER_DAGE * DAG;
         tom.bortkommetFraKl = new Date(fra).toISOString();
-        if (fra <= nu) kandidater = ["bortkommet", "svindel"];
+        tom.fristKl = new Date(til).toISOString();
+        if (fra <= nu && nu < til) kandidater = ["bortkommet", "svindel"];
       }
     }
 

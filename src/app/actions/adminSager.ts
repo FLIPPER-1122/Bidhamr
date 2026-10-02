@@ -8,14 +8,17 @@
 //   admin+        genåbne en afgjort/lukket sag, lukke en konto permanent
 //   chef          ser beløb (refusion, total) - alle andre ser aldrig beløb
 //
-// Pengeflow (databasen afgør og claimer atomisk; Stripe kaldes bagefter):
-//   medhold køber, svindel/bortkommet      -> sag_afgoer claimer refusionen
+// Pengeflow (databasen afgør og claimer atomisk; Stripe kaldes bagefter).
+// ANKEFRIST: pengene flyttes først 4 dage efter afgørelsen
+// (sager.penge_flyttes_efter_kl). Indtil da er pengene frosset, og admin kan
+// genåbne sagen, hvilket annullerer den planlagte flytning. Cron
+// (afviklForfaldneSager i src/lib/sagerServer.ts) flytter pengene:
+//   medhold køber, svindel/bortkommet      -> refusion efter fristen
 //       (alt undtagen BidHamr Beskyttelse) -> refunderBetaling (delvis refusion)
-//   medhold køber, skadet/ikke som beskrevet -> 'afventer_retur' (pengene
-//       forbliver frosset); "Retur afleveret" -> sag_retur_afleveret claimer
-//       refusionen -> refunderBetaling
-//   medhold sælger -> frigivet_kl sættes -> overfoerTilSaelger
-//   luk sag        -> frysningen fjernes; handlen fortsætter normalt
+//   medhold køber, skadet/ikke som beskrevet -> 'afventer_retur'; refusion når
+//       BÅDE "Retur afleveret" er registreret OG fristen er udløbet
+//   medhold sælger -> frigivelse efter fristen -> overfoerTilSaelger
+//   luk sag        -> frysningen fjernes efter fristen; handlen fortsætter
 // Fejler Stripe-kaldet, er refusionen stadig claimet; cron prøver igen
 // (refunderSagerVentende), og betalingen markeres til admin.
 // Aldrig dobbelt refusion (refusion_anmodet_kl + idempotency key), aldrig
@@ -30,13 +33,14 @@ import { assertRole, harMindstRolle, type StaffRole } from "@/lib/adminAuth";
 import {
   hentBetalingForHandel,
   indsigelseBlokerer,
-  overfoerTilSaelger,
   refunderBetaling,
 } from "@/lib/betaling/stripeBetaling";
 import { aabnChat } from "@/app/actions/staffChat";
-import { notificerSagAfgoerelse, type SagUdfaldBesked } from "@/lib/sagerServer";
+import { notificerSagAfgoerelse, sagFristTekst, type SagUdfaldBesked } from "@/lib/sagerServer";
 import {
   SAG_BEGRUNDELSE_MAKS,
+  SAG_PENGE_FEJL_NAVN,
+  type SagPengeHandling,
   SAG_BUCKET,
   SAG_CHAT_TYPE,
   SAG_STATUSSER,
@@ -116,6 +120,15 @@ type RpcSvar = {
   seller_id?: string;
   auction_id?: string;
   type?: string;
+  // sager.genaabnet_antal efter handlingen (nøgle for beskeder).
+  version?: number;
+  // Ankefrist: hvornår pengene tidligst flyttes.
+  penge_flyttes_efter_kl?: string | null;
+  // Medhold til sælger: frigivelsen er blokeret lige nu (fx indsigelse).
+  advarsel?: string | null;
+  // Retur afleveret efter fristen, men refusionen er blokeret.
+  grund?: string | null;
+  annulleret_planlagt?: boolean | null;
 };
 
 function revalider(sagId: string, tradeId?: string) {
@@ -162,6 +175,14 @@ export type SagDetalje = SagListeRaekke & {
   returAfleveretKl: string | null;
   genaabnetAntal: number;
   genaabnetKl: string | null;
+  // Ankefrist: hvad der sker med pengene, hvornår, og om det er sket.
+  pengeHandling: SagPengeHandling | null;
+  pengeFlyttesEfterKl: string | null;
+  afvikletKl: string | null;
+  // Hvorfor pengene ikke kunne flyttes efter fristen (dansk tekst), ellers null.
+  pengeFejl: string | null;
+  // Sagen er oprettet før "modtaget" (bortkommet / aldrig sendt): tjek sporingen.
+  tjekSporing: boolean;
   handelStatus: string;
   handelStatusVedOprettelse: string;
   trackingNumber: string | null;
@@ -216,6 +237,11 @@ type SagDbRaekke = {
   refusion_oere: number | null;
   genaabnet_antal: number;
   genaabnet_kl: string | null;
+  penge_handling: SagPengeHandling | null;
+  penge_flyttes_efter_kl: string | null;
+  afviklet_kl: string | null;
+  penge_fejl: string | null;
+  tjek_sporing: boolean;
 };
 
 const LISTE_KOLONNER = "id, trade_id, type, status, beskyttelse, oprettet_kl, afgjort_kl";
@@ -328,7 +354,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
     const { data: s, error } = await admin
       .from("sager")
       .select(
-        "id, trade_id, oprettet_af, type, beskrivelse, status, beskyttelse, handel_status_ved_oprettelse, oprettet_kl, afgjort_af, afgjort_kl, begrundelse, intern_note, retur_kraeves, returfragt_betaler, retur_afleveret_kl, refusion_oere, genaabnet_antal, genaabnet_kl",
+        "id, trade_id, oprettet_af, type, beskrivelse, status, beskyttelse, handel_status_ved_oprettelse, oprettet_kl, afgjort_af, afgjort_kl, begrundelse, intern_note, retur_kraeves, returfragt_betaler, retur_afleveret_kl, refusion_oere, genaabnet_antal, genaabnet_kl, penge_handling, penge_flyttes_efter_kl, afviklet_kl, penge_fejl, tjek_sporing",
       )
       .eq("id", sagId)
       .maybeSingle<SagDbRaekke>();
@@ -413,6 +439,11 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         returAfleveretKl: s.retur_afleveret_kl,
         genaabnetAntal: s.genaabnet_antal,
         genaabnetKl: s.genaabnet_kl,
+        pengeHandling: s.penge_handling,
+        pengeFlyttesEfterKl: s.penge_flyttes_efter_kl,
+        afvikletKl: s.afviklet_kl,
+        pengeFejl: s.penge_fejl ? (SAG_PENGE_FEJL_NAVN[s.penge_fejl] ?? s.penge_fejl) : null,
+        tjekSporing: s.tjek_sporing,
         handelStatus: t?.status ?? "",
         handelStatusVedOprettelse: s.handel_status_ved_oprettelse,
         trackingNumber: t?.tracking_number ?? null,
@@ -444,9 +475,13 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         kan: {
           afgoere: kanAfgoere && aaben,
           registrereRetur: kanAfgoere && s.status === "afventer_retur",
+          // Databasen (sag_genaabn) afviser, hvis pengene allerede er flyttet.
+          // Inden for ankefristen annulleres den planlagte flytning.
           genaabne:
             harMindstRolle(rolle, "admin") &&
-            (s.status === "afgjort_saelger" || s.status === "lukket"),
+            s.status !== "aaben" &&
+            !(s.penge_handling === "refunder" && s.afviklet_kl) &&
+            !(betaling && (betaling.refusion_anmodet_kl || betaling.stripe_transfer_id || betaling.overfoersel_paabegyndt_kl)),
           lukkeKonto: harMindstRolle(rolle, "admin"),
           seBeloeb,
         },
@@ -478,41 +513,53 @@ export async function hentAntalAabneSager() {
 
 type Udfald = { ok: true; besked: string };
 
-// Kører Stripe-delen efter en afgørelse/retur og returnerer en kort besked
-// til staff (uden beløb). Kaster aldrig - pengene er claimet i databasen, og
-// cron prøver igen.
-async function udfoerPenge(svar: RpcSvar): Promise<string> {
-  const betalingId = svar.betaling_id ?? null;
-  if (svar.handling === "refunder" && betalingId) {
-    try {
-      const r = await refunderBetaling(betalingId);
-      return r === "refunderet" || r === "allerede_refunderet"
-        ? "Køberen er refunderet (alt undtagen BidHamr Beskyttelse)."
-        : "Refusionen er sendt til Stripe og afventer bekræftelse.";
-    } catch (err) {
-      console.error("Sagsrefusion fejlede (cron prøver igen):", betalingId, err);
-      return "Refusionen fejlede hos Stripe. Den prøves igen automatisk, og betalingen er markeret til admin.";
-    }
-  }
-  if (svar.handling === "frigiv" && betalingId) {
-    try {
-      const r = await overfoerTilSaelger(betalingId);
-      if (r === "overfoert" || r === "allerede_overfoert") return "Pengene er overført til sælger.";
-      if (r === "afventer_saelgerkonto") return "Pengene er frigivet. Overførslen venter på sælgerens udbetalingskonto.";
-      return "Pengene er frigivet. Overførslen prøves igen automatisk.";
-    } catch (err) {
-      console.error("Overførsel efter sag fejlede (cron prøver igen):", betalingId, err);
-      return "Pengene er frigivet. Overførslen fejlede og prøves igen automatisk.";
-    }
-  }
-  if (svar.handling === "frigiv_blokeret") {
-    return "Sagen er afgjort, men pengene kan ikke frigives endnu (fx åben indsigelse). Betalingen følges op under Betalinger.";
-  }
-  if (svar.handling === "afvent_retur") {
-    return "Køberen skal sende varen retur. Registrér, når returpakken er afleveret - så refunderes køberen.";
-  }
-  return "Sagen er lukket. Ingen penge er flyttet.";
+function fristTekst(svar: RpcSvar): string {
+  return svar.penge_flyttes_efter_kl ? sagFristTekst(svar.penge_flyttes_efter_kl) : "om 4 dage";
 }
+
+function fejlNavn(kode: string | null | undefined): string {
+  return SAG_PENGE_FEJL_NAVN[kode ?? ""] ?? "betalingen er ikke klar";
+}
+
+// Kører Stripe-delen, når en refusion er claimet med det samme (retur
+// afleveret efter ankefristen). Kaster aldrig - pengene er claimet i
+// databasen, og cron prøver igen.
+async function refunderNu(betalingId: string): Promise<string> {
+  try {
+    const r = await refunderBetaling(betalingId);
+    return r === "refunderet" || r === "allerede_refunderet"
+      ? "Køberen er refunderet (alt undtagen BidHamr Beskyttelse)."
+      : "Refusionen er sendt til Stripe og afventer bekræftelse.";
+  } catch (err) {
+    console.error("Sagsrefusion fejlede (cron prøver igen):", betalingId, err);
+    return "Refusionen fejlede hos Stripe. Den prøves igen automatisk, og betalingen er markeret til admin.";
+  }
+}
+
+// Kort besked til staff efter en afgørelse (uden beløb). Ingen penge flyttes
+// ved afgørelsen - kun efter ankefristen.
+function afgoerelsesBesked(svar: RpcSvar): string {
+  const frist = fristTekst(svar);
+  switch (svar.handling) {
+    case "planlagt_refusion":
+      return `Køberen refunderes (alt undtagen BidHamr Beskyttelse) tidligst ${frist}, når ankefristen er udløbet. Admin kan genåbne sagen indtil da.`;
+    case "afvent_retur":
+      return `Køberen skal sende varen retur. Registrér, når returpakken er afleveret. Køberen refunderes, når returpakken er afleveret og ankefristen er udløbet (tidligst ${frist}).`;
+    case "planlagt_frigivelse":
+      return svar.advarsel
+        ? `Sagen er afgjort. Pengene frigives til sælgeren tidligst ${frist}, men lige nu er frigivelsen blokeret: ${fejlNavn(svar.advarsel)}. Følg op under Betalinger.`
+        : `Sagen er afgjort. Pengene frigives til sælgeren tidligst ${frist}, når ankefristen er udløbet. Admin kan genåbne sagen indtil da.`;
+    default:
+      return `Sagen er lukket uden at flytte penge. Frysningen fjernes ${frist}, og derefter fortsætter handlen normalt.`;
+  }
+}
+
+const AFGOER_BESKED: Record<string, SagUdfaldBesked> = {
+  planlagt_refusion: "planlagt_refusion",
+  afvent_retur: "afvent_retur",
+  planlagt_frigivelse: "planlagt_frigivelse",
+  lukket: "lukket",
+};
 
 // formData: sagId, udfald ('koeber' | 'saelger' | 'lukket'),
 // begrundelse (til køber og sælger, påkrævet), intern_note (valgfri).
@@ -541,23 +588,15 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
     const svar = (data ?? { kode: "" }) as RpcSvar;
     if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
 
-    const besked = await udfoerPenge(svar);
+    const besked = afgoerelsesBesked(svar);
 
     const type = svar.type;
-    if (svar.trade_id && erSagType(type)) {
-      const besked_type: SagUdfaldBesked =
-        svar.handling === "refunder"
-          ? "refunderet"
-          : svar.handling === "afvent_retur"
-            ? "afvent_retur"
-            : svar.handling === "frigiv"
-              ? "frigivet"
-              : svar.handling === "frigiv_blokeret"
-                ? "saelger_medhold"
-                : "lukket";
-      const v = await version(admin, sagId);
+    const beskedType = AFGOER_BESKED[svar.handling ?? ""];
+    if (svar.trade_id && erSagType(type) && beskedType) {
+      const v = Number(svar.version ?? (await version(admin, sagId)));
       const tradeId = svar.trade_id;
-      after(() => notificerSagAfgoerelse(sagId, tradeId, type, besked_type, begrundelse, v));
+      const frist = svar.penge_flyttes_efter_kl ?? null;
+      after(() => notificerSagAfgoerelse(sagId, tradeId, type, beskedType, begrundelse, v, frist));
     }
 
     revalider(sagId, svar.trade_id);
@@ -566,8 +605,9 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
 }
 
 // "Retur afleveret" (indtil GLS-sporingen er bygget): staff registrerer, at
-// køberens returpakke er afleveret. Refusionen claimes og sendes til Stripe.
-// formData: sagId, note (valgfri, intern).
+// køberens returpakke er afleveret. Er ankefristen udløbet, claimes
+// refusionen straks og sendes til Stripe; ellers sker det, når fristen er
+// udløbet (cron). formData: sagId, note (valgfri, intern).
 export async function registrerReturAfleveret(formData: FormData): Promise<Udfald | { fejl: string }> {
   return koer("registrerReturAfleveret", async () => {
     const { admin, userId } = await assertRole(AFGOER_ROLLE);
@@ -585,13 +625,25 @@ export async function registrerReturAfleveret(formData: FormData): Promise<Udfal
     const svar = (data ?? { kode: "" }) as RpcSvar;
     if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
 
-    const besked = await udfoerPenge(svar);
+    let besked: string;
+    let beskedType: SagUdfaldBesked | null = null;
+    if (svar.handling === "refunder" && svar.betaling_id) {
+      besked = await refunderNu(svar.betaling_id);
+      beskedType = "refunderet";
+    } else if (svar.handling === "refusion_blokeret") {
+      besked = `Returpakken er registreret, men refusionen kan ikke gennemføres: ${fejlNavn(svar.grund)}. Betalingen er markeret til admin, og refusionen prøves igen automatisk.`;
+    } else {
+      besked = `Returpakken er registreret. Køberen refunderes tidligst ${fristTekst(svar)}, når ankefristen er udløbet.`;
+      beskedType = "retur_afleveret";
+    }
 
     const type = svar.type;
-    if (svar.trade_id && erSagType(type)) {
-      const v = await version(admin, sagId);
+    if (svar.trade_id && erSagType(type) && beskedType) {
+      const v = Number(svar.version ?? (await version(admin, sagId)));
       const tradeId = svar.trade_id;
-      after(() => notificerSagAfgoerelse(sagId, tradeId, type, "retur_afleveret", null, v));
+      const frist = svar.penge_flyttes_efter_kl ?? null;
+      const bt = beskedType;
+      after(() => notificerSagAfgoerelse(sagId, tradeId, type, bt, null, v, frist));
     }
 
     revalider(sagId, svar.trade_id);
@@ -599,8 +651,9 @@ export async function registrerReturAfleveret(formData: FormData): Promise<Udfal
   });
 }
 
-// Admin/chef: genåbn en afgjort (sælger) eller lukket sag. Kun hvis ingen
-// penge er flyttet. Pengene fryses igen. formData: sagId, aarsag (påkrævet).
+// Admin/chef: genåbn en afgjort eller lukket sag. Kun hvis ingen penge er
+// flyttet; inden for ankefristen annulleres den planlagte refusion/udbetaling.
+// Pengene fryses (igen). formData: sagId, aarsag (påkrævet).
 export async function genaabnSag(formData: FormData): Promise<Udfald | { fejl: string }> {
   return koer("genaabnSag", async () => {
     const { admin, userId } = await assertRole("admin");
@@ -621,13 +674,18 @@ export async function genaabnSag(formData: FormData): Promise<Udfald | { fejl: s
 
     const type = svar.type;
     if (svar.trade_id && erSagType(type)) {
-      const v = await version(admin, sagId);
+      const v = Number(svar.version ?? (await version(admin, sagId)));
       const tradeId = svar.trade_id;
       after(() => notificerSagAfgoerelse(sagId, tradeId, type, "genaabnet", null, v));
     }
 
     revalider(sagId, svar.trade_id);
-    return { ok: true as const, besked: "Sagen er genåbnet, og pengene er frosset igen." };
+    return {
+      ok: true as const,
+      besked: svar.annulleret_planlagt
+        ? "Sagen er genåbnet. Den planlagte flytning af pengene er annulleret, og pengene er frosset."
+        : "Sagen er genåbnet, og pengene er frosset igen.",
+    };
   });
 }
 

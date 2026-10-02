@@ -9,6 +9,7 @@ import {
   spejlIndsigelse,
   spejlPaymentIntent,
   spejlRefusion,
+  spejlRefusionsfejl,
 } from "@/lib/betaling/stripeBetaling";
 
 // Stripe-webhook for den nye betalingsmodel. Spejler Stripes status i
@@ -64,6 +65,17 @@ async function haandter(event: Stripe.Event): Promise<void> {
       const charge = await getStripe().charges.retrieve(fraEvent.id);
       const resultat = await spejlRefusion(charge);
       console.log(`Stripe ${event.type}: ${charge.id} -> ${resultat}`);
+      return;
+    }
+
+    case "refund.updated":
+    case "refund.failed":
+    case "charge.refund.updated": {
+      // En refusion, der fejler hos Stripe (fx kortet er lukket), markeres til
+      // admin. Refusionen hentes frisk i spejlRefusionsfejl.
+      const refund = event.data.object as Stripe.Refund;
+      const resultat = await spejlRefusionsfejl(refund.id);
+      console.log(`Stripe ${event.type}: ${refund.id} -> ${resultat}`);
       return;
     }
 

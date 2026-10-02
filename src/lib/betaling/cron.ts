@@ -4,6 +4,10 @@
 //      minut). Den opretter handel + betaling med 24 timers frist.
 //   2. Nye betalinger: forsøg autobetaling (tilvalg), send "du vandt"-mails.
 //   3. Påmindelser 12 og 20 timer efter fristens start.
+//   3b. Sager, hvor ankefristen (4 dage efter afgørelsen) er udløbet: refusion
+//       til køber / frigivelse til sælger / frysningen fjernes.
+//   3c. Automatisk frigivelse: 48 t efter "modtaget" uden sag, eller 14 dage
+//       efter afsendelse uden "modtaget" og uden sag.
 //   4. Overfør frigivne beløb, der ventede på sælgerens Connect-konto.
 //   5. Refundér betalinger med afvigende beløb.
 //   5b. Sagsrefusioner, der er claimet, men ikke gennemført hos Stripe.
@@ -22,7 +26,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
 import { koerNotifikationsCron } from "@/lib/notifikationer/cron";
 import { annullerUbetalte, behandlAndenchance } from "@/lib/betaling/ubetalt";
-import { notificerNyeSager } from "@/lib/sagerServer";
+import { afviklForfaldneSager, notificerNyeSager } from "@/lib/sagerServer";
+import { frigivAutomatisk } from "@/lib/betaling/autoFrigiv";
 import {
   betalingsPaamindelseMail,
   koeberAndenchanceAutobetaltMail,
@@ -80,6 +85,8 @@ export async function koerBetalingsCron() {
     afvigelsesrefusioner: 0,
     sagsrefusioner: 0,
     sagsbeskeder: 0,
+    sagsafviklinger: 0,
+    autoFrigivet: 0,
     ubetalteAnnulleret: 0,
     ubetaltMails: 0,
     andenchanceUdloebne: 0,
@@ -216,6 +223,22 @@ export async function koerBetalingsCron() {
       });
       if (p.mail) resultat.paamindelser++;
     }
+  }
+
+  // 3b) Ankefristen er udløbet: flyt pengene efter sagens afgørelse. Kører
+  //     før den automatiske frigivelse, så en lukket sag (frysningen fjernes)
+  //     kan frigives i samme kørsel.
+  try {
+    resultat.sagsafviklinger = await afviklForfaldneSager();
+  } catch (err) {
+    console.error("Afvikling af sager efter ankefristen fejlede:", err);
+  }
+
+  // 3c) Automatisk frigivelse (48 t efter "modtaget" / 14 dage efter afsendelse).
+  try {
+    resultat.autoFrigivet = await frigivAutomatisk();
+  } catch (err) {
+    console.error("Automatisk frigivelse fejlede:", err);
   }
 
   // 4) Frigivne beløb, der ventede på sælgerens konto (eller fejlede).

@@ -1,10 +1,18 @@
 import "server-only";
 
-// Server-only hjælpere til sager: notifikationer. Bruges af server actions
-// (src/app/actions/sager.ts, adminSager.ts) og cron.
+// Server-only hjælpere til sager: notifikationer og afvikling af afgørelser
+// efter ankefristen. Bruges af server actions (src/app/actions/sager.ts,
+// adminSager.ts) og cron.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
-import { SAG_TYPE_NAVN, type SagType, erSagType, sagSti } from "@/lib/sager";
+import { overfoerTilSaelger, refunderBetaling } from "@/lib/betaling/stripeBetaling";
+import {
+  SAG_TYPE_NAVN,
+  type SagPengeHandling,
+  type SagType,
+  erSagType,
+  sagSti,
+} from "@/lib/sager";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -15,12 +23,30 @@ async function handelOgTitel(admin: Admin, tradeId: string) {
     .eq("id", tradeId)
     .maybeSingle<{ buyer_id: string; seller_id: string; auction_id: string }>();
   if (!t) return null;
-  const { data: a } = await admin
-    .from("auctions")
-    .select("titel")
-    .eq("id", t.auction_id)
-    .maybeSingle();
-  return { ...t, titel: (a?.titel as string | undefined) ?? "din vare" };
+  const [{ data: a }, { data: b }] = await Promise.all([
+    admin.from("auctions").select("titel").eq("id", t.auction_id).maybeSingle(),
+    admin.from("betalinger").select("beskyttelse").eq("trade_id", tradeId).maybeSingle(),
+  ]);
+  return {
+    ...t,
+    titel: (a?.titel as string | undefined) ?? "din vare",
+    beskyttelse: !!(b?.beskyttelse as boolean | undefined),
+  };
+}
+
+// Tidspunkt til beskeder, fx "tirsdag den 7. oktober kl. 14.05". Fast
+// tidszone, så tidspunktet er dansk uanset serverens zone.
+export function sagFristTekst(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  return new Date(t).toLocaleString("da-DK", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Copenhagen",
+  });
 }
 
 // "Sag oprettet" til køber og sælger. Claimes atomisk (sager.notificeret_kl),
@@ -83,16 +109,20 @@ export async function notificerNyeSager(): Promise<number> {
 }
 
 export type SagUdfaldBesked =
-  | "refunderet"
+  // Ved afgørelsen (pengene flyttes efter ankefristen på 4 dage).
+  | "planlagt_refusion"
   | "afvent_retur"
-  | "retur_afleveret"
-  | "frigivet"
-  | "saelger_medhold"
+  | "planlagt_frigivelse"
   | "lukket"
+  // Staff har registreret returpakken (refusion efter fristen).
+  | "retur_afleveret"
+  // Når pengene faktisk er flyttet (efter ankefristen).
+  | "refunderet"
+  | "frigivet"
   | "genaabnet";
 
-// Besked til køber og sælger efter en afgørelse. Begrundelsen fra staff
-// medsendes (den er skrevet til parterne). Beløb nævnes aldrig. Kaster aldrig.
+// Besked til køber og sælger om en sag. Begrundelsen fra staff medsendes
+// (den er skrevet til parterne). Beløb nævnes aldrig. Kaster aldrig.
 export async function notificerSagAfgoerelse(
   sagId: string,
   tradeId: string,
@@ -102,6 +132,8 @@ export async function notificerSagAfgoerelse(
   // sager.genaabnet_antal efter handlingen. Samme udfald kan kun ske igen
   // efter en genåbning, så nøglen er unik pr. afgørelse.
   version: number,
+  // sager.penge_flyttes_efter_kl - hvornår pengene tidligst flyttes.
+  fristKl: string | null = null,
 ): Promise<void> {
   try {
     const admin = createAdminClient();
@@ -111,35 +143,45 @@ export async function notificerSagAfgoerelse(
     const data = { trade_id: tradeId, sag_id: sagId };
     const grund = begrundelse ? ` Begrundelse: ${begrundelse}` : "";
     const t = h.titel;
+    const dato = fristKl ? sagFristTekst(fristKl) : "";
+    const tidligst = dato ? ` tidligst ${dato}` : " efter ankefristen på 4 dage";
+    const holdes = dato ? ` til ${dato}` : " i 4 dage";
+    const forbehold = ", medmindre sagen genoptages";
+    // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
+    const undtagen = h.beskyttelse ? ", undtagen BidHamr Beskyttelse" : "";
 
     const tekster: Record<SagUdfaldBesked, { koeber: [string, string]; saelger: [string, string] }> = {
-      refunderet: {
-        koeber: ["Du har fået medhold i din sag", `BidHamr har afgjort sagen om "${t}" til din fordel. Du får pengene retur, undtagen BidHamr Beskyttelse.${grund}`],
-        saelger: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen får pengene retur, og handlen er annulleret.${grund}`],
+      planlagt_refusion: {
+        koeber: ["Du har fået medhold i din sag", `BidHamr har afgjort sagen om "${t}" til din fordel. Du får pengene retur${undtagen}. Pengene refunderes${tidligst}${forbehold}.${grund}`],
+        saelger: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen får pengene retur${tidligst}${forbehold}, og handlen annulleres.${grund}`],
       },
       afvent_retur: {
-        koeber: ["Send varen retur", `BidHamr har afgjort sagen om "${t}" til din fordel. Send varen retur til sælgeren - BidHamr betaler returfragten. Du får pengene retur, når returpakken er afleveret.${grund}`],
-        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen sender varen retur til dig - BidHamr betaler returfragten.${grund}`],
+        koeber: ["Send varen retur", `BidHamr har afgjort sagen om "${t}" til din fordel. Send varen retur til sælgeren - BidHamr betaler returfragten. Du får pengene retur${undtagen}, når returpakken er afleveret -${tidligst}${forbehold}.${grund}`],
+        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen sender varen retur til dig - BidHamr betaler returfragten. Køberen får pengene retur, når returpakken er afleveret -${tidligst}${forbehold}.${grund}`],
       },
-      retur_afleveret: {
-        koeber: ["Returpakken er afleveret", `Returpakken med "${t}" er afleveret. Du får nu pengene retur, undtagen BidHamr Beskyttelse.`],
-        saelger: ["Returpakken er afleveret", `Returpakken med "${t}" er afleveret, og handlen er annulleret.`],
-      },
-      frigivet: {
-        koeber: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til sælgerens fordel. Pengene udbetales til sælgeren.${grund}`],
-        saelger: ["Du har fået medhold i sagen", `BidHamr har afgjort sagen om "${t}" til din fordel. Pengene bliver udbetalt til din udbetalingskonto.${grund}`],
-      },
-      saelger_medhold: {
-        koeber: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til sælgerens fordel.${grund}`],
-        saelger: ["Du har fået medhold i sagen", `BidHamr har afgjort sagen om "${t}" til din fordel. Udbetalingen sker, så snart betalingen er klar - BidHamr følger op.${grund}`],
+      planlagt_frigivelse: {
+        koeber: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til sælgerens fordel. Pengene udbetales til sælgeren${tidligst}${forbehold}.${grund}`],
+        saelger: ["Du har fået medhold i sagen", `BidHamr har afgjort sagen om "${t}" til din fordel. Pengene udbetales til dig${tidligst}${forbehold}.${grund}`],
       },
       lukket: {
-        koeber: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Handlen fortsætter som normalt.${grund}`],
-        saelger: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Handlen fortsætter som normalt.${grund}`],
+        koeber: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Pengene holdes tilbage${holdes}${forbehold}. Derefter fortsætter handlen som normalt.${grund}`],
+        saelger: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Pengene holdes tilbage${holdes}${forbehold}. Derefter fortsætter handlen som normalt.${grund}`],
+      },
+      retur_afleveret: {
+        koeber: ["Returpakken er afleveret", `Returpakken med "${t}" er afleveret. Du får pengene retur${undtagen}${tidligst}${forbehold}.`],
+        saelger: ["Returpakken er afleveret", `Returpakken med "${t}" er afleveret. Køberen får pengene retur${tidligst}${forbehold}, og handlen annulleres.`],
+      },
+      refunderet: {
+        koeber: ["Pengene er på vej retur", `Pengene for "${t}" er sendt retur til dig${undtagen}. Det kan tage nogle dage, før de står på din konto. Betalingen håndteres af vores betalingspartner Stripe.`],
+        saelger: ["Handlen er annulleret", `Køberen har fået pengene for "${t}" retur efter sagens afgørelse, og handlen er annulleret.`],
+      },
+      frigivet: {
+        koeber: ["Sagen er afsluttet", `Pengene for "${t}" er frigivet til sælgeren efter sagens afgørelse.`],
+        saelger: ["Pengene er frigivet", `Pengene for "${t}" er frigivet efter sagens afgørelse og bliver udbetalt til din udbetalingskonto hos vores betalingspartner Stripe.`],
       },
       genaabnet: {
-        koeber: ["Sagen er genåbnet", `BidHamr har genåbnet sagen om "${t}". Pengene holdes tilbage, til sagen er afgjort igen.`],
-        saelger: ["Sagen er genåbnet", `BidHamr har genåbnet sagen om "${t}". Udbetalingen venter, til sagen er afgjort igen.`],
+        koeber: ["Sagen er genåbnet", `BidHamr har genåbnet sagen om "${t}". Den tidligere afgørelse er sat på pause, og pengene holdes tilbage, til sagen er afgjort igen.`],
+        saelger: ["Sagen er genåbnet", `BidHamr har genåbnet sagen om "${t}". Den tidligere afgørelse er sat på pause, og udbetalingen venter, til sagen er afgjort igen.`],
       },
     };
 
@@ -161,4 +203,63 @@ export async function notificerSagAfgoerelse(
   } catch (err) {
     console.error("Notifikation om afgørelse fejlede:", sagId, err);
   }
+}
+
+// ------------------------------------------------------------------ Ankefrist
+
+// Svar fra sag_afvikl / sag_afvikl_forfaldne (kode 'ok').
+export type SagAfvikling = {
+  sag_id: string;
+  betaling_id: string | null;
+  trade_id: string;
+  type: string;
+  version: number;
+  handling: SagPengeHandling;
+};
+
+// Kører Stripe-delen, efter sag_afvikl har flyttet pengene i databasen, og
+// giver parterne besked. Kaster aldrig: refusionen/frigivelsen er claimet i
+// databasen, og cron prøver Stripe igen (refunderSagerVentende /
+// overfoerVentende). Returnerer resultatet fra Stripe-kaldet (uden beløb).
+export async function udfoerSagAfvikling(a: SagAfvikling): Promise<string> {
+  let status = "intet";
+  if (a.handling === "refunder" && a.betaling_id) {
+    try {
+      status = await refunderBetaling(a.betaling_id);
+    } catch (err) {
+      console.error("Sagsrefusion efter ankefristen fejlede (cron prøver igen):", a.betaling_id, err);
+      status = "refusion_fejlede";
+    }
+  } else if (a.handling === "frigiv" && a.betaling_id) {
+    try {
+      status = await overfoerTilSaelger(a.betaling_id);
+    } catch (err) {
+      console.error("Overførsel efter ankefristen fejlede (cron prøver igen):", a.betaling_id, err);
+      status = "overfoersel_fejlede";
+    }
+  }
+  if (erSagType(a.type) && (a.handling === "refunder" || a.handling === "frigiv")) {
+    await notificerSagAfgoerelse(
+      a.sag_id,
+      a.trade_id,
+      a.type,
+      a.handling === "refunder" ? "refunderet" : "frigivet",
+      null,
+      Number(a.version ?? 0),
+    );
+  }
+  return status;
+}
+
+// Cron: afgjorte sager, hvor ankefristen (4 dage) er udløbet. Databasen
+// flytter pengene atomisk (sag_afvikl_forfaldne), derefter kaldes Stripe.
+export async function afviklForfaldneSager(): Promise<number> {
+  const { data, error } = await createAdminClient().rpc("sag_afvikl_forfaldne");
+  if (error) {
+    console.error("sag_afvikl_forfaldne fejlede:", error.message);
+    return 0;
+  }
+  const liste = (Array.isArray(data) ? data : []) as SagAfvikling[];
+  for (const a of liste) await udfoerSagAfvikling(a);
+  return liste.length;
 }

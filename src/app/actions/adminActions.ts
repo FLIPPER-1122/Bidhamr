@@ -667,17 +667,16 @@ async function hentHandelTilSag(admin: AdminClient, tradeId: string) {
 // En sag fra køberen (tabellen sager) skal afgøres under Sager -> sagen
 // (src/app/actions/adminSager.ts), ikke med de generelle handelsknapper.
 // Databasen afviser det også (trigger trades_beskyt_sagsfrys).
+// Også når sagen er afgjort, men pengene venter på ankefristen (4 dage):
+// så sker refusion/frigivelse automatisk efter afgørelsen, og databasen
+// afviser admin-refusion (betaling_paabegynd_refusion) og frigivelse.
 const AABEN_KOEBERSAG =
-  "Handlen har en åben sag fra køberen. Afgør sagen under Sager, så køber og sælger får en begrundelse.";
+  "Handlen har en sag fra køberen, der holder pengene (åben, afventer retur eller afgjort med ankefrist). Afgør eller genåbn sagen under Sager.";
 
 async function afvisVedAabenKoeberSag(admin: AdminClient, tradeId: string) {
-  const { count, error } = await admin
-    .from("sager")
-    .select("id", { count: "exact", head: true })
-    .eq("trade_id", tradeId)
-    .in("status", ["aaben", "afventer_retur"]);
+  const { data, error } = await admin.rpc("sag_holder_pengene", { p_trade: tradeId });
   if (error) throw new Error(error.message);
-  if ((count ?? 0) > 0) throw new BrugerFejl(AABEN_KOEBERSAG);
+  if (data === true) throw new BrugerFejl(AABEN_KOEBERSAG);
 }
 
 function revaliderSag(tradeId: string) {
@@ -872,7 +871,8 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
     });
     if (error) throw new Error(error.message);
     if (beloeb === null) {
-      // Indsigelsen kan være kommet, efter betalingen blev hentet.
+      // En sag (eller indsigelse) kan være kommet, efter betalingen blev hentet.
+      await afvisVedAabenKoeberSag(admin, tradeId);
       const frisk = await hentBetalingForHandel(tradeId);
       if (frisk && indsigelseBlokerer(frisk)) {
         throw new BrugerFejl(

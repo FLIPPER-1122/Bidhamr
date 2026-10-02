@@ -372,7 +372,9 @@ export default async function HandelDetaljePage({
           // ikke nået endnu (ellers ville typen være mulig).
           muligheder.bortkommetFraKl && (
             <p className="rounded-xl border border-kant bg-neutral-50 px-4 py-3 text-sm text-tekst-daempet">
-              Er pakken ikke kommet frem, kan du melde den bortkommet fra {sagTid(muligheder.bortkommetFraKl)}.
+              Er pakken ikke kommet frem, kan du melde den bortkommet fra {sagTid(muligheder.bortkommetFraKl)}
+              {muligheder.fristKl && <> til {sagTid(muligheder.fristKl)}</>}. Har du hverken markeret pakken
+              som modtaget eller oprettet en sag 14 dage efter afsendelsen, frigives pengene til sælgeren.
             </p>
           )}
 

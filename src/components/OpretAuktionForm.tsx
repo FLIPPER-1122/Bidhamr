@@ -199,10 +199,13 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         // Fx 42501 (trigger afviser låste felter) – brugeren får samme faste besked.
         console.error("Fejl ved oprettelse af auktion:", insertError.code, insertError.message);
         // BHU01: databasen kræver en udbetalingskonto (auctions_kraev_udbetalingskonto).
+        // BHS02: kontoen er suspenderet (kraev_ikke_suspenderet).
         setError(
           insertError.code === "BHU01"
             ? "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg."
-            : "Auktionen kunne ikke oprettes. Prøv igen om lidt.",
+            : insertError.code === "BHS02"
+              ? "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
+              : "Auktionen kunne ikke oprettes. Prøv igen om lidt.",
         );
         setLoading(false);
         return;

@@ -91,10 +91,13 @@ export default function HandelChat({
 
     if (error) {
       // BHM01: databasen afviser beskeder, der udgiver sig for at være fra BidHamr.
+      // BHS02: kontoen er suspenderet (kraev_ikke_suspenderet).
       setFejl(
         error.code === "BHM01"
           ? "Beskeder må ikke starte med 'Besked fra BidHamr'."
-          : "Beskeden kunne ikke sendes.",
+          : error.code === "BHS02"
+            ? "Din konto er suspenderet, og du kan ikke sende beskeder. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
+            : "Beskeden kunne ikke sendes.",
       );
       return;
     }

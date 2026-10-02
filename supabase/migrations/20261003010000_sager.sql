@@ -20,8 +20,12 @@
 --       vaere 'modtaget' og hoejst 48 timer siden koeberen trykkede "modtaget"
 --       (trades.received_at).
 --   svindel: altid (med eller uden beskyttelse). Enten 'modtaget' inden for 48
---       timer (tom pakke, anden vare, falsk kopi), eller 'pakke_sendt' i mindst
---       7 dage (varen er aldrig sendt / sporingen er falsk).
+--       timer (tom pakke, anden vare, falsk kopi - billeder kraeves), eller
+--       'pakke_sendt' i mindst 7 dage (varen er aldrig sendt / sporingen er
+--       falsk - behandles som "aldrig modtaget": ingen billeder, men
+--       sager.tjek_sporing saettes, saa staff tjekker sporingen hos GLS).
+--   Paa 'pakke_sendt' kan sagen oprettes fra dag 7, indtil pengene frigives
+--       automatisk (dag 14, handel_auto_frigiv).
 --   bortkommet: altid. Handlen skal vaere 'pakke_sendt' i mindst 7 dage
 --       (trades.sendt_kl, ny). 7 dage = GLS' opbevaringstid i pakkeshoppen; en
 --       normal dansk pakke er fremme paa 1-3 hverdage.
@@ -32,15 +36,34 @@
 --   Betalingen skal vaere betalt, ikke frigivet, ikke overfoert og ikke under
 --   refusion.
 --
--- Afgoerelse (service_role, staff-rolle tjekkes igen her):
---   koeber + svindel/bortkommet       -> refusion straks
---   koeber + skadet/ikke_som_beskrevet -> 'afventer_retur'; refusion naar staff
---                                        registrerer, at returpakken er afleveret
---   saelger                           -> frigivelse straks (frigivet_kl)
---   lukket                            -> ingen penge flyttes; handlen fortsaetter
+-- Afgoerelse (service_role, staff-rolle tjekkes igen her). Medarbejder, admin
+-- og chef maa afgoere. ANKEFRIST: pengene flyttes foerst 4 dage efter
+-- afgoerelsen (sager.penge_flyttes_efter_kl). Indtil da er sagen afgjort, men
+-- pengene stadig frosset (trades.sag_aaben = true), og admin kan genaabne
+-- sagen, hvilket annullerer den planlagte flytning. Cron
+-- (sag_afvikl_forfaldne -> sag_afvikl) flytter pengene, naar fristen er udloebet:
+--   koeber + svindel/bortkommet       -> refusion efter fristen
+--   koeber + skadet/ikke_som_beskrevet -> 'afventer_retur'; refusion naar BAADE
+--                                        fristen er udloebet OG staff har
+--                                        registreret, at returpakken er afleveret
+--   saelger                           -> frigivelse efter fristen (frigivet_kl)
+--   lukket                            -> ingen penge flyttes; frysningen fjernes
+--                                        efter fristen, og handlen fortsaetter
 --   Refusionsbeloeb = total_oere - beskyttelse_oere (alt undtagen BidHamr
 --   Beskyttelse). Aldrig mere end betalt, een refusion pr. betaling.
 --   Returfragt betales af BidHamr (registreres; label kommer med GLS).
+--
+-- Automatisk frigivelse (cron, handel_auto_frigiv): 48 timer efter "modtaget"
+-- uden sag, eller 14 dage efter afsendelse, hvis koeberen hverken har trykket
+-- "modtaget" eller oprettet en sag. Respekterer frysning, indsigelse og refusion.
+--
+-- Refusion fra admin (betaling_paabegynd_refusion) afvises, mens en sag holder
+-- pengene - sagen skal afgoeres. En refusion, der alligevel sker hos Stripe
+-- (charge.refunded, fx fra Stripe Dashboard), afslutter sagen automatisk
+-- (betaling_registrer_refunderet).
+--
+-- Suspenderede brugere kan ikke oprette auktioner eller skrive beskeder i
+-- handelschatten (trigger, errcode BHS02). Bud afvises allerede i place_bid.
 --
 -- Sager og billeder slettes aldrig (bogfoeringsloven/DAC7/bevis).
 --
@@ -137,6 +160,18 @@ create table if not exists public.sager (
   refusion_oere        bigint,
   genaabnet_antal      integer not null default 0,
   genaabnet_kl         timestamptz,
+  -- Ankefrist. Hvad der skal ske med pengene efter afgoerelsen
+  -- ('refunder' | 'frigiv' | 'ingen'), og hvornaar tidligst (afgjort + 4 dage).
+  -- afviklet_kl: pengene er flyttet (refusion claimet / frigivet), eller
+  -- frysningen er fjernet ('ingen'). penge_fejl: hvorfor cron ikke kunne
+  -- flytte pengene (kun staff), fx 'indsigelse'.
+  penge_handling       text,
+  penge_flyttes_efter_kl timestamptz,
+  afviklet_kl          timestamptz,
+  penge_fejl           text,
+  -- Sagen er oprettet, foer koeberen trykkede "modtaget" (bortkommet / aldrig
+  -- sendt). Staff skal tjekke sporingen hos GLS foer afgoerelsen.
+  tjek_sporing         boolean not null default false,
   -- Claim for "sag oprettet"-notifikationen til koeber og saelger (server/cron),
   -- saa den ogsaa sendes for sager oprettet direkte fra appen.
   notificeret_kl       timestamptz,
@@ -156,8 +191,45 @@ create table if not exists public.sager (
   constraint sager_refusion_check check (refusion_oere is null or refusion_oere > 0),
   constraint sager_afgjort_par check (
     status in ('aaben', 'afventer_retur')
-    or (afgjort_af is not null and afgjort_kl is not null and begrundelse is not null))
+    or (afgjort_af is not null and afgjort_kl is not null and begrundelse is not null)),
+  constraint sager_penge_handling_check check (
+    penge_handling is null or penge_handling in ('refunder', 'frigiv', 'ingen')),
+  constraint sager_penge_par check (
+    (penge_handling is null) = (penge_flyttes_efter_kl is null)),
+  constraint sager_penge_fejl_laengde check (
+    penge_fejl is null or char_length(penge_fejl) <= 100)
 );
+
+-- Samme kolonner for et miljoe, hvor en tidligere udgave af tabellen findes.
+alter table public.sager
+  add column if not exists penge_handling         text,
+  add column if not exists penge_flyttes_efter_kl timestamptz,
+  add column if not exists afviklet_kl            timestamptz,
+  add column if not exists penge_fejl             text,
+  add column if not exists tjek_sporing           boolean not null default false;
+
+do $do$
+begin
+  if not exists (select 1 from pg_constraint
+                  where conname = 'sager_penge_handling_check'
+                    and conrelid = 'public.sager'::regclass) then
+    alter table public.sager add constraint sager_penge_handling_check check (
+      penge_handling is null or penge_handling in ('refunder', 'frigiv', 'ingen'));
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conname = 'sager_penge_par'
+                    and conrelid = 'public.sager'::regclass) then
+    alter table public.sager add constraint sager_penge_par check (
+      (penge_handling is null) = (penge_flyttes_efter_kl is null));
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conname = 'sager_penge_fejl_laengde'
+                    and conrelid = 'public.sager'::regclass) then
+    alter table public.sager add constraint sager_penge_fejl_laengde check (
+      penge_fejl is null or char_length(penge_fejl) <= 100);
+  end if;
+end;
+$do$;
 
 comment on table public.sager is
   'Sager oprettet af koeberen paa en handel (bortkommet, skadet, ikke som '
@@ -169,6 +241,10 @@ create unique index if not exists sager_en_aaben_pr_handel
 create index if not exists sager_trade_idx on public.sager (trade_id);
 create index if not exists sager_status_idx on public.sager (status, oprettet_kl desc);
 create index if not exists sager_oprettet_af_idx on public.sager (oprettet_af);
+-- Cron: afgjorte sager, hvor pengene venter paa ankefristen.
+create index if not exists sager_penge_venter_idx
+  on public.sager (penge_flyttes_efter_kl)
+  where penge_handling is not null and afviklet_kl is null;
 
 alter table public.sager enable row level security;
 
@@ -182,10 +258,14 @@ create policy sager_select_parter on public.sager
   );
 
 revoke all on public.sager from anon, authenticated;
--- Ikke afgjort_af, intern_note, retur_registreret_af eller refusion_oere.
-grant select (id, trade_id, type, beskrivelse, status, beskyttelse, oprettet_kl,
+-- Ikke afgjort_af, intern_note, retur_registreret_af, refusion_oere,
+-- penge_fejl eller tjek_sporing (staff). Heller ikke beskyttelse: saelgeren
+-- maa ikke se, om koeberen har koebt BidHamr Beskyttelse - koeberen faar den
+-- via serveren (hentSagForHandel) eller fra sin egen betaling.
+grant select (id, trade_id, type, beskrivelse, status, oprettet_kl,
               afgjort_kl, begrundelse, retur_kraeves, returfragt_betaler,
-              retur_afleveret_kl, genaabnet_kl)
+              retur_afleveret_kl, genaabnet_kl,
+              penge_handling, penge_flyttes_efter_kl, afviklet_kl)
   on public.sager to authenticated;
 grant all on public.sager to service_role;
 
@@ -264,6 +344,7 @@ begin
   or new.beskrivelse                  is distinct from old.beskrivelse
   or new.beskyttelse                  is distinct from old.beskyttelse
   or new.handel_status_ved_oprettelse is distinct from old.handel_status_ved_oprettelse
+  or new.tjek_sporing                 is distinct from old.tjek_sporing
   or new.oprettet_kl                  is distinct from old.oprettet_kl then
     raise exception 'Sagens faste oplysninger kan ikke ændres.' using errcode = '42501';
   end if;
@@ -281,10 +362,33 @@ create trigger sager_beskyt
 
 -- ============================================================ Vaern: frys
 
--- Mens en sag fra koeberen er aaben, kan trades.sag_aaben ikke fjernes - uanset
--- hvem der proever (admin_frigiv_handel, "Luk sag" i admin, service_role).
--- Undtagelse: handlen annulleres (refusion), saa er pengene paa vej tilbage
--- til koeberen. Sagen afgoeres altid FOER flaget fjernes (sag_afgoer).
+-- Holder en sag fra koeberen pengene? Ja, mens sagen er aaben/afventer retur,
+-- og mens en afgoerelse venter paa ankefristen (penge_handling sat, men ikke
+-- afviklet). Intern hjaelper for security definer-funktionerne.
+create or replace function public.sag_holder_pengene(p_trade uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $fn$
+  select exists (
+    select 1 from public.sager s
+     where s.trade_id = p_trade
+       and (s.status in ('aaben', 'afventer_retur')
+            or (s.penge_handling is not null and s.afviklet_kl is null)));
+$fn$;
+
+revoke all on function public.sag_holder_pengene(uuid) from public, anon, authenticated;
+grant execute on function public.sag_holder_pengene(uuid) to service_role;
+
+-- Mens en sag fra koeberen holder pengene (aaben, afventer retur eller
+-- afgjort med ankefrist, der ikke er afviklet), kan trades.sag_aaben ikke
+-- fjernes - uanset hvem der proever (admin_frigiv_handel, "Luk sag" i admin,
+-- service_role). Undtagelse: handlen annulleres (refusion), saa er pengene paa
+-- vej tilbage til koeberen. sag_afvikl saetter afviklet_kl FOER flaget fjernes.
+-- (Betingelsen staar direkte her og ikke via sag_holder_pengene, fordi
+-- triggeren koerer som den kaldende rolle.)
 create or replace function public.trades_beskyt_sagsfrys()
 returns trigger
 language plpgsql
@@ -297,7 +401,8 @@ begin
      and new.status <> 'annulleret'
      and exists (select 1 from public.sager s
                   where s.trade_id = new.id
-                    and s.status in ('aaben', 'afventer_retur')) then
+                    and (s.status in ('aaben', 'afventer_retur')
+                         or (s.penge_handling is not null and s.afviklet_kl is null))) then
     raise exception 'Handlen har en åben sag fra køberen. Afgør sagen først.'
       using errcode = 'BHS01';
   end if;
@@ -567,9 +672,13 @@ begin
   end if;
 
   begin
+    -- Paa 'pakke_sendt' (bortkommet, eller svindel = "aldrig sendt / falsk
+    -- sporing") kraeves ingen billeder; i stedet skal staff tjekke sporingen
+    -- hos GLS foer afgoerelsen (tjek_sporing).
     insert into public.sager (trade_id, oprettet_af, type, beskrivelse, beskyttelse,
-                              handel_status_ved_oprettelse)
-    values (p_trade, v_bruger, p_type, v_beskr, b.beskyttelse, t.status)
+                              handel_status_ved_oprettelse, tjek_sporing)
+    values (p_trade, v_bruger, p_type, v_beskr, b.beskyttelse, t.status,
+            t.status = 'pakke_sendt')
     returning id into v_sag;
   exception when unique_violation then
     return jsonb_build_object('kode', 'findes');
@@ -649,7 +758,7 @@ grant execute on function public.sag_tilfoej_billeder(uuid, jsonb) to authentica
 -- ============================================================ Intern: refusion
 
 -- Claimer en sagsrefusion paa betalingen (alt undtagen BidHamr Beskyttelse).
--- Kaldes kun inde fra sag_afgoer/sag_retur_afleveret, som allerede holder
+-- Kaldes kun inde fra sag_afvikl (efter ankefristen), som allerede holder
 -- betalingsraekkens laas (samme laas som betaling_claim_overfoersel).
 -- Returnerer refusionsbeloebet i oere, eller null + fejlkode i p_fejl via
 -- exception-fri returnering: 'indsigelse' | 'ikke_mulig'.
@@ -712,7 +821,7 @@ alter table public.moderation_log
     'ubetalt_afvist','overfoersel_proevet_igen','betaling_loest',
     'chat_aabnet','chat_lukket','faellesbesked',
     'sag_afgjort_koeber','sag_afgjort_saelger','sag_retur_afleveret',
-    'sag_genaabnet','konto_lukket'));
+    'sag_genaabnet','konto_lukket','sag_afviklet'));
 
 alter table public.moderation_log
   drop constraint if exists moderation_log_maal_type_check;
@@ -724,13 +833,25 @@ alter table public.moderation_log
 -- ============================================================ Staff: afgoer
 
 -- p_udfald: 'koeber' | 'saelger' | 'lukket'.
--- Returnerer {"kode": "ok", "handling", "betaling_id"?, "trade_id", "buyer_id",
--- "seller_id", "auction_id", "type"} hvor handling er:
---   'refunder'     - refusionen er claimet; serveren kalder Stripe nu
---   'afvent_retur' - koeberen skal sende varen retur (BidHamr betaler fragten)
---   'frigiv'       - frigivet til saelger; serveren overfoerer nu
---   'frigiv_blokeret' - saelger fik medhold, men en indsigelse blokerer frigivelsen
---   'lukket'       - sagen er lukket uden at flytte penge
+-- ANKEFRIST: ingen penge flyttes her. Afgoerelsen planlaegges til
+-- penge_flyttes_efter_kl = nu + 4 dage; sag_afvikl (cron) flytter pengene
+-- derefter. trades.sag_aaben forbliver true (frosset) imens, og admin kan
+-- genaabne sagen (sag_genaabn), hvilket annullerer den planlagte flytning.
+--
+-- Returnerer {"kode": "ok", "handling", "penge_flyttes_efter_kl",
+-- "advarsel"?, "betaling_id"?, "trade_id", "buyer_id", "seller_id",
+-- "auction_id", "type", "version"} hvor handling er:
+--   'planlagt_refusion'   - koeberen refunderes efter fristen (svindel/bortkommet,
+--                           eller skadet/ikke som beskrevet, hvor returpakken
+--                           allerede er registreret som afleveret)
+--   'afvent_retur'        - koeberen skal sende varen retur (BidHamr betaler
+--                           fragten); refusion naar retur er afleveret OG
+--                           fristen er udloebet
+--   'planlagt_frigivelse' - saelgeren faar pengene efter fristen
+--   'lukket'              - ingen penge flyttes; frysningen fjernes efter fristen
+-- advarsel (kun saelger): 'indsigelse' | 'refusion' | 'ikke_betalt' |
+--   'ingen_betaling' - frigivelsen vil vaere blokeret, hvis det stadig gaelder
+--   naar fristen udloeber (staff skal foelge op).
 -- Fejlkoder: ingen_adgang, ugyldigt_udfald, begrundelse_mangler,
 -- for_lang_tekst, ikke_fundet, forkert_status, indsigelse, ikke_mulig.
 -- Logger i moderation_log (uden beloeb - medarbejdere kan se loggen).
@@ -746,15 +867,16 @@ security definer
 set search_path = public
 as $fn$
 declare
-  v_grund  text := nullif(btrim(coalesce(p_begrundelse, '')), '');
-  v_note   text := nullif(btrim(coalesce(p_intern_note, '')), '');
-  v_trade  uuid;
-  s        record;
-  t        record;
-  b        record;
-  r        record;
+  v_grund    text := nullif(btrim(coalesce(p_begrundelse, '')), '');
+  v_note     text := nullif(btrim(coalesce(p_intern_note, '')), '');
+  v_frist    timestamptz := now() + interval '4 days';
+  v_trade    uuid;
+  s          record;
+  t          record;
+  b          record;
   v_handling text;
-  v_log    text;
+  v_advarsel text;
+  v_log      text;
 begin
   if not public.staff_chat_har_rolle(p_medarbejder, 'medarbejder') then
     return jsonb_build_object('kode', 'ingen_adgang');
@@ -785,50 +907,47 @@ begin
   end if;
 
   if p_udfald = 'koeber' then
+    -- Tjek allerede nu, at en refusion vil vaere mulig (ingen indsigelse,
+    -- intet overfoert). sag_afvikl tjekker igen, naar fristen er udloebet.
     if b.id is null then return jsonb_build_object('kode', 'ikke_mulig'); end if;
+    if public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status) then
+      return jsonb_build_object('kode', 'indsigelse');
+    end if;
+    if b.status <> 'betalt'
+       or b.refusion_anmodet_kl is not null
+       or b.overfoersel_paabegyndt_kl is not null
+       or b.stripe_transfer_id is not null then
+      return jsonb_build_object('kode', 'ikke_mulig');
+    end if;
 
-    if s.type in ('svindel', 'bortkommet') then
-      select * into r from public.sag_claim_refusion(b.id);
-      if r.fejl is not null then return jsonb_build_object('kode', r.fejl); end if;
-
+    if s.type in ('svindel', 'bortkommet') or s.retur_afleveret_kl is not null then
+      -- Svindel/bortkommet refunderes uden retur. (Er returpakken allerede
+      -- registreret - sagen er genaabnet efter retur - venter vi ikke igen.)
       update public.sager
          set status = 'afgjort_koeber', afgjort_af = p_medarbejder, afgjort_kl = now(),
              begrundelse = v_grund, intern_note = coalesce(v_note, intern_note),
-             refusion_oere = r.beloeb
+             retur_kraeves = (s.retur_afleveret_kl is not null),
+             returfragt_betaler = case when s.retur_afleveret_kl is not null
+                                       then 'bidhamr' end,
+             penge_handling = 'refunder', penge_flyttes_efter_kl = v_frist,
+             afviklet_kl = null, penge_fejl = null
        where id = s.id;
-
-      -- Sagen er afgjort; handlen annulleres og frysningen fjernes.
-      update public.trades
-         set status = 'annulleret', sag_aaben = false
-       where id = t.id
-         and status in ('betaling_modtaget', 'pakke_sendt', 'modtaget', 'leveret', 'annulleret');
-
-      v_handling := 'refunder';
-      v_log := 'Medhold til køber - refusion straks (alt undtagen BidHamr Beskyttelse)';
+      v_handling := 'planlagt_refusion';
+      v_log := 'Medhold til køber - refusion (alt undtagen BidHamr Beskyttelse) efter ankefristen på 4 dage';
     else
-      -- Skadet / ikke som beskrevet: retur foer refusion. Tjek allerede nu, at
-      -- en refusion vil vaere mulig (ingen indsigelse, intet overfoert).
-      if public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status) then
-        return jsonb_build_object('kode', 'indsigelse');
-      end if;
-      if b.status <> 'betalt'
-         or b.refusion_anmodet_kl is not null
-         or b.overfoersel_paabegyndt_kl is not null
-         or b.stripe_transfer_id is not null then
-        return jsonb_build_object('kode', 'ikke_mulig');
-      end if;
-
+      -- Skadet / ikke som beskrevet: retur foer refusion.
       update public.sager
          set status = 'afventer_retur', retur_kraeves = true,
              returfragt_betaler = 'bidhamr',
              afgjort_af = p_medarbejder, afgjort_kl = now(),
-             begrundelse = v_grund, intern_note = coalesce(v_note, intern_note)
+             begrundelse = v_grund, intern_note = coalesce(v_note, intern_note),
+             penge_handling = 'refunder', penge_flyttes_efter_kl = v_frist,
+             afviklet_kl = null, penge_fejl = null
        where id = s.id;
-      -- trades.sag_aaben forbliver true: pengene er stadig frosset.
-
       v_handling := 'afvent_retur';
-      v_log := 'Medhold til køber - varen sendes retur (BidHamr betaler returfragten), refusion når returpakken er afleveret';
+      v_log := 'Medhold til køber - varen sendes retur (BidHamr betaler returfragten), refusion når returpakken er afleveret og ankefristen på 4 dage er udløbet';
     end if;
+    -- trades.sag_aaben forbliver true: pengene er frosset til sag_afvikl.
 
     insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
     values (p_medarbejder, 'sag_afgjort_koeber', 'sag', s.id, t.buyer_id,
@@ -839,29 +958,22 @@ begin
     update public.sager
        set status = 'afgjort_saelger', afgjort_af = p_medarbejder, afgjort_kl = now(),
            begrundelse = v_grund, intern_note = coalesce(v_note, intern_note),
-           retur_kraeves = false, returfragt_betaler = null
+           retur_kraeves = false, returfragt_betaler = null,
+           penge_handling = 'frigiv', penge_flyttes_efter_kl = v_frist,
+           afviklet_kl = null, penge_fejl = null
      where id = s.id;
 
-    update public.trades set sag_aaben = false where id = t.id;
+    -- Vil frigivelsen vaere blokeret? (samme regler som sag_afvikl)
+    v_advarsel := case
+      when b.id is null then 'ingen_betaling'
+      when public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status) then 'indsigelse'
+      when b.status = 'refunderet' or b.refusion_anmodet_kl is not null then 'refusion'
+      when b.status <> 'betalt' then 'ikke_betalt'
+      else null end;
 
-    -- Frigiv straks (som admin_frigiv_handel), medmindre noget blokerer.
-    if b.id is not null
-       and b.status = 'betalt'
-       and b.refusion_anmodet_kl is null
-       and not public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status)
-       and t.status in ('pakke_sendt', 'modtaget') then
-      update public.trades
-         set status = 'leveret', received_at = coalesce(received_at, now())
-       where id = t.id;
-      update public.betalinger
-         set frigivet_kl = coalesce(frigivet_kl, now()), opdateret = now()
-       where id = b.id;
-      v_handling := 'frigiv';
-      v_log := 'Medhold til sælger - pengene frigives';
-    else
-      v_handling := 'frigiv_blokeret';
-      v_log := 'Medhold til sælger - frigivelse blokeret (indsigelse eller betaling ikke klar)';
-    end if;
+    v_handling := 'planlagt_frigivelse';
+    v_log := 'Medhold til sælger - pengene frigives efter ankefristen på 4 dage'
+             || coalesce(' (OBS: frigivelsen er blokeret lige nu: ' || v_advarsel || ')', '');
 
     insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
     values (p_medarbejder, 'sag_afgjort_saelger', 'sag', s.id, t.seller_id,
@@ -872,34 +984,215 @@ begin
     update public.sager
        set status = 'lukket', afgjort_af = p_medarbejder, afgjort_kl = now(),
            begrundelse = v_grund, intern_note = coalesce(v_note, intern_note),
-           retur_kraeves = false, returfragt_betaler = null
+           retur_kraeves = false, returfragt_betaler = null,
+           penge_handling = 'ingen', penge_flyttes_efter_kl = v_frist,
+           afviklet_kl = null, penge_fejl = null
      where id = s.id;
-
-    update public.trades set sag_aaben = false where id = t.id;
 
     v_handling := 'lukket';
     insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
     values (p_medarbejder, 'sag_lukket', 'sag', s.id, t.buyer_id,
-            left('Sag lukket uden at flytte penge | Til parterne: ' || v_grund
-                 || coalesce(' | Intern note: ' || v_note, ''), 4000));
+            left('Sag lukket uden at flytte penge - frysningen fjernes efter ankefristen på 4 dage | Til parterne: '
+                 || v_grund || coalesce(' | Intern note: ' || v_note, ''), 4000));
   end if;
 
   return jsonb_build_object(
-    'kode', 'ok', 'handling', v_handling, 'betaling_id', b.id,
+    'kode', 'ok', 'handling', v_handling, 'penge_flyttes_efter_kl', v_frist,
+    'advarsel', v_advarsel, 'betaling_id', b.id,
     'trade_id', t.id, 'buyer_id', t.buyer_id, 'seller_id', t.seller_id,
-    'auction_id', t.auction_id, 'type', s.type);
+    'auction_id', t.auction_id, 'type', s.type, 'version', s.genaabnet_antal);
 end;
 $fn$;
 
 revoke all on function public.sag_afgoer(uuid, uuid, text, text, text) from public, anon, authenticated;
 grant execute on function public.sag_afgoer(uuid, uuid, text, text, text) to service_role;
 
+-- ============================================================ Intern: afvikl
+
+-- Flytter pengene for EN afgjort sag, naar ankefristen er udloebet. Intern:
+-- kaldes af sag_afvikl_forfaldne (cron) og sag_retur_afleveret - aldrig af
+-- browseren. Idempotent: afviklet_kl saettes i samme transaktion, og alle
+-- raekker laases (betaling, handel, sag - samme raekkefoelge som overalt).
+--
+-- Returnerer {"kode", "handling", "grund"?, "sag_id", "betaling_id",
+-- "trade_id", "buyer_id", "seller_id", "auction_id", "type", "version"}:
+--   ok           - gennemfoert. handling 'refunder': refusionen er claimet
+--                  (serveren kalder Stripe nu). 'frigiv': frigivet_kl er sat
+--                  (serveren overfoerer nu). 'ingen': frysningen er fjernet.
+--   venter       - fristen er ikke udloebet
+--   venter_retur - returpakken er ikke registreret som afleveret endnu
+--   blokeret     - grund: indsigelse | ikke_mulig | refusion | ikke_betalt |
+--                  ingen_betaling | handel_status. Betalingen markeres til
+--                  admin (een gang pr. grund); cron proever igen.
+--   intet        - intet at flytte (afviklet, genaabnet eller ingen handling)
+create or replace function public.sag_afvikl(p_sag uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_trade uuid;
+  s       record;
+  t       record;
+  b       record;
+  r       record;
+  v_grund text;
+  v_res   jsonb;
+begin
+  select trade_id into v_trade from public.sager where id = p_sag;
+  if v_trade is null then return jsonb_build_object('kode', 'ikke_fundet'); end if;
+
+  select * into b from public.betalinger where trade_id = v_trade for update;
+  select * into t from public.trades where id = v_trade for update;
+  select * into s from public.sager where id = p_sag for update;
+
+  v_res := jsonb_build_object(
+    'sag_id', s.id, 'betaling_id', b.id, 'trade_id', t.id,
+    'buyer_id', t.buyer_id, 'seller_id', t.seller_id, 'auction_id', t.auction_id,
+    'type', s.type, 'version', s.genaabnet_antal, 'handling', s.penge_handling);
+
+  if s.penge_handling is null or s.afviklet_kl is not null
+     or s.status not in ('afventer_retur', 'afgjort_koeber', 'afgjort_saelger', 'lukket') then
+    return v_res || jsonb_build_object('kode', 'intet');
+  end if;
+  if s.penge_flyttes_efter_kl > now() then
+    return v_res || jsonb_build_object('kode', 'venter');
+  end if;
+
+  if s.penge_handling = 'refunder' then
+    if s.status <> 'afgjort_koeber' then
+      return v_res || jsonb_build_object('kode', 'venter_retur');
+    end if;
+    if b.id is null then
+      v_grund := 'ingen_betaling';
+    else
+      select * into r from public.sag_claim_refusion(b.id);
+      v_grund := r.fejl;
+    end if;
+    if v_grund is null then
+      update public.sager
+         set refusion_oere = r.beloeb, afviklet_kl = now(), penge_fejl = null
+       where id = s.id;
+      -- Sagen er afviklet; handlen annulleres og frysningen fjernes.
+      update public.trades
+         set status = 'annulleret', sag_aaben = false
+       where id = t.id
+         and status in ('betaling_modtaget', 'pakke_sendt', 'modtaget', 'leveret', 'annulleret');
+      insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+      values (public.bidhamr_system_id(), 'sag_afviklet', 'sag', s.id, t.buyer_id,
+              'Ankefristen er udløbet - refusion til køber sendt til Stripe (alt undtagen BidHamr Beskyttelse)');
+      return v_res || jsonb_build_object('kode', 'ok');
+    end if;
+
+  elsif s.penge_handling = 'frigiv' then
+    v_grund := case
+      when b.id is null then 'ingen_betaling'
+      when public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status) then 'indsigelse'
+      when b.status = 'refunderet' or b.refusion_anmodet_kl is not null then 'refusion'
+      when b.status <> 'betalt' then 'ikke_betalt'
+      -- Allerede frigivet (fx sagen genaabnet efter frigivelse): ok - der
+      -- overfoeres blot (L3).
+      when b.frigivet_kl is null and t.status not in ('pakke_sendt', 'modtaget', 'leveret')
+        then 'handel_status'
+      else null end;
+    if v_grund is null then
+      update public.sager set afviklet_kl = now(), penge_fejl = null where id = s.id;
+      update public.trades
+         set status = case when status in ('pakke_sendt', 'modtaget') then 'leveret' else status end,
+             received_at = coalesce(received_at, now()),
+             sag_aaben = false
+       where id = t.id;
+      update public.betalinger
+         set frigivet_kl = coalesce(frigivet_kl, now()), opdateret = now()
+       where id = b.id;
+      insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+      values (public.bidhamr_system_id(), 'sag_afviklet', 'sag', s.id, t.seller_id,
+              'Ankefristen er udløbet - pengene er frigivet til sælger');
+      return v_res || jsonb_build_object('kode', 'ok');
+    end if;
+
+  else
+    -- 'ingen' (lukket): frysningen fjernes; handlen fortsaetter normalt.
+    update public.sager set afviklet_kl = now(), penge_fejl = null where id = s.id;
+    update public.trades set sag_aaben = false where id = t.id;
+    insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+    values (public.bidhamr_system_id(), 'sag_afviklet', 'sag', s.id, t.buyer_id,
+            'Ankefristen er udløbet - frysningen er fjernet, og handlen fortsætter');
+    return v_res || jsonb_build_object('kode', 'ok');
+  end if;
+
+  -- Blokeret. Markeres til admin een gang pr. grund (ingen beloeb i teksten).
+  if s.penge_fejl is distinct from v_grund then
+    update public.sager set penge_fejl = v_grund where id = s.id;
+    if b.id is not null then
+      update public.betalinger
+         set kraever_opmaerksomhed = true,
+             sidste_fejl = left('Sagens afgørelse kan ikke gennemføres efter ankefristen ('
+                                || v_grund || ') - se sagen', 500),
+             opdateret = now()
+       where id = b.id;
+    end if;
+  end if;
+  return v_res || jsonb_build_object('kode', 'blokeret', 'grund', v_grund);
+end;
+$fn$;
+
+revoke all on function public.sag_afvikl(uuid) from public, anon, authenticated;
+grant execute on function public.sag_afvikl(uuid) to service_role;
+
+-- Cron: afvikler alle sager, hvor ankefristen er udloebet. Hver sag i sin
+-- egen undertransaktion, saa een fejl ikke stopper resten. Returnerer de
+-- gennemfoerte (kode 'ok') som jsonb-array; serveren kalder derefter Stripe
+-- (refusion/overfoersel) og sender beskeder. Blokerede proeves igen ved
+-- naeste koersel (de nye foerst).
+create or replace function public.sag_afvikl_forfaldne()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_id  uuid;
+  v_res jsonb;
+  v_ud  jsonb := '[]'::jsonb;
+begin
+  for v_id in
+    select id from public.sager
+     where penge_handling is not null
+       and afviklet_kl is null
+       and penge_flyttes_efter_kl <= now()
+       and status in ('afgjort_koeber', 'afgjort_saelger', 'lukket')
+     order by (penge_fejl is not null), penge_flyttes_efter_kl
+     limit 100
+  loop
+    begin
+      v_res := public.sag_afvikl(v_id);
+      if v_res->>'kode' = 'ok' then
+        v_ud := v_ud || jsonb_build_array(v_res);
+      end if;
+    exception when others then
+      raise warning 'sag_afvikl % fejlede: %', v_id, sqlerrm;
+    end;
+  end loop;
+  return v_ud;
+end;
+$fn$;
+
+revoke all on function public.sag_afvikl_forfaldne() from public, anon, authenticated;
+grant execute on function public.sag_afvikl_forfaldne() to service_role;
+
 -- ============================================================ Staff: retur afleveret
 
 -- Staff registrerer, at returpakken er afleveret (indtil GLS-sporingen er
--- bygget). Claimer refusionen og afgoer sagen til koeberen.
--- Returnerer {"kode": "ok", "betaling_id", ...} eller ingen_adgang,
--- ikke_fundet, forkert_status, indsigelse, ikke_mulig.
+-- bygget). Sagen afgoeres til koeberen. Refusionen sker, naar BAADE retur er
+-- afleveret OG ankefristen er udloebet: er fristen allerede udloebet, afvikles
+-- sagen straks (sag_afvikl), ellers tager cron den.
+-- Returnerer {"kode": "ok", "handling", "grund"?, "penge_flyttes_efter_kl",
+-- "betaling_id", ...} hvor handling er 'refunder' (claimet - serveren kalder
+-- Stripe), 'planlagt_refusion' (venter paa fristen) eller 'refusion_blokeret'
+-- (grund som i sag_afvikl). Fejlkoder: ingen_adgang, for_lang_tekst,
+-- ikke_fundet, forkert_status.
 create or replace function public.sag_retur_afleveret(
   p_medarbejder uuid,
   p_sag         uuid,
@@ -915,7 +1208,8 @@ declare
   s       record;
   t       record;
   b       record;
-  r       record;
+  v_res   jsonb;
+  v_handling text;
 begin
   if not public.staff_chat_har_rolle(p_medarbejder, 'medarbejder') then
     return jsonb_build_object('kode', 'ingen_adgang');
@@ -931,37 +1225,37 @@ begin
   select * into t from public.trades where id = v_trade for update;
   select * into s from public.sager where id = p_sag for update;
 
-  if s.status <> 'afventer_retur' then
+  if s.status <> 'afventer_retur' or s.penge_handling is distinct from 'refunder' then
     return jsonb_build_object('kode', 'forkert_status');
   end if;
-  if b.id is null then return jsonb_build_object('kode', 'ikke_mulig'); end if;
-
-  select * into r from public.sag_claim_refusion(b.id);
-  if r.fejl is not null then return jsonb_build_object('kode', r.fejl); end if;
 
   update public.sager
      set status = 'afgjort_koeber',
          retur_afleveret_kl = now(),
          retur_registreret_af = p_medarbejder,
-         refusion_oere = r.beloeb,
          intern_note = case when v_note is null then intern_note
                             else left(coalesce(intern_note || chr(10), '') || 'Retur: ' || v_note, 4000) end
    where id = s.id;
 
-  update public.trades
-     set status = 'annulleret', sag_aaben = false
-   where id = t.id
-     and status in ('betaling_modtaget', 'pakke_sendt', 'modtaget', 'leveret', 'annulleret');
-
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
   values (p_medarbejder, 'sag_retur_afleveret', 'sag', s.id, t.buyer_id,
           left('Returpakken er afleveret - refusion til køber (alt undtagen BidHamr Beskyttelse)'
+               || case when s.penge_flyttes_efter_kl > now()
+                       then ', når ankefristen er udløbet' else '' end
                || coalesce(' | ' || v_note, ''), 4000));
 
+  if s.penge_flyttes_efter_kl <= now() then
+    v_res := public.sag_afvikl(s.id);
+    v_handling := case v_res->>'kode' when 'ok' then 'refunder' else 'refusion_blokeret' end;
+  else
+    v_handling := 'planlagt_refusion';
+  end if;
+
   return jsonb_build_object(
-    'kode', 'ok', 'handling', 'refunder', 'betaling_id', b.id,
+    'kode', 'ok', 'handling', v_handling, 'grund', v_res->>'grund',
+    'penge_flyttes_efter_kl', s.penge_flyttes_efter_kl, 'betaling_id', b.id,
     'trade_id', t.id, 'buyer_id', t.buyer_id, 'seller_id', t.seller_id,
-    'auction_id', t.auction_id, 'type', s.type);
+    'auction_id', t.auction_id, 'type', s.type, 'version', s.genaabnet_antal);
 end;
 $fn$;
 
@@ -970,11 +1264,13 @@ grant execute on function public.sag_retur_afleveret(uuid, uuid, text) to servic
 
 -- ============================================================ Admin: genaabn
 
--- Admin/chef genaabner en afgjort eller lukket sag (anke er ikke bygget endnu).
--- Kun naar ingen penge er flyttet: ingen refusion, intet overfoert/paabegyndt,
--- og handlen er ikke annulleret. Pengene fryses igen (trades.sag_aaben).
--- Returnerer {"kode": "ok", ...} eller ingen_adgang, begrundelse_mangler,
--- ikke_fundet, forkert_status, penge_flyttet, findes (en anden aaben sag).
+-- Admin/chef genaabner en afgjort eller lukket sag (anke-knappen er ikke
+-- bygget endnu). Kun naar ingen penge er flyttet: ingen refusion, intet
+-- overfoert/paabegyndt, og handlen er ikke annulleret. Inden for ankefristen
+-- annulleres den planlagte refusion/frigivelse. Pengene fryses (igen).
+-- Returnerer {"kode": "ok", "annulleret_planlagt", ...} eller ingen_adgang,
+-- begrundelse_mangler, for_lang_tekst, ikke_fundet, forkert_status,
+-- penge_flyttet, findes (en anden aaben sag).
 create or replace function public.sag_genaabn(
   p_medarbejder uuid,
   p_sag         uuid,
@@ -1004,7 +1300,7 @@ begin
   select * into t from public.trades where id = v_trade for update;
   select * into s from public.sager where id = p_sag for update;
 
-  if s.status not in ('afgjort_saelger', 'lukket') then
+  if s.status not in ('afventer_retur', 'afgjort_koeber', 'afgjort_saelger', 'lukket') then
     return jsonb_build_object('kode', 'forkert_status');
   end if;
   if t.status = 'annulleret'
@@ -1020,6 +1316,8 @@ begin
     update public.sager
        set status = 'aaben', afgjort_af = null, afgjort_kl = null, begrundelse = null,
            retur_kraeves = false, returfragt_betaler = null,
+           penge_handling = null, penge_flyttes_efter_kl = null,
+           afviklet_kl = null, penge_fejl = null,
            genaabnet_antal = genaabnet_antal + 1, genaabnet_kl = now()
      where id = s.id;
   exception when unique_violation then
@@ -1034,16 +1332,253 @@ begin
 
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
   values (p_medarbejder, 'sag_genaabnet', 'sag', s.id, t.buyer_id,
-          left('Sag genåbnet (tidligere status: ' || s.status || ') | ' || v_grund, 4000));
+          left('Sag genåbnet (tidligere status: ' || s.status || ')'
+               || case when s.penge_handling in ('refunder', 'frigiv') and s.afviklet_kl is null
+                       then ' - den planlagte ' || case s.penge_handling when 'refunder'
+                            then 'refusion' else 'udbetaling' end || ' er annulleret'
+                       else '' end
+               || ' | ' || v_grund, 4000));
 
   return jsonb_build_object(
-    'kode', 'ok', 'trade_id', t.id, 'buyer_id', t.buyer_id, 'seller_id', t.seller_id,
-    'auction_id', t.auction_id, 'type', s.type);
+    'kode', 'ok',
+    'annulleret_planlagt', s.penge_handling in ('refunder', 'frigiv') and s.afviklet_kl is null,
+    'trade_id', t.id, 'buyer_id', t.buyer_id, 'seller_id', t.seller_id,
+    'auction_id', t.auction_id, 'type', s.type, 'version', s.genaabnet_antal + 1);
 end;
 $fn$;
 
 revoke all on function public.sag_genaabn(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.sag_genaabn(uuid, uuid, text) to service_role;
+
+-- ============================================================ Automatisk frigivelse
+
+-- Cron. Frigiver pengene til saelgeren (samme sti som handel_godkend /
+-- admin_frigiv_handel: trades.status 'leveret' + betalinger.frigivet_kl;
+-- serveren overfoerer derefter med overfoerTilSaelger), naar:
+--   (a) koeberen trykkede "modtaget" for over 48 timer siden, eller
+--   (b) pakken blev sendt for over 14 dage siden (sendt_kl, ellers betalt_kl
+--       for handler sendt foer sendt_kl fandtes), og koeberen hverken har
+--       trykket "modtaget" eller oprettet en sag (indtil GLS-sporing).
+-- Kun naar: betalt, ikke frigivet/refunderet/overfoert, ingen blokerende
+-- indsigelse, ingen frysning (sag_aaben) og ingen sag, der holder pengene.
+-- Idempotent: raekkerne laases og betingelserne tjekkes igen i samme
+-- transaktion; frigivet_kl saettes kun, hvis det er tomt.
+-- Returnerer jsonb-array: [{betaling_id, trade_id, buyer_id, seller_id,
+-- auction_id, grund: '48_timer' | '14_dage'}].
+create or replace function public.handel_auto_frigiv()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  k      record;
+  b      record;
+  t      record;
+  v_grund text;
+  v_ud   jsonb := '[]'::jsonb;
+begin
+  for k in
+    select bt.id as betaling_id, tr.id as trade_id
+      from public.trades tr
+      join public.betalinger bt on bt.trade_id = tr.id
+     where bt.status = 'betalt'
+       and bt.frigivet_kl is null
+       and bt.refusion_anmodet_kl is null
+       and bt.overfoersel_paabegyndt_kl is null
+       and bt.stripe_transfer_id is null
+       and not coalesce(tr.sag_aaben, false)
+       and ((tr.status = 'modtaget' and tr.received_at < now() - interval '48 hours')
+            or (tr.status = 'pakke_sendt'
+                and coalesce(tr.sendt_kl, bt.betalt_kl) < now() - interval '14 days'))
+     order by tr.id
+     limit 200
+  loop
+    -- Laaseraekkefoelge: betaling, handel. Alt tjekkes igen under laas.
+    select * into b from public.betalinger where id = k.betaling_id for update;
+    select * into t from public.trades where id = k.trade_id for update;
+
+    if b.status <> 'betalt'
+       or b.frigivet_kl is not null
+       or b.refusion_anmodet_kl is not null
+       or b.overfoersel_paabegyndt_kl is not null
+       or b.stripe_transfer_id is not null
+       or public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status)
+       or coalesce(t.sag_aaben, false)
+       or public.sag_holder_pengene(t.id) then
+      continue;
+    end if;
+
+    if t.status = 'modtaget' and t.received_at < now() - interval '48 hours' then
+      v_grund := '48_timer';
+    elsif t.status = 'pakke_sendt'
+          and coalesce(t.sendt_kl, b.betalt_kl) < now() - interval '14 days' then
+      v_grund := '14_dage';
+    else
+      continue;
+    end if;
+
+    update public.trades
+       set status = 'leveret', received_at = coalesce(received_at, now())
+     where id = t.id and status = t.status;
+    if not found then continue; end if;
+
+    update public.betalinger
+       set frigivet_kl = now(), opdateret = now()
+     where id = b.id and frigivet_kl is null;
+
+    v_ud := v_ud || jsonb_build_array(jsonb_build_object(
+      'betaling_id', b.id, 'trade_id', t.id, 'buyer_id', t.buyer_id,
+      'seller_id', t.seller_id, 'auction_id', t.auction_id, 'grund', v_grund));
+  end loop;
+  return v_ud;
+end;
+$fn$;
+
+revoke all on function public.handel_auto_frigiv() from public, anon, authenticated;
+grant execute on function public.handel_auto_frigiv() to service_role;
+
+-- ============================================================ Refusion og aabne sager
+
+-- Admin-refusion (betaling_paabegynd_refusion) afvises, mens en sag fra
+-- koeberen holder pengene: sagen skal afgoeres under Sager, saa refusionen
+-- foelger afgoerelsen (delvis - alt undtagen BidHamr Beskyttelse), logges med
+-- begrundelse og respekterer ankefristen. Det er det sikreste valg: en fuld
+-- admin-refusion uden om sagen ville give koeberen mere end afgoerelsen og
+-- efterlade sagen i en forkert tilstand.
+-- Ellers uaendret fra 20261002042000.
+create or replace function public.betaling_paabegynd_refusion(
+  p_trade uuid, p_aarsag text)
+returns bigint
+language plpgsql security definer set search_path = public as $fn$
+declare
+  b record;
+begin
+  select * into b from public.betalinger where trade_id = p_trade for update;
+  if not found then return null; end if;
+
+  if b.status <> 'betalt'
+     or b.overfoersel_paabegyndt_kl is not null
+     or b.stripe_transfer_id is not null
+     or public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status)
+     or public.sag_holder_pengene(p_trade) then
+    return null;
+  end if;
+
+  update public.betalinger
+     set refusion_anmodet_kl = coalesce(refusion_anmodet_kl, now()),
+         refusion_aarsag = coalesce(refusion_aarsag, p_aarsag),
+         opdateret = now()
+   where id = b.id;
+
+  update public.trades
+     set status = 'annulleret', sag_aaben = false
+   where id = p_trade
+     and status in ('betaling_modtaget','pakke_sendt','modtaget','leveret','annulleret');
+
+  return b.total_oere;
+end;
+$fn$;
+
+revoke all on function public.betaling_paabegynd_refusion(uuid, text)
+  from public, anon, authenticated;
+grant execute on function public.betaling_paabegynd_refusion(uuid, text) to service_role;
+
+-- charge.refunded (fuld refusion, eller sagens delvise refusion gennemfoert).
+-- Som 20261001020000, men en sag, der stadig holder pengene, afsluttes
+-- automatisk: en aaben sag lukkes ("Afsluttet ved refusion"), og en planlagt
+-- afgoerelse markeres som afviklet - pengene er jo allerede refunderet. Saa
+-- efterlades sagen aldrig aaben, og handlen kan annulleres (frys-triggeren
+-- tillader annullering).
+create or replace function public.betaling_registrer_refunderet(
+  p_payment_intent text,
+  p_refund         text)
+returns text
+language plpgsql security definer set search_path = public as $fn$
+declare
+  b record;
+  s record;
+begin
+  update public.betaling_afvigelser
+     set refunderet_kl = coalesce(refunderet_kl, now()),
+         stripe_refund_id = coalesce(p_refund, stripe_refund_id),
+         sidste_fejl = null,
+         opdateret = now()
+   where stripe_payment_intent_id = p_payment_intent;
+  if found then return 'afvigelse_refunderet'; end if;
+
+  select * into b from public.betalinger
+   where stripe_payment_intent_id = p_payment_intent
+   for update;
+
+  if not found then return 'ukendt'; end if;
+  if b.status = 'refunderet' then return 'allerede_refunderet'; end if;
+
+  update public.betalinger
+     set status = 'refunderet',
+         refunderet_kl = now(),
+         stripe_refund_id = coalesce(stripe_refund_id, p_refund),
+         refusion_anmodet_kl = coalesce(refusion_anmodet_kl, now()),
+         refusion_aarsag = coalesce(refusion_aarsag, 'stripe'),
+         kraever_opmaerksomhed = kraever_opmaerksomhed
+                                 or stripe_transfer_id is not null
+                                 or overfoersel_paabegyndt_kl is not null,
+         sidste_fejl = case
+           when stripe_transfer_id is not null or overfoersel_paabegyndt_kl is not null
+             then 'Refunderet EFTER overfoersel til saelger - kontroller hos Stripe'
+           else sidste_fejl end,
+         opdateret = now()
+   where id = b.id;
+
+  -- Sager, der stadig holder pengene (laases efter betaling og handel).
+  perform 1 from public.trades where id = b.trade_id for update;
+  for s in
+    select * from public.sager
+     where trade_id = b.trade_id
+       and (status in ('aaben', 'afventer_retur')
+            or (penge_handling is not null and afviklet_kl is null))
+     for update
+  loop
+    if s.status in ('aaben', 'afventer_retur') then
+      update public.sager
+         set status = 'lukket',
+             afgjort_af = public.bidhamr_system_id(),
+             afgjort_kl = now(),
+             begrundelse = 'Afsluttet ved refusion',
+             retur_kraeves = false, returfragt_betaler = null,
+             penge_handling = null, penge_flyttes_efter_kl = null,
+             afviklet_kl = now(), penge_fejl = null,
+             intern_note = left(coalesce(intern_note || chr(10), '')
+                                || 'Afsluttet automatisk: betalingen er refunderet hos Stripe.', 4000)
+       where id = s.id;
+    else
+      update public.sager
+         set afviklet_kl = now(),
+             penge_fejl = case when penge_handling = 'refunder' then null
+                               else 'refunderet_hos_stripe' end,
+             intern_note = left(coalesce(intern_note || chr(10), '')
+                                || 'Betalingen er refunderet hos Stripe, før ankefristen var udløbet.', 4000)
+       where id = s.id;
+    end if;
+    insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+    values (public.bidhamr_system_id(), 'sag_lukket', 'sag', s.id, b.buyer_id,
+            'Afsluttet ved refusion - betalingen er refunderet hos Stripe');
+  end loop;
+
+  if coalesce(b.refusion_aarsag, '') <> 'beloeb_afviger' then
+    update public.trades
+       set status = 'annulleret', sag_aaben = false
+     where id = b.trade_id
+       and status in ('afventer_betaling','betaling_modtaget','pakke_sendt','modtaget');
+  end if;
+
+  return 'refunderet';
+end;
+$fn$;
+
+revoke all on function public.betaling_registrer_refunderet(text, text)
+  from public, anon, authenticated;
+grant execute on function public.betaling_registrer_refunderet(text, text) to service_role;
 
 -- ============================================================ Konto lukket permanent
 
@@ -1174,3 +1709,52 @@ $fn$;
 
 revoke all on function public.antal_aabne_sager() from public, anon;
 grant execute on function public.antal_aabne_sager() to authenticated;
+
+-- ============================================================ Suspension
+
+-- En suspenderet bruger (suspenderet og suspenderet_til tom eller i
+-- fremtiden - samme regel som login og place_bid) kan ikke oprette auktioner
+-- eller skrive i handelschatten, heller ikke med en session, der var logget
+-- ind foer suspensionen, eller direkte fra appen. Bud afvises allerede i
+-- place_bid. Staff-chatten (svar til BidHamr) er bevidst ikke blokeret.
+-- service_role og postgres (seed, migrationer) er undtaget.
+-- TG_ARGV[0] = kolonnen med brugerens id (auctions.bruger_id, messages.sender_id).
+create or replace function public.kraev_ikke_suspenderet()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_bruger uuid;
+begin
+  if coalesce(auth.role(), '') = 'service_role' then
+    return new;
+  end if;
+  if auth.uid() is null
+     and current_user in ('postgres', 'supabase_admin', 'service_role') then
+    return new;
+  end if;
+
+  v_bruger := (to_jsonb(new) ->> tg_argv[0])::uuid;
+  if exists (select 1 from public.users u
+              where u.id = v_bruger
+                and u.suspenderet
+                and (u.suspenderet_til is null or u.suspenderet_til > now())) then
+    raise exception 'Din konto er suspenderet.' using errcode = 'BHS02';
+  end if;
+  return new;
+end;
+$fn$;
+
+revoke all on function public.kraev_ikke_suspenderet() from public, anon, authenticated;
+
+drop trigger if exists auctions_kraev_ikke_suspenderet on public.auctions;
+create trigger auctions_kraev_ikke_suspenderet
+  before insert on public.auctions
+  for each row execute function public.kraev_ikke_suspenderet('bruger_id');
+
+drop trigger if exists messages_kraev_ikke_suspenderet on public.messages;
+create trigger messages_kraev_ikke_suspenderet
+  before insert on public.messages
+  for each row execute function public.kraev_ikke_suspenderet('sender_id');

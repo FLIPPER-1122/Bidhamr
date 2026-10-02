@@ -158,11 +158,13 @@ type Udfald = "koeber" | "saelger" | "lukket";
 function konsekvens(udfald: Udfald, type: SagType): string {
   if (udfald === "koeber") {
     return type === "svindel" || type === "bortkommet"
-      ? "Køberen refunderes straks – alt undtagen BidHamr Beskyttelse. Sagen afsluttes."
-      : "Køberen skal sende varen retur før refusion. BidHamr betaler returfragten. Sagen står som \"Afventer retur\", indtil du registrerer, at returpakken er afleveret – så refunderes køberen.";
+      ? "Køberen refunderes – alt undtagen BidHamr Beskyttelse – når ankefristen på 4 dage er udløbet. Indtil da kan en admin genåbne sagen."
+      : "Køberen skal sende varen retur før refusion. BidHamr betaler returfragten. Sagen står som \"Afventer retur\", indtil du registrerer, at returpakken er afleveret. Køberen refunderes, når returpakken er afleveret og ankefristen på 4 dage er udløbet.";
   }
-  if (udfald === "saelger") return "Pengene frigives straks til sælgeren. Sagen afsluttes.";
-  return "Sagen lukkes uden afgørelse. Frysningen fjernes, og handlen fortsætter normalt. Ingen penge flyttes.";
+  if (udfald === "saelger") {
+    return "Pengene frigives til sælgeren, når ankefristen på 4 dage er udløbet. Indtil da kan en admin genåbne sagen.";
+  }
+  return "Sagen lukkes uden afgørelse. Ingen penge flyttes. Frysningen fjernes efter ankefristen på 4 dage, og derefter fortsætter handlen normalt.";
 }
 
 const UDFALD_NAVN: Record<Udfald, string> = {
@@ -330,7 +332,7 @@ function ReturKnap({ sagId, onResultat }: { sagId: string; onResultat: (b: strin
       </button>
       <Dialog
         titel="Er returpakken afleveret?"
-        beskrivelse="Køberen refunderes straks – alt undtagen BidHamr Beskyttelse. Kan ikke fortrydes."
+        beskrivelse="Køberen refunderes – alt undtagen BidHamr Beskyttelse – når ankefristen på 4 dage efter afgørelsen er udløbet (straks, hvis den allerede er udløbet). Kan ikke fortrydes."
         aaben={aaben}
         onLuk={luk}
         laast={sender}
@@ -351,7 +353,7 @@ function ReturKnap({ sagId, onResultat }: { sagId: string; onResultat: (b: strin
             />
           </div>
           <Fejl fejl={fejl} />
-          <Knapper sender={sender} onLuk={luk} bekraeft="Ja, refundér køberen" />
+          <Knapper sender={sender} onLuk={luk} bekraeft="Ja, returpakken er afleveret" />
         </form>
       </Dialog>
     </>
@@ -387,7 +389,7 @@ function GenaabnKnap({ sagId, onResultat }: { sagId: string; onResultat: (b: str
       </button>
       <Dialog
         titel="Genåbn sagen?"
-        beskrivelse="Pengene fryses igen, og køber og sælger får besked. Kan kun lade sig gøre, hvis ingen penge er flyttet."
+        beskrivelse="Pengene fryses igen, og køber og sælger får besked. Inden for ankefristen annulleres den planlagte refusion eller udbetaling. Kan kun lade sig gøre, hvis ingen penge er flyttet."
         aaben={aaben}
         onLuk={luk}
         laast={sender}

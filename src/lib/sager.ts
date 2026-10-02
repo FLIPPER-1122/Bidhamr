@@ -34,9 +34,29 @@ export const SAG_BESKRIVELSE_MIN = 10;
 export const SAG_BESKRIVELSE_MAKS = 4000;
 export const SAG_BEGRUNDELSE_MAKS = 2000;
 
-// Frister (timer/dage). Spejlet i sag_opret.
+// Frister (timer/dage). Spejlet i sag_opret, sag_afgoer og handel_auto_frigiv.
 export const SAG_FRIST_TIMER_EFTER_MODTAGET = 48;
 export const SAG_BORTKOMMET_EFTER_DAGE = 7;
+// Pengene frigives automatisk 14 dage efter afsendelse, hvis køberen hverken
+// har trykket "modtaget" eller oprettet en sag.
+export const SAG_AUTO_FRIGIV_EFTER_DAGE = 14;
+// Ankefrist: pengene flyttes først 4 dage efter en afgørelse.
+export const SAG_ANKEFRIST_DAGE = 4;
+
+// Hvad der sker med pengene efter afgørelsen (sager.penge_handling).
+export type SagPengeHandling = "refunder" | "frigiv" | "ingen";
+
+// Hvorfor pengene ikke kunne flyttes efter ankefristen (sager.penge_fejl).
+// Kun til staff.
+export const SAG_PENGE_FEJL_NAVN: Record<string, string> = {
+  indsigelse: "køberen har en åben indsigelse hos sin bank",
+  ikke_mulig: "betalingen kan ikke refunderes (allerede refunderet eller overført)",
+  refusion: "betalingen er refunderet eller under refusion",
+  ikke_betalt: "betalingen er ikke betalt",
+  ingen_betaling: "handlen har ingen betaling",
+  handel_status: "handlen er ikke i et trin, hvor pengene kan frigives",
+  refunderet_hos_stripe: "betalingen blev refunderet hos Stripe før ankefristen udløb",
+};
 
 // Staff-chat om en sag: staff_samtaler.sag_type = 'sag', sag_id = sager.id.
 export const SAG_CHAT_TYPE = "sag";
