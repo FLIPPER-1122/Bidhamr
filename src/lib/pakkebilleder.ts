@@ -35,6 +35,7 @@ export const PAKKE_SEND_FEJL: Record<string, string> = {
   ikke_fundet: "Handlen findes ikke.",
   afhentning: "Varen skal hentes hos dig – der sendes ingen pakke.",
   allerede_sendt: "Pakken er allerede markeret som sendt.",
+  annulleret: "Handlen er annulleret, og du skal ikke sende varen.",
   billeder_kraeves:
     "Tag mindst ét billede af varen pakket i den åbne kasse og ét af den lukkede kasse med label.",
   ugyldige_billeder: "Et eller flere billeder er ugyldige. Tag dem igen.",

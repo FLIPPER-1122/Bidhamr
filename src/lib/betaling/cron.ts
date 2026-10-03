@@ -15,6 +15,9 @@
 //   5c. "Sag oprettet"-beskeder for sager, der ikke er notificeret (fx fra appen).
 //   6. Fristen overskredet: annullér handlen (+ Stripe), opret sag til admin,
 //      mail til køber og sælger.
+//   6b. Afsendelsesfrist: påmindelse til sælgeren efter dag 3 og 4; ikke
+//       sendt 5 dage efter betalingen -> handlen annulleres, og køberen
+//       refunderes fuldt via Stripe (kun forsendelse, ikke afhentning).
 //   7. Andenchance-tilbud: udløb efter 24 t, mails til sælger/byder.
 //   8. Betalte handler, der ikke er afsluttet efter 14 dage: markeres til admin.
 //   8b. Afhentningshandler, der ikke er hentet 7 dage efter betalingen:
@@ -31,6 +34,7 @@ import { koerNotifikationsCron } from "@/lib/notifikationer/cron";
 import { annullerUbetalte, behandlAndenchance } from "@/lib/betaling/ubetalt";
 import { afviklForfaldneSager, notificerNyeSager } from "@/lib/sagerServer";
 import { frigivAutomatisk, paamindKoeberOmModtagelse } from "@/lib/betaling/autoFrigiv";
+import { annullerIkkeSendte, paamindSaelgerOmAfsendelse } from "@/lib/betaling/afsendelsesfrist";
 import {
   betalingsPaamindelseMail,
   koeberAndenchanceAutobetaltMail,
@@ -93,6 +97,9 @@ export async function koerBetalingsCron() {
     paamindelserModtaget: 0,
     ubetalteAnnulleret: 0,
     ubetaltMails: 0,
+    afsendelsesPaamindelser: 0,
+    ikkeSendtAnnulleret: 0,
+    ikkeSendtRefunderet: 0,
     andenchanceUdloebne: 0,
     andenchanceMails: 0,
     ikkeAfsluttet: 0,
@@ -267,6 +274,16 @@ export async function koerBetalingsCron() {
     resultat.ubetaltMails = r.mails;
   } catch (err) {
     console.error("Annullering af ubetalte handler fejlede:", err);
+  }
+
+  // 6b) Afsendelsesfrist: først påmindelserne (dag 3 og 4), så annullering
+  //     + fuld refusion af handler, der ikke er sendt 5 dage efter
+  //     betalingen. Kaster aldrig.
+  resultat.afsendelsesPaamindelser = await paamindSaelgerOmAfsendelse();
+  {
+    const r = await annullerIkkeSendte();
+    resultat.ikkeSendtAnnulleret = r.annulleret;
+    resultat.ikkeSendtRefunderet = r.refunderet;
   }
 
   // 8) Betalte handler, der ikke er afsluttet efter 14 dage: til admin.
