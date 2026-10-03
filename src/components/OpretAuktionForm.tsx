@@ -12,18 +12,9 @@ import {
   STARTPRIS_ANBEFALING,
   VARIGHEDER,
   slutterKlFraVarighed,
+  auktionBilledeSti,
   type VarighedDage,
 } from "@/lib/auktionRegler";
-
-// crypto.randomUUID() findes kun i sikre kontekster (https eller localhost) –
-// adgang via en LAN-IP over http (fx fra en telefon på samme netværk) ville
-// ellers fejle her med en kryptisk TypeError.
-function lavId() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const router = useRouter();
@@ -161,7 +152,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       const billedeUrls: string[] = [];
 
       for (const file of billeder) {
-        const filnavn = `${aktuelBrugerId}/${lavId()}-${file.name}`;
+        const filnavn = auktionBilledeSti(aktuelBrugerId, file);
         const { error: uploadError } = await supabase.storage
           .from("auktion-billeder")
           .upload(filnavn, file);
@@ -213,9 +204,13 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
             ? "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg."
             : insertError.code === "22023"
               ? "Tjek startpris og varighed (3, 5, 7 eller 10 dage), og prøv igen."
-              : insertError.code === "BHS02"
-                ? "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
-                : "Auktionen kunne ikke oprettes. Prøv igen om lidt.",
+              : insertError.code === "BHA01"
+                ? "Et af billederne kunne ikke bruges. Fjern det, tilføj det igen, og prøv igen."
+                : insertError.code === "BHA02"
+                  ? "Vælg en kategori."
+                  : insertError.code === "BHS02"
+                    ? "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
+                    : "Auktionen kunne ikke oprettes. Prøv igen om lidt.",
         );
         setLoading(false);
         return;

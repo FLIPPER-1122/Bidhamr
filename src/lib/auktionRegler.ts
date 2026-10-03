@@ -1,6 +1,6 @@
 // Regler for auktioner. Deles af opret-formularen, redigering, budfeltet og
 // genopsætning (server action), så de altid er ens. Databasen håndhæver de
-// samme regler (supabase/migrations/20261004010000_auktionsregler.sql).
+// samme regler (supabase/migrations/20261004060000_auktionsregler.sql).
 
 // Varighed: 3, 5, 7 eller 10 dage, 7 forvalgt (Filip, 4. oktober 2026).
 export const VARIGHEDER = [
@@ -61,6 +61,31 @@ export const STARTPRIS_ANBEFALING =
 
 export const BINDENDE_BUD_TEKST = "Dit bud er bindende og kan ikke trækkes tilbage.";
 
+// Samme grænse som public.auktion_billeder_gyldige (1-10 billeder).
 export const MAKS_BILLEDER = 10;
 export const MAKS_TITEL = 120;
 export const MAKS_BESKRIVELSE = 500;
+
+// crypto.randomUUID() findes kun i sikre kontekster (https eller localhost) –
+// adgang via en LAN-IP over http (fx fra en telefon på samme netværk) ville
+// ellers fejle med en kryptisk TypeError.
+function lavBilledeId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+// Sti til et nyt billede i bucket'en auktion-billeder: <bruger-id>/<id>.<endelse>.
+// Databasen godtager kun filnavne af [A-Za-z0-9._-] (public.auktion_billeder_gyldige,
+// 20261004061000_auktionsregler_rettelser.sql). Det originale filnavn (mellemrum,
+// æøå osv.) bruges derfor ikke – kun en renset endelse.
+export function auktionBilledeSti(brugerId: string, fil: { name: string; type?: string }): string {
+  const fraNavn = fil.name.includes(".") ? (fil.name.split(".").pop() ?? "") : "";
+  const fraType = fil.type?.startsWith("image/") ? fil.type.slice("image/".length) : "";
+  const endelse =
+    [fraNavn, fraType]
+      .map((e) => e.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5))
+      .find((e) => e.length > 0) ?? "jpg";
+  return `${brugerId}/${lavBilledeId()}.${endelse}`;
+}
