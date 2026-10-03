@@ -116,7 +116,9 @@ export default async function AdminOpklaredeRapporter({
         <Link href="/admin/rapporter" className="font-medium text-brand hover:underline">
           Rapporter
         </Link>
-        .
+        . Behandlede anmeldelser slettes automatisk 48 timer efter behandling
+        (dog ikke, mens en handel eller sag på auktionen er i gang). Hvem der
+        behandlede dem, og noten, bevares i medarbejder-loggen.
       </p>
 
       <Suspense>

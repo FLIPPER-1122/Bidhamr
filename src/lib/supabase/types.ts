@@ -35,6 +35,10 @@ export interface Auction {
   status: AuctionStatus;
   skjult: boolean;
   slutter_kl: string;
+  // Sat, når auktionen gik fra aktiv til afsluttet/annulleret.
+  afsluttet_kl?: string | null;
+  // Sat 48 timer efter afsluttet handel. Arkiverede vises kun for parterne.
+  arkiveret_kl?: string | null;
   oprettet: string;
   kategori: string | null;
   postnummer: string | null;
