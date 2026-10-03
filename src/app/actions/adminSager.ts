@@ -49,6 +49,7 @@ import {
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
 import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
 import {
+  SAG_ANKEFRIST_DAGE,
   SAG_BEGRUNDELSE_MAKS,
   SAG_PENGE_FEJL_NAVN,
   type SagPengeHandling,
@@ -140,6 +141,12 @@ const KODE_FEJL: Record<string, string> = {
   anket_afgoer: "Sagen er anket, og afgørelsen på anken er endelig. Den kan ikke afgøres igen.",
   samme_medarbejder_anket:
     "Du afgjorde selv sagen eller anken. Kun en anden admin eller chef kan ændre den.",
+  // sag_afgoer i 'afventer_retur' (til sælger eller luk sagen).
+  bekraeft_retur_ikke_sendt_afgoer:
+    "Bekræft, at du har tjekket, at køberen ikke har sendt varen retur (heller ikke undervejs).",
+  // sag_retur_afleveret, mens ankefristen løber (teksten får datoen i
+  // registrerReturAfleveret).
+  ankefrist_loeber: "Ankefristen løber stadig. Returen kan først registreres, når den er udløbet.",
 };
 
 function kodeFejl(kode: string | undefined): string {
@@ -168,6 +175,8 @@ type RpcSvar = {
   // afviklet straks (afvikling = svaret fra sag_afvikl).
   endelig?: boolean | null;
   afvikling?: (SagAfvikling & { kode?: string; grund?: string | null }) | null;
+  // sag_retur_afleveret med kode 'ankefrist_loeber': hvornår fristen udløber.
+  ankefrist_kl?: string | null;
 };
 
 function revalider(sagId: string, tradeId?: string) {
@@ -294,6 +303,8 @@ export type SagDetalje = SagListeRaekke & {
   ankeIkkeTilladt: string | null;
   // Anken er afgjort (afgørelsen er endelig): tekst til admin, ellers null.
   ankeEndelig: string | null;
+  // Hvorfor returen ikke kan registreres endnu (ankefristen løber), ellers null.
+  returIkkeTilladt: string | null;
   log: { handling: string; aarsag: string; oprettetKl: string; medarbejderNavn: string | null }[];
 };
 
@@ -631,6 +642,20 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
       userId !== ankeRaekke?.behandlet_af &&
       userId !== s.afgjort_af;
 
+    // Sælgeren kan anke indtil afgjort_kl + ankefristen, men ikke når returen
+    // er registreret. Så længe fristen løber, og der ikke er anket, kan
+    // returen ikke registreres (sag_retur_afleveret tjekker igen:
+    // 'ankefrist_loeber'). Er anken afgjort, kan den registreres som før.
+    const ankefristSlut = s.afgjort_kl
+      ? Date.parse(s.afgjort_kl) + SAG_ANKEFRIST_DAGE * 24 * 60 * 60 * 1000
+      : Number.NaN;
+    const ankefristLoeber =
+      s.status === "afventer_retur" && !ankeRaekke && !Number.isNaN(ankefristSlut) && Date.now() < ankefristSlut;
+    const returIkkeTilladt =
+      kanAfgoere && ankefristLoeber
+        ? `Ankefristen løber til ${sagFristTekst(new Date(ankefristSlut).toISOString())}. Sælgeren kan anke indtil da, så returen kan først registreres derefter.`
+        : null;
+
     // Må den aktuelle medarbejder behandle anken? (databasen tjekker igen)
     let ankeIkkeTilladt: string | null = null;
     if (ankeVenter) {
@@ -696,7 +721,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         kan: {
           // Mens en anke venter, skal den afgøres først (databasen afviser også).
           afgoere: kanAfgoere && aaben && !ankeVenter && (!ankeAfgjort || kanAfgoereAnket),
-          registrereRetur: kanAfgoere && s.status === "afventer_retur" && !ankeVenter,
+          registrereRetur: kanAfgoere && s.status === "afventer_retur" && !ankeVenter && !ankefristLoeber,
           // Databasen (sag_genaabn) afviser, hvis pengene allerede er flyttet,
           // eller hvis sagen er anket. Inden for ankefristen annulleres den
           // planlagte flytning.
@@ -738,6 +763,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
           : null,
         ankeIkkeTilladt,
         ankeEndelig: ankeAfgjort ? ANKE_ENDELIG_TEKST : null,
+        returIkkeTilladt,
         log: logRaekker.map((l) => ({
           handling: l.handling,
           aarsag: l.aarsag,
@@ -932,6 +958,9 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
     const udfald = tekst(formData, "udfald");
     const begrundelse = tekst(formData, "begrundelse");
     const internNote = tekst(formData, "intern_note");
+    // Sagen venter på retur, og udfaldet er til sælger eller luk: staff har
+    // bekræftet, at køberen ikke har sendt varen retur (databasen kræver det).
+    const returIkkeSendt = tekst(formData, "retur_ikke_sendt") === "ja";
     if (!erUuid(sagId)) throw new BrugerFejl("Sagen findes ikke.");
     if (!["koeber", "saelger", "lukket"].includes(udfald)) throw new BrugerFejl(KODE_FEJL.ugyldigt_udfald);
     if (!begrundelse) throw new BrugerFejl(KODE_FEJL.begrundelse_mangler);
@@ -945,13 +974,20 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
       p_udfald: udfald,
       p_begrundelse: begrundelse,
       p_intern_note: internNote || null,
+      p_retur_ikke_sendt: returIkkeSendt,
     });
     if (error) throw new Error(error.message);
     const svar = (data ?? { kode: "" }) as RpcSvar;
     if (svar.kode !== "ok") {
       // Koder fra en anket sag har deres egen tekst her.
       const kode =
-        svar.kode === "anket" ? "anket_afgoer" : svar.kode === "samme_medarbejder" ? "samme_medarbejder_anket" : svar.kode;
+        svar.kode === "anket"
+          ? "anket_afgoer"
+          : svar.kode === "samme_medarbejder"
+            ? "samme_medarbejder_anket"
+            : svar.kode === "bekraeft_retur_ikke_sendt"
+              ? "bekraeft_retur_ikke_sendt_afgoer"
+              : svar.kode;
       throw new BrugerFejl(kodeFejl(kode));
     }
 
@@ -1012,6 +1048,11 @@ export async function registrerReturAfleveret(formData: FormData): Promise<Udfal
     });
     if (error) throw new Error(error.message);
     const svar = (data ?? { kode: "" }) as RpcSvar;
+    if (svar.kode === "ankefrist_loeber" && svar.ankefrist_kl) {
+      throw new BrugerFejl(
+        `Ankefristen løber til ${sagFristTekst(svar.ankefrist_kl)}. Sælgeren kan anke indtil da, så returen kan først registreres derefter.`,
+      );
+    }
     if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
 
     let besked: string;

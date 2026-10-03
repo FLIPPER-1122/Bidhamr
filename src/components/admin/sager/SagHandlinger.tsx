@@ -193,8 +193,14 @@ function AfgoerKnap({
   const id = useId();
   const [aaben, setAaben] = useState(false);
   const [udfald, setUdfald] = useState<Udfald | "">("");
+  const [returTjekket, setReturTjekket] = useState(false);
   const luk = () => setAaben(false);
   const { sender, fejl, setFejl, send } = useSend(onResultat, luk);
+
+  // Sagen venter på retur, og pengene frigives til sælgeren / frysningen
+  // fjernes: staff skal have tjekket, at køberen ikke har sendt varen retur
+  // (ellers kan sælgeren få både varen og pengene). Databasen kræver det også.
+  const kraeverReturTjek = afventerRetur && (udfald === "saelger" || udfald === "lukket");
 
   function indsend(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -202,9 +208,14 @@ function AfgoerKnap({
       setFejl("Vælg et udfald.");
       return;
     }
+    if (kraeverReturTjek && !returTjekket) {
+      setFejl("Bekræft, at du har tjekket, at køberen ikke har sendt varen retur (heller ikke undervejs).");
+      return;
+    }
     const fd = new FormData(e.currentTarget);
     fd.set("sagId", sagId);
     fd.set("udfald", udfald);
+    fd.set("retur_ikke_sendt", kraeverReturTjek && returTjekket ? "ja" : "nej");
     void send(() => afgoerSag(fd));
   }
 
@@ -215,6 +226,7 @@ function AfgoerKnap({
         onClick={() => {
           setFejl(null);
           setUdfald("");
+          setReturTjekket(false);
           setAaben(true);
         }}
         className="btn btn-primaer"
@@ -263,6 +275,19 @@ function AfgoerKnap({
                 ))}
             </div>
           </fieldset>
+          {kraeverReturTjek && (
+            <label className="flex cursor-pointer gap-3 rounded-xl border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
+              <input
+                type="checkbox"
+                checked={returTjekket}
+                onChange={(e) => setReturTjekket(e.target.checked)}
+                disabled={sender}
+                required
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
+              />
+              <span>Jeg har tjekket, at køberen ikke har sendt varen retur (heller ikke undervejs)</span>
+            </label>
+          )}
           <div>
             <label htmlFor={`${id}-begr`} className="block text-sm font-medium text-neutral-800">
               Begrundelse til køber og sælger
@@ -303,7 +328,7 @@ function AfgoerKnap({
             sender={sender}
             onLuk={luk}
             bekraeft={udfald ? `Bekræft: ${UDFALD_NAVN[udfald].toLowerCase()}` : "Bekræft"}
-            deaktiveret={!udfald}
+            deaktiveret={!udfald || (kraeverReturTjek && !returTjekket)}
           />
         </form>
       </Dialog>
@@ -919,6 +944,8 @@ export type SagHandlingerProps = {
   ankeEndelig: string | null;
   // Sagen venter på retur.
   afventerRetur: boolean;
+  // Hvorfor returen ikke kan registreres endnu (ankefristen løber), ellers null.
+  returIkkeTilladt: string | null;
   koeber: { id: string; navn: string; lukket: boolean };
   saelger: { id: string; navn: string; lukket: boolean };
   indpakning: IndpakningInfo;
@@ -936,6 +963,7 @@ export default function SagHandlinger({
   ankeIkkeTilladt,
   ankeEndelig,
   afventerRetur,
+  returIkkeTilladt,
 }: SagHandlingerProps) {
   const [resultat, setResultat] = useState<string | null>(null);
 
@@ -984,6 +1012,8 @@ export default function SagHandlinger({
           {kan.genaabne && <GenaabnKnap sagId={sagId} onResultat={setResultat} />}
         </div>
       )}
+
+      {returIkkeTilladt && <p className="text-sm text-neutral-600">{returIkkeTilladt}</p>}
 
       {(kan.vurdereIndpakning || indpakning.vurderet) && (
         <div className="flex flex-wrap items-center gap-3">

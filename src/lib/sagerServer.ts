@@ -132,10 +132,14 @@ export type SagAfgoerelseValg = {
   // Kun med endelig: pengene er flyttet nu (sag_afvikl gennemførte). Ellers
   // flyttes de, så snart det er muligt (cron prøver igen).
   flyttetNu?: boolean;
+  // Til cron: kan nøglen ikke claimes af ukendt årsag, sendes beskeden ikke
+  // (se SendOptions.springOverVedClaimFejl) - næste kørsel prøver igen.
+  springOverVedClaimFejl?: boolean;
 };
 
 // Besked til køber og sælger om en sag. Begrundelsen fra staff medsendes
 // (den er skrevet til parterne). Beløb nævnes aldrig. Kaster aldrig.
+// Returnerer true, når mindst én ny besked faktisk er leveret nu.
 export async function notificerSagAfgoerelse(
   sagId: string,
   tradeId: string,
@@ -148,11 +152,11 @@ export async function notificerSagAfgoerelse(
   // sager.penge_flyttes_efter_kl - hvornår pengene tidligst flyttes.
   fristKl: string | null = null,
   valg: SagAfgoerelseValg = {},
-): Promise<void> {
+): Promise<boolean> {
   try {
     const admin = createAdminClient();
     const h = await handelOgTitel(admin, tradeId);
-    if (!h) return;
+    if (!h) return false;
     const link = sagLink(tradeId);
     const data = { trade_id: tradeId, sag_id: sagId };
     const endelig = !!valg.endelig;
@@ -224,22 +228,38 @@ export async function notificerSagAfgoerelse(
     // En endelig afgørelse efter anke har samme version som den oprindelige
     // afgørelse - egen nøgle, så den ikke bliver set som en dublet.
     const n = `sag_${udfald}${endelig ? "_endelig" : ""}`;
-    await send(h.buyer_id, "sag", {
-      titel: tekst.koeber[0],
-      tekst: tekst.koeber[1],
-      link,
-      data,
-      noegle: `${n}_koeber:${sagId}:${version}`,
-    });
-    await send(h.seller_id, "sag", {
-      titel: tekst.saelger[0],
-      tekst: tekst.saelger[1],
-      link,
-      data,
-      noegle: `${n}_saelger:${sagId}:${version}`,
-    });
+    const opts = { springOverVedClaimFejl: !!valg.springOverVedClaimFejl };
+    const r1 = await send(
+      h.buyer_id,
+      "sag",
+      {
+        titel: tekst.koeber[0],
+        tekst: tekst.koeber[1],
+        link,
+        data,
+        noegle: `${n}_koeber:${sagId}:${version}`,
+      },
+      opts,
+    );
+    const r2 = await send(
+      h.seller_id,
+      "sag",
+      {
+        titel: tekst.saelger[0],
+        tekst: tekst.saelger[1],
+        link,
+        data,
+        noegle: `${n}_saelger:${sagId}:${version}`,
+      },
+      opts,
+    );
+    // Kun nye, faktisk leverede beskeder tæller (ikke dubletter fra en
+    // tidligere kørsel og ikke sprungne).
+    const nyLeveret = (r: SendResultat) => !r.dublet && !r.sprunget && (r.klokke || r.mail || r.push);
+    return nyLeveret(r1) || nyLeveret(r2);
   } catch (err) {
     console.error("Notifikation om afgørelse fejlede:", sagId, err);
+    return false;
   }
 }
 
@@ -441,8 +461,19 @@ export async function notificerReturKanSendes(): Promise<number> {
   let antal = 0;
   for (const s of sager) {
     if (anket.has(s.id) || !erSagType(s.type)) continue;
-    await notificerSagAfgoerelse(s.id, s.trade_id, s.type, "retur_kan_sendes", null, Number(s.genaabnet_antal ?? 0));
-    antal++;
+    // Kun faktisk leverede (eller tidligere sendte) tælles. En nøgle, der
+    // ikke kunne claimes, springes over og prøves igen ved næste kørsel.
+    const ok = await notificerSagAfgoerelse(
+      s.id,
+      s.trade_id,
+      s.type,
+      "retur_kan_sendes",
+      null,
+      Number(s.genaabnet_antal ?? 0),
+      null,
+      { springOverVedClaimFejl: true },
+    );
+    if (ok) antal++;
   }
   return antal;
 }
