@@ -36,7 +36,7 @@ export type NotifikationTypeInfo = {
 export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "vundet", navn: "Vundet eller solgt", beskrivelse: "Når du vinder en auktion, eller din auktion bliver solgt.", paakraevet: true },
   { type: "betalingsfrist", navn: "Betalingsfrist", beskrivelse: "Påmindelser om at betale, og hvis en handel bliver annulleret, fordi den ikke blev betalt.", paakraevet: true },
-  { type: "betaling_modtaget", navn: "Køberen har betalt", beskrivelse: "Når køberen har betalt, og du skal sende varen.", paakraevet: true },
+  { type: "betaling_modtaget", navn: "Køberen har betalt", beskrivelse: "Når køberen har betalt, og du skal sende varen – eller når en afhentning skal aftales.", paakraevet: true },
   { type: "pakke_sendt", navn: "Pakken er sendt", beskrivelse: "Når sælgeren har sendt din vare.", paakraevet: true },
   { type: "pakke_leveret", navn: "Pakken er kommet frem", beskrivelse: "Når pakken er kommet frem til køberen.", paakraevet: true },
   { type: "udbetaling", navn: "Udbetaling", beskrivelse: "Når pengene er sendt til din udbetalingskonto, eller du mangler at oprette den.", paakraevet: true },

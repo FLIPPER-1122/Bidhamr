@@ -17,6 +17,8 @@
 //      mail til køber og sælger.
 //   7. Andenchance-tilbud: udløb efter 24 t, mails til sælger/byder.
 //   8. Betalte handler, der ikke er afsluttet efter 14 dage: markeres til admin.
+//   8b. Afhentningshandler, der ikke er hentet 7 dage efter betalingen:
+//       markeres til staff. Ingen automatisk frigivelse ved afhentning.
 //   Trin 4 sender også påmindelser til sælgere uden udbetalingskonto
 //   (straks, efter 3 og 7 dage) og markerer til admin efter 7 dage.
 //
@@ -94,6 +96,7 @@ export async function koerBetalingsCron() {
     andenchanceUdloebne: 0,
     andenchanceMails: 0,
     ikkeAfsluttet: 0,
+    ikkeAfhentet: 0,
   };
 
   // 1) Luk auktioner og opret handel + betaling.
@@ -272,6 +275,13 @@ export async function koerBetalingsCron() {
   );
   if (haengFejl) console.error("betaling_marker_ikke_afsluttet fejlede:", haengFejl);
   resultat.ikkeAfsluttet = Number(haengende ?? 0);
+
+  // 8b) Afhentning ikke gennemført 7 dage efter betalingen: til staff.
+  const { data: ikkeHentet, error: hentFejl } = await admin.rpc(
+    "afhentning_marker_ikke_hentet",
+  );
+  if (hentFejl) console.error("afhentning_marker_ikke_hentet fejlede:", hentFejl);
+  resultat.ikkeAfhentet = Number(ikkeHentet ?? 0);
 
   // 7) Andenchance-tilbud: udløb og mails.
   try {

@@ -16,6 +16,7 @@ type HandelRaekke = {
   seller_id: string;
   buyer_id: string;
   status: string;
+  afhentning: boolean;
 };
 
 async function hentHandel(tradeId: string) {
@@ -30,7 +31,7 @@ async function hentHandel(tradeId: string) {
   // slet ikke hentes for uvedkommende.
   const { data: handel } = await supabase
     .from("trades")
-    .select("id, auction_id, seller_id, buyer_id, status")
+    .select("id, auction_id, seller_id, buyer_id, status, afhentning")
     .eq("id", tradeId)
     .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
     .maybeSingle<HandelRaekke>();
@@ -47,6 +48,9 @@ export async function sendPakke(tradeId: string, tracking: string) {
 
   if (handel.seller_id !== user.id) {
     return { fejl: "Kun sælgeren kan markere pakken som sendt." };
+  }
+  if (handel.afhentning) {
+    return { fejl: "Varen skal hentes hos dig – der sendes ingen pakke." };
   }
   if (handel.status !== "betaling_modtaget") {
     return { fejl: "Pakken er allerede markeret som sendt." };
