@@ -59,7 +59,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [~] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen
 - [~] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem
 - [~] Afhentning hos sælger: køber giver stjerner og viser koden → pengene frigives med det samme
-- [ ] Krævede pakkebilleder i "Send pakke" (kamera direkte, ikke kamerarulle): varen indpakket i åben kasse + lukket kasse med label
+- [~] Krævede pakkebilleder i "Send pakke" (kamera direkte, ikke kamerarulle): varen indpakket i åben kasse + lukket kasse med label
 - [~] Sag kræver billeder fra køber (pakke, label, indhold) inden for 48 timer
 - [~] Svindel-undtagelse: åbenlys svindel giver altid en sag, med eller uden beskyttelse
 - [~] Permanent lukning af konti ved svindel (køber eller sælger)
