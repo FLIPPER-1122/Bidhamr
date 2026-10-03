@@ -46,7 +46,7 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 - Skadet vare **uden BidHamr Beskyttelse**: køber og sælger må selv blive enige. BidHamr blander sig ikke.
 - Skadet vare **med BidHamr Beskyttelse**: BidHamr løser sagen for køberen. Det er præcis det, beskyttelsen betales for. Pakkebillederne bruges til at vurdere, om sælgeren har pakket ordentligt.
 - Ingen af parterne hæftes for ekstra penge.
-- **Advarselssystem for dårlig indpakning:** 1. gang = påmindelse til sælgeren. 2. gang og derefter = en advarsel hver gang. **3 advarsler = profilen lukkes permanent.**
+- **Advarselssystem for dårlig indpakning:** 1. gang = påmindelse til sælgeren. 2. gang og derefter = en advarsel hver gang. **3 advarsler = profilen lukkes permanent.** En staff skal altid godkende lukningen – den sker aldrig automatisk (Filip, 3. oktober 2026).
 - ÅBENT: Kan GLS' målte vægt bruges som bevis? Spørges på møde med GLS/Shipmondo.
 - NOTE: Tjek med advokat, om platformen alligevel har pligt til at gribe ind ved åbenlys svindel.
 - ÅBENT: Hvad gør vi ved sælgere, der **bevidst lyver** i deres auktion (svindel)? Ikke besluttet endnu.
