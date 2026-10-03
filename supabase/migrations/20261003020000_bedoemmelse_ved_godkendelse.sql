@@ -34,7 +34,7 @@
 -- ============================================================ 1. ratings.trade_id
 
 alter table public.ratings
-  add column if not exists trade_id uuid references public.trades(id) on delete cascade;
+  add column if not exists trade_id uuid references public.trades(id) on delete restrict;
 
 -- Gamle bedoemmelser kobles til handlen, naar der er praecis een handel med
 -- samme auktion, koeber og saelger (flere handler pr. auktion er mulige efter
@@ -55,13 +55,12 @@ update public.ratings r
 create unique index if not exists ratings_trade_id_unik
   on public.ratings (trade_id) where trade_id is not null;
 
--- Kommentaren er offentlig paa profilen. Graensen haandhaeves ogsaa her, saa
--- ingen vej uden om funktionen kan gemme romaner. not valid: gamle raekker
--- tjekkes ikke (de kunne vaere laengere).
+-- Kommentarens laengde (hoejst 1000 tegn) tjekkes i
+-- handel_godkend_med_bedoemmelse og i server action - ikke som constraint paa
+-- tabellen, for en "not valid"-check ville faa admins skjul-opdatering af
+-- gamle, lange kommentarer til at fejle. Gamle kommentarer aendres ikke.
+-- (Fjerner constrainten, hvis en tidligere udgave af filen naaede at oprette den.)
 alter table public.ratings drop constraint if exists ratings_kommentar_laengde;
-alter table public.ratings
-  add constraint ratings_kommentar_laengde
-  check (kommentar is null or char_length(kommentar) <= 1000) not valid;
 
 -- ============================================================ 2. RLS og rettigheder
 
@@ -117,7 +116,8 @@ begin
      or b.status <> 'betalt'
      or b.refusion_anmodet_kl is not null
      or b.frigivet_kl is not null  -- nyt: frigivet uden koeberen = ingen bedoemmelse
-     or public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status) then
+     or public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status)
+     or public.sag_holder_pengene(p_trade) then  -- nyt: en sag holder pengene
     return 'ikke_mulig';
   end if;
 
