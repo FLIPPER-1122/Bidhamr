@@ -21,6 +21,8 @@ import { sagTid } from "@/components/sager/visning";
 import { hentMinSagSamtale } from "@/app/actions/staffChat";
 import { hentAfhentningInfo } from "@/app/actions/afhentning";
 import { VisAfhentningskode, IndtastAfhentningskode } from "@/components/Afhentning";
+import { hentMinKvittering } from "@/lib/betaling/kvittering";
+import { KvitteringBoks } from "@/components/Kvittering";
 
 // En sag kan tidligst oprettes, når pakken er sendt, og vises også efter
 // afgørelsen (handlen kan da være leveret eller annulleret).
@@ -146,6 +148,11 @@ export default async function HandelDetaljePage({
     afhentning && handel.status === "betaling_modtaget"
       ? await hentAfhentningInfo(handel.id)
       : null;
+
+  // Kvittering (køber, når betalingen er modtaget) / afregning (sælger, når
+  // pengene er frigivet). null, indtil den findes.
+  const kvittering =
+    handel.status === "afventer_betaling" ? null : await hentMinKvittering(handel.id);
 
   return (
     <main className="flex-1 bg-white px-4 py-8 sm:px-8">
@@ -442,6 +449,8 @@ export default async function HandelDetaljePage({
             </p>
           </div>
         )}
+
+        {kvittering && <KvitteringBoks k={kvittering} />}
 
         {/* Køberen kan oprette en sag */}
         {muligheder && !muligheder.harSag && (muligheder.typer.length > 0 || muligheder.kraeverBeskyttelse.length > 0) && (

@@ -6,6 +6,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
 import { overfoerTilSaelger, refunderBetaling } from "@/lib/betaling/stripeBetaling";
+import { sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 import {
   SAG_TYPE_NAVN,
   type SagPengeHandling,
@@ -234,6 +235,8 @@ export async function udfoerSagAfvikling(a: SagAfvikling): Promise<string> {
       status = "refusion_fejlede";
     }
   } else if (a.handling === "frigiv" && a.betaling_id) {
+    // Afregning til sælgeren før overførslen (kaster aldrig).
+    await sendSaelgerAfregning(a.trade_id, "sag");
     try {
       status = await overfoerTilSaelger(a.betaling_id);
     } catch (err) {

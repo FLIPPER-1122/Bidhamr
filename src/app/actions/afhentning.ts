@@ -14,6 +14,7 @@ import {
   hentBetalingForHandel,
   overfoerTilSaelger,
 } from "@/lib/betaling/stripeBetaling";
+import { sendKoeberAfsluttet, sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 
 const KOMMENTAR_MAKS = 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -170,6 +171,11 @@ export async function bekraeftAfhentning(
     default:
       return { fejl: "Handlen kan ikke afsluttes lige nu. Genindlæs siden." };
   }
+
+  // Afregning til sælgeren og "Tak for handlen" til køberen (idempotente
+  // nøgler pr. handel; kaster aldrig).
+  await sendSaelgerAfregning(tradeId, "afhentet");
+  await sendKoeberAfsluttet(tradeId, "afhentet");
 
   // Pengene overføres til sælgerens Stripe Connect-konto. Fejler det (eller
   // har sælgeren ingen aktiv konto endnu), prøver cron og account.updated-

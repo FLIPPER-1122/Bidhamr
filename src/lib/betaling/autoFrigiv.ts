@@ -8,11 +8,12 @@ import "server-only";
 // Databasen afgør og frigiver atomisk (handel_auto_frigiv - respekterer
 // frysning, åbne/afgjorte sager, indsigelse og refusion). Bagefter overføres
 // pengene som ved køberens godkendelse (overfoerTilSaelger), og køberen får
-// besked. Sælgeren får "Din udbetaling er på vej" fra overførslen (eller
-// påmindelsen om udbetalingskonto). Kaster aldrig.
+// besked. Sælgeren får afregningen (med grunden) og "Din udbetaling er på
+// vej" fra overførslen (eller påmindelsen om udbetalingskonto). Kaster aldrig.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
 import { indsigelseBlokerer, overfoerTilSaelger } from "@/lib/betaling/stripeBetaling";
+import { sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 import { SAG_AUTO_FRIGIV_EFTER_DAGE } from "@/lib/sager";
 
 type AutoFrigivet = {
@@ -41,6 +42,11 @@ export async function frigivAutomatisk(): Promise<number> {
   const titler = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
 
   for (const f of liste) {
+    // Før overførslen, så afregningen får grunden med (kaster aldrig).
+    await sendSaelgerAfregning(
+      f.trade_id,
+      f.grund === "48_timer" ? "automatisk_48" : "automatisk_14",
+    );
     try {
       await overfoerTilSaelger(f.betaling_id);
     } catch (err) {

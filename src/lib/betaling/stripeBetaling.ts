@@ -39,6 +39,12 @@ import {
   sideUrl,
 } from "@/lib/mails/handel";
 import { send } from "@/lib/notifikationer/send";
+import {
+  koeberKvittering,
+  sendKoeberKvittering,
+  sendRefusionForsinket,
+  sendSaelgerAfregning,
+} from "@/lib/betaling/handelsbeskeder";
 
 export type BetalingRaekke = {
   id: string;
@@ -394,7 +400,8 @@ async function efterBetalt(paymentIntentId: string) {
         tekst: `Aftal afhentning af "${titel}" med sælgeren – vis koden ved afhentning.`,
         link,
         data: { trade_id: b.trade_id },
-        mail: koeberAfhentningMail(titel, b.trade_id),
+        // Kvitteringen for købet er en del af afhentningsmailen.
+        mail: koeberAfhentningMail(titel, b.trade_id, await koeberKvittering(b.trade_id)),
         noegle: `afhentning_betalt:${b.trade_id}`,
       });
       return;
@@ -407,6 +414,8 @@ async function efterBetalt(paymentIntentId: string) {
       mail: saelgerBetaltMail(titel, b.trade_id),
       noegle: `betalt:${b.trade_id}`,
     });
+    // Kvittering til køberen med beløbene opdelt (kaster aldrig).
+    if (t?.buyer_id) await sendKoeberKvittering(b.trade_id, t.buyer_id as string);
   } catch (err) {
     console.error("Mail om modtaget betaling fejlede:", err);
   }
@@ -513,6 +522,10 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
     .single<{ status: string; sag_aaben: boolean | null }>();
   if (!handel || handel.status === "annulleret") return "annulleret";
   if (handel.sag_aaben) return "sag_aaben";
+
+  // Handlen er frigivet: afregning til sælgeren, hvis kalderen ikke allerede
+  // har sendt den med grunden (én gang pr. handel - kaster aldrig).
+  await sendSaelgerAfregning(b.trade_id, "standard");
 
   const profil = await hentProfil(b.seller_id);
   if (profil?.connect_frakoblet_kl) {
@@ -1049,6 +1062,8 @@ export async function spejlRefusionsfejl(refundId: string): Promise<string> {
       p_besked: besked,
     });
     if (error) throw new Error(`betaling_marker_opmaerksomhed: ${error.message}`);
+    // Køberen får besked om, at pengene er forsinket (én gang pr. refusion).
+    await sendRefusionForsinket(b.id, refund.id);
     return "markeret";
   }
   const { data: afv } = await admin
@@ -1098,7 +1113,9 @@ async function refusionFejletEfterRefunderet(
     p_refund: refund.id,
   });
   if (error) throw new Error(`betaling_refusion_fejlet: ${error.message}`);
-  return String(data) === "genaabnet" ? "refusion_genaabnet" : "allerede_refunderet";
+  if (String(data) !== "genaabnet") return "allerede_refunderet";
+  await sendRefusionForsinket(b.id, refund.id);
+  return "refusion_genaabnet";
 }
 
 // Spejler en indsigelse (chargeback) fra Stripe. Disputen hentes frisk, så

@@ -2,6 +2,15 @@
 // og server actions (pakke sendt). Selve layoutet ligger i ./layout, så alle
 // mails ser ens ud.
 import { bygMail, escapeHtml, sideUrl, type InfoRaekke, type MailLayoutInput } from "./layout";
+import {
+  KVITTERING_IKKE_FAKTURA,
+  KVITTERING_STRIPE,
+  kvitteringDato,
+  kvitteringLinjer,
+  type KoeberKvittering,
+  type Kvittering,
+  type SaelgerKvittering,
+} from "@/lib/kvittering";
 
 export { escapeHtml, sideUrl };
 
@@ -149,8 +158,13 @@ export function saelgerBetaltAfhentningMail(titel: string, tradeId: string) {
   });
 }
 
-// Kun afhentning: køberen henter varen og viser sin kode.
-export function koeberAfhentningMail(titel: string, tradeId: string) {
+// Kun afhentning: køberen henter varen og viser sin kode. Med kvittering
+// (beløbene opdelt), når den kunne hentes.
+export function koeberAfhentningMail(
+  titel: string,
+  tradeId: string,
+  kvittering: KoeberKvittering | null = null,
+) {
   return handelsMail(`Aftal afhentning: ${titel}`, {
     preheader: "Aftal afhentning med sælgeren – vis koden ved afhentning.",
     overskriftHtml: "Aftal afhentning med sælgeren",
@@ -159,8 +173,77 @@ export function koeberAfhentningMail(titel: string, tradeId: string) {
       "Din afhentningskode finder du på handelssiden. Du får den, når du har givet sælgeren 1-5 stjerner. Vis koden til sælgeren, når du henter varen.",
       "Tjek varen, før du viser koden. Når sælgeren har tastet koden ind, får sælgeren pengene med det samme, og du kan ikke klage over handlen bagefter.",
       "<strong>Vis kun koden, når du står med varen i hånden. Send den aldrig i chatten.</strong>",
+      ...(kvittering
+        ? [
+            "Herunder er din kvittering for købet.",
+            `${escapeHtml(KVITTERING_IKKE_FAKTURA)} ${escapeHtml(KVITTERING_STRIPE)}`,
+          ]
+        : []),
     ],
+    info: kvittering ? kvitteringInfo(kvittering) : undefined,
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// --- Kvittering og afregning ---------------------------------------------------
+
+// Fælles infoboks: vare, modpart, dato, handels-id og beløbene opdelt
+// (samme opdeling som på handelssiden).
+function kvitteringInfo(k: Kvittering): InfoRaekke[] {
+  return [
+    vare(k.titel),
+    {
+      noegle: k.rolle === "koeber" ? "Sælger" : "Køber",
+      vaerdiHtml: escapeHtml(k.modpartNavn),
+    },
+    {
+      noegle: k.rolle === "koeber" ? "Betalt" : "Afsluttet",
+      vaerdiHtml: escapeHtml(kvitteringDato(k.dato)),
+    },
+    { noegle: "Handels-id", vaerdiHtml: escapeHtml(k.handelId) },
+    ...kvitteringLinjer(k).map((l) => ({
+      noegle: l.tekst,
+      vaerdiHtml: `${l.fratraek ? "−&nbsp;" : ""}${kronerFraOere(l.oere)}&nbsp;kr`,
+      fremhaev: l.fremhaev,
+    })),
+  ];
+}
+
+// Køberen har betalt (forsendelse). Afhentning får kvitteringen i
+// koeberAfhentningMail i stedet.
+export function koeberKvitteringMail(k: KoeberKvittering) {
+  return handelsMail(`Kvittering for dit køb: ${k.titel}`, {
+    preheader: `Du har betalt ${kronerFraOere(k.totalOere)} kr. Sælgeren får besked om at sende varen.`,
+    overskriftHtml: "Kvittering for dit køb",
+    afsnitHtml: [
+      `Tak for din betaling for <strong>${escapeHtml(k.titel)}</strong>. Sælgeren får besked om at sende varen, og du får besked, når pakken er på vej.`,
+      STRIPE_KOEBER,
+      escapeHtml(KVITTERING_IKKE_FAKTURA),
+    ],
+    info: kvitteringInfo(k),
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${k.handelId}`) },
+  });
+}
+
+// Handlen er afsluttet, og pengene er frigivet til sælgeren. overskrift og
+// indledning er ren tekst og escapes her.
+export function saelgerAfregningMail(
+  k: SaelgerKvittering,
+  overskrift: string,
+  indledning: string,
+) {
+  return handelsMail(`${overskrift}: ${k.titel}`, {
+    preheader: `Du får ${kronerFraOere(k.udbetalingOere)} kr udbetalt for ${k.titel}.`,
+    overskriftHtml: escapeHtml(overskrift),
+    afsnitHtml: [
+      escapeHtml(indledning),
+      `Du får salgsprisen minus 5 % i sælgergebyr. Pengene overføres til din udbetalingskonto hos vores betalingspartner Stripe.${
+        k.afhentning ? "" : " Fragten betaler køberen, og den går til fragtfirmaet – den indgår ikke i din udbetaling."
+      }`,
+      escapeHtml(KVITTERING_IKKE_FAKTURA),
+    ],
+    info: kvitteringInfo(k),
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${k.handelId}`) },
   });
 }
 

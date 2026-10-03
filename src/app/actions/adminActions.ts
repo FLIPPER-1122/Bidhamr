@@ -14,6 +14,11 @@ import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
+import {
+  sendAdminRefunderet,
+  sendKoeberAfsluttet,
+  sendSaelgerAfregning,
+} from "@/lib/betaling/handelsbeskeder";
 
 // --- Fejlhaandtering ---------------------------------------------------------
 // Next skjuler beskeden fra fejl, der kastes i server actions, i produktion.
@@ -806,6 +811,11 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
   if (error) throw new Error(error.message);
   if (!frigivet) throw new BrugerFejl("Handlen er allerede afsluttet.");
 
+  // Afregning til sælgeren ("Pengene er frigivet") og besked til køberen.
+  // Idempotente nøgler pr. handel; kaster aldrig.
+  await sendSaelgerAfregning(tradeId, "bidhamr");
+  await sendKoeberAfsluttet(tradeId, "bidhamr");
+
   let overfoersel: string;
   try {
     const r = await overfoerTilSaelger(betaling.id);
@@ -915,6 +925,10 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
         "Handlen kan ikke refunderes: den er ikke betalt, allerede refunderet eller pengene er overført til sælger.",
       );
     }
+    // Refusionen er claimet, og handlen er annulleret: køberen og sælgeren
+    // får besked nu - også hvis Stripe-kaldet nedenfor fejler og skal prøves
+    // igen. Idempotente nøgler pr. handel; kaster aldrig.
+    await sendAdminRefunderet(tradeId);
     let resultat: string;
     try {
       resultat = await refunderBetaling(betaling.id);

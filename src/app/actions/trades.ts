@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { pakkeSendtMail } from "@/lib/mails/handel";
 import { send } from "@/lib/notifikationer/send";
+import { sendKoeberAfsluttet, sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 import {
   hentBetalingForHandel,
   indsigelseBlokerer,
@@ -262,6 +263,12 @@ export async function godkendPakke(
         GODKEND_FEJL[kode as string] ?? "Noget gik galt. Prøv igen om lidt.",
     };
   }
+
+  // Beskeder: sælgeren får "Køberen har godkendt varen" med afregningen,
+  // køberen "Tak for handlen". Før overførslen, så sælgerens afregning får
+  // den rigtige grund. Idempotente nøgler pr. handel; kaster aldrig.
+  await sendSaelgerAfregning(tradeId, "godkendt");
+  await sendKoeberAfsluttet(tradeId, "godkendt");
 
   // Pengene overføres til sælgerens Stripe Connect-konto. Fejler det (eller
   // har sælgeren ingen aktiv konto endnu), prøver cron og account.updated-
