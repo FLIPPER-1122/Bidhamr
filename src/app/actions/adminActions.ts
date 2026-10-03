@@ -208,6 +208,16 @@ function validerAdvarselTekster(begrundelseBruger: string, internNote: string) {
   }
 }
 
+// Fejlkoder fra admin_advar_bruger oversat til dansk.
+const ADVAR_BRUGER_FEJL: Record<string, string> = {
+  ...ADVARSEL_TEKST_FEJL,
+  ingen_adgang: "Du har ikke adgang til at give advarsler.",
+  ugyldig_bruger: "Brugeren blev ikke fundet.",
+  sig_selv: "Du kan ikke give dig selv en advarsel.",
+  staff: "Medarbejdere, admins og chefer kan ikke få en advarsel herfra.",
+  inhabil: "Du kan ikke give denne bruger en advarsel, fordi I har handlet med hinanden.",
+};
+
 // formData: userId, begrundelse_bruger (påkrævet), aarsag (intern note, valgfri).
 async function advarUserImpl(formData: FormData): Promise<void> {
   const userId = ((formData.get("userId") as string) ?? "").trim();
@@ -219,22 +229,23 @@ async function advarUserImpl(formData: FormData): Promise<void> {
   afvisSystembruger(userId);
   validerAdvarselTekster(begrundelseBruger, internNote);
 
-  const { error } = await admin.from("advarsler").insert({
-    bruger_id: userId,
-    oprettet_af: staffId,
-    aarsag: internNote || null,
-    begrundelse_bruger: begrundelseBruger,
+  // Databasen (admin_advar_bruger, 20261003051000_advarsel_inhabil.sql)
+  // tjekker rolle, sig selv, systembruger, staff-konti, inhabilitet og
+  // teksterne, indsætter advarslen og logger i moderation_log.
+  const { data, error } = await admin.rpc("admin_advar_bruger", {
+    p_medarbejder: staffId,
+    p_bruger: userId,
+    p_begrundelse_bruger: begrundelseBruger,
+    p_intern_note: internNote || null,
   });
   if (error) throw new Error(error.message);
-
-  await logModeration(admin, {
-    medarbejder_id: staffId,
-    handling: "advarsel",
-    maal_type: "bruger",
-    maal_id: userId,
-    bruger_id: userId,
-    aarsag: `${internNote ? `${internNote} | ` : ""}Til brugeren: ${begrundelseBruger}`,
-  });
+  const kode = (data as { kode?: string } | null)?.kode;
+  // allerede_givet = dobbeltklik; advarslen findes allerede, så det er en succes.
+  if (kode !== "ok" && kode !== "allerede_givet") {
+    const tekst = kode ? ADVAR_BRUGER_FEJL[kode] : undefined;
+    if (tekst) throw new BrugerFejl(tekst);
+    throw new Error(`admin_advar_bruger returnerede ${kode ?? "intet"}`);
+  }
 
   // Brugeren får besked (klokke/mail/push). Cron samler op, hvis det fejler.
   after(() => notificerAdvarsler());
