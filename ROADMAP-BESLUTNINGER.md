@@ -119,6 +119,7 @@ Brugeren får besked når:
 - **Kun køberen bedømmer sælgeren.** Sælgeren kan ikke bedømme køberen.
 - Bedømmelse kan **kun** gives i forbindelse med godkendelse af en handel. Ingen andre steder eller tidspunkter.
 - Frigives pengene automatisk (køber godkender aldrig), får sælgeren **ingen bedømmelse** for den handel.
+- **Links i kommentarer er tilladt** (Filip, 3. oktober 2026). Kommentaren må højst være 1000 tegn.
 - FEJL at rette: submitRating tjekker ikke, at man faktisk var køber i handlen. I dag kan enhver bedømme enhver. Skal låses, så kun køberen på en handel kan bedømme den handels sælger, én gang.
 
 ## Midlertidige beslutninger (1. oktober 2026)
