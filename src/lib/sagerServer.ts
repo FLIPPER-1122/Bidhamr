@@ -461,7 +461,7 @@ export async function notificerReturKanSendes(): Promise<number> {
   let antal = 0;
   for (const s of sager) {
     if (anket.has(s.id) || !erSagType(s.type)) continue;
-    // Kun faktisk leverede (eller tidligere sendte) tælles. En nøgle, der
+    // Kun beskeder, der faktisk leveres nu, tælles (dubletter tælles ikke). En nøgle, der
     // ikke kunne claimes, springes over og prøves igen ved næste kørsel.
     const ok = await notificerSagAfgoerelse(
       s.id,
