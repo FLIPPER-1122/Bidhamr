@@ -36,7 +36,15 @@ import {
   refunderBetaling,
 } from "@/lib/betaling/stripeBetaling";
 import { aabnChat } from "@/app/actions/staffChat";
-import { notificerSagAfgoerelse, sagFristTekst, type SagUdfaldBesked } from "@/lib/sagerServer";
+import {
+  notificerAnkeAfgjort,
+  notificerSagAfgoerelse,
+  sagFristTekst,
+  udfoerSagAfvikling,
+  type AnkeSlutUdfald,
+  type SagAfvikling,
+  type SagUdfaldBesked,
+} from "@/lib/sagerServer";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
 import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
 import {
@@ -47,6 +55,7 @@ import {
   SAG_CHAT_TYPE,
   SAG_STATUSSER,
   SAG_TYPE_NAVN,
+  type SagAnkeStatus,
   type SagBilledeKategori,
   type SagStatus,
   type SagType,
@@ -112,6 +121,14 @@ const KODE_FEJL: Record<string, string> = {
   begrundelse_bruger_for_lang: "Begrundelsen til sælgeren er for lang (højst 1000 tegn).",
   afhentning: "Handlen var afhentning. Der er ingen indpakning at vurdere.",
   allerede_vurderet: "Indpakningen i denne sag er allerede vurderet. Genindlæs siden.",
+  // Anke.
+  anke_afventer: "Afgørelsen er anket. Anken skal afgøres først.",
+  anket: "Sagen er anket og kan ikke genåbnes. Afgørelsen på anken er endelig.",
+  behandlet: "Anken er allerede afgjort. Genindlæs siden.",
+  samme_medarbejder: "Du afgjorde selv sagen. Anken skal behandles af en anden admin eller chef.",
+  retur_afleveret:
+    "Afgørelsen kan ikke ændres til sælgerens fordel, fordi returpakken allerede er afleveret til sælgeren.",
+  penge_flyttet_anke: "Afgørelsen kan ikke ændres, fordi pengene allerede er refunderet eller udbetalt.",
 };
 
 function kodeFejl(kode: string | undefined): string {
@@ -170,6 +187,26 @@ export type SagListeRaekke = {
   koeber: { id: string; navn: string | null };
   saelger: { id: string; navn: string | null };
   antalBilleder: number;
+  // Afgørelsen er anket, og anken venter på en admin/chef.
+  ankeVenter: boolean;
+};
+
+export type AdminAnke = {
+  id: string;
+  part: "koeber" | "saelger";
+  begrundelse: string;
+  indgivetKl: string;
+  status: SagAnkeStatus;
+  // Den ankede afgørelse (snapshot - sagen kan være ændret siden).
+  ankedeStatus: SagStatus;
+  ankedeAfgjortKl: string;
+  ankedeAfgjortAfNavn: string | null;
+  ankedeBegrundelse: string;
+  behandletKl: string | null;
+  behandletAfNavn: string | null;
+  afgoerelseBegrundelse: string | null;
+  internNote: string | null;
+  billeder: { id: string; kategori: SagBilledeKategori; url: string | null; oprettetKl: string }[];
 };
 
 export type SagDetalje = SagListeRaekke & {
@@ -234,7 +271,12 @@ export type SagDetalje = SagListeRaekke & {
     lukkeKonto: boolean;
     seBeloeb: boolean;
     vurdereIndpakning: boolean;
+    // Admin/chef, som ikke afgjorde sagen og ikke er part (databasen tjekker igen).
+    behandleAnke: boolean;
   };
+  anke: AdminAnke | null;
+  // Hvorfor den aktuelle admin ikke må behandle anken (vises i stedet for knappen).
+  ankeIkkeTilladt: string | null;
   log: { handling: string; aarsag: string; oprettetKl: string; medarbejderNavn: string | null }[];
 };
 
@@ -272,13 +314,36 @@ const LISTE_KOLONNER = "id, trade_id, type, status, beskyttelse, oprettet_kl, af
 // Liste til Sager-siden. filter: 'aabne' (aaben + afventer_retur), 'afgjorte'
 // (afgjort/lukket) eller en enkelt status. Uden beløb.
 export async function hentSager(
-  filter: "aabne" | "afgjorte" | SagStatus = "aabne",
+  filter: "aabne" | "afgjorte" | "anker" | SagStatus = "aabne",
   side = 0,
 ): Promise<{ sager: SagListeRaekke[]; flere: boolean } | { fejl: string }> {
   return koer("hentSager", async () => {
     const { admin } = await assertRole("medarbejder");
     const STR = 50;
     const s = Number.isInteger(side) && side >= 0 ? side : 0;
+
+    // Anker, der venter (ældste først).
+    if (filter === "anker") {
+      const { data: anker, error: aErr } = await admin
+        .from("sag_anker")
+        .select("sag_id, indgivet_kl")
+        .eq("status", "afventer")
+        .order("indgivet_kl", { ascending: true })
+        .range(s * STR, s * STR + STR);
+      if (aErr) throw new Error(aErr.message);
+      const ankeListe = (anker ?? []) as { sag_id: string; indgivet_kl: string }[];
+      const flere = ankeListe.length > STR;
+      const ids = ankeListe.slice(0, STR).map((a) => a.sag_id);
+      if (ids.length === 0) return { sager: [], flere: false };
+      const { data, error } = await admin.from("sager").select(LISTE_KOLONNER).in("id", ids);
+      if (error) throw new Error(error.message);
+      const orden = new Map(ids.map((id, i) => [id, i]));
+      const raekker = ((data ?? []) as Parameters<typeof berig>[1]).sort(
+        (x, y) => (orden.get(x.id) ?? 0) - (orden.get(y.id) ?? 0),
+      );
+      return { sager: await berig(admin, raekker), flere };
+    }
+
     let q = admin
       .from("sager")
       .select(LISTE_KOLONNER)
@@ -330,7 +395,7 @@ async function berig(
   );
   const auktionIds = [...new Set([...hMap.values()].map((h) => h.auction_id))];
   const brugerIds = [...new Set([...hMap.values()].flatMap((h) => [h.buyer_id, h.seller_id]))];
-  const [{ data: auktioner }, { data: brugere }, { data: billeder }] = await Promise.all([
+  const [{ data: auktioner }, { data: brugere }, { data: billeder }, { data: anker }] = await Promise.all([
     auktionIds.length
       ? admin.from("auctions").select("id, titel").in("id", auktionIds)
       : Promise.resolve({ data: [] }),
@@ -338,7 +403,13 @@ async function berig(
       ? admin.from("users").select("id, navn").in("id", brugerIds)
       : Promise.resolve({ data: [] }),
     admin.from("sag_billeder").select("sag_id").in("sag_id", raekker.map((r) => r.id)),
+    admin
+      .from("sag_anker")
+      .select("sag_id")
+      .eq("status", "afventer")
+      .in("sag_id", raekker.map((r) => r.id)),
   ]);
+  const ankeVenter = new Set(((anker ?? []) as { sag_id: string }[]).map((a) => a.sag_id));
   const titel = new Map(((auktioner ?? []) as { id: string; titel: string }[]).map((a) => [a.id, a.titel]));
   const navn = new Map(((brugere ?? []) as { id: string; navn: string | null }[]).map((u) => [u.id, u.navn]));
   const antal = new Map<string, number>();
@@ -361,6 +432,7 @@ async function berig(
         koeber: { id: h?.buyer_id ?? "", navn: h ? (navn.get(h.buyer_id) ?? null) : null },
         saelger: { id: h?.seller_id ?? "", navn: h ? (navn.get(h.seller_id) ?? null) : null },
         antalBilleder: antal.get(r.id) ?? 0,
+        ankeVenter: ankeVenter.has(r.id),
       };
     });
 }
@@ -370,7 +442,7 @@ async function berig(
 // fra src/app/actions/staffChat.ts.
 export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fejl: string }> {
   return koer("hentSag", async () => {
-    const { admin, rolle } = await assertRole("medarbejder");
+    const { admin, rolle, userId } = await assertRole("medarbejder");
     if (!erUuid(sagId)) throw new BrugerFejl("Sagen findes ikke.");
     const { data: s, error } = await admin
       .from("sager")
@@ -447,6 +519,42 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         : null;
     const afhentning = !!t?.afhentning;
 
+    // Anken (højst én pr. sag) og dens billeder.
+    const { data: ankeRaekke } = await admin
+      .from("sag_anker")
+      .select(
+        "id, part, begrundelse, indgivet_kl, status, ankede_status, ankede_afgjort_af, ankede_afgjort_kl, ankede_begrundelse, behandlet_af, behandlet_kl, afgoerelse_begrundelse, intern_note",
+      )
+      .eq("sag_id", s.id)
+      .maybeSingle<{
+        id: string;
+        part: "koeber" | "saelger";
+        begrundelse: string;
+        indgivet_kl: string;
+        status: SagAnkeStatus;
+        ankede_status: SagStatus;
+        ankede_afgjort_af: string;
+        ankede_afgjort_kl: string;
+        ankede_begrundelse: string;
+        behandlet_af: string | null;
+        behandlet_kl: string | null;
+        afgoerelse_begrundelse: string | null;
+        intern_note: string | null;
+      }>();
+    const { data: ankeBilleder } = ankeRaekke
+      ? await admin
+          .from("sag_anke_billeder")
+          .select("id, sti, kategori, oprettet_kl")
+          .eq("anke_id", ankeRaekke.id)
+          .order("oprettet_kl", { ascending: true })
+      : { data: [] };
+    const ankeBilledRaekker = (ankeBilleder ?? []) as {
+      id: string;
+      sti: string;
+      kategori: SagBilledeKategori;
+      oprettet_kl: string;
+    }[];
+
     const billedRaekker = (billeder ?? []) as {
       id: string;
       sti: string;
@@ -454,10 +562,9 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
       oprettet_kl: string;
     }[];
     const urls = new Map<string, string>();
-    if (billedRaekker.length > 0) {
-      const { data: signerede } = await admin.storage
-        .from(SAG_BUCKET)
-        .createSignedUrls(billedRaekker.map((b) => b.sti), 3600);
+    const alleStier = [...billedRaekker, ...ankeBilledRaekker].map((b) => b.sti);
+    if (alleStier.length > 0) {
+      const { data: signerede } = await admin.storage.from(SAG_BUCKET).createSignedUrls(alleStier, 3600);
       for (const x of signerede ?? []) if (x.path && x.signedUrl) urls.set(x.path, x.signedUrl);
     }
 
@@ -468,7 +575,12 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
       oprettet_kl: string;
     }[];
     const staffIds = [
-      ...new Set([...logRaekker.map((l) => l.medarbejder_id), ...(s.afgjort_af ? [s.afgjort_af] : [])]),
+      ...new Set([
+        ...logRaekker.map((l) => l.medarbejder_id),
+        ...(s.afgjort_af ? [s.afgjort_af] : []),
+        ...(ankeRaekke ? [ankeRaekke.ankede_afgjort_af] : []),
+        ...(ankeRaekke?.behandlet_af ? [ankeRaekke.behandlet_af] : []),
+      ]),
     ];
     const [{ data: staffNavne }, { data: konti }] = await Promise.all([
       staffIds.length
@@ -488,6 +600,17 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
 
     const aaben = s.status === "aaben" || s.status === "afventer_retur";
     const kanAfgoere = harMindstRolle(rolle, AFGOER_ROLLE);
+    const ankeVenter = ankeRaekke?.status === "afventer";
+
+    // Må den aktuelle medarbejder behandle anken? (databasen tjekker igen)
+    let ankeIkkeTilladt: string | null = null;
+    if (ankeVenter) {
+      if (!harMindstRolle(rolle, "admin")) ankeIkkeTilladt = "Anken skal behandles af en admin eller chef.";
+      else if (userId === liste.koeber.id || userId === liste.saelger.id) ankeIkkeTilladt = KODE_FEJL.inhabil;
+      else if (userId === ankeRaekke?.ankede_afgjort_af || userId === s.afgjort_af) {
+        ankeIkkeTilladt = KODE_FEJL.samme_medarbejder;
+      }
+    }
 
     return {
       sag: {
@@ -542,12 +665,15 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
           afhentning,
         },
         kan: {
-          afgoere: kanAfgoere && aaben,
-          registrereRetur: kanAfgoere && s.status === "afventer_retur",
-          // Databasen (sag_genaabn) afviser, hvis pengene allerede er flyttet.
-          // Inden for ankefristen annulleres den planlagte flytning.
+          // Mens en anke venter, skal den afgøres først (databasen afviser også).
+          afgoere: kanAfgoere && aaben && !ankeVenter,
+          registrereRetur: kanAfgoere && s.status === "afventer_retur" && !ankeVenter,
+          // Databasen (sag_genaabn) afviser, hvis pengene allerede er flyttet,
+          // eller hvis sagen er anket. Inden for ankefristen annulleres den
+          // planlagte flytning.
           genaabne:
             harMindstRolle(rolle, "admin") &&
+            !ankeRaekke &&
             s.status !== "aaben" &&
             !(s.penge_handling === "refunder" && s.afviklet_kl) &&
             !(betaling && (betaling.refusion_anmodet_kl || betaling.stripe_transfer_id || betaling.overfoersel_paabegyndt_kl)),
@@ -556,7 +682,32 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
           // Databasen (indpakning_vurder) tjekker rolle, inhabilitet og
           // én vurdering pr. sag igen.
           vurdereIndpakning: kanAfgoere && !indpakningVurderet && !afhentning && !!saelgerId,
+          behandleAnke: ankeVenter && ankeIkkeTilladt === null,
         },
+        anke: ankeRaekke
+          ? {
+              id: ankeRaekke.id,
+              part: ankeRaekke.part,
+              begrundelse: ankeRaekke.begrundelse,
+              indgivetKl: ankeRaekke.indgivet_kl,
+              status: ankeRaekke.status,
+              ankedeStatus: ankeRaekke.ankede_status,
+              ankedeAfgjortKl: ankeRaekke.ankede_afgjort_kl,
+              ankedeAfgjortAfNavn: staffNavn.get(ankeRaekke.ankede_afgjort_af) ?? null,
+              ankedeBegrundelse: ankeRaekke.ankede_begrundelse,
+              behandletKl: ankeRaekke.behandlet_kl,
+              behandletAfNavn: ankeRaekke.behandlet_af ? (staffNavn.get(ankeRaekke.behandlet_af) ?? null) : null,
+              afgoerelseBegrundelse: ankeRaekke.afgoerelse_begrundelse,
+              internNote: ankeRaekke.intern_note,
+              billeder: ankeBilledRaekker.map((b) => ({
+                id: b.id,
+                kategori: b.kategori,
+                url: urls.get(b.sti) ?? null,
+                oprettetKl: b.oprettet_kl,
+              })),
+            }
+          : null,
+        ankeIkkeTilladt,
         log: logRaekker.map((l) => ({
           handling: l.handling,
           aarsag: l.aarsag,
@@ -572,12 +723,112 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
 export async function hentAntalAabneSager() {
   return koer("hentAntalAabneSager", async () => {
     const { admin } = await assertRole("medarbejder");
+    const [{ count, error }, { count: anker, error: aErr }] = await Promise.all([
+      admin.from("sager").select("id", { count: "exact", head: true }).eq("status", "aaben"),
+      admin.from("sag_anker").select("id", { count: "exact", head: true }).eq("status", "afventer"),
+    ]);
+    if (error) throw new Error(error.message);
+    // Fejler anker-tællingen (fx migrationen er ikke kørt), vises sagerne stadig.
+    if (aErr) console.error("Tælling af anker fejlede:", aErr.message);
+    return { ok: true as const, antal: (count ?? 0) + (aErr ? 0 : (anker ?? 0)) };
+  });
+}
+
+// Antal anker, der venter på en admin/chef (fanen "Anker").
+export async function hentAntalVentendeAnker() {
+  return koer("hentAntalVentendeAnker", async () => {
+    const { admin } = await assertRole("medarbejder");
     const { count, error } = await admin
-      .from("sager")
+      .from("sag_anker")
       .select("id", { count: "exact", head: true })
-      .eq("status", "aaben");
+      .eq("status", "afventer");
     if (error) throw new Error(error.message);
     return { ok: true as const, antal: count ?? 0 };
+  });
+}
+
+// ------------------------------------------------------------------ Anke
+
+// Admin/chef afgør en anke: 'stadfaest' (afgørelsen står) eller 'omgoer'
+// (modsat udfald). Pengene flyttes straks efter (ingen ny ankefrist).
+// Databasen (sag_anke_afgoer) tjekker rolle, inhabilitet, at behandleren ikke
+// afgjorde sagen, og at anken stadig venter. formData: ankeId, udfald,
+// begrundelse (til begge parter, påkrævet), intern_note (valgfri).
+export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: string }> {
+  return koer("afgoerAnke", async () => {
+    const { admin, userId } = await assertRole("admin");
+    const ankeId = tekst(formData, "ankeId");
+    const udfald = tekst(formData, "udfald");
+    const begrundelse = tekst(formData, "begrundelse");
+    const internNote = tekst(formData, "intern_note");
+    if (!erUuid(ankeId)) throw new BrugerFejl("Anken findes ikke.");
+    if (udfald !== "stadfaest" && udfald !== "omgoer") throw new BrugerFejl(KODE_FEJL.ugyldigt_udfald);
+    if (!begrundelse) throw new BrugerFejl(KODE_FEJL.begrundelse_mangler);
+    if (begrundelse.length > SAG_BEGRUNDELSE_MAKS || internNote.length > 4000) {
+      throw new BrugerFejl(KODE_FEJL.for_lang_tekst);
+    }
+
+    const { data, error } = await admin.rpc("sag_anke_afgoer", {
+      p_medarbejder: userId,
+      p_anke: ankeId,
+      p_udfald: udfald,
+      p_begrundelse: begrundelse,
+      p_intern_note: internNote || null,
+    });
+    if (error) throw new Error(error.message);
+    const svar = (data ?? { kode: "" }) as {
+      kode: string;
+      udfald?: "stadfaest" | "omgoer";
+      handling?: "refunder" | "frigiv" | "afvent_retur" | "blokeret" | "allerede_afviklet";
+      afvikling?: (SagAfvikling & { kode?: string; grund?: string | null }) | null;
+      anke_id?: string;
+      part?: "koeber" | "saelger";
+      sag_id?: string;
+      trade_id?: string;
+    };
+    if (svar.kode !== "ok") {
+      throw new BrugerFejl(svar.kode === "penge_flyttet" ? KODE_FEJL.penge_flyttet_anke : kodeFejl(svar.kode));
+    }
+
+    // Stripe-delen (refusion/overførsel) og beskeder om pengene. Kaster aldrig;
+    // pengene er claimet i databasen, og cron prøver igen.
+    let pengeBesked: string;
+    if ((svar.handling === "refunder" || svar.handling === "frigiv") && svar.afvikling?.kode === "ok") {
+      const r = await udfoerSagAfvikling(svar.afvikling);
+      pengeBesked =
+        svar.handling === "refunder"
+          ? r === "refusion_fejlede"
+            ? "Refusionen fejlede hos Stripe. Den prøves igen automatisk, og betalingen er markeret til admin."
+            : "Køberen refunderes nu (alt undtagen BidHamr Beskyttelse)."
+          : r === "overfoersel_fejlede"
+            ? "Overførslen til sælgeren fejlede. Den prøves igen automatisk."
+            : "Pengene udbetales nu til sælgeren.";
+    } else if (svar.handling === "afvent_retur") {
+      pengeBesked =
+        "Køberen skal sende varen retur. Registrér, når returpakken er afleveret – så refunderes køberen straks.";
+    } else if (svar.handling === "blokeret") {
+      pengeBesked = `Pengene kan ikke flyttes lige nu: ${fejlNavn(svar.afvikling?.grund)}. Det prøves igen automatisk, og betalingen er markeret til admin.`;
+    } else {
+      pengeBesked = "Pengene var allerede flyttet.";
+    }
+
+    if (svar.trade_id && svar.sag_id && svar.part && svar.udfald) {
+      // Det endelige udfald for parterne.
+      const koeberVinder = (svar.udfald === "omgoer") === (svar.part === "koeber");
+      const slut: AnkeSlutUdfald = !koeberVinder
+        ? "saelger"
+        : svar.handling === "afvent_retur"
+          ? "koeber_retur"
+          : "koeber";
+      const { trade_id: tradeId, sag_id: sid, part, udfald: u } = svar;
+      after(() => notificerAnkeAfgjort(ankeId, tradeId, sid, part, u, slut, begrundelse));
+    }
+
+    if (svar.sag_id) revalider(svar.sag_id, svar.trade_id);
+    return {
+      ok: true as const,
+      besked: `${svar.udfald === "omgoer" ? "Afgørelsen er ændret." : "Afgørelsen står."} Afgørelsen på anken er endelig. ${pengeBesked}`,
+    };
   });
 }
 

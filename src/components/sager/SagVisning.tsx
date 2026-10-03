@@ -11,6 +11,7 @@ import type { MinSag } from "@/app/actions/sager";
 import type { StaffBesked } from "@/app/actions/staffChat";
 import { SAG_MAKS_BILLEDER, SAG_TYPE_NAVN } from "@/lib/sager";
 import TilfoejSagBilleder from "./TilfoejSagBilleder";
+import AnkeForm from "./AnkeForm";
 import { BeskyttelseBadge, SagBilleder, SagStatusBadge, sagTid } from "./visning";
 
 export type SagSamtale = { id: string; lukket: boolean; seneste: StaffBesked | null; ulaest: boolean };
@@ -39,10 +40,26 @@ function datoITekst(iso: string): string {
   });
 }
 
+// Dato og klokkeslæt i en sætning, fx "7. oktober kl. 14.05" (ankefristen
+// gælder til minuttet).
+function datoOgTid(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  return new Date(t).toLocaleString("da-DK", {
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Copenhagen",
+  });
+}
+
 function tidslinje(sag: MinSag): { trin: Trin[]; aktiv: number; alleFaerdige: boolean } {
   const medRetur = sag.returKraeves || sag.status === "afventer_retur";
   const lukketUdenPenge = sag.status === "lukket" || sag.pengeHandling === "ingen";
   const afgjort = sag.status !== "aaben";
+  const anke = sag.anke;
+  const ankeVenter = anke?.status === "afventer";
 
   const trin: Trin[] = [
     { noegle: "oprettet", navn: "Sag oprettet", note: kortDato(sag.oprettetKl) },
@@ -50,9 +67,18 @@ function tidslinje(sag: MinSag): { trin: Trin[]; aktiv: number; alleFaerdige: bo
     {
       noegle: "afgjort",
       navn: "Afgjort",
-      note: afgjort && sag.afgjortKl ? kortDato(sag.afgjortKl) : undefined,
+      // Er afgørelsen ændret på anke, er afgjortKl tidspunktet for ankens
+      // afgørelse - den dato står på anke-trinnet.
+      note: afgjort && sag.afgjortKl && anke?.status !== "omgjort" ? kortDato(sag.afgjortKl) : undefined,
     },
   ];
+  if (anke) {
+    trin.push({
+      noegle: "anke",
+      navn: "Anke",
+      note: ankeVenter ? "Behandles" : anke.behandletKl ? `Afgjort ${kortDato(anke.behandletKl)}` : undefined,
+    });
+  }
   if (medRetur) {
     trin.push({
       noegle: "retur",
@@ -64,7 +90,7 @@ function tidslinje(sag: MinSag): { trin: Trin[]; aktiv: number; alleFaerdige: bo
     noegle: "slut",
     navn: lukketUdenPenge ? "Sagen er lukket" : sag.afvikletKl ? "Pengene er sendt" : "Pengene er på vej",
     note:
-      afgjort && sag.status !== "afventer_retur" && !sag.afvikletKl && sag.pengeFlyttesEfterKl
+      afgjort && !ankeVenter && sag.status !== "afventer_retur" && !sag.afvikletKl && sag.pengeFlyttesEfterKl
         ? `Tidligst ${kortDato(sag.pengeFlyttesEfterKl)}`
         : undefined,
   });
@@ -72,6 +98,7 @@ function tidslinje(sag: MinSag): { trin: Trin[]; aktiv: number; alleFaerdige: bo
   const idx = (n: string) => trin.findIndex((t) => t.noegle === n);
   let aktiv: number;
   if (sag.status === "aaben") aktiv = idx("behandler");
+  else if (ankeVenter) aktiv = idx("anke");
   else if (sag.status === "afventer_retur") aktiv = idx("retur");
   else aktiv = idx("slut");
   const alleFaerdige = !!sag.afvikletKl || (sag.status === "lukket" && !sag.pengeFlyttesEfterKl);
@@ -137,8 +164,45 @@ function Tidslinje({ sag }: { sag: MinSag }) {
   );
 }
 
+// "Det skal du gøre nu" med anke: mens anken behandles, sker der intet med
+// pengene; ellers sagens egen tekst + evt. "Du kan anke ...".
+function goerNu(sag: MinSag): { tekst: string; handling: boolean; anke: "kan" | "snart" | null; ankeTekst: string | null } {
+  const a = sag.anke;
+  if (a && a.status === "afventer") {
+    const pause = "En anden medarbejder ser på sagen igen. Pengene flyttes ikke, mens anken behandles.";
+    const retur =
+      sag.erKoeber && sag.status === "afventer_retur" ? " Vent med at sende varen retur, til anken er afgjort." : "";
+    return {
+      tekst: a.egen
+        ? `Vi har modtaget din anke. ${pause} Du skal ikke gøre mere nu.`
+        : `${a.part === "koeber" ? "Køberen" : "Sælgeren"} har anket afgørelsen. ${pause}${retur}`,
+      handling: false,
+      anke: null,
+      ankeTekst: null,
+    };
+  }
+
+  const basis = goerNuSag(sag);
+  const m = sag.ankeMulighed;
+  if (a) {
+    return {
+      ...basis,
+      tekst: `Anken er afgjort, og afgørelsen er endelig. ${basis.tekst}`,
+      anke: null,
+      ankeTekst: null,
+    };
+  }
+  if (m.kode === "kan_anke" && m.tilKl) {
+    return { ...basis, anke: "kan", ankeTekst: `Er du uenig? Du kan anke afgørelsen indtil ${datoOgTid(m.tilKl)}.` };
+  }
+  if (m.kode === "for_tidligt" && m.fraKl) {
+    return { ...basis, anke: "snart", ankeTekst: `Er du uenig? Du kan anke afgørelsen fra ${datoOgTid(m.fraKl)}.` };
+  }
+  return { ...basis, anke: null, ankeTekst: null };
+}
+
 // "Det skal du gøre nu": én kort sætning pr. rolle og status.
-function goerNu(sag: MinSag): { tekst: string; handling: boolean } {
+function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
   const k = sag.erKoeber;
   const dato = sag.pengeFlyttesEfterKl ? datoITekst(sag.pengeFlyttesEfterKl) : "";
   const venter = !sag.afvikletKl && !!dato;
@@ -257,6 +321,18 @@ export default function SagVisning({
         </h3>
         <p className="mt-1 text-[15px] text-tekst">{nu.tekst}</p>
 
+        {nu.ankeTekst && <p className="mt-2 text-[15px] text-tekst">{nu.ankeTekst}</p>}
+        {nu.anke === "kan" && sag.ankeMulighed.tilKl && (
+          <div className="mt-3">
+            <AnkeForm
+              sagId={sag.id}
+              tradeId={sag.tradeId}
+              brugerId={brugerId}
+              fristTekst={datoOgTid(sag.ankeMulighed.tilKl)}
+            />
+          </div>
+        )}
+
         {kanTilfoejeBilleder && (
           <div className="mt-3">
             <TilfoejSagBilleder
@@ -333,6 +409,36 @@ export default function SagVisning({
             <h4 className="mb-2 text-sm font-semibold text-tekst">Billeder ({sag.billeder.length})</h4>
             <SagBilleder billeder={sag.billeder} />
           </div>
+
+          {sag.anke && (
+            <div className="rounded-xl border border-info-kant bg-info-bg p-4">
+              <h4 className="text-sm font-semibold text-tekst">
+                {sag.anke.egen ? "Din anke" : `Anke fra ${sag.anke.part === "koeber" ? "køberen" : "sælgeren"}`}
+              </h4>
+              <p className="mt-0.5 text-xs text-tekst-daempet">
+                Indgivet {sagTid(sag.anke.indgivetKl)} ·{" "}
+                {sag.anke.status === "afventer"
+                  ? "behandles"
+                  : sag.anke.status === "stadfaestet"
+                    ? "afgørelsen står"
+                    : "afgørelsen er ændret"}
+              </p>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm text-tekst">{sag.anke.begrundelse}</p>
+              {sag.anke.billeder.length > 0 && (
+                <div className="mt-3">
+                  <SagBilleder billeder={sag.anke.billeder} />
+                </div>
+              )}
+              {sag.anke.afgoerelseBegrundelse && (
+                <div className="mt-3">
+                  <h5 className="text-sm font-semibold text-tekst">BidHamrs afgørelse på anken</h5>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-tekst">
+                    {sag.anke.afgoerelseBegrundelse}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {sag.pakkebilleder.length > 0 && (
             <div>

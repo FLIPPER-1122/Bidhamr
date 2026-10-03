@@ -145,3 +145,49 @@ export const SAG_OPRET_FEJL: Record<string, string> = {
   for_mange_billeder: `Du kan højst tilføje ${SAG_MAKS_BILLEDER} billeder til en sag.`,
   lukket: "Sagen er afsluttet, så der kan ikke tilføjes flere billeder.",
 };
+
+// ------------------------------------------------------------------ Anke
+// Spejlet i supabase/migrations/20261004030000_anke.sql (sag_anke_vurder,
+// sag_anke_indgiv, sag_anke_afgoer). Den part, der taber sagen, kan anke fra
+// 24 timer efter afgørelsen og indtil ankefristen (4 dage). Én anke pr. sag.
+export const SAG_ANKE_AABNER_EFTER_TIMER = 24;
+export const SAG_ANKE_BEGRUNDELSE_MIN = 20;
+export const SAG_ANKE_BEGRUNDELSE_MAKS = 2000;
+export const SAG_ANKE_MAKS_BILLEDER = 10;
+
+export const SAG_ANKE_STATUSSER = ["afventer", "stadfaestet", "omgjort"] as const;
+export type SagAnkeStatus = (typeof SAG_ANKE_STATUSSER)[number];
+
+// Svar fra sag_anke_mulighed / sag_anke_vurder.
+export type SagAnkeMulighedKode =
+  | "kan_anke"
+  | "for_tidligt"
+  | "for_sent"
+  | "findes"
+  | "vandt"
+  | "ingen_anke"
+  | "retur_afleveret"
+  | "ikke_fundet"
+  | "ikke_logget_ind";
+
+export const SAG_ANKE_STATUS_NAVN: Record<SagAnkeStatus, string> = {
+  afventer: "Anken behandles",
+  stadfaestet: "Anken er afgjort – afgørelsen står",
+  omgjort: "Anken er afgjort – afgørelsen er ændret",
+};
+
+// Fejlkoder fra sag_anke_indgiv -> dansk tekst til brugeren.
+export const SAG_ANKE_FEJL: Record<string, string> = {
+  ikke_logget_ind: "Du skal være logget ind.",
+  ikke_fundet: "Sagen findes ikke.",
+  ugyldig_begrundelse: `Skriv, hvorfor du anker, med mindst ${SAG_ANKE_BEGRUNDELSE_MIN} tegn (højst ${SAG_ANKE_BEGRUNDELSE_MAKS}).`,
+  for_tidligt: `Du kan anke ${SAG_ANKE_AABNER_EFTER_TIMER} timer efter afgørelsen.`,
+  for_sent: "Fristen for at anke er udløbet.",
+  findes: "Afgørelsen er allerede anket. Der kan kun ankes én gang.",
+  vandt: "Du har fået medhold i sagen og kan ikke anke.",
+  ingen_anke: "Sagen kan ikke ankes.",
+  retur_afleveret: "Afgørelsen kan ikke ankes, fordi returpakken allerede er afleveret.",
+  ugyldige_billeder: "Et eller flere billeder er ugyldige. Upload dem igen.",
+  billede_mangler: "Et billede blev ikke uploadet korrekt. Upload det igen.",
+  for_mange_billeder: `Du kan højst tilføje ${SAG_ANKE_MAKS_BILLEDER} billeder til en anke.`,
+};

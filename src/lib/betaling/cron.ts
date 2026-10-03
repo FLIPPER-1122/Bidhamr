@@ -29,7 +29,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
 import { koerNotifikationsCron } from "@/lib/notifikationer/cron";
 import { annullerUbetalte, behandlAndenchance } from "@/lib/betaling/ubetalt";
-import { afviklForfaldneSager, notificerNyeSager } from "@/lib/sagerServer";
+import { afviklForfaldneSager, notificerNyeAnker, notificerNyeSager } from "@/lib/sagerServer";
 import { frigivAutomatisk, paamindKoeberOmModtagelse } from "@/lib/betaling/autoFrigiv";
 import {
   betalingsPaamindelseMail,
@@ -88,6 +88,7 @@ export async function koerBetalingsCron() {
     afvigelsesrefusioner: 0,
     sagsrefusioner: 0,
     sagsbeskeder: 0,
+    ankebeskeder: 0,
     sagsafviklinger: 0,
     autoFrigivet: 0,
     paamindelserModtaget: 0,
@@ -259,6 +260,8 @@ export async function koerBetalingsCron() {
 
   // 5c) Nye sager, hvor køber og sælger ikke har fået besked endnu.
   resultat.sagsbeskeder = await notificerNyeSager();
+  // 5d) Nye anker (fx indgivet fra appen), hvor parterne ikke har fået besked.
+  resultat.ankebeskeder = await notificerNyeAnker();
 
   // 6) Fristen overskredet: annullér handel + Stripe, opret sag, send mails.
   try {

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { hentSager, type SagListeRaekke } from "@/app/actions/adminSager";
+import { hentAntalVentendeAnker, hentSager, type SagListeRaekke } from "@/app/actions/adminSager";
 import { SAG_TYPE_NAVN, adminSagSti } from "@/lib/sager";
 import { BeskyttelseBadge, SagStatusBadge, sagTid } from "@/components/sager/visning";
 
@@ -9,6 +9,7 @@ import { BeskyttelseBadge, SagStatusBadge, sagTid } from "@/components/sager/vis
 
 const FANER = [
   { key: "aabne", label: "Åbne" },
+  { key: "anker", label: "Anker" },
   { key: "afventer_retur", label: "Afventer retur" },
   { key: "afgjorte", label: "Afgjorte" },
 ] as const;
@@ -16,6 +17,7 @@ type Fane = (typeof FANER)[number]["key"];
 
 const TOMT: Record<Fane, string> = {
   aabne: "Ingen åbne sager lige nu.",
+  anker: "Ingen anker venter lige nu.",
   afventer_retur: "Ingen sager venter på en returpakke.",
   afgjorte: "Ingen afgjorte sager endnu.",
 };
@@ -33,7 +35,8 @@ export default async function AdminSager({
   const fane: Fane = FANER.some((f) => f.key === vis) ? (vis as Fane) : "aabne";
   const side = Math.max(0, Math.min(1000, Number.parseInt(sideParam ?? "0", 10) || 0));
 
-  const res = await hentSager(fane, side);
+  const [res, ankerRes] = await Promise.all([hentSager(fane, side), hentAntalVentendeAnker()]);
+  const antalAnker = "antal" in ankerRes ? ankerRes.antal : 0;
   const fejl = "fejl" in res ? res.fejl : null;
   const liste = "fejl" in res ? [] : res.sager;
   const flere = "fejl" in res ? false : res.flere;
@@ -78,6 +81,16 @@ export default async function AdminSager({
               }`}
             >
               {f.label}
+              {f.key === "anker" && antalAnker > 0 && (
+                <span
+                  className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    aktiv ? "bg-white text-orange-knap" : "bg-orange-knap text-white"
+                  }`}
+                >
+                  {antalAnker}
+                  <span className="sr-only"> anker venter</span>
+                </span>
+              )}
             </Link>
           );
         })}
@@ -98,12 +111,17 @@ export default async function AdminSager({
               <Link
                 href={adminSagSti(s.id)}
                 className={`block px-4 py-4 transition-colors hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen sm:px-5 ${
-                  s.status === "aaben" ? "bg-advarsel-bg/40" : ""
+                  s.status === "aaben" || s.ankeVenter ? "bg-advarsel-bg/40" : ""
                 }`}
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <SagStatusBadge status={s.status} />
                   {s.beskyttelse && <BeskyttelseBadge />}
+                  {s.ankeVenter && (
+                    <span className="inline-block rounded-full border border-advarsel-kant bg-advarsel-bg px-2.5 py-1 text-xs font-semibold text-advarsel-tekst">
+                      Anke venter
+                    </span>
+                  )}
                   <span className="min-w-0 break-words font-semibold text-neutral-900">
                     {s.auktionTitel ?? "(slettet auktion)"}
                   </span>

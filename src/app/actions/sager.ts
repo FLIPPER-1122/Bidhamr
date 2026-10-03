@@ -30,12 +30,28 @@
 //   supabase.storage.from("sag-billeder").createSignedUrls(stier, 3600)
 //   Notifikationen "sag oprettet" sendes af cron for sager oprettet fra appen
 //   (sager.notificeret_kl claimes, så den kun sendes én gang).
+//
+// Anke (den part, der taber sagen; fra 24 timer til 4 dage efter afgørelsen,
+// én pr. sag, endelig):
+//   supabase.rpc("sag_anke_mulighed", { p_sag })
+//       -> { kode: "kan_anke" | "for_tidligt" | "for_sent" | "findes" | "vandt"
+//            | "ingen_anke" | "retur_afleveret" | "ikke_fundet", part?, fra_kl?, til_kl? }
+//   Billeder (valgfri): upload til "sag-billeder" under <eget id>/<handel-id>/...
+//       (tilladt, mens kode er "kan_anke"), { upsert: false }
+//   supabase.rpc("sag_anke_indgiv", { p_sag, p_begrundelse (20-2000 tegn),
+//       p_billeder: [{ sti, kategori: "andet" }] })
+//       -> { kode: "ok", anke_id } | { kode: <fejlkode> } (se SAG_ANKE_FEJL)
+//   supabase.from("sag_anker").select("id, sag_id, trade_id, part, begrundelse,
+//       indgivet_kl, ankede_status, ankede_afgjort_kl, status, behandlet_kl,
+//       afgoerelse_begrundelse")   (status: afventer | stadfaestet | omgjort)
+//   supabase.from("sag_anke_billeder").select("id, anke_id, sti, kategori, oprettet_kl")
+//   Beskeden "anke indgivet" sendes af cron for anker indgivet fra appen.
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { notificerSagOprettet } from "@/lib/sagerServer";
+import { notificerAnkeIndgivet, notificerSagOprettet } from "@/lib/sagerServer";
 import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
 import {
   SAG_AUTO_FRIGIV_EFTER_DAGE,
@@ -46,6 +62,12 @@ import {
   SAG_FRIST_TIMER_EFTER_MODTAGET,
   SAG_MAKS_BILLEDER,
   SAG_OPRET_FEJL,
+  SAG_ANKE_BEGRUNDELSE_MAKS,
+  SAG_ANKE_BEGRUNDELSE_MIN,
+  SAG_ANKE_FEJL,
+  SAG_ANKE_MAKS_BILLEDER,
+  type SagAnkeMulighedKode,
+  type SagAnkeStatus,
   type SagBilledeKategori,
   type SagPengeHandling,
   type SagStatus,
@@ -88,6 +110,31 @@ export type MinSag = {
   // Sælgerens billeder af indpakningen fra "Send pakke" (tom ved afhentning
   // og ved handler sendt før pakkebilleder blev krævet).
   pakkebilleder: VistPakkeBillede[];
+  // Anken (højst én pr. sag), eller null.
+  anke: MinAnke | null;
+  // Kan den indloggede bruger anke lige nu? (sag_anke_mulighed)
+  ankeMulighed: AnkeMulighed;
+};
+
+export type MinAnke = {
+  id: string;
+  // Hvem ankede.
+  part: "koeber" | "saelger";
+  egen: boolean;
+  begrundelse: string;
+  indgivetKl: string;
+  status: SagAnkeStatus;
+  behandletKl: string | null;
+  // BidHamrs begrundelse for afgørelsen på anken (til begge parter).
+  afgoerelseBegrundelse: string | null;
+  billeder: { id: string; kategori: SagBilledeKategori; url: string | null; oprettetKl: string }[];
+};
+
+export type AnkeMulighed = {
+  kode: SagAnkeMulighedKode;
+  // Knappen åbner (afgørelse + 24 timer) og lukker (afgørelse + 4 dage).
+  fraKl: string | null;
+  tilKl: string | null;
 };
 
 export type SagMuligheder = {
@@ -214,6 +261,58 @@ export async function tilfoejSagBilleder(
   }
 }
 
+// Den part, der tabte sagen, anker afgørelsen. billeder: stier fra upload til
+// 'sag-billeder' i brugerens egen mappe (valgfri ny dokumentation).
+// Databasen (sag_anke_indgiv) tjekker part, frist, én anke pr. sag og billeder.
+export async function indgivAnke(
+  sagId: string,
+  begrundelse: string,
+  billeder: SagBilledeInput[],
+): Promise<{ ok: true; ankeId: string } | { fejl: string }> {
+  try {
+    if (!erUuid(sagId)) return { fejl: SAG_ANKE_FEJL.ikke_fundet };
+    const tekst = typeof begrundelse === "string" ? begrundelse.trim() : "";
+    if (tekst.length < SAG_ANKE_BEGRUNDELSE_MIN || tekst.length > SAG_ANKE_BEGRUNDELSE_MAKS) {
+      return { fejl: SAG_ANKE_FEJL.ugyldig_begrundelse };
+    }
+    const rene = rensBilleder(billeder ?? []);
+    if (!rene || rene.length > SAG_ANKE_MAKS_BILLEDER) return { fejl: SAG_ANKE_FEJL.ugyldige_billeder };
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { fejl: SAG_ANKE_FEJL.ikke_logget_ind };
+
+    const { data, error } = await supabase.rpc("sag_anke_indgiv", {
+      p_sag: sagId,
+      p_begrundelse: tekst,
+      p_billeder: rene,
+    });
+    if (error) {
+      console.error("sag_anke_indgiv fejlede:", error);
+      return { fejl: GENERISK };
+    }
+    const svar = data as { kode: string; anke_id?: string } | null;
+    if (!svar || svar.kode !== "ok" || !svar.anke_id) {
+      return { fejl: SAG_ANKE_FEJL[svar?.kode ?? ""] ?? GENERISK };
+    }
+    const ankeId = svar.anke_id;
+
+    // Besked til begge parter (påkrævet type 'sag'). Kaster aldrig; cron
+    // samler op, hvis det fejler.
+    after(() => notificerAnkeIndgivet(ankeId));
+
+    revalidatePath("/mine-handler", "layout");
+    revalidatePath("/admin", "layout");
+    return { ok: true, ankeId };
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error("indgivAnke fejlede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
 const SAG_KOLONNER =
   "id, trade_id, type, beskrivelse, status, oprettet_kl, afgjort_kl, begrundelse, retur_kraeves, returfragt_betaler, retur_afleveret_kl, genaabnet_kl, penge_handling, penge_flyttes_efter_kl, afviklet_kl";
 
@@ -287,7 +386,34 @@ export async function hentSagForHandel(
       beskyttelse = !!b?.beskyttelse;
     }
 
-    const stier = (billeder ?? []).map((b) => b.sti);
+    // Anken (RLS: kun parterne) og om brugeren kan anke lige nu.
+    const [{ data: anke }, { data: mulighed }] = await Promise.all([
+      supabase
+        .from("sag_anker")
+        .select("id, part, begrundelse, indgivet_kl, status, behandlet_kl, afgoerelse_begrundelse")
+        .eq("sag_id", sag.id)
+        .maybeSingle<{
+          id: string;
+          part: "koeber" | "saelger";
+          begrundelse: string;
+          indgivet_kl: string;
+          status: SagAnkeStatus;
+          behandlet_kl: string | null;
+          afgoerelse_begrundelse: string | null;
+        }>(),
+      supabase.rpc("sag_anke_mulighed", { p_sag: sag.id }),
+    ]);
+    const { data: ankeBilleder } = anke
+      ? await supabase
+          .from("sag_anke_billeder")
+          .select("id, sti, kategori, oprettet_kl")
+          .eq("anke_id", anke.id)
+          .order("oprettet_kl", { ascending: true })
+          .overrideTypes<{ id: string; sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[], { merge: false }>()
+      : { data: [] as { id: string; sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[] };
+    const m = (mulighed ?? null) as { kode?: string; fra_kl?: string | null; til_kl?: string | null } | null;
+
+    const stier = [...(billeder ?? []), ...(ankeBilleder ?? [])].map((b) => b.sti);
     const urls = new Map<string, string>();
     const [signeret, pakkebilleder] = await Promise.all([
       stier.length > 0
@@ -327,6 +453,29 @@ export async function hentSagForHandel(
           oprettetKl: b.oprettet_kl,
         })),
         pakkebilleder,
+        anke: anke
+          ? {
+              id: anke.id,
+              part: anke.part,
+              egen: (anke.part === "koeber") === erKoeber,
+              begrundelse: anke.begrundelse,
+              indgivetKl: anke.indgivet_kl,
+              status: anke.status,
+              behandletKl: anke.behandlet_kl,
+              afgoerelseBegrundelse: anke.afgoerelse_begrundelse,
+              billeder: (ankeBilleder ?? []).map((b) => ({
+                id: b.id,
+                kategori: b.kategori,
+                url: urls.get(b.sti) ?? null,
+                oprettetKl: b.oprettet_kl,
+              })),
+            }
+          : null,
+        ankeMulighed: {
+          kode: (m?.kode ?? "ingen_anke") as SagAnkeMulighedKode,
+          fraKl: m?.fra_kl ?? null,
+          tilKl: m?.til_kl ?? null,
+        },
       },
     };
   } catch (err) {
