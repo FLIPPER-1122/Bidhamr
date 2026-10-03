@@ -124,6 +124,11 @@ begin
   if p.connect_frakoblet_kl is null then
     return jsonb_build_object('kode', 'ikke_frakoblet');
   end if;
+  -- En konto, Stripe har afvist, nulstilles aldrig - heller ikke hvis den
+  -- bagefter er frakoblet. Ellers kunne Stripes afgoerelse omgaas.
+  if coalesce(p.connect_spaerret_aarsag, '') like 'rejected.%' then
+    return jsonb_build_object('kode', 'afvist_af_stripe');
+  end if;
 
   update public.betalingsprofiler
      set connect_tidligere_konti =

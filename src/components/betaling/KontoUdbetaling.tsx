@@ -174,13 +174,13 @@ export default function KontoUdbetaling({
                     <span className="text-xs text-tekst-daempet">
                       {datoTekst(o.overfoertKl)}
                       {o.status !== "overfoert" && (
-                        <span className="ml-2 font-medium text-[#A32020]">{OVERFOERSEL_STATUS[o.status]}</span>
+                        <span className={`ml-2 font-medium ${o.status === "tilbagefoert" ? "text-[#A32020]" : "text-tekst-daempet"}`}>{OVERFOERSEL_STATUS[o.status]}</span>
                       )}
                     </span>
                   </div>
                   <span
                     className={`shrink-0 font-medium tabular-nums ${
-                      o.status === "overfoert" ? "text-tekst" : "text-tekst-daempet line-through"
+                      o.status === "tilbagefoert" ? "text-tekst-daempet line-through" : "text-tekst"
                     }`}
                   >
                     {kroner(o.beloebOere)}

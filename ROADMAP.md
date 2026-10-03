@@ -64,10 +64,10 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [~] Svindel-undtagelse: åbenlys svindel giver altid en sag, med eller uden beskyttelse
 - [~] Permanent lukning af konti ved svindel (køber eller sælger)
 - [~] Advarselssystem: dårlig indpakning giver påmindelse første gang, derefter en advarsel pr. gang. 3 advarsler = permanent lukning (byg videre på den eksisterende advarsel-funktion i admin)
-- [ ] Mails ved alle trin i handlen
-- [ ] **Udbetaling til sælgers bankkonto** via Stripe Connect (testmiljø – ingen rigtige penge endnu)
+- [~] Mails ved alle trin i handlen
+- [~] **Udbetaling til sælgers bankkonto** via Stripe Connect (testmiljø – ingen rigtige penge endnu)
 - [ ] **DAC7**: brug Stripes "Platform Tax Reporting" til at indsamle og indberette sælgeroplysninger
-- [ ] Kvittering til køber og sælger efter handel med opdeling af pris, gebyr, BidHamr Beskyttelse og fragt (kvittering/handelsbekræftelse for selve varen – IKKE en faktura, fordi varen sælges mellem private)
+- [~] Kvittering til køber og sælger efter handel med opdeling af pris, gebyr, BidHamr Beskyttelse og fragt (kvittering/handelsbekræftelse for selve varen – IKKE en faktura, fordi varen sælges mellem private)
 - [ ] Filip: spørg revisor, om **Dinero** er et godkendt digitalt bogføringssystem, og vælg regnskabsprogram (Dinero, Billy eller e-conomic)
 - [ ] **Automatiske fakturaer på BidHamrs egne gebyrer** med moms: køber får faktura på købergebyr + evt. BidHamr Beskyttelse, sælger får faktura på sælgergebyr. Oprettes automatisk i det valgte regnskabsprogram via API, så alle fakturaer ligger samlet ét sted. Fakturaerne vises også under brugerens profil. **Venter på Filips valg af regnskabsprogram** – byg kvitteringen først
 - [ ] Sælger kan redigere eller annullere sin auktion, så længe der ikke er bud

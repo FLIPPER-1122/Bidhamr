@@ -682,6 +682,8 @@ const NULSTIL_FEJL: Record<string, string> = {
   ikke_fundet: "Udbetalingskontoen blev ikke fundet.",
   ikke_frakoblet:
     "Kun en udbetalingskonto, som sælgeren har lukket eller frakoblet hos Stripe, kan nulstilles.",
+  afvist_af_stripe:
+    "Vores betalingspartner Stripe har afvist denne udbetalingskonto, så den kan ikke nulstilles.",
 };
 
 // Admin: nulstil en sælgers lukkede (frakoblede) udbetalingskonto, så sælgeren
