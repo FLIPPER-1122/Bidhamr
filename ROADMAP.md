@@ -56,7 +56,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - Beskeder fra BidHamr er tydeligt markeret. Alle samtaler logges og gemmes (slettes aldrig)
   - **Ved en sag:** staff skriver med køber og sælger hver for sig i separate interne samtaler, der knyttes til sagen. Admin kan desuden skrive en fællesbesked til begge i den eksisterende chat mellem køber og sælger (tydeligt markeret som besked fra BidHamr)
 - [~] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
-- [~] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen
+- [~] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen *(delvist: returlabel mangler – se fase 2, venter på aftale med fragtfirma)*
 - [~] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem
 - [~] Afhentning hos sælger: køber giver stjerner og viser koden → pengene frigives med det samme
 - [~] Krævede pakkebilleder i "Send pakke" (kamera direkte, ikke kamerarulle): varen indpakket i åben kasse + lukket kasse med label
@@ -99,6 +99,7 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 - [ ] Når GLS melder pakken leveret: notifikation "Pakken er kommet frem" til **køberen** (type pakke_leveret, påkrævet) – sælgeren får fortsat besked, når køberen bekræfter
 - [ ] Byg koden, så fragtfirmaet kan skiftes (GLS nu, evt. Shipmondo senere) uden at omskrive handelsflowet
 - [ ] Sælger får fragtlabel/QR-kode direkte i BidHamr
+- [ ] **Returlabel i sager**: når en sag afgøres med retur, får køberen et returlabel fra BidHamr via fragtfirmaet (køberen betaler returfragten). Sagsflowet med retur er bygget, men selve labelen mangler, indtil Filips aftale med fragtfirmaet er på plads – derfor er sagsretur kun delvist færdig
 - [ ] Køber betaler fragt og ser prisen, før han byder
 - [ ] Sporing hentes automatisk – status "afhentet" registreres
 - [ ] Auto-frigivelse 48 timer efter afhentning, hvis ingen sag
