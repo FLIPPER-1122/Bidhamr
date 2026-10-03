@@ -17,6 +17,7 @@ const AUKTION_AENDRET = "Sælgeren har lige ændret auktionen. Se den igen, før
 // Danske fejltekster fra bud-triggerne, som maa vises ordret.
 const KENDTE_BUDFEJL = [
   "Auktionen er allerede slut",
+  "Buddet skal være i hele kroner.",
   "Auktionen er ikke aktiv længere",
   "Auktionen er ikke tilgængelig",
   "Auktionen findes ikke",

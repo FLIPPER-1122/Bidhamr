@@ -10,6 +10,7 @@ import {
   MAKS_BILLEDER,
   MAKS_TITEL,
   STARTPRIS_ANBEFALING,
+  auktionBilledeSti,
   valideStartpris,
 } from "@/lib/auktionRegler";
 
@@ -21,13 +22,6 @@ import {
 type Billede =
   | { slags: "gemt"; url: string }
   | { slags: "ny"; fil: File; preview: string };
-
-function lavId() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 function billedeNoegle(b: Billede) {
   return b.slags === "gemt" ? b.url : b.preview;
@@ -111,7 +105,7 @@ export default function RedigerAuktionForm({
           urls.push(b.url);
           continue;
         }
-        const filnavn = `${brugerId}/${lavId()}-${b.fil.name}`;
+        const filnavn = auktionBilledeSti(brugerId, b.fil);
         const { error: uploadError } = await supabase.storage
           .from("auktion-billeder")
           .upload(filnavn, b.fil);
