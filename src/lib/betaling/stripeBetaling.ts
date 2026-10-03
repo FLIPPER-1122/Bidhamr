@@ -32,6 +32,8 @@ function offentligSideUrl(): string {
   return "https://bidhamr.dk";
 }
 import {
+  koeberAfhentningMail,
+  saelgerBetaltAfhentningMail,
   saelgerBetaltMail,
   saelgerOpretUdbetalingskontoMail,
   sideUrl,
@@ -360,10 +362,35 @@ async function efterBetalt(paymentIntentId: string) {
       .eq("stripe_payment_intent_id", paymentIntentId)
       .single<{ trade_id: string; auction_id: string; seller_id: string }>();
     if (!b) return;
-    const { data: a } = await admin.from("auctions").select("titel").eq("id", b.auction_id).single();
+    const [{ data: a }, { data: t }] = await Promise.all([
+      admin.from("auctions").select("titel").eq("id", b.auction_id).single(),
+      admin.from("trades").select("afhentning, buyer_id").eq("id", b.trade_id).single(),
+    ]);
     const titel = (a?.titel as string | undefined) ?? "din vare";
+    const link = `/mine-handler/${b.trade_id}`;
     // Nøglen sikrer, at webhook + autobetaling + retur fra betaling ikke giver
     // flere beskeder for samme handel.
+    if (t?.afhentning) {
+      // Kun afhentning: ingen pakke. Køber og sælger aftaler afhentning, og
+      // køberen viser sin kode, når han henter varen.
+      await send(b.seller_id, "betaling_modtaget", {
+        titel: "Køberen har betalt",
+        tekst: `Køberen har betalt for "${titel}". Aftal afhentning med køberen i chatten, og indtast køberens kode, når varen er hentet.`,
+        link,
+        data: { trade_id: b.trade_id },
+        mail: saelgerBetaltAfhentningMail(titel, b.trade_id),
+        noegle: `betalt:${b.trade_id}`,
+      });
+      await send(t.buyer_id as string, "betaling_modtaget", {
+        titel: "Aftal afhentning med sælgeren",
+        tekst: `Aftal afhentning af "${titel}" med sælgeren – vis koden ved afhentning.`,
+        link,
+        data: { trade_id: b.trade_id },
+        mail: koeberAfhentningMail(titel, b.trade_id),
+        noegle: `afhentning_betalt:${b.trade_id}`,
+      });
+      return;
+    }
     await send(b.seller_id, "betaling_modtaget", {
       titel: "Køberen har betalt",
       tekst: `Køberen har betalt for "${titel}". Send varen, og indtast sporingsnummeret på handelssiden.`,

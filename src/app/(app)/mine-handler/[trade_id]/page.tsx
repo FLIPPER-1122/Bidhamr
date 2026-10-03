@@ -19,6 +19,8 @@ import SagVisning from "@/components/sager/SagVisning";
 import OpretSagForm from "@/components/sager/OpretSagForm";
 import { sagTid } from "@/components/sager/visning";
 import { hentMinSagSamtale } from "@/app/actions/staffChat";
+import { hentAfhentningInfo } from "@/app/actions/afhentning";
+import { VisAfhentningskode, IndtastAfhentningskode } from "@/components/Afhentning";
 
 // En sag kan tidligst oprettes, når pakken er sendt, og vises også efter
 // afgørelsen (handlen kan da være leveret eller annulleret).
@@ -36,6 +38,7 @@ type HandelRaekke = {
   tracking_number: string | null;
   received_at: string | null;
   created_at: string;
+  afhentning: boolean;
 };
 
 export default async function HandelDetaljePage({
@@ -69,7 +72,7 @@ export default async function HandelDetaljePage({
   // Handlen ses i admin-panelet, ikke her.
   const { data: handel } = await supabase
     .from("trades")
-    .select("id, auction_id, seller_id, buyer_id, amount, status, tracking_number, received_at, created_at")
+    .select("id, auction_id, seller_id, buyer_id, amount, status, tracking_number, received_at, created_at, afhentning")
     .eq("id", trade_id)
     .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
     .maybeSingle<HandelRaekke>();
@@ -96,7 +99,15 @@ export default async function HandelDetaljePage({
 
   const erSaelger = handel.seller_id === user.id;
   const erKoeber = handel.buyer_id === user.id;
-  const aktivtTrin = HANDEL_STATUS.findIndex((s) => s.vaerdi === handel.status);
+  // Afhentningshandler (kun afhentning, fragt 0 kr) springer pakketrinnene
+  // over: køberen viser en kode, og sælgeren indtaster den.
+  const afhentning = handel.afhentning === true;
+  const tidslinje = afhentning
+    ? HANDEL_STATUS.filter((s) => s.vaerdi !== "pakke_sendt" && s.vaerdi !== "modtaget").map((s) =>
+        s.vaerdi === "leveret" ? { ...s, label: "Hentet og afregnet" } : s,
+      )
+    : HANDEL_STATUS;
+  const aktivtTrin = tidslinje.findIndex((s) => s.vaerdi === handel.status);
   const billede = (auktion?.billeder as string[] | null)?.[0] ?? null;
 
   // Betalingen hentes kun, når den er relevant: mens der ventes på den, og
@@ -130,6 +141,11 @@ export default async function HandelDetaljePage({
   ]);
   const sagSamtale = samtaleRes && "samtale" in samtaleRes ? samtaleRes.samtale : null;
   const muligheder = mulighederRes && !("fejl" in mulighederRes) ? mulighederRes : null;
+
+  const afhentningInfo =
+    afhentning && handel.status === "betaling_modtaget"
+      ? await hentAfhentningInfo(handel.id)
+      : null;
 
   return (
     <main className="flex-1 bg-white px-4 py-8 sm:px-8">
@@ -179,7 +195,7 @@ export default async function HandelDetaljePage({
 
           {/* Statustidslinje */}
           <ol className="mt-6 flex flex-wrap gap-2">
-            {HANDEL_STATUS.map((trin, i) => {
+            {tidslinje.map((trin, i) => {
               const naaet = i <= aktivtTrin;
               return (
                 <li
@@ -215,7 +231,9 @@ export default async function HandelDetaljePage({
           <div className="rounded-xl border border-[#B9D8CC] bg-groen-lys p-6">
             <p className="font-semibold text-groen-mork">Tak – din betaling er gennemført</p>
             <p className="mt-1 text-sm text-groen-mork">
-              Sælgeren får besked og sender varen. Pengene frigives først, når du har godkendt den.
+              {afhentning
+                ? "Sælgeren får besked. Aftal afhentningen med sælgeren i chatten herunder."
+                : "Sælgeren får besked og sender varen. Pengene frigives først, når du har godkendt den."}
             </p>
           </div>
         )}
@@ -271,11 +289,15 @@ export default async function HandelDetaljePage({
                   dateStyle: "medium",
                   timeStyle: "short",
                 })}{" "}
-                (<Nedtaelling til={betalingsstatus.betalSenest} />). Send ikke varen, før
-                betalingen er modtaget.
+                (<Nedtaelling til={betalingsstatus.betalSenest} />).{" "}
+                {afhentning
+                  ? "Udlevér ikke varen, før betalingen er modtaget."
+                  : "Send ikke varen, før betalingen er modtaget."}
               </p>
             ) : (
-              <p className="mt-1">Køberen har 24 timer til at betale. Send ikke varen før.</p>
+              <p className="mt-1">
+                Køberen har 24 timer til at betale. {afhentning ? "Udlevér" : "Send"} ikke varen før.
+              </p>
             )}
           </div>
         )}
@@ -309,8 +331,57 @@ export default async function HandelDetaljePage({
           </div>
         )}
 
+        {/* Afhentning hos sælger: køberen bedømmer og viser koden, sælgeren
+            indtaster den, og pengene frigives med det samme. */}
+        {afhentning && erKoeber && handel.status === "betaling_modtaget" && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-6">
+            <h2 className="text-sm font-semibold text-neutral-900">Hent varen hos sælgeren</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Aftal tid og sted for afhentningen med sælgeren i chatten herunder. Når du henter
+              varen, viser du sælgeren din afhentningskode.
+            </p>
+            <p className="mt-2 mb-4 text-sm text-neutral-500">
+              Tjek varen, før du viser koden. Når sælgeren har indtastet koden, frigives pengene til
+              sælgeren med det samme, og du kan ikke klage over handlen bagefter.
+            </p>
+            {afhentningInfo ? (
+              <VisAfhentningskode tradeId={handel.id} kode={afhentningInfo.kode} />
+            ) : (
+              <p className="text-sm text-fejl-tekst">
+                Afhentningskoden kunne ikke hentes lige nu. Genindlæs siden om lidt.
+              </p>
+            )}
+          </div>
+        )}
+
+        {afhentning && erSaelger && handel.status === "betaling_modtaget" && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-6">
+            <h2 className="text-sm font-semibold text-neutral-900">Køberen henter varen hos dig</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Aftal tid og sted for afhentningen med køberen i chatten herunder. Når køberen henter
+              varen, viser han dig en kode på 6 cifre. Indtast koden her – så frigives pengene til
+              dig med det samme. Giv ikke varen fra dig, før du har indtastet den rigtige kode.
+            </p>
+            {afhentningInfo && !afhentningInfo.vist && (
+              <p className="mt-3 rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+                Køberen har ikke hentet sin kode frem endnu.
+              </p>
+            )}
+            {afhentningInfo?.laast ? (
+              <p className="mt-4 rounded-lg border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
+                Koden er låst efter for mange forkerte forsøg. BidHamr kigger på handlen – kontakt
+                support@bidhamr.dk.
+              </p>
+            ) : (
+              <div className="mt-4">
+                <IndtastAfhentningskode tradeId={handel.id} />
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Handlinger */}
-        {erSaelger && handel.status === "betaling_modtaget" && (
+        {erSaelger && !afhentning && handel.status === "betaling_modtaget" && (
           <div className="rounded-xl border border-neutral-200 bg-white p-6">
             <h2 className="text-sm font-semibold text-neutral-900">Send pakken</h2>
             <p className="mt-1 mb-4 text-sm text-neutral-500">
@@ -321,7 +392,7 @@ export default async function HandelDetaljePage({
         )}
 
         {/* TRIN 1: kvittering for pakken. Ingen penge flyttes her. */}
-        {erKoeber && handel.status === "pakke_sendt" && (
+        {erKoeber && !afhentning && handel.status === "pakke_sendt" && (
           <div className="rounded-xl border border-neutral-200 bg-white p-6">
             <h2 className="text-sm font-semibold text-neutral-900">
               Har du modtaget pakken?
@@ -335,7 +406,7 @@ export default async function HandelDetaljePage({
         )}
 
         {/* TRIN 2: godkendelse udbetaler til sælgeren. */}
-        {erKoeber && handel.status === "modtaget" && !sagAktiv && (
+        {erKoeber && !afhentning && handel.status === "modtaget" && !sagAktiv && (
           <div className="rounded-xl border border-succes-kant bg-groen-lys p-6">
             <h2 className="text-sm font-semibold text-neutral-900">
               Tjek varen
@@ -348,7 +419,7 @@ export default async function HandelDetaljePage({
           </div>
         )}
 
-        {erSaelger && handel.status === "modtaget" && !sagAktiv && (
+        {erSaelger && !afhentning && handel.status === "modtaget" && !sagAktiv && (
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
             <p className="font-semibold text-indigo-900">
               Køberen har modtaget pakken
@@ -364,7 +435,9 @@ export default async function HandelDetaljePage({
           <div className="rounded-xl border border-green-300 bg-green-50 p-6">
             <p className="font-semibold text-green-700">Handlen er gennemført</p>
             <p className="mt-1 text-sm text-green-700">
-              Varen er bekræftet modtaget.
+              {afhentning
+                ? "Varen er hentet, og pengene er frigivet til sælgeren."
+                : "Varen er bekræftet modtaget."}
             </p>
           </div>
         )}

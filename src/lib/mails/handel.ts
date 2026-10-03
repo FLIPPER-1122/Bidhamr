@@ -135,6 +135,32 @@ export function saelgerBetaltMail(titel: string, tradeId: string) {
   });
 }
 
+// Kun afhentning: sælgeren sender ikke noget, men aftaler afhentning.
+export function saelgerBetaltAfhentningMail(titel: string, tradeId: string) {
+  return handelsMail(`Køberen har betalt: ${titel}`, {
+    preheader: "Aftal afhentning med køberen i handelschatten.",
+    overskriftHtml: "Køberen har betalt",
+    afsnitHtml: [
+      `Køberen har betalt for <strong>${escapeHtml(titel)}</strong>. Aftal tid og sted for afhentningen med køberen i chatten på handelssiden.`,
+      "Når køberen henter varen, viser han dig en kode på 6 cifre. Indtast koden på handelssiden – så frigives pengene til dig med det samme. Giv ikke varen fra dig uden at have indtastet den rigtige kode.",
+    ],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// Kun afhentning: køberen henter varen og viser sin kode.
+export function koeberAfhentningMail(titel: string, tradeId: string) {
+  return handelsMail(`Aftal afhentning: ${titel}`, {
+    preheader: "Aftal afhentning med sælgeren – vis koden ved afhentning.",
+    overskriftHtml: "Aftal afhentning med sælgeren",
+    afsnitHtml: [
+      `Din betaling for <strong>${escapeHtml(titel)}</strong> er gennemført. Aftal tid og sted for afhentningen med sælgeren i chatten på handelssiden.`,
+      "Når du henter varen, finder du din afhentningskode på handelssiden og viser den til sælgeren. Tjek varen, før du viser koden – når sælgeren har indtastet den, frigives pengene til sælgeren med det samme, og handlen kan ikke klages over bagefter.",
+    ],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
 export function pakkeSendtMail(titel: string, tracking: string, tradeId: string) {
   return handelsMail(`Din pakke er på vej: ${titel}`, {
     preheader: `Sporingsnummer: ${tracking}`,
