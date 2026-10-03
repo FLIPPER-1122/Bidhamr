@@ -4,7 +4,7 @@
 --       og kun i rediger_auktion. Ny faelles hjaelper
 --       public.auktion_billeder_gyldige(bruger, billeder): 1-10 billeder
 --       (MAKS_BILLEDER i src/lib/auktionRegler.ts), hvert praecist
---         https://<20 tegn projekt-ref>.supabase.co/storage/v1/object/public/
+--         https://<lkifkrexeldimmghnsie (prod) eller pjiigmzqwlfepxnjdvug (test)>.supabase.co/storage/v1/object/public/
 --         auktion-billeder/<brugerens id>/<[A-Za-z0-9._-]+>
 --       og uden '..'. Bruges i rediger_auktion, ved oprettelse
 --       (auctions_beskyt_ny) og ved direkte PATCH, naar billeder aendres
@@ -48,7 +48,7 @@ as $fn$
        where e.url is null
           or char_length(e.url) > 1000
           or position('..' in e.url) > 0
-          or e.url !~ ('^https://[a-z0-9]{20}\.supabase\.co/storage/v1/object/public/auktion-billeder/'
+          or e.url !~ ('^https://(lkifkrexeldimmghnsie|pjiigmzqwlfepxnjdvug)\.supabase\.co/storage/v1/object/public/auktion-billeder/'
                        || p_bruger::text || '/[A-Za-z0-9._-]+$')
     ),
     false);
