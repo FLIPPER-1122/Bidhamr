@@ -127,7 +127,13 @@ Brugeren får besked når:
 - **Udbetaling til sælger** sker automatisk via Stripe (dagligt; nye konti har Stripes ventetid på ca. 7 dage).
 - **Cron**: kører hvert 5. minut via pg_cron + pg_net i Supabase (gratis). Vercel Pro overvejes tættere på lancering.
 - **Moms:** Alle beløb, køberen ser, er **inkl. moms**. BidHamr afregner selv moms af sine gebyrer; køberen betaler aldrig moms oveni (Filip, 1. oktober 2026).
-- **Første bud** må være lig startprisen. Budstigningen derefter (i dag 10 %) er ikke fastlagt endnu – Filip beslutter senere.
+- **Første bud** må være lig startprisen.
+- **Budstigning (Filip, 4. oktober 2026)** – trappe efter det nuværende højeste bud: under 100 kr: +5 kr · 100–999 kr: +10 kr · 1.000–4.999 kr: +50 kr · fra 5.000 kr: +100 kr. Erstatter de 10 %.
+- **Auktionsvarighed (Filip, 4. oktober 2026):** sælger vælger 3, 5, 7 eller 10 dage ved oprettelse. 7 dage er forvalgt.
+- **Startpris = mindstepris:** én synlig startpris; ingen skjult mindstepris.
+- **Bindende bud:** et bud kan ikke trækkes tilbage. Det vises tydeligt, før man byder.
+- **Redigér/annullér auktion:** kun så længe der ikke er bud. Annullerede auktioner arkiveres, slettes aldrig.
+- **Afsendelsesfrist:** sælger skal markere pakken sendt inden 5 dage efter betaling. Ellers annulleres handlen automatisk, og køber refunderes fuldt (inkl. fragt og BidHamr Beskyttelse).
 - **Medarbejdere** må gerne kunne se alle handler (beløb og status), fordi de skal bruge det til sager. Pengetal og indtjening er stadig kun for chef.
 
 ## Vinderen betaler ikke (Filip, 2. oktober 2026)
@@ -167,4 +173,5 @@ Brugeren får besked når:
 - **Hvem afgør:** medarbejder, admin og chef må afgøre sager, også når pengene flyttes. Alt logges; admin kan genåbne.
 - **Bortkommet / aldrig sendt** kan meldes 7 dage efter afsendelse.
 - **Automatisk frigivelse:** 48 timer efter "modtaget" uden sag frigives pengene til sælger. Har køberen hverken trykket "modtaget" eller oprettet en sag **14 dage efter afsendelse**, frigives pengene også (indtil GLS-sporing erstatter det). Staff tjekker sporingsnummeret hos GLS før medhold i "bortkommet".
-- **Ankefrist:** efter en afgørelse flyttes pengene (refusion eller udbetaling) først **4 dage** efter afgørelsen. Staff kan genåbne sagen imens. Anke-knappen bygges senere.
+- **Ankefrist:** efter en afgørelse flyttes pengene (refusion eller udbetaling) først **4 dage** efter afgørelsen. Staff kan genåbne sagen imens.
+- **Anke:** den, der taber sagen, kan anke. Knappen åbner 24 timer efter afgørelsen og er åben i 3 dage (i alt 4 dage = ankefristen). Kræver begrundelse, gerne ny dokumentation. Behandles af en anden medarbejder (admin/chef) end den, der afgjorde sagen. Afgørelsen på anken er endelig. Pengene er frosset, til ankefristen er udløbet – og mens en anke behandles.
