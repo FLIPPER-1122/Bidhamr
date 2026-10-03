@@ -103,17 +103,17 @@ function afregningTekst(grund: FrigivGrund, titel: string): { titel: string; tek
     case "automatisk_48":
       return {
         titel: "Handlen er afsluttet automatisk",
-        tekst: `Der er gået 48 timer, siden køberen modtog "${titel}", uden at der er oprettet en sag. Handlen er afsluttet, og pengene er frigivet til dig.`,
+        tekst: `Der er gået 48 timer, siden køberen modtog "${titel}", uden at der er oprettet en sag. Handlen er afsluttet.`,
       };
     case "automatisk_14":
       return {
         titel: "Handlen er afsluttet automatisk",
-        tekst: `Der er gået 14 dage, siden du sendte "${titel}", uden at køberen har markeret pakken som modtaget eller oprettet en sag. Handlen er afsluttet, og pengene er frigivet til dig.`,
+        tekst: `Der er gået 14 dage, siden du sendte "${titel}", uden at køberen har markeret pakken som modtaget eller oprettet en sag. Handlen er afsluttet.`,
       };
     case "bidhamr":
       return {
         titel: "Pengene er frigivet",
-        tekst: `BidHamr har afsluttet handlen om "${titel}" og frigivet pengene til dig.`,
+        tekst: `BidHamr har afsluttet handlen om "${titel}".`,
       };
     case "sag":
       return {
@@ -123,7 +123,7 @@ function afregningTekst(grund: FrigivGrund, titel: string): { titel: string; tek
     default:
       return {
         titel: "Handlen er afsluttet",
-        tekst: `Handlen om "${titel}" er afsluttet, og pengene er frigivet til dig.`,
+        tekst: `Handlen om "${titel}" er afsluttet.`,
       };
   }
 }
@@ -163,7 +163,10 @@ export async function sendSaelgerAfregning(tradeId: string, grund: FrigivGrund):
     const tekst = afregningTekst(grund, k.titel);
     await send(b.seller_id, "udbetaling", {
       titel: tekst.titel,
-      tekst: `${tekst.tekst} Du får ${kronerFraOere(k.udbetalingOere)} kr udbetalt (salgsprisen minus 5 % i sælgergebyr) til din udbetalingskonto hos vores betalingspartner Stripe. Din afregning ligger på handelssiden.`,
+      // Intet løfte om, at pengene er i banken: afregningen sendes, før
+      // overførslen er låst (en refusion, indsigelse, genåbnet sag eller
+      // lukket udbetalingskonto kan stadig komme imellem).
+      tekst: `${tekst.tekst} Pengene er frigivet. Udbetalingen på ${kronerFraOere(k.udbetalingOere)} kr (salgsprisen minus 5 % i sælgergebyr) sendes til din udbetalingskonto hos vores betalingspartner Stripe. Din afregning ligger på handelssiden.`,
       link: `/mine-handler/${tradeId}`,
       data: { trade_id: tradeId },
       mail: saelgerAfregningMail(k as SaelgerKvittering, tekst.titel, tekst.tekst),

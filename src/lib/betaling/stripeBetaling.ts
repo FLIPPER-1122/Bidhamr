@@ -127,6 +127,10 @@ export type ProfilRaekke = {
   connect_klar_kl?: string | null;
   connect_frakoblet_kl?: string | null;
   connect_kraever_opmaerksomhed?: boolean | null;
+  // Fra 20261003061000_connect_rettelser.sql: antal admin-nulstillinger af
+  // udbetalingskontoen (indgår i idempotency key og beskednøgler).
+  connect_nulstillet_antal?: number | null;
+  connect_tidligere_konti?: string[] | null;
 };
 
 // ------------------------------------------------------------------ profiler
@@ -1386,7 +1390,10 @@ export async function spejlConnectKonto(konto: Stripe.Account): Promise<string |
       tekst:
         "Stripe har godkendt dine oplysninger. Når du sælger noget, udbetaler vores betalingspartner Stripe pengene til din bankkonto.",
       link: "/konto",
-      noegle: `connect_klar:${userId}`,
+      // En ny konto efter admin-nulstilling får sin egen "klar"-besked.
+      noegle: profil.connect_nulstillet_antal
+        ? `connect_klar:${userId}:${profil.connect_nulstillet_antal}`
+        : `connect_klar:${userId}`,
     });
     await admin
       .from("betalingsprofiler")
@@ -1541,62 +1548,147 @@ export async function stripeOversigtLink(userId: string): Promise<string | null>
   return link.url;
 }
 
+// overfoert: overført og står stadig hos sælgeren.
+// tilbagefoert: Stripe har tilbageført overførslen (helt eller delvist).
+// refunderet: køberen har fået pengene tilbage efter overførslen.
+// indsigelse: køberens bank har en åben eller tabt indsigelse (chargeback).
+export type OverfoerselStatus = "overfoert" | "tilbagefoert" | "refunderet" | "indsigelse";
+
 export type Overfoersel = {
   handelId: string;
   titel: string;
   overfoertKl: string;
   beloebOere: number;
+  status: OverfoerselStatus;
 };
 
 // Sælgerens egne overførsler fra BidHamr-handler til Connect-kontoen (spejl af
 // betalinger.stripe_transfer_id). Service-role med eksplicit seller-filter:
 // udbetaling_oere kan ikke læses med brugerens JWT. Kaldes KUN med en id fra
 // en verificeret session.
+// Stripe er sandheden: tilbageførte overførsler slås op hos Stripe (én liste
+// pr. udbetalingskonto, nyeste 100). Fejler opslaget, bruges databasens status.
 export async function hentOverfoersler(userId: string, antal = 50): Promise<Overfoersel[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("betalinger")
-    .select("trade_id, auction_id, udbetaling_oere, overfoert_kl")
+    .select(
+      "trade_id, auction_id, udbetaling_oere, overfoert_kl, stripe_transfer_id, status, " +
+        "refusion_anmodet_kl, indsigelse_kl, indsigelse_status",
+    )
     .eq("seller_id", userId)
     .not("stripe_transfer_id", "is", null)
     .order("overfoert_kl", { ascending: false, nullsFirst: false })
     .limit(antal);
   if (error) throw new Error(`hentOverfoersler: ${error.message}`);
-  const raekker = (data ?? []) as {
+  const raekker = (data ?? []) as unknown as {
     trade_id: string;
     auction_id: string;
     udbetaling_oere: number;
     overfoert_kl: string | null;
+    stripe_transfer_id: string;
+    status: BetalingRaekke["status"];
+    refusion_anmodet_kl: string | null;
+    indsigelse_kl: string | null;
+    indsigelse_status: string | null;
   }[];
+  if (raekker.length === 0) return [];
+
+  const tilbagefoert = new Set<string>();
+  try {
+    const profil = await hentProfil(userId);
+    const konti = [
+      ...new Set(
+        [profil?.stripe_account_id, ...(profil?.connect_tidligere_konti ?? [])].filter(
+          (k): k is string => !!k,
+        ),
+      ),
+    ];
+    const stripe = getStripe();
+    for (const konto of konti) {
+      const liste = await stripe.transfers.list({ destination: konto, limit: 100 });
+      for (const t of liste.data) {
+        if (t.reversed || t.amount_reversed > 0) tilbagefoert.add(t.id);
+      }
+    }
+  } catch (err) {
+    console.error("hentOverfoersler: tilbageførsler kunne ikke hentes hos Stripe:", err);
+  }
+
   const auktionIds = [...new Set(raekker.map((r) => r.auction_id))];
   const { data: auktioner } = auktionIds.length
     ? await admin.from("auctions").select("id, titel").in("id", auktionIds)
     : { data: [] as { id: string; titel: string }[] };
   const titel = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
-  return raekker.map((r) => ({
-    handelId: r.trade_id,
-    titel: titel.get(r.auction_id) ?? "Vare",
-    overfoertKl: r.overfoert_kl ?? "",
-    beloebOere: Number(r.udbetaling_oere),
-  }));
+  return raekker.map((r) => {
+    const status: OverfoerselStatus = tilbagefoert.has(r.stripe_transfer_id)
+      ? "tilbagefoert"
+      : r.status === "refunderet" || r.refusion_anmodet_kl
+        ? "refunderet"
+        : indsigelseBlokerer(r)
+          ? "indsigelse"
+          : "overfoert";
+    return {
+      handelId: r.trade_id,
+      titel: titel.get(r.auction_id) ?? "Vare",
+      overfoertKl: r.overfoert_kl ?? "",
+      beloebOere: Number(r.udbetaling_oere),
+      status,
+    };
+  });
 }
 
-// Betaling for en sælger med frakoblet konto: markér til admin én gang.
+// Betaling for en sælger med frakoblet konto. Markeres altid til admin
+// (uanset saelgerkonto_markeret_kl - den kan være sat af påmindelserne om at
+// oprette en konto), og cron stopper med at prøve: grænsen sættes ned til
+// antal forsøg (overfoersel_opbrugt bliver sand). Tælleren røres ikke (den
+// indgår i Stripes idempotency key). Nulstiller admin udbetalingskontoen
+// (udbetalingskonto_nulstil), hæves grænsen igen, og account.updated for den
+// nye konto overfører uanset grænsen. Filteret på overfoersel_forsoeg gør, at
+// en samtidig nulstilling ikke overskrives med den gamle værdi.
 async function markerFrakobletBetaling(b: BetalingRaekke): Promise<void> {
+  const admin = createAdminClient();
   const nu = new Date().toISOString();
-  const { error } = await createAdminClient()
+  const { error } = await admin
     .from("betalinger")
     .update({
-      saelgerkonto_markeret_kl: nu,
       kraever_opmaerksomhed: true,
       sidste_fejl: "Sælgers udbetalingskonto er lukket eller frakoblet hos Stripe",
+      overfoersel_graense: Math.min(b.overfoersel_graense, b.overfoersel_forsoeg),
       opdateret: nu,
     })
     .eq("id", b.id)
-    .is("saelgerkonto_markeret_kl", null)
+    .eq("overfoersel_forsoeg", b.overfoersel_forsoeg)
     .is("stripe_transfer_id", null);
   if (error) console.error("Markering (frakoblet sælgerkonto) fejlede:", b.id, error.message);
+  const { error: e2 } = await admin
+    .from("betalinger")
+    .update({ saelgerkonto_markeret_kl: nu })
+    .eq("id", b.id)
+    .is("saelgerkonto_markeret_kl", null)
+    .is("stripe_transfer_id", null);
+  if (e2) console.error("Markering (frakoblet sælgerkonto) fejlede:", b.id, e2.message);
 }
+
+// Besked til sælgeren, når admin har nulstillet en lukket udbetalingskonto
+// (udbetalingskonto_nulstil). Én gang pr. nulstilling. Kaster aldrig.
+export async function sendUdbetalingskontoNulstillet(
+  userId: string,
+  nulstilletAntal: number,
+): Promise<void> {
+  try {
+    await send(userId, "udbetaling", {
+      titel: "Opret en ny udbetalingskonto",
+      tekst:
+        "Din lukkede udbetalingskonto er fjernet fra BidHamr. Opret en ny udbetalingskonto hos vores betalingspartner Stripe under Min konto. Har du penge til gode fra et salg, sendes de til den nye konto, når Stripe har godkendt den.",
+      link: "/konto",
+      noegle: `connect_nulstillet:${userId}:${nulstilletAntal}`,
+    });
+  } catch (err) {
+    console.error("Besked om nulstillet udbetalingskonto fejlede:", userId, err);
+  }
+}
+
 // Opretter (én gang) sælgerens Connect Express-konto og returnerer et
 // onboarding-link. Kaldes KUN med en id fra en verificeret session (server
 // action og GET /api/stripe/connect/onboarding).
@@ -1643,7 +1735,14 @@ export async function onboardingLink(
         },
         metadata: { bruger_id: userId },
       },
-      { idempotencyKey: `bidhamr-connect-${userId}` },
+      // Efter en admin-nulstilling (udbetalingskonto_nulstil) skal der
+      // oprettes en NY konto - med den gamle nøgle ville Stripe (inden for
+      // 24 timer) svare med den gamle, frakoblede konto.
+      {
+        idempotencyKey: profil?.connect_nulstillet_antal
+          ? `bidhamr-connect-${userId}-${profil.connect_nulstillet_antal}`
+          : `bidhamr-connect-${userId}`,
+      },
     );
 
     await createAdminClient()

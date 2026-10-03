@@ -7,6 +7,7 @@ import {
   markerBetalingLøstForm,
   givAdvarselBetalingForm,
   markerUdbetalingskontoLøstForm,
+  nulstilUdbetalingskontoForm,
   type BetalingBeloeb,
   type Person,
 } from "@/app/actions/adminBetalinger";
@@ -240,6 +241,23 @@ export default async function AdminBetalinger({
                             required: true,
                           }}
                         />
+                        {k.frakoblet && (
+                          <ConfirmDialog
+                            triggerLabel="Nulstil udbetalingskonto"
+                            triggerClassName="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition-colors hover:bg-neutral-50"
+                            title="Nulstil udbetalingskontoen?"
+                            description="Den lukkede konto fjernes fra sælgeren, så sælgeren kan oprette en ny udbetalingskonto hos Stripe. Frigivne beløb, der venter, overføres til den nye konto, når Stripe har godkendt den. Sælgeren får besked. Handlingen logges."
+                            confirmLabel="Nulstil udbetalingskonto"
+                            action={nulstilUdbetalingskontoForm}
+                            hiddenFields={{ brugerId: k.saelger.id }}
+                            aarsagField={{
+                              name: "begrundelse",
+                              label: "Begrundelse",
+                              placeholder: "Fx: Sælger har skrevet til support og vil oprette en ny konto",
+                              required: true,
+                            }}
+                          />
+                        )}
                       </div>
                     )}
                   </li>

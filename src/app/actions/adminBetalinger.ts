@@ -5,7 +5,10 @@ import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
-import { indsigelseBlokerer } from "@/lib/betaling/stripeBetaling";
+import {
+  indsigelseBlokerer,
+  sendUdbetalingskontoNulstillet,
+} from "@/lib/betaling/stripeBetaling";
 
 // Admin: betalinger, der kræver handling (betalinger.kraever_opmaerksomhed og
 // åbne betaling_afvigelser). Medarbejder og admin ser kun hvem/hvad/status/fejl.
@@ -668,5 +671,57 @@ export async function markerUdbetalingskontoLøstForm(formData: FormData) {
   return markerUdbetalingskontoLøst(
     ((formData.get("brugerId") as string) ?? "").trim(),
     ((formData.get("note") as string) ?? "").trim(),
+  );
+}
+
+const NULSTIL_FEJL: Record<string, string> = {
+  ingen_adgang: "Du har ikke adgang til at nulstille udbetalingskonti.",
+  begrundelse_mangler: "Skriv en begrundelse.",
+  begrundelse_for_lang: "Begrundelsen er for lang (højst 2000 tegn).",
+  inhabil: "Du kan ikke nulstille din egen udbetalingskonto.",
+  ikke_fundet: "Udbetalingskontoen blev ikke fundet.",
+  ikke_frakoblet:
+    "Kun en udbetalingskonto, som sælgeren har lukket eller frakoblet hos Stripe, kan nulstilles.",
+};
+
+// Admin: nulstil en sælgers lukkede (frakoblede) udbetalingskonto, så sælgeren
+// kan oprette en ny hos Stripe. Atomisk i udbetalingskonto_nulstil (rolle,
+// inhabilitet, log i moderation_log, nye overførselsforsøg for ventende
+// betalinger). Pengene overføres, når den nye konto er klar (account.updated
+// -> overfoerVentende) - der flyttes ingen penge her.
+export async function nulstilUdbetalingskonto(brugerId: string, begrundelse: string) {
+  return koer("nulstilUdbetalingskonto", async () => {
+    const { admin, userId } = await assertRole("admin");
+    const id = (brugerId ?? "").trim();
+    const n = (begrundelse ?? "").trim();
+    if (!id) throw new BrugerFejl(NULSTIL_FEJL.ikke_fundet);
+    if (!n) throw new BrugerFejl(NULSTIL_FEJL.begrundelse_mangler);
+    if (n.length > 2000) throw new BrugerFejl(NULSTIL_FEJL.begrundelse_for_lang);
+    if (id === userId) throw new BrugerFejl(NULSTIL_FEJL.inhabil);
+
+    const { data, error } = await admin.rpc("udbetalingskonto_nulstil", {
+      p_medarbejder: userId,
+      p_bruger: id,
+      p_begrundelse: n,
+    });
+    if (error) throw new Error(error.message);
+    const svar = (data ?? {}) as { kode?: string; nulstillet_antal?: number };
+    if (svar.kode !== "ok") {
+      if (svar.kode && NULSTIL_FEJL[svar.kode]) throw new BrugerFejl(NULSTIL_FEJL[svar.kode]);
+      throw new Error(`udbetalingskonto_nulstil returnerede ${svar.kode}`);
+    }
+    const antal = Number(svar.nulstillet_antal ?? 0);
+    // Sælgeren har ingen konto endnu, så der er intet at overføre nu.
+    after(() => sendUdbetalingskontoNulstillet(id, antal));
+    revalidatePath("/admin", "layout");
+    return { ok: true as const };
+  });
+}
+
+// Til ConfirmDialog. formData: brugerId, begrundelse (påkrævet).
+export async function nulstilUdbetalingskontoForm(formData: FormData) {
+  return nulstilUdbetalingskonto(
+    ((formData.get("brugerId") as string) ?? "").trim(),
+    ((formData.get("begrundelse") as string) ?? "").trim(),
   );
 }

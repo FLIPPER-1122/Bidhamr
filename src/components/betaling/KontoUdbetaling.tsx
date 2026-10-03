@@ -13,6 +13,14 @@ import {
 import { FejlBoks } from "@/components/betaling/BetalingSektion";
 import { kroner } from "@/lib/kroner";
 
+// Overførsler, der ikke længere står hos sælgeren, vises med status.
+const OVERFOERSEL_STATUS: Record<Overfoersel["status"], string> = {
+  overfoert: "Overført",
+  tilbagefoert: "Tilbageført",
+  refunderet: "Refunderet til køberen",
+  indsigelse: "Indsigelse fra køberens bank",
+};
+
 function datoTekst(iso: string) {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString("da-DK", {
@@ -142,7 +150,7 @@ export default function KontoUdbetaling({
         </div>
       )}
 
-      {saelger.harKonto && (
+      {(saelger.harKonto || (overfoersler?.length ?? 0) > 0) && (
         <div className="border-t border-kant pt-4">
           <h3 className="text-sm font-semibold text-tekst">Overført fra dine salg</h3>
           {overfoersler === null ? (
@@ -163,9 +171,20 @@ export default function KontoUdbetaling({
                     >
                       {o.titel}
                     </Link>
-                    <span className="text-xs text-tekst-daempet">{datoTekst(o.overfoertKl)}</span>
+                    <span className="text-xs text-tekst-daempet">
+                      {datoTekst(o.overfoertKl)}
+                      {o.status !== "overfoert" && (
+                        <span className="ml-2 font-medium text-[#A32020]">{OVERFOERSEL_STATUS[o.status]}</span>
+                      )}
+                    </span>
                   </div>
-                  <span className="shrink-0 font-medium tabular-nums text-tekst">{kroner(o.beloebOere)}</span>
+                  <span
+                    className={`shrink-0 font-medium tabular-nums ${
+                      o.status === "overfoert" ? "text-tekst" : "text-tekst-daempet line-through"
+                    }`}
+                  >
+                    {kroner(o.beloebOere)}
+                  </span>
                 </li>
               ))}
             </ul>

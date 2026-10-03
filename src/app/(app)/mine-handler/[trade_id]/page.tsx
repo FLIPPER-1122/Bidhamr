@@ -252,7 +252,10 @@ export default async function HandelDetaljePage({
           </div>
         )}
 
-        {erKoeber && handel.status === "afventer_betaling" && betalingsstatus?.status === "afventer" && (
+        {erKoeber &&
+          betalingsstatus?.erKoeber === true &&
+          handel.status === "afventer_betaling" &&
+          betalingsstatus.status === "afventer" && (
           <section className="rounded-xl border border-kant bg-white p-6">
             <h2 className="font-serif text-xl font-semibold text-tekst">Betal for din vare</h2>
             {betalingsstatus.fristOverskredet ? (

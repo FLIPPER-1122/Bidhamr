@@ -77,7 +77,7 @@ export function kvitteringLinjer(k: Kvittering): KvitteringLinje[] {
   return [
     { tekst: "Salgspris (vindende bud)", oere: k.budOere },
     { tekst: "Sælgergebyr (5 %)", oere: k.saelgergebyrOere, fratraek: true },
-    { tekst: "Udbetales til dig", oere: k.udbetalingOere, fremhaev: true },
+    { tekst: "Udbetaling til dig", oere: k.udbetalingOere, fremhaev: true },
   ];
 }
 

@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
-import { startBetaling, type Betalingsstatus } from "@/app/actions/betaling";
+import { startBetaling, type KoeberBetalingsstatus } from "@/app/actions/betaling";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
 import { kroner } from "@/lib/kroner";
 
@@ -10,7 +10,7 @@ import { kroner } from "@/lib/kroner";
 // klienten lægger aldrig noget sammen.
 // BidHamr Beskyttelse er valgt (eller fravalgt) ved buddet og kan ikke ændres
 // her - den vises kun som en linje i opdelingen.
-export default function BetalingSektion({ status }: { status: Betalingsstatus }) {
+export default function BetalingSektion({ status }: { status: KoeberBetalingsstatus }) {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [totalOere, setTotalOere] = useState(status.totalOere);
   const [henter, setHenter] = useState(false);

@@ -39,13 +39,20 @@ async function indloggetBruger() {
 
 // ------------------------------------------------------------------ status
 
-export type Betalingsstatus = {
+type FaellesBetalingsstatus = {
   handelId: string;
-  erKoeber: boolean;
   status: "afventer" | "behandles" | "betalt" | "annulleret" | "refunderet";
   betalSenest: string;
   fristOverskredet: boolean;
   budOere: number;
+  betaltKl: string | null;
+  frigivetKl: string | null;
+  overfoertKl: string | null;
+};
+
+// Køberens visning: hele beløbet inkl. BidHamr Beskyttelse.
+export type KoeberBetalingsstatus = FaellesBetalingsstatus & {
+  erKoeber: true;
   koebergebyrOere: number;
   fragtOere: number;
   beskyttelse: boolean;
@@ -53,15 +60,21 @@ export type Betalingsstatus = {
   // Hvad BidHamr Beskyttelse koster på denne handel, hvis den tilvælges.
   beskyttelsePrisOere: number;
   totalOere: number;
-  // Kun for sælgeren: det, der overføres ved frigivelse.
-  saelgergebyrOere: number | null;
-  udbetalingOere: number | null;
-  betaltKl: string | null;
-  frigivetKl: string | null;
-  overfoertKl: string | null;
   sidsteFejl: string | null;
   autobetalingResultat: string | null;
 };
+
+// Sælgerens visning. Sælgeren må ikke kunne se, om køberen har købt BidHamr
+// Beskyttelse - derfor hverken beskyttelse, købers total eller noget, den
+// kan regnes ud fra.
+export type SaelgerBetalingsstatus = FaellesBetalingsstatus & {
+  erKoeber: false;
+  // Det, der overføres ved frigivelse.
+  saelgergebyrOere: number;
+  udbetalingOere: number;
+};
+
+export type Betalingsstatus = KoeberBetalingsstatus | SaelgerBetalingsstatus;
 
 // Henter betalingsstatus for en handel. Kun køber og sælger (RLS + eksplicit
 // tjek). Står betalingen som ikke-betalt, men har en PaymentIntent, spørges
@@ -69,7 +82,7 @@ export type Betalingsstatus = {
 // betalingen, selv om webhooken ikke er nået frem endnu.
 export async function hentBetalingsstatus(
   handelId: string,
-): Promise<({ ok: true } & Betalingsstatus) | Fejl> {
+): Promise<({ ok: true } & KoeberBetalingsstatus) | ({ ok: true } & SaelgerBetalingsstatus) | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
 
@@ -95,43 +108,49 @@ export async function hentBetalingsstatus(
       b = (await hentBetalingForHandel(handelId)) ?? b;
     }
 
-    const erKoeber = b.buyer_id === user.id;
-    return {
-      ok: true,
+    const faelles: FaellesBetalingsstatus = {
       handelId,
-      erKoeber,
       status: b.status,
       betalSenest: b.betal_senest,
       fristOverskredet: new Date(b.betal_senest).getTime() < Date.now(),
       budOere: Number(b.bud_oere),
+      betaltKl: b.betalt_kl,
+      frigivetKl: b.frigivet_kl,
+      overfoertKl: b.overfoert_kl,
+    };
+    if (b.buyer_id !== user.id) {
+      return {
+        ok: true,
+        ...faelles,
+        erKoeber: false,
+        saelgergebyrOere: Number(b.saelgergebyr_oere),
+        udbetalingOere: Number(b.udbetaling_oere),
+      };
+    }
+    return {
+      ok: true,
+      ...faelles,
+      erKoeber: true,
       koebergebyrOere: Number(b.koebergebyr_oere),
       fragtOere: Number(b.fragt_oere),
       beskyttelse: b.beskyttelse,
       beskyttelseOere: Number(b.beskyttelse_oere),
       beskyttelsePrisOere: beskyttelseOere(Number(b.bud_oere)),
       totalOere: Number(b.total_oere),
-      saelgergebyrOere: erKoeber ? null : Number(b.saelgergebyr_oere),
-      udbetalingOere: erKoeber ? null : Number(b.udbetaling_oere),
-      betaltKl: b.betalt_kl,
-      frigivetKl: b.frigivet_kl,
-      overfoertKl: b.overfoert_kl,
       // Aldrig den interne fejltekst: kun en fast dansk tekst, og kun for et
       // mislykket betalingsforsøg (ikke for interne markeringer til admin).
       sidsteFejl:
-        erKoeber &&
         b.sidste_fejl &&
         !b.kraever_opmaerksomhed &&
         (b.status === "afventer" || b.status === "behandles")
           ? "Betalingen kunne ikke gennemføres."
           : null,
       // Stripes fejlkode sendes ikke til klienten - kun "fejlet_" eller "betalt".
-      autobetalingResultat: !erKoeber
-        ? null
-        : b.autobetaling_resultat?.startsWith("fejlet_")
-          ? "fejlet_autobetaling"
-          : b.autobetaling_resultat === "betalt"
-            ? "betalt"
-            : null,
+      autobetalingResultat: b.autobetaling_resultat?.startsWith("fejlet_")
+        ? "fejlet_autobetaling"
+        : b.autobetaling_resultat === "betalt"
+          ? "betalt"
+          : null,
     };
   } catch (err) {
     console.error("hentBetalingsstatus fejlede:", err);

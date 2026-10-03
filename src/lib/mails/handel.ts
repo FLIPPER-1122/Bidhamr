@@ -233,11 +233,11 @@ export function saelgerAfregningMail(
   indledning: string,
 ) {
   return handelsMail(`${overskrift}: ${k.titel}`, {
-    preheader: `Du får ${kronerFraOere(k.udbetalingOere)} kr udbetalt for ${k.titel}.`,
+    preheader: `Pengene for ${k.titel} er frigivet. Udbetalingen sendes til din udbetalingskonto hos Stripe.`,
     overskriftHtml: escapeHtml(overskrift),
     afsnitHtml: [
       escapeHtml(indledning),
-      `Du får salgsprisen minus 5 % i sælgergebyr. Pengene overføres til din udbetalingskonto hos vores betalingspartner Stripe.${
+      `Pengene er frigivet. Udbetalingen på ${escapeHtml(kronerFraOere(k.udbetalingOere))} kr sendes til din udbetalingskonto hos vores betalingspartner Stripe. Udbetalingen er salgsprisen minus 5 % i sælgergebyr.${
         k.afhentning ? "" : " Fragten betaler køberen, og den går til fragtfirmaet – den indgår ikke i din udbetaling."
       }`,
       escapeHtml(KVITTERING_IKKE_FAKTURA),

@@ -102,7 +102,8 @@ export function KvitteringFuld({ k }: { k: Kvittering }) {
       <div className="mt-6 space-y-2 text-sm text-tekst-daempet">
         {k.rolle === "saelger" && (
           <p>
-            Du får salgsprisen minus 5 % i sælgergebyr.
+            Udbetalingen er salgsprisen minus 5 % i sælgergebyr og sendes til din udbetalingskonto
+            hos vores betalingspartner Stripe.
             {!k.afhentning &&
               " Fragten betaler køberen, og den går til fragtfirmaet – den indgår ikke i din udbetaling."}
           </p>
