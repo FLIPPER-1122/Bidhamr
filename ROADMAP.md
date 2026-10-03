@@ -63,7 +63,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [~] Sag kræver billeder fra køber (pakke, label, indhold) inden for 48 timer
 - [~] Svindel-undtagelse: åbenlys svindel giver altid en sag, med eller uden beskyttelse
 - [~] Permanent lukning af konti ved svindel (køber eller sælger)
-- [ ] Advarselssystem: dårlig indpakning giver påmindelse første gang, derefter en advarsel pr. gang. 3 advarsler = permanent lukning (byg videre på den eksisterende advarsel-funktion i admin)
+- [~] Advarselssystem: dårlig indpakning giver påmindelse første gang, derefter en advarsel pr. gang. 3 advarsler = permanent lukning (byg videre på den eksisterende advarsel-funktion i admin)
 - [ ] Mails ved alle trin i handlen
 - [ ] **Udbetaling til sælgers bankkonto** via Stripe Connect (testmiljø – ingen rigtige penge endnu)
 - [ ] **DAC7**: brug Stripes "Platform Tax Reporting" til at indsamle og indberette sælgeroplysninger
