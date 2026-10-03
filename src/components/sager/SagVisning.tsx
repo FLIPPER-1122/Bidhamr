@@ -26,6 +26,10 @@ function statusBoks(sag: MinSag): Boks {
   const venter = !sag.afvikletKl && !!sag.pengeFlyttesEfterKl;
   const dato = sag.pengeFlyttesEfterKl ? sagTid(sag.pengeFlyttesEfterKl) : "";
   const undtagen = sag.beskyttelse ? " – alt undtagen BidHamr Beskyttelse" : "";
+  // Retur: køberen betaler selv returfragten, og den refunderes ikke.
+  const undtagenRetur = sag.beskyttelse
+    ? " – alt undtagen BidHamr Beskyttelse og returfragten –"
+    : " – alt undtagen returfragten –";
   switch (sag.status) {
     case "aaben":
       return k
@@ -52,17 +56,17 @@ function statusBoks(sag: MinSag): Boks {
             tone: "info",
             titel: "Send varen retur",
             tekst: [
-              "Send varen retur – BidHamr betaler returfragten. Du får besked om label.",
+              "Send varen retur til sælgeren. Du betaler selv returfragten.",
               dato
-                ? `Du får pengene tilbage${undtagen}, når returpakken er afleveret – tidligst ${dato}, medmindre sagen genoptages.`
-                : "Du får pengene tilbage, når returpakken er afleveret.",
+                ? `Du får pengene tilbage${undtagenRetur} når returpakken er afleveret, tidligst ${dato}, medmindre sagen genoptages.`
+                : `Du får pengene tilbage${undtagenRetur} når returpakken er afleveret.`,
             ],
           }
         : {
             tone: "info",
             titel: "Køberen sender varen retur",
             tekst: [
-              "Køberen har fået medhold og sender varen retur til dig. BidHamr betaler returfragten.",
+              "Køberen har fået medhold og sender varen retur til dig for egen regning.",
               dato
                 ? `Pengene er stadig frosset. Køberen får dem tilbage, når returpakken er afleveret – tidligst ${dato}, medmindre sagen genoptages.`
                 : "Pengene er stadig frosset, indtil returpakken er afleveret.",

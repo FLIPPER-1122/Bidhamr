@@ -75,7 +75,7 @@ export type MinSag = {
   // Begrundelsen fra BidHamr til køber og sælger.
   begrundelse: string | null;
   returKraeves: boolean;
-  returfragtBetaler: "bidhamr" | null;
+  returfragtBetaler: "koeber" | "bidhamr" | null;
   returAfleveretKl: string | null;
   genaabnetKl: string | null;
   // Ankefrist: hvad der sker med pengene, tidligst hvornår, og om det er sket.
@@ -226,7 +226,7 @@ type SagRaekke = {
   afgjort_kl: string | null;
   begrundelse: string | null;
   retur_kraeves: boolean;
-  returfragt_betaler: "bidhamr" | null;
+  returfragt_betaler: "koeber" | "bidhamr" | null;
   retur_afleveret_kl: string | null;
   genaabnet_kl: string | null;
 };

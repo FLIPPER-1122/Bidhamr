@@ -190,6 +190,8 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
                   {sag.returAfleveretKl
                     ? `Returpakke afleveret ${sagTid(sag.returAfleveretKl)}`
                     : "Køberen skal sende varen retur"}
+                  {sag.returfragtBetaler === "koeber" && " · Køberen betaler selv returfragten"}
+                  {/* Sager afgjort før 3. oktober 2026, hvor BidHamr betalte. */}
                   {sag.returfragtBetaler === "bidhamr" && " · BidHamr betaler returfragten"}
                 </Felt>
               )}

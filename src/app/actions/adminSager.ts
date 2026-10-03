@@ -172,7 +172,7 @@ export type SagDetalje = SagListeRaekke & {
   internNote: string | null;
   afgjortAfNavn: string | null;
   returKraeves: boolean;
-  returfragtBetaler: "bidhamr" | null;
+  returfragtBetaler: "koeber" | "bidhamr" | null;
   returAfleveretKl: string | null;
   genaabnetAntal: number;
   genaabnetKl: string | null;
@@ -233,7 +233,7 @@ type SagDbRaekke = {
   begrundelse: string | null;
   intern_note: string | null;
   retur_kraeves: boolean;
-  returfragt_betaler: "bidhamr" | null;
+  returfragt_betaler: "koeber" | "bidhamr" | null;
   retur_afleveret_kl: string | null;
   refusion_oere: number | null;
   genaabnet_antal: number;

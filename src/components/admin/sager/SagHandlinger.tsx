@@ -159,7 +159,7 @@ function konsekvens(udfald: Udfald, type: SagType): string {
   if (udfald === "koeber") {
     return type === "svindel" || type === "bortkommet"
       ? "Køberen refunderes – alt undtagen BidHamr Beskyttelse – når ankefristen på 4 dage er udløbet. Indtil da kan en admin genåbne sagen."
-      : "Køberen skal sende varen retur før refusion. BidHamr betaler returfragten. Sagen står som \"Afventer retur\", indtil du registrerer, at returpakken er afleveret. Køberen refunderes, når returpakken er afleveret og ankefristen på 4 dage er udløbet.";
+      : "Køberen skal sende varen retur for egen regning før refusion. Sagen står som \"Afventer retur\", indtil du registrerer, at returpakken er afleveret. Køberen refunderes, når returpakken er afleveret og ankefristen på 4 dage er udløbet.";
   }
   if (udfald === "saelger") {
     return "Pengene frigives til sælgeren, når ankefristen på 4 dage er udløbet. Indtil da kan en admin genåbne sagen.";

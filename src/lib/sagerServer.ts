@@ -149,6 +149,10 @@ export async function notificerSagAfgoerelse(
     const forbehold = ", medmindre sagen genoptages";
     // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
     const undtagen = h.beskyttelse ? ", undtagen BidHamr Beskyttelse" : "";
+    // Retur: køberen betaler selv returfragten, og den refunderes ikke.
+    const undtagenRetur = h.beskyttelse
+      ? ", undtagen BidHamr Beskyttelse og returfragten"
+      : ", undtagen returfragten";
 
     const tekster: Record<SagUdfaldBesked, { koeber: [string, string]; saelger: [string, string] }> = {
       planlagt_refusion: {
@@ -156,8 +160,8 @@ export async function notificerSagAfgoerelse(
         saelger: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen får pengene retur${tidligst}${forbehold}, og handlen annulleres.${grund}`],
       },
       afvent_retur: {
-        koeber: ["Send varen retur", `BidHamr har afgjort sagen om "${t}" til din fordel. Send varen retur til sælgeren - BidHamr betaler returfragten. Du får pengene retur${undtagen}, når returpakken er afleveret -${tidligst}${forbehold}.${grund}`],
-        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen sender varen retur til dig - BidHamr betaler returfragten. Køberen får pengene retur, når returpakken er afleveret -${tidligst}${forbehold}.${grund}`],
+        koeber: ["Send varen retur", `BidHamr har afgjort sagen om "${t}" til din fordel. Send varen retur til sælgeren. Du betaler selv returfragten. Du får pengene retur${undtagenRetur}, når returpakken er afleveret -${tidligst}${forbehold}.${grund}`],
+        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen sender varen retur til dig for egen regning. Køberen får pengene retur, når returpakken er afleveret -${tidligst}${forbehold}.${grund}`],
       },
       planlagt_frigivelse: {
         koeber: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til sælgerens fordel. Pengene udbetales til sælgeren${tidligst}${forbehold}.${grund}`],
