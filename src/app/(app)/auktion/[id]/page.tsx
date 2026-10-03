@@ -257,9 +257,9 @@ export default async function AuktionPage({
                   Din auktion er solgt
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
-                  Køberen har 24 timer til at betale. Du får pengene udbetalt,
-                  når køberen har godkendt varen. Aftal levering med
-                  køberen i handelschatten.
+                  {auktion.forsendelse_mulig
+                    ? "Køberen har 24 timer til at betale. Du får pengene udbetalt, når køberen har godkendt varen. Aftal levering med køberen i handelschatten."
+                    : "Køberen har 24 timer til at betale. Aftal tid og sted for afhentning i handelschatten. Du får pengene udbetalt, når køberen har hentet varen, og du har tastet køberens afhentningskode ind."}
                 </p>
                 <StartChatKnap
                   auktionId={auktion.id}
@@ -311,9 +311,9 @@ export default async function AuktionPage({
               </Accordion>
 
               <Accordion title="Sikker handel med BidHamr">
-                Betalingen håndteres af vores betalingspartner Stripe, som
-                holder pengene, indtil du har modtaget og godkendt varen. Først
-                da går de videre til sælgeren.
+                {auktion.forsendelse_mulig
+                  ? "Betalingen håndteres af vores betalingspartner Stripe. Sælgeren får først pengene, når du har modtaget og godkendt varen."
+                  : "Betalingen håndteres af vores betalingspartner Stripe. Sælgeren får først pengene, når du har hentet varen og vist din afhentningskode. Vis først koden, når du har set varen og er tilfreds."}
               </Accordion>
             </div>
           </div>

@@ -70,7 +70,7 @@ export async function notificerSagOprettet(sagId: string): Promise<boolean> {
     const data = { trade_id: sag.trade_id, sag_id: sag.id };
     await send(h.buyer_id, "sag", {
       titel: "Din sag er oprettet",
-      tekst: `Vi har modtaget din sag om "${h.titel}" (${hvad}). Pengene holdes tilbage, mens BidHamr kigger på sagen.`,
+      tekst: `Vi har modtaget din sag om "${h.titel}" (${hvad}). Sælgeren får ikke pengene udbetalt, mens BidHamr kigger på sagen. Vi vender tilbage hurtigst muligt.`,
       link,
       data,
       noegle: `sag_oprettet_koeber:${sag.id}`,
@@ -144,47 +144,46 @@ export async function notificerSagAfgoerelse(
     const grund = begrundelse ? ` Begrundelse: ${begrundelse}` : "";
     const t = h.titel;
     const dato = fristKl ? sagFristTekst(fristKl) : "";
-    const tidligst = dato ? ` tidligst ${dato}` : " efter ankefristen på 4 dage";
-    const holdes = dato ? ` til ${dato}` : " i 4 dage";
-    const forbehold = ", medmindre sagen genoptages";
+    const tidligst = dato ? ` – tidligst ${dato}` : " efter ankefristen på 4 dage";
+    const fortsaetter = dato ? ` efter ${dato}` : " om 4 dage";
+    const forbehold = ", medmindre sagen genåbnes";
+    // Det køberen får tilbage ved medhold. Returfragten betaler køberen selv
+    // direkte til fragtfirmaet - den trækkes ikke fra refusionen.
     // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
-    const undtagen = h.beskyttelse ? ", undtagen BidHamr Beskyttelse" : "";
-    // Retur: køberen betaler selv returfragten, og den refunderes ikke.
-    const undtagenRetur = h.beskyttelse
-      ? ", undtagen BidHamr Beskyttelse og returfragten"
-      : ", undtagen returfragten";
+    const hvad = h.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
+    const beskyttelseNote = h.beskyttelse ? " BidHamr Beskyttelse refunderes ikke." : "";
 
     const tekster: Record<SagUdfaldBesked, { koeber: [string, string]; saelger: [string, string] }> = {
       planlagt_refusion: {
-        koeber: ["Du har fået medhold i din sag", `BidHamr har afgjort sagen om "${t}" til din fordel. Du får pengene retur${undtagen}. Pengene refunderes${tidligst}${forbehold}.${grund}`],
-        saelger: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen får pengene retur${tidligst}${forbehold}, og handlen annulleres.${grund}`],
+        koeber: ["Du har fået medhold i din sag", `BidHamr har afgjort sagen om "${t}" til din fordel. Du får ${hvad} tilbage${tidligst}${forbehold}.${beskyttelseNote}${grund}`],
+        saelger: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen får pengene tilbage${tidligst}${forbehold}, og handlen annulleres.${grund}`],
       },
       afvent_retur: {
-        koeber: ["Send varen retur", `BidHamr har afgjort sagen om "${t}" til din fordel. Send varen retur til sælgeren. Du betaler selv returfragten. Du får pengene retur${undtagenRetur}, når returpakken er afleveret -${tidligst}${forbehold}.${grund}`],
-        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen sender varen retur til dig for egen regning. Køberen får pengene retur, når returpakken er afleveret -${tidligst}${forbehold}.${grund}`],
+        koeber: ["Send varen retur", `BidHamr har afgjort sagen om "${t}" til din fordel. Send varen retur til sælgeren. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage${tidligst}${forbehold}.${beskyttelseNote}${grund}`],
+        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen sender varen retur til dig og betaler selv returfragten. Når pakken er afleveret, får køberen pengene tilbage${tidligst}${forbehold}.${grund}`],
       },
       planlagt_frigivelse: {
         koeber: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til sælgerens fordel. Pengene udbetales til sælgeren${tidligst}${forbehold}.${grund}`],
         saelger: ["Du har fået medhold i sagen", `BidHamr har afgjort sagen om "${t}" til din fordel. Pengene udbetales til dig${tidligst}${forbehold}.${grund}`],
       },
       lukket: {
-        koeber: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Pengene holdes tilbage${holdes}${forbehold}. Derefter fortsætter handlen som normalt.${grund}`],
-        saelger: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Pengene holdes tilbage${holdes}${forbehold}. Derefter fortsætter handlen som normalt.${grund}`],
+        koeber: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Handlen fortsætter som normalt${fortsaetter}${forbehold}.${grund}`],
+        saelger: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Handlen fortsætter som normalt${fortsaetter}${forbehold}.${grund}`],
       },
       retur_afleveret: {
-        koeber: ["Returpakken er afleveret", `Returpakken med "${t}" er afleveret. Du får pengene retur${undtagen}${tidligst}${forbehold}.`],
-        saelger: ["Returpakken er afleveret", `Returpakken med "${t}" er afleveret. Køberen får pengene retur${tidligst}${forbehold}, og handlen annulleres.`],
+        koeber: ["Returpakken er afleveret", `Returpakken med "${t}" er afleveret. Du får ${hvad} tilbage${tidligst}${forbehold}.${beskyttelseNote}`],
+        saelger: ["Returpakken er afleveret", `Returpakken med "${t}" er afleveret. Køberen får pengene tilbage${tidligst}${forbehold}, og handlen annulleres.`],
       },
       refunderet: {
-        koeber: ["Pengene er på vej retur", `Pengene for "${t}" er sendt retur til dig${undtagen}. Det kan tage nogle dage, før de står på din konto. Betalingen håndteres af vores betalingspartner Stripe.`],
-        saelger: ["Handlen er annulleret", `Køberen har fået pengene for "${t}" retur efter sagens afgørelse, og handlen er annulleret.`],
+        koeber: ["Pengene er på vej tilbage", `Pengene for "${t}" er sendt tilbage til dig.${beskyttelseNote} Der kan gå nogle dage, før de står på din konto. Betalingen håndteres af vores betalingspartner Stripe.`],
+        saelger: ["Handlen er annulleret", `Køberen har fået pengene for "${t}" tilbage efter sagens afgørelse, og handlen er annulleret.`],
       },
       frigivet: {
-        koeber: ["Sagen er afsluttet", `Pengene for "${t}" er frigivet til sælgeren efter sagens afgørelse.`],
-        saelger: ["Pengene er frigivet", `Pengene for "${t}" er frigivet efter sagens afgørelse og bliver udbetalt til din udbetalingskonto hos vores betalingspartner Stripe.`],
+        koeber: ["Sagen er afsluttet", `Pengene for "${t}" er udbetalt til sælgeren efter sagens afgørelse.`],
+        saelger: ["Pengene er på vej til dig", `Pengene for "${t}" bliver nu udbetalt til din udbetalingskonto hos vores betalingspartner Stripe.`],
       },
       genaabnet: {
-        koeber: ["Sagen er genåbnet", `BidHamr har genåbnet sagen om "${t}". Den tidligere afgørelse er sat på pause, og pengene holdes tilbage, til sagen er afgjort igen.`],
+        koeber: ["Sagen er genåbnet", `BidHamr har genåbnet sagen om "${t}". Den tidligere afgørelse er sat på pause, til sagen er afgjort igen.`],
         saelger: ["Sagen er genåbnet", `BidHamr har genåbnet sagen om "${t}". Den tidligere afgørelse er sat på pause, og udbetalingen venter, til sagen er afgjort igen.`],
       },
     };

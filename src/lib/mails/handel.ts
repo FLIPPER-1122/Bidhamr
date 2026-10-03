@@ -142,7 +142,8 @@ export function saelgerBetaltAfhentningMail(titel: string, tradeId: string) {
     overskriftHtml: "Køberen har betalt",
     afsnitHtml: [
       `Køberen har betalt for <strong>${escapeHtml(titel)}</strong>. Aftal tid og sted for afhentningen med køberen i chatten på handelssiden.`,
-      "Når køberen henter varen, viser han dig en kode på 6 cifre. Indtast koden på handelssiden – så frigives pengene til dig med det samme. Giv ikke varen fra dig uden at have indtastet den rigtige kode.",
+      "Når køberen henter varen, viser køberen dig en kode på 6 cifre. Tast koden ind på handelssiden, så får du pengene udbetalt med det samme.",
+      "<strong>Giv ikke varen fra dig, før du har tastet den rigtige kode ind.</strong>",
     ],
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
   });
@@ -155,7 +156,8 @@ export function koeberAfhentningMail(titel: string, tradeId: string) {
     overskriftHtml: "Aftal afhentning med sælgeren",
     afsnitHtml: [
       `Din betaling for <strong>${escapeHtml(titel)}</strong> er gennemført. Aftal tid og sted for afhentningen med sælgeren i chatten på handelssiden.`,
-      "Når du henter varen, finder du din afhentningskode på handelssiden og viser den til sælgeren. Tjek varen, før du viser koden – når sælgeren har indtastet den, frigives pengene til sælgeren med det samme, og handlen kan ikke klages over bagefter.",
+      "Din afhentningskode finder du på handelssiden. Du får den, når du har givet sælgeren 1-5 stjerner. Vis koden til sælgeren, når du henter varen.",
+      "Tjek varen, før du viser koden. Når sælgeren har tastet koden ind, får sælgeren pengene med det samme, og du kan ikke klage over handlen bagefter.",
       "<strong>Vis kun koden, når du står med varen i hånden. Send den aldrig i chatten.</strong>",
     ],
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },

@@ -19,10 +19,10 @@ function KodeVisning({ kode }: { kode: string }) {
         {kode}
       </p>
       <p className="mt-3 text-sm font-semibold text-tekst">
-        Vis kun koden, når du står med varen i hånden. Send den aldrig i chatten.
+        Vis kun koden, når du står med varen i hånden og har tjekket den. Send den aldrig i chatten.
       </p>
       <p className="mt-1 text-sm text-tekst-daempet">
-        Tjek varen, før du viser koden. Din bedømmelse vises på sælgerens profil, når afhentningen er gennemført.
+        Når sælgeren har tastet koden ind, får sælgeren pengene, og du kan ikke klage bagefter. Din bedømmelse vises på sælgerens profil, når afhentningen er gennemført.
       </p>
     </div>
   );
@@ -51,7 +51,7 @@ export function VisAfhentningskode({
     <BekraeftDialog
       triggerLabel="Vis afhentningskode"
       title="Bedøm sælgeren og få din kode"
-      description="Din bedømmelse vises på sælgerens profil, når afhentningen er gennemført. Vis kun koden, når du står med varen i hånden – send den aldrig i chatten. Vis først koden til sælgeren, når du står med varen og har tjekket den: når sælgeren har indtastet koden, frigives pengene til sælgeren med det samme, og du kan ikke klage over handlen bagefter. Betalingen håndteres af vores betalingspartner Stripe."
+      description="Vis kun koden, når du står med varen i hånden og har tjekket den. Send den aldrig i chatten. Når sælgeren har tastet koden ind, får sælgeren pengene med det samme, og du kan ikke klage over handlen bagefter. Din bedømmelse vises på sælgerens profil, når afhentningen er gennemført. Betalingen håndteres af vores betalingspartner Stripe."
       confirmLabel="Bedøm og vis kode"
       confirmDisabled={stjerner === 0 || antalTegn > KOMMENTAR_MAKS}
       onConfirm={async () => {

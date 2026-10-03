@@ -138,40 +138,41 @@ function Tidslinje({ sag }: { sag: MinSag }) {
 }
 
 // "Det skal du gøre nu": én kort sætning pr. rolle og status.
-// TODO(indhold): gennemse teksterne.
 function goerNu(sag: MinSag): { tekst: string; handling: boolean } {
   const k = sag.erKoeber;
   const dato = sag.pengeFlyttesEfterKl ? datoITekst(sag.pengeFlyttesEfterKl) : "";
   const venter = !sag.afvikletKl && !!dato;
   const tidligst = dato ? ` – tidligst ${dato}` : "";
   // Med BidHamr Beskyttelse er Beskyttelsen "brugt" og refunderes ikke.
+  // Returfragten betaler køberen selv direkte til fragtfirmaet.
   const hvad = sag.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
+  const beskyttelseNote = sag.beskyttelse ? " BidHamr Beskyttelse refunderes ikke." : "";
 
   switch (sag.status) {
     case "aaben":
       return k
-        ? { tekst: "Du skal ikke gøre noget nu. BidHamr ser på sagen og vender tilbage hurtigst muligt.", handling: false }
-        : { tekst: "Du skal ikke gøre noget nu. Pengene er sat på pause, mens BidHamr ser på sagen.", handling: false };
+        ? { tekst: "Du skal ikke gøre noget nu. BidHamr kigger på sagen og vender tilbage hurtigst muligt.", handling: false }
+        : { tekst: "Du skal ikke gøre noget nu. Udbetalingen venter, mens BidHamr kigger på sagen.", handling: false };
     case "afventer_retur":
       return k
         ? {
-            tekst: `Send varen retur til sælgeren. Du betaler selv returfragten til fragtfirmaet. Når pakken er afleveret, får du ${hvad} tilbage${tidligst}.`,
+            tekst: `Send varen retur til sælgeren. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage${tidligst}.${beskyttelseNote}`,
             handling: true,
           }
         : {
-            tekst: "Køberen sender varen retur til dig og betaler selv fragten. Du skal ikke gøre noget nu.",
+            tekst: "Køberen sender varen retur til dig og betaler selv returfragten. Du skal ikke gøre noget nu.",
             handling: false,
           };
     case "afgjort_koeber":
       if (k) {
         if (sag.afvikletKl) {
-          return { tekst: "Pengene er sendt retur til dig. Det kan tage nogle dage, før de står på din konto.", handling: false };
+          return { tekst: "Pengene er sendt tilbage til dig. Der kan gå nogle dage, før de står på din konto.", handling: false };
         }
-        return { tekst: `Du har fået medhold. Du får ${hvad} tilbage${tidligst}. Du skal ikke gøre mere.`, handling: false };
+        return { tekst: `Du har fået medhold og får ${hvad} tilbage${tidligst}. Du skal ikke gøre mere.${beskyttelseNote}`, handling: false };
       }
       return venter
         ? { tekst: `Køberen har fået medhold og får pengene tilbage tidligst ${dato}. Handlen annulleres.`, handling: false }
-        : { tekst: "Køberen har fået medhold og pengene tilbage. Handlen er annulleret.", handling: false };
+        : { tekst: "Køberen har fået medhold og har fået pengene tilbage. Handlen er annulleret.", handling: false };
     case "afgjort_saelger":
       if (k) {
         return venter
@@ -183,7 +184,7 @@ function goerNu(sag: MinSag): { tekst: string; handling: boolean } {
         : { tekst: "Du har fået medhold, og pengene er udbetalt til dig.", handling: false };
     case "lukket":
       return venter
-        ? { tekst: `Sagen er lukket. Pengene holdes tilbage til ${dato}, og derefter fortsætter handlen som normalt.`, handling: false }
+        ? { tekst: `Sagen er lukket. Handlen fortsætter som normalt efter ${dato}.`, handling: false }
         : { tekst: "Sagen er lukket, og handlen fortsætter som normalt.", handling: false };
   }
 }
