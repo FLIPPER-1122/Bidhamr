@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import HandelStatusBadge, { AKTIVE_STATUSSER } from "@/components/HandelStatusBadge";
 import { hentMineAktiveTilbud } from "@/app/actions/andenchanceBruger";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
+import { sagLink, type SagStatus } from "@/lib/sager";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,27 @@ type HandelRaekke = {
   buyer_id: string;
   seller_id: string;
   auctions: { titel: string; billeder: string[] | null } | null;
+  // Sager på handlen (hentes med i samme forespørgsel; RLS: kun parterne).
+  sager: { id: string; status: SagStatus; oprettet_kl: string }[] | null;
 };
+
+const SAG_AKTIV: SagStatus[] = ["aaben", "afventer_retur"];
+
+// Mærke på handelskortet, når der er en sag.
+const SAG_MAERKE: Record<SagStatus, { tekst: string; stil: string }> = {
+  aaben: { tekst: "Sag i gang", stil: "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst" },
+  afventer_retur: { tekst: "Afventer retur", stil: "border-info-kant bg-info-bg text-info-tekst" },
+  afgjort_koeber: { tekst: "Sag afgjort", stil: "border-kant-staerk bg-neutral-50 text-tekst-daempet" },
+  afgjort_saelger: { tekst: "Sag afgjort", stil: "border-kant-staerk bg-neutral-50 text-tekst-daempet" },
+  lukket: { tekst: "Sag lukket", stil: "border-kant-staerk bg-neutral-50 text-tekst-daempet" },
+};
+
+// Den nyeste sag på handlen (der er normalt kun én).
+function nyesteSag(h: HandelRaekke) {
+  const sager = h.sager ?? [];
+  if (sager.length === 0) return null;
+  return sager.reduce((a, b) => (Date.parse(b.oprettet_kl) > Date.parse(a.oprettet_kl) ? b : a));
+}
 
 function HandelKort({
   handel,
@@ -26,10 +47,12 @@ function HandelKort({
 }) {
   const erKoeber = handel.buyer_id === brugerId;
   const billede = handel.auctions?.billeder?.[0] ?? null;
+  const sag = nyesteSag(handel);
+  const sagAktiv = !!sag && SAG_AKTIV.includes(sag.status);
 
   return (
     <Link
-      href={`/mine-handler/${handel.id}`}
+      href={sagAktiv ? sagLink(handel.id) : `/mine-handler/${handel.id}`}
       className="flex items-center gap-4 rounded-xl border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-md"
     >
       <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100">
@@ -62,6 +85,13 @@ function HandelKort({
           {Number(handel.amount).toLocaleString("da-DK")} kr
         </span>
         <HandelStatusBadge status={handel.status} />
+        {sag && (
+          <span
+            className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${SAG_MAERKE[sag.status].stil}`}
+          >
+            {SAG_MAERKE[sag.status].tekst}
+          </span>
+        )}
         {/* Hele kortet er linket til handelssiden; dette er en synlig
             markering af, at chatten ligger derinde. Et <Link> her ville
             være et link inde i et link. */}
@@ -101,7 +131,7 @@ export default async function MineHandlerPage() {
   const [{ data }, tilbud] = await Promise.all([
     supabase
     .from("trades")
-    .select("id, status, amount, created_at, buyer_id, seller_id, auctions(titel, billeder)")
+    .select("id, status, amount, created_at, buyer_id, seller_id, auctions(titel, billeder), sager(id, status, oprettet_kl)")
     .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
     .order("created_at", { ascending: false })
     .overrideTypes<HandelRaekke[], { merge: false }>(),
@@ -111,6 +141,10 @@ export default async function MineHandlerPage() {
   const handler = data ?? [];
   const aktive = handler.filter((h) => AKTIVE_STATUSSER.includes(h.status));
   const afsluttede = handler.filter((h) => !AKTIVE_STATUSSER.includes(h.status));
+  const medSag = handler.filter((h) => {
+    const s = nyesteSag(h);
+    return !!s && SAG_AKTIV.includes(s.status);
+  });
 
   return (
     <main className="flex-1 bg-white px-4 py-8 sm:px-8">
@@ -119,6 +153,30 @@ export default async function MineHandlerPage() {
         <p className="mt-1 text-sm text-neutral-500">
           Handler hvor du er køber eller sælger.
         </p>
+
+        {medSag.length > 0 && (
+          <section
+            aria-labelledby="sager-titel"
+            className="mt-6 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst sm:p-5"
+          >
+            <h2 id="sager-titel" className="font-semibold">
+              {medSag.length === 1 ? "Du har 1 sag i gang" : `Du har ${medSag.length} sager i gang`}
+            </h2>
+            <ul className="mt-2 space-y-1">
+              {medSag.map((h) => (
+                <li key={h.id}>
+                  <Link
+                    href={sagLink(h.id)}
+                    className="inline-flex min-h-11 max-w-full items-center gap-1 text-sm font-semibold underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+                  >
+                    <span className="truncate">Se sagen om {h.auctions?.titel ?? "din handel"}</span>
+                    <span aria-hidden="true">→</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {tilbud.length > 0 && (
           <section className="mt-8">

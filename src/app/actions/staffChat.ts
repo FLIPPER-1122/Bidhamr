@@ -787,3 +787,53 @@ export async function markerStaffSamtaleLaest(samtaleId: string): Promise<{ ok: 
   }
   return { ok: true as const };
 }
+
+// Brugerens samtale med BidHamr om en bestemt sag (sag_type 'sag') og den
+// seneste besked fra BidHamr i den. Til sagsboksen på handelssiden. Kun
+// læsning med brugerens egen session (RLS og kolonne-grants: kun egne samtaler).
+export async function hentMinSagSamtale(
+  sagId: string,
+): Promise<
+  | { samtale: { id: string; lukket: boolean; seneste: StaffBesked | null; ulaest: boolean } | null }
+  | { fejl: string }
+> {
+  const { supabase, user } = await brugerSession();
+  if (!user) return { fejl: IKKE_LOGGET_IND };
+  if (!erUuid(sagId)) return { fejl: "Sagen findes ikke." };
+  try {
+    const { data: s, error } = await supabase
+      .from("staff_samtaler")
+      .select("id, lukket_kl, bruger_laest_kl")
+      .eq("bruger_id", user.id)
+      .eq("sag_type", "sag")
+      .eq("sag_id", sagId)
+      .order("aabnet_kl", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string; lukket_kl: string | null; bruger_laest_kl: string | null }>();
+    if (error) throw new Error(error.message);
+    if (!s) return { samtale: null };
+
+    const { data: b, error: bFejl } = await supabase
+      .from("staff_beskeder")
+      .select("id, fra_staff, tekst, oprettet_kl")
+      .eq("samtale_id", s.id)
+      .eq("fra_staff", true)
+      .order("oprettet_kl", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle<StaffBesked>();
+    if (bFejl) throw new Error(bFejl.message);
+
+    return {
+      samtale: {
+        id: s.id,
+        lukket: s.lukket_kl !== null,
+        seneste: b ?? null,
+        ulaest: !!b && (!s.bruger_laest_kl || Date.parse(b.oprettet_kl) > Date.parse(s.bruger_laest_kl)),
+      },
+    };
+  } catch (err) {
+    console.error("Staff-chat hentMinSagSamtale fejlede:", err);
+    return { fejl: GENERISK };
+  }
+}

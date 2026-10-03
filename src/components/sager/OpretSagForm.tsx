@@ -116,39 +116,52 @@ export default function OpretSagForm({
     }
   }
 
+  const beskyttelseInfo = muligheder.kraeverBeskyttelse.length > 0 && (
+    <p className="rounded-xl border border-info-kant bg-info-bg p-3 text-sm text-info-tekst">
+      Uden BidHamr Beskyttelse kan du ikke oprette en sag om{" "}
+      {muligheder.kraeverBeskyttelse.map((t) => SAG_TYPE_NAVN[t].toLowerCase()).join(" eller ")}. Skriv i stedet
+      til sælgeren i chatten herunder.{" "}
+      <Link href="/bidhamr-beskyttelse" className="font-semibold underline">
+        Læs mere
+      </Link>
+    </p>
+  );
+
+  // Ingen sag kan oprettes lige nu - kun forklaringen om Beskyttelsen.
+  if (muligheder.typer.length === 0) {
+    return <div>{beskyttelseInfo}</div>;
+  }
+
   return (
-    <section aria-labelledby={`${id}-titel`} className="rounded-2xl border border-kant bg-white p-5 sm:p-6">
-      <h2 id={`${id}-titel`} className="font-serif text-xl font-semibold text-tekst">
-        Er der et problem med handlen?
-      </h2>
-      {muligheder.fristKl && (
-        <p className="mt-1 text-sm text-tekst-daempet">
-          Du kan oprette en sag indtil <span className="font-semibold text-tekst">{sagTid(muligheder.fristKl)}</span>.
-        </p>
-      )}
-      <p className="mt-1 text-sm text-tekst-daempet">
-        Opretter du en sag, holdes pengene tilbage, mens BidHamr ser på den.
-      </p>
-
-      {muligheder.kraeverBeskyttelse.length > 0 && (
-        <div className="mt-4 rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
-          <p className="font-semibold">Du har ikke BidHamr Beskyttelse på denne handel</p>
-          <p className="mt-1">
-            Uden BidHamr Beskyttelse kan du ikke oprette en sag om{" "}
-            {muligheder.kraeverBeskyttelse.map((t) => SAG_TYPE_NAVN[t].toLowerCase()).join(" eller ")}. Så må du
-            og sælgeren selv finde en løsning, fx i chatten herunder.
-          </p>
-          <Link href="/bidhamr-beskyttelse" className="mt-2 inline-block font-semibold underline">
-            Læs mere om BidHamr Beskyttelse
-          </Link>
+    <section aria-labelledby={`${id}-titel`} className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      {!aaben ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 id={`${id}-titel`} className="text-sm font-semibold text-tekst">
+              Er der noget galt?
+            </h2>
+            {muligheder.fristKl && (
+              <p className="mt-0.5 text-sm text-tekst-daempet">Frist: {sagTid(muligheder.fristKl)}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAaben(true)}
+            className="btn btn-sekundaer w-full shrink-0 sm:w-auto"
+          >
+            Der er et problem med min vare
+          </button>
         </div>
-      )}
-
-      {muligheder.typer.length === 0 ? null : !aaben ? (
-        <button type="button" onClick={() => setAaben(true)} className="btn btn-sekundaer mt-4">
-          Opret sag
-        </button>
       ) : (
+        <>
+        <h2 id={`${id}-titel`} className="font-serif text-xl font-semibold text-tekst">
+          Der er et problem med min vare
+        </h2>
+        <p className="mt-1 text-sm text-tekst-daempet">
+          Pengene sættes på pause, mens BidHamr ser på sagen.
+          {muligheder.fristKl && <> Frist: {sagTid(muligheder.fristKl)}.</>}
+        </p>
+        {beskyttelseInfo && <div className="mt-4">{beskyttelseInfo}</div>}
         <form onSubmit={send} className="mt-5 space-y-6" noValidate>
           <fieldset>
             <legend className="text-sm font-semibold text-tekst">Hvad drejer sagen sig om?</legend>
@@ -247,6 +260,7 @@ export default function OpretSagForm({
             </button>
           </div>
         </form>
+        </>
       )}
     </section>
   );

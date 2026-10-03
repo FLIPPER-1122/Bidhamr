@@ -11,7 +11,7 @@ import {
   type SagPengeHandling,
   type SagType,
   erSagType,
-  sagSti,
+  sagLink,
 } from "@/lib/sager";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -66,7 +66,7 @@ export async function notificerSagOprettet(sagId: string): Promise<boolean> {
     const h = await handelOgTitel(admin, sag.trade_id);
     if (!h) return false;
     const hvad = SAG_TYPE_NAVN[sag.type].toLowerCase();
-    const link = sagSti(sag.trade_id);
+    const link = sagLink(sag.trade_id);
     const data = { trade_id: sag.trade_id, sag_id: sag.id };
     await send(h.buyer_id, "sag", {
       titel: "Din sag er oprettet",
@@ -139,7 +139,7 @@ export async function notificerSagAfgoerelse(
     const admin = createAdminClient();
     const h = await handelOgTitel(admin, tradeId);
     if (!h) return;
-    const link = sagSti(tradeId);
+    const link = sagLink(tradeId);
     const data = { trade_id: tradeId, sag_id: sagId };
     const grund = begrundelse ? ` Begrundelse: ${begrundelse}` : "";
     const t = h.titel;

@@ -18,6 +18,7 @@ import { hentSagForHandel, hentSagMuligheder } from "@/app/actions/sager";
 import SagVisning from "@/components/sager/SagVisning";
 import OpretSagForm from "@/components/sager/OpretSagForm";
 import { sagTid } from "@/components/sager/visning";
+import { hentMinSagSamtale } from "@/app/actions/staffChat";
 
 // En sag kan tidligst oprettes, når pakken er sendt, og vises også efter
 // afgørelsen (handlen kan da være leveret eller annulleret).
@@ -120,10 +121,14 @@ export default async function HandelDetaljePage({
   const sag = sagRes && "sag" in sagRes ? sagRes.sag : null;
   const sagFejl = sagRes && "fejl" in sagRes ? sagRes.fejl : null;
   const sagAktiv = sag?.status === "aaben" || sag?.status === "afventer_retur";
-  const mulighederRes =
+  const [mulighederRes, samtaleRes] = await Promise.all([
     erKoeber && !sag && !sagFejl && (handel.status === "pakke_sendt" || handel.status === "modtaget")
-      ? await hentSagMuligheder(handel.id)
-      : null;
+      ? hentSagMuligheder(handel.id)
+      : Promise.resolve(null),
+    // Seneste besked fra BidHamr om sagen (vises i sagsboksen).
+    sag ? hentMinSagSamtale(sag.id) : Promise.resolve(null),
+  ]);
+  const sagSamtale = samtaleRes && "samtale" in samtaleRes ? samtaleRes.samtale : null;
   const muligheder = mulighederRes && !("fejl" in mulighederRes) ? mulighederRes : null;
 
   return (
@@ -138,6 +143,14 @@ export default async function HandelDetaljePage({
           </svg>
           Tilbage til mine handler
         </Link>
+
+        {/* Sagen står øverst, så køber og sælger straks kan se, hvor den er. */}
+        {sagFejl && (
+          <div className="rounded-xl border border-fejl-kant bg-fejl-bg p-6 text-sm text-fejl-tekst">
+            Sagen kunne ikke hentes lige nu. Genindlæs siden om lidt.
+          </div>
+        )}
+        {sag && <SagVisning sag={sag} brugerId={user.id} samtale={sagSamtale} />}
 
         {/* Overblik */}
         <div className="rounded-xl border border-neutral-200 bg-white p-6">
@@ -356,13 +369,7 @@ export default async function HandelDetaljePage({
           </div>
         )}
 
-        {/* Sag fra køberen */}
-        {sagFejl && (
-          <div className="rounded-xl border border-fejl-kant bg-fejl-bg p-6 text-sm text-fejl-tekst">
-            Sagen kunne ikke hentes lige nu. Genindlæs siden om lidt.
-          </div>
-        )}
-        {sag && <SagVisning sag={sag} brugerId={user.id} />}
+        {/* Køberen kan oprette en sag */}
         {muligheder && !muligheder.harSag && (muligheder.typer.length > 0 || muligheder.kraeverBeskyttelse.length > 0) && (
           <OpretSagForm tradeId={handel.id} koeberId={user.id} muligheder={muligheder} />
         )}
@@ -372,9 +379,8 @@ export default async function HandelDetaljePage({
           // ikke nået endnu (ellers ville typen være mulig).
           muligheder.bortkommetFraKl && (
             <p className="rounded-xl border border-kant bg-neutral-50 px-4 py-3 text-sm text-tekst-daempet">
-              Er pakken ikke kommet frem, kan du melde den bortkommet fra {sagTid(muligheder.bortkommetFraKl)}
-              {muligheder.fristKl && <> til {sagTid(muligheder.fristKl)}</>}. Har du hverken markeret pakken
-              som modtaget eller oprettet en sag 14 dage efter afsendelsen, frigives pengene til sælgeren.
+              Er pakken ikke kommet frem? Du kan melde det fra {sagTid(muligheder.bortkommetFraKl)}
+              {muligheder.fristKl && <> til {sagTid(muligheder.fristKl)}</>}.
             </p>
           )}
 

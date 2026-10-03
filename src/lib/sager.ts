@@ -117,6 +117,11 @@ export function sagSti(tradeId: string): string {
   return `/mine-handler/${tradeId}`;
 }
 
+// Link direkte til sagen på handelssiden (notifikationer, mails, listen).
+export function sagLink(tradeId: string): string {
+  return `${sagSti(tradeId)}#sag`;
+}
+
 export function adminSagSti(sagId: string): string {
   return `/admin/sager/${sagId}`;
 }
