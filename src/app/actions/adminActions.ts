@@ -603,19 +603,52 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
     .select("id, auction_id, status")
     .eq("id", rapportId)
     .single();
-  if (!rapport) throw new BrugerFejl("Rapporten findes ikke.");
+  if (!rapport) {
+    throw new BrugerFejl(
+      "Rapporten findes ikke. Den kan være slettet af den automatiske oprydning.",
+    );
+  }
 
   // 'handled' rørte aldrig opslaget, så der er intet at fortryde.
   const opslagetBlevAendret =
     rapport.status === "under_behandling" || rapport.status === "fjernet";
 
-  if (opslagetBlevAendret) {
-    if (!harMindstRolle(rolle, "admin")) {
-      throw new BrugerFejl(
-        "Kun admin kan gøre et skjult eller fjernet opslag synligt igen.",
-      );
-    }
+  if (opslagetBlevAendret && !harMindstRolle(rolle, "admin")) {
+    throw new BrugerFejl(
+      "Kun admin kan gøre et skjult eller fjernet opslag synligt igen.",
+    );
+  }
 
+  // Rapporten genåbnes FØR opslaget ændres. Den automatiske oprydning kan have
+  // slettet rapporten imens (eller en anden kan have genåbnet den) - så må
+  // opslaget ikke røres. Status tjekkes i samme update, så et dobbeltklik ikke
+  // giver dobbelt effekt.
+  const { data: genaabnet, error } = await admin
+    .from("reports")
+    .update({
+      status: "pending",
+      handled_by: null,
+      handled_note: null,
+      handled_at: null,
+    })
+    .eq("id", rapportId)
+    .eq("status", rapport.status)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!genaabnet || genaabnet.length === 0) {
+    const { data: findes } = await admin
+      .from("reports")
+      .select("id")
+      .eq("id", rapportId)
+      .maybeSingle();
+    throw new BrugerFejl(
+      findes
+        ? "Rapporten er allerede ændret af en anden. Genindlæs siden."
+        : "Rapporten er allerede slettet af den automatiske oprydning.",
+    );
+  }
+
+  if (opslagetBlevAendret) {
     const { data: auktion } = await admin
       .from("auctions")
       .select("bruger_id, slutter_kl")
@@ -623,7 +656,9 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
       .single();
 
     if (auktion) {
-      const opdatering: { skjult: boolean; status?: string } = { skjult: false };
+      const opdatering: { skjult: boolean; status?: string; arkiveret_kl?: null } = {
+        skjult: false,
+      };
 
       // 'fjernet' satte status til 'annulleret' - den skal tilbage. En auktion
       // hvis sluttid er passeret genoplives som afsluttet, ikke som aktiv.
@@ -631,6 +666,13 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
         opdatering.status =
           new Date(auktion.slutter_kl) > new Date() ? "aktiv" : "afsluttet";
       }
+
+      // En aktiv auktion må aldrig være arkiveret. Triggeren
+      // auctions_arkiv_felter nulstiller også arkiveret_kl, når status bliver
+      // 'aktiv'; her gøres det eksplicit. En afsluttet auktion forbliver
+      // arkiveret - afsluttet_kl ændres ikke, så næste oprydning ville
+      // arkivere den igen med det samme.
+      if (opdatering.status === "aktiv") opdatering.arkiveret_kl = null;
 
       const { error: opdateringFejl } = await admin
         .from("auctions")
@@ -648,17 +690,6 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
       });
     }
   }
-
-  const { error } = await admin
-    .from("reports")
-    .update({
-      status: "pending",
-      handled_by: null,
-      handled_note: null,
-      handled_at: null,
-    })
-    .eq("id", rapportId);
-  if (error) throw new Error(error.message);
 
   revalidatePath("/admin/rapporter");
   revalidatePath("/admin/opklarede-rapporter");
