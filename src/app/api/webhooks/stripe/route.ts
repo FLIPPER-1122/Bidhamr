@@ -6,19 +6,23 @@ import {
   overfoerVentende,
   registrerGemtKort,
   spejlConnectKonto,
+  spejlFrakobling,
   spejlIndsigelse,
   spejlPaymentIntent,
   spejlRefusion,
   spejlRefusionsfejl,
+  spejlUdbetaling,
 } from "@/lib/betaling/stripeBetaling";
 
 // Stripe-webhook for den nye betalingsmodel. Spejler Stripes status i
 // databasen - Stripe er sandheden om penge.
 //
 // Signaturen verificeres altid. Platform-events signeres med
-// STRIPE_WEBHOOK_SECRET; events fra Connect-konti (account.updated) kommer
-// fra et separat Connect-endpoint i Stripe og signeres med
-// STRIPE_CONNECT_WEBHOOK_SECRET (valgfri - samme rute kan bruges til begge).
+// STRIPE_WEBHOOK_SECRET; events fra Connect-konti (account.updated,
+// account.application.deauthorized, payout.paid, payout.failed) kommer fra en
+// separat Connect-destination i Stripe ("Events from: Connected accounts")
+// og signeres med STRIPE_CONNECT_WEBHOOK_SECRET (samme rute bruges til begge).
+// Connect-events har event.account = sælgerens Connect-konto.
 //
 // Idempotent: alle handlere tåler samme event flere gange (statusvagter i
 // databasen). Behandlede event-id'er logges i stripe_haendelser og springes
@@ -42,7 +46,19 @@ function verificer(rawBody: string, signatur: string): Stripe.Event | null {
   return null;
 }
 
+// Events fra Connect-konti, som BidHamr bruger. Alle andre events med
+// event.account (fx betalinger direkte på en Connect-konto) ignoreres - de
+// hører ikke til BidHamrs pengestrøm og må ikke spejles som platform-events.
+const CONNECT_EVENTS = new Set<string>([
+  "account.updated",
+  "account.application.deauthorized",
+  "payout.paid",
+  "payout.failed",
+]);
+
 async function haandter(event: Stripe.Event): Promise<void> {
+  if (event.account && !CONNECT_EVENTS.has(event.type)) return;
+
   switch (event.type) {
     case "payment_intent.succeeded":
     case "payment_intent.payment_failed":
@@ -97,12 +113,43 @@ async function haandter(event: Stripe.Event): Promise<void> {
     }
 
     case "account.updated": {
-      const konto = event.data.object as Stripe.Account;
+      // Hent kontoen frisk (events kan komme i forkert rækkefølge).
+      const fraEvent = event.data.object as Stripe.Account;
+      let konto: Stripe.Account;
+      try {
+        konto = await getStripe().accounts.retrieve(fraEvent.id);
+      } catch (err) {
+        // Ingen adgang længere (kontoen er frakoblet/lukket): intet at spejle.
+        // account.application.deauthorized håndterer frakoblingen.
+        if (err instanceof Stripe.errors.StripePermissionError) {
+          console.warn("account.updated for konto uden adgang:", fraEvent.id);
+          return;
+        }
+        throw err;
+      }
       const brugerId = await spejlConnectKonto(konto);
       // Er sælgerens konto nu klar, overføres frigivne beløb, der ventede.
       if (brugerId && konto.capabilities?.transfers === "active") {
         await overfoerVentende(brugerId);
       }
+      return;
+    }
+
+    case "account.application.deauthorized": {
+      // data.object er applikationen (BidHamr); kontoen står i event.account.
+      if (!event.account) return;
+      const resultat = await spejlFrakobling(event.account);
+      console.log(`Stripe ${event.type}: ${event.account} -> ${resultat}`);
+      return;
+    }
+
+    case "payout.paid":
+    case "payout.failed": {
+      // Stripes automatiske udbetaling fra sælgerens Connect-konto til banken.
+      if (!event.account) return; // platformens egne udbetalinger
+      const payout = event.data.object as Stripe.Payout;
+      const resultat = await spejlUdbetaling(event.account, payout.id);
+      console.log(`Stripe ${event.type}: ${payout.id} -> ${resultat}`);
       return;
     }
 

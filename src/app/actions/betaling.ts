@@ -21,6 +21,9 @@ import {
   sikrStripeKunde,
   spejlConnectKonto,
   spejlPaymentIntent,
+  stripeOversigtLink,
+  hentOverfoersler,
+  type Overfoersel,
 } from "@/lib/betaling/stripeBetaling";
 
 type Fejl = { fejl: string };
@@ -187,6 +190,13 @@ export type Betalingsindstillinger = {
     detaljerIndsendt: boolean;
     overfoerslerAktiv: boolean;
     udbetalingerAktiv: boolean;
+    // Stripe mangler oplysninger efter indsendelse (requirements.currently_due
+    // eller past_due) - sælgeren skal fortsætte opsætningen.
+    manglerOplysninger: boolean;
+    // Stripe har afvist kontoen (disabled_reason rejected.*).
+    afvist: boolean;
+    // Sælgeren har lukket/frakoblet kontoen hos Stripe.
+    frakoblet: boolean;
   };
 };
 
@@ -208,6 +218,12 @@ export async function hentBetalingsindstillinger(): Promise<
         detaljerIndsendt: !!p?.connect_detaljer_indsendt,
         overfoerslerAktiv: !!p?.connect_overfoersler_aktiv,
         udbetalingerAktiv: !!p?.connect_udbetalinger_aktiv,
+        manglerOplysninger:
+          !!p?.stripe_account_id &&
+          ((p.connect_mangler_nu?.length ?? 0) > 0 ||
+            (p.connect_mangler_forfaldne?.length ?? 0) > 0),
+        afvist: !!p?.connect_spaerret_aarsag?.startsWith("rejected."),
+        frakoblet: !!p?.connect_frakoblet_kl,
       },
     };
   } catch (err) {
@@ -354,6 +370,7 @@ export async function startSaelgerOnboarding(
     const url = await onboardingLink(user.id, erOnboardingRetur(retur) ? retur : "konto");
     return { ok: true, url };
   } catch (err) {
+    if (err instanceof BetalingsFejl) return { fejl: err.message };
     console.error("startSaelgerOnboarding fejlede:", err);
     return { fejl: GENERISK };
   }
@@ -373,6 +390,45 @@ export async function opdaterSaelgerStatus(): Promise<{ ok: true } | Fejl> {
     return { ok: true };
   } catch (err) {
     console.error("opdaterSaelgerStatus fejlede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
+// ------------------------------------------------------------------ udbetalinger
+
+// Engangs-link til sælgerens egen oversigt hos Stripe (Express Dashboard:
+// udbetalinger til banken, bankkonto, saldo). Kun for den indloggede brugers
+// egen konto, og kun når oplysningerne er sendt ind. Linket returneres til
+// klienten, som sender brugeren videre med det samme (det må ikke gemmes
+// eller mailes).
+export async function aabnStripeOversigt(): Promise<{ ok: true; url: string } | Fejl> {
+  const user = await indloggetBruger();
+  if (!user) return { fejl: "Du skal være logget ind." };
+  try {
+    const url = await stripeOversigtLink(user.id);
+    if (!url) {
+      return { fejl: "Du skal først gøre opsætningen af din udbetalingskonto færdig." };
+    }
+    return { ok: true, url };
+  } catch (err) {
+    console.error("aabnStripeOversigt fejlede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
+export type { Overfoersel };
+
+// Sælgerens egne overførsler fra handler på BidHamr til udbetalingskontoen
+// hos Stripe (vare, dato, beløb). Kun egne - id'et kommer fra sessionen.
+export async function hentMineOverfoersler(): Promise<
+  { ok: true; overfoersler: Overfoersel[] } | Fejl
+> {
+  const user = await indloggetBruger();
+  if (!user) return { fejl: "Du skal være logget ind." };
+  try {
+    return { ok: true, overfoersler: await hentOverfoersler(user.id) };
+  } catch (err) {
+    console.error("hentMineOverfoersler fejlede:", err);
     return { fejl: GENERISK };
   }
 }

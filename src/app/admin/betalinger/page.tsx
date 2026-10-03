@@ -6,6 +6,7 @@ import {
   hentBetalingerTilHandling,
   markerBetalingLøstForm,
   givAdvarselBetalingForm,
+  markerUdbetalingskontoLøstForm,
   type BetalingBeloeb,
   type Person,
 } from "@/app/actions/adminBetalinger";
@@ -114,8 +115,12 @@ export default async function AdminBetalinger({
   const res = await hentBetalingerTilHandling(Number(side) || 1, fane);
   if ("fejl" in res) throw new Error(res.fejl);
 
-  const { betalinger, afvigelser, udenHandel, antalSider, side: s, kanLoese, antalAabne } = res;
-  const tom = betalinger.length === 0 && afvigelser.length === 0 && udenHandel.length === 0;
+  const { betalinger, afvigelser, udenHandel, udbetalingskonti, antalSider, side: s, kanLoese, antalAabne } = res;
+  const tom =
+    betalinger.length === 0 &&
+    afvigelser.length === 0 &&
+    udenHandel.length === 0 &&
+    udbetalingskonti.length === 0;
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
@@ -182,6 +187,60 @@ export default async function AdminBetalinger({
                       <p className="mt-2 text-xs text-neutral-600">
                         Modtaget {kr(a.beloeb.modtaget_oere)} · forventet {kr(a.beloeb.forventet_oere)}
                       </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {udbetalingskonti.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold text-neutral-700">Udbetalingskonti hos Stripe</h2>
+              <p className="text-xs text-neutral-500">
+                Sælgere, hvor en udbetaling til banken fejlede, eller hvor kontoen er lukket eller afvist hos Stripe.
+              </p>
+              <ul className="space-y-3">
+                {udbetalingskonti.map((k) => (
+                  <li key={k.saelger.id} className="rounded-xl border border-amber-200 bg-white p-4 sm:p-5">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        Udbetalingskonto
+                      </span>
+                      {k.frakoblet && (
+                        <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                          Lukket hos Stripe
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid gap-3 text-sm sm:grid-cols-2">
+                      <PersonLink label="Sælger" p={k.saelger} />
+                      <div>
+                        <p className="text-xs uppercase text-neutral-500">Markeret</p>
+                        <p className="text-neutral-800">{k.dato ? dato(k.dato) : "—"}</p>
+                      </div>
+                    </div>
+                    <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                      {k.aarsag ?? "Ingen beskrivelse."}
+                    </p>
+                    {kanLoese && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <ConfirmDialog
+                          triggerLabel="Markér som løst"
+                          triggerClassName="rounded-lg bg-orange-knap px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-orange-knap-mork"
+                          title="Markér udbetalingskontoen som løst?"
+                          description="Kontoen forsvinder fra listen. Skriv, hvad der er gjort."
+                          confirmLabel="Markér som løst"
+                          action={markerUdbetalingskontoLøstForm}
+                          hiddenFields={{ brugerId: k.saelger.id }}
+                          aarsagField={{
+                            name: "note",
+                            label: "Note",
+                            placeholder: "Fx: Sælger har rettet sin bankkonto hos Stripe",
+                            required: true,
+                          }}
+                        />
+                      </div>
                     )}
                   </li>
                 ))}

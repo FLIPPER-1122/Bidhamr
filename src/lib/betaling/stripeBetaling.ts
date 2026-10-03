@@ -113,6 +113,14 @@ export type ProfilRaekke = {
   connect_detaljer_indsendt: boolean;
   connect_overfoersler_aktiv: boolean;
   connect_udbetalinger_aktiv: boolean;
+  // Fra 20261003060000_connect_status.sql (valgfri, indtil migrationen er kørt).
+  connect_mangler_nu?: string[] | null;
+  connect_mangler_forfaldne?: string[] | null;
+  connect_spaerret_aarsag?: string | null;
+  connect_mangler_siden?: string | null;
+  connect_klar_kl?: string | null;
+  connect_frakoblet_kl?: string | null;
+  connect_kraever_opmaerksomhed?: boolean | null;
 };
 
 // ------------------------------------------------------------------ profiler
@@ -507,6 +515,13 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
   if (handel.sag_aaben) return "sag_aaben";
 
   const profil = await hentProfil(b.seller_id);
+  if (profil?.connect_frakoblet_kl) {
+    // Sælgeren har frakoblet/lukket sin Connect-konto hos Stripe. Der
+    // overføres intet; betalingen markeres til admin (én gang). Profilen er
+    // allerede markeret af webhooken (account.application.deauthorized).
+    await markerFrakobletBetaling(b);
+    return "saelgerkonto_frakoblet";
+  }
   if (!profil?.stripe_account_id || !profil.connect_overfoersler_aktiv) {
     // Sælgeren har ikke en aktiv udbetalingskonto endnu. Overførslen laves,
     // når account.updated viser, at kontoen er klar (webhook/cron).
@@ -1265,20 +1280,305 @@ export async function registrerGemtKort(si: Stripe.SetupIntent): Promise<boolean
 
 // ------------------------------------------------------------------ Connect
 
-export async function spejlConnectKonto(konto: Stripe.Account): Promise<string | null> {
-  const admin = createAdminClient();
-  const { data } = await admin
+// Markering af sælgerens udbetalingskonto til admin (/admin/betalinger).
+// Teksten må aldrig indeholde beløb (medarbejdere ser den).
+async function markerUdbetalingskonto(
+  stripeAccountId: string,
+  aarsag: string,
+): Promise<void> {
+  const nu = new Date().toISOString();
+  const { error } = await createAdminClient()
     .from("betalingsprofiler")
     .update({
-      connect_detaljer_indsendt: !!konto.details_submitted,
-      connect_overfoersler_aktiv: konto.capabilities?.transfers === "active",
-      connect_udbetalinger_aktiv: !!konto.payouts_enabled,
-      opdateret: new Date().toISOString(),
+      connect_kraever_opmaerksomhed: true,
+      connect_opmaerksomhed_aarsag: aarsag.slice(0, 500),
+      connect_opmaerksomhed_kl: nu,
+      opdateret: nu,
     })
+    .eq("stripe_account_id", stripeAccountId);
+  if (error) throw new Error(`markerUdbetalingskonto: ${error.message}`);
+}
+
+function erManglerKolonne(err: { code?: string; message?: string } | null): boolean {
+  return !!err && (err.code === "42703" || err.code === "PGRST204");
+}
+
+// Spejler sælgerens Connect-konto (account.updated eller hentet direkte fra
+// Stripe). Kald den med en FRISK konto (accounts.retrieve), så events i
+// forkert rækkefølge giver den aktuelle status. Idempotent:
+//   - "Din udbetalingskonto er klar" sendes én gang pr. sælger (første gang
+//     overførsler og udbetalinger er aktive) - noegle connect_klar:<bruger>.
+//   - "Stripe mangler oplysninger" sendes én gang pr. periode, hvor Stripe
+//     mangler oplysninger efter indsendelse - noegle pr. connect_mangler_siden.
+//   - En afvist konto (disabled_reason rejected.*) markeres til admin.
+// En frakoblet konto (account.application.deauthorized) genaktiveres aldrig.
+export async function spejlConnectKonto(konto: Stripe.Account): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data: profil, error: profilFejl } = await admin
+    .from("betalingsprofiler")
+    .select("*")
     .eq("stripe_account_id", konto.id)
+    .maybeSingle<ProfilRaekke>();
+  if (profilFejl) throw new Error(`spejlConnectKonto: ${profilFejl.message}`);
+  if (!profil) return null; // ikke en BidHamr-sælger
+  const userId = profil.user_id;
+  const frakoblet = !!profil.connect_frakoblet_kl;
+
+  const krav = konto.requirements;
+  const manglerNu = [...(krav?.currently_due ?? [])].sort();
+  const forfaldne = [...(krav?.past_due ?? [])].sort();
+  const spaerret = krav?.disabled_reason ?? null;
+  const overfoersler = !frakoblet && konto.capabilities?.transfers === "active";
+  const udbetalinger = !frakoblet && !!konto.payouts_enabled;
+  const detaljer = !!konto.details_submitted;
+  // Stripe mangler noget EFTER, at sælgeren har sendt sine oplysninger ind
+  // (under selve opsætningen mangler der altid noget - det er ikke nyt).
+  const mangler = detaljer && !frakoblet && (manglerNu.length > 0 || forfaldne.length > 0);
+  const nu = new Date().toISOString();
+
+  const basis = {
+    connect_detaljer_indsendt: detaljer,
+    connect_overfoersler_aktiv: overfoersler,
+    connect_udbetalinger_aktiv: udbetalinger,
+    opdateret: nu,
+  };
+  const { error } = await admin
+    .from("betalingsprofiler")
+    .update({
+      ...basis,
+      connect_mangler_nu: manglerNu,
+      connect_mangler_forfaldne: forfaldne,
+      connect_spaerret_aarsag: spaerret,
+      ...(mangler ? {} : { connect_mangler_siden: null }),
+    })
+    .eq("user_id", userId);
+  if (erManglerKolonne(error)) {
+    // Migrationen 20261003060000 er ikke kørt endnu: spejl kun de tre felter.
+    console.error("spejlConnectKonto: kør migrationen 20261003060000_connect_status.sql");
+    const { error: e2 } = await admin.from("betalingsprofiler").update(basis).eq("user_id", userId);
+    if (e2) throw new Error(`spejlConnectKonto: ${e2.message}`);
+    return userId;
+  }
+  if (error) throw new Error(`spejlConnectKonto: ${error.message}`);
+
+  // Klar til udbetaling første gang. Beskeden sendes FØR tidsstemplet sættes;
+  // nøglen forhindrer dobbelt besked, hvis to events kører samtidig.
+  if (overfoersler && udbetalinger && !profil.connect_klar_kl) {
+    await send(userId, "udbetaling", {
+      titel: "Din udbetalingskonto er klar",
+      tekst:
+        "Stripe har godkendt dine oplysninger. Når du sælger noget, udbetaler vores betalingspartner Stripe pengene til din bankkonto.",
+      link: "/konto",
+      noegle: `connect_klar:${userId}`,
+    });
+    await admin
+      .from("betalingsprofiler")
+      .update({ connect_klar_kl: nu })
+      .eq("user_id", userId)
+      .is("connect_klar_kl", null);
+  }
+
+  // Stripe kræver nye oplysninger. connect_mangler_siden sættes atomisk
+  // (kun hvis tom), så samtidige events bruger samme nøgle.
+  if (mangler) {
+    await admin
+      .from("betalingsprofiler")
+      .update({ connect_mangler_siden: nu })
+      .eq("user_id", userId)
+      .is("connect_mangler_siden", null);
+    const { data: p2 } = await admin
+      .from("betalingsprofiler")
+      .select("connect_mangler_siden")
+      .eq("user_id", userId)
+      .maybeSingle<{ connect_mangler_siden: string | null }>();
+    const siden = p2?.connect_mangler_siden;
+    if (siden) {
+      await send(userId, "udbetaling", {
+        titel: "Stripe mangler oplysninger",
+        tekst:
+          "Vores betalingspartner Stripe skal bruge flere oplysninger fra dig, før dine penge kan udbetales. Fortsæt opsætningen under Min konto.",
+        link: "/konto",
+        noegle: `connect_mangler:${userId}:${siden}`,
+      });
+    }
+  }
+
+  // Stripe har afvist kontoen (fx svindel eller vilkår). Kun admin kan hjælpe.
+  if (spaerret?.startsWith("rejected.") && profil.connect_spaerret_aarsag !== spaerret) {
+    await markerUdbetalingskonto(
+      konto.id,
+      `Stripe har afvist sælgerens udbetalingskonto (${spaerret}). Overførsler kan ikke gennemføres.`,
+    );
+  }
+
+  return userId;
+}
+
+// account.application.deauthorized: sælgeren har frakoblet/lukket sin
+// Connect-konto. Profilen markeres (én gang), overførsler stoppes
+// (overfoerTilSaelger tjekker connect_frakoblet_kl), og admin får en
+// markering. Idempotent: kun første event ændrer noget.
+export async function spejlFrakobling(stripeAccountId: string): Promise<string> {
+  const admin = createAdminClient();
+  const nu = new Date().toISOString();
+  const { data, error } = await admin
+    .from("betalingsprofiler")
+    .update({
+      connect_frakoblet_kl: nu,
+      connect_overfoersler_aktiv: false,
+      connect_udbetalinger_aktiv: false,
+      connect_kraever_opmaerksomhed: true,
+      connect_opmaerksomhed_aarsag:
+        "Sælgeren har lukket eller frakoblet sin udbetalingskonto hos Stripe. Frigivne beløb kan ikke overføres.",
+      connect_opmaerksomhed_kl: nu,
+      opdateret: nu,
+    })
+    .eq("stripe_account_id", stripeAccountId)
+    .is("connect_frakoblet_kl", null)
     .select("user_id")
     .maybeSingle<{ user_id: string }>();
-  return data?.user_id ?? null;
+  if (error) throw new Error(`spejlFrakobling: ${error.message}`);
+  if (!data) return "ukendt_eller_allerede";
+
+  await send(data.user_id, "udbetaling", {
+    titel: "Din udbetalingskonto er lukket",
+    tekst:
+      "Din udbetalingskonto hos vores betalingspartner Stripe er lukket eller frakoblet BidHamr. Kontakt support@bidhamr.dk, hvis du har penge til gode eller vil sælge igen.",
+    link: "/konto",
+    noegle: `connect_frakoblet:${stripeAccountId}`,
+  });
+  return "frakoblet";
+}
+
+// payout.paid / payout.failed fra en Connect-konto. Udbetalingen hentes frisk
+// hos Stripe som Connect-kontoen (en "paid" udbetaling kan senere fejle).
+// Stripe udbetaler selv automatisk fra Connect-kontoen til sælgerens bank -
+// BidHamr flytter ingen penge her og gemmer intet beløb.
+export async function spejlUdbetaling(
+  stripeAccountId: string,
+  payoutId: string,
+): Promise<string> {
+  const admin = createAdminClient();
+  const { data: profil, error } = await admin
+    .from("betalingsprofiler")
+    .select("user_id")
+    .eq("stripe_account_id", stripeAccountId)
+    .maybeSingle<{ user_id: string }>();
+  if (error) throw new Error(`spejlUdbetaling: ${error.message}`);
+  if (!profil) return "ukendt_konto";
+
+  let payout: Stripe.Payout;
+  try {
+    payout = await getStripe().payouts.retrieve(payoutId, undefined, {
+      stripeAccount: stripeAccountId,
+    });
+  } catch (err) {
+    // Ingen adgang længere (kontoen er frakoblet): intet at gøre - et nyt
+    // forsøg vil fejle igen. account.application.deauthorized markerer kontoen.
+    if (err instanceof Stripe.errors.StripePermissionError) return "ingen_adgang";
+    throw err;
+  }
+
+  if (payout.status === "failed") {
+    await markerUdbetalingskonto(
+      stripeAccountId,
+      `Udbetaling til sælgerens bank fejlede hos Stripe (${payout.failure_code ?? "ukendt årsag"}, ${payout.id}). Sælger skal rette bankoplysningerne hos Stripe.`,
+    );
+    await send(profil.user_id, "udbetaling", {
+      titel: "Udbetalingen til din bank fejlede",
+      tekst:
+        "Udbetalingen til din bank fejlede – tjek dine bankoplysninger hos Stripe. Du kan åbne din Stripe-oversigt under Min konto. Stripe prøver igen, når oplysningerne er rettet.",
+      link: "/konto",
+      noegle: `payout_fejlet:${payout.id}`,
+    });
+    return "fejlet";
+  }
+
+  if (payout.status === "paid") {
+    await send(profil.user_id, "udbetaling", {
+      titel: "Pengene er sendt til din bank",
+      tekst:
+        "Vores betalingspartner Stripe har sendt pengene til din bankkonto. Du kan se detaljerne i din Stripe-oversigt under Min konto.",
+      link: "/konto",
+      noegle: `payout_betalt:${payout.id}`,
+    });
+    return "betalt";
+  }
+
+  return payout.status;
+}
+
+// Engangs-link til sælgerens Express Dashboard hos Stripe (udbetalinger,
+// bankkonto, saldo). Kaldes KUN med en id fra en verificeret session og kun
+// for brugerens egen konto. Linket må ikke mailes - kun redirect med det samme.
+export async function stripeOversigtLink(userId: string): Promise<string | null> {
+  const profil = await hentProfil(userId);
+  if (
+    !profil?.stripe_account_id ||
+    !profil.connect_detaljer_indsendt ||
+    profil.connect_frakoblet_kl
+  ) {
+    return null;
+  }
+  const link = await getStripe().accounts.createLoginLink(profil.stripe_account_id);
+  return link.url;
+}
+
+export type Overfoersel = {
+  handelId: string;
+  titel: string;
+  overfoertKl: string;
+  beloebOere: number;
+};
+
+// Sælgerens egne overførsler fra BidHamr-handler til Connect-kontoen (spejl af
+// betalinger.stripe_transfer_id). Service-role med eksplicit seller-filter:
+// udbetaling_oere kan ikke læses med brugerens JWT. Kaldes KUN med en id fra
+// en verificeret session.
+export async function hentOverfoersler(userId: string, antal = 50): Promise<Overfoersel[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("betalinger")
+    .select("trade_id, auction_id, udbetaling_oere, overfoert_kl")
+    .eq("seller_id", userId)
+    .not("stripe_transfer_id", "is", null)
+    .order("overfoert_kl", { ascending: false, nullsFirst: false })
+    .limit(antal);
+  if (error) throw new Error(`hentOverfoersler: ${error.message}`);
+  const raekker = (data ?? []) as {
+    trade_id: string;
+    auction_id: string;
+    udbetaling_oere: number;
+    overfoert_kl: string | null;
+  }[];
+  const auktionIds = [...new Set(raekker.map((r) => r.auction_id))];
+  const { data: auktioner } = auktionIds.length
+    ? await admin.from("auctions").select("id, titel").in("id", auktionIds)
+    : { data: [] as { id: string; titel: string }[] };
+  const titel = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
+  return raekker.map((r) => ({
+    handelId: r.trade_id,
+    titel: titel.get(r.auction_id) ?? "Vare",
+    overfoertKl: r.overfoert_kl ?? "",
+    beloebOere: Number(r.udbetaling_oere),
+  }));
+}
+
+// Betaling for en sælger med frakoblet konto: markér til admin én gang.
+async function markerFrakobletBetaling(b: BetalingRaekke): Promise<void> {
+  const nu = new Date().toISOString();
+  const { error } = await createAdminClient()
+    .from("betalinger")
+    .update({
+      saelgerkonto_markeret_kl: nu,
+      kraever_opmaerksomhed: true,
+      sidste_fejl: "Sælgers udbetalingskonto er lukket eller frakoblet hos Stripe",
+      opdateret: nu,
+    })
+    .eq("id", b.id)
+    .is("saelgerkonto_markeret_kl", null)
+    .is("stripe_transfer_id", null);
+  if (error) console.error("Markering (frakoblet sælgerkonto) fejlede:", b.id, error.message);
 }
 // Opretter (én gang) sælgerens Connect Express-konto og returnerer et
 // onboarding-link. Kaldes KUN med en id fra en verificeret session (server
@@ -1296,6 +1596,12 @@ export async function onboardingLink(
   const stripe = getStripe();
   await sikrStripeKunde(userId); // sikrer profilrækken
   let profil = await hentProfil(userId);
+  if (profil?.connect_frakoblet_kl) {
+    // Kontoen er frakoblet hos Stripe - et nyt onboarding-link virker ikke.
+    throw new BetalingsFejl(
+      "Din udbetalingskonto er lukket. Skriv til support@bidhamr.dk, så hjælper vi dig.",
+    );
+  }
 
   if (!profil?.stripe_account_id) {
     const { data: bruger } = await createAdminClient()

@@ -105,6 +105,40 @@ export type AuktionUdenHandel = {
   for_gammel_til_automatik: boolean;
 };
 
+// Sælgeres udbetalingskonti, der kræver handling (fejlet udbetaling til bank,
+// frakoblet eller afvist konto). Spejlet fra Stripe af webhooken. Ingen beløb.
+export type UdbetalingskontoTilHandling = {
+  saelger: Person;
+  aarsag: string | null;
+  dato: string | null;
+  frakoblet: boolean;
+};
+
+const MAX_UDBETALINGSKONTI = 50;
+
+// Kolonnerne kommer fra 20261003060000_connect_status.sql. Mangler de, vises
+// sektionen ikke (og tælles ikke).
+async function hentUdbetalingskonti(
+  admin: AdminClient,
+): Promise<{ raekker: Raekke[]; antal: number }> {
+  const { data, count, error } = await admin
+    .from("betalingsprofiler")
+    .select("user_id, connect_opmaerksomhed_aarsag, connect_opmaerksomhed_kl, connect_frakoblet_kl", {
+      count: "exact",
+    })
+    .eq("connect_kraever_opmaerksomhed", true)
+    .order("connect_opmaerksomhed_kl", { ascending: true })
+    .limit(MAX_UDBETALINGSKONTI);
+  if (error) {
+    if (error.code === "42703" || error.code === "PGRST204") {
+      console.error("Udbetalingskonti: kør migrationen 20261003060000_connect_status.sql");
+      return { raekker: [], antal: 0 };
+    }
+    throw new Error(error.message);
+  }
+  return { raekker: (data ?? []) as Raekke[], antal: count ?? 0 };
+}
+
 export type BetalingerResultat = {
   ok: true;
   fane: "aaben" | "loest";
@@ -116,6 +150,7 @@ export type BetalingerResultat = {
   betalinger: BetalingTilHandling[];
   afvigelser: AfvigelseTilHandling[];
   udenHandel: AuktionUdenHandel[];
+  udbetalingskonti: UdbetalingskontoTilHandling[];
 };
 
 const BASIS_KOLONNER =
@@ -231,6 +266,10 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
       antalAfvigelser = count ?? 0;
     }
 
+    // Udbetalingskonti, der kræver handling (vises kun på "Kræver handling",
+    // men tælles altid med i fanens antal).
+    const konti = await hentUdbetalingskonti(admin);
+
     // Antal åbne betalinger (til fanen), hvis vi ikke allerede har det.
     let antalAabneBetalinger = fane === "aaben" ? total : 0;
     if (fane !== "aaben") {
@@ -260,6 +299,7 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
       brugerIds.add(r.seller_id as string);
       auktionIds.add(r.auction_id as string);
     }
+    if (fane === "aaben") for (const k of konti.raekker) brugerIds.add(k.user_id as string);
 
     const [{ data: brugere, error: bErr }, { data: auktioner, error: aErr }] = await Promise.all([
       brugerIds.size
@@ -385,17 +425,28 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
           })
         : [];
 
+    const udbetalingskonti: UdbetalingskontoTilHandling[] =
+      fane === "aaben"
+        ? konti.raekker.map((k) => ({
+            saelger: person(k.user_id),
+            aarsag: (k.connect_opmaerksomhed_aarsag as string | null) ?? null,
+            dato: (k.connect_opmaerksomhed_kl as string | null) ?? null,
+            frakoblet: !!k.connect_frakoblet_kl,
+          }))
+        : [];
+
     return {
       ok: true,
       fane,
       side: s,
       antalSider: Math.max(1, Math.ceil(total / PR_SIDE)),
-      antalAabne: antalAabneBetalinger + antalAfvigelser,
+      antalAabne: antalAabneBetalinger + antalAfvigelser + konti.antal,
       visBeloeb,
       kanLoese,
       betalinger,
       afvigelser,
       udenHandel,
+      udbetalingskonti,
     };
   });
 }
@@ -544,11 +595,12 @@ export async function givAdvarselBetalingForm(formData: FormData) {
   );
 }
 
-// Antal betalinger + åbne afvigelser, der kræver handling (badge i menuen).
+// Antal betalinger + åbne afvigelser + udbetalingskonti, der kræver handling
+// (badge i menuen).
 export async function hentAntalBetalingerTilHandling() {
   return koer("hentAntalBetalingerTilHandling", async () => {
     const { admin } = await assertRole("medarbejder");
-    const [b, a] = await Promise.all([
+    const [b, a, k] = await Promise.all([
       admin
         .from("betalinger")
         .select("id", { count: "exact", head: true })
@@ -557,9 +609,64 @@ export async function hentAntalBetalingerTilHandling() {
         .from("betaling_afvigelser")
         .select("id", { count: "exact", head: true })
         .is("refunderet_kl", null),
+      admin
+        .from("betalingsprofiler")
+        .select("user_id", { count: "exact", head: true })
+        .eq("connect_kraever_opmaerksomhed", true),
     ]);
     if (b.error) throw new Error(b.error.message);
     if (a.error) throw new Error(a.error.message);
-    return { ok: true as const, antal: (b.count ?? 0) + (a.count ?? 0) };
+    // Kolonnen findes først efter 20261003060000 - mangler den, tælles 0.
+    if (k.error && k.error.code !== "42703" && k.error.code !== "PGRST204") {
+      throw new Error(k.error.message);
+    }
+    return {
+      ok: true as const,
+      antal: (b.count ?? 0) + (a.count ?? 0) + (k.error ? 0 : (k.count ?? 0)),
+    };
   });
+}
+
+const UDBETALINGSKONTO_FEJL: Record<string, string> = {
+  note_mangler: "Skriv en note om, hvad der er gjort.",
+  note_for_lang: "Noten er for lang (højst 2000 tegn).",
+  inhabil: "Du kan ikke behandle din egen udbetalingskonto.",
+  ikke_fundet: "Udbetalingskontoen blev ikke fundet.",
+  allerede_loest: "Udbetalingskontoen er allerede markeret som løst.",
+};
+
+// Admin: markér en sælgers udbetalingskonto som løst (fx efter kontakt med
+// sælgeren om en fejlet udbetaling). Atomisk opdatering + log i databasen.
+export async function markerUdbetalingskontoLøst(brugerId: string, note: string) {
+  return koer("markerUdbetalingskontoLøst", async () => {
+    const { admin, userId } = await assertRole("admin");
+    const id = (brugerId ?? "").trim();
+    const n = (note ?? "").trim();
+    if (!id) throw new BrugerFejl(UDBETALINGSKONTO_FEJL.ikke_fundet);
+    if (!n) throw new BrugerFejl(UDBETALINGSKONTO_FEJL.note_mangler);
+    if (n.length > 2000) throw new BrugerFejl(UDBETALINGSKONTO_FEJL.note_for_lang);
+    if (id === userId) throw new BrugerFejl(UDBETALINGSKONTO_FEJL.inhabil);
+
+    const { data, error } = await admin.rpc("udbetalingskonto_loest", {
+      p_bruger: id,
+      p_medarbejder: userId,
+      p_note: n,
+    });
+    if (error) throw new Error(error.message);
+    const kode = String(data);
+    if (kode !== "ok") {
+      if (UDBETALINGSKONTO_FEJL[kode]) throw new BrugerFejl(UDBETALINGSKONTO_FEJL[kode]);
+      throw new Error(`udbetalingskonto_loest returnerede ${kode}`);
+    }
+    revalidatePath("/admin", "layout");
+    return { ok: true as const };
+  });
+}
+
+// Til ConfirmDialog. formData: brugerId, note (påkrævet).
+export async function markerUdbetalingskontoLøstForm(formData: FormData) {
+  return markerUdbetalingskontoLøst(
+    ((formData.get("brugerId") as string) ?? "").trim(),
+    ((formData.get("note") as string) ?? "").trim(),
+  );
 }

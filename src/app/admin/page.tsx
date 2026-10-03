@@ -32,6 +32,7 @@ export default async function AdminDashboard() {
     { count: ubetalte },
     { count: betalingerTilHandling },
     { count: aabneAfvigelser },
+    { count: udbetalingskonti },
   ] = await Promise.all([
     // Systembrugeren "BidHamr" taeller ikke som bruger.
     supabase.from("users").select("id", { count: "exact", head: true }).neq("id", BIDHAMR_SYSTEM_ID),
@@ -51,8 +52,10 @@ export default async function AdminDashboard() {
     supabase.from("ubetalte_vindere").select("id", { count: "exact", head: true }).eq("status", "afventer"),
     supabase.from("betalinger").select("id", { count: "exact", head: true }).eq("kraever_opmaerksomhed", true),
     supabase.from("betaling_afvigelser").select("id", { count: "exact", head: true }).is("refunderet_kl", null),
+    // Udbetalingskonti, der kræver handling (20261003060000; fejl = 0).
+    supabase.from("betalingsprofiler").select("user_id", { count: "exact", head: true }).eq("connect_kraever_opmaerksomhed", true),
   ]);
-  const antalBetalinger = (betalingerTilHandling ?? 0) + (aabneAfvigelser ?? 0);
+  const antalBetalinger = (betalingerTilHandling ?? 0) + (aabneAfvigelser ?? 0) + (udbetalingskonti ?? 0);
 
   // Omsaetning = summen af buddene i betalte handler. Gebyrindtaegten er
   // 5% koebergebyr + 5% saelgergebyr. Beloeb staar i oere.
