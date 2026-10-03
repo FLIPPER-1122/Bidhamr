@@ -455,3 +455,56 @@ export function saelgerAdminAnnulleretMail(titel: string, tradeId: string) {
     knap: { tekst: "Vælg næste skridt", url: sideUrl(`/mine-handler/${tradeId}`) },
   });
 }
+
+// --- Afsendelsesfrist (5 dage efter betalingen) ------------------------------
+
+// Påmindelse til sælgeren efter dag 3 og dag 4. sendSenestTekst er allerede
+// formateret (fx "mandag 6. oktober kl. 14.30").
+export function saelgerAfsendelsesPaamindelseMail(
+  titel: string,
+  tradeId: string,
+  sendSenestTekst: string,
+) {
+  return handelsMail(`Husk at sende pakken: ${titel}`, {
+    preheader: `Send pakken senest ${sendSenestTekst}, ellers annulleres handlen.`,
+    overskriftHtml: "Husk at sende pakken",
+    afsnitHtml: [
+      `Køberen har betalt for <strong>${escapeHtml(titel)}</strong>, men pakken er endnu ikke markeret som sendt.`,
+      `Send pakken senest <strong>${escapeHtml(sendSenestTekst)}</strong>, ellers annulleres handlen, og køberen får hele beløbet tilbage.`,
+      "Tag billederne af indpakningen, og indtast sporingsnummeret på handelssiden, når du har sendt varen.",
+    ],
+    info: [vare(titel), { noegle: "Send senest", vaerdiHtml: escapeHtml(sendSenestTekst) }],
+    knap: { tekst: "Send pakken", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// Køberen: sælgeren sendte ikke i tide, fuld refusion via Stripe.
+export function koeberAfsendelsesfristAnnulleretMail(
+  titel: string,
+  totalOere: number,
+  tradeId: string,
+) {
+  return handelsMail(`Handlen er annulleret: ${titel}`, {
+    preheader: "Sælgeren sendte ikke varen i tide. Du får hele beløbet tilbage.",
+    overskriftHtml: "Handlen er annulleret",
+    afsnitHtml: [
+      `Sælgeren sendte ikke <strong>${escapeHtml(titel)}</strong> i tide, så handlen er annulleret. Du får hele beløbet tilbage.`,
+      "Pengene sendes tilbage til den betalingsmetode, du betalte med. Der kan gå nogle dage, før de står på din konto. Betalingen håndteres af vores betalingspartner Stripe.",
+    ],
+    info: [vare(titel), beloeb("Du får tilbage", totalOere, true)],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// Sælgeren: handlen er annulleret, fordi pakken ikke blev markeret sendt.
+export function saelgerAfsendelsesfristAnnulleretMail(titel: string, tradeId: string) {
+  return handelsMail(`Handlen er annulleret: ${titel}`, {
+    preheader: "Pakken blev ikke sendt inden 5 dage. Du skal ikke sende varen.",
+    overskriftHtml: "Handlen er annulleret",
+    afsnitHtml: [
+      `Pakken med <strong>${escapeHtml(titel)}</strong> blev ikke markeret som sendt inden 5 dage efter betalingen, så handlen er annulleret, og køberen får hele beløbet tilbage.`,
+      "Du skal ikke sende varen. Har du allerede sendt den, så skriv straks til support@bidhamr.dk med sporingsnummeret.",
+    ],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}

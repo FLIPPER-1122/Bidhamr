@@ -22,6 +22,7 @@ type FavoritRow = {
     slutter_kl: string;
     billeder: string[] | null;
     skjult: boolean;
+    arkiveret_kl: string | null;
     antal_bud: number | null;
   } | null;
 };
@@ -39,16 +40,18 @@ export default async function FavoritterSide() {
   const { data } = await supabase
     .from("favorites")
     .select(
-      "auction_id, created_at, auctions(id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, skjult, antal_bud)",
+      "auction_id, created_at, auctions(id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, skjult, arkiveret_kl, antal_bud)",
     )
     .order("created_at", { ascending: false })
     .overrideTypes<FavoritRow[], { merge: false }>();
 
-  // Skjulte auktioner (fjernet af en moderator) vises ikke, selv om de stadig
-  // ligger på favoritlisten.
+  // Skjulte auktioner (fjernet af en moderator) og arkiverede auktioner
+  // (afsluttet handel for over 48 timer siden) vises ikke, selv om de stadig
+  // ligger på favoritlisten. RLS skjuler arkiverede for alle andre end
+  // parterne; her fjernes de også for parterne.
   const auktioner = (data ?? [])
     .map((f) => f.auctions)
-    .filter((a): a is NonNullable<FavoritRow["auctions"]> => !!a && !a.skjult)
+    .filter((a): a is NonNullable<FavoritRow["auctions"]> => !!a && !a.skjult && !a.arkiveret_kl)
     .map(mapAuctionTilKort);
 
   return (

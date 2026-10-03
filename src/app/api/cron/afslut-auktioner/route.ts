@@ -3,7 +3,8 @@ import { koerBetalingsCron } from "@/lib/betaling/cron";
 
 // Lukker auktioner, opretter handel + betaling (24 timers frist), forsøger
 // autobetaling, sender "du vandt"-mails og betalingspåmindelser og overfører
-// frigivne beløb til sælgere. Se src/lib/betaling/cron.ts.
+// frigivne beløb til sælgere. Annullerer og refunderer handler, hvor pakken
+// ikke er sendt 5 dage efter betalingen. Se src/lib/betaling/cron.ts.
 //
 // Kaldes hvert 5. minut af pg_cron + pg_net (job 'betalings-cron', se migration
 // 20261001020000) og dagligt kl. 03 af Vercel Cron som backup. Ruten er
