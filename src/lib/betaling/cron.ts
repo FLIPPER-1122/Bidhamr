@@ -32,7 +32,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
 import { koerNotifikationsCron } from "@/lib/notifikationer/cron";
 import { annullerUbetalte, behandlAndenchance } from "@/lib/betaling/ubetalt";
-import { afviklForfaldneSager, notificerNyeAnker, notificerNyeSager } from "@/lib/sagerServer";
+import {
+  afviklForfaldneSager,
+  notificerNyeAnker,
+  notificerNyeSager,
+  notificerReturKanSendes,
+} from "@/lib/sagerServer";
 import { frigivAutomatisk, paamindKoeberOmModtagelse } from "@/lib/betaling/autoFrigiv";
 import { annullerIkkeSendte, paamindSaelgerOmAfsendelse } from "@/lib/betaling/afsendelsesfrist";
 import {
@@ -93,6 +98,7 @@ export async function koerBetalingsCron() {
     sagsrefusioner: 0,
     sagsbeskeder: 0,
     ankebeskeder: 0,
+    returbeskeder: 0,
     sagsafviklinger: 0,
     autoFrigivet: 0,
     paamindelserModtaget: 0,
@@ -269,6 +275,12 @@ export async function koerBetalingsCron() {
   resultat.sagsbeskeder = await notificerNyeSager();
   // 5d) Nye anker (fx indgivet fra appen), hvor parterne ikke har fået besked.
   resultat.ankebeskeder = await notificerNyeAnker();
+  // 5e) Ankefristen er udløbet på et medhold med retur: køberen kan sende varen.
+  try {
+    resultat.returbeskeder = await notificerReturKanSendes();
+  } catch (err) {
+    console.error("Beskeder om retur efter ankefristen fejlede:", err);
+  }
 
   // 6) Fristen overskredet: annullér handel + Stripe, opret sag, send mails.
   try {

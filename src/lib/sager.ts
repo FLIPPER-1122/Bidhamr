@@ -147,8 +147,8 @@ export const SAG_OPRET_FEJL: Record<string, string> = {
 };
 
 // ------------------------------------------------------------------ Anke
-// Spejlet i supabase/migrations/20261004030000_anke.sql (sag_anke_vurder,
-// sag_anke_indgiv, sag_anke_afgoer). Den part, der taber sagen, kan anke fra
+// Spejlet i supabase/migrations/20261004050000_anke.sql (sag_anke_vurder,
+// sag_anke_indgiv, sag_anke_afgoer) og 20261004051000_anke_rettelser.sql. Den part, der taber sagen, kan anke fra
 // 24 timer efter afgørelsen og indtil ankefristen (4 dage). Én anke pr. sag.
 export const SAG_ANKE_AABNER_EFTER_TIMER = 24;
 export const SAG_ANKE_BEGRUNDELSE_MIN = 20;

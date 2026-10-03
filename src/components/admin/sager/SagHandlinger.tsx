@@ -179,11 +179,15 @@ function AfgoerKnap({
   sagId,
   type,
   indsigelse,
+  afventerRetur,
   onResultat,
 }: {
   sagId: string;
   type: SagType;
   indsigelse: boolean;
+  // Sagen venter på retur (fx køberen sender aldrig varen): kun medhold til
+  // sælger eller luk sagen (databasen afviser medhold til køber igen).
+  afventerRetur: boolean;
   onResultat: (b: string) => void;
 }) {
   const id = useId();
@@ -233,7 +237,9 @@ function AfgoerKnap({
           <fieldset>
             <legend className="text-sm font-medium text-neutral-800">Udfald</legend>
             <div className="mt-2 space-y-2">
-              {(Object.keys(UDFALD_NAVN) as Udfald[]).map((u) => (
+              {(Object.keys(UDFALD_NAVN) as Udfald[])
+                .filter((u) => !afventerRetur || u !== "koeber")
+                .map((u) => (
                 <label
                   key={u}
                   className={`flex cursor-pointer gap-3 rounded-xl border p-3 text-sm ${
@@ -254,7 +260,7 @@ function AfgoerKnap({
                     <span className="block text-neutral-600">{konsekvens(u, type)}</span>
                   </span>
                 </label>
-              ))}
+                ))}
             </div>
           </fieldset>
           <div>
@@ -321,8 +327,14 @@ function AnkeKnap({
   const id = useId();
   const [aaben, setAaben] = useState(false);
   const [udfald, setUdfald] = useState<AnkeUdfald | "">("");
+  const [returTjekket, setReturTjekket] = useState(false);
   const luk = () => setAaben(false);
   const { sender, fejl, setFejl, send } = useSend(onResultat, luk);
+
+  // Sælgeren har anket et medhold til køberen med retur, og sagen venter på
+  // returen: før en omgørelse skal behandleren have tjekket, at køberen ikke
+  // har sendt varen (ellers får sælgeren både varen og pengene).
+  const kraeverReturTjek = udfald === "omgoer" && anke.part === "saelger" && anke.ankedeStatus === "afventer_retur";
 
   const hvem = anke.part === "koeber" ? "køberen" : "sælgeren";
   const navn: Record<AnkeUdfald, string> = {
@@ -350,9 +362,14 @@ function AnkeKnap({
       setFejl("Vælg et udfald.");
       return;
     }
+    if (kraeverReturTjek && !returTjekket) {
+      setFejl("Bekræft, at du har tjekket, at køberen ikke har sendt varen retur.");
+      return;
+    }
     const fd = new FormData(e.currentTarget);
     fd.set("ankeId", ankeId);
     fd.set("udfald", udfald);
+    fd.set("retur_ikke_sendt", kraeverReturTjek && returTjekket ? "ja" : "nej");
     void send(() => afgoerAnke(fd));
   }
 
@@ -363,6 +380,7 @@ function AnkeKnap({
         onClick={() => {
           setFejl(null);
           setUdfald("");
+          setReturTjekket(false);
           setAaben(true);
         }}
         className="btn btn-primaer"
@@ -404,6 +422,19 @@ function AnkeKnap({
               ))}
             </div>
           </fieldset>
+          {kraeverReturTjek && (
+            <label className="flex cursor-pointer gap-3 rounded-xl border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
+              <input
+                type="checkbox"
+                checked={returTjekket}
+                onChange={(e) => setReturTjekket(e.target.checked)}
+                disabled={sender}
+                required
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
+              />
+              <span>Jeg har tjekket, at køberen ikke har sendt varen retur</span>
+            </label>
+          )}
           <div>
             <label htmlFor={`${id}-begr`} className="block text-sm font-medium text-neutral-800">
               Begrundelse til køber og sælger
@@ -432,7 +463,7 @@ function AnkeKnap({
             sender={sender}
             onLuk={luk}
             bekraeft={udfald === "omgoer" ? "Bekræft: ændr afgørelsen" : udfald ? "Bekræft: afgørelsen står" : "Bekræft"}
-            deaktiveret={!udfald}
+            deaktiveret={!udfald || (kraeverReturTjek && !returTjekket)}
           />
         </form>
       </Dialog>
@@ -884,6 +915,10 @@ export type SagHandlingerProps = {
   // behandle den.
   anke: AnkeInfo | null;
   ankeIkkeTilladt: string | null;
+  // Anken er afgjort (afgørelsen er endelig): tekst til admin, ellers null.
+  ankeEndelig: string | null;
+  // Sagen venter på retur.
+  afventerRetur: boolean;
   koeber: { id: string; navn: string; lukket: boolean };
   saelger: { id: string; navn: string; lukket: boolean };
   indpakning: IndpakningInfo;
@@ -899,6 +934,8 @@ export default function SagHandlinger({
   indpakning,
   anke,
   ankeIkkeTilladt,
+  ankeEndelig,
+  afventerRetur,
 }: SagHandlingerProps) {
   const [resultat, setResultat] = useState<string | null>(null);
 
@@ -926,10 +963,22 @@ export default function SagHandlinger({
         </div>
       )}
 
+      {ankeEndelig && (
+        <p className="rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-3 text-sm text-advarsel-tekst">
+          {ankeEndelig}
+        </p>
+      )}
+
       {(kan.afgoere || kan.registrereRetur || kan.genaabne) && (
         <div className="flex flex-wrap gap-3">
           {kan.afgoere && (
-            <AfgoerKnap sagId={sagId} type={type} indsigelse={indsigelse} onResultat={setResultat} />
+            <AfgoerKnap
+              sagId={sagId}
+              type={type}
+              indsigelse={indsigelse}
+              afventerRetur={afventerRetur}
+              onResultat={setResultat}
+            />
           )}
           {kan.registrereRetur && <ReturKnap sagId={sagId} onResultat={setResultat} />}
           {kan.genaabne && <GenaabnKnap sagId={sagId} onResultat={setResultat} />}

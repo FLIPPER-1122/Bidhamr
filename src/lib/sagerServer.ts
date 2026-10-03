@@ -4,7 +4,7 @@ import "server-only";
 // efter ankefristen. Bruges af server actions (src/app/actions/sager.ts,
 // adminSager.ts) og cron.
 import { createAdminClient } from "@/lib/supabase/admin";
-import { send } from "@/lib/notifikationer/send";
+import { send, type SendResultat } from "@/lib/notifikationer/send";
 import { overfoerTilSaelger, refunderBetaling } from "@/lib/betaling/stripeBetaling";
 import { sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 import {
@@ -120,7 +120,19 @@ export type SagUdfaldBesked =
   // Når pengene faktisk er flyttet (efter ankefristen).
   | "refunderet"
   | "frigivet"
-  | "genaabnet";
+  | "genaabnet"
+  // Cron: ankefristen er udløbet uden anke - køberen kan sende varen retur nu.
+  | "retur_kan_sendes";
+
+export type SagAfgoerelseValg = {
+  // Sagen er anket, og ankeafgørelsen er endelig (sag_afgoer med en afgjort
+  // anke, fx fordi køberen ikke sendte returen): ingen ny ankefrist, og sagen
+  // kan ikke genåbnes.
+  endelig?: boolean;
+  // Kun med endelig: pengene er flyttet nu (sag_afvikl gennemførte). Ellers
+  // flyttes de, så snart det er muligt (cron prøver igen).
+  flyttetNu?: boolean;
+};
 
 // Besked til køber og sælger om en sag. Begrundelsen fra staff medsendes
 // (den er skrevet til parterne). Beløb nævnes aldrig. Kaster aldrig.
@@ -135,6 +147,7 @@ export async function notificerSagAfgoerelse(
   version: number,
   // sager.penge_flyttes_efter_kl - hvornår pengene tidligst flyttes.
   fristKl: string | null = null,
+  valg: SagAfgoerelseValg = {},
 ): Promise<void> {
   try {
     const admin = createAdminClient();
@@ -142,12 +155,22 @@ export async function notificerSagAfgoerelse(
     if (!h) return;
     const link = sagLink(tradeId);
     const data = { trade_id: tradeId, sag_id: sagId };
-    const grund = begrundelse ? ` Begrundelse: ${begrundelse}` : "";
+    const endelig = !!valg.endelig;
+    // En endelig afgørelse (efter anke) har ingen ankefrist og kan ikke genåbnes.
+    const grund = (endelig ? " Afgørelsen er endelig." : "") + (begrundelse ? ` Begrundelse: ${begrundelse}` : "");
     const t = h.titel;
     const dato = fristKl ? sagFristTekst(fristKl) : "";
-    const tidligst = dato ? ` – tidligst ${dato}` : " efter ankefristen på 4 dage";
-    const fortsaetter = dato ? ` efter ${dato}` : " om 4 dage";
-    const forbehold = ", medmindre sagen genåbnes";
+    const tidligst = endelig
+      ? valg.flyttetNu
+        ? " nu"
+        : ""
+      : dato
+        ? ` – tidligst ${dato}`
+        : " efter ankefristen på 4 dage";
+    const fortsaetter = endelig ? (valg.flyttetNu ? " nu" : "") : dato ? ` efter ${dato}` : " om 4 dage";
+    const forbehold = endelig ? "" : ", medmindre sagen genåbnes";
+    // Ankefristen, til køberen må sende varen retur (sælgeren kan anke indtil da).
+    const ankefrist = dato ? ` ${dato}` : " om 4 dage";
     // Det køberen får tilbage ved medhold. Returfragten betaler køberen selv
     // direkte til fragtfirmaet - den trækkes ikke fra refusionen.
     // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
@@ -159,9 +182,17 @@ export async function notificerSagAfgoerelse(
         koeber: ["Du har fået medhold i din sag", `BidHamr har afgjort sagen om "${t}" til din fordel. Du får ${hvad} tilbage${tidligst}${forbehold}.${beskyttelseNote}${grund}`],
         saelger: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen får pengene tilbage${tidligst}${forbehold}, og handlen annulleres.${grund}`],
       },
+      // Sælgeren kan anke inden for 4 dage. Køberen venter med at sende
+      // varen, til ankefristen er udløbet (cron sender "retur_kan_sendes"),
+      // eller til BidHamr giver besked (ankens afgørelse) - ellers kunne en
+      // omgørelse give sælgeren både varen og pengene.
       afvent_retur: {
-        koeber: ["Send varen retur", `BidHamr har afgjort sagen om "${t}" til din fordel. Send varen retur til sælgeren. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage${tidligst}${forbehold}.${beskyttelseNote}${grund}`],
-        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Køberen sender varen retur til dig og betaler selv returfragten. Når pakken er afleveret, får køberen pengene tilbage${tidligst}${forbehold}.${grund}`],
+        koeber: ["Du har fået medhold i din sag", `BidHamr har afgjort sagen om "${t}" til din fordel. Sælgeren kan anke afgørelsen inden for 4 dage. Vent med at sende varen retur, til ankefristen er udløbet${ankefrist}, eller til BidHamr giver dig besked. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage${forbehold}.${beskyttelseNote}${grund}`],
+        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Er du uenig, kan du anke afgørelsen inden for 4 dage. Køberen sender varen retur til dig, når ankefristen er udløbet${ankefrist}, og betaler selv returfragten. Når pakken er afleveret, får køberen pengene tilbage${forbehold}.${grund}`],
+      },
+      retur_kan_sendes: {
+        koeber: ["Send varen retur nu", `Ankefristen i sagen om "${t}" er udløbet. Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`],
+        saelger: ["Køberen sender varen retur", `Ankefristen i sagen om "${t}" er udløbet. Køberen sender nu varen retur til dig og betaler selv returfragten.`],
       },
       planlagt_frigivelse: {
         koeber: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til sælgerens fordel. Pengene udbetales til sælgeren${tidligst}${forbehold}.${grund}`],
@@ -190,19 +221,22 @@ export async function notificerSagAfgoerelse(
     };
 
     const tekst = tekster[udfald];
+    // En endelig afgørelse efter anke har samme version som den oprindelige
+    // afgørelse - egen nøgle, så den ikke bliver set som en dublet.
+    const n = `sag_${udfald}${endelig ? "_endelig" : ""}`;
     await send(h.buyer_id, "sag", {
       titel: tekst.koeber[0],
       tekst: tekst.koeber[1],
       link,
       data,
-      noegle: `sag_${udfald}_koeber:${sagId}:${version}`,
+      noegle: `${n}_koeber:${sagId}:${version}`,
     });
     await send(h.seller_id, "sag", {
       titel: tekst.saelger[0],
       tekst: tekst.saelger[1],
       link,
       data,
-      noegle: `sag_${udfald}_saelger:${sagId}:${version}`,
+      noegle: `${n}_saelger:${sagId}:${version}`,
     });
   } catch (err) {
     console.error("Notifikation om afgørelse fejlede:", sagId, err);
@@ -225,7 +259,12 @@ export type SagAfvikling = {
 // giver parterne besked. Kaster aldrig: refusionen/frigivelsen er claimet i
 // databasen, og cron prøver Stripe igen (refunderSagerVentende /
 // overfoerVentende). Returnerer resultatet fra Stripe-kaldet (uden beløb).
-export async function udfoerSagAfvikling(a: SagAfvikling): Promise<string> {
+// notificer: false, når kalderen selv sender én samlet besked (anke og
+// endelig afgørelse efter anke), så parterne ikke får to beskeder.
+export async function udfoerSagAfvikling(
+  a: SagAfvikling,
+  { notificer = true }: { notificer?: boolean } = {},
+): Promise<string> {
   let status = "intet";
   if (a.handling === "refunder" && a.betaling_id) {
     try {
@@ -244,7 +283,7 @@ export async function udfoerSagAfvikling(a: SagAfvikling): Promise<string> {
       status = "overfoersel_fejlede";
     }
   }
-  if (erSagType(a.type) && (a.handling === "refunder" || a.handling === "frigiv")) {
+  if (notificer && erSagType(a.type) && (a.handling === "refunder" || a.handling === "frigiv")) {
     await notificerSagAfgoerelse(
       a.sag_id,
       a.trade_id,
@@ -267,18 +306,26 @@ type AnkeRaekke = {
   ankede_status: string;
 };
 
-// "Anke indgivet" til begge parter. Claimes atomisk (sag_anker.notificeret_kl),
-// så den sendes præcis én gang - også for anker indgivet direkte fra appen
-// (cron samler op). Kaster aldrig.
+// Er beskeden leveret (eller allerede sendt før)? En nøgle, der ikke kunne
+// claimes, eller en besked, der ikke nåede nogen kanal, prøves igen.
+function leveret(r: SendResultat): boolean {
+  if (r.dublet) return true;
+  if (r.sprunget) return false;
+  return r.klokke || r.mail || r.push;
+}
+
+// "Anke indgivet" til begge parter - også for anker indgivet direkte fra
+// appen (cron samler op). Hver besked har en idempotent nøgle, så den sendes
+// højst én gang. sag_anker.notificeret_kl sættes først, når begge beskeder er
+// leveret - ellers prøver cron igen. Kaster aldrig.
 export async function notificerAnkeIndgivet(ankeId: string): Promise<boolean> {
   try {
     const admin = createAdminClient();
     const { data: a } = await admin
       .from("sag_anker")
-      .update({ notificeret_kl: new Date().toISOString() })
+      .select("id, sag_id, trade_id, part, ankede_status")
       .eq("id", ankeId)
       .is("notificeret_kl", null)
-      .select("id, sag_id, trade_id, part, ankede_status")
       .maybeSingle<AnkeRaekke>();
     if (!a) return false;
     const h = await handelOgTitel(admin, a.trade_id);
@@ -297,21 +344,41 @@ export async function notificerAnkeIndgivet(ankeId: string): Promise<boolean> {
     const ankendeId = a.part === "koeber" ? h.buyer_id : h.seller_id;
     const andenId = a.part === "koeber" ? h.seller_id : h.buyer_id;
     const hvem = a.part === "koeber" ? "Køberen" : "Sælgeren";
-    await send(ankendeId, "sag", {
-      titel: "Vi har modtaget din anke",
-      tekst: `Vi har modtaget din anke af afgørelsen i sagen om "${t}". ${anden} ${venter} Afgørelsen på anken er endelig.`,
-      link,
-      data,
-      noegle: `sag_anke_indgivet_${a.part}:${a.id}`,
-    });
-    await send(andenId, "sag", {
-      titel: "Afgørelsen er anket",
-      tekst: `${hvem} har anket afgørelsen i sagen om "${t}". ${anden} ${venter}${returPause}`,
-      link,
-      data,
-      noegle: `sag_anke_indgivet_${a.part === "koeber" ? "saelger" : "koeber"}:${a.id}`,
-    });
-    return true;
+    const r1 = await send(
+      ankendeId,
+      "sag",
+      {
+        titel: "Vi har modtaget din anke",
+        tekst: `Vi har modtaget din anke af afgørelsen i sagen om "${t}". ${anden} ${venter} Afgørelsen på anken er endelig.`,
+        link,
+        data,
+        noegle: `sag_anke_indgivet_${a.part}:${a.id}`,
+      },
+      { springOverVedClaimFejl: true },
+    );
+    const r2 = await send(
+      andenId,
+      "sag",
+      {
+        titel: "Afgørelsen er anket",
+        tekst: `${hvem} har anket afgørelsen i sagen om "${t}". ${anden} ${venter}${returPause}`,
+        link,
+        data,
+        noegle: `sag_anke_indgivet_${a.part === "koeber" ? "saelger" : "koeber"}:${a.id}`,
+      },
+      { springOverVedClaimFejl: true },
+    );
+    if (!leveret(r1) || !leveret(r2)) return false;
+    // Claim efter vellykket afsendelse (nøglerne forhindrer dubletter, hvis
+    // to kørsler når hertil samtidig).
+    const { data: sat } = await admin
+      .from("sag_anker")
+      .update({ notificeret_kl: new Date().toISOString() })
+      .eq("id", a.id)
+      .is("notificeret_kl", null)
+      .select("id")
+      .maybeSingle();
+    return !!sat;
   } catch (err) {
     console.error("Notifikation om anke fejlede:", ankeId, err);
     return false;
@@ -337,14 +404,65 @@ export async function notificerNyeAnker(): Promise<number> {
   return antal;
 }
 
+// Cron: medhold til køber med retur, hvor ankefristen er udløbet uden anke.
+// Køberen fik besked om at vente med at sende varen til fristen; nu får
+// begge parter besked om, at returen kan sendes. Nøglen (pr. sag og version)
+// gør det idempotent; sager med en anke springes over (ankens afgørelse giver
+// selv besked). Ser 3 dage tilbage, så en mistet kørsel indhentes.
+export async function notificerReturKanSendes(): Promise<number> {
+  const admin = createAdminClient();
+  const nu = Date.now();
+  const { data, error } = await admin
+    .from("sager")
+    .select("id, trade_id, type, genaabnet_antal")
+    .eq("status", "afventer_retur")
+    .is("retur_afleveret_kl", null)
+    .lte("penge_flyttes_efter_kl", new Date(nu).toISOString())
+    .gte("penge_flyttes_efter_kl", new Date(nu - 3 * 24 * 60 * 60 * 1000).toISOString())
+    .limit(100);
+  if (error) {
+    console.error("Hentning af sager, hvor returen kan sendes, fejlede:", error.message);
+    return 0;
+  }
+  const sager = (data ?? []) as { id: string; trade_id: string; type: string; genaabnet_antal: number }[];
+  if (sager.length === 0) return 0;
+  const { data: anker, error: aErr } = await admin
+    .from("sag_anker")
+    .select("sag_id")
+    .in(
+      "sag_id",
+      sager.map((s) => s.id),
+    );
+  if (aErr) {
+    console.error("Hentning af anker fejlede:", aErr.message);
+    return 0;
+  }
+  const anket = new Set(((anker ?? []) as { sag_id: string }[]).map((a) => a.sag_id));
+  let antal = 0;
+  for (const s of sager) {
+    if (anket.has(s.id) || !erSagType(s.type)) continue;
+    await notificerSagAfgoerelse(s.id, s.trade_id, s.type, "retur_kan_sendes", null, Number(s.genaabnet_antal ?? 0));
+    antal++;
+  }
+  return antal;
+}
+
 // Hvad der nu sker med pengene efter ankens afgørelse:
 //   'koeber_retur'  - køberen har medhold og skal sende varen retur
 //   'koeber'        - køberen får pengene tilbage
 //   'saelger'       - sælgeren får pengene
 export type AnkeSlutUdfald = "koeber" | "koeber_retur" | "saelger";
 
-// "Anke afgjort" til begge parter. Begrundelsen fra BidHamr medsendes. Beløb
-// nævnes aldrig. Kaster aldrig.
+// Hvad der faktisk skete med pengene (koeber/saelger):
+//   'nu'      - sag_afvikl gennemførte; pengene er sendt til Stripe nu
+//   'senere'  - pengene kan ikke flyttes lige nu (fx indsigelse eller en
+//               Stripe-fejl); de flyttes, så snart det er muligt
+//   'ingen'   - pengene var allerede flyttet (intet nyt at sige om dem)
+export type AnkePengeStatus = "nu" | "senere" | "ingen";
+
+// "Anke afgjort" til begge parter - ÉN samlet besked pr. part (afviklingen
+// sender ikke sin egen "refunderet"/"frigivet"-besked her; se afgoerAnke).
+// Begrundelsen fra BidHamr medsendes. Beløb nævnes aldrig. Kaster aldrig.
 export async function notificerAnkeAfgjort(
   ankeId: string,
   tradeId: string,
@@ -353,6 +471,7 @@ export async function notificerAnkeAfgjort(
   udfald: "stadfaest" | "omgoer",
   slut: AnkeSlutUdfald,
   begrundelse: string,
+  pengeStatus: AnkePengeStatus,
 ): Promise<void> {
   try {
     const admin = createAdminClient();
@@ -367,32 +486,51 @@ export async function notificerAnkeAfgjort(
     const hvad = h.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
     const beskyttelseNote = h.beskyttelse ? " BidHamr Beskyttelse refunderes ikke." : "";
 
+    // Kun "nu", når pengene faktisk er flyttet. Ellers en tekst uden tidspunkt.
+    const stripe = "Betalingen håndteres af vores betalingspartner Stripe.";
     const penge: Record<AnkeSlutUdfald, { koeber: string; saelger: string }> = {
-      koeber: {
-        koeber: `Du får ${hvad} tilbage nu.${beskyttelseNote}`,
-        saelger: "Køberen får pengene tilbage, og handlen annulleres.",
-      },
+      koeber:
+        pengeStatus === "nu"
+          ? {
+              koeber: `Pengene er sendt tilbage til dig.${beskyttelseNote} Der kan gå nogle dage, før de står på din konto. ${stripe}`,
+              saelger: "Køberen har fået pengene tilbage, og handlen er annulleret.",
+            }
+          : pengeStatus === "senere"
+            ? {
+                koeber: `Du får ${hvad} tilbage, så snart betalingen kan gennemføres.${beskyttelseNote}`,
+                saelger: "Køberen får pengene tilbage, og handlen annulleres.",
+              }
+            : { koeber: "", saelger: "" },
       koeber_retur: {
-        koeber: `Send varen retur til sælgeren. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`,
+        koeber: `Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`,
         saelger: "Køberen sender varen retur til dig og betaler selv returfragten. Når pakken er afleveret, får køberen pengene tilbage.",
       },
-      saelger: {
-        koeber: "Pengene udbetales til sælgeren.",
-        saelger: "Pengene udbetales til dig nu.",
-      },
+      saelger:
+        pengeStatus === "nu"
+          ? {
+              koeber: "Pengene er udbetalt til sælgeren.",
+              saelger: `Pengene bliver nu udbetalt til din udbetalingskonto. ${stripe}`,
+            }
+          : pengeStatus === "senere"
+            ? {
+                koeber: "Pengene udbetales til sælgeren.",
+                saelger: "Pengene udbetales til dig, så snart betalingen kan gennemføres.",
+              }
+            : { koeber: "", saelger: "" },
     };
 
     const ankende = part;
     const tekst = (rolle: "koeber" | "saelger"): [string, string] => {
-      const p = penge[slut][rolle];
+      const pengeTekst = penge[slut][rolle];
+      const p = pengeTekst ? `${pengeTekst} ` : "";
       if (rolle === ankende) {
         return udfald === "omgoer"
-          ? ["Du har fået medhold i din anke", `BidHamr har set på sagen om "${t}" igen og ændret afgørelsen til din fordel. ${p} ${endelig}${grund}`]
-          : ["Din anke er afgjort", `BidHamr har set på sagen om "${t}" igen, og afgørelsen står ved magt. ${p} ${endelig}${grund}`];
+          ? ["Du har fået medhold i din anke", `BidHamr har set på sagen om "${t}" igen og ændret afgørelsen til din fordel. ${p}${endelig}${grund}`]
+          : ["Din anke er afgjort", `BidHamr har set på sagen om "${t}" igen, og afgørelsen står ved magt. ${p}${endelig}${grund}`];
       }
       return udfald === "omgoer"
-        ? ["Afgørelsen er ændret", `BidHamr har behandlet anken i sagen om "${t}" og ændret afgørelsen. ${p} ${endelig}${grund}`]
-        : ["Anken er afgjort", `BidHamr har behandlet anken i sagen om "${t}", og afgørelsen står ved magt. ${p} ${endelig}${grund}`];
+        ? ["Afgørelsen er ændret", `BidHamr har behandlet anken i sagen om "${t}" og ændret afgørelsen. ${p}${endelig}${grund}`]
+        : ["Anken er afgjort", `BidHamr har behandlet anken i sagen om "${t}", og afgørelsen står ved magt. ${p}${endelig}${grund}`];
     };
 
     const [kt, kx] = tekst("koeber");
