@@ -141,9 +141,51 @@ export async function markerModtaget(tradeId: string) {
   return { ok: true };
 }
 
-// TRIN 2: Køberen godkender varen, og beløbet udbetales til sælgeren.
-// Uigenkaldeligt - derfor bekræftelsesdialogen i brugerfladen.
-export async function godkendPakke(tradeId: string) {
+// Samme mønster for links som i handel_godkend_med_bedoemmelse
+// (20261003020000). Databasen er sikkerhedslaget; tjekket her giver blot en
+// pæn besked, før noget sendes.
+const LINK_I_KOMMENTAR =
+  /(https?:\/\/|www\.|[a-z0-9-]+\.(dk|com|net|org|io|info|biz|xyz|ly)(\/|\s|$))/i;
+const KOMMENTAR_MAKS = 1000;
+
+const GODKEND_FEJL: Record<string, string> = {
+  ikke_logget_ind: "Du skal være logget ind.",
+  ugyldige_stjerner: "Giv sælgeren 1-5 stjerner, før du godkender varen.",
+  kommentar_for_lang: `Kommentaren må højst være ${KOMMENTAR_MAKS} tegn.`,
+  kommentar_link: "Kommentaren må ikke indeholde links.",
+  ikke_mulig: "Pakken er allerede godkendt.",
+};
+
+// TRIN 2: Køberen godkender varen og bedømmer sælgeren (1-5 stjerner +
+// valgfri kommentar), og beløbet udbetales til sælgeren. Bedømmelse og
+// godkendelse sker i én transaktion i databasen - den ene kan ikke ske uden
+// den anden (ROADMAP-BESLUTNINGER afsnit 6). Uigenkaldeligt - derfor
+// bekræftelsesdialogen i brugerfladen.
+//
+// stjerner er valgfri i typen, så et kald uden bedømmelse afvises med en
+// forståelig besked i stedet for at kaste.
+export async function godkendPakke(
+  tradeId: string,
+  stjerner?: number,
+  kommentar?: string | null,
+) {
+  if (
+    typeof stjerner !== "number" ||
+    !Number.isInteger(stjerner) ||
+    stjerner < 1 ||
+    stjerner > 5
+  ) {
+    return { fejl: GODKEND_FEJL.ugyldige_stjerner };
+  }
+  const renKommentar =
+    typeof kommentar === "string" ? kommentar.trim() || null : null;
+  if (renKommentar && Array.from(renKommentar).length > KOMMENTAR_MAKS) {
+    return { fejl: GODKEND_FEJL.kommentar_for_lang };
+  }
+  if (renKommentar && LINK_I_KOMMENTAR.test(renKommentar)) {
+    return { fejl: GODKEND_FEJL.kommentar_link };
+  }
+
   const resultat = await hentHandel(tradeId);
   if ("fejl" in resultat) return resultat;
   const { supabase, user, handel } = resultat;
@@ -164,18 +206,24 @@ export async function godkendPakke(tradeId: string) {
     };
   }
 
-  // Statusskiftet og frigivelsen (frigivet_kl) sker i samme transaktion i
-  // databasen. Idempotent: et dobbeltklik finder ingen række anden gang.
-  const { data: godkendt, error } = await supabase.rpc("handel_godkend", {
-    p_trade: tradeId,
-  });
+  // Statusskiftet, frigivelsen (frigivet_kl) og bedømmelsen sker i samme
+  // transaktion i databasen. Køberen og sælgeren udledes af auth.uid() og
+  // handlen - de sendes ikke med. Idempotent: et dobbeltklik finder ingen
+  // række anden gang og giver ingen ekstra bedømmelse.
+  const { data: kode, error } = await supabase.rpc(
+    "handel_godkend_med_bedoemmelse",
+    { p_trade: tradeId, p_stjerner: stjerner, p_kommentar: renKommentar },
+  );
 
   if (error) {
-    console.error("handel_godkend fejlede:", error);
+    console.error("handel_godkend_med_bedoemmelse fejlede:", error);
     return { fejl: "Noget gik galt. Prøv igen om lidt." };
   }
-  if (!godkendt) {
-    return { fejl: "Pakken er allerede godkendt." };
+  if (kode !== "ok") {
+    return {
+      fejl:
+        GODKEND_FEJL[kode as string] ?? "Noget gik galt. Prøv igen om lidt.",
+    };
   }
 
   // Pengene overføres til sælgerens Stripe Connect-konto. Fejler det (eller
@@ -195,5 +243,8 @@ export async function godkendPakke(tradeId: string) {
 
   revalidatePath(`/mine-handler/${tradeId}`);
   revalidatePath("/mine-handler");
+  // Bedømmelsen vises på sælgerens profil og auktionssiden.
+  revalidatePath(`/profil/${handel.seller_id}`);
+  revalidatePath(`/auktion/${handel.auction_id}`);
   return { ok: true };
 }
