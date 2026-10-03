@@ -8,6 +8,18 @@ import KontoUdbetaling from "@/components/betaling/KontoUdbetaling";
 export const dynamic = "force-dynamic";
 
 type MinAdvarsel = { id: string; begrundelse_bruger: string | null; oprettet_kl: string };
+type MinPaamindelse = { id: string; grund: string; begrundelse_bruger: string; oprettet_kl: string };
+
+const GRUND_NAVN: Record<string, string> = { daarlig_indpakning: "Dårlig indpakning" };
+
+function datoTekst(iso: string) {
+  return new Date(iso).toLocaleDateString("da-DK", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/Copenhagen",
+  });
+}
 
 export default async function KontoSide({
   searchParams,
@@ -25,12 +37,21 @@ export default async function KontoSide({
   // Brugerens egne advarsler: kun begrundelse til brugeren og dato
   // (mine_advarsler() udleder brugeren af auth.uid(); den interne note
   // kan ikke læses herfra).
-  const [indstillinger, { data: advarselData, error: advarselFejl }] = await Promise.all([
+  // Påmindelser (fx 1. gang dårlig indpakning) hentes på samme måde via
+  // mine_paamindelser() og tæller ikke med i reglen om 3 advarsler.
+  const [
+    indstillinger,
+    { data: advarselData, error: advarselFejl },
+    { data: paamindelseData, error: paamindelseFejl },
+  ] = await Promise.all([
     hentBetalingsindstillinger(),
     supabase.rpc("mine_advarsler"),
+    supabase.rpc("mine_paamindelser"),
   ]);
   if (advarselFejl) console.error("Konto: advarsler kunne ikke hentes:", advarselFejl.message);
+  if (paamindelseFejl) console.error("Konto: påmindelser kunne ikke hentes:", paamindelseFejl.message);
   const advarsler = (advarselData ?? []) as MinAdvarsel[];
+  const paamindelser = (paamindelseData ?? []) as MinPaamindelse[];
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
@@ -46,23 +67,42 @@ export default async function KontoSide({
           </h2>
           <p className="mt-1 text-sm text-advarsel-tekst">
             Du har fået {advarsler.length === 1 ? "1 advarsel" : `${advarsler.length} advarsler`}.
-            Efter 3 advarsler lukkes din profil permanent. Kontakt support@bidhamr.dk, hvis du
-            har spørgsmål.
+            Efter 3 advarsler kan din profil blive lukket permanent. Kontakt support@bidhamr.dk, hvis
+            du har spørgsmål.
           </p>
           <ul className="mt-4 space-y-3">
             {advarsler.map((a) => (
               <li key={a.id} className="rounded-xl border border-advarsel-kant bg-white p-4">
-                <p className="text-xs font-medium text-tekst-daempet">
-                  {new Date(a.oprettet_kl).toLocaleDateString("da-DK", {
-                    day: "numeric",
-                    month: "long",
-                    year: "numeric",
-                    timeZone: "Europe/Copenhagen",
-                  })}
-                </p>
+                <p className="text-xs font-medium text-tekst-daempet">{datoTekst(a.oprettet_kl)}</p>
                 <p className="mt-1 whitespace-pre-line text-sm text-tekst">
                   {a.begrundelse_bruger ?? "Der er ikke angivet en begrundelse for denne advarsel."}
                 </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {paamindelser.length > 0 && (
+        <section
+          id="paamindelser"
+          className="mt-6 scroll-mt-24 rounded-2xl border border-kant bg-white p-5 sm:p-6"
+        >
+          <h2 className="font-serif text-xl font-semibold text-tekst">
+            Påmindelser ({paamindelser.length})
+          </h2>
+          <p className="mt-1 text-sm text-tekst-daempet">
+            En påmindelse er ikke en advarsel og tæller ikke med i reglen om 3 advarsler. Næste gang det
+            samme sker, giver det en advarsel.
+          </p>
+          <ul className="mt-4 space-y-3">
+            {paamindelser.map((p) => (
+              <li key={p.id} className="rounded-xl border border-kant p-4">
+                <p className="text-xs font-medium text-tekst-daempet">
+                  {datoTekst(p.oprettet_kl)}
+                  {GRUND_NAVN[p.grund] ? ` · ${GRUND_NAVN[p.grund]}` : ""}
+                </p>
+                <p className="mt-1 whitespace-pre-line text-sm text-tekst">{p.begrundelse_bruger}</p>
               </li>
             ))}
           </ul>

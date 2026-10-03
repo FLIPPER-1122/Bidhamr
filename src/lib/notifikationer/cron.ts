@@ -100,14 +100,20 @@ async function titler(admin: Admin, ids: string[]) {
 }
 
 // Advarsler gives fra flere steder (admin-brugerside, ubetalt-sag,
-// betalingssag). Alle opfanges her ud fra advarsler-tabellen.
+// betalingssag, dårlig indpakning). Alle opfanges her ud fra advarsler-
+// tabellen - sammen med påmindelser og godkendte kontolukninger.
 // Kaster aldrig (kaldes også fra after() i admin-actions).
 export async function notificerAdvarsler(): Promise<number> {
   try {
     const admin = createAdminClient();
     const start = await hentStart(admin);
     if (!start) return 0;
-    return await advarsler(admin, start);
+    const [a, p, l] = [
+      await advarsler(admin, start),
+      await paamindelser(admin, start),
+      await kontoLukninger(admin, start),
+    ];
+    return a + p + l;
   } catch (err) {
     console.error("Notifikationer: advarsler fejlede:", err);
     return 0;
@@ -118,7 +124,7 @@ export async function notificerAdvarsler(): Promise<number> {
 // Mailen escaper teksten (notifikationMail), klokke/push er ren tekst.
 export function advarselTekst(begrundelseBruger: string | null): string {
   const slut =
-    "Efter 3 advarsler lukkes din profil permanent. Kontakt support@bidhamr.dk, hvis du har spørgsmål.";
+    "Efter 3 advarsler kan din profil blive lukket permanent. Kontakt support@bidhamr.dk, hvis du har spørgsmål.";
   const b = (begrundelseBruger ?? "").trim();
   if (!b) return `Du har fået en advarsel fra BidHamr.\n${slut}`;
   const punktum = /[.!?]$/.test(b) ? "" : ".";
@@ -148,6 +154,76 @@ async function advarsler(admin: Admin, start: Date): Promise<number> {
         link: "/konto#advarsler",
         data: { advarsel_id: a.id },
         noegle: `advarsel:${a.id}`,
+      },
+    })),
+  );
+}
+
+// Påmindelser (fx 1. gang dårlig indpakning). Tæller ikke med i reglen om 3
+// advarsler. Påkrævet type 'advarsel', så brugeren ikke kan slå dem fra.
+// Kun begrundelse_bruger - ALDRIG intern_note.
+export function paamindelseTekst(begrundelseBruger: string): string {
+  const b = begrundelseBruger.trim();
+  const punktum = /[.!?]$/.test(b) ? "" : ".";
+  return `Du har fået en påmindelse fra BidHamr. Begrundelse: ${b}${punktum}
+Dette er en påmindelse – næste gang giver det en advarsel.`;
+}
+
+async function paamindelser(admin: Admin, start: Date): Promise<number> {
+  const { data, error } = await admin
+    .from("paamindelser")
+    .select("id, bruger_id, begrundelse_bruger")
+    .gte("oprettet_kl", fraTid(start, 48))
+    .order("oprettet_kl", { ascending: false })
+    .limit(MAKS);
+  if (error) {
+    console.error("Notifikationer: påmindelser kunne ikke hentes:", error.message);
+    return 0;
+  }
+  return sendNye(
+    admin,
+    (data ?? []).map((p) => ({
+      brugerId: p.bruger_id as string,
+      type: "advarsel" as const,
+      input: {
+        titel: "Du har fået en påmindelse",
+        tekst: paamindelseTekst(String(p.begrundelse_bruger ?? "")),
+        link: "/konto#paamindelser",
+        data: { paamindelse_id: p.id },
+        noegle: `paamindelse:${p.id}`,
+      },
+    })),
+  );
+}
+
+export const KONTO_LUKKET_TEKST =
+  "Din konto er lukket permanent efter 3 advarsler. Kontakt support@bidhamr.dk";
+
+// Kun når staff har GODKENDT lukningen (konto_lukning_forslag.status
+// 'godkendt'). Brugeren får ingen besked om et afventende eller afvist forslag.
+async function kontoLukninger(admin: Admin, start: Date): Promise<number> {
+  const { data, error } = await admin
+    .from("konto_lukning_forslag")
+    .select("id, bruger_id")
+    .eq("status", "godkendt")
+    .gte("behandlet_kl", fraTid(start, 48))
+    .order("behandlet_kl", { ascending: false })
+    .limit(MAKS);
+  if (error) {
+    console.error("Notifikationer: kontolukninger kunne ikke hentes:", error.message);
+    return 0;
+  }
+  return sendNye(
+    admin,
+    (data ?? []).map((f) => ({
+      brugerId: f.bruger_id as string,
+      type: "advarsel" as const,
+      input: {
+        titel: "Din konto er lukket",
+        tekst: KONTO_LUKKET_TEKST,
+        link: "/konto#advarsler",
+        data: {},
+        noegle: `konto_lukket:${f.id}`,
       },
     })),
   );
@@ -424,6 +500,8 @@ export async function koerNotifikationsCron() {
   const admin = createAdminClient();
   const resultat = {
     advarsler: 0,
+    paamindelser: 0,
+    kontoLukninger: 0,
     bud: 0,
     likes: 0,
     slutterSnart: 0,
@@ -441,6 +519,8 @@ export async function koerNotifikationsCron() {
     const s = start;
     trin.push(
       ["advarsler", () => advarsler(admin, s)],
+      ["paamindelser", () => paamindelser(admin, s)],
+      ["kontoLukninger", () => kontoLukninger(admin, s)],
       ["bud", () => bud(admin, s)],
       ["likes", () => likes(admin, s)],
     );

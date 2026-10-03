@@ -21,6 +21,8 @@ const LOG_NAVN: Record<string, string> = {
   sag_genaabnet: "Sagen er genåbnet",
   sag_afviklet: "Ankefristen er udløbet – pengene er flyttet",
   konto_lukket: "Konto lukket permanent",
+  indpakning_paamindelse: "Påmindelse til sælger: dårlig indpakning",
+  advarsel: "Advarsel",
 };
 
 const PENGE_HANDLING_NAVN = {
@@ -147,6 +149,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
             kan={sag.kan}
             koeber={{ id: sag.koeber.id, navn: koeberNavn, lukket: sag.koeberLukket }}
             saelger={{ id: sag.saelger.id, navn: saelgerNavn, lukket: sag.saelgerLukket }}
+            indpakning={sag.indpakning}
           />
         </div>
       </section>

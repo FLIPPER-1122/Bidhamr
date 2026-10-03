@@ -11,6 +11,7 @@ import {
   genaabnSag,
   lukKontoPermanent,
   registrerReturAfleveret,
+  vurderIndpakning,
 } from "@/app/actions/adminSager";
 import { SAG_BEGRUNDELSE_MAKS, type SagType } from "@/lib/sager";
 import { STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
@@ -500,6 +501,150 @@ function LukKontoKnap({
   );
 }
 
+// ------------------------------------------------------------------ Dårlig indpakning
+
+export type IndpakningInfo = {
+  vurderet: "paamindelse" | "advarsel" | null;
+  saelgerAdvarsler: number;
+  saelgerHarPaamindelse: boolean;
+  afhentning: boolean;
+};
+
+function advarslerTekst(n: number) {
+  return n === 1 ? "1 advarsel" : `${n} advarsler`;
+}
+
+function IndpakningKnap({
+  sagId,
+  saelgerNavn,
+  info,
+  onResultat,
+}: {
+  sagId: string;
+  saelgerNavn: string;
+  info: IndpakningInfo;
+  onResultat: (b: string) => void;
+}) {
+  const id = useId();
+  const [aaben, setAaben] = useState(false);
+  const luk = () => setAaben(false);
+  const { sender, fejl, setFejl, send } = useSend(onResultat, luk);
+
+  const blivAdvarsel = info.saelgerHarPaamindelse;
+  const efter = info.saelgerAdvarsler + 1;
+
+  function indsend(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const bruger = String(fd.get("begrundelse_bruger") ?? "").trim();
+    const note = String(fd.get("intern_note") ?? "").trim();
+    if (!bruger) {
+      setFejl("Skriv en begrundelse til sælgeren. Den vises for sælgeren.");
+      return;
+    }
+    void send(() => vurderIndpakning(sagId, bruger, note));
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setFejl(null);
+          setAaben(true);
+        }}
+        className="btn btn-sekundaer"
+      >
+        Dårlig indpakning
+      </button>
+      <Dialog
+        titel="Dårlig indpakning"
+        beskrivelse={
+          <>
+            <p>
+              Sælgeren har ansvaret for indpakningen. Brug sælgerens pakkebilleder og køberens billeder til at
+              vurdere den. Første gang får sælgeren en påmindelse, som ikke tæller med. Derefter giver det en
+              advarsel hver gang. Én vurdering pr. sag.
+            </p>
+          </>
+        }
+        aaben={aaben}
+        onLuk={luk}
+        laast={sender}
+      >
+        <form onSubmit={indsend} className="space-y-4">
+          <div
+            className={`rounded-lg border px-3 py-2 text-sm ${
+              blivAdvarsel
+                ? "border-fejl-kant bg-fejl-bg text-fejl-tekst"
+                : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"
+            }`}
+          >
+            <p>
+              {saelgerNavn} har {advarslerTekst(info.saelgerAdvarsler)}
+              {info.saelgerHarPaamindelse ? " og har tidligere fået en påmindelse for dårlig indpakning." : " og ingen påmindelse for dårlig indpakning."}
+            </p>
+            <p className="mt-1 font-semibold">
+              {blivAdvarsel
+                ? `Dette bliver en advarsel. Sælgeren får ${advarslerTekst(efter)} i alt.`
+                : "Dette bliver en påmindelse. Den tæller ikke med i reglen om 3 advarsler."}
+            </p>
+            {blivAdvarsel && efter >= 3 && (
+              <p className="mt-1">
+                Ved 3 advarsler sendes kontoen til en admin eller chef, der tager stilling til at lukke den
+                permanent. Kontoen lukkes ikke automatisk.
+              </p>
+            )}
+          </div>
+          <div>
+            <label htmlFor={`${id}-bruger`} className="block text-sm font-medium text-neutral-800">
+              Begrundelse til sælgeren
+            </label>
+            <textarea
+              id={`${id}-bruger`}
+              name="begrundelse_bruger"
+              required
+              rows={4}
+              maxLength={1000}
+              disabled={sender}
+              placeholder="Fx: Varen var pakket uden fyld og blev skadet under forsendelsen."
+              aria-describedby={`${id}-bruger-hj`}
+              className={FELT}
+            />
+            <p id={`${id}-bruger-hj`} className="mt-1 text-xs text-neutral-500">
+              Sælgeren ser teksten i beskeden og på sin konto. Højst 1000 tegn.
+            </p>
+          </div>
+          <div>
+            <label htmlFor={`${id}-note`} className="block text-sm font-medium text-neutral-800">
+              Intern note <span className="font-normal text-neutral-500">(valgfri)</span>
+            </label>
+            <textarea
+              id={`${id}-note`}
+              name="intern_note"
+              rows={3}
+              maxLength={2000}
+              disabled={sender}
+              aria-describedby={`${id}-note-hj`}
+              className={FELT}
+            />
+            <p id={`${id}-note-hj`} className="mt-1 text-xs text-neutral-500">
+              Kun synlig for BidHamr.
+            </p>
+          </div>
+          <Fejl fejl={fejl} />
+          <Knapper
+            sender={sender}
+            onLuk={luk}
+            bekraeft={blivAdvarsel ? "Giv advarsel" : "Giv påmindelse"}
+            fare={blivAdvarsel}
+          />
+        </form>
+      </Dialog>
+    </>
+  );
+}
+
 // ------------------------------------------------------------------ Chat
 
 function ChatKnap({ sagId, part, navn }: { sagId: string; part: "koeber" | "saelger"; navn: string }) {
@@ -584,12 +729,27 @@ export type SagHandlingerProps = {
   sagId: string;
   type: SagType;
   indsigelse: boolean;
-  kan: { afgoere: boolean; registrereRetur: boolean; genaabne: boolean; lukkeKonto: boolean };
+  kan: {
+    afgoere: boolean;
+    registrereRetur: boolean;
+    genaabne: boolean;
+    lukkeKonto: boolean;
+    vurdereIndpakning: boolean;
+  };
   koeber: { id: string; navn: string; lukket: boolean };
   saelger: { id: string; navn: string; lukket: boolean };
+  indpakning: IndpakningInfo;
 };
 
-export default function SagHandlinger({ sagId, type, indsigelse, kan, koeber, saelger }: SagHandlingerProps) {
+export default function SagHandlinger({
+  sagId,
+  type,
+  indsigelse,
+  kan,
+  koeber,
+  saelger,
+  indpakning,
+}: SagHandlingerProps) {
   const [resultat, setResultat] = useState<string | null>(null);
 
   return (
@@ -607,6 +767,20 @@ export default function SagHandlinger({ sagId, type, indsigelse, kan, koeber, sa
           )}
           {kan.registrereRetur && <ReturKnap sagId={sagId} onResultat={setResultat} />}
           {kan.genaabne && <GenaabnKnap sagId={sagId} onResultat={setResultat} />}
+        </div>
+      )}
+
+      {(kan.vurdereIndpakning || indpakning.vurderet) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {kan.vurdereIndpakning && (
+            <IndpakningKnap sagId={sagId} saelgerNavn={saelger.navn} info={indpakning} onResultat={setResultat} />
+          )}
+          {indpakning.vurderet && (
+            <span className="text-sm text-neutral-600">
+              Indpakning vurderet: sælgeren fik en{" "}
+              {indpakning.vurderet === "paamindelse" ? "påmindelse" : "advarsel"} for dårlig indpakning i denne sag.
+            </span>
+          )}
         </div>
       )}
 

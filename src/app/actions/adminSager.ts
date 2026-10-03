@@ -37,6 +37,7 @@ import {
 } from "@/lib/betaling/stripeBetaling";
 import { aabnChat } from "@/app/actions/staffChat";
 import { notificerSagAfgoerelse, sagFristTekst, type SagUdfaldBesked } from "@/lib/sagerServer";
+import { notificerAdvarsler } from "@/lib/notifikationer/cron";
 import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
 import {
   SAG_BEGRUNDELSE_MAKS,
@@ -107,6 +108,10 @@ const KODE_FEJL: Record<string, string> = {
   allerede_lukket: "Kontoen er allerede lukket permanent.",
   ugyldig_sag: "Brugeren er ikke part i sagen.",
   inhabil: "Du kan ikke behandle en sag, hvor du selv er køber eller sælger.",
+  begrundelse_bruger_mangler: "Skriv en begrundelse til sælgeren. Den vises for sælgeren.",
+  begrundelse_bruger_for_lang: "Begrundelsen til sælgeren er for lang (højst 1000 tegn).",
+  afhentning: "Handlen var afhentning. Der er ingen indpakning at vurdere.",
+  allerede_vurderet: "Indpakningen i denne sag er allerede vurderet. Genindlæs siden.",
 };
 
 function kodeFejl(kode: string | undefined): string {
@@ -210,6 +215,17 @@ export type SagDetalje = SagListeRaekke & {
   // Konti (til "Luk konto permanent").
   koeberLukket: boolean;
   saelgerLukket: boolean;
+  // Dårlig indpakning (ROADMAP-BESLUTNINGER afsnit 4).
+  indpakning: {
+    // Hvad der blev givet i DENNE sag, eller null hvis ikke vurderet.
+    vurderet: "paamindelse" | "advarsel" | null;
+    // Sælgerens samlede antal advarsler (alle typer) lige nu.
+    saelgerAdvarsler: number;
+    // Har sælgeren tidligere fået en påmindelse for dårlig indpakning?
+    // Så giver næste vurdering en advarsel.
+    saelgerHarPaamindelse: boolean;
+    afhentning: boolean;
+  };
   // Hvad den aktuelle medarbejder må.
   kan: {
     afgoere: boolean;
@@ -217,6 +233,7 @@ export type SagDetalje = SagListeRaekke & {
     genaabne: boolean;
     lukkeKonto: boolean;
     seBeloeb: boolean;
+    vurdereIndpakning: boolean;
   };
   log: { handling: string; aarsag: string; oprettetKl: string; medarbejderNavn: string | null }[];
 };
@@ -368,12 +385,29 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
     const [liste] = await berig(admin, [s]);
     const seBeloeb = harMindstRolle(rolle, "chef");
 
-    const [{ data: t }, betaling, { data: billeder }, { data: log }, pakkebilleder] = await Promise.all([
+    const saelgerId = liste.saelger.id;
+    const [
+      { data: t },
+      betaling,
+      { data: billeder },
+      { data: log },
+      pakkebilleder,
+      { data: sagPaamindelse },
+      { data: sagAdvarsel },
+      { count: saelgerAdvarsler },
+      { count: saelgerPaamindelser },
+    ] = await Promise.all([
       admin
         .from("trades")
-        .select("status, tracking_number, sendt_kl, received_at")
+        .select("status, tracking_number, sendt_kl, received_at, afhentning")
         .eq("id", s.trade_id)
-        .single<{ status: string; tracking_number: string | null; sendt_kl: string | null; received_at: string | null }>(),
+        .single<{
+          status: string;
+          tracking_number: string | null;
+          sendt_kl: string | null;
+          received_at: string | null;
+          afhentning: boolean | null;
+        }>(),
       hentBetalingForHandel(s.trade_id),
       admin
         .from("sag_billeder")
@@ -388,7 +422,30 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         .order("oprettet_kl", { ascending: true })
         .limit(100),
       hentPakkeBilleder(admin, s.trade_id),
+      admin.from("paamindelser").select("id").eq("sag_id", s.id).maybeSingle(),
+      admin
+        .from("advarsler")
+        .select("id")
+        .eq("sag_id", s.id)
+        .eq("grund", "daarlig_indpakning")
+        .maybeSingle(),
+      saelgerId
+        ? admin.from("advarsler").select("id", { count: "exact", head: true }).eq("bruger_id", saelgerId)
+        : Promise.resolve({ count: 0 }),
+      saelgerId
+        ? admin
+            .from("paamindelser")
+            .select("id", { count: "exact", head: true })
+            .eq("bruger_id", saelgerId)
+            .eq("grund", "daarlig_indpakning")
+        : Promise.resolve({ count: 0 }),
     ]);
+    const indpakningVurderet: "paamindelse" | "advarsel" | null = sagPaamindelse
+      ? "paamindelse"
+      : sagAdvarsel
+        ? "advarsel"
+        : null;
+    const afhentning = !!t?.afhentning;
 
     const billedRaekker = (billeder ?? []) as {
       id: string;
@@ -478,6 +535,12 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
           : null,
         koeberLukket: lukket.get(liste.koeber.id) ?? false,
         saelgerLukket: lukket.get(liste.saelger.id) ?? false,
+        indpakning: {
+          vurderet: indpakningVurderet,
+          saelgerAdvarsler: saelgerAdvarsler ?? 0,
+          saelgerHarPaamindelse: (saelgerPaamindelser ?? 0) > 0,
+          afhentning,
+        },
         kan: {
           afgoere: kanAfgoere && aaben,
           registrereRetur: kanAfgoere && s.status === "afventer_retur",
@@ -490,6 +553,9 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
             !(betaling && (betaling.refusion_anmodet_kl || betaling.stripe_transfer_id || betaling.overfoersel_paabegyndt_kl)),
           lukkeKonto: harMindstRolle(rolle, "admin"),
           seBeloeb,
+          // Databasen (indpakning_vurder) tjekker rolle, inhabilitet og
+          // én vurdering pr. sag igen.
+          vurdereIndpakning: kanAfgoere && !indpakningVurderet && !afhentning && !!saelgerId,
         },
         log: logRaekker.map((l) => ({
           handling: l.handling,
@@ -724,6 +790,68 @@ export async function lukKontoPermanent(formData: FormData): Promise<Udfald | { 
     revalidatePath(`/admin/brugere/${brugerId}`);
     if (sagId) revalidatePath(adminSagSti(sagId));
     return { ok: true as const, besked: "Kontoen er lukket permanent." };
+  });
+}
+
+// ------------------------------------------------------------------ Indpakning
+
+// Dårlig indpakning (ROADMAP-BESLUTNINGER afsnit 4): 1. gang en påmindelse til
+// sælgeren (tæller ikke med), derefter en advarsel hver gang. Når sælgeren når
+// 3 advarsler, oprettes et forslag om lukning til admin/chef - kontoen lukkes
+// aldrig automatisk. Én vurdering pr. sag. Medarbejder+; ikke hvis man selv er
+// part i handlen (databasen afviser med 'inhabil').
+export async function vurderIndpakning(
+  sagId: string,
+  begrundelseBruger: string,
+  internNote: string,
+): Promise<Udfald | { fejl: string }> {
+  return koer("vurderIndpakning", async () => {
+    const { admin, userId } = await assertRole(AFGOER_ROLLE);
+    const bruger = typeof begrundelseBruger === "string" ? begrundelseBruger.trim() : "";
+    const note = typeof internNote === "string" ? internNote.trim() : "";
+    if (!erUuid(sagId)) throw new BrugerFejl("Sagen findes ikke.");
+    if (!bruger) throw new BrugerFejl(KODE_FEJL.begrundelse_bruger_mangler);
+    if (bruger.length > 1000) throw new BrugerFejl(KODE_FEJL.begrundelse_bruger_for_lang);
+    if (note.length > 2000) throw new BrugerFejl("Den interne note er for lang (højst 2000 tegn).");
+
+    const { data, error } = await admin.rpc("indpakning_vurder", {
+      p_medarbejder: userId,
+      p_sag: sagId,
+      p_begrundelse_bruger: bruger,
+      p_intern_note: note || null,
+    });
+    if (error) throw new Error(error.message);
+    const svar = (data ?? { kode: "" }) as {
+      kode: string;
+      resultat?: "paamindelse" | "advarsel";
+      saelger_id?: string;
+      trade_id?: string;
+      advarsler_antal?: number;
+      lukning_foreslaaet?: boolean;
+    };
+    if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
+
+    // Sælgeren får besked (klokke/mail/push). Cron samler op, hvis det fejler.
+    after(() => notificerAdvarsler());
+
+    revalider(sagId, svar.trade_id);
+    if (svar.saelger_id) revalidatePath(`/admin/brugere/${svar.saelger_id}`);
+    revalidatePath("/admin/kontolukninger");
+
+    const antal = Number(svar.advarsler_antal ?? 0);
+    const antalTekst = antal === 1 ? "1 advarsel" : `${antal} advarsler`;
+    if (svar.resultat === "paamindelse") {
+      return {
+        ok: true as const,
+        besked: `Sælgeren har fået en påmindelse (tæller ikke med). Næste gang giver det en advarsel. Sælgeren har ${antalTekst}.`,
+      };
+    }
+    return {
+      ok: true as const,
+      besked: svar.lukning_foreslaaet
+        ? `Sælgeren har fået en advarsel og har nu ${antalTekst}. Kontoen er sendt til godkendelse af lukning under Kontolukninger (admin/chef).`
+        : `Sælgeren har fået en advarsel og har nu ${antalTekst}.`,
+    };
   });
 }
 
