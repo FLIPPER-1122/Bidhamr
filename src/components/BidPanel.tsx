@@ -14,6 +14,7 @@ import {
   totalOere,
 } from "@/lib/betaling/beregn";
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
+import { BINDENDE_BUD_TEKST, mindsteNaesteBud } from "@/lib/auktionRegler";
 
 // Budhistorikken er anonymiseret paa serveren: ingen bruger-id'er eller navne
 // i browseren - kun "Byder 3" eller "Dig".
@@ -30,6 +31,9 @@ const VIST_SOM_STANDARD = 5;
 export default function BidPanel({
   auktionId,
   initialNuværendeBud,
+  startpris,
+  initialHarBud,
+  redigeretKl: initialRedigeretKl,
   initialSlutterKl,
   initialBud,
   brugerId,
@@ -40,6 +44,12 @@ export default function BidPanel({
 }: {
   auktionId: string;
   initialNuværendeBud: number;
+  // Startpris = mindstepris. Første bud må være lig startprisen.
+  startpris: number;
+  // auctions."nuværende_bud" er sat (der er budt).
+  initialHarBud: boolean;
+  // auctions.redigeret_kl: den version af auktionen, byderen ser.
+  redigeretKl: string | null;
   initialSlutterKl: string;
   initialBud: BidPanelBud[];
   brugerId: string | null;
@@ -50,6 +60,10 @@ export default function BidPanel({
   vinderVisning: string | null;
 }) {
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
+  const [harBud, setHarBud] = useState(initialHarBud);
+  if (initialHarBud && !harBud) setHarBud(true);
+  // Versionen følger serveren (router.refresh() efter en redigering).
+  const redigeretKl = initialRedigeretKl;
   const [slutterKl, setSlutterKl] = useState(initialSlutterKl);
   const [budListe, setBudListe] = useState<BidPanelBud[]>(initialBud);
   // Ny budhistorik kommer fra serveren ved router.refresh().
@@ -79,6 +93,10 @@ export default function BidPanel({
   useEffect(() => {
     nuværendeBudRef.current = nuværendeBud;
   }, [nuværendeBud]);
+  const redigeretKlRef = useRef(redigeretKl);
+  useEffect(() => {
+    redigeretKlRef.current = redigeretKl;
+  }, [redigeretKl]);
 
   // Sættes når nedtællingen er kørt i nul, så genindlæsningen kun sker én
   // gang - også selv om auktionen forlænges og tælleren starter forfra.
@@ -127,12 +145,24 @@ export default function BidPanel({
             "nuværende_bud": number | null;
             slutter_kl: string;
             status: string;
+            redigeret_kl?: string | null;
           };
           if (
             opdateret["nuværende_bud"] != null &&
             opdateret["nuværende_bud"] !== nuværendeBudRef.current
           ) {
             setNuværendeBud(opdateret["nuværende_bud"]);
+            setHarBud(true);
+            router.refresh();
+          }
+          // Sælgeren har redigeret auktionen (kun muligt før første bud):
+          // hent det nye indhold, så ingen byder på en forældet visning.
+          if (
+            opdateret.redigeret_kl &&
+            redigeretKlRef.current &&
+            new Date(opdateret.redigeret_kl).getTime() !==
+              new Date(redigeretKlRef.current).getTime()
+          ) {
             router.refresh();
           }
           setSlutterKl(opdateret.slutter_kl);
@@ -155,9 +185,9 @@ export default function BidPanel({
     };
   }, [auktionId, brugerId, router]);
 
-  // Første bud må være lig startprisen; derefter mindst 10 % over nuværende bud.
-  const harBud = budListe.length > 0;
-  const minimumBud = harBud ? Math.ceil(nuværendeBud * 1.1) : Math.ceil(nuværendeBud);
+  // Første bud må være lig startprisen; derefter budstigning som trappe
+  // (samme regel som public.naeste_bud_minimum i databasen).
+  const minimumBud = mindsteNaesteBud(harBud ? nuværendeBud : null, startpris);
 
   // Kun visning: hvad vinderen kommer til at betale. Det endelige beløb
   // beregnes på serveren, når auktionen slutter.
@@ -204,7 +234,7 @@ export default function BidPanel({
     if (!Number.isFinite(beløbTal) || !Number.isInteger(beløbTal) || beløbTal < minimumBud) {
       setError(
         harBud
-          ? `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (10% over nuværende bud).`
+          ? `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr.`
           : `Dit bud skal være mindst ${minimumBud.toLocaleString("da-DK")} kr (startprisen).`,
       );
       return;
@@ -215,11 +245,17 @@ export default function BidPanel({
     // Afgives paa serveren (rate limit). RLS og triggere gaelder uaendret.
     // Kun afhentning: BidHamr Beskyttelse kan ikke tilvælges (afhentningshandler
     // kan ikke få sager). Databasen tvinger det også til nej.
-    const svar = await afgivBud(auktionId, beløbTal, beskyttelse && forsendelseMulig);
+    const svar = await afgivBud(
+      auktionId,
+      beløbTal,
+      beskyttelse && forsendelseMulig,
+      redigeretKl,
+    );
 
     if ("fejl" in svar) {
       setLoading(false);
       setError(svar.fejl);
+      if (svar.auktionAendret) router.refresh();
       return;
     }
 
@@ -279,6 +315,8 @@ export default function BidPanel({
                 </p>
               ) : null}
             </>
+          ) : auktionStatus === "annulleret" ? (
+            <p className="text-base font-semibold text-neutral-500">Auktionen er annulleret</p>
           ) : (
             <p className="text-base font-semibold text-neutral-500">Ingen bud – auktionen er lukket</p>
           )}
@@ -344,6 +382,13 @@ export default function BidPanel({
               i alt.
             </p>
           )}
+
+          <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+            <svg viewBox="0 0 24 24" className="mt-px h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 8v4m0 4h.01" />
+            </svg>
+            {BINDENDE_BUD_TEKST}
+          </p>
         </form>
       ) : (
         <Link

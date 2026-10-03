@@ -18,6 +18,7 @@ export interface MitBud {
 
 export interface EgenAuktion extends DummyAuction {
   slutterKl: string;
+  status?: string;
 }
 
 export interface Rating {
@@ -43,7 +44,8 @@ const BUD_LABEL: Record<BudStatus, string> = {
 
 type Fane = "auktioner" | "bud" | "bedommelser" | "indstillinger";
 
-function auktionStatusBadge(slutterKl: string, harBud: boolean) {
+function auktionStatusBadge(slutterKl: string, harBud: boolean, status?: string) {
+  if (status === "annulleret") return { label: "Annulleret", cls: "bg-neutral-100 text-neutral-500" };
   const erSlut = new Date(slutterKl) <= new Date();
   if (!erSlut) return { label: "Aktiv", cls: "bg-green-100 text-green-700" };
   if (harBud) return { label: "Venter på betaling", cls: "bg-orange-100 text-orange-700" };
@@ -127,7 +129,7 @@ export default function ProfileTabs({
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
               {egneAuktioner.map((auktion) => {
-                const badge = auktionStatusBadge(auktion.slutterKl, auktion.antalBud > 0);
+                const badge = auktionStatusBadge(auktion.slutterKl, auktion.antalBud > 0, auktion.status);
                 return (
                   <div key={auktion.id} className="relative">
                     <span

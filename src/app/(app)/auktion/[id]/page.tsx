@@ -9,6 +9,7 @@ import BidPanel from "@/components/BidPanel";
 import Accordion from "@/components/Accordion";
 import AnmeldOpslagKnap from "@/components/AnmeldOpslagKnap";
 import StartChatKnap from "@/components/StartChatKnap";
+import SaelgerAuktionHandlinger from "@/components/SaelgerAuktionHandlinger";
 import { kortNavn } from "@/lib/kortNavn";
 
 const MAKS_BUD_HENTET = 50;
@@ -95,6 +96,9 @@ export default async function AuktionPage({
   // vinderen ikke betalte, og byderen sagde ja til at købe varen.
   const erVinder = Boolean(auktionErSlut && vinderBud && bruger && bruger.id === vinderId);
   const erSælger = bruger?.id === auktion.bruger_id;
+  // Redigér/annullér: kun på en igangværende auktion (låst efter første bud).
+  const harBud = auktion.nuværende_bud != null || bud.length > 0;
+  const kanStyreAuktion = erSælger && auktion.status === "aktiv" && !auktionErSlut;
 
   // Handelstilstand: cron-jobbet opretter handel + betaling ved auktionsluk.
   // Betalingen er dermed allerede sket - der er intet "betal nu"-trin.
@@ -268,12 +272,19 @@ export default async function AuktionPage({
               </div>
             )}
 
+            {kanStyreAuktion && (
+              <SaelgerAuktionHandlinger auktionId={auktion.id} harBud={harBud} />
+            )}
+
             <div className="lg:sticky lg:top-4">
               <BidPanel
                 auktionId={auktion.id}
                 initialNuværendeBud={Number(
                   auktion.nuværende_bud ?? auktion.startpris,
                 )}
+                startpris={Number(auktion.startpris)}
+                initialHarBud={auktion.nuværende_bud != null}
+                redigeretKl={(auktion.redigeret_kl as string | null | undefined) ?? null}
                 initialSlutterKl={auktion.slutter_kl}
                 initialBud={anonymeBud}
                 brugerId={authData.user?.id ?? null}

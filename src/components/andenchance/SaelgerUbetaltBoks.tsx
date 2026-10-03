@@ -10,7 +10,12 @@ import {
   sendAndenchanceTilbud,
   type AndenchanceStatus,
 } from "@/app/actions/andenchance";
-import { VARIGHEDER, type VarighedDage } from "@/lib/auktionRegler";
+import {
+  STANDARD_VARIGHED,
+  STARTPRIS_ANBEFALING,
+  VARIGHEDER,
+  type VarighedDage,
+} from "@/lib/auktionRegler";
 import { dato, kroner } from "./format";
 
 const STATUS_TEKST: Record<string, string> = {
@@ -167,7 +172,7 @@ function GenopsaetForm({
 }) {
   const router = useRouter();
   const [startpris, setStartpris] = useState(standardStartpris);
-  const [varighed, setVarighed] = useState<VarighedDage>(3);
+  const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [fejl, setFejl] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -204,6 +209,7 @@ function GenopsaetForm({
           onChange={(e) => setStartpris(e.target.value === "" ? NaN : Number(e.target.value))}
           className="mt-1.5 w-full rounded-lg border border-kant-staerk bg-white px-3 py-2.5 text-sm text-tekst outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
+        <p className="mt-1.5 text-xs text-tekst-daempet">{STARTPRIS_ANBEFALING}</p>
       </div>
       <fieldset>
         <legend className="block text-sm font-medium text-tekst">Varighed</legend>

@@ -4,10 +4,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { kategorier } from "@/lib/kategorier";
-import { VARIGHEDER, slutterKlFraVarighed, type VarighedDage } from "@/lib/auktionRegler";
-
-const MAKS_BILLEDER = 10;
-const MAKS_BESKRIVELSE = 500;
+import {
+  MAKS_BESKRIVELSE,
+  MAKS_BILLEDER,
+  MAKS_TITEL,
+  STANDARD_VARIGHED,
+  STARTPRIS_ANBEFALING,
+  VARIGHEDER,
+  slutterKlFraVarighed,
+  type VarighedDage,
+} from "@/lib/auktionRegler";
 
 // crypto.randomUUID() findes kun i sikre kontekster (https eller localhost) –
 // adgang via en LAN-IP over http (fx fra en telefon på samme netværk) ville
@@ -29,7 +35,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const [kategori, setKategori] = useState(kategorier[0]);
   const [beskrivelse, setBeskrivelse] = useState("");
   const [startpris, setStartpris] = useState(0);
-  const [varighed, setVarighed] = useState<VarighedDage>(3);
+  const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
   const [postnummer, setPostnummer] = useState("");
   // Opslaget gemmes sammen med det postnummer, det hører til. By, koordinater
@@ -186,6 +192,8 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         lat: koordinater?.lat ?? null,
         lng: koordinater?.lng ?? null,
         forsendelse_mulig: forsendelseMulig,
+        // Databasen beregner selv sluttidspunktet ud fra varigheden.
+        varighed_dage: varighed,
         slutter_kl: slutterKl.toISOString(),
       };
 
@@ -203,9 +211,11 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         setError(
           insertError.code === "BHU01"
             ? "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg."
-            : insertError.code === "BHS02"
-              ? "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
-              : "Auktionen kunne ikke oprettes. Prøv igen om lidt.",
+            : insertError.code === "22023"
+              ? "Tjek startpris og varighed (3, 5, 7 eller 10 dage), og prøv igen."
+              : insertError.code === "BHS02"
+                ? "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
+                : "Auktionen kunne ikke oprettes. Prøv igen om lidt.",
         );
         setLoading(false);
         return;
@@ -306,6 +316,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           id="titel"
           type="text"
           required
+          maxLength={MAKS_TITEL}
           value={titel}
           onChange={(e) => setTitel(e.target.value)}
           className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
@@ -361,8 +372,12 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           step={1}
           value={startpris}
           onChange={(e) => setStartpris(Number(e.target.value))}
+          aria-describedby="startpris-hjaelp"
           className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
         />
+        <p id="startpris-hjaelp" className="mt-1.5 text-xs text-neutral-500">
+          {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
+        </p>
       </div>
 
       {/* Varighed */}
@@ -370,7 +385,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         <label className="block text-sm font-medium text-neutral-900">
           Varighed
         </label>
-        <div className="mt-1.5 flex gap-2">
+        <div className="mt-1.5 flex flex-wrap gap-2">
           {VARIGHEDER.map((v) => (
             <button
               key={v.dage}
@@ -386,6 +401,9 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
             </button>
           ))}
         </div>
+        <p className="mt-1.5 text-xs text-neutral-500">
+          Varigheden kan ikke ændres, når auktionen er oprettet.
+        </p>
       </div>
 
       {/* Forsendelse */}

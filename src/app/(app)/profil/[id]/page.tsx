@@ -108,6 +108,7 @@ export default async function ProfilPage({
       (auktion) => ({
         ...mapAuctionTilKort(auktion),
         slutterKl: auktion.slutter_kl,
+        status: auktion.status,
       }),
     );
 
