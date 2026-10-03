@@ -4,6 +4,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { sendPakke, markerModtaget, godkendPakke } from "@/app/actions/trades";
 import BekraeftDialog from "@/components/BekraeftDialog";
+import StjerneVaelger from "@/components/StjerneVaelger";
 
 export function SendPakkeForm({ tradeId }: { tradeId: string }) {
   const router = useRouter();
@@ -79,19 +80,58 @@ export function MarkerModtagetKnap({ tradeId }: { tradeId: string }) {
   );
 }
 
+const KOMMENTAR_MAKS = 1000;
+
 // TRIN 2: godkendelse udbetaler til sælgeren og kan ikke fortrydes - derfor
-// bekræftelsesdialogen.
+// bekræftelsesdialogen. Køberen bedømmer sælgeren i samme trin
+// (ROADMAP-BESLUTNINGER afsnit 6): stjerner er påkrævet, kommentaren valgfri.
 export function GodkendPakkeKnap({ tradeId }: { tradeId: string }) {
   const router = useRouter();
+  const [stjerner, setStjerner] = useState(0);
+  const [kommentar, setKommentar] = useState("");
+  const antalTegn = Array.from(kommentar).length;
 
   return (
     <BekraeftDialog
       triggerLabel="Godkend pakke"
-      title="Bekræft dit valg"
-      description="Når du godkender pakken, udbetales beløbet til sælgeren. Dette kan ikke trækkes tilbage."
-      confirmLabel="Ja, godkend pakken"
-      onConfirm={() => godkendPakke(tradeId)}
+      title="Godkend varen og bedøm sælgeren"
+      description="Din bedømmelse vises på sælgerens profil. Når du godkender, udbetales pengene til sælgeren – betalingen håndteres af vores betalingspartner Stripe. Det kan ikke fortrydes."
+      confirmLabel="Godkend og bedøm"
+      confirmDisabled={stjerner === 0 || antalTegn > KOMMENTAR_MAKS}
+      onConfirm={() => godkendPakke(tradeId, stjerner, kommentar)}
       onSuccess={() => router.refresh()}
-    />
+    >
+      <div className="space-y-4">
+        <StjerneVaelger
+          legend="Hvordan var handlen med sælgeren?"
+          vaerdi={stjerner}
+          onChange={setStjerner}
+        />
+        <div>
+          <label
+            htmlFor={`kommentar-${tradeId}`}
+            className="mb-1.5 block text-sm font-medium text-neutral-900"
+          >
+            Kommentar <span className="font-normal text-tekst-svag">(valgfrit)</span>
+          </label>
+          <textarea
+            id={`kommentar-${tradeId}`}
+            value={kommentar}
+            onChange={(e) => setKommentar(e.target.value)}
+            maxLength={KOMMENTAR_MAKS}
+            rows={3}
+            placeholder="Fortæl kort om din oplevelse"
+            aria-describedby={`kommentar-taeller-${tradeId}`}
+            className="w-full resize-none rounded-xl border border-kant-staerk bg-white px-4 py-2.5 text-[15px] text-tekst placeholder:text-pladsholder outline-none focus:border-groen focus:outline-2 focus:outline-groen/25"
+          />
+          <p
+            id={`kommentar-taeller-${tradeId}`}
+            className="mt-1 text-right text-xs text-tekst-svag"
+          >
+            {antalTegn}/{KOMMENTAR_MAKS} tegn
+          </p>
+        </div>
+      </div>
+    </BekraeftDialog>
   );
 }
