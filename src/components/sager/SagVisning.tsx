@@ -333,6 +333,19 @@ export default function SagVisning({
             <h4 className="mb-2 text-sm font-semibold text-tekst">Billeder ({sag.billeder.length})</h4>
             <SagBilleder billeder={sag.billeder} />
           </div>
+
+          {sag.pakkebilleder.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-tekst">
+                Sælgerens billeder af indpakningen ({sag.pakkebilleder.length})
+              </h4>
+              <p className="mb-2 mt-0.5 text-sm text-tekst-daempet">
+                Taget, da pakken blev sendt. BidHamr bruger dem til at vurdere, om varen var pakket
+                ordentligt.
+              </p>
+              <SagBilleder billeder={sag.pakkebilleder} />
+            </div>
+          )}
         </div>
       </details>
     </section>

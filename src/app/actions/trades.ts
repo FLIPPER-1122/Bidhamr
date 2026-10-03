@@ -9,6 +9,13 @@ import {
   indsigelseBlokerer,
   overfoerTilSaelger,
 } from "@/lib/betaling/stripeBetaling";
+import {
+  PAKKE_BILLEDE_KATEGORIER,
+  PAKKE_MAKS_BILLEDER,
+  PAKKE_SEND_FEJL,
+  type PakkeBilledeInput,
+  erPakkeBilledeKategori,
+} from "@/lib/pakkebilleder";
 
 type HandelRaekke = {
   id: string;
@@ -40,8 +47,31 @@ async function hentHandel(tradeId: string) {
   return { supabase, user, handel };
 }
 
-// Sælger sender pakken og indtaster sporingsnummer.
-export async function sendPakke(tradeId: string, tracking: string) {
+function rensPakkeBilleder(billeder: unknown): PakkeBilledeInput[] | null {
+  if (!Array.isArray(billeder) || billeder.length > PAKKE_MAKS_BILLEDER) return null;
+  const ud: PakkeBilledeInput[] = [];
+  for (const b of billeder) {
+    if (!b || typeof b !== "object") return null;
+    const { sti, kategori } = b as Record<string, unknown>;
+    if (typeof sti !== "string" || sti.length > 200 || !erPakkeBilledeKategori(kategori)) return null;
+    ud.push({ sti, kategori });
+  }
+  return ud;
+}
+
+// Sælger sender pakken: sporingsnummer + pakkebilleder (varen pakket i den
+// åbne kasse og den lukkede kasse med label). Billederne er uploadet af
+// klienten til bucket 'pakke-billeder' FØR kaldet; her knyttes de til
+// handlen i samme transaktion som statusskiftet (trade_marker_sendt).
+export async function sendPakke(
+  tradeId: string,
+  tracking: string,
+  billeder: PakkeBilledeInput[],
+) {
+  if (typeof tracking !== "string") return { fejl: PAKKE_SEND_FEJL.ugyldigt_tracking };
+  const rene = rensPakkeBilleder(billeder);
+  if (!rene) return { fejl: PAKKE_SEND_FEJL.ugyldige_billeder };
+
   const resultat = await hentHandel(tradeId);
   if ("fejl" in resultat) return resultat;
   const { supabase, user, handel } = resultat;
@@ -50,10 +80,10 @@ export async function sendPakke(tradeId: string, tracking: string) {
     return { fejl: "Kun sælgeren kan markere pakken som sendt." };
   }
   if (handel.afhentning) {
-    return { fejl: "Varen skal hentes hos dig – der sendes ingen pakke." };
+    return { fejl: PAKKE_SEND_FEJL.afhentning };
   }
   if (handel.status !== "betaling_modtaget") {
-    return { fejl: "Pakken er allerede markeret som sendt." };
+    return { fejl: PAKKE_SEND_FEJL.allerede_sendt };
   }
 
   const renTracking = tracking.trim();
@@ -61,18 +91,28 @@ export async function sendPakke(tradeId: string, tracking: string) {
 
   if (renTracking.length > 100) return { fejl: "Sporingsnummeret er for langt." };
 
-  // Sælgeren udledes af auth.uid() i funktionen. Statusguard i samme update
-  // gør handlingen idempotent ved dobbeltklik.
-  const { data: sendt, error } = await supabase.rpc("trade_marker_sendt", {
+  const kategorier = new Set(rene.map((b) => b.kategori));
+  if (!PAKKE_BILLEDE_KATEGORIER.every((k) => kategorier.has(k))) {
+    return { fejl: PAKKE_SEND_FEJL.billeder_kraeves };
+  }
+
+  // Sælgeren udledes af auth.uid() i funktionen. Handlen låses, billederne
+  // valideres (findes i storage, i sælgerens mappe, ikke brugt før), og
+  // statusguarden i samme update gør handlingen idempotent ved dobbeltklik.
+  const { data: svar, error } = await supabase.rpc("trade_marker_sendt", {
     p_trade: tradeId,
     p_tracking: renTracking,
+    p_billeder: rene,
   });
 
   if (error) {
     console.error("trade_marker_sendt fejlede:", error);
     return { fejl: "Noget gik galt. Prøv igen om lidt." };
   }
-  if (!sendt) return { fejl: "Pakken er allerede markeret som sendt." };
+  const kode = (svar as { kode?: string } | null)?.kode;
+  if (kode !== "ok") {
+    return { fejl: PAKKE_SEND_FEJL[kode ?? ""] ?? "Noget gik galt. Prøv igen om lidt." };
+  }
 
   // Besked til køberen. send() kaster aldrig, så forsendelsen står fast.
   // Sælgeren er allerede verificeret af trade_marker_sendt ovenfor.

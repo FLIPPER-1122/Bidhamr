@@ -385,9 +385,10 @@ export default async function HandelDetaljePage({
           <div className="rounded-xl border border-neutral-200 bg-white p-6">
             <h2 className="text-sm font-semibold text-neutral-900">Send pakken</h2>
             <p className="mt-1 mb-4 text-sm text-neutral-500">
-              Indtast sporingsnummeret, når du har sendt varen. Køberen får besked.
+              Tag to billeder, mens du pakker, og indtast sporingsnummeret, når du har sendt
+              varen. Køberen får besked.
             </p>
-            <SendPakkeForm tradeId={handel.id} />
+            <SendPakkeForm tradeId={handel.id} saelgerId={user.id} />
           </div>
         )}
 

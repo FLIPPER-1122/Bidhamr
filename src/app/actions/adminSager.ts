@@ -37,6 +37,7 @@ import {
 } from "@/lib/betaling/stripeBetaling";
 import { aabnChat } from "@/app/actions/staffChat";
 import { notificerSagAfgoerelse, sagFristTekst, type SagUdfaldBesked } from "@/lib/sagerServer";
+import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
 import {
   SAG_BEGRUNDELSE_MAKS,
   SAG_PENGE_FEJL_NAVN,
@@ -190,6 +191,8 @@ export type SagDetalje = SagListeRaekke & {
   sendtKl: string | null;
   modtagetKl: string | null;
   billeder: { id: string; kategori: SagBilledeKategori; url: string | null; oprettetKl: string }[];
+  // Sælgerens billeder af indpakningen fra "Send pakke".
+  pakkebilleder: VistPakkeBillede[];
   betaling: {
     status: string;
     beskyttelse: boolean;
@@ -365,7 +368,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
     const [liste] = await berig(admin, [s]);
     const seBeloeb = harMindstRolle(rolle, "chef");
 
-    const [{ data: t }, betaling, { data: billeder }, { data: log }] = await Promise.all([
+    const [{ data: t }, betaling, { data: billeder }, { data: log }, pakkebilleder] = await Promise.all([
       admin
         .from("trades")
         .select("status, tracking_number, sendt_kl, received_at")
@@ -384,6 +387,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         .eq("maal_id", s.id)
         .order("oprettet_kl", { ascending: true })
         .limit(100),
+      hentPakkeBilleder(admin, s.trade_id),
     ]);
 
     const billedRaekker = (billeder ?? []) as {
@@ -456,6 +460,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
           url: urls.get(b.sti) ?? null,
           oprettetKl: b.oprettet_kl,
         })),
+        pakkebilleder,
         betaling: betaling
           ? {
               status: betaling.status,

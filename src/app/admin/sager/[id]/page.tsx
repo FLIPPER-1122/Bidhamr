@@ -4,6 +4,7 @@ import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { hentSag } from "@/app/actions/adminSager";
 import { hentSamtalerForSag } from "@/app/actions/staffChat";
 import { SAG_CHAT_TYPE, SAG_KATEGORI_NAVN, SAG_STATUS_NAVN, SAG_TYPE_NAVN } from "@/lib/sager";
+import { PAKKE_KATEGORI_NAVN } from "@/lib/pakkebilleder";
 import { kroner } from "@/lib/kroner";
 import HandelStatusBadge, { statusLabel } from "@/components/HandelStatusBadge";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
@@ -219,6 +220,33 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
         {sag.billeder.length > 0 && (
           <p className="mt-3 text-xs text-neutral-500">
             Klik på et billede for at se det i fuld størrelse. Linkene udløber efter en time – genindlæs siden for nye.
+          </p>
+        )}
+      </Kort>
+
+      <Kort titel={`Sælgerens pakkebilleder (${sag.pakkebilleder.length})`}>
+        {sag.pakkebilleder.length > 0 ? (
+          <>
+            <p className="mb-3 text-sm text-neutral-600">
+              Taget af sælgeren ved &quot;Send pakke&quot;. Brug dem til at vurdere indpakningen – de
+              beviser ikke, at varen blev i kassen.
+            </p>
+            {(["aaben_kasse", "lukket_kasse"] as const).map((k) => {
+              const egne = sag.pakkebilleder.filter((x) => x.kategori === k);
+              if (egne.length === 0) return null;
+              return (
+                <div key={k} className="mb-5 last:mb-0">
+                  <h3 className="mb-2 text-sm font-medium text-neutral-700">
+                    {PAKKE_KATEGORI_NAVN[k]} ({egne.length})
+                  </h3>
+                  <SagBilleder billeder={egne} stor />
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <p className="text-sm text-neutral-500">
+            Ingen pakkebilleder (afhentning, eller pakken blev sendt, før billeder blev krævet).
           </p>
         )}
       </Kort>

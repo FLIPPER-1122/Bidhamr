@@ -1,7 +1,9 @@
-// Klientside: komprimering og upload af sagsbilleder direkte til Supabase
-// Storage (bucket 'sag-billeder', privat). Stien laves med sagBilledeSti(),
-// og der uploades med { upsert: false } - storage-policyen tillader kun
-// upload i køberens egen mappe på en handel, han er køber på.
+// Klientside: komprimering og upload af billeder direkte til Supabase
+// Storage. Bruges til sagsbilleder (bucket 'sag-billeder', køberens mappe) og
+// pakkebilleder (bucket 'pakke-billeder', sælgerens mappe). Stien laves med
+// sagBilledeSti() (<bruger-id>/<handel-id>/<uuid>.<endelse>), og der uploades
+// med { upsert: false } - storage-policyerne tillader kun upload i brugerens
+// egen mappe, og der er ingen update-policy.
 import { createClient } from "@/lib/supabase/client";
 import {
   SAG_BILLEDTYPER,
@@ -11,10 +13,10 @@ import {
   type SagBilledeKategori,
 } from "@/lib/sager";
 
-export type ValgtBillede = {
+export type ValgtBillede<K extends string = SagBilledeKategori> = {
   id: string;
   fil: File;
-  kategori: SagBilledeKategori;
+  kategori: K;
   // Object-URL til forhåndsvisning (frigives, når billedet fjernes).
   preview: string;
   // Sat, når billedet er uploadet - så det ikke uploades igen ved et nyt forsøg.
@@ -86,12 +88,14 @@ export const UPLOAD_FEJL = {
 
 // Uploader de billeder, der ikke allerede er uploadet. onFremskridt kaldes
 // efter hvert billede. Returnerer listen med stier, eller en fejltekst.
-export async function uploadBilleder(
-  koeberId: string,
+// brugerId er den indloggede brugers id (mappen i bucket'en).
+export async function uploadBilleder<K extends string>(
+  brugerId: string,
   tradeId: string,
-  billeder: ValgtBillede[],
-  onFremskridt: (faerdige: number, ialt: number, opdateret: ValgtBillede[]) => void,
-): Promise<{ billeder: ValgtBillede[] } | { fejl: string; billeder: ValgtBillede[] }> {
+  billeder: ValgtBillede<K>[],
+  onFremskridt: (faerdige: number, ialt: number, opdateret: ValgtBillede<K>[]) => void,
+  bucket: string = SAG_BUCKET,
+): Promise<{ billeder: ValgtBillede<K>[] } | { fejl: string; billeder: ValgtBillede<K>[] }> {
   const supabase = createClient();
   const ud = [...billeder];
   const ialt = ud.length;
@@ -108,13 +112,13 @@ export async function uploadBilleder(
       return { fejl: UPLOAD_FEJL.ugyldig_type, billeder: ud };
     }
     if (data.size > SAG_MAKS_BILLEDSTOERRELSE) return { fejl: UPLOAD_FEJL.for_stor, billeder: ud };
-    const sti = sagBilledeSti(koeberId, tradeId, type);
+    const sti = sagBilledeSti(brugerId, tradeId, type);
     if (!sti) return { fejl: UPLOAD_FEJL.ugyldig_type, billeder: ud };
     const { error } = await supabase.storage
-      .from(SAG_BUCKET)
+      .from(bucket)
       .upload(sti, data, { upsert: false, contentType: type, cacheControl: "3600" });
     if (error) {
-      console.error("Upload af sagsbillede fejlede:", error.message);
+      console.error(`Upload af billede til ${bucket} fejlede:`, error.message);
       return { fejl: UPLOAD_FEJL.upload, billeder: ud };
     }
     ud[i] = { ...ud[i], sti };

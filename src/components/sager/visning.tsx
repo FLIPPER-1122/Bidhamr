@@ -1,6 +1,13 @@
 // Fælles visning til sager (handelssiden og admin). Ingen "use client":
 // bruges både i server- og klientkomponenter.
 import { SAG_KATEGORI_NAVN, SAG_STATUS_NAVN, type SagBilledeKategori, type SagStatus } from "@/lib/sager";
+import { PAKKE_KATEGORI_NAVN, type PakkeBilledeKategori } from "@/lib/pakkebilleder";
+
+// Navn på en billedkategori (sagsbilleder og pakkebilleder).
+const BILLED_KATEGORI_NAVN: Record<SagBilledeKategori | PakkeBilledeKategori, string> = {
+  ...SAG_KATEGORI_NAVN,
+  ...PAKKE_KATEGORI_NAVN,
+};
 
 // Fast tidszone, så server og browser viser det samme (ingen hydreringsfejl).
 export function sagTid(iso: string): string {
@@ -56,7 +63,7 @@ export function BeskyttelseBadge() {
 
 export type VistSagBillede = {
   id: string;
-  kategori: SagBilledeKategori;
+  kategori: SagBilledeKategori | PakkeBilledeKategori;
   url: string | null;
   oprettetKl: string;
 };
@@ -83,12 +90,12 @@ export function SagBilleder({ billeder, stor = false }: { billeder: VistSagBille
               target="_blank"
               rel="noopener noreferrer"
               className="block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
-              aria-label={`${SAG_KATEGORI_NAVN[b.kategori]}: åbn billedet i fuld størrelse`}
+              aria-label={`${BILLED_KATEGORI_NAVN[b.kategori]}: åbn billedet i fuld størrelse`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={b.url}
-                alt={`Billede af ${SAG_KATEGORI_NAVN[b.kategori].toLowerCase()}`}
+                alt={`Billede af ${BILLED_KATEGORI_NAVN[b.kategori].toLowerCase()}`}
                 loading="lazy"
                 decoding="async"
                 width={stor ? 600 : 300}
@@ -106,7 +113,7 @@ export function SagBilleder({ billeder, stor = false }: { billeder: VistSagBille
             </div>
           )}
           <p className="px-3 py-2 text-xs font-medium text-tekst-daempet">
-            {SAG_KATEGORI_NAVN[b.kategori]}
+            {BILLED_KATEGORI_NAVN[b.kategori]}
           </p>
         </li>
       ))}

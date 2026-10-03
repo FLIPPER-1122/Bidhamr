@@ -36,6 +36,7 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notificerSagOprettet } from "@/lib/sagerServer";
+import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
 import {
   SAG_AUTO_FRIGIV_EFTER_DAGE,
   SAG_BESKRIVELSE_MAKS,
@@ -84,6 +85,9 @@ export type MinSag = {
   afvikletKl: string | null;
   erKoeber: boolean;
   billeder: { id: string; kategori: SagBilledeKategori; url: string | null; oprettetKl: string }[];
+  // Sælgerens billeder af indpakningen fra "Send pakke" (tom ved afhentning
+  // og ved handler sendt før pakkebilleder blev krævet).
+  pakkebilleder: VistPakkeBillede[];
 };
 
 export type SagMuligheder = {
@@ -285,13 +289,16 @@ export async function hentSagForHandel(
 
     const stier = (billeder ?? []).map((b) => b.sti);
     const urls = new Map<string, string>();
-    if (stier.length > 0) {
-      const { data: signerede } = await supabase.storage
-        .from(SAG_BUCKET)
-        .createSignedUrls(stier, 3600);
-      for (const s of signerede ?? []) {
-        if (s.path && s.signedUrl) urls.set(s.path, s.signedUrl);
-      }
+    const [signeret, pakkebilleder] = await Promise.all([
+      stier.length > 0
+        ? supabase.storage.from(SAG_BUCKET).createSignedUrls(stier, 3600)
+        : Promise.resolve({ data: [] as { path: string | null; signedUrl: string }[] }),
+      // Med brugerens egen session: storage-policyen giver køberen adgang til
+      // pakkebilleder, der er knyttet til handlen (dvs. efter afsendelsen).
+      hentPakkeBilleder(supabase, tradeId),
+    ]);
+    for (const s of signeret.data ?? []) {
+      if (s.path && s.signedUrl) urls.set(s.path, s.signedUrl);
     }
 
     return {
@@ -319,6 +326,7 @@ export async function hentSagForHandel(
           url: urls.get(b.sti) ?? null,
           oprettetKl: b.oprettet_kl,
         })),
+        pakkebilleder,
       },
     };
   } catch (err) {

@@ -4,11 +4,11 @@
 // forhåndsvisning og "Fjern". Selve uploadet sker først ved afsendelse
 // (sagUpload.ts), så fjernede billeder aldrig rammer serveren.
 import { useEffect, useId, useRef, useState } from "react";
-import { SAG_KATEGORI_NAVN, SAG_MAKS_BILLEDSTOERRELSE, type SagBilledeKategori } from "@/lib/sager";
+import { SAG_MAKS_BILLEDSTOERRELSE, type SagBilledeKategori } from "@/lib/sager";
 import { ACCEPT, UPLOAD_FEJL, filType, type ValgtBillede } from "./sagUpload";
 
-export type KategoriFelt = {
-  kategori: SagBilledeKategori;
+export type KategoriFelt<K extends string = SagBilledeKategori> = {
+  kategori: K;
   overskrift: string;
   hjaelp: string;
   paakraevet: boolean;
@@ -39,7 +39,7 @@ export const KATEGORI_FELTER: Record<SagBilledeKategori, Omit<KategoriFelt, "paa
 };
 
 // Frigiv object-URL'er, når komponenten forsvinder.
-export function useFrigivPreviews(billeder: ValgtBillede[]) {
+export function useFrigivPreviews<K extends string>(billeder: ValgtBillede<K>[]) {
   const ref = useRef(billeder);
   useEffect(() => {
     ref.current = billeder;
@@ -47,18 +47,23 @@ export function useFrigivPreviews(billeder: ValgtBillede[]) {
   useEffect(() => () => ref.current.forEach((b) => URL.revokeObjectURL(b.preview)), []);
 }
 
-export default function BilledVaelger({
+// kamera: åbn mobilens kamera direkte (capture="environment", ét billede ad
+// gangen). På web er capture kun et hint - nogle browsere (fx på computer)
+// åbner stadig en filvælger. Appen kan håndhæve kameraet.
+export default function BilledVaelger<K extends string = SagBilledeKategori>({
   felter,
   billeder,
   onChange,
   maks,
   laast,
+  kamera = false,
 }: {
-  felter: KategoriFelt[];
-  billeder: ValgtBillede[];
-  onChange: (billeder: ValgtBillede[]) => void;
+  felter: KategoriFelt<K>[];
+  billeder: ValgtBillede<K>[];
+  onChange: (billeder: ValgtBillede<K>[]) => void;
   maks: number;
   laast: boolean;
+  kamera?: boolean;
 }) {
   const id = useId();
   const [fejl, setFejl] = useState<string | null>(null);
@@ -66,10 +71,10 @@ export default function BilledVaelger({
   const [ulaeselige, setUlaeselige] = useState<ReadonlySet<string>>(new Set());
   const plads = maks - billeder.length;
 
-  function tilfoej(kategori: SagBilledeKategori, filer: FileList | null) {
+  function tilfoej(kategori: K, filer: FileList | null) {
     setFejl(null);
     if (!filer || filer.length === 0) return;
-    const nye: ValgtBillede[] = [];
+    const nye: ValgtBillede<K>[] = [];
     for (const fil of Array.from(filer)) {
       if (billeder.length + nye.length >= maks) {
         setFejl(`Du kan højst tilføje ${maks} billeder.`);
@@ -126,7 +131,7 @@ export default function BilledVaelger({
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={b.preview}
-                        alt={`Valgt billede: ${SAG_KATEGORI_NAVN[b.kategori].toLowerCase()}`}
+                        alt={`Valgt billede: ${f.overskrift.toLowerCase()}`}
                         className="aspect-square w-full object-cover"
                         onError={() => setUlaeselige((s) => new Set(s).add(b.id))}
                       />
@@ -161,13 +166,14 @@ export default function BilledVaelger({
               <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
               </svg>
-              Tilføj billede
+              {kamera ? (egne.length > 0 ? "Tag et billede mere" : "Tag billede") : "Tilføj billede"}
             </label>
             <input
               id={inputId}
               type="file"
-              accept={ACCEPT}
-              multiple
+              accept={kamera ? "image/*" : ACCEPT}
+              capture={kamera ? "environment" : undefined}
+              multiple={!kamera}
               disabled={laast || plads <= 0}
               aria-describedby={`${inputId}-hjaelp`}
               className="sr-only"
