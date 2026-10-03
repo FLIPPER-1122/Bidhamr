@@ -87,7 +87,6 @@ comment on table public.ratings is
 --   ikke_logget_ind     auth.uid() mangler
 --   ugyldige_stjerner   p_stjerner er ikke 1-5
 --   kommentar_for_lang  over 1000 tegn (efter trim)
---   kommentar_link      kommentaren indeholder et link
 --   ikke_mulig          handlen kan ikke godkendes af kalderen nu (ikke koeber,
 --                       ikke 'modtaget', ikke betalt, refusion, indsigelse,
 --                       sag aaben, allerede frigivet - eller allerede godkendt,
@@ -110,13 +109,7 @@ begin
   if v_kommentar is not null and char_length(v_kommentar) > 1000 then
     return 'kommentar_for_lang';
   end if;
-  -- Kommentarer er offentlige paa saelgerens profil. Links afvises, saa de
-  -- ikke kan bruges til spam eller phishing. Kun entydige topdomaener -
-  -- .de/.se/.no/.eu udelades, fordi "fint.De skrev" ellers ville blive afvist.
-  if v_kommentar is not null
-     and v_kommentar ~* '(https?://|www\.|[a-z0-9-]+\.(dk|com|net|org|io|info|biz|xyz|ly)(/|\s|$))' then
-    return 'kommentar_link';
-  end if;
+  -- Links er tilladt i kommentarer (Filips beslutning 2026-10-03).
 
   -- ---- Herfra som handel_godkend (20261002040000) ----
   select * into b from public.betalinger where trade_id = p_trade for update;

@@ -141,18 +141,14 @@ export async function markerModtaget(tradeId: string) {
   return { ok: true };
 }
 
-// Samme mønster for links som i handel_godkend_med_bedoemmelse
-// (20261003020000). Databasen er sikkerhedslaget; tjekket her giver blot en
-// pæn besked, før noget sendes.
-const LINK_I_KOMMENTAR =
-  /(https?:\/\/|www\.|[a-z0-9-]+\.(dk|com|net|org|io|info|biz|xyz|ly)(\/|\s|$))/i;
+// Links er tilladt i kommentarer (Filips beslutning). Kun længden tjekkes her
+// for en pæn besked - databasen er sikkerhedslaget.
 const KOMMENTAR_MAKS = 1000;
 
 const GODKEND_FEJL: Record<string, string> = {
   ikke_logget_ind: "Du skal være logget ind.",
   ugyldige_stjerner: "Giv sælgeren 1-5 stjerner, før du godkender varen.",
   kommentar_for_lang: `Kommentaren må højst være ${KOMMENTAR_MAKS} tegn.`,
-  kommentar_link: "Kommentaren må ikke indeholde links.",
   ikke_mulig: "Pakken er allerede godkendt.",
 };
 
@@ -181,9 +177,6 @@ export async function godkendPakke(
     typeof kommentar === "string" ? kommentar.trim() || null : null;
   if (renKommentar && Array.from(renKommentar).length > KOMMENTAR_MAKS) {
     return { fejl: GODKEND_FEJL.kommentar_for_lang };
-  }
-  if (renKommentar && LINK_I_KOMMENTAR.test(renKommentar)) {
-    return { fejl: GODKEND_FEJL.kommentar_link };
   }
 
   const resultat = await hentHandel(tradeId);

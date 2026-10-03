@@ -7,7 +7,6 @@ import AuctionGallery from "@/components/AuctionGallery";
 import AuctionTitleActions from "@/components/AuctionTitleActions";
 import BidPanel from "@/components/BidPanel";
 import Accordion from "@/components/Accordion";
-import RatingForm from "@/components/RatingForm";
 import AnmeldOpslagKnap from "@/components/AnmeldOpslagKnap";
 import StartChatKnap from "@/components/StartChatKnap";
 import { kortNavn } from "@/lib/kortNavn";
@@ -119,16 +118,12 @@ export default async function AuktionPage({
     handel = data;
   }
 
-  // Kun køberen i handlen må bedømme, og kun sælgeren. Sælgeren bedømmer
-  // ikke køberen (ROADMAP-BESLUTNINGER.md afsnit 6). Sandheden om hvem der
-  // handlede er trades-rækken – ikke budlisten – så formularen vises kun, når
-  // der findes en handel, hvor brugeren er køber.
+  // Kun køberen i handlen bedømmer, og kun sælgeren (ROADMAP-BESLUTNINGER.md
+  // afsnit 6). Bedømmelsen afgives samtidig med godkendelsen af varen under
+  // Mine handler - her vises kun en kvittering, når den er afgivet.
   const maaBedømme = Boolean(
     bruger && handel && handel.buyer_id === bruger.id && handel.seller_id === auktion.bruger_id,
   );
-
-  const handelGodkendt =
-    handel?.status === "leveret" || handel?.status === "afsluttet";
 
   let harBedømt = false;
   if (maaBedømme && bruger) {
@@ -289,29 +284,13 @@ export default async function AuktionPage({
               />
             </div>
 
-            {/* Rating-sektion – kun køberen i handlen kan bedømme sælgeren */}
-            {maaBedømme && !handelGodkendt && (
-              <p className="mt-4 text-sm text-neutral-600">
-                Du kan bedømme sælgeren, når du har godkendt varen.
-              </p>
-            )}
-
-            {maaBedømme && handelGodkendt && !harBedømt && (
-              <div className="mt-4">
-                <RatingForm
-                  auktionId={auktion.id}
-                  tilBrugerId={auktion.bruger_id}
-                  rolle="sælger"
-                />
-              </div>
-            )}
-
+            {/* Kvittering for bedømmelsen – den afgives ved godkendelse af varen */}
             {maaBedømme && harBedømt && (
               <div className="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
                 <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
-                Du har allerede afgivet en bedømmelse for denne handel.
+                Du har bedømt sælgeren for denne handel.
               </div>
             )}
 

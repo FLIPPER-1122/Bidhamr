@@ -20,6 +20,10 @@ type Props = {
   onConfirm: () => Promise<{ fejl?: string } | void>;
   /** Kaldes når handlingen er gået godt og dialogen er lukket. */
   onSuccess?: () => void;
+  /** Ekstra indhold (fx felter) mellem beskrivelsen og knapperne. */
+  children?: ReactNode;
+  /** Deaktiverer bekræft-knappen, fx indtil et påkrævet felt er udfyldt. */
+  confirmDisabled?: boolean;
 };
 
 export default function BekraeftDialog({
@@ -32,11 +36,14 @@ export default function BekraeftDialog({
   cancelLabel = "Annullér",
   onConfirm,
   onSuccess,
+  children,
+  confirmDisabled = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const bekraeftRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -48,8 +55,6 @@ export default function BekraeftDialog({
     };
     window.addEventListener("keydown", onKey);
 
-    bekraeftRef.current?.focus();
-
     // Baggrunden må ikke kunne scrolles bag dialogen.
     const forrigeOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -59,6 +64,23 @@ export default function BekraeftDialog({
       document.body.style.overflow = forrigeOverflow;
     };
   }, [open, pending]);
+
+  // Fokus flyttes kun ind i dialogen, når den åbnes - ellers ville fokus
+  // hoppe væk fra et felt, hver gang en handling starter eller slutter.
+  // Er bekræft-knappen deaktiveret (påkrævede felter), får dialogens første
+  // felt fokus i stedet.
+  useEffect(() => {
+    if (!open) return;
+    const knap = bekraeftRef.current;
+    if (knap && !knap.disabled) {
+      knap.focus();
+      return;
+    }
+    const foerste = dialogRef.current?.querySelector<HTMLElement>(
+      "input:not([disabled]), textarea:not([disabled]), select:not([disabled])",
+    );
+    (foerste ?? dialogRef.current)?.focus();
+  }, [open]);
 
   function luk() {
     setOpen(false);
@@ -98,10 +120,12 @@ export default function BekraeftDialog({
           onClick={() => !pending && luk()}
         >
           <div
+            ref={dialogRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-labelledby="bekraeft-titel"
-            className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+            className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl outline-none"
             onClick={(e) => e.stopPropagation()}
           >
             <h2
@@ -113,6 +137,8 @@ export default function BekraeftDialog({
             {description && (
               <p className="mt-1.5 text-sm text-neutral-600">{description}</p>
             )}
+
+            {children && <div className="mt-5">{children}</div>}
 
             {fejl && (
               <p className="mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -133,7 +159,7 @@ export default function BekraeftDialog({
                 ref={bekraeftRef}
                 type="button"
                 onClick={bekraeft}
-                disabled={pending}
+                disabled={pending || confirmDisabled}
                 className="rounded-lg bg-orange-knap px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-knap-mork disabled:opacity-50"
               >
                 {pending ? "Arbejder…" : confirmLabel}
