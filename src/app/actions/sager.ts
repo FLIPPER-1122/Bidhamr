@@ -105,6 +105,10 @@ export type MinSag = {
   pengeHandling: SagPengeHandling | null;
   pengeFlyttesEfterKl: string | null;
   afvikletKl: string | null;
+  // Medhold til køber med retur: køberen venter med at sende varen, til
+  // ankefristen er udløbet (sælgeren kan anke indtil da). Tidspunktet, eller
+  // null, når returen kan sendes nu (fristen er udløbet, eller anken er afgjort).
+  returVenterTilKl: string | null;
   erKoeber: boolean;
   billeder: { id: string; kategori: SagBilledeKategori; url: string | null; oprettetKl: string }[];
   // Sælgerens billeder af indpakningen fra "Send pakke" (tom ved afhentning
@@ -445,6 +449,14 @@ export async function hentSagForHandel(
         pengeHandling: sag.penge_handling,
         pengeFlyttesEfterKl: sag.penge_flyttes_efter_kl,
         afvikletKl: sag.afviklet_kl,
+        returVenterTilKl:
+          sag.status === "afventer_retur" &&
+          !anke &&
+          !sag.retur_afleveret_kl &&
+          !!sag.penge_flyttes_efter_kl &&
+          Date.parse(sag.penge_flyttes_efter_kl) > Date.now()
+            ? sag.penge_flyttes_efter_kl
+            : null,
         erKoeber,
         billeder: (billeder ?? []).map((b) => ({
           id: b.id,

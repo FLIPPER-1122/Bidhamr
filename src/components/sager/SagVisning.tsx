@@ -79,6 +79,15 @@ function tidslinje(sag: MinSag): { trin: Trin[]; aktiv: number; alleFaerdige: bo
       note: ankeVenter ? "Behandles" : anke.behandletKl ? `Afgjort ${kortDato(anke.behandletKl)}` : undefined,
     });
   }
+  // Medhold til køber med retur (uden anke): køberen venter med at sende
+  // varen, til ankefristen er udløbet - sælgeren kan anke indtil da.
+  if (medRetur && afgjort && !anke) {
+    trin.push({
+      noegle: "ankefrist",
+      navn: "Ankefrist",
+      note: sag.returVenterTilKl ? `Til ${kortDato(sag.returVenterTilKl)}` : undefined,
+    });
+  }
   if (medRetur) {
     trin.push({
       noegle: "retur",
@@ -99,6 +108,7 @@ function tidslinje(sag: MinSag): { trin: Trin[]; aktiv: number; alleFaerdige: bo
   let aktiv: number;
   if (sag.status === "aaben") aktiv = idx("behandler");
   else if (ankeVenter) aktiv = idx("anke");
+  else if (sag.status === "afventer_retur" && sag.returVenterTilKl) aktiv = idx("ankefrist");
   else if (sag.status === "afventer_retur") aktiv = idx("retur");
   else aktiv = idx("slut");
   const alleFaerdige = !!sag.afvikletKl || (sag.status === "lukket" && !sag.pengeFlyttesEfterKl);
@@ -218,9 +228,23 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
         ? { tekst: "Du skal ikke gøre noget nu. BidHamr kigger på sagen og vender tilbage hurtigst muligt.", handling: false }
         : { tekst: "Du skal ikke gøre noget nu. Udbetalingen venter, mens BidHamr kigger på sagen.", handling: false };
     case "afventer_retur":
+      // Inden for ankefristen venter køberen med at sende varen: sælgeren kan
+      // anke, og en omgørelse ville ellers give sælgeren både varen og pengene.
+      if (sag.returVenterTilKl) {
+        const frist = datoOgTid(sag.returVenterTilKl);
+        return k
+          ? {
+              tekst: `Du har fået medhold. Sælgeren kan anke afgørelsen indtil ${frist}. Vent med at sende varen, til ankefristen er udløbet ${frist}, eller til BidHamr giver dig besked. Derefter sender du varen retur til sælgeren og betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`,
+              handling: false,
+            }
+          : {
+              tekst: `Køberen har fået medhold og sender varen retur til dig, når ankefristen er udløbet ${frist}. Køberen betaler selv returfragten.`,
+              handling: false,
+            };
+      }
       return k
         ? {
-            tekst: `Send varen retur til sælgeren. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage${tidligst}.${beskyttelseNote}`,
+            tekst: `Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`,
             handling: true,
           }
         : {

@@ -41,6 +41,7 @@ import {
   notificerSagAfgoerelse,
   sagFristTekst,
   udfoerSagAfvikling,
+  type AnkePengeStatus,
   type AnkeSlutUdfald,
   type SagAfvikling,
   type SagUdfaldBesked,
@@ -67,6 +68,9 @@ import {
 // Hvem må afgøre en sag (inkl. de pengehandlinger, afgørelsen udløser)?
 // Databasen (sag_afgoer/sag_retur_afleveret) kræver mindst medarbejder.
 const AFGOER_ROLLE: StaffRole = "medarbejder";
+// Vises i admin, når sagen er anket, og anken er afgjort.
+const ANKE_ENDELIG_TEKST =
+  "Sagen er anket – kun en anden admin/chef kan ændre den, fx hvis køberen ikke sender returen.";
 
 class BrugerFejl extends Error {}
 
@@ -129,6 +133,13 @@ const KODE_FEJL: Record<string, string> = {
   retur_afleveret:
     "Afgørelsen kan ikke ændres til sælgerens fordel, fordi returpakken allerede er afleveret til sælgeren.",
   penge_flyttet_anke: "Afgørelsen kan ikke ændres, fordi pengene allerede er refunderet eller udbetalt.",
+  bekraeft_retur_ikke_sendt:
+    "Bekræft, at du har tjekket, at køberen ikke har sendt varen retur, før afgørelsen ændres til sælgerens fordel.",
+  // Afgørelse af en sag, hvor anken er afgjort (sag_afgoer).
+  anke_endelig: ANKE_ENDELIG_TEKST,
+  anket_afgoer: "Sagen er anket, og afgørelsen på anken er endelig. Den kan ikke afgøres igen.",
+  samme_medarbejder_anket:
+    "Du afgjorde selv sagen eller anken. Kun en anden admin eller chef kan ændre den.",
 };
 
 function kodeFejl(kode: string | undefined): string {
@@ -153,6 +164,10 @@ type RpcSvar = {
   // Retur afleveret efter fristen, men refusionen er blokeret.
   grund?: string | null;
   annulleret_planlagt?: boolean | null;
+  // sag_afgoer på en anket sag: endelig, ingen ny ankefrist, og sagen er
+  // afviklet straks (afvikling = svaret fra sag_afvikl).
+  endelig?: boolean | null;
+  afvikling?: (SagAfvikling & { kode?: string; grund?: string | null }) | null;
 };
 
 function revalider(sagId: string, tradeId?: string) {
@@ -277,6 +292,8 @@ export type SagDetalje = SagListeRaekke & {
   anke: AdminAnke | null;
   // Hvorfor den aktuelle admin ikke må behandle anken (vises i stedet for knappen).
   ankeIkkeTilladt: string | null;
+  // Anken er afgjort (afgørelsen er endelig): tekst til admin, ellers null.
+  ankeEndelig: string | null;
   log: { handling: string; aarsag: string; oprettetKl: string; medarbejderNavn: string | null }[];
 };
 
@@ -602,6 +619,18 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
     const kanAfgoere = harMindstRolle(rolle, AFGOER_ROLLE);
     const ankeVenter = ankeRaekke?.status === "afventer";
 
+    // Anken er afgjort: afgørelsen er endelig. Kun når sagen venter på en
+    // retur, der ikke kommer, må en anden admin/chef (ikke den, der afgjorde
+    // sagen eller anken) afgøre den igen (sag_afgoer tjekker igen).
+    const ankeAfgjort = !!ankeRaekke && ankeRaekke.status !== "afventer";
+    const kanAfgoereAnket =
+      ankeAfgjort &&
+      s.status === "afventer_retur" &&
+      harMindstRolle(rolle, "admin") &&
+      userId !== ankeRaekke?.ankede_afgjort_af &&
+      userId !== ankeRaekke?.behandlet_af &&
+      userId !== s.afgjort_af;
+
     // Må den aktuelle medarbejder behandle anken? (databasen tjekker igen)
     let ankeIkkeTilladt: string | null = null;
     if (ankeVenter) {
@@ -666,7 +695,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         },
         kan: {
           // Mens en anke venter, skal den afgøres først (databasen afviser også).
-          afgoere: kanAfgoere && aaben && !ankeVenter,
+          afgoere: kanAfgoere && aaben && !ankeVenter && (!ankeAfgjort || kanAfgoereAnket),
           registrereRetur: kanAfgoere && s.status === "afventer_retur" && !ankeVenter,
           // Databasen (sag_genaabn) afviser, hvis pengene allerede er flyttet,
           // eller hvis sagen er anket. Inden for ankefristen annulleres den
@@ -708,6 +737,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
             }
           : null,
         ankeIkkeTilladt,
+        ankeEndelig: ankeAfgjort ? ANKE_ENDELIG_TEKST : null,
         log: logRaekker.map((l) => ({
           handling: l.handling,
           aarsag: l.aarsag,
@@ -761,6 +791,9 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
     const udfald = tekst(formData, "udfald");
     const begrundelse = tekst(formData, "begrundelse");
     const internNote = tekst(formData, "intern_note");
+    // Omgørelse, mens sagen venter på retur: behandleren har tjekket, at
+    // køberen ikke har sendt varen (databasen kræver det).
+    const returIkkeSendt = tekst(formData, "retur_ikke_sendt") === "ja";
     if (!erUuid(ankeId)) throw new BrugerFejl("Anken findes ikke.");
     if (udfald !== "stadfaest" && udfald !== "omgoer") throw new BrugerFejl(KODE_FEJL.ugyldigt_udfald);
     if (!begrundelse) throw new BrugerFejl(KODE_FEJL.begrundelse_mangler);
@@ -774,6 +807,7 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
       p_udfald: udfald,
       p_begrundelse: begrundelse,
       p_intern_note: internNote || null,
+      p_retur_ikke_sendt: returIkkeSendt,
     });
     if (error) throw new Error(error.message);
     const svar = (data ?? { kode: "" }) as {
@@ -790,11 +824,14 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
       throw new BrugerFejl(svar.kode === "penge_flyttet" ? KODE_FEJL.penge_flyttet_anke : kodeFejl(svar.kode));
     }
 
-    // Stripe-delen (refusion/overførsel) og beskeder om pengene. Kaster aldrig;
-    // pengene er claimet i databasen, og cron prøver igen.
+    // Stripe-delen (refusion/overførsel). Kaster aldrig; pengene er claimet i
+    // databasen, og cron prøver igen. Parterne får ÉN samlet besked
+    // (notificerAnkeAfgjort) - afviklingen sender ikke sin egen.
     let pengeBesked: string;
+    let pengeStatus: AnkePengeStatus = "ingen";
     if ((svar.handling === "refunder" || svar.handling === "frigiv") && svar.afvikling?.kode === "ok") {
-      const r = await udfoerSagAfvikling(svar.afvikling);
+      const r = await udfoerSagAfvikling(svar.afvikling, { notificer: false });
+      pengeStatus = r === "refusion_fejlede" || r === "overfoersel_fejlede" ? "senere" : "nu";
       pengeBesked =
         svar.handling === "refunder"
           ? r === "refusion_fejlede"
@@ -807,6 +844,7 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
       pengeBesked =
         "Køberen skal sende varen retur. Registrér, når returpakken er afleveret – så refunderes køberen straks.";
     } else if (svar.handling === "blokeret") {
+      pengeStatus = "senere";
       pengeBesked = `Pengene kan ikke flyttes lige nu: ${fejlNavn(svar.afvikling?.grund)}. Det prøves igen automatisk, og betalingen er markeret til admin.`;
     } else {
       pengeBesked = "Pengene var allerede flyttet.";
@@ -821,7 +859,8 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
           ? "koeber_retur"
           : "koeber";
       const { trade_id: tradeId, sag_id: sid, part, udfald: u } = svar;
-      after(() => notificerAnkeAfgjort(ankeId, tradeId, sid, part, u, slut, begrundelse));
+      const ps = pengeStatus;
+      after(() => notificerAnkeAfgjort(ankeId, tradeId, sid, part, u, slut, begrundelse, ps));
     }
 
     if (svar.sag_id) revalider(svar.sag_id, svar.trade_id);
@@ -909,9 +948,35 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
     });
     if (error) throw new Error(error.message);
     const svar = (data ?? { kode: "" }) as RpcSvar;
-    if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
+    if (svar.kode !== "ok") {
+      // Koder fra en anket sag har deres egen tekst her.
+      const kode =
+        svar.kode === "anket" ? "anket_afgoer" : svar.kode === "samme_medarbejder" ? "samme_medarbejder_anket" : svar.kode;
+      throw new BrugerFejl(kodeFejl(kode));
+    }
 
-    const besked = afgoerelsesBesked(svar);
+    // Anket sag: endelig, ingen ny ankefrist - databasen har afviklet sagen
+    // straks. Stripe-delen køres her (kaster aldrig; cron prøver igen), og
+    // parterne får én samlet besked (ikke også "frigivet").
+    let besked: string;
+    let flyttetNu = false;
+    if (svar.endelig) {
+      const af = svar.afvikling;
+      if (af?.kode === "ok") {
+        const r = await udfoerSagAfvikling(af, { notificer: false });
+        flyttetNu = r !== "overfoersel_fejlede" && r !== "refusion_fejlede";
+        besked =
+          svar.handling === "lukket"
+            ? "Sagen er lukket. Afgørelsen er endelig, og handlen fortsætter normalt nu."
+            : flyttetNu
+              ? "Sagen er afgjort til sælgerens fordel. Afgørelsen er endelig, og pengene udbetales nu til sælgeren."
+              : "Sagen er afgjort til sælgerens fordel. Overførslen til sælgeren fejlede og prøves igen automatisk.";
+      } else {
+        besked = `Sagen er afgjort, og afgørelsen er endelig, men pengene kan ikke flyttes lige nu: ${fejlNavn(af?.grund)}. Det prøves igen automatisk, og betalingen er markeret til admin.`;
+      }
+    } else {
+      besked = afgoerelsesBesked(svar);
+    }
 
     const type = svar.type;
     const beskedType = AFGOER_BESKED[svar.handling ?? ""];
@@ -919,7 +984,8 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
       const v = Number(svar.version ?? (await version(admin, sagId)));
       const tradeId = svar.trade_id;
       const frist = svar.penge_flyttes_efter_kl ?? null;
-      after(() => notificerSagAfgoerelse(sagId, tradeId, type, beskedType, begrundelse, v, frist));
+      const valg = { endelig: !!svar.endelig, flyttetNu };
+      after(() => notificerSagAfgoerelse(sagId, tradeId, type, beskedType, begrundelse, v, frist, valg));
     }
 
     revalider(sagId, svar.trade_id);
