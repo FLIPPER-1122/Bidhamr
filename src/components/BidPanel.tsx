@@ -298,10 +298,10 @@ export default function BidPanel({
 
       {/* Førende bud */}
       <p className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">
-        Førende bud:
+        {harBud ? "Førende bud:" : "Startpris:"}
       </p>
       <p className="text-3xl font-bold text-[#111]">
-        {nuværendeBud.toLocaleString("da-DK")} kr
+        {(harBud ? nuværendeBud : startpris).toLocaleString("da-DK")} kr
       </p>
 
       {auktionStatus !== "aktiv" ? (
