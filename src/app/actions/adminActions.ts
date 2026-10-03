@@ -1107,6 +1107,8 @@ const OVERFOERSEL_TEKST: Record<string, string> = {
   allerede_overfoert: "Pengene var allerede overført til sælger.",
   afventer_saelgerkonto:
     "Overførslen afventer sælgerens udbetalingskonto. Sælger har fået en mail, og betalingen forbliver markeret.",
+  saelgerkonto_frakoblet:
+    "Sælger har lukket eller frakoblet sin udbetalingskonto hos Stripe. Der kan ikke overføres, før sagen er løst med sælgeren.",
   indsigelse: "Der er en åben indsigelse hos køberens bank. Overførslen afventer indsigelsen.",
   sag_aaben: "Handlen har en åben sag. Overførslen afventer, at sagen afgøres.",
   annulleret: "Handlen er annulleret og kan ikke overføres.",

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { hentBetalingsindstillinger } from "@/app/actions/betaling";
+import { hentBetalingsindstillinger, hentMineOverfoersler } from "@/app/actions/betaling";
 import KontoBetaling from "@/components/betaling/KontoBetaling";
 import KontoUdbetaling from "@/components/betaling/KontoUdbetaling";
 
@@ -41,10 +41,12 @@ export default async function KontoSide({
   // mine_paamindelser() og tæller ikke med i reglen om 3 advarsler.
   const [
     indstillinger,
+    overfoerslerSvar,
     { data: advarselData, error: advarselFejl },
     { data: paamindelseData, error: paamindelseFejl },
   ] = await Promise.all([
     hentBetalingsindstillinger(),
+    hentMineOverfoersler(),
     supabase.rpc("mine_advarsler"),
     supabase.rpc("mine_paamindelser"),
   ]);
@@ -137,6 +139,7 @@ export default async function KontoSide({
               <KontoUdbetaling
                 saelger={indstillinger.saelger}
                 erRetur={stripe === "retur"}
+                overfoersler={"fejl" in overfoerslerSvar ? null : overfoerslerSvar.overfoersler}
               />
             </div>
           </section>

@@ -24,16 +24,21 @@ export default async function OpretAuktionPage({
   // RLS: brugeren kan kun læse sin egen betalingsprofil.
   const { data: profil } = await supabase
     .from("betalingsprofiler")
-    .select("stripe_account_id, connect_detaljer_indsendt, connect_overfoersler_aktiv")
+    // "*": connect_frakoblet_kl findes først efter 20261003060000_connect_status.sql.
+    .select("*")
     .eq("user_id", data.user.id)
     .maybeSingle<{
       stripe_account_id: string | null;
       connect_detaljer_indsendt: boolean;
       connect_overfoersler_aktiv: boolean;
+      connect_frakoblet_kl?: string | null;
     }>();
 
   const harKonto = !!profil?.stripe_account_id;
-  const kanSaelge = harKonto && !!profil?.connect_detaljer_indsendt;
+  // En lukket/frakoblet udbetalingskonto kan ikke bruges (samme regel som
+  // har_udbetalingskonto i databasen).
+  const frakoblet = !!profil?.connect_frakoblet_kl;
+  const kanSaelge = harKonto && !!profil?.connect_detaljer_indsendt && !frakoblet;
   const aktiv = kanSaelge && !!profil?.connect_overfoersler_aktiv;
 
   return (
@@ -44,7 +49,12 @@ export default async function OpretAuktionPage({
         </h1>
 
         <div className="mt-6">
-          {kanSaelge && stripe !== "retur" ? (
+          {frakoblet ? (
+            <p className="rounded-lg border border-[#F3C4C4] bg-[#FDECEC] px-4 py-3 text-sm text-[#A32020]">
+              Din udbetalingskonto hos vores betalingspartner Stripe er lukket, så du kan ikke sætte
+              varer til salg lige nu. Skriv til support@bidhamr.dk, så hjælper vi dig.
+            </p>
+          ) : kanSaelge && stripe !== "retur" ? (
             <>
               {!aktiv && (
                 <p className="mb-6 rounded-lg border border-[#C9DCEB] bg-[#EDF3F8] px-4 py-3 text-sm text-[#1F4E79]">
