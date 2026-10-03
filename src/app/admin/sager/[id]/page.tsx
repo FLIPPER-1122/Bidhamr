@@ -3,7 +3,13 @@ import { notFound } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { hentSag } from "@/app/actions/adminSager";
 import { hentSamtalerForSag } from "@/app/actions/staffChat";
-import { SAG_CHAT_TYPE, SAG_KATEGORI_NAVN, SAG_STATUS_NAVN, SAG_TYPE_NAVN } from "@/lib/sager";
+import {
+  SAG_ANKE_STATUS_NAVN,
+  SAG_CHAT_TYPE,
+  SAG_KATEGORI_NAVN,
+  SAG_STATUS_NAVN,
+  SAG_TYPE_NAVN,
+} from "@/lib/sager";
 import { PAKKE_KATEGORI_NAVN } from "@/lib/pakkebilleder";
 import { kroner } from "@/lib/kroner";
 import HandelStatusBadge, { statusLabel } from "@/components/HandelStatusBadge";
@@ -19,7 +25,10 @@ const LOG_NAVN: Record<string, string> = {
   sag_lukket: "Sagen er lukket",
   sag_retur_afleveret: "Returpakke afleveret",
   sag_genaabnet: "Sagen er genåbnet",
-  sag_afviklet: "Ankefristen er udløbet – pengene er flyttet",
+  sag_afviklet: "Pengene er flyttet efter afgørelsen",
+  sag_anke_indgivet: "Afgørelsen er anket",
+  sag_anke_stadfaestet: "Anken er afgjort – afgørelsen står",
+  sag_anke_omgjort: "Anken er afgjort – afgørelsen er ændret",
   konto_lukket: "Konto lukket permanent",
   indpakning_paamindelse: "Påmindelse til sælger: dårlig indpakning",
   advarsel: "Advarsel",
@@ -150,6 +159,12 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
             koeber={{ id: sag.koeber.id, navn: koeberNavn, lukket: sag.koeberLukket }}
             saelger={{ id: sag.saelger.id, navn: saelgerNavn, lukket: sag.saelgerLukket }}
             indpakning={sag.indpakning}
+            anke={
+              sag.anke && sag.anke.status === "afventer"
+                ? { id: sag.anke.id, part: sag.anke.part, ankedeStatus: sag.anke.ankedeStatus, type: sag.type }
+                : null
+            }
+            ankeIkkeTilladt={sag.ankeIkkeTilladt}
           />
         </div>
       </section>
@@ -205,6 +220,47 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
           )}
         </Kort>
       </div>
+
+      {sag.anke && (
+        <Kort titel={`Anke fra ${sag.anke.part === "koeber" ? "køberen" : "sælgeren"} – ${SAG_ANKE_STATUS_NAVN[sag.anke.status].toLowerCase()}`}>
+          <dl className="space-y-3 text-sm">
+            <Felt navn="Indgivet">{sagTid(sag.anke.indgivetKl)}</Felt>
+            <Felt navn="Begrundelse fra den, der anker">
+              <span className="whitespace-pre-wrap">{sag.anke.begrundelse}</span>
+            </Felt>
+            <Felt navn="Den ankede afgørelse">
+              {SAG_STATUS_NAVN[sag.anke.ankedeStatus]} · {sagTid(sag.anke.ankedeAfgjortKl)} af{" "}
+              {sag.anke.ankedeAfgjortAfNavn ?? "ukendt"}
+              <span className="mt-1 block whitespace-pre-wrap text-neutral-700">{sag.anke.ankedeBegrundelse}</span>
+            </Felt>
+            {sag.anke.behandletKl && (
+              <Felt navn="Afgjort">
+                {sagTid(sag.anke.behandletKl)} af {sag.anke.behandletAfNavn ?? "ukendt"}
+              </Felt>
+            )}
+            {sag.anke.afgoerelseBegrundelse && (
+              <Felt navn="Begrundelse for afgørelsen på anken (til køber og sælger)">
+                <span className="whitespace-pre-wrap">{sag.anke.afgoerelseBegrundelse}</span>
+              </Felt>
+            )}
+            {sag.anke.internNote && (
+              <Felt navn="Intern note">
+                <span className="whitespace-pre-wrap">{sag.anke.internNote}</span>
+              </Felt>
+            )}
+          </dl>
+          <div className="mt-4">
+            <h3 className="mb-2 text-sm font-medium text-neutral-700">
+              Ny dokumentation ({sag.anke.billeder.length})
+            </h3>
+            {sag.anke.billeder.length > 0 ? (
+              <SagBilleder billeder={sag.anke.billeder} stor />
+            ) : (
+              <p className="text-sm text-neutral-500">Ingen billeder med anken.</p>
+            )}
+          </div>
+        </Kort>
+      )}
 
       <Kort titel={`Billeder (${sag.billeder.length})`}>
         {(["pakke", "label", "indhold", "andet"] as const).map((k) => {

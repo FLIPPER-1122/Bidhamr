@@ -257,6 +257,165 @@ export async function udfoerSagAfvikling(a: SagAfvikling): Promise<string> {
   return status;
 }
 
+// ------------------------------------------------------------------ Anke
+
+type AnkeRaekke = {
+  id: string;
+  sag_id: string;
+  trade_id: string;
+  part: "koeber" | "saelger";
+  ankede_status: string;
+};
+
+// "Anke indgivet" til begge parter. Claimes atomisk (sag_anker.notificeret_kl),
+// så den sendes præcis én gang - også for anker indgivet direkte fra appen
+// (cron samler op). Kaster aldrig.
+export async function notificerAnkeIndgivet(ankeId: string): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data: a } = await admin
+      .from("sag_anker")
+      .update({ notificeret_kl: new Date().toISOString() })
+      .eq("id", ankeId)
+      .is("notificeret_kl", null)
+      .select("id, sag_id, trade_id, part, ankede_status")
+      .maybeSingle<AnkeRaekke>();
+    if (!a) return false;
+    const h = await handelOgTitel(admin, a.trade_id);
+    if (!h) return false;
+    const link = sagLink(a.trade_id);
+    const data = { trade_id: a.trade_id, sag_id: a.sag_id };
+    const t = h.titel;
+    const venter = "Pengene flyttes ikke, mens anken behandles.";
+    const anden = "En anden medarbejder end den, der afgjorde sagen, ser på den igen.";
+    // Sælgeren har anket et medhold til køberen, hvor varen skal sendes retur.
+    const returPause =
+      a.part === "saelger" && a.ankede_status === "afventer_retur"
+        ? " Vent med at sende varen retur, til anken er afgjort."
+        : "";
+
+    const ankendeId = a.part === "koeber" ? h.buyer_id : h.seller_id;
+    const andenId = a.part === "koeber" ? h.seller_id : h.buyer_id;
+    const hvem = a.part === "koeber" ? "Køberen" : "Sælgeren";
+    await send(ankendeId, "sag", {
+      titel: "Vi har modtaget din anke",
+      tekst: `Vi har modtaget din anke af afgørelsen i sagen om "${t}". ${anden} ${venter} Afgørelsen på anken er endelig.`,
+      link,
+      data,
+      noegle: `sag_anke_indgivet_${a.part}:${a.id}`,
+    });
+    await send(andenId, "sag", {
+      titel: "Afgørelsen er anket",
+      tekst: `${hvem} har anket afgørelsen i sagen om "${t}". ${anden} ${venter}${returPause}`,
+      link,
+      data,
+      noegle: `sag_anke_indgivet_${a.part === "koeber" ? "saelger" : "koeber"}:${a.id}`,
+    });
+    return true;
+  } catch (err) {
+    console.error("Notifikation om anke fejlede:", ankeId, err);
+    return false;
+  }
+}
+
+// Cron: anker fra de seneste 7 dage, der ikke er notificeret endnu.
+export async function notificerNyeAnker(): Promise<number> {
+  const { data, error } = await createAdminClient()
+    .from("sag_anker")
+    .select("id")
+    .is("notificeret_kl", null)
+    .gte("indgivet_kl", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+    .limit(100);
+  if (error) {
+    console.error("Hentning af nye anker fejlede:", error.message);
+    return 0;
+  }
+  let antal = 0;
+  for (const { id } of (data ?? []) as { id: string }[]) {
+    if (await notificerAnkeIndgivet(id)) antal++;
+  }
+  return antal;
+}
+
+// Hvad der nu sker med pengene efter ankens afgørelse:
+//   'koeber_retur'  - køberen har medhold og skal sende varen retur
+//   'koeber'        - køberen får pengene tilbage
+//   'saelger'       - sælgeren får pengene
+export type AnkeSlutUdfald = "koeber" | "koeber_retur" | "saelger";
+
+// "Anke afgjort" til begge parter. Begrundelsen fra BidHamr medsendes. Beløb
+// nævnes aldrig. Kaster aldrig.
+export async function notificerAnkeAfgjort(
+  ankeId: string,
+  tradeId: string,
+  sagId: string,
+  part: "koeber" | "saelger",
+  udfald: "stadfaest" | "omgoer",
+  slut: AnkeSlutUdfald,
+  begrundelse: string,
+): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const h = await handelOgTitel(admin, tradeId);
+    if (!h) return;
+    const link = sagLink(tradeId);
+    const data = { trade_id: tradeId, sag_id: sagId };
+    const t = h.titel;
+    const grund = begrundelse ? ` Begrundelse: ${begrundelse}` : "";
+    const endelig = "Afgørelsen er endelig.";
+    // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
+    const hvad = h.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
+    const beskyttelseNote = h.beskyttelse ? " BidHamr Beskyttelse refunderes ikke." : "";
+
+    const penge: Record<AnkeSlutUdfald, { koeber: string; saelger: string }> = {
+      koeber: {
+        koeber: `Du får ${hvad} tilbage nu.${beskyttelseNote}`,
+        saelger: "Køberen får pengene tilbage, og handlen annulleres.",
+      },
+      koeber_retur: {
+        koeber: `Send varen retur til sælgeren. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`,
+        saelger: "Køberen sender varen retur til dig og betaler selv returfragten. Når pakken er afleveret, får køberen pengene tilbage.",
+      },
+      saelger: {
+        koeber: "Pengene udbetales til sælgeren.",
+        saelger: "Pengene udbetales til dig nu.",
+      },
+    };
+
+    const ankende = part;
+    const tekst = (rolle: "koeber" | "saelger"): [string, string] => {
+      const p = penge[slut][rolle];
+      if (rolle === ankende) {
+        return udfald === "omgoer"
+          ? ["Du har fået medhold i din anke", `BidHamr har set på sagen om "${t}" igen og ændret afgørelsen til din fordel. ${p} ${endelig}${grund}`]
+          : ["Din anke er afgjort", `BidHamr har set på sagen om "${t}" igen, og afgørelsen står ved magt. ${p} ${endelig}${grund}`];
+      }
+      return udfald === "omgoer"
+        ? ["Afgørelsen er ændret", `BidHamr har behandlet anken i sagen om "${t}" og ændret afgørelsen. ${p} ${endelig}${grund}`]
+        : ["Anken er afgjort", `BidHamr har behandlet anken i sagen om "${t}", og afgørelsen står ved magt. ${p} ${endelig}${grund}`];
+    };
+
+    const [kt, kx] = tekst("koeber");
+    const [st, sx] = tekst("saelger");
+    await send(h.buyer_id, "sag", {
+      titel: kt,
+      tekst: kx,
+      link,
+      data,
+      noegle: `sag_anke_afgjort_koeber:${ankeId}`,
+    });
+    await send(h.seller_id, "sag", {
+      titel: st,
+      tekst: sx,
+      link,
+      data,
+      noegle: `sag_anke_afgjort_saelger:${ankeId}`,
+    });
+  } catch (err) {
+    console.error("Notifikation om ankens afgørelse fejlede:", ankeId, err);
+  }
+}
+
 // Cron: afgjorte sager, hvor ankefristen (4 dage) er udløbet. Databasen
 // flytter pengene atomisk (sag_afvikl_forfaldne), derefter kaldes Stripe.
 export async function afviklForfaldneSager(): Promise<number> {

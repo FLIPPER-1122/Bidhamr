@@ -7,13 +7,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   aabnSagChat,
+  afgoerAnke,
   afgoerSag,
   genaabnSag,
   lukKontoPermanent,
   registrerReturAfleveret,
   vurderIndpakning,
 } from "@/app/actions/adminSager";
-import { SAG_BEGRUNDELSE_MAKS, type SagType } from "@/lib/sager";
+import { SAG_BEGRUNDELSE_MAKS, type SagStatus, type SagType } from "@/lib/sager";
 import { STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
 
 const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
@@ -296,6 +297,141 @@ function AfgoerKnap({
             sender={sender}
             onLuk={luk}
             bekraeft={udfald ? `Bekræft: ${UDFALD_NAVN[udfald].toLowerCase()}` : "Bekræft"}
+            deaktiveret={!udfald}
+          />
+        </form>
+      </Dialog>
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ Anke
+
+type AnkeUdfald = "stadfaest" | "omgoer";
+
+function AnkeKnap({
+  ankeId,
+  anke,
+  onResultat,
+}: {
+  ankeId: string;
+  anke: AnkeInfo;
+  onResultat: (b: string) => void;
+}) {
+  const id = useId();
+  const [aaben, setAaben] = useState(false);
+  const [udfald, setUdfald] = useState<AnkeUdfald | "">("");
+  const luk = () => setAaben(false);
+  const { sender, fejl, setFejl, send } = useSend(onResultat, luk);
+
+  const hvem = anke.part === "koeber" ? "køberen" : "sælgeren";
+  const navn: Record<AnkeUdfald, string> = {
+    stadfaest: "Afgørelsen står (afvis anken)",
+    omgoer: `Ændr afgørelsen (medhold til ${hvem})`,
+  };
+  const konsekvensTekst: Record<AnkeUdfald, string> = {
+    stadfaest:
+      anke.ankedeStatus === "afgjort_saelger"
+        ? "Pengene udbetales til sælgeren nu."
+        : anke.ankedeStatus === "afventer_retur"
+          ? "Køberen skal sende varen retur. Køberen refunderes, så snart returpakken er registreret."
+          : "Køberen refunderes nu (alt undtagen BidHamr Beskyttelse).",
+    omgoer:
+      anke.part === "saelger"
+        ? "Sælgeren får medhold, og pengene udbetales til sælgeren nu. Køberen skal ikke sende varen retur. Har køberen allerede sendt varen, skal det med i vurderingen."
+        : anke.type === "svindel" || anke.type === "bortkommet"
+          ? "Køberen får medhold og refunderes nu (alt undtagen BidHamr Beskyttelse)."
+          : "Køberen får medhold og skal sende varen retur for egen regning. Køberen refunderes, så snart returpakken er registreret.",
+  };
+
+  function indsend(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!udfald) {
+      setFejl("Vælg et udfald.");
+      return;
+    }
+    const fd = new FormData(e.currentTarget);
+    fd.set("ankeId", ankeId);
+    fd.set("udfald", udfald);
+    void send(() => afgoerAnke(fd));
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setFejl(null);
+          setUdfald("");
+          setAaben(true);
+        }}
+        className="btn btn-primaer"
+      >
+        Afgør anken
+      </button>
+      <Dialog
+        titel="Afgør anken"
+        beskrivelse="Afgørelsen på anken er endelig. Pengene flyttes straks efter – der er ingen ny ankefrist. Køber og sælger får besked med din begrundelse."
+        aaben={aaben}
+        onLuk={luk}
+        laast={sender}
+      >
+        <form onSubmit={indsend} className="space-y-4">
+          <fieldset>
+            <legend className="text-sm font-medium text-neutral-800">Udfald</legend>
+            <div className="mt-2 space-y-2">
+              {(["stadfaest", "omgoer"] as AnkeUdfald[]).map((u) => (
+                <label
+                  key={u}
+                  className={`flex cursor-pointer gap-3 rounded-xl border p-3 text-sm ${
+                    udfald === u ? "border-groen bg-groen-lys" : "border-neutral-200 hover:bg-neutral-50"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="anke_udfald_valg"
+                    value={u}
+                    checked={udfald === u}
+                    onChange={() => setUdfald(u)}
+                    disabled={sender}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
+                  />
+                  <span>
+                    <span className="block font-semibold text-neutral-900">{navn[u]}</span>
+                    <span className="block text-neutral-600">{konsekvensTekst[u]}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div>
+            <label htmlFor={`${id}-begr`} className="block text-sm font-medium text-neutral-800">
+              Begrundelse til køber og sælger
+            </label>
+            <textarea
+              id={`${id}-begr`}
+              name="begrundelse"
+              required
+              rows={4}
+              maxLength={SAG_BEGRUNDELSE_MAKS}
+              disabled={sender}
+              className={FELT}
+            />
+            <p className="mt-1 text-xs text-neutral-500">
+              Vises for både køber og sælger. Skriv aldrig beløb eller interne oplysninger her.
+            </p>
+          </div>
+          <div>
+            <label htmlFor={`${id}-note`} className="block text-sm font-medium text-neutral-800">
+              Intern note <span className="font-normal text-neutral-500">(valgfri)</span>
+            </label>
+            <textarea id={`${id}-note`} name="intern_note" rows={3} maxLength={4000} disabled={sender} className={FELT} />
+          </div>
+          <Fejl fejl={fejl} />
+          <Knapper
+            sender={sender}
+            onLuk={luk}
+            bekraeft={udfald === "omgoer" ? "Bekræft: ændr afgørelsen" : udfald ? "Bekræft: afgørelsen står" : "Bekræft"}
             deaktiveret={!udfald}
           />
         </form>
@@ -725,6 +861,13 @@ function ChatKnap({ sagId, part, navn }: { sagId: string; part: "koeber" | "sael
 
 // ------------------------------------------------------------------ Samlet
 
+export type AnkeInfo = {
+  id: string;
+  part: "koeber" | "saelger";
+  ankedeStatus: SagStatus;
+  type: SagType;
+};
+
 export type SagHandlingerProps = {
   sagId: string;
   type: SagType;
@@ -735,7 +878,12 @@ export type SagHandlingerProps = {
     genaabne: boolean;
     lukkeKonto: boolean;
     vurdereIndpakning: boolean;
+    behandleAnke: boolean;
   };
+  // Anken, der venter (eller null), og hvorfor den aktuelle admin ikke må
+  // behandle den.
+  anke: AnkeInfo | null;
+  ankeIkkeTilladt: string | null;
   koeber: { id: string; navn: string; lukket: boolean };
   saelger: { id: string; navn: string; lukket: boolean };
   indpakning: IndpakningInfo;
@@ -749,6 +897,8 @@ export default function SagHandlinger({
   koeber,
   saelger,
   indpakning,
+  anke,
+  ankeIkkeTilladt,
 }: SagHandlingerProps) {
   const [resultat, setResultat] = useState<string | null>(null);
 
@@ -758,6 +908,22 @@ export default function SagHandlinger({
         <p role="status" className="rounded-lg border border-succes-kant bg-succes-bg px-4 py-3 text-sm text-succes-tekst">
           {resultat}
         </p>
+      )}
+
+      {anke && (
+        <div className="rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-3 text-sm text-advarsel-tekst">
+          <p className="font-semibold">
+            Afgørelsen er anket af {anke.part === "koeber" ? "køberen" : "sælgeren"}. Pengene flyttes ikke, før
+            anken er afgjort.
+          </p>
+          {kan.behandleAnke ? (
+            <div className="mt-3">
+              <AnkeKnap ankeId={anke.id} anke={anke} onResultat={setResultat} />
+            </div>
+          ) : (
+            ankeIkkeTilladt && <p className="mt-1">{ankeIkkeTilladt}</p>
+          )}
+        </div>
       )}
 
       {(kan.afgoere || kan.registrereRetur || kan.genaabne) && (
