@@ -23,6 +23,8 @@ import { hentAfhentningInfo } from "@/app/actions/afhentning";
 import { VisAfhentningskode, IndtastAfhentningskode } from "@/components/Afhentning";
 import { hentMinKvittering } from "@/lib/betaling/kvittering";
 import { KvitteringBoks } from "@/components/Kvittering";
+import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
+import { hentAfsendelsesfristAnnullering } from "@/lib/betaling/afsendelsesfrist";
 
 // En sag kan tidligst oprettes, når pakken er sendt, og vises også efter
 // afgørelsen (handlen kan da være leveret eller annulleret).
@@ -148,6 +150,22 @@ export default async function HandelDetaljePage({
     afhentning && handel.status === "betaling_modtaget"
       ? await hentAfhentningInfo(handel.id)
       : null;
+
+  // Afsendelsesfrist (kun forsendelse): pakken skal markeres sendt senest 5
+  // dage efter betalingen, ellers annulleres handlen, og køberen refunderes
+  // fuldt. betalt_kl kan læses af køber og sælger (kolonne-grant).
+  const venterPaaAfsendelse = !afhentning && handel.status === "betaling_modtaget";
+  const [{ data: betaltRaekke }, afsendelsesAnnullering] = await Promise.all([
+    venterPaaAfsendelse
+      ? supabase
+          .from("betalinger")
+          .select("betalt_kl")
+          .eq("trade_id", handel.id)
+          .maybeSingle<{ betalt_kl: string | null }>()
+      : Promise.resolve({ data: null }),
+    annulleret ? hentAfsendelsesfristAnnullering(handel.id, user.id) : Promise.resolve(null),
+  ]);
+  const afsendSenest = venterPaaAfsendelse ? sendSenest(betaltRaekke?.betalt_kl) : null;
 
   // Kvittering (køber, når betalingen er modtaget) / afregning (sælger, når
   // pengene er frigivet). null, indtil den findes.
@@ -390,6 +408,51 @@ export default async function HandelDetaljePage({
           </div>
         )}
 
+        {erKoeber && venterPaaAfsendelse && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-6">
+            <h2 className="text-sm font-semibold text-neutral-900">Venter på, at sælgeren sender varen</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              {afsendSenest ? (
+                <>
+                  Sælgeren skal sende pakken senest{" "}
+                  <span className="font-semibold text-neutral-700">{sendSenestTekst(afsendSenest)}</span>.{" "}
+                </>
+              ) : (
+                <>Sælgeren skal sende pakken senest 5 dage efter din betaling. </>
+              )}
+              Sendes den ikke i tide, annulleres handlen, og du får hele beløbet tilbage.
+            </p>
+          </div>
+        )}
+
+        {afsendelsesAnnullering && (
+          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+            <p className="font-semibold">Handlen er annulleret</p>
+            {erKoeber ? (
+              <>
+                <p className="mt-1">Sælgeren sendte ikke varen i tide. Du får hele beløbet tilbage.</p>
+                <p className="mt-1">
+                  {afsendelsesAnnullering.refunderet
+                    ? "Pengene er sendt tilbage til den betalingsmetode, du betalte med. Der kan gå nogle dage, før de står på din konto."
+                    : "Tilbagebetalingen er sat i gang. Der kan gå nogle dage, før pengene står på din konto."}{" "}
+                  Betalingen håndteres af vores betalingspartner Stripe.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-1">
+                  Pakken blev ikke markeret som sendt inden 5 dage efter betalingen, så handlen er
+                  annulleret, og køberen får hele beløbet tilbage. Du skal ikke sende varen.
+                </p>
+                <p className="mt-1">
+                  Har du allerede sendt den, så skriv straks til support@bidhamr.dk med
+                  sporingsnummeret.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Handlinger */}
         {erSaelger && !afhentning && handel.status === "betaling_modtaget" && (
           <div className="rounded-xl border border-neutral-200 bg-white p-6">
@@ -398,6 +461,13 @@ export default async function HandelDetaljePage({
               Tag to billeder, mens du pakker, og indtast sporingsnummeret, når du har sendt
               varen. Køberen får besked.
             </p>
+            {afsendSenest && (
+              <p className="mb-4 rounded-lg border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+                Send pakken senest <span className="font-semibold">{sendSenestTekst(afsendSenest)}</span>{" "}
+                (<Nedtaelling til={afsendSenest} />). Ellers annulleres handlen, og køberen får hele
+                beløbet tilbage.
+              </p>
+            )}
             <SendPakkeForm tradeId={handel.id} saelgerId={user.id} />
           </div>
         )}

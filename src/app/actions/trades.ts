@@ -83,6 +83,9 @@ export async function sendPakke(
   if (handel.afhentning) {
     return { fejl: PAKKE_SEND_FEJL.afhentning };
   }
+  if (handel.status === "annulleret") {
+    return { fejl: PAKKE_SEND_FEJL.annulleret };
+  }
   if (handel.status !== "betaling_modtaget") {
     return { fejl: PAKKE_SEND_FEJL.allerede_sendt };
   }
