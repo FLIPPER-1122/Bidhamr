@@ -18,6 +18,10 @@ import { hentSamtalerForBruger } from "@/app/actions/staffChat";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import AabnChatKnap from "@/components/admin/staffchat/AabnChatKnap";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
+import KontoLukningKort, {
+  type KontoLukningAdvarsel,
+  type KontoLukningForslag,
+} from "@/components/admin/KontoLukningKort";
 
 const FANER = [
   { id: "oversigt", label: "Oversigt" },
@@ -58,14 +62,31 @@ export default async function AdminBrugerDetalje({
   // Sletning af auktioner/anmeldelser kræver admin+; medarbejdere ser ikke knapperne.
   const kanModerereIndhold = !!staffRolle && harMindstRolle(staffRolle, "admin");
 
-  const [{ data: user }, { data: advarsler }] = await Promise.all([
-    supabase.from("users").select("*").eq("id", id).single(),
-    supabase
-      .from("advarsler")
-      .select("id, aarsag, begrundelse_bruger, oprettet_kl, oprettet_af")
-      .eq("bruger_id", id)
-      .order("oprettet_kl", { ascending: false }),
-  ]);
+  const kanLukke = !!staffRolle && harMindstRolle(staffRolle, "admin");
+  const [{ data: user }, { data: advarsler }, { data: paamindelser }, { data: lukningForslag }] =
+    await Promise.all([
+      supabase.from("users").select("*").eq("id", id).single(),
+      supabase
+        .from("advarsler")
+        .select("id, bruger_id, aarsag, begrundelse_bruger, grund, oprettet_kl, oprettet_af")
+        .eq("bruger_id", id)
+        .order("oprettet_kl", { ascending: false }),
+      // Påmindelser (fx 1. gang dårlig indpakning) tæller IKKE med i 3-reglen.
+      supabase
+        .from("paamindelser")
+        .select("id, grund, sag_id, begrundelse_bruger, intern_note, oprettet_kl, oprettet_af")
+        .eq("bruger_id", id)
+        .order("oprettet_kl", { ascending: false }),
+      // Afventende forslag om lukning efter 3 advarsler (kun admin/chef).
+      kanLukke
+        ? supabase
+            .from("konto_lukning_forslag")
+            .select("id, bruger_id, advarsler_antal, status, oprettet_kl, behandlet_af, behandlet_kl, begrundelse")
+            .eq("bruger_id", id)
+            .eq("status", "afventer")
+            .maybeSingle<KontoLukningForslag>()
+        : Promise.resolve({ data: null as KontoLukningForslag | null }),
+    ]);
 
   if (!user) notFound();
 
@@ -134,7 +155,7 @@ export default async function AdminBrugerDetalje({
               </svg>
             }
             title={`Er du sikker på, at du vil sende en advarsel til ${user.navn ?? "brugeren"}?`}
-            description="Advarslen gemmes på brugerens profil. Brugeren får besked med begrundelsen. Efter 3 advarsler lukkes profilen permanent."
+            description="Advarslen gemmes på brugerens profil. Brugeren får besked med begrundelsen. Ved 3 advarsler skal en admin eller chef tage stilling til at lukke profilen permanent (under Kontolukninger)."
             confirmLabel="Ja, send advarslen"
             action={advarUser}
             hiddenFields={{ userId: user.id }}
@@ -186,6 +207,27 @@ export default async function AdminBrugerDetalje({
         </div>
       </div>
 
+      {lukningForslag && (
+        <section aria-labelledby="lukning-titel" className="space-y-2">
+          <h2 id="lukning-titel" className="flex items-center gap-2 text-sm font-semibold text-red-700">
+            <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">!</span>
+            3 advarsler – skal kontoen lukkes?
+          </h2>
+          <KontoLukningKort
+            f={lukningForslag}
+            bruger={{
+              navn: user.navn,
+              email: user.email,
+              rolle: user.rolle,
+              konto_lukket_kl: (user as { konto_lukket_kl?: string | null }).konto_lukket_kl ?? null,
+            }}
+            behandletAf={null}
+            advarsler={[...((advarsler ?? []) as KontoLukningAdvarsel[])].reverse()}
+            paamindelser={paamindelser?.length ?? 0}
+          />
+        </section>
+      )}
+
       {/* Faner */}
       <div className="flex gap-1 overflow-x-auto border-b border-neutral-200">
         {FANER.map((f) => (
@@ -204,7 +246,12 @@ export default async function AdminBrugerDetalje({
       </div>
 
       {fane === "oversigt" && (
-        <OversigtFane user={user} advarsler={advarsler ?? []} supabase={supabase} />
+        <OversigtFane
+          user={user}
+          advarsler={advarsler ?? []}
+          paamindelser={paamindelser ?? []}
+          supabase={supabase}
+        />
       )}
       {fane === "auktioner" && (
         <AuktionerFane userId={id} supabase={supabase} kanModerere={kanModerereIndhold} />
@@ -249,6 +296,7 @@ async function ChatsFane({ userId }: { userId: string }) {
 async function OversigtFane({
   user,
   advarsler,
+  paamindelser,
   supabase,
 }: {
   user: { id: string; rating: number | null; rolle: string | null; oprettet: string };
@@ -258,6 +306,16 @@ async function OversigtFane({
     begrundelse_bruger: string | null;
     oprettet_kl: string;
     oprettet_af: string | null;
+    grund?: string | null;
+  }[];
+  paamindelser: {
+    id: string;
+    grund: string;
+    sag_id: string;
+    begrundelse_bruger: string;
+    intern_note: string | null;
+    oprettet_kl: string;
+    oprettet_af: string;
   }[];
   supabase: Admin;
 }) {
@@ -271,7 +329,9 @@ async function OversigtFane({
         .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`),
     ]);
 
-  const forfatterIds = [...new Set(advarsler.map((a) => a.oprettet_af).filter(Boolean))] as string[];
+  const forfatterIds = [
+    ...new Set([...advarsler.map((a) => a.oprettet_af), ...paamindelser.map((p) => p.oprettet_af)].filter(Boolean)),
+  ] as string[];
   const { data: forfattere } = forfatterIds.length
     ? await supabase.from("users").select("id, navn").in("id", forfatterIds)
     : { data: [] };
@@ -324,6 +384,9 @@ async function OversigtFane({
                   {new Date(a.oprettet_kl).toLocaleDateString("da-DK")}
                 </span>
               </div>
+              {a.grund === "daarlig_indpakning" && (
+                <p className="mb-1 text-xs font-semibold text-red-700">Dårlig indpakning</p>
+              )}
               <p className="text-xs font-medium text-neutral-500">Til brugeren</p>
               <p className="whitespace-pre-line text-sm text-neutral-700">
                 {a.begrundelse_bruger ?? "Ingen begrundelse til brugeren (gammel advarsel)."}
@@ -340,6 +403,50 @@ async function OversigtFane({
             <div className="px-5 py-6 text-center text-sm text-neutral-400">
               Ingen advarsler
             </div>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+        <div className="border-b border-neutral-100 px-5 py-4">
+          <h2 className="text-sm font-semibold text-neutral-800">
+            Påmindelser ({paamindelser.length})
+          </h2>
+          <p className="mt-0.5 text-xs text-neutral-500">
+            Tæller ikke med i reglen om 3 advarsler. Dårlig indpakning: 1. gang en påmindelse, derefter en
+            advarsel hver gang.
+          </p>
+        </div>
+        <div className="divide-y divide-neutral-100">
+          {paamindelser.map((p) => (
+            <div key={p.id} className="px-5 py-4">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs font-medium text-neutral-500">
+                  {forfatterMap[p.oprettet_af] ?? "Ukendt"}
+                </span>
+                <span className="text-xs text-neutral-400">
+                  {new Date(p.oprettet_kl).toLocaleDateString("da-DK")}
+                </span>
+              </div>
+              <p className="mb-1 text-xs font-semibold text-neutral-700">
+                {p.grund === "daarlig_indpakning" ? "Dårlig indpakning" : p.grund}
+                {" · "}
+                <Link href={`/admin/sager/${p.sag_id}`} className="font-medium text-neutral-600 hover:underline">
+                  Se sagen
+                </Link>
+              </p>
+              <p className="text-xs font-medium text-neutral-500">Til brugeren</p>
+              <p className="whitespace-pre-line text-sm text-neutral-700">{p.begrundelse_bruger}</p>
+              {p.intern_note && (
+                <>
+                  <p className="mt-2 text-xs font-medium text-neutral-500">Intern note</p>
+                  <p className="whitespace-pre-line text-sm text-neutral-700">{p.intern_note}</p>
+                </>
+              )}
+            </div>
+          ))}
+          {paamindelser.length === 0 && (
+            <div className="px-5 py-6 text-center text-sm text-neutral-400">Ingen påmindelser</div>
           )}
         </div>
       </div>

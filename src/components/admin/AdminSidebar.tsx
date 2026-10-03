@@ -51,6 +51,16 @@ const navItems: {
     ),
   },
   {
+    href: "/admin/kontolukninger",
+    label: "Kontolukninger",
+    minRolle: "admin",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/handler",
     label: "Handler",
     minRolle: "medarbejder",
@@ -158,13 +168,20 @@ const BADGES: Record<string, keyof AdminTaellere> = {
   "/admin/betalinger": "betalinger",
   "/admin/chats": "chats",
   "/admin/sager": "sager",
+  "/admin/kontolukninger": "kontolukninger",
 };
 
-type AdminTaellere = { ubetalte: number; betalinger: number; chats: number; sager: number };
+type AdminTaellere = {
+  ubetalte: number;
+  betalinger: number;
+  chats: number;
+  sager: number;
+  kontolukninger: number;
+};
 
 export default function AdminSidebar({
   rolle,
-  taellere = { ubetalte: 0, betalinger: 0, chats: 0, sager: 0 },
+  taellere = { ubetalte: 0, betalinger: 0, chats: 0, sager: 0, kontolukninger: 0 },
 }: {
   rolle: StaffRole;
   taellere?: AdminTaellere;
