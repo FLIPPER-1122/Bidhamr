@@ -156,6 +156,7 @@ export function koeberAfhentningMail(titel: string, tradeId: string) {
     afsnitHtml: [
       `Din betaling for <strong>${escapeHtml(titel)}</strong> er gennemført. Aftal tid og sted for afhentningen med sælgeren i chatten på handelssiden.`,
       "Når du henter varen, finder du din afhentningskode på handelssiden og viser den til sælgeren. Tjek varen, før du viser koden – når sælgeren har indtastet den, frigives pengene til sælgeren med det samme, og handlen kan ikke klages over bagefter.",
+      "<strong>Vis kun koden, når du står med varen i hånden. Send den aldrig i chatten.</strong>",
     ],
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
   });

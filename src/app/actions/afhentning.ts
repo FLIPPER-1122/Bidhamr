@@ -60,8 +60,9 @@ const VIS_FEJL: Record<string, string> = {
   ikke_mulig: "Koden kan ikke vises lige nu. Genindlæs siden.",
 };
 
-// Køberen bedømmer sælgeren og får koden. Bedømmelsen gemmes kun første gang;
-// senere kald giver blot koden igen.
+// Køberen bedømmer sælgeren og får koden. Bedømmelsen gemmes kun første gang
+// (første valg gælder) og offentliggøres først, når sælgeren har indtastet
+// koden. Senere kald giver blot koden igen.
 export async function visAfhentningskode(
   tradeId: string,
   stjerner?: number,

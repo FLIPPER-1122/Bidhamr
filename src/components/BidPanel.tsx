@@ -173,7 +173,7 @@ export default function BidPanel({
                 koebergebyr_oere: Math.round((budOere * KOEBERGEBYR_PROCENT) / 100),
                 fragt_oere: fragtOere(forsendelseMulig),
               },
-              beskyttelse,
+              beskyttelse && forsendelseMulig,
             )
           );
         })()
@@ -213,7 +213,9 @@ export default function BidPanel({
     setLoading(true);
 
     // Afgives paa serveren (rate limit). RLS og triggere gaelder uaendret.
-    const svar = await afgivBud(auktionId, beløbTal, beskyttelse);
+    // Kun afhentning: BidHamr Beskyttelse kan ikke tilvælges (afhentningshandler
+    // kan ikke få sager). Databasen tvinger det også til nej.
+    const svar = await afgivBud(auktionId, beløbTal, beskyttelse && forsendelseMulig);
 
     if ("fejl" in svar) {
       setLoading(false);
@@ -307,6 +309,7 @@ export default function BidPanel({
           </button>
           </div>
 
+          {forsendelseMulig && (
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
             <label className="flex cursor-pointer items-center gap-3">
               <input
@@ -332,6 +335,7 @@ export default function BidPanel({
               {BIDPANEL.laesMere}
             </Link>
           </div>
+          )}
 
           {estimatOere !== null && (
             <p className="text-xs text-neutral-600">
