@@ -23,6 +23,18 @@ export const GRAENSER = {
   nulstil_ip: { maks: 5, vindueSek: 60 * 60 },
   nulstil_email: { maks: 3, vindueSek: 60 * 60 },
   gensend_ip: { maks: 5, vindueSek: 60 * 60 },
+  // Bekræftelsesmail ved oprettelse/gensend pr. e-mail. Supabase har
+  // desuden sin egen ventetid mellem to mails.
+  gensend_email: { maks: 4, vindueSek: 60 * 60 },
+  // Koder til to-trins-login (login, slå til/fra, ny adgangskode).
+  mfa_bruger: { maks: 10, vindueSek: 15 * 60 },
+  mfa_ip: { maks: 30, vindueSek: 15 * 60 },
+  // Tjek af nuværende adgangskode (skift adgangskode, slet konto) og
+  // ny adgangskode efter nulstilling.
+  adgangskode_bruger: { maks: 6, vindueSek: 15 * 60 },
+  konto_slet_bruger: { maks: 5, vindueSek: 60 * 60 },
+  // Enheder: fjern enhed / log ud andre steder.
+  enheder_bruger: { maks: 30, vindueSek: 15 * 60 },
   venteliste_ip: { maks: 5, vindueSek: 60 * 60 },
   bud_bruger: { maks: 20, vindueSek: 60 },
   bud_ip: { maks: 40, vindueSek: 60 },

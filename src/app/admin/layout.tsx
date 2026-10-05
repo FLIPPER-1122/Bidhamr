@@ -7,6 +7,8 @@ import { antalUbesvaredeStaffSamtaler } from "@/app/actions/staffChat";
 import { hentAntalAabneSager } from "@/app/actions/adminSager";
 import { hentAntalKontoLukninger } from "@/app/actions/adminKontoLukning";
 import { hentAntalTryghed } from "@/app/actions/adminTryghed";
+import { harToTrin } from "@/lib/mfa";
+import ToTrinAnbefaling from "@/components/admin/ToTrinAnbefaling";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -44,6 +46,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="flex h-screen bg-neutral-50">
       <AdminSidebar rolle={rolle} taellere={{ ubetalte: antalUbetalte, betalinger: antalBetalinger, chats: antalChats, sager: antalSager, kontolukninger: antalLukninger, kontakt: antalKontakt, rapporter: antalRapporter, bedoemmelser: antalBedoemmelser }} />
       <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">
+        {/* Medarbejdere skal ikke have to-trins-login endnu, men det anbefales. */}
+        {!harToTrin(user) && <ToTrinAnbefaling />}
         {children}
       </main>
     </div>

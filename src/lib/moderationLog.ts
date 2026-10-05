@@ -45,6 +45,7 @@ export const HANDLING_NAVNE: Record<string, string> = {
   fragt_haandteret: "Markerede forsendelse som håndteret",
   spoergsmaal_skjult: "Skjulte spørgsmål på auktion",
   spoergsmaal_vist: "Viste spørgsmål på auktion igen",
+  konto_slettet: "Brugeren slettede selv sin konto",
   // 20261007020000_bedoemmelse_svar.sql
   bedoemmelse_skjult: "Skjulte bedømmelse",
   bedoemmelse_vist: "Viste bedømmelse igen",

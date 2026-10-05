@@ -146,9 +146,9 @@ Formål: brugerne har overblik og styr på deres beskeder.
 - [x] Notifikationer: overbudt, ny auktion fra fulgt sælger, bud på egen auktion, vundet, pakke kommet frem
 - [x] Side med notifikationsindstillinger (mail / app / begge / fra, pr. type)
 - [x] Notifikations-indbakke på siden (klokke i topbaren)
-- [ ] Bekræftelse af e-mail ved oprettelse
-- [ ] GDPR: brugeren kan slette sin konto og downloade sine data
-- [ ] Kontosikkerhed: mail ved login fra ny enhed, mulighed for to-trins-login, krav til stærk adgangskode
+- [~] Bekræftelse af e-mail ved oprettelse
+- [~] GDPR: brugeren kan slette sin konto og downloade sine data
+- [~] Kontosikkerhed: mail ved login fra ny enhed, mulighed for to-trins-login, krav til stærk adgangskode
 - [~] Sælger kan skrive ét offentligt svar på en bedømmelse. BidHamr kan fjerne bedømmelser, der bryder reglerne (fx grove ord)
 
 ## Fase 5 – Appen
