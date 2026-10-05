@@ -118,7 +118,7 @@ export default function KraeverHandling({
       antal: tal.afhentning,
       href: "/admin/handler?vis=haenger",
       forklaring: "Køber og sælger har ikke mødtes – hør hvordan det går.",
-      detalje: `Mere end ${HAENGER_GRAENSER_DAGE.afhentning} dage siden betalingen`,
+      detalje: "Fristen for afhentning er overskredet",
     },
     {
       titel: "Sælgers udbetalingskonto",

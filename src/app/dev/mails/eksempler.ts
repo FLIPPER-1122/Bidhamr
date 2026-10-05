@@ -1,9 +1,12 @@
 // Eksempeldata til mail-preview (kun dev). Én række pr. mail.
 import {
+  afhentningPaamindelseMail,
+  afhentningsfristForlaengetMail,
   andenchanceTilbudMail,
   betalingsPaamindelseMail,
   betalingsfristForlaengetMail,
   koeberAdminAnnulleretMail,
+  koeberAfhentningAnnulleretMail,
   koeberAfsendelsesfristAnnulleretMail,
   koeberAndenchanceAutobetaltMail,
   koeberAndenchanceBetalMail,
@@ -13,6 +16,7 @@ import {
   notifikationMail,
   pakkeSendtMail,
   saelgerAdminAnnulleretMail,
+  saelgerAfhentningAnnulleretMail,
   saelgerAfsendelsesfristAnnulleretMail,
   saelgerAfsendelsesPaamindelseMail,
   saelgerAndenchanceAccepteretMail,
@@ -63,6 +67,11 @@ export function mailEksempler(): MailEksempel[] {
     { id: "saelger-afsendelse-paamindelse", navn: "Sælger: husk at sende pakken", mail: saelgerAfsendelsesPaamindelseMail(TITEL, TRADE, "mandag 6. oktober kl. 14.30") },
     { id: "koeber-afsendelsesfrist", navn: "Køber: sælgeren sendte ikke i tide", mail: koeberAfsendelsesfristAnnulleretMail(TITEL, 128_950, TRADE) },
     { id: "saelger-afsendelsesfrist", navn: "Sælger: annulleret (ikke sendt i tide)", mail: saelgerAfsendelsesfristAnnulleretMail(TITEL, TRADE) },
+    { id: "koeber-afhentning-paamindelse", navn: "Køber: husk at hente varen", mail: afhentningPaamindelseMail("koeber", TITEL, TRADE, "mandag 6. oktober kl. 14.30") },
+    { id: "saelger-afhentning-paamindelse", navn: "Sælger: varen er ikke hentet endnu", mail: afhentningPaamindelseMail("saelger", TITEL, TRADE, "mandag 6. oktober kl. 14.30") },
+    { id: "koeber-afhentningsfrist-forlaenget", navn: "Køber: ny afhentningsfrist", mail: afhentningsfristForlaengetMail(TITEL, TRADE, "fredag 10. oktober kl. 14.30") },
+    { id: "koeber-afhentningsfrist", navn: "Køber: varen blev ikke hentet (alle pengene tilbage)", mail: koeberAfhentningAnnulleretMail(TITEL, 128_950, TRADE) },
+    { id: "saelger-afhentningsfrist", navn: "Sælger: annulleret (varen blev ikke hentet)", mail: saelgerAfhentningAnnulleretMail(TITEL, TRADE) },
     {
       id: "notifikation",
       navn: "Notifikation (fælles skabelon, fx overbudt)",
