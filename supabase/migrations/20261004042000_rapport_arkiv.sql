@@ -178,3 +178,17 @@ comment on function public.oprydning_koer() is
   'Koeres af pg_cron (job ''oprydning'') hver time. Flytter behandlede '
   'rapporter til rapporter_arkiv 48 timer efter behandling (slettes aldrig) '
   'og arkiverer afsluttede auktioner 48 timer efter afsluttet handel.';
+
+-- ============================================================ reports: ingen kaskadesletning
+-- Rapporter maa heller ikke forsvinde, hvis en auktion eller bruger slettes
+-- haardt (fx i dashboardet). Fremmednoeglerne aendres fra "on delete cascade"
+-- til "on delete restrict". handled_by beholder "on delete set null".
+alter table public.reports drop constraint if exists reports_auction_id_fkey;
+alter table public.reports
+  add constraint reports_auction_id_fkey
+  foreign key (auction_id) references public.auctions(id) on delete restrict;
+
+alter table public.reports drop constraint if exists reports_reporter_id_fkey;
+alter table public.reports
+  add constraint reports_reporter_id_fkey
+  foreign key (reporter_id) references public.users(id) on delete restrict;
