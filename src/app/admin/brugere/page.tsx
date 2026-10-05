@@ -5,6 +5,7 @@ import BrugerSearch from "@/components/admin/BrugerSearch";
 import BrugereFaner from "@/components/admin/BrugereFaner";
 import { StatusBadge, brugerStatus, RolleBadge } from "@/components/admin/StatusBadge";
 import { assertRole } from "@/lib/adminAuth";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Brugere og sikkerhed: søgning på navn, e-mail, telefon og bruger-id med
 // filtre. Data via admin_brugere_soeg (service_role) efter assertRole.
@@ -75,12 +76,10 @@ export default async function AdminBrugere({
 
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-4xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Brugere og sikkerhed</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Find en bruger og se profil, advarsler, suspenderinger, auktioner, bud og anmeldelser.
-        </p>
-      </div>
+      <AdminSideHoved
+        titel="Brugere"
+        forklaring="Find en bruger og se profil, advarsler, auktioner, bud og bedømmelser. Herfra kan du også advare eller suspendere."
+      />
 
       <BrugereFaner aktiv="soeg" />
 

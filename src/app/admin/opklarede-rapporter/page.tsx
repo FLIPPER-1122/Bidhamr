@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import RapportFaner from "@/components/admin/RapportFaner";
 import { kategoriLabel } from "@/lib/anmeldelseKategorier";
 import { rapportGenaabn } from "@/app/actions/adminActions";
 
@@ -103,32 +105,23 @@ export default async function AdminOpklaredeRapporter({
   };
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Opklarede rapporter</h1>
-        <span className="text-sm text-neutral-500">
-          {rows.length} {rows.length === 1 ? "rapport" : "rapporter"}
-        </span>
-      </div>
+    <div className="p-4 sm:p-6 space-y-5">
+      <AdminSideHoved
+        titel="Rapporter"
+        forklaring="Anmeldelser, der er afsluttet uden at fjerne opslaget. Her kan du genåbne en, hvis der var en fejl."
+        hoejre={
+          <span className="text-sm text-neutral-500">
+            {rows.length} {rows.length === 1 ? "rapport" : "rapporter"}
+          </span>
+        }
+      >
+        <p className="mt-1 max-w-3xl text-xs text-neutral-500">
+          De flyttes til arkivet efter 48 timer (dog ikke, mens en handel eller sag på auktionen er
+          i gang). I arkivet gemmes de for altid og kan ikke genåbnes.
+        </p>
+      </AdminSideHoved>
 
-      <p className="text-sm text-neutral-500">
-        Anmeldelser der er afsluttet uden handling. Åbne anmeldelser findes under{" "}
-        <Link href="/admin/rapporter" className="font-medium text-brand hover:underline">
-          Rapporter
-        </Link>
-        . Behandlede anmeldelser flyttes til arkivet efter 48 timer (dog ikke,
-        mens en handel eller sag på auktionen er i gang). I arkivet gemmes de
-        permanent og kan ikke genåbnes.
-        {harMindstRolle(rolle, "admin") && (
-          <>
-            {" "}
-            <Link href="/admin/rapport-arkiv" className="font-medium text-brand hover:underline">
-              Se arkivet
-            </Link>
-            .
-          </>
-        )}
-      </p>
+      <RapportFaner aktiv="opklarede" visArkiv={harMindstRolle(rolle, "admin")} />
 
       <Suspense>
         <AdminSearchInput placeholder="Søg på auktion, note, anmelder eller behandler..." />

@@ -5,6 +5,7 @@ import {
   hentLukkedeStaffSamtaler,
 } from "@/app/actions/staffChat";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Samtaler mellem BidHamr og brugere. Åbne øverst (dem, der venter på svar,
 // først), derefter afsluttede med "Vis flere".
@@ -31,12 +32,10 @@ export default async function AdminChats({
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Chats</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Samtaler mellem BidHamr og brugere. Åbn en ny chat fra brugerens side.
-        </p>
-      </div>
+      <AdminSideHoved
+        titel="Chats"
+        forklaring="Samtaler mellem BidHamr og brugere. Svar her – en ny chat starter du fra brugerens side."
+      />
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-neutral-800">

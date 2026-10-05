@@ -3,6 +3,7 @@ import { assertRole } from "@/lib/adminAuth";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { advarselFelter } from "@/components/admin/advarselFelter";
 import { ubetaltAfvis, ubetaltGivAdvarsel } from "@/app/actions/adminActions";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Sager "Ubetalt vinder": oprettes af cron, når vinderen ikke betaler inden
 // fristen. En medarbejder giver advarsel eller afviser sagen.
@@ -89,12 +90,10 @@ export default async function AdminUbetalte({
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Ubetalte vindere</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Vindere, der ikke betalte inden fristen. Giv en advarsel, eller afvis sagen.
-        </p>
-      </div>
+      <AdminSideHoved
+        titel="Ubetalte vindere"
+        forklaring="Vindere, der ikke betalte inden fristen. Giv en advarsel, eller afvis, hvis der er en god grund."
+      />
 
       <div className="flex flex-wrap gap-2">
         {FANER.map((f) => {

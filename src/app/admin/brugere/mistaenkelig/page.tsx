@@ -2,6 +2,7 @@ import Link from "next/link";
 import BrugereFaner from "@/components/admin/BrugereFaner";
 import { RolleBadge } from "@/components/admin/StatusBadge";
 import { assertRole } from "@/lib/adminAuth";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Mistænkelig aktivitet: reglerne ligger samlet i SQL-funktionen
 // admin_mistaenkelige_brugere() (service_role). Listen viser kun, hvilke
@@ -46,13 +47,10 @@ export default async function AdminMistaenkelig() {
 
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-4xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Brugere og sikkerhed</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Brugere, der rammer en eller flere regler for mistænkelig aktivitet. Listen er kun et
-          signal – vurdér altid selv, før du advarer eller suspenderer.
-        </p>
-      </div>
+      <AdminSideHoved
+        titel="Brugere"
+        forklaring="Brugere, der opfører sig mistænkeligt. Listen er kun et signal – vurdér altid selv, før du advarer eller suspenderer."
+      />
 
       <BrugereFaner aktiv="mistaenkelig" />
 

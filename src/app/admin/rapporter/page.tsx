@@ -6,6 +6,8 @@ import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import RapportFaner from "@/components/admin/RapportFaner";
 import { kategoriLabel } from "@/lib/anmeldelseKategorier";
 import {
   rapportMarkerBehandlet,
@@ -104,13 +106,18 @@ export default async function AdminRapporter({
     : alle;
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Rapporter</h1>
-        <span className="text-sm text-neutral-500">
-          {rows.length} {rows.length === 1 ? "anmeldelse" : "anmeldelser"}
-        </span>
-      </div>
+    <div className="p-4 sm:p-6 space-y-5">
+      <AdminSideHoved
+        titel="Rapporter"
+        forklaring="Brugere har anmeldt en auktion. Kig opslaget igennem, og afgør om det skal fjernes eller kan blive."
+        hoejre={
+          <span className="text-sm text-neutral-500">
+            {rows.length} {rows.length === 1 ? "anmeldelse" : "anmeldelser"}
+          </span>
+        }
+      />
+
+      <RapportFaner aktiv="aabne" visArkiv={kanModerereOpslag} />
 
       <Suspense>
         <AdminSearchInput placeholder="Søg på auktion, kategori, beskrivelse eller anmelder..." />
@@ -207,7 +214,7 @@ export default async function AdminRapporter({
                             triggerLabel="Markér som behandlet"
                             triggerClassName="whitespace-nowrap rounded-md bg-green-100 px-2 py-1 text-xs text-green-800 transition-colors hover:bg-green-200"
                             title="Markér anmeldelsen som behandlet?"
-                            description="Auktionen forbliver aktiv. Rapporten flyttes til Opklarede rapporter."
+                            description="Auktionen forbliver aktiv. Rapporten flyttes til fanen Opklarede."
                             confirmLabel="Ja, markér som behandlet"
                             action={rapportMarkerBehandlet}
                             hiddenFields={{ rapportId: r.id }}
@@ -222,7 +229,7 @@ export default async function AdminRapporter({
                               triggerLabel="Slet midlertidigt"
                               triggerClassName="whitespace-nowrap rounded-md bg-blue-100 px-2 py-1 text-xs text-blue-800 transition-colors hover:bg-blue-200"
                               title="Skjul opslaget midlertidigt?"
-                              description="Auktionen skjules fra platformen, mens sagen undersøges. Den kan vises igen under Alle auktioner."
+                              description="Auktionen skjules fra platformen, mens sagen undersøges. Den kan vises igen under Auktioner."
                               confirmLabel="Ja, skjul opslaget"
                               action={rapportSletMidlertidigt}
                               hiddenFields={{ rapportId: r.id }}

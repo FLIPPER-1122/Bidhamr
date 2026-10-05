@@ -12,6 +12,7 @@ import {
   type Person,
 } from "@/app/actions/adminBetalinger";
 import { prøvOverfoerselIgenForm } from "@/app/actions/adminActions";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Betalinger, der kræver handling: markeret af webhook/cron (kraever_opmaerksomhed)
 // eller modtaget med forkert beløb (betaling_afvigelser). Beløb vises kun for chef.
@@ -125,12 +126,10 @@ export default async function AdminBetalinger({
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Betalinger</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Betalinger, hvor noget gik galt og en medarbejder skal kigge på det.
-        </p>
-      </div>
+      <AdminSideHoved
+        titel="Betalinger"
+        forklaring="Betalinger, hvor noget er gået galt – fx en udbetaling eller refusion, der fejlede."
+      />
 
       <div className="flex flex-wrap gap-2">
         {FANER.map((f) => {

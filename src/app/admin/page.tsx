@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { assertRole, harMindstRolle, type StaffRole } from "@/lib/adminAuth";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import KraeverHandling from "@/components/admin/forside/KraeverHandling";
 import PeriodeKort from "@/components/admin/forside/PeriodeKort";
 import TilvaekstGraf from "@/components/admin/forside/TilvaekstGraf";
@@ -32,7 +33,10 @@ export default async function AdminForside() {
 
   return (
     <div className="space-y-8 p-4 sm:p-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Forside</h1>
+      <AdminSideHoved
+        titel="Forside"
+        forklaring="Start her. Øverst står det, der venter på dig – nederst et par nøgletal."
+      />
 
       {!tal ? (
         <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
@@ -42,9 +46,9 @@ export default async function AdminForside() {
         <>
           <KraeverHandling tal={tal.handling} visKontolukninger={harMindstRolle(rolle, "admin")} />
 
-          <section aria-labelledby="forside-brugere" className="space-y-3">
-            <h2 id="forside-brugere" className="text-lg font-bold text-neutral-900">
-              Brugere
+          <section aria-labelledby="forside-brugere" className="space-y-3 border-t border-neutral-200 pt-6">
+            <h2 id="forside-brugere" className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              Nøgletal: brugere
             </h2>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               <PeriodeKort
@@ -59,8 +63,8 @@ export default async function AdminForside() {
           </section>
 
           <section aria-labelledby="forside-aktivitet" className="space-y-3">
-            <h2 id="forside-aktivitet" className="text-lg font-bold text-neutral-900">
-              Aktivitet
+            <h2 id="forside-aktivitet" className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              Nøgletal: aktivitet
             </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <PeriodeKort titel="Nye auktioner" tal={tal.aktivitet.auktioner} />

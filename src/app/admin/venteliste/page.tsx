@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import CsvExportButton from "@/components/admin/CsvExportButton";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 export default async function AdminVenteliste() {
   const rolle = await getStaffRole();
@@ -22,11 +23,12 @@ export default async function AdminVenteliste() {
   }));
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Venteliste</h1>
-        <CsvExportButton data={exportData} />
-      </div>
+    <div className="p-4 sm:p-6 space-y-5">
+      <AdminSideHoved
+        titel="Venteliste"
+        forklaring="Folk, der har skrevet sig op til at høre, når BidHamr åbner. Hent listen som fil, hvis du skal skrive til dem."
+        hoejre={<CsvExportButton data={exportData} />}
+      />
 
       {/* Count card */}
       <div className="bg-white rounded-xl border border-neutral-200 p-5 inline-flex items-center gap-4">

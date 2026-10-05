@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { assertRole } from "@/lib/adminAuth";
 import { kategoriLabel } from "@/lib/anmeldelseKategorier";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import RapportFaner from "@/components/admin/RapportFaner";
 
 // Rapportarkiv: behandlede anmeldelser flyttes hertil af den automatiske
 // oprydning 48 timer efter behandling. De gemmes permanent (DSA-dokumentation)
@@ -93,22 +95,18 @@ export default async function AdminRapportArkiv({
   };
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Rapportarkiv</h1>
-        <span className="text-sm text-neutral-500">
-          {antal} {antal === 1 ? "rapport" : "rapporter"}
-        </span>
-      </div>
+    <div className="p-4 sm:p-6 space-y-5">
+      <AdminSideHoved
+        titel="Rapporter"
+        forklaring="Gamle, afsluttede anmeldelser. De gemmes for altid som dokumentation og kan ikke ændres eller genåbnes."
+        hoejre={
+          <span className="text-sm text-neutral-500">
+            {antal} {antal === 1 ? "rapport" : "rapporter"}
+          </span>
+        }
+      />
 
-      <p className="text-sm text-neutral-500">
-        Behandlede anmeldelser flyttes hertil automatisk 48 timer efter behandling. De gemmes
-        permanent og kan ikke ændres, slettes eller genåbnes. Nyeste først. Se også{" "}
-        <Link href="/admin/opklarede-rapporter" className="font-medium text-brand hover:underline">
-          Opklarede rapporter
-        </Link>
-        .
-      </p>
+      <RapportFaner aktiv="arkiv" visArkiv />
 
       <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
         <div className="overflow-x-auto">
