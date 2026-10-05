@@ -243,7 +243,7 @@ export default async function AuktionPage({
                   🎉 Du har vundet denne auktion!
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
-                  Betal inden for 24 timer under handlen. Aftal det
+                  Betal inden for 48 timer under handlen. Aftal det
                   praktiske med sælgeren i handelschatten.
                 </p>
                 {/* Knappen vises altid; findes handlen endnu ikke, venter
@@ -262,8 +262,8 @@ export default async function AuktionPage({
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
                   {auktion.forsendelse_mulig
-                    ? "Køberen har 24 timer til at betale. Du får pengene udbetalt, når køberen har godkendt varen. Aftal levering med køberen i handelschatten."
-                    : "Køberen har 24 timer til at betale. Aftal tid og sted for afhentning i handelschatten. Du får pengene udbetalt, når køberen har hentet varen, og du har tastet køberens afhentningskode ind."}
+                    ? "Køberen har 48 timer til at betale. Du får pengene udbetalt, når køberen har godkendt varen. Aftal levering med køberen i handelschatten."
+                    : "Køberen har 48 timer til at betale. Aftal tid og sted for afhentning i handelschatten. Du får pengene udbetalt, når køberen har hentet varen, og du har tastet køberens afhentningskode ind."}
                 </p>
                 <StartChatKnap
                   auktionId={auktion.id}

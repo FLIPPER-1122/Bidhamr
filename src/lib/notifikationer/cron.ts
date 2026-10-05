@@ -20,6 +20,7 @@ import {
   markerBudBehandlet,
   notificerBud,
 } from "@/lib/notifikationer/bud";
+import { betalingsfristForlaengetMail } from "@/lib/mails/handel";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -97,6 +98,87 @@ async function titler(admin: Admin, ids: string[]) {
       { titel: a.titel as string, saelger: a.bruger_id as string },
     ]),
   );
+}
+
+// Sælgeren har forlænget betalingsfristen (handel_forlaeng_betalingsfrist -
+// kaldes både fra hjemmesiden og direkte fra appen). Én besked pr. ny frist.
+// Er fristen forlænget igen, eller er handlen betalt/annulleret, sendes intet
+// for den gamle forlængelse. Kaster aldrig (kaldes også fra after()).
+export function fristForlaengetNoegle(betalingId: string, nyFrist: string): string {
+  return `betalingsfrist_forlaenget:${betalingId}:${new Date(nyFrist).getTime()}`;
+}
+
+export async function notificerFristForlaengelser(): Promise<number> {
+  try {
+    const admin = createAdminClient();
+    const { data: rk, error } = await admin
+      .from("betalingsfrist_forlaengelser")
+      .select("betaling_id, trade_id, buyer_id, ny_frist")
+      .gte("oprettet", new Date(Date.now() - 48 * TIME).toISOString())
+      .order("oprettet", { ascending: false })
+      .limit(MAKS);
+    if (error) {
+      console.error("Notifikationer: fristforlængelser kunne ikke hentes:", error.message);
+      return 0;
+    }
+    if (!rk || rk.length === 0) return 0;
+    const sendt = await sendteNoegler(
+      admin,
+      rk.map((r) => fristForlaengetNoegle(r.betaling_id as string, r.ny_frist as string)),
+    );
+    if (!sendt) return 0;
+    const mangler = rk.filter(
+      (r) => !sendt.has(fristForlaengetNoegle(r.betaling_id as string, r.ny_frist as string)),
+    );
+    if (mangler.length === 0) return 0;
+
+    const { data: bet } = await admin
+      .from("betalinger")
+      .select("id, auction_id, status, betal_senest, total_oere")
+      .in("id", [...new Set(mangler.map((r) => r.betaling_id as string))]);
+    const bmap = new Map((bet ?? []).map((b) => [b.id as string, b]));
+    const a = await titler(admin, (bet ?? []).map((b) => b.auction_id as string));
+
+    const opgaver: Opgave[] = [];
+    for (const r of mangler) {
+      const b = bmap.get(r.betaling_id as string);
+      if (!b) continue;
+      if (b.status !== "afventer" && b.status !== "behandles") continue;
+      // Kun den gældende frist.
+      if (new Date(b.betal_senest as string).getTime() !== new Date(r.ny_frist as string).getTime()) {
+        continue;
+      }
+      const titel = a.get(b.auction_id as string)?.titel ?? "din vare";
+      const frist = new Date(r.ny_frist as string).toLocaleString("da-DK", {
+        timeZone: "Europe/Copenhagen",
+        day: "numeric",
+        month: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      opgaver.push({
+        brugerId: r.buyer_id as string,
+        type: "betalingsfrist",
+        input: {
+          titel: "Ny betalingsfrist",
+          tekst: `Sælgeren har forlænget fristen for at betale for "${titel}". Betal senest ${frist}.`,
+          link: `/mine-handler/${r.trade_id}`,
+          data: { trade_id: r.trade_id },
+          mail: betalingsfristForlaengetMail(
+            titel,
+            Number(b.total_oere),
+            r.trade_id as string,
+            r.ny_frist as string,
+          ),
+          noegle: fristForlaengetNoegle(r.betaling_id as string, r.ny_frist as string),
+        },
+      });
+    }
+    return sendNye(admin, opgaver);
+  } catch (err) {
+    console.error("Notifikationer: fristforlængelser fejlede:", err);
+    return 0;
+  }
 }
 
 // Advarsler gives fra flere steder (admin-brugerside, ubetalt-sag,
@@ -507,6 +589,7 @@ export async function koerNotifikationsCron() {
     slutterSnart: 0,
     nyAuktion: 0,
     beskeder: 0,
+    fristForlaengelser: 0,
   };
   let start: Date | null = null;
   try {
@@ -527,6 +610,8 @@ export async function koerNotifikationsCron() {
   }
   // "Slutter snart" handler om nu og fremad og kræver ikke start_kl.
   trin.push(["slutterSnart", () => slutterSnart(admin)]);
+  // Tabellen er ny (5. oktober 2026), så der er ingen gamle hændelser.
+  trin.push(["fristForlaengelser", () => notificerFristForlaengelser()]);
   if (start) {
     const s = start;
     trin.push(

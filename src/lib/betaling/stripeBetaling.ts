@@ -63,6 +63,9 @@ export type BetalingRaekke = {
   valuta: string;
   status: "afventer" | "behandles" | "betalt" | "annulleret" | "refunderet";
   betal_senest: string;
+  // Hvornår betalingen (og 48-timersfristen) blev oprettet. Sælgeren kan
+  // højst forlænge fristen til 7 dage efter dette tidspunkt.
+  oprettet: string;
   stripe_payment_intent_id: string | null;
   stripe_charge_id: string | null;
   betalt_kl: string | null;
@@ -430,7 +433,7 @@ async function efterBetalt(paymentIntentId: string) {
 // Forsøger at trække vinderens gemte kort off-session. Kører højst én gang
 // pr. betaling (atomisk claim i databasen + idempotency key hos Stripe).
 // Fejler det (fx 3D Secure kræves), står PaymentIntenten tilbage som
-// requires_payment_method, og køberen betaler selv inden for 24 timer med
+// requires_payment_method, og køberen betaler selv inden for 48 timer med
 // samme PaymentIntent.
 export async function forsoegAutobetaling(betalingId: string): Promise<string> {
   const admin = createAdminClient();
@@ -492,7 +495,7 @@ export async function forsoegAutobetaling(betalingId: string): Promise<string> {
     return resultat;
   } catch (err) {
     // Typisk authentication_required eller card_declined. Køberen falder
-    // tilbage til den almindelige 24-timers betaling.
+    // tilbage til den almindelige 48-timers betaling.
     const kode =
       err instanceof Stripe.errors.StripeError
         ? (err.code ?? err.decline_code ?? err.type)

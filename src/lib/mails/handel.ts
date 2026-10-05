@@ -58,7 +58,7 @@ function handelsMail(
   };
 }
 
-// Vinderen skal selv betale inden for 24 timer.
+// Vinderen skal selv betale inden for 48 timer.
 export function koeberVandtMail(
   titel: string,
   totalOere: number,
@@ -70,7 +70,7 @@ export function koeberVandtMail(
     overskriftHtml: "Tillykke, du vandt",
     afsnitHtml: [
       `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Beløbet nedenfor er inkl. købergebyr og fragt samt BidHamr Beskyttelse, hvis du valgte den.`,
-      "Betal inden for 24 timer, fx med kort, MobilePay, Apple Pay eller Google Pay. Betaler du ikke til tiden, bliver handlen annulleret.",
+      "Betal inden for 48 timer, fx med kort, MobilePay, Apple Pay eller Google Pay. Betaler du ikke til tiden, bliver handlen annulleret.",
       STRIPE_KOEBER,
     ],
     info: [
@@ -118,13 +118,37 @@ export function betalingsPaamindelseMail(
   });
 }
 
+// Sælgeren har forlænget betalingsfristen (handel_forlaeng_betalingsfrist).
+export function betalingsfristForlaengetMail(
+  titel: string,
+  totalOere: number,
+  tradeId: string,
+  betalSenest: string,
+) {
+  return handelsMail(`Ny betalingsfrist: ${titel}`, {
+    preheader: `Sælgeren har forlænget fristen. Betal senest ${fristTekst(betalSenest)}.`,
+    overskriftHtml: "Du har fået længere tid til at betale",
+    afsnitHtml: [
+      `Sælgeren har forlænget fristen for at betale for <strong>${escapeHtml(titel)}</strong>.`,
+      "Betaler du ikke inden den nye frist, bliver handlen annulleret.",
+      STRIPE_KOEBER,
+    ],
+    info: [
+      vare(titel),
+      beloeb("At betale i alt", totalOere, true),
+      { noegle: "Ny frist", vaerdiHtml: fristTekst(betalSenest) },
+    ],
+    knap: { tekst: "Betal nu", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
 export function saelgerSolgtMail(titel: string, buddetOere: number, tradeId: string) {
   return handelsMail(`Din auktion er solgt: ${titel}`, {
     preheader: `Solgt for ${kronerFraOere(buddetOere)} kr. Vent med at sende varen, til køberen har betalt.`,
     overskriftHtml: "Din auktion er solgt",
     afsnitHtml: [
       `<strong>${escapeHtml(titel)}</strong> er solgt.`,
-      "Køberen har 24 timer til at betale. Vent med at sende varen, til vi giver dig besked om, at køberen har betalt.",
+      "Køberen har 48 timer til at betale. Vent med at sende varen, til vi giver dig besked om, at køberen har betalt.",
       "Du får pengene, når køberen har bekræftet at have modtaget varen, eller når fristen for at oprette en sag er udløbet. Udbetalingen er salgsprisen minus 5 % i sælgergebyr. Betalingen håndteres af vores betalingspartner Stripe.",
     ],
     info: [vare(titel), beloeb("Solgt for", buddetOere, true)],
@@ -299,7 +323,7 @@ export function andenchanceTilbudMail(
     overskriftHtml: "Du får tilbudt varen",
     afsnitHtml: [
       `Handlen om <strong>${escapeHtml(titel)}</strong> blev ikke gennemført, og sælgeren tilbyder dig nu varen til dit eget højeste bud. Dertil kommer købergebyr, fragt og evt. BidHamr Beskyttelse.`,
-      "Du har 24 timer til at svare. Siger du ja, har du 24 timer til at betale. Siger du nej, koster det dig ingenting.",
+      "Du har 24 timer til at svare. Siger du ja, har du 48 timer til at betale. Siger du nej, koster det dig ingenting.",
     ],
     info: [
       vare(titel),
@@ -315,11 +339,11 @@ export function andenchanceTilbudMail(
 
 export function saelgerAndenchanceAccepteretMail(titel: string, nyTradeId: string) {
   return handelsMail(`Byderen sagde ja: ${titel}`, {
-    preheader: "Køberen har nu 24 timer til at betale. Vent med at sende varen.",
+    preheader: "Køberen har nu 48 timer til at betale. Vent med at sende varen.",
     overskriftHtml: "Byderen vil købe varen",
     afsnitHtml: [
       `Byderen har sagt ja til at købe <strong>${escapeHtml(titel)}</strong>.`,
-      "Køberen har nu 24 timer til at betale. Vent med at sende varen, til vi giver dig besked om, at køberen har betalt.",
+      "Køberen har nu 48 timer til at betale. Vent med at sende varen, til vi giver dig besked om, at køberen har betalt.",
     ],
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${nyTradeId}`) },
   });
@@ -385,7 +409,7 @@ export function koeberAndenchanceBetalMail(
     overskriftHtml: "Betal for din vare",
     afsnitHtml: [
       `Du har sagt ja til at købe <strong>${escapeHtml(titel)}</strong>. Beløbet nedenfor er inkl. købergebyr og fragt samt BidHamr Beskyttelse, hvis du valgte den.`,
-      "Betal inden for 24 timer, fx med kort, MobilePay, Apple Pay eller Google Pay. Betaler du ikke til tiden, bliver handlen annulleret.",
+      "Betal inden for 48 timer, fx med kort, MobilePay, Apple Pay eller Google Pay. Betaler du ikke til tiden, bliver handlen annulleret.",
       STRIPE_KOEBER,
     ],
     info: [

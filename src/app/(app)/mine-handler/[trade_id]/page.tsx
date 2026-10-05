@@ -11,6 +11,7 @@ import {
 import { hentBetalingsstatus } from "@/app/actions/betaling";
 import BetalingSektion from "@/components/betaling/BetalingSektion";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
+import ForlaengBetalingsfrist from "@/components/betaling/ForlaengBetalingsfrist";
 import { hentAndenchanceStatus } from "@/app/actions/andenchance";
 import { erAnnulleretUbetalt } from "@/app/actions/andenchanceBruger";
 import SaelgerUbetaltBoks from "@/components/andenchance/SaelgerUbetaltBoks";
@@ -324,9 +325,19 @@ export default async function HandelDetaljePage({
               </p>
             ) : (
               <p className="mt-1">
-                Køberen har 24 timer til at betale. {afhentning ? "Udlevér" : "Send"} ikke varen før.
+                Køberen har 48 timer til at betale. {afhentning ? "Udlevér" : "Send"} ikke varen før.
               </p>
             )}
+            {betalingsstatus &&
+              !betalingsstatus.fristOverskredet &&
+              (betalingsstatus.status === "afventer" || betalingsstatus.status === "behandles") && (
+                <ForlaengBetalingsfrist
+                  key={betalingsstatus.betalSenest}
+                  tradeId={handel.id}
+                  betalSenest={betalingsstatus.betalSenest}
+                  maksBetalSenest={betalingsstatus.maksBetalSenest}
+                />
+              )}
           </div>
         )}
 
