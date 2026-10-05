@@ -45,6 +45,9 @@ const supabaseBilleder = ["lkifkrexeldimmghnsie", "pjiigmzqwlfepxnjdvug"].map(
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // next dev maa ikke omskrive AGENTS.md/CLAUDE.md (vi vedligeholder dem selv).
+  // Se node_modules/next/dist/docs/01-app/02-guides/ai-agents.md ("Opting out").
+  agentRules: false,
   images: {
     remotePatterns: supabaseBilleder,
     formats: ["image/avif", "image/webp"],

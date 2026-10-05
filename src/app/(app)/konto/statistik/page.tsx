@@ -50,6 +50,15 @@ const STATUS: Record<BudStatus, { tekst: string; klasse: string }> = {
   annulleret: { tekst: "Annulleret", klasse: "border-kant bg-white text-tekst-daempet" },
 };
 
+// Filtre i budlisten. "Aktive" = auktionen kører stadig.
+type Filter = "alle" | "aktive" | "vundet" | "ikke-vundet";
+const FILTRE: { id: Filter; tekst: string; statusser: BudStatus[] | null }[] = [
+  { id: "alle", tekst: "Alle", statusser: null },
+  { id: "aktive", tekst: "Aktive", statusser: ["foerer", "overbudt"] },
+  { id: "vundet", tekst: "Vundet", statusser: ["vundet"] },
+  { id: "ikke-vundet", tekst: "Ikke vundet", statusser: ["tabt", "annulleret"] },
+];
+
 const kr = (v: number | string) => `${Number(v).toLocaleString("da-DK")} kr`;
 
 function Tal({ tal, tekst, stor = false }: { tal: string; tekst: string; stor?: boolean }) {
@@ -63,7 +72,13 @@ function Tal({ tal, tekst, stor = false }: { tal: string; tekst: string; stor?: 
   );
 }
 
-export default async function StatistikSide() {
+export default async function StatistikSide({
+  searchParams,
+}: {
+  searchParams: Promise<{ vis?: string }>;
+}) {
+  const { vis } = await searchParams;
+  const filter: Filter = FILTRE.some((f) => f.id === vis) ? (vis as Filter) : "alle";
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();
   if (!authData.user) redirect("/login?redirect=/konto/statistik");
@@ -78,6 +93,30 @@ export default async function StatistikSide() {
   const stat = (statData ?? null) as Statistik | null;
   const bud = (budData ?? []) as BudRaekke[];
   const ind = stat?.indtjening_oere;
+  const harSolgt = !!ind && (ind.i_alt > 0 || ind.paa_vej > 0 || ind.udbetalt > 0 || ind.antal_handler > 0);
+
+  // Vundne auktioner linker til handlen under Mine handler, hvis vi kan finde
+  // den. Kun egne handler (buyer_id), kun de to kolonner, siden bruger.
+  const vundneIds = bud.filter((b) => b.min_status === "vundet").map((b) => b.auktion_id);
+  const handelForAuktion = new Map<string, string>();
+  if (vundneIds.length > 0) {
+    const { data: handler, error: handelFejl } = await supabase
+      .from("trades")
+      .select("id, auction_id")
+      .eq("buyer_id", authData.user.id)
+      .in("auction_id", vundneIds)
+      .order("created_at", { ascending: false })
+      .limit(vundneIds.length * 2);
+    if (handelFejl) console.error("Statistik: handler kunne ikke hentes:", handelFejl.message);
+    for (const h of (handler ?? []) as { id: string; auction_id: string }[]) {
+      if (!handelForAuktion.has(h.auction_id)) handelForAuktion.set(h.auction_id, h.id);
+    }
+  }
+
+  const antal = (f: (typeof FILTRE)[number]) =>
+    f.statusser ? bud.filter((b) => f.statusser!.includes(b.min_status)).length : bud.length;
+  const valgtFilter = FILTRE.find((f) => f.id === filter)!;
+  const vist = valgtFilter.statusser ? bud.filter((b) => valgtFilter.statusser!.includes(b.min_status)) : bud;
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
@@ -92,6 +131,14 @@ export default async function StatistikSide() {
         <p role="alert" className="mt-6 rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
           Din statistik kunne ikke hentes lige nu. Prøv igen om lidt.
         </p>
+      ) : stat.auktioner.i_alt === 0 && !harSolgt ? (
+        <TomTilstand
+          className="mt-6"
+          ikon="statistik"
+          titel="Du har ikke solgt noget endnu"
+          tekst="Når du sælger, kan du følge dine auktioner og din indtjening her."
+          knap={{ href: "/opret-auktion", tekst: "Sæt din første ting til salg" }}
+        />
       ) : (
         <>
           <section aria-labelledby="indtjening" className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
@@ -99,6 +146,12 @@ export default async function StatistikSide() {
             <p className="mt-1 text-sm text-tekst-daempet">
               Udbetalt eller på vej til dig efter sælgergebyr.
             </p>
+            {!harSolgt ? (
+              <p className="mt-4 rounded-xl bg-groen-lys px-4 py-3.5 text-[15px] text-tekst">
+                Du har ikke tjent noget endnu. Når en køber har betalt for en af dine varer, kan du se beløbet her.
+              </p>
+            ) : (
+            <>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Tal stor tal={kroner(ind.uge)} tekst="Denne uge" />
               <Tal stor tal={kroner(ind.maaned)} tekst="Denne måned" />
@@ -120,10 +173,12 @@ export default async function StatistikSide() {
               Fragt er ikke med. &quot;På vej til dig&quot; er betalt, men endnu ikke sendt til din
               udbetalingskonto – fx fordi køberen ikke har godkendt varen endnu. Det kan ændre sig, hvis
               en handel ender i en sag. Betalingen håndteres af vores betalingspartner Stripe.{" "}
-              <Link href="/konto" className="font-medium text-groen hover:underline">
+              <Link href="/konto#udbetaling" className="font-medium text-groen hover:underline">
                 Se dine udbetalinger
               </Link>
             </p>
+            </>
+            )}
           </section>
 
           <section aria-labelledby="auktioner" className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
@@ -142,8 +197,8 @@ export default async function StatistikSide() {
         </>
       )}
 
-      <section aria-labelledby="budt-paa" className="mt-6">
-        <h2 id="budt-paa" className="text-[20px] leading-tight lg:text-[22px]">
+      <section id="budt-paa" aria-labelledby="budt-paa-titel" className="mt-6 scroll-mt-24">
+        <h2 id="budt-paa-titel" className="text-[20px] leading-tight lg:text-[22px]">
           Auktioner du har budt på{bud.length > 0 ? ` (${stat?.bud_paa ?? bud.length})` : ""}
         </h2>
         {budFejl ? (
@@ -159,50 +214,95 @@ export default async function StatistikSide() {
             knap={{ href: "/auktioner", tekst: "Find en auktion" }}
           />
         ) : (
-          <ul className="mt-3 divide-y divide-kant rounded-[14px] border border-kant bg-white">
-            {bud.map((b) => {
-              const status = STATUS[b.min_status] ?? STATUS.tabt;
-              const koerer = b.min_status === "foerer" || b.min_status === "overbudt";
-              return (
-                <li key={b.auktion_id}>
-                  <Link
-                    href={`/auktion/${b.auktion_id}`}
-                    className="flex items-center gap-3 rounded-[14px] px-4 py-3.5 hover:bg-groen-lys/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen sm:gap-4"
-                  >
-                    <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-skelet">
-                      {b.billede && (
-                        <Image
-                          src={b.billede}
-                          alt=""
-                          fill
-                          sizes="56px"
-                          unoptimized={!kanOptimeres(b.billede)}
-                          className="object-cover"
-                        />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-medium text-tekst">{b.titel}</span>
-                      <span className="mt-0.5 block text-[13px] text-tekst-svag">
-                        Dit bud <span className="font-semibold text-tekst">{kr(b.mit_bud)}</span>
-                        {Number(b.nuvaerende_bud) !== Number(b.mit_bud) && (
-                          <>
-                            {" "}· Højeste <span className="font-semibold text-tekst">{kr(b.nuvaerende_bud)}</span>
-                          </>
-                        )}
-                        {koerer && <> · {formatTidTilbage(b.slutter_kl)} tilbage</>}
-                      </span>
-                    </span>
-                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${status.klasse}`}>
-                      {status.tekst}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <nav aria-label="Filtrér dine bud" className="-mx-4 mt-3 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+              <ul className="flex gap-2">
+                {FILTRE.map((f) => {
+                  const valgt = f.id === filter;
+                  return (
+                    <li key={f.id} className="shrink-0">
+                      <Link
+                        href={f.id === "alle" ? "/konto/statistik#budt-paa" : `/konto/statistik?vis=${f.id}#budt-paa`}
+                        scroll={false}
+                        aria-current={valgt ? "page" : undefined}
+                        className={`inline-flex min-h-11 items-center rounded-full px-4 text-[13px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+                          valgt ? "bg-groen text-white" : "bg-groen-lys text-groen-mork hover:bg-[#DCEAE4]"
+                        }`}
+                      >
+                        {f.tekst} <span className="ml-1 tabular-nums opacity-80">{antal(f)}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+            {vist.length === 0 ? (
+              <p className="mt-3 rounded-[14px] border border-kant bg-white px-5 py-8 text-center text-[15px] text-tekst-daempet">
+                {filter === "aktive"
+                  ? "Du byder ikke på noget lige nu."
+                  : filter === "vundet"
+                    ? "Du har ikke vundet en auktion endnu."
+                    : "Ingen auktioner her."}
+              </p>
+            ) : (
+              <ul className="mt-3 divide-y divide-kant rounded-[14px] border border-kant bg-white">
+                {vist.map((b) => {
+                  const status = STATUS[b.min_status] ?? STATUS.tabt;
+                  const koerer = b.min_status === "foerer" || b.min_status === "overbudt";
+                  const vundet = b.min_status === "vundet";
+                  const handelId = vundet ? handelForAuktion.get(b.auktion_id) : undefined;
+                  const href = vundet
+                    ? handelId
+                      ? `/mine-handler/${handelId}`
+                      : "/mine-handler"
+                    : `/auktion/${b.auktion_id}`;
+                  return (
+                    <li key={b.auktion_id}>
+                      <Link
+                        href={href}
+                        className="flex items-center gap-3 rounded-[14px] px-4 py-3.5 hover:bg-groen-lys/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen sm:gap-4"
+                      >
+                        <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-skelet">
+                          {b.billede && (
+                            <Image
+                              src={b.billede}
+                              alt=""
+                              fill
+                              sizes="56px"
+                              unoptimized={!kanOptimeres(b.billede)}
+                              className="object-cover"
+                            />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[15px] font-medium text-tekst">{b.titel}</span>
+                          <span className="mt-0.5 block text-[13px] text-tekst-svag">
+                            Dit bud <span className="font-semibold text-tekst">{kr(b.mit_bud)}</span>
+                            {Number(b.nuvaerende_bud) !== Number(b.mit_bud) && (
+                              <>
+                                {" "}· Højeste <span className="font-semibold text-tekst">{kr(b.nuvaerende_bud)}</span>
+                              </>
+                            )}
+                            {koerer && <> · {formatTidTilbage(b.slutter_kl)} tilbage</>}
+                            {vundet && (
+                              <>
+                                {" "}· <span className="font-medium text-groen">Se handlen</span>
+                              </>
+                            )}
+                          </span>
+                        </span>
+                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${status.klasse}`}>
+                          {status.tekst}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )}
-        {bud.some((b) => b.min_status === "vundet") && (
+        {vist.some((b) => b.min_status === "vundet") && (
           <p className="mt-3 text-sm text-tekst-daempet">
             Betaling og levering af det, du har vundet, finder du under{" "}
             <Link href="/mine-handler" className="font-medium text-groen hover:underline">

@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   useTransition,
+  type FormEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -26,6 +27,9 @@ type Props = {
   // Flere tekstfelter, fx "Begrundelse til brugeren" + "Intern note" ved advarsler.
   // Vises i den angivne rækkefølge efter aarsagField.
   tekstFelter?: TekstFelt[];
+  // Gør et tekstfelt påkrævet, når et bestemt valg er markeret, fx at
+  // begrundelsen "Andet" kræver en uddybning. Tjekkes i browseren før afsendelse.
+  valgKraeverTekst?: { valg: string; felt: string; besked: string };
 };
 
 export type TekstFelt = {
@@ -51,11 +55,13 @@ export default function ConfirmDialog({
   varighedField,
   valgField,
   tekstFelter,
+  valgKraeverTekst,
 }: Props) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [fejl, setFejl] = useState<string | null>(null);
+  const [valgt, setValgt] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const annullerRef = useRef<HTMLButtonElement>(null);
@@ -103,7 +109,21 @@ export default function ConfirmDialog({
     }
   }
 
-  function handleSubmit(formData: FormData) {
+  // onSubmit + preventDefault i stedet for <form action>: React 19 nulstiller
+  // formularen efter en action, så valg og tekst ville forsvinde ved en
+  // serverfejl. Her bevares felterne, indtil handlingen lykkes.
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    if (valgKraeverTekst && formData.get(valgField?.name ?? "") === valgKraeverTekst.valg) {
+      const tekst = String(formData.get(valgKraeverTekst.felt) ?? "").trim();
+      if (!tekst) {
+        setFejl(valgKraeverTekst.besked);
+        form.querySelector<HTMLTextAreaElement>(`textarea[name="${valgKraeverTekst.felt}"]`)?.focus();
+        return;
+      }
+    }
     startTransition(async () => {
       setFejl(null);
       const res = await action(formData);
@@ -112,6 +132,7 @@ export default function ConfirmDialog({
         return;
       }
       setOpen(false);
+      setValgt(null);
     });
   }
 
@@ -151,7 +172,7 @@ export default function ConfirmDialog({
               <p id={`${id}-beskrivelse`} className="mt-1.5 text-sm text-neutral-500">{description}</p>
             )}
 
-            <form action={handleSubmit} className="mt-4 space-y-4">
+            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
               {fejl && (
                 <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
                   {fejl}
@@ -191,7 +212,13 @@ export default function ConfirmDialog({
                   <div className="mt-1.5 flex flex-wrap gap-4">
                     {valgField.valg.map((v) => (
                       <label key={v.value} className="inline-flex items-center gap-2 text-sm text-neutral-800">
-                        <input type="radio" name={valgField.name} value={v.value} required />
+                        <input
+                          type="radio"
+                          name={valgField.name}
+                          value={v.value}
+                          required
+                          onChange={() => setValgt(v.value)}
+                        />
                         {v.label}
                       </label>
                     ))}
@@ -220,16 +247,20 @@ export default function ConfirmDialog({
 
               {tekstFelter?.map((f) => {
                 const feltId = `${id}-${f.name}`;
+                const paakraevet =
+                  f.required ||
+                  (valgKraeverTekst?.felt === f.name && valgt === valgKraeverTekst.valg);
                 return (
                   <div key={f.name}>
                     <label htmlFor={feltId} className="block text-sm font-medium text-neutral-700">
                       {f.label}
-                      {!f.required && <span className="font-normal text-neutral-500"> (valgfri)</span>}
+                      {!paakraevet && <span className="font-normal text-neutral-500"> (valgfri)</span>}
                     </label>
                     <textarea
                       id={feltId}
                       name={f.name}
-                      required={f.required}
+                      required={paakraevet}
+                      aria-required={paakraevet || undefined}
                       maxLength={f.maxLength}
                       rows={3}
                       placeholder={f.placeholder}

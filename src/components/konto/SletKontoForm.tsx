@@ -7,7 +7,7 @@ import AdgangskodeFelt from "./AdgangskodeFelt";
 import Blokeringer from "./Blokeringer";
 import { FELT, FORMULAR_FEJL, LABEL } from "./felter";
 
-export default function SletKontoForm() {
+export default function SletKontoForm({ brugerId }: { brugerId: string }) {
   const router = useRouter();
   const [adgangskode, setAdgangskode] = useState("");
   const [bekraeftelse, setBekraeftelse] = useState("");
@@ -15,7 +15,29 @@ export default function SletKontoForm() {
   const [fejl, setFejl] = useState<string | null>(null);
   const [blokeringer, setBlokeringer] = useState<Blokering[] | null>(null);
 
-  const klar = bekraeftelse.trim() === "SLET" && adgangskode.length > 0;
+  const sletSkrevet = bekraeftelse.trim() === "SLET";
+  const klar = sletSkrevet && adgangskode.length > 0;
+  // Forklaring under knappen, så det er tydeligt, hvorfor den ikke kan trykkes.
+  const mangler = !adgangskode
+    ? sletSkrevet
+      ? "Skriv din adgangskode for at fortsætte."
+      : "Skriv din adgangskode, og skriv SLET med store bogstaver."
+    : !sletSkrevet
+      ? bekraeftelse.trim().toUpperCase() === "SLET"
+        ? "Skriv SLET med store bogstaver."
+        : "Skriv SLET i feltet ovenfor for at bekræfte."
+      : null;
+
+  // En gammel fejl (fx forkert adgangskode) hører til det forrige forsøg og
+  // forsvinder, så snart brugeren retter i et felt.
+  function aendrAdgangskode(v: string) {
+    setAdgangskode(v);
+    if (fejl) setFejl(null);
+  }
+  function aendrBekraeftelse(v: string) {
+    setBekraeftelse(v);
+    if (fejl) setFejl(null);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -36,7 +58,7 @@ export default function SletKontoForm() {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-md space-y-4">
-      <AdgangskodeFelt id="slet-adgangskode" label="Din adgangskode" vaerdi={adgangskode} onChange={setAdgangskode} />
+      <AdgangskodeFelt id="slet-adgangskode" label="Din adgangskode" vaerdi={adgangskode} onChange={aendrAdgangskode} />
 
       <div>
         <label htmlFor="slet-bekraeft" className={LABEL}>
@@ -49,7 +71,7 @@ export default function SletKontoForm() {
           autoCapitalize="characters"
           spellCheck={false}
           value={bekraeftelse}
-          onChange={(e) => setBekraeftelse(e.target.value)}
+          onChange={(e) => aendrBekraeftelse(e.target.value)}
           className={`mt-1.5 ${FELT}`}
         />
         <p className="mt-1.5 text-[13px] text-tekst-daempet">Sletningen kan ikke fortrydes.</p>
@@ -60,17 +82,23 @@ export default function SletKontoForm() {
           {fejl}
         </p>
       )}
-      {blokeringer && blokeringer.length > 0 && <Blokeringer blokeringer={blokeringer} />}
+      {blokeringer && blokeringer.length > 0 && <Blokeringer blokeringer={blokeringer} brugerId={brugerId} />}
 
       <button
         type="submit"
         disabled={!klar || loading}
         aria-busy={loading || undefined}
+        aria-describedby={mangler ? "slet-mangler" : undefined}
         className="btn btn-fare-fyldt btn-stor w-full sm:w-auto"
       >
         {loading && <span className="btn-spinner" aria-hidden="true" />}
         Slet min konto for altid
       </button>
+      {mangler && (
+        <p id="slet-mangler" className="-mt-2 text-[13px] text-tekst-daempet">
+          {mangler}
+        </p>
+      )}
     </form>
   );
 }

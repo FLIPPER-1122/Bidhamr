@@ -10,7 +10,7 @@ import {
   type Betalingsindstillinger,
   type Overfoersel,
 } from "@/app/actions/betaling";
-import { FejlBoks } from "@/components/betaling/BetalingSektion";
+import { FejlBoks } from "@/components/betaling/FejlBoks";
 import { kroner } from "@/lib/kroner";
 
 // Overførsler, der ikke længere står hos sælgeren, vises med status.

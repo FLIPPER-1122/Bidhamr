@@ -41,7 +41,7 @@ const TRIN = [
     num: "03",
     titel: "Handel i hus",
     tekst:
-      "Vinderen betaler inden for 48 timer, og pengene frigives til dig, når varen er modtaget og godkendt.",
+      "Vinderen betaler inden for 48 timer. Betalingen håndteres af vores betalingspartner Stripe, og du får pengene, når køberen har godkendt varen.",
     ikon: (
       <path strokeLinecap="round" strokeLinejoin="round" d="M8 12l3 3 5-6M3 4h18v16H3V4z" />
     ),
@@ -146,8 +146,9 @@ export default function ComingSoonPage() {
 
             <p className="mt-4 max-w-[52ch] text-base leading-relaxed text-white/85 lg:text-[17px]">
               Sælg det, du ikke bruger, og byd på andres ting. Du ser altid
-              totalprisen — bud, gebyr og fragt — før du byder, og pengene
-              holdes sikkert, til køberen har godkendt varen. Vil du være ekstra
+              totalprisen — bud, gebyr og fragt — før du byder. Betalingen håndteres af vores
+              betalingspartner Stripe, og sælgeren får først pengene, når
+              køberen har godkendt varen. Vil du være ekstra
               dækket, kan du tilkøbe BidHamr Beskyttelse.
             </p>
 

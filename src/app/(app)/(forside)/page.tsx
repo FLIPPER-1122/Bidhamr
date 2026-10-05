@@ -51,7 +51,7 @@ const SAELG_TRIN = [
 export const metadata: Metadata = {
   title: { absolute: "BidHamr – auktioner mellem private" },
   description:
-    "Køb og sælg brugte ting på auktion mellem private. Byd trygt med BidHamr Beskyttelse – pengene holdes, til du har fået varen.",
+    "Køb og sælg brugte ting på auktion mellem private. Byd trygt med BidHamr Beskyttelse – betalingen håndteres af Stripe, og sælgeren får først pengene, når du har fået varen.",
   alternates: { canonical: "/" },
 };
 

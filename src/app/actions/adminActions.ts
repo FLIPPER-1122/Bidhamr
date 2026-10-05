@@ -657,7 +657,7 @@ async function hentHandelTilSag(admin: AdminClient, tradeId: string) {
 // så sker refusion/frigivelse automatisk efter afgørelsen, og databasen
 // afviser admin-refusion (betaling_paabegynd_refusion) og frigivelse.
 const AABEN_KOEBERSAG =
-  "Handlen har en sag fra køberen, der holder pengene (åben, afventer retur eller afgjort med ankefrist). Afgør eller genåbn sagen under Sager.";
+  "Handlen har en sag fra køberen, der blokerer udbetalingen (åben, afventer retur eller afgjort med ankefrist). Afgør eller genåbn sagen under Sager.";
 
 async function afvisVedAabenKoeberSag(admin: AdminClient, tradeId: string) {
   const { data, error } = await admin.rpc("sag_holder_pengene", { p_trade: tradeId });

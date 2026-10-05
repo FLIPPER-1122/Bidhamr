@@ -96,7 +96,7 @@ export default function FulgteSaelgere({ start }: { start: FulgtSaelger[] }) {
               className="btn btn-sekundaer btn-lille shrink-0"
             >
               {igang === s.id && <span className="btn-spinner" aria-hidden="true" />}
-              Stop
+              Stop med at følge
             </button>
           </li>
         ))}
