@@ -88,23 +88,41 @@ export default async function AuktionPage({
 
   // Spørg sælger: offentlig liste uden bruger-id'er (auktion_spoergsmaal_liste).
   // Fejler kaldet (fx før migrationen er kørt), vises bare ingen spørgsmål.
-  // Er der en blokering/spærring mellem sælgeren og den indloggede (begge
-  // retninger)? er_blokeret_mellem er intern (kun service-role) og kaldes
-  // kun med den indloggede brugers eget id. Browseren får kun true/false –
-  // aldrig om det er en anonym byder-spærring eller en navngiven blokering.
+  // Skal Følg og Spørg sælger skjules? Ja, hvis sælgeren har blokeret mig
+  // (også en anonym byder-spærring - det er sælgerens egen spærring af mig,
+  // og jeg får ikke at vide hvorfor), eller ved en navngiven blokering i en af
+  // retningerne. ALDRIG pga. en anonym spærring, jeg selv har lavet som
+  // sælger: så kunne jeg udlede, hvem den spærrede byder er (samme regel som
+  // stil_spoergsmaal i 20261007011000). Funktionerne er interne (kun
+  // service-role) og kaldes kun med den indloggede brugers eget id. Browseren
+  // får kun true/false.
   const tjekBlokering =
     mitId && mitId !== auktion.bruger_id
-      ? createAdminClient()
-          .rpc("er_blokeret_mellem", { p_a: auktion.bruger_id, p_b: mitId })
-          .then(({ data, error }) => (error ? false : data === true))
+      ? (async () => {
+          const admin = createAdminClient();
+          const [saelgerSpaerrerMig, navngivet] = await Promise.all([
+            admin.rpc("er_blokeret", { p_blokerer: auktion.bruger_id, p_blokeret: mitId }),
+            admin.rpc("er_blokeret_navngivet_mellem", { p_a: auktion.bruger_id, p_b: mitId }),
+          ]);
+          return (
+            (!saelgerSpaerrerMig.error && saelgerSpaerrerMig.data === true) ||
+            (!navngivet.error && navngivet.data === true)
+          );
+        })()
       : Promise.resolve(false);
   const [{ data: spoergsmaalData }, staffRolle, blokeretMedSaelger, { data: minFoelgning }] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     authData.user ? getStaffRole() : Promise.resolve(null),
     tjekBlokering,
-    // Følger jeg sælgeren? RLS: kun egne følgninger kan læses.
+    // Følger jeg sælgeren? Altid filtreret på follower_id (RLS i produktion
+    // kan stadig vise alle følgninger, indtil 20261007012000 er kørt).
     mitId && mitId !== auktion.bruger_id
-      ? supabase.from("seller_follows").select("id").eq("seller_id", auktion.bruger_id).maybeSingle()
+      ? supabase
+          .from("seller_follows")
+          .select("id")
+          .eq("follower_id", mitId)
+          .eq("seller_id", auktion.bruger_id)
+          .maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];

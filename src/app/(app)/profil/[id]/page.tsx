@@ -245,9 +245,16 @@ export default async function ProfilPage({
       ? supabase.rpc("jeg_har_blokeret", { p_bruger: id })
       : Promise.resolve({ data: false }),
     supabase.rpc("antal_foelgere", { p_bruger: id }),
-    // RLS: kun egne følgninger kan læses.
+    // Altid filtreret på follower_id: i produktion kan RLS stadig tillade at
+    // læse alle følgninger (20261007012000 er ikke kørt endnu), og så ville
+    // maybeSingle() fejle, når profilen har flere følgere.
     mitId
-      ? supabase.from("seller_follows").select("id").eq("seller_id", id).maybeSingle()
+      ? supabase
+          .from("seller_follows")
+          .select("id")
+          .eq("follower_id", mitId)
+          .eq("seller_id", id)
+          .maybeSingle()
       : Promise.resolve({ data: null }),
     // Har profilens ejer blokeret mig ved navn? Intern funktion (kun
     // service-role), kaldt med den indloggedes eget id. Browseren får kun,
