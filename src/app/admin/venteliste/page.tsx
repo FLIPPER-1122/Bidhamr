@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import CsvExportButton from "@/components/admin/CsvExportButton";
@@ -7,7 +7,7 @@ import AdminSideHoved from "@/components/admin/AdminSideHoved";
 export default async function AdminVenteliste() {
   const rolle = await getStaffRole();
   if (rolle !== "chef") {
-    redirect("/admin/brugere");
+    notFound();
   }
 
   const supabase = createAdminClient();

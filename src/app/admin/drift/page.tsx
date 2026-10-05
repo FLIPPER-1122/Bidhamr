@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { assertRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
 import { erTestdatabase } from "@/lib/miljoe";
 import {
   CLAIM_HAENGER_MIN,
@@ -103,7 +103,7 @@ export default async function AdminDrift({
 }: {
   searchParams: Promise<{ dage?: string }>;
 }) {
-  const { admin } = await assertRole("admin");
+  const { admin } = await kraevSideRolle("admin");
   const { dage: dageParam } = await searchParams;
   const dage = DAGE_VALG.find((d) => String(d) === dageParam) ?? 7;
   const nu = naa();

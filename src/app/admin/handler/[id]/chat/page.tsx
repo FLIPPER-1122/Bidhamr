@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { assertRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
 import { UUID_RE, faellesbeskedId } from "@/lib/moderationLog";
 import { fjernFaellesPraefiks } from "@/lib/staffChat";
 import { BidhamrMaerke } from "@/components/staffchat/visning";
@@ -52,7 +52,7 @@ function Tilbage({ href, children }: { href: string; children: React.ReactNode }
 }
 
 export default async function AdminHandelChat({ params }: { params: Promise<{ id: string }> }) {
-  const { userId, admin } = await assertRole("medarbejder");
+  const { userId, admin } = await kraevSideRolle("medarbejder");
   const { id: raa } = await params;
   if (!UUID_RE.test(raa)) notFound();
   const tradeId = raa.toLowerCase();

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useId, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 type StaffRole = "chef" | "admin" | "medarbejder";
@@ -219,6 +219,23 @@ export default function AdminSidebar({
   const [open, setOpen] = useState(false);
   const [loggerUd, setLoggerUd] = useState(false);
   const indstillingerAaben = useSyncExternalStore(lytFold, laesFold, () => false);
+  const menuKnapRef = useRef<HTMLButtonElement>(null);
+  const mobilMenuRef = useRef<HTMLDivElement>(null);
+  const mobilMenuId = `${foldId}-mobilmenu`;
+
+  // Åben mobilmenu: fokus ind i menuen, og Esc lukker den og sender fokus
+  // tilbage til menuknappen.
+  useEffect(() => {
+    if (!open) return;
+    mobilMenuRef.current?.querySelector<HTMLElement>("a[href], button:not([disabled])")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      menuKnapRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   async function handleLogout() {
     setLoggerUd(true);
@@ -358,10 +375,13 @@ export default function AdminSidebar({
       <div className="fixed left-0 right-0 top-0 z-40 flex items-center justify-between border-b border-white/10 bg-[#111827] px-4 py-3 lg:hidden">
         <span className="text-xl font-extrabold" style={{ color: "var(--color-orange)" }}>BidHamr</span>
         <button
+          ref={menuKnapRef}
+          type="button"
           onClick={() => setOpen(!open)}
           className="p-1 text-neutral-400 hover:text-white"
           aria-label={open ? "Luk menu" : "Åbn menu"}
           aria-expanded={open}
+          aria-controls={mobilMenuId}
         >
           {open ? (
             <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -384,9 +404,14 @@ export default function AdminSidebar({
       )}
 
       {/* Mobile sidebar */}
+      {/* Lukket: inert + usynlig, så den hverken er i tab-rækkefølgen eller
+          læses op af skærmlæsere. */}
       <div
-        className={`fixed bottom-0 left-0 top-0 z-40 w-64 transform bg-[#111827] transition-transform duration-300 lg:hidden ${
-          open ? "translate-x-0" : "-translate-x-full"
+        id={mobilMenuId}
+        ref={mobilMenuRef}
+        inert={!open}
+        className={`fixed bottom-0 left-0 top-0 z-40 w-64 transform bg-[#111827] transition-[transform,visibility] duration-300 lg:hidden ${
+          open ? "visible translate-x-0" : "invisible -translate-x-full"
         }`}
       >
         {sidebarContent("mobil")}

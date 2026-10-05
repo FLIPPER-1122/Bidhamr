@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { assertRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
 import {
   hentAabneStaffSamtaler,
   hentLukkedeStaffSamtaler,
@@ -17,7 +17,7 @@ export default async function AdminChats({
 }: {
   searchParams: Promise<{ lukkede?: string }>;
 }) {
-  await assertRole("medarbejder");
+  await kraevSideRolle("medarbejder");
   const { lukkede } = await searchParams;
   const antalLukkede = Math.min(Math.max(Number(lukkede) || SIDE, SIDE), 200);
 

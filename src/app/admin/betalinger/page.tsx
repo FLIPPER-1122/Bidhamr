@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { assertRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { advarselFelter } from "@/components/admin/advarselFelter";
 import {
@@ -111,7 +111,7 @@ export default async function AdminBetalinger({
 }: {
   searchParams: Promise<{ vis?: string; side?: string }>;
 }) {
-  await assertRole("medarbejder");
+  await kraevSideRolle("medarbejder");
   const { vis, side } = await searchParams;
   const fane = vis === "loest" ? "loest" : "aaben";
   const res = await hentBetalingerTilHandling(Number(side) || 1, fane);

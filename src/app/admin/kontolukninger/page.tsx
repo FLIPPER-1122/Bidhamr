@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { assertRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
 import KontoLukningKort, {
   type KontoLukningAdvarsel,
   type KontoLukningForslag,
@@ -25,7 +25,7 @@ export default async function AdminKontolukninger({
 }: {
   searchParams: Promise<{ vis?: string; side?: string }>;
 }) {
-  const { admin } = await assertRole("admin");
+  const { admin } = await kraevSideRolle("admin");
   const { vis, side: sideParam } = await searchParams;
   const fane = vis === "behandlet" ? "behandlet" : "afventer";
   const side = Math.max(1, Math.floor(Number(sideParam)) || 1);

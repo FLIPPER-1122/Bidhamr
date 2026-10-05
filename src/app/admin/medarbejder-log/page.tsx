@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
-import { assertRole, harMindstRolle } from "@/lib/adminAuth";
+import { kraevSideRolle, harMindstRolle } from "@/lib/adminAuth";
 import {
   HANDLING_NAVNE,
   UUID_RE,
@@ -82,6 +82,63 @@ function smaatForrest(t: string): string {
   return t ? t.charAt(0).toLocaleLowerCase("da-DK") + t.slice(1) : t;
 }
 
+type ChatHandel = {
+  titel: string | null;
+  koeber: { id: string; navn: string } | null;
+  saelger: { id: string; navn: string } | null;
+};
+
+// 'chat_laest' logges med køberen som bruger. For at loggen kan sige, hvilken
+// handel chatten hørte til, slås handlen, auktionens titel og begge parter op
+// for de viste rækker (højst én side = 50 handler).
+async function hentChatHandler(
+  admin: Awaited<ReturnType<typeof kraevSideRolle>>["admin"],
+  raekker: LogRaekke[],
+): Promise<Map<string, ChatHandel>> {
+  const ider = [
+    ...new Set(
+      raekker
+        .filter((r) => r.handling === "chat_laest" && r.maal_type === "handel" && UUID_RE.test(r.maal_id))
+        .map((r) => r.maal_id.toLowerCase()),
+    ),
+  ];
+  const res = new Map<string, ChatHandel>();
+  if (ider.length === 0) return res;
+
+  const { data: handler, error } = await admin
+    .from("trades")
+    .select("id, auction_id, buyer_id, seller_id")
+    .in("id", ider);
+  if (error) {
+    console.error("Medarbejder-log: handler til chat_laest kunne ikke hentes:", error.message);
+    return res;
+  }
+  const rk = (handler ?? []) as { id: string; auction_id: string; buyer_id: string; seller_id: string }[];
+  const auktionIder = [...new Set(rk.map((h) => h.auction_id))];
+  const brugerIder = [...new Set(rk.flatMap((h) => [h.buyer_id, h.seller_id]))];
+  const [{ data: auktioner }, { data: brugere }] = await Promise.all([
+    auktionIder.length
+      ? admin.from("auctions").select("id, titel").in("id", auktionIder)
+      : Promise.resolve({ data: [] as { id: string; titel: string }[] }),
+    brugerIder.length
+      ? admin.from("users").select("id, navn, email").in("id", brugerIder)
+      : Promise.resolve({ data: [] as { id: string; navn: string | null; email: string | null }[] }),
+  ]);
+  const titler = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
+  const navne = new Map(
+    (brugere ?? []).map((u) => [u.id as string, (u.navn as string | null) ?? (u.email as string | null) ?? "ukendt bruger"]),
+  );
+  const person = (id: string) => (navne.has(id) ? { id, navn: navne.get(id)! } : null);
+  for (const h of rk) {
+    res.set(h.id.toLowerCase(), {
+      titel: titler.get(h.auction_id) ?? null,
+      koeber: person(h.buyer_id),
+      saelger: person(h.seller_id),
+    });
+  }
+  return res;
+}
+
 function enkelt(v: string | string[] | undefined): string {
   return (Array.isArray(v) ? v[0] : v ?? "").trim();
 }
@@ -91,7 +148,7 @@ export default async function MedarbejderLog({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { userId, rolle, admin } = await assertRole("medarbejder");
+  const { userId, rolle, admin } = await kraevSideRolle("medarbejder");
   const kanSeAlle = harMindstRolle(rolle, "admin");
 
   const sp = await searchParams;
@@ -133,6 +190,7 @@ export default async function MedarbejderLog({
   const raekker = (logRes.data ?? []) as LogRaekke[];
   const personer = (personerRes.data ?? []) as Person[];
   const total = raekker[0] ? Number(raekker[0].total_antal) : 0;
+  const chatHandler = await hentChatHandler(admin, raekker);
   const sider = Math.max(1, Math.ceil(total / PR_SIDE));
 
   const brugerErId = UUID_RE.test(bruger);
@@ -266,6 +324,12 @@ export default async function MedarbejderLog({
             kanSeAdminAuktioner: kanSeAlle,
           });
           const visBruger = r.bruger_id && !erSystem(r.bruger_id);
+          const chat = r.handling === "chat_laest" ? chatHandler.get(r.maal_id.toLowerCase()) : undefined;
+          const personLink = (p: { id: string; navn: string }) => (
+            <Link href={`/admin/brugere/${p.id}`} className="font-medium text-neutral-900 hover:underline">
+              {p.navn}
+            </Link>
+          );
           return (
             <li key={r.id} className="rounded-xl border border-neutral-200 bg-white p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -273,8 +337,25 @@ export default async function MedarbejderLog({
                   <span className="font-semibold">
                     {r.er_system ? "Systemet" : r.medarbejder_navn ?? "Ukendt medarbejder"}
                   </span>{" "}
-                  {smaatForrest(handlingNavn(r.handling))}
-                  {visBruger && (
+                  {chat ? (
+                    <>
+                      læste chatten på handlen{" "}
+                      <span className="font-medium">
+                        {chat.titel ? `“${chat.titel}”` : "(slettet auktion)"}
+                      </span>
+                      {chat.koeber && chat.saelger && (
+                        <>
+                          {" mellem "}
+                          {personLink(chat.koeber)}
+                          {" og "}
+                          {personLink(chat.saelger)}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    smaatForrest(handlingNavn(r.handling))
+                  )}
+                  {!chat && visBruger && (
                     <>
                       {" – "}
                       <Link href={`/admin/brugere/${r.bruger_id}`} className="font-medium text-neutral-900 hover:underline">

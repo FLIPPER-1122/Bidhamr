@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { assertRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
 import { hentStaffSamtale } from "@/app/actions/staffChat";
 import StaffChatAdmin from "@/components/admin/staffchat/StaffChatAdmin";
 import { beskedTid } from "@/components/staffchat/visning";
@@ -12,7 +12,7 @@ export default async function AdminChat({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ fandtes?: string }>;
 }) {
-  await assertRole("medarbejder");
+  await kraevSideRolle("medarbejder");
   const { id } = await params;
   const { fandtes } = await searchParams;
 

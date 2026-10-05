@@ -15,6 +15,17 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
   const [sendt, setSendt] = useState(false);
   const feltRef = useRef<HTMLTextAreaElement>(null);
   const senderLaas = useRef(false);
+  const knapRef = useRef<HTMLButtonElement>(null);
+  const varAaben = useRef(false);
+
+  // Fokus tilbage til knappen, når dialogen lukkes (Esc, Annullér, sendt).
+  useEffect(() => {
+    if (aaben) varAaben.current = true;
+    else if (varAaben.current) {
+      varAaben.current = false;
+      knapRef.current?.focus();
+    }
+  }, [aaben]);
 
   useEffect(() => {
     if (!aaben) return;
@@ -65,8 +76,10 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
   return (
     <>
       <button
+        ref={knapRef}
         type="button"
         onClick={aabn}
+        aria-haspopup="dialog"
         className="whitespace-nowrap rounded-md bg-[#E8F2EE] px-2 py-1 text-xs text-[#154537] transition-colors hover:bg-[#DCEAE4]"
       >
         Fællesbesked

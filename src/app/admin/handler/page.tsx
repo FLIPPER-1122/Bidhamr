@@ -163,14 +163,22 @@ export default async function AdminSager({
     });
   }
 
-  function Person({ id }: { id: string }) {
+  // Køber og sælger står i samme kolonne. E-mailen vises kun, når der er
+  // plads (kort på mobil og meget brede skærme), så tabellen passer fra 1280px.
+  function Person({ id, rolle }: { id: string; rolle: "Køber" | "Sælger" }) {
     const p = brugerMap.get(id);
-    if (!p) return <span className="text-neutral-400">—</span>;
     return (
-      <Link href={`/admin/brugere/${id}`} className="block max-w-[150px] hover:underline">
-        <span className="block truncate text-neutral-800">{p.navn ?? "Uden navn"}</span>
-        <span className="block truncate text-xs text-neutral-500">{p.email}</span>
-      </Link>
+      <div className="flex min-w-0 items-baseline gap-1.5">
+        <span className="w-12 shrink-0 text-xs text-neutral-500">{rolle}</span>
+        {p ? (
+          <Link href={`/admin/brugere/${id}`} className="block min-w-0 max-w-[180px] hover:underline">
+            <span className="block truncate text-neutral-800">{p.navn ?? "Uden navn"}</span>
+            <span className="block truncate text-xs text-neutral-500 lg:hidden 2xl:block">{p.email}</span>
+          </Link>
+        ) : (
+          <span className="text-neutral-400">—</span>
+        )}
+      </div>
     );
   }
 
@@ -229,28 +237,37 @@ export default async function AdminSager({
         <AdminSearchInput placeholder="Søg på auktion, køber, sælger, tracking eller note..." />
       </Suspense>
 
-      <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
+      {/* Under lg vises hver handel som et kort (ingen vandret scroll på
+          mobil). Fra lg er det en tabel, hvor Handlinger-kolonnen står fast i
+          højre side, så Se chat og Flere handlinger altid kan ses. */}
+      <div className="lg:overflow-hidden lg:rounded-xl lg:border lg:border-neutral-200 lg:bg-white">
+        <div className="lg:overflow-x-auto">
+          <table className="block w-full text-sm lg:table">
+            <thead className="hidden lg:table-header-group">
               <tr className="bg-neutral-50 text-xs text-neutral-500 uppercase">
-                <th className="px-5 py-3 text-left font-medium">Auktion</th>
-                <th className="px-5 py-3 text-left font-medium">Køber</th>
-                <th className="px-5 py-3 text-left font-medium">Sælger</th>
-                <th className="px-5 py-3 text-right font-medium">Beløb</th>
-                <th className="px-5 py-3 text-left font-medium">Status</th>
-                <th className="px-5 py-3 text-left font-medium">Alder</th>
-                <th className="px-5 py-3 text-left font-medium">Markering</th>
-                <th className="px-5 py-3 text-left font-medium">Handlinger</th>
+                <th className="px-3 py-3 text-left font-medium">Auktion</th>
+                <th className="px-3 py-3 text-left font-medium">Køber / sælger</th>
+                <th className="px-3 py-3 text-right font-medium">Beløb</th>
+                <th className="px-3 py-3 text-left font-medium">Status</th>
+                <th className="px-3 py-3 text-left font-medium">Markering</th>
+                <th className="sticky right-0 bg-neutral-50 px-3 py-3 text-left font-medium shadow-[-1px_0_0_0_#e5e5e5]">
+                  Handlinger
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 lg:divide-y lg:divide-neutral-100">
               {rows.map((h) => {
                 const aktiv = AKTIVE.includes(h.status);
                 const forsinket = haengerMap.get(h.id);
+                // Uigennemsigtig baggrund, så den faste kolonne ikke viser
+                // indholdet bag sig, når tabellen rulles.
+                const bund = h.sag_aaben ? "bg-red-50" : "bg-white group-hover:bg-neutral-50";
                 return (
-                  <tr key={h.id} className={`align-top ${h.sag_aaben ? "bg-red-50/40" : "hover:bg-neutral-50"}`}>
-                    <td className="px-5 py-3">
+                  <tr
+                    key={h.id}
+                    className={`group block rounded-xl border border-neutral-200 p-4 align-top lg:table-row lg:rounded-none lg:border-0 lg:p-0 ${bund}`}
+                  >
+                    <td className="block lg:table-cell lg:px-3 lg:py-3">
                       <Link
                         href={`/auktion/${h.auction_id}`}
                         className="font-medium text-neutral-800 hover:text-brand hover:underline"
@@ -258,38 +275,45 @@ export default async function AdminSager({
                         {titelMap.get(h.auction_id) ?? "(slettet auktion)"}
                       </Link>
                       {h.tracking_number && (
-                        <span className="mt-0.5 block text-xs text-neutral-500">
+                        <span className="mt-0.5 block break-all text-xs text-neutral-500">
                           Tracking: {h.tracking_number}
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-3"><Person id={h.buyer_id} /></td>
-                    <td className="px-5 py-3"><Person id={h.seller_id} /></td>
-                    <td className="px-5 py-3 text-right whitespace-nowrap font-medium text-neutral-800">
+                    <td className="mt-3 block space-y-1 lg:mt-0 lg:table-cell lg:px-3 lg:py-3">
+                      <Person id={h.buyer_id} rolle="Køber" />
+                      <Person id={h.seller_id} rolle="Sælger" />
+                    </td>
+                    <td className="mt-3 block whitespace-nowrap font-medium text-neutral-800 lg:mt-0 lg:table-cell lg:px-3 lg:py-3 lg:text-right">
+                      <span className="mr-1.5 text-xs font-normal text-neutral-500 lg:hidden">Beløb</span>
                       {kr(h.amount)}
                     </td>
-                    <td className="px-5 py-3"><HandelStatusBadge status={h.status} /></td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <span className={forsinket ? "font-semibold text-red-600" : "text-neutral-500"}>
-                        {dageSiden(forsinket ? forsinket.siden : h.created_at)} d
+                    <td className="mt-3 block lg:mt-0 lg:table-cell lg:px-3 lg:py-3">
+                      <HandelStatusBadge status={h.status} />
+                      <span
+                        className={`mt-1 block text-xs ${forsinket ? "font-semibold text-red-600" : "text-neutral-500"}`}
+                      >
+                        {dageSiden(forsinket ? forsinket.siden : h.created_at)} dage
+                        {forsinket && (
+                          <span className="block font-normal">{HAENGER_TEKST[forsinket.grund]}</span>
+                        )}
                       </span>
-                      {forsinket && (
-                        <span className="block text-xs text-red-600">{HAENGER_TEKST[forsinket.grund]}</span>
-                      )}
                     </td>
-                    <td className="px-5 py-3">
+                    <td className={`${h.sag_aaben ? "mt-3 block" : "hidden"} lg:table-cell lg:px-3 lg:py-3`}>
                       {h.sag_aaben ? (
-                        <span className="block max-w-[220px] text-neutral-700">
+                        <span className="block max-w-[200px] text-neutral-700">
                           <span className="mb-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
                             Markeret
                           </span>
-                          <span className="block text-xs">{h.sag_note}</span>
+                          <span className="block break-words text-xs">{h.sag_note}</span>
                         </span>
                       ) : (
                         <span className="text-neutral-400">—</span>
                       )}
                     </td>
-                    <td className="px-5 py-3">
+                    <td
+                      className={`mt-4 block border-t border-neutral-100 pt-3 lg:sticky lg:right-0 lg:mt-0 lg:table-cell lg:border-t-0 lg:px-3 lg:py-3 lg:shadow-[-1px_0_0_0_#f5f5f5] ${bund}`}
+                    >
                       {/* Højst én hovedknap pr. række. Sjældne og farlige
                           handlinger ligger under "Flere handlinger". */}
                       <div className="flex flex-col items-start gap-2">
@@ -364,8 +388,8 @@ export default async function AdminSager({
                 );
               })}
               {rows.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-neutral-400">
+                <tr className="block rounded-xl border border-neutral-200 bg-white lg:table-row lg:rounded-none lg:border-0">
+                  <td colSpan={6} className="block px-5 py-10 text-center text-neutral-400 lg:table-cell">
                     {søgetekst
                       ? `Ingen handler matcher "${søgetekst}"`
                       : fane === "sager"

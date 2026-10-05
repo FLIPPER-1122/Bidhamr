@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useId, useState, useTransition, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useTransition,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 type Props = {
   triggerLabel: string;
@@ -48,15 +56,52 @@ export default function ConfirmDialog({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [fejl, setFejl] = useState<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const annullerRef = useRef<HTMLButtonElement>(null);
+  const varAaben = useRef(false);
 
+  // Fokus ind i dialogen ved åbning (på Annullér - det sikre valg), og
+  // tilbage til knappen, der åbnede den, når den lukkes.
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    if (open) {
+      varAaben.current = true;
+      annullerRef.current?.focus();
+    } else if (varAaben.current) {
+      varAaben.current = false;
+      triggerRef.current?.focus();
+    }
   }, [open]);
+
+  function luk() {
+    if (!pending) setOpen(false);
+  }
+
+  // Esc lukker, og Tab holdes inde i dialogen.
+  function onDialogKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      luk();
+      return;
+    }
+    if (e.key !== "Tab" || !dialogRef.current) return;
+    const fokuserbare = [
+      ...dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ];
+    if (fokuserbare.length === 0) return;
+    const foerste = fokuserbare[0];
+    const sidste = fokuserbare[fokuserbare.length - 1];
+    const aktiv = document.activeElement;
+    if (e.shiftKey && (aktiv === foerste || !dialogRef.current.contains(aktiv))) {
+      e.preventDefault();
+      sidste.focus();
+    } else if (!e.shiftKey && (aktiv === sidste || !dialogRef.current.contains(aktiv))) {
+      e.preventDefault();
+      foerste.focus();
+    }
+  }
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -73,8 +118,10 @@ export default function ConfirmDialog({
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
         className={
           triggerClassName ??
           "inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors"
@@ -87,15 +134,21 @@ export default function ConfirmDialog({
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => !pending && setOpen(false)}
+          onClick={luk}
         >
           <div
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`${id}-titel`}
+            aria-describedby={description ? `${id}-beskrivelse` : undefined}
+            onKeyDown={onDialogKeyDown}
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 text-left shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-bold text-neutral-900">{title}</h2>
+            <h2 id={`${id}-titel`} className="text-lg font-bold text-neutral-900">{title}</h2>
             {description && (
-              <p className="mt-1.5 text-sm text-neutral-500">{description}</p>
+              <p id={`${id}-beskrivelse`} className="mt-1.5 text-sm text-neutral-500">{description}</p>
             )}
 
             <form action={handleSubmit} className="mt-4 space-y-4">
@@ -194,8 +247,9 @@ export default function ConfirmDialog({
 
               <div className="flex justify-end gap-3 pt-1">
                 <button
+                  ref={annullerRef}
                   type="button"
-                  onClick={() => setOpen(false)}
+                  onClick={luk}
                   disabled={pending}
                   className="rounded-lg bg-neutral-100 px-4 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-200 transition-colors disabled:opacity-50"
                 >

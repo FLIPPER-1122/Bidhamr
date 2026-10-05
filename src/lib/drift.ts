@@ -84,10 +84,25 @@ export type DriftFejlInput = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Next's egne afbrydelser (notFound(), forbidden(), unauthorized(), redirect())
+// virker ved at kaste - de er ikke fejl og må aldrig ende i drift_fejl.
+const NEXT_AFBRYDELSE = /^(NEXT_NOT_FOUND|NEXT_REDIRECT|NEXT_HTTP_ERROR_FALLBACK)\b/;
+
+export function erNextAfbrydelse(fejl: unknown, digest?: string | null): boolean {
+  const kandidater: unknown[] = [digest];
+  if (typeof fejl === "string") kandidater.push(fejl);
+  else if (typeof fejl === "object" && fejl !== null) {
+    kandidater.push((fejl as { digest?: unknown }).digest);
+    kandidater.push((fejl as { message?: unknown }).message);
+  }
+  return kandidater.some((k) => typeof k === "string" && NEXT_AFBRYDELSE.test(k));
+}
+
 // Gemmer en fejl i drift_fejl. Kaster aldrig. Returnerer databasens svar
 // ('ny' | 'dublet' | 'begraenset') eller null ved fejl.
 export async function logDriftFejl(input: DriftFejlInput): Promise<string | null> {
   try {
+    if (erNextAfbrydelse(input.fejl, input.digest)) return null;
     const tekst = renFejltekst(input.fejl, 900);
     const besked = input.hvor ? `${renFejltekst(input.hvor, 80)}: ${tekst}` : tekst;
     const digest =

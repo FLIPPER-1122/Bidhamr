@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { anonymUsername } from "@/lib/anonymUsername";
@@ -15,7 +15,7 @@ export default async function AdminBedommelser({
 }) {
   const rolle = await getStaffRole();
   if (!rolle || !harMindstRolle(rolle, "admin")) {
-    redirect("/admin/brugere");
+    notFound();
   }
 
   const { q } = await searchParams;

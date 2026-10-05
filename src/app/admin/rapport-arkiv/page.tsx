@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { assertRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
 import { kategoriLabel } from "@/lib/anmeldelseKategorier";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import RapportFaner from "@/components/admin/RapportFaner";
@@ -36,7 +36,7 @@ export default async function AdminRapportArkiv({
 }: {
   searchParams: Promise<{ side?: string }>;
 }) {
-  const { admin } = await assertRole("admin");
+  const { admin } = await kraevSideRolle("admin");
   const { side: sideParam } = await searchParams;
   const side = Math.max(1, Math.floor(Number(sideParam)) || 1);
 

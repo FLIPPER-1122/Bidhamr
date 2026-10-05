@@ -1,6 +1,6 @@
 import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import { orVaerdi } from "@/lib/postgrest";
-import { redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -17,7 +17,7 @@ export default async function AdminMedarbejdere({
 }) {
   const rolle = await getStaffRole();
   if (rolle !== "chef") {
-    redirect("/admin/brugere");
+    notFound();
   }
 
   const { q } = await searchParams;

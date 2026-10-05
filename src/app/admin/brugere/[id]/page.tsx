@@ -12,7 +12,7 @@ import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { advarselFelter } from "@/components/admin/advarselFelter";
 import { StatusBadge, brugerStatus, erSuspensionAktiv, RolleBadge } from "@/components/admin/StatusBadge";
-import { assertRole, harMindstRolle } from "@/lib/adminAuth";
+import { kraevSideRolle, harMindstRolle } from "@/lib/adminAuth";
 import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
 import { hentSamtalerForBruger } from "@/app/actions/staffChat";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
@@ -59,7 +59,7 @@ export default async function AdminBrugerDetalje({
     : "oversigt";
 
   // Rollen tjekkes paa selve siden (ikke kun i layoutet), foer service-role bruges.
-  const { rolle: staffRolle, admin: supabase } = await assertRole("medarbejder");
+  const { rolle: staffRolle, admin: supabase } = await kraevSideRolle("medarbejder");
   // Sletning af auktioner/anmeldelser kræver admin+; medarbejdere ser ikke knapperne.
   const kanModerereIndhold = !!staffRolle && harMindstRolle(staffRolle, "admin");
 

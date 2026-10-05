@@ -1,7 +1,7 @@
 import Link from "next/link";
 import BrugereFaner from "@/components/admin/BrugereFaner";
 import { RolleBadge } from "@/components/admin/StatusBadge";
-import { assertRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Mistænkelig aktivitet: reglerne ligger samlet i SQL-funktionen
@@ -39,7 +39,7 @@ function regelTekst(r: Regel): string {
 }
 
 export default async function AdminMistaenkelig() {
-  const { admin } = await assertRole("medarbejder");
+  const { admin } = await kraevSideRolle("medarbejder");
 
   const { data, error } = await admin.rpc("admin_mistaenkelige_brugere");
   if (error) console.error("admin_mistaenkelige_brugere fejlede:", error);

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { orVaerdi } from "@/lib/postgrest";
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deleteAuction, cancelAuction, hideAuction, unhideAuction } from "@/app/actions/adminActions";
@@ -30,7 +30,7 @@ export default async function AdminAuktioner({
 }) {
   const rolle = await getStaffRole();
   if (!rolle || !harMindstRolle(rolle, "admin")) {
-    redirect("/admin/brugere");
+    notFound();
   }
 
   const { status, q } = await searchParams;

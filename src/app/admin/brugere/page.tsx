@@ -4,11 +4,11 @@ import Avatar from "@/components/Avatar";
 import BrugerSearch from "@/components/admin/BrugerSearch";
 import BrugereFaner from "@/components/admin/BrugereFaner";
 import { StatusBadge, brugerStatus, RolleBadge } from "@/components/admin/StatusBadge";
-import { assertRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Brugere og sikkerhed: søgning på navn, e-mail, telefon og bruger-id med
-// filtre. Data via admin_brugere_soeg (service_role) efter assertRole.
+// filtre. Data via admin_brugere_soeg (service_role) efter kraevSideRolle.
 
 const FILTRE = [
   { id: "", label: "Alle" },
@@ -47,7 +47,7 @@ export default async function AdminBrugere({
   const soeg = (q ?? "").trim().slice(0, 200);
 
   // Rollen tjekkes paa selve siden (ikke kun i layoutet), foer service-role bruges.
-  const { admin: supabase } = await assertRole("medarbejder");
+  const { admin: supabase } = await kraevSideRolle("medarbejder");
 
   const { data, error } = await supabase.rpc("admin_brugere_soeg", {
     p_q: soeg || null,
