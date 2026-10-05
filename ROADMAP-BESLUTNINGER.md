@@ -140,7 +140,7 @@ Brugeren får besked når:
 - **Behandlede rapporter** (Filip, 5. oktober 2026): slettes aldrig. Efter 48 timer flyttes de fra den aktive liste til rapportarkivet (rapporter_arkiv), hvor de gemmes permanent.
 
 ## Vinderen betaler ikke (Filip, 2. oktober 2026)
-- **Betalingsfrist (Filip, 5. oktober 2026):** vinderen har **48 timer** til at betale. Sælger kan på handelssiden forlænge fristen (fx efter aftale i chatten), men højst til **7 dage** efter auktionens afslutning. Køberen får besked om den nye frist.
+- **Betalingsfrist (Filip, 5. oktober 2026):** vinderen har **48 timer** til at betale. Sælger kan på handelssiden forlænge fristen (fx efter aftale i chatten), men højst til **7 dage** efter, at betalingsfristen startede (auktionens afslutning – eller når næste byder siger ja til et tilbud). Køberen får besked om den nye frist.
 - Efter fristen uden betaling annulleres handlen automatisk (og Stripe-betalingen annulleres).
 - **Sælger gør intet (Filip, 5. oktober 2026):** har sælger hverken tilbudt varen til næste byder eller sat den op igen 14 dage efter annulleringen, arkiveres auktionen. Sælger kan stadig sætte varen op igen fra Mine handler.
 - **Advarsel til køberen gives IKKE automatisk.** Der oprettes en sag "Ubetalt vinder", som en medarbejder skal godkende eller afvise. I admin-menuen vises et ! med antallet af sager, der venter (fx "! 11").

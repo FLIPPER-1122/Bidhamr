@@ -23,7 +23,7 @@ export default function ForlaengBetalingsfrist({
   if (valg.length === 0) {
     return (
       <p className="mt-3 text-xs">
-        Fristen er allerede forlænget så langt som muligt (højst 7 dage efter auktionens slutning).
+        Fristen er allerede forlænget så langt som muligt (højst 7 dage efter, at betalingsfristen startede).
       </p>
     );
   }
@@ -34,7 +34,7 @@ export default function ForlaengBetalingsfrist({
         triggerLabel="Forlæng betalingsfristen"
         triggerClassName="btn btn-sekundaer btn-lille"
         title="Forlæng betalingsfristen"
-        description="Brug den, hvis I har aftalt det i chatten. Højst 7 dage efter auktionens slutning. Køberen får besked om den nye frist."
+        description="Brug den, hvis I har aftalt det i chatten. Højst 7 dage efter, at betalingsfristen startede, og højst 3 gange. Køberen får besked om den nye frist."
         confirmLabel="Forlæng fristen"
         confirmDisabled={!valgt}
         onConfirm={async () => {
@@ -63,7 +63,8 @@ export default function ForlaengBetalingsfrist({
         </p>
       </BekraeftDialog>
       <p className="mt-2 text-xs">
-        Brug den, hvis I har aftalt det i chatten. Højst 7 dage efter auktionens slutning.
+        Brug den, hvis I har aftalt det i chatten. Højst 7 dage efter, at betalingsfristen
+        startede, og højst 3 gange.
       </p>
     </div>
   );

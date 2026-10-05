@@ -3,7 +3,7 @@
 //   1. Luk udløbne auktioner (samme SQL-funktion som pg_cron kører hvert
 //      minut). Den opretter handel + betaling med 48 timers frist.
 //   2. Nye betalinger: forsøg autobetaling (tilvalg), send "du vandt"-mails.
-//   3. Påmindelser 12 og 20 timer efter fristens start.
+//   3. Påmindelser 24 og 8 timer før fristen.
 //   3b. Sager, hvor ankefristen (4 dage efter afgørelsen) er udløbet: refusion
 //       til køber / frigivelse til sælger / frysningen fjernes.
 //   3c. Automatisk frigivelse: 48 t efter "modtaget" uden sag, eller 14 dage
@@ -59,16 +59,21 @@ import {
 const TIME = 60 * 60 * 1000;
 
 // Sætter et tidsstempel-felt, hvis det er tomt. true = denne kørsel vandt.
+// Med betalSenest lykkes claimet kun, hvis fristen stadig er den, kørslen
+// læste - så en påmindelse aldrig sendes med en frist, sælgeren lige har
+// forlænget (forlængelsen nulstiller felterne; næste kørsel tager den nye).
 async function claim(
   betalingId: string,
   felt: "vundet_mail_sendt_kl" | "paamindelse_24_sendt_kl" | "paamindelse_40_sendt_kl",
+  betalSenest?: string,
 ): Promise<boolean> {
-  const { data } = await createAdminClient()
+  let q = createAdminClient()
     .from("betalinger")
     .update({ [felt]: new Date().toISOString() })
     .eq("id", betalingId)
-    .is(felt, null)
-    .select("id");
+    .is(felt, null);
+  if (betalSenest !== undefined) q = q.eq("betal_senest", betalSenest);
+  const { data } = await q.select("id");
   return (data ?? []).length > 0;
 }
 
@@ -226,10 +231,10 @@ export async function koerBetalingsCron() {
     if (!mangler || mangler.length === 0) continue;
     const o = await opslag(mangler);
     for (const b of mangler) {
-      if (!(await claim(b.id, felt))) continue;
+      if (!(await claim(b.id, felt, b.betal_senest))) continue;
       // Den sene påmindelse gør den tidlige overflødig, hvis cron har været nede.
       if (felt === "paamindelse_40_sendt_kl" && !b.paamindelse_24_sendt_kl) {
-        await claim(b.id, "paamindelse_24_sendt_kl");
+        await claim(b.id, "paamindelse_24_sendt_kl", b.betal_senest);
       }
       const titel = o.titel.get(b.auction_id) ?? "din auktion";
       const p = await send(b.buyer_id, "betalingsfrist", {

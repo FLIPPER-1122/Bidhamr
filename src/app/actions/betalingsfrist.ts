@@ -3,8 +3,9 @@
 // Sælgeren forlænger betalingsfristen (ROADMAP-BESLUTNINGER.md,
 // "Betalingsfrist", 5. oktober 2026). Alle regler håndhæves i databasen
 // (handel_forlaeng_betalingsfrist): kun sælgeren, kun mens handlen afventer
-// betaling, kun senere end den nuværende frist og højst 7 dage efter fristens
-// start. Appen kalder samme RPC direkte.
+// betaling, mindst 24 timer senere end den nuværende frist (eller lig med den
+// sidste mulige frist), højst 7 dage efter, at betalingsfristen startede, og
+// højst 3 forlængelser pr. handel. Appen kalder samme RPC direkte.
 //
 // Ingen penge flyttes: kun fristen i betalinger.betal_senest ændres.
 
@@ -58,13 +59,17 @@ export async function forlaengBetalingsfrist(
       return { fejl: "Handlen venter ikke længere på betaling." };
     case "frist_udloebet":
       return { fejl: "Fristen er allerede udløbet og kan ikke forlænges." };
+    case "for_mange":
+      return { fejl: "Fristen er allerede forlænget 3 gange og kan ikke forlænges igen." };
     case "ugyldig_frist":
-      return { fejl: "Den nye frist skal være senere end den nuværende." };
+      return {
+        fejl: "Den nye frist skal være mindst 24 timer senere end den nuværende (eller den sidste mulige frist).",
+      };
     case "for_sent":
       return {
         fejl: svar.maks_frist
           ? `Fristen kan højst forlænges til ${fristDato(svar.maks_frist)}.`
-          : "Fristen kan højst forlænges til 7 dage efter auktionens slutning.",
+          : "Fristen kan højst forlænges til 7 dage efter, at betalingsfristen startede.",
       };
     default:
       return { fejl: "Fristen kunne ikke forlænges. Prøv igen om lidt." };
