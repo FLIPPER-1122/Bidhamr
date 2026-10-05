@@ -83,12 +83,12 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 ## Fase 1B – Nyt admin-dashboard
 Formål: ét samlet sted, hvor staff kan styre hele BidHamr. Bygges efter fase 1, fordi pengetallene afhænger af den nye Stripe-model.
 
-- [ ] **Forside med fokus på brugere**: antal brugere i alt, nye brugere i dag / denne uge / denne måned, graf over tilvækst. Derudover nye auktioner og solgte varer
-- [ ] **"Kræver handling nu"** øverst på forsiden: åbne sager, nye rapporter, handler der hænger, ubetalte vindere, fejlede betalinger
-- [ ] **Penge – KUN for rollen chef**: omsætning, BidHamrs indtjening (købergebyr, sælgergebyr, BidHamr Beskyttelse), betalinger, udbetalinger og refusioner fra Stripe, penge der holdes lige nu og hvornår de frigives. Medarbejdere og admins må ikke kunne se indtjeningstal – heller ikke via URL eller API (tjekkes på serveren)
-- [ ] **Brugere og sikkerhed**: søgning, advarsler, suspenderinger, MitID-status, mistænkelig aktivitet (fx mange sager eller mange ubetalte auktioner)
-- [ ] **Drift**: fejlede cron-jobs, mails der ikke er sendt, fejl på siden
-- [ ] **Medarbejder-log**: hvad hver medarbejder har gjort (bygger videre på moderation_log)
+- [~] **Forside med fokus på brugere**: antal brugere i alt, nye brugere i dag / denne uge / denne måned, graf over tilvækst. Derudover nye auktioner og solgte varer
+- [~] **"Kræver handling nu"** øverst på forsiden: åbne sager, nye rapporter, handler der hænger, ubetalte vindere, fejlede betalinger
+- [~] **Penge – KUN for rollen chef**: omsætning, BidHamrs indtjening (købergebyr, sælgergebyr, BidHamr Beskyttelse), betalinger, udbetalinger og refusioner fra Stripe, penge der holdes lige nu og hvornår de frigives. Medarbejdere og admins må ikke kunne se indtjeningstal – heller ikke via URL eller API (tjekkes på serveren)
+- [~] **Brugere og sikkerhed**: søgning, advarsler, suspenderinger, MitID-status, mistænkelig aktivitet (fx mange sager eller mange ubetalte auktioner)
+- [~] **Drift**: fejlede cron-jobs, mails der ikke er sendt, fejl på siden
+- [~] **Medarbejder-log**: hvad hver medarbejder har gjort (bygger videre på moderation_log)
 
 ## Fase 2 – Fragt og automatisk frigivelse
 Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel indgriben.
