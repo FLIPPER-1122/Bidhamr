@@ -6,6 +6,8 @@ import { kanOptimeres } from "@/lib/billedUrl";
 import { useSearchParams, useRouter } from "next/navigation";
 import AuctionCard, { type DummyAuction } from "@/components/AuctionCard";
 import SettingsForm from "@/components/profile/SettingsForm";
+import BedoemmelseListe from "@/components/profile/BedoemmelseListe";
+import type { BedoemmelseVisning } from "@/lib/bedoemmelser";
 
 export type BudStatus = "vinder" | "overbud" | "aktiv";
 
@@ -23,14 +25,8 @@ export interface EgenAuktion extends DummyAuction {
   status?: string;
 }
 
-export interface Rating {
-  id: string;
-  fra_bruger_id: string;
-  fra_bruger_navn: string;
-  stjerner: number;
-  kommentar: string | null;
-  oprettet: string;
-}
+// En modtaget bedømmelse med sælgerens svar (src/lib/bedoemmelserHent.ts).
+export type Rating = BedoemmelseVisning;
 
 const BUD_STYLE: Record<BudStatus, string> = {
   vinder: "bg-succes-bg text-succes-tekst",
@@ -225,55 +221,19 @@ export default function ProfileTabs({
               </p>
             </div>
           ) : (
-            <ul className="space-y-3">
-              {ratings.map((rating) => (
-                <li
-                  key={rating.id}
-                  className="rounded-[14px] border border-kant bg-white p-5"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-groen-lys text-xs font-semibold text-tekst-daempet">
-                        {rating.fra_bruger_navn[0]}
-                      </div>
-                      <Link
-                        href={`/profil/${rating.fra_bruger_id}`}
-                        className="text-sm font-medium text-tekst hover:text-groen hover:underline"
-                      >
-                        {rating.fra_bruger_navn}
-                      </Link>
-                    </div>
-                    <span className="shrink-0 text-xs text-tekst-svag">
-                      {new Date(rating.oprettet).toLocaleDateString("da-DK", {
-                        dateStyle: "medium",
-                      })}
-                    </span>
-                  </div>
-
-                  <div className="mt-2 flex gap-0.5" role="img" aria-label={`${rating.stjerner} af 5 stjerner`}>
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <svg
-                        key={i}
-                        viewBox="0 0 24 24"
-                        className={`h-4 w-4 ${
-                          i <= rating.stjerner
-                            ? "fill-groen text-groen"
-                            : "fill-kant-staerk text-kant-staerk"
-                        }`}
-                      >
-                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                      </svg>
-                    ))}
-                  </div>
-
-                  {rating.kommentar && (
-                    <p className="mt-2 text-sm text-tekst-daempet">
-                      {rating.kommentar}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
+            // Med "Svar fra sælger": ét offentligt svar pr. bedømmelse.
+            <div className="space-y-3">
+              <p className="text-sm text-tekst-svag">
+                Du kan skrive ét offentligt svar på hver bedømmelse. Svaret kan rettes eller slettes i 48 timer.
+              </p>
+              <BedoemmelseListe
+                ratings={ratings}
+                erSaelger
+                erLoggetInd
+                kortKlasse="rounded-[14px] border border-kant bg-white p-4 sm:p-5"
+                tomTekst="Du har ingen bedømmelser endnu."
+              />
+            </div>
           )
         )}
 

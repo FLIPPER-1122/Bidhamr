@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import FoelgKnap from "@/components/foelg/FoelgKnap";
 import type { BidPanelBud } from "@/components/BidPanel";
 import AuctionGallery from "@/components/AuctionGallery";
 import AuctionTitleActions from "@/components/AuctionTitleActions";
@@ -97,10 +98,14 @@ export default async function AuktionPage({
           .rpc("er_blokeret_mellem", { p_a: auktion.bruger_id, p_b: mitId })
           .then(({ data, error }) => (error ? false : data === true))
       : Promise.resolve(false);
-  const [{ data: spoergsmaalData }, staffRolle, blokeretMedSaelger] = await Promise.all([
+  const [{ data: spoergsmaalData }, staffRolle, blokeretMedSaelger, { data: minFoelgning }] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     authData.user ? getStaffRole() : Promise.resolve(null),
     tjekBlokering,
+    // Følger jeg sælgeren? RLS: kun egne følgninger kan læses.
+    mitId && mitId !== auktion.bruger_id
+      ? supabase.from("seller_follows").select("id").eq("seller_id", auktion.bruger_id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
@@ -364,6 +369,17 @@ export default async function AuktionPage({
                   >
                     {sælgerNavn}
                   </Link>
+                  {mitId !== auktion.bruger_id && !blokeretMedSaelger && (
+                    <div className="mt-1.5">
+                      <FoelgKnap
+                        saelgerId={auktion.bruger_id}
+                        navn={sælgerNavn}
+                        foelger={Boolean(minFoelgning)}
+                        loginHref={mitId ? undefined : `/login?redirect=/auktion/${auktion.id}`}
+                        lille
+                      />
+                    </div>
+                  )}
                 </dd>
               </div>
               <div className="min-w-0">

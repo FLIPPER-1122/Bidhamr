@@ -12,6 +12,7 @@ import {
   ProfilSektion,
   SikkerhedSektion,
 } from "@/components/konto/KontoSektioner";
+import Ikon, { type IkonNavn } from "@/components/Ikon";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,12 @@ type MinAdvarsel = { id: string; begrundelse_bruger: string | null; oprettet_kl:
 type MinPaamindelse = { id: string; grund: string; begrundelse_bruger: string; oprettet_kl: string };
 
 const GRUND_NAVN: Record<string, string> = { daarlig_indpakning: "Dårlig indpakning" };
+
+const OVERBLIK: { href: string; ikon: IkonNavn; titel: string; tekst: string }[] = [
+  { href: "/konto/statistik", ikon: "statistik", titel: "Min statistik", tekst: "Salg, indtjening og dine bud" },
+  { href: "/konto/foelger", ikon: "foelgere", titel: "Sælgere du følger", tekst: "Få besked om nye varer" },
+  { href: "/konto/soegninger", ikon: "soeg", titel: "Gemte søgninger", tekst: "Besked, når der kommer nyt" },
+];
 
 function datoTekst(iso: string) {
   return new Date(iso).toLocaleDateString("da-DK", {
@@ -143,6 +150,26 @@ export default async function KontoSide({
         </section>
       )}
 
+      <nav aria-label="Dit overblik" className="mt-6">
+        <ul className="grid gap-3 sm:grid-cols-3">
+          {OVERBLIK.map((o) => (
+            <li key={o.href}>
+              <Link
+                href={o.href}
+                className="flex h-full min-h-11 items-start gap-3 rounded-[14px] border border-kant bg-white p-4 hover:border-kant-staerk hover:shadow-[0_8px_24px_rgba(0,0,0,.10)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+              >
+                <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-groen-lys text-groen-mork">
+                  <Ikon navn={o.ikon} className="h-[18px] w-[18px]" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[15px] font-semibold text-tekst">{o.titel}</span>
+                  <span className="mt-0.5 block text-[13px] text-tekst-daempet">{o.tekst}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
       <ProfilSektion bruger={authData.user} />
       <SikkerhedSektion bruger={authData.user} />
 

@@ -90,6 +90,9 @@ export default function KontoMenu({ erAdmin }: { erAdmin: boolean }) {
                 </Link>
               </li>
               <li><Link href="/favoritter" onClick={luk} className={punkt}>Favoritter</Link></li>
+              <li><Link href="/konto/statistik" onClick={luk} className={punkt}>Min statistik</Link></li>
+              <li><Link href="/konto/foelger" onClick={luk} className={punkt}>Sælgere du følger</Link></li>
+              <li><Link href="/konto/soegninger" onClick={luk} className={punkt}>Gemte søgninger</Link></li>
               <li><Link href="/konto" onClick={luk} className={punkt}>Min konto</Link></li>
               <li><Link href="/konto/notifikationer" onClick={luk} className={punkt}>Notifikationsindstillinger</Link></li>
               {erAdmin && (

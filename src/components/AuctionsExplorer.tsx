@@ -11,11 +11,17 @@ export default function AuctionsExplorer({
   initialQuery,
   initialKategori = "",
   initialSortering,
+  initialPostnummer,
+  initialRadiusKm,
+  erLoggetInd,
 }: {
   initialAuktioner: DummyAuction[];
   initialQuery: string;
   initialKategori?: string;
   initialSortering?: Sortering;
+  initialPostnummer?: string;
+  initialRadiusKm?: number;
+  erLoggetInd?: boolean;
 }) {
   // Kategorien ligger i URL'en (?kategori=…), så filteret kan deles, og
   // Tilbage-knappen husker det. replaceState opdaterer useSearchParams uden
@@ -47,6 +53,9 @@ export default function AuctionsExplorer({
           initialAuktioner={initialAuktioner}
           initialQuery={initialQuery}
           initialSortering={initialSortering}
+          initialPostnummer={initialPostnummer}
+          initialRadiusKm={initialRadiusKm}
+          erLoggetInd={erLoggetInd}
           kategori={kategori}
           onKategoriChange={setKategori}
         />

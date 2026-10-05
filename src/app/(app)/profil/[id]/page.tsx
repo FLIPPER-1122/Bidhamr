@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -8,6 +7,10 @@ import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import AuctionCard from "@/components/AuctionCard";
 import ProfileHeader from "@/components/profile/ProfileHeader";
 import ProfilTryghed from "@/components/tryghed/ProfilTryghed";
+import FoelgKnap from "@/components/foelg/FoelgKnap";
+import { createAdminClient } from "@/lib/supabase/admin";
+import BedoemmelseListe from "@/components/profile/BedoemmelseListe";
+import { hentBedoemmelser } from "@/lib/bedoemmelserHent";
 import ProfileTabs, {
   type MitBud,
   type EgenAuktion,
@@ -78,9 +81,10 @@ export default async function ProfilPage({
       { data: egneAuktionerRaw },
       { data: mineBidsRaw },
       { data: egenEmail },
-      { data: egneRatings },
+      egneRatings,
       { data: gennemforteHandlerRaw },
       { data: kontakt },
+      { data: egneFoelgere },
     ] = await Promise.all([
       supabase
         .from("auctions")
@@ -95,25 +99,21 @@ export default async function ProfilPage({
       // Egen profil (erEgenProfil): email/telefon via min_profil(), da
       // kolonnerne ikke er laesbare direkte.
       supabase.rpc("min_profil").maybeSingle<{ email: string; telefon: string | null }>(),
-      supabase
-        .from("ratings")
-        .select("id, fra_bruger_id, stjerner, kommentar, oprettet")
-        .eq("til_bruger_id", id)
-        .eq("skjult", false)
-        .order("oprettet", { ascending: false }),
+      // Skjulte bedømmelser er sorteret fra (tæller heller ikke i gennemsnittet).
+      hentBedoemmelser(supabase, id),
       supabase
         .from("trades")
         .select("id")
         .or(`buyer_id.eq.${id},seller_id.eq.${id}`),
       // Adressen (kun til afhentning) kan kun læses af ejeren selv.
       supabase.rpc("mine_kontaktoplysninger").maybeSingle<{ adresse: string | null }>(),
+      supabase.rpc("antal_foelgere", { p_bruger: id }),
     ]);
 
-    const antalRatings = egneRatings?.length ?? 0;
+    const antalRatings = egneRatings.length;
     const gennemsnitRating =
       antalRatings > 0
-        ? (egneRatings ?? []).reduce((sum, r) => sum + r.stjerner, 0) /
-          antalRatings
+        ? egneRatings.reduce((sum, r) => sum + r.stjerner, 0) / antalRatings
         : 0;
 
     // Byg egne auktioner med slutter_kl til status-badge
@@ -180,16 +180,7 @@ export default async function ProfilPage({
       });
     }
 
-    const egenFraIds = [...new Set((egneRatings ?? []).map((r) => r.fra_bruger_id))];
-    const { data: egenFraNavne } = egenFraIds.length > 0
-      ? await supabase.from("users").select("id, navn").in("id", egenFraIds)
-      : { data: [] };
-    const egenNavnMap = Object.fromEntries((egenFraNavne ?? []).map((u) => [u.id, u.navn as string | null]));
-
-    const ratings: Rating[] = (egneRatings ?? []).map((r) => ({
-      ...r,
-      fra_bruger_navn: kortNavn(egenNavnMap[r.fra_bruger_id]),
-    }));
+    const ratings: Rating[] = egneRatings;
 
     return (
       <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
@@ -208,6 +199,7 @@ export default async function ProfilPage({
             }}
             erEgenProfil={true}
             brugerId={id}
+            antalFoelgere={typeof egneFoelgere === "number" ? egneFoelgere : undefined}
           />
 
           <Suspense>
@@ -230,7 +222,15 @@ export default async function ProfilPage({
 
   // ── Offentlig profil ───────────────────────────────────────────────────────
   const erLoggetInd = Boolean(authData.user);
-  const [{ data: aktiveAuktionerRaw }, { data: ratingsRaw }, { data: harBlokeret }] = await Promise.all([
+  const mitId = authData.user?.id ?? null;
+  const [
+    { data: aktiveAuktionerRaw },
+    ratings,
+    { data: harBlokeret },
+    { data: antalFoelgere },
+    { data: minFoelgning },
+    blokeretAfProfil,
+  ] = await Promise.all([
     supabase
       .from("auctions")
       .select("*")
@@ -238,35 +238,33 @@ export default async function ProfilPage({
       .eq("status", "aktiv")
       .gt("slutter_kl", new Date().toISOString())
       .order("oprettet", { ascending: false }),
-    supabase
-      .from("ratings")
-      .select("id, fra_bruger_id, stjerner, kommentar, oprettet")
-      .eq("til_bruger_id", id)
-      .eq("skjult", false)
-      .order("oprettet", { ascending: false }),
+    // Med "Svar fra sælger". Skjulte bedømmelser er sorteret fra.
+    hentBedoemmelser(supabase, id),
     // Kun navngivne blokeringer (anonyme spærringer af bydere tæller ikke).
     erLoggetInd
       ? supabase.rpc("jeg_har_blokeret", { p_bruger: id })
       : Promise.resolve({ data: false }),
+    supabase.rpc("antal_foelgere", { p_bruger: id }),
+    // RLS: kun egne følgninger kan læses.
+    mitId
+      ? supabase.from("seller_follows").select("id").eq("seller_id", id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    // Har profilens ejer blokeret mig ved navn? Intern funktion (kun
+    // service-role), kaldt med den indloggedes eget id. Browseren får kun,
+    // om Følg-knappen vises.
+    mitId
+      ? createAdminClient()
+          .rpc("er_blokeret_navngivet_mellem", { p_a: id, p_b: mitId })
+          .then(({ data, error }) => (error ? false : data === true))
+      : Promise.resolve(false),
   ]);
 
   const aktiveAuktioner = (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort);
 
-  const fraIds = [...new Set((ratingsRaw ?? []).map((r) => r.fra_bruger_id))];
-  const { data: fraNavne } = fraIds.length > 0
-    ? await supabase.from("users").select("id, navn").in("id", fraIds)
-    : { data: [] };
-  const fraNavnMap = Object.fromEntries((fraNavne ?? []).map((u) => [u.id, u.navn as string | null]));
-
-  const ratings = (ratingsRaw ?? []).map((r) => ({
-    ...r,
-    fra_bruger_navn: kortNavn(fraNavnMap[r.fra_bruger_id]),
-  }));
-
-  const antalRatings = ratings?.length ?? 0;
+  const antalRatings = ratings.length;
   const gennemsnitRating =
     antalRatings > 0
-      ? (ratings ?? []).reduce((sum, r) => sum + r.stjerner, 0) / antalRatings
+      ? ratings.reduce((sum, r) => sum + r.stjerner, 0) / antalRatings
       : 0;
 
   return (
@@ -285,6 +283,17 @@ export default async function ProfilPage({
           }}
           erEgenProfil={false}
           brugerId={id}
+          antalFoelgere={typeof antalFoelgere === "number" ? antalFoelgere : undefined}
+          handling={
+            !blokeretAfProfil && harBlokeret !== true ? (
+              <FoelgKnap
+                saelgerId={id}
+                navn={kortNavn(profil.navn)}
+                foelger={Boolean(minFoelgning)}
+                loginHref={erLoggetInd ? undefined : `/login?redirect=/profil/${id}`}
+              />
+            ) : undefined
+          }
         />
 
         {erLoggetInd && (
@@ -320,54 +329,15 @@ export default async function ProfilPage({
           <h2 className="text-[20px] leading-tight lg:text-[22px]">
             Bedømmelser
           </h2>
-          {!ratings || ratings.length === 0 ? (
-            <p className="mt-3 text-sm text-tekst-svag">
-              Ingen bedømmelser endnu.
-            </p>
-          ) : (
-            <ul className="mt-4 space-y-3">
-              {ratings.map((rating) => (
-                <li
-                  key={rating.id}
-                  className="rounded-xl bg-groen-lys p-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <Link
-                      href={`/profil/${rating.fra_bruger_id}`}
-                      className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-tekst hover:text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:min-h-0"
-                    >
-                      {rating.fra_bruger_navn}
-                    </Link>
-                    <span className="shrink-0 text-xs text-tekst-svag">
-                      {new Date(rating.oprettet).toLocaleDateString("da-DK", {
-                        dateStyle: "medium",
-                      })}
-                    </span>
-                  </div>
-                  <div className="mt-1.5 flex gap-0.5" role="img" aria-label={`${rating.stjerner} af 5 stjerner`}>
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <svg
-                        key={i}
-                        viewBox="0 0 24 24"
-                        className={`h-4 w-4 ${
-                          i <= rating.stjerner
-                            ? "fill-groen text-groen"
-                            : "fill-kant-staerk text-kant-staerk"
-                        }`}
-                      >
-                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                      </svg>
-                    ))}
-                  </div>
-                  {rating.kommentar && (
-                    <p className="mt-2 text-sm text-tekst-daempet">
-                      {rating.kommentar}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="mt-4">
+            <BedoemmelseListe
+              ratings={ratings}
+              erSaelger={false}
+              erLoggetInd={erLoggetInd}
+              kortKlasse="rounded-xl bg-groen-lys p-4"
+              tomTekst="Ingen bedømmelser endnu."
+            />
+          </div>
         </section>
       </div>
     </main>

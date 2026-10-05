@@ -1,7 +1,9 @@
 // Notifikationstyper - ét sted for hele hjemmesiden (og som reference for appen).
 // Påkrævet-listen er spejlet i SQL (notifikation_paakraevet / notifikation_kendt_type
 // i supabase/migrations/20261002060000_notifikationer.sql; 'spoergsmaal' tilføjet i
-// 20261006040000_auktionsfunktioner.sql). Ændres listen her,
+// 20261006040000_auktionsfunktioner.sql; 'gemt_soegning' i
+// 20261007010000_brugerens_egne_ting.sql; 'bedoemmelse' i
+// 20261007020000_bedoemmelse_svar.sql). Ændres listen her,
 // skal SQL'en også rettes i en ny migration.
 //
 // Ingen server-only-import: frontend må gerne bruge navne og beskrivelser.
@@ -22,7 +24,9 @@ export type NotifikationType =
   | "fulgt_slutter_snart"
   | "ny_auktion_fulgt_saelger"
   | "ny_besked"
-  | "spoergsmaal";
+  | "spoergsmaal"
+  | "gemt_soegning"
+  | "bedoemmelse";
 
 export type Kanal = "klokke" | "mail" | "push";
 
@@ -43,15 +47,17 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "pakke_leveret", navn: "Pakken er kommet frem", beskrivelse: "Når pakken er kommet frem til køberen.", paakraevet: true },
   { type: "udbetaling", navn: "Udbetaling", beskrivelse: "Når pengene er sendt til din udbetalingskonto, eller du mangler at oprette den.", paakraevet: true },
   { type: "sag", navn: "Sager", beskrivelse: "Nyt i en sag om en handel, og når BidHamr åbner en samtale med dig.", paakraevet: true },
-  { type: "advarsel", navn: "Advarsler", beskrivelse: "Når du får en advarsel fra BidHamr.", paakraevet: true },
+  { type: "advarsel", navn: "Advarsler", beskrivelse: "Når du får en advarsel fra BidHamr, eller når noget, du har skrevet (fx en bedømmelse), bliver skjult.", paakraevet: true },
   { type: "andenchance", navn: "Tilbud til næste byder", beskrivelse: "Når du får tilbudt en vare, eller når byderen svarer på dit tilbud.", paakraevet: true },
   { type: "overbudt", navn: "Du er overbudt", beskrivelse: "Når en anden byder mere end dig.", paakraevet: false },
   { type: "bud_paa_egen", navn: "Bud på din auktion", beskrivelse: "Når nogen byder på en af dine auktioner.", paakraevet: false },
   { type: "like", navn: "Nogen har liket din auktion", beskrivelse: "Når nogen gemmer din auktion som favorit.", paakraevet: false },
   { type: "fulgt_slutter_snart", navn: "Favorit slutter snart", beskrivelse: "En time før en auktion, du har gemt, slutter.", paakraevet: false },
   { type: "ny_auktion_fulgt_saelger", navn: "Ny auktion fra en sælger, du følger", beskrivelse: "Når en sælger, du følger, sætter en ny vare til salg.", paakraevet: false },
+  { type: "gemt_soegning", navn: "Gemte søgninger", beskrivelse: "Når nye auktioner matcher en søgning, du har gemt. Højst én besked pr. søgning hver 6. time.", paakraevet: false },
   { type: "ny_besked", navn: "Nye beskeder", beskrivelse: "Når du får en ny besked i en handel eller fra BidHamr.", paakraevet: false },
   { type: "spoergsmaal", navn: "Spørgsmål til auktioner", beskrivelse: "Når nogen stiller et spørgsmål til din auktion, eller sælgeren svarer på dit spørgsmål.", paakraevet: false },
+  { type: "bedoemmelse", navn: "Svar på dine bedømmelser", beskrivelse: "Når en sælger svarer på en bedømmelse, du har givet.", paakraevet: false },
 ] as const;
 
 export const ALLE_TYPER: readonly NotifikationType[] = NOTIFIKATION_TYPER.map((t) => t.type);

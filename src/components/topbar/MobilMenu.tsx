@@ -161,6 +161,9 @@ export default function MobilMenu({
                   </li>
                   <li><Link href="/favoritter" className={punkt}><Ikon navn="hjerte" />Favoritter</Link></li>
                   <li><Link href="/profil/mig" className={punkt}><Ikon navn="bruger" />Min profil</Link></li>
+                  <li><Link href="/konto/statistik" className={punkt}><Ikon navn="statistik" />Min statistik</Link></li>
+                  <li><Link href="/konto/foelger" className={punkt}><Ikon navn="foelgere" />Sælgere du følger</Link></li>
+                  <li><Link href="/konto/soegninger" className={punkt}><Ikon navn="soeg" />Gemte søgninger</Link></li>
                   <li><Link href="/konto" className={punkt}><Ikon navn="indstillinger" />Min konto</Link></li>
                   <li><Link href="/konto/notifikationer" className={punkt}><Ikon navn="klokke" />Notifikationsindstillinger</Link></li>
                   {erAdmin && (

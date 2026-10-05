@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { kanOptimeres } from "@/lib/billedUrl";
@@ -16,6 +17,10 @@ interface ProfileHeaderProps {
   };
   erEgenProfil: boolean;
   brugerId: string;
+  // Antal følgere er offentligt (HVEM der følger er ikke).
+  antalFoelgere?: number;
+  // Fx "Følg"-knappen på en andens profil.
+  handling?: ReactNode;
 }
 
 export default function ProfileHeader({
@@ -28,6 +33,8 @@ export default function ProfileHeader({
   stats,
   erEgenProfil,
   brugerId,
+  antalFoelgere,
+  handling,
 }: ProfileHeaderProps) {
   return (
     <div className="overflow-hidden rounded-[14px] border border-kant bg-white">
@@ -75,6 +82,7 @@ export default function ProfileHeader({
                   Rediger profil
                 </Link>
               )}
+              {handling}
             </div>
             {email && (
               <p className="mt-0.5 text-sm break-all text-tekst-svag">{email}</p>
@@ -105,6 +113,26 @@ export default function ProfileHeader({
                   </svg>
                   {gennemsnitRating.toFixed(1).replace(".", ",")} · {antalRatings}{" "}
                   bedømmelse{antalRatings === 1 ? "" : "r"}
+                </span>
+              )}
+
+              {typeof antalFoelgere === "number" && (
+                <span className="flex items-center gap-1.5">
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4 shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0 -3 -3.85"
+                    />
+                  </svg>
+                  {antalFoelgere === 1 ? "1 følger" : `${antalFoelgere.toLocaleString("da-DK")} følgere`}
                 </span>
               )}
             </div>

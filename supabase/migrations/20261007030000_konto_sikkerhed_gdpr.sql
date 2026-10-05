@@ -18,6 +18,9 @@
 --   6. konto_sletning_blokeringer / min_konto_sletning_status / konto_slet
 --   7. mine_data (GDPR-udtraek, 1 gang i timen)
 --
+-- Koeres EFTER 20261007010000 (gemte_soegninger) og 20261007020000
+-- (bedoemmelse_svar), som konto_slet og mine_data bruger.
+--
 -- Idempotent. Roerer ikke andre CHECK-lister end moderation_log_handling_check.
 
 -- ============================================================ 1. users.konto_slettet_kl
@@ -526,6 +529,9 @@ begin
   delete from public.brugerblokeringer          where blokerer_id = p_bruger or blokeret_id = p_bruger;
   delete from public.auction_templates          where user_id = p_bruger;
   delete from public.kendte_enheder             where bruger_id = p_bruger;
+  -- Gemte soegninger (fase 4A). Saelgers svar paa bedoemmelser (fase 4B)
+  -- bevares og vises som fra "Slettet bruger" via users.navn.
+  delete from public.gemte_soegninger           where bruger_id = p_bruger;
 
   -- 3. Gemt kort og automatisk betaling. Stripe-kunde- og kontoreferencerne
   --    bevares, da de hoerer til handelsdata (betalinger, udbetalinger, DAC7).
@@ -597,7 +603,10 @@ begin
 
   with
   fornavn as (
-    select u.id, coalesce(nullif(btrim(u.fornavn), ''), nullif(split_part(btrim(u.navn), ' ', 1), ''), 'Bruger') as navn
+    select u.id,
+           case when u.konto_slettet_kl is not null then 'Slettet bruger'
+                else coalesce(nullif(btrim(u.fornavn), ''), nullif(split_part(btrim(u.navn), ' ', 1), ''), 'Bruger')
+           end as navn
       from public.users u
   ),
   mine_handler as (
@@ -774,6 +783,22 @@ begin
         'enhed', e.beskrivelse, 'foerst_set', e.foerst_set_kl, 'sidst_set', e.sidst_set_kl)
         order by e.sidst_set_kl desc)
       from public.kendte_enheder e where e.bruger_id = v_uid), '[]'::jsonb),
+
+    'gemte_soegninger', coalesce((select jsonb_agg(jsonb_build_object(
+        'navn', g.navn, 'soegeord', g.soegeord, 'kategori', g.kategori,
+        'postnummer', g.postnummer, 'radius_km', g.radius_km,
+        'pris_min', g.pris_min, 'pris_max', g.pris_max, 'besked', g.besked,
+        'oprettet', g.oprettet_kl) order by g.oprettet_kl)
+      from public.gemte_soegninger g where g.bruger_id = v_uid), '[]'::jsonb),
+
+    'dine_svar_paa_bedoemmelser', coalesce((select jsonb_agg(jsonb_build_object(
+        'auktion', a.titel, 'svar', x.tekst, 'oprettet', x.oprettet,
+        'rettet_kl', x.rettet_kl, 'slettet_kl', x.slettet_kl, 'skjult', x.skjult)
+        order by x.oprettet)
+      from public.bedoemmelse_svar x
+      left join public.ratings r on r.id = x.rating_id
+      left join public.auctions a on a.id = r.auktion_id
+     where x.saelger_id = v_uid), '[]'::jsonb),
 
     'auktionsskabeloner', coalesce((select jsonb_agg(jsonb_build_object(
         'navn', s.name, 'indhold', s.data, 'oprettet', s.created_at) order by s.created_at)
