@@ -52,6 +52,7 @@ set search_path = public
 as $$
 declare
   v_rolle text;
+  v_koeber uuid;
 begin
   if p_medarbejder is null or p_trade is null then
     return jsonb_build_object('kode', 'ikke_fundet');
@@ -62,7 +63,8 @@ begin
     return jsonb_build_object('kode', 'ikke_staff');
   end if;
 
-  if not exists (select 1 from public.trades t where t.id = p_trade) then
+  select t.buyer_id into v_koeber from public.trades t where t.id = p_trade;
+  if not found then
     return jsonb_build_object('kode', 'ikke_fundet');
   end if;
 
@@ -83,7 +85,7 @@ begin
   end if;
 
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
-  values (p_medarbejder, 'chat_laest', 'handel', p_trade, null,
+  values (p_medarbejder, 'chat_laest', 'handel', p_trade, v_koeber,
           'Læste chatten mellem køber og sælger');
 
   return jsonb_build_object('kode', 'ok');
