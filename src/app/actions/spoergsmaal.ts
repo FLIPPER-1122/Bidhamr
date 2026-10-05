@@ -6,6 +6,7 @@
 // (service_role), efter rollen er tjekket her. Fejl RETURNERES.
 
 import { after } from "next/server";
+import { getUserMedToTrin } from "@/lib/mfa";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/adminAuth";
@@ -54,7 +55,7 @@ export async function stilSpoergsmaal(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: FEJL.ikke_logget_ind };
 
     if (!(await tjekGraenser([["spoergsmaal_ip", await klientIp()]]))) {
@@ -99,7 +100,7 @@ export async function besvarSpoergsmaal(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: FEJL.ikke_logget_ind };
 
     const { data, error } = await supabase.rpc("besvar_spoergsmaal", {
@@ -136,7 +137,7 @@ export async function saetSpoergsmaalAktiv(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: FEJL.ikke_logget_ind };
 
     const { data, error } = await supabase.rpc("saet_spoergsmaal_aktiv", {

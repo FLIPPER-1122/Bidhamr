@@ -12,18 +12,26 @@ import { bekraeftAdgangskode } from "@/lib/bekraeftAdgangskode";
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { adgangskodeAendretMail, toTrinMail } from "@/lib/mails/konto";
 import { logDriftFejl } from "@/lib/drift";
+import { manglerToTrin } from "@/lib/mfa";
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const IKKE_LOGGET_IND = "Du er ikke logget ind længere. Log ind igen.";
+const TO_TRIN_MANGLER = "Indtast først koden fra din godkendelses-app. Log ud og ind igen, hvis du ikke bliver bedt om den.";
+const GENLOG_IND = "Af sikkerhedshensyn skal du logge ud og ind igen, før du kan skifte adgangskode.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Ok = { ok: true };
 type Fejl = { fejl: string };
 
+// toTrinMangler: brugeren har to-trins-login, men sessionen har kun
+// adgangskoden (aal1). Alle handlinger herunder kræver fuldt login - proxyen
+// alene er ikke nok, da en server action kan kaldes via en offentlig sti.
 async function hentBruger() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
-  return { supabase, bruger: data.user };
+  const bruger = data.user;
+  const toTrinMangler = bruger ? await manglerToTrin(supabase, bruger) : false;
+  return { supabase, bruger, toTrinMangler };
 }
 
 function renKode(v: unknown): string | null {
@@ -44,8 +52,9 @@ async function sendSikkerhedsmail(
 // ------------------------------------------------------------ Adgangskode
 
 export async function skiftAdgangskode(nuvaerende: string, ny: string): Promise<Ok | Fejl> {
-  const { supabase, bruger } = await hentBruger();
+  const { supabase, bruger, toTrinMangler } = await hentBruger();
   if (!bruger) return { fejl: IKKE_LOGGET_IND };
+  if (toTrinMangler) return { fejl: TO_TRIN_MANGLER };
   if (!(await tjekGraenser([["adgangskode_bruger", bruger.id]]))) return { fejl: FOR_MANGE_FORSOEG };
 
   const { data: profil } = await createAdminClient()
@@ -67,6 +76,7 @@ export async function skiftAdgangskode(nuvaerende: string, ny: string): Promise<
     if (error.code === "same_password") return { fejl: "Den nye adgangskode skal være en anden end den nuværende." };
     if (error.code === "weak_password") return { fejl: "Adgangskoden er for svag. Vælg en længere og mindre almindelig adgangskode." };
     if (error.code === "insufficient_aal") return { fejl: "Log ind med din kode fra appen igen, og prøv så igen." };
+    if (error.code === "reauthentication_needed") return { fejl: GENLOG_IND };
     if (error.status === 429) return { fejl: FOR_MANGE_FORSOEG };
     console.error("skiftAdgangskode fejlede:", error.code, error.message);
     return { fejl: GENERISK };
@@ -85,8 +95,9 @@ export async function skiftAdgangskode(nuvaerende: string, ny: string): Promise<
 export async function startToTrin(): Promise<
   { ok: true; faktorId: string; qrKode: string; hemmelighed: string } | Fejl
 > {
-  const { supabase, bruger } = await hentBruger();
+  const { supabase, bruger, toTrinMangler } = await hentBruger();
   if (!bruger) return { fejl: IKKE_LOGGET_IND };
+  if (toTrinMangler) return { fejl: TO_TRIN_MANGLER };
   if (!(await tjekGraenser([["mfa_bruger", bruger.id]]))) return { fejl: FOR_MANGE_FORSOEG };
 
   const { data: faktorer, error: listeFejl } = await supabase.auth.mfa.listFactors();
@@ -119,8 +130,9 @@ export async function bekraeftNyToTrin(faktorId: string, kodeInput: string): Pro
   if (!kode) return { fejl: "Koden består af 6 cifre." };
   if (typeof faktorId !== "string" || !UUID.test(faktorId)) return { fejl: GENERISK };
 
-  const { supabase, bruger } = await hentBruger();
+  const { supabase, bruger, toTrinMangler } = await hentBruger();
   if (!bruger) return { fejl: IKKE_LOGGET_IND };
+  if (toTrinMangler) return { fejl: TO_TRIN_MANGLER };
   if (!(await tjekGraenser([["mfa_bruger", bruger.id]]))) return { fejl: FOR_MANGE_FORSOEG };
   // Faktoren skal tilhøre brugeren (Supabase tjekker det også).
   if (!bruger.factors?.some((f) => f.id === faktorId)) return { fejl: "Start forfra, og scan QR-koden igen." };
@@ -138,8 +150,9 @@ export async function bekraeftNyToTrin(faktorId: string, kodeInput: string): Pro
 
 export async function annullerNyToTrin(faktorId: string): Promise<Ok | Fejl> {
   if (typeof faktorId !== "string" || !UUID.test(faktorId)) return { ok: true };
-  const { supabase, bruger } = await hentBruger();
+  const { supabase, bruger, toTrinMangler } = await hentBruger();
   if (!bruger) return { fejl: IKKE_LOGGET_IND };
+  if (toTrinMangler) return { fejl: TO_TRIN_MANGLER };
   const faktor = bruger.factors?.find((f) => f.id === faktorId);
   // Kun halvfærdige faktorer kan annulleres herfra.
   if (faktor && faktor.status !== "verified") await supabase.auth.mfa.unenroll({ factorId: faktorId });
@@ -150,8 +163,9 @@ export async function slaaToTrinFra(kodeInput: string): Promise<Ok | Fejl> {
   const kode = renKode(kodeInput);
   if (!kode) return { fejl: "Koden består af 6 cifre." };
 
-  const { supabase, bruger } = await hentBruger();
+  const { supabase, bruger, toTrinMangler } = await hentBruger();
   if (!bruger) return { fejl: IKKE_LOGGET_IND };
+  if (toTrinMangler) return { fejl: TO_TRIN_MANGLER };
   if (!(await tjekGraenser([["mfa_bruger", bruger.id]]))) return { fejl: FOR_MANGE_FORSOEG };
 
   const verificerede = bruger.factors?.filter((f) => f.status === "verified") ?? [];
@@ -182,8 +196,9 @@ export async function slaaToTrinFra(kodeInput: string): Promise<Ok | Fejl> {
 
 export async function fjernEnhed(id: string): Promise<Ok | Fejl> {
   if (typeof id !== "string" || !UUID.test(id)) return { fejl: GENERISK };
-  const { supabase, bruger } = await hentBruger();
+  const { supabase, bruger, toTrinMangler } = await hentBruger();
   if (!bruger) return { fejl: IKKE_LOGGET_IND };
+  if (toTrinMangler) return { fejl: TO_TRIN_MANGLER };
   if (!(await tjekGraenser([["enheder_bruger", bruger.id]]))) return { fejl: FOR_MANGE_FORSOEG };
 
   const { data, error } = await supabase.rpc("fjern_min_enhed", { p_id: id });
@@ -199,8 +214,9 @@ export async function fjernEnhed(id: string): Promise<Ok | Fejl> {
 }
 
 export async function logUdAndreSteder(): Promise<Ok | Fejl> {
-  const { supabase, bruger } = await hentBruger();
+  const { supabase, bruger, toTrinMangler } = await hentBruger();
   if (!bruger) return { fejl: IKKE_LOGGET_IND };
+  if (toTrinMangler) return { fejl: TO_TRIN_MANGLER };
   if (!(await tjekGraenser([["enheder_bruger", bruger.id]]))) return { fejl: FOR_MANGE_FORSOEG };
 
   const { error } = await supabase.auth.signOut({ scope: "others" });

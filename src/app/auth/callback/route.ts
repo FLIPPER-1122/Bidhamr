@@ -6,6 +6,7 @@ import { sikkerSti } from "@/lib/sikkerSti";
 import { registrerLogin } from "@/lib/enheder";
 import { harToTrin, TO_TRIN_STI } from "@/lib/mfa";
 import { TJEK_EMAIL_COOKIE } from "@/lib/tilmelding";
+import { hentKontoStatus } from "@/lib/kontoStatus";
 
 // Fælles landingspunkt for Supabase auth-links (nulstilling af adgangskode,
 // e-mailbekræftelse, magic links). Supabase sender brugeren hertil med enten
@@ -21,7 +22,7 @@ import { TJEK_EMAIL_COOKIE } from "@/lib/tilmelding";
 // Kun interne stier accepteres som mål, så ?next= ikke kan bruges til at
 // videresende brugeren til et fremmed domæne (open redirect). Se src/lib/sikkerSti.ts.
 
-type FejlKode = "link_udloebet" | "link_ugyldigt";
+type FejlKode = "link_udloebet" | "link_ugyldigt" | "konto_suspenderet";
 
 // Fejl sendes videre som en fast kode - aldrig Supabase' egen fejltekst, som
 // kan indeholde interne detaljer. Bekræftelseslinks sendes til "Tjek din
@@ -81,16 +82,32 @@ export async function GET(req: NextRequest) {
   const { user, session } = svar.data;
   if (erBekraeftelse) (await cookies()).delete(TJEK_EMAIL_COOKIE);
 
+  // Nulstilling af adgangskode: med token_hash kommer type=recovery; med
+  // ?code= (PKCE) kendes det kun på målet (/reset-password). En nulstilling
+  // er ikke et nyt login - ingen registrering af enheden og ingen mail.
+  const erNulstilling =
+    type === "recovery" || maal === "/reset-password" || maal.startsWith("/reset-password?");
+
+  // Samme tjek som ved almindeligt login: slettede og suspenderede konti
+  // lukkes ikke ind (fail closed, hvis profilen ikke kan læses).
+  if (user) {
+    const status = await hentKontoStatus(user.id);
+    if (status.kode !== "ok") {
+      await supabase.auth.signOut({ scope: "local" });
+      return tilFejl(origin, status.kode === "suspenderet" ? "konto_suspenderet" : "link_ugyldigt", false);
+    }
+  }
+
   // Linket logger brugeren ind. Har brugeren to-trins-login, skal koden
   // indtastes først (gælder ikke nulstilling - den side beder selv om koden).
-  if (user && type !== "recovery" && harToTrin(user)) {
+  if (user && !erNulstilling && harToTrin(user)) {
     const url = new URL(TO_TRIN_STI, origin);
     url.searchParams.set("redirect", maal);
     return NextResponse.redirect(url);
   }
 
   // Enheden registreres (første login efter oprettelse giver ingen mail).
-  if (user && session && type !== "recovery") {
+  if (user && session && !erNulstilling) {
     await registrerLogin({ brugerId: user.id, email: user.email, accessToken: session.access_token });
   }
 

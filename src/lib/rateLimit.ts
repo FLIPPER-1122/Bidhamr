@@ -33,6 +33,10 @@ export const GRAENSER = {
   // ny adgangskode efter nulstilling.
   adgangskode_bruger: { maks: 6, vindueSek: 15 * 60 },
   konto_slet_bruger: { maks: 5, vindueSek: 60 * 60 },
+  // POST /api/konto/slet (appen) pr. IP, før tokenet er valideret.
+  konto_slet_ip: { maks: 20, vindueSek: 60 * 60 },
+  // "Nyt login"-mails pr. bruger (registrerLogin).
+  nyt_login_mail: { maks: 5, vindueSek: 60 * 60 },
   // Enheder: fjern enhed / log ud andre steder.
   enheder_bruger: { maks: 30, vindueSek: 15 * 60 },
   venteliste_ip: { maks: 5, vindueSek: 60 * 60 },

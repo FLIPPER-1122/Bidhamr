@@ -13,7 +13,7 @@
 --   1. users.konto_slettet_kl
 --   2. handle_new_user: fornavn/efternavn fra signup-metadata, aldrig e-mail som navn
 --   3. kendte_enheder + registrer_login / mine_enheder / fjern_min_enhed
---   4. To-trins-login haandhaeves i databasen (PostgREST pre-request)
+--   4. (flyttet til 20261007032000 - koeres foerst, naar appen har to-trin)
 --   5. moderation_log_handling_check + 'konto_slettet' (FLETTES)
 --   6. konto_sletning_blokeringer / min_konto_sletning_status / konto_slet
 --   7. mine_data (GDPR-udtraek, 1 gang i timen)
@@ -264,51 +264,9 @@ grant execute on function public.fjern_min_enhed(uuid) to authenticated;
 
 -- ============================================================ 4. To-trins-login i databasen
 
--- Har brugeren slaaet to-trins-login til, maa en session, der kun har
--- adgangskoden (aal1), ikke bruge databasen - heller ikke direkte mod API'et
--- med anon-noeglen. PostgREST kalder funktionen foer hver forespoergsel
--- (tabeller og RPC'er). Gaelder ikke Realtime og Storage.
-create or replace function public.bidhamr_pre_request()
-returns void
-language plpgsql
-stable
-security definer
-set search_path = ''
-as $fn$
-declare
-  v_claims jsonb;
-  v_uid    uuid;
-begin
-  begin
-    v_claims := nullif(current_setting('request.jwt.claims', true), '')::jsonb;
-  exception when others then
-    return;
-  end;
-  if v_claims is null or (v_claims->>'role') is distinct from 'authenticated' then
-    return;
-  end if;
-  if coalesce(v_claims->>'aal', 'aal1') = 'aal2' then
-    return;
-  end if;
-  begin
-    v_uid := (v_claims->>'sub')::uuid;
-  exception when others then
-    return;
-  end;
-  if v_uid is not null and exists (
-       select 1 from auth.mfa_factors f
-        where f.user_id = v_uid and f.status = 'verified') then
-    raise exception 'To-trins-login mangler. Log ind igen med koden fra din app.'
-      using errcode = '42501', hint = 'mfa_kraeves';
-  end if;
-end;
-$fn$;
-
-revoke all on function public.bidhamr_pre_request() from public;
-grant execute on function public.bidhamr_pre_request() to anon, authenticated, service_role;
-
-alter role authenticator set pgrst.db_pre_request to 'public.bidhamr_pre_request';
-notify pgrst, 'reload config';
+-- FLYTTET til 20261007032000_mfa_database_haandhaevelse.sql, som foerst maa
+-- koeres i produktion, naar Expo-appen understoetter to-trins-login. Indtil
+-- da haandhaever hjemmesiden to-trin i proxyen og i server actions.
 
 -- ============================================================ 5. moderation_log: 'konto_slettet'
 

@@ -19,6 +19,8 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
   const callbackFejl =
     fejlKode === "link_udloebet"
       ? "Linket er udløbet. Bed om et nyt og prøv igen."
+      : fejlKode === "konto_suspenderet"
+        ? "Din konto er suspenderet. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
       : fejlKode
         ? "Linket virker ikke. Bed om et nyt og prøv igen."
         : null;

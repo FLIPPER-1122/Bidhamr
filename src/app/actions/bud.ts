@@ -1,6 +1,7 @@
 "use server";
 
 import { after } from "next/server";
+import { getUserMedToTrin } from "@/lib/mfa";
 import { createClient } from "@/lib/supabase/server";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 import { notificerEgetNyesteBud } from "@/lib/notifikationer/bud";
@@ -40,7 +41,7 @@ export async function afgivBud(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserMedToTrin(supabase);
   if (!user) return { fejl: "Du skal være logget ind for at byde." };
 
   if (

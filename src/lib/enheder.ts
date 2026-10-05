@@ -15,6 +15,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { nytLoginMail } from "@/lib/mails/konto";
 import { logDriftFejl } from "@/lib/drift";
+import { indenForGraense } from "@/lib/rateLimit";
 
 export const ENHED_COOKIE = "bh_enhed";
 // Browsere gemmer højst cookies i 400 dage.
@@ -116,7 +117,8 @@ export async function registrerLogin(input: {
       return;
     }
     const svar = data as { ny?: boolean; send_mail?: boolean } | null;
-    if (svar?.send_mail && input.email) {
+    // Højst 5 "Nyt login"-mails pr. bruger i timen.
+    if (svar?.send_mail && input.email && (await indenForGraense("nyt_login_mail", input.brugerId))) {
       const res = await sendHandelMailDetaljer(
         input.email,
         nytLoginMail({ tidspunkt: new Date(), enhed: beskrivelse }),

@@ -46,7 +46,7 @@ export default function Enheder({ enheder }: { enheder: Enhed[] }) {
     const svar = await fjernEnhed(id);
     setArbejder(null);
     if ("fejl" in svar) return setFejl(svar.fejl);
-    setBesked("Enheden er fjernet og logget ud.");
+    setBesked("Enheden er fjernet. Det kan tage op til en time, før enheden er helt logget ud.");
     router.refresh();
   }
 
@@ -57,7 +57,7 @@ export default function Enheder({ enheder }: { enheder: Enhed[] }) {
     const svar = await logUdAndreSteder();
     setArbejder(null);
     if ("fejl" in svar) return setFejl(svar.fejl);
-    setBesked("Du er logget ud alle andre steder. Du er stadig logget ind her.");
+    setBesked("Du er logget ud alle andre steder. Du er stadig logget ind her. Det kan tage op til en time, før de andre enheder er helt logget ud.");
     router.refresh();
   }
 
