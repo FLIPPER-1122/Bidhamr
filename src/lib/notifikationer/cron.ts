@@ -22,6 +22,7 @@ import {
 } from "@/lib/notifikationer/bud";
 import { betalingsfristForlaengetMail } from "@/lib/mails/handel";
 import { notificerAfhentningsfristForlaengelser } from "@/lib/betaling/afhentningsfrist";
+import { soegningHref } from "@/lib/gemteSoegninger";
 import {
   spoergsmaalInput,
   svarInput,
@@ -428,25 +429,59 @@ async function slutterSnart(admin: Admin): Promise<number> {
   return sendNye(admin, opgaver);
 }
 
+// Ny auktion fra en sælger, man følger. Kun følgninger, der fandtes, da
+// auktionen blev oprettet, og aldrig ved en blokering mellem de to (heller
+// ikke en anonym byder-spærring) - så får den blokerede ingen besked.
 async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
   const { data: auktioner } = await admin
     .from("auctions")
-    .select("id, titel, bruger_id")
+    .select("id, titel, bruger_id, oprettet")
     .eq("status", "aktiv")
     .eq("skjult", false)
     .gte("oprettet", fraTid(start, 24))
     .order("oprettet", { ascending: false })
     .limit(MAKS);
   if (!auktioner || auktioner.length === 0) return 0;
-  const { data: foelgere } = await admin
+  const saelgere = [...new Set(auktioner.map((a) => a.bruger_id as string))];
+  const { data: foelgere, error: foelgFejl } = await admin
     .from("seller_follows")
-    .select("follower_id, seller_id")
-    .in("seller_id", [...new Set(auktioner.map((a) => a.bruger_id as string))])
+    .select("follower_id, seller_id, created_at")
+    .in("seller_id", saelgere)
     .limit(5000);
+  if (foelgFejl) {
+    console.error("Notifikationer: følgere kunne ikke hentes:", foelgFejl.message);
+    return 0;
+  }
+  if (!foelgere || foelgere.length === 0) return 0;
+  // Blokeringer i begge retninger for de sælgere, der har følgere. I bidder,
+  // så URL'en ikke bliver for lang.
+  const blokeret = new Set<string>();
+  const medFoelgere = [...new Set(foelgere.map((f) => f.seller_id as string))];
+  for (let i = 0; i < medFoelgere.length; i += 100) {
+    const del = medFoelgere.slice(i, i + 100);
+    for (const kolonne of ["blokerer_id", "blokeret_id"] as const) {
+      const { data: blok, error } = await admin
+        .from("brugerblokeringer")
+        .select("blokerer_id, blokeret_id")
+        .in(kolonne, del)
+        .limit(10000);
+      if (error) {
+        // Hellere ingen besked end en besked til en blokeret bruger.
+        console.error("Notifikationer: blokeringer kunne ikke hentes:", error.message);
+        return 0;
+      }
+      for (const b of blok ?? []) {
+        blokeret.add(`${b.blokerer_id}:${b.blokeret_id}`);
+        blokeret.add(`${b.blokeret_id}:${b.blokerer_id}`);
+      }
+    }
+  }
   const opgaver: Opgave[] = [];
   for (const a of auktioner) {
-    for (const f of foelgere ?? []) {
+    for (const f of foelgere) {
       if (f.seller_id !== a.bruger_id) continue;
+      if (blokeret.has(`${f.follower_id}:${f.seller_id}`)) continue;
+      if (new Date(f.created_at as string) > new Date(a.oprettet as string)) continue;
       opgaver.push({
         brugerId: f.follower_id as string,
         type: "ny_auktion_fulgt_saelger",
@@ -460,6 +495,62 @@ async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
       });
     }
   }
+  return sendNye(admin, opgaver);
+}
+
+// Gemte søgninger med besked: gemte_soegninger_find_nye (migration
+// 20261007010000) finder nye matchende auktioner og markerer søgningen som
+// behandlet i samme kald (højst én besked pr. søgning pr. 6 timer, egne
+// auktioner og blokerede sælgere er sorteret fra). Her sendes kun beskeden.
+type SoegningsMatch = {
+  soegning_id: string;
+  bruger_id: string;
+  navn: string;
+  soegeord: string;
+  kategori: string | null;
+  postnummer: string | null;
+  radius_km: number | null;
+  antal: number;
+  foerste_id: string;
+  foerste_titel: string;
+  besked_kl: string;
+};
+
+async function gemteSoegninger(admin: Admin): Promise<number> {
+  const { data, error } = await admin.rpc("gemte_soegninger_find_nye", { p_maks: MAKS });
+  if (error) {
+    // Migrationen er ikke kørt endnu (funktionen findes ikke): spring over.
+    if (error.code !== "PGRST202" && error.code !== "42883") {
+      console.error("Notifikationer: gemte søgninger fejlede:", error.message);
+    }
+    return 0;
+  }
+  const opgaver: Opgave[] = ((data ?? []) as SoegningsMatch[]).map((m) => {
+    const link = soegningHref(
+      {
+        soegeord: m.soegeord ?? "",
+        kategori: m.kategori,
+        postnummer: m.postnummer,
+        radiusKm: m.radius_km,
+      },
+      true,
+    );
+    const navn = m.navn.slice(0, 60);
+    return {
+      brugerId: m.bruger_id,
+      type: "gemt_soegning",
+      input: {
+        titel: m.antal === 1 ? "Ny auktion i din søgning" : `${m.antal} nye auktioner i din søgning`,
+        tekst:
+          m.antal === 1
+            ? `"${m.foerste_titel}" matcher din søgning "${navn}".`
+            : `${m.antal} nye auktioner matcher din søgning "${navn}", bl.a. "${m.foerste_titel}".`,
+        link,
+        data: { gemt_soegning_id: m.soegning_id },
+        noegle: `gemt_soegning:${m.soegning_id}:${new Date(m.besked_kl).getTime()}`,
+      },
+    };
+  });
   return sendNye(admin, opgaver);
 }
 
@@ -642,6 +733,7 @@ export async function koerNotifikationsCron() {
     spoergsmaal: 0,
     slutterSnart: 0,
     nyAuktion: 0,
+    gemteSoegninger: 0,
     beskeder: 0,
     fristForlaengelser: 0,
     afhentningsfristForlaengelser: 0,
@@ -670,6 +762,9 @@ export async function koerNotifikationsCron() {
   trin.push(["fristForlaengelser", () => notificerFristForlaengelser()]);
   // Ny afhentningsfrist fra sælgeren (tabellen er ny, 5. oktober 2026).
   trin.push(["afhentningsfristForlaengelser", () => notificerAfhentningsfristForlaengelser()]);
+  // Gemte søgninger holder selv styr på, hvad der er vurderet (tabellen er
+  // ny, 7. oktober 2026), og kræver ikke start_kl.
+  trin.push(["gemteSoegninger", () => gemteSoegninger(admin)]);
   if (start) {
     const s = start;
     trin.push(
