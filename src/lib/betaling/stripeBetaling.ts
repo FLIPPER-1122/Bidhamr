@@ -16,6 +16,7 @@
 import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logDriftFejl } from "@/lib/drift";
 import { totalOere } from "@/lib/betaling/beregn";
 
 // Offentlig https-adresse til Stripes business_profile.url. Lokalt
@@ -278,6 +279,7 @@ export async function sikrPaymentIntent(
     // samme tilbage via idempotency key'en (24 t). Betal aldrig en intent,
     // databasen ikke kender.
     console.error("Kunne ikke gemme PaymentIntent:", betaling.id, pi.id, gemFejl.message);
+    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "Kunne ikke gemme PaymentIntent", fejl: gemFejl });
     throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
   }
 
@@ -850,6 +852,7 @@ export async function refunderSagerVentende(): Promise<number> {
       if ((await refunderBetaling(id)) === "refunderet") antal++;
     } catch (err) {
       console.error("Sagsrefusion fejlede (prøves igen):", id, err);
+      await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Sagsrefusion", fejl: err });
     }
   }
   return antal;
@@ -970,6 +973,7 @@ export async function refunderAfvigelserVentende(): Promise<number> {
       if ((await refunderAfvigelse(stripe_payment_intent_id)) === "refunderet") antal++;
     } catch (err) {
       console.error("Refusion af afvigelse fejlede:", stripe_payment_intent_id, err);
+      await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Refusion af afvigelse", fejl: err });
     }
   }
   return antal;
@@ -1250,6 +1254,7 @@ export async function overfoerVentende(saelgerId?: string): Promise<number> {
         if ((await overfoerTilSaelger(id)) === "overfoert") antal++;
       } catch (err) {
         console.error("Overførsel til sælger fejlede:", id, err);
+        await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Overførsel til sælger", fejl: err });
       }
     }
     if (raekker.length < OVERFOERSEL_SIDE) break;

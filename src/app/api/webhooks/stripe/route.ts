@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logDriftFejl } from "@/lib/drift";
 import {
   overfoerVentende,
   registrerGemtKort,
@@ -194,6 +195,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     // 500 får Stripe til at prøve igen. Handlerne er idempotente.
     console.error(`Webhook ${event.type} (${event.id}) fejlede:`, err);
+    await logDriftFejl({ kilde: "webhook", sti: "stripe-webhook", hvor: event.type, fejl: err });
     return NextResponse.json({ error: "Intern fejl." }, { status: 500 });
   }
 

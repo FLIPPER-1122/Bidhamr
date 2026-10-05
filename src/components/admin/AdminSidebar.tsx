@@ -152,6 +152,16 @@ const navItems: {
     ),
   },
   {
+    href: "/admin/drift",
+    label: "Drift",
+    minRolle: "admin",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l3-3 3 3 4.5-6 3 4.5 3-1.5M3.75 19.5h16.5" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/venteliste",
     label: "Venteliste",
     minRolle: "chef",

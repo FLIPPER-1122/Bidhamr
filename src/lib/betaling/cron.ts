@@ -29,6 +29,7 @@
 // sendes to gange, selv hvis to kørsler overlapper.
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logDriftFejl } from "@/lib/drift";
 import { send } from "@/lib/notifikationer/send";
 import { koerNotifikationsCron } from "@/lib/notifikationer/cron";
 import { annullerUbetalte, behandlAndenchance } from "@/lib/betaling/ubetalt";
@@ -57,6 +58,13 @@ import {
 } from "@/lib/betaling/stripeBetaling";
 
 const TIME = 60 * 60 * 1000;
+
+// Et trin fejlede: log til konsollen og til drift_fejl (/admin/drift).
+// Kørslen fortsætter med de næste trin. Kaster aldrig.
+async function trinFejl(trin: string, err: unknown, ...detaljer: unknown[]) {
+  console.error(`${trin} fejlede:`, ...detaljer, err);
+  await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: trin, fejl: err });
+}
 
 // Sætter et tidsstempel-felt, hvis det er tomt. true = denne kørsel vandt.
 // Med betalSenest lykkes claimet kun, hvis fristen stadig er den, kørslen
@@ -120,7 +128,7 @@ export async function koerBetalingsCron() {
 
   // 1) Luk auktioner og opret handel + betaling.
   const { data: lukkede, error: rpcFejl } = await admin.rpc("afslut_udloebne_auktioner");
-  if (rpcFejl) console.error("afslut_udloebne_auktioner fejlede:", rpcFejl);
+  if (rpcFejl) await trinFejl("afslut_udloebne_auktioner", rpcFejl);
   resultat.lukkede = Number(lukkede ?? 0);
 
   // 2) Nye betalinger uden "du vandt"-mail.
@@ -139,7 +147,7 @@ export async function koerBetalingsCron() {
         if (r === "betalt" || r === "allerede_betalt") resultat.autobetalinger++;
       }
     } catch (err) {
-      console.error("Autobetaling kastede:", b.id, err);
+      await trinFejl("Autobetaling", err, b.id);
     }
   }
 
@@ -255,7 +263,7 @@ export async function koerBetalingsCron() {
   try {
     resultat.sagsafviklinger = await afviklForfaldneSager();
   } catch (err) {
-    console.error("Afvikling af sager efter ankefristen fejlede:", err);
+    await trinFejl("Afvikling af sager efter ankefristen", err);
   }
 
   // 3c) Automatisk frigivelse (48 t efter "modtaget" / 14 dage efter afsendelse).
@@ -264,7 +272,7 @@ export async function koerBetalingsCron() {
   try {
     resultat.autoFrigivet = await frigivAutomatisk();
   } catch (err) {
-    console.error("Automatisk frigivelse fejlede:", err);
+    await trinFejl("Automatisk frigivelse", err);
   }
 
   // 4) Frigivne beløb, der ventede på sælgerens konto (eller fejlede).
@@ -284,7 +292,7 @@ export async function koerBetalingsCron() {
   try {
     resultat.returbeskeder = await notificerReturKanSendes();
   } catch (err) {
-    console.error("Beskeder om retur efter ankefristen fejlede:", err);
+    await trinFejl("Beskeder om retur efter ankefristen", err);
   }
 
   // 6) Fristen overskredet: annullér handel + Stripe, opret sag, send mails.
@@ -293,7 +301,7 @@ export async function koerBetalingsCron() {
     resultat.ubetalteAnnulleret = r.annulleret;
     resultat.ubetaltMails = r.mails;
   } catch (err) {
-    console.error("Annullering af ubetalte handler fejlede:", err);
+    await trinFejl("Annullering af ubetalte handler", err);
   }
 
   // 6b) Afsendelsesfrist: først påmindelserne (dag 3 og 4), så annullering
@@ -310,14 +318,14 @@ export async function koerBetalingsCron() {
   const { data: haengende, error: haengFejl } = await admin.rpc(
     "betaling_marker_ikke_afsluttet",
   );
-  if (haengFejl) console.error("betaling_marker_ikke_afsluttet fejlede:", haengFejl);
+  if (haengFejl) await trinFejl("betaling_marker_ikke_afsluttet", haengFejl);
   resultat.ikkeAfsluttet = Number(haengende ?? 0);
 
   // 8b) Afhentning ikke gennemført 7 dage efter betalingen: til staff.
   const { data: ikkeHentet, error: hentFejl } = await admin.rpc(
     "afhentning_marker_ikke_hentet",
   );
-  if (hentFejl) console.error("afhentning_marker_ikke_hentet fejlede:", hentFejl);
+  if (hentFejl) await trinFejl("afhentning_marker_ikke_hentet", hentFejl);
   resultat.ikkeAfhentet = Number(ikkeHentet ?? 0);
 
   // 7) Andenchance-tilbud: udløb og mails.
@@ -326,7 +334,7 @@ export async function koerBetalingsCron() {
     resultat.andenchanceUdloebne = r.udloebne;
     resultat.andenchanceMails = r.mails;
   } catch (err) {
-    console.error("Andenchance-trinnet fejlede:", err);
+    await trinFejl("Andenchance-trinnet", err);
   }
 
   // 9) Notifikationer om likes, beskeder, favoritter der slutter snart, nye

@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logDriftFejl } from "@/lib/drift";
 import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import {
@@ -199,6 +200,7 @@ export async function startBetaling(
   } catch (err) {
     if (err instanceof BetalingsFejl) return { fejl: err.message };
     console.error("startBetaling fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "startBetaling", fejl: err, brugerId: user.id });
     return { fejl: GENERISK };
   }
 }
@@ -295,6 +297,7 @@ export async function startGemKort(): Promise<{ ok: true; clientSecret: string }
     return { ok: true, clientSecret: si.client_secret };
   } catch (err) {
     console.error("startGemKort fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "startGemKort", fejl: err, brugerId: user.id });
     return { fejl: GENERISK };
   }
 }
@@ -322,6 +325,7 @@ export async function bekraeftGemtKort(
     return { ok: true };
   } catch (err) {
     console.error("bekraeftGemtKort fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "bekraeftGemtKort", fejl: err, brugerId: user.id });
     return { fejl: GENERISK };
   }
 }
@@ -345,6 +349,7 @@ export async function saetAutobetaling(til: boolean): Promise<{ ok: true } | Fej
     return { ok: true };
   } catch (err) {
     console.error("saetAutobetaling fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "saetAutobetaling", fejl: err, brugerId: user.id });
     return { fejl: GENERISK };
   }
 }
@@ -376,6 +381,7 @@ export async function fjernGemtKort(): Promise<{ ok: true } | Fejl> {
     return { ok: true };
   } catch (err) {
     console.error("fjernGemtKort fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "fjernGemtKort", fejl: err, brugerId: user.id });
     return { fejl: GENERISK };
   }
 }
@@ -395,6 +401,7 @@ export async function startSaelgerOnboarding(
   } catch (err) {
     if (err instanceof BetalingsFejl) return { fejl: err.message };
     console.error("startSaelgerOnboarding fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "startSaelgerOnboarding", fejl: err, brugerId: user.id });
     return { fejl: GENERISK };
   }
 }
@@ -413,6 +420,7 @@ export async function opdaterSaelgerStatus(): Promise<{ ok: true } | Fejl> {
     return { ok: true };
   } catch (err) {
     console.error("opdaterSaelgerStatus fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "opdaterSaelgerStatus", fejl: err, brugerId: user.id });
     return { fejl: GENERISK };
   }
 }
