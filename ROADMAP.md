@@ -111,31 +111,31 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 ## Fase 3 – Nyt design og forside
 Formål: siden bliver troværdig, professionel, tryg og moderne.
 
-- [ ] Nyt logo (nr. 8) og app-ikon (7B) ind på web og i appen
-- [ ] Skift fra rød til den grønne/orange stil fra mockup D på hele siden
-- [ ] Ny forside: delt hero med søgefelt, tryghedsstribe, kategorier med ikoner, "Slutter snart"-kort
-- [ ] Ny menu/topbar med bedre struktur
-- [ ] Gennemgå alle øvrige sider, så de følger `DESIGN.md`
-- [ ] Hele hjemmesiden mobilvenlig
-- [ ] "Sådan virker det"-side og hjælp/FAQ (købersikring, gebyrer, fragt, sager)
-- [ ] Søgning og filtre: pris, kategori, slutter snart, afstand
-- [ ] Forbudte varer: liste + kontrol ved oprettelse af auktion
-- [ ] Blokering af brugere – inkl. at sælger kan spærre bestemte brugere fra at byde på sine auktioner
-- [ ] Rapportér en besked/bruger i chatten + automatisk spamfilter i beskeder
-- [ ] SEO (titler, beskrivelser, sitemap) og besøgsstatistik (cookie-venlig)
+- [~] Nyt logo (nr. 8) og app-ikon (7B) ind på web og i appen
+- [~] Skift fra rød til den grønne/orange stil fra mockup D på hele siden
+- [~] Ny forside: delt hero med søgefelt, tryghedsstribe, kategorier med ikoner, "Slutter snart"-kort
+- [~] Ny menu/topbar med bedre struktur
+- [~] Gennemgå alle øvrige sider, så de følger `DESIGN.md`
+- [~] Hele hjemmesiden mobilvenlig
+- [~] "Sådan virker det"-side og hjælp/FAQ (købersikring, gebyrer, fragt, sager)
+- [~] Søgning og filtre: pris, kategori, slutter snart, afstand
+- [~] Forbudte varer: liste + kontrol ved oprettelse af auktion
+- [~] Blokering af brugere – inkl. at sælger kan spærre bestemte brugere fra at byde på sine auktioner
+- [~] Rapportér en besked/bruger i chatten + automatisk spamfilter i beskeder
+- [~] SEO (titler, beskrivelser, sitemap) og besøgsstatistik (cookie-venlig)
 - [ ] Filip: find en skabelon til **privatlivspolitik** og **brugerbetingelser/handelsbetingelser** (fx fra Erhvervsstyrelsen/Virk, Datatilsynet, din rådgiver eller en dansk skabelontjeneste for markedspladser) og læg den i projektet som `jura/privatlivspolitik-skabelon.md` og `jura/brugerbetingelser-skabelon.md`
 - [ ] Implementér privatlivspolitik og brugerbetingelser ud fra Filips skabeloner, tilpasset BidHamr og `ROADMAP-BESLUTNINGER.md` (indhold-agenten). Vises som egne sider og linkes fra footer, oprettelse af profil og betaling. Tydeligt markeret **"UDKAST – skal godkendes af advokat"**, indtil advokaten har gennemgået dem i fase 6. Brugeren skal acceptere brugerbetingelserne ved oprettelse
-- [ ] Footer og faste sider: Om BidHamr, Kontakt/kundeservice, Handelsbetingelser, Privatlivspolitik, Cookies
-- [ ] Kontaktformular til kundeservice, som lander i admin
-- [ ] Pæne fejlsider (404/500) og loading-tilstande overalt
-- [ ] **Spørg sælger**: købere kan stille spørgsmål til sælgeren, mens auktionen kører. **Sælger vælger selv ved oprettelse, om det er slået til eller fra** (kan ændres undervejs). Er det slået fra, vises "Sælgeren modtager ikke spørgsmål – læs beskrivelsen grundigt"
-- [ ] Tilgængelighedserklæring i footeren + "Rapportér en fejl"-knap
-- [ ] **Stand på varen** som faste valg ved oprettelse (Ny med mærke / Som ny / God / Brugt / Defekt) – gør "ikke som beskrevet"-sager lettere at afgøre
-- [ ] Billeder: op til 10 pr. auktion, understøt iPhone-formatet HEIC, automatisk komprimering
-- [ ] Pakkeguide i FAQ: "Sådan pakker du din vare" (hænger sammen med reglen om, at sælger har ansvaret for indpakning)
-- [ ] "MitID-verificeret"-mærke på alle profiler
-- [ ] Sælgerens adresse og telefonnummer vises aldrig offentligt – kun det nødvendige deles med køberen efter handlen
-- [ ] Opret auktion: gennemgå hele flowet, så det er hurtigt og nemt (billeder, kategorier, fragtvalg, forhåndsvisning)
+- [~] Footer og faste sider: Om BidHamr, Kontakt/kundeservice, Handelsbetingelser, Privatlivspolitik, Cookies
+- [~] Kontaktformular til kundeservice, som lander i admin
+- [~] Pæne fejlsider (404/500) og loading-tilstande overalt
+- [~] **Spørg sælger**: købere kan stille spørgsmål til sælgeren, mens auktionen kører. **Sælger vælger selv ved oprettelse, om det er slået til eller fra** (kan ændres undervejs). Er det slået fra, vises "Sælgeren modtager ikke spørgsmål – læs beskrivelsen grundigt"
+- [~] Tilgængelighedserklæring i footeren + "Rapportér en fejl"-knap
+- [~] **Stand på varen** som faste valg ved oprettelse (Ny med mærke / Som ny / God / Brugt / Defekt) – gør "ikke som beskrevet"-sager lettere at afgøre
+- [~] Billeder: op til 10 pr. auktion, understøt iPhone-formatet HEIC, automatisk komprimering
+- [~] Pakkeguide i FAQ: "Sådan pakker du din vare" (hænger sammen med reglen om, at sælger har ansvaret for indpakning)
+- [ ] "MitID-verificeret"-mærke på alle profiler *(venter på MitID – Filip, 6. okt.)*
+- [~] Sælgerens adresse og telefonnummer vises aldrig offentligt – kun det nødvendige deles med køberen efter handlen
+- [~] Opret auktion: gennemgå hele flowet, så det er hurtigt og nemt (billeder, kategorier, fragtvalg, forhåndsvisning)
 
 ## Fase 4 – Brugerens egne ting
 Formål: brugerne har overblik og styr på deres beskeder.
