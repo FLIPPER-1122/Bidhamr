@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { assertRole } from "@/lib/adminAuth";
+import { erTestdatabase } from "@/lib/miljoe";
 import {
   CLAIM_HAENGER_MIN,
   CRON_ADVARSEL_MIN,
@@ -115,7 +116,20 @@ export default async function AdminDrift({
   ]);
 
   // Advarsel: ingen vellykket kørsel af vores cron-rute i 15 minutter.
+  // Testdatabasen kalder bevidst ikke cron-ruten (ingen cron_url/cron_secret i
+  // Vault). Er der aldrig logget en kørsel og ingen pg_net-svar, vises en
+  // neutral besked i stedet for den røde advarsel. Kun på testdatabasen –
+  // erTestdatabase() er fail closed, så produktion viser altid advarslen.
+  const ruteIkkeKaldtPaaTest =
+    erTestdatabase() &&
+    rute.tilstand === "ok" &&
+    !rute.data.sidsteOk &&
+    rute.data.seneste.length === 0 &&
+    http.tilstand === "ok" &&
+    http.data.length === 0;
+
   const ruteAdvarsel =
+    !ruteIkkeKaldtPaaTest &&
     rute.tilstand === "ok" &&
     (!rute.data.sidsteOk ||
       nu - new Date(rute.data.sidsteOk).getTime() > CRON_ADVARSEL_MIN * 60_000);
@@ -140,7 +154,9 @@ export default async function AdminDrift({
         titel="Cron-rute (betalings-cron)"
         hoejre={
           rute.tilstand === "ok" ? (
-            ruteAdvarsel ? (
+            ruteIkkeKaldtPaaTest ? (
+              <Badge farve="graa">Ikke i brug på testdatabasen</Badge>
+            ) : ruteAdvarsel ? (
               <Badge farve="roed">Ingen vellykket kørsel i over {CRON_ADVARSEL_MIN} min.</Badge>
             ) : (
               <Badge farve="groen">Kører</Badge>
@@ -151,6 +167,12 @@ export default async function AdminDrift({
         <SektionFejl s={rute} />
         {rute.tilstand === "ok" && (
           <div className="space-y-4">
+            {ruteIkkeKaldtPaaTest && (
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
+                Ingen kørsler logget endnu. Cron-ruten kaldes kun fra produktionsdatabasen – på
+                testdatabasen er det normalt.
+              </div>
+            )}
             {ruteAdvarsel && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                 Sidste vellykkede kørsel: <strong>{siden(rute.data.sidsteOk, nu)}</strong>. Ruten skal
@@ -185,7 +207,7 @@ export default async function AdminDrift({
             {http.tilstand !== "ok" && <SektionFejl s={http} />}
 
             {rute.data.seneste.length === 0 ? (
-              <p className="text-sm text-neutral-500">Ingen kørsler logget endnu.</p>
+              !ruteIkkeKaldtPaaTest && <p className="text-sm text-neutral-500">Ingen kørsler logget endnu.</p>
             ) : (
               <div className="-mx-4 overflow-x-auto sm:mx-0">
                 <table className="w-full min-w-[560px] text-sm">
@@ -298,10 +320,22 @@ export default async function AdminDrift({
                       </td>
                       <td className={`${td} break-words text-neutral-700`}>
                         {j.seneste_fejl_kl ? (
-                          <>
-                            <span className="block text-xs text-neutral-500">{tid(j.seneste_fejl_kl)}</span>
-                            {j.seneste_fejl}
-                          </>
+                          // Fremhæv kun fejlen, hvis den er aktuel: fra de sidste 24 t,
+                          // eller jobbets sidste kørsel fejlede (fx et dagligt job).
+                          nu - new Date(j.seneste_fejl_kl).getTime() <= 24 * 60 * 60_000 ||
+                          j.sidste_status === "failed" ? (
+                            <>
+                              <span className="block text-xs text-neutral-500">{tid(j.seneste_fejl_kl)}</span>
+                              <span className="text-red-700">{j.seneste_fejl}</span>
+                            </>
+                          ) : (
+                            <span
+                              className="text-xs text-neutral-400"
+                              title={`${tid(j.seneste_fejl_kl)}: ${j.seneste_fejl ?? ""}`}
+                            >
+                              Seneste fejl for {siden(j.seneste_fejl_kl, nu)} (løst siden)
+                            </span>
+                          )
                         ) : (
                           "—"
                         )}
@@ -443,7 +477,7 @@ export default async function AdminDrift({
       </Kort>
 
       <p className="text-xs text-neutral-400">
-        Driftsdata slettes ikke automatisk. Fejlteksterne er renset for e-mails, telefonnumre og
+        Driftsdata slettes automatisk efter 90 dage. Fejlteksterne er renset for e-mails, telefonnumre og
         nøgler.
       </p>
     </div>
