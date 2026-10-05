@@ -31,8 +31,8 @@ const TRYGHED: { ikon: IkonNavn; titel: string; tekst: string; href?: string }[]
   },
   {
     ikon: "pakkeTjek",
-    titel: "Pengene frigives til sidst",
-    tekst: "Sælger får først pengene, når du har godkendt varen.",
+    titel: "Pengene venter hos Stripe",
+    tekst: "Sælger får pengene, når du har modtaget varen, og fristen for at klage er gået.",
   },
   {
     ikon: "hjaelp",
@@ -44,7 +44,7 @@ const TRYGHED: { ikon: IkonNavn; titel: string; tekst: string; href?: string }[]
 const SAELG_TRIN = [
   { titel: "Opret din auktion", tekst: "Tag et par billeder, skriv en kort beskrivelse og vælg startpris." },
   { titel: "Følg buddene", tekst: "Du får besked, når nogen byder. Højeste bud vinder, når tiden løber ud." },
-  { titel: "Send og få pengene", tekst: "Køberen betaler via Stripe. Du får pengene, når handlen er godkendt." },
+  { titel: "Send og få pengene", tekst: "Køberen betaler via Stripe. Du får pengene, når køberen har modtaget varen." },
 ];
 
 export default async function Forside() {

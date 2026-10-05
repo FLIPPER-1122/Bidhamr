@@ -119,7 +119,7 @@ export default function SettingsForm({
           value={adresse}
           onChange={(e) => setAdresse(e.target.value)}
           placeholder="Vejnavn og nummer, postnummer og by"
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
       </div>
 
