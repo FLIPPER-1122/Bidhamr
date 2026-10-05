@@ -237,7 +237,8 @@ async function proevIgen(admin: Admin): Promise<number> {
     .lt("refusion_anmodet_kl", new Date(Date.now() - 10 * 60 * 1000).toISOString())
     .is("stripe_transfer_id", null)
     .is("overfoersel_paabegyndt_kl", null)
-    .lt("refusion_forsoeg", 5)
+    // refusion_forsoeg < refusion_graense (standard 5).
+    .eq("refusion_opbrugt", false)
     .limit(50);
   if (error) {
     console.error("Hentning af ventende afsendelsesrefusioner fejlede:", error.message);

@@ -90,6 +90,9 @@ export type BetalingRaekke = {
   kraever_opmaerksomhed: boolean;
   overfoersel_forsoeg: number;
   refusion_forsoeg: number;
+  // Cron prøver refusionen, så længe refusion_forsoeg < refusion_graense
+  // (20261005090000_tilbagebetaling_igen.sql).
+  refusion_graense?: number;
   pi_forsoeg: number;
   overfoersel_graense: number;
   saelgerkonto_mail_1_kl: string | null;
@@ -615,6 +618,10 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
     .eq("id", b.id)
     .is("stripe_transfer_id", null);
 
+  // Skyldtes en markering kun en tidligere fejlet/ventende overførsel, er den
+  // nu løst (logges som systembrugeren). Andre markeringer røres ikke.
+  await overfoerselLoestAutomatisk(b.id);
+
   // Kaster aldrig; nøglen forhindrer dobbelt besked ved gentagne forsøg.
   const { data: a } = await admin
     .from("auctions")
@@ -631,6 +638,18 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
   });
 
   return "overfoert";
+}
+
+// Fjerner en markering, der kun skyldes en fejlet/ventende overførsel, når
+// overførslen er oprettet hos Stripe (betaling_overfoersel_loest_auto).
+// Kaster aldrig - overførslen er sket, og markeringen kan løses manuelt.
+async function overfoerselLoestAutomatisk(betalingId: string): Promise<void> {
+  const { error } = await createAdminClient().rpc("betaling_overfoersel_loest_auto", {
+    p_betaling: betalingId,
+  });
+  if (error && !manglerFunktion(error)) {
+    console.error("betaling_overfoersel_loest_auto:", betalingId, error.message);
+  }
 }
 
 // En fejl fra transfers.create. Er den ENDELIG (Stripe afviste anmodningen -
@@ -676,11 +695,22 @@ async function registrerOverfoerselsfejl(betalingId: string, err: unknown) {
 // eller af betaling_registrer_betalt ved sen betaling / afvigende beløb), så
 // en overførsel til sælger aldrig kan ske samtidig.
 //
-// Idempotent: idempotency key pr. betaling og forsøg, og en allerede refunderet
-// charge behandles som gennemført. Status 'refunderet' spejles af webhooken
-// (charge.refunded) - og her med det samme, hvis Stripe svarer "succeeded".
+// Aldrig dobbelt refusion:
+//   - Stripe-kaldet sker under en kort lås i databasen (betaling_refusion_laas),
+//     så to forsøg (fx cron og admins "Prøv tilbagebetaling igen", der bruger
+//     forskellige idempotency keys) aldrig kører samtidig. Er låsen taget,
+//     returneres "refusion_i_gang".
+//   - Idempotency key pr. betaling og forsøg.
+//   - Før en ny refusion oprettes, slås ALLE refusioner på PaymentIntenten op
+//     hos Stripe. Findes vores egen (metadata.betaling_id), genbruges den.
+//     Findes andre (fx lavet i Stripe Dashboard), oprettes der intet nyt: dækker
+//     de beløbet, er køberen refunderet, og ellers markeres betalingen til
+//     admin - så summen af refusioner aldrig kan overstige det, der skal
+//     refunderes.
+//
+// Status 'refunderet' spejles af webhooken (charge.refunded) - og her med det
+// samme, hvis Stripe svarer "succeeded".
 export async function refunderBetaling(betalingId: string): Promise<string> {
-  const admin = createAdminClient();
   const b = await hentBetaling(betalingId);
   if (b.status === "refunderet") return "allerede_refunderet";
   if (!b.refusion_anmodet_kl) throw new Error("Refusion er ikke claimet.");
@@ -689,26 +719,102 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
   }
   if (!b.stripe_payment_intent_id) throw new Error("Ingen PaymentIntent at refundere.");
 
+  const laas = await tagRefusionsLaas(b);
+  if (laas === null) return "refusion_i_gang";
+  try {
+    return await refunderUnderLaas(b, b.stripe_payment_intent_id, laas);
+  } finally {
+    if (laas !== UDEN_LAAS) await frigivRefusionsLaas(b.id, laas);
+  }
+}
+
+// Bruges kun, hvis migrationen 20261005090000_tilbagebetaling_igen.sql endnu
+// ikke er kørt (låsefunktionen findes ikke). Så findes "Prøv tilbagebetaling
+// igen" heller ikke, og den eneste kilde til en ny idempotency key er
+// betaling_refusion_nyt_forsoeg (som afviser samtidige ændringer).
+const UDEN_LAAS = "uden_laas";
+
+function manglerFunktion(err: { code?: string; message?: string } | null): boolean {
+  return !!err && (err.code === "PGRST202" || err.code === "42883");
+}
+
+// Låsens nøgle, UDEN_LAAS eller null (en anden er i gang, eller betalingen er
+// ændret, siden den blev læst).
+async function tagRefusionsLaas(b: BetalingRaekke): Promise<string | null> {
+  const noegle = crypto.randomUUID();
+  const { data, error } = await createAdminClient().rpc("betaling_refusion_laas", {
+    p_betaling: b.id,
+    p_noegle: noegle,
+    p_forsoeg: b.refusion_forsoeg,
+    p_refund: b.stripe_refund_id,
+  });
+  if (error) {
+    if (manglerFunktion(error)) {
+      console.error(
+        "betaling_refusion_laas mangler - kør migrationen 20261005090000_tilbagebetaling_igen.sql",
+      );
+      return UDEN_LAAS;
+    }
+    throw new Error(`betaling_refusion_laas: ${error.message}`);
+  }
+  return data === true ? noegle : null;
+}
+
+async function frigivRefusionsLaas(betalingId: string, noegle: string): Promise<void> {
+  const { error } = await createAdminClient().rpc("betaling_refusion_frigiv", {
+    p_betaling: betalingId,
+    p_noegle: noegle,
+  });
+  // Låsen udløber af sig selv efter 5 minutter.
+  if (error) console.error("betaling_refusion_frigiv:", betalingId, error.message);
+}
+
+// Markerer betalingen til admin. Aldrig beløb i teksten - den vises for staff.
+async function markerRefusion(betalingId: string, besked: string): Promise<void> {
+  const { error } = await createAdminClient()
+    .from("betalinger")
+    .update({
+      kraever_opmaerksomhed: true,
+      sidste_fejl: besked,
+      opdateret: new Date().toISOString(),
+    })
+    .eq("id", betalingId);
+  if (error) console.error("Markering af refusion fejlede:", betalingId, error.message);
+}
+
+async function refunderUnderLaas(
+  b: BetalingRaekke,
+  piId: string,
+  laas: string,
+): Promise<string> {
+  const admin = createAdminClient();
   const stripe = getStripe();
 
   // Findes der allerede en refusion, oprettes der kun en ny, hvis den forrige
-  // endeligt er failed/canceled. Så tælles forsøget op (atomisk), og den nye
-  // refusion får en ny idempotency key - ellers ville Stripe bare returnere
-  // den fejlede refusion igen.
+  // endeligt er failed/canceled. Så tælles forsøget op (atomisk, kun af den,
+  // der holder låsen), og den nye refusion får en ny idempotency key - ellers
+  // ville Stripe bare returnere den fejlede refusion igen.
   let forsoeg = b.refusion_forsoeg;
   if (b.stripe_refund_id) {
     const forrige = await stripe.refunds.retrieve(b.stripe_refund_id);
     if (forrige.status === "succeeded") {
-      await registrerRefunderet(b.stripe_payment_intent_id, forrige.id);
+      await registrerRefunderet(piId, forrige.id);
       return "refunderet";
     }
     if (forrige.status !== "failed" && forrige.status !== "canceled") {
       return "refusion_afventer"; // pending/requires_action - vent på Stripe
     }
-    const { data: n, error } = await admin.rpc("betaling_refusion_nyt_forsoeg", {
-      p_betaling: b.id,
-      p_gammel_refund: forrige.id,
-    });
+    const { data: n, error } =
+      laas === UDEN_LAAS
+        ? await admin.rpc("betaling_refusion_nyt_forsoeg", {
+            p_betaling: b.id,
+            p_gammel_refund: forrige.id,
+          })
+        : await admin.rpc("betaling_refusion_nyt_forsoeg", {
+            p_betaling: b.id,
+            p_gammel_refund: forrige.id,
+            p_noegle: laas,
+          });
     if (error) throw new Error(`betaling_refusion_nyt_forsoeg: ${error.message}`);
     if (Number(n) < 0) throw new Error("Refusionen blev ændret samtidig - prøv igen.");
     forsoeg = Number(n);
@@ -721,36 +827,58 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
   // forkert beløb aldrig sendes til Stripe.
   const delvis = refusionsbeloeb(b);
   if (delvis === "ugyldigt") {
-    await admin
-      .from("betalinger")
-      .update({
-        kraever_opmaerksomhed: true,
-        sidste_fejl: "Refusionsbeløbet er ugyldigt - refusion stoppet",
-        opdateret: new Date().toISOString(),
-      })
-      .eq("id", b.id);
+    await markerRefusion(b.id, "Refusionsbeløbet er ugyldigt - refusion stoppet");
     throw new Error(`Ugyldigt refusionsbeløb for betaling ${b.id}`);
   }
 
-  // Idempotency keys hos Stripe udløber efter 24 timer. Tjek derfor først,
-  // om en refusion for denne betaling allerede findes (samme mønster som
-  // transfers.list i overfoerTilSaelger) - ellers kunne et forsøg efter 24 t
-  // (fx cron efter nedetid) give en ekstra delvis refusion oveni. Kun
-  // refusioner, der ikke er endeligt fejlet, genbruges.
-  const eksisterende = await stripe.refunds.list({
-    payment_intent: b.stripe_payment_intent_id,
-    limit: 100,
-  });
+  // Det, der i alt skal refunderes: sagens beløb, eller alt det modtagne.
+  const pi = await stripe.paymentIntents.retrieve(piId);
+  const modtaget = Number(pi.amount_received ?? 0);
+  if (!Number.isInteger(modtaget) || modtaget <= 0) {
+    throw new Error(`Intet modtaget at refundere for betaling ${b.id}`);
+  }
+  const maal = delvis ?? modtaget;
+  if (maal > modtaget) {
+    await markerRefusion(b.id, "Refusionsbeløbet er ugyldigt - refusion stoppet");
+    throw new Error(`Refusionsbeløbet overstiger det modtagne for betaling ${b.id}`);
+  }
+
+  // Idempotency keys hos Stripe udløber efter 24 timer, og et nyt forsøg har
+  // en ny key. Slå derfor ALLE refusioner på PaymentIntenten op, før en ny
+  // oprettes (samme mønster som transfers.list i overfoerTilSaelger). Kun
+  // refusioner, der ikke er endeligt fejlet, tæller.
+  const eksisterende = await stripe.refunds.list({ payment_intent: piId, limit: 100 });
+  const aktive = eksisterende.data.filter(
+    (r) => r.status !== "failed" && r.status !== "canceled",
+  );
   let refund: Stripe.Refund | null =
-    eksisterende.data.find(
-      (r) =>
-        r.metadata?.betaling_id === b.id && r.status !== "failed" && r.status !== "canceled",
-    ) ?? null;
+    aktive.find((r) => r.metadata?.betaling_id === b.id) ?? null;
+
+  if (!refund) {
+    const allerede = aktive.reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
+    if (eksisterende.has_more || allerede > 0) {
+      // Andre refusioner (fx fra Stripe Dashboard). Dækker de beløbet, er
+      // køberen refunderet; ellers oprettes INTET, og admin må tage stilling.
+      if (!eksisterende.has_more && allerede >= maal) {
+        if (aktive.every((r) => r.status === "succeeded")) {
+          await registrerRefunderet(piId, null);
+          return "refunderet";
+        }
+        return "refusion_afventer";
+      }
+      await markerRefusion(
+        b.id,
+        "Anden refusion fundet hos Stripe - kontrollér betalingen, før der refunderes igen",
+      );
+      return "refusion_konflikt";
+    }
+  }
+
   try {
     if (!refund) {
       refund = await stripe.refunds.create(
         {
-          payment_intent: b.stripe_payment_intent_id,
+          payment_intent: piId,
           ...(delvis !== null ? { amount: delvis } : {}),
           reason: "requested_by_customer",
           metadata: {
@@ -766,16 +894,12 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
     if (err instanceof Stripe.errors.StripeError && err.code === "charge_already_refunded") {
       refund = null; // allerede refunderet - spejles nedenfor
     } else {
-      await admin
-        .from("betalinger")
-        .update({
-          kraever_opmaerksomhed: true,
-          sidste_fejl: `Refusion fejlede: ${
-            err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt"
-          }`,
-          opdateret: new Date().toISOString(),
-        })
-        .eq("id", b.id);
+      await markerRefusion(
+        b.id,
+        `Refusion fejlede: ${
+          err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt"
+        }`,
+      );
       throw err;
     }
   }
@@ -787,29 +911,22 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
       .eq("id", b.id)
       .is("stripe_refund_id", null);
     if (refund.status === "failed" || refund.status === "canceled") {
-      await admin
-        .from("betalinger")
-        .update({
-          kraever_opmaerksomhed: true,
-          sidste_fejl: `Refusion ${refund.status} hos Stripe`,
-          opdateret: new Date().toISOString(),
-        })
-        .eq("id", b.id);
+      await markerRefusion(b.id, `Refusion ${refund.status} hos Stripe`);
       return `refusion_${refund.status}`;
     }
     if (refund.status === "succeeded") {
-      await registrerRefunderet(b.stripe_payment_intent_id, refund.id);
+      await registrerRefunderet(piId, refund.id);
       return "refunderet";
     }
     return "refusion_afventer"; // pending: charge.refunded/refund.updated følger
   }
 
-  const pi = await stripe.paymentIntents.retrieve(b.stripe_payment_intent_id, {
+  const piNu = await stripe.paymentIntents.retrieve(piId, {
     expand: ["latest_charge"],
   });
-  const charge = pi.latest_charge;
+  const charge = piNu.latest_charge;
   if (charge && typeof charge !== "string" && charge.refunded) {
-    await registrerRefunderet(b.stripe_payment_intent_id, null);
+    await registrerRefunderet(piId, null);
   }
   return "refunderet";
 }
@@ -840,7 +957,9 @@ export async function refunderSagerVentende(): Promise<number> {
     .lt("refusion_anmodet_kl", new Date(Date.now() - 10 * 60 * 1000).toISOString())
     .is("stripe_transfer_id", null)
     .is("overfoersel_paabegyndt_kl", null)
-    .lt("refusion_forsoeg", 5)
+    // refusion_forsoeg < refusion_graense (standard 5; admin kan hæve den med
+    // "Prøv tilbagebetaling igen").
+    .eq("refusion_opbrugt", false)
     .limit(50);
   if (error) {
     console.error("Hentning af ventende sagsrefusioner fejlede:", error.message);
@@ -1870,4 +1989,51 @@ export async function proevOverfoerselIgen(betalingId: string): Promise<string> 
     if (rydFejl) console.error("Rydning af markering efter overførsel fejlede:", betalingId, rydFejl.message);
   }
   return r;
+}
+
+// Admin/chef: giv en fejlet tilbagebetaling til køberen et nyt forsøg og prøv
+// med det samme (én gang). Kaldes kun fra en admin-server-action; rolle og
+// inhabilitet tjekkes igen i betaling_refusion_proev_igen.
+//
+// Først spørges Stripe om den seneste refusion: er den gennemført eller stadig
+// i gang, gives der IKKE et nyt forsøg (så kunne der blive refunderet to gange).
+// Kun en endeligt fejlet (failed/canceled) eller manglende refusion giver et
+// nyt forsøg med ny idempotency key. refunderBetaling slår derefter alle
+// refusioner på betalingen op hos Stripe, før en ny oprettes.
+//
+// Resultat: "ok:<resultat fra refunderBetaling>" eller en afvisningskode fra
+// databasen (ingen_adgang, inhabil, ikke_fundet, allerede_refunderet,
+// ikke_anmodet, ikke_bidhamr, overfoert, indsigelse, i_gang, aendret), eller
+// "refunderet"/"refusion_afventer", hvis Stripe allerede har refusionen.
+export async function proevRefusionIgen(
+  betalingId: string,
+  medarbejderId: string,
+): Promise<string> {
+  const b = await hentBetaling(betalingId);
+  if (b.status === "refunderet") return "allerede_refunderet";
+  if (!b.stripe_payment_intent_id) return "ikke_anmodet";
+
+  if (b.stripe_refund_id) {
+    const forrige = await getStripe().refunds.retrieve(b.stripe_refund_id);
+    if (forrige.status === "succeeded") {
+      // Kun hvis refusionen faktisk er BidHamrs egen og betalingen stadig er
+      // claimet - registrerRefunderet er idempotent.
+      if (b.refusion_anmodet_kl) await registrerRefunderet(b.stripe_payment_intent_id, forrige.id);
+      return "refunderet";
+    }
+    if (forrige.status !== "failed" && forrige.status !== "canceled") {
+      return "refusion_afventer";
+    }
+  }
+
+  const { data, error } = await createAdminClient().rpc("betaling_refusion_proev_igen", {
+    p_medarbejder: medarbejderId,
+    p_betaling: betalingId,
+    p_gammel_refund: b.stripe_refund_id,
+  });
+  if (error) throw new Error(`betaling_refusion_proev_igen: ${error.message}`);
+  const kode = String((data as { kode?: string } | null)?.kode ?? "ukendt");
+  if (kode !== "ok") return kode;
+
+  return `ok:${await refunderBetaling(betalingId)}`;
 }

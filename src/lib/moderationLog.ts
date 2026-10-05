@@ -1,7 +1,7 @@
 // Danske navne og links til moderation_log (medarbejder-loggen og brugersiden).
 //
 // HANDLING_NAVNE dækker alle værdier i moderation_log_handling_check (seneste
-// definition: supabase/migrations/20261005070000_admin_se_chat.sql). Kommer der nye
+// definition: supabase/migrations/20261005090000_tilbagebetaling_igen.sql). Kommer der nye
 // værdier til, vises den rå værdi, indtil de tilføjes her.
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 
@@ -41,6 +41,7 @@ export const HANDLING_NAVNE: Record<string, string> = {
   sag_anke_stadfaestet: "Stadfæstede afgørelse efter anke",
   sag_anke_omgjort: "Omgjorde afgørelse efter anke",
   chat_laest: "Læste handelschat",
+  refusion_proevet_igen: "Prøvede tilbagebetaling igen",
 };
 
 export function handlingNavn(handling: string): string {
