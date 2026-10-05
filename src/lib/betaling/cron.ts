@@ -1,7 +1,7 @@
 // Server-only: cron-kørslen for betalingsmodellen.
 //
 //   1. Luk udløbne auktioner (samme SQL-funktion som pg_cron kører hvert
-//      minut). Den opretter handel + betaling med 24 timers frist.
+//      minut). Den opretter handel + betaling med 48 timers frist.
 //   2. Nye betalinger: forsøg autobetaling (tilvalg), send "du vandt"-mails.
 //   3. Påmindelser 12 og 20 timer efter fristens start.
 //   3b. Sager, hvor ankefristen (4 dage efter afgørelsen) er udløbet: refusion
@@ -181,7 +181,7 @@ export async function koerBetalingsCron() {
         tekst:
           b.status === "betalt"
             ? `Du har købt "${titel}", og beløbet er trukket automatisk på dit gemte kort.`
-            : `Du har købt "${titel}". Betal inden for 24 timer, ellers bliver handlen annulleret.`,
+            : `Du har købt "${titel}". Betal inden for 48 timer, ellers bliver handlen annulleret.`,
         link,
         data: { trade_id: b.trade_id, auction_id: b.auction_id },
         mail: koeberMail,
@@ -202,16 +202,16 @@ export async function koerBetalingsCron() {
     }
   }
 
-  // 3) Påmindelser. Fristen er 24 t: 12 t efter start = 12 t før frist,
-  //    20 t efter start = 4 t før frist. Den sene tages først, så en kørsel
+  // 3) Påmindelser. Fristen er 48 t: 24 t efter start = 24 t før frist,
+  //    40 t efter start = 8 t før frist. Den sene tages først, så en kørsel
   //    efter nedetid ikke sender begge på én gang.
-  //    Kolonnenavnene er historiske (fra 48-timers-fristen):
-  //    paamindelse_24_sendt_kl dækker nu påmindelsen efter 12 t, og
-  //    paamindelse_40_sendt_kl dækker nu påmindelsen efter 20 t.
+  //    Påmindelserne regnes fra fristen, så de også passer, når sælgeren har
+  //    forlænget den (handel_forlaeng_betalingsfrist nulstiller begge felter,
+  //    og nøglen indeholder fristen, så køberen påmindes igen).
   const nu = Date.now();
   for (const [felt, timerFoerFrist] of [
-    ["paamindelse_40_sendt_kl", 4],
-    ["paamindelse_24_sendt_kl", 12],
+    ["paamindelse_40_sendt_kl", 8],
+    ["paamindelse_24_sendt_kl", 24],
   ] as const) {
     const { data: mangler } = await admin
       .from("betalinger")
@@ -238,7 +238,7 @@ export async function koerBetalingsCron() {
         link: `/mine-handler/${b.trade_id}`,
         data: { trade_id: b.trade_id },
         mail: betalingsPaamindelseMail(titel, Number(b.total_oere), b.trade_id, b.betal_senest),
-        noegle: `paamindelse:${felt}:${b.id}`,
+        noegle: `paamindelse:${felt}:${b.id}:${new Date(b.betal_senest).getTime()}`,
       });
       if (p.mail) resultat.paamindelser++;
     }

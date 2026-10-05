@@ -64,7 +64,7 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
       {status.nyHandelId && (
         <div className="mt-4 rounded-xl border border-[#B9D8CC] bg-groen-lys p-4 text-sm text-groen-mork">
           <p className="font-semibold">Næste byder har sagt ja</p>
-          <p className="mt-1">Køberen har 24 timer til at betale.</p>
+          <p className="mt-1">Køberen har 48 timer til at betale.</p>
           <Link href={`/mine-handler/${status.nyHandelId}`} className="btn btn-sekundaer btn-lille mt-3">
             Gå til den nye handel
           </Link>

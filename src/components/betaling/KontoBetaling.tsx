@@ -83,7 +83,7 @@ export default function KontoBetaling({
   return (
     <div className="space-y-4">
       <p className="text-sm text-tekst-daempet">
-        Du kan byde uden at gemme et kort. Vinder du, betaler du inden for 24 timer.
+        Du kan byde uden at gemme et kort. Vinder du, betaler du inden for 48 timer.
       </p>
 
       {besked && (

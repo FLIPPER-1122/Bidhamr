@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { beskyttelseOere } from "@/lib/betaling/beregn";
+import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import {
   BetalingsFejl,
   hentBetalingForHandel,
@@ -43,6 +44,8 @@ type FaellesBetalingsstatus = {
   handelId: string;
   status: "afventer" | "behandles" | "betalt" | "annulleret" | "refunderet";
   betalSenest: string;
+  // Seneste frist, sælgeren kan forlænge til (7 dage efter fristens start).
+  maksBetalSenest: string;
   fristOverskredet: boolean;
   budOere: number;
   betaltKl: string | null;
@@ -112,6 +115,7 @@ export async function hentBetalingsstatus(
       handelId,
       status: b.status,
       betalSenest: b.betal_senest,
+      maksBetalSenest: maksBetalingsfrist(b.oprettet),
       fristOverskredet: new Date(b.betal_senest).getTime() < Date.now(),
       budOere: Number(b.bud_oere),
       betaltKl: b.betalt_kl,

@@ -108,5 +108,5 @@ export const BIDPANEL = {
   laesMere: "Læs mere",
   laesMereHref: "/bidhamr-beskyttelse",
   prisLinje:
-    "Vinder du, betaler du dit bud + købergebyr + fragt + evt. BidHamr Beskyttelse. Du ser den samlede pris i kroner, før du betaler, og har 24 timer til at betale. Alle beløb er inkl. moms.",
+    "Vinder du, betaler du dit bud + købergebyr + fragt + evt. BidHamr Beskyttelse. Du ser den samlede pris i kroner, før du betaler, og har 48 timer til at betale. Alle beløb er inkl. moms.",
 } as const;

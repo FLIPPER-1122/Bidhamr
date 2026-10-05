@@ -13,7 +13,7 @@ export default function SvarKnapper({ tilbudId, total }: { tilbudId: string; tot
         triggerLabel="Ja, køb varen"
         triggerClassName="btn btn-primaer w-full sm:w-auto"
         title="Køb varen?"
-        description={`Du forpligter dig til at betale ${total} inden for 24 timer.`}
+        description={`Du forpligter dig til at betale ${total} inden for 48 timer.`}
         confirmLabel="Ja, køb varen"
         onConfirm={async () => {
           const svar = await svarAndenchance(tilbudId, true);

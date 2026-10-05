@@ -78,7 +78,7 @@ function TilbudVisning({ t }: { t: Extract<Awaited<ReturnType<typeof hentMitTilb
     return (
       <div className="space-y-6">
         {vare}
-        <Besked titel="Du har sagt ja" tekst="Betal inden for 24 timer for at få varen.">
+        <Besked titel="Du har sagt ja" tekst="Betal inden for 48 timer for at få varen.">
           {t.nyTradeId && (
             <Link href={`/mine-handler/${t.nyTradeId}`} className="btn btn-primaer mt-4 w-full sm:w-auto">
               Gå til betaling
@@ -151,7 +151,7 @@ function TilbudVisning({ t }: { t: Extract<Awaited<ReturnType<typeof hentMitTilb
             <dd className="tabular-nums">{kroner(t.totalOere)}</dd>
           </div>
         </dl>
-        <p className="mt-3 text-xs text-tekst-svag">Siger du ja, har du 24 timer til at betale.</p>
+        <p className="mt-3 text-xs text-tekst-svag">Siger du ja, har du 48 timer til at betale.</p>
 
         <SvarKnapper tilbudId={t.id} total={kroner(t.totalOere)} />
       </section>
