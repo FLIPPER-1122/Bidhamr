@@ -61,6 +61,9 @@ export type BedoemmelseVisning = {
   stjerner: number;
   kommentar: string | null;
   oprettet: string;
+  // Sælgeren har selv slettet sit svar (kun sat på egen profil). Der kan
+  // ikke skrives et nyt, så "Svar offentligt" vises ikke.
+  svarSlettet: boolean;
   svar: {
     tekst: string;
     oprettet: string;

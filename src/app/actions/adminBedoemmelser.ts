@@ -45,6 +45,7 @@ const KODE_FEJL: Record<string, string> = {
   ikke_fundet: "Bedømmelsen eller svaret findes ikke.",
   begrundelse_mangler: "Vælg en begrundelse. Vælger du \"Andet\", skal du skrive hvorfor.",
   for_lang_tekst: "Begrundelsen må højst være 500 tegn.",
+  inhabil: "Du kan ikke behandle en bedømmelse, du selv er part i. Lad en kollega tage den.",
 };
 
 function revalider() {

@@ -10,7 +10,7 @@ import ProfilTryghed from "@/components/tryghed/ProfilTryghed";
 import FoelgKnap from "@/components/foelg/FoelgKnap";
 import { createAdminClient } from "@/lib/supabase/admin";
 import BedoemmelseListe from "@/components/profile/BedoemmelseListe";
-import { hentBedoemmelser } from "@/lib/bedoemmelserHent";
+import { hentBedoemmelseOpsummering, hentBedoemmelser } from "@/lib/bedoemmelserHent";
 import ProfileTabs, {
   type MitBud,
   type EgenAuktion,
@@ -85,6 +85,7 @@ export default async function ProfilPage({
       { data: gennemforteHandlerRaw },
       { data: kontakt },
       { data: egneFoelgere },
+      opsummering,
     ] = await Promise.all([
       supabase
         .from("auctions")
@@ -100,7 +101,7 @@ export default async function ProfilPage({
       // kolonnerne ikke er laesbare direkte.
       supabase.rpc("min_profil").maybeSingle<{ email: string; telefon: string | null }>(),
       // Skjulte bedømmelser er sorteret fra (tæller heller ikke i gennemsnittet).
-      hentBedoemmelser(supabase, id),
+      hentBedoemmelser(supabase, id, { erEjer: true }),
       supabase
         .from("trades")
         .select("id")
@@ -108,13 +109,12 @@ export default async function ProfilPage({
       // Adressen (kun til afhentning) kan kun læses af ejeren selv.
       supabase.rpc("mine_kontaktoplysninger").maybeSingle<{ adresse: string | null }>(),
       supabase.rpc("antal_foelgere", { p_bruger: id }),
+      // Gennemsnit og antal fra databasen - listen er begrænset til 200.
+      hentBedoemmelseOpsummering(supabase, id),
     ]);
 
-    const antalRatings = egneRatings.length;
-    const gennemsnitRating =
-      antalRatings > 0
-        ? egneRatings.reduce((sum, r) => sum + r.stjerner, 0) / antalRatings
-        : 0;
+    const antalRatings = opsummering.antal;
+    const gennemsnitRating = opsummering.gennemsnit;
 
     // Byg egne auktioner med slutter_kl til status-badge
     const egneAuktioner: EgenAuktion[] = (egneAuktionerRaw ?? []).map(
@@ -230,6 +230,7 @@ export default async function ProfilPage({
     { data: antalFoelgere },
     { data: minFoelgning },
     blokeretAfProfil,
+    opsummering,
   ] = await Promise.all([
     supabase
       .from("auctions")
@@ -257,15 +258,14 @@ export default async function ProfilPage({
           .rpc("er_blokeret_navngivet_mellem", { p_a: id, p_b: mitId })
           .then(({ data, error }) => (error ? false : data === true))
       : Promise.resolve(false),
+    hentBedoemmelseOpsummering(supabase, id),
   ]);
 
   const aktiveAuktioner = (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort);
 
-  const antalRatings = ratings.length;
-  const gennemsnitRating =
-    antalRatings > 0
-      ? ratings.reduce((sum, r) => sum + r.stjerner, 0) / antalRatings
-      : 0;
+  // Fra databasen (users.rating + count), ikke fra de højst 200 hentede.
+  const antalRatings = opsummering.antal;
+  const gennemsnitRating = opsummering.gennemsnit;
 
   return (
     <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
@@ -334,6 +334,7 @@ export default async function ProfilPage({
               ratings={ratings}
               erSaelger={false}
               erLoggetInd={erLoggetInd}
+              mitId={mitId}
               kortKlasse="rounded-xl bg-groen-lys p-4"
               tomTekst="Ingen bedømmelser endnu."
             />

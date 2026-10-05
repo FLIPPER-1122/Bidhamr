@@ -36,6 +36,7 @@ type RatingRaekke = {
 
 type SvarRaekke = {
   rating_id: string;
+  saelger_id: string;
   tekst: string;
   oprettet: string;
   rettet_kl: string | null;
@@ -172,7 +173,7 @@ export default async function AdminBedommelser({
   searchParams: Promise<{ vis?: string; q?: string; id?: string }>;
 }) {
   // Rollen tjekkes på selve siden, før service-role bruges.
-  const { admin } = await kraevSideRolle("medarbejder");
+  const { admin, userId } = await kraevSideRolle("medarbejder");
   const { vis: visParam, q, id: idParam } = await searchParams;
   const enkelt = idParam && UUID.test(idParam) ? idParam : null;
   const vis: Vis = enkelt
@@ -229,7 +230,7 @@ export default async function AdminBedommelser({
     ratingIds.length
       ? admin
           .from("bedoemmelse_svar")
-          .select("rating_id, tekst, oprettet, rettet_kl, slettet_kl, skjult")
+          .select("rating_id, saelger_id, tekst, oprettet, rettet_kl, slettet_kl, skjult")
           .in("rating_id", ratingIds)
       : Promise.resolve({ data: [] as SvarRaekke[] }),
     ratingIds.length
@@ -331,6 +332,10 @@ export default async function AdminBedommelser({
             const aabneS = egne.filter((x) => x.status === "ny" && x.rating_del === "svar");
             const tidligere = egne.filter((x) => x.status === "behandlet").length;
             const harAabne = aabneB.length + aabneS.length > 0;
+            // Inhabil: medarbejderen skrev eller modtog bedømmelsen eller
+            // skrev svaret. Databasen afviser også (kode 'inhabil').
+            const egenSag =
+              userId === r.fra_bruger_id || userId === r.til_bruger_id || userId === svar?.saelger_id;
             return (
               <li key={r.id} className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
                 {/* Handlen */}
@@ -459,18 +464,23 @@ export default async function AdminBedommelser({
 
                   {/* Handlinger */}
                   <div className="flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-3">
-                    {r.skjult ? (
+                    {egenSag && (
+                      <p className="text-sm text-neutral-600">
+                        Du er selv part i denne bedømmelse. Lad en kollega tage den.
+                      </p>
+                    )}
+                    {!egenSag && (r.skjult ? (
                       <VisKnap ratingId={r.id} del="bedoemmelse" />
                     ) : (
                       <SkjulKnap ratingId={r.id} del="bedoemmelse" />
-                    )}
-                    {svar && !svar.slettet_kl && !r.skjult &&
+                    ))}
+                    {!egenSag && svar && !svar.slettet_kl && !r.skjult &&
                       (svar.skjult ? (
                         <VisKnap ratingId={r.id} del="svar" />
                       ) : (
                         <SkjulKnap ratingId={r.id} del="svar" />
                       ))}
-                    {harAabne && (
+                    {!egenSag && harAabne && (
                       <ConfirmDialog
                         triggerLabel="Behold – bryder ikke reglerne"
                         triggerClassName={KNAP_BEHOLD}
