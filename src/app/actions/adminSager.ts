@@ -152,6 +152,10 @@ const KODE_FEJL: Record<string, string> = {
   // datoen i afgoerSag).
   retur_ventetid:
     "Køberen har stadig frist til at sende varen retur. Sagen kan først afgøres til sælgerens fordel eller lukkes, når fristen er udløbet.",
+  // sag_genaabn i 'afventer_retur' før de 7 dages ventetid (teksten får
+  // datoen i genaabnSag).
+  retur_ventetid_genaabn:
+    "Køberen har stadig frist til at sende varen retur. Sagen kan først genåbnes, når fristen er udløbet.",
 };
 
 function kodeFejl(kode: string | undefined): string {
@@ -677,9 +681,12 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         ? sagReturFristKl(s.penge_flyttes_efter_kl, s.afgjort_kl, ankeRaekke?.behandlet_kl ?? null)
         : null;
     const returVentetid = !!returFristKl && Date.now() < Date.parse(returFristKl);
+    // Genåbning ville omgå ventetiden (sag_genaabn tjekker igen:
+    // 'retur_ventetid'), medmindre returpakken allerede er registreret.
+    const genaabnVentetid = returVentetid && !s.retur_afleveret_kl;
     const returFristTekst = returFristKl
       ? returVentetid
-        ? `Køberen har frist til ${sagFristTekst(returFristKl)} til at sende varen retur. Indtil da kan sagen ikke afgøres til sælgerens fordel eller lukkes.`
+        ? `Køberen har frist til ${sagFristTekst(returFristKl)} til at sende varen retur. Indtil da kan sagen ikke afgøres til sælgerens fordel, lukkes${genaabnVentetid ? " eller genåbnes" : ""}.`
         : `Køberens frist til at sende varen retur udløb ${sagFristTekst(returFristKl)}.`
       : null;
 
@@ -751,11 +758,13 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
             kanAfgoere && aaben && !ankeVenter && !returVentetid && (!ankeAfgjort || kanAfgoereAnket),
           registrereRetur: kanAfgoere && s.status === "afventer_retur" && !ankeVenter && !ankefristLoeber,
           // Databasen (sag_genaabn) afviser, hvis pengene allerede er flyttet,
-          // eller hvis sagen er anket. Inden for ankefristen annulleres den
-          // planlagte flytning.
+          // hvis sagen er anket, eller hvis køberens frist til at sende varen
+          // retur løber ('retur_ventetid'). Inden for ankefristen annulleres
+          // den planlagte flytning.
           genaabne:
             harMindstRolle(rolle, "admin") &&
             !ankeRaekke &&
+            !genaabnVentetid &&
             s.status !== "aaben" &&
             !(s.penge_handling === "refunder" && s.afviklet_kl) &&
             !(betaling && (betaling.refusion_anmodet_kl || betaling.stripe_transfer_id || betaling.overfoersel_paabegyndt_kl)),
@@ -1140,6 +1149,13 @@ export async function genaabnSag(formData: FormData): Promise<Udfald | { fejl: s
     });
     if (error) throw new Error(error.message);
     const svar = (data ?? { kode: "" }) as RpcSvar;
+    if (svar.kode === "retur_ventetid") {
+      throw new BrugerFejl(
+        svar.retur_frist_kl
+          ? `Køberen har frist til ${sagFristTekst(svar.retur_frist_kl)} til at sende varen retur. Sagen kan først genåbnes derefter.`
+          : KODE_FEJL.retur_ventetid_genaabn,
+      );
+    }
     if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
 
     const type = svar.type;

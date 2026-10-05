@@ -949,7 +949,8 @@ export type SagHandlingerProps = {
   // Hvorfor returen ikke kan registreres endnu (ankefristen løber), ellers null.
   returIkkeTilladt: string | null;
   // Sagen venter på retur: køberens frist til at sende varen (7 dage efter
-  // beskeden "Send varen retur nu"). Indtil da er "Afgør sagen" skjult.
+  // beskeden "Send varen retur nu"). Indtil da er "Afgør sagen" skjult, og
+  // "Genåbn" er skjult, medmindre returpakken er registreret (kan.genaabne).
   returFristTekst: string | null;
   koeber: { id: string; navn: string; lukket: boolean };
   saelger: { id: string; navn: string; lukket: boolean };

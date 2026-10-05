@@ -35,11 +35,13 @@ export function budstigning(nuvaerende: number): number {
   return 100;
 }
 
-// Mindste tilladte næste bud. Uden bud: startprisen (mindst 1 kr). Med bud:
-// nuværende bud + budstigning. Samme regel som public.naeste_bud_minimum.
+// Mindste tilladte næste bud. Uden bud: startprisen. Med bud: nuværende bud
+// + budstigning. Altid mindst 1 kr (også på gamle auktioner med startpris 0).
+// Samme regel som public.naeste_bud_minimum
+// (20261005021000_startpris_anke_rettelser.sql).
 export function mindsteNaesteBud(nuvaerendeBud: number | null, startpris: number): number {
-  if (nuvaerendeBud === null) return Math.max(Math.ceil(startpris), 1);
-  return nuvaerendeBud + budstigning(nuvaerendeBud);
+  if (nuvaerendeBud === null) return Math.max(Math.ceil(startpris || 0), 1);
+  return Math.max(nuvaerendeBud + budstigning(nuvaerendeBud), 1);
 }
 
 // Startpris i hele kroner, mindst 1 kr (Filip, 5. oktober 2026 – som
