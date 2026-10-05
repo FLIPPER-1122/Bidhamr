@@ -66,17 +66,17 @@ export default function NulstilAdgangskodePage() {
 
   if (gemt) {
     return (
-      <main className="flex flex-1 items-center justify-center bg-white px-4 py-10">
-        <div className="w-full max-w-sm rounded-xl border border-neutral-200 p-6 text-center sm:p-8">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-            <svg viewBox="0 0 24 24" className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" strokeWidth={2.5}>
+      <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
+        <div className="w-full max-w-sm rounded-[14px] border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-succes-bg">
+            <svg viewBox="0 0 24 24" className="h-6 w-6 text-succes-tekst" fill="none" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="text-xl font-semibold text-neutral-900">
+          <h1 className="text-[20px] leading-tight lg:text-[22px]">
             Adgangskode gemt
           </h1>
-          <p className="mt-2 text-sm leading-relaxed text-neutral-500">
+          <p className="mt-2 text-sm leading-relaxed text-tekst-svag">
             Din adgangskode er opdateret. Du bliver sendt til login…
           </p>
           <Link
@@ -91,18 +91,18 @@ export default function NulstilAdgangskodePage() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-white px-4 py-10">
+    <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
       <div className="w-full max-w-sm">
-        <div className="rounded-xl border border-neutral-200 p-6 sm:p-8">
-          <h1 className="text-2xl font-semibold text-neutral-900">
+        <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
+          <h1 className="text-[26px] leading-tight sm:text-[32px]">
             Ny adgangskode
           </h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-tekst-svag">
             Vælg en ny adgangskode til din konto.
           </p>
 
           {!klar && (
-            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+            <p className="mt-4 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2.5 text-sm text-advarsel-tekst">
               Venter på bekræftelse af dit nulstillingslink… Hvis du ikke er
               kommet hertil via linket i din email, skal du{" "}
               <Link href="/glemt-adgangskode" className="font-medium underline">
@@ -116,7 +116,7 @@ export default function NulstilAdgangskodePage() {
             <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-neutral-900"
+                className="block text-sm font-medium text-tekst"
               >
                 Ny adgangskode
               </label>
@@ -129,14 +129,14 @@ export default function NulstilAdgangskodePage() {
                 placeholder="Mindst 6 tegn"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:ring-1 focus:ring-groen"
+                className="mt-1.5 h-11 w-full rounded-xl border border-kant-staerk px-4 text-[15px] text-tekst placeholder:text-pladsholder bg-white hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
               />
             </div>
 
             <div>
               <label
                 htmlFor="password-gentag"
-                className="block text-sm font-medium text-neutral-900"
+                className="block text-sm font-medium text-tekst"
               >
                 Gentag ny adgangskode
               </label>
@@ -148,7 +148,7 @@ export default function NulstilAdgangskodePage() {
                 placeholder="Gentag adgangskode"
                 value={passwordGentag}
                 onChange={(e) => setPasswordGentag(e.target.value)}
-                className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:ring-1 focus:ring-groen"
+                className="mt-1.5 h-11 w-full rounded-xl border border-kant-staerk px-4 text-[15px] text-tekst placeholder:text-pladsholder bg-white hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
               />
               {passwordGentag && password !== passwordGentag && (
                 <p className="mt-1.5 text-xs text-fejl-tekst">
@@ -157,7 +157,11 @@ export default function NulstilAdgangskodePage() {
               )}
             </div>
 
-            {error && <p className="text-sm text-fejl-tekst">{error}</p>}
+            {error && (
+              <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
+                {error}
+              </p>
+            )}
 
             <button
               type="submit"

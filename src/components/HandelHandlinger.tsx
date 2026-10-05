@@ -96,8 +96,8 @@ export function SendPakkeForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
-        <p className="font-medium text-neutral-900">Sådan pakker du godt</p>
+      <div className="rounded-lg bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
+        <p className="font-medium text-tekst">Sådan pakker du godt</p>
         <ul className="mt-1 list-disc space-y-0.5 pl-5">
           <li>Brug en solid kasse, der er lidt større end varen.</li>
           <li>Fyld tomrummet ud (fx bobleplast eller avispapir), så varen ikke kan rykke sig.</li>
@@ -119,7 +119,7 @@ export function SendPakkeForm({
       />
 
       <div>
-        <label htmlFor="tracking" className="block text-sm font-medium text-neutral-700">
+        <label htmlFor="tracking" className="block text-sm font-medium text-tekst-daempet">
           Sporingsnummer
         </label>
         <input
@@ -130,7 +130,7 @@ export function SendPakkeForm({
           placeholder="Fx 00570012345678"
           maxLength={100}
           disabled={sender}
-          className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+          className="min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk px-4 py-2.5 text-[15px] bg-white text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
         />
       </div>
       {fejl && (
@@ -146,7 +146,7 @@ export function SendPakkeForm({
       <button
         type="submit"
         disabled={sender || !klar}
-        className="rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
+        className="btn btn-primaer"
       >
         {sender ? "Gemmer…" : "Marker som sendt"}
       </button>
@@ -181,7 +181,7 @@ export function MarkerModtagetKnap({ tradeId }: { tradeId: string }) {
         type="button"
         onClick={handleClick}
         disabled={pending}
-        className="rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
+        className="btn btn-primaer"
       >
         {pending ? "Gemmer…" : "Jeg har modtaget pakken"}
       </button>
@@ -220,7 +220,7 @@ export function GodkendPakkeKnap({ tradeId }: { tradeId: string }) {
         <div>
           <label
             htmlFor={`kommentar-${tradeId}`}
-            className="mb-1.5 block text-sm font-medium text-neutral-900"
+            className="mb-1.5 block text-sm font-medium text-tekst"
           >
             Kommentar <span className="font-normal text-tekst-svag">(valgfrit)</span>
           </label>
@@ -232,7 +232,7 @@ export function GodkendPakkeKnap({ tradeId }: { tradeId: string }) {
             rows={3}
             placeholder="Fortæl kort om din oplevelse"
             aria-describedby={`kommentar-taeller-${tradeId}`}
-            className="w-full resize-none rounded-xl border border-kant-staerk bg-white px-4 py-2.5 text-[15px] text-tekst placeholder:text-pladsholder outline-none focus:border-groen focus:outline-2 focus:outline-groen/25"
+            className="w-full resize-none rounded-xl border border-kant-staerk bg-white px-4 py-2.5 text-[15px] text-tekst placeholder:text-pladsholder focus:border-groen focus:outline-2 focus:outline-groen/25"
           />
           <p
             id={`kommentar-taeller-${tradeId}`}

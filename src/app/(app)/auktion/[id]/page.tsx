@@ -175,181 +175,127 @@ export default async function AuktionPage({
     harBedømt = !!eksisterendeRating;
   }
 
-  return (
-    <main className="flex-1 bg-white px-4 py-6 sm:px-8">
-      <div className="mx-auto max-w-6xl">
-        {/* Zone 1 – top */}
-        <div className="flex items-center justify-between gap-3">
-          <nav className="text-xs text-neutral-500">
-            <Link href="/auktioner" className="hover:text-groen">
-              Alle auktioner
-            </Link>
-            {" > "}
-            <span>{auktion.kategori}</span>
-            {" > "}
-            <span className="text-neutral-700">{auktion.titel}</span>
-          </nav>
+  const sektionsLinje = "my-6 border-t border-kant";
+  const sektionsTitel = "text-[17px] leading-snug lg:text-lg";
 
-          <span className="bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-500">
-            Varenr. {varenummer}
-          </span>
+  return (
+    <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10">
+      {/* Zone 1 – top */}
+      <div className="flex items-center justify-between gap-3">
+        <nav aria-label="Brødkrumme" className="min-w-0 text-[13px] text-tekst-svag">
+          <ol className="flex min-w-0 items-center gap-1.5">
+            <li className="shrink-0">
+              <Link
+                href="/auktioner"
+                className="inline-flex min-h-11 items-center rounded-md hover:text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+              >
+                Alle auktioner
+              </Link>
+            </li>
+            <li aria-hidden="true" className="shrink-0">›</li>
+            <li className="min-w-0 shrink">
+              <Link
+                href={`/auktioner?kategori=${encodeURIComponent(auktion.kategori ?? "")}`}
+                className="inline-flex min-h-11 max-w-full items-center truncate rounded-md hover:text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+              >
+                <span className="truncate">{auktion.kategori}</span>
+              </Link>
+            </li>
+            <li aria-hidden="true" className="hidden shrink-0 sm:block">›</li>
+            <li className="hidden min-w-0 truncate text-tekst-daempet sm:block" aria-current="page">
+              {auktion.titel}
+            </li>
+          </ol>
+        </nav>
+
+        <span className="shrink-0 rounded-full bg-groen-lys px-3 py-1 text-xs font-medium text-groen-mork">
+          Varenr. {varenummer}
+        </span>
+      </div>
+
+      {/* Zone 2 – midten. På mobil: billeder og titel, så pris og bud, og
+          først derefter detaljer, beskrivelse og Spørg sælger. På store
+          skærme ligger budboksen i højre spalte ved siden af det hele. */}
+      <div className="mt-2 grid grid-cols-1 gap-x-10 gap-y-6 lg:mt-4 lg:grid-cols-5 lg:grid-rows-[auto_1fr]">
+        {/* Billeder og titel */}
+        <div className="min-w-0 lg:col-span-3 lg:row-start-1">
+          <AuctionGallery
+            billeder={auktion.billeder ?? []}
+            titel={auktion.titel}
+          />
+
+          <div className="mt-4 flex items-start justify-between gap-3">
+            <h1 className="min-w-0 text-[26px] leading-tight break-words sm:text-[32px]">
+              {auktion.titel}
+            </h1>
+            <AuctionTitleActions auktionId={auktion.id} titel={auktion.titel} />
+          </div>
         </div>
 
-        {/* Zone 2 – midten */}
-        <div className="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-5">
-          {/* Venstre kolonne (60%) */}
-          <div className="lg:col-span-3">
-            <AuctionGallery
-              billeder={auktion.billeder ?? []}
-              titel={auktion.titel}
-            />
-
-            <div className="mt-4 flex items-start justify-between gap-3">
-              <h1 className="text-2xl font-bold text-groen sm:text-3xl">
-                {auktion.titel}
-              </h1>
-              <AuctionTitleActions />
-            </div>
-
-            <div className="my-4 border-t border-neutral-200" />
-
-            <h2 className="text-sm font-semibold text-[#111]">Oversigt</h2>
-            <dl className="mt-3 grid grid-cols-2 gap-y-3 text-sm sm:grid-cols-4">
-              <div>
-                <dt className="text-neutral-500">Lokation</dt>
-                <dd className="text-[#111]">
-                  {auktion.lokation
-                    ? `${auktion.lokation} (${auktion.postnummer})`
-                    : auktion.postnummer}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-neutral-500">Kategori</dt>
-                <dd className="text-[#111]">{auktion.kategori}</dd>
-              </div>
-              <div>
-                <dt className="text-neutral-500">Sælger</dt>
-                <dd>
-                  <Link
-                    href={`/profil/${auktion.bruger_id}`}
-                    className="font-medium text-groen hover:underline"
-                  >
-                    {sælgerNavn}
-                  </Link>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-neutral-500">Stand</dt>
-                <dd className="text-[#111]">{standNavn(auktion.stand as string | null | undefined)}</dd>
-              </div>
-              <div>
-                <dt className="text-neutral-500">Forsendelse</dt>
-                <dd className="text-[#111]">
-                  {auktion.forsendelse_mulig ? "Tilbydes" : "Ikke tilbudt"}
-                </dd>
-              </div>
-            </dl>
-
-            {auktion.beskrivelse && (
-              <>
-                <div className="my-4 border-t border-neutral-200" />
-                <h2 className="text-sm font-semibold text-[#111]">
-                  Beskrivelse
-                </h2>
-                <p className="mt-2 text-sm text-neutral-700">
-                  {auktion.beskrivelse}
-                </p>
-              </>
-            )}
-
-            <div className="my-4 border-t border-neutral-200" />
-            <SpoergSaelger
-              auktionId={auktion.id}
-              spoergsmaal={spoergsmaal}
-              aktiv={(auktion.spoergsmaal_aktiv as boolean | null | undefined) !== false}
-              auktionKoerer={auktion.status === "aktiv" && !auktionErSlut}
-              erSaelger={erSælger}
-              erStaff={!!staffRolle}
-              loggetInd={!!bruger}
-            />
-
-            {/* Sælgeren har ingen grund til at anmelde sit eget opslag */}
-            {!erSælger && (
-              <>
-                <div className="my-4 border-t border-neutral-200" />
-                <AnmeldOpslagKnap
-                  auktionId={auktion.id}
-                  brugerId={bruger?.id ?? null}
-                />
-              </>
-            )}
-          </div>
-
-          {/* Højre kolonne (40%) */}
-          <div className="lg:col-span-2">
-            {erVinder && (
-              <div className="mb-4 rounded-[14px] border border-succes-kant bg-succes-bg p-4">
-                <p className="font-semibold text-groen">
-                  🎉 Du har vundet denne auktion!
-                </p>
-                <p className="mt-1 text-sm text-neutral-700">
-                  Betal inden for 48 timer under handlen. Aftal det
-                  praktiske med sælgeren i handelschatten.
-                </p>
-                {/* Knappen vises altid; findes handlen endnu ikke, venter
-                    komponenten på at pg_cron opretter den. */}
-                <StartChatKnap
-                  auktionId={auktion.id}
-                  tradeId={handel?.id ?? null}
-                />
-              </div>
-            )}
-
-            {erSælger && auktionErSlut && vinderBud && (
-              <div className="mb-4 rounded-[14px] border border-succes-kant bg-succes-bg p-4">
-                <p className="font-semibold text-groen">
-                  Din auktion er solgt
-                </p>
-                <p className="mt-1 text-sm text-neutral-700">
-                  {auktion.forsendelse_mulig
-                    ? "Køberen har 48 timer til at betale. Du får pengene udbetalt, når køberen har godkendt varen. Aftal levering med køberen i handelschatten."
-                    : "Køberen har 48 timer til at betale. Aftal tid og sted for afhentning i handelschatten. Du får pengene udbetalt, når køberen har hentet varen, og du har tastet køberens afhentningskode ind."}
-                </p>
-                <StartChatKnap
-                  auktionId={auktion.id}
-                  tradeId={handel?.id ?? null}
-                />
-              </div>
-            )}
-
-            {kanStyreAuktion && (
-              <SaelgerAuktionHandlinger auktionId={auktion.id} harBud={harBud} />
-            )}
-            {spaerbareBydere.length > 0 && <SpaerByder bydere={spaerbareBydere} />}
-
-            <div className="lg:sticky lg:top-4">
-              <BidPanel
+        {/* Højre spalte: status, bud og praktisk info */}
+        <div className="min-w-0 lg:col-span-2 lg:col-start-4 lg:row-span-2 lg:row-start-1">
+          {erVinder && (
+            <div className="mb-4 rounded-[14px] border border-succes-kant bg-succes-bg p-4">
+              <p className="font-semibold text-succes-tekst">
+                Du har vundet denne auktion!
+              </p>
+              <p className="mt-1 text-sm text-tekst-daempet">
+                Betal inden for 48 timer under handlen. Aftal det
+                praktiske med sælgeren i handelschatten.
+              </p>
+              {/* Knappen vises altid; findes handlen endnu ikke, venter
+                  komponenten på at pg_cron opretter den. */}
+              <StartChatKnap
                 auktionId={auktion.id}
-                initialNuværendeBud={Number(
-                  auktion.nuværende_bud ?? auktion.startpris,
-                )}
-                startpris={Number(auktion.startpris)}
-                initialHarBud={auktion.nuværende_bud != null}
-                redigeretKl={(auktion.redigeret_kl as string | null | undefined) ?? null}
-                initialSlutterKl={auktion.slutter_kl}
-                initialBud={anonymeBud}
-                brugerId={authData.user?.id ?? null}
-                saelgerId={auktion.bruger_id}
-                forsendelseMulig={auktion.forsendelse_mulig}
-                status={auktion.status}
-                vinderVisning={vinderVisning}
+                tradeId={handel?.id ?? null}
               />
             </div>
+          )}
+
+          {erSælger && auktionErSlut && vinderBud && (
+            <div className="mb-4 rounded-[14px] border border-succes-kant bg-succes-bg p-4">
+              <p className="font-semibold text-succes-tekst">
+                Din auktion er solgt
+              </p>
+              <p className="mt-1 text-sm text-tekst-daempet">
+                {auktion.forsendelse_mulig
+                  ? "Køberen har 48 timer til at betale. Du får pengene udbetalt, når køberen har godkendt varen. Aftal levering med køberen i handelschatten."
+                  : "Køberen har 48 timer til at betale. Aftal tid og sted for afhentning i handelschatten. Du får pengene udbetalt, når køberen har hentet varen, og du har tastet køberens afhentningskode ind."}
+              </p>
+              <StartChatKnap
+                auktionId={auktion.id}
+                tradeId={handel?.id ?? null}
+              />
+            </div>
+          )}
+
+          {kanStyreAuktion && (
+            <SaelgerAuktionHandlinger auktionId={auktion.id} harBud={harBud} />
+          )}
+          {spaerbareBydere.length > 0 && <SpaerByder bydere={spaerbareBydere} />}
+
+          <div className="lg:sticky lg:top-4">
+            <BidPanel
+              auktionId={auktion.id}
+              initialNuværendeBud={Number(
+                auktion.nuværende_bud ?? auktion.startpris,
+              )}
+              startpris={Number(auktion.startpris)}
+              initialHarBud={auktion.nuværende_bud != null}
+              redigeretKl={(auktion.redigeret_kl as string | null | undefined) ?? null}
+              initialSlutterKl={auktion.slutter_kl}
+              initialBud={anonymeBud}
+              brugerId={authData.user?.id ?? null}
+              saelgerId={auktion.bruger_id}
+              forsendelseMulig={auktion.forsendelse_mulig}
+              status={auktion.status}
+              vinderVisning={vinderVisning}
+            />
 
             {/* Kvittering for bedømmelsen – den afgives ved godkendelse af varen */}
             {maaBedømme && harBedømt && (
-              <div className="mt-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
+              <div className="mt-4 flex items-center gap-2 rounded-xl border border-succes-kant bg-succes-bg px-4 py-3 text-sm text-succes-tekst">
+                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 Du har bedømt sælgeren for denne handel.
@@ -380,7 +326,84 @@ export default async function AuktionPage({
             </div>
           </div>
         </div>
+
+        {/* Detaljer, beskrivelse og Spørg sælger */}
+        <div className="min-w-0 lg:col-span-3 lg:col-start-1 lg:row-start-2">
+          <div className="border-t border-kant pt-6 lg:border-t-0 lg:pt-0">
+            <h2 className={sektionsTitel}>Oversigt</h2>
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
+              <div className="min-w-0">
+                <dt className="text-tekst-svag">Lokation</dt>
+                <dd className="break-words text-tekst">
+                  {auktion.lokation
+                    ? `${auktion.lokation} (${auktion.postnummer})`
+                    : auktion.postnummer}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-tekst-svag">Kategori</dt>
+                <dd className="text-tekst">{auktion.kategori}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-tekst-svag">Sælger</dt>
+                <dd>
+                  <Link
+                    href={`/profil/${auktion.bruger_id}`}
+                    className="inline-flex min-h-11 items-center rounded-md font-medium break-words text-groen hover:underline sm:min-h-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+                  >
+                    {sælgerNavn}
+                  </Link>
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-tekst-svag">Stand</dt>
+                <dd className="text-tekst">{standNavn(auktion.stand as string | null | undefined)}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-tekst-svag">Forsendelse</dt>
+                <dd className="text-tekst">
+                  {auktion.forsendelse_mulig ? "Tilbydes" : "Ikke tilbudt"}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          {auktion.beskrivelse && (
+            <>
+              <div className={sektionsLinje} />
+              <h2 className={sektionsTitel}>Beskrivelse</h2>
+              <p className="mt-2 max-w-[65ch] text-[15px] leading-relaxed break-words whitespace-pre-line text-tekst">
+                {auktion.beskrivelse}
+              </p>
+            </>
+          )}
+
+          <div className={sektionsLinje} />
+          <SpoergSaelger
+            auktionId={auktion.id}
+            spoergsmaal={spoergsmaal}
+            aktiv={(auktion.spoergsmaal_aktiv as boolean | null | undefined) !== false}
+            auktionKoerer={auktion.status === "aktiv" && !auktionErSlut}
+            erSaelger={erSælger}
+            erStaff={!!staffRolle}
+            loggetInd={!!bruger}
+          />
+
+          {/* Sælgeren har ingen grund til at anmelde sit eget opslag */}
+          {!erSælger && (
+            <>
+              <div className={sektionsLinje} />
+              <AnmeldOpslagKnap
+                auktionId={auktion.id}
+                brugerId={bruger?.id ?? null}
+              />
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Fast budbjælke i bunden på mobil (BidPanel lægger indholdet her) */}
+      <div id="byd-bjaelke" className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 lg:hidden" />
     </main>
   );
 }

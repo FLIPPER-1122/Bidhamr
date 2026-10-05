@@ -123,6 +123,20 @@ export default function MobilMenu({
               </Link>
             </div>
 
+            {/* Ikke logget ind: Favoritter sender til login og tilbage igen. */}
+            {!loggetInd && (
+              <section className="mt-6" aria-labelledby="mobil-mig">
+                <h2 id="mobil-mig" className={`${overskrift}`}>Min side</h2>
+                <ul>
+                  <li>
+                    <Link href="/login?redirect=/favoritter" className={punkt}>
+                      <Ikon navn="hjerte" />Favoritter
+                    </Link>
+                  </li>
+                </ul>
+              </section>
+            )}
+
             {loggetInd && (
               <section className="mt-6" aria-labelledby="mobil-mig">
                 <h2 id="mobil-mig" className={`${overskrift}`}>Min side</h2>
@@ -147,10 +161,10 @@ export default function MobilMenu({
                   </li>
                   <li><Link href="/favoritter" className={punkt}><Ikon navn="hjerte" />Favoritter</Link></li>
                   <li><Link href="/profil/mig" className={punkt}><Ikon navn="bruger" />Min profil</Link></li>
-                  <li><Link href="/konto" className={`${punkt} pl-12`}>Min konto</Link></li>
-                  <li><Link href="/konto/notifikationer" className={`${punkt} pl-12`}>Notifikationsindstillinger</Link></li>
+                  <li><Link href="/konto" className={punkt}><Ikon navn="indstillinger" />Min konto</Link></li>
+                  <li><Link href="/konto/notifikationer" className={punkt}><Ikon navn="klokke" />Notifikationsindstillinger</Link></li>
                   {erAdmin && (
-                    <li><Link href="/admin" className={`${punkt} pl-12 text-groen`}>Admin</Link></li>
+                    <li><Link href="/admin" className={`${punkt} text-groen`}><Ikon navn="skjoldLaas" />Admin</Link></li>
                   )}
                 </ul>
               </section>
@@ -162,6 +176,7 @@ export default function MobilMenu({
                 {UDFORSK.map((l) => (
                   <li key={l.href}><Link href={l.href} className={punkt}>{l.tekst}</Link></li>
                 ))}
+
               </ul>
             </section>
 

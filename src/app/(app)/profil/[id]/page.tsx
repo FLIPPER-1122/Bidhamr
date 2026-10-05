@@ -192,7 +192,7 @@ export default async function ProfilPage({
     }));
 
     return (
-      <main className="flex-1 bg-neutral-50 px-4 py-8 sm:px-8">
+      <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
         <div className="mx-auto max-w-5xl">
           <ProfileHeader
             navn={profil.navn ?? ""}
@@ -270,7 +270,7 @@ export default async function ProfilPage({
       : 0;
 
   return (
-    <main className="flex-1 bg-neutral-50 px-4 py-8 sm:px-8">
+    <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
       <div className="mx-auto max-w-5xl space-y-6">
         <ProfileHeader
           navn={kortNavn(profil.navn)}
@@ -296,30 +296,32 @@ export default async function ProfilPage({
         )}
 
         {/* Aktive auktioner */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-6">
-          <h2 className="text-sm font-semibold text-neutral-900">
+        <section className="rounded-[14px] bg-white p-5 sm:p-6">
+          <h2 className="text-[20px] leading-tight lg:text-[22px]">
             Aktive auktioner
           </h2>
           {aktiveAuktioner.length === 0 ? (
-            <p className="mt-3 text-sm text-neutral-500">
+            <p className="mt-3 text-sm text-tekst-svag">
               Ingen aktive auktioner lige nu.
             </p>
           ) : (
-            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+            <ul className="mt-4 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
               {aktiveAuktioner.map((auktion) => (
-                <AuctionCard key={auktion.id} auktion={auktion} />
+                <li key={auktion.id} className="min-w-0">
+                  <AuctionCard auktion={auktion} />
+                </li>
               ))}
-            </div>
+            </ul>
           )}
-        </div>
+        </section>
 
         {/* Bedømmelser */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-6">
-          <h2 className="text-sm font-semibold text-neutral-900">
+        <section className="rounded-[14px] bg-white p-5 sm:p-6">
+          <h2 className="text-[20px] leading-tight lg:text-[22px]">
             Bedømmelser
           </h2>
           {!ratings || ratings.length === 0 ? (
-            <p className="mt-3 text-sm text-neutral-500">
+            <p className="mt-3 text-sm text-tekst-svag">
               Ingen bedømmelser endnu.
             </p>
           ) : (
@@ -327,22 +329,22 @@ export default async function ProfilPage({
               {ratings.map((rating) => (
                 <li
                   key={rating.id}
-                  className="rounded-xl border border-neutral-100 bg-neutral-50 p-4"
+                  className="rounded-xl bg-groen-lys p-4"
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center justify-between gap-3">
                     <Link
                       href={`/profil/${rating.fra_bruger_id}`}
-                      className="text-sm font-medium text-neutral-900 hover:text-groen hover:underline"
+                      className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-tekst hover:text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:min-h-0"
                     >
                       {rating.fra_bruger_navn}
                     </Link>
-                    <span className="shrink-0 text-xs text-neutral-400">
+                    <span className="shrink-0 text-xs text-tekst-svag">
                       {new Date(rating.oprettet).toLocaleDateString("da-DK", {
                         dateStyle: "medium",
                       })}
                     </span>
                   </div>
-                  <div className="mt-1.5 flex gap-0.5">
+                  <div className="mt-1.5 flex gap-0.5" role="img" aria-label={`${rating.stjerner} af 5 stjerner`}>
                     {[1, 2, 3, 4, 5].map((i) => (
                       <svg
                         key={i}
@@ -350,7 +352,7 @@ export default async function ProfilPage({
                         className={`h-4 w-4 ${
                           i <= rating.stjerner
                             ? "fill-groen text-groen"
-                            : "fill-neutral-200 text-neutral-200"
+                            : "fill-kant-staerk text-kant-staerk"
                         }`}
                       >
                         <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -358,7 +360,7 @@ export default async function ProfilPage({
                     ))}
                   </div>
                   {rating.kommentar && (
-                    <p className="mt-2 text-sm text-neutral-600">
+                    <p className="mt-2 text-sm text-tekst-daempet">
                       {rating.kommentar}
                     </p>
                   )}
@@ -366,7 +368,7 @@ export default async function ProfilPage({
               ))}
             </ul>
           )}
-        </div>
+        </section>
       </div>
     </main>
   );

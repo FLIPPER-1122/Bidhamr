@@ -17,11 +17,11 @@ export default async function NotifikationIndstillingerSide() {
   const svar = await hentIndstillinger();
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
-      <nav aria-label="Brødkrumme" className="text-sm">
+    <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
+      <nav aria-label="Brødkrumme" className="flex items-center text-sm">
         <Link
           href="/konto"
-          className="font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+          className="inline-flex min-h-11 items-center rounded-md font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
         >
           Min konto
         </Link>
@@ -29,7 +29,7 @@ export default async function NotifikationIndstillingerSide() {
         <span className="text-tekst-daempet" aria-current="page">Notifikationer</span>
       </nav>
 
-      <h1 className="mt-3 font-serif text-[26px] font-semibold leading-tight text-tekst sm:text-[32px]">
+      <h1 className="mt-1 text-[26px] leading-tight break-words hyphens-auto sm:text-[32px]">
         Notifikationsindstillinger
       </h1>
       <p className="mt-2 max-w-[65ch] text-[15px] text-tekst-daempet">

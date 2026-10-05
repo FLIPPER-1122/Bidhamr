@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
+import Ikon from "@/components/Ikon";
 import { createClient } from "@/lib/supabase/client";
 import { afgivBud } from "@/app/actions/bud";
 import { formatNedtælling } from "@/lib/auctionTid";
@@ -85,6 +87,8 @@ export default function BidPanel({
   // Nedtællingen afhænger af klokken og beregnes først efter mount, så
   // server- og klient-render er ens (ingen hydration-mismatch).
   const [nedtælling, setNedtælling] = useState<string | null>(null);
+  // Under en time tilbage: timeren bliver orange (DESIGN.md 1.5).
+  const [slutterSnart, setSlutterSnart] = useState(false);
 
   // Sælgere må ikke byde på egen auktion - databasen afviser det også.
   const erSælger = Boolean(brugerId && brugerId === saelgerId);
@@ -103,7 +107,11 @@ export default function BidPanel({
   const harLukketRef = useRef(false);
 
   useEffect(() => {
-    const opdater = () => setNedtælling(formatNedtælling(slutterKl));
+    const opdater = () => {
+      setNedtælling(formatNedtælling(slutterKl));
+      const tilbage = new Date(slutterKl).getTime() - Date.now();
+      setSlutterSnart(tilbage > 0 && tilbage < 60 * 60 * 1000);
+    };
     const foerste = setTimeout(opdater, 0);
     const id = setInterval(() => {
       opdater();
@@ -276,114 +284,237 @@ export default function BidPanel({
     router.refresh();
   }
 
+  // Budbjælken på mobil: vises i bunden af siden (#byd-bjaelke på
+  // auktionssiden), når selve budboksen er rullet ud af syne.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const budFeltRef = useRef<HTMLInputElement>(null);
+  const [panelSynligt, setPanelSynligt] = useState(true);
+  const [bjaelkeMaal, setBjaelkeMaal] = useState<HTMLElement | null>(null);
+  // Prisen og budknappen holdes øje med: er en af dem synlig, skjules bjælken.
+  const prisRef = useRef<HTMLDivElement>(null);
+  const handlingRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const maal = [prisRef.current, handlingRef.current].filter(
+      (el): el is HTMLDivElement => el !== null,
+    );
+    if (maal.length === 0 || typeof IntersectionObserver === "undefined") return;
+    const synlige = new Set<Element>();
+    const observer = new IntersectionObserver((indgange) => {
+      for (const i of indgange) {
+        if (i.isIntersecting) synlige.add(i.target);
+        else synlige.delete(i.target);
+      }
+      setBjaelkeMaal(document.getElementById("byd-bjaelke"));
+      setPanelSynligt(synlige.size > 0);
+    });
+    maal.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
   const visteBud = visAlle ? budListe : budListe.slice(0, VIST_SOM_STANDARD);
+  const visningsBud = harBud ? nuværendeBud : startpris;
+  const kanByde = auktionStatus === "aktiv" && !erSælger;
+
+  // Opsummering før "Afgiv bud" (DESIGN.md 8.6): bud, gebyr og fragt på hver
+  // sin linje og totalen nederst. Kun visning - serveren beregner beløbet.
+  const gyldigtBud = estimatOere !== null;
+  const budOereVist = gyldigtBud ? Math.round(budTal * 100) : null;
+  const gebyrOereVist =
+    budOereVist !== null ? Math.round((budOereVist * KOEBERGEBYR_PROCENT) / 100) : null;
+  const beskyttelseVist = beskyttelse && forsendelseMulig && budOereVist !== null
+    ? beskyttelseOere(budOereVist)
+    : null;
+
+  // Hvad det mindste bud koster i alt - vises i budbjælken på mobil.
+  const mindsteTotalOere = (() => {
+    const budOere = Math.round(minimumBud * 100);
+    return totalOere(
+      {
+        bud_oere: budOere,
+        koebergebyr_oere: Math.round((budOere * KOEBERGEBYR_PROCENT) / 100),
+        fragt_oere: fragtOere(forsendelseMulig),
+      },
+      false,
+    );
+  })();
+
+  function gaaTilBud() {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const reduceret = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    panel.scrollIntoView({ behavior: reduceret ? "auto" : "smooth", block: "start" });
+    // Fokus uden at rulle igen, så tastaturet åbner på budfeltet.
+    budFeltRef.current?.focus({ preventScroll: true });
+  }
+
+  const linje = "flex items-baseline justify-between gap-3";
 
   return (
-    <div className="border border-neutral-200 bg-white p-4">
+    <div ref={panelRef} className="scroll-mt-4 rounded-[14px] border border-kant bg-white p-4 sm:p-5">
       {/* Afslutning + countdown */}
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-neutral-600">
-          Afsluttes:{" "}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <p className="text-sm text-tekst-daempet">
+          Afsluttes{" "}
           {new Date(slutterKl).toLocaleString("da-DK", {
             dateStyle: "medium",
             timeStyle: "short",
           })}
         </p>
-        <p className="text-2xl font-bold text-[#111] tabular-nums">
+        <p
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-semibold tabular-nums ${
+            slutterSnart && auktionStatus === "aktiv" ? "bg-orange-knap text-white" : "bg-groen-lys text-groen-mork"
+          }`}
+        >
+          <Ikon navn="ur" className="h-4 w-4" strøg={2} />
+          {slutterSnart && auktionStatus === "aktiv" && <span className="sr-only">Slutter snart: </span>}
           {nedtælling ?? "–"}
         </p>
       </div>
 
-      <div className="my-4 border-t border-neutral-200" />
+      <div className="my-4 border-t border-kant" />
 
       {/* Førende bud */}
-      <p className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">
-        {harBud ? "Førende bud:" : "Startpris:"}
-      </p>
-      <p className="text-3xl font-bold text-[#111]">
-        {(harBud ? nuværendeBud : startpris).toLocaleString("da-DK")} kr
-      </p>
+      <div ref={prisRef}>
+        <p className="text-[13px] font-medium text-tekst-svag">
+          {harBud ? "Førende bud" : "Startpris"}
+        </p>
+        <p className="mt-0.5 text-[26px] leading-tight font-bold text-tekst tabular-nums lg:text-[30px]">
+          {visningsBud.toLocaleString("da-DK")} kr
+        </p>
+      </div>
 
       {auktionStatus !== "aktiv" ? (
-        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-5 py-4 text-center">
+        <div className="mt-4 rounded-xl bg-groen-lys px-5 py-4 text-center">
           {auktionStatus === "afsluttet" ? (
             <>
-              <p className="text-base font-semibold text-neutral-800">Auktionen er afsluttet</p>
+              <p className="text-base font-semibold text-groen-mork">Auktionen er afsluttet</p>
               {vinderVisning ? (
-                <p className="mt-1 text-sm text-neutral-500">
-                  Vinder: <span className="font-semibold text-neutral-700">{vinderVisning}</span>
+                <p className="mt-1 text-sm text-tekst-daempet">
+                  Vinder: <span className="font-semibold text-tekst">{vinderVisning}</span>
                 </p>
               ) : null}
             </>
           ) : auktionStatus === "annulleret" ? (
-            <p className="text-base font-semibold text-neutral-500">Auktionen er annulleret</p>
+            <p className="text-base font-semibold text-tekst-daempet">Auktionen er annulleret</p>
           ) : (
-            <p className="text-base font-semibold text-neutral-500">Ingen bud – auktionen er lukket</p>
+            <p className="text-base font-semibold text-tekst-daempet">Ingen bud – auktionen er lukket</p>
           )}
         </div>
       ) : erSælger ? (
-        <p className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-center text-sm text-neutral-600">
+        <p className="mt-4 rounded-xl bg-groen-lys px-4 py-3 text-center text-sm text-groen-mork">
           Det er din egen auktion – du kan ikke byde på den.
         </p>
       ) : brugerId ? (
         <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3">
-          <div className="flex flex-col gap-2 sm:flex-row">
-          <input
-            type="number"
-            inputMode="numeric"
-            min={minimumBud}
-            step={1}
-            value={beløb}
-            onChange={(e) => setBeløb(e.target.value)}
-            placeholder={`Mindst ${minimumBud.toLocaleString("da-DK")} kr`}
-            className="flex-1 rounded-lg border border-neutral-300 px-3 py-3 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-lg bg-orange-knap px-6 py-3 text-base font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
-          >
-            {loading ? "Afgiver…" : "Afgiv bud"}
-          </button>
+          <div>
+            <label htmlFor={`bud-${auktionId}`} className="mb-1.5 block text-sm font-medium text-tekst">
+              Dit bud
+            </label>
+            <div className="relative">
+              <input
+                id={`bud-${auktionId}`}
+                ref={budFeltRef}
+                type="number"
+                inputMode="numeric"
+                min={minimumBud}
+                step={1}
+                value={beløb}
+                onChange={(e) => setBeløb(e.target.value)}
+                placeholder={`Mindst ${minimumBud.toLocaleString("da-DK")}`}
+                aria-describedby={`bud-${auktionId}-hjaelp`}
+                aria-invalid={error ? true : undefined}
+                className={`h-[52px] w-full rounded-xl border bg-white pr-12 pl-4 text-lg font-semibold text-tekst tabular-nums placeholder:font-normal placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25 ${
+                  error ? "border-fejl-kant bg-fejl-bg/40" : "border-kant-staerk"
+                }`}
+              />
+              <span aria-hidden="true" className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-[15px] text-tekst-svag">
+                kr
+              </span>
+            </div>
+            <p id={`bud-${auktionId}-hjaelp`} className="mt-1.5 text-[13px] text-tekst-daempet">
+              Mindste bud er {minimumBud.toLocaleString("da-DK")} kr.
+            </p>
           </div>
 
           {forsendelseMulig && (
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-            <label className="flex cursor-pointer items-center gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-kant bg-white px-3">
+            <label className="flex min-h-11 flex-1 cursor-pointer items-center gap-3 py-2">
               <input
                 type="checkbox"
                 checked={beskyttelse}
                 onChange={(e) => setBeskyttelse(e.target.checked)}
-                className="h-4 w-4 shrink-0 accent-[#1E5E4A]"
+                className="h-5 w-5 shrink-0 accent-groen"
               />
-              <span className="text-sm font-semibold text-neutral-800">
-                {BIDPANEL.beskyttelseLabel}
-                {beskyttelsePrisOere !== null && (
-                  <span className="ml-1 font-normal text-neutral-600">
-                    + {kroner(beskyttelsePrisOere)}
-                  </span>
-                )}
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-tekst">
+                <Ikon navn="skjold" className="h-[18px] w-[18px] shrink-0 text-groen" />
+                <span>
+                  {BIDPANEL.beskyttelseLabel}
+                  {beskyttelsePrisOere !== null && (
+                    <span className="ml-1 font-normal text-tekst-daempet">
+                      + {kroner(beskyttelsePrisOere)}
+                    </span>
+                  )}
+                </span>
               </span>
             </label>
             {/* Uden for label, så et klik ikke slår afkrydsningen til/fra. */}
             <Link
               href={BIDPANEL.laesMereHref}
-              className="text-sm font-medium text-groen underline-offset-2 hover:underline"
+              className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
             >
               {BIDPANEL.laesMere}
             </Link>
           </div>
           )}
 
-          {estimatOere !== null && (
-            <p className="text-xs text-neutral-600">
-              Vinder du med dette bud, betaler du{" "}
-              <span className="font-semibold text-neutral-800">{kroner(estimatOere)}</span>{" "}
-              i alt.
-            </p>
-          )}
+          {/* Totalpris før man byder (bud + gebyr + fragt) */}
+          <div className="rounded-xl bg-groen-lys p-4" aria-live="polite">
+            <dl className="flex flex-col gap-1 text-sm text-tekst-daempet">
+              <div className={linje}>
+                <dt>Dit bud</dt>
+                <dd className="tabular-nums">{budOereVist !== null ? kroner(budOereVist) : "–"}</dd>
+              </div>
+              <div className={linje}>
+                <dt>Købergebyr</dt>
+                <dd className="tabular-nums">{gebyrOereVist !== null ? kroner(gebyrOereVist) : "–"}</dd>
+              </div>
+              <div className={linje}>
+                <dt>{forsendelseMulig ? "Fragt" : "Fragt (kun afhentning)"}</dt>
+                <dd className="tabular-nums">{kroner(fragtOere(forsendelseMulig))}</dd>
+              </div>
+              {beskyttelseVist !== null && (
+                <div className={linje}>
+                  <dt>BidHamr Beskyttelse</dt>
+                  <dd className="tabular-nums">{kroner(beskyttelseVist)}</dd>
+                </div>
+              )}
+              <div className={`${linje} mt-2 border-t border-groen/20 pt-2`}>
+                <dt className="font-semibold text-tekst">Du betaler i alt, hvis du vinder</dt>
+                <dd className="shrink-0 text-lg font-bold whitespace-nowrap text-tekst tabular-nums">
+                  {estimatOere !== null ? kroner(estimatOere) : "–"}
+                </dd>
+              </div>
+            </dl>
+          </div>
 
-          <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+          <div ref={handlingRef} className="flex flex-col gap-2">
+            <button
+              type="submit"
+              disabled={loading || !gyldigtBud}
+              aria-busy={loading || undefined}
+              className="btn btn-primaer btn-stor w-full"
+            >
+              {loading && <span className="btn-spinner" aria-hidden="true" />}
+              Afgiv bud
+            </button>
+            {!gyldigtBud && (
+              <p className="text-center text-[13px] text-tekst-daempet">
+                Skriv dit bud for at se den samlede pris.
+              </p>
+            )}
+          </div>
+
+          <p className="flex items-start gap-2 rounded-xl border border-advarsel-kant bg-advarsel-bg px-3 py-2.5 text-[13px] font-medium text-advarsel-tekst">
             <svg viewBox="0 0 24 24" className="mt-px h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 8v4m0 4h.01" />
             </svg>
@@ -391,26 +522,28 @@ export default function BidPanel({
           </p>
         </form>
       ) : (
-        <Link
-          href="/login"
-          className="mt-4 block w-full rounded-lg bg-orange-knap px-6 py-3 text-center text-base font-semibold text-white hover:bg-orange-knap-mork"
-        >
-          Log ind for at byde
-        </Link>
+        <div ref={handlingRef} className="mt-4">
+          <Link
+            href={`/login?redirect=${encodeURIComponent(`/auktion/${auktionId}`)}`}
+            className="btn btn-primaer btn-stor w-full"
+          >
+            Log ind for at byde
+          </Link>
+        </div>
       )}
 
-      <p className="mt-3 text-xs text-neutral-500">
+      <p className="mt-3 text-[13px] leading-relaxed text-tekst-daempet">
         {BIDPANEL.prisLinje}
       </p>
       {!forsendelseMulig && (
-        <p className="text-xs text-neutral-500">
+        <p className="mt-1 text-[13px] text-tekst-daempet">
           Kun afhentning – ingen fragt.
         </p>
       )}
 
       {info && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
+        <div role="status" className="mt-3 flex items-center gap-2 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
             <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 8v4m0 4h.01" />
           </svg>
           {info}
@@ -418,39 +551,39 @@ export default function BidPanel({
       )}
 
       {error && (
-        <div className="mt-3 border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
+        <div role="alert" className="mt-3 rounded-xl border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
           {error}
         </div>
       )}
 
-      <div className="my-4 border-t border-neutral-200" />
+      <div className="my-4 border-t border-kant" />
 
       {/* Budhistorik */}
-      <h2 className="text-sm font-semibold text-[#111]">Budhistorik</h2>
+      <h2 className="text-[17px] leading-snug lg:text-lg">Budhistorik</h2>
 
       {budListe.length === 0 ? (
-        <p className="mt-2 text-sm text-neutral-500">
+        <p className="mt-2 text-sm text-tekst-svag">
           Ingen bud endnu – vær den første.
         </p>
       ) : (
         <>
           <table className="mt-3 w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 text-xs text-neutral-500">
-                <th className="py-2 font-medium">Bud</th>
-                <th className="py-2 font-medium">Tidspunkt</th>
-                <th className="py-2 text-right font-medium">Budgiver</th>
+              <tr className="border-b border-kant text-xs text-tekst-svag">
+                <th scope="col" className="py-2 font-medium">Bud</th>
+                <th scope="col" className="py-2 font-medium">Tidspunkt</th>
+                <th scope="col" className="py-2 text-right font-medium">Budgiver</th>
               </tr>
             </thead>
             <tbody>
               {visteBud.map((bud, index) => {
-                const fed = index === 0 ? "font-bold text-[#111]" : "text-neutral-700";
+                const fed = index === 0 ? "font-bold text-tekst" : "text-tekst-daempet";
                 return (
-                  <tr key={bud.id} className="border-b border-neutral-100">
-                    <td className={`py-2 ${fed}`}>
+                  <tr key={bud.id} className="border-b border-kant last:border-b-0">
+                    <td className={`py-2 tabular-nums ${fed}`}>
                       {bud.beløb.toLocaleString("da-DK")} kr
                     </td>
-                    <td className={`py-2 ${fed}`}>
+                    <td className={`py-2 tabular-nums ${fed}`}>
                       {new Date(bud.oprettet).toLocaleString("da-DK", {
                         dateStyle: "short",
                         timeStyle: "short",
@@ -467,14 +600,60 @@ export default function BidPanel({
 
           {budListe.length > VIST_SOM_STANDARD && (
             <button
+              type="button"
               onClick={() => setVisAlle(!visAlle)}
-              className="mt-3 text-sm font-medium text-groen"
+              className="mt-2 inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
             >
               {visAlle ? "Vis færre bud" : "Vis al budhistorik"}
             </button>
           )}
         </>
       )}
+
+      {/* Budbjælke i bunden på mobil, mens budboksen er ude af syne. */}
+      {bjaelkeMaal && kanByde &&
+        createPortal(
+          <div
+            className={`border-t border-kant bg-white px-4 py-3 shadow-flyder transition-opacity duration-200 sm:px-6 ${
+              panelSynligt ? "pointer-events-none invisible opacity-0" : "opacity-100"
+            }`}
+            aria-hidden={panelSynligt || undefined}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs text-tekst-svag">
+                  {harBud ? "Førende bud" : "Startpris"}
+                  {nedtælling ? <> · {nedtælling}</> : null}
+                </p>
+                <p className="text-lg leading-tight font-bold text-tekst tabular-nums">
+                  {visningsBud.toLocaleString("da-DK")} kr
+                </p>
+                <p className="truncate text-xs text-tekst-daempet">
+                  Fra {kroner(mindsteTotalOere)} i alt inkl. gebyr og fragt
+                </p>
+              </div>
+              {brugerId ? (
+                <button
+                  type="button"
+                  onClick={gaaTilBud}
+                  tabIndex={panelSynligt ? -1 : undefined}
+                  className="btn btn-primaer shrink-0"
+                >
+                  Afgiv bud
+                </button>
+              ) : (
+                <Link
+                  href={`/login?redirect=${encodeURIComponent(`/auktion/${auktionId}`)}`}
+                  tabIndex={panelSynligt ? -1 : undefined}
+                  className="btn btn-primaer shrink-0"
+                >
+                  Log ind for at byde
+                </Link>
+              )}
+            </div>
+          </div>,
+          bjaelkeMaal,
+        )}
     </div>
   );
 }

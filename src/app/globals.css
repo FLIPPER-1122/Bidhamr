@@ -141,6 +141,14 @@ h3:not(.font-sans) {
   font-size: 14px;
 }
 
+/* Lille knap er kun til desktop (DESIGN.md 6). Under lg holdes touch-målet
+   på 44px, så ingen knap bliver for lille at ramme på mobil. */
+@media (max-width: 1023.98px) {
+  .btn-lille {
+    height: 44px;
+  }
+}
+
 .btn-stor {
   height: 52px;
   padding-inline: 24px;

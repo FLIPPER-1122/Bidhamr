@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 export default function Accordion({
   title,
@@ -12,29 +12,34 @@ export default function Accordion({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const id = useId();
 
   return (
-    <div className="border border-neutral-200 bg-[#F3F4F6]">
+    <div className="overflow-hidden rounded-xl border border-kant bg-white">
       <button
+        type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-[#111]"
+        aria-expanded={open}
+        aria-controls={id}
+        className="flex min-h-11 w-full items-center justify-between gap-4 rounded-xl px-4 py-3 text-left text-sm font-semibold text-tekst hover:bg-groen-lys focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen"
       >
         {title}
         <svg
           viewBox="0 0 24 24"
-          className={`h-4 w-4 text-neutral-500 transition-transform ${
+          className={`h-4 w-4 shrink-0 text-tekst-svag transition-transform ${
             open ? "rotate-180" : ""
           }`}
           fill="none"
           stroke="currentColor"
           strokeWidth={2}
+          aria-hidden="true"
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
         </svg>
       </button>
 
       {open && (
-        <div className="border-t border-neutral-200 px-4 py-3 text-sm text-neutral-700">
+        <div id={id} className="border-t border-kant px-4 py-3 text-sm leading-relaxed text-tekst-daempet">
           {children}
         </div>
       )}

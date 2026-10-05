@@ -21,8 +21,8 @@ export default function SpaerByder({ bydere }: { bydere: ByderValg[] }) {
   const valgtByder = bydere.find((b) => b.budId === valgt);
 
   return (
-    <details className="rounded-xl border border-kant bg-white p-4 text-sm">
-      <summary className="cursor-pointer font-medium text-tekst">Spær en byder</summary>
+    <details className="mb-4 rounded-[14px] border border-kant bg-white p-4 text-sm">
+      <summary className="flex min-h-11 cursor-pointer items-center rounded-md font-medium text-tekst focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">Spær en byder</summary>
       <p className="mt-2 text-tekst-daempet">
         En spærret byder kan ikke byde på dine auktioner igen. Byderens nuværende bud er bindende og
         bliver stående. Du kan fjerne spærringen under Min konto.
@@ -41,7 +41,7 @@ export default function SpaerByder({ bydere }: { bydere: ByderValg[] }) {
             id="spaer-byder"
             value={valgt}
             onChange={(e) => setValgt(e.target.value)}
-            className="h-11 rounded-lg border border-kant-staerk bg-white px-3 text-base text-tekst sm:h-9 sm:text-sm"
+            className="h-11 rounded-xl border border-kant-staerk bg-white px-4 text-base text-tekst hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25 sm:text-sm"
           >
             <option value="">Vælg byder</option>
             {muligeBydere.map((b) => (

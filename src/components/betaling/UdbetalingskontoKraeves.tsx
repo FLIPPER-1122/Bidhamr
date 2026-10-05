@@ -48,15 +48,15 @@ export default function UdbetalingskontoKraeves({
 
   if (henter) {
     return (
-      <p className="rounded-lg border border-[#C9DCEB] bg-[#EDF3F8] px-4 py-3 text-sm text-[#1F4E79]">
+      <p className="rounded-lg border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
         Henter status fra Stripe…
       </p>
     );
   }
 
   return (
-    <div className="space-y-4 rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] p-5">
-      <p className="text-sm text-[#8A4210]">
+    <div className="space-y-4 rounded-xl border border-advarsel-kant bg-advarsel-bg p-5">
+      <p className="text-sm text-advarsel-tekst">
         For at sælge skal du have en udbetalingskonto, så Stripe kan sende pengene til din bank.
       </p>
       {fejl && <FejlBoks tekst={fejl} />}

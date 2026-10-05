@@ -19,14 +19,14 @@ export default async function NotifikationerSide() {
   const svar = await hentNotifikationer({ antal: SIDE_STOERRELSE + 1 });
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
+    <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
         <h1 className="font-serif text-[26px] font-semibold leading-tight text-tekst sm:text-[32px]">
           Notifikationer
         </h1>
         <Link
           href="/konto/notifikationer"
-          className="text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+          className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
         >
           Indstillinger
         </Link>

@@ -39,11 +39,11 @@ export default async function StaffSamtalePage({
   return (
     <main className="flex-1 bg-white px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-3xl">
-        <Link href="/beskeder" className="text-sm font-medium text-groen hover:underline">
+        <Link href="/beskeder" className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
           ← Beskeder
         </Link>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <BidhamrMaerke />
           {samtale.lukket_kl && <AfsluttetMaerke />}
         </div>
@@ -54,7 +54,7 @@ export default async function StaffSamtalePage({
         {samtale.trade_id && (
           <Link
             href={`/mine-handler/${samtale.trade_id}`}
-            className="mt-2 inline-block text-sm font-medium text-groen hover:underline"
+            className="mt-1 inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
           >
             Se handlen →
           </Link>

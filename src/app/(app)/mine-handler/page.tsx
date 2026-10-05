@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
+import Ikon from "@/components/Ikon";
+import TomTilstand from "@/components/TomTilstand";
+import { kanOptimeres } from "@/lib/billedUrl";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import HandelStatusBadge, { AKTIVE_STATUSSER } from "@/components/HandelStatusBadge";
@@ -27,9 +31,9 @@ const SAG_AKTIV: SagStatus[] = ["aaben", "afventer_retur"];
 const SAG_MAERKE: Record<SagStatus, { tekst: string; stil: string }> = {
   aaben: { tekst: "Sag i gang", stil: "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst" },
   afventer_retur: { tekst: "Afventer retur", stil: "border-info-kant bg-info-bg text-info-tekst" },
-  afgjort_koeber: { tekst: "Sag afgjort", stil: "border-kant-staerk bg-neutral-50 text-tekst-daempet" },
-  afgjort_saelger: { tekst: "Sag afgjort", stil: "border-kant-staerk bg-neutral-50 text-tekst-daempet" },
-  lukket: { tekst: "Sag lukket", stil: "border-kant-staerk bg-neutral-50 text-tekst-daempet" },
+  afgjort_koeber: { tekst: "Sag afgjort", stil: "border-kant-staerk bg-groen-lys text-tekst-daempet" },
+  afgjort_saelger: { tekst: "Sag afgjort", stil: "border-kant-staerk bg-groen-lys text-tekst-daempet" },
+  lukket: { tekst: "Sag lukket", stil: "border-kant-staerk bg-groen-lys text-tekst-daempet" },
 };
 
 // Den nyeste sag på handlen (der er normalt kun én).
@@ -54,64 +58,56 @@ function HandelKort({
   return (
     <Link
       href={sagAktiv ? sagLink(handel.id) : `/mine-handler/${handel.id}`}
-      className="flex items-center gap-4 rounded-xl border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-md"
+      className="flex gap-3 rounded-[14px] border border-kant bg-white p-4 shadow-kort transition-[box-shadow,border-color] duration-200 ease-out hover:border-kant-staerk hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:gap-4"
     >
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100">
+      <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-skelet">
         {billede ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={billede}
-            alt={handel.auctions?.titel ?? ""}
-            className="h-full w-full object-cover"
+            alt=""
+            fill
+            sizes="64px"
+            unoptimized={!kanOptimeres(billede)}
+            className="object-cover"
           />
         ) : (
-          <svg className="h-6 w-6 text-neutral-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+          <svg className="h-6 w-6 text-tekst-svag" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 4.5h16.5a1.5 1.5 0 011.5 1.5v12a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5V6a1.5 1.5 0 011.5-1.5z" />
           </svg>
         )}
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold text-neutral-900">
-          {handel.auctions?.titel ?? "Slettet auktion"}
-        </p>
-        <p className="mt-0.5 text-sm text-neutral-500">
+        <div className="flex items-start justify-between gap-3">
+          <p className="line-clamp-2 min-w-0 text-[15px] font-semibold text-tekst">
+            {handel.auctions?.titel ?? "Slettet auktion"}
+          </p>
+          <span className="shrink-0 text-[15px] font-bold text-tekst tabular-nums">
+            {Number(handel.amount).toLocaleString("da-DK")} kr
+          </span>
+        </div>
+        <p className="mt-0.5 text-[13px] text-tekst-svag">
           {erKoeber ? "Du er køber" : "Du er sælger"} ·{" "}
           {new Date(handel.created_at).toLocaleDateString("da-DK")}
         </p>
-      </div>
 
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <span className="font-bold text-neutral-900">
-          {Number(handel.amount).toLocaleString("da-DK")} kr
-        </span>
-        <HandelStatusBadge status={handel.status} />
-        {sag && (
-          <span
-            className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${SAG_MAERKE[sag.status].stil}`}
-          >
-            {SAG_MAERKE[sag.status].tekst}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <HandelStatusBadge status={handel.status} />
+          {sag && (
+            <span
+              className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${SAG_MAERKE[sag.status].stil}`}
+            >
+              {SAG_MAERKE[sag.status].tekst}
+            </span>
+          )}
+          {/* Hele kortet er linket til handelssiden; dette er en synlig
+              markering af, at chatten ligger derinde. Et <Link> her ville
+              være et link inde i et link. */}
+          <span className="ml-auto inline-flex items-center gap-1 text-[13px] font-semibold text-groen">
+            <Ikon navn="besked" className="h-4 w-4" />
+            Start chat
           </span>
-        )}
-        {/* Hele kortet er linket til handelssiden; dette er en synlig
-            markering af, at chatten ligger derinde. Et <Link> her ville
-            være et link inde i et link. */}
-        <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-groen">
-          <svg
-            viewBox="0 0 24 24"
-            className="h-3.5 w-3.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M21 11.5a8.38 8.38 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.38 8.38 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0z"
-            />
-          </svg>
-          Start chat
-        </span>
+        </div>
       </div>
     </Link>
   );
@@ -150,10 +146,10 @@ export default async function MineHandlerPage() {
   });
 
   return (
-    <main className="flex-1 bg-white px-4 py-8 sm:px-8">
+    <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
       <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold text-neutral-900">Mine handler</h1>
-        <p className="mt-1 text-sm text-neutral-500">
+        <h1 className="text-[26px] leading-tight sm:text-[32px]">Mine handler</h1>
+        <p className="mt-2 text-[15px] text-tekst-daempet">
           Handler hvor du er køber eller sælger.
         </p>
 
@@ -162,7 +158,7 @@ export default async function MineHandlerPage() {
             aria-labelledby="sager-titel"
             className="mt-6 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst sm:p-5"
           >
-            <h2 id="sager-titel" className="font-semibold">
+            <h2 id="sager-titel" className="font-sans text-[15px] font-semibold">
               {medSag.length === 1 ? "Du har 1 sag i gang" : `Du har ${medSag.length} sager i gang`}
             </h2>
             <ul className="mt-2 space-y-1">
@@ -183,13 +179,13 @@ export default async function MineHandlerPage() {
 
         {tilbud.length > 0 && (
           <section className="mt-8">
-            <h2 className="text-sm font-semibold text-neutral-900">Tilbud til dig</h2>
+            <h2 className="text-[20px] leading-tight lg:text-[22px]">Tilbud til dig</h2>
             <div className="mt-3 space-y-2">
               {tilbud.map((t) => (
                 <Link
                   key={t.id}
                   href={`/andenchance/${t.id}`}
-                  className="flex flex-col gap-2 rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] p-4 text-[#8A4210] transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst transition-shadow hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:justify-between"
                 >
                   <span className="min-w-0">
                     <span className="block truncate font-semibold">{t.titel}</span>
@@ -197,7 +193,7 @@ export default async function MineHandlerPage() {
                       Du kan købe varen for dit bud · <Nedtaelling til={t.udloeber} />
                     </span>
                   </span>
-                  <span className="btn btn-primaer btn-lille shrink-0">Se tilbud</span>
+                  <span className="btn btn-primaer shrink-0">Se tilbud</span>
                 </Link>
               ))}
             </div>
@@ -205,13 +201,17 @@ export default async function MineHandlerPage() {
         )}
 
         {handler.length === 0 ? (
-          <div className="mt-8 rounded-xl border border-neutral-200 bg-white p-10 text-center text-neutral-400">
-            Du har ingen handler endnu.
-          </div>
+          <TomTilstand
+            className="mt-8"
+            ikon="handler"
+            titel="Du har ingen handler endnu"
+            tekst="Når du vinder eller sælger en auktion, kan du følge handlen her."
+            knap={{ href: "/auktioner", tekst: "Find auktioner" }}
+          />
         ) : (
           <>
             <section className="mt-8">
-              <h2 className="text-sm font-semibold text-neutral-900">
+              <h2 className="text-[20px] leading-tight lg:text-[22px]">
                 Aktive handler ({aktive.length})
               </h2>
               <div className="mt-3 space-y-2">
@@ -219,7 +219,7 @@ export default async function MineHandlerPage() {
                   <HandelKort key={h.id} handel={h} brugerId={user.id} />
                 ))}
                 {aktive.length === 0 && (
-                  <p className="rounded-xl border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-400">
+                  <p className="rounded-[14px] border border-kant bg-white p-6 text-center text-sm text-tekst-svag">
                     Ingen aktive handler
                   </p>
                 )}
@@ -228,7 +228,7 @@ export default async function MineHandlerPage() {
 
             {afsluttede.length > 0 && (
               <section className="mt-8">
-                <h2 className="text-sm font-semibold text-neutral-900">
+                <h2 className="text-[20px] leading-tight lg:text-[22px]">
                   Afsluttede handler ({afsluttede.length})
                 </h2>
                 <div className="mt-3 space-y-2">

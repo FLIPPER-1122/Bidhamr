@@ -28,7 +28,7 @@ const STATUS_STIL: Record<SagStatus, string> = {
   afventer_retur: "border-info-kant bg-info-bg text-info-tekst",
   afgjort_koeber: "border-succes-kant bg-succes-bg text-succes-tekst",
   afgjort_saelger: "border-succes-kant bg-succes-bg text-succes-tekst",
-  lukket: "border-kant-staerk bg-neutral-100 text-tekst-daempet",
+  lukket: "border-kant-staerk bg-kant text-tekst-daempet",
 };
 
 // Kort navn til badges (det lange står i SAG_STATUS_NAVN).

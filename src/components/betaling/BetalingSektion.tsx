@@ -94,7 +94,7 @@ export function FejlBoks({ tekst }: { tekst: string }) {
   return (
     <p
       role="alert"
-      className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] px-4 py-3 text-sm text-[#A32020]"
+      className="rounded-xl border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst"
     >
       {tekst}
     </p>

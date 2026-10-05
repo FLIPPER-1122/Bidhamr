@@ -98,13 +98,13 @@ function LoginForm() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-white px-4 py-10">
+    <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
       <div className="w-full max-w-sm">
-        <div className="rounded-xl border border-neutral-200 p-6 sm:p-8">
-          <h1 className="text-2xl font-semibold text-neutral-900">
+        <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
+          <h1 className="text-[26px] leading-tight sm:text-[32px]">
             Log ind
           </h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-tekst-svag">
             Velkommen tilbage til BidHamr.
           </p>
 
@@ -112,17 +112,18 @@ function LoginForm() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-neutral-900"
+                className="block text-sm font-medium text-tekst"
               >
                 Email
               </label>
               <input
                 id="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+                className="mt-1.5 h-11 w-full rounded-xl border border-kant-staerk px-4 text-[15px] text-tekst bg-white placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
               />
             </div>
 
@@ -130,13 +131,13 @@ function LoginForm() {
               <div className="flex items-center justify-between">
                 <label
                   htmlFor="password"
-                  className="block text-sm font-medium text-neutral-900"
+                  className="block text-sm font-medium text-tekst"
                 >
                   Adgangskode
                 </label>
                 <Link
                   href="/glemt-adgangskode"
-                  className="text-xs font-medium text-groen hover:underline"
+                  className="inline-flex min-h-11 items-center rounded-md text-[13px] font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
                 >
                   Glemt adgangskode?
                 </Link>
@@ -144,21 +145,24 @@ function LoginForm() {
               <input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+                className="mt-1.5 h-11 w-full rounded-xl border border-kant-staerk px-4 text-[15px] text-tekst bg-white placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
               />
             </div>
 
             {(error ?? callbackFejl) && (
-              <p className="text-sm text-fejl-tekst">{error ?? callbackFejl}</p>
+              <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
+                {error ?? callbackFejl}
+              </p>
             )}
 
             {emailIkkeBekraeftet && (
               <div>
                 {resendSuccess ? (
-                  <p className="text-sm text-green-600">
+                  <p className="text-sm text-succes-tekst">
                     Bekræftelsesmail sendt igen – tjek din indbakke.
                   </p>
                 ) : (
@@ -166,7 +170,7 @@ function LoginForm() {
                     type="button"
                     onClick={handleResend}
                     disabled={resendLoading}
-                    className="text-sm font-medium text-groen hover:underline disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen disabled:opacity-50"
                   >
                     {resendLoading ? "Sender…" : "Send bekræftelsesmail igen"}
                   </button>
@@ -177,16 +181,18 @@ function LoginForm() {
             <button
               type="submit"
               disabled={loading}
+              aria-busy={loading || undefined}
               className="btn btn-primaer btn-stor w-full"
             >
-              {loading ? "Logger ind…" : "Log ind"}
+              {loading && <span className="btn-spinner" aria-hidden="true" />}
+              Log ind
             </button>
           </form>
         </div>
 
-        <p className="mt-6 text-center text-sm text-neutral-500">
+        <p className="mt-6 text-center text-sm text-tekst-svag">
           BidHamr åbner snart.{" "}
-          <Link href="/coming-soon" className="font-medium text-groen">
+          <Link href="/coming-soon" className="font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
             Tilmeld ventelisten
           </Link>
         </p>

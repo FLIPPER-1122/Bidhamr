@@ -1,4 +1,5 @@
 import AuctionsExplorer from "@/components/AuctionsExplorer";
+import { læsSortering } from "@/lib/sortering";
 import { createClient } from "@/lib/supabase/server";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import type { Metadata } from "next";
@@ -39,11 +40,13 @@ export async function generateMetadata({
 export default async function AuktionerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; kategori?: string }>;
+  searchParams: Promise<{ q?: string; kategori?: string; sortering?: string }>;
 }) {
-  const { q, kategori } = await searchParams;
+  const { q, kategori, sortering } = await searchParams;
   const søgetekst = q?.trim() ?? "";
   const initialKategori = kategori?.trim() ?? "";
+  // ?sortering= fra forsiden og menuen ("Slutter snart", "Nye auktioner").
+  const initialSortering = læsSortering(sortering);
 
   const supabase = await createClient();
 
@@ -69,20 +72,17 @@ export default async function AuktionerPage({
   const visteAuktioner = (auktioner ?? []).map(mapAuctionTilKort);
 
   return (
-    <main className="flex flex-1 flex-col bg-white px-4 py-6 sm:px-8">
-      <h1 className="flex items-center gap-3 border-l-4 border-groen pl-3 text-2xl font-bold text-neutral-900 sm:text-3xl">
-        {søgetekst
-          ? `Søgeresultater for "${søgetekst}": ${visteAuktioner.length}`
-          : `Alle auktioner lige nu: ${visteAuktioner.length}`}
+    <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+      <h1 className="text-[26px] leading-tight break-words sm:text-[32px]">
+        {søgetekst ? `Søgeresultater for "${søgetekst}"` : "Alle auktioner"}
       </h1>
 
-      <div className="mt-4">
-        <AuctionsExplorer
-          initialAuktioner={visteAuktioner}
-          initialQuery={søgetekst}
-          initialKategori={initialKategori}
-        />
-      </div>
+      <AuctionsExplorer
+        initialAuktioner={visteAuktioner}
+        initialQuery={søgetekst}
+        initialKategori={initialKategori}
+        initialSortering={initialSortering}
+      />
     </main>
   );
 }

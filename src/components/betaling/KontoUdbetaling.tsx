@@ -83,17 +83,17 @@ export default function KontoUdbetaling({
 
   let status: { tekst: string; stil: string };
   if (saelger.frakoblet) {
-    status = { tekst: "Udbetalingskontoen er lukket", stil: "border-[#F3C4C4] bg-[#FDECEC] text-[#A32020]" };
+    status = { tekst: "Udbetalingskontoen er lukket", stil: "border-fejl-kant bg-fejl-bg text-fejl-tekst" };
   } else if (saelger.afvist) {
-    status = { tekst: "Stripe har afvist udbetalingskontoen", stil: "border-[#F3C4C4] bg-[#FDECEC] text-[#A32020]" };
+    status = { tekst: "Stripe har afvist udbetalingskontoen", stil: "border-fejl-kant bg-fejl-bg text-fejl-tekst" };
   } else if (mangler) {
-    status = { tekst: "Stripe mangler oplysninger – fortsæt opsætningen", stil: "border-[#F5D9B0] bg-[#FEF3E2] text-[#8A4210]" };
+    status = { tekst: "Stripe mangler oplysninger – fortsæt opsætningen", stil: "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst" };
   } else if (klar) {
-    status = { tekst: "Klar til udbetaling", stil: "border-[#B9D8CC] bg-groen-lys text-groen-mork" };
+    status = { tekst: "Klar til udbetaling", stil: "border-succes-kant bg-groen-lys text-groen-mork" };
   } else if (saelger.detaljerIndsendt) {
-    status = { tekst: "Stripe tjekker dine oplysninger", stil: "border-[#C9DCEB] bg-[#EDF3F8] text-[#1F4E79]" };
+    status = { tekst: "Stripe tjekker dine oplysninger", stil: "border-info-kant bg-info-bg text-info-tekst" };
   } else if (saelger.harKonto) {
-    status = { tekst: "Mangler oplysninger", stil: "border-[#F5D9B0] bg-[#FEF3E2] text-[#8A4210]" };
+    status = { tekst: "Mangler oplysninger", stil: "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst" };
   } else {
     status = { tekst: "Ikke oprettet", stil: "border-kant bg-white text-tekst-daempet" };
   }
@@ -174,7 +174,7 @@ export default function KontoUdbetaling({
                     <span className="text-xs text-tekst-daempet">
                       {datoTekst(o.overfoertKl)}
                       {o.status !== "overfoert" && (
-                        <span className={`ml-2 font-medium ${o.status === "tilbagefoert" ? "text-[#A32020]" : "text-tekst-daempet"}`}>{OVERFOERSEL_STATUS[o.status]}</span>
+                        <span className={`ml-2 font-medium ${o.status === "tilbagefoert" ? "text-fejl-tekst" : "text-tekst-daempet"}`}>{OVERFOERSEL_STATUS[o.status]}</span>
                       )}
                     </span>
                   </div>

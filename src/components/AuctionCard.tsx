@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import Ikon from "@/components/Ikon";
+import { kanOptimeres } from "@/lib/billedUrl";
 import { useFavoritter } from "@/components/FavoritterProvider";
 
 export interface DummyAuction {
@@ -19,14 +20,10 @@ export interface DummyAuction {
   billede?: string | null;
 }
 
-// Passer til gitteret 1 / 2 / 3 / 4 spalter (DESIGN.md 12).
-const STANDARD_SIZES =
-  "(min-width: 1280px) 300px, (min-width: 1024px) 31vw, (min-width: 640px) 46vw, 92vw";
+// Passer til gitteret 2 / 3 / 4 spalter, som alle kortlister bruger
+// (grid-cols-2 lg:grid-cols-3 xl:grid-cols-4).
+const STANDARD_SIZES = "(min-width: 1280px) 300px, (min-width: 1024px) 31vw, 46vw";
 
-// Kun billeder fra vores egen Supabase-lagring maa optimeres (next.config.ts).
-// Et billede fra andre steder vises uoptimeret i stedet for at vaelte siden.
-const OPTIMERBAR =
-  /^https:\/\/(lkifkrexeldimmghnsie|pjiigmzqwlfepxnjdvug)\.supabase\.co\/storage\/v1\/object\/public\/[^?]*$/;
 
 // Auktionskort efter DESIGN.md 7.1.
 export default function AuctionCard({
@@ -56,7 +53,7 @@ export default function AuctionCard({
               alt=""
               fill
               sizes={sizes}
-              unoptimized={!OPTIMERBAR.test(auktion.billede)}
+              unoptimized={!kanOptimeres(auktion.billede)}
               className="object-cover"
             />
           )}

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import AuctionCard from "@/components/AuctionCard";
+import TomTilstand from "@/components/TomTilstand";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 
 export const dynamic = "force-dynamic";
@@ -58,11 +58,11 @@ export default async function FavoritterSide() {
     .map(mapAuctionTilKort);
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-8">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Mine favoritter</h1>
+    <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h1 className="text-[26px] leading-tight sm:text-[32px]">Mine favoritter</h1>
         {auktioner.length > 0 && (
-          <span className="text-sm text-neutral-500">
+          <span className="text-sm text-tekst-svag">
             {auktioner.length}{" "}
             {auktioner.length === 1 ? "auktion" : "auktioner"}
           </span>
@@ -70,40 +70,21 @@ export default async function FavoritterSide() {
       </div>
 
       {auktioner.length === 0 ? (
-        <div className="mt-8 rounded-xl border border-dashed border-neutral-300 px-6 py-16 text-center">
-          <svg
-            viewBox="0 0 24 24"
-            className="mx-auto h-12 w-12 text-neutral-300"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.5}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 21s-7.5-4.5-9.5-9C1 8.5 2.5 5 6 5c2 0 3.5 1 4 2 0.5-1 2-2 4-2 3.5 0 5 3.5 3.5 7-2 4.5-9.5 9-9.5 9z"
-            />
-          </svg>
-          <p className="mt-4 text-lg font-semibold text-neutral-900">
-            Du har ingen favoritter endnu
-          </p>
-          <p className="mx-auto mt-2 max-w-sm text-sm text-neutral-500">
-            Tryk på hjertet på en auktion for at gemme den her, så du nemt kan
-            finde den igen.
-          </p>
-          <Link
-            href="/auktioner"
-            className="mt-6 inline-block rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork"
-          >
-            Find auktioner
-          </Link>
-        </div>
+        <TomTilstand
+          className="mt-6"
+          ikon="hjerte"
+          titel="Du har ingen favoritter endnu"
+          tekst="Tryk på hjertet på en auktion for at gemme den her, så du nemt kan finde den igen."
+          knap={{ href: "/auktioner", tekst: "Find auktioner" }}
+        />
       ) : (
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <ul className="mt-6 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
           {auktioner.map((auktion) => (
-            <AuctionCard key={auktion.id} auktion={auktion} />
+            <li key={auktion.id} className="min-w-0">
+              <AuctionCard auktion={auktion} />
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </main>
   );

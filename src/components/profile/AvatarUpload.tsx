@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import { kanOptimeres } from "@/lib/billedUrl";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -58,21 +60,27 @@ export default function AvatarUpload({
   return (
     <div>
       <button
+        type="button"
         onClick={() => fileInputRef.current?.click()}
         disabled={loading}
-        className="group relative block h-24 w-24 overflow-hidden rounded-full border border-neutral-200 bg-neutral-100"
+        aria-label={avatarUrl ? "Skift profilbillede" : "Tilføj profilbillede"}
+        aria-busy={loading || undefined}
+        className="group relative block h-24 w-24 overflow-hidden rounded-full border border-kant bg-groen-lys focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
       >
         {avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={avatarUrl}
-            alt="Profilbillede"
-            className="h-full w-full object-cover"
+            alt=""
+            fill
+            sizes="96px"
+            unoptimized={!kanOptimeres(avatarUrl)}
+            className="object-cover"
           />
         ) : (
           <svg
             viewBox="0 0 24 24"
-            className="h-full w-full p-5 text-neutral-400"
+            className="h-full w-full p-5 text-groen-mork"
+            aria-hidden="true"
             fill="none"
             stroke="currentColor"
             strokeWidth={1.5}
@@ -85,7 +93,7 @@ export default function AvatarUpload({
           </svg>
         )}
 
-        <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-xs font-medium text-white opacity-0 group-hover:opacity-100">
+        <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-xs font-medium text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">
           {loading ? "Uploader…" : "Skift billede"}
         </span>
       </button>

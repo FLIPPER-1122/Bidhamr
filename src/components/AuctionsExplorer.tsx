@@ -4,43 +4,40 @@ import { useState } from "react";
 import type { DummyAuction } from "@/components/AuctionCard";
 import CategoryGrid from "@/components/CategoryGrid";
 import AuctionBrowser from "@/components/AuctionBrowser";
+import type { Sortering } from "@/lib/sortering";
 
 export default function AuctionsExplorer({
   initialAuktioner,
   initialQuery,
   initialKategori = "",
+  initialSortering,
 }: {
   initialAuktioner: DummyAuction[];
   initialQuery: string;
   initialKategori?: string;
+  initialSortering?: Sortering;
 }) {
   const [kategori, setKategori] = useState(initialKategori);
 
   return (
     <div>
       {!initialQuery && (
-        <section>
-          <h2 className="text-lg font-semibold text-neutral-900">
+        <section aria-labelledby="kategorier-titel" className="mt-6">
+          <h2 id="kategorier-titel" className="sr-only">
             Kategorier
           </h2>
-          <div className="mt-3">
-            <CategoryGrid valgt={kategori} onVælg={setKategori} />
-          </div>
+          <CategoryGrid valgt={kategori} onVælg={setKategori} />
         </section>
       )}
 
-      <section id="alle-auktioner" className={initialQuery ? "" : "mt-10"}>
-        <h2 className="text-lg font-semibold text-neutral-900">
-          Alle auktioner
-        </h2>
-        <div className="mt-3">
-          <AuctionBrowser
-            initialAuktioner={initialAuktioner}
-            initialQuery={initialQuery}
-            kategori={kategori}
-            onKategoriChange={setKategori}
-          />
-        </div>
+      <section id="alle-auktioner" aria-label="Auktioner" className="mt-6">
+        <AuctionBrowser
+          initialAuktioner={initialAuktioner}
+          initialQuery={initialQuery}
+          initialSortering={initialSortering}
+          kategori={kategori}
+          onKategoriChange={setKategori}
+        />
       </section>
     </div>
   );

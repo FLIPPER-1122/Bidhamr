@@ -1,6 +1,7 @@
 // Kvittering (køber) / afregning (sælger) for en handel. Server-komponent:
 // data hentes af siden via hentMinKvittering og indeholder kun brugerens
 // egne beløb. Samme opdeling som i mailen (kvitteringLinjer).
+import Image from "next/image";
 import Link from "next/link";
 import {
   KVITTERING_IKKE_FAKTURA,
@@ -39,12 +40,12 @@ export function kvitteringOverskrift(k: Kvittering) {
 // Kort udgave til handelssiden med link til den fulde, udskrivbare kvittering.
 export function KvitteringBoks({ k }: { k: Kvittering }) {
   return (
-    <section className="rounded-xl border border-kant bg-white p-6">
+    <section className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-tekst">{kvitteringOverskrift(k)}</h2>
+        <h2 className="text-[17px] leading-snug lg:text-lg">{kvitteringOverskrift(k)}</h2>
         <Link
           href={`/mine-handler/${k.handelId}/kvittering`}
-          className="text-sm font-medium text-groen underline hover:text-groen-mork"
+          className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen underline hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
         >
           Vis og udskriv
         </Link>
@@ -61,9 +62,9 @@ export function KvitteringBoks({ k }: { k: Kvittering }) {
 export function KvitteringFuld({ k }: { k: Kvittering }) {
   const erKoeber = k.rolle === "koeber";
   return (
-    <article data-kvittering-udskrift className="rounded-xl border border-kant bg-white p-6 sm:p-8 print:border-0 print:p-0">
-      <p className="text-lg font-bold text-groen">BidHamr</p>
-      <h1 className="mt-4 font-serif text-2xl font-semibold text-tekst">{kvitteringOverskrift(k)}</h1>
+    <article data-kvittering-udskrift className="rounded-[14px] border border-kant bg-white p-5 sm:p-8 print:border-0 print:p-0">
+      <Image src="/brand/bidhamr-logo.svg" alt="BidHamr" width={230} height={60} unoptimized className="h-8 w-auto" />
+      <h1 className="mt-4 text-[26px] leading-tight sm:text-[32px]">{kvitteringOverskrift(k)}</h1>
       <p className="mt-1 text-sm text-tekst-daempet">Kvittering/handelsbekræftelse – ikke en faktura</p>
 
       <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
@@ -95,7 +96,7 @@ export function KvitteringFuld({ k }: { k: Kvittering }) {
         )}
       </dl>
 
-      <div className="mt-6 rounded-lg bg-neutral-50 px-4 py-2 print:bg-white print:px-0">
+      <div className="mt-6 rounded-xl bg-groen-lys px-4 py-2 print:bg-white print:px-0">
         <Beloebslinjer k={k} />
       </div>
 

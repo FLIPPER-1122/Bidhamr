@@ -1,6 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
+import { kanOptimeres } from "@/lib/billedUrl";
+
+const pil =
+  "absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-tekst shadow-kort transition-colors hover:bg-white hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
 
 export default function AuctionGallery({
   billeder,
@@ -24,38 +29,35 @@ export default function AuctionGallery({
 
   return (
     <div>
-      <div className="relative aspect-square w-full bg-neutral-100 sm:aspect-[4/3]">
+      <div className="relative aspect-square w-full overflow-hidden rounded-[14px] bg-skelet sm:aspect-[4/3]">
         {aktivBillede && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={aktivBillede}
-            alt={titel}
-            className="h-full w-full object-cover"
+            alt={antal > 1 ? `${titel} – billede ${aktivIndex + 1} af ${antal}` : titel}
+            fill
+            // Første billede er sidens hovedindhold og hentes med det samme.
+            loading="eager"
+            fetchPriority="high"
+            sizes="(min-width: 1280px) 740px, (min-width: 1024px) 58vw, 100vw"
+            unoptimized={!kanOptimeres(aktivBillede)}
+            className="object-cover"
           />
         )}
 
         {antal > 1 && (
           <>
-            <button
-              onClick={forrige}
-              aria-label="Forrige billede"
-              className="absolute top-1/2 left-2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-neutral-700"
-            >
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
+            <button type="button" onClick={forrige} aria-label="Forrige billede" className={`${pil} left-2`}>
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" />
               </svg>
             </button>
-            <button
-              onClick={næste}
-              aria-label="Næste billede"
-              className="absolute top-1/2 right-2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-neutral-700"
-            >
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
+            <button type="button" onClick={næste} aria-label="Næste billede" className={`${pil} right-2`}>
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" />
               </svg>
             </button>
 
-            <span className="absolute right-2 bottom-2 bg-black/70 px-2 py-1 text-xs font-medium text-white">
+            <span className="absolute right-3 bottom-3 rounded-full bg-white px-[9px] py-[5px] text-xs font-semibold text-tekst">
               {aktivIndex + 1} af {antal}
             </span>
           </>
@@ -63,24 +65,30 @@ export default function AuctionGallery({
       </div>
 
       {antal > 1 && (
-        <div className="mt-2 grid grid-cols-5 gap-2">
+        <ul className="mt-2 grid grid-cols-5 gap-2" aria-label="Vælg billede">
           {billeder.map((url, index) => (
-            <button
-              key={url}
-              onClick={() => setAktivIndex(index)}
-              className={`aspect-square overflow-hidden border-2 ${
-                index === aktivIndex ? "border-groen" : "border-transparent"
-              }`}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url}
-                alt={`${titel} – billede ${index + 1}`}
-                className="h-full w-full object-cover"
-              />
-            </button>
+            <li key={url}>
+              <button
+                type="button"
+                onClick={() => setAktivIndex(index)}
+                aria-label={`Vis billede ${index + 1}`}
+                aria-current={index === aktivIndex ? "true" : undefined}
+                className={`relative block aspect-square w-full overflow-hidden rounded-lg border-2 bg-skelet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+                  index === aktivIndex ? "border-groen" : "border-transparent hover:border-kant-staerk"
+                }`}
+              >
+                <Image
+                  src={url}
+                  alt=""
+                  fill
+                  sizes="(min-width: 1024px) 140px, 20vw"
+                  unoptimized={!kanOptimeres(url)}
+                  className="object-cover"
+                />
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

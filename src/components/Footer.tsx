@@ -22,6 +22,7 @@ const KOLONNER: { titel: string; links: { href: string; tekst: string }[] }[] = 
     links: [
       { href: "/faq", tekst: "FAQ" },
       { href: "/kontakt", tekst: "Kontakt kundeservice" },
+      { href: "/forbudte-varer", tekst: "Forbudte varer" },
       { href: "/kontakt?emne=fejl", tekst: "Rapportér en fejl" },
     ],
   },

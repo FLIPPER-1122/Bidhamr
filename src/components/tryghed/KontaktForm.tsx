@@ -5,7 +5,7 @@ import { sendKontakt } from "@/app/actions/kontakt";
 import { KONTAKT_BESKED_MAKS, KONTAKT_EMNER, type KontaktEmne } from "@/lib/tryghed";
 
 const felt =
-  "mt-1.5 w-full rounded-lg border border-kant-staerk bg-white px-3 py-2.5 text-base text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:ring-1 focus:ring-groen sm:text-sm";
+  "min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk bg-white px-4 py-2.5 text-base text-tekst placeholder:text-pladsholder sm:text-sm hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25";
 
 export default function KontaktForm({
   email,
@@ -52,7 +52,7 @@ export default function KontaktForm({
 
   if (sendt) {
     return (
-      <div role="status" className="rounded-2xl border border-succes-kant bg-succes-bg p-5 sm:p-6">
+      <div role="status" className="rounded-[14px] border border-succes-kant bg-succes-bg p-5 sm:p-6">
         <h2 className="font-serif text-xl font-semibold text-succes-tekst">Tak for din besked</h2>
         <p className="mt-1 text-sm text-succes-tekst">
           Vi har modtaget den og svarer dig så hurtigt, vi kan – som regel inden for 1-2 hverdage.

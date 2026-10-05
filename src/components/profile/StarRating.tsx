@@ -6,11 +6,11 @@ export default function StarRating({
   antal: number;
 }) {
   if (antal === 0) {
-    return <p className="text-sm text-neutral-500">Ingen bedømmelser endnu</p>;
+    return <p className="text-sm text-tekst-svag">Ingen bedømmelser endnu</p>;
   }
 
   return (
-    <p className="text-sm text-neutral-700">
+    <p className="text-sm text-tekst-daempet">
       ⭐ {gennemsnit.toFixed(1)} · {antal} bedømmelse{antal === 1 ? "" : "r"}
     </p>
   );
