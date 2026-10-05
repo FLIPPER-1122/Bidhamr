@@ -490,6 +490,8 @@ async function beskeder(admin: Admin, start: Date): Promise<number> {
     .select("id, trade_id, sender_id, content, created_at")
     // Fællesbeskeder fra BidHamr notificeres af sendFaellesbesked() som 'sag'.
     .eq("fra_bidhamr", false)
+    // Stoppet af spamfilteret: modtageren må ikke få besked om den.
+    .is("blokeret_grund", null)
     .gte("created_at", fraTid(start, 24))
     .order("created_at", { ascending: false })
     .limit(MAKS);

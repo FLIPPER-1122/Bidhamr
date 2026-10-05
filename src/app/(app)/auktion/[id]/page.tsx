@@ -10,6 +10,7 @@ import Accordion from "@/components/Accordion";
 import AnmeldOpslagKnap from "@/components/AnmeldOpslagKnap";
 import StartChatKnap from "@/components/StartChatKnap";
 import SaelgerAuktionHandlinger from "@/components/SaelgerAuktionHandlinger";
+import SpaerByder, { type ByderValg } from "@/components/tryghed/SpaerByder";
 import { kortNavn } from "@/lib/kortNavn";
 
 const MAKS_BUD_HENTET = 50;
@@ -99,6 +100,16 @@ export default async function AuktionPage({
   // Redigér/annullér: kun på en igangværende auktion (låst efter første bud).
   const harBud = auktion.nuværende_bud != null || bud.length > 0;
   const kanStyreAuktion = erSælger && auktion.status === "aktiv" && !auktionErSlut;
+  // Sælgeren kan spærre en byder ud fra et af byderens bud (kun bud-id og
+  // "Byder N" sendes til browseren - aldrig bruger-id eller navn).
+  const spaerbareBydere: ByderValg[] = kanStyreAuktion
+    ? [...byderNr.entries()]
+        .filter(([brugerId]) => brugerId !== mitId)
+        .map(([brugerId, nr]) => ({
+          budId: bud.find((b) => b.bruger_id === brugerId)!.id,
+          byder: `Byder ${nr}`,
+        }))
+    : [];
 
   // Handelstilstand: cron-jobbet opretter handel + betaling ved auktionsluk.
   // Betalingen er dermed allerede sket - der er intet "betal nu"-trin.
@@ -275,6 +286,7 @@ export default async function AuktionPage({
             {kanStyreAuktion && (
               <SaelgerAuktionHandlinger auktionId={auktion.id} harBud={harBud} />
             )}
+            {spaerbareBydere.length > 0 && <SpaerByder bydere={spaerbareBydere} />}
 
             <div className="lg:sticky lg:top-4">
               <BidPanel

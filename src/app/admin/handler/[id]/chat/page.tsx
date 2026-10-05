@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { spamNavnStaff } from "@/lib/tryghed";
 import { notFound } from "next/navigation";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import { UUID_RE, faellesbeskedId } from "@/lib/moderationLog";
@@ -19,6 +20,8 @@ type Besked = {
   content: string;
   created_at: string;
   fra_bidhamr: boolean;
+  // Sat af spamfilteret: beskeden blev ikke vist for modtageren.
+  blokeret_grund: string | null;
 };
 
 const TZ = "Europe/Copenhagen";
@@ -88,7 +91,7 @@ export default async function AdminHandelChat({ params }: { params: Promise<{ id
   for (let fra = 0; fra < MAKS_BESKEDER; fra += BID) {
     const { data, error } = await admin
       .from("messages")
-      .select("id, sender_id, content, created_at, fra_bidhamr")
+      .select("id, sender_id, content, created_at, fra_bidhamr, blokeret_grund")
       .eq("trade_id", tradeId)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
@@ -222,6 +225,11 @@ export default async function AdminHandelChat({ params }: { params: Promise<{ id
                 <p className="mb-1 px-1 text-xs text-neutral-500">
                   <span className="font-semibold text-neutral-700">{maerke}</span>
                   {navn && <> · {navn}</>}
+                  {b.blokeret_grund && (
+                    <span className="ml-1 font-semibold text-fejl-tekst">
+                      · Stoppet af spamfilteret ({spamNavnStaff(b.blokeret_grund)}) – ikke vist for modtageren
+                    </span>
+                  )}
                 </p>
                 <div
                   className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm sm:max-w-[75%] ${

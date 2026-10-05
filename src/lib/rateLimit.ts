@@ -29,6 +29,11 @@ export const GRAENSER = {
   // Fejlrapporter fra browserens error boundaries (/admin/drift). Derudover
   // et globalt loft på 30 nye pr. minut i drift_fejl_log.
   drift_fejl_ip: { maks: 10, vindueSek: 60 },
+  // Kontaktformularen (/kontakt). Derudover honeypot og et globalt loft.
+  kontakt_ip: { maks: 5, vindueSek: 60 * 60 },
+  kontakt_bruger: { maks: 5, vindueSek: 60 * 60 },
+  kontakt_email: { maks: 5, vindueSek: 60 * 60 },
+  kontakt_alle: { maks: 300, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;

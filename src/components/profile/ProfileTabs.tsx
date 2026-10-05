@@ -59,6 +59,7 @@ export default function ProfileTabs({
   brugerId,
   navn,
   telefon,
+  adresse = null,
   email,
   avatarUrl,
 }: {
@@ -68,6 +69,7 @@ export default function ProfileTabs({
   brugerId: string;
   navn: string;
   telefon: string | null;
+  adresse?: string | null;
   email: string;
   avatarUrl: string | null;
 }) {
@@ -275,6 +277,7 @@ export default function ProfileTabs({
             brugerId={brugerId}
             navn={navn}
             telefon={telefon}
+            adresse={adresse}
             email={email}
             avatarUrl={avatarUrl}
           />

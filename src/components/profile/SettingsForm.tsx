@@ -9,18 +9,21 @@ export default function SettingsForm({
   brugerId,
   navn: initialNavn,
   telefon: initialTelefon,
+  adresse: initialAdresse,
   email,
   avatarUrl,
 }: {
   brugerId: string;
   navn: string;
   telefon: string | null;
+  adresse: string | null;
   email: string;
   avatarUrl: string | null;
 }) {
   const router = useRouter();
   const [navn, setNavn] = useState(initialNavn);
   const [telefon, setTelefon] = useState(initialTelefon ?? "");
+  const [adresse, setAdresse] = useState(initialAdresse ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gemt, setGemt] = useState(false);
@@ -34,7 +37,7 @@ export default function SettingsForm({
     const supabase = createClient();
     const { error: updateError } = await supabase
       .from("users")
-      .update({ navn, telefon: telefon || null })
+      .update({ navn, telefon: telefon.trim() || null, adresse: adresse.trim() || null })
       .eq("id", brugerId);
 
     setLoading(false);
@@ -104,6 +107,27 @@ export default function SettingsForm({
           className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
         />
       </div>
+
+      <div>
+        <label htmlFor="adresse" className="block text-sm font-medium text-neutral-900">
+          Adresse til afhentning <span className="font-normal text-tekst-svag">(valgfri)</span>
+        </label>
+        <textarea
+          id="adresse"
+          rows={2}
+          maxLength={300}
+          value={adresse}
+          onChange={(e) => setAdresse(e.target.value)}
+          placeholder="Vejnavn og nummer, postnummer og by"
+          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+        />
+      </div>
+
+      <p className="text-xs text-tekst-svag">
+        Din e-mail, dit telefonnummer og din adresse vises aldrig offentligt. Sælger du en vare til
+        afhentning, kan køberen se din adresse og dit telefonnummer, når varen er betalt – og kun
+        indtil den er hentet.
+      </p>
 
       {error && (
         <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">

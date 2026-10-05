@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fjernFaellesPraefiks } from "@/lib/staffChat";
 import { BidhamrMaerke } from "@/components/staffchat/visning";
+import RapporterDialog from "@/components/tryghed/RapporterDialog";
+import { spamForklaring } from "@/lib/tryghed";
 
 export interface Besked {
   id: string;
@@ -13,6 +15,8 @@ export interface Besked {
   // true = fællesbesked fra BidHamr til begge parter. Kun denne kolonne
   // afgør markeringen - aldrig teksten.
   fra_bidhamr: boolean;
+  // Sat af spamfilteret: beskeden blev ikke sendt (ses kun af afsenderen).
+  blokeret_grund?: string | null;
 }
 
 export default function HandelChat({
@@ -30,6 +34,8 @@ export default function HandelChat({
   const [tekst, setTekst] = useState("");
   const [sender, setSender] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
+  // Venlig forklaring, når spamfilteret har stoppet en besked.
+  const [stoppet, setStoppet] = useState<string | null>(null);
   const bundRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,6 +58,7 @@ export default function HandelChat({
             content: r.content,
             created_at: r.created_at,
             fra_bidhamr: r.fra_bidhamr === true,
+            blokeret_grund: r.blokeret_grund ?? null,
           };
           // Dedup: egne beskeder kan nå frem både via insert-svaret og realtime.
           setBeskeder((tidligere) =>
@@ -77,6 +84,7 @@ export default function HandelChat({
 
     setSender(true);
     setFejl(null);
+    setStoppet(null);
 
     // Indsættes direkte fra klienten - RLS er autoriteten på hvem der må
     // skrive i hvilken handel.
@@ -84,7 +92,7 @@ export default function HandelChat({
     const { data, error } = await supabase
       .from("messages")
       .insert({ trade_id: tradeId, sender_id: brugerId, content: renTekst })
-      .select("id, sender_id, content, created_at, fra_bidhamr")
+      .select("id, sender_id, content, created_at, fra_bidhamr, blokeret_grund")
       .single<Besked>();
 
     setSender(false);
@@ -92,17 +100,28 @@ export default function HandelChat({
     if (error) {
       // BHM01: databasen afviser beskeder, der udgiver sig for at være fra BidHamr.
       // BHS02: kontoen er suspenderet (kraev_ikke_suspenderet).
+      // BHB01: en af jer har blokeret den anden, og handlen er afsluttet.
+      // BHM03: for mange beskeder på kort tid (messages_tryghed).
       setFejl(
         error.code === "BHM01"
           ? "Beskeder må ikke starte med 'Besked fra BidHamr'."
           : error.code === "BHS02"
             ? "Din konto er suspenderet, og du kan ikke sende beskeder. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
-            : "Beskeden kunne ikke sendes.",
+            : error.code === "BHB01"
+              ? "Du kan ikke skrive til denne bruger længere."
+              : error.code === "BHM03"
+                ? "Du sender beskeder meget hurtigt. Vent et øjeblik, og prøv så igen."
+                : "Beskeden kunne ikke sendes.",
       );
       return;
     }
 
-    setTekst("");
+    if (data?.blokeret_grund) {
+      // Beholdes i feltet, så brugeren kan rette beskeden.
+      setStoppet(spamForklaring(data.blokeret_grund));
+    } else {
+      setTekst("");
+    }
     if (data) {
       setBeskeder((tidligere) =>
         tidligere.some((b) => b.id === data.id) ? tidligere : [...tidligere, data],
@@ -148,8 +167,24 @@ export default function HandelChat({
             );
           }
           const erMig = b.sender_id === brugerId;
+          if (erMig && b.blokeret_grund) {
+            // Stoppet af spamfilteret - modtageren har ikke set den.
+            return (
+              <div key={b.id} className="flex flex-col items-end gap-1">
+                <div className="max-w-[85%] rounded-2xl border border-dashed border-kant-staerk bg-white px-4 py-2.5 text-sm text-tekst-svag sm:max-w-[75%]">
+                  <p className="whitespace-pre-wrap break-words line-through">{b.content}</p>
+                </div>
+                <p className="max-w-[85%] text-right text-[12px] text-fejl-tekst sm:max-w-[75%]">
+                  Ikke sendt. {spamForklaring(b.blokeret_grund)}
+                </p>
+              </div>
+            );
+          }
           return (
-            <div key={b.id} className={`flex ${erMig ? "justify-end" : "justify-start"}`}>
+            <div
+              key={b.id}
+              className={`flex flex-col ${erMig ? "items-end" : "items-start"}`}
+            >
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${
                   erMig
@@ -171,6 +206,14 @@ export default function HandelChat({
                   })}
                 </p>
               </div>
+              {!erMig && (
+                <RapporterDialog
+                  beskedId={b.id}
+                  titel="Rapportér besked"
+                  triggerLabel="Rapportér"
+                  triggerClassName="mt-0.5 px-1 py-1 text-[12px] text-tekst-svag hover:text-groen hover:underline"
+                />
+              )}
             </div>
           );
         })}
@@ -195,7 +238,12 @@ export default function HandelChat({
         </button>
       </form>
 
-      {fejl && <p className="px-4 pb-4 text-sm text-red-600">{fejl}</p>}
+      {stoppet && (
+        <p role="status" className="mx-4 mb-4 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
+          {stoppet}
+        </p>
+      )}
+      {fejl && <p role="alert" className="px-4 pb-4 text-sm text-fejl-tekst">{fejl}</p>}
     </div>
   );
 }

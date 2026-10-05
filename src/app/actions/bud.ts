@@ -23,6 +23,8 @@ const KENDTE_BUDFEJL = [
   "Auktionen findes ikke",
   "Buddet skal være højere end nuværende bud",
   "Din konto er suspenderet, og du kan ikke byde.",
+  // handle_new_bid: sælgeren har blokeret/spærret byderen.
+  "Sælgeren har spærret dig fra at byde på sine auktioner.",
   "Du skal være logget ind.",
   "Du har prøvet for mange gange. Vent lidt, og prøv så igen.",
   AUKTION_AENDRET,
