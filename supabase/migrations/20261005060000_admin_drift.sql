@@ -150,7 +150,7 @@ begin
     from drift_fejl
    where oprettet_kl > now() - interval '1 minute'
      and (kilde = 'klient') = v_klient;
-  if v_antal >= case when v_klient then 30 else 120 end then
+  if v_antal >= (case when v_klient then 30 else 120 end) then
     return 'begraenset';
   end if;
 
