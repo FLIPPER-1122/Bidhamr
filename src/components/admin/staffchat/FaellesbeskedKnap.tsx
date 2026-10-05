@@ -16,6 +16,7 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
   const feltRef = useRef<HTMLTextAreaElement>(null);
   const senderLaas = useRef(false);
   const knapRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const varAaben = useRef(false);
 
   // Fokus tilbage til knappen, når dialogen lukkes (Esc, Annullér, sendt).
@@ -31,7 +32,28 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
     if (!aaben) return;
     feltRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !sender) setAaben(false);
+      if (e.key === "Escape" && !sender) {
+        setAaben(false);
+        return;
+      }
+      // Hold Tab inde i dialogen (aria-modal).
+      if (e.key !== "Tab" || !dialogRef.current) return;
+      const felter = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          "a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled])",
+        ),
+      );
+      if (felter.length === 0) return;
+      const foerste = felter[0];
+      const sidste = felter[felter.length - 1];
+      const aktiv = document.activeElement;
+      if (e.shiftKey && (aktiv === foerste || !dialogRef.current.contains(aktiv))) {
+        e.preventDefault();
+        sidste.focus();
+      } else if (!e.shiftKey && (aktiv === sidste || !dialogRef.current.contains(aktiv))) {
+        e.preventDefault();
+        foerste.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -93,6 +115,7 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
       {aaben && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={luk}>
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={`${id}-titel`}

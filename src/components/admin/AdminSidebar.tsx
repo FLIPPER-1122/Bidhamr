@@ -227,14 +227,21 @@ export default function AdminSidebar({
   // tilbage til menuknappen.
   useEffect(() => {
     if (!open) return;
-    mobilMenuRef.current?.querySelector<HTMLElement>("a[href], button:not([disabled])")?.focus();
+    // Menuen er usynlig (visibility) indtil overgangen starter, og et usynligt
+    // element kan ikke få fokus - vent derfor til næste frame.
+    const fokusId = window.setTimeout(() => {
+      mobilMenuRef.current?.querySelector<HTMLElement>("a[href], button:not([disabled])")?.focus();
+    }, 50);
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       setOpen(false);
       menuKnapRef.current?.focus();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(fokusId);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   async function handleLogout() {
