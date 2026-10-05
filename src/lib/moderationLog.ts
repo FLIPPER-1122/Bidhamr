@@ -1,7 +1,7 @@
 // Danske navne og links til moderation_log (medarbejder-loggen og brugersiden).
 //
 // HANDLING_NAVNE dækker alle værdier i moderation_log_handling_check (seneste
-// definition: supabase/migrations/20261004050000_anke.sql). Kommer der nye
+// definition: supabase/migrations/20261005070000_admin_se_chat.sql). Kommer der nye
 // værdier til, vises den rå værdi, indtil de tilføjes her.
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 
@@ -40,6 +40,7 @@ export const HANDLING_NAVNE: Record<string, string> = {
   sag_anke_indgivet: "Anke indgivet",
   sag_anke_stadfaestet: "Stadfæstede afgørelse efter anke",
   sag_anke_omgjort: "Omgjorde afgørelse efter anke",
+  chat_laest: "Læste handelschat",
 };
 
 export function handlingNavn(handling: string): string {
@@ -95,6 +96,27 @@ export function maalLink(
     default:
       return null;
   }
+}
+
+// Staffs læsevisning af chatten mellem køber og sælger på en handel.
+export function handelChatSti(tradeId: string): string {
+  return `/admin/handler/${encodeURIComponent(tradeId)}/chat`;
+}
+
+// faellesbesked() gemmer årsagen som "Besked <message-id>: <tekst>", så
+// beskeden kan spores til medarbejderen. Bruges til både at vise teksten uden
+// det tekniske præfiks og til at finde afsenderen af en fællesbesked.
+const FAELLES_AARSAG_RE =
+  /^Besked ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}): /i;
+
+export function faellesbeskedId(aarsag: string | null | undefined): string | null {
+  const m = FAELLES_AARSAG_RE.exec(aarsag ?? "");
+  return m ? m[1].toLowerCase() : null;
+}
+
+// Årsagen som den skal vises: for fællesbeskeder uden "Besked <uuid>: ".
+export function visAarsag(handling: string, aarsag: string): string {
+  return handling === "faellesbesked" ? aarsag.replace(FAELLES_AARSAG_RE, "") : aarsag;
 }
 
 export function maalNavn(maalType: string): string {

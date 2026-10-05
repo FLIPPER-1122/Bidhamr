@@ -7,7 +7,7 @@ import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import HandelStatusBadge from "@/components/HandelStatusBadge";
 import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
-import { UUID_RE } from "@/lib/moderationLog";
+import { UUID_RE, handelChatSti } from "@/lib/moderationLog";
 import { HAENGER_TEKST, erHaengerGrund, type HaengerGrund } from "@/lib/adminGraenser";
 import {
   sagAabn,
@@ -285,6 +285,16 @@ export default async function AdminSager({
                       )}
                     </td>
                     <td className="px-5 py-3">
+                      <div className="mb-2">
+                        {/* prefetch slået fra: chatsiden logger læsningen. */}
+                        <Link
+                          href={handelChatSti(h.id)}
+                          prefetch={false}
+                          className="inline-flex whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
+                        >
+                          Se chat
+                        </Link>
+                      </div>
                       {kanSkriveFaelles && (
                         <div className="mb-2">
                           <FaellesbeskedKnap tradeId={h.id} />

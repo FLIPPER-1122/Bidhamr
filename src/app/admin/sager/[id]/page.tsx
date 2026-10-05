@@ -11,6 +11,7 @@ import {
   SAG_TYPE_NAVN,
 } from "@/lib/sager";
 import { PAKKE_KATEGORI_NAVN } from "@/lib/pakkebilleder";
+import { handelChatSti } from "@/lib/moderationLog";
 import { kroner } from "@/lib/kroner";
 import HandelStatusBadge, { statusLabel } from "@/components/HandelStatusBadge";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
@@ -353,11 +354,17 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
             <Felt navn="Sendt">{sag.sendtKl ? sagTid(sag.sendtKl) : "–"}</Felt>
             <Felt navn="Modtaget">{sag.modtagetKl ? sagTid(sag.modtagetKl) : "–"}</Felt>
           </dl>
-          {kanSkriveFaelles && (
-            <div className="mt-4 border-t border-neutral-100 pt-4">
-              <FaellesbeskedKnap tradeId={sag.tradeId} />
-            </div>
-          )}
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-4">
+            {/* prefetch slået fra: chatsiden logger læsningen. */}
+            <Link
+              href={handelChatSti(sag.tradeId)}
+              prefetch={false}
+              className="inline-flex min-h-10 items-center rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            >
+              Se chat mellem køber og sælger
+            </Link>
+            {kanSkriveFaelles && <FaellesbeskedKnap tradeId={sag.tradeId} />}
+          </div>
         </Kort>
 
         <Kort titel="Betaling">

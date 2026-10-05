@@ -4,9 +4,11 @@ import {
   HANDLING_NAVNE,
   UUID_RE,
   erSystem,
+  handelChatSti,
   handlingNavn,
   maalLink,
   maalNavn,
+  visAarsag,
 } from "@/lib/moderationLog";
 
 // Medarbejder-log: alt fra moderation_log. Admin og chef ser alle; en
@@ -244,9 +246,24 @@ export default async function MedarbejderLog({
                     </Link>
                   </>
                 )}
+                {r.maal_type === "handel" && UUID_RE.test(r.maal_id) && (
+                  <>
+                    {" · "}
+                    {/* prefetch slået fra: siden logger læsningen af chatten. */}
+                    <Link
+                      href={handelChatSti(r.maal_id)}
+                      prefetch={false}
+                      className="font-medium text-neutral-700 hover:underline"
+                    >
+                      Se chat
+                    </Link>
+                  </>
+                )}
               </p>
               {r.aarsag && (
-                <p className="mt-2 whitespace-pre-line break-words text-sm text-neutral-700">{r.aarsag}</p>
+                <p className="mt-2 whitespace-pre-line break-words text-sm text-neutral-700">
+                  {visAarsag(r.handling, r.aarsag)}
+                </p>
               )}
             </li>
           );
