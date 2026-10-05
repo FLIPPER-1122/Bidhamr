@@ -11,7 +11,8 @@ import "server-only";
 // - Påkrævede typer kan ikke ende med alle kanaler fra (databasen håndhæver
 //   det også); er de det alligevel, bruges klokken.
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendHandelMail, type Mail } from "@/lib/mails/send";
+import { sendHandelMailDetaljer, type Mail } from "@/lib/mails/send";
+import { logDriftFejl, renFejltekst } from "@/lib/drift";
 import { notifikationMail } from "@/lib/mails/handel";
 import { sikkerSti } from "@/lib/sikkerSti";
 import {
@@ -60,15 +61,28 @@ const EXPO_URL = "https://exp.host/--/api/v2/push/send";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
+// Resultat for én kanal. "ingen" = intet at sende til (ingen e-mail, ingen
+// push-token) - ikke en fejl. fejl er renset (src/lib/drift.ts).
+type KanalStatus = { s: "sendt" | "fejl" | "ingen"; fejl?: string };
+const SENDT: KanalStatus = { s: "sendt" };
+const INGEN_MODTAGER: KanalStatus = { s: "ingen" };
+const fejlet = (err: unknown): KanalStatus => ({ s: "fejl", fejl: renFejltekst(err, 300) });
+
 async function claimNoegle(
   admin: Admin,
   noegle: string,
   brugerId: string,
   type: NotifikationType,
 ): Promise<"ok" | "dublet" | "fejl"> {
-  const { error } = await admin
+  const raekke = { noegle: noegle.slice(0, 300), bruger_id: brugerId, type };
+  // status = 'claimet', til afsendelsen er meldt færdig (se meldStatus).
+  let { error } = await admin
     .from("notifikation_afsendelser")
-    .insert({ noegle: noegle.slice(0, 300), bruger_id: brugerId, type });
+    .insert({ ...raekke, status: "claimet" });
+  // Migrationen 20261005060000 er ikke kørt endnu: claim uden status.
+  if (error && (error.code === "PGRST204" || error.code === "42703")) {
+    ({ error } = await admin.from("notifikation_afsendelser").insert(raekke));
+  }
   if (!error) return "ok";
   if (error.code === "23505") return "dublet";
   // Ukendt fejl (fx databasen svarer ikke). send() afgør, om der alligevel
@@ -102,7 +116,7 @@ async function gemIKlokke(
   type: NotifikationType,
   input: NotifikationInput,
   link: string | null,
-): Promise<boolean> {
+): Promise<KanalStatus> {
   const { error } = await admin.from("notifikationer").insert({
     bruger_id: brugerId,
     type,
@@ -115,9 +129,9 @@ async function gemIKlokke(
   });
   if (error) {
     console.error("Notifikation: klokke fejlede:", type, error.message);
-    return false;
+    return fejlet(error);
   }
-  return true;
+  return SENDT;
 }
 
 async function sendMailTil(
@@ -125,7 +139,7 @@ async function sendMailTil(
   brugerId: string,
   input: NotifikationInput,
   link: string | null,
-): Promise<boolean> {
+): Promise<KanalStatus> {
   const { data: u, error } = await admin
     .from("users")
     .select("email")
@@ -133,10 +147,14 @@ async function sendMailTil(
     .maybeSingle<{ email: string | null }>();
   if (error) {
     console.error("Notifikation: email kunne ikke hentes:", error.message);
-    return false;
+    return fejlet(error);
   }
-  if (!u?.email) return false;
-  return sendHandelMail(u.email, input.mail ?? notifikationMail(input.titel, input.tekst, link));
+  if (!u?.email) return INGEN_MODTAGER;
+  const r = await sendHandelMailDetaljer(
+    u.email,
+    input.mail ?? notifikationMail(input.titel, input.tekst, link),
+  );
+  return r.ok ? SENDT : fejlet(r.fejl);
 }
 
 const EXPO_TOKEN = /^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/;
@@ -155,20 +173,30 @@ export async function sendPushTil(
   input: NotifikationInput,
   link: string | null,
 ): Promise<boolean> {
+  return (await pushTil(admin, brugerId, type, input, link)).s === "sendt";
+}
+
+async function pushTil(
+  admin: Admin,
+  brugerId: string,
+  type: NotifikationType,
+  input: NotifikationInput,
+  link: string | null,
+): Promise<KanalStatus> {
   const { data: tokens, error } = await admin
     .from("push_tokens")
     .select("token")
     .eq("user_id", brugerId);
   if (error) {
     console.error("Notifikation: push tokens kunne ikke hentes:", error.message);
-    return false;
+    return fejlet(error);
   }
   // Tabellen har ingen formatkrav (appen skriver selv i den, og platform kan
   // være 'web'). Expo accepterer kun Expo-tokens, så resten springes over.
   const liste = (tokens ?? [])
     .map((t) => t.token as string)
     .filter((t) => typeof t === "string" && EXPO_TOKEN.test(t));
-  if (liste.length === 0) return false;
+  if (liste.length === 0) return INGEN_MODTAGER;
 
   const beskeder = liste.map((to) => ({
     to,
@@ -188,6 +216,9 @@ export async function sendPushTil(
   }
 
   let enSendt = false;
+  // Sidste fejl (kode, aldrig token), hvis ingen blev sendt.
+  let sidsteFejl: string | null = null;
+  let kunDoede = true;
   // Expo tager højst 100 beskeder pr. kald.
   for (let i = 0; i < beskeder.length; i += 100) {
     const del = beskeder.slice(i, i + 100);
@@ -200,6 +231,8 @@ export async function sendPushTil(
       });
       if (!svar.ok) {
         console.error("Notifikation: Expo svarede", svar.status);
+        sidsteFejl = `Expo svarede ${svar.status}`;
+        kunDoede = false;
         continue;
       }
       const json = (await svar.json()) as { data?: ExpoTicket[] };
@@ -208,7 +241,11 @@ export async function sendPushTil(
       tickets.forEach((t, idx) => {
         if (t.status === "ok") enSendt = true;
         else if (t.details?.error === "DeviceNotRegistered") doede.push(del[idx].to);
-        else console.warn("Notifikation: push afvist:", t.details?.error ?? t.message);
+        else {
+          console.warn("Notifikation: push afvist:", t.details?.error ?? t.message);
+          sidsteFejl = `Push afvist: ${t.details?.error ?? t.message ?? "ukendt"}`;
+          kunDoede = false;
+        }
       });
       if (doede.length > 0) {
         const { error: sletFejl } = await admin.from("push_tokens").delete().in("token", doede);
@@ -216,9 +253,70 @@ export async function sendPushTil(
       }
     } catch (err) {
       console.error("Notifikation: push kastede:", err);
+      sidsteFejl = renFejltekst(err, 300);
+      kunDoede = false;
     }
   }
-  return enSendt;
+  if (enSendt) return SENDT;
+  // Kun afmeldte enheder (DeviceNotRegistered): ingen modtager, ikke en fejl.
+  if (kunDoede) return INGEN_MODTAGER;
+  return fejlet(sidsteFejl ?? "Push blev ikke sendt");
+}
+
+// Samlet status for afsendelsen (se migration 20261005060000).
+function samletStatus(k: Record<"klokke" | "mail" | "push", KanalStatus | null>) {
+  const alle = Object.values(k).filter((v): v is KanalStatus => v !== null);
+  const sendt = alle.some((v) => v.s === "sendt");
+  const fejl = alle.some((v) => v.s === "fejl");
+  if (sendt && fejl) return "delvis" as const;
+  if (fejl) return "fejlet" as const;
+  if (sendt) return "sendt" as const;
+  return "ingen_kanal" as const;
+}
+
+function fejlTekst(k: Record<"klokke" | "mail" | "push", KanalStatus | null>): string | null {
+  const dele = (Object.entries(k) as [string, KanalStatus | null][])
+    .filter(([, v]) => v?.s === "fejl")
+    .map(([navn, v]) => `${navn}: ${v?.fejl ?? "ukendt fejl"}`);
+  return dele.length > 0 ? dele.join(" | ").slice(0, 1000) : null;
+}
+
+// Melder afsendelsen færdig på den claimede nøgle, eller logger fejlede
+// kanaler i drift_fejl, hvis der ingen nøgle er. Kaster aldrig.
+async function meldStatus(
+  admin: Admin,
+  noegle: string | undefined,
+  brugerId: string,
+  type: NotifikationType,
+  k: Record<"klokke" | "mail" | "push", KanalStatus | null>,
+) {
+  try {
+    const status = samletStatus(k);
+    const fejl = fejlTekst(k);
+    if (noegle) {
+      const kanaler = Object.fromEntries(
+        Object.entries(k).map(([navn, v]) => [navn, v === null ? "fra" : v.s]),
+      );
+      const { error } = await admin
+        .from("notifikation_afsendelser")
+        .update({ status, afsluttet_kl: new Date().toISOString(), kanaler, fejl })
+        .eq("noegle", noegle.slice(0, 300))
+        .eq("status", "claimet");
+      // PGRST204/42703: migrationen er ikke kørt - intet at melde.
+      if (error && error.code !== "PGRST204" && error.code !== "42703") {
+        console.error("Notifikation: status kunne ikke gemmes:", error.message);
+      }
+    } else if (fejl) {
+      await logDriftFejl({
+        kilde: "notifikation",
+        sti: `notifikation:${type}`,
+        fejl,
+        brugerId,
+      });
+    }
+  } catch (err) {
+    console.error("Notifikation: status kastede:", err);
+  }
 }
 
 // Sender en notifikation til én bruger. Kaster aldrig.
@@ -244,16 +342,22 @@ export async function send(
     const link = input.link ? sikkerSti(input.link, "") || null : null;
     const kanaler = await hentKanaler(admin, brugerId, type);
 
+    const fra = Promise.resolve(null);
     const [klokke, mail, push] = await Promise.allSettled([
-      kanaler.klokke ? gemIKlokke(admin, brugerId, type, input, link) : Promise.resolve(false),
-      kanaler.mail ? sendMailTil(admin, brugerId, input, link) : Promise.resolve(false),
-      kanaler.push ? sendPushTil(admin, brugerId, type, input, link) : Promise.resolve(false),
+      kanaler.klokke ? gemIKlokke(admin, brugerId, type, input, link) : fra,
+      kanaler.mail ? sendMailTil(admin, brugerId, input, link) : fra,
+      kanaler.push ? pushTil(admin, brugerId, type, input, link) : fra,
     ]);
-    const ok = (r: PromiseSettledResult<boolean>) => r.status === "fulfilled" && r.value;
-    for (const r of [klokke, mail, push]) {
-      if (r.status === "rejected") console.error("Notifikation: kanal kastede:", type, r.reason);
-    }
-    return { klokke: ok(klokke), mail: ok(mail), push: ok(push) };
+    // null = kanalen er fra.
+    const status = (r: PromiseSettledResult<KanalStatus | null>): KanalStatus | null => {
+      if (r.status === "fulfilled") return r.value;
+      console.error("Notifikation: kanal kastede:", type, r.reason);
+      return fejlet(r.reason);
+    };
+    const k = { klokke: status(klokke), mail: status(mail), push: status(push) };
+    await meldStatus(admin, input.noegle, brugerId, type, k);
+    const ok = (v: KanalStatus | null) => v?.s === "sendt";
+    return { klokke: ok(k.klokke), mail: ok(k.mail), push: ok(k.push) };
   } catch (err) {
     console.error("Notifikation: send kastede:", type, err);
     return INGEN;

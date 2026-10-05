@@ -26,6 +26,9 @@ export const GRAENSER = {
   venteliste_ip: { maks: 5, vindueSek: 60 * 60 },
   bud_bruger: { maks: 20, vindueSek: 60 },
   bud_ip: { maks: 40, vindueSek: 60 },
+  // Fejlrapporter fra browserens error boundaries (/admin/drift). Derudover
+  // et globalt loft på 30 nye pr. minut i drift_fejl_log.
+  drift_fejl_ip: { maks: 10, vindueSek: 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;

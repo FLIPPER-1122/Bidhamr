@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { useRapporterFejl } from "@/components/drift/useRapporterFejl";
 
 // Sidste udvej i admin: vises, hvis en side eller en action kaster en fejl,
 // der ikke er blevet til en { fejl }-besked.
@@ -15,6 +16,8 @@ export default function AdminFejl({
   useEffect(() => {
     console.error(error);
   }, [error]);
+  // Logges til /admin/drift (kun sti, besked og digest).
+  useRapporterFejl(error);
 
   return (
     <div className="mx-auto max-w-md py-16 text-center">

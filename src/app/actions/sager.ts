@@ -51,6 +51,7 @@ import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logDriftFejl } from "@/lib/drift";
 import { notificerAnkeIndgivet, notificerSagOprettet } from "@/lib/sagerServer";
 import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
 import {
@@ -210,6 +211,7 @@ export async function opretSag(
     });
     if (error) {
       console.error("sag_opret fejlede:", error);
+      await logDriftFejl({ kilde: "action", sti: "sager", hvor: "sag_opret", fejl: error, brugerId: user.id });
       return { fejl: GENERISK };
     }
     const svar = data as { kode: string; sag_id?: string } | null;
@@ -228,6 +230,7 @@ export async function opretSag(
   } catch (err) {
     unstable_rethrow(err);
     console.error("opretSag fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "sager", hvor: "opretSag", fejl: err });
     return { fejl: GENERISK };
   }
 }
@@ -254,6 +257,7 @@ export async function tilfoejSagBilleder(
     });
     if (error) {
       console.error("sag_tilfoej_billeder fejlede:", error);
+      await logDriftFejl({ kilde: "action", sti: "sager", hvor: "sag_tilfoej_billeder", fejl: error, brugerId: user.id });
       return { fejl: GENERISK };
     }
     const kode = (data as { kode: string } | null)?.kode;
@@ -265,6 +269,7 @@ export async function tilfoejSagBilleder(
   } catch (err) {
     unstable_rethrow(err);
     console.error("tilfoejSagBilleder fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "sager", hvor: "tilfoejSagBilleder", fejl: err });
     return { fejl: GENERISK };
   }
 }
@@ -299,6 +304,7 @@ export async function indgivAnke(
     });
     if (error) {
       console.error("sag_anke_indgiv fejlede:", error);
+      await logDriftFejl({ kilde: "action", sti: "sager", hvor: "sag_anke_indgiv", fejl: error, brugerId: user.id });
       return { fejl: GENERISK };
     }
     const svar = data as { kode: string; anke_id?: string } | null;
@@ -317,6 +323,7 @@ export async function indgivAnke(
   } catch (err) {
     unstable_rethrow(err);
     console.error("indgivAnke fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "sager", hvor: "indgivAnke", fejl: err });
     return { fejl: GENERISK };
   }
 }
