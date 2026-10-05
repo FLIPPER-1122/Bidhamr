@@ -20,6 +20,8 @@ export async function sendHandelMailDetaljer(
   mail: Mail,
 ): Promise<{ ok: true } | { ok: false; fejl: string }> {
   if (!til) return { ok: false, fejl: "Ingen modtager" };
+  // Slettede konti har en pladsholder-adresse (konto_slet) - send aldrig dertil.
+  if (til.toLowerCase().endsWith("@slettet.invalid")) return { ok: false, fejl: "Slettet bruger" };
   const resend = getResend();
   if (!resend) {
     console.warn("RESEND_API_KEY mangler - mail ikke sendt:", mail.subject);

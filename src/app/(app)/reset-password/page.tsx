@@ -4,14 +4,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { gemNyAdgangskode } from "@/app/actions/auth";
+import { vurderAdgangskode } from "@/lib/adgangskode";
+import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
+import { FELT, FORMULAR_FEJL, LABEL } from "@/components/konto/felter";
 
 export default function NulstilAdgangskodePage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [passwordGentag, setPasswordGentag] = useState("");
+  const [kode, setKode] = useState("");
+  const [kraeverKode, setKraeverKode] = useState(false);
+  const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [gemt, setGemt] = useState(false);
   const [klar, setKlar] = useState(false);
 
   // Linket i mailen logger brugeren ind med en recovery-session.
@@ -20,12 +26,16 @@ export default function NulstilAdgangskodePage() {
     const supabase = createClient();
 
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setKlar(true);
+      if (data.session) {
+        setKlar(true);
+        setEmail(data.session.user.email ?? null);
+      }
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
         setKlar(true);
+        setEmail(session?.user.email ?? null);
       }
     });
 
@@ -36,70 +46,40 @@ export default function NulstilAdgangskodePage() {
     e.preventDefault();
     setError(null);
 
+    const v = vurderAdgangskode(password, { email });
+    if (!v.ok) {
+      setError(v.fejl);
+      return;
+    }
     if (password !== passwordGentag) {
       setError("Adgangskoderne stemmer ikke overens.");
       return;
     }
-    if (password.length < 6) {
-      setError("Adgangskoden skal være mindst 6 tegn.");
-      return;
-    }
 
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.updateUser({ password });
+    const svar = await gemNyAdgangskode(password, kraeverKode ? kode : undefined);
     setLoading(false);
 
-    if (error) {
-      setError(error.message);
+    if ("fejl" in svar) {
+      if ("kode" in svar && svar.kode === "to_trin_kraeves") {
+        setKraeverKode(true);
+        setKode("");
+      }
+      setError(svar.fejl);
       return;
     }
 
-    setGemt(true);
-    // Log ud af recovery-sessionen og send brugeren til login med den nye kode.
-    await supabase.auth.signOut();
-    setTimeout(() => {
-      router.push("/login");
-      router.refresh();
-    }, 2500);
-  }
-
-  if (gemt) {
-    return (
-      <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
-        <div className="w-full max-w-sm rounded-[14px] border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-succes-bg">
-            <svg viewBox="0 0 24 24" className="h-6 w-6 text-succes-tekst" fill="none" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h1 className="text-[20px] leading-tight lg:text-[22px]">
-            Adgangskode gemt
-          </h1>
-          <p className="mt-2 text-sm leading-relaxed text-tekst-svag">
-            Din adgangskode er opdateret. Du bliver sendt til login…
-          </p>
-          <Link
-            href="/login"
-            className="btn btn-primaer btn-stor mt-6 w-full sm:w-auto"
-          >
-            Gå til login nu
-          </Link>
-        </div>
-      </main>
-    );
+    // Serveren har logget ud alle steder; login-siden viser en bekræftelse.
+    router.push("/login?adgangskode=gemt");
+    router.refresh();
   }
 
   return (
     <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
       <div className="w-full max-w-sm">
         <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
-          <h1 className="text-[26px] leading-tight sm:text-[32px]">
-            Ny adgangskode
-          </h1>
-          <p className="mt-1 text-sm text-tekst-svag">
-            Vælg en ny adgangskode til din konto.
-          </p>
+          <h1 className="text-[26px] leading-tight sm:text-[32px]">Ny adgangskode</h1>
+          <p className="mt-1 text-sm text-tekst-svag">Vælg en ny adgangskode til din konto.</p>
 
           {!klar && (
             <p className="mt-4 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2.5 text-sm text-advarsel-tekst">
@@ -113,52 +93,53 @@ export default function NulstilAdgangskodePage() {
           )}
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-tekst"
-              >
-                Ny adgangskode
-              </label>
-              <input
-                id="password"
-                type="password"
-                required
-                minLength={6}
-                autoComplete="new-password"
-                placeholder="Mindst 6 tegn"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1.5 h-11 w-full rounded-xl border border-kant-staerk px-4 text-[15px] text-tekst placeholder:text-pladsholder bg-white hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
-              />
-            </div>
+            <AdgangskodeFelt
+              id="password"
+              label="Ny adgangskode"
+              vaerdi={password}
+              onChange={setPassword}
+              ny
+              person={{ email }}
+            />
 
             <div>
-              <label
-                htmlFor="password-gentag"
-                className="block text-sm font-medium text-tekst"
-              >
-                Gentag ny adgangskode
-              </label>
-              <input
+              <AdgangskodeFelt
                 id="password-gentag"
-                type="password"
-                required
+                label="Gentag ny adgangskode"
+                vaerdi={passwordGentag}
+                onChange={setPasswordGentag}
                 autoComplete="new-password"
-                placeholder="Gentag adgangskode"
-                value={passwordGentag}
-                onChange={(e) => setPasswordGentag(e.target.value)}
-                className="mt-1.5 h-11 w-full rounded-xl border border-kant-staerk px-4 text-[15px] text-tekst placeholder:text-pladsholder bg-white hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
               />
               {passwordGentag && password !== passwordGentag && (
-                <p className="mt-1.5 text-xs text-fejl-tekst">
+                <p className="mt-1.5 text-[13px] font-medium text-fejl-tekst">
                   Adgangskoderne stemmer ikke overens
                 </p>
               )}
             </div>
 
+            {kraeverKode && (
+              <div>
+                <label htmlFor="kode" className={LABEL}>
+                  Kode fra din godkendelses-app
+                </label>
+                <input
+                  id="kode"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={7}
+                  required
+                  value={kode}
+                  onChange={(e) => setKode(e.target.value.replace(/[^\d ]/g, ""))}
+                  className={`mt-1.5 ${FELT} tracking-[0.2em]`}
+                />
+                <p className="mt-1.5 text-[13px] text-tekst-daempet">
+                  Du har to-trins-login slået til, så vi skal også bruge koden.
+                </p>
+              </div>
+            )}
+
             {error && (
-              <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
+              <p role="alert" className={FORMULAR_FEJL}>
                 {error}
               </p>
             )}
@@ -166,9 +147,11 @@ export default function NulstilAdgangskodePage() {
             <button
               type="submit"
               disabled={loading || !klar || (!!passwordGentag && password !== passwordGentag)}
+              aria-busy={loading || undefined}
               className="btn btn-primaer btn-stor w-full"
             >
-              {loading ? "Gemmer…" : "Gem ny adgangskode"}
+              {loading && <span className="btn-spinner" aria-hidden="true" />}
+              Gem ny adgangskode
             </button>
           </form>
         </div>

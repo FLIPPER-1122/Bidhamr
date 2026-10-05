@@ -1,0 +1,154 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+import { opretKonto } from "@/app/actions/auth";
+import { vurderAdgangskode } from "@/lib/adgangskode";
+import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
+import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
+
+type Felt = "fornavn" | "email" | "password";
+
+export default function SignupForm() {
+  const router = useRouter();
+  const [fornavn, setFornavn] = useState("");
+  const [efternavn, setEfternavn] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [fejl, setFejl] = useState<string | null>(null);
+  const [fejlFelt, setFejlFelt] = useState<Felt | null>(null);
+
+  const person = { email, navn: [fornavn, efternavn] };
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setFejl(null);
+    setFejlFelt(null);
+
+    const v = vurderAdgangskode(password, person);
+    if (!v.ok) {
+      setFejl(v.fejl);
+      setFejlFelt("password");
+      return;
+    }
+
+    setLoading(true);
+    const svar = await opretKonto({ fornavn, efternavn, email, password });
+    if ("fejl" in svar) {
+      setLoading(false);
+      setFejl(svar.fejl);
+      setFejlFelt(svar.felt ?? null);
+      return;
+    }
+
+    if (svar.bekraeftMail) {
+      router.push("/tjek-indbakke");
+    } else {
+      router.push("/velkommen");
+      router.refresh();
+    }
+  }
+
+  return (
+    <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
+      <div className="w-full max-w-md">
+        <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
+          <h1 className="text-[26px] leading-tight sm:text-[32px]">Opret konto</h1>
+          <p className="mt-1 text-sm text-tekst-daempet">
+            Det er gratis. Du betaler kun et gebyr, når du køber eller sælger noget.
+          </p>
+
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="fornavn" className={LABEL}>
+                  Fornavn
+                </label>
+                <input
+                  id="fornavn"
+                  type="text"
+                  autoComplete="given-name"
+                  required
+                  maxLength={100}
+                  value={fornavn}
+                  onChange={(e) => setFornavn(e.target.value)}
+                  aria-invalid={fejlFelt === "fornavn" || undefined}
+                  className={`mt-1.5 ${FELT} ${fejlFelt === "fornavn" ? FELT_FEJL : ""}`}
+                />
+              </div>
+              <div>
+                <label htmlFor="efternavn" className={LABEL}>
+                  Efternavn <span className="font-normal text-tekst-svag">(valgfrit)</span>
+                </label>
+                <input
+                  id="efternavn"
+                  type="text"
+                  autoComplete="family-name"
+                  maxLength={100}
+                  value={efternavn}
+                  onChange={(e) => setEfternavn(e.target.value)}
+                  className={`mt-1.5 ${FELT}`}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="email" className={LABEL}>
+                E-mail
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                required
+                maxLength={320}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                aria-invalid={fejlFelt === "email" || undefined}
+                className={`mt-1.5 ${FELT} ${fejlFelt === "email" ? FELT_FEJL : ""}`}
+              />
+              <p className="mt-1.5 text-[13px] text-tekst-daempet">
+                Vi sender et link, som du skal klikke på for at bekræfte din e-mail.
+              </p>
+            </div>
+
+            <AdgangskodeFelt
+              id="password"
+              label="Adgangskode"
+              vaerdi={password}
+              onChange={setPassword}
+              ny
+              person={person}
+              fejl={fejlFelt === "password" ? fejl : null}
+            />
+
+            {fejl && fejlFelt !== "password" && (
+              <p role="alert" className={FORMULAR_FEJL}>
+                {fejl}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              aria-busy={loading || undefined}
+              className="btn btn-primaer btn-stor w-full"
+            >
+              {loading && <span className="btn-spinner" aria-hidden="true" />}
+              Opret konto
+            </button>
+          </form>
+        </div>
+
+        <p className="mt-6 text-center text-sm text-tekst-svag">
+          Har du allerede en konto?{" "}
+          <Link href="/login" className={LINK}>
+            Log ind
+          </Link>
+        </p>
+      </div>
+    </main>
+  );
+}

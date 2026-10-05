@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { erTestdatabase } from "@/lib/miljoe";
+import { manglerToTrin, TO_TRIN_STI } from "@/lib/mfa";
 
 // Routes der er tilgængelige uden login, mens resten af appen er bag
 // venteliste-gaten. Kun API-ruter med egen adgangskontrol undtages:
@@ -13,10 +14,16 @@ import { erTestdatabase } from "@/lib/miljoe";
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
 // "Disallow: /" og er tomme, indtil SEO_INDEKSERING=true (src/lib/seo.ts).
 // Delebilleder (opengraph-image.jpg) rammer slet ikke proxyen (matcher i src/proxy.ts).
+// /signup, /tjek-indbakke og /konto-slettet er offentlige, fordi man ikke er
+// logget ind dér. /signup lukker selv, så længe tilmeldingen er lukket
+// (src/lib/tilmelding.ts). /login dækker også /login/to-trin.
 const OFFENTLIGE_RUTER = [
   "/coming-soon",
   "/bidhamr-beskyttelse",
   "/login",
+  "/signup",
+  "/tjek-indbakke",
+  "/konto-slettet",
   "/glemt-adgangskode",
   "/nulstil-adgangskode",
   "/reset-password",
@@ -87,6 +94,17 @@ export async function updateSession(
   // -> hele appen er bag venteliste-gaten, ingen adgang uden login.
   if (!data.user) {
     return NextResponse.redirect(new URL("/coming-soon", request.url));
+  }
+
+  // To-trins-login: har brugeren slået det til, men kun indtastet adgangskoden
+  // (aal1), skal koden indtastes, før noget andet virker - også server actions
+  // og API-ruter. Databasen afviser desuden aal1 (bidhamr_pre_request).
+  if (await manglerToTrin(supabase, data.user)) {
+    const url = new URL(TO_TRIN_STI, request.url);
+    if (request.method === "GET") {
+      url.searchParams.set("redirect", `${pathname}${request.nextUrl.search}`);
+    }
+    return NextResponse.redirect(url);
   }
 
   // På testdatabasen (kun npm run dev via .env.local) må alle indloggede

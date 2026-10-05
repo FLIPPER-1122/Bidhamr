@@ -45,6 +45,7 @@ export const HANDLING_NAVNE: Record<string, string> = {
   fragt_haandteret: "Markerede forsendelse som håndteret",
   spoergsmaal_skjult: "Skjulte spørgsmål på auktion",
   spoergsmaal_vist: "Viste spørgsmål på auktion igen",
+  konto_slettet: "Brugeren slettede selv sin konto",
 };
 
 export function handlingNavn(handling: string): string {

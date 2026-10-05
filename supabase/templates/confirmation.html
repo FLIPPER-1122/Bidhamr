@@ -1,54 +1,68 @@
 <!DOCTYPE html>
 <html lang="da">
+  <!--
+    Supabase-skabelon: "Confirm signup" (Auth -> Emails -> Templates).
+    Emne: Bekræft din e-mail til BidHamr
+    Linket bruger token_hash i stedet for {{ .ConfirmationURL }}, så det også
+    virker, når mailen åbnes i en anden browser eller på telefonen.
+    Farver og opbygning følger src/lib/mails/layout.ts (DESIGN.md).
+  -->
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bekræft din email – BidHamr</title>
+    <meta name="color-scheme" content="light" />
+    <title>Bekræft din e-mail – BidHamr</title>
   </head>
-  <body style="margin:0; padding:0; background-color:#f5f5f5; font-family:Arial, Helvetica, sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:32px 16px;">
+  <body style="margin:0; padding:0; background-color:#F4F7F5;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+      Klik på knappen for at bekræfte din e-mail og komme i gang på BidHamr.
+    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F4F7F5; padding:32px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px; width:100%; background-color:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 2px 16px rgba(0,0,0,0.08);">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px; width:100%;">
             <tr>
-              <td align="center" style="background-color:#E63946; padding:28px 24px;">
-                <span style="font-size:24px; font-weight:800; color:#ffffff; letter-spacing:-0.02em;">BidHamr</span>
+              <td style="padding:0 8px 16px 8px; font-family:Fraunces, Georgia, 'Times New Roman', serif; font-size:24px; font-weight:600; color:#1E5E4A;">
+                BidHamr
               </td>
             </tr>
             <tr>
-              <td style="padding:36px 32px 24px 32px;">
-                <h1 style="margin:0 0 16px 0; font-size:20px; font-weight:700; color:#171717;">
-                  Velkommen til BidHamr!
+              <td style="background-color:#FFFFFF; border:1px solid #EEEEEE; border-radius:14px; padding:36px 32px 28px 32px;">
+                <h1 style="margin:0 0 16px 0; font-family:Fraunces, Georgia, 'Times New Roman', serif; font-size:26px; line-height:1.2; font-weight:600; color:#1A1A1A;">
+                  Bekræft din e-mail
                 </h1>
-                <p style="margin:0 0 28px 0; font-size:15px; line-height:1.6; color:#525252;">
-                  Velkommen til BidHamr! Klik på knappen nedenunder for at bekræfte din email og komme i gang.
+                <p style="margin:0 0 16px 0; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:15px; line-height:1.55; color:#1A1A1A;">
+                  Velkommen til BidHamr! Klik på knappen herunder for at bekræfte din e-mail. Så er din konto klar, og du kan byde, sælge og følge dine handler.
                 </p>
-                <table role="presentation" cellpadding="0" cellspacing="0">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px 0;">
                   <tr>
-                    <td align="center" style="border-radius:12px; background-color:#E63946;">
+                    <td align="left" style="border-radius:10px; background-color:#B85518;">
                       <a
-                        href="{{ .ConfirmationURL }}"
+                        href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email&next=/velkommen"
                         target="_blank"
-                        style="display:inline-block; padding:14px 32px; font-size:15px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:12px;"
-                      >
-                        Bekræft min email
-                      </a>
+                        style="display:inline-block; padding:14px 28px; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:15px; font-weight:600; line-height:20px; color:#FFFFFF; text-decoration:none; border-radius:10px;"
+                      >Bekræft min e-mail</a>
                     </td>
                   </tr>
                 </table>
-                <p style="margin:28px 0 0 0; font-size:13px; line-height:1.6; color:#a3a3a3;">
-                  Hvis knappen ikke virker, kan du kopiere og indsætte dette link i din browser:<br />
-                  <a href="{{ .ConfirmationURL }}" style="color:#E63946; word-break:break-all;">{{ .ConfirmationURL }}</a>
+                <p style="margin:0 0 8px 0; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:14px; line-height:1.5; color:#555555;">
+                  Virker knappen ikke? Kopiér dette link ind i din browser:
+                </p>
+                <p style="margin:0 0 20px 0; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:13px; line-height:1.5; word-break:break-all;">
+                  <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email&next=/velkommen" style="color:#1E5E4A;">{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/velkommen</a>
+                </p>
+                <p style="margin:0; padding:12px 16px; background-color:#E8F2EE; border-radius:10px; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:14px; line-height:1.5; color:#154537;">
+                  Linket virker kun i en begrænset tid. Er det udløbet, kan du få en ny mail på siden, linket sender dig til.
                 </p>
               </td>
             </tr>
             <tr>
-              <td style="padding:20px 32px 28px 32px; border-top:1px solid #f0f0f0;">
-                <p style="margin:0; font-size:12px; line-height:1.6; color:#a3a3a3;">
-                  Har du ikke oprettet en konto på BidHamr? Så kan du roligt ignorere denne email.
+              <td style="padding:24px 8px 0 8px;">
+                <p style="margin:0 0 8px 0; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:1.5; color:#666666;">
+                  Du får denne mail, fordi nogen har oprettet en konto på bidhamr.dk med {{ .Email }}. Var det ikke dig, kan du roligt se bort fra mailen – kontoen bliver ikke aktiv.
                 </p>
-                <p style="margin:12px 0 0 0; font-size:12px; color:#a3a3a3;">
-                  BidHamr · <a href="mailto:support@bidhamr.dk" style="color:#a3a3a3;">support@bidhamr.dk</a>
+                <p style="margin:0; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:1.5; color:#666666;">
+                  BidHamr · <a href="mailto:support@bidhamr.dk" style="color:#666666; text-decoration:underline;">support@bidhamr.dk</a>
                 </p>
               </td>
             </tr>

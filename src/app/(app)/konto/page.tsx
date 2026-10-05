@@ -6,6 +6,12 @@ import { hentBetalingsindstillinger, hentMineOverfoersler } from "@/app/actions/
 import KontoBetaling from "@/components/betaling/KontoBetaling";
 import KontoUdbetaling from "@/components/betaling/KontoUdbetaling";
 import BlokeredeBrugere, { type Blokering } from "@/components/tryghed/BlokeredeBrugere";
+import {
+  DineDataSektion,
+  KontoNavigation,
+  ProfilSektion,
+  SikkerhedSektion,
+} from "@/components/konto/KontoSektioner";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +34,9 @@ export const metadata: Metadata = { title: "Min konto", robots: { index: false, 
 export default async function KontoSide({
   searchParams,
 }: {
-  searchParams: Promise<{ stripe?: string; setup_intent?: string }>;
+  searchParams: Promise<{ stripe?: string; setup_intent?: string; data?: string }>;
 }) {
-  const { stripe, setup_intent } = await searchParams;
+  const { stripe, setup_intent, data: dataStatus } = await searchParams;
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();
 
@@ -83,6 +89,7 @@ export default async function KontoSide({
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
       <h1 className="text-[26px] leading-tight sm:text-[32px]">Min konto</h1>
+      <KontoNavigation />
 
       {advarsler.length > 0 && (
         <section
@@ -136,6 +143,9 @@ export default async function KontoSide({
         </section>
       )}
 
+      <ProfilSektion bruger={authData.user} />
+      <SikkerhedSektion bruger={authData.user} />
+
       {"fejl" in indstillinger ? (
         <p
           role="alert"
@@ -145,7 +155,7 @@ export default async function KontoSide({
         </p>
       ) : (
         <>
-          <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section id="betaling" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[20px] leading-tight lg:text-[22px]">Betaling</h2>
             <div className="mt-3">
               <KontoBetaling
@@ -171,7 +181,7 @@ export default async function KontoSide({
         </>
       )}
 
-      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      <section id="notifikationer" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
         <h2 className="text-[20px] leading-tight lg:text-[22px]">Notifikationer</h2>
         <p className="mt-1 text-sm text-tekst-daempet">
           Vælg, hvilke beskeder du vil have i klokken, på mail og i appen.
@@ -197,6 +207,8 @@ export default async function KontoSide({
           )}
         </div>
       </section>
+
+      <DineDataSektion dataStatus={dataStatus} />
 
       <p className="mt-6 text-sm text-tekst-daempet">
         Se dine køb og salg under{" "}
