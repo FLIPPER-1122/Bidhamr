@@ -1,6 +1,40 @@
 import AuctionsExplorer from "@/components/AuctionsExplorer";
 import { createClient } from "@/lib/supabase/server";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
+import type { Metadata } from "next";
+import { kategorier } from "@/lib/kategorier";
+
+// Kategorisider er egne sider i søgemaskinerne; fritekstsøgninger indekseres
+// ikke (uendeligt mange varianter af samme indhold).
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; kategori?: string }>;
+}): Promise<Metadata> {
+  const { q, kategori } = await searchParams;
+  const søg = q?.trim() ?? "";
+  const kat = kategorier.find((k) => k === kategori?.trim());
+  if (søg) {
+    return {
+      title: `Søgning: ${søg.slice(0, 60)}`,
+      robots: { index: false, follow: true },
+      alternates: { canonical: "/auktioner" },
+    };
+  }
+  if (kat) {
+    return {
+      title: `${kat} på auktion`,
+      description: `Byd på brugt ${kat.toLowerCase()} fra private sælgere i hele Danmark. Trygt med BidHamr Beskyttelse.`,
+      alternates: { canonical: `/auktioner?kategori=${encodeURIComponent(kat)}` },
+    };
+  }
+  return {
+    title: "Alle auktioner",
+    description:
+      "Se alle auktioner på BidHamr lige nu. Find brugte ting fra private sælgere, og byd trygt med BidHamr Beskyttelse.",
+    alternates: { canonical: "/auktioner" },
+  };
+}
 
 export default async function AuktionerPage({
   searchParams,

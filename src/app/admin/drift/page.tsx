@@ -12,6 +12,7 @@ import {
   hentPgCron,
 } from "@/lib/driftData";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import { hentBesoeg, stiNavn } from "@/lib/statistik";
 
 // Drift: cron-jobs, notifikationer der ikke er sendt, og fejl på siden.
 // Kun admin og chef (tjekkes på serveren). Ingen mailindhold og ingen
@@ -108,12 +109,13 @@ export default async function AdminDrift({
   const dage = DAGE_VALG.find((d) => String(d) === dageParam) ?? 7;
   const nu = naa();
 
-  const [rute, pgCron, http, ikkeSendte, fejl] = await Promise.all([
+  const [rute, pgCron, http, ikkeSendte, fejl, besoeg] = await Promise.all([
     hentCronRute(admin, nu),
     hentPgCron(admin),
     hentHttpSvar(admin),
     hentIkkeSendte(admin, nu),
     hentFejlGrupper(admin, nu, dage),
+    hentBesoeg(admin, 30),
   ]);
 
   // Advarsel: ingen vellykket kørsel af vores cron-rute i 15 minutter.
@@ -144,8 +146,89 @@ export default async function AdminDrift({
     <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
       <AdminSideHoved
         titel="Drift"
-        forklaring="Teknisk overblik: cron-jobs, notifikationer der ikke er sendt, og fejl på siden. Opdateres, når siden genindlæses."
+        forklaring="Teknisk overblik: besøg, cron-jobs, notifikationer der ikke er sendt, og fejl på siden. Opdateres, når siden genindlæses."
       />
+
+      {/* ---------------------------------------------------------- Besøg */}
+      <Kort titel="Besøg (cookiefri statistik)">
+        {besoeg.tilstand === "mangler" ? (
+          <p className="text-sm text-amber-800">
+            Ikke tilgængelig endnu: migrationen <code className="text-xs">20261006050000_statistik.sql</code> er
+            ikke kørt på denne database.
+          </p>
+        ) : besoeg.tilstand === "fejl" ? (
+          <p className="text-sm text-red-700">Kunne ikke hentes: {besoeg.besked}</p>
+        ) : (
+          <div className="space-y-5">
+            <dl className="grid grid-cols-3 gap-3 text-sm">
+              {[
+                { label: "I dag", v: besoeg.data.iDag },
+                { label: "Sidste 7 dage", v: besoeg.data.dage7 },
+                { label: "Sidste 30 dage", v: besoeg.data.dage30 },
+              ].map((t) => (
+                <div key={t.label} className="rounded-lg bg-neutral-50 p-3">
+                  <dt className="text-xs text-neutral-500">{t.label}</dt>
+                  <dd className="text-xl font-semibold text-neutral-900">{t.v.toLocaleString("da-DK")}</dd>
+                </div>
+              ))}
+            </dl>
+
+            {besoeg.data.prDag.length > 0 && (
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-neutral-800">Sidevisninger pr. dag (30 dage)</h3>
+                {(() => {
+                  const maks = Math.max(1, ...besoeg.data.prDag.map((d) => d.antal));
+                  return (
+                    <div className="flex h-24 items-end gap-0.5" aria-hidden="true">
+                      {besoeg.data.prDag.map((d) => (
+                        <div
+                          key={d.dag}
+                          title={`${d.dag}: ${d.antal.toLocaleString("da-DK")}`}
+                          className="min-w-[3px] flex-1 rounded-t bg-groen"
+                          style={{ height: `${Math.max(4, Math.round((d.antal / maks) * 100))}%` }}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-neutral-800">Mest besøgte sider (30 dage)</h3>
+              {besoeg.data.top.length === 0 ? (
+                <p className="text-sm text-neutral-500">Ingen besøg registreret endnu.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                      <th className={th}>Side</th>
+                      <th className={`${th} text-right`}>Visninger</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {besoeg.data.top.map((r) => (
+                      <tr key={r.sti}>
+                        <td className={td}>
+                          <span className="text-neutral-900">{stiNavn(r.sti)}</span>
+                          {stiNavn(r.sti) !== r.sti && (
+                            <span className="ml-2 font-mono text-xs text-neutral-500">{r.sti}</span>
+                          )}
+                        </td>
+                        <td className={`${td} text-right tabular-nums`}>{r.antal.toLocaleString("da-DK")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <p className="text-xs text-neutral-500">
+              Tæller kun sidevisninger pr. dag og sidetype. Ingen cookies, intet bruger-id, ingen IP og ingen
+              tredjepart. Besøgende med Do Not Track tælles ikke. Admin-sider tælles ikke.
+            </p>
+          </div>
+        )}
+      </Kort>
 
       {/* ---------------------------------------------------------- Cron */}
       <Kort

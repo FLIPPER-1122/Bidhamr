@@ -21,16 +21,25 @@ export async function generateMetadata({
 }) {
   const { id } = await params;
   // Systembrugeren har ingen offentlig profil (siden giver 404).
-  if (id.toLowerCase() === BIDHAMR_SYSTEM_ID) return { title: "Siden findes ikke" };
+  if (id.toLowerCase() === BIDHAMR_SYSTEM_ID) {
+    return { title: "Siden findes ikke", robots: { index: false, follow: false } };
+  }
   const supabase = await createClient();
   const [{ data: authData }, { data: profil }] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("users").select("navn").eq("id", id).single(),
   ]);
-  if (!profil) return { title: "Profil" };
+  if (!profil) return { title: "Profil", robots: { index: false, follow: false } };
   const erEgen = authData.user?.id === id;
   const visNavn = erEgen ? (profil.navn ?? "") : kortNavn(profil.navn);
-  return { title: `${visNavn}s profil` };
+  // Kun det korte navn (som på siden) - aldrig fulde navn i søgemaskiner.
+  const offentligtNavn = kortNavn(profil.navn);
+  return {
+    title: `${visNavn}s profil`,
+    description: `Se ${offentligtNavn}s auktioner og bedømmelser på BidHamr.`,
+    alternates: { canonical: `/profil/${id}` },
+    openGraph: { title: `${offentligtNavn}s profil · BidHamr`, url: `/profil/${id}` },
+  };
 }
 
 export default async function ProfilPage({

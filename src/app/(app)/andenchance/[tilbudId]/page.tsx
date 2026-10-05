@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -17,6 +18,8 @@ function Besked({ titel, tekst, children }: { titel: string; tekst: string; chil
     </div>
   );
 }
+
+export const metadata: Metadata = { title: "Tilbud om at købe varen", robots: { index: false, follow: false } };
 
 export default async function AndenchancePage({ params }: { params: Promise<{ tilbudId: string }> }) {
   const { tilbudId } = await params;

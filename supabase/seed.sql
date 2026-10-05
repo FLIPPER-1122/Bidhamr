@@ -81,20 +81,21 @@ update public.users set rolle = 'medarbejder' where id = '11111111-1111-4111-811
 insert into public.auctions
   (id, bruger_id, titel, beskrivelse, billeder, startpris, kategori, postnummer,
    lokation, forsendelse_mulig, stand, slutter_kl)
+-- stand er koden fra src/lib/stand.ts (auctions_stand_check).
 values
   ('22222222-2222-4222-8222-000000000001', '11111111-1111-4111-8111-000000000001',
    'Cykel, Kildemoes 7 gear', 'Velholdt damecykel, nye dæk i foråret.', '{}',
-   500, 'Sport', '4700', 'Næstved', false, 'Brugt', now() + interval '3 days'),
+   500, 'Sport', '4700', 'Næstved', false, 'god', now() + interval '3 days'),
   ('22222222-2222-4222-8222-000000000002', '11111111-1111-4111-8111-000000000001',
    'Sofabord i eg', 'Massivt egetræ, 120 x 60 cm. Lidt ridser.', '{}',
-   0, 'Møbler', '4700', 'Næstved', false, 'Brugt', now() + interval '5 days'),
+   0, 'Møbler', '4700', 'Næstved', false, 'brugt', now() + interval '5 days'),
   ('22222222-2222-4222-8222-000000000003', '11111111-1111-4111-8111-000000000001',
    'iPhone 13, 128 GB', 'Virker perfekt, batteri 88 %. Oplader medfølger.', '{}',
-   1500, 'Elektronik', '4700', 'Næstved', true, 'Som ny', now() + interval '1 day'),
+   1500, 'Elektronik', '4700', 'Næstved', true, 'som_ny', now() + interval '1 day'),
   -- Afsluttet auktion med vinder (grundlag for handlen nedenfor)
   ('22222222-2222-4222-8222-000000000004', '11111111-1111-4111-8111-000000000001',
    'LEGO Technic 42115', 'Komplet sæt med æske og vejledning.', '{}',
-   800, 'Legetøj', '4700', 'Næstved', true, 'Som ny', now() + interval '1 hour')
+   800, 'Legetøj', '4700', 'Næstved', true, 'som_ny', now() + interval '1 hour')
 on conflict (id) do nothing;
 
 -- Bud fra køber på den aktive cykel (≥ 10 % over startpris)

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -26,6 +27,8 @@ type FavoritRow = {
     antal_bud: number | null;
   } | null;
 };
+
+export const metadata: Metadata = { title: "Favoritter", robots: { index: false, follow: false } };
 
 export default async function FavoritterSide() {
   const supabase = await createClient();

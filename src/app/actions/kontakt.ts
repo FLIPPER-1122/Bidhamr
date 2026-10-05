@@ -28,10 +28,12 @@ export async function sendKontakt(
     if (String(formData.get("hjemmeside") ?? "").trim() !== "") return { ok: true };
     // Mangler tidsfeltet eller er det ugyldigt, behandles det som for hurtigt
     // (formularen sætter det altid) – ellers kunne en robot bare udelade det.
+    // Et menneske, der er hurtigt (fx indsat tekst), må ikke tro, at beskeden
+    // er sendt: derfor en synlig besked i stedet for et stille "ok".
     const raa = formData.get("t");
     const start = typeof raa === "string" && /^\d{1,16}$/.test(raa) ? Number(raa) : NaN;
     if (!Number.isFinite(start) || start <= 0 || Date.now() - start < MIN_SEKUNDER * 1000) {
-      return { ok: true };
+      return { fejl: "Vent et øjeblik, og prøv igen." };
     }
 
     const emne = String(formData.get("emne") ?? "");

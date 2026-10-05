@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
 import { Inter, Fraunces } from "next/font/google";
 import "./globals.css";
+import Sidevisning from "@/components/statistik/Sidevisning";
+import { seoIndeksering } from "@/lib/seo";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -28,6 +30,9 @@ export const metadata: Metadata = {
   description:
     "BidHamr er den danske auktionsplatform, hvor privatpersoner sælger brugte ting til hinanden. Byd trygt med BidHamr Beskyttelse.",
   applicationName: "BidHamr",
+  // Uden SEO_INDEKSERING=true (testmiljø, preview, pre-launch) får alle sider
+  // noindex - robots.txt siger desuden "Disallow: /" (src/app/robots.ts).
+  ...(seoIndeksering() ? {} : { robots: { index: false, follow: false } }),
   openGraph: {
     type: "website",
     siteName: "BidHamr",
@@ -54,6 +59,8 @@ export default async function RootLayout({
     >
       <body className="font-sans min-h-full flex flex-col" suppressHydrationWarning>
         {children}
+        {/* Cookiefri besøgsstatistik (src/app/api/statistik/route.ts). */}
+        <Sidevisning />
       </body>
     </html>
   );

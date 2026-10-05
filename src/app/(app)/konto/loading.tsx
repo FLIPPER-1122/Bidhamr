@@ -1,5 +1,5 @@
-import { IndlaeserSide } from "@/components/betaling/SideTilstande";
+import { KontoSkelet } from "@/components/Skeletter";
 
 export default function Loading() {
-  return <IndlaeserSide />;
+  return <KontoSkelet />;
 }

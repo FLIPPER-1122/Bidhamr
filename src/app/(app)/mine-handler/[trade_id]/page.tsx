@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -51,6 +52,8 @@ type HandelRaekke = {
   created_at: string;
   afhentning: boolean;
 };
+
+export const metadata: Metadata = { title: "Handel", robots: { index: false, follow: false } };
 
 export default async function HandelDetaljePage({
   params,

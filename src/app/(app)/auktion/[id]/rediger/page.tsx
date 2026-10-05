@@ -2,6 +2,12 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import RedigerAuktionForm from "@/components/RedigerAuktionForm";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Redigér auktion",
+  robots: { index: false, follow: false },
+};
 
 // Sælgeren redigerer sin auktion, så længe der ikke er bud. Databasen
 // (rediger_auktion) håndhæver det samme og låser auktionen under ændringen.

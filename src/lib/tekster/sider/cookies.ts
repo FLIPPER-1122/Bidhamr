@@ -10,18 +10,22 @@
 //   (src/components/admin/AdminSidebar.tsx, kun for medarbejdere).
 // - Ingen statistik-, reklame- eller sporingscookies. Skrifttyper hostes selv
 //   via next/font (ingen kald til Google).
+// - Besøgsstatistik: egen, cookiefri (src/components/statistik/Sidevisning.tsx
+//   -> /api/statistik -> tabellen sidevisninger). Gemmer kun antal pr. dag og
+//   sidetype (id'er fjernet). Ingen cookies, intet bruger-id, ingen IP, ingen
+//   tredjepart. Respekterer Do Not Track og Global Privacy Control.
 //
 // OPDATER denne side, hvis der tilføjes tredjepart: statistik, kort, video,
 // chat-widgets, sociale knapper, reklame eller andet, der sætter cookies eller
 // læser fra browseren. Så skal der måske også et samtykke-banner til.
-// OPDATER afsnittet "Besøgsstatistik", når statistikken er valgt og bygget.
+// OPDATER afsnittet "Besøgsstatistik", hvis statistikken ændres.
 
 import type { Tekstside } from "./typer";
 
 export const COOKIES: Tekstside = {
   titel: "Cookies",
   metabeskrivelse:
-    "Se, hvilke cookies BidHamr bruger. Vi bruger kun det, der er nødvendigt for, at du kan logge ind og betale.",
+    "Se, hvilke cookies BidHamr bruger. Vi bruger kun det, der er nødvendigt for, at du kan logge ind og betale. Vores besøgsstatistik er cookiefri.",
   intro:
     "En cookie er en lille fil, som en hjemmeside gemmer i din browser. BidHamr bruger kun de cookies, der er nødvendige for, at siden virker. Vi bruger ikke cookies til reklame eller til at følge dig rundt på nettet.",
   senestOpdateret: "5. oktober 2026",
@@ -49,7 +53,9 @@ export const COOKIES: Tekstside = {
       id: "statistik",
       overskrift: "Besøgsstatistik",
       tekst: [
-        "Vi bruger ikke cookies til besøgsstatistik. Måler vi, hvor mange der besøger siden, sker det uden cookies og uden at kunne se, hvem du er.",
+        "Vi bruger ikke cookies til besøgsstatistik. Vores statistik er cookiefri og bygget af os selv – der er ingen tredjepart som fx Google Analytics.",
+        "Når du åbner en side, tæller vi den op med én. Vi gemmer kun, hvilken slags side det var (fx \"en auktion\"), og hvilken dag. Vi gemmer ikke, hvem du er, din IP-adresse, hvilken auktion du så, eller hvad du søgte efter, og vi kan ikke følge dig fra side til side.",
+        "Har du slået \"Do Not Track\" eller \"Global Privacy Control\" til i din browser, tæller vi slet ikke dit besøg.",
       ],
     },
     {

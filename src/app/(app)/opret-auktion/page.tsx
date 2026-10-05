@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import OpretAuktionForm from "@/components/OpretAuktionForm";
@@ -7,6 +8,8 @@ import UdbetalingskontoKraeves from "@/components/betaling/UdbetalingskontoKraev
 // "Udbetalingskonto og advarsler fra admin"). Kravet er, at kontoen er
 // oprettet og oplysningerne sendt ind hos Stripe – Stripe må gerne stadig
 // behandle den. Databasen håndhæver det samme (auctions_kraev_udbetalingskonto).
+export const metadata: Metadata = { title: "Opret auktion", robots: { index: false, follow: false } };
+
 export default async function OpretAuktionPage({
   searchParams,
 }: {

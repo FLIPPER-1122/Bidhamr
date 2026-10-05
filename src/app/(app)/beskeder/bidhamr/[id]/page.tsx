@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Besked fra BidHamr",
+  robots: { index: false, follow: false },
 };
 
 // Svaret fra hentMinStaffSamtale, når samtalen ikke findes eller er en andens.

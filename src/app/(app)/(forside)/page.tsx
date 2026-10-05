@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import AuctionCard from "@/components/AuctionCard";
@@ -46,6 +47,13 @@ const SAELG_TRIN = [
   { titel: "Følg buddene", tekst: "Du får besked, når nogen byder. Højeste bud vinder, når tiden løber ud." },
   { titel: "Send og få pengene", tekst: "Køberen betaler via Stripe. Du får pengene, når køberen har modtaget varen." },
 ];
+
+export const metadata: Metadata = {
+  title: { absolute: "BidHamr – auktioner mellem private" },
+  description:
+    "Køb og sælg brugte ting på auktion mellem private. Byd trygt med BidHamr Beskyttelse – pengene holdes, til du har fået varen.",
+  alternates: { canonical: "/" },
+};
 
 export default async function Forside() {
   const supabase = await createClient();

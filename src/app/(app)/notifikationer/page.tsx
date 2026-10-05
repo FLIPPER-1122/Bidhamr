@@ -8,7 +8,7 @@ import { SIDE_STOERRELSE } from "@/lib/notifikationer/visning";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Notifikationer" };
+export const metadata: Metadata = { title: "Notifikationer", robots: { index: false, follow: false } };
 
 export default async function NotifikationerSide() {
   const supabase = await createClient();

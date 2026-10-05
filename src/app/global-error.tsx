@@ -25,14 +25,14 @@ export default function GlobalFejl({
           alignItems: "center",
           justifyContent: "center",
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-          background: "#fafafa",
-          color: "#171717",
+          background: "#ffffff",
+          color: "#1a1a1a",
           padding: "1rem",
         }}
       >
         <title>Noget gik galt · BidHamr</title>
         <div style={{ maxWidth: 420, textAlign: "center" }}>
-          <h1 style={{ fontSize: "1.25rem", margin: 0 }}>Noget gik galt</h1>
+          <h1 style={{ fontSize: "1.5rem", margin: 0, fontFamily: "Georgia, serif", fontWeight: 600 }}>Noget gik galt</h1>
           <p style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "#737373" }}>
             Siden kunne ikke vises. Prøv igen om lidt.
             {error.digest && (
@@ -46,7 +46,8 @@ export default function GlobalFejl({
               type="button"
               onClick={() => retry()}
               style={{
-                border: "1px solid #d4d4d4",
+                border: "1px solid #1e5e4a",
+                color: "#1e5e4a",
                 background: "#fff",
                 borderRadius: 8,
                 padding: "0.625rem 1.25rem",
@@ -59,7 +60,7 @@ export default function GlobalFejl({
             </button>
             {/* Almindeligt link: rodlayoutet er nede, så klient-navigation kan ikke bruges. */}
             {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-            <a href="/" style={{ fontSize: "0.875rem", fontWeight: 500, color: "#15803d" }}>
+            <a href="/" style={{ fontSize: "0.875rem", fontWeight: 500, color: "#1e5e4a" }}>
               Til forsiden
             </a>
           </div>

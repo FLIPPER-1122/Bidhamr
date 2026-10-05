@@ -7,7 +7,7 @@ import NotifikationIndstillinger from "@/components/notifikationer/NotifikationI
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Notifikationsindstillinger" };
+export const metadata: Metadata = { title: "Notifikationsindstillinger", robots: { index: false, follow: false } };
 
 export default async function NotifikationIndstillingerSide() {
   const supabase = await createClient();

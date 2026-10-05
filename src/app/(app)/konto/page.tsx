@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -21,6 +22,8 @@ function datoTekst(iso: string) {
     timeZone: "Europe/Copenhagen",
   });
 }
+
+export const metadata: Metadata = { title: "Min konto", robots: { index: false, follow: false } };
 
 export default async function KontoSide({
   searchParams,

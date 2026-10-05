@@ -8,8 +8,8 @@ import UdskrivKnap from "@/components/UdskrivKnap";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Kvittering – BidHamr",
-  robots: { index: false },
+  title: "Kvittering",
+  robots: { index: false, follow: false },
 };
 
 // Udskrivbar kvittering (køber, når betalingen er modtaget) eller afregning

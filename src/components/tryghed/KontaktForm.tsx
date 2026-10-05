@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { sendKontakt } from "@/app/actions/kontakt";
 import { KONTAKT_BESKED_MAKS, KONTAKT_EMNER, type KontaktEmne } from "@/lib/tryghed";
 
@@ -22,16 +22,27 @@ export default function KontaktForm({
   const [sendt, setSendt] = useState(false);
   // Tidspunktet, formularen blev vist (robotter udfylder på under 3 sek.).
   const [start] = useState(() => Date.now());
+  // Synkron spærre mod dobbelt-submit: state når ikke at opdatere mellem to
+  // hurtige klik/Enter, en ref gør.
+  const senderRef = useRef(false);
 
   async function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (sender) return;
+    if (senderRef.current) return;
+    senderRef.current = true;
     setFejl(null);
     const data = new FormData(e.currentTarget);
     data.set("t", String(start));
     setSender(true);
-    const res = await sendKontakt(data);
-    setSender(false);
+    let res: Awaited<ReturnType<typeof sendKontakt>>;
+    try {
+      res = await sendKontakt(data);
+    } catch {
+      res = { fejl: "Beskeden kunne ikke sendes lige nu. Prøv igen om lidt." };
+    } finally {
+      senderRef.current = false;
+      setSender(false);
+    }
     if ("fejl" in res) {
       setFejl(res.fejl);
       return;

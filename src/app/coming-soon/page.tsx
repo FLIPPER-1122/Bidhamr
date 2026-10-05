@@ -2,6 +2,13 @@ import Image from "next/image";
 import Link from "next/link";
 import WaitlistForm from "@/components/landing/WaitlistForm";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "BidHamr åbner snart",
+  description:
+    "BidHamr er en ny dansk auktionsplatform for brugte ting mellem private. Skriv dig op, og få besked, når vi åbner.",
+};
 
 // Server-komponent: ingen interaktion ud over ventelisteformularen, som er
 // sin egen klientkomponent. TODO indhold-agenten: alle længere tekster her

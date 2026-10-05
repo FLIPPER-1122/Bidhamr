@@ -16,6 +16,18 @@ import { kortNavn } from "@/lib/kortNavn";
 import { standNavn } from "@/lib/stand";
 import { getStaffRole } from "@/lib/adminAuth";
 import type { SpoergsmaalVisning } from "@/lib/spoergsmaal";
+import { auktionMetadata } from "@/lib/auktionSeo";
+
+// Titel, beskrivelse (pris + slut), første billede som delebillede og
+// canonical. JSON-LD ligger i layout.tsx.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  return auktionMetadata(id);
+}
 
 const MAKS_BUD_HENTET = 50;
 

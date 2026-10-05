@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -30,6 +31,8 @@ type SidsteBesked = {
   created_at: string;
   fra_bidhamr: boolean;
 };
+
+export const metadata: Metadata = { title: "Beskeder", robots: { index: false, follow: false } };
 
 export default async function BeskederPage() {
   const supabase = await createClient();

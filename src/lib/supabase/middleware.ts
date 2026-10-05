@@ -8,6 +8,11 @@ import { erTestdatabase } from "@/lib/miljoe";
 // (Stripe-signatur), /api/fragt/webhook (fragtfirmaets signatur, verificeret
 // af adapteren, fail closed) og /api/cron (CRON_SECRET, fail closed). Alle andre
 // /api-ruter kræver login + rolle som resten af appen.
+// /api/statistik er den cookiefri besøgsstatistik (gemmer kun antal pr. dag og
+// kendt sidetype, rate-limit pr. IP), så også besøg på venteliste-siden tælles.
+// /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
+// "Disallow: /" og er tomme, indtil SEO_INDEKSERING=true (src/lib/seo.ts).
+// Delebilleder (opengraph-image.jpg) rammer slet ikke proxyen (matcher i src/proxy.ts).
 const OFFENTLIGE_RUTER = [
   "/coming-soon",
   "/bidhamr-beskyttelse",
@@ -20,6 +25,9 @@ const OFFENTLIGE_RUTER = [
   "/api/webhooks",
   "/api/fragt/webhook",
   "/api/cron",
+  "/api/statistik",
+  "/robots.txt",
+  "/sitemap.xml",
 ];
 
 // Inden launch er appen lukket for almindelige brugere. Kun disse roller
