@@ -40,16 +40,30 @@ export async function generateMetadata({
 export default async function AuktionerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; kategori?: string; sortering?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    kategori?: string;
+    sortering?: string;
+    postnummer?: string;
+    afstand?: string;
+  }>;
 }) {
-  const { q, kategori, sortering } = await searchParams;
+  const { q, kategori, sortering, postnummer, afstand } = await searchParams;
   const søgetekst = q?.trim() ?? "";
   // Kun kendte kategorier – ukendte værdier ignoreres (som i generateMetadata).
   const initialKategori = kategorier.find((k) => k === kategori?.trim()) ?? "";
   // ?sortering= fra forsiden og menuen ("Slutter snart", "Nye auktioner").
   const initialSortering = læsSortering(sortering);
+  // ?postnummer=&afstand= fra en gemt søgning. Ugyldige værdier ignoreres.
+  const initialPostnummer = /^\d{4}$/.test(postnummer ?? "") ? postnummer! : "";
+  const afstandKm = Number(afstand);
+  const initialRadiusKm =
+    initialPostnummer && Number.isInteger(afstandKm) && afstandKm >= 5 && afstandKm <= 150
+      ? Math.round(afstandKm / 5) * 5
+      : undefined;
 
   const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
 
   let query = supabase
     .from("auctions")
@@ -83,6 +97,9 @@ export default async function AuktionerPage({
         initialQuery={søgetekst}
         initialKategori={initialKategori}
         initialSortering={initialSortering}
+        initialPostnummer={initialPostnummer}
+        initialRadiusKm={initialRadiusKm}
+        erLoggetInd={Boolean(authData.user)}
       />
     </main>
   );

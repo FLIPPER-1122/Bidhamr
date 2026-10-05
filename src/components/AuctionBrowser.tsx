@@ -10,6 +10,7 @@ import { beregnAfstandKm } from "@/lib/distance";
 import { UKENDT_POSTNUMMER, slaaPostnummerOp } from "@/lib/postnumre";
 
 import { SORTERINGER, type Sortering } from "@/lib/sortering";
+import GemSoegningKnap from "@/components/soegning/GemSoegningKnap";
 
 // Felter i filterbjælken (DESIGN.md 8.2).
 const felt =
@@ -50,18 +51,25 @@ export default function AuctionBrowser({
   initialAuktioner,
   initialQuery,
   initialSortering = "slutter_snart",
+  initialPostnummer = "",
+  initialRadiusKm = 50,
   kategori,
   onKategoriChange,
+  erLoggetInd = false,
 }: {
   initialAuktioner: DummyAuction[];
   initialQuery: string;
   initialSortering?: Sortering;
+  // Fra ?postnummer=&afstand= (fx linket i en notifikation om en gemt søgning).
+  initialPostnummer?: string;
+  initialRadiusKm?: number;
   kategori: string;
   onKategoriChange: (kategori: string) => void;
+  erLoggetInd?: boolean;
 }) {
   const query = initialQuery;
   const [sortering, setSortering] = useState<Sortering>(initialSortering);
-  const [postnummer, setPostnummer] = useState("");
+  const [postnummer, setPostnummer] = useState(initialPostnummer);
   // Postnummeret slås op i den lokale liste (synkront), så by og koordinat
   // udledes direkte ved render.
   const gyldigtPostnummer = /^\d{4}$/.test(postnummer);
@@ -74,7 +82,7 @@ export default function AuctionBrowser({
     : postOpslag
       ? "fundet"
       : "ikke-fundet";
-  const [radiusKm, setRadiusKm] = useState(50);
+  const [radiusKm, setRadiusKm] = useState(initialRadiusKm);
   const [auktioner, setAuktioner] = useState<DummyAuction[]>(initialAuktioner);
   const [loading, setLoading] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
@@ -283,11 +291,22 @@ export default function AuctionBrowser({
         </div>
       </div>
 
-      <p className="mt-4 text-sm text-tekst-svag" aria-live="polite">
-        {loading
-          ? "Søger…"
-          : `${auktioner.length} auktion${auktioner.length === 1 ? "" : "er"} fundet`}
-      </p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-tekst-svag" aria-live="polite">
+          {loading
+            ? "Søger…"
+            : `${auktioner.length} auktion${auktioner.length === 1 ? "" : "er"} fundet`}
+        </p>
+        <GemSoegningKnap
+          erLoggetInd={erLoggetInd}
+          kriterier={{
+            soegeord: query.trim(),
+            kategori: kategori || null,
+            postnummer: !erHeleDanmark && postStatus === "fundet" ? postnummer : null,
+            radiusKm: !erHeleDanmark && postStatus === "fundet" ? radiusKm : null,
+          }}
+        />
+      </div>
 
       {fejl && (
         <p role="alert" className="mt-3 rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">

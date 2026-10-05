@@ -8,6 +8,8 @@ import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import AuctionCard from "@/components/AuctionCard";
 import ProfileHeader from "@/components/profile/ProfileHeader";
 import ProfilTryghed from "@/components/tryghed/ProfilTryghed";
+import FoelgKnap from "@/components/foelg/FoelgKnap";
+import { createAdminClient } from "@/lib/supabase/admin";
 import ProfileTabs, {
   type MitBud,
   type EgenAuktion,
@@ -81,6 +83,7 @@ export default async function ProfilPage({
       { data: egneRatings },
       { data: gennemforteHandlerRaw },
       { data: kontakt },
+      { data: egneFoelgere },
     ] = await Promise.all([
       supabase
         .from("auctions")
@@ -107,6 +110,7 @@ export default async function ProfilPage({
         .or(`buyer_id.eq.${id},seller_id.eq.${id}`),
       // Adressen (kun til afhentning) kan kun læses af ejeren selv.
       supabase.rpc("mine_kontaktoplysninger").maybeSingle<{ adresse: string | null }>(),
+      supabase.rpc("antal_foelgere", { p_bruger: id }),
     ]);
 
     const antalRatings = egneRatings?.length ?? 0;
@@ -208,6 +212,7 @@ export default async function ProfilPage({
             }}
             erEgenProfil={true}
             brugerId={id}
+            antalFoelgere={typeof egneFoelgere === "number" ? egneFoelgere : undefined}
           />
 
           <Suspense>
@@ -230,7 +235,15 @@ export default async function ProfilPage({
 
   // ── Offentlig profil ───────────────────────────────────────────────────────
   const erLoggetInd = Boolean(authData.user);
-  const [{ data: aktiveAuktionerRaw }, { data: ratingsRaw }, { data: harBlokeret }] = await Promise.all([
+  const mitId = authData.user?.id ?? null;
+  const [
+    { data: aktiveAuktionerRaw },
+    { data: ratingsRaw },
+    { data: harBlokeret },
+    { data: antalFoelgere },
+    { data: minFoelgning },
+    blokeretAfProfil,
+  ] = await Promise.all([
     supabase
       .from("auctions")
       .select("*")
@@ -248,6 +261,19 @@ export default async function ProfilPage({
     erLoggetInd
       ? supabase.rpc("jeg_har_blokeret", { p_bruger: id })
       : Promise.resolve({ data: false }),
+    supabase.rpc("antal_foelgere", { p_bruger: id }),
+    // RLS: kun egne følgninger kan læses.
+    mitId
+      ? supabase.from("seller_follows").select("id").eq("seller_id", id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    // Har profilens ejer blokeret mig ved navn? Intern funktion (kun
+    // service-role), kaldt med den indloggedes eget id. Browseren får kun,
+    // om Følg-knappen vises.
+    mitId
+      ? createAdminClient()
+          .rpc("er_blokeret_navngivet_mellem", { p_a: id, p_b: mitId })
+          .then(({ data, error }) => (error ? false : data === true))
+      : Promise.resolve(false),
   ]);
 
   const aktiveAuktioner = (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort);
@@ -285,6 +311,17 @@ export default async function ProfilPage({
           }}
           erEgenProfil={false}
           brugerId={id}
+          antalFoelgere={typeof antalFoelgere === "number" ? antalFoelgere : undefined}
+          handling={
+            !blokeretAfProfil && harBlokeret !== true ? (
+              <FoelgKnap
+                saelgerId={id}
+                navn={kortNavn(profil.navn)}
+                foelger={Boolean(minFoelgning)}
+                loginHref={erLoggetInd ? undefined : `/login?redirect=/profil/${id}`}
+              />
+            ) : undefined
+          }
         />
 
         {erLoggetInd && (
