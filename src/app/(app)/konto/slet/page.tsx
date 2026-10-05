@@ -63,7 +63,7 @@ export default async function SletKontoSide() {
             </p>
           )}
           <div className="mt-4">
-            <SletKontoForm />
+            <SletKontoForm brugerId={authData.user.id} />
           </div>
         </section>
       ) : (
@@ -76,7 +76,7 @@ export default async function SletKontoSide() {
             listen er tom, kan du slette din konto.
           </p>
           <div className="mt-4">
-            <Blokeringer blokeringer={status.blokeringer} />
+            <Blokeringer blokeringer={status.blokeringer} brugerId={authData.user.id} />
           </div>
         </section>
       )}

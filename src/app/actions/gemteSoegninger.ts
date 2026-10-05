@@ -14,6 +14,7 @@ import {
   MAKS_GEMTE_SOEGNINGER,
   MAKS_NAVN,
   MAKS_SOEGEORD,
+  standardNavn,
   type GemtSoegning,
   type SoegeKriterier,
 } from "@/lib/gemteSoegninger";
@@ -22,7 +23,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GENERISK = "Det lykkedes ikke. Prøv igen om lidt.";
 const IKKE_LOGGET_IND = "Du skal være logget ind for at gemme søgninger.";
 
-type Svar = { ok: true } | { fejl: string };
+type Svar = { ok: true } | { fejl: string; kode?: "for_mange" };
 
 const ren = (s: unknown, maks: number) =>
   typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, maks) : "";
@@ -67,7 +68,6 @@ export async function gemSoegning(navn: string, k: SoegeKriterier): Promise<Svar
   if (!soegeord && !kategori) {
     return { fejl: "Skriv et søgeord eller vælg en kategori, før du gemmer søgningen." };
   }
-  const rentNavn = ren(navn, MAKS_NAVN) || (soegeord || kategori || "").slice(0, MAKS_NAVN);
 
   // Afstand kræver et kendt postnummer. Koordinaten slås op her (samme liste
   // som filteret på /auktioner) - aldrig fra browseren.
@@ -76,6 +76,9 @@ export async function gemSoegning(navn: string, k: SoegeKriterier): Promise<Svar
     opslag && typeof k?.radiusKm === "number" && Number.isInteger(k.radiusKm) && k.radiusKm >= 5 && k.radiusKm < 150
       ? k.radiusKm
       : null;
+  const rentNavn =
+    ren(navn, MAKS_NAVN) ||
+    standardNavn({ soegeord, kategori, postnummer: radius ? opslag!.postnummer : null, radiusKm: radius });
 
   const { supabase, user } = await bruger();
   if (!user) return { fejl: IKKE_LOGGET_IND };
@@ -94,6 +97,7 @@ export async function gemSoegning(navn: string, k: SoegeKriterier): Promise<Svar
     if (error.message.includes("for_mange")) {
       return {
         fejl: `Du kan højst gemme ${MAKS_GEMTE_SOEGNINGER} søgninger. Slet en under Min konto, og prøv igen.`,
+        kode: "for_mange",
       };
     }
     console.error("Søgning kunne ikke gemmes:", error.message);

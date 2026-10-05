@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import {
   bekraeftGemtKort,
   fjernGemtKort,
@@ -10,8 +10,19 @@ import {
   startGemKort,
   type Betalingsindstillinger,
 } from "@/app/actions/betaling";
-import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
-import { FejlBoks } from "@/components/betaling/BetalingSektion";
+import { FejlBoks } from "@/components/betaling/FejlBoks";
+
+// Stripe.js og Payment Element indlæses først, når brugeren har trykket
+// "Gem et kort" – ikke ved hvert besøg på Min konto.
+const GemKortStripe = dynamic(() => import("@/components/betaling/GemKortStripe"), {
+  ssr: false,
+  loading: () => (
+    <div className="space-y-3 rounded-xl border border-kant p-4" aria-busy="true" aria-label="Henter kortformular">
+      <div className="h-11 animate-pulse rounded-xl bg-skelet" />
+      <div className="h-11 animate-pulse rounded-xl bg-skelet" />
+    </div>
+  ),
+});
 
 const MAERKE: Record<string, string> = {
   visa: "Visa",
@@ -108,12 +119,7 @@ export default function KontoBetaling({
           </button>
         </div>
       ) : clientSecret ? (
-        <Elements
-          stripe={hentStripe()}
-          options={{ clientSecret, appearance: stripeUdseende, locale: "da" }}
-        >
-          <GemKortForm onAnnuller={() => setClientSecret(null)} />
-        </Elements>
+        <GemKortStripe clientSecret={clientSecret} onAnnuller={() => setClientSecret(null)} />
       ) : (
         <button type="button" onClick={gemKort} disabled={venter} className="btn btn-primaer w-full sm:w-auto">
           {venter ? "Henter…" : "Gem et kort"}
@@ -142,40 +148,5 @@ export default function KontoBetaling({
         </span>
       </label>
     </div>
-  );
-}
-
-function GemKortForm({ onAnnuller }: { onAnnuller: () => void }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [sender, setSender] = useState(false);
-  const [fejl, setFejl] = useState<string | null>(null);
-
-  async function gem(e: FormEvent) {
-    e.preventDefault();
-    if (!stripe || !elements) return;
-    setSender(true);
-    setFejl(null);
-    const { error } = await stripe.confirmSetup({
-      elements,
-      confirmParams: { return_url: `${window.location.origin}/konto` },
-    });
-    setFejl(error?.message ?? "Kortet kunne ikke gemmes. Prøv igen.");
-    setSender(false);
-  }
-
-  return (
-    <form onSubmit={gem} className="space-y-4 rounded-xl border border-kant p-4">
-      <PaymentElement options={{ layout: "tabs" }} />
-      {fejl && <FejlBoks tekst={fejl} />}
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <button type="submit" disabled={!stripe || sender} className="btn btn-primaer">
-          {sender ? "Gemmer…" : "Gem kort"}
-        </button>
-        <button type="button" onClick={onAnnuller} disabled={sender} className="btn btn-sekundaer">
-          Annullér
-        </button>
-      </div>
-    </form>
   );
 }

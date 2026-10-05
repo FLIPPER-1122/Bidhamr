@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import RapporterDialog from "@/components/tryghed/RapporterDialog";
 import { blokerBruger, fjernBlokeringAfBruger } from "@/app/actions/tryghed";
+import { medPunktum } from "@/lib/kortNavn";
 
 // "Blokér" / "Fjern blokering" og "Rapportér bruger" på en andens profil.
 export default function ProfilTryghed({
@@ -35,7 +36,7 @@ export default function ProfilTryghed({
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       {blokeret ? (
         <>
-          <span className="text-sm text-tekst-daempet">Du har blokeret {navn}.</span>
+          <span className="text-sm text-tekst-daempet">{medPunktum(`Du har blokeret ${navn}`)}</span>
           <button type="button" onClick={fjern} className="btn btn-tekst text-sm">
             Fjern blokering
           </button>

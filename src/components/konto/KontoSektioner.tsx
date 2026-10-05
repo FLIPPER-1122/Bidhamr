@@ -20,6 +20,7 @@ export function KontoNavigation() {
     ["#profil", "Profil"],
     ["#sikkerhed", "Sikkerhed"],
     ["#betaling", "Betaling"],
+    ["#udbetaling", "Udbetaling"],
     ["#notifikationer", "Notifikationer"],
     ["#blokerede", "Blokerede"],
     ["#dine-data", "Dine data"],

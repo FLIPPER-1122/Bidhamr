@@ -195,7 +195,7 @@ export default async function KontoSide({
             </div>
           </section>
 
-          <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section id="udbetaling" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[20px] leading-tight lg:text-[22px]">Udbetaling</h2>
             <div className="mt-3">
               <KontoUdbetaling

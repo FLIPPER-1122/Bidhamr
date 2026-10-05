@@ -24,15 +24,18 @@ function Oeje({ vis }: { vis: boolean }) {
   );
 }
 
-function KravLinje({ ok, tekst }: { ok: boolean; tekst: string }) {
+// Opfyldt: grøn ✓. Ikke opfyldt: rød ✗, når man er begyndt at skrive (før
+// det en neutral prik). Symbol og skærmlæsertekst, så det ikke kun er farve.
+function KravLinje({ ok, tekst, tom }: { ok: boolean; tekst: string; tom: boolean }) {
+  const klasse = ok ? "text-succes-tekst" : tom ? "text-tekst-daempet" : "text-fejl-tekst";
   return (
-    <li className={`flex items-start gap-2 text-[13px] ${ok ? "text-succes-tekst" : "text-tekst-daempet"}`}>
-      <span aria-hidden="true" className="mt-px w-4 shrink-0 text-center font-semibold">
-        {ok ? "✓" : "•"}
+    <li className={`flex items-start gap-2 text-[13px] ${klasse}`}>
+      <span aria-hidden="true" className="mt-px w-4 shrink-0 text-center font-bold">
+        {ok ? "✓" : tom ? "•" : "✗"}
       </span>
-      <span>
+      <span className={ok || tom ? undefined : "font-medium"}>
         {tekst}
-        <span className="sr-only">{ok ? " – opfyldt" : " – ikke opfyldt endnu"}</span>
+        <span className="sr-only">{ok ? " – opfyldt" : " – ikke opfyldt"}</span>
       </span>
     </li>
   );
@@ -121,9 +124,9 @@ export default function AdgangskodeFelt({
             </span>
           </div>
           <ul className="mt-2 space-y-1">
-            <KravLinje ok={vurdering.krav.laengde} tekst={`Mindst ${MIN_LAENGDE} tegn`} />
-            <KravLinje ok={vurdering.krav.ikkeAlmindelig} tekst="Ikke en almindelig adgangskode" />
-            <KravLinje ok={vurdering.krav.ikkePersonlig} tekst="Ikke din e-mail eller dit navn" />
+            <KravLinje tom={!vaerdi} ok={!!vaerdi && vurdering.krav.laengde} tekst={`Mindst ${MIN_LAENGDE} tegn`} />
+            <KravLinje tom={!vaerdi} ok={!!vaerdi && vurdering.krav.ikkeAlmindelig} tekst="Ikke en almindelig adgangskode" />
+            <KravLinje tom={!vaerdi} ok={!!vaerdi && vurdering.krav.ikkePersonlig} tekst="Ikke din e-mail eller dit navn" />
           </ul>
           <p className="mt-2 text-[13px] text-tekst-daempet">
             Tip: Brug tre-fire tilfældige ord, fx &quot;kaffe cykel blå tromme&quot;.

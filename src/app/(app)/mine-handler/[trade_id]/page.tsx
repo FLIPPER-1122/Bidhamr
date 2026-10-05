@@ -294,7 +294,7 @@ export default async function HandelDetaljePage({
             <p className="mt-1 text-sm text-groen-mork">
               {afhentning
                 ? "Sælgeren får besked. Aftal afhentningen med sælgeren i chatten herunder."
-                : "Sælgeren får besked og sender varen. Pengene frigives først, når du har godkendt den."}
+                : "Sælgeren får besked og sender varen. Sælgeren får først pengene, når du har godkendt den."}
             </p>
           </div>
         )}

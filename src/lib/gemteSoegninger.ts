@@ -47,8 +47,14 @@ export function kriterieTekst(k: SoegeKriterier): string {
   return dele.join(" · ");
 }
 
-// Forslag til navn, når søgningen gemmes.
+// Forslag til navn, når søgningen gemmes, fx "Omega · Ure · 25 km fra 2100".
 export function standardNavn(k: SoegeKriterier): string {
-  const navn = k.soegeord || k.kategori || "Min søgning";
-  return navn.slice(0, MAKS_NAVN);
+  const dele: string[] = [];
+  const ord = k.soegeord.trim();
+  if (ord) dele.push(ord.charAt(0).toLocaleUpperCase("da-DK") + ord.slice(1));
+  if (k.kategori) dele.push(k.kategori);
+  // Afstand gemmes kun sammen med et postnummer (se gemSoegning).
+  if (k.postnummer && k.radiusKm) dele.push(`${k.radiusKm} km fra ${k.postnummer}`);
+  const navn = dele.join(" · ") || "Min søgning";
+  return navn.length > MAKS_NAVN ? `${navn.slice(0, MAKS_NAVN - 1).trimEnd()}…` : navn;
 }

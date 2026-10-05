@@ -19,6 +19,7 @@ export default function GemSoegningKnap({
   const [aaben, setAaben] = useState(false);
   const [navn, setNavn] = useState("");
   const [fejl, setFejl] = useState<string | null>(null);
+  const [forMange, setForMange] = useState(false);
   // Hvilke filtre der sidst blev gemt - ændres filtrene, kan den nye søgning gemmes.
   const [gemtFor, setGemtFor] = useState<string | null>(null);
   const [gemmer, startGem] = useTransition();
@@ -52,10 +53,12 @@ export default function GemSoegningKnap({
   function gem(e: FormEvent) {
     e.preventDefault();
     setFejl(null);
+    setForMange(false);
     startGem(async () => {
       const res = await gemSoegning(navn, kriterier);
       if ("fejl" in res) {
         setFejl(res.fejl);
+        setForMange(res.kode === "for_mange");
         return;
       }
       setGemtFor(noegle);
@@ -112,6 +115,14 @@ export default function GemSoegningKnap({
       {fejl && (
         <p role="alert" className="mt-1.5 text-[13px] font-medium text-fejl-tekst">
           {fejl}
+          {forMange && (
+            <>
+              {" "}
+              <Link href="/konto/soegninger" className="font-semibold underline">
+                Gå til Gemte søgninger
+              </Link>
+            </>
+          )}
         </p>
       )}
       <div className="mt-3 flex flex-wrap gap-2">

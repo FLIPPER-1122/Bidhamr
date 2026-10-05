@@ -124,6 +124,11 @@ function SkjulKnap({ ratingId, del }: { ratingId: string; del: BedoemmelseDel })
       action={skjulBedoemmelse}
       hiddenFields={{ ratingId, del }}
       valgField={{ name: "grund", label: "Begrundelse", valg: GRUND_VALG }}
+      valgKraeverTekst={{
+        valg: "andet",
+        felt: "aarsag",
+        besked: "Skriv en uddybning, når du vælger \"Andet\".",
+      }}
       tekstFelter={[
         {
           name: "aarsag",

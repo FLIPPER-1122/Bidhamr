@@ -5,7 +5,13 @@ import { type FormEvent, useId, useState, useTransition } from "react";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import TomTilstand from "@/components/TomTilstand";
 import { omdoebSoegning, saetBesked, sletSoegning } from "@/app/actions/gemteSoegninger";
-import { MAKS_NAVN, kriterieTekst, soegningHref, type GemtSoegning } from "@/lib/gemteSoegninger";
+import {
+  MAKS_GEMTE_SOEGNINGER,
+  MAKS_NAVN,
+  kriterieTekst,
+  soegningHref,
+  type GemtSoegning,
+} from "@/lib/gemteSoegninger";
 
 // Listen "Gemte søgninger" under Min konto: omdøb, besked til/fra og slet.
 export default function GemteSoegninger({ start }: { start: GemtSoegning[] }) {
@@ -23,8 +29,17 @@ export default function GemteSoegninger({ start }: { start: GemtSoegning[] }) {
     );
   }
 
+  const fuld = soegninger.length >= MAKS_GEMTE_SOEGNINGER;
   return (
-    <ul className="mt-6 space-y-3">
+    <>
+      <p className="mt-6 text-sm text-tekst-daempet" aria-live="polite">
+        <span className="font-semibold text-tekst tabular-nums">
+          {soegninger.length} af {MAKS_GEMTE_SOEGNINGER}
+        </span>{" "}
+        gemte søgninger
+        {fuld && " – du har nået grænsen. Slet en for at gemme en ny."}
+      </p>
+    <ul className="mt-3 space-y-3">
       {soegninger.map((s) => (
         <Soegning
           key={s.id}
@@ -34,6 +49,7 @@ export default function GemteSoegninger({ start }: { start: GemtSoegning[] }) {
         />
       ))}
     </ul>
+    </>
   );
 }
 

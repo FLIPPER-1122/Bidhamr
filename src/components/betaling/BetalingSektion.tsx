@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { FejlBoks } from "@/components/betaling/FejlBoks";
 import { startBetaling, type KoeberBetalingsstatus } from "@/app/actions/betaling";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
 import { kroner } from "@/lib/kroner";
@@ -90,17 +91,6 @@ function Linje({ navn, vaerdi }: { navn: string; vaerdi: string }) {
   );
 }
 
-export function FejlBoks({ tekst }: { tekst: string }) {
-  return (
-    <p
-      role="alert"
-      className="rounded-xl border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst"
-    >
-      {tekst}
-    </p>
-  );
-}
-
 function BetalForm({
   handelId,
   totalOere,
@@ -145,3 +135,5 @@ function BetalForm({
     </form>
   );
 }
+
+export { FejlBoks };

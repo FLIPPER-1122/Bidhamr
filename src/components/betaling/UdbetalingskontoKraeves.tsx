@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { opdaterSaelgerStatus, startSaelgerOnboarding } from "@/app/actions/betaling";
-import { FejlBoks } from "@/components/betaling/BetalingSektion";
+import { FejlBoks } from "@/components/betaling/FejlBoks";
 
 // Vises på /opret-auktion i stedet for formularen, når sælgeren ikke har en
 // udbetalingskonto (eller ikke har sendt oplysningerne ind hos Stripe).

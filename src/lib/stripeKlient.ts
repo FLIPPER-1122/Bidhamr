@@ -1,4 +1,7 @@
-import { loadStripe, type Stripe } from "@stripe/stripe-js";
+// "pure": Stripe.js indsættes først, når hentStripe() kaldes (fx når brugeren
+// trykker "Gem et kort"), ikke allerede når modulet importeres.
+import { loadStripe } from "@stripe/stripe-js/pure";
+import type { Stripe } from "@stripe/stripe-js";
 
 // Stripe.js hentes kun på de sider, der bruger Payment Element.
 let stripePromise: Promise<Stripe | null> | null = null;
