@@ -78,7 +78,7 @@ export default function AnmeldOpslagKnap({
       <button
         type="button"
         onClick={() => setAaben(true)}
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-brand"
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-groen"
       >
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 21V5.25A2.25 2.25 0 015.25 3h6l.75 1.5h6.75a1.5 1.5 0 011.5 1.5v7.5a1.5 1.5 0 01-1.5 1.5H12l-.75-1.5H3" />
@@ -131,7 +131,7 @@ export default function AnmeldOpslagKnap({
                         key={k.vaerdi}
                         className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                           kategori === k.vaerdi
-                            ? "border-brand bg-orange-lys text-neutral-900"
+                            ? "border-groen bg-groen-lys text-neutral-900"
                             : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"
                         }`}
                       >
@@ -141,7 +141,7 @@ export default function AnmeldOpslagKnap({
                           value={k.vaerdi}
                           checked={kategori === k.vaerdi}
                           onChange={(e) => setKategori(e.target.value)}
-                          className="accent-brand"
+                          className="accent-groen"
                         />
                         {k.label}
                       </label>
@@ -161,11 +161,11 @@ export default function AnmeldOpslagKnap({
                       value={beskrivelse}
                       onChange={(e) => setBeskrivelse(e.target.value)}
                       placeholder="Uddyb gerne, så vi hurtigere kan vurdere sagen..."
-                      className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                      className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
                     />
                   </div>
 
-                  {fejl && <p className="text-sm text-red-600">{fejl}</p>}
+                  {fejl && <p className="text-sm text-fejl-tekst">{fejl}</p>}
 
                   <div className="flex justify-end gap-3">
                     <button

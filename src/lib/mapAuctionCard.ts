@@ -1,6 +1,13 @@
 import type { DummyAuction } from "@/components/AuctionCard";
 import { beregnProcentForløbet, formatTidTilbage } from "@/lib/auctionTid";
 
+const EN_TIME_MS = 60 * 60 * 1000;
+
+function erUnderEnTime(slutterKl: string) {
+  const tilbage = new Date(slutterKl).getTime() - Date.now();
+  return tilbage > 0 && tilbage < EN_TIME_MS;
+}
+
 interface AuctionRowMedBudCount {
   id: string;
   titel: string;
@@ -27,6 +34,7 @@ export function mapAuctionTilKort(
     antalBud: auktion.antal_bud ?? 0,
     tidTilbage: formatTidTilbage(auktion.slutter_kl),
     procentForløbet: beregnProcentForløbet(auktion.oprettet, auktion.slutter_kl),
+    slutterSnart: erUnderEnTime(auktion.slutter_kl),
     billede: auktion.billeder?.[0] ?? null,
   };
 }

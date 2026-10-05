@@ -151,13 +151,13 @@ export default function NulstilAdgangskodePage() {
                 className="mt-1.5 h-11 w-full rounded-lg border border-kant-staerk px-4 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:ring-1 focus:ring-groen"
               />
               {passwordGentag && password !== passwordGentag && (
-                <p className="mt-1.5 text-xs text-red-500">
+                <p className="mt-1.5 text-xs text-fejl-tekst">
                   Adgangskoderne stemmer ikke overens
                 </p>
               )}
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-fejl-tekst">{error}</p>}
 
             <button
               type="submit"

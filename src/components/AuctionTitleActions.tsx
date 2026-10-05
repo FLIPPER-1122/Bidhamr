@@ -9,7 +9,7 @@ export default function AuctionTitleActions() {
     <div className="flex items-center gap-2">
       <button
         aria-label="Del auktion"
-        className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 hover:text-brand"
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 hover:text-groen"
       >
         <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={2}>
           <path
@@ -23,11 +23,11 @@ export default function AuctionTitleActions() {
       <button
         onClick={() => setGemt(!gemt)}
         aria-label="Gem auktion"
-        className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 hover:text-brand"
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 hover:text-groen"
       >
         <svg
           viewBox="0 0 24 24"
-          className={`h-4.5 w-4.5 ${gemt ? "fill-brand text-brand" : "fill-none"}`}
+          className={`h-4.5 w-4.5 ${gemt ? "fill-groen text-groen" : "fill-none"}`}
           stroke="currentColor"
           strokeWidth={2}
         >

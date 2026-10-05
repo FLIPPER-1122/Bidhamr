@@ -408,7 +408,7 @@ export default async function AdminSager({
                     <td className="block lg:table-cell lg:px-3 lg:py-3">
                       <Link
                         href={`/auktion/${h.auction_id}`}
-                        className="font-medium text-neutral-800 hover:text-brand hover:underline"
+                        className="font-medium text-neutral-800 hover:text-groen hover:underline"
                       >
                         {titelMap.get(h.auction_id) ?? "(slettet auktion)"}
                       </Link>

@@ -107,7 +107,7 @@ export default function AabnChatKnap({
                   required
                   maxLength={STAFF_CHAT_MAKS_EMNE}
                   placeholder="Fx: Spørgsmål om din handel"
-                  className="mt-1.5 h-11 w-full rounded-lg border border-neutral-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                  className="mt-1.5 h-11 w-full rounded-lg border border-neutral-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
                 />
                 <p className="mt-1 text-xs text-neutral-500">Brugeren kan se emnet.</p>
               </div>
@@ -122,7 +122,7 @@ export default function AabnChatKnap({
                   maxLength={STAFF_CHAT_MAKS_TEKST}
                   rows={4}
                   placeholder="Skriv til brugeren…"
-                  className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                  className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
                 />
               </div>
               <div className="flex flex-wrap justify-end gap-3 pt-1">

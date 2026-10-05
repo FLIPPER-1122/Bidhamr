@@ -3,10 +3,26 @@ import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import KontoMenu from "@/components/KontoMenu";
 import Klokke from "@/components/notifikationer/Klokke";
+import Ikon from "@/components/Ikon";
+import BeskederLink from "@/components/topbar/BeskederLink";
+import KategoriMenu from "@/components/topbar/KategoriMenu";
+import MobilMenu from "@/components/topbar/MobilMenu";
+import { UlaesteBeskederProvider } from "@/components/topbar/UlaesteBeskeder";
+import { KATEGORIER_I_LINJEN, UDFORSK, kategoriHref } from "@/components/topbar/navigation";
 
+const ikonKnap =
+  "flex h-11 w-11 items-center justify-center rounded-full text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
+const linjeLink =
+  "flex min-h-11 items-center rounded-lg font-medium text-[#444] hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
+
+// Topbar efter DESIGN.md afsnit 9 og mockup D.
+// Mobil (< lg): logo, klokke og burger; søgefeltet i fuld bredde nedenunder.
+// Desktop (lg+): logo, søgefelt i midten, genveje, "Sælg en vare" og
+// profil-menu – med en kategorilinje under.
 export default async function Header() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
+  const loggetInd = !!data.user;
 
   let erAdmin = false;
   let ulaeste = 0;
@@ -18,108 +34,140 @@ export default async function Header() {
       supabase.rpc("antal_ulaeste_staff_beskeder"),
     ]);
     ulaesteBeskeder = Number(antalBeskeder ?? 0) || 0;
-    erAdmin =
-      rolle === "chef" ||
-      rolle === "admin" ||
-      rolle === "medarbejder";
+    erAdmin = rolle === "chef" || rolle === "admin" || rolle === "medarbejder";
     ulaeste = Number(antal ?? 0) || 0;
   }
 
   return (
-    // relative: klokke-panelet lægger sig i fuld bredde under headeren på mobil.
-    <header className="relative border-b border-kant bg-white">
-      <div className="mx-auto flex max-w-[1280px] flex-wrap items-center gap-x-3 gap-y-3 px-4 py-3 sm:px-6 lg:flex-nowrap lg:gap-x-6 lg:px-8 lg:py-4">
-        <Link
-          href="/"
-          aria-label="BidHamr - til forsiden"
-          className="shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
-        >
-          <Image
-            src="/brand/bidhamr-logo.svg"
-            alt="BidHamr"
-            width={230}
-            height={60}
-            priority
-            unoptimized
-            className="h-8 w-auto lg:h-9"
-          />
-        </Link>
+    <UlaesteBeskederProvider startAntal={ulaesteBeskeder} aktiv={loggetInd}>
+      <a
+        href="#indhold"
+        className="sr-only z-[60] rounded-lg bg-white px-4 py-3 font-medium text-groen shadow-flyder focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:outline-2 focus:outline-groen"
+      >
+        Spring til indhold
+      </a>
 
-        <Link
-          href="/auktioner"
-          className="hidden shrink-0 text-sm font-medium text-tekst-daempet hover:text-groen xl:block"
-        >
-          Alle auktioner
-        </Link>
-
-        {/* Mobil: søgefeltet i fuld bredde under logo-linjen */}
-        <form
-          action="/auktioner"
-          method="GET"
-          role="search"
-          className="relative order-last w-full lg:order-none lg:w-auto lg:min-w-0 lg:flex-1"
-        >
-          <label htmlFor="header-soeg" className="sr-only">
-            Søg efter varer
-          </label>
-          <button
-            type="submit"
-            aria-label="Søg"
-            className="group absolute top-1/2 right-0 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+      {/* relative: klokke-panelet lægger sig i fuld bredde under headeren på mobil. */}
+      <header className="relative border-b border-kant bg-white">
+        <div className="mx-auto flex max-w-[1280px] flex-wrap items-center gap-x-2 gap-y-3 px-4 py-3 sm:px-6 lg:flex-nowrap lg:gap-x-6 lg:px-8 lg:py-4">
+          <Link
+            href="/"
+            aria-label="BidHamr - til forsiden"
+            className="mr-auto shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:mr-0"
           >
-            <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-orange-knap text-white group-hover:bg-orange-knap-mork"><svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-              <circle cx="11" cy="11" r="7" />
-              <path strokeLinecap="round" d="M21 21l-4.3-4.3" />
-            </svg></span>
-          </button>
-          <input
-            id="header-soeg"
-            type="search"
-            name="q"
-            placeholder="Søg efter varer…"
-            className="h-11 w-full rounded-full border-[1.5px] border-kant-staerk bg-white py-2.5 pl-5 pr-14 text-[15px] text-tekst outline-none placeholder:text-pladsholder focus:border-groen focus:outline-2 focus:outline-groen/25"
-          />
-        </form>
-
-        <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0">
-          <Link href="/favoritter" aria-label="Favoritter" title="Favoritter" className="hidden h-11 w-11 items-center justify-center rounded-full text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7.5-4.5-9.5-9C1 8.5 2.5 5 6 5c2 0 3.5 1 4 2 0.5-1 2-2 4-2 3.5 0 5 3.5 3.5 7-2 4.5-9.5 9-9.5 9z" />
-            </svg>
-          </Link>
-          {data.user ? (
-            <Link href="/mine-handler" aria-label="Mine handler" title="Mine handler" className="hidden h-11 w-11 items-center justify-center rounded-full text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex">
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 0 0-8 0v4M5 9h14l1 12H4L5 9z" />
-            </svg>
-            </Link>
-          ) : (
-            <Link
-              href="/login"
-              className="hidden h-11 items-center px-2 text-sm font-medium text-tekst-daempet hover:text-groen lg:flex"
-            >
-              Log ind
-            </Link>
-          )}
-
-          {/* .btn er ulagdelt CSS og ville overtrumfe "hidden" – derfor en wrapper */}
-          <div className="hidden shrink-0 lg:block">
-            <Link href="/opret-auktion" className="btn btn-primaer">
-              Opret auktion
-            </Link>
-          </div>
-
-          {data.user && <Klokke startAntal={ulaeste} />}
-
-          <div className={data.user ? "" : "lg:hidden"}>
-            <KontoMenu
-              logget_ind={!!data.user}
-              erAdmin={erAdmin}
-              ulaesteBeskeder={ulaesteBeskeder}
+            <Image
+              src="/brand/bidhamr-logo.svg"
+              alt="BidHamr"
+              width={230}
+              height={60}
+              preload
+              unoptimized
+              className="h-8 w-auto lg:h-9"
             />
+          </Link>
+
+          <form
+            action="/auktioner"
+            method="GET"
+            role="search"
+            className="relative order-last w-full lg:order-none lg:w-auto lg:min-w-0 lg:flex-1"
+          >
+            <label htmlFor="header-soeg" className="sr-only">
+              Søg efter varer
+            </label>
+            <input
+              id="header-soeg"
+              type="search"
+              name="q"
+              placeholder="Søg efter alt fra ure til sofaer…"
+              className="h-11 w-full rounded-full border-[1.5px] border-kant-staerk bg-white py-2.5 pr-14 pl-5 text-[15px] text-tekst outline-none placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
+            />
+            {/* Touch-målet er 44x44; den synlige orange cirkel er 34px. */}
+            <button
+              type="submit"
+              aria-label="Søg"
+              className="group absolute top-1/2 right-0 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+            >
+              <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-orange-knap text-white group-hover:bg-orange-knap-mork">
+                <Ikon navn="soeg" className="h-[18px] w-[18px]" strøg={2} />
+              </span>
+            </button>
+          </form>
+
+          <div className="flex shrink-0 items-center gap-1 lg:gap-2">
+            {/* Kun store skærme: genveje som ikoner */}
+            <Link href="/favoritter" aria-label="Favoritter" title="Favoritter" className={`${ikonKnap} hidden lg:flex`}>
+              <Ikon navn="hjerte" />
+            </Link>
+            {loggetInd && (
+              <>
+                <BeskederLink className={`${ikonKnap} hidden lg:flex`} />
+                <Link
+                  href="/mine-handler"
+                  className="hidden h-11 items-center gap-2 rounded-full px-3 text-sm font-medium text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex"
+                >
+                  <Ikon navn="handler" />
+                  <span className="sr-only xl:not-sr-only">Mine handler</span>
+                </Link>
+              </>
+            )}
+
+            {loggetInd && <Klokke startAntal={ulaeste} />}
+
+            {!loggetInd && (
+              <Link
+                href="/login"
+                className="hidden h-11 items-center px-2 text-sm font-medium text-[#333] hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex"
+              >
+                Log ind
+              </Link>
+            )}
+
+            {/* .btn sætter display: wrapperen styrer, hvornår knappen vises. */}
+            <div className="hidden shrink-0 lg:block">
+              <Link href="/opret-auktion" className="btn btn-primaer">
+                Sælg en vare
+              </Link>
+            </div>
+
+            {loggetInd && (
+              <div className="hidden lg:block">
+                <KontoMenu erAdmin={erAdmin} />
+              </div>
+            )}
+
+            <div className="lg:hidden">
+              <MobilMenu loggetInd={loggetInd} erAdmin={erAdmin} />
+            </div>
           </div>
         </div>
-      </div>
-    </header>
+
+        {/* Kategorilinje – kun store skærme; på mobil ligger den i menuen. */}
+        <nav aria-label="Kategorier og genveje" className="hidden border-t border-kant lg:block">
+          <div className="mx-auto flex max-w-[1280px] items-center gap-7 px-8 text-sm">
+            <KategoriMenu />
+            {UDFORSK.slice(1).map((l) => (
+              <Link key={l.href} href={l.href} className={linjeLink}>
+                {l.tekst}
+              </Link>
+            ))}
+            {KATEGORIER_I_LINJEN.map((k, i) => (
+              <Link key={k} href={kategoriHref(k)} className={`${linjeLink} ${i > 1 ? "hidden xl:flex" : ""}`}>
+                {k}
+              </Link>
+            ))}
+            <div className="ml-auto flex items-center gap-7">
+              <Link href="/bidhamr-beskyttelse" className="flex min-h-11 items-center gap-1.5 rounded-lg font-medium text-groen-mork hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
+                <Ikon navn="skjold" className="h-[18px] w-[18px]" />
+                BidHamr Beskyttelse
+              </Link>
+              <Link href="/saadan-virker-det" className={linjeLink}>
+                Sådan virker det
+              </Link>
+            </div>
+          </div>
+        </nav>
+      </header>
+    </UlaesteBeskederProvider>
   );
 }

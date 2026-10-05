@@ -323,7 +323,7 @@ export default async function ProfilPage({
                   <div className="flex items-start justify-between gap-3">
                     <Link
                       href={`/profil/${rating.fra_bruger_id}`}
-                      className="text-sm font-medium text-neutral-900 hover:text-brand hover:underline"
+                      className="text-sm font-medium text-neutral-900 hover:text-groen hover:underline"
                     >
                       {rating.fra_bruger_navn}
                     </Link>
@@ -340,7 +340,7 @@ export default async function ProfilPage({
                         viewBox="0 0 24 24"
                         className={`h-4 w-4 ${
                           i <= rating.stjerner
-                            ? "fill-brand text-brand"
+                            ? "fill-groen text-groen"
                             : "fill-neutral-200 text-neutral-200"
                         }`}
                       >

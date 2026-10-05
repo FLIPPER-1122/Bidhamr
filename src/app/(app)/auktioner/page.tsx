@@ -36,7 +36,7 @@ export default async function AuktionerPage({
 
   return (
     <main className="flex flex-1 flex-col bg-white px-4 py-6 sm:px-8">
-      <h1 className="flex items-center gap-3 border-l-4 border-brand pl-3 text-2xl font-bold text-neutral-900 sm:text-3xl">
+      <h1 className="flex items-center gap-3 border-l-4 border-groen pl-3 text-2xl font-bold text-neutral-900 sm:text-3xl">
         {søgetekst
           ? `Søgeresultater for "${søgetekst}": ${visteAuktioner.length}`
           : `Alle auktioner lige nu: ${visteAuktioner.length}`}

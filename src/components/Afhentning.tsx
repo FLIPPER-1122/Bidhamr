@@ -135,7 +135,7 @@ export function IndtastAfhentningskode({ tradeId }: { tradeId: string }) {
           onChange={(e) => setKode(e.target.value.replace(/[^0-9 ]/g, ""))}
           placeholder="6 cifre"
           aria-describedby={fejl ? `afhentningskode-fejl-${tradeId}` : undefined}
-          className="mt-1.5 w-full max-w-xs rounded-lg border border-neutral-200 px-3 py-2.5 font-mono text-lg tracking-[0.2em] outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full max-w-xs rounded-lg border border-neutral-200 px-3 py-2.5 font-mono text-lg tracking-[0.2em] outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
       </div>
       <button
@@ -146,7 +146,7 @@ export function IndtastAfhentningskode({ tradeId }: { tradeId: string }) {
         {pending ? "Tjekker…" : "Bekræft afhentning"}
       </button>
       {fejl && (
-        <p id={`afhentningskode-fejl-${tradeId}`} role="alert" className="text-sm text-red-600">
+        <p id={`afhentningskode-fejl-${tradeId}`} role="alert" className="text-sm text-fejl-tekst">
           {fejl}
         </p>
       )}

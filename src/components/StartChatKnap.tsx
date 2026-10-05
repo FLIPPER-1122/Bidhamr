@@ -97,7 +97,7 @@ export default function StartChatKnap({
       <p className="mt-3 text-sm text-neutral-600">
         Handlen er ikke oprettet endnu. Prøv at genindlæse siden om lidt — eller
         find den under{" "}
-        <Link href="/mine-handler" className="font-medium text-brand underline">
+        <Link href="/mine-handler" className="font-medium text-groen underline">
           Mine handler
         </Link>
         .

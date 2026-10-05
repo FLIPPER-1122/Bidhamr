@@ -154,7 +154,7 @@ export default function StaffChatAdmin({
               placeholder="Skriv en besked…"
               aria-invalid={fejl ? true : undefined}
               aria-describedby={fejl ? fejlId : undefined}
-              className="min-h-11 w-full min-w-0 flex-1 resize-y rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+              className="min-h-11 w-full min-w-0 flex-1 resize-y rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
             />
             <button
               type="submit"

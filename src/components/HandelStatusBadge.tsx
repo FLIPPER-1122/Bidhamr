@@ -32,7 +32,7 @@ const STIL: Record<string, string> = {
   // Reserveret; se kommentaren ved HANDEL_STATUS.
   afsluttet: "bg-neutral-100 text-neutral-600",
   // Sat af admin via Sager (koeber refunderet). Ikke en del af tidslinjen.
-  annulleret: "bg-red-100 text-red-700",
+  annulleret: "bg-fejl-bg text-fejl-tekst",
 };
 
 export function statusLabel(status: string) {

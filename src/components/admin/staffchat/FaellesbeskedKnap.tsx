@@ -147,7 +147,7 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
                   rows={5}
                   maxLength={FAELLESBESKED_MAKS_TEKST}
                   aria-describedby={`${id}-taeller`}
-                  className="mt-1.5 w-full whitespace-normal rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                  className="mt-1.5 w-full whitespace-normal rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
                 />
                 <p id={`${id}-taeller`} className="mt-1 text-right text-xs text-neutral-500">
                   {tekst.length} / {FAELLESBESKED_MAKS_TEKST} tegn

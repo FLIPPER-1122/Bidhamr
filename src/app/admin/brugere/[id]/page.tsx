@@ -258,7 +258,7 @@ export default async function AdminBrugerDetalje({
             href={`?fane=${f.id}`}
             className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
               fane === f.id
-                ? "border-brand font-semibold text-brand"
+                ? "border-groen font-semibold text-groen"
                 : "border-transparent text-neutral-500 hover:text-neutral-800"
             }`}
           >

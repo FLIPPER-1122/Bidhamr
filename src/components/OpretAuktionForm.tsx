@@ -253,7 +253,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
           className={`mt-2 flex min-h-40 cursor-pointer flex-col items-center justify-center border-2 border-dashed px-4 py-8 text-center ${
-            dragOver ? "border-brand bg-red-50" : "border-neutral-300"
+            dragOver ? "border-groen bg-groen-lys" : "border-neutral-300"
           }`}
         >
           <svg
@@ -322,7 +322,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           maxLength={MAKS_TITEL}
           value={titel}
           onChange={(e) => setTitel(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
       </div>
 
@@ -335,7 +335,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           id="kategori"
           value={kategori}
           onChange={(e) => setKategori(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         >
           {kategorier.map((k) => (
             <option key={k} value={k}>
@@ -356,7 +356,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           maxLength={MAKS_BESKRIVELSE}
           value={beskrivelse}
           onChange={(e) => setBeskrivelse(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
         <p className="mt-1 text-right text-xs text-neutral-400">
           {beskrivelse.length}/{MAKS_BESKRIVELSE}
@@ -379,7 +379,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           value={Number.isNaN(startpris) ? "" : startpris}
           onChange={(e) => setStartpris(e.target.value === "" ? NaN : Number(e.target.value))}
           aria-describedby="startpris-hjaelp"
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
         <p id="startpris-hjaelp" className="mt-1.5 text-xs text-neutral-500">
           {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
@@ -399,7 +399,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
               onClick={() => setVarighed(v.dage)}
               className={`rounded-lg border px-4 py-2 text-sm font-medium ${
                 varighed === v.dage
-                  ? "border-brand bg-orange-knap text-white"
+                  ? "border-orange-knap bg-orange-knap text-white"
                   : "border-neutral-300 text-neutral-700"
               }`}
             >
@@ -424,7 +424,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           aria-checked={forsendelseMulig}
           onClick={() => setForsendelseMulig(!forsendelseMulig)}
           className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-            forsendelseMulig ? "bg-brand" : "bg-neutral-300"
+            forsendelseMulig ? "bg-groen" : "bg-neutral-300"
           }`}
         >
           <span
@@ -449,7 +449,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           value={postnummer}
           onChange={(e) => setPostnummer(e.target.value.replace(/\D/g, "").slice(0, 4))}
           placeholder="f.eks. 8000"
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
 
         {byStatus === "henter" && (
@@ -459,14 +459,14 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           <p className="mt-1.5 text-sm text-neutral-700">📍 {by}</p>
         )}
         {byStatus === "ikke-fundet" && (
-          <p className="mt-1.5 text-sm text-red-600">
+          <p className="mt-1.5 text-sm text-fejl-tekst">
             Postnummeret kunne ikke findes.
           </p>
         )}
       </div>
 
       {error && (
-        <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
           {error}
         </div>
       )}

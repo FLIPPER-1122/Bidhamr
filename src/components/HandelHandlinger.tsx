@@ -130,7 +130,7 @@ export function SendPakkeForm({
           placeholder="Fx 00570012345678"
           maxLength={100}
           disabled={sender}
-          className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
       </div>
       {fejl && (
@@ -185,7 +185,7 @@ export function MarkerModtagetKnap({ tradeId }: { tradeId: string }) {
       >
         {pending ? "Gemmer…" : "Jeg har modtaget pakken"}
       </button>
-      {fejl && <p className="mt-2 text-sm text-red-600">{fejl}</p>}
+      {fejl && <p className="mt-2 text-sm text-fejl-tekst">{fejl}</p>}
     </div>
   );
 }
