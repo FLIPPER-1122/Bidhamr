@@ -21,6 +21,7 @@ import {
   notificerBud,
 } from "@/lib/notifikationer/bud";
 import { betalingsfristForlaengetMail } from "@/lib/mails/handel";
+import { notificerAfhentningsfristForlaengelser } from "@/lib/betaling/afhentningsfrist";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -590,6 +591,7 @@ export async function koerNotifikationsCron() {
     nyAuktion: 0,
     beskeder: 0,
     fristForlaengelser: 0,
+    afhentningsfristForlaengelser: 0,
   };
   let start: Date | null = null;
   try {
@@ -612,6 +614,8 @@ export async function koerNotifikationsCron() {
   trin.push(["slutterSnart", () => slutterSnart(admin)]);
   // Tabellen er ny (5. oktober 2026), så der er ingen gamle hændelser.
   trin.push(["fristForlaengelser", () => notificerFristForlaengelser()]);
+  // Ny afhentningsfrist fra sælgeren (tabellen er ny, 5. oktober 2026).
+  trin.push(["afhentningsfristForlaengelser", () => notificerAfhentningsfristForlaengelser()]);
   if (start) {
     const s = start;
     trin.push(

@@ -26,6 +26,9 @@ import { hentMinKvittering } from "@/lib/betaling/kvittering";
 import { KvitteringBoks } from "@/components/Kvittering";
 import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
 import { hentAfsendelsesfristAnnullering } from "@/lib/betaling/afsendelsesfrist";
+import { hentAfhentningsfristAnnullering } from "@/lib/betaling/afhentningsfrist";
+import { afhentningsfristTekst } from "@/lib/afhentningsfrist";
+import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
 
 // En sag kan tidligst oprettes, når pakken er sendt, og vises også efter
 // afgørelsen (handlen kan da være leveret eller annulleret).
@@ -156,7 +159,7 @@ export default async function HandelDetaljePage({
   // dage efter betalingen, ellers annulleres handlen, og køberen refunderes
   // fuldt. betalt_kl kan læses af køber og sælger (kolonne-grant).
   const venterPaaAfsendelse = !afhentning && handel.status === "betaling_modtaget";
-  const [{ data: betaltRaekke }, afsendelsesAnnullering] = await Promise.all([
+  const [{ data: betaltRaekke }, afsendelsesAnnullering, afhentningsAnnullering] = await Promise.all([
     venterPaaAfsendelse
       ? supabase
           .from("betalinger")
@@ -165,6 +168,9 @@ export default async function HandelDetaljePage({
           .maybeSingle<{ betalt_kl: string | null }>()
       : Promise.resolve({ data: null }),
     annulleret ? hentAfsendelsesfristAnnullering(handel.id, user.id) : Promise.resolve(null),
+    annulleret && afhentning
+      ? hentAfhentningsfristAnnullering(handel.id, user.id)
+      : Promise.resolve(null),
   ]);
   const afsendSenest = venterPaaAfsendelse ? sendSenest(betaltRaekke?.betalt_kl) : null;
 
@@ -379,6 +385,9 @@ export default async function HandelDetaljePage({
               Aftal tid og sted for afhentningen med sælgeren i chatten herunder. Når du henter
               varen, viser du sælgeren din afhentningskode.
             </p>
+            {afhentningInfo?.frist && (
+              <AfhentningsfristLinje frist={afhentningInfo.frist} udloebet={afhentningInfo.fristUdloebet} koeber />
+            )}
             <p className="mt-2 mb-4 text-sm text-neutral-500">
               Tjek varen, før du viser koden. Når sælgeren har indtastet koden, frigives pengene til
               sælgeren med det samme, og du kan ikke klage over handlen bagefter.
@@ -401,6 +410,17 @@ export default async function HandelDetaljePage({
               varen, viser han dig en kode på 6 cifre. Indtast koden her – så frigives pengene til
               dig med det samme. Giv ikke varen fra dig, før du har indtastet den rigtige kode.
             </p>
+            {afhentningInfo?.frist && (
+              <AfhentningsfristLinje frist={afhentningInfo.frist} udloebet={afhentningInfo.fristUdloebet} />
+            )}
+            {afhentningInfo?.kanForlaenges && afhentningInfo.frist && afhentningInfo.maksFrist && (
+              <ForlaengAfhentningsfrist
+                key={afhentningInfo.frist}
+                tradeId={handel.id}
+                frist={afhentningInfo.frist}
+                maksFrist={afhentningInfo.maksFrist}
+              />
+            )}
             {afhentningInfo && !afhentningInfo.vist && (
               <p className="mt-3 rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
                 Køberen har ikke hentet sin kode frem endnu.
@@ -458,6 +478,30 @@ export default async function HandelDetaljePage({
                 <p className="mt-1">
                   Har du allerede sendt den, så skriv straks til support@bidhamr.dk med
                   sporingsnummeret.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
+        {afhentningsAnnullering && (
+          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+            <p className="font-semibold">Handlen er annulleret</p>
+            {erKoeber ? (
+              <>
+                <p className="mt-1">Varen blev ikke hentet, og du får alle pengene tilbage.</p>
+                <p className="mt-1">
+                  {afhentningsAnnullering.refunderet
+                    ? "Pengene er sendt tilbage til den betalingsmetode, du betalte med. Der kan gå nogle dage, før de står på din konto."
+                    : "Tilbagebetalingen er sat i gang. Der kan gå nogle dage, før pengene står på din konto."}{" "}
+                  Betalingen håndteres af vores betalingspartner Stripe.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-1">Handlen er annulleret, fordi varen ikke blev hentet. Du beholder varen.</p>
+                <p className="mt-1">
+                  Har køberen alligevel hentet varen, så skriv straks til support@bidhamr.dk.
                 </p>
               </>
             )}
@@ -559,5 +603,31 @@ export default async function HandelDetaljePage({
         />
       </div>
     </main>
+  );
+}
+
+// Afhentningsfristen på handelssiden (køber og sælger).
+function AfhentningsfristLinje({
+  frist,
+  udloebet,
+  koeber = false,
+}: {
+  frist: string;
+  udloebet: boolean;
+  koeber?: boolean;
+}) {
+  if (udloebet) {
+    return (
+      <p className="mt-3 rounded-lg border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+        Fristen for at hente varen udløb {afhentningsfristTekst(frist)}. BidHamr kigger på handlen.
+      </p>
+    );
+  }
+  return (
+    <p className="mt-3 rounded-lg border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+      {koeber ? "Hent varen senest" : "Køberen skal hente varen senest"}{" "}
+      <span className="font-semibold">{afhentningsfristTekst(frist)}</span>{" "}
+      (<Nedtaelling til={frist} />).
+    </p>
   );
 }

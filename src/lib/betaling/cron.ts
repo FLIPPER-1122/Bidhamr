@@ -20,8 +20,13 @@
 //       refunderes fuldt via Stripe (kun forsendelse, ikke afhentning).
 //   7. Andenchance-tilbud: udløb efter 24 t, mails til sælger/byder.
 //   8. Betalte handler, der ikke er afsluttet efter 14 dage: markeres til admin.
-//   8b. Afhentningshandler, der ikke er hentet 7 dage efter betalingen:
-//       markeres til staff. Ingen automatisk frigivelse ved afhentning.
+//   8b. Afhentningshandler, der ikke er hentet inden afhentningsfristen
+//       (7 dage efter betalingen, evt. forlænget af sælgeren): markeres til
+//       staff. Ingen automatisk frigivelse ved afhentning.
+//   8c. Afhentningsfrist: påmindelse til køber og sælger 2 døgn før fristen
+//       (dag 5). Er varen ikke hentet, og har staff ikke afgjort handlen 14
+//       dage efter betalingen (og mindst 7 dage efter fristen), annulleres
+//       handlen, og køberen får alle pengene tilbage via Stripe.
 //   Trin 4 sender også påmindelser til sælgere uden udbetalingskonto
 //   (straks, efter 3 og 7 dage) og markerer til admin efter 7 dage.
 //
@@ -41,6 +46,7 @@ import {
 } from "@/lib/sagerServer";
 import { frigivAutomatisk, paamindKoeberOmModtagelse } from "@/lib/betaling/autoFrigiv";
 import { annullerIkkeSendte, paamindSaelgerOmAfsendelse } from "@/lib/betaling/afsendelsesfrist";
+import { annullerIkkeHentede, paamindOmAfhentning } from "@/lib/betaling/afhentningsfrist";
 import {
   betalingsPaamindelseMail,
   koeberAndenchanceAutobetaltMail,
@@ -124,6 +130,9 @@ export async function koerBetalingsCron() {
     andenchanceMails: 0,
     ikkeAfsluttet: 0,
     ikkeAfhentet: 0,
+    afhentningsPaamindelser: 0,
+    ikkeHentetAnnulleret: 0,
+    ikkeHentetRefunderet: 0,
   };
 
   // 1) Luk auktioner og opret handel + betaling.
@@ -321,12 +330,22 @@ export async function koerBetalingsCron() {
   if (haengFejl) await trinFejl("betaling_marker_ikke_afsluttet", haengFejl);
   resultat.ikkeAfsluttet = Number(haengende ?? 0);
 
-  // 8b) Afhentning ikke gennemført 7 dage efter betalingen: til staff.
+  // 8b) Afhentning ikke gennemført inden fristen: til staff.
   const { data: ikkeHentet, error: hentFejl } = await admin.rpc(
     "afhentning_marker_ikke_hentet",
   );
   if (hentFejl) await trinFejl("afhentning_marker_ikke_hentet", hentFejl);
   resultat.ikkeAfhentet = Number(ikkeHentet ?? 0);
+
+  // 8c) Afhentningsfrist: påmindelser (dag 5), så automatisk tilbagebetaling
+  //     af handler, der ikke er hentet, og som staff ikke har afgjort.
+  //     Kaster aldrig.
+  resultat.afhentningsPaamindelser = await paamindOmAfhentning();
+  {
+    const r = await annullerIkkeHentede();
+    resultat.ikkeHentetAnnulleret = r.annulleret;
+    resultat.ikkeHentetRefunderet = r.refunderet;
+  }
 
   // 7) Andenchance-tilbud: udløb og mails.
   try {

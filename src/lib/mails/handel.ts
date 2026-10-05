@@ -532,3 +532,75 @@ export function saelgerAfsendelsesfristAnnulleretMail(titel: string, tradeId: st
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
   });
 }
+
+// --- Afhentningsfrist (7 dage efter betalingen) ------------------------------
+
+// Påmindelse 2 døgn før afhentningsfristen (dag 5) til køber og sælger.
+// fristTekst er allerede formateret (fx "mandag 6. oktober kl. 14.30").
+export function afhentningPaamindelseMail(
+  rolle: "koeber" | "saelger",
+  titel: string,
+  tradeId: string,
+  fristTekst: string,
+) {
+  const koeber = rolle === "koeber";
+  return handelsMail(`Husk afhentningen: ${titel}`, {
+    preheader: `Varen skal hentes senest ${fristTekst}.`,
+    overskriftHtml: koeber ? "Husk at hente varen" : "Varen er ikke hentet endnu",
+    afsnitHtml: koeber
+      ? [
+          `Du har betalt for <strong>${escapeHtml(titel)}</strong>, men varen er ikke hentet endnu.`,
+          `Hent varen senest <strong>${escapeHtml(fristTekst)}</strong>. Aftal tid og sted med sælgeren i chatten på handelssiden, og vis din afhentningskode, når du står med varen.`,
+          "Kan du ikke nå det, så skriv til sælgeren i chatten. Sælgeren kan give dig mere tid.",
+        ]
+      : [
+          `Køberen har betalt for <strong>${escapeHtml(titel)}</strong>, men varen er ikke hentet endnu.`,
+          `Varen skal hentes senest <strong>${escapeHtml(fristTekst)}</strong>. Aftal tid og sted med køberen i chatten på handelssiden, og tast køberens kode ind, når varen er hentet.`,
+          "Har I aftalt en senere dag, kan du forlænge fristen på handelssiden.",
+        ],
+    info: [vare(titel), { noegle: "Hentes senest", vaerdiHtml: escapeHtml(fristTekst) }],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// Sælgeren har forlænget afhentningsfristen (afhentning_forlaeng_frist).
+export function afhentningsfristForlaengetMail(titel: string, tradeId: string, fristTekst: string) {
+  return handelsMail(`Ny afhentningsfrist: ${titel}`, {
+    preheader: `Sælgeren har givet dig mere tid. Hent varen senest ${fristTekst}.`,
+    overskriftHtml: "Du har fået mere tid til at hente varen",
+    afsnitHtml: [
+      `Sælgeren har forlænget fristen for at hente <strong>${escapeHtml(titel)}</strong>.`,
+      `Hent varen senest <strong>${escapeHtml(fristTekst)}</strong>, og vis din afhentningskode, når du står med varen.`,
+    ],
+    info: [vare(titel), { noegle: "Ny frist", vaerdiHtml: escapeHtml(fristTekst) }],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// Køberen: varen blev ikke hentet, og handlen blev ikke afgjort af BidHamr.
+// Alle pengene sendes tilbage via Stripe.
+export function koeberAfhentningAnnulleretMail(titel: string, totalOere: number, tradeId: string) {
+  return handelsMail(`Handlen er annulleret: ${titel}`, {
+    preheader: "Varen blev ikke hentet, og du får alle pengene tilbage.",
+    overskriftHtml: "Du får alle pengene tilbage",
+    afsnitHtml: [
+      `Handlen om <strong>${escapeHtml(titel)}</strong> er annulleret. Varen blev ikke hentet, og du får alle pengene tilbage.`,
+      "Pengene sendes tilbage til den betalingsmetode, du betalte med. Der kan gå nogle dage, før de står på din konto. Betalingen håndteres af vores betalingspartner Stripe.",
+    ],
+    info: [vare(titel), beloeb("Du får tilbage", totalOere, true)],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// Sælgeren: handlen er annulleret, fordi varen ikke blev hentet.
+export function saelgerAfhentningAnnulleretMail(titel: string, tradeId: string) {
+  return handelsMail(`Handlen er annulleret: ${titel}`, {
+    preheader: "Varen blev ikke hentet. Du beholder varen.",
+    overskriftHtml: "Handlen er annulleret",
+    afsnitHtml: [
+      `Handlen om <strong>${escapeHtml(titel)}</strong> er annulleret, fordi varen ikke blev hentet. Du beholder varen.`,
+      "Køberen får sine penge tilbage. Har køberen alligevel hentet varen, så skriv straks til support@bidhamr.dk.",
+    ],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
