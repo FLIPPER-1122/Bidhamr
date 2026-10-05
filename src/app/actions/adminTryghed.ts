@@ -33,14 +33,25 @@ function tekst(formData: FormData, navn: string): string {
 // --- Tal til menuen ----------------------------------------------------------
 
 export async function hentAntalTryghed(): Promise<
-  { ok: true; kontakt: number; rapporter: number } | { fejl: string }
+  { ok: true; kontakt: number; rapporter: number; bedoemmelser: number } | { fejl: string }
 > {
   return koer("hentAntalTryghed", async () => {
-    if (!(await getStaffRole())) return { ok: true as const, kontakt: 0, rapporter: 0 };
+    if (!(await getStaffRole())) return { ok: true as const, kontakt: 0, rapporter: 0, bedoemmelser: 0 };
     const { admin } = await assertRole("medarbejder");
-    const [kontakt, brugerRapporter, opslag] = await Promise.all([
+    // Rapporter af bedømmelser (rating_id sat) tælles under Bedømmelser, ikke
+    // under Rapporter (20261007020000_bedoemmelse_svar.sql).
+    const [kontakt, brugerRapporter, bedoemmelser, opslag] = await Promise.all([
       admin.from("kontakt_henvendelser").select("id", { count: "exact", head: true }).eq("status", "ny"),
-      admin.from("bruger_rapporter").select("id", { count: "exact", head: true }).eq("status", "ny"),
+      admin
+        .from("bruger_rapporter")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "ny")
+        .is("rating_id", null),
+      admin
+        .from("bruger_rapporter")
+        .select("rating_id", { count: "exact", head: true })
+        .eq("status", "ny")
+        .not("rating_id", "is", null),
       admin.from("reports").select("id", { count: "exact", head: true }).eq("status", "pending"),
     ]);
     // Mangler tabellerne (migrationen er ikke kørt endnu), vises bare 0.
@@ -50,6 +61,7 @@ export async function hentAntalTryghed(): Promise<
       rapporter:
         (brugerRapporter.error ? 0 : (brugerRapporter.count ?? 0)) +
         (opslag.error ? 0 : (opslag.count ?? 0)),
+      bedoemmelser: bedoemmelser.error ? 0 : (bedoemmelser.count ?? 0),
     };
   });
 }

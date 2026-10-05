@@ -28,6 +28,11 @@ import {
   svarInput,
   type SpoergsmaalRaekke,
 } from "@/lib/notifikationer/spoergsmaal";
+import {
+  koeberForSvar,
+  svarInput as bedoemmelseSvarInput,
+  type SvarRaekke,
+} from "@/lib/notifikationer/bedoemmelse";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -393,6 +398,33 @@ async function spoergsmaal(admin: Admin, start: Date): Promise<number> {
   return sendNye(admin, opgaver);
 }
 
+// Sælgerens svar på en bedømmelse (kan komme direkte fra appen via RPC) ->
+// køberen, der skrev bedømmelsen. Samme nøgle som server action'en.
+async function bedoemmelseSvar(admin: Admin, start: Date): Promise<number> {
+  const { data, error } = await admin
+    .from("bedoemmelse_svar")
+    .select("id, rating_id, saelger_id, tekst, skjult, slettet_kl")
+    .eq("skjult", false)
+    .is("slettet_kl", null)
+    .gte("oprettet", fraTid(start, 24))
+    .order("oprettet", { ascending: false })
+    .limit(MAKS);
+  // 42P01: migrationen er ikke kørt endnu.
+  if (error) {
+    if (error.code !== "42P01") {
+      console.error("Notifikationer: svar på bedømmelser kunne ikke hentes:", error.message);
+    }
+    return 0;
+  }
+  const opgaver: Opgave[] = [];
+  for (const s of (data ?? []) as SvarRaekke[]) {
+    const koeber = await koeberForSvar(admin, s);
+    if (!koeber) continue;
+    opgaver.push({ brugerId: koeber, type: "bedoemmelse", input: bedoemmelseSvarInput(s) });
+  }
+  return sendNye(admin, opgaver);
+}
+
 async function slutterSnart(admin: Admin): Promise<number> {
   const nu = Date.now();
   const { data: auktioner } = await admin
@@ -731,6 +763,7 @@ export async function koerNotifikationsCron() {
     bud: 0,
     likes: 0,
     spoergsmaal: 0,
+    bedoemmelseSvar: 0,
     slutterSnart: 0,
     nyAuktion: 0,
     gemteSoegninger: 0,
@@ -754,6 +787,7 @@ export async function koerNotifikationsCron() {
       ["bud", () => bud(admin, s)],
       ["likes", () => likes(admin, s)],
       ["spoergsmaal", () => spoergsmaal(admin, s)],
+      ["bedoemmelseSvar", () => bedoemmelseSvar(admin, s)],
     );
   }
   // "Slutter snart" handler om nu og fremad og kræver ikke start_kl.

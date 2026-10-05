@@ -402,69 +402,7 @@ async function unhideAuctionImpl(formData: FormData): Promise<void> {
   revalidatePath("/admin/auktioner");
 }
 
-// --- Bedømmelser -----------------------------------------------------------
-
-async function deleteRatingImpl(formData: FormData): Promise<void> {
-  const ratingId = formData.get("ratingId") as string;
-  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
-  const { admin, userId: staffId } = await assertRole("admin");
-
-  if (!aarsag) throw new BrugerFejl("Angiv en årsag for sletningen.");
-
-  const { data: rating } = await admin
-    .from("ratings")
-    .select("fra_bruger_id, til_bruger_id")
-    .eq("id", ratingId)
-    .single();
-  if (!rating) throw new BrugerFejl("Anmeldelsen findes ikke.");
-
-  await logModeration(admin, {
-    medarbejder_id: staffId,
-    handling: "slet_anmeldelse",
-    maal_type: "anmeldelse",
-    maal_id: ratingId,
-    bruger_id: rating.fra_bruger_id,
-    aarsag,
-  });
-
-  // Handelsdata slettes aldrig: "slet" arkiverer ved at skjule bedoemmelsen.
-  // Skjulte bedoemmelser er filtreret fra i visning og gennemsnit.
-  const { error } = await admin
-    .from("ratings")
-    .update({ skjult: true })
-    .eq("id", ratingId);
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/admin/bedommelser");
-  revalidatePath(`/admin/brugere/${rating.fra_bruger_id}`);
-}
-
-async function hideRatingImpl(formData: FormData): Promise<void> {
-  const ratingId = formData.get("ratingId") as string;
-  const { admin } = await assertRole("admin");
-
-  const { error } = await admin
-    .from("ratings")
-    .update({ skjult: true })
-    .eq("id", ratingId);
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/admin/bedommelser");
-}
-
-async function unhideRatingImpl(formData: FormData): Promise<void> {
-  const ratingId = formData.get("ratingId") as string;
-  const { admin } = await assertRole("admin");
-
-  const { error } = await admin
-    .from("ratings")
-    .update({ skjult: false })
-    .eq("id", ratingId);
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/admin/bedommelser");
-}
-
+// Bedømmelser modereres i src/app/actions/adminBedoemmelser.ts.
 
 // --- Rapporter -------------------------------------------------------------
 // Tre udfald af en rapport. Kun "markér som behandlet" rører ikke auktionen og
@@ -1028,18 +966,6 @@ export async function hideAuction(formData: FormData) {
 
 export async function unhideAuction(formData: FormData) {
   return koer("unhideAuction", () => unhideAuctionImpl(formData));
-}
-
-export async function deleteRating(formData: FormData) {
-  return koer("deleteRating", () => deleteRatingImpl(formData));
-}
-
-export async function hideRating(formData: FormData) {
-  return koer("hideRating", () => hideRatingImpl(formData));
-}
-
-export async function unhideRating(formData: FormData) {
-  return koer("unhideRating", () => unhideRatingImpl(formData));
 }
 
 export async function rapportMarkerBehandlet(formData: FormData) {

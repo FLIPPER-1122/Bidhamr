@@ -22,6 +22,7 @@ type AdminTaellere = {
   kontolukninger: number;
   kontakt: number;
   rapporter: number;
+  bedoemmelser: number;
 };
 
 type MenuPunkt = {
@@ -72,7 +73,7 @@ const GRUPPER: MenuGruppe[] = [
       { href: "/admin/kontolukninger", label: "Kontolukninger", minRolle: "admin", badge: "kontolukninger" },
       { href: "/admin/brugere", label: "Brugere", minRolle: "medarbejder" },
       { href: "/admin/auktioner", label: "Auktioner", minRolle: "admin" },
-      { href: "/admin/bedommelser", label: "Bedømmelser", minRolle: "admin" },
+      { href: "/admin/bedommelser", label: "Bedømmelser", minRolle: "medarbejder", badge: "bedoemmelser" },
     ],
   },
   {
@@ -217,7 +218,7 @@ function lytFold(l: () => void) {
 
 export default function AdminSidebar({
   rolle,
-  taellere = { ubetalte: 0, betalinger: 0, chats: 0, sager: 0, kontolukninger: 0, kontakt: 0, rapporter: 0 },
+  taellere = { ubetalte: 0, betalinger: 0, chats: 0, sager: 0, kontolukninger: 0, kontakt: 0, rapporter: 0, bedoemmelser: 0 },
 }: {
   rolle: StaffRole;
   taellere?: AdminTaellere;
