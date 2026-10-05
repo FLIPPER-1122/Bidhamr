@@ -243,7 +243,7 @@ export default function AuctionBrowser({
           <select
             value={kategori}
             onChange={(e) => onKategoriChange(e.target.value)}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
           >
             <option value="">Alle kategorier</option>
             {kategorier.map((k) => (
@@ -256,7 +256,7 @@ export default function AuctionBrowser({
           <select
             value={sortering}
             onChange={(e) => setSortering(e.target.value as Sortering)}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
           >
             <option value="slutter_snart">Slutter snart</option>
             <option value="laveste_bud">Laveste bud</option>
@@ -274,7 +274,7 @@ export default function AuctionBrowser({
               onChange={(e) =>
                 setPostnummer(e.target.value.replace(/\D/g, "").slice(0, 4))
               }
-              className="w-32 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+              className="w-32 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
             />
             {postStatus === "henter" && (
               <p className="mt-1 text-xs text-neutral-500">Henter by…</p>
@@ -283,7 +283,7 @@ export default function AuctionBrowser({
               <p className="mt-1 text-xs text-neutral-700">📍 {postBy}</p>
             )}
             {postStatus === "ikke-fundet" && (
-              <p className="mt-1 text-xs text-red-600">
+              <p className="mt-1 text-xs text-fejl-tekst">
                 Postnummeret kunne ikke findes.
               </p>
             )}
@@ -305,7 +305,7 @@ export default function AuctionBrowser({
               step={RADIUS_STEP}
               value={radiusKm}
               onChange={(e) => setRadiusKm(Number(e.target.value))}
-              className="accent-brand flex-1"
+              className="accent-groen flex-1"
             />
             <button
               type="button"
@@ -313,7 +313,7 @@ export default function AuctionBrowser({
               className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${
                 erHeleDanmark
                   ? "bg-orange-knap text-white"
-                  : "border border-neutral-300 text-neutral-600 hover:border-brand hover:text-brand"
+                  : "border border-neutral-300 text-neutral-600 hover:border-groen hover:text-groen"
               }`}
             >
               Hele Danmark
@@ -328,7 +328,7 @@ export default function AuctionBrowser({
           : `${auktioner.length} auktion${auktioner.length === 1 ? "" : "er"} fundet`}
       </p>
 
-      {fejl && <p className="mt-1 text-sm text-red-600">{fejl}</p>}
+      {fejl && <p className="mt-1 text-sm text-fejl-tekst">{fejl}</p>}
 
       {!loading && auktioner.length === 0 ? (
         <p className="mt-10 text-center text-sm text-neutral-500">

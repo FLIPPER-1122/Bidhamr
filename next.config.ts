@@ -30,8 +30,25 @@ const sikkerhedsHeadere = [
   },
 ];
 
+// next/image maa kun optimere offentlige billeder fra vores egne Supabase-
+// projekter (auktionsbilleder og avatarer). Alt andet afvises med 400.
+const supabaseBilleder = ["lkifkrexeldimmghnsie", "pjiigmzqwlfepxnjdvug"].map(
+  (ref) =>
+    ({
+      protocol: "https",
+      hostname: `${ref}.supabase.co`,
+      port: "",
+      pathname: "/storage/v1/object/public/**",
+      search: "",
+    }) as const,
+);
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  images: {
+    remotePatterns: supabaseBilleder,
+    formats: ["image/avif", "image/webp"],
+  },
   async headers() {
     return [{ source: "/(.*)", headers: sikkerhedsHeadere }];
   },

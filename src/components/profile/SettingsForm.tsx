@@ -88,7 +88,7 @@ export default function SettingsForm({
           required
           value={navn}
           onChange={(e) => setNavn(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
       </div>
 
@@ -101,12 +101,12 @@ export default function SettingsForm({
           type="tel"
           value={telefon}
           onChange={(e) => setTelefon(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
       </div>
 
       {error && (
-        <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
           {error}
         </div>
       )}

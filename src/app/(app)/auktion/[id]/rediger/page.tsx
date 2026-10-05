@@ -28,7 +28,7 @@ export default async function RedigerAuktionPage({
   return (
     <main className="flex flex-1 justify-center bg-white px-4 py-10">
       <div className="w-full max-w-md">
-        <Link href={`/auktion/${id}`} className="text-sm text-neutral-500 hover:text-brand">
+        <Link href={`/auktion/${id}`} className="text-sm text-neutral-500 hover:text-groen">
           ← Tilbage til auktionen
         </Link>
         <h1 className="mt-3 text-2xl font-semibold text-neutral-900">Redigér auktion</h1>

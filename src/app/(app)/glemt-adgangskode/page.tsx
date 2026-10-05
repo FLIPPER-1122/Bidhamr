@@ -86,7 +86,7 @@ export default function GlemtAdgangskodePage() {
               />
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-fejl-tekst">{error}</p>}
 
             <button
               type="submit"
@@ -100,7 +100,7 @@ export default function GlemtAdgangskodePage() {
 
         <p className="mt-6 text-center text-sm text-neutral-500">
           Kom du i tanke om den?{" "}
-          <Link href="/login" className="font-medium text-brand">
+          <Link href="/login" className="font-medium text-groen">
             Log ind
           </Link>
         </p>

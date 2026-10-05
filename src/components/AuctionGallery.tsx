@@ -69,7 +69,7 @@ export default function AuctionGallery({
               key={url}
               onClick={() => setAktivIndex(index)}
               className={`aspect-square overflow-hidden border-2 ${
-                index === aktivIndex ? "border-brand" : "border-transparent"
+                index === aktivIndex ? "border-groen" : "border-transparent"
               }`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}

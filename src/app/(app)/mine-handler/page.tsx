@@ -95,7 +95,7 @@ function HandelKort({
         {/* Hele kortet er linket til handelssiden; dette er en synlig
             markering af, at chatten ligger derinde. Et <Link> her ville
             være et link inde i et link. */}
-        <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-brand">
+        <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-groen">
           <svg
             viewBox="0 0 24 24"
             className="h-3.5 w-3.5"

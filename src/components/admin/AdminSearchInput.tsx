@@ -33,7 +33,7 @@ export default function AdminSearchInput({
           else params.delete("q");
           router.push(pathname + (params.size ? `?${params}` : ""));
         }}
-        className="w-full rounded-lg border border-neutral-200 py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+        className="w-full rounded-lg border border-neutral-200 py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
       />
     </div>
   );

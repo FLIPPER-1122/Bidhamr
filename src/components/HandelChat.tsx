@@ -184,7 +184,7 @@ export default function HandelChat({
           onChange={(e) => setTekst(e.target.value)}
           placeholder="Skriv en besked..."
           maxLength={2000}
-          className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-groen focus:ring-1 focus:ring-groen"
         />
         <button
           type="submit"
@@ -195,7 +195,7 @@ export default function HandelChat({
         </button>
       </form>
 
-      {fejl && <p className="px-4 pb-4 text-sm text-red-600">{fejl}</p>}
+      {fejl && <p className="px-4 pb-4 text-sm text-fejl-tekst">{fejl}</p>}
     </div>
   );
 }

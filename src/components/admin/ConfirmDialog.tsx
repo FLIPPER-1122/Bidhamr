@@ -174,7 +174,7 @@ export default function ConfirmDialog({
                     id="varighed"
                     name="varighed"
                     required
-                    className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand bg-white"
+                    className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen bg-white"
                   >
                     <option value="1">1 dag</option>
                     <option value="7">7 dage</option>
@@ -213,7 +213,7 @@ export default function ConfirmDialog({
                     required={aarsagField.required}
                     rows={3}
                     placeholder={aarsagField.placeholder}
-                    className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                    className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
                   />
                 </div>
               )}
@@ -234,7 +234,7 @@ export default function ConfirmDialog({
                       rows={3}
                       placeholder={f.placeholder}
                       aria-describedby={f.hjaelp ? `${feltId}-hjaelp` : undefined}
-                      className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                      className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
                     />
                     {f.hjaelp && (
                       <p id={`${feltId}-hjaelp`} className="mt-1 text-xs text-neutral-500">

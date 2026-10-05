@@ -1,39 +1,30 @@
 "use client";
 
+// Profil-menuen i topbaren på store skærme (kun for indloggede).
+// På mobil ligger de samme links i MobilMenu.
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import Ikon from "@/components/Ikon";
 import { badgeTekst } from "@/lib/notifikationer/visning";
-import { useUlaesteBeskeder } from "@/components/staffchat/useUlaesteBeskeder";
-
-type Props = {
-  logget_ind: boolean;
-  erAdmin: boolean;
-  // Ulæste beskeder fra BidHamr (fra serveren ved første visning).
-  ulaesteBeskeder?: number;
-};
+import { beskederTekst, useAntalUlaesteBeskeder } from "@/components/topbar/UlaesteBeskeder";
+import { useLogUd } from "@/components/topbar/useLogUd";
 
 const punkt =
-  "flex min-h-11 w-full items-center rounded-lg px-3 text-left text-[15px] font-medium text-tekst hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen";
+  "flex min-h-11 w-full items-center rounded-lg px-3 text-left text-[15px] font-medium text-tekst hover:bg-groen-lys hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen";
 
-export default function KontoMenu({ logget_ind, erAdmin, ulaesteBeskeder = 0 }: Props) {
-  const antalBeskeder = useUlaesteBeskeder(ulaesteBeskeder, logget_ind);
-  const beskederTekst =
-    antalBeskeder === 1 ? "1 ulæst besked fra BidHamr" : `${antalBeskeder} ulæste beskeder fra BidHamr`;
+export default function KontoMenu({ erAdmin }: { erAdmin: boolean }) {
+  const antalBeskeder = useAntalUlaesteBeskeder();
   const [aaben, setAaben] = useState(false);
-  const [loggerUd, setLoggerUd] = useState(false);
   const rodRef = useRef<HTMLDivElement>(null);
   const knapRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
-  const router = useRouter();
+  const luk = () => setAaben(false);
+  const { logUd, loggerUd } = useLogUd(luk);
 
   useEffect(() => {
     if (!aaben) return;
     function vedKlik(e: MouseEvent) {
-      if (rodRef.current && !rodRef.current.contains(e.target as Node)) {
-        setAaben(false);
-      }
+      if (rodRef.current && !rodRef.current.contains(e.target as Node)) setAaben(false);
     }
     function vedTast(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -41,23 +32,18 @@ export default function KontoMenu({ logget_ind, erAdmin, ulaesteBeskeder = 0 }: 
         knapRef.current?.focus();
       }
     }
+    function vedFokus(e: FocusEvent) {
+      if (rodRef.current && !rodRef.current.contains(e.target as Node)) setAaben(false);
+    }
     document.addEventListener("mousedown", vedKlik);
     document.addEventListener("keydown", vedTast);
+    document.addEventListener("focusin", vedFokus);
     return () => {
       document.removeEventListener("mousedown", vedKlik);
       document.removeEventListener("keydown", vedTast);
+      document.removeEventListener("focusin", vedFokus);
     };
   }, [aaben]);
-
-  const luk = () => setAaben(false);
-
-  async function logUd() {
-    setLoggerUd(true);
-    await createClient().auth.signOut();
-    setAaben(false);
-    router.push("/login");
-    router.refresh();
-  }
 
   return (
     <div ref={rodRef} className="relative">
@@ -66,93 +52,61 @@ export default function KontoMenu({ logget_ind, erAdmin, ulaesteBeskeder = 0 }: 
         type="button"
         aria-expanded={aaben}
         aria-controls={menuId}
-        aria-label={
-          logget_ind ? (antalBeskeder > 0 ? `Konto-menu, ${beskederTekst}` : "Konto-menu") : "Menu"
-        }
+        aria-label={antalBeskeder > 0 ? `Min konto, ${beskederTekst(antalBeskeder)}` : "Min konto"}
         onClick={() => setAaben((v) => !v)}
-        className="relative flex h-11 min-w-11 items-center justify-center gap-2 rounded-full border-[1.5px] border-kant-staerk px-2.5 text-sm font-medium text-tekst hover:border-groen hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:px-3.5"
+        className="relative flex h-11 items-center gap-1.5 rounded-full border-[1.5px] border-kant-staerk pr-2.5 pl-1.5 text-sm font-medium text-tekst hover:border-groen hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
       >
-        {/* Burger på mobil */}
-        <svg viewBox="0 0 24 24" className="h-5 w-5 lg:hidden" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-          <path strokeLinecap="round" d="M4 7h16M4 12h16M4 17h16" />
-        </svg>
-        {/* Person-ikon + tekst på desktop */}
-        <svg viewBox="0 0 24 24" className="hidden h-5 w-5 lg:block" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />
-        </svg>
-        <span className="hidden lg:inline">{logget_ind ? "Min konto" : "Menu"}</span>
-        <svg viewBox="0 0 24 24" className="hidden h-4 w-4 lg:block" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
-        </svg>
-        {logget_ind && antalBeskeder > 0 && (
-          <span
-            aria-hidden="true"
-            className="absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-fejl-fyldt px-1 text-[11px] leading-none font-semibold text-white ring-2 ring-white"
-          >
-            {badgeTekst(antalBeskeder)}
-          </span>
-        )}
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-groen-lys text-groen-mork">
+          <Ikon navn="bruger" className="h-[18px] w-[18px]" />
+        </span>
+        <Ikon navn="ned" className={`h-4 w-4 transition-transform ${aaben ? "rotate-180" : ""}`} />
       </button>
 
       {aaben && (
         <div
           id={menuId}
-          className="absolute right-0 top-full z-50 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-kant bg-white p-2 shadow-[0_8px_30px_rgba(0,0,0,.13)]"
+          className="absolute top-full right-0 z-50 mt-2 w-64 rounded-xl border border-kant bg-white p-2 shadow-flyder"
         >
           <nav aria-label="Konto">
             <ul className="flex flex-col">
-              {/* Kun på mobil: det, topbaren viser på desktop */}
-              <li className="lg:hidden">
-                <Link href="/opret-auktion" onClick={luk} className={`${punkt} font-semibold`}>
-                  Opret auktion
-                </Link>
-              </li>
-              <li className="lg:hidden">
-                <Link href="/auktioner" onClick={luk} className={punkt}>
-                  Alle auktioner
-                </Link>
-              </li>
-
-              {logget_ind ? (
-                <>
-                  <li><Link href="/konto" onClick={luk} className={punkt}>Min konto</Link></li>
-                  <li><Link href="/konto/notifikationer" onClick={luk} className={punkt}>Notifikationsindstillinger</Link></li>
-                  <li><Link href="/mine-handler" onClick={luk} className={punkt}>Mine handler</Link></li>
-                  <li>
-                    <Link
-                      href="/beskeder"
-                      onClick={luk}
-                      className={`${punkt} justify-between gap-2`}
-                      aria-label={antalBeskeder > 0 ? `Beskeder, ${beskederTekst}` : undefined}
+              <li><Link href="/profil/mig" onClick={luk} className={punkt}>Min profil</Link></li>
+              <li><Link href="/mine-handler" onClick={luk} className={punkt}>Mine handler</Link></li>
+              <li>
+                <Link
+                  href="/beskeder"
+                  onClick={luk}
+                  className={`${punkt} justify-between gap-2`}
+                  aria-label={antalBeskeder > 0 ? `Beskeder, ${beskederTekst(antalBeskeder)}` : undefined}
+                >
+                  Beskeder
+                  {antalBeskeder > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="flex h-[20px] min-w-[20px] items-center justify-center rounded-full bg-fejl-fyldt px-1.5 text-[12px] leading-none font-semibold text-white"
                     >
-                      Beskeder
-                      {antalBeskeder > 0 && (
-                        <span
-                          aria-hidden="true"
-                          className="flex h-[20px] min-w-[20px] items-center justify-center rounded-full bg-fejl-fyldt px-1.5 text-[12px] leading-none font-semibold text-white"
-                        >
-                          {badgeTekst(antalBeskeder)}
-                        </span>
-                      )}
-                    </Link>
-                  </li>
-                  <li><Link href="/profil/mig" onClick={luk} className={punkt}>Min profil</Link></li>
-                  <li><Link href="/favoritter" onClick={luk} className={punkt}>Favoritter</Link></li>
-                  {erAdmin && (
-                    <li><Link href="/admin" onClick={luk} className={`${punkt} text-groen`}>Admin</Link></li>
+                      {badgeTekst(antalBeskeder)}
+                    </span>
                   )}
-                  <li className="mt-1 border-t border-kant pt-1">
-                    <button type="button" onClick={logUd} disabled={loggerUd} className={`${punkt} disabled:opacity-50`}>
-                      {loggerUd ? "Logger ud…" : "Log ud"}
-                    </button>
-                  </li>
-                </>
-              ) : (
-                <>
-                  <li><Link href="/favoritter" onClick={luk} className={punkt}>Favoritter</Link></li>
-                  <li><Link href="/login" onClick={luk} className={punkt}>Log ind</Link></li>
-                </>
+                </Link>
+              </li>
+              <li><Link href="/favoritter" onClick={luk} className={punkt}>Favoritter</Link></li>
+              <li><Link href="/konto" onClick={luk} className={punkt}>Min konto</Link></li>
+              <li><Link href="/konto/notifikationer" onClick={luk} className={punkt}>Notifikationsindstillinger</Link></li>
+              {erAdmin && (
+                <li><Link href="/admin" onClick={luk} className={`${punkt} text-groen`}>Admin</Link></li>
               )}
+              <li className="mt-1 border-t border-kant pt-1">
+                <button
+                  type="button"
+                  onClick={logUd}
+                  disabled={loggerUd}
+                  aria-busy={loggerUd}
+                  className={`${punkt} gap-2 disabled:cursor-not-allowed disabled:text-tekst-svag`}
+                >
+                  {loggerUd && <span className="btn-spinner" aria-hidden="true" />}
+                  Log ud
+                </button>
+              </li>
             </ul>
           </nav>
         </div>

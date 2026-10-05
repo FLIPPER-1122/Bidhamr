@@ -1,6 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import Ikon from "@/components/Ikon";
 import { useFavoritter } from "@/components/FavoritterProvider";
 
 export interface DummyAuction {
@@ -11,97 +13,114 @@ export interface DummyAuction {
   antalBud: number;
   tidTilbage: string;
   procentForløbet: number;
+  // Under en time tilbage: timeren bliver orange (DESIGN.md 1.5).
+  slutterSnart?: boolean;
   farve?: string;
   billede?: string | null;
 }
 
-export default function AuctionCard({ auktion }: { auktion: DummyAuction }) {
+// Passer til gitteret 1 / 2 / 3 / 4 spalter (DESIGN.md 12).
+const STANDARD_SIZES =
+  "(min-width: 1280px) 300px, (min-width: 1024px) 31vw, (min-width: 640px) 46vw, 92vw";
+
+// Kun billeder fra vores egen Supabase-lagring maa optimeres (next.config.ts).
+// Et billede fra andre steder vises uoptimeret i stedet for at vaelte siden.
+const OPTIMERBAR =
+  /^https:\/\/(lkifkrexeldimmghnsie|pjiigmzqwlfepxnjdvug)\.supabase\.co\/storage\/v1\/object\/public\/[^?]*$/;
+
+// Auktionskort efter DESIGN.md 7.1.
+export default function AuctionCard({
+  auktion,
+  sizes = STANDARD_SIZES,
+}: {
+  auktion: DummyAuction;
+  sizes?: string;
+}) {
   const favoritter = useFavoritter();
   const gemt = favoritter?.erFavorit(auktion.id) ?? false;
+  const meta = auktion.antalBud === 0 ? "Ingen bud endnu" : `${auktion.antalBud} bud`;
 
   return (
-    <Link
-      href={`/auktion/${auktion.id}`}
-      className="group block overflow-hidden border border-neutral-200"
-    >
-      <div
-        className="relative aspect-[4/3] w-full bg-neutral-100"
-        style={auktion.billede ? undefined : { backgroundColor: auktion.farve }}
+    <div className="group relative h-full">
+      <Link
+        href={`/auktion/${auktion.id}`}
+        className="flex h-full flex-col overflow-hidden rounded-[14px] border border-kant bg-white shadow-kort transition-[box-shadow,border-color] duration-200 ease-out hover:border-kant-staerk hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
       >
-        {auktion.billede && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={auktion.billede}
-            alt={auktion.titel}
-            className="h-full w-full object-cover"
-          />
-        )}
-
-        <button
-          onClick={(e) => {
-            // Kortet er ét stort <Link>; uden dette navigerer klikket væk.
-            e.preventDefault();
-            e.stopPropagation();
-            favoritter?.toggle(auktion.id);
-          }}
-          aria-label={gemt ? "Fjern fra favoritter" : "Gem som favorit"}
-          aria-pressed={gemt}
-          title={gemt ? "Fjern fra favoritter" : "Gem som favorit"}
-          className="absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/90"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className={`h-4 w-4 transition-colors ${
-              gemt ? "fill-brand text-brand" : "fill-none text-neutral-700"
-            }`}
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 21s-7.5-4.5-9.5-9C1 8.5 2.5 5 6 5c2 0 3.5 1 4 2 0.5-1 2-2 4-2 3.5 0 5 3.5 3.5 7-2 4.5-9.5 9-9.5 9z"
-            />
-          </svg>
-        </button>
-
-        <span className="absolute bottom-1.5 left-1.5 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-brand">
-          {auktion.tidTilbage}
-        </span>
-      </div>
-
-      <div className="h-1 w-full bg-neutral-200">
         <div
-          className="h-full bg-brand"
-          style={{ width: `${auktion.procentForløbet}%` }}
-        />
-      </div>
+          className="relative aspect-[4/3] w-full bg-skelet"
+          style={auktion.billede || !auktion.farve ? undefined : { backgroundColor: auktion.farve }}
+        >
+          {auktion.billede && (
+            <Image
+              src={auktion.billede}
+              alt=""
+              fill
+              sizes={sizes}
+              unoptimized={!OPTIMERBAR.test(auktion.billede)}
+              className="object-cover"
+            />
+          )}
 
-      <div className="p-2">
-        <h3 className="truncate text-[13px] font-medium text-neutral-900">
-          {auktion.titel}
-        </h3>
-
-        <p className="mt-0.5 flex items-center gap-1 text-[11px] text-neutral-500">
-          <svg
-            viewBox="0 0 24 24"
-            className="h-3 w-3"
-            fill="currentColor"
+          <span
+            className={`absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full px-[9px] py-[5px] text-xs font-semibold ${
+              auktion.slutterSnart ? "bg-orange-knap text-white" : "bg-white text-tekst"
+            }`}
           >
-            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" />
-          </svg>
-          {auktion.lokation}
-        </p>
-
-        <div className="mt-1.5 flex items-center justify-between">
-          <span className="text-sm font-bold text-neutral-900">
-            {auktion.nuværendeBud.toLocaleString("da-DK")} kr
-          </span>
-          <span className="bg-orange-knap px-1.5 py-0.5 text-[11px] font-semibold text-white">
-            {auktion.antalBud}
+            <Ikon navn="ur" className="h-3.5 w-3.5" strøg={2} />
+            {auktion.slutterSnart && <span className="sr-only">Slutter snart: </span>}
+            {auktion.tidTilbage}
           </span>
         </div>
+
+        <div className="flex flex-1 flex-col px-[14px] pt-3 pb-4">
+          <h3 className="line-clamp-2 font-sans text-sm font-normal text-tekst">{auktion.titel}</h3>
+          <p className="mt-1.5 text-lg leading-tight font-bold text-tekst">
+            {auktion.nuværendeBud.toLocaleString("da-DK")} kr
+          </p>
+          <p className="mt-0.5 truncate text-xs text-tekst-svag">
+            {meta}
+            {auktion.lokation && auktion.lokation !== "Ukendt" && <> · {auktion.lokation}</>}
+          </p>
+        </div>
+      </Link>
+
+      {/* Uden for linket: en knap må ikke ligge inde i et <a>. */}
+      <button
+        type="button"
+        onClick={() => favoritter?.toggle(auktion.id)}
+        aria-label={gemt ? `Fjern ${auktion.titel} fra favoritter` : `Gem ${auktion.titel} som favorit`}
+        aria-pressed={gemt}
+        title={gemt ? "Fjern fra favoritter" : "Gem som favorit"}
+        className="absolute top-1 right-1 flex h-11 w-11 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-groen"
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 shadow-kort">
+          <svg
+            viewBox="0 0 24 24"
+            className={`h-[18px] w-[18px] transition-colors ${gemt ? "fill-groen text-groen" : "fill-none text-tekst"}`}
+            stroke="currentColor"
+            strokeWidth={1.75}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572" />
+          </svg>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+// Skeleton med samme geometri som kortet (ingen layoutspring).
+export function AuctionCardSkelet() {
+  return (
+    <div aria-hidden="true" className="overflow-hidden rounded-[14px] border border-kant bg-white">
+      <div className="aspect-[4/3] w-full animate-pulse bg-skelet" />
+      <div className="px-[14px] pt-3 pb-4">
+        <div className="h-4 w-4/5 animate-pulse rounded bg-skelet" />
+        <div className="mt-2.5 h-5 w-1/3 animate-pulse rounded bg-skelet" />
+        <div className="mt-2 h-3 w-1/4 animate-pulse rounded bg-skelet" />
       </div>
-    </Link>
+    </div>
   );
 }

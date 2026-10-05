@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
 import { Inter, Fraunces } from "next/font/google";
 import "./globals.css";
@@ -16,20 +16,27 @@ const fraunces = Fraunces({
   display: "swap",
 });
 
+// Ikoner og delebillede kommer fra filkonventionerne i src/app:
+// favicon.ico, icon.svg, apple-icon.png og opengraph-image.jpg
+// (lavet ud fra public/brand/bidhamr-app-ikon.svg, app-ikon 7B).
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://bidhamr.dk"),
   title: {
     default: "BidHamr – auktioner mellem private",
     template: "%s · BidHamr",
   },
   description:
     "BidHamr er den danske auktionsplatform, hvor privatpersoner sælger brugte ting til hinanden. Byd trygt med BidHamr Beskyttelse.",
-  icons: {
-    icon: [{ url: "/brand/bidhamr-app-ikon.svg", type: "image/svg+xml" }],
-    shortcut: "/brand/bidhamr-app-ikon.svg",
-    apple: [
-      { url: "/brand/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    ],
+  applicationName: "BidHamr",
+  openGraph: {
+    type: "website",
+    siteName: "BidHamr",
+    locale: "da_DK",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#1e5e4a",
 };
 
 export default async function RootLayout({

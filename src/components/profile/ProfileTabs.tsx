@@ -32,7 +32,7 @@ export interface Rating {
 
 const BUD_STYLE: Record<BudStatus, string> = {
   vinder: "bg-green-100 text-green-700",
-  overbud: "bg-red-100 text-red-700",
+  overbud: "bg-fejl-bg text-fejl-tekst",
   aktiv: "bg-neutral-100 text-neutral-600",
 };
 
@@ -102,7 +102,7 @@ export default function ProfileTabs({
             onClick={() => setFane(key)}
             className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
               fane === key
-                ? "border-brand text-brand"
+                ? "border-groen text-groen"
                 : "border-transparent text-neutral-500 hover:text-neutral-800"
             }`}
           >
@@ -177,7 +177,7 @@ export default function ProfileTabs({
                   <div className="min-w-0 flex-1">
                     <Link
                       href={`/auktion/${bud.auktionId}`}
-                      className="block truncate text-sm font-medium text-neutral-900 hover:text-brand"
+                      className="block truncate text-sm font-medium text-neutral-900 hover:text-groen"
                     >
                       {bud.titel}
                     </Link>
@@ -230,7 +230,7 @@ export default function ProfileTabs({
                       </div>
                       <Link
                         href={`/profil/${rating.fra_bruger_id}`}
-                        className="text-sm font-medium text-neutral-900 hover:text-brand hover:underline"
+                        className="text-sm font-medium text-neutral-900 hover:text-groen hover:underline"
                       >
                         {rating.fra_bruger_navn}
                       </Link>
@@ -249,7 +249,7 @@ export default function ProfileTabs({
                         viewBox="0 0 24 24"
                         className={`h-4 w-4 ${
                           i <= rating.stjerner
-                            ? "fill-brand text-brand"
+                            ? "fill-groen text-groen"
                             : "fill-neutral-200 text-neutral-200"
                         }`}
                       >
