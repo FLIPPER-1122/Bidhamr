@@ -85,8 +85,11 @@ export async function GET(req: NextRequest) {
   // Nulstilling af adgangskode: med token_hash kommer type=recovery; med
   // ?code= (PKCE) kendes det kun på målet (/reset-password). En nulstilling
   // er ikke et nyt login - ingen registrering af enheden og ingen mail.
+  // Alle andre links (fx ?token_hash= med next=/reset-password) behandles
+  // som et almindeligt login.
   const erNulstilling =
-    type === "recovery" || maal === "/reset-password" || maal.startsWith("/reset-password?");
+    type === "recovery" ||
+    (code !== null && (maal === "/reset-password" || maal.startsWith("/reset-password?")));
 
   // Samme tjek som ved almindeligt login: slettede og suspenderede konti
   // lukkes ikke ind (fail closed, hvis profilen ikke kan læses).
