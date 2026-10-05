@@ -44,7 +44,8 @@ export default async function AuktionerPage({
 }) {
   const { q, kategori, sortering } = await searchParams;
   const søgetekst = q?.trim() ?? "";
-  const initialKategori = kategori?.trim() ?? "";
+  // Kun kendte kategorier – ukendte værdier ignoreres (som i generateMetadata).
+  const initialKategori = kategorier.find((k) => k === kategori?.trim()) ?? "";
   // ?sortering= fra forsiden og menuen ("Slutter snart", "Nye auktioner").
   const initialSortering = læsSortering(sortering);
 
@@ -67,7 +68,7 @@ export default async function AuktionerPage({
 
   const { data: auktioner, error } = await query;
 
-  console.log("Auktioner hentet fra Supabase:", { auktioner, error });
+  if (error) console.error("Auktioner kunne ikke hentes:", error.message);
 
   const visteAuktioner = (auktioner ?? []).map(mapAuctionTilKort);
 

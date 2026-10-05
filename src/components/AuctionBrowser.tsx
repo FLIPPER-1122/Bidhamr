@@ -16,7 +16,7 @@ const felt =
   "h-11 w-full rounded-xl border border-kant-staerk bg-white px-4 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25";
 const etiket = "mb-1.5 block text-sm font-medium text-tekst";
 
-const RADIUS_MIN = 1;
+const RADIUS_MIN = 5;
 const RADIUS_MAX = 150;
 const RADIUS_STEP = 5;
 
