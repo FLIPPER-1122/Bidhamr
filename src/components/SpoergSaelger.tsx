@@ -63,6 +63,7 @@ export default function SpoergSaelger({
   erSaelger,
   erStaff,
   loggetInd,
+  kanIkkeSpoerge = false,
 }: {
   auktionId: string;
   spoergsmaal: SpoergsmaalVisning[];
@@ -71,6 +72,8 @@ export default function SpoergSaelger({
   erSaelger: boolean;
   erStaff: boolean;
   loggetInd: boolean;
+  /** Blokering/spærring mellem sælger og den indloggede (art afsløres ikke). */
+  kanIkkeSpoerge?: boolean;
 }) {
   const router = useRouter();
   const [tekst, setTekst] = useState("");
@@ -164,6 +167,10 @@ export default function SpoergSaelger({
             Log ind
           </Link>{" "}
           for at stille sælgeren et spørgsmål.
+        </p>
+      ) : kanIkkeSpoerge ? (
+        <p className="mt-3 rounded-xl border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
+          Du kan ikke stille spørgsmål til denne sælger.
         </p>
       ) : (
         <form onSubmit={send} className="mt-3" noValidate>

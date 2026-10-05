@@ -87,9 +87,20 @@ export default async function AuktionPage({
 
   // Spørg sælger: offentlig liste uden bruger-id'er (auktion_spoergsmaal_liste).
   // Fejler kaldet (fx før migrationen er kørt), vises bare ingen spørgsmål.
-  const [{ data: spoergsmaalData }, staffRolle] = await Promise.all([
+  // Er der en blokering/spærring mellem sælgeren og den indloggede (begge
+  // retninger)? er_blokeret_mellem er intern (kun service-role) og kaldes
+  // kun med den indloggede brugers eget id. Browseren får kun true/false –
+  // aldrig om det er en anonym byder-spærring eller en navngiven blokering.
+  const tjekBlokering =
+    mitId && mitId !== auktion.bruger_id
+      ? createAdminClient()
+          .rpc("er_blokeret_mellem", { p_a: auktion.bruger_id, p_b: mitId })
+          .then(({ data, error }) => (error ? false : data === true))
+      : Promise.resolve(false);
+  const [{ data: spoergsmaalData }, staffRolle, blokeretMedSaelger] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     authData.user ? getStaffRole() : Promise.resolve(null),
+    tjekBlokering,
   ]);
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
@@ -387,6 +398,7 @@ export default async function AuktionPage({
             erSaelger={erSælger}
             erStaff={!!staffRolle}
             loggetInd={!!bruger}
+            kanIkkeSpoerge={blokeretMedSaelger}
           />
 
           {/* Sælgeren har ingen grund til at anmelde sit eget opslag */}

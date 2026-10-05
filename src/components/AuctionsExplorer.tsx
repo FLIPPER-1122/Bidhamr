@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { DummyAuction } from "@/components/AuctionCard";
 import CategoryGrid from "@/components/CategoryGrid";
 import AuctionBrowser from "@/components/AuctionBrowser";
@@ -17,7 +17,19 @@ export default function AuctionsExplorer({
   initialKategori?: string;
   initialSortering?: Sortering;
 }) {
-  const [kategori, setKategori] = useState(initialKategori);
+  // Kategorien ligger i URL'en (?kategori=…), så filteret kan deles, og
+  // Tilbage-knappen husker det. replaceState opdaterer useSearchParams uden
+  // at hente siden igen fra serveren.
+  const searchParams = useSearchParams();
+  const kategori = searchParams.get("kategori")?.trim() ?? initialKategori;
+
+  function setKategori(ny: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (ny) params.set("kategori", ny);
+    else params.delete("kategori");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }
 
   return (
     <div>

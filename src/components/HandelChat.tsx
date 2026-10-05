@@ -116,11 +116,11 @@ export default function HandelChat({
       return;
     }
 
+    // Feltet tømmes også, når spamfilteret stopper beskeden: den stoppede
+    // besked står overstreget i tråden, og ny tekst skal ikke klistres på den.
+    setTekst("");
     if (data?.blokeret_grund) {
-      // Beholdes i feltet, så brugeren kan rette beskeden.
       setStoppet(spamForklaring(data.blokeret_grund));
-    } else {
-      setTekst("");
     }
     if (data) {
       setBeskeder((tidligere) =>

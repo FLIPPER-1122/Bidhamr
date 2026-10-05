@@ -45,10 +45,14 @@ export const OM: Tekstside = {
       overskrift: "Open source",
       tekst: [
         "Når du uploader billeder i HEIC-format (fx fra en iPhone), omdanner hjemmesiden dem til JPEG i din browser med heic-to, som bygger på libheif. Begge er open source under licensen LGPL-3.0, og kildekoden kan hentes frit.",
+        // Kreditering kræves af CC BY 4.0 (src/data/postnumre.ts).
+        "Postnumre, bynavne og koordinater til afstandsfilteret kommer fra GeoNames (geonames.org) og bruges under licensen CC BY 4.0.",
       ],
       links: [
         { tekst: "Kildekoden til heic-to", href: "https://github.com/hoppergee/heic-to" },
         { tekst: "Kildekoden til libheif", href: "https://github.com/strukturag/libheif" },
+        { tekst: "GeoNames", href: "https://www.geonames.org" },
+        { tekst: "Licensen CC BY 4.0", href: "https://creativecommons.org/licenses/by/4.0/deed.da" },
       ],
     },
     {

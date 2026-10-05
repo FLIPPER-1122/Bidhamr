@@ -21,6 +21,7 @@ import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand, standNavn } from "@/lib/stand";
 import { SPOERGSMAAL_SLAAET_FRA } from "@/lib/spoergsmaal";
 import { kroner } from "@/lib/kroner";
+import { UKENDT_POSTNUMMER, slaaPostnummerOp } from "@/lib/postnumre";
 import { uploadAuktionsbilleder } from "@/lib/auktionUpload";
 import {
   Afkrydsning,
@@ -194,48 +195,16 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   }
 
   // ------------------------------------------------------------ postnummer
-  const [opslag, setOpslag] = useState<{
-    postnummer: string;
-    by: string | null;
-    koordinater: { lat: number; lng: number } | null;
-    fundet: boolean;
-  } | null>(null);
+  // Slås op i den lokale postnummerliste (synkront, ingen netværkskald).
   const gyldigtPostnummer = /^\d{4}$/.test(postnummer);
-  const aktueltOpslag = gyldigtPostnummer && opslag?.postnummer === postnummer ? opslag : null;
-  const by = aktueltOpslag?.by ?? null;
-  const koordinater = aktueltOpslag?.koordinater ?? null;
-  const byStatus: "idle" | "henter" | "fundet" | "ikke-fundet" = !gyldigtPostnummer
+  const postOpslag = gyldigtPostnummer ? slaaPostnummerOp(postnummer) : null;
+  const by = postOpslag?.by ?? null;
+  const koordinater = postOpslag ? { lat: postOpslag.lat, lng: postOpslag.lng } : null;
+  const byStatus: "idle" | "fundet" | "ikke-fundet" = !gyldigtPostnummer
     ? "idle"
-    : !aktueltOpslag
-      ? "henter"
-      : aktueltOpslag.fundet
-        ? "fundet"
-        : "ikke-fundet";
-
-  useEffect(() => {
-    if (!/^\d{4}$/.test(postnummer)) return;
-    const controller = new AbortController();
-    fetch(`https://api.dataforsyningen.dk/postnumre/${postnummer}`, { signal: controller.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error("Postnummer ikke fundet");
-        return res.json();
-      })
-      .then((data) => {
-        setOpslag({
-          postnummer,
-          by: data.navn ?? null,
-          koordinater: Array.isArray(data.visueltcenter)
-            ? { lng: data.visueltcenter[0], lat: data.visueltcenter[1] }
-            : null,
-          fundet: true,
-        });
-      })
-      .catch((err) => {
-        if (err.name === "AbortError") return;
-        setOpslag({ postnummer, by: null, koordinater: null, fundet: false });
-      });
-    return () => controller.abort();
-  }, [postnummer]);
+    : postOpslag
+      ? "fundet"
+      : "ikke-fundet";
 
   // ------------------------------------------------------------ validering
   const startpris = startprisTekst === "" ? NaN : Number(startprisTekst);
@@ -253,8 +222,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
     const prisFejl = valideStartpris(startpris);
     if (prisFejl) f.startpris = prisFejl;
     if (!gyldigtPostnummer) f.postnummer = "Skriv et postnummer med 4 cifre.";
-    else if (byStatus === "ikke-fundet") f.postnummer = "Postnummeret findes ikke – tjek, at det er rigtigt.";
-    else if (byStatus !== "fundet" || !by) f.postnummer = "Vent et øjeblik, mens vi finder byen.";
+    else if (byStatus !== "fundet" || !by) f.postnummer = UKENDT_POSTNUMMER;
     if (!bekraeftet) f.bekraeft = "Bekræft, at varen ikke er forbudt.";
     return f;
   }
@@ -418,7 +386,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <dt className="text-tekst-svag">Startpris</dt>
-                <dd className="text-lg font-bold text-tekst">{kroner(startpris)}</dd>
+                <dd className="text-lg font-bold text-tekst">{kroner(Math.round(startpris * 100))}</dd>
               </div>
               <div>
                 <dt className="text-tekst-svag">Varighed</dt>
@@ -687,7 +655,9 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
             className={`${feltKlasse(!!feltFejl.postnummer)} sm:max-w-[200px]`}
           />
           <p id="postnummer-status" className="mt-1.5 text-[13px] text-tekst-daempet" aria-live="polite">
-            {byStatus === "henter" && "Finder byen …"}
+            {byStatus === "ikke-fundet" && !feltFejl.postnummer && (
+              <span className="font-medium text-fejl-tekst">{UKENDT_POSTNUMMER}</span>
+            )}
             {byStatus === "fundet" && by && <span className="font-medium text-tekst">{by}</span>}
             {byStatus === "idle" && "Kun byen vises på auktionen – aldrig din adresse."}
           </p>

@@ -26,7 +26,7 @@ export function lavCsp(nonce: string): string {
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' blob: data: ${supabaseUrl} https://*.stripe.com https://*.gstatic.com https://*.googleusercontent.com`,
     "font-src 'self'",
-    `connect-src 'self' ${supabaseUrl} ${supabaseWss} https://api.stripe.com https://*.stripe.com https://api.dataforsyningen.dk https://pay.google.com https://google.com/pay https://www.google.com/pay`,
+    `connect-src 'self' ${supabaseUrl} ${supabaseWss} https://api.stripe.com https://*.stripe.com https://pay.google.com https://google.com/pay https://www.google.com/pay`,
     "frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network https://pay.google.com",
     "worker-src 'self' blob:",
     "object-src 'none'",

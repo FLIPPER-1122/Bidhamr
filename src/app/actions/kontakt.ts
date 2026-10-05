@@ -26,16 +26,9 @@ export async function sendKontakt(
     // Honeypot: feltet er skjult for mennesker. Robotten får "ok", så den
     // ikke prøver igen med et andet felt.
     if (String(formData.get("hjemmeside") ?? "").trim() !== "") return { ok: true };
-    // Mangler tidsfeltet eller er det ugyldigt, behandles det som for hurtigt
-    // (formularen sætter det altid) – ellers kunne en robot bare udelade det.
-    // Et menneske, der er hurtigt (fx indsat tekst), må ikke tro, at beskeden
-    // er sendt: derfor en synlig besked i stedet for et stille "ok".
-    const raa = formData.get("t");
-    const start = typeof raa === "string" && /^\d{1,16}$/.test(raa) ? Number(raa) : NaN;
-    if (!Number.isFinite(start) || start <= 0 || Date.now() - start < MIN_SEKUNDER * 1000) {
-      return { fejl: "Vent et øjeblik, og prøv igen." };
-    }
 
+    // Felterne valideres før tidstjekket, så en tom eller halv formular får
+    // den rigtige fejl ("Skriv lidt mere …") i stedet for "Vent et øjeblik".
     const emne = String(formData.get("emne") ?? "");
     const besked = String(formData.get("besked") ?? "").trim();
     const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -52,6 +45,16 @@ export async function sendKontakt(
       return { fejl: `Beskeden må højst være ${KONTAKT_BESKED_MAKS.toLocaleString("da-DK")} tegn.` };
     }
     if (ref.length > 100) return { fejl: "Handels-id'et er for langt." };
+
+    // Mangler tidsfeltet eller er det ugyldigt, behandles det som for hurtigt
+    // (formularen sætter det altid) – ellers kunne en robot bare udelade det.
+    // Et menneske, der er hurtigt (fx indsat tekst), må ikke tro, at beskeden
+    // er sendt: derfor en synlig besked i stedet for et stille "ok".
+    const raa = formData.get("t");
+    const start = typeof raa === "string" && /^\d{1,16}$/.test(raa) ? Number(raa) : NaN;
+    if (!Number.isFinite(start) || start <= 0 || Date.now() - start < MIN_SEKUNDER * 1000) {
+      return { fejl: "Vent et øjeblik, og prøv igen." };
+    }
 
     const supabase = await createClient();
     const {

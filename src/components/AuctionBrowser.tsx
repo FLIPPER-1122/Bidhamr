@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { kategorier } from "@/lib/kategorier";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import { beregnAfstandKm } from "@/lib/distance";
+import { UKENDT_POSTNUMMER, slaaPostnummerOp } from "@/lib/postnumre";
 
 import { SORTERINGER, type Sortering } from "@/lib/sortering";
 
@@ -40,29 +41,9 @@ interface Koordinat {
   lng: number;
 }
 
-async function slåPostnummerOp(postnummer: string): Promise<{
-  by: string | null;
-  koordinat: Koordinat | null;
-}> {
-  try {
-    const res = await fetch(
-      `https://api.dataforsyningen.dk/postnumre/${postnummer}`,
-    );
-    if (!res.ok) return { by: null, koordinat: null };
-
-    const data = await res.json();
-    const [lng, lat] = data.visueltcenter ?? [];
-
-    return {
-      by: data.navn ?? null,
-      koordinat:
-        typeof lat === "number" && typeof lng === "number"
-          ? { lat, lng }
-          : null,
-    };
-  } catch {
-    return { by: null, koordinat: null };
-  }
+function koordinatForPostnummer(postnummer: string): Koordinat | null {
+  const opslag = slaaPostnummerOp(postnummer);
+  return opslag ? { lat: opslag.lat, lng: opslag.lng } : null;
 }
 
 export default function AuctionBrowser({
@@ -78,51 +59,27 @@ export default function AuctionBrowser({
   kategori: string;
   onKategoriChange: (kategori: string) => void;
 }) {
-  const [query, setQuery] = useState(initialQuery);
+  const query = initialQuery;
   const [sortering, setSortering] = useState<Sortering>(initialSortering);
   const [postnummer, setPostnummer] = useState("");
-  // Opslaget gemmes med det postnummer, det hører til; by, koordinat og
-  // status udledes ved render (ingen synkron setState i effekten).
-  const [postOpslag, setPostOpslag] = useState<{
-    postnummer: string;
-    by: string | null;
-    koordinat: Koordinat | null;
-  } | null>(null);
+  // Postnummeret slås op i den lokale liste (synkront), så by og koordinat
+  // udledes direkte ved render.
   const gyldigtPostnummer = /^\d{4}$/.test(postnummer);
-  const aktueltOpslag =
-    gyldigtPostnummer && postOpslag?.postnummer === postnummer ? postOpslag : null;
-  const postBy = aktueltOpslag?.by ?? null;
-  const postKoordinat = aktueltOpslag?.koordinat ?? null;
-  const postStatus: "idle" | "henter" | "fundet" | "ikke-fundet" = !gyldigtPostnummer
+  const postOpslag = gyldigtPostnummer ? slaaPostnummerOp(postnummer) : null;
+  const postBy = postOpslag?.by ?? null;
+  const postLat = postOpslag?.lat ?? null;
+  const postLng = postOpslag?.lng ?? null;
+  const postStatus: "idle" | "fundet" | "ikke-fundet" = !gyldigtPostnummer
     ? "idle"
-    : !aktueltOpslag
-      ? "henter"
-      : aktueltOpslag.koordinat
-        ? "fundet"
-        : "ikke-fundet";
+    : postOpslag
+      ? "fundet"
+      : "ikke-fundet";
   const [radiusKm, setRadiusKm] = useState(50);
   const [auktioner, setAuktioner] = useState<DummyAuction[]>(initialAuktioner);
   const [loading, setLoading] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
 
   const harSøgt = useRef(false);
-
-  // Slå postnummeret op hos DAWA og vis bynavnet som bekræftelse, så snart
-  // brugeren har skrevet 4 cifre.
-  useEffect(() => {
-    if (!/^\d{4}$/.test(postnummer)) return;
-
-    let aktiv = true;
-
-    slåPostnummerOp(postnummer).then(({ by, koordinat }) => {
-      if (!aktiv) return;
-      setPostOpslag({ postnummer, by, koordinat });
-    });
-
-    return () => {
-      aktiv = false;
-    };
-  }, [postnummer]);
 
   async function søg(
     søgetekst: string,
@@ -184,28 +141,12 @@ export default function AuctionBrowser({
     if (center && radiusKmAktiv != null) {
       // Auktioner uden gemte koordinater slås op via deres postnummer, så de
       // ikke bare udelukkes fra radius-filtreringen.
-      const manglendePostnumre = Array.from(
-        new Set(
-          rows
-            .filter((r) => (r.lat == null || r.lng == null) && r.postnummer)
-            .map((r) => r.postnummer as string),
-        ),
-      );
-
-      const opslag = await Promise.all(
-        manglendePostnumre.map(async (pn) => {
-          const { koordinat } = await slåPostnummerOp(pn);
-          return [pn, koordinat] as const;
-        }),
-      );
-      const postnummerKoordinater = new Map(opslag);
-
       rows = rows.filter((row) => {
         const koordinat: Koordinat | null =
           row.lat != null && row.lng != null
             ? { lat: row.lat, lng: row.lng }
             : row.postnummer
-              ? postnummerKoordinater.get(row.postnummer) ?? null
+              ? koordinatForPostnummer(row.postnummer)
               : null;
 
         if (!koordinat) return false;
@@ -225,11 +166,10 @@ export default function AuctionBrowser({
   // tomt postnummer betyder ingen radius-filtrering.
   useEffect(() => {
     const erHeleDanmark = radiusKm >= RADIUS_MAX;
-    const aktivtCenter = !erHeleDanmark && postKoordinat ? postKoordinat : null;
-
-    // Vent med at søge til postnummer-opslaget er færdigt, så vi ikke søger
-    // med et "halvt" filter, mens DAWA stadig svarer.
-    if (postnummer && postStatus === "henter") return;
+    const aktivtCenter =
+      !erHeleDanmark && postLat != null && postLng != null
+        ? { lat: postLat, lng: postLng }
+        : null;
 
     const timeout = setTimeout(
       () => {
@@ -239,8 +179,7 @@ export default function AuctionBrowser({
       harSøgt.current ? 300 : 0,
     );
     return () => clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, kategori, sortering, postKoordinat, postStatus, radiusKm]);
+  }, [query, kategori, sortering, postLat, postLng, radiusKm]);
 
   const erHeleDanmark = radiusKm >= RADIUS_MAX;
 
@@ -298,15 +237,12 @@ export default function AuctionBrowser({
             className={felt}
           />
           <p id="filter-postnummer-status" aria-live="polite" className="text-[13px]">
-            {postStatus === "henter" && (
-              <span className="mt-1.5 block text-tekst-daempet">Henter by…</span>
-            )}
             {postStatus === "fundet" && postBy && (
               <span className="mt-1.5 block text-tekst-daempet">{postBy}</span>
             )}
             {postStatus === "ikke-fundet" && (
               <span className="mt-1.5 block font-medium text-fejl-tekst">
-                Postnummeret kunne ikke findes.
+                {UKENDT_POSTNUMMER}
               </span>
             )}
           </p>
