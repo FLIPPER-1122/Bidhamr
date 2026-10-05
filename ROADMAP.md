@@ -83,12 +83,12 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 ## Fase 1B – Nyt admin-dashboard
 Formål: ét samlet sted, hvor staff kan styre hele BidHamr. Bygges efter fase 1, fordi pengetallene afhænger af den nye Stripe-model.
 
-- [~] **Forside med fokus på brugere**: antal brugere i alt, nye brugere i dag / denne uge / denne måned, graf over tilvækst. Derudover nye auktioner og solgte varer
-- [~] **"Kræver handling nu"** øverst på forsiden: åbne sager, nye rapporter, handler der hænger, ubetalte vindere, fejlede betalinger
-- [~] **Penge – KUN for rollen chef**: omsætning, BidHamrs indtjening (købergebyr, sælgergebyr, BidHamr Beskyttelse), betalinger, udbetalinger og refusioner fra Stripe, penge der holdes lige nu og hvornår de frigives. Medarbejdere og admins må ikke kunne se indtjeningstal – heller ikke via URL eller API (tjekkes på serveren)
-- [~] **Brugere og sikkerhed**: søgning, advarsler, suspenderinger, MitID-status, mistænkelig aktivitet (fx mange sager eller mange ubetalte auktioner)
-- [~] **Drift**: fejlede cron-jobs, mails der ikke er sendt, fejl på siden
-- [~] **Medarbejder-log**: hvad hver medarbejder har gjort (bygger videre på moderation_log)
+- [x] **Forside med fokus på brugere**: antal brugere i alt, nye brugere i dag / denne uge / denne måned, graf over tilvækst. Derudover nye auktioner og solgte varer
+- [x] **"Kræver handling nu"** øverst på forsiden: åbne sager, nye rapporter, handler der hænger, ubetalte vindere, fejlede betalinger
+- [x] **Penge – KUN for rollen chef**: omsætning, BidHamrs indtjening (købergebyr, sælgergebyr, BidHamr Beskyttelse), betalinger, udbetalinger og refusioner fra Stripe, penge der holdes lige nu og hvornår de frigives. Medarbejdere og admins må ikke kunne se indtjeningstal – heller ikke via URL eller API (tjekkes på serveren)
+- [x] **Brugere og sikkerhed**: søgning, advarsler, suspenderinger, MitID-status, mistænkelig aktivitet (fx mange sager eller mange ubetalte auktioner)
+- [x] **Drift**: fejlede cron-jobs, mails der ikke er sendt, fejl på siden
+- [x] **Medarbejder-log**: hvad hver medarbejder har gjort (bygger videre på moderation_log)
 
 ## Fase 2 – Fragt og automatisk frigivelse
 Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel indgriben.
@@ -97,7 +97,7 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 - [ ] Filip: møde med Shipmondo om den bedste løsning
 - [ ] Filip: spørg GLS/Shipmondo, om fragtfirmaet selv **vejer pakken**, og om den målte vægt kan hentes via API (bruges som bevis i svindelsager)
 - [ ] Når GLS melder pakken leveret: notifikation "Pakken er kommet frem" til **køberen** (type pakke_leveret, påkrævet) – sælgeren får fortsat besked, når køberen bekræfter
-- [ ] Byg koden, så fragtfirmaet kan skiftes (GLS nu, evt. Shipmondo senere) uden at omskrive handelsflowet
+- [~] Byg koden, så fragtfirmaet kan skiftes (GLS nu, evt. Shipmondo senere) uden at omskrive handelsflowet
 - [ ] Sælger får fragtlabel/QR-kode direkte i BidHamr
 - [ ] **Returlabel i sager**: når en sag afgøres med retur, får køberen et returlabel fra BidHamr via fragtfirmaet (køberen betaler returfragten). Sagsflowet med retur er bygget, men selve labelen mangler, indtil Filips aftale med fragtfirmaet er på plads – derfor er sagsretur kun delvist færdig
 - [ ] Køber betaler fragt og ser prisen, før han byder
