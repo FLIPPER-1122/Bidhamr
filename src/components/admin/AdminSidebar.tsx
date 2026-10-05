@@ -41,6 +41,26 @@ const navItems: {
     ),
   },
   {
+    href: "/admin/brugere/mistaenkelig",
+    label: "Mistænkelig aktivitet",
+    minRolle: "medarbejder",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+      </svg>
+    ),
+  },
+  {
+    href: "/admin/medarbejder-log",
+    label: "Medarbejder-log",
+    minRolle: "medarbejder",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
     href: "/admin/sager",
     label: "Sager",
     minRolle: "medarbejder",
@@ -213,10 +233,15 @@ export default function AdminSidebar({
     (item) => ROLE_LEVEL[rolle] >= ROLE_LEVEL[item.minRolle],
   );
 
-  const isActive = (href: string) => {
-    if (href === "/admin") return pathname === "/admin";
-    return pathname.startsWith(href);
-  };
+  // Det mest specifikke menupunkt vinder, så fx /admin/brugere/mistaenkelig
+  // ikke også markerer "Søg bruger".
+  const matcher = (href: string) =>
+    href === "/admin" ? pathname === "/admin" : pathname === href || pathname.startsWith(`${href}/`);
+  const aktivHref = synligeItems
+    .map((item) => item.href)
+    .filter(matcher)
+    .sort((a, b) => b.length - a.length)[0];
+  const isActive = (href: string) => href === aktivHref;
 
   const sidebarContent = (
     <div className="flex flex-col h-full">

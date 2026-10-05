@@ -22,7 +22,7 @@ export default function BrugerSearch() {
       <input
         type="text"
         autoFocus
-        placeholder="Søg efter navn, e-mail eller telefon..."
+        placeholder="Søg efter navn, e-mail, telefon eller bruger-id..."
         defaultValue={searchParams.get("q") ?? ""}
         onChange={(e) => {
           const params = new URLSearchParams(searchParams.toString());

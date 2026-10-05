@@ -1,0 +1,94 @@
+// Danske navne og links til moderation_log (medarbejder-loggen og brugersiden).
+//
+// HANDLING_NAVNE dækker alle værdier i moderation_log_handling_check (seneste
+// definition: supabase/migrations/20261004050000_anke.sql). Kommer der nye
+// værdier til, vises den rå værdi, indtil de tilføjes her.
+import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
+
+export const HANDLING_NAVNE: Record<string, string> = {
+  slet_auktion: "Slettede auktion",
+  slet_anmeldelse: "Slettede anmeldelse",
+  suspender: "Suspenderede bruger",
+  ophaev_suspension: "Ophævede suspension",
+  advarsel: "Gav advarsel",
+  annuller_auktion: "Annullerede auktion",
+  saldo_sat: "Satte saldo (gammel wallet)",
+  saldo_tilfoert: "Tilførte saldo (gammel wallet)",
+  saldo_traukket: "Trak saldo (gammel wallet)",
+  sag_aabnet: "Åbnede sag på handel",
+  sag_lukket: "Lukkede sag på handel",
+  handel_frigivet: "Frigav handel til sælger",
+  handel_refunderet: "Refunderede handel",
+  ubetalt_afvist: "Afviste advarsel for ubetalt vinder",
+  overfoersel_proevet_igen: "Prøvede udbetaling igen",
+  betaling_loest: "Markerede betaling som løst",
+  chat_aabnet: "Åbnede chat",
+  chat_lukket: "Afsluttede chat",
+  faellesbesked: "Sendte fællesbesked",
+  sag_afgjort_koeber: "Afgjorde sag til køber",
+  sag_afgjort_saelger: "Afgjorde sag til sælger",
+  sag_retur_afleveret: "Registrerede retur som afleveret",
+  sag_genaabnet: "Genåbnede sag",
+  konto_lukket: "Lukkede konto permanent",
+  sag_afviklet: "Afviklede sag",
+  indpakning_paamindelse: "Gav påmindelse om indpakning",
+  konto_lukning_foreslaaet: "Foreslog kontolukning (3 advarsler)",
+  konto_lukning_afvist: "Afviste kontolukning",
+  udbetalingskonto_loest: "Markerede udbetalingskonto som løst",
+  udbetalingskonto_nulstillet: "Nulstillede udbetalingskonto",
+  rapport_behandlet: "Behandlede rapport",
+  sag_anke_indgivet: "Anke indgivet",
+  sag_anke_stadfaestet: "Stadfæstede afgørelse efter anke",
+  sag_anke_omgjort: "Omgjorde afgørelse efter anke",
+};
+
+export function handlingNavn(handling: string): string {
+  return HANDLING_NAVNE[handling] ?? handling;
+}
+
+export function erSystem(id: string | null | undefined): boolean {
+  return (id ?? "").toLowerCase() === BIDHAMR_SYSTEM_ID;
+}
+
+const MAAL_NAVNE: Record<string, string> = {
+  auktion: "Auktion",
+  anmeldelse: "Anmeldelse",
+  bruger: "Bruger",
+  handel: "Handel",
+  samtale: "Chat",
+  sag: "Sag",
+};
+
+// Link til det, handlingen handlede om. null, hvis der ikke findes en side.
+export function maalLink(
+  maalType: string,
+  maalId: string,
+  brugerId: string | null,
+): { href: string; label: string } | null {
+  const id = encodeURIComponent(maalId);
+  switch (maalType) {
+    case "auktion":
+      return { href: `/auktion/${id}`, label: "Se auktion" };
+    case "bruger":
+      return erSystem(maalId) ? null : { href: `/admin/brugere/${id}`, label: "Se bruger" };
+    case "handel":
+      return { href: `/admin/handler?vis=alle&q=${id}`, label: "Se handel" };
+    case "samtale":
+      return { href: `/admin/chats/${id}`, label: "Se chat" };
+    case "sag":
+      return { href: `/admin/sager/${id}`, label: "Se sag" };
+    case "anmeldelse":
+      // Anmeldelser har ingen egen side – vis brugerens anmeldelser.
+      return brugerId && !erSystem(brugerId)
+        ? { href: `/admin/brugere/${encodeURIComponent(brugerId)}?fane=anmeldelser`, label: "Se anmeldelser" }
+        : null;
+    default:
+      return null;
+  }
+}
+
+export function maalNavn(maalType: string): string {
+  return MAAL_NAVNE[maalType] ?? maalType;
+}
+
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
