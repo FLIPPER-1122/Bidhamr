@@ -140,9 +140,9 @@ Formål: siden bliver troværdig, professionel, tryg og moderne.
 ## Fase 4 – Brugerens egne ting
 Formål: brugerne har overblik og styr på deres beskeder.
 
-- [ ] Live statistikker under profil: antal auktioner, indtjening (uge/måned/år/lifetime), auktioner man har budt på
-- [ ] Følg sælgere
-- [ ] **Gemte søgninger med besked**: få besked, når der kommer nye auktioner, der matcher en søgning (fx "Omega ur")
+- [~] Live statistikker under profil: antal auktioner, indtjening (uge/måned/år/lifetime), auktioner man har budt på
+- [~] Følg sælgere
+- [~] **Gemte søgninger med besked**: få besked, når der kommer nye auktioner, der matcher en søgning (fx "Omega ur")
 - [x] Notifikationer: overbudt, ny auktion fra fulgt sælger, bud på egen auktion, vundet, pakke kommet frem
 - [x] Side med notifikationsindstillinger (mail / app / begge / fra, pr. type)
 - [x] Notifikations-indbakke på siden (klokke i topbaren)
@@ -161,6 +161,8 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 - [ ] Ret forskellene, så funktioner, tekster og design er ens (DESIGN.md gælder også appen)
 - [ ] Appen bruger samme Supabase-database og samme Stripe-betalingsflow som hjemmesiden (vinderen betaler selv inden for 24 timer, valgfrit gemt kort, ingen saldo)
 - [ ] Appen: to-trins-login (AAL2) og ubekræftet e-mail håndteres, og kontosletning direkte i appen (Apples krav 5.1.1(v)) via et sikkert endpoint (POST /api/konto/slet er bygget på hjemmesiden: Bearer-token, aal2-krav, adgangskode + "SLET"). Når appen har to-trins-login: kør 20261007032000_mfa_database_haandhaevelse.sql i produktion
+- [ ] Appen: følgere tælles med `antal_foelgere()` og kun insert/delete på `seller_follows` – kør derefter `20261007012000_seller_follows_stramning.sql` i produktion (i dag kan alle se, hvem der følger hvem)
+- [ ] Appen kender fase 4: `stand`, `idempotens_noegle` ved opret auktion (+ `min_auktion_for_noegle`), fejlkoden BHN02 (navn), `blokeret_grund = 'socialt_medie'`, `profil_offentlige_tal()`, svar på bedømmelser (`skriv_bedoemmelse_svar`, `bedoemmelse_svar`), gemte søgninger (`gemte_soegninger`) og notifikationstyperne `gemt_soegning` og `bedoemmelse`
 - [ ] Push-notifikationer
 - [ ] Statistikker i appen
 - [ ] Nyt design og app-ikon (7B)
