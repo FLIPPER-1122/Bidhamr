@@ -10,7 +10,10 @@ export default function AppLayout({
   return (
     <FavoritterProvider>
       <Header />
-      {children}
+      {/* Mål for "Spring til indhold" i topbaren */}
+      <div id="indhold" tabIndex={-1} className="flex flex-1 flex-col outline-none">
+        {children}
+      </div>
       <Footer />
     </FavoritterProvider>
   );

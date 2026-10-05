@@ -7,6 +7,7 @@ import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import AuctionCard from "@/components/AuctionCard";
 import ProfileHeader from "@/components/profile/ProfileHeader";
+import ProfilTryghed from "@/components/tryghed/ProfilTryghed";
 import ProfileTabs, {
   type MitBud,
   type EgenAuktion,
@@ -70,6 +71,7 @@ export default async function ProfilPage({
       { data: egenEmail },
       { data: egneRatings },
       { data: gennemforteHandlerRaw },
+      { data: kontakt },
     ] = await Promise.all([
       supabase
         .from("auctions")
@@ -94,6 +96,8 @@ export default async function ProfilPage({
         .from("trades")
         .select("id")
         .or(`buyer_id.eq.${id},seller_id.eq.${id}`),
+      // Adressen (kun til afhentning) kan kun læses af ejeren selv.
+      supabase.rpc("mine_kontaktoplysninger").maybeSingle<{ adresse: string | null }>(),
     ]);
 
     const antalRatings = egneRatings?.length ?? 0;
@@ -205,6 +209,7 @@ export default async function ProfilPage({
               brugerId={id}
               navn={profil.navn}
               telefon={egenEmail?.telefon ?? null}
+              adresse={kontakt?.adresse ?? null}
               email={egenEmail?.email ?? ""}
               avatarUrl={profil.avatar_url}
             />
@@ -215,7 +220,8 @@ export default async function ProfilPage({
   }
 
   // ── Offentlig profil ───────────────────────────────────────────────────────
-  const [{ data: aktiveAuktionerRaw }, { data: ratingsRaw }] = await Promise.all([
+  const erLoggetInd = Boolean(authData.user);
+  const [{ data: aktiveAuktionerRaw }, { data: ratingsRaw }, { data: harBlokeret }] = await Promise.all([
     supabase
       .from("auctions")
       .select("*")
@@ -229,6 +235,10 @@ export default async function ProfilPage({
       .eq("til_bruger_id", id)
       .eq("skjult", false)
       .order("oprettet", { ascending: false }),
+    // Kun navngivne blokeringer (anonyme spærringer af bydere tæller ikke).
+    erLoggetInd
+      ? supabase.rpc("jeg_har_blokeret", { p_bruger: id })
+      : Promise.resolve({ data: false }),
   ]);
 
   const aktiveAuktioner = (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort);
@@ -268,6 +278,14 @@ export default async function ProfilPage({
           brugerId={id}
         />
 
+        {erLoggetInd && (
+          <ProfilTryghed
+            brugerId={id}
+            navn={kortNavn(profil.navn)}
+            erBlokeret={harBlokeret === true}
+          />
+        )}
+
         {/* Aktive auktioner */}
         <div className="rounded-xl border border-neutral-200 bg-white p-6">
           <h2 className="text-sm font-semibold text-neutral-900">
@@ -305,7 +323,7 @@ export default async function ProfilPage({
                   <div className="flex items-start justify-between gap-3">
                     <Link
                       href={`/profil/${rating.fra_bruger_id}`}
-                      className="text-sm font-medium text-neutral-900 hover:text-brand hover:underline"
+                      className="text-sm font-medium text-neutral-900 hover:text-groen hover:underline"
                     >
                       {rating.fra_bruger_navn}
                     </Link>
@@ -322,7 +340,7 @@ export default async function ProfilPage({
                         viewBox="0 0 24 24"
                         className={`h-4 w-4 ${
                           i <= rating.stjerner
-                            ? "fill-brand text-brand"
+                            ? "fill-groen text-groen"
                             : "fill-neutral-200 text-neutral-200"
                         }`}
                       >

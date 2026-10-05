@@ -30,7 +30,7 @@ export default function BrugerSearch() {
           else params.delete("q");
           router.push(pathname + (params.size ? `?${params}` : ""));
         }}
-        className="h-14 w-full rounded-xl border border-neutral-200 bg-white pl-12 pr-4 text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-brand"
+        className="h-14 w-full rounded-xl border border-neutral-200 bg-white pl-12 pr-4 text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-groen"
       />
     </div>
   );

@@ -130,7 +130,7 @@ export default async function AdminRapportArkiv({
                   <td className="px-5 py-3">
                     <Link
                       href={`/auktion/${r.auction_id}`}
-                      className="font-medium text-neutral-800 hover:text-brand hover:underline"
+                      className="font-medium text-neutral-800 hover:text-groen hover:underline"
                     >
                       {titelMap[r.auction_id] ?? "(ukendt auktion)"}
                     </Link>

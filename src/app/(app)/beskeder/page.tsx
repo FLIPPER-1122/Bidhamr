@@ -58,6 +58,8 @@ export default async function BeskederPage() {
         .from("messages")
         .select("trade_id, sender_id, content, created_at, fra_bidhamr")
         .eq("trade_id", h.id)
+        // Beskeder, spamfilteret har stoppet, vises ikke som seneste besked.
+        .is("blokeret_grund", null)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle<SidsteBesked>(),

@@ -10,6 +10,8 @@ import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
 import FlereHandlinger from "@/components/admin/FlereHandlinger";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { UUID_RE, handelChatSti } from "@/lib/moderationLog";
+import { SPORINGS_NAVN, erSporingsType } from "@/lib/fragt/types";
+import { fragtMarkerHaandteret } from "@/app/actions/adminFragt";
 import { HAENGER_TEKST, erHaengerGrund, type HaengerGrund } from "@/lib/adminGraenser";
 import {
   sagAabn,
@@ -40,6 +42,29 @@ type HandelRow = {
 
 const AKTIVE = ["betaling_modtaget", "pakke_sendt", "modtaget"];
 
+// Forsendelser, staff skal se på (forsendelser.kraever_opmaerksomhed - samme
+// tal som kortet "Fragt kræver handling" på admin-forsiden).
+type FragtRow = {
+  id: string;
+  trade_id: string;
+  type: "udgaaende" | "retur";
+  status: string;
+  sporingsnummer: string | null;
+  opmaerksomhed_tekst: string | null;
+  opdateret_kl: string;
+};
+
+const FORSENDELSE_STATUS: Record<string, string> = {
+  opretter: "Labelen laves",
+  annulleres: "Annulleres",
+  annulleret: "Annulleret",
+  fejlet: "Fejlet",
+};
+
+function forsendelseStatus(s: string) {
+  return erSporingsType(s) ? SPORINGS_NAVN[s] : (FORSENDELSE_STATUS[s] ?? s);
+}
+
 // Hvilke handler der "hænger", afgøres af SQL-funktionen
 // admin_haengende_handler() – den samme, som tæller kortene på admin-forsiden
 // (grænserne står i src/lib/adminGraenser.ts).
@@ -48,6 +73,7 @@ type Haenger = { grund: HaengerGrund; siden: string };
 const FANER = [
   { key: "sager", label: "Markerede" },
   { key: "haenger", label: "Hænger" },
+  { key: "fragt", label: "Fragt" },
   { key: "aktive", label: "Aktive handler" },
   { key: "alle", label: "Alle" },
 ] as const;
@@ -78,11 +104,23 @@ export default async function AdminSager({
   const KOLONNER =
     "id, auction_id, seller_id, buyer_id, amount, status, tracking_number, created_at, sag_aaben, sag_note, sag_aabnet_at";
 
-  const [{ data: handler }, { data: haengende, error: haengerFejl }] = await Promise.all([
+  const [
+    { data: handler },
+    { data: haengende, error: haengerFejl },
+    { data: fragtData, error: fragtFejl },
+  ] = await Promise.all([
     supabase.from("trades").select(KOLONNER).order("created_at", { ascending: false }).limit(500),
     supabase.rpc("admin_haengende_handler"),
+    supabase
+      .from("forsendelser")
+      .select("id, trade_id, type, status, sporingsnummer, opmaerksomhed_tekst, opdateret_kl")
+      .eq("kraever_opmaerksomhed", true)
+      .order("opdateret_kl", { ascending: true })
+      .limit(200),
   ]);
   if (haengerFejl) console.error("admin_haengende_handler fejlede:", haengerFejl.message);
+  if (fragtFejl) console.error("Forsendelser til staff kunne ikke hentes:", fragtFejl.message);
+  const fragtRaekker = (fragtData ?? []) as FragtRow[];
 
   const haengerMap = new Map<string, Haenger>();
   for (const r of (haengende ?? []) as { trade_id: string; grund: unknown; siden: string }[]) {
@@ -94,7 +132,9 @@ export default async function AdminSager({
   // link i medarbejder-loggen.
   const nyeste = (handler ?? []) as HandelRow[];
   const kendte = new Set(nyeste.map((h) => h.id));
-  const mangler = [...haengerMap.keys()].filter((id) => !kendte.has(id)).slice(0, 500);
+  const mangler = [...new Set([...haengerMap.keys(), ...fragtRaekker.map((f) => f.trade_id)])]
+    .filter((id) => !kendte.has(id))
+    .slice(0, 500);
   const søgUuid = UUID_RE.test(søgetekst) ? søgetekst.toLowerCase() : null;
   const [{ data: ekstra }, { data: idTraef }] = await Promise.all([
     mangler.length
@@ -139,6 +179,7 @@ export default async function AdminSager({
   const antal = {
     sager: alle.filter((h) => h.sag_aaben).length,
     haenger: alle.filter(haenger).length,
+    fragt: fragtRaekker.length,
     aktive: alle.filter((h) => AKTIVE.includes(h.status)).length,
     alle: alle.length,
   };
@@ -146,6 +187,7 @@ export default async function AdminSager({
   let rows = alle.filter((h) => {
     if (fane === "sager") return h.sag_aaben;
     if (fane === "haenger") return haenger(h);
+    if (fane === "fragt") return false;
     if (fane === "aktive") return AKTIVE.includes(h.status);
     return true;
   });
@@ -162,6 +204,22 @@ export default async function AdminSager({
       ].some((v) => (v ?? "").toLowerCase().includes(nål));
     });
   }
+
+  const handelMap = new Map(alle.map((h) => [h.id, h]));
+  const nålFragt = søgetekst.toLowerCase();
+  const fragtVist = fragtRaekker.filter((f) => {
+    if (!nålFragt) return true;
+    const h = handelMap.get(f.trade_id);
+    return [
+      h ? titelMap.get(h.auction_id) : null,
+      f.opmaerksomhed_tekst, f.sporingsnummer, f.trade_id, f.id,
+    ].some((v) => (v ?? "").toLowerCase().includes(nålFragt));
+  });
+  const antalVist = fane === "fragt" ? fragtVist.length : rows.length;
+  const enhed =
+    fane === "fragt"
+      ? antalVist === 1 ? "forsendelse" : "forsendelser"
+      : antalVist === 1 ? "handel" : "handler";
 
   // Køber og sælger står i samme kolonne. E-mailen vises kun, når der er
   // plads (kort på mobil og meget brede skærme), så tabellen passer fra 1280px.
@@ -189,7 +247,7 @@ export default async function AdminSager({
         forklaring="Alle handler mellem køber og sælger. Brug siden, når en handel går i stå – fx hvis varen ikke er sendt."
         hoejre={
           <span className="text-sm text-neutral-500">
-            {rows.length} {rows.length === 1 ? "handel" : "handler"}
+            {antalVist} {enhed}
           </span>
         }
       >
@@ -233,14 +291,94 @@ export default async function AdminSager({
         })}
       </div>
 
+      {fragtFejl && fane === "fragt" && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          Forsendelserne kunne ikke hentes lige nu. Prøv at genindlæse siden.
+        </p>
+      )}
+
       <Suspense>
         <AdminSearchInput placeholder="Søg på auktion, køber, sælger, tracking eller note..." />
       </Suspense>
 
+      {fane === "fragt" && (
+        <ul className="space-y-3">
+          {fragtVist.map((f) => {
+            const h = handelMap.get(f.trade_id);
+            const handelSti = `/admin/handler?vis=alle&q=${encodeURIComponent(f.trade_id)}`;
+            return (
+              <li key={f.id} className="rounded-xl border border-advarsel-kant bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link
+                      href={handelSti}
+                      className="font-medium text-neutral-800 hover:text-brand hover:underline"
+                    >
+                      {h ? (titelMap.get(h.auction_id) ?? "(slettet auktion)") : "Handel"}
+                    </Link>
+                    <p className="mt-0.5 text-xs text-neutral-500">
+                      {f.type === "retur" ? "Returpakke" : "Pakke til køber"} · {forsendelseStatus(f.status)}
+                      {f.sporingsnummer && (
+                        <>
+                          {" · Sporing: "}
+                          <span className="break-all font-mono">{f.sporingsnummer}</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  {h && <HandelStatusBadge status={h.status} />}
+                </div>
+                <p className="mt-3 break-words text-sm text-neutral-800">
+                  {f.opmaerksomhed_tekst ?? "Ingen forklaring."}
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {/* prefetch slået fra: chatsiden logger læsningen. */}
+                  <Link
+                    href={handelChatSti(f.trade_id)}
+                    prefetch={false}
+                    className="inline-flex whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
+                  >
+                    Se chat
+                  </Link>
+                  <Link
+                    href={handelSti}
+                    className="inline-flex whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
+                  >
+                    Se handlen
+                  </Link>
+                  <ConfirmDialog
+                    triggerLabel="Markér som håndteret"
+                    triggerClassName="whitespace-nowrap rounded-md bg-green-100 px-2 py-1 text-xs text-green-800 transition-colors hover:bg-green-200"
+                    title="Markér forsendelsen som håndteret?"
+                    description="Markeringen fjernes. Ingen penge flyttes, og handlen ændres ikke."
+                    confirmLabel="Ja, markér som håndteret"
+                    action={fragtMarkerHaandteret}
+                    hiddenFields={{ forsendelseId: f.id }}
+                    aarsagField={{
+                      label: "Hvad har du gjort?",
+                      placeholder: "Fx: ringede til sælgeren, der markerer pakken sendt i dag",
+                      required: true,
+                    }}
+                  />
+                </div>
+              </li>
+            );
+          })}
+          {fragtVist.length === 0 && (
+            <li className="rounded-xl border border-neutral-200 bg-white px-5 py-10 text-center text-neutral-400">
+              {søgetekst ? `Ingen forsendelser matcher "${søgetekst}"` : "Ingen forsendelser kræver handling lige nu"}
+            </li>
+          )}
+        </ul>
+      )}
+
       {/* Under lg vises hver handel som et kort (ingen vandret scroll på
           mobil). Fra lg er det en tabel, hvor Handlinger-kolonnen står fast i
           højre side, så Se chat og Flere handlinger altid kan ses. */}
-      <div className="lg:overflow-hidden lg:rounded-xl lg:border lg:border-neutral-200 lg:bg-white">
+      <div
+        hidden={fane === "fragt"}
+        className="lg:overflow-hidden lg:rounded-xl lg:border lg:border-neutral-200 lg:bg-white"
+      >
         <div className="lg:overflow-x-auto">
           <table className="block w-full text-sm lg:table">
             <thead className="hidden lg:table-header-group">
@@ -270,7 +408,7 @@ export default async function AdminSager({
                     <td className="block lg:table-cell lg:px-3 lg:py-3">
                       <Link
                         href={`/auktion/${h.auction_id}`}
-                        className="font-medium text-neutral-800 hover:text-brand hover:underline"
+                        className="font-medium text-neutral-800 hover:text-groen hover:underline"
                       >
                         {titelMap.get(h.auction_id) ?? "(slettet auktion)"}
                       </Link>

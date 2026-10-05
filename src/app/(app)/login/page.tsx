@@ -136,7 +136,7 @@ function LoginForm() {
                 </label>
                 <Link
                   href="/glemt-adgangskode"
-                  className="text-xs font-medium text-brand hover:underline"
+                  className="text-xs font-medium text-groen hover:underline"
                 >
                   Glemt adgangskode?
                 </Link>
@@ -152,7 +152,7 @@ function LoginForm() {
             </div>
 
             {(error ?? callbackFejl) && (
-              <p className="text-sm text-red-600">{error ?? callbackFejl}</p>
+              <p className="text-sm text-fejl-tekst">{error ?? callbackFejl}</p>
             )}
 
             {emailIkkeBekraeftet && (
@@ -166,7 +166,7 @@ function LoginForm() {
                     type="button"
                     onClick={handleResend}
                     disabled={resendLoading}
-                    className="text-sm font-medium text-brand hover:underline disabled:opacity-50"
+                    className="text-sm font-medium text-groen hover:underline disabled:opacity-50"
                   >
                     {resendLoading ? "Sender…" : "Send bekræftelsesmail igen"}
                   </button>
@@ -186,7 +186,7 @@ function LoginForm() {
 
         <p className="mt-6 text-center text-sm text-neutral-500">
           BidHamr åbner snart.{" "}
-          <Link href="/coming-soon" className="font-medium text-brand">
+          <Link href="/coming-soon" className="font-medium text-groen">
             Tilmeld ventelisten
           </Link>
         </p>

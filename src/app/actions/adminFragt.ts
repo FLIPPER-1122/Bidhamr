@@ -1,0 +1,75 @@
+"use server";
+
+// Admin: forsendelser, der kræver opmærksomhed (forsendelser.kraever_opmaerksomhed,
+// sat af fragtkoden - fx "afleveret, men ikke markeret sendt", en fejlet
+// annullering eller en returneret pakke). Vises under fanen Fragt på
+// /admin/handler. Ingen penge flyttes her.
+import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
+import { assertRole } from "@/lib/adminAuth";
+import { UUID_RE } from "@/lib/moderationLog";
+
+class BrugerFejl extends Error {}
+
+const GENERISK_FEJL = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
+const INHABIL = "Du kan ikke behandle en handel, hvor du selv er køber eller sælger.";
+
+// Markerer forsendelsen som håndteret: markeringen fjernes, og noten (staffs
+// tekst + forsendelsens forklaring) gemmes i medarbejder-loggen. Idempotent:
+// kun en forsendelse, der stadig er markeret, ændres.
+export async function fragtMarkerHaandteret(formData: FormData): Promise<{ ok: true } | { fejl: string }> {
+  try {
+    const forsendelseId = String(formData.get("forsendelseId") ?? "");
+    const aarsag = String(formData.get("aarsag") ?? "").trim();
+    const { admin, userId: staffId } = await assertRole("medarbejder");
+    if (!UUID_RE.test(forsendelseId)) throw new BrugerFejl("Forsendelsen findes ikke.");
+    if (!aarsag) throw new BrugerFejl("Skriv, hvad du har gjort.");
+    if (aarsag.length > 500) throw new BrugerFejl("Noten må højst være 500 tegn.");
+
+    const { data: f, error } = await admin
+      .from("forsendelser")
+      .select("id, trade_id, opmaerksomhed_tekst, kraever_opmaerksomhed")
+      .eq("id", forsendelseId)
+      .maybeSingle<{ id: string; trade_id: string; opmaerksomhed_tekst: string | null; kraever_opmaerksomhed: boolean }>();
+    if (error) throw new Error(error.message);
+    if (!f) throw new BrugerFejl("Forsendelsen findes ikke.");
+    if (!f.kraever_opmaerksomhed) return { ok: true };
+
+    const { data: t } = await admin
+      .from("trades")
+      .select("buyer_id, seller_id")
+      .eq("id", f.trade_id)
+      .maybeSingle<{ buyer_id: string; seller_id: string }>();
+    if (t && (t.buyer_id === staffId || t.seller_id === staffId)) throw new BrugerFejl(INHABIL);
+
+    const { data: opdateret, error: opdFejl } = await admin
+      .from("forsendelser")
+      .update({ kraever_opmaerksomhed: false, opmaerksomhed_tekst: null })
+      .eq("id", forsendelseId)
+      .eq("kraever_opmaerksomhed", true)
+      .select("id");
+    if (opdFejl) throw new Error(opdFejl.message);
+    // En anden medarbejder nåede det først.
+    if (!opdateret || opdateret.length === 0) return { ok: true };
+
+    const forklaring = (f.opmaerksomhed_tekst ?? "").slice(0, 400);
+    const { error: logFejl } = await admin.from("moderation_log").insert({
+      medarbejder_id: staffId,
+      handling: "fragt_haandteret",
+      maal_type: "handel",
+      maal_id: f.trade_id,
+      bruger_id: null,
+      aarsag: forklaring ? `${aarsag} (Fragt: ${forklaring})` : aarsag,
+    });
+    if (logFejl) console.error("Kunne ikke skrive til moderation_log:", logFejl.message);
+
+    revalidatePath("/admin/handler");
+    revalidatePath("/admin");
+    return { ok: true };
+  } catch (err) {
+    unstable_rethrow(err);
+    if (err instanceof BrugerFejl) return { fejl: err.message };
+    console.error("Admin-handling fragtMarkerHaandteret fejlede:", err);
+    return { fejl: GENERISK_FEJL };
+  }
+}

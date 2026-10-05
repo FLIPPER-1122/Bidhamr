@@ -146,7 +146,7 @@ export default function RedigerAuktionForm({
   }
 
   const feltKlasse =
-    "mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand";
+    "mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
@@ -189,7 +189,7 @@ export default function RedigerAuktionForm({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex aspect-square items-center justify-center border-2 border-dashed border-neutral-300 text-2xl text-neutral-400 hover:border-brand"
+              className="flex aspect-square items-center justify-center border-2 border-dashed border-neutral-300 text-2xl text-neutral-400 hover:border-groen"
               aria-label="Tilføj billeder"
             >
               +
@@ -297,7 +297,7 @@ export default function RedigerAuktionForm({
           aria-checked={forsendelseMulig}
           onClick={() => setForsendelseMulig(!forsendelseMulig)}
           className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-            forsendelseMulig ? "bg-brand" : "bg-neutral-300"
+            forsendelseMulig ? "bg-groen" : "bg-neutral-300"
           }`}
         >
           <span
@@ -309,7 +309,7 @@ export default function RedigerAuktionForm({
       </div>
 
       {error && (
-        <div role="alert" className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div role="alert" className="border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
           {error}
         </div>
       )}

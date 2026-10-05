@@ -1,5 +1,6 @@
 // Tallene fra admin_forside_tal() (supabase/migrations/20261005030000_admin_forside.sql,
-// rettet i 20261005031000_admin_forside_rettelser.sql).
+// rettet i 20261005031000_admin_forside_rettelser.sql og
+// 20261006011000_fragt_rettelser.sql).
 // Kun antal - ingen beløb og ingen personoplysninger.
 
 export type HandlingTal = {
@@ -17,6 +18,7 @@ export type HandlingTal = {
   afvigelser: number;
   udbetalingskonti: number;
   kontolukninger: number;
+  fragt: number;
 };
 
 export type PeriodeTal = { i_dag: number; uge: number; maaned: number };
@@ -59,6 +61,7 @@ const HANDLING_NOEGLER: (keyof HandlingTal)[] = [
   "afvigelser",
   "udbetalingskonti",
   "kontolukninger",
+  "fragt",
 ];
 
 // Svaret fra databasen tolkes defensivt: manglende felter bliver 0.

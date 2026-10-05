@@ -114,6 +114,12 @@ export default function KraeverHandling({
       detalje: `Mere end ${HAENGER_GRAENSER_DAGE.ikke_modtaget} dage siden afsendelsen`,
     },
     {
+      titel: "Fragt kræver handling",
+      antal: tal.fragt,
+      href: "/admin/handler?vis=fragt",
+      forklaring: "Fragtfirmaet har meldt noget, der skal tjekkes – fx en pakke, sælgeren ikke har markeret sendt.",
+    },
+    {
       titel: "Afhentning ikke gennemført",
       antal: tal.afhentning,
       href: "/admin/handler?vis=haenger",

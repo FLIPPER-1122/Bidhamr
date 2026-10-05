@@ -102,7 +102,7 @@ export default async function HandelDetaljePage({
       // det tjek, lækker den chatten til staff.
       supabase
         .from("messages")
-        .select("id, sender_id, content, created_at, fra_bidhamr")
+        .select("id, sender_id, content, created_at, fra_bidhamr, blokeret_grund")
         .eq("trade_id", trade_id)
         .order("created_at", { ascending: true })
         .overrideTypes<Besked[], { merge: false }>(),
@@ -157,6 +157,15 @@ export default async function HandelDetaljePage({
     afhentning && handel.status === "betaling_modtaget"
       ? await hentAfhentningInfo(handel.id)
       : null;
+
+  // Sælgerens adresse og telefon vises kun for køberen, når en
+  // afhentningsvare er betalt og endnu ikke hentet (handel_afhentningsadresse).
+  let afhentningsadresse: { adresse: string | null; telefon: string | null } | null = null;
+  if (afhentning && erKoeber && handel.status === "betaling_modtaget") {
+    const { data } = await supabase.rpc("handel_afhentningsadresse", { p_trade: handel.id });
+    const d = data as { kode?: string; adresse?: string | null; telefon?: string | null } | null;
+    if (d?.kode === "ok") afhentningsadresse = { adresse: d.adresse ?? null, telefon: d.telefon ?? null };
+  }
 
   // Afsendelsesfrist (kun forsendelse): pakken skal markeres sendt senest 5
   // dage efter betalingen, ellers annulleres handlen, og køberen refunderes
@@ -242,7 +251,7 @@ export default async function HandelDetaljePage({
                   key={trin.vaerdi}
                   className={`flex-1 rounded-lg border px-3 py-2 text-center text-xs font-medium ${
                     naaet
-                      ? "border-brand bg-orange-lys text-brand"
+                      ? "border-groen bg-groen-lys text-groen-mork"
                       : "border-neutral-200 text-neutral-400"
                   }`}
                 >
@@ -393,6 +402,25 @@ export default async function HandelDetaljePage({
               Aftal tid og sted for afhentningen med sælgeren i chatten herunder. Når du henter
               varen, viser du sælgeren din afhentningskode.
             </p>
+            {afhentningsadresse && (afhentningsadresse.adresse || afhentningsadresse.telefon) && (
+              <dl className="mt-3 rounded-lg bg-groen-lys px-4 py-3 text-sm text-tekst">
+                {afhentningsadresse.adresse && (
+                  <div>
+                    <dt className="font-medium text-groen-mork">Afhentningsadresse</dt>
+                    <dd className="whitespace-pre-line">{afhentningsadresse.adresse}</dd>
+                  </div>
+                )}
+                {afhentningsadresse.telefon && (
+                  <div className={afhentningsadresse.adresse ? "mt-2" : ""}>
+                    <dt className="font-medium text-groen-mork">Sælgerens telefon</dt>
+                    <dd>{afhentningsadresse.telefon}</dd>
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-tekst-daempet">
+                  Kun du kan se oplysningerne, og kun indtil varen er hentet.
+                </p>
+              </dl>
+            )}
             {afhentningInfo?.frist && (
               <AfhentningsfristLinje
                 frist={afhentningInfo.frist}

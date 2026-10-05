@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hentBetalingsindstillinger, hentMineOverfoersler } from "@/app/actions/betaling";
 import KontoBetaling from "@/components/betaling/KontoBetaling";
 import KontoUdbetaling from "@/components/betaling/KontoUdbetaling";
+import BlokeredeBrugere, { type Blokering } from "@/components/tryghed/BlokeredeBrugere";
 
 export const dynamic = "force-dynamic";
 
@@ -44,12 +45,33 @@ export default async function KontoSide({
     overfoerslerSvar,
     { data: advarselData, error: advarselFejl },
     { data: paamindelseData, error: paamindelseFejl },
+    { data: blokeringData, error: blokeringFejl },
   ] = await Promise.all([
     hentBetalingsindstillinger(),
     hentMineOverfoersler(),
     supabase.rpc("mine_advarsler"),
     supabase.rpc("mine_paamindelser"),
+    // Anonyme spærringer af bydere returneres uden navn og bruger-id.
+    supabase.rpc("mine_blokeringer"),
   ]);
+  if (blokeringFejl) console.error("Konto: blokeringer kunne ikke hentes:", blokeringFejl.message);
+  const blokeringer: Blokering[] = (
+    (blokeringData ?? []) as {
+      id: string;
+      bruger_id: string | null;
+      navn: string | null;
+      auktion_id: string | null;
+      auktion_titel: string | null;
+      oprettet_kl: string;
+    }[]
+  ).map((b) => ({
+    id: b.id,
+    brugerId: b.bruger_id,
+    navn: b.navn,
+    auktionId: b.auktion_id,
+    auktionTitel: b.auktion_titel,
+    oprettetKl: b.oprettet_kl,
+  }));
   if (advarselFejl) console.error("Konto: advarsler kunne ikke hentes:", advarselFejl.message);
   if (paamindelseFejl) console.error("Konto: påmindelser kunne ikke hentes:", paamindelseFejl.message);
   const advarsler = (advarselData ?? []) as MinAdvarsel[];
@@ -154,6 +176,23 @@ export default async function KontoSide({
         <Link href="/konto/notifikationer" className="btn btn-sekundaer mt-4">
           Notifikationsindstillinger
         </Link>
+      </section>
+
+      <section id="blokerede" className="mt-6 scroll-mt-24 rounded-2xl border border-kant bg-white p-5 sm:p-6">
+        <h2 className="font-serif text-xl font-semibold text-tekst">Blokerede brugere</h2>
+        <p className="mt-1 text-sm text-tekst-daempet">
+          Blokerede brugere kan ikke byde på dine auktioner, skrive til dig eller stille dig spørgsmål.
+          Handler, I allerede er i gang med, kan stadig gennemføres.
+        </p>
+        <div className="mt-3">
+          {blokeringFejl ? (
+            <p role="alert" className="text-sm text-fejl-tekst">
+              Listen kunne ikke hentes lige nu. Prøv igen om lidt.
+            </p>
+          ) : (
+            <BlokeredeBrugere blokeringer={blokeringer} />
+          )}
+        </div>
       </section>
 
       <p className="mt-6 text-sm text-tekst-daempet">

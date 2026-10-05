@@ -336,7 +336,7 @@ export default function BidPanel({
             value={beløb}
             onChange={(e) => setBeløb(e.target.value)}
             placeholder={`Mindst ${minimumBud.toLocaleString("da-DK")} kr`}
-            className="flex-1 rounded-lg border border-neutral-300 px-3 py-3 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+            className="flex-1 rounded-lg border border-neutral-300 px-3 py-3 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
           />
           <button
             type="submit"
@@ -418,7 +418,7 @@ export default function BidPanel({
       )}
 
       {error && (
-        <div className="mt-3 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mt-3 border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
           {error}
         </div>
       )}
@@ -468,7 +468,7 @@ export default function BidPanel({
           {budListe.length > VIST_SOM_STANDARD && (
             <button
               onClick={() => setVisAlle(!visAlle)}
-              className="mt-3 text-sm font-medium text-brand"
+              className="mt-3 text-sm font-medium text-groen"
             >
               {visAlle ? "Vis færre bud" : "Vis al budhistorik"}
             </button>

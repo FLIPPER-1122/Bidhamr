@@ -10,7 +10,9 @@ import "server-only";
 //              pakkebillederne er stadig krævet fra sælgeren, og
 //              trade_marker_sendt kræver auth.uid() = sælgeren. Står handlen
 //              stadig i 'betaling_modtaget', får sælgeren en påmindelse om at
-//              markere pakken sendt med billeder.
+//              markere pakken sendt med billeder, og forsendelsen markeres
+//              til staff (kraever_opmaerksomhed) med afsendelsesfristens dato.
+//              Fristen ændres ikke.
 //   leveret    Køberen får "Pakken er kommet frem" (pakke_leveret, idempotent
 //              nøgle). Ingen penge frigives, og 48-timers uret startes IKKE -
 //              det gør stadig køberens "modtaget" / den eksisterende
@@ -22,6 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl, renFejltekst } from "@/lib/drift";
 import { send } from "@/lib/notifikationer/send";
 import { adapterFor, fragtErSatOp, hentFragtfirma } from "@/lib/fragt";
+import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
 import {
   type Adresse,
   type Label,
@@ -215,8 +218,90 @@ export async function opretUdgaaendeForsendelse(
   return { ok: true, forsendelseId: id };
 }
 
+// Annullerer en label hos fragtfirmaet i to trin, så en samtidig "afleveret"
+// ikke giver uoverensstemmelse:
+//   1. forsendelse_annuller_claim sætter status 'annulleres' FØR fragtfirmaet
+//      kaldes (dobbeltklik/cron giver ikke to kald).
+//   2. forsendelse_annuller_afslut: 'annulleret' ved succes. Ved fejl rulles
+//      status tilbage til 'oprettet' (labelen er stadig aktiv), og staff
+//      markeres, når vi ikke ved, hvad fragtfirmaet nåede (ukendt fejl/timeout)
+//      eller når det er systemet, der annullerer.
+// brugerId: brugeren (SKAL være verificeret med auth af kalderen), eller null
+// for systemet (fragt-cron - kun på annullerede handler, tjekkes i SQL).
+async function annullerForsendelse(
+  admin: Admin,
+  forsendelseId: string,
+  brugerId: string | null,
+): Promise<{ ok: true } | { fejl: string }> {
+  const { data: kode, error: claimFejl } = await admin.rpc("forsendelse_annuller_claim", {
+    p_id: forsendelseId,
+    p_bruger: brugerId,
+  });
+  if (claimFejl) {
+    await logDriftFejl({ kilde: "server", hvor: "Fragt: forsendelse_annuller_claim", fejl: claimFejl });
+    return { fejl: GENERISK_FEJL };
+  }
+  if (kode === "ikke_fundet") return { fejl: "Fragtlabelen findes ikke." };
+  if (kode === "i_gang") return { fejl: "Labelen er ved at blive annulleret. Opdatér siden om lidt." };
+  if (kode !== "ok") return { fejl: "Labelen kan ikke annulleres, når pakken er afleveret." };
+
+  const afslut = async (ok: boolean, note: string | null): Promise<string | null> => {
+    const { data, error } = await admin.rpc("forsendelse_annuller_afslut", {
+      p_id: forsendelseId,
+      p_ok: ok,
+      p_note: note,
+    });
+    if (error) {
+      // Status bliver stående i 'annulleres'; fragt-cron rydder op efter 15 min.
+      await logDriftFejl({ kilde: "server", hvor: "Fragt: forsendelse_annuller_afslut", fejl: error });
+      return null;
+    }
+    return data as string;
+  };
+
+  const { data: f } = await admin
+    .from("forsendelser")
+    .select("fragtfirma, forsendelses_id")
+    .eq("id", forsendelseId)
+    .maybeSingle<{ fragtfirma: string; forsendelses_id: string | null }>();
+  const adapter = f ? adapterFor(f.fragtfirma) : null;
+  if (!f?.forsendelses_id || !adapter) {
+    await afslut(
+      false,
+      brugerId === null
+        ? "Handlen er annulleret, men fragtfirmaet er ikke sat op her, så labelen kunne ikke annulleres. Annullér den manuelt hos fragtfirmaet."
+        : null,
+    );
+    return { fejl: FRAGT_IKKE_SAT_OP };
+  }
+
+  try {
+    await medTimeout(adapter.annullerForsendelse(f.forsendelses_id), 20_000, "annullerForsendelse");
+  } catch (err) {
+    const kendt = err instanceof FragtFejl;
+    const detalje = renFejltekst(err, 200);
+    let note: string | null = null;
+    if (brugerId === null) {
+      note = `Handlen er annulleret, men labelen kunne ikke annulleres hos fragtfirmaet (${detalje}). Annullér den manuelt hos fragtfirmaet, eller kontakt sælgeren.`;
+    } else if (!kendt) {
+      note = `Sælgeren prøvede at annullere labelen, men fragtfirmaet svarede ikke korrekt (${detalje}). Tjek hos fragtfirmaet, om labelen er annulleret.`;
+    }
+    await afslut(false, note);
+    if (!kendt) {
+      await logDriftFejl({ kilde: "server", hvor: "Fragt: annullér label", fejl: err });
+    }
+    return { fejl: brugerFejl(err) };
+  }
+
+  const svar = await afslut(true, null);
+  if (svar === "aendret") {
+    return { fejl: "Fragtfirmaet har netop meldt pakken indleveret. BidHamr kigger på forsendelsen." };
+  }
+  return { ok: true };
+}
+
 // Annullerer en udgående label, før pakken er afleveret. saelgerId SKAL være
-// verificeret med auth af kalderen.
+// verificeret med auth af kalderen (SQL tjekker igen, at han er sælgeren).
 export async function annullerUdgaaendeForsendelse(
   forsendelseId: string,
   saelgerId: string,
@@ -224,39 +309,11 @@ export async function annullerUdgaaendeForsendelse(
   const admin = createAdminClient();
   const { data: f } = await admin
     .from("forsendelser")
-    .select("id, trade_id, type, fragtfirma, status, forsendelses_id")
+    .select("type")
     .eq("id", forsendelseId)
-    .maybeSingle<{ id: string; trade_id: string; type: string; fragtfirma: string; status: string; forsendelses_id: string | null }>();
+    .maybeSingle<{ type: string }>();
   if (!f || f.type !== "udgaaende") return { fejl: "Fragtlabelen findes ikke." };
-  const { data: t } = await admin
-    .from("trades")
-    .select("seller_id")
-    .eq("id", f.trade_id)
-    .maybeSingle<{ seller_id: string }>();
-  if (!t || t.seller_id !== saelgerId) return { fejl: "Fragtlabelen findes ikke." };
-  if (f.status !== "oprettet" || !f.forsendelses_id) {
-    return { fejl: "Labelen kan ikke annulleres, når pakken er afleveret." };
-  }
-  const adapter = adapterFor(f.fragtfirma);
-  if (!adapter) return { fejl: FRAGT_IKKE_SAT_OP };
-  try {
-    await medTimeout(adapter.annullerForsendelse(f.forsendelses_id), 20_000, "annullerForsendelse");
-  } catch (err) {
-    if (!(err instanceof FragtFejl)) {
-      await logDriftFejl({ kilde: "server", hvor: "Fragt: annullér label", fejl: err });
-    }
-    return { fejl: brugerFejl(err) };
-  }
-  const { data: kode, error } = await admin.rpc("forsendelse_annuller", {
-    p_id: forsendelseId,
-    p_bruger: saelgerId,
-  });
-  if (error) {
-    await logDriftFejl({ kilde: "server", hvor: "Fragt: forsendelse_annuller", fejl: error });
-    return { fejl: GENERISK_FEJL };
-  }
-  if (kode !== "ok") return { fejl: "Labelen kan ikke annulleres, når pakken er afleveret." };
-  return { ok: true };
+  return annullerForsendelse(admin, forsendelseId, saelgerId);
 }
 
 // ------------------------------------------------------------ hændelser
@@ -329,9 +386,27 @@ async function udfoerHandelseffekter(admin: Admin, forsendelseId: string): Promi
     const titel = a?.titel ?? "din vare";
     const link = `/mine-handler/${t.id}`;
 
-    // Pakken er indleveret, men sælgeren har ikke markeret den sendt.
+    // Pakken er indleveret, men sælgeren har ikke markeret den sendt: sælgeren
+    // får en påmindelse, og forsendelsen markeres til staff, så de kan
+    // kontakte sælgeren. Afsendelsesfristen ændres IKKE (ROADMAP-BESLUTNINGER,
+    // "Sælger markerer selv pakken sendt") - handlen annulleres stadig, hvis
+    // pakken ikke er markeret sendt, når fristen udløber.
     if (f.afleveret_kl && !f.afleveret_besked_kl) {
+      let note: string | null = null;
       if (t.status === "betaling_modtaget") {
+        const { data: b } = await admin
+          .from("betalinger")
+          .select("betalt_kl")
+          .eq("trade_id", t.id)
+          .not("betalt_kl", "is", null)
+          .order("betalt_kl", { ascending: false })
+          .limit(1)
+          .maybeSingle<{ betalt_kl: string }>();
+        const frist = sendSenest(b?.betalt_kl);
+        note =
+          "Fragtfirmaet har pakken, men sælger har ikke trykket Send pakke – afsendelsesfristen annullerer handlen " +
+          (frist ? sendSenestTekst(frist) : "når fristen udløber") +
+          ". Kontakt sælgeren.";
         await send(t.seller_id, "betaling_modtaget", {
           titel: "Pakken er indleveret",
           tekst: `Fragtfirmaet har modtaget pakken med "${titel}". Har du ikke allerede gjort det, så markér pakken sendt med de to pakkebilleder på handelssiden - ellers bliver handlen annulleret, når fristen for afsendelse udløber.`,
@@ -340,8 +415,10 @@ async function udfoerHandelseffekter(admin: Admin, forsendelseId: string): Promi
           noegle: `fragt_afleveret:${f.id}`,
         });
         sendt++;
+      } else if (t.status === "annulleret") {
+        note = "Fragtfirmaet har modtaget pakken, men handlen er annulleret. Tjek, om pakken skal sendes retur til sælgeren.";
       }
-      await admin.rpc("forsendelse_marker_besked", { p_id: f.id, p_felt: "afleveret", p_note: null });
+      await admin.rpc("forsendelse_marker_besked", { p_id: f.id, p_felt: "afleveret", p_note: note });
     }
 
     // Pakken er kommet frem. Ingen penge flyttes, og 48-timers uret startes
@@ -409,25 +486,49 @@ const POLL_INTERVAL_MIN = 20;
 const POLL_MAKS = 20;
 const CRON_BUDGET_MS = 25_000;
 
+const ANNULLER_MAKS = 10;
+
 // Henter sporing for aktive forsendelser (højst 20 pr. kørsel, hver højst hvert
-// 20. minut) og sender beskeder, der mangler. Let og begrænset - kaldes fra
-// betalings-cron-ruten. Kaster aldrig.
+// 20. minut) og sender beskeder, der mangler. Annullerer desuden labels på
+// annullerede handler. Let og begrænset - kaldes fra betalings-cron-ruten.
+// Kaster aldrig.
 export async function koerFragtCron(): Promise<{
   sporet: number;
   nyeHaendelser: number;
   beskeder: number;
+  annulleret: number;
   fejl: number;
 }> {
-  const r = { sporet: 0, nyeHaendelser: 0, beskeder: 0, fejl: 0 };
+  const r = { sporet: 0, nyeHaendelser: 0, beskeder: 0, annulleret: 0, fejl: 0 };
   const start = Date.now();
   const admin = createAdminClient();
+
+  // Handlen er annulleret (afsendelsesfrist, afhentningsfrist, ubetalt, admin,
+  // sag - uanset grund): annullér udgående labels, der ikke er afleveret, hos
+  // fragtfirmaet. De eksisterende annulleringsfunktioner røres ikke - cron
+  // finder dem her. Fejler annulleringen, markeres forsendelsen til staff
+  // (højst 3 forsøg, 1 time imellem - se fragt_cron_annulleringer).
+  const { data: annuller, error: annFejl } = await admin.rpc("fragt_cron_annulleringer", {
+    p_graense: ANNULLER_MAKS,
+  });
+  if (annFejl) {
+    r.fejl++;
+    await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: "Fragt: find annulleringer", fejl: annFejl });
+  } else {
+    for (const a of (annuller ?? []) as { id: string; trade_id: string }[]) {
+      if (Date.now() - start > CRON_BUDGET_MS / 2) break;
+      const svar = await annullerForsendelse(admin, a.id, null);
+      if ("ok" in svar) r.annulleret++;
+      else r.fejl++;
+    }
+  }
 
   const graense = new Date(Date.now() - POLL_INTERVAL_MIN * 60_000).toISOString();
   const aeldst = new Date(Date.now() - 60 * 24 * 60 * 60_000).toISOString();
   const { data: aktive, error } = await admin
     .from("forsendelser")
     .select("id, fragtfirma, sporingsnummer")
-    .in("status", ["oprettet", "afleveret", "i_transit", "klar_til_afhentning"])
+    .in("status", ["oprettet", "annulleres", "afleveret", "i_transit", "klar_til_afhentning"])
     .gte("oprettet_kl", aeldst)
     .or(`sidst_polled_kl.is.null,sidst_polled_kl.lt.${graense}`)
     .order("sidst_polled_kl", { ascending: true, nullsFirst: true })

@@ -51,10 +51,11 @@
   --color-info-tekst: #1f4e79;
 
   /*
-    Overgang: mange filer bruger endnu bg-brand/text-brand fra den gamle røde.
-    Tokenet peger på skovgrøn, fordi text-brand oftest er links og tal på hvid
-    bund: grøn giver 7,62:1 på hvid og 6,67:1 på lys grøn, mens orange kun gav
-    2,95:1. Skal en flade have hvid tekst, bruges bg-orange-knap.
+    UDFASET (fase 3): alle bg-brand/text-brand/border-brand er skiftet til
+    groen-tokens. Aliaset bliver kun stående som sikkerhedsnet for grene, der
+    flettes senere – brug det ALDRIG i ny kode. Brug text-groen (links/tal på
+    hvid: 7,62:1), bg-groen (flader) eller bg-orange-knap (knapper med hvid
+    tekst). Den gamle røde #E63946 må ikke forekomme nogen steder.
   */
   --color-brand: #1e5e4a;
   --color-background: #ffffff;
@@ -88,10 +89,21 @@ body {
      next/font-variablerne ikke igennem. */
 }
 
-h1,
-h2,
-h3 {
-  font-family: var(--font-serif);
+/* Skrifttypen ligger i base-laget, så font-sans på en overskrift virker
+   (fx små sektionsoverskrifter i menuer). Vægten står uden for laget med
+   vilje: Fraunces er kun indlæst i 600, så font-bold på en h1 må ikke give
+   en kunstigt fed serif. Overskrifter med font-sans styrer selv vægten. */
+@layer base {
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-serif);
+  }
+}
+
+h1:not(.font-sans),
+h2:not(.font-sans),
+h3:not(.font-sans) {
   font-weight: 600;
 }
 
@@ -243,15 +255,6 @@ h3 {
 @keyframes btn-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes scroll-karussel {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
   }
 }
 

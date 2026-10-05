@@ -98,7 +98,7 @@ export default function AvatarUpload({
         onChange={handleFileChange}
       />
 
-      {error && <p className="mt-2 max-w-xs text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-2 max-w-xs text-xs text-fejl-tekst">{error}</p>}
     </div>
   );
 }

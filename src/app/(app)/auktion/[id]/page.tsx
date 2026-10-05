@@ -11,6 +11,7 @@ import AnmeldOpslagKnap from "@/components/AnmeldOpslagKnap";
 import StartChatKnap from "@/components/StartChatKnap";
 import SaelgerAuktionHandlinger from "@/components/SaelgerAuktionHandlinger";
 import SpoergSaelger from "@/components/SpoergSaelger";
+import SpaerByder, { type ByderValg } from "@/components/tryghed/SpaerByder";
 import { kortNavn } from "@/lib/kortNavn";
 import { standNavn } from "@/lib/stand";
 import { getStaffRole } from "@/lib/adminAuth";
@@ -111,6 +112,16 @@ export default async function AuktionPage({
   // Redigér/annullér: kun på en igangværende auktion (låst efter første bud).
   const harBud = auktion.nuværende_bud != null || bud.length > 0;
   const kanStyreAuktion = erSælger && auktion.status === "aktiv" && !auktionErSlut;
+  // Sælgeren kan spærre en byder ud fra et af byderens bud (kun bud-id og
+  // "Byder N" sendes til browseren - aldrig bruger-id eller navn).
+  const spaerbareBydere: ByderValg[] = kanStyreAuktion
+    ? [...byderNr.entries()]
+        .filter(([brugerId]) => brugerId !== mitId)
+        .map(([brugerId, nr]) => ({
+          budId: bud.find((b) => b.bruger_id === brugerId)!.id,
+          byder: `Byder ${nr}`,
+        }))
+    : [];
 
   // Handelstilstand: cron-jobbet opretter handel + betaling ved auktionsluk.
   // Betalingen er dermed allerede sket - der er intet "betal nu"-trin.
@@ -158,7 +169,7 @@ export default async function AuktionPage({
         {/* Zone 1 – top */}
         <div className="flex items-center justify-between gap-3">
           <nav className="text-xs text-neutral-500">
-            <Link href="/auktioner" className="hover:text-brand">
+            <Link href="/auktioner" className="hover:text-groen">
               Alle auktioner
             </Link>
             {" > "}
@@ -182,7 +193,7 @@ export default async function AuktionPage({
             />
 
             <div className="mt-4 flex items-start justify-between gap-3">
-              <h1 className="text-2xl font-bold text-brand sm:text-3xl">
+              <h1 className="text-2xl font-bold text-groen sm:text-3xl">
                 {auktion.titel}
               </h1>
               <AuctionTitleActions />
@@ -209,7 +220,7 @@ export default async function AuktionPage({
                 <dd>
                   <Link
                     href={`/profil/${auktion.bruger_id}`}
-                    className="font-medium text-brand hover:underline"
+                    className="font-medium text-groen hover:underline"
                   >
                     {sælgerNavn}
                   </Link>
@@ -265,8 +276,8 @@ export default async function AuktionPage({
           {/* Højre kolonne (40%) */}
           <div className="lg:col-span-2">
             {erVinder && (
-              <div className="mb-4 border border-brand bg-red-50 p-4">
-                <p className="font-semibold text-brand">
+              <div className="mb-4 rounded-[14px] border border-succes-kant bg-succes-bg p-4">
+                <p className="font-semibold text-groen">
                   🎉 Du har vundet denne auktion!
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
@@ -283,8 +294,8 @@ export default async function AuktionPage({
             )}
 
             {erSælger && auktionErSlut && vinderBud && (
-              <div className="mb-4 border border-brand bg-red-50 p-4">
-                <p className="font-semibold text-brand">
+              <div className="mb-4 rounded-[14px] border border-succes-kant bg-succes-bg p-4">
+                <p className="font-semibold text-groen">
                   Din auktion er solgt
                 </p>
                 <p className="mt-1 text-sm text-neutral-700">
@@ -302,6 +313,7 @@ export default async function AuktionPage({
             {kanStyreAuktion && (
               <SaelgerAuktionHandlinger auktionId={auktion.id} harBud={harBud} />
             )}
+            {spaerbareBydere.length > 0 && <SpaerByder bydere={spaerbareBydere} />}
 
             <div className="lg:sticky lg:top-4">
               <BidPanel
