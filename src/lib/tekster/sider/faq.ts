@@ -172,7 +172,7 @@ export const FAQ_SIDE: Tekstside = {
       punkter: [
         {
           spoergsmaal: "Er der ting, jeg ikke må sælge?",
-          svar: "Ja. Du må ikke sælge ulovlige varer, stjålne ting eller falske kopier. Auktioner, der bryder reglerne, bliver fjernet.",
+          svar: "Ja. Ulovlige varer – fx våben, narkotika, receptpligtig medicin, falske mærkevarer, levende dyr og stjålne ting – kan ikke sættes til salg. Enkelte lovlige varer, fx billetter, alkohol og tobak, bliver kontrolleret af BidHamr. Auktioner, der bryder reglerne, bliver fjernet. Se hele listen under \"Forbudte varer\".",
         },
         {
           spoergsmaal: "Hvordan melder jeg en auktion, der ikke burde være der?",

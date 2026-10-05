@@ -2,7 +2,8 @@
 // redigeringsformularen (advarsel i browseren) og som reference for appen.
 //
 // HOLD SYNKRON med databasen
-// (supabase/migrations/20261006041000_auktionsfunktioner_rettelser.sql):
+// (supabase/migrations/20261006042000_forbudte_varer_skaerpet.sql, som
+// erstatter listen fra 20261006041000):
 //   FORBUDTE_KATEGORIER  <-> public.forbudte_varer()
 //   FORBUDTE_REGLER      <-> public.forbudte_ord()   (samme rækkefølge = nr)
 //   PLADSHOLDERE         <-> public.forbudt_ekspander()
@@ -12,11 +13,15 @@
 // (fejlkode BHF01 / kode 'forbudt_vare') og opretter en automatisk rapport
 // til staff (reports.category = 'forbudt_vare') ved "tvivl".
 //
-// Princip (for at undgå falske positiver):
-//   blokeret - KUN helt entydige formuleringer ("skarp ammunition",
-//              "springkniv", "kokain" uden film/bog-ord ...).
-//   tvivl    - kun hvor der reelt er grund til, at staff kigger
-//              ("pistol", "kanin til salg", "flaske vodka" ...).
+// Princip (Filip, 6. oktober 2026 - se ROADMAP-BESLUTNINGER.md):
+//   blokeret - ALLE ulovlige varer: skydevåben (også luftvåben og
+//              almindelig "pistol"), våbendele, ammunition og krudt,
+//              narkotika, receptpligtig medicin, falske mærkevarer
+//              ("falsk/fake <mærke>"), levende dyr, ulovlige knive ...
+//   tvivl    - lovlige men følsomme varer, som staff kontrollerer:
+//              billetter (altid), alkohol, tobak, softguns, våbentilbehør
+//              ("Gevær rack"), kopier/replikaer uden "falsk"
+//              ("Kopi af Arne Jacobsen stol") ...
 //   Almindelige varer ("Kanin bur", "Vodka glas", "Nerf pistol") giver
 //   hverken blokering eller rapport.
 //
@@ -31,26 +36,18 @@
 // ?, +, (a|b). Ingen \b, \w, \d, lookahead eller (?:..). De matches mod den
 // normaliserede tekst (se normaliserTekst) og kun som hele ord.
 //
-// TESTTABEL (samme eksempler som DO-blokken sidst i 20261006041000, som får
-// migrationen til at fejle ved et forkert resultat; ret begge steder):
-//   ok (hverken blokering eller rapport):
-//     "Dynamit-Harry DVD", "Olsen-banden på dynamit-tur",
-//     "Eternitplader uden asbest", "Asbest-fri tagplader",
-//     "Næsespray ikke receptpligtig", "Legepenge falske penge",
-//     "Kokain Bear DVD", "Testosteron bog", "Snus dåse (tom)",
-//     "Hash brown-pande", "Skunk-jakke", "Skunk Anansie CD",
-//     "Killing Eve DVD", "Kanin bur", "Hamster bur med hjul",
-//     "Fake fur jakke", "Replika af Titanic model", "Medicin skab",
-//     "Piller til pool", "Nerf pistol", "Pistol Pete bog",
-//     "Krudt og kugler brætspil", "Joint compound spartelmasse",
-//     "Ding Dong bong klokke", "THC-fri CBD olie", "Vodka glas",
-//     "Alkohol tester", "Cigaret etui", "Billet holder", "Login",
-//     "Vandpistol", "Sex Pistols plakat", "iPhone 12", "Sofabord i eg"
-//   tvivl (bevidst): "Gevær rack" (gevær), "Kopi af Arne Jacobsen stol"
-//   tvivl: "Haglgevær", "2 billetter til Roskilde Festival",
-//     "Kanin til salg", "Flaske vodka", "Pistol"
-//   blokeret: "Sælger strømpistol", "Springkniv sælges", "Kokain 5 gram",
-//     "MitID kodeviser", "Falske 500-kr sedler", "Skarp ammunition 9mm"
+// TESTTABEL: DO-blokken sidst i 20261006042000 får migrationen til at fejle
+// ved et forkert resultat. Ret eksemplerne dér og kør dem også mod
+// tjekForbudtTekst, når listen ændres. Udvalg:
+//   ok:       "Nerf pistol", "Vandpistol", "Pistol Pete bog",
+//             "Sex Pistols plakat", "Hash brown-pande", "Kanin bur",
+//             "Hvalpe kurv", "Killingefoder", "Akvarium 60 L",
+//             "Billet holder", "Krudt og kugler brætspil", "Krudtugle"
+//   tvivl:    "Gevær rack", "Softgun", "Kopi af Arne Jacobsen stol",
+//             "2 billetter til Roskilde Festival", "Flaske vodka"
+//   blokeret: "Pistol", "Glock 17 pistol", "Jagtgevær sælges",
+//             "Luftpistol", "Hash 5 gram", "Falsk Rolex",
+//             "Kanin til salg", "Hvalpe sælges", "Akvariefisk"
 
 export type ForbudtKategori =
   | "vaaben"
@@ -74,7 +71,7 @@ export const FORBUDTE_KATEGORIER: readonly {
     kode: "vaaben",
     navn: "Våben og ammunition",
     beskrivelse:
-      "Skydevåben, dele til skydevåben, ammunition og krudt, springknive, butterflyknive, knojern, peberspray, strømpistoler og andre våben, der kræver tilladelse eller er forbudte i Danmark.",
+      "Skydevåben (også luftvåben), dele til skydevåben, ammunition og krudt, springknive, butterflyknive, knojern, peberspray, strømpistoler og andre våben, der kræver tilladelse eller er forbudte i Danmark. Auktioner med softguns, armbrøster og våbentilbehør bliver kontrolleret af BidHamr.",
   },
   {
     kode: "narkotika",
@@ -91,19 +88,19 @@ export const FORBUDTE_KATEGORIER: readonly {
   {
     kode: "levende_dyr",
     navn: "Levende dyr",
-    beskrivelse: "Alle levende dyr, fx hvalpe, killinger, kaniner, fugle, fisk og krybdyr.",
+    beskrivelse: "Levende dyr må ikke sælges på BidHamr, fx hvalpe, killinger, kaniner, fugle, fisk og krybdyr. Tilbehør som bure, foder og akvarier må gerne sælges.",
   },
   {
     kode: "forfalskninger",
     navn: "Forfalskninger og kopivarer",
     beskrivelse:
-      "Kopier af mærkevarer, falske dokumenter, pas, ID-kort, kørekort, pengesedler og andet, der udgiver sig for at være ægte.",
+      "Falske mærkevarer (fx en falsk Rolex), falske dokumenter, pas, ID-kort, kørekort, pengesedler og andet, der udgiver sig for at være ægte. Auktioner med kopier og replikaer bliver kontrolleret af BidHamr.",
   },
   {
     kode: "tobak_alkohol",
     navn: "Tobak og alkohol",
     beskrivelse:
-      "Snus (forbudt at sælge i Danmark). Tobak, e-cigaretter og alkohol må aldrig sælges til personer under 18 år.",
+      "Snus (forbudt at sælge i Danmark). Tobak, e-cigaretter og alkohol må aldrig sælges til personer under 18 år, og auktioner med dem bliver kontrolleret af BidHamr.",
   },
   {
     kode: "stjaalne",
@@ -131,7 +128,7 @@ export const FORBUDTE_KATEGORIER: readonly {
     kode: "billetter",
     navn: "Billetter med videresalgsforbud",
     beskrivelse:
-      "Billetter, som arrangøren ikke tillader videresalg af, og billetter solgt til mere end den oprindelige pris (billetloven).",
+      "Billetter, som arrangøren ikke tillader videresalg af, og billetter solgt til mere end den oprindelige pris (billetloven). Alle auktioner med billetter bliver kontrolleret af BidHamr.",
   },
 ] as const;
 
@@ -143,20 +140,26 @@ export const PLADSHOLDERE: readonly [string, string][] = [
   // Ord, der gør en "farlig" ting til legetøj/værktøj.
   [
     "@legevaaben",
-    "(vand|vandpistol|nerf|leget[oø]j|leget[oø]js|lim|limpistol|spr[oø]jte|spr[oø]jtepistol|maling|malerpistol|pete|start|startpistol|signal|signalpistol|kapsel|kapselpistol|knald|skum|massage|massagepistol|varmluft|varmluftpistol|silikone|fugepistol|lodde|loddepistol|@medie)",
+    "(vand|vandpistol|nerf|leget[oø]j|leget[oø]js|lim|limpistol|spr[oø]jte|spr[oø]jtepistol|maling|malerpistol|pete|start|startpistol|signal|signalpistol|kapsel|kapselpistol|knald|skum|massage|massagepistol|varmluft|varmluftpistol|silikone|fugepistol|lodde|loddepistol|vanding|haveslange|termometer|boremaskine|skruemaskine|v[aæ]rkt[oø]j|kompressor|trykluft|bl[aæ]sepistol|fedtpistol|tankpistol|@medie)",
+  ],
+  // Ord, der gør et skydevåben-ord til tilbehør, attrap eller softgun.
+  // Giver rapport til staff i stedet for blokering.
+  [
+    "@vaabenundtagen",
+    "(rack|stativ|v[aå]benskab|v[aå]benskabe|skab|sikkerhedsskab|holder|oph[aæ]ng|taske|futteral|kuffert|etui|rem|b[aæ]lte|hylster|sigtekikkert|kikkertsigte|reng[oø]ringss[aæ]t|attrap|replika|dummy|deaktiveret|softgun|airsoft|paintball|gotcha)",
   ],
   // Ting til dyr - ikke selve dyret.
   [
     "@tilbehoer",
-    "(bur|bure|buret|kurv|seng|foder|leget[oø]j|t[oø]j|sele|halsb[aå]nd|snor|transportkasse|transportbur|kradsetr[aæ]|akvarie|terrarie|hus|bamse|bamser|figur|figurer|sk[aå]l|hegn|grind|kravleg[aå]rd|@medie)",
+    "(bur|bure|buret|kurv|seng|foder|leget[oø]j|t[oø]j|sele|halsb[aå]nd|snor|transportkasse|transportbur|kradsetr[aæ]|akvarie|akvarium|terrarie|terrarium|hus|bamse|bamser|figur|figurer|sk[aå]l|hegn|grind|kravleg[aå]rd|net|sadel|grime|trense|d[aæ]kken|trailer|hestetrailer|rideudstyr|gyngehest|little pony|kabel|kabler|@medie)",
   ],
   [
     "@vaaben",
-    "(pistol(er|en|erne)?|revolver(e|en|erne)?|riffel|riflen|rifler|gev[aæ]r(et|er|erne)?|haglgev[aæ]r(et|er|erne)?|jagtriffel|jagtgev[aæ]r(et)?|luftgev[aæ]r(et)?|luftpistol(en)?|salonriffel|skydev[aå]ben(et)?|h[aå]ndv[aå]ben)",
+    "(pistol(er|en|erne)?|revolver(e|en|erne)?|riffel|riflen|rifler|gev[aæ]r(et|er|erne)?|haglgev[aæ]r(et|er|erne)?|jagtriffel|jagtgev[aæ]r(et|er)?|luftgev[aæ]r(et|er)?|luftpistol(en|er)?|salonriffel|skydev[aå]ben(et)?|h[aå]ndv[aå]ben|glock|kalashnikov|ak 47|ar 15|uzi|mp5)",
   ],
   [
     "@dyr",
-    "(hvalp(e|en|ene)?|killing(er|en|erne)?|kattekilling(er|en)?|kanin(er|en|erne)?|marsvin|undulat(er|en)?|hamster(e|en|ne)?|kat(te|ten|tene)?|hund(e|en|ene)?|papeg[oø]je(r|n)?|kyllinger|h[oø]ns|h[oø]ner|slange(r|n)?|ilder(e|en)?|fugl(e|en)?|akvariefisk|chinchilla(er)?|gekko(er)?|skildpadde(r|n)?|f[oø]l|hest(e|en)?|pony(er|en)?|ged(er|en)?)",
+    "(hvalp(e|en|ene)?|killing(er|en|erne)?|kattekilling(er|en|erne)?|kanin(er|en|erne)?|marsvin|undulat(er|en)?|hamster(e|en|ne)?|kat(te|ten|tene)?|hund(e|en|ene)?|papeg[oø]je(r|n)?|kyllinger|h[oø]ns|h[oø]ner|pyton|kongepyton|kornsnog|ilder(e|en)?|fugl(e|en)?|akvariefisk|chinchilla(er)?|gekko(er)?|skildpadde(r|n)?|f[oø]l|hest(e|en)?|pony(er|en)?|ged(er|en)?)",
   ],
   [
     "@maerke",
@@ -186,13 +189,10 @@ type Regel = {
 export const FORBUDTE_REGLER: readonly Regel[] = [
   // ---------------------------------------------------------------- Våben
   { kategori: "vaaben", niveau: "blokeret", moenster: "skarpe? (ammunition|patroner|skud)", undtagen: "@medie" },
-  {
-    kategori: "vaaben",
-    niveau: "blokeret",
-    moenster: "@vaaben",
-    kraever: "(skarp|skarpe|funktionsdygtig|funktionsdygtigt|funktionsdygtige|v[aå]bentilladelse|jagttegn)",
-    undtagen: "(@legevaaben|(ikke|uden|ingen) (krav om )?v[aå]bentilladelse|kr[aæ]ver ikke)",
-  },
+  // Alle skydevåben (også luftvåben) blokeres. Legetøj/værktøj er ok;
+  // tilbehør, attrapper og softguns giver rapport (tvivl-reglen længere nede).
+  { kategori: "vaaben", niveau: "blokeret", moenster: "@vaaben", undtagen: "(@legevaaben|@vaabenundtagen)" },
+  { kategori: "vaaben", niveau: "blokeret", moenster: "(v[aå]bendel(e|en|ene)?|skydev[aå]bendel(e|en|ene)?)", undtagen: "@medie" },
   { kategori: "vaaben", niveau: "blokeret", moenster: "spr[aæ]ngstof(fer|ferne|fet)?", undtagen: "@medie" },
   {
     kategori: "vaaben",
@@ -205,12 +205,25 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
   { kategori: "vaaben", niveau: "blokeret", moenster: "peberspray(en)?", undtagen: "@medie" },
   { kategori: "vaaben", niveau: "blokeret", moenster: "(str[oø]mpistol|elpistol)(er|en|erne)?", undtagen: "@medie" },
   { kategori: "vaaben", niveau: "blokeret", moenster: "taser(e|en)?", undtagen: "@medie" },
+  {
+    kategori: "vaaben",
+    niveau: "blokeret",
+    moenster: "(ammunition|haglpatroner|riffelpatroner|pistolpatroner|jagtpatroner|salonpatroner)",
+    undtagen:
+      "(tom|tomme|kasse|kasser|[aæ]ske|[aæ]sker|taske|b[aæ]lte|attrap|dummy|deaktiveret|hylster|hylstre|krudt og kugler|@medie)",
+  },
+  {
+    kategori: "vaaben",
+    niveau: "blokeret",
+    moenster: "(sortkrudt|r[oø]gfrit krudt|krudt (til|s[aæ]lges)|krudt [0-9]+ ?(g|gram|kg))",
+    undtagen: "(krudt og kugler|@medie)",
+  },
   { kategori: "vaaben", niveau: "tvivl", moenster: "@vaaben", undtagen: "@legevaaben" },
   { kategori: "vaaben", niveau: "tvivl", moenster: "h[aå]ndgranat(er|en|erne)?", undtagen: "@medie" },
   {
     kategori: "vaaben",
     niveau: "tvivl",
-    moenster: "(ammunition|krudt|haglpatroner|riffelpatroner|pistolpatroner)",
+    moenster: "(ammunition|krudt|haglpatroner|riffelpatroner|pistolpatroner|jagtpatroner|salonpatroner)",
     undtagen: "(krudt og kugler|@medie)",
   },
   {
@@ -229,7 +242,7 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
   },
   {
     kategori: "narkotika",
-    niveau: "tvivl",
+    niveau: "blokeret",
     moenster: "(hash|skunk|joints?)",
     kraever:
       "(gram|[0-9]+ ?g|ryge|rygning|thc|cannabis|weed|marihuana|tjald|grinder|rullepapir|bong|stoned|high)",
@@ -237,11 +250,30 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
   },
   {
     kategori: "narkotika",
+    niveau: "blokeret",
+    moenster: "bongs?",
+    kraever: "(ryge|rygning|cannabis|marihuana|thc|weed|hash|skunk)",
+    undtagen: "@medie",
+  },
+  {
+    kategori: "narkotika",
     niveau: "tvivl",
     moenster: "bongs?",
-    kraever: "(glas|ryge|rygning|cannabis|thc|weed|hash|skunk|percolator|bowl|vandpibe)",
+    kraever: "(glas|percolator|bowl|vandpibe)",
+  },
+  {
+    kategori: "narkotika",
+    niveau: "blokeret",
+    moenster: "(cannabis|marihuana|marijuana|ketamin)",
+    undtagen: "(cbd|hamp|medicinsk|@medie)",
   },
   { kategori: "narkotika", niveau: "tvivl", moenster: "(cannabis|marihuana|marijuana|weed|ketamin)", undtagen: "@medie" },
+  {
+    kategori: "narkotika",
+    niveau: "blokeret",
+    moenster: "thc",
+    undtagen: "(thc fri|fri for thc|uden thc|ingen thc|0 ?% thc|cbd|@medie)",
+  },
   {
     kategori: "narkotika",
     niveau: "tvivl",
@@ -274,28 +306,34 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
   { kategori: "medicin", niveau: "tvivl", moenster: "(medicin|piller|tabletter) (s[aæ]lges|til salg)" },
 
   // ---------------------------------------------------------------- Levende dyr
+  // Levende dyr må ikke sælges (Filip, 6. oktober 2026). Tilbehør er ok.
   {
     kategori: "levende_dyr",
-    niveau: "tvivl",
+    niveau: "blokeret",
     moenster: "@dyr (til salg|s[aæ]lges|gives v[aæ]k|s[oø]ger (nyt )?hjem|til adoption)",
     undtagen: "@tilbehoer",
   },
   {
     kategori: "levende_dyr",
-    niveau: "tvivl",
+    niveau: "blokeret",
     moenster: "(s[aæ]lger|s[aæ]lges|giver|gives) (min |mine |vores |en |et |to |tre |[0-9]+ )?@dyr",
     undtagen: "@tilbehoer",
   },
   {
     kategori: "levende_dyr",
-    niveau: "tvivl",
+    niveau: "blokeret",
     moenster: "@dyr",
     kraever:
       "(levende|stamtavle|stambog|vaccineret|vaccinerede|chippet|chippede|ormekur|ormekureret|nyt hjem|uger gammel|uger gamle|m[aå]neder gammel|m[aå]neder gamle|mdr gammel|mdr gamle|renracet|renracede|opdr[aæ]tter|kuld|hvalpekuld)",
     undtagen: "@tilbehoer",
   },
-  { kategori: "levende_dyr", niveau: "tvivl", moenster: "hvalp(e|en|ene)?", undtagen: "@tilbehoer" },
-  { kategori: "levende_dyr", niveau: "tvivl", moenster: "levende dyr", undtagen: "@medie" },
+  {
+    kategori: "levende_dyr",
+    niveau: "blokeret",
+    moenster: "(hvalp(e|en|ene)?|kattekilling(er|en|erne)?|akvariefisk)",
+    undtagen: "@tilbehoer",
+  },
+  { kategori: "levende_dyr", niveau: "blokeret", moenster: "levende dyr", undtagen: "@medie" },
 
   // ---------------------------------------------------------------- Forfalskninger
   {
@@ -304,6 +342,20 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
     moenster:
       "(falske?|forfalske(de|t)) ([0-9]+ ?(kr|kroner|euro|dollar|usd|eur) )?(pas|id kort|idkort|id|k[oø]rekort|sedler|pengesedler|penge|eurosedler|dollarsedler|dokumenter|eksamensbeviser|eksamensbevis|recepter|sundhedskort|sygesikringskort)",
     undtagen: "(legepenge|leget[oø]j|filmpenge|rekvisit|filmrekvisit|monopoly|@medie)",
+  },
+  // "Falsk/fake <mærke>" er ulovligt at sælge. "Kopi/replika af <mærke>"
+  // (fx en designklassiker) giver kun rapport (tvivl-reglerne herunder).
+  {
+    kategori: "forfalskninger",
+    niveau: "blokeret",
+    moenster: "(falsk|falske|fake|aaa) (af )?@maerke",
+    undtagen: "((ikke|ingen|aldrig) (en )?(falsk|falske|fake)|pas p[aå]|frugt|dekoration|pynt|@medie)",
+  },
+  {
+    kategori: "forfalskninger",
+    niveau: "blokeret",
+    moenster: "@maerke (fake|falsk|falske)",
+    undtagen: "((ikke|ingen|aldrig) (en )?(falsk|falske|fake)|pas p[aå]|frugt|dekoration|pynt|@medie)",
   },
   {
     kategori: "forfalskninger",
@@ -430,13 +482,22 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
   },
 
   // ---------------------------------------------------------------- Billetter
+  // Billetter giver altid rapport til staff (Filip, 6. oktober 2026).
   { kategori: "billetter", niveau: "tvivl", moenster: "billet(ter|ten|terne)? til" },
   {
     kategori: "billetter",
     niveau: "tvivl",
-    moenster: "(koncert|festival|fodbold|teater|landskamp|vip)billet(ter|ten|terne)?",
+    moenster: "(koncert|festival|fodbold|teater|landskamp|vip|e)billet(ter|ten|terne)?",
   },
   { kategori: "billetter", niveau: "tvivl", moenster: "billet(ter|ten|terne)? (s[aæ]lges|til salg)" },
+  {
+    kategori: "billetter",
+    niveau: "tvivl",
+    moenster: "(e )?billet(ter|ten|terne)?",
+    kraever:
+      "(koncert|festival|kamp|forestilling|show|teater|stadion|arena|r[aæ]kke|s[aæ]de|siddeplads|st[aå]plads|parket|parterre|balkon|ticketmaster|billetlugen|tivoli)",
+  },
+  { kategori: "billetter", niveau: "tvivl", moenster: "tickets?", undtagen: "(ticket to ride|@medie)" },
 ];
 
 function ekspander(moenster: string): string {

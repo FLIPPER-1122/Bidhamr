@@ -22,8 +22,8 @@ const SIDE: TekstsideData = {
       overskrift: "Hvad sker der, hvis en vare er forbudt?",
       punkter: [
         "Når du opretter en auktion, bekræfter du, at varen ikke er forbudt.",
-        "Står der åbenlyst forbudte ord i titlen eller beskrivelsen, kan auktionen ikke oprettes.",
-        "Er vi i tvivl, bliver auktionen oprettet, men en medarbejder hos BidHamr kigger på den.",
+        "Ulovlige varer kan ikke sættes til salg. Står der fx skydevåben, narkotika, falske mærkevarer eller levende dyr i titlen eller beskrivelsen, kan auktionen ikke oprettes.",
+        "Enkelte lovlige varer – fx billetter, alkohol og tobak – bliver kontrolleret af BidHamr. Auktionen bliver oprettet, men en medarbejder kigger på den.",
         "Forbudte varer bliver fjernet. Gentagne overtrædelser kan give en advarsel og i sidste ende lukning af kontoen.",
       ],
     },
