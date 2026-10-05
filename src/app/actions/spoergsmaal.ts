@@ -27,6 +27,7 @@ const FEJL: Record<string, string> = {
   ikke_aktiv: "Auktionen er slut, så der kan ikke stilles eller besvares spørgsmål længere.",
   slaaet_fra: "Sælgeren modtager ikke spørgsmål – læs beskrivelsen grundigt.",
   blokeret: "Du kan ikke stille spørgsmål til denne sælger.",
+  saelger_utilgaengelig: "Sælgeren kan ikke modtage spørgsmål lige nu.",
   ugyldig_tekst: `Spørgsmålet skal være mellem ${MIN_SPOERGSMAAL} og ${MAKS_SPOERGSMAAL} tegn.`,
   kontaktinfo: KONTAKTINFO_FEJL,
   for_mange: "Du har stillet mange spørgsmål på kort tid. Vent lidt, og prøv igen.",
@@ -113,6 +114,7 @@ export async function besvarSpoergsmaal(
     if (kode !== "ok") {
       if (kode === "ugyldig_tekst") return { fejl: `Svaret skal være mellem 1 og ${MAKS_SVAR} tegn.` };
       if (kode === "ikke_fundet") return { fejl: "Spørgsmålet findes ikke." };
+      if (kode === "blokeret") return { fejl: "Du kan ikke besvare spørgsmål fra denne bruger." };
       return { fejl: (kode && FEJL[kode]) || GENERISK };
     }
 

@@ -337,6 +337,8 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         else if (insertError.code === "BHA01") besked = "Et af billederne kunne ikke bruges. Fjern det, tilføj det igen, og prøv igen.";
         else if (insertError.code === "BHA02") besked = "Vælg en kategori.";
         else if (insertError.code === "BHA03") besked = "Vælg varens stand.";
+        else if (insertError.code === "BHA04") besked = `Titlen må højst være ${MAKS_TITEL} tegn.`;
+        else if (insertError.code === "BHA05") besked = `Beskrivelsen må højst være ${MAKS_BESKRIVELSE} tegn.`;
         else if (insertError.code === "BHS02")
           besked = "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl.";
         else if (insertError.code === "BHF01") {

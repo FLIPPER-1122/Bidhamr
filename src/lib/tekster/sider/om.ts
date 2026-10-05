@@ -41,6 +41,17 @@ export const OM: Tekstside = {
       ],
     },
     {
+      id: "open-source",
+      overskrift: "Open source",
+      tekst: [
+        "Når du uploader billeder i HEIC-format (fx fra en iPhone), omdanner hjemmesiden dem til JPEG i din browser med heic-to, som bygger på libheif. Begge er open source under licensen LGPL-3.0, og kildekoden kan hentes frit.",
+      ],
+      links: [
+        { tekst: "Kildekoden til heic-to", href: "https://github.com/hoppergee/heic-to" },
+        { tekst: "Kildekoden til libheif", href: "https://github.com/strukturag/libheif" },
+      ],
+    },
+    {
       id: "kontakt",
       overskrift: "Kontakt",
       tekst: ["Har du spørgsmål eller forslag, så skriv til support@bidhamr.dk."],

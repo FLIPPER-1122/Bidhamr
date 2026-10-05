@@ -70,8 +70,11 @@ export default function RedigerAuktionForm({
   const [error, setError] = useState<string | null>(null);
 
   const startpris = startprisTekst === "" ? NaN : Number(startprisTekst);
-  const forbudt = tjekForbudtTekst(titel, beskrivelse);
-  const forbudtTekst = forbudt.resultat === "blokeret" ? forbudtBesked(forbudt.ord, forbudt.kategori) : null;
+  // Som databasen (rediger_auktion): forbudte ord tjekkes kun, når teksten
+  // er ændret.
+  const tekstAendret = titel.trim() !== start.titel.trim() || beskrivelse.trim() !== start.beskrivelse.trim();
+  const forbudt = tekstAendret ? tjekForbudtTekst(titel, beskrivelse) : null;
+  const forbudtTekst = forbudt?.resultat === "blokeret" ? forbudtBesked(forbudt.ord, forbudt.kategori) : null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

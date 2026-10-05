@@ -20,7 +20,7 @@ import {
   STARTPRIS_FOR_LAV,
 } from "@/lib/auktionRegler";
 import { erStand } from "@/lib/stand";
-import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
+import { forbudtBesked } from "@/lib/forbudteVarer";
 
 type Fejl = { fejl: string };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -97,9 +97,9 @@ export async function redigerAuktion(
 
     if (input.stand !== null && !erStand(input.stand)) return { fejl: REDIGER_FEJL.ugyldig_stand };
 
-    // Forbudte varer: samme kontrol som databasen (rediger_auktion).
-    const forbudt = tjekForbudtTekst(titel, beskrivelse);
-    if (forbudt.resultat === "blokeret") return { fejl: forbudtBesked(forbudt.ord, forbudt.kategori) };
+    // Forbudte varer afgøres af databasen (rediger_auktion), som kun tjekker
+    // ordene, når titel eller beskrivelse er ændret - så en gammel auktion kan
+    // få rettet pris/billeder. Svaret 'forbudt_vare' håndteres herunder.
 
     const supabase = await createClient();
     const {
