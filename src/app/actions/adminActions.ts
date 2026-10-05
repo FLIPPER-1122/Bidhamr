@@ -605,7 +605,7 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
     .single();
   if (!rapport) {
     throw new BrugerFejl(
-      "Rapporten findes ikke. Den kan være slettet af den automatiske oprydning.",
+      "Rapporten findes ikke. Den kan være flyttet til arkivet og kan ikke genåbnes.",
     );
   }
 
@@ -620,7 +620,7 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
   }
 
   // Rapporten genåbnes FØR opslaget ændres. Den automatiske oprydning kan have
-  // slettet rapporten imens (eller en anden kan have genåbnet den) - så må
+  // flyttet rapporten til arkivet imens (eller en anden kan have genåbnet den) - så må
   // opslaget ikke røres. Status tjekkes i samme update, så et dobbeltklik ikke
   // giver dobbelt effekt.
   const { data: genaabnet, error } = await admin
@@ -644,7 +644,7 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
     throw new BrugerFejl(
       findes
         ? "Rapporten er allerede ændret af en anden. Genindlæs siden."
-        : "Rapporten er allerede slettet af den automatiske oprydning.",
+        : "Rapporten er flyttet til arkivet og kan ikke genåbnes.",
     );
   }
 

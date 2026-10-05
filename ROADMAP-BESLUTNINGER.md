@@ -135,6 +135,7 @@ Brugeren får besked når:
 - **Redigér/annullér auktion:** kun så længe der ikke er bud. Annullerede auktioner arkiveres, slettes aldrig.
 - **Afsendelsesfrist:** sælger skal markere pakken sendt inden 5 dage efter betaling. Ellers annulleres handlen automatisk, og køber refunderes fuldt (inkl. fragt og BidHamr Beskyttelse).
 - **Medarbejdere** må gerne kunne se alle handler (beløb og status), fordi de skal bruge det til sager. Pengetal og indtjening er stadig kun for chef.
+- **Behandlede rapporter** (Filip, 5. oktober 2026): slettes aldrig. Efter 48 timer flyttes de fra den aktive liste til rapportarkivet (rapporter_arkiv), hvor de gemmes permanent.
 
 ## Vinderen betaler ikke (Filip, 2. oktober 2026)
 - Efter 24 timer uden betaling annulleres handlen automatisk (og Stripe-betalingen annulleres).

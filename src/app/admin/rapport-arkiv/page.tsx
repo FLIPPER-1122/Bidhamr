@@ -1,65 +1,70 @@
-import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import Link from "next/link";
-import { Suspense } from "react";
-import { redirect } from "next/navigation";
-import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
-import { createAdminClient } from "@/lib/supabase/admin";
-import AdminSearchInput from "@/components/admin/AdminSearchInput";
+import { assertRole } from "@/lib/adminAuth";
 import { kategoriLabel } from "@/lib/anmeldelseKategorier";
-import { rapportGenaabn } from "@/app/actions/adminActions";
 
-type OpklaretRapport = {
+// Rapportarkiv: behandlede anmeldelser flyttes hertil af den automatiske
+// oprydning 48 timer efter behandling. De gemmes permanent (DSA-dokumentation)
+// og kan hverken ændres, slettes eller genåbnes. Kun admin og chef.
+
+const PR_SIDE = 50;
+
+type ArkiveretRapport = {
   id: string;
   auction_id: string;
   reporter_id: string;
   category: string;
   description: string | null;
   created_at: string;
+  status: string;
   handled_by: string | null;
   handled_note: string | null;
   handled_at: string | null;
+  arkiveret_kl: string;
 };
 
-export default async function AdminOpklaredeRapporter({
+const UDFALD: Record<string, string> = {
+  behandlet: "Afsluttet uden handling",
+  fjernet: "Opslag fjernet",
+  under_behandling: "Under behandling",
+  pending: "Afventer",
+};
+
+export default async function AdminRapportArkiv({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ side?: string }>;
 }) {
-  const rolle = await getStaffRole();
-  if (!rolle) {
-    redirect("/");
-  }
+  const { admin } = await assertRole("admin");
+  const { side: sideParam } = await searchParams;
+  const side = Math.max(1, Math.floor(Number(sideParam)) || 1);
 
-  const { q } = await searchParams;
-  const søgetekst = q?.trim() ?? "";
-  const supabase = createAdminClient();
-
-  const { data: rapporter } = await supabase
-    .from("reports")
+  const { data, count, error } = await admin
+    .from("rapporter_arkiv")
     .select(
-      "id, auction_id, reporter_id, category, description, created_at, handled_by, handled_note, handled_at",
+      "id, auction_id, reporter_id, category, description, created_at, status, handled_by, handled_note, handled_at, arkiveret_kl",
+      { count: "exact" },
     )
-    .eq("status", "behandlet")
-    .order("handled_at", { ascending: false })
-    .limit(500);
+    .order("arkiveret_kl", { ascending: false })
+    .order("id", { ascending: false })
+    .range((side - 1) * PR_SIDE, side * PR_SIDE - 1);
+  if (error) throw new Error(error.message);
 
-  const alle = (rapporter ?? []) as OpklaretRapport[];
+  const rows = (data ?? []) as ArkiveretRapport[];
 
-  const auktionIds = [...new Set(alle.map((r) => r.auction_id))];
-  // Både anmelderen og den medarbejder der behandlede sagen skal slås op.
+  const auktionIds = [...new Set(rows.map((r) => r.auction_id))];
   const brugerIds = [
     ...new Set([
-      ...alle.map((r) => r.reporter_id),
-      ...alle.map((r) => r.handled_by).filter(Boolean) as string[],
+      ...rows.map((r) => r.reporter_id),
+      ...(rows.map((r) => r.handled_by).filter(Boolean) as string[]),
     ]),
   ];
 
   const [{ data: auktioner }, { data: brugere }] = await Promise.all([
     auktionIds.length
-      ? supabase.from("auctions").select("id, titel").in("id", auktionIds)
+      ? admin.from("auctions").select("id, titel").in("id", auktionIds)
       : Promise.resolve({ data: [] as { id: string; titel: string }[] }),
     brugerIds.length
-      ? supabase.from("users").select("id, navn, email").in("id", brugerIds)
+      ? admin.from("users").select("id, navn, email").in("id", brugerIds)
       : Promise.resolve({ data: [] as { id: string; navn: string; email: string }[] }),
   ]);
 
@@ -72,23 +77,8 @@ export default async function AdminOpklaredeRapporter({
     brugerMap[u.id] = { navn: u.navn, email: u.email };
   });
 
-  const rows = søgetekst
-    ? alle.filter((r) => {
-        const nål = søgetekst.toLowerCase();
-        const anmelder = brugerMap[r.reporter_id];
-        const behandler = r.handled_by ? brugerMap[r.handled_by] : undefined;
-        return (
-          (titelMap[r.auction_id] ?? "").toLowerCase().includes(nål) ||
-          kategoriLabel(r.category).toLowerCase().includes(nål) ||
-          (r.description ?? "").toLowerCase().includes(nål) ||
-          (r.handled_note ?? "").toLowerCase().includes(nål) ||
-          (anmelder?.navn ?? "").toLowerCase().includes(nål) ||
-          (anmelder?.email ?? "").toLowerCase().includes(nål) ||
-          (behandler?.navn ?? "").toLowerCase().includes(nål) ||
-          (behandler?.email ?? "").toLowerCase().includes(nål)
-        );
-      })
-    : alle;
+  const antal = count ?? 0;
+  const antalSider = Math.max(1, Math.ceil(antal / PR_SIDE));
 
   const brugerCelle = (id: string | null) => {
     if (!id) return <span className="text-neutral-400">—</span>;
@@ -105,34 +95,20 @@ export default async function AdminOpklaredeRapporter({
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Opklarede rapporter</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">Rapportarkiv</h1>
         <span className="text-sm text-neutral-500">
-          {rows.length} {rows.length === 1 ? "rapport" : "rapporter"}
+          {antal} {antal === 1 ? "rapport" : "rapporter"}
         </span>
       </div>
 
       <p className="text-sm text-neutral-500">
-        Anmeldelser der er afsluttet uden handling. Åbne anmeldelser findes under{" "}
-        <Link href="/admin/rapporter" className="font-medium text-brand hover:underline">
-          Rapporter
+        Behandlede anmeldelser flyttes hertil automatisk 48 timer efter behandling. De gemmes
+        permanent og kan ikke ændres, slettes eller genåbnes. Nyeste først. Se også{" "}
+        <Link href="/admin/opklarede-rapporter" className="font-medium text-brand hover:underline">
+          Opklarede rapporter
         </Link>
-        . Behandlede anmeldelser flyttes til arkivet efter 48 timer (dog ikke,
-        mens en handel eller sag på auktionen er i gang). I arkivet gemmes de
-        permanent og kan ikke genåbnes.
-        {harMindstRolle(rolle, "admin") && (
-          <>
-            {" "}
-            <Link href="/admin/rapport-arkiv" className="font-medium text-brand hover:underline">
-              Se arkivet
-            </Link>
-            .
-          </>
-        )}
+        .
       </p>
-
-      <Suspense>
-        <AdminSearchInput placeholder="Søg på auktion, note, anmelder eller behandler..." />
-      </Suspense>
 
       <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -144,9 +120,10 @@ export default async function AdminOpklaredeRapporter({
                 <th className="px-5 py-3 text-left font-medium">Beskrivelse</th>
                 <th className="px-5 py-3 text-left font-medium">Anmelder</th>
                 <th className="px-5 py-3 text-left font-medium">Dato</th>
+                <th className="px-5 py-3 text-left font-medium">Udfald</th>
                 <th className="px-5 py-3 text-left font-medium">Behandlet af</th>
                 <th className="px-5 py-3 text-left font-medium">Note</th>
-                <th className="px-5 py-3 text-left font-medium"></th>
+                <th className="px-5 py-3 text-left font-medium">Arkiveret</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -157,7 +134,7 @@ export default async function AdminOpklaredeRapporter({
                       href={`/auktion/${r.auction_id}`}
                       className="font-medium text-neutral-800 hover:text-brand hover:underline"
                     >
-                      {titelMap[r.auction_id] ?? "(slettet auktion)"}
+                      {titelMap[r.auction_id] ?? "(ukendt auktion)"}
                     </Link>
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap text-neutral-700">
@@ -174,6 +151,9 @@ export default async function AdminOpklaredeRapporter({
                   <td className="px-5 py-3 whitespace-nowrap text-neutral-500">
                     {new Date(r.created_at).toLocaleDateString("da-DK")}
                   </td>
+                  <td className="px-5 py-3 whitespace-nowrap text-neutral-700">
+                    {UDFALD[r.status] ?? r.status}
+                  </td>
                   <td className="px-5 py-3">
                     {brugerCelle(r.handled_by)}
                     {r.handled_at && (
@@ -189,22 +169,15 @@ export default async function AdminOpklaredeRapporter({
                       <span className="text-neutral-400">—</span>
                     )}
                   </td>
-                  <td className="px-5 py-3">
-                    <AdminActionKnap
-                      action={rapportGenaabn}
-                      hiddenFields={{ rapportId: r.id }}
-                      label="Genåbn"
-                      className="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-200"
-                    />
+                  <td className="px-5 py-3 whitespace-nowrap text-neutral-500">
+                    {new Date(r.arkiveret_kl).toLocaleDateString("da-DK")}
                   </td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-neutral-400">
-                    {søgetekst
-                      ? `Ingen opklarede rapporter matcher "${søgetekst}"`
-                      : "Der er endnu ingen opklarede rapporter"}
+                  <td colSpan={9} className="px-5 py-10 text-center text-neutral-400">
+                    {side > 1 ? "Ingen rapporter på denne side" : "Arkivet er tomt"}
                   </td>
                 </tr>
               )}
@@ -212,6 +185,28 @@ export default async function AdminOpklaredeRapporter({
           </table>
         </div>
       </div>
+
+      {antalSider > 1 && (
+        <div className="flex items-center justify-between text-sm">
+          {side > 1 ? (
+            <Link href={`/admin/rapport-arkiv?side=${side - 1}`} className="text-neutral-700 hover:underline">
+              ← Forrige
+            </Link>
+          ) : (
+            <span />
+          )}
+          <span className="text-neutral-500">
+            Side {side} af {antalSider}
+          </span>
+          {side < antalSider ? (
+            <Link href={`/admin/rapport-arkiv?side=${side + 1}`} className="text-neutral-700 hover:underline">
+              Næste →
+            </Link>
+          ) : (
+            <span />
+          )}
+        </div>
+      )}
     </div>
   );
 }

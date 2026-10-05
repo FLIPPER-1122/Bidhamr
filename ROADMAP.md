@@ -73,7 +73,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [~] Sælger kan redigere eller annullere sin auktion, så længe der ikke er bud
 - [~] **Startpris = mindstepris**: sælger sætter én synlig startpris, som alle kan se. Første bud skal mindst være startprisen. Ingen skjult mindstepris
 - [~] Ved oprettelse vises en tydelig anbefaling: "Sæt startprisen lidt under det, du regner med at få – er den for høj, byder ingen"
-- [~] Oprydning: behandlede rapporter slettes efter 48 timer (cron)
+- [~] Oprydning: behandlede rapporter flyttes til arkiv efter 48 timer – gemmes permanent (cron)
 - [~] Oprydning: afsluttede auktioner **skjules/arkiveres** 48 timer efter afsluttet handel – de må IKKE slettes, fordi kvitteringer, bedømmelser, DAC7 og bogføringsloven kræver, at handelsdata gemmes i 5 år
 - [~] **Afsendelsesfrist**: sælger skal sende inden 5 dage. Sendes der ikke, annulleres handlen, og køber refunderes fuldt (som Vinted/Tradera)
 - [~] **Bindende bud**: bud kan ikke trækkes tilbage – vises tydeligt, før man byder
