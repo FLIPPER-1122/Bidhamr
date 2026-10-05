@@ -1,32 +1,41 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { kategorier } from "@/lib/kategorier";
 import { redigerAuktion } from "@/app/actions/auktion";
 import {
   MAKS_BESKRIVELSE,
-  MAKS_BILLEDER,
   MAKS_TITEL,
   MINDSTE_STARTPRIS,
   STARTPRIS_ANBEFALING,
-  auktionBilledeSti,
   valideStartpris,
 } from "@/lib/auktionRegler";
+import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
+import { erStand } from "@/lib/stand";
+import { uploadAuktionsbilleder } from "@/lib/auktionUpload";
+import {
+  Afkrydsning,
+  BilledVaelger,
+  FeltFejl,
+  Hjaelp,
+  Sektion,
+  Spinner,
+  StandVaelger,
+  billedeKlar,
+  feltKlasse,
+  primaerKnap,
+  tekstfeltKlasse,
+  type Billede,
+} from "@/components/opret/formular";
 
-// Samme felter og stil som OpretAuktionForm. Postnummer og varighed kan ikke
-// ændres. Nye billeder uploades i browseren til sælgerens egen mappe; selve
-// ændringen gemmes på serveren (redigerAuktion -> rediger_auktion), som
-// afviser den, hvis der er kommet et bud imens.
-
-type Billede =
-  | { slags: "gemt"; url: string }
-  | { slags: "ny"; fil: File; preview: string };
-
-function billedeNoegle(b: Billede) {
-  return b.slags === "gemt" ? b.url : b.preview;
-}
+// Samme felter og byggesten som OpretAuktionForm. Postnummer og varighed kan
+// ikke ændres. Nye billeder klargøres (HEIC -> JPEG, maks 2000 px) og uploades
+// i browseren til sælgerens egen mappe; selve ændringen gemmes på serveren
+// (redigerAuktion -> rediger_auktion), som afviser den, hvis der er kommet et
+// bud imens.
 
 export default function RedigerAuktionForm({
   auktionId,
@@ -42,84 +51,57 @@ export default function RedigerAuktionForm({
     kategori: string;
     startpris: number;
     forsendelseMulig: boolean;
+    stand: string | null;
   };
 }) {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [billeder, setBilleder] = useState<Billede[]>(
-    start.billeder.map((url) => ({ slags: "gemt", url })),
+    start.billeder.map((url, i) => ({ slags: "gemt", noegle: `gemt-${i}-${url}`, url })),
   );
   const [titel, setTitel] = useState(start.titel);
-  const [kategori, setKategori] = useState(
-    kategorier.includes(start.kategori) ? start.kategori : "",
-  );
+  const [kategori, setKategori] = useState(kategorier.includes(start.kategori) ? start.kategori : "");
   const [beskrivelse, setBeskrivelse] = useState(start.beskrivelse);
-  const [startpris, setStartpris] = useState(start.startpris);
+  const [startprisTekst, setStartprisTekst] = useState(String(start.startpris));
   const [forsendelseMulig, setForsendelseMulig] = useState(start.forsendelseMulig);
+  const [stand, setStand] = useState<string>(erStand(start.stand) ? start.stand : "");
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function tilføjBilleder(files: FileList | null) {
-    if (!files) return;
-    const nye = Array.from(files).slice(0, MAKS_BILLEDER - billeder.length);
-    if (nye.length === 0) return;
-    setBilleder((prev) => [
-      ...prev,
-      ...nye.map((fil) => ({ slags: "ny" as const, fil, preview: URL.createObjectURL(fil) })),
-    ]);
-  }
-
-  function fjernBillede(index: number) {
-    setBilleder((prev) => prev.filter((_, i) => i !== index));
-  }
+  const startpris = startprisTekst === "" ? NaN : Number(startprisTekst);
+  const forbudt = tjekForbudtTekst(titel, beskrivelse);
+  const forbudtTekst = forbudt.resultat === "blokeret" ? forbudtBesked(forbudt.ord, forbudt.kategori) : null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
-    if (billeder.length === 0) {
-      setError("Tilføj mindst ét billede.");
-      return;
-    }
-    if (!titel.trim()) {
-      setError("Skriv en titel.");
-      return;
-    }
-    if (!kategori) {
-      setError("Vælg en kategori.");
-      return;
-    }
+    if (billeder.length === 0) return setError("Tilføj mindst ét billede.");
+    if (!billeder.every(billedeKlar)) return setError("Vent, til billederne er klar.");
+    if (!titel.trim()) return setError("Skriv en titel.");
+    if (forbudtTekst) return setError(forbudtTekst);
+    if (!kategori) return setError("Vælg en kategori.");
+    // Gamle auktioner uden stand må gemmes uden (databasen kræver den kun ved oprettelse).
+    if (start.stand && !erStand(stand)) return setError("Vælg varens stand.");
     // En gammel auktion med startpris 0 må beholde den uændret (databasen
     // tjekker kun mindst 1 kr, når startprisen ændres).
     const prisFejl = startpris === start.startpris && startpris === 0 ? null : valideStartpris(startpris);
-    if (prisFejl) {
-      setError(prisFejl);
-      return;
-    }
+    if (prisFejl) return setError(prisFejl);
 
     setLoading(true);
     const supabase = createClient();
 
     try {
-      const urls: string[] = [];
-      for (const b of billeder) {
-        if (b.slags === "gemt") {
-          urls.push(b.url);
-          continue;
-        }
-        const filnavn = auktionBilledeSti(brugerId, b.fil);
-        const { error: uploadError } = await supabase.storage
-          .from("auktion-billeder")
-          .upload(filnavn, b.fil);
-        if (uploadError) {
-          console.error("Billede-upload fejlede:", uploadError.message);
-          setError("Billedet kunne ikke uploades. Prøv igen om lidt.");
-          setLoading(false);
-          return;
-        }
-        urls.push(supabase.storage.from("auktion-billeder").getPublicUrl(filnavn).data.publicUrl);
-      }
+      const urls = await uploadAuktionsbilleder(
+        supabase,
+        brugerId,
+        billeder.map((b) =>
+          b.slags === "gemt" ? { url: b.url } : b.status === "klar" ? { fil: b.fil } : { url: "" },
+        ),
+        (nr, ialt) => setStatus(`Uploader billede ${nr} af ${ialt} …`),
+      );
+      setStatus("Gemmer …");
 
       const svar = await redigerAuktion(auktionId, {
         titel,
@@ -128,10 +110,12 @@ export default function RedigerAuktionForm({
         kategori,
         startpris,
         forsendelseMulig,
+        stand: erStand(stand) ? stand : null,
       });
 
       if ("fejl" in svar) {
         setError(svar.fejl);
+        setStatus(null);
         setLoading(false);
         return;
       }
@@ -140,186 +124,125 @@ export default function RedigerAuktionForm({
       router.refresh();
     } catch (err) {
       console.error("Fejl ved redigering af auktion:", err);
-      setError("Ændringerne kunne ikke gemmes. Prøv igen om lidt.");
+      setError(err instanceof Error ? err.message : "Ændringerne kunne ikke gemmes. Prøv igen om lidt.");
+      setStatus(null);
       setLoading(false);
     }
   }
 
-  const feltKlasse =
-    "mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen";
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
-      <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
-        Du kan ændre auktionen, indtil der kommer det første bud. Varigheden og
-        postnummeret kan ikke ændres.
+    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      <p className="rounded-xl border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
+        Du kan ændre auktionen, indtil der kommer det første bud. Varigheden og postnummeret kan ikke ændres.
       </p>
 
-      {/* Billeder */}
-      <div>
-        <span className="block text-sm font-medium text-neutral-900">Billeder</span>
-        <p className="mt-1 text-xs text-neutral-500">
-          Op til {MAKS_BILLEDER} billeder. Det første billede bliver forsidebillede.
-        </p>
+      <Sektion nr={1} titel="Billeder" id="sektion-billeder">
+        <BilledVaelger billeder={billeder} setBilleder={setBilleder} fejlId="billeder-fejl" />
+      </Sektion>
 
-        <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-5">
-          {billeder.map((b, index) => (
-            <div key={billedeNoegle(b)} className="relative aspect-square">
-              <img
-                src={b.slags === "gemt" ? b.url : b.preview}
-                alt={`Billede ${index + 1}`}
-                className="h-full w-full object-cover"
-              />
-              {index === 0 && (
-                <span className="absolute bottom-1 left-1 bg-orange-knap px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  Forside
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => fjernBillede(index)}
-                aria-label="Fjern billede"
-                className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-xs text-neutral-700"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          {billeder.length < MAKS_BILLEDER && (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex aspect-square items-center justify-center border-2 border-dashed border-neutral-300 text-2xl text-neutral-400 hover:border-groen"
-              aria-label="Tilføj billeder"
-            >
-              +
-            </button>
+      <Sektion nr={2} titel="Titel og beskrivelse" id="sektion-titel">
+        <div>
+          <label htmlFor="titel" className="mb-1.5 block text-sm font-medium text-tekst">
+            Titel
+          </label>
+          <input
+            id="titel"
+            type="text"
+            maxLength={MAKS_TITEL}
+            value={titel}
+            onChange={(e) => setTitel(e.target.value)}
+            aria-invalid={forbudtTekst ? true : undefined}
+            aria-describedby={forbudtTekst ? "titel-forbudt" : undefined}
+            className={feltKlasse(!!forbudtTekst)}
+          />
+          {forbudtTekst && (
+            <FeltFejl id="titel-forbudt">
+              {forbudtTekst}{" "}
+              <Link href="/forbudte-varer" target="_blank" className="underline">
+                Se forbudte varer
+              </Link>
+            </FeltFejl>
           )}
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            tilføjBilleder(e.target.files);
-            e.target.value = "";
-          }}
-        />
-      </div>
-
-      {/* Titel */}
-      <div>
-        <label htmlFor="titel" className="block text-sm font-medium text-neutral-900">
-          Titel
-        </label>
-        <input
-          id="titel"
-          type="text"
-          required
-          maxLength={MAKS_TITEL}
-          value={titel}
-          onChange={(e) => setTitel(e.target.value)}
-          className={feltKlasse}
-        />
-      </div>
-
-      {/* Kategori */}
-      <div>
-        <label htmlFor="kategori" className="block text-sm font-medium text-neutral-900">
-          Kategori
-        </label>
-        <select
-          id="kategori"
-          value={kategori}
-          onChange={(e) => setKategori(e.target.value)}
-          className={feltKlasse}
-        >
-          {!kategori && <option value="">Vælg kategori</option>}
-          {kategorier.map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Beskrivelse */}
-      <div>
-        <label htmlFor="beskrivelse" className="block text-sm font-medium text-neutral-900">
-          Beskrivelse <span className="text-neutral-400">(valgfri)</span>
-        </label>
-        <textarea
-          id="beskrivelse"
-          rows={4}
-          maxLength={MAKS_BESKRIVELSE}
-          value={beskrivelse}
-          onChange={(e) => setBeskrivelse(e.target.value)}
-          className={feltKlasse}
-        />
-        <p className="mt-1 text-right text-xs text-neutral-400">
-          {beskrivelse.length}/{MAKS_BESKRIVELSE}
-        </p>
-      </div>
-
-      {/* Startpris */}
-      <div>
-        <label htmlFor="startpris" className="block text-sm font-medium text-neutral-900">
-          Startpris (kr.)
-        </label>
-        <input
-          id="startpris"
-          type="number"
-          inputMode="numeric"
-          min={Math.min(MINDSTE_STARTPRIS, start.startpris)}
-          step={1}
-          required
-          value={Number.isNaN(startpris) ? "" : startpris}
-          onChange={(e) => setStartpris(e.target.value === "" ? NaN : Number(e.target.value))}
-          aria-describedby="startpris-hjaelp"
-          className={feltKlasse}
-        />
-        <p id="startpris-hjaelp" className="mt-1.5 text-xs text-neutral-500">
-          {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
-        </p>
-      </div>
-
-      {/* Forsendelse */}
-      <div className="flex items-center justify-between">
-        <label htmlFor="forsendelse" className="text-sm font-medium text-neutral-900">
-          Jeg tilbyder forsendelse mod betaling
-        </label>
-        <button
-          id="forsendelse"
-          type="button"
-          role="switch"
-          aria-checked={forsendelseMulig}
-          onClick={() => setForsendelseMulig(!forsendelseMulig)}
-          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-            forsendelseMulig ? "bg-groen" : "bg-neutral-300"
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-              forsendelseMulig ? "translate-x-5" : ""
-            }`}
+        <div>
+          <label htmlFor="beskrivelse" className="mb-1.5 block text-sm font-medium text-tekst">
+            Beskrivelse <span className="font-normal text-tekst-svag">(valgfrit)</span>
+          </label>
+          <textarea
+            id="beskrivelse"
+            rows={5}
+            maxLength={MAKS_BESKRIVELSE}
+            value={beskrivelse}
+            onChange={(e) => setBeskrivelse(e.target.value)}
+            className={tekstfeltKlasse()}
           />
-        </button>
-      </div>
+          <Hjaelp>
+            {beskrivelse.length}/{MAKS_BESKRIVELSE}
+          </Hjaelp>
+        </div>
+      </Sektion>
+
+      <Sektion nr={3} titel="Kategori og stand" id="sektion-kategori">
+        <div>
+          <label htmlFor="kategori" className="mb-1.5 block text-sm font-medium text-tekst">
+            Kategori
+          </label>
+          <select id="kategori" value={kategori} onChange={(e) => setKategori(e.target.value)} className={feltKlasse()}>
+            {!kategori && <option value="">Vælg kategori</option>}
+            {kategorier.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </div>
+        <StandVaelger vaerdi={stand} onChange={setStand} fejlId="stand-fejl" />
+      </Sektion>
+
+      <Sektion nr={4} titel="Pris og levering" id="sektion-pris">
+        <div>
+          <label htmlFor="startpris" className="mb-1.5 block text-sm font-medium text-tekst">
+            Startpris (kr.)
+          </label>
+          <input
+            id="startpris"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            value={startprisTekst}
+            onChange={(e) => setStartprisTekst(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            placeholder={`Mindst ${MINDSTE_STARTPRIS} kr.`}
+            aria-describedby="startpris-hjaelp"
+            className={feltKlasse()}
+          />
+          <Hjaelp id="startpris-hjaelp">
+            {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
+          </Hjaelp>
+        </div>
+        <Afkrydsning
+          id="forsendelse"
+          checked={forsendelseMulig}
+          onChange={setForsendelseMulig}
+          hjaelp="Køberen kan vælge at få varen sendt og betaler selv fragten. Ellers skal varen hentes."
+        >
+          Jeg tilbyder også forsendelse
+        </Afkrydsning>
+      </Sektion>
 
       {error && (
-        <div role="alert" className="border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
+        <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
           {error}
         </div>
       )}
+      {status && (
+        <p role="status" className="flex items-center gap-2 text-sm text-tekst-daempet">
+          <Spinner /> {status}
+        </p>
+      )}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full rounded-lg bg-orange-knap px-4 py-3 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
-      >
-        {loading ? "Gemmer…" : "Gem ændringer"}
+      <button type="submit" disabled={loading} aria-busy={loading} className={`${primaerKnap} sm:w-full`}>
+        {loading && <Spinner />}
+        Gem ændringer
       </button>
     </form>
   );

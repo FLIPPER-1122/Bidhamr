@@ -13,6 +13,7 @@ import {
 import { PAKKE_KATEGORI_NAVN } from "@/lib/pakkebilleder";
 import { handelChatSti } from "@/lib/moderationLog";
 import { kroner } from "@/lib/kroner";
+import { standNavn } from "@/lib/stand";
 import HandelStatusBadge, { statusLabel } from "@/components/HandelStatusBadge";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
@@ -177,6 +178,41 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Kort titel="Køberens beskrivelse">
           <p className="whitespace-pre-wrap break-words text-sm text-neutral-800">{sag.beskrivelse}</p>
+        </Kort>
+        <Kort titel="Varen i auktionen">
+          <dl className="space-y-2 text-sm">
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="text-tekst-daempet">Stand:</dt>
+              <dd className="font-semibold text-tekst">{standNavn(sag.auktionStand)}</dd>
+            </div>
+            <div>
+              <dt className="text-tekst-daempet">Sælgerens beskrivelse:</dt>
+              <dd className="mt-0.5 whitespace-pre-wrap break-words text-neutral-800">
+                {sag.auktionBeskrivelse || "(ingen beskrivelse)"}
+              </dd>
+            </div>
+            {sag.auktionSpoergsmaal.length > 0 && (
+              <div>
+                <dt className="text-tekst-daempet">Spørgsmål og svar ({sag.auktionSpoergsmaal.length}):</dt>
+                <dd>
+                  <ul className="mt-1 space-y-2">
+                    {sag.auktionSpoergsmaal.map((q, i) => (
+                      <li key={i} className="rounded-lg bg-neutral-50 px-3 py-2">
+                        <p className="break-words text-neutral-800">
+                          <span className="font-medium">Spørgsmål:</span> {q.question}
+                          {q.hidden && <span className="text-tekst-svag"> (skjult)</span>}
+                        </p>
+                        <p className="mt-0.5 break-words text-neutral-800">
+                          <span className="font-medium">Svar:</span> {q.answer ?? "(ikke besvaret)"}
+                        </p>
+                        <p className="mt-0.5 text-xs text-tekst-svag">{sagTid(q.askedKl)}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            )}
+          </dl>
         </Kort>
 
         <Kort titel="Afgørelse">

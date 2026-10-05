@@ -19,6 +19,8 @@ import {
   valideStartpris,
   STARTPRIS_FOR_LAV,
 } from "@/lib/auktionRegler";
+import { erStand } from "@/lib/stand";
+import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 
 type Fejl = { fejl: string };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -37,6 +39,7 @@ const REDIGER_FEJL: Record<string, string> = {
   ugyldig_kategori: "Vælg en kategori.",
   ugyldig_startpris: "Startprisen skal være et helt antal kroner.",
   startpris_for_lav: STARTPRIS_FOR_LAV,
+  ugyldig_stand: "Vælg varens stand.",
 };
 
 export type RedigerAuktionInput = {
@@ -46,6 +49,8 @@ export type RedigerAuktionInput = {
   kategori: string;
   startpris: number;
   forsendelseMulig: boolean;
+  // Kode fra src/lib/stand.ts. null = uændret (gamle auktioner uden stand).
+  stand: string | null;
 };
 
 export async function redigerAuktion(
@@ -90,6 +95,12 @@ export async function redigerAuktion(
       return { fejl: REDIGER_FEJL.ugyldige_billeder };
     }
 
+    if (input.stand !== null && !erStand(input.stand)) return { fejl: REDIGER_FEJL.ugyldig_stand };
+
+    // Forbudte varer: samme kontrol som databasen (rediger_auktion).
+    const forbudt = tjekForbudtTekst(titel, beskrivelse);
+    if (forbudt.resultat === "blokeret") return { fejl: forbudtBesked(forbudt.ord, forbudt.kategori) };
+
     const supabase = await createClient();
     const {
       data: { user },
@@ -104,12 +115,17 @@ export async function redigerAuktion(
       p_kategori: input.kategori,
       p_startpris: input.startpris,
       p_forsendelse_mulig: input.forsendelseMulig === true,
+      p_stand: input.stand,
     });
     if (error) {
       console.error("rediger_auktion fejlede:", error.code, error.message);
       return { fejl: GENERISK };
     }
-    const kode = (data as { kode?: string } | null)?.kode;
+    const svar = data as { kode?: string; ord?: string; kategori?: string } | null;
+    const kode = svar?.kode;
+    if (kode === "forbudt_vare") {
+      return { fejl: forbudtBesked(svar?.ord ?? "", svar?.kategori ?? "") };
+    }
     if (kode !== "ok") return { fejl: (kode && REDIGER_FEJL[kode]) || GENERISK };
 
     revalidatePath(`/auktion/${auktionId}`);

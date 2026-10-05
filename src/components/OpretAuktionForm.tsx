@@ -1,39 +1,199 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { kategorier } from "@/lib/kategorier";
 import {
   MAKS_BESKRIVELSE,
-  MAKS_BILLEDER,
   MAKS_TITEL,
   MINDSTE_STARTPRIS,
   STANDARD_VARIGHED,
   STARTPRIS_ANBEFALING,
   VARIGHEDER,
+  erGyldigVarighed,
   slutterKlFraVarighed,
-  auktionBilledeSti,
   valideStartpris,
   type VarighedDage,
 } from "@/lib/auktionRegler";
+import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
+import { erStand, standNavn } from "@/lib/stand";
+import { SPOERGSMAAL_SLAAET_FRA } from "@/lib/spoergsmaal";
+import { kroner } from "@/lib/kroner";
+import { uploadAuktionsbilleder } from "@/lib/auktionUpload";
+import {
+  Afkrydsning,
+  BilledVaelger,
+  FeltFejl,
+  Hjaelp,
+  Sektion,
+  Spinner,
+  StandVaelger,
+  billedeKlar,
+  feltKlasse,
+  primaerKnap,
+  sekundaerKnap,
+  tekstfeltKlasse,
+  type Billede,
+} from "@/components/opret/formular";
+
+// Opret auktion i sektioner: billeder, titel/beskrivelse, kategori og stand,
+// pris og varighed, levering, spørgsmål - og en forhåndsvisning, før den
+// oprettes. Felterne (ikke billederne) gemmes som kladde i browseren, indtil
+// auktionen er oprettet. Databasen håndhæver alle regler igen.
+
+type Kladde = {
+  titel: string;
+  beskrivelse: string;
+  kategori: string;
+  stand: string;
+  startpris: string;
+  varighed: number;
+  forsendelseMulig: boolean;
+  postnummer: string;
+  spoergsmaalAktiv: boolean;
+};
+
+type FeltNavn = "billeder" | "titel" | "beskrivelse" | "kategori" | "stand" | "startpris" | "postnummer" | "bekraeft";
+
+const FELT_ID: Record<FeltNavn, string> = {
+  billeder: "billeder",
+  titel: "titel",
+  beskrivelse: "beskrivelse",
+  kategori: "kategori",
+  stand: "stand",
+  startpris: "startpris",
+  postnummer: "postnummer",
+  bekraeft: "bekraeft",
+};
+
+const kladdeNoegle = (brugerId: string) => `bidhamr:opret-kladde:${brugerId}`;
+
+function laesKladde(noegle: string): string | null {
+  try {
+    return window.localStorage.getItem(noegle);
+  } catch {
+    return null;
+  }
+}
+function gemKladde(noegle: string, k: Kladde) {
+  try {
+    window.localStorage.setItem(noegle, JSON.stringify({ ...k, gemt: Date.now() }));
+  } catch {
+    // Privat browsing / fuld lagerplads: kladden gemmes bare ikke.
+  }
+}
+function sletKladde(noegle: string) {
+  try {
+    window.localStorage.removeItem(noegle);
+  } catch {
+    // ignoreres
+  }
+}
+function fortolkKladde(raa: string | null): Kladde | null {
+  if (!raa) return null;
+  try {
+    const k = JSON.parse(raa) as Partial<Kladde>;
+    if (!k || typeof k !== "object") return null;
+    return {
+      titel: typeof k.titel === "string" ? k.titel.slice(0, MAKS_TITEL) : "",
+      beskrivelse: typeof k.beskrivelse === "string" ? k.beskrivelse.slice(0, MAKS_BESKRIVELSE) : "",
+      kategori: typeof k.kategori === "string" && kategorier.includes(k.kategori) ? k.kategori : "",
+      stand: erStand(k.stand) ? k.stand : "",
+      startpris: typeof k.startpris === "string" ? k.startpris.replace(/\D/g, "").slice(0, 10) : "",
+      varighed: erGyldigVarighed(k.varighed) ? k.varighed : STANDARD_VARIGHED,
+      forsendelseMulig: k.forsendelseMulig === true,
+      postnummer: typeof k.postnummer === "string" ? k.postnummer.replace(/\D/g, "").slice(0, 4) : "",
+      spoergsmaalAktiv: k.spoergsmaalAktiv !== false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const ingenAbonnement = () => () => {};
 
 export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const noegle = kladdeNoegle(brugerId);
+  const fejlBoksRef = useRef<HTMLDivElement>(null);
 
-  const [billeder, setBilleder] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const [billeder, setBilleder] = useState<Billede[]>([]);
   const [titel, setTitel] = useState("");
-  const [kategori, setKategori] = useState(kategorier[0]);
   const [beskrivelse, setBeskrivelse] = useState("");
-  // Tomt felt fra start (ikke 0): mindste startpris er 1 kr.
-  const [startpris, setStartpris] = useState<number>(NaN);
+  const [kategori, setKategori] = useState("");
+  const [stand, setStand] = useState("");
+  const [startprisTekst, setStartprisTekst] = useState("");
   const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
   const [postnummer, setPostnummer] = useState("");
-  // Opslaget gemmes sammen med det postnummer, det hører til. By, koordinater
-  // og status udledes ved render, så effekten kun sætter state i callbacks.
+  const [spoergsmaalAktiv, setSpoergsmaalAktiv] = useState(true);
+  const [bekraeftet, setBekraeftet] = useState(false);
+
+  const [roert, setRoert] = useState(false);
+  const [kladdeHaandteret, setKladdeHaandteret] = useState(false);
+  const [forsoegt, setForsoegt] = useState(false);
+  const [visForhaandsvisning, setVisForhaandsvisning] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Kladden læses som et "eksternt lager" - ingen setState i en effekt, og
+  // serveren renderer uden kladde (ingen hydreringsfejl).
+  const gemtKladdeRaa = useSyncExternalStore(ingenAbonnement, () => laesKladde(noegle), () => null);
+  const gemtKladde = fortolkKladde(gemtKladdeRaa);
+  const visKladdeBanner = !!gemtKladde && !roert && !kladdeHaandteret;
+
+  const kladde: Kladde = {
+    titel,
+    beskrivelse,
+    kategori,
+    stand,
+    startpris: startprisTekst,
+    varighed,
+    forsendelseMulig,
+    postnummer,
+    spoergsmaalAktiv,
+  };
+  const kladdeJson = JSON.stringify(kladde);
+
+  // Gem kladden, når brugeren har skrevet noget (ikke ved første visning, så
+  // en gemt kladde ikke overskrives, før brugeren har valgt).
+  useEffect(() => {
+    if (!roert) return;
+    const t = window.setTimeout(() => gemKladde(noegle, JSON.parse(kladdeJson) as Kladde), 400);
+    return () => window.clearTimeout(t);
+  }, [roert, kladdeJson, noegle]);
+
+  function aendret<T>(saet: (v: T) => void) {
+    return (v: T) => {
+      setRoert(true);
+      saet(v);
+    };
+  }
+
+  function hentKladde() {
+    if (!gemtKladde) return;
+    setTitel(gemtKladde.titel);
+    setBeskrivelse(gemtKladde.beskrivelse);
+    setKategori(gemtKladde.kategori);
+    setStand(gemtKladde.stand);
+    setStartprisTekst(gemtKladde.startpris);
+    setVarighed(gemtKladde.varighed as VarighedDage);
+    setForsendelseMulig(gemtKladde.forsendelseMulig);
+    setPostnummer(gemtKladde.postnummer);
+    setSpoergsmaalAktiv(gemtKladde.spoergsmaalAktiv);
+    setKladdeHaandteret(true);
+    setRoert(true);
+  }
+
+  function kasserKladde() {
+    sletKladde(noegle);
+    setKladdeHaandteret(true);
+  }
+
+  // ------------------------------------------------------------ postnummer
   const [opslag, setOpslag] = useState<{
     postnummer: string;
     by: string | null;
@@ -41,8 +201,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
     fundet: boolean;
   } | null>(null);
   const gyldigtPostnummer = /^\d{4}$/.test(postnummer);
-  const aktueltOpslag =
-    gyldigtPostnummer && opslag?.postnummer === postnummer ? opslag : null;
+  const aktueltOpslag = gyldigtPostnummer && opslag?.postnummer === postnummer ? opslag : null;
   const by = aktueltOpslag?.by ?? null;
   const koordinater = aktueltOpslag?.koordinater ?? null;
   const byStatus: "idle" | "henter" | "fundet" | "ikke-fundet" = !gyldigtPostnummer
@@ -52,18 +211,11 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       : aktueltOpslag.fundet
         ? "fundet"
         : "ikke-fundet";
-  const [dragOver, setDragOver] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!/^\d{4}$/.test(postnummer)) return;
-
     const controller = new AbortController();
-
-    fetch(`https://api.dataforsyningen.dk/postnumre/${postnummer}`, {
-      signal: controller.signal,
-    })
+    fetch(`https://api.dataforsyningen.dk/postnumre/${postnummer}`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error("Postnummer ikke fundet");
         return res.json();
@@ -82,402 +234,522 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         if (err.name === "AbortError") return;
         setOpslag({ postnummer, by: null, koordinater: null, fundet: false });
       });
-
     return () => controller.abort();
   }, [postnummer]);
 
-  function tilføjBilleder(files: FileList | null) {
-    if (!files) return;
-    const nye = Array.from(files).slice(0, MAKS_BILLEDER - billeder.length);
-    if (nye.length === 0) return;
+  // ------------------------------------------------------------ validering
+  const startpris = startprisTekst === "" ? NaN : Number(startprisTekst);
+  const forbudt = tjekForbudtTekst(titel, beskrivelse);
+  const forbudtTekst = forbudt.resultat === "blokeret" ? forbudtBesked(forbudt.ord, forbudt.kategori) : null;
 
-    setBilleder((prev) => [...prev, ...nye]);
-    setPreviews((prev) => [
-      ...prev,
-      ...nye.map((file) => URL.createObjectURL(file)),
-    ]);
+  function valider(): Partial<Record<FeltNavn, string>> {
+    const f: Partial<Record<FeltNavn, string>> = {};
+    if (billeder.length === 0) f.billeder = "Tilføj mindst ét billede af varen.";
+    else if (!billeder.every(billedeKlar)) f.billeder = "Vent, til billederne er klar.";
+    if (!titel.trim()) f.titel = "Skriv en titel, fx mærke og model.";
+    else if (forbudtTekst) f.titel = forbudtTekst;
+    if (!kategori) f.kategori = "Vælg en kategori.";
+    if (!erStand(stand)) f.stand = "Vælg varens stand.";
+    const prisFejl = valideStartpris(startpris);
+    if (prisFejl) f.startpris = prisFejl;
+    if (!gyldigtPostnummer) f.postnummer = "Skriv et postnummer med 4 cifre.";
+    else if (byStatus === "ikke-fundet") f.postnummer = "Postnummeret findes ikke – tjek, at det er rigtigt.";
+    else if (byStatus !== "fundet" || !by) f.postnummer = "Vent et øjeblik, mens vi finder byen.";
+    if (!bekraeftet) f.bekraeft = "Bekræft, at varen ikke er forbudt.";
+    return f;
   }
 
-  function fjernBillede(index: number) {
-    setBilleder((prev) => prev.filter((_, i) => i !== index));
-    setPreviews((prev) => prev.filter((_, i) => i !== index));
-  }
+  const feltFejl = forsoegt ? valider() : {};
+  const antalFejl = Object.keys(feltFejl).length;
 
-  function handleDrop(e: DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    setDragOver(false);
-    tilføjBilleder(e.dataTransfer.files);
-  }
-
-  async function handleSubmit(e: FormEvent) {
+  function visForhaand(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setForsoegt(true);
+    const f = valider();
+    const foerste = (Object.keys(FELT_ID) as FeltNavn[]).find((k) => f[k]);
+    if (foerste) {
+      // Fokus på fejlboksen øverst, så skærmlæsere hører fejlene.
+      window.requestAnimationFrame(() => fejlBoksRef.current?.focus());
+      return;
+    }
+    setVisForhaandsvisning(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
-    if (billeder.length === 0) {
-      setError("Tilføj mindst ét billede.");
-      return;
-    }
-    const prisFejl = valideStartpris(startpris);
-    if (prisFejl) {
-      setError(prisFejl);
-      return;
-    }
-    if (!/^\d{4}$/.test(postnummer)) {
-      setError("Indtast et gyldigt postnummer (4 cifre).");
-      return;
-    }
-    if (byStatus !== "fundet" || !by) {
-      setError("Postnummeret kunne ikke findes – tjek at det er korrekt.");
+  async function opret() {
+    setError(null);
+    const f = valider();
+    if (Object.keys(f).length > 0 || !by) {
+      setVisForhaandsvisning(false);
+      setForsoegt(true);
       return;
     }
 
     setLoading(true);
     const supabase = createClient();
-
     try {
-      // Brug den faktiske browser-session som autoritet for bruger-id'et,
-      // i stedet for blindt at stole på prop'en fra serverkomponenten – hvis
-      // sessionen er udløbet/mangler i browseren, fanger vi det her med en
-      // klar besked, frem for at RLS bare afviser inserts/uploads tavst.
-      const { data: sessionData, error: sessionError } =
-        await supabase.auth.getUser();
-
+      const { data: sessionData, error: sessionError } = await supabase.auth.getUser();
       if (sessionError || !sessionData.user) {
-        throw new Error(
-          "Du er ikke logget ind længere. Log ind igen og prøv en gang til.",
-        );
+        throw new Error("Du er ikke logget ind længere. Log ind igen, og prøv en gang til – din kladde er gemt.");
       }
+      const uid = sessionData.user.id;
 
-      const aktuelBrugerId = sessionData.user.id;
-
-      if (aktuelBrugerId !== brugerId) {
-        console.warn(
-          "Bruger-id fra server matcher ikke bruger-id fra browser-session.",
-          { brugerIdFraServer: brugerId, brugerIdFraSession: aktuelBrugerId },
-        );
-      }
-
-      const billedeUrls: string[] = [];
-
-      for (const file of billeder) {
-        const filnavn = auktionBilledeSti(aktuelBrugerId, file);
-        const { error: uploadError } = await supabase.storage
-          .from("auktion-billeder")
-          .upload(filnavn, file);
-
-        if (uploadError) {
-          console.error("Billede-upload fejlede:", uploadError.message);
-          throw new Error("Billedet kunne ikke uploades. Prøv igen om lidt.");
-        }
-
-        const { data: publicUrlData } = supabase.storage
-          .from("auktion-billeder")
-          .getPublicUrl(filnavn);
-
-        billedeUrls.push(publicUrlData.publicUrl);
-      }
-
-      const slutterKl = slutterKlFraVarighed(varighed);
-
-      const payload = {
-        bruger_id: aktuelBrugerId,
-        titel,
-        beskrivelse: beskrivelse || null,
-        billeder: billedeUrls,
-        startpris,
-        kategori,
-        postnummer,
-        lokation: by,
-        lat: koordinater?.lat ?? null,
-        lng: koordinater?.lng ?? null,
-        forsendelse_mulig: forsendelseMulig,
-        // Databasen beregner selv sluttidspunktet ud fra varigheden.
-        varighed_dage: varighed,
-        slutter_kl: slutterKl.toISOString(),
-      };
+      const billedeUrls = await uploadAuktionsbilleder(
+        supabase,
+        uid,
+        billeder.map((b) =>
+          b.slags === "gemt" ? { url: b.url } : b.status === "klar" ? { fil: b.fil } : { url: "" },
+        ),
+        (nr, ialt) => setStatus(`Uploader billede ${nr} af ${ialt} …`),
+      );
+      setStatus("Opretter auktionen …");
 
       const { data, error: insertError } = await supabase
         .from("auctions")
-        .insert(payload)
+        .insert({
+          bruger_id: uid,
+          titel: titel.trim(),
+          beskrivelse: beskrivelse.trim() || null,
+          billeder: billedeUrls,
+          startpris,
+          kategori,
+          stand,
+          postnummer,
+          lokation: by,
+          lat: koordinater?.lat ?? null,
+          lng: koordinater?.lng ?? null,
+          forsendelse_mulig: forsendelseMulig,
+          spoergsmaal_aktiv: spoergsmaalAktiv,
+          forbudt_bekraeftet: bekraeftet,
+          // Databasen beregner selv sluttidspunktet ud fra varigheden.
+          varighed_dage: varighed,
+          slutter_kl: slutterKlFraVarighed(varighed).toISOString(),
+        })
         .select("id")
         .single();
 
       if (insertError) {
-        // Fx 42501 (trigger afviser låste felter) – brugeren får samme faste besked.
         console.error("Fejl ved oprettelse af auktion:", insertError.code, insertError.message);
-        // BHU01: databasen kræver en udbetalingskonto (auctions_kraev_udbetalingskonto).
-        // BHS02: kontoen er suspenderet (kraev_ikke_suspenderet).
-        setError(
-          insertError.code === "BHU01"
-            ? "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg."
-            : insertError.code === "22023"
-              ? "Tjek startpris og varighed (3, 5, 7 eller 10 dage), og prøv igen."
-              : insertError.code === "BHA01"
-                ? "Et af billederne kunne ikke bruges. Fjern det, tilføj det igen, og prøv igen."
-                : insertError.code === "BHA02"
-                  ? "Vælg en kategori."
-                  : insertError.code === "BHS02"
-                    ? "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
-                    : "Auktionen kunne ikke oprettes. Prøv igen om lidt.",
-        );
+        let besked = "Auktionen kunne ikke oprettes. Prøv igen om lidt – din kladde er gemt.";
+        if (insertError.code === "BHU01") besked = "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.";
+        else if (insertError.code === "22023") besked = "Tjek startpris og varighed (3, 5, 7 eller 10 dage), og prøv igen.";
+        else if (insertError.code === "BHA01") besked = "Et af billederne kunne ikke bruges. Fjern det, tilføj det igen, og prøv igen.";
+        else if (insertError.code === "BHA02") besked = "Vælg en kategori.";
+        else if (insertError.code === "BHA03") besked = "Vælg varens stand.";
+        else if (insertError.code === "BHS02")
+          besked = "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl.";
+        else if (insertError.code === "BHF01") {
+          let ord = "";
+          let kat = "";
+          try {
+            const d = JSON.parse(insertError.details ?? "{}") as { ord?: string; kategori?: string };
+            ord = d.ord ?? "";
+            kat = d.kategori ?? "";
+          } catch {
+            // brug standardteksten
+          }
+          besked = ord ? forbudtBesked(ord, kat) : "Auktionen ligner en forbudt vare og kan ikke oprettes.";
+        }
+        setError(besked);
+        setStatus(null);
         setLoading(false);
         return;
       }
 
+      sletKladde(noegle);
       router.push(`/auktion/${data.id}`);
     } catch (err) {
       console.error("Fejl ved oprettelse af auktion:", err);
       setError(err instanceof Error ? err.message : "Auktionen kunne ikke oprettes. Prøv igen om lidt.");
+      setStatus(null);
       setLoading(false);
     }
   }
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-8">
-      {/* Billedupload */}
-      <div>
-        <label className="block text-sm font-medium text-neutral-900">
-          Billeder
-        </label>
-        <p className="mt-1 text-xs text-neutral-500">
-          Op til {MAKS_BILLEDER} billeder. Det første billede bliver
-          forsidebillede.
-        </p>
+  const describedBy = (felt: FeltNavn, hjaelp?: string) =>
+    [hjaelp, feltFejl[felt] ? `${FELT_ID[felt]}-fejl` : ""].filter(Boolean).join(" ") || undefined;
 
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          className={`mt-2 flex min-h-40 cursor-pointer flex-col items-center justify-center border-2 border-dashed px-4 py-8 text-center ${
-            dragOver ? "border-groen bg-groen-lys" : "border-neutral-300"
-          }`}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="h-8 w-8 text-neutral-400"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 16V4m0 0L7 9m5-5l5 5M4 20h16"
-            />
-          </svg>
-          <p className="mt-2 text-sm text-neutral-600">
-            Klik eller træk billeder herind
-          </p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => tilføjBilleder(e.target.files)}
-          />
+  // ------------------------------------------------------------ forhåndsvisning
+  if (visForhaandsvisning) {
+    const forside = billeder[0];
+    const forsideUrl = forside ? (forside.slags === "gemt" ? forside.url : forside.status === "klar" ? forside.preview : "") : "";
+    return (
+      <div className="space-y-5">
+        <div className="rounded-xl border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
+          Sådan ser din auktion ud. Tjek, at alt er rigtigt – når der er budt, kan den ikke ændres.
         </div>
 
-        {previews.length > 0 && (
-          <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-5">
-            {previews.map((src, index) => (
-              <div key={src} className="relative aspect-square">
-                <img
-                  src={src}
-                  alt={`Billede ${index + 1}`}
-                  className="h-full w-full object-cover"
-                />
-                {index === 0 && (
-                  <span className="absolute bottom-1 left-1 bg-orange-knap px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                    Forside
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => fjernBillede(index)}
-                  aria-label="Fjern billede"
-                  className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-xs text-neutral-700"
-                >
-                  ×
-                </button>
+        <article className="overflow-hidden rounded-[14px] border border-kant bg-white">
+          {forsideUrl && (
+            <div className="aspect-[4/3] bg-skelet">
+              {/* eslint-disable-next-line @next/next/no-img-element -- lokal blob-URL */}
+              <img src={forsideUrl} alt="Forsidebillede" className="h-full w-full object-cover" />
+            </div>
+          )}
+          {billeder.length > 1 && (
+            <ul className="flex gap-2 overflow-x-auto px-4 pt-3">
+              {billeder.slice(1).map((b, i) => (
+                <li key={b.noegle} className="h-14 w-14 shrink-0 overflow-hidden rounded-md bg-skelet">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- lokal blob-URL */}
+                  <img
+                    src={b.slags === "gemt" ? b.url : b.status === "klar" ? b.preview : ""}
+                    alt={`Billede ${i + 2}`}
+                    className="h-full w-full object-cover"
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="space-y-4 p-4 sm:p-6">
+            <div>
+              <h2 className="break-words font-serif text-xl font-semibold text-tekst">{titel.trim()}</h2>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <span className="rounded-full bg-groen-lys px-3 py-1.5 text-[13px] font-medium text-groen-mork">
+                  {standNavn(stand)}
+                </span>
+                <span className="rounded-full bg-groen-lys px-3 py-1.5 text-[13px] font-medium text-groen-mork">
+                  {kategori}
+                </span>
               </div>
-            ))}
+            </div>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt className="text-tekst-svag">Startpris</dt>
+                <dd className="text-lg font-bold text-tekst">{kroner(startpris)}</dd>
+              </div>
+              <div>
+                <dt className="text-tekst-svag">Varighed</dt>
+                <dd className="text-tekst">{varighed} dage</dd>
+              </div>
+              <div>
+                <dt className="text-tekst-svag">Levering</dt>
+                <dd className="text-tekst">{forsendelseMulig ? "Afhentning eller forsendelse" : "Kun afhentning"}</dd>
+              </div>
+              <div>
+                <dt className="text-tekst-svag">Lokation</dt>
+                <dd className="text-tekst">
+                  {by} ({postnummer})
+                </dd>
+              </div>
+            </dl>
+            {beskrivelse.trim() && (
+              <div>
+                <h3 className="text-sm font-semibold text-tekst">Beskrivelse</h3>
+                <p className="mt-1 whitespace-pre-line break-words text-[15px] text-tekst-daempet">{beskrivelse.trim()}</p>
+              </div>
+            )}
+            <p className="text-[13px] text-tekst-daempet">
+              {spoergsmaalAktiv ? "Købere kan stille dig spørgsmål, mens auktionen kører." : SPOERGSMAAL_SLAAET_FRA}
+            </p>
+          </div>
+        </article>
+
+        {error && (
+          <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
+            {error}
           </div>
         )}
-      </div>
-
-      {/* Titel */}
-      <div>
-        <label htmlFor="titel" className="block text-sm font-medium text-neutral-900">
-          Titel
-        </label>
-        <input
-          id="titel"
-          type="text"
-          required
-          maxLength={MAKS_TITEL}
-          value={titel}
-          onChange={(e) => setTitel(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
-        />
-      </div>
-
-      {/* Kategori */}
-      <div>
-        <label htmlFor="kategori" className="block text-sm font-medium text-neutral-900">
-          Kategori
-        </label>
-        <select
-          id="kategori"
-          value={kategori}
-          onChange={(e) => setKategori(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
-        >
-          {kategorier.map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Beskrivelse */}
-      <div>
-        <label htmlFor="beskrivelse" className="block text-sm font-medium text-neutral-900">
-          Beskrivelse <span className="text-neutral-400">(valgfri)</span>
-        </label>
-        <textarea
-          id="beskrivelse"
-          rows={4}
-          maxLength={MAKS_BESKRIVELSE}
-          value={beskrivelse}
-          onChange={(e) => setBeskrivelse(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
-        />
-        <p className="mt-1 text-right text-xs text-neutral-400">
-          {beskrivelse.length}/{MAKS_BESKRIVELSE}
-        </p>
-      </div>
-
-      {/* Startpris */}
-      <div>
-        <label htmlFor="startpris" className="block text-sm font-medium text-neutral-900">
-          Startpris (kr.)
-        </label>
-        <input
-          id="startpris"
-          type="number"
-          inputMode="numeric"
-          min={MINDSTE_STARTPRIS}
-          step={1}
-          required
-          placeholder="Mindst 1 kr."
-          value={Number.isNaN(startpris) ? "" : startpris}
-          onChange={(e) => setStartpris(e.target.value === "" ? NaN : Number(e.target.value))}
-          aria-describedby="startpris-hjaelp"
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
-        />
-        <p id="startpris-hjaelp" className="mt-1.5 text-xs text-neutral-500">
-          {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
-        </p>
-      </div>
-
-      {/* Varighed */}
-      <div>
-        <label className="block text-sm font-medium text-neutral-900">
-          Varighed
-        </label>
-        <div className="mt-1.5 flex flex-wrap gap-2">
-          {VARIGHEDER.map((v) => (
-            <button
-              key={v.dage}
-              type="button"
-              onClick={() => setVarighed(v.dage)}
-              className={`rounded-lg border px-4 py-2 text-sm font-medium ${
-                varighed === v.dage
-                  ? "border-orange-knap bg-orange-knap text-white"
-                  : "border-neutral-300 text-neutral-700"
-              }`}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
-        <p className="mt-1.5 text-xs text-neutral-500">
-          Varigheden kan ikke ændres, når auktionen er oprettet.
-        </p>
-      </div>
-
-      {/* Forsendelse */}
-      <div className="flex items-center justify-between">
-        <label htmlFor="forsendelse" className="text-sm font-medium text-neutral-900">
-          Jeg tilbyder forsendelse mod betaling
-        </label>
-        <button
-          id="forsendelse"
-          type="button"
-          role="switch"
-          aria-checked={forsendelseMulig}
-          onClick={() => setForsendelseMulig(!forsendelseMulig)}
-          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-            forsendelseMulig ? "bg-groen" : "bg-neutral-300"
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-              forsendelseMulig ? "translate-x-5" : ""
-            }`}
-          />
-        </button>
-      </div>
-
-      {/* Postnummer */}
-      <div>
-        <label htmlFor="postnummer" className="block text-sm font-medium text-neutral-900">
-          Postnummer
-        </label>
-        <input
-          id="postnummer"
-          type="text"
-          inputMode="numeric"
-          maxLength={4}
-          required
-          value={postnummer}
-          onChange={(e) => setPostnummer(e.target.value.replace(/\D/g, "").slice(0, 4))}
-          placeholder="f.eks. 8000"
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
-        />
-
-        {byStatus === "henter" && (
-          <p className="mt-1.5 text-sm text-neutral-500">Henter by…</p>
-        )}
-        {byStatus === "fundet" && by && (
-          <p className="mt-1.5 text-sm text-neutral-700">📍 {by}</p>
-        )}
-        {byStatus === "ikke-fundet" && (
-          <p className="mt-1.5 text-sm text-fejl-tekst">
-            Postnummeret kunne ikke findes.
+        {status && (
+          <p role="status" className="flex items-center gap-2 text-sm text-tekst-daempet">
+            <Spinner /> {status}
           </p>
         )}
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setVisForhaandsvisning(false)}
+            disabled={loading}
+            className={sekundaerKnap}
+          >
+            Ret auktionen
+          </button>
+          <button type="button" onClick={opret} disabled={loading} aria-busy={loading} className={primaerKnap}>
+            {loading && <Spinner />}
+            Opret auktion
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ------------------------------------------------------------ formular
+  return (
+    <form onSubmit={visForhaand} noValidate className="space-y-5">
+      {visKladdeBanner && (
+        <div className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
+          <p className="font-semibold">Du har en kladde, der ikke er oprettet.</p>
+          <p className="mt-0.5">Vil du fortsætte, hvor du slap? Billeder gemmes ikke i kladden.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={hentKladde} className={sekundaerKnap}>
+              Fortsæt kladden
+            </button>
+            <button
+              type="button"
+              onClick={kasserKladde}
+              className="inline-flex min-h-11 items-center px-3 text-sm font-medium text-groen hover:underline"
+            >
+              Start forfra
+            </button>
+          </div>
+        </div>
+      )}
+
+      {forsoegt && antalFejl > 0 && (
+        <div
+          ref={fejlBoksRef}
+          tabIndex={-1}
+          role="alert"
+          className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst focus:outline-2 focus:outline-fejl-tekst"
+        >
+          <p className="font-semibold">
+            {antalFejl === 1 ? "Der mangler én ting" : `Der mangler ${antalFejl} ting`}, før du kan se auktionen:
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {(Object.keys(FELT_ID) as FeltNavn[])
+              .filter((k) => feltFejl[k])
+              .map((k) => (
+                <li key={k}>
+                  <a href={`#${FELT_ID[k]}`} className="underline">
+                    {feltFejl[k]}
+                  </a>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+
+      <Sektion nr={1} titel="Billeder" id="sektion-billeder">
+        <div id={FELT_ID.billeder} tabIndex={-1}>
+          <p className="mb-2 text-[13px] text-tekst-daempet">
+            Gode billeder sælger. Vis varen forfra, bagfra og eventuelle fejl. Det første billede er forsidebilledet.
+          </p>
+          <BilledVaelger
+            billeder={billeder}
+            setBilleder={(fn) => {
+              setRoert(true);
+              setBilleder(fn);
+            }}
+            fejl={feltFejl.billeder}
+            fejlId={`${FELT_ID.billeder}-fejl`}
+          />
+        </div>
+      </Sektion>
+
+      <Sektion nr={2} titel="Titel og beskrivelse" id="sektion-titel">
+        <div>
+          <label htmlFor={FELT_ID.titel} className="mb-1.5 block text-sm font-medium text-tekst">
+            Titel
+          </label>
+          <input
+            id={FELT_ID.titel}
+            type="text"
+            maxLength={MAKS_TITEL}
+            value={titel}
+            onChange={(e) => aendret(setTitel)(e.target.value)}
+            placeholder="Fx: iPhone 13, 128 GB, sort"
+            aria-invalid={feltFejl.titel || forbudtTekst ? true : undefined}
+            aria-describedby={describedBy("titel", "titel-hjaelp")}
+            className={feltKlasse(!!feltFejl.titel || !!forbudtTekst)}
+          />
+          <Hjaelp id="titel-hjaelp">
+            Skriv mærke, model og størrelse. {titel.length}/{MAKS_TITEL}
+          </Hjaelp>
+          {feltFejl.titel ? (
+            <FeltFejl id="titel-fejl">{feltFejl.titel}</FeltFejl>
+          ) : (
+            forbudtTekst && (
+              <FeltFejl id="titel-forbudt">
+                {forbudtTekst}{" "}
+                <Link href="/forbudte-varer" target="_blank" className="underline">
+                  Se forbudte varer
+                </Link>
+              </FeltFejl>
+            )
+          )}
+        </div>
+
+        <div>
+          <label htmlFor={FELT_ID.beskrivelse} className="mb-1.5 block text-sm font-medium text-tekst">
+            Beskrivelse <span className="font-normal text-tekst-svag">(valgfrit)</span>
+          </label>
+          <textarea
+            id={FELT_ID.beskrivelse}
+            rows={5}
+            maxLength={MAKS_BESKRIVELSE}
+            value={beskrivelse}
+            onChange={(e) => aendret(setBeskrivelse)(e.target.value)}
+            placeholder="Fortæl om alder, mål, fejl og mangler – og hvad der følger med."
+            aria-describedby="beskrivelse-hjaelp"
+            className={tekstfeltKlasse()}
+          />
+          <Hjaelp id="beskrivelse-hjaelp">
+            En ærlig beskrivelse giver færre spørgsmål og sager. {beskrivelse.length}/{MAKS_BESKRIVELSE}
+          </Hjaelp>
+        </div>
+      </Sektion>
+
+      <Sektion nr={3} titel="Kategori og stand" id="sektion-kategori">
+        <div>
+          <label htmlFor={FELT_ID.kategori} className="mb-1.5 block text-sm font-medium text-tekst">
+            Kategori
+          </label>
+          <select
+            id={FELT_ID.kategori}
+            value={kategori}
+            onChange={(e) => aendret(setKategori)(e.target.value)}
+            aria-invalid={feltFejl.kategori ? true : undefined}
+            aria-describedby={describedBy("kategori")}
+            className={feltKlasse(!!feltFejl.kategori)}
+          >
+            <option value="">Vælg kategori</option>
+            {kategorier.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+          {feltFejl.kategori && <FeltFejl id="kategori-fejl">{feltFejl.kategori}</FeltFejl>}
+        </div>
+        <div id={FELT_ID.stand} tabIndex={-1}>
+          <StandVaelger vaerdi={stand} onChange={aendret(setStand)} fejl={feltFejl.stand} fejlId="stand-fejl" />
+        </div>
+      </Sektion>
+
+      <Sektion nr={4} titel="Pris og varighed" id="sektion-pris">
+        <div>
+          <label htmlFor={FELT_ID.startpris} className="mb-1.5 block text-sm font-medium text-tekst">
+            Startpris (kr.)
+          </label>
+          <input
+            id={FELT_ID.startpris}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            value={startprisTekst}
+            onChange={(e) => aendret(setStartprisTekst)(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            placeholder={`Mindst ${MINDSTE_STARTPRIS} kr.`}
+            aria-invalid={feltFejl.startpris ? true : undefined}
+            aria-describedby={describedBy("startpris", "startpris-hjaelp")}
+            className={feltKlasse(!!feltFejl.startpris)}
+          />
+          <Hjaelp id="startpris-hjaelp">
+            {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
+          </Hjaelp>
+          {feltFejl.startpris && <FeltFejl id="startpris-fejl">{feltFejl.startpris}</FeltFejl>}
+        </div>
+
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium text-tekst">Varighed</legend>
+          <div className="flex flex-wrap gap-2">
+            {VARIGHEDER.map((v) => (
+              <label
+                key={v.dage}
+                className={`inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 text-sm font-medium transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-groen ${
+                  varighed === v.dage ? "border-groen bg-groen text-white" : "border-kant-staerk text-tekst hover:bg-groen-lys"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="varighed"
+                  value={v.dage}
+                  checked={varighed === v.dage}
+                  onChange={() => aendret(setVarighed)(v.dage)}
+                  className="sr-only"
+                />
+                {v.label}
+              </label>
+            ))}
+          </div>
+          <Hjaelp>Varigheden kan ikke ændres, når auktionen er oprettet.</Hjaelp>
+        </fieldset>
+      </Sektion>
+
+      <Sektion nr={5} titel="Levering" id="sektion-levering">
+        <div>
+          <label htmlFor={FELT_ID.postnummer} className="mb-1.5 block text-sm font-medium text-tekst">
+            Postnummer, hvor varen kan hentes
+          </label>
+          <input
+            id={FELT_ID.postnummer}
+            type="text"
+            inputMode="numeric"
+            autoComplete="postal-code"
+            maxLength={4}
+            value={postnummer}
+            onChange={(e) => aendret(setPostnummer)(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            placeholder="Fx 8000"
+            aria-invalid={feltFejl.postnummer ? true : undefined}
+            aria-describedby={describedBy("postnummer", "postnummer-status")}
+            className={`${feltKlasse(!!feltFejl.postnummer)} sm:max-w-[200px]`}
+          />
+          <p id="postnummer-status" className="mt-1.5 text-[13px] text-tekst-daempet" aria-live="polite">
+            {byStatus === "henter" && "Finder byen …"}
+            {byStatus === "fundet" && by && <span className="font-medium text-tekst">{by}</span>}
+            {byStatus === "idle" && "Kun byen vises på auktionen – aldrig din adresse."}
+          </p>
+          {feltFejl.postnummer && <FeltFejl id="postnummer-fejl">{feltFejl.postnummer}</FeltFejl>}
+        </div>
+
+        <Afkrydsning
+          id="forsendelse"
+          checked={forsendelseMulig}
+          onChange={aendret(setForsendelseMulig)}
+          hjaelp="Køberen kan vælge at få varen sendt og betaler selv fragten. Ellers skal varen hentes."
+        >
+          Jeg tilbyder også forsendelse
+        </Afkrydsning>
+      </Sektion>
+
+      <Sektion nr={6} titel="Spørgsmål fra købere" id="sektion-spoergsmaal">
+        <Afkrydsning
+          id="spoergsmaal-aktiv"
+          checked={spoergsmaalAktiv}
+          onChange={aendret(setSpoergsmaalAktiv)}
+          hjaelp={
+            spoergsmaalAktiv
+              ? "Købere kan stille dig spørgsmål på auktionssiden. Spørgsmål og svar kan ses af alle. Du kan slå det fra undervejs."
+              : `Køberne ser: "${SPOERGSMAAL_SLAAET_FRA}" Du kan slå det til undervejs.`
+          }
+        >
+          Købere må stille mig spørgsmål
+        </Afkrydsning>
+      </Sektion>
+
+      <div className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
+        <Afkrydsning
+          id={FELT_ID.bekraeft}
+          checked={bekraeftet}
+          onChange={setBekraeftet}
+          fejl={feltFejl.bekraeft}
+          hjaelp={
+            <>
+              Fx våben, narkotika, medicin, levende dyr og kopivarer.{" "}
+              <Link href="/forbudte-varer" target="_blank" className="font-medium text-groen underline">
+                Se hele listen
+              </Link>
+            </>
+          }
+        >
+          Jeg bekræfter, at varen ikke er forbudt
+        </Afkrydsning>
       </div>
 
       {error && (
-        <div className="border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
+        <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
           {error}
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full rounded-lg bg-orange-knap px-4 py-3 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
-      >
-        {loading ? "Opretter auktion…" : "Opret auktion"}
-      </button>
+      <div className="sticky bottom-0 -mx-4 border-t border-kant bg-white p-4 sm:static sm:mx-0 sm:border-0 sm:p-0">
+        <button type="submit" className={`${primaerKnap} sm:w-full`}>
+          Se forhåndsvisning
+        </button>
+        <p className="mt-2 text-center text-[13px] text-tekst-svag">
+          Du ser auktionen, før den bliver oprettet. {roert ? "Din kladde gemmes automatisk." : ""}
+        </p>
+      </div>
     </form>
   );
 }

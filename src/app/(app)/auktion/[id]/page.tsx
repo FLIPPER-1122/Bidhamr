@@ -10,8 +10,12 @@ import Accordion from "@/components/Accordion";
 import AnmeldOpslagKnap from "@/components/AnmeldOpslagKnap";
 import StartChatKnap from "@/components/StartChatKnap";
 import SaelgerAuktionHandlinger from "@/components/SaelgerAuktionHandlinger";
+import SpoergSaelger from "@/components/SpoergSaelger";
 import SpaerByder, { type ByderValg } from "@/components/tryghed/SpaerByder";
 import { kortNavn } from "@/lib/kortNavn";
+import { standNavn } from "@/lib/stand";
+import { getStaffRole } from "@/lib/adminAuth";
+import type { SpoergsmaalVisning } from "@/lib/spoergsmaal";
 
 const MAKS_BUD_HENTET = 50;
 
@@ -68,6 +72,14 @@ export default async function AuktionPage({
     erMig: b.bruger_id === mitId,
     byder: b.bruger_id === mitId ? "Dig" : `Byder ${byderNr.get(b.bruger_id)}`,
   }));
+
+  // Spørg sælger: offentlig liste uden bruger-id'er (auktion_spoergsmaal_liste).
+  // Fejler kaldet (fx før migrationen er kørt), vises bare ingen spørgsmål.
+  const [{ data: spoergsmaalData }, staffRolle] = await Promise.all([
+    supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
+    authData.user ? getStaffRole() : Promise.resolve(null),
+  ]);
+  const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
   const varenummer = auktion.id.slice(-6).toUpperCase();
   const auktionErSlut = new Date(auktion.slutter_kl) <= new Date();
@@ -215,6 +227,10 @@ export default async function AuktionPage({
                 </dd>
               </div>
               <div>
+                <dt className="text-neutral-500">Stand</dt>
+                <dd className="text-[#111]">{standNavn(auktion.stand as string | null | undefined)}</dd>
+              </div>
+              <div>
                 <dt className="text-neutral-500">Forsendelse</dt>
                 <dd className="text-[#111]">
                   {auktion.forsendelse_mulig ? "Tilbydes" : "Ikke tilbudt"}
@@ -233,6 +249,17 @@ export default async function AuktionPage({
                 </p>
               </>
             )}
+
+            <div className="my-4 border-t border-neutral-200" />
+            <SpoergSaelger
+              auktionId={auktion.id}
+              spoergsmaal={spoergsmaal}
+              aktiv={(auktion.spoergsmaal_aktiv as boolean | null | undefined) !== false}
+              auktionKoerer={auktion.status === "aktiv" && !auktionErSlut}
+              erSaelger={erSælger}
+              erStaff={!!staffRolle}
+              loggetInd={!!bruger}
+            />
 
             {/* Sælgeren har ingen grund til at anmelde sit eget opslag */}
             {!erSælger && (

@@ -11,6 +11,15 @@ export const ANMELDELSE_KATEGORIER = [
 
 export type AnmeldelseKategori = (typeof ANMELDELSE_KATEGORIER)[number]["vaerdi"];
 
+// Kategorier, som kun systemet bruger (brugere kan ikke vælge dem).
+// 'forbudt_vare': automatisk rapport fra kontrollen af forbudte ord
+// (20261006040000_auktionsfunktioner.sql, auctions_forbudt_rapport).
+const SYSTEM_KATEGORIER: Record<string, string> = {
+  forbudt_vare: "Mulig forbudt vare (automatisk)",
+};
+
 export function kategoriLabel(vaerdi: string) {
-  return ANMELDELSE_KATEGORIER.find((k) => k.vaerdi === vaerdi)?.label ?? vaerdi;
+  return (
+    ANMELDELSE_KATEGORIER.find((k) => k.vaerdi === vaerdi)?.label ?? SYSTEM_KATEGORIER[vaerdi] ?? vaerdi
+  );
 }
