@@ -36,7 +36,7 @@ export default async function FoelgerSide() {
       <KontoSideHoved
         titel="Sælgere du følger"
         krumme="Følger"
-        tekst="Du får besked, når en sælger, du følger, sætter en ny vare til salg. Sælgeren kan ikke se, at du følger dem."
+        tekst="Du får besked, når en sælger, du følger, sætter en ny vare til salg. Sælgeren kan se, hvor mange der følger, men ikke hvem."
       />
       {error ? (
         <p role="alert" className="mt-6 rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">

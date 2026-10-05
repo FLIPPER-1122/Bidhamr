@@ -147,15 +147,15 @@ function Soegning({
           Besked om nye auktioner
         </button>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-4">
           {!redigerer && (
-            <button type="button" onClick={() => setRedigerer(true)} className="btn btn-tekst text-sm">
+            <button type="button" onClick={() => setRedigerer(true)} className="btn btn-tekst min-h-11 text-sm">
               Omdøb
             </button>
           )}
           <BekraeftDialog
             triggerLabel="Slet"
-            triggerClassName="btn btn-tekst text-sm text-fejl-tekst"
+            triggerClassName="btn btn-tekst min-h-11 text-sm text-fejl-tekst"
             title="Slet gemt søgning?"
             description={`"${s.navn}" slettes, og du får ikke længere besked om nye auktioner fra den.`}
             confirmLabel="Ja, slet"

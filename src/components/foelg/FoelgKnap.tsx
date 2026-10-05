@@ -61,7 +61,7 @@ export default function FoelgKnap({
         disabled={pending}
         aria-pressed={aktiv}
         aria-busy={pending || undefined}
-        aria-label={aktiv ? `Du følger ${navn}. Tryk for at stoppe med at følge` : `Følg ${navn}`}
+        aria-label={aktiv ? `Du følger ${navn} – tryk for at stoppe med at følge` : `Følg ${navn}`}
         title={aktiv ? "Tryk for at stoppe med at følge" : undefined}
         className={`btn ${stoerrelse} ${
           aktiv ? "border border-groen bg-groen-lys text-groen-mork hover:bg-white" : "btn-sekundaer"
