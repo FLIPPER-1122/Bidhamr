@@ -4,6 +4,7 @@
 // andenchance.ts uden at ændre den.
 
 import { createClient } from "@/lib/supabase/server";
+import { getUserMedToTrin } from "@/lib/mfa";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -17,7 +18,7 @@ export async function hentMineAktiveTilbud(): Promise<AktivtTilbud[]> {
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return [];
 
     const { data } = await supabase
@@ -60,7 +61,7 @@ export async function erAnnulleretUbetalt(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return null;
 
     const { data } = await createAdminClient()

@@ -11,6 +11,8 @@ import { manglerToTrin, TO_TRIN_STI } from "@/lib/mfa";
 // /api-ruter kræver login + rolle som resten af appen.
 // /api/statistik er den cookiefri besøgsstatistik (gemmer kun antal pr. dag og
 // kendt sidetype, rate-limit pr. IP), så også besøg på venteliste-siden tælles.
+// /api/konto/slet er appens kontosletning: kun Bearer-token (ingen cookies),
+// aal2-krav, adgangskode og "SLET" tjekkes i ruten selv.
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
 // "Disallow: /" og er tomme, indtil SEO_INDEKSERING=true (src/lib/seo.ts).
 // Delebilleder (opengraph-image.jpg) rammer slet ikke proxyen (matcher i src/proxy.ts).
@@ -33,6 +35,7 @@ const OFFENTLIGE_RUTER = [
   "/api/fragt/webhook",
   "/api/cron",
   "/api/statistik",
+  "/api/konto/slet",
   "/robots.txt",
   "/sitemap.xml",
 ];
@@ -98,7 +101,9 @@ export async function updateSession(
 
   // To-trins-login: har brugeren slået det til, men kun indtastet adgangskoden
   // (aal1), skal koden indtastes, før noget andet virker - også server actions
-  // og API-ruter. Databasen afviser desuden aal1 (bidhamr_pre_request).
+  // og API-ruter. Offentlige stier springes over, så server actions tjekker
+  // det også selv (getUserMedToTrin / manglerToTrin). Databasen afviser
+  // desuden aal1, når 20261007032000_mfa_database_haandhaevelse er kørt.
   if (await manglerToTrin(supabase, data.user)) {
     const url = new URL(TO_TRIN_STI, request.url);
     if (request.method === "GET") {

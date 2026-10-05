@@ -160,6 +160,7 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 - [ ] Sammenlign app og hjemmeside skærm for skærm – lav en liste over forskelle
 - [ ] Ret forskellene, så funktioner, tekster og design er ens (DESIGN.md gælder også appen)
 - [ ] Appen bruger samme Supabase-database og samme Stripe-betalingsflow som hjemmesiden (vinderen betaler selv inden for 24 timer, valgfrit gemt kort, ingen saldo)
+- [ ] Appen: to-trins-login (AAL2) og ubekræftet e-mail håndteres, og kontosletning direkte i appen (Apples krav 5.1.1(v)) via et sikkert endpoint (POST /api/konto/slet er bygget på hjemmesiden: Bearer-token, aal2-krav, adgangskode + "SLET"). Når appen har to-trins-login: kør 20261007032000_mfa_database_haandhaevelse.sql i produktion
 - [ ] Push-notifikationer
 - [ ] Statistikker i appen
 - [ ] Nyt design og app-ikon (7B)

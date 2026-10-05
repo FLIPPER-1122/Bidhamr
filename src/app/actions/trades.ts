@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getUserMedToTrin } from "@/lib/mfa";
 import { createClient } from "@/lib/supabase/server";
 import { pakkeSendtMail } from "@/lib/mails/handel";
 import { send } from "@/lib/notifikationer/send";
@@ -31,7 +32,7 @@ async function hentHandel(tradeId: string) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserMedToTrin(supabase);
   if (!user) return { fejl: "Du skal være logget ind." as const };
 
   // Medlemskab filtreres eksplicit. RLS ville også slippe staff igennem, og

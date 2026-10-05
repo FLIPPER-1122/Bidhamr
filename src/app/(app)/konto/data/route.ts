@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logDriftFejl } from "@/lib/drift";
+import { manglerToTrin, TO_TRIN_STI } from "@/lib/mfa";
 
 // "Download dine data" (GDPR). Formularen på /konto poster hertil, og svaret
 // er en JSON-fil. Indholdet bygges af mine_data() i databasen (udleder
@@ -26,6 +27,10 @@ export async function POST(req: NextRequest) {
   const { data: brugerData } = await supabase.auth.getUser();
   if (!brugerData.user) {
     return NextResponse.redirect(new URL("/login?redirect=/konto%23dine-data", base), 303);
+  }
+  // Har brugeren to-trins-login, kræves koden (aal2), før data udleveres.
+  if (await manglerToTrin(supabase, brugerData.user)) {
+    return NextResponse.redirect(new URL(`${TO_TRIN_STI}?redirect=/konto%23dine-data`, base), 303);
   }
 
   const { data, error } = await supabase.rpc("mine_data");

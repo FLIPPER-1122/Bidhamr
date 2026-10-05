@@ -17,6 +17,10 @@
 --
 -- Adgangskoderne gælder kun testdatabasen. De må ikke genbruges andre steder.
 --
+-- Brugere kan ikke slettes (trigger users_ingen_haard_sletning, 20261007031000).
+-- Skal testbrugere ryddes op, så kør i samme transaktion først:
+--   set local bidhamr.tillad_brugersletning = 'ja';
+--
 -- NB om gaten før lancering: middleware lukker alle andre end staff
 -- (medarbejder/admin/chef) ude. Sælger og køber er almindelige brugere og
 -- lander derfor på /coming-soon, indtil gaten åbnes. Tester-agenten er

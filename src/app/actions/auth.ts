@@ -12,6 +12,7 @@ import { registrerLogin } from "@/lib/enheder";
 import { harToTrin, manglerToTrin } from "@/lib/mfa";
 import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
 import { logDriftFejl } from "@/lib/drift";
+import { hentKontoStatus } from "@/lib/kontoStatus";
 
 // Login, oprettelse, gensend bekraeftelse, to-trins-login og nulstil
 // adgangskode koeres paa serveren, saa de kan rate-limites pr. IP og pr.
@@ -44,35 +45,13 @@ async function efterLogin(
   bruger: { id: string; email?: string | null },
   accessToken: string | null | undefined,
 ): Promise<Resultat> {
-  const { data: profil, error } = await createAdminClient()
-    .from("users")
-    .select("suspenderet, suspenderet_aarsag, suspenderet_til, konto_slettet_kl")
-    .eq("id", bruger.id)
-    .maybeSingle();
-  if (error) {
+  const status = await hentKontoStatus(bruger.id);
+  if (status.kode !== "ok") {
+    await supabase.auth.signOut({ scope: "local" });
     // Kan profilen ikke laeses, lukkes der ikke ind (fail closed).
-    console.error("efterLogin: profil kunne ikke hentes:", error.message);
-    await supabase.auth.signOut({ scope: "local" });
-    return { fejl: GENERISK };
-  }
-
-  if (profil?.konto_slettet_kl) {
-    await supabase.auth.signOut({ scope: "local" });
-    return { fejl: "Forkert email eller adgangskode." };
-  }
-
-  // Udloebet suspension ignoreres (ryddes af en medarbejder i admin-panelet).
-  const aktivSuspension =
-    profil?.suspenderet &&
-    (!profil.suspenderet_til || new Date(profil.suspenderet_til) > new Date());
-  if (aktivSuspension) {
-    await supabase.auth.signOut({ scope: "local" });
-    const varighed = profil.suspenderet_til
-      ? `indtil d. ${new Date(profil.suspenderet_til).toLocaleDateString("da-DK", { timeZone: "Europe/Copenhagen" })}`
-      : "permanent";
-    return {
-      fejl: `Din konto er suspenderet ${varighed}. Årsag: ${profil.suspenderet_aarsag ?? "Ingen begrundelse angivet"}. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl.`,
-    };
+    if (status.kode === "fejl") return { fejl: GENERISK };
+    if (status.kode === "slettet") return { fejl: "Forkert email eller adgangskode." };
+    return { fejl: status.besked };
   }
 
   await registrerLogin({ brugerId: bruger.id, email: bruger.email, accessToken });
@@ -341,6 +320,9 @@ export async function gemNyAdgangskode(
     // Har brugeren to-trins-login, kraever Supabase koden foerst (aal2).
     if (error.code === "insufficient_aal") {
       return { fejl: "Du har to-trins-login slået til. Log ind med din kode først, og skift så adgangskoden under Min konto." };
+    }
+    if (error.code === "reauthentication_needed") {
+      return { fejl: "Linket er for gammelt. Bed om et nyt og prøv igen." };
     }
     console.error("gemNyAdgangskode fejlede:", error.code, error.message);
     return { fejl: GENERISK };

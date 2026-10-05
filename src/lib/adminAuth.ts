@@ -5,6 +5,7 @@ import "server-only";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getUserMedToTrin } from "@/lib/mfa";
 
 export type StaffRole = "medarbejder" | "admin" | "chef";
 
@@ -28,9 +29,10 @@ function somStaffRole(rolle: unknown): StaffRole | null {
 // Til layout/sider: returnerer brugerens staff-rolle eller null.
 export async function getStaffRole(): Promise<StaffRole | null> {
   const supabase = await createClient();
+  // Mangler to-trins-koden (aal1), er man ikke staff endnu.
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserMedToTrin(supabase);
   if (!user) return null;
 
   // rolle er ikke laesbar via kolonne-grants; min_rolle() udleder brugeren af auth.uid().
@@ -49,9 +51,10 @@ async function hentAdgang(
   min: StaffRole,
 ): Promise<StaffAdgang | "ikke_logget_ind" | "ingen_adgang"> {
   const supabase = await createClient();
+  // Mangler to-trins-koden (aal1), er man ikke staff endnu.
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserMedToTrin(supabase);
   if (!user) return "ikke_logget_ind";
 
   // rolle er ikke laesbar via kolonne-grants; min_rolle() udleder brugeren af auth.uid().

@@ -47,6 +47,7 @@
 //   supabase.from("sag_anke_billeder").select("id, anke_id, sti, kategori, oprettet_kl")
 //   Beskeden "anke indgivet" sendes af cron for anker indgivet fra appen.
 import { revalidatePath } from "next/cache";
+import { getUserMedToTrin } from "@/lib/mfa";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -200,7 +201,7 @@ export async function opretSag(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: SAG_OPRET_FEJL.ikke_logget_ind };
 
     const { data, error } = await supabase.rpc("sag_opret", {
@@ -248,7 +249,7 @@ export async function tilfoejSagBilleder(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: SAG_OPRET_FEJL.ikke_logget_ind };
 
     const { data, error } = await supabase.rpc("sag_tilfoej_billeder", {
@@ -294,7 +295,7 @@ export async function indgivAnke(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: SAG_ANKE_FEJL.ikke_logget_ind };
 
     const { data, error } = await supabase.rpc("sag_anke_indgiv", {
@@ -360,7 +361,7 @@ export async function hentSagForHandel(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: SAG_OPRET_FEJL.ikke_logget_ind };
 
     const { data: handel } = await supabase
@@ -529,7 +530,7 @@ export async function hentSagMuligheder(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: SAG_OPRET_FEJL.ikke_logget_ind };
 
     // Kun køberen. Hentes med brugerens session (RLS), derefter detaljer med

@@ -12,7 +12,13 @@
 // "Minimum password length") bør sættes til 10, så kravet også gælder appen.
 
 export const MIN_LAENGDE = 10;
+// Bytes (UTF-8), ikke tegn: "æøå" og emoji fylder flere bytes, og bcrypt
+// skærer ved 72 bytes.
 export const MAKS_LAENGDE = 72;
+
+export function antalBytes(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
 
 // De mest brugte adgangskoder (internationale lister + danske varianter).
 // Sammenlignes uden store/små bogstaver og efter fjernelse af tal og tegn i
@@ -121,14 +127,15 @@ export const STYRKE_TEKST = ["Meget svag", "Svag", "Okay", "God", "Stærk"] as c
 export function vurderAdgangskode(adgangskode: string, info: Personinfo = {}): Vurdering {
   const pw = typeof adgangskode === "string" ? adgangskode : "";
   const krav: Krav = {
-    laengde: pw.length >= MIN_LAENGDE && pw.length <= MAKS_LAENGDE,
+    laengde: pw.length >= MIN_LAENGDE && antalBytes(pw) <= MAKS_LAENGDE,
     ikkeAlmindelig: pw.length > 0 && !erAlmindelig(pw),
     ikkePersonlig: pw.length > 0 && !indeholderPersoninfo(pw, info),
   };
 
   let fejl: string | null = null;
   if (pw.length < MIN_LAENGDE) fejl = `Adgangskoden skal være mindst ${MIN_LAENGDE} tegn.`;
-  else if (pw.length > MAKS_LAENGDE) fejl = `Adgangskoden må højst være ${MAKS_LAENGDE} tegn.`;
+  else if (antalBytes(pw) > MAKS_LAENGDE)
+    fejl = `Adgangskoden er for lang. Den må højst fylde ${MAKS_LAENGDE} tegn (æ, ø, å og specialtegn tæller som flere).`;
   else if (!krav.ikkeAlmindelig) fejl = "Adgangskoden er for almindelig. Vælg noget, der er svært at gætte.";
   else if (!krav.ikkePersonlig) fejl = "Adgangskoden må ikke være din e-mail eller dit navn.";
 

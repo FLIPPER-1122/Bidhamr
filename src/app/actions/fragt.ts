@@ -5,6 +5,7 @@
 // service-role i src/lib/fragt/server.ts, som tjekker sælgeren igen under lås.
 // Den eksisterende "Send pakke" (sporingsnummer + pakkebilleder) er uændret.
 import { revalidatePath } from "next/cache";
+import { getUserMedToTrin } from "@/lib/mfa";
 import { createClient } from "@/lib/supabase/server";
 import { fragtLabelsAktiv } from "@/lib/fragt";
 import { erPakkestoerrelse } from "@/lib/fragt/types";
@@ -38,7 +39,7 @@ async function brugerOgHandel(tradeId: string) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserMedToTrin(supabase);
   if (!user) return null;
   const { data: handel } = await supabase
     .from("trades")
@@ -134,7 +135,7 @@ export async function hentFragtlabelLink(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserMedToTrin(supabase);
   if (!user) return { fejl: "Du skal være logget ind." };
   const f = await hentLabel(supabase, forsendelseId);
   if (!f?.label_sti) return { fejl: "Fragtlabelen findes ikke." };

@@ -6,6 +6,7 @@
 // Alle funktioner returnerer enten { ok: true, ... } eller { fejl: string }.
 
 import { revalidatePath } from "next/cache";
+import { getUserMedToTrin } from "@/lib/mfa";
 import { createClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -35,7 +36,7 @@ async function indloggetBruger() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserMedToTrin(supabase);
   return user;
 }
 

@@ -10,6 +10,7 @@
 // (status 'annulleret') og slettes aldrig. Fejl RETURNERES.
 
 import { revalidatePath } from "next/cache";
+import { getUserMedToTrin } from "@/lib/mfa";
 import { createClient } from "@/lib/supabase/server";
 import { kategorier } from "@/lib/kategorier";
 import {
@@ -104,7 +105,7 @@ export async function redigerAuktion(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: "Du skal være logget ind." };
 
     const { data, error } = await supabase.rpc("rediger_auktion", {
@@ -146,7 +147,7 @@ export async function annullerAuktion(auktionId: string): Promise<{ ok: true } |
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: "Du skal være logget ind." };
 
     // Idempotent i databasen: ejer, status og "ingen bud" tjekkes i samme update.
