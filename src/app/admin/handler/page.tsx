@@ -7,6 +7,8 @@ import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import HandelStatusBadge from "@/components/HandelStatusBadge";
 import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
+import { UUID_RE } from "@/lib/moderationLog";
+import { HAENGER_TEKST, erHaengerGrund, type HaengerGrund } from "@/lib/adminGraenser";
 import {
   sagAabn,
   sagLuk,
@@ -29,7 +31,6 @@ type HandelRow = {
   status: string;
   tracking_number: string | null;
   created_at: string;
-  received_at: string | null;
   sag_aaben: boolean;
   sag_note: string | null;
   sag_aabnet_at: string | null;
@@ -37,12 +38,10 @@ type HandelRow = {
 
 const AKTIVE = ["betaling_modtaget", "pakke_sendt", "modtaget"];
 
-// En handel "hænger", hvis den har stået i samme trin for længe.
-const FRIST_DAGE: Record<string, number> = {
-  betaling_modtaget: 5, // sælger har ikke sendt
-  pakke_sendt: 10, // køber har ikke kvitteret
-  modtaget: 5, // køber har ikke godkendt
-};
+// Hvilke handler der "hænger", afgøres af SQL-funktionen
+// admin_haengende_handler() – den samme, som tæller kortene på admin-forsiden
+// (grænserne står i src/lib/adminGraenser.ts).
+type Haenger = { grund: HaengerGrund; siden: string };
 
 const FANER = [
   { key: "sager", label: "Markerede" },
@@ -53,13 +52,6 @@ const FANER = [
 
 function dageSiden(iso: string) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-}
-
-function haenger(h: HandelRow) {
-  const frist = FRIST_DAGE[h.status];
-  if (!frist) return false;
-  const fra = h.status === "modtaget" && h.received_at ? h.received_at : h.created_at;
-  return dageSiden(fra) >= frist;
 }
 
 const kr = (v: number | string) =>
@@ -81,15 +73,49 @@ export default async function AdminSager({
   const søgetekst = q?.trim() ?? "";
   const supabase = createAdminClient();
 
-  const { data: handler } = await supabase
-    .from("trades")
-    .select(
-      "id, auction_id, seller_id, buyer_id, amount, status, tracking_number, created_at, received_at, sag_aaben, sag_note, sag_aabnet_at",
-    )
-    .order("created_at", { ascending: false })
-    .limit(500);
+  const KOLONNER =
+    "id, auction_id, seller_id, buyer_id, amount, status, tracking_number, created_at, sag_aaben, sag_note, sag_aabnet_at";
 
-  const alle = (handler ?? []) as HandelRow[];
+  const [{ data: handler }, { data: haengende, error: haengerFejl }] = await Promise.all([
+    supabase.from("trades").select(KOLONNER).order("created_at", { ascending: false }).limit(500),
+    supabase.rpc("admin_haengende_handler"),
+  ]);
+  if (haengerFejl) console.error("admin_haengende_handler fejlede:", haengerFejl.message);
+
+  const haengerMap = new Map<string, Haenger>();
+  for (const r of (haengende ?? []) as { trade_id: string; grund: unknown; siden: string }[]) {
+    if (erHaengerGrund(r.grund)) haengerMap.set(r.trade_id, { grund: r.grund, siden: r.siden });
+  }
+
+  // Kun de 500 nyeste hentes. Ældre handler hentes med, når de hænger, eller
+  // når der søges på et id (handel, auktion, køber eller sælger) – fx fra et
+  // link i medarbejder-loggen.
+  const nyeste = (handler ?? []) as HandelRow[];
+  const kendte = new Set(nyeste.map((h) => h.id));
+  const mangler = [...haengerMap.keys()].filter((id) => !kendte.has(id)).slice(0, 500);
+  const søgUuid = UUID_RE.test(søgetekst) ? søgetekst.toLowerCase() : null;
+  const [{ data: ekstra }, { data: idTraef }] = await Promise.all([
+    mangler.length
+      ? supabase.from("trades").select(KOLONNER).in("id", mangler)
+      : Promise.resolve({ data: [] as HandelRow[] }),
+    søgUuid
+      ? supabase
+          .from("trades")
+          .select(KOLONNER)
+          .or(`id.eq.${søgUuid},auction_id.eq.${søgUuid},buyer_id.eq.${søgUuid},seller_id.eq.${søgUuid}`)
+          .order("created_at", { ascending: false })
+          .limit(200)
+      : Promise.resolve({ data: [] as HandelRow[] }),
+  ]);
+  const alle = [...nyeste];
+  for (const h of [...((ekstra ?? []) as HandelRow[]), ...((idTraef ?? []) as HandelRow[])]) {
+    if (!kendte.has(h.id)) {
+      kendte.add(h.id);
+      alle.push(h);
+    }
+  }
+  alle.sort((x, y) => y.created_at.localeCompare(x.created_at));
+  const haenger = (h: HandelRow) => haengerMap.has(h.id);
 
   const auktionIds = [...new Set(alle.map((h) => h.auction_id))];
   const brugerIds = [...new Set(alle.flatMap((h) => [h.buyer_id, h.seller_id]))];
@@ -110,14 +136,14 @@ export default async function AdminSager({
 
   const antal = {
     sager: alle.filter((h) => h.sag_aaben).length,
-    haenger: alle.filter((h) => AKTIVE.includes(h.status) && haenger(h)).length,
+    haenger: alle.filter(haenger).length,
     aktive: alle.filter((h) => AKTIVE.includes(h.status)).length,
     alle: alle.length,
   };
 
   let rows = alle.filter((h) => {
     if (fane === "sager") return h.sag_aaben;
-    if (fane === "haenger") return AKTIVE.includes(h.status) && haenger(h);
+    if (fane === "haenger") return haenger(h);
     if (fane === "aktive") return AKTIVE.includes(h.status);
     return true;
   });
@@ -130,7 +156,7 @@ export default async function AdminSager({
       return [
         titelMap.get(h.auction_id),
         k?.navn, k?.email, s?.navn, s?.email,
-        h.tracking_number, h.sag_note, h.id,
+        h.tracking_number, h.sag_note, h.id, h.auction_id, h.buyer_id, h.seller_id,
       ].some((v) => (v ?? "").toLowerCase().includes(nål));
     });
   }
@@ -162,6 +188,12 @@ export default async function AdminSager({
         </Link>
         . En markering her fryser pengene, indtil den fjernes.
       </p>
+
+      {haengerFejl && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          Handler, der hænger, kunne ikke hentes lige nu. Prøv at genindlæse siden.
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {FANER.map((f) => {
@@ -210,7 +242,7 @@ export default async function AdminSager({
             <tbody className="divide-y divide-neutral-100">
               {rows.map((h) => {
                 const aktiv = AKTIVE.includes(h.status);
-                const forsinket = aktiv && haenger(h);
+                const forsinket = haengerMap.get(h.id);
                 return (
                   <tr key={h.id} className={`align-top ${h.sag_aaben ? "bg-red-50/40" : "hover:bg-neutral-50"}`}>
                     <td className="px-5 py-3">
@@ -234,9 +266,11 @@ export default async function AdminSager({
                     <td className="px-5 py-3"><HandelStatusBadge status={h.status} /></td>
                     <td className="px-5 py-3 whitespace-nowrap">
                       <span className={forsinket ? "font-semibold text-red-600" : "text-neutral-500"}>
-                        {dageSiden(h.created_at)} d
+                        {dageSiden(forsinket ? forsinket.siden : h.created_at)} d
                       </span>
-                      {forsinket && <span className="block text-xs text-red-600">Hænger</span>}
+                      {forsinket && (
+                        <span className="block text-xs text-red-600">{HAENGER_TEKST[forsinket.grund]}</span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       {h.sag_aaben ? (

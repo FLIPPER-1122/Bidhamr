@@ -1,4 +1,5 @@
-// Tallene fra admin_forside_tal() (supabase/migrations/20261005030000_admin_forside.sql).
+// Tallene fra admin_forside_tal() (supabase/migrations/20261005030000_admin_forside.sql,
+// rettet i 20261005031000_admin_forside_rettelser.sql).
 // Kun antal - ingen beløb og ingen personoplysninger.
 
 export type HandlingTal = {
