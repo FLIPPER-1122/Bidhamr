@@ -73,8 +73,13 @@ export async function redigerAuktion(
       return { fejl: REDIGER_FEJL.ugyldig_kategori };
     }
 
+    // "Mindst 1 kr" afgøres af databasen (rediger_auktion), som kun tjekker
+    // det, når startprisen ændres - så en gammel auktion med startpris 0 kan
+    // få rettet titel/billeder.
     const prisFejl = valideStartpris(input.startpris);
-    if (prisFejl) return { fejl: prisFejl };
+    if (prisFejl && !(prisFejl === STARTPRIS_FOR_LAV && input.startpris === 0)) {
+      return { fejl: prisFejl };
+    }
 
     if (
       !Array.isArray(input.billeder) ||

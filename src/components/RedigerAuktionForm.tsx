@@ -90,7 +90,9 @@ export default function RedigerAuktionForm({
       setError("Vælg en kategori.");
       return;
     }
-    const prisFejl = valideStartpris(startpris);
+    // En gammel auktion med startpris 0 må beholde den uændret (databasen
+    // tjekker kun mindst 1 kr, når startprisen ændres).
+    const prisFejl = startpris === start.startpris && startpris === 0 ? null : valideStartpris(startpris);
     if (prisFejl) {
       setError(prisFejl);
       return;
@@ -270,7 +272,7 @@ export default function RedigerAuktionForm({
           id="startpris"
           type="number"
           inputMode="numeric"
-          min={MINDSTE_STARTPRIS}
+          min={Math.min(MINDSTE_STARTPRIS, start.startpris)}
           step={1}
           required
           value={Number.isNaN(startpris) ? "" : startpris}
