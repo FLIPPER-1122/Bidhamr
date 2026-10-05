@@ -130,6 +130,9 @@ Brugeren får besked når:
 - **Cron**: kører hvert 5. minut via pg_cron + pg_net i Supabase (gratis). Vercel Pro overvejes tættere på lancering.
 - **Moms:** Alle beløb, køberen ser, er **inkl. moms**. BidHamr afregner selv moms af sine gebyrer; køberen betaler aldrig moms oveni (Filip, 1. oktober 2026).
 - **Mindste startpris (Filip, 5. oktober 2026): 1 kr.**
+- **Gratis at oprette en auktion (Filip, 6. oktober 2026).** Der betales kun gebyr, når en vare bliver solgt.
+- **Forbudte varer (Filip, 6. oktober 2026):** alle ulovlige varer blokeres med det samme ved oprettelse (fx skydevåben inkl. almindelig "pistol", narkotika, ulovlige knive). Lovlige men følsomme varer (fx billetter, alkohol, tobak, levende dyr, mulige kopivarer) giver en rapport til staff. **Billetter giver altid en rapport til staff.**
+- **Filips navn vises ikke offentligt** (Filip, 6. oktober 2026) – "Om BidHamr" nævner kun BidHamr.
 - **Sælger markerer selv pakken sendt (Filip, 6. oktober 2026):** også når fragtfirmaet melder pakken afleveret, skal sælger selv trykke "Send pakke" (med pakkebilleder). Afsendelsesfristen gælder uændret.
 - **Driftsdata (Filip, 5. oktober 2026):** fejllog (drift_fejl), cron-log (drift_cron_koersler) og pg_cron-historik slettes automatisk efter 90 dage. Det er ikke handelsdata.
 - **Første bud** må være lig startprisen.
