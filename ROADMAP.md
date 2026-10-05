@@ -55,30 +55,30 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - Brugeren ser samtalen under "Beskeder" og kan svare, så længe chatten er åben. Staff har **til hver en tid** en knap "Afslut chat" i samtalen; derefter kan brugeren ikke skrive mere (samtalen kan stadig læses)
   - Beskeder fra BidHamr er tydeligt markeret. Alle samtaler logges og gemmes (slettes aldrig)
   - **Ved en sag:** staff skriver med køber og sælger hver for sig i separate interne samtaler, der knyttes til sagen. Admin kan desuden skrive en fællesbesked til begge i den eksisterende chat mellem køber og sælger (tydeligt markeret som besked fra BidHamr)
-- [~] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
+- [x] Sag inden for 48 timer efter afhentning – pengene fryses og sagen vises på Sager-siden
 - [~] Uden BidHamr Beskyttelse: ingen retur via BidHamr. Med beskyttelse: BidHamr håndterer sagen *(delvist: returlabel mangler – se fase 2, venter på aftale med fragtfirma)*
-- [~] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem
-- [~] Afhentning hos sælger: køber giver stjerner og viser koden → pengene frigives med det samme
-- [~] Krævede pakkebilleder i "Send pakke" (kamera direkte, ikke kamerarulle): varen indpakket i åben kasse + lukket kasse med label
-- [~] Sag kræver billeder fra køber (pakke, label, indhold) inden for 48 timer
-- [~] Svindel-undtagelse: åbenlys svindel giver altid en sag, med eller uden beskyttelse
-- [~] Permanent lukning af konti ved svindel (køber eller sælger)
-- [~] Advarselssystem: dårlig indpakning giver påmindelse første gang, derefter en advarsel pr. gang. 3 advarsler = permanent lukning (byg videre på den eksisterende advarsel-funktion i admin)
-- [~] Mails ved alle trin i handlen
-- [~] **Udbetaling til sælgers bankkonto** via Stripe Connect (testmiljø – ingen rigtige penge endnu)
+- [x] Bedømmelse: køber skal give sælger 1-5 stjerner, før godkendelse går igennem
+- [x] Afhentning hos sælger: køber giver stjerner og viser koden → pengene frigives med det samme
+- [x] Krævede pakkebilleder i "Send pakke" (kamera direkte, ikke kamerarulle): varen indpakket i åben kasse + lukket kasse med label
+- [x] Sag kræver billeder fra køber (pakke, label, indhold) inden for 48 timer
+- [x] Svindel-undtagelse: åbenlys svindel giver altid en sag, med eller uden beskyttelse
+- [x] Permanent lukning af konti ved svindel (køber eller sælger)
+- [x] Advarselssystem: dårlig indpakning giver påmindelse første gang, derefter en advarsel pr. gang. 3 advarsler = permanent lukning (byg videre på den eksisterende advarsel-funktion i admin)
+- [x] Mails ved alle trin i handlen
+- [x] **Udbetaling til sælgers bankkonto** via Stripe Connect (testmiljø – ingen rigtige penge endnu)
 - [ ] **DAC7**: brug Stripes "Platform Tax Reporting" til at indsamle og indberette sælgeroplysninger
-- [~] Kvittering til køber og sælger efter handel med opdeling af pris, gebyr, BidHamr Beskyttelse og fragt (kvittering/handelsbekræftelse for selve varen – IKKE en faktura, fordi varen sælges mellem private)
+- [x] Kvittering til køber og sælger efter handel med opdeling af pris, gebyr, BidHamr Beskyttelse og fragt (kvittering/handelsbekræftelse for selve varen – IKKE en faktura, fordi varen sælges mellem private)
 - [ ] Filip: spørg revisor, om **Dinero** er et godkendt digitalt bogføringssystem, og vælg regnskabsprogram (Dinero, Billy eller e-conomic)
 - [ ] **Automatiske fakturaer på BidHamrs egne gebyrer** med moms: køber får faktura på købergebyr + evt. BidHamr Beskyttelse, sælger får faktura på sælgergebyr. Oprettes automatisk i det valgte regnskabsprogram via API, så alle fakturaer ligger samlet ét sted. Fakturaerne vises også under brugerens profil. **Venter på Filips valg af regnskabsprogram** – byg kvitteringen først
-- [~] Sælger kan redigere eller annullere sin auktion, så længe der ikke er bud
-- [~] **Startpris = mindstepris**: sælger sætter én synlig startpris, som alle kan se. Første bud skal mindst være startprisen. Ingen skjult mindstepris
-- [~] Ved oprettelse vises en tydelig anbefaling: "Sæt startprisen lidt under det, du regner med at få – er den for høj, byder ingen"
-- [~] Oprydning: behandlede rapporter flyttes til arkiv efter 48 timer – gemmes permanent (cron)
-- [~] Oprydning: afsluttede auktioner **skjules/arkiveres** 48 timer efter afsluttet handel – de må IKKE slettes, fordi kvitteringer, bedømmelser, DAC7 og bogføringsloven kræver, at handelsdata gemmes i 5 år
-- [~] **Afsendelsesfrist**: sælger skal sende inden 5 dage. Sendes der ikke, annulleres handlen, og køber refunderes fuldt (som Vinted/Tradera)
-- [~] **Bindende bud**: bud kan ikke trækkes tilbage – vises tydeligt, før man byder
-- [~] Minimum budstigning (fx +10 kr / +5%) og valg af auktionsvarighed ved oprettelse
-- [~] **Anke**: den, der taber en sag, kan anke. **Anke-knappen åbner først 24 timer efter afgørelsen** (afkølingsperiode), og derefter er der **3 dage** til at anke. Kræver begrundelse og gerne ny dokumentation. Behandles af en anden medarbejder end den, der afgjorde sagen (admin/chef). Afgørelsen på anken er endelig. Pengene er frosset, til ankefristen er udløbet (i alt 4 dage efter afgørelsen). Gælder kun handler med en sag
+- [x] Sælger kan redigere eller annullere sin auktion, så længe der ikke er bud
+- [x] **Startpris = mindstepris**: sælger sætter én synlig startpris, som alle kan se. Første bud skal mindst være startprisen. Ingen skjult mindstepris
+- [x] Ved oprettelse vises en tydelig anbefaling: "Sæt startprisen lidt under det, du regner med at få – er den for høj, byder ingen"
+- [x] Oprydning: behandlede rapporter flyttes til arkiv efter 48 timer – gemmes permanent (cron)
+- [x] Oprydning: afsluttede auktioner **skjules/arkiveres** 48 timer efter afsluttet handel – de må IKKE slettes, fordi kvitteringer, bedømmelser, DAC7 og bogføringsloven kræver, at handelsdata gemmes i 5 år
+- [x] **Afsendelsesfrist**: sælger skal sende inden 5 dage. Sendes der ikke, annulleres handlen, og køber refunderes fuldt (som Vinted/Tradera)
+- [x] **Bindende bud**: bud kan ikke trækkes tilbage – vises tydeligt, før man byder
+- [x] Minimum budstigning (fx +10 kr / +5%) og valg af auktionsvarighed ved oprettelse
+- [x] **Anke**: den, der taber en sag, kan anke. **Anke-knappen åbner først 24 timer efter afgørelsen** (afkølingsperiode), og derefter er der **3 dage** til at anke. Kræver begrundelse og gerne ny dokumentation. Behandles af en anden medarbejder end den, der afgjorde sagen (admin/chef). Afgørelsen på anken er endelig. Pengene er frosset, til ankefristen er udløbet (i alt 4 dage efter afgørelsen). Gælder kun handler med en sag
 
 ## Fase 1B – Nyt admin-dashboard
 Formål: ét samlet sted, hvor staff kan styre hele BidHamr. Bygges efter fase 1, fordi pengetallene afhænger af den nye Stripe-model.
