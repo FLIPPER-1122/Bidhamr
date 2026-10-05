@@ -29,7 +29,12 @@
 //   moenster  - skal stå i teksten (som hele ord)
 //   kraever   - (valgfri) skal OGSÅ stå et sted i teksten (hele ord)
 //   undtagen  - (valgfri) står det et sted i teksten, gælder reglen ikke
-// Pladsholdere (@medie, @vaaben, ...) udfoldes i alle tre felter.
+//   fjern     - (valgfri) fraser, der fjernes fra teksten, før mønsteret
+//               tjekkes ("kanin bur", "gevær rack", "nerf pistol"). Bruges til
+//               tilbehør/undtagelser, der kun må gælde lige ved dyre-/
+//               våbenordet: "Kanin bur" er ok, "Kanin til salg med bur" ikke.
+//               kraever og undtagen tjekkes mod hele teksten.
+// Pladsholdere (@medie, @vaaben, ...) udfoldes i alle fire felter.
 //
 // Mønstrene er bevidst skrevet i en lille fælles regex-delmængde, som både
 // JavaScript og Postgres forstår ens: bogstaver, tal, mellemrum, % &, [..],
@@ -42,12 +47,16 @@
 //   ok:       "Nerf pistol", "Vandpistol", "Pistol Pete bog",
 //             "Sex Pistols plakat", "Hash brown-pande", "Kanin bur",
 //             "Hvalpe kurv", "Killingefoder", "Akvarium 60 L",
-//             "Billet holder", "Krudt og kugler brætspil", "Krudtugle"
+//             "Billet holder", "Krudt og kugler brætspil", "Krudtugle",
+//             "Hamster bur med hjul", "Bur til kanin", "Pistolhylster"
 //   tvivl:    "Gevær rack", "Softgun", "Kopi af Arne Jacobsen stol",
-//             "2 billetter til Roskilde Festival", "Flaske vodka"
+//             "2 billetter til Roskilde Festival", "Flaske vodka",
+//             "Hylster til pistol"
 //   blokeret: "Pistol", "Glock 17 pistol", "Jagtgevær sælges",
 //             "Luftpistol", "Hash 5 gram", "Falsk Rolex",
-//             "Kanin til salg", "Hvalpe sælges", "Akvariefisk"
+//             "Kanin til salg", "Hvalpe sælges", "Akvariefisk",
+//             "Hest til salg inkl. trailer", "Pistol med hylster",
+//             "Hvalpe sælges med kurv", "Kanin med bur", "Hvalp + kurv"
 
 export type ForbudtKategori =
   | "vaaben"
@@ -137,6 +146,31 @@ export type ForbudtNiveau = "blokeret" | "tvivl";
 // Pladsholdere. Udfoldes i denne rækkefølge (nogle indeholder @medie, som
 // derfor kommer sidst). HOLD SYNKRON med public.forbudt_ekspander().
 export const PLADSHOLDERE: readonly [string, string][] = [
+  // ---- Fjern-fraser (feltet "fjern"). Et tilbehørs-/undtagelsesord tæller
+  // kun, når det står LIGE ved dyre-/våbenordet ("Kanin bur", "Gevær rack",
+  // "Bur til kanin", "Nerf pistol"). Frasen fjernes fra teksten, før reglens
+  // mønster tjekkes - så "Hvalpe sælges med kurv", "Pistol med hylster" og
+  // "Hvalpe kurv. Hvalpe sælges" stadig rammes.
+  [
+    "@fjerndyr",
+    "(@dyr @tilbehoer|@tilbehoer (til|for|om|af) (min |mine |vores |din |dine |en |et |@tal )?@dyr( (og|eller) (en |et |@tal )?@dyr)?|(bamse|bamser|figur|figurer|leget[oø]j|schleich|lego|playmobil|duplo|sylvanian|@medie) @dyr|little pony(er|en)?)",
+  ],
+  ["@fjernlege", "(@legevaaben (til |for )?@vaaben|@vaaben (til |for )?@legevaaben)"],
+  [
+    "@fjernvaabentilbehoer",
+    "(@vaaben @vaabenundtagen( (til|for) (@tal |en |et )?@vaaben)?|@vaabenundtagen (til |for )?(@tal |en |et |din |dit |dine )?@vaaben)",
+  ],
+  [
+    "@fjernammo",
+    "(@ammo (kasse|kasser|[aæ]ske|[aæ]sker|taske|b[aæ]lte|hylster)|(kasse|kasser|[aæ]ske|[aæ]sker|taske|b[aæ]lte|hylster) (til |for )?@ammo)",
+  ],
+  // Udstyr, som et levende dyr typisk sælges sammen med ("Kanin med bur").
+  [
+    "@dyrudstyr",
+    "(bur|bure|buret|kurv|transportkasse|transportbur|akvarie|akvarium|terrarie|terrarium|trailer|hestetrailer|sadel|grime|trense|foder|hus|hegn|kravleg[aå]rd|snor|sele|halsb[aå]nd)",
+  ],
+  ["@tal", "([0-9]+|to|tre|fire|fem|seks|syv|otte|ni|ti)"],
+  ["@ammo", "(ammunition|haglpatroner|riffelpatroner|pistolpatroner|jagtpatroner|salonpatroner)"],
   // Ord, der gør en "farlig" ting til legetøj/værktøj.
   [
     "@legevaaben",
@@ -182,6 +216,7 @@ type Regel = {
   moenster: string;
   kraever?: string;
   undtagen?: string;
+  fjern?: string;
 };
 
 // Rækkefølgen er nr i public.forbudte_ord(). Blokeret vinder altid over
@@ -191,7 +226,16 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
   { kategori: "vaaben", niveau: "blokeret", moenster: "skarpe? (ammunition|patroner|skud)", undtagen: "@medie" },
   // Alle skydevåben (også luftvåben) blokeres. Legetøj/værktøj er ok;
   // tilbehør, attrapper og softguns giver rapport (tvivl-reglen længere nede).
-  { kategori: "vaaben", niveau: "blokeret", moenster: "@vaaben", undtagen: "(@legevaaben|@vaabenundtagen)" },
+  // Undtagelsesordet skal stå lige ved våbenordet ("Gevær rack", "Nerf
+  // pistol") - "Pistol med hylster" blokeres. Medier ("Beatles Revolver LP")
+  // giver rapport via tvivl-reglen.
+  {
+    kategori: "vaaben",
+    niveau: "blokeret",
+    moenster: "@vaaben",
+    fjern: "(@fjernvaabentilbehoer|@fjernlege)",
+    undtagen: "@medie",
+  },
   { kategori: "vaaben", niveau: "blokeret", moenster: "(v[aå]bendel(e|en|ene)?|skydev[aå]bendel(e|en|ene)?)", undtagen: "@medie" },
   { kategori: "vaaben", niveau: "blokeret", moenster: "spr[aæ]ngstof(fer|ferne|fet)?", undtagen: "@medie" },
   {
@@ -208,9 +252,11 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
   {
     kategori: "vaaben",
     niveau: "blokeret",
-    moenster: "(ammunition|haglpatroner|riffelpatroner|pistolpatroner|jagtpatroner|salonpatroner)",
-    undtagen:
-      "(tom|tomme|kasse|kasser|[aæ]ske|[aæ]sker|taske|b[aæ]lte|attrap|dummy|deaktiveret|hylster|hylstre|krudt og kugler|@medie)",
+    moenster: "@ammo",
+    // Emballage kun lige ved ordet ("Ammunition kasse"); "Haglpatroner med
+    // kasse" blokeres.
+    fjern: "@fjernammo",
+    undtagen: "(tom|tomme|attrap|dummy|deaktiveret|hylstre|krudt og kugler|@medie)",
   },
   {
     kategori: "vaaben",
@@ -218,7 +264,7 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
     moenster: "(sortkrudt|r[oø]gfrit krudt|krudt (til|s[aæ]lges)|krudt [0-9]+ ?(g|gram|kg))",
     undtagen: "(krudt og kugler|@medie)",
   },
-  { kategori: "vaaben", niveau: "tvivl", moenster: "@vaaben", undtagen: "@legevaaben" },
+  { kategori: "vaaben", niveau: "tvivl", moenster: "@vaaben", fjern: "@fjernlege" },
   { kategori: "vaaben", niveau: "tvivl", moenster: "h[aå]ndgranat(er|en|erne)?", undtagen: "@medie" },
   {
     kategori: "vaaben",
@@ -306,18 +352,21 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
   { kategori: "medicin", niveau: "tvivl", moenster: "(medicin|piller|tabletter) (s[aæ]lges|til salg)" },
 
   // ---------------------------------------------------------------- Levende dyr
-  // Levende dyr må ikke sælges (Filip, 6. oktober 2026). Tilbehør er ok.
+  // Levende dyr må ikke sælges (Filip, 6. oktober 2026). Tilbehør er ok,
+  // men kun når tilbehørsordet står lige ved dyret ("Kanin bur", "Bur til
+  // kanin", "Hvalpe kurv") - se @fjerndyr. "Hvalpe sælges med kurv", "Hest til
+  // salg inkl. trailer" og "Kanin med bur" blokeres.
   {
     kategori: "levende_dyr",
     niveau: "blokeret",
-    moenster: "@dyr (til salg|s[aæ]lges|gives v[aæ]k|s[oø]ger (nyt )?hjem|til adoption)",
-    undtagen: "@tilbehoer",
+    moenster: "@dyr (til salg|s[aæ]lges|gives v[aæ]k|s[oø]ger (nyt )?hjem|til adoption|medf[oø]lger)",
+    fjern: "@fjerndyr",
   },
   {
     kategori: "levende_dyr",
     niveau: "blokeret",
-    moenster: "(s[aæ]lger|s[aæ]lges|giver|gives) (min |mine |vores |en |et |to |tre |[0-9]+ )?@dyr",
-    undtagen: "@tilbehoer",
+    moenster: "(s[aæ]lger|s[aæ]lges|giver|gives) (min |mine |vores |en |et |@tal )?@dyr",
+    fjern: "@fjerndyr",
   },
   {
     kategori: "levende_dyr",
@@ -325,13 +374,34 @@ export const FORBUDTE_REGLER: readonly Regel[] = [
     moenster: "@dyr",
     kraever:
       "(levende|stamtavle|stambog|vaccineret|vaccinerede|chippet|chippede|ormekur|ormekureret|nyt hjem|uger gammel|uger gamle|m[aå]neder gammel|m[aå]neder gamle|mdr gammel|mdr gamle|renracet|renracede|opdr[aæ]tter|kuld|hvalpekuld)",
-    undtagen: "@tilbehoer",
+    fjern: "@fjerndyr",
   },
   {
     kategori: "levende_dyr",
     niveau: "blokeret",
     moenster: "(hvalp(e|en|ene)?|kattekilling(er|en|erne)?|akvariefisk)",
-    undtagen: "@tilbehoer",
+    fjern: "@fjerndyr",
+  },
+  // Dyret medfølger tilbehøret: "Bur inkl. kanin", "Kanin med bur",
+  // "Bur med 2 kaniner".
+  {
+    kategori: "levende_dyr",
+    niveau: "blokeret",
+    moenster: "(inkl|inklusiv|inklusive|samt|plus) (min |mine |vores |en |et |@tal )?@dyr",
+    fjern: "@fjerndyr",
+  },
+  {
+    kategori: "levende_dyr",
+    niveau: "blokeret",
+    moenster: "@dyr (med|og|inkl|inklusiv|inklusive|samt|plus) (tilh[oø]rende |eget |egen |egne |nyt |ny |nye |stort |stor |store )?@dyrudstyr",
+    fjern: "@fjerndyr",
+  },
+  {
+    kategori: "levende_dyr",
+    niveau: "blokeret",
+    moenster: "(med|og|@tal) (min |mine |vores |en |et |@tal )?@dyr",
+    kraever: "@dyrudstyr",
+    fjern: "@fjerndyr",
   },
   { kategori: "levende_dyr", niveau: "blokeret", moenster: "levende dyr", undtagen: "@medie" },
 
@@ -514,6 +584,7 @@ export const FORBUDTE_ORD: readonly {
   moenster: string;
   kraever: string | null;
   undtagen: string | null;
+  fjern: string | null;
 }[] = FORBUDTE_REGLER.map((o, i) => ({
   nr: i + 1,
   kategori: o.kategori,
@@ -521,6 +592,7 @@ export const FORBUDTE_ORD: readonly {
   moenster: ekspander(o.moenster),
   kraever: o.kraever ? ekspander(o.kraever) : null,
   undtagen: o.undtagen ? ekspander(o.undtagen) : null,
+  fjern: o.fjern ? ekspander(o.fjern) : null,
 }));
 
 // Usynlige tegn og retningsmærker (samme som public.spoergsmaal_ryd_tekst),
@@ -531,7 +603,8 @@ const USYNLIGE = /[­​-‏‪-‮⁠-⁯﻿]/g;
 // parenteser ...) bliver til mellemrum - undtagen % og &.
 const ORDTEGN = "a-z0-9æøåäöüéèáàâêëíìîïóòôúùûñçß";
 
-// Små bogstaver, NFC, usynlige tegn fjernes, tegnsætning og bindestreger
+// Små bogstaver, NFC, usynlige tegn fjernes, "+" bliver til " og " (så
+// "Hvalp + kurv" ikke ligner "Hvalp kurv"), tegnsætning og bindestreger
 // bliver til mellemrum, gentagne mellemrum til ét. Samme regel som
 // public.forbudt_normaliser.
 export function normaliserTekst(tekst: string | null | undefined): string {
@@ -539,6 +612,7 @@ export function normaliserTekst(tekst: string | null | undefined): string {
     .normalize("NFC")
     .toLowerCase()
     .replace(USYNLIGE, "")
+    .replace(/[+]/g, " og ")
     .replace(new RegExp(`[^${ORDTEGN}%& ]+`, "g"), " ")
     .replace(/ +/g, " ")
     .trim();
@@ -553,7 +627,17 @@ const KOMPILEREDE = FORBUDTE_ORD.map((o) => ({
   re: helOrd(o.moenster),
   kraeverRe: o.kraever ? helOrd(o.kraever) : null,
   undtagenRe: o.undtagen ? helOrd(o.undtagen) : null,
+  fjernRe: o.fjern ? helOrd(o.fjern) : null,
 }));
+
+// Fjerner forekomsterne af en fjern-frase én ad gangen (første forekomst
+// erstattes af ét mellemrum), præcis som regexp_replace uden 'g' i
+// public.forbudt_tekst_tjek. Højst 50 gange.
+function fjernFraser(tekst: string, re: RegExp): string {
+  let t = tekst;
+  for (let i = 0; i < 50 && re.test(t); i++) t = t.replace(re, " ");
+  return t;
+}
 
 export type ForbudtResultat =
   | { resultat: "ok" }
@@ -565,7 +649,7 @@ export function tjekForbudtTekst(...tekster: (string | null | undefined)[]): For
   if (norm === "") return { resultat: "ok" };
   let tvivl: ForbudtResultat | null = null;
   for (const o of KOMPILEREDE) {
-    const m = norm.match(o.re);
+    const m = (o.fjernRe ? fjernFraser(norm, o.fjernRe) : norm).match(o.re);
     if (!m) continue;
     if (o.kraeverRe && !o.kraeverRe.test(norm)) continue;
     if (o.undtagenRe && o.undtagenRe.test(norm)) continue;
