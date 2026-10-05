@@ -119,6 +119,11 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const router = useRouter();
   const noegle = kladdeNoegle(brugerId);
   const fejlBoksRef = useRef<HTMLDivElement>(null);
+  // Idempotens: én nøgle pr. formular. Databasen afviser en anden auktion med
+  // samme nøgle (auctions_idempotens_unik), så et dobbeltklik giver kun én.
+  const idempotensNoegle = useRef<string | null>(null);
+  // Spærrer et nyt klik, mens oprettelsen kører (samme tick som klikket).
+  const opretterRef = useRef(false);
 
   const [billeder, setBilleder] = useState<Billede[]>([]);
   const [titel, setTitel] = useState("");
@@ -246,6 +251,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   }
 
   async function opret() {
+    if (opretterRef.current) return;
     setError(null);
     const f = valider();
     if (Object.keys(f).length > 0 || !by) {
@@ -254,6 +260,9 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       return;
     }
 
+    opretterRef.current = true;
+    idempotensNoegle.current ??= crypto.randomUUID();
+    const noegleTilOprettelse = idempotensNoegle.current;
     setLoading(true);
     const supabase = createClient();
     try {
@@ -293,9 +302,22 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           // Databasen beregner selv sluttidspunktet ud fra varigheden.
           varighed_dage: varighed,
           slutter_kl: slutterKlFraVarighed(varighed).toISOString(),
+          idempotens_noegle: noegleTilOprettelse,
         })
         .select("id")
         .single();
+
+      // Dublet (fx to klik): auktionen findes allerede - vis den.
+      if (insertError?.code === "23505" && insertError.message.includes("auctions_idempotens_unik")) {
+        const { data: eksisterende } = await supabase.rpc("min_auktion_for_noegle", {
+          p_noegle: noegleTilOprettelse,
+        });
+        if (typeof eksisterende === "string") {
+          sletKladde(noegle);
+          router.push(`/auktion/${eksisterende}`);
+          return;
+        }
+      }
 
       if (insertError) {
         console.error("Fejl ved oprettelse af auktion:", insertError.code, insertError.message);
@@ -324,6 +346,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         setError(besked);
         setStatus(null);
         setLoading(false);
+        opretterRef.current = false;
         return;
       }
 
@@ -334,6 +357,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
       setError(err instanceof Error ? err.message : "Auktionen kunne ikke oprettes. Prøv igen om lidt.");
       setStatus(null);
       setLoading(false);
+      opretterRef.current = false;
     }
   }
 

@@ -4,8 +4,8 @@
 //
 // Databasen er autoriteten: public.indeholder_kontaktinfo i
 // supabase/migrations/20261006040000_auktionsfunktioner.sql, som bygger på
-// chattens spamfilter public.besked_spam_grund (seneste:
-// 20261006031000_spamfilter_rettelser.sql). Denne kopi bruger TS-spejlet
+// chattens spamfilter public.besked_spam_grund (seneste: 20261007050000_fase4_testrettelser.sql,
+// før: 20261006031000). Denne kopi bruger TS-spejlet
 // spamGrund() i src/lib/tryghed.ts, så brugeren får en advarsel, mens hun
 // skriver. Ændres reglerne i SQL, så ret dem også i tryghed.ts.
 
