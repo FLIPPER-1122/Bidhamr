@@ -5,7 +5,8 @@ import { erTestdatabase } from "@/lib/miljoe";
 // Routes der er tilgængelige uden login, mens resten af appen er bag
 // venteliste-gaten. Kun API-ruter med egen adgangskontrol undtages:
 // /api/waitlist (offentlig tilmelding fra splash-siden), /api/webhooks
-// (Stripe-signatur) og /api/cron (CRON_SECRET, fail closed). Alle andre
+// (Stripe-signatur), /api/fragt/webhook (fragtfirmaets signatur, verificeret
+// af adapteren, fail closed) og /api/cron (CRON_SECRET, fail closed). Alle andre
 // /api-ruter kræver login + rolle som resten af appen.
 const OFFENTLIGE_RUTER = [
   "/coming-soon",
@@ -17,6 +18,7 @@ const OFFENTLIGE_RUTER = [
   "/auth",
   "/api/waitlist",
   "/api/webhooks",
+  "/api/fragt/webhook",
   "/api/cron",
 ];
 

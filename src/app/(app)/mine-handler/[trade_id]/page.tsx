@@ -29,6 +29,9 @@ import { hentAfsendelsesfristAnnullering } from "@/lib/betaling/afsendelsesfrist
 import { hentAfhentningsfristAnnullering } from "@/lib/betaling/afhentningsfrist";
 import { afhentningTilbagebetalKl, afhentningsfristTekst } from "@/lib/afhentningsfrist";
 import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
+import FragtlabelBoks from "@/components/fragt/FragtlabelBoks";
+import { hentMinForsendelse } from "@/app/actions/fragt";
+import { fragtLabelsAktiv } from "@/lib/fragt";
 
 // En sag kan tidligst oprettes, når pakken er sendt, og vises også efter
 // afgørelsen (handlen kan da være leveret eller annulleret).
@@ -159,6 +162,11 @@ export default async function HandelDetaljePage({
   // dage efter betalingen, ellers annulleres handlen, og køberen refunderes
   // fuldt. betalt_kl kan læses af køber og sælger (kolonne-grant).
   const venterPaaAfsendelse = !afhentning && handel.status === "betaling_modtaget";
+
+  // Fragtlabel i BidHamr (kun bag flaget FRAGT_LABELS_AKTIV=true). Uden flaget
+  // er "Send pakke" præcis som før.
+  const visFragtlabel = fragtLabelsAktiv() && erSaelger && venterPaaAfsendelse;
+  const forsendelse = visFragtlabel ? await hentMinForsendelse(handel.id) : null;
   const [{ data: betaltRaekke }, afsendelsesAnnullering, afhentningsAnnullering] = await Promise.all([
     venterPaaAfsendelse
       ? supabase
@@ -518,6 +526,8 @@ export default async function HandelDetaljePage({
         )}
 
         {/* Handlinger */}
+        {visFragtlabel && <FragtlabelBoks tradeId={handel.id} forsendelse={forsendelse} />}
+
         {erSaelger && !afhentning && handel.status === "betaling_modtaget" && (
           <div className="rounded-xl border border-neutral-200 bg-white p-6">
             <h2 className="text-sm font-semibold text-neutral-900">Send pakken</h2>
@@ -532,7 +542,12 @@ export default async function HandelDetaljePage({
                 beløbet tilbage.
               </p>
             )}
-            <SendPakkeForm tradeId={handel.id} saelgerId={user.id} />
+            <SendPakkeForm
+              key={forsendelse?.sporingsnummer ?? "uden-label"}
+              tradeId={handel.id}
+              saelgerId={user.id}
+              forslagTracking={forsendelse?.sporingsnummer ?? null}
+            />
           </div>
         )}
 

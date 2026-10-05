@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { koerBetalingsCron } from "@/lib/betaling/cron";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl, renFejltekst } from "@/lib/drift";
+import { koerFragtCron } from "@/lib/fragt/server";
 
 // Lukker auktioner, opretter handel + betaling (48 timers frist), forsøger
 // autobetaling, sender "du vandt"-mails og betalingspåmindelser og overfører
 // frigivne beløb til sælgere. Annullerer og refunderer handler, hvor pakken
 // ikke er sendt 5 dage efter betalingen. Se src/lib/betaling/cron.ts.
+// Henter derefter sporing for aktive forsendelser (src/lib/fragt/server.ts).
 //
 // Kaldes hvert 5. minut af pg_cron + pg_net (job 'betalings-cron', se migration
 // 20261001020000) og dagligt kl. 03 af Vercel Cron som backup. Ruten er
@@ -93,7 +95,16 @@ async function haandter(req: NextRequest) {
   let fejl: string | null = null;
   let resultat: Record<string, unknown> | null = null;
   try {
-    const r = await koerBetalingsCron();
+    const betaling = await koerBetalingsCron();
+    // Fragtsporing (let og begrænset; flytter ingen penge). Fejl her stopper
+    // ikke betalings-cron'en og logges i drift_fejl af koerFragtCron selv.
+    let fragt: Awaited<ReturnType<typeof koerFragtCron>> | null = null;
+    try {
+      fragt = await koerFragtCron();
+    } catch (err) {
+      await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Fragt-cron", fejl: err });
+    }
+    const r = { ...betaling, fragt };
     resultat = kortResultat(r);
     ok = true;
     return NextResponse.json(r);

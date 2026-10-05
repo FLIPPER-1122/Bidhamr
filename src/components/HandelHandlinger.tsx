@@ -32,9 +32,19 @@ const PAKKE_FELTER: KategoriFelt<PakkeBilledeKategori>[] = [
   },
 ];
 
-export function SendPakkeForm({ tradeId, saelgerId }: { tradeId: string; saelgerId: string }) {
+export function SendPakkeForm({
+  tradeId,
+  saelgerId,
+  forslagTracking,
+}: {
+  tradeId: string;
+  saelgerId: string;
+  // Sporingsnummeret fra en fragtlabel lavet i BidHamr (kun når
+  // FRAGT_LABELS_AKTIV=true). Uden det er feltet tomt som altid.
+  forslagTracking?: string | null;
+}) {
   const router = useRouter();
-  const [tracking, setTracking] = useState("");
+  const [tracking, setTracking] = useState(forslagTracking ?? "");
   const [billeder, setBilleder] = useState<ValgtBillede<PakkeBilledeKategori>[]>([]);
   const [fejl, setFejl] = useState<string | null>(null);
   const [fremskridt, setFremskridt] = useState<string | null>(null);
