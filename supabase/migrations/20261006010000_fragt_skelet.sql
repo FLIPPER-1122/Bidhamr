@@ -16,13 +16,13 @@
 --   2. forsendelse_haendelser: normaliserede sporingshaendelser. Idempotent
 --      via (forsendelse_id, noegle). raa er begraenset til 4 KB.
 --   3. fragt_test_sporing: testfragtfirmaets "sporingssystem" (kun service_role).
+--   RLS (i afsnit 1 og 2): koeber og saelger paa handlen (og staff) kan laese
+--      forsendelser og haendelser. Kun service_role skriver.
 --   4. Ingen sletning: handelsdata (bogfoeringsloven/DAC7). Haendelser kan
 --      heller ikke aendres (bevis i sager).
---   5. RLS: koeber og saelger paa handlen (og staff) kan laese forsendelser og
---      haendelser. Kun service_role skriver.
---   6. Privat bucket 'fragt-labels' (PDF). Laesning: saelgeren (udgaaende),
+--   5. Privat bucket 'fragt-labels' (PDF). Laesning: saelgeren (udgaaende),
 --      koeberen (retur) og staff. Kun service_role uploader.
---   7. Funktioner (alle kun service_role - serveren har allerede tjekket
+--   6. Funktioner (alle kun service_role - serveren har allerede tjekket
 --      brugeren med auth, og funktionerne tjekker det igen under laas):
 --        forsendelse_claim, forsendelse_gem_oprettet, forsendelse_marker_fejlet,
 --        forsendelse_annuller, forsendelse_registrer_haendelse,
@@ -268,7 +268,7 @@ create trigger forsendelser_beskyt
   before update on public.forsendelser
   for each row execute function public.forsendelser_beskyt();
 
--- ============================================================ 6. storage
+-- ============================================================ 5. storage
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('fragt-labels', 'fragt-labels', false, 5242880, array['application/pdf'])
@@ -308,7 +308,7 @@ create policy "fragt_labels_laes"
   );
 -- Ingen insert/update/delete-policies: kun service_role uploader labels.
 
--- ============================================================ 7. funktioner
+-- ============================================================ 6. funktioner
 
 -- Rang for sporingsstatus: status flyttes kun fremad, saa haendelser i forkert
 -- raekkefoelge (webhook + sporing) ikke ruller status tilbage.
