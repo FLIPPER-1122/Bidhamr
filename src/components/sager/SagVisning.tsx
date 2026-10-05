@@ -242,15 +242,26 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
               handling: false,
             };
       }
-      return k
-        ? {
-            tekst: `Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`,
-            handling: true,
-          }
-        : {
-            tekst: "Køberen sender varen retur til dig og betaler selv returfragten. Du skal ikke gøre noget nu.",
-            handling: false,
-          };
+      {
+        // Ventetid ved retur: har køberen ikke sendt varen inden fristen (7
+        // dage efter beskeden), kan BidHamr afgøre sagen til sælgerens fordel.
+        const returFrist = sag.returFristKl ? datoOgTid(sag.returFristKl) : null;
+        return k
+          ? {
+              tekst: `Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}${
+                returFrist
+                  ? ` Send varen senest ${returFrist} – ellers kan BidHamr afgøre sagen til sælgerens fordel.`
+                  : ""
+              }`,
+              handling: true,
+            }
+          : {
+              tekst: `Køberen sender varen retur til dig og betaler selv returfragten.${
+                returFrist ? ` Køberen har frist til ${returFrist}.` : ""
+              } Du skal ikke gøre noget nu.`,
+              handling: false,
+            };
+      }
     case "afgjort_koeber":
       if (k) {
         if (sag.afvikletKl) {
@@ -271,6 +282,7 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
         ? { tekst: `Du har fået medhold. Pengene udbetales til dig tidligst ${dato}.`, handling: false }
         : { tekst: "Du har fået medhold, og pengene er udbetalt til dig.", handling: false };
     case "lukket":
+      // Køberen kan anke en lukning (se goerNu - "Er du uenig? ...").
       return venter
         ? { tekst: `Sagen er lukket. Handlen fortsætter som normalt efter ${dato}.`, handling: false }
         : { tekst: "Sagen er lukket, og handlen fortsætter som normalt.", handling: false };

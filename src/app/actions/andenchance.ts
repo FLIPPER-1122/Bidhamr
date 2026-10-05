@@ -17,6 +17,7 @@ import {
   erGyldigVarighed,
   slutterKlFraVarighed,
   valideStartpris,
+  STARTPRIS_FOR_LAV,
 } from "@/lib/auktionRegler";
 
 type Fejl = { fejl: string };
@@ -421,6 +422,7 @@ const GENOPSAET_FEJL: Record<string, string> = {
   solgt: "Varen er solgt og kan ikke sættes op igen.",
   allerede_genopsat: "Varen er allerede sat op igen.",
   ugyldig_startpris: "Startprisen er ugyldig.",
+  startpris_for_lav: STARTPRIS_FOR_LAV,
   ugyldig_slutdato: "Varigheden er ugyldig.",
   mangler_udbetalingskonto: "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.",
 };

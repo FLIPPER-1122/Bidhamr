@@ -168,6 +168,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
             ankeEndelig={sag.ankeEndelig}
             afventerRetur={sag.status === "afventer_retur"}
             returIkkeTilladt={sag.returIkkeTilladt}
+            returFristTekst={sag.returFristTekst}
           />
         </div>
       </section>

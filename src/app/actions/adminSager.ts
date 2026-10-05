@@ -63,6 +63,7 @@ import {
   type SagType,
   adminSagSti,
   erSagType,
+  sagReturFristKl,
   sagSti,
 } from "@/lib/sager";
 
@@ -147,6 +148,10 @@ const KODE_FEJL: Record<string, string> = {
   // sag_retur_afleveret, mens ankefristen løber (teksten får datoen i
   // registrerReturAfleveret).
   ankefrist_loeber: "Ankefristen løber stadig. Returen kan først registreres, når den er udløbet.",
+  // sag_afgoer i 'afventer_retur' før de 7 dages ventetid (teksten får
+  // datoen i afgoerSag).
+  retur_ventetid:
+    "Køberen har stadig frist til at sende varen retur. Sagen kan først afgøres til sælgerens fordel eller lukkes, når fristen er udløbet.",
 };
 
 function kodeFejl(kode: string | undefined): string {
@@ -177,6 +182,9 @@ type RpcSvar = {
   afvikling?: (SagAfvikling & { kode?: string; grund?: string | null }) | null;
   // sag_retur_afleveret med kode 'ankefrist_loeber': hvornår fristen udløber.
   ankefrist_kl?: string | null;
+  // sag_afgoer 'retur_ventetid': hvornår køberens frist til at sende varen
+  // retur udløber.
+  retur_frist_kl?: string | null;
 };
 
 function revalider(sagId: string, tradeId?: string) {
@@ -305,6 +313,10 @@ export type SagDetalje = SagListeRaekke & {
   ankeEndelig: string | null;
   // Hvorfor returen ikke kan registreres endnu (ankefristen løber), ellers null.
   returIkkeTilladt: string | null;
+  // Sagen venter på retur: køberens frist til at sende varen (7 dage efter
+  // beskeden "Send varen retur nu"). Før den er udløbet, kan sagen hverken
+  // afgøres til sælger eller lukkes. Ellers null.
+  returFristTekst: string | null;
   log: { handling: string; aarsag: string; oprettetKl: string; medarbejderNavn: string | null }[];
 };
 
@@ -656,6 +668,21 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         ? `Ankefristen løber til ${sagFristTekst(new Date(ankefristSlut).toISOString())}. Sælgeren kan anke indtil da, så returen kan først registreres derefter.`
         : null;
 
+    // Ventetid ved retur: køberen har 7 dage fra beskeden "Send varen retur
+    // nu" (sag_afgoer tjekker igen: 'retur_ventetid'). I 'afventer_retur' kan
+    // sagen kun afgøres til sælger eller lukkes, så "Afgør sagen" skjules,
+    // indtil fristen er udløbet.
+    const returFristKl =
+      s.status === "afventer_retur" && !ankeVenter
+        ? sagReturFristKl(s.penge_flyttes_efter_kl, s.afgjort_kl, ankeRaekke?.behandlet_kl ?? null)
+        : null;
+    const returVentetid = !!returFristKl && Date.now() < Date.parse(returFristKl);
+    const returFristTekst = returFristKl
+      ? returVentetid
+        ? `Køberen har frist til ${sagFristTekst(returFristKl)} til at sende varen retur. Indtil da kan sagen ikke afgøres til sælgerens fordel eller lukkes.`
+        : `Køberens frist til at sende varen retur udløb ${sagFristTekst(returFristKl)}.`
+      : null;
+
     // Må den aktuelle medarbejder behandle anken? (databasen tjekker igen)
     let ankeIkkeTilladt: string | null = null;
     if (ankeVenter) {
@@ -720,7 +747,8 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         },
         kan: {
           // Mens en anke venter, skal den afgøres først (databasen afviser også).
-          afgoere: kanAfgoere && aaben && !ankeVenter && (!ankeAfgjort || kanAfgoereAnket),
+          afgoere:
+            kanAfgoere && aaben && !ankeVenter && !returVentetid && (!ankeAfgjort || kanAfgoereAnket),
           registrereRetur: kanAfgoere && s.status === "afventer_retur" && !ankeVenter && !ankefristLoeber,
           // Databasen (sag_genaabn) afviser, hvis pengene allerede er flyttet,
           // eller hvis sagen er anket. Inden for ankefristen annulleres den
@@ -764,6 +792,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         ankeIkkeTilladt,
         ankeEndelig: ankeAfgjort ? ANKE_ENDELIG_TEKST : null,
         returIkkeTilladt,
+        returFristTekst,
         log: logRaekker.map((l) => ({
           handling: l.handling,
           aarsag: l.aarsag,
@@ -839,7 +868,9 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
     const svar = (data ?? { kode: "" }) as {
       kode: string;
       udfald?: "stadfaest" | "omgoer";
-      handling?: "refunder" | "frigiv" | "afvent_retur" | "blokeret" | "allerede_afviklet";
+      // 'lukket': anken på en lukket sag er afvist - sagen forbliver lukket, og
+      // frysningen er fjernet (intet til Stripe).
+      handling?: "refunder" | "frigiv" | "afvent_retur" | "blokeret" | "allerede_afviklet" | "lukket";
       afvikling?: (SagAfvikling & { kode?: string; grund?: string | null }) | null;
       anke_id?: string;
       part?: "koeber" | "saelger";
@@ -866,6 +897,8 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
           : r === "overfoersel_fejlede"
             ? "Overførslen til sælgeren fejlede. Den prøves igen automatisk."
             : "Pengene udbetales nu til sælgeren.";
+    } else if (svar.handling === "lukket") {
+      pengeBesked = "Sagen forbliver lukket. Frysningen er fjernet, og handlen fortsætter normalt.";
     } else if (svar.handling === "afvent_retur") {
       pengeBesked =
         "Køberen skal sende varen retur. Registrér, når returpakken er afleveret – så refunderes køberen straks.";
@@ -879,7 +912,9 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
     if (svar.trade_id && svar.sag_id && svar.part && svar.udfald) {
       // Det endelige udfald for parterne.
       const koeberVinder = (svar.udfald === "omgoer") === (svar.part === "koeber");
-      const slut: AnkeSlutUdfald = !koeberVinder
+      const slut: AnkeSlutUdfald = svar.handling === "lukket"
+        ? "lukket"
+        : !koeberVinder
         ? "saelger"
         : svar.handling === "afvent_retur"
           ? "koeber_retur"
@@ -978,6 +1013,11 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
     });
     if (error) throw new Error(error.message);
     const svar = (data ?? { kode: "" }) as RpcSvar;
+    if (svar.kode === "retur_ventetid" && svar.retur_frist_kl) {
+      throw new BrugerFejl(
+        `Køberen har frist til ${sagFristTekst(svar.retur_frist_kl)} til at sende varen retur. Sagen kan først afgøres til sælgerens fordel eller lukkes derefter.`,
+      );
+    }
     if (svar.kode !== "ok") {
       // Koder fra en anket sag har deres egen tekst her.
       const kode =

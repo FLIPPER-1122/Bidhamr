@@ -368,7 +368,9 @@ function AnkeKnap({
   };
   const konsekvensTekst: Record<AnkeUdfald, string> = {
     stadfaest:
-      anke.ankedeStatus === "afgjort_saelger"
+      anke.ankedeStatus === "lukket"
+        ? "Sagen forbliver lukket. Frysningen fjernes nu, og handlen fortsætter normalt."
+        : anke.ankedeStatus === "afgjort_saelger"
         ? "Pengene udbetales til sælgeren nu."
         : anke.ankedeStatus === "afventer_retur"
           ? "Køberen skal sende varen retur. Køberen refunderes, så snart returpakken er registreret."
@@ -946,6 +948,9 @@ export type SagHandlingerProps = {
   afventerRetur: boolean;
   // Hvorfor returen ikke kan registreres endnu (ankefristen løber), ellers null.
   returIkkeTilladt: string | null;
+  // Sagen venter på retur: køberens frist til at sende varen (7 dage efter
+  // beskeden "Send varen retur nu"). Indtil da er "Afgør sagen" skjult.
+  returFristTekst: string | null;
   koeber: { id: string; navn: string; lukket: boolean };
   saelger: { id: string; navn: string; lukket: boolean };
   indpakning: IndpakningInfo;
@@ -964,6 +969,7 @@ export default function SagHandlinger({
   ankeEndelig,
   afventerRetur,
   returIkkeTilladt,
+  returFristTekst,
 }: SagHandlingerProps) {
   const [resultat, setResultat] = useState<string | null>(null);
 
@@ -1013,6 +1019,7 @@ export default function SagHandlinger({
         </div>
       )}
 
+      {returFristTekst && <p className="text-sm text-neutral-600">{returFristTekst}</p>}
       {returIkkeTilladt && <p className="text-sm text-neutral-600">{returIkkeTilladt}</p>}
 
       {(kan.vurdereIndpakning || indpakning.vurderet) && (

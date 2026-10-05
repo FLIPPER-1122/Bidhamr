@@ -75,6 +75,7 @@ import {
   erSagBilledeKategori,
   erSagType,
   sagKraeverBeskyttelse,
+  sagReturFristKl,
   sagSti,
 } from "@/lib/sager";
 
@@ -109,6 +110,9 @@ export type MinSag = {
   // ankefristen er udløbet (sælgeren kan anke indtil da). Tidspunktet, eller
   // null, når returen kan sendes nu (fristen er udløbet, eller anken er afgjort).
   returVenterTilKl: string | null;
+  // Køberen skal sende varen retur nu: fristen (7 dage efter beskeden), hvorefter
+  // BidHamr kan afgøre sagen til sælgerens fordel. Ellers null.
+  returFristKl: string | null;
   erKoeber: boolean;
   billeder: { id: string; kategori: SagBilledeKategori; url: string | null; oprettetKl: string }[];
   // Sælgerens billeder af indpakningen fra "Send pakke" (tom ved afhentning
@@ -456,6 +460,17 @@ export async function hentSagForHandel(
           !!sag.penge_flyttes_efter_kl &&
           Date.parse(sag.penge_flyttes_efter_kl) > Date.now()
             ? sag.penge_flyttes_efter_kl
+            : null,
+        returFristKl:
+          sag.status === "afventer_retur" &&
+          !sag.retur_afleveret_kl &&
+          anke?.status !== "afventer" &&
+          !(
+            !anke &&
+            !!sag.penge_flyttes_efter_kl &&
+            Date.parse(sag.penge_flyttes_efter_kl) > Date.now()
+          )
+            ? sagReturFristKl(sag.penge_flyttes_efter_kl, sag.afgjort_kl, anke?.behandlet_kl ?? null)
             : null,
         erKoeber,
         billeder: (billeder ?? []).map((b) => ({
