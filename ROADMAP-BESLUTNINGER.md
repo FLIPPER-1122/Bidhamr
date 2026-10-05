@@ -2,7 +2,7 @@
 
 > **VIGTIGT – gælder hele dokumentet:**
 > - **Stripe holder brugernes penge (Stripe Connect), ikke BidHamr.**
-> - **Der er INGEN købersaldo/wallet.** Vinderen betaler selv inden for **24 timer** efter auktionen (kort, MobilePay, Apple Pay, Google Pay – og de øvrige metoder Stripe tilbyder, fx Klarna, Revolut Pay og Link; Filip 1. okt. 2026: må gerne være slået til). Som **tilvalg** kan brugeren gemme et kort og slå automatisk betaling til, så kortet trækkes med det samme, når han vinder. Betaler han ikke inden 24 timer: handlen annulleres, han får en advarsel, og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen. Hvor der står "wallet" nedenfor, er det forældet.
+> - **Der er INGEN købersaldo/wallet.** Vinderen betaler selv inden for **48 timer** efter auktionen (ændret fra 24 timer af Filip 5. okt. 2026; sælger kan forlænge til højst 7 dage) (kort, MobilePay, Apple Pay, Google Pay – og de øvrige metoder Stripe tilbyder, fx Klarna, Revolut Pay og Link; Filip 1. okt. 2026: må gerne være slået til). Som **tilvalg** kan brugeren gemme et kort og slå automatisk betaling til, så kortet trækkes med det samme, når han vinder. Betaler han ikke inden fristen: handlen annulleres, han får en advarsel, og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen. Hvor der står "wallet" nedenfor, er det forældet.
 > - **Stripe-opsætning: "separate charges and transfers"** med manuelle udbetalinger. Køber betaler til BidHamrs platformskonto; beløbet minus sælgergebyr overføres til sælgerens Stripe Connect Express-konto, når pengene frigives (bekræftelse, 48 timer uden sag, eller afgjort sag + ankefrist). Valgt fordi pengene ofte skal holdes i dage og kunne fryses ved sager.
 > - **Faktura og kvittering:** BidHamr laver kun faktura på sine egne gebyrer (købergebyr, sælgergebyr, BidHamr Beskyttelse) – med moms. Selve varen sælges mellem private, så køber og sælger får en kvittering/handelsbekræftelse, ikke en faktura. Fakturaerne oprettes automatisk i et dansk regnskabsprogram (sandsynligvis Dinero – afventer revisor) og vises også på brugerens profil.
 > - **Admin-dashboard:** Kun rollen **chef** må se pengetal og indtjeningsstatistik. Medarbejdere og admins ser alt andet. Forsiden fokuserer på brugere (antal i alt og nye brugere).
@@ -127,6 +127,7 @@ Brugeren får besked når:
 - **Udbetaling til sælger** sker automatisk via Stripe (dagligt; nye konti har Stripes ventetid på ca. 7 dage).
 - **Cron**: kører hvert 5. minut via pg_cron + pg_net i Supabase (gratis). Vercel Pro overvejes tættere på lancering.
 - **Moms:** Alle beløb, køberen ser, er **inkl. moms**. BidHamr afregner selv moms af sine gebyrer; køberen betaler aldrig moms oveni (Filip, 1. oktober 2026).
+- **Mindste startpris (Filip, 5. oktober 2026): 1 kr.**
 - **Første bud** må være lig startprisen.
 - **Budstigning (Filip, 4. oktober 2026)** – trappe efter det nuværende højeste bud: under 100 kr: +5 kr · 100–999 kr: +10 kr · 1.000–4.999 kr: +50 kr · fra 5.000 kr: +100 kr. Erstatter de 10 %.
 - **Auktionsvarighed (Filip, 4. oktober 2026):** sælger vælger 3, 5, 7 eller 10 dage ved oprettelse. 7 dage er forvalgt.
@@ -138,10 +139,12 @@ Brugeren får besked når:
 - **Behandlede rapporter** (Filip, 5. oktober 2026): slettes aldrig. Efter 48 timer flyttes de fra den aktive liste til rapportarkivet (rapporter_arkiv), hvor de gemmes permanent.
 
 ## Vinderen betaler ikke (Filip, 2. oktober 2026)
-- Efter 24 timer uden betaling annulleres handlen automatisk (og Stripe-betalingen annulleres).
+- **Betalingsfrist (Filip, 5. oktober 2026):** vinderen har **48 timer** til at betale. Sælger kan på handelssiden forlænge fristen (fx efter aftale i chatten), men højst til **7 dage** efter auktionens afslutning. Køberen får besked om den nye frist.
+- Efter fristen uden betaling annulleres handlen automatisk (og Stripe-betalingen annulleres).
+- **Sælger gør intet (Filip, 5. oktober 2026):** har sælger hverken tilbudt varen til næste byder eller sat den op igen 14 dage efter annulleringen, arkiveres auktionen. Sælger kan stadig sætte varen op igen fra Mine handler.
 - **Advarsel til køberen gives IKKE automatisk.** Der oprettes en sag "Ubetalt vinder", som en medarbejder skal godkende eller afvise. I admin-menuen vises et ! med antallet af sager, der venter (fx "! 11").
 - **Sælger bestemmer selv** næste skridt på handelssiden:
-  - **Tilbyd til næsthøjeste byder** – til byderens eget højeste bud. Byderen har 24 timer til at sige ja/nej. Siger han ja, oprettes en ny handel med ny 24-timers betalingsfrist. Siger han nej, eller går tiden, kan sælger vælge at sende tilbuddet videre til den næste byder i rækken.
+  - **Tilbyd til næsthøjeste byder** – til byderens eget højeste bud. Byderen har 24 timer til at sige ja/nej. Siger han ja, oprettes en ny handel med ny 48-timers betalingsfrist. Siger han nej, eller går tiden, kan sælger vælge at sende tilbuddet videre til den næste byder i rækken.
   - **Sæt varen op igen** – gratis. Ny auktion med samme titel, billeder og beskrivelse; sælger kan rette startpris og varighed.
 
 ## Chat mellem staff og brugere (Filip, 2. oktober 2026)
@@ -176,3 +179,5 @@ Brugeren får besked når:
 - **Automatisk frigivelse:** 48 timer efter "modtaget" uden sag frigives pengene til sælger. Har køberen hverken trykket "modtaget" eller oprettet en sag **14 dage efter afsendelse**, frigives pengene også (indtil GLS-sporing erstatter det). Staff tjekker sporingsnummeret hos GLS før medhold i "bortkommet".
 - **Ankefrist:** efter en afgørelse flyttes pengene (refusion eller udbetaling) først **4 dage** efter afgørelsen. Staff kan genåbne sagen imens.
 - **Anke:** den, der taber sagen, kan anke. Knappen åbner 24 timer efter afgørelsen og er åben i 3 dage (i alt 4 dage = ankefristen). Kræver begrundelse, gerne ny dokumentation. Behandles af en anden medarbejder (admin/chef) end den, der afgjorde sagen. Afgørelsen på anken er endelig. Pengene er frosset, til ankefristen er udløbet – og mens en anke behandles.
+- **Alle afgørelser kan ankes (Filip, 5. oktober 2026)** – også en sag, der er lukket uden at penge blev flyttet. Den part, der fik afvist sin sag, kan anke.
+- **Ventetid før afgørelse til sælger ved retur (Filip, 5. oktober 2026):** når køberen har fået besked om at sende varen retur, skal der gå mindst **7 dage**, før staff kan afgøre til sælger eller lukke sagen, fordi returen ikke er kommet.
