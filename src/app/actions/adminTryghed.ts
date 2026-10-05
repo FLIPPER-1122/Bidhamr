@@ -8,6 +8,7 @@
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { assertRole, getStaffRole } from "@/lib/adminAuth";
+import { rapportKategoriNavn } from "@/lib/tryghed";
 
 class BrugerFejl extends Error {}
 
@@ -74,9 +75,25 @@ export async function brugerRapportBehandlet(formData: FormData): Promise<{ ok: 
       })
       .eq("id", id)
       .eq("status", "ny")
-      .select("id");
+      .select("id, reported_id, category, kilde");
     if (error) throw new Error(error.message);
     if (!data || data.length === 0) throw new BrugerFejl("Rapporten er allerede behandlet.");
+
+    // Medarbejder-loggen: eksisterende handling 'rapport_behandlet' (bruges
+    // også for rapporter af auktioner); målet er den rapporterede bruger.
+    // Rapporten er allerede markeret behandlet, så en fejlet logning må ikke
+    // se ud som om intet skete – den logges blot.
+    const r = data[0] as { id: string; reported_id: string; category: string; kilde: string };
+    const { error: logFejl } = await admin.from("moderation_log").insert({
+      medarbejder_id: userId,
+      handling: "rapport_behandlet",
+      maal_type: "bruger",
+      maal_id: r.reported_id,
+      bruger_id: r.reported_id,
+      aarsag: `Rapport ${r.id} (${rapportKategoriNavn(r.category)}${r.kilde === "auto" ? ", spamfilter" : ""}): ${note}`.slice(0, 2000),
+    });
+    if (logFejl) console.error("Kunne ikke skrive til moderation_log:", logFejl.message);
+
     revalidatePath("/admin/bruger-rapporter");
     return { ok: true as const };
   });

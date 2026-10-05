@@ -26,8 +26,11 @@ export async function sendKontakt(
     // Honeypot: feltet er skjult for mennesker. Robotten får "ok", så den
     // ikke prøver igen med et andet felt.
     if (String(formData.get("hjemmeside") ?? "").trim() !== "") return { ok: true };
-    const start = Number(formData.get("t"));
-    if (Number.isFinite(start) && start > 0 && Date.now() - start < MIN_SEKUNDER * 1000) {
+    // Mangler tidsfeltet eller er det ugyldigt, behandles det som for hurtigt
+    // (formularen sætter det altid) – ellers kunne en robot bare udelade det.
+    const raa = formData.get("t");
+    const start = typeof raa === "string" && /^\d{1,16}$/.test(raa) ? Number(raa) : NaN;
+    if (!Number.isFinite(start) || start <= 0 || Date.now() - start < MIN_SEKUNDER * 1000) {
       return { ok: true };
     }
 
