@@ -208,7 +208,10 @@ export default async function MedarbejderLog({
 
       <ul className="space-y-2">
         {raekker.map((r) => {
-          const link = maalLink(r.maal_type, r.maal_id, r.bruger_id);
+          const link = maalLink(r.maal_type, r.maal_id, r.bruger_id, {
+            handling: r.handling,
+            kanSeAdminAuktioner: kanSeAlle,
+          });
           const visBruger = r.bruger_id && !erSystem(r.bruger_id);
           return (
             <li key={r.id} className="rounded-xl border border-neutral-200 bg-white p-4">

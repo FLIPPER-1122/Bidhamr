@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { HandlingTal } from "./forsideTal";
+import { HAENGER_GRAENSER_DAGE } from "@/lib/adminGraenser";
 
 type Kort = {
   titel: string;
@@ -72,19 +73,19 @@ export default function KraeverHandling({
       titel: "Betalt, ikke sendt",
       antal: tal.ikke_sendt,
       href: "/admin/handler?vis=haenger",
-      detalje: "Mere end 3 dage siden betalingen",
+      detalje: `Mere end ${HAENGER_GRAENSER_DAGE.ikke_sendt} dage siden betalingen`,
     },
     {
       titel: "Sendt, ikke modtaget",
       antal: tal.ikke_modtaget,
       href: "/admin/handler?vis=haenger",
-      detalje: "Mere end 10 dage siden afsendelsen",
+      detalje: `Mere end ${HAENGER_GRAENSER_DAGE.ikke_modtaget} dage siden afsendelsen`,
     },
     {
       titel: "Afhentning ikke gennemført",
       antal: tal.afhentning,
       href: "/admin/handler?vis=haenger",
-      detalje: "Mere end 7 dage siden betalingen",
+      detalje: `Mere end ${HAENGER_GRAENSER_DAGE.afhentning} dage siden betalingen`,
     },
     {
       titel: "Ubetalte vindere",

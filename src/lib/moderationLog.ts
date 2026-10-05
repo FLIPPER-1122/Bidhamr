@@ -64,10 +64,20 @@ export function maalLink(
   maalType: string,
   maalId: string,
   brugerId: string | null,
+  // Handlingen i loggen og om den viste medarbejder må åbne /admin/auktioner
+  // (kun admin og chef).
+  valg: { handling?: string; kanSeAdminAuktioner?: boolean } = {},
 ): { href: string; label: string } | null {
   const id = encodeURIComponent(maalId);
   switch (maalType) {
     case "auktion":
+      // En slettet/annulleret auktion findes ikke offentligt (404) – find den
+      // i stedet i admins auktionsoversigt (søgning på id).
+      if (valg.handling === "slet_auktion" || valg.handling === "annuller_auktion") {
+        return valg.kanSeAdminAuktioner
+          ? { href: `/admin/auktioner?q=${id}`, label: "Find auktion" }
+          : null;
+      }
       return { href: `/auktion/${id}`, label: "Se auktion" };
     case "bruger":
       return erSystem(maalId) ? null : { href: `/admin/brugere/${id}`, label: "Se bruger" };
