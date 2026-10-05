@@ -89,7 +89,7 @@ export function KvitteringFuld({ k }: { k: Kvittering }) {
         </div>
         {k.rolle === "koeber" && k.refunderetKl && (
           <div>
-            <dt className="text-tekst-svag">Refunderet</dt>
+            <dt className="text-tekst-svag">Pengene sendt tilbage</dt>
             <dd className="font-medium text-tekst">{kvitteringDato(k.refunderetKl)}</dd>
           </div>
         )}

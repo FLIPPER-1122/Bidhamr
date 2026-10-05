@@ -256,7 +256,7 @@ export async function sendRefusionForsinket(betalingId: string, refundId: string
     if (!b) return;
     const titel = await titelFor(admin, b.trade_id);
     await send(b.buyer_id, "sag", {
-      titel: "Din refusion er forsinket",
+      titel: "Dine penge er lidt forsinket",
       tekst: `Tilbagebetalingen for "${titel}" gik ikke igennem i første forsøg hos vores betalingspartner Stripe. Vi prøver igen – du behøver ikke gøre noget.`,
       link: `/mine-handler/${b.trade_id}`,
       data: { trade_id: b.trade_id },

@@ -184,7 +184,7 @@ export async function notificerSagAfgoerelse(
     // direkte til fragtfirmaet - den trækkes ikke fra refusionen.
     // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
     const hvad = h.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
-    const beskyttelseNote = h.beskyttelse ? " BidHamr Beskyttelse refunderes ikke." : "";
+    const beskyttelseNote = h.beskyttelse ? " Prisen for BidHamr Beskyttelse får du ikke tilbage." : "";
 
     const tekster: Record<SagUdfaldBesked, { koeber: [string, string]; saelger: [string, string] }> = {
       planlagt_refusion: {
@@ -523,7 +523,7 @@ export async function notificerAnkeAfgjort(
     const endelig = "Afgørelsen er endelig.";
     // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
     const hvad = h.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
-    const beskyttelseNote = h.beskyttelse ? " BidHamr Beskyttelse refunderes ikke." : "";
+    const beskyttelseNote = h.beskyttelse ? " Prisen for BidHamr Beskyttelse får du ikke tilbage." : "";
 
     // Kun "nu", når pengene faktisk er flyttet. Ellers en tekst uden tidspunkt.
     const returFristNote = RETUR_FRIST_NOTE;

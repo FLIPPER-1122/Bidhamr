@@ -70,7 +70,7 @@ export function kvitteringLinjer(k: Kvittering): KvitteringLinje[] {
     if (k.beskyttelse) linjer.push({ tekst: "BidHamr Beskyttelse", oere: k.beskyttelseOere });
     linjer.push({ tekst: "I alt betalt", oere: k.totalOere, fremhaev: true });
     if (k.refunderetOere !== null) {
-      linjer.push({ tekst: "Refunderet til dig", oere: k.refunderetOere, fratraek: true });
+      linjer.push({ tekst: "Betalt tilbage til dig", oere: k.refunderetOere, fratraek: true });
     }
     return linjer;
   }

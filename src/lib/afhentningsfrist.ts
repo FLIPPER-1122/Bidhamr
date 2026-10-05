@@ -16,4 +16,18 @@ export const AFHENTNING_MAKS_FORLAENGELSER = 3;
 // Påmindelsen sendes, når der er under 48 timer til fristen (dag 5).
 export const AFHENTNING_PAAMIND_TIMER_FOER = 48;
 
+// Den automatiske tilbagebetaling sker tidligst så mange dage efter fristen.
+export const AFHENTNING_TILBAGEBETAL_DAGE_EFTER_FRIST = 7;
+
+// Hvornår køberen automatisk får pengene tilbage, hvis varen ikke er hentet:
+// greatest(betalt + 14 dage, frist + 7 dage). maksFrist er betalt + 14 dage
+// (afhentning_info.maks_frist). Skal holdes ens med SQL-funktionen
+// public.afhentning_tilbagebetal_kl i
+// supabase/migrations/20261005080000_afhentningsfrist.sql. Kun til visning -
+// databasen afgør, hvornår pengene sendes tilbage.
+export function afhentningTilbagebetalKl(frist: string, maksFrist: string): string {
+  const fraFrist = new Date(frist).getTime() + AFHENTNING_TILBAGEBETAL_DAGE_EFTER_FRIST * 24 * 60 * 60 * 1000;
+  return new Date(Math.max(new Date(maksFrist).getTime(), fraFrist)).toISOString();
+}
+
 export { sendSenestTekst as afhentningsfristTekst } from "@/lib/afsendelsesfrist";

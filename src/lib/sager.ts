@@ -160,7 +160,7 @@ export const SAG_OPRET_FEJL: Record<string, string> = {
   ugyldig_type: "Vælg, hvad sagen drejer sig om.",
   ugyldig_beskrivelse: `Beskriv problemet med mindst ${SAG_BESKRIVELSE_MIN} tegn (højst ${SAG_BESKRIVELSE_MAKS}).`,
   findes: "Der er allerede oprettet en sag på denne handel.",
-  ikke_betalt: "Der kan ikke oprettes en sag på handlen lige nu, fordi pengene allerede er udbetalt eller refunderet.",
+  ikke_betalt: "Der kan ikke oprettes en sag på handlen lige nu, fordi pengene allerede er udbetalt eller sendt tilbage til køberen.",
   kraever_beskyttelse:
     "Denne type sag kræver BidHamr Beskyttelse. Uden BidHamr Beskyttelse må du og sælgeren selv finde en løsning.",
   for_sent: `Fristen er udløbet. En sag skal oprettes inden for ${SAG_FRIST_TIMER_EFTER_MODTAGET} timer, efter du har markeret pakken som modtaget.`,

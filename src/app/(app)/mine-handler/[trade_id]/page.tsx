@@ -27,7 +27,7 @@ import { KvitteringBoks } from "@/components/Kvittering";
 import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
 import { hentAfsendelsesfristAnnullering } from "@/lib/betaling/afsendelsesfrist";
 import { hentAfhentningsfristAnnullering } from "@/lib/betaling/afhentningsfrist";
-import { afhentningsfristTekst } from "@/lib/afhentningsfrist";
+import { afhentningTilbagebetalKl, afhentningsfristTekst } from "@/lib/afhentningsfrist";
 import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
 
 // En sag kan tidligst oprettes, når pakken er sendt, og vises også efter
@@ -386,7 +386,12 @@ export default async function HandelDetaljePage({
               varen, viser du sælgeren din afhentningskode.
             </p>
             {afhentningInfo?.frist && (
-              <AfhentningsfristLinje frist={afhentningInfo.frist} udloebet={afhentningInfo.fristUdloebet} koeber />
+              <AfhentningsfristLinje
+                frist={afhentningInfo.frist}
+                maksFrist={afhentningInfo.maksFrist}
+                udloebet={afhentningInfo.fristUdloebet}
+                koeber
+              />
             )}
             <p className="mt-2 mb-4 text-sm text-neutral-500">
               Tjek varen, før du viser koden. Når sælgeren har indtastet koden, frigives pengene til
@@ -411,7 +416,11 @@ export default async function HandelDetaljePage({
               dig med det samme. Giv ikke varen fra dig, før du har indtastet den rigtige kode.
             </p>
             {afhentningInfo?.frist && (
-              <AfhentningsfristLinje frist={afhentningInfo.frist} udloebet={afhentningInfo.fristUdloebet} />
+              <AfhentningsfristLinje
+                frist={afhentningInfo.frist}
+                maksFrist={afhentningInfo.maksFrist}
+                udloebet={afhentningInfo.fristUdloebet}
+              />
             )}
             {afhentningInfo?.kanForlaenges && afhentningInfo.frist && afhentningInfo.maksFrist && (
               <ForlaengAfhentningsfrist
@@ -609,17 +618,34 @@ export default async function HandelDetaljePage({
 // Afhentningsfristen på handelssiden (køber og sælger).
 function AfhentningsfristLinje({
   frist,
+  maksFrist,
   udloebet,
   koeber = false,
 }: {
   frist: string;
+  maksFrist: string | null;
   udloebet: boolean;
   koeber?: boolean;
 }) {
   if (udloebet) {
+    // Datoen for den automatiske tilbagebetaling (samme regel som
+    // afhentning_tilbagebetal_kl i databasen). Uden maksFrist vises den ikke.
+    const tilbage = maksFrist ? afhentningsfristTekst(afhentningTilbagebetalKl(frist, maksFrist)) : null;
     return (
       <p className="mt-3 rounded-lg border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
         Fristen for at hente varen udløb {afhentningsfristTekst(frist)}. BidHamr kigger på handlen.
+        {tilbage &&
+          (koeber ? (
+            <>
+              {" "}Er varen ikke hentet senest <span className="font-semibold">{tilbage}</span>, får du
+              automatisk alle pengene tilbage.
+            </>
+          ) : (
+            <>
+              {" "}Er varen ikke hentet senest <span className="font-semibold">{tilbage}</span>, annulleres
+              handlen automatisk, og køberen får pengene tilbage. Giv ikke varen fra dig efter denne dato.
+            </>
+          ))}
       </p>
     );
   }

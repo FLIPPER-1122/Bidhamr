@@ -17,7 +17,7 @@ import { kroner } from "@/lib/kroner";
 const OVERFOERSEL_STATUS: Record<Overfoersel["status"], string> = {
   overfoert: "Overført",
   tilbagefoert: "Tilbageført",
-  refunderet: "Refunderet til køberen",
+  refunderet: "Pengene er sendt tilbage til køberen",
   indsigelse: "Indsigelse fra køberens bank",
 };
 

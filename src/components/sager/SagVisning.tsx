@@ -220,7 +220,7 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
   // Med BidHamr Beskyttelse er Beskyttelsen "brugt" og refunderes ikke.
   // Returfragten betaler køberen selv direkte til fragtfirmaet.
   const hvad = sag.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
-  const beskyttelseNote = sag.beskyttelse ? " BidHamr Beskyttelse refunderes ikke." : "";
+  const beskyttelseNote = sag.beskyttelse ? " Prisen for BidHamr Beskyttelse får du ikke tilbage." : "";
 
   switch (sag.status) {
     case "aaben":
