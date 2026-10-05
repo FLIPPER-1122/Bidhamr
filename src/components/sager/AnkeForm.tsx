@@ -126,7 +126,7 @@ export default function AnkeForm({
           maxLength={SAG_ANKE_BEGRUNDELSE_MAKS}
           disabled={sender}
           aria-describedby={`${id}-hj`}
-          className="mt-1.5 w-full rounded-lg border border-kant-staerk px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-groen sm:text-sm"
+          className="min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk px-4 py-2.5 text-base sm:text-sm bg-white text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
         />
         <p id={`${id}-hj`} className="mt-1 text-xs text-tekst-svag">
           Mindst {SAG_ANKE_BEGRUNDELSE_MIN} tegn. {laengde} / {SAG_ANKE_BEGRUNDELSE_MAKS}

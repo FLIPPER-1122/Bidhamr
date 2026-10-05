@@ -2,12 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import AuctionCard, { type DummyAuction } from "@/components/AuctionCard";
+import Ikon from "@/components/Ikon";
 import { createClient } from "@/lib/supabase/client";
 import { kategorier } from "@/lib/kategorier";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import { beregnAfstandKm } from "@/lib/distance";
 
-type Sortering = "slutter_snart" | "laveste_bud" | "højeste_bud" | "nyeste";
+import { SORTERINGER, type Sortering } from "@/lib/sortering";
+
+// Felter i filterbjælken (DESIGN.md 8.2).
+const felt =
+  "h-11 w-full rounded-xl border border-kant-staerk bg-white px-4 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25";
+const etiket = "mb-1.5 block text-sm font-medium text-tekst";
 
 const RADIUS_MIN = 1;
 const RADIUS_MAX = 150;
@@ -62,16 +68,18 @@ async function slåPostnummerOp(postnummer: string): Promise<{
 export default function AuctionBrowser({
   initialAuktioner,
   initialQuery,
+  initialSortering = "slutter_snart",
   kategori,
   onKategoriChange,
 }: {
   initialAuktioner: DummyAuction[];
   initialQuery: string;
+  initialSortering?: Sortering;
   kategori: string;
   onKategoriChange: (kategori: string) => void;
 }) {
   const [query, setQuery] = useState(initialQuery);
-  const [sortering, setSortering] = useState<Sortering>("slutter_snart");
+  const [sortering, setSortering] = useState<Sortering>(initialSortering);
   const [postnummer, setPostnummer] = useState("");
   // Opslaget gemmes med det postnummer, det hører til; by, koordinat og
   // status udledes ved render (ingen synkron setState i effekten).
@@ -238,12 +246,14 @@ export default function AuctionBrowser({
 
   return (
     <div>
-      <div className="flex flex-col gap-4 bg-[#F3F4F6] px-4 py-4 sm:flex-row sm:items-start sm:gap-6">
-        <div className="flex flex-1 flex-wrap items-start gap-3">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-4 rounded-[14px] bg-groen-lys p-4 md:grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.4fr)] lg:gap-x-5">
+        <div className="min-w-0">
+          <label htmlFor="filter-kategori" className={etiket}>Kategori</label>
           <select
+            id="filter-kategori"
             value={kategori}
             onChange={(e) => onKategoriChange(e.target.value)}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+            className={felt}
           >
             <option value="">Alle kategorier</option>
             {kategorier.map((k) => (
@@ -252,68 +262,83 @@ export default function AuctionBrowser({
               </option>
             ))}
           </select>
-
-          <select
-            value={sortering}
-            onChange={(e) => setSortering(e.target.value as Sortering)}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
-          >
-            <option value="slutter_snart">Slutter snart</option>
-            <option value="laveste_bud">Laveste bud</option>
-            <option value="højeste_bud">Højeste bud</option>
-            <option value="nyeste">Nyeste</option>
-          </select>
-
-          <div>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={4}
-              placeholder="Postnummer"
-              value={postnummer}
-              onChange={(e) =>
-                setPostnummer(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-              className="w-32 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
-            />
-            {postStatus === "henter" && (
-              <p className="mt-1 text-xs text-neutral-500">Henter by…</p>
-            )}
-            {postStatus === "fundet" && postBy && (
-              <p className="mt-1 text-xs text-neutral-700">📍 {postBy}</p>
-            )}
-            {postStatus === "ikke-fundet" && (
-              <p className="mt-1 text-xs text-fejl-tekst">
-                Postnummeret kunne ikke findes.
-              </p>
-            )}
-          </div>
         </div>
 
-        <div className="flex w-full flex-col gap-1.5 sm:w-56">
-          <div className="flex items-center justify-between text-xs text-neutral-500">
-            <span>Radius</span>
-            <span className="font-medium text-neutral-700">
+        <div className="min-w-0">
+          <label htmlFor="filter-sortering" className={etiket}>Sortér efter</label>
+          <select
+            id="filter-sortering"
+            value={sortering}
+            onChange={(e) => setSortering(e.target.value as Sortering)}
+            className={felt}
+          >
+            {SORTERINGER.map((s) => (
+              <option key={s.værdi} value={s.værdi}>
+                {s.tekst}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="col-span-2 min-w-0 md:col-span-1">
+          <label htmlFor="filter-postnummer" className={etiket}>Postnummer</label>
+          <input
+            id="filter-postnummer"
+            type="text"
+            inputMode="numeric"
+            autoComplete="postal-code"
+            maxLength={4}
+            placeholder="Fx 8000"
+            value={postnummer}
+            onChange={(e) =>
+              setPostnummer(e.target.value.replace(/\D/g, "").slice(0, 4))
+            }
+            aria-describedby="filter-postnummer-status"
+            aria-invalid={postStatus === "ikke-fundet" || undefined}
+            className={felt}
+          />
+          <p id="filter-postnummer-status" aria-live="polite" className="text-[13px]">
+            {postStatus === "henter" && (
+              <span className="mt-1.5 block text-tekst-daempet">Henter by…</span>
+            )}
+            {postStatus === "fundet" && postBy && (
+              <span className="mt-1.5 block text-tekst-daempet">{postBy}</span>
+            )}
+            {postStatus === "ikke-fundet" && (
+              <span className="mt-1.5 block font-medium text-fejl-tekst">
+                Postnummeret kunne ikke findes.
+              </span>
+            )}
+          </p>
+        </div>
+
+        <div className="col-span-2 min-w-0 md:col-span-1">
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <label htmlFor="filter-radius" className="text-sm font-medium text-tekst">Afstand</label>
+            <span className="text-[13px] font-semibold text-groen-mork">
               {erHeleDanmark ? "Hele Danmark" : `${radiusKm} km`}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex h-11 min-w-0 items-center gap-3">
             <input
+              id="filter-radius"
               type="range"
               min={RADIUS_MIN}
               max={RADIUS_MAX}
               step={RADIUS_STEP}
               value={radiusKm}
               onChange={(e) => setRadiusKm(Number(e.target.value))}
-              className="accent-groen flex-1"
+              aria-valuetext={erHeleDanmark ? "Hele Danmark" : `${radiusKm} km`}
+              className="h-11 w-0 min-w-0 flex-1 accent-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
             />
             <button
               type="button"
               onClick={() => setRadiusKm(RADIUS_MAX)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${
+              aria-pressed={erHeleDanmark}
+              className={`inline-flex h-11 shrink-0 items-center rounded-full px-3.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                 erHeleDanmark
-                  ? "bg-orange-knap text-white"
-                  : "border border-neutral-300 text-neutral-600 hover:border-groen hover:text-groen"
+                  ? "bg-groen text-white"
+                  : "border border-kant-staerk bg-white text-tekst-daempet hover:border-groen hover:text-groen"
               }`}
             >
               Hele Danmark
@@ -322,28 +347,41 @@ export default function AuctionBrowser({
         </div>
       </div>
 
-      <p className="mt-3 text-sm text-neutral-500">
+      <p className="mt-4 text-sm text-tekst-svag" aria-live="polite">
         {loading
           ? "Søger…"
           : `${auktioner.length} auktion${auktioner.length === 1 ? "" : "er"} fundet`}
       </p>
 
-      {fejl && <p className="mt-1 text-sm text-fejl-tekst">{fejl}</p>}
-
-      {!loading && auktioner.length === 0 ? (
-        <p className="mt-10 text-center text-sm text-neutral-500">
-          Ingen auktioner matcher dine filtre.
+      {fejl && (
+        <p role="alert" className="mt-3 rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
+          {fejl}
         </p>
+      )}
+
+      {!loading && !fejl && auktioner.length === 0 ? (
+        <div className="mt-4 flex flex-col items-center rounded-[14px] border border-kant px-6 py-10 text-center">
+          <span className="grid h-14 w-14 place-items-center rounded-full bg-groen-lys text-groen-mork">
+            <Ikon navn="soeg" className="h-6 w-6" />
+          </span>
+          <h3 className="mt-4 text-[17px] lg:text-lg">Ingen auktioner fundet</h3>
+          <p className="mt-1 max-w-[45ch] text-[15px] text-tekst-daempet">
+            Prøv en anden kategori, et større område eller færre ord i søgningen.
+          </p>
+        </div>
       ) : (
-        <div
-          className={`mt-6 grid grid-cols-2 gap-4 transition-opacity sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 ${
+        <ul
+          aria-busy={loading}
+          className={`mt-4 grid grid-cols-2 gap-3 transition-opacity sm:gap-5 lg:grid-cols-3 xl:grid-cols-4 ${
             loading ? "opacity-50" : ""
           }`}
         >
           {auktioner.map((auktion) => (
-            <AuctionCard key={auktion.id} auktion={auktion} />
+            <li key={auktion.id} className="min-w-0">
+              <AuctionCard auktion={auktion} />
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

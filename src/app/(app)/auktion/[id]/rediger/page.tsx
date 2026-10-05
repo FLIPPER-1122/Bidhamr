@@ -26,20 +26,20 @@ export default async function RedigerAuktionPage({
   const erSlut = auktion.status !== "aktiv" || new Date(auktion.slutter_kl) <= new Date();
 
   return (
-    <main className="flex flex-1 justify-center bg-white px-4 py-10">
+    <main className="flex flex-1 justify-center px-4 py-8 sm:px-6 lg:py-10">
       <div className="w-full max-w-2xl">
-        <Link href={`/auktion/${id}`} className="text-sm text-neutral-500 hover:text-groen">
+        <Link href={`/auktion/${id}`} className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-tekst-daempet hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
           ← Tilbage til auktionen
         </Link>
-        <h1 className="mt-3 font-serif text-[26px] font-semibold text-tekst sm:text-[32px]">Redigér auktion</h1>
+        <h1 className="mt-1 text-[26px] leading-tight sm:text-[32px]">Redigér auktion</h1>
 
         <div className="mt-6">
           {erSlut ? (
-            <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+            <p className="rounded-lg border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
               Auktionen er ikke aktiv længere og kan ikke ændres.
             </p>
           ) : harBud ? (
-            <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+            <p className="rounded-lg border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
               Der er budt på auktionen, så den kan ikke længere ændres.
             </p>
           ) : (

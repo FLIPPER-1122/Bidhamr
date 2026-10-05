@@ -45,17 +45,17 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
   const afsluttet = Boolean(status.nyHandelId || status.genopsatAuktionId);
 
   return (
-    <section className="rounded-2xl border border-kant bg-white p-5 sm:p-6">
+    <section className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
       {status.aarsag === "admin_annulleret" ? (
         <>
-          <h2 className="font-serif text-xl font-semibold text-tekst">Handlen er annulleret</h2>
+          <h2 className="text-[20px] leading-tight lg:text-[22px]">Handlen er annulleret</h2>
           <p className="mt-1 text-sm text-tekst-daempet">
             Handlen er annulleret af BidHamr. Du kan tilbyde varen til næste byder eller sætte den op igen.
           </p>
         </>
       ) : (
         <>
-          <h2 className="font-serif text-xl font-semibold text-tekst">Køberen betalte ikke</h2>
+          <h2 className="text-[20px] leading-tight lg:text-[22px]">Køberen betalte ikke</h2>
           <p className="mt-1 text-sm text-tekst-daempet">
             Køberen betalte ikke inden fristen. Handlen er annulleret.
           </p>
@@ -63,7 +63,7 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
       )}
 
       {status.nyHandelId && (
-        <div className="mt-4 rounded-xl border border-[#B9D8CC] bg-groen-lys p-4 text-sm text-groen-mork">
+        <div className="mt-4 rounded-xl border border-succes-kant bg-groen-lys p-4 text-sm text-groen-mork">
           <p className="font-semibold">Næste byder har sagt ja</p>
           <p className="mt-1">Køberen har 48 timer til at betale.</p>
           <Link href={`/mine-handler/${status.nyHandelId}`} className="btn btn-sekundaer btn-lille mt-3">
@@ -73,7 +73,7 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
       )}
 
       {status.genopsatAuktionId && (
-        <div className="mt-4 rounded-xl border border-[#B9D8CC] bg-groen-lys p-4 text-sm text-groen-mork">
+        <div className="mt-4 rounded-xl border border-succes-kant bg-groen-lys p-4 text-sm text-groen-mork">
           <p className="font-semibold">Varen er sat op igen</p>
           <Link href={`/auktion/${status.genopsatAuktionId}`} className="btn btn-sekundaer btn-lille mt-3">
             Se den nye auktion
@@ -82,7 +82,7 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
       )}
 
       {status.aktivtTilbud && (
-        <div className="mt-4 rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] p-4 text-sm text-[#8A4210]">
+        <div className="mt-4 rounded-xl border border-advarsel-kant bg-advarsel-bg p-4 text-sm text-advarsel-tekst">
           <p className="font-semibold">Tilbudt til næste byder for {kroner(status.aktivtTilbud.budOere)}</p>
           <p className="mt-1">
             Venter på svar ·{" "}
@@ -95,7 +95,7 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
       )}
 
       {!afsluttet && !status.aktivtTilbud && !status.harFlereBydere && (
-        <p className="mt-4 rounded-xl bg-neutral-50 px-4 py-3 text-sm text-tekst-daempet">
+        <p className="mt-4 rounded-xl bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
           Der er ikke flere bydere at tilbyde varen til.
         </p>
       )}
@@ -150,7 +150,7 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
                   Byder {status.tilbud.length - i} · {kroner(t.budOere)}
                   <span className="block text-xs text-tekst-svag">Sendt {dato(t.oprettet)}</span>
                 </span>
-                <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-700">
+                <span className="rounded-full bg-kant px-2.5 py-0.5 text-xs font-medium text-tekst-daempet">
                   {STATUS_TEKST[t.status] ?? t.status}
                 </span>
               </li>
@@ -193,7 +193,7 @@ function GenopsaetForm({
   }
 
   return (
-    <form onSubmit={send} className="mt-5 space-y-4 rounded-xl border border-kant bg-neutral-50 p-4">
+    <form onSubmit={send} className="mt-5 space-y-4 rounded-xl border border-kant bg-groen-lys p-4">
       <p className="text-sm text-tekst-daempet">
         Varen sættes op som en ny auktion. Det er gratis.
       </p>
@@ -210,7 +210,7 @@ function GenopsaetForm({
           required
           value={Number.isNaN(startpris) ? "" : startpris}
           onChange={(e) => setStartpris(e.target.value === "" ? NaN : Number(e.target.value))}
-          className="mt-1.5 w-full rounded-lg border border-kant-staerk bg-white px-3 py-2.5 text-sm text-tekst outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+          className="min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk bg-white px-4 py-2.5 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
         />
         <p className="mt-1.5 text-xs text-tekst-daempet">{STARTPRIS_ANBEFALING}</p>
       </div>
@@ -226,7 +226,7 @@ function GenopsaetForm({
               className={`rounded-lg border px-4 py-2 text-sm font-medium ${
                 varighed === v.dage
                   ? "border-orange-knap bg-orange-knap text-white"
-                  : "border-kant-staerk bg-white text-neutral-700"
+                  : "border-kant-staerk bg-white text-tekst-daempet"
               }`}
             >
               {v.label}

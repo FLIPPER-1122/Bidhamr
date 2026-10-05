@@ -170,7 +170,7 @@ export default function OpretSagForm({
                 <label
                   key={t}
                   className={`flex cursor-pointer gap-3 rounded-xl border p-3 text-sm transition-colors ${
-                    type === t ? "border-groen bg-groen-lys" : "border-kant-staerk hover:bg-neutral-50"
+                    type === t ? "border-groen bg-groen-lys" : "border-kant-staerk hover:bg-groen-lys"
                   }`}
                 >
                   <input
@@ -180,7 +180,7 @@ export default function OpretSagForm({
                     checked={type === t}
                     onChange={() => setType(t)}
                     disabled={sender}
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
                   />
                   <span>
                     <span className="block font-medium text-tekst">{SAG_TYPE_NAVN[t]}</span>
@@ -205,7 +205,7 @@ export default function OpretSagForm({
               disabled={sender}
               aria-describedby={`${id}-beskrivelse-hjaelp`}
               placeholder="Hvad er der galt, og hvornår opdagede du det?"
-              className="mt-1.5 w-full rounded-xl border border-kant-staerk px-3 py-2.5 text-base text-tekst placeholder:text-pladsholder focus:border-groen focus:outline-none focus:ring-2 focus:ring-groen/30 sm:text-sm"
+              className="min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk px-4 py-2.5 text-base text-tekst placeholder:text-pladsholder sm:text-sm bg-white hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
             />
             <p id={`${id}-beskrivelse-hjaelp`} className="mt-1 flex justify-between gap-3 text-xs text-tekst-svag">
               <span>Mindst {SAG_BESKRIVELSE_MIN} tegn. Sælgeren kan også se beskrivelsen.</span>

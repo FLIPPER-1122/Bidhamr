@@ -37,7 +37,7 @@ export default async function KontaktSide({
         Har du spørgsmål eller er der noget, der driller? Skriv til os, så hjælper vi dig.
       </p>
 
-      <div className="mt-6 rounded-2xl border border-kant bg-white p-5 sm:p-6">
+      <div className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
         <KontaktForm
           email={email}
           emne={erKontaktEmne(emne) ? emne : "generelt"}

@@ -1,4 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
+import { kanOptimeres } from "@/lib/billedUrl";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import HandelStatusBadge, { HANDEL_STATUS } from "@/components/HandelStatusBadge";
@@ -197,13 +199,13 @@ export default async function HandelDetaljePage({
     handel.status === "afventer_betaling" ? null : await hentMinKvittering(handel.id);
 
   return (
-    <main className="flex-1 bg-white px-4 py-8 sm:px-8">
-      <div className="mx-auto max-w-3xl space-y-6">
+    <main className="flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10">
+      <div className="mx-auto max-w-3xl space-y-5 sm:space-y-6">
         <Link
           href="/mine-handler"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 hover:text-neutral-800"
+          className="-mb-1 inline-flex min-h-11 items-center gap-1.5 rounded-md text-sm font-medium text-tekst-daempet hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
           Tilbage til mine handler
@@ -211,30 +213,36 @@ export default async function HandelDetaljePage({
 
         {/* Sagen står øverst, så køber og sælger straks kan se, hvor den er. */}
         {sagFejl && (
-          <div className="rounded-xl border border-fejl-kant bg-fejl-bg p-6 text-sm text-fejl-tekst">
+          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             Sagen kunne ikke hentes lige nu. Genindlæs siden om lidt.
           </div>
         )}
         {sag && <SagVisning sag={sag} brugerId={user.id} samtale={sagSamtale} />}
 
         {/* Overblik */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-6">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100">
+        <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-skelet">
               {billede ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={billede} alt="" className="h-full w-full object-cover" />
+                <Image
+                  src={billede}
+                  alt=""
+                  fill
+                  sizes="64px"
+                  unoptimized={!kanOptimeres(billede)}
+                  className="object-cover"
+                />
               ) : (
-                <svg className="h-6 w-6 text-neutral-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                <svg className="h-6 w-6 text-tekst-svag" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.5h16.5a1.5 1.5 0 011.5 1.5v12a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5V6a1.5 1.5 0 011.5-1.5z" />
                 </svg>
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-bold text-neutral-900">
+              <h1 className="text-[22px] leading-tight break-words sm:text-[26px]">
                 {auktion?.titel ?? "Slettet auktion"}
               </h1>
-              <p className="mt-0.5 text-sm text-neutral-500">
+              <p className="mt-0.5 text-sm text-tekst-svag">
                 {erKoeber ? "Du er køber" : "Du er sælger"} ·{" "}
                 {Number(handel.amount).toLocaleString("da-DK")} kr
               </p>
@@ -243,16 +251,17 @@ export default async function HandelDetaljePage({
           </div>
 
           {/* Statustidslinje */}
-          <ol className="mt-6 flex flex-wrap gap-2">
+          <ol className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" aria-label="Handlens forløb">
             {tidslinje.map((trin, i) => {
               const naaet = i <= aktivtTrin;
               return (
                 <li
                   key={trin.vaerdi}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-center text-xs font-medium ${
+                  aria-current={i === aktivtTrin ? "step" : undefined}
+                  className={`flex min-h-9 flex-1 items-center justify-center rounded-lg border px-3 py-2 text-center text-xs font-medium ${
                     naaet
                       ? "border-groen bg-groen-lys text-groen-mork"
-                      : "border-neutral-200 text-neutral-400"
+                      : "border-kant text-tekst-svag"
                   }`}
                 >
                   {trin.label}
@@ -262,7 +271,7 @@ export default async function HandelDetaljePage({
           </ol>
 
           {handel.tracking_number && (
-            <p className="mt-4 rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+            <p className="mt-4 rounded-lg bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
               Sporingsnummer:{" "}
               <span className="font-semibold">{handel.tracking_number}</span>
             </p>
@@ -271,13 +280,13 @@ export default async function HandelDetaljePage({
 
         {/* Betaling */}
         {betaling && "fejl" in betaling && handel.status === "afventer_betaling" && (
-          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             Betalingen kunne ikke hentes lige nu. {betaling.fejl}
           </div>
         )}
 
         {betalingsstatus && betalingsstatus.status === "betalt" && betalingParam === "retur" && (
-          <div className="rounded-xl border border-[#B9D8CC] bg-groen-lys p-6">
+          <div className="rounded-[14px] border border-succes-kant bg-groen-lys p-5 sm:p-6">
             <p className="font-semibold text-groen-mork">Tak – din betaling er gennemført</p>
             <p className="mt-1 text-sm text-groen-mork">
               {afhentning
@@ -288,7 +297,7 @@ export default async function HandelDetaljePage({
         )}
 
         {betalingsstatus && betalingsstatus.status === "behandles" && erKoeber && (
-          <div className="rounded-xl border border-[#C9DCEB] bg-[#EDF3F8] p-6 text-sm text-[#1F4E79]">
+          <div className="rounded-[14px] border border-info-kant bg-info-bg p-5 sm:p-6 text-sm text-info-tekst">
             <p className="font-semibold">Din betaling behandles</p>
             <p className="mt-1">Det tager normalt kun et øjeblik. Genindlæs siden om lidt.</p>
           </div>
@@ -298,10 +307,10 @@ export default async function HandelDetaljePage({
           betalingsstatus?.erKoeber === true &&
           handel.status === "afventer_betaling" &&
           betalingsstatus.status === "afventer" && (
-          <section className="rounded-xl border border-kant bg-white p-6">
-            <h2 className="font-serif text-xl font-semibold text-tekst">Betal for din vare</h2>
+          <section className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 className="text-[20px] leading-tight lg:text-[22px]">Betal for din vare</h2>
             {betalingsstatus.fristOverskredet ? (
-              <p className="mt-2 text-sm text-[#A32020]">
+              <p className="mt-2 text-sm text-fejl-tekst">
                 Fristen for at betale er overskredet. Kontakt os, hvis du mener, det er en fejl.
               </p>
             ) : (
@@ -312,16 +321,16 @@ export default async function HandelDetaljePage({
                     dateStyle: "medium",
                     timeStyle: "short",
                   })}{" "}
-                  · <span className="font-semibold text-[#8A4210]"><Nedtaelling til={betalingsstatus.betalSenest} /></span>
+                  · <span className="font-semibold text-advarsel-tekst"><Nedtaelling til={betalingsstatus.betalSenest} /></span>
                 </p>
                 {/* Kun når en automatisk betaling med gemt kort faktisk er
                     forsøgt og fejlet - ikke efter et afvist manuelt kort. */}
                 {betalingsstatus.autobetalingResultat?.startsWith("fejlet_") ? (
-                  <p className="mb-4 rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+                  <p className="mb-4 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
                     Den automatiske betaling gik ikke igennem. Betal herunder.
                   </p>
                 ) : betalingsstatus.sidsteFejl ? (
-                  <p className="mb-4 rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+                  <p className="mb-4 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
                     Betalingen gik ikke igennem. Prøv igen, eller vælg en anden betalingsmetode.
                   </p>
                 ) : null}
@@ -332,7 +341,7 @@ export default async function HandelDetaljePage({
         )}
 
         {erSaelger && handel.status === "afventer_betaling" && (
-          <div className="rounded-xl border border-[#F5D9B0] bg-[#FEF3E2] p-6 text-sm text-[#8A4210]">
+          <div className="rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6 text-sm text-advarsel-tekst">
             <p className="font-semibold">Afventer købers betaling</p>
             {betalingsstatus ? (
               <p className="mt-1">
@@ -365,7 +374,7 @@ export default async function HandelDetaljePage({
         )}
 
         {andenchance && "fejl" in andenchance && (
-          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             Mulighederne for varen kunne ikke hentes lige nu. {andenchance.fejl}
           </div>
         )}
@@ -380,7 +389,7 @@ export default async function HandelDetaljePage({
         )}
 
         {koeberUbetalt && (
-          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             <p className="font-semibold">Handlen er annulleret</p>
             {koeberUbetalt === "admin_annulleret" ? (
               <p className="mt-1">Handlen er annulleret af BidHamr.</p>
@@ -396,9 +405,9 @@ export default async function HandelDetaljePage({
         {/* Afhentning hos sælger: køberen bedømmer og viser koden, sælgeren
             indtaster den, og pengene frigives med det samme. */}
         {afhentning && erKoeber && handel.status === "betaling_modtaget" && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-6">
-            <h2 className="text-sm font-semibold text-neutral-900">Hent varen hos sælgeren</h2>
-            <p className="mt-1 text-sm text-neutral-500">
+          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 className="text-[17px] leading-snug lg:text-lg">Hent varen hos sælgeren</h2>
+            <p className="mt-1 text-sm text-tekst-svag">
               Aftal tid og sted for afhentningen med sælgeren i chatten herunder. Når du henter
               varen, viser du sælgeren din afhentningskode.
             </p>
@@ -429,7 +438,7 @@ export default async function HandelDetaljePage({
                 koeber
               />
             )}
-            <p className="mt-2 mb-4 text-sm text-neutral-500">
+            <p className="mt-2 mb-4 text-sm text-tekst-svag">
               Tjek varen, før du viser koden. Når sælgeren har indtastet koden, frigives pengene til
               sælgeren med det samme, og du kan ikke klage over handlen bagefter.
             </p>
@@ -444,9 +453,9 @@ export default async function HandelDetaljePage({
         )}
 
         {afhentning && erSaelger && handel.status === "betaling_modtaget" && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-6">
-            <h2 className="text-sm font-semibold text-neutral-900">Køberen henter varen hos dig</h2>
-            <p className="mt-1 text-sm text-neutral-500">
+          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 className="text-[17px] leading-snug lg:text-lg">Køberen henter varen hos dig</h2>
+            <p className="mt-1 text-sm text-tekst-svag">
               Aftal tid og sted for afhentningen med køberen i chatten herunder. Når køberen henter
               varen, viser han dig en kode på 6 cifre. Indtast koden her – så frigives pengene til
               dig med det samme. Giv ikke varen fra dig, før du har indtastet den rigtige kode.
@@ -467,7 +476,7 @@ export default async function HandelDetaljePage({
               />
             )}
             {afhentningInfo && !afhentningInfo.vist && (
-              <p className="mt-3 rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+              <p className="mt-3 rounded-lg bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
                 Køberen har ikke hentet sin kode frem endnu.
               </p>
             )}
@@ -485,13 +494,13 @@ export default async function HandelDetaljePage({
         )}
 
         {erKoeber && venterPaaAfsendelse && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-6">
-            <h2 className="text-sm font-semibold text-neutral-900">Venter på, at sælgeren sender varen</h2>
-            <p className="mt-1 text-sm text-neutral-500">
+          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 className="text-[17px] leading-snug lg:text-lg">Venter på, at sælgeren sender varen</h2>
+            <p className="mt-1 text-sm text-tekst-svag">
               {afsendSenest ? (
                 <>
                   Sælgeren skal sende pakken senest{" "}
-                  <span className="font-semibold text-neutral-700">{sendSenestTekst(afsendSenest)}</span>.{" "}
+                  <span className="font-semibold text-tekst-daempet">{sendSenestTekst(afsendSenest)}</span>.{" "}
                 </>
               ) : (
                 <>Sælgeren skal sende pakken senest 5 dage efter din betaling. </>
@@ -502,7 +511,7 @@ export default async function HandelDetaljePage({
         )}
 
         {afsendelsesAnnullering && (
-          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             <p className="font-semibold">Handlen er annulleret</p>
             {erKoeber ? (
               <>
@@ -530,7 +539,7 @@ export default async function HandelDetaljePage({
         )}
 
         {afhentningsAnnullering && (
-          <div className="rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-6 text-sm text-[#A32020]">
+          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             <p className="font-semibold">Handlen er annulleret</p>
             {erKoeber ? (
               <>
@@ -557,14 +566,14 @@ export default async function HandelDetaljePage({
         {visFragtlabel && <FragtlabelBoks tradeId={handel.id} forsendelse={forsendelse} />}
 
         {erSaelger && !afhentning && handel.status === "betaling_modtaget" && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-6">
-            <h2 className="text-sm font-semibold text-neutral-900">Send pakken</h2>
-            <p className="mt-1 mb-4 text-sm text-neutral-500">
+          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 className="text-[17px] leading-snug lg:text-lg">Send pakken</h2>
+            <p className="mt-1 mb-4 text-sm text-tekst-svag">
               Tag to billeder, mens du pakker, og indtast sporingsnummeret, når du har sendt
               varen. Køberen får besked.
             </p>
             {afsendSenest && (
-              <p className="mb-4 rounded-lg border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+              <p className="mb-4 rounded-lg border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
                 Send pakken senest <span className="font-semibold">{sendSenestTekst(afsendSenest)}</span>{" "}
                 (<Nedtaelling til={afsendSenest} />). Ellers annulleres handlen, og køberen får hele
                 beløbet tilbage.
@@ -581,11 +590,11 @@ export default async function HandelDetaljePage({
 
         {/* TRIN 1: kvittering for pakken. Ingen penge flyttes her. */}
         {erKoeber && !afhentning && handel.status === "pakke_sendt" && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-6">
-            <h2 className="text-sm font-semibold text-neutral-900">
+          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 className="text-[17px] leading-snug lg:text-lg">
               Har du modtaget pakken?
             </h2>
-            <p className="mt-1 mb-4 text-sm text-neutral-500">
+            <p className="mt-1 mb-4 text-sm text-tekst-svag">
               Kvittér når pakken er kommet frem. Du skal godkende varen
               bagefter — først da får sælgeren pengene.
             </p>
@@ -595,11 +604,11 @@ export default async function HandelDetaljePage({
 
         {/* TRIN 2: godkendelse udbetaler til sælgeren. */}
         {erKoeber && !afhentning && handel.status === "modtaget" && !sagAktiv && (
-          <div className="rounded-xl border border-succes-kant bg-groen-lys p-6">
-            <h2 className="text-sm font-semibold text-neutral-900">
+          <div className="rounded-[14px] border border-succes-kant bg-groen-lys p-5 sm:p-6">
+            <h2 className="text-[17px] leading-snug lg:text-lg">
               Tjek varen
             </h2>
-            <p className="mt-1 mb-4 text-sm text-neutral-700">
+            <p className="mt-1 mb-4 text-sm text-tekst-daempet">
               Kontrollér at varen svarer til beskrivelsen og ikke er
               beskadiget. Når du godkender, frigives beløbet til sælgeren.
             </p>
@@ -608,11 +617,11 @@ export default async function HandelDetaljePage({
         )}
 
         {erSaelger && !afhentning && handel.status === "modtaget" && !sagAktiv && (
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
-            <p className="font-semibold text-indigo-900">
+          <div className="rounded-[14px] border border-info-kant bg-info-bg p-5 sm:p-6">
+            <p className="font-semibold text-info-tekst">
               Køberen har modtaget pakken
             </p>
-            <p className="mt-1 text-sm text-indigo-900">
+            <p className="mt-1 text-sm text-info-tekst">
               Køberen har modtaget pakken og tjekker varen. Du får pengene, når
               køberen godkender.
             </p>
@@ -620,9 +629,9 @@ export default async function HandelDetaljePage({
         )}
 
         {(handel.status === "leveret" || handel.status === "afsluttet") && (
-          <div className="rounded-xl border border-green-300 bg-green-50 p-6">
-            <p className="font-semibold text-green-700">Handlen er gennemført</p>
-            <p className="mt-1 text-sm text-green-700">
+          <div className="rounded-[14px] border border-succes-kant bg-succes-bg p-5 sm:p-6">
+            <p className="font-semibold text-succes-tekst">Handlen er gennemført</p>
+            <p className="mt-1 text-sm text-succes-tekst">
               {afhentning
                 ? "Varen er hentet, og pengene er frigivet til sælgeren."
                 : "Varen er bekræftet modtaget."}
@@ -641,7 +650,7 @@ export default async function HandelDetaljePage({
           // Typerne er tomme, men datoen er sat: fristen for "bortkommet" er
           // ikke nået endnu (ellers ville typen være mulig).
           muligheder.bortkommetFraKl && (
-            <p className="rounded-xl border border-kant bg-neutral-50 px-4 py-3 text-sm text-tekst-daempet">
+            <p className="rounded-xl border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
               Er pakken ikke kommet frem? Du kan melde det fra {sagTid(muligheder.bortkommetFraKl)}
               {muligheder.fristKl && <> til {sagTid(muligheder.fristKl)}</>}.
             </p>
@@ -675,7 +684,7 @@ function AfhentningsfristLinje({
     // afhentning_tilbagebetal_kl i databasen). Uden maksFrist vises den ikke.
     const tilbage = maksFrist ? afhentningsfristTekst(afhentningTilbagebetalKl(frist, maksFrist)) : null;
     return (
-      <p className="mt-3 rounded-lg border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+      <p className="mt-3 rounded-lg border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
         Fristen for at hente varen udløb {afhentningsfristTekst(frist)}. BidHamr kigger på handlen.
         {tilbage &&
           (koeber ? (
@@ -693,7 +702,7 @@ function AfhentningsfristLinje({
     );
   }
   return (
-    <p className="mt-3 rounded-lg border border-[#F5D9B0] bg-[#FEF3E2] px-4 py-3 text-sm text-[#8A4210]">
+    <p className="mt-3 rounded-lg border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
       {koeber ? "Hent varen senest" : "Køberen skal hente varen senest"}{" "}
       <span className="font-semibold">{afhentningsfristTekst(frist)}</span>{" "}
       (<Nedtaelling til={frist} />).

@@ -103,7 +103,7 @@ export default async function BeskederPage() {
                     <Link
                       href={`/beskeder/bidhamr/${s.id}`}
                       className={`flex gap-3 rounded-[14px] border p-4 transition-colors hover:border-kant-staerk focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
-                        ulaest ? "border-[#B9D8CC] bg-groen-lys" : "border-kant bg-white"
+                        ulaest ? "border-succes-kant bg-groen-lys" : "border-kant bg-white"
                       }`}
                     >
                       <span className="flex w-2.5 shrink-0 justify-center pt-2" aria-hidden="true">
@@ -150,7 +150,7 @@ export default async function BeskederPage() {
             <h2 id="handler-overskrift" className="font-serif text-xl font-semibold text-tekst">
               Handler
             </h2>
-            <Link href="/mine-handler" className="text-sm font-medium text-groen hover:underline">
+            <Link href="/mine-handler" className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
               Mine handler →
             </Link>
           </div>

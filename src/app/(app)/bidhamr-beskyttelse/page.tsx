@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Ikon from "@/components/Ikon";
 import {
   FAQ,
   FAQ_OVERSKRIFT,
@@ -43,18 +44,19 @@ function Kolonne({
 }) {
   return (
     <section
-      className={`rounded-2xl p-6 sm:p-8 ${
+      className={`rounded-[14px] p-5 sm:p-8 ${
         fremhaevet ? "border-2 border-groen bg-white" : "bg-groen-lys"
       }`}
     >
       <span
-        className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${
+        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
           fremhaevet ? "bg-groen text-white" : "bg-white text-groen-mork"
         }`}
       >
+        {fremhaevet && <Ikon navn="skjold" className="h-4 w-4" />}
         {maerke}
       </span>
-      <h2 className="mt-3 text-xl text-groen-mork">{sektion.overskrift}</h2>
+      <h2 className="mt-3 text-[20px] leading-tight text-groen-mork lg:text-[22px]">{sektion.overskrift}</h2>
       {sektion.tekst && <p className="mt-2 text-sm text-tekst-daempet">{sektion.tekst}</p>}
       <Punkter punkter={sektion.punkter} accent={fremhaevet ? "bg-orange" : "bg-groen"} />
     </section>
@@ -63,38 +65,38 @@ function Kolonne({
 
 export default function BeskyttelsePage() {
   return (
-    <main className="mx-auto w-full max-w-[1080px] flex-1 px-4 py-10 sm:px-6 sm:py-14">
+    <main className="mx-auto w-full max-w-[1080px] flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
       <header className="max-w-[65ch]">
-        <h1 className="text-3xl text-groen-mork sm:text-4xl">{SIDETITEL}</h1>
+        <h1 className="text-[26px] leading-tight text-groen-mork sm:text-[32px]">{SIDETITEL}</h1>
         <p className="mt-4 text-base leading-relaxed text-tekst-daempet">{INTRO}</p>
       </header>
 
-      <div className="mt-10 grid gap-6 md:grid-cols-2">
+      <div className="mt-8 grid gap-5 md:grid-cols-2 lg:gap-6">
         <Kolonne sektion={SEKTION_ALTID} maerke="Altid" />
         <Kolonne sektion={SEKTION_MED} maerke="Med BidHamr Beskyttelse" fremhaevet />
       </div>
 
-      <div className="mt-10 flex flex-col gap-8">
+      <div className="mt-8 flex flex-col gap-5 lg:gap-6">
         {OEVRIGE.map((s) => (
-          <section key={s.overskrift} className="rounded-2xl border border-kant bg-white p-6 sm:p-8">
-            <h2 className="text-xl text-groen-mork">{s.overskrift}</h2>
+          <section key={s.overskrift} className="rounded-[14px] border border-kant bg-white p-5 sm:p-8">
+            <h2 className="text-[20px] leading-tight text-groen-mork lg:text-[22px]">{s.overskrift}</h2>
             {s.tekst && <p className="mt-2 text-sm text-tekst-daempet">{s.tekst}</p>}
             <Punkter punkter={s.punkter} accent="bg-groen" />
           </section>
         ))}
       </div>
 
-      <section className="mt-12">
-        <h2 className="text-2xl text-groen-mork">{FAQ_OVERSKRIFT}</h2>
+      <section className="mt-10 lg:mt-16">
+        <h2 className="text-[20px] leading-tight text-groen-mork lg:text-[22px]">{FAQ_OVERSKRIFT}</h2>
         {/* Accordion med <details>: virker uden JavaScript. */}
         <div className="mt-5 flex flex-col gap-3">
           {FAQ.map((f) => (
             <details key={f.spoergsmaal} className="group rounded-xl border border-kant bg-white">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-tekst [&::-webkit-details-marker]:hidden">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 rounded-xl px-5 py-4 text-sm font-semibold text-tekst focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen [&::-webkit-details-marker]:hidden">
                 {f.spoergsmaal}
                 <svg
                   viewBox="0 0 24 24"
-                  className="h-4 w-4 shrink-0 text-tekst-svag transition-transform group-open:rotate-180"
+                  className="h-4 w-4 shrink-0 text-tekst-svag transition-transform group-open:rotate-180 motion-reduce:transition-none"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth={2}
@@ -103,7 +105,7 @@ export default function BeskyttelsePage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
                 </svg>
               </summary>
-              <p className="border-t border-kant px-5 py-4 text-sm leading-relaxed text-tekst-daempet">
+              <p className="max-w-[65ch] border-t border-kant px-5 py-4 text-sm leading-relaxed text-tekst-daempet">
                 {f.svar}
               </p>
             </details>

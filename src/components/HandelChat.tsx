@@ -130,16 +130,16 @@ export default function HandelChat({
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white">
-      <div className="border-b border-neutral-100 px-5 py-4">
-        <h2 className="text-sm font-semibold text-neutral-900">
+    <div className="rounded-xl border border-kant bg-white">
+      <div className="border-b border-kant px-5 py-4">
+        <h2 className="text-sm font-semibold text-tekst">
           Beskeder med {modpartNavn}
         </h2>
       </div>
 
       <div className="max-h-96 space-y-3 overflow-y-auto px-5 py-4">
         {beskeder.length === 0 && (
-          <p className="py-6 text-center text-sm text-neutral-400">
+          <p className="py-6 text-center text-sm text-tekst-svag">
             Ingen beskeder endnu. Skriv den første.
           </p>
         )}
@@ -149,7 +149,7 @@ export default function HandelChat({
             return (
               <div key={b.id} className="flex flex-col items-start gap-1.5">
                 <BidhamrMaerke lille />
-                <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-[#B9D8CC] bg-groen-lys px-4 py-2.5 text-sm text-tekst sm:max-w-[75%]">
+                <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-succes-kant bg-groen-lys px-4 py-2.5 text-sm text-tekst sm:max-w-[75%]">
                   <p className="whitespace-pre-wrap break-words">
                     <span className="sr-only">Besked fra BidHamr: </span>
                     {fjernFaellesPraefiks(b.content, b.fra_bidhamr)}
@@ -171,7 +171,7 @@ export default function HandelChat({
             // Stoppet af spamfilteret - modtageren har ikke set den.
             return (
               <div key={b.id} className="flex flex-col items-end gap-1">
-                <div className="max-w-[85%] rounded-2xl border border-dashed border-kant-staerk bg-white px-4 py-2.5 text-sm text-tekst-svag sm:max-w-[75%]">
+                <div className="max-w-[85%] rounded-[14px] border border-dashed border-kant-staerk bg-white px-4 py-2.5 text-sm text-tekst-svag sm:max-w-[75%]">
                   <p className="whitespace-pre-wrap break-words line-through">{b.content}</p>
                 </div>
                 <p className="max-w-[85%] text-right text-[12px] text-fejl-tekst sm:max-w-[75%]">
@@ -186,16 +186,16 @@ export default function HandelChat({
               className={`flex flex-col ${erMig ? "items-end" : "items-start"}`}
             >
               <div
-                className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${
+                className={`max-w-[75%] rounded-[14px] px-4 py-2.5 text-sm ${
                   erMig
-                    ? "bg-orange-knap text-white"
-                    : "bg-neutral-100 text-neutral-800"
+                    ? "bg-groen text-white"
+                    : "bg-groen-lys text-tekst"
                 }`}
               >
                 <p className="whitespace-pre-wrap break-words">{b.content}</p>
                 <p
                   className={`mt-1 text-[11px] ${
-                    erMig ? "text-white/70" : "text-neutral-400"
+                    erMig ? "text-white/70" : "text-tekst-svag"
                   }`}
                 >
                   {new Date(b.created_at).toLocaleString("da-DK", {
@@ -220,19 +220,19 @@ export default function HandelChat({
         <div ref={bundRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="flex gap-2 border-t border-neutral-100 p-4">
+      <form onSubmit={handleSubmit} className="flex gap-2 border-t border-kant p-4">
         <input
           type="text"
           value={tekst}
           onChange={(e) => setTekst(e.target.value)}
           placeholder="Skriv en besked..."
           maxLength={2000}
-          className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2.5 text-sm outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+          className="min-h-11 min-w-0 flex-1 rounded-xl border border-kant-staerk px-4 py-2.5 text-[15px] bg-white text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
         />
         <button
           type="submit"
           disabled={sender || !tekst.trim()}
-          className="shrink-0 rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
+          className="btn btn-primaer shrink-0"
         >
           {sender ? "Sender…" : "Send"}
         </button>

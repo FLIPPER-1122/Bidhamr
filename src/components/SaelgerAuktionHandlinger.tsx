@@ -19,15 +19,15 @@ export default function SaelgerAuktionHandlinger({
 
   if (harBud) {
     return (
-      <p className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+      <p className="mb-4 rounded-lg border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
         Der er budt på din auktion, så den kan ikke længere ændres eller annulleres.
       </p>
     );
   }
 
   return (
-    <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-4">
-      <p className="text-sm text-neutral-700">
+    <div className="mb-4 rounded-lg border border-kant bg-white p-4">
+      <p className="text-sm text-tekst-daempet">
         Du kan ændre eller annullere auktionen, indtil der kommer det første bud.
         Varigheden kan ikke ændres.
       </p>

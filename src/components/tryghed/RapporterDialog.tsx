@@ -87,7 +87,7 @@ export default function RapporterDialog({
             role="dialog"
             aria-modal="true"
             aria-labelledby={`${id}-titel`}
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl sm:p-6"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-[14px] sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             {sendt ? (
@@ -148,7 +148,7 @@ export default function RapporterDialog({
                       maxLength={RAPPORT_BESKRIVELSE_MAKS}
                       value={beskrivelse}
                       onChange={(e) => setBeskrivelse(e.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-kant-staerk px-3 py-2.5 text-base text-tekst outline-none focus:border-groen focus:ring-1 focus:ring-groen sm:text-sm"
+                      className="min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk px-4 py-2.5 text-base text-tekst sm:text-sm bg-white placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
                     />
                   </div>
                   {fejl && (

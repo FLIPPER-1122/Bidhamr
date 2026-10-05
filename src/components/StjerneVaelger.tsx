@@ -25,7 +25,7 @@ export default function StjerneVaelger({
 
   return (
     <fieldset disabled={disabled}>
-      <legend className="text-sm font-medium text-neutral-900">{legend}</legend>
+      <legend className="text-sm font-medium text-tekst">{legend}</legend>
       <div
         className="mt-2 flex gap-1"
         onMouseLeave={() => setHover(0)}
@@ -52,7 +52,7 @@ export default function StjerneVaelger({
                 className={`h-9 w-9 transition-colors sm:h-8 sm:w-8 ${
                   i <= vist
                     ? "fill-orange-mork text-orange-mork"
-                    : "fill-neutral-200 text-neutral-200"
+                    : "fill-kant-staerk text-kant-staerk"
                 }`}
               >
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -61,7 +61,7 @@ export default function StjerneVaelger({
           </label>
         ))}
       </div>
-      <p className="mt-1 min-h-5 text-sm text-neutral-600" aria-live="polite">
+      <p className="mt-1 min-h-5 text-sm text-tekst-daempet" aria-live="polite">
         {vaerdi > 0 ? BETEGNELSER[vaerdi] : ""}
       </p>
     </fieldset>

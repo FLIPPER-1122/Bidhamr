@@ -10,7 +10,7 @@ const KOMMENTAR_MAKS = 1000;
 
 function KodeVisning({ kode }: { kode: string }) {
   return (
-    <div className="rounded-xl border border-kant bg-neutral-50 px-4 py-5 text-center">
+    <div className="rounded-xl border border-kant bg-groen-lys px-4 py-5 text-center">
       <p className="text-sm text-tekst-daempet">Din afhentningskode</p>
       <p
         className="mt-1 font-mono text-4xl font-bold tracking-[0.3em] text-tekst sm:text-5xl"
@@ -70,7 +70,7 @@ export function VisAfhentningskode({
         <div>
           <label
             htmlFor={`afhentning-kommentar-${tradeId}`}
-            className="mb-1.5 block text-sm font-medium text-neutral-900"
+            className="mb-1.5 block text-sm font-medium text-tekst"
           >
             Kommentar <span className="font-normal text-tekst-svag">(valgfrit)</span>
           </label>
@@ -82,7 +82,7 @@ export function VisAfhentningskode({
             rows={3}
             placeholder="Fortæl kort om din oplevelse"
             aria-describedby={`afhentning-taeller-${tradeId}`}
-            className="w-full resize-none rounded-xl border border-kant-staerk bg-white px-4 py-2.5 text-[15px] text-tekst placeholder:text-pladsholder outline-none focus:border-groen focus:outline-2 focus:outline-groen/25"
+            className="w-full resize-none rounded-xl border border-kant-staerk bg-white px-4 py-2.5 text-[15px] text-tekst placeholder:text-pladsholder focus:border-groen focus:outline-2 focus:outline-groen/25"
           />
           <p
             id={`afhentning-taeller-${tradeId}`}
@@ -121,7 +121,7 @@ export function IndtastAfhentningskode({ tradeId }: { tradeId: string }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <label htmlFor={`afhentningskode-${tradeId}`} className="block text-sm font-medium text-neutral-700">
+        <label htmlFor={`afhentningskode-${tradeId}`} className="block text-sm font-medium text-tekst-daempet">
           Indtast køberens kode
         </label>
         <input
@@ -135,13 +135,13 @@ export function IndtastAfhentningskode({ tradeId }: { tradeId: string }) {
           onChange={(e) => setKode(e.target.value.replace(/[^0-9 ]/g, ""))}
           placeholder="6 cifre"
           aria-describedby={fejl ? `afhentningskode-fejl-${tradeId}` : undefined}
-          className="mt-1.5 w-full max-w-xs rounded-lg border border-neutral-200 px-3 py-2.5 font-mono text-lg tracking-[0.2em] outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+          className="min-h-11 mt-1.5 w-full max-w-xs rounded-xl border border-kant-staerk px-4 py-2.5 font-mono text-lg tracking-[0.2em] bg-white text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
         />
       </div>
       <button
         type="submit"
         disabled={pending || !/^[0-9]{6}$/.test(ren)}
-        className="rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
+        className="btn btn-primaer"
       >
         {pending ? "Tjekker…" : "Bekræft afhentning"}
       </button>

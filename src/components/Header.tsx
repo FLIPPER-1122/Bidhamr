@@ -53,7 +53,7 @@ export default async function Header() {
           <Link
             href="/"
             aria-label="BidHamr - til forsiden"
-            className="mr-auto shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:mr-0"
+            className="mr-auto flex min-h-11 shrink-0 items-center rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:mr-0"
           >
             <Image
               src="/brand/bidhamr-logo.svg"
@@ -80,7 +80,7 @@ export default async function Header() {
               type="search"
               name="q"
               placeholder="Søg efter alt fra ure til sofaer…"
-              className="h-11 w-full rounded-full border-[1.5px] border-kant-staerk bg-white py-2.5 pr-14 pl-5 text-[15px] text-tekst outline-none placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
+              className="h-11 w-full rounded-full border-[1.5px] border-kant-staerk bg-white py-2.5 pr-14 pl-5 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
             />
             {/* Touch-målet er 44x44; den synlige orange cirkel er 34px. */}
             <button

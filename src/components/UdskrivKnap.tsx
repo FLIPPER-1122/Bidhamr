@@ -6,7 +6,7 @@ export default function UdskrivKnap({ tekst = "Udskriv" }: { tekst?: string }) {
     <button
       type="button"
       onClick={() => window.print()}
-      className="rounded-lg bg-orange-knap px-4 py-2 text-sm font-semibold text-white hover:bg-orange-knap-mork print:hidden"
+      className="btn btn-primaer print:hidden"
     >
       {tekst}
     </button>

@@ -56,7 +56,7 @@ export default function ForlaengAfhentningsfrist({
         </select>
         <p className="mt-2 text-xs text-tekst-svag">Nuværende frist: {fristDato(frist)}.</p>
       </BekraeftDialog>
-      <p className="mt-2 text-xs text-neutral-500">
+      <p className="mt-2 text-xs text-tekst-svag">
         Har I aftalt en senere dag i chatten, kan du give køberen mere tid. Højst 14 dage efter
         betalingen, og højst 3 gange.
       </p>

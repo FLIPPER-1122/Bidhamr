@@ -57,9 +57,9 @@ export default function SettingsForm({
   }
 
   return (
-    <div className="max-w-sm space-y-6">
+    <div className="max-w-md space-y-6">
       <div>
-        <label className="block text-sm font-medium text-neutral-900">
+        <label className="block text-sm font-medium text-tekst">
           Profilbillede
         </label>
         <div className="mt-1.5">
@@ -69,7 +69,7 @@ export default function SettingsForm({
 
       <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-neutral-900">
+        <label htmlFor="email" className="block text-sm font-medium text-tekst">
           Email
         </label>
         <input
@@ -77,12 +77,12 @@ export default function SettingsForm({
           type="email"
           value={email}
           disabled
-          className="mt-1.5 w-full rounded-lg border border-neutral-200 bg-neutral-100 px-3 py-2.5 text-sm text-neutral-500"
+          className="mt-1.5 w-full h-11 rounded-xl border border-transparent bg-groen-lys px-4 text-[15px] text-tekst-daempet"
         />
       </div>
 
       <div>
-        <label htmlFor="navn" className="block text-sm font-medium text-neutral-900">
+        <label htmlFor="navn" className="block text-sm font-medium text-tekst">
           Navn
         </label>
         <input
@@ -91,12 +91,12 @@ export default function SettingsForm({
           required
           value={navn}
           onChange={(e) => setNavn(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+          className="min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk px-4 py-2.5 text-[15px] text-tekst bg-white placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
         />
       </div>
 
       <div>
-        <label htmlFor="telefon" className="block text-sm font-medium text-neutral-900">
+        <label htmlFor="telefon" className="block text-sm font-medium text-tekst">
           Telefon
         </label>
         <input
@@ -104,12 +104,12 @@ export default function SettingsForm({
           type="tel"
           value={telefon}
           onChange={(e) => setTelefon(e.target.value)}
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+          className="min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk px-4 py-2.5 text-[15px] text-tekst bg-white placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
         />
       </div>
 
       <div>
-        <label htmlFor="adresse" className="block text-sm font-medium text-neutral-900">
+        <label htmlFor="adresse" className="block text-sm font-medium text-tekst">
           Adresse til afhentning <span className="font-normal text-tekst-svag">(valgfri)</span>
         </label>
         <textarea
@@ -119,7 +119,7 @@ export default function SettingsForm({
           value={adresse}
           onChange={(e) => setAdresse(e.target.value)}
           placeholder="Vejnavn og nummer, postnummer og by"
-          className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-groen focus:ring-1 focus:ring-groen"
+          className="mt-1.5 min-h-[88px] w-full rounded-xl border border-kant-staerk bg-white px-4 py-2.5 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
         />
       </div>
 
@@ -130,12 +130,12 @@ export default function SettingsForm({
       </p>
 
       {error && (
-        <div className="border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
+        <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
           {error}
         </div>
       )}
       {gemt && (
-        <div className="border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-700">
+        <div role="status" className="rounded-xl border border-succes-kant bg-succes-bg px-4 py-3 text-sm text-succes-tekst">
           Profil opdateret.
         </div>
       )}
@@ -143,9 +143,11 @@ export default function SettingsForm({
       <button
         type="submit"
         disabled={loading}
-        className="rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
+        aria-busy={loading || undefined}
+        className="btn btn-primaer w-full sm:w-auto"
       >
-        {loading ? "Gemmer…" : "Gem ændringer"}
+        {loading && <span className="btn-spinner" aria-hidden="true" />}
+        Gem ændringer
       </button>
       </form>
     </div>

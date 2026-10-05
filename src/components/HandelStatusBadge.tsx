@@ -24,13 +24,13 @@ export const AKTIVE_STATUSSER = [
 ];
 
 const STIL: Record<string, string> = {
-  afventer_betaling: "bg-orange-100 text-orange-800",
-  betaling_modtaget: "bg-amber-100 text-amber-800",
-  pakke_sendt: "bg-blue-100 text-blue-800",
-  modtaget: "bg-indigo-100 text-indigo-800",
-  leveret: "bg-green-100 text-green-800",
+  afventer_betaling: "bg-advarsel-bg text-advarsel-tekst",
+  betaling_modtaget: "bg-advarsel-bg text-advarsel-tekst",
+  pakke_sendt: "bg-info-bg text-info-tekst",
+  modtaget: "bg-info-bg text-info-tekst",
+  leveret: "bg-succes-bg text-succes-tekst",
   // Reserveret; se kommentaren ved HANDEL_STATUS.
-  afsluttet: "bg-neutral-100 text-neutral-600",
+  afsluttet: "bg-kant text-tekst-daempet",
   // Sat af admin via Sager (koeber refunderet). Ikke en del af tidslinjen.
   annulleret: "bg-fejl-bg text-fejl-tekst",
 };

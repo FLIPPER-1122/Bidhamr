@@ -1,6 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { kanOptimeres } from "@/lib/billedUrl";
 import { useSearchParams, useRouter } from "next/navigation";
 import AuctionCard, { type DummyAuction } from "@/components/AuctionCard";
 import SettingsForm from "@/components/profile/SettingsForm";
@@ -31,9 +33,9 @@ export interface Rating {
 }
 
 const BUD_STYLE: Record<BudStatus, string> = {
-  vinder: "bg-green-100 text-green-700",
+  vinder: "bg-succes-bg text-succes-tekst",
   overbud: "bg-fejl-bg text-fejl-tekst",
-  aktiv: "bg-neutral-100 text-neutral-600",
+  aktiv: "bg-kant text-tekst-daempet",
 };
 
 const BUD_LABEL: Record<BudStatus, string> = {
@@ -45,11 +47,11 @@ const BUD_LABEL: Record<BudStatus, string> = {
 type Fane = "auktioner" | "bud" | "bedommelser" | "indstillinger";
 
 function auktionStatusBadge(slutterKl: string, harBud: boolean, status?: string) {
-  if (status === "annulleret") return { label: "Annulleret", cls: "bg-neutral-100 text-neutral-500" };
+  if (status === "annulleret") return { label: "Annulleret", cls: "bg-kant text-tekst-daempet" };
   const erSlut = new Date(slutterKl) <= new Date();
-  if (!erSlut) return { label: "Aktiv", cls: "bg-green-100 text-green-700" };
-  if (harBud) return { label: "Venter på betaling", cls: "bg-orange-100 text-orange-700" };
-  return { label: "Afsluttet", cls: "bg-neutral-100 text-neutral-500" };
+  if (!erSlut) return { label: "Aktiv", cls: "bg-succes-bg text-succes-tekst" };
+  if (harBud) return { label: "Venter på betaling", cls: "bg-advarsel-bg text-advarsel-tekst" };
+  return { label: "Afsluttet", cls: "bg-kant text-tekst-daempet" };
 }
 
 export default function ProfileTabs({
@@ -97,15 +99,17 @@ export default function ProfileTabs({
   return (
     <div className="mt-6">
       {/* Tab-bar */}
-      <div className="flex gap-1 overflow-x-auto border-b border-neutral-200">
+      <div className="-mx-4 flex gap-1 overflow-x-auto border-b border-kant px-4 sm:mx-0 sm:px-0">
         {faner.map(([key, label]) => (
           <button
             key={key}
+            type="button"
             onClick={() => setFane(key)}
-            className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+            aria-pressed={fane === key}
+            className={`flex min-h-11 shrink-0 items-center border-b-2 px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen ${
               fane === key
                 ? "border-groen text-groen"
-                : "border-transparent text-neutral-500 hover:text-neutral-800"
+                : "border-transparent text-tekst-daempet hover:text-tekst"
             }`}
           >
             {label}
@@ -117,19 +121,19 @@ export default function ProfileTabs({
         {/* Mine auktioner */}
         {fane === "auktioner" && (
           egneAuktioner.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-neutral-200 py-16 text-center">
-              <p className="text-sm text-neutral-500">
+            <div className="rounded-[14px] border border-kant bg-white px-6 py-10 text-center">
+              <p className="text-sm text-tekst-svag">
                 Du har ikke oprettet nogen auktioner endnu.
               </p>
               <Link
                 href="/opret-auktion"
-                className="mt-4 inline-block rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork"
+                className="btn btn-primaer mt-4"
               >
                 Opret din første auktion
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
               {egneAuktioner.map((auktion) => {
                 const badge = auktionStatusBadge(auktion.slutterKl, auktion.antalBud > 0, auktion.status);
                 return (
@@ -150,28 +154,30 @@ export default function ProfileTabs({
         {/* Mine bud */}
         {fane === "bud" && (
           mineBud.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-neutral-200 py-16 text-center">
-              <p className="text-sm text-neutral-500">
+            <div className="rounded-[14px] border border-kant bg-white px-6 py-10 text-center">
+              <p className="text-sm text-tekst-svag">
                 Du har ikke afgivet nogen bud endnu.
               </p>
               <Link
                 href="/auktioner"
-                className="mt-4 inline-block rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork"
+                className="btn btn-primaer mt-4"
               >
                 Se alle auktioner
               </Link>
             </div>
           ) : (
-            <ul className="divide-y divide-neutral-100 rounded-xl border border-neutral-200">
+            <ul className="divide-y divide-kant rounded-[14px] border border-kant bg-white">
               {mineBud.map((bud) => (
-                <li key={bud.auktionId} className="flex items-center gap-4 px-4 py-3.5">
-                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
+                <li key={bud.auktionId} className="flex items-center gap-3 px-4 py-3.5 sm:gap-4">
+                  <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-skelet">
                     {bud.billede && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={bud.billede}
-                        alt={bud.titel}
-                        className="h-full w-full object-cover"
+                        alt=""
+                        fill
+                        sizes="56px"
+                        unoptimized={!kanOptimeres(bud.billede)}
+                        className="object-cover"
                       />
                     )}
                   </div>
@@ -179,19 +185,19 @@ export default function ProfileTabs({
                   <div className="min-w-0 flex-1">
                     <Link
                       href={`/auktion/${bud.auktionId}`}
-                      className="block truncate text-sm font-medium text-neutral-900 hover:text-groen"
+                      className="block truncate rounded-md text-sm font-medium text-tekst hover:text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
                     >
                       {bud.titel}
                     </Link>
-                    <p className="mt-0.5 text-xs text-neutral-500">
+                    <p className="mt-0.5 text-xs text-tekst-svag">
                       Dit bud:{" "}
-                      <span className="font-semibold text-neutral-800">
+                      <span className="font-semibold text-tekst">
                         {bud.egetBud.toLocaleString("da-DK")} kr
                       </span>
                       {bud.højesteBud !== bud.egetBud && (
                         <>
                           {" "}· Højeste:{" "}
-                          <span className="font-semibold text-neutral-800">
+                          <span className="font-semibold text-tekst">
                             {bud.højesteBud.toLocaleString("da-DK")} kr
                           </span>
                         </>
@@ -213,8 +219,8 @@ export default function ProfileTabs({
         {/* Bedømmelser */}
         {fane === "bedommelser" && (
           ratings.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-neutral-200 py-16 text-center">
-              <p className="text-sm text-neutral-500">
+            <div className="rounded-[14px] border border-kant bg-white px-6 py-10 text-center">
+              <p className="text-sm text-tekst-svag">
                 Du har ingen bedømmelser endnu.
               </p>
             </div>
@@ -223,28 +229,28 @@ export default function ProfileTabs({
               {ratings.map((rating) => (
                 <li
                   key={rating.id}
-                  className="rounded-xl border border-neutral-200 bg-white p-5"
+                  className="rounded-[14px] border border-kant bg-white p-5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-600">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-groen-lys text-xs font-semibold text-tekst-daempet">
                         {rating.fra_bruger_navn[0]}
                       </div>
                       <Link
                         href={`/profil/${rating.fra_bruger_id}`}
-                        className="text-sm font-medium text-neutral-900 hover:text-groen hover:underline"
+                        className="text-sm font-medium text-tekst hover:text-groen hover:underline"
                       >
                         {rating.fra_bruger_navn}
                       </Link>
                     </div>
-                    <span className="shrink-0 text-xs text-neutral-400">
+                    <span className="shrink-0 text-xs text-tekst-svag">
                       {new Date(rating.oprettet).toLocaleDateString("da-DK", {
                         dateStyle: "medium",
                       })}
                     </span>
                   </div>
 
-                  <div className="mt-2 flex gap-0.5">
+                  <div className="mt-2 flex gap-0.5" role="img" aria-label={`${rating.stjerner} af 5 stjerner`}>
                     {[1, 2, 3, 4, 5].map((i) => (
                       <svg
                         key={i}
@@ -252,7 +258,7 @@ export default function ProfileTabs({
                         className={`h-4 w-4 ${
                           i <= rating.stjerner
                             ? "fill-groen text-groen"
-                            : "fill-neutral-200 text-neutral-200"
+                            : "fill-kant-staerk text-kant-staerk"
                         }`}
                       >
                         <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -261,7 +267,7 @@ export default function ProfileTabs({
                   </div>
 
                   {rating.kommentar && (
-                    <p className="mt-2 text-sm text-neutral-600">
+                    <p className="mt-2 text-sm text-tekst-daempet">
                       {rating.kommentar}
                     </p>
                   )}

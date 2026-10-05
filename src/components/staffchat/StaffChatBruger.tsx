@@ -126,7 +126,7 @@ export default function StaffChatBruger({
           b.fra_staff ? (
             <li key={b.id} className="flex flex-col items-start gap-1.5">
               <BidhamrMaerke lille />
-              <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-[#B9D8CC] bg-groen-lys px-4 py-3 text-[15px] text-tekst sm:max-w-[75%]">
+              <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-succes-kant bg-groen-lys px-4 py-3 text-[15px] text-tekst sm:max-w-[75%]">
                 <p className="whitespace-pre-wrap break-words">{b.tekst}</p>
                 <p className="mt-1 text-[12px] text-tekst-svag">
                   <span className="sr-only">Fra BidHamr, </span>
@@ -136,7 +136,7 @@ export default function StaffChatBruger({
             </li>
           ) : (
             <li key={b.id} className="flex justify-end">
-              <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-orange-knap px-4 py-3 text-[15px] text-white sm:max-w-[75%]">
+              <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-groen px-4 py-3 text-[15px] text-white sm:max-w-[75%]">
                 <p className="whitespace-pre-wrap break-words">{b.tekst}</p>
                 <p className="mt-1 text-[12px] text-white/85">
                   <span className="sr-only">Dig, </span>

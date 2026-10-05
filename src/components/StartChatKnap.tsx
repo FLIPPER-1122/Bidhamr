@@ -72,7 +72,7 @@ export default function StartChatKnap({
     return (
       <Link
         href={`/mine-handler/${id}`}
-        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork"
+        className="btn btn-primaer mt-3"
       >
         <svg
           viewBox="0 0 24 24"
@@ -94,7 +94,7 @@ export default function StartChatKnap({
 
   if (opgivet) {
     return (
-      <p className="mt-3 text-sm text-neutral-600">
+      <p className="mt-3 text-sm text-tekst-daempet">
         Handlen er ikke oprettet endnu. Prøv at genindlæse siden om lidt — eller
         find den under{" "}
         <Link href="/mine-handler" className="font-medium text-groen underline">
@@ -110,7 +110,7 @@ export default function StartChatKnap({
       type="button"
       disabled
       aria-busy="true"
-      className="mt-3 inline-flex cursor-wait items-center gap-2 rounded-lg bg-neutral-300 px-5 py-2.5 text-sm font-semibold text-neutral-600"
+      className="btn btn-sekundaer mt-3 cursor-wait"
     >
       <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
         <circle

@@ -6,7 +6,6 @@ export type NavLink = { href: string; tekst: string };
 export const kategoriHref = (kategori: string) =>
   `/auktioner?kategori=${encodeURIComponent(kategori)}`;
 
-// TODO søgning/filtre-opgaven: /auktioner skal læse ?sortering= (slutter_snart, nyeste).
 export const UDFORSK: NavLink[] = [
   { href: "/auktioner", tekst: "Alle auktioner" },
   { href: "/auktioner?sortering=slutter_snart", tekst: "Slutter snart" },

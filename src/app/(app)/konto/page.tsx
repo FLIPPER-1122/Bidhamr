@@ -78,15 +78,15 @@ export default async function KontoSide({
   const paamindelser = (paamindelseData ?? []) as MinPaamindelse[];
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-8">
-      <h1 className="font-serif text-3xl font-semibold text-tekst">Min konto</h1>
+    <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
+      <h1 className="text-[26px] leading-tight sm:text-[32px]">Min konto</h1>
 
       {advarsler.length > 0 && (
         <section
           id="advarsler"
-          className="mt-6 scroll-mt-24 rounded-2xl border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6"
+          className="mt-6 scroll-mt-24 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6"
         >
-          <h2 className="font-serif text-xl font-semibold text-advarsel-tekst">
+          <h2 className="text-[20px] leading-tight text-advarsel-tekst lg:text-[22px]">
             Advarsler ({advarsler.length})
           </h2>
           <p className="mt-1 text-sm text-advarsel-tekst">
@@ -110,9 +110,9 @@ export default async function KontoSide({
       {paamindelser.length > 0 && (
         <section
           id="paamindelser"
-          className="mt-6 scroll-mt-24 rounded-2xl border border-kant bg-white p-5 sm:p-6"
+          className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6"
         >
-          <h2 className="font-serif text-xl font-semibold text-tekst">
+          <h2 className="text-[20px] leading-tight lg:text-[22px]">
             Påmindelser ({paamindelser.length})
           </h2>
           <p className="mt-1 text-sm text-tekst-daempet">
@@ -136,14 +136,14 @@ export default async function KontoSide({
       {"fejl" in indstillinger ? (
         <p
           role="alert"
-          className="mt-6 rounded-xl border border-[#F3C4C4] bg-[#FDECEC] p-4 text-sm text-[#A32020]"
+          className="mt-6 rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst"
         >
           Dine betalingsindstillinger kunne ikke hentes. {indstillinger.fejl}
         </p>
       ) : (
         <>
-          <section className="mt-6 rounded-2xl border border-kant bg-white p-5 sm:p-6">
-            <h2 className="font-serif text-xl font-semibold text-tekst">Betaling</h2>
+          <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 className="text-[20px] leading-tight lg:text-[22px]">Betaling</h2>
             <div className="mt-3">
               <KontoBetaling
                 gemtKort={indstillinger.gemtKort}
@@ -155,8 +155,8 @@ export default async function KontoSide({
             </div>
           </section>
 
-          <section className="mt-6 rounded-2xl border border-kant bg-white p-5 sm:p-6">
-            <h2 className="font-serif text-xl font-semibold text-tekst">Udbetaling</h2>
+          <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 className="text-[20px] leading-tight lg:text-[22px]">Udbetaling</h2>
             <div className="mt-3">
               <KontoUdbetaling
                 saelger={indstillinger.saelger}
@@ -168,8 +168,8 @@ export default async function KontoSide({
         </>
       )}
 
-      <section className="mt-6 rounded-2xl border border-kant bg-white p-5 sm:p-6">
-        <h2 className="font-serif text-xl font-semibold text-tekst">Notifikationer</h2>
+      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+        <h2 className="text-[20px] leading-tight lg:text-[22px]">Notifikationer</h2>
         <p className="mt-1 text-sm text-tekst-daempet">
           Vælg, hvilke beskeder du vil have i klokken, på mail og i appen.
         </p>
@@ -178,8 +178,8 @@ export default async function KontoSide({
         </Link>
       </section>
 
-      <section id="blokerede" className="mt-6 scroll-mt-24 rounded-2xl border border-kant bg-white p-5 sm:p-6">
-        <h2 className="font-serif text-xl font-semibold text-tekst">Blokerede brugere</h2>
+      <section id="blokerede" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+        <h2 className="text-[20px] leading-tight lg:text-[22px]">Blokerede brugere</h2>
         <p className="mt-1 text-sm text-tekst-daempet">
           Blokerede brugere kan ikke byde på dine auktioner, skrive til dig eller stille dig spørgsmål.
           Handler, I allerede er i gang med, kan stadig gennemføres.
@@ -197,7 +197,7 @@ export default async function KontoSide({
 
       <p className="mt-6 text-sm text-tekst-daempet">
         Se dine køb og salg under{" "}
-        <Link href="/mine-handler" className="font-medium text-groen hover:underline">
+        <Link href="/mine-handler" className="font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
           Mine handler
         </Link>
         .

@@ -69,21 +69,21 @@ export default function FragtlabelBoks({
         ? "Labelen er ved at blive annulleret"
         : "Labelen er ved at blive lavet";
     return (
-      <div className="rounded-xl border border-neutral-200 bg-white p-6">
-        <h2 className="text-sm font-semibold text-neutral-900">Din fragtlabel</h2>
-        <p className="mt-1 text-sm text-neutral-500">
+      <div className="rounded-xl border border-kant bg-white p-6">
+        <h2 className="text-sm font-semibold text-tekst">Din fragtlabel</h2>
+        <p className="mt-1 text-sm text-tekst-svag">
           Print labelen og sæt den på kassen - eller vis QR-koden i pakkeshoppen. Husk stadig at
           tage de to pakkebilleder og markere pakken sendt nedenfor.
         </p>
         <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-          <dt className="text-neutral-500">Sporingsnummer</dt>
-          <dd className="font-mono font-medium text-neutral-900">{forsendelse.sporingsnummer ?? "-"}</dd>
-          <dt className="text-neutral-500">Størrelse</dt>
-          <dd className="text-neutral-900">
+          <dt className="text-tekst-svag">Sporingsnummer</dt>
+          <dd className="font-mono font-medium text-tekst">{forsendelse.sporingsnummer ?? "-"}</dd>
+          <dt className="text-tekst-svag">Størrelse</dt>
+          <dd className="text-tekst">
             {PAKKESTOERRELSE_NAVN[forsendelse.pakkestoerrelse as Pakkestoerrelse] ?? forsendelse.pakkestoerrelse}
           </dd>
-          <dt className="text-neutral-500">Status</dt>
-          <dd className="text-neutral-900">{status}</dd>
+          <dt className="text-tekst-svag">Status</dt>
+          <dd className="text-tekst">{status}</dd>
         </dl>
         {fejl && (
           <p role="alert" className="mt-4 rounded-lg border border-fejl-kant bg-fejl-bg px-3 py-2 text-sm text-fejl-tekst">
@@ -95,7 +95,7 @@ export default function FragtlabelBoks({
             <button
               type="button"
               onClick={() => aabnLabel(forsendelse.id)}
-              className="rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork"
+              className="btn btn-primaer"
             >
               Hent label (PDF)
             </button>
@@ -103,7 +103,7 @@ export default function FragtlabelBoks({
           {forsendelse.status === "oprettet" && (
             <BekraeftDialog
               triggerLabel="Annullér label"
-              triggerClassName="rounded-lg border border-neutral-200 px-5 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              triggerClassName="rounded-lg border border-kant px-5 py-2.5 text-sm font-medium text-tekst-daempet hover:bg-groen-lys"
               title="Annullér fragtlabelen?"
               description="Labelen kan ikke bruges bagefter. Du kan lave en ny, hvis du fx har valgt forkert størrelse."
               confirmLabel="Annullér label"
@@ -121,9 +121,9 @@ export default function FragtlabelBoks({
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-6">
-      <h2 className="text-sm font-semibold text-neutral-900">Lav fragtlabel</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+    <div className="rounded-xl border border-kant bg-white p-6">
+      <h2 className="text-sm font-semibold text-tekst">Lav fragtlabel</h2>
+      <p className="mt-1 text-sm text-tekst-svag">
         Vælg pakkens størrelse. Du får en label med sporingsnummer og QR-kode, som du kan
         printe eller vise i pakkeshoppen.
       </p>
@@ -133,7 +133,7 @@ export default function FragtlabelBoks({
           <label
             key={s}
             className={`cursor-pointer rounded-lg border px-3 py-2.5 text-sm ${
-              stoerrelse === s ? "border-groen bg-groen-lys" : "border-neutral-200"
+              stoerrelse === s ? "border-groen bg-groen-lys" : "border-kant"
             }`}
           >
             <input
@@ -144,8 +144,8 @@ export default function FragtlabelBoks({
               onChange={() => setStoerrelse(s)}
               className="sr-only"
             />
-            <span className="block font-medium text-neutral-900">{PAKKESTOERRELSE_NAVN[s]}</span>
-            <span className="block text-xs text-neutral-500">{STOERRELSE_HJAELP[s]}</span>
+            <span className="block font-medium text-tekst">{PAKKESTOERRELSE_NAVN[s]}</span>
+            <span className="block text-xs text-tekst-svag">{STOERRELSE_HJAELP[s]}</span>
           </label>
         ))}
       </fieldset>
@@ -158,7 +158,7 @@ export default function FragtlabelBoks({
         type="button"
         onClick={lav}
         disabled={arbejder || !stoerrelse}
-        className="mt-4 rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork disabled:opacity-50"
+        className="btn btn-primaer mt-4"
       >
         {arbejder ? "Laver label…" : "Lav fragtlabel"}
       </button>

@@ -71,7 +71,7 @@ export default function WaitlistForm() {
           }}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? "email-fejl" : "email-hjaelp"}
-          className={`h-13 min-w-0 flex-1 rounded-xl border bg-white px-4 text-[15px] text-tekst outline-none transition-colors placeholder:text-pladsholder focus:border-groen focus:outline-2 focus:outline-groen/25 ${
+          className={`h-13 min-w-0 flex-1 rounded-xl border bg-white px-4 text-[15px] text-tekst transition-colors placeholder:text-pladsholder focus:border-groen focus:outline-2 focus:outline-groen/25 ${
             error ? "border-fejl-kant" : "border-kant-staerk hover:border-[#BFBFBF]"
           }`}
         />

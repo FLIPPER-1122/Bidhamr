@@ -87,7 +87,7 @@ export default function KontoBetaling({
       </p>
 
       {besked && (
-        <p className="rounded-xl border border-[#B9D8CC] bg-groen-lys px-4 py-3 text-sm text-groen-mork">
+        <p className="rounded-xl border border-succes-kant bg-groen-lys px-4 py-3 text-sm text-groen-mork">
           {besked}
         </p>
       )}
@@ -130,7 +130,7 @@ export default function KontoBetaling({
           checked={autobetaling && !!gemtKort}
           disabled={!gemtKort || venter}
           onChange={(e) => skiftAuto(e.target.checked)}
-          className="mt-0.5 h-5 w-5 shrink-0 accent-[#1E5E4A]"
+          className="mt-0.5 h-5 w-5 shrink-0 accent-groen"
         />
         <span className="text-sm">
           <span className="font-semibold text-groen-mork">Betal automatisk, når jeg vinder</span>

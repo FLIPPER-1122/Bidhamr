@@ -1,4 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
+import { kanOptimeres } from "@/lib/billedUrl";
 
 interface ProfileHeaderProps {
   navn: string;
@@ -28,22 +30,25 @@ export default function ProfileHeader({
   brugerId,
 }: ProfileHeaderProps) {
   return (
-    <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-[14px] border border-kant bg-white">
       <div className="px-5 pb-6 pt-6 sm:px-8">
         {/* Avatar + navn */}
         <div className="flex flex-wrap items-center gap-4">
-          <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border border-neutral-200 bg-neutral-100 sm:h-24 sm:w-24">
+          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-kant bg-groen-lys sm:h-24 sm:w-24">
             {avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={avatarUrl}
-                alt={navn}
-                className="h-full w-full object-cover"
+                alt=""
+                fill
+                sizes="96px"
+                unoptimized={!kanOptimeres(avatarUrl)}
+                className="object-cover"
               />
             ) : (
               <svg
                 viewBox="0 0 24 24"
-                className="h-full w-full p-5 text-neutral-400"
+                className="h-full w-full p-5 text-groen-mork"
+                aria-hidden="true"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={1.5}
@@ -57,25 +62,25 @@ export default function ProfileHeader({
             )}
           </div>
 
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <h1 className="text-2xl font-bold text-neutral-900 sm:text-3xl">
+              <h1 className="min-w-0 text-[26px] leading-tight break-words sm:text-[32px]">
                 {navn}
               </h1>
               {erEgenProfil && (
                 <Link
                   href={`/profil/${brugerId}?fane=indstillinger`}
-                  className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 shadow-sm hover:border-groen hover:text-groen"
+                  className="btn btn-sekundaer"
                 >
                   Rediger profil
                 </Link>
               )}
             </div>
             {email && (
-              <p className="mt-0.5 text-sm text-neutral-400">{email}</p>
+              <p className="mt-0.5 text-sm break-all text-tekst-svag">{email}</p>
             )}
 
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-neutral-500">
+            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-tekst-svag">
               <span className="flex items-center gap-1.5">
                 <svg
                   viewBox="0 0 24 24"
@@ -83,6 +88,7 @@ export default function ProfileHeader({
                   fill="none"
                   stroke="currentColor"
                   strokeWidth={1.5}
+                  aria-hidden="true"
                 >
                   <rect x="3" y="4" width="18" height="18" rx="2" />
                   <path strokeLinecap="round" d="M16 2v4M8 2v4M3 10h18" />
@@ -91,10 +97,13 @@ export default function ProfileHeader({
               </span>
 
               {antalRatings === 0 ? (
-                <span className="text-neutral-400">Ingen bedømmelser endnu</span>
+                <span className="text-tekst-svag">Ingen bedømmelser endnu</span>
               ) : (
-                <span>
-                  ⭐ {gennemsnitRating.toFixed(1)} · {antalRatings}{" "}
+                <span className="flex items-center gap-1.5">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-groen text-groen" aria-hidden="true">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                  {gennemsnitRating.toFixed(1).replace(".", ",")} · {antalRatings}{" "}
                   bedømmelse{antalRatings === 1 ? "" : "r"}
                 </span>
               )}
@@ -112,10 +121,10 @@ export default function ProfileHeader({
           ].map(({ tal, label }) => (
             <div
               key={label}
-              className="rounded-lg bg-neutral-50 px-3 py-3 text-center"
+              className="min-w-0 rounded-xl bg-groen-lys px-2 py-3 text-center sm:px-3"
             >
-              <p className="text-2xl font-bold text-neutral-900">{tal}</p>
-              <p className="mt-0.5 text-xs text-neutral-500">{label}</p>
+              <p className="text-[22px] leading-tight font-bold text-tekst tabular-nums">{tal}</p>
+              <p className="mt-0.5 text-xs leading-snug text-tekst-svag">{label}</p>
             </div>
           ))}
         </div>

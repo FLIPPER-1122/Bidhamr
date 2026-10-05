@@ -107,7 +107,7 @@ export default function BekraeftDialog({
         onClick={() => setOpen(true)}
         className={
           triggerClassName ??
-          "inline-flex items-center gap-2 rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-knap-mork"
+          "btn btn-primaer"
         }
       >
         {triggerIcon}
@@ -130,12 +130,12 @@ export default function BekraeftDialog({
           >
             <h2
               id="bekraeft-titel"
-              className="text-lg font-bold text-neutral-900"
+              className="text-lg font-bold text-tekst"
             >
               {title}
             </h2>
             {description && (
-              <p className="mt-1.5 text-sm text-neutral-600">{description}</p>
+              <p className="mt-1.5 text-sm text-tekst-daempet">{description}</p>
             )}
 
             {children && <div className="mt-5">{children}</div>}
@@ -151,7 +151,7 @@ export default function BekraeftDialog({
                 type="button"
                 onClick={luk}
                 disabled={pending}
-                className="rounded-lg bg-neutral-100 px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                className="btn btn-sekundaer"
               >
                 {cancelLabel}
               </button>
@@ -160,7 +160,7 @@ export default function BekraeftDialog({
                 type="button"
                 onClick={bekraeft}
                 disabled={pending || confirmDisabled}
-                className="rounded-lg bg-orange-knap px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-knap-mork disabled:opacity-50"
+                className="btn btn-primaer"
               >
                 {pending ? "Arbejder…" : confirmLabel}
               </button>

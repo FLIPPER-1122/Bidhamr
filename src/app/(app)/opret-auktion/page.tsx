@@ -46,7 +46,7 @@ export default async function OpretAuktionPage({
   const aktiv = kanSaelge && !!profil?.connect_overfoersler_aktiv;
 
   return (
-    <main className="flex flex-1 justify-center bg-white px-4 py-10">
+    <main className="flex flex-1 justify-center px-4 py-8 sm:px-6 lg:py-10">
       <div className="w-full max-w-2xl">
         <h1 className="font-serif text-[26px] font-semibold text-tekst sm:text-[32px]">
           Opret auktion
@@ -54,19 +54,19 @@ export default async function OpretAuktionPage({
 
         <div className="mt-6">
           {frakoblet ? (
-            <p className="rounded-lg border border-[#F3C4C4] bg-[#FDECEC] px-4 py-3 text-sm text-[#A32020]">
+            <p className="rounded-lg border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
               Din udbetalingskonto hos vores betalingspartner Stripe er lukket, så du kan ikke sætte
               varer til salg lige nu. Skriv til support@bidhamr.dk, så hjælper vi dig.
             </p>
           ) : afvist ? (
-            <p className="rounded-lg border border-[#F3C4C4] bg-[#FDECEC] px-4 py-3 text-sm text-[#A32020]">
+            <p className="rounded-lg border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
               Vores betalingspartner Stripe har afvist din udbetalingskonto, så du kan ikke sætte
               varer til salg. Skriv til support@bidhamr.dk, hvis du har spørgsmål.
             </p>
           ) : kanSaelge && stripe !== "retur" ? (
             <>
               {!aktiv && (
-                <p className="mb-6 rounded-lg border border-[#C9DCEB] bg-[#EDF3F8] px-4 py-3 text-sm text-[#1F4E79]">
+                <p className="mb-6 rounded-lg border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
                   Stripe behandler din udbetalingskonto. Du kan godt sætte varer til salg imens.
                 </p>
               )}
