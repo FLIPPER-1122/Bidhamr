@@ -200,7 +200,7 @@ const MAKS_REFUSION_FORSOEG = 5;
 const CRON_REFUSION_AARSAGER = ["sag", "afsendelsesfrist"];
 
 function stripeBetalingLink(pi: string): string {
-  const live = (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_");
+  const live = /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "");
   return `https://dashboard.stripe.com/${live ? "" : "test/"}payments/${encodeURIComponent(pi)}`;
 }
 const BELOEB_KOLONNER =

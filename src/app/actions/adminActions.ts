@@ -744,6 +744,7 @@ function afvisInhabil(
 function revaliderSag(tradeId: string) {
   revalidatePath("/admin/sager");
   revalidatePath("/admin/handler");
+  revalidatePath("/admin/betalinger");
   revalidatePath(`/mine-handler/${tradeId}`);
   revalidatePath("/mine-handler");
 }
