@@ -6,7 +6,6 @@ import {
   unsuspendUser,
   advarUser,
   deleteAuction,
-  deleteRating,
 } from "@/app/actions/adminActions";
 import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
@@ -281,7 +280,7 @@ export default async function AdminBrugerDetalje({
       )}
       {fane === "bud" && <BudFane userId={id} supabase={supabase} />}
       {fane === "anmeldelser" && (
-        <AnmeldelserFane userId={id} supabase={supabase} kanModerere={kanModerereIndhold} />
+        <AnmeldelserFane userId={id} supabase={supabase} />
       )}
       {fane === "chats" && <ChatsFane userId={id} />}
       {fane === "sager" && (
@@ -673,11 +672,9 @@ async function BudFane({ userId, supabase }: { userId: string; supabase: Admin }
 async function AnmeldelserFane({
   userId,
   supabase,
-  kanModerere,
 }: {
   userId: string;
   supabase: Admin;
-  kanModerere: boolean;
 }) {
   const [{ data: modtagne }, { data: afgivne }] = await Promise.all([
     supabase
@@ -718,22 +715,13 @@ async function AnmeldelserFane({
                 <span className="text-xs text-neutral-400">
                   {new Date(r.oprettet).toLocaleDateString("da-DK")}
                 </span>
-                {kanModerere && (
-                  <ConfirmDialog
-                    triggerLabel="Slet anmeldelse"
-                    triggerClassName="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
-                    title="Er du sikker på, at du vil slette anmeldelsen?"
-                    description="Handlingen kan ikke fortrydes."
-                    confirmLabel="Ja, slet anmeldelsen"
-                    action={deleteRating}
-                    hiddenFields={{ ratingId: r.id }}
-                    aarsagField={{
-                      label: "Årsag",
-                      placeholder: "Skriv hvorfor anmeldelsen slettes...",
-                      required: true,
-                    }}
-                  />
-                )}
+                {/* Skjul/vis med begrundelse sker på Bedømmelser (intet slettes). */}
+                <Link
+                  href={`/admin/bedommelser?id=${r.id}`}
+                  className="rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
+                >
+                  Moderér
+                </Link>
               </div>
             </div>
             {r.kommentar && <p className="text-sm text-neutral-600">{r.kommentar}</p>}

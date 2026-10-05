@@ -53,6 +53,8 @@ export default async function BrugerRapporterSide({
       "id, kilde, reporter_id, reported_id, message_id, trade_id, category, description, status, handled_by, handled_at, handled_note, created_at",
     )
     .eq("status", visBehandlede ? "behandlet" : "ny")
+    // Rapporter af bedømmelser behandles under Bedømmelser.
+    .is("rating_id", null)
     .order(visBehandlede ? "handled_at" : "created_at", { ascending: false })
     .limit(300);
   const rapporter = (data ?? []) as Raekke[];
@@ -83,7 +85,17 @@ export default async function BrugerRapporterSide({
     <div className="space-y-5 p-4 sm:p-6">
       <AdminSideHoved
         titel="Rapporter"
-        forklaring="Beskeder og brugere, som andre brugere har rapporteret, og beskeder, spamfilteret har markeret. Se samtalen igennem, og afgør om brugeren skal have en advarsel (under Brugere)."
+        forklaring={
+          <>
+            Beskeder og brugere, som andre brugere har rapporteret, og beskeder, spamfilteret har markeret. Se
+            samtalen igennem, og afgør om brugeren skal have en advarsel (under Brugere). Rapporterede bedømmelser
+            ligger under{" "}
+            <Link href="/admin/bedommelser" className="font-medium text-groen hover:underline">
+              Bedømmelser
+            </Link>
+            .
+          </>
+        }
         hoejre={
           <span className="text-sm text-neutral-500">
             {rapporter.length} {rapporter.length === 1 ? "rapport" : "rapporter"}

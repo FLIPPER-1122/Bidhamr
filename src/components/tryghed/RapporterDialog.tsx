@@ -2,13 +2,18 @@
 
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { rapporter } from "@/app/actions/tryghed";
+import { rapporterBedoemmelse } from "@/app/actions/bedoemmelser";
 import { RAPPORT_BESKRIVELSE_MAKS, RAPPORT_KATEGORIER } from "@/lib/tryghed";
+import { BEDOEMMELSE_RAPPORT_KATEGORIER, type BedoemmelseDel } from "@/lib/bedoemmelser";
 
-// "Rapportér" ved en chatbesked eller på en profil. Rapporten lander i admin
-// under Rapporter -> Chat og profiler (bruger_rapporter).
+// "Rapportér" ved en chatbesked, på en profil eller ved en bedømmelse/et svar
+// fra sælger. Rapporter af beskeder/profiler lander i admin under Rapporter ->
+// Chat og profiler; rapporter af bedømmelser under Bedømmelser
+// (begge i bruger_rapporter).
 export default function RapporterDialog({
   beskedId,
   brugerId,
+  bedoemmelse,
   titel,
   triggerLabel,
   triggerClassName,
@@ -16,11 +21,13 @@ export default function RapporterDialog({
 }: {
   beskedId?: string;
   brugerId?: string;
+  bedoemmelse?: { ratingId: string; del: BedoemmelseDel };
   titel: string;
   triggerLabel: string;
   triggerClassName?: string;
   triggerIcon?: ReactNode;
 }) {
+  const kategorier = bedoemmelse ? BEDOEMMELSE_RAPPORT_KATEGORIER : RAPPORT_KATEGORIER;
   const id = useId();
   const [aaben, setAaben] = useState(false);
   const [kategori, setKategori] = useState("");
@@ -62,7 +69,9 @@ export default function RapporterDialog({
       return;
     }
     setSender(true);
-    const res = await rapporter({ beskedId, brugerId, kategori, beskrivelse });
+    const res = bedoemmelse
+      ? await rapporterBedoemmelse({ ...bedoemmelse, kategori, beskrivelse })
+      : await rapporter({ beskedId, brugerId, kategori, beskrivelse });
     setSender(false);
     if ("fejl" in res) {
       setFejl(res.fejl);
@@ -114,7 +123,7 @@ export default function RapporterDialog({
                 <form onSubmit={send} className="mt-4 space-y-4">
                   <fieldset className="space-y-2">
                     <legend className="text-sm font-medium text-tekst">Hvad drejer det sig om?</legend>
-                    {RAPPORT_KATEGORIER.map((k) => (
+                    {kategorier.map((k) => (
                       <label
                         key={k.vaerdi}
                         className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm ${

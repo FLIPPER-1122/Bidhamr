@@ -45,6 +45,12 @@ export const HANDLING_NAVNE: Record<string, string> = {
   fragt_haandteret: "Markerede forsendelse som håndteret",
   spoergsmaal_skjult: "Skjulte spørgsmål på auktion",
   spoergsmaal_vist: "Viste spørgsmål på auktion igen",
+  // 20261007020000_bedoemmelse_svar.sql
+  bedoemmelse_skjult: "Skjulte bedømmelse",
+  bedoemmelse_vist: "Viste bedømmelse igen",
+  bedoemmelse_svar_skjult: "Skjulte sælgers svar på bedømmelse",
+  bedoemmelse_svar_vist: "Viste sælgers svar på bedømmelse igen",
+  bedoemmelse_beholdt: "Beholdt rapporteret bedømmelse",
 };
 
 export function handlingNavn(handling: string): string {
@@ -93,7 +99,11 @@ export function maalLink(
     case "sag":
       return { href: `/admin/sager/${id}`, label: "Se sag" };
     case "anmeldelse":
-      // Anmeldelser har ingen egen side – vis brugerens anmeldelser.
+      // maal_id er bedømmelsens id (ratings.id) - vis den på Bedømmelser.
+      // Meget gamle rækker kan mangle den, så brugerens anmeldelser er reserven.
+      if (UUID_RE.test(maalId)) {
+        return { href: `/admin/bedommelser?id=${id}`, label: "Se bedømmelse" };
+      }
       return brugerId && !erSystem(brugerId)
         ? { href: `/admin/brugere/${encodeURIComponent(brugerId)}?fane=anmeldelser`, label: "Se anmeldelser" }
         : null;
