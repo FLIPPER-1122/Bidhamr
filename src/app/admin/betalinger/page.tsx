@@ -1,17 +1,14 @@
 import Link from "next/link";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
-import { advarselFelter } from "@/components/admin/advarselFelter";
+import BetalingHandlinger, { problemTekst, statusBadge } from "@/components/admin/betalinger/BetalingHandlinger";
 import {
   hentBetalingerTilHandling,
-  markerBetalingLøstForm,
-  givAdvarselBetalingForm,
   markerUdbetalingskontoLøstForm,
   nulstilUdbetalingskontoForm,
   type BetalingBeloeb,
   type Person,
 } from "@/app/actions/adminBetalinger";
-import { prøvOverfoerselIgenForm } from "@/app/actions/adminActions";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Betalinger, der kræver handling: markeret af webhook/cron (kraever_opmaerksomhed)
@@ -44,6 +41,16 @@ function fejlPaaDansk(tekst: string | null): string {
     .replace(/\bsaelger(en)?\b/g, "sælger$1")
     .replace(/\boverfoersel\b/g, "overførsel")
     .replace(/\bfejlet\b/g, "fejlede");
+}
+
+// Én linje øverst i kortet: hvad er problemet, og hvad gør staff typisk.
+function Problemlinje({ titel, tekst }: { titel: string; tekst: string }) {
+  return (
+    <div className="mb-3 rounded-lg border border-succes-kant bg-groen-lys px-3 py-2 text-sm text-succes-tekst">
+      <p className="font-semibold">{titel}</p>
+      <p className="mt-0.5">{tekst}</p>
+    </div>
+  );
 }
 
 function PersonLink({ label, p }: { label: string; p: Person | null }) {
@@ -170,6 +177,14 @@ export default async function AdminBetalinger({
                     <span className="mb-3 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
                       Afvigelse
                     </span>
+                    <Problemlinje
+                      titel="Køberen har betalt et forkert beløb"
+                      tekst={
+                        a.refusion_forsoeg < 5
+                          ? "Beløbet sendes automatisk tilbage til køberen. Du skal kun gøre noget, hvis det bliver ved med at fejle."
+                          : "Systemet har opgivet at sende beløbet tilbage. Tjek årsagen i Stripe, og kontakt køberen."
+                      }
+                    />
                     <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                       <AuktionLink id={a.auction_id} titel={a.auktion_titel} tradeId={a.trade_id} />
                       <PersonLink label="Køber" p={a.koeber} />
@@ -177,7 +192,9 @@ export default async function AdminBetalinger({
                       <div>
                         <p className="text-xs uppercase text-neutral-500">Modtaget</p>
                         <p className="text-neutral-800">{dato(a.dato)}</p>
-                        <p className="text-xs text-neutral-500">Refusionsforsøg: {a.refusion_forsoeg}</p>
+                        <p className="text-xs text-neutral-500">
+                          Automatiske forsøg: {Math.min(a.refusion_forsoeg, 5)} af 5
+                        </p>
                       </div>
                     </div>
                     <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -294,18 +311,29 @@ export default async function AdminBetalinger({
 
           {betalinger.length > 0 && (
             <ul className="space-y-3">
-              {betalinger.map((b) => (
+              {betalinger.map((b) => {
+                const badge = statusBadge(b, STATUS[b.status] ?? b.status);
+                const problem = problemTekst(b);
+                return (
                 <li key={b.id} className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
-                      {STATUS[b.status] ?? b.status}
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.farve}`}>
+                      {badge.tekst}
                     </span>
+                    {b.refusion && b.refusion.tilstand !== "gennemfoert" && (
+                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
+                        Automatiske forsøg: {Math.min(b.refusion.forsoeg, b.refusion.maksForsoeg)} af{" "}
+                        {b.refusion.maksForsoeg}
+                        {b.refusion.proeverSelv ? " · prøver selv igen" : " · prøver ikke selv igen"}
+                      </span>
+                    )}
                     {b.indsigelse_kl && (
                       <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
                         Indsigelse {dato(b.indsigelse_kl)}
                       </span>
                     )}
                   </div>
+                  {!b.loest && <Problemlinje titel={problem.titel} tekst={problem.tekst} />}
                   <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                     <AuktionLink id={b.auction_id} titel={b.auktion_titel} tradeId={b.trade_id} />
                     <PersonLink label="Køber" p={b.koeber} />
@@ -316,7 +344,16 @@ export default async function AdminBetalinger({
                     </div>
                   </div>
 
-                  <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                  <p
+                    className={`mt-3 rounded-lg px-3 py-2 text-sm ${
+                      b.refusion?.tilstand === "gennemfoert"
+                        ? "bg-neutral-50 text-neutral-600"
+                        : "bg-red-50 text-red-800"
+                    }`}
+                  >
+                    <span className="block text-xs font-medium uppercase opacity-70">
+                      {b.refusion?.tilstand === "gennemfoert" ? "Fejl fra et tidligere forsøg" : "Fejlbesked"}
+                    </span>
                     {fejlPaaDansk(b.sidste_fejl)}
                   </p>
 
@@ -334,62 +371,11 @@ export default async function AdminBetalinger({
                       <p className="mt-1 whitespace-pre-line">{b.loest.note}</p>
                     </div>
                   ) : (
-                    kanLoese &&
-                    fane === "aaben" && (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {b.kanProeveOverfoersel && (
-                          <ConfirmDialog
-                            triggerLabel="Prøv overførsel igen"
-                            triggerClassName="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition-colors hover:bg-neutral-100"
-                            title="Prøv overførslen til sælger igen?"
-                            description="Overførslen får nye forsøg og prøves med det samme. Betalingen forbliver markeret, indtil pengene faktisk er overført."
-                            confirmLabel="Prøv igen"
-                            action={prøvOverfoerselIgenForm}
-                            hiddenFields={{ tradeId: b.trade_id }}
-                          />
-                        )}
-                        <ConfirmDialog
-                          triggerLabel="Markér som løst"
-                          triggerClassName="rounded-lg bg-orange-knap px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-orange-knap-mork"
-                          title="Markér betalingen som løst?"
-                          description="Betalingen forsvinder fra listen. Skriv, hvad der er gjort."
-                          confirmLabel="Markér som løst"
-                          action={markerBetalingLøstForm}
-                          hiddenFields={{ betalingId: b.id }}
-                          aarsagField={{
-                            name: "note",
-                            label: "Note",
-                            placeholder: "Fx: Refunderet manuelt i Stripe",
-                            required: true,
-                          }}
-                        />
-                        <ConfirmDialog
-                          triggerLabel="Giv advarsel"
-                          triggerClassName="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition-colors hover:bg-neutral-100"
-                          title="Giv advarsel og luk sagen?"
-                          description="Advarslen tæller med i reglen om 3 advarsler. Betalingen markeres som løst."
-                          confirmLabel="Giv advarsel"
-                          action={givAdvarselBetalingForm}
-                          hiddenFields={{ betalingId: b.id }}
-                          valgField={{
-                            name: "modtager",
-                            label: "Hvem får advarslen?",
-                            valg: [
-                              { value: "koeber", label: b.koeber.navn ? `Køber (${b.koeber.navn})` : "Køber" },
-                              { value: "saelger", label: b.saelger.navn ? `Sælger (${b.saelger.navn})` : "Sælger" },
-                            ],
-                          }}
-                          tekstFelter={advarselFelter({
-                            internNavn: "begrundelse",
-                            brugerPlaceholder: "Fx: Du sendte ikke varen, selvom køberen havde betalt.",
-                            internPlaceholder: "Fx: Sendte ikke varen trods flere påmindelser",
-                          })}
-                        />
-                      </div>
-                    )
+                    fane === "aaben" && <BetalingHandlinger b={b} kanLoese={kanLoese} />
                   )}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </>

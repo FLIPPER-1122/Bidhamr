@@ -64,6 +64,23 @@ export type BetalingBeloeb = {
   beskyttelse_oere: number;
 };
 
+// Hvilken slags problem betalingen har. Afgør, hvilke knapper og hvilken
+// forklaring kortet på /admin/betalinger viser.
+//   afhentning     - afhentningshandel, betalt, ikke frigivet/refunderet
+//                    (kodelås eller ikke hentet efter 7 dage).
+//   ikke_afsluttet - betalt, men hverken frigivet eller refunderet.
+//   overfoersel    - frigivet, men overførslen til sælger er ikke lykkedes.
+//   refusion       - refusion til køber er påbegyndt/fejlet.
+//   indsigelse     - åben indsigelse hos køberens bank.
+//   andet          - alt andet.
+export type BetalingProblem =
+  | "afhentning"
+  | "ikke_afsluttet"
+  | "overfoersel"
+  | "refusion"
+  | "indsigelse"
+  | "andet";
+
 export type BetalingTilHandling = {
   id: string;
   trade_id: string;
@@ -78,6 +95,24 @@ export type BetalingTilHandling = {
   // Admin/chef kan prøve overførslen igen (frigivet, ikke overført, ikke
   // refunderet, ingen blokerende indsigelse, handel ikke annulleret, ingen sag).
   kanProeveOverfoersel: boolean;
+  problem: BetalingProblem;
+  // Admin/chef kan frigive til sælger eller refundere køberen (samme regel som
+  // på /admin/handler: rolle admin+ og handlen er aktiv). Kun sat for
+  // problemtyperne afhentning og ikke_afsluttet.
+  kanFlyttePenge: boolean;
+  // Kun for problem "refusion": er tilbagebetalingen gennemført, fejlet eller
+  // stadig i gang - afgjort ud fra status/refunderet_kl, ikke fejlteksten
+  // (sidste_fejl kan stå tilbage fra et tidligere, fejlet forsøg).
+  refusion: {
+    tilstand: "gennemfoert" | "fejlet" | "afventer";
+    forsoeg: number;
+    maksForsoeg: number;
+    // Prøver cron selv igen (kun sags- og afsendelsesfristrefusioner, op til
+    // maksForsoeg).
+    proeverSelv: boolean;
+  } | null;
+  // Link til betalingen i Stripes dashboard. Kun sat for admin/chef.
+  stripeLink: string | null;
   // Handlens status (fx 'annulleret' - så vises fragten som refunderet).
   handel_status: string | null;
   // Kun for løste: hvem/hvornår/note.
@@ -157,7 +192,17 @@ export type BetalingerResultat = {
 };
 
 const BASIS_KOLONNER =
-  "id, trade_id, auction_id, buyer_id, seller_id, status, sidste_fejl, opdateret, frigivet_kl, stripe_transfer_id, refusion_anmodet_kl";
+  "id, trade_id, auction_id, buyer_id, seller_id, status, sidste_fejl, opdateret, frigivet_kl, stripe_transfer_id, refusion_anmodet_kl, refunderet_kl, refusion_forsoeg, refusion_aarsag, stripe_payment_intent_id";
+
+// Samme grænse som cron bruger (refunderSagerVentende og afsendelsesfristens
+// proevIgen: refusion_forsoeg < 5).
+const MAKS_REFUSION_FORSOEG = 5;
+const CRON_REFUSION_AARSAGER = ["sag", "afsendelsesfrist"];
+
+function stripeBetalingLink(pi: string): string {
+  const live = (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_");
+  return `https://dashboard.stripe.com/${live ? "" : "test/"}payments/${encodeURIComponent(pi)}`;
+}
 const BELOEB_KOLONNER =
   "total_oere, udbetaling_oere, fragt_oere, koebergebyr_oere, saelgergebyr_oere, beskyttelse_oere";
 
@@ -317,13 +362,16 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
     // Handlernes status (til "Prøv overførsel igen").
     const tradeIdsAlle = [...new Set(raekker.map((r) => r.trade_id as string))];
     const { data: handler, error: hErr } = tradeIdsAlle.length
-      ? await admin.from("trades").select("id, status, sag_aaben").in("id", tradeIdsAlle)
-      : { data: [] as { id: string; status: string; sag_aaben: boolean | null }[], error: null };
+      ? await admin.from("trades").select("id, status, sag_aaben, afhentning").in("id", tradeIdsAlle)
+      : {
+          data: [] as { id: string; status: string; sag_aaben: boolean | null; afhentning: boolean | null }[],
+          error: null,
+        };
     if (hErr) throw new Error(hErr.message);
     const handelMap = new Map(
       (handler ?? []).map((h) => [
         h.id as string,
-        { status: h.status as string, sag_aaben: !!h.sag_aaben },
+        { status: h.status as string, sag_aaben: !!h.sag_aaben, afhentning: !!h.afhentning },
       ]),
     );
 
@@ -373,7 +421,30 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
       );
     };
 
+    const problemFor = (r: Raekke, proeve: boolean): BetalingProblem => {
+      const h = handelMap.get(r.trade_id as string);
+      const fejl = (r.sidste_fejl as string | null) ?? "";
+      if (
+        indsigelseBlokerer({
+          indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
+          indsigelse_status: (r.indsigelse_status as string | null | undefined) ?? null,
+        })
+      ) {
+        return "indsigelse";
+      }
+      if (proeve) return "overfoersel";
+      if (r.refusion_anmodet_kl || r.status === "refunderet") return "refusion";
+      if (r.status === "betalt" && !r.frigivet_kl) {
+        return h?.afhentning || /Afhentning/i.test(fejl) ? "afhentning" : "ikke_afsluttet";
+      }
+      return "andet";
+    };
+    const AKTIVE_HANDLER = ["betaling_modtaget", "pakke_sendt", "modtaget"];
+
     const betalinger: BetalingTilHandling[] = raekker.map((r) => {
+      const proeve = kanProeve(r);
+      const problem = problemFor(r, proeve);
+      const hStatus = handelMap.get(r.trade_id as string)?.status ?? null;
       const b: BetalingTilHandling = {
         id: r.id as string,
         trade_id: r.trade_id as string,
@@ -385,8 +456,39 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
         sidste_fejl: renset(r.sidste_fejl),
         dato: r.opdateret as string,
         indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
-        kanProeveOverfoersel: kanLoese && kanProeve(r),
-        handel_status: handelMap.get(r.trade_id as string)?.status ?? null,
+        kanProeveOverfoersel: kanLoese && proeve,
+        problem,
+        kanFlyttePenge:
+          kanLoese &&
+          (problem === "afhentning" || problem === "ikke_afsluttet") &&
+          !!hStatus &&
+          AKTIVE_HANDLER.includes(hStatus),
+        refusion:
+          problem === "refusion"
+            ? (() => {
+                const forsoeg = Number(r.refusion_forsoeg ?? 0);
+                const gennemfoert = r.status === "refunderet" && !!r.refunderet_kl;
+                const fejlet =
+                  !gennemfoert &&
+                  (forsoeg > 0 || /refusion/i.test((r.sidste_fejl as string | null) ?? ""));
+                return {
+                  tilstand: gennemfoert ? "gennemfoert" : fejlet ? "fejlet" : "afventer",
+                  forsoeg,
+                  maksForsoeg: MAKS_REFUSION_FORSOEG,
+                  proeverSelv:
+                    !gennemfoert &&
+                    r.status === "betalt" &&
+                    !r.stripe_transfer_id &&
+                    CRON_REFUSION_AARSAGER.includes((r.refusion_aarsag as string | null) ?? "") &&
+                    forsoeg < MAKS_REFUSION_FORSOEG,
+                } as const;
+              })()
+            : null,
+        stripeLink:
+          kanLoese && r.stripe_payment_intent_id
+            ? stripeBetalingLink(r.stripe_payment_intent_id as string)
+            : null,
+        handel_status: hStatus,
         loest: fane === "loest" ? loestMap.get(r.trade_id as string) ?? null : null,
       };
       if (visBeloeb) {
