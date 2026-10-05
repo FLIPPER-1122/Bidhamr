@@ -47,7 +47,8 @@ const SPAM_FORKLARING: Record<SpamGrund, string> = {
 
 // --- Spamfilter (spejl af databasen) -----------------------------------------
 // SPEJL af public.besked_normaliser + public.besked_spam_grund i
-// supabase/migrations/20261007050000_fase4_testrettelser.sql. Databasen
+// supabase/migrations/20261007050000_fase4_testrettelser.sql (testdatabasen:
+// rettet igen i 20261007051000_fase4_testrettelser_2.sql). Databasen
 // afgør altid (triggeren messages_tryghed); denne kopi kan bruges til at
 // advare, før beskeden sendes. Ændres en regel, SKAL begge steder rettes.
 // Forskel: Postgres' \m/\M regner æøå som bogstaver; her bruges \p{L}.
@@ -79,27 +80,76 @@ const P_MOBILEPAY = `(mobile\\s*pay|${B}mp${E})`;
 const P_SOME =
   `(instagram|insta|${B}ig|facebook|${B}fb|messenger|snap\\s*chat|${B}snap|tik\\s*tok|telegram` +
   `|whats\\s*app|${B}signal|wechat|viber|discord)${E}`;
+// Som P_SOME, men uden signal: "mit signal er dårligt" er ikke en kontaktvej
+// (bruges kun efter min/mit/mine; "på signal" og "signal:" stoppes stadig).
+const P_SOME_MIN =
+  `(instagram|insta|${B}ig|facebook|${B}fb|messenger|snap\\s*chat|${B}snap|tik\\s*tok|telegram` +
+  `|whats\\s*app|wechat|viber|discord)${E}`;
+// @brugernavn kræver mindst ét bogstav eller _ ("Pris @1500" er ikke et brugernavn).
+const P_AT = "@(?=[a-z0-9_.]*[a-z_])";
 
 // Tal, der ikke er telefonnumre, erstattes med '#' i arbejdskopien.
+// Et 8-cifret nummer i 2-2-2-2- eller 4-4-format (ikke del af en længere cifferrække).
+const GRP_2222 = String.raw`[2-9][0-9][\s.-][0-9]{2}[\s.-][0-9]{2}[\s.-][0-9]{2}(?![\s.,-]?[0-9])`;
+const GRP_44 = String.raw`[2-9][0-9]{3}[\s.-][0-9]{4}(?![\s.,-]?[0-9])`;
+const NR = String.raw`[\s.:#]*((nr|nummer|nummeret)${E})?[\s.:#]*`;
+// Cifre lige efter model, ordre(nr), postnr, sporing, mål m.fl.
 const NEUTRAL_ORD = new RegExp(
   B +
-    "(str|størrelse[a-zæøå]*|skostørrelse[a-zæøå]*|size|sizes|model[a-zæøå]*" +
+    "(model[a-zæøå]*" +
     "|ordre[a-zæøå]*|post\\s*nr|postnummer[a-zæøå]*|sporing[a-zæøå]*|track[a-z]*" +
     "|stregkode|ean|imei|serie\\s*nr|serienummer[a-zæøå]*|vare\\s*nr|varenummer[a-zæøå]*" +
-    "|kl|ref|reference|faktura[a-zæøå]*|kunde\\s*nr|kundenummer[a-zæøå]*" +
-    "|konto[a-zæøå]*|reg|pakke[a-zæøå]*|art)" +
+    "|faktura[a-zæøå]*|kunde\\s*nr|kundenummer[a-zæøå]*" +
+    "|reg|pakke[a-zæøå]*|mål[a-zæøå]*)" +
     E +
-    `[\\s.:#]*((nr|nummer|nummeret)${E})?[\\s.:#]*[0-9][0-9\\s.,/-]*`,
+    NR +
+    String.raw`[0-9][0-9\s.,/-]*`,
+  "gu",
+);
+// ref/konto/art: aldrig et nummer i telefonformat (2-2-2-2 eller 4-4).
+const NEUTRAL_REF = new RegExp(
+  `${B}(ref|reference|konto[a-zæøå]*|art)${E}${NR}(?!${GRP_2222}|${GRP_44})` + String.raw`[0-9][0-9\s.,/-]*`,
+  "gu",
+);
+// str/størrelse: ikke 2-2-2-2 (størrelseslister fanges af STOERRELSER).
+const NEUTRAL_STR = new RegExp(
+  `${B}(str|størrelse[a-zæøå]*|skostørrelse[a-zæøå]*|size|sizes)${E}${NR}(?!${GRP_2222})` +
+    String.raw`[0-9][0-9\s.,/-]*`,
+  "gu",
+);
+// kl/klokken: kun et klokkeslæt (18, 18.30, 18:30, 18 30) med intet ciffer efter.
+const NEUTRAL_KL = new RegExp(
+  `${B}(kl|klokken)${E}` + String.raw`[\s.:]*([01]?[0-9]|2[0-3])([.:\s][0-5][0-9])?(?![\s.:,-]?[0-9])`,
+  "gu",
+);
+// Par/intervaller af klokkeslæt (20.00-22.00, 20.10 21.10) og datoer (24.12-27.12.).
+const PAR_SEP = String.raw`(\s*[-–]\s*|\s+(og|til)\s+|\s+)`;
+const TID = "([01][0-9]|2[0-3])[.:][0-5][0-9]";
+const DATO = String.raw`(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.?`;
+const NEUTRAL_TID_DATO = new RegExp(
+  `(?<![0-9][.:])(?<![0-9])(${TID}${PAR_SEP}${TID}|${DATO}${PAR_SEP}${DATO})(?![.:]?[0-9])`,
   "gu",
 );
 const NEUTRAL_AAR = /(?<![0-9])(19|20)[0-9]{2}(\s*[-/]\s*|\s+(og|til)\s+|\s+)(19|20)[0-9]{2}(?![0-9])/gu;
+// Beløbspar i hele hundreder: "2500 3000", "1500-2000".
+const NEUTRAL_HUNDREDER =
+  /(?<![0-9])[1-9][0-9]{1,3}00(\s*[-–/]\s*|\s+(og|til|eller)\s+|\s+)[1-9][0-9]{1,3}00(?![0-9])/gu;
 const NEUTRAL_BELOEB = new RegExp(`(?<![0-9])[0-9][0-9 .]*[0-9]\\s*(kr${E}|dkk${E}|kroner${E}|,-|\\.-)`, "gu");
 const STOERRELSER = /(?<![0-9])([0-9]{2})[\s.,/-]+([0-9]{2})[\s.,/-]+([0-9]{2})[\s.,/-]+([0-9]{2})(?![0-9])/gu;
 
-// Arbejdskopi: størrelseslister (fast trin 1 eller 2), modelnumre, årstal,
-// beløb m.m. -> '#', så de ikke ligner telefonnumre.
+// Arbejdskopi: klokkeslæt/datoer, modelnumre, årstal, beløb og
+// størrelseslister (fast trin 1 eller 2) -> '#', så de ikke ligner
+// telefonnumre. Samme rækkefølge som i SQL.
 function neutraliserTal(v: string): string {
-  let g = v.replace(NEUTRAL_ORD, " # ").replace(NEUTRAL_AAR, " # ").replace(NEUTRAL_BELOEB, " # ");
+  let g = v
+    .replace(NEUTRAL_TID_DATO, " # ")
+    .replace(NEUTRAL_ORD, " # ")
+    .replace(NEUTRAL_REF, " # ")
+    .replace(NEUTRAL_STR, " # ")
+    .replace(NEUTRAL_KL, " # ")
+    .replace(NEUTRAL_AAR, " # ")
+    .replace(NEUTRAL_HUNDREDER, " # ")
+    .replace(NEUTRAL_BELOEB, " # ");
   for (const m of [...g.matchAll(STOERRELSER)]) {
     const [a, b, c, d] = [m[1], m[2], m[3], m[4]].map(Number);
     const trin = b - a;
@@ -146,11 +196,11 @@ const SPAM_REGLER = {
   ],
   socialt: [
     RE(`${P_SOME}\\s*(:|=)\\s*@?[a-z0-9_.]{3,}`),
-    RE(`${P_SOME}[^]{0,15}(?<![a-z0-9._%+-])@[a-z0-9_.]{3,}`),
+    RE(`${P_SOME}[^]{0,15}(?<![a-z0-9._%+-])${P_AT}[a-z0-9_.]{3,}`),
     RE(`${P_SOME}\\s+(er|hedder)\\s+@?(?=[a-z0-9_.]*[_.0-9])[a-z0-9_.]{3,}`),
     RE(`${B}(på|via|over|gennem|i)\\s+((min|mit|mine)\\s+)?${P_SOME}`),
-    RE(`${B}(min|mit|mine)\\s+${P_SOME}`),
-    RE("(^|[^a-z0-9._%+-])@[a-z0-9_][a-z0-9_.]{2,}"),
+    RE(`${B}(min|mit|mine)\\s+${P_SOME_MIN}`),
+    RE(`(^|[^a-z0-9._%+-])${P_AT}[a-z0-9_][a-z0-9_.]{2,}`),
   ],
 };
 
