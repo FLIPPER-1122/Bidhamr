@@ -462,8 +462,10 @@ async function slutterSnart(admin: Admin): Promise<number> {
 }
 
 // Ny auktion fra en sælger, man følger. Kun følgninger, der fandtes, da
-// auktionen blev oprettet, og aldrig ved en blokering mellem de to (heller
-// ikke en anonym byder-spærring) - så får den blokerede ingen besked.
+// auktionen blev oprettet. Ingen besked, hvis sælgeren har blokeret følgeren
+// (også en anonym byder-spærring) eller ved en navngiven blokering i en af
+// retningerne. En anonym spærring, FØLGEREN selv har lavet som sælger, stopper
+// ikke beskeden - ellers kunne han udlede, hvem den spærrede byder er.
 async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
   const { data: auktioner } = await admin
     .from("auctions")
@@ -494,7 +496,7 @@ async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
     for (const kolonne of ["blokerer_id", "blokeret_id"] as const) {
       const { data: blok, error } = await admin
         .from("brugerblokeringer")
-        .select("blokerer_id, blokeret_id")
+        .select("blokerer_id, blokeret_id, kilde_auktion_id")
         .in(kolonne, del)
         .limit(10000);
       if (error) {
@@ -502,9 +504,12 @@ async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
         console.error("Notifikationer: blokeringer kunne ikke hentes:", error.message);
         return 0;
       }
+      // Nøgle = "følger:sælger". Sælger (blokerer) har blokeret følgeren
+      // (blokeret): gælder altid. Følgeren har blokeret sælgeren: kun ved en
+      // navngiven blokering (kilde_auktion_id er null).
       for (const b of blok ?? []) {
-        blokeret.add(`${b.blokerer_id}:${b.blokeret_id}`);
         blokeret.add(`${b.blokeret_id}:${b.blokerer_id}`);
+        if (b.kilde_auktion_id == null) blokeret.add(`${b.blokerer_id}:${b.blokeret_id}`);
       }
     }
   }
@@ -531,9 +536,11 @@ async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
 }
 
 // Gemte søgninger med besked: gemte_soegninger_find_nye (migration
-// 20261007010000) finder nye matchende auktioner og markerer søgningen som
-// behandlet i samme kald (højst én besked pr. søgning pr. 6 timer, egne
-// auktioner og blokerede sælgere er sorteret fra). Her sendes kun beskeden.
+// 20261007010000, rettet i 011000) finder nye matchende auktioner og markerer
+// søgningen som behandlet i samme kald. Fejler afsendelsen herunder, tabes
+// den ene besked bevidst (hellere det end dobbelte beskeder). Højst én besked
+// pr. søgning pr. 6 timer; egne auktioner og blokerede sælgere er sorteret
+// fra. Her sendes kun beskeden.
 type SoegningsMatch = {
   soegning_id: string;
   bruger_id: string;

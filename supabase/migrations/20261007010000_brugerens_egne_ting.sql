@@ -1,7 +1,7 @@
 -- Fase 4 – brugerens egne ting (ROADMAP-BESLUTNINGER afsnit 5 og 9):
 --   1. Statistik under profilen (kun brugeren selv): min_statistik(),
 --      mine_bud_auktioner().
---   2. Foelg saelgere: seller_follows (fra appen) strammes op +
+--   2. Foelg saelgere (seller_follows fra appen; stramning i 20261007012000) +
 --      foelg_saelger(), stop_foelg_saelger(), antal_foelgere(),
 --      mine_fulgte_saelgere(). Blokerede kan ikke foelge hinanden, og en
 --      navngiven blokering fjerner foelgningen i begge retninger.
@@ -189,29 +189,18 @@ grant execute on function public.mine_bud_auktioner(integer) to authenticated, s
 
 -- ============================================================ 2. Foelg saelgere
 
--- Tabellen blev lavet til appen (20260930130000) med alle rettigheder til
--- anon/authenticated. Strammes til det noedvendige: laes/opret/slet egne.
+-- Tabellen blev lavet til appen (20260930130000). Stramningen af rettigheder
+-- og policies (kun egne raekker, ingen anon/UPDATE/TRUNCATE) ligger i
+-- 20261007012000_seller_follows_stramning.sql, som holdes tilbage i
+-- produktion, indtil Expo-appen kun bruger antal_foelgere() og insert/delete.
+-- Alt i denne fil virker uden den: funktionerne nedenfor er security definer,
+-- og hjemmesiden filtrerer altid sine egne foelgninger paa follower_id.
 do $$
 begin
   if to_regclass('public.seller_follows') is null then
     raise exception 'seller_follows mangler - koer 20260930130000 foerst';
   end if;
 end $$;
-
-revoke all on public.seller_follows from public, anon, authenticated;
-grant select, insert, delete on public.seller_follows to authenticated;
-grant all on public.seller_follows to service_role;
-
-drop policy if exists seller_follows_select_all on public.seller_follows;
-drop policy if exists seller_follows_select_own on public.seller_follows;
-create policy seller_follows_select_own on public.seller_follows
-  for select to authenticated using (follower_id = auth.uid());
-drop policy if exists seller_follows_insert_own on public.seller_follows;
-create policy seller_follows_insert_own on public.seller_follows
-  for insert to authenticated with check (follower_id = auth.uid());
-drop policy if exists seller_follows_delete_own on public.seller_follows;
-create policy seller_follows_delete_own on public.seller_follows
-  for delete to authenticated using (follower_id = auth.uid());
 
 -- Tjek ved hver ny foelgning (ogsaa direkte inserts fra appen):
 -- ikke BidHamr-systembrugeren, ikke ved navngiven blokering i en af
