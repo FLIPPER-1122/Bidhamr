@@ -24,6 +24,7 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 - Sælgeren får en **fragtlabel/QR-kode via BidHamr**, og sporingen kommer automatisk (fx Shipmondo).
 - **Køberen betaler fragten** og ser prisen, før han byder.
 - **Afhentning hos sælger** er en valgmulighed. Køberen viser en kode ved afhentning, og pengene frigives med det samme. Ingen klagefrist bagefter.
+  - **Afhentningsfrist (Filip, 5. oktober 2026):** køberen har **7 dage** fra betalingen til at hente varen. Fristen vises på handelssiden for begge, og begge får en påmindelse på dag 5. Sælger kan forlænge fristen (fx efter aftale i chatten), højst til 14 dage efter betalingen. Er varen ikke hentet inden fristen, får staff besked og afgør handlen. Har staff ikke gjort noget **14 dage** efter betalingen (eller efter den forlængede frist), får køberen automatisk alle pengene tilbage, og sælger beholder varen.
   - **Grænser (Filip, 5. oktober 2026):** 5 forkerte koder låser koden i 1 time; 15 forkerte forsøg i alt låser den permanent, og staff tager over. Er varen ikke hentet, får staff besked efter 7 og igen efter 14 dage.
 
 ## 3. Gebyrer
