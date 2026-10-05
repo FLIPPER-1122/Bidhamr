@@ -184,7 +184,7 @@ function Indtjening({ t }: { t: PengeTal }) {
       <Linje label="Indtjening i alt" vaerdi={kr(i.i_alt)} fremhaev />
       {i.heraf_ikke_frigivet > 0 && (
         <p className="pb-1 text-xs text-neutral-500">
-          Heraf {kr(i.heraf_ikke_frigivet)} på handler, der ikke er frigivet endnu – de kan stadig
+          Heraf {kr(i.heraf_ikke_frigivet)} på handler, hvor pengene ikke er overført til sælger endnu – de kan stadig
           blive refunderet.
         </p>
       )}

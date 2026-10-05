@@ -34,6 +34,9 @@ export function renFejltekst(err: unknown, maks = 1000): string {
       // Nøgler og tokens (Stripe, Resend, webhook, JWT, Bearer, Expo).
       .replace(/\b(sk|rk|pk)_(live|test)_[A-Za-z0-9]+/g, "[nøgle]")
       .replace(/\bwhsec_[A-Za-z0-9]+/g, "[nøgle]")
+      .replace(/\bsb_(secret|publishable)_[A-Za-z0-9_-]+/g, "[nøgle]")
+      // URL'er: fjern query-streng og hash (kan indeholde tokens).
+      .replace(/(https?:\/\/[^\s?#]+)[?#]\S*/g, "$1")
       .replace(/\bre_[A-Za-z0-9_]{16,}/g, "[nøgle]")
       .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[token]")
       .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [token]")
