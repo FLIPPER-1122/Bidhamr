@@ -6,6 +6,7 @@ import { handelChatSti } from "@/lib/moderationLog";
 import {
   markerBetalingLøstForm,
   givAdvarselBetalingForm,
+  proevTilbagebetalingIgenForm,
   type BetalingTilHandling,
 } from "@/app/actions/adminBetalinger";
 import { prøvOverfoerselIgenForm, handelFrigiv, handelRefunder } from "@/app/actions/adminActions";
@@ -56,14 +57,14 @@ export function problemTekst(b: BetalingTilHandling): { titel: string; tekst: st
         return {
           titel: "Tilbagebetaling i gang",
           tekst:
-            "Køberen skal have pengene tilbage, og tilbagebetalingen er sendt til Stripe. Tjek i Stripe, og markér som løst, når køberen har fået pengene.",
+            "Køberen skal have pengene tilbage, og tilbagebetalingen er sendt til Stripe. Markeringen forsvinder af sig selv, når Stripe bekræfter den. Står den stille, så prøv igen eller tjek i Stripe.",
         };
       }
       return {
         titel: "Tilbagebetalingen til køberen fejlede",
         tekst: b.refusion?.proeverSelv
-          ? "Køberens penge kunne ikke sendes tilbage. Systemet prøver selv igen. Lykkes det ikke: tjek årsagen i Stripe, kontakt køberen, og markér som løst, når køberen har fået pengene på anden vis."
-          : "Køberens penge kunne ikke sendes tilbage, og systemet prøver ikke selv igen. Tjek årsagen i Stripe, kontakt køberen, og markér som løst, når køberen har fået pengene på anden vis.",
+          ? "Køberens penge kunne ikke sendes tilbage. Systemet prøver selv igen, og du kan prøve igen med det samme. Lykkes det ikke: tjek årsagen i Stripe, kontakt køberen, og markér som løst, når køberen har fået pengene på anden vis."
+          : "Køberens penge kunne ikke sendes tilbage, og systemet prøver ikke selv igen. Prøv tilbagebetalingen igen. Lykkes det ikke: tjek årsagen i Stripe, kontakt køberen, og markér som løst, når køberen har fået pengene på anden vis.",
       };
     case "indsigelse":
       return {
@@ -143,6 +144,23 @@ export default function BetalingHandlinger({
             />
           }
           forklaring="Sender pengene til sælgerens konto igen med det samme."
+        />
+      )}
+
+      {b.kanProeveRefusion && p === "refusion" && (
+        <Handling
+          knap={
+            <ConfirmDialog
+              triggerLabel="Prøv tilbagebetaling igen"
+              triggerClassName={KNAP_ORANGE}
+              title="Prøv tilbagebetalingen til køberen igen?"
+              description="Stripe spørges først, om pengene allerede er sendt tilbage – så bliver køberen aldrig betalt to gange. Ellers får tilbagebetalingen et nyt forsøg med det samme. Markeringen forsvinder af sig selv, når Stripe bekræfter tilbagebetalingen."
+              confirmLabel="Prøv igen"
+              action={proevTilbagebetalingIgenForm}
+              hiddenFields={{ betalingId: b.id }}
+            />
+          }
+          forklaring="Prøver at sende pengene tilbage til køberen igen via Stripe."
         />
       )}
 

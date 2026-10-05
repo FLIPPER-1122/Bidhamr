@@ -7,6 +7,7 @@ import { after } from "next/server";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
 import {
   indsigelseBlokerer,
+  proevRefusionIgen,
   sendUdbetalingskontoNulstillet,
 } from "@/lib/betaling/stripeBetaling";
 
@@ -95,6 +96,10 @@ export type BetalingTilHandling = {
   // Admin/chef kan prøve overførslen igen (frigivet, ikke overført, ikke
   // refunderet, ingen blokerende indsigelse, handel ikke annulleret, ingen sag).
   kanProeveOverfoersel: boolean;
+  // Admin/chef kan prøve tilbagebetalingen igen (refusion anmodet, ikke
+  // gennemført, intet overført til sælger, ingen indsigelse, BidHamrs egen
+  // refusion). Serveren og databasen tjekker det igen.
+  kanProeveRefusion: boolean;
   problem: BetalingProblem;
   // Admin/chef kan frigive til sælger eller refundere køberen (samme regel som
   // på /admin/handler: rolle admin+ og handlen er aktiv). Kun sat for
@@ -192,10 +197,11 @@ export type BetalingerResultat = {
 };
 
 const BASIS_KOLONNER =
-  "id, trade_id, auction_id, buyer_id, seller_id, status, sidste_fejl, opdateret, frigivet_kl, stripe_transfer_id, refusion_anmodet_kl, refunderet_kl, refusion_forsoeg, refusion_aarsag, stripe_payment_intent_id";
+  "id, trade_id, auction_id, buyer_id, seller_id, status, sidste_fejl, opdateret, frigivet_kl, stripe_transfer_id, refusion_anmodet_kl, refunderet_kl, refusion_forsoeg, refusion_aarsag, stripe_payment_intent_id, overfoersel_paabegyndt_kl, refusion_graense";
 
-// Samme grænse som cron bruger (refunderSagerVentende og afsendelsesfristens
-// proevIgen: refusion_forsoeg < 5).
+// Standardgrænsen, som cron bruger (refunderSagerVentende og
+// afsendelsesfristens proevIgen: refusion_forsoeg < refusion_graense, standard
+// 5). "Prøv tilbagebetaling igen" hæver grænsen pr. betaling.
 const MAKS_REFUSION_FORSOEG = 5;
 const CRON_REFUSION_AARSAGER = ["sag", "afsendelsesfrist"];
 
@@ -457,6 +463,16 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
         dato: r.opdateret as string,
         indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
         kanProeveOverfoersel: kanLoese && proeve,
+        kanProeveRefusion:
+          kanLoese &&
+          problem === "refusion" &&
+          r.status === "betalt" &&
+          !!r.refusion_anmodet_kl &&
+          !r.refunderet_kl &&
+          !r.stripe_transfer_id &&
+          !r.overfoersel_paabegyndt_kl &&
+          !!r.stripe_payment_intent_id &&
+          r.refusion_aarsag !== "delvis_refusion_stripe",
         problem,
         kanFlyttePenge:
           kanLoese &&
@@ -467,6 +483,7 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
           problem === "refusion"
             ? (() => {
                 const forsoeg = Number(r.refusion_forsoeg ?? 0);
+                const graense = Number(r.refusion_graense ?? MAKS_REFUSION_FORSOEG);
                 const gennemfoert = r.status === "refunderet" && !!r.refunderet_kl;
                 const fejlet =
                   !gennemfoert &&
@@ -474,13 +491,13 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
                 return {
                   tilstand: gennemfoert ? "gennemfoert" : fejlet ? "fejlet" : "afventer",
                   forsoeg,
-                  maksForsoeg: MAKS_REFUSION_FORSOEG,
+                  maksForsoeg: graense,
                   proeverSelv:
                     !gennemfoert &&
                     r.status === "betalt" &&
                     !r.stripe_transfer_id &&
                     CRON_REFUSION_AARSAGER.includes((r.refusion_aarsag as string | null) ?? "") &&
-                    forsoeg < MAKS_REFUSION_FORSOEG,
+                    forsoeg < graense,
                 } as const;
               })()
             : null,
@@ -623,6 +640,106 @@ export async function markerBetalingLøstForm(formData: FormData) {
     ((formData.get("betalingId") as string) ?? "").trim(),
     ((formData.get("note") as string) ?? "").trim(),
   );
+}
+
+// "Prøv tilbagebetaling igen" (admin/chef). Ingen beløb i teksterne.
+const REFUSION_AFVIST: Record<string, string> = {
+  ingen_adgang: "Du har ikke adgang til at prøve tilbagebetalinger igen.",
+  inhabil: INHABIL,
+  ikke_fundet: "Betalingen blev ikke fundet.",
+  allerede_refunderet: "Køberen har allerede fået pengene tilbage.",
+  ikke_anmodet: "Der er ingen tilbagebetaling at prøve igen på denne betaling.",
+  ikke_bidhamr:
+    "Tilbagebetalingen er lavet direkte i Stripe og kan ikke prøves igen herfra. Tjek betalingen i Stripe.",
+  overfoert: "Pengene er overført (eller ved at blive overført) til sælger, så der kan ikke tilbagebetales herfra.",
+  indsigelse:
+    "Der er en åben indsigelse hos køberens bank. Tilbagebetalingen afgøres af indsigelsen.",
+  i_gang: "Tilbagebetalingen er i gang lige nu. Vent et par minutter, og opdatér siden.",
+  aendret: "Betalingen er ændret i mellemtiden. Opdatér siden, og prøv igen.",
+};
+
+const REFUSION_UDFALD: Record<string, { gennemfoert: boolean; besked: string }> = {
+  refunderet: { gennemfoert: true, besked: "Køberen har fået pengene tilbage." },
+  allerede_refunderet: { gennemfoert: true, besked: "Køberen har allerede fået pengene tilbage." },
+  refusion_afventer: {
+    gennemfoert: true,
+    besked:
+      "Tilbagebetalingen er sendt til Stripe og afventer bekræftelse. Markeringen forsvinder af sig selv, når Stripe bekræfter den.",
+  },
+  refusion_i_gang: {
+    gennemfoert: false,
+    besked: "Tilbagebetalingen er i gang lige nu. Vent et par minutter, og opdatér siden.",
+  },
+  refusion_failed: {
+    gennemfoert: false,
+    besked: "Stripe afviste tilbagebetalingen igen. Tjek årsagen i Stripe, og kontakt køberen.",
+  },
+  refusion_canceled: {
+    gennemfoert: false,
+    besked: "Tilbagebetalingen blev annulleret hos Stripe. Tjek årsagen i Stripe.",
+  },
+  refusion_konflikt: {
+    gennemfoert: false,
+    besked:
+      "Der findes allerede en anden tilbagebetaling på betalingen hos Stripe. Der er ikke sendt flere penge - tjek betalingen i Stripe.",
+  },
+};
+
+// Admin/chef: giv en fejlet tilbagebetaling til køberen et nyt forsøg og prøv
+// med det samme. Rolle, inhabilitet og tilstand tjekkes igen atomisk i
+// betaling_refusion_proev_igen (som også logger 'refusion_proevet_igen').
+// Dobbelt refusion forhindres i refunderBetaling (lås + opslag hos Stripe).
+export async function proevTilbagebetalingIgen(betalingId: string) {
+  return koer("proevTilbagebetalingIgen", async () => {
+    const { admin, userId } = await assertRole("admin");
+    const id = (betalingId ?? "").trim();
+    if (!id) throw new BrugerFejl(REFUSION_AFVIST.ikke_fundet);
+
+    const { data: nu, error: nuErr } = await admin
+      .from("betalinger")
+      .select("buyer_id, seller_id, trade_id, indsigelse_kl, indsigelse_status")
+      .eq("id", id)
+      .maybeSingle<{
+        buyer_id: string | null;
+        seller_id: string | null;
+        trade_id: string;
+        indsigelse_kl: string | null;
+        indsigelse_status: string | null;
+      }>();
+    if (nuErr) throw new Error(nuErr.message);
+    if (!nu) throw new BrugerFejl(REFUSION_AFVIST.ikke_fundet);
+    if (userId === nu.buyer_id || userId === nu.seller_id) throw new BrugerFejl(INHABIL);
+    if (indsigelseBlokerer(nu)) throw new BrugerFejl(REFUSION_AFVIST.indsigelse);
+
+    let r: string;
+    try {
+      r = await proevRefusionIgen(id, userId);
+    } catch (err) {
+      console.error("Admin: tilbagebetaling fejlede igen:", id, err);
+      revalidatePath("/admin", "layout");
+      throw new BrugerFejl(
+        "Tilbagebetalingen fejlede igen hos Stripe. Betalingen forbliver markeret - se fejlen på betalingen.",
+      );
+    }
+    revalidatePath("/admin", "layout");
+
+    if (!r.startsWith("ok:") && REFUSION_AFVIST[r]) throw new BrugerFejl(REFUSION_AFVIST[r]);
+    const udfald = REFUSION_UDFALD[r.replace(/^ok:/, "")];
+    if (!udfald) {
+      console.error("Admin: uventet udfald af tilbagebetaling:", id, r);
+      throw new BrugerFejl("Tilbagebetalingen blev ikke gennemført. Betalingen forbliver markeret.");
+    }
+    return { ok: true as const, gennemfoert: udfald.gennemfoert, besked: udfald.besked };
+  });
+}
+
+// Til ConfirmDialog. formData: betalingId. Er tilbagebetalingen ikke sendt
+// afsted, returneres udfaldet som { fejl }, så dialogen bliver stående.
+export async function proevTilbagebetalingIgenForm(formData: FormData) {
+  const res = await proevTilbagebetalingIgen(((formData.get("betalingId") as string) ?? "").trim());
+  if ("fejl" in res) return res;
+  if (!res.gennemfoert) return { fejl: res.besked };
+  return { ok: true as const };
 }
 
 const ADVARSEL_FEJL: Record<string, string> = {
