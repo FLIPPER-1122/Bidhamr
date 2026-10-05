@@ -27,11 +27,11 @@ export default async function RedigerAuktionPage({
 
   return (
     <main className="flex flex-1 justify-center bg-white px-4 py-10">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-2xl">
         <Link href={`/auktion/${id}`} className="text-sm text-neutral-500 hover:text-groen">
           ← Tilbage til auktionen
         </Link>
-        <h1 className="mt-3 text-2xl font-semibold text-neutral-900">Redigér auktion</h1>
+        <h1 className="mt-3 font-serif text-[26px] font-semibold text-tekst sm:text-[32px]">Redigér auktion</h1>
 
         <div className="mt-6">
           {erSlut ? (
@@ -53,6 +53,7 @@ export default async function RedigerAuktionPage({
                 kategori: auktion.kategori ?? "",
                 startpris: Number(auktion.startpris),
                 forsendelseMulig: Boolean(auktion.forsendelse_mulig),
+                stand: (auktion.stand as string | null | undefined) ?? null,
               }}
             />
           )}

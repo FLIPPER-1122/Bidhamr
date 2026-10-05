@@ -707,7 +707,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
 
     // Varen, som den stod i auktionen: stand, beskrivelse og sælgerens svar
     // på spørgsmål - bruges især ved "ikke som beskrevet". Fejler opslaget
-    // (fx før 20261006020000 er kørt), vises bare ingenting.
+    // (fx før 20261006040000 er kørt), vises bare ingenting.
     const [{ data: auktionInfo }, { data: qaRaekker }] = liste.auktionId
       ? await Promise.all([
           admin

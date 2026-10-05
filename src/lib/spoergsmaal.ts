@@ -1,6 +1,6 @@
 // "Spørg sælger" – grænser og typer. Samme grænser i databasen
 // (stil_spoergsmaal / besvar_spoergsmaal i
-// supabase/migrations/20261006020000_auktionsfunktioner.sql).
+// supabase/migrations/20261006040000_auktionsfunktioner.sql).
 export const MAKS_SPOERGSMAAL = 500;
 export const MIN_SPOERGSMAAL = 3;
 export const MAKS_SVAR = 1000;

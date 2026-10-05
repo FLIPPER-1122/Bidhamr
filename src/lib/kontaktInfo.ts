@@ -1,35 +1,51 @@
-// Links, e-mails, telefonnumre og "skriv til mig på ..." i spørgsmål og svar
-// blokeres, så handlen ikke flyttes uden om BidHamr (og køberen mister sin
-// beskyttelse).
+// Links, e-mails, telefonnumre, MobilePay-numre og beskedtjenester i
+// spørgsmål og svar ("Spørg sælger") blokeres, så handlen ikke flyttes uden
+// om BidHamr (og køberen mister sin beskyttelse).
 //
-// HOLD SYNKRON med public.indeholder_kontaktinfo() i
-// supabase/migrations/20261006020000_auktionsfunktioner.sql. Databasen er
-// autoriteten (stil_spoergsmaal / besvar_spoergsmaal giver kode
-// 'kontaktinfo'); denne kopi giver kun en advarsel, mens man skriver.
-//
-// Samme fælles regex-delmængde som forbudteVarer.ts. Teksten matches med små
-// bogstaver.
-export const KONTAKT_MOENSTRE: readonly string[] = [
-  // Links
-  String.raw`https?:`,
-  String.raw`www\.`,
-  String.raw`[a-z0-9-]+\.(dk|com|net|org|se|no|de|eu|io|info|me|app|shop|nu|biz|co|ly)([^a-z0-9]|$)`,
-  String.raw`(punktum|dot) (dk|com|net|org)`,
-  // E-mail
-  String.raw`[a-z0-9._%+-]+@[a-z0-9-]+`,
-  String.raw`snabel[ -]?a`,
-  // Telefonnumre: mindst 8 cifre, evt. adskilt af mellemrum, punktum eller bindestreg
-  String.raw`[0-9]([ .()-]*[0-9]){7,}`,
-  String.raw`\+ ?45`,
-  // Andre beskedtjenester
-  String.raw`(whatsapp|telegram|snapchat|messenger|wechat|viber)`,
-];
+// Databasen er autoriteten: public.indeholder_kontaktinfo i
+// supabase/migrations/20261006040000_auktionsfunktioner.sql, som bygger på
+// chattens spamfilter public.besked_spam_grund (20261006030000). Denne kopi
+// efterligner de samme regler, så brugeren får en advarsel, mens hun skriver.
+// Ændres reglerne i SQL, så ret dem også her.
 
-const KOMPILEREDE = KONTAKT_MOENSTRE.map((m) => new RegExp(m, "u"));
+function normaliser(tekst: string): string {
+  return tekst
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[­​-‏⁠-⁤﻿]/g, "");
+}
 
 export function indeholderKontaktinfo(tekst: string | null | undefined): boolean {
-  const t = (tekst ?? "").normalize("NFC").toLowerCase();
-  return KOMPILEREDE.some((re) => re.test(t));
+  const v = normaliser(tekst ?? "");
+  if (!v) return false;
+
+  // E-mail, også "navn (at) mail punktum dk" og "snabel-a".
+  if (/[a-z0-9._%+-]+\s*(@|\(at\)|\[at\]|\bsnabel-?a\b)\s*[a-z0-9-]+(\.|\s+(punktum|dot)\s+)[a-z]{2,}/.test(v)) {
+    return true;
+  }
+
+  // Links (bidhamr.dk er tilladt).
+  const w = v.replace(/(https?:\/\/)?(www\.)?bidhamr\.dk(\/\S*)?/g, " ");
+  if (
+    /(https?:\/\/|www\.)/.test(w) ||
+    /\b[a-z0-9-]{2,}\.(dk|com|net|org|info|biz|shop|online|site|xyz|link|ly|app)\b/.test(w) ||
+    /\b[a-z0-9-]{2,}\s+(punktum|dot)\s+(dk|com|net|org)\b/.test(w)
+  ) {
+    return true;
+  }
+
+  // Tal: mellemrum mellem cifre fjernes ("12 34 56 78" -> "12345678").
+  const d = v.replace(/([0-9])\s+(?=[0-9+])/g, "$1").replace(/(\+)\s+(?=[0-9])/g, "$1");
+  if (/(mobile\s*pay|\bmp\b)[^0-9]{0,25}[0-9]{4,}/.test(d)) return true;
+  if (
+    /(^|[^0-9])(\+45|0045)?[2-9][0-9]{7}($|[^0-9])/.test(d) ||
+    /(^|[^0-9])[2-9][0-9][-.][0-9]{2}[-.][0-9]{2}[-.][0-9]{2}($|[^0-9])/.test(v)
+  ) {
+    return true;
+  }
+
+  // Andre beskedtjenester.
+  return /(whats ?app|telegram|snapchat|messenger|wechat|viber)/.test(v);
 }
 
 export const KONTAKTINFO_FEJL =

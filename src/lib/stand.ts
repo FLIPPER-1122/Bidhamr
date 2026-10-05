@@ -2,7 +2,7 @@
 // lettere at afgøre (staff ser standen i sagen).
 //
 // HOLD SYNKRON med auctions_stand_check og public.stand_normaliser() i
-// supabase/migrations/20261006020000_auktionsfunktioner.sql. Databasen gemmer
+// supabase/migrations/20261006040000_auktionsfunktioner.sql. Databasen gemmer
 // koden (fx 'som_ny'). Gamle værdier fra appen ('Ny', 'Som ny', 'Brugt',
 // 'Defekt') oversættes automatisk til koder af databasen.
 export const STAND_VALG = [

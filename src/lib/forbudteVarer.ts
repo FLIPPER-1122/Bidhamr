@@ -1,7 +1,7 @@
 // Forbudte varer på BidHamr. Bruges af siden /forbudte-varer, opret- og
 // redigeringsformularen (advarsel i browseren) og som reference for appen.
 //
-// HOLD SYNKRON med databasen (supabase/migrations/20261006020000_auktionsfunktioner.sql):
+// HOLD SYNKRON med databasen (supabase/migrations/20261006040000_auktionsfunktioner.sql):
 //   FORBUDTE_KATEGORIER  <-> public.forbudte_varer()
 //   FORBUDTE_ORD         <-> public.forbudte_ord()
 //   normaliserTekst      <-> public.forbudt_normaliser()

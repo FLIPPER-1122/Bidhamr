@@ -10,7 +10,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/adminAuth";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
-import { KONTAKTINFO_FEJL, indeholderKontaktinfo } from "@/lib/kontaktInfo";
+import { KONTAKTINFO_FEJL } from "@/lib/kontaktInfo";
 import { MAKS_SPOERGSMAAL, MAKS_SVAR, MIN_SPOERGSMAAL } from "@/lib/spoergsmaal";
 import { notificerNytSpoergsmaal, notificerSvar } from "@/lib/notifikationer/spoergsmaal";
 
@@ -26,6 +26,7 @@ const FEJL: Record<string, string> = {
   egen_auktion: "Du kan ikke stille spørgsmål til din egen auktion.",
   ikke_aktiv: "Auktionen er slut, så der kan ikke stilles eller besvares spørgsmål længere.",
   slaaet_fra: "Sælgeren modtager ikke spørgsmål – læs beskrivelsen grundigt.",
+  blokeret: "Du kan ikke stille spørgsmål til denne sælger.",
   ugyldig_tekst: `Spørgsmålet skal være mellem ${MIN_SPOERGSMAAL} og ${MAKS_SPOERGSMAAL} tegn.`,
   kontaktinfo: KONTAKTINFO_FEJL,
   for_mange: "Du har stillet mange spørgsmål på kort tid. Vent lidt, og prøv igen.",
@@ -47,7 +48,7 @@ export async function stilSpoergsmaal(
     if (!tjekUuid(auktionId)) return { fejl: FEJL.ikke_fundet };
     const t = typeof tekst === "string" ? tekst.trim() : "";
     if (t.length < MIN_SPOERGSMAAL || t.length > MAKS_SPOERGSMAAL) return { fejl: FEJL.ugyldig_tekst };
-    if (indeholderKontaktinfo(t)) return { fejl: KONTAKTINFO_FEJL };
+    // Kontaktoplysninger afgøres af databasen (indeholder_kontaktinfo).
 
     const supabase = await createClient();
     const {
@@ -93,7 +94,6 @@ export async function besvarSpoergsmaal(
     if (t.length < 1 || t.length > MAKS_SVAR) {
       return { fejl: `Svaret skal være mellem 1 og ${MAKS_SVAR} tegn.` };
     }
-    if (indeholderKontaktinfo(t)) return { fejl: KONTAKTINFO_FEJL };
 
     const supabase = await createClient();
     const {

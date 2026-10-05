@@ -92,10 +92,6 @@ export default function SpoergSaelger({
       setFejl(`Skriv mindst ${MIN_SPOERGSMAAL} tegn.`);
       return;
     }
-    if (kontaktAdvarsel) {
-      setFejl(KONTAKTINFO_FEJL);
-      return;
-    }
     startSend(async () => {
       const svar = await stilSpoergsmaal(auktionId, t);
       if ("fejl" in svar) {
@@ -200,7 +196,7 @@ export default function SpoergSaelger({
           )}
           <button
             type="submit"
-            disabled={sender || tekst.trim().length < MIN_SPOERGSMAAL || kontaktAdvarsel}
+            disabled={sender || tekst.trim().length < MIN_SPOERGSMAAL}
             aria-busy={sender}
             className={`${primaer} mt-3 w-full sm:w-auto`}
           >
@@ -259,10 +255,6 @@ function SpoergsmaalPunkt({
     setFejl(null);
     if (!svar.trim()) {
       setFejl("Skriv et svar.");
-      return;
-    }
-    if (kontaktAdvarsel) {
-      setFejl(KONTAKTINFO_FEJL);
       return;
     }
     startSend(async () => {
@@ -342,7 +334,7 @@ function SpoergsmaalPunkt({
           {fejl && <Fejltekst>{fejl}</Fejltekst>}
           <button
             type="submit"
-            disabled={sender || !svar.trim() || kontaktAdvarsel}
+            disabled={sender || !svar.trim()}
             aria-busy={sender}
             className={`${sekundaer} mt-2 w-full sm:w-auto`}
           >

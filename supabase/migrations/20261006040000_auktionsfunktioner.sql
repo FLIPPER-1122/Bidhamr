@@ -31,7 +31,8 @@
 --        skjul_spoergsmaal(p_medarbejder, ...)           service_role (staff)
 --      auctions.spoergsmaal_aktiv (default true). Links, e-mails,
 --      telefonnumre og beskedtjenester afvises (public.indeholder_kontaktinfo,
---      HOLD SYNKRON med src/lib/kontaktInfo.ts). Rate-limit i databasen, saa
+--      bygger paa chattens spamfilter besked_spam_grund fra 20261006030000).
+--      Blokerede brugere (er_blokeret_mellem) kan ikke spoerge. Rate-limit i databasen, saa
 --      det ogsaa gaelder appen. Offentlig visning kun med fornavn + initial,
 --      aldrig bruger-id. Ny notifikationstype 'spoergsmaal' (valgfri).
 --
@@ -49,7 +50,9 @@
 --     (alle 37 vaerdier fra 20261006011000_fragt_rettelser.sql staar ogsaa
 --      eksplicit herunder)
 -- admin_forside_tal roeres ikke.
--- Idempotent. Koeres EFTER 20261006011000_fragt_rettelser.sql.
+-- Idempotent. Koeres EFTER 20261006030000_tryghed_chat_kontakt.sql
+-- (bruger besked_spam_grund, besked_normaliser og er_blokeret_mellem).
+-- handle_new_bid roeres ikke.
 
 -- ============================================================ 1. Kolonner
 
@@ -581,31 +584,25 @@ alter table public.auction_questions enable row level security;
 revoke all on public.auction_questions from public, anon, authenticated;
 grant select on public.auction_questions to service_role;
 
--- Links, e-mails, telefonnumre og beskedtjenester. HOLD SYNKRON med
--- KONTAKT_MOENSTRE i src/lib/kontaktInfo.ts.
+-- Links, e-mails, telefonnumre og MobilePay-numre: samme regler som
+-- spamfilteret i chatten (public.besked_spam_grund, 20261006030000) +
+-- andre beskedtjenester (WhatsApp m.fl.), som i et offentligt spoergsmaal
+-- kun bruges til at flytte handlen uden om BidHamr. (besked_mistaenkelig
+-- bruges ikke: den rammer ogsaa "kan jeg betale med MobilePay?".)
+-- TS-kopien i src/lib/kontaktInfo.ts er kun en advarsel, mens man skriver.
 create or replace function public.indeholder_kontaktinfo(p_tekst text)
 returns boolean
 language sql
 immutable
 set search_path = public
 as $fn$
-  select exists (
-    select 1
-      from unnest(array[
-        'https?:',
-        'www\.',
-        '[a-z0-9-]+\.(dk|com|net|org|se|no|de|eu|io|info|me|app|shop|nu|biz|co|ly)([^a-z0-9]|$)',
-        '(punktum|dot) (dk|com|net|org)',
-        '[a-z0-9._%+-]+@[a-z0-9-]+',
-        'snabel[ -]?a',
-        '[0-9]([ .()-]*[0-9]){7,}',
-        '\+ ?45',
-        '(whatsapp|telegram|snapchat|messenger|wechat|viber)'
-      ]) as m(re)
-     where lower(normalize(coalesce(p_tekst, ''), NFC)) ~ m.re);
+  select public.besked_spam_grund(p_tekst) is not null
+      or public.besked_normaliser(p_tekst)
+         ~ '(whats ?app|telegram|snapchat|messenger|wechat|viber)';
 $fn$;
 
-grant execute on function public.indeholder_kontaktinfo(text) to anon, authenticated, service_role;
+revoke all on function public.indeholder_kontaktinfo(text) from public, anon;
+grant execute on function public.indeholder_kontaktinfo(text) to authenticated, service_role;
 
 -- Rydder tekst: fjerner usynlige tegn og retningsmaerker (saa de ikke kan
 -- skjule en e-mail), og samler alle mellemrum/linjeskift til ét mellemrum.
@@ -643,7 +640,7 @@ grant execute on function public.kort_visningsnavn(text) to anon, authenticated,
 
 -- Koeberen stiller et spoergsmaal. Returnerer {"kode": "ok", "id", "dublet"?}
 -- eller en fejlkode: ikke_logget_ind, suspenderet, konto_lukket, ikke_fundet,
--- egen_auktion, ikke_aktiv, slaaet_fra, ugyldig_tekst, kontaktinfo,
+-- egen_auktion, ikke_aktiv, slaaet_fra, blokeret, ugyldig_tekst, kontaktinfo,
 -- for_mange, for_mange_ubesvarede.
 -- Rate-limit: 5 pr. 10 minutter og 30 pr. doegn pr. bruger, og hoejst 3
 -- ubesvarede pr. bruger pr. auktion. Samme tekst igen inden for et doegn
@@ -689,6 +686,10 @@ begin
   end if;
   if not a.spoergsmaal_aktiv then
     return jsonb_build_object('kode', 'slaaet_fra');
+  end if;
+  -- Blokering (20261006030000) i en af retningerne.
+  if public.er_blokeret_mellem(a.bruger_id, v_uid) then
+    return jsonb_build_object('kode', 'blokeret');
   end if;
 
   if char_length(v_tekst) < 3 or char_length(v_tekst) > 500 then

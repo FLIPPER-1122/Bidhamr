@@ -1,7 +1,7 @@
 // Notifikationstyper - ét sted for hele hjemmesiden (og som reference for appen).
 // Påkrævet-listen er spejlet i SQL (notifikation_paakraevet / notifikation_kendt_type
 // i supabase/migrations/20261002060000_notifikationer.sql; 'spoergsmaal' tilføjet i
-// 20261006020000_auktionsfunktioner.sql). Ændres listen her,
+// 20261006040000_auktionsfunktioner.sql). Ændres listen her,
 // skal SQL'en også rettes i en ny migration.
 //
 // Ingen server-only-import: frontend må gerne bruge navne og beskrivelser.
