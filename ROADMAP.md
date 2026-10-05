@@ -149,7 +149,6 @@ Formål: brugerne har overblik og styr på deres beskeder.
 - [ ] Bekræftelse af e-mail ved oprettelse
 - [ ] GDPR: brugeren kan slette sin konto og downloade sine data
 - [ ] Kontosikkerhed: mail ved login fra ny enhed, mulighed for to-trins-login, krav til stærk adgangskode
-- [ ] **Feriemodus**: sælger kan sætte sin profil på pause, så nye auktioner ikke kan oprettes, og købere kan se, at sælger er væk
 - [ ] Sælger kan skrive ét offentligt svar på en bedømmelse. BidHamr kan fjerne bedømmelser, der bryder reglerne (fx grove ord)
 
 ## Fase 5 – Appen
@@ -199,6 +198,7 @@ Formål: alt det juridiske og praktiske er på plads.
 
 ## Senere – efter lancering
 Fundet i gennemgang af Tradera, Vinted og Etsy. Gode, men ikke nødvendige for at lancere.
+- [ ] **Feriemodus**: sælger kan sætte sin profil på pause, så nye auktioner ikke kan oprettes, og købere kan se, at sælger er væk *(flyttet hertil af Filip 6. okt. 2026 – rart at have, ikke nødvendigt til lancering)*
 - [ ] **Autobud (maksimalbud)**: køber angiver sit maksimum, og BidHamr byder automatisk op til det (som Tradera). Maksimum kan sænkes, men ikke under nuværende bud *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
 - [ ] Efter første bud kan sælger ikke redigere, kun tilføje et synligt **tillæg** til beskrivelsen *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
 - [ ] Sælger kan give køber en **delvis refusion/rabat** i handlen, hvis de bliver enige (fx ved en lille skade) *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
