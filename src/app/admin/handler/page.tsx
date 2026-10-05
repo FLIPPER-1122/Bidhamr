@@ -312,7 +312,7 @@ export default async function AdminSager({
                   <div className="min-w-0">
                     <Link
                       href={handelSti}
-                      className="font-medium text-neutral-800 hover:text-brand hover:underline"
+                      className="font-medium text-neutral-800 hover:text-groen hover:underline"
                     >
                       {h ? (titelMap.get(h.auction_id) ?? "(slettet auktion)") : "Handel"}
                     </Link>
