@@ -35,6 +35,7 @@ import {
   indsigelseBlokerer,
   refunderBetaling,
 } from "@/lib/betaling/stripeBetaling";
+import { REFUSION_I_GANG, REFUSION_KONFLIKT } from "@/lib/betaling/refusionTekster";
 import { aabnChat } from "@/app/actions/staffChat";
 import {
   notificerAnkeAfgjort,
@@ -897,12 +898,22 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
     let pengeStatus: AnkePengeStatus = "ingen";
     if ((svar.handling === "refunder" || svar.handling === "frigiv") && svar.afvikling?.kode === "ok") {
       const r = await udfoerSagAfvikling(svar.afvikling, { notificer: false });
-      pengeStatus = r === "refusion_fejlede" || r === "overfoersel_fejlede" ? "senere" : "nu";
+      // Anken er afgjort (endeligt) uanset Stripe-delen, så der vises ikke en
+      // fejl - men heller ikke "refunderes nu", når ingen ny tilbagebetaling
+      // er sendt afsted (konflikt/i gang).
+      pengeStatus =
+        r === "refusion_fejlede" || r === "overfoersel_fejlede" || r === "refusion_konflikt"
+          ? "senere"
+          : "nu";
       pengeBesked =
         svar.handling === "refunder"
           ? r === "refusion_fejlede"
             ? "Refusionen fejlede hos Stripe. Den prøves igen automatisk, og betalingen er markeret til admin."
-            : "Køberen refunderes nu (alt undtagen BidHamr Beskyttelse)."
+            : r === "refusion_konflikt"
+              ? `Køberen er ikke refunderet herfra: ${REFUSION_KONFLIKT}`
+              : r === "refusion_i_gang"
+                ? REFUSION_I_GANG
+                : "Køberen refunderes nu (alt undtagen BidHamr Beskyttelse)."
           : r === "overfoersel_fejlede"
             ? "Overførslen til sælgeren fejlede. Den prøves igen automatisk."
             : "Pengene udbetales nu til sælgeren.";
@@ -955,16 +966,29 @@ function fejlNavn(kode: string | null | undefined): string {
 
 // Kører Stripe-delen, når en refusion er claimet med det samme (retur
 // afleveret efter ankefristen). Kaster aldrig - pengene er claimet i
-// databasen, og cron prøver igen.
-async function refunderNu(betalingId: string): Promise<string> {
+// databasen, og cron prøver igen. stop er sat, når der IKKE er sendt en ny
+// tilbagebetaling afsted (en anden findes allerede hos Stripe, eller en er i
+// gang lige nu): kalderen viser så stop som fejl i stedet for en succesbesked.
+async function refunderNu(
+  betalingId: string,
+): Promise<{ besked: string; stop?: "refusion_konflikt" | "refusion_i_gang" }> {
   try {
     const r = await refunderBetaling(betalingId);
-    return r === "refunderet" || r === "allerede_refunderet"
-      ? "Køberen er refunderet (alt undtagen BidHamr Beskyttelse)."
-      : "Refusionen er sendt til Stripe og afventer bekræftelse.";
+    if (r === "refusion_konflikt" || r === "refusion_i_gang") {
+      return { besked: r === "refusion_konflikt" ? REFUSION_KONFLIKT : REFUSION_I_GANG, stop: r };
+    }
+    return {
+      besked:
+        r === "refunderet" || r === "allerede_refunderet"
+          ? "Køberen er refunderet (alt undtagen BidHamr Beskyttelse)."
+          : "Refusionen er sendt til Stripe og afventer bekræftelse.",
+    };
   } catch (err) {
     console.error("Sagsrefusion fejlede (cron prøver igen):", betalingId, err);
-    return "Refusionen fejlede hos Stripe. Den prøves igen automatisk, og betalingen er markeret til admin.";
+    return {
+      besked:
+        "Refusionen fejlede hos Stripe. Den prøves igen automatisk, og betalingen er markeret til admin.",
+    };
   }
 }
 
@@ -1106,9 +1130,15 @@ export async function registrerReturAfleveret(formData: FormData): Promise<Udfal
 
     let besked: string;
     let beskedType: SagUdfaldBesked | null = null;
+    let stop: string | null = null;
     if (svar.handling === "refunder" && svar.betaling_id) {
-      besked = await refunderNu(svar.betaling_id);
-      beskedType = "refunderet";
+      const r = await refunderNu(svar.betaling_id);
+      besked = r.besked;
+      // Konflikt: en anden tilbagebetaling findes allerede hos Stripe - parterne
+      // får ingen "refunderet"-besked, før admin har tjekket den. I gang: den
+      // anden kørsel gennemfører tilbagebetalingen, så parterne får besked.
+      beskedType = r.stop === "refusion_konflikt" ? null : "refunderet";
+      if (r.stop) stop = r.besked;
     } else if (svar.handling === "refusion_blokeret") {
       besked = `Returpakken er registreret, men refusionen kan ikke gennemføres: ${fejlNavn(svar.grund)}. Betalingen er markeret til admin, og refusionen prøves igen automatisk.`;
     } else {
@@ -1126,6 +1156,9 @@ export async function registrerReturAfleveret(formData: FormData): Promise<Udfal
     }
 
     revalider(sagId, svar.trade_id);
+    // Returpakken er registreret, men ingen ny tilbagebetaling er sendt
+    // afsted: ingen succesbesked.
+    if (stop) throw new BrugerFejl(stop);
     return { ok: true as const, besked };
   });
 }

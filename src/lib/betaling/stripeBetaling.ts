@@ -724,22 +724,24 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
   try {
     return await refunderUnderLaas(b, b.stripe_payment_intent_id, laas);
   } finally {
-    if (laas !== UDEN_LAAS) await frigivRefusionsLaas(b.id, laas);
+    await frigivRefusionsLaas(b.id, laas);
   }
 }
 
-// Bruges kun, hvis migrationen 20261005090000_tilbagebetaling_igen.sql endnu
-// ikke er kørt (låsefunktionen findes ikke). Så findes "Prøv tilbagebetaling
-// igen" heller ikke, og den eneste kilde til en ny idempotency key er
-// betaling_refusion_nyt_forsoeg (som afviser samtidige ændringer).
-const UDEN_LAAS = "uden_laas";
+// Stripe-kald under refusionslåsen: højst 20 sekunder pr. forsøg og højst ét
+// automatisk genforsøg (stripe-node's standard er 80 sekunder). Alle kald
+// under låsen (højst 5 Stripe-kald) tager dermed højst ca. 4 minutter, og
+// låsen (betaling_refusion_laas) varer 15 minutter - den udløber ikke, mens
+// et kald stadig er i gang. Genforsøg sker med samme idempotency key.
+const UNDER_LAAS: Stripe.RequestOptions = { timeout: 20_000, maxNetworkRetries: 1 };
 
 function manglerFunktion(err: { code?: string; message?: string } | null): boolean {
   return !!err && (err.code === "PGRST202" || err.code === "42883");
 }
 
-// Låsens nøgle, UDEN_LAAS eller null (en anden er i gang, eller betalingen er
-// ændret, siden den blev læst).
+// Låsens nøgle eller null (en anden er i gang, eller betalingen er ændret,
+// siden den blev læst). Uden lås ingen refusion: mangler låsefunktionen,
+// kastes der.
 async function tagRefusionsLaas(b: BetalingRaekke): Promise<string | null> {
   const noegle = crypto.randomUUID();
   const { data, error } = await createAdminClient().rpc("betaling_refusion_laas", {
@@ -748,15 +750,7 @@ async function tagRefusionsLaas(b: BetalingRaekke): Promise<string | null> {
     p_forsoeg: b.refusion_forsoeg,
     p_refund: b.stripe_refund_id,
   });
-  if (error) {
-    if (manglerFunktion(error)) {
-      console.error(
-        "betaling_refusion_laas mangler - kør migrationen 20261005090000_tilbagebetaling_igen.sql",
-      );
-      return UDEN_LAAS;
-    }
-    throw new Error(`betaling_refusion_laas: ${error.message}`);
-  }
+  if (error) throw new Error(`betaling_refusion_laas: ${error.message}`);
   return data === true ? noegle : null;
 }
 
@@ -765,21 +759,32 @@ async function frigivRefusionsLaas(betalingId: string, noegle: string): Promise<
     p_betaling: betalingId,
     p_noegle: noegle,
   });
-  // Låsen udløber af sig selv efter 5 minutter.
+  // Låsen udløber af sig selv efter 15 minutter.
   if (error) console.error("betaling_refusion_frigiv:", betalingId, error.message);
 }
 
 // Markerer betalingen til admin. Aldrig beløb i teksten - den vises for staff.
+// Teksten TILFØJES til en eksisterende markering (betaling_marker_refusion),
+// så en tidligere grund (fx afhentning eller sen betaling) ikke forsvinder.
 async function markerRefusion(betalingId: string, besked: string): Promise<void> {
-  const { error } = await createAdminClient()
-    .from("betalinger")
-    .update({
-      kraever_opmaerksomhed: true,
-      sidste_fejl: besked,
-      opdateret: new Date().toISOString(),
-    })
-    .eq("id", betalingId);
+  const { error } = await createAdminClient().rpc("betaling_marker_refusion", {
+    p_betaling: betalingId,
+    p_besked: besked,
+  });
   if (error) console.error("Markering af refusion fejlede:", betalingId, error.message);
+}
+
+// En anden refusion hos Stripe (fx fra Dashboard), der ikke dækker beløbet.
+// Kaldes under låsen: betaling_refusion_konflikt markerer betalingen og sætter
+// refusion_graense = refusion_forsoeg (kun når låsen holdes), så cron ikke
+// prøver igen hver kørsel. Admin kan give et nyt forsøg. Kaster aldrig.
+async function markerRefusionskonflikt(betalingId: string, laas: string): Promise<void> {
+  const { error } = await createAdminClient().rpc("betaling_refusion_konflikt", {
+    p_betaling: betalingId,
+    p_noegle: laas,
+    p_besked: "Anden refusion fundet hos Stripe - kontrollér betalingen, før der refunderes igen",
+  });
+  if (error) console.error("betaling_refusion_konflikt:", betalingId, error.message);
 }
 
 async function refunderUnderLaas(
@@ -796,7 +801,7 @@ async function refunderUnderLaas(
   // ville Stripe bare returnere den fejlede refusion igen.
   let forsoeg = b.refusion_forsoeg;
   if (b.stripe_refund_id) {
-    const forrige = await stripe.refunds.retrieve(b.stripe_refund_id);
+    const forrige = await stripe.refunds.retrieve(b.stripe_refund_id, {}, UNDER_LAAS);
     if (forrige.status === "succeeded") {
       await registrerRefunderet(piId, forrige.id);
       return "refunderet";
@@ -804,17 +809,11 @@ async function refunderUnderLaas(
     if (forrige.status !== "failed" && forrige.status !== "canceled") {
       return "refusion_afventer"; // pending/requires_action - vent på Stripe
     }
-    const { data: n, error } =
-      laas === UDEN_LAAS
-        ? await admin.rpc("betaling_refusion_nyt_forsoeg", {
-            p_betaling: b.id,
-            p_gammel_refund: forrige.id,
-          })
-        : await admin.rpc("betaling_refusion_nyt_forsoeg", {
-            p_betaling: b.id,
-            p_gammel_refund: forrige.id,
-            p_noegle: laas,
-          });
+    const { data: n, error } = await admin.rpc("betaling_refusion_nyt_forsoeg", {
+      p_betaling: b.id,
+      p_gammel_refund: forrige.id,
+      p_noegle: laas,
+    });
     if (error) throw new Error(`betaling_refusion_nyt_forsoeg: ${error.message}`);
     if (Number(n) < 0) throw new Error("Refusionen blev ændret samtidig - prøv igen.");
     forsoeg = Number(n);
@@ -832,7 +831,7 @@ async function refunderUnderLaas(
   }
 
   // Det, der i alt skal refunderes: sagens beløb, eller alt det modtagne.
-  const pi = await stripe.paymentIntents.retrieve(piId);
+  const pi = await stripe.paymentIntents.retrieve(piId, {}, UNDER_LAAS);
   const modtaget = Number(pi.amount_received ?? 0);
   if (!Number.isInteger(modtaget) || modtaget <= 0) {
     throw new Error(`Intet modtaget at refundere for betaling ${b.id}`);
@@ -847,7 +846,10 @@ async function refunderUnderLaas(
   // en ny key. Slå derfor ALLE refusioner på PaymentIntenten op, før en ny
   // oprettes (samme mønster som transfers.list i overfoerTilSaelger). Kun
   // refusioner, der ikke er endeligt fejlet, tæller.
-  const eksisterende = await stripe.refunds.list({ payment_intent: piId, limit: 100 });
+  const eksisterende = await stripe.refunds.list(
+    { payment_intent: piId, limit: 100 },
+    UNDER_LAAS,
+  );
   const aktive = eksisterende.data.filter(
     (r) => r.status !== "failed" && r.status !== "canceled",
   );
@@ -866,10 +868,7 @@ async function refunderUnderLaas(
         }
         return "refusion_afventer";
       }
-      await markerRefusion(
-        b.id,
-        "Anden refusion fundet hos Stripe - kontrollér betalingen, før der refunderes igen",
-      );
+      await markerRefusionskonflikt(b.id, laas);
       return "refusion_konflikt";
     }
   }
@@ -887,7 +886,7 @@ async function refunderUnderLaas(
             aarsag: b.refusion_aarsag ?? "",
           },
         },
-        { idempotencyKey: nøgle },
+        { idempotencyKey: nøgle, ...UNDER_LAAS },
       );
     }
   } catch (err) {
@@ -921,9 +920,11 @@ async function refunderUnderLaas(
     return "refusion_afventer"; // pending: charge.refunded/refund.updated følger
   }
 
-  const piNu = await stripe.paymentIntents.retrieve(piId, {
-    expand: ["latest_charge"],
-  });
+  const piNu = await stripe.paymentIntents.retrieve(
+    piId,
+    { expand: ["latest_charge"] },
+    UNDER_LAAS,
+  );
   const charge = piNu.latest_charge;
   if (charge && typeof charge !== "string" && charge.refunded) {
     await registrerRefunderet(piId, null);

@@ -309,7 +309,16 @@ export async function udfoerSagAfvikling(
       status = "overfoersel_fejlede";
     }
   }
-  if (notificer && erSagType(a.type) && (a.handling === "refunder" || a.handling === "frigiv")) {
+  // "refusion_konflikt": en anden tilbagebetaling findes allerede hos Stripe,
+  // og betalingen er markeret til admin. Parterne får ingen "refunderet"-besked,
+  // før admin har tjekket den. ("refusion_i_gang": en anden kørsel gennemfører
+  // tilbagebetalingen - beskeden sendes som normalt.)
+  if (
+    notificer &&
+    status !== "refusion_konflikt" &&
+    erSagType(a.type) &&
+    (a.handling === "refunder" || a.handling === "frigiv")
+  ) {
     await notificerSagAfgoerelse(
       a.sag_id,
       a.trade_id,

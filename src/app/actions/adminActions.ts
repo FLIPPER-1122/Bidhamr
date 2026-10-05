@@ -19,6 +19,7 @@ import {
   sendKoeberAfsluttet,
   sendSaelgerAfregning,
 } from "@/lib/betaling/handelsbeskeder";
+import { REFUSION_I_GANG, REFUSION_KONFLIKT } from "@/lib/betaling/refusionTekster";
 
 // --- Fejlhaandtering ---------------------------------------------------------
 // Next skjuler beskeden fra fejl, der kastes i server actions, i produktion.
@@ -969,6 +970,16 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
       throw new BrugerFejl(
         "Refusionen fejlede hos Stripe. Handlen er annulleret og markeret - prøv igen.",
       );
+    }
+    // Ingen ny tilbagebetaling er sendt: ingen succesbesked og intet
+    // "Fuld refusion" i loggen. Handlen er annulleret, og refusionen er claimet.
+    if (resultat === "refusion_konflikt") {
+      revaliderSag(tradeId);
+      throw new BrugerFejl(REFUSION_KONFLIKT);
+    }
+    if (resultat === "refusion_i_gang") {
+      revaliderSag(tradeId);
+      throw new BrugerFejl(REFUSION_I_GANG);
     }
     logTekst = `Fuld refusion via Stripe (${resultat})`;
   }
