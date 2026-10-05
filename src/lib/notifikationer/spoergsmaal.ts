@@ -27,17 +27,15 @@ export type SpoergsmaalRaekke = {
 export const spoergsmaalNoegle = (id: string) => `spoergsmaal:${id}`;
 export const svarNoegle = (id: string) => `spoergsmaal_svar:${id}`;
 
-function kort(tekst: string, maks = 140): string {
-  return tekst.length > maks ? `${tekst.slice(0, maks - 1)}…` : tekst;
-}
-
 export function spoergsmaalInput(
   q: SpoergsmaalRaekke,
   titel: string,
 ): NotifikationInput & { noegle: string } {
   return {
     titel: "Nyt spørgsmål til din auktion",
-    tekst: `Der er et nyt spørgsmål til "${titel}": "${kort(q.question)}". Svar på auktionssiden – svaret kan ses af alle.`,
+    // Teksten citeres ikke: staff kan skjule spørgsmål, og notifikationen
+    // ville ellers blive ved med at vise den skjulte tekst.
+    tekst: `Der er et nyt spørgsmål til "${titel}". Svar på auktionssiden – svaret kan ses af alle.`,
     link: `/auktion/${q.auction_id}#spoergsmaal`,
     data: { auction_id: q.auction_id, question_id: q.id },
     noegle: spoergsmaalNoegle(q.id),
@@ -47,7 +45,7 @@ export function spoergsmaalInput(
 export function svarInput(q: SpoergsmaalRaekke, titel: string): NotifikationInput & { noegle: string } {
   return {
     titel: "Sælgeren har svaret på dit spørgsmål",
-    tekst: `Sælgeren af "${titel}" har svaret: "${kort(q.answer ?? "")}".`,
+    tekst: `Sælgeren af "${titel}" har svaret på dit spørgsmål – se svaret på auktionssiden.`,
     link: `/auktion/${q.auction_id}#spoergsmaal`,
     data: { auction_id: q.auction_id, question_id: q.id },
     noegle: svarNoegle(q.id),

@@ -105,6 +105,7 @@ export default function BidPanel({
   // Sættes når nedtællingen er kørt i nul, så genindlæsningen kun sker én
   // gang - også selv om auktionen forlænges og tælleren starter forfra.
   const harLukketRef = useRef(false);
+  const senderRef = useRef(false);
 
   useEffect(() => {
     const opdater = () => {
@@ -225,6 +226,9 @@ export default function BidPanel({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // Ref-lås: loading-state fra en gammel closure stopper ikke to indsendelser
+    // i samme tick (det andet bud fik ellers en vildledende minimumsfejl).
+    if (senderRef.current) return;
     setError(null);
 
     const beløbTal = Number(beløb);
@@ -249,16 +253,22 @@ export default function BidPanel({
     }
 
     setLoading(true);
+    senderRef.current = true;
 
     // Afgives paa serveren (rate limit). RLS og triggere gaelder uaendret.
     // Kun afhentning: BidHamr Beskyttelse kan ikke tilvælges (afhentningshandler
     // kan ikke få sager). Databasen tvinger det også til nej.
-    const svar = await afgivBud(
-      auktionId,
-      beløbTal,
-      beskyttelse && forsendelseMulig,
-      redigeretKl,
-    );
+    let svar: Awaited<ReturnType<typeof afgivBud>>;
+    try {
+      svar = await afgivBud(
+        auktionId,
+        beløbTal,
+        beskyttelse && forsendelseMulig,
+        redigeretKl,
+      );
+    } finally {
+      senderRef.current = false;
+    }
 
     if ("fejl" in svar) {
       setLoading(false);
