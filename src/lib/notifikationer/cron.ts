@@ -22,6 +22,11 @@ import {
 } from "@/lib/notifikationer/bud";
 import { betalingsfristForlaengetMail } from "@/lib/mails/handel";
 import { notificerAfhentningsfristForlaengelser } from "@/lib/betaling/afhentningsfrist";
+import {
+  spoergsmaalInput,
+  svarInput,
+  type SpoergsmaalRaekke,
+} from "@/lib/notifikationer/spoergsmaal";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -342,6 +347,51 @@ async function likes(admin: Admin, start: Date): Promise<number> {
   return sendNye(admin, opgaver);
 }
 
+// "Spørg sælger" (spørgsmål og svar kan komme direkte fra appen via RPC).
+// Nyt spørgsmål -> sælgeren, nyt svar -> spørgeren. Samme nøgler som
+// server actions, så intet sendes dobbelt. Skjulte spørgsmål springes over.
+async function spoergsmaal(admin: Admin, start: Date): Promise<number> {
+  const fra = fraTid(start, 24);
+  const felter = "id, auction_id, asker_id, question, answer, hidden";
+  const [{ data: nye, error: e1 }, { data: svar, error: e2 }] = await Promise.all([
+    admin
+      .from("auction_questions")
+      .select(felter)
+      .eq("hidden", false)
+      .gte("asked_at", fra)
+      .order("asked_at", { ascending: false })
+      .limit(MAKS),
+    admin
+      .from("auction_questions")
+      .select(felter)
+      .eq("hidden", false)
+      .gte("answered_at", fra)
+      .order("answered_at", { ascending: false })
+      .limit(MAKS),
+  ]);
+  // 42P01: migrationen er ikke kørt endnu.
+  if (e1 || e2) {
+    const fejl = e1 ?? e2;
+    if (fejl?.code !== "42P01") console.error("Notifikationer: spørgsmål kunne ikke hentes:", fejl?.message);
+    return 0;
+  }
+  const nyeR = (nye ?? []) as SpoergsmaalRaekke[];
+  const svarR = (svar ?? []) as SpoergsmaalRaekke[];
+  const a = await titler(admin, [...nyeR, ...svarR].map((q) => q.auction_id));
+  const opgaver: Opgave[] = [];
+  for (const q of nyeR) {
+    const auk = a.get(q.auction_id);
+    if (!auk || auk.saelger === q.asker_id) continue;
+    opgaver.push({ brugerId: auk.saelger, type: "spoergsmaal", input: spoergsmaalInput(q, auk.titel) });
+  }
+  for (const q of svarR) {
+    const auk = a.get(q.auction_id);
+    if (!auk || !q.answer) continue;
+    opgaver.push({ brugerId: q.asker_id, type: "spoergsmaal", input: svarInput(q, auk.titel) });
+  }
+  return sendNye(admin, opgaver);
+}
+
 async function slutterSnart(admin: Admin): Promise<number> {
   const nu = Date.now();
   const { data: auktioner } = await admin
@@ -587,6 +637,7 @@ export async function koerNotifikationsCron() {
     kontoLukninger: 0,
     bud: 0,
     likes: 0,
+    spoergsmaal: 0,
     slutterSnart: 0,
     nyAuktion: 0,
     beskeder: 0,
@@ -608,6 +659,7 @@ export async function koerNotifikationsCron() {
       ["kontoLukninger", () => kontoLukninger(admin, s)],
       ["bud", () => bud(admin, s)],
       ["likes", () => likes(admin, s)],
+      ["spoergsmaal", () => spoergsmaal(admin, s)],
     );
   }
   // "Slutter snart" handler om nu og fremad og kræver ikke start_kl.

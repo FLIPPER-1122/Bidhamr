@@ -42,6 +42,8 @@ export const HANDLING_NAVNE: Record<string, string> = {
   sag_anke_omgjort: "Omgjorde afgørelse efter anke",
   chat_laest: "Læste handelschat",
   refusion_proevet_igen: "Prøvede tilbagebetaling igen",
+  spoergsmaal_skjult: "Skjulte spørgsmål på auktion",
+  spoergsmaal_vist: "Viste spørgsmål på auktion igen",
 };
 
 export function handlingNavn(handling: string): string {

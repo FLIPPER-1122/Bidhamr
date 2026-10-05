@@ -26,6 +26,9 @@ export const GRAENSER = {
   venteliste_ip: { maks: 5, vindueSek: 60 * 60 },
   bud_bruger: { maks: 20, vindueSek: 60 },
   bud_ip: { maks: 40, vindueSek: 60 },
+  // Spørg sælger. Databasen har sine egne grænser pr. bruger
+  // (stil_spoergsmaal), som også gælder appen; dette er et ekstra IP-loft.
+  spoergsmaal_ip: { maks: 30, vindueSek: 60 * 60 },
   // Fejlrapporter fra browserens error boundaries (/admin/drift). Derudover
   // et globalt loft på 30 nye pr. minut i drift_fejl_log.
   drift_fejl_ip: { maks: 10, vindueSek: 60 },

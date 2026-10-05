@@ -247,6 +247,10 @@ export type AdminAnke = {
 };
 
 export type SagDetalje = SagListeRaekke & {
+  // Varen, som den stod i auktionen (stand-kode, se src/lib/stand.ts).
+  auktionStand: string | null;
+  auktionBeskrivelse: string | null;
+  auktionSpoergsmaal: { question: string; answer: string | null; askedKl: string; hidden: boolean }[];
   beskrivelse: string;
   begrundelse: string | null;
   internNote: string | null;
@@ -701,9 +705,36 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
       }
     }
 
+    // Varen, som den stod i auktionen: stand, beskrivelse og sælgerens svar
+    // på spørgsmål - bruges især ved "ikke som beskrevet". Fejler opslaget
+    // (fx før 20261006020000 er kørt), vises bare ingenting.
+    const [{ data: auktionInfo }, { data: qaRaekker }] = liste.auktionId
+      ? await Promise.all([
+          admin
+            .from("auctions")
+            .select("stand, beskrivelse")
+            .eq("id", liste.auktionId)
+            .maybeSingle<{ stand: string | null; beskrivelse: string | null }>(),
+          admin
+            .from("auction_questions")
+            .select("question, answer, asked_at, hidden")
+            .eq("auction_id", liste.auktionId)
+            .order("asked_at", { ascending: true })
+            .limit(50),
+        ])
+      : [{ data: null }, { data: [] }];
+
     return {
       sag: {
         ...liste,
+        auktionStand: auktionInfo?.stand ?? null,
+        auktionBeskrivelse: auktionInfo?.beskrivelse ?? null,
+        auktionSpoergsmaal: ((qaRaekker ?? []) as {
+          question: string;
+          answer: string | null;
+          asked_at: string;
+          hidden: boolean;
+        }[]).map((q) => ({ question: q.question, answer: q.answer, askedKl: q.asked_at, hidden: q.hidden })),
         beskrivelse: s.beskrivelse,
         begrundelse: s.begrundelse,
         internNote: s.intern_note,

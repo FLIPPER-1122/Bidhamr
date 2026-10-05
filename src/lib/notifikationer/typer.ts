@@ -1,6 +1,7 @@
 // Notifikationstyper - ét sted for hele hjemmesiden (og som reference for appen).
 // Påkrævet-listen er spejlet i SQL (notifikation_paakraevet / notifikation_kendt_type
-// i supabase/migrations/20261002060000_notifikationer.sql). Ændres listen her,
+// i supabase/migrations/20261002060000_notifikationer.sql; 'spoergsmaal' tilføjet i
+// 20261006020000_auktionsfunktioner.sql). Ændres listen her,
 // skal SQL'en også rettes i en ny migration.
 //
 // Ingen server-only-import: frontend må gerne bruge navne og beskrivelser.
@@ -20,7 +21,8 @@ export type NotifikationType =
   | "like"
   | "fulgt_slutter_snart"
   | "ny_auktion_fulgt_saelger"
-  | "ny_besked";
+  | "ny_besked"
+  | "spoergsmaal";
 
 export type Kanal = "klokke" | "mail" | "push";
 
@@ -49,6 +51,7 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "fulgt_slutter_snart", navn: "Favorit slutter snart", beskrivelse: "En time før en auktion, du har gemt, slutter.", paakraevet: false },
   { type: "ny_auktion_fulgt_saelger", navn: "Ny auktion fra en sælger, du følger", beskrivelse: "Når en sælger, du følger, sætter en ny vare til salg.", paakraevet: false },
   { type: "ny_besked", navn: "Nye beskeder", beskrivelse: "Når du får en ny besked i en handel eller fra BidHamr.", paakraevet: false },
+  { type: "spoergsmaal", navn: "Spørgsmål til auktioner", beskrivelse: "Når nogen stiller et spørgsmål til din auktion, eller sælgeren svarer på dit spørgsmål.", paakraevet: false },
 ] as const;
 
 export const ALLE_TYPER: readonly NotifikationType[] = NOTIFIKATION_TYPER.map((t) => t.type);
