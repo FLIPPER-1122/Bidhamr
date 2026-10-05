@@ -3,15 +3,19 @@
 -- ============================================================================
 --
 -- !!! DATAAENDRING I PRODUKTION, NAAR FILEN KOERES DER !!!
---   Afsnit 3 saetter visningsnavnet (public.users.navn) til 'Bruger' for alle
---   brugere, hvis navn indeholder en e-mail, et telefonnummer eller et link,
---   og fjerner fornavn/efternavn, der goer det samme. I produktion drejer det
---   sig (5. okt. 2026) om 11 brugere, hvis navn ER deres e-mail - den gamle
---   handle_new_user i produktion brugte e-mailen som navn, naar der ikke var
---   et navn. Taelles foer koersel:
---     select count(*) from public.users where navn ~ '@'
---        or length(regexp_replace(coalesce(navn, ''), '[^0-9]', '', 'g')) >= 6;
+--   Afsnit 3 saetter visningsnavnet (public.users.navn) til 'Bruger' og
+--   fjerner fornavn/efternavn, KUN naar de indeholder en e-mail (@ + domaene)
+--   eller et telefonnummer (8+ cifre eller +45). De gamle vaerdier gemmes
+--   foerst i public.navne_arkiv (kun service_role), saa det kan fortrydes.
+--   Toerkoersel i produktion 6. okt. 2026: 11 brugere (11 navne + 9 fornavne,
+--   alle = brugerens e-mail - den gamle handle_new_user brugte e-mailen som
+--   navn). Ingen lukkede konti. Taelles foer koersel:
+--     select count(*) from public.users
+--      where lower(coalesce(navn,'')||' '||coalesce(fornavn,'')||' '||coalesce(efternavn,''))
+--            ~ '[a-z0-9._%+-]+\s*@\s*[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}'
+--         or length(regexp_replace(coalesce(navn,''), '[^0-9]', '', 'g')) >= 8;
 --   Afsnit 6 retter teksten i eksisterende notifikationer (ingen sletning).
+--   Tabellaase (trigger, constraint, indeks) venter hoejst 5 s (lock_timeout).
 --
 -- Indhold:
 --   2. Kontaktinfo-filteret (besked_spam_grund -> ogsaa indeholder_kontaktinfo,
@@ -24,9 +28,13 @@
 --           ikke er bogstaver/cifre, efter). En besked, der KUN er
 --           "22 34 56 78", stoppes derfor nu (fase 3's test er vendt).
 --         Falske positiver undgaas ved at "neutralisere" cifre i en
---         arbejdskopi, foer reglerne koeres: cifre lige efter str/stoerrelse/
---         model/ordre(nr)/postnr/sporing/ean/imei/serienr/varenr/kl/ref/
---         faktura/kundenr/konto/pakke; aarstalspar (2019 2020); beloeb foran
+--         arbejdskopi, foer reglerne koeres: klokkeslaet/datoer i par eller
+--         intervaller (20.00-22.00, 20.10 21.10, 24.12-27.12.); cifre lige
+--         efter model/ordre(nr)/postnr/sporing/ean/imei/serienr/varenr/
+--         faktura/kundenr/reg/pakke/maal; efter ref/konto/art - men ALDRIG et
+--         nummer i 2-2-2-2/4-4-format; efter str/stoerrelse - men ikke
+--         2-2-2-2; efter kl/klokken kun et klokkeslaet; aarstalspar
+--         (2019 2020); beloebspar i hele hundreder (2500 3000); beloeb foran
 --         kr/dkk/,-; og lister af 2-cifrede tal med fast trin 1 eller 2
 --         (stoerrelser "38 39 40 41", "36 38 40 42"). Cifre, der er del af en
 --         laengere cifferraekke (sporingsnumre), rammes ikke.
@@ -34,8 +42,9 @@
 --         facebook, fb, messenger, snap(chat), tiktok, telegram, whatsapp,
 --         signal, wechat, viber, discord - naar de bruges som kontaktvej:
 --           "insta: sofie_99" (kolon/@ + brugernavn), "mit snap er sofie99",
---           "på/via/over/gennem/i (min/mit) facebook", "min insta", og et
---           selvstaendigt @brugernavn.
+--           "på/via/over/gennem/i (min/mit) facebook", "min insta" (men
+--           ikke "mit signal er daarligt"), og et selvstaendigt @brugernavn
+--           med mindst et bogstav eller _ ("Pris @1500" er ok).
 --         VURDERING: I chat, Spoerg saelger og saelgersvar er "paa Facebook
 --         Marketplace" et kontaktforsoeg (at flytte handlen) og stoppes ogsaa.
 --         Auktionsbeskrivelser bruger IKKE dette filter (kun forbudte varer),
@@ -45,14 +54,19 @@
 --      SPEJL: spamGrund() i src/lib/tryghed.ts - hold reglerne synkrone.
 --      messages_blokeret_grund_check FLETTES med 'socialt_medie'.
 --   3. Visningsnavn: navn/fornavn/efternavn maa ikke indeholde e-mail,
---      telefonnummer eller link (navn_har_kontaktinfo). Trigger
---      users_navn_kontaktinfo: ved oprettelse -> 'Bruger' (fornavn/efternavn
---      -> null), ved aendring -> fejl BHN02. handle_new_user renser ogsaa.
---      Eksisterende navne ryddes (se overskriften). mine_data(): et
---      modpart-fornavn, der ligner kontaktinfo, vises som 'Bruger'.
---   4. profil_offentlige_tal(p_bruger): auktioner oprettet, solgte handler
---      (samme definition som min_statistik), medlem siden - og bud_afgivet
---      kun for brugeren selv. Ingen beloeb.
+--      telefonnummer eller link (navn_har_kontaktinfo; et link kraever 2+
+--      tegn foer punktummet, saa "A.de Jong" og "J.P. Hansen" er tilladt).
+--      Trigger users_navn_kontaktinfo: ved oprettelse -> 'Bruger' (fornavn/
+--      efternavn -> null), ved aendring -> fejl BHN02. handle_new_user
+--      renser ogsaa. Eksisterende navne ryddes KUN ved e-mail/telefonnummer
+--      (se overskriften); de gamle vaerdier gemmes i public.navne_arkiv.
+--      mine_data(): et modpart-fornavn, der ligner kontaktinfo, vises som
+--      'Bruger'.
+--   4. profil_offentlige_tal(p_bruger): auktioner oprettet (offentligt uden
+--      auktioner, BidHamr har skjult; auktioner_oprettet_alle med dem, kun
+--      for brugeren selv), solgte handler (samme definition som
+--      min_statistik), medlem siden - og bud_afgivet kun for brugeren selv.
+--      Ingen beloeb.
 --   6. Notifikationer: eksisterende "Saelgeren har svaret paa din
 --      bedoemmelse: "..."" faar tekst uden citat; "... er synlig(t) igen"
 --      flyttes fra 'advarsel' til 'bedoemmelse' og faar et link.
@@ -65,6 +79,8 @@
 -- Rene tekstfunktioner er security invoker (ingen tabeladgang); alle andre
 -- er security definer. Alle har search_path = ''.
 -- Idempotent: create or replace / if not exists / betingede updates.
+
+set local lock_timeout = '5s';
 
 -- ============================================================ 2. Spamfilter
 
@@ -83,18 +99,27 @@ declare
   g text;
   m text[];
   a int; b int; c int; d int;
-  -- (a) +45 / 0045 / (+45) + 8 cifre (uaendret).
+  -- (a) +45 / 0045 / (+45) + 8 cifre.
   p_landekode constant text :=
     '(\(\s*\+\s*45\s*\)|\+\s*45|(?<![0-9])0045)[\s.-]{0,2}[0-9]([\s.-]{0,2}[0-9]){7}(?![0-9])';
-  -- (b) 8 cifre i traek (uaendret).
+  -- (b) 8 cifre i traek.
   p_otte constant text := '(?<![0-9])[2-9][0-9]{7}(?![0-9])';
-  -- (c) 2-2-2-2 eller 4-4 (uaendret; bruges efter MobilePay).
+  -- (c) 2-2-2-2 eller 4-4 (bruges efter MobilePay).
   p_grupperet constant text :=
     '(?<![0-9])([2-9][0-9][\s.-][0-9]{2}[\s.-][0-9]{2}[\s.-][0-9]{2}|[2-9][0-9]{3}[\s.-][0-9]{4})(?![0-9])';
   -- (c') Som (c), men heller ikke ved siden af en anden cifferblok
   -- ("0730 2533 0012" i et sporingsnummer).
   p_grp constant text :=
     '(?<![0-9][\s.,-])(?<![0-9])([2-9][0-9][\s.-][0-9]{2}[\s.-][0-9]{2}[\s.-][0-9]{2}|[2-9][0-9]{3}[\s.-][0-9]{4})(?![\s.,-]?[0-9])';
+  -- Et nummer i 2-2-2-2- eller 4-4-format (til ref/konto/art/str nedenfor).
+  p_grp_2222 constant text :=
+    '[2-9][0-9][\s.-][0-9]{2}[\s.-][0-9]{2}[\s.-][0-9]{2}(?![\s.,-]?[0-9])';
+  p_grp_44 constant text := '[2-9][0-9]{3}[\s.-][0-9]{4}(?![\s.,-]?[0-9])';
+  p_nr constant text := '[\s.:#]*((nr|nummer|nummeret)\M)?[\s.:#]*';
+  -- Klokkeslaet og datoer i par/intervaller.
+  p_par_sep constant text := '(\s*[-–]\s*|\s+(og|til)\s+|\s+)';
+  p_tid constant text := '([01][0-9]|2[0-3])[.:][0-5][0-9]';
+  p_dato constant text := '(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.?';
   p_foer constant text :=
     '\m(ring|ringe|ringer|tlf|tlfnr|telefon|telefonnummer|telefonnummeret|telefonnr'
     || '|mobil|mobilnummer|mobilnummeret|mobilnr|sms|skriv til|kontakt mig'
@@ -105,13 +130,19 @@ declare
   p_some constant text :=
     '(instagram|insta|\mig|facebook|\mfb|messenger|snap\s*chat|\msnap|tik\s*tok|telegram'
     || '|whats\s*app|\msignal|wechat|viber|discord)\M';
+  -- Som p_some uden signal: "mit signal er daarligt" er ikke en kontaktvej.
+  p_some_min constant text :=
+    '(instagram|insta|\mig|facebook|\mfb|messenger|snap\s*chat|\msnap|tik\s*tok|telegram'
+    || '|whats\s*app|wechat|viber|discord)\M';
+  -- @brugernavn kraever mindst et bogstav eller _ ("Pris @1500" er en pris).
+  p_at constant text := '@(?=[a-z0-9_.]*[a-z_])';
 begin
-  -- E-mail (uaendret).
+  -- E-mail.
   if v ~ '[a-z0-9._%+-]+\s*(@|\(at\)|\[at\]|\msnabel-?a\M)\s*[a-z0-9-]+(\.|\s+(punktum|dot)\s+)[a-z]{2,}' then
     return 'email';
   end if;
 
-  -- Links (uaendret).
+  -- Links.
   w := regexp_replace(v,
          '(?<![a-z0-9.@-])(https?://)?(www\.)?bidhamr\.dk(/[a-z0-9/_-]*)?(?![a-z0-9@-]|\.[a-z0-9])',
          ' ', 'g');
@@ -128,32 +159,55 @@ begin
     return 'link';
   end if;
 
-  -- MobilePay-nummer (uaendret).
+  -- MobilePay-nummer.
   if v ~ (p_mobilepay || '(\s*(boks|box))?[\s:#.]*((nr|nummer|nummeret|på|til)[\s:#.]*)?'
           || '(?<![0-9])[0-9]{4,5}(?![0-9])(?!\s*(kr|dkk|,-|\.-|,[0-9]|\.[0-9]))')
      or v ~ (p_mobilepay || '.{0,25}(' || p_landekode || '|' || p_otte || '|' || p_grupperet || ')') then
     return 'mobilepay';
   end if;
 
-  -- Telefon (a) og (b) (uaendret).
+  -- Telefon (a) og (b).
   if v ~ p_landekode or v ~ p_otte then
     return 'telefon';
   end if;
 
   -- Telefon (c): arbejdskopi g, hvor tal, der ikke er telefonnumre, er
-  -- erstattet med '#'.
-  -- Cifre lige efter ord som str, model, ordre(nr), postnr, sporing, kl.
+  -- erstattet med '#'. Samme raekkefoelge som neutraliserTal() i TS.
+  -- Klokkeslaet/datoer i par: "20.00-22.00", "20.10 21.10", "24.12-27.12.".
   g := regexp_replace(v,
-         '\m(str|størrelse[a-zæøå]*|skostørrelse[a-zæøå]*|size|sizes|model[a-zæøå]*'
+         '(?<![0-9][.:])(?<![0-9])(' || p_tid || p_par_sep || p_tid
+         || '|' || p_dato || p_par_sep || p_dato || ')(?![.:]?[0-9])',
+         ' # ', 'g');
+  -- Cifre lige efter model, ordre(nr), postnr, sporing, maal m.fl.
+  g := regexp_replace(g,
+         '\m(model[a-zæøå]*'
          || '|ordre[a-zæøå]*|post\s*nr|postnummer[a-zæøå]*|sporing[a-zæøå]*|track[a-z]*'
          || '|stregkode|ean|imei|serie\s*nr|serienummer[a-zæøå]*|vare\s*nr|varenummer[a-zæøå]*'
-         || '|kl|ref|reference|faktura[a-zæøå]*|kunde\s*nr|kundenummer[a-zæøå]*'
-         || '|konto[a-zæøå]*|reg|pakke[a-zæøå]*|art)\M'
-         || '[\s.:#]*((nr|nummer|nummeret)\M)?[\s.:#]*[0-9][0-9\s.,/-]*',
+         || '|faktura[a-zæøå]*|kunde\s*nr|kundenummer[a-zæøå]*'
+         || '|reg|pakke[a-zæøå]*|mål[a-zæøå]*)\M'
+         || p_nr || '[0-9][0-9\s.,/-]*',
+         ' # ', 'g');
+  -- ref/konto/art: aldrig et nummer i telefonformat (2-2-2-2 eller 4-4).
+  g := regexp_replace(g,
+         '\m(ref|reference|konto[a-zæøå]*|art)\M' || p_nr
+         || '(?!' || p_grp_2222 || '|' || p_grp_44 || ')[0-9][0-9\s.,/-]*',
+         ' # ', 'g');
+  -- str/stoerrelse: ikke 2-2-2-2 (stoerrelseslister fanges nedenfor).
+  g := regexp_replace(g,
+         '\m(str|størrelse[a-zæøå]*|skostørrelse[a-zæøå]*|size|sizes)\M' || p_nr
+         || '(?!' || p_grp_2222 || ')[0-9][0-9\s.,/-]*',
+         ' # ', 'g');
+  -- kl/klokken: kun et klokkeslaet (18, 18.30, 18:30, 18 30) uden ciffer efter.
+  g := regexp_replace(g,
+         '\m(kl|klokken)\M[\s.:]*([01]?[0-9]|2[0-3])([.:\s][0-5][0-9])?(?![\s.:,-]?[0-9])',
          ' # ', 'g');
   -- Aarstalspar: "2019 2020", "2019-2020", "2019 og 2020".
   g := regexp_replace(g,
          '(?<![0-9])(19|20)[0-9]{2}(\s*[-/]\s*|\s+(og|til)\s+|\s+)(19|20)[0-9]{2}(?![0-9])',
+         ' # ', 'g');
+  -- Beloebspar i hele hundreder: "2500 3000", "1500-2000".
+  g := regexp_replace(g,
+         '(?<![0-9])[1-9][0-9]{1,3}00(\s*[-–/]\s*|\s+(og|til|eller)\s+|\s+)[1-9][0-9]{1,3}00(?![0-9])',
          ' # ', 'g');
   -- Beloeb: "2500 3000 kr", "1.250,-".
   g := regexp_replace(g, '(?<![0-9])[0-9][0-9 .]*[0-9]\s*(kr\M|dkk\M|kroner\M|,-|\.-)', ' # ', 'g');
@@ -176,11 +230,11 @@ begin
 
   -- Sociale medier som kontaktvej.
   if v ~ (p_some || '\s*(:|=)\s*@?[a-z0-9_.]{3,}')
-     or v ~ (p_some || '.{0,15}(?<![a-z0-9._%+-])@[a-z0-9_.]{3,}')
+     or v ~ (p_some || '.{0,15}(?<![a-z0-9._%+-])' || p_at || '[a-z0-9_.]{3,}')
      or v ~ (p_some || '\s+(er|hedder)\s+@?(?=[a-z0-9_.]*[_.0-9])[a-z0-9_.]{3,}')
      or v ~ ('\m(på|via|over|gennem|i)\s+((min|mit|mine)\s+)?' || p_some)
-     or v ~ ('\m(min|mit|mine)\s+' || p_some)
-     or v ~ '(^|[^a-z0-9._%+-])@[a-z0-9_][a-z0-9_.]{2,}' then
+     or v ~ ('\m(min|mit|mine)\s+' || p_some_min)
+     or v ~ ('(^|[^a-z0-9._%+-])' || p_at || '[a-z0-9_][a-z0-9_.]{2,}') then
     return 'socialt_medie';
   end if;
 
@@ -213,8 +267,10 @@ $flet$;
 
 -- ============================================================ 3. Visningsnavn
 
--- Indeholder et navn en e-mail, et telefonnummer eller et link? Strengere
--- end chatten: '@' og 6+ cifre er nok.
+-- Indeholder et navn en e-mail, et telefonnummer eller et link? Bruges af
+-- triggeren for NYE/AENDREDE navne. Strengere end chatten: '@' og 6+ cifre
+-- er nok. Et link kraever mindst 2 tegn foer punktummet, saa "A.de Jong" og
+-- "J.P. Hansen" er tilladt.
 create or replace function public.navn_har_kontaktinfo(p_navn text)
 returns boolean
 language sql
@@ -225,7 +281,7 @@ as $fn$
   select p_navn is not null and btrim(p_navn) <> '' and (
          public.besked_normaliser(p_navn) ~ '@|\(at\)|\[at\]|\msnabel-?a\M'
       or length(regexp_replace(public.besked_normaliser(p_navn), '[^0-9]', '', 'g')) >= 6
-      or public.besked_normaliser(p_navn) ~ '(https?:|www\.|\m[a-z0-9-]+\.(dk|com|net|org|info|io|me|eu|se|de|no|nu|co|app|shop)\M)'
+      or public.besked_normaliser(p_navn) ~ '(https?:|www\.|\m[a-z0-9-]{2,}\.(dk|com|net|org|info|io|me|eu|se|de|no|nu|co|app|shop)\M)'
       or public.besked_spam_grund(p_navn) is not null);
 $fn$;
 
@@ -306,33 +362,79 @@ $fn$;
 
 revoke all on function public.handle_new_user() from public, anon, authenticated;
 
--- Ryd eksisterende navne (DATAAENDRING - se overskriften).
--- users_beskyt_lukket_konto afviser ENHVER aendring af en lukket konto
--- (BHK01) - ogsaa navnet. Den slaas fra under oprydningen (kun i denne
--- transaktion) og til igen bagefter.
+-- Arkiv over navne, BidHamr har ryddet (saa oprydningen kan fortrydes).
+-- Kun service_role: RLS slaaet til, ingen policies, ingen grants til
+-- anon/authenticated.
+create table if not exists public.navne_arkiv (
+  id           bigint generated always as identity primary key,
+  bruger_id    uuid not null,
+  navn         text,
+  fornavn      text,
+  efternavn    text,
+  arkiveret_kl timestamptz not null default now(),
+  grund        text not null
+);
+comment on table public.navne_arkiv is
+  'Gamle vaerdier af users.navn/fornavn/efternavn foer BidHamr ryddede dem '
+  '(fx e-mail eller telefonnummer i navnet). Kun service_role. Fortryd: '
+  'update public.users u set navn = a.navn, fornavn = a.fornavn, efternavn = a.efternavn '
+  'from public.navne_arkiv a where a.bruger_id = u.id and a.grund = ... '
+  '(kraever at users_navn_kontaktinfo slaas fra).';
+alter table public.navne_arkiv enable row level security;
+revoke all on table public.navne_arkiv from public, anon, authenticated;
+grant all on table public.navne_arkiv to service_role;
+create index if not exists navne_arkiv_bruger_idx on public.navne_arkiv (bruger_id);
+
+-- Aabenlys kontaktinfo i et EKSISTERENDE navn: en e-mail (@ + domaene) eller
+-- et telefonnummer (8+ cifre eller +45). IKKE link-reglen - den rammer fx
+-- "A.de Jong". Kun til oprydningen (pg_temp: forsvinder efter migrationen).
+create or replace function pg_temp.navn_aabenlys_kontaktinfo(p_navn text)
+returns boolean
+language sql
+immutable
+as $fn$
+  select p_navn is not null and (
+         public.besked_normaliser(p_navn) ~ '[a-z0-9._%+-]+\s*@\s*[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}'
+      or length(regexp_replace(p_navn, '[^0-9]', '', 'g')) >= 8
+      or p_navn ~ '\+\s*45');
+$fn$;
+
+-- Ryd eksisterende navne (DATAAENDRING - se overskriften). De gamle vaerdier
+-- gemmes i navne_arkiv foerst. users_beskyt_lukket_konto slaas IKKE fra: den
+-- afviser kun aendringer af lukke-kolonnerne og genaabning af en lukket
+-- konto, ikke et nyt navn (testet med en lukket konto). Ingen tabellaas ud
+-- over raekkelaase.
 do $ryd$
 declare
-  v_lukket boolean := exists (select 1 from pg_trigger
-                               where tgrelid = 'public.users'::regclass
-                                 and tgname = 'users_beskyt_lukket_konto');
+  v_antal int;
 begin
-  if v_lukket then
-    alter table public.users disable trigger users_beskyt_lukket_konto;
-  end if;
-
-  update public.users
-     set navn = 'Bruger'
-   where id <> '00000000-0000-4000-8000-0000000b1d00'::uuid
-     and public.navn_har_kontaktinfo(navn);
-  update public.users
-     set fornavn = case when public.navn_har_kontaktinfo(fornavn) then null else fornavn end,
-         efternavn = case when public.navn_har_kontaktinfo(efternavn) then null else efternavn end
-   where id <> '00000000-0000-4000-8000-0000000b1d00'::uuid
-     and (public.navn_har_kontaktinfo(fornavn) or public.navn_har_kontaktinfo(efternavn));
-
-  if v_lukket then
-    alter table public.users enable trigger users_beskyt_lukket_konto;
-  end if;
+  with ramt as (
+    select u.id, u.navn, u.fornavn, u.efternavn,
+           pg_temp.navn_aabenlys_kontaktinfo(u.navn) as r_navn,
+           pg_temp.navn_aabenlys_kontaktinfo(u.fornavn) as r_fornavn,
+           pg_temp.navn_aabenlys_kontaktinfo(u.efternavn) as r_efternavn
+      from public.users u
+     where u.id <> '00000000-0000-4000-8000-0000000b1d00'::uuid
+       and (pg_temp.navn_aabenlys_kontaktinfo(u.navn)
+            or pg_temp.navn_aabenlys_kontaktinfo(u.fornavn)
+            or pg_temp.navn_aabenlys_kontaktinfo(u.efternavn))
+       for update
+  ),
+  arkiv as (
+    insert into public.navne_arkiv (bruger_id, navn, fornavn, efternavn, grund)
+    select r.id, r.navn, r.fornavn, r.efternavn, 'fase4_kontaktinfo_i_navn'
+      from ramt r
+    returning bruger_id
+  )
+  update public.users u
+     set navn      = case when r.r_navn then 'Bruger' else u.navn end,
+         fornavn   = case when r.r_fornavn then null else u.fornavn end,
+         efternavn = case when r.r_efternavn then null else u.efternavn end
+    from ramt r
+   where u.id = r.id
+     and r.id in (select a.bruger_id from arkiv a);
+  get diagnostics v_antal = row_count;
+  raise notice 'Navne ryddet: % brugere (gamle vaerdier i public.navne_arkiv).', v_antal;
 end;
 $ryd$;
 
@@ -590,11 +692,14 @@ grant execute on function public.mine_data() to authenticated;
 -- ============================================================ 4. Offentlige tal
 
 -- Tal til profilen - samme definitioner som min_statistik (/konto/statistik):
---   auktioner_oprettet = alle brugerens auktioner ("Oprettet i alt"),
---   solgte_handler     = auktioner med en gennemfoert betaling ("Solgt"),
---   bud_afgivet        = auktioner, brugeren har budt paa (kun til brugeren
---                        selv, ellers null),
---   medlem_siden       = users.oprettet.
+--   auktioner_oprettet      = brugerens auktioner, UDEN dem BidHamr har
+--                             skjult (skjult = true) - det offentlige tal,
+--   auktioner_oprettet_alle = alle brugerens auktioner ("Oprettet i alt") -
+--                             kun til brugeren selv, ellers null,
+--   solgte_handler          = auktioner med en gennemfoert betaling ("Solgt"),
+--   bud_afgivet             = auktioner, brugeren har budt paa (kun til
+--                             brugeren selv, ellers null),
+--   medlem_siden            = users.oprettet.
 -- Ingen beloeb. null for ukendte/slettede brugere og systembrugeren.
 create or replace function public.profil_offentlige_tal(p_bruger uuid)
 returns jsonb
@@ -604,7 +709,11 @@ security definer
 set search_path = ''
 as $fn$
   select jsonb_build_object(
-    'auktioner_oprettet', (select count(*) from public.auctions a where a.bruger_id = u.id),
+    'auktioner_oprettet', (select count(*) from public.auctions a
+                            where a.bruger_id = u.id and not coalesce(a.skjult, false)),
+    'auktioner_oprettet_alle', case when u.id = auth.uid() then
+                                 (select count(*) from public.auctions a where a.bruger_id = u.id)
+                               end,
     'solgte_handler', (select count(*) from public.auctions a
                         where a.bruger_id = u.id
                           and exists (
@@ -683,7 +792,8 @@ grant execute on function public.min_auktion_for_noegle(uuid) to authenticated;
 -- ============================================================ Test
 
 -- Fejler et eksempel, afbrydes migrationen. Fase 3's eksempler
--- (20261006031000) + de nye. Samme eksempler i src/lib/tryghed.ts' spejl.
+-- (20261006031000), 050000's og slutreviewets nye. PRAECIS samme liste
+-- giver samme svar i TS-spejlet spamGrund() i src/lib/tryghed.ts.
 do $test$
 declare
   r record;
@@ -692,7 +802,6 @@ declare
 begin
   for r in
     select * from (values
-      -- Fase 3: maa IKKE stoppes.
       ('Jeg har størrelse 42 43 44 45', null),
       ('Skostørrelse 38 39 40 41 er udsolgt', null),
       ('Postnr 8000 8200', null),
@@ -704,7 +813,6 @@ begin
       ('Prisen er 1.250 kr, 12.10.2026', null),
       ('EAN 5701234567890 og IMEI 356938035643809', null),
       ('Str 2234 5678', null),
-      -- Fase 3: skal stoppes.
       ('ring på 22 34 56 78', 'telefon'),
       ('+45 22 34 56 78', 'telefon'),
       ('(+45) 22345678', 'telefon'),
@@ -713,9 +821,7 @@ begin
       ('Tlf. 2234 5678', 'telefon'),
       ('Mit nummer er 22-34-56-78', 'telefon'),
       ('skriv til mig på whatsapp 22.34.56.78', 'telefon'),
-      -- VENDT fra fase 3: et nummer alene er et telefonnummer.
       ('22 34 56 78', 'telefon'),
-      -- Nye: skal stoppes.
       ('Mit nr er 2030 4050', 'telefon'),
       ('Tak, hilsen Sofie, 2030-4050', 'telefon'),
       ('Tak! 20 30 40 50', 'telefon'),
@@ -723,7 +829,6 @@ begin
       ('Tak for handlen 2030 4050 :)', 'telefon'),
       ('Mvh Sofie 2030 4050', 'telefon'),
       ('2030 4050 ring gerne', 'telefon'),
-      -- Nye: maa IKKE stoppes.
       ('Jeg har str 42 43 44 45', null),
       ('Har du 38 39 40 41?', null),
       ('Findes den i 36 38 40 42', null),
@@ -741,7 +846,6 @@ begin
       ('Hej, er den stadig til salg? Hilsen Sofie', null),
       ('Den er 2 år gammel og virker fint', null),
       ('Den måler 120 x 60 x 75 cm', null),
-      -- MobilePay (fase 3).
       ('Kan jeg betale med MobilePay? 1250 kr er fint', null),
       ('mobilepay 1250 kr', null),
       ('mp 1250,-', null),
@@ -750,7 +854,6 @@ begin
       ('MobilePay boks: 4321', 'mobilepay'),
       ('mp nr 98765', 'mobilepay'),
       ('send på mobilepay til 22 34 56 78', 'mobilepay'),
-      -- Links (fase 3).
       ('se bidhamr.dk/auktion/123', null),
       ('Se mere på bidhamr.dk.', null),
       ('https://www.bidhamr.dk/handler', null),
@@ -765,9 +868,7 @@ begin
       ('skriv på t.me/minkanal', 'link'),
       ('min side minside.se', 'link'),
       ('evilgls.dk', 'link'),
-      -- E-mail (fase 3).
       ('skriv til hans@mail.dk', 'email'),
-      -- Sociale medier (nye).
       ('insta: sofie_99', 'socialt_medie'),
       ('skriv på facebook', 'socialt_medie'),
       ('find mig på snap', 'socialt_medie'),
@@ -780,7 +881,34 @@ begin
       ('Har du facebook?', null),
       ('Dårligt signal på mobilen, så svarer lidt sent', null),
       ('Den har et lille mærke ved stikket', null),
-      ('Kan du sende med GLS?', null)
+      ('Kan du sende med GLS?', null),
+      ('Du kan hente den i aften 20.00-22.00', null),
+      ('Jeg er hjemme fra klokken 20.30-22.30', null),
+      ('Jeg er væk 24.12-27.12.', null),
+      ('Kan hente 20.10 21.10 hvis det passer', null),
+      ('Jeg byder 2500 3000', null),
+      ('Mål 60 40 30 20', null),
+      ('Mit signal er dårligt', null),
+      ('Pris @1500', null),
+      ('Kan hente mellem 16 og 18', null),
+      ('Kan hentes kl 18-20', null),
+      ('Jeg er hjemme 20:00 - 22:00', null),
+      ('ring 20304050', 'telefon'),
+      ('+45 20 30 40 50', 'telefon'),
+      ('skriv på signal', 'socialt_medie'),
+      ('signal: sofie_99', 'socialt_medie'),
+      ('ref 2030 4050', 'telefon'),
+      ('ref 2030 4050 ring', 'telefon'),
+      ('konto 20 30 40 50', 'telefon'),
+      ('kontonr 2030-4050', 'telefon'),
+      ('art 2030 4050', 'telefon'),
+      ('kl 20 30 40 50', 'telefon'),
+      ('klokken 2030 4050', 'telefon'),
+      ('str 20 30 40 50', 'telefon'),
+      ('Mit nr er 20.30.21.40', 'telefon'),
+      ('Ref 12345', null),
+      ('Kontonr 1234567890', null),
+      ('Kan hente kl 17', null)
     ) as x(tekst, forventet)
   loop
     v_faktisk := public.besked_spam_grund(r.tekst);
@@ -790,22 +918,31 @@ begin
     end if;
   end loop;
 
-  -- Visningsnavne.
+  -- Visningsnavne: triggeren (navn_har_kontaktinfo) og oprydningen
+  -- (navn_aabenlys_kontaktinfo - kun e-mail/telefon, ikke links).
   for r in
     select * from (values
-      ('Sofie Hansen', false),
-      ('Jens-Peter Ø. Madsen', false),
-      ('Bruger', false),
-      ('Sofie 2', false),
-      ('sofie@mail.dk', true),
-      ('Sofie 20304050', true),
-      ('Sofie 20 30 40 50', true),
-      ('www.sofie.dk', true),
-      ('sofie.dk', true)
-    ) as x(tekst, forventet)
+      ('Sofie Hansen', false, false),
+      ('Jens-Peter Ø. Madsen', false, false),
+      ('Bruger', false, false),
+      ('Sofie 2', false, false),
+      ('A.de Jong', false, false),
+      ('Anne-Marie', false, false),
+      ('J.P. Hansen', false, false),
+      ('Ole Ø.', false, false),
+      ('sofie@mail.dk', true, true),
+      ('Sofie 20304050', true, true),
+      ('Sofie 20 30 40 50', true, true),
+      ('Sofie +45 2030 4050', true, true),
+      ('www.sofie.dk', true, false),
+      ('sofie.dk', true, false)
+    ) as x(tekst, trigger_afviser, ryddes)
   loop
-    if public.navn_har_kontaktinfo(r.tekst) is distinct from r.forventet::boolean then
-      v_fejl := v_fejl || format(E'\n  navn %L: forventet %s', r.tekst, r.forventet);
+    if public.navn_har_kontaktinfo(r.tekst) is distinct from r.trigger_afviser then
+      v_fejl := v_fejl || format(E'\n  navn %L: trigger forventet %s', r.tekst, r.trigger_afviser);
+    end if;
+    if pg_temp.navn_aabenlys_kontaktinfo(r.tekst) is distinct from r.ryddes then
+      v_fejl := v_fejl || format(E'\n  navn %L: oprydning forventet %s', r.tekst, r.ryddes);
     end if;
   end loop;
 

@@ -17,10 +17,14 @@ import ProfileTabs, {
   type Rating,
 } from "@/components/profile/ProfileTabs";
 
-// public.profil_offentlige_tal (20261007050000): kun antal, ingen beløb.
+// public.profil_offentlige_tal (20261007050000/051000): kun antal, ingen beløb.
 // Samme definitioner som min_statistik (/konto/statistik).
+// auktioner_oprettet tæller ikke auktioner, BidHamr har skjult;
+// auktioner_oprettet_alle (alle, også skjulte) og bud_afgivet får kun
+// brugeren selv - ellers null.
 type ProfilTal = {
   auktioner_oprettet: number;
+  auktioner_oprettet_alle: number | null;
   solgte_handler: number;
   medlem_siden: string;
   bud_afgivet: number | null;
@@ -212,7 +216,8 @@ export default async function ProfilPage({
             gennemsnitRating={gennemsnitRating}
             antalRatings={antalRatings}
             stats={{
-              auktionerOprettet: egneTal?.auktioner_oprettet ?? egneAuktioner.length,
+              auktionerOprettet:
+                egneTal?.auktioner_oprettet_alle ?? egneTal?.auktioner_oprettet ?? egneAuktioner.length,
               budAfgivet: egneTal?.bud_afgivet ?? budAuktionIds.length,
               gennemforteHandler: egneTal?.solgte_handler ?? 0,
             }}
