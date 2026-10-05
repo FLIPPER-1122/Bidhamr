@@ -8,6 +8,7 @@ import { deleteAuction, cancelAuction, hideAuction, unhideAuction } from "@/app/
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import type { AdminAuktionRow } from "@/lib/adminRowTypes";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 const statusOptions = [
   { value: "alle", label: "Alle" },
@@ -99,11 +100,12 @@ export default async function AdminAuktioner({
   };
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Alle auktioner</h1>
-        <span className="text-sm text-neutral-500">{auctions?.length ?? 0} resultater</span>
-      </div>
+    <div className="p-4 sm:p-6 space-y-5">
+      <AdminSideHoved
+        titel="Auktioner"
+        forklaring="Alle auktioner på BidHamr. Brug siden, når du skal finde, skjule eller vise en bestemt auktion."
+        hoejre={<span className="text-sm text-neutral-500">{auctions?.length ?? 0} resultater</span>}
+      />
 
       <Suspense>
         <AdminSearchInput placeholder="Søg på auktions-ID, titel, sælgers navn eller e-mail..." />

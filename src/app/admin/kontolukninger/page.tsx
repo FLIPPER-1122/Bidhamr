@@ -4,6 +4,7 @@ import KontoLukningKort, {
   type KontoLukningAdvarsel,
   type KontoLukningForslag,
 } from "@/components/admin/KontoLukningKort";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // "3 advarsler – skal kontoen lukkes?" Forslagene oprettes af databasen, når
 // en bruger når 3 advarsler (påmindelser tæller ikke). Kontoen lukkes aldrig
@@ -89,13 +90,15 @@ export default async function AdminKontolukninger({
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Kontolukninger</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Brugere med 3 advarsler. Kontoen lukkes aldrig automatisk – godkend lukningen, eller afvis med en
-          begrundelse. Brugeren får først besked, når lukningen er godkendt. Påmindelser tæller ikke med.
+      <AdminSideHoved
+        titel="Kontolukninger"
+        forklaring="Brugere med 3 advarsler. Godkend lukningen af kontoen, eller afvis med en begrundelse."
+      >
+        <p className="mt-1 max-w-3xl text-xs text-neutral-500">
+          Kontoen lukkes aldrig automatisk, og brugeren får først besked, når lukningen er godkendt.
+          Påmindelser tæller ikke med.
         </p>
-      </div>
+      </AdminSideHoved>
 
       <div className="flex flex-wrap gap-2">
         {FANER.map((f) => {

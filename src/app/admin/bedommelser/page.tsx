@@ -6,6 +6,7 @@ import { anonymUsername } from "@/lib/anonymUsername";
 import { deleteRating, hideRating, unhideRating } from "@/app/actions/adminActions";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 export default async function AdminBedommelser({
   searchParams,
@@ -41,11 +42,12 @@ export default async function AdminBedommelser({
   };
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Alle anmeldelser</h1>
-        <span className="text-sm text-neutral-500">{ratings?.length ?? 0} i alt</span>
-      </div>
+    <div className="p-4 sm:p-6 space-y-5">
+      <AdminSideHoved
+        titel="Bedømmelser"
+        forklaring="Det, købere og sælgere har skrevet om hinanden efter en handel. Fjern en bedømmelse, hvis den bryder reglerne."
+        hoejre={<span className="text-sm text-neutral-500">{ratings?.length ?? 0} i alt</span>}
+      />
 
       <Suspense>
         <AdminSearchInput placeholder="Søg i anmeldelsernes tekst..." />

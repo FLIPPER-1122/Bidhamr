@@ -11,6 +11,7 @@ import {
   hentIkkeSendte,
   hentPgCron,
 } from "@/lib/driftData";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Drift: cron-jobs, notifikationer der ikke er sendt, og fejl på siden.
 // Kun admin og chef (tjekkes på serveren). Ingen mailindhold og ingen
@@ -141,13 +142,10 @@ export default async function AdminDrift({
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Drift</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Cron-jobs, notifikationer der ikke er sendt, og fejl på siden. Opdateres, når siden
-          genindlæses.
-        </p>
-      </div>
+      <AdminSideHoved
+        titel="Drift"
+        forklaring="Teknisk overblik: cron-jobs, notifikationer der ikke er sendt, og fejl på siden. Opdateres, når siden genindlæses."
+      />
 
       {/* ---------------------------------------------------------- Cron */}
       <Kort

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { assertRole, harMindstRolle } from "@/lib/adminAuth";
 import {
   HANDLING_NAVNE,
@@ -50,6 +52,32 @@ function koebenhavnMidnat(dato: string, plusDage = 0): string | null {
     .find((p) => p.type === "timeZoneName")?.value;
   const offset = del?.replace("GMT", "") || "+00:00";
   return `${utc.toISOString().slice(0, 10)}T00:00:00${offset}`;
+}
+
+// Tekniske id'er (uuid) i fritekst vises små og forkortede, så teksten er
+// til at læse. Hele id'et står i tooltip.
+const UUID_I_TEKST = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+function laesbarTekst(tekst: string): ReactNode[] {
+  const dele: ReactNode[] = [];
+  let sidst = 0;
+  for (const m of tekst.matchAll(UUID_I_TEKST)) {
+    const start = m.index ?? 0;
+    if (start > sidst) dele.push(tekst.slice(sidst, start));
+    dele.push(
+      <span key={start} title={m[0]} className="font-mono text-[11px] text-neutral-400">
+        #{m[0].slice(0, 8)}
+      </span>,
+    );
+    sidst = start + m[0].length;
+  }
+  if (sidst < tekst.length) dele.push(tekst.slice(sidst));
+  return dele;
+}
+
+// "Gav advarsel" -> "gav advarsel", så det kan stå efter et navn.
+function smaatForrest(t: string): string {
+  return t ? t.charAt(0).toLocaleLowerCase("da-DK") + t.slice(1) : t;
 }
 
 function enkelt(v: string | string[] | undefined): string {
@@ -105,13 +133,21 @@ export default async function MedarbejderLog({
   const total = raekker[0] ? Number(raekker[0].total_antal) : 0;
   const sider = Math.max(1, Math.ceil(total / PR_SIDE));
 
-  const sideHref = (n: number) => {
+  const brugerErId = UUID_RE.test(bruger);
+  const filterBrugerRaekke = brugerErId
+    ? raekker.find((r) => (r.bruger_id ?? "").toLowerCase() === bruger.toLowerCase())
+    : undefined;
+  const filterBrugerNavn = filterBrugerRaekke
+    ? filterBrugerRaekke.bruger_navn ?? filterBrugerRaekke.bruger_email ?? null
+    : null;
+
+  const sideHref = (n: number, valg: { udenBruger?: boolean } = {}) => {
     const p = new URLSearchParams();
     if (kanSeAlle && medarbejder) p.set("medarbejder", medarbejder);
     if (handlingGyldig) p.set("handling", handlingGyldig);
     if (fraIso) p.set("fra", fra);
     if (tilIso) p.set("til", til);
-    if (bruger) p.set("bruger", bruger);
+    if (bruger && !valg.udenBruger) p.set("bruger", bruger);
     if (n > 1) p.set("side", String(n));
     return `/admin/medarbejder-log${p.size ? `?${p}` : ""}`;
   };
@@ -122,14 +158,14 @@ export default async function MedarbejderLog({
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Medarbejder-log</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          {kanSeAlle
-            ? "Alt, hvad staff og systemet har gjort i admin – nyeste først."
-            : "Alt, hvad du har gjort i admin – nyeste først."}
-        </p>
-      </div>
+      <AdminSideHoved
+        titel="Medarbejder-log"
+        forklaring={
+          kanSeAlle
+            ? "Alt, hvad medarbejdere og systemet har gjort i admin – nyeste først. Brug den, når du vil se, hvem der gjorde hvad."
+            : "Alt, hvad du har gjort i admin – nyeste først."
+        }
+      />
 
       <form
         method="get"
@@ -162,10 +198,25 @@ export default async function MedarbejderLog({
             ))}
           </select>
         </label>
-        <label className="text-xs font-medium text-neutral-600">
-          Bruger (navn, e-mail eller id)
-          <input name="bruger" type="search" defaultValue={bruger} className={`mt-1 ${feltKlasse}`} />
-        </label>
+        {brugerErId ? (
+          // Kommer man fra en brugers side, filtreres der på brugerens id. Vis
+          // navnet i stedet for id'et.
+          <div className="text-xs font-medium text-neutral-600">
+            Bruger
+            <input type="hidden" name="bruger" value={bruger} />
+            <p className="mt-1 flex min-h-10 items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-normal text-neutral-800">
+              <span className="truncate">{filterBrugerNavn ?? "Én bestemt bruger"}</span>
+              <Link href={sideHref(1, { udenBruger: true })} className="shrink-0 text-xs font-medium text-groen hover:underline">
+                Fjern
+              </Link>
+            </p>
+          </div>
+        ) : (
+          <label className="text-xs font-medium text-neutral-600">
+            Bruger (navn eller e-mail)
+            <input name="bruger" type="search" defaultValue={bruger} className={`mt-1 ${feltKlasse}`} />
+          </label>
+        )}
         <label className="text-xs font-medium text-neutral-600">
           Fra dato
           <input name="fra" type="date" defaultValue={fraIso ? fra : ""} className={`mt-1 ${feltKlasse}`} />
@@ -215,39 +266,39 @@ export default async function MedarbejderLog({
           const visBruger = r.bruger_id && !erSystem(r.bruger_id);
           return (
             <li key={r.id} className="rounded-xl border border-neutral-200 bg-white p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-neutral-900">{handlingNavn(r.handling)}</span>
-                <time dateTime={r.oprettet_kl} className="text-xs text-neutral-400">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <p className="min-w-0 text-sm text-neutral-900">
+                  <span className="font-semibold">
+                    {r.er_system ? "Systemet" : r.medarbejder_navn ?? "Ukendt medarbejder"}
+                  </span>{" "}
+                  {smaatForrest(handlingNavn(r.handling))}
+                  {visBruger && (
+                    <>
+                      {" – "}
+                      <Link href={`/admin/brugere/${r.bruger_id}`} className="font-medium text-neutral-900 hover:underline">
+                        {r.bruger_navn ?? r.bruger_email ?? "ukendt bruger"}
+                      </Link>
+                    </>
+                  )}
+                </p>
+                <time dateTime={r.oprettet_kl} className="text-xs text-neutral-500">
                   {new Date(r.oprettet_kl).toLocaleString("da-DK", { timeZone: TZ })}
                 </time>
               </div>
-              <p className="mt-1 text-xs text-neutral-500">
-                Af{" "}
-                <span className="font-medium text-neutral-700">
-                  {r.er_system ? "System" : r.medarbejder_navn ?? "Ukendt"}
-                </span>
-                {visBruger && (
-                  <>
-                    {" · Bruger: "}
-                    <Link href={`/admin/brugere/${r.bruger_id}`} className="font-medium text-neutral-700 hover:underline">
-                      {r.bruger_navn ?? r.bruger_email ?? "Ukendt"}
-                    </Link>
-                  </>
-                )}
-                {" · "}
+              {r.aarsag && (
+                <p className="mt-2 whitespace-pre-line break-words text-sm text-neutral-700">{laesbarTekst(r.aarsag)}</p>
+              )}
+              <p className="mt-2 text-xs text-neutral-500">
                 {maalNavn(r.maal_type)}
                 {link && (
                   <>
-                    {" – "}
-                    <Link href={link.href} className="font-medium text-neutral-700 hover:underline">
+                    {" · "}
+                    <Link href={link.href} className="font-medium text-groen hover:underline">
                       {link.label}
                     </Link>
                   </>
                 )}
               </p>
-              {r.aarsag && (
-                <p className="mt-2 whitespace-pre-line break-words text-sm text-neutral-700">{r.aarsag}</p>
-              )}
             </li>
           );
         })}

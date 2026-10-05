@@ -8,6 +8,7 @@ import { setRolle } from "@/app/actions/adminActions";
 import AdminFilters from "@/components/admin/AdminFilters";
 import { RolleBadge } from "@/components/admin/StatusBadge";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 export default async function AdminMedarbejdere({
   searchParams,
@@ -110,13 +111,12 @@ export default async function AdminMedarbejdere({
   );
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Medarbejdere</h1>
-        <span className="text-sm text-neutral-500">
-          {staff?.length ?? 0} med adgang
-        </span>
-      </div>
+    <div className="p-4 sm:p-6 space-y-5">
+      <AdminSideHoved
+        titel="Medarbejdere"
+        forklaring="Hvem der har adgang til admin, og med hvilken rolle. Brug siden, når nogen starter eller stopper."
+        hoejre={<span className="text-sm text-neutral-500">{staff?.length ?? 0} med adgang</span>}
+      />
 
       {tabel(staff ?? [], "Ingen medarbejdere endnu")}
 

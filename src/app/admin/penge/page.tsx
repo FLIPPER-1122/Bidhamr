@@ -550,10 +550,13 @@ export default async function AdminPenge({
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-neutral-900">Penge</h1>
+          <p className="mt-1 text-sm text-neutral-600">
+            Hvad BidHamr har tjent, og hvor pengene er lige nu. Kun synlig for chef.
+          </p>
           <p className="text-xs text-neutral-500">
-            Kun synlig for chef. {o.fra ? `${dato(o.fra)} – ${dato(o.til)}` : `Alt til ${dato(o.til)}`}
+            {o.fra ? `${dato(o.fra)} – ${dato(o.til)}` : `Alt til ${dato(o.til)}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

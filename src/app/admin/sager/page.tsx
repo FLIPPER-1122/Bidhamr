@@ -2,6 +2,7 @@ import Link from "next/link";
 import { hentAntalVentendeAnker, hentSager, type SagListeRaekke } from "@/app/actions/adminSager";
 import { SAG_TYPE_NAVN, adminSagSti } from "@/lib/sager";
 import { BeskyttelseBadge, SagStatusBadge, sagTid } from "@/components/sager/visning";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 // Sager oprettet af køberen. Åbne sager (venter på afgørelse) står øverst.
 // Handler uden sag (hænger, manuel markering, fællesbesked) ligger under
@@ -55,16 +56,19 @@ export default async function AdminSager({
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Sager</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Sager oprettet af køberen. Pengene er frosset, mens en sag er åben. Handler uden sag finder du under{" "}
-          <Link href="/admin/handler" className="font-medium text-groen hover:underline">
-            Handler
-          </Link>
-          .
-        </p>
-      </div>
+      <AdminSideHoved
+        titel="Sager"
+        forklaring={
+          <>
+            Køberen har klaget over en handel. Læs sagen, og afgør hvem der har ret. Pengene er frosset,
+            mens sagen er åben. Handler uden sag finder du under{" "}
+            <Link href="/admin/handler" className="font-medium text-groen hover:underline">
+              Handler
+            </Link>
+            .
+          </>
+        }
+      />
 
       <nav aria-label="Filtrér sager" className="flex flex-wrap gap-2">
         {FANER.map((f) => {

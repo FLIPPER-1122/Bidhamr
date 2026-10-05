@@ -7,6 +7,8 @@ import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import HandelStatusBadge from "@/components/HandelStatusBadge";
 import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
+import FlereHandlinger from "@/components/admin/FlereHandlinger";
+import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { UUID_RE } from "@/lib/moderationLog";
 import { HAENGER_TEKST, erHaengerGrund, type HaengerGrund } from "@/lib/adminGraenser";
 import {
@@ -173,21 +175,24 @@ export default async function AdminSager({
   }
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">Handler</h1>
-        <span className="text-sm text-neutral-500">
-          {rows.length} {rows.length === 1 ? "handel" : "handler"}
-        </span>
-      </div>
-
-      <p className="text-sm text-neutral-500">
-        Sager oprettet af køberen behandles under{" "}
-        <Link href="/admin/sager" className="font-medium text-groen hover:underline">
-          Sager
-        </Link>
-        . En markering her fryser pengene, indtil den fjernes.
-      </p>
+    <div className="p-4 sm:p-6 space-y-5">
+      <AdminSideHoved
+        titel="Handler"
+        forklaring="Alle handler mellem køber og sælger. Brug siden, når en handel går i stå – fx hvis varen ikke er sendt."
+        hoejre={
+          <span className="text-sm text-neutral-500">
+            {rows.length} {rows.length === 1 ? "handel" : "handler"}
+          </span>
+        }
+      >
+        <p className="mt-1 max-w-3xl text-xs text-neutral-500">
+          Klager fra køberen behandles under{" "}
+          <Link href="/admin/sager" className="font-medium text-groen hover:underline">
+            Sager
+          </Link>
+          . Markerer du en handel her, fryses pengene, indtil markeringen fjernes.
+        </p>
+      </AdminSideHoved>
 
       {haengerFejl && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -285,27 +290,29 @@ export default async function AdminSager({
                       )}
                     </td>
                     <td className="px-5 py-3">
-                      {kanSkriveFaelles && (
-                        <div className="mb-2">
-                          <FaellesbeskedKnap tradeId={h.id} />
-                        </div>
-                      )}
+                      {/* Højst én hovedknap pr. række. Sjældne og farlige
+                          handlinger ligger under "Flere handlinger". */}
+                      <div className="flex flex-col items-start gap-2">
                       {!aktiv ? (
                         <span className="text-xs text-neutral-400">Afsluttet</span>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {h.sag_aaben ? (
-                            <ConfirmDialog
-                              triggerLabel="Fjern markering"
-                              triggerClassName="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-200"
-                              title="Fjern markeringen?"
-                              description="Handlen fortsætter normalt. Ingen penge flyttes."
-                              confirmLabel="Ja, fjern markeringen"
-                              action={sagLuk}
-                              hiddenFields={{ tradeId: h.id }}
-                              aarsagField={{ label: "Afsluttende note", placeholder: "Hvad blev udfaldet?", required: true }}
-                            />
-                          ) : (
+                        h.sag_aaben && (
+                          <ConfirmDialog
+                            triggerLabel="Fjern markering"
+                            triggerClassName="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-200"
+                            title="Fjern markeringen?"
+                            description="Handlen fortsætter normalt. Ingen penge flyttes."
+                            confirmLabel="Ja, fjern markeringen"
+                            action={sagLuk}
+                            hiddenFields={{ tradeId: h.id }}
+                            aarsagField={{ label: "Afsluttende note", placeholder: "Hvad blev udfaldet?", required: true }}
+                          />
+                        )
+                      )}
+                      {(kanSkriveFaelles || (aktiv && (!h.sag_aaben || kanFlyttePenge))) && (
+                        <FlereHandlinger>
+                          {kanSkriveFaelles && <FaellesbeskedKnap tradeId={h.id} />}
+                          {aktiv && !h.sag_aaben && (
                             <ConfirmDialog
                               triggerLabel="Markér handel"
                               triggerClassName="whitespace-nowrap rounded-md bg-amber-100 px-2 py-1 text-xs text-amber-800 transition-colors hover:bg-amber-200"
@@ -317,7 +324,7 @@ export default async function AdminSager({
                               aarsagField={{ label: "Hvad drejer sagen sig om?", placeholder: "Fx: køber melder varen defekt, sælger svarer ikke...", required: true }}
                             />
                           )}
-                          {kanFlyttePenge && (
+                          {aktiv && kanFlyttePenge && (
                             <>
                               <ConfirmDialog
                                 triggerLabel="Frigiv til sælger"
@@ -341,8 +348,9 @@ export default async function AdminSager({
                               />
                             </>
                           )}
-                        </div>
+                        </FlereHandlinger>
                       )}
+                      </div>
                     </td>
                   </tr>
                 );
