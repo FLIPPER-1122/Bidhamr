@@ -8,11 +8,13 @@ import {
   MAKS_BESKRIVELSE,
   MAKS_BILLEDER,
   MAKS_TITEL,
+  MINDSTE_STARTPRIS,
   STANDARD_VARIGHED,
   STARTPRIS_ANBEFALING,
   VARIGHEDER,
   slutterKlFraVarighed,
   auktionBilledeSti,
+  valideStartpris,
   type VarighedDage,
 } from "@/lib/auktionRegler";
 
@@ -25,7 +27,8 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const [titel, setTitel] = useState("");
   const [kategori, setKategori] = useState(kategorier[0]);
   const [beskrivelse, setBeskrivelse] = useState("");
-  const [startpris, setStartpris] = useState(0);
+  // Tomt felt fra start (ikke 0): mindste startpris er 1 kr.
+  const [startpris, setStartpris] = useState<number>(NaN);
   const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
   const [postnummer, setPostnummer] = useState("");
@@ -112,6 +115,11 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
 
     if (billeder.length === 0) {
       setError("Tilføj mindst ét billede.");
+      return;
+    }
+    const prisFejl = valideStartpris(startpris);
+    if (prisFejl) {
+      setError(prisFejl);
       return;
     }
     if (!/^\d{4}$/.test(postnummer)) {
@@ -363,10 +371,13 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         <input
           id="startpris"
           type="number"
-          min={0}
+          inputMode="numeric"
+          min={MINDSTE_STARTPRIS}
           step={1}
-          value={startpris}
-          onChange={(e) => setStartpris(Number(e.target.value))}
+          required
+          placeholder="Mindst 1 kr."
+          value={Number.isNaN(startpris) ? "" : startpris}
+          onChange={(e) => setStartpris(e.target.value === "" ? NaN : Number(e.target.value))}
           aria-describedby="startpris-hjaelp"
           className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-sm text-neutral-900 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
         />

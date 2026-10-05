@@ -42,6 +42,33 @@ export const SAG_BORTKOMMET_EFTER_DAGE = 7;
 export const SAG_AUTO_FRIGIV_EFTER_DAGE = 14;
 // Ankefrist: pengene flyttes først 4 dage efter en afgørelse.
 export const SAG_ANKEFRIST_DAGE = 4;
+// Ventetid ved retur (Filip, 5. oktober 2026): når køberen har fået besked om
+// at sende varen retur, går der mindst 7 dage, før staff kan afgøre sagen til
+// sælger eller lukke den, fordi returen ikke er kommet.
+export const SAG_RETUR_VENTETID_DAGE = 7;
+
+const DAG_MS = 24 * 60 * 60 * 1000;
+
+// Hvornår er de 7 dages ventetid udløbet? Køberen får besked om at sende
+// varen, når ankefristen er udløbet (penge_flyttes_efter_kl = afgørelsen + 4
+// dage), eller når anken er afgjort (penge_flyttes_efter_kl = ankens
+// afgørelse). Samme beregning som sag_afgoer i
+// supabase/migrations/20261005020000_startpris_anke.sql (kode 'retur_ventetid').
+export function sagReturFristKl(
+  pengeFlyttesEfterKl: string | null,
+  afgjortKl: string | null,
+  ankeBehandletKl: string | null,
+): string | null {
+  const besked = pengeFlyttesEfterKl
+    ? Date.parse(pengeFlyttesEfterKl)
+    : afgjortKl
+      ? Date.parse(afgjortKl) + SAG_ANKEFRIST_DAGE * DAG_MS
+      : Number.NaN;
+  if (Number.isNaN(besked)) return null;
+  const anke = ankeBehandletKl ? Date.parse(ankeBehandletKl) : Number.NaN;
+  const fra = Number.isNaN(anke) ? besked : Math.max(besked, anke);
+  return new Date(fra + SAG_RETUR_VENTETID_DAGE * DAG_MS).toISOString();
+}
 
 // Hvad der sker med pengene efter afgørelsen (sager.penge_handling).
 export type SagPengeHandling = "refunder" | "frigiv" | "ingen";
@@ -148,8 +175,11 @@ export const SAG_OPRET_FEJL: Record<string, string> = {
 
 // ------------------------------------------------------------------ Anke
 // Spejlet i supabase/migrations/20261004050000_anke.sql (sag_anke_vurder,
-// sag_anke_indgiv, sag_anke_afgoer) og 20261004051000_anke_rettelser.sql. Den part, der taber sagen, kan anke fra
+// sag_anke_indgiv, sag_anke_afgoer), 20261004051000_anke_rettelser.sql og
+// 20261005020000_startpris_anke.sql. Den part, der taber sagen, kan anke fra
 // 24 timer efter afgørelsen og indtil ankefristen (4 dage). Én anke pr. sag.
+// Også en sag, der er lukket uden at flytte penge, kan ankes - af køberen,
+// som oprettede den (Filip, 5. oktober 2026).
 export const SAG_ANKE_AABNER_EFTER_TIMER = 24;
 export const SAG_ANKE_BEGRUNDELSE_MIN = 20;
 export const SAG_ANKE_BEGRUNDELSE_MAKS = 2000;

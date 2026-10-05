@@ -9,6 +9,7 @@ import {
   MAKS_BESKRIVELSE,
   MAKS_BILLEDER,
   MAKS_TITEL,
+  MINDSTE_STARTPRIS,
   STARTPRIS_ANBEFALING,
   auktionBilledeSti,
   valideStartpris,
@@ -268,8 +269,10 @@ export default function RedigerAuktionForm({
         <input
           id="startpris"
           type="number"
-          min={0}
+          inputMode="numeric"
+          min={MINDSTE_STARTPRIS}
           step={1}
+          required
           value={Number.isNaN(startpris) ? "" : startpris}
           onChange={(e) => setStartpris(e.target.value === "" ? NaN : Number(e.target.value))}
           aria-describedby="startpris-hjaelp"

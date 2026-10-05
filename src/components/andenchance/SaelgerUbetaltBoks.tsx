@@ -12,6 +12,7 @@ import {
 } from "@/app/actions/andenchance";
 import {
   STANDARD_VARIGHED,
+  MINDSTE_STARTPRIS,
   STARTPRIS_ANBEFALING,
   VARIGHEDER,
   type VarighedDage,
@@ -171,7 +172,9 @@ function GenopsaetForm({
   onAnnuller: () => void;
 }) {
   const router = useRouter();
-  const [startpris, setStartpris] = useState(standardStartpris);
+  // Mindste startpris er 1 kr. En gammel auktion med startpris 0 foreslås
+  // derfor til 1 kr.
+  const [startpris, setStartpris] = useState(Math.max(standardStartpris, MINDSTE_STARTPRIS));
   const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [fejl, setFejl] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -202,7 +205,7 @@ function GenopsaetForm({
           id="genopsaet-startpris"
           type="number"
           inputMode="numeric"
-          min={0}
+          min={MINDSTE_STARTPRIS}
           step={1}
           required
           value={Number.isNaN(startpris) ? "" : startpris}

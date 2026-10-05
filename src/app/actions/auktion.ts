@@ -17,6 +17,7 @@ import {
   MAKS_BILLEDER,
   MAKS_TITEL,
   valideStartpris,
+  STARTPRIS_FOR_LAV,
 } from "@/lib/auktionRegler";
 
 type Fejl = { fejl: string };
@@ -35,6 +36,7 @@ const REDIGER_FEJL: Record<string, string> = {
   ugyldige_billeder: `Tilføj mellem 1 og ${MAKS_BILLEDER} billeder.`,
   ugyldig_kategori: "Vælg en kategori.",
   ugyldig_startpris: "Startprisen skal være et helt antal kroner.",
+  startpris_for_lav: STARTPRIS_FOR_LAV,
 };
 
 export type RedigerAuktionInput = {

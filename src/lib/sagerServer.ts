@@ -8,6 +8,7 @@ import { send, type SendResultat } from "@/lib/notifikationer/send";
 import { overfoerTilSaelger, refunderBetaling } from "@/lib/betaling/stripeBetaling";
 import { sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 import {
+  SAG_RETUR_VENTETID_DAGE,
   SAG_TYPE_NAVN,
   type SagPengeHandling,
   type SagType,
@@ -109,6 +110,10 @@ export async function notificerNyeSager(): Promise<number> {
   return antal;
 }
 
+// Ventetid ved retur (SAG_RETUR_VENTETID_DAGE): sender køberen ikke varen
+// inden 7 dage efter beskeden, kan BidHamr afgøre sagen til sælgerens fordel.
+const RETUR_FRIST_NOTE = `Send varen inden ${SAG_RETUR_VENTETID_DAGE} dage – ellers kan BidHamr afgøre sagen til sælgerens fordel.`;
+
 export type SagUdfaldBesked =
   // Ved afgørelsen (pengene flyttes efter ankefristen på 4 dage).
   | "planlagt_refusion"
@@ -195,7 +200,7 @@ export async function notificerSagAfgoerelse(
         saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Er du uenig, kan du anke afgørelsen inden for 4 dage. Køberen sender varen retur til dig, når ankefristen er udløbet${ankefrist}, og betaler selv returfragten. Når pakken er afleveret, får køberen pengene tilbage${forbehold}.${grund}`],
       },
       retur_kan_sendes: {
-        koeber: ["Send varen retur nu", `Ankefristen i sagen om "${t}" er udløbet. Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`],
+        koeber: ["Send varen retur nu", `Ankefristen i sagen om "${t}" er udløbet. Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote} ${RETUR_FRIST_NOTE}`],
         saelger: ["Køberen sender varen retur", `Ankefristen i sagen om "${t}" er udløbet. Køberen sender nu varen retur til dig og betaler selv returfragten.`],
       },
       planlagt_frigivelse: {
@@ -203,7 +208,8 @@ export async function notificerSagAfgoerelse(
         saelger: ["Du har fået medhold i sagen", `BidHamr har afgjort sagen om "${t}" til din fordel. Pengene udbetales til dig${tidligst}${forbehold}.${grund}`],
       },
       lukket: {
-        koeber: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Handlen fortsætter som normalt${fortsaetter}${forbehold}.${grund}`],
+        // Køberen fik afvist sin sag og kan anke (ikke ved en endelig afgørelse).
+        koeber: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Handlen fortsætter som normalt${fortsaetter}${forbehold}.${endelig ? "" : " Er du uenig, kan du anke afgørelsen inden for 4 dage."}${grund}`],
         saelger: ["Sagen er lukket", `BidHamr har lukket sagen om "${t}". Handlen fortsætter som normalt${fortsaetter}${forbehold}.${grund}`],
       },
       retur_afleveret: {
@@ -482,7 +488,9 @@ export async function notificerReturKanSendes(): Promise<number> {
 //   'koeber_retur'  - køberen har medhold og skal sende varen retur
 //   'koeber'        - køberen får pengene tilbage
 //   'saelger'       - sælgeren får pengene
-export type AnkeSlutUdfald = "koeber" | "koeber_retur" | "saelger";
+//   'lukket'        - sagen forbliver lukket (anken på en lukket sag er
+//                     afvist); handlen fortsætter normalt
+export type AnkeSlutUdfald = "koeber" | "koeber_retur" | "saelger" | "lukket";
 
 // Hvad der faktisk skete med pengene (koeber/saelger):
 //   'nu'      - sag_afvikl gennemførte; pengene er sendt til Stripe nu
@@ -518,6 +526,7 @@ export async function notificerAnkeAfgjort(
     const beskyttelseNote = h.beskyttelse ? " BidHamr Beskyttelse refunderes ikke." : "";
 
     // Kun "nu", når pengene faktisk er flyttet. Ellers en tekst uden tidspunkt.
+    const returFristNote = RETUR_FRIST_NOTE;
     const stripe = "Betalingen håndteres af vores betalingspartner Stripe.";
     const penge: Record<AnkeSlutUdfald, { koeber: string; saelger: string }> = {
       koeber:
@@ -533,8 +542,12 @@ export async function notificerAnkeAfgjort(
               }
             : { koeber: "", saelger: "" },
       koeber_retur: {
-        koeber: `Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`,
+        koeber: `Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote} ${returFristNote}`,
         saelger: "Køberen sender varen retur til dig og betaler selv returfragten. Når pakken er afleveret, får køberen pengene tilbage.",
+      },
+      lukket: {
+        koeber: "Sagen forbliver lukket, og handlen fortsætter som normalt.",
+        saelger: "Sagen forbliver lukket, og handlen fortsætter som normalt.",
       },
       saelger:
         pengeStatus === "nu"

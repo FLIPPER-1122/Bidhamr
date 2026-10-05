@@ -42,15 +42,20 @@ export function mindsteNaesteBud(nuvaerendeBud: number | null, startpris: number
   return nuvaerendeBud + budstigning(nuvaerendeBud);
 }
 
-// Startpris i hele kroner, 0 eller derover (som formularens felt: min 0, trin 1).
+// Startpris i hele kroner, mindst 1 kr (Filip, 5. oktober 2026 – som
+// formularens felt: min 1, trin 1). Samme regel i databasen
+// (auctions_beskyt_ny, auctions_beskyt_kolonner, rediger_auktion,
+// genopsaet_auktion - 20261005020000_startpris_anke.sql).
+export const MINDSTE_STARTPRIS = 1;
 export const MAKS_STARTPRIS = 9_999_999_999;
+export const STARTPRIS_FOR_LAV = "Startprisen skal være mindst 1 kr.";
 
 export function valideStartpris(startpris: unknown): string | null {
   if (typeof startpris !== "number" || !Number.isFinite(startpris)) {
     return "Angiv en startpris.";
   }
   if (!Number.isInteger(startpris)) return "Startprisen skal være i hele kroner.";
-  if (startpris < 0) return "Startprisen kan ikke være negativ.";
+  if (startpris < MINDSTE_STARTPRIS) return STARTPRIS_FOR_LAV;
   if (startpris > MAKS_STARTPRIS) return "Startprisen er for høj.";
   return null;
 }

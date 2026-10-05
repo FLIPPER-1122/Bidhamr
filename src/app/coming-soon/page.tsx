@@ -12,7 +12,7 @@ const TRIN = [
     num: "01",
     titel: "Opret en auktion",
     tekst:
-      "Tag billeder, sæt en startpris — eller start fra 0 kr. Du vælger selv, om du sender varen eller kun tilbyder afhentning.",
+      "Tag billeder, sæt en startpris — eller start fra 1 kr. Du vælger selv, om du sender varen eller kun tilbyder afhentning.",
     ikon: (
       <path
         strokeLinecap="round"
@@ -241,7 +241,7 @@ export default function ComingSoonPage() {
                 {
                   titel: "Prisen finder sig selv",
                   tekst:
-                    "Ved du ikke, hvad tingen er værd? Start fra 0 kr og lad buddene bestemme.",
+                    "Ved du ikke, hvad tingen er værd? Start fra 1 kr og lad buddene bestemme.",
                 },
                 {
                   titel: "Totalprisen står frem",
