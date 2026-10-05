@@ -145,7 +145,7 @@ export default function ProfileHeader({
           {[
             { tal: stats.auktionerOprettet, label: "Auktioner oprettet" },
             ...(erEgenProfil ? [{ tal: stats.budAfgivet, label: "Bud afgivet" }] : []),
-            { tal: stats.gennemforteHandler, label: "Gennemførte handler" },
+            { tal: stats.gennemforteHandler, label: "Gennemførte salg" },
           ].map(({ tal, label }) => (
             <div
               key={label}

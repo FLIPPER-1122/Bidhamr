@@ -47,7 +47,9 @@ export default function SettingsForm({
       setError(
         updateError.code === "BHN01"
           ? 'Navnet må ikke indeholde "BidHamr".'
-          : "Dine oplysninger kunne ikke gemmes. Prøv igen om lidt."
+          : updateError.code === "BHN02"
+            ? "Navnet må ikke indeholde en e-mail, et telefonnummer eller et link. Andre brugere kan se dit navn, så skriv kun dit navn."
+            : "Dine oplysninger kunne ikke gemmes. Prøv igen om lidt."
       );
       return;
     }

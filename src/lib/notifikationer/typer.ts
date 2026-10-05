@@ -57,7 +57,7 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "gemt_soegning", navn: "Gemte søgninger", beskrivelse: "Når nye auktioner matcher en søgning, du har gemt. Højst én besked pr. søgning hver 6. time.", paakraevet: false },
   { type: "ny_besked", navn: "Nye beskeder", beskrivelse: "Når du får en ny besked i en handel eller fra BidHamr.", paakraevet: false },
   { type: "spoergsmaal", navn: "Spørgsmål til auktioner", beskrivelse: "Når nogen stiller et spørgsmål til din auktion, eller sælgeren svarer på dit spørgsmål.", paakraevet: false },
-  { type: "bedoemmelse", navn: "Svar på dine bedømmelser", beskrivelse: "Når en sælger svarer på en bedømmelse, du har givet.", paakraevet: false },
+  { type: "bedoemmelse", navn: "Dine bedømmelser", beskrivelse: "Når en sælger svarer på en bedømmelse, du har givet, eller når noget, du har skrevet, er synligt igen efter en gennemgang.", paakraevet: false },
 ] as const;
 
 export const ALLE_TYPER: readonly NotifikationType[] = NOTIFIKATION_TYPER.map((t) => t.type);

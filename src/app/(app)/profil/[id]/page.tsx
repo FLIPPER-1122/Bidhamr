@@ -17,6 +17,27 @@ import ProfileTabs, {
   type Rating,
 } from "@/components/profile/ProfileTabs";
 
+// public.profil_offentlige_tal (20261007050000): kun antal, ingen beløb.
+// Samme definitioner som min_statistik (/konto/statistik).
+type ProfilTal = {
+  auktioner_oprettet: number;
+  solgte_handler: number;
+  medlem_siden: string;
+  bud_afgivet: number | null;
+};
+
+async function hentProfilTal(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+): Promise<ProfilTal | null> {
+  const { data, error } = await supabase.rpc("profil_offentlige_tal", { p_bruger: id });
+  if (error) {
+    console.error("Profiltal kunne ikke hentes:", error.message);
+    return null;
+  }
+  return (data ?? null) as ProfilTal | null;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -82,7 +103,7 @@ export default async function ProfilPage({
       { data: mineBidsRaw },
       { data: egenEmail },
       egneRatings,
-      { data: gennemforteHandlerRaw },
+      egneTal,
       { data: kontakt },
       { data: egneFoelgere },
       opsummering,
@@ -102,10 +123,8 @@ export default async function ProfilPage({
       supabase.rpc("min_profil").maybeSingle<{ email: string; telefon: string | null }>(),
       // Skjulte bedømmelser er sorteret fra (tæller heller ikke i gennemsnittet).
       hentBedoemmelser(supabase, id, { erEjer: true }),
-      supabase
-        .from("trades")
-        .select("id")
-        .or(`buyer_id.eq.${id},seller_id.eq.${id}`),
+      // Samme tal som /konto/statistik (bud_afgivet kun for en selv).
+      hentProfilTal(supabase, id),
       // Adressen (kun til afhentning) kan kun læses af ejeren selv.
       supabase.rpc("mine_kontaktoplysninger").maybeSingle<{ adresse: string | null }>(),
       supabase.rpc("antal_foelgere", { p_bruger: id }),
@@ -193,9 +212,9 @@ export default async function ProfilPage({
             gennemsnitRating={gennemsnitRating}
             antalRatings={antalRatings}
             stats={{
-              auktionerOprettet: egneAuktioner.length,
-              budAfgivet: budAuktionIds.length,
-              gennemforteHandler: gennemforteHandlerRaw?.length ?? 0,
+              auktionerOprettet: egneTal?.auktioner_oprettet ?? egneAuktioner.length,
+              budAfgivet: egneTal?.bud_afgivet ?? budAuktionIds.length,
+              gennemforteHandler: egneTal?.solgte_handler ?? 0,
             }}
             erEgenProfil={true}
             brugerId={id}
@@ -231,6 +250,7 @@ export default async function ProfilPage({
     { data: minFoelgning },
     blokeretAfProfil,
     opsummering,
+    profilTal,
   ] = await Promise.all([
     supabase
       .from("auctions")
@@ -266,6 +286,7 @@ export default async function ProfilPage({
           .then(({ data, error }) => (error ? false : data === true))
       : Promise.resolve(false),
     hentBedoemmelseOpsummering(supabase, id),
+    hentProfilTal(supabase, id),
   ]);
 
   const aktiveAuktioner = (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort);
@@ -284,9 +305,9 @@ export default async function ProfilPage({
           gennemsnitRating={gennemsnitRating}
           antalRatings={antalRatings}
           stats={{
-            auktionerOprettet: aktiveAuktioner.length,
+            auktionerOprettet: profilTal?.auktioner_oprettet ?? aktiveAuktioner.length,
             budAfgivet: 0,
-            gennemforteHandler: 0,
+            gennemforteHandler: profilTal?.solgte_handler ?? 0,
           }}
           erEgenProfil={false}
           brugerId={id}

@@ -102,3 +102,56 @@ grant execute on function public.bidhamr_pre_request() to anon, authenticated, s
 
 alter role authenticator set pgrst.db_pre_request to 'public.bidhamr_pre_request';
 notify pgrst, 'reload config';
+
+-- ============================================================================
+-- Storage: to-trin ogsaa for uploads (tilfoejet i fase 4-testrettelserne)
+-- ============================================================================
+--
+-- Pre-requesten ovenfor gaelder ikke Storage. Uden dette afsnit kan en
+-- aal1-session (kun adgangskode) for en bruger med to-trins-login uploade
+-- og slette billeder. Skrive-policies (insert/delete) paa storage.objects
+-- kraever nu storage_to_trin_ok(): sessionen er aal2, ELLER brugeren har
+-- ingen verificeret to-trins-faktor. Laesning er uaendret.
+-- Gaelder buckets: auktion-billeder, avatarer, pakke-billeder, sag-billeder.
+-- Tilbagerulning: koer policy-definitionerne uden "and public.storage_to_trin_ok()".
+
+create or replace function public.storage_to_trin_ok()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $fn$
+  select auth.uid() is null
+      or coalesce(auth.jwt()->>'aal', 'aal1') = 'aal2'
+      or not exists (select 1 from auth.mfa_factors f
+                      where f.user_id = auth.uid() and f.status = 'verified');
+$fn$;
+
+revoke all on function public.storage_to_trin_ok() from public;
+grant execute on function public.storage_to_trin_ok() to anon, authenticated, service_role;
+
+alter policy auktion_billeder_insert_own on storage.objects
+  with check (bucket_id = 'auktion-billeder'
+              and (auth.uid())::text = (storage.foldername(name))[1]
+              and public.storage_to_trin_ok());
+alter policy auktion_billeder_delete_own on storage.objects
+  using (bucket_id = 'auktion-billeder'
+         and (auth.uid())::text = (storage.foldername(name))[1]
+         and public.storage_to_trin_ok());
+alter policy avatarer_insert_own on storage.objects
+  with check (bucket_id = 'avatarer'
+              and (auth.uid())::text = (storage.foldername(name))[1]
+              and public.storage_to_trin_ok());
+alter policy avatarer_delete_own on storage.objects
+  using (bucket_id = 'avatarer'
+         and (auth.uid())::text = (storage.foldername(name))[1]
+         and public.storage_to_trin_ok());
+alter policy pakke_billeder_upload_saelger on storage.objects
+  with check (bucket_id = 'pakke-billeder'
+              and public.pakke_billede_maa_uploade(name)
+              and public.storage_to_trin_ok());
+alter policy sag_billeder_upload_koeber on storage.objects
+  with check (bucket_id = 'sag-billeder'
+              and public.sag_billede_maa_uploade(name)
+              and public.storage_to_trin_ok());
