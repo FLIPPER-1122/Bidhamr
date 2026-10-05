@@ -7,21 +7,30 @@ import { logDriftFejl } from "@/lib/drift";
 // brugeren af auth.uid(), højst 1 gang i timen) - appen kan bruge samme RPC.
 // POST (ikke GET), så et link eller prefetch ikke kan bruge timens udtræk.
 export async function POST(req: NextRequest) {
-  // Kun fra vores egen side (formularen på /konto).
+  // Kun fra vores egen side (formularen på /konto). Sammenlignes med
+  // Host-headeren, så det også virker bag Vercels proxy.
+  const vaert = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
   const origin = req.headers.get("origin");
-  if (origin && origin !== req.nextUrl.origin) {
+  let fremmed = false;
+  try {
+    fremmed = !!origin && new URL(origin).host !== vaert;
+  } catch {
+    fremmed = true;
+  }
+  if (fremmed) {
     return NextResponse.json({ fejl: "Ugyldig forespørgsel." }, { status: 403 });
   }
+  const base = origin ?? req.nextUrl.origin;
 
   const supabase = await createClient();
   const { data: brugerData } = await supabase.auth.getUser();
   if (!brugerData.user) {
-    return NextResponse.redirect(new URL("/login?redirect=/konto%23dine-data", req.url), 303);
+    return NextResponse.redirect(new URL("/login?redirect=/konto%23dine-data", base), 303);
   }
 
   const { data, error } = await supabase.rpc("mine_data");
   if (error) {
-    const tilbage = new URL("/konto", req.url);
+    const tilbage = new URL("/konto", base);
     if (error.code === "BHR01") {
       tilbage.searchParams.set("data", "vent");
     } else {

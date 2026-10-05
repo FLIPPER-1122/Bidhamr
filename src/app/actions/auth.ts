@@ -202,6 +202,9 @@ export async function opretKonto(input: {
       return { fejl: "Adgangskoden er for svag. Vælg en længere og mindre almindelig adgangskode.", felt: "password" };
     }
     if (error.code === "signup_disabled") return { fejl: "Det er ikke muligt at oprette en konto endnu." };
+    if (error.code === "email_address_invalid" || error.code === "email_address_not_authorized") {
+      return { fejl: "Vi kan ikke sende mail til den adresse. Tjek, at den er skrevet rigtigt.", felt: "email" };
+    }
     console.error("opretKonto fejlede:", error.code, error.message);
     return { fejl: GENERISK };
   }

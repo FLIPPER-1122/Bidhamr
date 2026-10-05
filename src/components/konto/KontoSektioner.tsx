@@ -25,7 +25,10 @@ export function KontoNavigation() {
     ["#dine-data", "Dine data"],
   ];
   return (
-    <nav aria-label="Sektioner på Min konto" className="-mx-4 mt-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+    <nav
+      aria-label="Sektioner på Min konto"
+      className="-mx-4 mt-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
+    >
       <ul className="flex gap-2 whitespace-nowrap pb-1">
         {punkter.map(([href, tekst]) => (
           <li key={href}>
