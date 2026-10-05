@@ -22,7 +22,9 @@ export type MinForsendelse = {
   status: string;
   pakkestoerrelse: string;
   sporingsnummer: string | null;
-  label_sti: string | null;
+  // Labelen og QR-koden kan kun ses af den rette part (sælgeren for en
+  // udgående) - hentes via mine_forsendelse_label, ikke fra tabellen.
+  har_label: boolean;
   qr_kode: string | null;
   oprettet_kl: string;
   afleveret_kl: string | null;
@@ -48,6 +50,24 @@ async function brugerOgHandel(tradeId: string) {
   return { supabase, user, handel };
 }
 
+type ForsendelseRaekke = Omit<MinForsendelse, "har_label" | "qr_kode">;
+type LabelRaekke = { label_sti: string | null; qr_kode: string | null };
+
+// Labelens sti og QR-kode, hvis brugeren må se dem (mine_forsendelse_label:
+// sælgeren for en udgående, køberen for en retur, og staff).
+async function hentLabel(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  forsendelseId: string,
+): Promise<LabelRaekke | null> {
+  const { data, error } = await supabase.rpc("mine_forsendelse_label", { p_forsendelse: forsendelseId });
+  if (error) {
+    console.error("mine_forsendelse_label fejlede:", error.message);
+    return null;
+  }
+  const raekke = (Array.isArray(data) ? data[0] : data) as LabelRaekke | undefined;
+  return raekke ?? null;
+}
+
 // Den aktive udgående forsendelse på handlen (læses med brugerens egen
 // session - RLS: kun køber, sælger og staff).
 export async function hentMinForsendelse(tradeId: string): Promise<MinForsendelse | null> {
@@ -56,15 +76,17 @@ export async function hentMinForsendelse(tradeId: string): Promise<MinForsendels
   const { data } = await r.supabase
     .from("forsendelser")
     .select(
-      "id, status, pakkestoerrelse, sporingsnummer, label_sti, qr_kode, oprettet_kl, afleveret_kl, klar_til_afhentning_kl, leveret_kl, returneret_kl",
+      "id, status, pakkestoerrelse, sporingsnummer, oprettet_kl, afleveret_kl, klar_til_afhentning_kl, leveret_kl, returneret_kl",
     )
     .eq("trade_id", tradeId)
     .eq("type", "udgaaende")
     .not("status", "in", "(annulleret,fejlet)")
     .order("oprettet_kl", { ascending: false })
     .limit(1)
-    .maybeSingle<MinForsendelse>();
-  return data ?? null;
+    .maybeSingle<ForsendelseRaekke>();
+  if (!data) return null;
+  const label = await hentLabel(r.supabase, data.id);
+  return { ...data, har_label: Boolean(label?.label_sti), qr_kode: label?.qr_kode ?? null };
 }
 
 export async function lavFragtlabel(
@@ -100,8 +122,9 @@ export async function annullerFragtlabel(
   return svar;
 }
 
-// Kortlivet link til label-PDF'en. Signeres med brugerens egen session, så
-// storage-RLS (fragt_label_maa_laese) afgør adgangen.
+// Kortlivet link til label-PDF'en. Stien hentes med mine_forsendelse_label,
+// og linket signeres med brugerens egen session, så storage-RLS
+// (fragt_label_maa_laese) også afgør adgangen.
 export async function hentFragtlabelLink(
   forsendelseId: string,
 ): Promise<{ url: string } | { fejl: string }> {
@@ -113,11 +136,7 @@ export async function hentFragtlabelLink(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { fejl: "Du skal være logget ind." };
-  const { data: f } = await supabase
-    .from("forsendelser")
-    .select("label_sti")
-    .eq("id", forsendelseId)
-    .maybeSingle<{ label_sti: string | null }>();
+  const f = await hentLabel(supabase, forsendelseId);
   if (!f?.label_sti) return { fejl: "Fragtlabelen findes ikke." };
   const { data, error } = await supabase.storage
     .from(FRAGT_LABEL_BUCKET)

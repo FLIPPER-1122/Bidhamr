@@ -65,7 +65,9 @@ export default function FragtlabelBoks({
   if (forsendelse) {
     const status = erSporingsType(forsendelse.status)
       ? SPORINGS_NAVN[forsendelse.status]
-      : "Labelen er ved at blive lavet";
+      : forsendelse.status === "annulleres"
+        ? "Labelen er ved at blive annulleret"
+        : "Labelen er ved at blive lavet";
     return (
       <div className="rounded-xl border border-neutral-200 bg-white p-6">
         <h2 className="text-sm font-semibold text-neutral-900">Din fragtlabel</h2>
@@ -89,7 +91,7 @@ export default function FragtlabelBoks({
           </p>
         )}
         <div className="mt-4 flex flex-wrap gap-3">
-          {forsendelse.label_sti && (
+          {forsendelse.har_label && (
             <button
               type="button"
               onClick={() => aabnLabel(forsendelse.id)}
