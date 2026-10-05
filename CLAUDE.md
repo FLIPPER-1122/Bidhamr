@@ -15,7 +15,7 @@ BidHamr er en dansk C2C-auktionsplatform (bidhamr.dk), hvor privatpersoner sælg
    - **Agenter køres altid i en git worktree** (`isolation: "worktree"`), så de har deres egen mappe. Uden det arbejder flere agenter og Filip i samme arbejdstræ samtidig, og git har intet værn mod det: HEAD kan skifte midt i en agents kommandoer, og `git reset` kan ramme den forkerte branch. Det er sket.
    - En worktree kræver en branch – git tillader ikke to worktrees på `main` samtidig. Den branch er teknik, ikke noget Filip skal forholde sig til: den flettes ind i `main` og slettes, før opgaven meldes færdig.
 2. **Ingen ændringer i produktionsdatabasen** uden Filips udtrykkelige "ja". Skriv migrationer som filer i `supabase/migrations/`. På **testdatabasen** må agenter frit køre migrationer og testdata (se "Databaser" nedenfor).
-3. **Stripe holder alle penge. BidHamr har ingen saldo/wallet.** Vinderen betaler selv inden for 24 timer (kort, MobilePay, Apple Pay, Google Pay). Gemt kort med automatisk betaling er et tilvalg – man kan byde uden. Kun Stripes testmiljø indtil fase 6.
+3. **Stripe holder alle penge. BidHamr har ingen saldo/wallet.** Vinderen betaler selv inden for 48 timer (sælger kan forlænge til højst 7 dage) (kort, MobilePay, Apple Pay, Google Pay). Gemt kort med automatisk betaling er et tilvalg – man kan byde uden. Kun Stripes testmiljø indtil fase 6.
 4. Ordet **"forsikring"** bruges aldrig – det hedder **"BidHamr Beskyttelse"**.
 5. Al tekst i UI er på **dansk**.
 6. Handelsdata slettes aldrig (bogføringsloven/DAC7) – arkivér i stedet.
