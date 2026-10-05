@@ -230,6 +230,7 @@ export default function ProfileTabs({
                 ratings={ratings}
                 erSaelger
                 erLoggetInd
+                mitId={brugerId}
                 kortKlasse="rounded-[14px] border border-kant bg-white p-4 sm:p-5"
                 tomTekst="Du har ingen bedømmelser endnu."
               />

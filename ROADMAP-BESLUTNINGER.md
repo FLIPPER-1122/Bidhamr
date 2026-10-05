@@ -123,12 +123,12 @@ Brugeren får besked når:
 - Frigives pengene automatisk (køber godkender aldrig), får sælgeren **ingen bedømmelse** for den handel.
 - **Links i kommentarer er tilladt** (Filip, 3. oktober 2026). Kommentaren må højst være 1000 tegn.
 - FEJL at rette: submitRating tjekker ikke, at man faktisk var køber i handlen. I dag kan enhver bedømme enhver. Skal låses, så kun køberen på en handel kan bedømme den handels sælger, én gang.
-- **Svar fra sælger** (chef-beslutning, 7. oktober 2026):
+- **Svar fra sælger** (foreslået af Claude 5. oktober 2026 – afventer Filips godkendelse):
   - Kun sælgeren på den bedømte handel kan svare – **ét offentligt svar pr. bedømmelse**, højst 1000 tegn. Vises under bedømmelsen som "Svar fra sælger".
   - Svaret kan **rettes eller slettes i 48 timer** efter det er skrevet, derefter er det låst. Et slettet svar kan ikke skrives igen (der er kun ét svar).
   - Svaret må **ikke indeholde kontaktinfo** (samme filter som "Spørg sælger": links, e-mail, telefon, MobilePay, beskedtjenester) og **ingen grove ord** (kort liste over entydige skældsord og trusler). Køberens kommentar må stadig indeholde links.
   - Køberen får en notifikation, når sælgeren svarer (valgfri type "Svar på dine bedømmelser").
-- **Rapportér og fjern** (chef-beslutning, 7. oktober 2026):
+- **Rapportér og fjern** (foreslået af Claude 5. oktober 2026 – afventer Filips godkendelse):
   - Alle indloggede brugere kan rapportere en bedømmelse eller et svar (grove ord/chikane, personoplysninger, kontaktinfo, ikke om handlen, stødende, spam, andet). Rapporterne ligger i admin under **Bedømmelser → Til gennemsyn**.
   - Medarbejdere (og op) kan **skjule** en bedømmelse og/eller et svar med en fast begrundelse: grove ord/chikane, personoplysninger, kontaktinfo, ikke relateret til handlen, andet (+ fritekst). Eller vælge **Behold**, som lukker rapporterne.
   - Bedømmelser **slettes aldrig** – de skjules (arkiveres), kan vises igen, og en skjult bedømmelse **tæller ikke med i sælgerens gennemsnit**. Alt logges i medarbejder-loggen.

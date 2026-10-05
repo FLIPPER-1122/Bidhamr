@@ -14,7 +14,8 @@ import {
 // Bedømmelser på en profil med "Svar fra sælger" under hver.
 // - erSaelger: profilens ejer ser sin egen liste og kan svare (ét svar pr.
 //   bedømmelse, kan rettes/slettes i 48 timer).
-// - erLoggetInd: andre kan rapportere en bedømmelse eller et svar.
+// - erLoggetInd: andre kan rapportere en bedømmelse eller et svar - aldrig
+//   noget, de selv har skrevet (mitId).
 // Reglerne håndhæves i databasen (20261007020000_bedoemmelse_svar.sql).
 
 const TZ = "Europe/Copenhagen";
@@ -186,15 +187,21 @@ function BedoemmelseKort({
   r,
   erSaelger,
   erLoggetInd,
+  mitId,
   kortKlasse,
 }: {
   r: BedoemmelseVisning;
   erSaelger: boolean;
   erLoggetInd: boolean;
+  mitId: string | null;
   kortKlasse: string;
 }) {
   const [skriver, setSkriver] = useState(false);
   const svar = r.svar;
+  // Sælgerens svar er skrevet af profilens ejer (til_bruger_id) - på den
+  // offentlige profil kan det aldrig være mitId; egenBedoemmelse dækker, at
+  // man ser sin egen bedømmelse af en anden.
+  const egenBedoemmelse = mitId !== null && r.fra_bruger_id === mitId;
 
   return (
     <li id={`bedoemmelse-${r.id}`} className={`scroll-mt-24 ${kortKlasse}`}>
@@ -246,10 +253,15 @@ function BedoemmelseKort({
       {/* Handlinger */}
       {erSaelger && !skriver && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {!svar && (
+          {!svar && !r.svarSlettet && (
             <button type="button" onClick={() => setSkriver(true)} className="btn btn-sekundaer btn-lille">
               Svar offentligt
             </button>
+          )}
+          {!svar && r.svarSlettet && (
+            <span className="text-xs text-tekst-svag">
+              Du har slettet dit svar. Der kan kun skrives ét svar pr. bedømmelse.
+            </span>
           )}
           {svar && !svar.skjult && svar.kanRettes && (
             <>
@@ -271,14 +283,16 @@ function BedoemmelseKort({
         <SvarFormular ratingId={r.id} startTekst={svar?.tekst ?? ""} onLuk={() => setSkriver(false)} />
       )}
 
-      {!erSaelger && erLoggetInd && (
+      {!erSaelger && erLoggetInd && (!egenBedoemmelse || (svar && !svar.skjult)) && (
         <div className="mt-1 flex flex-wrap gap-x-4">
-          <RapporterDialog
-            bedoemmelse={{ ratingId: r.id, del: "bedoemmelse" }}
-            titel="Rapportér bedømmelse"
-            triggerLabel="Rapportér bedømmelse"
-            triggerClassName={RAPPORT_KNAP}
-          />
+          {!egenBedoemmelse && (
+            <RapporterDialog
+              bedoemmelse={{ ratingId: r.id, del: "bedoemmelse" }}
+              titel="Rapportér bedømmelse"
+              triggerLabel="Rapportér bedømmelse"
+              triggerClassName={RAPPORT_KNAP}
+            />
+          )}
           {svar && !svar.skjult && (
             <RapporterDialog
               bedoemmelse={{ ratingId: r.id, del: "svar" }}
@@ -307,12 +321,15 @@ export default function BedoemmelseListe({
   ratings,
   erSaelger,
   erLoggetInd,
+  mitId = null,
   kortKlasse,
   tomTekst,
 }: {
   ratings: BedoemmelseVisning[];
   erSaelger: boolean;
   erLoggetInd: boolean;
+  // Den indloggede brugers id - skjuler "Rapportér" på egne tekster.
+  mitId?: string | null;
   kortKlasse: string;
   tomTekst: string;
 }) {
@@ -327,6 +344,7 @@ export default function BedoemmelseListe({
           r={r}
           erSaelger={erSaelger}
           erLoggetInd={erLoggetInd}
+          mitId={mitId}
           kortKlasse={kortKlasse}
         />
       ))}

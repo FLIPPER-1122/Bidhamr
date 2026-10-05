@@ -38,6 +38,8 @@ const FEJL: Record<string, string> = {
 
 const RAPPORT_FEJL: Record<string, string> = {
   ikke_logget_ind: "Du skal være logget ind for at rapportere.",
+  konto_lukket: "Din konto er lukket.",
+  suspenderet: "Din konto er suspenderet, og du kan ikke rapportere lige nu. Skriv til os via kontaktformularen, hvis det haster.",
   ugyldig_kategori: "Vælg, hvad det drejer sig om.",
   beskrivelse_mangler: "Beskriv kort, hvad der er galt.",
   for_lang_tekst: `Beskrivelsen må højst være ${RAPPORT_BESKRIVELSE_MAKS} tegn.`,
