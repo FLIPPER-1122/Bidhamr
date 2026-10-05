@@ -18,6 +18,7 @@ import { hentSamtalerForBruger } from "@/app/actions/staffChat";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import AabnChatKnap from "@/components/admin/staffchat/AabnChatKnap";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
+import { handlingNavn } from "@/lib/moderationLog";
 import KontoLukningKort, {
   type KontoLukningAdvarsel,
   type KontoLukningForslag,
@@ -90,6 +91,7 @@ export default async function AdminBrugerDetalje({
 
   if (!user) notFound();
 
+  const kontoLukketKl = (user as { konto_lukket_kl?: string | null }).konto_lukket_kl ?? null;
   const suspensionAktiv = erSuspensionAktiv(user);
   const status = brugerStatus(user, advarsler?.length ?? 0);
 
@@ -117,16 +119,35 @@ export default async function AdminBrugerDetalje({
               {user.rolle && user.rolle !== "bruger" && (
                 <RolleBadge rolle={user.rolle} />
               )}
-              <StatusBadge status={status} />
+              {kontoLukketKl ? (
+                <span className="rounded-full bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white">
+                  Lukket
+                </span>
+              ) : (
+                <StatusBadge status={status} />
+              )}
             </div>
-            <p className="mt-0.5 text-sm text-neutral-500">
+            <p className="mt-0.5 break-all text-sm text-neutral-500">
               {user.email}
               {user.telefon ? ` · ${user.telefon}` : ""}
+            </p>
+            {/* MitID er ikke bygget endnu (kommer før lancering via Criipto). */}
+            <p className="mt-1 text-xs text-neutral-500">
+              <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 font-medium text-neutral-600">
+                MitID: ikke tilgængelig endnu
+              </span>
+              <span className="ml-2 select-all font-mono text-neutral-400">{user.id}</span>
             </p>
           </div>
         </div>
 
-        {suspensionAktiv && (
+        {kontoLukketKl && (
+          <div className="mt-4 rounded-lg border border-neutral-300 bg-neutral-100 px-4 py-3 text-sm text-neutral-800">
+            Kontoen er lukket permanent d. {new Date(kontoLukketKl).toLocaleDateString("da-DK")}. Den kan
+            ikke åbnes igen herfra.
+          </div>
+        )}
+        {!kontoLukketKl && suspensionAktiv && (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             Kontoen er suspenderet{" "}
             {user.suspenderet_til
@@ -168,6 +189,7 @@ export default async function AdminBrugerDetalje({
 
           {user.rolle !== "admin" &&
             user.rolle !== "chef" &&
+            !kontoLukketKl &&
             (user.suspenderet ? (
               <ConfirmDialog
                 triggerLabel="Ophæv suspension"
@@ -219,7 +241,7 @@ export default async function AdminBrugerDetalje({
               navn: user.navn,
               email: user.email,
               rolle: user.rolle,
-              konto_lukket_kl: (user as { konto_lukket_kl?: string | null }).konto_lukket_kl ?? null,
+              konto_lukket_kl: kontoLukketKl,
             }}
             behandletAf={null}
             advarsler={[...((advarsler ?? []) as KontoLukningAdvarsel[])].reverse()}
@@ -251,6 +273,7 @@ export default async function AdminBrugerDetalje({
           advarsler={advarsler ?? []}
           paamindelser={paamindelser ?? []}
           supabase={supabase}
+          kanSeLog={kanLukke}
         />
       )}
       {fane === "auktioner" && (
@@ -298,6 +321,7 @@ async function OversigtFane({
   advarsler,
   paamindelser,
   supabase,
+  kanSeLog,
 }: {
   user: { id: string; rating: number | null; rolle: string | null; oprettet: string };
   advarsler: {
@@ -318,16 +342,32 @@ async function OversigtFane({
     oprettet_af: string;
   }[];
   supabase: Admin;
+  kanSeLog: boolean;
 }) {
-  const [{ count: antalAuktioner }, { count: antalBud }, { count: antalHandler }] =
-    await Promise.all([
+  const [
+    { count: antalAuktioner },
+    { count: antalBud },
+    { count: antalHandler },
+    { data: historikData, error: historikFejl },
+  ] = await Promise.all([
       supabase.from("auctions").select("id", { count: "exact", head: true }).eq("bruger_id", user.id),
       supabase.from("bids").select("id", { count: "exact", head: true }).eq("bruger_id", user.id),
       supabase
         .from("trades")
         .select("id", { count: "exact", head: true })
         .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`),
+      // Suspenderinger og kontolukning fra moderation_log.
+      supabase.rpc("admin_bruger_historik", { p_bruger: user.id }),
     ]);
+  if (historikFejl) console.error("admin_bruger_historik fejlede:", historikFejl);
+  const historik = (historikData ?? []) as {
+    id: string;
+    handling: string;
+    medarbejder_navn: string | null;
+    er_system: boolean;
+    aarsag: string | null;
+    oprettet_kl: string;
+  }[];
 
   const forfatterIds = [
     ...new Set([...advarsler.map((a) => a.oprettet_af), ...paamindelser.map((p) => p.oprettet_af)].filter(Boolean)),
@@ -365,6 +405,50 @@ async function OversigtFane({
           <span className="ml-4 text-neutral-500">Rolle:</span>{" "}
           <span className="font-medium text-neutral-800">{user.rolle ?? "bruger"}</span>
         </p>
+      </div>
+
+      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 px-5 py-4">
+          <h2 className="text-sm font-semibold text-neutral-800">
+            Suspenderinger og kontolukning ({historik.length})
+          </h2>
+          {kanSeLog && (
+            <Link
+              href={`/admin/medarbejder-log?bruger=${user.id}`}
+              className="text-xs font-medium text-neutral-600 hover:underline"
+            >
+              Alt om brugeren i medarbejder-log
+            </Link>
+          )}
+        </div>
+        <div className="divide-y divide-neutral-100">
+          {historikFejl && (
+            <p role="alert" className="px-5 py-4 text-sm text-red-700">
+              Historikken kunne ikke hentes.
+            </p>
+          )}
+          {historik.map((h) => (
+            <div key={h.id} className="px-5 py-4">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-neutral-800">{handlingNavn(h.handling)}</span>
+                <span className="text-xs text-neutral-400">
+                  {new Date(h.oprettet_kl).toLocaleString("da-DK")}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-neutral-500">
+                {h.er_system ? "System" : h.medarbejder_navn ?? "Ukendt"}
+              </p>
+              {h.aarsag && (
+                <p className="mt-1 whitespace-pre-line text-sm text-neutral-700">{h.aarsag}</p>
+              )}
+            </div>
+          ))}
+          {!historikFejl && historik.length === 0 && (
+            <div className="px-5 py-6 text-center text-sm text-neutral-400">
+              Ingen suspenderinger eller kontolukning
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
