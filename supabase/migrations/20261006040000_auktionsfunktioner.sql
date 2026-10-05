@@ -91,6 +91,14 @@ update public.auctions
    set stand = public.stand_normaliser(stand)
  where stand is distinct from public.stand_normaliser(stand);
 
+-- Ukendte gamle vaerdier -> null, saa CHECK'en herunder aldrig fejler
+-- (rettelse fra 20261006041000; tilfoejet her, fordi denne migration ikke er
+-- koert i produktion endnu).
+update public.auctions
+   set stand = null
+ where stand is not null
+   and stand not in ('ny_med_maerke', 'som_ny', 'god', 'brugt', 'defekt');
+
 alter table public.auctions add constraint auctions_stand_check
   check (stand is null or stand in ('ny_med_maerke', 'som_ny', 'god', 'brugt', 'defekt'));
 
