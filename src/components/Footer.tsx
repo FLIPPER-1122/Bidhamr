@@ -32,7 +32,7 @@ const KOLONNER: { titel: string; links: { href: string; tekst: string }[] }[] = 
     titel: "BidHamr",
     links: [
       { href: "/om", tekst: "Om BidHamr" },
-      { href: "/betingelser", tekst: "Handelsbetingelser" },
+      { href: "/betingelser", tekst: "Brugerbetingelser" },
       { href: "/privatliv", tekst: "Privatlivspolitik" },
       { href: "/cookies", tekst: "Cookies" },
       { href: "/tilgaengelighed", tekst: "Tilgængelighedserklæring" },

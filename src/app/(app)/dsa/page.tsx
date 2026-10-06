@@ -139,6 +139,25 @@ export default function DsaSide() {
           <h2 id="rapport" className={h2}>Gennemsigtighed</h2>
           <p className={p}>Vi offentliggør hvert år en rapport med antal anmeldelser, indgreb, klager og suspenderinger.</p>
         </section>
+
+        <section className={kort} aria-labelledby="regler">
+          <h2 id="regler" className={h2}>Vores regler</h2>
+          <p className={p}>
+            Hvad der er tilladt på BidHamr, står i{" "}
+            <Link href="/betingelser#afsnit-21" className="font-semibold text-groen hover:underline">
+              brugerbetingelserne
+            </Link>{" "}
+            og på listen over{" "}
+            <Link href="/forbudte-varer" className="font-semibold text-groen hover:underline">
+              forbudte varer
+            </Link>
+            . Sådan behandler vi oplysningerne i en anmeldelse:{" "}
+            <Link href="/privatliv#afsnit-3" className="font-semibold text-groen hover:underline">
+              privatlivspolitikken
+            </Link>
+            .
+          </p>
+        </section>
       </div>
     </main>
   );

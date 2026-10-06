@@ -6,6 +6,7 @@ import { FejlBoks } from "@/components/betaling/FejlBoks";
 import { startBetaling, type KoeberBetalingsstatus } from "@/app/actions/betaling";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
 import { kroner } from "@/lib/kroner";
+import { BETINGELSER_STI } from "@/lib/vilkaar";
 
 // Køberens betaling af en vundet auktion. Alle beløb kommer fra serveren -
 // klienten lægger aldrig noget sammen.
@@ -132,6 +133,20 @@ function BetalForm({
       >
         {sender ? "Betaler…" : `Betal ${kroner(totalOere)}`}
       </button>
+      {/* Kun tekst - ændrer ikke betalingen. Åbner i ny fane, så betalingen ikke afbrydes. */}
+      <p className="text-center text-[13px] text-tekst-daempet">
+        Ved at betale accepterer du BidHamrs{" "}
+        <a
+          href={BETINGELSER_STI}
+          target="_blank"
+          rel="noopener"
+          className="font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+        >
+          brugerbetingelser
+          <span className="sr-only"> (åbner i et nyt vindue)</span>
+        </a>
+        .
+      </p>
     </form>
   );
 }

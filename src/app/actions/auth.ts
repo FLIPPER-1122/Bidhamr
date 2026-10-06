@@ -20,6 +20,7 @@ import { harToTrin, manglerToTrin } from "@/lib/mfa";
 import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
 import { logDriftFejl } from "@/lib/drift";
 import { hentKontoStatus } from "@/lib/kontoStatus";
+import { VILKAAR_VERSION } from "@/lib/vilkaar";
 
 // Login, oprettelse, gensend bekraeftelse, to-trins-login og nulstil
 // adgangskode koeres paa serveren, saa de kan rate-limites pr. IP og pr.
@@ -150,12 +151,19 @@ export async function afbrydLogin(): Promise<{ ok: true }> {
   return { ok: true };
 }
 
+// vilkaarVersion: den version af brugerbetingelserne, brugeren har sat
+// flueben ved. Uden accept af den aktuelle version oprettes ingen konto.
+// Versionen sendes i signup-metadata; handle_new_user gemmer den med
+// databasens tidspunkt (20261009050000_vilkaar_accept.sql).
 export async function opretKonto(input: {
   fornavn: string;
   efternavn: string;
   email: string;
   password: string;
-}): Promise<{ ok: true; bekraeftMail: boolean } | { fejl: string; felt?: "email" | "password" | "fornavn" }> {
+  vilkaarVersion: string;
+}): Promise<
+  { ok: true; bekraeftMail: boolean } | { fejl: string; felt?: "email" | "password" | "fornavn" | "vilkaar" }
+> {
   if (!tilmeldingAaben()) return { fejl: "Det er ikke muligt at oprette en konto endnu." };
 
   const email = renEmail(input?.email);
@@ -167,6 +175,9 @@ export async function opretKonto(input: {
   if (!email) return { fejl: "Indtast en gyldig e-mail.", felt: "email" };
   const v = vurderAdgangskode(password, { email, navn: [fornavn, efternavn] });
   if (!v.ok) return { fejl: v.fejl ?? GENERISK, felt: "password" };
+  if (input?.vilkaarVersion !== VILKAAR_VERSION) {
+    return { fejl: "Du skal acceptere brugerbetingelserne for at oprette en konto.", felt: "vilkaar" };
+  }
 
   const ip = await klientIp();
   if (!(await tjekGraenser([["opret_ip", ip], ["gensend_email", email]]))) {
@@ -180,7 +191,7 @@ export async function opretKonto(input: {
     password,
     options: {
       emailRedirectTo: sideUrl("/auth/callback?next=/velkommen"),
-      data: { navn, fornavn, efternavn },
+      data: { navn, fornavn, efternavn, vilkaar_version: VILKAAR_VERSION },
     },
   });
 

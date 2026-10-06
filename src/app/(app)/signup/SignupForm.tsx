@@ -7,8 +7,9 @@ import { opretKonto } from "@/app/actions/auth";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
 import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
+import { BETINGELSER_STI, PRIVATLIV_STI, VILKAAR_VERSION } from "@/lib/vilkaar";
 
-type Felt = "fornavn" | "email" | "password";
+type Felt = "fornavn" | "email" | "password" | "vilkaar";
 
 export default function SignupForm() {
   const router = useRouter();
@@ -16,6 +17,7 @@ export default function SignupForm() {
   const [efternavn, setEfternavn] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [accepterer, setAccepterer] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
   const [fejlFelt, setFejlFelt] = useState<Felt | null>(null);
@@ -34,8 +36,20 @@ export default function SignupForm() {
       return;
     }
 
+    if (!accepterer) {
+      setFejl("Du skal acceptere brugerbetingelserne for at oprette en konto.");
+      setFejlFelt("vilkaar");
+      return;
+    }
+
     setLoading(true);
-    const svar = await opretKonto({ fornavn, efternavn, email, password });
+    const svar = await opretKonto({
+      fornavn,
+      efternavn,
+      email,
+      password,
+      vilkaarVersion: VILKAAR_VERSION,
+    });
     if ("fejl" in svar) {
       setLoading(false);
       setFejl(svar.fejl);
@@ -123,6 +137,42 @@ export default function SignupForm() {
               person={person}
               fejl={fejlFelt === "password" ? fejl : null}
             />
+
+            <div>
+              <div className="flex items-start gap-3">
+                <input
+                  id="vilkaar"
+                  type="checkbox"
+                  required
+                  checked={accepterer}
+                  onChange={(e) => {
+                    setAccepterer(e.target.checked);
+                    if (e.target.checked && fejlFelt === "vilkaar") {
+                      setFejl(null);
+                      setFejlFelt(null);
+                    }
+                  }}
+                  aria-invalid={fejlFelt === "vilkaar" || undefined}
+                  aria-describedby="vilkaar-privatliv"
+                  className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-groen"
+                />
+                <label htmlFor="vilkaar" className="cursor-pointer text-sm leading-snug text-tekst">
+                  Jeg accepterer BidHamrs{" "}
+                  <a href={BETINGELSER_STI} target="_blank" rel="noopener" className={LINK}>
+                    brugerbetingelser
+                    <span className="sr-only"> (åbner i et nyt vindue)</span>
+                  </a>
+                </label>
+              </div>
+              <p id="vilkaar-privatliv" className="mt-1.5 pl-8 text-[13px] text-tekst-daempet">
+                Læs hvordan vi behandler dine oplysninger i{" "}
+                <a href={PRIVATLIV_STI} target="_blank" rel="noopener" className={LINK}>
+                  privatlivspolitikken
+                  <span className="sr-only"> (åbner i et nyt vindue)</span>
+                </a>
+                .
+              </p>
+            </div>
 
             {fejl && fejlFelt !== "password" && (
               <p role="alert" className={FORMULAR_FEJL}>

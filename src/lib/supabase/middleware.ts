@@ -57,6 +57,19 @@ const OFFENTLIGE_RUTER = [
   "/api/offentlig",
 ];
 
+// Rene læsesider, der skal kunne læses af alle uden login, også før lancering
+// (brugerbetingelser og privatlivspolitik linkes fra signup og footer). Kun
+// GET/HEAD er offentlige - alle andre metoder (fx et server action-kald via
+// POST) går gennem den almindelige gate herunder.
+const OFFENTLIGE_LAESESIDER = ["/betingelser", "/privatliv"];
+
+function erOffentligLaeseside(pathname: string, metode: string) {
+  if (metode !== "GET" && metode !== "HEAD") return false;
+  return OFFENTLIGE_LAESESIDER.some(
+    (rute) => pathname === rute || pathname.startsWith(`${rute}/`),
+  );
+}
+
 // Inden launch er appen lukket for almindelige brugere. Kun disse roller
 // slipper igennem - alle andre (også indloggede) sendes til splash-siden.
 const ROLLER_MED_ADGANG = ["chef", "admin", "medarbejder"];
@@ -148,6 +161,10 @@ export async function updateSession(
   const { pathname } = request.nextUrl;
 
   // Offentlige ruter skal aldrig redirecte, uanset login-status.
+  if (erOffentligLaeseside(pathname, request.method)) {
+    return supabaseResponse;
+  }
+
   if (erOffentligRute(pathname)) {
     if (await afvisSkrivningPaaOffentligSti(request, supabase)) {
       return new NextResponse("Ingen adgang", { status: 403 });

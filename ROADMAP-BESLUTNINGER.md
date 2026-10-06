@@ -236,3 +236,10 @@ Bygget i `20261009040000_skjult_auktion_pause.sql`.
 - **Visning:** auktionssiden (sælger, bydere og staff) viser "På pause – resterende tid X" i stedet for nedtællingen. Profil og Min statistik viser den som "På pause"; admin-listen viser "På pause" og den resterende tid.
 - **Teknik (foreslået af Claude):** `auctions.pauset_kl` og `auctions.pause_resterende` sættes og nulstilles af en trigger på `auctions.skjult`, så det virker uanset hvilken staff-funktion der skjuler. Kun systemet kan ændre felterne. Pauserne logges i `auktion_pauser` (slettes aldrig). En auktion er "på pause", når `status = 'aktiv'` og `pauset_kl` er sat.
 - **Eksisterende skjulte, aktive auktioner** blev sat på pause med deres resterende tid (0, hvis tiden allerede var gået uden handel – så får de 24 timer, når de vises igen). Der var 0 i både produktion og test 6. oktober 2026.
+
+## Accept af brugerbetingelser (foreslået af Claude 6. oktober 2026 – afventer Filip)
+- **Nye brugere** skal sætte flueben ved "Jeg accepterer BidHamrs brugerbetingelser" for at oprette en konto på hjemmesiden. Versionen og tidspunktet gemmes på brugeren (`users.vilkaar_version`, `users.vilkaar_accepteret_kl`); tidspunktet sættes altid af databasen.
+- **Appen** skal vise samme flueben og sende `vilkaar_version` i signup-metadata. Sender den ikke versionen, oprettes kontoen stadig, men uden gemt accept.
+- **Eksisterende brugere** (og brugere uden gemt accept) ser en venlig bjælke på Min konto: "Vi har lavet brugerbetingelser – læs dem her" med knappen "Jeg har læst og accepterer". Den blokerer ikke noget, indtil videre.
+- **Ved lancering** kan accept af den aktuelle version gøres påkrævet, før man kan byde eller oprette en auktion (fx en side "Accepter de nye brugerbetingelser" i stedet for buddet). Det gælder også, når betingelserne ændres væsentligt (se betingelsernes afsnit 25).
+- Betingelserne og privatlivspolitikken vises som **UDKAST – skal godkendes af advokat** (version 0.1), indtil advokaten har godkendt dem i fase 6. Advokatens noter og interne noter vises aldrig på siderne; manglende oplysninger vises som "[udfyldes inden lancering]".

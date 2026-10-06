@@ -4,6 +4,7 @@
 // sagBilledeSti() (<bruger-id>/<handel-id>/<uuid>.<endelse>), og der uploades
 // med { upsert: false } - storage-policyerne tillader kun upload i brugerens
 // egen mappe, og der er ingen update-policy.
+import { BilledFejl, klargoerBillede } from "@/lib/billedBehandling";
 import { createClient } from "@/lib/supabase/client";
 import {
   SAG_BILLEDTYPER,
@@ -42,42 +43,15 @@ export function filType(fil: File): string | null {
   return ENDELSE_TIL_TYPE[endelse] ?? null;
 }
 
-const MAKS_KANT = 2000;
-const KVALITET = 0.85;
-
-// Skalerer billedet ned (højst 2000 px på den længste led) og gemmer som JPEG.
-// Fjerner samtidig metadata som GPS-position. Kan browseren ikke læse
-// billedet (fx HEIC i Chrome), sendes originalen.
+// Genkoder billedet med samme hjælpefunktion som auktionsbilleder
+// (src/lib/billedBehandling.ts): HEIC/HEIF konverteres, billedet skaleres ned
+// til højst 2000 px og gemmes altid som JPEG. Genkodningen fjerner EXIF-data
+// som GPS-position - originalen uploades aldrig (heller ikke HEIC).
+// Kaster BilledFejl med en dansk besked, hvis billedet ikke kan læses.
 export async function komprimer(fil: File): Promise<{ data: Blob; type: string }> {
-  const type = filType(fil);
-  if (!type) throw new Error("ugyldig_type");
-  if (type === "image/heic" || type === "image/heif") return { data: fil, type };
-  try {
-    const bitmap = await createImageBitmap(fil, { imageOrientation: "from-image" });
-    const skala = Math.min(1, MAKS_KANT / Math.max(bitmap.width, bitmap.height));
-    const b = Math.round(bitmap.width * skala);
-    const h = Math.round(bitmap.height * skala);
-    const canvas = document.createElement("canvas");
-    canvas.width = b;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      bitmap.close();
-      return { data: fil, type };
-    }
-    // Hvid baggrund, så gennemsigtige PNG'er ikke bliver sorte som JPEG.
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, b, h);
-    ctx.drawImage(bitmap, 0, 0, b, h);
-    bitmap.close();
-    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", KVALITET));
-    if (!blob) return { data: fil, type };
-    // Bliver det ikke mindre, og er originalen ikke for stor, beholdes den.
-    if (blob.size >= fil.size && skala === 1) return { data: fil, type };
-    return { data: blob, type: "image/jpeg" };
-  } catch {
-    return { data: fil, type };
-  }
+  if (!filType(fil)) throw new BilledFejl(UPLOAD_FEJL.ugyldig_type);
+  const jpeg = await klargoerBillede(fil);
+  return { data: jpeg, type: jpeg.type };
 }
 
 export const UPLOAD_FEJL = {
@@ -108,8 +82,11 @@ export async function uploadBilleder<K extends string>(
     let type: string;
     try {
       ({ data, type } = await komprimer(ud[i].fil));
-    } catch {
-      return { fejl: UPLOAD_FEJL.ugyldig_type, billeder: ud };
+    } catch (err) {
+      return {
+        fejl: err instanceof BilledFejl ? err.message : UPLOAD_FEJL.ugyldig_type,
+        billeder: ud,
+      };
     }
     if (data.size > SAG_MAKS_BILLEDSTOERRELSE) return { fejl: UPLOAD_FEJL.for_stor, billeder: ud };
     const sti = sagBilledeSti(brugerId, tradeId, type);
