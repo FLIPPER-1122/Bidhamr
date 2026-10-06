@@ -13,6 +13,8 @@ import { manglerToTrin, TO_TRIN_STI } from "@/lib/mfa";
 // kendt sidetype, rate-limit pr. IP), så også besøg på venteliste-siden tælles.
 // /api/konto/slet er appens kontosletning: kun Bearer-token (ingen cookies),
 // aal2-krav, adgangskode og "SLET" tjekkes i ruten selv.
+// /api/helbred er sundhedstjekket til uptime-tjenesten: svarer kun {ok}, ingen
+// detaljer, grænse pr. IP i ruten selv.
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
 // "Disallow: /" og er tomme, indtil SEO_INDEKSERING=true (src/lib/seo.ts).
 // Delebilleder (opengraph-image.jpg) rammer slet ikke proxyen (matcher i src/proxy.ts).
@@ -36,6 +38,7 @@ const OFFENTLIGE_RUTER = [
   "/api/cron",
   "/api/statistik",
   "/api/konto/slet",
+  "/api/helbred",
   "/robots.txt",
   "/sitemap.xml",
 ];
