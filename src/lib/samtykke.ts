@@ -75,8 +75,11 @@ export function fortolkSamtykke(raa: string | null | undefined, nuMs?: number): 
 
 // Cookieværdien, hvis den er gyldig lige nu - ellers "". Bruges af root-
 // layoutet, så serveren ved, om banneret skal med i den første HTML.
+// Værdien bygges igen ud fra det fortolkede samtykke, så kun de kendte felter
+// sendes videre til siden (ikke ukendte parametre fra en rå cookie).
 export function gyldigSamtykkeVaerdi(raa: string | null | undefined): string {
-  return raa && fortolkSamtykke(raa, Date.now()) ? raa : "";
+  const samtykke = raa ? fortolkSamtykke(raa, Date.now()) : null;
+  return samtykke ? lavSamtykkeVaerdi(samtykke.valg, samtykke.tidspunkt * 1000) : "";
 }
 
 export function lavSamtykkeVaerdi(valg: SamtykkeValg, nuMs: number): string {

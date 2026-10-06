@@ -90,6 +90,7 @@ export default async function AuktionerPage({
       <AuctionsExplorer
         initialAuktioner={side.auktioner}
         initialTotal={side.total}
+        initialTotalType={side.totalType}
         initialQuery={søgetekst}
         initialKategori={initialKategori}
         initialSortering={initialSortering}

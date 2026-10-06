@@ -16,6 +16,7 @@ import {
   SAMTYKKE_KATEGORIER,
   SAMTYKKE_MAKS_SEKUNDER,
   fortolkSamtykke,
+  gyldigSamtykkeVaerdi,
   lavSamtykkeVaerdi,
   type Samtykke,
   type SamtykkeKategori,
@@ -47,8 +48,8 @@ function laesCookie(navn: string): string | null {
 // Rå cookieværdi, men kun hvis den er gyldig lige nu - ellers "". Bruges som
 // snapshot i useSyncExternalStore (en streng er stabil mellem kald).
 export function laesGyldigSamtykkeRaa(): string {
-  const raa = laesCookie(SAMTYKKE_COOKIE);
-  return fortolkSamtykke(raa, Date.now()) ? (raa as string) : "";
+  // Samme normaliserede værdi som serveren sender (root-layoutet).
+  return gyldigSamtykkeVaerdi(laesCookie(SAMTYKKE_COOKIE));
 }
 
 export function hentSamtykke(): Samtykke | null {

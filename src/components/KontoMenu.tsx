@@ -19,7 +19,7 @@ export default function KontoMenu({ erAdmin }: { erAdmin: boolean }) {
   const knapRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
   const luk = () => setAaben(false);
-  const { logUd, loggerUd } = useLogUd(luk);
+  const { logUd, loggerUd, fejl: logUdFejl } = useLogUd(luk);
 
   useEffect(() => {
     if (!aaben) return;
@@ -109,6 +109,11 @@ export default function KontoMenu({ erAdmin }: { erAdmin: boolean }) {
                   {loggerUd && <span className="btn-spinner" aria-hidden="true" />}
                   Log ud
                 </button>
+                {logUdFejl && (
+                  <p role="alert" className="px-3 pb-2 text-[13px] font-medium text-fejl-tekst">
+                    {logUdFejl}
+                  </p>
+                )}
               </li>
             </ul>
           </nav>

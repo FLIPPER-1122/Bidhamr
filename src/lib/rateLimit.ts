@@ -53,6 +53,11 @@ export const GRAENSER = {
   kontakt_bruger: { maks: 5, vindueSek: 60 * 60 },
   kontakt_email: { maks: 5, vindueSek: 60 * 60 },
   kontakt_alle: { maks: 300, vindueSek: 60 * 60 },
+  // Søgning/"Vis flere" på /auktioner (offentlig server action). Klienten
+  // venter 300 ms mellem tastetryk, så en rigtig bruger når sjældent 60 pr.
+  // minut. IP-loftet er højere, fordi mange mobilbrugere deler IP (CGNAT).
+  soeg_bruger: { maks: 60, vindueSek: 60 },
+  soeg_ip: { maks: 120, vindueSek: 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;

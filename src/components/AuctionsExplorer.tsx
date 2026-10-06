@@ -5,10 +5,12 @@ import type { DummyAuction } from "@/components/AuctionCard";
 import CategoryGrid from "@/components/CategoryGrid";
 import AuctionBrowser from "@/components/AuctionBrowser";
 import type { Sortering } from "@/lib/sortering";
+import type { TotalType } from "@/lib/soegeTotal";
 
 export default function AuctionsExplorer({
   initialAuktioner,
   initialTotal,
+  initialTotalType,
   initialQuery,
   initialKategori = "",
   initialSortering,
@@ -19,6 +21,7 @@ export default function AuctionsExplorer({
 }: {
   initialAuktioner: DummyAuction[];
   initialTotal: number;
+  initialTotalType: TotalType;
   initialQuery: string;
   initialKategori?: string;
   initialSortering?: Sortering;
@@ -56,6 +59,7 @@ export default function AuctionsExplorer({
         <AuctionBrowser
           initialAuktioner={initialAuktioner}
           initialTotal={initialTotal}
+          initialTotalType={initialTotalType}
           initialKategori={initialKategori}
           initialQuery={initialQuery}
           initialSortering={initialSortering}

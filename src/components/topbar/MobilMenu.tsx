@@ -30,7 +30,7 @@ export default function MobilMenu({
   const [aaben, setAaben] = useState(false);
   const antalBeskeder = useAntalUlaesteBeskeder();
   const luk = () => dialogRef.current?.close();
-  const { logUd, loggerUd } = useLogUd(luk);
+  const { logUd, loggerUd, fejl: logUdFejl } = useLogUd(luk);
 
   function aabn() {
     dialogRef.current?.showModal();
@@ -211,16 +211,23 @@ export default function MobilMenu({
 
           <div className="border-t border-kant p-4">
             {loggetInd ? (
-              <button
-                type="button"
-                onClick={logUd}
-                disabled={loggerUd}
-                aria-busy={loggerUd}
-                className="btn btn-sekundaer w-full"
-              >
-                {loggerUd && <span className="btn-spinner" aria-hidden="true" />}
-                Log ud
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={logUd}
+                  disabled={loggerUd}
+                  aria-busy={loggerUd}
+                  className="btn btn-sekundaer w-full"
+                >
+                  {loggerUd && <span className="btn-spinner" aria-hidden="true" />}
+                  Log ud
+                </button>
+                {logUdFejl && (
+                  <p role="alert" className="mt-2 text-[13px] font-medium text-fejl-tekst">
+                    {logUdFejl}
+                  </p>
+                )}
+              </>
             ) : (
               <div className="flex gap-2">
                 <Link href="/login" className="btn btn-sekundaer flex-1">Log ind</Link>
