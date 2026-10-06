@@ -8,6 +8,12 @@ import { UKENDT_POSTNUMMER } from "@/lib/postnummerTekst";
 import { soegAuktioner } from "@/app/actions/auktionSoegning";
 
 import { SORTERINGER, type Sortering } from "@/lib/sortering";
+import {
+  AFSTAND_MAX_KM,
+  AFSTAND_MIN_KM,
+  AFSTAND_STANDARD_KM,
+  AFSTAND_TRIN_KM,
+} from "@/lib/auktionFiltre";
 import { antalFundet, antalTekst, type TotalType } from "@/lib/soegeTotal";
 import GemSoegningKnap from "@/components/soegning/GemSoegningKnap";
 
@@ -16,9 +22,9 @@ const felt =
   "h-11 w-full rounded-xl border border-kant-staerk bg-white px-4 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25";
 const etiket = "mb-1.5 block text-sm font-medium text-tekst";
 
-const RADIUS_MIN = 5;
-const RADIUS_MAX = 150;
-const RADIUS_STEP = 5;
+const RADIUS_MIN = AFSTAND_MIN_KM;
+const RADIUS_MAX = AFSTAND_MAX_KM;
+const RADIUS_STEP = AFSTAND_TRIN_KM;
 const FEJL = "Auktionerne kunne ikke hentes. Prøv igen.";
 
 type Opslag = typeof import("@/lib/postnumre").slaaPostnummerOp;
@@ -30,6 +36,11 @@ function filterNoegle(query: string, kategori: string, sortering: Sortering, afs
   return JSON.stringify({ q: query.trim(), kategori, sortering, afstand });
 }
 
+// Sådan står postnummer og afstand i URL'en (kun med et helt postnummer).
+function urlAfstandNoegle(postnummer: string, radiusKm: number | undefined) {
+  return /^\d{4}$/.test(postnummer) ? `${postnummer}|${radiusKm ?? AFSTAND_STANDARD_KM}` : "";
+}
+
 export default function AuctionBrowser({
   initialAuktioner,
   initialTotal,
@@ -38,10 +49,15 @@ export default function AuctionBrowser({
   initialKategori = "",
   initialSortering = "slutter_snart",
   initialPostnummer = "",
-  initialRadiusKm = 50,
+  initialRadiusKm = AFSTAND_STANDARD_KM,
   initialAfstandAktiv = false,
   kategori,
   onKategoriChange,
+  sortering,
+  onSorteringChange,
+  urlPostnummer,
+  urlRadiusKm,
+  onAfstandChange,
   erLoggetInd = false,
 }: {
   // Første side er hentet på serveren med de samme filtre (src/lib/auktionSoegning.ts).
@@ -57,13 +73,42 @@ export default function AuctionBrowser({
   // Serveren har filtreret på afstand (postnummeret findes, og radius er
   // under "Hele Danmark").
   initialAfstandAktiv?: boolean;
+  // Filtrene fra URL'en (AuctionsExplorer). Ændringer skrives tilbage dertil.
   kategori: string;
   onKategoriChange: (kategori: string) => void;
+  sortering: Sortering;
+  onSorteringChange: (sortering: Sortering) => void;
+  urlPostnummer: string;
+  urlRadiusKm: number | undefined;
+  onAfstandChange: (postnummer: string, radiusKm: number) => void;
   erLoggetInd?: boolean;
 }) {
   const query = initialQuery;
-  const [sortering, setSortering] = useState<Sortering>(initialSortering);
+  // Postnummerfeltet og skyderen har egen tilstand (man taster ét ciffer ad
+  // gangen), men følger URL'en, når den skifter udefra (et menulink, Tilbage
+  // eller en gemt søgning).
   const [postnummer, setPostnummer] = useState(initialPostnummer);
+  const [radiusKm, setRadiusKm] = useState(initialRadiusKm);
+  const urlNoegle = urlAfstandNoegle(urlPostnummer, urlRadiusKm);
+  const [sidsteUrlNoegle, setSidsteUrlNoegle] = useState(urlNoegle);
+  if (urlNoegle !== sidsteUrlNoegle) {
+    setSidsteUrlNoegle(urlNoegle);
+    // Er det blot vores egen ændring, der er nået ud i URL'en, røres feltet ikke.
+    if (urlNoegle !== urlAfstandNoegle(postnummer, radiusKm)) {
+      setPostnummer(urlPostnummer);
+      setRadiusKm(urlRadiusKm ?? AFSTAND_STANDARD_KM);
+    }
+  }
+
+  function skiftPostnummer(nyt: string) {
+    setPostnummer(nyt);
+    onAfstandChange(nyt, radiusKm);
+  }
+
+  function skiftRadius(ny: number) {
+    setRadiusKm(ny);
+    onAfstandChange(postnummer, ny);
+  }
   // Postnummeret slås op i den lokale postnummerliste. Listen (ca. 50 kB)
   // indlæses først, når der står et helt postnummer i feltet, så den ikke er
   // med i sidens JavaScript fra start.
@@ -87,7 +132,6 @@ export default function AuctionBrowser({
     : postOpslag
       ? "fundet"
       : "ikke-fundet";
-  const [radiusKm, setRadiusKm] = useState(initialRadiusKm);
   const [auktioner, setAuktioner] = useState<DummyAuction[]>(initialAuktioner);
   const [total, setTotal] = useState(initialTotal);
   const [totalType, setTotalType] = useState<TotalType>(initialTotalType);
@@ -98,14 +142,24 @@ export default function AuctionBrowser({
   const afstand: Afstand = radiusKm < RADIUS_MAX && postOpslag ? { postnummer, radiusKm } : null;
   const noegle = filterNoegle(query, kategori, sortering, afstand);
   // Filtrene, den viste liste er hentet med. Starter som serverens.
-  const hentetNoegle = useRef(
-    filterNoegle(
-      initialQuery,
-      initialKategori,
-      initialSortering,
-      initialAfstandAktiv ? { postnummer: initialPostnummer, radiusKm: initialRadiusKm } : null,
-    ),
+  const serverNoegle = filterNoegle(
+    initialQuery,
+    initialKategori,
+    initialSortering,
+    initialAfstandAktiv ? { postnummer: initialPostnummer, radiusKm: initialRadiusKm } : null,
   );
+  const [hentetNoegle, setHentetNoegle] = useState(serverNoegle);
+  // Ny første side fra serveren (man har fulgt et link til /auktioner med
+  // andre filtre eller trykket Tilbage): vis den i stedet for at hente igen.
+  const [serverListe, setServerListe] = useState(initialAuktioner);
+  if (initialAuktioner !== serverListe) {
+    setServerListe(initialAuktioner);
+    setAuktioner(initialAuktioner);
+    setTotal(initialTotal);
+    setTotalType(initialTotalType);
+    setHentetNoegle(serverNoegle);
+    setFejl(null);
+  }
   // Kun svaret på den seneste forespørgsel må vises.
   const forespoergselNr = useRef(0);
 
@@ -124,7 +178,7 @@ export default function AuctionBrowser({
   // afstandsskyderen eller taster postnummer).
   useEffect(() => {
     // Vent på postnummerlisten, før afstanden kan afgøres.
-    if (venterPaaOpslag || noegle === hentetNoegle.current) return;
+    if (venterPaaOpslag || noegle === hentetNoegle) return;
     const timeout = setTimeout(async () => {
       const nr = ++forespoergselNr.current;
       setLoading(true);
@@ -135,7 +189,7 @@ export default function AuctionBrowser({
         if (!svar.ok) {
           setFejl(svar.fejl);
         } else {
-          hentetNoegle.current = noegle;
+          setHentetNoegle(noegle);
           setAuktioner(svar.auktioner);
           setTotal(svar.total);
           setTotalType(svar.totalType);
@@ -149,7 +203,7 @@ export default function AuctionBrowser({
     return () => clearTimeout(timeout);
     // filtre() læser kun værdier, der indgår i noegle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noegle, venterPaaOpslag]);
+  }, [noegle, venterPaaOpslag, hentetNoegle]);
 
   async function visFlere() {
     const nr = ++forespoergselNr.current;
@@ -201,7 +255,7 @@ export default function AuctionBrowser({
           <select
             id="filter-sortering"
             value={sortering}
-            onChange={(e) => setSortering(e.target.value as Sortering)}
+            onChange={(e) => onSorteringChange(e.target.value as Sortering)}
             className={felt}
           >
             {SORTERINGER.map((s) => (
@@ -222,9 +276,7 @@ export default function AuctionBrowser({
             maxLength={4}
             placeholder="Fx 8000"
             value={postnummer}
-            onChange={(e) =>
-              setPostnummer(e.target.value.replace(/\D/g, "").slice(0, 4))
-            }
+            onChange={(e) => skiftPostnummer(e.target.value.replace(/\D/g, "").slice(0, 4))}
             aria-describedby="filter-postnummer-status"
             aria-invalid={postStatus === "ikke-fundet" || undefined}
             className={felt}
@@ -256,13 +308,13 @@ export default function AuctionBrowser({
               max={RADIUS_MAX}
               step={RADIUS_STEP}
               value={radiusKm}
-              onChange={(e) => setRadiusKm(Number(e.target.value))}
+              onChange={(e) => skiftRadius(Number(e.target.value))}
               aria-valuetext={erHeleDanmark ? "Hele Danmark" : `${radiusKm} km`}
               className="h-11 w-0 min-w-0 flex-1 accent-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
             />
             <button
               type="button"
-              onClick={() => setRadiusKm(RADIUS_MAX)}
+              onClick={() => skiftRadius(RADIUS_MAX)}
               aria-pressed={erHeleDanmark}
               className={`inline-flex h-11 shrink-0 items-center rounded-full px-3.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                 erHeleDanmark

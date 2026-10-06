@@ -195,7 +195,7 @@ export default function NotifikationIndstillinger({ start }: { start: Indstillin
       </p>
 
       {/* Gem-linje: holder sig synlig i bunden, mens man scroller på mobil */}
-      <div className="sticky bottom-0 z-10 -mx-4 mt-6 border-t border-kant bg-white px-4 py-4 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0">
+      <div className="sticky bottom-[var(--samtykke-hoejde,0px)] z-10 -mx-4 mt-6 border-t border-kant bg-white px-4 py-4 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0">
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
           <button
             type="button"

@@ -1,5 +1,5 @@
 import AuctionsExplorer from "@/components/AuctionsExplorer";
-import { læsSortering } from "@/lib/sortering";
+import { AFSTAND_STANDARD_KM, læsAfstand, læsPostnummer, læsSortering } from "@/lib/auktionFiltre";
 import { createClient } from "@/lib/supabase/server";
 import { RADIUS_MAX_KM, hentAuktionsside } from "@/lib/auktionSoegning";
 import { slaaPostnummerOp } from "@/lib/postnumre";
@@ -55,16 +55,13 @@ export default async function AuktionerPage({
   const initialKategori = kategorier.find((k) => k === kategori?.trim()) ?? "";
   // ?sortering= fra forsiden og menuen ("Slutter snart", "Nye auktioner").
   const initialSortering = læsSortering(sortering);
-  // ?postnummer=&afstand= fra en gemt søgning. Ugyldige værdier ignoreres.
-  const initialPostnummer = /^\d{4}$/.test(postnummer ?? "") ? postnummer! : "";
-  const afstandKm = Number(afstand);
-  const initialRadiusKm =
-    initialPostnummer && Number.isInteger(afstandKm) && afstandKm >= 5 && afstandKm <= 150
-      ? Math.round(afstandKm / 5) * 5
-      : undefined;
+  // ?postnummer=&afstand= fra filterbjælken eller en gemt søgning.
+  // Ugyldige værdier ignoreres (samme regler som klienten, src/lib/auktionFiltre.ts).
+  const initialPostnummer = læsPostnummer(postnummer);
+  const initialRadiusKm = læsAfstand(initialPostnummer, afstand);
 
   // Samme standard som filterbjælken (50 km), når kun postnummeret er givet.
-  const radiusKm = initialRadiusKm ?? 50;
+  const radiusKm = initialRadiusKm ?? AFSTAND_STANDARD_KM;
   const initialAfstandAktiv = Boolean(slaaPostnummerOp(initialPostnummer)) && radiusKm < RADIUS_MAX_KM;
 
   const [{ data: authData }, side] = await Promise.all([

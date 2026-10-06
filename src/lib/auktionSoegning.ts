@@ -103,11 +103,13 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
       case "slutter_snart":
         q = q.order("slutter_kl", { ascending: true });
         break;
+      // Efter den viste pris (nuværende bud, ellers startpris). visningspris
+      // er en genereret kolonne (migration 20261008040000).
       case "laveste_bud":
-        q = q.order("nuværende_bud", { ascending: true, nullsFirst: false });
+        q = q.order("visningspris", { ascending: true, nullsFirst: false });
         break;
       case "højeste_bud":
-        q = q.order("nuværende_bud", { ascending: false, nullsFirst: false });
+        q = q.order("visningspris", { ascending: false, nullsFirst: false });
         break;
       case "nyeste":
         q = q.order("oprettet", { ascending: false });

@@ -78,6 +78,11 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
   const boksRef = useRef<HTMLElement>(null);
   const overskriftRef = useRef<HTMLHeadingElement>(null);
   const tilbageRef = useRef<HTMLElement | null>(null);
+  // De to "Indstillinger"-knapper i banneret (mobil og computer). Lukkes
+  // indstillingerne, der blev åbnet fra banneret, får den synlige fokus igen.
+  const indstMobilRef = useRef<HTMLButtonElement>(null);
+  const indstComputerRef = useRef<HTMLButtonElement>(null);
+  const fokusIndstRef = useRef(false);
   const id = useId();
 
   const vis = !samtykke || udkast !== null;
@@ -95,9 +100,18 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
     [],
   );
 
-  // Fokus til overskriften, når indstillingerne åbnes.
+  // Fokus til overskriften, når indstillingerne åbnes - og tilbage til
+  // "Indstillinger"-knappen, når de lukkes igen fra banneret.
   useEffect(() => {
-    if (iIndstillinger) overskriftRef.current?.focus();
+    if (iIndstillinger) {
+      overskriftRef.current?.focus();
+    } else if (fokusIndstRef.current) {
+      fokusIndstRef.current = false;
+      const knap = [indstMobilRef.current, indstComputerRef.current].find(
+        (k) => k && k.offsetParent !== null,
+      );
+      knap?.focus();
+    }
   }, [iIndstillinger]);
 
   // Bannerets højde bliver til luft nederst på siden.
@@ -115,13 +129,27 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
     };
   }, [vis, iIndstillinger]);
 
+  // Fokus efter et valg: tilbage dertil, hvor man åbnede indstillingerne
+  // (fx footeren). Kom man fra banneret, forsvinder det, og fokus lander på
+  // sidens indhold (målet for "Spring til indhold") i stedet for <body>.
+  function fokusEfterValg() {
+    const tilbage = tilbageRef.current;
+    tilbageRef.current = null;
+    fokusIndstRef.current = false;
+    if (tilbage?.isConnected) {
+      tilbage.focus();
+      return;
+    }
+    const maal =
+      document.getElementById("indhold") ?? document.querySelector<HTMLElement>("main[tabindex]");
+    maal?.focus({ preventScroll: true });
+  }
+
   function vaelg(valg: SamtykkeValg) {
     gemSamtykke(valg);
     setUdkast(null);
     setBesked(T.gemt);
-    const tilbage = tilbageRef.current;
-    tilbageRef.current = null;
-    if (tilbage?.isConnected) tilbage.focus();
+    fokusEfterValg();
   }
 
   function aabnFraBanner() {
@@ -133,7 +161,13 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
     setUdkast(null);
     const tilbage = tilbageRef.current;
     tilbageRef.current = null;
-    if (tilbage?.isConnected) tilbage.focus();
+    if (tilbage?.isConnected) {
+      tilbage.focus();
+    } else if (!samtykke) {
+      // Åbnet fra banneret: banneret står igen, og fokus går til
+      // "Indstillinger"-knappen (når den er tegnet, se effekten ovenfor).
+      fokusIndstRef.current = true;
+    }
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -162,31 +196,43 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
           ref={boksRef}
           aria-labelledby={`${id}-overskrift`}
           onKeyDown={onKeyDown}
-          className="pointer-events-none fixed inset-x-0 bottom-0 z-[35] px-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-6"
+          className="pointer-events-none fixed inset-x-0 bottom-0 z-[35] px-2 pb-[max(8px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-6"
         >
-          <div className="pointer-events-auto mx-auto max-h-[85dvh] w-full max-w-[960px] overflow-y-auto rounded-[14px] border border-kant bg-white p-4 shadow-stor sm:rounded-[18px] sm:p-6">
+          <div className="pointer-events-auto mx-auto max-h-[85dvh] w-full max-w-[960px] overflow-y-auto rounded-[14px] border border-kant bg-white p-3 shadow-stor sm:rounded-[18px] sm:p-6">
             {!iIndstillinger ? (
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:gap-8">
+              <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-end lg:gap-8">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center justify-between gap-2 sm:gap-3">
                     <h2
                       id={`${id}-overskrift`}
                       ref={overskriftRef}
                       tabIndex={-1}
-                      className="text-[17px] leading-snug text-groen-mork outline-none sm:text-[18px]"
+                      className="text-[15px] leading-snug text-groen-mork outline-none sm:text-[18px]"
                     >
                       {T.bannerOverskrift}
                     </h2>
-                    {/* Mobil/tablet: ved overskriften. Computer: ved knapperne. */}
+                    {/* Mobil/tablet: tekstlink ved overskriften. Computer: ved knapperne. */}
                     <button
+                      ref={indstMobilRef}
                       type="button"
                       onClick={aabnFraBanner}
-                      className="-my-2 inline-flex min-h-11 shrink-0 items-center rounded-md px-1 text-sm font-semibold text-groen underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:hidden"
+                      className="-my-2 -mr-1 inline-flex min-h-11 shrink-0 items-center rounded-md px-1 text-[13px] font-semibold sm:text-sm text-groen underline underline-offset-2 hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:hidden"
                     >
                       {T.indstillinger}
                     </button>
                   </div>
-                  <p className="mt-1 max-w-[70ch] text-sm leading-relaxed text-tekst-daempet">
+                  {/* Mobil: én kort linje. Fra sm og op: hele forklaringen. */}
+                  <p className="mt-0.5 text-sm leading-snug text-tekst-daempet sm:hidden">
+                    {T.bannerTekstKort}{" "}
+                    <Link
+                      href="/cookies"
+                      className="font-medium text-groen underline underline-offset-2 hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+                    >
+                      {T.laesMereKort}
+                      <span className="sr-only"> om cookies</span>
+                    </Link>
+                  </p>
+                  <p className="mt-1 hidden max-w-[70ch] text-sm leading-relaxed text-tekst-daempet sm:block">
                     {T.bannerTekst}{" "}
                     <Link
                       href="/cookies"
@@ -198,6 +244,7 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
                 </div>
                 <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:gap-3">
                   <button
+                    ref={indstComputerRef}
                     type="button"
                     onClick={aabnFraBanner}
                     className="btn hidden px-3 text-groen underline-offset-2 hover:underline lg:inline-flex"

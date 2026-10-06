@@ -458,7 +458,7 @@ export default async function AuktionPage({
       </div>
 
       {/* Fast budbjælke i bunden på mobil (BidPanel lægger indholdet her) */}
-      <div id="byd-bjaelke" className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 lg:hidden" />
+      <div id="byd-bjaelke" className="sticky bottom-[var(--samtykke-hoejde,0px)] z-20 -mx-4 sm:-mx-6 lg:hidden" />
     </main>
   );
 }
