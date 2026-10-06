@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import BekraeftDialog from "@/components/BekraeftDialog";
-import RapporterDialog from "@/components/tryghed/RapporterDialog";
+import AnmeldKnap from "@/components/dsa/AnmeldKnap";
 import { blokerBruger, fjernBlokeringAfBruger } from "@/app/actions/tryghed";
 import { medPunktum } from "@/lib/kortNavn";
 
-// "Blokér" / "Fjern blokering" og "Rapportér bruger" på en andens profil.
+// "Blokér" / "Fjern blokering" og "Anmeld profil" (DSA) på en andens profil.
 export default function ProfilTryghed({
   brugerId,
   navn,
@@ -58,11 +58,13 @@ export default function ProfilTryghed({
           }}
         />
       )}
-      <RapporterDialog
-        brugerId={brugerId}
-        titel={`Rapportér ${navn}`}
-        triggerLabel="Rapportér bruger"
-        triggerClassName="btn btn-tekst text-sm"
+      <AnmeldKnap
+        type="profil"
+        id={brugerId}
+        hvad={`Profilen ${navn}`}
+        loggetInd
+        label="Anmeld profil"
+        className="btn btn-tekst text-sm"
       />
       {fejl && (
         <p role="alert" className="w-full text-sm text-fejl-tekst">

@@ -26,6 +26,7 @@
 // og en åben indsigelse afviser både refusion og frigivelse.
 //
 // Fejl RETURNERES som { fejl } (Next skjuler kastede fejl i produktion).
+import { indgrebFejl, udfoerIndgreb } from "@/lib/dsa/server";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
@@ -1254,15 +1255,18 @@ export async function lukKontoPermanent(formData: FormData): Promise<Udfald | { 
     if (!aarsag) throw new BrugerFejl(KODE_FEJL.aarsag_mangler);
     if (aarsag.length > 1000) throw new BrugerFejl(KODE_FEJL.for_lang_tekst);
 
-    const { data, error } = await admin.rpc("bruger_luk_konto_permanent", {
-      p_medarbejder: staffId,
-      p_bruger: brugerId,
-      p_aarsag: aarsag,
-      p_sag: sagId || null,
+    // Den fælles DSA-funktion: lukningen og begrundelsen til brugeren (med
+    // klagemulighed) i samme transaktion. Årsagen vises for brugeren.
+    const r = await udfoerIndgreb(admin, {
+      staffId,
+      type: "profil",
+      id: brugerId,
+      handling: "konto_lukket",
+      regel: "svindel",
+      fakta: aarsag,
+      sagId: sagId || null,
     });
-    if (error) throw new Error(error.message);
-    const kode = (data as { kode: string } | null)?.kode;
-    if (kode !== "ok") throw new BrugerFejl(kodeFejl(kode));
+    if (!r.ok) throw new BrugerFejl(KODE_FEJL[r.kode] ?? indgrebFejl(r.kode));
 
     revalidatePath("/admin/brugere");
     revalidatePath(`/admin/brugere/${brugerId}`);

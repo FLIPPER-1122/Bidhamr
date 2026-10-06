@@ -10,6 +10,8 @@ import { getUserMedToTrin } from "@/lib/mfa";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/adminAuth";
+import { indgrebFejl, udfoerIndgreb } from "@/lib/dsa/server";
+import { erRegel } from "@/lib/dsa/regler";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 import { KONTAKTINFO_FEJL } from "@/lib/kontaktInfo";
 import { MAKS_SPOERGSMAAL, MAKS_SVAR, MIN_SPOERGSMAAL } from "@/lib/spoergsmaal";
@@ -168,6 +170,7 @@ export async function skjulSpoergsmaal(
   spoergsmaalId: string,
   skjul: boolean,
   aarsag: string,
+  regel: string = "andet",
 ): Promise<{ ok: true } | Fejl> {
   try {
     if (!tjekUuid(auktionId) || !tjekUuid(spoergsmaalId)) return { fejl: "Spørgsmålet findes ikke." };
@@ -182,10 +185,27 @@ export async function skjulSpoergsmaal(
       return { fejl: "Du har ikke adgang til at gøre dette." };
     }
 
+    if (skjul === true) {
+      // Skjul går gennem den fælles DSA-funktion: skjul + begrundelse til
+      // den, der skrev spørgsmålet (med klagemulighed).
+      if (!erRegel(regel)) return { fejl: "Vælg hvilken regel spørgsmålet bryder." };
+      const r = await udfoerIndgreb(adgang.admin, {
+        staffId: adgang.userId,
+        type: "spoergsmaal",
+        id: spoergsmaalId,
+        handling: "spoergsmaal_skjult",
+        regel,
+        fakta: grund,
+      });
+      if (!r.ok && r.kode !== "uaendret") return { fejl: indgrebFejl(r.kode) };
+      revalidatePath(`/auktion/${auktionId}`);
+      return { ok: true };
+    }
+
     const { data, error } = await adgang.admin.rpc("skjul_spoergsmaal", {
       p_medarbejder: adgang.userId,
       p_spoergsmaal: spoergsmaalId,
-      p_skjul: skjul === true,
+      p_skjul: false,
       p_aarsag: grund || null,
     });
     if (error) {

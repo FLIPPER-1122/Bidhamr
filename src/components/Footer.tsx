@@ -25,6 +25,7 @@ const KOLONNER: { titel: string; links: { href: string; tekst: string }[] }[] = 
       { href: "/kontakt", tekst: "Kontakt kundeservice" },
       { href: "/forbudte-varer", tekst: "Forbudte varer" },
       { href: "/kontakt?emne=fejl", tekst: "Rapportér en fejl" },
+      { href: "/dsa/anmeld", tekst: "Anmeld ulovligt indhold" },
     ],
   },
   {
@@ -35,6 +36,7 @@ const KOLONNER: { titel: string; links: { href: string; tekst: string }[] }[] = 
       { href: "/privatliv", tekst: "Privatlivspolitik" },
       { href: "/cookies", tekst: "Cookies" },
       { href: "/tilgaengelighed", tekst: "Tilgængelighedserklæring" },
+      { href: "/dsa", tekst: "Ulovligt indhold og DSA" },
     ],
   },
 ];

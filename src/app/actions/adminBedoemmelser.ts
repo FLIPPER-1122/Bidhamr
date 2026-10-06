@@ -13,6 +13,7 @@ import { unstable_rethrow } from "next/navigation";
 import { assertRole } from "@/lib/adminAuth";
 import { erSkjulGrund, type BedoemmelseDel } from "@/lib/bedoemmelser";
 import { notificerModeration } from "@/lib/notifikationer/bedoemmelse";
+import { indgrebFejl, udfoerIndgreb } from "@/lib/dsa/server";
 
 class BrugerFejl extends Error {}
 
@@ -56,6 +57,16 @@ function revalider() {
 
 type RpcSvar = { kode?: string; forfatter_id?: string };
 
+// Fast begrundelse -> DSA-regel og en standardtekst til brugeren, hvis
+// medarbejderen ikke har skrevet en uddybning.
+const GRUND_TIL_REGEL: Record<string, { regel: string; fakta: string }> = {
+  groft_sprog: { regel: "chikane", fakta: "Teksten indeholder grove ord, chikane eller trusler." },
+  personoplysninger: { regel: "personoplysninger", fakta: "Teksten indeholder personoplysninger om en anden person." },
+  kontaktinfo: { regel: "kontaktinfo", fakta: "Teksten indeholder kontaktoplysninger eller opfordrer til handel uden om BidHamr." },
+  ikke_relateret: { regel: "ikke_relateret", fakta: "Teksten handler ikke om handlen." },
+  andet: { regel: "andet", fakta: "" },
+};
+
 async function skjulEllerVis(formData: FormData, skjul: boolean) {
   const { admin, userId } = await assertRole("medarbejder");
   const ratingId = tekst(formData, "ratingId");
@@ -67,12 +78,37 @@ async function skjulEllerVis(formData: FormData, skjul: boolean) {
   if (skjul && grund === "andet" && !aarsag) throw new BrugerFejl(KODE_FEJL.begrundelse_mangler);
   if (aarsag.length > 500) throw new BrugerFejl(KODE_FEJL.for_lang_tekst);
 
+  if (skjul) {
+    // Skjul går gennem den fælles DSA-funktion: skjul + begrundelse til
+    // brugeren (med klagemulighed) i samme transaktion.
+    const m = GRUND_TIL_REGEL[grund];
+    const r = await udfoerIndgreb(admin, {
+      staffId: userId,
+      type: d === "bedoemmelse" ? "bedoemmelse" : "bedoemmelse_svar",
+      id: ratingId,
+      handling: d === "bedoemmelse" ? "bedoemmelse_skjult" : "bedoemmelse_svar_skjult",
+      regel: m.regel,
+      fakta: [m.fakta, aarsag].filter(Boolean).join(" "),
+      anmeldelseId: tekst(formData, "anmeldelseId") || null,
+    });
+    if (!r.ok) {
+      if (r.kode === "uaendret") {
+        revalider();
+        return { ok: true as const };
+      }
+      throw new BrugerFejl(KODE_FEJL[r.kode] ?? indgrebFejl(r.kode));
+    }
+    revalider();
+    revalidatePath("/admin/dsa");
+    return { ok: true as const };
+  }
+
   const { data, error } = await admin.rpc("skjul_bedoemmelse", {
     p_medarbejder: userId,
     p_rating: ratingId,
     p_del: d,
-    p_skjul: skjul,
-    p_grund: skjul ? grund : null,
+    p_skjul: false,
+    p_grund: null,
     p_aarsag: aarsag || null,
   });
   if (error) throw new Error(error.message);
@@ -85,16 +121,7 @@ async function skjulEllerVis(formData: FormData, skjul: boolean) {
 
   const forfatterId = svar.forfatter_id;
   if (forfatterId) {
-    after(() =>
-      notificerModeration({
-        forfatterId,
-        ratingId,
-        del: d,
-        skjult: skjul,
-        grund: skjul ? grund : null,
-        aarsag: skjul ? aarsag || null : null,
-      }),
-    );
+    after(() => notificerModeration({ forfatterId, ratingId, del: d }));
   }
   revalider();
   return { ok: true as const };

@@ -52,6 +52,14 @@ export const HANDLING_NAVNE: Record<string, string> = {
   bedoemmelse_svar_skjult: "Skjulte sælgers svar på bedømmelse",
   bedoemmelse_svar_vist: "Viste sælgers svar på bedømmelse igen",
   bedoemmelse_beholdt: "Beholdt rapporteret bedømmelse",
+  // 20261009010000_dsa.sql
+  auktion_skjult: "Skjulte auktion",
+  auktion_vist: "Viste auktion igen",
+  dsa_anmeldelse_afgjort: "Afgjorde anmeldelse (DSA)",
+  dsa_anmeldelse_videresendt: "Videresendte anmeldelse til admin",
+  dsa_klage_medhold: "Gav medhold i klage (DSA)",
+  dsa_klage_fastholdt: "Fastholdt afgørelse efter klage (DSA)",
+  konto_genaabnet: "Genåbnede lukket konto efter klage",
 };
 
 export function handlingNavn(handling: string): string {
@@ -69,6 +77,7 @@ const MAAL_NAVNE: Record<string, string> = {
   handel: "Handel",
   samtale: "Chat",
   sag: "Sag",
+  dsa: "Anmeldelse/klage (DSA)",
 };
 
 // Link til det, handlingen handlede om. null, hvis der ikke findes en side.
@@ -99,6 +108,8 @@ export function maalLink(
       return { href: `/admin/chats/${id}`, label: "Se chat" };
     case "sag":
       return { href: `/admin/sager/${id}`, label: "Se sag" };
+    case "dsa":
+      return { href: "/admin/dsa?fane=afsluttede", label: "Se anmeldelser" };
     case "anmeldelse":
       // maal_id er bedømmelsens id (ratings.id) - vis den på Bedømmelser.
       // Meget gamle rækker kan mangle den, så brugerens anmeldelser er reserven.

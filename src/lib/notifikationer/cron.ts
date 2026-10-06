@@ -21,6 +21,7 @@ import {
   notificerBud,
 } from "@/lib/notifikationer/bud";
 import { betalingsfristForlaengetMail } from "@/lib/mails/handel";
+import { koerDsaNotifikationer } from "@/lib/dsa/notifikationer";
 import { notificerAfhentningsfristForlaengelser } from "@/lib/betaling/afhentningsfrist";
 import { soegningHref } from "@/lib/gemteSoegninger";
 import {
@@ -207,12 +208,8 @@ export async function notificerAdvarsler(): Promise<number> {
     const admin = createAdminClient();
     const start = await hentStart(admin);
     if (!start) return 0;
-    const [a, p, l] = [
-      await advarsler(admin, start),
-      await paamindelser(admin, start),
-      await kontoLukninger(admin, start),
-    ];
-    return a + p + l;
+    const [a, p] = [await advarsler(admin, start), await paamindelser(admin, start)];
+    return a + p;
   } catch (err) {
     console.error("Notifikationer: advarsler fejlede:", err);
     return 0;
@@ -295,38 +292,9 @@ async function paamindelser(admin: Admin, start: Date): Promise<number> {
   );
 }
 
-export const KONTO_LUKKET_TEKST =
-  "Din konto er lukket permanent efter 3 advarsler. Kontakt support@bidhamr.dk";
-
-// Kun når staff har GODKENDT lukningen (konto_lukning_forslag.status
-// 'godkendt'). Brugeren får ingen besked om et afventende eller afvist forslag.
-async function kontoLukninger(admin: Admin, start: Date): Promise<number> {
-  const { data, error } = await admin
-    .from("konto_lukning_forslag")
-    .select("id, bruger_id")
-    .eq("status", "godkendt")
-    .gte("behandlet_kl", fraTid(start, 48))
-    .order("behandlet_kl", { ascending: false })
-    .limit(MAKS);
-  if (error) {
-    console.error("Notifikationer: kontolukninger kunne ikke hentes:", error.message);
-    return 0;
-  }
-  return sendNye(
-    admin,
-    (data ?? []).map((f) => ({
-      brugerId: f.bruger_id as string,
-      type: "advarsel" as const,
-      input: {
-        titel: "Din konto er lukket",
-        tekst: KONTO_LUKKET_TEKST,
-        link: "/konto#advarsler",
-        data: {},
-        noegle: `konto_lukket:${f.id}`,
-      },
-    })),
-  );
-}
+// Lukning af en konto (efter 3 advarsler eller fra en sag) giver nu en
+// DSA-begrundelse med klagemulighed (src/lib/dsa/notifikationer.ts) i stedet
+// for den gamle "Din konto er lukket"-besked.
 
 // Hvem der likede, står kun i nøglen (notifikation_afsendelser, kun
 // service-role) - aldrig i teksten eller data, som sælgeren kan læse.
@@ -794,7 +762,7 @@ export async function koerNotifikationsCron() {
   const resultat = {
     advarsler: 0,
     paamindelser: 0,
-    kontoLukninger: 0,
+    dsa: 0,
     bud: 0,
     likes: 0,
     spoergsmaal: 0,
@@ -818,7 +786,6 @@ export async function koerNotifikationsCron() {
     trin.push(
       ["advarsler", () => advarsler(admin, s)],
       ["paamindelser", () => paamindelser(admin, s)],
-      ["kontoLukninger", () => kontoLukninger(admin, s)],
       ["bud", () => bud(admin, s)],
       ["likes", () => likes(admin, s)],
       ["spoergsmaal", () => spoergsmaal(admin, s)],
@@ -834,6 +801,8 @@ export async function koerNotifikationsCron() {
   // Gemte søgninger holder selv styr på, hvad der er vurderet (tabellen er
   // ny, 7. oktober 2026), og kræver ikke start_kl.
   trin.push(["gemteSoegninger", () => gemteSoegninger(admin)]);
+  // DSA: kvitteringer, begrundelser og svar, der ikke blev sendt med det samme.
+  trin.push(["dsa", () => koerDsaNotifikationer()]);
   if (start) {
     const s = start;
     trin.push(

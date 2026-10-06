@@ -3,7 +3,8 @@
 // i supabase/migrations/20261002060000_notifikationer.sql; 'spoergsmaal' tilføjet i
 // 20261006040000_auktionsfunktioner.sql; 'gemt_soegning' i
 // 20261007010000_brugerens_egne_ting.sql; 'bedoemmelse' i
-// 20261007020000_bedoemmelse_svar.sql). Ændres listen her,
+// 20261007020000_bedoemmelse_svar.sql; 'afgoerelse' (påkrævet) i
+// 20261009010000_dsa.sql). Ændres listen her,
 // skal SQL'en også rettes i en ny migration.
 //
 // Ingen server-only-import: frontend må gerne bruge navne og beskrivelser.
@@ -26,7 +27,8 @@ export type NotifikationType =
   | "ny_besked"
   | "spoergsmaal"
   | "gemt_soegning"
-  | "bedoemmelse";
+  | "bedoemmelse"
+  | "afgoerelse";
 
 export type Kanal = "klokke" | "mail" | "push";
 
@@ -48,6 +50,7 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "udbetaling", navn: "Udbetaling", beskrivelse: "Når pengene er sendt til din udbetalingskonto, eller du mangler at oprette den.", paakraevet: true },
   { type: "sag", navn: "Sager", beskrivelse: "Nyt i en sag om en handel, og når BidHamr åbner en samtale med dig.", paakraevet: true },
   { type: "advarsel", navn: "Advarsler", beskrivelse: "Når du får en advarsel fra BidHamr, eller når noget, du har skrevet (fx en bedømmelse), bliver skjult.", paakraevet: true },
+  { type: "afgoerelse", navn: "Afgørelser og klager", beskrivelse: "Når BidHamr fjerner eller begrænser noget af dit indhold eller din konto, svar på dine klager, og svar på det, du har anmeldt. Mail sendes altid.", paakraevet: true },
   { type: "andenchance", navn: "Tilbud til næste byder", beskrivelse: "Når du får tilbudt en vare, eller når byderen svarer på dit tilbud.", paakraevet: true },
   { type: "overbudt", navn: "Du er overbudt", beskrivelse: "Når en anden byder mere end dig.", paakraevet: false },
   { type: "bud_paa_egen", navn: "Bud på din auktion", beskrivelse: "Når nogen byder på en af dine auktioner.", paakraevet: false },

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useId, useState, useTransition } from "react";
-import RapporterDialog from "@/components/tryghed/RapporterDialog";
+import AnmeldKnap from "@/components/dsa/AnmeldKnap";
 import { skrivBedoemmelseSvar, sletBedoemmelseSvar } from "@/app/actions/bedoemmelser";
 import { indeholderKontaktinfo, KONTAKTINFO_FEJL } from "@/lib/kontaktInfo";
 import {
@@ -283,33 +283,40 @@ function BedoemmelseKort({
         <SvarFormular ratingId={r.id} startTekst={svar?.tekst ?? ""} onLuk={() => setSkriver(false)} />
       )}
 
-      {!erSaelger && erLoggetInd && (!egenBedoemmelse || (svar && !svar.skjult)) && (
+      {/* Anmeld (DSA): også uden login. Aldrig på egne tekster. */}
+      {!erSaelger && (!egenBedoemmelse || (svar && !svar.skjult)) && (
         <div className="mt-1 flex flex-wrap gap-x-4">
           {!egenBedoemmelse && (
-            <RapporterDialog
-              bedoemmelse={{ ratingId: r.id, del: "bedoemmelse" }}
-              titel="Rapportér bedømmelse"
-              triggerLabel="Rapportér bedømmelse"
-              triggerClassName={RAPPORT_KNAP}
+            <AnmeldKnap
+              type="bedoemmelse"
+              id={r.id}
+              hvad={`Bedømmelsen fra ${r.fra_bruger_navn}`}
+              loggetInd={erLoggetInd}
+              label="Anmeld bedømmelse"
+              className={RAPPORT_KNAP}
             />
           )}
           {svar && !svar.skjult && (
-            <RapporterDialog
-              bedoemmelse={{ ratingId: r.id, del: "svar" }}
-              titel="Rapportér sælgerens svar"
-              triggerLabel="Rapportér svar"
-              triggerClassName={RAPPORT_KNAP}
+            <AnmeldKnap
+              type="bedoemmelse_svar"
+              id={r.id}
+              hvad="Sælgerens svar på en bedømmelse"
+              loggetInd={erLoggetInd}
+              label="Anmeld svar"
+              className={RAPPORT_KNAP}
             />
           )}
         </div>
       )}
       {erSaelger && (
         <div className="mt-1">
-          <RapporterDialog
-            bedoemmelse={{ ratingId: r.id, del: "bedoemmelse" }}
-            titel="Rapportér bedømmelse"
-            triggerLabel="Bryder bedømmelsen reglerne? Rapportér den"
-            triggerClassName={RAPPORT_KNAP}
+          <AnmeldKnap
+            type="bedoemmelse"
+            id={r.id}
+            hvad={`Bedømmelsen fra ${r.fra_bruger_navn}`}
+            loggetInd
+            label="Bryder bedømmelsen reglerne? Anmeld den"
+            className={RAPPORT_KNAP}
           />
         </div>
       )}
