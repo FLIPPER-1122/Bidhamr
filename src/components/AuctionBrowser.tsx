@@ -8,6 +8,7 @@ import { UKENDT_POSTNUMMER } from "@/lib/postnummerTekst";
 import { soegAuktioner } from "@/app/actions/auktionSoegning";
 
 import { SORTERINGER, type Sortering } from "@/lib/sortering";
+import { antalFundet, antalTekst, type TotalType } from "@/lib/soegeTotal";
 import GemSoegningKnap from "@/components/soegning/GemSoegningKnap";
 
 // Felter i filterbjælken (DESIGN.md 8.2).
@@ -32,6 +33,7 @@ function filterNoegle(query: string, kategori: string, sortering: Sortering, afs
 export default function AuctionBrowser({
   initialAuktioner,
   initialTotal,
+  initialTotalType,
   initialQuery,
   initialKategori = "",
   initialSortering = "slutter_snart",
@@ -45,6 +47,7 @@ export default function AuctionBrowser({
   // Første side er hentet på serveren med de samme filtre (src/lib/auktionSoegning.ts).
   initialAuktioner: DummyAuction[];
   initialTotal: number;
+  initialTotalType: TotalType;
   initialQuery: string;
   initialKategori?: string;
   initialSortering?: Sortering;
@@ -87,6 +90,7 @@ export default function AuctionBrowser({
   const [radiusKm, setRadiusKm] = useState(initialRadiusKm);
   const [auktioner, setAuktioner] = useState<DummyAuction[]>(initialAuktioner);
   const [total, setTotal] = useState(initialTotal);
+  const [totalType, setTotalType] = useState<TotalType>(initialTotalType);
   const [loading, setLoading] = useState(false);
   const [henterFlere, setHenterFlere] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
@@ -134,6 +138,7 @@ export default function AuctionBrowser({
           hentetNoegle.current = noegle;
           setAuktioner(svar.auktioner);
           setTotal(svar.total);
+          setTotalType(svar.totalType);
         }
       } catch {
         if (nr === forespoergselNr.current) setFejl(FEJL);
@@ -160,6 +165,7 @@ export default function AuctionBrowser({
         const kendte = new Set(auktioner.map((a) => a.id));
         setAuktioner([...auktioner, ...svar.auktioner.filter((a) => !kendte.has(a.id))]);
         setTotal(svar.total);
+        setTotalType(svar.totalType);
       }
     } catch {
       if (nr === forespoergselNr.current) setFejl(FEJL);
@@ -274,7 +280,7 @@ export default function AuctionBrowser({
         <p className="text-sm text-tekst-svag" aria-live="polite">
           {loading
             ? "Søger…"
-            : `${total} auktion${total === 1 ? "" : "er"} fundet`}
+            : antalFundet(total, totalType)}
         </p>
         <GemSoegningKnap
           erLoggetInd={erLoggetInd}
@@ -321,7 +327,7 @@ export default function AuctionBrowser({
       {!loading && auktioner.length > 0 && auktioner.length < total && (
         <div className="mt-6 flex flex-col items-center gap-2">
           <p className="text-sm text-tekst-svag">
-            Viser {auktioner.length} af {total}
+            Viser {auktioner.length} af {antalTekst(total, totalType)}
           </p>
           <button
             type="button"

@@ -74,7 +74,12 @@ export default function FavoritterProvider({
       setKlar(true);
     }
 
-    hent();
+    hent().catch((err) => {
+      // Fx netværksfejl eller en JavaScript-fil, der ikke kunne hentes. Så
+      // vises tomme hjerter i stedet for en uhåndteret fejl.
+      console.error("Kunne ikke hente favoritter:", err);
+      if (!afbrudt) setKlar(true);
+    });
     return () => {
       afbrudt = true;
     };
@@ -114,21 +119,26 @@ export default function FavoritterProvider({
             .from("favorites")
             .insert({ user_id: bruger, auction_id: auktionId }));
 
-      skriv.then(({ error }) => {
-        if (!error) return;
-
-        // 23505 = allerede gemt. Så er ønsket tilstand allerede opnået, og
-        // der er intet at rulle tilbage.
-        if (error.code === "23505") return;
-
-        console.error("Kunne ikke gemme favorit:", error);
+      const rulTilbage = (fejl: unknown) => {
+        console.error("Kunne ikke gemme favorit:", fejl);
         setIder((forrige) => {
           const ny = new Set(forrige);
           if (varFavorit) ny.add(auktionId);
           else ny.delete(auktionId);
           return ny;
         });
-      });
+      };
+
+      skriv
+        .then(({ error }) => {
+          if (!error) return;
+          // 23505 = allerede gemt. Så er ønsket tilstand allerede opnået, og
+          // der er intet at rulle tilbage.
+          if (error.code === "23505") return;
+          rulTilbage(error);
+        })
+        // Netværksfejl, eller Supabase-klienten kunne ikke indlæses.
+        .catch(rulTilbage);
     },
     [bruger, ider, pathname, router],
   );
