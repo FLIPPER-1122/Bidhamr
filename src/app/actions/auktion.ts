@@ -147,7 +147,7 @@ export async function redigerAuktion(
     const fjernede = (foer?.billeder ?? []).filter((url) => !input.billeder.includes(url));
     if (fjernede.length > 0) {
       const brugerId = user.id;
-      after(() => sletFjernedeBilleder(brugerId, fjernede));
+      after(() => sletFjernedeBilleder(brugerId, auktionId, fjernede));
     }
 
     revalidatePath(`/auktion/${auktionId}`);
@@ -160,32 +160,71 @@ export async function redigerAuktion(
 }
 
 // Sletter billeder, sælgeren har fjernet ved redigering. Kun filer i
-// brugerens egen mappe i auktion-billeder, og kun hvis ingen auktion (heller
-// ikke en anden af brugerens egne, fx en genopsat vare) stadig bruger dem.
-// Service role, fordi storage-policyen ikke lader brugeren slette - ejeren er
-// tjekket af rediger_auktion. Kaster aldrig.
+// brugerens egen mappe i auktion-billeder, og kun hvis ingen af brugerens
+// auktioner (fx en genopsat vare) stadig bruger dem - sammenlignet på
+// storage-stien, ikke den præcise URL. Slettes aldrig, mens der er en åben
+// DSA-anmeldelse (ny eller videresendt) eller en åben rapport om auktionen:
+// billederne kan være bevis. Service role, fordi storage-policyen ikke lader
+// brugeren slette - ejeren er tjekket af rediger_auktion. Kaster aldrig.
 const BILLEDE_STI = /^[0-9a-f-]{36}\/[A-Za-z0-9_-]{1,100}\.[a-z0-9]{1,5}$/;
-async function sletFjernedeBilleder(brugerId: string, urls: string[]) {
+const BILLEDE_MARKOER = "/storage/v1/object/public/auktion-billeder/";
+
+function billedeSti(url: string): string | null {
+  const i = url.indexOf(BILLEDE_MARKOER);
+  if (i < 0) return null;
   try {
-    const markoer = "/storage/v1/object/public/auktion-billeder/";
+    return decodeURIComponent(url.slice(i + BILLEDE_MARKOER.length).split("?")[0].split("#")[0]);
+  } catch {
+    return null;
+  }
+}
+
+async function sletFjernedeBilleder(brugerId: string, auktionId: string, urls: string[]) {
+  try {
     const admin = createAdminClient();
-    const stier: string[] = [];
-    for (const url of urls) {
-      const i = url.indexOf(markoer);
-      if (i < 0) continue;
-      const sti = decodeURIComponent(url.slice(i + markoer.length).split("?")[0]);
-      if (!BILLEDE_STI.test(sti) || !sti.startsWith(`${brugerId.toLowerCase()}/`)) continue;
-      const { data: iBrug, error } = await admin
-        .from("auctions")
+    const kandidater = urls
+      .map(billedeSti)
+      .filter((sti): sti is string => !!sti && BILLEDE_STI.test(sti) && sti.startsWith(`${brugerId.toLowerCase()}/`));
+    if (kandidater.length === 0) return;
+
+    // Åben sag om auktionen: behold alt.
+    const [anm, rap] = await Promise.all([
+      admin
+        .from("dsa_anmeldelser")
         .select("id")
-        .contains("billeder", [url])
-        .limit(1);
-      if (error || (iBrug && iBrug.length > 0)) continue;
-      stier.push(sti);
+        .eq("status", "ny")
+        .or(`auktion_id.eq.${auktionId},and(indhold_type.eq.auktion,indhold_id.eq.${auktionId})`)
+        .limit(1),
+      admin
+        .from("reports")
+        .select("id")
+        .eq("auction_id", auktionId)
+        .in("status", ["pending", "under_behandling"])
+        .limit(1),
+    ]);
+    if (anm.error || rap.error) throw new Error(anm.error?.message ?? rap.error?.message);
+    if ((anm.data?.length ?? 0) > 0 || (rap.data?.length ?? 0) > 0) return;
+
+    // Billederne ligger i brugerens egen mappe og kan kun bruges af
+    // brugerens egne auktioner (auktion_billeder_gyldige).
+    const { data: auktioner, error } = await admin
+      .from("auctions")
+      .select("billeder")
+      .eq("bruger_id", brugerId)
+      .limit(5000);
+    if (error) throw new Error(error.message);
+    const iBrug = new Set<string>();
+    for (const a of (auktioner ?? []) as { billeder: string[] | null }[]) {
+      for (const url of a.billeder ?? []) {
+        const sti = billedeSti(url);
+        if (sti) iBrug.add(sti);
+      }
     }
+
+    const stier = [...new Set(kandidater)].filter((sti) => !iBrug.has(sti));
     if (stier.length === 0) return;
-    const { error } = await admin.storage.from("auktion-billeder").remove(stier);
-    if (error) throw error;
+    const { error: sletFejl } = await admin.storage.from("auktion-billeder").remove(stier);
+    if (sletFejl) throw sletFejl;
   } catch (err) {
     await logDriftFejl({ kilde: "action", hvor: "redigerAuktion: slet fjernede billeder", fejl: err });
   }
@@ -232,6 +271,58 @@ export async function annullerAuktion(auktionId: string): Promise<{ ok: true } |
     return { ok: true };
   } catch (err) {
     console.error("annullerAuktion fejlede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
+// "Sæt varen op igen" med ét klik: en auktion, som BidHamr har fjernet eller
+// stoppet (og hvor afgørelsen er ophævet), eller som blev annulleret
+// automatisk efter 14 dages pause. En annulleret auktion genåbnes aldrig
+// (Filip, 6. okt. 2026) - der oprettes en ny auktion med samme indhold,
+// startpris og varighed. Databasen (saet_annulleret_op_igen) tjekker ejer,
+// konto, udbetalingskonto, åben klage, gældende fjernelse og forbudte ord.
+const SAET_OP_IGEN_FEJL: Record<string, string> = {
+  ikke_fundet: "Auktionen findes ikke.",
+  ikke_saelger: "Auktionen findes ikke.",
+  ikke_annulleret: "Auktionen er ikke annulleret og kan ikke sættes op igen herfra.",
+  allerede_genopsat: "Varen er allerede sat op igen.",
+  klage_afventer: "Din klage er ikke afgjort endnu. Vent på svaret, før du sætter varen op igen.",
+  fjernet: "Auktionen er fjernet af BidHamr. Overholder varen vores regler, kan du oprette en ny auktion.",
+  ikke_bidhamr: "Opret en ny auktion for at sætte varen til salg igen.",
+  konto_lukket: "Din konto er lukket.",
+  suspenderet: "Din konto er suspenderet, og du kan ikke sætte varer op.",
+  mangler_udbetalingskonto: "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.",
+};
+
+export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; auktionId: string } | Fejl> {
+  try {
+    if (typeof auktionId !== "string" || !UUID.test(auktionId)) {
+      return { fejl: SAET_OP_IGEN_FEJL.ikke_fundet };
+    }
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await getUserMedToTrin(supabase);
+    if (!user) return { fejl: "Log ind for at sætte varen op igen." };
+
+    const { data, error } = await createAdminClient().rpc("saet_annulleret_op_igen", {
+      p_auction: auktionId,
+      p_seller: user.id,
+    });
+    if (error) {
+      if (error.code === "23505") return { fejl: SAET_OP_IGEN_FEJL.allerede_genopsat };
+      console.error("saet_annulleret_op_igen fejlede:", error.code, error.message);
+      return { fejl: GENERISK };
+    }
+    const r = data as { kode?: string; auction_id?: string; ord?: string; kategori?: string } | null;
+    if (r?.kode === "forbudt_vare") return { fejl: forbudtBesked(r.ord ?? "", r.kategori ?? "") };
+    if (r?.kode !== "ok" || !r.auction_id) return { fejl: SAET_OP_IGEN_FEJL[r?.kode ?? ""] ?? GENERISK };
+
+    revalidatePath("/");
+    revalidatePath(`/auktion/${auktionId}`);
+    return { ok: true, auktionId: r.auction_id };
+  } catch (err) {
+    console.error("saetVarenOpIgen fejlede:", err);
     return { fejl: GENERISK };
   }
 }

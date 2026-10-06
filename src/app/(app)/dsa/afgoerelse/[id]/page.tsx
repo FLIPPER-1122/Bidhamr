@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserMedToTrin } from "@/lib/mfa";
 import { erUuid, tjekDsaToken } from "@/lib/dsa/link";
 import KlageFormular from "@/components/dsa/KlageFormular";
+import SaetOpIgenKnap from "@/components/dsa/SaetOpIgenKnap";
 import Tidslinje, { type Trin } from "@/components/dsa/Tidslinje";
 import {
   ANDRE_KLAGEMULIGHEDER,
@@ -114,17 +115,44 @@ export default async function AfgoerelseSide({
     .eq("afgoerelse_id", id)
     .maybeSingle<Klage>();
 
-  // Er auktionen skjult/fjernet, giver "Gå til auktionen" ingen mening - så
-  // forklarer vi i stedet, og tilbyder at sætte varen op igen.
+  // Auktionen: er den synlig, linker vi til den. Er den annulleret
+  // (fjernet/stoppet), genåbnes den aldrig (Filip, 6. okt. 2026) - så kan
+  // sælgeren sætte varen op igen: med ét klik, når afgørelsen er ophævet
+  // eller den blev annulleret automatisk efter 14 dages pause
+  // (kan_saette_op_igen), ellers som en ny auktion. Ikke mens den er på
+  // pause, og ikke mens en klage er i gang.
   const visAuktion = !!a.auktion_id && a.indhold_type !== "profil";
   const { data: auk } = visAuktion
-    ? await admin.from("auctions").select("skjult").eq("id", a.auktion_id).maybeSingle<{ skjult: boolean }>()
+    ? await admin
+        .from("auctions")
+        .select("skjult, status")
+        .eq("id", a.auktion_id)
+        .maybeSingle<{ skjult: boolean; status: string }>()
     : { data: null };
-  const auktionSkjult = visAuktion && (!auk || auk.skjult);
+  const annulleret = visAuktion && auk?.status === "annulleret";
+  const klageIGang = k?.status === "afventer";
+  let saetOp: string | null = null;
+  let nyAuktionId: string | null = null;
+  if (annulleret && !klageIGang) {
+    const { data: kode } = await admin.rpc("kan_saette_op_igen", { p_auction: a.auktion_id });
+    saetOp = typeof kode === "string" ? kode : null;
+    if (saetOp === "allerede_genopsat") {
+      const { data: g } = await admin
+        .from("genopsaetninger")
+        .select("ny_auction_id")
+        .eq("gammel_auction_id", a.auktion_id)
+        .maybeSingle<{ ny_auction_id: string }>();
+      nyAuktionId = g?.ny_auction_id ?? null;
+    }
+  }
+  const auktionSynlig = visAuktion && !!auk && !auk.skjult && !annulleret;
+  const paaPause = visAuktion && !!auk && auk.skjult && auk.status === "aktiv";
 
   const fristOk = new Date(a.klage_frist_kl).getTime() > nuMs();
   const kanKlage = !k && !a.ophaevet_kl && fristOk;
-  const hvordan = a.automatisk_opdaget
+  const hvordan = a.automatisk_afgjort
+    ? "Auktionen havde været på pause i 14 dage uden at blive åbnet igen, og blev derfor annulleret automatisk efter vores regler."
+    : a.automatisk_opdaget
     ? "Vores automatiske kontrol markerede indholdet. En medarbejder har vurderet det og truffet afgørelsen."
     : a.anmeldelse_id
       ? "Vi fik en anmeldelse. En medarbejder har vurderet indholdet og truffet afgørelsen."
@@ -145,7 +173,13 @@ export default async function AfgoerelseSide({
         tid: k.afgjort_kl,
         tekst:
           k.status === "afgjort"
-            ? `${KLAGE_UDFALD_NAVNE[k.udfald ?? ""] ?? ""}${k.udfald === "medhold" ? ". Afgørelsen er ophævet." : "."}`
+            ? `${KLAGE_UDFALD_NAVNE[k.udfald ?? ""] ?? ""}${
+                k.udfald === "medhold"
+                  ? annulleret
+                    ? ". Afgørelsen er ophævet. Auktionen kan ikke åbnes igen, men du kan sætte varen op igen."
+                    : ". Afgørelsen er ophævet."
+                  : "."
+              }`
             : undefined,
         tilstand: k.status === "afgjort" ? "faerdig" : "kommende",
       },
@@ -193,21 +227,50 @@ export default async function AfgoerelseSide({
             <Raekke titel="Varighed">{a.varighed_til ? `Til ${dato(a.varighed_til)}` : "Indtil videre"}</Raekke>
           )}
           <Raekke titel="Dato">{dato(a.oprettet_kl)}</Raekke>
-          {visAuktion && !auktionSkjult && (
+          {auktionSynlig && (
             <Raekke titel="Auktion">
               <Link href={`/auktion/${a.auktion_id}`} className="font-medium text-groen hover:underline">
                 Gå til auktionen
               </Link>
             </Raekke>
           )}
-          {visAuktion && auktionSkjult && !a.ophaevet_kl && (
+          {paaPause && (
+            <Raekke titel="Auktion">
+              Auktionen er sat på pause, mens vi kigger på den. Der kan ikke bydes, og den slutter ikke, før den er oppe
+              igen.
+            </Raekke>
+          )}
+          {annulleret && klageIGang && (
+            <Raekke titel="Auktion">Auktionen er stoppet. Vent på svaret på din klage, før du sætter varen op igen.</Raekke>
+          )}
+          {annulleret && saetOp === "ok" && (
             <Raekke titel="Auktion">
               <span className="block">
-                Auktionen er ikke længere synlig for andre. Overholder varen vores regler, kan du sætte den op igen
-                som en ny auktion.
+                {a.ophaevet_kl ? "Vi beklager, at vi stoppede din auktion. " : ""}
+                Auktionen kan ikke åbnes igen, fordi buddene ikke gælder længere. Du kan sætte varen op igen med ét klik –
+                den nye auktion får samme titel, beskrivelse, billeder, startpris og varighed.
+              </span>
+              <SaetOpIgenKnap auktionId={a.auktion_id!} />
+            </Raekke>
+          )}
+          {annulleret && saetOp === "allerede_genopsat" && (
+            <Raekke titel="Auktion">
+              <span className="block">Du har sat varen op igen.</span>
+              {nyAuktionId && (
+                <Link href={`/auktion/${nyAuktionId}`} className="font-medium text-groen hover:underline">
+                  Gå til den nye auktion
+                </Link>
+              )}
+            </Raekke>
+          )}
+          {annulleret && !klageIGang && saetOp !== null && saetOp !== "ok" && saetOp !== "allerede_genopsat" && (
+            <Raekke titel="Auktion">
+              <span className="block">
+                Auktionen er stoppet og kan ikke åbnes igen. Overholder varen vores regler, kan du sætte den op igen som
+                en ny auktion.
               </span>
               <Link href="/opret-auktion" className="btn btn-sekundaer mt-3">
-                Sæt varen op igen
+                Opret en ny auktion
               </Link>
             </Raekke>
           )}

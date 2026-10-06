@@ -436,7 +436,9 @@ export function KlageKort({
             title="Giv klageren medhold?"
             description={
               afg
-                ? "Indgrebet bliver ophævet med det samme (indholdet vises igen / kontoen åbnes igen). Klageren får dit svar."
+                ? afg.handling === "auktion_fjernet" || afg.handling === "auktion_annulleret"
+                  ? "Afgørelsen bliver ophævet, men auktionen åbnes ikke igen – buddene gælder ikke. Sælgeren får dit svar (husk en undskyldning) og kan sætte varen op igen med ét klik."
+                  : "Indgrebet bliver ophævet med det samme (indholdet vises igen / kontoen åbnes igen). Klageren får dit svar."
                 : "Anmeldelsen bliver genåbnet og skal behandles igen. Anmelderen får dit svar."
             }
             confirmLabel="Giv medhold"

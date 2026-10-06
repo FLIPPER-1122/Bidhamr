@@ -21,6 +21,8 @@ const KENDTE_BUDFEJL = [
   "Buddet skal være i hele kroner.",
   "Auktionen er ikke aktiv længere",
   "Auktionen er ikke tilgængelig",
+  // handle_new_bid: BidHamr har sat auktionen på pause (6. okt. 2026).
+  "Auktionen er sat på pause",
   "Auktionen findes ikke",
   "Buddet skal være højere end nuværende bud",
   "Din konto er suspenderet, og du kan ikke byde.",
