@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
+import { cookies } from "next/headers";
 import { Inter, Fraunces } from "next/font/google";
 import "./globals.css";
 import Sidevisning from "@/components/statistik/Sidevisning";
+import CookieBanner from "@/components/samtykke/CookieBanner";
 import { seoIndeksering } from "@/lib/seo";
+import { SAMTYKKE_COOKIE, gyldigSamtykkeVaerdi } from "@/lib/samtykke";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -52,6 +55,9 @@ export default async function RootLayout({
   // CSP med nonce (src/proxy.ts) kraever dynamisk rendering: statiske sider
   // bygges uden request og ville faa scripts uden nonce, som browseren afviser.
   await connection();
+  // Cookie-samtykket læses her, så banneret er med i den første HTML, når der
+  // mangler et gyldigt valg (ingen blink efter hydrering).
+  const startRaa = gyldigSamtykkeVaerdi((await cookies()).get(SAMTYKKE_COOKIE)?.value);
   return (
     <html
       lang="da"
@@ -61,6 +67,7 @@ export default async function RootLayout({
         {children}
         {/* Cookiefri besøgsstatistik (src/app/api/statistik/route.ts). */}
         <Sidevisning />
+        <CookieBanner startRaa={startRaa} />
       </body>
     </html>
   );

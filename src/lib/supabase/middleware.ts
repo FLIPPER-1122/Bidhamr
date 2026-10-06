@@ -19,11 +19,13 @@ import { manglerToTrin, TO_TRIN_STI } from "@/lib/mfa";
 // "Disallow: /" og er tomme, indtil SEO_INDEKSERING=true (src/lib/seo.ts).
 // Delebilleder (opengraph-image.jpg) rammer slet ikke proxyen (matcher i src/proxy.ts).
 // /signup, /tjek-indbakke og /konto-slettet er offentlige, fordi man ikke er
-// logget ind dér. /signup lukker selv, så længe tilmeldingen er lukket
+// logget ind dér. /cookies (cookiepolitikken) skal kunne læses af alle, også
+// før login, fordi cookie-banneret linker til den. /signup lukker selv, så længe tilmeldingen er lukket
 // (src/lib/tilmelding.ts). /login dækker også /login/to-trin.
 const OFFENTLIGE_RUTER = [
   "/coming-soon",
   "/bidhamr-beskyttelse",
+  "/cookies",
   "/login",
   "/signup",
   "/tjek-indbakke",

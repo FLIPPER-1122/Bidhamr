@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import Ikon from "@/components/Ikon";
+import CookieindstillingerKnap from "@/components/samtykke/CookieindstillingerKnap";
 
 // Lys footer: logoet findes kun i en grøn variant, så det må ikke lægges på
 // en skovgrøn flade (DESIGN.md afsnit 10).
@@ -83,6 +84,12 @@ export default function Footer() {
                       </Link>
                     </li>
                   ))}
+                  {/* Altid mulighed for at ændre eller trække cookie-samtykket tilbage. */}
+                  {k.titel === "BidHamr" && (
+                    <li>
+                      <CookieindstillingerKnap className={`${link} text-left`} />
+                    </li>
+                  )}
                 </ul>
               </nav>
             ))}

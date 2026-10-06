@@ -12,6 +12,15 @@ export type Link = {
   href: string;
 };
 
+// Tabel, fx over cookies. Første kolonne er rækkens navn. På mobil vises
+// hver række som et kort, så tabellen ikke giver vandret scroll.
+export type Tabel = {
+  // Læses op af skærmlæsere som tabellens titel.
+  titel: string;
+  kolonner: string[];
+  raekker: string[][];
+};
+
 export type Afsnit = {
   // Bruges som anker (#id) og som React-key. Kun a-z, 0-9 og bindestreg.
   id: string;
@@ -25,6 +34,7 @@ export type Afsnit = {
   // Lille note under afsnittet, fx "Gælder indtil videre".
   note?: string;
   links?: Link[];
+  tabel?: Tabel;
 };
 
 export type FaqPunkt = {

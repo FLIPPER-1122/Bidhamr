@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import WaitlistForm from "@/components/landing/WaitlistForm";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
+import CookieindstillingerKnap from "@/components/samtykke/CookieindstillingerKnap";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -321,6 +322,10 @@ export default function ComingSoonPage() {
             <Link href="/bidhamr-beskyttelse" className="text-groen hover:underline">
               BidHamr Beskyttelse
             </Link>
+            <Link href="/cookies" className="text-groen hover:underline">
+              Cookies
+            </Link>
+            <CookieindstillingerKnap className="text-groen hover:underline" />
           </nav>
         </div>
       </footer>

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import type { Afsnit, FaqGruppe, Tekstside as TekstsideData } from "@/lib/tekster/sider/typer";
+import type { ReactNode } from "react";
+import type { Afsnit, FaqGruppe, Tabel, Tekstside as TekstsideData } from "@/lib/tekster/sider/typer";
 
 // Fælles visning af rene tekstsider (Sådan virker det, FAQ, Pakkeguide, Om,
 // Cookies, Tilgængelighed). Indholdet ligger i src/lib/tekster/sider/.
@@ -23,7 +24,60 @@ function TekstLink({ href, tekst }: { href: string; tekst: string }) {
   );
 }
 
-function AfsnitBoks({ afsnit }: { afsnit: Afsnit }) {
+function TabelVisning({ tabel }: { tabel: Tabel }) {
+  const [, ...ovrige] = tabel.kolonner;
+  return (
+    <>
+      {/* Mobil: ét kort pr. række */}
+      <ul aria-label={tabel.titel} className="mt-4 flex flex-col gap-3 md:hidden">
+        {tabel.raekker.map((r) => (
+          <li key={r[0]} className="rounded-xl border border-kant p-4">
+            <p className="break-words font-mono text-[13px] font-semibold text-tekst">{r[0]}</p>
+            <dl className="mt-2 flex flex-col gap-2">
+              {ovrige.map((k, i) => (
+                <div key={k}>
+                  <dt className="text-xs font-medium text-tekst-svag">{k}</dt>
+                  <dd className="text-sm leading-relaxed text-tekst">{r[i + 1]}</dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ul>
+      {/* Bred skærm: almindelig tabel */}
+      <div className="mt-4 hidden overflow-hidden rounded-xl border border-kant md:block">
+        <table className="w-full border-collapse text-left text-sm">
+          <caption className="sr-only">{tabel.titel}</caption>
+          <thead className="bg-groen-lys text-groen-mork">
+            <tr>
+              {tabel.kolonner.map((k) => (
+                <th key={k} scope="col" className="px-4 py-3 font-semibold">
+                  {k}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tabel.raekker.map((r) => (
+              <tr key={r[0]} className="border-t border-kant align-top">
+                <th scope="row" className="break-words px-4 py-3 font-mono text-[13px] font-semibold text-tekst">
+                  {r[0]}
+                </th>
+                {r.slice(1).map((c, i) => (
+                  <td key={i} className="px-4 py-3 leading-relaxed text-tekst">
+                    {c}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function AfsnitBoks({ afsnit, ekstra }: { afsnit: Afsnit; ekstra?: ReactNode }) {
   return (
     <section
       id={afsnit.id}
@@ -70,6 +124,8 @@ function AfsnitBoks({ afsnit }: { afsnit: Afsnit }) {
         </ul>
       )}
 
+      {afsnit.tabel && <TabelVisning tabel={afsnit.tabel} />}
+
       {afsnit.note && (
         <p className="mt-4 max-w-[65ch] rounded-xl bg-groen-lys p-4 text-sm leading-relaxed text-groen-mork">
           {afsnit.note}
@@ -85,6 +141,8 @@ function AfsnitBoks({ afsnit }: { afsnit: Afsnit }) {
           ))}
         </ul>
       )}
+
+      {ekstra}
     </section>
   );
 }
@@ -121,7 +179,15 @@ function FaqBoks({ gruppe }: { gruppe: FaqGruppe }) {
   );
 }
 
-export default function Tekstside({ side }: { side: TekstsideData }) {
+// ekstra: indhold, der sættes ind nederst i et afsnit (nøgle = afsnittets id),
+// fx en knap. Bruges, hvor en ren tekst ikke er nok.
+export default function Tekstside({
+  side,
+  ekstra,
+}: {
+  side: TekstsideData;
+  ekstra?: Record<string, ReactNode>;
+}) {
   return (
     <main className="mx-auto w-full max-w-[880px] flex-1 px-4 py-8 sm:px-6 lg:py-10">
       <header className="max-w-[65ch]">
@@ -135,7 +201,7 @@ export default function Tekstside({ side }: { side: TekstsideData }) {
       {side.afsnit.length > 0 && (
         <div className="mt-8 flex flex-col gap-6">
           {side.afsnit.map((a) => (
-            <AfsnitBoks key={a.id} afsnit={a} />
+            <AfsnitBoks key={a.id} afsnit={a} ekstra={ekstra?.[a.id]} />
           ))}
         </div>
       )}
