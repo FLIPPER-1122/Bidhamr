@@ -97,7 +97,7 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 - [ ] Filip: møde med Shipmondo om den bedste løsning
 - [ ] Filip: spørg GLS/Shipmondo, om fragtfirmaet selv **vejer pakken**, og om den målte vægt kan hentes via API (bruges som bevis i svindelsager)
 - [ ] Når GLS melder pakken leveret: notifikation "Pakken er kommet frem" til **køberen** (type pakke_leveret, påkrævet) – sælgeren får fortsat besked, når køberen bekræfter
-- [~] Byg koden, så fragtfirmaet kan skiftes (GLS nu, evt. Shipmondo senere) uden at omskrive handelsflowet
+- [x] Byg koden, så fragtfirmaet kan skiftes (GLS nu, evt. Shipmondo senere) uden at omskrive handelsflowet
 - [ ] Sælger får fragtlabel/QR-kode direkte i BidHamr
 - [ ] **Returlabel i sager**: når en sag afgøres med retur, får køberen et returlabel fra BidHamr via fragtfirmaet (køberen betaler returfragten). Sagsflowet med retur er bygget, men selve labelen mangler, indtil Filips aftale med fragtfirmaet er på plads – derfor er sagsretur kun delvist færdig
 - [ ] Køber betaler fragt og ser prisen, før han byder
@@ -111,45 +111,45 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 ## Fase 3 – Nyt design og forside
 Formål: siden bliver troværdig, professionel, tryg og moderne.
 
-- [~] Nyt logo (nr. 8) og app-ikon (7B) ind på web og i appen
-- [~] Skift fra rød til den grønne/orange stil fra mockup D på hele siden
-- [~] Ny forside: delt hero med søgefelt, tryghedsstribe, kategorier med ikoner, "Slutter snart"-kort
-- [~] Ny menu/topbar med bedre struktur
-- [~] Gennemgå alle øvrige sider, så de følger `DESIGN.md`
-- [~] Hele hjemmesiden mobilvenlig
-- [~] "Sådan virker det"-side og hjælp/FAQ (købersikring, gebyrer, fragt, sager)
-- [~] Søgning og filtre: pris, kategori, slutter snart, afstand
-- [~] Forbudte varer: liste + kontrol ved oprettelse af auktion
-- [~] Blokering af brugere – inkl. at sælger kan spærre bestemte brugere fra at byde på sine auktioner
-- [~] Rapportér en besked/bruger i chatten + automatisk spamfilter i beskeder
-- [~] SEO (titler, beskrivelser, sitemap) og besøgsstatistik (cookie-venlig)
+- [x] Nyt logo (nr. 8) og app-ikon (7B) ind på web og i appen
+- [x] Skift fra rød til den grønne/orange stil fra mockup D på hele siden
+- [x] Ny forside: delt hero med søgefelt, tryghedsstribe, kategorier med ikoner, "Slutter snart"-kort
+- [x] Ny menu/topbar med bedre struktur
+- [x] Gennemgå alle øvrige sider, så de følger `DESIGN.md`
+- [x] Hele hjemmesiden mobilvenlig
+- [x] "Sådan virker det"-side og hjælp/FAQ (købersikring, gebyrer, fragt, sager)
+- [x] Søgning og filtre: pris, kategori, slutter snart, afstand
+- [x] Forbudte varer: liste + kontrol ved oprettelse af auktion
+- [x] Blokering af brugere – inkl. at sælger kan spærre bestemte brugere fra at byde på sine auktioner
+- [x] Rapportér en besked/bruger i chatten + automatisk spamfilter i beskeder
+- [x] SEO (titler, beskrivelser, sitemap) og besøgsstatistik (cookie-venlig)
 - [ ] Filip: find en skabelon til **privatlivspolitik** og **brugerbetingelser/handelsbetingelser** (fx fra Erhvervsstyrelsen/Virk, Datatilsynet, din rådgiver eller en dansk skabelontjeneste for markedspladser) og læg den i projektet som `jura/privatlivspolitik-skabelon.md` og `jura/brugerbetingelser-skabelon.md`
 - [ ] Implementér privatlivspolitik og brugerbetingelser ud fra Filips skabeloner, tilpasset BidHamr og `ROADMAP-BESLUTNINGER.md` (indhold-agenten). Vises som egne sider og linkes fra footer, oprettelse af profil og betaling. Tydeligt markeret **"UDKAST – skal godkendes af advokat"**, indtil advokaten har gennemgået dem i fase 6. Brugeren skal acceptere brugerbetingelserne ved oprettelse
-- [~] Footer og faste sider: Om BidHamr, Kontakt/kundeservice, Handelsbetingelser, Privatlivspolitik, Cookies
-- [~] Kontaktformular til kundeservice, som lander i admin
-- [~] Pæne fejlsider (404/500) og loading-tilstande overalt
-- [~] **Spørg sælger**: købere kan stille spørgsmål til sælgeren, mens auktionen kører. **Sælger vælger selv ved oprettelse, om det er slået til eller fra** (kan ændres undervejs). Er det slået fra, vises "Sælgeren modtager ikke spørgsmål – læs beskrivelsen grundigt"
-- [~] Tilgængelighedserklæring i footeren + "Rapportér en fejl"-knap
-- [~] **Stand på varen** som faste valg ved oprettelse (Ny med mærke / Som ny / God / Brugt / Defekt) – gør "ikke som beskrevet"-sager lettere at afgøre
-- [~] Billeder: op til 10 pr. auktion, understøt iPhone-formatet HEIC, automatisk komprimering
-- [~] Pakkeguide i FAQ: "Sådan pakker du din vare" (hænger sammen med reglen om, at sælger har ansvaret for indpakning)
+- [~] Footer og faste sider: Om BidHamr, Kontakt/kundeservice, Handelsbetingelser, Privatlivspolitik, Cookies *(Handelsbetingelser og Privatlivspolitik mangler – venter på Filips skabeloner)*
+- [x] Kontaktformular til kundeservice, som lander i admin
+- [x] Pæne fejlsider (404/500) og loading-tilstande overalt
+- [x] **Spørg sælger**: købere kan stille spørgsmål til sælgeren, mens auktionen kører. **Sælger vælger selv ved oprettelse, om det er slået til eller fra** (kan ændres undervejs). Er det slået fra, vises "Sælgeren modtager ikke spørgsmål – læs beskrivelsen grundigt"
+- [x] Tilgængelighedserklæring i footeren + "Rapportér en fejl"-knap
+- [x] **Stand på varen** som faste valg ved oprettelse (Ny med mærke / Som ny / God / Brugt / Defekt) – gør "ikke som beskrevet"-sager lettere at afgøre
+- [x] Billeder: op til 10 pr. auktion, understøt iPhone-formatet HEIC, automatisk komprimering
+- [x] Pakkeguide i FAQ: "Sådan pakker du din vare" (hænger sammen med reglen om, at sælger har ansvaret for indpakning)
 - [ ] "MitID-verificeret"-mærke på alle profiler *(venter på MitID – Filip, 6. okt.)*
-- [~] Sælgerens adresse og telefonnummer vises aldrig offentligt – kun det nødvendige deles med køberen efter handlen
-- [~] Opret auktion: gennemgå hele flowet, så det er hurtigt og nemt (billeder, kategorier, fragtvalg, forhåndsvisning)
+- [x] Sælgerens adresse og telefonnummer vises aldrig offentligt – kun det nødvendige deles med køberen efter handlen
+- [x] Opret auktion: gennemgå hele flowet, så det er hurtigt og nemt (billeder, kategorier, fragtvalg, forhåndsvisning)
 
 ## Fase 4 – Brugerens egne ting
 Formål: brugerne har overblik og styr på deres beskeder.
 
-- [~] Live statistikker under profil: antal auktioner, indtjening (uge/måned/år/lifetime), auktioner man har budt på
-- [~] Følg sælgere
-- [~] **Gemte søgninger med besked**: få besked, når der kommer nye auktioner, der matcher en søgning (fx "Omega ur")
+- [x] Live statistikker under profil: antal auktioner, indtjening (uge/måned/år/lifetime), auktioner man har budt på
+- [x] Følg sælgere
+- [x] **Gemte søgninger med besked**: få besked, når der kommer nye auktioner, der matcher en søgning (fx "Omega ur")
 - [x] Notifikationer: overbudt, ny auktion fra fulgt sælger, bud på egen auktion, vundet, pakke kommet frem
 - [x] Side med notifikationsindstillinger (mail / app / begge / fra, pr. type)
 - [x] Notifikations-indbakke på siden (klokke i topbaren)
-- [~] Bekræftelse af e-mail ved oprettelse
-- [~] GDPR: brugeren kan slette sin konto og downloade sine data
-- [~] Kontosikkerhed: mail ved login fra ny enhed, mulighed for to-trins-login, krav til stærk adgangskode
-- [~] Sælger kan skrive ét offentligt svar på en bedømmelse. BidHamr kan fjerne bedømmelser, der bryder reglerne (fx grove ord)
+- [~] Bekræftelse af e-mail ved oprettelse *(bygget på hjemmesiden – "Confirm email" i Supabase slås først til, når appen håndterer det og en egen mailserver (SMTP, fx Resend) er sat op i Supabase)*
+- [x] GDPR: brugeren kan slette sin konto og downloade sine data
+- [x] Kontosikkerhed: mail ved login fra ny enhed, mulighed for to-trins-login, krav til stærk adgangskode
+- [x] Sælger kan skrive ét offentligt svar på en bedømmelse. BidHamr kan fjerne bedømmelser, der bryder reglerne (fx grove ord)
 
 ## Fase 5 – Appen
 Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – de fleste brugere skal bruge appen frem for hjemmesiden.
@@ -172,7 +172,7 @@ Formål: alt det juridiske og praktiske er på plads.
 
 - [ ] CVR-nummer
 - [ ] MitID-verificering ved oprettelse (Criipto) – virker ikke i dag
-- [ ] Cookie-banner
+- [~] Cookie-banner
 - [ ] Handelsbetingelser og privatlivspolitik skrevet af advokat
 - [ ] Afklar med advokat: svindel og platformens ansvar
 - [ ] Skift fra testpenge til rigtige penge (Stripe live), inkl. udbetaling til rigtige bankkonti
@@ -187,9 +187,9 @@ Formål: alt det juridiske og praktiske er på plads.
   - Henvisning til klagemuligheder (fx Forbrugerklagenævnet) i handelsbetingelserne
   - Tilgængelighedsloven (European Accessibility Act): tjek om BidHamr som lille virksomhed er undtaget
 - [ ] **EU's Digital Services Act (DSA)**: markedspladser skal have en måde at anmelde ulovligt indhold, give brugeren en begrundelse, når en auktion fjernes, og udgive en årlig gennemsigtighedsrapport (Tradera og Vinted gør det begge). Afklar omfanget med advokat – det meste bygger videre på det eksisterende rapport-system
-- [ ] **Hastighedsgennemgang**: Lighthouse på forside, auktionsside, søgning, opret auktion og mine handler. Mål: Performance-score 90+ og LCP under 2,5 sek. på mobil. Ret de største syndere (billeder, databaseforespørgsler, JavaScript)
-- [ ] Fejlovervågning (fx Sentry) og besked til Filip, hvis siden går ned
-- [ ] Backup af databasen er slået til og testet
+- [~] **Hastighedsgennemgang**: Lighthouse på forside, auktionsside, søgning, opret auktion og mine handler. Mål: Performance-score 90+ og LCP under 2,5 sek. på mobil. Ret de største syndere (billeder, databaseforespørgsler, JavaScript)
+- [~] Fejlovervågning (fx Sentry) og besked til Filip, hvis siden går ned
+- [~] Backup af databasen er slået til og testet
 - [ ] **Beta-test med 10-20 rigtige, fremmede personer**, der køber og sælger med testpenge. Ret det, de støder på
 - [ ] Endelig sikkerhedsgennemgang og test af hele flowet (sikkerhed-agenten kører en fuld gennemgang)
 - [ ] **Ekstern pentest**: et professionelt sikkerhedsfirma tester siden, før der skiftes til rigtige penge
