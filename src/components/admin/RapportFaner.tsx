@@ -9,7 +9,9 @@ export default function RapportFaner({
   aktiv: "aabne" | "opklarede" | "arkiv" | "chat";
   visArkiv: boolean;
 }) {
+  // Anmeldelser fra hjemmesiden (også uden login) ligger under DSA.
   const faner = [
+    { id: "dsa", label: "Anmeldelser (DSA)", href: "/admin/dsa" },
     { id: "aabne", label: "Åbne", href: "/admin/rapporter" },
     { id: "opklarede", label: "Opklarede (48 t)", href: "/admin/opklarede-rapporter" },
     { id: "chat", label: "Chat og profiler", href: "/admin/bruger-rapporter" },

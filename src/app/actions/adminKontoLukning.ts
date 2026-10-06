@@ -12,7 +12,7 @@ import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { assertRole, getStaffRole, harMindstRolle } from "@/lib/adminAuth";
-import { notificerAdvarsler } from "@/lib/notifikationer/cron";
+import { notificerAfgoerelse } from "@/lib/dsa/notifikationer";
 
 class BrugerFejl extends Error {}
 
@@ -87,21 +87,23 @@ export async function godkendKontoLukning(formData: FormData): Promise<{ ok: tru
     if (!UUID.test(forslagId)) throw new BrugerFejl(KODE_FEJL.ikke_fundet);
     if (note.length > 2000) throw new BrugerFejl(KODE_FEJL.for_lang_tekst);
 
-    const { data, error } = await admin.rpc("konto_lukning_godkend", {
+    // Wrapper om konto_lukning_godkend, der også gemmer DSA-begrundelsen.
+    const { data, error } = await admin.rpc("dsa_konto_lukning_godkend", {
       p_medarbejder: userId,
       p_forslag: forslagId,
       p_note: note || null,
     });
     if (error) throw new Error(error.message);
-    const svar = (data ?? { kode: "" }) as { kode: string; bruger_id?: string };
+    const svar = (data ?? { kode: "" }) as { kode: string; bruger_id?: string; afgoerelse_id?: string };
     if (svar.kode === "bortfaldet") {
       revalider(svar.bruger_id);
       throw new BrugerFejl("Kontoen var allerede lukket. Forslaget er markeret som bortfaldet.");
     }
     if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
 
-    // Brugeren får besked om lukningen. Cron samler op, hvis det fejler.
-    after(() => notificerAdvarsler());
+    // Brugeren får begrundelsen (med klagemulighed). Cron samler op, hvis det fejler.
+    const afgId = svar.afgoerelse_id;
+    if (afgId) after(() => notificerAfgoerelse(afgId));
 
     revalider(svar.bruger_id);
     revalidatePath("/admin/brugere");

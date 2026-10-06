@@ -10,6 +10,8 @@ import {
   stilSpoergsmaal,
 } from "@/app/actions/spoergsmaal";
 import { KONTAKTINFO_FEJL, indeholderKontaktinfo } from "@/lib/kontaktInfo";
+import AnmeldKnap from "@/components/dsa/AnmeldKnap";
+import { REGEL_VALG } from "@/lib/dsa/regler";
 import {
   MAKS_SPOERGSMAAL,
   MAKS_SVAR,
@@ -27,6 +29,9 @@ const primaer =
   "inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-orange-knap px-5 text-[15px] font-semibold text-white transition-colors hover:bg-orange-knap-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen disabled:cursor-not-allowed disabled:bg-orange-knap/40 disabled:text-white/80";
 const sekundaer =
   "inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-groen bg-white px-4 text-sm font-semibold text-groen transition-colors hover:bg-groen-lys focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen disabled:cursor-not-allowed disabled:border-kant-staerk disabled:text-tekst-svag";
+
+const ANMELD_KNAP =
+  "inline-flex min-h-11 items-center gap-1.5 rounded-md text-xs font-medium text-tekst-svag hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:min-h-8";
 
 function dato(iso: string) {
   return new Date(iso).toLocaleString("da-DK", {
@@ -222,6 +227,8 @@ export default function SpoergSaelger({
               q={q}
               kanSvare={erSaelger && auktionKoerer && !q.answer && !q.hidden}
               erStaff={erStaff}
+              erSaelger={erSaelger}
+              loggetInd={loggetInd}
             />
           ))}
         </ul>
@@ -239,11 +246,15 @@ function SpoergsmaalPunkt({
   q,
   kanSvare,
   erStaff,
+  erSaelger,
+  loggetInd,
 }: {
   auktionId: string;
   q: SpoergsmaalVisning;
   kanSvare: boolean;
   erStaff: boolean;
+  erSaelger: boolean;
+  loggetInd: boolean;
 }) {
   const router = useRouter();
   const [svar, setSvar] = useState("");
@@ -251,6 +262,7 @@ function SpoergsmaalPunkt({
   const [sender, startSend] = useTransition();
   const [skjulAaben, setSkjulAaben] = useState(false);
   const [grund, setGrund] = useState("");
+  const [regel, setRegel] = useState("chikane");
   const [skjulFejl, setSkjulFejl] = useState<string | null>(null);
   const [skjuler, startSkjul] = useTransition();
 
@@ -284,7 +296,7 @@ function SpoergsmaalPunkt({
       return;
     }
     startSkjul(async () => {
-      const r = await skjulSpoergsmaal(auktionId, q.id, nyTilstand, grund.trim());
+      const r = await skjulSpoergsmaal(auktionId, q.id, nyTilstand, grund.trim(), regel);
       if ("fejl" in r) {
         setSkjulFejl(r.fejl);
         return;
@@ -297,7 +309,8 @@ function SpoergsmaalPunkt({
 
   return (
     <li
-      className={`rounded-[14px] border p-4 ${q.hidden ? "border-advarsel-kant bg-advarsel-bg" : "border-kant bg-white"}`}
+      id={`spoergsmaal-${q.id}`}
+      className={`scroll-mt-24 rounded-[14px] border p-4 ${q.hidden ? "border-advarsel-kant bg-advarsel-bg" : "border-kant bg-white"}`}
     >
       {q.hidden && (
         <p className="mb-2 text-[13px] font-semibold text-advarsel-tekst">
@@ -308,6 +321,16 @@ function SpoergsmaalPunkt({
         {q.is_mine ? "Dit spørgsmål" : q.asker_name} · {dato(q.asked_at)}
       </p>
       <p className="mt-1 whitespace-pre-line break-words text-[15px] text-tekst">{q.question}</p>
+      {!q.is_mine && !q.hidden && (
+        <AnmeldKnap
+          type="spoergsmaal"
+          id={q.id}
+          hvad={`Spørgsmålet "${q.question.slice(0, 80)}${q.question.length > 80 ? "…" : ""}"`}
+          loggetInd={loggetInd}
+          label="Anmeld spørgsmål"
+          className={ANMELD_KNAP}
+        />
+      )}
 
       {q.answer ? (
         <div className="mt-3 rounded-xl bg-groen-lys px-4 py-3">
@@ -315,6 +338,16 @@ function SpoergsmaalPunkt({
             Sælgerens svar{q.answered_at ? ` · ${dato(q.answered_at)}` : ""}
           </p>
           <p className="mt-1 whitespace-pre-line break-words text-[15px] text-tekst">{q.answer}</p>
+          {!erSaelger && !q.hidden && (
+            <AnmeldKnap
+              type="spoergsmaal_svar"
+              id={q.id}
+              hvad="Sælgerens svar på et spørgsmål"
+              loggetInd={loggetInd}
+              label="Anmeld svar"
+              className={ANMELD_KNAP}
+            />
+          )}
         </div>
       ) : (
         !kanSvare && <p className="mt-2 text-[13px] text-tekst-svag">Sælgeren har ikke svaret endnu.</p>
@@ -360,8 +393,23 @@ function SpoergsmaalPunkt({
             </button>
           ) : skjulAaben ? (
             <form onSubmit={skjul} noValidate>
+              <label htmlFor={`regel-${q.id}`} className="mb-1.5 block text-sm font-medium text-tekst">
+                Hvilken regel bryder det?
+              </label>
+              <select
+                id={`regel-${q.id}`}
+                value={regel}
+                onChange={(e) => setRegel(e.target.value)}
+                className={`${felt} mb-3 h-11 py-0`}
+              >
+                {REGEL_VALG.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
               <label htmlFor={`grund-${q.id}`} className="mb-1.5 block text-sm font-medium text-tekst">
-                Hvorfor skjules spørgsmålet? (intern note)
+                Begrundelse til den, der skrev det (vises for brugeren, som kan klage)
               </label>
               <input
                 id={`grund-${q.id}`}

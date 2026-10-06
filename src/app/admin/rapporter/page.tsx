@@ -6,6 +6,7 @@ import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import { indgrebFelter } from "@/components/admin/indgrebFelter";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import RapportFaner from "@/components/admin/RapportFaner";
 import { kategoriLabel } from "@/lib/anmeldelseKategorier";
@@ -199,15 +200,14 @@ export default async function AdminRapporter({
                               triggerLabel="Fjern opslag"
                               triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"
                               title="Er du sikker på, at du vil fjerne opslaget permanent?"
-                              description="Auktionen annulleres og skjules fra platformen. Anmeldelsen bevares som dokumentation."
+                              description="Auktionen annulleres og skjules fra platformen. Anmeldelsen bevares som dokumentation. Sælgeren får begrundelsen og kan klage."
                               confirmLabel="Ja, fjern opslaget"
                               action={rapportFjernOpslag}
                               hiddenFields={{ rapportId: r.id }}
-                              aarsagField={{
-                                label: "Årsag",
-                                placeholder: "Skriv hvorfor opslaget fjernes...",
-                                required: true,
-                              }}
+                              {...indgrebFelter({
+                                faktaPlaceholder: "Fx: Auktionen sælger et skydevåben, som ikke må sælges på BidHamr.",
+                                standardRegel: r.category === "forbudt_vare" ? "forbudt_vare" : undefined,
+                              })}
                             />
                           )}
                           <ConfirmDialog
@@ -229,15 +229,14 @@ export default async function AdminRapporter({
                               triggerLabel="Slet midlertidigt"
                               triggerClassName="whitespace-nowrap rounded-md bg-blue-100 px-2 py-1 text-xs text-blue-800 transition-colors hover:bg-blue-200"
                               title="Skjul opslaget midlertidigt?"
-                              description="Auktionen skjules fra platformen, mens sagen undersøges. Den kan vises igen under Auktioner."
+                              description="Auktionen skjules fra platformen, mens sagen undersøges. Den kan vises igen under Auktioner. Sælgeren får begrundelsen og kan klage."
                               confirmLabel="Ja, skjul opslaget"
                               action={rapportSletMidlertidigt}
                               hiddenFields={{ rapportId: r.id }}
-                              aarsagField={{
-                                label: "Årsag",
-                                placeholder: "Skriv hvad der undersøges...",
-                                required: true,
-                              }}
+                              {...indgrebFelter({
+                                faktaPlaceholder: "Fx: Vi undersøger, om varen er en kopi. Auktionen er skjult imens.",
+                                standardRegel: r.category === "forbudt_vare" ? "forbudt_vare" : undefined,
+                              })}
                             />
                           )}
                         </div>

@@ -24,6 +24,7 @@ type AdminTaellere = {
   kontakt: number;
   rapporter: number;
   bedoemmelser: number;
+  dsa: number;
 };
 
 type MenuPunkt = {
@@ -53,6 +54,13 @@ const GRUPPER: MenuGruppe[] = [
     punkter: [
       { href: "/admin", label: "Forside", minRolle: "medarbejder" },
       { href: "/admin/sager", label: "Sager", minRolle: "medarbejder", badge: "sager" },
+      {
+        href: "/admin/dsa",
+        label: "Anmeldelser og klager",
+        minRolle: "medarbejder",
+        ogsaa: ["/admin/dsa/rapport"],
+        badge: "dsa",
+      },
       {
         href: "/admin/rapporter",
         label: "Rapporter",
@@ -107,6 +115,11 @@ const IKONER: Record<string, React.ReactNode> = {
   "/admin/sager": (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+    </svg>
+  ),
+  "/admin/dsa": (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v17.25m0 0c-1.472 0-2.882.265-4.185.75M12 20.25c1.472 0 2.882.265 4.185.75M18.75 4.97A48.416 48.416 0 0012 4.5c-2.291 0-4.545.16-6.75.47m13.5 0c1.01.143 2.01.317 3 .52m-3-.52l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.988 5.988 0 01-2.031.352 5.988 5.988 0 01-2.031-.352c-.483-.174-.711-.703-.59-1.202L18.75 4.971zm-16.5.52c.99-.203 1.99-.377 3-.52m0 0l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 01-2.031.352 5.989 5.989 0 01-2.031-.352c-.483-.174-.711-.703-.59-1.202L5.25 4.971z" />
     </svg>
   ),
   "/admin/rapporter": (
@@ -219,7 +232,7 @@ function lytFold(l: () => void) {
 
 export default function AdminSidebar({
   rolle,
-  taellere = { ubetalte: 0, betalinger: 0, chats: 0, sager: 0, kontolukninger: 0, kontakt: 0, rapporter: 0, bedoemmelser: 0 },
+  taellere = { ubetalte: 0, betalinger: 0, chats: 0, sager: 0, kontolukninger: 0, kontakt: 0, rapporter: 0, bedoemmelser: 0, dsa: 0 },
 }: {
   rolle: StaffRole;
   taellere?: AdminTaellere;

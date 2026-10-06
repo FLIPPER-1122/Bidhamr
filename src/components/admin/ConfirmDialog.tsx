@@ -30,6 +30,20 @@ type Props = {
   // Gør et tekstfelt påkrævet, når et bestemt valg er markeret, fx at
   // begrundelsen "Andet" kræver en uddybning. Tjekkes i browseren før afsendelse.
   valgKraeverTekst?: { valg: string; felt: string; besked: string };
+  // Rullelister, fx "Hvilken regel bryder det?" ved DSA-indgreb. Vises efter
+  // valgField og før tekstfelterne.
+  vaelgFelter?: VaelgFelt[];
+  // Et afkrydsningsfelt nederst (sendes som value, når det er krydset af).
+  afkrydsning?: { name: string; label: string; value?: string };
+};
+
+export type VaelgFelt = {
+  name: string;
+  label: string;
+  valg: { value: string; label: string }[];
+  required?: boolean;
+  standard?: string;
+  hjaelp?: string;
 };
 
 export type TekstFelt = {
@@ -40,6 +54,8 @@ export type TekstFelt = {
   maxLength?: number;
   // Kort forklaring under feltet, fx hvem der kan se teksten.
   hjaelp?: string;
+  // Forudfyldt tekst.
+  standard?: string;
 };
 
 export default function ConfirmDialog({
@@ -56,6 +72,8 @@ export default function ConfirmDialog({
   valgField,
   tekstFelter,
   valgKraeverTekst,
+  vaelgFelter,
+  afkrydsning,
 }: Props) {
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -226,6 +244,41 @@ export default function ConfirmDialog({
                 </fieldset>
               )}
 
+              {vaelgFelter?.map((f) => {
+                const feltId = `${id}-${f.name}`;
+                return (
+                  <div key={f.name}>
+                    <label htmlFor={feltId} className="block text-sm font-medium text-neutral-700">
+                      {f.label}
+                    </label>
+                    <select
+                      id={feltId}
+                      name={f.name}
+                      required={f.required !== false}
+                      defaultValue={f.standard ?? ""}
+                      aria-describedby={f.hjaelp ? `${feltId}-hjaelp` : undefined}
+                      className="mt-1.5 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
+                    >
+                      {!f.standard && (
+                        <option value="" disabled>
+                          Vælg …
+                        </option>
+                      )}
+                      {f.valg.map((v) => (
+                        <option key={v.value} value={v.value}>
+                          {v.label}
+                        </option>
+                      ))}
+                    </select>
+                    {f.hjaelp && (
+                      <p id={`${feltId}-hjaelp`} className="mt-1 text-xs text-neutral-500">
+                        {f.hjaelp}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+
               {aarsagField && (
                 <div>
                   <label
@@ -264,6 +317,7 @@ export default function ConfirmDialog({
                       maxLength={f.maxLength}
                       rows={3}
                       placeholder={f.placeholder}
+                      defaultValue={f.standard}
                       aria-describedby={f.hjaelp ? `${feltId}-hjaelp` : undefined}
                       className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
                     />
@@ -275,6 +329,18 @@ export default function ConfirmDialog({
                   </div>
                 );
               })}
+
+              {afkrydsning && (
+                <label className="flex items-start gap-2 text-sm text-neutral-800">
+                  <input
+                    type="checkbox"
+                    name={afkrydsning.name}
+                    value={afkrydsning.value ?? "ja"}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
+                  />
+                  {afkrydsning.label}
+                </label>
+              )}
 
               <div className="flex justify-end gap-3 pt-1">
                 <button

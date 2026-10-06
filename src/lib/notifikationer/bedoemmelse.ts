@@ -3,8 +3,7 @@ import "server-only";
 // Notifikationer for bedømmelser:
 // - sælgeren svarer        -> køberen (type 'bedoemmelse', valgfri,
 //                              nøgle bedoemmelse_svar:<svar-id>)
-// - staff skjuler           -> den, der skrev teksten (type 'advarsel',
-//                              påkrævet: begrundelsen skal frem - DSA)
+// - staff skjuler           -> DSA-begrundelse (src/lib/dsa/notifikationer.ts)
 // - staff viser igen        -> den, der skrev teksten (type 'bedoemmelse',
 //                              med link til bedømmelsen)
 //
@@ -14,7 +13,7 @@ import "server-only";
 // Ingen bruger-id'er i data.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send, type NotifikationInput } from "@/lib/notifikationer/send";
-import { skjulGrundNavn, type BedoemmelseDel } from "@/lib/bedoemmelser";
+import { type BedoemmelseDel } from "@/lib/bedoemmelser";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -73,36 +72,20 @@ export async function notificerBedoemmelseSvar(svarId: string): Promise<void> {
   }
 }
 
-// Staff har skjult eller vist noget, brugeren har skrevet. Begrundelsen
-// sendes med (Digital Services Act: brugeren skal kende årsagen).
+// Staff har vist noget, brugeren har skrevet, igen. (Når noget SKJULES, får
+// brugeren en DSA-begrundelse med klagemulighed i stedet - se
+// src/lib/dsa/notifikationer.ts.)
 export async function notificerModeration(input: {
   forfatterId: string;
   ratingId: string;
   del: BedoemmelseDel;
-  skjult: boolean;
-  grund: string | null;
-  aarsag: string | null;
 }): Promise<void> {
   try {
     const erBedoemmelse = input.del === "bedoemmelse";
     const hvad = erBedoemmelse ? "Din bedømmelse" : "Dit svar på en bedømmelse";
     const den = erBedoemmelse ? "den" : "det";
     const synlig = erBedoemmelse ? "synlig" : "synligt";
-    const begrundelse = [skjulGrundNavn(input.grund), input.aarsag].filter(Boolean).join(": ");
     const data = { rating_id: input.ratingId, del: input.del };
-    if (input.skjult) {
-      // Påkrævet ('advarsel'): begrundelsen skal frem (DSA). Intet link - det
-      // skjulte kan ikke ses af andre.
-      await send(input.forfatterId, "advarsel", {
-        titel: `${hvad} er skjult`,
-        tekst: `${hvad} er skjult af BidHamr, fordi ${den} bryder reglerne for bedømmelser. Begrundelse: ${
-          begrundelse || "Ikke angivet"
-        }. ${den[0].toUpperCase()}${den.slice(1)} er ikke slettet, men kan ikke længere ses af andre. Er du uenig, kan du skrive til os via kontaktformularen.`,
-        link: null,
-        data,
-      });
-      return;
-    }
     // Synlig igen: ikke en advarsel. Link til bedømmelsen på sælgerens profil
     // (bedømmelse og svar vises samme sted).
     const { data: r } = await createAdminClient()

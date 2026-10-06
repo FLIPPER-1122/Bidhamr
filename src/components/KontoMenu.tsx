@@ -95,6 +95,7 @@ export default function KontoMenu({ erAdmin }: { erAdmin: boolean }) {
               <li><Link href="/konto/soegninger" onClick={luk} className={punkt}>Gemte søgninger</Link></li>
               <li><Link href="/konto" onClick={luk} className={punkt}>Min konto</Link></li>
               <li><Link href="/konto/notifikationer" onClick={luk} className={punkt}>Notifikationsindstillinger</Link></li>
+              <li><Link href="/konto/afgoerelser" onClick={luk} className={punkt}>Afgørelser og anmeldelser</Link></li>
               {erAdmin && (
                 <li><Link href="/admin" onClick={luk} className={`${punkt} text-groen`}>Admin</Link></li>
               )}

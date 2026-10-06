@@ -9,6 +9,7 @@ import {
 } from "@/app/actions/adminActions";
 import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import { indgrebFelter } from "@/components/admin/indgrebFelter";
 import { advarselFelter } from "@/components/admin/advarselFelter";
 import { StatusBadge, brugerStatus, erSuspensionAktiv, RolleBadge } from "@/components/admin/StatusBadge";
 import { kraevSideRolle, harMindstRolle } from "@/lib/adminAuth";
@@ -213,16 +214,12 @@ export default async function AdminBrugerDetalje({
                   </svg>
                 }
                 title={`Er du sikker på, at du vil suspendere ${user.navn ?? "brugeren"}?`}
-                description="Brugeren kan ikke logge ind, så længe suspensionen er aktiv."
+                description="Brugeren kan ikke logge ind, så længe suspensionen er aktiv. Brugeren får begrundelsen på mail og kan klage."
                 confirmLabel="Ja, suspendér kontoen"
                 action={suspendUser}
                 hiddenFields={{ userId: user.id }}
                 varighedField
-                aarsagField={{
-                  label: "Årsag",
-                  placeholder: "Skriv hvorfor kontoen suspenderes (vises for brugeren ved login)...",
-                  required: true,
-                }}
+                {...indgrebFelter({ faktaPlaceholder: "Fx: Du har skrevet truende beskeder til en køber i flere handler." })}
               />
             ))}
         </div>
@@ -582,15 +579,11 @@ async function AuktionerFane({
                     triggerLabel="Slet auktion"
                     triggerClassName="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
                     title="Er du sikker på, at du vil fjerne auktionen?"
-                    description="Auktionen annulleres og skjules. Data bevares af hensyn til bogføringen."
+                    description="Auktionen annulleres og skjules. Data bevares af hensyn til bogføringen. Sælgeren får begrundelsen og kan klage."
                     confirmLabel="Ja, fjern auktionen"
                     action={deleteAuction}
                     hiddenFields={{ auktionId: a.id }}
-                    aarsagField={{
-                      label: "Årsag",
-                      placeholder: "Skriv hvorfor auktionen slettes...",
-                      required: true,
-                    }}
+                    {...indgrebFelter({ faktaPlaceholder: "Fx: Auktionen sælger et skydevåben, som ikke må sælges på BidHamr." })}
                   />
                 ) : (
                   <span className="text-xs text-neutral-400">—</span>
