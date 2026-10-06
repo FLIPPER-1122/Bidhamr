@@ -503,7 +503,11 @@ export default async function DsaAdminSide({
                       <td className="px-4 py-2.5 text-neutral-600">{navn(x.medarbejder_id)}</td>
                       <td className="px-4 py-2.5">
                         {x.ophaevet_kl ? (
-                          <Pille farve="blaa">Ophævet{x.ophaevet_grund === "klage" ? " efter klage" : ""}</Pille>
+                          <Pille farve="blaa">
+                            {x.ophaevet_grund === "erstattet"
+                              ? "Erstattet af nyere afgørelse"
+                              : `Ophævet${x.ophaevet_grund === "klage" ? " efter klage" : ""}`}
+                          </Pille>
                         ) : (
                           <Pille>Gældende</Pille>
                         )}

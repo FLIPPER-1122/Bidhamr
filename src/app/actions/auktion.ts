@@ -254,15 +254,17 @@ export async function annullerAuktion(auktionId: string): Promise<{ ok: true } |
       // Allerede annulleret (dobbeltklik) tæller som gennemført.
       const { data: a } = await supabase
         .from("auctions")
-        .select("status, bruger_id")
+        .select("status, bruger_id, skjult")
         .eq("id", auktionId)
-        .maybeSingle<{ status: string; bruger_id: string }>();
+        .maybeSingle<{ status: string; bruger_id: string; skjult: boolean | null }>();
       if (a && a.bruger_id === user.id && a.status === "annulleret") return { ok: true };
       return {
         fejl:
-          a?.bruger_id === user.id
-            ? "Auktionen kan ikke annulleres længere – der er budt på den, eller den er slut."
-            : "Auktionen findes ikke.",
+          a?.bruger_id !== user.id
+            ? "Auktionen findes ikke."
+            : a.skjult
+              ? "Auktionen er skjult af BidHamr og kan ikke annulleres lige nu."
+              : "Auktionen kan ikke annulleres længere – der er budt på den, eller den er slut.",
       };
     }
 

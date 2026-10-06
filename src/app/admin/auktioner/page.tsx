@@ -277,23 +277,33 @@ export default async function AdminAuktioner({
                           />
                         )}
                         <ConfirmDialog
-                          triggerLabel={a.skjult ? "Vis igen" : "Skjul"}
+                          triggerLabel={a.skjult ? (a.status === "annulleret" ? "Ophæv fjernelse" : "Vis igen") : "Skjul"}
                           triggerClassName="px-2 py-1 text-xs bg-neutral-100 text-neutral-600 rounded-md hover:bg-neutral-200 transition-colors"
                           title={
                             a.skjult
-                              ? "Er du sikker på, at du vil vise auktionen igen?"
+                              ? a.status === "annulleret"
+                                ? "Er du sikker på, at du vil ophæve fjernelsen?"
+                                : "Er du sikker på, at du vil vise auktionen igen?"
                               : "Er du sikker på, at du vil skjule auktionen?"
                           }
                           description={
                             a.skjult
-                              ? erPaaPause(a)
+                              ? a.status === "annulleret"
+                                ? "En annulleret auktion åbnes aldrig igen og forbliver skjult for andre. Afgørelsen ophæves, så sælgeren kan sætte varen op igen med ét klik."
+                                : erPaaPause(a)
                                 ? "Auktionen bliver synlig for alle igen og fortsætter med den resterende tid – dog mindst 24 timer. Sælger og bydere får besked."
                                 : "Auktionen bliver synlig for alle igen."
                               : a.status === "aktiv"
                                 ? "Auktionen bliver usynlig for brugerne og sættes på pause: der kan ikke bydes, og den slutter ikke, før den vises igen. Den slettes ikke."
                                 : "Auktionen bliver usynlig for brugerne, men slettes ikke."
                           }
-                          confirmLabel={a.skjult ? "Ja, vis auktionen" : "Ja, skjul auktionen"}
+                          confirmLabel={
+                            a.skjult
+                              ? a.status === "annulleret"
+                                ? "Ja, ophæv fjernelsen"
+                                : "Ja, vis auktionen"
+                              : "Ja, skjul auktionen"
+                          }
                           action={a.skjult ? unhideAuction : hideAuction}
                           hiddenFields={{ auktionId: a.id }}
                           {...(a.skjult

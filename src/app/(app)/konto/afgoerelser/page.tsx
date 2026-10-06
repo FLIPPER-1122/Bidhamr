@@ -21,6 +21,8 @@ type MinAfg = {
   oprettet_kl: string;
   klage_frist_kl: string;
   ophaevet_kl: string | null;
+  // 'klage' | 'staff' | 'erstattet' (en nyere afgørelse om samme auktion).
+  ophaevet_grund?: string | null;
   klage_status: string | null;
   klage_udfald: string | null;
 };
@@ -91,7 +93,7 @@ export default async function AfgoerelserSide({
     f === "alle" ||
     (f === "kan-klage" && afgKanKlage(a)) ||
     (f === "under-klage" && a.klage_status === "afventer") ||
-    (f === "ophaevet" && !!a.ophaevet_kl);
+    (f === "ophaevet" && !!a.ophaevet_kl && a.ophaevet_grund !== "erstattet");
   const anmPasser = (a: MinAnm, f: Filter) =>
     f === "alle" || (f === "kan-klage" && anmKanKlage(a)) || (f === "under-klage" && a.klage_status === "afventer");
   const antal = (f: Filter) => alleAfg.filter((a) => afgPasser(a, f)).length + alleAnm.filter((a) => anmPasser(a, f)).length;
@@ -168,7 +170,9 @@ export default async function AfgoerelserSide({
                         </span>
                       </span>
                       <span className="shrink-0">
-                        {a.ophaevet_kl ? (
+                        {a.ophaevet_kl && a.ophaevet_grund === "erstattet" ? (
+                          <Maerke tone="neutral">Erstattet</Maerke>
+                        ) : a.ophaevet_kl ? (
                           <Maerke tone="god">Ophævet</Maerke>
                         ) : a.klage_status === "afventer" ? (
                           <Maerke tone="neutral">Klage behandles</Maerke>
