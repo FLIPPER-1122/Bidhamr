@@ -27,7 +27,7 @@
 --
 -- 6. rate_limits: rate_limit_tjek sletter kun gamle raekker tilfaeldigt (1 %
 --    af kaldene), saa ved lav trafik kan IP-adresser og e-mails blive liggende
---    laenge. Nyt dagligt pg_cron-job 'rate-limits-oprydning' sletter raekker,
+--    laenge. Nyt timeligt pg_cron-job 'rate-limits-oprydning' sletter raekker,
 --    hvis vindue startede for mere end 24 timer siden. Det laengste vindue i
 --    src/lib/rateLimit.ts er 24 timer, saa et aktivt vindue roeres aldrig.
 --    Det tilfaeldige oprydningskald i rate_limit_tjek beholdes.
@@ -242,9 +242,9 @@ grant execute on function public.accepter_vilkaar(text) to authenticated, servic
 -- Engangs-oprydning (tabellen er lille; ingen batches).
 delete from public.rate_limits where vindue_start < now() - interval '24 hours';
 
--- Dagligt kl. 04:23 UTC.
+-- Hver time (minut 23), saa raekker hoejst lever ca. 25 timer.
 select cron.schedule(
   'rate-limits-oprydning',
-  '23 4 * * *',
+  '23 * * * *',
   $$delete from public.rate_limits where vindue_start < now() - interval '24 hours'$$
 );

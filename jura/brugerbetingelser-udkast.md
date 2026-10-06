@@ -4,12 +4,13 @@
 
 > **Til Filip og advokaten (fjernes, før siden går live):**
 > - Udkastet er skrevet ud fra Filips skabelon (`jura/brugerbetingelser-skabelon.md`) og forretningsreglerne i `ROADMAP-BESLUTNINGER.md` (stand 6. oktober 2026). Hvor de to strider, følger udkastet beslutningerne.
+> - Opdateret 6. oktober 2026 med dagens ændringer: accept af betingelserne gemmes (1.3), og skjulte auktioner sættes på pause, fjernede auktioner åbnes aldrig igen, og en auktion på pause annulleres efter 14 dage (20.7 og 21.5, Filips beslutninger 6. oktober 2026).
 > - `[TODO Filip: …]` = oplysninger eller beslutninger, Filip skal udfylde.
 > - `[ADVOKAT: …]` = juridiske spørgsmål, advokaten skal tage stilling til. Alle spørgsmål er samlet i `jura/noter-til-advokat.md`.
 > - Udkastet er ikke et juridisk løfte. Intet her må vises som endelige betingelser, før advokaten har godkendt det.
 > - Siden skal ligge på `/betingelser` (linket findes allerede i footeren). Brugeren skal acceptere betingelserne ved oprettelse af konto (ROADMAP fase 3).
 
-**Version:** udkast 1 · **Senest opdateret:** [TODO Filip: dato ved offentliggørelse]
+**Version:** udkast 2 · **Senest opdateret:** [TODO Filip: dato ved offentliggørelse]
 
 ---
 
@@ -27,7 +28,7 @@
 
 [ADVOKAT: Bekræft, at firmaoplysningerne her og i sidefoden opfylder e-handelslovens krav (navn, adresse, CVR, e-mail).]
 
-1.3 Betingelserne gælder, når du bruger BidHamr – både som besøgende, køber og sælger. Når du opretter en konto, skal du acceptere betingelserne. Læs også:
+1.3 Betingelserne gælder, når du bruger BidHamr – både som besøgende, køber og sælger. Når du opretter en konto, skal du acceptere betingelserne. Vi gemmer, hvilken version af betingelserne du har accepteret, og hvornår. Læs også:
 
 - Privatlivspolitikken (`/privatliv`) – hvordan vi behandler dine personoplysninger
 - Cookies (`/cookies`)
@@ -120,6 +121,8 @@ For BidHamrs egne ydelser betaler du gebyrer (se afsnit 5).
 4.12 Den, der har det højeste bud, når auktionen slutter, vinder og skal betale (se afsnit 6).
 
 4.13 Andre brugere ser ikke, hvem der har budt. I budhistorikken står bydere uden navn (fx "Byder 3").
+
+4.14 Sætter BidHamr en auktion på pause, stopper uret, og ingen kan byde, før den åbner igen. Se 20.7.
 
 [ADVOKAT: Skal vi skrive noget om, hvornår købsaftalen mellem køber og sælger er indgået (ved auktionens slutning)?]
 
@@ -412,7 +415,8 @@ Når du bruger BidHamr, må du ikke:
 
 20.1 Bryder du betingelserne, kan BidHamr:
 
-- fjerne eller skjule en auktion, et spørgsmål, et svar eller en bedømmelse
+- skjule en auktion, så den bliver sat på pause, eller fjerne den (se 20.7)
+- skjule eller fjerne et spørgsmål, et svar eller en bedømmelse
 - give dig en påmindelse eller en advarsel
 - suspendere din konto i en periode, så du ikke kan logge ind, byde eller sælge
 - lukke din konto permanent
@@ -429,6 +433,15 @@ Vi vælger et indgreb, der står i forhold til overtrædelsen.
 
 20.6 Du kan klage over en advarsel, en suspension eller en lukning (se afsnit 21).
 
+20.7 **Skjulte og fjernede auktioner.**
+
+- **Skjult auktion = pause.** Skjuler BidHamr en auktion, der er i gang (fx mens vi kigger på en anmeldelse), bliver den sat på pause. Uret stopper, ingen kan byde, og auktionen kan ikke slutte, så længe den er skjult. Buddene gælder stadig. Byderne får besked om pausen, og sælgeren får en begrundelse (se 21.4).
+- **Åben igen.** Bliver auktionen vist igen, fortsætter den med den tid, der var tilbage, da den blev sat på pause – dog mindst 24 timer, så byderne kan nå at byde igen. Sælger og bydere får besked om den nye sluttid.
+- **14 dage på pause.** Har auktionen været på pause i 14 dage, bliver den annulleret automatisk. Der bliver ingen handel, og buddene gælder ikke længere.
+- **Fjernet auktion.** Fjerner BidHamr en auktion, bliver den annulleret. Der bliver ingen handel, og buddene gælder ikke længere. En fjernet auktion bliver aldrig åbnet igen – heller ikke hvis sælgeren får medhold i en klage. Sælgeren kan sætte varen op igen som en ny auktion, hvis den overholder reglerne.
+
+[ADVOKAT: Er det rimeligt over for sælger og bydere, at bud fortsat er bindende under en pause, og at auktionen annulleres efter 14 dage på pause? Er det foreneligt med DSA art. 20(4) (indgreb ophæves ved medhold), at en fjernet auktion aldrig genåbnes, og sælgeren i stedet må sætte varen op igen?]
+
 ---
 
 ## 21. Ulovligt indhold, anmeldelse og klage (DSA)
@@ -437,11 +450,14 @@ Vi vælger et indgreb, der står i forhold til overtrædelsen.
 
 21.2 **Kvittering og svar.** Du får en kvittering på mail med et link, hvor du kan følge sagen, og et svar, når vi har taget stilling. Vi oplyser aldrig, hvem der har anmeldt indholdet.
 
-21.3 **Sådan behandler vi anmeldelser.** En medarbejder vurderer anmeldelsen. Vi bruger også automatiske filtre: ulovlige varer bliver stoppet, når auktionen oprettes, nogle varer bliver sendt til kontrol, og beskeder med kontaktoplysninger bliver stoppet (se 4.6 og 17.4). Beslutninger om at fjerne indhold fra en auktion eller lukke en konto træffes af en medarbejder. Vi kan underrette politiet, hvis der er mistanke om alvorlig kriminalitet.
+21.3 **Sådan behandler vi anmeldelser.** En medarbejder vurderer anmeldelsen. Vi bruger også automatiske filtre: ulovlige varer bliver stoppet, når auktionen oprettes, nogle varer bliver sendt til kontrol, og beskeder med kontaktoplysninger bliver stoppet (se 4.6 og 17.4). Beslutninger om at skjule eller fjerne en auktion eller lukke en konto træffes af en medarbejder. Vi kan underrette politiet, hvis der er mistanke om alvorlig kriminalitet.
 
 21.4 **Begrundelse.** Fjerner eller begrænser vi dit indhold eller din konto, får du altid en mail med: hvad vi har gjort, hvorfor, hvilken regel eller lov det bygger på, om det blev opdaget automatisk eller via en anmeldelse, og hvordan du klager. Du får mailen, også selvom du har slået mails fra.
 
-21.5 **Klage.** Du kan klage over en afgørelse inden for 6 måneder via linket i mailen eller under Min konto → Afgørelser – også hvis din konto er suspenderet eller lukket. Har du anmeldt noget, og har vi ikke grebet ind, kan du også klage. Klagen behandles af en anden medarbejder end den, der traf afgørelsen. Får du medhold, bliver indgrebet ophævet med det samme. Er en auktion udløbet imens, kan den ikke åbnes igen, men du kan sætte varen op igen.
+21.5 **Klage.** Du kan klage over en afgørelse inden for 6 måneder via linket i mailen eller under Min konto → Afgørelser – også hvis din konto er suspenderet eller lukket. Har du anmeldt noget, og har vi ikke grebet ind, kan du også klage. Klagen behandles af en anden medarbejder end den, der traf afgørelsen. Får du medhold, bliver indgrebet ophævet med det samme. For auktioner gælder:
+
+- En skjult auktion, der stadig er på pause, åbner igen med den tid, der var tilbage – dog mindst 24 timer (se 20.7).
+- En auktion, der er fjernet, eller som er annulleret efter 14 dage på pause, bliver ikke åbnet igen. Du kan sætte varen op igen som en ny auktion.
 
 21.6 **Misbrug.** Sender nogen gentagne gange anmeldelser eller klager, der er åbenlyst grundløse, kan vi i en periode lade være med at behandle dem. [ADVOKAT: DSA art. 23 – skal reglen med, og hvordan skal den formuleres?]
 
@@ -493,7 +509,7 @@ Vi vælger et indgreb, der står i forhold til overtrædelsen.
 
 25.2 Ved væsentlige ændringer får du besked på mail mindst 30 dage før, de træder i kraft. Er du ikke enig, kan du slette din konto, før ændringerne gælder (se afsnit 26).
 
-25.3 Bud, handler og sager, der er i gang, følger de betingelser, der gjaldt, da buddet blev afgivet. [ADVOKAT: Er dette den rigtige overgangsregel? Hvordan skal accept af nye betingelser ske (fx ved næste login)?]
+25.3 Bud, handler og sager, der er i gang, følger de betingelser, der gjaldt, da buddet blev afgivet. [ADVOKAT: Er dette den rigtige overgangsregel? Hvordan skal accept af nye betingelser ske (fx ved næste login)? Vi gemmer i dag version og tidspunkt for accept, og eksisterende brugere kan acceptere via en bjælke på Min konto.]
 
 ---
 
@@ -508,7 +524,7 @@ Vi vælger et indgreb, der står i forhold til overtrædelsen.
 - Auktioner uden bud bliver afsluttet og arkiveret.
 - Dit navn bliver erstattet med "Slettet bruger". Din e-mail, dit telefonnummer, din adresse, dit profilbillede, gemte kort og automatisk betaling bliver fjernet.
 - Favoritter, følger, gemte søgninger, notifikationer, blokeringer, skabeloner og enheder bliver slettet.
-- **Handelsdata bliver gemt**, fordi vi har pligt til det efter bogføringsloven og reglerne om indberetning til Skattestyrelsen (DAC7). Det gælder fx handler, betalinger, gebyrer, sager, anker og beskeder i handler.
+- **Handelsdata bliver gemt**, fordi vi har pligt til det efter bogføringsloven og reglerne om indberetning til Skattestyrelsen (DAC7). Det gælder fx handler, betalinger, gebyrer, sager, anker og beskeder i handler. Vi gemmer også, hvilken version af betingelserne du accepterede, og hvornår, som dokumentation for dine handler.
 - Bedømmelser, du har givet eller fået, og dine svar på bedømmelser bliver stående, men vises som fra "Slettet bruger".
 
 26.4 Du kan senere oprette en ny konto med samme e-mail, medmindre din konto er blevet lukket af BidHamr.

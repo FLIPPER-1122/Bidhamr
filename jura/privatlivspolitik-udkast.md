@@ -4,11 +4,12 @@
 
 > **Til Filip og advokaten (fjernes, før siden går live):**
 > - Udkastet er skrevet ud fra Filips skabelon (`jura/privatlivspolitik-skabelon.md`), `ROADMAP-BESLUTNINGER.md` og en gennemgang af koden og databasen pr. 6. oktober 2026 (`src/`, `supabase/migrations/`, `src/lib/tekster/sider/cookies.ts` og navnene på miljøvariablerne – ingen værdier er læst ud).
+> - Opdateret 6. oktober 2026 med dagens ændringer: serverkoden hos Vercel kører i EU (dub1, Dublin), skjulte oplysninger (fx GPS) fjernes nu også fra billeder i sager og fra pakkebilleder, accept af brugerbetingelserne gemmes (version og tidspunkt), og IP-tællerne ryddes af et dagligt oprydningsjob.
 > - Politikken beskriver, hvad BidHamr gør **i dag**. Ting, der ikke er bygget endnu (MitID, fragtfirma, regnskabsprogram, DAC7-indsamling), står som markerede afsnit, der skal rettes, når de er i drift.
 > - `[TODO Filip: …]` = oplysninger eller tjek, Filip skal lave. `[ADVOKAT: …]` = juridiske spørgsmål. Alle spørgsmål er samlet i `jura/noter-til-advokat.md`.
 > - Siden skal ligge på `/privatliv` (linket findes allerede i footeren).
 
-**Version:** udkast 1 · **Senest opdateret:** [TODO Filip: dato ved offentliggørelse]
+**Version:** udkast 2 · **Senest opdateret:** [TODO Filip: dato ved offentliggørelse]
 
 ---
 
@@ -41,6 +42,7 @@ Dataansvarlig for behandlingen af dine personoplysninger på bidhamr.dk og i Bid
 ### 3.1 Din konto
 
 - **Navn og e-mail**, når du opretter en konto. Din adgangskode gemmes kun krypteret (som en hash) hos vores leverandør Supabase – vi kan ikke se den.
+- **Accept af brugerbetingelserne**: når du opretter en konto, gemmer vi, hvilken version af brugerbetingelserne du har accepteret, og hvornår. Har du accepteret senere (fx via bjælken på Min konto), gemmer vi det tidspunkt.
 - **Telefonnummer og adresse til afhentning**, hvis du selv skriver dem under Min konto (frivilligt).
 - **Profilbillede**, hvis du lægger et op.
 - **To-trins-login**: hvis du slår det til, gemmes den hemmelige nøgle til din app-kode hos Supabase.
@@ -79,8 +81,8 @@ Vi gemmer også beskeder, som vores filter har stoppet (fx fordi de indeholdt et
 ### 3.5 Sikkerhed og misbrug
 
 - **Enheder**: når du logger ind, får din browser en tilfældig kode i en cookie (`bh_enhed`). Vi gemmer kun en sløret udgave (en hash) af koden, en kort beskrivelse som "Chrome på Windows" og tidspunkter. Vi gemmer ikke din IP-adresse sammen med enheden. Det bruger vi til at give dig besked ved login fra en ny enhed. Vi gemmer højst de 30 seneste enheder.
-- **IP-adresse til at stoppe misbrug**: for at forhindre fx gætteri af adgangskoder og spam tæller vi forsøg pr. IP-adresse og pr. e-mail i et kort tidsrum (fx ved login, oprettelse, bud, søgning, kontaktformular og anmeldelser). Tællerne slettes automatisk, når de er mere end et døgn gamle.
-- **Tekniske logs hos vores leverandører**: Supabase (login) og Vercel (hosting) registrerer tekniske oplysninger som IP-adresse, browser og tidspunkt, når du bruger BidHamr. [TODO Filip: tjek, hvor længe Supabase og Vercel gemmer deres logs på jeres abonnement, og skriv det i afsnit 7.]
+- **IP-adresse til at stoppe misbrug**: for at forhindre fx gætteri af adgangskoder og spam tæller vi forsøg pr. IP-adresse og pr. e-mail i et kort tidsrum (fx ved login, oprettelse, bud, søgning, kontaktformular og anmeldelser). Et dagligt oprydningsjob sletter tællerne, så de gemmes i højst ca. et døgn.
+- **Tekniske logs hos vores leverandører**: Supabase (login) og Vercel (hosting) registrerer tekniske oplysninger som IP-adresse, browser og tidspunkt, når du bruger BidHamr. [TODO Filip: tjek, hvor længe Supabase og Vercel gemmer deres logs på jeres abonnement, og skriv det i afsnit 8.]
 - **Advarsler, påmindelser, suspension og lukning** af konti, med begrundelser.
 - **Anmeldelser og rapporter**: hvem der har anmeldt hvad, og hvordan vi har behandlet det. Det gælder også automatiske rapporter fra vores filtre (fx forbudte varer og beskeder om handel uden om BidHamr).
 - **Medarbejder-log**: hvad vores medarbejdere har gjort (fx afgjort en sag eller givet en advarsel). Ved sletning af en konto logges det uden persondata.
@@ -103,7 +105,7 @@ Skriver du dig op til ventelisten før lanceringen, gemmer vi din e-mail og send
 
 - Kortnumre og bankkontonumre (de ligger hos Stripe).
 - CPR-nummer. [TODO Filip/ADVOKAT: se afsnit 3.10 om MitID og DAC7.]
-- GPS-position fra dine billeder: når du lægger billeder op til en auktion eller som profilbillede, fjerner vi skjulte oplysninger som GPS-position. [TODO Filip: billeder i sager og anker gemmes i nogle tilfælde i originalen (fx HEIC-billeder), så oplysningerne kan følge med. Ret koden eller teksten.]
+- GPS-position fra dine billeder: når du lægger billeder op – til en auktion, som profilbillede, i en sag eller som pakkebillede – bliver billedet lavet om i din browser, før det sendes til os. Det fjerner skjulte oplysninger som GPS-position. [TODO Filip: bekræft, at det også gælder billeder og dokumentation, der uploades til en anke, og i appen.]
 
 ### 3.10 Kommer senere (rettes, når det er i drift)
 
@@ -119,6 +121,7 @@ Skriver du dig op til ventelisten før lanceringen, gemmer vi din e-mail og send
 | Formål | Oplysninger | Retsgrundlag (GDPR) |
 |---|---|---|
 | Oprette og drive din konto, login og to-trins-login | Konto, enheder | Aftale – art. 6, stk. 1, litra b |
+| Indgå aftalen om brugen af BidHamr og kunne dokumentere, hvilke brugerbetingelser du har accepteret | Version og tidspunkt for din accept | Aftale – litra b, og legitim interesse i at kunne dokumentere aftalen – litra f |
 | Auktioner, bud, betaling, forsendelse, afhentning, udbetaling og handelsbeskeder | Auktioner, bud, handler, betalinger, beskeder, adresse og telefon ved afhentning | Aftale – litra b |
 | Sager, anker og BidHamr Beskyttelse | Sager, billeder, pakkebilleder, beskeder, sporing | Aftale – litra b, og legitim interesse i at afgøre tvister – litra f |
 | Notifikationer og mails om dine handler | E-mail, push-token, indstillinger | Aftale – litra b |
@@ -132,9 +135,9 @@ Skriver du dig op til ventelisten før lanceringen, gemmer vi din e-mail og send
 | Push-beskeder på telefonen | Push-token | Samtykke – litra a (du siger ja i telefonens indstillinger og kan slå det fra der) |
 | Cookies, der ikke er nødvendige | – | Samtykke – litra a. Vi bruger ingen i dag (se `/cookies`) |
 
-[ADVOKAT: Bekræft retsgrundlagene, især: (1) legitim interesse for svindelforebyggelse og for at læse beskeder i handler; (2) at DSA-behandlingen kan bygge på litra c; (3) om push kræver samtykke eller er en del af aftalen.]
+[ADVOKAT: Bekræft retsgrundlagene, især: (1) legitim interesse for svindelforebyggelse og for at læse beskeder i handler; (2) at DSA-behandlingen kan bygge på litra c; (3) om push kræver samtykke eller er en del af aftalen; (4) aftale/legitim interesse for at gemme version og tidspunkt for accept af brugerbetingelserne.]
 
-**Automatiske beslutninger.** Nogle ting sker automatisk: ulovlige varer bliver stoppet ved oprettelse, beskeder med kontaktoplysninger bliver stoppet, handler annulleres, hvis fristen for betaling eller afsendelse er overskredet, og pengene frigives, når fristen for en sag er gået. Advarsler, afgørelser i sager og lukning af konti træffes altid af en medarbejder. [ADVOKAT: Er nogen af de automatiske beslutninger omfattet af GDPR art. 22?]
+**Automatiske beslutninger.** Nogle ting sker automatisk: ulovlige varer bliver stoppet ved oprettelse, beskeder med kontaktoplysninger bliver stoppet, handler annulleres, hvis fristen for betaling eller afsendelse er overskredet, pengene frigives, når fristen for en sag er gået, og en auktion, som BidHamr har sat på pause, annulleres efter 14 dage på pause. Advarsler, afgørelser i sager, skjulning af auktioner og lukning af konti træffes altid af en medarbejder. [ADVOKAT: Er nogen af de automatiske beslutninger omfattet af GDPR art. 22?]
 
 ---
 
@@ -165,7 +168,7 @@ Vores medarbejdere har adgang til de oplysninger, de skal bruge til fx sager, an
 | Leverandør | Hvad de gør for os | Hvor | Overførsel uden for EU/EØS |
 |---|---|---|---|
 | **Supabase** | Database, login, filer (billeder) og planlagte opgaver | Data lagres i EU – AWS-region eu-west-1 (Irland) | Supabase Inc. er en amerikansk virksomhed. Mulig adgang fra USA (support/drift) [ADVOKAT] |
-| **Vercel** | Hosting af hjemmesiden, billedvisning og serverkode | [TODO Filip: tjek funktions-region i Vercel. Uden valgt region kører serverkoden som standard i USA (iad1). Overvej en EU-region, fx Frankfurt (fra1) eller Stockholm (arn1)] | Vercel Inc., USA |
+| **Vercel** | Hosting af hjemmesiden, billedvisning og serverkode | Serverkoden kører i EU – Vercel-region dub1 (Dublin, Irland) [TODO Filip: tjek, hvor Vercel gemmer logs, og om sider og billeder også leveres fra servere uden for EU via Vercels netværk] | Vercel Inc. er en amerikansk virksomhed. Overførsel eller adgang fra USA kan forekomme (fx support, drift og logs) [ADVOKAT] |
 | **Resend** | Afsendelse af mails (fx bekræftelse, notifikationer, kvitteringer) | [TODO Filip: tjek, om bidhamr.dk-domænet i Resend er sat op i en EU-region] | Resend Inc., USA |
 | **Expo** (650 Industries) | Sender push-beskeder til appen videre til Apple og Google | USA | Ja |
 | **Apple** og **Google** | Levering af push-beskeder til din telefon | – | [ADVOKAT: databehandlere eller selvstændigt dataansvarlige?] |
@@ -194,9 +197,9 @@ Vi sælger aldrig dine oplysninger.
 
 ## 7. Overførsel til lande uden for EU/EØS
 
-Nogle af vores leverandører er amerikanske virksomheder (Supabase, Vercel, Resend, Expo og Stripe). Når oplysninger overføres til USA, sker det på grundlag af EU-US Data Privacy Framework, hvis leverandøren er certificeret, og ellers EU-Kommissionens standardkontraktbestemmelser.
+Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverandører er dog amerikanske virksomheder (Supabase, Vercel, Resend, Expo og Stripe), og oplysninger kan derfor blive overført til eller set fra USA, fx når leverandøren yder support eller drift. Når oplysninger overføres til USA, sker det på grundlag af EU-US Data Privacy Framework, hvis leverandøren er certificeret, og ellers EU-Kommissionens standardkontraktbestemmelser.
 
-[ADVOKAT: Bekræft grundlaget for hver leverandør (DPF-certificering/SCC) og behovet for en overførselsvurdering (TIA).] [TODO Filip: tjek på dataprivacyframework.gov, hvilke af leverandørerne der er certificeret.]
+[ADVOKAT: Bekræft grundlaget for hver leverandør (DPF-certificering/SCC) og behovet for en overførselsvurdering (TIA). Gælder også Vercel, selvom serverkoden nu kører i EU (dub1).] [TODO Filip: tjek på dataprivacyframework.gov, hvilke af leverandørerne der er certificeret.]
 
 ---
 
@@ -205,6 +208,7 @@ Nogle af vores leverandører er amerikanske virksomheder (Supabase, Vercel, Rese
 | Oplysninger | Hvor længe |
 |---|---|
 | Konto og profil | Så længe du har en konto. Når du sletter den, fjernes eller anonymiseres oplysningerne (se afsnit 9) |
+| Accept af brugerbetingelserne (version og tidspunkt) | Så længe du har en konto. Har du handlet på BidHamr, gemmes den derefter som dokumentation for de handler, du har lavet, lige så længe som handelsdata [TODO Filip: bekræft, at sletning af kontoen bevarer felterne] [ADVOKAT] |
 | Handelsdata: handler, betalinger, gebyrer, forsendelser, pakkebilleder, sager, anker, sagsbilleder og beskeder i handler | Mindst 5 år efter udgangen af det regnskabsår, handlen hører til (bogføringsloven). I dag slettes de ikke automatisk. [ADVOKAT: se nedenfor] |
 | Bedømmelser og sælgers svar | Så længe BidHamr findes. Efter sletning af kontoen vises de som fra "Slettet bruger" |
 | Samtaler med BidHamr | Slettes ikke automatisk i dag [ADVOKAT] |
@@ -212,7 +216,7 @@ Nogle af vores leverandører er amerikanske virksomheder (Supabase, Vercel, Rese
 | Advarsler, begrundelser for indgreb og medarbejder-log | Slettes ikke automatisk i dag (dokumentation for afgørelser) [ADVOKAT] |
 | Anmeldelser og rapporter | Behandlede rapporter flyttes til et arkiv efter 48 timer og gemmes der. Anmelderens navn, e-mail, konto-kobling og fritekst i DSA-anmeldelser anonymiseres 12 måneder efter afgørelsen. Statistik og begrundelser gemmes |
 | Enheder | Til du fjerner enheden, til den bliver skubbet ud af listen over de 30 seneste, eller til du sletter kontoen |
-| Tællere med IP-adresse og e-mail (misbrug) | Ca. et døgn |
+| Tællere med IP-adresse og e-mail (misbrug) | Højst ca. et døgn. Et dagligt oprydningsjob sletter dem |
 | Fejllog | 90 dage efter, fejlen sidst er set |
 | Log over planlagte opgaver (cron) | 90 dage. Den tekniske historik i databasen slettes efter 14 dage. Indeholder ikke persondata |
 | Besøgsstatistik | Indeholder ikke persondata |
@@ -238,7 +242,7 @@ Når kontoen slettes:
 - Din login-bruger spærres, og e-mailen sløres, så du ikke kan logge ind. Du kan senere oprette en ny konto med samme e-mail.
 - Du får en mail om, at kontoen er slettet.
 
-Det gemmer vi, fordi loven kræver det: handler, betalinger, gebyrer, sager, anker, beskeder i handler og medarbejder-loggen (bogføringsloven og DAC7). Bedømmelser og svar bliver stående, men står som fra "Slettet bruger". Referencer til din kunde- og udbetalingskonto hos Stripe gemmes som en del af handelsdata. [TODO Filip: gemte kort hos Stripe ryddes, når Stripe-arbejdet genoptages.]
+Det gemmer vi, fordi loven kræver det: handler, betalinger, gebyrer, sager, anker, beskeder i handler og medarbejder-loggen (bogføringsloven og DAC7). Vi gemmer også, hvilken version af brugerbetingelserne du accepterede, og hvornår, som dokumentation for de handler, du har lavet. Bedømmelser og svar bliver stående, men står som fra "Slettet bruger". Referencer til din kunde- og udbetalingskonto hos Stripe gemmes som en del af handelsdata. [TODO Filip: gemte kort hos Stripe ryddes, når Stripe-arbejdet genoptages.]
 
 Mails, der allerede er sendt til andre (fx en kvittering med dit navn), kan vi ikke trække tilbage. [TODO Filip: tjek, om dit tidligere navn kan ses andre steder efter sletningen, fx i tekst, som brugerne selv har skrevet i beskeder.]
 
@@ -248,7 +252,7 @@ Mails, der allerede er sendt til andre (fx en kvittering med dit navn), kan vi i
 
 Du har disse rettigheder efter databeskyttelsesforordningen (GDPR):
 
-- **Indsigt og dataportabilitet**: under Min konto kan du trykke "Download dine data" og få én fil (JSON) med dine oplysninger: profil, auktioner, bud, handler med dine egne beløb, beskeder i dine handler, samtaler med BidHamr, bedømmelser, notifikationer og indstillinger, favoritter, følger, gemte søgninger, anmeldelser, kontakthenvendelser og enheder. Andre brugere står kun med fornavn. Du kan hente filen én gang i timen. Vil du have oplysninger, der ikke er i filen, så skriv til os.
+- **Indsigt og dataportabilitet**: under Min konto kan du trykke "Download dine data" og få én fil (JSON) med dine oplysninger: profil, auktioner, bud, handler med dine egne beløb, beskeder i dine handler, samtaler med BidHamr, bedømmelser, notifikationer og indstillinger, favoritter, følger, gemte søgninger, anmeldelser, kontakthenvendelser og enheder. Andre brugere står kun med fornavn. Du kan hente filen én gang i timen. Vil du have oplysninger, der ikke er i filen, så skriv til os. [TODO Filip: tjek, om version og tidspunkt for accept af brugerbetingelserne er med i filen.]
 - **Berigtigelse**: du kan selv rette navn, telefon, adresse og profilbillede under Min konto. Skriv til os, hvis noget andet er forkert.
 - **Sletning**: brug "Slet konto" (se afsnit 9). Vi sletter ikke oplysninger, vi har pligt til at gemme.
 - **Begrænsning**: du kan bede os om midlertidigt kun at opbevare dine oplysninger, fx mens vi undersøger, om de er rigtige.
@@ -273,6 +277,7 @@ Vi bruger kun nødvendige cookies til login, sikkerhed og betaling – ingen sta
 - Adgangskoder gemmes kun som hash. Vi kræver stærke adgangskoder, og du kan slå to-trins-login til. Medarbejdere skal bruge to-trins-login.
 - Du får en mail ved login fra en ny enhed, når din adgangskode ændres, når to-trins-login slås til eller fra, og når din konto slettes. Mails om sikkerhed kan ikke slås fra.
 - Databasen bruger adgangsregler, så du kun kan se dine egne private oplysninger. Billeder fra sager, pakkebilleder og fragtlabels ligger i lukkede mapper, som kun parterne i handlen og vores medarbejdere kan åbne.
+- Billeder bliver lavet om i din browser, før de sendes til os, så skjulte oplysninger som GPS-position ikke følger med (se afsnit 3.9).
 - Vores medarbejdere har kun adgang til det, de skal bruge, og deres handlinger logges.
 - Vi begrænser antallet af forsøg (fx login og anmeldelser) for at stoppe gætteri og spam.
 - Supabase krypterer data, når de er gemt. [TODO Filip: bekræft på Supabases side.]

@@ -1,6 +1,6 @@
 # Noter til advokaten – samlet liste over åbne spørgsmål
 
-> UDKAST – til mødet med advokaten. Skrevet 6. oktober 2026 ud fra `jura/brugerbetingelser-udkast.md`, `jura/privatlivspolitik-udkast.md` og `ROADMAP-BESLUTNINGER.md`.
+> UDKAST – til mødet med advokaten. Skrevet 6. oktober 2026 ud fra `jura/brugerbetingelser-udkast.md`, `jura/privatlivspolitik-udkast.md` og `ROADMAP-BESLUTNINGER.md`. Opdateret samme dag med: Vercel-region i EU (dub1), GPS fjernes fra sags- og pakkebilleder, gemt accept af brugerbetingelser, daglig oprydning af IP-tællere, og pause/annullering af skjulte og fjernede auktioner (spm. 21, 34, 45, 46 og 52).
 > Henvisninger i parentes: **B** = brugerbetingelser (afsnitsnummer), **P** = privatlivspolitik (afsnitsnummer), **RB** = ROADMAP-BESLUTNINGER.md.
 
 ## Kort om BidHamr (til advokaten)
@@ -9,6 +9,7 @@
 - Gebyrer: 5 % for køber og 5 % for sælger af buddet. Frivilligt tilkøb for køber: "BidHamr Beskyttelse" (5 % af buddet, min. 25 / maks. 250 kr). Fragt betales af køber (i dag fast 35 kr, som går til fragtfirmaet). Alle beløb inkl. moms.
 - Betaling via Stripe Connect, "separate charges and transfers": køber betaler til BidHamrs platformskonto hos Stripe. Beløbet holdes, til handlen er afsluttet (køber godkender, 48 timer uden sag, eller sag afgjort + 4 dages ankefrist), og overføres så minus sælgergebyr til sælgers Stripe Express-konto. BidHamr har ingen saldo/wallet.
 - Sager med frosne penge, anke, advarsler (3 = lukning, altid godkendt af en medarbejder) og DSA-anmeldelse/begrundelse/klage er bygget.
+- Database (Supabase) og serverkode (Vercel, region dub1) kører i EU (Irland). Leverandørerne er amerikanske virksomheder.
 
 ---
 
@@ -37,7 +38,7 @@
 18. **Rangering.** Opfylder beskrivelsen af sortering kravet om at oplyse de vigtigste parametre? (B 24)
 19. **Brugernes billeder i markedsføring.** Må BidHamr bruge auktionsbilleder i egen markedsføring (fx sociale medier), og kræver det samtykke? (B 22.3)
 20. **Lukket konto.** Hvad skal der ske med en lukket brugers igangværende auktioner, handler og ventende udbetalinger? (B 20.5)
-21. **Ændring af betingelserne.** 30 dages varsel ved væsentlige ændringer; igangværende bud følger de gamle betingelser. Rigtig overgangsregel? Hvordan skal accept af nye betingelser ske og logges? (B 25)
+21. **Accept og ændring af betingelserne.** Nye brugere skal sætte flueben ved oprettelse; vi gemmer version og tidspunkt for accept (`users.vilkaar_version`, `users.vilkaar_accepteret_kl` – tidspunktet sættes af databasen). Eksisterende brugere ser en bjælke på Min konto og kan acceptere der, men det blokerer ikke noget endnu. Ved lancering kan accept gøres påkrævet, før man kan byde eller oprette en auktion. Er det nok som dokumentation for aftalen? 30 dages varsel ved væsentlige ændringer; igangværende bud følger de gamle betingelser. Rigtig overgangsregel? Hvordan skal accept af nye betingelser ske? (B 1.3, 25, RB "Accept af brugerbetingelser")
 22. **Lukning af BidHamr.** Hvilket varsel, og hvad med igangværende handler? (B 26.5)
 23. **Klageadgang.** Er henvisningen til Forbrugerklagenævnet (kun for BidHamrs egne ydelser) korrekt? EU's ODR-platform er lukket i juli 2025, så den er udeladt – bekræft. Bekræft, at handler mellem to private ikke hører under Forbrugerklagenævnet. (B 28.4, ROADMAP fase 6)
 24. **Værneting og lovvalg.** Dansk ret og danske domstole; forbrugere kan sagsøge ved eget hjemting. Formulering? (B 28.5)
@@ -55,7 +56,7 @@ Alt i RB-afsnittet "DSA" er Claudes forslag og afventer advokatens godkendelse. 
 31. **Frister.** Interne frister: anmeldelser 7 dage (24 timer ved misbrug af børn og hadefuld tale), klager 14 dage. Opfylder det "rettidigt" og "uden unødig forsinkelse"?
 32. **Begrundelse (art. 17).** Indeholder mailen det, den skal? Er lovhenvisningerne i regel-listen rigtige (fx straffeloven § 279, §§ 266 og 266 b, § 235, våbenloven, varemærkeloven, ophavsretsloven, dyrevelfærdsloven)? Se `src/lib/dsa/regler.ts`.
 33. **Forbudte-varer-filteret.** Varer, som filteret blokerer ved oprettelse, bliver aldrig offentliggjort og registreres ikke som en afgørelse – sælger får kun en fejlbesked. Kræver det alligevel en begrundelse efter art. 17?
-34. **Klage (art. 20).** 6 måneders frist, ét klagetrin, behandles af en anden medarbejder, medhold ophæver indgrebet. En udløbet auktion kan ikke genåbnes (brugeren får besked om at sætte varen op igen). I orden?
+34. **Klage (art. 20) og auktioner på pause.** 6 måneders frist, ét klagetrin, behandles af en anden medarbejder, medhold ophæver indgrebet. For auktioner gælder nu (Filips beslutninger 6. oktober 2026): en skjult auktion sættes på pause (uret stopper, ingen kan byde, buddene gælder stadig); vises den igen, fortsætter den med den resterende tid, dog mindst 24 timer; efter 14 dage på pause annulleres den automatisk; en fjernet auktion annulleres og genåbnes aldrig – heller ikke ved medhold i en klage – men sælgeren kan sætte varen op igen. Spørgsmål: (a) Er det foreneligt med art. 20(4), at medhold over en fjernet eller annulleret auktion ikke genåbner den? (b) Er det rimeligt over for bydere, at deres bud er bindende under en pause, og over for sælgeren, at auktionen annulleres efter 14 dage, selvom klagefristen er 6 måneder? (B 20.7, 21.5)
 35. **Udenretslig tvistbilæggelse (art. 21).** Skal vi henvise til et certificeret organ – og hvilket? (B 21.7)
 36. **Misbrug (art. 23).** Skal reglen om at stoppe behandling af åbenlyst grundløse anmeldelser/klager med i betingelserne, og hvordan? (B 21.6)
 37. **Underretning af politiet (art. 18).** Hvornår har vi pligt til at underrette politiet, og hvem?
@@ -67,16 +68,16 @@ Alt i RB-afsnittet "DSA" er Claudes forslag og afventer advokatens godkendelse. 
 ## 4. Persondata (GDPR)
 
 42. **Databeskyttelsesrådgiver (DPO).** Skal BidHamr have en? (P 2)
-43. **Retsgrundlag.** Bekræft især: legitim interesse for svindelforebyggelse og for at medarbejdere kan læse beskeder i handler; litra c for DSA-behandling; om push-beskeder kræver samtykke. (P 4)
+43. **Retsgrundlag.** Bekræft især: legitim interesse for svindelforebyggelse og for at medarbejdere kan læse beskeder i handler; litra c for DSA-behandling; om push-beskeder kræver samtykke; aftale/legitim interesse for at gemme version og tidspunkt for accept af brugerbetingelserne. (P 4)
 44. **Venteliste.** Samtykke eller legitim interesse – og må listen bruges til nyheder ved lancering? (P 3.7, 4)
-45. **Automatiske beslutninger (art. 22).** Filtre, automatisk annullering ved overskredne frister og automatisk frigivelse – er nogen af dem omfattet? (P 4)
-46. **Opbevaring.** Forretningsreglen er, at handelsdata, samtaler med BidHamr, kontakthenvendelser, rapporter, advarsler og begrundelser "slettes aldrig". Bogføringsloven kræver 5 år efter regnskabsårets udløb. Hvor længe må vi gemme de enkelte typer, og skal vi bygge automatisk sletning/anonymisering? (P 8)
+45. **Automatiske beslutninger (art. 22).** Filtre, automatisk annullering ved overskredne frister, automatisk frigivelse og automatisk annullering af en auktion efter 14 dage på pause – er nogen af dem omfattet? (P 4)
+46. **Opbevaring.** Forretningsreglen er, at handelsdata, samtaler med BidHamr, kontakthenvendelser, rapporter, advarsler og begrundelser "slettes aldrig". Bogføringsloven kræver 5 år efter regnskabsårets udløb. Hvor længe må vi gemme de enkelte typer, og skal vi bygge automatisk sletning/anonymisering? Gælder også version og tidspunkt for accept af brugerbetingelserne: foreslået så længe kontoen findes og derefter som dokumentation for brugerens handler. IP-tællere (login og anti-spam) slettes nu af et dagligt oprydningsjob efter ca. et døgn. (P 8)
 47. **Bedømmelser efter sletning.** Bedømmelser bevares som fra "Slettet bruger". I orden? (P 9)
 48. **MitID.** Hvilke oplysninger fra MitID (via Criipto) må vi gemme for at forhindre, at en lukket bruger opretter en ny konto? Må vi gemme en hash af CPR eller et MitID-id? (P 3.10)
 49. **DAC7.** Bekræft grænserne (30 salg / 2.000 euro), hvilke oplysninger vi skal indsamle, hvordan sælgerne skal informeres, og hvor længe oplysningerne skal gemmes. Skal revisor også inddrages? (P 5, ROADMAP fase 6)
 50. **Stripes rolle.** For hvilke dele er Stripe databehandler, og for hvilke selvstændigt dataansvarlig (KYC, svindel, hvidvask)? (P 6.4)
 51. **Apple og Google** (push): databehandlere eller selvstændigt dataansvarlige? (P 6.3)
-52. **Overførsel til USA.** Supabase, Vercel, Resend, Expo og Stripe er amerikanske. Bekræft grundlaget pr. leverandør (EU-US Data Privacy Framework eller standardkontraktbestemmelser), og om vi skal lave en overførselsvurdering (TIA). (P 7)
+52. **Overførsel til USA.** Supabase, Vercel, Resend, Expo og Stripe er amerikanske virksomheder. Database (Supabase, eu-west-1) og serverkode (Vercel, region dub1 i Dublin) kører nu i EU, men overførsel eller adgang fra USA kan stadig forekomme (support, drift, logs og evt. Vercels globale netværk). Bekræft grundlaget pr. leverandør (EU-US Data Privacy Framework eller standardkontraktbestemmelser), og om vi skal lave en overførselsvurdering (TIA). (P 6.3, 7)
 53. **Databehandleraftaler.** Bekræft, at standardaftalerne fra Supabase, Vercel, Resend, Expo (og senere GLS/Shipmondo, Criipto, Dinero) er tilstrækkelige. (P 6.3, ROADMAP fase 6)
 54. **Nødvendige cookies.** Må disse regnes som nødvendige (intet samtykke): `bh_enhed` (genkendelse af enhed til mail ved nyt login, 400 dage), kladden til auktioner i local storage, og Stripes svindel-cookies `__stripe_mid`/`__stripe_sid`? (RAPPORT 6. okt., `/cookies`)
 
