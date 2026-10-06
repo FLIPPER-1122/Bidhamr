@@ -28,6 +28,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Anmeldelser og klager" };
+
 type Anmeldelse = {
   id: string;
   sagsnummer: string;

@@ -9,6 +9,8 @@ import { anmeldKategoriNavn, handlingNavn, indholdNavn, regelNavn } from "@/lib/
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Gennemsigtighedsrapport" };
+
 type Rapport = {
   fra: string;
   til: string;

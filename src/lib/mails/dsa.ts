@@ -58,7 +58,7 @@ export function anmeldelseKvitteringMail(input: {
         { noegle: "Sagsnummer", vaerdiHtml: escapeHtml(input.sagsnummer) },
         { noegle: "Hvad", vaerdiHtml: escapeHtml(indholdNavn(input.indholdType)) },
         { noegle: "Kategori", vaerdiHtml: escapeHtml(anmeldKategoriNavn(input.kategori)) },
-        { noegle: "Placering", vaerdiHtml: escapeHtml(input.placering) },
+        { noegle: "Placering", vaerdiHtml: escapeHtml(input.placering.startsWith("/") ? sideUrl(input.placering) : input.placering) },
         { noegle: "Modtaget", vaerdiHtml: escapeHtml(dato(input.oprettet)) },
       ],
       knap: { tekst: "Se din anmeldelse", url: sideUrl(input.statusSti) },
