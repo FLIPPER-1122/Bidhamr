@@ -11,7 +11,7 @@ export interface PostnummerOpslag {
   lng: number;
 }
 
-export const UKENDT_POSTNUMMER = "Postnummeret findes ikke – tjek, at det er rigtigt.";
+export { UKENDT_POSTNUMMER } from "@/lib/postnummerTekst";
 
 /** Returnerer by og koordinat for et dansk postnummer, eller null hvis det ikke findes. */
 export function slaaPostnummerOp(nr: string | null | undefined): PostnummerOpslag | null {

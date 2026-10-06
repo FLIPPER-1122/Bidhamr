@@ -8,7 +8,11 @@ import {
   useState,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+
+// Supabase-klienten (ca. 60 kB komprimeret) indlæses først, når den skal
+// bruges. Udbyderen ligger i layoutet for alle sider, så en statisk import
+// ville lægge den i JavaScript-pakken på hver side, før siden kan vises.
+const hentKlient = () => import("@/lib/supabase/client").then((m) => m.createClient());
 
 // Favoritterne hentes EEN gang og deles af alle auktionskort på siden.
 // Alternativet - at hvert kort selv slår op - ville give ét kald pr. kort på
@@ -47,7 +51,8 @@ export default function FavoritterProvider({
     let afbrudt = false;
 
     async function hent() {
-      const supabase = createClient();
+      const supabase = await hentKlient();
+      if (afbrudt) return;
       const { data: auth } = await supabase.auth.getUser();
 
       if (afbrudt) return;
@@ -99,9 +104,7 @@ export default function FavoritterProvider({
         return ny;
       });
 
-      const supabase = createClient();
-
-      const skriv = varFavorit
+      const skriv = hentKlient().then((supabase) => varFavorit
         ? supabase
             .from("favorites")
             .delete()
@@ -109,7 +112,7 @@ export default function FavoritterProvider({
             .eq("auction_id", auktionId)
         : supabase
             .from("favorites")
-            .insert({ user_id: bruger, auction_id: auktionId });
+            .insert({ user_id: bruger, auction_id: auktionId }));
 
       skriv.then(({ error }) => {
         if (!error) return;

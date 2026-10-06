@@ -40,37 +40,38 @@ export default async function AuktionPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: auktion }, { data: authData }] = await Promise.all([
+  // Bud kan ikke laeses af andre end byderen selv (bydernes privatliv). Siden
+  // henter dem med service-role, men kun til serverens egne beregninger
+  // (vinder) og en anonymiseret budhistorik - bruger-id'er og navne sendes
+  // aldrig til browseren. Hentes samtidig med auktionen (samme id), så siden
+  // ikke venter på to runder til databasen efter hinanden.
+  const [{ data: auktion }, { data: authData }, { data: budRaw }] = await Promise.all([
     supabase.from("auctions").select("*").eq("id", id).single(),
     supabase.auth.getUser(),
+    createAdminClient()
+      .from("bids")
+      .select("id, bruger_id, beløb, oprettet")
+      .eq("auktion_id", id)
+      .order("oprettet", { ascending: false })
+      .limit(MAKS_BUD_HENTET)
+      .overrideTypes<
+        { id: string; bruger_id: string; beløb: number; oprettet: string }[],
+        { merge: false }
+      >(),
   ]);
 
   if (!auktion || auktion.skjult) {
     notFound();
   }
 
-  // Bud kan ikke laeses af andre end byderen selv (bydernes privatliv). Siden
-  // henter dem med service-role, men kun til serverens egne beregninger
-  // (vinder) og en anonymiseret budhistorik - bruger-id'er og navne sendes
-  // aldrig til browseren.
-  const { data: budRaw } = await createAdminClient()
-    .from("bids")
-    .select("id, bruger_id, beløb, oprettet")
-    .eq("auktion_id", id)
-    .order("oprettet", { ascending: false })
-    .limit(MAKS_BUD_HENTET)
-    .overrideTypes<
-      { id: string; bruger_id: string; beløb: number; oprettet: string }[],
-      { merge: false }
-    >();
   const bud = budRaw ?? [];
 
-  const { data: saelger } = await supabase
+  // Sælgerens navn hentes sammen med resten nedenfor (Promise.all).
+  const saelgerOpslag = supabase
     .from("users")
     .select("navn")
     .eq("id", auktion.bruger_id)
     .maybeSingle();
-  const sælgerNavn = kortNavn(saelger?.navn ?? null);
 
   // "Byder 1", "Byder 2" ... i den raekkefoelge, de foerst bød. Egne bud vises som "Dig".
   const byderNr = new Map<string, number>();
@@ -110,7 +111,13 @@ export default async function AuktionPage({
           );
         })()
       : Promise.resolve(false);
-  const [{ data: spoergsmaalData }, staffRolle, blokeretMedSaelger, { data: minFoelgning }] = await Promise.all([
+  const [
+    { data: spoergsmaalData },
+    staffRolle,
+    blokeretMedSaelger,
+    { data: minFoelgning },
+    { data: saelger },
+  ] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     authData.user ? getStaffRole() : Promise.resolve(null),
     tjekBlokering,
@@ -124,7 +131,9 @@ export default async function AuktionPage({
           .eq("seller_id", auktion.bruger_id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    saelgerOpslag,
   ]);
+  const sælgerNavn = kortNavn(saelger?.navn ?? null);
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
   const varenummer = auktion.id.slice(-6).toUpperCase();

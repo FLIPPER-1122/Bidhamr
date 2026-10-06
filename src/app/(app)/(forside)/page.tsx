@@ -154,7 +154,10 @@ export default async function Forside() {
               src={heroBillede}
               alt=""
               fill
-              preload
+              // LCP-billedet på mobil: hentes med det samme og med høj
+              // prioritet (anbefalet frem for preload i Next.js 16).
+              loading="eager"
+              fetchPriority="high"
               placeholder="blur"
               sizes="(min-width: 1280px) 600px, (min-width: 768px) 48vw, 100vw"
               className="object-cover"
