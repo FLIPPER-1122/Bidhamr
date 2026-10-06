@@ -4,7 +4,8 @@
 // 20261006040000_auktionsfunktioner.sql; 'gemt_soegning' i
 // 20261007010000_brugerens_egne_ting.sql; 'bedoemmelse' i
 // 20261007020000_bedoemmelse_svar.sql; 'afgoerelse' (påkrævet) i
-// 20261009010000_dsa.sql). Ændres listen her,
+// 20261009010000_dsa.sql; 'auktion_status' i
+// 20261009040000_skjult_auktion_pause.sql). Ændres listen her,
 // skal SQL'en også rettes i en ny migration.
 //
 // Ingen server-only-import: frontend må gerne bruge navne og beskrivelser.
@@ -28,7 +29,8 @@ export type NotifikationType =
   | "spoergsmaal"
   | "gemt_soegning"
   | "bedoemmelse"
-  | "afgoerelse";
+  | "afgoerelse"
+  | "auktion_status";
 
 export type Kanal = "klokke" | "mail" | "push";
 
@@ -55,6 +57,7 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "overbudt", navn: "Du er overbudt", beskrivelse: "Når en anden byder mere end dig.", paakraevet: false },
   { type: "bud_paa_egen", navn: "Bud på din auktion", beskrivelse: "Når nogen byder på en af dine auktioner.", paakraevet: false },
   { type: "like", navn: "Nogen har liket din auktion", beskrivelse: "Når nogen gemmer din auktion som favorit.", paakraevet: false },
+  { type: "auktion_status", navn: "Auktion på pause", beskrivelse: "Når BidHamr sætter en auktion, du sælger eller har budt på, på pause, og når den åbner igen.", paakraevet: false },
   { type: "fulgt_slutter_snart", navn: "Favorit slutter snart", beskrivelse: "En time før en auktion, du har gemt, slutter.", paakraevet: false },
   { type: "ny_auktion_fulgt_saelger", navn: "Ny auktion fra en sælger, du følger", beskrivelse: "Når en sælger, du følger, sætter en ny vare til salg.", paakraevet: false },
   { type: "gemt_soegning", navn: "Gemte søgninger", beskrivelse: "Når nye auktioner matcher en søgning, du har gemt. Højst én besked pr. søgning hver 6. time.", paakraevet: false },

@@ -35,6 +35,11 @@ export interface Auction {
   status: AuctionStatus;
   skjult: boolean;
   slutter_kl: string;
+  // På pause, mens auktionen er skjult af BidHamr (kun sammen med status
+  // 'aktiv'). pause_resterende = tid tilbage, da den blev sat på pause
+  // (Postgres-interval som tekst, fx "1 day 03:12:00"). Kun systemet skriver.
+  pauset_kl?: string | null;
+  pause_resterende?: string | null;
   // Sat, når auktionen gik fra aktiv til afsluttet/annulleret.
   afsluttet_kl?: string | null;
   // Sat 48 timer efter afsluttet handel. Arkiverede vises kun for parterne.

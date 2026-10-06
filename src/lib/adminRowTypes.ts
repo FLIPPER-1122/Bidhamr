@@ -14,6 +14,8 @@ export type AdminAuktionRow = {
   oprettet: string;
   bruger_id: string;
   skjult: boolean;
+  pauset_kl: string | null;
+  pause_resterende: string | null;
 };
 
 export type BrugerAuktionRow = {

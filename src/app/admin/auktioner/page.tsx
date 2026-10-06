@@ -9,6 +9,7 @@ import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
 import type { AdminAuktionRow } from "@/lib/adminRowTypes";
+import { erPaaPause, formatVarighed, intervalTilMs } from "@/lib/auctionTid";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 const statusOptions = [
@@ -53,7 +54,7 @@ export default async function AdminAuktioner({
 
   let query = supabase
     .from("auctions")
-    .select("id, titel, billeder, startpris, nuværende_bud, status, slutter_kl, oprettet, bruger_id, skjult")
+    .select("id, titel, billeder, startpris, nuværende_bud, status, slutter_kl, oprettet, bruger_id, skjult, pauset_kl, pause_resterende")
     .order("oprettet", { ascending: false })
     .limit(200);
 
@@ -199,10 +200,17 @@ export default async function AdminAuktioner({
                         {a.skjult && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-neutral-600">Skjult</span>
                         )}
+                        {erPaaPause(a) && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">På pause</span>
+                        )}
                       </span>
                     </td>
                     <td className="px-5 py-3 text-neutral-500">
-                      {a["slutter_kl"] ? new Date(a["slutter_kl"]).toLocaleDateString("da-DK") : "—"}
+                      {erPaaPause(a)
+                        ? `${formatVarighed(intervalTilMs(a.pause_resterende))} tilbage`
+                        : a["slutter_kl"]
+                          ? new Date(a["slutter_kl"]).toLocaleDateString("da-DK")
+                          : "—"}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex gap-2">
@@ -228,8 +236,12 @@ export default async function AdminAuktioner({
                           }
                           description={
                             a.skjult
-                              ? "Auktionen bliver synlig for alle igen."
-                              : "Auktionen bliver usynlig for brugerne, men slettes ikke."
+                              ? erPaaPause(a)
+                                ? "Auktionen bliver synlig for alle igen og fortsætter med den resterende tid – dog mindst 24 timer. Sælger og bydere får besked."
+                                : "Auktionen bliver synlig for alle igen."
+                              : a.status === "aktiv"
+                                ? "Auktionen bliver usynlig for brugerne og sættes på pause: der kan ikke bydes, og den slutter ikke, før den vises igen. Den slettes ikke."
+                                : "Auktionen bliver usynlig for brugerne, men slettes ikke."
                           }
                           confirmLabel={a.skjult ? "Ja, vis auktionen" : "Ja, skjul auktionen"}
                           action={a.skjult ? unhideAuction : hideAuction}

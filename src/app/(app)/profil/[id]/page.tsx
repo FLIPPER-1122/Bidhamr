@@ -10,6 +10,7 @@ import ProfilTryghed from "@/components/tryghed/ProfilTryghed";
 import AnmeldKnap from "@/components/dsa/AnmeldKnap";
 import FoelgKnap from "@/components/foelg/FoelgKnap";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { erPaaPause } from "@/lib/auctionTid";
 import BedoemmelseListe from "@/components/profile/BedoemmelseListe";
 import { hentBedoemmelseOpsummering, hentBedoemmelser } from "@/lib/bedoemmelserHent";
 import ProfileTabs, {
@@ -146,6 +147,7 @@ export default async function ProfilPage({
         ...mapAuctionTilKort(auktion),
         slutterKl: auktion.slutter_kl,
         status: auktion.status,
+        pauset: erPaaPause(auktion),
       }),
     );
 
@@ -176,6 +178,8 @@ export default async function ProfilPage({
             slutter_kl: string;
             nuværende_bud: number | string | null;
             vinder_id: string | null;
+            status: string;
+            pauset_kl: string | null;
           }[],
           { merge: false }
         >();
@@ -187,7 +191,9 @@ export default async function ProfilPage({
         const jegFører = auktion.vinder_id
           ? auktion.vinder_id === id
           : egetBud > 0 && egetBud >= højesteBud;
-        const status: MitBud["status"] = !erSlut
+        const status: MitBud["status"] = erPaaPause(auktion)
+          ? "pause"
+          : !erSlut
           ? "aktiv"
           : jegFører
             ? "vinder"

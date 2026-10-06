@@ -9,7 +9,7 @@ import SettingsForm from "@/components/profile/SettingsForm";
 import BedoemmelseListe from "@/components/profile/BedoemmelseListe";
 import type { BedoemmelseVisning } from "@/lib/bedoemmelser";
 
-export type BudStatus = "vinder" | "overbud" | "aktiv";
+export type BudStatus = "vinder" | "overbud" | "aktiv" | "pause";
 
 export interface MitBud {
   auktionId: string;
@@ -23,6 +23,8 @@ export interface MitBud {
 export interface EgenAuktion extends DummyAuction {
   slutterKl: string;
   status?: string;
+  // Skjult af BidHamr og på pause (auctions.pauset_kl).
+  pauset?: boolean;
 }
 
 // En modtaget bedømmelse med sælgerens svar (src/lib/bedoemmelserHent.ts).
@@ -32,18 +34,21 @@ const BUD_STYLE: Record<BudStatus, string> = {
   vinder: "bg-succes-bg text-succes-tekst",
   overbud: "bg-fejl-bg text-fejl-tekst",
   aktiv: "bg-kant text-tekst-daempet",
+  pause: "bg-advarsel-bg text-advarsel-tekst",
 };
 
 const BUD_LABEL: Record<BudStatus, string> = {
   vinder: "Vinder",
   overbud: "Overbud",
   aktiv: "Aktiv",
+  pause: "På pause",
 };
 
 type Fane = "auktioner" | "bud" | "bedommelser" | "indstillinger";
 
-function auktionStatusBadge(slutterKl: string, harBud: boolean, status?: string) {
+function auktionStatusBadge(slutterKl: string, harBud: boolean, status?: string, pauset?: boolean) {
   if (status === "annulleret") return { label: "Annulleret", cls: "bg-kant text-tekst-daempet" };
+  if (pauset) return { label: "På pause", cls: "bg-advarsel-bg text-advarsel-tekst" };
   const erSlut = new Date(slutterKl) <= new Date();
   if (!erSlut) return { label: "Aktiv", cls: "bg-succes-bg text-succes-tekst" };
   if (harBud) return { label: "Venter på betaling", cls: "bg-advarsel-bg text-advarsel-tekst" };
@@ -131,7 +136,7 @@ export default function ProfileTabs({
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
               {egneAuktioner.map((auktion) => {
-                const badge = auktionStatusBadge(auktion.slutterKl, auktion.antalBud > 0, auktion.status);
+                const badge = auktionStatusBadge(auktion.slutterKl, auktion.antalBud > 0, auktion.status, auktion.pauset);
                 return (
                   <div key={auktion.id} className="relative">
                     <span

@@ -18,6 +18,7 @@ import { standNavn } from "@/lib/stand";
 import { getStaffRole } from "@/lib/adminAuth";
 import type { SpoergsmaalVisning } from "@/lib/spoergsmaal";
 import { auktionMetadata } from "@/lib/auktionSeo";
+import { erPaaPause } from "@/lib/auctionTid";
 
 // Titel, beskrivelse (pris + slut), første billede som delebillede og
 // canonical. JSON-LD ligger i layout.tsx.
@@ -67,6 +68,9 @@ export default async function AuktionPage({
     notFound();
   }
   const skjult = Boolean(auktion.skjult);
+  // Skjult og på pause (Filip, 6. okt. 2026): den slutter ikke, før den er
+  // vist igen - slutter_kl gælder ikke imens.
+  const pauset = erPaaPause(auktion);
 
   const bud = budRaw ?? [];
 
@@ -159,7 +163,7 @@ export default async function AuktionPage({
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
   const varenummer = auktion.id.slice(-6).toUpperCase();
-  const auktionErSlut = new Date(auktion.slutter_kl) <= new Date();
+  const auktionErSlut = !pauset && new Date(auktion.slutter_kl) <= new Date();
   // Vinderen er det højeste bud (ikke det seneste) – samme logik som
   // betal-siden og checkout-API'et.
   const vinderBud =
@@ -254,6 +258,8 @@ export default async function AuktionPage({
               : staffRolle
                 ? "Kun sælgeren, dem, der har budt, og BidHamrs medarbejdere kan se auktionen."
                 : "Andre kan ikke se auktionen, og der kan ikke bydes på den. Du kan se den, fordi du har budt på den."}
+            {pauset &&
+              " Auktionen er sat på pause og slutter ikke, mens BidHamr kigger på den. Eksisterende bud gælder stadig. Åbner den igen, får den den resterende tid – dog mindst 24 timer."}
           </p>
           {erSælger && afgoerelseId && (
             <p className="mt-2 text-sm">
@@ -389,6 +395,8 @@ export default async function AuktionPage({
               status={auktion.status}
               vinderVisning={vinderVisning}
               skjult={skjult}
+              pauset={pauset}
+              pauseResterende={(auktion.pause_resterende as string | null | undefined) ?? null}
             />
 
             {/* Kvittering for bedømmelsen – den afgives ved godkendelse af varen */}

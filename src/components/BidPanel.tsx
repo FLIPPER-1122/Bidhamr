@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import Ikon from "@/components/Ikon";
 import { createClient } from "@/lib/supabase/client";
 import { afgivBud } from "@/app/actions/bud";
-import { formatNedtælling } from "@/lib/auctionTid";
+import { formatNedtælling, pauseTekst } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
 import {
   KOEBERGEBYR_PROCENT,
@@ -44,6 +44,8 @@ export default function BidPanel({
   status,
   vinderVisning,
   skjult = false,
+  pauset = false,
+  pauseResterende = null,
 }: {
   auktionId: string;
   initialNuværendeBud: number;
@@ -63,6 +65,11 @@ export default function BidPanel({
   vinderVisning: string | null;
   // Skjult af BidHamr: ingen budknap.
   skjult?: boolean;
+  // Skjult og på pause (auctions.pauset_kl): ingen nedtælling - den
+  // resterende tid vises i stedet, og auktionen slutter ikke.
+  pauset?: boolean;
+  // auctions.pause_resterende (Postgres-interval som tekst).
+  pauseResterende?: string | null;
 }) {
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
   const [harBud, setHarBud] = useState(initialHarBud);
@@ -113,6 +120,9 @@ export default function BidPanel({
   const senderRef = useRef(false);
 
   useEffect(() => {
+    // På pause: sluttiden gælder ikke, så ingen nedtælling og ingen
+    // genindlæsning, når den oprindelige sluttid passeres.
+    if (pauset) return;
     const opdater = () => {
       setNedtælling(formatNedtælling(slutterKl));
       const tilbage = new Date(slutterKl).getTime() - Date.now();
@@ -136,7 +146,7 @@ export default function BidPanel({
       clearTimeout(foerste);
       clearInterval(id);
     };
-  }, [slutterKl, router]);
+  }, [slutterKl, router, pauset]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -367,6 +377,12 @@ export default function BidPanel({
   return (
     <div ref={panelRef} className="scroll-mt-4 rounded-[14px] border border-kant bg-white p-4 sm:p-5">
       {/* Afslutning + countdown */}
+      {pauset ? (
+        <p className="inline-flex items-center gap-1.5 rounded-full bg-advarsel-bg px-3 py-1 text-[13px] font-semibold text-advarsel-tekst tabular-nums">
+          <Ikon navn="ur" className="h-4 w-4" strøg={2} />
+          {pauseTekst(pauseResterende)}
+        </p>
+      ) : (
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <p className="text-sm text-tekst-daempet">
           Afsluttes{" "}
@@ -385,6 +401,7 @@ export default function BidPanel({
           {nedtælling ?? "–"}
         </p>
       </div>
+      )}
 
       <div className="my-4 border-t border-kant" />
 
@@ -411,6 +428,13 @@ export default function BidPanel({
             </>
           ) : auktionStatus === "annulleret" ? (
             <p className="text-base font-semibold text-tekst-daempet">Auktionen er annulleret</p>
+          ) : auktionStatus === "skjult" && pauset ? (
+            <>
+              <p className="text-base font-semibold text-tekst-daempet">Auktionen er sat på pause</p>
+              <p className="mt-1 text-sm text-tekst-daempet">
+                BidHamr kigger på den. Der kan ikke bydes imens, og den slutter ikke. Eksisterende bud gælder stadig.
+              </p>
+            </>
           ) : auktionStatus === "skjult" ? (
             <p className="text-base font-semibold text-tekst-daempet">Der kan ikke bydes, mens auktionen er skjult</p>
           ) : (

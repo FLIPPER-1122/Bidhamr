@@ -22,6 +22,7 @@ import {
 } from "@/lib/notifikationer/bud";
 import { betalingsfristForlaengetMail } from "@/lib/mails/handel";
 import { koerDsaNotifikationer } from "@/lib/dsa/notifikationer";
+import { notificerAuktionPauser } from "@/lib/notifikationer/auktionPause";
 import { notificerAfhentningsfristForlaengelser } from "@/lib/betaling/afhentningsfrist";
 import { soegningHref } from "@/lib/gemteSoegninger";
 import {
@@ -832,6 +833,7 @@ export async function koerNotifikationsCron() {
     beskeder: 0,
     fristForlaengelser: 0,
     afhentningsfristForlaengelser: 0,
+    auktionPauser: 0,
   };
   let start: Date | null = null;
   try {
@@ -863,6 +865,8 @@ export async function koerNotifikationsCron() {
   trin.push(["gemteSoegninger", () => gemteSoegninger(admin)]);
   // DSA: kvitteringer, begrundelser og svar, der ikke blev sendt med det samme.
   trin.push(["dsa", () => koerDsaNotifikationer()]);
+  // Skjult auktion sat på pause / åben igen (tabellen er ny, 6. okt. 2026).
+  trin.push(["auktionPauser", () => notificerAuktionPauser()]);
   if (start) {
     const s = start;
     trin.push(
