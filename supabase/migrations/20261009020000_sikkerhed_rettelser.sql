@@ -5,8 +5,8 @@
 -- (tilbageholdt).
 --
 -- Idempotent: kan koeres flere gange (create or replace / drop ... if exists /
--- "if not exists"-tjek). Koeres den igen efter 20261007032000_mfa_database_
--- haandhaevelse, genskabes storage-policyerne med baade loft og to-trins-tjek.
+-- "if not exists"-tjek). Uafhaengig af raekkefoelgen i forhold til
+-- 20261007032000_mfa_database_haandhaevelse (se afsnit 3).
 --
 --  1. hent_medarbejdere(): indfanget fra produktion og laast til staff.
 --  2. auctions-RLS (M1): skjulte auktioner er ikke laengere synlige for alle.
@@ -147,37 +147,57 @@ $function$;
 revoke all on function public.auktion_billede_maa_slettes(text) from public, anon;
 grant execute on function public.auktion_billede_maa_slettes(text) to authenticated, service_role;
 
--- Policyerne genskabes. Findes storage_to_trin_ok() (20261007032000 er
--- koert), tages to-trins-tjekket med, saa det ikke tabes.
-do $$
-declare
-  v_mfa text := case
-    when to_regprocedure('public.storage_to_trin_ok()') is not null
-      then ' and public.storage_to_trin_ok()'
-    else ''
-  end;
+-- Faelles to-trins-tjek for storage: policyerne herunder kalder ALTID
+-- public.storage_to_trin_ok(). Findes den ikke (20261007032000_mfa_database_
+-- haandhaevelse er ikke koert), oprettes den her som "altid true", og 032000
+-- erstatter den senere med det rigtige tjek uden at roere policyerne. Findes
+-- den allerede (032000 koert), beholdes den. Raekkefoelgen er ligegyldig.
+do $do$
 begin
-  drop policy if exists auktion_billeder_insert_own on storage.objects;
-  execute
-    'create policy auktion_billeder_insert_own on storage.objects for insert to authenticated '
-    || 'with check (bucket_id = ''auktion-billeder'' '
-    || 'and (select auth.uid())::text = (storage.foldername(name))[1] '
-    || 'and public.storage_mappe_under_loft(''auktion-billeder'', 200)' || v_mfa || ')';
+  if to_regprocedure('public.storage_to_trin_ok()') is null then
+    execute $fn$
+      create function public.storage_to_trin_ok()
+      returns boolean
+      language sql
+      stable
+      security definer
+      set search_path = ''
+      as $body$ select true $body$
+    $fn$;
+    revoke all on function public.storage_to_trin_ok() from public;
+    grant execute on function public.storage_to_trin_ok() to anon, authenticated, service_role;
+  end if;
+end $do$;
 
-  drop policy if exists auktion_billeder_delete_own on storage.objects;
-  execute
-    'create policy auktion_billeder_delete_own on storage.objects for delete to authenticated '
-    || 'using (bucket_id = ''auktion-billeder'' '
-    || 'and (select auth.uid())::text = (storage.foldername(name))[1] '
-    || 'and public.auktion_billede_maa_slettes(name)' || v_mfa || ')';
+drop policy if exists auktion_billeder_insert_own on storage.objects;
+create policy auktion_billeder_insert_own on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'auktion-billeder'
+    and (select auth.uid())::text = (storage.foldername(name))[1]
+    and public.storage_mappe_under_loft('auktion-billeder', 200)
+    and public.storage_to_trin_ok()
+  );
 
-  drop policy if exists avatarer_insert_own on storage.objects;
-  execute
-    'create policy avatarer_insert_own on storage.objects for insert to authenticated '
-    || 'with check (bucket_id = ''avatarer'' '
-    || 'and (select auth.uid())::text = (storage.foldername(name))[1] '
-    || 'and public.storage_mappe_under_loft(''avatarer'', 10)' || v_mfa || ')';
-end $$;
+drop policy if exists auktion_billeder_delete_own on storage.objects;
+create policy auktion_billeder_delete_own on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'auktion-billeder'
+    and (select auth.uid())::text = (storage.foldername(name))[1]
+    and public.auktion_billede_maa_slettes(name)
+    and public.storage_to_trin_ok()
+  );
+
+drop policy if exists avatarer_insert_own on storage.objects;
+create policy avatarer_insert_own on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'avatarer'
+    and (select auth.uid())::text = (storage.foldername(name))[1]
+    and public.storage_mappe_under_loft('avatarer', 10)
+    and public.storage_to_trin_ok()
+  );
 
 -- =====================================================================
 -- 4. Laengdegraenser (M6) og venteliste

@@ -131,18 +131,32 @@ $fn$;
 revoke all on function public.storage_to_trin_ok() from public;
 grant execute on function public.storage_to_trin_ok() to anon, authenticated, service_role;
 
-alter policy auktion_billeder_insert_own on storage.objects
-  with check (bucket_id = 'auktion-billeder'
-              and (auth.uid())::text = (storage.foldername(name))[1]
-              and public.storage_to_trin_ok());
-alter policy auktion_billeder_delete_own on storage.objects
-  using (bucket_id = 'auktion-billeder'
-         and (auth.uid())::text = (storage.foldername(name))[1]
-         and public.storage_to_trin_ok());
-alter policy avatarer_insert_own on storage.objects
-  with check (bucket_id = 'avatarer'
-              and (auth.uid())::text = (storage.foldername(name))[1]
-              and public.storage_to_trin_ok());
+-- auktion_billeder_insert_own, auktion_billeder_delete_own og
+-- avatarer_insert_own: er 20261009020000_sikkerhed_rettelser koert (den
+-- opretter storage_mappe_under_loft), kalder dens policies ALLEREDE
+-- storage_to_trin_ok() - sammen med loft paa antal filer og
+-- auktion_billede_maa_slettes. Saa er det nok, at funktionen ovenfor nu er det
+-- rigtige tjek (A opretter den som "altid true", hvis den mangler), og
+-- policyerne roeres ikke. Ellers (aeldre database) tilfoejes tjekket til de
+-- oprindelige policies. Rækkefølgen af de to migrationer er dermed ligegyldig.
+do $do$
+begin
+  if to_regprocedure('public.storage_mappe_under_loft(text, integer)') is not null then
+    return;
+  end if;
+  alter policy auktion_billeder_insert_own on storage.objects
+    with check (bucket_id = 'auktion-billeder'
+                and (auth.uid())::text = (storage.foldername(name))[1]
+                and public.storage_to_trin_ok());
+  alter policy auktion_billeder_delete_own on storage.objects
+    using (bucket_id = 'auktion-billeder'
+           and (auth.uid())::text = (storage.foldername(name))[1]
+           and public.storage_to_trin_ok());
+  alter policy avatarer_insert_own on storage.objects
+    with check (bucket_id = 'avatarer'
+                and (auth.uid())::text = (storage.foldername(name))[1]
+                and public.storage_to_trin_ok());
+end $do$;
 alter policy avatarer_delete_own on storage.objects
   using (bucket_id = 'avatarer'
          and (auth.uid())::text = (storage.foldername(name))[1]
