@@ -1,3 +1,5 @@
+set lock_timeout = '5s';
+
 -- Visningspris: den pris, kortet viser (nuværende bud, ellers startpris).
 -- Sorteringen "Laveste bud"/"Højeste bud" på /auktioner bruger den, så en
 -- auktion uden bud sorteres efter sin startpris i stedet for at havne sidst.
