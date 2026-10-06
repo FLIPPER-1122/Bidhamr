@@ -77,8 +77,8 @@ async function afkodHeic(fil: File): Promise<Kilde | null> {
   }
 }
 
-function tilJpeg(kilde: Kilde): Promise<Blob> {
-  const skala = Math.min(1, MAKS_SIDE / Math.max(kilde.bredde, kilde.hoejde));
+function tilJpeg(kilde: Kilde, maksSide: number): Promise<Blob> {
+  const skala = Math.min(1, maksSide / Math.max(kilde.bredde, kilde.hoejde));
   const b = Math.max(1, Math.round(kilde.bredde * skala));
   const h = Math.max(1, Math.round(kilde.hoejde * skala));
   const canvas = document.createElement("canvas");
@@ -102,7 +102,8 @@ function tilJpeg(kilde: Kilde): Promise<Blob> {
 }
 
 // Returnerer en komprimeret JPEG-fil. Kaster BilledFejl med en dansk besked.
-export async function klargoerBillede(fil: File): Promise<File> {
+// maksSide: længste side i px (profilbilleder bruger en mindre værdi).
+export async function klargoerBillede(fil: File, maksSide: number = MAKS_SIDE): Promise<File> {
   if (!erBillede(fil)) {
     throw new BilledFejl(`"${fil.name}" er ikke et billede.`);
   }
@@ -121,7 +122,7 @@ export async function klargoerBillede(fil: File): Promise<File> {
   }
 
   try {
-    const blob = await tilJpeg(kilde);
+    const blob = await tilJpeg(kilde, maksSide);
     return new File([blob], "billede.jpg", { type: "image/jpeg", lastModified: Date.now() });
   } finally {
     kilde.luk();

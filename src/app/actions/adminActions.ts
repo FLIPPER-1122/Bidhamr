@@ -288,6 +288,20 @@ async function setRolleImpl(formData: FormData): Promise<void> {
     .eq("id", userId);
   if (error) throw new Error(error.message);
 
+  // Rolleskift logges (handling 'rolle_aendret', migration
+  // 20261009020000_sikkerhed_rettelser). Rollen er allerede skiftet, så en
+  // fejlet logning stopper ikke handlingen, men logges på serveren.
+  if (target.rolle !== nyRolle) {
+    await logModerationBloedt(admin, {
+      medarbejder_id: staffId,
+      handling: "rolle_aendret",
+      maal_type: "bruger",
+      maal_id: userId,
+      bruger_id: userId,
+      aarsag: `Rolle ændret fra ${target.rolle ?? "bruger"} til ${nyRolle}`,
+    });
+  }
+
   revalidatePath("/admin/medarbejdere");
   revalidatePath("/admin/brugere");
 }

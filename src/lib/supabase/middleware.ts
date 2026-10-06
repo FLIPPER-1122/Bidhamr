@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { erTestdatabase } from "@/lib/miljoe";
 import { manglerToTrin, TO_TRIN_STI } from "@/lib/mfa";
+import { tilmeldingAaben } from "@/lib/tilmelding";
 
 // Routes der er tilgængelige uden login, mens resten af appen er bag
 // venteliste-gaten. Kun API-ruter med egen adgangskontrol undtages:
@@ -55,6 +56,40 @@ function erOffentligRute(pathname: string) {
   );
 }
 
+// Server actions kan kaldes med POST til en HVILKEN SOM HELST sti - også de
+// offentlige (/login, /coming-soon, /cookies ...), som gaten herunder springer
+// over. Uden dette tjek kunne en indlogget almindelig bruger kalde fx afgivBud
+// eller opretAuktion via POST /login, mens siden er lukket for alle andre end
+// medarbejdere.
+//
+// Action-id'er er hashes, der skifter ved hvert build, så de kan ikke
+// hvidlistes pålideligt. Derfor tjekkes brugeren i stedet. Mens tilmeldingen
+// er lukket (TILMELDING_AABEN ikke 'true', src/lib/tilmelding.ts), tillades en
+// server action (POST med Next-Action-header) på en offentlig sti kun når:
+//   - brugeren ikke er logget ind (login, signup, glemt adgangskode, waitlist),
+//   - sessionen mangler to-trins-koden (aal1) - nødvendigt for at kunne
+//     indtaste koden på /login/to-trin; alle andre actions behandler en aal1-
+//     session som "ikke logget ind" (getUserMedToTrin), eller
+//   - brugeren har en staff-rolle (som slipper gennem gaten alligevel).
+// Kendt begrænsning: en indlogget almindelig bruger kan ikke gemme ny
+// adgangskode via /reset-password, mens siden er lukket (han kan heller ikke
+// bruge siden). På testdatabasen er tilmeldingen altid åben, så tjekket er
+// slået fra dér - ligesom rolle-gaten.
+async function afvisServerActionPaaOffentligSti(
+  request: NextRequest,
+  supabase: ReturnType<typeof createServerClient>,
+): Promise<boolean> {
+  if (request.method !== "POST" || !request.headers.has("next-action")) return false;
+  if (tilmeldingAaben()) return false;
+
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return false;
+  if (await manglerToTrin(supabase, data.user)) return false;
+
+  const { data: rolle } = await supabase.rpc("min_rolle");
+  return typeof rolle !== "string" || !ROLLER_MED_ADGANG.includes(rolle);
+}
+
 // ekstraHeadere (fx CSP-nonce fra src/proxy.ts) sendes med til renderingen.
 // Headerne bygges fra request.headers hver gang, saa opdaterede cookies kommer med.
 export async function updateSession(
@@ -93,6 +128,9 @@ export async function updateSession(
 
   // Offentlige ruter skal aldrig redirecte, uanset login-status.
   if (erOffentligRute(pathname)) {
+    if (await afvisServerActionPaaOffentligSti(request, supabase)) {
+      return new NextResponse("Ingen adgang", { status: 403 });
+    }
     return supabaseResponse;
   }
 
