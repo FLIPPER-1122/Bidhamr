@@ -9,7 +9,15 @@ import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
 import type { AdminAuktionRow } from "@/lib/adminRowTypes";
-import { erPaaPause, formatVarighed, intervalTilMs } from "@/lib/auctionTid";
+import { nuMs } from "@/lib/dsa/regler";
+import {
+  autoAnnulleringTekst,
+  erPaaPause,
+  formatVarighed,
+  intervalTilMs,
+  pauseDage,
+  PAUSE_PAAMIND_DAGE,
+} from "@/lib/auctionTid";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
 const statusOptions = [
@@ -75,6 +83,19 @@ export default async function AdminAuktioner({
 
   const { data: auctions } = await query.overrideTypes<AdminAuktionRow[], { merge: false }>();
 
+  // Auktioner på pause i over 3 dage (uanset filter): staff skal tage stilling,
+  // før de annulleres automatisk efter 14 dage (Filip, 6. okt. 2026).
+  const nu = nuMs();
+  const { data: laengePause } = await supabase
+    .from("auctions")
+    .select("id, titel, pauset_kl")
+    .eq("status", "aktiv")
+    .not("pauset_kl", "is", null)
+    .lte("pauset_kl", new Date(nu - PAUSE_PAAMIND_DAGE * 86400000).toISOString())
+    .order("pauset_kl", { ascending: true })
+    .limit(50)
+    .overrideTypes<{ id: string; titel: string | null; pauset_kl: string }[], { merge: false }>();
+
   // Sælgerinfo til de viste auktioner
   const brugerIds = [...new Set((auctions ?? []).map((a) => a.bruger_id))];
   const { data: sælgere } = brugerIds.length
@@ -108,6 +129,30 @@ export default async function AdminAuktioner({
         forklaring="Alle auktioner på BidHamr. Brug siden, når du skal finde, skjule eller vise en bestemt auktion."
         hoejre={<span className="text-sm text-neutral-500">{auctions?.length ?? 0} resultater</span>}
       />
+
+      {(laengePause?.length ?? 0) > 0 && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <p className="font-semibold">
+            {laengePause!.length === 1
+              ? "1 auktion har været på pause i over 3 dage"
+              : `${laengePause!.length} auktioner har været på pause i over 3 dage`}
+          </p>
+          <p className="mt-1">
+            Vis dem igen, eller fjern dem. Ellers annulleres de automatisk efter 14 dage, og byderne får besked om, at
+            buddet ikke gælder.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {laengePause!.map((a) => (
+              <li key={a.id}>
+                <Link href={`/admin/auktioner?q=${a.id}`} className="font-medium underline">
+                  {a.titel || "Uden titel"}
+                </Link>{" "}
+                – på pause i {pauseDage(a.pauset_kl, nu)} dage, {autoAnnulleringTekst(a.pauset_kl, nu)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <Suspense>
         <AdminSearchInput placeholder="Søg på auktions-ID, titel, sælgers navn eller e-mail..." />
@@ -202,6 +247,11 @@ export default async function AdminAuktioner({
                         )}
                         {erPaaPause(a) && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">På pause</span>
+                        )}
+                        {erPaaPause(a) && a.pauset_kl && pauseDage(a.pauset_kl, nu) >= PAUSE_PAAMIND_DAGE && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                            Pause i {pauseDage(a.pauset_kl, nu)} dage – {autoAnnulleringTekst(a.pauset_kl, nu)}
+                          </span>
                         )}
                       </span>
                     </td>

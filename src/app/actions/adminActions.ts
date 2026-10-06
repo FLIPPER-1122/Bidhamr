@@ -22,6 +22,8 @@ import {
 import { REFUSION_I_GANG, REFUSION_KONFLIKT } from "@/lib/betaling/refusionTekster";
 import { indgrebFejl, udfoerIndgreb } from "@/lib/dsa/server";
 import { notificerAuktionPauser } from "@/lib/notifikationer/auktionPause";
+import { send } from "@/lib/notifikationer/send";
+import { afgoerelseSti } from "@/lib/dsa/link";
 import { erRegel, regelNavn } from "@/lib/dsa/regler";
 
 // --- Fejlhaandtering ---------------------------------------------------------
@@ -562,36 +564,46 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
   if (opslagetBlevAendret) {
     const { data: auktion } = await admin
       .from("auctions")
-      .select("bruger_id, slutter_kl, pauset_kl")
+      .select("bruger_id, status, titel")
       .eq("id", rapport.auction_id)
-      .single<{ bruger_id: string; slutter_kl: string; pauset_kl: string | null }>();
+      .single<{ bruger_id: string; status: string; titel: string | null }>();
 
     if (auktion) {
-      const opdatering: { skjult: boolean; status?: string; arkiveret_kl?: null } = {
-        skjult: false,
-      };
-
-      // 'fjernet' satte status til 'annulleret' - den skal tilbage. En auktion
-      // hvis sluttid er passeret genoplives som afsluttet, ikke som aktiv -
-      // medmindre den var på pause (så genoptages den med den resterende tid).
-      if (rapport.status === "fjernet") {
-        opdatering.status =
-          auktion.pauset_kl || new Date(auktion.slutter_kl) > new Date() ? "aktiv" : "afsluttet";
-      }
-
-      // En aktiv auktion må aldrig være arkiveret. Triggeren
-      // auctions_arkiv_felter nulstiller også arkiveret_kl, når status bliver
-      // 'aktiv'; her gøres det eksplicit. En afsluttet auktion forbliver
-      // arkiveret - afsluttet_kl ændres ikke, så næste oprydning ville
-      // arkivere den igen med det samme.
-      if (opdatering.status === "aktiv") opdatering.arkiveret_kl = null;
-
+      // Opslaget gøres synligt igen. Var auktionen skjult og på pause,
+      // genoptager triggeren auctions_pause_skjult den (resterende tid, mindst
+      // 24 timer). En fjernet (annulleret) auktion genåbnes ALDRIG (Filip,
+      // 6. okt. 2026): status forbliver 'annulleret', buddene gælder ikke, og
+      // sælgeren får besked og kan sætte varen op igen med ét klik. Triggeren
+      // auctions_dsa_ophaevet markerer fjernelsen som ophævet.
       const { error: opdateringFejl } = await admin
         .from("auctions")
-        .update(opdatering)
+        .update({ skjult: false })
         .eq("id", rapport.auction_id);
       if (opdateringFejl) throw new Error(opdateringFejl.message);
       after(() => notificerAuktionPauser(rapport.auction_id));
+
+      if (rapport.status === "fjernet" && auktion.status === "annulleret") {
+        const saelger = auktion.bruger_id;
+        const titel = auktion.titel ? `"${auktion.titel}"` : "din auktion";
+        after(async () => {
+          const { data: afg } = await admin
+            .from("dsa_afgoerelser")
+            .select("id")
+            .eq("indhold_type", "auktion")
+            .eq("indhold_id", rapport.auction_id)
+            .in("handling", ["auktion_fjernet", "auktion_annulleret"])
+            .order("oprettet_kl", { ascending: false })
+            .limit(1)
+            .maybeSingle<{ id: string }>();
+          await send(saelger, "afgoerelse", {
+            titel: "BidHamr har trukket fjernelsen af din auktion tilbage",
+            tekst: `Vi beklager, at vi fjernede ${titel}. Auktionen kan ikke åbnes igen, fordi buddene ikke gælder længere – men du kan sætte varen op igen med ét klik.`,
+            link: afg ? afgoerelseSti(afg.id, false) : `/auktion/${rapport.auction_id}`,
+            data: { auction_id: rapport.auction_id },
+            noegle: `rapport_genaabnet:${rapportId}:${afg?.id ?? rapport.auction_id}`,
+          });
+        });
+      }
 
       await logModeration(admin, {
         medarbejder_id: staffId,

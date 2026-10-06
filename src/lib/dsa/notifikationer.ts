@@ -260,16 +260,17 @@ export async function notificerKlageSvar(id: string): Promise<void> {
         svar: string;
       }>();
     if (!k) return;
-    // Medhold, men auktionen var udløbet og kunne ikke åbnes igen
-    // (dsa_klage_afgoer markerer så ikke afgørelsen ophævet).
+    // Medhold i en klage over en fjernet/stoppet auktion: afgørelsen er
+    // ophævet, men auktionen genåbnes aldrig (Filip, 6. okt. 2026) - sælgeren
+    // kan sætte varen op igen med ét klik.
     let ikkeGenaabnet = false;
     if (k.udfald === "medhold" && k.afgoerelse_id) {
       const { data: af } = await admin
         .from("dsa_afgoerelser")
-        .select("handling, ophaevet_kl")
+        .select("handling")
         .eq("id", k.afgoerelse_id)
-        .maybeSingle<{ handling: string; ophaevet_kl: string | null }>();
-      ikkeGenaabnet = !!af && af.ophaevet_kl === null && ["auktion_fjernet", "auktion_annulleret"].includes(af.handling);
+        .maybeSingle<{ handling: string }>();
+      ikkeGenaabnet = !!af && ["auktion_fjernet", "auktion_annulleret"].includes(af.handling);
     }
     const sti = k.afgoerelse_id ? afgoerelseSti(k.afgoerelse_id) : anmeldelseSti(k.anmeldelse_id!);
     const mail = klageSvarMail({ sagsnummer: k.sagsnummer, udfald: k.udfald, svar: k.svar, sti, ikkeGenaabnet });

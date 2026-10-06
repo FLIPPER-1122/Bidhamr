@@ -87,3 +87,23 @@ export function pauseTekst(resterende: string | null | undefined): string {
   const ms = intervalTilMs(resterende);
   return ms > 0 ? `På pause – resterende tid ${formatVarighed(ms)}` : "På pause";
 }
+
+// Maks pause (Filip, 6. okt. 2026): staff får en påmindelse efter 3 dage, og
+// efter 14 dage annulleres auktionen automatisk (pg_cron 'pause-udloeb',
+// 20261009040000_skjult_auktion_pause.sql). HOLD SYNKRON med SQL'en.
+export const PAUSE_PAAMIND_DAGE = 3;
+export const PAUSE_MAKS_DAGE = 14;
+const DAG_MS = 86400000;
+
+// Hele dage på pause indtil nu.
+export function pauseDage(pausetKl: string, nu: number = Date.now()): number {
+  return Math.max(0, Math.floor((nu - new Date(pausetKl).getTime()) / DAG_MS));
+}
+
+// "annulleres automatisk om 3 dage" / "i dag" (oprundet til hele dage).
+export function autoAnnulleringTekst(pausetKl: string, nu: number = Date.now()): string {
+  const ms = new Date(pausetKl).getTime() + PAUSE_MAKS_DAGE * DAG_MS - nu;
+  if (ms <= 60 * 60 * 1000) return "annulleres automatisk inden for en time";
+  const dage = Math.ceil(ms / DAG_MS);
+  return dage <= 1 ? "annulleres automatisk inden for et døgn" : `annulleres automatisk om ${dage} dage`;
+}

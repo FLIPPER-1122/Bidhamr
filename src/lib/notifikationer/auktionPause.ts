@@ -9,6 +9,11 @@ import "server-only";
 // - Pause: byderne får "Auktionen er sat på pause ...". Sælgeren får den
 //   eksisterende begrundelse (DSA) og ikke en ekstra besked.
 // - Genoptaget: sælger og bydere får "Auktionen er åben igen og slutter ...".
+// - Annulleret automatisk efter 14 dages pause (pg_cron pause_udloeb_koer):
+//   byderne får "dit bud gælder ikke længere", og sælgeren får DSA-
+//   begrundelsen (med "Sæt varen op igen"). En pause, der lukkes, fordi en
+//   medarbejder fjerner/stopper auktionen, giver ingen besked herfra - det
+//   gør DSA-indgrebet (src/lib/dsa/server.ts).
 //
 // Kaldes lige efter staff-handlingen (after()) og fra notifikations-cron'en
 // som sikkerhedsnet. Nøglerne (auktion_pauset:/auktion_genoptaget:<pause-id>:
@@ -17,6 +22,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
 import { fristDato } from "@/lib/betalingsfrist";
 import { logDriftFejl } from "@/lib/drift";
+import { notificerAfgoerelse } from "@/lib/dsa/notifikationer";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -25,6 +31,9 @@ const VINDUE_MS = 48 * 60 * 60 * 1000;
 
 export const PAUSE_TEKST =
   "Auktionen er sat på pause, mens BidHamr kigger på den. Dit bud gælder stadig.";
+
+export const AUTO_ANNULLERET_TEKST =
+  "Auktionen blev ikke åbnet igen, og dit bud gælder ikke længere. Du skal ikke betale noget.";
 
 export function genoptagetTekst(slutterKl: string): string {
   return `Auktionen er åben igen og slutter ${fristDato(slutterKl)}.`;
@@ -37,6 +46,9 @@ type PauseRaekke = {
   genoptaget_kl: string | null;
   ny_slutter_kl: string | null;
   fra_oprydning: boolean;
+  annulleret_kl: string | null;
+  automatisk: boolean;
+  afgoerelse_id: string | null;
 };
 
 async function bydere(admin: Admin, auktionId: string, saelgerId: string): Promise<string[]> {
@@ -47,15 +59,33 @@ async function bydere(admin: Admin, auktionId: string, saelgerId: string): Promi
 async function behandl(admin: Admin, p: PauseRaekke): Promise<number> {
   const { data: auktion } = await admin
     .from("auctions")
-    .select("titel, bruger_id, status, slutter_kl")
+    .select("titel, bruger_id, status, slutter_kl, pauset_kl")
     .eq("id", p.auction_id)
-    .maybeSingle<{ titel: string; bruger_id: string; status: string; slutter_kl: string }>();
+    .maybeSingle<{ titel: string; bruger_id: string; status: string; slutter_kl: string; pauset_kl: string | null }>();
   if (!auktion) return 0;
   const titel = auktion.titel ? `"${auktion.titel}"` : "En auktion";
   const link = `/auktion/${p.auction_id}`;
   const data = { auction_id: p.auction_id };
   const modtagere = await bydere(admin, p.auction_id, auktion.bruger_id);
   let sendt = 0;
+
+  if (p.annulleret_kl) {
+    // Fjernet/stoppet af en medarbejder: beskederne kommer fra DSA-indgrebet.
+    if (!p.automatisk) return 0;
+    // Sælgeren: begrundelsen (idempotent via dsa_afgoerelser.notificeret_kl).
+    if (p.afgoerelse_id) await notificerAfgoerelse(p.afgoerelse_id);
+    for (const bruger of modtagere) {
+      const r = await send(bruger, "overbudt", {
+        titel: `${titel} er annulleret`,
+        tekst: AUTO_ANNULLERET_TEKST,
+        link,
+        data,
+        noegle: `auktion_pause_annulleret:${p.id}:${bruger}`,
+      });
+      if (r.klokke || r.mail || r.push) sendt++;
+    }
+    return sendt;
+  }
 
   if (p.genoptaget_kl) {
     // Kun hvis den stadig kører (ikke fjernet igen i mellemtiden).
@@ -80,8 +110,10 @@ async function behandl(admin: Admin, p: PauseRaekke): Promise<number> {
   }
 
   // Pauset (og endnu ikke genoptaget). Ingen besked for pauser fra
-  // engangs-oprydningen - de bydere har allerede fået besked om skjul.
+  // engangs-oprydningen - de bydere har allerede fået besked om skjul. Kun
+  // hvis auktionen stadig er aktiv og på pause (ikke fjernet i mellemtiden).
   if (p.fra_oprydning) return 0;
+  if (auktion.status !== "aktiv" || !auktion.pauset_kl) return 0;
   for (const bruger of modtagere) {
     const r = await send(
       bruger,
@@ -100,16 +132,16 @@ async function behandl(admin: Admin, p: PauseRaekke): Promise<number> {
   return sendt;
 }
 
-// Sender de beskeder, der mangler for pauser og genoptagelser de seneste 48
-// timer - eller kun for én auktion. Returnerer antal sendte beskeder.
+// Sender de beskeder, der mangler for pauser, genoptagelser og automatiske
+// annulleringer de seneste 48 timer - eller kun for én auktion. Returnerer antal sendte beskeder.
 export async function notificerAuktionPauser(auktionId?: string): Promise<number> {
   try {
     const admin = createAdminClient();
     const fra = new Date(Date.now() - VINDUE_MS).toISOString();
     let q = admin
       .from("auktion_pauser")
-      .select("id, auction_id, pauset_kl, genoptaget_kl, ny_slutter_kl, fra_oprydning")
-      .or(`pauset_kl.gte.${fra},genoptaget_kl.gte.${fra}`)
+      .select("id, auction_id, pauset_kl, genoptaget_kl, ny_slutter_kl, fra_oprydning, annulleret_kl, automatisk, afgoerelse_id")
+      .or(`pauset_kl.gte.${fra},genoptaget_kl.gte.${fra},annulleret_kl.gte.${fra}`)
       .order("pauset_kl", { ascending: false })
       .limit(200);
     if (auktionId) q = q.eq("auction_id", auktionId);

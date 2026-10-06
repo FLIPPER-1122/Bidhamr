@@ -6,9 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   FOR_MANGE_FORSOEG,
   klientIp,
-  nulstilFejl,
-  registrerFejl,
-  tjekFejlGraenser,
+  nulstilGraense,
   tjekGraenser,
 } from "@/lib/rateLimit";
 import { sideUrl } from "@/lib/mails/handel";
@@ -74,21 +72,17 @@ export async function logInd(
     return { fejl: "Forkert e-mail eller adgangskode." };
   }
 
-  // Kun mislykkede logins tæller mod grænserne (pr. IP og pr. e-mail+IP).
-  // Et gennemført login nulstiller e-mail+IP-tælleren.
+  // Hvert forsøg tælles op, FØR adgangskoden tjekkes (rate_limit_tjek er
+  // atomisk), så loftet holder ved samtidige forsøg: 8 pr. e-mail+IP og 50
+  // pr. IP pr. 15 min. Et gennemført login nulstiller e-mail+IP-tælleren.
   const ip = await klientIp();
-  const graenser: Parameters<typeof tjekFejlGraenser>[0] = [
-    ["login_ip", ip],
-    ["login_email_ip", `${email}|${ip}`],
-  ];
-  if (!(await tjekFejlGraenser(graenser))) {
+  if (!(await tjekGraenser([["login_ip", ip], ["login_email_ip", `${email}|${ip}`]]))) {
     return { fejl: FOR_MANGE_FORSOEG };
   }
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error?.code === "invalid_credentials" || error?.code === "user_banned") await registrerFejl(graenser);
-  else if (!error) await nulstilFejl("login_email_ip", `${email}|${ip}`);
+  if (!error) await nulstilGraense("login_email_ip", `${email}|${ip}`);
   if (error) {
     if (error.code === "email_not_confirmed") {
       return {

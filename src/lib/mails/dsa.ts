@@ -163,7 +163,7 @@ export function klageSvarMail(input: {
   udfald: "medhold" | "fastholdt";
   svar: string;
   sti: string;
-  // Medhold, men auktionen er udløbet og kunne ikke åbnes igen.
+  // Medhold over en fjernet/stoppet auktion: den åbnes aldrig igen.
   ikkeGenaabnet?: boolean;
 }) {
   const medhold = input.udfald === "medhold";
@@ -173,14 +173,14 @@ export function klageSvarMail(input: {
     ...bygMail({
       preheader: medhold
         ? input.ikkeGenaabnet
-          ? "Du får medhold, men auktionen er udløbet – du kan sætte varen op igen."
+          ? "Du får medhold. Auktionen kan ikke åbnes igen, men du kan sætte varen op igen med ét klik."
           : "Vi har ændret vores afgørelse."
         : "Vi fastholder vores afgørelse.",
       overskriftHtml: escapeHtml(titel),
       afsnitHtml: [
         medhold
           ? input.ikkeGenaabnet
-            ? "En anden medarbejder har set på sagen igen og giver dig ret. Auktionen er dog udløbet imens, så vi kan ikke åbne den igen – du er velkommen til at sætte varen op på ny."
+            ? "En anden medarbejder har set på sagen igen og giver dig ret. Vi beklager, at vi stoppede din auktion. Den kan ikke åbnes igen, fordi buddene ikke gælder længere – men du kan sætte varen op igen med ét klik under \"Se sagen\"."
             : "En anden medarbejder har set på sagen igen og giver dig ret. Vi har ændret afgørelsen."
           : "En anden medarbejder har set på sagen igen og fastholder afgørelsen.",
         ...afsnit(input.svar),
