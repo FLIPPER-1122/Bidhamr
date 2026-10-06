@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@supabase/supabase-js";
 import { klientIp } from "@/lib/rateLimit";
 
 // Sundhedstjek til den eksterne uptime-tjeneste (docs/overvaagning.md):
@@ -12,6 +12,10 @@ import { klientIp } from "@/lib/rateLimit";
 // Billigt: højst ét databasekald pr. 10 sekunder pr. server-instans (resultatet
 // genbruges), og en simpel grænse pr. IP i hukommelsen - ingen databasekald
 // for at tælle.
+//
+// Bruger anon-nøglen (ikke service_role) og kalder helbred_ping(), som kun
+// returnerer true (migration 20261008010000_drift_alarmer.sql). Ruten kan
+// derfor ikke læse noget, selv hvis den blev misbrugt.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -48,12 +52,14 @@ async function databaseSvarer(): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const signal = AbortSignal.timeout(ms);
-    const forespoergsel = createAdminClient()
-      .from("drift_fejl")
-      .select("id")
-      .limit(1)
+    const forespoergsel = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    )
+      .rpc("helbred_ping")
       .abortSignal(signal)
-      .then(({ error }) => !error);
+      .then(({ data, error }) => !error && data === true);
     const frist = new Promise<boolean>((resolve) => {
       timer = setTimeout(() => resolve(false), ms + 50);
     });

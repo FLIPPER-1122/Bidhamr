@@ -16,6 +16,7 @@ if (!url || !key || !ud) {
 }
 
 const supabase = createClient(url, key, { auth: { persistSession: false } });
+const udFuld = path.resolve(ud);
 
 async function listAlle(bucket, prefix = "") {
   const filer = [];
@@ -63,8 +64,15 @@ for (const b of buckets) {
       console.error(`  FEJL ${b.name}/${f.sti}: ${dlFejl.message}`);
       continue;
     }
+    // Sti-traversal: et objektnavn som "../../x" må aldrig skrive uden for
+    // backup-mappen. Springes over og tælles som fejl.
+    const maal = path.resolve(ud, b.name, ...f.sti.split("/"));
+    if (!maal.startsWith(udFuld + path.sep)) {
+      fejl++;
+      console.error(`  FEJL ${b.name}/${f.sti}: ugyldig sti (uden for backup-mappen) - sprunget over`);
+      continue;
+    }
     const buf = Buffer.from(await data.arrayBuffer());
-    const maal = path.join(ud, b.name, ...f.sti.split("/"));
     await mkdir(path.dirname(maal), { recursive: true });
     await writeFile(maal, buf);
     bytes += buf.length;

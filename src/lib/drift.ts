@@ -111,13 +111,18 @@ export async function logDriftFejl(input: DriftFejlInput): Promise<string | null
         : null;
     const brugerId =
       typeof input.brugerId === "string" && UUID.test(input.brugerId) ? input.brugerId : null;
-    const { data, error } = await createAdminClient().rpc("drift_fejl_log", {
-      p_kilde: input.kilde,
-      p_sti: renSti(input.sti ?? null),
-      p_besked: besked,
-      p_digest: digest,
-      p_bruger_id: brugerId,
-    });
+    // Databasen giver op efter 2 s laaseventetid / 3 s (drift_fejl_log har
+    // lock_timeout og statement_timeout). Afbryd også selv efter 5 s, så
+    // logningen aldrig kan holde det kaldende svar hen.
+    const { data, error } = await createAdminClient()
+      .rpc("drift_fejl_log", {
+        p_kilde: input.kilde,
+        p_sti: renSti(input.sti ?? null),
+        p_besked: besked,
+        p_digest: digest,
+        p_bruger_id: brugerId,
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
     if (error) {
       console.error("Drift: fejl kunne ikke logges:", error.message);
       return null;

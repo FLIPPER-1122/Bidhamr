@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { koerDriftAlarm } from "@/lib/driftAlarm";
 import { logDriftFejl } from "@/lib/drift";
+import { harCronAdgang } from "@/lib/cronAdgang";
 
 // Drift-alarmer (src/lib/driftAlarm.ts). Kaldes hvert 5. minut af pg_cron-
 // jobbet 'drift-alarm' (migration 20261008010000_drift_alarmer.sql) med
@@ -9,15 +10,8 @@ import { logDriftFejl } from "@/lib/drift";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function harAdgang(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  // Fail closed: uden en konfigureret hemmelighed afvises alt.
-  if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
-}
-
 async function haandter(req: NextRequest) {
-  if (!harAdgang(req)) {
+  if (!harCronAdgang(req)) {
     return NextResponse.json({ fejl: "Ingen adgang" }, { status: 401 });
   }
   try {
