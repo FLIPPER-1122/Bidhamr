@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useId, useState, useTransition, type FormEvent } from "react";
-import { anmeldIndhold } from "@/app/actions/dsa";
+import { kaldOffentligHandling } from "@/lib/offentligHandling";
+import type { AnmeldResultat } from "@/lib/dsa/server";
 import {
   ANMELD_KATEGORIER,
   DSA_BEGRUNDELSE_MAKS,
@@ -58,7 +59,7 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
     }
     const fd = new FormData(form);
     startSend(async () => {
-      const r = await anmeldIndhold(fd);
+      const r = await kaldOffentligHandling<AnmeldResultat>("dsa-anmeld", fd);
       if ("fejl" in r) {
         setFejl(r.fejl);
         return;

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { gemNyAdgangskode } from "@/app/actions/auth";
+import type { gemNyAdgangskode } from "@/app/actions/auth";
+import { kaldOffentligHandling } from "@/lib/offentligHandling";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
 import { FELT, FORMULAR_FEJL, LABEL } from "@/components/konto/felter";
@@ -57,7 +58,12 @@ export default function NulstilAdgangskodePage() {
     }
 
     setLoading(true);
-    const svar = await gemNyAdgangskode(password, kraeverKode ? kode : undefined);
+    // Via /api/offentlig (ikke server action), saa det ogsaa virker for en
+    // almindelig bruger, mens siden er lukket (gaten i middleware.ts).
+    const fd = new FormData();
+    fd.set("password", password);
+    if (kraeverKode) fd.set("kode", kode);
+    const svar = await kaldOffentligHandling<Awaited<ReturnType<typeof gemNyAdgangskode>>>("ny-adgangskode", fd);
     setLoading(false);
 
     if ("fejl" in svar) {

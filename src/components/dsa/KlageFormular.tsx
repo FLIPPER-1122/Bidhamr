@@ -2,7 +2,7 @@
 
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { klagOverAfgoerelse, klagSomAnmelder } from "@/app/actions/dsa";
+import { kaldOffentligHandling } from "@/lib/offentligHandling";
 import { DSA_BEGRUNDELSE_MAKS, DSA_BEGRUNDELSE_MIN } from "@/lib/dsa/regler";
 
 // Klage over en afgørelse (DSA art. 20). Én klage pr. afgørelse.
@@ -31,7 +31,10 @@ export default function KlageFormular({
     }
     const fd = new FormData(e.currentTarget);
     startSend(async () => {
-      const r = type === "afgoerelse" ? await klagOverAfgoerelse(fd) : await klagSomAnmelder(fd);
+      const r = await kaldOffentligHandling<{ ok: true } | { fejl: string }>(
+        type === "afgoerelse" ? "dsa-klage-afgoerelse" : "dsa-klage-anmelder",
+        fd,
+      );
       if ("fejl" in r) {
         setFejl(r.fejl);
         return;
