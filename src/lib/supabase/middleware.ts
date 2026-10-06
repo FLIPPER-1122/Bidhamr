@@ -18,11 +18,19 @@ import { tilmeldingAaben } from "@/lib/tilmelding";
 // detaljer, grænse pr. IP i ruten selv.
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
 // "Disallow: /" og er tomme, indtil SEO_INDEKSERING=true (src/lib/seo.ts).
-// Delebilleder (opengraph-image.jpg) rammer slet ikke proxyen (matcher i src/proxy.ts).
+// Statiske filer (public/, delebilledet opengraph-image.jpg, ikoner) rammer
+// kun proxyen, hvis forespørgslen har en krop eller en Next-Action-header
+// (matcher i src/proxy.ts) - og så gælder gaten herunder.
 // /signup, /tjek-indbakke og /konto-slettet er offentlige, fordi man ikke er
 // logget ind dér. /cookies (cookiepolitikken) skal kunne læses af alle, også
 // før login, fordi cookie-banneret linker til den. /signup lukker selv, så længe tilmeldingen er lukket
 // (src/lib/tilmelding.ts). /login dækker også /login/to-trin.
+// /dsa (kontaktpunkt, anmeld ulovligt indhold, status og klage) og /api/dsa
+// (appens anmeldelse) skal kunne nås af alle, også før lancering og uden login
+// (DSA art. 12 og 16).
+// /api/offentlig er de få handlinger, der skal virke for en indlogget
+// almindelig bruger på en offentlig side, mens siden er lukket (ny adgangskode,
+// DSA-anmeldelse og -klage) - se src/app/api/offentlig/[handling]/route.ts.
 const OFFENTLIGE_RUTER = [
   "/coming-soon",
   "/bidhamr-beskyttelse",
@@ -44,6 +52,9 @@ const OFFENTLIGE_RUTER = [
   "/api/helbred",
   "/robots.txt",
   "/sitemap.xml",
+  "/dsa",
+  "/api/dsa",
+  "/api/offentlig",
 ];
 
 // Inden launch er appen lukket for almindelige brugere. Kun disse roller
@@ -60,26 +71,36 @@ function erOffentligRute(pathname: string) {
 // offentlige (/login, /coming-soon, /cookies ...), som gaten herunder springer
 // over. Uden dette tjek kunne en indlogget almindelig bruger kalde fx afgivBud
 // eller opretAuktion via POST /login, mens siden er lukket for alle andre end
-// medarbejdere.
+// medarbejdere. Det gælder også uden Next-Action-header: formularer uden
+// JavaScript sender action-id'et i en multipart-krop.
 //
 // Action-id'er er hashes, der skifter ved hvert build, så de kan ikke
 // hvidlistes pålideligt. Derfor tjekkes brugeren i stedet. Mens tilmeldingen
-// er lukket (TILMELDING_AABEN ikke 'true', src/lib/tilmelding.ts), tillades en
-// server action (POST med Next-Action-header) på en offentlig sti kun når:
-//   - brugeren ikke er logget ind (login, signup, glemt adgangskode, waitlist),
+// er lukket (TILMELDING_AABEN ikke 'true', src/lib/tilmelding.ts), afvises
+// ALLE forespørgsler, der ikke er GET/HEAD, på en offentlig sidesti, medmindre:
+//   - brugeren ikke er logget ind (login, signup, glemt adgangskode),
 //   - sessionen mangler to-trins-koden (aal1) - nødvendigt for at kunne
 //     indtaste koden på /login/to-trin; alle andre actions behandler en aal1-
 //     session som "ikke logget ind" (getUserMedToTrin), eller
 //   - brugeren har en staff-rolle (som slipper gennem gaten alligevel).
-// Kendt begrænsning: en indlogget almindelig bruger kan ikke gemme ny
-// adgangskode via /reset-password, mens siden er lukket (han kan heller ikke
-// bruge siden). På testdatabasen er tilmeldingen altid åben, så tjekket er
-// slået fra dér - ligesom rolle-gaten.
-async function afvisServerActionPaaOffentligSti(
+// Undtaget er /api/* og /auth/*: det er route handlers, som ikke kan køre
+// server actions, og som har deres egne tjek (cron, webhooks, helbred ...).
+// Auth-siderne (/login, /reset-password ...) undtages IKKE: et action-id kan
+// sendes til enhver sidesti, så én undtaget side ville åbne for alle actions.
+// Det, en indlogget almindelig bruger skal kunne dér (gemme ny adgangskode,
+// DSA-anmeldelse og -klage), går i stedet via /api/offentlig/<handling>.
+// På testdatabasen er tilmeldingen altid åben, så tjekket er slået fra dér -
+// ligesom rolle-gaten.
+function erRouteHandlerSti(pathname: string) {
+  return pathname.startsWith("/api/") || pathname.startsWith("/auth/");
+}
+
+async function afvisSkrivningPaaOffentligSti(
   request: NextRequest,
   supabase: ReturnType<typeof createServerClient>,
 ): Promise<boolean> {
-  if (request.method !== "POST" || !request.headers.has("next-action")) return false;
+  if (request.method === "GET" || request.method === "HEAD") return false;
+  if (erRouteHandlerSti(request.nextUrl.pathname)) return false;
   if (tilmeldingAaben()) return false;
 
   const { data } = await supabase.auth.getUser();
@@ -128,7 +149,7 @@ export async function updateSession(
 
   // Offentlige ruter skal aldrig redirecte, uanset login-status.
   if (erOffentligRute(pathname)) {
-    if (await afvisServerActionPaaOffentligSti(request, supabase)) {
+    if (await afvisSkrivningPaaOffentligSti(request, supabase)) {
       return new NextResponse("Ingen adgang", { status: 403 });
     }
     return supabaseResponse;
