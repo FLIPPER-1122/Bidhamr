@@ -46,3 +46,9 @@ next-env.d.ts
 
 # Agenternes git-worktrees - fulde kopier af repoet
 .claude/worktrees/
+
+# Database-backups og deres hemmeligheder - maa aldrig i git (se docs/backup.md)
+BidHamr-backups/
+backups/
+backup-*.env
+*.dump
