@@ -8,19 +8,23 @@ import type { Sortering } from "@/lib/sortering";
 
 export default function AuctionsExplorer({
   initialAuktioner,
+  initialTotal,
   initialQuery,
   initialKategori = "",
   initialSortering,
   initialPostnummer,
   initialRadiusKm,
+  initialAfstandAktiv,
   erLoggetInd,
 }: {
   initialAuktioner: DummyAuction[];
+  initialTotal: number;
   initialQuery: string;
   initialKategori?: string;
   initialSortering?: Sortering;
   initialPostnummer?: string;
   initialRadiusKm?: number;
+  initialAfstandAktiv?: boolean;
   erLoggetInd?: boolean;
 }) {
   // Kategorien ligger i URL'en (?kategori=…), så filteret kan deles, og
@@ -51,10 +55,13 @@ export default function AuctionsExplorer({
       <section id="alle-auktioner" aria-label="Auktioner" className="mt-6">
         <AuctionBrowser
           initialAuktioner={initialAuktioner}
+          initialTotal={initialTotal}
+          initialKategori={initialKategori}
           initialQuery={initialQuery}
           initialSortering={initialSortering}
           initialPostnummer={initialPostnummer}
           initialRadiusKm={initialRadiusKm}
+          initialAfstandAktiv={initialAfstandAktiv}
           erLoggetInd={erLoggetInd}
           kategori={kategori}
           onKategoriChange={setKategori}

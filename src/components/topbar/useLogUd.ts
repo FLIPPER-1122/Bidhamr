@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 export function useLogUd(efter?: () => void) {
   const router = useRouter();
@@ -10,6 +9,9 @@ export function useLogUd(efter?: () => void) {
 
   async function logUd() {
     setLoggerUd(true);
+    // Indlæses først ved klik, så Supabase-klienten ikke er med i topbarens
+    // JavaScript på hver side.
+    const { createClient } = await import("@/lib/supabase/client");
     await createClient().auth.signOut();
     efter?.();
     router.push("/login");

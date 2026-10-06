@@ -3,11 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import AuctionCard, { type DummyAuction } from "@/components/AuctionCard";
 import Ikon from "@/components/Ikon";
-import { createClient } from "@/lib/supabase/client";
 import { kategorier } from "@/lib/kategorier";
-import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
-import { beregnAfstandKm } from "@/lib/distance";
-import { UKENDT_POSTNUMMER, slaaPostnummerOp } from "@/lib/postnumre";
+import { UKENDT_POSTNUMMER } from "@/lib/postnummerTekst";
+import { soegAuktioner } from "@/app/actions/auktionSoegning";
 
 import { SORTERINGER, type Sortering } from "@/lib/sortering";
 import GemSoegningKnap from "@/components/soegning/GemSoegningKnap";
@@ -20,49 +18,42 @@ const etiket = "mb-1.5 block text-sm font-medium text-tekst";
 const RADIUS_MIN = 5;
 const RADIUS_MAX = 150;
 const RADIUS_STEP = 5;
+const FEJL = "Auktionerne kunne ikke hentes. Prøv igen.";
 
-interface AuctionRow {
-  id: string;
-  titel: string;
-  postnummer: string | null;
-  lokation: string | null;
-  nuværende_bud: number | string | null;
-  startpris: number | string;
-  oprettet: string;
-  slutter_kl: string;
-  billeder: string[] | null;
-  kategori: string | null;
-  lat: number | null;
-  lng: number | null;
-  antal_bud?: number | null;
-}
+type Opslag = typeof import("@/lib/postnumre").slaaPostnummerOp;
+type Afstand = { postnummer: string; radiusKm: number } | null;
 
-interface Koordinat {
-  lat: number;
-  lng: number;
-}
-
-function koordinatForPostnummer(postnummer: string): Koordinat | null {
-  const opslag = slaaPostnummerOp(postnummer);
-  return opslag ? { lat: opslag.lat, lng: opslag.lng } : null;
+// De filtre, der faktisk sendes til serveren. Postnummer og radius tæller
+// kun, når postnummeret findes, og radius er under "Hele Danmark".
+function filterNoegle(query: string, kategori: string, sortering: Sortering, afstand: Afstand) {
+  return JSON.stringify({ q: query.trim(), kategori, sortering, afstand });
 }
 
 export default function AuctionBrowser({
   initialAuktioner,
+  initialTotal,
   initialQuery,
+  initialKategori = "",
   initialSortering = "slutter_snart",
   initialPostnummer = "",
   initialRadiusKm = 50,
+  initialAfstandAktiv = false,
   kategori,
   onKategoriChange,
   erLoggetInd = false,
 }: {
+  // Første side er hentet på serveren med de samme filtre (src/lib/auktionSoegning.ts).
   initialAuktioner: DummyAuction[];
+  initialTotal: number;
   initialQuery: string;
+  initialKategori?: string;
   initialSortering?: Sortering;
   // Fra ?postnummer=&afstand= (fx linket i en notifikation om en gemt søgning).
   initialPostnummer?: string;
   initialRadiusKm?: number;
+  // Serveren har filtreret på afstand (postnummeret findes, og radius er
+  // under "Hele Danmark").
+  initialAfstandAktiv?: boolean;
   kategori: string;
   onKategoriChange: (kategori: string) => void;
   erLoggetInd?: boolean;
@@ -70,124 +61,112 @@ export default function AuctionBrowser({
   const query = initialQuery;
   const [sortering, setSortering] = useState<Sortering>(initialSortering);
   const [postnummer, setPostnummer] = useState(initialPostnummer);
-  // Postnummeret slås op i den lokale liste (synkront), så by og koordinat
-  // udledes direkte ved render.
+  // Postnummeret slås op i den lokale postnummerliste. Listen (ca. 50 kB)
+  // indlæses først, når der står et helt postnummer i feltet, så den ikke er
+  // med i sidens JavaScript fra start.
   const gyldigtPostnummer = /^\d{4}$/.test(postnummer);
-  const postOpslag = gyldigtPostnummer ? slaaPostnummerOp(postnummer) : null;
+  const [slaaOp, setSlaaOp] = useState<Opslag | null>(null);
+  useEffect(() => {
+    if (!gyldigtPostnummer || slaaOp) return;
+    let aktiv = true;
+    import("@/lib/postnumre").then((m) => {
+      if (aktiv) setSlaaOp(() => m.slaaPostnummerOp);
+    });
+    return () => {
+      aktiv = false;
+    };
+  }, [gyldigtPostnummer, slaaOp]);
+  const venterPaaOpslag = gyldigtPostnummer && !slaaOp;
+  const postOpslag = gyldigtPostnummer && slaaOp ? slaaOp(postnummer) : null;
   const postBy = postOpslag?.by ?? null;
-  const postLat = postOpslag?.lat ?? null;
-  const postLng = postOpslag?.lng ?? null;
-  const postStatus: "idle" | "fundet" | "ikke-fundet" = !gyldigtPostnummer
+  const postStatus: "idle" | "fundet" | "ikke-fundet" = !gyldigtPostnummer || venterPaaOpslag
     ? "idle"
     : postOpslag
       ? "fundet"
       : "ikke-fundet";
   const [radiusKm, setRadiusKm] = useState(initialRadiusKm);
   const [auktioner, setAuktioner] = useState<DummyAuction[]>(initialAuktioner);
+  const [total, setTotal] = useState(initialTotal);
   const [loading, setLoading] = useState(false);
+  const [henterFlere, setHenterFlere] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
 
-  const harSøgt = useRef(false);
+  const afstand: Afstand = radiusKm < RADIUS_MAX && postOpslag ? { postnummer, radiusKm } : null;
+  const noegle = filterNoegle(query, kategori, sortering, afstand);
+  // Filtrene, den viste liste er hentet med. Starter som serverens.
+  const hentetNoegle = useRef(
+    filterNoegle(
+      initialQuery,
+      initialKategori,
+      initialSortering,
+      initialAfstandAktiv ? { postnummer: initialPostnummer, radiusKm: initialRadiusKm } : null,
+    ),
+  );
+  // Kun svaret på den seneste forespørgsel må vises.
+  const forespoergselNr = useRef(0);
 
-  async function søg(
-    søgetekst: string,
-    valgtKategori: string,
-    valgtSortering: Sortering,
-    center: Koordinat | null,
-    radiusKmAktiv: number | null,
-  ) {
-    setLoading(true);
-    setFejl(null);
-
-    const supabase = createClient();
-    let queryBuilder = supabase
-      .from("auctions")
-      .select("*")
-      .eq("status", "aktiv")
-      .eq("skjult", false)
-      .gt("slutter_kl", new Date().toISOString());
-
-    if (søgetekst.trim()) {
-      queryBuilder = queryBuilder.ilike("titel", `%${søgetekst.trim()}%`);
-    }
-    if (valgtKategori) {
-      queryBuilder = queryBuilder.eq("kategori", valgtKategori);
-    }
-
-    switch (valgtSortering) {
-      case "slutter_snart":
-        queryBuilder = queryBuilder.order("slutter_kl", { ascending: true });
-        break;
-      case "laveste_bud":
-        queryBuilder = queryBuilder.order("nuværende_bud", {
-          ascending: true,
-          nullsFirst: false,
-        });
-        break;
-      case "højeste_bud":
-        queryBuilder = queryBuilder.order("nuværende_bud", {
-          ascending: false,
-          nullsFirst: false,
-        });
-        break;
-      case "nyeste":
-        queryBuilder = queryBuilder.order("oprettet", { ascending: false });
-        break;
-    }
-
-    const { data, error } = await queryBuilder;
-
-    if (error) {
-      console.error("Søgning fejlede:", error.message);
-      setFejl("Auktionerne kunne ikke hentes. Prøv igen.");
-      setLoading(false);
-      return;
-    }
-
-    let rows = (data ?? []) as AuctionRow[];
-
-    if (center && radiusKmAktiv != null) {
-      // Auktioner uden gemte koordinater slås op via deres postnummer, så de
-      // ikke bare udelukkes fra radius-filtreringen.
-      rows = rows.filter((row) => {
-        const koordinat: Koordinat | null =
-          row.lat != null && row.lng != null
-            ? { lat: row.lat, lng: row.lng }
-            : row.postnummer
-              ? koordinatForPostnummer(row.postnummer)
-              : null;
-
-        if (!koordinat) return false;
-
-        return (
-          beregnAfstandKm(center.lat, center.lng, koordinat.lat, koordinat.lng) <=
-          radiusKmAktiv
-        );
-      });
-    }
-
-    setAuktioner(rows.map(mapAuctionTilKort));
-    setLoading(false);
+  function filtre(offset: number) {
+    return {
+      q: query.trim(),
+      kategori,
+      sortering,
+      postnummer: afstand?.postnummer,
+      radiusKm: afstand?.radiusKm,
+      offset,
+    };
   }
 
-  // Søg/filtrer, når noget ændrer sig. Hele Danmark (radius i top) eller
-  // tomt postnummer betyder ingen radius-filtrering.
+  // Nye filtre: hent første side igen (lidt forsinket, mens man trækker i
+  // afstandsskyderen eller taster postnummer).
   useEffect(() => {
-    const erHeleDanmark = radiusKm >= RADIUS_MAX;
-    const aktivtCenter =
-      !erHeleDanmark && postLat != null && postLng != null
-        ? { lat: postLat, lng: postLng }
-        : null;
-
-    const timeout = setTimeout(
-      () => {
-        harSøgt.current = true;
-        søg(query, kategori, sortering, aktivtCenter, erHeleDanmark ? null : radiusKm);
-      },
-      harSøgt.current ? 300 : 0,
-    );
+    // Vent på postnummerlisten, før afstanden kan afgøres.
+    if (venterPaaOpslag || noegle === hentetNoegle.current) return;
+    const timeout = setTimeout(async () => {
+      const nr = ++forespoergselNr.current;
+      setLoading(true);
+      setFejl(null);
+      try {
+        const svar = await soegAuktioner(filtre(0));
+        if (nr !== forespoergselNr.current) return;
+        if (!svar.ok) {
+          setFejl(svar.fejl);
+        } else {
+          hentetNoegle.current = noegle;
+          setAuktioner(svar.auktioner);
+          setTotal(svar.total);
+        }
+      } catch {
+        if (nr === forespoergselNr.current) setFejl(FEJL);
+      } finally {
+        if (nr === forespoergselNr.current) setLoading(false);
+      }
+    }, 300);
     return () => clearTimeout(timeout);
-  }, [query, kategori, sortering, postLat, postLng, radiusKm]);
+    // filtre() læser kun værdier, der indgår i noegle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noegle, venterPaaOpslag]);
+
+  async function visFlere() {
+    const nr = ++forespoergselNr.current;
+    setHenterFlere(true);
+    setFejl(null);
+    try {
+      const svar = await soegAuktioner(filtre(auktioner.length));
+      if (nr !== forespoergselNr.current) return;
+      if (!svar.ok) {
+        setFejl(svar.fejl);
+      } else {
+        // Undgå dubletter, hvis listen har flyttet sig imens.
+        const kendte = new Set(auktioner.map((a) => a.id));
+        setAuktioner([...auktioner, ...svar.auktioner.filter((a) => !kendte.has(a.id))]);
+        setTotal(svar.total);
+      }
+    } catch {
+      if (nr === forespoergselNr.current) setFejl(FEJL);
+    } finally {
+      setHenterFlere(false);
+    }
+  }
 
   const erHeleDanmark = radiusKm >= RADIUS_MAX;
 
@@ -295,7 +274,7 @@ export default function AuctionBrowser({
         <p className="text-sm text-tekst-svag" aria-live="polite">
           {loading
             ? "Søger…"
-            : `${auktioner.length} auktion${auktioner.length === 1 ? "" : "er"} fundet`}
+            : `${total} auktion${total === 1 ? "" : "er"} fundet`}
         </p>
         <GemSoegningKnap
           erLoggetInd={erLoggetInd}
@@ -337,6 +316,23 @@ export default function AuctionBrowser({
             </li>
           ))}
         </ul>
+      )}
+
+      {!loading && auktioner.length > 0 && auktioner.length < total && (
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <p className="text-sm text-tekst-svag">
+            Viser {auktioner.length} af {total}
+          </p>
+          <button
+            type="button"
+            onClick={visFlere}
+            disabled={henterFlere}
+            aria-busy={henterFlere}
+            className="btn btn-sekundaer w-full sm:w-auto"
+          >
+            {henterFlere ? "Henter…" : "Vis flere auktioner"}
+          </button>
+        </div>
       )}
     </div>
   );

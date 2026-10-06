@@ -1,7 +1,8 @@
 import AuctionsExplorer from "@/components/AuctionsExplorer";
 import { læsSortering } from "@/lib/sortering";
 import { createClient } from "@/lib/supabase/server";
-import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
+import { RADIUS_MAX_KM, hentAuktionsside } from "@/lib/auktionSoegning";
+import { slaaPostnummerOp } from "@/lib/postnumre";
 import type { Metadata } from "next";
 import { kategorier } from "@/lib/kategorier";
 
@@ -62,29 +63,23 @@ export default async function AuktionerPage({
       ? Math.round(afstandKm / 5) * 5
       : undefined;
 
-  const supabase = await createClient();
-  const { data: authData } = await supabase.auth.getUser();
+  // Samme standard som filterbjælken (50 km), når kun postnummeret er givet.
+  const radiusKm = initialRadiusKm ?? 50;
+  const initialAfstandAktiv = Boolean(slaaPostnummerOp(initialPostnummer)) && radiusKm < RADIUS_MAX_KM;
 
-  let query = supabase
-    .from("auctions")
-    .select("*")
-    .eq("status", "aktiv")
-    .eq("skjult", false)
-    .gt("slutter_kl", new Date().toISOString())
-    .order("slutter_kl", { ascending: true });
+  const [{ data: authData }, side] = await Promise.all([
+    (await createClient()).auth.getUser(),
+    hentAuktionsside({
+      q: søgetekst,
+      kategori: initialKategori,
+      sortering: initialSortering,
+      postnummer: initialPostnummer,
+      radiusKm,
+    }),
+  ]);
 
-  if (søgetekst) {
-    query = query.ilike("titel", `%${søgetekst}%`);
-  }
-  if (initialKategori) {
-    query = query.eq("kategori", initialKategori);
-  }
-
-  const { data: auktioner, error } = await query;
-
-  if (error) console.error("Auktioner kunne ikke hentes:", error.message);
-
-  const visteAuktioner = (auktioner ?? []).map(mapAuctionTilKort);
+  // Vises af error.tsx - en tom liste ville fejlagtigt sige "ingen auktioner".
+  if (!side.ok) throw new Error("Auktionerne kunne ikke hentes");
 
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
@@ -93,12 +88,14 @@ export default async function AuktionerPage({
       </h1>
 
       <AuctionsExplorer
-        initialAuktioner={visteAuktioner}
+        initialAuktioner={side.auktioner}
+        initialTotal={side.total}
         initialQuery={søgetekst}
         initialKategori={initialKategori}
         initialSortering={initialSortering}
         initialPostnummer={initialPostnummer}
         initialRadiusKm={initialRadiusKm}
+        initialAfstandAktiv={initialAfstandAktiv}
         erLoggetInd={Boolean(authData.user)}
       />
     </main>

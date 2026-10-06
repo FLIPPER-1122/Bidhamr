@@ -115,7 +115,16 @@ function HandelKort({
 
 export const metadata: Metadata = { title: "Mine handler", robots: { index: false, follow: false } };
 
-export default async function MineHandlerPage() {
+// Afsluttede handler vises 20 ad gangen ("Vis flere" lægger 20 til via
+// ?vis=). Aktive handler er altid få og vises alle.
+const AFSLUTTEDE_PR_SIDE = 20;
+const MAKS_VIS = 1000;
+
+export default async function MineHandlerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ vis?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -125,22 +134,57 @@ export default async function MineHandlerPage() {
     redirect("/login?redirect=/mine-handler");
   }
 
+  const visØnsket = Number((await searchParams).vis);
+  const visAfsluttede = Number.isInteger(visØnsket)
+    ? Math.min(Math.max(visØnsket, AFSLUTTEDE_PR_SIDE), MAKS_VIS)
+    : AFSLUTTEDE_PR_SIDE;
+
   // or-filteret er det, der begrænser til egne handler. RLS alene ville ikke
   // gøre det: policyen tillader også staff at se alt.
-  const [{ data }, tilbud] = await Promise.all([
+  const egne = `buyer_id.eq.${user.id},seller_id.eq.${user.id}`;
+  const kolonner =
+    "id, status, amount, created_at, buyer_id, seller_id, auctions(titel, billeder), sager(id, status, oprettet_kl)";
+  const aktiveStatusser = `(${AKTIVE_STATUSSER.join(",")})`;
+  const [aktiveSvar, afsluttedeSvar, sagSvar, tilbud] = await Promise.all([
     supabase
-    .from("trades")
-    .select("id, status, amount, created_at, buyer_id, seller_id, auctions(titel, billeder), sager(id, status, oprettet_kl)")
-    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
-    .order("created_at", { ascending: false })
-    .overrideTypes<HandelRaekke[], { merge: false }>(),
+      .from("trades")
+      .select(kolonner)
+      .or(egne)
+      .in("status", AKTIVE_STATUSSER)
+      .order("created_at", { ascending: false })
+      .overrideTypes<HandelRaekke[], { merge: false }>(),
+    supabase
+      .from("trades")
+      .select(kolonner, { count: "exact" })
+      .or(egne)
+      .not("status", "in", aktiveStatusser)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(0, visAfsluttede - 1)
+      .overrideTypes<HandelRaekke[], { merge: false }>(),
+    // Handler med en igangværende sag - uanset om handlen er på den viste
+    // side. "aktiv_sag" filtrerer kun rækkerne; "sager" er alle sager på handlen.
+    supabase
+      .from("trades")
+      .select(`${kolonner}, aktiv_sag:sager!inner(id)`)
+      .or(egne)
+      .in("aktiv_sag.status", SAG_AKTIV)
+      .order("created_at", { ascending: false })
+      .overrideTypes<HandelRaekke[], { merge: false }>(),
     hentMineAktiveTilbud(),
   ]);
 
-  const handler = data ?? [];
-  const aktive = handler.filter((h) => AKTIVE_STATUSSER.includes(h.status));
-  const afsluttede = handler.filter((h) => !AKTIVE_STATUSSER.includes(h.status));
-  const medSag = handler.filter((h) => {
+  // Vises af error.tsx - en tom liste ville fejlagtigt sige "ingen handler".
+  if (aktiveSvar.error || afsluttedeSvar.error) {
+    throw new Error("Mine handler kunne ikke hentes");
+  }
+  if (sagSvar.error) console.error("Mine handler: sager kunne ikke hentes:", sagSvar.error.message);
+
+  const aktive = aktiveSvar.data ?? [];
+  const afsluttede = afsluttedeSvar.data ?? [];
+  const antalAfsluttede = afsluttedeSvar.count ?? afsluttede.length;
+  const handler = [...aktive, ...afsluttede];
+  const medSag = (sagSvar.data ?? []).filter((h) => {
     const s = nyesteSag(h);
     return !!s && SAG_AKTIV.includes(s.status);
   });
@@ -229,13 +273,27 @@ export default async function MineHandlerPage() {
             {afsluttede.length > 0 && (
               <section className="mt-8">
                 <h2 className="text-[20px] leading-tight lg:text-[22px]">
-                  Afsluttede handler ({afsluttede.length})
+                  Afsluttede handler ({antalAfsluttede})
                 </h2>
                 <div className="mt-3 space-y-2">
                   {afsluttede.map((h) => (
                     <HandelKort key={h.id} handel={h} brugerId={user.id} />
                   ))}
                 </div>
+                {afsluttede.length < antalAfsluttede && (
+                  <div className="mt-4 flex flex-col items-center gap-2">
+                    <p className="text-sm text-tekst-svag">
+                      Viser {afsluttede.length} af {antalAfsluttede}
+                    </p>
+                    <Link
+                      href={`/mine-handler?vis=${visAfsluttede + AFSLUTTEDE_PR_SIDE}`}
+                      scroll={false}
+                      className="btn btn-sekundaer w-full sm:w-auto"
+                    >
+                      Vis flere handler
+                    </Link>
+                  </div>
+                )}
               </section>
             )}
           </>
