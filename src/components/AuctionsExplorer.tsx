@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import type { DummyAuction } from "@/components/AuctionCard";
 import CategoryGrid from "@/components/CategoryGrid";
 import AuctionBrowser from "@/components/AuctionBrowser";
-import type { Sortering } from "@/lib/sortering";
+import { læsAfstand, læsPostnummer, læsSortering, type Sortering } from "@/lib/auktionFiltre";
 import type { TotalType } from "@/lib/soegeTotal";
 
 export default function AuctionsExplorer({
@@ -30,18 +30,40 @@ export default function AuctionsExplorer({
   initialAfstandAktiv?: boolean;
   erLoggetInd?: boolean;
 }) {
-  // Kategorien ligger i URL'en (?kategori=…), så filteret kan deles, og
-  // Tilbage-knappen husker det. replaceState opdaterer useSearchParams uden
-  // at hente siden igen fra serveren.
+  // Filtrene ligger i URL'en (?kategori=&sortering=&postnummer=&afstand=),
+  // så de kan deles, Tilbage-knappen husker dem, og menulinks som "Slutter
+  // snart" virker, også når man allerede står på /auktioner. replaceState
+  // opdaterer useSearchParams uden at hente siden igen fra serveren.
   const searchParams = useSearchParams();
   const kategori = searchParams.get("kategori")?.trim() ?? initialKategori;
+  const sortering = læsSortering(searchParams.get("sortering") ?? undefined);
+  const urlPostnummer = læsPostnummer(searchParams.get("postnummer"));
+  const urlRadiusKm = læsAfstand(urlPostnummer, searchParams.get("afstand"));
+
+  function opdaterUrl(ændringer: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [navn, værdi] of Object.entries(ændringer)) {
+      if (værdi) params.set(navn, værdi);
+      else params.delete(navn);
+    }
+    const qs = params.toString();
+    if (qs === searchParams.toString()) return;
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }
 
   function setKategori(ny: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (ny) params.set("kategori", ny);
-    else params.delete("kategori");
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+    opdaterUrl({ kategori: ny || null });
+  }
+
+  function setSortering(ny: Sortering) {
+    // Standarden står ikke i URL'en, så /auktioner forbliver den kanoniske adresse.
+    opdaterUrl({ sortering: ny === læsSortering(undefined) ? null : ny });
+  }
+
+  // Postnummer og afstand skrives kun, når postnummeret er fire cifre.
+  function setAfstand(postnummer: string, radiusKm: number) {
+    const gyldigt = læsPostnummer(postnummer);
+    opdaterUrl({ postnummer: gyldigt || null, afstand: gyldigt ? String(radiusKm) : null });
   }
 
   return (
@@ -69,6 +91,11 @@ export default function AuctionsExplorer({
           erLoggetInd={erLoggetInd}
           kategori={kategori}
           onKategoriChange={setKategori}
+          sortering={sortering}
+          onSorteringChange={setSortering}
+          urlPostnummer={urlPostnummer}
+          urlRadiusKm={urlRadiusKm}
+          onAfstandChange={setAfstand}
         />
       </section>
     </div>

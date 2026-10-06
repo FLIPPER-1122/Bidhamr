@@ -20,6 +20,8 @@ type HandelRaekke = {
   created_at: string;
   buyer_id: string;
   seller_id: string;
+  // Afhentning i stedet for forsendelse (sat ved oprettelsen af handlen).
+  afhentning: boolean | null;
   auctions: { titel: string; billeder: string[] | null } | null;
   // Sager på handlen (hentes med i samme forespørgsel; RLS: kun parterne).
   sager: { id: string; status: SagStatus; oprettet_kl: string }[] | null;
@@ -41,6 +43,52 @@ function nyesteSag(h: HandelRaekke) {
   const sager = h.sager ?? [];
   if (sager.length === 0) return null;
   return sager.reduce((a, b) => (Date.parse(b.oprettet_kl) > Date.parse(a.oprettet_kl) ? b : a));
+}
+
+function harAktivSag(h: HandelRaekke) {
+  const s = nyesteSag(h);
+  return !!s && SAG_AKTIV.includes(s.status);
+}
+
+// Aktive handler grupperes efter, hvad der skal ske nu - det, du selv skal
+// gøre, står øverst. Samme regler som handelssiden (/mine-handler/[id]).
+type GruppeId =
+  | "betale"
+  | "sende"
+  | "afhentning"
+  | "godkende"
+  | "sager"
+  | "venter_saelger"
+  | "venter_koeber"
+  | "paa_vej";
+
+const GRUPPER: { id: GruppeId; titel: string; tekst: string }[] = [
+  { id: "betale", titel: "Du skal betale", tekst: "Betal inden fristen, så handlen ikke annulleres." },
+  { id: "sende", titel: "Du skal sende", tekst: "Køberen har betalt. Send pakken inden fristen." },
+  { id: "afhentning", titel: "Skal afhentes", tekst: "Varen er betalt. Aftal afhentningen i handlen." },
+  { id: "godkende", titel: "Du skal godkende varen", tekst: "Tjek varen. Sælgeren får pengene, når du godkender." },
+  { id: "sager", titel: "Sager i gang", tekst: "BidHamr ser på sagen. Følg med og svar i sagen." },
+  { id: "venter_saelger", titel: "Venter på sælgeren", tekst: "Du har betalt. Sælgeren sender pakken." },
+  { id: "venter_koeber", titel: "Venter på køberen", tekst: "Køberen skal betale eller godkende varen." },
+  { id: "paa_vej", titel: "På vej", tekst: "Pakken er sendt." },
+];
+
+function gruppeFor(h: HandelRaekke, brugerId: string): GruppeId {
+  if (harAktivSag(h)) return "sager";
+  const erKoeber = h.buyer_id === brugerId;
+  switch (h.status) {
+    case "afventer_betaling":
+      return erKoeber ? "betale" : "venter_koeber";
+    case "betaling_modtaget":
+      if (h.afhentning) return "afhentning";
+      return erKoeber ? "venter_saelger" : "sende";
+    case "pakke_sendt":
+      return "paa_vej";
+    case "modtaget":
+      return erKoeber ? "godkende" : "venter_koeber";
+    default:
+      return "venter_koeber";
+  }
 }
 
 function HandelKort({
@@ -100,12 +148,11 @@ function HandelKort({
               {SAG_MAERKE[sag.status].tekst}
             </span>
           )}
-          {/* Hele kortet er linket til handelssiden; dette er en synlig
-              markering af, at chatten ligger derinde. Et <Link> her ville
-              være et link inde i et link. */}
+          {/* Hele kortet er linket til handelssiden (med chatten); dette er
+              en synlig markering. Et <Link> her ville være et link i et link. */}
           <span className="ml-auto inline-flex items-center gap-1 text-[13px] font-semibold text-groen">
-            <Ikon navn="besked" className="h-4 w-4" />
-            Start chat
+            {sagAktiv ? "Åbn sag" : "Åbn handel"}
+            <Ikon navn="hoejre" className="h-4 w-4" />
           </span>
         </div>
       </div>
@@ -143,7 +190,7 @@ export default async function MineHandlerPage({
   // gøre det: policyen tillader også staff at se alt.
   const egne = `buyer_id.eq.${user.id},seller_id.eq.${user.id}`;
   const kolonner =
-    "id, status, amount, created_at, buyer_id, seller_id, auctions(titel, billeder), sager(id, status, oprettet_kl)";
+    "id, status, amount, created_at, buyer_id, seller_id, afhentning, auctions(titel, billeder), sager(id, status, oprettet_kl)";
   const aktiveStatusser = `(${AKTIVE_STATUSSER.join(",")})`;
   const [aktiveSvar, afsluttedeSvar, sagSvar, tilbud] = await Promise.all([
     supabase
@@ -184,10 +231,17 @@ export default async function MineHandlerPage({
   const afsluttede = afsluttedeSvar.data ?? [];
   const antalAfsluttede = afsluttedeSvar.count ?? afsluttede.length;
   const handler = [...aktive, ...afsluttede];
-  const medSag = (sagSvar.data ?? []).filter((h) => {
-    const s = nyesteSag(h);
-    return !!s && SAG_AKTIV.includes(s.status);
-  });
+  // Handler med en sag i gang, også hvis handlen ellers er afsluttet.
+  const medSag = (sagSvar.data ?? []).filter(harAktivSag);
+  const grupper = new Map<GruppeId, HandelRaekke[]>();
+  const sete = new Set<string>();
+  for (const h of [...aktive, ...medSag]) {
+    if (sete.has(h.id)) continue;
+    sete.add(h.id);
+    const g = gruppeFor(h, user.id);
+    grupper.set(g, [...(grupper.get(g) ?? []), h]);
+  }
+  const antalAktive = sete.size;
 
   return (
     <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
@@ -196,30 +250,6 @@ export default async function MineHandlerPage({
         <p className="mt-2 text-[15px] text-tekst-daempet">
           Handler hvor du er køber eller sælger.
         </p>
-
-        {medSag.length > 0 && (
-          <section
-            aria-labelledby="sager-titel"
-            className="mt-6 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst sm:p-5"
-          >
-            <h2 id="sager-titel" className="font-sans text-[15px] font-semibold">
-              {medSag.length === 1 ? "Du har 1 sag i gang" : `Du har ${medSag.length} sager i gang`}
-            </h2>
-            <ul className="mt-2 space-y-1">
-              {medSag.map((h) => (
-                <li key={h.id}>
-                  <Link
-                    href={sagLink(h.id)}
-                    className="inline-flex min-h-11 max-w-full items-center gap-1 text-sm font-semibold underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
-                  >
-                    <span className="truncate">Se sagen om {h.auctions?.titel ?? "din handel"}</span>
-                    <span aria-hidden="true">→</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
 
         {tilbud.length > 0 && (
           <section className="mt-8">
@@ -254,20 +284,34 @@ export default async function MineHandlerPage({
           />
         ) : (
           <>
-            <section className="mt-8">
-              <h2 className="text-[20px] leading-tight lg:text-[22px]">
-                Aktive handler ({aktive.length})
+            <section aria-labelledby="aktive-titel" className="mt-8">
+              <h2 id="aktive-titel" className="text-[20px] leading-tight lg:text-[22px]">
+                Aktive handler ({antalAktive})
               </h2>
-              <div className="mt-3 space-y-2">
-                {aktive.map((h) => (
-                  <HandelKort key={h.id} handel={h} brugerId={user.id} />
-                ))}
-                {aktive.length === 0 && (
-                  <p className="rounded-[14px] border border-kant bg-white p-6 text-center text-sm text-tekst-svag">
-                    Ingen aktive handler
-                  </p>
-                )}
-              </div>
+              {antalAktive === 0 ? (
+                <p className="mt-3 rounded-[14px] border border-kant bg-white p-6 text-center text-sm text-tekst-svag">
+                  Ingen aktive handler
+                </p>
+              ) : (
+                GRUPPER.filter((g) => grupper.has(g.id)).map((g) => {
+                  const liste = grupper.get(g.id)!;
+                  return (
+                    <section key={g.id} aria-labelledby={`gruppe-${g.id}`} className="mt-5 first-of-type:mt-3">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                        <h3 id={`gruppe-${g.id}`} className="font-sans text-[16px] font-semibold text-tekst">
+                          {g.titel} <span className="font-normal text-tekst-svag">({liste.length})</span>
+                        </h3>
+                        <p className="text-[13px] text-tekst-svag">{g.tekst}</p>
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {liste.map((h) => (
+                          <HandelKort key={h.id} handel={h} brugerId={user.id} />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })
+              )}
             </section>
 
             {afsluttede.length > 0 && (

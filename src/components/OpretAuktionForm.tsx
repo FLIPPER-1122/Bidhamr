@@ -738,7 +738,7 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         </div>
       )}
 
-      <div className="sticky bottom-0 -mx-4 border-t border-kant bg-white p-4 sm:static sm:mx-0 sm:border-0 sm:p-0">
+      <div className="sticky bottom-[var(--samtykke-hoejde,0px)] -mx-4 border-t border-kant bg-white p-4 sm:static sm:mx-0 sm:border-0 sm:p-0">
         <button type="submit" className={`${primaerKnap} sm:w-full`}>
           Se forhåndsvisning
         </button>

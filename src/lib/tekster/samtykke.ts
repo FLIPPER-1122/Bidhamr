@@ -10,7 +10,10 @@ export const SAMTYKKE_TEKST = {
   bannerOverskrift: "Vi bruger kun nødvendige cookies",
   bannerTekst:
     "De holder dig logget ind, beskytter din konto og husker dit valg. Når du betaler, bruger vores betalingspartner Stripe cookies for at forhindre svindel. Vi bruger ingen cookies til statistik eller markedsføring – begynder vi på det, spørger vi dig først. Du kan altid ændre dit valg under \"Cookieindstillinger\" nederst på siden.",
+  // Kort udgave til mobil, så banneret ikke dækker siden (én linje).
+  bannerTekstKort: "De bruges til login og sikkerhed.",
   laesMere: "Læs mere om cookies",
+  laesMereKort: "Læs mere",
   accepterAlle: "Accepter alle",
   kunNoedvendige: "Kun nødvendige",
   indstillinger: "Indstillinger",
