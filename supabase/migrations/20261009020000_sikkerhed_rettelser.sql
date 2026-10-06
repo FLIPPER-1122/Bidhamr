@@ -10,9 +10,9 @@
 --
 --  1. hent_medarbejdere(): indfanget fra produktion og laast til staff.
 --  2. auctions-RLS (M1): skjulte auktioner er ikke laengere synlige for alle.
---  3. Storage (M5): ingen offentlig listing af auktion-billeder/avatarer, loft
---     paa antal filer pr. bruger, og billeder i en auktion med bud/handel kan
---     ikke slettes af brugeren.
+--  3. Storage (M5): ingen offentlig listing af auktion-billeder/avatarer (kun
+--     egen mappe), loft paa antal uploads pr. bruger pr. doegn, og billeder i
+--     en auktion med bud/handel kan ikke slettes af brugeren.
 --  4. Laengdegraenser (M6) + venteliste kun via /api/waitlist (service role).
 --  5. users.avatar_url skal pege paa projektets egen avatarer-bucket (L2).
 --  6. moderation_log: ny handling 'rolle_aendret' (L3).
@@ -23,6 +23,17 @@
 --     holde op med at indsaette direkte i reports (se migration B).
 --
 -- Tilbagerulning: se kommentaren ved hver sektion.
+--
+-- Rettet efter reviewer (okt. 2026). Samme rettelser til databaser, hvor den
+-- foerste version allerede er koert (testdatabasen), ligger i
+-- 20261009022000_sikkerhed_rettelser_2.sql - den er idempotent og kan ogsaa
+-- koeres efter denne fil uden at aendre noget.
+--
+-- Kendt begraensning (V6): to-trins-kravet for staff haandhaeves i Next
+-- (src/lib/adminAuth.ts, src/app/admin/layout.tsx), ikke i databasen.
+-- er_staff() kigger kun paa rollen, saa en aal1-session for en medarbejder
+-- er staff i RLS. Fuld haandhaevelse i databasen kommer med
+-- 20261007032000_mfa_database_haandhaevelse.sql (pre-request + storage_to_trin_ok).
 
 set lock_timeout = '5s';
 
@@ -80,9 +91,11 @@ drop policy if exists auctions_select_authenticated on public.auctions;
 create policy auctions_select_authenticated on public.auctions
   for select to authenticated
   using (
-    bruger_id = (select auth.uid())
-    or public.er_staff()
-    or (arkiveret_kl is null and not coalesce(skjult, false))
+    -- Den billige betingelse foerst; (select ...) evalueres een gang pr.
+    -- forespoergsel i stedet for pr. raekke.
+    (arkiveret_kl is null and not coalesce(skjult, false))
+    or bruger_id = (select auth.uid())
+    or (select public.er_staff())
     or public.auktion_arkiv_adgang(id)
   );
 
@@ -90,14 +103,40 @@ create policy auctions_select_authenticated on public.auctions
 -- 3. Storage (M5)
 -- =====================================================================
 -- Bucketene auktion-billeder og avatarer er public: billederne vises via
--- /storage/v1/object/public/... uden om RLS. SELECT-policyerne var derfor kun
--- noedvendige for at LISTE filer (storage.list), hvilket afsloerede alle
--- brugeres mapper og filnavne. Hjemmesiden lister kun avatarer med service
--- role (kontosletning).
+-- /storage/v1/object/public/... uden om RLS. SELECT-policyerne "alle maa
+-- laese alt" var derfor kun noedvendige for at LISTE filer (storage.list),
+-- hvilket afsloerede alle brugeres mapper og filnavne. Hjemmesiden lister kun
+-- avatarer med service role (kontosletning).
+-- Storage kraever dog en SELECT-policy, for at DELETE virker (remove() laeser
+-- raekken), saa brugeren maa se sin EGEN mappe - ellers kan han ikke slette
+-- sit gamle profilbillede eller et billede fra en auktion uden bud.
+-- Tilbagerulning: drop de to *_select_egen-policies.
 drop policy if exists auktion_billeder_select_all on storage.objects;
 drop policy if exists avatarer_select_all on storage.objects;
 
--- Antal filer i brugerens egen mappe i en bucket er under loftet.
+drop policy if exists auktion_billeder_select_egen on storage.objects;
+create policy auktion_billeder_select_egen on storage.objects
+  for select to authenticated
+  using (
+    bucket_id = 'auktion-billeder'
+    and (select auth.uid())::text = (storage.foldername(name))[1]
+  );
+
+drop policy if exists avatarer_select_egen on storage.objects;
+create policy avatarer_select_egen on storage.objects
+  for select to authenticated
+  using (
+    bucket_id = 'avatarer'
+    and (select auth.uid())::text = (storage.foldername(name))[1]
+  );
+
+-- Antal filer, brugeren har uploadet i sin egen mappe i en bucket det seneste
+-- doegn, er under loftet. Et tidsvindue i stedet for "alle filer nogensinde",
+-- saa en aktiv saelger ikke rammer loftet med tiden - det skal kun stoppe
+-- masseupload. Navnet er bevaret, fordi 20261007032000_mfa_database_
+-- haandhaevelse.sql tjekker, om funktionen findes.
+-- Tjekket i produktion 2026-10-06: hoejst 4 auktionsbilleder og 1 avatar pr.
+-- bruger pr. doegn. Lofter: 100 auktionsbilleder og 10 avatarer pr. doegn.
 create or replace function public.storage_mappe_under_loft(p_bucket text, p_loft integer)
 returns boolean
 language sql
@@ -109,7 +148,8 @@ as $function$
      and (select count(*)
             from storage.objects o
            where o.bucket_id = p_bucket
-             and o.name like auth.uid()::text || '/%') < p_loft;
+             and o.name like auth.uid()::text || '/%'
+             and o.created_at > now() - interval '1 day') < p_loft;
 $function$;
 
 revoke all on function public.storage_mappe_under_loft(text, integer) from public, anon;
@@ -175,7 +215,7 @@ create policy auktion_billeder_insert_own on storage.objects
   with check (
     bucket_id = 'auktion-billeder'
     and (select auth.uid())::text = (storage.foldername(name))[1]
-    and public.storage_mappe_under_loft('auktion-billeder', 200)
+    and public.storage_mappe_under_loft('auktion-billeder', 100)
     and public.storage_to_trin_ok()
   );
 
@@ -253,11 +293,20 @@ grant all on public.venteliste to service_role;
 -- eller test) i brugerens egen mappe - ellers kunne en bruger saette en URL
 -- til en fremmed server (sporingspixel, IP-logning af alle, der ser profilen).
 -- Gaelder ogsaa service role (der er ingen grund til andre URL'er).
+-- Filnavnet maa indeholde alt undtagen mellemrum/kontroltegn (ogsaa aeoeaa og
+-- URL-kodede tegn), og der maa vaere en query-streng (fx ?t=... til cache).
+-- Stien (foer '?') tjekkes for '..' og kodede punktummer/skraastreger, saa man
+-- ikke kan pege ud af sin egen mappe.
+-- Tjekket i produktion 2026-10-06: alle avatar_url er null. Triggeren gaelder
+-- kun ved insert og ved AENDRING af vaerdien, saa en eksisterende vaerdi
+-- aldrig blokerer andre opdateringer af users.
 create or replace function public.users_avatar_url_gyldig()
 returns trigger
 language plpgsql
 set search_path = ''
 as $function$
+declare
+  v_sti text;
 begin
   if new.avatar_url is null then
     return new;
@@ -265,12 +314,15 @@ begin
   if tg_op = 'UPDATE' and new.avatar_url is not distinct from old.avatar_url then
     return new;
   end if;
+  v_sti := split_part(new.avatar_url, '?', 1);
   if new.avatar_url !~ (
        '^https://(lkifkrexeldimmghnsie|pjiigmzqwlfepxnjdvug)\.supabase\.co'
        || '/storage/v1/object/public/avatarer/'
-       || new.id::text || '/[A-Za-z0-9._-]{1,200}$'
+       || new.id::text || '/[^?#[:space:][:cntrl:]]{1,255}'
+       || '(\?[^[:space:][:cntrl:]]*)?$'
      )
-     or position('..' in new.avatar_url) > 0 then
+     or position('..' in v_sti) > 0
+     or v_sti ~* '%2e%2e|%2f|%5c|\\' then
     raise exception 'Ugyldigt profilbillede.' using errcode = '22023';
   end if;
   return new;
@@ -300,7 +352,12 @@ begin
     raise notice 'moderation_log_handling_check findes ikke - springes over';
     return;
   end if;
-  v_liste := string_to_array(substring(v_def from '\{([^}]*)\}'), ',');
+  -- Samme parsing som 20261007030000_konto_sikkerhed_gdpr.sql: constrainten
+  -- kan staa som '{a,b}'::text[] eller som ARRAY['a'::text, ...] / in (...).
+  select array_agg(distinct x order by x) into v_liste from (
+    select unnest(case when m[1] like '{%}' then m[1]::text[] else array[m[1]] end) as x
+      from regexp_matches(v_def, '''([^'']+)''', 'g') as m
+  ) s;
   if v_liste is null or array_length(v_liste, 1) is null then
     raise exception 'Kunne ikke laese moderation_log_handling_check: %', v_def;
   end if;
@@ -402,7 +459,10 @@ alter default privileges for role postgres in schema public
 -- Appen og hjemmesiden indsaetter i dag direkte i reports. Migration B
 -- fjerner den direkte insert-ret, naar appen er skiftet til denne funktion.
 -- Samme koder som rapporter_bruger(): ok, ikke_logget_ind, ugyldig_kategori,
--- beskrivelse_mangler, for_lang_tekst, ikke_fundet, findes, for_mange.
+-- beskrivelse_mangler, for_lang_tekst, ikke_fundet, findes, for_mange - plus
+-- egen_auktion (man kan ikke anmelde sin egen auktion).
+-- 'forbudt_vare' er en systemkategori (automatisk rapport fra kontrollen af
+-- forbudte ord, src/lib/forbudteVarer.ts) og kan ikke vaelges af brugeren.
 create or replace function public.rapporter_auktion(
   p_auktion uuid,
   p_kategori text,
@@ -422,7 +482,7 @@ begin
     return jsonb_build_object('kode', 'ikke_logget_ind');
   end if;
   if p_kategori is null or p_kategori not in (
-       'andet', 'forbudt_vare', 'forfalsket_vare', 'mistaenkelig_saelger',
+       'andet', 'forfalsket_vare', 'mistaenkelig_saelger',
        'spam_duplikat', 'stoedende_indhold', 'ulovlig_vare') then
     return jsonb_build_object('kode', 'ugyldig_kategori');
   end if;
@@ -440,6 +500,11 @@ begin
           and ((a.arkiveret_kl is null and not coalesce(a.skjult, false))
                or public.auktion_arkiv_adgang(a.id))) then
     return jsonb_build_object('kode', 'ikke_fundet');
+  end if;
+
+  if exists (select 1 from public.auctions a
+              where a.id = p_auktion and a.bruger_id = v_uid) then
+    return jsonb_build_object('kode', 'egen_auktion');
   end if;
 
   -- Samme auktion anmeldt igen, mens den forrige er aaben.

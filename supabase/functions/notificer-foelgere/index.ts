@@ -14,7 +14,10 @@
 //   ny_auktion_push:<auktion>:<følger> claimes i notifikation_afsendelser, før
 //   der sendes. Hjemmesidens cron (src/lib/notifikationer/cron.ts,
 //   nyAuktionFraFulgt) ser nøglen og sender så kun klokke og mail - ikke push
-//   en gang til.
+//   en gang til. Omvendt: har cron'en allerede claimet sin nøgle
+//   ny_auktion:<auktion>:<følger> (og dermed sendt push), sender vi ikke.
+//   Kører de to helt samtidig, kan der stadig komme én dobbelt push (sjældent;
+//   cron'en kører hvert minut, appen kalder lige efter oprettelsen).
 // - Samme filtre som cron'en: følgningen skal være ældre end auktionen,
 //   blokeringer respekteres (sælger har blokeret følgeren - også anonymt;
 //   følgeren har blokeret sælgeren navngivet), og følgerens indstilling for
@@ -178,9 +181,30 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Har hjemmesidens cron allerede taget følgeren (nøglen
+    // ny_auktion:<auktion>:<følger>), har den også sendt push (den så ingen
+    // push-nøgle fra os) - så sendes der ikke en gang til herfra.
+    const cronTaget = new Set<string>();
+    const foelgereMedToken = [...tokensPr.keys()];
+    for (let i = 0; i < foelgereMedToken.length; i += 200) {
+      const noegler = foelgereMedToken
+        .slice(i, i + 200)
+        .map((f) => `ny_auktion:${auktion.id}:${f}`);
+      const { data, error } = await supabase
+        .from("notifikation_afsendelser")
+        .select("noegle")
+        .in("noegle", noegler);
+      if (error) {
+        console.error("[notificer-foelgere] opslag af cron-nøgler:", error.message);
+        return OK();
+      }
+      for (const r of data ?? []) cronTaget.add(r.noegle as string);
+    }
+
     // Claim én nøgle pr. følger, FØR der sendes. 23505 = allerede sendt.
     const afsendelser: Afsendelse[] = [];
     for (const [follower, tokens] of tokensPr) {
+      if (cronTaget.has(`ny_auktion:${auktion.id}:${follower}`)) continue;
       const noegle = `ny_auktion_push:${auktion.id}:${follower}`;
       const { error } = await supabase
         .from("notifikation_afsendelser")
