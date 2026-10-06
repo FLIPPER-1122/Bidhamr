@@ -38,7 +38,11 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
   // Tidspunktet, formularen blev vist (tidsfælden mod robotter).
   const [startet] = useState(() => String(Date.now()));
   const [fejl, setFejl] = useState<string | null>(null);
-  const [kvittering, setKvittering] = useState<{ sagsnummer: string; statusSti: string; findes: boolean } | null>(null);
+  // Uden login vises hverken sagsnummer eller link - de kommer kun i
+  // kvitteringsmailen (så ingen kan se andres sager via en fremmed e-mail).
+  const [kvittering, setKvittering] = useState<
+    { anonym: true; medEmail: boolean } | { anonym: false; sagsnummer: string; statusSti: string; findes: boolean } | null
+  >(null);
   const [sender, startSend] = useTransition();
 
 
@@ -64,7 +68,12 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
         setFejl(r.fejl);
         return;
       }
-      setKvittering({ sagsnummer: r.sagsnummer, statusSti: r.statusSti, findes: !!r.findes });
+      if ("anonym" in r) {
+        const mail = fd.get("email");
+        setKvittering({ anonym: true, medEmail: typeof mail === "string" && mail.trim() !== "" });
+        return;
+      }
+      setKvittering({ anonym: false, sagsnummer: r.sagsnummer, statusSti: r.statusSti, findes: !!r.findes });
     });
   }
 
@@ -76,21 +85,34 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="text-[20px] leading-tight">
-          {kvittering.findes ? "Du har allerede anmeldt dette" : "Tak for din anmeldelse"}
-        </h2>
-        <p className="mt-1.5 text-sm text-tekst-daempet">
-          {kvittering.findes
-            ? "Vi er ved at se på din tidligere anmeldelse."
-            : "En medarbejder kigger på det. Du får svar, når vi har taget stilling."}
-        </p>
-        {kvittering.sagsnummer && (
-          <p className="mt-3 text-sm text-tekst">
-            Sagsnummer: <strong className="font-semibold">{kvittering.sagsnummer}</strong>
-          </p>
+        {kvittering.anonym ? (
+          <>
+            <h2 className="text-[20px] leading-tight">Tak for din anmeldelse</h2>
+            <p className="mt-1.5 text-sm text-tekst-daempet">
+              {kvittering.medEmail
+                ? "Vi har sendt en kvittering til din e-mail med sagsnummer og et link, hvor du kan følge sagen. Du får svar, når vi har taget stilling."
+                : "En medarbejder kigger på det."}
+            </p>
+          </>
+        ) : (
+          <>
+            <h2 className="text-[20px] leading-tight">
+              {kvittering.findes ? "Du har allerede anmeldt dette" : "Tak for din anmeldelse"}
+            </h2>
+            <p className="mt-1.5 text-sm text-tekst-daempet">
+              {kvittering.findes
+                ? "Vi er ved at se på din tidligere anmeldelse."
+                : "En medarbejder kigger på det. Du får svar, når vi har taget stilling."}
+            </p>
+            {kvittering.sagsnummer && (
+              <p className="mt-3 text-sm text-tekst">
+                Sagsnummer: <strong className="font-semibold">{kvittering.sagsnummer}</strong>
+              </p>
+            )}
+          </>
         )}
         <div className="mt-5 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
-          {kvittering.sagsnummer && (
+          {!kvittering.anonym && kvittering.sagsnummer && (
             <Link href={kvittering.statusSti} className="btn btn-sekundaer">
               Følg din anmeldelse
             </Link>

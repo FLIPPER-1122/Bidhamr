@@ -37,7 +37,9 @@ export function anmeldelseKvitteringMail(input: {
   sagsnummer: string;
   indholdType: string;
   kategori: string;
-  placering: string;
+  // Kun et link, BidHamr selv har bygget (fx /auktion/<id>) - aldrig
+  // anmelderens fritekst. null = vises ikke.
+  placering: string | null;
   oprettet: string;
   statusSti: string;
   haster: boolean;
@@ -58,7 +60,9 @@ export function anmeldelseKvitteringMail(input: {
         { noegle: "Sagsnummer", vaerdiHtml: escapeHtml(input.sagsnummer) },
         { noegle: "Hvad", vaerdiHtml: escapeHtml(indholdNavn(input.indholdType)) },
         { noegle: "Kategori", vaerdiHtml: escapeHtml(anmeldKategoriNavn(input.kategori)) },
-        { noegle: "Placering", vaerdiHtml: escapeHtml(input.placering.startsWith("/") ? sideUrl(input.placering) : input.placering) },
+        ...(input.placering && input.placering.startsWith("/")
+          ? [{ noegle: "Placering", vaerdiHtml: escapeHtml(sideUrl(input.placering)) }]
+          : []),
         { noegle: "Modtaget", vaerdiHtml: escapeHtml(dato(input.oprettet)) },
       ],
       knap: { tekst: "Se din anmeldelse", url: sideUrl(input.statusSti) },
@@ -159,17 +163,25 @@ export function klageSvarMail(input: {
   udfald: "medhold" | "fastholdt";
   svar: string;
   sti: string;
+  // Medhold, men auktionen er udløbet og kunne ikke åbnes igen.
+  ikkeGenaabnet?: boolean;
 }) {
   const medhold = input.udfald === "medhold";
   const titel = medhold ? "Du har fået medhold i din klage" : "Vi har behandlet din klage";
   return {
     subject: `${titel} (${input.sagsnummer})`,
     ...bygMail({
-      preheader: medhold ? "Vi har ændret vores afgørelse." : "Vi fastholder vores afgørelse.",
+      preheader: medhold
+        ? input.ikkeGenaabnet
+          ? "Du får medhold, men auktionen er udløbet – du kan sætte varen op igen."
+          : "Vi har ændret vores afgørelse."
+        : "Vi fastholder vores afgørelse.",
       overskriftHtml: escapeHtml(titel),
       afsnitHtml: [
         medhold
-          ? "En anden medarbejder har set på sagen igen og giver dig ret. Vi har ændret afgørelsen."
+          ? input.ikkeGenaabnet
+            ? "En anden medarbejder har set på sagen igen og giver dig ret. Auktionen er dog udløbet imens, så vi kan ikke åbne den igen – du er velkommen til at sætte varen op på ny."
+            : "En anden medarbejder har set på sagen igen og giver dig ret. Vi har ændret afgørelsen."
           : "En anden medarbejder har set på sagen igen og fastholder afgørelsen.",
         ...afsnit(input.svar),
         ...(medhold ? [] : [escapeHtml(ANDRE_KLAGEMULIGHEDER)]),

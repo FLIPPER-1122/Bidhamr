@@ -112,9 +112,17 @@ export type AnmeldInput = {
   startet?: unknown;
 };
 
+// Uden login får anmelderen ALDRIG sagsnummer eller link i svaret (kun i
+// kvitteringsmailen) - ellers kunne man med en andens e-mail se, om der
+// findes en anmeldelse, og følge den. Svaret er det samme, uanset om
+// anmeldelsen blev oprettet, indholdet ikke findes, eller e-mailen tilhører
+// den, der ejer indholdet (så oprettes ingen sag).
 export type AnmeldResultat =
   | { ok: true; sagsnummer: string; statusSti: string; findes?: true }
+  | { ok: true; anonym: true }
   | { fejl: string; kode: string };
+
+const ANONYMT_OK: AnmeldResultat = { ok: true, anonym: true };
 
 const KODE_FEJL: Record<string, string> = {
   ugyldig_kategori: "Vælg, hvad anmeldelsen handler om.",
@@ -144,9 +152,8 @@ export async function opretAnmeldelse(
   const fejl = (kode: string): AnmeldResultat => ({ kode, fejl: KODE_FEJL[kode] ?? GENERISK });
 
   // Honeypot: robotten får "ok" uden noget gemt, så den ikke prøver igen.
-  if (ctx.kilde === "web" && str(input.honeypot) !== "") {
-    return { ok: true, sagsnummer: "", statusSti: "/dsa" };
-  }
+  if (ctx.kilde === "web" && str(input.honeypot) !== "") return ANONYMT_OK;
+  const anonym = !ctx.brugerId;
 
   const kategori = str(input.kategori);
   const begrundelse = str(input.begrundelse);
@@ -184,6 +191,9 @@ export async function opretAnmeldelse(
     ({ type, id } = fortolkLink(link));
   }
 
+  // IP-loftet tjekkes, FØR indholdet slås op (ingen gratis opslag).
+  if (!(await tjekGraenser([[anonym ? "dsa_ip" : "dsa_ip_indlogget", ctx.ip]]))) return fejl("for_mange");
+
   const admin = createAdminClient();
   let placering: string;
   if (type === "andet" || !id) {
@@ -191,7 +201,8 @@ export async function opretAnmeldelse(
     if (!placering) return fejl("ugyldig_placering");
   } else {
     const p = await placeringFor(admin, type, id);
-    if (!p) return fejl("ikke_fundet");
+    // Uden login afsløres det ikke, om indholdet findes.
+    if (!p) return anonym ? ANONYMT_OK : fejl("ikke_fundet");
     placering = p;
   }
 
@@ -208,13 +219,15 @@ export async function opretAnmeldelse(
     return fejl("anmelder_mangler");
   }
 
-  const graenser: Parameters<typeof tjekGraenser>[0] = [
-    ["dsa_ip", ctx.ip],
-    ["dsa_alle", "alle"],
-  ];
-  if (email) graenser.push(["dsa_email", email]);
+  // Særskilte lofter for anmeldere med og uden login. Misbrug af børn
+  // undtages fra det fælles loft (IP-loftet ovenfor gælder stadig).
+  const graenser: Parameters<typeof tjekGraenser>[0] = [];
+  if (kategori !== "misbrug_boern") graenser.push([anonym ? "dsa_alle_anonym" : "dsa_alle_indlogget", "alle"]);
   if (ctx.brugerId) graenser.push(["dsa_bruger", ctx.brugerId]);
-  if (!(await tjekGraenser(graenser))) return fejl("for_mange");
+  if (graenser.length > 0 && !(await tjekGraenser(graenser))) return fejl("for_mange");
+  // Loftet pr. e-mail uden login giver det neutrale svar - ellers kunne man
+  // se, om en andens e-mail er brugt til mange anmeldelser.
+  if (anonym && email && !(await tjekGraenser([["dsa_email", email]]))) return ANONYMT_OK;
 
   const { data, error } = await admin.rpc("dsa_anmeldelse_opret", {
     p_anmelder: ctx.brugerId,
@@ -232,9 +245,15 @@ export async function opretAnmeldelse(
     return { kode: "fejl", fejl: GENERISK };
   }
   const svar = (data ?? {}) as { kode?: string; id?: string; sagsnummer?: string };
+  if (svar.kode === "ok" && svar.id) {
+    const anmeldelseId = svar.id;
+    after(() => sendAnmeldelseKvittering(anmeldelseId));
+  }
+  // Uden login: altid det samme neutrale svar (også 'ok' uden sag fra
+  // databasen). Sagsnummer og link kommer kun i kvitteringsmailen.
+  if (anonym && (svar.kode === "ok" || svar.kode === "for_mange")) return ANONYMT_OK;
   if ((svar.kode === "ok" || svar.kode === "findes") && svar.id && svar.sagsnummer) {
     const anmeldelseId = svar.id;
-    if (svar.kode === "ok") after(() => sendAnmeldelseKvittering(anmeldelseId));
     return {
       ok: true,
       sagsnummer: svar.sagsnummer,
@@ -297,14 +316,18 @@ export async function udfoerIndgreb(admin: Admin, input: IndgrebInput): Promise<
     afgoerelse_id?: string;
     bruger_id?: string;
     anmeldelser?: string[];
+    // Den anden part, hvis et spørgsmål med svar blev skjult.
+    ekstra_afgoerelser?: string[];
   };
   if (svar.kode !== "ok" || !svar.afgoerelse_id || !svar.bruger_id) {
     return { ok: false, kode: svar.kode ?? "ukendt" };
   }
   const afgId = svar.afgoerelse_id;
   const anmeldelser = svar.anmeldelser ?? [];
+  const andenPart = svar.ekstra_afgoerelser ?? [];
   after(async () => {
     await notificerAfgoerelse(afgId);
+    for (const x of andenPart) await notificerAfgoerelse(x);
     for (const a of anmeldelser) await notificerAnmeldelseSvar(a);
   });
   return { ok: true, afgoerelseId: afgId, brugerId: svar.bruger_id };

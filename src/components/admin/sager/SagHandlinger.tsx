@@ -16,6 +16,7 @@ import {
 } from "@/app/actions/adminSager";
 import { SAG_BEGRUNDELSE_MAKS, type SagStatus, type SagType } from "@/lib/sager";
 import { STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
+import { indgrebFelter } from "@/components/admin/indgrebFelter";
 
 const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
 
@@ -614,6 +615,13 @@ function GenaabnKnap({ sagId, onResultat }: { sagId: string; onResultat: (b: str
 
 // ------------------------------------------------------------------ Luk konto
 
+// Samme felter som alle andre indgreb (DSA art. 17): regel, fakta til
+// brugeren og en intern note.
+const LUK_FELTER = indgrebFelter({
+  faktaPlaceholder: "Fx Du har solgt varer, du ikke ejede, i tre handler (se sagen).",
+  standardRegel: "svindel",
+});
+
 function LukKontoKnap({
   sagId,
   brugerId,
@@ -663,20 +671,50 @@ function LukKontoKnap({
         laast={sender}
       >
         <form onSubmit={indsend} className="space-y-4">
-          <div>
-            <label htmlFor={`${id}-aarsag`} className="block text-sm font-medium text-neutral-800">
-              Årsag
-            </label>
-            <textarea
-              id={`${id}-aarsag`}
-              name="aarsag"
-              required
-              rows={3}
-              maxLength={1000}
-              disabled={sender}
-              className={FELT}
-            />
-          </div>
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-neutral-800">
+            Brugeren får en mail med reglen og begrundelsen nedenfor (DSA) og kan klage. Den interne note ses kun af staff.
+          </p>
+          {LUK_FELTER.vaelgFelter.map((f) => (
+            <div key={f.name}>
+              <label htmlFor={`${id}-${f.name}`} className="block text-sm font-medium text-neutral-800">
+                {f.label}
+              </label>
+              <select
+                id={`${id}-${f.name}`}
+                name={f.name}
+                required
+                defaultValue={f.standard ?? ""}
+                disabled={sender}
+                className={FELT}
+              >
+                {!f.standard && <option value="">Vælg …</option>}
+                {f.valg.map((v) => (
+                  <option key={v.value} value={v.value}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+              {f.hjaelp && <p className="mt-1 text-xs text-neutral-500">{f.hjaelp}</p>}
+            </div>
+          ))}
+          {LUK_FELTER.tekstFelter.map((f) => (
+            <div key={f.name}>
+              <label htmlFor={`${id}-${f.name}`} className="block text-sm font-medium text-neutral-800">
+                {f.label}
+              </label>
+              <textarea
+                id={`${id}-${f.name}`}
+                name={f.name}
+                required={f.required}
+                rows={3}
+                maxLength={f.maxLength}
+                placeholder={f.placeholder}
+                disabled={sender}
+                className={FELT}
+              />
+              {f.hjaelp && <p className="mt-1 text-xs text-neutral-500">{f.hjaelp}</p>}
+            </div>
+          ))}
           <label className="flex items-start gap-2 text-sm text-neutral-800">
             <input
               type="checkbox"

@@ -27,6 +27,7 @@
 //
 // Fejl RETURNERES som { fejl } (Next skjuler kastede fejl i produktion).
 import { indgrebFejl, udfoerIndgreb } from "@/lib/dsa/server";
+import { erRegel } from "@/lib/dsa/regler";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
@@ -1243,27 +1244,32 @@ export async function genaabnSag(formData: FormData): Promise<Udfald | { fejl: s
 // ------------------------------------------------------------------ Konto
 
 // Admin/chef: luk en konto permanent (fx svindel). Suspenderet uden slutdato;
-// kan ikke ophæves fra admin. formData: userId, aarsag (påkrævet), sagId (valgfri).
+// kan ikke ophæves fra admin. formData: userId, regel, fakta (til brugeren,
+// påkrævet), aarsag (intern note, valgfri), sagId (valgfri).
 export async function lukKontoPermanent(formData: FormData): Promise<Udfald | { fejl: string }> {
   return koer("lukKontoPermanent", async () => {
     const { admin, userId: staffId } = await assertRole("admin");
     const brugerId = tekst(formData, "userId");
-    const aarsag = tekst(formData, "aarsag");
+    const regel = tekst(formData, "regel");
+    const fakta = tekst(formData, "fakta");
+    const note = tekst(formData, "aarsag");
     const sagId = tekst(formData, "sagId");
     if (!erUuid(brugerId)) throw new BrugerFejl(KODE_FEJL.ugyldig_bruger);
     if (sagId && !erUuid(sagId)) throw new BrugerFejl("Sagen findes ikke.");
-    if (!aarsag) throw new BrugerFejl(KODE_FEJL.aarsag_mangler);
-    if (aarsag.length > 1000) throw new BrugerFejl(KODE_FEJL.for_lang_tekst);
+    if (!erRegel(regel) || regel === "gentagne_overtraedelser") throw new BrugerFejl(indgrebFejl("ugyldig_regel"));
+    if (!fakta) throw new BrugerFejl(indgrebFejl("fakta_mangler"));
+    if (fakta.length > 2000 || note.length > 2000) throw new BrugerFejl(KODE_FEJL.for_lang_tekst);
 
     // Den fælles DSA-funktion: lukningen og begrundelsen til brugeren (med
-    // klagemulighed) i samme transaktion. Årsagen vises for brugeren.
+    // klagemulighed) i samme transaktion. Fakta vises for brugeren.
     const r = await udfoerIndgreb(admin, {
       staffId,
       type: "profil",
       id: brugerId,
       handling: "konto_lukket",
-      regel: "svindel",
-      fakta: aarsag,
+      regel,
+      fakta,
+      internNote: note || null,
       sagId: sagId || null,
     });
     if (!r.ok) throw new BrugerFejl(KODE_FEJL[r.kode] ?? indgrebFejl(r.kode));

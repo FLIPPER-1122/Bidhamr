@@ -26,12 +26,21 @@ import { logDriftFejl } from "@/lib/drift";
 //     "god_tro": true
 //   }
 //
-// Svar: 200 { ok: true, sagsnummer, statusSti }
+// Svar: 200 { ok: true, sagsnummer, statusSti }   (med login - egen sag)
+//       200 { ok: true, anonym: true }             (uden login - ALDRIG sagsnummer
+//                                                   eller link; de kommer kun i
+//                                                   kvitteringsmailen. Samme svar,
+//                                                   også når indholdet ikke findes)
 //       400 { fejl, kode }   429 { fejl, kode: "for_mange" }   500 { fejl, kode: "fejl" }
 //
+// Spam: appen kan ikke bruge honeypot/tidsfælde, og login er valgfrit (DSA
+// art. 16 kræver, at man kan anmelde uden konto). Ruten har derfor præcis
+// de samme lofter som hjemmesiden (opretAnmeldelse): IP-loft før opslag,
+// loft pr. e-mail, fælles loft for anmeldere uden login, 20 pr. døgn pr.
+// anmelder i databasen og lofter på kvitteringsmails (3 pr. modtager pr.
+// døgn, 100 i alt pr. time uden login).
+//
 // Ingen CORS-headere; forespørgsler med en fremmed Origin afvises.
-// TODO Filip/sikkerhed: /api/dsa skal på listen over offentlige ruter i
-// src/lib/supabase/middleware.ts, før appen kan bruge den uden login.
 
 export const dynamic = "force-dynamic";
 
@@ -100,6 +109,7 @@ export async function POST(req: NextRequest) {
       },
       { brugerId, ip: await klientIp(), kilde: "app" },
     );
+    if ("anonym" in res) return svar(200, { ok: true, anonym: true });
     if ("ok" in res) return svar(200, { ok: true, sagsnummer: res.sagsnummer, statusSti: res.statusSti });
     return svar(res.kode === "for_mange" ? 429 : res.kode === "fejl" ? 500 : 400, { fejl: res.fejl, kode: res.kode });
   } catch (err) {
