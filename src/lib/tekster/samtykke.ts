@@ -2,36 +2,37 @@
 // Skal passe til src/lib/samtykke.ts (kategorierne) og /cookies-siden.
 // Ærlighed: BidHamr bruger i dag kun nødvendige cookies. Står en kategori
 // som iBrug=false, skal teksten sige, at den ikke bruges i dag.
-// TODO indhold-agenten: gennemlæs teksterne (korte pladsholdere).
+// Betaling: skriv aldrig, at BidHamr modtager eller holder penge – betalingen
+// håndteres af vores betalingspartner Stripe.
 import type { SamtykkeKategori } from "@/lib/samtykke";
 
 export const SAMTYKKE_TEKST = {
-  bannerOverskrift: "Cookies på BidHamr",
+  bannerOverskrift: "Vi bruger kun nødvendige cookies",
   bannerTekst:
-    "Vi bruger kun de cookies, der skal til, for at du kan logge ind, handle og betale sikkert. Vi bruger ingen statistik- eller reklamecookies i dag. Begynder vi på det, spørger vi dig først.",
-  laesMere: "Læs om cookies",
+    "De holder dig logget ind, beskytter din konto og husker dit valg. Når du betaler, bruger vores betalingspartner Stripe cookies for at forhindre svindel. Vi bruger ingen cookies til statistik eller markedsføring – begynder vi på det, spørger vi dig først. Du kan altid ændre dit valg under \"Cookieindstillinger\" nederst på siden.",
+  laesMere: "Læs mere om cookies",
   accepterAlle: "Accepter alle",
   kunNoedvendige: "Kun nødvendige",
   indstillinger: "Indstillinger",
   indstillingerOverskrift: "Cookieindstillinger",
   indstillingerTekst:
-    "Vælg, hvad du vil tillade. Du kan altid ændre dit valg under \"Cookieindstillinger\" nederst på siden.",
-  gemValg: "Gem valg",
+    "Her vælger du, hvad du vil tillade. Nødvendige cookies er altid slået til, fordi siden ikke virker uden dem. Du kan altid ændre dit valg under \"Cookieindstillinger\" nederst på siden.",
+  gemValg: "Gem mit valg",
   luk: "Luk cookieindstillinger",
-  altidTil: "Altid til",
+  altidTil: "Altid slået til",
   ikkeIBrug: "Bruges ikke i dag",
-  gemt: "Dit cookievalg er gemt.",
-  nuvaerendeValg: (dato: string) => `Dit nuværende valg er fra ${dato}.`,
+  gemt: "Dit cookievalg er gemt. Du kan altid ændre det under \"Cookieindstillinger\" nederst på siden.",
+  nuvaerendeValg: (dato: string) => `Du har sidst valgt den ${dato}.`,
   noedvendigeNavn: "Nødvendige",
   noedvendigeBeskrivelse:
-    "Login, sikkerhed, dit cookievalg og betaling. Siden virker ikke uden dem.",
+    "Holder dig logget ind, giver dig besked ved login fra en ny enhed, husker dit cookievalg og gemmer din kladde, når du opretter en auktion. Når du betaler, bruger Stripe cookies for at forhindre svindel.",
 };
 
 export const KATEGORI_TEKST: Record<SamtykkeKategori, { navn: string; beskrivelse: string }> = {
   statistik: {
     navn: "Statistik",
     beskrivelse:
-      "Viser os, hvordan siden bliver brugt. Vores egen besøgstælling er cookiefri og kræver ikke samtykke.",
+      "Fortæller os, hvordan siden bliver brugt, så vi kan gøre den bedre. Vores egen optælling af besøg bruger ingen cookies og gemmer ikke, hvem du er.",
   },
   markedsfoering: {
     navn: "Markedsføring",
