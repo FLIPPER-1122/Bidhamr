@@ -20,6 +20,8 @@ import {
   sendSaelgerAfregning,
 } from "@/lib/betaling/handelsbeskeder";
 import { REFUSION_I_GANG, REFUSION_KONFLIKT } from "@/lib/betaling/refusionTekster";
+import { indgrebFejl, udfoerIndgreb } from "@/lib/dsa/server";
+import { erRegel, regelNavn } from "@/lib/dsa/regler";
 
 // --- Fejlhaandtering ---------------------------------------------------------
 // Next skjuler beskeden fra fejl, der kastes i server actions, i produktion.
@@ -95,59 +97,51 @@ async function logModerationBloedt(
   return error.message;
 }
 
+// Fælles felter for et DSA-indgreb (art. 17): regel (DSA_REGLER), fakta
+// (begrundelse til brugeren, påkrævet) og aarsag (intern note, valgfri).
+function indgrebFelter(formData: FormData) {
+  const regel = ((formData.get("regel") as string) ?? "").trim();
+  const fakta = ((formData.get("fakta") as string) ?? "").trim();
+  const internNote = ((formData.get("aarsag") as string) ?? "").trim();
+  if (!erRegel(regel)) throw new BrugerFejl("Vælg hvilken regel eller lov, det bryder.");
+  if (!fakta) throw new BrugerFejl("Skriv en begrundelse til brugeren: hvad har brugeren gjort?");
+  if (fakta.length > 2000 || internNote.length > 2000) {
+    throw new BrugerFejl("En af teksterne er for lang (højst 2000 tegn).");
+  }
+  return { regel, fakta, internNote };
+}
+
+// Suspendering går gennem den fælles DSA-funktion (udfoerIndgreb): brugeren
+// får begrundelsen og kan klage. formData: userId, varighed, regel, fakta, aarsag.
 async function suspendUserImpl(formData: FormData): Promise<void> {
   const userId = formData.get("userId") as string;
-  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const varighed = (formData.get("varighed") as string) ?? "permanent";
   const { admin, userId: staffId } = await assertRole("medarbejder");
 
   afvisSystembruger(userId);
-  if (!aarsag) throw new BrugerFejl("Angiv en årsag for suspensionen.");
-  if (!["1", "7", "permanent"].includes(varighed)) {
+  if (varighed !== "1" && varighed !== "7" && varighed !== "permanent") {
     throw new BrugerFejl("Ugyldig varighed.");
   }
+  const f = indgrebFelter(formData);
 
-  const { data: target } = await admin
-    .from("users")
-    .select("rolle, konto_lukket_kl")
-    .eq("id", userId)
-    .single();
-  if (!target) throw new BrugerFejl("Brugeren findes ikke.");
-  if (target.rolle === "admin" || target.rolle === "chef") {
-    throw new BrugerFejl("Admins og chefer kan ikke suspenderes.");
-  }
-  // En permanent lukket konto er allerede suspenderet uden slutdato.
-  if (target.konto_lukket_kl) {
-    throw new BrugerFejl("Kontoen er allerede lukket permanent.");
-  }
-
-  const suspenderetTil =
-    varighed === "permanent"
-      ? null
-      : new Date(Date.now() + Number(varighed) * 24 * 60 * 60 * 1000).toISOString();
-
-  const { error } = await admin
-    .from("users")
-    .update({
-      suspenderet: true,
-      suspenderet_aarsag: aarsag,
-      suspenderet_kl: new Date().toISOString(),
-      suspenderet_til: suspenderetTil,
-    })
-    .eq("id", userId);
-  if (error) throw new Error(error.message);
-
-  await logModeration(admin, {
-    medarbejder_id: staffId,
-    handling: "suspender",
-    maal_type: "bruger",
-    maal_id: userId,
-    bruger_id: userId,
-    aarsag: `${aarsag} (varighed: ${varighed === "permanent" ? "permanent" : `${varighed} dag(e)`})`,
+  const r = await udfoerIndgreb(admin, {
+    staffId,
+    type: "profil",
+    id: userId,
+    handling: "konto_suspenderet",
+    regel: f.regel,
+    fakta: f.fakta,
+    internNote: f.internNote,
+    varighed,
   });
+  if (!r.ok) {
+    if (r.kode === "staff") throw new BrugerFejl("Admins og chefer kan ikke suspenderes.");
+    throw new BrugerFejl(indgrebFejl(r.kode));
+  }
 
   revalidatePath("/admin/brugere");
   revalidatePath(`/admin/brugere/${userId}`);
+  revalidatePath("/admin/dsa");
 }
 
 async function unsuspendUserImpl(formData: FormData): Promise<void> {
@@ -294,110 +288,89 @@ async function setRolleImpl(formData: FormData): Promise<void> {
 
 // --- Auktioner -------------------------------------------------------------
 
-// "Slet" arkiverer: handelsdata (bud, handler, bedoemmelser, anmeldelser)
-// maa aldrig slettes (bogfoeringsloven/DAC7). Auktionen annulleres og skjules.
-// Har auktionen en handel, afvises det - den skal loeses som en sag.
-async function deleteAuctionImpl(
+// Alle tre indgreb på en auktion (fjern, annullér, skjul) går gennem den
+// fælles DSA-funktion (udfoerIndgreb): indgrebet og begrundelsen til sælgeren
+// gemmes i samme transaktion, og sælgeren kan klage. "Fjern" arkiverer:
+// handelsdata må aldrig slettes (bogføringsloven/DAC7), og en auktion med en
+// handel afvises - den skal løses som en sag.
+async function auktionIndgreb(
   formData: FormData,
+  handling: "auktion_fjernet" | "auktion_annulleret" | "auktion_skjult",
 ): Promise<{ ok: true } | { fejl: string }> {
-  const auktionId = formData.get("auktionId") as string;
-  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
-
+  const auktionId = ((formData.get("auktionId") as string) ?? "").trim();
   let admin, staffId;
   try {
     ({ admin, userId: staffId } = await assertRole("admin"));
   } catch {
-    return { fejl: "Du har ikke adgang til at fjerne auktioner." };
+    return { fejl: "Du har ikke adgang til at ændre auktioner." };
   }
-
-  if (!aarsag) return { fejl: "Angiv en årsag for fjernelsen." };
-
-  const { data: auktion } = await admin
-    .from("auctions")
-    .select("bruger_id, status, skjult")
-    .eq("id", auktionId)
-    .maybeSingle();
-  if (!auktion) return { fejl: "Auktionen findes ikke." };
-
-  const { count: antalHandler } = await admin
-    .from("trades")
-    .select("id", { count: "exact", head: true })
-    .eq("auction_id", auktionId);
-  if ((antalHandler ?? 0) > 0) {
-    return {
-      fejl: "Auktionen har en handel og kan ikke fjernes. Håndter den som en sag.",
-    };
+  let f;
+  try {
+    f = indgrebFelter(formData);
+  } catch (err) {
+    if (err instanceof BrugerFejl) return { fejl: err.message };
+    throw err;
   }
-  if (auktion.status === "afsluttet") {
-    return { fejl: "Auktionen er afsluttet og kan ikke fjernes. Skjul den i stedet." };
+  const r = await udfoerIndgreb(admin, {
+    staffId,
+    type: "auktion",
+    id: auktionId,
+    handling,
+    regel: f.regel,
+    fakta: f.fakta,
+    internNote: f.internNote,
+  });
+  if (!r.ok) {
+    if (r.kode === "uaendret") return { ok: true };
+    return { fejl: indgrebFejl(r.kode) };
   }
-
-  // Idempotent: kun en aktiv/annulleret auktion, der ikke allerede er fjernet.
-  const { data: opdateret, error } = await admin
-    .from("auctions")
-    .update({ status: "annulleret", skjult: true })
-    .eq("id", auktionId)
-    .in("status", ["aktiv", "annulleret"])
-    .select("id");
-  if (error) return { fejl: "Auktionen kunne ikke fjernes. Prøv igen." };
-  if (!opdateret || opdateret.length === 0) {
-    return { fejl: "Auktionens status er ændret. Genindlæs siden." };
-  }
-
-  if (!(auktion.status === "annulleret" && auktion.skjult)) {
-    await logModerationBloedt(admin, {
-      medarbejder_id: staffId,
-      handling: "slet_auktion",
-      maal_type: "auktion",
-      maal_id: auktionId,
-      bruger_id: auktion.bruger_id,
-      aarsag,
-    });
-  }
-
   revalidatePath("/admin/auktioner");
-  revalidatePath(`/admin/brugere/${auktion.bruger_id}`);
+  revalidatePath(`/admin/brugere/${r.brugerId}`);
+  revalidatePath(`/auktion/${auktionId}`);
+  revalidatePath("/admin/dsa");
   return { ok: true };
 }
 
-async function cancelAuctionImpl(formData: FormData): Promise<void> {
-  const auktionId = formData.get("auktionId") as string;
-  const { admin } = await assertRole("admin");
-
-  // Idempotent: kun en aktiv auktion annulleres. En afsluttet auktion har en
-  // vinder/handel og skal loeses som en sag.
-  const { error } = await admin
-    .from("auctions")
-    .update({ status: "annulleret" })
-    .eq("id", auktionId)
-    .eq("status", "aktiv");
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/admin/auktioner");
+async function deleteAuctionImpl(formData: FormData) {
+  return auktionIndgreb(formData, "auktion_fjernet");
 }
 
-async function hideAuctionImpl(formData: FormData): Promise<void> {
-  const auktionId = formData.get("auktionId") as string;
-  const { admin } = await assertRole("admin");
-
-  const { error } = await admin
-    .from("auctions")
-    .update({ skjult: true })
-    .eq("id", auktionId);
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/admin/auktioner");
+async function cancelAuctionImpl(formData: FormData) {
+  return auktionIndgreb(formData, "auktion_annulleret");
 }
 
+async function hideAuctionImpl(formData: FormData) {
+  return auktionIndgreb(formData, "auktion_skjult");
+}
+
+// Vis igen. Triggeren auctions_dsa_ophaevet markerer begrundelsen som ophævet.
 async function unhideAuctionImpl(formData: FormData): Promise<void> {
   const auktionId = formData.get("auktionId") as string;
-  const { admin } = await assertRole("admin");
+  const { admin, userId: staffId } = await assertRole("admin");
+
+  const { data: auktion } = await admin
+    .from("auctions")
+    .select("bruger_id, skjult")
+    .eq("id", auktionId)
+    .maybeSingle<{ bruger_id: string; skjult: boolean }>();
+  if (!auktion) throw new BrugerFejl("Auktionen findes ikke.");
 
   const { error } = await admin
     .from("auctions")
     .update({ skjult: false })
     .eq("id", auktionId);
   if (error) throw new Error(error.message);
+
+  if (auktion.skjult) {
+    await logModerationBloedt(admin, {
+      medarbejder_id: staffId,
+      handling: "auktion_vist",
+      maal_type: "auktion",
+      maal_id: auktionId,
+      bruger_id: auktion.bruger_id,
+      aarsag: "Auktionen er synlig igen",
+    });
+  }
 
   revalidatePath("/admin/auktioner");
 }
@@ -455,80 +428,61 @@ async function rapportMarkerBehandletImpl(formData: FormData): Promise<void> {
   revalidatePath("/admin/opklarede-rapporter");
 }
 
-// Skjul opslaget midlertidigt mens sagen undersøges.
-async function rapportSletMidlertidigtImpl(formData: FormData): Promise<void> {
+// Skjul eller fjern opslaget efter en rapport. Går gennem den fælles
+// DSA-funktion, så sælgeren får en begrundelse og kan klage. Kom rapporten fra
+// den automatiske kontrol af forbudte varer, registreres indgrebet som
+// "automatisk opdaget" (til gennemsigtighedsrapporten). Auktionen annulleres
+// og skjules i stedet for at blive slettet: reports.auction_id har ON DELETE
+// CASCADE, så en hård sletning ville også fjerne rapporten.
+async function rapportIndgreb(
+  formData: FormData,
+  handling: "auktion_skjult" | "auktion_fjernet",
+): Promise<void> {
   const rapportId = formData.get("rapportId") as string;
-  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("admin");
-
-  if (!aarsag) throw new BrugerFejl("Angiv en årsag.");
+  const f = indgrebFelter(formData);
   const rapport = await hentRapport(admin, rapportId);
 
-  const { data: auktion } = await admin
-    .from("auctions")
-    .select("bruger_id")
-    .eq("id", rapport.auction_id)
-    .single();
-  if (!auktion) throw new BrugerFejl("Auktionen findes ikke.");
+  const { data: r0 } = await admin
+    .from("reports")
+    .select("reporter_id")
+    .eq("id", rapportId)
+    .maybeSingle<{ reporter_id: string | null }>();
+  const automatisk = (r0?.reporter_id ?? "").toLowerCase() === BIDHAMR_SYSTEM_ID;
 
-  const { error } = await admin
-    .from("auctions")
-    .update({ skjult: true })
-    .eq("id", rapport.auction_id);
-  if (error) throw new Error(error.message);
-
-  await logModeration(admin, {
-    medarbejder_id: staffId,
-    handling: "slet_auktion",
-    maal_type: "auktion",
-    maal_id: rapport.auction_id,
-    bruger_id: auktion.bruger_id,
-    aarsag: `Midlertidigt skjult efter anmeldelse: ${aarsag}`,
+  const r = await udfoerIndgreb(admin, {
+    staffId,
+    type: "auktion",
+    id: rapport.auction_id,
+    handling,
+    regel: f.regel,
+    fakta: f.fakta,
+    internNote: f.internNote || `Efter rapport ${rapportId}`,
+    automatiskOpdaget: automatisk,
   });
+  if (!r.ok && r.kode !== "uaendret") throw new BrugerFejl(indgrebFejl(r.kode));
 
-  await afslutRapport(admin, staffId, rapportId, "under_behandling", aarsag);
+  await afslutRapport(
+    admin,
+    staffId,
+    rapportId,
+    handling === "auktion_skjult" ? "under_behandling" : "fjernet",
+    `${regelNavn(f.regel)}: ${f.fakta}${f.internNote ? ` | ${f.internNote}` : ""}`.slice(0, 2000),
+  );
   revalidatePath("/admin/rapporter");
   revalidatePath("/admin/auktioner");
   revalidatePath(`/auktion/${rapport.auction_id}`);
+  revalidatePath("/admin/dsa");
 }
 
-// Fjern opslaget permanent fra platformen. Auktionen annulleres og skjules i
-// stedet for at blive slettet: reports.auction_id har ON DELETE CASCADE, så en
-// hård sletning ville også fjerne selve rapporten og dermed dokumentationen.
+// Skjul opslaget midlertidigt mens sagen undersøges.
+async function rapportSletMidlertidigtImpl(formData: FormData): Promise<void> {
+  return rapportIndgreb(formData, "auktion_skjult");
+}
+
+// Fjern opslaget permanent fra platformen.
 async function rapportFjernOpslagImpl(formData: FormData): Promise<void> {
-  const rapportId = formData.get("rapportId") as string;
-  const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
-  const { admin, userId: staffId } = await assertRole("admin");
-
-  if (!aarsag) throw new BrugerFejl("Angiv en årsag.");
-  const rapport = await hentRapport(admin, rapportId);
-
-  const { data: auktion } = await admin
-    .from("auctions")
-    .select("bruger_id")
-    .eq("id", rapport.auction_id)
-    .single();
-  if (!auktion) throw new BrugerFejl("Auktionen findes ikke.");
-
-  const { error } = await admin
-    .from("auctions")
-    .update({ status: "annulleret", skjult: true })
-    .eq("id", rapport.auction_id);
-  if (error) throw new Error(error.message);
-
-  await logModeration(admin, {
-    medarbejder_id: staffId,
-    handling: "slet_auktion",
-    maal_type: "auktion",
-    maal_id: rapport.auction_id,
-    bruger_id: auktion.bruger_id,
-    aarsag: `Opslag fjernet efter anmeldelse: ${aarsag}`,
-  });
-
-  await afslutRapport(admin, staffId, rapportId, "fjernet", aarsag);
-  revalidatePath("/admin/rapporter");
-  revalidatePath("/admin/auktioner");
-  revalidatePath(`/auktion/${rapport.auction_id}`);
+  return rapportIndgreb(formData, "auktion_fjernet");
 }
 
 // Fortryd. Skal også gøre opslaget synligt igen - ellers bliver auktionen ved

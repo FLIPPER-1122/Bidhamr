@@ -8,7 +8,7 @@ import AuctionGallery from "@/components/AuctionGallery";
 import AuctionTitleActions from "@/components/AuctionTitleActions";
 import BidPanel from "@/components/BidPanel";
 import Accordion from "@/components/Accordion";
-import AnmeldOpslagKnap from "@/components/AnmeldOpslagKnap";
+import AnmeldKnap from "@/components/dsa/AnmeldKnap";
 import StartChatKnap from "@/components/StartChatKnap";
 import SaelgerAuktionHandlinger from "@/components/SaelgerAuktionHandlinger";
 import SpoergSaelger from "@/components/SpoergSaelger";
@@ -448,9 +448,12 @@ export default async function AuktionPage({
           {!erSælger && (
             <>
               <div className={sektionsLinje} />
-              <AnmeldOpslagKnap
-                auktionId={auktion.id}
-                brugerId={bruger?.id ?? null}
+              <AnmeldKnap
+                type="auktion"
+                id={auktion.id}
+                hvad={`Auktionen "${auktion.titel}"`}
+                loggetInd={!!bruger}
+                label="Anmeld auktionen"
               />
             </>
           )}

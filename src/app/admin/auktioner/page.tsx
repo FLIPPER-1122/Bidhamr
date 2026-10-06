@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { deleteAuction, cancelAuction, hideAuction, unhideAuction } from "@/app/actions/adminActions";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import { indgrebFelter } from "@/components/admin/indgrebFelter";
 import type { AdminAuktionRow } from "@/lib/adminRowTypes";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 
@@ -210,10 +211,11 @@ export default async function AdminAuktioner({
                             triggerLabel="Annullér"
                             triggerClassName="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded-md hover:bg-amber-200 transition-colors"
                             title="Er du sikker på, at du vil annullere auktionen?"
-                            description="Auktionen stoppes, og der kan ikke bydes længere."
+                            description="Auktionen stoppes, og der kan ikke bydes længere. Sælgeren får begrundelsen og kan klage."
                             confirmLabel="Ja, annullér auktionen"
                             action={cancelAuction}
                             hiddenFields={{ auktionId: a.id }}
+                            {...indgrebFelter({ faktaPlaceholder: "Fx: Auktionen sælger en billet til over den oprindelige pris." })}
                           />
                         )}
                         <ConfirmDialog
@@ -232,20 +234,19 @@ export default async function AdminAuktioner({
                           confirmLabel={a.skjult ? "Ja, vis auktionen" : "Ja, skjul auktionen"}
                           action={a.skjult ? unhideAuction : hideAuction}
                           hiddenFields={{ auktionId: a.id }}
+                          {...(a.skjult
+                            ? {}
+                            : indgrebFelter({ faktaPlaceholder: "Fx: Billederne er kopieret fra en anden hjemmeside." }))}
                         />
                         <ConfirmDialog
                           triggerLabel="Slet"
                           triggerClassName="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
                           title="Er du sikker på, at du vil fjerne auktionen?"
-                          description="Auktionen annulleres og skjules. Data bevares af hensyn til bogføringen."
+                          description="Auktionen annulleres og skjules. Data bevares af hensyn til bogføringen. Sælgeren får begrundelsen og kan klage."
                           confirmLabel="Ja, fjern auktionen"
                           action={deleteAuction}
                           hiddenFields={{ auktionId: a.id }}
-                          aarsagField={{
-                            label: "Årsag",
-                            placeholder: "Skriv hvorfor auktionen slettes...",
-                            required: true,
-                          }}
+                          {...indgrebFelter({ faktaPlaceholder: "Fx: Auktionen sælger et skydevåben, som ikke må sælges på BidHamr." })}
                         />
                       </div>
                     </td>

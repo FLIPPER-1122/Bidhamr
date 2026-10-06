@@ -58,6 +58,14 @@ export const GRAENSER = {
   // minut. IP-loftet er højere, fordi mange mobilbrugere deler IP (CGNAT).
   soeg_bruger: { maks: 60, vindueSek: 60 },
   soeg_ip: { maks: 120, vindueSek: 60 },
+  // Anmeld ulovligt indhold (DSA, også uden login). Honeypot og tidsfælde
+  // i formularen; databasen har desuden 20 pr. døgn pr. anmelder.
+  dsa_ip: { maks: 10, vindueSek: 60 * 60 },
+  dsa_email: { maks: 10, vindueSek: 60 * 60 },
+  dsa_bruger: { maks: 20, vindueSek: 60 * 60 },
+  dsa_alle: { maks: 500, vindueSek: 60 * 60 },
+  // Klager og visning af en DSA-sag via signeret link.
+  dsa_klage_ip: { maks: 10, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;

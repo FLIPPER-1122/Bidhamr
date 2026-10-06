@@ -117,8 +117,8 @@ function SkjulKnap({ ratingId, del }: { ratingId: string; del: BedoemmelseDel })
       title={`Skjul ${hvad}?`}
       description={
         del === "bedoemmelse"
-          ? "Bedømmelsen bliver usynlig for alle og tæller ikke længere med i sælgerens gennemsnit. Den slettes ikke og kan vises igen. Køberen får en besked med begrundelsen."
-          : "Svaret bliver usynligt for alle. Det slettes ikke og kan vises igen. Sælgeren får en besked med begrundelsen."
+          ? "Bedømmelsen bliver usynlig for alle og tæller ikke længere med i sælgerens gennemsnit. Den slettes ikke og kan vises igen. Køberen får begrundelsen og kan klage."
+          : "Svaret bliver usynligt for alle. Det slettes ikke og kan vises igen. Sælgeren får begrundelsen og kan klage."
       }
       confirmLabel={`Ja, skjul ${hvad}`}
       action={skjulBedoemmelse}
@@ -136,7 +136,7 @@ function SkjulKnap({ ratingId, del }: { ratingId: string; del: BedoemmelseDel })
           placeholder: "Påkrævet ved \"Andet\". Fx hvilke ord der bryder reglerne.",
           required: false,
           maxLength: 500,
-          hjaelp: "Sendes til brugeren sammen med begrundelsen og gemmes i medarbejder-loggen.",
+          hjaelp: "Sendes til brugeren sammen med begrundelsen (som kan klage) og gemmes i medarbejder-loggen.",
         },
       ]}
     />

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import KontaktForm from "@/components/tryghed/KontaktForm";
 import { erKontaktEmne } from "@/lib/tryghed";
@@ -50,6 +51,17 @@ export default async function KontaktSide({
         <a href="mailto:support@bidhamr.dk" className="font-medium text-groen hover:underline">
           support@bidhamr.dk
         </a>
+        .
+      </p>
+      <p className="mt-2 text-sm text-tekst-svag">
+        Vil du anmelde ulovligt indhold?{" "}
+        <Link href="/dsa/anmeld" className="font-medium text-groen hover:underline">
+          Brug formularen til anmeldelser
+        </Link>
+        . Myndigheder kan kontakte vores{" "}
+        <Link href="/dsa#kontaktpunkt" className="font-medium text-groen hover:underline">
+          kontaktpunkt
+        </Link>
         .
       </p>
     </main>

@@ -7,6 +7,7 @@ import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import AuctionCard from "@/components/AuctionCard";
 import ProfileHeader from "@/components/profile/ProfileHeader";
 import ProfilTryghed from "@/components/tryghed/ProfilTryghed";
+import AnmeldKnap from "@/components/dsa/AnmeldKnap";
 import FoelgKnap from "@/components/foelg/FoelgKnap";
 import { createAdminClient } from "@/lib/supabase/admin";
 import BedoemmelseListe from "@/components/profile/BedoemmelseListe";
@@ -329,6 +330,9 @@ export default async function ProfilPage({
           }
         />
 
+        {!erLoggetInd && (
+          <AnmeldKnap type="profil" id={id} hvad={`Profilen ${kortNavn(profil.navn)}`} loggetInd={false} label="Anmeld profil" />
+        )}
         {erLoggetInd && (
           <ProfilTryghed
             brugerId={id}

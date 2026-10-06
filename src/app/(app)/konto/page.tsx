@@ -218,6 +218,17 @@ export default async function KontoSide({
         </Link>
       </section>
 
+      <section id="afgoerelser" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+        <h2 className="text-[20px] leading-tight lg:text-[22px]">Afgørelser og anmeldelser</h2>
+        <p className="mt-1 text-sm text-tekst-daempet">
+          Se, hvis BidHamr har fjernet eller begrænset noget af dit indhold, og klag, hvis du er uenig. Her kan du også
+          følge det, du selv har anmeldt.
+        </p>
+        <Link href="/konto/afgoerelser" className="btn btn-sekundaer mt-4">
+          Se afgørelser og anmeldelser
+        </Link>
+      </section>
+
       <section id="blokerede" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
         <h2 className="text-[20px] leading-tight lg:text-[22px]">Blokerede brugere</h2>
         <p className="mt-1 text-sm text-tekst-daempet">

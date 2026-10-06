@@ -1,0 +1,44 @@
+import "server-only";
+
+// Signerede links til DSA-sager (HMAC), så en anmelder uden login - eller en
+// bruger med lukket/suspenderet konto - kan se sin sag og klage via mailen.
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function erUuid(v: unknown): v is string {
+  return typeof v === "string" && UUID.test(v);
+}
+
+// Nøglen: DSA_LINK_HEMMELIGHED, ellers afledt af service-role-nøglen (findes
+// altid på serveren). Linket giver kun adgang til at se én sag og klage.
+function noegle(): string {
+  const k = process.env.DSA_LINK_HEMMELIGHED || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!k) throw new Error("Ingen nøgle til DSA-links");
+  return k;
+}
+
+export type LinkType = "anmeldelse" | "afgoerelse";
+
+export function dsaToken(type: LinkType, id: string): string {
+  return createHmac("sha256", noegle())
+    .update(`bidhamr-dsa:${type}:${id.toLowerCase()}`)
+    .digest("base64url")
+    .slice(0, 32);
+}
+
+export function tjekDsaToken(type: LinkType, id: string, token: unknown): boolean {
+  if (typeof token !== "string" || token.length !== 32 || !erUuid(id)) return false;
+  const a = Buffer.from(dsaToken(type, id));
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export function anmeldelseSti(id: string, medToken = true): string {
+  return `/dsa/anmeldelse/${id}${medToken ? `?t=${dsaToken("anmeldelse", id)}` : ""}`;
+}
+
+export function afgoerelseSti(id: string, medToken = true): string {
+  return `/dsa/afgoerelse/${id}${medToken ? `?t=${dsaToken("afgoerelse", id)}` : ""}`;
+}
+

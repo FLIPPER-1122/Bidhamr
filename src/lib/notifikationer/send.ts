@@ -53,6 +53,9 @@ export type SendOptions = {
   // nøglen aldrig bliver gemt. Påkrævede typer sendes stadig (hellere to gange
   // end aldrig). Næste kørsel prøver igen.
   springOverVedClaimFejl?: boolean;
+  // Mail sendes uanset brugerens kanalvalg (DSA-begrundelser: brugeren kan
+  // være suspenderet og ude af stand til at logge ind og se klokken).
+  altidMail?: boolean;
 };
 
 const INGEN: SendResultat = { klokke: false, mail: false, push: false };
@@ -340,7 +343,8 @@ export async function send(
       }
     }
     const link = input.link ? sikkerSti(input.link, "") || null : null;
-    const kanaler = await hentKanaler(admin, brugerId, type);
+    const valgte = await hentKanaler(admin, brugerId, type);
+    const kanaler = opts.altidMail ? { ...valgte, mail: true } : valgte;
 
     const fra = Promise.resolve(null);
     const [klokke, mail, push] = await Promise.allSettled([
