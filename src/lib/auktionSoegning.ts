@@ -5,7 +5,6 @@ import { kategorier } from "@/lib/kategorier";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import { beregnAfstandKm } from "@/lib/distance";
 import { slaaPostnummerOp } from "@/lib/postnumre";
-import { POSTNUMRE } from "@/data/postnumre";
 import { logDriftFejl } from "@/lib/drift";
 import { læsSortering, type Sortering } from "@/lib/sortering";
 import { escapeLike, escapeRegex } from "@/lib/postgrest";
@@ -19,8 +18,8 @@ export const AUKTIONER_PR_SIDE = 24; // går op i 2, 3 og 4 spalter
 export const RADIUS_MAX_KM = 150; // "Hele Danmark"
 const MAKS_SOEGETEKST = 100;
 const MAKS_OFFSET = 5000;
-// Øvre grænse for kandidater ved afstandsfilter (kun id, koordinat og
-// postnummer hentes, så det er få kB). Rammes loftet, logges det til drift.
+// Øvre grænse for kandidater ved afstandsfilter (kun id og koordinat
+// hentes, så det er få kB). Rammes loftet, logges det til drift.
 const MAKS_KANDIDATER = 1000;
 // Antal: "estimated" tæller præcist op til PostgREST's max-rows (1000 hos
 // Supabase) og bruger planlæggerens skøn derover, så en bred søgning ikke
@@ -31,10 +30,10 @@ const PRAECIST_ANTAL_OP_TIL = 1000;
 // select-parser kan ikke læse "ø" i nuværende_bud.
 const KORT_KOLONNER: string =
   "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud";
-const AFSTAND_KOLONNER: string = "id, lat, lng, postnummer";
+const AFSTAND_KOLONNER: string = "id, lat, lng";
 
 type KortRaekke = Parameters<typeof mapAuctionTilKort>[0];
-type AfstandRaekke = { id: string; lat: number | null; lng: number | null; postnummer: string | null };
+type AfstandRaekke = { id: string; lat: number | null; lng: number | null };
 
 export interface AuktionsFiltre {
   q?: string;
@@ -52,17 +51,6 @@ export type AuktionsSide =
   | { ok: false; fejl: string };
 
 const FEJL = "Auktionerne kunne ikke hentes. Prøv igen.";
-
-// Postnumre, hvis koordinat ligger højst radiusKm fra centret. Bruges til
-// auktioner uden eget koordinat (de placeres ud fra postnummeret, præcis som
-// i filteret nedenfor).
-function postnumreIndenfor(center: { lat: number; lng: number }, radiusKm: number): string[] {
-  const ud: string[] = [];
-  for (const [nr, [, lat, lng]] of Object.entries(POSTNUMRE)) {
-    if (beregnAfstandKm(center.lat, center.lng, lat, lng) <= radiusKm) ud.push(nr);
-  }
-  return ud;
-}
 
 export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<AuktionsSide> {
   const søgetekst = typeof filtre.q === "string" ? filtre.q.trim().slice(0, MAKS_SOEGETEKST) : "";
@@ -141,25 +129,18 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
     };
   }
 
-  // Afstandsfilter: hent kandidater inden for en firkant om centret plus
-  // auktioner uden koordinat, hvis postnummer ligger inden for radius (ikke
-  // hele landets), filtrér præcist her, og hent derefter kun kortene til den
-  // viste side.
+  // Afstandsfilter: hent kandidater inden for en firkant om centret,
+  // filtrér præcist her, og hent derefter kun kortene til den viste side.
+  // Alle auktioner har en koordinat: databasen sætter den ud fra
+  // postnummeret, hvis web/app ikke selv sender en (migration
+  // 20261008050000). Auktioner uden koordinat kommer derfor ikke med.
   const dLat = (radiusKm / 111) * 1.01;
   const dLng = (radiusKm / (111.32 * Math.cos((center.lat * Math.PI) / 180))) * 1.01;
-  const boks = [
-    `lat.gte.${(center.lat - dLat).toFixed(5)}`,
-    `lat.lte.${(center.lat + dLat).toFixed(5)}`,
-    `lng.gte.${(center.lng - dLng).toFixed(5)}`,
-    `lng.lte.${(center.lng + dLng).toFixed(5)}`,
-  ].join(",");
-  // Postnumrene kommer fra vores egen liste (altid fire cifre).
-  const naerePostnumre = postnumreIndenfor(center, radiusKm);
-  const udenKoordinat = naerePostnumre.length
-    ? `,and(or(lat.is.null,lng.is.null),postnummer.in.(${naerePostnumre.join(",")}))`
-    : "";
   const { data: kandidater, error: kandidatFejl } = await grund(AFSTAND_KOLONNER, false)
-    .or(`and(${boks})${udenKoordinat}`)
+    .gte("lat", Number((center.lat - dLat).toFixed(5)))
+    .lte("lat", Number((center.lat + dLat).toFixed(5)))
+    .gte("lng", Number((center.lng - dLng).toFixed(5)))
+    .lte("lng", Number((center.lng + dLng).toFixed(5)))
     .limit(MAKS_KANDIDATER);
   if (kandidatFejl) {
     console.error("Auktioner (afstand) kunne ikke hentes:", kandidatFejl.message);
@@ -182,11 +163,12 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
   }
   const totalType: TotalType = loftRamt ? "mange" : "praecis";
 
-  const indenfor = alleKandidater.filter((r) => {
-    const punkt =
-      r.lat != null && r.lng != null ? { lat: r.lat, lng: r.lng } : slaaPostnummerOp(r.postnummer);
-    return !!punkt && beregnAfstandKm(center.lat, center.lng, punkt.lat, punkt.lng) <= radiusKm;
-  });
+  const indenfor = alleKandidater.filter(
+    (r) =>
+      r.lat != null &&
+      r.lng != null &&
+      beregnAfstandKm(center.lat, center.lng, r.lat, r.lng) <= radiusKm,
+  );
   const sideIder = indenfor.slice(offset, offset + AUKTIONER_PR_SIDE).map((r) => r.id);
   if (sideIder.length === 0) return { ok: true, auktioner: [], total: indenfor.length, totalType };
 
