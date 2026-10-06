@@ -16,7 +16,8 @@ export const metadata: Metadata = { title: "Min statistik", robots: { index: fal
 
 // Svar fra min_statistik() (migration 20261007010000). Beløb i øre.
 type Statistik = {
-  auktioner: { i_alt: number; aktive: number; solgte: number };
+  // pauset: skjult af BidHamr og på pause (20261009040000) - mangler i ældre svar.
+  auktioner: { i_alt: number; aktive: number; solgte: number; pauset?: number };
   indtjening_oere: {
     uge: number;
     maaned: number;
@@ -29,7 +30,8 @@ type Statistik = {
   bud_paa: number;
 };
 
-type BudStatus = "foerer" | "overbudt" | "vundet" | "tabt" | "annulleret";
+// "pause": skjult af BidHamr og på pause - den slutter ikke imens.
+type BudStatus = "foerer" | "overbudt" | "vundet" | "tabt" | "annulleret" | "pause";
 
 type BudRaekke = {
   auktion_id: string;
@@ -48,13 +50,14 @@ const STATUS: Record<BudStatus, { tekst: string; klasse: string }> = {
   vundet: { tekst: "Vundet", klasse: "border-succes-kant bg-succes-bg text-succes-tekst" },
   tabt: { tekst: "Ikke vundet", klasse: "border-kant bg-white text-tekst-daempet" },
   annulleret: { tekst: "Annulleret", klasse: "border-kant bg-white text-tekst-daempet" },
+  pause: { tekst: "På pause", klasse: "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst" },
 };
 
 // Filtre i budlisten. "Aktive" = auktionen kører stadig.
 type Filter = "alle" | "aktive" | "vundet" | "ikke-vundet";
 const FILTRE: { id: Filter; tekst: string; statusser: BudStatus[] | null }[] = [
   { id: "alle", tekst: "Alle", statusser: null },
-  { id: "aktive", tekst: "Aktive", statusser: ["foerer", "overbudt"] },
+  { id: "aktive", tekst: "Aktive", statusser: ["foerer", "overbudt", "pause"] },
   { id: "vundet", tekst: "Vundet", statusser: ["vundet"] },
   { id: "ikke-vundet", tekst: "Ikke vundet", statusser: ["tabt", "annulleret"] },
 ];
@@ -190,7 +193,10 @@ export default async function StatistikSide({
             </div>
             <div className="mt-4 grid grid-cols-3 gap-3">
               <Tal tal={String(stat.auktioner.i_alt)} tekst="Oprettet i alt" />
-              <Tal tal={String(stat.auktioner.aktive)} tekst="Aktive nu" />
+              <Tal
+                tal={String(stat.auktioner.aktive)}
+                tekst={stat.auktioner.pauset ? `Aktive nu (+${stat.auktioner.pauset} på pause)` : "Aktive nu"}
+              />
               <Tal tal={String(stat.auktioner.solgte)} tekst="Solgt" />
             </div>
           </section>

@@ -21,6 +21,7 @@ import {
 } from "@/lib/betaling/handelsbeskeder";
 import { REFUSION_I_GANG, REFUSION_KONFLIKT } from "@/lib/betaling/refusionTekster";
 import { indgrebFejl, udfoerIndgreb } from "@/lib/dsa/server";
+import { notificerAuktionPauser } from "@/lib/notifikationer/auktionPause";
 import { erRegel, regelNavn } from "@/lib/dsa/regler";
 
 // --- Fejlhaandtering ---------------------------------------------------------
@@ -358,6 +359,8 @@ async function hideAuctionImpl(formData: FormData) {
 }
 
 // Vis igen. Triggeren auctions_dsa_ophaevet markerer begrundelsen som ophævet.
+// Var auktionen på pause, genoptager triggeren auctions_pause_skjult den
+// (resterende tid, mindst 24 timer), og sælger og bydere får besked.
 async function unhideAuctionImpl(formData: FormData): Promise<void> {
   const auktionId = formData.get("auktionId") as string;
   const { admin, userId: staffId } = await assertRole("admin");
@@ -376,6 +379,7 @@ async function unhideAuctionImpl(formData: FormData): Promise<void> {
   if (error) throw new Error(error.message);
 
   if (auktion.skjult) {
+    after(() => notificerAuktionPauser(auktionId));
     await logModerationBloedt(admin, {
       medarbejder_id: staffId,
       handling: "auktion_vist",
@@ -558,9 +562,9 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
   if (opslagetBlevAendret) {
     const { data: auktion } = await admin
       .from("auctions")
-      .select("bruger_id, slutter_kl")
+      .select("bruger_id, slutter_kl, pauset_kl")
       .eq("id", rapport.auction_id)
-      .single();
+      .single<{ bruger_id: string; slutter_kl: string; pauset_kl: string | null }>();
 
     if (auktion) {
       const opdatering: { skjult: boolean; status?: string; arkiveret_kl?: null } = {
@@ -568,10 +572,11 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
       };
 
       // 'fjernet' satte status til 'annulleret' - den skal tilbage. En auktion
-      // hvis sluttid er passeret genoplives som afsluttet, ikke som aktiv.
+      // hvis sluttid er passeret genoplives som afsluttet, ikke som aktiv -
+      // medmindre den var på pause (så genoptages den med den resterende tid).
       if (rapport.status === "fjernet") {
         opdatering.status =
-          new Date(auktion.slutter_kl) > new Date() ? "aktiv" : "afsluttet";
+          auktion.pauset_kl || new Date(auktion.slutter_kl) > new Date() ? "aktiv" : "afsluttet";
       }
 
       // En aktiv auktion må aldrig være arkiveret. Triggeren
@@ -586,6 +591,7 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
         .update(opdatering)
         .eq("id", rapport.auction_id);
       if (opdateringFejl) throw new Error(opdateringFejl.message);
+      after(() => notificerAuktionPauser(rapport.auction_id));
 
       await logModeration(admin, {
         medarbejder_id: staffId,

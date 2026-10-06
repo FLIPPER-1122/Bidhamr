@@ -12,6 +12,7 @@ import { assertRole, getStaffRole } from "@/lib/adminAuth";
 import { indgrebFejl, udfoerIndgreb } from "@/lib/dsa/server";
 import { erUuid } from "@/lib/dsa/link";
 import { notificerAnmeldelseSvar, notificerKlageSvar } from "@/lib/dsa/notifikationer";
+import { notificerAuktionPauser } from "@/lib/notifikationer/auktionPause";
 import {
   erDsaHandling,
   erIndholdType,
@@ -227,6 +228,8 @@ export async function dsaKlageAfgoer(formData: FormData): Promise<{ ok: true } |
       throw new BrugerFejl(KODE_FEJL[kode ?? ""] ?? indgrebFejl(kode ?? ""));
     }
     after(() => notificerKlageSvar(id));
+    // Medhold kan have vist en pauset auktion igen (genoptaget af triggeren).
+    after(() => notificerAuktionPauser());
     revalider();
     revalidatePath("/admin/auktioner");
     revalidatePath("/admin/bedommelser");

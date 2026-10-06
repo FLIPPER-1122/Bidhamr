@@ -178,7 +178,7 @@ export const HANDLING_BRUGER: Record<DsaHandling, string> = {
 
 // Kort forklaring af konsekvensen.
 export const HANDLING_KONSEKVENS: Record<DsaHandling, string> = {
-  auktion_skjult: "Auktionen kan ikke længere ses af andre. Den er ikke slettet.",
+  auktion_skjult: "Auktionen kan ikke længere ses af andre. Var den i gang, er den sat på pause, så den ikke slutter, mens den er skjult. Den er ikke slettet.",
   auktion_fjernet: "Auktionen er stoppet og kan ikke længere ses af andre. Den er ikke slettet.",
   auktion_annulleret: "Auktionen er stoppet, og der kan ikke længere bydes.",
   spoergsmaal_skjult: "Teksten kan ikke længere ses af andre. Den er ikke slettet.",
