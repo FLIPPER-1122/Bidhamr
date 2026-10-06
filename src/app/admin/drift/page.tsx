@@ -5,6 +5,7 @@ import {
   CLAIM_HAENGER_MIN,
   CRON_ADVARSEL_MIN,
   type Sektion,
+  hentAlarmStatus,
   hentCronRute,
   hentFejlGrupper,
   hentHttpSvar,
@@ -13,6 +14,7 @@ import {
 } from "@/lib/driftData";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { hentBesoeg, stiNavn } from "@/lib/statistik";
+import { ALARM_INTERVAL_MIN, ALARM_SLAGS, alarmModtagere, type AlarmSlags } from "@/lib/driftAlarm";
 
 // Drift: cron-jobs, notifikationer der ikke er sendt, og fejl på siden.
 // Kun admin og chef (tjekkes på serveren). Ingen mailindhold og ingen
@@ -109,14 +111,21 @@ export default async function AdminDrift({
   const dage = DAGE_VALG.find((d) => String(d) === dageParam) ?? 7;
   const nu = naa();
 
-  const [rute, pgCron, http, ikkeSendte, fejl, besoeg] = await Promise.all([
+  const [rute, pgCron, http, ikkeSendte, fejl, besoeg, alarm] = await Promise.all([
     hentCronRute(admin, nu),
     hentPgCron(admin),
     hentHttpSvar(admin),
     hentIkkeSendte(admin, nu),
     hentFejlGrupper(admin, nu, dage),
     hentBesoeg(admin, 30),
+    hentAlarmStatus(admin),
   ]);
+  // Kun om modtageren er sat - adressen vises aldrig.
+  const alarmModtagerSat = alarmModtagere().length > 0;
+  const alarmTjekGammelt =
+    alarm.tilstand === "ok" &&
+    alarm.data.sidstTjekket !== null &&
+    nu - new Date(alarm.data.sidstTjekket).getTime() > 15 * 60_000;
 
   // Advarsel: ingen vellykket kørsel af vores cron-rute i 15 minutter.
   // Testdatabasen kalder bevidst ikke cron-ruten (ingen cron_url/cron_secret i
@@ -225,6 +234,112 @@ export default async function AdminDrift({
             <p className="text-xs text-neutral-500">
               Tæller kun sidevisninger pr. dag og sidetype. Ingen cookies, intet bruger-id, ingen IP og ingen
               tredjepart. Besøgende med Do Not Track tælles ikke. Admin-sider tælles ikke.
+            </p>
+          </div>
+        )}
+      </Kort>
+
+      {/* ---------------------------------------------------------- Alarmer */}
+      <Kort
+        titel="Alarmer (mail ved fejl)"
+        hoejre={
+          !alarmModtagerSat ? (
+            <Badge farve="gul">Modtager ikke sat</Badge>
+          ) : alarmTjekGammelt ? (
+            <Badge farve="roed">Tjekket for over 15 min. siden</Badge>
+          ) : alarm.tilstand === "ok" && alarm.data.sidstTjekket ? (
+            <Badge farve="groen">Aktiv</Badge>
+          ) : null
+        }
+      >
+        {alarm.tilstand === "mangler" ? (
+          <p className="text-sm text-amber-800">
+            Ikke tilgængelig endnu: migrationen <code className="text-xs">20261008010000_drift_alarmer.sql</code> er
+            ikke kørt på denne database.
+          </p>
+        ) : alarm.tilstand === "fejl" ? (
+          <p className="text-sm text-red-700">Kunne ikke hentes: {alarm.besked}</p>
+        ) : (
+          <div className="space-y-4">
+            {!alarmModtagerSat && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Miljøvariablen <code>DRIFT_ALARM_MAIL</code> er ikke sat, så der sendes ingen alarmer. Alarmerne
+                registreres stadig her.
+              </div>
+            )}
+            {alarm.data.sidsteFejl && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                Sidste alarm-mail kunne ikke sendes: {alarm.data.sidsteFejl}
+              </div>
+            )}
+            <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-xs text-neutral-500">Modtager (DRIFT_ALARM_MAIL)</dt>
+                <dd className="font-medium text-neutral-900">{alarmModtagerSat ? "Sat" : "Ikke sat"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-neutral-500">Sidste tjek</dt>
+                <dd className="font-medium text-neutral-900">{siden(alarm.data.sidstTjekket, nu)}</dd>
+                <dd className="text-xs text-neutral-500">{tid(alarm.data.sidstTjekket)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-neutral-500">Sidst sendt</dt>
+                {(() => {
+                  const sidst = alarm.data.alarmer
+                    .map((a) => a.sidst_sendt_kl)
+                    .filter((t): t is string => !!t)
+                    .sort()
+                    .at(-1) ?? null;
+                  return (
+                    <>
+                      <dd className="font-medium text-neutral-900">{siden(sidst, nu)}</dd>
+                      <dd className="text-xs text-neutral-500">{tid(sidst)}</dd>
+                    </>
+                  );
+                })()}
+              </div>
+            </dl>
+            <div className="-mx-4 overflow-x-auto sm:mx-0">
+              <table className="w-full min-w-[520px] text-sm">
+                <thead>
+                  <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                    <th className={th}>Slags</th>
+                    <th className={th}>Sidst sendt</th>
+                    <th className={th}>Sidst udløst</th>
+                    <th className={`${th} text-right`}>Sendt i alt</th>
+                    <th className={th}>Seneste</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {alarm.data.alarmer.map((a) => (
+                    <tr key={a.slags}>
+                      <td className={td}>{ALARM_SLAGS[a.slags as AlarmSlags] ?? a.slags}</td>
+                      <td className={`${td} whitespace-nowrap`}>{tid(a.sidst_sendt_kl)}</td>
+                      <td className={`${td} whitespace-nowrap`}>{tid(a.sidst_udloest_kl)}</td>
+                      <td className={`${td} text-right tabular-nums`}>{a.antal_sendt}</td>
+                      <td className={td}>
+                        {a.sidste_resultat === "sendt" ? (
+                          <Badge farve="groen">Sendt</Badge>
+                        ) : a.sidste_resultat === "undertrykt" ? (
+                          <Badge farve="graa">Venter (sendt for nylig)</Badge>
+                        ) : a.sidste_resultat === "ingen_modtager" ? (
+                          <Badge farve="gul">Ikke sendt – ingen modtager</Badge>
+                        ) : a.sidste_resultat === "mail_fejlet" ? (
+                          <Badge farve="roed">Mail fejlede</Badge>
+                        ) : (
+                          <span className="text-neutral-500">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-neutral-500">
+              Tjekkes hvert 5. minut (pg_cron-jobbet <code>drift-alarm</code>). Der sendes én samlet mail ved en ny
+              slags fejl, over 20 fejl på 15 minutter, cron-fejl og webhook-fejl – højst én mail pr. slags pr.{" "}
+              {ALARM_INTERVAL_MIN} minutter. Hvis hele siden er nede, kan den ikke selv sende besked; det klarer den
+              eksterne overvågning af <code>/api/helbred</code>.
             </p>
           </div>
         )}

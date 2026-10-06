@@ -307,3 +307,42 @@ export async function hentFejlGrupper(
     data: { grupper: liste, iAlt, afkortet: (data ?? []).length >= MAKS },
   };
 }
+
+// ------------------------------------------------------------------ alarmer
+
+export type AlarmRaekke = {
+  slags: string;
+  sidst_sendt_kl: string | null;
+  antal_sendt: number;
+  sidst_udloest_kl: string | null;
+  sidste_resultat: string | null;
+};
+
+export type AlarmStatus = {
+  alarmer: AlarmRaekke[];
+  sidstTjekket: string | null;
+  sidsteResultat: string | null;
+  sidsteFejl: string | null;
+};
+
+// Status for drift-alarmerne (migration 20261008010000_drift_alarmer.sql).
+// Ingen modtageradresse - siden viser kun, om den er sat.
+export async function hentAlarmStatus(admin: Admin): Promise<Sektion<AlarmStatus>> {
+  const [alarmer, tilstand] = await Promise.all([
+    admin
+      .from("drift_alarmer")
+      .select("slags, sidst_sendt_kl, antal_sendt, sidst_udloest_kl, sidste_resultat")
+      .order("slags"),
+    admin
+      .from("drift_alarm_tilstand")
+      .select("sidst_tjekket_kl, sidste_resultat, sidste_fejl")
+      .maybeSingle<{ sidst_tjekket_kl: string | null; sidste_resultat: string | null; sidste_fejl: string | null }>(),
+  ]);
+  const error = alarmer.error ?? tilstand.error;
+  return sektion(error, {
+    alarmer: (alarmer.data ?? []) as AlarmRaekke[],
+    sidstTjekket: tilstand.data?.sidst_tjekket_kl ?? null,
+    sidsteResultat: tilstand.data?.sidste_resultat ?? null,
+    sidsteFejl: tilstand.data?.sidste_fejl ?? null,
+  });
+}
