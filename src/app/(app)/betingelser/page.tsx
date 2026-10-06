@@ -5,7 +5,7 @@ import { seoIndeksering } from "@/lib/seo";
 import { PRIVATLIV_STI } from "@/lib/vilkaar";
 
 // Brugerbetingelser (jura/brugerbetingelser-udkast.md). Offentlig side
-// (OFFENTLIGE_RUTER i src/lib/supabase/middleware.ts). Udkastet indekseres
+// (OFFENTLIGE_LAESESIDER i src/lib/supabase/middleware.ts). Udkastet indekseres
 // ikke, før SEO_INDEKSERING=true (som resten af siden).
 export const metadata: Metadata = {
   title: "Brugerbetingelser",

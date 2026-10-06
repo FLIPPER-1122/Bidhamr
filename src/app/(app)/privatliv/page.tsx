@@ -5,7 +5,7 @@ import { seoIndeksering } from "@/lib/seo";
 import { BETINGELSER_STI } from "@/lib/vilkaar";
 
 // Privatlivspolitik (jura/privatlivspolitik-udkast.md). Offentlig side
-// (OFFENTLIGE_RUTER i src/lib/supabase/middleware.ts). Udkastet indekseres
+// (OFFENTLIGE_LAESESIDER i src/lib/supabase/middleware.ts). Udkastet indekseres
 // ikke, før SEO_INDEKSERING=true (som resten af siden).
 export const metadata: Metadata = {
   title: "Privatlivspolitik",

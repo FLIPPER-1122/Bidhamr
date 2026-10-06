@@ -51,8 +51,8 @@ function slug(tekst: string): string {
 // Fjerner interne noter fra én linje.
 function rens(linje: string): string {
   return linje
-    .replace(/\s*\[ADVOKAT[^\]]*\]/g, "")
-    .replace(/\[TODO[^\]]*\]/g, P)
+    .replace(/\s*\[ADVOKAT[^\]]*\]/gi, "")
+    .replace(/\[TODO[^\]]*\]/gi, P)
     .replace(new RegExp(`${P}(\\s*${P})+`, "g"), P)
     .replace(/[ \t]{2,}/g, " ")
     .trim();
@@ -68,7 +68,7 @@ function inline(tekst: string): Inline[] {
     if (m[1] !== undefined) ud.push({ type: "fed", indhold: inline(m[1]) });
     else if (m[2] !== undefined) {
       const kode = m[2];
-      if (/^\/[a-z0-9\-/]*$/.test(kode)) ud.push({ type: "link", tekst: `bidhamr.dk${kode}`, href: kode });
+      if (/^\/(?!\/)[a-z0-9\-/]*$/.test(kode)) ud.push({ type: "link", tekst: `bidhamr.dk${kode}`, href: kode });
       else ud.push({ type: "kode", tekst: kode });
     } else if (m[3] !== undefined) ud.push({ type: "link", tekst: m[3], href: `mailto:${m[3]}` });
     else ud.push({ type: "pladsholder" });
@@ -139,7 +139,7 @@ export function parseJura(markdown: string): JuraDokument {
   for (const raa of linjer) {
     const linje = raa.trimEnd();
 
-    if (/^>/.test(linje)) {
+    if (/^\s*>/.test(linje)) {
       // Interne noter (citatblokke) vises aldrig.
       afslutAlt();
       continue;
@@ -193,7 +193,7 @@ export function parseJura(markdown: string): JuraDokument {
   const synlige = afsnit.filter((a) => a.blokke.length > 0);
 
   const alTekst = JSON.stringify({ titel, synlige });
-  if (/ADVOKAT|TODO|indhold-agenten|\\u0000/.test(alTekst)) {
+  if (/ADVOKAT|TODO|indhold-agenten|noter-til-advokat|Filip|Claude|forsikring|\\u0000/i.test(alTekst)) {
     throw new Error("Juradokumentet indeholder stadig interne noter efter rensning.");
   }
   if (!titel || synlige.length === 0) throw new Error("Juradokumentet er tomt.");

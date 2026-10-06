@@ -52,6 +52,13 @@ const nextConfig: NextConfig = {
   // udvikling) - argumenterne kan være adgangskoder, e-mails og to-trins-koder.
   // Se node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/logging.md.
   logging: { serverFunctions: false },
+  // /betingelser og /privatliv læser jura/*-udkast.md ved runtime (siderne er
+  // dynamiske pga. CSP-nonce i root-layoutet). Sikrer, at filerne kommer med
+  // i serverbundlen på Vercel.
+  outputFileTracingIncludes: {
+    "/betingelser": ["./jura/brugerbetingelser-udkast.md"],
+    "/privatliv": ["./jura/privatlivspolitik-udkast.md"],
+  },
   images: {
     remotePatterns: supabaseBilleder,
     formats: ["image/avif", "image/webp"],
