@@ -48,6 +48,10 @@ const nextConfig: NextConfig = {
   // next dev maa ikke omskrive AGENTS.md/CLAUDE.md (vi vedligeholder dem selv).
   // Se node_modules/next/dist/docs/01-app/02-guides/ai-agents.md ("Opting out").
   agentRules: false,
+  // Server actions logges ikke med navn og argumenter i terminalen (kun i
+  // udvikling) - argumenterne kan være adgangskoder, e-mails og to-trins-koder.
+  // Se node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/logging.md.
+  logging: { serverFunctions: false },
   images: {
     remotePatterns: supabaseBilleder,
     formats: ["image/avif", "image/webp"],

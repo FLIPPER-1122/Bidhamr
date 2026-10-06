@@ -43,6 +43,7 @@ export default function BidPanel({
   forsendelseMulig,
   status,
   vinderVisning,
+  skjult = false,
 }: {
   auktionId: string;
   initialNuværendeBud: number;
@@ -60,6 +61,8 @@ export default function BidPanel({
   status: string;
   // Anonym vinderbetegnelse fra serveren ("Dig" / "Byder 2") - aldrig navn/id.
   vinderVisning: string | null;
+  // Skjult af BidHamr: ingen budknap.
+  skjult?: boolean;
 }) {
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
   const [harBud, setHarBud] = useState(initialHarBud);
@@ -83,7 +86,9 @@ export default function BidPanel({
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<string>("aktiv");
-  const auktionStatus = status !== "aktiv" ? status : realtimeStatus;
+  // Skjult af BidHamr (kun sælger, deltagere og staff ser siden): der kan
+  // ikke bydes, selvom auktionen stadig står som aktiv.
+  const auktionStatus = skjult && status === "aktiv" ? "skjult" : status !== "aktiv" ? status : realtimeStatus;
   // Nedtællingen afhænger af klokken og beregnes først efter mount, så
   // server- og klient-render er ens (ingen hydration-mismatch).
   const [nedtælling, setNedtælling] = useState<string | null>(null);
@@ -406,6 +411,8 @@ export default function BidPanel({
             </>
           ) : auktionStatus === "annulleret" ? (
             <p className="text-base font-semibold text-tekst-daempet">Auktionen er annulleret</p>
+          ) : auktionStatus === "skjult" ? (
+            <p className="text-base font-semibold text-tekst-daempet">Der kan ikke bydes, mens auktionen er skjult</p>
           ) : (
             <p className="text-base font-semibold text-tekst-daempet">Ingen bud – auktionen er lukket</p>
           )}

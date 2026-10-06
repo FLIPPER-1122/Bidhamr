@@ -77,7 +77,7 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div>
               <label htmlFor="email" className={LABEL}>
-                Email
+                E-mail
               </label>
               <input
                 id="email"

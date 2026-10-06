@@ -72,7 +72,7 @@ export default function SettingsForm({
       <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-tekst">
-          Email
+          E-mail
         </label>
         <input
           id="email"

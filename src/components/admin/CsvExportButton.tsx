@@ -6,7 +6,7 @@ interface CsvExportButtonProps {
 
 export default function CsvExportButton({ data }: CsvExportButtonProps) {
   const handleExport = () => {
-    const header = "Email,Oprettet\n";
+    const header = "E-mail,Oprettet\n";
     const rows = data
       .map((row) => `${row.email},${new Date(row.oprettet).toLocaleDateString("da-DK")}`)
       .join("\n");

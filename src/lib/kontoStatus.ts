@@ -30,9 +30,11 @@ export async function hentKontoStatus(brugerId: string): Promise<KontoStatus> {
     const varighed = profil.suspenderet_til
       ? `indtil d. ${new Date(profil.suspenderet_til).toLocaleDateString("da-DK", { timeZone: "Europe/Copenhagen" })}`
       : "permanent";
+    // Årsagen slutter tit selv med punktum (fx "...spam.") - undgå "..".
+    const aarsag = (profil.suspenderet_aarsag?.trim() || "Ingen begrundelse angivet").replace(/[.!?]+$/, "");
     return {
       kode: "suspenderet",
-      besked: `Din konto er suspenderet ${varighed}. Årsag: ${profil.suspenderet_aarsag ?? "Ingen begrundelse angivet"}. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl.`,
+      besked: `Din konto er suspenderet ${varighed}. Årsag: ${aarsag}. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl.`,
     };
   }
   return { kode: "ok" };

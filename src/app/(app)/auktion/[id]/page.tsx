@@ -60,9 +60,13 @@ export default async function AuktionPage({
       >(),
   ]);
 
-  if (!auktion || auktion.skjult) {
+  // layout.tsx har allerede givet 404 (med rigtig status), hvis brugeren
+  // ikke må se auktionen. En skjult auktion når kun hertil for sælgeren,
+  // deltagere (byder, vinder, køber) og staff - RLS på auctions afgør det.
+  if (!auktion) {
     notFound();
   }
+  const skjult = Boolean(auktion.skjult);
 
   const bud = budRaw ?? [];
 
@@ -98,7 +102,7 @@ export default async function AuktionPage({
   // service-role) og kaldes kun med den indloggede brugers eget id. Browseren
   // får kun true/false.
   const tjekBlokering =
-    mitId && mitId !== auktion.bruger_id
+    mitId && mitId !== auktion.bruger_id && !skjult
       ? (async () => {
           const admin = createAdminClient();
           const [saelgerSpaerrerMig, navngivet] = await Promise.all([
@@ -123,7 +127,7 @@ export default async function AuktionPage({
     tjekBlokering,
     // Følger jeg sælgeren? Altid filtreret på follower_id (RLS i produktion
     // kan stadig vise alle følgninger, indtil 20261007012000 er kørt).
-    mitId && mitId !== auktion.bruger_id
+    mitId && mitId !== auktion.bruger_id && !skjult
       ? supabase
           .from("seller_follows")
           .select("id")
@@ -133,6 +137,24 @@ export default async function AuktionPage({
       : Promise.resolve({ data: null }),
     saelgerOpslag,
   ]);
+
+  // Skjult af BidHamr: sælgeren får et link til begrundelsen (DSA art. 17),
+  // hvor han også kan klage. Bydere er ikke part i afgørelsen og ser kun, at
+  // auktionen er skjult.
+  let afgoerelseId: string | null = null;
+  if (skjult && mitId && mitId === auktion.bruger_id) {
+    const { data: afg } = await createAdminClient()
+      .from("dsa_afgoerelser")
+      .select("id")
+      .eq("indhold_type", "auktion")
+      .eq("indhold_id", id)
+      .eq("bruger_id", mitId)
+      .is("ophaevet_kl", null)
+      .order("oprettet_kl", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    afgoerelseId = afg?.id ?? null;
+  }
   const sælgerNavn = kortNavn(saelger?.navn ?? null);
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
@@ -166,7 +188,7 @@ export default async function AuktionPage({
   const erSælger = bruger?.id === auktion.bruger_id;
   // Redigér/annullér: kun på en igangværende auktion (låst efter første bud).
   const harBud = auktion.nuværende_bud != null || bud.length > 0;
-  const kanStyreAuktion = erSælger && auktion.status === "aktiv" && !auktionErSlut;
+  const kanStyreAuktion = erSælger && auktion.status === "aktiv" && !auktionErSlut && !skjult;
   // Sælgeren kan spærre en byder ud fra et af byderens bud (kun bud-id og
   // "Byder N" sendes til browseren - aldrig bruger-id eller navn).
   const spaerbareBydere: ByderValg[] = kanStyreAuktion
@@ -223,6 +245,39 @@ export default async function AuktionPage({
 
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10">
+      {skjult && (
+        <div role="status" className="mb-4 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4">
+          <p className="font-semibold text-advarsel-tekst">Denne auktion er skjult af BidHamr</p>
+          <p className="mt-1 text-sm text-tekst-daempet">
+            {erSælger
+              ? "Andre kan ikke se auktionen, og der kan ikke bydes på den."
+              : staffRolle
+                ? "Kun sælgeren, dem, der har budt, og BidHamrs medarbejdere kan se auktionen."
+                : "Andre kan ikke se auktionen, og der kan ikke bydes på den. Du kan se den, fordi du har budt på den."}
+          </p>
+          {erSælger && afgoerelseId && (
+            <p className="mt-2 text-sm">
+              <Link
+                href={`/dsa/afgoerelse/${afgoerelseId}`}
+                className="inline-flex min-h-11 items-center rounded-md font-medium text-groen underline sm:min-h-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+              >
+                Se begrundelsen
+              </Link>
+              <span className="text-tekst-daempet"> – du kan klage over afgørelsen.</span>
+            </p>
+          )}
+          {erSælger && !afgoerelseId && (
+            <p className="mt-2 text-sm text-tekst-daempet">
+              Du kan se begrundelsen og klage under{" "}
+              <Link href="/konto/afgoerelser" className="font-medium text-groen underline">
+                Min konto → Afgørelser
+              </Link>
+              .
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Zone 1 – top */}
       <div className="flex items-center justify-between gap-3">
         <nav aria-label="Brødkrumme" className="min-w-0 text-[13px] text-tekst-svag">
@@ -333,6 +388,7 @@ export default async function AuktionPage({
               forsendelseMulig={auktion.forsendelse_mulig}
               status={auktion.status}
               vinderVisning={vinderVisning}
+              skjult={skjult}
             />
 
             {/* Kvittering for bedømmelsen – den afgives ved godkendelse af varen */}
@@ -346,14 +402,18 @@ export default async function AuktionPage({
             )}
 
             <div className="mt-4 space-y-2">
-              <Accordion title="Sådan fungerer afhentning">
-                Varen kan afhentes i{" "}
-                {auktion.lokation
-                  ? `${auktion.lokation} (postnr. ${auktion.postnummer})`
-                  : `postnr. ${auktion.postnummer}`}
-                . Kontakt sælger efter vundet auktion for at aftale tid og
-                sted.
-              </Accordion>
+              {/* Med forsendelse kan køberen ikke vælge afhentning
+                  (ROADMAP-BESLUTNINGER.md afsnit 3, fragt). */}
+              {!auktion.forsendelse_mulig && (
+                <Accordion title="Sådan fungerer afhentning">
+                  Varen kan afhentes i{" "}
+                  {auktion.lokation
+                    ? `${auktion.lokation} (postnr. ${auktion.postnummer})`
+                    : `postnr. ${auktion.postnummer}`}
+                  . Kontakt sælger efter vundet auktion for at aftale tid og
+                  sted.
+                </Accordion>
+              )}
 
               <Accordion title="Forsendelse">
                 {auktion.forsendelse_mulig
@@ -396,7 +456,7 @@ export default async function AuktionPage({
                   >
                     {sælgerNavn}
                   </Link>
-                  {mitId !== auktion.bruger_id && !blokeretMedSaelger && (
+                  {mitId !== auktion.bruger_id && !blokeretMedSaelger && !skjult && (
                     <div className="mt-1.5">
                       <FoelgKnap
                         saelgerId={auktion.bruger_id}
@@ -437,7 +497,7 @@ export default async function AuktionPage({
             auktionId={auktion.id}
             spoergsmaal={spoergsmaal}
             aktiv={(auktion.spoergsmaal_aktiv as boolean | null | undefined) !== false}
-            auktionKoerer={auktion.status === "aktiv" && !auktionErSlut}
+            auktionKoerer={auktion.status === "aktiv" && !auktionErSlut && !skjult}
             erSaelger={erSælger}
             erStaff={!!staffRolle}
             loggetInd={!!bruger}
@@ -445,7 +505,7 @@ export default async function AuktionPage({
           />
 
           {/* Sælgeren har ingen grund til at anmelde sit eget opslag */}
-          {!erSælger && (
+          {!erSælger && !skjult && (
             <>
               <div className={sektionsLinje} />
               <AnmeldKnap

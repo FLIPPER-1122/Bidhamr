@@ -15,9 +15,12 @@ export const FOR_MANGE_FORSOEG =
 export type Graense = { maks: number; vindueSek: number };
 
 export const GRAENSER = {
-  login_ip: { maks: 20, vindueSek: 15 * 60 },
+  // Login: kun MISLYKKEDE forsøg tæller (se tjekFejlGraenser/registrerFejl).
+  // IP-loftet er højt, fordi mange deler IP (CGNAT, arbejdspladser).
+  login_ip: { maks: 50, vindueSek: 15 * 60 },
   // Noeglen er e-mail + IP, saa en fremmed ikke kan laase en bruger ude ved
-  // at hamre loes paa hans e-mail fra sin egen IP.
+  // at hamre loes paa hans e-mail fra sin egen IP. Nulstilles ved et
+  // gennemfoert login.
   login_email_ip: { maks: 8, vindueSek: 15 * 60 },
   opret_ip: { maks: 5, vindueSek: 60 * 60 },
   nulstil_ip: { maks: 5, vindueSek: 60 * 60 },
@@ -122,4 +125,70 @@ export async function tjekGraenser(
 ): Promise<boolean> {
   const svar = await Promise.all(tjek.map(([n, id]) => indenForGraense(n, id)));
   return svar.every(Boolean);
+}
+
+// ------------------------------------------------------------------ Fejl-tællere
+// Til grænser, hvor kun mislykkede forsøg skal tælle (login). Tjekket tæller
+// ikke op; det gør registrerFejl, når forsøget er mislykket. Samtidige
+// forsøg kan derfor komme lidt over loftet - Supabase Auth har sine egne
+// grænser bagved. Fail open som indenForGraense.
+
+function fejlNoegle(navn: GraenseNavn, id: string) {
+  return `${navn}:fejl:${id.toLowerCase()}`;
+}
+
+// true, hvis der stadig er forsøg tilbage under alle grænserne.
+export async function tjekFejlGraenser(tjek: [GraenseNavn, string][]): Promise<boolean> {
+  const svar = await Promise.all(
+    tjek.map(async ([navn, id]) => {
+      const g = GRAENSER[navn];
+      try {
+        const { data, error } = await createAdminClient().rpc("rate_limit_status", {
+          p_noegle: fejlNoegle(navn, id),
+          p_maks: g.maks,
+          p_vindue_sek: g.vindueSek,
+        });
+        if (error) {
+          console.error(`[rate-limit] fejl – slipper igennem (${navn}):`, error.message);
+          return true;
+        }
+        return data !== false;
+      } catch (err) {
+        console.error(`[rate-limit] fejl – slipper igennem (${navn}):`, err);
+        return true;
+      }
+    }),
+  );
+  return svar.every(Boolean);
+}
+
+// Tæller et mislykket forsøg op. Kaster aldrig.
+export async function registrerFejl(tjek: [GraenseNavn, string][]): Promise<void> {
+  await Promise.all(
+    tjek.map(async ([navn, id]) => {
+      const g = GRAENSER[navn];
+      try {
+        const { error } = await createAdminClient().rpc("rate_limit_tjek", {
+          p_noegle: fejlNoegle(navn, id),
+          p_maks: g.maks,
+          p_vindue_sek: g.vindueSek,
+        });
+        if (error) console.error(`[rate-limit] kunne ikke tælle op (${navn}):`, error.message);
+      } catch (err) {
+        console.error(`[rate-limit] kunne ikke tælle op (${navn}):`, err);
+      }
+    }),
+  );
+}
+
+// Nulstiller en fejl-tæller (fx e-mail+IP efter et gennemført login). Kaster aldrig.
+export async function nulstilFejl(navn: GraenseNavn, id: string): Promise<void> {
+  try {
+    const { error } = await createAdminClient().rpc("rate_limit_nulstil", {
+      p_noegle: fejlNoegle(navn, id),
+    });
+    if (error) console.error(`[rate-limit] kunne ikke nulstille (${navn}):`, error.message);
+  } catch (err) {
+    console.error(`[rate-limit] kunne ikke nulstille (${navn}):`, err);
+  }
 }

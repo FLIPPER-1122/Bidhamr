@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
-import { auktionJsonLd } from "@/lib/auktionSeo";
+import { notFound } from "next/navigation";
+import { auktionJsonLd, auktionSynlig } from "@/lib/auktionSeo";
 
 // Strukturerede data (JSON-LD Product/Offer) til søgemaskiner. Ligger i et
 // layout, så selve auktionssiden ikke skal ændres. Data hentes én gang pr.
@@ -12,7 +13,11 @@ export default async function AuktionLayout({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [jsonLd, h] = await Promise.all([auktionJsonLd(id), headers()]);
+  const [synlig, jsonLd, h] = await Promise.all([auktionSynlig(id), auktionJsonLd(id), headers()]);
+  // Tjekkes her og ikke kun i page.tsx: layoutet ligger uden for
+  // loading.tsx-grænsen, så notFound() giver en rigtig 404-status, før
+  // skelettet streames.
+  if (!synlig) notFound();
   const nonce = h.get("x-nonce") ?? undefined;
 
   return (

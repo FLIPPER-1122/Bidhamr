@@ -3,7 +3,14 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
+import {
+  FOR_MANGE_FORSOEG,
+  klientIp,
+  nulstilFejl,
+  registrerFejl,
+  tjekFejlGraenser,
+  tjekGraenser,
+} from "@/lib/rateLimit";
 import { sideUrl } from "@/lib/mails/handel";
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { adgangskodeAendretMail } from "@/lib/mails/konto";
@@ -50,7 +57,7 @@ async function efterLogin(
     await supabase.auth.signOut({ scope: "local" });
     // Kan profilen ikke laeses, lukkes der ikke ind (fail closed).
     if (status.kode === "fejl") return { fejl: GENERISK };
-    if (status.kode === "slettet") return { fejl: "Forkert email eller adgangskode." };
+    if (status.kode === "slettet") return { fejl: "Forkert e-mail eller adgangskode." };
     return { fejl: status.besked };
   }
 
@@ -64,16 +71,24 @@ export async function logInd(
 ): Promise<{ ok: true; toTrin: boolean } | { fejl: string; kode?: "email_ikke_bekraeftet" }> {
   const email = renEmail(emailInput);
   if (!email || typeof password !== "string" || password.length === 0) {
-    return { fejl: "Forkert email eller adgangskode." };
+    return { fejl: "Forkert e-mail eller adgangskode." };
   }
 
+  // Kun mislykkede logins tæller mod grænserne (pr. IP og pr. e-mail+IP).
+  // Et gennemført login nulstiller e-mail+IP-tælleren.
   const ip = await klientIp();
-  if (!(await tjekGraenser([["login_ip", ip], ["login_email_ip", `${email}|${ip}`]]))) {
+  const graenser: Parameters<typeof tjekFejlGraenser>[0] = [
+    ["login_ip", ip],
+    ["login_email_ip", `${email}|${ip}`],
+  ];
+  if (!(await tjekFejlGraenser(graenser))) {
     return { fejl: FOR_MANGE_FORSOEG };
   }
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error?.code === "invalid_credentials" || error?.code === "user_banned") await registrerFejl(graenser);
+  else if (!error) await nulstilFejl("login_email_ip", `${email}|${ip}`);
   if (error) {
     if (error.code === "email_not_confirmed") {
       return {
@@ -82,7 +97,7 @@ export async function logInd(
       };
     }
     if (error.code === "invalid_credentials" || error.code === "user_banned") {
-      return { fejl: "Forkert email eller adgangskode." };
+      return { fejl: "Forkert e-mail eller adgangskode." };
     }
     if (error.status === 429) return { fejl: FOR_MANGE_FORSOEG };
     console.error("logInd fejlede:", error.code, error.message);
@@ -210,7 +225,7 @@ export async function opretKonto(input: {
 // signup-cookien (siden "Tjek din indbakke").
 export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat> {
   const email = renEmail(emailInput ?? (await cookies()).get(TJEK_EMAIL_COOKIE)?.value);
-  if (!email) return { fejl: "Indtast en gyldig email." };
+  if (!email) return { fejl: "Indtast en gyldig e-mail." };
 
   const ip = await klientIp();
   if (!(await tjekGraenser([["gensend_ip", ip], ["gensend_email", email]]))) {
@@ -243,7 +258,7 @@ export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat
 
 export async function nulstilAdgangskode(emailInput: string): Promise<Resultat> {
   const email = renEmail(emailInput);
-  if (!email) return { fejl: "Indtast en gyldig email." };
+  if (!email) return { fejl: "Indtast en gyldig e-mail." };
 
   const ip = await klientIp();
   if (!(await tjekGraenser([["nulstil_ip", ip], ["nulstil_email", email]]))) {
@@ -255,9 +270,15 @@ export async function nulstilAdgangskode(emailInput: string): Promise<Resultat> 
     redirectTo: sideUrl("/auth/callback?next=/reset-password"),
   });
   if (error) {
+    // Kun "for mange forsøg" vises. Alle andre fejl giver samme svar som en
+    // gennemført afsendelse, så svaret ikke afslører, om e-mailen findes.
+    // Fejlen logges i drift uden e-mailadressen.
     if (error.status === 429) return { fejl: FOR_MANGE_FORSOEG };
-    console.error("nulstilAdgangskode fejlede:", error.code, error.message);
-    return { fejl: GENERISK };
+    await logDriftFejl({
+      kilde: "action",
+      hvor: "nulstilAdgangskode",
+      fejl: `${error.status ?? ""} ${error.code ?? ""}: ${error.message}`.replace(/[^\s@]+@[^\s@]+/g, "[e-mail]"),
+    });
   }
   return { ok: true };
 }

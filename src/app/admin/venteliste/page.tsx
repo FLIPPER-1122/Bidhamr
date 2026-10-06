@@ -47,7 +47,7 @@ export default async function AdminVenteliste() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-neutral-50 text-xs text-neutral-500 uppercase">
-              <th className="px-5 py-3 text-left font-medium">Email</th>
+              <th className="px-5 py-3 text-left font-medium">E-mail</th>
               <th className="px-5 py-3 text-left font-medium">Tilmeldt</th>
             </tr>
           </thead>
