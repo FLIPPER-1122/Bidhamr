@@ -12,6 +12,13 @@ import "server-only";
 //
 // Ingen persondata i mailen: kun kilde, sti og fejltekst, som allerede er
 // renset af src/lib/drift.ts - og renses igen her.
+//
+// Mailen må ikke kunne styres udefra:
+// - Browser-fejl (kilde 'klient') er indsendt af brugere. For dem vises kun
+//   antal og en henvisning til /admin/drift - aldrig tekst eller sti (databasen
+//   sender dem heller ikke med, se drift_alarm_vurder).
+// - For andre kilder neutraliseres links i fejlteksten (renLinks), og linjen
+//   markeres "[renset]", hvis noget blev ændret.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl, renFejltekst, renSti } from "@/lib/drift";
 import { bygMail, escapeHtml, sideUrl } from "@/lib/mails/layout";
@@ -84,13 +91,60 @@ const tid = (iso: string | undefined) =>
       })
     : "";
 
+const EGET_DOMAENE = /^(?:[a-z0-9-]+\.)*bidhamr\.dk$/i;
+
+// Almindelige topdomæner - bruges til at finde domæner uden http(s):// foran
+// (fx "evil.com/login"), uden at ramme filnavne som "drift.ts".
+const TLD =
+  "dk|com|net|org|io|co|info|biz|xyz|app|dev|me|eu|de|se|no|nl|uk|fr|ru|cn|top|online|site|shop|link|click|live|ly|gl|to|ai|gg|tk|ml|ga|cf|ws|cc|tv|us";
+const URL_MED_SKEMA = /\b(https?):\/\/([^\s/?#:]+)(?::\d+)?(\S*)/gi;
+const BART_DOMAENE = new RegExp(
+  String.raw`\b((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:${TLD}))\b(/\S*)?`,
+  "gi",
+);
+
+// Neutraliserer links i en fejltekst, så den ikke kan bruges til phishing i
+// alarm-mailen: bidhamr.dk-links bliver til "hxxps://bidhamr.dk/sti" (ikke
+// klikbare), alle andre domæner fjernes helt.
+export function renLinks(tekst: string): { tekst: string; renset: boolean } {
+  let renset = false;
+  let t = tekst.replace(URL_MED_SKEMA, (_m, skema: string, vaert: string, rest: string) => {
+    renset = true;
+    if (EGET_DOMAENE.test(vaert)) {
+      return `${skema.toLowerCase().replace("http", "hxxp")}://${vaert.toLowerCase()}${rest}`;
+    }
+    return "[link fjernet]";
+  });
+  t = t.replace(BART_DOMAENE, (m: string, vaert: string) => {
+    if (EGET_DOMAENE.test(vaert)) return m;
+    renset = true;
+    return "[domæne fjernet]";
+  });
+  return { tekst: t, renset };
+}
+
 function punktLinje(p: Punkt): string {
   const hvad = p.type ?? (p.kilde ? (KILDE[p.kilde] ?? p.kilde) : "Fejl");
   const sti = p.sti ? (renSti(p.sti) ?? "") : "";
-  const besked = p.besked ? renFejltekst(p.besked, 200) : "";
+  const raa = p.besked ? renFejltekst(p.besked, 200) : "";
+  const { tekst, renset } = renLinks(raa);
+  const besked = renset ? `${tekst} [renset]` : tekst;
   const antal = typeof p.antal === "number" && p.antal > 1 ? ` (×${p.antal})` : "";
   const kl = tid(p.senest_kl ?? p.oprettet_kl ?? p.startet_kl);
-  return [kl, hvad, sti, besked].filter(Boolean).join(" · ") + antal;
+  return [kl, hvad, renLinks(sti).tekst, besked].filter(Boolean).join(" · ") + antal;
+}
+
+// Browser-fejl samles til én linje med antal - teksten kommer fra brugernes
+// browsere og vises kun på /admin/drift.
+function klientLinje(punkter: Punkt[], mangeFejl: boolean): string | null {
+  if (punkter.length === 0) return null;
+  const n = mangeFejl
+    ? punkter.reduce((sum, p) => sum + (typeof p.antal === "number" && p.antal > 0 ? p.antal : 1), 0)
+    : punkter.length;
+  const hvad = mangeFejl
+    ? `${n} fejl`
+    : `${n} ${n === 1 ? "ny slags fejl" : "nye slags fejl"}`;
+  return `Browser: ${hvad} – teksten vises kun på /admin/drift`;
 }
 
 export function bygAlarmMail(alarmer: AlarmData[]) {
@@ -98,7 +152,12 @@ export function bygAlarmMail(alarmer: AlarmData[]) {
   const afsnitHtml: string[] = [];
   for (const a of alarmer) {
     const punkter = (a.punkter ?? []).slice(0, 10);
-    const linjer = punkter.map((p) => `• ${escapeHtml(punktLinje(p))}`);
+    const klient = punkter.filter((p) => p.kilde === "klient");
+    const linjer = punkter
+      .filter((p) => p.kilde !== "klient")
+      .map((p) => `• ${escapeHtml(punktLinje(p))}`);
+    const kl = klientLinje(klient, a.slags === "mange_fejl");
+    if (kl) linjer.push(`• ${escapeHtml(kl)}`);
     const flere = a.antal > punkter.length ? `<br>… og ${a.antal - punkter.length} mere` : "";
     const overskrift =
       a.slags === "mange_fejl"
@@ -114,7 +173,7 @@ export function bygAlarmMail(alarmer: AlarmData[]) {
     overskriftHtml: "Der er noget galt på BidHamr",
     afsnitHtml,
     knap: { tekst: "Åbn drift-siden", url: sideUrl("/admin/drift") },
-    aarsag: `Du får denne mail, fordi din adresse står i DRIFT_ALARM_MAIL. Højst én mail pr. slags pr. ${ALARM_INTERVAL_MIN} minutter.`,
+    aarsag: `Du får denne mail, fordi din adresse står i DRIFT_ALARM_MAIL. Højst én mail pr. slags pr. ${ALARM_INTERVAL_MIN} minutter. Fejltekster er renset: links er gjort ikke-klikbare (hxxps://), fremmede domæner er fjernet, og browser-fejl vises kun som antal.`,
   });
   return { subject: emne, ...mail };
 }
@@ -178,7 +237,19 @@ export async function koerDriftAlarm(): Promise<AlarmResultat> {
       })),
       p_fejl: besked,
     });
-    if (e2) console.error("Drift-alarm: tilbagerulning fejlede:", e2.message);
+    if (e2) {
+      const e2tekst = renFejltekst(e2.message, 200);
+      console.error("Drift-alarm: tilbagerulning fejlede:", e2tekst);
+      // Noteres på /admin/drift (drift_alarm_tilstand), ikke i drift_fejl.
+      const { error: e3 } = await admin
+        .from("drift_alarm_tilstand")
+        .update({
+          sidste_resultat: "mail_fejlet",
+          sidste_fejl: `Mail: ${besked}; tilbagerulning fejlede: ${e2tekst}`.slice(0, 500),
+        })
+        .eq("id", true);
+      if (e3) console.error("Drift-alarm: kunne heller ikke notere fejlen:", e3.message);
+    }
     return { status: "fejl", fejl: besked };
   }
   return { status: "sendt", slags };

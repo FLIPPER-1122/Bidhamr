@@ -1,45 +1,25 @@
--- Drift-alarmer: besked til Filip, naar noget gaar galt (fase 6).
+-- Rettelser til 20261008010000_drift_alarmer.sql efter review (fase 6).
 --
--- Ruten /api/cron/drift-alarm kaldes hvert 5. minut af pg_cron (jobbet
--- 'drift-alarm' nedenfor). Den kalder drift_alarm_vurder(), som finder:
---   ny_fejl     en ny slags fejl i drift_fejl (kilde+besked ikke set de
---               seneste 30 dage). Cron- og webhook-fejl har egne slags.
---   mange_fejl  over 20 fejl (inkl. gentagelser) paa 15 minutter
---   cron        betalings-cron fejlede/haenger/holdt op, et pg_cron-job
---               fejlede, et pg_net-kald fik fejl, eller cron-fejl i drift_fejl
---   webhook     webhook-fejl i drift_fejl
--- og sender een samlet mail (til DRIFT_ALARM_MAIL). Hoejst een mail pr.
--- slags pr. 30 minutter. Haendelser, der er udloest men undertrykt, tages
--- med i naeste mail, naar de 30 minutter er gaaet.
+-- 010000 er rettet direkte (koeres endnu ikke i produktion), men var allerede
+-- koert paa testdatabasen. Denne fil bringer en database, der har koert den
+-- gamle 010000, frem til samme slutresultat. Idempotent: kan koeres flere
+-- gange og efter den rettede 010000 uden at aendre noget.
 --
---   A. drift_fejl_minut     taeller pr. minut (ogsaa gentagelser og droppede),
---                           saa "mange fejl" kan maales. Kun tal.
---   B. drift_fejl_log()     uaendret logik + taelleren. search_path = ''.
---                           lock_timeout 2s / statement_timeout 3s: logningen
---                           fejler stille i stedet for at haenge.
---   C. drift_alarmer        status pr. slags (hvornaar sidst sendt m.m.)
---      drift_alarm_tilstand een raekke: sidste tjek og resultat
---   D. drift_alarm_vurder() / drift_alarm_mail_fejlet()
---   E. pg_cron-job 'drift-alarm' (+ drift_alarm_kald: alarmens egne
---      pg_net-kald, som ikke selv maa udloese en cron-alarm)
---   F. helbred_ping()        billigt sundhedstjek til /api/helbred (anon)
---
--- Ingen persondata: kun kilde, sti og den allerede rensede fejltekst
--- (src/lib/drift.ts). Alle tabeller: RLS uden policies, kun service_role.
--- Idempotent: kan koeres flere gange.
+--   1. drift_fejl_log: lock_timeout 2s / statement_timeout 3s, saa logningen
+--      fejler stille i stedet for at haenge.
+--      drift_alarm_vurder tager IKKE laengere drift_fejl_log's advisory-laas;
+--      i stedet ses kun haendelser til og med 10 sekunder siden (v_graense),
+--      saa fejl, der logges samtidig, ikke gaar tabt.
+--      Nyt indeks drift_fejl (kilde, md5(besked), id) til "ny slags fejl".
+--   2. Browser-fejl (kilde klient): tekst og sti sendes ikke med i alarmen,
+--      kun antal (mailen henviser til /admin/drift).
+--   5. service_role maa opdatere drift_alarm_tilstand.sidste_resultat /
+--      sidste_fejl (appen noterer, hvis tilbagerulningen fejler).
+--   6. Drift-alarmens egne pg_net-kald (drift_alarm_kald) udloeser ikke
+--      cron-alarmen (fx timeout, mens mailen sendes).
+--   7. helbred_ping() til /api/helbred med anon-noeglen.
 
--- ============================================================ A. minut-taeller
-
-create table if not exists public.drift_fejl_minut (
-  minut timestamptz primary key,
-  antal integer not null default 0 check (antal >= 0)
-);
-
-alter table public.drift_fejl_minut enable row level security;
-revoke all on public.drift_fejl_minut from public, anon, authenticated;
-grant select, insert, update, delete on public.drift_fejl_minut to service_role;
-
--- ============================================================ B. drift_fejl_log
+-- ============================================================ 1. logning
 
 -- Samme logik som i 20261005060000_admin_drift.sql. Nyt: hvert kald med
 -- gyldig kilde taeller i drift_fejl_minut (ny, dublet og begraenset).
@@ -127,49 +107,12 @@ grant execute on function public.drift_fejl_log(text, text, text, text, uuid) to
 create index if not exists drift_fejl_kilde_besked_md5_idx
   on public.drift_fejl (kilde, md5(besked), id);
 
--- ============================================================ C. tabeller
+-- ============================================================ 5. tilstand
 
-create table if not exists public.drift_alarmer (
-  slags            text primary key,
-  -- Haendelser til og med dette tidspunkt er meldt (eller ikke relevante).
-  daekket_til      timestamptz not null default now(),
-  sidst_sendt_kl   timestamptz,
-  antal_sendt      integer not null default 0,
-  -- Sidst betingelsen var opfyldt (ogsaa hvis mailen blev undertrykt).
-  sidst_udloest_kl timestamptz,
-  -- sendt | undertrykt | ingen_modtager | mail_fejlet
-  sidste_resultat  text,
-  constraint drift_alarmer_slags check (slags in ('ny_fejl', 'mange_fejl', 'cron', 'webhook')),
-  constraint drift_alarmer_resultat check (
-    sidste_resultat is null
-    or sidste_resultat in ('sendt', 'undertrykt', 'ingen_modtager', 'mail_fejlet'))
-);
-
-alter table public.drift_alarmer enable row level security;
-revoke all on public.drift_alarmer from public, anon, authenticated;
-grant select on public.drift_alarmer to service_role;
-
--- Start: intet gammelt meldes (daekket_til = nu).
-insert into public.drift_alarmer (slags)
-values ('ny_fejl'), ('mange_fejl'), ('cron'), ('webhook')
-on conflict (slags) do nothing;
-
-create table if not exists public.drift_alarm_tilstand (
-  id               boolean primary key default true check (id),
-  sidst_tjekket_kl timestamptz,
-  -- ingen | sendt | ingen_modtager | mail_fejlet | undertrykt
-  sidste_resultat  text,
-  sidste_fejl      text,
-  constraint drift_alarm_tilstand_fejl_laengde check (sidste_fejl is null or char_length(sidste_fejl) <= 500)
-);
-
-alter table public.drift_alarm_tilstand enable row level security;
-revoke all on public.drift_alarm_tilstand from public, anon, authenticated;
-grant select on public.drift_alarm_tilstand to service_role;
 -- Appen noterer selv, hvis tilbagerulningen efter en fejlet mail fejler.
 grant update (sidste_resultat, sidste_fejl) on public.drift_alarm_tilstand to service_role;
 
-insert into public.drift_alarm_tilstand (id) values (true) on conflict (id) do nothing;
+-- ============================================================ 6. egne kald
 
 -- Request-id'er fra kald_drift_alarm(). Alarmens egne pg_net-kald (fx
 -- timeout mens mailen sendes) maa ikke selv udloese en cron-alarm.
@@ -182,7 +125,7 @@ alter table public.drift_alarm_kald enable row level security;
 revoke all on public.drift_alarm_kald from public, anon, authenticated;
 grant select on public.drift_alarm_kald to service_role;
 
--- ============================================================ D. funktioner
+-- ============================================================ 1+2+6. vurdering
 
 -- Finder hvad der skal meldes, og markerer det atomisk (to samtidige kald
 -- kan ikke sende samme alarm). p_kan_sende = false (ingen modtager sat):
@@ -427,51 +370,8 @@ $fn$;
 revoke all on function public.drift_alarm_vurder(boolean) from public, anon, authenticated;
 grant execute on function public.drift_alarm_vurder(boolean) to service_role;
 
--- Mailen kunne ikke sendes: rul markeringen tilbage, saa alarmen proeves
--- igen ved naeste koersel. p_tidspunkt er "tidspunkt" fra drift_alarm_vurder;
--- kun raekker, der stadig er markeret af netop det kald, roeres.
-create or replace function public.drift_alarm_mail_fejlet(
-  p_tidspunkt timestamptz,
-  p_alarmer jsonb,
-  p_fejl text)
-returns void
-language plpgsql
-security definer
-set search_path = ''
-as $fn$
-declare
-  v_a jsonb;
-begin
-  if jsonb_typeof(p_alarmer) = 'array' then
-    for v_a in select * from jsonb_array_elements(p_alarmer) loop
-      update public.drift_alarmer
-         set daekket_til = coalesce((v_a->>'forrige_daekket_til')::timestamptz, daekket_til),
-             sidst_sendt_kl = (v_a->>'forrige_sendt_kl')::timestamptz,
-             antal_sendt = greatest(antal_sendt - 1, 0),
-             sidste_resultat = 'mail_fejlet'
-       where slags = v_a->>'slags'
-         and sidst_sendt_kl = p_tidspunkt;
-    end loop;
-  end if;
+-- ============================================================ 6. kald_drift_alarm
 
-  update public.drift_alarm_tilstand
-     set sidste_resultat = 'mail_fejlet', sidste_fejl = left(p_fejl, 500)
-   where id;
-end;
-$fn$;
-
-revoke all on function public.drift_alarm_mail_fejlet(timestamptz, jsonb, text) from public, anon, authenticated;
-grant execute on function public.drift_alarm_mail_fejlet(timestamptz, jsonb, text) to service_role;
-
--- ============================================================ E. pg_cron
-
--- Kalder /api/cron/drift-alarm. URL og hemmelighed staar i Supabase Vault -
--- ALDRIG i denne fil:
---   drift_alarm_url  (valgfri) fx https://bidhamr.dk/api/cron/drift-alarm.
---                    Mangler den, bruges cron_url med sidste del af stien
---                    skiftet ud: .../api/cron/afslut-auktioner -> .../api/cron/drift-alarm
---   cron_secret      samme som til betalings-cron (CRON_SECRET i Vercel)
--- Ikke konfigureret (fx testdatabasen): springes stille over.
 create or replace function public.kald_drift_alarm()
 returns bigint
 language plpgsql
@@ -522,17 +422,7 @@ $fn$;
 
 revoke all on function public.kald_drift_alarm() from public, anon, authenticated;
 
-select cron.unschedule('drift-alarm')
- where exists (select 1 from cron.job where jobname = 'drift-alarm');
-
--- Minut 2, 7, 12 ... - lige efter betalings-cron (minut 0, 5, 10 ...).
-select cron.schedule(
-  'drift-alarm',
-  '2-59/5 * * * *',
-  $$select public.kald_drift_alarm();$$
-);
-
--- ============================================================ F. sundhedstjek
+-- ============================================================ 7. sundhedstjek
 
 -- /api/helbred kalder denne med anon-noeglen (ikke service_role): et billigt
 -- tjek af, at PostgREST og databasen svarer. Returnerer altid true og laeser

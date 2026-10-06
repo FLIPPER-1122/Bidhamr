@@ -3,6 +3,7 @@ import { koerBetalingsCron } from "@/lib/betaling/cron";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
+import { harCronAdgang } from "@/lib/cronAdgang";
 
 // Lukker auktioner, opretter handel + betaling (48 timers frist), forsøger
 // autobetaling, sender "du vandt"-mails og betalingspåmindelser og overfører
@@ -23,13 +24,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const JOB = "betalings-cron";
-
-function harAdgang(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  // Fail closed: uden en konfigureret hemmelighed afvises alt.
-  if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
-}
 
 // Kun tal og små objekter med tal (resuméet fra koerBetalingsCron) - aldrig
 // tekst, der kunne indeholde persondata.
@@ -87,7 +81,7 @@ async function slutLog(
 }
 
 async function haandter(req: NextRequest) {
-  if (!harAdgang(req)) {
+  if (!harCronAdgang(req)) {
     return NextResponse.json({ fejl: "Ingen adgang" }, { status: 401 });
   }
   const logId = await startLog(req.method === "GET" ? "GET" : "POST");
