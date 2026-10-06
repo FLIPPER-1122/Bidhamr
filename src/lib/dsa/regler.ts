@@ -104,7 +104,7 @@ export type DsaRegel = {
 
 // Spejl af dsa_regler() i SQL. Henvisningerne er foreløbige (afventer advokat).
 export const DSA_REGLER: readonly DsaRegel[] = [
-  { kode: "forbudt_vare", navn: "Varen må ikke sælges på BidHamr", grundlag: "vilkaar", henvisning: "BidHamrs regler om forbudte varer (bidhamr.dk/forbudte-varer)" },
+  { kode: "forbudt_vare", navn: "Varen må ikke sælges på BidHamr", grundlag: "vilkaar", henvisning: "BidHamrs regler om forbudte varer, se bidhamr.dk/forbudte-varer" },
   { kode: "ulovlig_vare", navn: "Varen er ulovlig at sælge", grundlag: "lov", henvisning: "Dansk lovgivning, fx våbenloven, lov om euforiserende stoffer og dyrevelfærdsloven" },
   { kode: "falsk_vare", navn: "Kopivare eller krænkelse af et varemærke", grundlag: "lov", henvisning: "Varemærkeloven" },
   { kode: "ophavsret", navn: "Krænkelse af ophavsret (fx kopierede billeder)", grundlag: "lov", henvisning: "Ophavsretsloven" },

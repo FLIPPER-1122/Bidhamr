@@ -37,7 +37,7 @@ export default function GlemtAdgangskodePage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="text-[20px] leading-tight lg:text-[22px]">Tjek din email</h1>
+          <h1 className="text-[20px] leading-tight lg:text-[22px]">Tjek din e-mail</h1>
           <p className="mt-2 text-sm leading-relaxed text-tekst-svag">
             Hvis <span className="font-medium text-tekst-daempet">{email}</span> er
             registreret hos os, har vi sendt et link til at nulstille din
@@ -62,7 +62,7 @@ export default function GlemtAdgangskodePage() {
             Glemt adgangskode
           </h1>
           <p className="mt-1 text-sm text-tekst-svag">
-            Indtast din email, så sender vi dig et link til at nulstille din
+            Indtast din e-mail, så sender vi dig et link til at nulstille din
             adgangskode.
           </p>
 
@@ -72,7 +72,7 @@ export default function GlemtAdgangskodePage() {
                 htmlFor="email"
                 className="block text-sm font-medium text-tekst"
               >
-                Email
+                E-mail
               </label>
               <input
                 id="email"

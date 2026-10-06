@@ -22,6 +22,8 @@ import {
   type IndholdType,
 } from "@/lib/dsa/regler";
 import { anmeldelseSti, erUuid } from "@/lib/dsa/link";
+import { send } from "@/lib/notifikationer/send";
+import { logDriftFejl } from "@/lib/drift";
 import {
   notificerAfgoerelse,
   notificerAnmeldelseSvar,
@@ -329,8 +331,63 @@ export async function udfoerIndgreb(admin: Admin, input: IndgrebInput): Promise<
     await notificerAfgoerelse(afgId);
     for (const x of andenPart) await notificerAfgoerelse(x);
     for (const a of anmeldelser) await notificerAnmeldelseSvar(a);
+    if (input.type === "auktion") await notificerBydere(admin, afgId);
   });
   return { ok: true, afgoerelseId: afgId, brugerId: svar.bruger_id };
+}
+
+// Når BidHamr skjuler, fjerner eller stopper en igangværende auktion, får
+// alle, der har budt, en kort besked. Bydere er ikke part i afgørelsen, så
+// beskeden har ingen begrundelse, og sælgerens identitet nævnes ikke.
+// Almindelig type ('overbudt' - status for brugerens bud). Idempotent pr.
+// afgørelse og byder. Kaster aldrig.
+async function notificerBydere(admin: Admin, afgoerelseId: string) {
+  try {
+    const { data: afg } = await admin
+      .from("dsa_afgoerelser")
+      .select("handling, foer_status, indhold_id, bruger_id")
+      .eq("id", afgoerelseId)
+      .maybeSingle<{ handling: string; foer_status: string | null; indhold_id: string; bruger_id: string }>();
+    if (!afg) return;
+    // Kun en auktion, der var i gang: på en afsluttet auktion er buddene
+    // allerede afgjort (handlen håndteres som en sag).
+    if (afg.foer_status !== "aktiv") return;
+
+    const [{ data: auktion }, { data: bud }] = await Promise.all([
+      admin.from("auctions").select("titel").eq("id", afg.indhold_id).maybeSingle<{ titel: string }>(),
+      admin.from("bids").select("bruger_id").eq("auktion_id", afg.indhold_id).limit(1000),
+    ]);
+    const bydere = [...new Set((bud ?? []).map((b) => b.bruger_id as string))].filter(
+      (b) => b !== afg.bruger_id,
+    );
+    if (bydere.length === 0) return;
+
+    const titel = auktion?.titel ? `"${auktion.titel}"` : "auktionen";
+    const tekst =
+      afg.handling === "auktion_skjult"
+        ? {
+            titel: "En auktion, du har budt på, er skjult af BidHamr",
+            tekst: `BidHamr har skjult ${titel}. Der kan ikke bydes på den, mens den er skjult.`,
+          }
+        : {
+            titel:
+              afg.handling === "auktion_fjernet"
+                ? "En auktion, du har budt på, er fjernet af BidHamr"
+                : "En auktion, du har budt på, er stoppet af BidHamr",
+            tekst: `BidHamr har ${afg.handling === "auktion_fjernet" ? "fjernet" : "stoppet"} ${titel}. Auktionen er annulleret, og dit bud gælder ikke længere. Du skal ikke betale noget.`,
+          };
+
+    for (const byder of bydere) {
+      await send(byder, "overbudt", {
+        ...tekst,
+        link: `/auktion/${afg.indhold_id}`,
+        data: { auction_id: afg.indhold_id },
+        noegle: `dsa_byder:${afgoerelseId}:${byder}`,
+      });
+    }
+  } catch (err) {
+    await logDriftFejl({ kilde: "notifikation", hvor: "dsa: besked til bydere", fejl: err });
+  }
 }
 
 // Danske tekster til fejlkoderne fra dsa_indgreb (og de funktioner, den kalder).

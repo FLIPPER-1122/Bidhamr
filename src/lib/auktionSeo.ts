@@ -51,6 +51,19 @@ export const hentAuktionSeo = cache(async (id: string): Promise<AuktionSeo | nul
   }
 });
 
+// Må brugeren se auktionen? RLS afgør det (anon: aktiv og ikke skjult;
+// indlogget: også egen auktion, staff og deltagere - byder, vinder, køber -
+// i en skjult eller arkiveret auktion). Bruges af layout.tsx FØR siden
+// streames (loading.tsx), så en auktion, man ikke må se, giver HTTP 404 og
+// ikke en "blød" 404 med status 200.
+export const auktionSynlig = cache(async (id: string): Promise<boolean> => {
+  if (!UUID.test(id)) return false;
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("auctions").select("id").eq("id", id).maybeSingle();
+  if (error) throw new Error(`Auktionen kunne ikke hentes: ${error.message}`);
+  return Boolean(data);
+});
+
 const kr = (n: number) => `${n.toLocaleString("da-DK", { maximumFractionDigits: 2 })} kr.`;
 const dato = (iso: string) =>
   new Date(iso).toLocaleString("da-DK", {

@@ -226,9 +226,9 @@ export default function RedigerAuktionForm({
           id="forsendelse"
           checked={forsendelseMulig}
           onChange={setForsendelseMulig}
-          hjaelp="Køberen kan vælge at få varen sendt og betaler selv fragten. Ellers skal varen hentes."
+          hjaelp="Varen sendes til køberen, som betaler 35 kr i fragt. Uden forsendelse skal køberen hente varen hos dig."
         >
-          Jeg tilbyder også forsendelse
+          Jeg tilbyder forsendelse
         </Afkrydsning>
       </Sektion>
 

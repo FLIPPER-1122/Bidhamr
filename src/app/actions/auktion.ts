@@ -9,9 +9,12 @@
 // kan smutte ind under en redigering. Annullerede auktioner arkiveres
 // (status 'annulleret') og slettes aldrig. Fejl RETURNERES.
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getUserMedToTrin } from "@/lib/mfa";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { logDriftFejl } from "@/lib/drift";
 import { kategorier } from "@/lib/kategorier";
 import {
   MAKS_BESKRIVELSE,
@@ -108,6 +111,15 @@ export async function redigerAuktion(
     } = await getUserMedToTrin(supabase);
     if (!user) return { fejl: "Du skal være logget ind." };
 
+    // Billederne før redigeringen (kun egen auktion), så de billeder, der
+    // fjernes, kan slettes fra storage bagefter.
+    const { data: foer } = await supabase
+      .from("auctions")
+      .select("billeder")
+      .eq("id", auktionId)
+      .eq("bruger_id", user.id)
+      .maybeSingle<{ billeder: string[] | null }>();
+
     const { data, error } = await supabase.rpc("rediger_auktion", {
       p_auktion: auktionId,
       p_titel: titel,
@@ -129,12 +141,53 @@ export async function redigerAuktion(
     }
     if (kode !== "ok") return { fejl: (kode && REDIGER_FEJL[kode]) || GENERISK };
 
+    // rediger_auktion lykkes kun på brugerens egen aktive auktion uden bud
+    // (og dermed uden handel), så de fjernede billeder er ikke længere i brug
+    // på denne auktion og må slettes.
+    const fjernede = (foer?.billeder ?? []).filter((url) => !input.billeder.includes(url));
+    if (fjernede.length > 0) {
+      const brugerId = user.id;
+      after(() => sletFjernedeBilleder(brugerId, fjernede));
+    }
+
     revalidatePath(`/auktion/${auktionId}`);
     revalidatePath("/");
     return { ok: true };
   } catch (err) {
     console.error("redigerAuktion fejlede:", err);
     return { fejl: GENERISK };
+  }
+}
+
+// Sletter billeder, sælgeren har fjernet ved redigering. Kun filer i
+// brugerens egen mappe i auktion-billeder, og kun hvis ingen auktion (heller
+// ikke en anden af brugerens egne, fx en genopsat vare) stadig bruger dem.
+// Service role, fordi storage-policyen ikke lader brugeren slette - ejeren er
+// tjekket af rediger_auktion. Kaster aldrig.
+const BILLEDE_STI = /^[0-9a-f-]{36}\/[A-Za-z0-9_-]{1,100}\.[a-z0-9]{1,5}$/;
+async function sletFjernedeBilleder(brugerId: string, urls: string[]) {
+  try {
+    const markoer = "/storage/v1/object/public/auktion-billeder/";
+    const admin = createAdminClient();
+    const stier: string[] = [];
+    for (const url of urls) {
+      const i = url.indexOf(markoer);
+      if (i < 0) continue;
+      const sti = decodeURIComponent(url.slice(i + markoer.length).split("?")[0]);
+      if (!BILLEDE_STI.test(sti) || !sti.startsWith(`${brugerId.toLowerCase()}/`)) continue;
+      const { data: iBrug, error } = await admin
+        .from("auctions")
+        .select("id")
+        .contains("billeder", [url])
+        .limit(1);
+      if (error || (iBrug && iBrug.length > 0)) continue;
+      stier.push(sti);
+    }
+    if (stier.length === 0) return;
+    const { error } = await admin.storage.from("auktion-billeder").remove(stier);
+    if (error) throw error;
+  } catch (err) {
+    await logDriftFejl({ kilde: "action", hvor: "redigerAuktion: slet fjernede billeder", fejl: err });
   }
 }
 

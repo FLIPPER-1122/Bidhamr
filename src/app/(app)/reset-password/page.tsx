@@ -90,7 +90,7 @@ export default function NulstilAdgangskodePage() {
           {!klar && (
             <p className="mt-4 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2.5 text-sm text-advarsel-tekst">
               Venter på bekræftelse af dit nulstillingslink… Hvis du ikke er
-              kommet hertil via linket i din email, skal du{" "}
+              kommet hertil via linket i din e-mail, skal du{" "}
               <Link href="/glemt-adgangskode" className="font-medium underline">
                 bestille et nyt link
               </Link>

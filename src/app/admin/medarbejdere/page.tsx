@@ -79,7 +79,7 @@ export default async function AdminMedarbejdere({
           <thead>
             <tr className="bg-neutral-50 text-xs text-neutral-500 uppercase">
               <th className="px-5 py-3 text-left font-medium">Navn</th>
-              <th className="px-5 py-3 text-left font-medium">Email</th>
+              <th className="px-5 py-3 text-left font-medium">E-mail</th>
               <th className="px-5 py-3 text-left font-medium">Rolle</th>
               <th className="px-5 py-3 text-left font-medium">Oprettet</th>
               <th className="px-5 py-3 text-left font-medium">Handling</th>
@@ -129,7 +129,7 @@ export default async function AdminMedarbejdere({
         </p>
         <div className="mt-3">
           <Suspense>
-            <AdminFilters sortOptions={[]} searchPlaceholder="Søg på navn eller email..." />
+            <AdminFilters sortOptions={[]} searchPlaceholder="Søg på navn eller e-mail..." />
           </Suspense>
         </div>
       </div>
