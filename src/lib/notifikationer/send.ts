@@ -56,6 +56,9 @@ export type SendOptions = {
   // Mail sendes uanset brugerens kanalvalg (DSA-begrundelser: brugeren kan
   // være suspenderet og ude af stand til at logge ind og se klokken).
   altidMail?: boolean;
+  // Push er allerede sendt af en anden kilde (edge function
+  // notificer-foelgere for nye auktioner) - send kun klokke og mail.
+  udenPush?: boolean;
 };
 
 const INGEN: SendResultat = { klokke: false, mail: false, push: false };
@@ -350,7 +353,7 @@ export async function send(
     const [klokke, mail, push] = await Promise.allSettled([
       kanaler.klokke ? gemIKlokke(admin, brugerId, type, input, link) : fra,
       kanaler.mail ? sendMailTil(admin, brugerId, input, link) : fra,
-      kanaler.push ? pushTil(admin, brugerId, type, input, link) : fra,
+      kanaler.push && !opts.udenPush ? pushTil(admin, brugerId, type, input, link) : fra,
     ]);
     // null = kanalen er fra.
     const status = (r: PromiseSettledResult<KanalStatus | null>): KanalStatus | null => {

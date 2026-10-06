@@ -41,6 +41,8 @@ type Opgave = {
   brugerId: string;
   type: NotifikationType;
   input: NotifikationInput & { noegle: string };
+  // Push er allerede sendt (se SendOptions.udenPush).
+  udenPush?: boolean;
 };
 
 const TIME = 60 * 60 * 1000;
@@ -93,7 +95,10 @@ async function sendNye(admin: Admin, opgaver: Opgave[]): Promise<number> {
     if (sendt.has(o.input.noegle)) continue;
     // Valgfrie typer springes over, hvis nøglen ikke kan claimes - ellers
     // sendes samme hændelse ved hver kørsel. Påkrævede (advarsel) sendes stadig.
-    const r = await send(o.brugerId, o.type, o.input, { springOverVedClaimFejl: true });
+    const r = await send(o.brugerId, o.type, o.input, {
+      springOverVedClaimFejl: true,
+      udenPush: o.udenPush,
+    });
     if (!r.dublet && !r.sprunget) antal++;
   }
   return antal;
@@ -499,6 +504,29 @@ async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
         },
       });
     }
+  }
+  // Appen kalder edge function notificer-foelgere lige efter oprettelsen; den
+  // sender kun push og claimer nøglen ny_auktion_push:<auktion>:<følger>
+  // (supabase/functions/notificer-foelgere). Her sendes så kun klokke og mail.
+  // En fejlet push fra edge function'en sendes igen herfra.
+  const pushNoegle = (n: string) => n.replace(/^ny_auktion:/, "ny_auktion_push:");
+  const pushSendt = new Set<string>();
+  const pushNoegler = opgaver.map((o) => pushNoegle(o.input.noegle));
+  for (let i = 0; i < pushNoegler.length; i += 200) {
+    const { data, error } = await admin
+      .from("notifikation_afsendelser")
+      .select("noegle, status")
+      .in("noegle", pushNoegler.slice(i, i + 200));
+    if (error) {
+      console.error("Notifikationer: opslag af push-nøgler fejlede:", error.message);
+      return 0;
+    }
+    for (const r of data ?? []) {
+      if (r.status !== "fejlet") pushSendt.add(r.noegle as string);
+    }
+  }
+  for (const o of opgaver) {
+    o.udenPush = pushSendt.has(pushNoegle(o.input.noegle));
   }
   return sendNye(admin, opgaver);
 }
