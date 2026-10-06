@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     ".claude/worktrees/**",
     // Loest Node-script (laver statusrapporten i Word), ikke en del af appen.
     "gen_status.js",
+    // Supabase edge functions er Deno (jsr:-imports), ikke en del af Next-appen.
+    "supabase/functions/**",
   ]),
 ]);
 

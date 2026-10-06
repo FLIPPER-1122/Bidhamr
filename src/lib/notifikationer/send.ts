@@ -53,6 +53,9 @@ export type SendOptions = {
   // nøglen aldrig bliver gemt. Påkrævede typer sendes stadig (hellere to gange
   // end aldrig). Næste kørsel prøver igen.
   springOverVedClaimFejl?: boolean;
+  // Push er allerede sendt af en anden kilde (edge function
+  // notificer-foelgere for nye auktioner) - send kun klokke og mail.
+  udenPush?: boolean;
 };
 
 const INGEN: SendResultat = { klokke: false, mail: false, push: false };
@@ -346,7 +349,7 @@ export async function send(
     const [klokke, mail, push] = await Promise.allSettled([
       kanaler.klokke ? gemIKlokke(admin, brugerId, type, input, link) : fra,
       kanaler.mail ? sendMailTil(admin, brugerId, input, link) : fra,
-      kanaler.push ? pushTil(admin, brugerId, type, input, link) : fra,
+      kanaler.push && !opts.udenPush ? pushTil(admin, brugerId, type, input, link) : fra,
     ]);
     // null = kanalen er fra.
     const status = (r: PromiseSettledResult<KanalStatus | null>): KanalStatus | null => {

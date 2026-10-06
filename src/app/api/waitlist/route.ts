@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getResend } from "@/lib/resend";
 import { velkomstMail } from "@/lib/mails/venteliste";
 import { FOR_MANGE_FORSOEG, indenForGraense, klientIp } from "@/lib/rateLimit";
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Ugyldig forespørgsel." }, { status: 400 });
   }
 
-  if (typeof email !== "string" || !EMAIL_REGEX.test(email)) {
+  if (typeof email !== "string" || email.length > 254 || !EMAIL_REGEX.test(email)) {
     return NextResponse.json(
       { error: "Indtast en gyldig e-mailadresse." },
       { status: 400 },
@@ -37,8 +37,10 @@ export async function POST(req: NextRequest) {
   const renEmail = email.trim().toLowerCase();
   let error: { code?: string; message?: string } | null;
   try {
-    const supabase = await createClient();
-    ({ error } = await supabase.from("venteliste").insert({ email: renEmail }));
+    // Service role: browseren har ingen insert-ret på venteliste (migration
+    // 20261009020000_sikkerhed_rettelser) - kun denne rute med IP-grænsen.
+    const admin = createAdminClient();
+    ({ error } = await admin.from("venteliste").insert({ email: renEmail }));
   } catch (err) {
     console.error("Venteliste: kunne ikke gemme tilmelding:", err);
     return NextResponse.json({ error: SERVERFEJL }, { status: 500 });
