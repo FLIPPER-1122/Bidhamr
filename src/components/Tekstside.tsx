@@ -24,6 +24,19 @@ function TekstLink({ href, tekst }: { href: string; tekst: string }) {
   );
 }
 
+// Første celle kan være "Venligt navn · teknisk-navn": det venlige navn vises
+// fremhævet, det tekniske (fx cookiens rigtige navn) småt nedenunder.
+function RaekkeNavn({ vaerdi }: { vaerdi: string }) {
+  const [navn, teknisk] = vaerdi.split(" · ");
+  if (!teknisk) return <span className="break-words font-semibold text-tekst">{navn}</span>;
+  return (
+    <>
+      <span className="block font-semibold text-tekst">{navn}</span>
+      <code className="mt-0.5 block break-words font-mono text-[12px] font-normal text-tekst-svag">{teknisk}</code>
+    </>
+  );
+}
+
 function TabelVisning({ tabel }: { tabel: Tabel }) {
   const [, ...ovrige] = tabel.kolonner;
   return (
@@ -32,7 +45,9 @@ function TabelVisning({ tabel }: { tabel: Tabel }) {
       <ul aria-label={tabel.titel} className="mt-4 flex flex-col gap-3 md:hidden">
         {tabel.raekker.map((r) => (
           <li key={r[0]} className="rounded-xl border border-kant p-4">
-            <p className="break-words font-mono text-[13px] font-semibold text-tekst">{r[0]}</p>
+            <p className="text-sm">
+              <RaekkeNavn vaerdi={r[0]} />
+            </p>
             <dl className="mt-2 flex flex-col gap-2">
               {ovrige.map((k, i) => (
                 <div key={k}>
@@ -60,8 +75,8 @@ function TabelVisning({ tabel }: { tabel: Tabel }) {
           <tbody>
             {tabel.raekker.map((r) => (
               <tr key={r[0]} className="border-t border-kant align-top">
-                <th scope="row" className="break-words px-4 py-3 font-mono text-[13px] font-semibold text-tekst">
-                  {r[0]}
+                <th scope="row" className="w-[26%] px-4 py-3 font-normal">
+                  <RaekkeNavn vaerdi={r[0]} />
                 </th>
                 {r.slice(1).map((c, i) => (
                   <td key={i} className="px-4 py-3 leading-relaxed text-tekst">
