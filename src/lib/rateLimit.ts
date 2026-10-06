@@ -58,12 +58,22 @@ export const GRAENSER = {
   // minut. IP-loftet er højere, fordi mange mobilbrugere deler IP (CGNAT).
   soeg_bruger: { maks: 60, vindueSek: 60 },
   soeg_ip: { maks: 120, vindueSek: 60 },
-  // Anmeld ulovligt indhold (DSA, også uden login). Honeypot og tidsfælde
-  // i formularen; databasen har desuden 20 pr. døgn pr. anmelder.
+  // Anmeld ulovligt indhold (DSA, også uden login - hjemmesiden og appens
+  // POST /api/dsa/anmeld). Honeypot og tidsfælde i formularen; databasen har
+  // desuden 20 pr. døgn pr. anmelder og sine egne fælles lofter. IP-loftet
+  // tjekkes først (før indholdet slås op). Anmeldelser om misbrug af børn
+  // tæller ikke med i de fælles lofter (men har stadig IP-loftet).
   dsa_ip: { maks: 10, vindueSek: 60 * 60 },
+  dsa_ip_indlogget: { maks: 30, vindueSek: 60 * 60 },
   dsa_email: { maks: 10, vindueSek: 60 * 60 },
   dsa_bruger: { maks: 20, vindueSek: 60 * 60 },
-  dsa_alle: { maks: 500, vindueSek: 60 * 60 },
+  dsa_alle_anonym: { maks: 300, vindueSek: 60 * 60 },
+  dsa_alle_indlogget: { maks: 500, vindueSek: 60 * 60 },
+  // Kvitteringsmails for anmeldelser: højst 3 pr. modtager pr. døgn og højst
+  // 100 i alt pr. time til anmeldere uden login (e-mailen er ikke bekræftet,
+  // så formularen må ikke kunne bruges til at sende mails til fremmede).
+  dsa_kvittering_email: { maks: 3, vindueSek: 24 * 60 * 60 },
+  dsa_kvittering_anonym: { maks: 100, vindueSek: 60 * 60 },
   // Klager og visning af en DSA-sag via signeret link.
   dsa_klage_ip: { maks: 10, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;

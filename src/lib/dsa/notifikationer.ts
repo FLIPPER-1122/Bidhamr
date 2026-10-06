@@ -4,6 +4,11 @@ import "server-only";
 //
 // - Kvittering til anmelderen (art. 16(4)) - mail til den e-mail, anmelderen
 //   har givet (eller kontoens). Claimes med kvittering_sendt_kl (højst én).
+//   Viser aldrig fritekst fra anmelderen (kun et link, BidHamr selv har
+//   bygget). Højst 3 kvitteringer pr. modtager pr. døgn og 100 i alt pr. time
+//   uden login (e-mailen er ikke bekræftet) - over loftet sendes den ikke.
+//
+// Alle claims frigives igen, hvis afsendelsen fejler, så cron'en prøver igen.
 // - Afgørelsen til anmelderen (art. 16(5)) - claimes med svar_sendt_kl.
 // - Begrundelsen til den ramte bruger (art. 17) - type 'afgoerelse'
 //   (påkrævet), mail sendes ALTID (også ved suspenderet/lukket konto, hvor
@@ -25,6 +30,7 @@ import {
   klageSvarMail,
 } from "@/lib/mails/dsa";
 import { HANDLING_BRUGER, type DsaHandling } from "@/lib/dsa/regler";
+import { indenForGraense } from "@/lib/rateLimit";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -68,21 +74,43 @@ export async function sendAnmeldelseKvittering(id: string): Promise<void> {
     if (!data) return;
     const til = await modtager(admin, data.anmelder_id, data.anmelder_email);
     if (!til) return;
-    await sendHandelMail(
+    // Lofter (se toppen). Over loftet: ingen mail, og claimet bliver stående,
+    // så cron'en ikke prøver igen.
+    const indenFor =
+      (await indenForGraense("dsa_kvittering_email", til)) &&
+      (!!data.anmelder_id || (await indenForGraense("dsa_kvittering_anonym", "alle")));
+    if (!indenFor) {
+      console.warn("DSA: kvittering ikke sendt (loft for kvitteringsmails nået):", data.sagsnummer);
+      return;
+    }
+    const sendt = await sendHandelMail(
       til,
       anmeldelseKvitteringMail({
         sagsnummer: data.sagsnummer,
         indholdType: data.indhold_type,
         kategori: data.kategori,
-        placering: data.placering,
+        // Kun et link, BidHamr selv har bygget - aldrig fritekst.
+        placering: data.indhold_type !== "andet" && data.placering.startsWith("/") ? data.placering : null,
         oprettet: data.oprettet_kl,
         statusSti: anmeldelseSti(data.id),
         haster: data.kategori === "misbrug_boern" || data.kategori === "hadefuld_tale",
       }),
     );
+    if (!sendt) await frigiv(admin, "dsa_anmeldelser", "kvittering_sendt_kl", data.id);
   } catch (err) {
     console.error("DSA: kvittering fejlede:", err);
   }
+}
+
+// Frigiver et claim, så cron'en prøver igen.
+async function frigiv(
+  admin: Admin,
+  tabel: "dsa_anmeldelser" | "dsa_klager",
+  kolonne: "kvittering_sendt_kl" | "svar_sendt_kl",
+  id: string,
+): Promise<void> {
+  const { error } = await admin.from(tabel).update({ [kolonne]: null }).eq("id", id);
+  if (error) console.error("DSA: claim kunne ikke frigives:", tabel, kolonne, error.message);
 }
 
 // ------------------------------------------------------------------ Svar til anmelder
@@ -120,7 +148,7 @@ export async function notificerAnmeldelseSvar(id: string): Promise<void> {
       kanKlage,
     });
     if (data.anmelder_id) {
-      await send(
+      const r = await send(
         data.anmelder_id,
         "afgoerelse",
         {
@@ -133,10 +161,11 @@ export async function notificerAnmeldelseSvar(id: string): Promise<void> {
         },
         { altidMail: true },
       );
+      if (!(r.klokke || r.mail || r.push || r.dublet)) await frigiv(admin, "dsa_anmeldelser", "svar_sendt_kl", data.id);
       return;
     }
     const til = await modtager(admin, null, data.anmelder_email);
-    if (til) await sendHandelMail(til, mail);
+    if (til && !(await sendHandelMail(til, mail))) await frigiv(admin, "dsa_anmeldelser", "svar_sendt_kl", data.id);
   } catch (err) {
     console.error("DSA: svar til anmelder fejlede:", err);
   }
@@ -231,10 +260,21 @@ export async function notificerKlageSvar(id: string): Promise<void> {
         svar: string;
       }>();
     if (!k) return;
+    // Medhold, men auktionen var udløbet og kunne ikke åbnes igen
+    // (dsa_klage_afgoer markerer så ikke afgørelsen ophævet).
+    let ikkeGenaabnet = false;
+    if (k.udfald === "medhold" && k.afgoerelse_id) {
+      const { data: af } = await admin
+        .from("dsa_afgoerelser")
+        .select("handling, ophaevet_kl")
+        .eq("id", k.afgoerelse_id)
+        .maybeSingle<{ handling: string; ophaevet_kl: string | null }>();
+      ikkeGenaabnet = !!af && af.ophaevet_kl === null && ["auktion_fjernet", "auktion_annulleret"].includes(af.handling);
+    }
     const sti = k.afgoerelse_id ? afgoerelseSti(k.afgoerelse_id) : anmeldelseSti(k.anmeldelse_id!);
-    const mail = klageSvarMail({ sagsnummer: k.sagsnummer, udfald: k.udfald, svar: k.svar, sti });
+    const mail = klageSvarMail({ sagsnummer: k.sagsnummer, udfald: k.udfald, svar: k.svar, sti, ikkeGenaabnet });
     if (k.klager_id) {
-      await send(
+      const r = await send(
         k.klager_id,
         "afgoerelse",
         {
@@ -247,9 +287,12 @@ export async function notificerKlageSvar(id: string): Promise<void> {
         },
         { altidMail: true },
       );
+      if (!(r.klokke || r.mail || r.push || r.dublet)) await frigiv(admin, "dsa_klager", "svar_sendt_kl", k.id);
       return;
     }
-    if (k.klager_email) await sendHandelMail(k.klager_email, mail);
+    if (k.klager_email && !(await sendHandelMail(k.klager_email, mail))) {
+      await frigiv(admin, "dsa_klager", "svar_sendt_kl", k.id);
+    }
   } catch (err) {
     console.error("DSA: svar på klage fejlede:", err);
   }

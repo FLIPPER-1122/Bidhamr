@@ -7,8 +7,8 @@
 --      pr. IP, e-mail og bruger + honeypot/tidsfælde (src/app/actions/dsa.ts
 --      og POST /api/dsa/anmeld til appen). Anmelderens navn og e-mail er
 --      persondata: kun staff (service_role) kan læse dem - aldrig den anmeldte.
---      Anonymiseres 12 måneder efter afgørelsen (dsa_oprydning_koer, kaldes
---      af den eksisterende oprydnings-cron 'oprydning').
+--      Anonymiseres 12 måneder efter afgørelsen (dsa_oprydning_koer, eget
+--      cron-job 'dsa_oprydning').
 --   2. public.dsa_afgoerelser   Begrundelse ved indgreb (art. 17). ÉN fælles
 --      funktion dsa_indgreb() udfører indgrebet OG gemmer begrundelsen i samme
 --      transaktion: skjul/fjern/annullér auktion, skjul spørgsmål/svar, skjul
@@ -42,7 +42,8 @@
 --   notifikation_kendt_type()      genskrives med sine nuværende værdier (den
 --                                  kalder notifikation_paakraevet, så den nye
 --                                  type er kendt automatisk)
--- Cron-jobbet 'oprydning' kører nu også dsa_oprydning_koer().
+-- Nyt cron-job 'dsa_oprydning' kører dsa_oprydning_koer() (eget job, så det
+-- kører, selvom 'oprydning' fejler).
 --
 -- Idempotent. Kræver 20261007020000_bedoemmelse_svar.sql (skjul_bedoemmelse)
 -- og 20261006040000_auktionsfunktioner.sql (skjul_spoergsmaal).
@@ -447,6 +448,7 @@ declare
   v_navn   text := nullif(btrim(coalesce(p_navn, '')), '');
   v_email  text := nullif(lower(btrim(coalesce(p_email, ''))), '');
   v_plac   text := btrim(coalesce(p_placering, ''));
+  v_anonym boolean := p_anmelder is null;
   v_ejer   uuid;
   v_auk    uuid;
   v_frist  timestamptz;
@@ -481,50 +483,69 @@ begin
   end if;
 
   -- Indloggede: navn og e-mail fra kontoen (serveren sender dem med).
-  if p_anmelder is null and p_kategori <> 'misbrug_boern'
+  if v_anonym and p_kategori <> 'misbrug_boern'
      and (v_navn is null or v_email is null) then
     return jsonb_build_object('kode', 'anmelder_mangler');
   end if;
-  if p_anmelder is not null and not exists (select 1 from public.users u where u.id = p_anmelder) then
+  if not v_anonym and not exists (select 1 from public.users u where u.id = p_anmelder) then
     return jsonb_build_object('kode', 'anmelder_mangler');
   end if;
 
   if p_type <> 'andet' then
     select * into e from public.dsa_indhold_ejer(p_type, p_id) limit 1;
     if not found then
+      -- Uden login afsløres det ikke, om indholdet findes.
+      if v_anonym then return jsonb_build_object('kode', 'ok'); end if;
       return jsonb_build_object('kode', 'ikke_fundet');
     end if;
     v_ejer := e.bruger_id;
     v_auk := e.auktion_id;
-    if p_anmelder is not null and v_ejer = p_anmelder then
+    if not v_anonym and v_ejer = p_anmelder then
       return jsonb_build_object('kode', 'sig_selv');
+    end if;
+    -- Uden login med ejerens egen e-mail: neutralt svar, ingen sag. Ejeren
+    -- skal ikke kunne følge (eller klage over) en "anmeldelse" af sig selv.
+    if v_anonym and v_email is not null
+       and exists (select 1 from public.users u where u.id = v_ejer and lower(u.email) = v_email) then
+      return jsonb_build_object('kode', 'ok');
     end if;
   end if;
 
-  -- Samme anmelder, samme indhold, mens den forrige er åben.
-  select a.id, a.sagsnummer into v_id, v_nr
-    from public.dsa_anmeldelser a
-   where a.status = 'ny'
-     and a.indhold_type = p_type
-     and a.indhold_id is not distinct from p_id
-     and ((p_anmelder is not null and a.anmelder_id = p_anmelder)
-          or (p_anmelder is null and v_email is not null and a.anmelder_email = v_email))
-     and (p_type <> 'andet' or a.placering = v_plac)
-   limit 1;
-  if found then
-    return jsonb_build_object('kode', 'findes', 'id', v_id, 'sagsnummer', v_nr);
+  -- Dublet: KUN for indloggede (deres egen konto). Uden login kan en e-mail
+  -- ikke bevise, hvem man er - et dublettjek ville afsløre andres sager.
+  if not v_anonym then
+    select a.id, a.sagsnummer into v_id, v_nr
+      from public.dsa_anmeldelser a
+     where a.status = 'ny'
+       and a.indhold_type = p_type
+       and a.indhold_id is not distinct from p_id
+       and a.anmelder_id = p_anmelder
+       and (p_type <> 'andet' or a.placering = v_plac)
+     limit 1;
+    if found then
+      return jsonb_build_object('kode', 'findes', 'id', v_id, 'sagsnummer', v_nr);
+    end if;
   end if;
 
   -- Grænser i databasen (serveren har også grænser pr. IP).
-  if p_anmelder is not null or v_email is not null then
+  if not v_anonym or v_email is not null then
     select count(*) into n from public.dsa_anmeldelser a
      where a.oprettet_kl > now() - interval '1 day'
-       and ((p_anmelder is not null and a.anmelder_id = p_anmelder)
-            or (v_email is not null and a.anmelder_email = v_email));
+       and ((not v_anonym and a.anmelder_id = p_anmelder)
+            or (v_anonym and a.anmelder_id is null and a.anmelder_email = v_email));
     if n >= 20 then return jsonb_build_object('kode', 'for_mange'); end if;
   end if;
-  select count(*) into n from public.dsa_anmeldelser a where a.oprettet_kl > now() - interval '1 hour';
-  if n >= 1000 then return jsonb_build_object('kode', 'for_mange'); end if;
+  -- Fælles loft, særskilt for med og uden login. Anmeldelser om misbrug af
+  -- børn stoppes aldrig af det fælles loft (og tælles ikke med).
+  if p_kategori <> 'misbrug_boern' then
+    select count(*) into n from public.dsa_anmeldelser a
+     where a.oprettet_kl > now() - interval '1 hour'
+       and a.kategori <> 'misbrug_boern'
+       and (a.anmelder_id is null) = v_anonym;
+    if n >= (case when v_anonym then 500 else 1000 end) then
+      return jsonb_build_object('kode', 'for_mange');
+    end if;
+  end if;
 
   -- Intern frist: 7 dage, men 24 timer ved misbrug af børn og hadefuld tale.
   v_frist := now() + case when p_kategori in ('misbrug_boern', 'hadefuld_tale')
@@ -583,6 +604,7 @@ declare
   e         record;
   a         record;
   u         record;
+  q         record;
   v_r       jsonb;
   v_foer    text;
   v_til     timestamptz;
@@ -591,6 +613,8 @@ declare
   v_afg     uuid;
   v_nr      text;
   v_anm     uuid[];
+  v_ekstra_afg uuid[] := '{}';
+  v_x       uuid;
   v_svar    text := nullif(btrim(coalesce(v_ekstra->>'svar_til_anmelder', '')), '');
   v_auto    boolean := coalesce(p_automatisk_opdaget, false);
 begin
@@ -623,6 +647,17 @@ begin
   if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
   if public.dsa_er_inhabil(p_medarbejder, e.bruger_id) then
     return jsonb_build_object('kode', 'inhabil');
+  end if;
+
+  -- Spørgsmål og svar skjules sammen: den anden part skal også have en
+  -- begrundelse, og staff må heller ikke være inhabil over for den.
+  if p_type in ('spoergsmaal', 'spoergsmaal_svar') then
+    select x.asker_id, x.answer, x.auction_id, x.question, au.bruger_id as saelger_id into q
+      from public.auction_questions x join public.auctions au on au.id = x.auction_id
+     where x.id = p_id;
+    if public.dsa_er_inhabil(p_medarbejder, q.asker_id) or public.dsa_er_inhabil(p_medarbejder, q.saelger_id) then
+      return jsonb_build_object('kode', 'inhabil');
+    end if;
   end if;
 
   -- Anmeldelsen skal være åben og handle om det samme indhold.
@@ -732,6 +767,32 @@ begin
      v_auto, false, p_anmeldelse, v_til, v_foer, p_medarbejder)
   returning id, sagsnummer into v_afg, v_nr;
 
+  -- Den anden part i et spørgsmål med svar (spørgeren eller sælgeren) får
+  -- også en begrundelse - deres tekst er skjult sammen med den anden.
+  if p_type in ('spoergsmaal', 'spoergsmaal_svar') then
+   if q.answer is not null and q.asker_id is distinct from q.saelger_id then
+    insert into public.dsa_afgoerelser
+      (bruger_id, indhold_type, indhold_id, auktion_id, indhold_tekst, handling, regel_kode, regel_tekst,
+       grundlag, fakta, intern_note, automatisk_opdaget, automatisk_afgjort, anmeldelse_id, varighed_til,
+       foer_status, medarbejder_id)
+    values
+      (case when p_type = 'spoergsmaal' then q.saelger_id else q.asker_id end,
+       case when p_type = 'spoergsmaal' then 'spoergsmaal_svar' else 'spoergsmaal' end,
+       p_id, q.auction_id,
+       left(case when p_type = 'spoergsmaal' then 'Svar på spørgsmål: ' || q.answer
+                 else 'Spørgsmål: ' || q.question end, 300),
+       p_handling, v_regel.kode,
+       left(v_regel.navn || ' (' || v_regel.henvisning || ')', 500), v_regel.grundlag,
+       left(case when p_type = 'spoergsmaal'
+                 then 'Spørgsmålet, du svarede på, er skjult, og dit svar er derfor også skjult. Begrundelsen for spørgsmålet: '
+                 else 'Svaret på dit spørgsmål er skjult, og dit spørgsmål er derfor også skjult. Begrundelsen for svaret: '
+            end || v_fakta, 2000),
+       v_note, v_auto, false, p_anmeldelse, null, null, p_medarbejder)
+    returning id into v_x;
+    v_ekstra_afg := array[v_x];
+   end if;
+  end if;
+
   -- Alle åbne anmeldelser af samme indhold afgøres med indgrebet.
   with luk as (
     update public.dsa_anmeldelser x
@@ -758,7 +819,8 @@ begin
   end if;
 
   return jsonb_build_object('kode', 'ok', 'afgoerelse_id', v_afg, 'sagsnummer', v_nr,
-                            'bruger_id', e.bruger_id, 'anmeldelser', to_jsonb(v_anm));
+                            'bruger_id', e.bruger_id, 'anmeldelser', to_jsonb(v_anm),
+                            'ekstra_afgoerelser', to_jsonb(v_ekstra_afg));
 end;
 $fn$;
 revoke all on function public.dsa_indgreb(uuid, text, uuid, text, text, text, text, uuid, boolean, jsonb)
@@ -1003,7 +1065,10 @@ declare
   v_r     jsonb;
   v_genaabnet boolean := true;
   v_status text;
+  v_slut   timestamptz;
   v_bruger uuid;
+  v_til    uuid;
+  v_saelger uuid;
 begin
   if p_udfald is null or p_udfald not in ('medhold', 'fastholdt') then
     return jsonb_build_object('kode', 'ugyldigt_udfald');
@@ -1030,8 +1095,9 @@ begin
     return jsonb_build_object('kode', 'ingen_adgang');
   end if;
 
-  -- Inhabil: den, der traf afgørelsen, klageren, den ramte og en, man har
-  -- handlet med.
+  -- Inhabil - ALT tjekkes, før der skrives noget: den, der traf afgørelsen,
+  -- klageren, den ramte, en, man har handlet med, og ved bedømmelser også
+  -- begge parter i bedømmelsen (bedoemmelse_er_inhabil).
   if k.afgoerelse_id is not null then
     if p_medarbejder is not distinct from af.medarbejder_id
        or p_medarbejder = k.klager_id
@@ -1039,6 +1105,20 @@ begin
        or exists (select 1 from public.dsa_anmeldelser x
                    where x.id = af.anmeldelse_id and x.anmelder_id = p_medarbejder) then
       return jsonb_build_object('kode', 'inhabil');
+    end if;
+    if af.handling in ('bedoemmelse_skjult', 'bedoemmelse_svar_skjult') then
+      select r.til_bruger_id into v_til from public.ratings r where r.id = af.indhold_id;
+      if public.bedoemmelse_er_inhabil(p_medarbejder, af.indhold_id)
+         or public.dsa_er_inhabil(p_medarbejder, v_til) then
+        return jsonb_build_object('kode', 'inhabil');
+      end if;
+    elsif af.handling = 'spoergsmaal_skjult' then
+      select x.asker_id, au.bruger_id into v_til, v_saelger
+        from public.auction_questions x join public.auctions au on au.id = x.auction_id
+       where x.id = af.indhold_id;
+      if public.dsa_er_inhabil(p_medarbejder, v_til) or public.dsa_er_inhabil(p_medarbejder, v_saelger) then
+        return jsonb_build_object('kode', 'inhabil');
+      end if;
     end if;
   else
     if p_medarbejder is not distinct from an.behandlet_af
@@ -1048,25 +1128,33 @@ begin
     end if;
   end if;
 
+  -- Herfra: en fejl ruller alt tilbage (raise), så der aldrig er delvise
+  -- skrivninger.
   if p_udfald = 'medhold' then
     if k.afgoerelse_id is not null then
-      -- Markér først, så triggerne ikke også markerer den som ophævet af staff.
-      update public.dsa_afgoerelser
-         set ophaevet_kl = coalesce(ophaevet_kl, now()), ophaevet_grund = coalesce(ophaevet_grund, 'klage')
-       where id = af.id;
+      -- Kan auktionen åbnes igen? Afgøres før noget skrives.
+      if af.handling in ('auktion_fjernet', 'auktion_annulleret') then
+        select x.status, x.slutter_kl into v_status, v_slut from public.auctions x where x.id = af.indhold_id for update;
+        v_genaabnet := (v_status = 'annulleret' and af.foer_status = 'aktiv' and v_slut > now())
+                    or (af.handling = 'auktion_fjernet' and v_status = 'annulleret' and af.foer_status = 'annulleret');
+      end if;
+
+      -- Markér først, så triggerne ikke også markerer den som ophævet af
+      -- staff. Kan indgrebet ikke tilbageføres (auktionen er udløbet), står
+      -- afgørelsen ved magt - brugeren får besked om at sætte varen op igen.
+      if v_genaabnet then
+        update public.dsa_afgoerelser
+           set ophaevet_kl = coalesce(ophaevet_kl, now()), ophaevet_grund = coalesce(ophaevet_grund, 'klage')
+         where id = af.id;
+      end if;
 
       if af.handling = 'auktion_skjult' then
         update public.auctions set skjult = false where id = af.indhold_id and skjult;
       elsif af.handling in ('auktion_fjernet', 'auktion_annulleret') then
-        select x.status into v_status from public.auctions x where x.id = af.indhold_id for update;
-        if v_status = 'annulleret' and af.foer_status = 'aktiv'
-           and exists (select 1 from public.auctions x where x.id = af.indhold_id and x.slutter_kl > now()) then
+        if v_status = 'annulleret' and af.foer_status = 'aktiv' and v_slut > now() then
           update public.auctions set status = 'aktiv', skjult = false, arkiveret_kl = null where id = af.indhold_id;
-        elsif af.handling = 'auktion_fjernet' and v_status = 'annulleret' and af.foer_status = 'annulleret' then
+        elsif v_genaabnet then
           update public.auctions set skjult = false where id = af.indhold_id;
-        else
-          -- Auktionen er udløbet imens og kan ikke åbnes igen.
-          v_genaabnet := false;
         end if;
       elsif af.handling = 'spoergsmaal_skjult' then
         v_r := public.skjul_spoergsmaal(p_medarbejder, af.indhold_id, false, null);
@@ -1077,14 +1165,19 @@ begin
         v_r := public.skjul_bedoemmelse(p_medarbejder, af.indhold_id,
                  case when af.handling = 'bedoemmelse_skjult' then 'bedoemmelse' else 'svar' end,
                  false, null, left('Medhold i klage ' || k.sagsnummer, 500));
-        if v_r->>'kode' = 'inhabil' then return v_r; end if;
         if v_r->>'kode' not in ('ok', 'uaendret') then
           raise exception 'skjul_bedoemmelse: %', v_r->>'kode';
         end if;
       elsif af.handling = 'konto_suspenderet' then
-        update public.users
-           set suspenderet = false, suspenderet_aarsag = null, suspenderet_kl = null, suspenderet_til = null
-         where id = af.bruger_id and suspenderet and konto_lukket_kl is null;
+        -- Ophæv kun, hvis der ikke er kommet en nyere, gældende suspension.
+        if not exists (select 1 from public.dsa_afgoerelser y
+                        where y.bruger_id = af.bruger_id and y.id <> af.id
+                          and y.handling in ('konto_suspenderet', 'konto_lukket')
+                          and y.oprettet_kl > af.oprettet_kl and y.ophaevet_kl is null) then
+          update public.users
+             set suspenderet = false, suspenderet_aarsag = null, suspenderet_kl = null, suspenderet_til = null
+           where id = af.bruger_id and suspenderet and konto_lukket_kl is null;
+        end if;
         insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
         values (p_medarbejder, 'ophaev_suspension', 'bruger', af.bruger_id, af.bruger_id,
                 left('Suspension ophævet efter medhold i klage ' || k.sagsnummer, 4000));
@@ -1116,6 +1209,7 @@ begin
           case when p_udfald = 'medhold' then 'dsa_klage_medhold' else 'dsa_klage_fastholdt' end,
           'dsa', k.id, v_bruger,
           left('Klage ' || k.sagsnummer || ': ' || case when p_udfald = 'medhold' then 'medhold' else 'afgørelsen fastholdt' end
+               || case when p_udfald = 'medhold' and not v_genaabnet then ' (auktionen er udløbet og kan ikke åbnes igen)' else '' end
                || ' | ' || coalesce(v_note, v_svar), 4000));
 
   return jsonb_build_object('kode', 'ok', 'genaabnet', v_genaabnet,
@@ -1194,8 +1288,11 @@ as $fn$
 begin
   if tg_table_name = 'auctions' then
     if old.skjult and not new.skjult then
+      -- "Vis igen" ophæver både en skjult og en fjernet (annulleret + skjult)
+      -- auktion - indholdet er synligt igen.
       update public.dsa_afgoerelser set ophaevet_kl = now(), ophaevet_grund = 'staff'
-       where indhold_type = 'auktion' and indhold_id = new.id and handling = 'auktion_skjult'
+       where indhold_type = 'auktion' and indhold_id = new.id
+         and handling in ('auktion_skjult', 'auktion_fjernet')
          and ophaevet_kl is null;
     end if;
     if old.status = 'annulleret' and new.status <> 'annulleret' then
@@ -1220,9 +1317,16 @@ begin
        where indhold_type = 'bedoemmelse_svar' and indhold_id = new.rating_id and ophaevet_kl is null;
     end if;
   elsif tg_table_name = 'users' then
+    -- En suspension, der er udløbet af sig selv, er ikke "ophævet" - brugeren
+    -- beholder sin klageret.
     if old.suspenderet and not new.suspenderet then
       update public.dsa_afgoerelser set ophaevet_kl = now(), ophaevet_grund = 'staff'
-       where bruger_id = new.id and handling in ('konto_suspenderet', 'konto_lukket') and ophaevet_kl is null;
+       where bruger_id = new.id and handling = 'konto_suspenderet' and ophaevet_kl is null
+         and (varighed_til is null or varighed_til > now());
+    end if;
+    if old.konto_lukket_kl is not null and new.konto_lukket_kl is null then
+      update public.dsa_afgoerelser set ophaevet_kl = now(), ophaevet_grund = 'staff'
+       where bruger_id = new.id and handling = 'konto_lukket' and ophaevet_kl is null;
     end if;
   end if;
   return null;
@@ -1247,8 +1351,9 @@ create trigger bedoemmelse_svar_dsa_ophaevet after update of skjult on public.be
   for each row when (old.skjult is distinct from new.skjult)
   execute function public.dsa_marker_ophaevet();
 drop trigger if exists users_dsa_ophaevet on public.users;
-create trigger users_dsa_ophaevet after update of suspenderet on public.users
-  for each row when (old.suspenderet is distinct from new.suspenderet)
+create trigger users_dsa_ophaevet after update of suspenderet, konto_lukket_kl on public.users
+  for each row when (old.suspenderet is distinct from new.suspenderet
+                     or old.konto_lukket_kl is distinct from new.konto_lukket_kl)
   execute function public.dsa_marker_ophaevet();
 
 -- ============================================================ 11. Gennemsigtighedsrapport
@@ -1347,6 +1452,23 @@ grant execute on function public.dsa_rapport(timestamptz, timestamptz) to servic
 
 -- ============================================================ 12. Oprydning
 
+-- Fjerner e-mailadresser og telefonnumre fra fritekst (interne noter, der
+-- bevares efter anonymiseringen).
+create or replace function public.dsa_rens_kontakt(p_tekst text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $fn$
+  select case when p_tekst is null then null else
+    regexp_replace(
+      regexp_replace(p_tekst, '[^\s@<>(),;]+@[^\s@<>(),;]+\.[^\s@<>(),;]+', '[e-mail fjernet]', 'g'),
+      '(?<![\d-])(\+\d{2} ?)?\d{2}( ?\d{2}){3}(?![\d-])', '[nummer fjernet]', 'g')
+  end;
+$fn$;
+revoke all on function public.dsa_rens_kontakt(text) from public, anon, authenticated;
+grant execute on function public.dsa_rens_kontakt(text) to service_role;
+
 -- Anmelderens navn, e-mail og konto-kobling samt fritekst slettes 12
 -- måneder efter afgørelsen. Statistikken (kategori, tider, udfald) bevares.
 create or replace function public.dsa_oprydning_koer()
@@ -1363,6 +1485,9 @@ begin
      set anmelder_navn = null, anmelder_email = null, anmelder_id = null,
          begrundelse = '(Slettet 12 måneder efter afgørelsen)',
          placering = case when a.indhold_type = 'andet' then '(slettet)' else a.placering end,
+         svar_til_anmelder = case when a.svar_til_anmelder is null then null else '(slettet)' end,
+         intern_note = public.dsa_rens_kontakt(a.intern_note),
+         eskaleret_note = public.dsa_rens_kontakt(a.eskaleret_note),
          anonymiseret_kl = now()
    where a.id in (
            select x.id from public.dsa_anmeldelser x
@@ -1376,9 +1501,14 @@ begin
             limit 5000);
   get diagnostics v_anm = row_count;
 
+  -- Anmelderens klage: e-mail, konto-kobling og fritekst (svaret er skrevet
+  -- til anmelderen og kan nævne den).
   update public.dsa_klager k
      set klager_email = null,
+         klager_id = null,
          begrundelse = '(Slettet 12 måneder efter afgørelsen)',
+         svar = case when k.svar is null then null else '(slettet)' end,
+         intern_note = public.dsa_rens_kontakt(k.intern_note),
          anonymiseret_kl = now()
    where k.id in (
            select x.id from public.dsa_klager x
@@ -1395,12 +1525,9 @@ $fn$;
 revoke all on function public.dsa_oprydning_koer() from public, anon, authenticated;
 grant execute on function public.dsa_oprydning_koer() to service_role;
 
--- Den eksisterende oprydnings-cron kører også DSA-oprydningen.
-select cron.schedule(
-  'oprydning',
-  '17 * * * *',
-  $$select public.oprydning_koer(); select public.dsa_oprydning_koer();$$
-);
+-- Eget cron-job, så DSA-oprydningen kører, selvom oprydning_koer fejler (og
+-- omvendt).
+select cron.schedule('dsa_oprydning', '47 3 * * *', $$select public.dsa_oprydning_koer();$$);
 
 comment on table public.dsa_anmeldelser is
   'DSA art. 16: anmeldelser af ulovligt indhold. Kun service_role. Anmelderens navn/e-mail ses kun af staff og anonymiseres 12 mdr. efter afgørelsen (dsa_oprydning_koer).';
