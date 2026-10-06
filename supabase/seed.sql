@@ -14,6 +14,8 @@
 --   admin        admin@test.bidhamr.dk         XfmzQkQfDevL71WJ
 --   chef         chef@test.bidhamr.dk          0hz1020kbKcMf1BE
 --   tester-agent tester@test.bidhamr.dk        WZYWlaZcZ558016I
+--   Niels køber  niels-koeber@test.bidhamr.dk  WjzVSXnvJAYX4wHs   (ekstern Stripe-gennemgang, Ankerdigital)
+--   Niels sælger niels-saelger@test.bidhamr.dk qdsG-8MIOUFOZ3w9   (ekstern Stripe-gennemgang, Ankerdigital)
 --
 -- Adgangskoderne gælder kun testdatabasen. De må ikke genbruges andre steder.
 --
@@ -35,7 +37,9 @@ declare
     {"id":"11111111-1111-4111-8111-000000000002","email":"koeber@test.bidhamr.dk","pw":"6iPgNlFfXauDMDAp","navn":"Kasper Køber"},
     {"id":"11111111-1111-4111-8111-000000000003","email":"admin@test.bidhamr.dk","pw":"XfmzQkQfDevL71WJ","navn":"Anna Admin"},
     {"id":"11111111-1111-4111-8111-000000000004","email":"chef@test.bidhamr.dk","pw":"0hz1020kbKcMf1BE","navn":"Christian Chef"},
-    {"id":"11111111-1111-4111-8111-000000000005","email":"tester@test.bidhamr.dk","pw":"WZYWlaZcZ558016I","navn":"Tester Agent"}
+    {"id":"11111111-1111-4111-8111-000000000005","email":"tester@test.bidhamr.dk","pw":"WZYWlaZcZ558016I","navn":"Tester Agent"},
+    {"id":"11111111-1111-4111-8111-000000000006","email":"niels-koeber@test.bidhamr.dk","pw":"WjzVSXnvJAYX4wHs","navn":"Niels Køber"},
+    {"id":"11111111-1111-4111-8111-000000000007","email":"niels-saelger@test.bidhamr.dk","pw":"qdsG-8MIOUFOZ3w9","navn":"Niels Sælger"}
   ]';
   b jsonb;
 begin
