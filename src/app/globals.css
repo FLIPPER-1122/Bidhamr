@@ -85,6 +85,9 @@
 body {
   background: var(--color-flade);
   color: var(--color-tekst);
+  /* Luft under siden, mens cookie-banneret står fast nederst (sættes af
+     CookieBanner.tsx). Luften kommer under footeren, så intet flytter sig. */
+  padding-bottom: var(--samtykke-hoejde, 0px);
   /* Ingen font-family her: den skal komme fra font-sans, ellers slår
      next/font-variablerne ikke igennem. */
 }

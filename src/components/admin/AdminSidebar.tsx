@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import CookieindstillingerKnap from "@/components/samtykke/CookieindstillingerKnap";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -382,6 +383,7 @@ export default function AdminSidebar({
         >
           ← Tilbage til siden
         </Link>
+        <CookieindstillingerKnap vedKlik={() => setOpen(false)} className="block px-3 pt-1 text-left text-xs text-neutral-500 transition-colors hover:text-neutral-300" />
       </div>
     </div>
   );
@@ -435,7 +437,7 @@ export default function AdminSidebar({
       </div>
 
       {/* Desktop sidebar */}
-      <div className="sticky top-0 hidden h-screen w-64 flex-col bg-[#111827] lg:flex">
+      <div className="sticky top-0 hidden h-[calc(100vh-var(--samtykke-hoejde,0px))] w-64 flex-col bg-[#111827] lg:flex">
         {sidebarContent("pc")}
       </div>
     </>
