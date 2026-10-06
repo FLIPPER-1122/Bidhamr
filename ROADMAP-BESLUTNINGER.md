@@ -144,7 +144,7 @@ Brugeren får besked når:
 - **Forbudte varer (Filip, 6. oktober 2026):** alle ulovlige varer blokeres med det samme ved oprettelse (fx skydevåben inkl. almindelig "pistol", narkotika, ulovlige knive). **Levende dyr må ikke sælges** og blokeres. Lovlige men følsomme varer (fx billetter, alkohol, tobak, mulige kopivarer) giver en rapport til staff. **Billetter giver altid en rapport til staff.**
 - **Filips navn vises ikke offentligt** (Filip, 6. oktober 2026) – "Om BidHamr" nævner kun BidHamr.
 - **Sælger markerer selv pakken sendt (Filip, 6. oktober 2026):** også når fragtfirmaet melder pakken afleveret, skal sælger selv trykke "Send pakke" (med pakkebilleder). Afsendelsesfristen gælder uændret.
-- **Driftsdata (Filip, 5. oktober 2026):** fejllog (drift_fejl), cron-log (drift_cron_koersler) og pg_cron-historik slettes automatisk efter 90 dage. Det er ikke handelsdata.
+- **Driftsdata (Filip, 5. oktober 2026):** fejllog (drift_fejl) og cron-log (drift_cron_koersler) slettes automatisk efter 90 dage. pg_cron-historikken (cron.job_run_details) slettes efter 14 dage (Filip, 6. oktober 2026). Det er ikke handelsdata.
 - **Første bud** må være lig startprisen.
 - **Budstigning (Filip, 4. oktober 2026)** – trappe efter det nuværende højeste bud: under 100 kr: +5 kr · 100–999 kr: +10 kr · 1.000–4.999 kr: +50 kr · fra 5.000 kr: +100 kr. Erstatter de 10 %.
 - **Auktionsvarighed (Filip, 4. oktober 2026):** sælger vælger 3, 5, 7 eller 10 dage ved oprettelse. 7 dage er forvalgt.
