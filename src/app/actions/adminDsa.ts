@@ -127,45 +127,78 @@ export async function dsaIndgrebFraAnmeldelse(formData: FormData): Promise<{ ok:
   });
 }
 
+// Anmeldelser af samme indhold vises samlet i admin og afgøres samlet.
+// formData: anmeldelseIder (kommasepareret) eller anmeldelseId.
+const MAKS_SAMLET = 50;
+function anmeldelseIder(formData: FormData): string[] {
+  const samlet = tekst(formData, "anmeldelseIder");
+  const ider = samlet ? samlet.split(",").map((x) => x.trim()).filter(Boolean) : [tekst(formData, "anmeldelseId")];
+  const unikke = [...new Set(ider)];
+  if (unikke.length === 0 || unikke.length > MAKS_SAMLET || !unikke.every(erUuid)) {
+    throw new BrugerFejl(KODE_FEJL.ikke_fundet);
+  }
+  return unikke;
+}
+
+// Når nogle af de samlede anmeldelser blev afgjort, før en fejlede.
+function delvisFejl(antalOk: number, ialt: number, besked: string): string {
+  return antalOk > 0 ? `${antalOk} af ${ialt} anmeldelser blev behandlet, så stoppede det: ${besked}` : besked;
+}
+
 // Behold indholdet (ingen overtrædelse) eller luk som "ikke fundet".
-// formData: anmeldelseId, udfald, svar (til anmelderen), aarsag (intern), politi.
+// formData: anmeldelseId/anmeldelseIder, udfald, svar (til anmelderne),
+// aarsag (intern), politi.
 export async function dsaAnmeldelseAfgoer(formData: FormData): Promise<{ ok: true } | { fejl: string }> {
   return koer("dsaAnmeldelseAfgoer", async () => {
     const { admin, userId } = await assertRole("medarbejder");
-    const id = tekst(formData, "anmeldelseId");
-    if (!erUuid(id)) throw new BrugerFejl(KODE_FEJL.ikke_fundet);
-    const { data, error } = await admin.rpc("dsa_anmeldelse_afgoer", {
-      p_medarbejder: userId,
-      p_anmeldelse: id,
-      p_udfald: tekst(formData, "udfald"),
-      p_svar: tekst(formData, "svar"),
-      p_intern_note: tekst(formData, "aarsag") || null,
-      p_politi: formData.get("politi") === "ja",
-    });
-    if (error) throw new Error(error.message);
-    const kode = (data as { kode?: string } | null)?.kode;
-    if (kode !== "ok") throw new BrugerFejl(KODE_FEJL[kode ?? ""] ?? GENERISK);
-    after(() => notificerAnmeldelseSvar(id));
-    revalider();
+    const ider = anmeldelseIder(formData);
+    let antalOk = 0;
+    try {
+      for (const id of ider) {
+        const { data, error } = await admin.rpc("dsa_anmeldelse_afgoer", {
+          p_medarbejder: userId,
+          p_anmeldelse: id,
+          p_udfald: tekst(formData, "udfald"),
+          p_svar: tekst(formData, "svar"),
+          p_intern_note: tekst(formData, "aarsag") || null,
+          p_politi: formData.get("politi") === "ja",
+        });
+        if (error) throw new Error(error.message);
+        const kode = (data as { kode?: string } | null)?.kode;
+        if (kode !== "ok") throw new BrugerFejl(delvisFejl(antalOk, ider.length, KODE_FEJL[kode ?? ""] ?? GENERISK));
+        antalOk++;
+        after(() => notificerAnmeldelseSvar(id));
+      }
+    } finally {
+      if (antalOk > 0) revalider();
+    }
     return { ok: true as const };
   });
 }
 
-// Videresend til admin. formData: anmeldelseId, aarsag (note, påkrævet).
+// Videresend til admin. formData: anmeldelseId/anmeldelseIder, aarsag (note, påkrævet).
 export async function dsaVideresend(formData: FormData): Promise<{ ok: true } | { fejl: string }> {
   return koer("dsaVideresend", async () => {
     const { admin, userId } = await assertRole("medarbejder");
-    const id = tekst(formData, "anmeldelseId");
-    if (!erUuid(id)) throw new BrugerFejl(KODE_FEJL.ikke_fundet);
-    const { data, error } = await admin.rpc("dsa_anmeldelse_videresend", {
-      p_medarbejder: userId,
-      p_anmeldelse: id,
-      p_note: tekst(formData, "aarsag"),
-    });
-    if (error) throw new Error(error.message);
-    const kode = (data as { kode?: string } | null)?.kode;
-    if (kode !== "ok") throw new BrugerFejl(KODE_FEJL[kode ?? ""] ?? GENERISK);
-    revalider();
+    const ider = anmeldelseIder(formData);
+    let antalOk = 0;
+    try {
+      for (const id of ider) {
+        const { data, error } = await admin.rpc("dsa_anmeldelse_videresend", {
+          p_medarbejder: userId,
+          p_anmeldelse: id,
+          p_note: tekst(formData, "aarsag"),
+        });
+        if (error) throw new Error(error.message);
+        const kode = (data as { kode?: string } | null)?.kode;
+        // Er en af de samlede allerede videresendt, er det fint.
+        if (kode === "uaendret" && ider.length > 1) continue;
+        if (kode !== "ok") throw new BrugerFejl(delvisFejl(antalOk, ider.length, KODE_FEJL[kode ?? ""] ?? GENERISK));
+        antalOk++;
+      }
+    } finally {
+      if (antalOk > 0) revalider();
+    }
     return { ok: true as const };
   });
 }

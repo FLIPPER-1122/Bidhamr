@@ -2,100 +2,37 @@ import Link from "next/link";
 import { kraevSideRolle, harMindstRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import AdminFaner from "@/components/admin/AdminFaner";
-import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import Statuslinje from "@/components/admin/Statuslinje";
 import {
-  dsaAnmeldelseAfgoer,
-  dsaIndgrebFraAnmeldelse,
-  dsaKlageAfgoer,
-  dsaVideresend,
-} from "@/app/actions/adminDsa";
+  AnmeldelseGruppeKort,
+  KlageKort,
+  type Afgoerelse,
+  type Anmeldelse,
+  type Gruppe,
+  type Klage,
+} from "@/components/admin/dsa/DsaKort";
+import { Pille, PlaceringLink, fristNiveau, tid, type FristNiveau } from "@/components/admin/dsa/DsaDele";
 import {
   GRUNDLAG_NAVNE,
-  KATEGORI_TIL_REGEL,
-  REGEL_VALG,
   UDFALD_NAVNE,
   anmeldKategoriNavn,
   handlingKraeverAdmin,
   handlingNavn,
   handlingerFor,
   indholdNavn,
-  nuMs,
 } from "@/lib/dsa/regler";
 
 // DSA: anmeldelser af ulovligt indhold (art. 16) og klager over afgørelser
 // (art. 20). Medarbejder og op. At fjerne en auktion eller lukke en konto
 // kræver admin – en medarbejder videresender. Intet slettes.
+//
+// Anmeldelser af samme indhold vises som ét kort. Inhabilitet (egen sag,
+// selv anmeldt, handlet med ejeren) beregnes her med samme regler som i
+// databasen, så knapperne slet ikke vises; databasen tjekker det igen.
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Anmeldelser og klager" };
-
-type Anmeldelse = {
-  id: string;
-  sagsnummer: string;
-  indhold_type: string;
-  indhold_id: string | null;
-  auktion_id: string | null;
-  anmeldt_bruger_id: string | null;
-  placering: string;
-  kategori: string;
-  begrundelse: string;
-  anmelder_id: string | null;
-  anmelder_navn: string | null;
-  anmelder_email: string | null;
-  status: string;
-  frist_kl: string;
-  eskaleret_kl: string | null;
-  eskaleret_af: string | null;
-  eskaleret_note: string | null;
-  udfald: string | null;
-  svar_til_anmelder: string | null;
-  intern_note: string | null;
-  politi_underrettet: boolean;
-  behandlet_af: string | null;
-  behandlet_kl: string | null;
-  genaabnet_kl: string | null;
-  anonymiseret_kl: string | null;
-  oprettet_kl: string;
-};
-
-type Afgoerelse = {
-  id: string;
-  sagsnummer: string;
-  bruger_id: string;
-  indhold_type: string;
-  indhold_id: string;
-  indhold_tekst: string | null;
-  handling: string;
-  regel_kode: string;
-  regel_tekst: string;
-  grundlag: string;
-  fakta: string;
-  intern_note: string | null;
-  automatisk_opdaget: boolean;
-  anmeldelse_id: string | null;
-  medarbejder_id: string | null;
-  oprettet_kl: string;
-  ophaevet_kl: string | null;
-  ophaevet_grund: string | null;
-};
-
-type Klage = {
-  id: string;
-  sagsnummer: string;
-  afgoerelse_id: string | null;
-  anmeldelse_id: string | null;
-  klager_id: string | null;
-  klager_email: string | null;
-  begrundelse: string;
-  status: string;
-  udfald: string | null;
-  svar: string | null;
-  afgjort_af: string | null;
-  afgjort_kl: string | null;
-  frist_kl: string;
-  oprettet_kl: string;
-};
 
 const ANM_FELTER =
   "id, sagsnummer, indhold_type, indhold_id, auktion_id, anmeldt_bruger_id, placering, kategori, begrundelse, anmelder_id, anmelder_navn, anmelder_email, status, frist_kl, eskaleret_kl, eskaleret_af, eskaleret_note, udfald, svar_til_anmelder, intern_note, politi_underrettet, behandlet_af, behandlet_kl, genaabnet_kl, anonymiseret_kl, oprettet_kl";
@@ -104,64 +41,45 @@ const AFG_FELTER =
 const KLAGE_FELTER =
   "id, sagsnummer, afgoerelse_id, anmeldelse_id, klager_id, klager_email, begrundelse, status, udfald, svar, afgjort_af, afgjort_kl, frist_kl, oprettet_kl";
 
-const TZ = "Europe/Copenhagen";
-const tid = (iso: string) =>
-  new Date(iso).toLocaleString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: TZ });
+type Vis = "alle" | "admin" | "videresendt" | "mine";
+const VIS_NAVNE: Record<Vis, string> = {
+  alle: "Alle",
+  admin: "Kræver admin",
+  videresendt: "Videresendt",
+  mine: "Mine",
+};
 
-const KNAP_FJERN = "whitespace-nowrap rounded-md bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-800 transition-colors hover:bg-red-200";
-const KNAP_BEHOLD = "whitespace-nowrap rounded-md bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-800 transition-colors hover:bg-green-200";
-const KNAP_NEUTRAL = "whitespace-nowrap rounded-md bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-200";
+const GRUND = {
+  selvAnmeldt: "Du har selv anmeldt dette indhold.",
+  egen: "Sagen handler om dig selv.",
+  handel: "Du har handlet med en af parterne.",
+  traf: "Du traf selv den oprindelige afgørelse.",
+  klager: "Du har selv klaget.",
+};
 
-function Frist({ iso }: { iso: string }) {
-  const timer = (new Date(iso).getTime() - nuMs()) / 3_600_000;
-  if (timer < 0) {
-    return (
-      <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
-        Over fristen ({Math.ceil(-timer)} t)
-      </span>
-    );
-  }
-  if (timer < 24) {
-    return (
-      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-        Frist om {Math.max(1, Math.floor(timer))} t
-      </span>
-    );
-  }
-  return (
-    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">
-      Frist {tid(iso)}
-    </span>
-  );
+// Spørgsmål og svar hører til samme indhold (og skjules sammen).
+function indholdGruppe(type: string): string {
+  return type === "spoergsmaal_svar" ? "spoergsmaal" : type;
 }
 
-function Pille({ children, farve = "neutral" }: { children: React.ReactNode; farve?: "neutral" | "blaa" | "lilla" }) {
-  const k =
-    farve === "blaa" ? "bg-blue-100 text-blue-800" : farve === "lilla" ? "bg-purple-100 text-purple-800" : "bg-neutral-100 text-neutral-700";
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${k}`}>{children}</span>;
-}
-
-function PlaceringLink({ a }: { a: Pick<Anmeldelse, "indhold_type" | "placering"> }) {
-  // Kendt indhold: placeringen er en intern sti, som serveren har bygget.
-  if (a.indhold_type !== "andet" && a.placering.startsWith("/")) {
-    return (
-      <Link href={a.placering} className="break-all font-medium text-groen hover:underline" target="_blank">
-        {a.placering}
-      </Link>
-    );
-  }
-  // Fritekst fra anmelderen - vises som tekst, aldrig som link.
-  return <span className="break-all text-neutral-700">{a.placering}</span>;
+function byggeHref(p: { fane?: string; vis?: Vis; kategori?: string | null }): string {
+  const q = new URLSearchParams();
+  if (p.fane && p.fane !== "anmeldelser") q.set("fane", p.fane);
+  if (p.vis && p.vis !== "alle") q.set("vis", p.vis);
+  if (p.kategori) q.set("kategori", p.kategori);
+  const s = q.toString();
+  return s ? `/admin/dsa?${s}` : "/admin/dsa";
 }
 
 export default async function DsaAdminSide({
   searchParams,
 }: {
-  searchParams: Promise<{ fane?: string }>;
+  searchParams: Promise<{ fane?: string; vis?: string; kategori?: string }>;
 }) {
   const { admin, rolle, userId } = await kraevSideRolle("medarbejder");
-  const { fane: raaFane } = await searchParams;
-  const fane = raaFane === "klager" || raaFane === "afsluttede" ? raaFane : "anmeldelser";
+  const sp = await searchParams;
+  const fane = sp.fane === "klager" || sp.fane === "afsluttede" ? sp.fane : "anmeldelser";
+  const vis: Vis = sp.vis === "admin" || sp.vis === "videresendt" || sp.vis === "mine" ? sp.vis : "alle";
   const erAdmin = harMindstRolle(rolle, "admin");
 
   const [aabneRes, klagerRes, antalKlager, afsAnmRes, afgRes, afsKlagerRes] = await Promise.all([
@@ -186,7 +104,7 @@ export default async function DsaAdminSide({
   const afsAnm = (afsAnmRes.data ?? []) as Anmeldelse[];
   const afg = (afgRes.data ?? []) as Afgoerelse[];
   const afsKlager = (afsKlagerRes.data ?? []) as Klage[];
-  const fejl = aabneRes.error;
+  const fejl = aabneRes.error ?? (fane === "klager" ? klagerRes.error : null);
 
   // Afgørelser og anmeldelser, klagerne handler om.
   const klageAfgIds = [...klager, ...afsKlager].map((k) => k.afgoerelse_id).filter((x): x is string => !!x);
@@ -201,25 +119,200 @@ export default async function DsaAdminSide({
   ]);
   const afgMap = new Map(((kAfg ?? []) as Afgoerelse[]).map((a) => [a.id, a]));
   const anmMap = new Map(((kAnm ?? []) as Anmeldelse[]).map((a) => [a.id, a]));
+  // Hvem anmeldte det, der førte til en påklaget afgørelse (inhabilitet).
+  const afgAnmIds = klager
+    .map((k) => (k.afgoerelse_id ? afgMap.get(k.afgoerelse_id)?.anmeldelse_id : null))
+    .filter((x): x is string => !!x);
+  const { data: afgAnm } = afgAnmIds.length
+    ? await admin.from("dsa_anmeldelser").select("id, anmelder_id").in("id", afgAnmIds)
+    : { data: [] as { id: string; anmelder_id: string | null }[] };
+  const afgAnmelder = new Map(((afgAnm ?? []) as { id: string; anmelder_id: string | null }[]).map((x) => [x.id, x.anmelder_id]));
 
-  // Kort beskrivelse af det anmeldte indhold (titel, tekst).
-  const visteAnm = fane === "anmeldelser" ? aabne : [];
-  const uddrag = new Map<string, string>();
-  await Promise.all(
-    visteAnm
-      .filter((a) => a.indhold_id && a.indhold_type !== "andet")
-      .map(async (a) => {
+  // ---------------------------------------------------------------- Grupper
+  const gruppeMap = new Map<string, Anmeldelse[]>();
+  for (const a of aabne) {
+    const noegle = a.indhold_id ? `${indholdGruppe(a.indhold_type)}:${a.indhold_id}` : `id:${a.id}`;
+    const liste = gruppeMap.get(noegle);
+    if (liste) liste.push(a);
+    else gruppeMap.set(noegle, [a]);
+  }
+
+  // Ejer og uddrag pr. indhold (én opslag pr. gruppe, kun på fanen anmeldelser).
+  const ejerInfo = new Map<string, { ejer: string | null; tekst: string | null }>();
+  if (fane === "anmeldelser") {
+    await Promise.all(
+      [...gruppeMap.entries()].map(async ([noegle, liste]) => {
+        const a = liste[0];
+        if (!a.indhold_id || a.indhold_type === "andet") return;
         const { data } = await admin.rpc("dsa_indhold_ejer", { p_type: a.indhold_type, p_id: a.indhold_id });
-        const r = (data as { tekst: string | null }[] | null)?.[0];
-        uddrag.set(a.id, r?.tekst ?? "(Indholdet findes ikke længere)");
+        const r = (data as { bruger_id: string | null; tekst: string | null }[] | null)?.[0];
+        ejerInfo.set(noegle, { ejer: r?.bruger_id ?? null, tekst: r?.tekst ?? "(Indholdet findes ikke længere)" });
       }),
-  );
+    );
+  }
+
+  // Ekstra parter: spørgsmål (spørger + sælger) og bedømmelser (begge parter).
+  const spIds = new Set<string>();
+  const bedIds = new Set<string>();
+  if (fane === "anmeldelser") {
+    for (const liste of gruppeMap.values()) {
+      const a = liste[0];
+      if (a.indhold_id && indholdGruppe(a.indhold_type) === "spoergsmaal") spIds.add(a.indhold_id);
+    }
+  }
+  for (const k of klager) {
+    const af = k.afgoerelse_id ? afgMap.get(k.afgoerelse_id) : null;
+    if (!af) continue;
+    if (af.handling === "spoergsmaal_skjult") spIds.add(af.indhold_id);
+    if (af.handling === "bedoemmelse_skjult" || af.handling === "bedoemmelse_svar_skjult") bedIds.add(af.indhold_id);
+  }
+  const [{ data: spData }, { data: bedData }] = await Promise.all([
+    spIds.size
+      ? admin.from("auction_questions").select("id, asker_id, auction_id").in("id", [...spIds])
+      : Promise.resolve({ data: [] as { id: string; asker_id: string | null; auction_id: string }[] }),
+    bedIds.size
+      ? admin.from("ratings").select("id, fra_bruger_id, til_bruger_id").in("id", [...bedIds])
+      : Promise.resolve({ data: [] as { id: string; fra_bruger_id: string | null; til_bruger_id: string | null }[] }),
+  ]);
+  const spRaekker = (spData ?? []) as { id: string; asker_id: string | null; auction_id: string }[];
+  const auktionIds = [...new Set(spRaekker.map((q) => q.auction_id))];
+  const { data: aukData } = auktionIds.length
+    ? await admin.from("auctions").select("id, bruger_id").in("id", auktionIds)
+    : { data: [] as { id: string; bruger_id: string }[] };
+  const saelger = new Map(((aukData ?? []) as { id: string; bruger_id: string }[]).map((x) => [x.id, x.bruger_id]));
+  const ekstraParter = new Map<string, string[]>();
+  for (const q of spRaekker) {
+    ekstraParter.set(q.id, [q.asker_id, saelger.get(q.auction_id) ?? null].filter((x): x is string => !!x));
+  }
+  for (const r of (bedData ?? []) as { id: string; fra_bruger_id: string | null; til_bruger_id: string | null }[]) {
+    ekstraParter.set(r.id, [r.fra_bruger_id, r.til_bruger_id].filter((x): x is string => !!x));
+  }
+
+  // Parter pr. gruppe og pr. klage (dem, man ikke må have handlet med).
+  const gruppeParter = new Map<string, string[]>();
+  for (const [noegle, liste] of gruppeMap) {
+    const a = liste[0];
+    const p = new Set<string>();
+    const ejer = ejerInfo.get(noegle)?.ejer;
+    if (ejer) p.add(ejer);
+    for (const x of liste) if (x.anmeldt_bruger_id) p.add(x.anmeldt_bruger_id);
+    if (a.indhold_id && indholdGruppe(a.indhold_type) === "spoergsmaal") {
+      for (const x of ekstraParter.get(a.indhold_id) ?? []) p.add(x);
+    }
+    gruppeParter.set(noegle, [...p]);
+  }
+  const klageParter = new Map<string, string[]>();
+  for (const k of klager) {
+    const af = k.afgoerelse_id ? afgMap.get(k.afgoerelse_id) : null;
+    const an = k.anmeldelse_id ? anmMap.get(k.anmeldelse_id) : null;
+    const p = new Set<string>();
+    if (af) {
+      p.add(af.bruger_id);
+      for (const x of ekstraParter.get(af.indhold_id) ?? []) p.add(x);
+    } else if (an?.anmeldt_bruger_id) {
+      p.add(an.anmeldt_bruger_id);
+    }
+    klageParter.set(k.id, [...p]);
+  }
+
+  // Handler mellem mig og parterne (trades) - samme regel som dsa_er_inhabil.
+  const alleParter = [...new Set([...gruppeParter.values(), ...klageParter.values()].flat())].filter((x) => x !== userId);
+  const handelMed = new Set<string>();
+  if (alleParter.length) {
+    const [som1, som2] = await Promise.all([
+      admin.from("trades").select("seller_id").eq("buyer_id", userId).in("seller_id", alleParter).limit(500),
+      admin.from("trades").select("buyer_id").eq("seller_id", userId).in("buyer_id", alleParter).limit(500),
+    ]);
+    for (const r of (som1.data ?? []) as { seller_id: string }[]) handelMed.add(r.seller_id);
+    for (const r of (som2.data ?? []) as { buyer_id: string }[]) handelMed.add(r.buyer_id);
+  }
+
+  // Tidligere afgørelser (gældende) mod ejerne.
+  const ejere = [...new Set([...ejerInfo.values()].map((e) => e.ejer).filter((x): x is string => !!x))];
+  const tidligere = new Map<string, number>();
+  if (ejere.length) {
+    const { data } = await admin
+      .from("dsa_afgoerelser")
+      .select("bruger_id")
+      .in("bruger_id", ejere)
+      .is("ophaevet_kl", null)
+      .limit(2000);
+    for (const r of (data ?? []) as { bruger_id: string }[]) tidligere.set(r.bruger_id, (tidligere.get(r.bruger_id) ?? 0) + 1);
+  }
+
+  const grupper: Gruppe[] = [...gruppeMap.entries()]
+    .map(([noegle, liste]) => {
+      const anm = [...liste].sort((x, y) => x.frist_kl.localeCompare(y.frist_kl));
+      const forste = anm[0];
+      const info = ejerInfo.get(noegle);
+      const ejer = info?.ejer ?? forste.anmeldt_bruger_id;
+      const parter = gruppeParter.get(noegle) ?? [];
+      const alle = handlingerFor(forste.indhold_type);
+      const inhabil = anm.some((x) => x.anmelder_id === userId)
+        ? GRUND.selvAnmeldt
+        : parter.includes(userId)
+          ? GRUND.egen
+          : parter.some((x) => handelMed.has(x))
+            ? GRUND.handel
+            : null;
+      return {
+        noegle,
+        anm,
+        forste,
+        frist: forste.frist_kl,
+        kategorier: [...new Set(anm.map((x) => x.kategori))],
+        ejer,
+        uddrag: info?.tekst ?? null,
+        tidligereAfg: ejer ? (tidligere.get(ejer) ?? 0) : 0,
+        videresendt: anm.find((x) => x.eskaleret_kl) ?? null,
+        kunAdmin: alle.length > 0 && alle.every(handlingKraeverAdmin),
+        inhabil,
+      };
+    })
+    .sort((x, y) => x.frist.localeCompare(y.frist));
+
+  // Filtre
+  const passerVis = (g: Gruppe, v: Vis) =>
+    v === "alle"
+      ? true
+      : v === "admin"
+        ? g.kunAdmin || !!g.videresendt
+        : v === "videresendt"
+          ? !!g.videresendt
+          : g.anm.some((x) => x.eskaleret_af === userId);
+  const kategoriTal = new Map<string, number>();
+  for (const g of grupper.filter((g) => passerVis(g, vis))) {
+    for (const k of g.kategorier) kategoriTal.set(k, (kategoriTal.get(k) ?? 0) + 1);
+  }
+  const kategori = sp.kategori && kategoriTal.has(sp.kategori) ? sp.kategori : null;
+  const viste = grupper.filter((g) => passerVis(g, vis) && (!kategori || g.kategorier.includes(kategori)));
+
+  const SEKTIONER: { id: FristNiveau; titel: string }[] = [
+    { id: "over", titel: "Over fristen" },
+    { id: "snart", titel: "Frist inden for 24 timer" },
+    { id: "senere", titel: "Senere" },
+  ];
+
+  // Inhabilitet for klager.
+  const klageInhabil = (k: Klage): string | null => {
+    const af = k.afgoerelse_id ? afgMap.get(k.afgoerelse_id) : null;
+    const an = k.anmeldelse_id ? anmMap.get(k.anmeldelse_id) : null;
+    const parter = klageParter.get(k.id) ?? [];
+    if (k.klager_id === userId) return GRUND.klager;
+    if (af ? af.medarbejder_id === userId : an?.behandlet_af === userId) return GRUND.traf;
+    if (af?.anmeldelse_id && afgAnmelder.get(af.anmeldelse_id) === userId) return GRUND.selvAnmeldt;
+    if (an?.anmelder_id === userId) return GRUND.selvAnmeldt;
+    if (parter.includes(userId)) return GRUND.egen;
+    if (parter.some((x) => handelMed.has(x))) return GRUND.handel;
+    return null;
+  };
 
   // Navne på brugere og medarbejdere.
   const ids = new Set<string>();
   for (const a of [...aabne, ...afsAnm, ...anmMap.values()]) {
     for (const x of [a.anmeldt_bruger_id, a.anmelder_id, a.behandlet_af, a.eskaleret_af]) if (x) ids.add(x);
   }
+  for (const e of ejere) ids.add(e);
   for (const a of [...afg, ...afgMap.values()]) for (const x of [a.bruger_id, a.medarbejder_id]) if (x) ids.add(x);
   for (const k of [...klager, ...afsKlager]) for (const x of [k.klager_id, k.afgjort_af]) if (x) ids.add(x);
   const { data: brugere } = ids.size
@@ -228,7 +321,12 @@ export default async function DsaAdminSide({
   const navne = new Map((brugere ?? []).map((u) => [u.id as string, (u.navn as string | null) ?? "Uden navn"]));
   const navn = (id: string | null) => (id ? (navne.get(id) ?? "Ukendt") : "—");
 
-  const overskredne = aabne.filter((a) => new Date(a.frist_kl).getTime() < nuMs()).length;
+  const overskredne = grupper.filter((g) => fristNiveau(g.frist) === "over").length;
+
+  const chip = (aktiv: boolean) =>
+    `inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+      aktiv ? "border-groen bg-groen text-white" : "border-kant-staerk bg-white text-neutral-700 hover:bg-groen-lys"
+    }`;
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
@@ -236,10 +334,9 @@ export default async function DsaAdminSide({
         titel="Anmeldelser og klager"
         forklaring={
           <>
-            Anmeldelser af ulovligt indhold fra hjemmesiden og appen – også fra folk uden login – og klager over
-            vores afgørelser (EU&apos;s forordning om digitale tjenester, DSA). Besvar anmeldelser inden for 7
-            dage (24 timer ved misbrug af børn og hadefuld tale) og klager inden for 14 dage. Den, der klager,
-            behandles altid af en anden medarbejder end den, der traf afgørelsen.
+            Anmeldelser af ulovligt indhold og klager over vores afgørelser (DSA). Svar på anmeldelser inden for 7 dage
+            (24 timer ved misbrug af børn og hadefuld tale) og på klager inden for 14 dage. En klage behandles altid af
+            en anden end den, der traf afgørelsen.
           </>
         }
         hoejre={
@@ -251,9 +348,8 @@ export default async function DsaAdminSide({
         }
       >
         {overskredne > 0 && (
-          <p className="mt-2 inline-flex items-center gap-2 rounded-lg bg-red-50 px-3 py-1.5 text-sm font-semibold text-red-800">
-            <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">!</span>
-            {overskredne} {overskredne === 1 ? "anmeldelse er" : "anmeldelser er"} over fristen
+          <p className="mt-2 inline-flex items-center gap-2 rounded-lg border border-fejl-kant bg-fejl-bg px-3 py-1.5 text-sm font-semibold text-fejl-tekst">
+            {overskredne} {overskredne === 1 ? "sag er" : "sager er"} over fristen
           </p>
         )}
       </AdminSideHoved>
@@ -262,7 +358,7 @@ export default async function DsaAdminSide({
         label="Anmeldelser og klager"
         aktiv={fane}
         faner={[
-          { id: "anmeldelser", label: `Anmeldelser (${aabne.length})`, href: "/admin/dsa" },
+          { id: "anmeldelser", label: `Anmeldelser (${grupper.length})`, href: "/admin/dsa" },
           { id: "klager", label: `Klager (${antalKlager.count ?? 0})`, href: "/admin/dsa?fane=klager" },
           { id: "afsluttede", label: "Afsluttede", href: "/admin/dsa?fane=afsluttede" },
         ]}
@@ -270,28 +366,81 @@ export default async function DsaAdminSide({
 
       {fejl && (
         <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
-          Anmeldelserne kunne ikke hentes. Er migrationen 20261009010000_dsa.sql kørt?
+          Sagerne kunne ikke hentes. Genindlæs siden, eller kontakt en udvikler, hvis det bliver ved.
         </p>
       )}
 
       {fane === "anmeldelser" && (
-        <ul className="space-y-3">
-          {aabne.map((a) => (
-            <AnmeldelseKort
-              key={a.id}
-              a={a}
-              uddrag={uddrag.get(a.id) ?? null}
-              navn={navn}
-              userId={userId}
-              erAdmin={erAdmin}
-            />
-          ))}
-          {aabne.length === 0 && !fejl && (
-            <li className="rounded-xl border border-neutral-200 bg-white px-5 py-10 text-center text-sm text-neutral-400">
-              Der er ingen åbne anmeldelser.
-            </li>
+        <div className="space-y-5">
+          <nav aria-label="Filtrér anmeldelser" className="space-y-2">
+            <ul className="flex flex-wrap gap-2">
+              {(Object.keys(VIS_NAVNE) as Vis[]).map((v) => {
+                const n = grupper.filter((g) => passerVis(g, v)).length;
+                return (
+                  <li key={v}>
+                    <Link
+                      href={byggeHref({ vis: v, kategori })}
+                      aria-current={vis === v ? "true" : undefined}
+                      className={chip(vis === v)}
+                      title={v === "mine" ? "Sager, du selv har videresendt" : undefined}
+                    >
+                      {VIS_NAVNE[v]} <span className={vis === v ? "text-white/85" : "text-neutral-500"}>({n})</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+            {kategoriTal.size > 1 && (
+              <ul className="flex flex-wrap gap-2" aria-label="Kategori">
+                <li>
+                  <Link href={byggeHref({ vis })} aria-current={!kategori ? "true" : undefined} className={chip(!kategori)}>
+                    Alle kategorier
+                  </Link>
+                </li>
+                {[...kategoriTal.entries()].map(([k, n]) => (
+                  <li key={k}>
+                    <Link
+                      href={byggeHref({ vis, kategori: k })}
+                      aria-current={kategori === k ? "true" : undefined}
+                      className={chip(kategori === k)}
+                    >
+                      {anmeldKategoriNavn(k)} <span className={kategori === k ? "text-white/85" : "text-neutral-500"}>({n})</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {vis === "mine" && (
+              <p className="text-xs text-neutral-600">Viser sager, du selv har videresendt til admin.</p>
+            )}
+          </nav>
+
+          {SEKTIONER.map((s) => {
+            const liste = viste.filter((g) => fristNiveau(g.frist) === s.id);
+            if (liste.length === 0) return null;
+            return (
+              <section key={s.id} aria-labelledby={`sek-${s.id}`} className="space-y-3">
+                <h2
+                  id={`sek-${s.id}`}
+                  className={`text-sm font-semibold ${s.id === "over" ? "text-fejl-tekst" : "text-neutral-800"}`}
+                >
+                  {s.titel} ({liste.length})
+                </h2>
+                <ul className="space-y-3">
+                  {liste.map((g) => (
+                    <AnmeldelseGruppeKort key={g.noegle} g={g} navn={navn} erAdmin={erAdmin} />
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+
+          {viste.length === 0 && !fejl && (
+            <p className="rounded-[14px] border border-kant bg-white px-5 py-10 text-center text-sm text-neutral-600">
+              {grupper.length === 0 ? "Der er ingen åbne anmeldelser." : "Ingen anmeldelser passer til filteret."}
+            </p>
           )}
-        </ul>
+        </div>
       )}
 
       {fane === "klager" && (
@@ -303,12 +452,12 @@ export default async function DsaAdminSide({
               afg={k.afgoerelse_id ? (afgMap.get(k.afgoerelse_id) ?? null) : null}
               anm={k.anmeldelse_id ? (anmMap.get(k.anmeldelse_id) ?? null) : null}
               navn={navn}
-              userId={userId}
+              inhabil={klageInhabil(k)}
               erAdmin={erAdmin}
             />
           ))}
-          {klager.length === 0 && (
-            <li className="rounded-xl border border-neutral-200 bg-white px-5 py-10 text-center text-sm text-neutral-400">
+          {klager.length === 0 && !fejl && (
+            <li className="rounded-[14px] border border-kant bg-white px-5 py-10 text-center text-sm text-neutral-600">
               Der er ingen klager, der venter.
             </li>
           )}
@@ -346,7 +495,7 @@ export default async function DsaAdminSide({
                       </td>
                       <td className="px-4 py-2.5 text-neutral-700">
                         {x.regel_tekst}
-                        <p className="text-xs text-neutral-500">{GRUNDLAG_NAVNE[x.grundlag] ?? x.grundlag}</p>
+                        <p className="text-xs text-neutral-600">{GRUNDLAG_NAVNE[x.grundlag] ?? x.grundlag}</p>
                       </td>
                       <td className="px-4 py-2.5">
                         <Link href={`/admin/brugere/${x.bruger_id}`} className="text-groen hover:underline">{navn(x.bruger_id)}</Link>
@@ -362,7 +511,7 @@ export default async function DsaAdminSide({
                     </tr>
                   ))}
                   {afg.length === 0 && (
-                    <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-400">Ingen indgreb endnu.</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-600">Ingen indgreb endnu.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -382,14 +531,14 @@ export default async function DsaAdminSide({
                     {a.anonymiseret_kl && <Pille>Anonymiseret</Pille>}
                   </div>
                   <p className="mt-1 text-xs text-neutral-500">
-                    {indholdNavn(a.indhold_type)} · <PlaceringLink a={a} /> · behandlet af {navn(a.behandlet_af)}
+                    {indholdNavn(a.indhold_type)} · <PlaceringLink indholdType={a.indhold_type} placering={a.placering} /> · behandlet af {navn(a.behandlet_af)}
                     {a.behandlet_kl && ` ${tid(a.behandlet_kl)}`}
                   </p>
                   {a.svar_til_anmelder && <p className="mt-1 whitespace-pre-wrap text-neutral-700">Svar: {a.svar_til_anmelder}</p>}
                 </li>
               ))}
               {afsAnm.length === 0 && (
-                <li className="rounded-xl border border-neutral-200 bg-white px-5 py-8 text-center text-sm text-neutral-400">
+                <li className="rounded-xl border border-neutral-200 bg-white px-5 py-8 text-center text-sm text-neutral-600">
                   Ingen afsluttede anmeldelser endnu.
                 </li>
               )}
@@ -406,7 +555,7 @@ export default async function DsaAdminSide({
                     <Pille farve={k.udfald === "medhold" ? "blaa" : "neutral"}>
                       {k.udfald === "medhold" ? "Medhold" : "Fastholdt"}
                     </Pille>
-                    <span className="text-xs text-neutral-500">
+                    <span className="text-xs text-neutral-600">
                       afgjort af {navn(k.afgjort_af)} {k.afgjort_kl && tid(k.afgjort_kl)}
                     </span>
                   </div>
@@ -414,7 +563,7 @@ export default async function DsaAdminSide({
                 </li>
               ))}
               {afsKlager.length === 0 && (
-                <li className="rounded-xl border border-neutral-200 bg-white px-5 py-8 text-center text-sm text-neutral-400">
+                <li className="rounded-xl border border-neutral-200 bg-white px-5 py-8 text-center text-sm text-neutral-600">
                   Ingen afgjorte klager endnu.
                 </li>
               )}
@@ -422,299 +571,8 @@ export default async function DsaAdminSide({
           </section>
         </div>
       )}
+
+      <Statuslinje />
     </div>
-  );
-}
-
-function AnmeldelseKort({
-  a,
-  uddrag,
-  navn,
-  userId,
-  erAdmin,
-}: {
-  a: Anmeldelse;
-  uddrag: string | null;
-  navn: (id: string | null) => string;
-  userId: string;
-  erAdmin: boolean;
-}) {
-  const inhabil = userId === a.anmeldt_bruger_id || userId === a.anmelder_id;
-  const alle = handlingerFor(a.indhold_type);
-  const mine = alle.filter((h) => erAdmin || !handlingKraeverAdmin(h));
-  const kunAdmin = alle.length > 0 && mine.length === 0;
-  const standardSvar =
-    "Tak for din anmeldelse. Vi har vurderet indholdet og fundet, at det ikke er ulovligt og ikke bryder BidHamrs regler. Det bliver derfor på BidHamr.";
-
-  return (
-    <li className={`rounded-xl border bg-white p-4 sm:p-5 ${a.eskaleret_kl ? "border-purple-300" : "border-neutral-200"}`}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-neutral-900">
-            {anmeldKategoriNavn(a.kategori)}
-            <Pille>{indholdNavn(a.indhold_type)}</Pille>
-            {a.eskaleret_kl && <Pille farve="lilla">Videresendt til admin</Pille>}
-            {a.genaabnet_kl && <Pille farve="blaa">Genåbnet efter klage</Pille>}
-          </p>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            {a.sagsnummer} · modtaget {tid(a.oprettet_kl)} · fra{" "}
-            {a.anmelder_id ? (
-              <Link href={`/admin/brugere/${a.anmelder_id}`} className="hover:underline">
-                {navn(a.anmelder_id)} (indlogget)
-              </Link>
-            ) : a.anmelder_navn || a.anmelder_email ? (
-              <>
-                {a.anmelder_navn ?? "Uden navn"}
-                {a.anmelder_email && ` · ${a.anmelder_email}`} (uden login)
-              </>
-            ) : (
-              "anonym (misbrug af børn)"
-            )}
-          </p>
-        </div>
-        <Frist iso={a.frist_kl} />
-      </div>
-
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <div className="rounded-lg bg-neutral-50 p-3 text-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Anmeldt indhold</p>
-          <p className="mt-1"><PlaceringLink a={a} /></p>
-          {uddrag && <p className="mt-1 whitespace-pre-wrap break-words text-neutral-800">{uddrag}</p>}
-          {a.anmeldt_bruger_id && (
-            <p className="mt-1 text-xs text-neutral-500">
-              Ejer:{" "}
-              <Link href={`/admin/brugere/${a.anmeldt_bruger_id}`} className="text-groen hover:underline">
-                {navn(a.anmeldt_bruger_id)}
-              </Link>
-            </p>
-          )}
-        </div>
-        <div className="rounded-lg bg-neutral-50 p-3 text-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Anmelderens begrundelse</p>
-          <p className="mt-1 whitespace-pre-wrap break-words text-neutral-800">{a.begrundelse}</p>
-        </div>
-      </div>
-
-      {a.eskaleret_kl && (
-        <p className="mt-3 rounded-lg bg-purple-50 px-3 py-2 text-sm text-purple-900">
-          Videresendt af {navn(a.eskaleret_af)} {tid(a.eskaleret_kl)}: {a.eskaleret_note}
-        </p>
-      )}
-
-      {inhabil ? (
-        <p className="mt-3 text-sm text-neutral-600">
-          Du er selv part i denne anmeldelse. En kollega skal behandle den.
-        </p>
-      ) : (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {mine.length > 0 && a.indhold_id && (
-            <ConfirmDialog
-              triggerLabel={a.indhold_type === "profil" ? "Suspendér / luk konto" : "Fjern / skjul"}
-              triggerClassName={KNAP_FJERN}
-              title="Grib ind over for indholdet"
-              description="Brugeren får begrundelsen på mail og kan klage. Alle åbne anmeldelser af samme indhold lukkes, og anmelderne får svar."
-              confirmLabel="Udfør og send begrundelse"
-              action={dsaIndgrebFraAnmeldelse}
-              hiddenFields={{ anmeldelseId: a.id }}
-              varighedField={a.indhold_type === "profil"}
-              vaelgFelter={[
-                {
-                  name: "handling",
-                  label: "Hvad skal der ske?",
-                  valg: mine.map((h) => ({ value: h, label: handlingNavn(h) })),
-                  standard: mine[0],
-                  hjaelp: a.indhold_type === "profil" ? "Varigheden gælder kun suspendering." : undefined,
-                },
-                {
-                  name: "regel",
-                  label: "Hvilken regel eller lov bryder det?",
-                  valg: REGEL_VALG,
-                  standard: KATEGORI_TIL_REGEL[a.kategori],
-                },
-              ]}
-              tekstFelter={[
-                {
-                  name: "fakta",
-                  label: "Begrundelse til brugeren (vises for brugeren)",
-                  placeholder: "Skriv konkret, hvad brugeren har gjort, fx: Auktionen sælger en kopi af en mærketaske som ægte.",
-                  required: true,
-                  maxLength: 2000,
-                  hjaelp: "Skriv aldrig, hvem der har anmeldt.",
-                },
-                {
-                  name: "svar",
-                  label: "Svar til anmelderen",
-                  placeholder: "Tom = standardtekst om, at vi har grebet ind.",
-                  required: false,
-                  maxLength: 2000,
-                },
-                { name: "aarsag", label: "Intern note (kun staff)", required: false, maxLength: 2000 },
-              ]}
-              afkrydsning={{ name: "politi", label: "Vi har givet politiet besked (mistanke om strafbart forhold, der truer liv eller sikkerhed)" }}
-            />
-          )}
-          <ConfirmDialog
-            triggerLabel="Behold"
-            triggerClassName={KNAP_BEHOLD}
-            title="Afslut uden at gribe ind?"
-            description="Indholdet bliver. Anmelderen får dit svar og kan klage over afgørelsen."
-            confirmLabel="Afslut og send svar"
-            action={dsaAnmeldelseAfgoer}
-            hiddenFields={{ anmeldelseId: a.id }}
-            valgField={{
-              name: "udfald",
-              label: "Udfald",
-              valg: [
-                { value: "ingen_overtraedelse", label: "Ingen overtrædelse" },
-                { value: "ikke_fundet", label: "Indholdet findes ikke" },
-              ],
-            }}
-            tekstFelter={[
-              {
-                name: "svar",
-                label: "Svar til anmelderen (vises for anmelderen)",
-                required: true,
-                maxLength: 2000,
-                standard: standardSvar,
-              },
-              { name: "aarsag", label: "Intern note (kun staff)", required: false, maxLength: 2000 },
-            ]}
-            afkrydsning={{ name: "politi", label: "Vi har givet politiet besked" }}
-          />
-          {!a.eskaleret_kl && (
-            <ConfirmDialog
-              triggerLabel="Videresend til admin"
-              triggerClassName={KNAP_NEUTRAL}
-              title="Videresend til admin?"
-              description="Anmeldelsen bliver i listen, markeret til admin. Brug det, når kun admin kan gribe ind (fx en auktion), eller når du er i tvivl."
-              confirmLabel="Videresend"
-              action={dsaVideresend}
-              hiddenFields={{ anmeldelseId: a.id }}
-              aarsagField={{ label: "Note til admin", placeholder: "Hvad har du set, og hvad foreslår du?", required: true }}
-            />
-          )}
-          {kunAdmin && <span className="text-xs text-neutral-500">Kun admin kan fjerne auktioner og lukke konti.</span>}
-        </div>
-      )}
-    </li>
-  );
-}
-
-function KlageKort({
-  k,
-  afg,
-  anm,
-  navn,
-  userId,
-  erAdmin,
-}: {
-  k: Klage;
-  afg: Afgoerelse | null;
-  anm: Anmeldelse | null;
-  navn: (id: string | null) => string;
-  userId: string;
-  erAdmin: boolean;
-}) {
-  const traf = afg ? afg.medarbejder_id : (anm?.behandlet_af ?? null);
-  const inhabil =
-    userId === traf || userId === k.klager_id || (afg ? userId === afg.bruger_id : userId === anm?.anmeldt_bruger_id);
-  const kraeverAdmin = afg ? handlingKraeverAdmin(afg.handling) : false;
-
-  return (
-    <li className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-neutral-900">
-            {afg ? `Klage over: ${handlingNavn(afg.handling)}` : "Anmelder klager over, at vi ikke greb ind"}
-          </p>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            {k.sagsnummer} · modtaget {tid(k.oprettet_kl)} · fra{" "}
-            {k.klager_id ? (
-              <Link href={`/admin/brugere/${k.klager_id}`} className="hover:underline">{navn(k.klager_id)}</Link>
-            ) : (
-              (k.klager_email ?? "anmelder uden login")
-            )}
-          </p>
-        </div>
-        <Frist iso={k.frist_kl} />
-      </div>
-
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <div className="rounded-lg bg-neutral-50 p-3 text-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Den oprindelige afgørelse</p>
-          {afg ? (
-            <>
-              <p className="mt-1 text-neutral-800">
-                {afg.sagsnummer} · {tid(afg.oprettet_kl)} · af {navn(afg.medarbejder_id)}
-              </p>
-              {afg.indhold_tekst && <p className="mt-1 text-neutral-700">{afg.indhold_tekst}</p>}
-              <p className="mt-1 text-neutral-700"><strong>Regel:</strong> {afg.regel_tekst}</p>
-              <p className="mt-1 whitespace-pre-wrap text-neutral-700"><strong>Begrundelse:</strong> {afg.fakta}</p>
-              {afg.intern_note && <p className="mt-1 text-xs text-neutral-500">Intern note: {afg.intern_note}</p>}
-              <Link href={`/admin/brugere/${afg.bruger_id}`} className="mt-1 inline-block text-xs text-groen hover:underline">
-                Se brugeren
-              </Link>
-            </>
-          ) : anm ? (
-            <>
-              <p className="mt-1 text-neutral-800">
-                {anm.sagsnummer} · {anmeldKategoriNavn(anm.kategori)} · af {navn(anm.behandlet_af)}
-              </p>
-              <p className="mt-1"><PlaceringLink a={anm} /></p>
-              <p className="mt-1 text-neutral-700">{UDFALD_NAVNE[anm.udfald ?? ""] ?? anm.udfald}</p>
-              {anm.svar_til_anmelder && <p className="mt-1 whitespace-pre-wrap text-neutral-700">Svar: {anm.svar_til_anmelder}</p>}
-              <p className="mt-1 whitespace-pre-wrap text-xs text-neutral-500">Anmeldelsen: {anm.begrundelse}</p>
-            </>
-          ) : (
-            <p className="mt-1 text-neutral-500">Ikke fundet.</p>
-          )}
-        </div>
-        <div className="rounded-lg bg-neutral-50 p-3 text-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Klagen</p>
-          <p className="mt-1 whitespace-pre-wrap break-words text-neutral-800">{k.begrundelse}</p>
-        </div>
-      </div>
-
-      {inhabil ? (
-        <p className="mt-3 text-sm text-neutral-600">
-          Du traf selv afgørelsen eller er part i sagen. En kollega skal behandle klagen.
-        </p>
-      ) : kraeverAdmin && !erAdmin ? (
-        <p className="mt-3 text-sm text-neutral-600">Klager over auktioner og lukkede konti behandles af en admin eller chef.</p>
-      ) : (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <ConfirmDialog
-            triggerLabel="Giv medhold"
-            triggerClassName={KNAP_BEHOLD}
-            title="Giv klageren medhold?"
-            description={
-              afg
-                ? "Indgrebet bliver ophævet med det samme (indholdet vises igen / kontoen åbnes igen). Klageren får dit svar."
-                : "Anmeldelsen bliver genåbnet og skal behandles igen. Anmelderen får dit svar."
-            }
-            confirmLabel="Giv medhold"
-            action={dsaKlageAfgoer}
-            hiddenFields={{ klageId: k.id, udfald: "medhold" }}
-            tekstFelter={[
-              { name: "svar", label: "Svar til klageren (vises for klageren)", required: true, maxLength: 2000 },
-              { name: "aarsag", label: "Intern note (kun staff)", required: false, maxLength: 2000 },
-            ]}
-          />
-          <ConfirmDialog
-            triggerLabel="Fasthold afgørelsen"
-            triggerClassName={KNAP_FJERN}
-            title="Fasthold afgørelsen?"
-            description="Afgørelsen står ved magt. Klageren får dit svar og besked om andre klagemuligheder. Der er kun ét klagetrin."
-            confirmLabel="Fasthold"
-            action={dsaKlageAfgoer}
-            hiddenFields={{ klageId: k.id, udfald: "fastholdt" }}
-            tekstFelter={[
-              { name: "svar", label: "Svar til klageren (vises for klageren)", required: true, maxLength: 2000 },
-              { name: "aarsag", label: "Intern note (kun staff)", required: false, maxLength: 2000 },
-            ]}
-          />
-        </div>
-      )}
-    </li>
   );
 }
