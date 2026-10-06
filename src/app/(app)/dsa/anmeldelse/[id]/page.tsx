@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserMedToTrin } from "@/lib/mfa";
 import { erUuid, tjekDsaToken } from "@/lib/dsa/link";
 import KlageFormular from "@/components/dsa/KlageFormular";
+import Tidslinje, { type Trin } from "@/components/dsa/Tidslinje";
 import {
   ANDRE_KLAGEMULIGHEDER,
   KLAGE_UDFALD_NAVNE,
@@ -84,9 +85,16 @@ export default async function AnmeldelseSide({
 
   const { data: k } = await admin
     .from("dsa_klager")
-    .select("sagsnummer, status, udfald, svar, oprettet_kl")
+    .select("sagsnummer, status, udfald, svar, oprettet_kl, afgjort_kl")
     .eq("anmeldelse_id", id)
-    .maybeSingle<{ sagsnummer: string; status: string; udfald: string | null; svar: string | null; oprettet_kl: string }>();
+    .maybeSingle<{
+      sagsnummer: string;
+      status: string;
+      udfald: string | null;
+      svar: string | null;
+      oprettet_kl: string;
+      afgjort_kl: string | null;
+    }>();
 
   const afgjort = a.status === "afgjort";
   const kanKlage =
@@ -96,6 +104,52 @@ export default async function AnmeldelseSide({
     !!a.behandlet_kl &&
     nuMs() < new Date(a.behandlet_kl).getTime() + 182 * 24 * 3600 * 1000;
 
+  // Tidslinjen: Modtaget -> Behandles -> Afgjort -> Klage -> Klage afgjort.
+  const kortUdfald = UDFALD_NAVNE[a.udfald ?? ""]?.split(" – ")[0];
+  const trin: Trin[] = [{ titel: "Modtaget", tid: a.oprettet_kl, tilstand: "faerdig" }];
+  if (!afgjort && k?.status === "afgjort" && k.udfald === "medhold") {
+    // Klageren fik medhold, og anmeldelsen behandles igen.
+    trin.push(
+      { titel: "Afgjort", tilstand: "faerdig" },
+      { titel: "Klage", tid: k.oprettet_kl, tilstand: "faerdig" },
+      { titel: "Klage afgjort", tid: k.afgjort_kl, tekst: "Du fik medhold.", tilstand: "faerdig" },
+      { titel: "Behandles igen", tekst: "En medarbejder ser på sagen igen.", tilstand: "aktiv" },
+      { titel: "Afgjort", tilstand: "kommende" },
+    );
+  } else {
+    trin.push(
+      {
+        titel: a.genaabnet_kl ? "Behandles igen" : "Behandles",
+        tekst: afgjort ? undefined : "En medarbejder ser på din anmeldelse.",
+        tilstand: afgjort ? "faerdig" : "aktiv",
+      },
+      {
+        titel: "Afgjort",
+        tid: afgjort ? a.behandlet_kl : null,
+        tekst: afgjort ? kortUdfald : undefined,
+        tilstand: afgjort ? "faerdig" : "kommende",
+      },
+    );
+    if (k) {
+      trin.push(
+        {
+          titel: "Klage",
+          tid: k.oprettet_kl,
+          tekst: k.status === "afventer" ? "En anden medarbejder ser på din klage." : undefined,
+          tilstand: k.status === "afventer" ? "aktiv" : "faerdig",
+        },
+        {
+          titel: "Klage afgjort",
+          tid: k.afgjort_kl,
+          tekst: k.status === "afgjort" ? KLAGE_UDFALD_NAVNE[k.udfald ?? ""] : undefined,
+          tilstand: k.status === "afgjort" ? "faerdig" : "kommende",
+        },
+      );
+    } else if (kanKlage) {
+      trin.push({ titel: "Klage", tekst: "Hvis du er uenig, kan du klage nedenfor.", tilstand: "kommende" });
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">
       <p className="text-sm text-tekst-svag">Sagsnummer {a.sagsnummer}</p>
@@ -103,14 +157,26 @@ export default async function AnmeldelseSide({
         Din anmeldelse
       </h1>
 
-      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-label="Status">
+      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="status-titel">
+        <h2 id="status-titel" className="font-serif text-[20px] leading-tight font-semibold text-tekst">
+          Status
+        </h2>
+        <p className="mt-1 text-[15px] font-semibold text-tekst">
+          {afgjort ? (UDFALD_NAVNE[a.udfald ?? ""] ?? "Afgjort") : a.genaabnet_kl ? "Bliver behandlet igen" : "Bliver behandlet"}
+        </p>
+        <div className="mt-4">
+          <Tidslinje trin={trin} />
+        </div>
+        {!afgjort && (
+          <p className="mt-4 text-sm text-tekst-daempet">Du får besked på e-mail, når vi har taget stilling.</p>
+        )}
+      </section>
+
+      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="detaljer-titel">
+        <h2 id="detaljer-titel" className="sr-only">
+          Detaljer
+        </h2>
         <dl className="space-y-3 text-[15px]">
-          <div>
-            <dt className="text-sm font-medium text-tekst-svag">Status</dt>
-            <dd className="mt-0.5 font-semibold text-tekst">
-              {afgjort ? (UDFALD_NAVNE[a.udfald ?? ""] ?? "Afgjort") : a.genaabnet_kl ? "Bliver behandlet igen" : "Bliver behandlet"}
-            </dd>
-          </div>
           <div>
             <dt className="text-sm font-medium text-tekst-svag">Hvad du anmeldte</dt>
             <dd className="mt-0.5 break-words text-tekst">
@@ -118,16 +184,6 @@ export default async function AnmeldelseSide({
               <span className="block text-sm text-tekst-svag">{a.placering}</span>
             </dd>
           </div>
-          <div>
-            <dt className="text-sm font-medium text-tekst-svag">Modtaget</dt>
-            <dd className="mt-0.5 text-tekst">{dato(a.oprettet_kl)}</dd>
-          </div>
-          {afgjort && a.behandlet_kl && (
-            <div>
-              <dt className="text-sm font-medium text-tekst-svag">Afgjort</dt>
-              <dd className="mt-0.5 text-tekst">{dato(a.behandlet_kl)}</dd>
-            </div>
-          )}
           {afgjort && a.svar_til_anmelder && (
             <div>
               <dt className="text-sm font-medium text-tekst-svag">Vores svar</dt>
@@ -135,11 +191,6 @@ export default async function AnmeldelseSide({
             </div>
           )}
         </dl>
-        {!afgjort && (
-          <p className="mt-4 text-sm text-tekst-daempet">
-            En medarbejder ser på din anmeldelse. Du får besked, når vi har taget stilling.
-          </p>
-        )}
       </section>
 
       {(k || kanKlage) && (
@@ -153,7 +204,7 @@ export default async function AnmeldelseSide({
                 Sagsnummer {k.sagsnummer} · modtaget {dato(k.oprettet_kl)}
               </p>
               {k.status === "afventer" ? (
-                <p>En anden medarbejder ser på din klage. Du får svar på mail.</p>
+                <p>En anden medarbejder ser på din klage. Du får svar på e-mail.</p>
               ) : (
                 <>
                   <p className="font-semibold text-tekst">{KLAGE_UDFALD_NAVNE[k.udfald ?? ""] ?? k.udfald}</p>

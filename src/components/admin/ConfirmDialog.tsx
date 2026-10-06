@@ -11,6 +11,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { visKvittering } from "@/components/admin/Statuslinje";
+
 type Props = {
   triggerLabel: string;
   triggerIcon?: ReactNode;
@@ -35,6 +37,9 @@ type Props = {
   vaelgFelter?: VaelgFelt[];
   // Et afkrydsningsfelt nederst (sendes som value, når det er krydset af).
   afkrydsning?: { name: string; label: string; value?: string };
+  // Kort kvittering, der vises i sidens statuslinje (<Statuslinje />), når
+  // handlingen er lykkedes - fx "Anmeldelsen er afsluttet".
+  kvittering?: string;
 };
 
 export type VaelgFelt = {
@@ -43,6 +48,8 @@ export type VaelgFelt = {
   valg: { value: string; label: string }[];
   required?: boolean;
   standard?: string;
+  // Tekst på den tomme første mulighed, når der ikke er et standardvalg.
+  pladsholder?: string;
   hjaelp?: string;
 };
 
@@ -74,6 +81,7 @@ export default function ConfirmDialog({
   valgKraeverTekst,
   vaelgFelter,
   afkrydsning,
+  kvittering,
 }: Props) {
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -149,6 +157,7 @@ export default function ConfirmDialog({
         setFejl(res.fejl);
         return;
       }
+      if (kvittering) visKvittering(kvittering);
       setOpen(false);
       setValgt(null);
     });
@@ -261,7 +270,7 @@ export default function ConfirmDialog({
                     >
                       {!f.standard && (
                         <option value="" disabled>
-                          Vælg …
+                          {f.pladsholder ?? "Vælg …"}
                         </option>
                       )}
                       {f.valg.map((v) => (

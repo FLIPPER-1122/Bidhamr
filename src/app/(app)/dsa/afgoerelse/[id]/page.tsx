@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserMedToTrin } from "@/lib/mfa";
 import { erUuid, tjekDsaToken } from "@/lib/dsa/link";
 import KlageFormular from "@/components/dsa/KlageFormular";
+import Tidslinje, { type Trin } from "@/components/dsa/Tidslinje";
 import {
   ANDRE_KLAGEMULIGHEDER,
   GRUNDLAG_NAVNE,
@@ -113,6 +114,14 @@ export default async function AfgoerelseSide({
     .eq("afgoerelse_id", id)
     .maybeSingle<Klage>();
 
+  // Er auktionen skjult/fjernet, giver "Gå til auktionen" ingen mening - så
+  // forklarer vi i stedet, og tilbyder at sætte varen op igen.
+  const visAuktion = !!a.auktion_id && a.indhold_type !== "profil";
+  const { data: auk } = visAuktion
+    ? await admin.from("auctions").select("skjult").eq("id", a.auktion_id).maybeSingle<{ skjult: boolean }>()
+    : { data: null };
+  const auktionSkjult = visAuktion && (!auk || auk.skjult);
+
   const fristOk = new Date(a.klage_frist_kl).getTime() > nuMs();
   const kanKlage = !k && !a.ophaevet_kl && fristOk;
   const hvordan = a.automatisk_opdaget
@@ -120,6 +129,32 @@ export default async function AfgoerelseSide({
     : a.anmeldelse_id
       ? "Vi fik en anmeldelse. En medarbejder har vurderet indholdet og truffet afgørelsen."
       : "En medarbejder fandt det ved vores egen gennemgang og har truffet afgørelsen.";
+
+  // Tidslinjen: Afgjort -> Klage -> Klage afgjort (eller Ophævet).
+  const trin: Trin[] = [{ titel: "Afgjort", tid: a.oprettet_kl, tilstand: "faerdig" }];
+  if (k) {
+    trin.push(
+      {
+        titel: "Klage",
+        tid: k.oprettet_kl,
+        tekst: k.status === "afventer" ? "En anden medarbejder ser på din klage." : undefined,
+        tilstand: k.status === "afventer" ? "aktiv" : "faerdig",
+      },
+      {
+        titel: "Klage afgjort",
+        tid: k.afgjort_kl,
+        tekst:
+          k.status === "afgjort"
+            ? `${KLAGE_UDFALD_NAVNE[k.udfald ?? ""] ?? ""}${k.udfald === "medhold" ? ". Afgørelsen er ophævet." : "."}`
+            : undefined,
+        tilstand: k.status === "afgjort" ? "faerdig" : "kommende",
+      },
+    );
+  } else if (a.ophaevet_kl) {
+    trin.push({ titel: "Ophævet", tid: a.ophaevet_kl, tilstand: "faerdig" });
+  } else if (kanKlage) {
+    trin.push({ titel: "Klage", tekst: `Du kan klage senest ${dato(a.klage_frist_kl)}.`, tilstand: "kommende" });
+  }
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">
@@ -136,6 +171,15 @@ export default async function AfgoerelseSide({
         </p>
       )}
 
+      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="status-titel">
+        <h2 id="status-titel" className="font-serif text-[20px] leading-tight font-semibold text-tekst">
+          Status
+        </h2>
+        <div className="mt-4">
+          <Tidslinje trin={trin} />
+        </div>
+      </section>
+
       <section className="mt-6 rounded-[14px] border border-kant bg-white px-5 py-2 sm:px-6" aria-label="Begrundelse">
         <dl>
           {a.indhold_tekst && <Raekke titel="Det drejer sig om">{a.indhold_tekst}</Raekke>}
@@ -149,10 +193,21 @@ export default async function AfgoerelseSide({
             <Raekke titel="Varighed">{a.varighed_til ? `Til ${dato(a.varighed_til)}` : "Indtil videre"}</Raekke>
           )}
           <Raekke titel="Dato">{dato(a.oprettet_kl)}</Raekke>
-          {a.auktion_id && a.indhold_type !== "profil" && !a.ophaevet_kl && (
+          {visAuktion && !auktionSkjult && (
             <Raekke titel="Auktion">
               <Link href={`/auktion/${a.auktion_id}`} className="font-medium text-groen hover:underline">
                 Gå til auktionen
+              </Link>
+            </Raekke>
+          )}
+          {visAuktion && auktionSkjult && !a.ophaevet_kl && (
+            <Raekke titel="Auktion">
+              <span className="block">
+                Auktionen er ikke længere synlig for andre. Overholder varen vores regler, kan du sætte den op igen
+                som en ny auktion.
+              </span>
+              <Link href="/opret-auktion" className="btn btn-sekundaer mt-3">
+                Sæt varen op igen
               </Link>
             </Raekke>
           )}
@@ -169,7 +224,7 @@ export default async function AfgoerelseSide({
               Sagsnummer {k.sagsnummer} · modtaget {dato(k.oprettet_kl)}
             </p>
             {k.status === "afventer" ? (
-              <p>En anden medarbejder end den, der traf afgørelsen, ser på din klage. Du får svar på mail.</p>
+              <p>En anden medarbejder end den, der traf afgørelsen, ser på din klage. Du får svar på e-mail.</p>
             ) : (
               <>
                 <p className="font-semibold text-tekst">{KLAGE_UDFALD_NAVNE[k.udfald ?? ""] ?? k.udfald}</p>
