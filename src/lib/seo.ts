@@ -22,6 +22,8 @@ export const TEKSTSIDER = [
   "/om",
   "/kontakt",
   "/cookies",
+  "/betingelser",
+  "/privatliv",
   "/tilgaengelighed",
 ] as const;
 

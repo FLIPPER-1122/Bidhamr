@@ -14,6 +14,8 @@ import {
 } from "@/components/konto/KontoSektioner";
 import Ikon, { type IkonNavn } from "@/components/Ikon";
 import { harToTrin } from "@/lib/mfa";
+import VilkaarBjaelke from "@/components/konto/VilkaarBjaelke";
+import { vilkaarErAccepteret } from "@/lib/vilkaar";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +65,7 @@ export default async function KontoSide({
     { data: advarselData, error: advarselFejl },
     { data: paamindelseData, error: paamindelseFejl },
     { data: blokeringData, error: blokeringFejl },
+    { data: vilkaarData, error: vilkaarFejl },
   ] = await Promise.all([
     hentBetalingsindstillinger(),
     hentMineOverfoersler(),
@@ -70,7 +73,13 @@ export default async function KontoSide({
     supabase.rpc("mine_paamindelser"),
     // Anonyme spærringer af bydere returneres uden navn og bruger-id.
     supabase.rpc("mine_blokeringer"),
+    // Accepteret version af brugerbetingelserne (kun brugerens egen).
+    supabase.rpc("mine_vilkaar"),
   ]);
+  if (vilkaarFejl) console.error("Konto: accept af betingelser kunne ikke hentes:", vilkaarFejl.message);
+  const vilkaarVersion = ((vilkaarData ?? []) as { version: string | null }[])[0]?.version ?? null;
+  // Ved en fejl vises bjælken ikke (den er kun en venlig påmindelse).
+  const visVilkaarBjaelke = !vilkaarFejl && !vilkaarErAccepteret(vilkaarVersion);
   if (blokeringFejl) console.error("Konto: blokeringer kunne ikke hentes:", blokeringFejl.message);
   const blokeringer: Blokering[] = (
     (blokeringData ?? []) as {
@@ -98,6 +107,7 @@ export default async function KontoSide({
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
       <h1 className="text-[26px] leading-tight sm:text-[32px]">Min konto</h1>
       <KontoNavigation />
+      {visVilkaarBjaelke && <VilkaarBjaelke />}
       {/* Sendt hertil fra admin (src/lib/adminAuth.ts): medarbejdere uden to-trins-login. */}
       {sikkerhed === "to-trin-paakraevet" && !harToTrin(authData.user) && (
         <p

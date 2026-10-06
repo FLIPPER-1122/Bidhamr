@@ -124,7 +124,7 @@ Formål: siden bliver troværdig, professionel, tryg og moderne.
 - [x] Rapportér en besked/bruger i chatten + automatisk spamfilter i beskeder
 - [x] SEO (titler, beskrivelser, sitemap) og besøgsstatistik (cookie-venlig)
 - [~] Filip: find en skabelon til **privatlivspolitik** og **brugerbetingelser/handelsbetingelser** *(begge ligger i `jura/` med noter til agenten: `brugerbetingelser-skabelon.md` og `privatlivspolitik-skabelon.md`)* (fx fra Erhvervsstyrelsen/Virk, Datatilsynet, din rådgiver eller en dansk skabelontjeneste for markedspladser) og læg den i projektet som `jura/privatlivspolitik-skabelon.md` og `jura/brugerbetingelser-skabelon.md`
-- [ ] Implementér privatlivspolitik og brugerbetingelser ud fra Filips skabeloner, tilpasset BidHamr og `ROADMAP-BESLUTNINGER.md` (indhold-agenten). Vises som egne sider og linkes fra footer, oprettelse af profil og betaling. Tydeligt markeret **"UDKAST – skal godkendes af advokat"**, indtil advokaten har gennemgået dem i fase 6. Brugeren skal acceptere brugerbetingelserne ved oprettelse
+- [~] Implementér privatlivspolitik og brugerbetingelser ud fra Filips skabeloner, tilpasset BidHamr og `ROADMAP-BESLUTNINGER.md` (indhold-agenten). Vises som egne sider og linkes fra footer, oprettelse af profil og betaling. Tydeligt markeret **"UDKAST – skal godkendes af advokat"**, indtil advokaten har gennemgået dem i fase 6. Brugeren skal acceptere brugerbetingelserne ved oprettelse
 - [~] Footer og faste sider: Om BidHamr, Kontakt/kundeservice, Handelsbetingelser, Privatlivspolitik, Cookies *(Handelsbetingelser og Privatlivspolitik mangler – venter på Filips skabeloner)*
 - [x] Kontaktformular til kundeservice, som lander i admin
 - [x] Pæne fejlsider (404/500) og loading-tilstande overalt

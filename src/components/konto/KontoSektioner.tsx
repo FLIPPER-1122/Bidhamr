@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { nuvaerendeEnhedHash } from "@/lib/enheder";
 import { harToTrin } from "@/lib/mfa";
+import { BETINGELSER_STI, PRIVATLIV_STI } from "@/lib/vilkaar";
 import SkiftAdgangskode from "./SkiftAdgangskode";
 import ToTrinsLogin from "./ToTrinsLogin";
 import Enheder, { type Enhed } from "./Enheder";
@@ -182,6 +183,22 @@ export function DineDataSektion({ dataStatus }: { dataStatus?: string }) {
         <Link href="/konto/slet" className="btn btn-fare mt-3 w-full sm:w-auto">
           Slet min konto
         </Link>
+      </div>
+
+      <div className="mt-5 border-t border-kant pt-5">
+        <h3 className={H3}>Betingelser og privatliv</h3>
+        <ul className="mt-2 flex flex-col gap-1 text-sm sm:flex-row sm:gap-6">
+          <li>
+            <Link href={PRIVATLIV_STI} className={`${LINK} inline-flex min-h-11 items-center sm:min-h-0`}>
+              Sådan behandler vi dine oplysninger
+            </Link>
+          </li>
+          <li>
+            <Link href={BETINGELSER_STI} className={`${LINK} inline-flex min-h-11 items-center sm:min-h-0`}>
+              Brugerbetingelser
+            </Link>
+          </li>
+        </ul>
       </div>
 
       <p className="mt-5 text-[13px] text-tekst-daempet">

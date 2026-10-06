@@ -174,6 +174,10 @@ export const COOKIES: Tekstside = {
       tekst: [
         "Begynder vi at bruge nye cookies, opdaterer vi denne side. Kræver de dit samtykke, spørger vi dig, før de bliver sat.",
       ],
+      links: [
+        { tekst: "Privatlivspolitik", href: "/privatliv" },
+        { tekst: "Brugerbetingelser", href: "/betingelser" },
+      ],
     },
   ],
 };
