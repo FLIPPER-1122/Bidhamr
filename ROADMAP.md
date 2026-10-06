@@ -172,7 +172,7 @@ Formål: alt det juridiske og praktiske er på plads.
 
 - [ ] CVR-nummer
 - [ ] MitID-verificering ved oprettelse (Criipto) – virker ikke i dag
-- [~] Cookie-banner
+- [x] Cookie-banner
 - [ ] Handelsbetingelser og privatlivspolitik skrevet af advokat
 - [ ] Afklar med advokat: svindel og platformens ansvar
 - [ ] Skift fra testpenge til rigtige penge (Stripe live), inkl. udbetaling til rigtige bankkonti
@@ -186,12 +186,12 @@ Formål: alt det juridiske og praktiske er på plads.
   - Databehandleraftaler med Supabase, Stripe, Resend, GLS m.fl. (GDPR)
   - Henvisning til klagemuligheder (fx Forbrugerklagenævnet) i handelsbetingelserne
   - Tilgængelighedsloven (European Accessibility Act): tjek om BidHamr som lille virksomhed er undtaget
-- [ ] **EU's Digital Services Act (DSA)**: markedspladser skal have en måde at anmelde ulovligt indhold, give brugeren en begrundelse, når en auktion fjernes, og udgive en årlig gennemsigtighedsrapport (Tradera og Vinted gør det begge). Afklar omfanget med advokat – det meste bygger videre på det eksisterende rapport-system
+- [~] **EU's Digital Services Act (DSA)**: markedspladser skal have en måde at anmelde ulovligt indhold, give brugeren en begrundelse, når en auktion fjernes, og udgive en årlig gennemsigtighedsrapport (Tradera og Vinted gør det begge). Afklar omfanget med advokat – det meste bygger videre på det eksisterende rapport-system
 - [~] **Hastighedsgennemgang**: Lighthouse på forside, auktionsside, søgning, opret auktion og mine handler. Mål: Performance-score 90+ og LCP under 2,5 sek. på mobil. Ret de største syndere (billeder, databaseforespørgsler, JavaScript)
-- [~] Fejlovervågning (fx Sentry) og besked til Filip, hvis siden går ned
+- [x] Fejlovervågning (fx Sentry) og besked til Filip, hvis siden går ned
 - [~] Backup af databasen er slået til og testet
 - [ ] **Beta-test med 10-20 rigtige, fremmede personer**, der køber og sælger med testpenge. Ret det, de støder på
-- [ ] Endelig sikkerhedsgennemgang og test af hele flowet (sikkerhed-agenten kører en fuld gennemgang)
+- [~] Endelig sikkerhedsgennemgang og test af hele flowet (sikkerhed-agenten kører en fuld gennemgang)
 - [ ] **Ekstern pentest**: et professionelt sikkerhedsfirma tester siden, før der skiftes til rigtige penge
 - [ ] Erstat coming-soon-siden med den rigtige forside
 - [ ] Logo finpudset af designer, favicon og app store-billeder
