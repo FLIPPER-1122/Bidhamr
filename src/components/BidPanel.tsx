@@ -376,8 +376,9 @@ export default function BidPanel({
 
   return (
     <div ref={panelRef} className="scroll-mt-4 rounded-[14px] border border-kant bg-white p-4 sm:p-5">
-      {/* Afslutning + countdown */}
-      {pauset ? (
+      {/* Afslutning + countdown. En annulleret auktion slutter ikke - kun
+          status vises (længere nede). */}
+      {auktionStatus === "annulleret" ? null : pauset ? (
         <p className="inline-flex items-center gap-1.5 rounded-full bg-advarsel-bg px-3 py-1 text-[13px] font-semibold text-advarsel-tekst tabular-nums">
           <Ikon navn="ur" className="h-4 w-4" strøg={2} />
           {pauseTekst(pauseResterende)}
@@ -403,7 +404,7 @@ export default function BidPanel({
       </div>
       )}
 
-      <div className="my-4 border-t border-kant" />
+      {auktionStatus !== "annulleret" && <div className="my-4 border-t border-kant" />}
 
       {/* Førende bud */}
       <div ref={prisRef}>
@@ -597,7 +598,7 @@ export default function BidPanel({
         </div>
       )}
 
-      <div className="my-4 border-t border-kant" />
+      {auktionStatus !== "annulleret" && <div className="my-4 border-t border-kant" />}
 
       {/* Budhistorik */}
       <h2 className="text-[17px] leading-snug lg:text-lg">Budhistorik</h2>

@@ -148,6 +148,25 @@ export default async function AfgoerelseSide({
   const auktionSynlig = visAuktion && !!auk && !auk.skjult && !annulleret;
   const paaPause = visAuktion && !!auk && auk.skjult && auk.status === "aktiv";
 
+  // Erstattet: auktionen blev skjult og derefter fjernet/stoppet (også
+  // automatisk efter 14 dages pause). Klageretten gælder den nyeste afgørelse
+  // om samme auktion, så den ældre "Auktion skjult" kan ikke påklages.
+  const erstattet = a.ophaevet_grund === "erstattet";
+  const { data: nyere } =
+    erstattet && a.auktion_id
+      ? await admin
+          .from("dsa_afgoerelser")
+          .select("id")
+          .eq("indhold_type", "auktion")
+          .eq("indhold_id", a.auktion_id)
+          .eq("bruger_id", a.bruger_id)
+          .gt("oprettet_kl", a.oprettet_kl)
+          .order("oprettet_kl", { ascending: false })
+          .limit(1)
+          .maybeSingle<{ id: string }>()
+      : { data: null };
+  const nyereLink = nyere ? `/dsa/afgoerelse/${nyere.id}` : "/konto/afgoerelser";
+
   const fristOk = new Date(a.klage_frist_kl).getTime() > nuMs();
   const kanKlage = !k && !a.ophaevet_kl && fristOk;
   const hvordan = a.automatisk_afgjort
@@ -185,7 +204,11 @@ export default async function AfgoerelseSide({
       },
     );
   } else if (a.ophaevet_kl) {
-    trin.push({ titel: "Ophævet", tid: a.ophaevet_kl, tilstand: "faerdig" });
+    trin.push({
+      titel: erstattet ? "Erstattet af en nyere afgørelse" : "Ophævet",
+      tid: a.ophaevet_kl,
+      tilstand: "faerdig",
+    });
   } else if (kanKlage) {
     trin.push({ titel: "Klage", tekst: `Du kan klage senest ${dato(a.klage_frist_kl)}.`, tilstand: "kommende" });
   }
@@ -198,7 +221,16 @@ export default async function AfgoerelseSide({
       </h1>
       <p className="mt-2 text-base text-tekst-daempet">{HANDLING_KONSEKVENS[a.handling]}</p>
 
-      {a.ophaevet_kl && (
+      {erstattet && a.ophaevet_kl && (
+        <p className="mt-4 rounded-xl bg-advarsel-bg p-4 text-sm text-advarsel-tekst">
+          Afgørelsen er erstattet {dato(a.ophaevet_kl)} af en nyere afgørelse om samme auktion.{" "}
+          <Link href={nyereLink} className="font-medium underline">
+            Se den nyeste afgørelse
+          </Link>{" "}
+          – det er den, du kan klage over.
+        </p>
+      )}
+      {a.ophaevet_kl && !erstattet && (
         <p className="mt-4 rounded-xl bg-succes-bg p-4 text-sm text-succes-tekst">
           Afgørelsen er ophævet {dato(a.ophaevet_kl)}
           {a.ophaevet_grund === "klage" ? " efter din klage" : ""}.
@@ -246,7 +278,7 @@ export default async function AfgoerelseSide({
           {annulleret && saetOp === "ok" && (
             <Raekke titel="Auktion">
               <span className="block">
-                {a.ophaevet_kl ? "Vi beklager, at vi stoppede din auktion. " : ""}
+                {a.ophaevet_kl && !erstattet ? "Vi beklager, at vi stoppede din auktion. " : ""}
                 Auktionen kan ikke åbnes igen, fordi buddene ikke gælder længere. Du kan sætte varen op igen med ét klik –
                 den nye auktion får samme titel, beskrivelse, billeder, startpris og varighed.
               </span>
@@ -306,7 +338,19 @@ export default async function AfgoerelseSide({
           </>
         ) : (
           <p className="mt-2 text-[15px] text-tekst-daempet">
-            {a.ophaevet_kl ? "Afgørelsen er ophævet, så der er intet at klage over." : "Fristen for at klage er udløbet."}
+            {erstattet ? (
+              <>
+                Afgørelsen er erstattet af en nyere afgørelse om samme auktion.{" "}
+                <Link href={nyereLink} className="font-medium text-groen underline">
+                  Klag over den nyeste afgørelse
+                </Link>
+                .
+              </>
+            ) : a.ophaevet_kl ? (
+              "Afgørelsen er ophævet, så der er intet at klage over."
+            ) : (
+              "Fristen for at klage er udløbet."
+            )}
           </p>
         )}
         {!k && <p className="mt-4 text-sm text-tekst-svag">{ANDRE_KLAGEMULIGHEDER}</p>}

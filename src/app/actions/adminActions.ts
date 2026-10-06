@@ -363,15 +363,18 @@ async function hideAuctionImpl(formData: FormData) {
 // Vis igen. Triggeren auctions_dsa_ophaevet markerer begrundelsen som ophævet.
 // Var auktionen på pause, genoptager triggeren auctions_pause_skjult den
 // (resterende tid, mindst 24 timer), og sælger og bydere får besked.
+// En annulleret (fjernet) auktion forbliver skjult (Filip, 6. okt. 2026):
+// triggeren auctions_pause_skjult beholder skjult = true og ophæver i stedet
+// afgørelsen, så sælgeren kan sætte varen op igen med ét klik.
 async function unhideAuctionImpl(formData: FormData): Promise<void> {
   const auktionId = formData.get("auktionId") as string;
   const { admin, userId: staffId } = await assertRole("admin");
 
   const { data: auktion } = await admin
     .from("auctions")
-    .select("bruger_id, skjult")
+    .select("bruger_id, skjult, status")
     .eq("id", auktionId)
-    .maybeSingle<{ bruger_id: string; skjult: boolean }>();
+    .maybeSingle<{ bruger_id: string; skjult: boolean; status: string }>();
   if (!auktion) throw new BrugerFejl("Auktionen findes ikke.");
 
   const { error } = await admin
@@ -388,7 +391,10 @@ async function unhideAuctionImpl(formData: FormData): Promise<void> {
       maal_type: "auktion",
       maal_id: auktionId,
       bruger_id: auktion.bruger_id,
-      aarsag: "Auktionen er synlig igen",
+      aarsag:
+        auktion.status === "annulleret"
+          ? "Fjernelsen er ophævet – auktionen forbliver annulleret og skjult, sælgeren kan sætte varen op igen"
+          : "Auktionen er synlig igen",
     });
   }
 
@@ -571,10 +577,11 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
     if (auktion) {
       // Opslaget gøres synligt igen. Var auktionen skjult og på pause,
       // genoptager triggeren auctions_pause_skjult den (resterende tid, mindst
-      // 24 timer). En fjernet (annulleret) auktion genåbnes ALDRIG (Filip,
-      // 6. okt. 2026): status forbliver 'annulleret', buddene gælder ikke, og
-      // sælgeren får besked og kan sætte varen op igen med ét klik. Triggeren
-      // auctions_dsa_ophaevet markerer fjernelsen som ophævet.
+      // 24 timer). En fjernet (annulleret) auktion genåbnes ALDRIG og bliver
+      // ikke synlig igen (Filip, 6. okt. 2026): status forbliver 'annulleret',
+      // triggeren auctions_pause_skjult beholder skjult = true og ophæver
+      // fjernelsen, buddene gælder ikke, og sælgeren får besked og kan sætte
+      // varen op igen med ét klik.
       const { error: opdateringFejl } = await admin
         .from("auctions")
         .update({ skjult: false })
@@ -611,7 +618,10 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
         maal_type: "auktion",
         maal_id: rapport.auction_id,
         bruger_id: auktion.bruger_id,
-        aarsag: "Opslag gjort synligt igen da anmeldelsen blev genåbnet",
+        aarsag:
+          auktion.status === "annulleret"
+            ? "Fjernelsen ophævet da anmeldelsen blev genåbnet (auktionen forbliver annulleret og skjult)"
+            : "Opslag gjort synligt igen da anmeldelsen blev genåbnet",
       });
     }
   }

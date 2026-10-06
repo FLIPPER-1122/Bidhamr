@@ -12,6 +12,7 @@ import AnmeldKnap from "@/components/dsa/AnmeldKnap";
 import StartChatKnap from "@/components/StartChatKnap";
 import SaelgerAuktionHandlinger from "@/components/SaelgerAuktionHandlinger";
 import SpoergSaelger from "@/components/SpoergSaelger";
+import SaetOpIgenKnap from "@/components/dsa/SaetOpIgenKnap";
 import SpaerByder, { type ByderValg } from "@/components/tryghed/SpaerByder";
 import { kortNavn } from "@/lib/kortNavn";
 import { standNavn } from "@/lib/stand";
@@ -145,19 +146,45 @@ export default async function AuktionPage({
   // Skjult af BidHamr: sælgeren får et link til begrundelsen (DSA art. 17),
   // hvor han også kan klage. Bydere er ikke part i afgørelsen og ser kun, at
   // auktionen er skjult.
+  //
+  // En fjernet (annulleret) auktion forbliver skjult - også efter medhold i en
+  // klage (Filip, 6. okt. 2026). Kun sælgeren, deltagerne og staff kan se den,
+  // og sælgeren kan sætte varen op igen med ét klik herfra.
+  const annulleretSkjult = skjult && auktion.status === "annulleret";
   let afgoerelseId: string | null = null;
+  let medhold = false;
+  let afgOphaevet = false;
+  let saetOp: string | null = null;
+  let nyAuktionId: string | null = null;
   if (skjult && mitId && mitId === auktion.bruger_id) {
-    const { data: afg } = await createAdminClient()
+    const admin = createAdminClient();
+    let q = admin
       .from("dsa_afgoerelser")
-      .select("id")
+      .select("id, ophaevet_grund")
       .eq("indhold_type", "auktion")
       .eq("indhold_id", id)
-      .eq("bruger_id", mitId)
-      .is("ophaevet_kl", null)
+      .eq("bruger_id", mitId);
+    // Annulleret: den nyeste afgørelse (også en ophævet) - ellers en gældende.
+    q = annulleretSkjult ? q.or("ophaevet_grund.is.null,ophaevet_grund.neq.erstattet") : q.is("ophaevet_kl", null);
+    const { data: afg } = await q
       .order("oprettet_kl", { ascending: false })
       .limit(1)
-      .maybeSingle<{ id: string }>();
+      .maybeSingle<{ id: string; ophaevet_grund: string | null }>();
     afgoerelseId = afg?.id ?? null;
+    medhold = afg?.ophaevet_grund === "klage";
+    afgOphaevet = afg?.ophaevet_grund != null;
+    if (annulleretSkjult) {
+      const { data: kode } = await admin.rpc("kan_saette_op_igen", { p_auction: id });
+      saetOp = typeof kode === "string" ? kode : null;
+      if (saetOp === "allerede_genopsat") {
+        const { data: g } = await admin
+          .from("genopsaetninger")
+          .select("ny_auction_id")
+          .eq("gammel_auction_id", id)
+          .maybeSingle<{ ny_auction_id: string }>();
+        nyAuktionId = g?.ny_auction_id ?? null;
+      }
+    }
   }
   const sælgerNavn = kortNavn(saelger?.navn ?? null);
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
@@ -251,7 +278,26 @@ export default async function AuktionPage({
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10">
       {skjult && (
         <div role="status" className="mb-4 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4">
-          <p className="font-semibold text-advarsel-tekst">Denne auktion er skjult af BidHamr</p>
+          <p className="font-semibold text-advarsel-tekst">
+            {annulleretSkjult
+              ? medhold && erSælger
+                ? "Annulleret – du fik medhold, sæt varen op igen"
+                : "Auktionen er annulleret"
+              : "Denne auktion er skjult af BidHamr"}
+          </p>
+          {annulleretSkjult ? (
+            <p className="mt-1 text-sm text-tekst-daempet">
+              {erSælger
+                ? saetOp === "ok"
+                  ? `${medhold ? "Vi beklager, at vi fjernede din auktion. " : ""}Auktionen kan ikke åbnes igen, fordi buddene ikke gælder længere. Du kan sætte varen op igen med ét klik – den nye auktion får samme titel, beskrivelse, billeder, startpris og varighed.`
+                  : saetOp === "allerede_genopsat"
+                    ? "Du har sat varen op igen."
+                    : "Auktionen kan ikke åbnes igen, og andre kan ikke se den."
+                : staffRolle
+                  ? "Auktionen kan ikke åbnes igen. Kun sælgeren, dem, der har budt, og BidHamrs medarbejdere kan se den."
+                  : "Buddene gælder ikke, og du skal ikke betale noget. Du kan se auktionen, fordi du har budt på den."}
+            </p>
+          ) : (
           <p className="mt-1 text-sm text-tekst-daempet">
             {erSælger
               ? "Andre kan ikke se auktionen, og der kan ikke bydes på den."
@@ -261,6 +307,15 @@ export default async function AuktionPage({
             {pauset &&
               " Auktionen er sat på pause og slutter ikke, mens BidHamr kigger på den. Eksisterende bud gælder stadig. Åbner den igen, får den den resterende tid – dog mindst 24 timer."}
           </p>
+          )}
+          {erSælger && annulleretSkjult && saetOp === "ok" && <SaetOpIgenKnap auktionId={auktion.id} />}
+          {erSælger && annulleretSkjult && saetOp === "allerede_genopsat" && nyAuktionId && (
+            <p className="mt-2 text-sm">
+              <Link href={`/auktion/${nyAuktionId}`} className="font-medium text-groen underline">
+                Gå til den nye auktion
+              </Link>
+            </p>
+          )}
           {erSælger && afgoerelseId && (
             <p className="mt-2 text-sm">
               <Link
@@ -269,7 +324,9 @@ export default async function AuktionPage({
               >
                 Se begrundelsen
               </Link>
-              <span className="text-tekst-daempet"> – du kan klage over afgørelsen.</span>
+              {!(annulleretSkjult && (afgOphaevet || saetOp === "allerede_genopsat")) && (
+                <span className="text-tekst-daempet"> – du kan klage over afgørelsen.</span>
+              )}
             </p>
           )}
           {erSælger && !afgoerelseId && (
