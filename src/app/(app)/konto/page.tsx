@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { bekraeftetBruger, hentBruger, sessionBrugerId } from "@/lib/supabase/bruger";
 import { hentBetalingsindstillinger, hentMineOverfoersler } from "@/app/actions/betaling";
 import KontoBetaling from "@/components/betaling/KontoBetaling";
 import KontoUdbetaling from "@/components/betaling/KontoUdbetaling";
 import BlokeredeBrugere, { type Blokering } from "@/components/tryghed/BlokeredeBrugere";
 import {
   DineDataSektion,
+  forhaandshentKonto,
   KontoNavigation,
   ProfilSektion,
   SikkerhedSektion,
@@ -47,11 +49,14 @@ export default async function KontoSide({
 }) {
   const { stripe, setup_intent, data: dataStatus } = await searchParams;
   const supabase = await createClient();
-  const { data: authData } = await supabase.auth.getUser();
 
-  if (!authData.user) {
-    redirect("/login?redirect=/konto");
-  }
+  // Alle opslag herunder hentes SAMTIDIG med valideringen af brugeren (før:
+  // først getUser, så resten). De udleder selv brugeren af auth.uid() i
+  // JWT'en eller tjekker login selv, og intet vises, før getUser har godkendt
+  // brugeren. Profil-sektionernes navn og enheder startes også nu (med id'et
+  // fra sessionens JWT - bruges kun, hvis det er den bekræftede bruger).
+  const sessionId = await sessionBrugerId();
+  if (sessionId) forhaandshentKonto(sessionId);
 
   // Brugerens egne advarsler: kun begrundelse til brugeren og dato
   // (mine_advarsler() udleder brugeren af auth.uid(); den interne note
@@ -59,6 +64,7 @@ export default async function KontoSide({
   // Påmindelser (fx 1. gang dårlig indpakning) hentes på samme måde via
   // mine_paamindelser() og tæller ikke med i reglen om 3 advarsler.
   const [
+    bruger,
     indstillinger,
     overfoerslerSvar,
     { data: advarselData, error: advarselFejl },
@@ -66,6 +72,7 @@ export default async function KontoSide({
     { data: blokeringData, error: blokeringFejl },
     { data: vilkaarData, error: vilkaarFejl },
   ] = await Promise.all([
+    sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
     hentBetalingsindstillinger(),
     hentMineOverfoersler(),
     supabase.rpc("mine_advarsler"),
@@ -75,6 +82,11 @@ export default async function KontoSide({
     // Accepteret version af brugerbetingelserne (kun brugerens egen).
     supabase.rpc("mine_vilkaar"),
   ]);
+  if (!bruger) {
+    redirect("/login?redirect=/konto");
+  }
+  const authData = { user: bruger };
+
   if (vilkaarFejl) console.error("Konto: accept af betingelser kunne ikke hentes:", vilkaarFejl.message);
   const vilkaarVersion = ((vilkaarData ?? []) as { version: string | null }[])[0]?.version ?? null;
   // Ved en fejl vises bjælken ikke (den er kun en venlig påmindelse).

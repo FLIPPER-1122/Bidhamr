@@ -130,6 +130,28 @@ export function HandelSkelet() {
   );
 }
 
+// Almindelig side med overskrift og tekst (fx FAQ, Om, Opret auktion). Bruges
+// af den fælles loading.tsx for alle sider uden deres eget skelet, så et klik
+// altid giver et svar med det samme.
+export function SideSkelet() {
+  return (
+    <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10" aria-busy="true">
+      <Indlaeser tekst="Indlæser siden…" />
+      <div className={`h-8 w-64 max-w-full ${blok}`} />
+      <div className="mt-6 space-y-3">
+        <div className={`h-4 w-full ${blok}`} />
+        <div className={`h-4 w-11/12 ${blok}`} />
+        <div className={`h-4 w-4/5 ${blok}`} />
+      </div>
+      <div className={`mt-8 h-40 ${flade}`} />
+      <div className="mt-6 space-y-3">
+        <div className={`h-4 w-full ${blok}`} />
+        <div className={`h-4 w-2/3 ${blok}`} />
+      </div>
+    </main>
+  );
+}
+
 export function KontoSkelet() {
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8" aria-busy="true">

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { hentBruger, hentMinRolle } from "@/lib/supabase/bruger";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import { hentAntalUbetalte } from "@/app/actions/adminActions";
 import { hentAntalBetalingerTilHandling } from "@/app/actions/adminBetalinger";
@@ -10,29 +10,34 @@ import { hentAntalTryghed } from "@/app/actions/adminTryghed";
 import { hentAntalDsa } from "@/app/actions/adminDsa";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // Bruger og rolle hentes samtidig (højst én gang pr. forespørgsel, delt via
+  // cache() i src/lib/supabase/bruger.ts). Menuens tællere startes, så snart
+  // rollen er kendt, i stedet for at vente på begge - hver tæller kalder
+  // desuden selv assertRole (samme delte svar) og giver ingen data uden adgang.
+  const erStaff = (r: string | null) => r === "chef" || r === "admin" || r === "medarbejder";
+  const taellerLoefte = hentMinRolle().then((r) =>
+    erStaff(r)
+      ? Promise.all([
+          hentAntalUbetalte(),
+          hentAntalBetalingerTilHandling(),
+          antalUbesvaredeStaffSamtaler(),
+          hentAntalAabneSager(),
+          hentAntalKontoLukninger(),
+          hentAntalTryghed(),
+          hentAntalDsa(),
+        ])
+      : null,
+  );
+  const [user, rolle] = await Promise.all([hentBruger(), hentMinRolle()]);
 
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: rolle } = await supabase.rpc("min_rolle");
-
-  if (rolle !== "chef" && rolle !== "admin" && rolle !== "medarbejder") {
+  if (!user || !erStaff(rolle)) {
     redirect("/");
   }
 
   // Tallet til menuens badge. En fejl her må ikke vælte hele admin-panelet.
-  const [ubetalte, betalinger, chats, sager, lukninger, tryghed, dsa] = await Promise.all([
-    hentAntalUbetalte(),
-    hentAntalBetalingerTilHandling(),
-    antalUbesvaredeStaffSamtaler(),
-    hentAntalAabneSager(),
-    hentAntalKontoLukninger(),
-    hentAntalTryghed(),
-    hentAntalDsa(),
-  ]);
+  const taellere = await taellerLoefte;
+  if (!taellere) redirect("/");
+  const [ubetalte, betalinger, chats, sager, lukninger, tryghed, dsa] = taellere;
   const antalUbetalte = "antal" in ubetalte ? ubetalte.antal : 0;
   const antalBetalinger = "antal" in betalinger ? betalinger.antal : 0;
   const antalChats = "antal" in chats ? chats.antal : 0;

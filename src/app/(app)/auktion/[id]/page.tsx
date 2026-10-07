@@ -18,7 +18,8 @@ import { kortNavn } from "@/lib/kortNavn";
 import { standNavn } from "@/lib/stand";
 import { getStaffRole } from "@/lib/adminAuth";
 import type { SpoergsmaalVisning } from "@/lib/spoergsmaal";
-import { auktionMetadata } from "@/lib/auktionSeo";
+import { auktionMetadata, hentAuktionRaekke } from "@/lib/auktionSeo";
+import { hentBruger } from "@/lib/supabase/bruger";
 import { erPaaPause } from "@/lib/auctionTid";
 
 // Titel, beskrivelse (pris + slut), første billede som delebillede og
@@ -47,9 +48,11 @@ export default async function AuktionPage({
   // (vinder) og en anonymiseret budhistorik - bruger-id'er og navne sendes
   // aldrig til browseren. Hentes samtidig med auktionen (samme id), så siden
   // ikke venter på to runder til databasen efter hinanden.
-  const [{ data: auktion }, { data: authData }, { data: budRaw }] = await Promise.all([
-    supabase.from("auctions").select("*").eq("id", id).single(),
-    supabase.auth.getUser(),
+  // Auktionsrækken deles med layout.tsx og generateMetadata (cache()), og
+  // brugeren med topbaren (src/lib/supabase/bruger.ts).
+  const [{ data: auktion }, bruger, { data: budRaw }] = await Promise.all([
+    hentAuktionRaekke(id),
+    hentBruger(),
     createAdminClient()
       .from("bids")
       .select("id, bruger_id, beløb, oprettet")
@@ -87,7 +90,62 @@ export default async function AuktionPage({
   for (const b of [...bud].reverse()) {
     if (!byderNr.has(b.bruger_id)) byderNr.set(b.bruger_id, byderNr.size + 1);
   }
-  const mitId = authData.user?.id ?? null;
+  const mitId = bruger?.id ?? null;
+
+  const auktionErSlut = !pauset && new Date(auktion.slutter_kl) <= new Date();
+  // Vinderen er det højeste bud (ikke det seneste) – samme logik som
+  // betal-siden og checkout-API'et.
+  const vinderBud =
+    (bud ?? []).reduce<(typeof bud)[number] | null>(
+      (bedste, b) =>
+        !bedste || Number(b.beløb) > Number(bedste.beløb) ? b : bedste,
+      null,
+    ) ?? null;
+  // auctions.vinder_id er sandheden: den flyttes til næste byder, hvis
+  // vinderen ikke betalte, og byderen sagde ja til at købe varen.
+  const vinderId: string | null =
+    (auktion.vinder_id as string | null | undefined) ??
+    (auktion.status !== "aktiv" ? (vinderBud?.bruger_id ?? null) : null);
+  const erVinder = Boolean(auktionErSlut && vinderBud && bruger && bruger.id === vinderId);
+  const erSælger = bruger?.id === auktion.bruger_id;
+
+  // Handelstilstand: cron-jobbet opretter handel + betaling ved auktionsluk.
+  // Betalingen er dermed allerede sket - der er intet "betal nu"-trin.
+  // En auktion kan have flere handler, hvis vinderen ikke betalte og varen
+  // gik videre til næste byder (kun én er ikke-annulleret). Den nyeste er
+  // den gældende; RLS viser kun handler, brugeren selv er part i.
+  // Startes her, så den hentes samtidig med resten nedenfor.
+  const handelLoefte: Promise<{
+    id: string;
+    status: string;
+    buyer_id: string;
+    seller_id: string;
+  } | null> =
+    auktionErSlut && vinderBud && (erVinder || erSælger)
+      ? Promise.resolve(
+          supabase
+            .from("trades")
+            .select("id, status, buyer_id, seller_id")
+            .eq("auction_id", id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ).then((r) => r.data)
+      : Promise.resolve(null);
+  // Har køberen allerede bedømt? Hentes samtidig med handlen og bruges kun,
+  // hvis brugeren må bedømme (se maaBedømme nedenfor).
+  const harBedømtLoefte: Promise<boolean> =
+    bruger && auktionErSlut && vinderBud && erVinder && !erSælger
+      ? Promise.resolve(
+          supabase
+            .from("ratings")
+            .select("id")
+            .eq("fra_bruger_id", bruger.id)
+            .eq("auktion_id", id)
+            .maybeSingle(),
+        ).then((r) => !!r.data)
+      : Promise.resolve(false);
+
   const anonymeBud: BidPanelBud[] = bud.map((b) => ({
     id: b.id,
     beløb: Number(b.beløb),
@@ -128,7 +186,7 @@ export default async function AuktionPage({
     { data: saelger },
   ] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
-    authData.user ? getStaffRole() : Promise.resolve(null),
+    bruger ? getStaffRole() : Promise.resolve(null),
     tjekBlokering,
     // Følger jeg sælgeren? Altid filtreret på follower_id (RLS i produktion
     // kan stadig vise alle følgninger, indtil 20261007012000 er kørt).
@@ -190,20 +248,8 @@ export default async function AuktionPage({
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
   const varenummer = auktion.id.slice(-6).toUpperCase();
-  const auktionErSlut = !pauset && new Date(auktion.slutter_kl) <= new Date();
-  // Vinderen er det højeste bud (ikke det seneste) – samme logik som
-  // betal-siden og checkout-API'et.
-  const vinderBud =
-    (bud ?? []).reduce<(typeof bud)[number] | null>(
-      (bedste, b) =>
-        !bedste || Number(b.beløb) > Number(bedste.beløb) ? b : bedste,
-      null,
-    ) ?? null;
   // Vinderen vises anonymt som i budhistorikken ("Dig" / "Byder 2") - aldrig
   // navn eller bruger-id (bydernes privatliv).
-  const vinderId: string | null =
-    (auktion.vinder_id as string | null | undefined) ??
-    (auktion.status !== "aktiv" ? (vinderBud?.bruger_id ?? null) : null);
   const vinderVisning =
     vinderId && auktion.status !== "aktiv"
       ? vinderId === mitId
@@ -212,11 +258,6 @@ export default async function AuktionPage({
           ? `Byder ${byderNr.get(vinderId)}`
           : null
       : null;
-  const bruger = authData.user ?? null;
-  // auctions.vinder_id er sandheden: den flyttes til næste byder, hvis
-  // vinderen ikke betalte, og byderen sagde ja til at købe varen.
-  const erVinder = Boolean(auktionErSlut && vinderBud && bruger && bruger.id === vinderId);
-  const erSælger = bruger?.id === auktion.bruger_id;
   // Redigér/annullér: kun på en igangværende auktion (låst efter første bud).
   const harBud = auktion.nuværende_bud != null || bud.length > 0;
   const kanStyreAuktion = erSælger && auktion.status === "aktiv" && !auktionErSlut && !skjult;
@@ -231,27 +272,7 @@ export default async function AuktionPage({
         }))
     : [];
 
-  // Handelstilstand: cron-jobbet opretter handel + betaling ved auktionsluk.
-  // Betalingen er dermed allerede sket - der er intet "betal nu"-trin.
-  let handel: {
-    id: string;
-    status: string;
-    buyer_id: string;
-    seller_id: string;
-  } | null = null;
-  if (auktionErSlut && vinderBud && (erVinder || erSælger)) {
-    // En auktion kan have flere handler, hvis vinderen ikke betalte og varen
-    // gik videre til næste byder (kun én er ikke-annulleret). Den nyeste er
-    // den gældende; RLS viser kun handler, brugeren selv er part i.
-    const { data } = await supabase
-      .from("trades")
-      .select("id, status, buyer_id, seller_id")
-      .eq("auction_id", id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    handel = data;
-  }
+  const handel = await handelLoefte;
 
   // Kun køberen i handlen bedømmer, og kun sælgeren (ROADMAP-BESLUTNINGER.md
   // afsnit 6). Bedømmelsen afgives samtidig med godkendelsen af varen under
@@ -259,17 +280,7 @@ export default async function AuktionPage({
   const maaBedømme = Boolean(
     bruger && handel && handel.buyer_id === bruger.id && handel.seller_id === auktion.bruger_id,
   );
-
-  let harBedømt = false;
-  if (maaBedømme && bruger) {
-    const { data: eksisterendeRating } = await supabase
-      .from("ratings")
-      .select("id")
-      .eq("fra_bruger_id", bruger.id)
-      .eq("auktion_id", id)
-      .maybeSingle();
-    harBedømt = !!eksisterendeRating;
-  }
+  const harBedømt = maaBedømme && (await harBedømtLoefte);
 
   const sektionsLinje = "my-6 border-t border-kant";
   const sektionsTitel = "text-[17px] leading-snug lg:text-lg";
@@ -446,7 +457,7 @@ export default async function AuktionPage({
               redigeretKl={(auktion.redigeret_kl as string | null | undefined) ?? null}
               initialSlutterKl={auktion.slutter_kl}
               initialBud={anonymeBud}
-              brugerId={authData.user?.id ?? null}
+              brugerId={bruger?.id ?? null}
               saelgerId={auktion.bruger_id}
               forsendelseMulig={auktion.forsendelse_mulig}
               status={auktion.status}

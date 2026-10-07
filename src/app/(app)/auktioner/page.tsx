@@ -1,6 +1,6 @@
 import AuctionsExplorer from "@/components/AuctionsExplorer";
 import { AFSTAND_STANDARD_KM, læsAfstand, læsPostnummer, læsSortering } from "@/lib/auktionFiltre";
-import { createClient } from "@/lib/supabase/server";
+import { hentBruger } from "@/lib/supabase/bruger";
 import { RADIUS_MAX_KM, hentAuktionsside } from "@/lib/auktionSoegning";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import type { Metadata } from "next";
@@ -64,8 +64,9 @@ export default async function AuktionerPage({
   const radiusKm = initialRadiusKm ?? AFSTAND_STANDARD_KM;
   const initialAfstandAktiv = Boolean(slaaPostnummerOp(initialPostnummer)) && radiusKm < RADIUS_MAX_KM;
 
-  const [{ data: authData }, side] = await Promise.all([
-    (await createClient()).auth.getUser(),
+  const [bruger, side] = await Promise.all([
+    // Delt med topbaren (cache() i src/lib/supabase/bruger.ts).
+    hentBruger(),
     hentAuktionsside({
       q: søgetekst,
       kategori: initialKategori,
@@ -94,7 +95,7 @@ export default async function AuktionerPage({
         initialPostnummer={initialPostnummer}
         initialRadiusKm={initialRadiusKm}
         initialAfstandAktiv={initialAfstandAktiv}
-        erLoggetInd={Boolean(authData.user)}
+        erLoggetInd={Boolean(bruger)}
       />
     </main>
   );

@@ -6,6 +6,7 @@ import TomTilstand from "@/components/TomTilstand";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { bekraeftetBruger, hentBruger, sessionBrugerId } from "@/lib/supabase/bruger";
 import HandelStatusBadge, { AKTIVE_STATUSSER } from "@/components/HandelStatusBadge";
 import { hentMineAktiveTilbud } from "@/app/actions/andenchanceBruger";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
@@ -173,13 +174,6 @@ export default async function MineHandlerPage({
   searchParams: Promise<{ vis?: string }>;
 }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login?redirect=/mine-handler");
-  }
 
   const visØnsket = Number((await searchParams).vis);
   const visAfsluttede = Number.isInteger(visØnsket)
@@ -188,38 +182,55 @@ export default async function MineHandlerPage({
 
   // or-filteret er det, der begrænser til egne handler. RLS alene ville ikke
   // gøre det: policyen tillader også staff at se alt.
-  const egne = `buyer_id.eq.${user.id},seller_id.eq.${user.id}`;
   const kolonner =
     "id, status, amount, created_at, buyer_id, seller_id, afhentning, auctions(titel, billeder), sager(id, status, oprettet_kl)";
   const aktiveStatusser = `(${AKTIVE_STATUSSER.join(",")})`;
-  const [aktiveSvar, afsluttedeSvar, sagSvar, tilbud] = await Promise.all([
-    supabase
-      .from("trades")
-      .select(kolonner)
-      .or(egne)
-      .in("status", AKTIVE_STATUSSER)
-      .order("created_at", { ascending: false })
-      .overrideTypes<HandelRaekke[], { merge: false }>(),
-    supabase
-      .from("trades")
-      .select(kolonner, { count: "exact" })
-      .or(egne)
-      .not("status", "in", aktiveStatusser)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: true })
-      .range(0, visAfsluttede - 1)
-      .overrideTypes<HandelRaekke[], { merge: false }>(),
-    // Handler med en igangværende sag - uanset om handlen er på den viste
-    // side. "aktiv_sag" filtrerer kun rækkerne; "sager" er alle sager på handlen.
-    supabase
-      .from("trades")
-      .select(`${kolonner}, aktiv_sag:sager!inner(id)`)
-      .or(egne)
-      .in("aktiv_sag.status", SAG_AKTIV)
-      .order("created_at", { ascending: false })
-      .overrideTypes<HandelRaekke[], { merge: false }>(),
+  const hentHandler = (brugerId: string) => {
+    const egne = `buyer_id.eq.${brugerId},seller_id.eq.${brugerId}`;
+    return Promise.all([
+      supabase
+        .from("trades")
+        .select(kolonner)
+        .or(egne)
+        .in("status", AKTIVE_STATUSSER)
+        .order("created_at", { ascending: false })
+        .overrideTypes<HandelRaekke[], { merge: false }>(),
+      supabase
+        .from("trades")
+        .select(kolonner, { count: "exact" })
+        .or(egne)
+        .not("status", "in", aktiveStatusser)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(0, visAfsluttede - 1)
+        .overrideTypes<HandelRaekke[], { merge: false }>(),
+      // Handler med en igangværende sag - uanset om handlen er på den viste
+      // side. "aktiv_sag" filtrerer kun rækkerne; "sager" er alle sager på handlen.
+      supabase
+        .from("trades")
+        .select(`${kolonner}, aktiv_sag:sager!inner(id)`)
+        .or(egne)
+        .in("aktiv_sag.status", SAG_AKTIV)
+        .order("created_at", { ascending: false })
+        .overrideTypes<HandelRaekke[], { merge: false }>(),
+    ]);
+  };
+
+  // Handlerne hentes SAMTIDIG med valideringen af brugeren: id'et fra
+  // sessionens JWT (tjekket lokalt) bruges til opslaget, og intet vises, før
+  // getUser har bekræftet præcis den bruger (bekraeftetBruger).
+  const sessionId = await sessionBrugerId();
+  const [user, tidligt, tilbud] = await Promise.all([
+    sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
+    sessionId ? hentHandler(sessionId) : null,
     hentMineAktiveTilbud(),
   ]);
+
+  if (!user) {
+    redirect("/login?redirect=/mine-handler");
+  }
+
+  const [aktiveSvar, afsluttedeSvar, sagSvar] = tidligt ?? (await hentHandler(user.id));
 
   // Vises af error.tsx - en tom liste ville fejlagtigt sige "ingen handler".
   if (aktiveSvar.error || afsluttedeSvar.error) {

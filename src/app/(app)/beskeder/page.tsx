@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { bekraeftetBruger, hentBruger, sessionBrugerId } from "@/lib/supabase/bruger";
 import { hentMineStaffSamtaler } from "@/app/actions/staffChat";
 import { fjernFaellesPraefiks } from "@/lib/staffChat";
 import {
@@ -36,40 +37,43 @@ export const metadata: Metadata = { title: "Beskeder", robots: { index: false, f
 
 export default async function BeskederPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login?redirect=/beskeder");
 
   // or-filteret begrænser til egne handler (RLS tillader også staff alt).
-  const [staff, { data: handlerData, error: handelFejl }] = await Promise.all([
-    hentMineStaffSamtaler(),
+  // Seneste besked pr. handel hentes i SAMME forespørgsel (indlejret
+  // messages, sorteret og begrænset til 1 pr. handel) - før var det ét opslag
+  // pr. handel efter handlerne. RLS på messages gælder også indlejret.
+  const hentHandler = (brugerId: string) =>
     supabase
       .from("trades")
-      .select("id, buyer_id, seller_id, created_at, auctions(titel)")
-      .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
+      .select("id, buyer_id, seller_id, created_at, auctions(titel), messages(trade_id, sender_id, content, created_at, fra_bidhamr)")
+      .or(`buyer_id.eq.${brugerId},seller_id.eq.${brugerId}`)
+      // Beskeder, spamfilteret har stoppet, vises ikke som seneste besked.
+      .is("messages.blokeret_grund", null)
       .order("created_at", { ascending: false })
+      .order("created_at", { referencedTable: "messages", ascending: false })
+      .limit(1, { referencedTable: "messages" })
       .limit(ANTAL_HANDLER)
-      .overrideTypes<HandelRaekke[], { merge: false }>(),
+      .overrideTypes<(HandelRaekke & { messages: SidsteBesked[] | null })[], { merge: false }>();
+
+  // Handlerne og beskederne fra BidHamr hentes SAMTIDIG med valideringen af
+  // brugeren (id'et fra sessionens JWT, tjekket lokalt). Intet vises, før
+  // getUser har bekræftet præcis den bruger (bekraeftetBruger).
+  const sessionId = await sessionBrugerId();
+  const [user, staff, tidligeHandler] = await Promise.all([
+    sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
+    hentMineStaffSamtaler(),
+    sessionId ? hentHandler(sessionId) : null,
   ]);
+  if (!user) redirect("/login?redirect=/beskeder");
+
+  const { data: handlerData, error: handelFejl } = tidligeHandler ?? (await hentHandler(user.id));
 
   const handler = handlerData ?? [];
-  // Seneste besked pr. handel (højst ANTAL_HANDLER små opslag, parallelt).
-  const seneste = await Promise.all(
-    handler.map((h) =>
-      supabase
-        .from("messages")
-        .select("trade_id, sender_id, content, created_at, fra_bidhamr")
-        .eq("trade_id", h.id)
-        // Beskeder, spamfilteret har stoppet, vises ikke som seneste besked.
-        .is("blokeret_grund", null)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle<SidsteBesked>(),
-    ),
-  );
   const sidste = new Map<string, SidsteBesked>();
-  for (const { data: b } of seneste) if (b) sidste.set(b.trade_id, b);
+  for (const h of handler) {
+    const b = h.messages?.[0];
+    if (b) sidste.set(h.id, b);
+  }
 
   // Handler med beskeder først (nyeste besked øverst), derefter resten.
   const sorteret = [...handler].sort((a, b) => {

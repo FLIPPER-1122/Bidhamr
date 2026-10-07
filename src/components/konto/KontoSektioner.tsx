@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cache } from "react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { nuvaerendeEnhedHash } from "@/lib/enheder";
@@ -9,6 +10,28 @@ import { FORMULAR_FEJL, KORT, LINK } from "./felter";
 
 // Sektionerne "Profil", "Sikkerhed" og "Dine data" på /konto. Ligger i egne
 // komponenter, så konto-siden kun skal importere dem.
+
+// Navn og enheder hentes højst én gang pr. forespørgsel (begge sektioner
+// viser navnet), og /konto starter dem på forhånd sammen med sine egne
+// opslag (forhaandshentKonto), så sektionerne ikke venter en runde mere.
+const hentMitNavn = cache(async (brugerId: string) => {
+  const supabase = await createClient();
+  const { data } = await supabase.from("users").select("navn").eq("id", brugerId).maybeSingle();
+  return (data?.navn as string | null | undefined) ?? null;
+});
+
+const hentMineEnheder = cache(async () => {
+  const supabase = await createClient();
+  const hash = await nuvaerendeEnhedHash();
+  return supabase.rpc("mine_enheder", { p_hash: hash });
+});
+
+// Kaldes af /konto med id'et fra sessionens JWT. Resultaterne vises kun af
+// sektionerne, som først renderes, når siden har bekræftet brugeren.
+export function forhaandshentKonto(brugerId: string) {
+  void hentMitNavn(brugerId);
+  void hentMineEnheder();
+}
 
 const H2 = "text-[20px] leading-tight lg:text-[22px]";
 const H3 = "text-[17px] leading-snug lg:text-[18px]";
@@ -46,19 +69,14 @@ export function KontoNavigation() {
 }
 
 export async function ProfilSektion({ bruger }: { bruger: User }) {
-  const supabase = await createClient();
-  const { data: profil } = await supabase
-    .from("users")
-    .select("navn")
-    .eq("id", bruger.id)
-    .maybeSingle();
+  const navn = await hentMitNavn(bruger.id);
 
   return (
     <section id="profil" className={`mt-6 scroll-mt-24 ${KORT}`}>
       <h2 className={H2}>Profil</h2>
       <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-[140px_1fr]">
         <dt className="text-tekst-daempet">Navn</dt>
-        <dd className="font-medium text-tekst">{profil?.navn ?? "—"}</dd>
+        <dd className="font-medium text-tekst">{navn ?? "—"}</dd>
         <dt className="text-tekst-daempet">E-mail</dt>
         <dd className="min-w-0 break-all font-medium text-tekst">
           {bruger.email}
@@ -77,11 +95,9 @@ export async function ProfilSektion({ bruger }: { bruger: User }) {
 }
 
 export async function SikkerhedSektion({ bruger }: { bruger: User }) {
-  const supabase = await createClient();
-  const hash = await nuvaerendeEnhedHash();
-  const [{ data: profil }, { data: enhedData, error: enhedFejl }] = await Promise.all([
-    supabase.from("users").select("navn").eq("id", bruger.id).maybeSingle(),
-    supabase.rpc("mine_enheder", { p_hash: hash }),
+  const [navn, { data: enhedData, error: enhedFejl }] = await Promise.all([
+    hentMitNavn(bruger.id),
+    hentMineEnheder(),
   ]);
   if (enhedFejl) console.error("Konto: enheder kunne ikke hentes:", enhedFejl.message);
 
@@ -113,7 +129,7 @@ export async function SikkerhedSektion({ bruger }: { bruger: User }) {
       <div className="mt-5 border-t border-kant pt-5">
         <h3 className={H3}>Adgangskode</h3>
         <div className="mt-3">
-          <SkiftAdgangskode person={{ email: bruger.email, navn: [profil?.navn] }} />
+          <SkiftAdgangskode person={{ email: bruger.email, navn: [navn] }} />
         </div>
       </div>
 
