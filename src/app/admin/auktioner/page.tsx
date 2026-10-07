@@ -122,6 +122,24 @@ export default async function AdminAuktioner({
     else gaeldendeAfg[g.indhold_id] = "fjernelse";
   });
 
+  // Ophævede afgørelser på de samme auktioner ("erstattet" tæller ikke som
+  // ophævet): kun dem viser "fjernelse ophævet"/"skjulning ophævet".
+  const { data: ophaevede } = annulleretSkjultIds.length
+    ? await supabase
+        .from("dsa_afgoerelser")
+        .select("indhold_id, handling")
+        .eq("indhold_type", "auktion")
+        .in("indhold_id", annulleretSkjultIds)
+        .in("handling", ["auktion_fjernet", "auktion_annulleret", "auktion_skjult"])
+        .not("ophaevet_kl", "is", null)
+        .neq("ophaevet_grund", "erstattet")
+    : { data: [] };
+  const ophaevetAfg: Record<string, "fjernelse" | "skjulning"> = {};
+  ((ophaevede ?? []) as { indhold_id: string; handling: string }[]).forEach((g) => {
+    if (g.handling === "auktion_skjult") ophaevetAfg[g.indhold_id] ??= "skjulning";
+    else ophaevetAfg[g.indhold_id] = "fjernelse";
+  });
+
   const sælgerMap: Record<string, { navn: string | null; email: string }> = {};
   (sælgere ?? []).forEach((u) => {
     sælgerMap[u.id] = { navn: u.navn, email: u.email };
@@ -298,7 +316,13 @@ export default async function AdminAuktioner({
                         )}
                         {a.skjult && a.status === "annulleret" && !gaeldendeAfg[a.id] ? (
                           // Intet at ophæve (allerede ophævet, eller skjult uden afgørelse).
-                          <span className="px-2 py-1 text-xs text-neutral-500">Annulleret – fjernelse ophævet</span>
+                          <span className="px-2 py-1 text-xs text-neutral-500">
+                            {ophaevetAfg[a.id] === "fjernelse"
+                              ? "Annulleret – fjernelse ophævet"
+                              : ophaevetAfg[a.id] === "skjulning"
+                                ? "Annulleret – skjulning ophævet"
+                                : "Annulleret"}
+                          </span>
                         ) : (
                         <ConfirmDialog
                           triggerLabel={
