@@ -4,7 +4,7 @@ import "server-only";
 // bruger med lukket/suspenderet konto - kan se sin sag og klage via mailen.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { logDriftFejl } from "@/lib/drift";
-import { afledningsNoegle } from "@/lib/supabase/noegler";
+import { afledningsNoegle } from "@/lib/supabase/noeglerServer";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,12 +23,12 @@ function noegle(): string {
   const egen = process.env.DSA_LINK_HEMMELIGHED;
   if (!egen && !advaret && process.env.NODE_ENV === "production") {
     advaret = true;
-    console.warn("DSA_LINK_HEMMELIGHED mangler - DSA-links signeres med service-role-nøglen.");
+    console.warn("DSA_LINK_HEMMELIGHED mangler - DSA-links signeres med Supabase-nøglen.");
     void logDriftFejl({
       kilde: "server",
       sti: "/dsa",
       hvor: "DSA-links",
-      fejl: "DSA_LINK_HEMMELIGHED mangler i produktion - links signeres med service-role-nøglen (fallback).",
+      fejl: "DSA_LINK_HEMMELIGHED mangler i produktion - links signeres med Supabase-nøglen (fallback).",
     });
   }
   const k = egen || afledningsNoegle();
@@ -39,7 +39,13 @@ function noegle(): string {
 export type LinkType = "anmeldelse" | "afgoerelse";
 
 export function dsaToken(type: LinkType, id: string): string {
-  return createHmac("sha256", noegle())
+  return tokenMed(noegle(), type, id);
+}
+
+// Overgang: links sendt før DSA_LINK_HEMMELIGHED blev sat, er signeret med
+// afledningsnøglen. De godtages stadig, så gamle links i folks mails virker.
+function tokenMed(k: string, type: LinkType, id: string): string {
+  return createHmac("sha256", k)
     .update(`bidhamr-dsa:${type}:${id.toLowerCase()}`)
     .digest("base64url")
     .slice(0, 32);
@@ -47,9 +53,16 @@ export function dsaToken(type: LinkType, id: string): string {
 
 export function tjekDsaToken(type: LinkType, id: string, token: unknown): boolean {
   if (typeof token !== "string" || token.length !== 32 || !erUuid(id)) return false;
-  const a = Buffer.from(dsaToken(type, id));
   const b = Buffer.from(token);
-  return a.length === b.length && timingSafeEqual(a, b);
+  const noegler = [noegle(), afledningsNoegle()].filter(
+    (k, i, alle): k is string => typeof k === "string" && k.length > 0 && alle.indexOf(k) === i,
+  );
+  let ok = false;
+  for (const k of noegler) {
+    const a = Buffer.from(tokenMed(k, type, id));
+    if (a.length === b.length && timingSafeEqual(a, b)) ok = true;
+  }
+  return ok;
 }
 
 export function anmeldelseSti(id: string, medToken = true): string {

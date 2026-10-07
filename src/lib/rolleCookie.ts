@@ -24,7 +24,7 @@
 // - httpOnly, SameSite=Lax og Secure (undtagen lokalt på http).
 
 import { logDriftFejl } from "@/lib/drift";
-import { afledningsNoegle } from "@/lib/supabase/noegler";
+import { afledningsNoegle } from "@/lib/supabase/noeglerServer";
 
 export const ROLLE_COOKIE = "bh_rolle";
 const LEVETID_SEKUNDER = 5 * 60;
@@ -37,12 +37,12 @@ let advaret = false;
 function advarOmFallback() {
   if (advaret || process.env.NODE_ENV !== "production") return;
   advaret = true;
-  console.warn("ROLLE_COOKIE_HEMMELIGHED mangler - rolle-cookien signeres med service-role-nøglen.");
+  console.warn("ROLLE_COOKIE_HEMMELIGHED mangler - rolle-cookien signeres med Supabase-nøglen.");
   void logDriftFejl({
     kilde: "server",
     sti: "/",
     hvor: "Rolle-cookie",
-    fejl: "ROLLE_COOKIE_HEMMELIGHED mangler i produktion - rolle-cookien signeres med service-role-nøglen (fallback).",
+    fejl: "ROLLE_COOKIE_HEMMELIGHED mangler i produktion - rolle-cookien signeres med Supabase-nøglen (fallback).",
   });
 }
 

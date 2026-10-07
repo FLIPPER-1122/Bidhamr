@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
-import { hemmeligNoegle } from "@/lib/supabase/noegler";
+import { hemmeligNoegle } from "@/lib/supabase/noeglerServer";
 
 // Bruger den hemmelige nøgle (sb_secret_… eller den gamle service_role, se
 // src/lib/supabase/noegler.ts) og omgår derfor RLS. Må KUN importeres i
