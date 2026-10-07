@@ -72,7 +72,7 @@ export default async function HandelDetaljePage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    redirect(`/login?redirect=/mine-handler/${trade_id}`);
+    redirect(`/login?redirect=/mine-handler/${encodeURIComponent(trade_id)}`);
   }
 
   // Vender køberen tilbage fra Stripe, spejles betalingen FØR handlen hentes.

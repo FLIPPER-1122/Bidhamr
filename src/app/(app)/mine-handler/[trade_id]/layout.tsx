@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 // Adgangstjek for en handel. Ligger i et layout og ikke kun i page.tsx:
@@ -21,9 +21,11 @@ export default async function HandelLayout({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
-    redirect(`/login?redirect=/mine-handler/${encodeURIComponent(trade_id)}`);
-  }
+  // Ikke logget ind: layoutet kender ikke understien (fx /kvittering), så
+  // login-redirect overlades til siderne, der hver sender tilbage til deres
+  // egen sti. HVER side under [trade_id] skal derfor selv redirecte, når
+  // brugeren ikke er logget ind (RLS viser alligevel intet for anon).
+  if (!user) return <>{children}</>;
 
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!UUID.test(trade_id)) notFound();
