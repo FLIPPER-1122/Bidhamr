@@ -148,7 +148,7 @@ Formål: brugerne har overblik og styr på deres beskeder.
 - [x] Notifikationer: overbudt, ny auktion fra fulgt sælger, bud på egen auktion, vundet, pakke kommet frem
 - [x] Side med notifikationsindstillinger (mail / app / begge / fra, pr. type)
 - [x] Notifikations-indbakke på siden (klokke i topbaren)
-- [~] Bekræftelse af e-mail ved oprettelse med en 6-cifret kode i mailen (ikke link, ikke SMS) *(bygget på hjemmesiden 7. okt. 2026 – "Confirm email" i Supabase slås først til, når appen håndterer koden (`verifyOtp` type `signup`), og en egen mailserver (SMTP, fx Resend) er sat op i Supabase)*
+- [x] Bekræftelse af e-mail ved oprettelse med en 6-cifret kode i mailen (ikke link, ikke SMS) *(bygget på hjemmesiden 7. okt. 2026 – "Confirm email" i Supabase slås først til, når appen håndterer koden (`verifyOtp` type `signup`), og en egen mailserver (SMTP, fx Resend) er sat op i Supabase)* *(Supabase sat op 7. okt. 2026: Resend-SMTP fra noreply@bidhamr.dk, kode-skabelon, Confirm email til. Oprettelse åbnes ved lancering)*
 - [x] GDPR: brugeren kan slette sin konto og downloade sine data
 - [x] Kontosikkerhed: mail ved login fra ny enhed, krav til stærk adgangskode, e-mail-kode ved oprettelse *(to-trins-login er udgået – fjernet 7. okt. 2026, Filip)*
 - [x] Sælger kan skrive ét offentligt svar på en bedømmelse. BidHamr kan fjerne bedømmelser, der bryder reglerne (fx grove ord)
