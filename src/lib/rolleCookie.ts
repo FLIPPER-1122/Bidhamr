@@ -14,8 +14,10 @@
 // - Bundet til brugerens id OG sessionens id (session_id i JWT'en): et nyt
 //   login, logud eller en anden bruger i samme browser gør den ugyldig.
 // - Gælder højst 5 minutter. Fratages en medarbejder rollen, kan gaten
-//   derfor lukke op for ham i op til 5 minutter mere - men kun for de
-//   offentlige sider; admin og staff-handlinger afvises med det samme.
+//   derfor lukke op for ham i op til 5 minutter mere: han kan se siden og
+//   bruge almindelige brugerhandlinger (fx byde), som kun kræver login.
+//   Admin og staff-handlinger tjekker rollen i databasen og afvises med
+//   det samme.
 // - httpOnly, SameSite=Lax og Secure (undtagen lokalt på http).
 
 export const ROLLE_COOKIE = "bh_rolle";
