@@ -200,7 +200,7 @@ export const ERHVERV_FORMULAR = {
     forLang: "Teksten er for lang. Gør den lidt kortere.",
     forMangeForsoeg: "Du har sendt formularen mange gange på kort tid. Vent lidt, og prøv igen senere.",
     generisk:
-      "Formularen blev ikke sendt. Prøv igen om lidt. Virker det stadig ikke, så skriv til support@bidhamr.dk.",
+      "Formularen blev ikke sendt. Prøv igen om lidt. Virker det stadig ikke, så skriv til erhverv@bidhamr.dk.",
   },
 
   kvittering: {
@@ -229,7 +229,7 @@ export const ERHVERV_VELKOMSTMAIL = {
   // Ret teksten, hvis indstillingen ændres.
   udloeber: "Linket virker i 1 time. Er det udløbet, så skriv til os, så sender vi et nyt.",
   separatKonto: "Firmakontoen er en ny konto. Har du også en privat konto, er den ikke ændret.",
-  hjaelp: "Har du spørgsmål? Skriv til os på support@bidhamr.dk.",
+  hjaelp: "Har du spørgsmål? Skriv til os på erhverv@bidhamr.dk.",
   fodnote: (email: string) =>
     `Du får denne mail, fordi BidHamr har oprettet en firmakonto til ${email}. Har du ikke talt med os, kan du se bort fra mailen.`,
 } as const;
@@ -365,7 +365,7 @@ export const FIRMA_OVERSIGT = {
   kontakt: {
     titel: "Kontakt BidHamr",
     tekst: "Har du spørgsmål, eller har du brug for hjælp? Skriv til os, så svarer vi hurtigst muligt.",
-    email: "support@bidhamr.dk",
+    email: "erhverv@bidhamr.dk",
     knap: "Skriv til os",
   },
 
