@@ -8,6 +8,20 @@ import { hentAntalAabneSager } from "@/app/actions/adminSager";
 import { hentAntalKontoLukninger } from "@/app/actions/adminKontoLukning";
 import { hentAntalTryghed } from "@/app/actions/adminTryghed";
 import { hentAntalDsa } from "@/app/actions/adminDsa";
+import { hentAntalNyeErhvervHenvendelser } from "@/app/actions/adminErhverv";
+
+const INGEN_TAELLERE = {
+  ubetalte: 0,
+  betalinger: 0,
+  chats: 0,
+  sager: 0,
+  kontolukninger: 0,
+  kontakt: 0,
+  rapporter: 0,
+  bedoemmelser: 0,
+  dsa: 0,
+  erhverv: 0,
+};
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Bruger og rolle hentes samtidig (højst én gang pr. forespørgsel, delt via
@@ -28,7 +42,26 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         ])
       : null,
   );
+  // Erhverv-tælleren (nye henvendelser) kun for chef og saelger.
+  const erhvervLoefte = hentMinRolle().then((r) =>
+    r === "chef" || r === "saelger" ? hentAntalNyeErhvervHenvendelser() : null,
+  );
   const [user, rolle] = await Promise.all([hentBruger(), hentMinRolle()]);
+
+  // Rollen 'saelger' (erhvervssælger) kommer ind, men ser KUN Erhverv.
+  // Alle andre admin-sider og -actions afviser rollen selv (assertRole/
+  // kraevSideRolle kender den ikke), og proxyen sender saelger videre til
+  // /admin/erhverv fra alle andre admin-stier (src/lib/supabase/middleware.ts).
+  if (user && rolle === "saelger") {
+    const erhverv = await erhvervLoefte;
+    const antalErhverv = erhverv && "antal" in erhverv ? erhverv.antal : 0;
+    return (
+      <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-neutral-50">
+        <AdminSidebar rolle="saelger" taellere={{ ...INGEN_TAELLERE, erhverv: antalErhverv }} />
+        <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">{children}</main>
+      </div>
+    );
+  }
 
   if (!user || !erStaff(rolle)) {
     redirect("/");
@@ -47,12 +80,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const antalRapporter = "rapporter" in tryghed ? tryghed.rapporter : 0;
   const antalBedoemmelser = "bedoemmelser" in tryghed ? tryghed.bedoemmelser : 0;
   const antalDsa = "antal" in dsa ? dsa.antal : 0;
+  const erhverv = await erhvervLoefte;
+  const antalErhverv = erhverv && "antal" in erhverv ? erhverv.antal : 0;
 
   // Højden trækker cookie-bannerets højde fra (--samtykke-hoejde), så
   // banneret aldrig dækker knapper nederst i admin - heller ikke på mobil.
   return (
     <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-neutral-50">
-      <AdminSidebar rolle={rolle} taellere={{ ubetalte: antalUbetalte, betalinger: antalBetalinger, chats: antalChats, sager: antalSager, kontolukninger: antalLukninger, kontakt: antalKontakt, rapporter: antalRapporter, bedoemmelser: antalBedoemmelser, dsa: antalDsa }} />
+      <AdminSidebar rolle={rolle} taellere={{ ubetalte: antalUbetalte, betalinger: antalBetalinger, chats: antalChats, sager: antalSager, kontolukninger: antalLukninger, kontakt: antalKontakt, rapporter: antalRapporter, bedoemmelser: antalBedoemmelser, dsa: antalDsa, erhverv: antalErhverv }} />
       <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">
         {children}
       </main>

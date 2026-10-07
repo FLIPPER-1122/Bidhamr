@@ -21,6 +21,8 @@ interface AuctionRowMedBudCount {
   // Vedligeholdes af en trigger paa bids (bud kan ikke taelles direkte, da
   // de ikke er offentlige).
   antal_bud?: number | null;
+  // auctions.erhverv: mærket "Erhvervssælger" på kortet.
+  erhverv?: boolean | null;
 }
 
 export function mapAuctionTilKort(
@@ -36,5 +38,6 @@ export function mapAuctionTilKort(
     procentForløbet: beregnProcentForløbet(auktion.oprettet, auktion.slutter_kl),
     slutterSnart: erUnderEnTime(auktion.slutter_kl),
     billede: auktion.billeder?.[0] ?? null,
+    erhverv: auktion.erhverv === true,
   };
 }

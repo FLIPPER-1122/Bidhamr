@@ -19,6 +19,7 @@ import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand } from "@/lib/stand";
 import { uploadAuktionsbilleder } from "@/lib/auktionUpload";
+import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
 import {
   Afkrydsning,
   BilledVaelger,
@@ -44,9 +45,12 @@ export default function RedigerAuktionForm({
   auktionId,
   brugerId,
   start,
+  erFirma = false,
 }: {
   auktionId: string;
   brugerId: string;
+  // Firmakonto: GPSR-felter ved "Ny med mærke" (private ser dem ikke).
+  erFirma?: boolean;
   start: {
     titel: string;
     beskrivelse: string;
@@ -55,6 +59,8 @@ export default function RedigerAuktionForm({
     startpris: number;
     forsendelseMulig: boolean;
     stand: string | null;
+    producent?: string | null;
+    sikkerhedsoplysninger?: string | null;
   };
 }) {
   const router = useRouter();
@@ -68,6 +74,11 @@ export default function RedigerAuktionForm({
   const [startprisTekst, setStartprisTekst] = useState(String(start.startpris));
   const [forsendelseMulig, setForsendelseMulig] = useState(start.forsendelseMulig);
   const [stand, setStand] = useState<string>(erStand(start.stand) ? start.stand : "");
+  const [producent, setProducent] = useState(start.producent ?? "");
+  const [sikkerhed, setSikkerhed] = useState(start.sikkerhedsoplysninger ?? "");
+  const [visGpsrFejl, setVisGpsrFejl] = useState(false);
+  const kraeverGpsr = erFirma && stand === "ny_med_maerke";
+  const gpsr = kraeverGpsr ? gpsrFejl(producent, sikkerhed) : null;
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +104,11 @@ export default function RedigerAuktionForm({
     if (!kategori) return setError("Vælg en kategori.");
     // Gamle auktioner uden stand må gemmes uden (databasen kræver den kun ved oprettelse).
     if (start.stand && !erStand(stand)) return setError("Vælg varens stand.");
+    if (gpsr && (gpsr.producent || gpsr.sikkerhed)) {
+      setVisGpsrFejl(true);
+      document.getElementById(gpsr.producent ? "producent" : "sikkerhedsoplysninger")?.focus();
+      return;
+    }
     // En gammel auktion med startpris 0 må beholde den uændret (databasen
     // tjekker kun mindst 1 kr, når startprisen ændres).
     const prisFejl = startpris === start.startpris && startpris === 0 ? null : valideStartpris(startpris);
@@ -122,6 +138,9 @@ export default function RedigerAuktionForm({
         startpris,
         forsendelseMulig,
         stand: erStand(stand) ? stand : null,
+        // Kun firmakonti sender felterne (null = uændret).
+        producent: erFirma ? producent : null,
+        sikkerhedsoplysninger: erFirma ? sikkerhed : null,
       });
 
       if ("fejl" in svar) {
@@ -223,6 +242,15 @@ export default function RedigerAuktionForm({
           </select>
         </div>
         <StandVaelger vaerdi={stand} onChange={setStand} fejlId="stand-fejl" />
+        {kraeverGpsr && (
+          <GpsrFelter
+            producent={producent}
+            sikkerhed={sikkerhed}
+            onProducent={setProducent}
+            onSikkerhed={setSikkerhed}
+            fejl={visGpsrFejl ? gpsr : null}
+          />
+        )}
       </Sektion>
 
       <Sektion nr={4} titel="Pris og levering" id="sektion-pris">

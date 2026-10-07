@@ -63,7 +63,10 @@ export default async function RedigerAuktionPage({
                 startpris: Number(auktion.startpris),
                 forsendelseMulig: Boolean(auktion.forsendelse_mulig),
                 stand: (auktion.stand as string | null | undefined) ?? null,
+                producent: (auktion.producent as string | null | undefined) ?? null,
+                sikkerhedsoplysninger: (auktion.sikkerhedsoplysninger as string | null | undefined) ?? null,
               }}
+              erFirma={auktion.erhverv === true}
             />
           )}
         </div>

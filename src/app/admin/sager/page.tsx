@@ -3,6 +3,7 @@ import { hentAntalVentendeAnker, hentSager, type SagListeRaekke } from "@/app/ac
 import { SAG_TYPE_NAVN, adminSagSti } from "@/lib/sager";
 import { BeskyttelseBadge, SagStatusBadge, sagTid } from "@/components/sager/visning";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import { kraevSideRolle } from "@/lib/adminAuth";
 
 // Sager oprettet af køberen. Åbne sager (venter på afgørelse) står øverst.
 // Handler uden sag (hænger, manuel markering, fællesbesked) ligger under
@@ -32,6 +33,7 @@ export default async function AdminSager({
 }: {
   searchParams: Promise<{ vis?: string; side?: string }>;
 }) {
+  await kraevSideRolle("medarbejder");
   const { vis, side: sideParam } = await searchParams;
   const fane: Fane = FANER.some((f) => f.key === vis) ? (vis as Fane) : "aabne";
   const side = Math.max(0, Math.min(1000, Number.parseInt(sideParam ?? "0", 10) || 0));

@@ -29,7 +29,7 @@ const PRAECIST_ANTAL_OP_TIL = 1000;
 // Kun de kolonner, kortet bruger. Typet som string: Supabase-typernes
 // select-parser kan ikke læse "ø" i nuværende_bud.
 const KORT_KOLONNER: string =
-  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud";
+  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv";
 const AFSTAND_KOLONNER: string = "id, lat, lng";
 
 type KortRaekke = Parameters<typeof mapAuctionTilKort>[0];

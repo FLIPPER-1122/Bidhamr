@@ -25,6 +25,7 @@ type FavoritRow = {
     skjult: boolean;
     arkiveret_kl: string | null;
     antal_bud: number | null;
+    erhverv: boolean | null;
   } | null;
 };
 
@@ -43,7 +44,7 @@ export default async function FavoritterSide() {
   const { data } = await supabase
     .from("favorites")
     .select(
-      "auction_id, created_at, auctions(id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, skjult, arkiveret_kl, antal_bud)",
+      "auction_id, created_at, auctions(id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, skjult, arkiveret_kl, antal_bud, erhverv)",
     )
     .order("created_at", { ascending: false })
     .overrideTypes<FavoritRow[], { merge: false }>();

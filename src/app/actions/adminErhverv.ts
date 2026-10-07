@@ -333,8 +333,10 @@ function tjekFirmaFelter(input: Partial<FirmaFelter>): FirmaFelter {
 // Engangslink i velkomstmailen. /auth/callback indløser det IKKE ved
 // visning (mail-scannere åbner links), men sender til mellemsiden /bekraeft;
 // først knappen dér logger firmaet ind og sender det til "Vælg adgangskode".
+// ?velkommen=1 får /reset-password til at vise "Vælg din adgangskode" i
+// stedet for "Ny adgangskode".
 function velkomstLink(hashedToken: string, type: "invite" | "recovery") {
-  const p = new URLSearchParams({ token_hash: hashedToken, type, next: "/reset-password" });
+  const p = new URLSearchParams({ token_hash: hashedToken, type, next: "/reset-password?velkommen=1" });
   return sideUrl(`/auth/callback?${p.toString()}`);
 }
 
@@ -451,6 +453,7 @@ export async function opretFirmakonto(
 
     const mail = firmaVelkomstMail({
       firmanavn: felter.firmanavn,
+      email: loginEmail,
       linkUrl: velkomstLink(link.properties.hashed_token, "invite"),
     });
     const sendt = await sendHandelMailDetaljer(loginEmail, mail);
@@ -502,6 +505,7 @@ export async function gensendFirmaVelkomst(firmaId: string) {
       firma.users.email,
       firmaVelkomstMail({
         firmanavn: firma.firmanavn,
+        email: firma.users.email,
         linkUrl: velkomstLink(link.properties.hashed_token, "recovery"),
         gensendt: true,
       }),

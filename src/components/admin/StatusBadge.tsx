@@ -48,6 +48,7 @@ const ROLLE_STYLES: Record<string, { klasse: string; tekst: string }> = {
   chef: { klasse: "bg-amber-100 text-amber-800", tekst: "Chef" },
   admin: { klasse: "bg-purple-100 text-purple-700", tekst: "Admin" },
   medarbejder: { klasse: "bg-blue-100 text-blue-700", tekst: "Medarbejder" },
+  saelger: { klasse: "bg-emerald-100 text-emerald-800", tekst: "Sælger (erhverv)" },
   bruger: { klasse: "bg-neutral-100 text-neutral-600", tekst: "Bruger" },
 };
 

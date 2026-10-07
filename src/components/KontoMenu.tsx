@@ -8,11 +8,14 @@ import Ikon from "@/components/Ikon";
 import { badgeTekst } from "@/lib/notifikationer/visning";
 import { beskederTekst, useAntalUlaesteBeskeder } from "@/components/topbar/UlaesteBeskeder";
 import { useLogUd } from "@/components/topbar/useLogUd";
+import { ERHVERV_MENU } from "@/lib/tekster/erhverv";
 
 const punkt =
   "flex min-h-11 w-full items-center rounded-lg px-3 text-left text-[15px] font-medium text-tekst hover:bg-groen-lys hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen";
 
-export default function KontoMenu({ erAdmin }: { erAdmin: boolean }) {
+// erFirma: en firmakonto (users.konto_type = 'erhverv') ser kun "Firma
+// oversigt" og "Log ud" - alt andet nås fra Firma oversigt.
+export default function KontoMenu({ erAdmin, erFirma = false }: { erAdmin: boolean; erFirma?: boolean }) {
   const antalBeskeder = useAntalUlaesteBeskeder();
   const [aaben, setAaben] = useState(false);
   const rodRef = useRef<HTMLDivElement>(null);
@@ -69,6 +72,14 @@ export default function KontoMenu({ erAdmin }: { erAdmin: boolean }) {
         >
           <nav aria-label="Konto">
             <ul className="flex flex-col">
+              {erFirma ? (
+                <li>
+                  <Link href="/firma" onClick={luk} className={`${punkt} min-h-12 text-[17px] font-semibold`}>
+                    {ERHVERV_MENU.profilmenuFirmaOversigt}
+                  </Link>
+                </li>
+              ) : (
+              <>
               <li><Link href="/profil/mig" onClick={luk} className={punkt}>Min profil</Link></li>
               <li><Link href="/mine-handler" onClick={luk} className={punkt}>Mine handler</Link></li>
               <li>
@@ -99,6 +110,8 @@ export default function KontoMenu({ erAdmin }: { erAdmin: boolean }) {
               {erAdmin && (
                 <li><Link href="/admin" onClick={luk} className={`${punkt} text-groen`}>Admin</Link></li>
               )}
+              </>
+              )}
               <li className="mt-1 border-t border-kant pt-1">
                 <button
                   type="button"
@@ -108,7 +121,7 @@ export default function KontoMenu({ erAdmin }: { erAdmin: boolean }) {
                   className={`${punkt} gap-2 disabled:cursor-not-allowed disabled:text-tekst-svag`}
                 >
                   {loggerUd && <span className="btn-spinner" aria-hidden="true" />}
-                  Log ud
+                  {ERHVERV_MENU.profilmenuLogUd}
                 </button>
                 {logUdFejl && (
                   <p role="alert" className="px-3 pb-2 text-[13px] font-medium text-fejl-tekst">

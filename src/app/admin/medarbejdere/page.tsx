@@ -9,6 +9,7 @@ import AdminFilters from "@/components/admin/AdminFilters";
 import { RolleBadge } from "@/components/admin/StatusBadge";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import { ADMIN_ERHVERV_EKSTRA } from "@/lib/tekster/erhverv";
 
 export default async function AdminMedarbejdere({
   searchParams,
@@ -23,7 +24,7 @@ export default async function AdminMedarbejdere({
   const { q } = await searchParams;
   const supabase = createAdminClient();
 
-  // Staff-listen (admins + medarbejdere) vises altid; søgning finder alle
+  // Staff-listen (admins, medarbejdere og sælgere) vises altid; søgning finder alle
   // brugere, så en almindelig bruger kan forfremmes.
   const { data: staff } = await supabase
     .from("users")
@@ -51,6 +52,8 @@ export default async function AdminMedarbejdere({
     const muligheder: { rolle: string; label: string; klasse: string }[] = [
       { rolle: "medarbejder", label: "Gør til medarbejder", klasse: "bg-blue-100 text-blue-700 hover:bg-blue-200" },
       { rolle: "admin", label: "Gør til admin", klasse: "bg-purple-100 text-purple-700 hover:bg-purple-200" },
+      // Sælger (erhverv): kun Admin → Erhverv (henvendelser og firmaer).
+      { rolle: "saelger", label: ADMIN_ERHVERV_EKSTRA.goerTilSaelger, klasse: "bg-emerald-100 text-emerald-800 hover:bg-emerald-200" },
       { rolle: "bruger", label: "Fjern rolle", klasse: "bg-neutral-100 text-neutral-600 hover:bg-neutral-200" },
     ].filter((m) => m.rolle !== user.rolle);
 
