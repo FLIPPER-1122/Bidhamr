@@ -35,6 +35,9 @@ export const GRAENSER = {
   // forkerte pr. e-mail+IP pr. 15 min.
   signup_kode_email_ip: { maks: 5, vindueSek: 15 * 60 },
   signup_kode_ip: { maks: 30, vindueSek: 15 * 60 },
+  // Pr. e-mail alene (uden IP), så mange IP'er ikke kan gætte løs på samme
+  // e-mails kode. Nulstilles ikke ved succes.
+  signup_kode_email: { maks: 15, vindueSek: 60 * 60 },
   // Tjek af nuværende adgangskode (skift adgangskode, slet konto) og
   // ny adgangskode efter nulstilling.
   adgangskode_bruger: { maks: 6, vindueSek: 15 * 60 },

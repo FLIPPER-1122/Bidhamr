@@ -242,7 +242,13 @@ export async function verificerSignupKode(
   if (!email) return { fejl: "Indtast den e-mail, du oprettede kontoen med.", kode: "mangler_email" };
 
   const ip = await klientIp();
-  if (!(await tjekGraenser([["signup_kode_ip", ip], ["signup_kode_email_ip", `${email}|${ip}`]]))) {
+  if (
+    !(await tjekGraenser([
+      ["signup_kode_ip", ip],
+      ["signup_kode_email_ip", `${email}|${ip}`],
+      ["signup_kode_email", email],
+    ]))
+  ) {
     return { fejl: FOR_MANGE_FORSOEG };
   }
 
