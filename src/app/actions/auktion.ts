@@ -27,6 +27,7 @@ import {
 } from "@/lib/auktionRegler";
 import { erStand } from "@/lib/stand";
 import { forbudtBesked } from "@/lib/forbudteVarer";
+import { ERHVERV_FEJL } from "@/lib/erhverv/regler";
 
 type Fejl = { fejl: string };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -46,6 +47,7 @@ const REDIGER_FEJL: Record<string, string> = {
   ugyldig_startpris: "Startprisen skal være et helt antal kroner.",
   startpris_for_lav: STARTPRIS_FOR_LAV,
   ugyldig_stand: "Vælg varens stand.",
+  erhverv_gpsr: ERHVERV_FEJL.gpsr,
 };
 
 export type RedigerAuktionInput = {
@@ -301,6 +303,8 @@ const SAET_OP_IGEN_FEJL: Record<string, string> = {
   konto_lukket: "Din konto er lukket.",
   suspenderet: "Din konto er suspenderet, og du kan ikke sætte varer op.",
   mangler_udbetalingskonto: "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.",
+  erhverv_intet_abonnement: ERHVERV_FEJL.intetAbonnement,
+  erhverv_kvote: ERHVERV_FEJL.kvote,
 };
 
 export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; auktionId: string } | Fejl> {

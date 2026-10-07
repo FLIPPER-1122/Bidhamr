@@ -217,7 +217,7 @@ Formål: firmaer med CVR kan sælge på BidHamr med abonnement – og det skal v
 - [ ] Nye varer for erhverv: stand "Ny" + GPSR-felter (producent, sikkerhedsoplysninger)
 - [ ] Ingen BidHamr Beskyttelse ved køb fra erhverv
 - [ ] Fortrydelsesret 14 dage: "Fortryd køb", returlabel, refusion via Stripe ved modtagelse, udbetaling til erhverv først efter fristen *(venter på Stripe/Niels og fragt)*
-- [ ] Abonnementsbetaling, opgradering med betaling af forskellen og fakturaer via Stripe *(venter på Stripe/Niels og valg af regnskabsprogram)*
+- [ ] Abonnementsbetaling, opgradering med betaling af forskellen og fakturaer via Stripe *(venter på Stripe/Niels og valg af regnskabsprogram)*. Databasen er klar (`firma_pakkeskift_betalt`, `firma_abonnement_betalt`, `firma_abonnement_mislykket`, `firma_abonnement_frist_koer`, `firmaer.stripe_customer_id/stripe_subscription_id`); TODO-listen til Stripe-koden står i `src/lib/erhverv/betaling.ts`. Husk også cron for `firma_abonnement_frist_koer` og `stripe_price_id` på pakkerne
 - [ ] Reklamation: køber kan se virksomhedens kontaktoplysninger og klage; gentagne klager → advarsel/lukning
 - [ ] Brugerbetingelser og FAQ for erhverv (indhold + advokat)
 - [ ] Appen: samme erhvervsfunktioner (Filip)

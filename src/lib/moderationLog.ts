@@ -60,6 +60,12 @@ export const HANDLING_NAVNE: Record<string, string> = {
   dsa_klage_medhold: "Gav medhold i klage (DSA)",
   dsa_klage_fastholdt: "Fastholdt afgørelse efter klage (DSA)",
   konto_genaabnet: "Genåbnede lukket konto efter klage",
+  // 20261010030000_erhverv.sql
+  erhverv_henvendelse_opdateret: "Behandlede erhvervshenvendelse",
+  erhverv_pakke_gemt: "Gemte erhvervspakke",
+  firma_oprettet: "Oprettede firmakonto",
+  firma_opdateret: "Ændrede firmakonto",
+  firma_velkomst_gensendt: "Sendte velkomstmail til firma igen",
 };
 
 export function handlingNavn(handling: string): string {
@@ -78,6 +84,9 @@ const MAAL_NAVNE: Record<string, string> = {
   samtale: "Chat",
   sag: "Sag",
   dsa: "Anmeldelse/klage (DSA)",
+  firma: "Firmakonto",
+  erhverv_henvendelse: "Erhvervshenvendelse",
+  erhverv_pakke: "Erhvervspakke",
 };
 
 // Link til det, handlingen handlede om. null, hvis der ikke findes en side.

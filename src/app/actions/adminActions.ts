@@ -263,7 +263,8 @@ async function setRolleImpl(formData: FormData): Promise<void> {
   const nyRolle = formData.get("rolle") as string;
   const { admin, userId: staffId } = await assertRole("chef");
 
-  if (!["bruger", "medarbejder", "admin"].includes(nyRolle)) {
+  // 'saelger' = erhvervssælger: kun Erhverv i admin (src/lib/adminAuth.ts).
+  if (!["bruger", "medarbejder", "admin", "saelger"].includes(nyRolle)) {
     throw new BrugerFejl("Ugyldig rolle.");
   }
   if (userId === staffId) throw new BrugerFejl("Du kan ikke ændre din egen rolle.");
@@ -271,12 +272,16 @@ async function setRolleImpl(formData: FormData): Promise<void> {
 
   const { data: target } = await admin
     .from("users")
-    .select("rolle")
+    .select("rolle, konto_type")
     .eq("id", userId)
     .single();
   if (!target) throw new BrugerFejl("Brugeren findes ikke.");
   if (target.rolle === "chef") {
     throw new BrugerFejl("Chefer kan ikke ændres herfra.");
+  }
+  // Databasen afviser det også (users_erhverv_ingen_staffrolle).
+  if (target.konto_type === "erhverv" && nyRolle !== "bruger") {
+    throw new BrugerFejl("En firmakonto kan ikke få en medarbejderrolle.");
   }
 
   const { error } = await admin

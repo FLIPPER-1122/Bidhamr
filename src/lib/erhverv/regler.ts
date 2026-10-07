@@ -1,0 +1,192 @@
+// Erhvervskonti - fælles konstanter, typer og validering (bruges både af
+// server actions og af sider/komponenter, derfor ikke "server-only").
+//
+// Regler: ROADMAP-BESLUTNINGER.md, "Erhvervskonti (Filip, 7. oktober 2026)".
+// Database: supabase/migrations/20261010030000_erhverv.sql.
+
+export const ERHVERV_EMAIL = "erhverv@bidhamr.dk";
+
+export const HENVENDELSE_STATUSSER = ["ny", "i_gang", "godkendt", "afvist"] as const;
+export type HenvendelseStatus = (typeof HENVENDELSE_STATUSSER)[number];
+
+export const HENVENDELSE_STATUS_NAVN: Record<HenvendelseStatus, string> = {
+  ny: "Ny",
+  i_gang: "I gang",
+  godkendt: "Godkendt",
+  afvist: "Afvist",
+};
+
+export function erHenvendelseStatus(s: unknown): s is HenvendelseStatus {
+  return typeof s === "string" && (HENVENDELSE_STATUSSER as readonly string[]).includes(s);
+}
+
+export const ABONNEMENT_STATUSSER = ["aktiv", "pauset", "opsagt"] as const;
+export type AbonnementStatus = (typeof ABONNEMENT_STATUSSER)[number];
+
+export const ABONNEMENT_STATUS_NAVN: Record<AbonnementStatus, string> = {
+  aktiv: "Aktiv",
+  pauset: "Sat på pause",
+  opsagt: "Opsagt",
+};
+
+export function erAbonnementStatus(s: unknown): s is AbonnementStatus {
+  return typeof s === "string" && (ABONNEMENT_STATUSSER as readonly string[]).includes(s);
+}
+
+// Feltgrænser - samme som CHECK-constraints i databasen.
+export const ERHVERV_GRAENSER = {
+  firmanavn: 200,
+  kontaktperson: 200,
+  telefonMin: 6,
+  telefonMaks: 30,
+  email: 254,
+  adresse: 200,
+  by: 100,
+  hvadSaelgerI: 2000,
+  besked: 4000,
+  noter: 10000,
+  antalVarerMaks: 10_000_000,
+  pakkeNavn: 60,
+  pakkeBeskrivelse: 1000,
+  pakkePrisMaks: 1_000_000,
+  auktionerPrUgeMaks: 1000,
+  producent: 500,
+  sikkerhedsoplysninger: 2000,
+} as const;
+
+export const CVR = /^[0-9]{8}$/;
+export const POSTNUMMER = /^[0-9]{4}$/;
+export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+// "12 34 56 78" / "DK12345678" -> "12345678". null, hvis det ikke er 8 cifre.
+export function renCvr(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const s = input.replace(/\s+/g, "").replace(/^DK/i, "");
+  return CVR.test(s) ? s : null;
+}
+
+// Telefon: cifre, mellemrum, + og bindestreg.
+export function renTelefon(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const s = input.trim().replace(/\s+/g, " ");
+  if (!/^\+?[0-9][0-9 \-]*$/.test(s)) return null;
+  const cifre = s.replace(/[^0-9]/g, "").length;
+  if (cifre < 8 || s.length > ERHVERV_GRAENSER.telefonMaks) return null;
+  return s;
+}
+
+export type ErhvervPakke = {
+  id: string;
+  navn: string;
+  beskrivelse: string | null;
+  // Hele kroner pr. måned. null = Filip har ikke sat prisen endnu.
+  maanedspris: number | null;
+  auktioner_pr_uge: number;
+  aktiv: boolean;
+};
+
+export type Ugekvote = {
+  brugt: number;
+  max: number;
+  naeste_ledige: string | null;
+  uge_start: string;
+  naeste_uge: string;
+  aktivt_abonnement: boolean;
+};
+
+// Svar fra firma_oversigt() (se migrationen for alle felter).
+export type FirmaOversigt = {
+  firma: {
+    id: string;
+    firmanavn: string;
+    cvr: string;
+    adresse: string;
+    postnummer: string;
+    by: string;
+    telefon: string;
+    kontakt_email: string;
+    kontaktperson: string;
+    abonnement_status: AbonnementStatus;
+    abonnement_start: string;
+    betalt_til: string | null;
+    betaling_mislykket_kl: string | null;
+    pauset_aarsag: "betaling" | "bidhamr" | null;
+    naeste_periode: string;
+  };
+  pakke: ErhvervPakke | null;
+  naeste_pakke: (ErhvervPakke & { fra: string }) | null;
+  afventende_opgradering: (ErhvervPakke & { skift_id: string; anmodet_kl: string }) | null;
+  pakker: ErhvervPakke[];
+  ugekvote: Ugekvote | null;
+  auktioner: { aktive: number; i_alt: number; visninger: number; visninger_aktive: number; bud: number };
+  salg: {
+    solgte_i_alt: number;
+    solgte_denne_maaned: number;
+    omsaetning_i_alt: number;
+    omsaetning_denne_maaned: number;
+    afsluttede_i_alt: number;
+    omsaetning_afsluttede_i_alt: number;
+  };
+  udbetalinger: { udbetalt_i_alt_oere: number; udbetalt_denne_maaned_oere: number; paa_vej_oere: number };
+  venter_paa_dig: {
+    trade_id: string;
+    auktion_id: string;
+    titel: string | null;
+    beloeb: number;
+    afhentning: boolean;
+    status: string;
+    oprettet: string;
+  }[];
+  ubesvarede_spoergsmaal: { id: string; auktion_id: string; titel: string; spoergsmaal: string; stillet_kl: string }[];
+  regninger: {
+    id: string;
+    nummer: string | null;
+    type: "abonnement" | "opgradering" | "andet";
+    periode_fra: string | null;
+    periode_til: string | null;
+    beloeb_oere: number;
+    status: "afventer" | "betalt" | "mislykket" | "krediteret";
+    pdf_url: string | null;
+    betalt_kl: string | null;
+    oprettet: string;
+  }[];
+  kontakt_bidhamr: string;
+};
+
+// Offentlige firmaoplysninger (firma_offentlig) til mærket "Erhvervssælger"
+// og firmaprofilen.
+export type FirmaOffentlig = {
+  bruger_id: string;
+  firmanavn: string;
+  cvr: string;
+  adresse: string;
+  postnummer: string;
+  by: string;
+  telefon: string;
+  kontakt_email: string;
+  aktiv: boolean;
+  siden: string;
+};
+
+// Databasens fejl med stabilt præfiks (også fra appen). Teksten bygges her,
+// så databasens fejltekst aldrig sendes ordret til brugeren.
+export const ERHVERV_FEJL = {
+  kanIkkeByde: "Firmakonti kan ikke byde. Vil du købe, så brug en privat konto.",
+  intetAbonnement: `Firmaet har ikke et aktivt abonnement. Kontakt BidHamr på ${ERHVERV_EMAIL}.`,
+  gpsr: "Når varen er ny, skal du udfylde producent (navn og adresse) og sikkerhedsoplysninger.",
+  kvote: "Du har brugt ugens auktioner. Du kan oprette den næste mandag.",
+} as const;
+
+export function erhvervFejlTekst(besked: string | null | undefined, kode?: string | null): string | null {
+  const b = besked ?? "";
+  if (kode === "BHE01" || b.includes("erhverv_kan_ikke_byde")) return ERHVERV_FEJL.kanIkkeByde;
+  if (kode === "BHE02" || b.includes("erhverv_intet_abonnement")) return ERHVERV_FEJL.intetAbonnement;
+  if (kode === "BHE04" || b.includes("erhverv_gpsr")) return ERHVERV_FEJL.gpsr;
+  if (kode === "BHE03" || b.includes("erhverv_kvote")) {
+    const m = b.match(/oprettet (\d+) af (\d+) auktioner.*mandag den (\d{2}\.\d{2}\.\d{4})/);
+    return m
+      ? `Du har oprettet ${m[1]} af ${m[2]} auktioner i denne uge. Du kan oprette den næste mandag den ${m[3]}.`
+      : ERHVERV_FEJL.kvote;
+  }
+  return null;
+}

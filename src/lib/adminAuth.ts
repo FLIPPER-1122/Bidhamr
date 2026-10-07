@@ -68,6 +68,57 @@ export async function assertRole(min: StaffRole): Promise<StaffAdgang> {
   return res;
 }
 
+// --- Erhverv (chef + sælger) -------------------------------------------------
+// Rollen 'saelger' står UDEN FOR hierarkiet medarbejder < admin < chef:
+// getStaffRole/assertRole/kraevSideRolle kender den ikke og giver den derfor
+// ingen adgang til resten af admin. Erhverv i admin kræver 'chef' eller
+// 'saelger'; pakker og priser kun 'chef'. Databasen tjekker det samme igen
+// (erhverv_har_adgang i 20261010030000_erhverv.sql).
+
+export type ErhvervRolle = "chef" | "saelger";
+
+function somErhvervRolle(rolle: unknown): ErhvervRolle | null {
+  return rolle === "chef" || rolle === "saelger" ? rolle : null;
+}
+
+export async function getErhvervRolle(): Promise<ErhvervRolle | null> {
+  const [user, minRolle] = await Promise.all([hentBruger(), hentMinRolle()]);
+  if (!user) return null;
+  return somErhvervRolle(minRolle);
+}
+
+type ErhvervAdgang = {
+  userId: string;
+  rolle: ErhvervRolle;
+  admin: ReturnType<typeof createAdminClient>;
+};
+
+async function hentErhvervAdgang(
+  kunChef: boolean,
+): Promise<ErhvervAdgang | "ikke_logget_ind" | "ingen_adgang"> {
+  const [user, minRolle] = await Promise.all([hentBruger(), hentMinRolle()]);
+  if (!user) return "ikke_logget_ind";
+  const rolle = somErhvervRolle(minRolle);
+  if (!rolle || (kunChef && rolle !== "chef")) return "ingen_adgang";
+  return { userId: user.id, rolle, admin: createAdminClient() };
+}
+
+// Til server actions under Erhverv. kunChef: pakker og priser.
+export async function assertErhverv(kunChef = false): Promise<ErhvervAdgang> {
+  const res = await hentErhvervAdgang(kunChef);
+  if (res === "ikke_logget_ind") throw new Error("Ikke logget ind");
+  if (res === "ingen_adgang") throw new Error("Ingen adgang");
+  return res;
+}
+
+// Til admin-sider under Erhverv (som kraevSideRolle).
+export async function kraevErhvervSide(kunChef = false): Promise<ErhvervAdgang> {
+  const res = await hentErhvervAdgang(kunChef);
+  if (res === "ikke_logget_ind") redirect("/");
+  if (res === "ingen_adgang") notFound();
+  return res;
+}
+
 // Til admin-SIDER (server components). Samme tjek som assertRole, men viser en
 // pæn afvisning i stedet for fejlsiden: ikke logget ind sendes til forsiden,
 // manglende rolle giver "Siden findes ikke" (admin/not-found.tsx). Begge er

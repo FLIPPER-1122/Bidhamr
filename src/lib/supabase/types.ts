@@ -5,7 +5,10 @@ export type TransactionStatus =
   | "frigivet"
   | "refunderet"
   | "annulleret";
-export type UserRolle = "bruger" | "medarbejder" | "admin" | "chef";
+// 'saelger' = BidHamrs erhvervssælger: kun Erhverv i admin (src/lib/adminAuth.ts).
+export type UserRolle = "bruger" | "medarbejder" | "admin" | "chef" | "saelger";
+// Sættes kun af BidHamr (erhverv_firma_opret).
+export type KontoType = "privat" | "erhverv";
 
 export interface User {
   id: string;
@@ -47,6 +50,11 @@ export interface Auction {
   oprettet: string;
   kategori: string | null;
   postnummer: string | null;
+  // Erhverv (20261010030000_erhverv.sql): sat af databasen, når sælgeren er en
+  // firmakonto. GPSR-felterne er altid null for private.
+  erhverv?: boolean;
+  producent?: string | null;
+  sikkerhedsoplysninger?: string | null;
 }
 
 export interface Bid {
