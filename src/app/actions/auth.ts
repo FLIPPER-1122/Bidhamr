@@ -28,7 +28,8 @@ import { VILKAAR_VERSION } from "@/lib/vilkaar";
 // Auths egne rate limits og adgangskodekrav (dashboard -> Auth) er det
 // egentlige vaern; dette er et ekstra lag for hjemmesiden.
 
-type Resultat = { ok: true } | { fejl: string; kode?: "email_ikke_bekraeftet" };
+// firma: true = firmakonto (logInd) - login-siden sender så til /firma.
+type Resultat = { ok: true; firma?: boolean } | { fejl: string; kode?: "email_ikke_bekraeftet" };
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 
@@ -75,6 +76,17 @@ async function efterLogin(
   return { ok: true };
 }
 
+// Firmakonto (users.konto_type = 'erhverv')? Så lander login på /firma i
+// stedet for /auktioner. Kun til at vælge siden - ingen adgang afhænger af det.
+async function erFirmakonto(supabase: Awaited<ReturnType<typeof createClient>>, brugerId: string) {
+  const { data } = await supabase
+    .from("users")
+    .select("konto_type")
+    .eq("id", brugerId)
+    .maybeSingle<{ konto_type: string | null }>();
+  return data?.konto_type === "erhverv";
+}
+
 export async function logInd(
   emailInput: string,
   password: string,
@@ -114,7 +126,9 @@ export async function logInd(
     return { fejl: GENERISK };
   }
 
-  return efterLogin(supabase, data.user, data.session?.access_token);
+  const resultat = await efterLogin(supabase, data.user, data.session?.access_token);
+  if ("ok" in resultat && (await erFirmakonto(supabase, data.user.id))) return { ok: true, firma: true };
+  return resultat;
 }
 
 // vilkaarVersion: den version af brugerbetingelserne, brugeren har sat

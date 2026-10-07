@@ -168,12 +168,12 @@ export const ERHVERV_FORMULAR = {
       pladsholder: "Fx Odense",
     },
     hvadSaelger: {
-      label: "Hvad sælger I?",
+      label: "Hvad sælger du?",
       hjaelp: "Skriv med dine egne ord. Fx møbler, værktøj eller ting fra dødsboer.",
       pladsholder: "Fx brugte møbler og lamper",
     },
     antalVarer: {
-      label: "Cirka hvor mange varer vil I sælge om måneden?",
+      label: "Cirka hvor mange varer vil du sælge om måneden?",
       hjaelp: "Et skøn er fint.",
       pladsholder: "Fx 10",
     },
@@ -198,6 +198,7 @@ export const ERHVERV_FORMULAR = {
     telefonUgyldigt: "Telefonnummeret ser forkert ud. Skriv 8 cifre, fx 12 34 56 78.",
     postnummerUgyldigt: "Postnummeret skal være 4 cifre.",
     forLang: "Teksten er for lang. Gør den lidt kortere.",
+    antalUgyldigt: "Skriv et tal, fx 20 – eller lad feltet stå tomt.",
     forMangeForsoeg: "Du har sendt formularen mange gange på kort tid. Vent lidt, og prøv igen senere.",
     generisk:
       "Formularen blev ikke sendt. Prøv igen om lidt. Virker det stadig ikke, så skriv til erhverv@bidhamr.dk.",
@@ -319,10 +320,10 @@ export const FIRMA_OVERSIGT = {
     knapNedgrader: "Skift til denne pakke fra næste måned",
     knapAnnuller: "Fortryd",
 
-    bekraeftOpgraderTitel: (pakke: string) => `Skift til ${pakke} nu?`,
+    bekraeftOpgraderTitel: (pakke: string) => `Vælg ${pakke}?`,
     bekraeftOpgraderTekst:
       "Du får de ekstra auktioner med det samme. Du betaler forskellen i pris for resten af måneden og får en regning på det.",
-    bekraeftOpgraderJa: "Ja, skift nu",
+    bekraeftOpgraderJa: (pakke: string) => `Ja, vælg ${pakke}`,
     opgraderetSvar: (pakke: string) => `Du har nu ${pakke}. Dine ekstra auktioner kan bruges med det samme.`,
 
     bekraeftNedgraderTitel: (pakke: string) => `Skift til ${pakke} fra næste måned?`,
@@ -470,6 +471,7 @@ export const ADMIN_ERHVERV = {
     fejl: {
       navnMangler: "Skriv et navn.",
       prisUgyldig: "Prisen skal være et tal på 0 eller derover.",
+      prisHeleKroner: "Skriv prisen i hele kroner, fx 199.",
       auktionerUgyldigt: "Antal auktioner pr. uge skal være mindst 1.",
       navnFindes: "Der findes allerede en pakke med det navn.",
       generisk: "Pakken blev ikke gemt. Prøv igen.",
@@ -572,7 +574,12 @@ export const FIRMA_OVERSIGT_EKSTRA = {
   // Mens betaling via Stripe ikke er åbnet: opgraderingen gælder først, når
   // den er betalt (src/lib/erhverv/betaling.ts).
   bekraeftOpgraderTekstAfventer:
-    "Du får de ekstra auktioner, når betalingen er på plads. Vi kontakter dig om betalingen.",
+    "Din pakke skifter, når betalingen er på plads. Indtil da beholder du din nuværende pakke. Vi kontakter dig om betalingen.",
+  opgraderingBetalingFejl:
+    "Vi kunne ikke sætte betalingen i gang. Din pakke er ikke skiftet. Prøv igen om lidt, eller skriv til erhverv@bidhamr.dk.",
+  nedgraderetSvar: (pakke: string, dato: string) =>
+    `Du skifter til ${pakke} den ${dato}. Indtil da beholder du din nuværende pakke.`,
+  uaendretSvar: "Du beholder din nuværende pakke.",
   afhentning: (vare: string) => `Køberen skal hente ${vare}. Aftal tid og sted med køberen.`,
   knapSeHandel: "Se handlen",
   ugensTal: (brugt: number, ialt: number) => `${brugt} af ${ialt}`,
@@ -652,4 +659,30 @@ export const ADMIN_ERHVERV_EKSTRA = {
   pakkeBruges: (n: number) =>
     `${n === 1 ? "1 firma bruger" : `${n} firmaer bruger`} denne pakke – ændringen gælder for dem med det samme.`,
   knapGemAlligevel: "Ja, gem ændringen",
+} as const;
+
+// Login-siden for firmakonti.
+export const ERHVERV_LOGIN = {
+  // /auth/callback med et brugt eller udløbet velkomstlink (type=invite).
+  velkommenUdloebet: "Linket virker ikke længere. Skriv til erhverv@bidhamr.dk, så sender vi dig et nyt.",
+  // Efter "Vælg din adgangskode" (/reset-password?velkommen=1).
+  adgangskodeGemt: "Din adgangskode er gemt. Log ind for at komme til din Firma oversigt.",
+  undertitelVelkommen: "Log ind med din e-mail og den adgangskode, du lige har valgt.",
+} as const;
+
+// Opret auktion for en firmakonto uden udbetalingskonto (bankkonto).
+export const FIRMA_UDBETALINGSKONTO = {
+  titel: "Hvor skal pengene sendes hen?",
+  tekst:
+    "Før du kan sælge, skal vi vide, hvilken bankkonto pengene skal sendes til. Det er gratis og tager ca. 5 minutter. Betalingen håndteres af vores betalingspartner Stripe.",
+  knapOpret: "Tilføj bankkonto",
+  knapFaerdig: "Gør det færdigt",
+  knapSender: "Sender dig videre …",
+  hjaelp: "Har du brug for hjælp? Skriv til",
+  tilbage: "Tilbage til Firma oversigt",
+} as const;
+
+// Diskret link på /coming-soon (siden /erhverv er offentlig før lancering).
+export const ERHVERV_COMING_SOON = {
+  link: "Er du virksomhed? Læs om BidHamr Erhverv",
 } as const;

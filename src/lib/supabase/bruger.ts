@@ -43,6 +43,20 @@ export const sessionBrugerId = cache(async (): Promise<string | null> => {
   return typeof sub === "string" ? sub : null;
 });
 
+// Kontotypen ('privat' | 'erhverv') for en bruger - hentet højst ÉN gang pr.
+// forespørgsel pr. bruger-id (topbaren, auktionssiden og Opret auktion
+// spørger alle). users.konto_type kan læses af alle
+// (20261010030000_erhverv.sql). null, hvis opslaget fejler.
+export const hentKontoType = cache(async (brugerId: string): Promise<string | null> => {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("users")
+    .select("konto_type")
+    .eq("id", brugerId)
+    .maybeSingle<{ konto_type: string | null }>();
+  return data?.konto_type ?? null;
+});
+
 // Den bekræftede bruger, men kun hvis den er den samme som i JWT'en, som
 // opslagene blev startet med. Ellers null (behandles som ikke logget ind).
 export async function bekraeftetBruger(sessionId: string | null): Promise<User | null> {

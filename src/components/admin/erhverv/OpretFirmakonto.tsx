@@ -29,6 +29,13 @@ export default function OpretFirmakonto({
   const [slaarOp, startOpslag] = useTransition();
   const [resultat, setResultat] = useState<{ firmaId: string; besked: string; mailSendt: boolean } | null>(null);
 
+  // Rettes CVR-nummeret, passer en gammel besked fra CVR-opslaget ikke
+  // længere (fx "ikke fundet") - så fjernes den.
+  function saetV(ny: FirmaVaerdier) {
+    if (ny.cvr !== v.cvr) setCvrBesked(null);
+    setV(ny);
+  }
+
   function cvrOpslag() {
     setCvrBesked(null);
     startOpslag(async () => {
@@ -83,7 +90,7 @@ export default function OpretFirmakonto({
             id="opret-cvr-opslag"
             inputMode="numeric"
             value={v.cvr}
-            onChange={(e) => setV({ ...v, cvr: e.target.value })}
+            onChange={(e) => saetV({ ...v, cvr: e.target.value })}
             className={ADMIN_FELT}
           />
         </div>
@@ -101,7 +108,7 @@ export default function OpretFirmakonto({
         </p>
       )}
 
-      <FirmaFelter vaerdier={v} onChange={setV} idPraefiks="opret" />
+      <FirmaFelter vaerdier={v} onChange={saetV} idPraefiks="opret" />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>

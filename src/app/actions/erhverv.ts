@@ -28,6 +28,7 @@ import {
   type FirmaOversigt,
 } from "@/lib/erhverv/regler";
 import { startNedgradering, startOpgradering } from "@/lib/erhverv/betaling";
+import { ERHVERV_FORMULAR, FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA } from "@/lib/tekster/erhverv";
 import { revalidatePath } from "next/cache";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -81,14 +82,14 @@ export async function sendErhvervHenvendelse(
     if (adresse.length > G.adresse) return { fejl: "Adressen er for lang.", felt: "adresse" };
     if (postnummer && !POSTNUMMER.test(postnummer)) return { fejl: "Postnummeret skal have 4 cifre.", felt: "postnummer" };
     if (by.length > G.by) return { fejl: "Bynavnet er for langt.", felt: "by" };
-    if (hvad.length < 3) return { fejl: "Skriv kort, hvad I sælger.", felt: "hvad_saelger_i" };
+    if (hvad.length < 3) return { fejl: "Skriv kort, hvad du sælger.", felt: "hvad_saelger_i" };
     if (hvad.length > G.hvadSaelgerI) {
-      return { fejl: `Højst ${G.hvadSaelgerI.toLocaleString("da-DK")} tegn om, hvad I sælger.`, felt: "hvad_saelger_i" };
+      return { fejl: `Højst ${G.hvadSaelgerI.toLocaleString("da-DK")} tegn om, hvad du sælger.`, felt: "hvad_saelger_i" };
     }
     let antal: number | null = null;
     if (antalRaa) {
       if (!/^\d{1,8}$/.test(antalRaa) || Number(antalRaa) > G.antalVarerMaks) {
-        return { fejl: "Skriv antallet af varer som et tal.", felt: "antal_varer_ca" };
+        return { fejl: ERHVERV_FORMULAR.fejl.antalUgyldigt, felt: "antal_varer_ca" };
       }
       antal = Number(antalRaa);
     }
@@ -165,6 +166,8 @@ export async function hentFirmaOversigt(): Promise<{ ok: true; oversigt: FirmaOv
 
 export type SkiftPakkeSvar =
   | { ok: true; kode: "opgradering_afventer_betaling"; pakke: ErhvervPakke; besked: string }
+  // Betalingen gik igennem med det samme, og pakken er aktiveret.
+  | { ok: true; kode: "opgraderet"; pakke: ErhvervPakke; besked: string }
   | { ok: true; kode: "nedgradering_planlagt"; pakke: ErhvervPakke; gaelderFra: string; besked: string }
   | { ok: true; kode: "uaendret"; besked: string }
   | { fejl: string };
@@ -195,15 +198,22 @@ export async function skiftFirmaPakke(pakkeId: string): Promise<SkiftPakkeSvar> 
 
     if (svar?.kode === "opgradering_afventer_betaling" && svar.pakke && svar.skift_id) {
       const betaling = await startOpgradering(svar.skift_id);
-      return {
-        ok: true,
-        kode: "opgradering_afventer_betaling",
-        pakke: svar.pakke,
-        besked:
-          betaling.status === "afventer_betaling"
-            ? betaling.besked
-            : `Jeres pakke er nu ${svar.pakke.navn}.`,
-      };
+      // Kun "Din pakke er nu X", når betalingen er gået igennem og pakken
+      // faktisk er aktiveret. Fejl: skiftet venter stadig på betaling i
+      // databasen, men firmaet beholder sin nuværende pakke.
+      if (betaling.status === "betalt") {
+        return {
+          ok: true,
+          kode: "opgraderet",
+          pakke: svar.pakke,
+          besked: FIRMA_OVERSIGT.abonnement.opgraderetSvar(svar.pakke.navn),
+        };
+      }
+      if (betaling.status === "fejl") {
+        await logDriftFejl({ kilde: "action", hvor: "skiftFirmaPakke/startOpgradering", fejl: betaling.fejl, brugerId: user.id });
+        return { fejl: FIRMA_OVERSIGT_EKSTRA.opgraderingBetalingFejl };
+      }
+      return { ok: true, kode: "opgradering_afventer_betaling", pakke: svar.pakke, besked: betaling.besked };
     }
     if (svar?.kode === "nedgradering_planlagt" && svar.pakke && svar.gaelder_fra && svar.skift_id) {
       await startNedgradering(svar.skift_id);
@@ -218,10 +228,10 @@ export async function skiftFirmaPakke(pakkeId: string): Promise<SkiftPakkeSvar> 
         kode: "nedgradering_planlagt",
         pakke: svar.pakke,
         gaelderFra: svar.gaelder_fra,
-        besked: `I skifter til ${svar.pakke.navn} den ${dato}. Indtil da beholder I jeres nuværende pakke.`,
+        besked: FIRMA_OVERSIGT_EKSTRA.nedgraderetSvar(svar.pakke.navn, dato),
       };
     }
-    if (svar?.kode === "uaendret") return { ok: true, kode: "uaendret", besked: "I beholder jeres nuværende pakke." };
+    if (svar?.kode === "uaendret") return { ok: true, kode: "uaendret", besked: FIRMA_OVERSIGT_EKSTRA.uaendretSvar };
     if (svar?.kode === "ugyldig_pakke") return { fejl: "Pakken findes ikke længere. Vælg en anden." };
     return { fejl: GENERISK };
   } catch (err) {

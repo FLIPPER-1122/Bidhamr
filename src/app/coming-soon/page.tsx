@@ -4,6 +4,7 @@ import WaitlistForm from "@/components/landing/WaitlistForm";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
 import CookieindstillingerKnap from "@/components/samtykke/CookieindstillingerKnap";
 import type { Metadata } from "next";
+import { ERHVERV_COMING_SOON } from "@/lib/tekster/erhverv";
 
 export const metadata: Metadata = {
   title: "BidHamr åbner snart",
@@ -160,6 +161,17 @@ export default function ComingSoonPage() {
               </p>
               <WaitlistForm />
             </div>
+
+            {/* /erhverv er offentlig før lancering (src/lib/supabase/middleware.ts). */}
+            <p className="mt-5">
+              <Link
+                href="/erhverv"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-md text-[16px] font-semibold text-white underline underline-offset-4 hover:text-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                {ERHVERV_COMING_SOON.link}
+                <span aria-hidden="true">→</span>
+              </Link>
+            </p>
 
             <ul className="mt-8 flex flex-wrap gap-2">
               {["Gratis at oprette auktion", "Ingen abonnement", "Support på dansk og engelsk"].map(

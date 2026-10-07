@@ -23,7 +23,7 @@ const TYPE: Record<string, TypeInfo> = {
   },
   firmakonto: {
     titel: () => "Det er en firmakonto",
-    hjaelp: "En firmakonto lukkes af BidHamr. Skriv til erhverv@bidhamr.dk, så hjælper vi jer.",
+    hjaelp: "En firmakonto lukkes af BidHamr. Skriv til erhverv@bidhamr.dk, så hjælper vi dig.",
     enkelt: "",
   },
   auktion_med_bud: {

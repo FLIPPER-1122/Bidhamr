@@ -12,6 +12,28 @@ export function ugedagDato(iso: string): string {
   return `${ugedag} den ${dato}`;
 }
 
+// Danske numre vises pænt: "11223344", "+4511223344", "0045 11 22 33 44"
+// -> "+45 11 22 33 44". Andre numre (udenlandske) vises som de er skrevet.
+export function visTelefon(telefon: string | null | undefined): string {
+  if (!telefon) return "";
+  const cifre = telefon.replace(/[^0-9]/g, "");
+  const lokal =
+    cifre.length === 8 && !telefon.trim().startsWith("+")
+      ? cifre
+      : cifre.length === 10 && cifre.startsWith("45") && telefon.trim().startsWith("+")
+        ? cifre.slice(2)
+        : cifre.length === 12 && cifre.startsWith("0045")
+          ? cifre.slice(4)
+          : null;
+  if (!lokal) return telefon.trim();
+  return `+45 ${lokal.replace(/(\d{2})(?=\d)/g, "$1 ")}`;
+}
+
+// Til tel:-links: kun + og cifre.
+export function telefonLink(telefon: string): string {
+  return `tel:${telefon.replace(/[^0-9+]/g, "")}`;
+}
+
 // "13. oktober 2026"
 export function langDato(iso: string): string {
   return new Date(iso).toLocaleDateString("da-DK", { timeZone: TZ, day: "numeric", month: "long", year: "numeric" });

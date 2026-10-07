@@ -67,8 +67,9 @@ function valider(v: Vaerdier): Partial<Record<Navn, string>> {
   if (!f.postnummer && v.postnummer.trim() && !POSTNUMMER.test(v.postnummer.trim())) {
     f.postnummer = F.fejl.postnummerUgyldigt;
   }
-  if (!f.antal_varer_ca && v.antal_varer_ca.trim() && !/^\d{1,8}$/.test(v.antal_varer_ca.replace(/[.\s]/g, ""))) {
-    f.antal_varer_ca = F.felter.antalVarer.hjaelp;
+  const antalRaa = v.antal_varer_ca.replace(/[.\s]/g, "");
+  if (!f.antal_varer_ca && antalRaa && (!/^\d{1,8}$/.test(antalRaa) || Number(antalRaa) > G.antalVarerMaks)) {
+    f.antal_varer_ca = F.fejl.antalUgyldigt;
   }
   return f;
 }

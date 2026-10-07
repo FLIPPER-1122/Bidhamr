@@ -41,6 +41,26 @@ import "server-only";
 // Staff kan aktivere en pakke manuelt (erhverv_firma_opdater) efter en aftale
 // uden for Stripe.
 
+// Idempotency-nøgler til ALLE kald, der opretter/ændrer noget hos Stripe
+// (anden parameter: { idempotencyKey }). Prøver serveren et kald igen (fx
+// efter timeout, eller fordi firmaet trykker to gange), laver Stripe så ikke
+// to abonnementer, to fakturaer eller to refusioner. Nøglen skal være den
+// samme for den samme handling - og forskellig for en ny handling:
+//   opgradering:  ét pakkeskift (firma_pakkeskift.id) = én faktura for forskellen
+//   abonnement:   firmaets abonnement for én periode (fx "2026-11")
+//   nedgradering: ét planlagt skift
+//   opsigelse:    én opsigelse pr. firma og periode
+//   kunde:        én Stripe Customer pr. firma
+// Stripe husker nøgler i mindst 24 timer.
+export const idempotensNoegle = {
+  kunde: (firmaId: string) => `kunde:${firmaId}`,
+  abonnement: (firmaId: string, periode: string) => `abonnement:${firmaId}:${periode}`,
+  opgradering: (skiftId: string) => `opgradering:${skiftId}`,
+  opgraderingRefusion: (skiftId: string) => `opgradering-refusion:${skiftId}`,
+  nedgradering: (skiftId: string) => `nedgradering:${skiftId}`,
+  opsigelse: (firmaId: string, periode: string) => `opsigelse:${firmaId}:${periode}`,
+} as const;
+
 export type BetalingsStatus =
   | { status: "afventer_betaling"; besked: string }
   | { status: "betalt" }
@@ -49,7 +69,7 @@ export type BetalingsStatus =
 const AFVENTER: BetalingsStatus = {
   status: "afventer_betaling",
   besked:
-    "Betaling af abonnementer er ikke åbnet endnu. BidHamr kontakter jer om betalingen, og ændringen gælder, når den er betalt.",
+    "Betaling af abonnementer er ikke åbnet endnu. BidHamr kontakter dig om betalingen, og ændringen gælder, når den er betalt.",
 };
 
 // Starter firmaets abonnement, når firmakontoen er oprettet.
@@ -58,12 +78,15 @@ const AFVENTER: BetalingsStatus = {
 //  1. Opret (eller genbrug) en Stripe Customer for firmaet med CVR som
 //     tax_id (type 'eu_vat', værdi 'DK' + cvr), firmanavn, adresse og
 //     kontakt_email. Gem id'et i firmaer.stripe_customer_id (service role).
+//     Kald med { idempotencyKey: idempotensNoegle.kunde(firmaId) }.
 //  2. Opret en Subscription (Stripe Billing) med pakkens Price (månedlig,
 //     DKK, pakken skal have et stripe_price_id - tilføj kolonnen på
 //     erhverv_pakker, når priserne er sat). collection_method
 //     'charge_automatically', payment_behavior 'default_incomplete', så
 //     firmaet betaler første faktura via Checkout/Payment Element (kort,
 //     MobilePay). Gem subscription.id i firmaer.stripe_subscription_id.
+//     Kald med { idempotencyKey: idempotensNoegle.abonnement(firmaId, periode) },
+//     periode = første periode som "ÅÅÅÅ-MM" (fx "2026-11").
 //  3. Webhook invoice.paid (billing_reason 'subscription_create' eller
 //     'subscription_cycle') -> firma_abonnement_betalt(firma, period.start,
 //     period.end, amount_paid, event.id, invoice.id).
@@ -83,7 +106,8 @@ export async function startAbonnement(firmaId: string): Promise<BetalingsStatus>
 // TODO(Stripe):
 //  1. stripe.subscriptions.update(subscription, { items: [{ id, price:
 //     nyPakke.stripe_price_id }], proration_behavior: 'always_invoice',
-//     payment_behavior: 'pending_if_incomplete', metadata: { skift_id } }).
+//     payment_behavior: 'pending_if_incomplete', metadata: { skift_id } },
+//     { idempotencyKey: idempotensNoegle.opgradering(skiftId) }).
 //     Stripe laver straks en faktura for forskellen resten af perioden
 //     (proration), og ændringen træder først i kraft, når den er betalt.
 //  2. Webhook invoice.paid med metadata.skift_id (eller
@@ -91,7 +115,8 @@ export async function startAbonnement(firmaId: string): Promise<BetalingsStatus>
 //     skift_id, event.id, amount_paid, invoice.id). Først DÉR får firmaet
 //     flere auktioner pr. uge. Svarer krogen 'betalt_men_ikke_afventende'
 //     (staff har fx skiftet pakken manuelt imens), aktiveres intet: refundér
-//     fakturaen (stripe.refunds.create på invoice.charge/payment_intent) og
+//     fakturaen (stripe.refunds.create på invoice.charge/payment_intent, med
+//     { idempotencyKey: idempotensNoegle.opgraderingRefusion(skiftId) }) og
 //     sæt prisen på abonnementet tilbage til firmaets nuværende pakke - eller
 //     lad den drift-alarm, databasen har logget, gå til manuel undersøgelse.
 //  3. Fejler betalingen, forbliver skiftet 'afventer_betaling'; firmaet
@@ -106,7 +131,8 @@ export async function startOpgradering(skiftId: string): Promise<BetalingsStatus
 //
 // TODO(Stripe):
 //  1. Opret/opdater en Subscription Schedule, så prisen skifter ved
-//     current_period_end (ingen proration, intet refunderes).
+//     current_period_end (ingen proration, intet refunderes). Kald med
+//     { idempotencyKey: idempotensNoegle.nedgradering(skiftId) }.
 //  2. Sæt firmaer.naeste_pakke_fra = current_period_end fra Stripe (service
 //     role), så datoen følger Stripes periode.
 //  3. Webhook invoice.paid for den nye periode -> firma_abonnement_betalt
@@ -119,7 +145,8 @@ export async function startNedgradering(skiftId: string): Promise<BetalingsStatu
 // Firmaet opsiger (sker via BidHamr - abonnement_status 'opsagt' i admin).
 //
 // TODO(Stripe): stripe.subscriptions.update(subscription, {
-//   cancel_at_period_end: true }). Ingen refusion. Webhook
+//   cancel_at_period_end: true }, { idempotencyKey:
+//   idempotensNoegle.opsigelse(firmaId, periode) }). Ingen refusion. Webhook
 //   customer.subscription.deleted -> erhverv_firma_opdater(status 'opsagt')
 //   via service role (eller en egen krog, hvis staff-id ikke findes).
 export async function opsigAbonnement(firmaId: string): Promise<BetalingsStatus> {

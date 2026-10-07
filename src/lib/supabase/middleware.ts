@@ -78,8 +78,9 @@ function erOffentligLaeseside(pathname: string, metode: string) {
 
 // Inden launch er appen lukket for almindelige brugere. Kun disse roller
 // slipper igennem - alle andre (også indloggede) sendes til splash-siden.
-// 'saelger' (erhvervssælger) skal kunne nå Admin → Erhverv før lancering;
-// resten af admin afviser rollen (src/lib/adminAuth.ts).
+// 'saelger' (erhvervssælger) skal kunne nå Admin → Erhverv før lancering -
+// men KUN det: updateSession sender sælgeren til /admin/erhverv fra alle
+// andre lukkede stier, og resten af admin afviser rollen (src/lib/adminAuth.ts).
 const ROLLER_MED_ADGANG = ["chef", "admin", "medarbejder", "saelger"];
 
 function erOffentligRute(pathname: string) {
@@ -125,7 +126,17 @@ async function afvisSkrivningPaaOffentligSti(
   if (!session) return false;
 
   const { rolle } = await hentGateRolle(request, supabase, session);
-  return !rolle || !ROLLER_MED_ADGANG.includes(rolle);
+  // Sælgeren må kun bruge Admin → Erhverv før lancering - ikke kalde fx
+  // afgivBud eller opretAuktion via POST til en offentlig sti.
+  return !rolle || !ROLLER_MED_ADGANG.includes(rolle) || rolle === "saelger";
+}
+
+// En fil fra public/ (fx /placeholder.png), der ikke er undtaget i
+// matcheren i src/proxy.ts. Kun GET/HEAD - en server action kan sendes til
+// enhver sti, også en med filendelse.
+function erStatiskFil(pathname: string, metode: string) {
+  if (metode !== "GET" && metode !== "HEAD") return false;
+  return /\/[^/]+\.(?:png|jpe?g|gif|webp|avif|svg|ico|txt|xml|webmanifest|json|woff2?)$/i.test(pathname);
 }
 
 type Session = { brugerId: string; sessionId: string | null };
@@ -256,12 +267,19 @@ export async function updateSession(
   // Rollen 'saelger' (erhvervssælger) har kun adgang til Admin → Erhverv.
   // Hver admin-side og action afviser rollen også selv (src/lib/adminAuth.ts);
   // dette er et ekstra værn, så sælgeren aldrig ser en anden admin-side.
-  if (
+  // Før lancering (gaten her) kommer sælgeren heller ikke ind i resten af den
+  // lukkede app (auktioner, byd, opret auktion ...) - kun /admin/erhverv*,
+  // de offentlige ruter ovenfor (login, /auth, /api/offentlig ...) og
+  // statiske filer. Log ud sker i browseren direkte mod Supabase.
+  // Offentlige stier: skrivninger (server actions) afvises for sælgeren i
+  // afvisSkrivningPaaOffentligSti. På testdatabasen (efter-lancering-
+  // tilstand) må sælgeren som alle andre bruge siden - admin er stadig låst.
+  const saelgerUdenforErhverv =
     rolle === "saelger" &&
-    erAdminSti &&
     pathname !== "/admin/erhverv" &&
-    !pathname.startsWith("/admin/erhverv/")
-  ) {
+    !pathname.startsWith("/admin/erhverv/") &&
+    (erAdminSti || (!erTestdatabase() && !erStatiskFil(pathname, request.method)));
+  if (saelgerUdenforErhverv) {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new NextResponse("Ingen adgang", { status: 403 });
     }

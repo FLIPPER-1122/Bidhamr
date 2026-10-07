@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { hentKontoType } from "@/lib/supabase/bruger";
 import OpretAuktionForm from "@/components/OpretAuktionForm";
 import UdbetalingskontoKraeves from "@/components/betaling/UdbetalingskontoKraeves";
 import Link from "next/link";
@@ -30,11 +31,11 @@ export default async function OpretAuktionPage({
 
   // Firmakonto? Så gælder ugekvote og abonnement (databasen håndhæver det
   // også, BHE02/BHE03) - vis det her, før firmaet udfylder hele formularen.
-  const [{ data: konto }, { data: kvoteData }] = await Promise.all([
-    supabase.from("users").select("konto_type").eq("id", data.user.id).maybeSingle<{ konto_type: string | null }>(),
+  const [kontoType, { data: kvoteData }] = await Promise.all([
+    hentKontoType(data.user.id),
     supabase.rpc("firma_ugekvote"),
   ]);
-  const erFirma = konto?.konto_type === "erhverv";
+  const erFirma = kontoType === "erhverv";
   const kvote = erFirma ? ((kvoteData as Ugekvote | null) ?? null) : null;
   const firmaSpaerret = erFirma && (!kvote || !kvote.aktivt_abonnement || kvote.brugt >= kvote.max);
 
@@ -105,6 +106,7 @@ export default async function OpretAuktionPage({
               harKonto={harKonto}
               erRetur={stripe === "retur"}
               erFejl={stripe === "fejl"}
+              erFirma={erFirma}
             />
           )}
         </div>

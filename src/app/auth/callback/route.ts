@@ -36,10 +36,23 @@ type FejlKode = "link_udloebet" | "link_ugyldigt" | "konto_suspenderet";
 // Fejl sendes videre som en fast kode - aldrig Supabase' egen fejltekst, som
 // kan indeholde interne detaljer. Bekræftelseslinks sendes til "Tjek din
 // indbakke", hvor man kan få en ny mail; andre links til login-siden.
-function tilFejl(origin: string, kode: FejlKode, erBekraeftelse: boolean) {
+// Velkomstlinks til firmakonti (type=invite, eller recovery med
+// next=/reset-password?velkommen=1 for en eksisterende auth-bruger) kan
+// firmaet ikke selv få et nyt af - det sender BidHamr. De sendes derfor til
+// login med koden velkommen_udloebet ("Skriv til erhverv@bidhamr.dk ...").
+function tilFejl(origin: string, kode: FejlKode, erBekraeftelse: boolean, erVelkomst = false) {
+  if (erVelkomst && kode !== "konto_suspenderet") {
+    const url = new URL("/login", origin);
+    url.searchParams.set("fejl", "velkommen_udloebet");
+    return NextResponse.redirect(url, 303);
+  }
   const url = new URL(erBekraeftelse ? "/tjek-indbakke" : "/login", origin);
   url.searchParams.set("fejl", kode);
   return NextResponse.redirect(url, 303);
+}
+
+function erVelkomstLink(type: string | null, naeste: string | null) {
+  return type === "invite" || (!!naeste && naeste.startsWith("/reset-password?velkommen=1"));
 }
 
 const BEKRAEFTELSE_TYPER = new Set(["signup", "email", "invite"]);
@@ -83,7 +96,12 @@ async function indloes(origin: string, p: LinkParametre) {
 
   if (svar.error) {
     console.error("auth/callback fejlede:", svar.error.code, svar.error.message);
-    return tilFejl(origin, erUdloebet(svar.error.code) ? "link_udloebet" : "link_ugyldigt", erBekraeftelse);
+    return tilFejl(
+      origin,
+      erUdloebet(svar.error.code) ? "link_udloebet" : "link_ugyldigt",
+      erBekraeftelse,
+      erVelkomstLink(p.type, p.naeste),
+    );
   }
 
   const { user, session } = svar.data;
@@ -130,7 +148,12 @@ export async function GET(req: NextRequest) {
   // Supabase kan selv melde fejl tilbage, fx hvis linket er udløbet.
   if (fejlKode) {
     const { erBekraeftelse } = maalFor(p);
-    return tilFejl(origin, erUdloebet(fejlKode) ? "link_udloebet" : "link_ugyldigt", erBekraeftelse);
+    return tilFejl(
+      origin,
+      erUdloebet(fejlKode) ? "link_udloebet" : "link_ugyldigt",
+      erBekraeftelse,
+      erVelkomstLink(p.type, p.naeste),
+    );
   }
 
   // Engangslink fra en mail: vis mellemsiden - indløs IKKE her (se øverst).
@@ -171,7 +194,12 @@ export async function POST(req: NextRequest) {
   const tokenHash = tekst("token_hash");
   const type = tekst("type");
   if (!tokenHash || !erLinkType(type)) {
-    return tilFejl(origin, "link_ugyldigt", type !== null && BEKRAEFTELSE_TYPER.has(type));
+    return tilFejl(
+      origin,
+      "link_ugyldigt",
+      type !== null && BEKRAEFTELSE_TYPER.has(type),
+      erVelkomstLink(type, tekst("next")),
+    );
   }
   return indloes(origin, { code: null, tokenHash, type, naeste: tekst("next") });
 }

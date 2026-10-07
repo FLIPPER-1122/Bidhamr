@@ -73,7 +73,7 @@ export default function NulstilForm({ velkommen = false }: { velkommen?: boolean
 
     // Serveren har logget ud alle steder; login-siden viser en bekræftelse.
     // En ny firmakonto sendes til Firma oversigt efter login.
-    router.push(velkommen ? "/login?adgangskode=gemt&redirect=/firma" : "/login?adgangskode=gemt");
+    router.push(velkommen ? "/login?adgangskode=gemt&velkommen=1&redirect=/firma" : "/login?adgangskode=gemt");
     router.refresh();
   }
 
