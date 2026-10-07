@@ -360,44 +360,148 @@ async function hideAuctionImpl(formData: FormData) {
   return auktionIndgreb(formData, "auktion_skjult");
 }
 
+// --- Ophævelse af afgørelser på en auktion -----------------------------------
+
+// Mens en klage over den gældende afgørelse afventer, afvises "Vis igen",
+// "Ophæv fjernelse" og genåbning af en rapport (foreslået af Claude, se
+// ROADMAP-BESLUTNINGER.md): klagen afgøres først, så sælgeren får ét svar.
+const KLAGE_AFVENTER =
+  "Der er en klage over afgørelsen, som afventer. Afgør klagen under DSA → Klager først.";
+
+async function afvisVedAfventendeKlage(admin: AdminClient, auktionId: string) {
+  const { data: afg, error } = await admin
+    .from("dsa_afgoerelser")
+    .select("id")
+    .eq("indhold_type", "auktion")
+    .eq("indhold_id", auktionId)
+    .is("ophaevet_kl", null);
+  if (error) throw new Error(error.message);
+  const ids = ((afg ?? []) as { id: string }[]).map((a) => a.id);
+  if (ids.length === 0) return;
+  const { count, error: klageFejl } = await admin
+    .from("dsa_klager")
+    .select("id", { count: "exact", head: true })
+    .in("afgoerelse_id", ids)
+    .eq("status", "afventer");
+  if (klageFejl) throw new Error(klageFejl.message);
+  if ((count ?? 0) > 0) throw new BrugerFejl(KLAGE_AFVENTER);
+}
+
+const FJERNELSE_HANDLINGER = ["auktion_fjernet", "auktion_annulleret"];
+
+// Ophæver de gældende afgørelser på en annulleret auktion. Auktionen åbnes
+// aldrig igen og forbliver skjult (Filip, 6. okt. 2026). Opdateringen er
+// betinget (ophaevet_kl is null), så et dobbeltklik intet ophæver anden gang,
+// og resultatet fortæller, hvad der faktisk blev ophævet. Triggeren
+// auctions_pause_skjult gør det samme for alle andre veje (fx appen).
+async function ophaevAnnulleretAuktion(
+  admin: AdminClient,
+  auktionId: string,
+): Promise<{ antal: number; fjernelseId: string | null }> {
+  const { data, error } = await admin
+    .from("dsa_afgoerelser")
+    .update({ ophaevet_kl: new Date().toISOString(), ophaevet_grund: "staff" })
+    .eq("indhold_type", "auktion")
+    .eq("indhold_id", auktionId)
+    .in("handling", [...FJERNELSE_HANDLINGER, "auktion_skjult"])
+    .is("ophaevet_kl", null)
+    .select("id, handling, oprettet_kl");
+  if (error) throw new Error(error.message);
+  const raekker = (data ?? []) as { id: string; handling: string; oprettet_kl: string }[];
+  const fjernelse = raekker
+    .filter((r) => FJERNELSE_HANDLINGER.includes(r.handling))
+    .sort((a, b) => b.oprettet_kl.localeCompare(a.oprettet_kl))[0];
+  return { antal: raekker.length, fjernelseId: fjernelse?.id ?? null };
+}
+
+function ophaevetAarsag(fjernelse: boolean, kilde: "knap" | "rapport"): string {
+  const hvad = fjernelse ? "Fjernelsen er ophævet" : "Skjulningen er ophævet";
+  const hvorfor = kilde === "rapport" ? " da anmeldelsen blev genåbnet" : "";
+  return fjernelse
+    ? `${hvad}${hvorfor} – auktionen forbliver annulleret og skjult, sælgeren kan sætte varen op igen`
+    : `${hvad}${hvorfor} – auktionen forbliver annulleret og skjult`;
+}
+
+// Sælgeren får en undskyldning og kan sætte varen op igen med ét klik. Fast
+// nøgle pr. auktion: en annulleret auktion åbnes aldrig igen, så beskeden
+// sendes kun én gang, uanset om fjernelsen ophæves med "Ophæv fjernelse"
+// eller ved en genåbnet rapport.
+async function sendFjernelseOphaevet(
+  saelgerId: string,
+  auktionId: string,
+  titel: string | null,
+  afgoerelseId: string | null,
+) {
+  const navn = titel ? `"${titel}"` : "din auktion";
+  await send(saelgerId, "afgoerelse", {
+    titel: "BidHamr har trukket fjernelsen af din auktion tilbage",
+    tekst: `Vi beklager, at vi fjernede ${navn}. Auktionen kan ikke åbnes igen, fordi buddene ikke gælder længere – men du kan sætte varen op igen med ét klik.`,
+    link: afgoerelseId ? afgoerelseSti(afgoerelseId, false) : `/auktion/${auktionId}`,
+    data: { auction_id: auktionId },
+    noegle: `fjernelse_ophaevet:${auktionId}`,
+  });
+}
+
 // Vis igen. Triggeren auctions_dsa_ophaevet markerer begrundelsen som ophævet.
 // Var auktionen på pause, genoptager triggeren auctions_pause_skjult den
 // (resterende tid, mindst 24 timer), og sælger og bydere får besked.
 // En annulleret (fjernet) auktion forbliver skjult (Filip, 6. okt. 2026):
-// triggeren auctions_pause_skjult beholder skjult = true og ophæver i stedet
-// afgørelsen, så sælgeren kan sætte varen op igen med ét klik.
+// "Ophæv fjernelse" ophæver i stedet afgørelserne, så sælgeren kan sætte
+// varen op igen med ét klik. Idempotent: gentagne klik logger ikke igen.
 async function unhideAuctionImpl(formData: FormData): Promise<void> {
   const auktionId = formData.get("auktionId") as string;
   const { admin, userId: staffId } = await assertRole("admin");
 
   const { data: auktion } = await admin
     .from("auctions")
-    .select("bruger_id, skjult, status")
+    .select("bruger_id, skjult, status, titel")
     .eq("id", auktionId)
-    .maybeSingle<{ bruger_id: string; skjult: boolean; status: string }>();
+    .maybeSingle<{ bruger_id: string; skjult: boolean; status: string; titel: string | null }>();
   if (!auktion) throw new BrugerFejl("Auktionen findes ikke.");
+  if (!auktion.skjult) return;
 
-  const { error } = await admin
-    .from("auctions")
-    .update({ skjult: false })
-    .eq("id", auktionId);
-  if (error) throw new Error(error.message);
+  await afvisVedAfventendeKlage(admin, auktionId);
 
-  if (auktion.skjult) {
-    after(() => notificerAuktionPauser(auktionId));
-    await logModerationBloedt(admin, {
-      medarbejder_id: staffId,
-      handling: "auktion_vist",
-      maal_type: "auktion",
-      maal_id: auktionId,
-      bruger_id: auktion.bruger_id,
-      aarsag:
-        auktion.status === "annulleret"
-          ? "Fjernelsen er ophævet – auktionen forbliver annulleret og skjult, sælgeren kan sætte varen op igen"
-          : "Auktionen er synlig igen",
-    });
+  if (auktion.status === "annulleret") {
+    const r = await ophaevAnnulleretAuktion(admin, auktionId);
+    if (r.antal > 0) {
+      const fjernelseId = r.fjernelseId;
+      if (fjernelseId) {
+        after(() => sendFjernelseOphaevet(auktion.bruger_id, auktionId, auktion.titel, fjernelseId));
+      }
+      await logModerationBloedt(admin, {
+        medarbejder_id: staffId,
+        handling: "auktion_vist",
+        maal_type: "auktion",
+        maal_id: auktionId,
+        bruger_id: auktion.bruger_id,
+        aarsag: ophaevetAarsag(!!fjernelseId, "knap"),
+      });
+    }
+  } else {
+    // Betinget: kun det første af to samtidige klik gør auktionen synlig.
+    const { data: vist, error } = await admin
+      .from("auctions")
+      .update({ skjult: false })
+      .eq("id", auktionId)
+      .eq("skjult", true)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (vist && vist.length > 0) {
+      after(() => notificerAuktionPauser(auktionId));
+      await logModerationBloedt(admin, {
+        medarbejder_id: staffId,
+        handling: "auktion_vist",
+        maal_type: "auktion",
+        maal_id: auktionId,
+        bruger_id: auktion.bruger_id,
+        aarsag: "Auktionen er synlig igen",
+      });
+    }
   }
 
+  revalidatePath(`/auktion/${auktionId}`);
+  revalidatePath("/admin/dsa");
   revalidatePath("/admin/auktioner");
 }
 
@@ -538,6 +642,12 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
     );
   }
 
+  // Før rapporten genåbnes: en klage over den gældende afgørelse skal
+  // afgøres først (foreslået af Claude).
+  if (opslagetBlevAendret && rapport.auction_id) {
+    await afvisVedAfventendeKlage(admin, rapport.auction_id);
+  }
+
   // Rapporten genåbnes FØR opslaget ændres. Den automatiske oprydning kan have
   // flyttet rapporten til arkivet imens (eller en anden kan have genåbnet den) - så må
   // opslaget ikke røres. Status tjekkes i samme update, så et dobbeltklik ikke
@@ -574,14 +684,33 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
       .eq("id", rapport.auction_id)
       .single<{ bruger_id: string; status: string; titel: string | null }>();
 
-    if (auktion) {
+    if (auktion?.status === "annulleret") {
+      // En fjernet (annulleret) auktion genåbnes ALDRIG og bliver ikke
+      // synlig igen (Filip, 6. okt. 2026): afgørelserne ophæves (samme
+      // fælles funktion som "Ophæv fjernelse"), buddene gælder ikke, og
+      // sælgeren får besked og kan sætte varen op igen med ét klik. Der
+      // logges og gives kun besked, når noget faktisk blev ophævet.
+      const r = await ophaevAnnulleretAuktion(admin, rapport.auction_id);
+      if (r.antal > 0) {
+        const fjernelseId = r.fjernelseId;
+        if (fjernelseId) {
+          after(() =>
+            sendFjernelseOphaevet(auktion.bruger_id, rapport.auction_id, auktion.titel, fjernelseId),
+          );
+        }
+        await logModeration(admin, {
+          medarbejder_id: staffId,
+          handling: "annuller_auktion",
+          maal_type: "auktion",
+          maal_id: rapport.auction_id,
+          bruger_id: auktion.bruger_id,
+          aarsag: ophaevetAarsag(!!fjernelseId, "rapport"),
+        });
+      }
+    } else if (auktion) {
       // Opslaget gøres synligt igen. Var auktionen skjult og på pause,
       // genoptager triggeren auctions_pause_skjult den (resterende tid, mindst
-      // 24 timer). En fjernet (annulleret) auktion genåbnes ALDRIG og bliver
-      // ikke synlig igen (Filip, 6. okt. 2026): status forbliver 'annulleret',
-      // triggeren auctions_pause_skjult beholder skjult = true og ophæver
-      // fjernelsen, buddene gælder ikke, og sælgeren får besked og kan sætte
-      // varen op igen med ét klik.
+      // 24 timer).
       const { error: opdateringFejl } = await admin
         .from("auctions")
         .update({ skjult: false })
@@ -589,39 +718,13 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
       if (opdateringFejl) throw new Error(opdateringFejl.message);
       after(() => notificerAuktionPauser(rapport.auction_id));
 
-      if (rapport.status === "fjernet" && auktion.status === "annulleret") {
-        const saelger = auktion.bruger_id;
-        const titel = auktion.titel ? `"${auktion.titel}"` : "din auktion";
-        after(async () => {
-          const { data: afg } = await admin
-            .from("dsa_afgoerelser")
-            .select("id")
-            .eq("indhold_type", "auktion")
-            .eq("indhold_id", rapport.auction_id)
-            .in("handling", ["auktion_fjernet", "auktion_annulleret"])
-            .order("oprettet_kl", { ascending: false })
-            .limit(1)
-            .maybeSingle<{ id: string }>();
-          await send(saelger, "afgoerelse", {
-            titel: "BidHamr har trukket fjernelsen af din auktion tilbage",
-            tekst: `Vi beklager, at vi fjernede ${titel}. Auktionen kan ikke åbnes igen, fordi buddene ikke gælder længere – men du kan sætte varen op igen med ét klik.`,
-            link: afg ? afgoerelseSti(afg.id, false) : `/auktion/${rapport.auction_id}`,
-            data: { auction_id: rapport.auction_id },
-            noegle: `rapport_genaabnet:${rapportId}:${afg?.id ?? rapport.auction_id}`,
-          });
-        });
-      }
-
       await logModeration(admin, {
         medarbejder_id: staffId,
         handling: "annuller_auktion",
         maal_type: "auktion",
         maal_id: rapport.auction_id,
         bruger_id: auktion.bruger_id,
-        aarsag:
-          auktion.status === "annulleret"
-            ? "Fjernelsen ophævet da anmeldelsen blev genåbnet (auktionen forbliver annulleret og skjult)"
-            : "Opslag gjort synligt igen da anmeldelsen blev genåbnet",
+        aarsag: "Opslag gjort synligt igen da anmeldelsen blev genåbnet",
       });
     }
   }

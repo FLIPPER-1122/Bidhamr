@@ -102,6 +102,26 @@ export default async function AdminAuktioner({
     ? await supabase.from("users").select("id, navn, email").in("id", brugerIds)
     : { data: [] };
 
+  // Gældende (ikke ophævede) afgørelser på de viste annullerede, skjulte
+  // auktioner: kun dem kan "Ophæv fjernelse"/"Ophæv skjulning" ophæve.
+  const annulleretSkjultIds = (auctions ?? [])
+    .filter((a) => a.status === "annulleret" && a.skjult)
+    .map((a) => a.id);
+  const { data: gaeldende } = annulleretSkjultIds.length
+    ? await supabase
+        .from("dsa_afgoerelser")
+        .select("indhold_id, handling")
+        .eq("indhold_type", "auktion")
+        .in("indhold_id", annulleretSkjultIds)
+        .in("handling", ["auktion_fjernet", "auktion_annulleret", "auktion_skjult"])
+        .is("ophaevet_kl", null)
+    : { data: [] };
+  const gaeldendeAfg: Record<string, "fjernelse" | "skjulning"> = {};
+  ((gaeldende ?? []) as { indhold_id: string; handling: string }[]).forEach((g) => {
+    if (g.handling === "auktion_skjult") gaeldendeAfg[g.indhold_id] ??= "skjulning";
+    else gaeldendeAfg[g.indhold_id] = "fjernelse";
+  });
+
   const sælgerMap: Record<string, { navn: string | null; email: string }> = {};
   (sælgere ?? []).forEach((u) => {
     sælgerMap[u.id] = { navn: u.navn, email: u.email };
@@ -276,20 +296,36 @@ export default async function AdminAuktioner({
                             {...indgrebFelter({ faktaPlaceholder: "Fx: Auktionen sælger en billet til over den oprindelige pris." })}
                           />
                         )}
+                        {a.skjult && a.status === "annulleret" && !gaeldendeAfg[a.id] ? (
+                          // Intet at ophæve (allerede ophævet, eller skjult uden afgørelse).
+                          <span className="px-2 py-1 text-xs text-neutral-500">Annulleret – fjernelse ophævet</span>
+                        ) : (
                         <ConfirmDialog
-                          triggerLabel={a.skjult ? (a.status === "annulleret" ? "Ophæv fjernelse" : "Vis igen") : "Skjul"}
+                          triggerLabel={
+                            a.skjult
+                              ? a.status === "annulleret"
+                                ? gaeldendeAfg[a.id] === "skjulning"
+                                  ? "Ophæv skjulning"
+                                  : "Ophæv fjernelse"
+                                : "Vis igen"
+                              : "Skjul"
+                          }
                           triggerClassName="px-2 py-1 text-xs bg-neutral-100 text-neutral-600 rounded-md hover:bg-neutral-200 transition-colors"
                           title={
                             a.skjult
                               ? a.status === "annulleret"
-                                ? "Er du sikker på, at du vil ophæve fjernelsen?"
+                                ? gaeldendeAfg[a.id] === "skjulning"
+                                  ? "Er du sikker på, at du vil ophæve skjulningen?"
+                                  : "Er du sikker på, at du vil ophæve fjernelsen?"
                                 : "Er du sikker på, at du vil vise auktionen igen?"
                               : "Er du sikker på, at du vil skjule auktionen?"
                           }
                           description={
                             a.skjult
                               ? a.status === "annulleret"
-                                ? "En annulleret auktion åbnes aldrig igen og forbliver skjult for andre. Afgørelsen ophæves, så sælgeren kan sætte varen op igen med ét klik."
+                                ? gaeldendeAfg[a.id] === "skjulning"
+                                  ? "En annulleret auktion åbnes aldrig igen og forbliver skjult for andre. Afgørelsen om skjulning ophæves."
+                                  : "En annulleret auktion åbnes aldrig igen og forbliver skjult for andre. Afgørelsen ophæves, så sælgeren kan sætte varen op igen med ét klik, og sælgeren får en undskyldning."
                                 : erPaaPause(a)
                                 ? "Auktionen bliver synlig for alle igen og fortsætter med den resterende tid – dog mindst 24 timer. Sælger og bydere får besked."
                                 : "Auktionen bliver synlig for alle igen."
@@ -300,7 +336,9 @@ export default async function AdminAuktioner({
                           confirmLabel={
                             a.skjult
                               ? a.status === "annulleret"
-                                ? "Ja, ophæv fjernelsen"
+                                ? gaeldendeAfg[a.id] === "skjulning"
+                                  ? "Ja, ophæv skjulningen"
+                                  : "Ja, ophæv fjernelsen"
                                 : "Ja, vis auktionen"
                               : "Ja, skjul auktionen"
                           }
@@ -310,6 +348,7 @@ export default async function AdminAuktioner({
                             ? {}
                             : indgrebFelter({ faktaPlaceholder: "Fx: Billederne er kopieret fra en anden hjemmeside." }))}
                         />
+                        )}
                         <ConfirmDialog
                           triggerLabel="Slet"
                           triggerClassName="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"

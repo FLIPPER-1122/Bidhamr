@@ -25,7 +25,7 @@ export default async function KvitteringPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect(`/login?redirect=/mine-handler/${trade_id}/kvittering`);
+  if (!user) redirect(`/login?redirect=/mine-handler/${encodeURIComponent(trade_id)}/kvittering`);
 
   const kvittering = await hentMinKvittering(trade_id);
   if (!kvittering) notFound();
