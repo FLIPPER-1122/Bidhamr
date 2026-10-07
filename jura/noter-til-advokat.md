@@ -80,6 +80,7 @@ Alt i RB-afsnittet "DSA" er Claudes forslag og afventer advokatens godkendelse. 
 52. **Overførsel til USA.** Supabase, Vercel, Resend, Expo og Stripe er amerikanske virksomheder. Database (Supabase, eu-west-1) og serverkode (Vercel, region dub1 i Dublin) kører nu i EU, men overførsel eller adgang fra USA kan stadig forekomme (support, drift, logs og evt. Vercels globale netværk). Bekræft grundlaget pr. leverandør (EU-US Data Privacy Framework eller standardkontraktbestemmelser), og om vi skal lave en overførselsvurdering (TIA). (P 6.3, 7)
 53. **Databehandleraftaler.** Bekræft, at standardaftalerne fra Supabase, Vercel, Resend, Expo (og senere GLS/Shipmondo, Criipto, Dinero) er tilstrækkelige. (P 6.3, ROADMAP fase 6)
 54. **Nødvendige cookies.** Må disse regnes som nødvendige (intet samtykke): `bh_enhed` (genkendelse af enhed til mail ved nyt login, 400 dage), kladden til auktioner i local storage, og Stripes svindel-cookies `__stripe_mid`/`__stripe_sid`? (RAPPORT 6. okt., `/cookies`)
+55. **Cookie-banner: eget eller Cookiebot?** BidHamr har sit eget cookie-banner: "Accepter alle" og "Kun nødvendige" er lige store, intet er forvalgt, valget gemmes i 12 måneder i cookien `bh_samtykke` (kun i brugerens browser, ikke en central log), og man kan altid ændre det via "Cookieindstillinger" i footeren. I dag bruges kun nødvendige cookies. Er vores eget banner nok, eller anbefales et certificeret værktøj som Cookiebot (pris ca. 100-400 kr./md.) med automatisk cookie-scanning og central dokumentation af samtykker – nu eller først, når vi tager statistik- eller marketingværktøjer i brug? (`/cookies`, `src/components/samtykke/CookieBanner.tsx`)
 
 ## 5. Til revisor (ikke advokat, men samme møde-runde)
 
@@ -89,4 +90,4 @@ Alt i RB-afsnittet "DSA" er Claudes forslag og afventer advokatens godkendelse. 
 
 ---
 
-**I alt: 54 spørgsmål til advokaten** (27 om betaling og handelsbetingelser, 14 om DSA, 13 om persondata) + 3 punkter til revisor.
+**I alt: 55 spørgsmål til advokaten** (27 om betaling og handelsbetingelser, 14 om DSA, 13 om persondata) + 3 punkter til revisor.
