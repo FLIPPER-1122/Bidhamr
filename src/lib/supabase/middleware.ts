@@ -73,7 +73,9 @@ function erOffentligLaeseside(pathname: string, metode: string) {
 
 // Inden launch er appen lukket for almindelige brugere. Kun disse roller
 // slipper igennem - alle andre (også indloggede) sendes til splash-siden.
-const ROLLER_MED_ADGANG = ["chef", "admin", "medarbejder"];
+// 'saelger' (erhvervssælger) skal kunne nå Admin → Erhverv før lancering;
+// resten af admin afviser rollen (src/lib/adminAuth.ts).
+const ROLLER_MED_ADGANG = ["chef", "admin", "medarbejder", "saelger"];
 
 function erOffentligRute(pathname: string) {
   return OFFENTLIGE_RUTER.some(

@@ -83,6 +83,18 @@ export const GRAENSER = {
   // så formularen må ikke kunne bruges til at sende mails til fremmede).
   dsa_kvittering_email: { maks: 3, vindueSek: 24 * 60 * 60 },
   dsa_kvittering_anonym: { maks: 100, vindueSek: 60 * 60 },
+  // Erhvervsformularen (/erhverv). Derudover honeypot, tidsfælde og et
+  // globalt loft. Pr. CVR, så samme firma ikke kan fylde admin op.
+  erhverv_ip: { maks: 5, vindueSek: 60 * 60 },
+  erhverv_email: { maks: 3, vindueSek: 60 * 60 },
+  erhverv_cvr: { maks: 3, vindueSek: 24 * 60 * 60 },
+  erhverv_bruger: { maks: 5, vindueSek: 60 * 60 },
+  erhverv_alle: { maks: 100, vindueSek: 60 * 60 },
+  // Admin → Erhverv: oprettelse af firmakonti/velkomstmails og CVR-opslag
+  // pr. medarbejder.
+  erhverv_opret_staff: { maks: 30, vindueSek: 60 * 60 },
+  erhverv_velkomst_firma: { maks: 5, vindueSek: 24 * 60 * 60 },
+  cvr_opslag_staff: { maks: 60, vindueSek: 60 * 60 },
   // Klager og visning af en DSA-sag via signeret link.
   dsa_klage_ip: { maks: 10, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;

@@ -19,6 +19,7 @@ import {
 } from "@/lib/auktionRegler";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand, standNavn } from "@/lib/stand";
+import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { SPOERGSMAAL_SLAAET_FRA } from "@/lib/spoergsmaal";
 import { kroner } from "@/lib/kroner";
 import { UKENDT_POSTNUMMER, slaaPostnummerOp } from "@/lib/postnumre";
@@ -329,6 +330,8 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         else if (insertError.code === "BHA03") besked = "Vælg varens stand.";
         else if (insertError.code === "BHA04") besked = `Titlen må højst være ${MAKS_TITEL} tegn.`;
         else if (insertError.code === "BHA05") besked = `Beskrivelsen må højst være ${MAKS_BESKRIVELSE} tegn.`;
+        else if (erhvervFejlTekst(insertError.message, insertError.code))
+          besked = erhvervFejlTekst(insertError.message, insertError.code)!;
         else if (insertError.code === "BHS02")
           besked = "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl.";
         else if (insertError.code === "BHF01") {

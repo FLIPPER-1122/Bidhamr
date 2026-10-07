@@ -16,6 +16,9 @@
 --   tester-agent tester@test.bidhamr.dk        WZYWlaZcZ558016I
 --   Niels køber  niels-koeber@test.bidhamr.dk  WjzVSXnvJAYX4wHs   (ekstern Stripe-gennemgang, Ankerdigital)
 --   Niels sælger niels-saelger@test.bidhamr.dk qdsG-8MIOUFOZ3w9   (ekstern Stripe-gennemgang, Ankerdigital)
+--   staff-rolle 'saelger' (kun Erhverv i admin)
+--                erhvervssaelger@test.bidhamr.dk PXXou0dC3YLbNy5G
+--   firmakonto   firma@test.bidhamr.dk         51Ha-G0X21hAIx7k   (Testfirma ApS, pakke "Basis")
 --
 -- Adgangskoderne gælder kun testdatabasen. De må ikke genbruges andre steder.
 --
@@ -39,7 +42,9 @@ declare
     {"id":"11111111-1111-4111-8111-000000000004","email":"chef@test.bidhamr.dk","pw":"0hz1020kbKcMf1BE","navn":"Christian Chef"},
     {"id":"11111111-1111-4111-8111-000000000005","email":"tester@test.bidhamr.dk","pw":"WZYWlaZcZ558016I","navn":"Tester Agent"},
     {"id":"11111111-1111-4111-8111-000000000006","email":"niels-koeber@test.bidhamr.dk","pw":"WjzVSXnvJAYX4wHs","navn":"Niels Køber"},
-    {"id":"11111111-1111-4111-8111-000000000007","email":"niels-saelger@test.bidhamr.dk","pw":"qdsG-8MIOUFOZ3w9","navn":"Niels Sælger"}
+    {"id":"11111111-1111-4111-8111-000000000007","email":"niels-saelger@test.bidhamr.dk","pw":"qdsG-8MIOUFOZ3w9","navn":"Niels Sælger"},
+    {"id":"11111111-1111-4111-8111-000000000008","email":"erhvervssaelger@test.bidhamr.dk","pw":"PXXou0dC3YLbNy5G","navn":"Ebbe Erhvervssælger"},
+    {"id":"11111111-1111-4111-8111-000000000009","email":"firma@test.bidhamr.dk","pw":"51Ha-G0X21hAIx7k","navn":"Testfirma ApS"}
   ]';
   b jsonb;
 begin
@@ -79,6 +84,27 @@ end $$;
 update public.users set rolle = 'admin'       where id = '11111111-1111-4111-8111-000000000003';
 update public.users set rolle = 'chef'        where id = '11111111-1111-4111-8111-000000000004';
 update public.users set rolle = 'medarbejder' where id = '11111111-1111-4111-8111-000000000005';
+update public.users set rolle = 'saelger'     where id = '11111111-1111-4111-8111-000000000008';
+
+-- ---------------------------------------------------------
+-- Erhverv (20261010030000_erhverv.sql): én testpakke uden pris og én
+-- firmakonto. Kun testdata - priserne sætter Filip i admin.
+-- ---------------------------------------------------------
+insert into public.erhverv_pakker (id, navn, beskrivelse, maanedspris, auktioner_pr_uge, sortering)
+values ('66666666-6666-4666-8666-000000000001', 'Basis', 'Testpakke: 1 auktion pr. uge.', null, 1, 1)
+on conflict (id) do nothing;
+
+update public.users
+   set konto_type = 'erhverv', navn = 'Testfirma ApS', fornavn = null, efternavn = null
+ where id = '11111111-1111-4111-8111-000000000009';
+
+insert into public.firmaer (id, bruger_id, firmanavn, cvr, adresse, postnummer, bynavn, telefon,
+                            kontakt_email, kontaktperson, pakke_id, oprettet_af)
+values ('77777777-7777-4777-8777-000000000001', '11111111-1111-4111-8111-000000000009',
+        'Testfirma ApS', '12345678', 'Testvej 1', '4700', 'Næstved', '+4511223344',
+        'firma@test.bidhamr.dk', 'Tina Test', '66666666-6666-4666-8666-000000000001',
+        '11111111-1111-4111-8111-000000000004')
+on conflict (id) do nothing;
 
 -- ---------------------------------------------------------
 -- Auktioner (sælger)

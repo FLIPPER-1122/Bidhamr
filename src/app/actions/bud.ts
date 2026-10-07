@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 import { notificerEgetNyesteBud } from "@/lib/notifikationer/bud";
+import { ERHVERV_FEJL } from "@/lib/erhverv/regler";
 
 // Bud afgives paa serveren, saa det kan rate-limites pr. bruger og pr. IP.
 // Selve buddet indsaettes stadig med brugerens egen session, saa RLS
@@ -126,6 +127,7 @@ export async function afgivBud(
     // Databasens fejltekst sendes aldrig ordret til brugeren - kun kendte
     // beskeder (whitelist). Alt andet logges og giver en generisk besked.
     if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
+    if (besked.includes("erhverv_kan_ikke_byde")) return { fejl: ERHVERV_FEJL.kanIkkeByde };
     if (besked.includes("minimum_bid")) {
       const kr = Number(besked.match(/mindst\s+([\d.]+)\s*kr/)?.[1]);
       return {
@@ -216,6 +218,7 @@ export async function saetMaksimum(
     const besked = error.message ?? "";
     const kr = (re: RegExp) => Number(besked.match(re)?.[1]);
     if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
+    if (besked.includes("erhverv_kan_ikke_byde")) return { fejl: ERHVERV_FEJL.kanIkkeByde };
     if (besked.includes("maks_for_lavt")) {
       const v = kr(/mindst\s+([\d.]+)\s*kr/);
       return {
