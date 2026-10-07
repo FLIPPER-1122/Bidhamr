@@ -269,16 +269,23 @@ Bygget i `20261010010000_autobud.sql` (testdatabasen: + `20261010011000_autobud_
 
 Baggrund og research: `ERHVERV-OVERBLIK.md`. Lovspørgsmålene er sendt til advokaten (`jura/noter-til-advokat.md`, nr. 56 ff.).
 
-- **Konto:** man skifter sin eksisterende profil til erhverv ("Skift til erhverv" + CVR). Samme login. Handler fra før skiftet forbliver private handler. (Senere evt.: én person kan eje flere virksomheder.)
-- **Hvem:** kun firmaer med **aktivt dansk CVR** (ApS, A/S, I/S, enkeltmandsvirksomhed m.fl.). CVR tjekkes mod CVR-registret. Ikke foreninger og ikke udenlandske firmaer ved start.
-- **Abonnement er påkrævet for at sælge.** Firmaet opretter sig som erhverv og **booker et møde** med BidHamr. Efter mødet vælger staff en fast pakke i admin og aktiverer abonnementet; først da kan firmaet sælge. Pakkerne (navn, månedspris, gebyr, antal auktioner) oprettes og ændres af staff i admin – **Filip fastsætter priserne senere**. Abonnementet betales via Stripe (bygges, når Stripe-arbejdet genoptages med Niels).
-- **Antal auktioner:** udgangspunktet er **1 auktion pr. uge** med det månedlige abonnement. Firmaet kan **tilkøbe flere auktioner pr. uge**.
+**Grundregel: det skal være MEGET nemt.** Det er primært ældre mennesker, der bruger erhvervskontoen. Store knapper, få valg, enkelt sprog, ingen fagudtryk, én ting ad gangen.
+
+- **Knappen "Erhverv"** står i menuen øverst (også for folk, der ikke er logget ind). Den fører til en side om, hvad man kan som erhverv, og hvad BidHamr tilbyder. **Der står ingen priser** på siden.
+- **Formular:** på samme side er knappen "Formular". Virksomheden udfylder den for at få en aftale med BidHamr. Henvendelsen lander i admin under Erhverv.
+- **Adgang i admin:** kun **chef** og den nye rolle **sælger** kan se erhvervshenvendelser og firmaer. Sælger kan læse formularer, skrive noter, godkende/afvise og oprette firmakontoen med pakke. Kun chef kan oprette og ændre pakker og priser.
+- **Et firma kan ALDRIG oprette sin egen firmakonto.** BidHamr opretter den manuelt, når firmaet er godkendt og der er lavet en aftale, så alt stemmer overens. Firmakontoen er en **ny, separat konto** med firmaets e-mail: firmaet får en mail "Velkommen – vælg din adgangskode". En evt. privat konto er ikke berørt.
+- **Hvem:** kun firmaer med **aktivt dansk CVR**. Ikke foreninger og ikke udenlandske firmaer ved start.
+- **Abonnement er påkrævet for at sælge.** BidHamr vælger pakken, når kontoen oprettes. Pakkerne (navn, månedspris, antal auktioner pr. uge) oprettes af chefen i admin – **Filip fastsætter priserne senere**.
+- **Antal auktioner:** udgangspunktet er **1 auktion pr. uge**. Firmaet kan opgradere til flere auktioner pr. uge.
+- **Skift af pakke i Firma oversigt:** firmaet ser altid sin egen pakke og de andre pakker **med priser** (priserne vises kun her, ikke på den offentlige side). **Opgradering** sker med det samme ved et tryk: betalingen ændres, og firmaet betaler forskellen og får en faktura. **Nedgradering** gælder fra næste betalingsperiode (intet refunderes). Betalingen kører via Stripe (bygges, når Stripe-arbejdet genoptages med Niels).
+- **Profilmenuen** (pop op-menuen ved tryk på egen profil) viser for en firmakonto kun **"Firma oversigt"** (og Log ud).
+- **Firma oversigt (dashboard)** samler alt: indtjening, salg, visninger af annoncerne, regninger fra BidHamr, abonnement og pakker – se ROADMAP fase 7 for indholdet.
 - **Kun auktion** – ingen "Køb nu", heller ikke for erhverv.
 - **Nye varer er tilladt for erhverv** (fx overskudslager, returvarer, udgåede modeller). Stand "Ny" og de oplysninger, EU's produktsikkerhedsregler (GPSR) kræver (producent, sikkerhedsoplysninger), skal udfyldes. Private sælger fortsat kun brugte ting.
-- **Erhverv kan kun sælge**, ikke købe. Vil ejeren købe, sker det med en privat konto.
-- **Ingen grænse for private:** sælger man fra et firma, skal man oprette sig som erhverv. Det står tydeligt i reglerne; der er ingen automatisk grænse eller tælling.
+- **Erhverv kan kun sælge**, ikke købe/byde. Vil ejeren købe, sker det med en privat konto.
+- **Ingen grænse for private:** sælger man fra et firma, skal man være oprettet som erhverv. Det står tydeligt i reglerne; der er ingen automatisk grænse eller tælling.
 - **Visning:** tydeligt mærke "Erhvervssælger" på auktionen og ét klik til firmaets profil med firmanavn, CVR, adresse, kontakt, vilkår og fortrydelsesret (advokaten skal godkende, at det er nok).
 - **Fortrydelsesret (14 dage)** ved køb fra erhverv håndteres af BidHamr i appen: knap "Fortryd køb", returlabel, og refusion via Stripe, når sælgeren har modtaget varen. Erhvervssælgeren får først udbetalt, når fortrydelsesfristen er udløbet.
 - **Reklamation efter udbetaling** (virksomheden hæfter i 2 år) er mellem køber og virksomheden. BidHamr hjælper køberen med virksomhedens kontaktoplysninger, og gentagne klager kan give advarsel/lukning af erhvervskontoen. BidHamr trækker ikke penge tilbage.
 - **BidHamr Beskyttelse kan ikke vælges ved køb fra erhverv** – køberen har i stedet fortrydelses- og reklamationsret efter loven.
-- **Værktøjer ved start:** statistik (visninger, bud, salg og omsætning). Butiksside, masse-upload og flere medarbejdere kan komme senere.

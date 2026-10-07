@@ -202,21 +202,23 @@ Formål: alt det juridiske og praktiske er på plads.
 ---
 
 ## Fase 7 – Erhvervskonti
-Formål: firmaer med CVR kan sælge på BidHamr med abonnement. Regler: `ROADMAP-BESLUTNINGER.md`, "Erhvervskonti". Research: `ERHVERV-OVERBLIK.md`.
+Formål: firmaer med CVR kan sælge på BidHamr med abonnement – og det skal være MEGET nemt (primært ældre brugere). Regler: `ROADMAP-BESLUTNINGER.md`, "Erhvervskonti". Research: `ERHVERV-OVERBLIK.md`.
 
-- [ ] Filip: fastsæt abonnementspakker og priser (månedspris, gebyr, tilkøb af ekstra auktioner pr. uge)
+- [ ] Filip: fastsæt abonnementspakker og priser (månedspris og antal auktioner pr. uge)
 - [ ] Filip: send erhvervsspørgsmålene til advokaten (`jura/noter-til-advokat.md` nr. 56 ff.)
-- [ ] "Skift til erhverv": CVR indtastes og tjekkes mod CVR-registret (aktivt dansk CVR), firmanavn og adresse hentes automatisk
-- [ ] Book et møde med BidHamr efter oprettelse (kalender/booking) og status "Afventer møde"
-- [ ] Admin: pakker (opret/ændr), aktivér/deaktivér abonnement for et firma, oversigt over erhvervskonti
-- [ ] Salg kræver aktivt abonnement; grænse på auktioner pr. uge efter pakke + tilkøb – håndhæves i databasen (også fra appen)
-- [ ] Mærke "Erhvervssælger" på auktioner og i søgning + firmaprofil med CVR, adresse, kontakt, vilkår og fortrydelsesret
+- [ ] Siden **Erhverv** (knap i menuen øverst): hvad man kan som erhverv, hvad BidHamr tilbyder – ingen priser – og knappen **Formular**
+- [ ] Erhvervsformularen: firmanavn, CVR, kontaktperson, telefon, e-mail, hvad de sælger m.m. Spamværn. Lander i admin
+- [ ] Ny staff-rolle **sælger**. Admin → Erhverv (kun chef og sælger): henvendelser (læs, noter, godkend/afvis), firmaer, opret firmakonto med pakke (velkomstmail med link til at vælge adgangskode). Pakker oprettes/ændres kun af chef
+- [ ] Firmakonti kan ikke oprettes af firmaet selv – håndhæves i databasen
+- [ ] Salg kræver aktivt abonnement; antal auktioner pr. uge efter pakke – håndhæves i databasen (også fra appen). Firmakonti kan ikke byde
+- [ ] Profilmenuen viser kun **Firma oversigt** for firmakonti
+- [ ] **Firma oversigt** (dashboard): indtjening og udbetalinger, salg, visninger, aktive auktioner og ugens kvote, handler der venter på firmaet (fx send pakke), spørgsmål fra købere, abonnement og alle pakker med priser (opgradér med det samme, nedgradér fra næste periode), regninger fra BidHamr, firmaoplysninger, kontakt til BidHamr
+- [ ] Mærke "Erhvervssælger" på auktioner og i søgning + offentlig firmaprofil med CVR, adresse, kontakt, vilkår og fortrydelsesret
 - [ ] Nye varer for erhverv: stand "Ny" + GPSR-felter (producent, sikkerhedsoplysninger)
-- [ ] Fortrydelsesret 14 dage: "Fortryd køb", returlabel, refusion via Stripe ved modtagelse, udbetaling til erhverv først efter fristen
-- [ ] Ingen BidHamr Beskyttelse ved køb fra erhverv; erhvervskonti kan ikke byde
+- [ ] Ingen BidHamr Beskyttelse ved køb fra erhverv
+- [ ] Fortrydelsesret 14 dage: "Fortryd køb", returlabel, refusion via Stripe ved modtagelse, udbetaling til erhverv først efter fristen *(venter på Stripe/Niels og fragt)*
+- [ ] Abonnementsbetaling, opgradering med betaling af forskellen og fakturaer via Stripe *(venter på Stripe/Niels og valg af regnskabsprogram)*
 - [ ] Reklamation: køber kan se virksomhedens kontaktoplysninger og klage; gentagne klager → advarsel/lukning
-- [ ] Statistik for erhverv: visninger, bud, salg, omsætning
-- [ ] Abonnementsbetaling via Stripe *(venter på Stripe/Niels)*
 - [ ] Brugerbetingelser og FAQ for erhverv (indhold + advokat)
 - [ ] Appen: samme erhvervsfunktioner (Filip)
 
