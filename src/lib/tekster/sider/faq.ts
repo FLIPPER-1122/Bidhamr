@@ -31,6 +31,14 @@ export const FAQ_SIDE: Tekstside = {
           svar: "Det afhænger af det højeste bud lige nu. Under 100 kr.: mindst 5 kr. mere. 100-999 kr.: 10 kr. 1.000-4.999 kr.: 50 kr. Fra 5.000 kr.: 100 kr. Det første bud må gerne være lig startprisen.",
         },
         {
+          spoergsmaal: "Hvordan virker automatisk bud?",
+          svar: "Du skriver det højeste beløb, du vil give – dit maksimum. BidHamr byder så for dig med det mindst mulige, hver gang en anden byder over, indtil dit maksimum er nået. Du betaler altså kun det, der skal til for at føre. Sælgeren og de andre bydere kan aldrig se dit maksimum, kun dine bud. I budhistorikken står der \"automatisk\" ved de bud, BidHamr har afgivet. Har to bydere et maksimum, fører den højeste – til det laveste beløb, der slår det andet. Er de lige store, fører den, der satte sit maksimum først. Du får besked, hvis nogen byder over dit maksimum.",
+        },
+        {
+          spoergsmaal: "Er mit maksimum bindende?",
+          svar: "Ja, ligesom et almindeligt bud. Vinder du, skal du betale det, du endte med at byde – højst dit maksimum. Du kan hæve dit maksimum når som helst, mens auktionen kører. Du kan også sænke det, men ikke under dit nuværende bud, hvis du fører.",
+        },
+        {
           spoergsmaal: "Er der en skjult mindstepris?",
           svar: "Nej. Startprisen er den laveste pris, sælgeren vil sælge for. Der er ingen skjult mindstepris.",
         },

@@ -55,12 +55,16 @@ export default async function AuktionPage({
     hentBruger(),
     createAdminClient()
       .from("bids")
-      .select("id, bruger_id, beløb, oprettet")
+      .select("id, bruger_id, beløb, oprettet, automatisk")
       .eq("auktion_id", id)
+      // Bud stiger altid, så beløb giver samme rækkefølge som tidspunkt -
+      // også når et bud og de automatiske bud, det udløste, har samme
+      // tidspunkt (samme transaktion).
+      .order("beløb", { ascending: false })
       .order("oprettet", { ascending: false })
       .limit(MAKS_BUD_HENTET)
       .overrideTypes<
-        { id: string; bruger_id: string; beløb: number; oprettet: string }[],
+        { id: string; bruger_id: string; beløb: number; oprettet: string; automatisk: boolean | null }[],
         { merge: false }
       >(),
   ]);
@@ -152,7 +156,19 @@ export default async function AuktionPage({
     oprettet: b.oprettet,
     erMig: b.bruger_id === mitId,
     byder: b.bruger_id === mitId ? "Dig" : `Byder ${byderNr.get(b.bruger_id)}`,
+    // Kun at BidHamr bød automatisk - aldrig maksimum.
+    automatisk: b.automatisk === true,
   }));
+
+  // Mit eget maksimum (automatisk bud). Kun byderen selv kan se det
+  // (mit_maksimum bruger auth.uid()); sælger og andre får null.
+  const mitMaksimumLoefte: Promise<number | null> =
+    mitId && mitId !== auktion.bruger_id && auktion.status === "aktiv"
+      ? Promise.resolve(supabase.rpc("mit_maksimum", { p_auktion: id })).then((r) => {
+          const v = (r.data as { maks_beloeb?: number | string } | null)?.maks_beloeb;
+          return r.error || v == null ? null : Number(v);
+        })
+      : Promise.resolve(null);
 
   // Spørg sælger: offentlig liste uden bruger-id'er (auktion_spoergsmaal_liste).
   // Fejler kaldet (fx før migrationen er kørt), vises bare ingen spørgsmål.
@@ -281,6 +297,7 @@ export default async function AuktionPage({
     bruger && handel && handel.buyer_id === bruger.id && handel.seller_id === auktion.bruger_id,
   );
   const harBedømt = maaBedømme && (await harBedømtLoefte);
+  const mitMaksimum = await mitMaksimumLoefte;
 
   const sektionsLinje = "my-6 border-t border-kant";
   const sektionsTitel = "text-[17px] leading-snug lg:text-lg";
@@ -457,6 +474,7 @@ export default async function AuktionPage({
               redigeretKl={(auktion.redigeret_kl as string | null | undefined) ?? null}
               initialSlutterKl={auktion.slutter_kl}
               initialBud={anonymeBud}
+              mitMaksimum={mitMaksimum}
               brugerId={bruger?.id ?? null}
               saelgerId={auktion.bruger_id}
               forsendelseMulig={auktion.forsendelse_mulig}
