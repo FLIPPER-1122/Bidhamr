@@ -91,3 +91,26 @@ Alt i RB-afsnittet "DSA" er Claudes forslag og afventer advokatens godkendelse. 
 ---
 
 **I alt: 55 spørgsmål til advokaten** (27 om betaling og handelsbetingelser, 14 om DSA, 14 om persondata og cookies) + 3 punkter til revisor.
+
+## Erhvervskonti (fase 7, besluttet 7. okt. 2026 – se ROADMAP-BESLUTNINGER.md "Erhvervskonti" og ERHVERV-OVERBLIK.md)
+
+Kort om modellen: kun firmaer med aktivt dansk CVR, månedligt abonnement (aktiveres af BidHamr efter et møde), kun auktion, erhverv må sælge nye varer, erhverv kan ikke købe, ingen BidHamr Beskyttelse ved køb fra erhverv, BidHamr håndterer fortrydelse i appen, og erhvervssælgeren får først udbetalt efter fortrydelsesfristen.
+
+56. **Fortrydelsesret ved netauktion.** Bekræft, at undtagelsen for "offentlig auktion" (forbrugeraftaleloven § 18, stk. 2, nr. 11) ikke gælder BidHamr, så forbrugere har 14 dages fortrydelsesret ved køb fra erhvervssælgere.
+57. **Refusion ved fortrydelse.** Skal BidHamrs købergebyr og fragt refunderes, når en køber fortryder et erhvervskøb (accessoriske aftaler)? Hvem bærer omkostningen – BidHamr eller sælger?
+58. **Fortrydelse af BidHamrs egne tjenester.** Har forbrugeren 14 dages fortrydelsesret over for BidHamrs gebyr og BidHamr Beskyttelse – også ved køb fra private?
+59. **Mærkning af private sælgere.** Hvordan skal mærkningen formuleres, så BidHamr ikke anses som sælger efter købeloven § 4 a, stk. 2? (Gælder allerede nu, før erhverv.)
+60. **DSA art. 30–32.** Er BidHamr undtaget efter art. 29 (mikro/lille virksomhed), og fra hvornår gælder kravene, hvis vi vokser?
+61. **Produktsikkerhed (GPSR).** Hvilke pligter har BidHamr som markedsplads (kontaktpunkt, Safety Gate, felter ved oprettelse), når erhverv sælger nye og brugte varer?
+62. **Ingen BidHamr Beskyttelse ved erhverv.** Vi tilbyder ikke BidHamr Beskyttelse ved køb fra erhverv, fordi køberen har lovens rettigheder. Er det i orden, og hvordan forklarer vi det uden at vildlede?
+63. **Ansvar ved reklamation.** Har BidHamr noget ansvar ved reklamation (2 år), hvis erhvervssælgeren ikke betaler eller er gået konkurs, og pengene er udbetalt? Vi hjælper kun med kontaktoplysninger.
+64. **Oplysninger før buddet.** Hvilke oplysninger skal erhvervssælgeren vise, og er det nok med mærket "Erhvervssælger" og ét klik til profilen?
+65. **Dødsboer og bobestyrere.** Skal de oprettes som erhverv, når de sælger på BidHamr?
+66. **Private, der sælger fra et firma.** Reglen er: sælger du fra et firma, skal du oprette dig som erhverv. Må vi lukke en privat konto, der i virkeligheden sælger som firma, og skal vi aktivt kontrollere det?
+67. **Faktura og brugtmoms.** Skal erhvervssælgere kunne udstede faktura gennem BidHamr, og hvad kræver brugtmomsordningen af faktura og prisvisning?
+68. **Klageoplysning.** Hvilke krav gælder for henvisning til Nævnenes Hus nu, hvor EU's ODR-platform er lukket – for BidHamr og for erhvervssælgerne?
+69. **Vilkår for erhverv.** Skal brugerbetingelserne have et særskilt afsnit for erhvervssælgere (pligter, ansvar, skadesløsholdelse af BidHamr, abonnement og opsigelse)?
+70. **Producentansvar.** Har BidHamr producentansvar (elektronik, batterier, emballage), når erhverv sælger nye varer?
+71. **DAC7 for erhverv.** Skal vi indsamle momsnummer og fast forretningssted, og må vi stole på Stripes indsamling?
+72. **Abonnementet.** Hvad skal abonnementsvilkårene indeholde (binding, opsigelse, prisændring, grænse på antal auktioner pr. uge og tilkøb)?
+73. **Mindstepris/reserve.** Må erhvervssælgere sætte mindstepris på auktioner, og skal det oplyses særskilt over for forbrugere?

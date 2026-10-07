@@ -201,6 +201,27 @@ Formål: alt det juridiske og praktiske er på plads.
 
 ---
 
+## Fase 7 – Erhvervskonti
+Formål: firmaer med CVR kan sælge på BidHamr med abonnement. Regler: `ROADMAP-BESLUTNINGER.md`, "Erhvervskonti". Research: `ERHVERV-OVERBLIK.md`.
+
+- [ ] Filip: fastsæt abonnementspakker og priser (månedspris, gebyr, tilkøb af ekstra auktioner pr. uge)
+- [ ] Filip: send erhvervsspørgsmålene til advokaten (`jura/noter-til-advokat.md` nr. 56 ff.)
+- [ ] "Skift til erhverv": CVR indtastes og tjekkes mod CVR-registret (aktivt dansk CVR), firmanavn og adresse hentes automatisk
+- [ ] Book et møde med BidHamr efter oprettelse (kalender/booking) og status "Afventer møde"
+- [ ] Admin: pakker (opret/ændr), aktivér/deaktivér abonnement for et firma, oversigt over erhvervskonti
+- [ ] Salg kræver aktivt abonnement; grænse på auktioner pr. uge efter pakke + tilkøb – håndhæves i databasen (også fra appen)
+- [ ] Mærke "Erhvervssælger" på auktioner og i søgning + firmaprofil med CVR, adresse, kontakt, vilkår og fortrydelsesret
+- [ ] Nye varer for erhverv: stand "Ny" + GPSR-felter (producent, sikkerhedsoplysninger)
+- [ ] Fortrydelsesret 14 dage: "Fortryd køb", returlabel, refusion via Stripe ved modtagelse, udbetaling til erhverv først efter fristen
+- [ ] Ingen BidHamr Beskyttelse ved køb fra erhverv; erhvervskonti kan ikke byde
+- [ ] Reklamation: køber kan se virksomhedens kontaktoplysninger og klage; gentagne klager → advarsel/lukning
+- [ ] Statistik for erhverv: visninger, bud, salg, omsætning
+- [ ] Abonnementsbetaling via Stripe *(venter på Stripe/Niels)*
+- [ ] Brugerbetingelser og FAQ for erhverv (indhold + advokat)
+- [ ] Appen: samme erhvervsfunktioner (Filip)
+
+---
+
 ## Senere – efter lancering
 Fundet i gennemgang af Tradera, Vinted og Etsy. Gode, men ikke nødvendige for at lancere.
 - [ ] **Feriemodus**: sælger kan sætte sin profil på pause, så nye auktioner ikke kan oprettes, og købere kan se, at sælger er væk *(flyttet hertil af Filip 6. okt. 2026 – rart at have, ikke nødvendigt til lancering)*
@@ -215,12 +236,9 @@ Fundet i gennemgang af Tradera, Vinted og Etsy. Gode, men ikke nødvendige for a
 - Automatisk deling af auktioner på Facebook/Instagram
 - Automatisk risikoscoring, der fanger mistænkelige auktioner og beskeder
 - "Køb nu" (se nedenfor)
-- **Virksomheder som sælgere** (se åbne spørgsmål). Stripe-delen er klar, fordi Stripes onboarding allerede håndterer både private og virksomheder (CVR, ejere). Det, der mangler, er forretningsreglerne:
-  - [ ] Filip: idéer til, hvordan virksomheder skal bruge platformen (fx genbrugsbutikker, dødsbo, overskudslager)
-  - [ ] Filip: afklar med rådgiver, hvad der gælder, når en virksomhed sælger til en privatperson: købeloven, forbrugeraftaleloven (14 dages fortrydelsesret ved fjernsalg), reklamationsret, moms på salget og priser vist inkl. moms
-  - [ ] Bygges ud fra rådgiverens svar: markering af erhvervssælgere på auktionen, deres egne vilkår og fortrydelsesret, moms på varen og evt. andre gebyrer
+- **Virksomheder som sælgere**: flyttet til *Fase 7 – Erhvervskonti* (Filip, 7. okt. 2026)
 
 ## Åbne spørgsmål
 - BidHamr Beskyttelse: bedre prismodel end fast 5%
-- Virksomheder som sælgere: hvilke typer virksomheder, samme gebyrer som private, og hvordan fortrydelsesret og moms håndteres
+- Virksomheder som sælgere: besluttet 7. okt. 2026 – se Fase 7 og ROADMAP-BESLUTNINGER.md "Erhvervskonti"
 - "Køb nu": IKKE med ved lancering – BidHamr er en ren auktionsside. Kan tages op igen senere.
