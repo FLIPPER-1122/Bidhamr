@@ -8,9 +8,6 @@ import { hentAntalAabneSager } from "@/app/actions/adminSager";
 import { hentAntalKontoLukninger } from "@/app/actions/adminKontoLukning";
 import { hentAntalTryghed } from "@/app/actions/adminTryghed";
 import { hentAntalDsa } from "@/app/actions/adminDsa";
-import { harToTrin } from "@/lib/mfa";
-import ToTrinAnbefaling from "@/components/admin/ToTrinAnbefaling";
-import { manglerStaffToTrin, TO_TRIN_PAAKRAEVET_STI } from "@/lib/adminAuth";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -24,12 +21,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   if (rolle !== "chef" && rolle !== "admin" && rolle !== "medarbejder") {
     redirect("/");
-  }
-
-  // Medarbejdere skal have to-trins-login (STAFF_KRAEVER_TO_TRIN, se
-  // src/lib/adminAuth.ts). Uden det sendes de til opsætningen på Min konto.
-  if (manglerStaffToTrin(user)) {
-    redirect(TO_TRIN_PAAKRAEVET_STI);
   }
 
   // Tallet til menuens badge. En fejl her må ikke vælte hele admin-panelet.
@@ -58,8 +49,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-neutral-50">
       <AdminSidebar rolle={rolle} taellere={{ ubetalte: antalUbetalte, betalinger: antalBetalinger, chats: antalChats, sager: antalSager, kontolukninger: antalLukninger, kontakt: antalKontakt, rapporter: antalRapporter, bedoemmelser: antalBedoemmelser, dsa: antalDsa }} />
       <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">
-        {/* Vises kun, hvis kravet om to-trins-login er slået fra (STAFF_KRAEVER_TO_TRIN=false). */}
-        {!harToTrin(user) && <ToTrinAnbefaling />}
         {children}
       </main>
     </div>

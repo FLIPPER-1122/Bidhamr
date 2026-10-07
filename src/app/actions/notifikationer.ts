@@ -20,7 +20,7 @@
 //       { p_indstillinger: [{ type, klokke, mail, push }] })  -> { kode: "ok" | ... }
 // Push-beskeder har data = { type, link, ...}; appen åbner `link` ved tryk.
 import { createClient } from "@/lib/supabase/server";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import {
   ALLE_TYPER,
   type Kanaler,
@@ -56,7 +56,7 @@ async function bruger() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   return { supabase, user };
 }
 

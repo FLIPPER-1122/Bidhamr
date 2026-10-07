@@ -14,13 +14,12 @@ import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { adgangskodeAendretMail } from "@/lib/mails/konto";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import { registrerLogin } from "@/lib/enheder";
-import { harToTrin, manglerToTrin } from "@/lib/mfa";
 import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
 import { logDriftFejl } from "@/lib/drift";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
 
-// Login, oprettelse, gensend bekraeftelse, to-trins-login og nulstil
+// Login, oprettelse, bekraeftelseskode (e-mail), gensend kode og nulstil
 // adgangskode koeres paa serveren, saa de kan rate-limites pr. IP og pr.
 // e-mail, og saa kravene til adgangskoden ikke kan omgaas fra browseren.
 // Fejl RETURNERES (Next.js skjuler kastede fejl i produktion).
@@ -33,6 +32,18 @@ type Resultat = { ok: true } | { fejl: string; kode?: "email_ikke_bekraeftet" };
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 
+// E-mailen fra signup (eller et login med ubekraeftet e-mail) huskes i en
+// kort, httpOnly cookie til /tjek-indbakke - den skal ikke staa i URL'en.
+async function saetTjekEmailCookie(email: string) {
+  (await cookies()).set(TJEK_EMAIL_COOKIE, email, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24,
+  });
+}
+
 function renEmail(email: unknown): string | null {
   if (typeof email !== "string") return null;
   const e = email.trim().toLowerCase();
@@ -43,7 +54,7 @@ function renNavn(v: unknown, maks = 100): string {
   return typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, maks) : "";
 }
 
-// Faelles efter et gennemfoert login (adgangskode + evt. to-trins-kode):
+// Faelles efter et gennemfoert login:
 // suspenderede konti logges ud igen med besked om aarsagen, og enheden
 // registreres (mail ved ny enhed).
 async function efterLogin(
@@ -67,7 +78,7 @@ async function efterLogin(
 export async function logInd(
   emailInput: string,
   password: string,
-): Promise<{ ok: true; toTrin: boolean } | { fejl: string; kode?: "email_ikke_bekraeftet" }> {
+): Promise<Resultat> {
   const email = renEmail(emailInput);
   if (!email || typeof password !== "string" || password.length === 0) {
     return { fejl: "Forkert e-mail eller adgangskode." };
@@ -85,9 +96,13 @@ export async function logInd(
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (!error) await nulstilGraense("login_email_ip", `${email}|${ip}`);
   if (error) {
+    // Supabase svarer kun email_not_confirmed, naar adgangskoden passer.
+    // E-mailen gemmes i den httpOnly cookie, saa /tjek-indbakke kan vise den
+    // og sende en ny kode.
     if (error.code === "email_not_confirmed") {
+      await saetTjekEmailCookie(email);
       return {
-        fejl: "Du mangler at bekræfte din e-mail. Klik på linket i den mail, vi sendte dig, da du oprettede kontoen.",
+        fejl: "Du mangler at bekræfte din e-mail. Indtast koden fra den mail, vi sendte dig.",
         kode: "email_ikke_bekraeftet",
       };
     }
@@ -99,50 +114,7 @@ export async function logInd(
     return { fejl: GENERISK };
   }
 
-  // To-trins-login: koden indtastes paa /login/to-trin. Foerst derefter
-  // tjekkes suspension og enhed.
-  if (harToTrin(data.user)) return { ok: true, toTrin: true };
-
-  const svar = await efterLogin(supabase, data.user, data.session?.access_token);
-  return "fejl" in svar ? svar : { ok: true, toTrin: false };
-}
-
-// Trin 2 af login: koden fra godkendelses-appen.
-export async function bekraeftToTrin(kodeInput: string): Promise<Resultat> {
-  const kode = typeof kodeInput === "string" ? kodeInput.replace(/\s+/g, "") : "";
-  if (!/^\d{6}$/.test(kode)) return { fejl: "Koden består af 6 cifre." };
-
-  const supabase = await createClient();
-  const { data: brugerData } = await supabase.auth.getUser();
-  const bruger = brugerData.user;
-  if (!bruger) return { fejl: "Din login-session er udløbet. Log ind igen." };
-
-  const ip = await klientIp();
-  if (!(await tjekGraenser([["mfa_bruger", bruger.id], ["mfa_ip", ip]]))) {
-    return { fejl: FOR_MANGE_FORSOEG };
-  }
-
-  const faktor = bruger.factors?.find((f) => f.status === "verified" && f.factor_type === "totp");
-  if (!faktor) return { fejl: GENERISK };
-
-  const { data, error } = await supabase.auth.mfa.challengeAndVerify({ factorId: faktor.id, code: kode });
-  if (error) {
-    if (error.status === 429) return { fejl: FOR_MANGE_FORSOEG };
-    if (error.code === "mfa_verification_failed" || error.status === 422 || error.status === 400) {
-      return { fejl: "Koden passer ikke. Tjek, at uret på din telefon går rigtigt, og prøv med den nye kode." };
-    }
-    console.error("bekraeftToTrin fejlede:", error.code, error.message);
-    return { fejl: GENERISK };
-  }
-
-  return efterLogin(supabase, bruger, data?.access_token);
-}
-
-// "Log ud" fra to-trins-siden (fx hvis man ikke har telefonen ved haanden).
-export async function afbrydLogin(): Promise<{ ok: true }> {
-  const supabase = await createClient();
-  await supabase.auth.signOut({ scope: "local" });
-  return { ok: true };
+  return efterLogin(supabase, data.user, data.session?.access_token);
 }
 
 // vilkaarVersion: den version af brugerbetingelserne, brugeren har sat
@@ -216,18 +188,12 @@ export async function opretKonto(input: {
     return { ok: true, bekraeftMail: false };
   }
 
-  (await cookies()).set(TJEK_EMAIL_COOKIE, email, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24,
-  });
+  await saetTjekEmailCookie(email);
   return { ok: true, bekraeftMail: true };
 }
 
-// Sender bekraeftelsesmailen igen. Uden emailInput bruges adressen fra
-// signup-cookien (siden "Tjek din indbakke").
+// Sender bekraeftelsesmailen (med en ny kode) igen. Uden emailInput bruges
+// adressen fra signup-cookien (siden "Indtast koden").
 export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat> {
   const email = renEmail(emailInput ?? (await cookies()).get(TJEK_EMAIL_COOKIE)?.value);
   if (!email) return { fejl: "Indtast en gyldig e-mail." };
@@ -245,20 +211,57 @@ export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat
   });
   if (error) {
     if (error.status === 429) {
-      return { fejl: "Vent lidt, før du beder om en ny mail. Den forrige kan stadig være på vej." };
+      return { fejl: "Vent lidt, før du beder om en ny kode. Den forrige mail kan stadig være på vej." };
     }
     console.error("gensendBekraeftelse fejlede:", error.code, error.message);
     return { fejl: GENERISK };
   }
 
-  (await cookies()).set(TJEK_EMAIL_COOKIE, email, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24,
-  });
+  await saetTjekEmailCookie(email);
   return { ok: true };
+}
+
+// Den 6-cifrede kode fra bekraeftelsesmailen ({{ .Token }} i
+// supabase/templates/confirmation.html). Uden emailInput bruges adressen fra
+// signup-cookien. Ved succes er brugeren logget ind (session-cookies saettes
+// af verifyOtp), og enheden registreres - foerste login efter oprettelse
+// giver ingen "Nyt login"-mail. Alle forsoeg taelles: hoejst 5 pr. e-mail+IP
+// og 30 pr. IP pr. 15 min; et gennemfoert forsoeg nulstiller e-mail+IP.
+// Appen bruger samme kald direkte: supabase.auth.verifyOtp({ email, token,
+// type: "signup" }).
+export async function verificerSignupKode(
+  kodeInput: string,
+  emailInput?: string,
+): Promise<Resultat | { fejl: string; kode: "kode_forkert" | "mangler_email" }> {
+  const kode = typeof kodeInput === "string" ? kodeInput.replace(/\D/g, "") : "";
+  // Produktion bruger 6 cifre ("Email OTP length"). Supabase tillader 6-10,
+  // så andre laengder afvises ikke her (testdatabasen bruger 8).
+  if (!/^\d{6,10}$/.test(kode)) return { fejl: "Koden består af 6 cifre.", kode: "kode_forkert" };
+
+  const email = renEmail(emailInput || (await cookies()).get(TJEK_EMAIL_COOKIE)?.value);
+  if (!email) return { fejl: "Indtast den e-mail, du oprettede kontoen med.", kode: "mangler_email" };
+
+  const ip = await klientIp();
+  if (!(await tjekGraenser([["signup_kode_ip", ip], ["signup_kode_email_ip", `${email}|${ip}`]]))) {
+    return { fejl: FOR_MANGE_FORSOEG };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.verifyOtp({ email, token: kode, type: "signup" });
+  if (error || !data.user) {
+    if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
+    // Supabase svarer otp_expired baade ved forkert og udloebet kode, saa
+    // teksten daekker begge dele.
+    if (error && (error.code === "otp_expired" || error.status === 403 || error.status === 400)) {
+      return { fejl: "Koden passer ikke, eller den er udløbet. Tjek koden, eller få en ny.", kode: "kode_forkert" };
+    }
+    console.error("verificerSignupKode fejlede:", error?.code, error?.message);
+    return { fejl: GENERISK };
+  }
+
+  await nulstilGraense("signup_kode_email_ip", `${email}|${ip}`);
+  (await cookies()).delete(TJEK_EMAIL_COOKIE);
+  return efterLogin(supabase, data.user, data.session?.access_token);
 }
 
 export async function nulstilAdgangskode(emailInput: string): Promise<Resultat> {
@@ -290,12 +293,7 @@ export async function nulstilAdgangskode(emailInput: string): Promise<Resultat> 
 
 // Ny adgangskode efter nulstillingslinket (recovery-session). Brugeren
 // logges ud bagefter og skal logge ind med den nye kode.
-// Har brugeren to-trins-login, kraever Supabase koden (aal2), foer
-// adgangskoden kan aendres - derfor kodeInput.
-export async function gemNyAdgangskode(
-  password: string,
-  kodeInput?: string,
-): Promise<Resultat | { fejl: string; kode: "to_trin_kraeves" }> {
+export async function gemNyAdgangskode(password: string): Promise<Resultat> {
   const supabase = await createClient();
   const { data: brugerData } = await supabase.auth.getUser();
   const bruger = brugerData.user;
@@ -304,23 +302,6 @@ export async function gemNyAdgangskode(
   const ip = await klientIp();
   if (!(await tjekGraenser([["adgangskode_bruger", bruger.id], ["nulstil_ip", ip]]))) {
     return { fejl: FOR_MANGE_FORSOEG };
-  }
-
-  if (await manglerToTrin(supabase, bruger)) {
-    const kode = typeof kodeInput === "string" ? kodeInput.replace(/\s+/g, "") : "";
-    if (!/^\d{6}$/.test(kode)) {
-      return { fejl: "Indtast koden fra din godkendelses-app.", kode: "to_trin_kraeves" };
-    }
-    if (!(await tjekGraenser([["mfa_bruger", bruger.id], ["mfa_ip", ip]]))) {
-      return { fejl: FOR_MANGE_FORSOEG };
-    }
-    const faktor = bruger.factors?.find((f) => f.status === "verified" && f.factor_type === "totp");
-    const { error: mfaFejl } = faktor
-      ? await supabase.auth.mfa.challengeAndVerify({ factorId: faktor.id, code: kode })
-      : { error: new Error("ingen faktor") };
-    if (mfaFejl) {
-      return { fejl: "Koden passer ikke. Prøv med den nye kode fra din app.", kode: "to_trin_kraeves" };
-    }
   }
 
   const { data: profil } = await createAdminClient()
@@ -343,10 +324,6 @@ export async function gemNyAdgangskode(
       return { fejl: "Adgangskoden er for svag. Vælg en længere og mindre almindelig adgangskode." };
     }
     if (error.status === 429) return { fejl: FOR_MANGE_FORSOEG };
-    // Har brugeren to-trins-login, kraever Supabase koden foerst (aal2).
-    if (error.code === "insufficient_aal") {
-      return { fejl: "Du har to-trins-login slået til. Log ind med din kode først, og skift så adgangskoden under Min konto." };
-    }
     if (error.code === "reauthentication_needed") {
       return { fejl: "Linket er for gammelt. Bed om et nyt og prøv igen." };
     }

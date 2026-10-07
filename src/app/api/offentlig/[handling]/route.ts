@@ -32,7 +32,7 @@ function tekst(fd: FormData, navn: string): string | undefined {
 }
 
 const HANDLINGER: Record<string, Handling> = {
-  "ny-adgangskode": (fd) => gemNyAdgangskode(tekst(fd, "password") ?? "", tekst(fd, "kode") || undefined),
+  "ny-adgangskode": (fd) => gemNyAdgangskode(tekst(fd, "password") ?? ""),
   "dsa-anmeld": anmeldIndhold,
   "dsa-klage-afgoerelse": klagOverAfgoerelse,
   "dsa-klage-anmelder": klagSomAnmelder,

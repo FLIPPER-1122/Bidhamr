@@ -3,7 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // Må brugeren logge ind? Bruges efter hvert gennemført login (adgangskode,
-// to-trins-kode og links i mails via /auth/callback).
+// koden fra bekræftelsesmailen og links i mails via /auth/callback).
 export type KontoStatus =
   | { kode: "ok" }
   | { kode: "slettet" }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { gensendBekraeftelse } from "@/app/actions/auth";
 
-// "Send mailen igen" med ventetid. Uden email bruger serveren adressen fra
+// "Send en ny kode" med ventetid. Uden email bruger serveren adressen fra
 // signup-cookien. Serveren og Supabase har desuden egne grænser.
 const VENTETID_SEK = 60;
 
@@ -14,7 +14,7 @@ export default function GensendBekraeftelse({
 }: {
   email?: string;
   variant?: "sekundaer" | "tekst";
-  // Vent også før første klik (mailen er lige sendt).
+  // Vent også før første klik (koden er lige sendt).
   startVentetid?: boolean;
 }) {
   const [sekunder, setSekunder] = useState(startVentetid ? VENTETID_SEK : 0);
@@ -37,7 +37,7 @@ export default function GensendBekraeftelse({
       setSekunder(VENTETID_SEK);
       return;
     }
-    setBesked({ ok: true, tekst: "Vi har sendt en ny mail. Tjek også din spam-mappe." });
+    setBesked({ ok: true, tekst: "Vi har sendt en ny kode. Tjek også din spam-mappe." });
     setSekunder(VENTETID_SEK);
   }
 
@@ -57,7 +57,7 @@ export default function GensendBekraeftelse({
         className={klasse}
       >
         {sender && <span className="btn-spinner" aria-hidden="true" />}
-        {venter ? `Send mailen igen (om ${sekunder} sek.)` : "Send mailen igen"}
+        {venter ? `Send en ny kode (om ${sekunder} sek.)` : "Send en ny kode"}
       </button>
       <p aria-live="polite" className="min-h-0">
         {besked && (

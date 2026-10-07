@@ -6,7 +6,7 @@
 // rate-limit pr. IP, bruger, e-mail og samlet. Fejl RETURNERES.
 
 import { createClient } from "@/lib/supabase/server";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 import {
@@ -60,7 +60,7 @@ export async function sendKontakt(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await getUserMedToTrin(supabase);
+    } = await hentLoggetIndBruger(supabase);
 
     const ip = await klientIp();
     const graenser: Parameters<typeof tjekGraenser>[0] = [

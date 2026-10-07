@@ -70,7 +70,7 @@ Indhold af `backup.7z`:
 
 | Fil | Indhold |
 |---|---|
-| `roles.sql`, `schema.sql`, `data.sql` | Databasen, som beskrevet i Supabases vejledning. `data.sql` indeholder `auth.users`, `auth.identities` og `auth.mfa_factors` (logins og to-trinsbekræftelse) og `storage.objects` (filernes metadata). **Ikke** med: login-sessioner og engangskoder (`auth.sessions`, `auth.refresh_tokens`, `auth.one_time_tokens`, `auth.flow_state`, `auth.mfa_challenges`, `auth.mfa_amr_claims`). De er kortlivede og ville give adgang til konti, så efter en gendannelse skal alle logge ind igen |
+| `roles.sql`, `schema.sql`, `data.sql` | Databasen, som beskrevet i Supabases vejledning. `data.sql` indeholder `auth.users`, `auth.identities` og `auth.mfa_factors` (logins; to-trins-login er fjernet, så tabellen er tom) og `storage.objects` (filernes metadata). **Ikke** med: login-sessioner og engangskoder (`auth.sessions`, `auth.refresh_tokens`, `auth.one_time_tokens`, `auth.flow_state`, `auth.mfa_challenges`, `auth.mfa_amr_claims`). De er kortlivede og ville give adgang til konti, så efter en gendannelse skal alle logge ind igen |
 | `cron.sql` | Cron-jobbene (`cron.job`) for sig, uden kørselsloggen. Indlæses aldrig af gendannelsestesten |
 | `migrationshistorik_*.sql` | Hvilke migrationer der er kørt |
 | `kontroltal.json` | Antal rækker pr. tabel i backuppen, så gendannelsestesten kan sammenligne |

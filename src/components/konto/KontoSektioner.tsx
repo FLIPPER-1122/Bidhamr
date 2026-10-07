@@ -2,10 +2,8 @@ import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { nuvaerendeEnhedHash } from "@/lib/enheder";
-import { harToTrin } from "@/lib/mfa";
 import { BETINGELSER_STI, PRIVATLIV_STI } from "@/lib/vilkaar";
 import SkiftAdgangskode from "./SkiftAdgangskode";
-import ToTrinsLogin from "./ToTrinsLogin";
 import Enheder, { type Enhed } from "./Enheder";
 import { FORMULAR_FEJL, KORT, LINK } from "./felter";
 
@@ -116,13 +114,6 @@ export async function SikkerhedSektion({ bruger }: { bruger: User }) {
         <h3 className={H3}>Adgangskode</h3>
         <div className="mt-3">
           <SkiftAdgangskode person={{ email: bruger.email, navn: [profil?.navn] }} />
-        </div>
-      </div>
-
-      <div className="mt-5 border-t border-kant pt-5">
-        <h3 className={H3}>To-trins-login</h3>
-        <div className="mt-3">
-          <ToTrinsLogin slaaetTil={harToTrin(bruger)} />
         </div>
       </div>
 

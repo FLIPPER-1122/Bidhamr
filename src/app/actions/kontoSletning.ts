@@ -5,7 +5,7 @@
 // POST /api/konto/slet.
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { manglerToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { ENHED_COOKIE } from "@/lib/enheder";
 import { udfoerKontoSletning, type Blokering } from "@/lib/kontoSletning";
 
@@ -16,14 +16,9 @@ export async function sletMinKonto(input: {
   bekraeftelse: string;
 }): Promise<{ ok: true } | { fejl: string; blokeringer?: Blokering[] }> {
   const supabase = await createClient();
-  const { data: brugerData } = await supabase.auth.getUser();
+  const { data: brugerData } = await hentLoggetIndBruger(supabase);
   const bruger = brugerData.user;
   if (!bruger) return { fejl: "Du er ikke logget ind længere. Log ind igen." };
-  // Har brugeren to-trins-login, skal sessionen have koden (aal2). Proxyen
-  // tjekker det også, men en server action kan kaldes via en offentlig sti.
-  if (await manglerToTrin(supabase, bruger)) {
-    return { fejl: "Indtast først koden fra din godkendelses-app. Log ud og ind igen, hvis du ikke bliver bedt om den." };
-  }
 
   const svar = await udfoerKontoSletning({
     bruger,

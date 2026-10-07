@@ -69,9 +69,9 @@ For BidHamrs egne ydelser betaler du gebyrer (se afsnit 5).
 
 3.3 **MitID.** Når vi indfører verificering med MitID, skal du bekræfte din identitet med MitID for at oprette en konto og for at kunne byde og sælge. Det er med til at forhindre, at en lukket bruger opretter en ny profil. [TODO Filip: MitID (Criipto) er ikke bygget endnu. Ret teksten, når det virker – fx om eksisterende brugere skal verificere sig.]
 
-3.4 **Bekræft din e-mail.** Du kan først logge ind, når du har bekræftet din e-mail via linket, vi sender dig.
+3.4 **Bekræft din e-mail.** Du kan først logge ind, når du har bekræftet din e-mail med den sikkerhedskode, vi sender til dig på e-mail. Koden udløber efter 1 time; du kan få en ny.
 
-3.5 **Hold din konto sikker.** Du er ansvarlig for at holde din adgangskode hemmelig. Adgangskoden skal være på mindst 10 tegn og må ikke være en almindelig adgangskode, din e-mail eller dit navn. Du kan slå to-trins-login til under Min konto. Får du mistanke om, at andre har adgang til din konto, skal du straks skifte adgangskode og skrive til support@bidhamr.dk.
+3.5 **Hold din konto sikker.** Du er ansvarlig for at holde din adgangskode hemmelig. Adgangskoden skal være på mindst 10 tegn og må ikke være en almindelig adgangskode, din e-mail eller dit navn. Får du mistanke om, at andre har adgang til din konto, skal du straks skifte adgangskode og skrive til support@bidhamr.dk.
 
 3.6 **Besked ved nyt login.** Logger nogen ind på din konto fra en ny enhed, får du en mail. Under Min konto kan du se dine enheder, fjerne en enhed og logge ud alle andre steder.
 

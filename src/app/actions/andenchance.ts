@@ -9,7 +9,7 @@
 // kalde. Alle funktioner returnerer { ok: true, ... } eller { fejl: string }.
 
 import { revalidatePath } from "next/cache";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { beskyttelseOere, fragtOere, KOEBERGEBYR_PROCENT } from "@/lib/betaling/beregn";
@@ -29,7 +29,7 @@ async function indloggetBrugerId(): Promise<string | null> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   return user?.id ?? null;
 }
 

@@ -10,7 +10,7 @@
 // Ingen penge flyttes: kun fristen i betalinger.betal_senest ændres.
 
 import { after } from "next/server";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { notificerFristForlaengelser } from "@/lib/notifikationer/cron";
@@ -33,7 +33,7 @@ export async function forlaengBetalingsfrist(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   if (!user) return { fejl: "Du skal være logget ind." };
 
   const { data, error } = await supabase.rpc("handel_forlaeng_betalingsfrist", {

@@ -6,7 +6,7 @@
 // auth.uid()). Her oversættes koderne til danske beskeder. Fejl RETURNERES.
 
 import { revalidatePath } from "next/cache";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { erRapportKategori, RAPPORT_BESKRIVELSE_MAKS } from "@/lib/tryghed";
 
@@ -26,7 +26,7 @@ async function kald(fn: string, args: Record<string, unknown>): Promise<string |
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   if (!user) return "ikke_logget_ind";
   const { data, error } = await supabase.rpc(fn, args);
   if (error) {

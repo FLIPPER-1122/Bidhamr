@@ -1,5 +1,5 @@
-// Sikkerheds- og kontomails: nyt login, ændret adgangskode, to-trins-login
-// og slettet konto. De sendes altid (de kan ikke slås fra under
+// Sikkerheds- og kontomails: nyt login, ændret adgangskode og slettet
+// konto. De sendes altid (de kan ikke slås fra under
 // notifikationsindstillinger), fordi de handler om kontoens sikkerhed.
 import { bygMail, escapeHtml, sideUrl } from "./layout";
 
@@ -56,31 +56,6 @@ export function adgangskodeAendretMail(input: { tidspunkt: Date }) {
       ],
       info: [{ noegle: "Tidspunkt", vaerdiHtml: escapeHtml(mailTidspunkt(input.tidspunkt)) }],
       knap: { tekst: "Nulstil adgangskode", url: sideUrl("/glemt-adgangskode") },
-      aarsag: AARSAG_SIKKERHED,
-    }),
-  };
-}
-
-export function toTrinMail(input: { slaaetTil: boolean; tidspunkt: Date }) {
-  const til = input.slaaetTil;
-  return {
-    subject: til ? "To-trins-login er slået til" : "To-trins-login er slået fra",
-    ...bygMail({
-      preheader: til
-        ? "Din konto er nu ekstra beskyttet med en kode fra din app."
-        : "Din konto bruger nu kun adgangskoden ved login.",
-      overskriftHtml: til ? "To-trins-login er slået til" : "To-trins-login er slået fra",
-      afsnitHtml: til
-        ? [
-            "Fremover skal du indtaste en kode fra din godkendelses-app, når du logger ind på BidHamr.",
-            "Mister du telefonen eller appen, så skriv til support@bidhamr.dk. Vi bekræfter, at det er dig, og hjælper dig ind igen.",
-          ]
-        : [
-            "Du skal nu kun bruge din adgangskode for at logge ind. Vi anbefaler, at du slår to-trins-login til igen under Min konto → Sikkerhed.",
-            "<strong>Var det ikke dig?</strong> Skift din adgangskode med det samme, og skriv til support@bidhamr.dk.",
-          ],
-      info: [{ noegle: "Tidspunkt", vaerdiHtml: escapeHtml(mailTidspunkt(input.tidspunkt)) }],
-      knap: til ? { tekst: "Gå til Min konto", url: sideUrl("/konto#sikkerhed") } : IKKE_DIG,
       aarsag: AARSAG_SIKKERHED,
     }),
   };

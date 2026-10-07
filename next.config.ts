@@ -49,7 +49,7 @@ const nextConfig: NextConfig = {
   // Se node_modules/next/dist/docs/01-app/02-guides/ai-agents.md ("Opting out").
   agentRules: false,
   // Server actions logges ikke med navn og argumenter i terminalen (kun i
-  // udvikling) - argumenterne kan være adgangskoder, e-mails og to-trins-koder.
+  // udvikling) - argumenterne kan være adgangskoder, e-mails og engangskoder.
   // Se node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/logging.md.
   logging: { serverFunctions: false },
   // /betingelser og /privatliv læser jura/*-udkast.md ved runtime (siderne er

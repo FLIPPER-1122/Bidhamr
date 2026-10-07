@@ -19,7 +19,7 @@
 //   supabase.rpc("antal_ulaeste_staff_beskeder")             rødt tal
 //   Realtime: staff_beskeder (filter samtale_id=eq.<id>).
 import { revalidatePath } from "next/cache";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { assertRole, type StaffRole } from "@/lib/adminAuth";
@@ -596,7 +596,7 @@ async function brugerSession() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   return { supabase, user };
 }
 

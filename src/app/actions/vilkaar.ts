@@ -6,7 +6,7 @@
 // (supabase/migrations/20261009050000_vilkaar_accept.sql).
 
 import { revalidatePath } from "next/cache";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
 
@@ -19,7 +19,7 @@ export async function accepterVilkaar(version: string): Promise<Svar> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   if (!user) return { fejl: "Du skal være logget ind." };
 
   const { error } = await supabase.rpc("accepter_vilkaar", { p_version: version });

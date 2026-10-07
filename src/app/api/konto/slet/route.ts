@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { manglerToTrin } from "@/lib/mfa";
 import { klientIp, tjekGraenser, FOR_MANGE_FORSOEG } from "@/lib/rateLimit";
 import { udfoerKontoSletning, SLET_GENERISK } from "@/lib/kontoSletning";
 import { logDriftFejl } from "@/lib/drift";
@@ -18,7 +17,7 @@ import { logDriftFejl } from "@/lib/drift";
 //   200 { ok: true }
 //   400 { fejl, kode: "bekraeftelse" | "ugyldig" }
 //   401 { fejl, kode: "ikke_logget_ind" }
-//   403 { fejl, kode: "to_trin_kraeves" | "forkert_adgangskode" | "ikke_tilladt" }
+//   403 { fejl, kode: "forkert_adgangskode" | "ikke_tilladt" }
 //   409 { fejl, kode: "blokeret", blokeringer: [{ type, tekst, link }] }
 //   429 { fejl, kode: "for_mange" }
 //   500 { fejl, kode: "fejl" }
@@ -29,7 +28,6 @@ import { logDriftFejl } from "@/lib/drift";
 // - Ingen CORS-headere: browsere på andre domæner kan ikke kalde endpointet
 //   (Authorization-headeren kræver preflight, som ikke godkendes). Forespørgsler
 //   med en fremmed Origin afvises desuden. Appen (native) sender ingen Origin.
-// - Har brugeren to-trins-login, skal tokenet være aal2.
 // - Adgangskoden og "SLET" kræves, og der er rate limits pr. bruger og IP.
 //
 // Proxyen lukker denne sti igennem uden cookie-login (src/lib/supabase/middleware.ts);
@@ -82,7 +80,7 @@ export async function POST(req: NextRequest) {
     return svar(400, { fejl: "Ugyldig forespørgsel.", kode: "ugyldig" });
   }
 
-  // Klient med brugerens token - kun til at validere tokenet og læse aal.
+  // Klient med brugerens token - kun til at validere tokenet.
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -92,12 +90,6 @@ export async function POST(req: NextRequest) {
   const bruger = brugerData?.user;
   if (brugerFejl || !bruger) {
     return svar(401, { fejl: "Du er ikke logget ind længere. Log ind igen.", kode: "ikke_logget_ind" });
-  }
-  if (await manglerToTrin(supabase, bruger, token)) {
-    return svar(403, {
-      fejl: "Indtast først koden fra din godkendelses-app.",
-      kode: "to_trin_kraeves",
-    });
   }
 
   try {

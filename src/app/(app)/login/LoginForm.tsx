@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { sikkerSti } from "@/lib/sikkerSti";
 import { logInd } from "@/app/actions/auth";
-import GensendBekraeftelse from "@/components/konto/GensendBekraeftelse";
 import { FELT, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 
 export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolean }) {
@@ -30,28 +29,26 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [emailIkkeBekraeftet, setEmailIkkeBekraeftet] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    setEmailIkkeBekraeftet(false);
 
     // Login sker på serveren, så det kan rate-limites og tjekkes for
     // suspension og ny enhed (src/app/actions/auth.ts).
     const svar = await logInd(email, password);
 
     if ("fejl" in svar) {
+      // Ubekræftet e-mail: serveren har gemt e-mailen i en httpOnly cookie,
+      // og koden fra mailen indtastes på /tjek-indbakke (hvor man også kan
+      // få en ny kode).
+      if (svar.kode === "email_ikke_bekraeftet") {
+        router.push("/tjek-indbakke?fra=login");
+        return;
+      }
       setLoading(false);
       setError(svar.fejl);
-      if (svar.kode === "email_ikke_bekraeftet") setEmailIkkeBekraeftet(true);
-      return;
-    }
-
-    // To-trins-login: koden indtastes på næste side.
-    if (svar.toTrin) {
-      router.push(`/login/to-trin?redirect=${encodeURIComponent(redirectTo)}`);
       return;
     }
 
@@ -117,15 +114,6 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
               <p role="alert" className={FORMULAR_FEJL}>
                 {fejlTekst}
               </p>
-            )}
-
-            {emailIkkeBekraeftet && (
-              <div className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
-                <p>Kan du ikke finde mailen? Tjek din spam-mappe, eller få en ny.</p>
-                <div className="mt-2">
-                  <GensendBekraeftelse email={email.trim()} variant="tekst" />
-                </div>
-              </div>
             )}
 
             <button

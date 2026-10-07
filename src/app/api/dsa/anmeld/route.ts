@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { manglerToTrin } from "@/lib/mfa";
 import { klientIp } from "@/lib/rateLimit";
 import { opretAnmeldelse } from "@/lib/dsa/server";
 import { logDriftFejl } from "@/lib/drift";
@@ -88,9 +87,6 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase.auth.getUser(m[1]);
     if (error || !data.user) {
       return svar(401, { fejl: "Du er ikke logget ind længere. Log ind igen.", kode: "ikke_logget_ind" });
-    }
-    if (await manglerToTrin(supabase, data.user, m[1])) {
-      return svar(403, { fejl: "Indtast først koden fra din godkendelses-app.", kode: "to_trin_kraeves" });
     }
     brugerId = data.user.id;
   }

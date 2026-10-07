@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { erTestdatabase } from "@/lib/miljoe";
-import { manglerToTrin, TO_TRIN_STI } from "@/lib/mfa";
 import { tilmeldingAaben } from "@/lib/tilmelding";
 
 // Routes der er tilgængelige uden login, mens resten af appen er bag
@@ -13,7 +12,7 @@ import { tilmeldingAaben } from "@/lib/tilmelding";
 // /api/statistik er den cookiefri besøgsstatistik (gemmer kun antal pr. dag og
 // kendt sidetype, rate-limit pr. IP), så også besøg på venteliste-siden tælles.
 // /api/konto/slet er appens kontosletning: kun Bearer-token (ingen cookies),
-// aal2-krav, adgangskode og "SLET" tjekkes i ruten selv.
+// adgangskode og "SLET" tjekkes i ruten selv.
 // /api/helbred er sundhedstjekket til uptime-tjenesten: svarer kun {ok}, ingen
 // detaljer, grænse pr. IP i ruten selv.
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
@@ -24,7 +23,7 @@ import { tilmeldingAaben } from "@/lib/tilmelding";
 // /signup, /tjek-indbakke og /konto-slettet er offentlige, fordi man ikke er
 // logget ind dér. /cookies (cookiepolitikken) skal kunne læses af alle, også
 // før login, fordi cookie-banneret linker til den. /signup lukker selv, så længe tilmeldingen er lukket
-// (src/lib/tilmelding.ts). /login dækker også /login/to-trin.
+// (src/lib/tilmelding.ts).
 // /dsa (kontaktpunkt, anmeld ulovligt indhold, status og klage) og /api/dsa
 // (appens anmeldelse) skal kunne nås af alle, også før lancering og uden login
 // (DSA art. 12 og 16).
@@ -91,10 +90,7 @@ function erOffentligRute(pathname: string) {
 // hvidlistes pålideligt. Derfor tjekkes brugeren i stedet. Mens tilmeldingen
 // er lukket (TILMELDING_AABEN ikke 'true', src/lib/tilmelding.ts), afvises
 // ALLE forespørgsler, der ikke er GET/HEAD, på en offentlig sidesti, medmindre:
-//   - brugeren ikke er logget ind (login, signup, glemt adgangskode),
-//   - sessionen mangler to-trins-koden (aal1) - nødvendigt for at kunne
-//     indtaste koden på /login/to-trin; alle andre actions behandler en aal1-
-//     session som "ikke logget ind" (getUserMedToTrin), eller
+//   - brugeren ikke er logget ind (login, signup, glemt adgangskode), eller
 //   - brugeren har en staff-rolle (som slipper gennem gaten alligevel).
 // Undtaget er /api/* og /auth/*: det er route handlers, som ikke kan køre
 // server actions, og som har deres egne tjek (cron, webhooks, helbred ...).
@@ -118,7 +114,6 @@ async function afvisSkrivningPaaOffentligSti(
 
   const { data } = await supabase.auth.getUser();
   if (!data.user) return false;
-  if (await manglerToTrin(supabase, data.user)) return false;
 
   const { data: rolle } = await supabase.rpc("min_rolle");
   return typeof rolle !== "string" || !ROLLER_MED_ADGANG.includes(rolle);
@@ -178,19 +173,6 @@ export async function updateSession(
   // -> hele appen er bag venteliste-gaten, ingen adgang uden login.
   if (!data.user) {
     return NextResponse.redirect(new URL("/coming-soon", request.url));
-  }
-
-  // To-trins-login: har brugeren slået det til, men kun indtastet adgangskoden
-  // (aal1), skal koden indtastes, før noget andet virker - også server actions
-  // og API-ruter. Offentlige stier springes over, så server actions tjekker
-  // det også selv (getUserMedToTrin / manglerToTrin). Databasen afviser
-  // desuden aal1, når 20261007032000_mfa_database_haandhaevelse er kørt.
-  if (await manglerToTrin(supabase, data.user)) {
-    const url = new URL(TO_TRIN_STI, request.url);
-    if (request.method === "GET") {
-      url.searchParams.set("redirect", `${pathname}${request.nextUrl.search}`);
-    }
-    return NextResponse.redirect(url);
   }
 
   // På testdatabasen (kun npm run dev via .env.local) må alle indloggede

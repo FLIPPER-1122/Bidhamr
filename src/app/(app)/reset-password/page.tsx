@@ -8,14 +8,12 @@ import type { gemNyAdgangskode } from "@/app/actions/auth";
 import { kaldOffentligHandling } from "@/lib/offentligHandling";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
-import { FELT, FORMULAR_FEJL, LABEL } from "@/components/konto/felter";
+import { FORMULAR_FEJL } from "@/components/konto/felter";
 
 export default function NulstilAdgangskodePage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [passwordGentag, setPasswordGentag] = useState("");
-  const [kode, setKode] = useState("");
-  const [kraeverKode, setKraeverKode] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,15 +60,10 @@ export default function NulstilAdgangskodePage() {
     // almindelig bruger, mens siden er lukket (gaten i middleware.ts).
     const fd = new FormData();
     fd.set("password", password);
-    if (kraeverKode) fd.set("kode", kode);
     const svar = await kaldOffentligHandling<Awaited<ReturnType<typeof gemNyAdgangskode>>>("ny-adgangskode", fd);
     setLoading(false);
 
     if ("fejl" in svar) {
-      if ("kode" in svar && svar.kode === "to_trin_kraeves") {
-        setKraeverKode(true);
-        setKode("");
-      }
       setError(svar.fejl);
       return;
     }
@@ -122,27 +115,6 @@ export default function NulstilAdgangskodePage() {
                 </p>
               )}
             </div>
-
-            {kraeverKode && (
-              <div>
-                <label htmlFor="kode" className={LABEL}>
-                  Kode fra din godkendelses-app
-                </label>
-                <input
-                  id="kode"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={7}
-                  required
-                  value={kode}
-                  onChange={(e) => setKode(e.target.value.replace(/[^\d ]/g, ""))}
-                  className={`mt-1.5 ${FELT} tracking-[0.2em]`}
-                />
-                <p className="mt-1.5 text-[13px] text-tekst-daempet">
-                  Du har to-trins-login slået til, så vi skal også bruge koden.
-                </p>
-              </div>
-            )}
 
             {error && (
               <p role="alert" className={FORMULAR_FEJL}>

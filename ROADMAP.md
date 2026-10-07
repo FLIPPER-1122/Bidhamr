@@ -146,9 +146,9 @@ Formål: brugerne har overblik og styr på deres beskeder.
 - [x] Notifikationer: overbudt, ny auktion fra fulgt sælger, bud på egen auktion, vundet, pakke kommet frem
 - [x] Side med notifikationsindstillinger (mail / app / begge / fra, pr. type)
 - [x] Notifikations-indbakke på siden (klokke i topbaren)
-- [~] Bekræftelse af e-mail ved oprettelse *(bygget på hjemmesiden – "Confirm email" i Supabase slås først til, når appen håndterer det og en egen mailserver (SMTP, fx Resend) er sat op i Supabase)*
+- [~] Bekræftelse af e-mail ved oprettelse med en 6-cifret kode i mailen (ikke link, ikke SMS) *(bygget på hjemmesiden 7. okt. 2026 – "Confirm email" i Supabase slås først til, når appen håndterer koden (`verifyOtp` type `signup`), og en egen mailserver (SMTP, fx Resend) er sat op i Supabase)*
 - [x] GDPR: brugeren kan slette sin konto og downloade sine data
-- [x] Kontosikkerhed: mail ved login fra ny enhed, mulighed for to-trins-login, krav til stærk adgangskode
+- [x] Kontosikkerhed: mail ved login fra ny enhed, krav til stærk adgangskode, e-mail-kode ved oprettelse *(to-trins-login er udgået – fjernet 7. okt. 2026, Filip)*
 - [x] Sælger kan skrive ét offentligt svar på en bedømmelse. BidHamr kan fjerne bedømmelser, der bryder reglerne (fx grove ord)
 
 ## Fase 5 – Appen
@@ -160,7 +160,7 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 - [ ] Sammenlign app og hjemmeside skærm for skærm – lav en liste over forskelle
 - [ ] Ret forskellene, så funktioner, tekster og design er ens (DESIGN.md gælder også appen)
 - [ ] Appen bruger samme Supabase-database og samme Stripe-betalingsflow som hjemmesiden (vinderen betaler selv inden for 24 timer, valgfrit gemt kort, ingen saldo)
-- [ ] Appen: to-trins-login (AAL2) og ubekræftet e-mail håndteres, og kontosletning direkte i appen (Apples krav 5.1.1(v)) via et sikkert endpoint (POST /api/konto/slet er bygget på hjemmesiden: Bearer-token, aal2-krav, adgangskode + "SLET"). Når appen har to-trins-login: kør 20261007032000_mfa_database_haandhaevelse.sql i produktion
+- [ ] Appen: ubekræftet e-mail håndteres (indtast koden fra mailen: `verifyOtp({ email, token, type: "signup" })`, ny kode med `resend({ type: "signup", email })`), og kontosletning direkte i appen (Apples krav 5.1.1(v)) via et sikkert endpoint (POST /api/konto/slet er bygget på hjemmesiden: Bearer-token, adgangskode + "SLET"). *(To-trins-login/AAL2 i appen er udgået – to-trins-login er fjernet 7. okt. 2026, og 20261007032000_mfa_database_haandhaevelse.sql er slettet.)*
 - [ ] Appen: følgere tælles med `antal_foelgere()` og kun insert/delete på `seller_follows` – kør derefter `20261007012000_seller_follows_stramning.sql` i produktion (i dag kan alle se, hvem der følger hvem)
 - [ ] Appen kender fase 4: `stand`, `idempotens_noegle` ved opret auktion (+ `min_auktion_for_noegle`), fejlkoden BHN02 (navn), `blokeret_grund = 'socialt_medie'`, `profil_offentlige_tal()`, svar på bedømmelser (`skriv_bedoemmelse_svar`, `bedoemmelse_svar`), gemte søgninger (`gemte_soegninger`) og notifikationstyperne `gemt_soegning` og `bedoemmelse`
 - [ ] Push-notifikationer

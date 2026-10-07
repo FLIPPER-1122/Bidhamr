@@ -12,8 +12,7 @@ import "server-only";
 //   ikke kan logge ind, men kan bruges til en ny konto senere.
 // - Handelsdata slettes ALDRIG.
 //
-// Kalderen SKAL have valideret brugeren (getUser) og tjekket to-trins-login
-// (aal2, hvis brugeren har det slået til), før denne funktion kaldes.
+// Kalderen SKAL have valideret brugeren (getUser), før denne funktion kaldes.
 import type { User } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { FOR_MANGE_FORSOEG, tjekGraenser } from "@/lib/rateLimit";
