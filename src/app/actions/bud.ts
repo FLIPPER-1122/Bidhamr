@@ -3,6 +3,8 @@
 import { after } from "next/server";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { logDriftFejl } from "@/lib/drift";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 import { notificerEgetNyesteBud } from "@/lib/notifikationer/bud";
 
@@ -14,6 +16,49 @@ import { notificerEgetNyesteBud } from "@/lib/notifikationer/bud";
 // handle_new_bid afviser et bud, hvis sælgeren har redigeret auktionen,
 // siden byderen hentede siden (bids.auktion_redigeret_kl).
 const AUKTION_AENDRET = "Sælgeren har lige ændret auktionen. Se den igen, før du byder.";
+
+// Autobud: et andet maksimum på præcis samme beløb er sat før buddet og
+// fører (samme_bud i autobud_afgoer) - buddet afvises.
+const SAMME_BUD = "En anden byder har allerede budt det samme – byd mere.";
+
+// Ukendte fejl (fx en fejl i autobud-motoren, som ruller hele buddet
+// tilbage) logges i drift og vises aldrig ordret.
+const NOGET_GIK_GALT = "Noget gik galt – prøv igen.";
+
+// Efter buddet: fører byderen stadig, og hvad er det højeste bud? (Et
+// maksimum kan have overbudt ham i samme transaktion.) Admin-klient, fordi
+// bud ikke kan læses direkte - kun byderens egen status sendes tilbage.
+async function minStatus(
+  auktionId: string,
+  brugerId: string,
+): Promise<{ slutterKl: string | null; foerer: boolean | null; nuvaerendeBud: number | null }> {
+  try {
+    const admin = createAdminClient();
+    const [{ data: a }, { data: top }] = await Promise.all([
+      admin
+        .from("auctions")
+        .select("slutter_kl, nuværende_bud")
+        .eq("id", auktionId)
+        .maybeSingle<{ slutter_kl: string; "nuværende_bud": number | string | null }>(),
+      admin
+        .from("bids")
+        .select("bruger_id")
+        .eq("auktion_id", auktionId)
+        .order("beløb", { ascending: false })
+        .order("oprettet", { ascending: true })
+        .limit(1)
+        .maybeSingle<{ bruger_id: string }>(),
+    ]);
+    return {
+      slutterKl: a?.slutter_kl ?? null,
+      foerer: top ? top.bruger_id === brugerId : null,
+      nuvaerendeBud: a?.["nuværende_bud"] != null ? Number(a["nuværende_bud"]) : null,
+    };
+  } catch (err) {
+    console.error("Budstatus kunne ikke hentes:", err);
+    return { slutterKl: null, foerer: null, nuvaerendeBud: null };
+  }
+}
 
 // Danske fejltekster fra bud-triggerne, som maa vises ordret.
 const KENDTE_BUDFEJL = [
@@ -39,7 +84,10 @@ export async function afgivBud(
   beskyttelse: boolean,
   // auctions.redigeret_kl, som byderen så. Valgfri for bagudkompatibilitet.
   redigeretKl?: string | null,
-): Promise<{ ok: true; slutterKl: string | null } | { fejl: string; auktionAendret?: true }> {
+): Promise<
+  | { ok: true; slutterKl: string | null; foerer: boolean | null; nuvaerendeBud: number | null }
+  | { fejl: string; auktionAendret?: true }
+> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -86,21 +134,20 @@ export async function afgivBud(
           : "Dit bud er for lavt.",
       };
     }
+    if (besked.includes("samme_bud")) return { fejl: SAMME_BUD };
     if (besked.includes(AUKTION_AENDRET)) {
       return { fejl: AUKTION_AENDRET, auktionAendret: true };
     }
     const kendt = KENDTE_BUDFEJL.find((k) => besked.includes(k));
     if (kendt) return { fejl: kendt };
     console.error("afgivBud fejlede:", error.code, besked);
-    return { fejl: "Dit bud kunne ikke afgives. Prøv igen." };
+    await logDriftFejl({ kilde: "action", hvor: "afgivBud", fejl: error, brugerId: user.id });
+    return { fejl: NOGET_GIK_GALT };
   }
 
-  // Anti-sniping sker i handle_new_bid; returnér det nye sluttidspunkt.
-  const { data: efter } = await supabase
-    .from("auctions")
-    .select("slutter_kl")
-    .eq("id", auktionId)
-    .maybeSingle<{ slutter_kl: string }>();
+  // Anti-sniping sker i handle_new_bid (også for automatiske bud i samme
+  // transaktion); returnér det nye sluttidspunkt og min status.
+  const status = await minStatus(auktionId, user.id);
 
   // Overbudt + bud på egen auktion sendes efter svaret, så budgiveren ikke
   // venter på mail/push. Den forrige førende findes ud fra bud-rækkefølgen
@@ -109,7 +156,7 @@ export async function afgivBud(
   const byder = user.id;
   after(() => notificerEgetNyesteBud(auktionId, byder));
 
-  return { ok: true, slutterKl: efter?.slutter_kl ?? null };
+  return { ok: true, ...status };
 }
 
 // Automatisk bud (maksimum) - se ROADMAP-BESLUTNINGER.md, "Autobud".
@@ -119,6 +166,8 @@ export async function afgivBud(
 export async function saetMaksimum(
   auktionId: string,
   maks: number,
+  // Fører byderen, kan BidHamr Beskyttelse ikke ændres (den følger hans
+  // førende bud) - budpanelet sender så den nuværende værdi.
   beskyttelse: boolean,
   redigeretKl?: string | null,
 ): Promise<
@@ -190,6 +239,12 @@ export async function saetMaksimum(
     if (besked.includes("minimum_bid")) {
       return { fejl: "En anden har lige budt. Se det nye bud, og prøv igen." };
     }
+    if (besked.includes("samme_bud")) return { fejl: SAMME_BUD };
+    if (besked.includes("beskyttelse_laast")) {
+      return {
+        fejl: "Du fører allerede. BidHamr Beskyttelse følger dit bud og kan ikke ændres, mens du fører.",
+      };
+    }
     if (besked.includes("Kontoen er slettet")) return { fejl: "Du kan ikke byde." };
     if (besked.includes(AUKTION_AENDRET)) {
       return { fejl: AUKTION_AENDRET, auktionAendret: true };
@@ -197,7 +252,8 @@ export async function saetMaksimum(
     const kendt = KENDTE_BUDFEJL.find((k) => besked.includes(k));
     if (kendt) return { fejl: kendt };
     console.error("saetMaksimum fejlede:", error.code, besked);
-    return { fejl: "Dit maksimum kunne ikke gemmes. Prøv igen." };
+    await logDriftFejl({ kilde: "action", hvor: "saetMaksimum", fejl: error, brugerId: user.id });
+    return { fejl: NOGET_GIK_GALT };
   }
 
   const svar = (data ?? {}) as {

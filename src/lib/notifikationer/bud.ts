@@ -64,8 +64,9 @@ export async function foerendeNu(admin: Admin, auktionId: string): Promise<strin
   return data?.bruger_id ?? null;
 }
 
-// Automatisk bud (autobud): et bud og de automatiske bud, det udløste,
-// indsættes i samme transaktion og har derfor præcis samme tidspunkt
+// Automatisk bud (autobud): et bud og det automatiske bud, det udløste
+// (kun vinderens - taberens maksimum afgives aldrig som bud), indsættes i
+// samme transaktion og har derfor præcis samme tidspunkt
 // (bids.oprettet = now()). Sådan en "runde" giver højst ÉN notifikation til
 // hver: sælgeren får det endelige bud, og alle, der førte før runden eller
 // bød i runden og ikke fører efter den, får "overbudt" én gang. Den, der
@@ -163,8 +164,18 @@ export async function notificerBud(
     }
   }
 
+  // Den, der selv har budt i runden inden for de sidste ~10 sekunder og
+  // straks blev overbudt af et maksimum, ser det i budpanelet - ingen push
+  // (klokke og mail som valgt). Rundens laveste bud er det, der udløste den.
+  const udloeser = runde[0].bruger_id;
+  const frisk =
+    !!bud.oprettet && Date.now() - Date.parse(bud.oprettet) < 10_000;
+
   for (const u of overbudte) {
     const maks = maksimum.get(u);
+    const uOpts = frisk && u === udloeser ? { ...opts, udenPush: true } : opts;
+    // Kun eget maksimum (aldrig andres). Nået = det højeste bud er mindst
+    // maksimum (ved lige store førte den, der satte sit først).
     const naaet = maks !== undefined && maks <= sidste.beloeb;
     await send(
       u,
@@ -184,7 +195,7 @@ export async function notificerBud(
             data,
             noegle: u === forrigeForSidste ? overbudtNoegle(sidste.id) : `${overbudtNoegle(sidste.id)}:${u}`,
           },
-      opts,
+      uOpts,
     );
   }
   if (auktion.bruger_id !== sidste.bruger_id) {

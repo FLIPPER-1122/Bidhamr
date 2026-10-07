@@ -55,7 +55,7 @@ export default async function AuktionPage({
     hentBruger(),
     createAdminClient()
       .from("bids")
-      .select("id, bruger_id, beløb, oprettet, automatisk")
+      .select("id, bruger_id, beløb, oprettet, automatisk, beskyttelse")
       .eq("auktion_id", id)
       // Bud stiger altid, så beløb giver samme rækkefølge som tidspunkt -
       // også når et bud og de automatiske bud, det udløste, har samme
@@ -64,7 +64,14 @@ export default async function AuktionPage({
       .order("oprettet", { ascending: false })
       .limit(MAKS_BUD_HENTET)
       .overrideTypes<
-        { id: string; bruger_id: string; beløb: number; oprettet: string; automatisk: boolean | null }[],
+        {
+          id: string;
+          bruger_id: string;
+          beløb: number;
+          oprettet: string;
+          automatisk: boolean | null;
+          beskyttelse: boolean | null;
+        }[],
         { merge: false }
       >(),
   ]);
@@ -160,13 +167,20 @@ export default async function AuktionPage({
     automatisk: b.automatisk === true,
   }));
 
+  // BidHamr Beskyttelse på mit seneste (= højeste) bud. Fører jeg, følger
+  // mine automatiske bud den, så budpanelet viser den låst. Kun mit eget.
+  const mitSenesteBud = mitId ? bud.find((b) => b.bruger_id === mitId) : undefined;
+  const minBeskyttelse = mitSenesteBud ? mitSenesteBud.beskyttelse === true : null;
+
   // Mit eget maksimum (automatisk bud). Kun byderen selv kan se det
   // (mit_maksimum bruger auth.uid()); sælger og andre får null.
-  const mitMaksimumLoefte: Promise<number | null> =
+  const mitMaksimumLoefte: Promise<{ maks: number; naaet: boolean } | null> =
     mitId && mitId !== auktion.bruger_id && auktion.status === "aktiv"
       ? Promise.resolve(supabase.rpc("mit_maksimum", { p_auktion: id })).then((r) => {
-          const v = (r.data as { maks_beloeb?: number | string } | null)?.maks_beloeb;
-          return r.error || v == null ? null : Number(v);
+          const d = r.data as { maks_beloeb?: number | string; naaet?: boolean } | null;
+          return r.error || d?.maks_beloeb == null
+            ? null
+            : { maks: Number(d.maks_beloeb), naaet: d.naaet === true };
         })
       : Promise.resolve(null);
 
@@ -474,7 +488,9 @@ export default async function AuktionPage({
               redigeretKl={(auktion.redigeret_kl as string | null | undefined) ?? null}
               initialSlutterKl={auktion.slutter_kl}
               initialBud={anonymeBud}
-              mitMaksimum={mitMaksimum}
+              mitMaksimum={mitMaksimum?.maks ?? null}
+              mitMaksimumNaaet={mitMaksimum?.naaet ?? false}
+              minBeskyttelse={minBeskyttelse}
               brugerId={bruger?.id ?? null}
               saelgerId={auktion.bruger_id}
               forsendelseMulig={auktion.forsendelse_mulig}

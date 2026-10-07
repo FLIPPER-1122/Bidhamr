@@ -1,107 +1,46 @@
--- Autobud / maksimalbud (som Tradera). Regler: ROADMAP-BESLUTNINGER.md,
--- afsnittet "Autobud".
+-- Autobud: rettelser efter review og test (7. okt. 2026).
 --
--- Kræver, at 20261009040000_skjult_auktion_pause.sql er kørt (pauset_kl).
--- Rettet 7. okt. 2026 efter review og test, før den er kørt i produktionen.
--- Testdatabasen (der kørte den første udgave) får de samme rettelser via
--- 20261010011000_autobud_rettelser.sql - slutresultatet er det samme.
+-- KUN TIL TESTDATABASEN (og andre databaser, hvor 20261010010000_autobud.sql
+-- allerede er kørt i sin første udgave). 20261010010000_autobud.sql er rettet
+-- tilsvarende, så produktionen får slutresultatet direkte. Denne fil er
+-- idempotent og giver samme slutresultat, uanset hvilken udgave af
+-- 20261010010000 der er kørt.
 --
--- Overblik:
---  1. bud_maksimum: ét hemmeligt maksimum pr. byder pr. auktion. RLS slået
---     til uden policies - ingen bruger kan læse eller skrive tabellen direkte.
---     Kun via RPC'erne nedenfor (security definer, auth.uid()).
---     bud_maksimum_log: hver ændring (beløb og BidHamr Beskyttelse) gemmes
---     (bindende tilsagn - kan ikke ændres, slettes eller truncates).
---  2. bids.automatisk: true på bud, som BidHamr har afgivet for en byder
---     (motorens bud og det første bud ved "Byd automatisk"). Kan kun sættes
---     af databasen selv (bids_automatisk_kun_system nulstiller den for alle
---     andre - også service_role).
---  3. Motoren (autobud_afgoer) kører i AFTER INSERT-triggeren zz_bids_autobud
---     efter hvert bud, der ikke er motorens eget (web, app, saet_maksimum),
---     under auktionslåsen (a0_bids_laas_auktion), så alt afgøres i samme
---     transaktion: ingen løkker, ingen kapløb. Den kører også, når den
---     førende ændrer sit maksimum. Fejl i motoren ruller hele buddet tilbage.
---  4. Afgørelse: alle andre gyldige maksimum, der er STØRRE end buddet (og
---     dem på præcis samme beløb - de er sat før buddet), plus den, der lige
---     har budt (loft = greatest(buddet, eget maksimum)), rangeres efter loft
---     (højest først) og tidspunkt, maksimum blev sat (først fører ved lige
---     store). KUN vinderen (W) byder: least(W.loft, naeste_bud_minimum(nr. 2's
---     loft)) - ved lige store loft præcis loftet. Taberens maksimum afgives
---     aldrig som et bud og kan ikke ses af andre (Filip, 7. okt. 2026), så
---     budhistorikken kan "hoppe". Er et andet maksimum præcis lig et nyt
---     manuelt bud, fører maksimum, og det manuelle bud afvises (samme_bud:
---     "En anden byder har allerede budt det samme – byd mere") - så står der
---     aldrig to bud med samme beløb. Motorens bud må ligge under budtrappen
---     (de skal blot være højere end det nuværende bud).
---  5. Autobud følger de eksisterende regler i handle_new_bid (pause, skjult,
---     slut, suspenderet/slettet, spærret, anti-sniping 2 min). Byderen
---     filtreres FØR motoren byder for ham, så et forbudt autobud aldrig
---     vælter det bud, der udløste det. Automatiske bud tæller ikke med i
---     brugerens rate limit (bids_rate_limit).
---  6. RPC'er (authenticated): saet_maksimum, mit_maksimum, mine_maksimumbud.
---     mine_data() har egne maksimumbud med.
+-- Regler: ROADMAP-BESLUTNINGER.md, afsnittet "Autobud".
+--  1. Taberens maksimum afgives ALDRIG som et synligt bud (Filip, 7. okt.
+--     2026). Kun vinderen byder: least(vinderens loft,
+--     naeste_bud_minimum(nr. 2's loft)), ved lige store præcis loftet.
+--     Alle maksimum, der er STØRRE end buddet, er med (ingen springes over).
+--     Lige store: et maksimum, der er sat før et manuelt bud på præcis samme
+--     beløb, fører - det manuelle bud afvises ("samme_bud"), så der aldrig
+--     står to bud med samme beløb.
+--  2. Fører køberen, kan BidHamr Beskyttelse ikke ændres via saet_maksimum
+--     (beskyttelse_laast). Kun ændringer af beløbet tæller i rate limit.
+--  3. Fejl i motoren ruller hele buddet tilbage (ingen exception when others).
+--     Motoren kører også, når den førende ændrer sit maksimum.
+--  4. Det første bud ved "Byd automatisk" markeres automatisk = true.
+--  5. bud_maksimum_log logger også beskyttelse og kan ikke truncates;
+--     bud_maksimum-FK'er er on delete restrict.
+--  6. bids_rate_limit og check_minimum_bid: search_path = ''.
+--  7. mit_maksimum.naaet kun, når maksimum faktisk er nået/overgået.
+--  8. mine_data() har egne maksimumbud med (mine_maksimumbud).
 
 set local lock_timeout = '5s';
 
 -- ---------------------------------------------------------------------------
 -- 1. Tabeller
 -- ---------------------------------------------------------------------------
-create table if not exists public.bud_maksimum (
-  auktion_id uuid not null references public.auctions(id) on delete restrict,
-  bruger_id uuid not null references public.users(id) on delete restrict,
-  maks_beloeb numeric not null
-    check (maks_beloeb >= 1 and maks_beloeb = trunc(maks_beloeb) and maks_beloeb <= 9999999999),
-  -- Ønsket om BidHamr Beskyttelse, når maksimum blev sat. Bruges kun, hvis
-  -- byderen ikke har et bud på auktionen i forvejen (så gælder hans
-  -- seneste bud - samme regel som afslut_udloebne_auktioner).
-  beskyttelse boolean not null default false,
-  -- Tidspunktet, det NUVÆRENDE beløb blev sat. Afgør lige store maksimum
-  -- (først fører).
-  sat_kl timestamptz not null default now(),
-  oprettet_kl timestamptz not null default now(),
-  opdateret_kl timestamptz not null default now(),
-  -- Rate limit pr. byder pr. auktion (10 ændringer pr. minut).
-  aendringer_vindue_kl timestamptz not null default now(),
-  aendringer_antal integer not null default 0,
-  primary key (auktion_id, bruger_id)
-);
+alter table public.bud_maksimum
+  drop constraint if exists bud_maksimum_auktion_id_fkey,
+  add constraint bud_maksimum_auktion_id_fkey
+    foreign key (auktion_id) references public.auctions(id) on delete restrict;
+alter table public.bud_maksimum
+  drop constraint if exists bud_maksimum_bruger_id_fkey,
+  add constraint bud_maksimum_bruger_id_fkey
+    foreign key (bruger_id) references public.users(id) on delete restrict;
 
-create index if not exists bud_maksimum_bruger_idx on public.bud_maksimum (bruger_id);
-
-alter table public.bud_maksimum enable row level security;
-revoke all on public.bud_maksimum from anon, authenticated;
-
-create table if not exists public.bud_maksimum_log (
-  id bigint generated always as identity primary key,
-  auktion_id uuid not null,
-  bruger_id uuid not null,
-  maks_beloeb numeric not null,
-  forrige_beloeb numeric,
-  beskyttelse boolean,
-  forrige_beskyttelse boolean,
-  kl timestamptz not null default now()
-);
-
-create index if not exists bud_maksimum_log_auktion_idx on public.bud_maksimum_log (auktion_id, bruger_id);
-
-alter table public.bud_maksimum_log enable row level security;
-revoke all on public.bud_maksimum_log from anon, authenticated;
-
--- Loggen ændres, slettes og truncates aldrig.
-create or replace function public.bud_maksimum_log_uaendret()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  raise exception 'bud_maksimum_log kan ikke ændres eller slettes.';
-end;
-$$;
-
-drop trigger if exists bud_maksimum_log_uaendret on public.bud_maksimum_log;
-create trigger bud_maksimum_log_uaendret
-  before update or delete on public.bud_maksimum_log
-  for each row execute function public.bud_maksimum_log_uaendret();
+alter table public.bud_maksimum_log add column if not exists beskyttelse boolean;
+alter table public.bud_maksimum_log add column if not exists forrige_beskyttelse boolean;
 
 drop trigger if exists bud_maksimum_log_ingen_truncate on public.bud_maksimum_log;
 create trigger bud_maksimum_log_ingen_truncate
@@ -109,15 +48,9 @@ create trigger bud_maksimum_log_ingen_truncate
   for each statement execute function public.bud_maksimum_log_uaendret();
 
 -- ---------------------------------------------------------------------------
--- 2. bids.automatisk
+-- 2. bids.automatisk: '1' = motorens bud, 'start' = det første bud fra
+--    saet_maksimum ("Byd automatisk").
 -- ---------------------------------------------------------------------------
-alter table public.bids add column if not exists automatisk boolean not null default false;
-
--- Kun databasen selv må markere et bud som automatisk: motoren sætter
--- bidhamr.autobud = '1' og saet_maksimum 'start' (lokalt i transaktionen),
--- og begge kører som ejeren (security definer). Alle andre - også appen og
--- service_role - får false.
--- IKKE security definer: current_user skal være den rigtige rolle.
 create or replace function public.bids_automatisk_kun_system()
 returns trigger
 language plpgsql
@@ -133,11 +66,6 @@ begin
   return new;
 end;
 $$;
-
-drop trigger if exists a1_bids_automatisk_kun_system on public.bids;
-create trigger a1_bids_automatisk_kun_system
-  before insert on public.bids
-  for each row execute function public.bids_automatisk_kun_system();
 
 -- ---------------------------------------------------------------------------
 -- 3. Bud-triggere
@@ -306,26 +234,6 @@ $$;
 -- 4. Motoren
 -- ---------------------------------------------------------------------------
 
--- Må motoren byde for denne bruger på auktionen? Samme regler som
--- handle_new_bid - tjekkes FØR der bydes, så et forbudt autobud aldrig
--- vælter det bud, der udløste det.
-create or replace function public.autobud_maa_byde(p_saelger uuid, p_bruger uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select p_bruger <> p_saelger
-     and exists (
-       select 1 from public.users u
-        where u.id = p_bruger
-          and u.konto_slettet_kl is null
-          and not (coalesce(u.suspenderet, false)
-                   and (u.suspenderet_til is null or u.suspenderet_til > now())))
-     and not public.er_blokeret(p_saelger, p_bruger);
-$$;
-
 -- Afgiver ét automatisk bud (kun vinderen af en runde). BidHamr Beskyttelse:
 -- byderens seneste bud på auktionen (samme regel som
 -- afslut_udloebne_auktioner), ellers ønsket fra maksimum.
@@ -365,6 +273,7 @@ $$;
 --    er større end det nuværende bud, kan ændre noget.
 -- Kun vinderen byder. Taberens maksimum afgives aldrig som et bud og ses
 -- aldrig af andre.
+drop function if exists public.autobud_afgoer(uuid, uuid, numeric);
 create or replace function public.autobud_afgoer(
   p_auktion uuid, p_byder uuid, p_beloeb numeric, p_nyt_bud boolean
 )
@@ -486,12 +395,6 @@ begin
   return null;
 end;
 $$;
-
--- Navnet sikrer, at den kører efter on_bid_created (handle_new_bid).
-drop trigger if exists zz_bids_autobud on public.bids;
-create trigger zz_bids_autobud
-  after insert on public.bids
-  for each row execute function public.bids_autobud();
 
 -- ---------------------------------------------------------------------------
 -- 5. RPC'er
@@ -777,9 +680,7 @@ $do$;
 -- ---------------------------------------------------------------------------
 -- 6. Rettigheder
 -- ---------------------------------------------------------------------------
-revoke all on function public.bud_maksimum_log_uaendret() from public, anon, authenticated;
 revoke all on function public.bids_automatisk_kun_system() from public, anon, authenticated;
-revoke all on function public.autobud_maa_byde(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.autobud_afgiv(uuid, uuid, numeric) from public, anon, authenticated;
 revoke all on function public.autobud_afgoer(uuid, uuid, numeric, boolean) from public, anon, authenticated;
 revoke all on function public.bids_autobud() from public, anon, authenticated;
