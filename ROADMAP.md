@@ -204,8 +204,8 @@ Formål: alt det juridiske og praktiske er på plads.
 ## Senere – efter lancering
 Fundet i gennemgang af Tradera, Vinted og Etsy. Gode, men ikke nødvendige for at lancere.
 - [ ] **Feriemodus**: sælger kan sætte sin profil på pause, så nye auktioner ikke kan oprettes, og købere kan se, at sælger er væk *(flyttet hertil af Filip 6. okt. 2026 – rart at have, ikke nødvendigt til lancering)*
-- [~] **Autobud (maksimalbud)**: køber angiver sit maksimum, og BidHamr byder automatisk op til det (som Tradera). Maksimum kan sænkes, men ikke under nuværende bud *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
-- [ ] Efter første bud kan sælger ikke redigere, kun tilføje et synligt **tillæg** til beskrivelsen *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
+- [x] **Autobud (maksimalbud)**: køber angiver sit maksimum, og BidHamr byder automatisk op til det (som Tradera). Maksimum kan sænkes, men ikke under nuværende bud *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
+- [~] **Auktionen låses efter første bud**: sælger kan hverken redigere, tilføje noget eller slette/annullere auktionen – intet kan ændres *(flyttet fra fase 1 af Filip, 3. oktober 2026; ændret af Filip 7. okt. 2026: intet tillæg, helt låst)*
 - [ ] Sælger kan give køber en **delvis refusion/rabat** i handlen, hvis de bliver enige (fx ved en lille skade) *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
 - Samlet fragt, når man vinder flere auktioner fra samme sælger
 - Ægthedstjek af dyre mærkevarer (som Vinteds "Artikelbekræftelse")

@@ -152,6 +152,7 @@ Brugeren får besked når:
 - **Startpris = mindstepris:** én synlig startpris; ingen skjult mindstepris.
 - **Bindende bud:** et bud kan ikke trækkes tilbage. Det vises tydeligt, før man byder.
 - **Redigér/annullér auktion:** kun så længe der ikke er bud. Annullerede auktioner arkiveres, slettes aldrig.
+- **Låst efter første bud (Filip, 7. okt. 2026):** når auktionen har fået sit første bud, kan sælgeren ikke ændre noget som helst (titel, beskrivelse, billeder, pris, kategori, stand, fragt, varighed m.m.), ikke tilføje et tillæg og ikke slette eller annullere den – heller ikke direkte fra appen. Låsen håndhæves i databasen. Kun BidHamr (staff) kan stoppe en auktion med bud (fx ved regelbrud eller hvis varen er gået i stykker – sælgeren kontakter BidHamr).
 - **Afsendelsesfrist:** sælger skal markere pakken sendt inden 5 dage efter betaling. Ellers annulleres handlen automatisk, og køber refunderes fuldt (inkl. fragt og BidHamr Beskyttelse).
 - **Medarbejdere** må gerne kunne se alle handler (beløb og status), fordi de skal bruge det til sager. Pengetal og indtjening er stadig kun for chef.
 - **Behandlede rapporter** (Filip, 5. oktober 2026): slettes aldrig. Efter 48 timer flyttes de fra den aktive liste til rapportarkivet (rapporter_arkiv), hvor de gemmes permanent.
