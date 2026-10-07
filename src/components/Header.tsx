@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
+import { bekraeftetBruger, hentBruger, hentMinRolle, sessionBrugerId } from "@/lib/supabase/bruger";
 import KontoMenu from "@/components/KontoMenu";
 import Klokke from "@/components/notifikationer/Klokke";
 import Ikon from "@/components/Ikon";
@@ -20,19 +21,25 @@ const linjeLink =
 // Desktop (lg+): logo, søgefelt i midten, genveje, "Sælg en vare" og
 // profil-menu – med en kategorilinje under.
 export default async function Header() {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getUser();
-  const loggetInd = !!data.user;
+  // Er der en gyldig session (lokal JWT-tjek, intet netværkskald), startes
+  // tællerne og rollen SAMTIDIG med getUser i stedet for bagefter. RPC'erne
+  // udleder selv brugeren af auth.uid() i JWT'en, og tallene bruges kun, hvis
+  // getUser godkender den samme bruger. Bruger og rolle deles med siden og
+  // adminAuth (cache() i src/lib/supabase/bruger.ts).
+  const sessionId = await sessionBrugerId();
+  const supabase = sessionId ? await createClient() : null;
+  const [bruger, rolle, antal, antalBeskeder] = await Promise.all([
+    sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
+    sessionId ? hentMinRolle() : null,
+    supabase ? supabase.rpc("notifikationer_antal_ulaeste").then((r) => r.data) : null,
+    supabase ? supabase.rpc("antal_ulaeste_staff_beskeder").then((r) => r.data) : null,
+  ]);
+  const loggetInd = !!bruger;
 
   let erAdmin = false;
   let ulaeste = 0;
   let ulaesteBeskeder = 0;
-  if (data.user) {
-    const [{ data: rolle }, { data: antal }, { data: antalBeskeder }] = await Promise.all([
-      supabase.rpc("min_rolle"),
-      supabase.rpc("notifikationer_antal_ulaeste"),
-      supabase.rpc("antal_ulaeste_staff_beskeder"),
-    ]);
+  if (bruger) {
     ulaesteBeskeder = Number(antalBeskeder ?? 0) || 0;
     erAdmin = rolle === "chef" || rolle === "admin" || rolle === "medarbejder";
     ulaeste = Number(antal ?? 0) || 0;

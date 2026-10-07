@@ -4,6 +4,7 @@ import Link from "next/link";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { bekraeftetBruger, hentBruger, sessionBrugerId } from "@/lib/supabase/bruger";
 import HandelStatusBadge, { HANDEL_STATUS } from "@/components/HandelStatusBadge";
 import HandelChat, { type Besked } from "@/components/HandelChat";
 import {
@@ -68,120 +69,122 @@ export default async function HandelDetaljePage({
   const { betaling: betalingParam } = await searchParams;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    redirect(`/login?redirect=/mine-handler/${encodeURIComponent(trade_id)}`);
-  }
+  // Medlemskab tjekkes eksplicit. RLS er ikke nok: policyen tillader også
+  // staff, og uden dette filter kunne en medarbejder åbne en hvilken som
+  // helst handel og læse den private chat mellem køber og sælger.
+  // Handlen ses i admin-panelet, ikke her.
+  const hentHandel = (brugerId: string) =>
+    supabase
+      .from("trades")
+      .select("id, auction_id, seller_id, buyer_id, amount, status, tracking_number, received_at, created_at, afhentning")
+      .eq("id", trade_id)
+      .or(`buyer_id.eq.${brugerId},seller_id.eq.${brugerId}`)
+      .maybeSingle<HandelRaekke>();
 
   // Vender køberen tilbage fra Stripe, spejles betalingen FØR handlen hentes.
   // hentBetalingsstatus spørger Stripe og opdaterer handlens status, så
   // statusmærket og trinlinjen nedenfor viser den nye status med det samme.
   // (Funktionen tjekker selv, at brugeren er køber eller sælger.)
+  // Ellers hentes handlen SAMTIDIG med valideringen af brugeren: id'et fra
+  // sessionens JWT (tjekket lokalt) bruges til opslaget, og intet vises, før
+  // getUser har bekræftet præcis den bruger (bekraeftetBruger).
+  const sessionId = betalingParam === "retur" ? null : await sessionBrugerId();
+  const [user, tidligHandel] = await Promise.all([
+    sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
+    sessionId ? hentHandel(sessionId) : null,
+  ]);
+  if (!user) {
+    redirect(`/login?redirect=/mine-handler/${encodeURIComponent(trade_id)}`);
+  }
+
   const returBetaling =
     betalingParam === "retur" ? await hentBetalingsstatus(trade_id) : null;
 
-  // Medlemskab tjekkes eksplicit. RLS er ikke nok: policyen tillader også
-  // staff, og uden dette filter kunne en medarbejder åbne en hvilken som
-  // helst handel og læse den private chat mellem køber og sælger.
-  // Handlen ses i admin-panelet, ikke her.
-  const { data: handel } = await supabase
-    .from("trades")
-    .select("id, auction_id, seller_id, buyer_id, amount, status, tracking_number, received_at, created_at, afhentning")
-    .eq("id", trade_id)
-    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
-    .maybeSingle<HandelRaekke>();
+  const { data: handel } = tidligHandel ?? (await hentHandel(user.id));
 
   if (!handel) notFound();
 
   const modpartId =
     handel.buyer_id === user.id ? handel.seller_id : handel.buyer_id;
 
-  const [{ data: auktion }, { data: modpart }, { data: beskeder }] =
-    await Promise.all([
-      supabase.from("auctions").select("titel, billeder, startpris").eq("id", handel.auction_id).maybeSingle(),
-      supabase.from("users").select("navn").eq("id", modpartId).maybeSingle(),
-      // Sikker uden medlemskabsfilter, fordi notFound() ovenfor allerede har
-      // afvist alle andre end køber og sælger. Flyttes denne query op over
-      // det tjek, lækker den chatten til staff.
-      supabase
-        .from("messages")
-        .select("id, sender_id, content, created_at, fra_bidhamr, blokeret_grund")
-        .eq("trade_id", trade_id)
-        .order("created_at", { ascending: true })
-        .overrideTypes<Besked[], { merge: false }>(),
-    ]);
-
   const erSaelger = handel.seller_id === user.id;
   const erKoeber = handel.buyer_id === user.id;
-  // Afhentningshandler (kun afhentning, fragt 0 kr) springer pakketrinnene
-  // over: køberen viser en kode, og sælgeren indtaster den.
   const afhentning = handel.afhentning === true;
-  const tidslinje = afhentning
-    ? HANDEL_STATUS.filter((s) => s.vaerdi !== "pakke_sendt" && s.vaerdi !== "modtaget").map((s) =>
-        s.vaerdi === "leveret" ? { ...s, label: "Hentet og afregnet" } : s,
-      )
-    : HANDEL_STATUS;
-  const aktivtTrin = tidslinje.findIndex((s) => s.vaerdi === handel.status);
-  const billede = (auktion?.billeder as string[] | null)?.[0] ?? null;
-
-  // Betalingen hentes kun, når den er relevant: mens der ventes på den, og
-  // når køberen lige er vendt tilbage fra Stripe.
-  const betaling =
-    returBetaling ??
-    (handel.status === "afventer_betaling" ? await hentBetalingsstatus(handel.id) : null);
-  const betalingsstatus = betaling && "ok" in betaling ? betaling : null;
-
-  // Vinderen betalte ikke: sælgeren vælger næste skridt, køberen får besked.
   const annulleret = handel.status === "annulleret";
-  const [andenchance, koeberUbetalt] = await Promise.all([
-    annulleret && erSaelger ? hentAndenchanceStatus(handel.id) : Promise.resolve(null),
-    annulleret && erKoeber ? erAnnulleretUbetalt(handel.id) : Promise.resolve(null),
-  ]);
-
-  // Sag fra køberen: vises for både køber og sælger. Køberen kan oprette en,
-  // hvis der ingen er (mulighederne afgøres på serveren).
-  const sagRes = SAG_STATUSSER_HANDEL.includes(handel.status)
-    ? await hentSagForHandel(handel.id)
-    : null;
-  const sag = sagRes && "sag" in sagRes ? sagRes.sag : null;
-  const sagFejl = sagRes && "fejl" in sagRes ? sagRes.fejl : null;
-  const sagAktiv = sag?.status === "aaben" || sag?.status === "afventer_retur";
-  const [mulighederRes, samtaleRes] = await Promise.all([
-    erKoeber && !sag && !sagFejl && (handel.status === "pakke_sendt" || handel.status === "modtaget")
-      ? hentSagMuligheder(handel.id)
-      : Promise.resolve(null),
-    // Seneste besked fra BidHamr om sagen (vises i sagsboksen).
-    sag ? hentMinSagSamtale(sag.id) : Promise.resolve(null),
-  ]);
-  const sagSamtale = samtaleRes && "samtale" in samtaleRes ? samtaleRes.samtale : null;
-  const muligheder = mulighederRes && !("fejl" in mulighederRes) ? mulighederRes : null;
-
-  const afhentningInfo =
-    afhentning && handel.status === "betaling_modtaget"
-      ? await hentAfhentningInfo(handel.id)
-      : null;
-
-  // Sælgerens adresse og telefon vises kun for køberen, når en
-  // afhentningsvare er betalt og endnu ikke hentet (handel_afhentningsadresse).
-  let afhentningsadresse: { adresse: string | null; telefon: string | null } | null = null;
-  if (afhentning && erKoeber && handel.status === "betaling_modtaget") {
-    const { data } = await supabase.rpc("handel_afhentningsadresse", { p_trade: handel.id });
-    const d = data as { kode?: string; adresse?: string | null; telefon?: string | null } | null;
-    if (d?.kode === "ok") afhentningsadresse = { adresse: d.adresse ?? null, telefon: d.telefon ?? null };
-  }
-
   // Afsendelsesfrist (kun forsendelse): pakken skal markeres sendt senest 5
   // dage efter betalingen, ellers annulleres handlen, og køberen refunderes
   // fuldt. betalt_kl kan læses af køber og sælger (kolonne-grant).
   const venterPaaAfsendelse = !afhentning && handel.status === "betaling_modtaget";
-
   // Fragtlabel i BidHamr (kun bag flaget FRAGT_LABELS_AKTIV=true). Uden flaget
   // er "Send pakke" præcis som før.
   const visFragtlabel = fragtLabelsAktiv() && erSaelger && venterPaaAfsendelse;
-  const forsendelse = visFragtlabel ? await hentMinForsendelse(handel.id) : null;
-  const [{ data: betaltRaekke }, afsendelsesAnnullering, afhentningsAnnullering] = await Promise.all([
+
+  // Alt, der kun afhænger af handlen, hentes samtidig (før: ét opslag ad
+  // gangen, op til 12 runder til databasen efter hinanden).
+  //
+  // Sag fra køberen: vises for både køber og sælger. Køberen kan oprette en,
+  // hvis der ingen er (mulighederne afgøres på serveren). Seneste besked fra
+  // BidHamr om sagen hentes, så snart sagen er kendt.
+  const sagLoefte = SAG_STATUSSER_HANDEL.includes(handel.status)
+    ? hentSagForHandel(handel.id)
+    : Promise.resolve(null);
+  const sagDetaljerLoefte = sagLoefte.then(async (sagRes) => {
+    const sag = sagRes && "sag" in sagRes ? sagRes.sag : null;
+    const sagFejl = sagRes && "fejl" in sagRes ? sagRes.fejl : null;
+    return Promise.all([
+      erKoeber && !sag && !sagFejl && (handel.status === "pakke_sendt" || handel.status === "modtaget")
+        ? hentSagMuligheder(handel.id)
+        : Promise.resolve(null),
+      sag ? hentMinSagSamtale(sag.id) : Promise.resolve(null),
+    ]);
+  });
+
+  const [
+    { data: auktion },
+    { data: modpart },
+    { data: beskeder },
+    betaling,
+    andenchance,
+    koeberUbetalt,
+    sagRes,
+    [mulighederRes, samtaleRes],
+    afhentningInfo,
+    afhentningsadresseSvar,
+    forsendelse,
+    { data: betaltRaekke },
+    afsendelsesAnnullering,
+    afhentningsAnnullering,
+    kvittering,
+  ] = await Promise.all([
+    supabase.from("auctions").select("titel, billeder, startpris").eq("id", handel.auction_id).maybeSingle(),
+    supabase.from("users").select("navn").eq("id", modpartId).maybeSingle(),
+    // Sikker uden medlemskabsfilter, fordi notFound() ovenfor allerede har
+    // afvist alle andre end køber og sælger. Flyttes denne query op over
+    // det tjek, lækker den chatten til staff.
+    supabase
+      .from("messages")
+      .select("id, sender_id, content, created_at, fra_bidhamr, blokeret_grund")
+      .eq("trade_id", trade_id)
+      .order("created_at", { ascending: true })
+      .overrideTypes<Besked[], { merge: false }>(),
+    // Betalingen hentes kun, når den er relevant: mens der ventes på den, og
+    // når køberen lige er vendt tilbage fra Stripe.
+    returBetaling ??
+      (handel.status === "afventer_betaling" ? hentBetalingsstatus(handel.id) : Promise.resolve(null)),
+    // Vinderen betalte ikke: sælgeren vælger næste skridt, køberen får besked.
+    annulleret && erSaelger ? hentAndenchanceStatus(handel.id) : Promise.resolve(null),
+    annulleret && erKoeber ? erAnnulleretUbetalt(handel.id) : Promise.resolve(null),
+    sagLoefte,
+    sagDetaljerLoefte,
+    afhentning && handel.status === "betaling_modtaget"
+      ? hentAfhentningInfo(handel.id)
+      : Promise.resolve(null),
+    // Sælgerens adresse og telefon vises kun for køberen, når en
+    // afhentningsvare er betalt og endnu ikke hentet (handel_afhentningsadresse).
+    afhentning && erKoeber && handel.status === "betaling_modtaget"
+      ? supabase.rpc("handel_afhentningsadresse", { p_trade: handel.id }).then((r) => r.data)
+      : Promise.resolve(null),
+    visFragtlabel ? hentMinForsendelse(handel.id) : Promise.resolve(null),
     venterPaaAfsendelse
       ? supabase
           .from("betalinger")
@@ -193,13 +196,34 @@ export default async function HandelDetaljePage({
     annulleret && afhentning
       ? hentAfhentningsfristAnnullering(handel.id, user.id)
       : Promise.resolve(null),
+    // Kvittering (køber, når betalingen er modtaget) / afregning (sælger, når
+    // pengene er frigivet). null, indtil den findes.
+    handel.status === "afventer_betaling" ? Promise.resolve(null) : hentMinKvittering(handel.id),
   ]);
-  const afsendSenest = venterPaaAfsendelse ? sendSenest(betaltRaekke?.betalt_kl) : null;
 
-  // Kvittering (køber, når betalingen er modtaget) / afregning (sælger, når
-  // pengene er frigivet). null, indtil den findes.
-  const kvittering =
-    handel.status === "afventer_betaling" ? null : await hentMinKvittering(handel.id);
+  // Afhentningshandler (kun afhentning, fragt 0 kr) springer pakketrinnene
+  // over: køberen viser en kode, og sælgeren indtaster den.
+  const tidslinje = afhentning
+    ? HANDEL_STATUS.filter((s) => s.vaerdi !== "pakke_sendt" && s.vaerdi !== "modtaget").map((s) =>
+        s.vaerdi === "leveret" ? { ...s, label: "Hentet og afregnet" } : s,
+      )
+    : HANDEL_STATUS;
+  const aktivtTrin = tidslinje.findIndex((s) => s.vaerdi === handel.status);
+  const billede = (auktion?.billeder as string[] | null)?.[0] ?? null;
+
+  const betalingsstatus = betaling && "ok" in betaling ? betaling : null;
+
+  const sag = sagRes && "sag" in sagRes ? sagRes.sag : null;
+  const sagFejl = sagRes && "fejl" in sagRes ? sagRes.fejl : null;
+  const sagAktiv = sag?.status === "aaben" || sag?.status === "afventer_retur";
+  const sagSamtale = samtaleRes && "samtale" in samtaleRes ? samtaleRes.samtale : null;
+  const muligheder = mulighederRes && !("fejl" in mulighederRes) ? mulighederRes : null;
+
+  const adresseSvar = afhentningsadresseSvar as { kode?: string; adresse?: string | null; telefon?: string | null } | null;
+  const afhentningsadresse: { adresse: string | null; telefon: string | null } | null =
+    adresseSvar?.kode === "ok" ? { adresse: adresseSvar.adresse ?? null, telefon: adresseSvar.telefon ?? null } : null;
+
+  const afsendSenest = venterPaaAfsendelse ? sendSenest(betaltRaekke?.betalt_kl) : null;
 
   return (
     <main className="flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10">

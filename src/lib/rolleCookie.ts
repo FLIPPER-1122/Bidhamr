@@ -1,0 +1,104 @@
+// Kortlivet, signeret cookie med brugerens staff-rolle til gaten før
+// lancering (src/lib/supabase/middleware.ts). Uden den spurgte proxyen
+// databasen (min_rolle) ved HVERT klik, før siden overhovedet begyndte at
+// blive bygget.
+//
+// Sikkerhed:
+// - Kun gaten bruger cookien. Admin-sider og alle staff-handlinger tjekker
+//   stadig rollen i databasen hver gang (kraevSideRolle/assertRole i
+//   src/lib/adminAuth.ts), og RLS er uændret.
+// - Værdien er signeret med HMAC-SHA256 med en nøgle, der kun findes på
+//   serveren (afledt af SUPABASE_SERVICE_ROLE_KEY). Kan ikke laves eller
+//   ændres i browseren. Mangler nøglen, bruges cookien ikke (fail closed:
+//   så spørges databasen hver gang som før).
+// - Bundet til brugerens id OG sessionens id (session_id i JWT'en): et nyt
+//   login, logud eller en anden bruger i samme browser gør den ugyldig.
+// - Gælder højst 5 minutter. Fratages en medarbejder rollen, kan gaten
+//   derfor lukke op for ham i op til 5 minutter mere - men kun for de
+//   offentlige sider; admin og staff-handlinger afvises med det samme.
+// - httpOnly, SameSite=Lax og Secure (undtagen lokalt på http).
+
+export const ROLLE_COOKIE = "bh_rolle";
+const LEVETID_SEKUNDER = 5 * 60;
+const VERSION = "v1";
+
+let noegleLoefte: Promise<CryptoKey | null> | null = null;
+
+function hentNoegle(): Promise<CryptoKey | null> {
+  if (!noegleLoefte) {
+    noegleLoefte = (async () => {
+      const hemmelighed = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!hemmelighed) return null;
+      // Egen nøgle til dette formål, afledt af service-role-nøglen.
+      const materiale = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(`bidhamr-rolle-cookie-${VERSION}|${hemmelighed}`),
+      );
+      return crypto.subtle.importKey("raw", materiale, { name: "HMAC", hash: "SHA-256" }, false, [
+        "sign",
+        "verify",
+      ]);
+    })().catch(() => null);
+  }
+  return noegleLoefte;
+}
+
+function tilBase64Url(bytes: ArrayBuffer): string {
+  let s = "";
+  for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fraBase64Url(tekst: string): Uint8Array<ArrayBuffer> | null {
+  try {
+    const b64 = tekst.replace(/-/g, "+").replace(/_/g, "/");
+    const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+    const ud = new Uint8Array(new ArrayBuffer(bin.length));
+    for (let i = 0; i < bin.length; i++) ud[i] = bin.charCodeAt(i);
+    return ud;
+  } catch {
+    return null;
+  }
+}
+
+const SIKKER_DEL = /^[A-Za-z0-9-]{1,64}$/;
+
+// Den signerede værdi til cookien, eller null hvis den ikke kan laves.
+export async function lavRolleCookie(
+  brugerId: string,
+  sessionId: string,
+  rolle: string,
+): Promise<{ vaerdi: string; maxAge: number } | null> {
+  if (![brugerId, sessionId, rolle].every((d) => SIKKER_DEL.test(d))) return null;
+  const noegle = await hentNoegle();
+  if (!noegle) return null;
+  const udloeber = Math.floor(Date.now() / 1000) + LEVETID_SEKUNDER;
+  const data = `${VERSION}.${brugerId}.${sessionId}.${rolle}.${udloeber}`;
+  const signatur = await crypto.subtle.sign("HMAC", noegle, new TextEncoder().encode(data));
+  return { vaerdi: `${data}.${tilBase64Url(signatur)}`, maxAge: LEVETID_SEKUNDER };
+}
+
+// Rollen fra cookien, hvis signaturen er gyldig, den ikke er udløbet, og den
+// hører til præcis denne bruger og session. Ellers null.
+export async function laesRolleCookie(
+  vaerdi: string | undefined,
+  brugerId: string,
+  sessionId: string,
+): Promise<string | null> {
+  if (!vaerdi) return null;
+  const dele = vaerdi.split(".");
+  if (dele.length !== 6) return null;
+  const [version, id, session, rolle, udloeberTekst, signaturTekst] = dele;
+  if (version !== VERSION || id !== brugerId || session !== sessionId) return null;
+  const udloeber = Number(udloeberTekst);
+  if (!Number.isInteger(udloeber) || udloeber <= Math.floor(Date.now() / 1000)) return null;
+  if (udloeber > Math.floor(Date.now() / 1000) + LEVETID_SEKUNDER) return null;
+  const signatur = fraBase64Url(signaturTekst);
+  if (!signatur) return null;
+  const noegle = await hentNoegle();
+  if (!noegle) return null;
+  const data = `${version}.${id}.${session}.${rolle}.${udloeberTekst}`;
+  // crypto.subtle.verify sammenligner i konstant tid.
+  const gyldig = await crypto.subtle.verify("HMAC", noegle, signatur, new TextEncoder().encode(data));
+  return gyldig ? rolle : null;
+}

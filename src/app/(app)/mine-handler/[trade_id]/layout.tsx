@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { bekraeftetBruger, hentBruger, sessionBrugerId } from "@/lib/supabase/bruger";
 
 // Adgangstjek for en handel. Ligger i et layout og ikke kun i page.tsx:
 // layoutet ligger uden for loading.tsx-grænsen, så notFound() giver en rigtig
@@ -18,24 +19,32 @@ export default async function HandelLayout({
 }) {
   const { trade_id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const opslag = (brugerId: string) =>
+    supabase
+      .from("trades")
+      .select("id")
+      .eq("id", trade_id)
+      .or(`buyer_id.eq.${brugerId},seller_id.eq.${brugerId}`)
+      .maybeSingle<{ id: string }>();
+  // Handlen slås op SAMTIDIG med valideringen af brugeren (id'et fra
+  // sessionens JWT, tjekket lokalt) - men bruges kun, hvis getUser bekræfter
+  // præcis den bruger. Brugeren deles med siden (cache() i
+  // src/lib/supabase/bruger.ts): ét getUser-kald.
+  const sessionId = await sessionBrugerId();
+  const [user, tidligt] = await Promise.all([
+    sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
+    sessionId && UUID.test(trade_id) ? opslag(sessionId) : null,
+  ]);
   // Ikke logget ind: layoutet kender ikke understien (fx /kvittering), så
   // login-redirect overlades til siderne, der hver sender tilbage til deres
   // egen sti. HVER side under [trade_id] skal derfor selv redirecte, når
   // brugeren ikke er logget ind (RLS viser alligevel intet for anon).
   if (!user) return <>{children}</>;
 
-  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!UUID.test(trade_id)) notFound();
 
-  const { data: handel, error } = await supabase
-    .from("trades")
-    .select("id")
-    .eq("id", trade_id)
-    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
-    .maybeSingle<{ id: string }>();
+  const { data: handel, error } = tidligt ?? (await opslag(user.id));
   if (error) throw new Error(`Handlen kunne ikke hentes: ${error.message}`);
   if (!handel) notFound();
 

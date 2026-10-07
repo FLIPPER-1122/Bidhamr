@@ -24,12 +24,20 @@ type AuktionSeo = {
   kategori: string | null;
 };
 
+// Hele auktionsrækken, som brugeren må se den (RLS), hentet ÉN gang pr.
+// forespørgsel og delt af layout.tsx (404-tjek og JSON-LD), generateMetadata
+// og page.tsx. Før blev den samme række hentet tre gange.
+// "*": supabase-js kan ikke parse "nuværende_bud" i en select-streng.
+export const hentAuktionRaekke = cache(async (id: string) => {
+  if (!UUID.test(id)) return { data: null, error: null };
+  const supabase = await createClient();
+  return supabase.from("auctions").select("*").eq("id", id).maybeSingle();
+});
+
 export const hentAuktionSeo = cache(async (id: string): Promise<AuktionSeo | null> => {
   if (!UUID.test(id)) return null;
   try {
-    const supabase = await createClient();
-    // "*": supabase-js kan ikke parse "nuværende_bud" i en select-streng.
-    const { data } = await supabase.from("auctions").select("*").eq("id", id).maybeSingle();
+    const { data } = await hentAuktionRaekke(id);
     if (!data || data.skjult) return null;
     const billeder = Array.isArray(data.billeder)
       ? (data.billeder as unknown[]).filter((b): b is string => typeof b === "string" && /^https:\/\//.test(b))
@@ -58,8 +66,7 @@ export const hentAuktionSeo = cache(async (id: string): Promise<AuktionSeo | nul
 // ikke en "blød" 404 med status 200.
 export const auktionSynlig = cache(async (id: string): Promise<boolean> => {
   if (!UUID.test(id)) return false;
-  const supabase = await createClient();
-  const { data, error } = await supabase.from("auctions").select("id").eq("id", id).maybeSingle();
+  const { data, error } = await hentAuktionRaekke(id);
   if (error) throw new Error(`Auktionen kunne ikke hentes: ${error.message}`);
   return Boolean(data);
 });

@@ -3,9 +3,8 @@ import "server-only";
 // Må KUN importeres i server-kode (server components/actions) — returnerer
 // service-role-klienten, som aldrig må ende i klient-bundlen.
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hentLoggetIndBruger } from "@/lib/hentBruger";
+import { hentBruger, hentMinRolle } from "@/lib/supabase/bruger";
 
 export type StaffRole = "medarbejder" | "admin" | "chef";
 
@@ -27,16 +26,12 @@ function somStaffRole(rolle: unknown): StaffRole | null {
 }
 
 // Til layout/sider: returnerer brugerens staff-rolle eller null.
+// Bruger og rolle hentes samtidig og højst én gang pr. forespørgsel
+// (src/lib/supabase/bruger.ts). min_rolle() udleder brugeren af auth.uid() i
+// JWT'en, og rollen bruges kun, hvis getUser også har godkendt brugeren.
 export async function getStaffRole(): Promise<StaffRole | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await hentLoggetIndBruger(supabase);
+  const [user, minRolle] = await Promise.all([hentBruger(), hentMinRolle()]);
   if (!user) return null;
-
-  // rolle er ikke laesbar via kolonne-grants; min_rolle() udleder brugeren af auth.uid().
-  const { data: minRolle } = await supabase.rpc("min_rolle");
-
   return somStaffRole(minRolle);
 }
 
@@ -49,14 +44,12 @@ type StaffAdgang = {
 async function hentAdgang(
   min: StaffRole,
 ): Promise<StaffAdgang | "ikke_logget_ind" | "ingen_adgang"> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await hentLoggetIndBruger(supabase);
+  // rolle er ikke laesbar via kolonne-grants; min_rolle() udleder brugeren af
+  // auth.uid(). Hentes samtidig med getUser, men bruges kun, hvis getUser har
+  // godkendt brugeren. I server actions er cache() uden virkning, så hvert
+  // assertRole-kald spørger Supabase på ny.
+  const [user, minRolle] = await Promise.all([hentBruger(), hentMinRolle()]);
   if (!user) return "ikke_logget_ind";
-
-  // rolle er ikke laesbar via kolonne-grants; min_rolle() udleder brugeren af auth.uid().
-  const { data: minRolle } = await supabase.rpc("min_rolle");
 
   const rolle = somStaffRole(minRolle);
   if (!rolle || !harMindstRolle(rolle, min)) return "ingen_adgang";

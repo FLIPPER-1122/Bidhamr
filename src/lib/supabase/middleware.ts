@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { erTestdatabase } from "@/lib/miljoe";
 import { tilmeldingAaben } from "@/lib/tilmelding";
+import { ROLLE_COOKIE, laesRolleCookie, lavRolleCookie } from "@/lib/rolleCookie";
 
 // Routes der er tilgængelige uden login, mens resten af appen er bag
 // venteliste-gaten. Kun API-ruter med egen adgangskontrol undtages:
@@ -112,11 +113,60 @@ async function afvisSkrivningPaaOffentligSti(
   if (erRouteHandlerSti(request.nextUrl.pathname)) return false;
   if (tilmeldingAaben()) return false;
 
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) return false;
+  const session = await hentSession(supabase);
+  if (!session) return false;
 
-  const { data: rolle } = await supabase.rpc("min_rolle");
-  return typeof rolle !== "string" || !ROLLER_MED_ADGANG.includes(rolle);
+  const { rolle } = await hentGateRolle(request, supabase, session);
+  return !rolle || !ROLLER_MED_ADGANG.includes(rolle);
+}
+
+type Session = { brugerId: string; sessionId: string | null };
+
+// Gaten bruger getClaims(): JWT'en tjekkes lokalt med projektets offentlige
+// nøgle (JWKS, ES256 - hentes én gang og caches), så der går INTET kald til
+// Supabase Auth ved hvert klik. getClaims fornyer også en udløbet session
+// (cookies sættes via setAll ovenfor), ligesom getUser gjorde. Er JWT'en
+// signeret med den gamle fælles hemmelighed (HS256), falder getClaims selv
+// tilbage til getUser (et netværkskald) - så er det lige så sikkert som før.
+// Forskellen: en session, der er logget ud andetsteds, men hvis JWT endnu
+// ikke er udløbet (højst 1 time), kommer forbi GATEN. Siderne og server
+// actions validerer stadig brugeren med getUser (src/lib/supabase/bruger.ts
+// og src/lib/hentBruger.ts), og RLS i databasen tjekker JWT'en selv.
+async function hentSession(
+  supabase: ReturnType<typeof createServerClient>,
+): Promise<Session | null> {
+  const { data, error } = await supabase.auth.getClaims();
+  if (error || !data?.claims) return null;
+  const { sub, session_id: sessionId } = data.claims;
+  if (typeof sub !== "string" || !sub) return null;
+  return { brugerId: sub, sessionId: typeof sessionId === "string" ? sessionId : null };
+}
+
+// Rollen til gaten: fra den signerede rolle-cookie, hvis den er gyldig for
+// netop denne bruger og session (src/lib/rolleCookie.ts), ellers fra
+// databasen (min_rolle). En staff-rolle fra databasen gemmes i en ny cookie,
+// så de næste klik i 5 minutter ikke venter på databasen.
+async function hentGateRolle(
+  request: NextRequest,
+  supabase: ReturnType<typeof createServerClient>,
+  session: Session,
+): Promise<{ rolle: string | null; nyCookie: { vaerdi: string; maxAge: number } | null }> {
+  if (session.sessionId) {
+    const fraCookie = await laesRolleCookie(
+      request.cookies.get(ROLLE_COOKIE)?.value,
+      session.brugerId,
+      session.sessionId,
+    );
+    if (fraCookie && ROLLER_MED_ADGANG.includes(fraCookie)) return { rolle: fraCookie, nyCookie: null };
+  }
+  // rolle er ikke laesbar via kolonne-grants; min_rolle() bruger auth.uid().
+  const { data } = await supabase.rpc("min_rolle");
+  const rolle = typeof data === "string" ? data : null;
+  const nyCookie =
+    rolle && ROLLER_MED_ADGANG.includes(rolle) && session.sessionId
+      ? await lavRolleCookie(session.brugerId, session.sessionId, rolle)
+      : null;
+  return { rolle, nyCookie };
 }
 
 // ekstraHeadere (fx CSP-nonce fra src/proxy.ts) sendes med til renderingen.
@@ -167,11 +217,12 @@ export async function updateSession(
     return supabaseResponse;
   }
 
-  const { data } = await supabase.auth.getUser();
+  // Lokal JWT-tjek (se hentSession) - intet kald til Supabase Auth.
+  const session = await hentSession(supabase);
 
   // Ikke logget ind og forsøger at tilgå noget andet end de offentlige ruter
   // -> hele appen er bag venteliste-gaten, ingen adgang uden login.
-  if (!data.user) {
+  if (!session) {
     return NextResponse.redirect(new URL("/coming-soon", request.url));
   }
 
@@ -183,12 +234,23 @@ export async function updateSession(
     return supabaseResponse;
   }
 
-  // Logget ind er ikke nok inden launch: rollen skal give adgang.
-  // rolle er ikke laesbar via kolonne-grants; min_rolle() bruger auth.uid().
-  const { data: rolle } = await supabase.rpc("min_rolle");
+  // Logget ind er ikke nok inden launch: rollen skal give adgang. Rollen
+  // læses fra den signerede rolle-cookie (højst 5 min. gammel) eller
+  // databasen - se hentGateRolle.
+  const { rolle, nyCookie } = await hentGateRolle(request, supabase, session);
 
-  if (typeof rolle !== "string" || !ROLLER_MED_ADGANG.includes(rolle)) {
+  if (!rolle || !ROLLER_MED_ADGANG.includes(rolle)) {
     return NextResponse.redirect(new URL("/coming-soon", request.url));
+  }
+
+  if (nyCookie) {
+    supabaseResponse.cookies.set(ROLLE_COOKIE, nyCookie.vaerdi, {
+      httpOnly: true,
+      secure: request.nextUrl.protocol === "https:",
+      sameSite: "lax",
+      path: "/",
+      maxAge: nyCookie.maxAge,
+    });
   }
 
   return supabaseResponse;
