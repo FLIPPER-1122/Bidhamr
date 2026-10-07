@@ -4,17 +4,16 @@
 //  - sendErhvervHenvendelse: formularen på /erhverv (også uden login).
 //    Gemmes med service role (ingen browser-adgang til tabellen) efter
 //    honeypot, tidsfælde og rate limits pr. IP, e-mail, CVR, bruger og samlet
-//    (som kontaktformularen). IP gemmes kun som HMAC (ip_hash).
+//    (som kontaktformularen). IP-adressen bruges kun til rate limit og
+//    gemmes ikke (kolonnen ip_hash er altid null).
 //  - hentFirmaOversigt / skiftFirmaPakke: Firma oversigt for en firmakonto.
 //    Databasen (firma_oversigt, firma_skift_pakke) tjekker selv, at brugeren
 //    er en firmakonto - samme RPC'er bruges af appen.
 // Fejl RETURNERES som { fejl } med dansk tekst.
 
-import { createHmac } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
-import { hemmeligNoegle } from "@/lib/supabase/noeglerServer";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
 import {
@@ -45,10 +44,6 @@ function felt(formData: FormData, navn: string): string {
 function fritekst(formData: FormData, navn: string): string {
   const v = formData.get(navn);
   return typeof v === "string" ? v.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim() : "";
-}
-
-function ipHash(ip: string): string {
-  return createHmac("sha256", `erhverv-ip|${hemmeligNoegle()}`).update(ip).digest("hex");
 }
 
 // Felter i formularen (name-attributter): firmanavn, cvr, kontaktperson,
@@ -136,7 +131,6 @@ export async function sendErhvervHenvendelse(
       antal_varer_ca: antal,
       besked: besked || null,
       bruger_id: user?.id ?? null,
-      ip_hash: ip && ip !== "ukendt" ? ipHash(ip) : null,
     });
     if (error) {
       await logDriftFejl({ kilde: "action", hvor: "sendErhvervHenvendelse", fejl: error });

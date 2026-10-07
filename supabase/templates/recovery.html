@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="da">
+  <!--
+    Supabase-skabelon: "Reset password" (Auth -> Emails -> Templates).
+    Emne: Nulstil din adgangskode til BidHamr
+    Sendes af resetPasswordForEmail (glemt adgangskode, src/app/actions/auth.ts).
+    Linket går til bidhamr.dk/auth/callback med token_hash - IKKE
+    ConfirmationURL (Supabases verify-adresse), for den bruges op, når en
+    mail-scanner (fx Microsoft Safe Links) åbner linket før modtageren.
+    /auth/callback sender videre til mellemsiden /bekraeft, og først et tryk
+    på knappen dér indløser linket. Linket følger "Email OTP expiration"
+    (i dag 3600 sekunder, teksten siger "1 time").
+    Farver og opbygning følger confirmation.html og invite.html.
+  -->
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Nulstil din adgangskode</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#F4F7F5;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+      Tryk på knappen for at vælge en ny adgangskode.
+    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F4F7F5; padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px; width:100%;">
+            <tr>
+              <td style="padding:0 8px 16px 8px; font-family:Fraunces, Georgia, 'Times New Roman', serif; font-size:24px; font-weight:600; color:#1E5E4A;">
+                BidHamr
+              </td>
+            </tr>
+            <tr>
+              <td style="background-color:#FFFFFF; border:1px solid #EEEEEE; border-radius:14px; padding:36px 32px 28px 32px;">
+                <h1 style="margin:0 0 20px 0; font-family:Fraunces, Georgia, 'Times New Roman', serif; font-size:26px; line-height:1.2; font-weight:600; color:#1A1A1A;">
+                  Nulstil din adgangskode
+                </h1>
+                <p style="margin:0 0 24px 0; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.55; color:#1A1A1A;">
+                  Tryk på knappen herunder, og vælg en ny adgangskode.
+                </p>
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+                  <tr>
+                    <td align="center" style="background-color:#B85518; border-radius:10px;">
+                      <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=recovery&amp;next=/reset-password" target="_blank" style="display:inline-block; padding:16px 32px; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:17px; line-height:20px; font-weight:600; color:#FFFFFF; text-decoration:none; border-radius:10px;">
+                        Vælg ny adgangskode
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:15px; line-height:1.55; color:#1A1A1A;">
+                  Linket virker i 1 time. Har du ikke bedt om en ny adgangskode, kan du se bort fra mailen.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 8px 0 8px;">
+                <p style="margin:0; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:1.5; color:#666666;">
+                  Du får denne mail, fordi nogen har bedt om at nulstille adgangskoden til {{ .Email }} på bidhamr.dk. BidHamr spørger dig aldrig om din adgangskode.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

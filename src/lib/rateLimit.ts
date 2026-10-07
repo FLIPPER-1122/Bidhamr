@@ -89,7 +89,7 @@ export const GRAENSER = {
   erhverv_email: { maks: 3, vindueSek: 60 * 60 },
   erhverv_cvr: { maks: 3, vindueSek: 24 * 60 * 60 },
   erhverv_bruger: { maks: 5, vindueSek: 60 * 60 },
-  erhverv_alle: { maks: 100, vindueSek: 60 * 60 },
+  erhverv_alle: { maks: 300, vindueSek: 60 * 60 },
   // Admin → Erhverv: oprettelse af firmakonti/velkomstmails og CVR-opslag
   // pr. medarbejder.
   erhverv_opret_staff: { maks: 30, vindueSek: 60 * 60 },

@@ -87,6 +87,7 @@ const KODE_FEJL: Record<string, string> = {
   henvendelse_findes_ikke: "Henvendelsen findes ikke længere.",
   henvendelse_brugt: "Der er allerede oprettet en firmakonto ud fra denne henvendelse.",
   ugyldige_felter: "Tjek felterne og prøv igen.",
+  kun_chef: "Kun chefen kan ændre pakke, status, firmanavn og CVR. Du kan rette adresse og kontaktoplysninger.",
 };
 
 function kodeFejl(kode: string | undefined): never {
@@ -329,11 +330,40 @@ function tjekFirmaFelter(input: Partial<FirmaFelter>): FirmaFelter {
   };
 }
 
-// Engangslink i velkomstmailen. Går via /auth/callback (verifyOtp på
-// serveren), som logger firmaet ind og sender det til "Vælg adgangskode".
+// Engangslink i velkomstmailen. /auth/callback indløser det IKKE ved
+// visning (mail-scannere åbner links), men sender til mellemsiden /bekraeft;
+// først knappen dér logger firmaet ind og sender det til "Vælg adgangskode".
 function velkomstLink(hashedToken: string, type: "invite" | "recovery") {
   const p = new URLSearchParams({ token_hash: hashedToken, type, next: "/reset-password" });
   return sideUrl(`/auth/callback?${p.toString()}`);
+}
+
+// Sletter den tomme auth-bruger, som generateLink lige har oprettet, når
+// erhverv_firma_opret fejler. Først fjerner databasen public.users-rækken
+// (kun hvis kontoen er helt ny og tom - ellers 'ikke_tom'), derefter slettes
+// auth-brugeren via admin API. Returnerer true, hvis begge dele lykkedes.
+async function rydTomKonto(
+  admin: Awaited<ReturnType<typeof assertErhverv>>["admin"],
+  staffId: string,
+  brugerId: string,
+): Promise<boolean> {
+  try {
+    const { data, error } = await admin.rpc("erhverv_tom_konto_ryd", { p_staff: staffId, p_bruger: brugerId });
+    const kode = (data as { kode?: string } | null)?.kode;
+    if (error || (kode !== "ok" && kode !== "findes_ikke")) {
+      console.error("erhverv_tom_konto_ryd:", error?.message ?? kode);
+      return false;
+    }
+    const { error: sletFejl } = await admin.auth.admin.deleteUser(brugerId);
+    if (sletFejl && sletFejl.status !== 404) {
+      console.error("deleteUser:", sletFejl.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("rydTomKonto:", err);
+    return false;
+  }
 }
 
 export async function opretFirmakonto(
@@ -395,17 +425,22 @@ export async function opretFirmakonto(
     });
     const svar = data as { kode?: string; firma_id?: string } | null;
     if (error || svar?.kode !== "ok" || !svar.firma_id) {
-      // Auth-brugeren findes nu som en almindelig (privat) konto uden firma.
-      // Den kan ikke slettes automatisk - logges, så en udvikler kan rydde op.
+      // Auth-brugeren findes nu som en tom (privat) konto uden firma. Den
+      // slettes igen automatisk (ingen handelsdata) - databasen tjekker, at
+      // den er under 5 minutter gammel, aldrig har logget ind og ingen
+      // aktivitet har (erhverv_tom_konto_ryd).
+      const ryddet = await rydTomKonto(admin, userId, link.user.id);
       await logDriftFejl({
         kilde: "action",
         hvor: "opretFirmakonto",
-        fejl: `Firmakonto ikke oprettet efter generateLink (bruger ${link.user.id}): ${error?.message ?? svar?.kode ?? "ukendt"}`,
+        fejl: `Firmakonto ikke oprettet efter generateLink (bruger ${link.user.id}): ${error?.message ?? svar?.kode ?? "ukendt"}. Tom konto ${ryddet ? "slettet igen" : "IKKE slettet - ryd op manuelt"}.`,
         brugerId: userId,
       });
       if (svar?.kode && KODE_FEJL[svar.kode]) {
         throw new BrugerFejl(
-          `${KODE_FEJL[svar.kode]} Bemærk: der er oprettet en tom konto på ${loginEmail} - kontakt en udvikler, før du prøver igen med samme e-mail.`,
+          ryddet
+            ? KODE_FEJL[svar.kode]
+            : `${KODE_FEJL[svar.kode]} Bemærk: der er oprettet en tom konto på ${loginEmail} - kontakt en udvikler, før du prøver igen med samme e-mail.`,
         );
       }
       throw new Error(error?.message ?? `erhverv_firma_opret: ${svar?.kode ?? "intet svar"}`);
@@ -501,6 +536,10 @@ export async function opdaterFirma(input: {
     const pakkeId = input.pakkeId ? tjekUuid(input.pakkeId, KODE_FEJL.ugyldig_pakke) : null;
     if (input.status != null && !erAbonnementStatus(input.status)) throw new BrugerFejl("Ugyldig status.");
     const f = input.felter ? tjekFirmaFelter(input.felter) : null;
+    // Sælger må kun rette adresse og kontaktoplysninger. ÆNDRER kaldet pakke,
+    // status, firmanavn eller CVR, kræver det chef - databasen sammenligner
+    // med de nuværende værdier og svarer 'kun_chef' (så en formular, der
+    // altid sender alle felter med uændret navn/CVR, stadig virker for sælger).
     const note = typeof input.note === "string" ? input.note.trim().slice(0, 1000) : null;
 
     const { data, error } = await admin.rpc("erhverv_firma_opdater", {
