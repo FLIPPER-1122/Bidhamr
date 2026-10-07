@@ -42,6 +42,8 @@ export default function BidPanel({
   initialSlutterKl,
   initialBud,
   mitMaksimum = null,
+  mitMaksimumNaaet = false,
+  minBeskyttelse = null,
   brugerId,
   saelgerId,
   forsendelseMulig,
@@ -63,6 +65,11 @@ export default function BidPanel({
   initialBud: BidPanelBud[];
   // Mit eget maksimum (automatisk bud) - kun hentet for byderen selv.
   mitMaksimum?: number | null;
+  // mit_maksimum.naaet: en anden fører, og mit maksimum er nået.
+  mitMaksimumNaaet?: boolean;
+  // BidHamr Beskyttelse på mit seneste bud (null = ingen bud). Fører jeg,
+  // følger mine automatiske bud den, og den kan ikke ændres via maksimum.
+  minBeskyttelse?: boolean | null;
   brugerId: string | null;
   saelgerId: string;
   forsendelseMulig: boolean;
@@ -101,8 +108,10 @@ export default function BidPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  // Kvittering efter et automatisk bud (fører / overbudt / gemt).
-  const [kvittering, setKvittering] = useState<string | null>(null);
+  // Kvittering efter et bud (fører / overbudt / gemt).
+  const [kvittering, setKvittering] = useState<{ tekst: string; tone: "succes" | "advarsel" } | null>(null);
+  // Meget højt maksimum: beløbet, der venter på "Er du sikker?".
+  const [bekraeftMaks, setBekraeftMaks] = useState<number | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<string>("aktiv");
   // Skjult af BidHamr (kun sælger, deltagere og staff ser siden): der kan
   // ikke bydes, selvom auktionen stadig står som aktiv.
@@ -231,7 +240,27 @@ export default function BidPanel({
   // skal det mindst være næste mindstebud (samme regel som saet_maksimum).
   const mindsteMaks = jegFoerer ? nuværendeBud : minimumBud;
   const mindsteGyldige = automatisk ? mindsteMaks : minimumBud;
-  const maksAktivt = mitMaksimum !== null && jegFoerer && mitMaksimum > nuværendeBud;
+  const maksAktivt = mitMaksimum !== null && jegFoerer && mitMaksimum >= nuværendeBud;
+  // Fører jeg, følger mine automatiske bud BidHamr Beskyttelse på mit
+  // førende bud - den kan ikke ændres via maksimum (saet_maksimum afviser).
+  const beskyttelseLaast = automatisk && jegFoerer;
+  const beskyttelseValgt = beskyttelseLaast ? minBeskyttelse === true : beskyttelse;
+
+  // Fejl mens man skriver (ikke kun en deaktiveret knap).
+  const skrevet = beløb.trim();
+  const skrevetTal = Number(skrevet);
+  const inlineFejl =
+    skrevet === ""
+      ? null
+      : !Number.isFinite(skrevetTal) || !Number.isInteger(skrevetTal)
+        ? "Skriv et helt antal kroner."
+        : skrevetTal < mindsteGyldige
+          ? automatisk
+            ? jegFoerer
+              ? `Du fører med ${nuværendeBud.toLocaleString("da-DK")} kr. Dit maksimum kan ikke være lavere.`
+              : `Dit maksimum skal være mindst ${mindsteGyldige.toLocaleString("da-DK")} kr.`
+            : `Dit bud skal være mindst ${mindsteGyldige.toLocaleString("da-DK")} kr.`
+          : null;
 
   // Kun visning: hvad vinderen kommer til at betale. Det endelige beløb
   // beregnes på serveren, når auktionen slutter.
@@ -247,7 +276,7 @@ export default function BidPanel({
                 koebergebyr_oere: Math.round((budOere * KOEBERGEBYR_PROCENT) / 100),
                 fragt_oere: fragtOere(forsendelseMulig),
               },
-              beskyttelse && forsendelseMulig,
+              beskyttelseValgt && forsendelseMulig,
             )
           );
         })()
@@ -288,46 +317,14 @@ export default function BidPanel({
         );
         return;
       }
-      setLoading(true);
-      senderRef.current = true;
-      let maksSvar: Awaited<ReturnType<typeof saetMaksimum>>;
-      try {
-        maksSvar = await saetMaksimum(
-          auktionId,
-          beløbTal,
-          beskyttelse && forsendelseMulig,
-          redigeretKl,
-        );
-      } finally {
-        senderRef.current = false;
-      }
-      setLoading(false);
-      if ("fejl" in maksSvar) {
-        setError(maksSvar.fejl);
-        if (maksSvar.auktionAendret) router.refresh();
+      // Meget højt maksimum (> 10 × nuværende bud eller > 10.000 kr): spørg
+      // først. Gælder ikke, når man sænker et maksimum.
+      const hoejt = beløbTal > 10_000 || beløbTal > 10 * Math.max(visningsBud, 1);
+      if (hoejt && !(maksAktivt && mitMaksimum !== null && beløbTal <= mitMaksimum)) {
+        setBekraeftMaks(beløbTal);
         return;
       }
-      const kr = (n: number) => `${n.toLocaleString("da-DK")} kr`;
-      if (maksSvar.nuvaerendeBud !== null) {
-        setNuværendeBud(maksSvar.nuvaerendeBud);
-        setHarBud(true);
-      }
-      setKvittering(
-        !maksSvar.budAfgivet
-          ? AUTOBUD.svarGemt(kr(maksSvar.maks))
-          : maksSvar.foerer
-            ? AUTOBUD.svarFoerer(kr(maksSvar.nuvaerendeBud ?? beløbTal), kr(maksSvar.maks))
-            : AUTOBUD.svarOverbudt(kr(maksSvar.nuvaerendeBud ?? beløbTal)),
-      );
-      setTimeout(() => setKvittering(null), 8000);
-      if (
-        maksSvar.slutterKl &&
-        new Date(maksSvar.slutterKl).getTime() > new Date(slutterKl).getTime()
-      ) {
-        setSlutterKl(maksSvar.slutterKl);
-      }
-      setBeløb("");
-      router.refresh();
+      await sendMaksimum(beløbTal);
       return;
     }
 
@@ -340,6 +337,7 @@ export default function BidPanel({
       return;
     }
 
+    setBekraeftMaks(null);
     setLoading(true);
     senderRef.current = true;
 
@@ -372,14 +370,88 @@ export default function BidPanel({
       new Date(svar.slutterKl).getTime() > new Date(slutterKl).getTime()
     ) {
       setSlutterKl(svar.slutterKl);
-      setInfo("Auktionen er forlænget med 2 minutter!");
+      setInfo(AUTOBUD.forlaenget);
       setTimeout(() => setInfo(null), 6000);
+    }
+    if (svar.nuvaerendeBud !== null) {
+      setNuværendeBud(svar.nuvaerendeBud);
+      setHarBud(true);
+    }
+    // Et automatisk bud (maksimum) bød straks over.
+    if (svar.foerer === false && svar.nuvaerendeBud !== null) {
+      setKvittering({
+        tekst: AUTOBUD.svarOverbudtEfterEnkelt(`${svar.nuvaerendeBud.toLocaleString("da-DK")} kr`),
+        tone: "advarsel",
+      });
+      setTimeout(() => setKvittering(null), 10000);
     }
 
     setLoading(false);
     setBeløb("");
 
     router.refresh();
+  }
+
+  // Automatisk bud: gemmer maksimum (og byder, hvis jeg ikke fører).
+  async function sendMaksimum(beløbTal: number) {
+    if (senderRef.current) return;
+    setBekraeftMaks(null);
+    setError(null);
+    setKvittering(null);
+    setLoading(true);
+    senderRef.current = true;
+    let maksSvar: Awaited<ReturnType<typeof saetMaksimum>>;
+    try {
+      maksSvar = await saetMaksimum(
+        auktionId,
+        beløbTal,
+        beskyttelseValgt && forsendelseMulig,
+        redigeretKl,
+      );
+    } finally {
+      senderRef.current = false;
+    }
+    setLoading(false);
+    if ("fejl" in maksSvar) {
+      setError(maksSvar.fejl);
+      if (maksSvar.auktionAendret) router.refresh();
+      return;
+    }
+    const kr = (n: number) => `${n.toLocaleString("da-DK")} kr`;
+    if (maksSvar.nuvaerendeBud !== null) {
+      setNuværendeBud(maksSvar.nuvaerendeBud);
+      setHarBud(true);
+    }
+    setKvittering(
+      maksSvar.foerer
+        ? {
+            tekst: maksSvar.budAfgivet
+              ? AUTOBUD.svarFoerer(kr(maksSvar.nuvaerendeBud ?? beløbTal), kr(maksSvar.maks))
+              : AUTOBUD.svarGemt(kr(maksSvar.maks)),
+            tone: "succes",
+          }
+        : { tekst: AUTOBUD.svarOverbudt(kr(maksSvar.nuvaerendeBud ?? beløbTal)), tone: "advarsel" },
+    );
+    setTimeout(() => setKvittering(null), 8000);
+    // Anti-sniping gælder også automatiske bud.
+    if (
+      maksSvar.slutterKl &&
+      new Date(maksSvar.slutterKl).getTime() > new Date(slutterKl).getTime()
+    ) {
+      setSlutterKl(maksSvar.slutterKl);
+      setInfo(AUTOBUD.forlaenget);
+      setTimeout(() => setInfo(null), 6000);
+    }
+    setBeløb("");
+    router.refresh();
+  }
+
+  // "Ret maksimum": skift til automatisk bud og gå til feltet.
+  function retMaksimum() {
+    setAutomatisk(true);
+    setError(null);
+    setBekraeftMaks(null);
+    gaaTilBud();
   }
 
   // Budbjælken på mobil: vises i bunden af siden (#byd-bjaelke på
@@ -419,7 +491,7 @@ export default function BidPanel({
   const budOereVist = gyldigtBud ? Math.round(budTal * 100) : null;
   const gebyrOereVist =
     budOereVist !== null ? Math.round((budOereVist * KOEBERGEBYR_PROCENT) / 100) : null;
-  const beskyttelseVist = beskyttelse && forsendelseMulig && budOereVist !== null
+  const beskyttelseVist = beskyttelseValgt && forsendelseMulig && budOereVist !== null
     ? beskyttelseOere(budOereVist)
     : null;
 
@@ -505,10 +577,19 @@ export default function BidPanel({
             {jegFoerer && maksAktivt && mitMaksimum !== null && (
               <p className="mt-0.5">{AUTOBUD.statusFoererMedMaks(`${mitMaksimum.toLocaleString("da-DK")} kr`)}</p>
             )}
-            {!jegFoerer && mitMaksimum !== null && (
+            {!jegFoerer && mitMaksimum !== null && mitMaksimumNaaet && (
               <p className="mt-0.5">{AUTOBUD.statusMaksNaaet(`${mitMaksimum.toLocaleString("da-DK")} kr`)}</p>
             )}
           </div>
+          {jegFoerer && (
+            <button
+              type="button"
+              onClick={retMaksimum}
+              className="-my-2 ml-auto inline-flex min-h-11 shrink-0 items-center rounded-lg px-2 text-sm font-semibold text-succes-tekst underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+            >
+              {AUTOBUD.knapRetMaks}
+            </button>
+          )}
         </div>
       )}
 
@@ -564,6 +645,7 @@ export default function BidPanel({
                   onClick={() => {
                     setAutomatisk(vaerdi);
                     setError(null);
+                    setBekraeftMaks(null);
                   }}
                   className={`min-h-11 rounded-lg px-2 text-sm font-semibold transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                     valgt ? "bg-white text-groen-mork shadow-sm" : "text-tekst-daempet hover:text-tekst"
@@ -588,22 +670,30 @@ export default function BidPanel({
                 min={mindsteGyldige}
                 step={1}
                 value={beløb}
-                onChange={(e) => setBeløb(e.target.value)}
+                onChange={(e) => {
+                  setBeløb(e.target.value);
+                  setBekraeftMaks(null);
+                }}
                 placeholder={
                   automatisk && maksAktivt && mitMaksimum !== null
                     ? `Nu ${mitMaksimum.toLocaleString("da-DK")}`
                     : `Mindst ${mindsteGyldige.toLocaleString("da-DK")}`
                 }
-                aria-describedby={`bud-${auktionId}-hjaelp`}
-                aria-invalid={error ? true : undefined}
+                aria-describedby={`bud-${auktionId}-hjaelp${inlineFejl ? ` bud-${auktionId}-fejl` : ""}`}
+                aria-invalid={error || inlineFejl ? true : undefined}
                 className={`h-[52px] w-full rounded-xl border bg-white pr-12 pl-4 text-lg font-semibold text-tekst tabular-nums placeholder:font-normal placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25 ${
-                  error ? "border-fejl-kant bg-fejl-bg/40" : "border-kant-staerk"
+                  error || inlineFejl ? "border-fejl-kant bg-fejl-bg/40" : "border-kant-staerk"
                 }`}
               />
               <span aria-hidden="true" className="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-[15px] text-tekst-svag">
                 kr
               </span>
             </div>
+            {inlineFejl && (
+              <p id={`bud-${auktionId}-fejl`} className="mt-1.5 text-[13px] font-medium text-fejl-tekst">
+                {inlineFejl}
+              </p>
+            )}
             <p id={`bud-${auktionId}-hjaelp`} className="mt-1.5 text-[13px] text-tekst-daempet">
               {automatisk ? (
                 <>
@@ -617,6 +707,19 @@ export default function BidPanel({
               )}
             </p>
           </div>
+
+          {!automatisk && jegFoerer && (
+            <div role="note" className="flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-advarsel-kant bg-advarsel-bg px-3.5 py-1 text-sm text-advarsel-tekst">
+              <span className="py-2">{AUTOBUD.advarselFoererEnkelt}</span>
+              <button
+                type="button"
+                onClick={retMaksimum}
+                className="inline-flex min-h-11 items-center rounded-lg font-semibold underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+              >
+                {AUTOBUD.knapSkiftTilMaks}
+              </button>
+            </div>
+          )}
 
           {automatisk && (
             <details className="group rounded-xl border border-info-kant bg-info-bg text-sm text-info-tekst">
@@ -641,12 +744,16 @@ export default function BidPanel({
 
           {forsendelseMulig && (
           <div className="flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-kant bg-white px-3">
-            <label className="flex min-h-11 flex-1 cursor-pointer items-center gap-3 py-2">
+            <label
+              className={`flex min-h-11 flex-1 items-center gap-3 py-2 ${beskyttelseLaast ? "cursor-not-allowed" : "cursor-pointer"}`}
+            >
               <input
                 type="checkbox"
-                checked={beskyttelse}
+                checked={beskyttelseValgt}
+                disabled={beskyttelseLaast}
+                aria-describedby={beskyttelseLaast ? `besk-${auktionId}-laast` : undefined}
                 onChange={(e) => setBeskyttelse(e.target.checked)}
-                className="h-5 w-5 shrink-0 accent-groen"
+                className="h-5 w-5 shrink-0 accent-groen disabled:opacity-60"
               />
               <span className="flex items-center gap-1.5 text-sm font-semibold text-tekst">
                 <Ikon navn="skjold" className="h-[18px] w-[18px] shrink-0 text-groen" />
@@ -667,6 +774,11 @@ export default function BidPanel({
             >
               {BIDPANEL.laesMere}
             </Link>
+            {beskyttelseLaast && (
+              <p id={`besk-${auktionId}-laast`} className="w-full pb-2 text-[13px] text-tekst-daempet">
+                {AUTOBUD.beskyttelseLaast}
+              </p>
+            )}
           </div>
           )}
 
@@ -702,10 +814,37 @@ export default function BidPanel({
             </dl>
           </div>
 
+          {bekraeftMaks !== null && (
+            <div role="alertdialog" aria-labelledby={`bekraeft-${auktionId}`} className="rounded-xl border border-advarsel-kant bg-advarsel-bg px-3.5 py-3 text-sm text-advarsel-tekst">
+              <p id={`bekraeft-${auktionId}`} className="font-semibold">{AUTOBUD.bekraeftHoejtTitel}</p>
+              <p className="mt-1">{AUTOBUD.bekraeftHoejtTekst(`${bekraeftMaks.toLocaleString("da-DK")} kr`)}</p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => sendMaksimum(bekraeftMaks)}
+                  disabled={loading}
+                  className="btn btn-primaer flex-1"
+                >
+                  {AUTOBUD.bekraeftHoejtJa}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBekraeftMaks(null);
+                    budFeltRef.current?.focus();
+                  }}
+                  className="btn btn-sekundaer flex-1"
+                >
+                  {AUTOBUD.bekraeftHoejtNej}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div ref={handlingRef} className="flex flex-col gap-2">
             <button
               type="submit"
-              disabled={loading || !gyldigtBud}
+              disabled={loading || !gyldigtBud || bekraeftMaks !== null}
               aria-busy={loading || undefined}
               className="btn btn-primaer btn-stor w-full"
             >
@@ -758,9 +897,16 @@ export default function BidPanel({
       )}
 
       {kvittering && (
-        <div role="status" className="mt-3 flex items-start gap-2 rounded-xl border border-succes-kant bg-succes-bg px-4 py-3 text-sm text-succes-tekst">
-          <Ikon navn="flueben" className="mt-0.5 h-4 w-4 shrink-0" strøg={2} />
-          {kvittering}
+        <div
+          role="status"
+          className={`mt-3 flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${
+            kvittering.tone === "succes"
+              ? "border-succes-kant bg-succes-bg text-succes-tekst"
+              : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"
+          }`}
+        >
+          <Ikon navn={kvittering.tone === "succes" ? "flueben" : "ur"} className="mt-0.5 h-4 w-4 shrink-0" strøg={2} />
+          {kvittering.tekst}
         </div>
       )}
 
@@ -860,11 +1006,11 @@ export default function BidPanel({
               {brugerId ? (
                 <button
                   type="button"
-                  onClick={gaaTilBud}
+                  onClick={jegFoerer ? retMaksimum : gaaTilBud}
                   tabIndex={panelSynligt ? -1 : undefined}
                   className="btn btn-primaer shrink-0"
                 >
-                  Afgiv bud
+                  {jegFoerer ? AUTOBUD.knapRetMaks : "Afgiv bud"}
                 </button>
               ) : (
                 <Link
