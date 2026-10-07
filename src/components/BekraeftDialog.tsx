@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { NETVAERKSFEJL } from "@/lib/auktionRegler";
 
 // Generel bekræftelsesdialog til uigenkaldelige handlinger.
 //
@@ -90,7 +91,16 @@ export default function BekraeftDialog({
   function bekraeft() {
     setFejl(null);
     startTransition(async () => {
-      const svar = await onConfirm();
+      let svar: { fejl?: string } | void;
+      try {
+        svar = await onConfirm();
+      } catch (err) {
+        // Fx afbrudt forbindelse. Uden catch ville hele siden skifte til
+        // fejlsiden; i stedet vises fejlen i dialogen.
+        console.error("Handlingen fejlede:", err);
+        setFejl(NETVAERKSFEJL);
+        return;
+      }
       if (svar && "fejl" in svar && svar.fejl) {
         setFejl(svar.fejl);
         return;

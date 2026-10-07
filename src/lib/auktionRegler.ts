@@ -82,6 +82,16 @@ export function erAuktionLaastFejl(
   return !!fejl && (fejl.code === "BHL01" || (fejl.message ?? "").startsWith("auktion_laast:"));
 }
 
+// Klienten genkender låst-svaret fra server actions (redigerAuktion,
+// annullerAuktion, saetSpoergsmaalAktiv) her - ét sted, så en gammel fane
+// kan lukke dialogen, hente siden igen og vise låst-beskeden med link.
+export function erAuktionLaastBesked(fejl: string | null | undefined): boolean {
+  return fejl === AUKTION_LAAST;
+}
+
+// Vises, når et kald til serveren kaster (fx afbrudt forbindelse).
+export const NETVAERKSFEJL = "Der skete en fejl. Tjek din forbindelse, og prøv igen.";
+
 // Samme grænse som public.auktion_billeder_gyldige (1-10 billeder).
 export const MAKS_BILLEDER = 10;
 export const MAKS_TITEL = 120;

@@ -12,6 +12,8 @@ import {
 import { KONTAKTINFO_FEJL, indeholderKontaktinfo } from "@/lib/kontaktInfo";
 import AnmeldKnap from "@/components/dsa/AnmeldKnap";
 import { REGEL_VALG } from "@/lib/dsa/regler";
+import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
+import { NETVAERKSFEJL, erAuktionLaastBesked } from "@/lib/auktionRegler";
 import {
   MAKS_SPOERGSMAAL,
   MAKS_SVAR,
@@ -92,6 +94,10 @@ export default function SpoergSaelger({
   const [modtager, setModtager] = useState(aktiv);
   const [skifter, startSkift] = useTransition();
   const [skiftFejl, setSkiftFejl] = useState<string | null>(null);
+  // Gammel fane: serveren svarer, at auktionen er låst (der er budt, siden
+  // siden blev åbnet). Kontakten skjules, og låst-beskeden vises med link.
+  const [laastLokalt, setLaastLokalt] = useState(false);
+  const erLaast = laast || laastLokalt;
 
   const kontaktAdvarsel = tekst.length > 0 && indeholderKontaktinfo(tekst);
 
@@ -105,7 +111,14 @@ export default function SpoergSaelger({
       return;
     }
     startSend(async () => {
-      const svar = await stilSpoergsmaal(auktionId, t);
+      let svar: Awaited<ReturnType<typeof stilSpoergsmaal>>;
+      try {
+        svar = await stilSpoergsmaal(auktionId, t);
+      } catch (err) {
+        console.error("stilSpoergsmaal fejlede:", err);
+        setFejl(NETVAERKSFEJL);
+        return;
+      }
       if ("fejl" in svar) {
         setFejl(svar.fejl);
         return;
@@ -120,8 +133,20 @@ export default function SpoergSaelger({
     setSkiftFejl(null);
     const ny = !modtager;
     startSkift(async () => {
-      const svar = await saetSpoergsmaalAktiv(auktionId, ny);
+      let svar: Awaited<ReturnType<typeof saetSpoergsmaalAktiv>>;
+      try {
+        svar = await saetSpoergsmaalAktiv(auktionId, ny);
+      } catch (err) {
+        console.error("saetSpoergsmaalAktiv fejlede:", err);
+        setSkiftFejl(NETVAERKSFEJL);
+        return;
+      }
       if ("fejl" in svar) {
+        if (erAuktionLaastBesked(svar.fejl)) {
+          setLaastLokalt(true);
+          router.refresh();
+          return;
+        }
         setSkiftFejl(svar.fejl);
         return;
       }
@@ -138,7 +163,7 @@ export default function SpoergSaelger({
         <h2 id="spoergsmaal-overskrift" className="font-serif text-[17px] font-semibold text-tekst sm:text-lg">
           Spørg sælger
         </h2>
-        {erSaelger && auktionKoerer && !laast && (
+        {erSaelger && auktionKoerer && !erLaast && (
           <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-medium text-tekst">
             Modtag spørgsmål
             <button
@@ -161,6 +186,11 @@ export default function SpoergSaelger({
         )}
       </div>
       {skiftFejl && <Fejltekst>{skiftFejl}</Fejltekst>}
+      {laastLokalt && (
+        <p role="alert" className="mt-3 rounded-xl border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
+          <AuktionLaastTekst />
+        </p>
+      )}
 
       {!modtager ? (
         <p className="mt-3 rounded-xl border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
@@ -281,7 +311,14 @@ function SpoergsmaalPunkt({
       return;
     }
     startSend(async () => {
-      const r = await besvarSpoergsmaal(auktionId, q.id, svar.trim());
+      let r: Awaited<ReturnType<typeof besvarSpoergsmaal>>;
+      try {
+        r = await besvarSpoergsmaal(auktionId, q.id, svar.trim());
+      } catch (err) {
+        console.error("besvarSpoergsmaal fejlede:", err);
+        setFejl(NETVAERKSFEJL);
+        return;
+      }
       if ("fejl" in r) {
         setFejl(r.fejl);
         return;
@@ -300,7 +337,14 @@ function SpoergsmaalPunkt({
       return;
     }
     startSkjul(async () => {
-      const r = await skjulSpoergsmaal(auktionId, q.id, nyTilstand, grund.trim(), regel);
+      let r: Awaited<ReturnType<typeof skjulSpoergsmaal>>;
+      try {
+        r = await skjulSpoergsmaal(auktionId, q.id, nyTilstand, grund.trim(), regel);
+      } catch (err) {
+        console.error("skjulSpoergsmaal fejlede:", err);
+        setSkjulFejl(NETVAERKSFEJL);
+        return;
+      }
       if ("fejl" in r) {
         setSkjulFejl(r.fejl);
         return;

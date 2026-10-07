@@ -10,9 +10,12 @@ import {
   MAKS_BESKRIVELSE,
   MAKS_TITEL,
   MINDSTE_STARTPRIS,
+  NETVAERKSFEJL,
   STARTPRIS_ANBEFALING,
+  erAuktionLaastBesked,
   valideStartpris,
 } from "@/lib/auktionRegler";
+import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand } from "@/lib/stand";
 import { uploadAuktionsbilleder } from "@/lib/auktionUpload";
@@ -68,6 +71,9 @@ export default function RedigerAuktionForm({
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Gammel fane: der er budt, siden siden blev åbnet. Serveren afviser, og
+  // låst-beskeden (med link) vises i stedet for formularen.
+  const [laast, setLaast] = useState(false);
 
   const startpris = startprisTekst === "" ? NaN : Number(startprisTekst);
   // Som databasen (rediger_auktion): forbudte ord tjekkes kun, når teksten
@@ -94,6 +100,7 @@ export default function RedigerAuktionForm({
 
     setLoading(true);
     const supabase = createClient();
+    let gemmer = false;
 
     try {
       const urls = await uploadAuktionsbilleder(
@@ -105,6 +112,7 @@ export default function RedigerAuktionForm({
         (nr, ialt) => setStatus(`Uploader billede ${nr} af ${ialt} …`),
       );
       setStatus("Gemmer …");
+      gemmer = true;
 
       const svar = await redigerAuktion(auktionId, {
         titel,
@@ -117,6 +125,11 @@ export default function RedigerAuktionForm({
       });
 
       if ("fejl" in svar) {
+        if (erAuktionLaastBesked(svar.fejl)) {
+          setLaast(true);
+          router.refresh();
+          return;
+        }
         setError(svar.fejl);
         setStatus(null);
         setLoading(false);
@@ -127,10 +140,20 @@ export default function RedigerAuktionForm({
       router.refresh();
     } catch (err) {
       console.error("Fejl ved redigering af auktion:", err);
-      setError(err instanceof Error ? err.message : "Ændringerne kunne ikke gemmes. Prøv igen om lidt.");
+      // Fejl under upload har en dansk besked; kaster selve gem-kaldet (fx
+      // afbrudt forbindelse), er beskeden fra browseren på engelsk.
+      setError(gemmer || !(err instanceof Error) ? NETVAERKSFEJL : err.message);
       setStatus(null);
       setLoading(false);
     }
+  }
+
+  if (laast) {
+    return (
+      <p role="alert" className="rounded-lg border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
+        <AuktionLaastTekst />
+      </p>
+    );
   }
 
   return (
