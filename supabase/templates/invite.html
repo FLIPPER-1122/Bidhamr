@@ -6,7 +6,9 @@
     Sendes, når BidHamr (chef eller sælger i admin) har oprettet en firmakonto
     (supabase.auth.admin.inviteUserByEmail). Et firma kan aldrig oprette sin
     egen firmakonto - se ROADMAP-BESLUTNINGER.md "Erhvervskonti".
-    Linket ({{ .ConfirmationURL }}) fører til siden, hvor firmaet vælger sin
+    Linket går til bidhamr.dk/auth/callback med token_hash (IKKE
+    {{ .ConfirmationURL }}, som mail-scannere kan bruge op) og videre til
+    mellemsiden /bekraeft, hvor et tryk på knappen fører til siden, hvor firmaet vælger sin
     adgangskode. Linket følger "Email OTP expiration" (i dag 3600 sekunder,
     teksten siger "1 time") - ret teksten, hvis indstillingen ændres.
     Teksterne svarer til ERHVERV_VELKOMSTMAIL i src/lib/tekster/erhverv.ts.
@@ -45,7 +47,7 @@
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
                   <tr>
                     <td align="center" style="background-color:#B85518; border-radius:10px;">
-                      <a href="{{ .ConfirmationURL }}" target="_blank" style="display:inline-block; padding:16px 32px; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:17px; line-height:20px; font-weight:600; color:#FFFFFF; text-decoration:none; border-radius:10px;">
+                      <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=invite&amp;next=/reset-password" target="_blank" style="display:inline-block; padding:16px 32px; font-family:Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:17px; line-height:20px; font-weight:600; color:#FFFFFF; text-decoration:none; border-radius:10px;">
                         Vælg din adgangskode
                       </a>
                     </td>

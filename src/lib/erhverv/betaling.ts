@@ -11,13 +11,26 @@ import "server-only";
 //   Database (20261010030000_erhverv.sql), kun service_role:
 //     firma_pakkeskift_betalt(p_skift, p_stripe_reference, p_beloeb_oere, p_stripe_invoice_id)
 //       Opgradering betalt -> pakken aktiveres med det samme + firma_regninger-række.
+//       Svarer 'betalt_men_ikke_afventende' (skal_undersoeges: true), hvis
+//       skiftet ikke længere afventer (fx har staff allerede skiftet pakken
+//       manuelt, eller skiftet er annulleret). Så er INTET aktiveret, og
+//       databasen har logget en drift-alarm (kilde 'webhook'): webhooken skal
+//       refundere betalingen (eller markere den til manuel undersøgelse) -
+//       aldrig bare svare 200 og glemme den.
 //     firma_abonnement_betalt(p_firma, p_periode_start, p_periode_slut, p_beloeb_oere,
 //                             p_stripe_reference, p_stripe_invoice_id)
 //       Månedens abonnement betalt -> regning, betalt_til, genaktivering efter
 //       betalingspause, planlagt nedgradering gennemføres ved periodeskift.
-//     firma_abonnement_mislykket(p_firma, p_stripe_reference, p_beloeb_oere, p_stripe_invoice_id)
+//     firma_abonnement_mislykket(p_firma, p_stripe_reference, p_beloeb_oere, p_stripe_invoice_id,
+//                                p_periode_slut)
 //       Betaling fejlet -> betaling_mislykket_kl. firma_abonnement_frist_koer()
-//       (cron, dagligt) sætter abonnementet på pause efter 7 dage uden betaling.
+//       (cron 'erhverv-betalingsfrist', dagligt) sætter abonnementet på pause
+//       efter 7 dage uden betaling. Send ALTID p_periode_slut (slutningen af
+//       den periode, fakturaen dækker - invoice.lines.data[0].period.end, ikke
+//       invoice.period_end): dækker betalt_til allerede perioden, eller er
+//       fakturaen allerede registreret som betalt, ignoreres hændelsen
+//       ('allerede_betalt') - fx et forsinket payment_failed efter et
+//       vellykket nyt forsøg.
 //     firmaer.stripe_customer_id / stripe_subscription_id (kun service_role).
 //   Alle kroge er idempotente på p_stripe_reference (brug Stripes event- eller
 //   invoice-id), så en webhook, der kommer to gange, ikke giver to regninger.
@@ -54,7 +67,9 @@ const AFVENTER: BetalingsStatus = {
 //  3. Webhook invoice.paid (billing_reason 'subscription_create' eller
 //     'subscription_cycle') -> firma_abonnement_betalt(firma, period.start,
 //     period.end, amount_paid, event.id, invoice.id).
-//  4. Webhook invoice.payment_failed -> firma_abonnement_mislykket(...).
+//  4. Webhook invoice.payment_failed -> firma_abonnement_mislykket(firma,
+//     event.id, amount_due, invoice.id, lines.data[0].period.end).
+//     'allerede_betalt' = intet at gøre.
 //  5. Fakturaen fra Stripe (invoice.hosted_invoice_url / invoice_pdf) gemmes
 //     i firma_regninger.pdf_url, når regnskabsprogrammet er valgt.
 export async function startAbonnement(firmaId: string): Promise<BetalingsStatus> {
@@ -74,7 +89,11 @@ export async function startAbonnement(firmaId: string): Promise<BetalingsStatus>
 //  2. Webhook invoice.paid med metadata.skift_id (eller
 //     billing_reason 'subscription_update') -> firma_pakkeskift_betalt(
 //     skift_id, event.id, amount_paid, invoice.id). Først DÉR får firmaet
-//     flere auktioner pr. uge.
+//     flere auktioner pr. uge. Svarer krogen 'betalt_men_ikke_afventende'
+//     (staff har fx skiftet pakken manuelt imens), aktiveres intet: refundér
+//     fakturaen (stripe.refunds.create på invoice.charge/payment_intent) og
+//     sæt prisen på abonnementet tilbage til firmaets nuværende pakke - eller
+//     lad den drift-alarm, databasen har logget, gå til manuel undersøgelse.
 //  3. Fejler betalingen, forbliver skiftet 'afventer_betaling'; firmaet
 //     beholder sin gamle pakke.
 export async function startOpgradering(skiftId: string): Promise<BetalingsStatus> {

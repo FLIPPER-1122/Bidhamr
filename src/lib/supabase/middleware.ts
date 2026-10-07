@@ -62,7 +62,9 @@ const OFFENTLIGE_RUTER = [
 // (brugerbetingelser og privatlivspolitik linkes fra signup og footer). Kun
 // GET/HEAD er offentlige - alle andre metoder (fx et server action-kald via
 // POST) går gennem den almindelige gate herunder.
-const OFFENTLIGE_LAESESIDER = ["/betingelser", "/privatliv"];
+// /bekraeft er mellemsiden for engangslinks i mails (én knap, der poster til
+// /auth/callback) - den skal kunne vises for alle, også før lancering.
+const OFFENTLIGE_LAESESIDER = ["/betingelser", "/privatliv", "/bekraeft"];
 
 function erOffentligLaeseside(pathname: string, metode: string) {
   if (metode !== "GET" && metode !== "HEAD") return false;

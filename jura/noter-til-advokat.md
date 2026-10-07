@@ -114,3 +114,4 @@ Kort om modellen: kun firmaer med aktivt dansk CVR, månedligt abonnement (aktiv
 71. **DAC7 for erhverv.** Skal vi indsamle momsnummer og fast forretningssted, og må vi stole på Stripes indsamling?
 72. **Abonnementet.** Hvad skal abonnementsvilkårene indeholde (binding, opsigelse, prisændring, grænse på antal auktioner pr. uge og tilkøb)?
 73. **Mindstepris/reserve.** Må erhvervssælgere sætte mindstepris på auktioner, og skal det oplyses særskilt over for forbrugere?
+74. **Opbevaring af erhvervshenvendelser.** Formularen på /erhverv gemmer kontaktperson, telefon, e-mail, adresse og besked. Afviste og arkiverede henvendelser, der ikke blev til en firmakonto, anonymiseres automatisk 12 måneder efter sidste behandling (firmanavn, CVR, status og datoer bevares). Er 12 måneder passende efter GDPR art. 5, stk. 1, litra e, eller skal det være kortere/længere? Skal det stå i privatlivspolitikken?

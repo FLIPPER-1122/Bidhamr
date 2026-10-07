@@ -256,6 +256,12 @@ otp_expiry = 3600
 subject = "Din kode til BidHamr"
 content_path = "./supabase/templates/confirmation.html"
 
+# Nulstil adgangskode: linket går til /auth/callback med token_hash (mail-
+# scannere kan ikke bruge det op - se supabase/templates/recovery.html).
+[auth.email.template.recovery]
+subject = "Nulstil din adgangskode til BidHamr"
+content_path = "./supabase/templates/recovery.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
