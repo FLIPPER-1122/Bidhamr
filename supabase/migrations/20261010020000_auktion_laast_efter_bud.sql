@@ -247,3 +247,5 @@ drop trigger if exists auctions_laast_slet on public.auctions;
 create trigger auctions_laast_slet
   before delete on public.auctions
   for each row execute function public.auctions_laast_slet();
+
+revoke all on function public.auctions_laast_slet() from public, anon, authenticated;

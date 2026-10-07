@@ -259,9 +259,9 @@ export async function annullerAuktion(auktionId: string): Promise<{ ok: true } |
       // Allerede annulleret (dobbeltklik) tæller som gennemført.
       const { data: a } = await supabase
         .from("auctions")
-        .select("status, bruger_id, skjult")
+        .select("status, bruger_id, skjult, pauset_kl")
         .eq("id", auktionId)
-        .maybeSingle<{ status: string; bruger_id: string; skjult: boolean | null }>();
+        .maybeSingle<{ status: string; bruger_id: string; skjult: boolean | null; pauset_kl: string | null }>();
       if (a && a.bruger_id === user.id && a.status === "annulleret") return { ok: true };
       return {
         fejl:
@@ -269,7 +269,9 @@ export async function annullerAuktion(auktionId: string): Promise<{ ok: true } |
             ? "Auktionen findes ikke."
             : a.skjult
               ? "Auktionen er skjult af BidHamr og kan ikke annulleres lige nu."
-              : "Auktionen kan ikke annulleres længere, fordi den er slut.",
+              : a.pauset_kl
+                ? "Auktionen er sat på pause af BidHamr og kan ikke annulleres lige nu."
+                : "Auktionen kan ikke annulleres længere, fordi den er slut.",
       };
     }
 
