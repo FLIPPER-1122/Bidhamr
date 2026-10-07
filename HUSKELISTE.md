@@ -1,4 +1,14 @@
-# Huskeliste til Filip – efter mødet
+# Huskeliste til Filip
+
+## Mail på bidhamr.dk (når erhvervskonto og CVR er på plads)
+- Google Workspace **Starter**, **1 bruger**, gerne **månedlig** betaling: opret `filip@bidhamr.dk`
+- Opret `support@bidhamr.dk` og `faktura@bidhamr.dk` som gratis **grupper** i Google Admin
+- Tilføj Googles MX/TXT-poster hos One.com – **slet ingen** eksisterende poster (Resend/Vercel), og der må kun være **én** SPF-post (flet dem)
+- Skift faktura-mail hos Stripe, Vercel, Supabase, Google, One.com, Resend m.fl. til `faktura@bidhamr.dk`
+
+---
+
+# Tidligere noter
 
 Testdatabasen er sat op (commit 3e22009). Det her mangler:
 

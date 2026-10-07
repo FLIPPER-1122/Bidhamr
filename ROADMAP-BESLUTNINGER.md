@@ -48,6 +48,7 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 - Skadet vare **uden BidHamr Beskyttelse**: køber og sælger må selv blive enige. BidHamr blander sig ikke.
 - Skadet vare **med BidHamr Beskyttelse**: BidHamr løser sagen for køberen. Det er præcis det, beskyttelsen betales for. Pakkebillederne bruges til at vurdere, om sælgeren har pakket ordentligt.
 - Ingen af parterne hæftes for ekstra penge.
+- **Transportskade – hvem bærer tabet (Filip, 7. oktober 2026):** Får køber medhold i en sag om skade under fragten, refunderes køber, og varen sendes retur til sælger. Viser pakkebillederne, at sælger har pakket **ordentligt**, opretter **BidHamr en reklamation hos fragtfirmaet** (fragten er booket på BidHamrs aftale) med sælgers pakkebilleder, købers billeder af skaden og sporingsdata. Erstatter fragtfirmaet, går erstatningen til **sælger**. Afviser fragtfirmaet, er det **sælgers tab** – BidHamr dækker ikke. Viser billederne **dårlig indpakning**, reklameres der ikke, og sælger får påmindelse/advarsel efter advarselssystemet.
 - **Advarselssystem for dårlig indpakning:** 1. gang = påmindelse til sælgeren. 2. gang og derefter = en advarsel hver gang. **3 advarsler = profilen lukkes permanent.** En staff skal altid godkende lukningen – den sker aldrig automatisk (Filip, 3. oktober 2026).
 - ÅBENT: Kan GLS' målte vægt bruges som bevis? Spørges på møde med GLS/Shipmondo.
 - NOTE: Tjek med advokat, om platformen alligevel har pligt til at gribe ind ved åbenlys svindel.

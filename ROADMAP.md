@@ -96,6 +96,8 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 - [ ] Byg og test fragt mod **GLS' testmiljø** (kræver ikke firmaaftale) – skal være færdigt inden nytår
 - [ ] Filip: møde med Shipmondo om den bedste løsning
 - [ ] Filip: spørg GLS/Shipmondo, om fragtfirmaet selv **vejer pakken**, og om den målte vægt kan hentes via API (bruges som bevis i svindelsager)
+- [ ] Filip: spørg GLS/Shipmondo om **reklamation ved transportskade**: kan BidHamr reklamere på sælgers vegne (fragten er på BidHamrs aftale), hvad er maks. erstatning pr. pakke, er elektronik/glas undtaget, og findes der tillægsforsikring?
+- [ ] **Reklamation hos fragtfirma**: når en sag om transportskade afgøres til købers fordel, og sælger har pakket ordentligt, opretter staff (eller systemet via fragtfirmaets API) en reklamation med pakkebilleder, købers skadebilleder og sporingsdata. Status vises på sagen for sælger. Erstatning fra fragtfirmaet udbetales til sælger. Afvises den, lukkes reklamationen, og sælger får besked (se ROADMAP-BESLUTNINGER.md afsnit 4)
 - [ ] Når GLS melder pakken leveret: notifikation "Pakken er kommet frem" til **køberen** (type pakke_leveret, påkrævet) – sælgeren får fortsat besked, når køberen bekræfter
 - [x] Byg koden, så fragtfirmaet kan skiftes (GLS nu, evt. Shipmondo senere) uden at omskrive handelsflowet
 - [ ] Sælger får fragtlabel/QR-kode direkte i BidHamr
