@@ -41,8 +41,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.redirect(tilbage, 303);
   }
 
+  // Egne maksimumbud (automatisk bud) og ændringer af dem. Fejler kaldet
+  // (fx før migrationen er kørt), leveres resten af filen stadig.
+  const { data: maksimumbud, error: maksFejl } = await supabase.rpc("mine_maksimumbud");
+  if (maksFejl) {
+    await logDriftFejl({ kilde: "server", sti: "/konto/data", fejl: maksFejl, brugerId: brugerData.user.id });
+  }
+  const indhold =
+    data && typeof data === "object" && !Array.isArray(data) && maksimumbud
+      ? { ...(data as Record<string, unknown>), maksimumbud }
+      : data;
+
   const dato = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Copenhagen" });
-  return new NextResponse(JSON.stringify(data, null, 2), {
+  return new NextResponse(JSON.stringify(indhold, null, 2), {
     status: 200,
     headers: {
       "Content-Type": "application/json; charset=utf-8",

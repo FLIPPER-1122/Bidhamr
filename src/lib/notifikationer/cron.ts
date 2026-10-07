@@ -656,12 +656,12 @@ async function bud(admin: Admin, start: Date): Promise<number> {
   // Nyeste først, så nye bud ikke sultes.
   const { data: nye } = await admin
     .from("bids")
-    .select("id, auktion_id, bruger_id, beløb")
+    .select("id, auktion_id, bruger_id, beløb, oprettet")
     .gte("oprettet", fraTid(start, 24))
     .order("oprettet", { ascending: false })
     .limit(MAKS)
     .overrideTypes<
-      { id: string; auktion_id: string; bruger_id: string; beløb: number | string }[],
+      { id: string; auktion_id: string; bruger_id: string; beløb: number | string; oprettet: string }[],
       { merge: false }
     >();
   if (!nye || nye.length === 0) return 0;
@@ -703,6 +703,7 @@ async function bud(admin: Admin, start: Date): Promise<number> {
           auktion_id: b.auktion_id,
           bruger_id: b.bruger_id,
           beloeb: Number(b.beløb),
+          oprettet: b.oprettet,
         },
         { titel: a.titel as string, bruger_id: a.bruger_id as string },
         { springOverVedClaimFejl: true },

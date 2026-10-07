@@ -111,3 +111,116 @@ export async function afgivBud(
 
   return { ok: true, slutterKl: efter?.slutter_kl ?? null };
 }
+
+// Automatisk bud (maksimum) - se ROADMAP-BESLUTNINGER.md, "Autobud".
+// public.saet_maksimum gemmer det hemmelige maksimum og byder (fører man
+// ikke) det mindst mulige; maksimumbud afgøres i databasen under
+// auktionslåsen. Maksimum sendes aldrig til andre end byderen selv.
+export async function saetMaksimum(
+  auktionId: string,
+  maks: number,
+  beskyttelse: boolean,
+  redigeretKl?: string | null,
+): Promise<
+  | {
+      ok: true;
+      foerer: boolean;
+      nuvaerendeBud: number | null;
+      maks: number;
+      slutterKl: string | null;
+      budAfgivet: boolean;
+    }
+  | { fejl: string; auktionAendret?: true }
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await hentLoggetIndBruger(supabase);
+  if (!user) return { fejl: "Du skal være logget ind for at byde." };
+
+  if (
+    typeof auktionId !== "string" ||
+    !Number.isFinite(maks) ||
+    !Number.isInteger(maks) ||
+    maks <= 0
+  ) {
+    return { fejl: "Skriv dit maksimum i hele kroner." };
+  }
+  const version =
+    typeof redigeretKl === "string" && !Number.isNaN(Date.parse(redigeretKl))
+      ? redigeretKl
+      : null;
+
+  const ip = await klientIp();
+  if (!(await tjekGraenser([["bud_bruger", user.id], ["bud_ip", ip]]))) {
+    return { fejl: FOR_MANGE_FORSOEG };
+  }
+
+  const { data, error } = await supabase.rpc("saet_maksimum", {
+    p_auktion: auktionId,
+    p_maks: maks,
+    p_beskyttelse: beskyttelse === true,
+    p_auktion_redigeret_kl: version,
+  });
+
+  if (error) {
+    const besked = error.message ?? "";
+    const kr = (re: RegExp) => Number(besked.match(re)?.[1]);
+    if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
+    if (besked.includes("maks_for_lavt")) {
+      const v = kr(/mindst\s+([\d.]+)\s*kr/);
+      return {
+        fejl:
+          Number.isFinite(v) && v > 0
+            ? `Dit maksimum skal være mindst ${v.toLocaleString("da-DK")} kr.`
+            : "Dit maksimum er for lavt.",
+      };
+    }
+    if (besked.includes("maks_under_bud")) {
+      const v = kr(/med\s+([\d.]+)\s*kr/);
+      return {
+        fejl:
+          Number.isFinite(v) && v > 0
+            ? `Du fører med ${v.toLocaleString("da-DK")} kr. Dit maksimum kan ikke være lavere end dit nuværende bud.`
+            : "Dit maksimum kan ikke være lavere end dit nuværende bud.",
+      };
+    }
+    if (besked.includes("maks_ugyldigt")) return { fejl: "Dit maksimum er ugyldigt." };
+    // Nogen bød lige før dig (mindstebuddet steg) - bed om at prøve igen.
+    if (besked.includes("minimum_bid")) {
+      return { fejl: "En anden har lige budt. Se det nye bud, og prøv igen." };
+    }
+    if (besked.includes("Kontoen er slettet")) return { fejl: "Du kan ikke byde." };
+    if (besked.includes(AUKTION_AENDRET)) {
+      return { fejl: AUKTION_AENDRET, auktionAendret: true };
+    }
+    const kendt = KENDTE_BUDFEJL.find((k) => besked.includes(k));
+    if (kendt) return { fejl: kendt };
+    console.error("saetMaksimum fejlede:", error.code, besked);
+    return { fejl: "Dit maksimum kunne ikke gemmes. Prøv igen." };
+  }
+
+  const svar = (data ?? {}) as {
+    foerer?: boolean;
+    nuvaerende_bud?: number | string | null;
+    maks_beloeb?: number | string;
+    slutter_kl?: string | null;
+    bud_afgivet?: boolean;
+  };
+
+  // Overbudt + bud på egen auktion - også for de automatiske bud i samme
+  // runde. Samme nøgler som cron'en, så intet sendes dobbelt.
+  if (svar.bud_afgivet) {
+    const byder = user.id;
+    after(() => notificerEgetNyesteBud(auktionId, byder));
+  }
+
+  return {
+    ok: true,
+    foerer: svar.foerer === true,
+    nuvaerendeBud: svar.nuvaerende_bud != null ? Number(svar.nuvaerende_bud) : null,
+    maks: Number(svar.maks_beloeb ?? maks),
+    slutterKl: svar.slutter_kl ?? null,
+    budAfgivet: svar.bud_afgivet === true,
+  };
+}

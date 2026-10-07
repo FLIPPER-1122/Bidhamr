@@ -6,7 +6,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import Ikon from "@/components/Ikon";
 import { createClient } from "@/lib/supabase/client";
-import { afgivBud } from "@/app/actions/bud";
+import { afgivBud, saetMaksimum } from "@/app/actions/bud";
+import { AUTOBUD } from "@/lib/tekster/autobud";
 import { formatNedtælling, pauseTekst } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
 import {
@@ -26,6 +27,8 @@ export interface BidPanelBud {
   oprettet: string;
   byder: string;
   erMig: boolean;
+  // Afgivet automatisk af BidHamr (maksimum). Maksimum selv vises aldrig.
+  automatisk?: boolean;
 }
 
 const VIST_SOM_STANDARD = 5;
@@ -38,6 +41,7 @@ export default function BidPanel({
   redigeretKl: initialRedigeretKl,
   initialSlutterKl,
   initialBud,
+  mitMaksimum = null,
   brugerId,
   saelgerId,
   forsendelseMulig,
@@ -57,6 +61,8 @@ export default function BidPanel({
   redigeretKl: string | null;
   initialSlutterKl: string;
   initialBud: BidPanelBud[];
+  // Mit eget maksimum (automatisk bud) - kun hentet for byderen selv.
+  mitMaksimum?: number | null;
   brugerId: string | null;
   saelgerId: string;
   forsendelseMulig: boolean;
@@ -88,10 +94,15 @@ export default function BidPanel({
   const [beløb, setBeløb] = useState("");
   // BidHamr Beskyttelse: ikke valgt på forhånd. Gemmes med buddet.
   const [beskyttelse, setBeskyttelse] = useState(false);
+  // Automatisk bud: brugeren skriver sit maksimum i stedet for et bud.
+  // Har brugeren allerede et maksimum, åbnes panelet i den tilstand.
+  const [automatisk, setAutomatisk] = useState(mitMaksimum !== null);
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  // Kvittering efter et automatisk bud (fører / overbudt / gemt).
+  const [kvittering, setKvittering] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<string>("aktiv");
   // Skjult af BidHamr (kun sælger, deltagere og staff ser siden): der kan
   // ikke bydes, selvom auktionen stadig står som aktiv.
@@ -213,11 +224,20 @@ export default function BidPanel({
   // (samme regel som public.naeste_bud_minimum i databasen).
   const minimumBud = mindsteNaesteBud(harBud ? nuværendeBud : null, startpris);
 
+  // Fører jeg? Budhistorikken er sorteret med det højeste bud først.
+  const jegFoerer = harBud && budListe.length > 0 && budListe[0].erMig;
+  const harBudtSelv = budListe.some((b) => b.erMig);
+  // Maksimum: fører jeg, må det ikke være under mit nuværende bud; ellers
+  // skal det mindst være næste mindstebud (samme regel som saet_maksimum).
+  const mindsteMaks = jegFoerer ? nuværendeBud : minimumBud;
+  const mindsteGyldige = automatisk ? mindsteMaks : minimumBud;
+  const maksAktivt = mitMaksimum !== null && jegFoerer && mitMaksimum > nuværendeBud;
+
   // Kun visning: hvad vinderen kommer til at betale. Det endelige beløb
   // beregnes på serveren, når auktionen slutter.
   const budTal = Number(beløb);
   const estimatOere =
-    Number.isFinite(budTal) && budTal >= minimumBud
+    Number.isFinite(budTal) && budTal >= mindsteGyldige
       ? (() => {
           const budOere = Math.round(budTal * 100);
           return (
@@ -241,6 +261,7 @@ export default function BidPanel({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    setKvittering(null);
     // Ref-lås: loading-state fra en gammel closure stopper ikke to indsendelser
     // i samme tick (det andet bud fik ellers en vildledende minimumsfejl).
     if (senderRef.current) return;
@@ -255,6 +276,58 @@ export default function BidPanel({
 
     if (erSælger) {
       setError("Du kan ikke byde på din egen auktion.");
+      return;
+    }
+
+    if (automatisk) {
+      if (!Number.isFinite(beløbTal) || !Number.isInteger(beløbTal) || beløbTal < mindsteMaks) {
+        setError(
+          jegFoerer
+            ? `Du fører med ${nuværendeBud.toLocaleString("da-DK")} kr. Dit maksimum kan ikke være lavere end dit nuværende bud.`
+            : `Dit maksimum skal være mindst ${mindsteMaks.toLocaleString("da-DK")} kr.`,
+        );
+        return;
+      }
+      setLoading(true);
+      senderRef.current = true;
+      let maksSvar: Awaited<ReturnType<typeof saetMaksimum>>;
+      try {
+        maksSvar = await saetMaksimum(
+          auktionId,
+          beløbTal,
+          beskyttelse && forsendelseMulig,
+          redigeretKl,
+        );
+      } finally {
+        senderRef.current = false;
+      }
+      setLoading(false);
+      if ("fejl" in maksSvar) {
+        setError(maksSvar.fejl);
+        if (maksSvar.auktionAendret) router.refresh();
+        return;
+      }
+      const kr = (n: number) => `${n.toLocaleString("da-DK")} kr`;
+      if (maksSvar.nuvaerendeBud !== null) {
+        setNuværendeBud(maksSvar.nuvaerendeBud);
+        setHarBud(true);
+      }
+      setKvittering(
+        !maksSvar.budAfgivet
+          ? AUTOBUD.svarGemt(kr(maksSvar.maks))
+          : maksSvar.foerer
+            ? AUTOBUD.svarFoerer(kr(maksSvar.nuvaerendeBud ?? beløbTal), kr(maksSvar.maks))
+            : AUTOBUD.svarOverbudt(kr(maksSvar.nuvaerendeBud ?? beløbTal)),
+      );
+      setTimeout(() => setKvittering(null), 8000);
+      if (
+        maksSvar.slutterKl &&
+        new Date(maksSvar.slutterKl).getTime() > new Date(slutterKl).getTime()
+      ) {
+        setSlutterKl(maksSvar.slutterKl);
+      }
+      setBeløb("");
+      router.refresh();
       return;
     }
 
@@ -416,6 +489,29 @@ export default function BidPanel({
         </p>
       </div>
 
+      {/* Min status: fører / overbudt - og mit eget maksimum (kun mig). */}
+      {kanByde && brugerId && harBudtSelv && (
+        <div
+          role="status"
+          className={`mt-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${
+            jegFoerer
+              ? "border-succes-kant bg-succes-bg text-succes-tekst"
+              : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"
+          }`}
+        >
+          <Ikon navn={jegFoerer ? "flueben" : "ur"} className="mt-0.5 h-4 w-4 shrink-0" strøg={2} />
+          <div className="min-w-0">
+            <p className="font-semibold">{jegFoerer ? AUTOBUD.statusFoerer : AUTOBUD.statusOverbudt}</p>
+            {jegFoerer && maksAktivt && mitMaksimum !== null && (
+              <p className="mt-0.5">{AUTOBUD.statusFoererMedMaks(`${mitMaksimum.toLocaleString("da-DK")} kr`)}</p>
+            )}
+            {!jegFoerer && mitMaksimum !== null && (
+              <p className="mt-0.5">{AUTOBUD.statusMaksNaaet(`${mitMaksimum.toLocaleString("da-DK")} kr`)}</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {auktionStatus !== "aktiv" ? (
         <div className="mt-4 rounded-xl bg-groen-lys px-5 py-4 text-center">
           {auktionStatus === "afsluttet" ? (
@@ -448,9 +544,40 @@ export default function BidPanel({
         </p>
       ) : brugerId ? (
         <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3">
+          {/* Budtype: ét bud eller automatisk bud op til et maksimum. */}
+          <div
+            role="radiogroup"
+            aria-label="Budtype"
+            className="grid grid-cols-2 gap-1 rounded-xl bg-groen-lys p-1"
+          >
+            {([
+              [false, AUTOBUD.valgEnkelt],
+              [true, AUTOBUD.valgAutomatisk],
+            ] as const).map(([vaerdi, tekst]) => {
+              const valgt = automatisk === vaerdi;
+              return (
+                <button
+                  key={tekst}
+                  type="button"
+                  role="radio"
+                  aria-checked={valgt}
+                  onClick={() => {
+                    setAutomatisk(vaerdi);
+                    setError(null);
+                  }}
+                  className={`min-h-11 rounded-lg px-2 text-sm font-semibold transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+                    valgt ? "bg-white text-groen-mork shadow-sm" : "text-tekst-daempet hover:text-tekst"
+                  }`}
+                >
+                  {tekst}
+                </button>
+              );
+            })}
+          </div>
+
           <div>
             <label htmlFor={`bud-${auktionId}`} className="mb-1.5 block text-sm font-medium text-tekst">
-              Dit bud
+              {automatisk ? AUTOBUD.feltLabel : "Dit bud"}
             </label>
             <div className="relative">
               <input
@@ -458,11 +585,15 @@ export default function BidPanel({
                 ref={budFeltRef}
                 type="number"
                 inputMode="numeric"
-                min={minimumBud}
+                min={mindsteGyldige}
                 step={1}
                 value={beløb}
                 onChange={(e) => setBeløb(e.target.value)}
-                placeholder={`Mindst ${minimumBud.toLocaleString("da-DK")}`}
+                placeholder={
+                  automatisk && maksAktivt && mitMaksimum !== null
+                    ? `Nu ${mitMaksimum.toLocaleString("da-DK")}`
+                    : `Mindst ${mindsteGyldige.toLocaleString("da-DK")}`
+                }
                 aria-describedby={`bud-${auktionId}-hjaelp`}
                 aria-invalid={error ? true : undefined}
                 className={`h-[52px] w-full rounded-xl border bg-white pr-12 pl-4 text-lg font-semibold text-tekst tabular-nums placeholder:font-normal placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25 ${
@@ -474,9 +605,39 @@ export default function BidPanel({
               </span>
             </div>
             <p id={`bud-${auktionId}-hjaelp`} className="mt-1.5 text-[13px] text-tekst-daempet">
-              Mindste bud er {minimumBud.toLocaleString("da-DK")} kr.
+              {automatisk ? (
+                <>
+                  {AUTOBUD.feltHjaelp}{" "}
+                  {jegFoerer
+                    ? `Du fører, så det kan ikke være lavere end dit nuværende bud på ${mindsteMaks.toLocaleString("da-DK")} kr.`
+                    : `Mindst ${mindsteMaks.toLocaleString("da-DK")} kr.`}
+                </>
+              ) : (
+                <>Mindste bud er {minimumBud.toLocaleString("da-DK")} kr.</>
+              )}
             </p>
           </div>
+
+          {automatisk && (
+            <details className="group rounded-xl border border-info-kant bg-info-bg text-sm text-info-tekst">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-3.5 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen [&::-webkit-details-marker]:hidden">
+                <span className="flex items-center gap-2">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 16v-4m0-4h.01" />
+                  </svg>
+                  {AUTOBUD.forklaringTitel}
+                </span>
+                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 transition-transform duration-150 group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
+                </svg>
+              </summary>
+              <ul className="flex list-disc flex-col gap-1.5 px-3.5 pt-0.5 pb-3 pl-8 leading-relaxed">
+                {AUTOBUD.forklaring.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </details>
+          )}
 
           {forsendelseMulig && (
           <div className="flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-kant bg-white px-3">
@@ -513,7 +674,7 @@ export default function BidPanel({
           <div className="rounded-xl bg-groen-lys p-4" aria-live="polite">
             <dl className="flex flex-col gap-1 text-sm text-tekst-daempet">
               <div className={linje}>
-                <dt>Dit bud</dt>
+                <dt>{automatisk ? AUTOBUD.feltLabel : "Dit bud"}</dt>
                 <dd className="tabular-nums">{budOereVist !== null ? kroner(budOereVist) : "–"}</dd>
               </div>
               <div className={linje}>
@@ -531,7 +692,9 @@ export default function BidPanel({
                 </div>
               )}
               <div className={`${linje} mt-2 border-t border-groen/20 pt-2`}>
-                <dt className="font-semibold text-tekst">Du betaler i alt, hvis du vinder</dt>
+                <dt className="font-semibold text-tekst">
+                  {automatisk ? AUTOBUD.totalLabel : "Du betaler i alt, hvis du vinder"}
+                </dt>
                 <dd className="shrink-0 text-lg font-bold whitespace-nowrap text-tekst tabular-nums">
                   {estimatOere !== null ? kroner(estimatOere) : "–"}
                 </dd>
@@ -547,11 +710,13 @@ export default function BidPanel({
               className="btn btn-primaer btn-stor w-full"
             >
               {loading && <span className="btn-spinner" aria-hidden="true" />}
-              Afgiv bud
+              {automatisk ? (maksAktivt ? AUTOBUD.knapRet : AUTOBUD.knapNy) : "Afgiv bud"}
             </button>
             {!gyldigtBud && (
               <p className="text-center text-[13px] text-tekst-daempet">
-                Skriv dit bud for at se den samlede pris.
+                {automatisk
+                  ? "Skriv dit maksimum for at se, hvad du højst kan komme til at betale."
+                  : "Skriv dit bud for at se den samlede pris."}
               </p>
             )}
           </div>
@@ -560,7 +725,7 @@ export default function BidPanel({
             <svg viewBox="0 0 24 24" className="mt-px h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 8v4m0 4h.01" />
             </svg>
-            {BINDENDE_BUD_TEKST}
+            {automatisk ? AUTOBUD.bindende : BINDENDE_BUD_TEKST}
           </p>
         </form>
       ) : (
@@ -589,6 +754,13 @@ export default function BidPanel({
             <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 8v4m0 4h.01" />
           </svg>
           {info}
+        </div>
+      )}
+
+      {kvittering && (
+        <div role="status" className="mt-3 flex items-start gap-2 rounded-xl border border-succes-kant bg-succes-bg px-4 py-3 text-sm text-succes-tekst">
+          <Ikon navn="flueben" className="mt-0.5 h-4 w-4 shrink-0" strøg={2} />
+          {kvittering}
         </div>
       )}
 
@@ -633,6 +805,11 @@ export default function BidPanel({
                     </td>
                     <td className={`py-2 text-right ${fed}`}>
                       {bud.byder}
+                      {bud.automatisk && (
+                        <span className="mt-0.5 block text-xs font-normal text-tekst-svag">
+                          {AUTOBUD.historikMarkering}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -671,7 +848,13 @@ export default function BidPanel({
                   {visningsBud.toLocaleString("da-DK")} kr
                 </p>
                 <p className="truncate text-xs text-tekst-daempet">
-                  Fra {kroner(mindsteTotalOere)} i alt inkl. gebyr og fragt
+                  {brugerId && jegFoerer
+                    ? maksAktivt && mitMaksimum !== null
+                      ? `Du fører · dit maksimum ${mitMaksimum.toLocaleString("da-DK")} kr`
+                      : "Du fører"
+                    : brugerId && harBudtSelv
+                      ? "Du er overbudt"
+                      : `Fra ${kroner(mindsteTotalOere)} i alt inkl. gebyr og fragt`}
                 </p>
               </div>
               {brugerId ? (
