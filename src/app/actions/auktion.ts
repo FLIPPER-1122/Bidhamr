@@ -11,7 +11,7 @@
 
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
@@ -108,7 +108,7 @@ export async function redigerAuktion(
     const supabase = await createClient();
     const {
       data: { user },
-    } = await getUserMedToTrin(supabase);
+    } = await hentLoggetIndBruger(supabase);
     if (!user) return { fejl: "Du skal være logget ind." };
 
     // Billederne før redigeringen (kun egen auktion), så de billeder, der
@@ -239,7 +239,7 @@ export async function annullerAuktion(auktionId: string): Promise<{ ok: true } |
     const supabase = await createClient();
     const {
       data: { user },
-    } = await getUserMedToTrin(supabase);
+    } = await hentLoggetIndBruger(supabase);
     if (!user) return { fejl: "Du skal være logget ind." };
 
     // Idempotent i databasen: ejer, status og "ingen bud" tjekkes i samme update.
@@ -304,7 +304,7 @@ export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; au
     const supabase = await createClient();
     const {
       data: { user },
-    } = await getUserMedToTrin(supabase);
+    } = await hentLoggetIndBruger(supabase);
     if (!user) return { fejl: "Log ind for at sætte varen op igen." };
 
     const { data, error } = await createAdminClient().rpc("saet_annulleret_op_igen", {

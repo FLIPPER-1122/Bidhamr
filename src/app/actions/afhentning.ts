@@ -9,7 +9,7 @@
 // koderne til danske beskeder, og overførslen til sælgeren sættes i gang.
 
 import { after } from "next/server";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -103,7 +103,7 @@ export async function forlaengAfhentningsfrist(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   if (!user) return { fejl: "Du skal være logget ind." };
 
   const { data, error } = await supabase.rpc("afhentning_forlaeng_frist", {
@@ -183,7 +183,7 @@ export async function visAfhentningskode(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   if (!user) return { fejl: VIS_FEJL.ikke_logget_ind };
 
   const { data, error } = await supabase.rpc("afhentning_vis_kode", {
@@ -226,7 +226,7 @@ export async function bekraeftAfhentning(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   if (!user) return { fejl: "Du skal være logget ind." };
 
   const { data, error } = await supabase.rpc("afhentning_bekraeft", {

@@ -30,9 +30,11 @@ export const GRAENSER = {
   // Bekræftelsesmail ved oprettelse/gensend pr. e-mail. Supabase har
   // desuden sin egen ventetid mellem to mails.
   gensend_email: { maks: 4, vindueSek: 60 * 60 },
-  // Koder til to-trins-login (login, slå til/fra, ny adgangskode).
-  mfa_bruger: { maks: 10, vindueSek: 15 * 60 },
-  mfa_ip: { maks: 30, vindueSek: 15 * 60 },
+  // Koden fra bekræftelsesmailen (/tjek-indbakke). Alle forsøg tælles;
+  // e-mail+IP nulstilles ved et gennemført forsøg, så det reelt er 5
+  // forkerte pr. e-mail+IP pr. 15 min.
+  signup_kode_email_ip: { maks: 5, vindueSek: 15 * 60 },
+  signup_kode_ip: { maks: 30, vindueSek: 15 * 60 },
   // Tjek af nuværende adgangskode (skift adgangskode, slet konto) og
   // ny adgangskode efter nulstilling.
   adgangskode_bruger: { maks: 6, vindueSek: 15 * 60 },

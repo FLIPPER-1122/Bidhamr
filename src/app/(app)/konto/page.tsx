@@ -13,7 +13,6 @@ import {
   SikkerhedSektion,
 } from "@/components/konto/KontoSektioner";
 import Ikon, { type IkonNavn } from "@/components/Ikon";
-import { harToTrin } from "@/lib/mfa";
 import VilkaarBjaelke from "@/components/konto/VilkaarBjaelke";
 import { vilkaarErAccepteret } from "@/lib/vilkaar";
 
@@ -44,9 +43,9 @@ export const metadata: Metadata = { title: "Min konto", robots: { index: false, 
 export default async function KontoSide({
   searchParams,
 }: {
-  searchParams: Promise<{ stripe?: string; setup_intent?: string; data?: string; sikkerhed?: string }>;
+  searchParams: Promise<{ stripe?: string; setup_intent?: string; data?: string }>;
 }) {
-  const { stripe, setup_intent, data: dataStatus, sikkerhed } = await searchParams;
+  const { stripe, setup_intent, data: dataStatus } = await searchParams;
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();
 
@@ -108,16 +107,6 @@ export default async function KontoSide({
       <h1 className="text-[26px] leading-tight sm:text-[32px]">Min konto</h1>
       <KontoNavigation />
       {visVilkaarBjaelke && <VilkaarBjaelke />}
-      {/* Sendt hertil fra admin (src/lib/adminAuth.ts): medarbejdere uden to-trins-login. */}
-      {sikkerhed === "to-trin-paakraevet" && !harToTrin(authData.user) && (
-        <p
-          role="alert"
-          className="mt-6 rounded-xl border border-advarsel-kant bg-advarsel-bg p-4 text-sm text-advarsel-tekst"
-        >
-          <strong className="font-semibold">Medarbejdere skal bruge to-trins-login.</strong> Slå det til
-          under <a href="#sikkerhed" className="font-semibold underline">Sikkerhed</a>. Når det er slået til, kan du åbne admin igen.
-        </p>
-      )}
 
       {advarsler.length > 0 && (
         <section

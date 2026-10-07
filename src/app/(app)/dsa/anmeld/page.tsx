@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import AnmeldFormular from "@/components/dsa/AnmeldFormular";
 
 // Anmeld ulovligt indhold med et link (footeren: "Anmeld ulovligt indhold").
@@ -18,7 +18,7 @@ export default async function AnmeldSide() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">

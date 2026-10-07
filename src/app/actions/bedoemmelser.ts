@@ -6,7 +6,7 @@
 // slet_bedoemmelse_svar, rapporter_bedoemmelse). Fejl RETURNERES.
 
 import { after } from "next/server";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { KONTAKTINFO_FEJL } from "@/lib/kontaktInfo";
@@ -57,7 +57,7 @@ async function kald(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   if (!user) return { kode: "ikke_logget_ind" };
   const { data, error } = await supabase.rpc(fn, args);
   if (error) {

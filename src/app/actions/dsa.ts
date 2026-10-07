@@ -10,7 +10,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 import { opretAnmeldelse, type AnmeldResultat } from "@/lib/dsa/server";
 import { erUuid, tjekDsaToken } from "@/lib/dsa/link";
@@ -22,7 +22,7 @@ async function brugerId(): Promise<string | null> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   return user?.id ?? null;
 }
 

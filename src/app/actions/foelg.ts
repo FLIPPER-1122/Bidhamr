@@ -5,7 +5,7 @@
 // brugeren af auth.uid() (migration 20261007010000). Fejl RETURNERES.
 
 import { revalidatePath } from "next/cache";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,7 +26,7 @@ async function kald(fn: "foelg_saelger" | "stop_foelg_saelger", saelgerId: strin
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   if (!user) return { fejl: FEJL.ikke_logget_ind };
   const { data, error } = await supabase.rpc(fn, { p_saelger: saelgerId });
   if (error) {

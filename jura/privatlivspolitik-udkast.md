@@ -45,7 +45,7 @@ Dataansvarlig for behandlingen af dine personoplysninger på bidhamr.dk og i Bid
 - **Accept af brugerbetingelserne**: når du opretter en konto, gemmer vi, hvilken version af brugerbetingelserne du har accepteret, og hvornår. Har du accepteret senere (fx via bjælken på Min konto), gemmer vi det tidspunkt.
 - **Telefonnummer og adresse til afhentning**, hvis du selv skriver dem under Min konto (frivilligt).
 - **Profilbillede**, hvis du lægger et op.
-- **To-trins-login**: hvis du slår det til, gemmes den hemmelige nøgle til din app-kode hos Supabase.
+- **Sikkerhedskode ved oprettelse**: når du opretter en konto, sender vi en 6-cifret kode til din e-mail for at bekræfte, at e-mailen er din. Koden gemmes kun i kort tid (højst 1 time) hos Supabase.
 - **Kontostatus**: fx om din e-mail er bekræftet, om kontoen er suspenderet eller lukket, og din rolle (bruger eller medarbejder).
 - **Udbetalingskonto**: hvis du sælger, gemmer vi id'et på din udbetalingskonto hos Stripe og status for den (fx om Stripe har godkendt dine oplysninger). Selve dine oplysninger til Stripe (fx ID og bankkonto) giver du direkte til Stripe.
 - **Gemt kort (tilvalg)**: hvis du gemmer et kort, gemmer vi kun kortets mærke, de sidste 4 cifre og udløbsdatoen, så du kan genkende det. Selve kortet ligger hos Stripe.
@@ -120,7 +120,7 @@ Skriver du dig op til ventelisten før lanceringen, gemmer vi din e-mail og send
 
 | Formål | Oplysninger | Retsgrundlag (GDPR) |
 |---|---|---|
-| Oprette og drive din konto, login og to-trins-login | Konto, enheder | Aftale – art. 6, stk. 1, litra b |
+| Oprette og drive din konto, login og bekræftelse af din e-mail | Konto, enheder | Aftale – art. 6, stk. 1, litra b |
 | Indgå aftalen om brugen af BidHamr og kunne dokumentere, hvilke brugerbetingelser du har accepteret | Version og tidspunkt for din accept | Aftale – litra b, og legitim interesse i at kunne dokumentere aftalen – litra f |
 | Auktioner, bud, betaling, forsendelse, afhentning, udbetaling og handelsbeskeder | Auktioner, bud, handler, betalinger, beskeder, adresse og telefon ved afhentning | Aftale – litra b |
 | Sager, anker og BidHamr Beskyttelse | Sager, billeder, pakkebilleder, beskeder, sporing | Aftale – litra b, og legitim interesse i at afgøre tvister – litra f |
@@ -161,7 +161,7 @@ Rammer du grænserne, beder vi dig om de oplysninger, loven kræver, og giver di
 
 ### 6.2 BidHamrs medarbejdere
 
-Vores medarbejdere har adgang til de oplysninger, de skal bruge til fx sager, anmeldelser, support og svindelforebyggelse – også beskeder i handler. Kun ledelsen ("chef") kan se BidHamrs indtjening. Medarbejdere skal bruge to-trins-login.
+Vores medarbejdere har adgang til de oplysninger, de skal bruge til fx sager, anmeldelser, support og svindelforebyggelse – også beskeder i handler. Kun ledelsen ("chef") kan se BidHamrs indtjening.
 
 ### 6.3 Databehandlere (leverandører, der behandler oplysninger for os)
 
@@ -274,8 +274,8 @@ Vi bruger kun nødvendige cookies til login, sikkerhed og betaling – ingen sta
 ## 12. Sådan beskytter vi dine oplysninger
 
 - Al trafik til BidHamr er krypteret (HTTPS).
-- Adgangskoder gemmes kun som hash. Vi kræver stærke adgangskoder, og du kan slå to-trins-login til. Medarbejdere skal bruge to-trins-login.
-- Du får en mail ved login fra en ny enhed, når din adgangskode ændres, når to-trins-login slås til eller fra, og når din konto slettes. Mails om sikkerhed kan ikke slås fra.
+- Adgangskoder gemmes kun som hash. Vi kræver stærke adgangskoder, og din e-mail bekræftes med en kode, når du opretter en konto.
+- Du får en mail ved login fra en ny enhed, når din adgangskode ændres, og når din konto slettes. Mails om sikkerhed kan ikke slås fra.
 - Databasen bruger adgangsregler, så du kun kan se dine egne private oplysninger. Billeder fra sager, pakkebilleder og fragtlabels ligger i lukkede mapper, som kun parterne i handlen og vores medarbejdere kan åbne.
 - Billeder bliver lavet om i din browser, før de sendes til os, så skjulte oplysninger som GPS-position ikke følger med (se afsnit 3.9).
 - Vores medarbejdere har kun adgang til det, de skal bruge, og deres handlinger logges.

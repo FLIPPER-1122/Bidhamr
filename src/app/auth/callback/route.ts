@@ -4,16 +4,15 @@ import { createClient } from "@/lib/supabase/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { sikkerSti } from "@/lib/sikkerSti";
 import { registrerLogin } from "@/lib/enheder";
-import { harToTrin, TO_TRIN_STI } from "@/lib/mfa";
 import { TJEK_EMAIL_COOKIE } from "@/lib/tilmelding";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 
 // Fælles landingspunkt for Supabase auth-links (nulstilling af adgangskode,
-// e-mailbekræftelse, magic links). Supabase sender brugeren hertil med enten
-// ?code= (PKCE) eller ?token_hash=&type= afhængigt af flow. Bekræftelses-
-// mailen (supabase/templates/confirmation.html) bruger token_hash, så linket
-// også virker, når det åbnes i en anden browser end den, kontoen blev
-// oprettet i.
+// ældre bekræftelseslinks, magic links). Supabase sender brugeren hertil med
+// enten ?code= (PKCE) eller ?token_hash=&type= afhængigt af flow. Ved
+// oprettelse bruges i dag en 6-cifret kode i mailen (supabase/templates/
+// confirmation.html), som indtastes på /tjek-indbakke (verificerSignupKode i
+// src/app/actions/auth.ts) - linkflowet her er kun tilbage for gamle mails.
 //
 // BEMÆRK: kommer tokenet som hash-fragment (#access_token=...), når det aldrig
 // serveren - browseren sender ikke fragmenter med. I det tilfælde sendes
@@ -99,14 +98,6 @@ export async function GET(req: NextRequest) {
       await supabase.auth.signOut({ scope: "local" });
       return tilFejl(origin, status.kode === "suspenderet" ? "konto_suspenderet" : "link_ugyldigt", false);
     }
-  }
-
-  // Linket logger brugeren ind. Har brugeren to-trins-login, skal koden
-  // indtastes først (gælder ikke nulstilling - den side beder selv om koden).
-  if (user && !erNulstilling && harToTrin(user)) {
-    const url = new URL(TO_TRIN_STI, origin);
-    url.searchParams.set("redirect", maal);
-    return NextResponse.redirect(url);
   }
 
   // Enheden registreres (første login efter oprettelse giver ingen mail).

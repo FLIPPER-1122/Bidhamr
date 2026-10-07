@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { erUuid, tjekDsaToken } from "@/lib/dsa/link";
 import KlageFormular from "@/components/dsa/KlageFormular";
 import Tidslinje, { type Trin } from "@/components/dsa/Tidslinje";
@@ -79,7 +79,7 @@ export default async function AnmeldelseSide({
     const supabase = await createClient();
     const {
       data: { user },
-    } = await getUserMedToTrin(supabase);
+    } = await hentLoggetIndBruger(supabase);
     if (!user || !a.anmelder_id || user.id !== a.anmelder_id) notFound();
   }
 

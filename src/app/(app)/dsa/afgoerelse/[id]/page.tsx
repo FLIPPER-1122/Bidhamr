@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { erUuid, tjekDsaToken } from "@/lib/dsa/link";
 import KlageFormular from "@/components/dsa/KlageFormular";
 import SaetOpIgenKnap from "@/components/dsa/SaetOpIgenKnap";
@@ -105,7 +105,7 @@ export default async function AfgoerelseSide({
     const supabase = await createClient();
     const {
       data: { user },
-    } = await getUserMedToTrin(supabase);
+    } = await hentLoggetIndBruger(supabase);
     if (!user || user.id !== a.bruger_id) notFound();
   }
 

@@ -6,7 +6,7 @@
 // bruger (migration 20261007010000). Fejl RETURNERES.
 
 import { revalidatePath } from "next/cache";
-import { getUserMedToTrin } from "@/lib/mfa";
+import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { kategorier } from "@/lib/kategorier";
 import { slaaPostnummerOp } from "@/lib/postnumre";
@@ -32,7 +32,7 @@ async function bruger() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await getUserMedToTrin(supabase);
+  } = await hentLoggetIndBruger(supabase);
   return { supabase, user };
 }
 
