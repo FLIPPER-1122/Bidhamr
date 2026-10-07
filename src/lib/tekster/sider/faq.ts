@@ -166,7 +166,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Kan jeg rette eller annullere min auktion?",
-          svar: "Ja, så længe der ikke er bud på den.",
+          svar: "Ja, så længe der ikke er bud på den. Når det første bud er kommet, er auktionen låst: du kan ikke ændre noget, tilføje noget eller annullere den. Er der et problem med varen, så kontakt BidHamr.",
         },
         {
           spoergsmaal: "Hvem har ansvaret, hvis varen går i stykker i posten?",

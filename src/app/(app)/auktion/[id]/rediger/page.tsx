@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import RedigerAuktionForm from "@/components/RedigerAuktionForm";
+import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -9,8 +10,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-// Sælgeren redigerer sin auktion, så længe der ikke er bud. Databasen
-// (rediger_auktion) håndhæver det samme og låser auktionen under ændringen.
+// Sælgeren redigerer sin auktion, så længe der ikke er bud. Efter første bud
+// vises formularen ikke - kun en besked om, at auktionen er låst. Databasen
+// (rediger_auktion, auctions_beskyt_kolonner) håndhæver det samme og låser
+// auktionen under ændringen.
 export default async function RedigerAuktionPage({
   params,
 }: {
@@ -46,7 +49,7 @@ export default async function RedigerAuktionPage({
             </p>
           ) : harBud ? (
             <p className="rounded-lg border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
-              Der er budt på auktionen, så den kan ikke længere ændres.
+              <AuktionLaastTekst />
             </p>
           ) : (
             <RedigerAuktionForm

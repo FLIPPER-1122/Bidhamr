@@ -16,6 +16,7 @@ import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 import { KONTAKTINFO_FEJL } from "@/lib/kontaktInfo";
 import { MAKS_SPOERGSMAAL, MAKS_SVAR, MIN_SPOERGSMAAL } from "@/lib/spoergsmaal";
 import { notificerNytSpoergsmaal, notificerSvar } from "@/lib/notifikationer/spoergsmaal";
+import { AUKTION_LAAST } from "@/lib/auktionRegler";
 
 type Fejl = { fejl: string };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -153,6 +154,8 @@ export async function saetSpoergsmaalAktiv(
     const svar = data as { kode?: string; aktiv?: boolean } | null;
     if (svar?.kode !== "ok") {
       if (svar?.kode === "ikke_aktiv") return { fejl: "Auktionen er slut og kan ikke ændres." };
+      // Låst efter første bud (Filip, 7. okt. 2026) - også "Modtag spørgsmål".
+      if (svar?.kode === "har_bud") return { fejl: AUKTION_LAAST };
       return { fejl: (svar?.kode && FEJL[svar.kode]) || GENERISK };
     }
     revalidatePath(`/auktion/${auktionId}`);

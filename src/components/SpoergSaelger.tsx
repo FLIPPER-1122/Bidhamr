@@ -69,6 +69,7 @@ export default function SpoergSaelger({
   erStaff,
   loggetInd,
   kanIkkeSpoerge = false,
+  laast = false,
 }: {
   auktionId: string;
   spoergsmaal: SpoergsmaalVisning[];
@@ -79,6 +80,9 @@ export default function SpoergSaelger({
   loggetInd: boolean;
   /** Blokering/spærring mellem sælger og den indloggede (art afsløres ikke). */
   kanIkkeSpoerge?: boolean;
+  /** Der er budt: auktionen er låst, så "Modtag spørgsmål" kan ikke ændres
+   * (Filip, 7. okt. 2026). Sælgeren kan stadig besvare spørgsmål. */
+  laast?: boolean;
 }) {
   const router = useRouter();
   const [tekst, setTekst] = useState("");
@@ -134,7 +138,7 @@ export default function SpoergSaelger({
         <h2 id="spoergsmaal-overskrift" className="font-serif text-[17px] font-semibold text-tekst sm:text-lg">
           Spørg sælger
         </h2>
-        {erSaelger && auktionKoerer && (
+        {erSaelger && auktionKoerer && !laast && (
           <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-medium text-tekst">
             Modtag spørgsmål
             <button

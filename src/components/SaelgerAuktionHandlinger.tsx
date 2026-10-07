@@ -5,9 +5,23 @@ import { useRouter } from "next/navigation";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import { annullerAuktion } from "@/app/actions/auktion";
 
+// "Auktionen har fået bud og er låst. Kontakt BidHamr, ..." med link til
+// /kontakt. Bruges her og på redigeringssiden.
+export function AuktionLaastTekst() {
+  return (
+    <>
+      Auktionen har fået bud og er låst.{" "}
+      <Link href="/kontakt" className="font-medium text-groen underline hover:no-underline">
+        Kontakt BidHamr
+      </Link>
+      , hvis der er et problem med varen.
+    </>
+  );
+}
+
 // Vises for sælgeren på en igangværende auktion. Redigering og annullering
-// er kun muligt, indtil det første bud kommer – derefter er auktionen låst
-// (også i databasen).
+// er kun muligt, indtil det første bud kommer – derefter er auktionen helt
+// låst (også i databasen, 20261010020000_auktion_laast_efter_bud.sql).
 export default function SaelgerAuktionHandlinger({
   auktionId,
   harBud,
@@ -20,7 +34,7 @@ export default function SaelgerAuktionHandlinger({
   if (harBud) {
     return (
       <p className="mb-4 rounded-lg border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
-        Der er budt på din auktion, så den kan ikke længere ændres eller annulleres.
+        <AuktionLaastTekst />
       </p>
     );
   }

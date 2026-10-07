@@ -612,6 +612,7 @@ export default async function AuktionPage({
             erStaff={!!staffRolle}
             loggetInd={!!bruger}
             kanIkkeSpoerge={blokeretMedSaelger}
+            laast={harBud}
           />
 
           {/* Sælgeren har ingen grund til at anmelde sit eget opslag */}

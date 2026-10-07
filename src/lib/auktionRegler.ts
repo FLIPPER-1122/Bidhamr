@@ -68,6 +68,20 @@ export const STARTPRIS_ANBEFALING =
 
 export const BINDENDE_BUD_TEKST = "Dit bud er bindende og kan ikke trækkes tilbage.";
 
+// Låst efter første bud (Filip, 7. okt. 2026): sælgeren kan hverken ændre,
+// tilføje, slette eller annullere. Databasen afviser med errcode 'BHL01' og
+// en besked, der starter med 'auktion_laast:'
+// (20261010020000_auktion_laast_efter_bud.sql); rediger_auktion og
+// saet_spoergsmaal_aktiv svarer i stedet kode 'har_bud'.
+export const AUKTION_LAAST =
+  "Auktionen har fået bud og er låst. Kontakt BidHamr, hvis der er et problem med varen.";
+
+export function erAuktionLaastFejl(
+  fejl: { code?: string; message?: string } | null | undefined,
+): boolean {
+  return !!fejl && (fejl.code === "BHL01" || (fejl.message ?? "").startsWith("auktion_laast:"));
+}
+
 // Samme grænse som public.auktion_billeder_gyldige (1-10 billeder).
 export const MAKS_BILLEDER = 10;
 export const MAKS_TITEL = 120;
