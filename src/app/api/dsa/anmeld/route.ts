@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { offentligNoegle } from "@/lib/supabase/noegler";
 import { klientIp } from "@/lib/rateLimit";
 import { opretAnmeldelse } from "@/lib/dsa/server";
 import { logDriftFejl } from "@/lib/drift";
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
     if (!m) return svar(401, { fejl: "Du er ikke logget ind længere. Log ind igen.", kode: "ikke_logget_ind" });
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      offentligNoegle(),
       { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
     );
     const { data, error } = await supabase.auth.getUser(m[1]);

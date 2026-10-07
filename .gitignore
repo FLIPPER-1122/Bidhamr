@@ -42,6 +42,8 @@ next-env.d.ts
 
 .vercel
 .env*
+# Skabelonen med navne og forklaringer (ingen værdier) må gerne i git.
+!.env.example
 /BidHamr/
 
 # Agenternes git-worktrees - fulde kopier af repoet

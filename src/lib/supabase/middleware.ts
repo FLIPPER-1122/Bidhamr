@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { erTestdatabase } from "@/lib/miljoe";
 import { tilmeldingAaben } from "@/lib/tilmelding";
 import { ROLLE_COOKIE, laesRolleCookie, lavRolleCookie } from "@/lib/rolleCookie";
+import { offentligNoegle } from "@/lib/supabase/noegler";
 
 // Routes der er tilgængelige uden login, mens resten af appen er bag
 // venteliste-gaten. Kun API-ruter med egen adgangskontrol undtages:
@@ -184,7 +185,7 @@ export async function updateSession(
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    offentligNoegle(),
     {
       cookies: {
         getAll() {

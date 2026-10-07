@@ -14,8 +14,9 @@ Testdatabasen er sat op (commit 3e22009). Det her mangler:
 
 ## Gør først (5 min)
 1. **Udfyld to felter i `.env.local`** med nøglerne fra Supabase → **Bidhamr Test** (IKKE "Hamr") → Project Settings → API Keys:
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = "anon public"-nøglen (eller `sb_publishable_…`)
-   - `SUPABASE_SERVICE_ROLE_KEY` = "service_role"-nøglen (eller `sb_secret_…`)
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = `sb_publishable_…`-nøglen (gammelt navn: `NEXT_PUBLIC_SUPABASE_ANON_KEY` med "anon public"-nøglen)
+   - `SUPABASE_SECRET_KEY` = `sb_secret_…`-nøglen (gammelt navn: `SUPABASE_SERVICE_ROLE_KEY` med "service_role"-nøglen)
+   - Se `.env.example` for alle navne.
 2. **Genstart dev-serveren** (stop `npm run dev` og start den igen).
 3. **Log ind på localhost med `chef@test.bidhamr.dk`** – adgangskoden står øverst i `supabase/seed.sql`. Din egen konto findes ikke i testdatabasen.
 4. Tjek at designet og coming-soon-siden ser rigtige ud. Er du tilfreds: commit og push, og sæt `[x]` ved de færdige fase 0-punkter i `ROADMAP.md`.

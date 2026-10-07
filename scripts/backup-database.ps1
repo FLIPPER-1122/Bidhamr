@@ -29,9 +29,11 @@
   med linjerne
     DB_URL=postgresql://postgres.<ref>:<adgangskode>@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
     SUPABASE_URL=https://<ref>.supabase.co
-    SUPABASE_SERVICE_ROLE_KEY=<service_role-nøgle>
-  Miljøvariablerne BIDHAMR_DB_URL, BIDHAMR_SUPABASE_URL og BIDHAMR_SERVICE_ROLE_KEY
-  vinder over filen.
+    SUPABASE_SECRET_KEY=<sb_secret_-nøgle>
+  (den gamle linje SUPABASE_SERVICE_ROLE_KEY=<service_role-nøgle> virker også,
+  så længe Supabases gamle nøgler er slået til; SUPABASE_SECRET_KEY vinder).
+  Miljøvariablerne BIDHAMR_DB_URL, BIDHAMR_SUPABASE_URL og BIDHAMR_SECRET_KEY
+  (eller den gamle BIDHAMR_SERVICE_ROLE_KEY) vinder over filen.
 
   Kræver: Node (npx), Docker Desktop, der kører (Supabase CLI kører pg_dump i
   Docker), og 7-Zip (7-zip.org).
@@ -95,7 +97,10 @@ if (Test-Path $Indstillinger) {
 }
 $DbUrl = if ($env:BIDHAMR_DB_URL) { $env:BIDHAMR_DB_URL } else { $vaerdier['DB_URL'] }
 $ApiUrl = if ($env:BIDHAMR_SUPABASE_URL) { $env:BIDHAMR_SUPABASE_URL } else { $vaerdier['SUPABASE_URL'] }
-$ServiceKey = if ($env:BIDHAMR_SERVICE_ROLE_KEY) { $env:BIDHAMR_SERVICE_ROLE_KEY } else { $vaerdier['SUPABASE_SERVICE_ROLE_KEY'] }
+$ServiceKey = if ($env:BIDHAMR_SECRET_KEY) { $env:BIDHAMR_SECRET_KEY }
+  elseif ($env:BIDHAMR_SERVICE_ROLE_KEY) { $env:BIDHAMR_SERVICE_ROLE_KEY }
+  elseif ($vaerdier['SUPABASE_SECRET_KEY']) { $vaerdier['SUPABASE_SECRET_KEY'] }
+  else { $vaerdier['SUPABASE_SERVICE_ROLE_KEY'] }
 $script:Hemmeligheder = @($DbUrl, $ServiceKey)
 # Adgangskoden tages ud af forbindelsesstrengen og gives som PGPASSWORD (læses
 # af Supabase CLI), så den ikke står på kommandolinjen, hvor andre processer
@@ -115,7 +120,7 @@ if (-not $UdenDatabase) {
   }
 }
 if (-not $UdenStorage) {
-  if (-not $ApiUrl -or -not $ServiceKey) { Stop-Med "SUPABASE_URL eller SUPABASE_SERVICE_ROLE_KEY mangler i $Indstillinger (eller brug -UdenStorage)." }
+  if (-not $ApiUrl -or -not $ServiceKey) { Stop-Med "SUPABASE_URL eller SUPABASE_SECRET_KEY (eller SUPABASE_SERVICE_ROLE_KEY) mangler i $Indstillinger (eller brug -UdenStorage)." }
   if ($ApiUrl -notmatch [regex]::Escape($ForventetRef)) { Stop-Med "SUPABASE_URL peger ikke på $Miljoe-projektet ($ForventetRef)." }
 }
 
@@ -265,11 +270,11 @@ if (-not $UdenDatabase) {
 if (-not $UdenStorage) {
   Log 'Henter Storage-filer ...'
   $env:SUPABASE_URL = $ApiUrl
-  $env:SUPABASE_SERVICE_ROLE_KEY = $ServiceKey
+  $env:SUPABASE_SECRET_KEY = $ServiceKey
   try {
     $kode = Koer 'node' @((Join-Path $PSScriptRoot 'backup-storage.mjs'), (Join-Path $Mappe 'storage'))
   } finally {
-    Remove-Item Env:SUPABASE_URL, Env:SUPABASE_SERVICE_ROLE_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:SUPABASE_URL, Env:SUPABASE_SECRET_KEY -ErrorAction SilentlyContinue
   }
   if ($kode -ne 0) { Log "FEJL: Storage-backup fejlede (exit $kode)."; $fejl++ }
 }

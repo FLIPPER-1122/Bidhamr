@@ -4,6 +4,7 @@ import "server-only";
 // bruger med lukket/suspenderet konto - kan se sin sag og klage via mailen.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { logDriftFejl } from "@/lib/drift";
+import { afledningsNoegle } from "@/lib/supabase/noegler";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -11,11 +12,12 @@ export function erUuid(v: unknown): v is string {
   return typeof v === "string" && UUID.test(v);
 }
 
-// Nøglen: DSA_LINK_HEMMELIGHED, ellers afledt af service-role-nøglen (findes
-// altid på serveren). Linket giver kun adgang til at se én sag og klage.
-// Mangler DSA_LINK_HEMMELIGHED i produktion, logges en advarsel i drift (én
-// gang pr. serverproces) - fallback'en virker, men skiftes service-role-
-// nøglen, holder alle gamle links op med at virke.
+// Nøglen: DSA_LINK_HEMMELIGHED (egen lang, tilfældig værdi, uafhængig af
+// Supabases API-nøgler), ellers som før service-role-nøglen (afledningsNoegle
+// i src/lib/supabase/noegler.ts). Linket giver kun adgang til at se én sag og
+// klage. Mangler DSA_LINK_HEMMELIGHED i produktion, logges en advarsel i drift
+// (én gang pr. serverproces) - fallback'en virker, men skiftes eller slås
+// service-role-nøglen fra, holder alle gamle links op med at virke.
 let advaret = false;
 function noegle(): string {
   const egen = process.env.DSA_LINK_HEMMELIGHED;
@@ -29,7 +31,7 @@ function noegle(): string {
       fejl: "DSA_LINK_HEMMELIGHED mangler i produktion - links signeres med service-role-nøglen (fallback).",
     });
   }
-  const k = egen || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const k = egen || afledningsNoegle();
   if (!k) throw new Error("Ingen nøgle til DSA-links");
   return k;
 }

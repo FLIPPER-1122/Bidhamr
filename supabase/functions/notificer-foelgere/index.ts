@@ -52,6 +52,24 @@ const OK = () => svar({ ok: true });
 
 type Afsendelse = { noegle: string; follower: string; tokens: string[] };
 
+// Den hemmelige nøgle. Supabase giver selv funktionen SUPABASE_SECRET_KEYS
+// (JSON med de nye sb_secret_-nøgler efter navn; "default" er standard) og den
+// gamle SUPABASE_SERVICE_ROLE_KEY. Den nye bruges, hvis den findes, så
+// funktionen virker videre, når de gamle nøgler slås fra.
+// verify_jwt er slået fra i supabase/config.toml: funktionen tjekker selv
+// kalderens access token hos Supabase Auth (getUser herunder).
+function hemmeligNoegle(): string {
+  try {
+    const nye = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}");
+    if (typeof nye?.default === "string" && nye.default) return nye.default;
+  } catch {
+    // ugyldig JSON - brug den gamle nøgle
+  }
+  const gammel = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!gammel) throw new Error("Ingen hemmelig nøgle i miljøet");
+  return gammel;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return svar({ error: "Ugyldig forespørgsel" }, 405);
@@ -72,7 +90,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      hemmeligNoegle(),
       { auth: { persistSession: false, autoRefreshToken: false } },
     );
 

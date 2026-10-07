@@ -8,9 +8,12 @@
 //   stadig rollen i databasen hver gang (kraevSideRolle/assertRole i
 //   src/lib/adminAuth.ts), og RLS er uændret.
 // - Værdien er signeret med HMAC-SHA256 med en nøgle, der kun findes på
-//   serveren (afledt af SUPABASE_SERVICE_ROLE_KEY). Kan ikke laves eller
-//   ændres i browseren. Mangler nøglen, bruges cookien ikke (fail closed:
-//   så spørges databasen hver gang som før).
+//   serveren: ROLLE_COOKIE_HEMMELIGHED (egen lang, tilfældig værdi, uafhængig
+//   af Supabases API-nøgler, så et nøgleskifte ikke rører den). Mangler den,
+//   afledes nøglen som før af service-role-nøglen (afledningsNoegle i
+//   src/lib/supabase/noegler.ts), og der logges én advarsel i drift i
+//   produktion. Kan ikke laves eller ændres i browseren. Mangler alle nøgler,
+//   bruges cookien ikke (fail closed: så spørges databasen hver gang som før).
 // - Bundet til brugerens id OG sessionens id (session_id i JWT'en): et nyt
 //   login, logud eller en anden bruger i samme browser gør den ugyldig.
 // - Gælder højst 5 minutter. Fratages en medarbejder rollen, kan gaten
@@ -20,22 +23,44 @@
 //   det samme.
 // - httpOnly, SameSite=Lax og Secure (undtagen lokalt på http).
 
+import { logDriftFejl } from "@/lib/drift";
+import { afledningsNoegle } from "@/lib/supabase/noegler";
+
 export const ROLLE_COOKIE = "bh_rolle";
 const LEVETID_SEKUNDER = 5 * 60;
 const VERSION = "v1";
 
 let noegleLoefte: Promise<CryptoKey | null> | null = null;
+let advaret = false;
+
+// Én advarsel pr. serverproces i produktion, når fallback'en bruges.
+function advarOmFallback() {
+  if (advaret || process.env.NODE_ENV !== "production") return;
+  advaret = true;
+  console.warn("ROLLE_COOKIE_HEMMELIGHED mangler - rolle-cookien signeres med service-role-nøglen.");
+  void logDriftFejl({
+    kilde: "server",
+    sti: "/",
+    hvor: "Rolle-cookie",
+    fejl: "ROLLE_COOKIE_HEMMELIGHED mangler i produktion - rolle-cookien signeres med service-role-nøglen (fallback).",
+  });
+}
 
 function hentNoegle(): Promise<CryptoKey | null> {
   if (!noegleLoefte) {
     noegleLoefte = (async () => {
-      const hemmelighed = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!hemmelighed) return null;
-      // Egen nøgle til dette formål, afledt af service-role-nøglen.
-      const materiale = await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(`bidhamr-rolle-cookie-${VERSION}|${hemmelighed}`),
-      );
+      const egen = process.env.ROLLE_COOKIE_HEMMELIGHED;
+      let tekst: string;
+      if (egen) {
+        tekst = `bidhamr-rolle-cookie-${VERSION}|egen|${egen}`;
+      } else {
+        // Den gamle afledning (uændret), så eksisterende cookies virker videre.
+        const afledt = afledningsNoegle();
+        if (!afledt) return null;
+        advarOmFallback();
+        tekst = `bidhamr-rolle-cookie-${VERSION}|${afledt}`;
+      }
+      const materiale = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(tekst));
       return crypto.subtle.importKey("raw", materiale, { name: "HMAC", hash: "SHA-256" }, false, [
         "sign",
         "verify",

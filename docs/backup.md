@@ -42,10 +42,10 @@ Et backup fylder i dag få MB og tager et par minutter.
    ```
    DB_URL=postgresql://postgres.lkifkrexeldimmghnsie:DIN-DB-ADGANGSKODE@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
    SUPABASE_URL=https://lkifkrexeldimmghnsie.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=DIN-SECRET-/SERVICE_ROLE-NØGLE
+   SUPABASE_SECRET_KEY=DIN-SB_SECRET-NØGLE
    ```
    - `DB_URL`: Supabase → projektet Hamr → **Connect** → **Session pooler**. Kopiér strengen præcis, som den står (værtsnavnet kan afvige fra eksemplet). Har du glemt database-adgangskoden, kan den nulstilles under Database → Settings. Nulstilling påvirker ikke hjemmesiden, som bruger API-nøgler.
-   - `SUPABASE_SERVICE_ROLE_KEY`: Settings → API Keys (secret key eller den gamle service_role). Den bruges kun til at hente billederne.
+   - `SUPABASE_SECRET_KEY`: Settings → API Keys → fanen **Publishable and secret API keys** → secret key (`sb_secret_…`). Den bruges kun til at hente billederne. Har du en gammel fil med `SUPABASE_SERVICE_ROLE_KEY=` (den gamle service_role-nøgle), virker den, indtil de gamle nøgler slås fra i Supabase – skift den til `SUPABASE_SECRET_KEY` før det.
 5. Lav evt. også `backup-test.env` med testprojektets værdier (`pjiigmzqwlfepxnjdvug`), så du kan prøve det hele af på testdatabasen først.
 
 Scriptet stopper selv, hvis forbindelsesstrengen peger på et andet projekt end det valgte miljø.
@@ -140,7 +140,7 @@ Resultatet noteres i `gendannelsestest.log` i backup-mappen. Første kørsel hen
       ```
    4. Indlæs cron-jobbene til sidst, når alt andet er på plads og Vault-hemmelighederne (`cron_url`, `cron_secret`) er sat: `... psql "NY-DB-URL" -v ON_ERROR_STOP=1 -f /b/cron.sql`. Mangler `cron.sql`, så kør cron-delene af migrationerne igen.
    5. Upload filerne fra `storage\` til de samme buckets med samme stier, fx med Supabases migrationsscript til Storage (se Supabase-guiden "Backup and Restore using the CLI").
-5. **Hvis et nyt projekt blev oprettet:** opdatér Vercels miljøvariabler (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) og `.env.production.local`, auth-indstillinger (site-URL, redirect-URL'er, SMTP/Resend), Vault-hemmeligheder (fx `CRON_SECRET`) og Stripe-webhookens URL hvis nødvendigt. Opdatér appen (Expo) med den nye URL og nøgle. Brugerne skal logge ind igen.
+5. **Hvis et nyt projekt blev oprettet:** opdatér Vercels miljøvariabler (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` – se `.env.example`) og `.env.production.local`, auth-indstillinger (site-URL, redirect-URL'er, SMTP/Resend), Vault-hemmeligheder (fx `CRON_SECRET`) og Stripe-webhookens URL hvis nødvendigt. Opdatér appen (Expo) med den nye URL og nøgle. Brugerne skal logge ind igen.
 6. **Tjek:** sammenlign antal brugere, auktioner, handler og betalinger med `kontroltal.json`. Tjek at cron-jobbene kører (`select * from cron.job`). Afstem betalinger i perioden mellem backup og uheld mod Stripe-dashboardet, og genskab manglende handler/betalinger ud fra Stripe.
 7. **Fortæl brugerne,** hvis data fra en periode er tabt (fx bud eller beskeder). Er persondata kommet i forkerte hænder, skal Datatilsynet underrettes inden for 72 timer.
 8. Skriv bagefter ned, hvad der skete, og tag en ny backup med det samme.

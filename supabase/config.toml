@@ -394,6 +394,13 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# notificer-foelgere tjekker selv kalderens access token (auth.getUser) og
+# afviser alt andet med 401. Platformens verify_jwt forstår kun de gamle
+# JWT-baserede nøgler/HS256, så den slås fra (Supabases vejledning om nye
+# API-nøgler og JWT signing keys).
+[functions.notificer-foelgere]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

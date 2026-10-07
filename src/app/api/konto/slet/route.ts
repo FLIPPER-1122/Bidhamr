@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { offentligNoegle } from "@/lib/supabase/noegler";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { klientIp, tjekGraenser, FOR_MANGE_FORSOEG } from "@/lib/rateLimit";
 import { udfoerKontoSletning, SLET_GENERISK } from "@/lib/kontoSletning";
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
   // Klient med brugerens token - kun til at validere tokenet.
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    offentligNoegle(),
     { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
   );
   const { data: brugerData, error: brugerFejl } = await supabase.auth.getUser(token);
