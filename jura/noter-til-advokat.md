@@ -90,4 +90,4 @@ Alt i RB-afsnittet "DSA" er Claudes forslag og afventer advokatens godkendelse. 
 
 ---
 
-**I alt: 55 spørgsmål til advokaten** (27 om betaling og handelsbetingelser, 14 om DSA, 13 om persondata) + 3 punkter til revisor.
+**I alt: 55 spørgsmål til advokaten** (27 om betaling og handelsbetingelser, 14 om DSA, 14 om persondata og cookies) + 3 punkter til revisor.
