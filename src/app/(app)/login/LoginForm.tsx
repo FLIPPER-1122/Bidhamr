@@ -6,17 +6,22 @@ import { useState, type FormEvent } from "react";
 import { sikkerSti } from "@/lib/sikkerSti";
 import { logInd } from "@/app/actions/auth";
 import { FELT, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
+import { ERHVERV_LOGIN } from "@/lib/tekster/erhverv";
 
 export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Kun relative stier - ellers kan ?redirect bruges til phishing-omdirigering.
-  const redirectTo = sikkerSti(searchParams.get("redirect"), "/auktioner");
+  // Uden ?redirect lander en firmakonto på /firma, alle andre på /auktioner.
+  const redirectParam = searchParams.get("redirect");
+  const redirectTo = sikkerSti(redirectParam, "/auktioner");
   // Auth-callbacket sender fejl hertil, fx når et nulstillingslink er udløbet.
   // Kun faste koder fra /auth/callback vises - aldrig fri tekst fra URL'en.
   const fejlKode = searchParams.get("fejl");
   const callbackFejl =
-    fejlKode === "link_udloebet"
+    fejlKode === "velkommen_udloebet"
+      ? ERHVERV_LOGIN.velkommenUdloebet
+      : fejlKode === "link_udloebet"
       ? "Linket er udløbet. Bed om et nyt og prøv igen."
       : fejlKode === "konto_suspenderet"
         ? "Din konto er suspenderet. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
@@ -24,6 +29,8 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
         ? "Linket virker ikke. Bed om et nyt og prøv igen."
         : null;
   const adgangskodeGemt = searchParams.get("adgangskode") === "gemt";
+  // Ny firmakonto, der lige har valgt sin adgangskode (velkomstmailen).
+  const velkommenFirma = adgangskodeGemt && searchParams.get("velkommen") === "1";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,7 +59,7 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
       return;
     }
 
-    router.push(redirectTo);
+    router.push(svar.firma && !redirectParam ? "/firma" : redirectTo);
     router.refresh();
   }
 
@@ -63,11 +70,16 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
       <div className="w-full max-w-sm">
         <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
           <h1 className="text-[26px] leading-tight sm:text-[32px]">Log ind</h1>
-          <p className="mt-1 text-sm text-tekst-svag">Velkommen tilbage til BidHamr.</p>
+          <p className="mt-1 text-sm text-tekst-svag">
+            {velkommenFirma ? ERHVERV_LOGIN.undertitelVelkommen : "Velkommen tilbage til BidHamr."}
+          </p>
 
           {adgangskodeGemt && !fejlTekst && (
-            <p role="status" className="mt-4 rounded-xl border border-succes-kant bg-succes-bg p-4 text-sm text-succes-tekst">
-              Din nye adgangskode er gemt. Log ind med den her.
+            <p
+              role="status"
+              className={`mt-4 rounded-xl border border-succes-kant bg-succes-bg p-4 text-succes-tekst ${velkommenFirma ? "text-[17px] font-semibold" : "text-sm"}`}
+            >
+              {velkommenFirma ? ERHVERV_LOGIN.adgangskodeGemt : "Din nye adgangskode er gemt. Log ind med den her."}
             </p>
           )}
 

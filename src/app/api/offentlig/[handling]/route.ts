@@ -45,6 +45,35 @@ function svar(status: number, krop: unknown) {
   return NextResponse.json(krop, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+// Læser kroppen, men højst maks bytes. "for_stor" ved mere, null ved fejl.
+async function laesMedGraense(req: NextRequest, maks: number): Promise<Uint8Array<ArrayBuffer> | "for_stor" | null> {
+  if (!req.body) return new Uint8Array(0);
+  const laeser = req.body.getReader();
+  const dele: Uint8Array[] = [];
+  let ialt = 0;
+  try {
+    for (;;) {
+      const { done, value } = await laeser.read();
+      if (done) break;
+      ialt += value.byteLength;
+      if (ialt > maks) {
+        await laeser.cancel().catch(() => {});
+        return "for_stor";
+      }
+      dele.push(value);
+    }
+  } catch {
+    return null;
+  }
+  const ud = new Uint8Array(ialt);
+  let pos = 0;
+  for (const d of dele) {
+    ud.set(d, pos);
+    pos += d.byteLength;
+  }
+  return ud;
+}
+
 function egenOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return false;
@@ -66,12 +95,22 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ handling: 
   if (!type.startsWith("multipart/form-data") && !type.startsWith("application/x-www-form-urlencoded")) {
     return svar(400, { fejl: GENERISK, kode: "ugyldig" });
   }
-  const laengde = Number(req.headers.get("content-length") ?? "0");
+  // Content-Length skal være der og være inden for grænsen (browsere sender
+  // den altid ved fetch med FormData). Headeren kan dog lyve, så kroppen
+  // læses også med en grænse - der læses aldrig mere end MAKS_BYTES ind.
+  const laengdeHeader = req.headers.get("content-length");
+  const laengde = laengdeHeader !== null && /^\d{1,12}$/.test(laengdeHeader.trim()) ? Number(laengdeHeader) : NaN;
+  if (!Number.isFinite(laengde)) return svar(411, { fejl: GENERISK, kode: "ugyldig" });
   if (laengde > MAKS_BYTES) return svar(413, { fejl: GENERISK, kode: "ugyldig" });
+
+  const krop = await laesMedGraense(req, MAKS_BYTES);
+  if (krop === "for_stor") return svar(413, { fejl: GENERISK, kode: "ugyldig" });
+  if (krop === null) return svar(400, { fejl: GENERISK, kode: "ugyldig" });
 
   let fd: FormData;
   try {
-    fd = await req.formData();
+    // Samme Content-Type (med boundary) som den oprindelige forespørgsel.
+    fd = await new Response(krop, { headers: { "content-type": req.headers.get("content-type") ?? "" } }).formData();
   } catch {
     return svar(400, { fejl: GENERISK, kode: "ugyldig" });
   }

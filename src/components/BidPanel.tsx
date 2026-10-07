@@ -897,7 +897,7 @@ export default function BidPanel({
         </div>
       )}
 
-      {!auktionSlut && (
+      {!auktionSlut && !erFirmakonto && (
         <p className="mt-3 text-[13px] leading-relaxed text-tekst-daempet">
           {erhvervAuktion ? ERHVERV_BIDPANEL.prisLinje : BIDPANEL.prisLinje}
         </p>

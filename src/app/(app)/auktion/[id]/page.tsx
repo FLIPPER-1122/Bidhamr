@@ -19,7 +19,7 @@ import { standNavn } from "@/lib/stand";
 import { getStaffRole } from "@/lib/adminAuth";
 import type { SpoergsmaalVisning } from "@/lib/spoergsmaal";
 import { auktionMetadata, hentAuktionRaekke } from "@/lib/auktionSeo";
-import { hentBruger } from "@/lib/supabase/bruger";
+import { hentBruger, hentKontoType } from "@/lib/supabase/bruger";
 import { erPaaPause } from "@/lib/auctionTid";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
 import { ERHVERVSSAELGER, ERHVERV_GPSR } from "@/lib/tekster/erhverv";
@@ -216,7 +216,7 @@ export default async function AuktionPage({
     blokeretMedSaelger,
     { data: minFoelgning },
     { data: saelger },
-    { data: minKonto },
+    minKontoType,
   ] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     bruger ? getStaffRole() : Promise.resolve(null),
@@ -232,13 +232,12 @@ export default async function AuktionPage({
           .maybeSingle()
       : Promise.resolve({ data: null }),
     saelgerOpslag,
-    // Er jeg en firmakonto? Så kan jeg ikke byde (users.konto_type).
-    mitId && mitId !== auktion.bruger_id
-      ? supabase.from("users").select("konto_type").eq("id", mitId).maybeSingle<{ konto_type: string | null }>()
-      : Promise.resolve({ data: null }),
+    // Er jeg en firmakonto? Så kan jeg ikke byde (users.konto_type). Delt
+    // med topbaren (cache() i src/lib/supabase/bruger.ts).
+    mitId && mitId !== auktion.bruger_id ? hentKontoType(mitId) : Promise.resolve(null),
   ]);
   const erhvervAuktion = auktion.erhverv === true;
-  const erFirmakonto = minKonto?.konto_type === "erhverv";
+  const erFirmakonto = minKontoType === "erhverv";
 
   // Skjult af BidHamr: sælgeren får et link til begrundelsen (DSA art. 17),
   // hvor han også kan klage. Bydere er ikke part i afgørelsen og ser kun, at
@@ -283,7 +282,7 @@ export default async function AuktionPage({
       }
     }
   }
-  const sælgerNavn = kortNavn(saelger?.navn ?? null);
+  const sælgerNavn = kortNavn(saelger?.navn ?? null, erhvervAuktion);
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
   const varenummer = auktion.id.slice(-6).toUpperCase();
@@ -639,18 +638,24 @@ export default async function AuktionPage({
             </>
           )}
 
-          <div className={sektionsLinje} />
-          <SpoergSaelger
-            auktionId={auktion.id}
-            spoergsmaal={spoergsmaal}
-            aktiv={(auktion.spoergsmaal_aktiv as boolean | null | undefined) !== false}
-            auktionKoerer={auktion.status === "aktiv" && !auktionErSlut && !skjult}
-            erSaelger={erSælger}
-            erStaff={!!staffRolle}
-            loggetInd={!!bruger}
-            kanIkkeSpoerge={blokeretMedSaelger}
-            laast={harBud}
-          />
+          {/* En firmakonto kan ikke købe - så heller ikke spørge sælgeren
+              på andres auktioner (erFirmakonto er false på egne). */}
+          {!erFirmakonto && (
+            <>
+              <div className={sektionsLinje} />
+              <SpoergSaelger
+                auktionId={auktion.id}
+                spoergsmaal={spoergsmaal}
+                aktiv={(auktion.spoergsmaal_aktiv as boolean | null | undefined) !== false}
+                auktionKoerer={auktion.status === "aktiv" && !auktionErSlut && !skjult}
+                erSaelger={erSælger}
+                erStaff={!!staffRolle}
+                loggetInd={!!bruger}
+                kanIkkeSpoerge={blokeretMedSaelger}
+                laast={harBud}
+              />
+            </>
+          )}
 
           {/* Sælgeren har ingen grund til at anmelde sit eget opslag */}
           {!erSælger && !skjult && (

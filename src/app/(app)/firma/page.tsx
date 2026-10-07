@@ -15,7 +15,7 @@ import {
 } from "@/components/erhverv/stil";
 import { FIRMA_OVERSIGT as T, FIRMA_OVERSIGT_EKSTRA as X } from "@/lib/tekster/erhverv";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
-import { kr, krFraOere, langDato, naesteLedigeTekst, ugedagDato } from "@/lib/erhverv/visning";
+import { kr, krFraOere, langDato, naesteLedigeTekst, ugedagDato, visTelefon } from "@/lib/erhverv/visning";
 
 // Firma oversigt (dashboard) - kun for firmakonti; alle andre sendes væk.
 // Profilmenuen viser kun denne side for en firmakonto, så ALT firmaet skal
@@ -325,7 +325,7 @@ export default async function FirmaOversigtSide() {
                 [T.firmaoplysninger.cvr, f.cvr],
                 [T.firmaoplysninger.adresse, `${f.adresse}, ${f.postnummer} ${f.by}`],
                 [T.firmaoplysninger.kontaktperson, f.kontaktperson],
-                [T.firmaoplysninger.telefon, f.telefon],
+                [T.firmaoplysninger.telefon, visTelefon(f.telefon)],
                 [T.firmaoplysninger.email, f.kontakt_email],
               ] as const
             ).map(([label, vaerdi]) => (
@@ -337,7 +337,7 @@ export default async function FirmaOversigtSide() {
           </dl>
           <p className={`mt-5 ${E_TEKST}`}>
             {T.firmaoplysninger.rettes}{" "}
-            <a href={`mailto:${ERHVERV_EMAIL}`} className="font-semibold text-groen underline underline-offset-2">
+            <a href={`mailto:${ERHVERV_EMAIL}`} className="inline-flex min-h-11 items-center font-semibold break-all text-groen underline underline-offset-2">
               {ERHVERV_EMAIL}
             </a>
           </p>

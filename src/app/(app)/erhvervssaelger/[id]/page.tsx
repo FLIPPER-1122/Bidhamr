@@ -5,6 +5,7 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { ERHVERVSSAELGER as T } from "@/lib/tekster/erhverv";
 import type { FirmaOffentlig } from "@/lib/erhverv/regler";
+import { telefonLink, visTelefon } from "@/lib/erhverv/visning";
 import { E_KORT, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
 
 // Offentlig firmaprofil for en erhvervssælger: firmanavn, CVR, adresse,
@@ -39,8 +40,8 @@ export default async function ErhvervssaelgerSide({ params }: { params: Promise<
     [T.adresse, `${firma.adresse}, ${firma.postnummer} ${firma.by}`],
     [
       T.telefon,
-      <a key="tlf" href={`tel:${firma.telefon.replace(/\s/g, "")}`} className="font-semibold text-groen underline underline-offset-2">
-        {firma.telefon}
+      <a key="tlf" href={telefonLink(firma.telefon)} className="inline-flex min-h-11 items-center font-semibold text-groen underline underline-offset-2">
+        {visTelefon(firma.telefon)}
       </a>,
     ],
     [

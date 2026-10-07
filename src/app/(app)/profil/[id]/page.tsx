@@ -44,6 +44,11 @@ async function hentProfilTal(
   return (data ?? null) as ProfilTal | null;
 }
 
+// Dansk ejefald: "Kasper K.s", men "Testfirma ApS'" (navn på s, x eller z).
+function genitiv(navn: string): string {
+  return /[sxz]$/i.test(navn) ? `${navn}'` : `${navn}s`;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -57,18 +62,18 @@ export async function generateMetadata({
   const supabase = await createClient();
   const [{ data: authData }, { data: profil }] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from("users").select("navn").eq("id", id).single(),
+    supabase.from("users").select("navn, konto_type").eq("id", id).single(),
   ]);
   if (!profil) return { title: "Profil", robots: { index: false, follow: false } };
   const erEgen = authData.user?.id === id;
-  const visNavn = erEgen ? (profil.navn ?? "") : kortNavn(profil.navn);
+  const visNavn = erEgen ? (profil.navn ?? "") : kortNavn(profil.navn, profil.konto_type === "erhverv");
   // Kun det korte navn (som på siden) - aldrig fulde navn i søgemaskiner.
-  const offentligtNavn = kortNavn(profil.navn);
+  const offentligtNavn = kortNavn(profil.navn, profil.konto_type === "erhverv");
   return {
-    title: `${visNavn}s profil`,
-    description: `Se ${offentligtNavn}s auktioner og bedømmelser på BidHamr.`,
+    title: `${genitiv(visNavn)} profil`,
+    description: `Se ${genitiv(offentligtNavn)} auktioner og bedømmelser på BidHamr.`,
     alternates: { canonical: `/profil/${id}` },
-    openGraph: { title: `${offentligtNavn}s profil · BidHamr`, url: `/profil/${id}` },
+    openGraph: { title: `${genitiv(offentligtNavn)} profil · BidHamr`, url: `/profil/${id}` },
   };
 }
 
@@ -86,7 +91,7 @@ export default async function ProfilPage({
     supabase.auth.getUser(),
     supabase
       .from("users")
-      .select("id, navn, avatar_url, oprettet")
+      .select("id, navn, avatar_url, oprettet, konto_type")
       .eq("id", id)
       .single(),
   ]);
@@ -311,7 +316,7 @@ export default async function ProfilPage({
     <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
       <div className="mx-auto max-w-5xl space-y-6">
         <ProfileHeader
-          navn={kortNavn(profil.navn)}
+          navn={kortNavn(profil.navn, profil.konto_type === "erhverv")}
           avatarUrl={profil.avatar_url}
           medlemSiden={medlemSiden}
           gennemsnitRating={gennemsnitRating}
@@ -328,7 +333,7 @@ export default async function ProfilPage({
             !blokeretAfProfil && harBlokeret !== true ? (
               <FoelgKnap
                 saelgerId={id}
-                navn={kortNavn(profil.navn)}
+                navn={kortNavn(profil.navn, profil.konto_type === "erhverv")}
                 foelger={Boolean(minFoelgning)}
                 loginHref={erLoggetInd ? undefined : `/login?redirect=/profil/${id}`}
               />
@@ -337,12 +342,12 @@ export default async function ProfilPage({
         />
 
         {!erLoggetInd && (
-          <AnmeldKnap type="profil" id={id} hvad={`Profilen ${kortNavn(profil.navn)}`} loggetInd={false} label="Anmeld profil" />
+          <AnmeldKnap type="profil" id={id} hvad={`Profilen ${kortNavn(profil.navn, profil.konto_type === "erhverv")}`} loggetInd={false} label="Anmeld profil" />
         )}
         {erLoggetInd && (
           <ProfilTryghed
             brugerId={id}
-            navn={kortNavn(profil.navn)}
+            navn={kortNavn(profil.navn, profil.konto_type === "erhverv")}
             erBlokeret={harBlokeret === true}
           />
         )}

@@ -125,10 +125,13 @@ export default function MobilMenu({
                 <Ikon navn="plus" />
                 Sælg en vare
               </Link>
-              {/* "Erhverv" øverst i menuen - også for dem, der ikke er logget ind. */}
-              <Link href="/erhverv" className="btn btn-sekundaer btn-stor mt-2 w-full">
-                {ERHVERV_MENU.topmenu}
-              </Link>
+              {/* "Erhverv" øverst i menuen - også for dem, der ikke er logget ind.
+                  En firmakonto er allerede kunde og ser den ikke. */}
+              {!erFirma && (
+                <Link href="/erhverv" className="btn btn-sekundaer btn-stor mt-2 w-full">
+                  {ERHVERV_MENU.topmenu}
+                </Link>
+              )}
             </div>
 
             {/* Ikke logget ind: Favoritter sender til login og tilbage igen. */}

@@ -21,7 +21,12 @@ type Kladde = {
   sortering: string;
 };
 
-const NY: Kladde = { id: null, navn: "", beskrivelse: "", pris: "", auktioner: "1", aktiv: true, sortering: "0" };
+// Mellemrum fjernes ("1 000" = 1000). Komma og punktum afvises i valider.
+function renPris(s: string): string {
+  return s.replace(/\s/g, "");
+}
+
+const NY: Kladde ={ id: null, navn: "", beskrivelse: "", pris: "", auktioner: "1", aktiv: true, sortering: "0" };
 
 function fraPakke(p: ErhvervPakkeAdmin): Kladde {
   return {
@@ -45,7 +50,9 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
 
   function valider(k: Kladde): string | null {
     if (!k.navn.trim()) return A.pakker.fejl.navnMangler;
-    if (k.pris.trim() !== "" && !/^\d+$/.test(k.pris.trim())) return A.pakker.fejl.prisUgyldig;
+    // Kun hele kroner: "99,50" må ikke blive til 9.950 kr.
+    if (/[.,]/.test(k.pris)) return A.pakker.fejl.prisHeleKroner;
+    if (renPris(k.pris) !== "" && !/^\d+$/.test(renPris(k.pris))) return A.pakker.fejl.prisUgyldig;
     if (!/^\d+$/.test(k.auktioner.trim()) || Number(k.auktioner) < 1) return A.pakker.fejl.auktionerUgyldigt;
     return null;
   }
@@ -56,7 +63,7 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
     const f = valider(k);
     if (f) return setFejl(f);
     const original = k.id ? pakker.find((p) => p.id === k.id) : null;
-    const pris = k.pris.trim() === "" ? null : Number(k.pris);
+    const pris = renPris(k.pris) === "" ? null : Number(renPris(k.pris));
     const antal = Number(k.auktioner);
     if (
       !bekraeftet &&
@@ -160,7 +167,8 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
             <div>
               <label htmlFor="pakke-pris" className={ADMIN_LABEL}>{A.pakker.feltPris}</label>
               <input id="pakke-pris" inputMode="numeric" value={kladde.pris} aria-describedby="pakke-pris-hjaelp"
-                onChange={(e) => setKladde({ ...kladde, pris: e.target.value.replace(/\D/g, "").slice(0, 7) })} className={ADMIN_FELT} />
+                aria-invalid={/[.,]/.test(kladde.pris) || undefined}
+                onChange={(e) => setKladde({ ...kladde, pris: e.target.value.replace(/[^\d.,\s]/g, "").slice(0, 10) })} className={ADMIN_FELT} />
               <p id="pakke-pris-hjaelp" className="mt-1.5 text-[13px] text-tekst-daempet">{X.prisTomHjaelp}</p>
             </div>
             <div>

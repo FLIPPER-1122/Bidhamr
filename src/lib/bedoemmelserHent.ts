@@ -53,7 +53,7 @@ export async function hentBedoemmelser(
   const ids = liste.map((r) => r.id as string);
   const fraIds = [...new Set(liste.map((r) => r.fra_bruger_id as string))];
   const [{ data: navne }, { data: svar, error: svarFejl }, slettede] = await Promise.all([
-    supabase.from("users").select("id, navn").in("id", fraIds),
+    supabase.from("users").select("id, navn, konto_type").in("id", fraIds),
     supabase
       .from("bedoemmelse_svar")
       .select("rating_id, tekst, oprettet, rettet_kl, skjult")
@@ -75,6 +75,10 @@ export async function hentBedoemmelser(
 
   const nu = Date.now();
   const navnMap = new Map((navne ?? []).map((u) => [u.id as string, u.navn as string | null]));
+  // Firmakonti vises med det fulde firmanavn (kortNavn).
+  const firmaIds = new Set(
+    (navne ?? []).filter((u) => (u as { konto_type?: string | null }).konto_type === "erhverv").map((u) => u.id as string),
+  );
   const svarMap = new Map(
     (svar ?? []).map((s) => [
       s.rating_id as string,
@@ -91,7 +95,7 @@ export async function hentBedoemmelser(
   return liste.map((r) => ({
     id: r.id as string,
     fra_bruger_id: r.fra_bruger_id as string,
-    fra_bruger_navn: kortNavn(navnMap.get(r.fra_bruger_id as string)),
+    fra_bruger_navn: kortNavn(navnMap.get(r.fra_bruger_id as string), firmaIds.has(r.fra_bruger_id as string)),
     stjerner: Number(r.stjerner),
     kommentar: (r.kommentar as string | null) ?? null,
     oprettet: r.oprettet as string,

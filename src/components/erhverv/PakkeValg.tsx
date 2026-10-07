@@ -53,6 +53,10 @@ export default function PakkeValg({
       const res = await skiftFirmaPakke(p.id);
       setAaben(null);
       if ("fejl" in res) setSvar({ tekst: res.fejl || A.fejlSkift, fejl: true });
+      // Planlagt nedgradering og opgradering, der venter på betaling: siden
+      // viser selv en fast besked om det (role="status") efter refresh - så
+      // vises der ikke også en besked her (ellers står det samme to gange).
+      else if (res.kode === "opgradering_afventer_betaling" || res.kode === "nedgradering_planlagt") setSvar(null);
       else setSvar({ tekst: res.besked, fejl: false });
       router.refresh();
       window.requestAnimationFrame(() => svarRef.current?.focus());
@@ -118,7 +122,7 @@ export default function PakkeValg({
                       className={E_KNAP_PRIMAER}
                     >
                       {sender && <span className="btn-spinner" aria-hidden="true" />}
-                      {op ? A.bekraeftOpgraderJa : A.bekraeftNedgraderJa}
+                      {op ? A.bekraeftOpgraderJa(p.navn) : A.bekraeftNedgraderJa}
                     </button>
                     <button type="button" onClick={() => setAaben(null)} disabled={sender} className={E_KNAP_SEKUNDAER}>
                       {A.knapAnnuller}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
-import { bekraeftetBruger, hentBruger, hentMinRolle, sessionBrugerId } from "@/lib/supabase/bruger";
+import { bekraeftetBruger, hentBruger, hentKontoType, hentMinRolle, sessionBrugerId } from "@/lib/supabase/bruger";
 import KontoMenu from "@/components/KontoMenu";
 import Klokke from "@/components/notifikationer/Klokke";
 import Ikon from "@/components/Ikon";
@@ -34,15 +34,8 @@ export default async function Header() {
     sessionId ? hentMinRolle() : null,
     supabase ? supabase.rpc("notifikationer_antal_ulaeste").then((r) => r.data) : null,
     supabase ? supabase.rpc("antal_ulaeste_staff_beskeder").then((r) => r.data) : null,
-    // users.konto_type kan læses af alle (20261010030000_erhverv.sql).
-    supabase && sessionId
-      ? supabase
-          .from("users")
-          .select("konto_type")
-          .eq("id", sessionId)
-          .maybeSingle<{ konto_type: string | null }>()
-          .then((r) => r.data?.konto_type ?? null)
-      : null,
+    // Delt med siden (cache() i src/lib/supabase/bruger.ts).
+    sessionId ? hentKontoType(sessionId) : null,
   ]);
   const loggetInd = !!bruger;
 
@@ -183,9 +176,12 @@ export default async function Header() {
               <Link href="/saadan-virker-det" className={linjeLink}>
                 Sådan virker det
               </Link>
-              <Link href="/erhverv" className={`${linjeLink} font-semibold text-groen-mork`}>
-                {ERHVERV_MENU.topmenu}
-              </Link>
+              {/* En firmakonto er allerede kunde - salgsknappen skjules. */}
+              {!erFirma && (
+                <Link href="/erhverv" className={`${linjeLink} font-semibold text-groen-mork`}>
+                  {ERHVERV_MENU.topmenu}
+                </Link>
+              )}
             </div>
           </div>
         </nav>

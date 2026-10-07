@@ -17,16 +17,24 @@ export default async function FoelgerSide() {
   // mine_fulgte_saelgere() udleder brugeren af auth.uid().
   const { data, error } = await supabase.rpc("mine_fulgte_saelgere");
   if (error) console.error("Fulgte sælgere kunne ikke hentes:", error.message);
-  const saelgere: FulgtSaelger[] = (
-    (data ?? []) as {
-      saelger_id: string;
-      navn: string | null;
-      avatar_url: string | null;
-      aktive_auktioner: number;
-    }[]
-  ).map((s) => ({
+  const raekker = (data ?? []) as {
+    saelger_id: string;
+    navn: string | null;
+    avatar_url: string | null;
+    aktive_auktioner: number;
+  }[];
+  // Firmakonti vises med det fulde firmanavn (users.konto_type kan læses af alle).
+  const { data: firmaer } = raekker.length
+    ? await supabase
+        .from("users")
+        .select("id")
+        .in("id", raekker.map((s) => s.saelger_id))
+        .eq("konto_type", "erhverv")
+    : { data: [] as { id: string }[] };
+  const firmaIds = new Set((firmaer ?? []).map((f) => f.id as string));
+  const saelgere: FulgtSaelger[] = raekker.map((s) => ({
     id: s.saelger_id,
-    navn: kortNavn(s.navn),
+    navn: kortNavn(s.navn, firmaIds.has(s.saelger_id)),
     avatarUrl: s.avatar_url,
     aktiveAuktioner: s.aktive_auktioner,
   }));
