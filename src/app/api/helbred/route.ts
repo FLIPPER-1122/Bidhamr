@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { offentligNoegle } from "@/lib/supabase/noegler";
 import { klientIp } from "@/lib/rateLimit";
 
 // Sundhedstjek til den eksterne uptime-tjeneste (docs/overvaagning.md):
@@ -54,7 +55,7 @@ async function databaseSvarer(): Promise<boolean> {
     const signal = AbortSignal.timeout(ms);
     const forespoergsel = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      offentligNoegle(),
       { auth: { autoRefreshToken: false, persistSession: false } },
     )
       .rpc("helbred_ping")

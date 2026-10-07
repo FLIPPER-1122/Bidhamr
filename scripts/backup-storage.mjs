@@ -1,17 +1,19 @@
 // Henter alle filer i alle Storage-buckets ned til en lokal mappe.
 // Kaldes af scripts/backup-database.ps1 - kan også køres alene:
-//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/backup-storage.mjs <mappe>
+//   SUPABASE_URL=... SUPABASE_SECRET_KEY=... node scripts/backup-storage.mjs <mappe>
+// (SUPABASE_SECRET_KEY = sb_secret_-nøglen; den gamle SUPABASE_SERVICE_ROLE_KEY
+// virker også, så længe Supabases gamle nøgler er slået til.)
 // Læser kun (list + download). Nøglen printes aldrig.
 import { createClient } from "@supabase/supabase-js";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const url = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ud = process.argv[2];
 
 if (!url || !key || !ud) {
-  console.error("Mangler SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY eller mappe-argument.");
+  console.error("Mangler SUPABASE_URL, SUPABASE_SECRET_KEY (eller SUPABASE_SERVICE_ROLE_KEY) eller mappe-argument.");
   process.exit(2);
 }
 

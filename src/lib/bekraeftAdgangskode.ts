@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
+import { offentligNoegle } from "@/lib/supabase/noegler";
 
 // Tjekker en brugers nuværende adgangskode uden at røre brugerens egne
 // cookies: en midlertidig klient uden lager logger ind og ud igen med det
@@ -13,7 +14,7 @@ export async function bekraeftAdgangskode(
   if (!email || typeof adgangskode !== "string" || adgangskode.length === 0) return "forkert";
   const klient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    offentligNoegle(),
     { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
   );
   const { data, error } = await klient.auth.signInWithPassword({ email, password: adgangskode });
