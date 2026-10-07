@@ -327,7 +327,7 @@ export const FIRMA_OVERSIGT = {
 
     bekraeftNedgraderTitel: (pakke: string) => `Skift til ${pakke} fra næste måned?`,
     bekraeftNedgraderTekst: (dato: string) =>
-      `Du beholder din nuværende pakke til og med ${dato}. Derefter får du den nye pakke. Du får ikke penge tilbage for denne måned.`,
+      `Din nye pakke gælder fra ${dato}. Indtil da beholder du din nuværende pakke. Du får ikke penge tilbage for denne måned.`,
     bekraeftNedgraderJa: "Ja, skift fra næste måned",
     nedgraderetSvar: (pakke: string, dato: string) => `Fra ${dato} har du ${pakke}.`,
     planlagtSkift: (pakke: string, dato: string) => `Fra ${dato} skifter du til ${pakke}.`,
@@ -475,4 +475,181 @@ export const ADMIN_ERHVERV = {
       generisk: "Pakken blev ikke gemt. Prøv igen.",
     },
   },
+} as const;
+
+// ---------------------------------------------------------------------------
+// 7. Ekstra tekster til siderne (frontend). Korte pladsholdere i samme stil -
+//    indhold-agenten må gerne finpudse dem.
+// ---------------------------------------------------------------------------
+
+export const ERHVERV_SIDE_EKSTRA = {
+  formularTilbage: "Tilbage til Erhverv",
+  formularMetaTitel: "Formular for erhverv",
+  kontaktLinje: "Du kan også skrive direkte til os på",
+} as const;
+
+// Mærket "Erhvervssælger" og den offentlige firmaprofil.
+export const ERHVERVSSAELGER = {
+  maerke: "Erhvervssælger",
+  seFirma: "Se firmaets oplysninger",
+  profilIntro: "Denne sælger er et firma med dansk CVR-nummer.",
+  firmanavn: "Firmanavn",
+  cvr: "CVR-nummer",
+  adresse: "Adresse",
+  telefon: "Telefon",
+  email: "E-mail",
+  siden: "Sælger på BidHamr siden",
+  ikkeAktiv: "Firmaet sælger ikke på BidHamr lige nu. Oplysningerne vises, så du stadig kan kontakte firmaet.",
+  fortrydelsesretTitel: "Fortrydelsesret i 14 dage",
+  fortrydelsesret: [
+    "Når du køber af et firma, har du 14 dages fortrydelsesret efter loven. Fristen regnes fra den dag, du har fået varen.",
+    "Har varen en fejl, kan du klage til firmaet (reklamationsret i 2 år).",
+  ],
+  // BidHamr Beskyttelse gælder ikke ved køb fra erhverv.
+  ingenBeskyttelse:
+    "BidHamr Beskyttelse kan ikke vælges, når du køber af et firma. Du har i stedet fortrydelsesret og reklamationsret efter loven.",
+  seAuktioner: "Se firmaets profil og auktioner",
+  tilbage: "Tilbage",
+} as const;
+
+// Budpanelet på en erhvervsauktion.
+export const ERHVERV_BIDPANEL = {
+  prisLinje:
+    "Vinder du, betaler du dit bud + købergebyr + fragt. Du ser den samlede pris i kroner, før du betaler, og har 48 timer til at betale. Alle beløb er inkl. moms.",
+  firmakontoTitel: "En firmakonto kan kun sælge",
+  firmakontoTekst: "Vil du købe noget, skal du bruge en privat konto.",
+} as const;
+
+// Opret/redigér auktion: oplysninger, EU kræver ved nye varer (GPSR).
+export const ERHVERV_GPSR = {
+  titel: "Oplysninger om den nye vare",
+  intro: "Når et firma sælger en ny vare, skal disse oplysninger stå på auktionen.",
+  producentLabel: "Producent",
+  producentHjaelp:
+    "Navn og adresse på den, der har lavet varen. Fx: Hansen Møbler A/S, Fabriksvej 1, 5000 Odense.",
+  producentMangler: "Skriv producentens navn og adresse.",
+  sikkerhedLabel: "Sikkerhedsoplysninger",
+  sikkerhedHjaelp:
+    "Advarsler og råd om sikker brug. Fx: Ikke egnet til børn under 3 år. Står der ingen advarsler på varen, så skriv det.",
+  sikkerhedMangler: "Skriv sikkerhedsoplysninger. Er der ingen advarsler, så skriv det.",
+} as const;
+
+// /reset-password, når man kommer fra velkomstmailen.
+export const ERHVERV_VAELG_ADGANGSKODE = {
+  titel: "Vælg din adgangskode",
+  tekst: "Velkommen til BidHamr. Vælg den adgangskode, du vil bruge til din firmakonto.",
+  felt: "Adgangskode",
+  feltGentag: "Skriv adgangskoden igen",
+  knap: "Gem adgangskode",
+  venter: "Vi tjekker dit link … Er linket udløbet, så skriv til erhverv@bidhamr.dk, så sender vi et nyt.",
+} as const;
+
+// Velkomstmailen sendt igen fra admin.
+export const ERHVERV_VELKOMSTMAIL_GENSENDT = {
+  fodnote: (email: string) =>
+    `Du får denne mail igen, fordi BidHamr har sendt et nyt link til firmakontoen ${email}. Har du ikke talt med os, kan du se bort fra mailen.`,
+} as const;
+
+// Firma oversigt - ekstra.
+export const FIRMA_OVERSIGT_EKSTRA = {
+  genvejeTitel: "Det bruger du mest",
+  genveje: {
+    handler: "Dine handler",
+    handlerTekst: "Solgte varer, pakker der skal sendes, og betalinger.",
+    beskeder: "Beskeder",
+    beskederTekst: "Beskeder fra købere og fra BidHamr.",
+    auktioner: "Dine auktioner",
+    auktionerTekst: "Alle de auktioner, du har oprettet.",
+  },
+  kanIkkeOpretteIkkeAktiv: "Du kan ikke oprette auktioner, før din pakke er sat i gang.",
+  pakkePause: "Dit abonnement er sat på pause. Du kan ikke oprette nye auktioner. Skriv til os, så hjælper vi dig.",
+  pakkeOpsagt: "Dit abonnement er opsagt. Skriv til os, hvis du vil sælge igen.",
+  ingenPakke: "Du har ingen pakke endnu. Vi kontakter dig.",
+  afventerTitel: "Venter på betaling",
+  afventerTekst: (pakke: string) =>
+    `Du har valgt ${pakke}. Du får de ekstra auktioner, når betalingen er på plads. Vi kontakter dig om betalingen.`,
+  prisIkkeSat: "Prisen aftales med BidHamr",
+  // Mens betaling via Stripe ikke er åbnet: opgraderingen gælder først, når
+  // den er betalt (src/lib/erhverv/betaling.ts).
+  bekraeftOpgraderTekstAfventer:
+    "Du får de ekstra auktioner, når betalingen er på plads. Vi kontakter dig om betalingen.",
+  afhentning: (vare: string) => `Køberen skal hente ${vare}. Aftal tid og sted med køberen.`,
+  knapSeHandel: "Se handlen",
+  ugensTal: (brugt: number, ialt: number) => `${brugt} af ${ialt}`,
+  ugensTalLabel: "Brugt denne uge",
+  visningerAktive: "På dine aktive auktioner",
+  firmanavnLabel: "Firma",
+  slutter: "Slutter",
+  bud: (antal: number) => (antal === 1 ? "1 bud" : `${antal} bud`),
+  solgtDenneMaaned: "Solgt denne måned",
+  solgtIAlt: "Solgt i alt",
+  seSalg: "Se alle dine salg",
+  regningType: { abonnement: "Abonnement", opgradering: "Opgradering", andet: "Andet" },
+  regningStatus: { afventer: "Ikke betalt", betalt: "Betalt", mislykket: "Betaling fejlede", krediteret: "Krediteret" },
+  luk: "Luk",
+} as const;
+
+// Admin - ekstra.
+export const ADMIN_ERHVERV_EKSTRA = {
+  forklaring: "Formularer fra firmaer, firmakonti og pakker.",
+  arkiverede: "Arkiverede",
+  knapArkiver: "Arkivér",
+  knapHentTilbage: "Hent tilbage",
+  bekraeftArkiver: "Arkivér henvendelsen? Den kan hentes tilbage under Arkiverede.",
+  tilbageTilListe: "Tilbage til henvendelser",
+  felter: {
+    firmanavn: "Firmanavn",
+    cvr: "CVR",
+    kontaktperson: "Kontaktperson",
+    telefon: "Telefon",
+    email: "E-mail",
+    kontaktEmail: "Kontakt-e-mail (vises for købere)",
+    adresse: "Adresse",
+    postnummer: "Postnummer",
+    by: "By",
+    hvadSaelger: "Hvad sælger de",
+    antalVarer: "Varer pr. måned (ca.)",
+    besked: "Besked",
+    modtaget: "Modtaget",
+    behandletAf: "Sidst behandlet af",
+    loginEmail: "Login-e-mail",
+    loggetInd: "Har logget ind",
+  },
+  ja: "Ja",
+  nej: "Nej, ikke endnu",
+  ikkeLoggetInd: "Ikke logget ind endnu",
+  knapSlaaCvrOp: "Slå CVR op",
+  cvrFundet: "Oplysningerne er hentet fra CVR-registret. Tjek dem, før du opretter kontoen.",
+  firmaOprettet: "Der er oprettet en firmakonto ud fra denne henvendelse.",
+  kontoOprettet: "Konto oprettet",
+  seFirma: "Se firmaet",
+  bekraeftOpretTitel: "Opret firmakontoen?",
+  bekraeftOpret: (email: string) =>
+    `Kontoen oprettes, og velkomstmailen sendes til ${email}. Kontoen kan ikke slettes bagefter.`,
+  tilbageTilFirmaer: "Tilbage til firmaer",
+  knapGemFirma: "Gem ændringer",
+  firmaGemt: "Firmaet er gemt.",
+  aendrPakkeHjaelp: "Skifter pakken med det samme (fx efter en aftale eller betaling uden for Stripe).",
+  bekraeftGemFirma: "Gem ændringerne på firmaet?",
+  feltStatus: "Abonnement",
+  feltNote: "Note (vises kun internt)",
+  afventerOpgradering: (pakke: string) => `Firmaet har bedt om ${pakke} og venter på betaling.`,
+  planlagtSkift: (pakke: string, dato: string) => `Skifter til ${pakke} fra ${dato}.`,
+  aktiveAuktioner: "Aktive auktioner",
+  oprettetAf: "Oprettet af",
+  feltBeskrivelse: "Beskrivelse (valgfri)",
+  feltSortering: "Rækkefølge",
+  feltSorteringHjaelp: "Lavt tal vises først.",
+  prisTomHjaelp: "Lad feltet være tomt, hvis prisen ikke er sat endnu.",
+  antalFirmaer: (n: number) => (n === 1 ? "1 firma" : `${n} firmaer`),
+  prisIkkeSat: "Ikke sat",
+  knapRet: "Ret",
+  knapAnnuller: "Annullér",
+  skjult: "Skjult",
+  rolleSaelger: "Sælger",
+  goerTilSaelger: "Gør til sælger",
+  pakkeBrugesTitel: "Pakken bruges af firmaer",
+  pakkeBruges: (n: number) =>
+    `${n === 1 ? "1 firma bruger" : `${n} firmaer bruger`} denne pakke – ændringen gælder for dem med det samme.`,
+  knapGemAlligevel: "Ja, gem ændringen",
 } as const;

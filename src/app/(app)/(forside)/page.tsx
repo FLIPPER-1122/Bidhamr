@@ -11,7 +11,7 @@ import heroBillede from "../../../../public/forside/hero.webp";
 // Kun de kolonner, kortene bruger. Typet som string: Supabase-typernes
 // select-parser kan ikke læse "ø" i nuværende_bud.
 const KORT_KOLONNER: string =
-  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud";
+  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv";
 const ANTAL_KORT = 8;
 type KortRaekke = Parameters<typeof mapAuctionTilKort>[0];
 

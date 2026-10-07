@@ -13,6 +13,7 @@ import { kategorier } from "@/lib/kategorier";
 import { HJAELP, UDFORSK, kategoriHref } from "@/components/topbar/navigation";
 import { beskederTekst, useAntalUlaesteBeskeder } from "@/components/topbar/UlaesteBeskeder";
 import { useLogUd } from "@/components/topbar/useLogUd";
+import { ERHVERV_MENU } from "@/lib/tekster/erhverv";
 
 const punkt =
   "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[15px] font-medium text-tekst hover:bg-groen-lys hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen";
@@ -21,9 +22,12 @@ const overskrift = "px-3 pb-1 font-sans text-xs font-semibold tracking-wide text
 export default function MobilMenu({
   loggetInd,
   erAdmin,
+  erFirma = false,
 }: {
   loggetInd: boolean;
   erAdmin: boolean;
+  // Firmakonto: "Min side" viser kun Firma oversigt (se KontoMenu).
+  erFirma?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lukRef = useRef<HTMLButtonElement>(null);
@@ -121,6 +125,10 @@ export default function MobilMenu({
                 <Ikon navn="plus" />
                 Sælg en vare
               </Link>
+              {/* "Erhverv" øverst i menuen - også for dem, der ikke er logget ind. */}
+              <Link href="/erhverv" className="btn btn-sekundaer btn-stor mt-2 w-full">
+                {ERHVERV_MENU.topmenu}
+              </Link>
             </div>
 
             {/* Ikke logget ind: Favoritter sender til login og tilbage igen. */}
@@ -137,7 +145,21 @@ export default function MobilMenu({
               </section>
             )}
 
-            {loggetInd && (
+            {loggetInd && erFirma && (
+              <section className="mt-6" aria-labelledby="mobil-mig">
+                <h2 id="mobil-mig" className={`${overskrift}`}>Min side</h2>
+                <ul>
+                  <li>
+                    <Link href="/firma" className={`${punkt} min-h-12 text-[17px] font-semibold`}>
+                      <Ikon navn="handler" />
+                      {ERHVERV_MENU.profilmenuFirmaOversigt}
+                    </Link>
+                  </li>
+                </ul>
+              </section>
+            )}
+
+            {loggetInd && !erFirma && (
               <section className="mt-6" aria-labelledby="mobil-mig">
                 <h2 id="mobil-mig" className={`${overskrift}`}>Min side</h2>
                 <ul>

@@ -21,6 +21,8 @@ import type { SpoergsmaalVisning } from "@/lib/spoergsmaal";
 import { auktionMetadata, hentAuktionRaekke } from "@/lib/auktionSeo";
 import { hentBruger } from "@/lib/supabase/bruger";
 import { erPaaPause } from "@/lib/auctionTid";
+import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
+import { ERHVERVSSAELGER, ERHVERV_GPSR } from "@/lib/tekster/erhverv";
 
 // Titel, beskrivelse (pris + slut), første billede som delebillede og
 // canonical. JSON-LD ligger i layout.tsx.
@@ -214,6 +216,7 @@ export default async function AuktionPage({
     blokeretMedSaelger,
     { data: minFoelgning },
     { data: saelger },
+    { data: minKonto },
   ] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     bruger ? getStaffRole() : Promise.resolve(null),
@@ -229,7 +232,13 @@ export default async function AuktionPage({
           .maybeSingle()
       : Promise.resolve({ data: null }),
     saelgerOpslag,
+    // Er jeg en firmakonto? Så kan jeg ikke byde (users.konto_type).
+    mitId && mitId !== auktion.bruger_id
+      ? supabase.from("users").select("konto_type").eq("id", mitId).maybeSingle<{ konto_type: string | null }>()
+      : Promise.resolve({ data: null }),
   ]);
+  const erhvervAuktion = auktion.erhverv === true;
+  const erFirmakonto = minKonto?.konto_type === "erhverv";
 
   // Skjult af BidHamr: sælgeren får et link til begrundelsen (DSA art. 17),
   // hvor han også kan klage. Bydere er ikke part i afgørelsen og ser kun, at
@@ -433,6 +442,11 @@ export default async function AuktionPage({
             </h1>
             <AuctionTitleActions auktionId={auktion.id} titel={auktion.titel} />
           </div>
+          {erhvervAuktion && (
+            <div className="mt-2">
+              <ErhvervssaelgerMaerke saelgerId={auktion.bruger_id} />
+            </div>
+          )}
         </div>
 
         {/* Højre spalte: status, bud og praktisk info */}
@@ -499,6 +513,8 @@ export default async function AuktionPage({
               skjult={skjult}
               pauset={pauset}
               pauseResterende={(auktion.pause_resterende as string | null | undefined) ?? null}
+              erhvervAuktion={erhvervAuktion}
+              erFirmakonto={erFirmakonto}
             />
 
             {/* Kvittering for bedømmelsen – den afgives ved godkendelse af varen */}
@@ -530,6 +546,15 @@ export default async function AuktionPage({
                   ? "Sælger sender varen. Fragt koster 35 kr og lægges oven i din betaling."
                   : "Ikke tilbudt – varen skal afhentes."}
               </Accordion>
+
+              {erhvervAuktion && (
+                <Accordion title={ERHVERVSSAELGER.fortrydelsesretTitel}>
+                  {ERHVERVSSAELGER.fortrydelsesret.join(" ")} {ERHVERVSSAELGER.ingenBeskyttelse}{" "}
+                  <Link href={`/erhvervssaelger/${auktion.bruger_id}`} className="font-medium text-groen underline">
+                    {ERHVERVSSAELGER.seFirma}
+                  </Link>
+                </Accordion>
+              )}
 
               <Accordion title="Sikker handel med BidHamr">
                 {auktion.forsendelse_mulig
@@ -583,6 +608,18 @@ export default async function AuktionPage({
                 <dt className="text-tekst-svag">Stand</dt>
                 <dd className="text-tekst">{standNavn(auktion.stand as string | null | undefined)}</dd>
               </div>
+              {erhvervAuktion && auktion.producent && (
+                <div className="col-span-2 min-w-0 sm:col-span-3">
+                  <dt className="text-tekst-svag">{ERHVERV_GPSR.producentLabel}</dt>
+                  <dd className="break-words whitespace-pre-line text-tekst">{auktion.producent as string}</dd>
+                </div>
+              )}
+              {erhvervAuktion && auktion.sikkerhedsoplysninger && (
+                <div className="col-span-2 min-w-0 sm:col-span-3">
+                  <dt className="text-tekst-svag">{ERHVERV_GPSR.sikkerhedLabel}</dt>
+                  <dd className="break-words whitespace-pre-line text-tekst">{auktion.sikkerhedsoplysninger as string}</dd>
+                </div>
+              )}
               <div className="min-w-0">
                 <dt className="text-tekst-svag">Forsendelse</dt>
                 <dd className="text-tekst">

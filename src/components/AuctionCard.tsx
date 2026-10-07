@@ -5,6 +5,7 @@ import Link from "next/link";
 import Ikon from "@/components/Ikon";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { useFavoritter } from "@/components/FavoritterProvider";
+import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
 
 export interface DummyAuction {
   id: string;
@@ -18,6 +19,8 @@ export interface DummyAuction {
   slutterSnart?: boolean;
   farve?: string;
   billede?: string | null;
+  // Sælgeren er et firma (auctions.erhverv).
+  erhverv?: boolean;
 }
 
 // Passer til gitteret 2 / 3 / 4 spalter, som alle kortlister bruger
@@ -78,6 +81,11 @@ export default function AuctionCard({
             {meta}
             {auktion.lokation && auktion.lokation !== "Ukendt" && <> · {auktion.lokation}</>}
           </p>
+          {auktion.erhverv && (
+            <p className="mt-2">
+              <ErhvervssaelgerMaerke lille />
+            </p>
+          )}
         </div>
       </Link>
 

@@ -17,6 +17,7 @@ import {
   totalOere,
 } from "@/lib/betaling/beregn";
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
+import { ERHVERV_BIDPANEL } from "@/lib/tekster/erhverv";
 import { BINDENDE_BUD_TEKST, mindsteNaesteBud } from "@/lib/auktionRegler";
 
 // Budhistorikken er anonymiseret paa serveren: ingen bruger-id'er eller navne
@@ -52,6 +53,8 @@ export default function BidPanel({
   skjult = false,
   pauset = false,
   pauseResterende = null,
+  erhvervAuktion = false,
+  erFirmakonto = false,
 }: {
   auktionId: string;
   initialNuværendeBud: number;
@@ -83,6 +86,12 @@ export default function BidPanel({
   pauset?: boolean;
   // auctions.pause_resterende (Postgres-interval som tekst).
   pauseResterende?: string | null;
+  // auctions.erhverv: sælgeren er et firma. BidHamr Beskyttelse kan ikke
+  // vælges (køberen har fortrydelses- og reklamationsret efter loven).
+  erhvervAuktion?: boolean;
+  // Den indloggede er en firmakonto: firmakonti kan kun sælge, ikke byde
+  // (databasen afviser det også, BHE01).
+  erFirmakonto?: boolean;
 }) {
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
   const [harBud, setHarBud] = useState(initialHarBud);
@@ -124,6 +133,8 @@ export default function BidPanel({
 
   // Sælgere må ikke byde på egen auktion - databasen afviser det også.
   const erSælger = Boolean(brugerId && brugerId === saelgerId);
+  // BidHamr Beskyttelse: kun med forsendelse og aldrig ved køb fra erhverv.
+  const beskyttelseMulig = forsendelseMulig && !erhvervAuktion;
 
   const nuværendeBudRef = useRef(nuværendeBud);
   useEffect(() => {
@@ -276,7 +287,7 @@ export default function BidPanel({
                 koebergebyr_oere: Math.round((budOere * KOEBERGEBYR_PROCENT) / 100),
                 fragt_oere: fragtOere(forsendelseMulig),
               },
-              beskyttelseValgt && forsendelseMulig,
+              beskyttelseValgt && beskyttelseMulig,
             )
           );
         })()
@@ -349,7 +360,7 @@ export default function BidPanel({
       svar = await afgivBud(
         auktionId,
         beløbTal,
-        beskyttelse && forsendelseMulig,
+        beskyttelse && beskyttelseMulig,
         redigeretKl,
       );
     } finally {
@@ -405,7 +416,7 @@ export default function BidPanel({
       maksSvar = await saetMaksimum(
         auktionId,
         beløbTal,
-        beskyttelseValgt && forsendelseMulig,
+        beskyttelseValgt && beskyttelseMulig,
         redigeretKl,
       );
     } finally {
@@ -483,7 +494,7 @@ export default function BidPanel({
 
   const visteBud = visAlle ? budListe : budListe.slice(0, VIST_SOM_STANDARD);
   const visningsBud = harBud ? nuværendeBud : startpris;
-  const kanByde = auktionStatus === "aktiv" && !erSælger;
+  const kanByde = auktionStatus === "aktiv" && !erSælger && !erFirmakonto;
   // Afsluttet eller annulleret: ingen opfordringer til at byde. En skjult
   // eller pauset auktion kan blive aktiv igen og tæller ikke som slut.
   const auktionSlut = auktionStatus !== "aktiv" && auktionStatus !== "skjult";
@@ -494,7 +505,7 @@ export default function BidPanel({
   const budOereVist = gyldigtBud ? Math.round(budTal * 100) : null;
   const gebyrOereVist =
     budOereVist !== null ? Math.round((budOereVist * KOEBERGEBYR_PROCENT) / 100) : null;
-  const beskyttelseVist = beskyttelseValgt && forsendelseMulig && budOereVist !== null
+  const beskyttelseVist = beskyttelseValgt && beskyttelseMulig && budOereVist !== null
     ? beskyttelseOere(budOereVist)
     : null;
 
@@ -626,6 +637,11 @@ export default function BidPanel({
         <p className="mt-4 rounded-xl bg-groen-lys px-4 py-3 text-center text-sm text-groen-mork">
           Det er din egen auktion – du kan ikke byde på den.
         </p>
+      ) : erFirmakonto ? (
+        <div role="note" className="mt-4 rounded-xl border border-info-kant bg-info-bg px-4 py-4 text-info-tekst">
+          <p className="text-[17px] font-semibold">{ERHVERV_BIDPANEL.firmakontoTitel}</p>
+          <p className="mt-1 text-base">{ERHVERV_BIDPANEL.firmakontoTekst}</p>
+        </div>
       ) : brugerId ? (
         <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3">
           {/* Budtype: ét bud eller automatisk bud op til et maksimum. */}
@@ -745,7 +761,7 @@ export default function BidPanel({
             </details>
           )}
 
-          {forsendelseMulig && (
+          {beskyttelseMulig && (
           <div className="flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-kant bg-white px-3">
             <label
               className={`flex min-h-11 flex-1 items-center gap-3 py-2 ${beskyttelseLaast ? "cursor-not-allowed" : "cursor-pointer"}`}
@@ -883,7 +899,7 @@ export default function BidPanel({
 
       {!auktionSlut && (
         <p className="mt-3 text-[13px] leading-relaxed text-tekst-daempet">
-          {BIDPANEL.prisLinje}
+          {erhvervAuktion ? ERHVERV_BIDPANEL.prisLinje : BIDPANEL.prisLinje}
         </p>
       )}
       {!forsendelseMulig && (

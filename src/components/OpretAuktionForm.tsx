@@ -20,6 +20,8 @@ import {
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand, standNavn } from "@/lib/stand";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
+import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
+import { ERHVERV_GPSR } from "@/lib/tekster/erhverv";
 import { SPOERGSMAAL_SLAAET_FRA } from "@/lib/spoergsmaal";
 import { kroner } from "@/lib/kroner";
 import { UKENDT_POSTNUMMER, slaaPostnummerOp } from "@/lib/postnumre";
@@ -57,7 +59,17 @@ type Kladde = {
   spoergsmaalAktiv: boolean;
 };
 
-type FeltNavn = "billeder" | "titel" | "beskrivelse" | "kategori" | "stand" | "startpris" | "postnummer" | "bekraeft";
+type FeltNavn =
+  | "billeder"
+  | "titel"
+  | "beskrivelse"
+  | "kategori"
+  | "stand"
+  | "producent"
+  | "sikkerhedsoplysninger"
+  | "startpris"
+  | "postnummer"
+  | "bekraeft";
 
 const FELT_ID: Record<FeltNavn, string> = {
   billeder: "billeder",
@@ -65,6 +77,8 @@ const FELT_ID: Record<FeltNavn, string> = {
   beskrivelse: "beskrivelse",
   kategori: "kategori",
   stand: "stand",
+  producent: "producent",
+  sikkerhedsoplysninger: "sikkerhedsoplysninger",
   startpris: "startpris",
   postnummer: "postnummer",
   bekraeft: "bekraeft",
@@ -116,7 +130,10 @@ function fortolkKladde(raa: string | null): Kladde | null {
 
 const ingenAbonnement = () => () => {};
 
-export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
+// erFirma: firmakonto (users.konto_type = 'erhverv'). Ved stand "Ny med
+// mærke" skal producent og sikkerhedsoplysninger udfyldes (GPSR). Private ser
+// ikke felterne.
+export default function OpretAuktionForm({ brugerId, erFirma = false }: { brugerId: string; erFirma?: boolean }) {
   const router = useRouter();
   const noegle = kladdeNoegle(brugerId);
   const fejlBoksRef = useRef<HTMLDivElement>(null);
@@ -131,6 +148,9 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
   const [beskrivelse, setBeskrivelse] = useState("");
   const [kategori, setKategori] = useState("");
   const [stand, setStand] = useState("");
+  const [producent, setProducent] = useState("");
+  const [sikkerhed, setSikkerhed] = useState("");
+  const kraeverGpsr = erFirma && stand === "ny_med_maerke";
   const [startprisTekst, setStartprisTekst] = useState("");
   const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
@@ -225,6 +245,11 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
     else if (forbudtTekst) f.titel = forbudtTekst;
     if (!kategori) f.kategori = "Vælg en kategori.";
     if (!erStand(stand)) f.stand = "Vælg varens stand.";
+    if (kraeverGpsr) {
+      const g = gpsrFejl(producent, sikkerhed);
+      if (g.producent) f.producent = g.producent;
+      if (g.sikkerhed) f.sikkerhedsoplysninger = g.sikkerhed;
+    }
     const prisFejl = valideStartpris(startpris);
     if (prisFejl) f.startpris = prisFejl;
     if (!gyldigtPostnummer) f.postnummer = "Skriv et postnummer med 4 cifre.";
@@ -293,6 +318,8 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
           startpris,
           kategori,
           stand,
+          // GPSR: kun firmakonti ved "Ny med mærke" (databasen nulstiller dem for private).
+          ...(kraeverGpsr ? { producent: producent.trim(), sikkerhedsoplysninger: sikkerhed.trim() } : {}),
           postnummer,
           lokation: by,
           lat: koordinater?.lat ?? null,
@@ -430,6 +457,18 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
                 </dd>
               </div>
             </dl>
+            {kraeverGpsr && (
+              <dl className="space-y-2 text-sm">
+                <div>
+                  <dt className="text-tekst-svag">{ERHVERV_GPSR.producentLabel}</dt>
+                  <dd className="whitespace-pre-line break-words text-tekst">{producent.trim()}</dd>
+                </div>
+                <div>
+                  <dt className="text-tekst-svag">{ERHVERV_GPSR.sikkerhedLabel}</dt>
+                  <dd className="whitespace-pre-line break-words text-tekst">{sikkerhed.trim()}</dd>
+                </div>
+              </dl>
+            )}
             {beskrivelse.trim() && (
               <div>
                 <h3 className="text-sm font-semibold text-tekst">Beskrivelse</h3>
@@ -612,6 +651,19 @@ export default function OpretAuktionForm({ brugerId }: { brugerId: string }) {
         <div id={FELT_ID.stand} tabIndex={-1}>
           <StandVaelger vaerdi={stand} onChange={aendret(setStand)} fejl={feltFejl.stand} fejlId="stand-fejl" />
         </div>
+        {kraeverGpsr && (
+          <GpsrFelter
+            producent={producent}
+            sikkerhed={sikkerhed}
+            onProducent={aendret(setProducent)}
+            onSikkerhed={aendret(setSikkerhed)}
+            fejl={
+              feltFejl.producent || feltFejl.sikkerhedsoplysninger
+                ? { producent: feltFejl.producent ?? null, sikkerhed: feltFejl.sikkerhedsoplysninger ?? null }
+                : null
+            }
+          />
+        )}
       </Sektion>
 
       <Sektion nr={4} titel="Pris og varighed" id="sektion-pris">

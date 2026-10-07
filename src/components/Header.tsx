@@ -10,6 +10,7 @@ import KategoriMenu from "@/components/topbar/KategoriMenu";
 import MobilMenu from "@/components/topbar/MobilMenu";
 import { UlaesteBeskederProvider } from "@/components/topbar/UlaesteBeskeder";
 import { KATEGORIER_I_LINJEN, UDFORSK, kategoriHref } from "@/components/topbar/navigation";
+import { ERHVERV_MENU } from "@/lib/tekster/erhverv";
 
 const ikonKnap =
   "flex h-11 w-11 items-center justify-center rounded-full text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
@@ -28,20 +29,31 @@ export default async function Header() {
   // adminAuth (cache() i src/lib/supabase/bruger.ts).
   const sessionId = await sessionBrugerId();
   const supabase = sessionId ? await createClient() : null;
-  const [bruger, rolle, antal, antalBeskeder] = await Promise.all([
+  const [bruger, rolle, antal, antalBeskeder, kontoType] = await Promise.all([
     sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
     sessionId ? hentMinRolle() : null,
     supabase ? supabase.rpc("notifikationer_antal_ulaeste").then((r) => r.data) : null,
     supabase ? supabase.rpc("antal_ulaeste_staff_beskeder").then((r) => r.data) : null,
+    // users.konto_type kan læses af alle (20261010030000_erhverv.sql).
+    supabase && sessionId
+      ? supabase
+          .from("users")
+          .select("konto_type")
+          .eq("id", sessionId)
+          .maybeSingle<{ konto_type: string | null }>()
+          .then((r) => r.data?.konto_type ?? null)
+      : null,
   ]);
   const loggetInd = !!bruger;
 
+  // Firmakonto: profilmenuen viser kun "Firma oversigt" og "Log ud".
+  const erFirma = !!bruger && kontoType === "erhverv";
   let erAdmin = false;
   let ulaeste = 0;
   let ulaesteBeskeder = 0;
   if (bruger) {
     ulaesteBeskeder = Number(antalBeskeder ?? 0) || 0;
-    erAdmin = rolle === "chef" || rolle === "admin" || rolle === "medarbejder";
+    erAdmin = rolle === "chef" || rolle === "admin" || rolle === "medarbejder" || rolle === "saelger";
     ulaeste = Number(antal ?? 0) || 0;
   }
 
@@ -139,12 +151,12 @@ export default async function Header() {
 
             {loggetInd && (
               <div className="hidden lg:block">
-                <KontoMenu erAdmin={erAdmin} />
+                <KontoMenu erAdmin={erAdmin} erFirma={erFirma} />
               </div>
             )}
 
             <div className="lg:hidden">
-              <MobilMenu loggetInd={loggetInd} erAdmin={erAdmin} />
+              <MobilMenu loggetInd={loggetInd} erAdmin={erAdmin} erFirma={erFirma} />
             </div>
           </div>
         </div>
@@ -170,6 +182,9 @@ export default async function Header() {
               </Link>
               <Link href="/saadan-virker-det" className={linjeLink}>
                 Sådan virker det
+              </Link>
+              <Link href="/erhverv" className={`${linjeLink} font-semibold text-groen-mork`}>
+                {ERHVERV_MENU.topmenu}
               </Link>
             </div>
           </div>

@@ -7,12 +7,22 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 import { createClient } from "@/lib/supabase/client";
 
 type StaffRole = "chef" | "admin" | "medarbejder";
+// 'saelger' (erhvervssælger) står uden for hierarkiet og ser KUN Erhverv.
+type MenuRolle = StaffRole | "saelger";
 
 // Hierarki: medarbejder < admin < chef. Skal matche src/lib/adminAuth.ts.
 const ROLE_LEVEL: Record<StaffRole, number> = {
   medarbejder: 1,
   admin: 2,
   chef: 3,
+};
+
+// Erhverv: kun chef og saelger (kraevErhvervSide i src/lib/adminAuth.ts).
+const ERHVERV_PUNKT: MenuPunkt = {
+  href: "/admin/erhverv",
+  label: "Erhverv",
+  minRolle: "chef",
+  badge: "erhverv",
 };
 
 type AdminTaellere = {
@@ -25,6 +35,7 @@ type AdminTaellere = {
   rapporter: number;
   bedoemmelser: number;
   dsa: number;
+  erhverv: number;
 };
 
 type MenuPunkt = {
@@ -83,6 +94,7 @@ const GRUPPER: MenuGruppe[] = [
       { href: "/admin/brugere", label: "Brugere", minRolle: "medarbejder" },
       { href: "/admin/auktioner", label: "Auktioner", minRolle: "admin" },
       { href: "/admin/bedommelser", label: "Bedømmelser", minRolle: "medarbejder", badge: "bedoemmelser" },
+      ERHVERV_PUNKT,
     ],
   },
   {
@@ -192,6 +204,11 @@ const IKONER: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
     </svg>
   ),
+  "/admin/erhverv": (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+    </svg>
+  ),
   "/admin/venteliste": (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
@@ -232,9 +249,9 @@ function lytFold(l: () => void) {
 
 export default function AdminSidebar({
   rolle,
-  taellere = { ubetalte: 0, betalinger: 0, chats: 0, sager: 0, kontolukninger: 0, kontakt: 0, rapporter: 0, bedoemmelser: 0, dsa: 0 },
+  taellere = { ubetalte: 0, betalinger: 0, chats: 0, sager: 0, kontolukninger: 0, kontakt: 0, rapporter: 0, bedoemmelser: 0, dsa: 0, erhverv: 0 },
 }: {
-  rolle: StaffRole;
+  rolle: MenuRolle;
   taellere?: AdminTaellere;
 }) {
   const pathname = usePathname();
@@ -276,10 +293,13 @@ export default function AdminSidebar({
     router.refresh();
   }
 
-  const synligeGrupper = GRUPPER.map((g) => ({
-    ...g,
-    punkter: g.punkter.filter((p) => ROLE_LEVEL[rolle] >= ROLE_LEVEL[p.minRolle]),
-  })).filter((g) => g.punkter.length > 0);
+  const synligeGrupper: MenuGruppe[] =
+    rolle === "saelger"
+      ? [{ id: "erhverv", titel: "Erhverv", punkter: [ERHVERV_PUNKT] }]
+      : GRUPPER.map((g) => ({
+          ...g,
+          punkter: g.punkter.filter((p) => ROLE_LEVEL[rolle] >= ROLE_LEVEL[p.minRolle]),
+        })).filter((g) => g.punkter.length > 0);
 
   // Det mest specifikke menupunkt vinder, så fx /admin/brugere/123 markerer
   // "Brugere", og /admin/rapport-arkiv markerer "Rapporter".
@@ -327,7 +347,7 @@ export default function AdminSidebar({
           BidHamr
         </span>
         <span className="ml-2 text-xs font-medium uppercase tracking-widest text-neutral-400">
-          {rolle === "chef" ? "Chef" : rolle === "admin" ? "Admin" : "Medarbejder"}
+          {rolle === "chef" ? "Chef" : rolle === "admin" ? "Admin" : rolle === "saelger" ? "Sælger" : "Medarbejder"}
         </span>
       </div>
 

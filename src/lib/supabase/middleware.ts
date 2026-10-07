@@ -32,7 +32,10 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 // /api/offentlig er de få handlinger, der skal virke for en indlogget
 // almindelig bruger på en offentlig side, mens siden er lukket (ny adgangskode,
 // DSA-anmeldelse og -klage) - se src/app/api/offentlig/[handling]/route.ts.
+// /erhverv (info-siden og /erhverv/formular) skal virke før lancering, så
+// firmaer kan skrive til os. Formularen sendes via /api/offentlig.
 const OFFENTLIGE_RUTER = [
+  "/erhverv",
   "/coming-soon",
   "/bidhamr-beskyttelse",
   "/cookies",
@@ -233,7 +236,9 @@ export async function updateSession(
   // brugere komme forbi gaten, så almindelige testbrugere kan bruge siden.
   // Admin er stadig beskyttet af rolle-tjekket i src/app/admin/layout.tsx.
   // erTestdatabase() er fail closed, så produktion er uændret.
-  if (erTestdatabase()) {
+  // Admin-stier tjekkes dog altid for rollen 'saelger' herunder.
+  const erAdminSti = pathname === "/admin" || pathname.startsWith("/admin/");
+  if (erTestdatabase() && !erAdminSti) {
     return supabaseResponse;
   }
 
@@ -242,8 +247,23 @@ export async function updateSession(
   // databasen - se hentGateRolle.
   const { rolle, nyCookie } = await hentGateRolle(request, supabase, session);
 
-  if (!rolle || !ROLLER_MED_ADGANG.includes(rolle)) {
+  if (!erTestdatabase() && (!rolle || !ROLLER_MED_ADGANG.includes(rolle))) {
     return NextResponse.redirect(new URL("/coming-soon", request.url));
+  }
+
+  // Rollen 'saelger' (erhvervssælger) har kun adgang til Admin → Erhverv.
+  // Hver admin-side og action afviser rollen også selv (src/lib/adminAuth.ts);
+  // dette er et ekstra værn, så sælgeren aldrig ser en anden admin-side.
+  if (
+    rolle === "saelger" &&
+    erAdminSti &&
+    pathname !== "/admin/erhverv" &&
+    !pathname.startsWith("/admin/erhverv/")
+  ) {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new NextResponse("Ingen adgang", { status: 403 });
+    }
+    return NextResponse.redirect(new URL("/admin/erhverv", request.url));
   }
 
   if (nyCookie) {

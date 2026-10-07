@@ -1,25 +1,31 @@
-// Mails til firmakonti (erhverv). Teksterne kan finpudses af indhold-agenten.
+// Mails til firmakonti (erhverv). Teksterne ligger i src/lib/tekster/erhverv.ts
+// (ERHVERV_VELKOMSTMAIL), så siden, mailen og supabase/templates/invite.html
+// siger det samme.
 import { bygMail, escapeHtml } from "./layout";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
+import { ERHVERV_VELKOMSTMAIL as T, ERHVERV_VELKOMSTMAIL_GENSENDT } from "@/lib/tekster/erhverv";
 
 // Velkomstmail, når BidHamr har oprettet firmakontoen. linkUrl er et
 // engangslink, som logger ind og fører til "Vælg din adgangskode".
-export function firmaVelkomstMail(input: { firmanavn: string; linkUrl: string; gensendt?: boolean }) {
+export function firmaVelkomstMail(input: {
+  firmanavn: string;
+  email: string;
+  linkUrl: string;
+  gensendt?: boolean;
+}) {
   return {
-    subject: "Velkommen til BidHamr – vælg din adgangskode",
+    subject: T.emne,
     ...bygMail({
-      preheader: `Jeres firmakonto for ${input.firmanavn} er klar.`,
-      overskriftHtml: "Velkommen til BidHamr",
+      preheader: T.forhaandsvisning,
+      overskriftHtml: escapeHtml(T.overskrift),
       afsnitHtml: [
-        `Vi har oprettet en firmakonto til <strong>${escapeHtml(input.firmanavn)}</strong>.`,
-        "Tryk på knappen herunder og vælg en adgangskode. Så er I klar til at sætte varer på auktion.",
-        "Linket virker kun én gang og udløber efter et døgn. Er det udløbet, så skriv til os, så sender vi et nyt.",
-        `Har I spørgsmål, så skriv til <a href="mailto:${ERHVERV_EMAIL}">${ERHVERV_EMAIL}</a>.`,
+        ...T.tekst.map((t) => escapeHtml(t)),
+        escapeHtml(T.udloeber),
+        escapeHtml(T.separatKonto),
+        escapeHtml(T.hjaelp).replace(ERHVERV_EMAIL, `<a href="mailto:${ERHVERV_EMAIL}">${ERHVERV_EMAIL}</a>`),
       ],
-      knap: { tekst: "Vælg adgangskode", url: input.linkUrl },
-      aarsag: input.gensendt
-        ? "Du får denne mail igen, fordi BidHamr har sendt et nyt link til jeres firmakonto."
-        : "Du får denne mail, fordi BidHamr har oprettet en firmakonto til jeres virksomhed.",
+      knap: { tekst: T.knap, url: input.linkUrl },
+      aarsag: input.gensendt ? ERHVERV_VELKOMSTMAIL_GENSENDT.fodnote(input.email) : T.fodnote(input.email),
     }),
   };
 }

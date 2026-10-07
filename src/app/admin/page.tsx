@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { assertRole, harMindstRolle, type StaffRole } from "@/lib/adminAuth";
+import { assertRole, getErhvervRolle, harMindstRolle, type StaffRole } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import KraeverHandling from "@/components/admin/forside/KraeverHandling";
 import PeriodeKort from "@/components/admin/forside/PeriodeKort";
@@ -28,7 +28,11 @@ async function hentTal(): Promise<{ rolle: StaffRole; tal: ForsideTal | null } |
 
 export default async function AdminForside() {
   const res = await hentTal();
-  if (!res) redirect("/");
+  if (!res) {
+    // Sælger (erhverv) har kun adgang til Erhverv.
+    if ((await getErhvervRolle()) === "saelger") redirect("/admin/erhverv");
+    redirect("/");
+  }
   const { rolle, tal } = res;
 
   return (

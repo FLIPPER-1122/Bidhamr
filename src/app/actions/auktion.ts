@@ -27,7 +27,7 @@ import {
 } from "@/lib/auktionRegler";
 import { erStand } from "@/lib/stand";
 import { forbudtBesked } from "@/lib/forbudteVarer";
-import { ERHVERV_FEJL } from "@/lib/erhverv/regler";
+import { ERHVERV_FEJL, ERHVERV_GRAENSER, erhvervFejlTekst } from "@/lib/erhverv/regler";
 
 type Fejl = { fejl: string };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -59,6 +59,11 @@ export type RedigerAuktionInput = {
   forsendelseMulig: boolean;
   // Kode fra src/lib/stand.ts. null = uændret (gamle auktioner uden stand).
   stand: string | null;
+  // GPSR (kun firmakonti). Udeladt/null = uændret, "" = ryd. Databasen
+  // ignorerer felterne for private og kræver dem for erhverv ved "Ny med
+  // mærke" (svarer { kode: 'erhverv_gpsr' }).
+  producent?: string | null;
+  sikkerhedsoplysninger?: string | null;
 };
 
 export async function redigerAuktion(
@@ -105,6 +110,11 @@ export async function redigerAuktion(
 
     if (input.stand !== null && !erStand(input.stand)) return { fejl: REDIGER_FEJL.ugyldig_stand };
 
+    const gpsr = (v: unknown, maks: number) =>
+      typeof v === "string" ? v.trim().slice(0, maks) : null;
+    const producent = gpsr(input.producent, ERHVERV_GRAENSER.producent);
+    const sikkerhedsoplysninger = gpsr(input.sikkerhedsoplysninger, ERHVERV_GRAENSER.sikkerhedsoplysninger);
+
     // Forbudte varer afgøres af databasen (rediger_auktion), som kun tjekker
     // ordene, når titel eller beskrivelse er ændret - så en gammel auktion kan
     // få rettet pris/billeder. Svaret 'forbudt_vare' håndteres herunder.
@@ -133,9 +143,13 @@ export async function redigerAuktion(
       p_startpris: input.startpris,
       p_forsendelse_mulig: input.forsendelseMulig === true,
       p_stand: input.stand,
+      p_producent: producent,
+      p_sikkerhedsoplysninger: sikkerhedsoplysninger,
     });
     if (error) {
       if (erAuktionLaastFejl(error)) return { fejl: LAAST };
+      const erhvervTekst = erhvervFejlTekst(error.message, error.code);
+      if (erhvervTekst) return { fejl: erhvervTekst };
       console.error("rediger_auktion fejlede:", error.code, error.message);
       return { fejl: GENERISK };
     }

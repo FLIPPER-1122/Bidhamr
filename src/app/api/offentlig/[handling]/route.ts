@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { gemNyAdgangskode } from "@/app/actions/auth";
 import { anmeldIndhold, klagOverAfgoerelse, klagSomAnmelder } from "@/app/actions/dsa";
+import { sendErhvervHenvendelse } from "@/app/actions/erhverv";
 
 // De få handlinger, som en indlogget ALMINDELIG bruger skal kunne udføre på
 // en offentlig side, mens siden er lukket for alle andre end staff:
@@ -8,6 +9,7 @@ import { anmeldIndhold, klagOverAfgoerelse, klagSomAnmelder } from "@/app/action
 //   dsa-anmeld            /dsa/anmeld og anmeld-knappen (DSA art. 16)
 //   dsa-klage-afgoerelse  /dsa/afgoerelse/[id] (DSA art. 20)
 //   dsa-klage-anmelder    /dsa/anmeldelse/[id]
+//   erhverv-henvendelse   /erhverv/formular (også uden login)
 //
 // Hvorfor ikke bare server actions: gaten i src/lib/supabase/middleware.ts
 // afviser alle POST'er fra indloggede almindelige brugere på offentlige
@@ -36,6 +38,7 @@ const HANDLINGER: Record<string, Handling> = {
   "dsa-anmeld": anmeldIndhold,
   "dsa-klage-afgoerelse": klagOverAfgoerelse,
   "dsa-klage-anmelder": klagSomAnmelder,
+  "erhverv-henvendelse": sendErhvervHenvendelse,
 };
 
 function svar(status: number, krop: unknown) {
