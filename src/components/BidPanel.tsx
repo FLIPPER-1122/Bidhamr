@@ -484,6 +484,9 @@ export default function BidPanel({
   const visteBud = visAlle ? budListe : budListe.slice(0, VIST_SOM_STANDARD);
   const visningsBud = harBud ? nuværendeBud : startpris;
   const kanByde = auktionStatus === "aktiv" && !erSælger;
+  // Afsluttet eller annulleret: ingen opfordringer til at byde. En skjult
+  // eller pauset auktion kan blive aktiv igen og tæller ikke som slut.
+  const auktionSlut = auktionStatus !== "aktiv" && auktionStatus !== "skjult";
 
   // Opsummering før "Afgiv bud" (DESIGN.md 8.6): bud, gebyr og fragt på hver
   // sin linje og totalen nederst. Kun visning - serveren beregner beløbet.
@@ -878,9 +881,11 @@ export default function BidPanel({
         </div>
       )}
 
-      <p className="mt-3 text-[13px] leading-relaxed text-tekst-daempet">
-        {BIDPANEL.prisLinje}
-      </p>
+      {!auktionSlut && (
+        <p className="mt-3 text-[13px] leading-relaxed text-tekst-daempet">
+          {BIDPANEL.prisLinje}
+        </p>
+      )}
       {!forsendelseMulig && (
         <p className="mt-1 text-[13px] text-tekst-daempet">
           Kun afhentning – ingen fragt.
@@ -923,7 +928,11 @@ export default function BidPanel({
 
       {budListe.length === 0 ? (
         <p className="mt-2 text-sm text-tekst-svag">
-          Ingen bud endnu – vær den første.
+          {auktionSlut
+            ? "Der kom ingen bud på auktionen."
+            : auktionStatus === "aktiv" && !erSælger
+              ? "Ingen bud endnu – vær den første."
+              : "Ingen bud endnu."}
         </p>
       ) : (
         <>

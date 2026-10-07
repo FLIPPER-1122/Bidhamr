@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import { annullerAuktion } from "@/app/actions/auktion";
+import { erAuktionLaastBesked } from "@/lib/auktionRegler";
 
 // "Auktionen har fået bud og er låst. Kontakt BidHamr, ..." med link til
 // /kontakt. Bruges her og på redigeringssiden.
@@ -30,8 +32,12 @@ export default function SaelgerAuktionHandlinger({
   harBud: boolean;
 }) {
   const router = useRouter();
+  // Gammel fane: siden var åben fra før første bud. Svarer serveren, at
+  // auktionen er låst, lukkes dialogen, og låst-beskeden vises med det samme,
+  // mens siden hentes igen.
+  const [laastLokalt, setLaastLokalt] = useState(false);
 
-  if (harBud) {
+  if (harBud || laastLokalt) {
     return (
       <p className="mb-4 rounded-lg border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
         <AuktionLaastTekst />
@@ -58,7 +64,13 @@ export default function SaelgerAuktionHandlinger({
           cancelLabel="Behold auktionen"
           onConfirm={async () => {
             const svar = await annullerAuktion(auktionId);
-            if ("fejl" in svar) return { fejl: svar.fejl };
+            if ("fejl" in svar) {
+              if (erAuktionLaastBesked(svar.fejl)) {
+                setLaastLokalt(true);
+                return; // Lukker dialogen; onSuccess henter siden igen.
+              }
+              return { fejl: svar.fejl };
+            }
           }}
           onSuccess={() => router.refresh()}
         />
