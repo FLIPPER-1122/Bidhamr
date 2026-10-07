@@ -125,9 +125,9 @@ Formål: siden bliver troværdig, professionel, tryg og moderne.
 - [x] Blokering af brugere – inkl. at sælger kan spærre bestemte brugere fra at byde på sine auktioner
 - [x] Rapportér en besked/bruger i chatten + automatisk spamfilter i beskeder
 - [x] SEO (titler, beskrivelser, sitemap) og besøgsstatistik (cookie-venlig)
-- [~] Filip: find en skabelon til **privatlivspolitik** og **brugerbetingelser/handelsbetingelser** *(begge ligger i `jura/` med noter til agenten: `brugerbetingelser-skabelon.md` og `privatlivspolitik-skabelon.md`)* (fx fra Erhvervsstyrelsen/Virk, Datatilsynet, din rådgiver eller en dansk skabelontjeneste for markedspladser) og læg den i projektet som `jura/privatlivspolitik-skabelon.md` og `jura/brugerbetingelser-skabelon.md`
-- [~] Implementér privatlivspolitik og brugerbetingelser ud fra Filips skabeloner, tilpasset BidHamr og `ROADMAP-BESLUTNINGER.md` (indhold-agenten). Vises som egne sider og linkes fra footer, oprettelse af profil og betaling. Tydeligt markeret **"UDKAST – skal godkendes af advokat"**, indtil advokaten har gennemgået dem i fase 6. Brugeren skal acceptere brugerbetingelserne ved oprettelse
-- [~] Footer og faste sider: Om BidHamr, Kontakt/kundeservice, Handelsbetingelser, Privatlivspolitik, Cookies *(Handelsbetingelser og Privatlivspolitik mangler – venter på Filips skabeloner)*
+- [x] Filip: find en skabelon til **privatlivspolitik** og **brugerbetingelser/handelsbetingelser** *(begge ligger i `jura/` med noter til agenten: `brugerbetingelser-skabelon.md` og `privatlivspolitik-skabelon.md`)* (fx fra Erhvervsstyrelsen/Virk, Datatilsynet, din rådgiver eller en dansk skabelontjeneste for markedspladser) og læg den i projektet som `jura/privatlivspolitik-skabelon.md` og `jura/brugerbetingelser-skabelon.md`
+- [x] Implementér privatlivspolitik og brugerbetingelser ud fra Filips skabeloner, tilpasset BidHamr og `ROADMAP-BESLUTNINGER.md` (indhold-agenten). Vises som egne sider og linkes fra footer, oprettelse af profil og betaling. Tydeligt markeret **"UDKAST – skal godkendes af advokat"**, indtil advokaten har gennemgået dem i fase 6. Brugeren skal acceptere brugerbetingelserne ved oprettelse
+- [x] Footer og faste sider: Om BidHamr, Kontakt/kundeservice, Handelsbetingelser, Privatlivspolitik, Cookies *(Handelsbetingelser og Privatlivspolitik mangler – venter på Filips skabeloner)*
 - [x] Kontaktformular til kundeservice, som lander i admin
 - [x] Pæne fejlsider (404/500) og loading-tilstande overalt
 - [x] **Spørg sælger**: købere kan stille spørgsmål til sælgeren, mens auktionen kører. **Sælger vælger selv ved oprettelse, om det er slået til eller fra** (kan ændres undervejs). Er det slået fra, vises "Sælgeren modtager ikke spørgsmål – læs beskrivelsen grundigt"
@@ -188,12 +188,12 @@ Formål: alt det juridiske og praktiske er på plads.
   - Databehandleraftaler med Supabase, Stripe, Resend, GLS m.fl. (GDPR)
   - Henvisning til klagemuligheder (fx Forbrugerklagenævnet) i handelsbetingelserne
   - Tilgængelighedsloven (European Accessibility Act): tjek om BidHamr som lille virksomhed er undtaget
-- [~] **EU's Digital Services Act (DSA)**: markedspladser skal have en måde at anmelde ulovligt indhold, give brugeren en begrundelse, når en auktion fjernes, og udgive en årlig gennemsigtighedsrapport (Tradera og Vinted gør det begge). Afklar omfanget med advokat – det meste bygger videre på det eksisterende rapport-system
-- [~] **Hastighedsgennemgang**: Lighthouse på forside, auktionsside, søgning, opret auktion og mine handler. Mål: Performance-score 90+ og LCP under 2,5 sek. på mobil. Ret de største syndere (billeder, databaseforespørgsler, JavaScript)
+- [x] **EU's Digital Services Act (DSA)**: markedspladser skal have en måde at anmelde ulovligt indhold, give brugeren en begrundelse, når en auktion fjernes, og udgive en årlig gennemsigtighedsrapport (Tradera og Vinted gør det begge). Afklar omfanget med advokat – det meste bygger videre på det eksisterende rapport-system
+- [x] **Hastighedsgennemgang**: Lighthouse på forside, auktionsside, søgning, opret auktion og mine handler. Mål: Performance-score 90+ og LCP under 2,5 sek. på mobil. Ret de største syndere (billeder, databaseforespørgsler, JavaScript)
 - [x] Fejlovervågning (fx Sentry) og besked til Filip, hvis siden går ned
 - [~] Backup af databasen er slået til og testet
 - [ ] **Beta-test med 10-20 rigtige, fremmede personer**, der køber og sælger med testpenge. Ret det, de støder på
-- [~] Endelig sikkerhedsgennemgang og test af hele flowet (sikkerhed-agenten kører en fuld gennemgang)
+- [~] Endelig sikkerhedsgennemgang og test af hele flowet (sikkerhed-agenten kører en fuld gennemgang) *(første fulde gennemgang og rettelser 7. okt. 2026 – gentages lige før lancering)*
 - [ ] **Ekstern pentest**: et professionelt sikkerhedsfirma tester siden, før der skiftes til rigtige penge
 - [ ] Erstat coming-soon-siden med den rigtige forside
 - [ ] Logo finpudset af designer, favicon og app store-billeder
@@ -204,7 +204,7 @@ Formål: alt det juridiske og praktiske er på plads.
 ## Senere – efter lancering
 Fundet i gennemgang af Tradera, Vinted og Etsy. Gode, men ikke nødvendige for at lancere.
 - [ ] **Feriemodus**: sælger kan sætte sin profil på pause, så nye auktioner ikke kan oprettes, og købere kan se, at sælger er væk *(flyttet hertil af Filip 6. okt. 2026 – rart at have, ikke nødvendigt til lancering)*
-- [ ] **Autobud (maksimalbud)**: køber angiver sit maksimum, og BidHamr byder automatisk op til det (som Tradera). Maksimum kan sænkes, men ikke under nuværende bud *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
+- [~] **Autobud (maksimalbud)**: køber angiver sit maksimum, og BidHamr byder automatisk op til det (som Tradera). Maksimum kan sænkes, men ikke under nuværende bud *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
 - [ ] Efter første bud kan sælger ikke redigere, kun tilføje et synligt **tillæg** til beskrivelsen *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
 - [ ] Sælger kan give køber en **delvis refusion/rabat** i handlen, hvis de bliver enige (fx ved en lille skade) *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
 - Samlet fragt, når man vinder flere auktioner fra samme sælger
