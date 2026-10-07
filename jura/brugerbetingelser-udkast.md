@@ -5,6 +5,7 @@
 > **Til Filip og advokaten (fjernes, før siden går live):**
 > - Udkastet er skrevet ud fra Filips skabelon (`jura/brugerbetingelser-skabelon.md`) og forretningsreglerne i `ROADMAP-BESLUTNINGER.md` (stand 6. oktober 2026). Hvor de to strider, følger udkastet beslutningerne.
 > - Opdateret 6. oktober 2026 med dagens ændringer: accept af betingelserne gemmes (1.3), og skjulte auktioner sættes på pause, fjernede auktioner åbnes aldrig igen, og en auktion på pause annulleres efter 14 dage (20.7 og 21.5, Filips beslutninger 6. oktober 2026).
+> - Opdateret 7. oktober 2026: auktionen er helt låst efter første bud – intet kan ændres, tilføjes, slettes eller annulleres af sælgeren (4.7, Filips beslutning 7. oktober 2026).
 > - `[TODO Filip: …]` = oplysninger eller beslutninger, Filip skal udfylde.
 > - `[ADVOKAT: …]` = juridiske spørgsmål, advokaten skal tage stilling til. Alle spørgsmål er samlet i `jura/noter-til-advokat.md`.
 > - Udkastet er ikke et juridisk løfte. Intet her må vises som endelige betingelser, før advokaten har godkendt det.
@@ -99,7 +100,7 @@ For BidHamrs egne ydelser betaler du gebyrer (se afsnit 5).
 - Nogle lovlige varer (fx billetter, alkohol og tobak) bliver kontrolleret af en medarbejder, efter auktionen er oprettet.
 - Listen er ikke udtømmende. Alt, der er ulovligt at sælge i Danmark, er også forbudt på BidHamr.
 
-4.7 **Ændre eller annullere.** Du kan rette eller annullere din auktion, så længe ingen har budt. Når der er kommet et bud, kan auktionen ikke ændres eller annulleres. Annullerede auktioner bliver gemt hos os, men vises ikke.
+4.7 **Ændre eller annullere.** Du kan rette eller annullere din auktion, så længe ingen har budt. Når der er kommet et bud, er auktionen låst: du kan ikke ændre noget (fx titel, beskrivelse, billeder, pris, kategori, stand, fragt eller varighed), ikke tilføje noget og ikke slette eller annullere den. Kun BidHamr kan stoppe en auktion med bud, fx ved brud på reglerne, eller hvis varen er gået i stykker. Er der et problem med varen, skal du kontakte BidHamr. Annullerede auktioner bliver gemt hos os, men vises ikke.
 
 ### Bud
 

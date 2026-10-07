@@ -22,6 +22,8 @@ import {
   MAKS_TITEL,
   valideStartpris,
   STARTPRIS_FOR_LAV,
+  AUKTION_LAAST,
+  erAuktionLaastFejl,
 } from "@/lib/auktionRegler";
 import { erStand } from "@/lib/stand";
 import { forbudtBesked } from "@/lib/forbudteVarer";
@@ -29,7 +31,7 @@ import { forbudtBesked } from "@/lib/forbudteVarer";
 type Fejl = { fejl: string };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const LAAST = "Auktionen kan ikke ændres, når der er budt på den.";
+const LAAST = AUKTION_LAAST;
 
 const REDIGER_FEJL: Record<string, string> = {
   ikke_fundet: "Auktionen findes ikke.",
@@ -131,6 +133,7 @@ export async function redigerAuktion(
       p_stand: input.stand,
     });
     if (error) {
+      if (erAuktionLaastFejl(error)) return { fejl: LAAST };
       console.error("rediger_auktion fejlede:", error.code, error.message);
       return { fejl: GENERISK };
     }
@@ -247,6 +250,8 @@ export async function annullerAuktion(auktionId: string): Promise<{ ok: true } |
       p_auktion: auktionId,
     });
     if (error) {
+      // Der er budt: auktionen er låst (databasen afviser med auktion_laast).
+      if (erAuktionLaastFejl(error)) return { fejl: LAAST };
       console.error("annuller_egen_auktion fejlede:", error.code, error.message);
       return { fejl: GENERISK };
     }
@@ -264,7 +269,7 @@ export async function annullerAuktion(auktionId: string): Promise<{ ok: true } |
             ? "Auktionen findes ikke."
             : a.skjult
               ? "Auktionen er skjult af BidHamr og kan ikke annulleres lige nu."
-              : "Auktionen kan ikke annulleres længere – der er budt på den, eller den er slut.",
+              : "Auktionen kan ikke annulleres længere, fordi den er slut.",
       };
     }
 
