@@ -978,3 +978,14 @@ export const ADMIN_ERHVERV_BETALING = {
   pakkeStripeFejl: "Pakken er IKKE ændret: abonnementet i Stripe kunne ikke opdateres. Prøv igen om lidt.",
   pakkeSkiftetStripe: "Pakken er ændret. Den nye pris gælder i Stripe fra firmaets næste betaling.",
 } as const;
+
+// Moms ved prisen på erhvervsauktioner (Filip, 8. okt. 2026 - se
+// ROADMAP-BESLUTNINGER.md "Moms og fakturaer"): på en erhvervsauktion er
+// prisen på varen inkl. moms, og det skal stå ved beløbet. Private
+// auktioner viser intet om moms.
+export const ERHVERV_MOMS = {
+  // Lille tekst ved beløbet (kort, auktionsside, Firma oversigt).
+  inklMoms: "inkl. moms",
+  // Hjælpetekst ved startpris-feltet, når et firma opretter/retter.
+  startprisHjaelp: "Prisen er inkl. moms",
+} as const;

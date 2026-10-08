@@ -20,6 +20,7 @@ import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand } from "@/lib/stand";
 import { uploadAuktionsbilleder } from "@/lib/auktionUpload";
 import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
+import { ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import {
   Afkrydsning,
   BilledVaelger,
@@ -271,6 +272,9 @@ export default function RedigerAuktionForm({
             className={feltKlasse()}
           />
           <Hjaelp id="startpris-hjaelp">
+            {erFirma && (
+              <span className="mb-1 block text-base font-semibold text-tekst">{ERHVERV_MOMS.startprisHjaelp}.</span>
+            )}
             {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
           </Hjaelp>
         </div>

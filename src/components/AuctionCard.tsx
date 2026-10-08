@@ -6,6 +6,7 @@ import Ikon from "@/components/Ikon";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { useFavoritter } from "@/components/FavoritterProvider";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
+import { ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 
 export interface DummyAuction {
   id: string;
@@ -76,6 +77,11 @@ export default function AuctionCard({
           <h3 className="line-clamp-2 font-sans text-sm font-normal text-tekst">{auktion.titel}</h3>
           <p className="mt-1.5 text-lg leading-tight font-bold text-tekst">
             {auktion.nuværendeBud.toLocaleString("da-DK")} kr
+            {auktion.erhverv && (
+              <span className="ml-1.5 inline-block text-xs font-normal whitespace-nowrap text-tekst-svag">
+                {ERHVERV_MOMS.inklMoms}
+              </span>
+            )}
           </p>
           <p className="mt-0.5 truncate text-xs text-tekst-svag">
             {meta}
