@@ -101,7 +101,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
       punkter: [
         "Køber betaler et gebyr på 5 % af buddet.",
         "Sælger betaler et gebyr på 5 % af buddet. Det trækkes fra, før pengene udbetales.",
-        "Fragt koster 35 kr. og betales af køberen. Skal varen hentes, er der ingen fragt.",
+        "Fragt koster omkring 35 kr. og betales af køberen. Skal varen hentes, er der ingen fragt.",
         "BidHamr Beskyttelse er et frivilligt tilvalg for køberen: 5 % af buddet, mindst 25 kr. og højst 250 kr.",
         "Alle priser er inkl. moms. Der kommer ikke noget oveni.",
       ],

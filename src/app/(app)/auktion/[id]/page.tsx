@@ -542,7 +542,7 @@ export default async function AuktionPage({
 
               <Accordion title="Forsendelse">
                 {auktion.forsendelse_mulig
-                  ? "Sælger sender varen. Fragt koster 35 kr og lægges oven i din betaling."
+                  ? "Sælger sender varen. Fragt koster omkring 35 kr. og lægges oven i din betaling."
                   : "Ikke tilbudt – varen skal afhentes."}
               </Accordion>
 

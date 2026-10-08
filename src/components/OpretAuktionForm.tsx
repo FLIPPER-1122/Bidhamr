@@ -747,7 +747,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           id="forsendelse"
           checked={forsendelseMulig}
           onChange={aendret(setForsendelseMulig)}
-          hjaelp="Varen sendes til køberen, som betaler 35 kr i fragt. Uden forsendelse skal køberen hente varen hos dig."
+          hjaelp="Varen sendes til køberen, som betaler omkring 35 kr. i fragt. Uden forsendelse skal køberen hente varen hos dig."
         >
           Jeg tilbyder forsendelse
         </Afkrydsning>

@@ -66,7 +66,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvad koster det?",
-          svar: "Køber og sælger betaler hver 5 % af buddet i gebyr. Fragt koster 35 kr. og betales af køberen. Alle priser er inkl. moms. Du ser altid den samlede pris, før du byder.",
+          svar: "Køber og sælger betaler hver 5 % af buddet i gebyr. Fragt koster omkring 35 kr. og betales af køberen. Alle priser er inkl. moms. Du ser altid den samlede pris, før du byder.",
         },
         {
           spoergsmaal: "Holder BidHamr mine penge?",
@@ -88,7 +88,7 @@ export const FAQ_SIDE: Tekstside = {
       punkter: [
         {
           spoergsmaal: "Hvem betaler fragten?",
-          svar: "Køberen. Fragten koster 35 kr. og står i prisen, før du byder.",
+          svar: "Køberen. Fragten koster omkring 35 kr. og står i prisen, før du byder.",
         },
         {
           spoergsmaal: "Hvornår bliver min vare sendt?",
