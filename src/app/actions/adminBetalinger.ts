@@ -240,6 +240,23 @@ function manglerKolonne(err: { code?: string; message?: string } | null) {
   );
 }
 
+// Et uløst tidligt svindelvarsel (betalingsmodel trin 2) skal gennemgås
+// eksplicit ("Svindelvarsel gennemgået"), før betalingen kan markeres som løst,
+// eller der gives en advarsel. Kaster BrugerFejl med dansk besked.
+async function afvisUloestSvindelvarsel(admin: AdminClient, betalingId: string): Promise<void> {
+  const { data: sv, error: svErr } = await admin
+    .from("betalinger")
+    .select("svindelvarsel_kl, svindelvarsel_loest_kl")
+    .eq("id", betalingId)
+    .maybeSingle<{ svindelvarsel_kl: string | null; svindelvarsel_loest_kl: string | null }>();
+  if (svErr && !manglerKolonne(svErr)) throw new Error(svErr.message);
+  if (sv?.svindelvarsel_kl && !sv.svindelvarsel_loest_kl) {
+    throw new BrugerFejl(
+      'Der er et tidligt svindelvarsel fra Stripe på handlen. Kontrollér handlen, og tryk først "Svindelvarsel gennemgået".',
+    );
+  }
+}
+
 async function hentBetalingRaekker(
   admin: AdminClient,
   kolonner: string,
@@ -673,18 +690,7 @@ export async function markerBetalingLøst(betalingId: string, note: string) {
       return { ok: true as const };
     }
     if (indsigelseBlokerer(nu)) throw new BrugerFejl(INDSIGELSE_FEJL);
-    {
-      // Uløst tidligt svindelvarsel: skal gennemgås eksplicit først (trin 2).
-      const { data: sv, error: svErr } = await admin
-        .from("betalinger")
-        .select("svindelvarsel_kl, svindelvarsel_loest_kl")
-        .eq("id", id)
-        .maybeSingle<{ svindelvarsel_kl: string | null; svindelvarsel_loest_kl: string | null }>();
-      if (svErr && !manglerKolonne(svErr)) throw new Error(svErr.message);
-      if (sv?.svindelvarsel_kl && !sv.svindelvarsel_loest_kl) {
-        throw new BrugerFejl("Der er et tidligt svindelvarsel fra Stripe. Tryk først \"Svindelvarsel gennemgået\".");
-      }
-    }
+    await afvisUloestSvindelvarsel(admin, id);
 
     // Atomisk: kun rækker, der stadig kræver opmærksomhed og ikke har en
     // blokerende indsigelse (samme regel som betaling_indsigelse_blokerer), ændres.
@@ -877,6 +883,7 @@ export async function givAdvarselBetaling(
     if (parterErr) throw new Error(parterErr.message);
     if (!parter) throw new BrugerFejl(ADVARSEL_FEJL.ikke_fundet);
     if (userId === parter.buyer_id || userId === parter.seller_id) throw new BrugerFejl(INHABIL);
+    await afvisUloestSvindelvarsel(admin, id);
 
     const { data, error } = await admin.rpc("admin_advarsel_betaling", {
       p_betaling: id,

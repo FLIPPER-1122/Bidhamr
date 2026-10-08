@@ -59,7 +59,8 @@ alter table public.betalinger
   add column if not exists stripe_svindelvarsel_id    text,
   add column if not exists svindelvarsel_loest_kl     timestamptz,
   add column if not exists svindelvarsel_loest_af     uuid references public.users(id) on delete set null,
-  add column if not exists svindelvarsel_note         text;
+  add column if not exists svindelvarsel_note         text,
+  add column if not exists venter_frist               timestamptz;
 
 comment on column public.betalinger.venter_paa_saelgerkonto_kl is
   'Destination: betalingen venter på, at sælgerens Stripe-konto kan tage imod betaling. Imens står betal_senest til fristen for kontoens godkendelse (ikke købers betalingsfrist). null = betalingen er åben.';
@@ -113,9 +114,10 @@ $fn$;
 revoke all on function public.saelger_kan_modtage_betaling(uuid) from public, anon, authenticated;
 grant execute on function public.saelger_kan_modtage_betaling(uuid) to service_role;
 
--- Fristen for, hvornår sælgerens konto senest skal være godkendt: fast 7 dage
--- efter auktionens slutning (= betalingens oprettelse). Også når kontoen
--- først spærres senere - så annulleringen altid sker (ingen løkke).
+-- Fristen for, hvornår sælgerens konto senest skal være godkendt, når
+-- betalingen venter fra starten: fast 7 dage efter auktionens slutning
+-- (= betalingens oprettelse). Gemmes i venter_frist og beregnes kun én gang
+-- (se betaling_saet_venter for en betaling, der har været åben).
 create or replace function public.betaling_venter_frist(p_oprettet timestamptz)
 returns timestamptz
 language sql
@@ -129,7 +131,8 @@ revoke all on function public.betaling_venter_frist(timestamptz) from public, an
 grant execute on function public.betaling_venter_frist(timestamptz) to service_role;
 
 -- Kan en ventende betaling åbnes nu? Sælgerens konto kan tage imod betaling
--- (spejlet), og er sælgerkontoen låst på betalingen, er det stadig den konto.
+-- (spejlet), og er sælgerkontoen låst på betalingen (der findes en
+-- PaymentIntent), er det stadig den konto.
 create or replace function public.betaling_kan_aabnes(p_betaling uuid)
 returns boolean
 language sql
@@ -143,7 +146,10 @@ as $fn$
       join public.betalingsprofiler bp on bp.user_id = bt.seller_id
      where bt.id = p_betaling
        and public.saelger_kan_modtage_betaling(bt.seller_id)
-       and (bt.saelger_stripe_konto is null or bt.saelger_stripe_konto = bp.stripe_account_id));
+       -- Kun når en PaymentIntent findes, er sælgerkontoen låst. Uden
+       -- PaymentIntent låses den (nye) konto ved betaling_klargoer_destination.
+       and (bt.stripe_payment_intent_id is null or bt.saelger_stripe_konto is null
+            or bt.saelger_stripe_konto = bp.stripe_account_id));
 $fn$;
 
 revoke all on function public.betaling_kan_aabnes(uuid) from public, anon, authenticated;
@@ -164,7 +170,8 @@ begin
      and not public.saelger_kan_modtage_betaling(new.seller_id) then
     new.venter_paa_saelgerkonto_kl := now();
     new.venter_aarsag := 'saelgerkonto_ikke_klar';
-    new.betal_senest := public.betaling_venter_frist(coalesce(new.oprettet, now()));
+    new.venter_frist := public.betaling_venter_frist(coalesce(new.oprettet, now()));
+    new.betal_senest := new.venter_frist;
   end if;
   return new;
 end;
@@ -246,34 +253,45 @@ create trigger betalinger_trin2_vedligehold
 -- først (p_annulleret_pi): den fjernes, og pi_forsoeg + 1, så der laves en ny,
 -- når betalingen åbner. En separat-PaymentIntent bliver stående (den kan
 -- stadig betales i den gamle model).
+-- Fristen (venter_frist) beregnes KUN ÉN GANG - første gang betalingen
+-- venter (chefens valg): har betalingen været åben (venter første gang nu),
+-- får sælgeren mindst 48 timer: greatest(oprettet + 7 dage, nu + 48 t).
+-- Venter den igen senere, genbruges fristen (ingen løkke, der forlænger).
+-- Svar: 'venter_ny_frist' (første gang - serveren giver køber og sælger
+-- besked om fristen), 'venter' (ventede allerede / samme frist), 'nej'.
 drop function if exists public.betaling_saet_venter(uuid, text);
+drop function if exists public.betaling_saet_venter(uuid, text, text);
 
 create or replace function public.betaling_saet_venter(
   p_betaling uuid, p_aarsag text, p_annulleret_pi text default null)
-returns boolean
+returns text
 language plpgsql
 security definer
 set search_path = ''
 as $fn$
 declare
-  b record;
-  fjern boolean;
+  b       record;
+  fjern   boolean;
+  v_frist timestamptz;
 begin
   select * into b from public.betalinger where id = p_betaling for update;
   if not found or b.status <> 'afventer' or b.stripe_charge_id is not null then
-    return false;
+    return 'nej';
   end if;
   fjern := b.pengemodel = 'destination' and b.stripe_payment_intent_id is not null;
   if fjern and b.stripe_payment_intent_id is distinct from p_annulleret_pi then
-    return false; -- PaymentIntenten er ikke annulleret hos Stripe
+    return 'nej'; -- PaymentIntenten er ikke annulleret hos Stripe
   end if;
   if b.venter_paa_saelgerkonto_kl is not null and not fjern then
-    return true;
+    return 'venter';
   end if;
+  v_frist := coalesce(b.venter_frist,
+                      date_trunc('second', greatest(b.oprettet + interval '7 days', now() + interval '48 hours')));
   update public.betalinger
      set venter_paa_saelgerkonto_kl = coalesce(venter_paa_saelgerkonto_kl, now()),
          venter_aarsag = left(coalesce(nullif(btrim(p_aarsag), ''), 'saelgerkonto_ikke_klar'), 200),
-         betal_senest = public.betaling_venter_frist(b.oprettet),
+         venter_frist = v_frist,
+         betal_senest = v_frist,
          paamindelse_24_sendt_kl = null,
          paamindelse_40_sendt_kl = null,
          aabnet_besked_sendt_kl = null,
@@ -283,12 +301,42 @@ begin
                                           else tidligere_payment_intents end,
          opdateret = now()
    where id = b.id;
-  return true;
+  return case when b.venter_frist is null then 'venter_ny_frist' else 'venter' end;
 end;
 $fn$;
 
 revoke all on function public.betaling_saet_venter(uuid, text, text) from public, anon, authenticated;
 grant execute on function public.betaling_saet_venter(uuid, text, text) to service_role;
+
+-- En gemt PaymentIntent er annulleret hos Stripe (fx udløbet eller annulleret
+-- uden for BidHamr), mens betalingen stadig afventer: den fjernes, og
+-- pi_forsoeg + 1, så serveren laver en ny (sikrPaymentIntent).
+create or replace function public.betaling_nulstil_annulleret_pi(p_betaling uuid, p_pi text)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  b record;
+begin
+  select * into b from public.betalinger where id = p_betaling for update;
+  if not found or b.status <> 'afventer' or b.stripe_charge_id is not null
+     or b.stripe_payment_intent_id is distinct from p_pi or p_pi is null then
+    return false;
+  end if;
+  update public.betalinger
+     set stripe_payment_intent_id = null,
+         pi_forsoeg = pi_forsoeg + 1,
+         tidligere_payment_intents = tidligere_payment_intents || p_pi,
+         opdateret = now()
+   where id = b.id;
+  return true;
+end;
+$fn$;
+
+revoke all on function public.betaling_nulstil_annulleret_pi(uuid, text) from public, anon, authenticated;
+grant execute on function public.betaling_nulstil_annulleret_pi(uuid, text) to service_role;
 
 -- ===========================================================================
 -- Åbn ventende betalinger, hvis sælgerens konto nu kan tage imod betaling
@@ -625,24 +673,37 @@ $fn$;
 revoke all on function public.betaling_registrer_svindelvarsel(text, text, text, text) from public, anon, authenticated;
 grant execute on function public.betaling_registrer_svindelvarsel(text, text, text, text) to service_role;
 
--- moderation_log: ny handling 'svindelvarsel_gennemgaaet' (de eksisterende
--- værdier bevares - constraint'en genopbygges kun, hvis værdien mangler).
+-- moderation_log: ny handling 'svindelvarsel_gennemgaaet'. Samme robuste
+-- parsing som 20261009022000 (constraint'en kan stå som '{a,b}'::text[] eller
+-- som ARRAY['a'::text, ...]); de eksisterende værdier bevares.
 do $do$
 declare
-  def      text;
-  vaerdier text[];
+  v_def   text;
+  v_liste text[];
 begin
-  select pg_get_constraintdef(oid) into def
-    from pg_constraint
-   where conname = 'moderation_log_handling_check' and conrelid = 'public.moderation_log'::regclass;
-  if def is null then
+  select pg_get_constraintdef(c.oid) into v_def
+    from pg_constraint c
+   where c.conname = 'moderation_log_handling_check'
+     and c.conrelid = 'public.moderation_log'::regclass;
+  if v_def is null then
     raise exception 'moderation_log_handling_check findes ikke - kontrollér moderation_log';
   end if;
-  if position('svindelvarsel_gennemgaaet' in def) = 0 then
-    vaerdier := ('{' || substring(def from '\{([^}]*)\}') || '}')::text[] || array['svindelvarsel_gennemgaaet'];
-    alter table public.moderation_log drop constraint moderation_log_handling_check;
-    execute format('alter table public.moderation_log add constraint moderation_log_handling_check check (handling = any (%L::text[]))', vaerdier);
+  select array_agg(distinct x order by x) into v_liste from (
+    select unnest(case when m[1] like '{%}' then m[1]::text[] else array[m[1]] end) as x
+      from regexp_matches(v_def, '''([^'']+)''', 'g') as m
+  ) s;
+  if v_liste is null or array_length(v_liste, 1) is null then
+    raise exception 'Kunne ikke læse moderation_log_handling_check: %', v_def;
   end if;
+  if 'svindelvarsel_gennemgaaet' = any (v_liste) then
+    return;
+  end if;
+  v_liste := array(select distinct x from unnest(v_liste || 'svindelvarsel_gennemgaaet'::text) as x order by x);
+  alter table public.moderation_log drop constraint moderation_log_handling_check;
+  execute format(
+    'alter table public.moderation_log add constraint moderation_log_handling_check check (handling = any (%L::text[]))',
+    v_liste
+  );
 end $do$;
 
 -- Staff (admin/chef) har gennemgået et tidligt svindelvarsel. Først derefter
@@ -775,45 +836,34 @@ grant execute on function public.betaling_claim_overfoersel(uuid) to service_rol
 -- Ventende betalinger: ingen "ubetalt vinder" og ingen forlængelse
 -- ===========================================================================
 -- Ventende betalinger: ingen "ubetalt vinder" og ingen forlængelse.
--- De to funktioner genoprettes HELT (ikke tekst-erstatning - teksten er
+-- De to funktioner genoprettes HELT (ikke tekst-erstatning - formateringen er
 -- forskellig i produktion, på testdatabasen og i en database bygget fra
--- filerne). Drift fanges først: den nuværende definition skal indeholde de
--- forventede dele (whitespace ignoreres), ellers afbrydes migrationen, så en
--- ukendt ændring ikke overskrives i stilhed.
+-- filerne). Drift fanges først: md5 af hele den normaliserede krop (prosrc
+-- uden kommentarer og uden whitespace, små bogstaver) skal være repoets
+-- seneste version (20261002030000 / 20261005011000 - verificeret mod
+-- produktion 8. okt. 2026) eller denne migrations version (allerede kørt).
+-- Ellers afbrydes migrationen, så en ukendt ændring ikke overskrives.
 do $do$
 declare
-  r   record;
-  def text;
-  del text;
+  r record;
+  h text;
 begin
   for r in
     select * from (values
-      ('public.ubetalt_vinder_annuller(uuid,boolean)', array[
-        'select * into b from public.betalinger where trade_id = p_trade for update;',
-        'if not ((b.status = ''afventer'' and b.betal_senest < now()) or (b.status = ''behandles'' and coalesce(p_stripe_fejlet, false) and b.betal_senest + interval ''1 hour'' < now())) then',
-        'perform public.betaling_annuller(p_trade);',
-        'insert into public.ubetalte_vindere (trade_id, auction_id, buyer_id, seller_id) values (p_trade, b.auction_id, b.buyer_id, b.seller_id) on conflict (trade_id) do nothing returning id into sag;']),
-      ('public.handel_forlaeng_betalingsfrist(uuid,timestamp with time zone)', array[
-        'if t.status <> ''afventer_betaling'' or b.status not in (''afventer'', ''behandles'') then',
-        'if b.betal_senest <= now() then',
-        'if v_antal >= 3 then',
-        'v_maks := date_trunc(''second'', b.oprettet + interval ''7 days'');',
-        'v_min := date_trunc(''second'', b.betal_senest + interval ''24 hours'');',
-        'insert into public.betalingsfrist_forlaengelser ( betaling_id, trade_id, seller_id, buyer_id, gammel_frist, ny_frist)'])
-    ) as v(fn, dele)
+      ('public.ubetalt_vinder_annuller(uuid,boolean)',
+       'd2156c5d934e70b6f6f55d77c37bae56', 'a63a21a81e2c9c82a22e71f2d00de606'),
+      ('public.handel_forlaeng_betalingsfrist(uuid,timestamp with time zone)',
+       '833bcaa93488edba153eeedc8c0640ac', 'd29a376ea5b0d45e53a16842e2150eee')
+    ) as v(fn, gammel, ny)
   loop
-    def := regexp_replace(replace(pg_get_functiondef(r.fn::regprocedure), chr(13), ''), '\s+', ' ', 'g');
-    def := replace(replace(def, '( ', '('), ' )', ')');
-    if position('venter_paa_saelgerkonto_kl' in def) > 0 then
-      raise notice '%: allerede rettet - genoprettes', r.fn;
-      continue;
+    select md5(lower(regexp_replace(regexp_replace(replace(p.prosrc, chr(13), ''), '--[^\n]*', '', 'g'), '\s', '', 'g')))
+      into h
+      from pg_proc p where p.oid = r.fn::regprocedure;
+    if h = r.ny then
+      raise notice '%: allerede rettet', r.fn;
+    elsif h is distinct from r.gammel then
+      raise exception '%: kroppen afviger fra repoets seneste version (md5 %) - kontrollér funktionen, før migrationen køres', r.fn, h;
     end if;
-    foreach del in array r.dele loop
-      del := replace(replace(regexp_replace(del, '\s+', ' ', 'g'), '( ', '('), ' )', ')');
-      if position(del in def) = 0 then
-        raise exception '%: definitionen afviger fra den forventede (mangler "%") - kontrollér funktionen, før migrationen køres', r.fn, del;
-      end if;
-    end loop;
   end loop;
 end $do$;
 

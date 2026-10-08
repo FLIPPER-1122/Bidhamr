@@ -667,6 +667,36 @@ export function saelgerKontoIkkeKlarMail(titel: string, paamindelse: boolean) {
   );
 }
 
+// En åben betaling er sat på pause: sælgerens konto kan ikke tage imod
+// betaling lige nu. Fristen er mindst 48 timer.
+export function koeberBetalingPauseMail(titel: string, tradeId: string, frist: string) {
+  return handelsMail(`Betalingen er sat på pause: ${titel}`, {
+    preheader: `Du kan ikke betale lige nu. Vi giver dig besked, når du kan.`,
+    overskriftHtml: "Betalingen er sat på pause",
+    afsnitHtml: [
+      `Sælgerens konto hos vores betalingspartner Stripe kan ikke tage imod betaling lige nu, så du kan ikke betale for <strong>${escapeHtml(titel)}</strong> endnu.`,
+      "Vi giver dig besked, så snart du kan betale – derefter har du 48 timer.",
+      `Er sælgerens konto ikke klar senest ${fristTekst(frist)}, bliver handlen annulleret, og du bliver ikke trukket noget.`,
+    ],
+    info: [vare(titel), { noegle: "Sælgerens frist", vaerdiHtml: fristTekst(frist) }],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+export function saelgerBetalingPauseMail(titel: string, frist: string) {
+  return handelsMail(`Køberen kan ikke betale: ${titel}`, {
+    preheader: `Din konto hos Stripe kan ikke tage imod betaling. Ret det senest ${fristTekst(frist)}.`,
+    overskriftHtml: "Din konto kan ikke tage imod betaling",
+    afsnitHtml: [
+      `Køberen kan ikke betale for <strong>${escapeHtml(titel)}</strong>, fordi din konto hos vores betalingspartner Stripe ikke kan tage imod betaling lige nu.`,
+      `Ret det under Min konto senest ${fristTekst(frist)}. Ellers bliver handlen annulleret, og du kan ikke sætte varer til salg, før Stripe har godkendt kontoen.`,
+      "Send eller udlevér ikke varen, før køberen har betalt.",
+    ],
+    info: [vare(titel), { noegle: "Frist", vaerdiHtml: fristTekst(frist) }],
+    knap: { tekst: "Gør kontoen færdig", url: sideUrl("/konto") },
+  });
+}
+
 // Handlen er annulleret, fordi sælgerens konto ikke blev godkendt.
 export function koeberAnnulleretSaelgerkontoMail(titel: string, tradeId: string) {
   return handelsMail(`Handlen er annulleret: ${titel}`, {

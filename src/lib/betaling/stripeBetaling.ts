@@ -37,6 +37,8 @@ function offentligSideUrl(): string {
 }
 import {
   koeberAfhentningMail,
+  koeberBetalingPauseMail,
+  saelgerBetalingPauseMail,
   saelgerBetaltAfhentningMail,
   saelgerBetaltMail,
   saelgerOpretUdbetalingskontoMail,
@@ -271,9 +273,10 @@ export async function kontrollerSaelgerkonto(kontoId: string): Promise<KontoTjek
     konto = await getStripe().accounts.retrieve(kontoId);
   } catch (err) {
     if (err instanceof Stripe.errors.StripePermissionError) {
-      // Ingen adgang til kontoen længere (frakoblet/lukket): markér den som
-      // frakoblet (til staff), så betalingen ikke åbnes igen.
-      await spejlFrakobling(kontoId);
+      // Ingen adgang til kontoen lige nu: kan ikke tage imod betaling, og
+      // staff får besked (ikke permanent - kun account.application.
+      // deauthorized frakobler kontoen).
+      await markerKontoUdenAdgang(kontoId);
       return { ok: false, aarsag: "konto_ingen_adgang" };
     }
     throw err;
@@ -300,6 +303,34 @@ export async function kontrollerSaelgerkonto(kontoId: string): Promise<KontoTjek
   return { ok: true };
 }
 
+// Stripe giver ingen adgang til sælgerens konto (StripePermissionError). Ikke
+// permanent: kontoen kan ikke tage imod betaling (connect_charges_enabled =
+// false, så betaling_kan_aabnes bliver falsk), staff får en markering og
+// drift-alarm. Næste vellykkede spejling (account.updated / frisk hentning)
+// retter tilstanden. Kun account.application.deauthorized frakobler kontoen.
+export async function markerKontoUdenAdgang(kontoId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("betalingsprofiler")
+    .update({ connect_charges_enabled: false, opdateret: new Date().toISOString() })
+    .eq("stripe_account_id", kontoId)
+    .is("connect_frakoblet_kl", null)
+    .select("user_id")
+    .maybeSingle<{ user_id: string }>();
+  if (error && !erManglerKolonne(error)) throw new Error(`markerKontoUdenAdgang: ${error.message}`);
+  if (!data) return;
+  await markerUdbetalingskonto(
+    kontoId,
+    "Stripe giver ingen adgang til sælgerens udbetalingskonto. Betalinger kan ikke tages imod, før adgangen er tilbage - kontrollér kontoen hos Stripe.",
+  );
+  await logDriftFejl({
+    kilde: "server",
+    hvor: "connect/ingen-adgang",
+    fejl: `Ingen adgang til sælgerkonto ${kontoId} hos Stripe - kan ikke tage imod betaling (ikke frakoblet).`,
+    brugerId: data.user_id,
+  });
+}
+
 // Sætter betalingen til at vente på sælgerens konto og kaster
 // BetalingVenterFejl (betaling_saet_venter, 20261011020000). Har betalingen
 // en destination-PaymentIntent, annulleres den først hos Stripe (en gammel
@@ -321,11 +352,56 @@ async function saetVenter(b: BetalingRaekke, aarsag: string): Promise<Stripe.Pay
     p_annulleret_pi: annulleret,
   });
   if (error) throw new Error(`betaling_saet_venter: ${error.message}`);
-  if (data !== true) {
+  const svar = String(data);
+  if (svar !== "venter" && svar !== "venter_ny_frist") {
     // Betalingen er ændret samtidig (fx betalt eller annulleret).
     throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
   }
+  // Første gang en åben betaling venter: køber og sælger får fristen.
+  if (svar === "venter_ny_frist") await beskedOmVenterFrist(b.id);
   throw new BetalingVenterFejl();
+}
+
+// En betaling, der var åben, venter nu på sælgerens konto. Køber og sælger
+// får fristen (venter_frist). Kaster aldrig.
+async function beskedOmVenterFrist(betalingId: string): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { data: b } = await admin
+      .from("betalinger")
+      .select("trade_id, auction_id, buyer_id, seller_id, betal_senest")
+      .eq("id", betalingId)
+      .maybeSingle<{ trade_id: string; auction_id: string; buyer_id: string; seller_id: string; betal_senest: string }>();
+    if (!b) return;
+    const { data: a } = await admin.from("auctions").select("titel").eq("id", b.auction_id).maybeSingle();
+    const titel = (a?.titel as string | undefined) ?? "din vare";
+    const frist = new Date(b.betal_senest).toLocaleString("da-DK", {
+      timeZone: "Europe/Copenhagen",
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const link = `/mine-handler/${b.trade_id}`;
+    await send(b.buyer_id, "betalingsfrist", {
+      titel: "Betalingen er sat på pause",
+      tekst: `Sælgerens konto hos vores betalingspartner Stripe kan ikke tage imod betaling lige nu, så du kan ikke betale for "${titel}" endnu. Vi giver dig besked, når du kan betale. Er kontoen ikke klar senest ${frist}, bliver handlen annulleret, og du bliver ikke trukket noget.`,
+      link,
+      data: { trade_id: b.trade_id },
+      mail: koeberBetalingPauseMail(titel, b.trade_id, b.betal_senest),
+      noegle: `venter_frist:${betalingId}:koeber`,
+    });
+    await send(b.seller_id, "udbetaling", {
+      titel: "Din konto kan ikke tage imod betaling",
+      tekst: `Køberen kan ikke betale for "${titel}", fordi din konto hos Stripe ikke kan tage imod betaling lige nu. Ret det under Min konto senest ${frist} – ellers bliver handlen annulleret.`,
+      link: "/konto",
+      data: { trade_id: b.trade_id },
+      mail: saelgerBetalingPauseMail(titel, b.betal_senest),
+      noegle: `venter_frist:${betalingId}:saelger`,
+    });
+  } catch (err) {
+    console.error("Besked om ventefrist fejlede:", betalingId, err);
+  }
 }
 
 // PaymentIntents, der kan annulleres, når en separat-betaling skiftes til
@@ -422,6 +498,17 @@ export async function sikrPaymentIntent(
     const eksisterende = await stripe.paymentIntents.retrieve(
       betaling.stripe_payment_intent_id,
     );
+    // Annulleret hos Stripe, mens betalingen afventer (fx uden for BidHamr):
+    // fjern den (pi_forsoeg + 1) og lav en ny.
+    if (eksisterende.status === "canceled" && betaling.status === "afventer") {
+      const { data: nulstillet, error: nFejl } = await createAdminClient().rpc(
+        "betaling_nulstil_annulleret_pi",
+        { p_betaling: betaling.id, p_pi: eksisterende.id },
+      );
+      if (nFejl) throw new Error(`betaling_nulstil_annulleret_pi: ${nFejl.message}`);
+      if (nulstillet !== true) throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
+      return sikrPaymentIntent(await hentBetaling(betaling.id));
+    }
     // Sikkerhedsnet for PaymentIntents oprettet før beskyttelsen blev låst ved
     // buddet: beløbet bringes i trit med databasens total. Klienten har
     // aldrig indflydelse på beløbet. Destination: gebyret følger med.
@@ -542,9 +629,9 @@ async function skiftTilDestination(
   const profil = await hentProfil(b.seller_id);
   const konto = profil?.stripe_account_id ?? null;
   if (!konto) return { pi: await saetVenter(b, "ingen_saelgerkonto") };
-  // Er sælgerkontoen låst på betalingen, skal det stadig være den konto
-  // (ellers åbner betalingen aldrig igen og annulleres efter fristen).
-  if (b.saelger_stripe_konto && b.saelger_stripe_konto !== konto) {
+  // Findes der en PaymentIntent, er sælgerkontoen låst, og det skal stadig
+  // være den konto. Uden PaymentIntent låses den nye konto ved klargoer.
+  if (b.stripe_payment_intent_id && b.saelger_stripe_konto && b.saelger_stripe_konto !== konto) {
     return { pi: await saetVenter(b, "saelgerkonto_aendret") };
   }
   const tjek = await kontrollerSaelgerkonto(konto);

@@ -34,7 +34,7 @@ import {
   type BetalingRaekke,
   forsoegAutobetaling,
   spejlConnectKonto,
-  spejlFrakobling,
+  markerKontoUdenAdgang,
   spejlPaymentIntent,
 } from "@/lib/betaling/stripeBetaling";
 
@@ -139,8 +139,9 @@ export async function notificerAabnede(): Promise<number> {
 }
 
 // Henter sælgerkonti frisk hos Stripe og spejler dem (hvis account.updated er
-// gået tabt). Ingen adgang til kontoen (frakoblet/lukket) markeres som
-// frakoblet, så betalingen ikke åbnes og annulleres ved fristen.
+// gået tabt). Ingen adgang til kontoen: markeres til staff og kan ikke tage
+// imod betaling (ikke permanent - kun account.application.deauthorized
+// frakobler).
 async function hentOgSpejlKonti(saelgere: string[]): Promise<number> {
   if (!saelgere.length) return 0;
   const { data: profiler } = await createAdminClient()
@@ -158,7 +159,7 @@ async function hentOgSpejlKonti(saelgere: string[]): Promise<number> {
     } catch (err) {
       if (err instanceof Stripe.errors.StripePermissionError) {
         try {
-          await spejlFrakobling(kontoId);
+          await markerKontoUdenAdgang(kontoId);
         } catch (err2) {
           await fejl("Markering af konto uden adgang", err2);
         }
