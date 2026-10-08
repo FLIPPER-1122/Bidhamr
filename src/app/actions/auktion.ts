@@ -28,6 +28,7 @@ import {
 import { erStand } from "@/lib/stand";
 import { forbudtBesked } from "@/lib/forbudteVarer";
 import { ERHVERV_FEJL, ERHVERV_GRAENSER, erhvervFejlTekst } from "@/lib/erhverv/regler";
+import { udbetalingskontoFejltekst } from "@/lib/betaling/frossetServer";
 
 type Fejl = { fejl: string };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -343,6 +344,9 @@ export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; au
     }
     const r = data as { kode?: string; auction_id?: string; ord?: string; kategori?: string } | null;
     if (r?.kode === "forbudt_vare") return { fejl: forbudtBesked(r.ord ?? "", r.kategori ?? "") };
+    if (r?.kode === "mangler_udbetalingskonto") {
+      return { fejl: await udbetalingskontoFejltekst(user.id, SAET_OP_IGEN_FEJL.mangler_udbetalingskonto) };
+    }
     if (r?.kode !== "ok" || !r.auction_id) return { fejl: SAET_OP_IGEN_FEJL[r?.kode ?? ""] ?? GENERISK };
 
     revalidatePath("/");

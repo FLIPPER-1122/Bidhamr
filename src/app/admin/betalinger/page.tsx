@@ -6,6 +6,7 @@ import {
   hentBetalingerTilHandling,
   markerUdbetalingskontoLøstForm,
   nulstilUdbetalingskontoForm,
+  svindelvarselGennemgaaetForm,
   type BetalingBeloeb,
   type Person,
 } from "@/app/actions/adminBetalinger";
@@ -332,7 +333,46 @@ export default async function AdminBetalinger({
                         Indsigelse {dato(b.indsigelse_kl)}
                       </span>
                     )}
+                    {b.svindelvarsel && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                          b.svindelvarsel.gennemgaaet ? "bg-neutral-200 text-neutral-700" : "bg-red-600 text-white"
+                        }`}
+                      >
+                        Svindelvarsel fra Stripe {dato(b.svindelvarsel.kl)}
+                        {b.svindelvarsel.gennemgaaet ? " · gennemgået" : ""}
+                      </span>
+                    )}
                   </div>
+                  {!b.loest && b.svindelvarsel && !b.svindelvarsel.gennemgaaet && (
+                    <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                      <p className="font-semibold">Tidligt svindelvarsel fra Stripe</p>
+                      <p className="mt-0.5">
+                        Kortudstederen har meldt mulig svindel. Pengene gives ikke til sælgeren, og der refunderes
+                        ikke automatisk. Kontrollér handlen (køber, sælger, levering), og tryk derefter
+                        &quot;Svindelvarsel gennemgået&quot;. Refusion eller advarsel vælges bagefter som normalt.
+                      </p>
+                      {kanLoese && fane === "aaben" && (
+                        <div className="mt-2">
+                          <ConfirmDialog
+                            triggerLabel="Svindelvarsel gennemgået"
+                            triggerClassName="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                            title="Er svindelvarslet gennemgået?"
+                            description="Når varslet er gennemgået, kan pengene gives til sælgeren, når handlen er færdig. Skriv, hvad du har kontrolleret. Handlingen logges med dit navn."
+                            confirmLabel="Svindelvarsel gennemgået"
+                            action={svindelvarselGennemgaaetForm}
+                            hiddenFields={{ betalingId: b.id }}
+                            aarsagField={{
+                              name: "note",
+                              label: "Hvad har du kontrolleret?",
+                              placeholder: "Fx: Køberen har bekræftet købet i chatten, sporingen viser levering",
+                              required: true,
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {!b.loest && <Problemlinje titel={problem.titel} tekst={problem.tekst} />}
                   <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                     <AuktionLink id={b.auction_id} titel={b.auktion_titel} tradeId={b.trade_id} />

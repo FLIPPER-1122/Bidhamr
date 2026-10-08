@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { SAELGER_FROSSET_TEKST, erSaelgerFrossetFejl } from "@/lib/betaling/frosset";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -354,7 +355,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
       if (insertError) {
         console.error("Fejl ved oprettelse af auktion:", insertError.code, insertError.message);
         let besked = "Auktionen kunne ikke oprettes. Prøv igen om lidt – din kladde er gemt.";
-        if (insertError.code === "BHU01") besked = "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.";
+        if (erSaelgerFrossetFejl(insertError.code, insertError.message)) besked = SAELGER_FROSSET_TEKST;
+        else if (insertError.code === "BHU01") besked = "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.";
         else if (insertError.code === "22023") besked = "Tjek startpris og varighed (3, 5, 7 eller 10 dage), og prøv igen.";
         else if (insertError.code === "BHA01") besked = "Et af billederne kunne ikke bruges. Fjern det, tilføj det igen, og prøv igen.";
         else if (insertError.code === "BHA02") besked = "Vælg en kategori.";

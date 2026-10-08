@@ -34,6 +34,7 @@ import {
   type BetalingRaekke,
   forsoegAutobetaling,
   spejlConnectKonto,
+  spejlFrakobling,
   spejlPaymentIntent,
 } from "@/lib/betaling/stripeBetaling";
 
@@ -100,6 +101,9 @@ export async function notificerAabnede(): Promise<number> {
         .update({ aabnet_besked_sendt_kl: new Date().toISOString() })
         .eq("id", b.id)
         .is("aabnet_besked_sendt_kl", null)
+        // Satte autobetalingens friske kontotjek betalingen til at vente
+        // igen, sendes "nu kan du betale" ikke (den sendes ved næste åbning).
+        .is("venter_paa_saelgerkonto_kl", null)
         .select("*")
         .overrideTypes<BetalingRaekke[], { merge: false }>();
       const nu = claimet?.[0];
@@ -134,9 +138,41 @@ export async function notificerAabnede(): Promise<number> {
   return antal;
 }
 
-// Henter sælgerkonti med ventende betalinger frisk hos Stripe og spejler dem
-// (hvis account.updated er gået tabt). Højst 20 konti pr. kørsel, ældste
-// ventende først.
+// Henter sælgerkonti frisk hos Stripe og spejler dem (hvis account.updated er
+// gået tabt). Ingen adgang til kontoen (frakoblet/lukket) markeres som
+// frakoblet, så betalingen ikke åbnes og annulleres ved fristen.
+async function hentOgSpejlKonti(saelgere: string[]): Promise<number> {
+  if (!saelgere.length) return 0;
+  const { data: profiler } = await createAdminClient()
+    .from("betalingsprofiler")
+    .select("user_id, stripe_account_id")
+    .in("user_id", saelgere)
+    .not("stripe_account_id", "is", null);
+  let antal = 0;
+  for (const p of profiler ?? []) {
+    const kontoId = p.stripe_account_id as string;
+    try {
+      const konto = await getStripe().accounts.retrieve(kontoId);
+      await spejlConnectKonto(konto);
+      antal++;
+    } catch (err) {
+      if (err instanceof Stripe.errors.StripePermissionError) {
+        try {
+          await spejlFrakobling(kontoId);
+        } catch (err2) {
+          await fejl("Markering af konto uden adgang", err2);
+        }
+        continue;
+      }
+      await fejl("Frisk tjek af sælgerkonto", err);
+    }
+  }
+  return antal;
+}
+
+// Sælgere med ventende betalinger (ældste først, højst 20) og frosne sælgere
+// (højst 10, ældste frysning først - så frysningen ophæves, selv om et event
+// er gået tabt).
 export async function opdaterVentendeSaelgerkonti(): Promise<number> {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -151,25 +187,20 @@ export async function opdaterVentendeSaelgerkonti(): Promise<number> {
     await fejl("Ventende sælgerkonti", error);
     return 0;
   }
-  const saelgere = [...new Set((data ?? []).map((r) => r.seller_id as string))].slice(0, 20);
-  if (!saelgere.length) return 0;
-  const { data: profiler } = await admin
+  const { data: frosne, error: fFejl } = await admin
     .from("betalingsprofiler")
-    .select("user_id, stripe_account_id")
-    .in("user_id", saelgere)
-    .not("stripe_account_id", "is", null);
-  let antal = 0;
-  for (const p of profiler ?? []) {
-    try {
-      const konto = await getStripe().accounts.retrieve(p.stripe_account_id as string);
-      await spejlConnectKonto(konto);
-      antal++;
-    } catch (err) {
-      if (err instanceof Stripe.errors.StripePermissionError) continue;
-      await fejl("Frisk tjek af sælgerkonto", err);
-    }
-  }
-  return antal;
+    .select("user_id")
+    .not("saelger_frosset_kl", "is", null)
+    .order("saelger_frosset_kl", { ascending: true })
+    .limit(10);
+  if (fFejl && !mangler(fFejl)) await fejl("Frosne sælgere", fFejl);
+  const saelgere = [
+    ...new Set([
+      ...[...new Set((data ?? []).map((r) => r.seller_id as string))].slice(0, 20),
+      ...(frosne ?? []).map((r) => r.user_id as string),
+    ]),
+  ];
+  return hentOgSpejlKonti(saelgere);
 }
 
 // Påmindelse til sælgeren 3 dage efter, at betalingen begyndte at vente.
@@ -227,6 +258,24 @@ type Annulleret = {
 // 8. okt. 2026). En evt. PaymentIntent annulleres hos Stripe; er den
 // alligevel betalt, giver spejlingen automatisk refusion (sen_betaling).
 export async function annullerIkkeGodkendte(): Promise<number> {
+  // Sælgerkontoen hentes frisk hos Stripe lige før: er den blevet godkendt,
+  // åbnes betalingen i stedet (et tabt account.updated må ikke annullere en
+  // handel). Databasen annullerer dog altid, når betalingen stadig venter 1
+  // døgn efter fristen.
+  const { data: forfaldne, error: fFejl } = await createAdminClient()
+    .from("betalinger")
+    .select("seller_id")
+    .not("venter_paa_saelgerkonto_kl", "is", null)
+    .eq("status", "afventer")
+    .lte("betal_senest", new Date().toISOString())
+    .limit(100);
+  if (mangler(fFejl)) return 0;
+  if (fFejl) await fejl("Forfaldne ventende betalinger", fFejl);
+  const saelgere = [...new Set((forfaldne ?? []).map((r) => r.seller_id as string))];
+  if (saelgere.length) {
+    await hentOgSpejlKonti(saelgere);
+    await aabnVentende();
+  }
   const { data, error } = await createAdminClient().rpc("betaling_annuller_ikke_godkendt_saelgerkonto");
   if (mangler(error)) return 0;
   if (error) {

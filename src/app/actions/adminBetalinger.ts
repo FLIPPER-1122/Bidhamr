@@ -99,6 +99,9 @@ export type BetalingTilHandling = {
   sidste_fejl: string | null;
   dato: string;
   indsigelse_kl: string | null;
+  // Tidligt svindelvarsel fra Stripe (betalingsmodel trin 2). Pengene gives
+  // ikke til sælger, før admin/chef har trykket "Svindelvarsel gennemgået".
+  svindelvarsel: { kl: string; gennemgaaet: boolean } | null;
   // Admin/chef kan prøve overførslen igen (frigivet, ikke overført, ikke
   // refunderet, ingen blokerende indsigelse, handel ikke annulleret, ingen sag).
   kanProeveOverfoersel: boolean;
@@ -246,6 +249,18 @@ async function hentBetalingRaekker(
     error: { code?: string; message?: string } | null;
   }>,
 ): Promise<{ data: Raekke[]; count: number }> {
+  // Svindelvarsel-kolonnerne (20261011020000) - findes de ikke, hentes uden.
+  const medSvindel = await byg(
+    admin
+      .from("betalinger")
+      .select(`${kolonner}, indsigelse_kl, indsigelse_status, svindelvarsel_kl, svindelvarsel_loest_kl`, {
+        count: "exact",
+      }),
+  );
+  if (!medSvindel.error) {
+    return { data: (medSvindel.data ?? []) as Raekke[], count: medSvindel.count ?? 0 };
+  }
+  if (!manglerKolonne(medSvindel.error)) throw new Error(medSvindel.error.message);
   const medIndsigelse = await byg(
     admin
       .from("betalinger")
@@ -428,6 +443,7 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
         !!r.frigivet_kl &&
         !r.stripe_transfer_id &&
         !r.refusion_anmodet_kl &&
+        !(r.svindelvarsel_kl && !r.svindelvarsel_loest_kl) &&
         !indsigelseBlokerer({
           indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
           indsigelse_status: (r.indsigelse_status as string | null | undefined) ?? null,
@@ -475,6 +491,9 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
         sidste_fejl: renset(r.sidste_fejl),
         dato: r.opdateret as string,
         indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
+        svindelvarsel: r.svindelvarsel_kl
+          ? { kl: r.svindelvarsel_kl as string, gennemgaaet: !!r.svindelvarsel_loest_kl }
+          : null,
         kanProeveOverfoersel: kanLoese && proeve,
         kanProeveRefusion:
           kanLoese &&
@@ -654,6 +673,18 @@ export async function markerBetalingLøst(betalingId: string, note: string) {
       return { ok: true as const };
     }
     if (indsigelseBlokerer(nu)) throw new BrugerFejl(INDSIGELSE_FEJL);
+    {
+      // Uløst tidligt svindelvarsel: skal gennemgås eksplicit først (trin 2).
+      const { data: sv, error: svErr } = await admin
+        .from("betalinger")
+        .select("svindelvarsel_kl, svindelvarsel_loest_kl")
+        .eq("id", id)
+        .maybeSingle<{ svindelvarsel_kl: string | null; svindelvarsel_loest_kl: string | null }>();
+      if (svErr && !manglerKolonne(svErr)) throw new Error(svErr.message);
+      if (sv?.svindelvarsel_kl && !sv.svindelvarsel_loest_kl) {
+        throw new BrugerFejl("Der er et tidligt svindelvarsel fra Stripe. Tryk først \"Svindelvarsel gennemgået\".");
+      }
+    }
 
     // Atomisk: kun rækker, der stadig kræver opmærksomhed og ikke har en
     // blokerende indsigelse (samme regel som betaling_indsigelse_blokerer), ændres.
@@ -979,6 +1010,54 @@ export async function markerUdbetalingskontoLøst(brugerId: string, note: string
     revalidatePath("/admin", "layout");
     return { ok: true as const };
   });
+}
+
+// ---------------------------------------------------------------- svindelvarsel
+
+const SVINDEL_FEJL: Record<string, string> = {
+  ingen_adgang: "Kun admin og chef kan gennemgå svindelvarsler.",
+  note_mangler: "Skriv, hvad du har kontrolleret.",
+  ikke_fundet: "Betalingen blev ikke fundet.",
+  inhabil: INHABIL,
+  intet_varsel: "Betalingen har ikke et svindelvarsel.",
+  allerede: "Svindelvarslet er allerede gennemgået.",
+};
+
+// Admin/chef: et tidligt svindelvarsel fra Stripe er gennemgået (betalingsmodel
+// trin 2). Først derefter kan pengene gives til sælger, og markeringen kan
+// lukkes med "Markér som løst". Databasen gemmer hvem og noten og logger
+// handlingen i moderation_log. Ingen penge flyttes.
+export async function svindelvarselGennemgaaet(betalingId: string, note: string) {
+  return koer("svindelvarselGennemgaaet", async () => {
+    const { admin, userId } = await assertRole("admin");
+    const id = (betalingId ?? "").trim();
+    const n = (note ?? "").trim();
+    if (!id) throw new BrugerFejl(SVINDEL_FEJL.ikke_fundet);
+    if (!n) throw new BrugerFejl(SVINDEL_FEJL.note_mangler);
+    if (n.length > 2000) throw new BrugerFejl("Noten er for lang (højst 2000 tegn).");
+    const { data, error } = await admin.rpc("betaling_svindelvarsel_gennemgaaet", {
+      p_betaling: id,
+      p_medarbejder: userId,
+      p_note: n,
+    });
+    if (error) throw new Error(error.message);
+    const kode = (data as { kode?: string } | null)?.kode ?? "";
+    if (kode !== "ok") {
+      if (SVINDEL_FEJL[kode]) throw new BrugerFejl(SVINDEL_FEJL[kode]);
+      throw new Error(`betaling_svindelvarsel_gennemgaaet returnerede ${kode}`);
+    }
+    // Databasen har logget handlingen i moderation_log (samme transaktion).
+    revalidatePath("/admin", "layout");
+    return { ok: true as const };
+  });
+}
+
+// Til ConfirmDialog. formData: betalingId, note (påkrævet).
+export async function svindelvarselGennemgaaetForm(formData: FormData) {
+  return svindelvarselGennemgaaet(
+    ((formData.get("betalingId") as string) ?? "").trim(),
+    ((formData.get("note") as string) ?? "").trim(),
+  );
 }
 
 // Til ConfirmDialog. formData: brugerId, note (påkrævet).

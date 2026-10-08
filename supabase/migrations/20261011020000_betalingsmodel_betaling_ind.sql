@@ -23,9 +23,10 @@
 --     PaymentIntent er annulleret hos Stripe (betaling_klargoer_destination).
 --  4. Tidligt svindelvarsel fra Stripe (radar.early_fraud_warning): markering
 --     til staff (betaling_registrer_svindelvarsel). Ingen automatisk
---     refusion. Pengene gives ikke til sælger, før staff har kigget
---     (svindelvarsel_loest_kl sættes, når staff lukker markeringen) - også i
---     separat (betaling_claim_overfoersel).
+--     refusion. Pengene gives ikke til sælger, før admin/chef eksplicit har
+--     gennemgået varslet (betaling_svindelvarsel_gennemgaaet, logger hvem) -
+--     også i separat (betaling_claim_overfoersel). Indtil da kan markeringen
+--     til staff ikke lukkes.
 --  5. betaling_udbetaling_blokeret(): ALLE grunde til, at pengene ikke må
 --     udbetales endnu (bruges af trin 3 før hver payout).
 --  6. har_udbetalingskonto: med destination kræves (som Filip har besluttet)
@@ -33,8 +34,15 @@
 --     sendt ind - auktionen må køre, mens Stripe godkender. Frosset sælger =
 --     nej.
 --
--- Idempotent. Ændrer ingen handelsdata. Nye funktioner: security definer med
--- search_path = ''.
+--  7. Destination-låse: sælgerkonto og gebyr kan ikke ændres, når der findes
+--     en PaymentIntent (undtagen kontrolleret nulstilling), og beløbene ikke,
+--     når der findes en charge (betalinger_trin2_vedligehold).
+--  8. ubetalt_vinder_annuller og handel_forlaeng_betalingsfrist genoprettes
+--     helt (efter et drift-tjek af den nuværende definition).
+--
+-- Idempotent. Ændrer ingen handelsdata. Nye og ændrede funktioner: security
+-- definer med search_path = '' (de to genoprettede beholder search_path =
+-- public som før).
 
 set local lock_timeout = '5s';
 
@@ -49,7 +57,9 @@ alter table public.betalinger
   add column if not exists venter_paamindet_kl        timestamptz,
   add column if not exists tidligere_payment_intents  text[] not null default '{}',
   add column if not exists stripe_svindelvarsel_id    text,
-  add column if not exists svindelvarsel_loest_kl     timestamptz;
+  add column if not exists svindelvarsel_loest_kl     timestamptz,
+  add column if not exists svindelvarsel_loest_af     uuid references public.users(id) on delete set null,
+  add column if not exists svindelvarsel_note         text;
 
 comment on column public.betalinger.venter_paa_saelgerkonto_kl is
   'Destination: betalingen venter på, at sælgerens Stripe-konto kan tage imod betaling. Imens står betal_senest til fristen for kontoens godkendelse (ikke købers betalingsfrist). null = betalingen er åben.';
@@ -103,20 +113,41 @@ $fn$;
 revoke all on function public.saelger_kan_modtage_betaling(uuid) from public, anon, authenticated;
 grant execute on function public.saelger_kan_modtage_betaling(uuid) to service_role;
 
--- Fristen for, hvornår sælgerens konto senest skal være godkendt: 7 dage
--- efter auktionens slutning (= betalingens oprettelse), dog mindst 48 timer
--- fra nu (en konto, der først spærres senere, får også tid).
+-- Fristen for, hvornår sælgerens konto senest skal være godkendt: fast 7 dage
+-- efter auktionens slutning (= betalingens oprettelse). Også når kontoen
+-- først spærres senere - så annulleringen altid sker (ingen løkke).
 create or replace function public.betaling_venter_frist(p_oprettet timestamptz)
 returns timestamptz
 language sql
-stable
+immutable
 set search_path = ''
 as $fn$
-  select date_trunc('second', greatest(p_oprettet + interval '7 days', now() + interval '48 hours'));
+  select date_trunc('second', p_oprettet + interval '7 days');
 $fn$;
 
 revoke all on function public.betaling_venter_frist(timestamptz) from public, anon, authenticated;
 grant execute on function public.betaling_venter_frist(timestamptz) to service_role;
+
+-- Kan en ventende betaling åbnes nu? Sælgerens konto kan tage imod betaling
+-- (spejlet), og er sælgerkontoen låst på betalingen, er det stadig den konto.
+create or replace function public.betaling_kan_aabnes(p_betaling uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $fn$
+  select exists (
+    select 1
+      from public.betalinger bt
+      join public.betalingsprofiler bp on bp.user_id = bt.seller_id
+     where bt.id = p_betaling
+       and public.saelger_kan_modtage_betaling(bt.seller_id)
+       and (bt.saelger_stripe_konto is null or bt.saelger_stripe_konto = bp.stripe_account_id));
+$fn$;
+
+revoke all on function public.betaling_kan_aabnes(uuid) from public, anon, authenticated;
+grant execute on function public.betaling_kan_aabnes(uuid) to service_role;
 
 -- ===========================================================================
 -- 1. Ny betaling: venter, hvis sælgerens konto ikke er klar
@@ -146,14 +177,16 @@ create trigger betalinger_venter_ved_oprettelse
   before insert on public.betalinger
   for each row execute function public.betalinger_venter_ved_oprettelse();
 
--- Ved hver ændring:
+-- Ved hver ændring (BEFORE UPDATE):
 --   - betalt: venter ophører (en betaling er gået igennem alligevel).
---   - staff lukker markeringen (kraever_opmaerksomhed true -> false) efter et
---     svindelvarsel: svindelvarsel_loest_kl sættes.
---   - destination: application_fee_oere følger altid beløbene (CHECK
---     betalinger_destination_gebyr_stemmer), så en rettelse af fx
---     BidHamr Beskyttelse aldrig bryder constraint'en. PaymentIntentens fee
---     rettes af serveren (sikrPaymentIntent).
+--   - uløst svindelvarsel: markeringen til staff kan ikke fjernes, før staff
+--     eksplicit har gennemgået varslet (betaling_svindelvarsel_gennemgaaet).
+--   - destination: application_fee_oere følger beløbene, så længe betalingen
+--     afventer uden charge (CHECK betalinger_destination_gebyr_stemmer).
+--   - destination: sælgerkonto og gebyr kan ikke ændres, når der findes en
+--     PaymentIntent - undtagen den kontrollerede nulstilling (PaymentIntent
+--     fjernes og pi_forsoeg + 1, fx ved skiftet eller når betalingen sættes
+--     til at vente). Beløbene kan ikke ændres, når der findes en charge.
 create or replace function public.betalinger_trin2_vedligehold()
 returns trigger
 language plpgsql
@@ -165,13 +198,34 @@ begin
     new.venter_aarsag := null;
     new.betaling_aabnet_kl := coalesce(new.betaling_aabnet_kl, now());
   end if;
-  if old.kraever_opmaerksomhed and not new.kraever_opmaerksomhed
-     and new.svindelvarsel_kl is not null and new.svindelvarsel_loest_kl is null then
-    new.svindelvarsel_loest_kl := now();
+  if new.svindelvarsel_kl is not null and new.svindelvarsel_loest_kl is null then
+    new.kraever_opmaerksomhed := true;
   end if;
-  if new.pengemodel = 'destination' and new.application_fee_oere is not null then
+  if new.pengemodel = 'destination' and new.application_fee_oere is not null
+     and new.status = 'afventer' and new.stripe_charge_id is null then
     new.application_fee_oere := new.koebergebyr_oere + new.saelgergebyr_oere
                                 + new.fragt_oere + new.beskyttelse_oere;
+  end if;
+  if new.pengemodel = 'destination' then
+    if old.stripe_payment_intent_id is not null
+       and (new.saelger_stripe_konto is distinct from old.saelger_stripe_konto
+            or new.application_fee_oere is distinct from old.application_fee_oere)
+       and not (new.stripe_payment_intent_id is null and new.pi_forsoeg = old.pi_forsoeg + 1) then
+      raise exception 'betalinger_destination_laast: sælgerkonto og gebyr kan ikke ændres, når der findes en PaymentIntent';
+    end if;
+    if old.stripe_charge_id is not null
+       and (new.bud_oere is distinct from old.bud_oere
+            or new.koebergebyr_oere is distinct from old.koebergebyr_oere
+            or new.saelgergebyr_oere is distinct from old.saelgergebyr_oere
+            or new.fragt_oere is distinct from old.fragt_oere
+            or new.beskyttelse is distinct from old.beskyttelse
+            or new.beskyttelse_oere is distinct from old.beskyttelse_oere
+            or new.total_oere is distinct from old.total_oere
+            or new.udbetaling_oere is distinct from old.udbetaling_oere
+            or new.application_fee_oere is distinct from old.application_fee_oere
+            or new.saelger_stripe_konto is distinct from old.saelger_stripe_konto) then
+      raise exception 'betalinger_destination_laast: beløbene kan ikke ændres efter betaling';
+    end if;
   end if;
   return new;
 end;
@@ -187,7 +241,15 @@ create trigger betalinger_trin2_vedligehold
 -- ===========================================================================
 -- Sæt en åben betaling til at vente (serverens friske kontotjek fejlede)
 -- ===========================================================================
-create or replace function public.betaling_saet_venter(p_betaling uuid, p_aarsag text)
+-- Sæt en åben betaling til at vente (serverens friske kontotjek fejlede).
+-- En destination-PaymentIntent skal være annulleret hos Stripe af serveren
+-- først (p_annulleret_pi): den fjernes, og pi_forsoeg + 1, så der laves en ny,
+-- når betalingen åbner. En separat-PaymentIntent bliver stående (den kan
+-- stadig betales i den gamle model).
+drop function if exists public.betaling_saet_venter(uuid, text);
+
+create or replace function public.betaling_saet_venter(
+  p_betaling uuid, p_aarsag text, p_annulleret_pi text default null)
 returns boolean
 language plpgsql
 security definer
@@ -195,30 +257,38 @@ set search_path = ''
 as $fn$
 declare
   b record;
+  fjern boolean;
 begin
   select * into b from public.betalinger where id = p_betaling for update;
   if not found or b.status <> 'afventer' or b.stripe_charge_id is not null then
     return false;
   end if;
-  if b.venter_paa_saelgerkonto_kl is not null then
+  fjern := b.pengemodel = 'destination' and b.stripe_payment_intent_id is not null;
+  if fjern and b.stripe_payment_intent_id is distinct from p_annulleret_pi then
+    return false; -- PaymentIntenten er ikke annulleret hos Stripe
+  end if;
+  if b.venter_paa_saelgerkonto_kl is not null and not fjern then
     return true;
   end if;
   update public.betalinger
-     set venter_paa_saelgerkonto_kl = now(),
+     set venter_paa_saelgerkonto_kl = coalesce(venter_paa_saelgerkonto_kl, now()),
          venter_aarsag = left(coalesce(nullif(btrim(p_aarsag), ''), 'saelgerkonto_ikke_klar'), 200),
          betal_senest = public.betaling_venter_frist(b.oprettet),
          paamindelse_24_sendt_kl = null,
          paamindelse_40_sendt_kl = null,
          aabnet_besked_sendt_kl = null,
-         venter_paamindet_kl = null,
+         stripe_payment_intent_id = case when fjern then null else stripe_payment_intent_id end,
+         pi_forsoeg = case when fjern then pi_forsoeg + 1 else pi_forsoeg end,
+         tidligere_payment_intents = case when fjern then tidligere_payment_intents || b.stripe_payment_intent_id
+                                          else tidligere_payment_intents end,
          opdateret = now()
    where id = b.id;
   return true;
 end;
 $fn$;
 
-revoke all on function public.betaling_saet_venter(uuid, text) from public, anon, authenticated;
-grant execute on function public.betaling_saet_venter(uuid, text) to service_role;
+revoke all on function public.betaling_saet_venter(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.betaling_saet_venter(uuid, text, text) to service_role;
 
 -- ===========================================================================
 -- Åbn ventende betalinger, hvis sælgerens konto nu kan tage imod betaling
@@ -247,11 +317,13 @@ begin
      where bt.venter_paa_saelgerkonto_kl is not null
        and bt.status = 'afventer'
        and (p_saelger is null or bt.seller_id = p_saelger)
-       and public.saelger_kan_modtage_betaling(bt.seller_id)
      order by bt.venter_paa_saelgerkonto_kl
      limit 500
      for update of bt skip locked
   loop
+    if not public.betaling_kan_aabnes(b.id) then
+      continue;
+    end if;
     if not exists (select 1 from public.trades t
                     where t.id = b.trade_id and t.status = 'afventer_betaling') then
       continue;
@@ -278,12 +350,14 @@ grant execute on function public.betaling_aabn_ventende(uuid) to service_role;
 -- ===========================================================================
 -- 2. Kontoen blev ikke godkendt i tide: annullér og frys sælgeren
 -- ===========================================================================
--- Kun betalinger, der stadig venter, hvis frist er udløbet, og hvis sælger
--- STADIG ikke kan tage imod betaling. Køberen trækkes ikke (der er ingen
--- betalt charge), og der oprettes ingen "ubetalt vinder"-sag (køberen har
--- intet gjort forkert). Returnerer pr. annulleret handel: trade_id,
--- auction_id, buyer_id, seller_id og payment_intent (skal annulleres hos
--- Stripe af serveren, hvis den findes).
+-- Kun betalinger, der stadig venter, og hvis frist er udløbet. Kan betalingen
+-- åbnes (sælgerens konto er klar), springes den over - dog højst 1 døgn efter
+-- fristen: venter den stadig da, annulleres den altid (ingen løkke mellem
+-- "venter" og "åben"). Serveren henter sælgerkontoen frisk hos Stripe lige
+-- før (betalingInd.ts). Køberen trækkes ikke (der er ingen betalt charge), og
+-- der oprettes ingen "ubetalt vinder"-sag. Returnerer pr. annulleret handel:
+-- trade_id, auction_id, buyer_id, seller_id, betaling_id og payment_intent
+-- (skal annulleres hos Stripe af serveren, hvis den findes).
 create or replace function public.betaling_annuller_ikke_godkendt_saelgerkonto()
 returns jsonb
 language plpgsql
@@ -306,7 +380,7 @@ begin
      limit 100
      for update of bt skip locked
   loop
-    if public.saelger_kan_modtage_betaling(b.seller_id) then
+    if public.betaling_kan_aabnes(b.id) and b.betal_senest > now() - interval '1 day' then
       continue; -- åbnes af betaling_aabn_ventende
     end if;
     res := public.betaling_annuller(b.trade_id);
@@ -374,17 +448,17 @@ create trigger bids_kraev_saelger_ikke_frosset
 -- på kontoen (ellers kan den aldrig tage imod betaling). Frosset = nej.
 create or replace function public.har_udbetalingskonto(p_bruger uuid)
 returns boolean
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = '' as $fn$
   select exists (
-    select 1 from public.betalingsprofiler
-     where user_id = p_bruger
-       and stripe_account_id is not null
-       and connect_detaljer_indsendt
-       and connect_frakoblet_kl is null
-       and saelger_frosset_kl is null
-       and coalesce(connect_spaerret_aarsag, '') not like 'rejected.%'
+    select 1 from public.betalingsprofiler bp
+     where bp.user_id = p_bruger
+       and bp.stripe_account_id is not null
+       and bp.connect_detaljer_indsendt
+       and bp.connect_frakoblet_kl is null
+       and bp.saelger_frosset_kl is null
+       and coalesce(bp.connect_spaerret_aarsag, '') not like 'rejected.%'
        and (public.betalingsmodel_aktiv() = 'separat'
-            or connect_betalingsmetoder ? 'card_payments')
+            or bp.connect_betalingsmetoder ? 'card_payments')
   );
 $fn$;
 
@@ -396,7 +470,7 @@ create or replace function public.auctions_kraev_udbetalingskonto()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 begin
   if coalesce(auth.role(), '') = 'service_role' then
@@ -407,8 +481,8 @@ begin
     return new;
   end if;
   if new.bruger_id is not null and exists (
-       select 1 from public.betalingsprofiler
-        where user_id = new.bruger_id and saelger_frosset_kl is not null) then
+       select 1 from public.betalingsprofiler bp
+        where bp.user_id = new.bruger_id and bp.saelger_frosset_kl is not null) then
     raise exception 'saelger_frosset: Din udbetalingskonto er ikke godkendt af vores betalingspartner Stripe. Du kan sætte varer til salg igen, når Stripe har godkendt den.'
       using errcode = 'BHU02';
   end if;
@@ -429,13 +503,13 @@ $fn$;
 create or replace function public.betalinger_pengemodel_laas()
 returns trigger
 language plpgsql
-set search_path = public
+set search_path = ''
 as $$
 begin
   if new.pengemodel is distinct from old.pengemodel
      and (old.status <> 'afventer' or old.stripe_charge_id is not null
           or old.stripe_payment_intent_id is not null)
-     and not (coalesce(current_setting('bidhamr.pengemodel_skift', true), '') = 'ja'
+     and not (coalesce(pg_catalog.current_setting('bidhamr.pengemodel_skift', true), '') = 'ja'
               and old.status = 'afventer' and old.stripe_charge_id is null
               and new.stripe_payment_intent_id is null) then
     raise exception 'betalinger_pengemodel_laast: pengemodel kan ikke ændres efter betaling';
@@ -537,9 +611,11 @@ begin
      set svindelvarsel_kl = coalesce(svindelvarsel_kl, now()),
          stripe_svindelvarsel_id = p_varsel,
          svindelvarsel_loest_kl = null,
+         svindelvarsel_loest_af = null,
+         svindelvarsel_note = null,
          kraever_opmaerksomhed = true,
          sidste_fejl = left('Tidligt svindelvarsel fra Stripe (' || coalesce(nullif(p_type, ''), 'ukendt')
-           || ') - pengene gives ikke til sælger, før staff har kigget på handlen. Ingen automatisk refusion.', 500),
+           || ') - pengene gives ikke til sælger, før staff har gennemgået varslet. Ingen automatisk refusion.', 500),
          opdateret = now()
    where id = b.id;
   return 'markeret';
@@ -548,6 +624,67 @@ $fn$;
 
 revoke all on function public.betaling_registrer_svindelvarsel(text, text, text, text) from public, anon, authenticated;
 grant execute on function public.betaling_registrer_svindelvarsel(text, text, text, text) to service_role;
+
+-- moderation_log: ny handling 'svindelvarsel_gennemgaaet' (de eksisterende
+-- værdier bevares - constraint'en genopbygges kun, hvis værdien mangler).
+do $do$
+declare
+  def      text;
+  vaerdier text[];
+begin
+  select pg_get_constraintdef(oid) into def
+    from pg_constraint
+   where conname = 'moderation_log_handling_check' and conrelid = 'public.moderation_log'::regclass;
+  if def is null then
+    raise exception 'moderation_log_handling_check findes ikke - kontrollér moderation_log';
+  end if;
+  if position('svindelvarsel_gennemgaaet' in def) = 0 then
+    vaerdier := ('{' || substring(def from '\{([^}]*)\}') || '}')::text[] || array['svindelvarsel_gennemgaaet'];
+    alter table public.moderation_log drop constraint moderation_log_handling_check;
+    execute format('alter table public.moderation_log add constraint moderation_log_handling_check check (handling = any (%L::text[]))', vaerdier);
+  end if;
+end $do$;
+
+-- Staff (admin/chef) har gennemgået et tidligt svindelvarsel. Først derefter
+-- kan pengene gives til sælger, og markeringen kan lukkes. Svar (kode):
+-- ok, ingen_adgang, note_mangler, ikke_fundet, inhabil, intet_varsel, allerede.
+create or replace function public.betaling_svindelvarsel_gennemgaaet(
+  p_betaling uuid, p_medarbejder uuid, p_note text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  b    record;
+  note text := nullif(btrim(coalesce(p_note, '')), '');
+begin
+  if not exists (select 1 from public.users u
+                  where u.id = p_medarbejder and u.rolle in ('admin', 'chef')) then
+    return jsonb_build_object('kode', 'ingen_adgang');
+  end if;
+  if note is null then return jsonb_build_object('kode', 'note_mangler'); end if;
+  select * into b from public.betalinger where id = p_betaling for update;
+  if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
+  if p_medarbejder = b.buyer_id or p_medarbejder = b.seller_id then
+    return jsonb_build_object('kode', 'inhabil');
+  end if;
+  if b.svindelvarsel_kl is null then return jsonb_build_object('kode', 'intet_varsel'); end if;
+  if b.svindelvarsel_loest_kl is not null then return jsonb_build_object('kode', 'allerede'); end if;
+  update public.betalinger
+     set svindelvarsel_loest_kl = now(),
+         svindelvarsel_loest_af = p_medarbejder,
+         svindelvarsel_note = left(note, 2000),
+         opdateret = now()
+   where id = b.id;
+  insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+  values (p_medarbejder, 'svindelvarsel_gennemgaaet', 'handel', b.trade_id, b.buyer_id, left(note, 2000));
+  return jsonb_build_object('kode', 'ok', 'trade_id', b.trade_id);
+end;
+$fn$;
+
+revoke all on function public.betaling_svindelvarsel_gennemgaaet(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.betaling_svindelvarsel_gennemgaaet(uuid, uuid, text) to service_role;
 
 -- ===========================================================================
 -- 5. Hvorfor må pengene (endnu) ikke udbetales? (trin 3)
@@ -601,7 +738,7 @@ create or replace function public.betaling_claim_overfoersel(p_betaling uuid)
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   b record;
@@ -637,49 +774,171 @@ grant execute on function public.betaling_claim_overfoersel(uuid) to service_rol
 -- ===========================================================================
 -- Ventende betalinger: ingen "ubetalt vinder" og ingen forlængelse
 -- ===========================================================================
--- Rettes på stedet (som trin 1): mønstrene skal findes præcis én gang.
-create or replace function pg_temp.bm2_ret(p_fn text, p_par jsonb)
-returns text
-language plpgsql
-as $f$
-declare
-  v_def text := replace(pg_get_functiondef(p_fn::regprocedure), chr(13), '');
-  e     jsonb;
-  n     integer;
-begin
-  if position('venter_paa_saelgerkonto_kl' in v_def) > 0 then
-    return 'allerede';
-  end if;
-  for e in select * from jsonb_array_elements(p_par) loop
-    n := (length(v_def) - length(replace(v_def, e->>0, ''))) / length(e->>0);
-    if n <> (e->>2)::integer then
-      raise exception '%: forventede % forekomst(er) af "%", fandt %', p_fn, e->>2, e->>0, n;
-    end if;
-    v_def := replace(v_def, e->>0, e->>1);
-  end loop;
-  execute v_def;
-  return 'rettet';
-end
-$f$;
-
+-- Ventende betalinger: ingen "ubetalt vinder" og ingen forlængelse.
+-- De to funktioner genoprettes HELT (ikke tekst-erstatning - teksten er
+-- forskellig i produktion, på testdatabasen og i en database bygget fra
+-- filerne). Drift fanges først: den nuværende definition skal indeholde de
+-- forventede dele (whitespace ignoreres), ellers afbrydes migrationen, så en
+-- ukendt ændring ikke overskrives i stilhed.
 do $do$
+declare
+  r   record;
+  def text;
+  del text;
 begin
-  raise notice 'ubetalt_vinder_annuller: %', pg_temp.bm2_ret(
-    'public.ubetalt_vinder_annuller(uuid,boolean)', jsonb_build_array(
-      jsonb_build_array(
-        '  if not ((b.status = ''afventer'' and b.betal_senest < now())',
-        '  if b.venter_paa_saelgerkonto_kl is not null or not ((b.status = ''afventer'' and b.betal_senest < now())',
-        1)));
-  raise notice 'handel_forlaeng_betalingsfrist: %', pg_temp.bm2_ret(
-    'public.handel_forlaeng_betalingsfrist(uuid,timestamp with time zone)', jsonb_build_array(
-      jsonb_build_array(
-        '  if b.betal_senest <= now() then',
-        E'  if b.venter_paa_saelgerkonto_kl is not null then\n    return jsonb_build_object(''kode'', ''venter_paa_saelgerkonto'');\n  end if;\n  if b.betal_senest <= now() then',
-        1),
-      jsonb_build_array(
+  for r in
+    select * from (values
+      ('public.ubetalt_vinder_annuller(uuid,boolean)', array[
+        'select * into b from public.betalinger where trade_id = p_trade for update;',
+        'if not ((b.status = ''afventer'' and b.betal_senest < now()) or (b.status = ''behandles'' and coalesce(p_stripe_fejlet, false) and b.betal_senest + interval ''1 hour'' < now())) then',
+        'perform public.betaling_annuller(p_trade);',
+        'insert into public.ubetalte_vindere (trade_id, auction_id, buyer_id, seller_id) values (p_trade, b.auction_id, b.buyer_id, b.seller_id) on conflict (trade_id) do nothing returning id into sag;']),
+      ('public.handel_forlaeng_betalingsfrist(uuid,timestamp with time zone)', array[
+        'if t.status <> ''afventer_betaling'' or b.status not in (''afventer'', ''behandles'') then',
+        'if b.betal_senest <= now() then',
+        'if v_antal >= 3 then',
         'v_maks := date_trunc(''second'', b.oprettet + interval ''7 days'');',
-        'v_maks := date_trunc(''second'', coalesce(b.betaling_aabnet_kl, b.oprettet) + interval ''7 days'');',
-        1)));
+        'v_min := date_trunc(''second'', b.betal_senest + interval ''24 hours'');',
+        'insert into public.betalingsfrist_forlaengelser ( betaling_id, trade_id, seller_id, buyer_id, gammel_frist, ny_frist)'])
+    ) as v(fn, dele)
+  loop
+    def := regexp_replace(replace(pg_get_functiondef(r.fn::regprocedure), chr(13), ''), '\s+', ' ', 'g');
+    def := replace(replace(def, '( ', '('), ' )', ')');
+    if position('venter_paa_saelgerkonto_kl' in def) > 0 then
+      raise notice '%: allerede rettet - genoprettes', r.fn;
+      continue;
+    end if;
+    foreach del in array r.dele loop
+      del := replace(replace(regexp_replace(del, '\s+', ' ', 'g'), '( ', '('), ' )', ')');
+      if position(del in def) = 0 then
+        raise exception '%: definitionen afviger fra den forventede (mangler "%") - kontrollér funktionen, før migrationen køres', r.fn, del;
+      end if;
+    end loop;
+  end loop;
 end $do$;
 
-drop function pg_temp.bm2_ret(text, jsonb);
+create or replace function public.ubetalt_vinder_annuller(
+  p_trade uuid, p_stripe_fejlet boolean default false)
+returns jsonb
+language plpgsql security definer set search_path = public as $fn$
+declare
+  b     record;
+  sag   uuid;
+begin
+  select * into b from public.betalinger where trade_id = p_trade for update;
+  if not found then
+    return jsonb_build_object('annulleret', false, 'payment_intent', null, 'sag_id', null);
+  end if;
+
+  -- Betalingsmodel trin 2: en betaling, der venter på sælgerens konto, er
+  -- ikke en ubetalt vinder (betal_senest er fristen for kontoen).
+  if b.venter_paa_saelgerkonto_kl is not null or not (
+       (b.status = 'afventer' and b.betal_senest < now())
+    or (b.status = 'behandles' and coalesce(p_stripe_fejlet, false)
+        and b.betal_senest + interval '1 hour' < now())
+  ) then
+    return jsonb_build_object('annulleret', false,
+                              'payment_intent', b.stripe_payment_intent_id,
+                              'sag_id', null);
+  end if;
+
+  perform public.betaling_annuller(p_trade);
+
+  insert into public.ubetalte_vindere (trade_id, auction_id, buyer_id, seller_id)
+  values (p_trade, b.auction_id, b.buyer_id, b.seller_id)
+  on conflict (trade_id) do nothing
+  returning id into sag;
+
+  return jsonb_build_object('annulleret', true,
+                            'payment_intent', b.stripe_payment_intent_id,
+                            'sag_id', sag);
+end;
+$fn$;
+
+revoke all on function public.ubetalt_vinder_annuller(uuid, boolean) from public, anon, authenticated;
+grant execute on function public.ubetalt_vinder_annuller(uuid, boolean) to service_role;
+
+create or replace function public.handel_forlaeng_betalingsfrist(p_trade uuid, p_ny_frist timestamptz)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_bruger uuid := auth.uid();
+  v_ny     timestamptz := date_trunc('second', p_ny_frist);
+  v_maks   timestamptz;
+  v_min    timestamptz;
+  v_antal  integer;
+  b        record;
+  t        record;
+begin
+  if v_bruger is null then
+    return jsonb_build_object('kode', 'ikke_logget_ind');
+  end if;
+  if p_trade is null then
+    return jsonb_build_object('kode', 'ikke_fundet');
+  end if;
+
+  -- Laaseraekkefoelge som ubetalt_vinder_annuller/betaling_annuller:
+  -- betalinger foerst, derefter trades.
+  select * into b from public.betalinger where trade_id = p_trade for update;
+  if not found or b.seller_id is distinct from v_bruger then
+    return jsonb_build_object('kode', 'ikke_fundet');
+  end if;
+  select * into t from public.trades where id = p_trade for update;
+  if not found or t.seller_id is distinct from v_bruger then
+    return jsonb_build_object('kode', 'ikke_fundet');
+  end if;
+
+  if t.status <> 'afventer_betaling' or b.status not in ('afventer', 'behandles') then
+    return jsonb_build_object('kode', 'ikke_afventer');
+  end if;
+  -- Betalingsmodel trin 2: venter betalingen på sælgerens konto, er der
+  -- ingen betalingsfrist at forlænge endnu.
+  if b.venter_paa_saelgerkonto_kl is not null then
+    return jsonb_build_object('kode', 'venter_paa_saelgerkonto');
+  end if;
+  if b.betal_senest <= now() then
+    return jsonb_build_object('kode', 'frist_udloebet');
+  end if;
+
+  -- Hoejst 3 forlaengelser. Betalingen er laast, saa taellingen er sikker.
+  select count(*) into v_antal
+    from public.betalingsfrist_forlaengelser
+   where betaling_id = b.id;
+  if v_antal >= 3 then
+    return jsonb_build_object('kode', 'for_mange');
+  end if;
+
+  -- Fristen kan højst forlænges til 7 dage efter, at den startede (auktionens
+  -- slutning, eller når en ventende betaling åbnede - trin 2).
+  v_maks := date_trunc('second', coalesce(b.betaling_aabnet_kl, b.oprettet) + interval '7 days');
+  if v_ny is null or v_ny <= b.betal_senest then
+    return jsonb_build_object('kode', 'ugyldig_frist', 'maks_frist', v_maks);
+  end if;
+  if v_ny > v_maks then
+    return jsonb_build_object('kode', 'for_sent', 'maks_frist', v_maks);
+  end if;
+  -- Mindst 24 timer laengere end den nuvaerende frist - medmindre den nye
+  -- frist er maks-fristen (under 24 timer tilbage til graensen).
+  v_min := date_trunc('second', b.betal_senest + interval '24 hours');
+  if v_ny < v_min and v_ny <> v_maks then
+    return jsonb_build_object('kode', 'ugyldig_frist', 'maks_frist', v_maks);
+  end if;
+
+  update public.betalinger
+     set betal_senest            = v_ny,
+         paamindelse_24_sendt_kl = null,
+         paamindelse_40_sendt_kl = null,
+         opdateret               = now()
+   where id = b.id;
+
+  insert into public.betalingsfrist_forlaengelser (
+    betaling_id, trade_id, seller_id, buyer_id, gammel_frist, ny_frist)
+  values (b.id, t.id, t.seller_id, t.buyer_id, b.betal_senest, v_ny)
+  on conflict (betaling_id, ny_frist) do nothing;
+
+  return jsonb_build_object('kode', 'ok', 'betal_senest', v_ny, 'maks_frist', v_maks);
+end;
+$fn$;

@@ -92,6 +92,7 @@ export type BetalingRaekke = {
   stripe_destination_transfer_id?: string | null;
   midler_tilgaengelige_kl?: string | null;
   svindelvarsel_kl?: string | null;
+  svindelvarsel_loest_kl?: string | null;
   // Betalingen venter på sælgerens konto (betal_senest = fristen for
   // kontoens godkendelse, ikke købers betalingsfrist).
   venter_paa_saelgerkonto_kl?: string | null;
@@ -270,6 +271,9 @@ export async function kontrollerSaelgerkonto(kontoId: string): Promise<KontoTjek
     konto = await getStripe().accounts.retrieve(kontoId);
   } catch (err) {
     if (err instanceof Stripe.errors.StripePermissionError) {
+      // Ingen adgang til kontoen længere (frakoblet/lukket): markér den som
+      // frakoblet (til staff), så betalingen ikke åbnes igen.
+      await spejlFrakobling(kontoId);
       return { ok: false, aarsag: "konto_ingen_adgang" };
     }
     throw err;
@@ -297,13 +301,30 @@ export async function kontrollerSaelgerkonto(kontoId: string): Promise<KontoTjek
 }
 
 // Sætter betalingen til at vente på sælgerens konto og kaster
-// BetalingVenterFejl (betaling_saet_venter, 20261011020000).
-async function saetVenter(betalingId: string, aarsag: string): Promise<never> {
-  const { error } = await createAdminClient().rpc("betaling_saet_venter", {
-    p_betaling: betalingId,
+// BetalingVenterFejl (betaling_saet_venter, 20261011020000). Har betalingen
+// en destination-PaymentIntent, annulleres den først hos Stripe (en gammel
+// client_secret kan så ikke betales), og databasen fjerner den og tæller
+// pi_forsoeg op, så der laves en ny, når betalingen åbner. Er den alligevel
+// betalt eller under behandling, gives den tilbage (kalderen spejler den), og
+// betalingen sættes ikke til at vente. En separat-PaymentIntent bliver
+// stående (den kan stadig betales i den gamle model).
+async function saetVenter(b: BetalingRaekke, aarsag: string): Promise<Stripe.PaymentIntent> {
+  let annulleret: string | null = null;
+  if (b.pengemodel === "destination" && b.stripe_payment_intent_id) {
+    const ikkeAnnulleret = await annullerVedSkift(b.stripe_payment_intent_id);
+    if (ikkeAnnulleret) return ikkeAnnulleret;
+    annulleret = b.stripe_payment_intent_id;
+  }
+  const { data, error } = await createAdminClient().rpc("betaling_saet_venter", {
+    p_betaling: b.id,
     p_aarsag: aarsag,
+    p_annulleret_pi: annulleret,
   });
   if (error) throw new Error(`betaling_saet_venter: ${error.message}`);
+  if (data !== true) {
+    // Betalingen er ændret samtidig (fx betalt eller annulleret).
+    throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
+  }
   throw new BetalingVenterFejl();
 }
 
@@ -315,9 +336,10 @@ const ANNULLERBARE_VED_SKIFT: Stripe.PaymentIntent.Status[] = [
   "requires_action",
 ];
 
-// Annullerer en gammel separat-PaymentIntent ved skiftet til destination.
+// Annullerer en afventende PaymentIntent (en gammel separat-PaymentIntent ved
+// skiftet, eller en destination-PaymentIntent, når betalingen skal vente).
 // Returnerer null, når den er annulleret, ellers PaymentIntenten (fx
-// succeeded/processing - så skiftes der ikke, og den spejles).
+// succeeded/processing - så annulleres/skiftes der ikke, og den spejles).
 async function annullerVedSkift(piId: string): Promise<Stripe.PaymentIntent | null> {
   const stripe = getStripe();
   const pi = await stripe.paymentIntents.retrieve(piId);
@@ -390,7 +412,7 @@ export async function sikrPaymentIntent(
     if (erDestination) {
       // Frisk kontotjek, også før en eksisterende PaymentIntent betales.
       const tjek = await kontrollerSaelgerkonto(betaling.saelger_stripe_konto!);
-      if (!tjek.ok) await saetVenter(betaling.id, tjek.aarsag);
+      if (!tjek.ok) return saetVenter(betaling, tjek.aarsag);
     } else if (model === "destination") {
       // Skiftet: annullér den gamle separat-PaymentIntent og lav en ny.
       const skift = await skiftTilDestination(betaling);
@@ -519,15 +541,20 @@ async function skiftTilDestination(
 ): Promise<{ b: BetalingRaekke } | { pi: Stripe.PaymentIntent }> {
   const profil = await hentProfil(b.seller_id);
   const konto = profil?.stripe_account_id ?? null;
-  if (!konto) await saetVenter(b.id, "ingen_saelgerkonto");
-  const tjek = await kontrollerSaelgerkonto(konto!);
-  if (!tjek.ok) await saetVenter(b.id, tjek.aarsag);
+  if (!konto) return { pi: await saetVenter(b, "ingen_saelgerkonto") };
+  // Er sælgerkontoen låst på betalingen, skal det stadig være den konto
+  // (ellers åbner betalingen aldrig igen og annulleres efter fristen).
+  if (b.saelger_stripe_konto && b.saelger_stripe_konto !== konto) {
+    return { pi: await saetVenter(b, "saelgerkonto_aendret") };
+  }
+  const tjek = await kontrollerSaelgerkonto(konto);
+  if (!tjek.ok) return { pi: await saetVenter(b, tjek.aarsag) };
   const gammelPi = b.pengemodel === "destination" ? null : b.stripe_payment_intent_id;
   if (gammelPi) {
     const ikkeAnnulleret = await annullerVedSkift(gammelPi);
     if (ikkeAnnulleret) return { pi: ikkeAnnulleret };
   }
-  return { b: await klargoerDestination(b, konto!, gammelPi) };
+  return { b: await klargoerDestination(b, konto, gammelPi) };
 }
 
 // Cron: afventende separat-betalinger med en PaymentIntent annulleres og
@@ -828,6 +855,9 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
     return "ikke_klar";
   }
   if (indsigelseBlokerer(b)) return "indsigelse";
+  // Uløst tidligt svindelvarsel: ingen afregning og ingen overførsel, før
+  // staff har gennemgået det (også afvist i betaling_claim_overfoersel).
+  if (b.svindelvarsel_kl && !b.svindelvarsel_loest_kl) return "svindelvarsel";
   if (b.udbetaling_oere <= 0) return "intet_at_overfoere";
 
   const admin = createAdminClient();
