@@ -228,6 +228,7 @@ Formål: firmaer med CVR kan sælge på BidHamr med abonnement – og det skal v
 
 ## Senere – efter lancering
 Fundet i gennemgang af Tradera, Vinted og Etsy. Gode, men ikke nødvendige for at lancere.
+- [ ] **Eget fragtfirma for erhverv**: BidHamr kan slå det til for det enkelte firma i admin. Firmaet skal angive et sporingsnummer fra et kendt fragtfirma, så leveringen kan følges; udbetaling først når sporingen viser leveret og fortrydelsesfristen er udløbet *(Filip, 8. okt. 2026 – kun hvis store firmaer efterspørger det)*
 - [ ] **Feriemodus**: sælger kan sætte sin profil på pause, så nye auktioner ikke kan oprettes, og købere kan se, at sælger er væk *(flyttet hertil af Filip 6. okt. 2026 – rart at have, ikke nødvendigt til lancering)*
 - [x] **Autobud (maksimalbud)**: køber angiver sit maksimum, og BidHamr byder automatisk op til det (som Tradera). Maksimum kan sænkes, men ikke under nuværende bud *(flyttet fra fase 1 af Filip, 3. oktober 2026)*
 - [~] **Auktionen låses efter første bud**: sælger kan hverken redigere, tilføje noget eller slette/annullere auktionen – intet kan ændres *(flyttet fra fase 1 af Filip, 3. oktober 2026; ændret af Filip 7. okt. 2026: intet tillæg, helt låst)*
