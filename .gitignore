@@ -55,3 +55,4 @@ backups/
 backup-*.env
 *.dump
 prod-koersel/
+docs/niels/

@@ -116,3 +116,25 @@ Kort om modellen: kun firmaer med aktivt dansk CVR, månedligt abonnement (aktiv
 73. **Mindstepris/reserve.** Må erhvervssælgere sætte mindstepris på auktioner, og skal det oplyses særskilt over for forbrugere?
 74. **Opbevaring af erhvervshenvendelser.** Formularen på /erhverv gemmer kontaktperson, telefon, e-mail, adresse og besked. Afviste og arkiverede henvendelser, der ikke blev til en firmakonto, anonymiseres automatisk 12 måneder efter sidste behandling (firmanavn, CVR, status og datoer bevares). Er 12 måneder passende efter GDPR art. 5, stk. 1, litra e, eller skal det være kortere/længere? Skal det stå i privatlivspolitikken?
 75. **Telefonnummer.** Skal BidHamr oplyse et telefonnummer over for forbrugere (forbrugeraftaleloven § 8 efter Omnibus-direktivet / e-handelsloven § 7), eller er e-mail og kontaktformular nok? Og skal erhvervssælgere på BidHamr oplyse telefonnummer til købere? I dag viser firmaprofilen firmaets telefonnummer, men BidHamr selv har kun e-mail (support@ og erhverv@). Filip har et andet arbejde i hverdagene: er det nok med en kort telefontid (fx hverdage kl. 17–18 eller lørdag) og ellers telefonsvarer med opkald tilbage inden for 1–2 hverdage?
+
+## Fra Niels' gennemgang af betalingsdelen (Ankerdigital, 8. okt. 2026)
+
+Sådan virker koden i dag: Stripe Connect, "separate charges and transfers". Køberen betaler til BidHamrs egen Stripe-konto (platformskontoen) uden `on_behalf_of`, så BidHamr står som sælger over for kortnetværket. Købers penge står på BidHamrs Stripe-saldo sammen med BidHamrs egne, til handlen er afsluttet (typisk 19–32 dage; ved afhentning frigives de med det samme). Ved frigivelse overføres buddet minus 5 % til sælgerens Express-konto, og Stripe udbetaler derfra til sælgerens bank. Ved en dispute trækker Stripe beløbet fra BidHamrs saldo. Fem tilstande har ingen øvre tidsgrænse: åben sag, anke, ventende retur, åben dispute og penge til en sælger uden konto. Stripe har oplyst, at pengene må holdes i op til 90 dage.
+
+76. **Tilladelse.** Kræver det en tilladelse (fx betalingsinstitut eller e-pengeinstitut), at BidHamr holder købers penge på sin egen Stripe-saldo, til handlen er afsluttet?
+77. **Alternativer.** Ændrer svaret sig, hvis pengene holdes adskilt fra BidHamrs egne (Stripes "funds segregation" – dækker kun kort, ikke MobilePay), hvis betalingen sker på sælgerens vegne (`on_behalf_of`), eller hvis den går direkte til sælgerens konto?
+78. **Hvor længe må pengene stå?** Og hvad skal der ske med sager, anker og disputes uden slutdato?
+79. **Dække en dispute.** Må BidHamr midlertidigt dække en dispute med sælgernes penge på saldoen, eller skal der altid stå egne midler som reserve?
+80. **Hvidvask.** Skal BidHamr selv kende og kontrollere sine sælgere, eller er Stripes identitetskontrol nok?
+81. **Formuleringen om Stripe.** Hjemmesiden skriver "betalingen håndteres af vores betalingspartner Stripe" (og internt: "Stripe holder pengene"). Er den formulering dækkende, når pengene står på BidHamrs Stripe-saldo?
+82. **Disputes efter udbetaling.** BidHamr bærer tabet ved disputes efter udbetaling. Kan BidHamr kræve beløbet tilbage fra sælgeren, og hvad skal der stå i sælgervilkårene?
+83. **Afhentning.** Afhentning frigiver pengene med det samme, uden klagefrist. Hvad skal vilkårene sige om det?
+84. **Ikke-betalende vinder.** Bud er bindende, men der betales først efter auktionen. En køber, der ikke betaler, kan få kontoen lukket permanent. Kan det håndhæves, og hvordan skal det stå?
+85. **Beskyttelse, sager og anke i betingelserne.** Fx at refusion efter en vundet sag sker uden BidHamr Beskyttelse (gebyret for Beskyttelse refunderes ikke).
+86. **Databehandleraftaler** med Supabase, Stripe, Vercel og Resend.
+87. **Opbevaring af beviser.** Sletning af brugere og opbevaringstid – også for chatbeskeder og billeder, der bruges som bevis i sager.
+
+### Til revisor
+88. **Moms** på købergebyr, sælgergebyr, fragt og BidHamr Beskyttelse. Der er ingen momslogik i koden i dag (undtagen erhvervsabonnementet: 25 % oven i).
+89. **Bogføring.** Sælgernes penge på saldoen er ikke omsætning. Hvordan bogføres de, gebyrerne, Stripes gebyrer og tab på disputes?
+
