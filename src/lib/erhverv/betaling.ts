@@ -91,7 +91,16 @@ export type BetalingsStatus =
   | { status: "kraever_handling"; url: string }
   // rulletTilbage: databasen er sat tilbage til før skiftet (Stripe fejlede,
   // før abonnementet blev ændret). betalFoerst: abonnementet er ikke aktivt.
-  | { status: "fejl"; fejl: string; rulletTilbage?: boolean; betalFoerst?: boolean };
+  // laasOvertaget: databasen er IKKE rullet tilbage, fordi et nyere pakkeskift
+  // (eller chefen) har taget låsen imens - det nye skift gælder.
+  | { status: "fejl"; fejl: string; rulletTilbage?: boolean; laasOvertaget?: boolean; betalFoerst?: boolean };
+
+// Udfald af rulTilbage.
+type Tilbagerulning = "ok" | "fejl" | "laas_overtaget";
+
+function tilbagerulFelter(r: Tilbagerulning): { rulletTilbage: boolean; laasOvertaget?: true } {
+  return r === "laas_overtaget" ? { rulletTilbage: false, laasOvertaget: true } : { rulletTilbage: r === "ok" };
+}
 
 // Tilstanden før et pakkeskift (firma_skift_pakke_server -> 'tilbagerul').
 export type Tilbagerul = {
@@ -476,7 +485,7 @@ async function rulTilbage(
   gendanAfventende: boolean,
   aarsag: string,
   laas: string | null,
-): Promise<boolean> {
+): Promise<Tilbagerulning> {
   try {
     const svar = await rpc("firma_pakkeskift_rul_tilbage", {
       p_firma: firmaId,
@@ -489,24 +498,33 @@ async function rulTilbage(
       // chefen taget den, røres intet ('laas_overtaget').
       p_laas: laas,
     });
-    // Et nyere pakkeskift gælder nu - Stripe blev ikke ændret af dette.
-    if (svar.kode === "laas_overtaget") return true;
+    // Et nyere pakkeskift (eller chefen) har taget låsen: intet er rullet
+    // tilbage herfra, og det nye skift gælder. Det er ikke "alt er rullet
+    // tilbage" - drift skal tjekke, at Stripe og databasen stemmer.
+    if (svar.kode === "laas_overtaget") {
+      await logDriftFejl({
+        kilde: "server",
+        hvor: "erhverv/rul-tilbage",
+        fejl: `Pakkeskift ${skiftId ?? "-"} for firma ${firmaId} blev ikke rullet tilbage: et nyere pakkeskift har taget låsen. Tjek abonnementet i Stripe mod databasen. Stripe-fejl: ${aarsag}`,
+      });
+      return "laas_overtaget";
+    }
     if (svar.kode !== "ok") {
       await logDriftFejl({
         kilde: "server",
         hvor: "erhverv/rul-tilbage",
         fejl: `Pakkeskift ${skiftId ?? "-"} for firma ${firmaId} kunne ikke rulles tilbage (${String(svar.kode)}) efter Stripe-fejl: ${aarsag}`,
       });
-      return false;
+      return "fejl";
     }
-    return true;
+    return "ok";
   } catch (err) {
     await logDriftFejl({
       kilde: "server",
       hvor: "erhverv/rul-tilbage",
       fejl: `Pakkeskift ${skiftId ?? "-"} for firma ${firmaId}: tilbagerulning fejlede (${fejltekst(err)}) efter Stripe-fejl: ${aarsag}`,
     });
-    return false;
+    return "fejl";
   }
 }
 
@@ -624,8 +642,10 @@ export async function startOpgradering(
     const s = stripe();
     let sub = await s.subscriptions.retrieve(f.stripe_subscription_id);
     if (sub.status !== "active") {
-      if (tilbagerul) await rulTilbage(f.id, skift.id, tilbagerul, true, true, `abonnementet er ${sub.status}`, laas);
-      return { status: "fejl", fejl: `Abonnementet er ${sub.status}`, rulletTilbage: !!tilbagerul, betalFoerst: true };
+      const r = tilbagerul
+        ? await rulTilbage(f.id, skift.id, tilbagerul, true, true, `abonnementet er ${sub.status}`, laas)
+        : "fejl";
+      return { status: "fejl", fejl: `Abonnementet er ${sub.status}`, ...tilbagerulFelter(r), betalFoerst: true };
     }
     const prisId = await sikrPris(skift.til_pakke_id);
 
@@ -706,9 +726,9 @@ export async function startOpgradering(
       // Er planen frigivet i Stripe, kan den planlagte nedgradering ikke
       // gendannes; er en gammel faktura annulleret, kan den gamle
       // opgradering heller ikke.
-      const ok = await rulTilbage(firmaId, skiftId, tilbagerul, !planFrigivet, annulleret === 0, `opgradering: ${fejltekst(err)}`, laas);
+      const r = await rulTilbage(firmaId, skiftId, tilbagerul, !planFrigivet, annulleret === 0, `opgradering: ${fejltekst(err)}`, laas);
       await rydSkiftMetadata(subIdForRyd, skiftId);
-      return { status: "fejl", fejl: fejltekst(err), rulletTilbage: ok };
+      return { status: "fejl", fejl: fejltekst(err), ...tilbagerulFelter(r) };
     }
     return { status: "fejl", fejl: fejltekst(err) };
   }
@@ -811,8 +831,8 @@ export async function startNedgradering(
         .catch((e) => logDriftFejl({ kilde: "server", hvor: "startNedgradering/frigiv", fejl: e }));
     }
     if (firmaId && tilbagerul) {
-      const ok = await rulTilbage(firmaId, skiftId, tilbagerul, true, annulleret === 0, `nedgradering: ${fejltekst(err)}`, laas);
-      return { status: "fejl", fejl: fejltekst(err), rulletTilbage: ok };
+      const r = await rulTilbage(firmaId, skiftId, tilbagerul, true, annulleret === 0, `nedgradering: ${fejltekst(err)}`, laas);
+      return { status: "fejl", fejl: fejltekst(err), ...tilbagerulFelter(r) };
     }
     return { status: "fejl", fejl: fejltekst(err) };
   }
@@ -837,8 +857,8 @@ export async function annullerPlanlagtSkift(
     return { status: "betalt" };
   } catch (err) {
     if (firmaId && tilbagerul) {
-      const ok = await rulTilbage(firmaId, null, tilbagerul, true, annulleret === 0, `behold pakken: ${fejltekst(err)}`, laas);
-      return { status: "fejl", fejl: fejltekst(err), rulletTilbage: ok };
+      const r = await rulTilbage(firmaId, null, tilbagerul, true, annulleret === 0, `behold pakken: ${fejltekst(err)}`, laas);
+      return { status: "fejl", fejl: fejltekst(err), ...tilbagerulFelter(r) };
     }
     return { status: "fejl", fejl: fejltekst(err) };
   }

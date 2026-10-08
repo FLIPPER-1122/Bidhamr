@@ -586,6 +586,9 @@ export const FIRMA_OVERSIGT_EKSTRA = {
   // Stripe kunne ikke ændre abonnementet: skiftet er rullet tilbage.
   pakkeskiftFejl:
     "Vi kunne ikke skifte din pakke lige nu. Din pakke er ikke ændret. Prøv igen om lidt, eller skriv til erhverv@bidhamr.dk.",
+  // Stripe fejlede, og et andet pakkeskift gik i gang imens (det gælder nu).
+  pakkeskiftLaasOvertaget:
+    "Vi kunne ikke gennemføre dit pakkeskift, og et andet pakkeskift blev sat i gang imens. Se din pakke under Abonnement, før du prøver igen. Er du i tvivl, så skriv til erhverv@bidhamr.dk.",
   // Abonnementet i Stripe er ikke aktivt (fx en ubetalt regning).
   pakkeskiftBetalFoerst: "Du kan ikke skifte pakke, før din seneste regning er betalt. Din pakke er ikke ændret.",
   afhentning: (vare: string) => `Køberen skal hente ${vare}. Aftal tid og sted med køberen.`,

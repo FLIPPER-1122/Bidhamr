@@ -101,8 +101,12 @@ export const GRAENSER = {
   // begrænser databasen selv (firma_skift_pakke_server).
   firma_skift_pakke_ip: { maks: 30, vindueSek: 60 * 60 },
   // POST /api/betaling/kort (appens automatisk betaling / fjern kort) pr. IP,
-  // før tokenet er valideret.
-  betaling_kort_ip: { maks: 60, vindueSek: 60 * 60 },
+  // før tokenet er valideret. Rummelig, fordi mange mobilbrugere deler IP
+  // (CGNAT); den egentlige grænse er pr. bruger nedenfor.
+  betaling_kort_ip: { maks: 150, vindueSek: 60 * 60 },
+  // Samme endpoint pr. bruger, efter tokenet er godkendt (hvert kald rammer
+  // Stripe).
+  betaling_kort_bruger: { maks: 20, vindueSek: 60 * 60 },
   cvr_opslag_staff: { maks: 60, vindueSek: 60 * 60 },
   // Klager og visning af en DSA-sag via signeret link.
   dsa_klage_ip: { maks: 10, vindueSek: 60 * 60 },

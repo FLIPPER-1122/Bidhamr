@@ -607,6 +607,37 @@ export async function notificerAnkeAfgjort(
   }
 }
 
+// Sager (og ventende anker) lukket, fordi køberens bank har afgjort
+// betalingen (tabt indsigelse - betaling_indsigelse_tabt_luk). Én besked pr.
+// sag til køber og sælger med sagens begrundelse. Ingen beløb. Idempotent
+// nøgle pr. sag. Kaster aldrig.
+export async function notificerSagLukketVedIndsigelse(
+  tradeId: string,
+  sagIds: string[],
+  begrundelse: string,
+): Promise<void> {
+  if (!tradeId || sagIds.length === 0) return;
+  try {
+    const admin = createAdminClient();
+    const h = await handelOgTitel(admin, tradeId);
+    if (!h) return;
+    const { data: anker } = await admin.from("sag_anker").select("sag_id").in("sag_id", sagIds);
+    const medAnke = new Set(((anker ?? []) as { sag_id: string }[]).map((a) => a.sag_id));
+    const link = sagLink(tradeId);
+    const grund = begrundelse ? ` ${begrundelse}` : "";
+    for (const sagId of sagIds) {
+      const hvad = medAnke.has(sagId) ? "sagen og anken" : "sagen";
+      const titel = medAnke.has(sagId) ? "Sagen og anken er lukket" : "Sagen er lukket";
+      const tekst = `BidHamr har lukket ${hvad} om "${h.titel}".${grund}`;
+      const data = { trade_id: tradeId, sag_id: sagId };
+      await send(h.buyer_id, "sag", { titel, tekst, link, data, noegle: `sag_indsigelse_tabt_koeber:${sagId}` });
+      await send(h.seller_id, "sag", { titel, tekst, link, data, noegle: `sag_indsigelse_tabt_saelger:${sagId}` });
+    }
+  } catch (err) {
+    console.error("Notifikation om lukket sag (tabt indsigelse) fejlede:", tradeId, err);
+  }
+}
+
 // Cron: afgjorte sager, hvor ankefristen (4 dage) er udløbet. Databasen
 // flytter pengene atomisk (sag_afvikl_forfaldne), derefter kaldes Stripe.
 export async function afviklForfaldneSager(): Promise<number> {

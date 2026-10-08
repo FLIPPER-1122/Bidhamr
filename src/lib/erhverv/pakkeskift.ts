@@ -49,6 +49,9 @@ type DbSvar = {
 };
 
 function stripeFejl(b: Extract<BetalingsStatus, { status: "fejl" }>): SkiftPakkeSvar {
+  // Et andet pakkeskift er gået i gang imens: dette skift er ikke rullet
+  // tilbage, og det nye gælder. Sig det ærligt i stedet for "ikke ændret".
+  if (b.laasOvertaget) return { fejl: FIRMA_OVERSIGT_EKSTRA.pakkeskiftLaasOvertaget, kode: "i_gang" };
   if (b.betalFoerst) return { fejl: FIRMA_OVERSIGT_EKSTRA.pakkeskiftBetalFoerst, kode: "betal_foerst" };
   return { fejl: b.rulletTilbage ? FIRMA_OVERSIGT_EKSTRA.pakkeskiftFejl : FIRMA_OVERSIGT_EKSTRA.opgraderingBetalingFejl, kode: "stripe_fejl" };
 }
