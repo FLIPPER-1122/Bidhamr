@@ -58,6 +58,12 @@ const NOEGLE_LEVETID_MS = 23 * 60 * 60_000;
 
 type Admin = ReturnType<typeof createAdminClient>;
 
+// Kolonne eller funktion findes ikke (migrationen er ikke kørt endnu) - som
+// trin 2: ingen alarm.
+function manglerIDatabasen(err: { code?: string } | null): boolean {
+  return !!err && ["PGRST202", "PGRST204", "42883", "42703"].includes(err.code ?? "");
+}
+
 type UdbetalingRaekke = {
   id: string;
   seller_id: string;
@@ -144,7 +150,6 @@ const AFREGNING_OK = new Set([
   "plan_ikke_manuel",
   "udbetalinger_inaktive",
   "venter_paa_bank",
-  "kraever_opmaerksomhed",
   "allerede_udbetalt",
 ]);
 
@@ -175,6 +180,34 @@ export async function udbetalTilSaelger(betalingId: string): Promise<string> {
   return r === "udbetalt" ? "venter_naeste_udbetaling" : r;
 }
 
+// Payouts, betalingen tidligere har været med i, og som databasen har som
+// failed/canceled: hentes frisk hos Stripe. Står en af dem ikke som
+// failed/canceled hos Stripe, stoppes betalingen (markering + drift-alarm),
+// så pengene aldrig udbetales to gange.
+async function tidligereUdbetalingBekraeftetFejlet(admin: Admin, b: BetalingRaekke): Promise<boolean> {
+  const { data, error } = await admin
+    .from("saelger_udbetalinger")
+    .select("id, stripe_konto, stripe_payout_id, status")
+    .contains("betaling_ids", [b.id])
+    .in("status", ["failed", "canceled"]);
+  if (error) throw new Error(`tidligere udbetalinger: ${error.message}`);
+  for (const u of data ?? []) {
+    if (!u.stripe_payout_id) continue;
+    const p = await getStripe().payouts.retrieve(u.stripe_payout_id as string, undefined, {
+      stripeAccount: u.stripe_konto as string,
+    });
+    if (p.status !== "failed" && p.status !== "canceled") {
+      await markerBetaling(
+        admin,
+        b,
+        `Udbetaling stoppet: en tidligere udbetaling (${p.id}) står som '${p.status}' hos Stripe, men som '${u.status}' i databasen - kontrollér, at pengene ikke allerede er udbetalt.`,
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
 // --------------------------------------------------------------- F03
 
 // Frisk tjek hos Stripe lige før udbetaling (Niels F03). null = i orden.
@@ -187,6 +220,20 @@ export async function tjekFoerUdbetaling(b: BetalingRaekke): Promise<string | nu
   if (!b.stripe_charge_id) return "ingen_charge";
   const charge = await stripe.charges.retrieve(b.stripe_charge_id);
 
+  // Beløbene skal være præcis dem, databasen har låst (en afvigelse kan ikke
+  // omgås med "Prøv igen" - tjekket kører før hver udbetaling).
+  const feeOere = Number(charge.application_fee_amount ?? -1);
+  if (
+    charge.currency !== "dkk" ||
+    Number(charge.amount) !== Number(b.total_oere) ||
+    b.application_fee_oere === null ||
+    b.application_fee_oere === undefined ||
+    feeOere !== Number(b.application_fee_oere) ||
+    Number(charge.amount) - feeOere !== Number(b.udbetaling_oere)
+  ) {
+    await markerBetaling(admin, b, "Udbetaling stoppet: beløb, gebyr eller valuta hos Stripe passer ikke med handlen.");
+    return "beloeb_afviger";
+  }
   if (charge.status !== "succeeded" || !charge.paid) {
     await markerBetaling(admin, b, `Udbetaling stoppet: betalingen står som '${charge.status}' hos Stripe.`);
     return "charge_ikke_betalt";
@@ -224,6 +271,10 @@ export async function tjekFoerUdbetaling(b: BetalingRaekke): Promise<string | nu
     return "transfer_afviger";
   }
   const tr = await stripe.transfers.retrieve(transferId);
+  if (Number(tr.amount) !== Number(charge.amount) || tr.currency !== "dkk") {
+    await markerBetaling(admin, b, "Udbetaling stoppet: overførslen til sælgerens konto har et andet beløb end betalingen.");
+    return "transfer_afviger";
+  }
   if (tr.reversed || Number(tr.amount_reversed) > 0) {
     await markerBetaling(admin, b, "Udbetaling stoppet: overførslen til sælgerens konto er helt eller delvist tilbageført hos Stripe.");
     return "transfer_tilbagefoert";
@@ -243,7 +294,7 @@ function dkk(liste: Stripe.Balance.Available[] | Stripe.Balance.Pending[] | unde
 }
 
 // Alle betalte destination-betalinger på kontoen, der ikke er udbetalt eller
-// refunderet - det, kontoen skal kunne dække.
+// refunderet (også dem med en refusion i gang) - det, kontoen skal kunne dække.
 async function skyldigOere(admin: Admin, saelgerId: string, konto: string): Promise<number> {
   const { data, error } = await admin
     .from("betalinger")
@@ -252,7 +303,8 @@ async function skyldigOere(admin: Admin, saelgerId: string, konto: string): Prom
     .eq("pengemodel", "destination")
     .eq("saelger_stripe_konto", konto)
     .eq("status", "betalt")
-    .is("refusion_anmodet_kl", null)
+    // Også betalinger med en anmodet refusion: pengene står på kontoen, til
+    // refusionen (reverse_transfer) er gennemført (status 'refunderet').
     .is("saelger_udbetaling_id", null)
     .limit(1000);
   if (error) throw new Error(`skyldigOere: ${error.message}`);
@@ -309,6 +361,9 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
   const klar: BetalingRaekke[] = [];
   for (const b of raekker ?? []) {
     if ((await blokeret(admin, b.id)) !== null) continue;
+    // Har betalingen været med i en fejlet/annulleret udbetaling, skal Stripe
+    // bekræfte, at den payout virkelig ikke gik igennem - ellers ingen ny.
+    if (!(await tidligereUdbetalingBekraeftetFejlet(admin, b))) continue;
     // 3. F03.
     if ((await tjekFoerUdbetaling(b)) !== null) continue;
     klar.push(b);
@@ -398,6 +453,20 @@ async function opretPayout(admin: Admin, u: UdbetalingRaekke): Promise<string> {
     );
     const fundet = liste.data.find((p) => p.metadata?.saelger_udbetaling_id === u.id);
     if (fundet) return registrerOprettet(admin, u, fundet);
+  }
+
+  // Afklaring af en ældre claim: saldoen tjekkes igen, før Stripe kaldes
+  // (ved en frisk claim er den tjekket lige før i udbetalSaelger).
+  if (u.status === "usikker" || u.forsoeg > 0 || Date.now() - new Date(u.oprettet).getTime() > CLAIM_I_GANG_MS) {
+    const saldo = await stripe.balance.retrieve({}, valg);
+    if (dkk(saldo.available, true) < Number(u.beloeb_oere)) {
+      await admin.rpc("saelger_udbetaling_afvist", {
+        p_udbetaling: u.id,
+        p_fejl: "Saldoen dækkede ikke beløbet ved nyt forsøg",
+        p_marker: false,
+      });
+      return "afvist";
+    }
   }
 
   // Nøglen er udløbet (over 23 t): nyt forsøg med ny nøgle - payouten findes
@@ -552,15 +621,20 @@ export async function udbetalVentende(saelgerId?: string): Promise<number> {
       .or(`udbetal_tidligst.is.null,udbetal_tidligst.lte."${nu}"`)
       .limit(1000);
     if (error) {
+      // Migrationen er ikke kørt endnu (kolonne/funktion mangler): ingen alarm.
+      if (manglerIDatabasen(error)) return 0;
       await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Udbetaling til sælger", fejl: error });
       return 0;
     }
     for (const r of data ?? []) saelgere.add(r.seller_id as string);
-    const { data: uaf } = await admin
+    const { data: uaf, error: uafFejl } = await admin
       .from("saelger_udbetalinger")
       .select("seller_id")
       .in("status", ["claimet", "usikker"])
       .limit(200);
+    if (uafFejl && !manglerIDatabasen(uafFejl)) {
+      await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Udbetaling til sælger", fejl: uafFejl });
+    }
     for (const r of uaf ?? []) saelgere.add(r.seller_id as string);
   }
   let antal = 0;
@@ -579,7 +653,8 @@ export async function udbetalVentende(saelgerId?: string): Promise<number> {
 
 // payout.paid/failed/canceled (Connect). Returnerer null, hvis payouten ikke
 // er en BidHamr-udbetaling (fx Stripes automatiske udbetaling i separat).
-export async function spejlBidhamrPayout(konto: string, payout: Stripe.Payout): Promise<string | null> {
+export async function spejlBidhamrPayout(konto: string, payoutArg: Stripe.Payout): Promise<string | null> {
+  let payout = payoutArg;
   const admin = createAdminClient();
   const fraMetadata = payout.metadata?.saelger_udbetaling_id ?? null;
   const { data: kendt } = await admin
@@ -597,6 +672,11 @@ export async function spejlBidhamrPayout(konto: string, payout: Stripe.Payout): 
     .maybeSingle<UdbetalingRaekke>();
   if (!u || u.stripe_konto !== konto) return null;
 
+  // Betalingerne frigøres kun på Stripes egen, friske status - aldrig på et
+  // objekt, der er givet med (fx fra et event eller et svar).
+  if (payout.status === "failed" || payout.status === "canceled") {
+    payout = await getStripe().payouts.retrieve(payout.id, undefined, { stripeAccount: konto });
+  }
   const status = payout.status === "paid" || payout.status === "failed" || payout.status === "canceled" ? payout.status : null;
   if (!status) {
     // pending/in_transit: payout-id'et gemmes, hvis svaret ved oprettelsen gik tabt.
@@ -668,7 +748,11 @@ export async function bankKontoRettet(konto: Stripe.Account, userId: string): Pr
       p_bank: standard.id,
       p_tving: false,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      // Migrationen 20261011030000 er ikke kørt endnu: intet at gøre.
+      if (manglerIDatabasen(error)) return false;
+      throw new Error(error.message);
+    }
     if (!data) return false;
     await udbetalVentende(userId);
     return true;

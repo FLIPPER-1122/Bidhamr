@@ -102,8 +102,10 @@ comment on column public.betalingsprofiler.connect_udbetaling_fejlet_bank is
 -- ===========================================================================
 -- Filip 8. okt. 2026: ved afhentning venter udbetalingen 3 dage, hvis sælgeren
 -- har under 5 gennemførte handler, eller købet er over 2.000 kr.
---   "gennemført handel" = en anden betaling for sælgeren, der er betalt og
---     frigivet uden refusion og uden åben/tabt indsigelse (chefens valg).
+--   "gennemført handel" = en handel med en ANDEN køber end den aktuelle;
+--     kun forskellige købere tæller. Betalt og frigivet for mindst 3 dage
+--     siden, uden refusion, indsigelse, uløst svindelvarsel eller åben
+--     markering (chefens valg - strammet efter review).
 --   "købet" = købers samlede betaling (total_oere) - det strengeste (chefens
 --     valg).
 -- Regnes fra frigivelsen (sælgeren har indtastet købers afhentningskode).
@@ -122,14 +124,20 @@ begin
      and new.udbetal_tidligst is null then
     select t.afhentning into v_afhentning from public.trades t where t.id = new.trade_id;
     if coalesce(v_afhentning, false) then
-      select count(*) into v_antal
+      select count(distinct b2.buyer_id) into v_antal
         from public.betalinger b2
        where b2.seller_id = new.seller_id
          and b2.id <> new.id
+         and b2.buyer_id <> new.buyer_id
+         and b2.buyer_id <> new.seller_id
          and b2.status = 'betalt'
          and b2.frigivet_kl is not null
+         and b2.frigivet_kl <= now() - interval '3 days'
          and b2.refusion_anmodet_kl is null
-         and not public.betaling_indsigelse_blokerer(b2.indsigelse_kl, b2.indsigelse_status);
+         and b2.refunderet_kl is null
+         and b2.indsigelse_kl is null
+         and (b2.svindelvarsel_kl is null or b2.svindelvarsel_loest_kl is not null)
+         and not b2.kraever_opmaerksomhed;
       if v_antal < 5 or new.total_oere > 200000 then
         new.udbetal_tidligst := new.frigivet_kl + interval '3 days';
       end if;
@@ -524,7 +532,7 @@ begin
       ('public.admin_penge_holdes(integer)',
        'b27ca3cad6b9d35113149ab5f4ca6748', '952173b9a04ede95438fd49da5b3ec20'),
       ('public.admin_penge_tal(timestamp with time zone,timestamp with time zone)',
-       'e6b8419cdc4ccdd915344b0a83700958', '74480ad1e993a43d95eed9c325e01965')
+       'e6b8419cdc4ccdd915344b0a83700958', '168599dca4d37c1844e5bceb124d7cbb')
     ) as v(fn, gammel, ny)
   loop
     select md5(lower(regexp_replace(regexp_replace(replace(p.prosrc, chr(13), ''), '--[^\n]*', '', 'g'), '\s', '', 'g')))
@@ -693,7 +701,10 @@ as $function$
     select bt.*,
            coalesce(bt.refusion_oere, bt.total_oere) as ref_beloeb,
            (bt.refusion_oere is not null and bt.refusion_oere < bt.total_oere) as er_delvis,
-           (bt.stripe_transfer_id is not null or bt.saelger_udbetaling_id is not null) as givet_til_saelger
+           (bt.stripe_transfer_id is not null
+            or exists (select 1 from public.saelger_udbetalinger su
+                        where su.id = bt.saelger_udbetaling_id
+                          and su.status in ('oprettet', 'paid'))) as givet_til_saelger
       from public.betalinger bt
   ),
   betalt as (
@@ -841,7 +852,7 @@ grant execute on function public.admin_penge_tal(timestamptz, timestamptz) to se
 
 -- Én handel (betalingsmodel destination, frigivet). null = ikke relevant
 -- (separat, ikke frigivet, eller ikke sælgerens handel).
--- {status: venter|stoppet|paa_vej|udbetalt|venter_paa_bank, tidligst_kl,
+-- {status: venter|stoppet|kraever_handling|paa_vej|udbetalt|venter_paa_bank, tidligst_kl,
 --  sendt_kl, beloeb_oere}
 create or replace function public.handel_udbetalingsstatus(p_trade uuid)
 returns jsonb
@@ -858,7 +869,10 @@ declare
   v_tid   timestamptz;
 begin
   if v_uid is null or p_trade is null then return null; end if;
-  select * into b from public.betalinger where trade_id = p_trade and seller_id = v_uid;
+  select * into b from public.betalinger
+   where trade_id = p_trade and seller_id = v_uid
+   order by oprettet desc, id
+   limit 1;
   if not found or b.pengemodel <> 'destination' or b.status <> 'betalt' or b.frigivet_kl is null then
     return null;
   end if;
@@ -877,6 +891,10 @@ begin
     return jsonb_build_object('status', 'venter_paa_bank', 'tidligst_kl', null,
                               'sendt_kl', null, 'beloeb_oere', b.udbetaling_oere);
   end if;
+  if v_grund in ('udbetalinger_inaktive', 'plan_ikke_manuel', 'transfer_ukendt') then
+    return jsonb_build_object('status', 'kraever_handling', 'tidligst_kl', null,
+                              'sendt_kl', null, 'beloeb_oere', b.udbetaling_oere);
+  end if;
   if v_grund in ('refusion', 'indsigelse', 'svindelvarsel', 'radar_review', 'handel_annulleret',
                  'sag_aaben', 'kraever_opmaerksomhed', 'konto_frakoblet', 'konto_skiftet') then
     return jsonb_build_object('status', 'stoppet', 'tidligst_kl', null,
@@ -893,7 +911,7 @@ revoke all on function public.handel_udbetalingsstatus(uuid) from public, anon, 
 grant execute on function public.handel_udbetalingsstatus(uuid) to authenticated, service_role;
 
 -- Sælgerens seneste udbetalinger til banken (højst 20).
--- [{id, kl, beloeb_oere, status: paa_vej|udbetalt|fejlet, antal_handler}]
+-- [{id, kl, beloeb_oere, status: paa_vej|udbetalt|fejlet|annulleret, antal_handler}]
 create or replace function public.mine_bankudbetalinger()
 returns jsonb
 language sql
@@ -905,7 +923,8 @@ as $fn$
            'id', x.id,
            'kl', coalesce(x.betalt_kl, x.oprettet_hos_stripe_kl, x.oprettet),
            'beloeb_oere', x.beloeb_oere,
-           'status', case x.status when 'paid' then 'udbetalt' when 'oprettet' then 'paa_vej' else 'fejlet' end,
+           'status', case x.status when 'paid' then 'udbetalt' when 'oprettet' then 'paa_vej'
+                                  when 'canceled' then 'annulleret' else 'fejlet' end,
            'antal_handler', coalesce(array_length(x.betaling_ids, 1), 0))
          order by x.oprettet desc), '[]'::jsonb)
     from (select * from public.saelger_udbetalinger u

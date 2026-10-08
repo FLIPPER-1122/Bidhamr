@@ -38,6 +38,12 @@ export default function UdbetalingStatusBoks({ v }: { v: Udbetalingsvisning }) {
         "Stripe kunne ikke sende pengene til din bankkonto. Ret dine bankoplysninger under Min konto – så sendes pengene automatisk igen.";
       stil = "border-fejl-kant bg-fejl-bg text-fejl-tekst";
       break;
+    case "kraever_handling":
+      titel = "Din udbetalingskonto mangler noget";
+      tekst =
+        "Pengene kan ikke sendes til din bank endnu. Åbn Min konto, og gør din udbetalingskonto hos vores betalingspartner Stripe færdig. Så sendes pengene automatisk.";
+      stil = "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst";
+      break;
     case "stoppet":
       titel = "Udbetalingen er sat på pause";
       tekst =
@@ -55,7 +61,7 @@ export default function UdbetalingStatusBoks({ v }: { v: Udbetalingsvisning }) {
     <div className={`rounded-[14px] border p-5 text-sm sm:p-6 ${stil}`}>
       <p className="font-semibold">{titel}</p>
       <p className="mt-1">{tekst}</p>
-      {v.status === "venter_paa_bank" && (
+      {(v.status === "venter_paa_bank" || v.status === "kraever_handling") && (
         <Link href="/konto#udbetaling" className="btn btn-sekundaer mt-3 inline-flex w-full sm:w-auto">
           Gå til Min konto
         </Link>

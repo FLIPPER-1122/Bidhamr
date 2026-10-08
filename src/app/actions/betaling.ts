@@ -13,6 +13,7 @@ import { logDriftFejl } from "@/lib/drift";
 import { fjernGemtKortForBruger, saetAutobetalingForBruger } from "@/lib/betaling/kort";
 import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
+import { aktivBetalingsmodel } from "@/lib/betaling/model";
 import {
   BetalingsFejl,
   BetalingVenterFejl,
@@ -271,7 +272,7 @@ export async function hentBetalingsindstillinger(): Promise<
         afvist: !!p?.connect_spaerret_aarsag?.startsWith("rejected."),
         frakoblet: !!p?.connect_frakoblet_kl,
         frosset: !!p?.saelger_frosset_kl,
-        bidhamrUdbetaler: !!p?.connect_plan_ok,
+        bidhamrUdbetaler: (await aktivBetalingsmodel()) === "destination",
         venterPaaBank: !!p?.connect_udbetaling_fejlet_kl,
       },
     };
@@ -467,7 +468,7 @@ export async function hentMineOverfoersler(): Promise<
 // Samme databasefunktioner som appen (handel_udbetalingsstatus og
 // mine_bankudbetalinger, 20261011030000) - kun egne data (auth.uid()).
 export type Udbetalingsvisning = {
-  status: "venter" | "stoppet" | "paa_vej" | "udbetalt" | "venter_paa_bank";
+  status: "venter" | "stoppet" | "kraever_handling" | "paa_vej" | "udbetalt" | "venter_paa_bank";
   // Tidligst, hvornår udbetalingen sendes (venter).
   tidligstKl: string | null;
   sendtKl: string | null;
@@ -478,7 +479,7 @@ export type Bankudbetaling = {
   id: string;
   oprettetKl: string;
   beloebOere: number;
-  status: "paa_vej" | "udbetalt" | "fejlet";
+  status: "paa_vej" | "udbetalt" | "fejlet" | "annulleret";
   antalHandler: number;
 };
 

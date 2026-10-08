@@ -27,6 +27,7 @@ const BANK_STATUS: Record<Bankudbetaling["status"], { tekst: string; stil: strin
   paa_vej: { tekst: "På vej til din bank", stil: "text-info-tekst" },
   udbetalt: { tekst: "Sendt til din bank", stil: "text-groen-mork" },
   fejlet: { tekst: "Fejlede – sendes igen, når bankkontoen er rettet", stil: "text-fejl-tekst" },
+  annulleret: { tekst: "Stoppet – BidHamr kigger på det", stil: "text-advarsel-tekst" },
 };
 
 function datoTekst(iso: string) {
@@ -199,7 +200,7 @@ export default function KontoUdbetaling({
                   </div>
                   <span
                     className={`shrink-0 font-medium tabular-nums ${
-                      u.status === "fejlet" ? "text-tekst-daempet line-through" : "text-tekst"
+                      u.status === "fejlet" || u.status === "annulleret" ? "text-tekst-daempet line-through" : "text-tekst"
                     }`}
                   >
                     {kroner(u.beloebOere)}
