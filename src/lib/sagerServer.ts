@@ -5,7 +5,8 @@ import "server-only";
 // adminSager.ts) og cron.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send, type SendResultat } from "@/lib/notifikationer/send";
-import { overfoerTilSaelger, refunderBetaling } from "@/lib/betaling/stripeBetaling";
+import { refunderBetaling } from "@/lib/betaling/stripeBetaling";
+import { pengeTilSaelger } from "@/lib/betaling/udbetaling";
 import { sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 import {
   SAG_RETUR_VENTETID_DAGE,
@@ -303,7 +304,7 @@ export async function udfoerSagAfvikling(
     // Afregning til sælgeren før overførslen (kaster aldrig).
     await sendSaelgerAfregning(a.trade_id, "sag");
     try {
-      status = await overfoerTilSaelger(a.betaling_id);
+      status = await pengeTilSaelger(a.betaling_id);
     } catch (err) {
       console.error("Overførsel efter ankefristen fejlede (cron prøver igen):", a.betaling_id, err);
       status = "overfoersel_fejlede";

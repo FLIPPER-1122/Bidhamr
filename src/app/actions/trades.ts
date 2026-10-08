@@ -9,8 +9,8 @@ import { sendKoeberAfsluttet, sendSaelgerAfregning } from "@/lib/betaling/handel
 import {
   hentBetalingForHandel,
   indsigelseBlokerer,
-  overfoerTilSaelger,
 } from "@/lib/betaling/stripeBetaling";
+import { erSendtTilSaelger, pengeTilSaelger } from "@/lib/betaling/udbetaling";
 import {
   PAKKE_BILLEDE_KATEGORIER,
   PAKKE_MAKS_BILLEDER,
@@ -280,8 +280,9 @@ export async function godkendPakke(
   try {
     const betaling = await hentBetalingForHandel(tradeId);
     if (betaling) {
-      const r = await overfoerTilSaelger(betaling.id);
-      if (r !== "overfoert" && r !== "allerede_overfoert") {
+      // Begge modeller: transfer (separat) eller payout til banken (destination).
+      const r = await pengeTilSaelger(betaling.id);
+      if (!erSendtTilSaelger(r)) {
         console.warn("Overførsel ikke gennemført endnu:", tradeId, r);
       }
     }

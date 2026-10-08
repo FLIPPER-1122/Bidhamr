@@ -17,6 +17,7 @@ import {
   spejlUdbetaling,
 } from "@/lib/betaling/stripeBetaling";
 import { aabnVentende } from "@/lib/betaling/betalingInd";
+import { bankKontoRettet, spejlReview, udbetalForKonto, udbetalVentende } from "@/lib/betaling/udbetaling";
 import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/betaling";
 
 // Stripe-webhook for den nye betalingsmodel. Spejler Stripes status i
@@ -25,7 +26,8 @@ import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/
 // Signaturen verificeres altid. Platform-events signeres med
 // STRIPE_WEBHOOK_SECRET; events fra Connect-konti (account.updated,
 // account.application.deauthorized, capability.updated, payout.paid,
-// payout.failed) kommer fra en
+// payout.failed, payout.canceled, balance.available,
+// account.external_account.created/updated) kommer fra en
 // separat Connect-destination i Stripe ("Events from: Connected accounts")
 // og signeres med STRIPE_CONNECT_WEBHOOK_SECRET (samme rute bruges til begge).
 // Connect-events har event.account = sælgerens Connect-konto.
@@ -39,6 +41,11 @@ import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/
 // charge.updated spejler transfer/application fee/available_on;
 // radar.early_fraud_warning.created/updated markerer betalingen til staff
 // (ingen automatisk refusion).
+//
+// Trin 3 (udbetaling): payout.paid/failed/canceled spejler BidHamrs
+// udbetalinger fra sælgerens konto til banken; balance.available og
+// account.external_account.* (Connect) prøver ventende udbetalinger igen;
+// review.opened/closed (platform) stopper udbetalingen under et Radar-review.
 //
 // Idempotent: alle handlere tåler samme event flere gange (statusvagter i
 // databasen). Behandlede event-id'er logges i stripe_haendelser og springes
@@ -71,6 +78,10 @@ const CONNECT_EVENTS = new Set<string>([
   "capability.updated",
   "payout.paid",
   "payout.failed",
+  "payout.canceled",
+  "balance.available",
+  "account.external_account.created",
+  "account.external_account.updated",
 ]);
 
 // Hent sælgerens konto frisk (events kan komme i forkert rækkefølge) og spejl
@@ -96,6 +107,11 @@ async function spejlKonto(kontoId: string, eventType: string): Promise<void> {
   // Betalinger, der ventede på sælgerens konto (destination), åbnes nu,
   // hvis kontoen kan tage imod betaling.
   if (brugerId) await aabnVentende(brugerId);
+  // Destination (trin 3): har sælgeren rettet bankkontoen efter en fejlet
+  // udbetaling, sendes pengene igen; ellers forsøges ventende udbetalinger.
+  if (brugerId && !(await bankKontoRettet(konto, brugerId)) && konto.payouts_enabled) {
+    await udbetalVentende(brugerId);
+  }
 }
 
 async function haandter(event: Stripe.Event): Promise<void> {
@@ -196,9 +212,38 @@ async function haandter(event: Stripe.Event): Promise<void> {
       return;
     }
 
+    case "account.external_account.created":
+    case "account.external_account.updated": {
+      // Sælgeren har tilføjet/rettet en bankkonto hos Stripe.
+      if (!event.account) return;
+      await spejlKonto(event.account, event.type);
+      return;
+    }
+
+    case "balance.available": {
+      // Midler på sælgerens konto er blevet tilgængelige (destination):
+      // udbetal handler, der er helt færdige.
+      if (!event.account) return;
+      const antal = await udbetalForKonto(event.account);
+      console.log(`Stripe ${event.type}: ${event.account} -> ${antal} udbetaling(er)`);
+      return;
+    }
+
+    case "review.opened":
+    case "review.closed": {
+      // Stripe Radar-review (platform): stopper udbetalingen, mens det er åbent.
+      const review = event.data.object as Stripe.Review;
+      const resultat = await spejlReview(review.id);
+      console.log(`Stripe ${event.type}: ${review.id} -> ${resultat}`);
+      return;
+    }
+
     case "payout.paid":
-    case "payout.failed": {
-      // Stripes automatiske udbetaling fra sælgerens Connect-konto til banken.
+    case "payout.failed":
+    case "payout.canceled": {
+      // Udbetaling fra sælgerens Connect-konto til banken: BidHamrs egen
+      // (destination, saelger_udbetalinger) eller Stripes automatiske
+      // (separat).
       if (!event.account) return; // platformens egne udbetalinger
       const payout = event.data.object as Stripe.Payout;
       const resultat = await spejlUdbetaling(event.account, payout.id);

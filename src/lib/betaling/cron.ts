@@ -10,6 +10,8 @@
 //       efter afsendelse uden "modtaget" og uden sag. Køberen får en
 //       påmindelse på dag 12.
 //   4. Overfør frigivne beløb, der ventede på sælgerens Connect-konto.
+//   4b. Destination: udbetal frigivne beløb fra sælgerens Connect-konto til
+//       banken (udbetalVentende - F03, saldo-afstemning, udbetal_tidligst).
 //   5. Refundér betalinger med afvigende beløb.
 //   5b. Alle lovede refusioner (uanset årsag), der er claimet, men ikke
 //       gennemført hos Stripe - med backoff (Niels F05).
@@ -59,6 +61,7 @@ import {
   saelgerSolgtMail,
 } from "@/lib/mails/handel";
 import { behandlVentendeBetalinger } from "@/lib/betaling/betalingInd";
+import { udbetalVentende } from "@/lib/betaling/udbetaling";
 import {
   type BetalingRaekke,
   forsoegAutobetaling,
@@ -118,6 +121,7 @@ export async function koerBetalingsCron() {
     vundetMails: 0,
     paamindelser: 0,
     overfoersler: 0,
+    udbetalinger: 0,
     afvigelsesrefusioner: 0,
     sagsrefusioner: 0,
     sagsbeskeder: 0,
@@ -329,6 +333,9 @@ export async function koerBetalingsCron() {
 
   // 4) Frigivne beløb, der ventede på sælgerens konto (eller fejlede).
   resultat.overfoersler = await overfoerVentende();
+  // 4b) Destination (trin 3): udbetaling fra sælgerens Stripe-konto til
+  //     banken for handler, der er helt færdige (samlet pr. sælger).
+  resultat.udbetalinger = await udbetalVentende();
 
   // 5) Betalinger med afvigende beløb, der endnu ikke er refunderet.
   resultat.afvigelsesrefusioner = await refunderAfvigelserVentende();
