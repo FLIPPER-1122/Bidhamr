@@ -59,7 +59,8 @@ Klart skift med flag `STRIPE_BETALINGSMODEL=destination` (server) + kolonnen `pe
 
 ## 5. Åbne spørgsmål
 Advokat/revisor: se jura/noter-til-advokat.md nr. 90–94 (kontrol over frigivelse, sælger som merchant of record, hæftelse, moms på application fee, moms for momsregistrerede erhvervssælgere).
-Filip: (9) klar konto før bud – auktion kan oprettes, men ikke modtage bud, før kontoen kan tage imod betaling? Hvad hvis kontoen spærres under auktionen? (10) F02: N dage og beløbsgrænse. (11) Tidligt svindelvarsel: automatisk refusion eller kun blokering? (12) Tabt dispute før payout, hvor varen dokumenteret er leveret: får sælger intet, eller betaler BidHamr? (13) Platformens egen udbetalingsplan.
+**Besvaret 8. okt. 2026 (9–12, se ROADMAP-BESLUTNINGER.md "Ny betalingsmodel – Filips svar"):** (9) konto oprettet + oplysninger sendt før auktion; auktionen må køre under Stripes godkendelse, pengene venter. (10) 3 dage ved afhentning ved <5 handler eller >2.000 kr. (11) kun blokering til staff har set på det. (12) køberen sender varen retur, sælger får varen og ingen udbetaling.
+Oprindelige spørgsmål: (9) klar konto før bud – auktion kan oprettes, men ikke modtage bud, før kontoen kan tage imod betaling? Hvad hvis kontoen spærres under auktionen? (10) F02: N dage og beløbsgrænse. (11) Tidligt svindelvarsel: automatisk refusion eller kun blokering? (12) Tabt dispute før payout, hvor varen dokumenteret er leveret: får sælger intet, eller betaler BidHamr? (13) Platformens egen udbetalingsplan.
 Tekniske risici: Express Dashboard viser saldo (tekster), afrunding ved delvise refusioner (undgås med eksakte trin), MIT med skiftende on_behalf_of, MobilePay/Klarna med private, gebyrer pr. konto/payout, refusion fra afvist sælgerkonto [VERIFICÉR].
 
 ## 6. Byggetrin (worktree, reviewer efter hvert trin, tester til sidst; kun testmiljø)
