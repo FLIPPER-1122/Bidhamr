@@ -511,6 +511,8 @@ export const ERHVERVSSAELGER = {
   ingenBeskyttelse:
     "BidHamr Beskyttelse kan ikke vælges, når du køber af et firma. Du har i stedet fortrydelsesret og reklamationsret efter loven.",
   seAuktioner: "Se firmaets profil og auktioner",
+  // Når firmaet selv ser sin firmaprofil (linker til /firma/auktioner).
+  seEgneAuktioner: "Se dine auktioner",
   tilbage: "Tilbage",
 } as const;
 
