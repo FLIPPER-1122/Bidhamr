@@ -54,14 +54,18 @@ import {
   koeberAndenchanceBetalMail,
   koeberAutobetaltMail,
   koeberVandtMail,
+  koeberVandtVenterMail,
+  saelgerKontoIkkeKlarMail,
   saelgerSolgtMail,
 } from "@/lib/mails/handel";
+import { behandlVentendeBetalinger } from "@/lib/betaling/betalingInd";
 import {
   type BetalingRaekke,
   forsoegAutobetaling,
   overfoerVentende,
   refunderAfvigelserVentende,
   refunderLoveteVentende,
+  skiftVentendeTilDestination,
 } from "@/lib/betaling/stripeBetaling";
 
 const TIME = 60 * 60 * 1000;
@@ -134,12 +138,25 @@ export async function koerBetalingsCron() {
     afhentningsPaamindelser: 0,
     ikkeHentetAnnulleret: 0,
     ikkeHentetRefunderet: 0,
+    skiftetTilDestination: 0,
+    ventende: {} as Awaited<ReturnType<typeof behandlVentendeBetalinger>>,
   };
 
   // 1) Luk auktioner og opret handel + betaling.
   const { data: lukkede, error: rpcFejl } = await admin.rpc("afslut_udloebne_auktioner");
   if (rpcFejl) await trinFejl("afslut_udloebne_auktioner", rpcFejl);
   resultat.lukkede = Number(lukkede ?? 0);
+
+  // 1b) Betalingsmodel destination (trin 2): afventende separat-betalinger
+  //     skiftes til destination (den gamle PaymentIntent annulleres), og
+  //     betalinger, der venter på sælgerens Stripe-konto, åbnes, påmindes
+  //     eller annulleres (betalingInd.ts). Med separat: intet.
+  try {
+    resultat.skiftetTilDestination = await skiftVentendeTilDestination();
+  } catch (err) {
+    await trinFejl("Skift til destination", err);
+  }
+  resultat.ventende = await behandlVentendeBetalinger();
 
   // 2) Nye betalinger uden "du vandt"-mail.
   const { data: nye } = await admin
@@ -180,6 +197,29 @@ export async function koerBetalingsCron() {
       if (!(await claim(b.id, "vundet_mail_sendt_kl"))) continue;
       const titel = o.titel.get(b.auction_id) ?? "din auktion";
       const erAndenchance = andenchance.has(b.trade_id);
+      const link = `/mine-handler/${b.trade_id}`;
+      // Betalingen venter på sælgerens Stripe-konto (destination): køberen
+      // kan ikke betale endnu, og sælgeren skal gøre kontoen færdig.
+      if (b.venter_paa_saelgerkonto_kl && b.status === "afventer") {
+        const k = await send(b.buyer_id, "vundet", {
+          titel: erAndenchance ? "Din vare venter på sælgeren" : "Du vandt auktionen",
+          tekst: `Du har købt "${titel}". Du kan betale, så snart sælgerens konto er godkendt hos vores betalingspartner Stripe – vi giver dig besked.`,
+          link,
+          data: { trade_id: b.trade_id, auction_id: b.auction_id },
+          mail: koeberVandtVenterMail(titel, Number(b.total_oere), b.trade_id),
+          noegle: `vundet:${b.id}`,
+        });
+        if (k.mail) resultat.vundetMails++;
+        await send(b.seller_id, "vundet", {
+          titel: "Din auktion er solgt – gør din konto færdig",
+          tekst: `"${titel}" er solgt, men køberen kan først betale, når din konto hos Stripe er godkendt. Gør opsætningen færdig under Min konto.`,
+          link: "/konto",
+          data: { trade_id: b.trade_id, auction_id: b.auction_id },
+          mail: saelgerKontoIkkeKlarMail(titel, false),
+          noegle: `solgt:${b.id}`,
+        });
+        continue;
+      }
       const koeberMail =
         b.status === "betalt"
           ? (erAndenchance ? koeberAndenchanceAutobetaltMail : koeberAutobetaltMail)(
@@ -193,7 +233,6 @@ export async function koerBetalingsCron() {
               b.trade_id,
               b.betal_senest,
             );
-      const link = `/mine-handler/${b.trade_id}`;
       const k = await send(b.buyer_id, "vundet", {
         titel:
           b.status === "betalt"
@@ -249,6 +288,9 @@ export async function koerBetalingsCron() {
     if (!mangler || mangler.length === 0) continue;
     const o = await opslag(mangler);
     for (const b of mangler) {
+      // Venter på sælgerens konto: betal_senest er fristen for kontoen, ikke
+      // købers betalingsfrist - ingen påmindelse.
+      if (b.venter_paa_saelgerkonto_kl) continue;
       if (!(await claim(b.id, felt, b.betal_senest))) continue;
       // Den sene påmindelse gør den tidlige overflødig, hvis cron har været nede.
       if (felt === "paamindelse_40_sendt_kl" && !b.paamindelse_24_sendt_kl) {

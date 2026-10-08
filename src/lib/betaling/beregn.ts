@@ -44,6 +44,24 @@ export type BetalingsBeloeb = {
   fragt_oere: number;
 };
 
+// Betalingsmodel destination: BidHamrs application fee på PaymentIntenten =
+// købergebyr + sælgergebyr + fragt + BidHamr Beskyttelse (alle inkl. moms).
+// Sælgeren står tilbage med total - fee = bud - sælgergebyr = udbetaling_oere
+// (CHECK betalinger_destination_gebyr_stemmer i databasen).
+export function applicationFeeOere(b: {
+  koebergebyr_oere: number;
+  saelgergebyr_oere: number;
+  fragt_oere: number;
+  beskyttelse_oere: number;
+}): number {
+  return (
+    Number(b.koebergebyr_oere) +
+    Number(b.saelgergebyr_oere) +
+    Number(b.fragt_oere) +
+    Number(b.beskyttelse_oere)
+  );
+}
+
 export function totalOere(b: BetalingsBeloeb, beskyttelse: boolean): number {
   return (
     Number(b.bud_oere) +
