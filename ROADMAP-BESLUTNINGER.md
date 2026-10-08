@@ -367,6 +367,7 @@ Baggrund og research: `ERHVERV-OVERBLIK.md`. Lovspørgsmålene er sendt til advo
 - **Tidligt svindelvarsel fra Stripe:** Ingen automatisk refusion. Udbetalingen stoppes, til staff har kigget på sagen.
 - **Pengene er låst, til handlen er helt færdig (Filip, 8. okt. 2026 – ufravigeligt):** Intet udbetales fra Stripe, før handlen er gået helt igennem. Opretter køberen en sag, eller kommer der en indsigelse fra banken, er pengene frosset, til sagen er afgjort – derefter går de til den, der får medhold (sælger eller køber).
 - **Tabt indsigelse, hvor varen er leveret:** Køberen sender pakken tilbage til sælgeren. Køberen har fået pengene gennem banken; sælgeren får varen tilbage og ingen udbetaling.
+- **Indsigelse fra banken efter en færdig handel (Filip, 8. okt. 2026):** BidHamr sender banken alle beviser (sporing, leveringskvittering, beskeder, billeder). Giver banken alligevel køberen medhold, bærer BidHamr tabet – intet trækkes fra sælgeren. Køberen skal sende varen til BidHamr (ikke til sælgeren).
 - **Sælgerkontoen bliver aldrig godkendt (Filip, 8. okt. 2026):** Auktionen annulleres (køberen trækkes ikke), og sælgerens konto fryses (kan ikke oprette eller køre auktioner), til Stripe har godkendt den. Frist: annulleres, hvis kontoen ikke er godkendt senest 7 dage efter auktionens slutning (chefens valg – Filip kan ændre).
 
 ## Virksomhedsoplysninger (Filip, 8. okt. 2026)
