@@ -108,7 +108,6 @@ export const PAKKEGUIDE: Tekstside = {
         "Pak skærmen ind i bobleplast, og beskyt den mod tryk.",
         "Pak ledninger og opladere for sig, så de ikke ridser varen.",
         "Sluk enheden helt, før du pakker den.",
-        "Løse batterier og powerbanks kan have særlige regler hos fragtfirmaet. Spørg dem, før du sender.",
       ],
     },
     {
