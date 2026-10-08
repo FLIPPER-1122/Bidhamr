@@ -184,6 +184,23 @@ Brugeren får besked når:
 - Udbetaling sker først, når køberen har godkendt pakken (eller fristen er udløbet). Opretter køberen en sag, refunderes køberen direkte – pengene når aldrig sælgeren.
 - Indsigelse **efter** udbetaling: **BidHamr bærer tabet.** En udbetaling trækkes aldrig tilbage fra sælgeren. BidHamr forsvarer sagen over for banken med sporing og leveringskvittering.
 - Viser indsigelsen sig at være falsk (køberen fik varen), kan staff give køberen en advarsel via "Giv advarsel".
+- **Sælgeren får besked** (Niels F04, 8. okt. 2026): når indsigelsen åbnes ("Send/udlevér ikke varen, før vi skriver igen", hvis den ikke er sendt), og når den er afgjort (vundet: handlen fortsætter; tabt: handlen annulleres, og der udbetales ikke – eller "din udbetaling trækkes ikke tilbage", hvis den er udbetalt).
+- **Tabt indsigelse er en sluttilstand** (Niels F04): pengene flyttes ikke mere (ingen frigivelse, ingen refusion – banken har givet køberen pengene). Staff lukker handlen under Betalinger ("Luk handlen" eller "Giv advarsel"): er intet udbetalt, annulleres handlen; er der udbetalt, bærer BidHamr tabet, og handlen står, som den er.
+
+## Lovede refusioner (Niels F05, 8. okt. 2026)
+- Når køberen er lovet pengene tilbage (sag, "Refundér køber", betaling på en annulleret handel, afsendelses-/afhentningsfrist), prøver betalings-cron'en **altid** igen, til Stripe har gennemført refusionen – uanset årsag. Forsøgene spredes (5 min, 10 min, 20 min … højst 6 timer imellem). Efter 5 mislykkede forsøg stopper det automatiske, og betalingen står med et rødt flag ("Tilbagebetaling opgivet – kræver handling") under Betalinger; staff kan give nye forsøg med "Prøv tilbagebetaling igen". Fra 2 mislykkede forsøg vises "Tilbagebetaling fejlet N gange".
+- En delvis refusion lavet direkte i Stripe-dashboardet prøves aldrig automatisk (staff afgør den).
+
+## Overvågning og go-live (Niels F06/F07, 8. okt. 2026)
+- Betalings-cron'en markeres som **fejlet** i kørselsloggen, når et pengetrin fejler, og der logges en drift-fejl, hvis pg_cron ikke kan kalde den (manglende Vault-hemmelighed). Valgfri ekstern heartbeat: `HEARTBEAT_URL` (fx healthchecks.io eller UptimeRobot – Filip vælger).
+- Serveren kalder kun Stripe, når nøglens tilstand (test/live) passer til databasens (`stripe_tilstand`). Go-live følger `docs/GO-LIVE-STRIPE.md`.
+
+## Småting (Niels M04, 8. okt. 2026)
+- **Mindste bud er 3 kr.** (Stripes mindstebeløb er 2,50 kr.). Startprisen kan stadig være 1 kr., men første bud er mindst 3 kr.
+- Samtykke til automatisk betaling gemmes (tidspunkt og tekstversion, `src/lib/betaling/samtykke.ts`).
+- Et fjernet gemt kort kan ikke komme tilbage af et forsinket svar fra Stripe.
+- Stripes API-version er låst (`2026-05-27.dahlia`).
+- **Appen (Expo):** mindste bud følger `supabase.rpc("mindste_naeste_bud", { p_auktion })` (nu mindst 3 kr.) – beregner appen selv, skal gulvet være 3 kr. Slår appen automatisk betaling til direkte på `betalingsprofiler`, så sæt også `autobetaling_samtykke_version` til samme version som hjemmesiden (`2026-10-08`) og vis samme tekst ("Betal automatisk, når jeg vinder. Tilvalg: Vinder du, trækkes totalprisen på dit gemte kort. Du kan slå det fra når som helst."); ellers gemmes versionen som `ukendt`. Fjerner appen selv et gemt kort, så sæt `kort_fjernet_kl = now()`.
 
 ## Advarsler og begrundelse (Filip, 2. oktober 2026)
 - Når staff giver en advarsel, skrives **to tekster**: en **intern note** (kun staff ser den) og en **begrundelse til brugeren** (kræves). Brugeren ser begrundelsen i notifikationen/mailen og på sin konto (DSA: brugeren skal vide hvorfor, da 3 advarsler giver permanent lukning).

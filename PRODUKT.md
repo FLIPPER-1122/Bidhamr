@@ -52,7 +52,7 @@ Den svære bruger er den nye sælger. Han skal turde lægge sin ting op hos en p
 - **Gemt kort er et tilvalg.** Brugeren kan gemme et kort og slå "Betal automatisk, når jeg vinder" til, så kortet trækkes med det samme. Man kan byde uden et gemt kort.
 - Betaler vinderen ikke inden **48 timer**, annulleres handlen, køberen får en advarsel, og sælgeren kan tilbyde varen til næsthøjeste byder eller sætte den op igen.
 - **Gebyrer: 5% til køberen og 5% til sælgeren.** Altid, uden minimum eller maksimum.
-- **BidHamr Beskyttelse** er et frivilligt tilkøb på **3%** oveni købergebyret, mindst 20 kr. og højst 250 kr. Den dækker, hvis varen er gået i stykker under forsendelsen: køberen kan oprette en sag og sende varen retur, og BidHamr håndterer sagen. De 3% er en midlertidig pris – der skal laves et bedre prissystem senere.
+- **BidHamr Beskyttelse** er et frivilligt tilkøb på **5 %** af buddet oveni købergebyret, mindst 25 kr. og højst 250 kr. (som i koden, `src/lib/betaling/beregn.ts`). Den dækker, hvis varen er gået i stykker under forsendelsen: køberen kan oprette en sag og sende varen retur, og BidHamr håndterer sagen. Prisen er midlertidig – der skal laves et bedre prissystem senere.
 - Ordet **"forsikring"** bruges aldrig – hverken i UI, mails, kode eller dokumenter. Det hedder **BidHamr Beskyttelse**. Heller ikke "garanti".
 - **Køberen betaler fragten** og ser prisen, før han byder. Totalprisen vises, før man byder.
 - Sælgeren får sine penge udbetalt til sin bankkonto via sin Stripe Connect-konto, minus sælgergebyret.

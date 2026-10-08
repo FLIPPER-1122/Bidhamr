@@ -1010,7 +1010,7 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
     } catch (err) {
       console.error("Refusion fejlede:", tradeId, err);
       throw new BrugerFejl(
-        "Refusionen fejlede hos Stripe. Handlen er annulleret og markeret - prøv igen.",
+        "Refusionen fejlede hos Stripe. Handlen er annulleret, og tilbagebetalingen prøves igen automatisk. Følg den under Betalinger.",
       );
     }
     // Ingen ny tilbagebetaling er sendt: ingen succesbesked og intet

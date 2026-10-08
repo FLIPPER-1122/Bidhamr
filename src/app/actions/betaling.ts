@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
+import { AUTOBETALING_SAMTYKKE } from "@/lib/betaling/samtykke";
 import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import {
@@ -343,7 +344,12 @@ export async function saetAutobetaling(til: boolean): Promise<{ ok: true } | Fej
     if (!p) return { ok: true };
     const { error } = await createAdminClient()
       .from("betalingsprofiler")
-      .update({ autobetaling: til, opdateret: new Date().toISOString() })
+      .update({
+        autobetaling: til,
+        // Samtykket gemmes (tidspunkt sættes af databasen, Niels M04).
+        ...(til ? { autobetaling_samtykke_version: AUTOBETALING_SAMTYKKE.version } : {}),
+        opdateret: new Date().toISOString(),
+      })
       .eq("user_id", user.id);
     if (error) throw new Error(error.message);
     revalidatePath("/konto");
@@ -369,6 +375,8 @@ export async function fjernGemtKort(): Promise<{ ok: true } | Fejl> {
         gemt_kort_maerke: null,
         gemt_kort_sidste4: null,
         gemt_kort_udloeb: null,
+        // Et forsinket Stripe-svar må ikke genskabe kortet (registrerGemtKort).
+        kort_fjernet_kl: new Date().toISOString(),
         opdateret: new Date().toISOString(),
       })
       .eq("user_id", user.id);

@@ -239,6 +239,8 @@ async function proevIgen(admin: Admin): Promise<number> {
     .is("overfoersel_paabegyndt_kl", null)
     // refusion_forsoeg < refusion_graense (standard 5).
     .eq("refusion_opbrugt", false)
+    // Backoff efter en fejlet refusion (20261010070000).
+    .or(`refusion_naeste_forsoeg_kl.is.null,refusion_naeste_forsoeg_kl.lte.${new Date().toISOString()}`)
     .limit(50);
   if (error) {
     console.error("Hentning af ventende afsendelsesrefusioner fejlede:", error.message);

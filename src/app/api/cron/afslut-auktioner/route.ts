@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { koerBetalingsCron } from "@/lib/betaling/cron";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logDriftFejl, renFejltekst } from "@/lib/drift";
+import { driftFejlSamler, logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
 import { harCronAdgang } from "@/lib/cronAdgang";
 
@@ -19,7 +19,17 @@ import { harCronAdgang } from "@/lib/cronAdgang";
 //
 // Hver godkendt kørsel logges i drift_cron_koersler (vises på /admin/drift).
 // Afslutningen skrives i finally, så også fejl logges. Afbrydes processen
-// (fx timeout), står rækken uden afsluttet_kl.
+// (fx timeout), står rækken uden afsluttet_kl. Logger et af betalingstrinnene
+// en fejl (logDriftFejl med kilde 'cron' - også når trinnet selv fanger den og
+// fortsætter), markeres kørslen som FEJLET (ok = false) med trinnenes fejl
+// (Niels F06). Fragtsporingen tæller ikke med (flytter ingen penge).
+//
+// Livstegn til en EKSTERN overvågning (Niels F06): er HEARTBEAT_URL sat
+// (valgfri, fx en healthchecks.io- eller UptimeRobot-heartbeat-adresse),
+// pinges den efter hver kørsel - "<url>" ved succes og "<url>/fail" ved fejl
+// (healthchecks.io-formatet; UptimeRobot ignorerer fejl-pinget, og så udebliver
+// livstegnet). Den eksterne tjeneste alarmerer, hvis der ikke kommer et
+// livstegn hvert 5. minut - også hvis Supabase, pg_cron eller Vercel er nede.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -80,6 +90,20 @@ async function slutLog(
   }
 }
 
+// Kaster aldrig og venter højst 5 sekunder. Kun https.
+async function heartbeat(ok: boolean) {
+  const url = process.env.HEARTBEAT_URL;
+  if (!url) return;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return;
+    const sti = ok ? u.toString() : `${u.toString().replace(/\/+$/, "")}/fail`;
+    await fetch(sti, { method: "GET", signal: AbortSignal.timeout(5_000), cache: "no-store" });
+  } catch (err) {
+    console.error("Heartbeat kunne ikke sendes:", renFejltekst(err));
+  }
+}
+
 async function haandter(req: NextRequest) {
   if (!harCronAdgang(req)) {
     return NextResponse.json({ fejl: "Ingen adgang" }, { status: 401 });
@@ -88,8 +112,9 @@ async function haandter(req: NextRequest) {
   let ok = false;
   let fejl: string | null = null;
   let resultat: Record<string, unknown> | null = null;
+  const trinFejl: string[] = [];
   try {
-    const betaling = await koerBetalingsCron();
+    const betaling = await driftFejlSamler.run(trinFejl, () => koerBetalingsCron());
     // Fragtsporing (let og begrænset; flytter ingen penge). Fejl her stopper
     // ikke betalings-cron'en og logges i drift_fejl af koerFragtCron selv.
     let fragt: Awaited<ReturnType<typeof koerFragtCron>> | null = null;
@@ -100,8 +125,12 @@ async function haandter(req: NextRequest) {
     }
     const r = { ...betaling, fragt };
     resultat = kortResultat(r);
-    ok = true;
-    return NextResponse.json(r);
+    if (trinFejl.length > 0) {
+      fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);
+    } else {
+      ok = true;
+    }
+    return NextResponse.json({ ...r, ok, trinFejl: trinFejl.length });
   } catch (err) {
     console.error("Cron-kørsel fejlede:", err);
     fejl = renFejltekst(err);
@@ -109,6 +138,7 @@ async function haandter(req: NextRequest) {
     return NextResponse.json({ fejl: "Cron-kørsel fejlede" }, { status: 500 });
   } finally {
     await slutLog(logId, ok, ok ? null : (fejl ?? "Ukendt fejl"), resultat);
+    await heartbeat(ok);
   }
 }
 
