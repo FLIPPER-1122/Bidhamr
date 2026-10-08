@@ -26,8 +26,10 @@
 //   det samme. Det samme gælder konto_type: en firmakonto, der laves om til
 //   privat, kan nå Firma oversigt i op til 5 minutter mere (siden tjekker
 //   selv konto_type i databasen).
-// - Kun staff-roller og firmakonti får en cookie. Almindelige brugere slås
-//   op i databasen som før (de sendes alligevel til venteliste-siden).
+// - Alle indloggede får en cookie (også private brugere med rollen 'bruger'),
+//   så gaten heller ikke spørger databasen ved hvert klik for dem efter
+//   lancering. Cookien giver kun det, rollen i den giver: en privat bruger
+//   sendes stadig til venteliste-siden før lancering.
 // - httpOnly, SameSite=Lax og Secure (undtagen lokalt på http).
 
 import { logDriftFejl } from "@/lib/drift";

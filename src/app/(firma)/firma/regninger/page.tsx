@@ -29,7 +29,8 @@ export default async function FirmaRegninger() {
                     {T.regninger.kolonneDato}: {langDato(r.oprettet)} · {X.regningStatus[r.status]}
                   </p>
                 </div>
-                {r.pdf_url && (
+                {/* Kun https-links (aldrig javascript:, data: eller http:). */}
+                {r.pdf_url?.startsWith("https://") && (
                   <a href={r.pdf_url} target="_blank" rel="noopener noreferrer" className={E_KNAP_SEKUNDAER}>
                     {T.regninger.knapHent}
                   </a>

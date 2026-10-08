@@ -22,15 +22,26 @@ export async function POST(req: NextRequest) {
   }
   const base = origin ?? req.nextUrl.origin;
 
+  // Firma-dashboardet (/firma/oplysninger) sender fra=firma med, så en fejl
+  // ("vent"/"fejl") vises dér - /konto sender en firmakonto til /firma.
+  // Kun den faste værdi bruges, aldrig en sti fra formularen.
+  let fraFirma = false;
+  try {
+    fraFirma = (await req.formData()).get("fra") === "firma";
+  } catch {
+    fraFirma = false;
+  }
+  const tilbageSti = fraFirma ? "/firma/oplysninger" : "/konto";
+
   const supabase = await createClient();
   const { data: brugerData } = await supabase.auth.getUser();
   if (!brugerData.user) {
-    return NextResponse.redirect(new URL("/login?redirect=/konto%23dine-data", base), 303);
+    return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(`${tilbageSti}#dine-data`)}`, base), 303);
   }
 
   const { data, error } = await supabase.rpc("mine_data");
   if (error) {
-    const tilbage = new URL("/konto", base);
+    const tilbage = new URL(tilbageSti, base);
     if (error.code === "BHR01") {
       tilbage.searchParams.set("data", "vent");
     } else {

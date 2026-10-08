@@ -519,7 +519,7 @@ export default async function HandelDetalje({
             <h2 className="text-[17px] leading-snug lg:text-lg">Køberen henter varen hos dig</h2>
             <p className="mt-1 text-sm text-tekst-svag">
               {erhvervHandel
-                ? "Køberen kontakter dig for at aftale tid og sted. "
+                ? `${FIRMA_DASHBOARD.afhentning} `
                 : "Aftal tid og sted for afhentningen med køberen i chatten herunder. "}
               Når køberen henter varen, viser han dig en kode på 6 cifre. Indtast koden her – så frigives pengene til
               dig med det samme. Giv ikke varen fra dig, før du har indtastet den rigtige kode.

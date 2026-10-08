@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hentBruger } from "@/lib/supabase/bruger";
 import { hentFirmaOversigt } from "@/app/actions/erhverv";
 import { logDriftFejl } from "@/lib/drift";
-import { FIRMA_OVERSIGT } from "@/lib/tekster/erhverv";
+import { FIRMA_DASHBOARD, FIRMA_OVERSIGT } from "@/lib/tekster/erhverv";
 import type {
   AuktionGruppe,
   FirmaAuktioner,
@@ -22,15 +22,38 @@ import type {
 
 // Layout og sider kalder denne: ikke logget ind -> login, ikke en firmakonto
 // -> forsiden. Fejl kastes (fanges af firma/error.tsx).
+// En firmakonto UDEN firma-oplysninger (ingen række i firmaer endnu) sendes
+// IKKE til forsiden: før lancering sender gaten firmaet tilbage til /firma,
+// så det ville give en løkke. Layoutet viser i stedet en enkel side ("ikke
+// sat op endnu") uden siden selv (hentFirmaTilstand), og kraevFirma kaster
+// en fejl i siden, hvis den alligevel bygges.
 const oversigtCached = cache(() => hentFirmaOversigt());
 
-export async function kraevFirma(sti: string = "/firma"): Promise<{ bruger: User; oversigt: FirmaOversigt }> {
+export type FirmaTilstand =
+  | { klar: true; bruger: User; oversigt: FirmaOversigt }
+  | { klar: false; bruger: User };
+
+export const hentFirmaTilstand = cache(async (sti: string = "/firma"): Promise<FirmaTilstand> => {
   const bruger = await hentBruger();
   if (!bruger) redirect(`/login?redirect=${encodeURIComponent(sti)}`);
   const svar = await oversigtCached();
   if ("fejl" in svar) throw new Error(FIRMA_OVERSIGT.fejlHent);
-  if (!svar.oversigt) redirect("/");
-  return { bruger, oversigt: svar.oversigt };
+  if (svar.oversigt) return { klar: true, bruger, oversigt: svar.oversigt };
+  // Ingen firma-oplysninger: kun en firmakonto bliver på /firma.
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("users").select("konto_type").eq("id", bruger.id).maybeSingle();
+  if (error) {
+    await logDriftFejl({ kilde: "server", hvor: "firma/konto_type", fejl: error, brugerId: bruger.id });
+    throw new Error(FIRMA_OVERSIGT.fejlHent);
+  }
+  if ((data as { konto_type?: string } | null)?.konto_type !== "erhverv") redirect("/");
+  return { klar: false, bruger };
+});
+
+export async function kraevFirma(sti: string = "/firma"): Promise<{ bruger: User; oversigt: FirmaOversigt }> {
+  const t = await hentFirmaTilstand(sti);
+  if (!t.klar) throw new Error(FIRMA_DASHBOARD.ikkeSatOp.fuld);
+  return { bruger: t.bruger, oversigt: t.oversigt };
 }
 
 async function rpc<T>(navn: string, args?: Record<string, unknown>): Promise<T | null> {
