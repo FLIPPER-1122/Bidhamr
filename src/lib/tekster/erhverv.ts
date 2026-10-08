@@ -847,6 +847,30 @@ export const FIRMA_DASHBOARD = {
     titel: "Firmaoplysninger",
   },
 
+  // "Download dine data" (GDPR) på Firmaoplysninger. Formularen poster til
+  // /konto/data (samme som for private).
+  dineData: {
+    titel: "Dine data",
+    tekst:
+      "Få en fil med alt det, BidHamr har gemt om dig og dit firma: konto, auktioner, handler og indstillinger. Filen er i JSON-format og kan åbnes i en teksteditor.",
+    knap: "Download dine data",
+    hjaelp: "Du kan hente filen én gang i timen.",
+    vent: "Du har lige hentet dine data. Du kan hente dem igen om højst en time.",
+    fejl: "Dine data kunne ikke hentes lige nu. Prøv igen om lidt.",
+  },
+
+  // Firmakonto uden firma-oplysninger (ingen række i firmaer endnu).
+  ikkeSatOp: {
+    titel: "Firma oversigt",
+    // Efterfølges af e-mailen som link og et punktum.
+    tekst: "Din firmakonto er ikke sat op endnu. Skriv til",
+    fuld: "Din firmakonto er ikke sat op endnu. Skriv til erhverv@bidhamr.dk.",
+  },
+
+  // Afhentning hos firmaet (ingen chat med erhverv).
+  afhentning:
+    "Køberen kommer og henter varen. Køberen kan se jeres adresse og telefonnummer og kontakter jer, hvis der er brug for det.",
+
   hjaelp: {
     titel: "Hjælp og kontakt",
   },

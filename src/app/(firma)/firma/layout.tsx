@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { kraevFirma } from "@/lib/erhverv/firmaData";
+import { hentFirmaTilstand } from "@/lib/erhverv/firmaData";
 import { foerLancering } from "@/lib/lancering";
 import FirmaMenu from "@/components/firma/FirmaMenu";
 import FirmaLogUd from "@/components/firma/FirmaLogUd";
 import { FIRMA_DASHBOARD as D, FIRMA_OVERSIGT } from "@/lib/tekster/erhverv";
+import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
 
 // Firma-dashboardet (Filip, 8. okt. 2026): eget layout i route-gruppen
 // (firma) - den almindelige Header/Footer (src/app/(app)/layout.tsx) vises
@@ -23,7 +24,32 @@ export const metadata: Metadata = {
 };
 
 export default async function FirmaLayout({ children }: { children: React.ReactNode }) {
-  const { bruger, oversigt } = await kraevFirma();
+  const tilstand = await hentFirmaTilstand();
+  // Firmakonto uden firma-oplysninger: en enkel besked uden menu og uden
+  // siden selv - ingen omdirigering (det gav en løkke før lancering).
+  if (!tilstand.klar) {
+    return (
+      <div className="flex min-h-svh flex-col bg-[#F6F9F8]">
+        <header className="border-b border-kant bg-white">
+          <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+            <Image src="/brand/bidhamr-logo.svg" alt="BidHamr" width={230} height={60} preload unoptimized className="h-9 w-auto" />
+            <FirmaLogUd />
+          </div>
+        </header>
+        <main id="indhold" className="mx-auto w-full max-w-lg flex-1 px-4 py-10 text-center">
+          <h1 className="text-[28px] leading-tight">{D.ikkeSatOp.titel}</h1>
+          <p role="alert" className="mt-3 text-[18px] leading-relaxed text-tekst">
+            {D.ikkeSatOp.tekst}{" "}
+            <a href={`mailto:${ERHVERV_EMAIL}`} className="font-semibold break-all text-groen underline underline-offset-2">
+              {ERHVERV_EMAIL}
+            </a>
+            .
+          </p>
+        </main>
+      </div>
+    );
+  }
+  const { bruger, oversigt } = tilstand;
   const lukket = foerLancering();
 
   return (
@@ -67,7 +93,9 @@ export default async function FirmaLayout({ children }: { children: React.ReactN
 
       <div className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row lg:gap-8 lg:px-8 lg:py-10">
         <FirmaMenu />
-        <main id="indhold" tabIndex={-1} className="min-w-0 flex-1 outline-none">
+        {/* firma-stor: større tekst og knapper i de genbrugte komponenter
+            (formularer, handel, fragt) - se src/app/globals.css. */}
+        <main id="indhold" tabIndex={-1} className="firma-stor min-w-0 flex-1 outline-none">
           {children}
         </main>
       </div>

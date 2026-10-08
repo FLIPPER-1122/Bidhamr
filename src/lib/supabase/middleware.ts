@@ -114,7 +114,11 @@ const FIRMA_KORT: [RegExp, (m: RegExpMatchArray) => string][] = [
   [/^\/mine-handler(\/.*)?$/, () => "/firma/salg"],
   [/^\/opret-auktion\/?$/, () => "/firma/auktioner/ny"],
   [new RegExp(`^/auktion/(${UUID_DEL})/rediger/?$`), (m) => `/firma/auktioner/${m[1]}/rediger`],
-  [/^\/(beskeder|konto|favoritter|notifikationer|andenchance|velkommen)(\/.*)?$/, () => "/firma"],
+  // /konto/* -> /firma, undtagen /konto/data ("Download dine data", GDPR):
+  // formularen på /firma/oplysninger poster dertil (kun POST, så kortet her
+  // rammer den alligevel ikke - undtagelsen er et ekstra værn).
+  [/^\/konto(?:\/(?!data(?:\/|$)).*)?$/, () => "/firma"],
+  [/^\/(beskeder|favoritter|notifikationer|andenchance|velkommen)(\/.*)?$/, () => "/firma"],
   [/^\/profil\/mig\/?$/, () => "/firma"],
 ];
 
@@ -153,7 +157,8 @@ function erOffentligRute(pathname: string) {
 // ALLE forespørgsler, der ikke er GET/HEAD, på en offentlig sidesti, medmindre:
 //   - brugeren ikke er logget ind (login, signup, glemt adgangskode), eller
 //   - brugeren har en staff-rolle (som slipper gennem gaten alligevel).
-// Firmakonti afvises også her (de har ingen staff-rolle).
+// Firmakonti afvises her før lancering UANSET TILMELDING_AABEN: firmaet må
+// ikke kalde server actions før lancering (se FIRMA_KONTOTYPE ovenfor).
 // Undtaget er /api/* og /auth/*: det er route handlers, som ikke kan køre
 // server actions, og som har deres egne tjek (cron, webhooks, helbred ...).
 // Auth-siderne (/login, /reset-password ...) undtages IKKE: et action-id kan
@@ -174,15 +179,18 @@ async function afvisSkrivningPaaOffentligSti(
 ): Promise<boolean> {
   if (request.method === "GET" || request.method === "HEAD") return false;
   if (erRouteHandlerSti(request.nextUrl.pathname)) return false;
-  if (!foerLancering() || process.env.TILMELDING_AABEN === "true") return false;
+  if (!foerLancering()) return false;
 
   const session = await hentSession(supabase);
   if (!session) return false;
 
-  const { rolle } = await hentGateIdentitet(request, supabase, session);
+  const { rolle, kontoType } = await hentGateIdentitet(request, supabase, session);
   // Sælgeren må kun bruge Admin → Erhverv før lancering - ikke kalde fx
   // afgivBud eller opretAuktion via POST til en offentlig sti.
-  return !rolle || !ROLLER_MED_ADGANG.includes(rolle) || rolle === "saelger";
+  const staff = !!rolle && ROLLER_MED_ADGANG.includes(rolle) && rolle !== "saelger";
+  if (kontoType === FIRMA_KONTOTYPE && !staff) return true;
+  if (process.env.TILMELDING_AABEN === "true") return false;
+  return !staff;
 }
 
 // En fil fra public/ (fx /placeholder.png), der ikke er undtaget i
@@ -218,12 +226,15 @@ async function hentSession(
 // Rolle og konto_type til gaten: fra den signerede rolle-cookie, hvis den er
 // gyldig for netop denne bruger og session (src/lib/rolleCookie.ts), ellers
 // fra databasen (min_rolle og users.konto_type, samtidig - så det tager ikke
-// længere end før). En staff-rolle eller en firmakonto fra databasen gemmes i
-// en ny cookie, så de næste klik i 5 minutter ikke venter på databasen.
+// længere end før). Svaret fra databasen gemmes i en ny cookie - for ALLE
+// brugere (staff, firmakonti og private), så de næste klik i 5 minutter ikke
+// venter på databasen. Efter lancering slår gaten identiteten op på "min
+// konto"-stierne for at sende en firmakonto til dashboardet; uden cookien
+// kostede det private brugere to databasekald ved hvert klik dér.
+// Cookien giver ingen adgang i sig selv: den er signeret, bundet til bruger og
+// session og gælder højst 5 minutter, og admin, staff-handlinger og RLS
+// tjekker stadig databasen.
 // Besøgende uden login når aldrig hertil (ingen opslag for dem).
-function faarCookie(rolle: string | null, kontoType: string | null) {
-  return (!!rolle && ROLLER_MED_ADGANG.includes(rolle)) || kontoType === FIRMA_KONTOTYPE;
-}
 
 async function hentGateIdentitet(
   request: NextRequest,
@@ -240,7 +251,7 @@ async function hentGateIdentitet(
       session.brugerId,
       session.sessionId,
     );
-    if (fraCookie && faarCookie(fraCookie.rolle, fraCookie.kontoType)) {
+    if (fraCookie) {
       return { rolle: fraCookie.rolle, kontoType: fraCookie.kontoType, nyCookie: null };
     }
   }
@@ -258,10 +269,34 @@ async function hentGateIdentitet(
   const konto = (kontoData as { konto_type?: unknown } | null)?.konto_type;
   const kontoType = typeof konto === "string" ? konto : null;
   const nyCookie =
-    rolle && faarCookie(rolle, kontoType) && session.sessionId
+    rolle && session.sessionId
       ? await lavRolleCookie(session.brugerId, session.sessionId, rolle, kontoType)
       : null;
   return { rolle, kontoType, nyCookie };
+}
+
+function saetRolleCookie(
+  request: NextRequest,
+  res: NextResponse,
+  nyCookie: { vaerdi: string; maxAge: number } | null,
+): NextResponse {
+  if (nyCookie) {
+    res.cookies.set(ROLLE_COOKIE, nyCookie.vaerdi, {
+      httpOnly: true,
+      secure: request.nextUrl.protocol === "https:",
+      sameSite: "lax",
+      path: "/",
+      maxAge: nyCookie.maxAge,
+    });
+  }
+  return res;
+}
+
+// "Download dine data" (src/app/(app)/konto/data/route.ts) er en route
+// handler (kan ikke køre server actions) og kun POST. En firmakonto må bruge
+// den før lancering (GDPR), selvom firmaet ellers ikke må skrive noget.
+function erDataEksport(pathname: string, metode: string) {
+  return metode === "POST" && (pathname === "/konto/data" || pathname === "/konto/data/");
 }
 
 // ekstraHeadere (fx CSP-nonce fra src/proxy.ts) sendes med til renderingen.
@@ -333,25 +368,16 @@ export async function updateSession(
     // Efter lancering: en firmakonto sendes fra "min konto"-siderne til
     // firma-dashboardet (firmaOmdirigering). Kun GET/HEAD - en server action
     // kan sendes til enhver sti og må ikke omdirigeres. Identiteten slås kun
-    // op på netop de stier (firmaet har den signerede cookie; en privat
-    // bruger koster ét databasekald på dem).
+    // op på netop de stier, og svaret gemmes i den signerede cookie for alle
+    // (også private), så de næste klik i 5 minutter ikke koster opslag.
     const til = request.method === "GET" || request.method === "HEAD" ? firmaOmdirigering(pathname) : null;
     if (til) {
       const id = await hentGateIdentitet(request, supabase, session);
       const staff = !!id.rolle && ROLLER_MED_ADGANG.includes(id.rolle) && id.rolle !== "saelger";
       if (id.kontoType === FIRMA_KONTOTYPE && !staff) {
-        const res = NextResponse.redirect(firmaRedirectUrl(request, til));
-        if (id.nyCookie) {
-          res.cookies.set(ROLLE_COOKIE, id.nyCookie.vaerdi, {
-            httpOnly: true,
-            secure: request.nextUrl.protocol === "https:",
-            sameSite: "lax",
-            path: "/",
-            maxAge: id.nyCookie.maxAge,
-          });
-        }
-        return res;
+        return saetRolleCookie(request, NextResponse.redirect(firmaRedirectUrl(request, til)), id.nyCookie);
       }
+      return saetRolleCookie(request, supabaseResponse, id.nyCookie);
     }
     return supabaseResponse;
   }
@@ -361,18 +387,7 @@ export async function updateSession(
   // gammel) eller databasen - se hentGateIdentitet.
   const { rolle, kontoType, nyCookie } = await hentGateIdentitet(request, supabase, session);
 
-  const medCookie = (res: NextResponse) => {
-    if (nyCookie) {
-      res.cookies.set(ROLLE_COOKIE, nyCookie.vaerdi, {
-        httpOnly: true,
-        secure: request.nextUrl.protocol === "https:",
-        sameSite: "lax",
-        path: "/",
-        maxAge: nyCookie.maxAge,
-      });
-    }
-    return res;
-  };
+  const medCookie = (res: NextResponse) => saetRolleCookie(request, res, nyCookie);
 
   const erStaff = !!rolle && ROLLER_MED_ADGANG.includes(rolle);
   if (lukket && !erStaff) {
@@ -380,11 +395,12 @@ export async function updateSession(
     // Skrivninger (server actions) afvises overalt, også på /firma.
     if (kontoType === FIRMA_KONTOTYPE) {
       const laesning = request.method === "GET" || request.method === "HEAD";
+      if (erDataEksport(pathname, request.method)) return medCookie(supabaseResponse);
       if (!laesning) return new NextResponse("Ingen adgang", { status: 403 });
       if (erFirmaSti(pathname) || erStatiskFil(pathname, request.method)) return medCookie(supabaseResponse);
       return medCookie(NextResponse.redirect(firmaRedirectUrl(request, firmaOmdirigering(pathname) ?? "/firma")));
     }
-    return NextResponse.redirect(new URL("/coming-soon", request.url));
+    return medCookie(NextResponse.redirect(new URL("/coming-soon", request.url)));
   }
 
   // Rollen 'saelger' (erhvervssælger) har kun adgang til Admin → Erhverv.
