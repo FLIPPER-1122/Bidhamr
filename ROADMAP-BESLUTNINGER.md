@@ -370,4 +370,4 @@ Baggrund og research: `ERHVERV-OVERBLIK.md`. Lovspørgsmålene er sendt til advo
 - **Sælgerkontoen bliver aldrig godkendt (Filip, 8. okt. 2026):** Auktionen annulleres (køberen trækkes ikke), og sælgerens konto fryses (kan ikke oprette eller køre auktioner), til Stripe har godkendt den. Frist: annulleres, hvis kontoen ikke er godkendt senest 7 dage efter auktionens slutning (chefens valg – Filip kan ændre).
 
 ## Virksomhedsoplysninger (Filip, 8. okt. 2026)
-- **BidHamr**, CVR **46836219**, Ellegårdsvej 40 [postnummer og by mangler]. Bruges på fakturaer, i Stripe og på "Om BidHamr"/kontakt.
+- **BidHamr**, CVR **46836219**, Ellegårdsvej 40, 4684 Holmegaard. Bruges på fakturaer, i Stripe og på "Om BidHamr"/kontakt.

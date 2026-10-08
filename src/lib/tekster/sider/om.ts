@@ -4,7 +4,6 @@
 // navnet må vises offentligt. Filip skal sige ja, før det tilføjes.
 // OPDATER, når MitID er på plads (ROADMAP-BESLUTNINGER afsnit 7): tilføj et
 // punkt om MitID-verificerede brugere. Det må ikke stå her før.
-// OPDATER, når CVR-nummer og adresse er på plads: tilføj dem under "Kontakt".
 
 import type { Tekstside } from "./typer";
 
@@ -58,7 +57,10 @@ export const OM: Tekstside = {
     {
       id: "kontakt",
       overskrift: "Kontakt",
-      tekst: ["Har du spørgsmål eller forslag, så skriv til support@bidhamr.dk."],
+      tekst: [
+        "Har du spørgsmål eller forslag, så skriv til support@bidhamr.dk.",
+        "BidHamr · CVR 46836219 · Ellegårdsvej 40, 4684 Holmegaard",
+      ],
       links: [{ tekst: "Spørgsmål og svar", href: "/faq" }],
     },
   ],
