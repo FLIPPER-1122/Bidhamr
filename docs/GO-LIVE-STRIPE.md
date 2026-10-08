@@ -18,7 +18,12 @@ Lavet 8. okt. 2026 efter Niels' gennemgang (F07). Bruges, når BidHamr skifter f
 - [ ] Betalingsmetoder (kort, MobilePay, Apple Pay, Google Pay …) slået til i live.
 - [ ] Radar-regler (fx bloker ved høj risiko, 3D Secure-regler) gennemgået.
 - [ ] Billing (erhverv): Smart Retries, fakturaindstillinger (firmanavn, CVR, nummerering), kundeportal, e-mail-kvitteringer.
-- [ ] Webhook-endpoints oprettet i **live** med de samme events som i test (platform: se `src/app/api/webhooks/stripe/route.ts`; Connect: `account.updated`, `account.application.deauthorized`, `payout.paid`, `payout.failed`). Noter signatur-hemmelighederne.
+- [ ] Webhook-endpoints oprettet i **live** med de samme events som i test (platform: se `src/app/api/webhooks/stripe/route.ts`; Connect: `account.updated`, `account.application.deauthorized`, `capability.updated`, `payout.paid`, `payout.failed`). Noter signatur-hemmelighederne.
+- [ ] **Ny betalingsmodel (destination, docs/BETALINGSMODEL-PLAN.md):** ombygningen skal være færdig (trin 1–5). Derefter:
+  - Migrationen `20261011010000_betalingsmodel_fundament.sql` (og trin 2–5) er kørt i produktion.
+  - Alle sælgerkonti er sat op: `node scripts/betalingsmodel-backfill.mts --udfoer` (prøvekørsel uden `--udfoer` først). Mangler en konto oplysninger til card_payments, bliver overførsler/udbetalinger inaktive, indtil sælgeren har gjort onboardingen færdig – giv sælgerne besked først.
+  - Vercel (Filip selv): `STRIPE_BETALINGSMODEL=destination`, og databasen: `update public.stripe_tilstand set betalingsmodel = 'destination' where id;` – begge skal være sat, ellers kører koden den gamle model (og giver drift-alarm).
+  - Kontrol: ingen `connect/udbetalingsplan`- eller `betaling/betalingsmodel`-alarmer på /admin/drift; alle sælgerkonti står til manuel udbetaling.
 
 ## 2. Ryd testdata i produktionsdatabasen (kræver Filips "ja" – skriv det som en migration)
 Stripe-id'er fra testtilstand virker ikke med live-nøglen (Stripe svarer "No such …"). Status i prod 8. okt. 2026 (kun læst): 3 Stripe-kunder, 3 Connect-konti, 0 gemte kort, 0 betalinger, 103 registrerede webhook-events.
