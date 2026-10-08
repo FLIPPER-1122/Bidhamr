@@ -99,11 +99,14 @@ update public.users
  where id = '11111111-1111-4111-8111-000000000009';
 
 insert into public.firmaer (id, bruger_id, firmanavn, cvr, adresse, postnummer, bynavn, telefon,
-                            kontakt_email, kontaktperson, pakke_id, oprettet_af)
+                            kontakt_email, kontaktperson, pakke_id, oprettet_af, abonnement_status)
 values ('77777777-7777-4777-8777-000000000001', '11111111-1111-4111-8111-000000000009',
         'Testfirma ApS', '12345678', 'Testvej 1', '4700', 'Næstved', '+4511223344',
         'firma@test.bidhamr.dk', 'Tina Test', '66666666-6666-4666-8666-000000000001',
-        '11111111-1111-4111-8111-000000000004')
+        '11111111-1111-4111-8111-000000000004',
+        -- 'aktiv' som efter en manuel aftale (nye firmaer starter i
+        -- 'afventer_betaling' og betaler selv via Stripe - 20261010050000).
+        'aktiv')
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------

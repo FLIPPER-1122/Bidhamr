@@ -91,6 +91,12 @@ export default function FirmaRedigering({
               onChange={(e) => setStatus(e.target.value as AbonnementStatus)}
               className={ADMIN_FELT}
             >
+              {/* 'Venter på første betaling' kan ikke vælges - kun vises. */}
+              {!(ABONNEMENT_STATUSSER as readonly string[]).includes(startStatus) && (
+                <option value={startStatus} disabled>
+                  {ABONNEMENT_STATUS_NAVN[startStatus]}
+                </option>
+              )}
               {ABONNEMENT_STATUSSER.map((s) => (
                 <option key={s} value={s}>
                   {ABONNEMENT_STATUS_NAVN[s]}

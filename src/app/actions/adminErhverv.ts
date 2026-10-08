@@ -21,7 +21,8 @@ import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { firmaVelkomstMail } from "@/lib/mails/erhverv";
 import { sideUrl } from "@/lib/mails/layout";
 import { slaaCvrOpOffentligt, type CvrOpslag } from "@/lib/erhverv/cvr";
-import { startAbonnement } from "@/lib/erhverv/betaling";
+import { fortrydOpsigelse, opsigAbonnement, sikrPris, startAbonnement, stripeTilgaengelig } from "@/lib/erhverv/betaling";
+import { ADMIN_ERHVERV_BETALING as AB } from "@/lib/tekster/erhverv";
 import {
   EMAIL,
   ERHVERV_GRAENSER as G,
@@ -213,6 +214,16 @@ export async function gemErhvervPakke(input: {
     if (!Number.isInteger(antal) || antal < 1 || antal > G.auktionerPrUgeMaks) kodeFejl("ugyldigt_antal");
     const sortering = Number.isInteger(input.sortering) ? input.sortering! : 0;
 
+    // Den gamle pris: ændres den, laves en ny pris i Stripe (priser kan ikke
+    // ændres i Stripe). Eksisterende abonnementer beholder den gamle pris,
+    // til firmaet skifter pakke.
+    let gammelPris: number | null = null;
+    if (id) {
+      const { data: gammel } = await admin.from("erhverv_pakker").select("maanedspris").eq("id", id).maybeSingle();
+      const v = (gammel as { maanedspris: number | string | null } | null)?.maanedspris;
+      gammelPris = v == null ? null : Number(v);
+    }
+
     const { data, error } = await admin.rpc("erhverv_pakke_gem", {
       p_staff: userId,
       p_id: id,
@@ -227,7 +238,24 @@ export async function gemErhvervPakke(input: {
     const svar = data as { kode?: string; id?: string } | null;
     if (svar?.kode !== "ok" || !svar.id) kodeFejl(svar?.kode);
     revalidatePath("/admin/erhverv");
-    return { ok: true as const, id: svar.id };
+
+    let besked: string | undefined;
+    if (pris !== null && pris > 0 && pris !== gammelPris && stripeTilgaengelig()) {
+      try {
+        await sikrPris(svar.id);
+        const { count } = await admin
+          .from("firmaer")
+          .select("id", { count: "exact", head: true })
+          .eq("pakke_id", svar.id)
+          .not("stripe_subscription_id", "is", null)
+          .neq("abonnement_status", "opsagt");
+        besked = id ? AB.prisNyStripe(count ?? 0) : undefined;
+      } catch (err) {
+        await logDriftFejl({ kilde: "action", hvor: "gemErhvervPakke/sikrPris", fejl: err, brugerId: userId });
+        besked = AB.prisStripeFejl;
+      }
+    }
+    return { ok: true as const, id: svar.id, besked };
   });
 }
 
@@ -277,6 +305,11 @@ export type FirmaAdmin = {
   betaling_mislykket_kl: string | null;
   pauset_aarsag: "betaling" | "bidhamr" | null;
   opsagt_kl: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_abonnement_status: string | null;
+  opsiges_fra: string | null;
+  periode_slut: string | null;
   oprettet_kl: string;
   login_email: string;
   har_logget_ind: boolean;
@@ -546,6 +579,19 @@ export async function opdaterFirma(input: {
     // altid sender alle felter med uændret navn/CVR, stadig virker for sælger).
     const note = typeof input.note === "string" ? input.note.trim().slice(0, 1000) : null;
 
+    // "Opsagt" må ikke sættes her, mens firmaet har et abonnement i Stripe -
+    // så ville Stripe blive ved med at trække betalingen. Brug "Opsig
+    // abonnement" (opsigFirmaAbonnement).
+    if (input.status === "opsagt") {
+      const { data: fr } = await admin
+        .from("firmaer")
+        .select("stripe_subscription_id, stripe_abonnement_status")
+        .eq("id", firmaId)
+        .maybeSingle();
+      const r = fr as { stripe_subscription_id: string | null; stripe_abonnement_status: string | null } | null;
+      if (r?.stripe_subscription_id && r.stripe_abonnement_status !== "canceled") throw new BrugerFejl(AB.brugOpsigKnap);
+    }
+
     const { data, error } = await admin.rpc("erhverv_firma_opdater", {
       p_staff: userId,
       p_firma: firmaId,
@@ -567,4 +613,72 @@ export async function opdaterFirma(input: {
     revalidatePath("/admin/erhverv");
     return { ok: true as const };
   });
+}
+
+// --- Opsigelse (kun chef) -------------------------------------------------------
+
+// Opsiger firmaets abonnement: i Stripe stopper det ved slutningen af den
+// betalte periode (cancel_at_period_end, ingen refusion), og webhooken
+// customer.subscription.deleted sætter firmaet til 'opsagt'. Har firmaet
+// intet abonnement i Stripe, opsiges det med det samme i databasen.
+export async function opsigFirmaAbonnement(firmaId: string) {
+  return koer("opsigFirmaAbonnement", async () => {
+    const { admin, userId } = await assertErhverv(true);
+    const id = tjekUuid(firmaId);
+    const svar = await opsigAbonnement(id);
+    if (svar.status === "fejl") throw new Error(svar.fejl);
+    if (svar.status === "ingen_stripe") {
+      const { data, error } = await admin.rpc("erhverv_firma_opdater", {
+        p_staff: userId,
+        p_firma: id,
+        p_status: "opsagt",
+        p_note: "Opsagt (intet abonnement i Stripe)",
+      });
+      if (error) throw new Error(error.message);
+      const kode = (data as { kode?: string } | null)?.kode;
+      if (kode !== "ok") kodeFejl(kode);
+      revalidatePath("/admin/erhverv");
+      return { ok: true as const, besked: AB.opsagtStraks };
+    }
+    const fra = new Date(svar.fra).toLocaleDateString("da-DK", {
+      timeZone: "Europe/Copenhagen",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    await logFirmaHaendelse(admin, userId, id, `Abonnement opsagt i Stripe - stopper ${fra}`);
+    revalidatePath("/admin/erhverv");
+    return { ok: true as const, besked: AB.opsagt(fra) };
+  });
+}
+
+export async function fortrydFirmaOpsigelse(firmaId: string) {
+  return koer("fortrydFirmaOpsigelse", async () => {
+    const { admin, userId } = await assertErhverv(true);
+    const id = tjekUuid(firmaId);
+    const svar = await fortrydOpsigelse(id);
+    if (svar.status === "fejl") throw new Error(svar.fejl);
+    await logFirmaHaendelse(admin, userId, id, "Opsigelse af abonnement fortrudt");
+    revalidatePath("/admin/erhverv");
+    return { ok: true as const, besked: AB.fortrudt };
+  });
+}
+
+async function logFirmaHaendelse(
+  admin: Awaited<ReturnType<typeof assertErhverv>>["admin"],
+  staffId: string,
+  firmaId: string,
+  tekst: string,
+) {
+  const { data: f } = await admin.from("firmaer").select("bruger_id, firmanavn, cvr").eq("id", firmaId).maybeSingle();
+  const r = f as { bruger_id: string; firmanavn: string; cvr: string } | null;
+  const { error } = await admin.from("moderation_log").insert({
+    medarbejder_id: staffId,
+    handling: "firma_opdateret",
+    maal_type: "firma",
+    maal_id: firmaId,
+    bruger_id: r?.bruger_id ?? null,
+    aarsag: `${tekst}; ${r?.firmanavn ?? ""} (CVR ${r?.cvr ?? "-"})`.slice(0, 1000),
+  });
+  if (error) await logDriftFejl({ kilde: "action", hvor: "logFirmaHaendelse", fejl: error, brugerId: staffId });
 }

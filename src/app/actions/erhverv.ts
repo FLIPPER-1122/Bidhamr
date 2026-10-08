@@ -27,7 +27,7 @@ import {
   type ErhvervPakke,
   type FirmaOversigt,
 } from "@/lib/erhverv/regler";
-import { startNedgradering, startOpgradering } from "@/lib/erhverv/betaling";
+import { annullerPlanlagtSkift, startNedgradering, startOpgradering } from "@/lib/erhverv/betaling";
 import { ERHVERV_FORMULAR, FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA } from "@/lib/tekster/erhverv";
 import { revalidatePath } from "next/cache";
 
@@ -166,6 +166,9 @@ export async function hentFirmaOversigt(): Promise<{ ok: true; oversigt: FirmaOv
 
 export type SkiftPakkeSvar =
   | { ok: true; kode: "opgradering_afventer_betaling"; pakke: ErhvervPakke; besked: string }
+  // Kortet kræver godkendelse (fx 3D Secure), eller betalingen fejlede:
+  // firmaet sendes til Stripes fakturaside for at betale forskellen.
+  | { ok: true; kode: "betal_forskellen"; pakke: ErhvervPakke; url: string; besked: string }
   // Betalingen gik igennem med det samme, og pakken er aktiveret.
   | { ok: true; kode: "opgraderet"; pakke: ErhvervPakke; besked: string }
   | { ok: true; kode: "nedgradering_planlagt"; pakke: ErhvervPakke; gaelderFra: string; besked: string }
@@ -173,8 +176,9 @@ export type SkiftPakkeSvar =
   | { fejl: string };
 
 // Firmaet vælger en anden pakke i Firma oversigt.
-//  - Større pakke: registreres og venter på betaling (Stripe, på pause) -
-//    giver IKKE flere auktioner før betalt (src/lib/erhverv/betaling.ts).
+//  - Større pakke: Stripe trækker forskellen for resten af perioden med det
+//    samme (faktura). Først når den er betalt, får firmaet flere auktioner
+//    (src/lib/erhverv/betaling.ts startOpgradering + webhook invoice.paid).
 //  - Mindre pakke: gælder fra næste periode.
 export async function skiftFirmaPakke(pakkeId: string): Promise<SkiftPakkeSvar> {
   try {
@@ -213,10 +217,22 @@ export async function skiftFirmaPakke(pakkeId: string): Promise<SkiftPakkeSvar> 
         await logDriftFejl({ kilde: "action", hvor: "skiftFirmaPakke/startOpgradering", fejl: betaling.fejl, brugerId: user.id });
         return { fejl: FIRMA_OVERSIGT_EKSTRA.opgraderingBetalingFejl };
       }
+      if (betaling.status === "kraever_handling") {
+        return {
+          ok: true,
+          kode: "betal_forskellen",
+          pakke: svar.pakke,
+          url: betaling.url,
+          besked: FIRMA_OVERSIGT_EKSTRA.betalForskellenSvar,
+        };
+      }
       return { ok: true, kode: "opgradering_afventer_betaling", pakke: svar.pakke, besked: betaling.besked };
     }
     if (svar?.kode === "nedgradering_planlagt" && svar.pakke && svar.gaelder_fra && svar.skift_id) {
-      await startNedgradering(svar.skift_id);
+      const plan = await startNedgradering(svar.skift_id);
+      if (plan.status === "fejl") {
+        await logDriftFejl({ kilde: "action", hvor: "skiftFirmaPakke/startNedgradering", fejl: plan.fejl, brugerId: user.id });
+      }
       const dato = new Date(svar.gaelder_fra).toLocaleDateString("da-DK", {
         timeZone: "Europe/Copenhagen",
         day: "numeric",
@@ -231,6 +247,7 @@ export async function skiftFirmaPakke(pakkeId: string): Promise<SkiftPakkeSvar> 
         besked: FIRMA_OVERSIGT_EKSTRA.nedgraderetSvar(svar.pakke.navn, dato),
       };
     }
+    if (svar?.kode === "uaendret") await annullerPlanlagtSkift(user.id);
     if (svar?.kode === "uaendret") return { ok: true, kode: "uaendret", besked: FIRMA_OVERSIGT_EKSTRA.uaendretSvar };
     if (svar?.kode === "ugyldig_pakke") return { fejl: "Pakken findes ikke længere. Vælg en anden." };
     return { fejl: GENERISK };

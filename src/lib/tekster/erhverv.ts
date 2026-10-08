@@ -315,7 +315,7 @@ export const FIRMA_OVERSIGT = {
     dinPakke: "Din pakke",
     andrePakker: "Andre pakker",
     auktionerPrUge: (antal: number) => (antal === 1 ? "1 auktion om ugen" : `${antal} auktioner om ugen`),
-    prisPrMaaned: (pris: string) => `${pris} om måneden`,
+    prisPrMaaned: (pris: string) => `${pris} om måneden + moms`,
     knapOpgrader: "Opgradér",
     knapNedgrader: "Skift til denne pakke fra næste måned",
     knapAnnuller: "Fortryd",
@@ -335,7 +335,7 @@ export const FIRMA_OVERSIGT = {
 
     betalingIkkeSatOp: "Vi kontakter dig om betalingen.",
     betalingIkkeSatOpSkift:
-      "Du kan ikke skifte pakke her endnu. Vi kontakter dig om betalingen. Vil du skifte nu, så skriv til os.",
+      "Du kan skifte pakke, når dit abonnement er i gang. Vil du have en anden pakke nu, så skriv til os.",
     fejlSkift: "Pakken blev ikke skiftet. Prøv igen om lidt, eller skriv til os.",
   },
 
@@ -564,17 +564,18 @@ export const FIRMA_OVERSIGT_EKSTRA = {
     auktionerTekst: "Alle de auktioner, du har oprettet.",
   },
   kanIkkeOpretteIkkeAktiv: "Du kan ikke oprette auktioner, før din pakke er sat i gang.",
+  kanIkkeOpretteBetal: "Betal for din pakke under Abonnement. Så kan du oprette auktioner.",
   pakkePause: "Dit abonnement er sat på pause. Du kan ikke oprette nye auktioner. Skriv til os, så hjælper vi dig.",
   pakkeOpsagt: "Dit abonnement er opsagt. Skriv til os, hvis du vil sælge igen.",
   ingenPakke: "Du har ingen pakke endnu. Vi kontakter dig.",
   afventerTitel: "Venter på betaling",
   afventerTekst: (pakke: string) =>
-    `Du har valgt ${pakke}. Du får de ekstra auktioner, når betalingen er på plads. Vi kontakter dig om betalingen.`,
+    `Du har valgt ${pakke}. Du får de ekstra auktioner, så snart betalingen er gået igennem.`,
   prisIkkeSat: "Prisen aftales med BidHamr",
-  // Mens betaling via Stripe ikke er åbnet: opgraderingen gælder først, når
-  // den er betalt (src/lib/erhverv/betaling.ts).
+  // Opgraderingen gælder, så snart forskellen er betalt (src/lib/erhverv/betaling.ts).
   bekraeftOpgraderTekstAfventer:
-    "Din pakke skifter, når betalingen er på plads. Indtil da beholder du din nuværende pakke. Vi kontakter dig om betalingen.",
+    "Du betaler forskellen i pris for resten af måneden med dit kort. Så snart betalingen er gået igennem, får du de ekstra auktioner. Du får en regning på det.",
+  betalForskellenSvar: "Din bank vil have dig til at godkende betalingen. Vi sender dig videre nu …",
   opgraderingBetalingFejl:
     "Vi kunne ikke sætte betalingen i gang. Din pakke er ikke skiftet. Prøv igen om lidt, eller skriv til erhverv@bidhamr.dk.",
   nedgraderetSvar: (pakke: string, dato: string) =>
@@ -592,7 +593,13 @@ export const FIRMA_OVERSIGT_EKSTRA = {
   solgtIAlt: "Solgt i alt",
   seSalg: "Se alle dine salg",
   regningType: { abonnement: "Abonnement", opgradering: "Opgradering", andet: "Andet" },
-  regningStatus: { afventer: "Ikke betalt", betalt: "Betalt", mislykket: "Betaling fejlede", krediteret: "Krediteret" },
+  regningStatus: {
+    afventer: "Ikke betalt",
+    betalt: "Betalt",
+    mislykket: "Betaling fejlede",
+    krediteret: "Krediteret",
+    annulleret: "Annulleret",
+  },
   luk: "Luk",
 } as const;
 
@@ -892,4 +899,68 @@ export const FIRMA_DASHBOARD = {
   },
   ingenBeskederFejl:
     "Du kan ikke skrive til en erhvervssælger. Kontakt firmaet på mail eller telefon - se firmaets profil.",
+} as const;
+
+// Betaling af abonnementet med Stripe (Firma oversigt -> Abonnement og
+// Regninger). Meget enkelt sprog - primært ældre brugere.
+export const FIRMA_BETALING = {
+  betalTitel: "Betal for at komme i gang",
+  betalTekst: (pakke: string, pris: string) =>
+    `Du har pakken ${pakke}. Du betaler ${pris} om måneden + moms. Når du har betalt, kan du oprette auktioner.`,
+  betalTekstUdenPris: "Når du har betalt for din pakke, kan du oprette auktioner.",
+  knapBetal: "Betal for din pakke",
+  knapSender: "Sender dig videre …",
+  stripeForklaring: "Betalingen håndteres af vores betalingspartner Stripe. Du betaler med kort.",
+  maanedligTekst: "Beløbet trækkes automatisk hver måned. Du får en regning hver gang.",
+  prisMedMoms: (ekskl: string, inkl: string) => `${ekskl} + moms (${inkl} i alt) om måneden`,
+  eksklMoms: "ekskl. moms",
+  // Retur fra Stripe.
+  kvitteringTitel: "Tak for din betaling",
+  kvitteringTekst: "Din pakke er sat i gang. Du kan nu oprette auktioner. Regningen ligger under Regninger.",
+  behandlesTitel: "Vi venter på betalingen",
+  behandlesTekst: "Betalingen er ved at blive behandlet. Opdater siden om et øjeblik.",
+  afbrudtTekst: "Du afbrød betalingen. Der er ikke trukket penge. Du kan prøve igen, når du er klar.",
+  opgraderetTitel: "Tak - din pakke er skiftet",
+  // Mislykket betaling.
+  mislykketTitel: "Din betaling gik ikke igennem",
+  mislykketTekst: (dato: string) =>
+    `Vi kunne ikke trække betalingen for dit abonnement. Skift dit betalingskort, eller betal regningen, inden ${dato}. Ellers sættes dit abonnement på pause, og du kan ikke oprette nye auktioner.`,
+  pauseTitel: "Dit abonnement er sat på pause",
+  pauseTekst: "Vi har ikke modtaget betalingen. Betal regningen, så kører dit abonnement igen med det samme.",
+  pauseNyBetalingTekst: "Vi har ikke modtaget betalingen. Betal for din pakke igen, så kører dit abonnement igen med det samme.",
+  knapBetalRegning: "Betal regningen",
+  knapBetalForskellen: "Betal forskellen",
+  knapSkiftKort: "Skift betalingskort",
+  skiftKortTekst: "Vil du betale med et andet kort? Du kan også se dine regninger dér.",
+  opsigesTekst: (dato: string) => `Dit abonnement stopper den ${dato}. Skriv til os, hvis du vil fortsætte.`,
+  naesteBetaling: (dato: string) => `Næste betaling: ${dato}.`,
+  fejl: "Vi kunne ikke sende dig til betalingen. Prøv igen om lidt, eller skriv til erhverv@bidhamr.dk.",
+  // Regninger.
+  regningBeloeb: (ekskl: string, moms: string, inkl: string) => `${ekskl} + moms ${moms} = ${inkl}`,
+  knapHentPdf: "Hent faktura (PDF)",
+  knapSeRegning: "Se og betal regningen",
+  regningNummer: (nr: string) => `Faktura ${nr}`,
+} as const;
+
+// Admin -> Erhverv -> Firma: abonnementet i Stripe (kun chef).
+export const ADMIN_ERHVERV_BETALING = {
+  titel: "Betaling (Stripe)",
+  ingenAbonnement: "Firmaet har ikke betalt for sin pakke endnu (intet abonnement i Stripe).",
+  stripeStatus: "Status i Stripe",
+  betaltTil: "Betalt til",
+  opsigesFra: (dato: string) => `Abonnementet er opsagt og stopper ${dato}.`,
+  knapOpsig: "Opsig abonnement",
+  bekraeftOpsigTitel: "Opsig abonnementet?",
+  bekraeftOpsig: "Abonnementet stopper ved slutningen af den betalte periode. Der refunderes ikke noget. Firmaet kan sælge, indtil perioden slutter.",
+  opsagt: (dato: string) => `Abonnementet er opsagt og stopper ${dato}.`,
+  opsagtStraks: "Firmaet havde intet abonnement i Stripe, så det er opsagt med det samme.",
+  knapFortryd: "Fortryd opsigelsen",
+  fortrudt: "Opsigelsen er fortrudt. Abonnementet fortsætter.",
+  kunChef: "Kun chefen kan opsige abonnementet.",
+  brugOpsigKnap: "Firmaet har et abonnement i Stripe. Brug knappen \"Opsig abonnement\", så stopper betalingen også.",
+  prisNyStripe: (n: number) =>
+    n === 0
+      ? "Prisen er gemt, og der er lavet en ny pris i Stripe."
+      : `Prisen er gemt, og der er lavet en ny pris i Stripe. ${n === 1 ? "1 firma" : `${n} firmaer`} betaler stadig den gamle pris, indtil de skifter pakke.`,
+  prisStripeFejl: "Prisen er gemt, men den nye pris kunne ikke oprettes i Stripe endnu. Den oprettes automatisk, næste gang et firma betaler.",
 } as const;
