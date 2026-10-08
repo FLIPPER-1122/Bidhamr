@@ -21,6 +21,7 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 - Forudsætning: fragtintegration, så sporing læses automatisk.
 
 ## 2. Fragt
+- **Store og tunge ting sendes ikke (Filip, 8. oktober 2026):** varer over en vægtgrænse (og varer, der er for store til en almindelig pakke) kan kun afhentes. Filip aftaler vægtgrænsen med fragtfirmaet; når den er fastsat, skal opret auktion håndhæve den (kun afhentning over grænsen).
 - Sælgeren får en **fragtlabel/QR-kode via BidHamr**, og sporingen kommer automatisk (fx Shipmondo).
 - **Køberen betaler fragten** og ser prisen, før han byder.
 - **Afhentning hos sælger** er en valgmulighed. Køberen viser en kode ved afhentning, og pengene frigives med det samme. Ingen klagefrist bagefter.

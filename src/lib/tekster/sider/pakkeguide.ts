@@ -122,12 +122,12 @@ export const PAKKEGUIDE: Tekstside = {
     {
       id: "store-ting",
       overskrift: "Store og tunge ting",
-      tekst: ["Fx møbler, lamper og værktøj."],
+      tekst: ["Fx møbler og store maskiner."],
       punkter: [
-        "Tjek fragtfirmaets krav til størrelse og vægt, før du sætter auktionen op. Er varen for stor til en almindelig pakke, så vælg afhentning.",
-        "Skil gerne varen ad, og pak skruer og små dele i en lukket pose, der tapes fast inde i kassen.",
-        "Beskyt hjørner og kanter med pap eller hjørnebeskyttere.",
-        "Tunge ting skal ligge i bunden og sidde helt fast.",
+        "Store og tunge ting sendes ikke. Er varen for tung eller for stor til en almindelig pakke, kan den kun afhentes.",
+        "Vælg derfor afhentning, når du sætter auktionen op.",
+        "Køberen henter varen hos dig. Aftal tid og sted i beskederne.",
+        "Skil gerne varen ad på forhånd, hvis det gør den nemmere at hente, og saml skruer og små dele i en lukket pose.",
       ],
     },
   ],

@@ -106,6 +106,8 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 - [ ] Sporing hentes automatisk – status "afhentet" registreres
 - [ ] Auto-frigivelse 48 timer efter afhentning, hvis ingen sag
 - [ ] Sælger kan annullere/ændre en fragtbooking, så længe pakken ikke er afleveret
+- [ ] Filip: aftal vægtgrænse med fragtfirmaet – alt over grænsen kan kun afhentes
+- [ ] Håndhæv vægtgrænsen ved opret auktion: over grænsen kan kun "afhentning" vælges
 - [ ] Fragtberegner: sælger vælger pakkestørrelse (Lille/Mellem/Stor) ved oprettelse, prisen hentes fra GLS og vises på auktionssiden. Findes også som selvstændig side
 - [ ] Vælger sælger en for lille pakkestørrelse, og fragtfirmaet opkræver ekstra, betaler sælgeren forskellen
 - [ ] Ikke-afhentet pakke (GLS returnerer efter 7 dage): sælger beholder varen og får fragten dækket, køber refunderes minus gebyrer og fragt begge veje. Afhentning udløser aldrig udbetaling – kun købers bekræftelse (eller 48 timer uden sag) gør
