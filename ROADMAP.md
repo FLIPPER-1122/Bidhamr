@@ -93,7 +93,7 @@ Formål: ét samlet sted, hvor staff kan styre hele BidHamr. Bygges efter fase 1
 ## Fase 2 – Fragt og automatisk frigivelse
 Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel indgriben.
 
-- [ ] Byg og test fragt mod **GLS' testmiljø** (kræver ikke firmaaftale) – skal være færdigt inden nytår
+- [ ] Byg og test fragt mod **Shipmondos testmiljø** (Filip 8. okt. 2026: i stedet for GLS direkte – Filip får adgang ca. 9. okt.) – skal være færdigt inden nytår
 - [ ] Filip: møde med Shipmondo om den bedste løsning
 - [ ] Filip: spørg GLS/Shipmondo, om fragtfirmaet selv **vejer pakken**, og om den målte vægt kan hentes via API (bruges som bevis i svindelsager)
 - [ ] Filip: spørg GLS/Shipmondo om **reklamation ved transportskade**: kan BidHamr reklamere på sælgers vegne (fragten er på BidHamrs aftale), hvad er maks. erstatning pr. pakke, er elektronik/glas undtaget, og findes der tillægsforsikring?
