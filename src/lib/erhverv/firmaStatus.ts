@@ -4,6 +4,7 @@
 import type { FirmaOversigt } from "@/lib/erhverv/regler";
 import { naesteLedigeTekst } from "@/lib/erhverv/visning";
 import {
+  FIRMA_BETALING,
   FIRMA_DASHBOARD,
   FIRMA_FOER_LANCERING,
   FIRMA_OVERSIGT,
@@ -16,6 +17,8 @@ export function abonnementAktivt(o: FirmaOversigt): boolean {
 
 export function ikkeAktivTekst(o: FirmaOversigt): string {
   const s = o.firma.abonnement_status;
+  if (s === "afventer_betaling") return X.kanIkkeOpretteBetal;
+  if (s === "pauset" && o.firma.pauset_aarsag === "betaling") return FIRMA_BETALING.pauseTekst;
   return s === "pauset" ? X.pakkePause : s === "opsagt" ? X.pakkeOpsagt : X.kanIkkeOpretteIkkeAktiv;
 }
 

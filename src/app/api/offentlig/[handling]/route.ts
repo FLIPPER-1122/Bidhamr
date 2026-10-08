@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { gemNyAdgangskode } from "@/app/actions/auth";
 import { anmeldIndhold, klagOverAfgoerelse, klagSomAnmelder } from "@/app/actions/dsa";
 import { sendErhvervHenvendelse, skiftFirmaPakke } from "@/app/actions/erhverv";
+import { betalForPakke, skiftBetalingskort } from "@/lib/erhverv/betalingHandlinger";
 
 // De få handlinger, som en indlogget ALMINDELIG bruger skal kunne udføre på
 // en offentlig side, mens siden er lukket for alle andre end staff:
@@ -12,6 +13,10 @@ import { sendErhvervHenvendelse, skiftFirmaPakke } from "@/app/actions/erhverv";
 //   erhverv-henvendelse   /erhverv/formular (også uden login)
 //   firma-skift-pakke     /firma (pakkeskift; firmakonti må før lancering
 //                         ikke kalde server actions - se gaten)
+//   firma-betal           /firma/abonnement "Betal for din pakke" -> svarer
+//                         med Stripe Checkout-adressen ({ ok, url })
+//   firma-betalingskort   /firma/abonnement "Skift betalingskort" -> Stripes
+//                         kundeportal (kun kort og fakturaer)
 //
 // Hvorfor ikke bare server actions: gaten i src/lib/supabase/middleware.ts
 // afviser alle POST'er fra indloggede almindelige brugere på offentlige
@@ -28,7 +33,9 @@ export const dynamic = "force-dynamic";
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const MAKS_BYTES = 64 * 1024;
 
-type Handling = (fd: FormData) => Promise<unknown>;
+// origin: sidens egen adresse (kontrolleret i egenOrigin), bruges som
+// retur-adresse fra Stripe.
+type Handling = (fd: FormData, origin: string) => Promise<unknown>;
 
 function tekst(fd: FormData, navn: string): string | undefined {
   const v = fd.get(navn);
@@ -44,6 +51,9 @@ const HANDLINGER: Record<string, Handling> = {
   // skiftFirmaPakke kræver selv login, og firma_skift_pakke afviser alle
   // andre end firmakontoen selv.
   "firma-skift-pakke": (fd) => skiftFirmaPakke(tekst(fd, "pakkeId") ?? ""),
+  // Kræver login som firmakonto (src/lib/erhverv/betalingHandlinger.ts).
+  "firma-betal": (_fd, origin) => betalForPakke(origin),
+  "firma-betalingskort": (_fd, origin) => skiftBetalingskort(origin),
 };
 
 function svar(status: number, krop: unknown) {
@@ -121,7 +131,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ handling: 
   }
 
   try {
-    return svar(200, await fn(fd));
+    return svar(200, await fn(fd, new URL(req.headers.get("origin") ?? "").origin));
   } catch (err) {
     console.error(`/api/offentlig/${handling} fejlede:`, err);
     return svar(500, { fejl: GENERISK, kode: "fejl" });

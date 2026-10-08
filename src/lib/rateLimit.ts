@@ -94,6 +94,9 @@ export const GRAENSER = {
   // pr. medarbejder.
   erhverv_opret_staff: { maks: 30, vindueSek: 60 * 60 },
   erhverv_velkomst_firma: { maks: 5, vindueSek: 24 * 60 * 60 },
+  // Firma oversigt -> Abonnement: "Betal for din pakke" / "Skift
+  // betalingskort" (hvert tryk laver et kald til Stripe).
+  firma_stripe_link: { maks: 20, vindueSek: 60 * 60 },
   cvr_opslag_staff: { maks: 60, vindueSek: 60 * 60 },
   // Klager og visning af en DSA-sag via signeret link.
   dsa_klage_ip: { maks: 10, vindueSek: 60 * 60 },

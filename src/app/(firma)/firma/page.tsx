@@ -8,6 +8,7 @@ import {
   FIRMA_DASHBOARD as D,
   FIRMA_OVERSIGT as T,
   FIRMA_OVERSIGT_EKSTRA as X,
+  FIRMA_BETALING,
 } from "@/lib/tekster/erhverv";
 import { kr, krFraOere } from "@/lib/erhverv/visning";
 
@@ -28,6 +29,11 @@ export default async function FirmaOverblik() {
     <FirmaSide titel={D.overblik.titel} intro={D.overblik.intro}>
       {lukket && <LukketBoks />}
       {!abonnementAktivt(o) && <Advarsel titel={T.ikkeAktiv.titel} tekst={ikkeAktivTekst(o)} />}
+      {o.firma.abonnement_status === "afventer_betaling" && (
+        <Link href="/firma/abonnement" className={`${E_KNAP_PRIMAER} w-full sm:w-auto`}>
+          {FIRMA_BETALING.knapBetal}
+        </Link>
+      )}
 
       <Kort id="venter" titel={T.venter.titel} forklaring={T.venter.forklaring}>
         {venter.length === 0 ? (

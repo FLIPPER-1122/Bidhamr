@@ -14,6 +14,7 @@ import {
   spejlRefusionsfejl,
   spejlUdbetaling,
 } from "@/lib/betaling/stripeBetaling";
+import { synkAbonnement, synkFaktura } from "@/lib/erhverv/betaling";
 
 // Stripe-webhook for den nye betalingsmodel. Spejler Stripes status i
 // databasen - Stripe er sandheden om penge.
@@ -24,6 +25,11 @@ import {
 // separat Connect-destination i Stripe ("Events from: Connected accounts")
 // og signeres med STRIPE_CONNECT_WEBHOOK_SECRET (samme rute bruges til begge).
 // Connect-events har event.account = sælgerens Connect-konto.
+//
+// Erhvervsabonnementer (Stripe Billing, src/lib/erhverv/betaling.ts):
+// customer.subscription.created/updated/deleted og invoice.finalized/paid/
+// payment_failed. Kun for kunder, der er et firma (firmaer.stripe_customer_id);
+// alle andre ignoreres.
 //
 // Idempotent: alle handlere tåler samme event flere gange (statusvagter i
 // databasen). Behandlede event-id'er logges i stripe_haendelser og springes
@@ -151,6 +157,28 @@ async function haandter(event: Stripe.Event): Promise<void> {
       const payout = event.data.object as Stripe.Payout;
       const resultat = await spejlUdbetaling(event.account, payout.id);
       console.log(`Stripe ${event.type}: ${payout.id} -> ${resultat}`);
+      return;
+    }
+
+    case "customer.subscription.created":
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted": {
+      // Hent abonnementet frisk (events kan komme i forkert rækkefølge).
+      const fraEvent = event.data.object as Stripe.Subscription;
+      const sub = await getStripe().subscriptions.retrieve(fraEvent.id);
+      const resultat = await synkAbonnement(sub, event.type === "customer.subscription.deleted");
+      console.log(`Stripe ${event.type}: ${sub.id} -> ${resultat}`);
+      return;
+    }
+
+    case "invoice.finalized":
+    case "invoice.paid":
+    case "invoice.payment_failed": {
+      const fraEvent = event.data.object as Stripe.Invoice;
+      if (!fraEvent.id) return;
+      const faktura = await getStripe().invoices.retrieve(fraEvent.id);
+      const resultat = await synkFaktura(faktura, event.type === "invoice.payment_failed" ? "payment_failed" : null);
+      console.log(`Stripe ${event.type}: ${faktura.id} -> ${resultat}`);
       return;
     }
 

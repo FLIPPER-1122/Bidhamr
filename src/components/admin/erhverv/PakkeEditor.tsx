@@ -45,7 +45,7 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
   const [kladde, setKladde] = useState<Kladde | null>(null);
   const [advarsel, setAdvarsel] = useState<number | null>(null);
   const [fejl, setFejl] = useState<string | null>(null);
-  const [gemt, setGemt] = useState(false);
+  const [gemt, setGemt] = useState<string | false>(false);
   const [gemmer, start] = useTransition();
 
   function valider(k: Kladde): string | null {
@@ -87,7 +87,7 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
       setAdvarsel(null);
       if ("fejl" in svar) return setFejl(svar.fejl);
       setKladde(null);
-      setGemt(true);
+      setGemt(svar.besked ?? A.pakker.gemt);
       router.refresh();
     });
   }
@@ -99,7 +99,7 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
       )}
       {gemt && (
         <p role="status" className="rounded-lg border border-succes-kant bg-succes-bg px-4 py-3 text-sm font-medium text-succes-tekst">
-          {A.pakker.gemt}
+          {gemt}
         </p>
       )}
 

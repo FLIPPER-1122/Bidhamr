@@ -14,6 +14,7 @@ import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA as X } from "@/lib/tekster/erhver
 import type { ErhvervPakke } from "@/lib/erhverv/regler";
 import { kr } from "@/lib/erhverv/visning";
 import { E_KNAP_PRIMAER, E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
+import { erStripeAdresse } from "@/components/erhverv/StripeKnap";
 
 const A = FIRMA_OVERSIGT.abonnement;
 
@@ -56,12 +57,24 @@ export default function PakkeValg({
       const fd = new FormData();
       fd.set("pakkeId", p.id);
       const res = await kaldOffentligHandling<SkiftPakkeSvar>("firma-skift-pakke", fd);
+      // Kortet skal godkendes (3D Secure), eller betalingen fejlede: videre
+      // til Stripes fakturaside for at betale forskellen.
+      if (!("fejl" in res) && res.kode === "betal_forskellen" && erStripeAdresse(res.url)) {
+        setSvar({ tekst: res.besked, fejl: false });
+        window.location.assign(res.url);
+        return;
+      }
       setAaben(null);
       if ("fejl" in res) setSvar({ tekst: res.fejl || A.fejlSkift, fejl: true });
       // Planlagt nedgradering og opgradering, der venter på betaling: siden
       // viser selv en fast besked om det (role="status") efter refresh - så
       // vises der ikke også en besked her (ellers står det samme to gange).
-      else if (res.kode === "opgradering_afventer_betaling" || res.kode === "nedgradering_planlagt") setSvar(null);
+      else if (
+        res.kode === "opgradering_afventer_betaling" ||
+        res.kode === "nedgradering_planlagt" ||
+        res.kode === "betal_forskellen"
+      )
+        setSvar(null);
       else setSvar({ tekst: res.besked, fejl: false });
       router.refresh();
       window.requestAnimationFrame(() => svarRef.current?.focus());

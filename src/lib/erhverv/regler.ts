@@ -20,10 +20,14 @@ export function erHenvendelseStatus(s: unknown): s is HenvendelseStatus {
   return typeof s === "string" && (HENVENDELSE_STATUSSER as readonly string[]).includes(s);
 }
 
+// Statusser, staff kan vælge i admin. 'afventer_betaling' (ny firmakonto,
+// der ikke har betalt endnu) sættes kun af databasen og ophæves af første
+// betaling (Stripe) - eller af staff ved at vælge 'aktiv' efter en aftale.
 export const ABONNEMENT_STATUSSER = ["aktiv", "pauset", "opsagt"] as const;
-export type AbonnementStatus = (typeof ABONNEMENT_STATUSSER)[number];
+export type AbonnementStatus = (typeof ABONNEMENT_STATUSSER)[number] | "afventer_betaling";
 
 export const ABONNEMENT_STATUS_NAVN: Record<AbonnementStatus, string> = {
+  afventer_betaling: "Venter på første betaling",
   aktiv: "Aktiv",
   pauset: "Sat på pause",
   opsagt: "Opsagt",
@@ -112,10 +116,14 @@ export type FirmaOversigt = {
     betaling_mislykket_kl: string | null;
     pauset_aarsag: "betaling" | "bidhamr" | null;
     naeste_periode: string;
+    periode_slut: string | null;
+    opsiges_fra: string | null;
+    har_stripe_abonnement: boolean;
+    stripe_abonnement_status: string | null;
   };
   pakke: ErhvervPakke | null;
   naeste_pakke: (ErhvervPakke & { fra: string }) | null;
-  afventende_opgradering: (ErhvervPakke & { skift_id: string; anmodet_kl: string }) | null;
+  afventende_opgradering: (ErhvervPakke & { skift_id: string; anmodet_kl: string; faktura_url: string | null }) | null;
   pakker: ErhvervPakke[];
   ugekvote: Ugekvote | null;
   auktioner: { aktive: number; i_alt: number; visninger: number; visninger_aktive: number; bud: number };
@@ -144,9 +152,14 @@ export type FirmaOversigt = {
     type: "abonnement" | "opgradering" | "andet";
     periode_fra: string | null;
     periode_til: string | null;
+    // Inkl. moms.
     beloeb_oere: number;
-    status: "afventer" | "betalt" | "mislykket" | "krediteret";
+    beloeb_ekskl_moms_oere: number | null;
+    moms_oere: number | null;
+    status: "afventer" | "betalt" | "mislykket" | "krediteret" | "annulleret";
     pdf_url: string | null;
+    // Stripes fakturaside (se og betal).
+    hosted_url: string | null;
     betalt_kl: string | null;
     oprettet: string;
   }[];
@@ -237,6 +250,7 @@ export type FirmaOffentlig = {
 // så databasens fejltekst aldrig sendes ordret til brugeren.
 export const ERHVERV_FEJL = {
   kanIkkeByde: "Firmakonti kan ikke byde. Vil du købe, så brug en privat konto.",
+  skalBetale: "Betal for din pakke under Abonnement i Firma oversigt. Så kan du oprette auktioner.",
   intetAbonnement: `Firmaet har ikke et aktivt abonnement. Kontakt BidHamr på ${ERHVERV_EMAIL}.`,
   gpsr: "Når varen er ny, skal du udfylde producent (navn og adresse) og sikkerhedsoplysninger.",
   kvote: "Du har brugt ugens auktioner. Du kan oprette den næste mandag.",
@@ -247,6 +261,9 @@ export const ERHVERV_FEJL = {
 export function erhvervFejlTekst(besked: string | null | undefined, kode?: string | null): string | null {
   const b = besked ?? "";
   if (kode === "BHE01" || b.includes("erhverv_kan_ikke_byde")) return ERHVERV_FEJL.kanIkkeByde;
+  if ((kode === "BHE02" || b.includes("erhverv_intet_abonnement")) && b.includes("Betal for din pakke")) {
+    return ERHVERV_FEJL.skalBetale;
+  }
   if (kode === "BHE02" || b.includes("erhverv_intet_abonnement")) return ERHVERV_FEJL.intetAbonnement;
   if (kode === "BHE04" || b.includes("erhverv_gpsr")) return ERHVERV_FEJL.gpsr;
   if (kode === "BHE05" || b.includes("erhverv_ingen_beskeder")) return ERHVERV_FEJL.ingenBeskeder;

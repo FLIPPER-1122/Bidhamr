@@ -5,7 +5,8 @@ import { hentErhvervPakker, hentFirmaer } from "@/app/actions/adminErhverv";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { dato, datoTid } from "@/components/admin/erhverv/ErhvervFaner";
 import FirmaRedigering from "@/components/admin/erhverv/FirmaRedigering";
-import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
+import FirmaAbonnementStripe from "@/components/admin/erhverv/FirmaAbonnementStripe";
+import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_BETALING as AB, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
 import { ABONNEMENT_STATUS_NAVN } from "@/lib/erhverv/regler";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,6 +62,40 @@ export default async function FirmaSide({ params }: { params: Promise<{ id: stri
             {A.henvendelser.titel} →
           </Link>
         )}
+      </section>
+
+      <section aria-labelledby="stripe-titel" className="rounded-xl border border-neutral-200 bg-white p-5">
+        <h2 id="stripe-titel" className="text-lg font-semibold text-neutral-900">
+          {AB.titel}
+        </h2>
+        {f.stripe_subscription_id ? (
+          <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs font-medium text-neutral-500">{AB.stripeStatus}</dt>
+              <dd className="text-[15px] text-neutral-900">{f.stripe_abonnement_status ?? "–"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-neutral-500">{AB.betaltTil}</dt>
+              <dd className="text-[15px] text-neutral-900">{f.betalt_til ? dato(f.betalt_til) : "–"}</dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="mt-2 text-sm text-neutral-700">{AB.ingenAbonnement}</p>
+        )}
+        {f.opsiges_fra && (
+          <p className="mt-3 rounded-lg border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
+            {AB.opsigesFra(dato(f.opsiges_fra))}
+          </p>
+        )}
+        <div className="mt-4">
+          <FirmaAbonnementStripe
+            firmaId={f.id}
+            erChef={rolle === "chef"}
+            harAbonnement={!!f.stripe_subscription_id}
+            opsiges={f.opsiges_fra ? dato(f.opsiges_fra) : null}
+            opsagt={f.abonnement_status === "opsagt"}
+          />
+        </div>
       </section>
 
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
