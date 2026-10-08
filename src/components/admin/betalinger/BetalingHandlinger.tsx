@@ -70,7 +70,7 @@ export function problemTekst(b: BetalingTilHandling): { titel: string; tekst: st
       return {
         titel: "Køberens bank har givet køberen pengene tilbage",
         tekst:
-          "Indsigelsen er tabt. Pengene flyttes ikke mere – der frigives og refunderes intet. Luk handlen: er intet udbetalt til sælgeren, annulleres handlen. Er der udbetalt, bærer BidHamr tabet. Var indsigelsen falsk (køberen fik varen), kan du give køberen en advarsel – så lukkes handlen samtidig.",
+          "Indsigelsen er tabt. Pengene flyttes ikke mere – der frigives og refunderes intet. Rækkefølgen er vigtig: Var indsigelsen falsk (køberen fik varen), så tryk FØRST \"Giv advarsel\" – det lukker også handlen. Tryk kun \"Luk handlen\", hvis der ikke skal gives advarsel; bagefter forsvinder betalingen fra listen, og der kan ikke længere gives advarsel herfra. Ved lukning annulleres handlen, hvis intet er udbetalt til sælgeren (ellers bærer BidHamr tabet), og en åben sag på handlen lukkes.",
       };
     case "indsigelse":
       return {
@@ -239,8 +239,12 @@ export default function BetalingHandlinger({
             <ConfirmDialog
               triggerLabel="Giv advarsel"
               triggerClassName={KNAP_HVID}
-              title="Giv advarsel og luk sagen?"
-              description="Advarslen tæller med i reglen om 3 advarsler. Betalingen markeres som løst. Pengene flyttes ikke."
+              title={tabt ? "Giv advarsel og luk handlen?" : "Giv advarsel og luk sagen?"}
+              description={
+                tabt
+                  ? "Advarslen tæller med i reglen om 3 advarsler. Handlen lukkes samtidig efter den tabte indsigelse – du skal ikke også trykke \"Luk handlen\". Pengene flyttes ikke."
+                  : "Advarslen tæller med i reglen om 3 advarsler. Betalingen markeres som løst. Pengene flyttes ikke."
+              }
               confirmLabel="Giv advarsel"
               action={givAdvarselBetalingForm}
               hiddenFields={{ betalingId: b.id }}
@@ -259,7 +263,11 @@ export default function BetalingHandlinger({
               })}
             />
           }
-          forklaring="Køber eller sælger får en advarsel, og markeringen fjernes. Pengene flyttes ikke."
+          forklaring={
+            tabt
+              ? "Trin 1, hvis indsigelsen var falsk: køberen får en advarsel, og handlen lukkes samtidig."
+              : "Køber eller sælger får en advarsel, og markeringen fjernes. Pengene flyttes ikke."
+          }
         />
       )}
 
@@ -272,7 +280,7 @@ export default function BetalingHandlinger({
               title={tabt ? "Luk handlen efter den tabte indsigelse?" : "Markér betalingen som løst?"}
               description={
                 tabt
-                  ? "Handlen lukkes og annulleres, hvis intet er udbetalt til sælgeren. Pengene flyttes ikke. Skriv, hvad der er gjort."
+                  ? "Handlen lukkes og annulleres, hvis intet er udbetalt til sælgeren, og en åben sag lukkes. Pengene flyttes ikke. Skal køberen have en advarsel, så brug \"Giv advarsel\" i stedet – det kan ikke gøres herfra bagefter. Skriv, hvad der er gjort."
                   : "Betalingen forsvinder fra listen. Pengene flyttes ikke. Skriv, hvad der er gjort."
               }
               confirmLabel={tabt ? "Luk handlen" : "Markér som løst"}
@@ -288,7 +296,7 @@ export default function BetalingHandlinger({
           }
           forklaring={
             tabt
-              ? "Lukker handlen. Der frigives og refunderes intet."
+              ? "Kun hvis der ikke skal gives advarsel: lukker handlen (og en åben sag). Der frigives og refunderes intet."
               : "Fjerner markeringen. Pengene flyttes ikke."
           }
         />

@@ -88,9 +88,11 @@ export async function skiftPakkeForBruger(brugerId: string, pakkeId: unknown): P
 
 async function stripeDel(brugerId: string, svar: DbSvar | null): Promise<SkiftPakkeSvar> {
   const tilbagerul = svar?.tilbagerul ?? null;
+  // Tilbagerulning rydder kun vores egen lås (firma_pakkeskift_rul_tilbage).
+  const laas = svar?.laas ?? null;
 
   if (svar?.kode === "opgradering_afventer_betaling" && svar.pakke && svar.skift_id) {
-    const betaling = await startOpgradering(svar.skift_id, tilbagerul);
+    const betaling = await startOpgradering(svar.skift_id, tilbagerul, laas);
     // Kun "Din pakke er nu X", når betalingen er gået igennem og pakken
     // faktisk er aktiveret.
     if (betaling.status === "betalt") {
@@ -113,7 +115,7 @@ async function stripeDel(brugerId: string, svar: DbSvar | null): Promise<SkiftPa
   }
 
   if (svar?.kode === "nedgradering_planlagt" && svar.pakke && svar.gaelder_fra && svar.skift_id) {
-    const plan = await startNedgradering(svar.skift_id, tilbagerul);
+    const plan = await startNedgradering(svar.skift_id, tilbagerul, laas);
     if (plan.status === "fejl") {
       await logDriftFejl({ kilde: "action", hvor: "skiftPakke/startNedgradering", fejl: plan.fejl, brugerId });
       return stripeFejl(plan);
@@ -141,7 +143,7 @@ async function stripeDel(brugerId: string, svar: DbSvar | null): Promise<SkiftPa
   }
 
   if (svar?.kode === "uaendret") {
-    const res = await annullerPlanlagtSkift(brugerId, tilbagerul);
+    const res = await annullerPlanlagtSkift(brugerId, tilbagerul, laas);
     if (res.status === "fejl") {
       await logDriftFejl({ kilde: "action", hvor: "skiftPakke/annullerPlanlagtSkift", fejl: res.fejl, brugerId });
       return stripeFejl(res);

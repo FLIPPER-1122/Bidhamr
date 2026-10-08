@@ -27,12 +27,18 @@ export function noeglensTilstand(noegle = process.env.STRIPE_SECRET_KEY ?? ""): 
 
 export class StripeTilstandFejl extends Error {}
 
+// Et gyldigt svar ('test'/'live') huskes i 60 sekunder. Kunne tilstanden ikke
+// læses (databasefejl, ingen række), huskes det kun i 5 sekunder, så en kort
+// databasefejl ikke stopper (live) eller tillader (test) Stripe-kald i et
+// helt minut.
 const CACHE_MS = 60_000;
+const CACHE_FEJL_MS = 5_000;
+const ALARM_MS = 60_000;
 let cache: { tilstand: StripeTilstand | null; kl: number } | null = null;
 let sidsteAlarm = 0;
 
 export async function databasensStripeTilstand(): Promise<StripeTilstand | null> {
-  if (cache && Date.now() - cache.kl < CACHE_MS) return cache.tilstand;
+  if (cache && Date.now() - cache.kl < (cache.tilstand ? CACHE_MS : CACHE_FEJL_MS)) return cache.tilstand;
   let tilstand: StripeTilstand | null = null;
   try {
     const { data, error } = await createAdminClient()
@@ -49,7 +55,7 @@ export async function databasensStripeTilstand(): Promise<StripeTilstand | null>
 }
 
 async function alarm(tekst: string) {
-  if (Date.now() - sidsteAlarm < CACHE_MS) return;
+  if (Date.now() - sidsteAlarm < ALARM_MS) return;
   sidsteAlarm = Date.now();
   await logDriftFejl({ kilde: "server", hvor: "stripe/tilstand", fejl: tekst });
 }
@@ -76,7 +82,8 @@ export function glemStripeTilstand() {
 
 type HttpKlient = ReturnType<typeof Stripe.createNodeHttpClient>;
 
-// Stripes egen Node-klient med vagten foran hvert kald.
+// Stripes egen Node-klient med vagten foran hvert kald (ekstra sikring - en
+// fejl her pakkes af stripe-node ind som StripeConnectionError).
 class VagtHttpKlient {
   constructor(private readonly basis: HttpKlient) {}
   getClientName() {
@@ -86,6 +93,74 @@ class VagtHttpKlient {
     await kraevSammeStripeTilstand();
     return this.basis.makeRequest(...args);
   }
+}
+
+// --- medVagt: vagten FØR hvert API-kald -------------------------------------
+//
+// getStripe() giver Stripe-klienten pakket i en Proxy: hver metode på en
+// ressource (stripe.paymentIntents.create, stripe.checkout.sessions.list ...)
+// venter først på kraevSammeStripeTilstand() og kalder derefter den rigtige
+// metode. Lister virker stadig med `for await` og autoPagingEach/-ToArray.
+// Synkrone hjælpere (webhooks.constructEvent, oauth.authorizeUrl) røres ikke.
+
+const StripeRessource = (Stripe as unknown as { StripeResource: abstract new (...a: never[]) => object }).StripeResource;
+const IKKE_PAKKET = new Set(["webhooks", "errors", "authorizeUrl", "createFullPath", "createResourcePathWithSymbols"]);
+const pakket = new WeakMap<object, object>();
+
+type Liste = {
+  autoPagingEach: (...a: unknown[]) => Promise<unknown>;
+  autoPagingToArray: (...a: unknown[]) => Promise<unknown>;
+  [Symbol.asyncIterator]: () => AsyncIterator<unknown>;
+};
+
+function vagtKald(fn: (...a: unknown[]) => unknown, self: object, args: unknown[]): unknown {
+  // { r } så det oprindelige (liste-)løfte ikke opløses af .then.
+  const klar = kraevSammeStripeTilstand().then(() => ({ r: fn.apply(self, args) }));
+  const svar = klar.then(({ r }) => r) as Promise<unknown> & Partial<Liste>;
+  // Bruges kun `for await`, må en afvisning ikke blive "unhandled".
+  svar.catch(() => {});
+  // Også her i { l }: en async-funktion ville ellers opløse listens løfte
+  // til første side og miste iteratoren.
+  const liste = async () => ({ l: (await klar).r as Liste });
+  svar.autoPagingEach = (...a) => liste().then(({ l }) => l.autoPagingEach(...a));
+  svar.autoPagingToArray = (...a) => liste().then(({ l }) => l.autoPagingToArray(...a));
+  svar[Symbol.asyncIterator] = () => {
+    let it: AsyncIterator<unknown> | null = null;
+    return {
+      next: async () => {
+        if (!it) it = (await liste()).l[Symbol.asyncIterator]();
+        return it.next();
+      },
+      return: async () => ({ done: true, value: undefined }),
+    };
+  };
+  return svar;
+}
+
+function erRessource(v: unknown, dybde = 0): v is object {
+  if (!v || typeof v !== "object") return false;
+  if (v instanceof StripeRessource) return true;
+  // Navnerum (stripe.checkout, stripe.billingPortal, stripe.v2.core ...).
+  return dybde < 3 && Object.values(v).some((x) => erRessource(x, dybde + 1));
+}
+
+function medVagt<T extends object>(maal: T): T {
+  const kendt = pakket.get(maal);
+  if (kendt) return kendt as T;
+  const proxy = new Proxy(maal, {
+    get(t, noegle, modtager) {
+      const v = Reflect.get(t, noegle, modtager);
+      if (typeof noegle !== "string" || noegle.startsWith("_") || IKKE_PAKKET.has(noegle)) return v;
+      if (typeof v === "function") {
+        // Kun metoder på ressourcer - ikke klientens egne hjælpere.
+        if (!(t instanceof StripeRessource)) return v;
+        return (...args: unknown[]) => vagtKald(v as (...a: unknown[]) => unknown, t, args);
+      }
+      return erRessource(v) ? medVagt(v) : v;
+    },
+  });
+  pakket.set(maal, proxy);
+  return proxy;
 }
 
 // Lazy-initialiseret: `new Stripe()` kaster hvis nøglen mangler, og det må
@@ -98,10 +173,12 @@ export function getStripe(): Stripe {
     if (!key) {
       throw new Error("STRIPE_SECRET_KEY mangler i miljøvariablerne.");
     }
-    client = new Stripe(key, {
-      apiVersion: STRIPE_API_VERSION,
-      httpClient: new VagtHttpKlient(Stripe.createNodeHttpClient()),
-    });
+    client = medVagt(
+      new Stripe(key, {
+        apiVersion: STRIPE_API_VERSION,
+        httpClient: new VagtHttpKlient(Stripe.createNodeHttpClient()),
+      }),
+    );
   }
   return client;
 }

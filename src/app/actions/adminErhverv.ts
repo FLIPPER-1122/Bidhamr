@@ -27,6 +27,8 @@ import {
   saetAdminPrisTilbage,
   sikrPris,
   skiftPrisAdmin,
+  PakkeskiftIGang,
+  frigivPakkeskiftLaas,
   startAbonnement,
   stripeTilgaengelig,
   type AdminPrisSvar,
@@ -617,32 +619,40 @@ export async function opdaterFirma(input: {
         try {
           stripePris = await skiftPrisAdmin(firmaId, pakkeId);
         } catch (err) {
+          if (err instanceof PakkeskiftIGang) throw new BrugerFejl(err.message);
           await logDriftFejl({ kilde: "action", hvor: "adminErhverv.opdaterFirma/stripe", fejl: err, brugerId: userId });
           throw new BrugerFejl(AB.pakkeStripeFejl);
         }
       }
     }
 
-    const { data, error } = await admin.rpc("erhverv_firma_opdater", {
-      p_staff: userId,
-      p_firma: firmaId,
-      p_pakke: pakkeId,
-      p_status: input.status ?? null,
-      p_firmanavn: f?.firmanavn ?? null,
-      p_cvr: f?.cvr ?? null,
-      p_adresse: f?.adresse ?? null,
-      p_postnummer: f?.postnummer ?? null,
-      p_by: f?.by ?? null,
-      p_telefon: f?.telefon ?? null,
-      p_kontakt_email: f?.kontaktEmail ?? null,
-      p_kontaktperson: f?.kontaktperson ?? null,
-      p_note: note || null,
-    });
-    const kode = (data as { kode?: string } | null)?.kode;
-    if (error || kode !== "ok") {
-      if (stripePris?.status === "ok") await saetAdminPrisTilbage(stripePris);
-      if (error) throw new Error(error.message);
-      kodeFejl(kode);
+    // Pakkeskift-låsen (taget af skiftPrisAdmin) frigives, når databasen er
+    // opdateret - eller prisen er sat tilbage.
+    const laas = stripePris?.status === "ok" ? stripePris.laas : null;
+    try {
+      const { data, error } = await admin.rpc("erhverv_firma_opdater", {
+        p_staff: userId,
+        p_firma: firmaId,
+        p_pakke: pakkeId,
+        p_status: input.status ?? null,
+        p_firmanavn: f?.firmanavn ?? null,
+        p_cvr: f?.cvr ?? null,
+        p_adresse: f?.adresse ?? null,
+        p_postnummer: f?.postnummer ?? null,
+        p_by: f?.by ?? null,
+        p_telefon: f?.telefon ?? null,
+        p_kontakt_email: f?.kontaktEmail ?? null,
+        p_kontaktperson: f?.kontaktperson ?? null,
+        p_note: note || null,
+      });
+      const kode = (data as { kode?: string } | null)?.kode;
+      if (error || kode !== "ok") {
+        if (stripePris?.status === "ok") await saetAdminPrisTilbage(stripePris);
+        if (error) throw new Error(error.message);
+        kodeFejl(kode);
+      }
+    } finally {
+      if (laas) await frigivPakkeskiftLaas(firmaId, laas);
     }
     revalidatePath("/admin/erhverv");
     return { ok: true as const, besked: stripePris?.status === "ok" ? AB.pakkeSkiftetStripe : undefined };
@@ -660,6 +670,7 @@ export async function opsigFirmaAbonnement(firmaId: string) {
     const { admin, userId } = await assertErhverv(true);
     const id = tjekUuid(firmaId);
     const svar = await opsigAbonnement(id);
+    if (svar.status === "i_gang") throw new BrugerFejl(svar.fejl);
     if (svar.status === "fejl") throw new Error(svar.fejl);
     if (svar.status === "ingen_stripe") {
       const { data, error } = await admin.rpc("erhverv_firma_opdater", {
