@@ -82,6 +82,10 @@ export type BetalingRaekke = {
   frigivet_kl: string | null;
   stripe_transfer_id: string | null;
   overfoert_kl: string | null;
+  // 'separat' (transfer ved frigivelse) eller 'destination' (pengene står på
+  // sælgerens Connect-konto - aldrig en separat transfer). 20261011010000.
+  // Valgfri: mangler før migrationen (= separat).
+  pengemodel?: "separat" | "destination";
   refusion_anmodet_kl: string | null;
   refusion_aarsag: string | null;
   // Delvis refusion (sag: alt undtagen BidHamr Beskyttelse). null = fuld.
@@ -529,6 +533,10 @@ export async function forsoegAutobetaling(betalingId: string): Promise<string> {
 // frigivelsesflow). Sikker at kalde flere gange.
 export async function overfoerTilSaelger(betalingId: string): Promise<string> {
   const b = await hentBetaling(betalingId);
+  // Kun den gamle model: en destination-betaling står allerede på sælgerens
+  // konto - en transfer oven i ville være en dobbeltudbetaling. Afvises også
+  // i databasen (betaling_claim_overfoersel), før Stripe kaldes.
+  if ((b.pengemodel ?? "separat") !== "separat") return "ikke_separat";
   if (b.stripe_transfer_id) return "allerede_overfoert";
   if (b.status === "refunderet" || b.refusion_anmodet_kl) return "refunderet";
   if (b.status !== "betalt" || !b.frigivet_kl || !b.stripe_charge_id) {
@@ -2076,9 +2084,10 @@ export async function onboardingLink(
 
   if (!profil?.stripe_account_id) {
     const konto = await stripe.accounts.create(
-      // Kontoen oprettes klar til den nye model (card_payments + transfers +
-      // MobilePay, MCC, firma/privat) - src/lib/betaling/connect.ts.
-      nyKontoParametre({ userId, email: bruger?.email, erFirma, manuelPlan, url: offentligSideUrl() }),
+      // Separat: som før (kun transfers, individual) + MCC/url/descriptor.
+      // Destination: klar til den nye model (card_payments + transfers +
+      // MobilePay, firma/privat, manuel plan) - src/lib/betaling/connect.ts.
+      nyKontoParametre({ userId, email: bruger?.email, erFirma, destination: manuelPlan, url: offentligSideUrl() }),
       // Efter en admin-nulstilling (udbetalingskonto_nulstil) skal der
       // oprettes en NY konto - med den gamle nøgle ville Stripe (inden for
       // 24 timer) svare med den gamle, frakoblede konto.
