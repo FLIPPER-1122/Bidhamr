@@ -217,6 +217,53 @@ $fn$;
 revoke all on function public.betaling_udbetaling_blokeret(uuid) from public, anon, authenticated;
 grant execute on function public.betaling_udbetaling_blokeret(uuid) to service_role;
 
+-- Samme regler som betaling_udbetaling_blokeret, for en betaling, der er
+-- låst i den uafklarede udbetaling p_udbetaling (claimen selv tæller ikke
+-- som "allerede udbetalt"). Bruges, før en ældre/usikker claim sendes til
+-- Stripe (ny kontrol af sag, indsigelse, svindelvarsel, markering ...).
+create or replace function public.betaling_udbetaling_blokeret_i_claim(p_betaling uuid, p_udbetaling uuid)
+returns text
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $fn$
+declare
+  b  record;
+  t  record;
+  bp record;
+begin
+  select * into b from public.betalinger where id = p_betaling;
+  if not found then return 'ikke_fundet'; end if;
+  if b.saelger_udbetaling_id is distinct from p_udbetaling then return 'ikke_i_claim'; end if;
+  select * into t from public.trades where id = b.trade_id;
+  select * into bp from public.betalingsprofiler where user_id = b.seller_id;
+  if b.status <> 'betalt' or b.stripe_charge_id is null then return 'ikke_betalt'; end if;
+  if b.frigivet_kl is null then return 'ikke_frigivet'; end if;
+  if b.stripe_transfer_id is not null then return 'allerede_udbetalt'; end if;
+  if b.refusion_anmodet_kl is not null or b.refunderet_kl is not null then return 'refusion'; end if;
+  if public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status) then return 'indsigelse'; end if;
+  if b.svindelvarsel_kl is not null and b.svindelvarsel_loest_kl is null then return 'svindelvarsel'; end if;
+  if b.radar_review_aaben then return 'radar_review'; end if;
+  if t.id is null or t.status = 'annulleret' then return 'handel_annulleret'; end if;
+  if t.sag_aaben then return 'sag_aaben'; end if;
+  if b.kraever_opmaerksomhed then return 'kraever_opmaerksomhed'; end if;
+  if b.pengemodel <> 'destination' then return 'ikke_destination'; end if;
+  if b.stripe_destination_transfer_id is null then return 'transfer_ukendt'; end if;
+  if b.midler_tilgaengelige_kl is null or b.midler_tilgaengelige_kl > now() then return 'midler_ikke_tilgaengelige'; end if;
+  if b.udbetal_tidligst is not null and b.udbetal_tidligst > now() then return 'ventetid'; end if;
+  if bp.user_id is null or bp.connect_frakoblet_kl is not null then return 'konto_frakoblet'; end if;
+  if bp.stripe_account_id is distinct from b.saelger_stripe_konto then return 'konto_skiftet'; end if;
+  if not bp.connect_plan_ok then return 'plan_ikke_manuel'; end if;
+  if not coalesce(bp.connect_udbetalinger_aktiv, false) then return 'udbetalinger_inaktive'; end if;
+  if bp.connect_udbetaling_fejlet_kl is not null then return 'venter_paa_bank'; end if;
+  return null;
+end;
+$fn$;
+
+revoke all on function public.betaling_udbetaling_blokeret_i_claim(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.betaling_udbetaling_blokeret_i_claim(uuid, uuid) to service_role;
+
 -- ===========================================================================
 -- 5. Udbetalingens livscyklus
 -- ===========================================================================
@@ -301,7 +348,8 @@ grant execute on function public.saelger_udbetaling_claim(uuid, text, uuid[]) to
 
 -- Payout er oprettet hos Stripe. overfoert_kl = "udbetalt" (sendt til bank).
 -- p_status er payout.status (pending/in_transit/paid ...). Svar: oprettet,
--- paid, allerede, ikke_fundet, forkert_status.
+-- paid, allerede, ikke_fundet, forkert_status, konflikt (udbetalingen var
+-- afvist/fejlet og betalingerne frigjort - de markeres til staff).
 create or replace function public.saelger_udbetaling_oprettet(
   p_udbetaling uuid, p_payout text, p_bank text, p_status text)
 returns text
@@ -320,6 +368,19 @@ begin
   if u.status not in ('claimet', 'usikker') then
     if u.stripe_payout_id is null then
       update public.saelger_udbetalinger set stripe_payout_id = p_payout, opdateret = now() where id = u.id;
+    end if;
+    -- En udbetaling, der er afvist/fejlet (betalingerne er frigjort), har
+    -- alligevel fået en payout hos Stripe: betalingerne kan blive udbetalt
+    -- to gange - stop dem til staff (markering). Serveren giver drift-alarm.
+    if u.status in ('afvist', 'failed', 'canceled') then
+      update public.betalinger
+         set kraever_opmaerksomhed = true,
+             sidste_fejl = left('Udbetaling stoppet: en afvist/fejlet udbetaling (' || u.id::text
+                                || ') har alligevel fået payout ' || p_payout
+                                || ' hos Stripe - kontrollér, at pengene ikke udbetales to gange.', 500),
+             opdateret = now()
+       where id = any (u.betaling_ids);
+      return 'konflikt';
     end if;
     return case when u.status in ('oprettet', 'paid') then 'allerede' else 'forkert_status' end;
   end if;
@@ -411,8 +472,9 @@ grant execute on function public.saelger_udbetaling_afvist(uuid, text, boolean) 
 --     Betalingerne frigøres (historik i betaling_ids). failed: sælgeren
 --     "venter på bank" (betalingsprofiler.connect_udbetaling_fejlet_*).
 --     canceled: betalingerne markeres til staff.
--- Svar: jsonb {kode: paid|failed|canceled|allerede|ukendt, seller_id,
--- betalinger}.
+-- Svar: jsonb {kode: paid|failed|canceled|allerede|konflikt|ukendt,
+-- seller_id, betalinger}. konflikt: udbetalingen var afvist/fejlet i
+-- databasen, men Stripe har udbetalt - betalingerne markeres til staff.
 create or replace function public.saelger_udbetaling_spejl(
   p_udbetaling uuid, p_payout text, p_status text, p_fejlkode text, p_bank text)
 returns jsonb
@@ -434,6 +496,20 @@ begin
   if p_status = 'paid' then
     if u.status = 'paid' then
       return jsonb_build_object('kode', 'allerede', 'seller_id', u.seller_id);
+    end if;
+    if u.status in ('afvist', 'failed', 'canceled') then
+      -- Betalingerne er frigjort, men Stripe har udbetalt: stop dem.
+      update public.saelger_udbetalinger
+         set stripe_payout_id = coalesce(stripe_payout_id, p_payout), opdateret = now()
+       where id = u.id;
+      update public.betalinger
+         set kraever_opmaerksomhed = true,
+             sidste_fejl = left('Udbetaling stoppet: udbetaling ' || u.id::text || ' står som ' || u.status
+                                || ', men payout ' || p_payout
+                                || ' er udbetalt hos Stripe - kontrollér, at pengene ikke udbetales to gange.', 500),
+             opdateret = now()
+       where id = any (u.betaling_ids);
+      return jsonb_build_object('kode', 'konflikt', 'seller_id', u.seller_id, 'betalinger', to_jsonb(u.betaling_ids));
     end if;
     if u.status not in ('claimet', 'usikker', 'oprettet') then
       return jsonb_build_object('kode', 'allerede', 'seller_id', u.seller_id);

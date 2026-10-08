@@ -50,9 +50,11 @@ import {
 } from "@/lib/betaling/stripeBetaling";
 
 const MAKS_PR_UDBETALING = 50;
-// En claimet udbetaling yngre end dette er (formentlig) ved at blive oprettet
-// af en anden kørsel - den røres ikke.
-const CLAIM_I_GANG_MS = 2 * 60_000;
+// En claimet/usikker udbetaling, der er rørt for nylig, kan have et kald i
+// gang hos Stripe (samme idempotency-nøgle) - den overtages først efter
+// dette. Langt over den længste kaldetid (PAYOUT_KALD: 2 x 30 s + backoff).
+const CLAIM_I_GANG_MS = 10 * 60_000;
+const PAYOUT_KALD: Stripe.RequestOptions = { timeout: 30_000, maxNetworkRetries: 1 };
 // Stripes idempotency-nøgler udløber efter 24 timer.
 const NOEGLE_LEVETID_MS = 23 * 60 * 60_000;
 
@@ -189,10 +191,10 @@ async function tidligereUdbetalingBekraeftetFejlet(admin: Admin, b: BetalingRaek
     .from("saelger_udbetalinger")
     .select("id, stripe_konto, stripe_payout_id, status")
     .contains("betaling_ids", [b.id])
-    .in("status", ["failed", "canceled"]);
+    .in("status", ["failed", "canceled", "afvist"]);
   if (error) throw new Error(`tidligere udbetalinger: ${error.message}`);
   for (const u of data ?? []) {
-    if (!u.stripe_payout_id) continue;
+    if (!u.stripe_payout_id) continue; // afvist uden payout: intet er sendt
     const p = await getStripe().payouts.retrieve(u.stripe_payout_id as string, undefined, {
       stripeAccount: u.stripe_konto as string,
     });
@@ -440,13 +442,34 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
   return opretPayout(admin, u);
 }
 
+// En ældre claim er blokeret, før den er sendt (igen). Den frigøres kun, når
+// intet kald med dens nøgle kan være i gang eller gemt hos Stripe: opslaget
+// via metadata har ikke fundet en payout, OG nøglen er udløbet (over 24 t
+// siden sidste forsøg). Ellers beholdes den, og betalingerne markeres.
+async function frigoerGammelClaim(admin: Admin, u: UdbetalingRaekke, aarsag: string): Promise<string> {
+  const sidst = new Date(u.opdateret).getTime();
+  if (Date.now() - sidst > 24 * 60 * 60_000) {
+    await admin.rpc("saelger_udbetaling_afvist", { p_udbetaling: u.id, p_fejl: aarsag, p_marker: true });
+    return "afvist";
+  }
+  await logDriftFejl({
+    kilde: "server",
+    hvor: "betaling/udbetaling-stoppet",
+    fejl: `${aarsag}. Uafklaret udbetaling ${u.id} sendes ikke til Stripe; den beholdes (et tidligere kald kan være gemt hos Stripe) og frigøres automatisk efter 24 timer, hvis Stripe ingen payout har.`,
+    brugerId: u.seller_id,
+  });
+  return "stoppet";
+}
+
 // Opretter (eller finder) payouten for en claimet/usikker udbetaling.
 async function opretPayout(admin: Admin, u: UdbetalingRaekke): Promise<string> {
   const stripe = getStripe();
   const valg = { stripeAccount: u.stripe_konto };
+  // Ikke en frisk claim fra denne kørsel: et tidligere kald kan have nået Stripe.
+  const gammel = u.status === "usikker" || u.forsoeg > 0 || Date.now() - new Date(u.oprettet).getTime() > CLAIM_I_GANG_MS;
 
   // Findes payouten allerede (fx svaret gik tabt)? Slås op via metadata.
-  if (u.status === "usikker" || u.forsoeg > 0 || Date.now() - new Date(u.oprettet).getTime() > CLAIM_I_GANG_MS) {
+  if (gammel) {
     const liste = await stripe.payouts.list(
       { limit: 100, created: { gte: Math.floor(new Date(u.oprettet).getTime() / 1000) - 3600 } },
       valg,
@@ -455,17 +478,31 @@ async function opretPayout(admin: Admin, u: UdbetalingRaekke): Promise<string> {
     if (fundet) return registrerOprettet(admin, u, fundet);
   }
 
-  // Afklaring af en ældre claim: saldoen tjekkes igen, før Stripe kaldes
-  // (ved en frisk claim er den tjekket lige før i udbetalSaelger).
-  if (u.status === "usikker" || u.forsoeg > 0 || Date.now() - new Date(u.oprettet).getTime() > CLAIM_I_GANG_MS) {
+  // Afklaring af en ældre claim (et tidligere kald kan have nået Stripe):
+  // claimen frigøres ALDRIG på lav saldo - den beholdes, og næste forsøg
+  // bruger samme nøgle. Blokeringen og F03 tjekkes igen for hver betaling.
+  if (gammel) {
+    for (const id of u.betaling_ids) {
+      const { data: grund, error } = await admin.rpc("betaling_udbetaling_blokeret_i_claim", {
+        p_betaling: id,
+        p_udbetaling: u.id,
+      });
+      if (error) throw new Error(`betaling_udbetaling_blokeret_i_claim: ${error.message}`);
+      let stop = (grund as string | null) ?? null;
+      if (!stop) {
+        const b = await hentBetaling(admin, id);
+        stop = b ? await tjekFoerUdbetaling(b) : "ikke_fundet";
+      }
+      if (stop) return frigoerGammelClaim(admin, u, `Betaling ${id} blokeret (${stop}) før nyt forsøg`);
+    }
     const saldo = await stripe.balance.retrieve({}, valg);
     if (dkk(saldo.available, true) < Number(u.beloeb_oere)) {
-      await admin.rpc("saelger_udbetaling_afvist", {
+      await admin.rpc("saelger_udbetaling_usikker", {
         p_udbetaling: u.id,
-        p_fejl: "Saldoen dækkede ikke beløbet ved nyt forsøg",
-        p_marker: false,
+        p_fejl: "Saldoen dækker ikke beløbet - claimen beholdes, prøves igen med samme nøgle",
+        p_ny_noegle: false,
       });
-      return "afvist";
+      return "venter_saldo";
     }
   }
 
@@ -494,10 +531,10 @@ async function opretPayout(admin: Admin, u: UdbetalingRaekke): Promise<string> {
           antal_handler: String(u.betaling_ids.length),
         },
       },
-      { ...valg, idempotencyKey: `bidhamr-payout-${u.id}-${forsoeg}` },
+      { ...valg, ...PAYOUT_KALD, idempotencyKey: `bidhamr-payout-${u.id}-${forsoeg}` },
     );
   } catch (err) {
-    return registrerPayoutFejl(admin, u, err);
+    return registrerPayoutFejl(admin, u, err, gammel);
   }
   return registrerOprettet(admin, u, payout);
 }
@@ -510,6 +547,15 @@ async function registrerOprettet(admin: Admin, u: UdbetalingRaekke, payout: Stri
     p_status: payout.status,
   });
   if (error) throw new Error(`saelger_udbetaling_oprettet: ${error.message}`);
+  if (String(data) === "konflikt") {
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "betaling/udbetaling-konflikt",
+      fejl: `Udbetaling ${u.id} var afvist/fejlet i databasen, men payout ${payout.id} findes hos Stripe (sælgerkonto ${u.stripe_konto}). Betalingerne er stoppet og markeret - kontrollér, at intet udbetales to gange.`,
+      brugerId: u.seller_id,
+    });
+    return "konflikt";
+  }
   // En evt. fejlet/annulleret payout spejles af webhooken (payout.failed).
   if (payout.status === "failed" || payout.status === "canceled") {
     await spejlBidhamrPayout(u.stripe_konto, payout);
@@ -531,7 +577,33 @@ async function registrerOprettet(admin: Admin, u: UdbetalingRaekke, payout: Stri
 //     vent og prøv igen (drift-alarm); andet markeres til staff.
 //   Usikker (netværk, 5xx, rate limit, idempotency-konflikt): claimet
 //     beholdes, og næste kørsel slår op og prøver med samme nøgle.
-async function registrerPayoutFejl(admin: Admin, u: UdbetalingRaekke, err: unknown): Promise<string> {
+async function registrerPayoutFejl(admin: Admin, u: UdbetalingRaekke, err: unknown, gammel: boolean): Promise<string> {
+  // En ældre claim frigøres aldrig her (et tidligere kald med samme nøgle kan
+  // være gemt hos Stripe) - den beholdes som usikker og prøves igen.
+  if (gammel) {
+    const kode = err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : err instanceof StripeTilstandFejl ? "stripe_stoppet" : "ukendt_fejl";
+    const endelig =
+      err instanceof Stripe.errors.StripeInvalidRequestError ||
+      err instanceof Stripe.errors.StripePermissionError ||
+      err instanceof Stripe.errors.StripeCardError;
+    // Stripe afviste endeligt (ikke saldo): frigøres kun efter 24 t uden
+    // payout (frigoerGammelClaim) - ellers beholdes den og markeres.
+    if (endelig && kode !== "balance_insufficient") {
+      return frigoerGammelClaim(admin, u, `Stripe afviste nyt forsøg (${kode})`);
+    }
+    await admin.rpc("saelger_udbetaling_usikker", {
+      p_udbetaling: u.id,
+      p_fejl: `Nyt forsøg fejlede (${kode}) - claimen beholdes`,
+      p_ny_noegle: false,
+    });
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "betaling/udbetaling",
+      fejl: `Nyt forsøg på uafklaret udbetaling ${u.id} (sælgerkonto ${u.stripe_konto}) fejlede (${kode}). Claimen beholdes og prøves igen.`,
+      brugerId: u.seller_id,
+    });
+    return "usikker";
+  }
   if (err instanceof StripeTilstandFejl) {
     await admin.rpc("saelger_udbetaling_afvist", { p_udbetaling: u.id, p_fejl: "Stripe-vagten stoppede kaldet", p_marker: false });
     return "stripe_stoppet";
@@ -679,8 +751,10 @@ export async function spejlBidhamrPayout(konto: string, payoutArg: Stripe.Payout
   }
   const status = payout.status === "paid" || payout.status === "failed" || payout.status === "canceled" ? payout.status : null;
   if (!status) {
-    // pending/in_transit: payout-id'et gemmes, hvis svaret ved oprettelsen gik tabt.
-    if (u.status === "claimet" || u.status === "usikker") await registrerOprettet(admin, u, payout);
+    // pending/in_transit: payout-id'et gemmes, hvis svaret ved oprettelsen gik
+    // tabt. Er udbetalingen afvist/fejlet i databasen, giver det 'konflikt'
+    // (betalingerne markeres + drift-alarm).
+    if (u.status !== "oprettet" && u.status !== "paid") await registrerOprettet(admin, u, payout);
     return payout.status;
   }
   const bank = stripeId(payout.destination as string | Stripe.BankAccount | Stripe.Card | null);
@@ -694,7 +768,14 @@ export async function spejlBidhamrPayout(konto: string, payoutArg: Stripe.Payout
   if (error) throw new Error(`saelger_udbetaling_spejl: ${error.message}`);
   const kode = String((data as { kode?: string } | null)?.kode ?? "ukendt");
 
-  if (kode === "paid") {
+  if (kode === "konflikt") {
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "betaling/udbetaling-konflikt",
+      fejl: `Payout ${payout.id} er udbetalt hos Stripe, men udbetaling ${u.id} står som afvist/fejlet (sælgerkonto ${konto}). Betalingerne er stoppet og markeret - kontrollér, at intet udbetales to gange.`,
+      brugerId: u.seller_id,
+    });
+  } else if (kode === "paid") {
     const liste = await titler(admin, u.betaling_ids);
     await send(u.seller_id, "udbetaling", {
       titel: "Pengene er sendt til din bank",
