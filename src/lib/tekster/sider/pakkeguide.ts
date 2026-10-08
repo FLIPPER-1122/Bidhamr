@@ -65,12 +65,14 @@ export const PAKKEGUIDE: Tekstside = {
     },
     {
       id: "advarsler",
-      overskrift: "Hvis en vare er pakket dårligt",
+      overskrift: "Det er dit ansvar at pakke varen godt ind",
       punkter: [
-        "Første gang får du en påmindelse om at pakke bedre.",
-        "Anden gang og derefter får du en advarsel hver gang.",
-        "Ved 3 advarsler lukkes din profil permanent. En medarbejder skal altid godkende lukningen.",
-        "Du kan altid se begrundelsen for en advarsel på din konto.",
+        "Som sælger har du altid ansvaret for, at varen er pakket forsvarligt – så den kan tåle at blive løftet, stablet og rystet på vejen.",
+        "Pakken bliver håndteret af mange hænder og maskiner, før den når frem. En god indpakning er den bedste måde at sikre, at køberen får varen hel.",
+        "Går varen i stykker, fordi den var pakket dårligt, er det dit tab. Fragtfirmaer erstatter som regel ikke skader, der skyldes dårlig indpakning.",
+        "Har køberen valgt BidHamr Beskyttelse, og har du pakket ordentligt, klager BidHamr til fragtfirmaet, hvis varen alligevel går i stykker på vejen. Dine pakkebilleder er beviset.",
+        "Derfor skal du tage billeder af varen i den åbne kasse og af den lukkede kasse, når du sender pakken.",
+        "Pakker du for dårligt, kan du få en påmindelse eller en advarsel. Begrundelsen kan du altid se på din konto.",
       ],
     },
     {
