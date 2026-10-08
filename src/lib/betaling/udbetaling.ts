@@ -264,10 +264,17 @@ export async function tjekFoerUdbetaling(b: BetalingRaekke): Promise<string | nu
     return "charge_ikke_betalt";
   }
   if (charge.disputed) {
+    // charge.disputed bliver stående, også når indsigelsen er vundet. Kun en
+    // åben eller tabt indsigelse stopper (trin 4: vundet = handlen fortsætter).
     const d = await stripe.disputes.list({ charge: charge.id, limit: 10 });
     for (const dispute of d.data) await spejlIndsigelse(dispute.id);
-    if (!d.data.length) await markerBetaling(admin, b, "Udbetaling stoppet: Stripe melder indsigelse på betalingen.");
-    return "indsigelse";
+    if (!d.data.length) {
+      await markerBetaling(admin, b, "Udbetaling stoppet: Stripe melder indsigelse på betalingen.");
+      return "indsigelse";
+    }
+    if (d.has_more || d.data.some((x) => !["won", "warning_closed", "prevented"].includes(x.status))) {
+      return "indsigelse";
+    }
   }
   if (charge.refunded || Number(charge.amount_refunded) > 0) {
     await markerBetaling(admin, b, "Udbetaling stoppet: betalingen er helt eller delvist refunderet hos Stripe.");
@@ -318,24 +325,48 @@ function dkk(liste: Stripe.Balance.Available[] | Stripe.Balance.Pending[] | unde
   return sum;
 }
 
-// Alle betalte destination-betalinger på kontoen, der ikke er udbetalt eller
-// refunderet (også dem med en refusion i gang) - det, kontoen skal kunne dække.
+// Det, sælgerens konto skal kunne dække: for hver betalt destination-betaling
+// på kontoen, der ikke er udbetalt, det beløb, der stadig står på kontoen for
+// handlen (trin 4 - hænger sammen med refusioner og indsigelser):
+//   udbetaling_oere (U)
+//   + gebyr-refusionen (G), når den er gennemført, og tilbageførslen endnu ikke
+//   - refusionsbeløbet (R = S + G), når tilbageførslen er gennemført
+//   - det tilbageførte ved tabt indsigelse
+// Betalinger med en refusion i gang tæller altså med, til tilbageførslen er
+// gennemført; en refunderet betaling står med 0 (S = U).
+export function staarPaaKontoen(r: {
+  udbetaling_oere: number;
+  refusion_fra_saelger_oere?: number | null;
+  refusion_gebyr_oere?: number | null;
+  gebyr_refunderet_kl?: string | null;
+  refusion_tilbagefoert_kl?: string | null;
+  indsigelse_tilbagefoersel_id?: string | null;
+  indsigelse_tilbagefoert_oere?: number | null;
+}): number {
+  let beloeb = Number(r.udbetaling_oere);
+  const g = Number(r.refusion_gebyr_oere ?? 0);
+  const s = Number(r.refusion_fra_saelger_oere ?? 0);
+  if (r.gebyr_refunderet_kl) beloeb += g;
+  if (r.refusion_tilbagefoert_kl) beloeb -= s + g;
+  if (r.indsigelse_tilbagefoersel_id) beloeb -= Number(r.indsigelse_tilbagefoert_oere ?? 0);
+  return Math.max(beloeb, 0);
+}
+
 async function skyldigOere(admin: Admin, saelgerId: string, konto: string): Promise<number> {
   const { data, error } = await admin
     .from("betalinger")
-    .select("udbetaling_oere, indsigelse_status, indsigelse_tilbagefoersel_id")
+    .select(
+      "udbetaling_oere, refusion_fra_saelger_oere, refusion_gebyr_oere, gebyr_refunderet_kl, refusion_tilbagefoert_kl, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoert_oere",
+    )
     .eq("seller_id", saelgerId)
     .eq("pengemodel", "destination")
     .eq("saelger_stripe_konto", konto)
+    // 'betalt': også med en refusion i gang. En refunderet betaling står med 0.
     .eq("status", "betalt")
-    // Også betalinger med en anmodet refusion: pengene står på kontoen, til
-    // refusionen (reverse_transfer) er gennemført (status 'refunderet').
     .is("saelger_udbetaling_id", null)
     .limit(1000);
   if (error) throw new Error(`skyldigOere: ${error.message}`);
-  return (data ?? [])
-    .filter((r) => !r.indsigelse_tilbagefoersel_id && r.indsigelse_status !== "lost")
-    .reduce((s, r) => s + Number(r.udbetaling_oere), 0);
+  return (data ?? []).reduce((sum, r) => sum + staarPaaKontoen(r), 0);
 }
 
 // --------------------------------------------------------------- én sælger

@@ -7,6 +7,7 @@ import {
   markerBetalingLøstForm,
   givAdvarselBetalingForm,
   proevTilbagebetalingIgenForm,
+  hentFraSaelgerIgenForm,
   type BetalingTilHandling,
 } from "@/app/actions/adminBetalinger";
 import { prøvOverfoerselIgenForm, handelFrigiv, handelRefunder } from "@/app/actions/adminActions";
@@ -145,8 +146,42 @@ export default function BetalingHandlinger({
     />
   );
 
+  // Betalingsmodel trin 4: tabt indsigelse på en betaling, hvor pengene står
+  // på sælgerens Stripe-konto.
+  const tilbage = tabt ? b.indsigelseTilbagefoersel : null;
+  const tilbageTekst =
+    tilbage?.tilstand === "gennemfoert"
+      ? "Beløbet er hentet tilbage fra sælgerens Stripe-konto. Sælgeren får ingen udbetaling, og køberen skal sende varen tilbage til sælgeren."
+      : tilbage?.tilstand === "udbetalt"
+        ? "Handlen var udbetalt til sælgeren: BidHamr bærer tabet, og der trækkes intet fra sælgeren. Køberen skal sende varen til BidHamr."
+        : tilbage?.tilstand === "opgivet"
+          ? "Beløbet kunne ikke hentes tilbage fra sælgerens Stripe-konto, og systemet prøver ikke selv igen. Tjek fejlen og kontoen i Stripe, og prøv igen."
+          : tilbage
+            ? "Beløbet hentes tilbage fra sælgerens Stripe-konto. Systemet prøver selv igen, hvis det fejler."
+            : null;
+
   return (
     <ul className="mt-4 space-y-3 border-t border-neutral-100 pt-4">
+      {tilbageTekst && (
+        <li className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-700">{tilbageTekst}</li>
+      )}
+
+      {kanLoese && tilbage?.tilstand === "opgivet" && (
+        <Handling
+          knap={
+            <ConfirmDialog
+              triggerLabel="Hent beløbet fra sælgeren igen"
+              triggerClassName={KNAP_ORANGE}
+              title="Hent beløbet fra sælgerens Stripe-konto igen?"
+              description="Køberens bank har givet køberen pengene tilbage, og BidHamr er trukket for beløbet. Sælgerens del hentes nu tilbage fra hans Stripe-konto (aldrig mere, end der står på kontoen). Stripe spørges først, så der aldrig trækkes to gange."
+              confirmLabel="Prøv igen"
+              action={hentFraSaelgerIgenForm}
+              hiddenFields={{ betalingId: b.id }}
+            />
+          }
+          forklaring="Prøver at hente beløbet tilbage fra sælgerens Stripe-konto igen."
+        />
+      )}
       {b.kanProeveOverfoersel && p === "overfoersel" && (
         <Handling
           knap={

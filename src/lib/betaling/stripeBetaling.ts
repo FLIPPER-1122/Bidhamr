@@ -1294,17 +1294,18 @@ async function refunderUnderLaas(
     await markerRefusion(b.id, "Refusionsbeløbet er ugyldigt - refusion stoppet");
     throw new Error(`Refusionsbeløbet overstiger det modtagne for betaling ${b.id}`);
   }
-  // Betalingsmodel destination: pengene står på sælgerens Connect-konto. En
-  // fuld refusion tager dem tilbage derfra (reverse_transfer) og giver
-  // BidHamrs gebyr tilbage (refund_application_fee) - ellers ville BidHamr
-  // betale køberen af sin egen saldo, mens sælgeren beholdt pengene. Delvis
-  // refusion kræver en refusionsplan (trin 4) - stoppes til staff.
+  // Betalingsmodel destination: pengene står på sælgerens Connect-konto.
+  // Refusionen (fuld og delvis) laves efter en låst refusionsplan i tre
+  // eksakte trin (src/lib/betaling/refusion.ts): BidHamrs gebyr tilbage til
+  // sælgerens konto, tilbageførsel fra sælgerens konto, refusion til køberen
+  // fra platformen - ellers ville BidHamr betale køberen af sin egen saldo,
+  // mens sælgeren beholdt pengene.
   const destination = !!pi.transfer_data?.destination;
-  if (destination && delvis !== null) {
+  if (destination !== (b.pengemodel === "destination")) {
     await markerRefusionskonflikt(
       b.id,
       laas,
-      "Delvis refusion af en betaling på sælgerens Stripe-konto kan ikke laves automatisk endnu (betalingsmodel trin 4) - håndtér den manuelt",
+      "Betalingens pengemodel passer ikke med Stripe - refusion stoppet",
     );
     return "refusion_konflikt";
   }
@@ -1341,12 +1342,27 @@ async function refunderUnderLaas(
   }
 
   try {
+    if (!refund && destination) {
+      // Trin (a) gebyr og (b) tilbageførsel - kun det, der mangler hos Stripe.
+      const { forberedDestinationRefusion } = await import("@/lib/betaling/refusion");
+      const klar = await forberedDestinationRefusion(b, laas, forsoeg, maal, UNDER_LAAS);
+      if (klar.kode === "indsigelse") {
+        // Banken afgør pengene (cron prøver ikke, mens indsigelsen er åben).
+        await markerRefusion(b.id, "Refusion venter: køberen har lavet en indsigelse hos sin bank");
+        return "refusion_afventer";
+      }
+      if (klar.kode === "konflikt") {
+        await markerRefusionskonflikt(b.id, laas, klar.besked);
+        return "refusion_konflikt";
+      }
+    }
     if (!refund) {
       refund = await stripe.refunds.create(
         {
           payment_intent: piId,
-          ...(delvis !== null ? { amount: delvis } : {}),
-          ...(destination ? { reverse_transfer: true, refund_application_fee: true } : {}),
+          // Destination: altid det eksakte beløb fra planen; pengene er
+          // allerede hentet tilbage til platformen (trin a og b).
+          ...(delvis !== null || destination ? { amount: maal } : {}),
           reason: "requested_by_customer",
           metadata: {
             betaling_id: b.id,
@@ -1660,6 +1676,12 @@ export async function registrerRefunderet(
     p_refund: refundId,
   });
   if (error) throw new Error(`betaling_registrer_refunderet: ${error.message}`);
+  // Destination (trin 4): sælgeren skal stå med 0 på handlen bagefter - også
+  // når refusionen er lavet i Stripe-dashboardet. Kaster aldrig.
+  if (String(data) === "refunderet") {
+    const { kontrollerDestinationRefusion } = await import("@/lib/betaling/refusion");
+    await kontrollerDestinationRefusion(paymentIntentId);
+  }
   return String(data);
 }
 
@@ -1833,6 +1855,13 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
     if (!(udfald === "afgjort" && d.status === "warning_closed")) {
       await sendIndsigelseTilSaelger(d.id, piId, chId, udfald);
     }
+  }
+  // Destination (trin 4): beviser lægges klar ved en åben indsigelse; en tabt
+  // indsigelse før udbetaling henter beløbet tilbage fra sælgerens konto, og
+  // køberen får besked om at sende varen retur. Kaster aldrig. Intet i separat.
+  if (resultat === "blokeret" || resultat === "tabt") {
+    const { efterIndsigelseDestination } = await import("@/lib/betaling/indsigelse");
+    await efterIndsigelseDestination(d, resultat);
   }
   if (resultat === "afsluttet" && piId) {
     const { data: b } = await createAdminClient()

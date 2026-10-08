@@ -128,6 +128,13 @@ export type BetalingTilHandling = {
     fejletFlereGange: boolean;
     opgivet: boolean;
   } | null;
+  // Kun for tabt indsigelse på en destination-betaling (betalingsmodel
+  // trin 4): er beløbet hentet tilbage fra sælgerens Stripe-konto? 'udbetalt'
+  // = handlen var udbetalt, BidHamr bærer tabet (intet trækkes fra sælgeren).
+  indsigelseTilbagefoersel: {
+    tilstand: "venter" | "gennemfoert" | "opgivet" | "udbetalt";
+    forsoeg: number;
+  } | null;
   // Link til betalingen i Stripes dashboard. Kun sat for admin/chef.
   stripeLink: string | null;
   // Handlens status (fx 'annulleret' - så vises fragten som refunderet).
@@ -496,6 +503,33 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
     };
     const AKTIVE_HANDLER = ["betaling_modtaget", "pakke_sendt", "modtaget"];
 
+    // Tabte indsigelser på destination-betalinger (trin 4, 20261011040000):
+    // er beløbet hentet tilbage fra sælgerens konto? Mangler kolonnerne,
+    // vises intet.
+    const tilbageMap = new Map<string, NonNullable<BetalingTilHandling["indsigelseTilbagefoersel"]>>();
+    const tabteIds = raekker.filter((r) => r.indsigelse_status === "lost").map((r) => r.id as string);
+    if (tabteIds.length) {
+      const { data: tb, error: tbErr } = await admin
+        .from("betalinger")
+        .select("id, pengemodel, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoersel_forsoeg, saelger_udbetaling_id, overfoersel_paabegyndt_kl")
+        .in("id", tabteIds);
+      if (tbErr && !manglerKolonne(tbErr)) throw new Error(tbErr.message);
+      for (const t of tb ?? []) {
+        if (t.pengemodel !== "destination") continue;
+        const forsoeg = Number(t.indsigelse_tilbagefoersel_forsoeg ?? 0);
+        tilbageMap.set(t.id as string, {
+          tilstand: t.indsigelse_tilbagefoersel_id
+            ? "gennemfoert"
+            : t.saelger_udbetaling_id || t.overfoersel_paabegyndt_kl
+              ? "udbetalt"
+              : forsoeg >= 5
+                ? "opgivet"
+                : "venter",
+          forsoeg,
+        });
+      }
+    }
+
     const betalinger: BetalingTilHandling[] = raekker.map((r) => {
       const proeve = kanProeve(r);
       const problem = problemFor(r, proeve);
@@ -555,6 +589,7 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
                 } as const;
               })()
             : null,
+        indsigelseTilbagefoersel: tilbageMap.get(r.id as string) ?? null,
         stripeLink:
           kanLoese && r.stripe_payment_intent_id
             ? stripeBetalingLink(r.stripe_payment_intent_id as string)
@@ -831,6 +866,61 @@ export async function proevTilbagebetalingIgen(betalingId: string) {
     }
     return { ok: true as const, gennemfoert: udfald.gennemfoert, besked: udfald.besked };
   });
+}
+
+// Admin/chef (betalingsmodel trin 4): tabt indsigelse før udbetaling, hvor
+// beløbet ikke kunne hentes tilbage fra sælgerens Stripe-konto efter 5
+// forsøg. Giver nye forsøg og prøver med det samme. Rolle og inhabilitet
+// tjekkes igen i databasen (betaling_indsigelse_tilbagefoersel_proev_igen).
+const HENT_FRA_SAELGER: Record<string, { ok: boolean; besked: string }> = {
+  tilbagefoert: { ok: true, besked: "Beløbet er hentet tilbage fra sælgerens Stripe-konto." },
+  allerede: { ok: true, besked: "Beløbet var allerede hentet tilbage fra sælgerens Stripe-konto." },
+  udbetalt: {
+    ok: false,
+    besked: "Handlen var udbetalt til sælgeren. BidHamr bærer tabet - der trækkes intet fra sælgeren.",
+  },
+  venter: { ok: false, besked: "Det kan ikke gøres lige nu (en udbetaling eller refusion er i gang). Det prøves igen automatisk." },
+  stoppet: { ok: false, besked: "Beløbet kunne ikke hentes tilbage. Se fejlbeskeden på betalingen og tjek kontoen i Stripe." },
+  ingen_adgang: { ok: false, besked: "Du har ikke adgang til at gøre dette." },
+  inhabil: { ok: false, besked: INHABIL },
+  ikke_tabt: { ok: false, besked: "Betalingen har ingen tabt indsigelse." },
+  i_gang: { ok: false, besked: "Et forsøg er i gang lige nu. Vent lidt, og prøv igen." },
+  ikke_fundet: { ok: false, besked: "Betalingen blev ikke fundet." },
+};
+
+export async function hentFraSaelgerIgen(betalingId: string) {
+  return koer("hentFraSaelgerIgen", async () => {
+    const { admin, userId } = await assertRole("admin");
+    const id = (betalingId ?? "").trim();
+    if (!id) throw new BrugerFejl(HENT_FRA_SAELGER.ikke_fundet.besked);
+    const { data: nu, error } = await admin
+      .from("betalinger")
+      .select("buyer_id, seller_id")
+      .eq("id", id)
+      .maybeSingle<{ buyer_id: string | null; seller_id: string | null }>();
+    if (error) throw new Error(error.message);
+    if (!nu) throw new BrugerFejl(HENT_FRA_SAELGER.ikke_fundet.besked);
+    if (userId === nu.buyer_id || userId === nu.seller_id) throw new BrugerFejl(INHABIL);
+    const { proevIndsigelseTilbagefoerselIgen } = await import("@/lib/betaling/indsigelse");
+    let r: string;
+    try {
+      r = await proevIndsigelseTilbagefoerselIgen(id, userId);
+    } catch (err) {
+      console.error("Admin: tilbageførsel ved tabt indsigelse fejlede igen:", id, err);
+      revalidatePath("/admin", "layout");
+      throw new BrugerFejl("Stripe afviste tilbageførslen igen. Se fejlbeskeden på betalingen.");
+    }
+    revalidatePath("/admin", "layout");
+    const udfald = HENT_FRA_SAELGER[r] ?? { ok: false, besked: "Beløbet blev ikke hentet tilbage." };
+    if (!udfald.ok) throw new BrugerFejl(udfald.besked);
+    return { ok: true as const, besked: udfald.besked };
+  });
+}
+
+export async function hentFraSaelgerIgenForm(formData: FormData) {
+  const res = await hentFraSaelgerIgen(((formData.get("betalingId") as string) ?? "").trim());
+  if ("fejl" in res) return res;
+  return { ok: true as const };
 }
 
 // Til ConfirmDialog. formData: betalingId. Er tilbagebetalingen ikke sendt
