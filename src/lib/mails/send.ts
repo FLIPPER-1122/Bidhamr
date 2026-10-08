@@ -7,7 +7,9 @@ import { HANDEL_AFSENDER } from "@/lib/mails/handel";
 
 // text er tekstudgaven (multipart/alternative). Alle skabeloner i
 // src/lib/mails laver den; uden den sender Resend kun HTML.
-export type Mail = { subject: string; html: string; text?: string };
+// replyTo bruges til interne mails (fx kontaktformularen), så "Svar" går til
+// afsenderen. Kalderen skal have valideret adressen.
+export type Mail = { subject: string; html: string; text?: string; replyTo?: string };
 
 export async function sendHandelMail(til: string | undefined | null, mail: Mail): Promise<boolean> {
   return (await sendHandelMailDetaljer(til, mail)).ok;
@@ -34,6 +36,7 @@ export async function sendHandelMailDetaljer(
       subject: mail.subject,
       html: mail.html,
       ...(mail.text ? { text: mail.text } : {}),
+      ...(mail.replyTo ? { replyTo: mail.replyTo } : {}),
     });
     if (error) {
       console.error("Mail fejlede:", error);

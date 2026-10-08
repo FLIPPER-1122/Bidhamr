@@ -4,6 +4,9 @@
 // med service-role (ingen browser-adgang til tabellen) og vises i
 // /admin/kontakt. Spambeskyttelse: honeypot-felt, minimumstid på siden og
 // rate-limit pr. IP, bruger, e-mail og samlet. Fejl RETURNERES.
+// Når henvendelsen er gemt, sendes den også som mail til SUPPORT_EMAIL
+// (Reply-To = afsenderen). Fejler mailen, er henvendelsen stadig gemt: fejlen
+// logges i /admin/drift, og brugeren får alligevel kvitteringen.
 
 import { createClient } from "@/lib/supabase/server";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
@@ -13,7 +16,11 @@ import {
   erKontaktEmne,
   KONTAKT_BESKED_MAKS,
   KONTAKT_BESKED_MIN,
+  SUPPORT_EMAIL,
 } from "@/lib/tryghed";
+import { kontaktSupportMail } from "@/lib/mails/kontakt";
+import { sendHandelMailDetaljer } from "@/lib/mails/send";
+import { logDriftFejl } from "@/lib/drift";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -95,6 +102,40 @@ export async function sendKontakt(
     if (error) {
       console.error("Kontaktformular kunne ikke gemmes:", error.message);
       return { fejl: "Beskeden kunne ikke sendes lige nu. Prøv igen om lidt, eller skriv til support@bidhamr.dk." };
+    }
+
+    // Mail til support. Må aldrig vælte svaret: henvendelsen er allerede gemt.
+    // Fejlteksten er Resends (aldrig mailens indhold) og renses af logDriftFejl.
+    try {
+      const resultat = await sendHandelMailDetaljer(
+        SUPPORT_EMAIL,
+        kontaktSupportMail({
+          emne,
+          besked,
+          email,
+          handelsRef: ref || null,
+          tradeId,
+          brugerId: user?.id ?? null,
+          tidspunkt: new Date(),
+        }),
+      );
+      if (!resultat.ok) {
+        await logDriftFejl({
+          kilde: "action",
+          sti: "/kontakt",
+          hvor: "sendKontakt: mail til support",
+          fejl: resultat.fejl,
+          brugerId: user?.id ?? null,
+        });
+      }
+    } catch (err) {
+      await logDriftFejl({
+        kilde: "action",
+        sti: "/kontakt",
+        hvor: "sendKontakt: mail til support",
+        fejl: err,
+        brugerId: user?.id ?? null,
+      });
     }
     return { ok: true };
   } catch (err) {
