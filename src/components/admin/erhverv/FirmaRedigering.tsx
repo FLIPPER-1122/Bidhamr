@@ -129,7 +129,7 @@ export default function FirmaRedigering({
               note: note || null,
             });
             if ("fejl" in svar) return { fejl: svar.fejl };
-            setBesked({ tekst: X.firmaGemt, fejl: false });
+            setBesked({ tekst: svar.besked ?? X.firmaGemt, fejl: false });
             setNote("");
             router.refresh();
           }}

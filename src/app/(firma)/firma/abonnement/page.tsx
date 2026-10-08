@@ -8,7 +8,7 @@ import StripeKnap from "@/components/erhverv/StripeKnap";
 import { FirmaSide, Kort } from "@/components/firma/dele";
 import { E_KNAP_PRIMAER, E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
 import { FIRMA_BETALING as B, FIRMA_OVERSIGT as T, FIRMA_OVERSIGT_EKSTRA as X } from "@/lib/tekster/erhverv";
-import { kr, langDato } from "@/lib/erhverv/visning";
+import { kr, krFraOere, langDato } from "@/lib/erhverv/visning";
 import type { FirmaOversigt } from "@/lib/erhverv/regler";
 
 // Abonnement: betaling (Stripe Billing), nuværende pakke og alle andre
@@ -20,7 +20,12 @@ import type { FirmaOversigt } from "@/lib/erhverv/regler";
 
 export const metadata = { title: T.abonnement.titel };
 
-const MOMS = 1.25;
+// Moms regnes i hele øre som i Stripe (fast Tax Rate 25 %, eksklusiv):
+// momsen afrundes til nærmeste øre og lægges oven i prisen.
+function oereInklMoms(maanedspris: number): { ekskl: number; inkl: number } {
+  const ekskl = Math.round(maanedspris * 100);
+  return { ekskl, inkl: ekskl + Math.round((ekskl * 25) / 100) };
+}
 
 function Boks({ titel, tekst, farve, children }: { titel: string; tekst?: string; farve: "succes" | "advarsel" | "info" | "fejl"; children?: React.ReactNode }) {
   const klasser = {
@@ -99,7 +104,10 @@ export default async function FirmaAbonnement({
           </p>
           {pakke?.maanedspris != null && (
             <p className="mt-3 text-[20px] font-semibold text-tekst">
-              {B.prisMedMoms(kr(pakke.maanedspris), kr(pakke.maanedspris * MOMS))}
+              {B.prisMedMoms(
+                krFraOere(oereInklMoms(pakke.maanedspris).ekskl),
+                krFraOere(oereInklMoms(pakke.maanedspris).inkl),
+              )}
             </p>
           )}
           <p className={`mt-2 ${E_TEKST_DAEMPET}`}>{B.maanedligTekst}</p>
