@@ -686,3 +686,16 @@ export const FIRMA_UDBETALINGSKONTO = {
 export const ERHVERV_COMING_SOON = {
   link: "Er du virksomhed? Læs om BidHamr Erhverv",
 } as const;
+
+// Firma oversigt før lancering: firmaet kan logge ind og se sin pakke og sine
+// oplysninger, men resten af siden er lukket, og der kan ikke sælges endnu
+// (Filip, 8. okt. 2026).
+export const FIRMA_FOER_LANCERING = {
+  titel: "BidHamr åbner snart",
+  tekst:
+    "Når vi åbner, kan du sætte dine auktioner til salg her. Indtil da kan du se din pakke og dine oplysninger.",
+  // Under den slåede-fra "Opret auktion"-knap.
+  kanIkkeOprette: "Du kan oprette auktioner, når BidHamr åbner.",
+  // I stedet for genvejene til handler, beskeder og auktioner.
+  genvejeLukket: "Dine handler, beskeder og auktioner kommer her, når BidHamr åbner.",
+} as const;

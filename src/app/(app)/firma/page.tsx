@@ -13,7 +13,8 @@ import {
   E_TEKST,
   E_TEKST_DAEMPET,
 } from "@/components/erhverv/stil";
-import { FIRMA_OVERSIGT as T, FIRMA_OVERSIGT_EKSTRA as X } from "@/lib/tekster/erhverv";
+import { FIRMA_FOER_LANCERING as F, FIRMA_OVERSIGT as T, FIRMA_OVERSIGT_EKSTRA as X } from "@/lib/tekster/erhverv";
+import { foerLancering } from "@/lib/lancering";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
 import { kr, krFraOere, langDato, naesteLedigeTekst, ugedagDato, visTelefon } from "@/lib/erhverv/visning";
 
@@ -22,6 +23,10 @@ import { kr, krFraOere, langDato, naesteLedigeTekst, ugedagDato, visTelefon } fr
 // bruge (opret auktion, handler, beskeder, abonnement) kan nås herfra.
 // Data: firma_oversigt (samme RPC som appen) via hentFirmaOversigt.
 // Målgruppen er primært ældre: stor tekst, store knapper, få valg pr. kort.
+// Før lancering (src/lib/lancering.ts) kan firmaet kun nå denne side (gaten i
+// src/lib/supabase/middleware.ts): en boks øverst forklarer det, "Opret
+// auktion" er slået fra, og links til lukkede sider (handler, beskeder,
+// auktioner) vises ikke. Pakkeskift virker stadig.
 
 export const metadata: Metadata = { title: T.titel, robots: { index: false, follow: false } };
 
@@ -87,6 +92,8 @@ export default async function FirmaOversigtSide() {
   const spoergsmaal = o.ubesvarede_spoergsmaal;
   const andrePakker = o.pakker.filter((p) => p.id !== o.pakke?.id);
   const naestePeriode = langDato(f.betalt_til ?? f.naeste_periode);
+  const lukket = foerLancering();
+  const opretTekst = lukket ? F.kanIkkeOprette : opretForklaring;
 
   return (
     <main className="flex-1 bg-[#F6F9F8] px-4 py-8 sm:px-6 lg:py-12">
@@ -97,6 +104,13 @@ export default async function FirmaOversigtSide() {
           <p className={`mt-2 ${E_TEKST_DAEMPET}`}>{T.intro}</p>
         </div>
 
+        {lukket && (
+          <div role="status" className="rounded-[18px] border-2 border-info-kant bg-info-bg p-5 text-info-tekst">
+            <p className="text-[22px] font-semibold">{F.titel}</p>
+            <p className="mt-1 text-[18px]">{F.tekst}</p>
+          </div>
+        )}
+
         {!abonnementAktivt && (
           <div role="status" className="rounded-[18px] border-2 border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst">
             <p className="text-[20px] font-semibold">{T.ikkeAktiv.titel}</p>
@@ -106,7 +120,11 @@ export default async function FirmaOversigtSide() {
           </div>
         )}
 
-        {/* Genveje: det, firmaet bruger mest. Ingen skjulte menuer. */}
+        {/* Genveje: det, firmaet bruger mest. Ingen skjulte menuer.
+            Før lancering er siderne lukket - så vises genvejene ikke. */}
+        {lukket ? (
+          <p className={E_TEKST_DAEMPET}>{F.genvejeLukket}</p>
+        ) : (
         <nav aria-label={X.genvejeTitel} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
             { href: "/mine-handler", titel: X.genveje.handler, tekst: X.genveje.handlerTekst },
@@ -123,6 +141,7 @@ export default async function FirmaOversigtSide() {
             </Link>
           ))}
         </nav>
+        )}
 
         {/* 1. Overblik */}
         <Kort id="overblik" titel={T.overblik.titel} forklaring={T.overblik.forklaring}>
@@ -152,9 +171,11 @@ export default async function FirmaOversigtSide() {
                 return (
                   <li key={v.trade_id} className="rounded-[14px] border-2 border-orange bg-orange-lys p-4">
                     <p className={E_TEKST}>{v.afhentning ? X.afhentning(vare) : T.venter.sendPakke(vare)}</p>
-                    <Link href={`/mine-handler/${v.trade_id}`} className={`${E_KNAP_PRIMAER} mt-3 w-full sm:w-auto`}>
-                      {v.afhentning ? X.knapSeHandel : T.venter.knapSendPakke}
-                    </Link>
+                    {!lukket && (
+                      <Link href={`/mine-handler/${v.trade_id}`} className={`${E_KNAP_PRIMAER} mt-3 w-full sm:w-auto`}>
+                        {v.afhentning ? X.knapSeHandel : T.venter.knapSendPakke}
+                      </Link>
+                    )}
                   </li>
                 );
               })}
@@ -162,9 +183,11 @@ export default async function FirmaOversigtSide() {
                 <li key={q.id} className="rounded-[14px] border-2 border-kant bg-white p-4">
                   <p className={E_TEKST}>{T.venter.svarSpoergsmaal(q.titel)}</p>
                   <p className={`mt-1 break-words italic ${E_TEKST_DAEMPET}`}>“{q.spoergsmaal}”</p>
-                  <Link href={`/auktion/${q.auktion_id}#spoergsmaal`} className={`${E_KNAP_PRIMAER} mt-3 w-full sm:w-auto`}>
-                    {T.venter.knapSvar}
-                  </Link>
+                  {!lukket && (
+                    <Link href={`/auktion/${q.auktion_id}#spoergsmaal`} className={`${E_KNAP_PRIMAER} mt-3 w-full sm:w-auto`}>
+                      {T.venter.knapSvar}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>
@@ -185,7 +208,7 @@ export default async function FirmaOversigtSide() {
           )}
 
           <div className="mt-5">
-            {kanOprette ? (
+            {kanOprette && !lukket ? (
               <Link href="/opret-auktion" className={`${E_KNAP_PRIMAER} w-full sm:w-auto`}>
                 {T.auktioner.knapOpret}
               </Link>
@@ -194,9 +217,9 @@ export default async function FirmaOversigtSide() {
                 <button type="button" disabled aria-describedby="opret-forklaring" className={`${E_KNAP_PRIMAER} w-full sm:w-auto`}>
                   {T.auktioner.knapOpret}
                 </button>
-                {opretForklaring && (
+                {opretTekst && (
                   <p id="opret-forklaring" className="mt-3 rounded-lg bg-advarsel-bg px-4 py-3 text-[17px] text-advarsel-tekst">
-                    {opretForklaring}
+                    {opretTekst}
                   </p>
                 )}
               </>
@@ -209,6 +232,14 @@ export default async function FirmaOversigtSide() {
             <ul className="mt-5 divide-y divide-kant rounded-[14px] border border-kant">
               {aktive.map((a) => (
                 <li key={a.id}>
+                  {lukket ? (
+                    <div className="flex min-h-14 flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-[18px] font-semibold break-words text-tekst">{a.titel}</span>
+                      <span className="shrink-0 text-[16px] text-tekst-daempet">
+                        {X.bud(a.antal_bud ?? 0)} · {X.slutter} {ugedagDato(a.slutter_kl)}
+                      </span>
+                    </div>
+                  ) : (
                   <Link
                     href={`/auktion/${a.id}`}
                     className="flex min-h-14 flex-col gap-1 px-4 py-3 hover:bg-groen-lys focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:justify-between"
@@ -218,16 +249,19 @@ export default async function FirmaOversigtSide() {
                       {X.bud(a.antal_bud ?? 0)} · {X.slutter} {ugedagDato(a.slutter_kl)}
                     </span>
                   </Link>
+                  )}
                 </li>
               ))}
             </ul>
           )}
-          <Link
-            href={`/profil/${bruger.id}`}
-            className="mt-4 inline-flex min-h-12 items-center text-[18px] font-semibold text-groen underline underline-offset-2"
-          >
-            {T.auktioner.knapSeAlle} →
-          </Link>
+          {!lukket && (
+            <Link
+              href={`/profil/${bruger.id}`}
+              className="mt-4 inline-flex min-h-12 items-center text-[18px] font-semibold text-groen underline underline-offset-2"
+            >
+              {T.auktioner.knapSeAlle} →
+            </Link>
+          )}
         </Kort>
 
         {/* 4. Visninger og salg */}
@@ -243,9 +277,11 @@ export default async function FirmaOversigtSide() {
               <Tal label={X.solgtIAlt} vaerdi={o.salg.solgte_i_alt.toLocaleString("da-DK")} />
             </div>
           )}
-          <Link href="/mine-handler" className={`${E_KNAP_SEKUNDAER} mt-5 w-full sm:w-auto`}>
-            {X.seSalg}
-          </Link>
+          {!lukket && (
+            <Link href="/mine-handler" className={`${E_KNAP_SEKUNDAER} mt-5 w-full sm:w-auto`}>
+              {X.seSalg}
+            </Link>
+          )}
         </Kort>
 
         {/* 5. Abonnement */}

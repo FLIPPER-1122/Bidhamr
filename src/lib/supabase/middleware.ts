@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { erTestdatabase } from "@/lib/miljoe";
-import { tilmeldingAaben } from "@/lib/tilmelding";
+import { foerLancering } from "@/lib/lancering";
 import { ROLLE_COOKIE, laesRolleCookie, lavRolleCookie } from "@/lib/rolleCookie";
 import { offentligNoegle } from "@/lib/supabase/noegler";
 
@@ -83,6 +82,20 @@ function erOffentligLaeseside(pathname: string, metode: string) {
 // andre lukkede stier, og resten af admin afviser rollen (src/lib/adminAuth.ts).
 const ROLLER_MED_ADGANG = ["chef", "admin", "medarbejder", "saelger"];
 
+// Firmakonti (users.konto_type = 'erhverv') må før lancering KUN se Firma
+// oversigt (/firma), så de er klar, når siden åbner (Filip, 8. okt. 2026).
+// Alle andre lukkede sider sender firmaet til /firma, og firmaet kan ikke
+// kalde server actions nogen steder (heller ikke på /firma - et action-id kan
+// sendes til enhver sti). Pakkeskift på /firma går derfor via
+// /api/offentlig/firma-skift-pakke. De offentlige ruter (login, /auth,
+// /reset-password, /bekraeft, /betingelser ...) virker som for alle andre.
+// Har en firmakonto også en staff-rolle, gælder staff-reglerne.
+const FIRMA_KONTOTYPE = "erhverv";
+
+function erFirmaSti(pathname: string) {
+  return pathname === "/firma" || pathname.startsWith("/firma/");
+}
+
 function erOffentligRute(pathname: string) {
   return OFFENTLIGE_RUTER.some(
     (rute) => pathname === rute || pathname.startsWith(`${rute}/`),
@@ -102,14 +115,17 @@ function erOffentligRute(pathname: string) {
 // ALLE forespørgsler, der ikke er GET/HEAD, på en offentlig sidesti, medmindre:
 //   - brugeren ikke er logget ind (login, signup, glemt adgangskode), eller
 //   - brugeren har en staff-rolle (som slipper gennem gaten alligevel).
+// Firmakonti afvises også her (de har ingen staff-rolle).
 // Undtaget er /api/* og /auth/*: det er route handlers, som ikke kan køre
 // server actions, og som har deres egne tjek (cron, webhooks, helbred ...).
 // Auth-siderne (/login, /reset-password ...) undtages IKKE: et action-id kan
 // sendes til enhver sidesti, så én undtaget side ville åbne for alle actions.
 // Det, en indlogget almindelig bruger skal kunne dér (gemme ny adgangskode,
 // DSA-anmeldelse og -klage), går i stedet via /api/offentlig/<handling>.
-// På testdatabasen er tilmeldingen altid åben, så tjekket er slået fra dér -
-// ligesom rolle-gaten.
+// Efter lancering (på testdatabasen, se src/lib/lancering.ts) er tjekket slået
+// fra - ligesom rolle-gaten. TILMELDING_AABEN læses direkte (ikke
+// tilmeldingAaben()), fordi tilmeldingen altid er åben på testdatabasen -
+// ellers kunne tjekket ikke testes med SIMULER_FOER_LANCERING.
 function erRouteHandlerSti(pathname: string) {
   return pathname.startsWith("/api/") || pathname.startsWith("/auth/");
 }
@@ -120,12 +136,12 @@ async function afvisSkrivningPaaOffentligSti(
 ): Promise<boolean> {
   if (request.method === "GET" || request.method === "HEAD") return false;
   if (erRouteHandlerSti(request.nextUrl.pathname)) return false;
-  if (tilmeldingAaben()) return false;
+  if (!foerLancering() || process.env.TILMELDING_AABEN === "true") return false;
 
   const session = await hentSession(supabase);
   if (!session) return false;
 
-  const { rolle } = await hentGateRolle(request, supabase, session);
+  const { rolle } = await hentGateIdentitet(request, supabase, session);
   // Sælgeren må kun bruge Admin → Erhverv før lancering - ikke kalde fx
   // afgivBud eller opretAuktion via POST til en offentlig sti.
   return !rolle || !ROLLER_MED_ADGANG.includes(rolle) || rolle === "saelger";
@@ -161,31 +177,53 @@ async function hentSession(
   return { brugerId: sub, sessionId: typeof sessionId === "string" ? sessionId : null };
 }
 
-// Rollen til gaten: fra den signerede rolle-cookie, hvis den er gyldig for
-// netop denne bruger og session (src/lib/rolleCookie.ts), ellers fra
-// databasen (min_rolle). En staff-rolle fra databasen gemmes i en ny cookie,
-// så de næste klik i 5 minutter ikke venter på databasen.
-async function hentGateRolle(
+// Rolle og konto_type til gaten: fra den signerede rolle-cookie, hvis den er
+// gyldig for netop denne bruger og session (src/lib/rolleCookie.ts), ellers
+// fra databasen (min_rolle og users.konto_type, samtidig - så det tager ikke
+// længere end før). En staff-rolle eller en firmakonto fra databasen gemmes i
+// en ny cookie, så de næste klik i 5 minutter ikke venter på databasen.
+// Besøgende uden login når aldrig hertil (ingen opslag for dem).
+function faarCookie(rolle: string | null, kontoType: string | null) {
+  return (!!rolle && ROLLER_MED_ADGANG.includes(rolle)) || kontoType === FIRMA_KONTOTYPE;
+}
+
+async function hentGateIdentitet(
   request: NextRequest,
   supabase: ReturnType<typeof createServerClient>,
   session: Session,
-): Promise<{ rolle: string | null; nyCookie: { vaerdi: string; maxAge: number } | null }> {
+): Promise<{
+  rolle: string | null;
+  kontoType: string | null;
+  nyCookie: { vaerdi: string; maxAge: number } | null;
+}> {
   if (session.sessionId) {
     const fraCookie = await laesRolleCookie(
       request.cookies.get(ROLLE_COOKIE)?.value,
       session.brugerId,
       session.sessionId,
     );
-    if (fraCookie && ROLLER_MED_ADGANG.includes(fraCookie)) return { rolle: fraCookie, nyCookie: null };
+    if (fraCookie && faarCookie(fraCookie.rolle, fraCookie.kontoType)) {
+      return { rolle: fraCookie.rolle, kontoType: fraCookie.kontoType, nyCookie: null };
+    }
   }
   // rolle er ikke laesbar via kolonne-grants; min_rolle() bruger auth.uid().
-  const { data } = await supabase.rpc("min_rolle");
-  const rolle = typeof data === "string" ? data : null;
+  // konto_type kan læses af alle (20261010030000_erhverv.sql).
+  const [{ data: rolleData }, { data: kontoData }] = await Promise.all([
+    supabase.rpc("min_rolle"),
+    supabase
+      .from("users")
+      .select("konto_type")
+      .eq("id", session.brugerId)
+      .maybeSingle(),
+  ]);
+  const rolle = typeof rolleData === "string" ? rolleData : null;
+  const konto = (kontoData as { konto_type?: unknown } | null)?.konto_type;
+  const kontoType = typeof konto === "string" ? konto : null;
   const nyCookie =
-    rolle && ROLLER_MED_ADGANG.includes(rolle) && session.sessionId
-      ? await lavRolleCookie(session.brugerId, session.sessionId, rolle)
+    rolle && faarCookie(rolle, kontoType) && session.sessionId
+      ? await lavRolleCookie(session.brugerId, session.sessionId, rolle, kontoType)
       : null;
-  return { rolle, nyCookie };
+  return { rolle, kontoType, nyCookie };
 }
 
 // ekstraHeadere (fx CSP-nonce fra src/proxy.ts) sendes med til renderingen.
@@ -245,22 +283,46 @@ export async function updateSession(
     return NextResponse.redirect(new URL("/coming-soon", request.url));
   }
 
-  // På testdatabasen (kun npm run dev via .env.local) må alle indloggede
-  // brugere komme forbi gaten, så almindelige testbrugere kan bruge siden.
-  // Admin er stadig beskyttet af rolle-tjekket i src/app/admin/layout.tsx.
-  // erTestdatabase() er fail closed, så produktion er uændret.
-  // Admin-stier tjekkes dog altid for rollen 'saelger' herunder.
+  // Efter lancering (i dag kun på testdatabasen - npm run dev via .env.local,
+  // se src/lib/lancering.ts) må alle indloggede brugere komme forbi gaten, så
+  // almindelige testbrugere kan bruge siden. Admin er stadig beskyttet af
+  // rolle-tjekket i src/app/admin/layout.tsx. foerLancering() er fail closed,
+  // så produktion er uændret. Admin-stier tjekkes dog altid for rollen
+  // 'saelger' herunder.
+  const lukket = foerLancering();
   const erAdminSti = pathname === "/admin" || pathname.startsWith("/admin/");
-  if (erTestdatabase() && !erAdminSti) {
+  if (!lukket && !erAdminSti) {
     return supabaseResponse;
   }
 
-  // Logget ind er ikke nok inden launch: rollen skal give adgang. Rollen
-  // læses fra den signerede rolle-cookie (højst 5 min. gammel) eller
-  // databasen - se hentGateRolle.
-  const { rolle, nyCookie } = await hentGateRolle(request, supabase, session);
+  // Logget ind er ikke nok inden launch: rollen (eller en firmakonto) skal
+  // give adgang. Den læses fra den signerede rolle-cookie (højst 5 min.
+  // gammel) eller databasen - se hentGateIdentitet.
+  const { rolle, kontoType, nyCookie } = await hentGateIdentitet(request, supabase, session);
 
-  if (!erTestdatabase() && (!rolle || !ROLLER_MED_ADGANG.includes(rolle))) {
+  const medCookie = (res: NextResponse) => {
+    if (nyCookie) {
+      res.cookies.set(ROLLE_COOKIE, nyCookie.vaerdi, {
+        httpOnly: true,
+        secure: request.nextUrl.protocol === "https:",
+        sameSite: "lax",
+        path: "/",
+        maxAge: nyCookie.maxAge,
+      });
+    }
+    return res;
+  };
+
+  const erStaff = !!rolle && ROLLER_MED_ADGANG.includes(rolle);
+  if (lukket && !erStaff) {
+    // Firmakonto før lancering: kun /firma (læsning) og statiske filer.
+    // Skrivninger (server actions) afvises overalt, også på /firma.
+    if (kontoType === FIRMA_KONTOTYPE) {
+      const laesning = request.method === "GET" || request.method === "HEAD";
+      if (!laesning) return new NextResponse("Ingen adgang", { status: 403 });
+      if (erFirmaSti(pathname) || erStatiskFil(pathname, request.method)) return medCookie(supabaseResponse);
+      return medCookie(NextResponse.redirect(new URL("/firma", request.url)));
+    }
     return NextResponse.redirect(new URL("/coming-soon", request.url));
   }
 
@@ -278,7 +340,7 @@ export async function updateSession(
     rolle === "saelger" &&
     pathname !== "/admin/erhverv" &&
     !pathname.startsWith("/admin/erhverv/") &&
-    (erAdminSti || (!erTestdatabase() && !erStatiskFil(pathname, request.method)));
+    (erAdminSti || (lukket && !erStatiskFil(pathname, request.method)));
   if (saelgerUdenforErhverv) {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new NextResponse("Ingen adgang", { status: 403 });
@@ -286,15 +348,5 @@ export async function updateSession(
     return NextResponse.redirect(new URL("/admin/erhverv", request.url));
   }
 
-  if (nyCookie) {
-    supabaseResponse.cookies.set(ROLLE_COOKIE, nyCookie.vaerdi, {
-      httpOnly: true,
-      secure: request.nextUrl.protocol === "https:",
-      sameSite: "lax",
-      path: "/",
-      maxAge: nyCookie.maxAge,
-    });
-  }
-
-  return supabaseResponse;
+  return medCookie(supabaseResponse);
 }
