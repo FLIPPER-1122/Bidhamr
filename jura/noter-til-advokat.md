@@ -141,3 +141,13 @@ Sådan virker koden i dag: Stripe Connect, "separate charges and transfers". Kø
 88. **Moms** på købergebyr, sælgergebyr, fragt og BidHamr Beskyttelse. Der er ingen momslogik i koden i dag (undtagen erhvervsabonnementet: 25 % oven i).
 89. **Bogføring.** Sælgernes penge på saldoen er ikke omsætning. Hvordan bogføres de, gebyrerne, Stripes gebyrer og tab på disputes?
 
+## Den nye betalingsmodel (pengene på sælgerens Stripe Connect-konto) – spørgsmål fra planen 8. okt. 2026
+
+90. **Kontrol over frigivelsen.** Pengene står på sælgerens egen Stripe-konto, men det er BidHamr, der bestemmer, hvornår de udbetales til sælgerens bank og hvornår de refunderes. Er BidHamr så fri for kravet om tilladelse (nr. 76–77), eller kan kontrollen over frigivelsen i sig selv kræve tilladelse?
+91. **Sælgeren som "forretning" over for kortnetværket.** Med betaling på sælgerens vegne står sælgeren (også en privatperson) formelt som forretning for HELE beløbet, inkl. købergebyr, fragt og BidHamr Beskyttelse. Hvordan skal det beskrives over for køberen, og passer det med, at BidHamr Beskyttelse er BidHamrs ydelse?
+92. **Hæftelse.** Ved denne model (Express-konti) hæfter BidHamr over for Stripe, hvis sælgerens Stripe-konto går i minus (fx dispute efter udbetaling). Kan BidHamr kræve beløbet af sælgeren, og hvad skal stå i vilkårene?
+
+### Til revisor
+93. **Moms på gebyrer som "application fee".** BidHamrs omsætning er gebyrerne, der trækkes fra betalingen. Hvem er kunden for købergebyret, når sælgeren står som forretning for hele beløbet – køber eller sælger? Hvem skal BidHamrs faktura stiles til?
+94. **Momsregistrerede erhvervssælgere.** Skal de opgøre moms af hele beløbet (inkl. købergebyr og fragt), når de står som forretning? Alternativet er to betalinger (varen til sælgeren + gebyrerne til BidHamr), som er en dårligere oplevelse for køberen.
+
