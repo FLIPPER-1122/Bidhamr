@@ -474,12 +474,12 @@ do $do$
 declare
   v_def text := pg_get_functiondef('public.auctions_erhverv()'::regprocedure);
   v_gl constant text := $t$v_k := public.erhverv_kvote(new.bruger_id, true);$t$;
-  v_ny constant text := $t$if exists (select 1 from public.firmaer fa
+  v_ny constant text := replace($t$if exists (select 1 from public.firmaer fa
                   where fa.bruger_id = new.bruger_id and fa.abonnement_status = 'afventer_betaling') then
         raise exception 'erhverv_intet_abonnement: Betal for din pakke under Abonnement i Firma oversigt, før du opretter auktioner.'
           using errcode = 'BHE02';
       end if;
-      v_k := public.erhverv_kvote(new.bruger_id, true);$t$;
+      v_k := public.erhverv_kvote(new.bruger_id, true);$t$, chr(13), '');
 begin
   if position('afventer_betaling' in v_def) > 0 then
     return;
@@ -503,20 +503,20 @@ do $do$
 declare
   v_def text := pg_get_functiondef('public.firma_oversigt()'::regprocedure);
   v_gl1 constant text := $t$'pauset_aarsag', f.pauset_aarsag, 'naeste_periode', public.firma_naeste_periode(f.abonnement_start)),$t$;
-  v_ny1 constant text := $t$'pauset_aarsag', f.pauset_aarsag,
+  v_ny1 constant text := replace($t$'pauset_aarsag', f.pauset_aarsag,
       'naeste_periode', coalesce(f.periode_slut, public.firma_naeste_periode(f.abonnement_start)),
       'periode_slut', f.periode_slut, 'opsiges_fra', f.opsiges_fra,
       'har_stripe_abonnement', f.stripe_subscription_id is not null,
-      'stripe_abonnement_status', f.stripe_abonnement_status),$t$;
+      'stripe_abonnement_status', f.stripe_abonnement_status),$t$, chr(13), '');
   v_gl2 constant text := $t$|| jsonb_build_object('skift_id', s.id, 'anmodet_kl', s.oprettet_kl)$t$;
-  v_ny2 constant text := $t$|| jsonb_build_object('skift_id', s.id, 'anmodet_kl', s.oprettet_kl,
+  v_ny2 constant text := replace($t$|| jsonb_build_object('skift_id', s.id, 'anmodet_kl', s.oprettet_kl,
                                          'faktura_url', (select r2.hosted_url from public.firma_regninger r2
                                                           where s.stripe_invoice_id is not null
                                                             and r2.stripe_invoice_id = s.stripe_invoice_id
-                                                            and r2.status in ('afventer', 'mislykket')))$t$;
+                                                            and r2.status in ('afventer', 'mislykket')))$t$, chr(13), '');
   v_gl3 constant text := $t$'pdf_url', r.pdf_url,$t$;
-  v_ny3 constant text := $t$'pdf_url', r.pdf_url, 'hosted_url', r.hosted_url,
-        'beloeb_ekskl_moms_oere', r.beloeb_ekskl_moms_oere, 'moms_oere', r.moms_oere,$t$;
+  v_ny3 constant text := replace($t$'pdf_url', r.pdf_url, 'hosted_url', r.hosted_url,
+        'beloeb_ekskl_moms_oere', r.beloeb_ekskl_moms_oere, 'moms_oere', r.moms_oere,$t$, chr(13), '');
 begin
   if position('har_stripe_abonnement' in v_def) > 0 then
     return;

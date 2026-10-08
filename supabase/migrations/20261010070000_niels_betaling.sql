@@ -115,11 +115,11 @@ grant execute on function public.betaling_indsigelse_tabt_luk(uuid, uuid, text) 
 do $do$
 declare
   v_def text := pg_get_functiondef('public.admin_advarsel_betaling(uuid,uuid,text,text,text)'::regprocedure);
-  v_gl constant text := $t$if public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status) then
-    return jsonb_build_object('kode', 'indsigelse');$t$;
-  v_ny constant text := $t$if public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status)
+  v_gl constant text := replace($t$if public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status) then
+    return jsonb_build_object('kode', 'indsigelse');$t$, chr(13), '');
+  v_ny constant text := replace($t$if public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status)
      and coalesce(b.indsigelse_status, '') <> 'lost' then
-    return jsonb_build_object('kode', 'indsigelse');$t$;
+    return jsonb_build_object('kode', 'indsigelse');$t$, chr(13), '');
 begin
   if position($t$coalesce(b.indsigelse_status, '') <> 'lost' then$t$ in v_def) > 0 then
     return;
