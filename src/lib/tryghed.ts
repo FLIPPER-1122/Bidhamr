@@ -245,6 +245,9 @@ export function spamNavnStaff(grund: string): string {
 }
 
 // Kontaktformularen (kontakt_henvendelser.emne). "?emne=fejl" forvælger Teknisk fejl.
+// BidHamrs supportadresse. Kontaktformularen sender henvendelser hertil.
+export const SUPPORT_EMAIL = "support@bidhamr.dk";
+
 export const KONTAKT_EMNER = [
   { vaerdi: "generelt", label: "Generelt" },
   { vaerdi: "handel", label: "Handel" },
