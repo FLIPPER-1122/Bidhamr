@@ -869,7 +869,7 @@ export const FIRMA_DASHBOARD = {
 
   // Afhentning hos firmaet (ingen chat med erhverv).
   afhentning:
-    "Køberen kommer og henter varen. Køberen kan se jeres adresse og telefonnummer og kontakter jer, hvis der er brug for det.",
+    "Køberen kommer og henter varen. Køberen kan se din adresse og dit telefonnummer og kontakter dig, hvis der er brug for det.",
 
   hjaelp: {
     titel: "Hjælp og kontakt",
