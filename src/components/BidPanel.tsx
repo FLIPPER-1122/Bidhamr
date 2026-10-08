@@ -17,7 +17,7 @@ import {
   totalOere,
 } from "@/lib/betaling/beregn";
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
-import { ERHVERV_BIDPANEL } from "@/lib/tekster/erhverv";
+import { ERHVERV_BIDPANEL, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import { BINDENDE_BUD_TEKST, mindsteNaesteBud } from "@/lib/auktionRegler";
 
 // Budhistorikken er anonymiseret paa serveren: ingen bruger-id'er eller navne
@@ -572,6 +572,11 @@ export default function BidPanel({
         </p>
         <p className="mt-0.5 text-[26px] leading-tight font-bold text-tekst tabular-nums lg:text-[30px]">
           {visningsBud.toLocaleString("da-DK")} kr
+          {erhvervAuktion && (
+            <span className="ml-2 inline-block text-sm font-normal whitespace-nowrap text-tekst-svag">
+              {ERHVERV_MOMS.inklMoms}
+            </span>
+          )}
         </p>
       </div>
 
@@ -1017,6 +1022,11 @@ export default function BidPanel({
                 </p>
                 <p className="text-lg leading-tight font-bold text-tekst tabular-nums">
                   {visningsBud.toLocaleString("da-DK")} kr
+                  {erhvervAuktion && (
+                    <span className="ml-1.5 text-xs font-normal whitespace-nowrap text-tekst-svag">
+                      {ERHVERV_MOMS.inklMoms}
+                    </span>
+                  )}
                 </p>
                 <p className="truncate text-xs text-tekst-daempet">
                   {brugerId && jegFoerer

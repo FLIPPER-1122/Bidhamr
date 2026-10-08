@@ -21,7 +21,7 @@ import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand, standNavn } from "@/lib/stand";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
-import { ERHVERV_GPSR } from "@/lib/tekster/erhverv";
+import { ERHVERV_GPSR, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import { SPOERGSMAAL_SLAAET_FRA } from "@/lib/spoergsmaal";
 import { kroner } from "@/lib/kroner";
 import { UKENDT_POSTNUMMER, slaaPostnummerOp } from "@/lib/postnumre";
@@ -444,7 +444,14 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <dt className="text-tekst-svag">Startpris</dt>
-                <dd className="text-lg font-bold text-tekst">{kroner(Math.round(startpris * 100))}</dd>
+                <dd className="text-lg font-bold text-tekst">
+                  {kroner(Math.round(startpris * 100))}
+                  {erFirma && (
+                    <span className="ml-1.5 inline-block text-sm font-normal whitespace-nowrap text-tekst-svag">
+                      {ERHVERV_MOMS.inklMoms}
+                    </span>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-tekst-svag">Varighed</dt>
@@ -690,6 +697,9 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
             className={feltKlasse(!!feltFejl.startpris)}
           />
           <Hjaelp id="startpris-hjaelp">
+            {erFirma && (
+              <span className="mb-1 block text-base font-semibold text-tekst">{ERHVERV_MOMS.startprisHjaelp}.</span>
+            )}
             {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
           </Hjaelp>
           {feltFejl.startpris && <FeltFejl id="startpris-fejl">{feltFejl.startpris}</FeltFejl>}

@@ -5,7 +5,7 @@ import { opretStatus } from "@/lib/erhverv/firmaStatus";
 import { AUKTION_GRUPPER, erAuktionGruppe, type AuktionGruppe } from "@/lib/erhverv/regler";
 import { FirmaSide, Kort, LukketBoks, OpretKnap, VareBillede } from "@/components/firma/dele";
 import { E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
-import { FIRMA_DASHBOARD as D } from "@/lib/tekster/erhverv";
+import { FIRMA_DASHBOARD as D, ERHVERV_MOMS as M } from "@/lib/tekster/erhverv";
 import { kr, ugedagDato } from "@/lib/erhverv/visning";
 
 // Auktioner: firmaets auktioner i fanerne Aktive / Solgte / Usolgte /
@@ -86,7 +86,10 @@ export default async function FirmaAuktionerSide({
                           ? `${A.solgtFor}: ${kr(Number(a.solgt_for))}`
                           : harBud
                             ? `${A.nuvaerendeBud}: ${kr(Number(a.nuvaerende_bud ?? a.startpris))}`
-                            : `${A.startpris}: ${kr(Number(a.startpris))} · ${A.ingenBud}`}
+                            : `${A.startpris}: ${kr(Number(a.startpris))}`}{" "}
+                        {/* Firmaets auktioner er erhvervsauktioner: prisen er inkl. moms. */}
+                        <span className="whitespace-nowrap text-[17px] text-tekst-daempet">{M.inklMoms}</span>
+                        {!(gruppe === "solgte" && a.solgt_for != null) && !harBud && <> · {A.ingenBud}</>}
                       </p>
                       <p className={E_TEKST_DAEMPET}>
                         {koerer ? A.slutter : A.sluttede} {ugedagDato(a.slutter_kl)} · {A.bud(a.antal_bud)} ·{" "}
