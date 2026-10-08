@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
+import { notificerSagLukketVedIndsigelse } from "@/lib/sagerServer";
 import {
   indsigelseBlokerer,
   proevRefusionIgen,
@@ -587,6 +588,23 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
   });
 }
 
+type TabtLukSvar = {
+  kode?: string;
+  trade_id?: string;
+  sag_ids?: string[];
+  begrundelse?: string;
+};
+
+// Køber og sælger får besked, når en sag/anke er lukket ved tabt indsigelse
+// (20261010072000). Efter svaret, så staff ikke venter på mails.
+function notificerLukkedeSager(luk: TabtLukSvar | null) {
+  const ids = Array.isArray(luk?.sag_ids) ? luk.sag_ids : [];
+  if (!luk?.trade_id || ids.length === 0) return;
+  const tradeId = luk.trade_id;
+  const begrundelse = luk.begrundelse ?? "";
+  after(() => notificerSagLukketVedIndsigelse(tradeId, ids, begrundelse));
+}
+
 const TABT_LUK_FEJL: Record<string, string> = {
   ingen_adgang: "Du har ikke adgang til at lukke handlen.",
   note_mangler: "Skriv en note om, hvad der er gjort.",
@@ -628,8 +646,10 @@ export async function markerBetalingLøst(betalingId: string, note: string) {
         p_note: n,
       });
       if (lukErr) throw new Error(lukErr.message);
-      const kode = (luk as { kode?: string } | null)?.kode;
+      const svar = luk as TabtLukSvar | null;
+      const kode = svar?.kode;
       if (kode !== "ok") throw new BrugerFejl(TABT_LUK_FEJL[kode ?? ""] ?? GENERISK_FEJL);
+      notificerLukkedeSager(svar);
       revalidatePath("/admin", "layout");
       return { ok: true as const };
     }
@@ -853,10 +873,28 @@ export async function givAdvarselBetaling(
         p_betaling: id,
         p_note: `Advarsel givet: ${note || tilBruger}`.slice(0, 2000),
       });
-      const kode = (luk as { kode?: string } | null)?.kode;
+      const svar = luk as TabtLukSvar | null;
+      const kode = svar?.kode;
       if (lukErr || (kode !== "ok" && kode !== "allerede_lukket")) {
+        // Advarslen ER givet (og sendes), men handlen står åben. Staff skal
+        // se det - ikke kun en linje i serverloggen.
         console.error("Lukning af tabt indsigelse efter advarsel fejlede:", id, lukErr?.message ?? kode);
+        // Advarslen fjernede markeringen - sæt den igen, så betalingen står i
+        // listen med "Luk handlen".
+        const { error: markErr } = await admin
+          .from("betalinger")
+          .update({ kraever_opmaerksomhed: true })
+          .eq("id", id)
+          .is("indsigelse_lukket_kl", null);
+        if (markErr) console.error("Kunne ikke markere betalingen igen:", id, markErr.message);
+        after(() => notificerAdvarsler());
+        revalidatePath("/admin", "layout");
+        const grund = !lukErr && kode && TABT_LUK_FEJL[kode] ? ` (${TABT_LUK_FEJL[kode]})` : "";
+        throw new BrugerFejl(
+          `Advarslen er givet, men handlen kunne ikke lukkes${grund}. Tryk "Luk handlen" på betalingen, eller kontakt en udvikler.`,
+        );
       }
+      if (kode === "ok") notificerLukkedeSager(svar);
     }
     after(() => notificerAdvarsler());
     revalidatePath("/admin", "layout");

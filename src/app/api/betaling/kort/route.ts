@@ -117,6 +117,9 @@ export async function POST(req: NextRequest) {
   const { data: brugerData, error: brugerFejl } = await supabase.auth.getUser(m[1]);
   const bruger = brugerData?.user;
   if (brugerFejl || !bruger) return svar(401, IKKE_LOGGET_IND);
+  if (!(await tjekGraenser([["betaling_kort_bruger", bruger.id]]))) {
+    return svar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
+  }
 
   try {
     if (erAutobetaling) {
