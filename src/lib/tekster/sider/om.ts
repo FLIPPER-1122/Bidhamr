@@ -59,7 +59,7 @@ export const OM: Tekstside = {
       overskrift: "Kontakt",
       tekst: [
         "Har du spørgsmål eller forslag, så skriv til support@bidhamr.dk.",
-        "BidHamr · CVR 46836219 · Ellegårdsvej 40, 4684 Holmegaard",
+        "BidHamr · CVR 46836219 · support@bidhamr.dk",
       ],
       links: [{ tekst: "Spørgsmål og svar", href: "/faq" }],
     },
