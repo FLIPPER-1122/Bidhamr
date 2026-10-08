@@ -10,6 +10,7 @@ import ProfilTryghed from "@/components/tryghed/ProfilTryghed";
 import AnmeldKnap from "@/components/dsa/AnmeldKnap";
 import FoelgKnap from "@/components/foelg/FoelgKnap";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { AUKTION_KOLONNER, type AuktionRaekke } from "@/lib/auktionKolonner";
 import { erPaaPause } from "@/lib/auctionTid";
 import BedoemmelseListe from "@/components/profile/BedoemmelseListe";
 import { hentBedoemmelseOpsummering, hentBedoemmelser } from "@/lib/bedoemmelserHent";
@@ -127,9 +128,10 @@ export default async function ProfilPage({
     ] = await Promise.all([
       supabase
         .from("auctions")
-        .select("*")
+        .select(AUKTION_KOLONNER)
         .eq("bruger_id", id)
-        .order("oprettet", { ascending: false }),
+        .order("oprettet", { ascending: false })
+        .overrideTypes<AuktionRaekke[], { merge: false }>(),
       supabase
         .from("bids")
         .select("*")
@@ -177,30 +179,42 @@ export default async function ProfilPage({
     if (budAuktionIds.length > 0) {
       // Andres bud kan ikke laeses (bydernes privatliv). Foerende bud staar
       // paa auktionen; har jeg budt mindst det, er det mit.
-      const { data: relevanteAuktioner } = await supabase
-        .from("auctions")
-        .select("*")
-        .in("id", budAuktionIds)
-        .overrideTypes<
-          {
-            id: string;
-            titel: string;
-            billeder: string[] | null;
-            slutter_kl: string;
-            nuværende_bud: number | string | null;
-            vinder_id: string | null;
-            status: string;
-            pauset_kl: string | null;
-          }[],
-          { merge: false }
-        >();
+      // vinder_id kan ikke læses af brugere (Niels M03) - den hentes med
+      // service role, kun for auktioner, brugeren selv har budt på, og kun
+      // sammenligningen med eget id bruges (intet id sendes til browseren).
+      const [{ data: relevanteAuktioner }, { data: vindere }] = await Promise.all([
+        supabase
+          .from("auctions")
+          .select(AUKTION_KOLONNER)
+          .in("id", budAuktionIds)
+          .overrideTypes<
+            {
+              id: string;
+              titel: string;
+              billeder: string[] | null;
+              slutter_kl: string;
+              nuværende_bud: number | string | null;
+              status: string;
+              pauset_kl: string | null;
+            }[],
+            { merge: false }
+          >(),
+        createAdminClient()
+          .from("auctions")
+          .select("id, vinder_id")
+          .in("id", budAuktionIds)
+          .not("vinder_id", "is", null)
+          .overrideTypes<{ id: string; vinder_id: string }[], { merge: false }>(),
+      ]);
+      const vinderPerAuktion = new Map((vindere ?? []).map((v) => [v.id, v.vinder_id]));
 
       mineBud = (relevanteAuktioner ?? []).map((auktion) => {
+        const vinderId = vinderPerAuktion.get(auktion.id) ?? null;
         const erSlut = new Date(auktion.slutter_kl) <= new Date();
         const højesteBud = Number(auktion.nuværende_bud ?? 0);
         const egetBud = egneBudPerAuktion.get(auktion.id) ?? 0;
-        const jegFører = auktion.vinder_id
-          ? auktion.vinder_id === id
+        const jegFører = vinderId
+          ? vinderId === id
           : egetBud > 0 && egetBud >= højesteBud;
         const status: MitBud["status"] = erPaaPause(auktion)
           ? "pause"
@@ -277,11 +291,12 @@ export default async function ProfilPage({
   ] = await Promise.all([
     supabase
       .from("auctions")
-      .select("*")
+      .select(AUKTION_KOLONNER)
       .eq("bruger_id", id)
       .eq("status", "aktiv")
       .gt("slutter_kl", new Date().toISOString())
-      .order("oprettet", { ascending: false }),
+      .order("oprettet", { ascending: false })
+      .overrideTypes<AuktionRaekke[], { merge: false }>(),
     // Med "Svar fra sælger". Skjulte bedømmelser er sorteret fra.
     hentBedoemmelser(supabase, id),
     // Kun navngivne blokeringer (anonyme spærringer af bydere tæller ikke).

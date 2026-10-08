@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { kortBeskrivelse, seoIndeksering, sideUrl } from "@/lib/seo";
 import { standNavn } from "@/lib/stand";
+import { AUKTION_KOLONNER, type AuktionRaekke } from "@/lib/auktionKolonner";
 
 // SEO for /auktion/[id]: metadata (generateMetadata i page.tsx) og JSON-LD
 // (layout.tsx). Hentes med brugerens egen klient (RLS), og én gang pr.
@@ -27,11 +28,12 @@ type AuktionSeo = {
 // Hele auktionsrækken, som brugeren må se den (RLS), hentet ÉN gang pr.
 // forespørgsel og delt af layout.tsx (404-tjek og JSON-LD), generateMetadata
 // og page.tsx. Før blev den samme række hentet tre gange.
-// "*": supabase-js kan ikke parse "nuværende_bud" i en select-streng.
+// Alle kolonner undtagen vinder_id (kan ikke læses af brugere - se
+// src/lib/auktionKolonner.ts).
 export const hentAuktionRaekke = cache(async (id: string) => {
   if (!UUID.test(id)) return { data: null, error: null };
   const supabase = await createClient();
-  return supabase.from("auctions").select("*").eq("id", id).maybeSingle();
+  return supabase.from("auctions").select(AUKTION_KOLONNER).eq("id", id).maybeSingle<AuktionRaekke>();
 });
 
 export const hentAuktionSeo = cache(async (id: string): Promise<AuktionSeo | null> => {
