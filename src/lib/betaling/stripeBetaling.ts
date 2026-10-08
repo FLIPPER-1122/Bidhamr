@@ -17,7 +17,7 @@ import Stripe from "stripe";
 import { getStripe, StripeTilstandFejl } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
-import { totalOere } from "@/lib/betaling/beregn";
+import { applicationFeeOere, totalOere } from "@/lib/betaling/beregn";
 import { sendIndsigelseTilSaelger } from "@/lib/betaling/indsigelseBeskeder";
 import { kontoSpejl, nyKontoParametre, sikrKontoopsaetning } from "@/lib/betaling/connect";
 import { aktivBetalingsmodel } from "@/lib/betaling/model";
@@ -37,6 +37,8 @@ function offentligSideUrl(): string {
 }
 import {
   koeberAfhentningMail,
+  koeberBetalingPauseMail,
+  saelgerBetalingPauseMail,
   saelgerBetaltAfhentningMail,
   saelgerBetaltMail,
   saelgerOpretUdbetalingskontoMail,
@@ -86,6 +88,21 @@ export type BetalingRaekke = {
   // sælgerens Connect-konto - aldrig en separat transfer). 20261011010000.
   // Valgfri: mangler før migrationen (= separat).
   pengemodel?: "separat" | "destination";
+  // Destination (20261011010000/20261011020000, valgfri indtil kørt).
+  saelger_stripe_konto?: string | null;
+  application_fee_oere?: number | null;
+  stripe_destination_transfer_id?: string | null;
+  midler_tilgaengelige_kl?: string | null;
+  svindelvarsel_kl?: string | null;
+  svindelvarsel_loest_kl?: string | null;
+  // Betalingen venter på sælgerens konto (betal_senest = fristen for
+  // kontoens godkendelse, ikke købers betalingsfrist).
+  venter_paa_saelgerkonto_kl?: string | null;
+  venter_aarsag?: string | null;
+  // Hvornår en ventende betaling åbnede - betalingsfristen regnes herfra.
+  betaling_aabnet_kl?: string | null;
+  aabnet_besked_sendt_kl?: string | null;
+  venter_paamindet_kl?: string | null;
   refusion_anmodet_kl: string | null;
   refusion_aarsag: string | null;
   // Delvis refusion (sag: alt undtagen BidHamr Beskyttelse). null = fuld.
@@ -151,6 +168,8 @@ export type ProfilRaekke = {
   connect_betalingsmetoder?: Record<string, string> | null;
   connect_udbetalingsplan?: string | null;
   connect_plan_ok?: boolean | null;
+  // Fra 20261011020000: sælgeren er frosset (kontoen blev ikke godkendt i tide).
+  saelger_frosset_kl?: string | null;
 };
 
 // ------------------------------------------------------------------ profiler
@@ -226,23 +245,279 @@ async function hentBetaling(id: string): Promise<BetalingRaekke> {
   return data;
 }
 
+// ------------------------------------------------------------------ destination
+
+// Fejl, når betalingen venter på sælgerens Stripe-konto (betalingsmodel
+// destination). Teksten må vises for køberen.
+export const VENTER_TEKST =
+  "Betalingen åbner, når sælgerens konto er godkendt hos vores betalingspartner Stripe. Du får besked, så snart du kan betale.";
+
+export class BetalingVenterFejl extends Error {
+  constructor() {
+    super(VENTER_TEKST);
+  }
+}
+
+export type KontoTjek = { ok: true } | { ok: false; aarsag: string };
+
+// Frisk tjek af sælgerens Connect-konto hos Stripe, før der laves (eller
+// betales) en destination-PaymentIntent: charges_enabled, card_payments aktiv
+// og manuel udbetalingsplan (BidHamr udbetaler først, når handlen er helt
+// færdig - Filip, ufravigeligt). Kontoen spejles samtidig (spejlConnectKonto
+// sætter også en forkert plan tilbage til manual og giver drift-alarm).
+// Står planen ikke til manual, stoppes betalingen (drift-alarm) - den
+// åbner igen, når account.updated viser en manuel plan.
+export async function kontrollerSaelgerkonto(kontoId: string): Promise<KontoTjek> {
+  let konto: Stripe.Account;
+  try {
+    konto = await getStripe().accounts.retrieve(kontoId);
+  } catch (err) {
+    if (err instanceof Stripe.errors.StripePermissionError) {
+      // Ingen adgang til kontoen lige nu: kan ikke tage imod betaling, og
+      // staff får besked (ikke permanent - kun account.application.
+      // deauthorized frakobler kontoen).
+      await markerKontoUdenAdgang(kontoId);
+      return { ok: false, aarsag: "konto_ingen_adgang" };
+    }
+    throw err;
+  }
+  const profilId = await spejlConnectKonto(konto);
+  const { data: profil } = await createAdminClient()
+    .from("betalingsprofiler")
+    .select("connect_frakoblet_kl")
+    .eq("stripe_account_id", kontoId)
+    .maybeSingle<{ connect_frakoblet_kl: string | null }>();
+  if (!profilId || profil?.connect_frakoblet_kl) return { ok: false, aarsag: "konto_frakoblet" };
+  if (!konto.charges_enabled) return { ok: false, aarsag: "charges_disabled" };
+  if (konto.capabilities?.card_payments !== "active") return { ok: false, aarsag: "card_payments_ikke_aktiv" };
+  const plan = konto.settings?.payouts?.schedule?.interval ?? null;
+  if (plan !== "manual") {
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "betaling/kontotjek",
+      fejl: `Betaling stoppet: sælgerkonto ${kontoId} har udbetalingsplan '${plan ?? "ukendt"}' (skal være manual). Betalingen venter, til planen er manual.`,
+      brugerId: profilId,
+    });
+    return { ok: false, aarsag: "plan_ikke_manual" };
+  }
+  return { ok: true };
+}
+
+// Stripe giver ingen adgang til sælgerens konto (StripePermissionError). Ikke
+// permanent: kontoen kan ikke tage imod betaling (connect_charges_enabled =
+// false, så betaling_kan_aabnes bliver falsk), staff får en markering og
+// drift-alarm. Næste vellykkede spejling (account.updated / frisk hentning)
+// retter tilstanden. Kun account.application.deauthorized frakobler kontoen.
+export async function markerKontoUdenAdgang(kontoId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("betalingsprofiler")
+    .update({ connect_charges_enabled: false, opdateret: new Date().toISOString() })
+    .eq("stripe_account_id", kontoId)
+    .is("connect_frakoblet_kl", null)
+    .select("user_id")
+    .maybeSingle<{ user_id: string }>();
+  if (error && !erManglerKolonne(error)) throw new Error(`markerKontoUdenAdgang: ${error.message}`);
+  if (!data) return;
+  await markerUdbetalingskonto(
+    kontoId,
+    "Stripe giver ingen adgang til sælgerens udbetalingskonto. Betalinger kan ikke tages imod, før adgangen er tilbage - kontrollér kontoen hos Stripe.",
+  );
+  await logDriftFejl({
+    kilde: "server",
+    hvor: "connect/ingen-adgang",
+    fejl: `Ingen adgang til sælgerkonto ${kontoId} hos Stripe - kan ikke tage imod betaling (ikke frakoblet).`,
+    brugerId: data.user_id,
+  });
+}
+
+// Sætter betalingen til at vente på sælgerens konto og kaster
+// BetalingVenterFejl (betaling_saet_venter, 20261011020000). Har betalingen
+// en destination-PaymentIntent, annulleres den først hos Stripe (en gammel
+// client_secret kan så ikke betales), og databasen fjerner den og tæller
+// pi_forsoeg op, så der laves en ny, når betalingen åbner. Er den alligevel
+// betalt eller under behandling, gives den tilbage (kalderen spejler den), og
+// betalingen sættes ikke til at vente. En separat-PaymentIntent bliver
+// stående (den kan stadig betales i den gamle model).
+async function saetVenter(b: BetalingRaekke, aarsag: string): Promise<Stripe.PaymentIntent> {
+  let annulleret: string | null = null;
+  if (b.pengemodel === "destination" && b.stripe_payment_intent_id) {
+    const ikkeAnnulleret = await annullerVedSkift(b.stripe_payment_intent_id);
+    if (ikkeAnnulleret) return ikkeAnnulleret;
+    annulleret = b.stripe_payment_intent_id;
+  }
+  const { data, error } = await createAdminClient().rpc("betaling_saet_venter", {
+    p_betaling: b.id,
+    p_aarsag: aarsag,
+    p_annulleret_pi: annulleret,
+  });
+  if (error) throw new Error(`betaling_saet_venter: ${error.message}`);
+  const svar = String(data);
+  if (svar !== "venter" && svar !== "venter_ny_frist") {
+    // Betalingen er ændret samtidig (fx betalt eller annulleret).
+    throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
+  }
+  // Første gang en åben betaling venter: køber og sælger får fristen.
+  if (svar === "venter_ny_frist") await beskedOmVenterFrist(b.id);
+  throw new BetalingVenterFejl();
+}
+
+// En betaling, der var åben, venter nu på sælgerens konto. Køber og sælger
+// får fristen (venter_frist). Kaster aldrig.
+async function beskedOmVenterFrist(betalingId: string): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { data: b } = await admin
+      .from("betalinger")
+      .select("trade_id, auction_id, buyer_id, seller_id, betal_senest")
+      .eq("id", betalingId)
+      .maybeSingle<{ trade_id: string; auction_id: string; buyer_id: string; seller_id: string; betal_senest: string }>();
+    if (!b) return;
+    const { data: a } = await admin.from("auctions").select("titel").eq("id", b.auction_id).maybeSingle();
+    const titel = (a?.titel as string | undefined) ?? "din vare";
+    const frist = new Date(b.betal_senest).toLocaleString("da-DK", {
+      timeZone: "Europe/Copenhagen",
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const link = `/mine-handler/${b.trade_id}`;
+    await send(b.buyer_id, "betalingsfrist", {
+      titel: "Betalingen er sat på pause",
+      tekst: `Sælgerens konto hos vores betalingspartner Stripe kan ikke tage imod betaling lige nu, så du kan ikke betale for "${titel}" endnu. Vi giver dig besked, når du kan betale. Er kontoen ikke klar senest ${frist}, bliver handlen annulleret, og du bliver ikke trukket noget.`,
+      link,
+      data: { trade_id: b.trade_id },
+      mail: koeberBetalingPauseMail(titel, b.trade_id, b.betal_senest),
+      noegle: `venter_frist:${betalingId}:koeber`,
+    });
+    await send(b.seller_id, "udbetaling", {
+      titel: "Din konto kan ikke tage imod betaling",
+      tekst: `Køberen kan ikke betale for "${titel}", fordi din konto hos Stripe ikke kan tage imod betaling lige nu. Ret det under Min konto senest ${frist} – ellers bliver handlen annulleret.`,
+      link: "/konto",
+      data: { trade_id: b.trade_id },
+      mail: saelgerBetalingPauseMail(titel, b.betal_senest),
+      noegle: `venter_frist:${betalingId}:saelger`,
+    });
+  } catch (err) {
+    console.error("Besked om ventefrist fejlede:", betalingId, err);
+  }
+}
+
+// PaymentIntents, der kan annulleres, når en separat-betaling skiftes til
+// destination (ingen penge er trukket).
+const ANNULLERBARE_VED_SKIFT: Stripe.PaymentIntent.Status[] = [
+  "requires_payment_method",
+  "requires_confirmation",
+  "requires_action",
+];
+
+// Annullerer en afventende PaymentIntent (en gammel separat-PaymentIntent ved
+// skiftet, eller en destination-PaymentIntent, når betalingen skal vente).
+// Returnerer null, når den er annulleret, ellers PaymentIntenten (fx
+// succeeded/processing - så annulleres/skiftes der ikke, og den spejles).
+async function annullerVedSkift(piId: string): Promise<Stripe.PaymentIntent | null> {
+  const stripe = getStripe();
+  const pi = await stripe.paymentIntents.retrieve(piId);
+  if (pi.status === "canceled") return null;
+  if (!ANNULLERBARE_VED_SKIFT.includes(pi.status)) return pi;
+  try {
+    await stripe.paymentIntents.cancel(
+      piId,
+      { cancellation_reason: "abandoned" },
+      { idempotencyKey: `bidhamr-skift-annuller-${piId}` },
+    );
+    return null;
+  } catch (err) {
+    const igen = await stripe.paymentIntents.retrieve(piId);
+    if (igen.status === "canceled") return null;
+    if (igen.status === "succeeded" || igen.status === "processing") return igen;
+    throw err;
+  }
+}
+
+// Låser sælgerkonto og gebyr i databasen før en destination-PaymentIntent.
+// gammelPi = en separat-PaymentIntent, der ER annulleret hos Stripe.
+async function klargoerDestination(
+  b: BetalingRaekke,
+  konto: string,
+  gammelPi: string | null,
+): Promise<BetalingRaekke> {
+  const { data, error } = await createAdminClient().rpc("betaling_klargoer_destination", {
+    p_betaling: b.id,
+    p_konto: konto,
+    p_gammel_pi: gammelPi,
+  });
+  if (error) throw new Error(`betaling_klargoer_destination: ${error.message}`);
+  const svar = String(data);
+  if (svar === "venter") throw new BetalingVenterFejl();
+  if (svar !== "klar" && svar !== "har_pi") {
+    // ikke_afventer / pi_aendret / konto_aendret: noget ændrede sig samtidig.
+    throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
+  }
+  return hentBetaling(b.id);
+}
+
+// ------------------------------------------------------------------ PaymentIntent
+
 // Opretter (én gang) PaymentIntenten for en betaling. Beløbet er altid det,
 // databasen har beregnet - aldrig noget fra klienten.
+//
+// Betalingsmodel (src/lib/betaling/model.ts):
+//   separat     - som før: PaymentIntent på platformskontoen.
+//   destination - on_behalf_of = transfer_data.destination = sælgerens
+//                 Connect-konto, application_fee_amount = BidHamrs gebyrer
+//                 (købergebyr + sælgergebyr + fragt + BidHamr Beskyttelse,
+//                 inkl. moms). Sælgerkontoen tjekkes FRISK hos Stripe først;
+//                 er den ikke klar, venter betalingen (BetalingVenterFejl).
+//                 En afventende separat-PaymentIntent annulleres og laves på
+//                 ny som destination (skiftet).
+// En betaling, der allerede er destination, forbliver destination, også hvis
+// serveren skiftes tilbage til separat (on_behalf_of kan ikke ændres).
 export async function sikrPaymentIntent(
   betaling: BetalingRaekke,
 ): Promise<Stripe.PaymentIntent> {
   const stripe = getStripe();
   const beloeb = Number(betaling.total_oere);
+  if (betaling.venter_paa_saelgerkonto_kl) throw new BetalingVenterFejl();
+
+  const model = await aktivBetalingsmodel();
+  const erDestination = betaling.pengemodel === "destination";
+
   if (betaling.stripe_payment_intent_id) {
+    if (erDestination) {
+      // Frisk kontotjek, også før en eksisterende PaymentIntent betales.
+      const tjek = await kontrollerSaelgerkonto(betaling.saelger_stripe_konto!);
+      if (!tjek.ok) return saetVenter(betaling, tjek.aarsag);
+    } else if (model === "destination") {
+      // Skiftet: annullér den gamle separat-PaymentIntent og lav en ny.
+      const skift = await skiftTilDestination(betaling);
+      if ("pi" in skift) return skift.pi; // betalt/behandles - spejles af kalderen
+      return sikrPaymentIntent(skift.b);
+    }
     const eksisterende = await stripe.paymentIntents.retrieve(
       betaling.stripe_payment_intent_id,
     );
+    // Annulleret hos Stripe, mens betalingen afventer (fx uden for BidHamr):
+    // fjern den (pi_forsoeg + 1) og lav en ny.
+    if (eksisterende.status === "canceled" && betaling.status === "afventer") {
+      const { data: nulstillet, error: nFejl } = await createAdminClient().rpc(
+        "betaling_nulstil_annulleret_pi",
+        { p_betaling: betaling.id, p_pi: eksisterende.id },
+      );
+      if (nFejl) throw new Error(`betaling_nulstil_annulleret_pi: ${nFejl.message}`);
+      if (nulstillet !== true) throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
+      return sikrPaymentIntent(await hentBetaling(betaling.id));
+    }
     // Sikkerhedsnet for PaymentIntents oprettet før beskyttelsen blev låst ved
     // buddet: beløbet bringes i trit med databasens total. Klienten har
-    // aldrig indflydelse på beløbet.
-    if (eksisterende.amount !== beloeb && OPDATERBARE.includes(eksisterende.status)) {
+    // aldrig indflydelse på beløbet. Destination: gebyret følger med.
+    const fee = erDestination ? Number(betaling.application_fee_oere) : null;
+    const feeAfviger = fee !== null && eksisterende.application_fee_amount !== fee;
+    if ((eksisterende.amount !== beloeb || feeAfviger) && OPDATERBARE.includes(eksisterende.status)) {
       return stripe.paymentIntents.update(eksisterende.id, {
         amount: beloeb,
+        ...(fee !== null ? { application_fee_amount: fee } : {}),
         metadata: { beskyttelse: betaling.beskyttelse ? "ja" : "nej" },
       });
     }
@@ -253,32 +528,61 @@ export async function sikrPaymentIntent(
     throw new Error(`Beløb stemmer ikke for betaling ${betaling.id}`);
   }
 
-  const kunde = await sikrStripeKunde(betaling.buyer_id);
+  let b = betaling;
+  if (erDestination || model === "destination") {
+    const skift = await skiftTilDestination(betaling);
+    if ("pi" in skift) return skift.pi;
+    b = skift.b;
+  }
+  const dest = b.pengemodel === "destination";
+  if (dest) {
+    const fee = Number(b.application_fee_oere);
+    if (
+      !b.saelger_stripe_konto ||
+      !Number.isInteger(fee) ||
+      fee < 0 ||
+      fee !== applicationFeeOere(b) ||
+      beloeb - fee !== Number(b.udbetaling_oere)
+    ) {
+      throw new Error(`Gebyr eller sælgerkonto stemmer ikke for betaling ${b.id}`);
+    }
+  }
+
+  const kunde = await sikrStripeKunde(b.buyer_id);
 
   // PaymentIntenten oprettes én gang med det fulde beløb fra databasen
   // (bud + købergebyr + fragt + evt. BidHamr Beskyttelse valgt ved buddet).
-  // pi_forsoeg > 0 betyder, at en tidligere PaymentIntent er kasseret pga.
-  // afvigende beløb - så skal der en ny key til, ellers giver Stripe den
-  // gamle tilbage.
-  const nøgle =
-    betaling.pi_forsoeg > 0
-      ? `bidhamr-pi-${betaling.id}-${betaling.pi_forsoeg}`
-      : `bidhamr-pi-${betaling.id}`;
+  // pi_forsoeg > 0 betyder, at en tidligere PaymentIntent er kasseret (fx
+  // afvigende beløb eller skiftet til destination) - så skal der en ny key
+  // til, ellers giver Stripe den gamle tilbage.
+  const nøgle = dest
+    ? `bidhamr-pi-dest-${b.id}-${b.pi_forsoeg}`
+    : b.pi_forsoeg > 0
+      ? `bidhamr-pi-${b.id}-${b.pi_forsoeg}`
+      : `bidhamr-pi-${b.id}`;
   const pi = await stripe.paymentIntents.create(
     {
       amount: beloeb,
-      currency: betaling.valuta,
+      currency: b.valuta,
       customer: kunde,
       // Kort, MobilePay, Apple Pay, Google Pay - styres fra Stripe Dashboard.
       automatic_payment_methods: { enabled: true },
-      transfer_group: `handel_${betaling.trade_id}`,
-      description: `BidHamr handel ${betaling.trade_id}`,
+      transfer_group: `handel_${b.trade_id}`,
+      description: `BidHamr handel ${b.trade_id}`,
+      ...(dest
+        ? {
+            on_behalf_of: b.saelger_stripe_konto!,
+            transfer_data: { destination: b.saelger_stripe_konto! },
+            application_fee_amount: Number(b.application_fee_oere),
+          }
+        : {}),
       metadata: {
-        betaling_id: betaling.id,
-        handel_id: betaling.trade_id,
-        auktion_id: betaling.auction_id,
-        koeber_id: betaling.buyer_id,
-        beskyttelse: betaling.beskyttelse ? "ja" : "nej",
+        betaling_id: b.id,
+        handel_id: b.trade_id,
+        auktion_id: b.auction_id,
+        koeber_id: b.buyer_id,
+        beskyttelse: b.beskyttelse ? "ja" : "nej",
+        pengemodel: dest ? "destination" : "separat",
       },
     },
     { idempotencyKey: nøgle },
@@ -288,18 +592,18 @@ export async function sikrPaymentIntent(
   const { error: gemFejl } = await admin
     .from("betalinger")
     .update({ stripe_payment_intent_id: pi.id, opdateret: new Date().toISOString() })
-    .eq("id", betaling.id)
+    .eq("id", b.id)
     .is("stripe_payment_intent_id", null);
   if (gemFejl) {
     // PaymentIntenten findes hos Stripe, men er ikke gemt. Næste kald får den
     // samme tilbage via idempotency key'en (24 t). Betal aldrig en intent,
     // databasen ikke kender.
-    console.error("Kunne ikke gemme PaymentIntent:", betaling.id, pi.id, gemFejl.message);
+    console.error("Kunne ikke gemme PaymentIntent:", b.id, pi.id, gemFejl.message);
     await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "Kunne ikke gemme PaymentIntent", fejl: gemFejl });
     throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
   }
 
-  const efter = await hentBetaling(betaling.id);
+  const efter = await hentBetaling(b.id);
   if (efter.stripe_payment_intent_id !== pi.id) {
     // Et samtidigt kald nåede at gemme en anden PaymentIntent. Brug den, og
     // annullér vores, så der aldrig ligger to betalbare intents.
@@ -311,6 +615,67 @@ export async function sikrPaymentIntent(
     return stripe.paymentIntents.retrieve(efter.stripe_payment_intent_id!);
   }
   return pi;
+}
+
+// Tjekker sælgerens konto frisk og låser sælgerkonto + gebyr på betalingen.
+// Har betalingen en separat-PaymentIntent, annulleres den hos Stripe (først
+// EFTER kontotjekket - venter betalingen, kan den gamle stadig betales i
+// separat) og skiftes til destination. Er den gamle allerede betalt eller
+// under behandling, gives den tilbage ({ pi }) og intet skiftes.
+// Venter betalingen, kastes BetalingVenterFejl.
+async function skiftTilDestination(
+  b: BetalingRaekke,
+): Promise<{ b: BetalingRaekke } | { pi: Stripe.PaymentIntent }> {
+  const profil = await hentProfil(b.seller_id);
+  const konto = profil?.stripe_account_id ?? null;
+  if (!konto) return { pi: await saetVenter(b, "ingen_saelgerkonto") };
+  // Findes der en PaymentIntent, er sælgerkontoen låst, og det skal stadig
+  // være den konto. Uden PaymentIntent låses den nye konto ved klargoer.
+  if (b.stripe_payment_intent_id && b.saelger_stripe_konto && b.saelger_stripe_konto !== konto) {
+    return { pi: await saetVenter(b, "saelgerkonto_aendret") };
+  }
+  const tjek = await kontrollerSaelgerkonto(konto);
+  if (!tjek.ok) return { pi: await saetVenter(b, tjek.aarsag) };
+  const gammelPi = b.pengemodel === "destination" ? null : b.stripe_payment_intent_id;
+  if (gammelPi) {
+    const ikkeAnnulleret = await annullerVedSkift(gammelPi);
+    if (ikkeAnnulleret) return { pi: ikkeAnnulleret };
+  }
+  return { b: await klargoerDestination(b, konto, gammelPi) };
+}
+
+// Cron: afventende separat-betalinger med en PaymentIntent annulleres og
+// skiftes til destination, når destination er slået til (en ny PaymentIntent
+// laves, når køberen betaler, eller ved autobetaling). Højst 50 pr. kørsel.
+export async function skiftVentendeTilDestination(): Promise<number> {
+  if ((await aktivBetalingsmodel()) !== "destination") return 0;
+  const { data, error } = await createAdminClient()
+    .from("betalinger")
+    .select("*")
+    .eq("status", "afventer")
+    .eq("pengemodel", "separat")
+    .not("stripe_payment_intent_id", "is", null)
+    .is("stripe_charge_id", null)
+    .is("venter_paa_saelgerkonto_kl", null)
+    .limit(50)
+    .overrideTypes<BetalingRaekke[], { merge: false }>();
+  if (error) throw new Error(`skiftVentendeTilDestination: ${error.message}`);
+  let antal = 0;
+  for (const b of data ?? []) {
+    try {
+      const skift = await skiftTilDestination(b);
+      if ("pi" in skift) {
+        await spejlPaymentIntent(skift.pi);
+        continue;
+      }
+      antal++;
+    } catch (err) {
+      if (err instanceof BetalingVenterFejl) continue; // venter nu på sælgerens konto
+      console.error("Skift til destination fejlede:", b.id, err);
+      await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Skift til destination", fejl: err });
+    }
+  }
+  return antal;
 }
 
 const OPDATERBARE: Stripe.PaymentIntent.Status[] = [
@@ -362,6 +727,15 @@ export async function spejlPaymentIntent(pi: Stripe.PaymentIntent): Promise<stri
       if (b) await refunderBetaling(b.id);
     }
     if (resultat === "betalt") await efterBetalt(pi.id);
+    // Destination: spejl transfer, gebyr og hvornår pengene er tilgængelige
+    // på sælgerens konto (charge.succeeded/updated gør det også).
+    if (pi.transfer_data?.destination && chargeId(pi)) {
+      try {
+        await spejlDestinationCharge(chargeId(pi)!);
+      } catch (err) {
+        console.error("Spejling af destination-charge fejlede (webhook prøver igen):", pi.id, err);
+      }
+    }
     return resultat;
   }
 
@@ -457,6 +831,15 @@ export async function forsoegAutobetaling(betalingId: string): Promise<string> {
   const admin = createAdminClient();
   const nu = new Date().toISOString();
 
+  // Venter betalingen på sælgerens konto, forsøges der ikke endnu (forsøget
+  // må ikke bruges op) - det sker, når betalingen åbner (betalingInd.ts).
+  const { data: foer } = await admin
+    .from("betalinger")
+    .select("*")
+    .eq("id", betalingId)
+    .maybeSingle<BetalingRaekke>();
+  if (!foer || foer.venter_paa_saelgerkonto_kl) return foer ? "venter" : "ikke_relevant";
+
   const { data: claimed } = await admin
     .from("betalinger")
     .update({ autobetaling_forsoegt_kl: nu, opdateret: nu })
@@ -506,12 +889,28 @@ export async function forsoegAutobetaling(betalingId: string): Promise<string> {
         off_session: true,
         return_url: sideUrl(`/mine-handler/${claimed.trade_id}`),
       },
-      { idempotencyKey: `bidhamr-autobetal-${claimed.id}` },
+      {
+        // Destination: PaymentIntenten er ny efter skiftet (en evt. separat-
+        // PaymentIntent er annulleret), så nøglen indeholder dens id.
+        idempotencyKey: pi.transfer_data?.destination
+          ? `bidhamr-autobetal-dest-${claimed.id}-${pi.id}`
+          : `bidhamr-autobetal-${claimed.id}`,
+      },
     );
     const resultat = await spejlPaymentIntent(bekraeftet);
     await saetResultat(resultat === "betalt" || resultat === "allerede_betalt" ? "betalt" : resultat);
     return resultat;
   } catch (err) {
+    if (err instanceof BetalingVenterFejl) {
+      // Sælgerens konto var ikke klar (frisk tjek): betalingen venter nu.
+      // Forsøget gives tilbage, så kortet trækkes, når betalingen åbner.
+      await admin
+        .from("betalinger")
+        .update({ autobetaling_forsoegt_kl: null, autobetaling_resultat: null, opdateret: new Date().toISOString() })
+        .eq("id", betalingId)
+        .eq("status", "afventer");
+      return "venter";
+    }
     // Typisk authentication_required eller card_declined. Køberen falder
     // tilbage til den almindelige 48-timers betaling.
     const kode =
@@ -543,6 +942,9 @@ export async function overfoerTilSaelger(betalingId: string): Promise<string> {
     return "ikke_klar";
   }
   if (indsigelseBlokerer(b)) return "indsigelse";
+  // Uløst tidligt svindelvarsel: ingen afregning og ingen overførsel, før
+  // staff har gennemgået det (også afvist i betaling_claim_overfoersel).
+  if (b.svindelvarsel_kl && !b.svindelvarsel_loest_kl) return "svindelvarsel";
   if (b.udbetaling_oere <= 0) return "intet_at_overfoere";
 
   const admin = createAdminClient();
@@ -812,11 +1214,15 @@ async function markerRefusion(betalingId: string, besked: string): Promise<void>
 // Kaldes under låsen: betaling_refusion_konflikt markerer betalingen og sætter
 // refusion_graense = refusion_forsoeg (kun når låsen holdes), så cron ikke
 // prøver igen hver kørsel. Admin kan give et nyt forsøg. Kaster aldrig.
-async function markerRefusionskonflikt(betalingId: string, laas: string): Promise<void> {
+async function markerRefusionskonflikt(
+  betalingId: string,
+  laas: string,
+  besked = "Anden refusion fundet hos Stripe - kontrollér betalingen, før der refunderes igen",
+): Promise<void> {
   const { error } = await createAdminClient().rpc("betaling_refusion_konflikt", {
     p_betaling: betalingId,
     p_noegle: laas,
-    p_besked: "Anden refusion fundet hos Stripe - kontrollér betalingen, før der refunderes igen",
+    p_besked: besked,
   });
   if (error) console.error("betaling_refusion_konflikt:", betalingId, error.message);
 }
@@ -875,6 +1281,20 @@ async function refunderUnderLaas(
     await markerRefusion(b.id, "Refusionsbeløbet er ugyldigt - refusion stoppet");
     throw new Error(`Refusionsbeløbet overstiger det modtagne for betaling ${b.id}`);
   }
+  // Betalingsmodel destination: pengene står på sælgerens Connect-konto. En
+  // fuld refusion tager dem tilbage derfra (reverse_transfer) og giver
+  // BidHamrs gebyr tilbage (refund_application_fee) - ellers ville BidHamr
+  // betale køberen af sin egen saldo, mens sælgeren beholdt pengene. Delvis
+  // refusion kræver en refusionsplan (trin 4) - stoppes til staff.
+  const destination = !!pi.transfer_data?.destination;
+  if (destination && delvis !== null) {
+    await markerRefusionskonflikt(
+      b.id,
+      laas,
+      "Delvis refusion af en betaling på sælgerens Stripe-konto kan ikke laves automatisk endnu (betalingsmodel trin 4) - håndtér den manuelt",
+    );
+    return "refusion_konflikt";
+  }
 
   // Idempotency keys hos Stripe udløber efter 24 timer, og et nyt forsøg har
   // en ny key. Slå derfor ALLE refusioner på PaymentIntenten op, før en ny
@@ -913,6 +1333,7 @@ async function refunderUnderLaas(
         {
           payment_intent: piId,
           ...(delvis !== null ? { amount: delvis } : {}),
+          ...(destination ? { reverse_transfer: true, refund_application_fee: true } : {}),
           reason: "requested_by_customer",
           metadata: {
             betaling_id: b.id,
@@ -1139,11 +1560,16 @@ export async function refunderAfvigelse(paymentIntentId: string): Promise<string
       ? `bidhamr-afvigelse-refusion-${paymentIntentId}-${forsoeg}`
       : `bidhamr-afvigelse-refusion-${paymentIntentId}`;
 
+  // Destination: pengene tages tilbage fra sælgerens konto, og gebyret
+  // gives tilbage (se refunderUnderLaas).
+  const piAfv = await stripe.paymentIntents.retrieve(paymentIntentId);
+  const destination = !!piAfv.transfer_data?.destination;
   let refund: Stripe.Refund | null = null;
   try {
     refund = await stripe.refunds.create(
       {
         payment_intent: paymentIntentId,
+        ...(destination ? { reverse_transfer: true, refund_application_fee: true } : {}),
         reason: "requested_by_customer",
         metadata: {
           betaling_id: a.betaling_id,
@@ -1408,6 +1834,134 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
         console.error("Overførsel efter afsluttet indsigelse fejlede (cron prøver igen):", err);
       }
     }
+  }
+  return resultat;
+}
+
+// ------------------------------------------------------------------ destination: charge
+
+type DestinationRaekke = {
+  id: string;
+  pengemodel: string;
+  total_oere: number;
+  application_fee_oere: number | null;
+  saelger_stripe_konto: string | null;
+  stripe_destination_transfer_id: string | null;
+  stripe_application_fee_id: string | null;
+  stripe_destination_payment_id: string | null;
+  midler_tilgaengelige_kl: string | null;
+};
+
+function stripeId(v: string | { id: string } | null | undefined): string | null {
+  if (!v) return null;
+  return typeof v === "string" ? v : v.id;
+}
+
+// Spejler en destination-charge (charge.succeeded/charge.updated, eller
+// efter betalt): Stripes automatiske transfer til sælgerens konto, BidHamrs
+// application fee og hvornår pengene er "available" på sælgerens konto
+// (destination_payment -> balance_transaction.available_on - trin 3 bruger
+// det før udbetaling). Kontrollerer, at beløb, gebyr og konto er som låst i
+// databasen; ellers drift-alarm og markering til staff. Flytter ingen penge.
+// Idempotent.
+export async function spejlDestinationCharge(chargeIdArg: string): Promise<string> {
+  const stripe = getStripe();
+  const admin = createAdminClient();
+  const charge = await stripe.charges.retrieve(chargeIdArg);
+  const piId = stripeId(charge.payment_intent);
+  const konto = stripeId(charge.transfer_data?.destination ?? null);
+  if (!piId || !konto) return "ikke_destination";
+
+  const { data: b, error } = await admin
+    .from("betalinger")
+    .select(
+      "id, pengemodel, total_oere, application_fee_oere, saelger_stripe_konto, stripe_destination_transfer_id, stripe_application_fee_id, stripe_destination_payment_id, midler_tilgaengelige_kl",
+    )
+    .eq("stripe_payment_intent_id", piId)
+    .maybeSingle<DestinationRaekke>();
+  if (error) throw new Error(`spejlDestinationCharge: ${error.message}`);
+  if (!b) return "ukendt";
+  if (charge.status !== "succeeded") return charge.status;
+
+  const afvigelser: string[] = [];
+  if (b.pengemodel !== "destination") afvigelser.push("betalingen er ikke destination i databasen");
+  if (b.saelger_stripe_konto !== konto) afvigelser.push("anden sælgerkonto end låst");
+  if (Number(charge.amount) !== Number(b.total_oere)) afvigelser.push("beløb");
+  if (b.application_fee_oere === null || Number(charge.application_fee_amount ?? -1) !== Number(b.application_fee_oere)) {
+    afvigelser.push("application fee");
+  }
+
+  const transferId = stripeId(charge.transfer as string | Stripe.Transfer | null);
+  const feeId = stripeId(charge.application_fee as string | Stripe.ApplicationFee | null);
+  let destPaymentId: string | null = null;
+  let tilgaengelig: string | null = null;
+  if (transferId) {
+    const tr = await stripe.transfers.retrieve(transferId);
+    destPaymentId = stripeId(tr.destination_payment as string | Stripe.Charge | null);
+    if (Number(tr.amount) !== Number(charge.amount)) afvigelser.push("transfer-beløb");
+    if (stripeId(tr.destination as string | Stripe.Account) !== konto) afvigelser.push("transfer-konto");
+    if (destPaymentId) {
+      const py = await stripe.charges.retrieve(
+        destPaymentId,
+        { expand: ["balance_transaction"] },
+        { stripeAccount: konto },
+      );
+      const bt = py.balance_transaction;
+      if (bt && typeof bt !== "string" && bt.available_on) {
+        tilgaengelig = new Date(bt.available_on * 1000).toISOString();
+      }
+    }
+  }
+
+  if (b.pengemodel === "destination") {
+    const { error: e2 } = await admin
+      .from("betalinger")
+      .update({
+        stripe_destination_transfer_id: b.stripe_destination_transfer_id ?? transferId,
+        stripe_application_fee_id: b.stripe_application_fee_id ?? feeId,
+        stripe_destination_payment_id: b.stripe_destination_payment_id ?? destPaymentId,
+        midler_tilgaengelige_kl: tilgaengelig ?? b.midler_tilgaengelige_kl,
+        opdateret: new Date().toISOString(),
+      })
+      .eq("id", b.id)
+      .eq("pengemodel", "destination");
+    if (e2) throw new Error(`spejlDestinationCharge: ${e2.message}`);
+    if (b.stripe_destination_transfer_id && transferId && b.stripe_destination_transfer_id !== transferId) {
+      afvigelser.push("anden transfer end spejlet");
+    }
+  }
+
+  if (afvigelser.length) {
+    const tekst = `Destination-betaling afviger fra databasen (${afvigelser.join(", ")}) - kontrollér betalingen i Stripe. Pengene udbetales ikke automatisk.`;
+    await logDriftFejl({ kilde: "server", hvor: "betaling/destination-charge", fejl: `${tekst} Charge ${charge.id}.` });
+    await admin
+      .from("betalinger")
+      .update({ kraever_opmaerksomhed: true, sidste_fejl: tekst, opdateret: new Date().toISOString() })
+      .eq("id", b.id);
+    return "afviger";
+  }
+  return transferId ? "spejlet" : "ingen_transfer";
+}
+
+// ------------------------------------------------------------------ tidligt svindelvarsel
+
+// radar.early_fraud_warning.created/updated (Filip 8. okt. 2026): INGEN
+// automatisk refusion. Betalingen markeres til staff under Betalinger, og
+// pengene gives ikke til sælger, før staff har lukket markeringen
+// (svindelvarsel_loest_kl - betaling_claim_overfoersel og trin 3's
+// betaling_udbetaling_blokeret). Varslet hentes frisk hos Stripe.
+export async function spejlSvindelvarsel(varselId: string): Promise<string> {
+  const v = await getStripe().radar.earlyFraudWarnings.retrieve(varselId);
+  const { data, error } = await createAdminClient().rpc("betaling_registrer_svindelvarsel", {
+    p_payment_intent: stripeId(v.payment_intent ?? null),
+    p_charge: stripeId(v.charge),
+    p_varsel: v.id,
+    p_type: v.fraud_type ?? "",
+  });
+  if (error) throw new Error(`betaling_registrer_svindelvarsel: ${error.message}`);
+  const resultat = String(data);
+  if (resultat === "ukendt") {
+    console.error("Svindelvarsel på ukendt betaling:", v.id, stripeId(v.charge));
   }
   return resultat;
 }

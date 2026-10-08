@@ -369,7 +369,13 @@ export default async function HandelDetalje({
           betalingsstatus.status === "afventer" && (
           <section className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[20px] leading-tight lg:text-[22px]">Betal for din vare</h2>
-            {betalingsstatus.fristOverskredet ? (
+            {betalingsstatus.venterPaaSaelgerkonto ? (
+              <p className="mt-2 rounded-xl border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
+                Betalingen åbner, når sælgerens konto er godkendt hos vores betalingspartner Stripe. Du får
+                besked, så snart du kan betale – derefter har du 48 timer. Bliver kontoen ikke godkendt
+                inden for 7 dage, bliver handlen annulleret, og du bliver ikke trukket noget.
+              </p>
+            ) : betalingsstatus.fristOverskredet ? (
               <p className="mt-2 text-sm text-fejl-tekst">
                 Fristen for at betale er overskredet. Kontakt os, hvis du mener, det er en fejl.
               </p>
@@ -403,7 +409,14 @@ export default async function HandelDetalje({
         {erSaelger && handel.status === "afventer_betaling" && (
           <div className="rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6 text-sm text-advarsel-tekst">
             <p className="font-semibold">Afventer købers betaling</p>
-            {betalingsstatus ? (
+            {betalingsstatus?.venterPaaSaelgerkonto ? (
+              <p className="mt-1">
+                Køberen kan først betale, når din konto hos vores betalingspartner Stripe er godkendt.{" "}
+                <Link href="/konto" className="font-semibold underline">Gør opsætningen færdig under Min konto</Link>.
+                Er kontoen ikke godkendt senest 7 dage efter, at auktionen sluttede, bliver handlen
+                annulleret. {afhentning ? "Udlevér" : "Send"} ikke varen, før køberen har betalt.
+              </p>
+            ) : betalingsstatus ? (
               <p className="mt-1">
                 Køberen skal betale senest{" "}
                 {new Date(betalingsstatus.betalSenest).toLocaleString("da-DK", {
@@ -422,6 +435,7 @@ export default async function HandelDetalje({
             )}
             {betalingsstatus &&
               !betalingsstatus.fristOverskredet &&
+              !betalingsstatus.venterPaaSaelgerkonto &&
               (betalingsstatus.status === "afventer" || betalingsstatus.status === "behandles") && (
                 <ForlaengBetalingsfrist
                   key={betalingsstatus.betalSenest}

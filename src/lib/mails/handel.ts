@@ -604,3 +604,120 @@ export function saelgerAfhentningAnnulleretMail(titel: string, tradeId: string) 
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
   });
 }
+
+// ---------------------------------------------------------------- betalingen venter på sælgerens konto
+// Betalingsmodel destination (trin 2): sælgerens Stripe-konto er ikke
+// godkendt endnu, når auktionen slutter. Betalingen (og 48-timersfristen)
+// starter først, når kontoen er godkendt.
+
+// Vinderen: betalingen åbner senere.
+export function koeberVandtVenterMail(titel: string, totalOere: number, tradeId: string) {
+  return handelsMail(`Du vandt auktionen: ${titel}`, {
+    preheader: "Du kan betale, så snart sælgerens konto er godkendt. Vi giver dig besked.",
+    overskriftHtml: "Tillykke, du vandt",
+    afsnitHtml: [
+      `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>.`,
+      "Sælgerens konto hos vores betalingspartner Stripe er ikke godkendt endnu, så du kan ikke betale lige nu. Vi giver dig besked, så snart du kan betale – derefter har du 48 timer.",
+      "Bliver sælgerens konto ikke godkendt inden for 7 dage, bliver handlen annulleret, og du bliver ikke trukket noget.",
+    ],
+    info: [vare(titel), beloeb("At betale i alt", totalOere, true)],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// Vinderen: nu kan der betales.
+export function koeberBetalingAabnetMail(
+  titel: string,
+  totalOere: number,
+  tradeId: string,
+  betalSenest: string,
+) {
+  return handelsMail(`Nu kan du betale: ${titel}`, {
+    preheader: `Betal ${kronerFraOere(totalOere)} kr senest ${fristTekst(betalSenest)}.`,
+    overskriftHtml: "Nu kan du betale",
+    afsnitHtml: [
+      `Sælgerens konto er godkendt, og du kan nu betale for <strong>${escapeHtml(titel)}</strong>.`,
+      "Betal inden for 48 timer, fx med kort, MobilePay, Apple Pay eller Google Pay. Betaler du ikke til tiden, bliver handlen annulleret.",
+      STRIPE_KOEBER,
+    ],
+    info: [
+      vare(titel),
+      beloeb("At betale i alt", totalOere, true),
+      { noegle: "Betal senest", vaerdiHtml: fristTekst(betalSenest) },
+    ],
+    knap: { tekst: "Betal nu", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// Sælgeren: auktionen er solgt, men kontoen kan ikke tage imod betalingen.
+export function saelgerKontoIkkeKlarMail(titel: string, paamindelse: boolean) {
+  return handelsMail(
+    paamindelse ? `Påmindelse: din konto er ikke godkendt – ${titel}` : `Din auktion er solgt: ${titel}`,
+    {
+      preheader: "Køberen kan først betale, når din konto hos Stripe er godkendt.",
+      overskriftHtml: paamindelse ? "Din konto er stadig ikke godkendt" : "Din auktion er solgt",
+      afsnitHtml: [
+        `<strong>${escapeHtml(titel)}</strong> er solgt, men din konto hos vores betalingspartner Stripe er ikke godkendt endnu. Køberen kan først betale, når den er godkendt.`,
+        "Gør opsætningen færdig under Min konto. Er kontoen ikke godkendt senest 7 dage efter, at auktionen sluttede, bliver handlen annulleret, og du kan ikke sætte varer til salg, før Stripe har godkendt kontoen.",
+        "Send eller udlevér ikke varen, før køberen har betalt.",
+      ],
+      info: [vare(titel)],
+      knap: { tekst: "Gør kontoen færdig", url: sideUrl("/konto") },
+    },
+  );
+}
+
+// En åben betaling er sat på pause: sælgerens konto kan ikke tage imod
+// betaling lige nu. Fristen er mindst 48 timer.
+export function koeberBetalingPauseMail(titel: string, tradeId: string, frist: string) {
+  return handelsMail(`Betalingen er sat på pause: ${titel}`, {
+    preheader: `Du kan ikke betale lige nu. Vi giver dig besked, når du kan.`,
+    overskriftHtml: "Betalingen er sat på pause",
+    afsnitHtml: [
+      `Sælgerens konto hos vores betalingspartner Stripe kan ikke tage imod betaling lige nu, så du kan ikke betale for <strong>${escapeHtml(titel)}</strong> endnu.`,
+      "Vi giver dig besked, så snart du kan betale – derefter har du 48 timer.",
+      `Er sælgerens konto ikke klar senest ${fristTekst(frist)}, bliver handlen annulleret, og du bliver ikke trukket noget.`,
+    ],
+    info: [vare(titel), { noegle: "Sælgerens frist", vaerdiHtml: fristTekst(frist) }],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+export function saelgerBetalingPauseMail(titel: string, frist: string) {
+  return handelsMail(`Køberen kan ikke betale: ${titel}`, {
+    preheader: `Din konto hos Stripe kan ikke tage imod betaling. Ret det senest ${fristTekst(frist)}.`,
+    overskriftHtml: "Din konto kan ikke tage imod betaling",
+    afsnitHtml: [
+      `Køberen kan ikke betale for <strong>${escapeHtml(titel)}</strong>, fordi din konto hos vores betalingspartner Stripe ikke kan tage imod betaling lige nu.`,
+      `Ret det under Min konto senest ${fristTekst(frist)}. Ellers bliver handlen annulleret, og du kan ikke sætte varer til salg, før Stripe har godkendt kontoen.`,
+      "Send eller udlevér ikke varen, før køberen har betalt.",
+    ],
+    info: [vare(titel), { noegle: "Frist", vaerdiHtml: fristTekst(frist) }],
+    knap: { tekst: "Gør kontoen færdig", url: sideUrl("/konto") },
+  });
+}
+
+// Handlen er annulleret, fordi sælgerens konto ikke blev godkendt.
+export function koeberAnnulleretSaelgerkontoMail(titel: string, tradeId: string) {
+  return handelsMail(`Handlen er annulleret: ${titel}`, {
+    preheader: "Sælgerens konto blev ikke godkendt. Du er ikke blevet trukket noget.",
+    overskriftHtml: "Handlen er annulleret",
+    afsnitHtml: [
+      `Handlen om <strong>${escapeHtml(titel)}</strong> er annulleret, fordi sælgerens konto hos vores betalingspartner Stripe ikke blev godkendt i tide.`,
+      "Du er ikke blevet trukket noget, og du får ingen advarsel.",
+    ],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+export function saelgerAnnulleretSaelgerkontoMail(titel: string) {
+  return handelsMail(`Din auktion er annulleret: ${titel}`, {
+    preheader: "Din konto hos Stripe blev ikke godkendt inden for 7 dage.",
+    overskriftHtml: "Din auktion er annulleret",
+    afsnitHtml: [
+      `Auktionen <strong>${escapeHtml(titel)}</strong> er annulleret, fordi din konto hos vores betalingspartner Stripe ikke blev godkendt inden for 7 dage efter, at auktionen sluttede. Køberen er ikke blevet trukket noget.`,
+      "Din konto er sat på pause: du kan ikke sætte varer til salg, og der kan ikke bydes på dine auktioner, før Stripe har godkendt din konto. Gør opsætningen færdig under Min konto.",
+    ],
+    knap: { tekst: "Gør kontoen færdig", url: sideUrl("/konto") },
+  });
+}

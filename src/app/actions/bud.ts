@@ -1,6 +1,7 @@
 "use server";
 
 import { after } from "next/server";
+import { BUD_SAELGER_FROSSET_TEKST, erBudSaelgerFrossetFejl } from "@/lib/betaling/frosset";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -128,6 +129,7 @@ export async function afgivBud(
     // beskeder (whitelist). Alt andet logges og giver en generisk besked.
     if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
     if (besked.includes("erhverv_kan_ikke_byde")) return { fejl: ERHVERV_FEJL.kanIkkeByde };
+    if (erBudSaelgerFrossetFejl(error.code, besked)) return { fejl: BUD_SAELGER_FROSSET_TEKST };
     if (besked.includes("minimum_bid")) {
       const kr = Number(besked.match(/mindst\s+([\d.]+)\s*kr/)?.[1]);
       return {
@@ -219,6 +221,7 @@ export async function saetMaksimum(
     const kr = (re: RegExp) => Number(besked.match(re)?.[1]);
     if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
     if (besked.includes("erhverv_kan_ikke_byde")) return { fejl: ERHVERV_FEJL.kanIkkeByde };
+    if (erBudSaelgerFrossetFejl(error.code, besked)) return { fejl: BUD_SAELGER_FROSSET_TEKST };
     if (besked.includes("maks_for_lavt")) {
       const v = kr(/mindst\s+([\d.]+)\s*kr/);
       return {

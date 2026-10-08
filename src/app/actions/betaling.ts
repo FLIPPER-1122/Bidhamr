@@ -15,6 +15,8 @@ import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import {
   BetalingsFejl,
+  BetalingVenterFejl,
+  VENTER_TEKST,
   hentBetalingForHandel,
   hentProfil,
   erOnboardingRetur,
@@ -49,6 +51,11 @@ type FaellesBetalingsstatus = {
   // Seneste frist, sælgeren kan forlænge til (7 dage efter fristens start).
   maksBetalSenest: string;
   fristOverskredet: boolean;
+  // Betalingsmodel destination: betalingen venter på, at sælgerens Stripe-
+  // konto bliver godkendt. Køberen kan ikke betale endnu, og betalSenest er
+  // IKKE købers frist (den starter, når betalingen åbner) - vis i stedet
+  // "Betalingen åbner, når sælgerens konto er godkendt".
+  venterPaaSaelgerkonto: boolean;
   budOere: number;
   betaltKl: string | null;
   frigivetKl: string | null;
@@ -113,12 +120,15 @@ export async function hentBetalingsstatus(
       b = (await hentBetalingForHandel(handelId)) ?? b;
     }
 
+    const venter = !!b.venter_paa_saelgerkonto_kl;
     const faelles: FaellesBetalingsstatus = {
       handelId,
       status: b.status,
       betalSenest: b.betal_senest,
-      maksBetalSenest: maksBetalingsfrist(b.oprettet),
-      fristOverskredet: new Date(b.betal_senest).getTime() < Date.now(),
+      // Fristen kan forlænges til 7 dage efter, at betalingen åbnede.
+      maksBetalSenest: maksBetalingsfrist(b.betaling_aabnet_kl ?? b.oprettet),
+      fristOverskredet: !venter && new Date(b.betal_senest).getTime() < Date.now(),
+      venterPaaSaelgerkonto: venter,
       budOere: Number(b.bud_oere),
       betaltKl: b.betalt_kl,
       frigivetKl: b.frigivet_kl,
@@ -184,6 +194,7 @@ export async function startBetaling(
       return { fejl: "Din betaling behandles. Du hører fra os, når den er gennemført." };
     }
     if (b.status !== "afventer") return { fejl: "Handlen kan ikke længere betales." };
+    if (b.venter_paa_saelgerkonto_kl) return { fejl: VENTER_TEKST };
     if (new Date(b.betal_senest).getTime() < Date.now()) {
       return { fejl: "Fristen for at betale er overskredet." };
     }
@@ -199,7 +210,7 @@ export async function startBetaling(
 
     return { ok: true, clientSecret: pi.client_secret, totalOere: pi.amount };
   } catch (err) {
-    if (err instanceof BetalingsFejl) return { fejl: err.message };
+    if (err instanceof BetalingsFejl || err instanceof BetalingVenterFejl) return { fejl: err.message };
     console.error("startBetaling fejlede:", err);
     await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "startBetaling", fejl: err, brugerId: user.id });
     return { fejl: GENERISK };
@@ -223,6 +234,10 @@ export type Betalingsindstillinger = {
     afvist: boolean;
     // Sælgeren har lukket/frakoblet kontoen hos Stripe.
     frakoblet: boolean;
+    // Kontoen blev ikke godkendt i tide, og en auktion er annulleret: kan ikke
+    // sætte varer til salg, før Stripe har godkendt kontoen (betalingsmodel
+    // destination, 20261011020000).
+    frosset: boolean;
   };
 };
 
@@ -250,6 +265,7 @@ export async function hentBetalingsindstillinger(): Promise<
             (p.connect_mangler_forfaldne?.length ?? 0) > 0),
         afvist: !!p?.connect_spaerret_aarsag?.startsWith("rejected."),
         frakoblet: !!p?.connect_frakoblet_kl,
+        frosset: !!p?.saelger_frosset_kl,
       },
     };
   } catch (err) {

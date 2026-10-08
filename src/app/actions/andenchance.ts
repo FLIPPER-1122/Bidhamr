@@ -9,6 +9,7 @@
 // kalde. Alle funktioner returnerer { ok: true, ... } eller { fejl: string }.
 
 import { revalidatePath } from "next/cache";
+import { udbetalingskontoFejltekst } from "@/lib/betaling/frossetServer";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -454,6 +455,9 @@ export async function genopsaetAuktion(
       return { fejl: GENERISK };
     }
     const r = data as { kode: string; auction_id?: string };
+    if (r.kode === "mangler_udbetalingskonto") {
+      return { fejl: await udbetalingskontoFejltekst(uid, GENOPSAET_FEJL.mangler_udbetalingskonto) };
+    }
     if (r.kode !== "ok" || !r.auction_id) return { fejl: GENOPSAET_FEJL[r.kode] ?? GENERISK };
 
     revalidatePath("/");

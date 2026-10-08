@@ -58,6 +58,10 @@ export async function forlaengBetalingsfrist(
       return { fejl: "Handlen findes ikke." };
     case "ikke_afventer":
       return { fejl: "Handlen venter ikke længere på betaling." };
+    case "venter_paa_saelgerkonto":
+      return {
+        fejl: "Køberen kan ikke betale endnu, fordi din konto hos Stripe ikke er godkendt. Fristen starter, når kontoen er godkendt.",
+      };
     case "frist_udloebet":
       return { fejl: "Fristen er allerede udløbet og kan ikke forlænges." };
     case "for_mange":

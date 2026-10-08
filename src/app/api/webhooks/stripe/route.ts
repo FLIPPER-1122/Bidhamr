@@ -7,13 +7,16 @@ import {
   overfoerVentende,
   registrerGemtKort,
   spejlConnectKonto,
+  spejlDestinationCharge,
   spejlFrakobling,
   spejlIndsigelse,
   spejlPaymentIntent,
   spejlRefusion,
   spejlRefusionsfejl,
+  spejlSvindelvarsel,
   spejlUdbetaling,
 } from "@/lib/betaling/stripeBetaling";
+import { aabnVentende } from "@/lib/betaling/betalingInd";
 import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/betaling";
 
 // Stripe-webhook for den nye betalingsmodel. Spejler Stripes status i
@@ -31,6 +34,11 @@ import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/
 // customer.subscription.created/updated/deleted/pending_update_expired og
 // invoice.finalized/paid/payment_failed/voided/marked_uncollectible. Kun for
 // kunder, der er et firma (firmaer.stripe_customer_id); alle andre ignoreres.
+//
+// Betalingsmodel destination (trin 2, platform-events): charge.succeeded og
+// charge.updated spejler transfer/application fee/available_on;
+// radar.early_fraud_warning.created/updated markerer betalingen til staff
+// (ingen automatisk refusion).
 //
 // Idempotent: alle handlere tåler samme event flere gange (statusvagter i
 // databasen). Behandlede event-id'er logges i stripe_haendelser og springes
@@ -85,6 +93,9 @@ async function spejlKonto(kontoId: string, eventType: string): Promise<void> {
   if (brugerId && konto.capabilities?.transfers === "active") {
     await overfoerVentende(brugerId);
   }
+  // Betalinger, der ventede på sælgerens konto (destination), åbnes nu,
+  // hvis kontoen kan tage imod betaling.
+  if (brugerId) await aabnVentende(brugerId);
 }
 
 async function haandter(event: Stripe.Event): Promise<void> {
@@ -102,6 +113,24 @@ async function haandter(event: Stripe.Event): Promise<void> {
       const pi = await getStripe().paymentIntents.retrieve(fraEvent.id);
       const resultat = await spejlPaymentIntent(pi);
       console.log(`Stripe ${event.type}: ${pi.id} -> ${resultat}`);
+      return;
+    }
+
+    case "charge.succeeded":
+    case "charge.updated": {
+      // Kun destination-charges (transfer_data) - alt andet ignoreres.
+      const fraEvent = event.data.object as Stripe.Charge;
+      if (!fraEvent.payment_intent || !fraEvent.transfer_data?.destination) return;
+      const resultat = await spejlDestinationCharge(fraEvent.id);
+      console.log(`Stripe ${event.type}: ${fraEvent.id} -> ${resultat}`);
+      return;
+    }
+
+    case "radar.early_fraud_warning.created":
+    case "radar.early_fraud_warning.updated": {
+      const varsel = event.data.object as Stripe.Radar.EarlyFraudWarning;
+      const resultat = await spejlSvindelvarsel(varsel.id);
+      console.log(`Stripe ${event.type}: ${varsel.id} -> ${resultat}`);
       return;
     }
 
