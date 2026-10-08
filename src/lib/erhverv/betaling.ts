@@ -475,6 +475,7 @@ async function rulTilbage(
   gendanPlanlagt: boolean,
   gendanAfventende: boolean,
   aarsag: string,
+  laas: string | null,
 ): Promise<boolean> {
   try {
     const svar = await rpc("firma_pakkeskift_rul_tilbage", {
@@ -484,7 +485,12 @@ async function rulTilbage(
       p_gendan_planlagt: gendanPlanlagt,
       p_gendan_afventende: gendanAfventende,
       p_note: `Rullet tilbage: ${aarsag}`.slice(0, 1000),
+      // Kun vores egen lås ryddes (20261010071000): har et nyere skift eller
+      // chefen taget den, røres intet ('laas_overtaget').
+      p_laas: laas,
     });
+    // Et nyere pakkeskift gælder nu - Stripe blev ikke ændret af dette.
+    if (svar.kode === "laas_overtaget") return true;
     if (svar.kode !== "ok") {
       await logDriftFejl({
         kilde: "server",
@@ -595,7 +601,11 @@ function prisensPakke(pris: Stripe.Price | string | null | undefined): string | 
 // 'opgradering_afventer_betaling'). Pakken skifter først, når fakturaen for
 // forskellen er betalt. Fejler Stripe, før abonnementet er ændret, rulles
 // databasen tilbage.
-export async function startOpgradering(skiftId: string, tilbagerul: Tilbagerul | null): Promise<BetalingsStatus> {
+export async function startOpgradering(
+  skiftId: string,
+  tilbagerul: Tilbagerul | null,
+  laas: string | null = null,
+): Promise<BetalingsStatus> {
   let firmaId: string | null = null;
   let planFrigivet = false;
   let annulleret = 0;
@@ -614,7 +624,7 @@ export async function startOpgradering(skiftId: string, tilbagerul: Tilbagerul |
     const s = stripe();
     let sub = await s.subscriptions.retrieve(f.stripe_subscription_id);
     if (sub.status !== "active") {
-      if (tilbagerul) await rulTilbage(f.id, skift.id, tilbagerul, true, true, `abonnementet er ${sub.status}`);
+      if (tilbagerul) await rulTilbage(f.id, skift.id, tilbagerul, true, true, `abonnementet er ${sub.status}`, laas);
       return { status: "fejl", fejl: `Abonnementet er ${sub.status}`, rulletTilbage: !!tilbagerul, betalFoerst: true };
     }
     const prisId = await sikrPris(skift.til_pakke_id);
@@ -696,7 +706,7 @@ export async function startOpgradering(skiftId: string, tilbagerul: Tilbagerul |
       // Er planen frigivet i Stripe, kan den planlagte nedgradering ikke
       // gendannes; er en gammel faktura annulleret, kan den gamle
       // opgradering heller ikke.
-      const ok = await rulTilbage(firmaId, skiftId, tilbagerul, !planFrigivet, annulleret === 0, `opgradering: ${fejltekst(err)}`);
+      const ok = await rulTilbage(firmaId, skiftId, tilbagerul, !planFrigivet, annulleret === 0, `opgradering: ${fejltekst(err)}`, laas);
       await rydSkiftMetadata(subIdForRyd, skiftId);
       return { status: "fejl", fejl: fejltekst(err), rulletTilbage: ok };
     }
@@ -704,10 +714,20 @@ export async function startOpgradering(skiftId: string, tilbagerul: Tilbagerul |
   }
 }
 
+function stopHvisOpsagt(sub: Stripe.Subscription): void {
+  if (sub.cancel_at_period_end || sub.cancel_at) {
+    throw new Error(`Abonnement ${sub.id} er opsagt - nedgraderingen er stoppet`);
+  }
+}
+
 // Firmaet har valgt en mindre pakke (firma_skift_pakke_server svarede
 // 'nedgradering_planlagt'). Prisen skifter i Stripe ved periodens slut.
 // Fejler Stripe, rulles databasen tilbage.
-export async function startNedgradering(skiftId: string, tilbagerul: Tilbagerul | null): Promise<BetalingsStatus> {
+export async function startNedgradering(
+  skiftId: string,
+  tilbagerul: Tilbagerul | null,
+  laas: string | null = null,
+): Promise<BetalingsStatus> {
   let firmaId: string | null = null;
   let annulleret = 0;
   let nyPlan: string | null = null;
@@ -727,7 +747,11 @@ export async function startNedgradering(skiftId: string, tilbagerul: Tilbagerul 
     const prisId = await sikrPris(skift.til_pakke_id);
     const moms = await sikrMomssats();
     annulleret = await annullerGamleOpgraderinger(f.id);
-    if (annulleret > 0 || sub.pending_update) sub = await s.subscriptions.retrieve(sub.id);
+    // Frisk lige før planen laves: er abonnementet opsagt i mellemtiden
+    // (cancel_at_period_end/cancel_at), stoppes nedgraderingen og rulles
+    // tilbage - en Stripe-plan ville ellers genstarte et opsagt abonnement.
+    sub = await s.subscriptions.retrieve(sub.id);
+    stopHvisOpsagt(sub);
     if (sub.pending_update) throw new Error(`Abonnement ${sub.id} har stadig en ventende ændring`);
     const item = sub.items.data[0];
     if (!item) throw new Error(`Abonnement ${sub.id} har ingen linjer`);
@@ -745,6 +769,8 @@ export async function startNedgradering(skiftId: string, tilbagerul: Tilbagerul 
     }
     const plan = await s.subscriptionSchedules.retrieve(planId);
     const start = plan.current_phase?.start_date ?? plan.phases[0]?.start_date ?? item.current_period_start;
+    // Og igen lige før planen ændres (en ny plan frigives i catch).
+    stopHvisOpsagt(await s.subscriptions.retrieve(sub.id));
 
     await s.subscriptionSchedules.update(
       planId,
@@ -785,7 +811,7 @@ export async function startNedgradering(skiftId: string, tilbagerul: Tilbagerul 
         .catch((e) => logDriftFejl({ kilde: "server", hvor: "startNedgradering/frigiv", fejl: e }));
     }
     if (firmaId && tilbagerul) {
-      const ok = await rulTilbage(firmaId, skiftId, tilbagerul, true, annulleret === 0, `nedgradering: ${fejltekst(err)}`);
+      const ok = await rulTilbage(firmaId, skiftId, tilbagerul, true, annulleret === 0, `nedgradering: ${fejltekst(err)}`, laas);
       return { status: "fejl", fejl: fejltekst(err), rulletTilbage: ok };
     }
     return { status: "fejl", fejl: fejltekst(err) };
@@ -795,7 +821,11 @@ export async function startNedgradering(skiftId: string, tilbagerul: Tilbagerul 
 // Firmaet beholder sin pakke ("uaendret"): en planlagt nedgradering i Stripe
 // fjernes, og gamle opgraderingsfakturaer annulleres. Fejler Stripe, rulles
 // databasen tilbage (den planlagte nedgradering gælder stadig).
-export async function annullerPlanlagtSkift(brugerId: string, tilbagerul: Tilbagerul | null): Promise<BetalingsStatus> {
+export async function annullerPlanlagtSkift(
+  brugerId: string,
+  tilbagerul: Tilbagerul | null,
+  laas: string | null = null,
+): Promise<BetalingsStatus> {
   let firmaId: string | null = null;
   let annulleret = 0;
   try {
@@ -807,7 +837,7 @@ export async function annullerPlanlagtSkift(brugerId: string, tilbagerul: Tilbag
     return { status: "betalt" };
   } catch (err) {
     if (firmaId && tilbagerul) {
-      const ok = await rulTilbage(firmaId, null, tilbagerul, true, annulleret === 0, `behold pakken: ${fejltekst(err)}`);
+      const ok = await rulTilbage(firmaId, null, tilbagerul, true, annulleret === 0, `behold pakken: ${fejltekst(err)}`, laas);
       return { status: "fejl", fejl: fejltekst(err), rulletTilbage: ok };
     }
     return { status: "fejl", fejl: fejltekst(err) };
@@ -815,6 +845,25 @@ export async function annullerPlanlagtSkift(brugerId: string, tilbagerul: Tilbag
 }
 
 // --- Admin -------------------------------------------------------------------
+
+// Chefens opsigelse og pakkeskift tager samme lås som firmaets pakkeskift
+// (firmaer.pakkeskift_laas, 20261010071000), så de aldrig kører samtidig med
+// et pakkeskift - og firmaet kan ikke starte et skift, mens chefen arbejder.
+export const PAKKESKIFT_I_GANG =
+  "Firmaet er ved at skifte pakke lige nu. Vent et par minutter, og prøv igen.";
+export class PakkeskiftIGang extends Error {}
+
+async function tagPakkeskiftLaas(firmaId: string): Promise<string | null> {
+  const { data, error } = await createAdminClient().rpc("firma_pakkeskift_laas_tag", { p_firma: firmaId });
+  if (error) throw new Error(`firma_pakkeskift_laas_tag: ${error.message}`);
+  return typeof data === "string" ? data : null;
+}
+
+// Kaster ikke (låsen udløber selv efter 5 minutter).
+export async function frigivPakkeskiftLaas(firmaId: string, laas: string): Promise<void> {
+  const { error } = await createAdminClient().rpc("firma_pakkeskift_laas_frigiv", { p_firma: firmaId, p_laas: laas });
+  if (error) await logDriftFejl({ kilde: "action", hvor: "erhverv/frigiv-laas", fejl: error });
+}
 
 // Firmakontoen er oprettet: Stripe-kunden laves med det samme (så CVR og
 // adresse står rigtigt), men abonnementet starter først, når firmaet betaler
@@ -844,6 +893,9 @@ export type AdminPrisSvar =
       // faktura kan ikke genåbnes; en frigivet plan er væk).
       planFrigivet: boolean;
       annulleredeFakturaer: number;
+      // Pakkeskift-låsen: frigives af kalderen (frigivPakkeskiftLaas), når
+      // databasen også er opdateret.
+      laas: string;
     };
 
 // Chefen skifter firmaets pakke i admin (med det samme). I Stripe:
@@ -863,10 +915,23 @@ export type AdminPrisSvar =
 export async function skiftPrisAdmin(firmaId: string, pakkeId: string): Promise<AdminPrisSvar> {
   const f = await hentFirma("id", firmaId);
   if (!f?.stripe_subscription_id || !stripeTilgaengelig()) return { status: "ingen_stripe" };
+  // Afvises, mens firmaet er midt i et pakkeskift (PakkeskiftIGang).
+  const laas = await tagPakkeskiftLaas(firmaId);
+  if (!laas) throw new PakkeskiftIGang(PAKKESKIFT_I_GANG);
   const s = stripe();
-  let sub = await s.subscriptions.retrieve(f.stripe_subscription_id);
-  if (sub.status === "canceled" || sub.status === "incomplete_expired") return { status: "ingen_stripe" };
-  const prisId = await sikrPris(pakkeId);
+  let sub: Stripe.Subscription;
+  let prisId: string;
+  try {
+    sub = await s.subscriptions.retrieve(f.stripe_subscription_id);
+    if (sub.status === "canceled" || sub.status === "incomplete_expired") {
+      await frigivPakkeskiftLaas(firmaId, laas);
+      return { status: "ingen_stripe" };
+    }
+    prisId = await sikrPris(pakkeId);
+  } catch (err) {
+    await frigivPakkeskiftLaas(firmaId, laas);
+    throw err;
+  }
 
   let planFrigivet = false;
   let annulleredeFakturaer = 0;
@@ -899,9 +964,11 @@ export async function skiftPrisAdmin(firmaId: string, pakkeId: string): Promise<
       nyPris: prisId,
       planFrigivet,
       annulleredeFakturaer,
+      laas,
     };
   } catch (err) {
     await efterAdminFejl(firmaId, sub.id, planFrigivet, annulleredeFakturaer, `Stripe-fejl: ${fejltekst(err)}`);
+    await frigivPakkeskiftLaas(firmaId, laas);
     throw err;
   }
 }
@@ -964,15 +1031,22 @@ export async function saetAdminPrisTilbage(svar: Extract<AdminPrisSvar, { status
 export type OpsigSvar =
   | { status: "opsiges"; fra: string }
   | { status: "ingen_stripe" }
+  // Firmaet er midt i et pakkeskift (dansk besked i fejl).
+  | { status: "i_gang"; fejl: string }
   | { status: "fejl"; fejl: string };
 
 // Opsigelse (kun chef): abonnementet stopper ved periodens slut. Ingen refusion.
 // Ny idempotency-nøgle pr. klik, og abonnementet hentes frisk bagefter, så
 // opsig -> fortryd -> opsig igen altid virker i Stripe.
 export async function opsigAbonnement(firmaId: string): Promise<OpsigSvar> {
+  let laas: string | null = null;
   try {
     const f = await hentFirma("id", firmaId);
     if (!f?.stripe_subscription_id) return { status: "ingen_stripe" };
+    // Ikke midt i et pakkeskift: en nedgradering laver en Stripe-plan, som
+    // ellers kunne genstarte det opsagte abonnement.
+    laas = await tagPakkeskiftLaas(f.id);
+    if (!laas) return { status: "i_gang", fejl: PAKKESKIFT_I_GANG };
     const s = stripe();
     const sub = await s.subscriptions.retrieve(f.stripe_subscription_id);
     if (sub.status === "canceled") return { status: "ingen_stripe" };
@@ -1003,6 +1077,8 @@ export async function opsigAbonnement(firmaId: string): Promise<OpsigSvar> {
     return { status: "opsiges", fra };
   } catch (err) {
     return { status: "fejl", fejl: fejltekst(err) };
+  } finally {
+    if (laas) await frigivPakkeskiftLaas(firmaId, laas);
   }
 }
 

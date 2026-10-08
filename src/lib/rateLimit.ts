@@ -100,6 +100,9 @@ export const GRAENSER = {
   // Appens pakkeskift (POST /api/firma/skift-pakke) pr. IP; pr. bruger
   // begrænser databasen selv (firma_skift_pakke_server).
   firma_skift_pakke_ip: { maks: 30, vindueSek: 60 * 60 },
+  // POST /api/betaling/kort (appens automatisk betaling / fjern kort) pr. IP,
+  // før tokenet er valideret.
+  betaling_kort_ip: { maks: 60, vindueSek: 60 * 60 },
   cvr_opslag_staff: { maks: 60, vindueSek: 60 * 60 },
   // Klager og visning af en DSA-sag via signeret link.
   dsa_klage_ip: { maks: 10, vindueSek: 60 * 60 },

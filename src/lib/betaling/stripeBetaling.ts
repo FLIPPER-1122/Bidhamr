@@ -14,7 +14,7 @@
 // kun - Stripe er sandheden om penge. Alle beløb i øre.
 
 import Stripe from "stripe";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, StripeTilstandFejl } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { totalOere } from "@/lib/betaling/beregn";
@@ -505,7 +505,9 @@ export async function forsoegAutobetaling(betalingId: string): Promise<string> {
     const kode =
       err instanceof Stripe.errors.StripeError
         ? (err.code ?? err.decline_code ?? err.type)
-        : "ukendt_fejl";
+        : err instanceof StripeTilstandFejl
+          ? "stripe_stoppet"
+          : "ukendt_fejl";
     console.warn("Autobetaling fejlede:", betalingId, kode);
     await saetResultat(`fejlet_${kode}`, kode);
     return `fejlet_${kode}`;
@@ -663,6 +665,21 @@ async function overfoerselLoestAutomatisk(betalingId: string): Promise<void> {
 // evt. oprettet overførsel via transfers.list først.
 async function registrerOverfoerselsfejl(betalingId: string, err: unknown) {
   const admin = createAdminClient();
+  if (err instanceof StripeTilstandFejl) {
+    // Vagten stoppede kaldet, FØR det nåede Stripe: med sikkerhed intet
+    // oprettet, og det tæller ikke som et forsøg. Claimet beholdes (samme
+    // key næste gang), og drift-alarmen er givet af vagten.
+    await admin
+      .from("betalinger")
+      .update({
+        kraever_opmaerksomhed: true,
+        sidste_fejl: "Overførsel til sælger stoppet: Stripe-nøglen passer ikke til databasen - intet sendt, prøves igen",
+        opdateret: new Date().toISOString(),
+      })
+      .eq("id", betalingId)
+      .is("stripe_transfer_id", null);
+    return;
+  }
   const endelig =
     err instanceof Stripe.errors.StripeInvalidRequestError ||
     err instanceof Stripe.errors.StripePermissionError ||
@@ -893,6 +910,10 @@ async function refunderUnderLaas(
   } catch (err) {
     if (err instanceof Stripe.errors.StripeError && err.code === "charge_already_refunded") {
       refund = null; // allerede refunderet - spejles nedenfor
+    } else if (err instanceof StripeTilstandFejl) {
+      // Vagten stoppede kaldet, før det nåede Stripe: intet oprettet, og
+      // det tæller ikke som et forsøg (cron udskyder kun).
+      throw err;
     } else {
       await markerRefusion(
         b.id,
@@ -1012,9 +1033,27 @@ export async function refunderLoveteVentende(): Promise<number> {
     } catch (err) {
       console.error("Lovet refusion fejlede (prøves igen):", r.id, err);
       await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Lovet refusion", fejl: err });
-      // Backoff også ved fejl før Stripe-kaldet (fx Stripe svarer ikke).
-      await udskydRefusion(r.id);
-      // Forsøgene er brugt op: tydelig alarm (admin skal tage over).
+      if (err instanceof StripeTilstandFejl) {
+        // Stripe-kald stoppet af vagten (nøgle/database passer ikke): ikke
+        // et forsøg - kun backoff. Vagten giver selv drift-alarm.
+        await udskydRefusion(r.id);
+        continue;
+      }
+      // Tæller som et forsøg, hvis det ikke allerede er talt under låsen
+      // (betaling_refusion_fejl / _nyt_forsoeg): også fejl FØR refunds.create
+      // (fx "Intet modtaget at refundere", ugyldigt beløb, Stripe svarer
+      // ikke). Så når refusionen refusion_graense og opgives med én alarm -
+      // i stedet for en ny alarm ved hver kørsel for evigt. Giver backoff.
+      const { error: tFejl } = await createAdminClient().rpc("betaling_refusion_fejl_uden_laas", {
+        p_betaling: r.id,
+        p_forsoeg: r.refusion_forsoeg,
+      });
+      if (tFejl) {
+        console.error("betaling_refusion_fejl_uden_laas:", r.id, tFejl.message);
+        await udskydRefusion(r.id);
+      }
+      // Forsøgene er brugt op: tydelig alarm (admin skal tage over). Kun én
+      // gang - en opbrugt refusion hentes ikke igen af cron.
       const { data: efter } = await createAdminClient()
         .from("betalinger")
         .select("refusion_opbrugt, refusion_forsoeg")
@@ -1475,13 +1514,18 @@ export async function registrerGemtKort(si: Stripe.SetupIntent): Promise<boolean
   // ikke genskabe et kort, brugeren har fjernet, eller erstatte et nyere kort
   // (Niels M04): SetupIntenten skal være nyere end både det gemte kort og
   // seneste "Fjern kort", og kortet skal stadig sidde på kunden hos Stripe.
+  // Sammenlignes i hele sekunder (Stripes created er i sekunder, databasens
+  // tidspunkter i mikrosekunder): samme sekund som "Fjern kort" afvises.
   const siKl = new Date(si.created * 1000);
   const p = profil as ProfilRaekke & { gemt_kort_kl?: string | null; kort_fjernet_kl?: string | null };
+  const stripe = getStripe();
   for (const graense of [p.gemt_kort_kl, p.kort_fjernet_kl]) {
-    if (graense && siKl.getTime() <= new Date(graense).getTime()) return false;
+    if (graense && si.created <= Math.floor(new Date(graense).getTime() / 1000)) {
+      await fjernAfvistKort(profil.user_id, pmId);
+      return false;
+    }
   }
 
-  const stripe = getStripe();
   const pm = await stripe.paymentMethods.retrieve(pmId);
   const pmKunde = typeof pm.customer === "string" ? pm.customer : (pm.customer?.id ?? null);
   if (pmKunde !== kundeId) return false; // fjernet (detached) i mellemtiden
@@ -1506,7 +1550,10 @@ export async function registrerGemtKort(si: Stripe.SetupIntent): Promise<boolean
   q = p.kort_fjernet_kl ? q.eq("kort_fjernet_kl", p.kort_fjernet_kl) : q.is("kort_fjernet_kl", null);
   const { data: gemt, error: gemFejl } = await q.select("user_id");
   if (gemFejl) throw new Error(`registrerGemtKort: ${gemFejl.message}`);
-  if (!gemt?.length) return false;
+  if (!gemt?.length) {
+    await fjernAfvistKort(profil.user_id, pmId);
+    return false;
+  }
 
   // Det tidligere gemte kort fjernes hos Stripe, så der kun er ét.
   if (profil.gemt_betalingsmetode_id) {
@@ -1517,6 +1564,23 @@ export async function registrerGemtKort(si: Stripe.SetupIntent): Promise<boolean
     }
   }
   return true;
+}
+
+// Et kort fra et forsinket/afvist Stripe-svar fjernes (detach) hos Stripe, så
+// det ikke bliver hængende på kunden. Aldrig det kort, profilen bruger nu
+// (læses frisk). Kaster aldrig.
+async function fjernAfvistKort(userId: string, pmId: string): Promise<void> {
+  try {
+    const { data, error } = await createAdminClient()
+      .from("betalingsprofiler")
+      .select("gemt_betalingsmetode_id")
+      .eq("user_id", userId)
+      .maybeSingle<{ gemt_betalingsmetode_id: string | null }>();
+    if (error || !data || data.gemt_betalingsmetode_id === pmId) return;
+    await getStripe().paymentMethods.detach(pmId);
+  } catch (err) {
+    console.warn("Kunne ikke fjerne afvist kort hos Stripe:", pmId, err instanceof Error ? err.message : err);
+  }
 }
 
 // ------------------------------------------------------------------ Connect

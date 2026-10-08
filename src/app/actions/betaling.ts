@@ -9,9 +9,8 @@ import { revalidatePath } from "next/cache";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
-import { AUTOBETALING_SAMTYKKE } from "@/lib/betaling/samtykke";
+import { fjernGemtKortForBruger, saetAutobetalingForBruger } from "@/lib/betaling/kort";
 import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import {
@@ -337,23 +336,9 @@ export async function saetAutobetaling(til: boolean): Promise<{ ok: true } | Fej
   if (!user) return { fejl: "Du skal være logget ind." };
   if (typeof til !== "boolean") return { fejl: "Ugyldigt valg." };
   try {
-    const p = await hentProfil(user.id);
-    if (til && !p?.gemt_betalingsmetode_id) {
-      return { fejl: "Gem et kort, før du slår automatisk betaling til." };
-    }
-    if (!p) return { ok: true };
-    const { error } = await createAdminClient()
-      .from("betalingsprofiler")
-      .update({
-        autobetaling: til,
-        // Samtykket gemmes (tidspunkt sættes af databasen, Niels M04).
-        ...(til ? { autobetaling_samtykke_version: AUTOBETALING_SAMTYKKE.version } : {}),
-        opdateret: new Date().toISOString(),
-      })
-      .eq("user_id", user.id);
-    if (error) throw new Error(error.message);
-    revalidatePath("/konto");
-    return { ok: true };
+    const svar = await saetAutobetalingForBruger(user.id, til);
+    if ("ok" in svar) revalidatePath("/konto");
+    return svar;
   } catch (err) {
     console.error("saetAutobetaling fejlede:", err);
     await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "saetAutobetaling", fejl: err, brugerId: user.id });
@@ -365,27 +350,7 @@ export async function fjernGemtKort(): Promise<{ ok: true } | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
   try {
-    const p = await hentProfil(user.id);
-    if (!p?.gemt_betalingsmetode_id) return { ok: true };
-    const { error } = await createAdminClient()
-      .from("betalingsprofiler")
-      .update({
-        autobetaling: false,
-        gemt_betalingsmetode_id: null,
-        gemt_kort_maerke: null,
-        gemt_kort_sidste4: null,
-        gemt_kort_udloeb: null,
-        // Et forsinket Stripe-svar må ikke genskabe kortet (registrerGemtKort).
-        kort_fjernet_kl: new Date().toISOString(),
-        opdateret: new Date().toISOString(),
-      })
-      .eq("user_id", user.id);
-    if (error) throw new Error(error.message);
-    try {
-      await getStripe().paymentMethods.detach(p.gemt_betalingsmetode_id);
-    } catch (err) {
-      console.warn("Kunne ikke fjerne kort hos Stripe:", err);
-    }
+    await fjernGemtKortForBruger(user.id);
     revalidatePath("/konto");
     return { ok: true };
   } catch (err) {
