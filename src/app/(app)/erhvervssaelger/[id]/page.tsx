@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { sessionBrugerId } from "@/lib/supabase/bruger";
 import { ERHVERVSSAELGER as T } from "@/lib/tekster/erhverv";
 import type { FirmaOffentlig } from "@/lib/erhverv/regler";
 import { telefonLink, visTelefon } from "@/lib/erhverv/visning";
@@ -31,8 +32,12 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function ErhvervssaelgerSide({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const firma = await hentFirma(id);
+  const [firma, mitId] = await Promise.all([hentFirma(id), sessionBrugerId()]);
   if (!firma) notFound();
+  // Firmaet selv ser sin firmaprofil: linket går til dashboardet, ikke til
+  // /profil/<eget id> (privat-ejer-visningen, som firmaet ikke må se).
+  // Id'et fra JWT'en er nok her - det vælger kun, hvilket link der vises.
+  const erEget = mitId === firma.bruger_id;
 
   const raekker: [string, React.ReactNode][] = [
     [T.firmanavn, firma.firmanavn],
@@ -95,10 +100,10 @@ export default async function ErhvervssaelgerSide({ params }: { params: Promise<
         </section>
 
         <Link
-          href={`/profil/${firma.bruger_id}`}
+          href={erEget ? "/firma/auktioner" : `/profil/${firma.bruger_id}`}
           className="inline-flex min-h-12 items-center rounded-md text-[18px] font-semibold text-groen underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
         >
-          {T.seAuktioner} →
+          {erEget ? T.seEgneAuktioner : T.seAuktioner} →
         </Link>
       </div>
     </main>

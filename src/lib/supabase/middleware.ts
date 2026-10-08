@@ -122,11 +122,21 @@ const FIRMA_KORT: [RegExp, (m: RegExpMatchArray) => string][] = [
   [/^\/profil\/mig\/?$/, () => "/firma"],
 ];
 
-function firmaOmdirigering(pathname: string): string | null {
+// Egen profil (/profil/<eget id> og alt under den, fx ?fane=indstillinger)
+// er privat-ejer-visningen med "Rediger profil", "Mine bud" og e-mail - den
+// har firmaet i dashboardet. Id'et i stien sammenlignes med bruger-id'et fra
+// sessionens JWT (lokalt, intet opslag), så kun firmaets EGEN profil slår
+// identiteten op. Andres profiler (også et andet firmas) er offentlige.
+// Siden selv omdirigerer også (src/app/(app)/profil/[id]/page.tsx).
+const EGEN_PROFIL = new RegExp(`^/profil/(${UUID_DEL})(?:/.*)?$`);
+
+function firmaOmdirigering(pathname: string, brugerId: string): string | null {
   for (const [moenster, til] of FIRMA_KORT) {
     const m = pathname.match(moenster);
     if (m) return til(m);
   }
+  const egen = pathname.match(EGEN_PROFIL);
+  if (egen && egen[1].toLowerCase() === brugerId.toLowerCase()) return "/firma";
   return null;
 }
 
@@ -370,7 +380,7 @@ export async function updateSession(
     // kan sendes til enhver sti og må ikke omdirigeres. Identiteten slås kun
     // op på netop de stier, og svaret gemmes i den signerede cookie for alle
     // (også private), så de næste klik i 5 minutter ikke koster opslag.
-    const til = request.method === "GET" || request.method === "HEAD" ? firmaOmdirigering(pathname) : null;
+    const til = request.method === "GET" || request.method === "HEAD" ? firmaOmdirigering(pathname, session.brugerId) : null;
     if (til) {
       const id = await hentGateIdentitet(request, supabase, session);
       const staff = !!id.rolle && ROLLER_MED_ADGANG.includes(id.rolle) && id.rolle !== "saelger";
@@ -398,7 +408,7 @@ export async function updateSession(
       if (erDataEksport(pathname, request.method)) return medCookie(supabaseResponse);
       if (!laesning) return new NextResponse("Ingen adgang", { status: 403 });
       if (erFirmaSti(pathname) || erStatiskFil(pathname, request.method)) return medCookie(supabaseResponse);
-      return medCookie(NextResponse.redirect(firmaRedirectUrl(request, firmaOmdirigering(pathname) ?? "/firma")));
+      return medCookie(NextResponse.redirect(firmaRedirectUrl(request, firmaOmdirigering(pathname, session.brugerId) ?? "/firma")));
     }
     return medCookie(NextResponse.redirect(new URL("/coming-soon", request.url)));
   }

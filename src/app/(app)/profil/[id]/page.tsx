@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { kortNavn } from "@/lib/kortNavn";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
@@ -101,6 +101,12 @@ export default async function ProfilPage({
   }
 
   const erEgenProfil = authData.user?.id === id;
+
+  // En firmakonto har ingen privat-ejer-visning (Rediger profil, Mine bud,
+  // e-mail ...) - alt for firmaet ligger i dashboardet. Gaten omdirigerer
+  // allerede (src/lib/supabase/middleware.ts); dette er værnet på siden.
+  // konto_type er hentet ovenfor, så det koster intet ekstra opslag.
+  if (erEgenProfil && profil?.konto_type === "erhverv") redirect("/firma");
 
   const medlemSiden = new Date(profil.oprettet).toLocaleDateString("da-DK", {
     month: "long",
