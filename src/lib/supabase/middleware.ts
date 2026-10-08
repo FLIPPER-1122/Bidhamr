@@ -90,10 +90,48 @@ const ROLLER_MED_ADGANG = ["chef", "admin", "medarbejder", "saelger"];
 // /api/offentlig/firma-skift-pakke. De offentlige ruter (login, /auth,
 // /reset-password, /bekraeft, /betingelser ...) virker som for alle andre.
 // Har en firmakonto også en staff-rolle, gælder staff-reglerne.
+// Lukkede stier sendes til den tilsvarende side i dashboardet
+// (firmaOmdirigering, fx /mine-handler/<id> -> /firma/salg/<id>).
+// Efter lancering er gaten slået fra for alle: firmaets server actions virker
+// så (også på /firma/*), og firmaet må se de offentlige sider - men "min
+// konto"-siderne sender stadig firmaet til dashboardet (se updateSession).
 const FIRMA_KONTOTYPE = "erhverv";
 
 function erFirmaSti(pathname: string) {
   return pathname === "/firma" || pathname.startsWith("/firma/");
+}
+
+// Firma-dashboardet (/firma/*) har sin egen udgave af de almindelige "min
+// konto"-sider. En firmakonto sendes altid dertil - også efter lancering - så
+// firmaet aldrig farer vild (links i mails og notifikationer peger fx på
+// /mine-handler/<id>). Offentlige sider (forsiden, auktioner, søgning, en
+// auktion, firmaprofilen) må firmaet gerne se efter lancering.
+// Returnerer stien i dashboardet, eller null hvis stien ikke skal omdirigeres.
+const UUID_DEL = "[0-9a-fA-F-]{36}";
+const FIRMA_KORT: [RegExp, (m: RegExpMatchArray) => string][] = [
+  [new RegExp(`^/mine-handler/(${UUID_DEL})/kvittering/?$`), (m) => `/firma/salg/${m[1]}/kvittering`],
+  [new RegExp(`^/mine-handler/(${UUID_DEL})/?$`), (m) => `/firma/salg/${m[1]}`],
+  [/^\/mine-handler(\/.*)?$/, () => "/firma/salg"],
+  [/^\/opret-auktion\/?$/, () => "/firma/auktioner/ny"],
+  [new RegExp(`^/auktion/(${UUID_DEL})/rediger/?$`), (m) => `/firma/auktioner/${m[1]}/rediger`],
+  [/^\/(beskeder|konto|favoritter|notifikationer|andenchance|velkommen)(\/.*)?$/, () => "/firma"],
+  [/^\/profil\/mig\/?$/, () => "/firma"],
+];
+
+function firmaOmdirigering(pathname: string): string | null {
+  for (const [moenster, til] of FIRMA_KORT) {
+    const m = pathname.match(moenster);
+    if (m) return til(m);
+  }
+  return null;
+}
+
+// Omdirigering til dashboardet. Forespørgslens søgeparametre følger kun med
+// til "Opret auktion" (fx ?stripe=retur fra udbetalingskontoen).
+function firmaRedirectUrl(request: NextRequest, til: string): URL {
+  const url = new URL(til, request.url);
+  if (til === "/firma/auktioner/ny") url.search = request.nextUrl.search;
+  return url;
 }
 
 function erOffentligRute(pathname: string) {
@@ -292,6 +330,29 @@ export async function updateSession(
   const lukket = foerLancering();
   const erAdminSti = pathname === "/admin" || pathname.startsWith("/admin/");
   if (!lukket && !erAdminSti) {
+    // Efter lancering: en firmakonto sendes fra "min konto"-siderne til
+    // firma-dashboardet (firmaOmdirigering). Kun GET/HEAD - en server action
+    // kan sendes til enhver sti og må ikke omdirigeres. Identiteten slås kun
+    // op på netop de stier (firmaet har den signerede cookie; en privat
+    // bruger koster ét databasekald på dem).
+    const til = request.method === "GET" || request.method === "HEAD" ? firmaOmdirigering(pathname) : null;
+    if (til) {
+      const id = await hentGateIdentitet(request, supabase, session);
+      const staff = !!id.rolle && ROLLER_MED_ADGANG.includes(id.rolle) && id.rolle !== "saelger";
+      if (id.kontoType === FIRMA_KONTOTYPE && !staff) {
+        const res = NextResponse.redirect(firmaRedirectUrl(request, til));
+        if (id.nyCookie) {
+          res.cookies.set(ROLLE_COOKIE, id.nyCookie.vaerdi, {
+            httpOnly: true,
+            secure: request.nextUrl.protocol === "https:",
+            sameSite: "lax",
+            path: "/",
+            maxAge: id.nyCookie.maxAge,
+          });
+        }
+        return res;
+      }
+    }
     return supabaseResponse;
   }
 
@@ -321,7 +382,7 @@ export async function updateSession(
       const laesning = request.method === "GET" || request.method === "HEAD";
       if (!laesning) return new NextResponse("Ingen adgang", { status: 403 });
       if (erFirmaSti(pathname) || erStatiskFil(pathname, request.method)) return medCookie(supabaseResponse);
-      return medCookie(NextResponse.redirect(new URL("/firma", request.url)));
+      return medCookie(NextResponse.redirect(firmaRedirectUrl(request, firmaOmdirigering(pathname) ?? "/firma")));
     }
     return NextResponse.redirect(new URL("/coming-soon", request.url));
   }

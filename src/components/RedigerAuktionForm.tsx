@@ -155,7 +155,8 @@ export default function RedigerAuktionForm({
         return;
       }
 
-      router.push(`/auktion/${auktionId}`);
+      // Firmaet redigerer i firma-dashboardet og bliver dér.
+      router.push(erFirma ? "/firma/auktioner?gemt=1" : `/auktion/${auktionId}`);
       router.refresh();
     } catch (err) {
       console.error("Fejl ved redigering af auktion:", err);

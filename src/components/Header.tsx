@@ -48,6 +48,10 @@ export default async function Header() {
   // sender tilbage til /firma (og klokken/beskeder spørger serveren via server
   // actions, som firmaet ikke må kalde før lancering).
   const kunFirma = erFirma && foerLancering();
+  // Også efter lancering har firmaet alt sit eget i firma-dashboardet
+  // (/firma/*, eget layout uden denne header). På de offentlige sider vises
+  // derfor ikke favoritter, beskeder, mine handler, klokke eller "Sælg en
+  // vare" for en firmakonto - kun profilmenuen med "Firma oversigt".
   let erAdmin = false;
   let ulaeste = 0;
   let ulaesteBeskeder = 0;
@@ -58,7 +62,7 @@ export default async function Header() {
   }
 
   return (
-    <UlaesteBeskederProvider startAntal={ulaesteBeskeder} aktiv={loggetInd && !kunFirma}>
+    <UlaesteBeskederProvider startAntal={ulaesteBeskeder} aktiv={loggetInd && !erFirma}>
       <a
         href="#indhold"
         className="sr-only z-[60] rounded-lg bg-white px-4 py-3 font-medium text-groen shadow-flyder focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:outline-2 focus:outline-groen"
@@ -117,12 +121,12 @@ export default async function Header() {
 
           <div className="flex shrink-0 items-center gap-1 lg:gap-2">
             {/* Kun store skærme: genveje som ikoner */}
-            {!kunFirma && (
+            {!erFirma && (
               <Link href="/favoritter" aria-label="Favoritter" title="Favoritter" className={`${ikonKnap} hidden lg:flex`}>
                 <Ikon navn="hjerte" />
               </Link>
             )}
-            {loggetInd && !kunFirma && (
+            {loggetInd && !erFirma && (
               <>
                 <BeskederLink className={`${ikonKnap} hidden lg:flex`} />
                 <Link
@@ -135,7 +139,7 @@ export default async function Header() {
               </>
             )}
 
-            {loggetInd && !kunFirma && <Klokke startAntal={ulaeste} />}
+            {loggetInd && !erFirma && <Klokke startAntal={ulaeste} />}
 
             {!loggetInd && (
               <Link
@@ -147,7 +151,7 @@ export default async function Header() {
             )}
 
             {/* .btn sætter display: wrapperen styrer, hvornår knappen vises. */}
-            {!kunFirma && (
+            {!erFirma && (
               <div className="hidden shrink-0 lg:block">
                 <Link href="/opret-auktion" className="btn btn-primaer">
                   Sælg en vare

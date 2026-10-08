@@ -697,5 +697,175 @@ export const FIRMA_FOER_LANCERING = {
   // Under den slåede-fra "Opret auktion"-knap.
   kanIkkeOprette: "Du kan oprette auktioner, når BidHamr åbner.",
   // I stedet for genvejene til handler, beskeder og auktioner.
-  genvejeLukket: "Dine handler, beskeder og auktioner kommer her, når BidHamr åbner.",
+  genvejeLukket: "Dine handler og auktioner kommer her, når BidHamr åbner.",
+} as const;
+
+// Firma-dashboardet (/firma/*), sat op som admin: menu i siden, egen top og
+// én side pr. emne (Filip, 8. okt. 2026). Målgruppen er primært ældre:
+// korte sætninger, ingen fagudtryk.
+export const FIRMA_DASHBOARD = {
+  top: {
+    logoLabel: "BidHamr - til Overblik",
+    seButik: "Se din butik",
+    seButikLukket: "Din butik kan ses af købere, når BidHamr åbner.",
+    logUd: "Log ud",
+    loggerUd: "Logger ud …",
+  },
+  menu: {
+    navLabel: "Firma",
+    aabn: "Menu",
+    luk: "Luk menu",
+    overblik: "Overblik",
+    auktioner: "Auktioner",
+    salg: "Salg",
+    statistik: "Statistik",
+    udbetalinger: "Udbetalinger",
+    abonnement: "Abonnement",
+    regninger: "Regninger",
+    oplysninger: "Firmaoplysninger",
+    hjaelp: "Hjælp og kontakt",
+  },
+  tilbage: (side: string) => `Tilbage til ${side}`,
+
+  overblik: {
+    titel: "Overblik",
+    intro: "Det vigtigste lige nu.",
+    tal: "Dine tal",
+    aktive: "Aktive auktioner",
+    ugensKvote: "Ugens auktioner",
+    seAuktioner: "Se dine auktioner",
+    seSalg: "Se dine salg",
+    seUdbetalinger: "Se udbetalinger",
+  },
+
+  auktioner: {
+    titel: "Auktioner",
+    intro: "Alle dine auktioner. Vælg, hvilke du vil se.",
+    faner: {
+      aktive: "Aktive",
+      solgte: "Solgte",
+      usolgte: "Usolgte",
+      annullerede: "Annullerede",
+    },
+    fanerLabel: "Vis auktioner",
+    tom: {
+      aktive: "Du har ingen auktioner, der kører lige nu.",
+      solgte: "Du har ikke solgt noget endnu.",
+      usolgte: "Ingen af dine auktioner er sluttet uden at blive solgt.",
+      annullerede: "Du har ingen annullerede auktioner.",
+    },
+    nuvaerendeBud: "Højeste bud",
+    startpris: "Startpris",
+    ingenBud: "Ingen bud endnu",
+    solgtFor: "Solgt for",
+    slutter: "Slutter",
+    sluttede: "Sluttede",
+    visninger: (n: number) => (n === 1 ? "1 visning" : `${n.toLocaleString("da-DK")} visninger`),
+    bud: (n: number) => (n === 1 ? "1 bud" : `${n.toLocaleString("da-DK")} bud`),
+    skjult: "Skjult af BidHamr",
+    knapRediger: "Redigér",
+    knapSeAuktion: "Se auktionen",
+    knapSeHandel: "Se handlen",
+    ugeKvote: (brugt: number, max: number) =>
+      `Du har brugt ${brugt} af ${max} ${max === 1 ? "auktion" : "auktioner"} denne uge.`,
+    oprettet: "Din auktion er oprettet og kører nu.",
+    gemt: "Dine ændringer er gemt.",
+  },
+
+  opret: {
+    titel: "Opret auktion",
+    lukket: "Du kan oprette auktioner, når BidHamr åbner.",
+  },
+
+  rediger: {
+    titel: "Redigér auktion",
+    lukket: "Du kan redigere auktioner, når BidHamr åbner.",
+    ikkeAktiv: "Auktionen er ikke aktiv længere og kan ikke ændres.",
+  },
+
+  salg: {
+    titel: "Salg",
+    intro: "Alle dine solgte varer. Tryk på en vare for at se handlen.",
+    tom: "Du har ikke solgt noget endnu. Når du sælger, kan du se det her.",
+    solgt: "Solgt",
+    knapSendPakke: "Send pakke",
+    knapSeHandel: "Se handlen",
+    status: {
+      afventer_betaling: "Venter på betaling",
+      betaling_modtaget: "Skal sendes",
+      betaling_modtaget_afhentning: "Skal hentes",
+      pakke_sendt: "Sendt",
+      modtaget: "Leveret",
+      leveret: "Leveret",
+      afsluttet: "Afsluttet",
+      annulleret: "Annulleret",
+      retur: "Retur",
+    } as Record<string, string>,
+    sendPakkeLukket: "Du kan sende pakker, når BidHamr åbner.",
+    ingenChat:
+      "Køberen kan ikke skrive til dig her. Køberen ser dit firmas e-mail og telefon og kontakter dig dér, hvis der er spørgsmål.",
+  },
+
+  statistik: {
+    titel: "Statistik",
+    intro: "Hvor mange der har set dine auktioner, budt og købt.",
+    prMaaned: "Pr. måned",
+    prMaanedForklaring: "De seneste 12 måneder.",
+    prAuktion: "Pr. auktion",
+    prAuktionForklaring: "Dine seneste auktioner.",
+    kolonneMaaned: "Måned",
+    kolonneVisninger: "Visninger",
+    kolonneBud: "Bud",
+    kolonneSolgte: "Solgte",
+    kolonneOmsaetning: "Indtjent",
+    kolonneAuktion: "Auktion",
+    kolonneSolgtFor: "Solgt for",
+    ikkeSolgt: "Ikke solgt",
+    koerer: "Kører",
+    tom: "Der er ingen tal endnu. Tallene kommer, når du har en auktion.",
+  },
+
+  udbetalinger: {
+    titel: "Udbetalinger",
+    intro: "Penge fra dine salg. Betalingen håndteres af vores betalingspartner Stripe.",
+    paaVej: "På vej til dig",
+    udbetalt: "Udbetalt i alt",
+    udbetaltMaaned: "Udbetalt denne måned",
+    prHandel: "Pr. handel",
+    tom: "Der er ingen udbetalinger endnu.",
+    hjaelp: "Pengene udbetales til din bankkonto, når køberens frist for at fortryde er gået.",
+    status: {
+      udbetalt: "Udbetalt",
+      paaVej: "På vej til dig",
+      venterBetaling: "Køberen har ikke betalt endnu",
+      refunderet: "Pengene er sendt tilbage til køberen",
+      annulleret: "Annulleret",
+    },
+  },
+
+  oplysninger: {
+    titel: "Firmaoplysninger",
+  },
+
+  hjaelp: {
+    titel: "Hjælp og kontakt",
+  },
+
+  // Handelssiden for køberen, når sælgeren er et firma (ingen chat).
+  koeberKontakt: {
+    titel: "Kontakt sælgeren",
+    tekst: "Sælgeren er et firma. Har du spørgsmål til handlen, så kontakt firmaet direkte.",
+    telefon: "Telefon",
+    email: "E-mail",
+    seProfil: "Se firmaets profil",
+  },
+  bidhamrBeskeder: "Beskeder fra BidHamr",
+  // I stedet for "Spørg sælger" på en erhvervsauktion.
+  spoergFirma: {
+    titel: "Spørgsmål til sælgeren",
+    tekst: "Sælgeren er et firma. Har du spørgsmål til varen, så kontakt firmaet på mail eller telefon.",
+    seProfil: "Se firmaets kontaktoplysninger",
+  },
+  ingenBeskederFejl:
+    "Du kan ikke skrive til en erhvervssælger. Kontakt firmaet på mail eller telefon - se firmaets profil.",
 } as const;
