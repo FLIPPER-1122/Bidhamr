@@ -23,11 +23,15 @@ export default function MobilMenu({
   loggetInd,
   erAdmin,
   erFirma = false,
+  kunFirma = false,
 }: {
   loggetInd: boolean;
   erAdmin: boolean;
   // Firmakonto: "Min side" viser kun Firma oversigt (se KontoMenu).
   erFirma?: boolean;
+  // Firmakonto før lancering: kun Firma oversigt og Log ud (resten af siden
+  // er lukket for firmaet - se Header).
+  kunFirma?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lukRef = useRef<HTMLButtonElement>(null);
@@ -120,6 +124,7 @@ export default function MobilMenu({
           </div>
 
           <nav aria-label="Hovedmenu" className="flex-1 overflow-y-auto overscroll-contain px-2 py-4">
+            {!kunFirma && (
             <div className="px-2">
               <Link href="/opret-auktion" className="btn btn-primaer btn-stor w-full">
                 <Ikon navn="plus" />
@@ -133,6 +138,7 @@ export default function MobilMenu({
                 </Link>
               )}
             </div>
+            )}
 
             {/* Ikke logget ind: Favoritter sender til login og tilbage igen. */}
             {!loggetInd && (
@@ -198,6 +204,8 @@ export default function MobilMenu({
               </section>
             )}
 
+            {!kunFirma && (
+            <>
             <section className="mt-6" aria-labelledby="mobil-udforsk">
               <h2 id="mobil-udforsk" className={`${overskrift}`}>Udforsk</h2>
               <ul>
@@ -232,6 +240,8 @@ export default function MobilMenu({
                 ))}
               </ul>
             </section>
+            </>
+            )}
           </nav>
 
           <div className="border-t border-kant p-4">

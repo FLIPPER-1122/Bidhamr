@@ -11,6 +11,7 @@ import MobilMenu from "@/components/topbar/MobilMenu";
 import { UlaesteBeskederProvider } from "@/components/topbar/UlaesteBeskeder";
 import { KATEGORIER_I_LINJEN, UDFORSK, kategoriHref } from "@/components/topbar/navigation";
 import { ERHVERV_MENU } from "@/lib/tekster/erhverv";
+import { foerLancering } from "@/lib/lancering";
 
 const ikonKnap =
   "flex h-11 w-11 items-center justify-center rounded-full text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
@@ -41,6 +42,12 @@ export default async function Header() {
 
   // Firmakonto: profilmenuen viser kun "Firma oversigt" og "Log ud".
   const erFirma = !!bruger && kontoType === "erhverv";
+  // Før lancering kan en firmakonto kun nå Firma oversigt (gaten i
+  // src/lib/supabase/middleware.ts). Så vises kun logo, profilmenu og log ud -
+  // ingen søgning, kategorier, klokke eller beskeder, der alligevel bare
+  // sender tilbage til /firma (og klokken/beskeder spørger serveren via server
+  // actions, som firmaet ikke må kalde før lancering).
+  const kunFirma = erFirma && foerLancering();
   let erAdmin = false;
   let ulaeste = 0;
   let ulaesteBeskeder = 0;
@@ -51,7 +58,7 @@ export default async function Header() {
   }
 
   return (
-    <UlaesteBeskederProvider startAntal={ulaesteBeskeder} aktiv={loggetInd}>
+    <UlaesteBeskederProvider startAntal={ulaesteBeskeder} aktiv={loggetInd && !kunFirma}>
       <a
         href="#indhold"
         className="sr-only z-[60] rounded-lg bg-white px-4 py-3 font-medium text-groen shadow-flyder focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:outline-2 focus:outline-groen"
@@ -78,6 +85,7 @@ export default async function Header() {
             />
           </Link>
 
+          {!kunFirma && (
           <form
             action="/auktioner"
             method="GET"
@@ -105,13 +113,16 @@ export default async function Header() {
               </span>
             </button>
           </form>
+          )}
 
           <div className="flex shrink-0 items-center gap-1 lg:gap-2">
             {/* Kun store skærme: genveje som ikoner */}
-            <Link href="/favoritter" aria-label="Favoritter" title="Favoritter" className={`${ikonKnap} hidden lg:flex`}>
-              <Ikon navn="hjerte" />
-            </Link>
-            {loggetInd && (
+            {!kunFirma && (
+              <Link href="/favoritter" aria-label="Favoritter" title="Favoritter" className={`${ikonKnap} hidden lg:flex`}>
+                <Ikon navn="hjerte" />
+              </Link>
+            )}
+            {loggetInd && !kunFirma && (
               <>
                 <BeskederLink className={`${ikonKnap} hidden lg:flex`} />
                 <Link
@@ -124,7 +135,7 @@ export default async function Header() {
               </>
             )}
 
-            {loggetInd && <Klokke startAntal={ulaeste} />}
+            {loggetInd && !kunFirma && <Klokke startAntal={ulaeste} />}
 
             {!loggetInd && (
               <Link
@@ -136,11 +147,13 @@ export default async function Header() {
             )}
 
             {/* .btn sætter display: wrapperen styrer, hvornår knappen vises. */}
-            <div className="hidden shrink-0 lg:block">
-              <Link href="/opret-auktion" className="btn btn-primaer">
-                Sælg en vare
-              </Link>
-            </div>
+            {!kunFirma && (
+              <div className="hidden shrink-0 lg:block">
+                <Link href="/opret-auktion" className="btn btn-primaer">
+                  Sælg en vare
+                </Link>
+              </div>
+            )}
 
             {loggetInd && (
               <div className="hidden lg:block">
@@ -149,12 +162,13 @@ export default async function Header() {
             )}
 
             <div className="lg:hidden">
-              <MobilMenu loggetInd={loggetInd} erAdmin={erAdmin} erFirma={erFirma} />
+              <MobilMenu loggetInd={loggetInd} erAdmin={erAdmin} erFirma={erFirma} kunFirma={kunFirma} />
             </div>
           </div>
         </div>
 
         {/* Kategorilinje – kun store skærme; på mobil ligger den i menuen. */}
+        {!kunFirma && (
         <nav aria-label="Kategorier og genveje" className="hidden border-t border-kant lg:block">
           <div className="mx-auto flex max-w-[1280px] items-center gap-7 px-8 text-sm">
             <KategoriMenu />
@@ -185,6 +199,7 @@ export default async function Header() {
             </div>
           </div>
         </nav>
+        )}
       </header>
     </UlaesteBeskederProvider>
   );

@@ -10,7 +10,8 @@ export type OffentligHandling =
   | "dsa-anmeld"
   | "dsa-klage-afgoerelse"
   | "dsa-klage-anmelder"
-  | "erhverv-henvendelse";
+  | "erhverv-henvendelse"
+  | "firma-skift-pakke";
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 

@@ -1,5 +1,8 @@
-// Kortlivet, signeret cookie med brugerens staff-rolle til gaten før
-// lancering (src/lib/supabase/middleware.ts). Uden den spurgte proxyen
+// Kortlivet, signeret cookie med brugerens staff-rolle og konto_type til
+// gaten før lancering (src/lib/supabase/middleware.ts). konto_type er med,
+// fordi en firmakonto (konto_type 'erhverv') må nå Firma oversigt før
+// lancering - så skal gaten heller ikke spørge databasen ved hvert klik for
+// firmaet. Uden den spurgte proxyen
 // databasen (min_rolle) ved HVERT klik, før siden overhovedet begyndte at
 // blive bygget.
 //
@@ -20,7 +23,11 @@
 //   derfor lukke op for ham i op til 5 minutter mere: han kan se siden og
 //   bruge almindelige brugerhandlinger (fx byde), som kun kræver login.
 //   Admin og staff-handlinger tjekker rollen i databasen og afvises med
-//   det samme.
+//   det samme. Det samme gælder konto_type: en firmakonto, der laves om til
+//   privat, kan nå Firma oversigt i op til 5 minutter mere (siden tjekker
+//   selv konto_type i databasen).
+// - Kun staff-roller og firmakonti får en cookie. Almindelige brugere slås
+//   op i databasen som før (de sendes alligevel til venteliste-siden).
 // - httpOnly, SameSite=Lax og Secure (undtagen lokalt på http).
 
 import { logDriftFejl } from "@/lib/drift";
@@ -28,7 +35,11 @@ import { afledningsNoegle } from "@/lib/supabase/noeglerServer";
 
 export const ROLLE_COOKIE = "bh_rolle";
 const LEVETID_SEKUNDER = 5 * 60;
-const VERSION = "v1";
+// NOEGLE_VERSION indgår i nøgleafledningen og er uændret, så nøglen er den
+// samme som før. VERSION er cookiens format: v2 har konto_type med (v1 havde
+// kun rollen). En gammel v1-cookie afvises bare, og rollen slås op igen.
+const NOEGLE_VERSION = "v1";
+const VERSION = "v2";
 
 let noegleLoefte: Promise<CryptoKey | null> | null = null;
 let advaret = false;
@@ -52,13 +63,13 @@ function hentNoegle(): Promise<CryptoKey | null> {
       const egen = process.env.ROLLE_COOKIE_HEMMELIGHED;
       let tekst: string;
       if (egen) {
-        tekst = `bidhamr-rolle-cookie-${VERSION}|egen|${egen}`;
+        tekst = `bidhamr-rolle-cookie-${NOEGLE_VERSION}|egen|${egen}`;
       } else {
         // Den gamle afledning (uændret), så eksisterende cookies virker videre.
         const afledt = afledningsNoegle();
         if (!afledt) return null;
         advarOmFallback();
-        tekst = `bidhamr-rolle-cookie-${VERSION}|${afledt}`;
+        tekst = `bidhamr-rolle-cookie-${NOEGLE_VERSION}|${afledt}`;
       }
       const materiale = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(tekst));
       return crypto.subtle.importKey("raw", materiale, { name: "HMAC", hash: "SHA-256" }, false, [
@@ -90,32 +101,39 @@ function fraBase64Url(tekst: string): Uint8Array<ArrayBuffer> | null {
 
 const SIKKER_DEL = /^[A-Za-z0-9-]{1,64}$/;
 
+// Konto_type til cookien: kun sikre tegn; mangler den, gemmes "ingen".
+const INGEN_KONTOTYPE = "ingen";
+
+export type GateIdentitet = { rolle: string; kontoType: string | null };
+
 // Den signerede værdi til cookien, eller null hvis den ikke kan laves.
 export async function lavRolleCookie(
   brugerId: string,
   sessionId: string,
   rolle: string,
+  kontoType: string | null,
 ): Promise<{ vaerdi: string; maxAge: number } | null> {
-  if (![brugerId, sessionId, rolle].every((d) => SIKKER_DEL.test(d))) return null;
+  const konto = kontoType ?? INGEN_KONTOTYPE;
+  if (![brugerId, sessionId, rolle, konto].every((d) => SIKKER_DEL.test(d))) return null;
   const noegle = await hentNoegle();
   if (!noegle) return null;
   const udloeber = Math.floor(Date.now() / 1000) + LEVETID_SEKUNDER;
-  const data = `${VERSION}.${brugerId}.${sessionId}.${rolle}.${udloeber}`;
+  const data = `${VERSION}.${brugerId}.${sessionId}.${rolle}.${konto}.${udloeber}`;
   const signatur = await crypto.subtle.sign("HMAC", noegle, new TextEncoder().encode(data));
   return { vaerdi: `${data}.${tilBase64Url(signatur)}`, maxAge: LEVETID_SEKUNDER };
 }
 
-// Rollen fra cookien, hvis signaturen er gyldig, den ikke er udløbet, og den
-// hører til præcis denne bruger og session. Ellers null.
+// Rolle og konto_type fra cookien, hvis signaturen er gyldig, den ikke er
+// udløbet, og den hører til præcis denne bruger og session. Ellers null.
 export async function laesRolleCookie(
   vaerdi: string | undefined,
   brugerId: string,
   sessionId: string,
-): Promise<string | null> {
+): Promise<GateIdentitet | null> {
   if (!vaerdi) return null;
   const dele = vaerdi.split(".");
-  if (dele.length !== 6) return null;
-  const [version, id, session, rolle, udloeberTekst, signaturTekst] = dele;
+  if (dele.length !== 7) return null;
+  const [version, id, session, rolle, konto, udloeberTekst, signaturTekst] = dele;
   if (version !== VERSION || id !== brugerId || session !== sessionId) return null;
   const udloeber = Number(udloeberTekst);
   if (!Number.isInteger(udloeber) || udloeber <= Math.floor(Date.now() / 1000)) return null;
@@ -124,8 +142,9 @@ export async function laesRolleCookie(
   if (!signatur) return null;
   const noegle = await hentNoegle();
   if (!noegle) return null;
-  const data = `${version}.${id}.${session}.${rolle}.${udloeberTekst}`;
+  const data = `${version}.${id}.${session}.${rolle}.${konto}.${udloeberTekst}`;
   // crypto.subtle.verify sammenligner i konstant tid.
   const gyldig = await crypto.subtle.verify("HMAC", noegle, signatur, new TextEncoder().encode(data));
-  return gyldig ? rolle : null;
+  if (!gyldig) return null;
+  return { rolle, kontoType: konto === INGEN_KONTOTYPE ? null : konto };
 }

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { gemNyAdgangskode } from "@/app/actions/auth";
 import { anmeldIndhold, klagOverAfgoerelse, klagSomAnmelder } from "@/app/actions/dsa";
-import { sendErhvervHenvendelse } from "@/app/actions/erhverv";
+import { sendErhvervHenvendelse, skiftFirmaPakke } from "@/app/actions/erhverv";
 
 // De få handlinger, som en indlogget ALMINDELIG bruger skal kunne udføre på
 // en offentlig side, mens siden er lukket for alle andre end staff:
@@ -10,6 +10,8 @@ import { sendErhvervHenvendelse } from "@/app/actions/erhverv";
 //   dsa-klage-afgoerelse  /dsa/afgoerelse/[id] (DSA art. 20)
 //   dsa-klage-anmelder    /dsa/anmeldelse/[id]
 //   erhverv-henvendelse   /erhverv/formular (også uden login)
+//   firma-skift-pakke     /firma (pakkeskift; firmakonti må før lancering
+//                         ikke kalde server actions - se gaten)
 //
 // Hvorfor ikke bare server actions: gaten i src/lib/supabase/middleware.ts
 // afviser alle POST'er fra indloggede almindelige brugere på offentlige
@@ -39,6 +41,9 @@ const HANDLINGER: Record<string, Handling> = {
   "dsa-klage-afgoerelse": klagOverAfgoerelse,
   "dsa-klage-anmelder": klagSomAnmelder,
   "erhverv-henvendelse": sendErhvervHenvendelse,
+  // skiftFirmaPakke kræver selv login, og firma_skift_pakke afviser alle
+  // andre end firmakontoen selv.
+  "firma-skift-pakke": (fd) => skiftFirmaPakke(tekst(fd, "pakkeId") ?? ""),
 };
 
 function svar(status: number, krop: unknown) {

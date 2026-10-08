@@ -2,11 +2,14 @@
 
 // Abonnement i Firma oversigt: nuværende pakke + alle andre pakker MED
 // priser. "Opgradér" (flere auktioner) og "Skift til denne pakke fra næste
-// måned" (færre) - altid med en bekræftelse, før noget sker -> skiftFirmaPakke.
+// måned" (færre) - altid med en bekræftelse, før noget sker -> skiftFirmaPakke
+// via /api/offentlig/firma-skift-pakke (ikke som server action: firmakonti må
+// før lancering ikke kalde server actions - se src/lib/supabase/middleware.ts).
 // Bekræftelsen vises direkte under pakken (ingen pop op), med store knapper.
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
-import { skiftFirmaPakke } from "@/app/actions/erhverv";
+import type { SkiftPakkeSvar } from "@/app/actions/erhverv";
+import { kaldOffentligHandling } from "@/lib/offentligHandling";
 import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA as X } from "@/lib/tekster/erhverv";
 import type { ErhvervPakke } from "@/lib/erhverv/regler";
 import { kr } from "@/lib/erhverv/visning";
@@ -50,7 +53,9 @@ export default function PakkeValg({
   function skift(p: ErhvervPakke) {
     setSvar(null);
     start(async () => {
-      const res = await skiftFirmaPakke(p.id);
+      const fd = new FormData();
+      fd.set("pakkeId", p.id);
+      const res = await kaldOffentligHandling<SkiftPakkeSvar>("firma-skift-pakke", fd);
       setAaben(null);
       if ("fejl" in res) setSvar({ tekst: res.fejl || A.fejlSkift, fejl: true });
       // Planlagt nedgradering og opgradering, der venter på betaling: siden
