@@ -7,8 +7,9 @@
 //    (som kontaktformularen). IP-adressen bruges kun til rate limit og
 //    gemmes ikke (kolonnen ip_hash er altid null).
 //  - hentFirmaOversigt / skiftFirmaPakke: Firma oversigt for en firmakonto.
-//    Databasen (firma_oversigt, firma_skift_pakke) tjekker selv, at brugeren
-//    er en firmakonto - samme RPC'er bruges af appen.
+//    Databasen (firma_oversigt, firma_skift_pakke_server) tjekker selv, at
+//    brugeren er en firmakonto. Pakkeskift kan KUN ske via serveren (appen:
+//    POST /api/firma/skift-pakke), fordi Stripe også skal ændres.
 // Fejl RETURNERES som { fejl } med dansk tekst.
 
 import { createClient } from "@/lib/supabase/server";
@@ -21,17 +22,14 @@ import {
   ERHVERV_EMAIL,
   ERHVERV_GRAENSER as G,
   POSTNUMMER,
-  erhvervFejlTekst,
   renCvr,
   renTelefon,
-  type ErhvervPakke,
   type FirmaOversigt,
 } from "@/lib/erhverv/regler";
-import { annullerPlanlagtSkift, startNedgradering, startOpgradering } from "@/lib/erhverv/betaling";
-import { ERHVERV_FORMULAR, FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA } from "@/lib/tekster/erhverv";
+import { skiftPakkeForBruger, type SkiftPakkeSvar } from "@/lib/erhverv/pakkeskift";
+import { ERHVERV_FORMULAR } from "@/lib/tekster/erhverv";
 import { revalidatePath } from "next/cache";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Udfyldes formularen hurtigere end dette, er det næsten altid en robot.
 const MIN_SEKUNDER = 5;
 const GENERISK = `Noget gik galt. Prøv igen om lidt, eller skriv til ${ERHVERV_EMAIL}.`;
@@ -164,93 +162,26 @@ export async function hentFirmaOversigt(): Promise<{ ok: true; oversigt: FirmaOv
   }
 }
 
-export type SkiftPakkeSvar =
-  | { ok: true; kode: "opgradering_afventer_betaling"; pakke: ErhvervPakke; besked: string }
-  // Kortet kræver godkendelse (fx 3D Secure), eller betalingen fejlede:
-  // firmaet sendes til Stripes fakturaside for at betale forskellen.
-  | { ok: true; kode: "betal_forskellen"; pakke: ErhvervPakke; url: string; besked: string }
-  // Betalingen gik igennem med det samme, og pakken er aktiveret.
-  | { ok: true; kode: "opgraderet"; pakke: ErhvervPakke; besked: string }
-  | { ok: true; kode: "nedgradering_planlagt"; pakke: ErhvervPakke; gaelderFra: string; besked: string }
-  | { ok: true; kode: "uaendret"; besked: string }
-  | { fejl: string };
 
-// Firmaet vælger en anden pakke i Firma oversigt.
+export type { SkiftPakkeSvar } from "@/lib/erhverv/pakkeskift";
+
+// Firmaet vælger en anden pakke i Firma oversigt (hjemmesiden, via
+// /api/offentlig/firma-skift-pakke). Al logik - database, Stripe og
+// tilbagerulning ved Stripe-fejl - ligger i src/lib/erhverv/pakkeskift.ts,
+// som appen også bruger (POST /api/firma/skift-pakke).
 //  - Større pakke: Stripe trækker forskellen for resten af perioden med det
-//    samme (faktura). Først når den er betalt, får firmaet flere auktioner
-//    (src/lib/erhverv/betaling.ts startOpgradering + webhook invoice.paid).
-//  - Mindre pakke: gælder fra næste periode.
+//    samme (faktura). Først når den er betalt, får firmaet flere auktioner.
+//  - Mindre pakke: gælder fra næste periode (Subscription Schedule).
 export async function skiftFirmaPakke(pakkeId: string): Promise<SkiftPakkeSvar> {
   try {
-    if (typeof pakkeId !== "string" || !UUID.test(pakkeId)) return { fejl: "Vælg en pakke." };
     const supabase = await createClient();
     const {
       data: { user },
     } = await hentLoggetIndBruger(supabase);
     if (!user) return { fejl: "Du skal være logget ind." };
-
-    const { data, error } = await supabase.rpc("firma_skift_pakke", { p_pakke: pakkeId });
-    if (error) {
-      const tekst = erhvervFejlTekst(error.message, error.code);
-      if (tekst) return { fejl: tekst };
-      if (error.code === "BHR01") return { fejl: FOR_MANGE_FORSOEG };
-      await logDriftFejl({ kilde: "action", hvor: "skiftFirmaPakke", fejl: error, brugerId: user.id });
-      return { fejl: GENERISK };
-    }
-    const svar = data as { kode?: string; skift_id?: string; gaelder_fra?: string; pakke?: ErhvervPakke } | null;
+    const svar = await skiftPakkeForBruger(user.id, pakkeId);
     revalidatePath("/firma");
-
-    if (svar?.kode === "opgradering_afventer_betaling" && svar.pakke && svar.skift_id) {
-      const betaling = await startOpgradering(svar.skift_id);
-      // Kun "Din pakke er nu X", når betalingen er gået igennem og pakken
-      // faktisk er aktiveret. Fejl: skiftet venter stadig på betaling i
-      // databasen, men firmaet beholder sin nuværende pakke.
-      if (betaling.status === "betalt") {
-        return {
-          ok: true,
-          kode: "opgraderet",
-          pakke: svar.pakke,
-          besked: FIRMA_OVERSIGT.abonnement.opgraderetSvar(svar.pakke.navn),
-        };
-      }
-      if (betaling.status === "fejl") {
-        await logDriftFejl({ kilde: "action", hvor: "skiftFirmaPakke/startOpgradering", fejl: betaling.fejl, brugerId: user.id });
-        return { fejl: FIRMA_OVERSIGT_EKSTRA.opgraderingBetalingFejl };
-      }
-      if (betaling.status === "kraever_handling") {
-        return {
-          ok: true,
-          kode: "betal_forskellen",
-          pakke: svar.pakke,
-          url: betaling.url,
-          besked: FIRMA_OVERSIGT_EKSTRA.betalForskellenSvar,
-        };
-      }
-      return { ok: true, kode: "opgradering_afventer_betaling", pakke: svar.pakke, besked: betaling.besked };
-    }
-    if (svar?.kode === "nedgradering_planlagt" && svar.pakke && svar.gaelder_fra && svar.skift_id) {
-      const plan = await startNedgradering(svar.skift_id);
-      if (plan.status === "fejl") {
-        await logDriftFejl({ kilde: "action", hvor: "skiftFirmaPakke/startNedgradering", fejl: plan.fejl, brugerId: user.id });
-      }
-      const dato = new Date(svar.gaelder_fra).toLocaleDateString("da-DK", {
-        timeZone: "Europe/Copenhagen",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      });
-      return {
-        ok: true,
-        kode: "nedgradering_planlagt",
-        pakke: svar.pakke,
-        gaelderFra: svar.gaelder_fra,
-        besked: FIRMA_OVERSIGT_EKSTRA.nedgraderetSvar(svar.pakke.navn, dato),
-      };
-    }
-    if (svar?.kode === "uaendret") await annullerPlanlagtSkift(user.id);
-    if (svar?.kode === "uaendret") return { ok: true, kode: "uaendret", besked: FIRMA_OVERSIGT_EKSTRA.uaendretSvar };
-    if (svar?.kode === "ugyldig_pakke") return { fejl: "Pakken findes ikke længere. Vælg en anden." };
-    return { fejl: GENERISK };
+    return svar;
   } catch (err) {
     await logDriftFejl({ kilde: "action", hvor: "skiftFirmaPakke", fejl: err });
     return { fejl: GENERISK };

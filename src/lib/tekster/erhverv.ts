@@ -583,6 +583,11 @@ export const FIRMA_OVERSIGT_EKSTRA = {
   nedgraderetSvar: (pakke: string, dato: string) =>
     `Du skifter til ${pakke} den ${dato}. Indtil da beholder du din nuværende pakke.`,
   uaendretSvar: "Du beholder din nuværende pakke.",
+  // Stripe kunne ikke ændre abonnementet: skiftet er rullet tilbage.
+  pakkeskiftFejl:
+    "Vi kunne ikke skifte din pakke lige nu. Din pakke er ikke ændret. Prøv igen om lidt, eller skriv til erhverv@bidhamr.dk.",
+  // Abonnementet i Stripe er ikke aktivt (fx en ubetalt regning).
+  pakkeskiftBetalFoerst: "Du kan ikke skifte pakke, før din seneste regning er betalt. Din pakke er ikke ændret.",
   afhentning: (vare: string) => `Køberen skal hente ${vare}. Aftal tid og sted med køberen.`,
   knapSeHandel: "Se handlen",
   ugensTal: (brugt: number, ialt: number) => `${brugt} af ${ialt}`,
@@ -965,4 +970,8 @@ export const ADMIN_ERHVERV_BETALING = {
       ? "Prisen er gemt, og der er lavet en ny pris i Stripe."
       : `Prisen er gemt, og der er lavet en ny pris i Stripe. ${n === 1 ? "1 firma" : `${n} firmaer`} betaler stadig den gamle pris, indtil de skifter pakke.`,
   prisStripeFejl: "Prisen er gemt, men den nye pris kunne ikke oprettes i Stripe endnu. Den oprettes automatisk, næste gang et firma betaler.",
+  // Chefen skifter pakke i admin: prisen i Stripe skifter fra næste betaling
+  // (ingen proration - en evt. forskel i indeværende periode aftales særskilt).
+  pakkeStripeFejl: "Pakken er IKKE ændret: abonnementet i Stripe kunne ikke opdateres. Prøv igen om lidt.",
+  pakkeSkiftetStripe: "Pakken er ændret. Den nye pris gælder i Stripe fra firmaets næste betaling.",
 } as const;

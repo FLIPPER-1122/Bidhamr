@@ -14,6 +14,8 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 // kendt sidetype, rate-limit pr. IP), så også besøg på venteliste-siden tælles.
 // /api/konto/slet er appens kontosletning: kun Bearer-token (ingen cookies),
 // adgangskode og "SLET" tjekkes i ruten selv.
+// /api/firma/skift-pakke er appens pakkeskift for firmakonti: kun
+// Bearer-token (ingen cookies); login og firmakonto tjekkes i ruten/databasen.
 // /api/helbred er sundhedstjekket til uptime-tjenesten: svarer kun {ok}, ingen
 // detaljer, grænse pr. IP i ruten selv.
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
@@ -52,6 +54,7 @@ const OFFENTLIGE_RUTER = [
   "/api/cron",
   "/api/statistik",
   "/api/konto/slet",
+  "/api/firma/skift-pakke",
   "/api/helbred",
   "/robots.txt",
   "/sitemap.xml",

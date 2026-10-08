@@ -14,7 +14,7 @@ import {
   spejlRefusionsfejl,
   spejlUdbetaling,
 } from "@/lib/betaling/stripeBetaling";
-import { synkAbonnement, synkFaktura } from "@/lib/erhverv/betaling";
+import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/betaling";
 
 // Stripe-webhook for den nye betalingsmodel. Spejler Stripes status i
 // databasen - Stripe er sandheden om penge.
@@ -27,9 +27,9 @@ import { synkAbonnement, synkFaktura } from "@/lib/erhverv/betaling";
 // Connect-events har event.account = sælgerens Connect-konto.
 //
 // Erhvervsabonnementer (Stripe Billing, src/lib/erhverv/betaling.ts):
-// customer.subscription.created/updated/deleted og invoice.finalized/paid/
-// payment_failed. Kun for kunder, der er et firma (firmaer.stripe_customer_id);
-// alle andre ignoreres.
+// customer.subscription.created/updated/deleted/pending_update_expired og
+// invoice.finalized/paid/payment_failed/voided/marked_uncollectible. Kun for
+// kunder, der er et firma (firmaer.stripe_customer_id); alle andre ignoreres.
 //
 // Idempotent: alle handlere tåler samme event flere gange (statusvagter i
 // databasen). Behandlede event-id'er logges i stripe_haendelser og springes
@@ -171,9 +171,20 @@ async function haandter(event: Stripe.Event): Promise<void> {
       return;
     }
 
+    case "customer.subscription.pending_update_expired": {
+      // Firmaet nåede ikke at betale forskellen for en opgradering.
+      const fraEvent = event.data.object as Stripe.Subscription;
+      const sub = await getStripe().subscriptions.retrieve(fraEvent.id);
+      const resultat = await udloebetOpgradering(sub);
+      console.log(`Stripe ${event.type}: ${sub.id} -> ${resultat}`);
+      return;
+    }
+
     case "invoice.finalized":
     case "invoice.paid":
-    case "invoice.payment_failed": {
+    case "invoice.payment_failed":
+    case "invoice.voided":
+    case "invoice.marked_uncollectible": {
       const fraEvent = event.data.object as Stripe.Invoice;
       if (!fraEvent.id) return;
       const faktura = await getStripe().invoices.retrieve(fraEvent.id);

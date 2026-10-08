@@ -21,7 +21,16 @@ import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { firmaVelkomstMail } from "@/lib/mails/erhverv";
 import { sideUrl } from "@/lib/mails/layout";
 import { slaaCvrOpOffentligt, type CvrOpslag } from "@/lib/erhverv/cvr";
-import { fortrydOpsigelse, opsigAbonnement, sikrPris, startAbonnement, stripeTilgaengelig } from "@/lib/erhverv/betaling";
+import {
+  fortrydOpsigelse,
+  opsigAbonnement,
+  saetAdminPrisTilbage,
+  sikrPris,
+  skiftPrisAdmin,
+  startAbonnement,
+  stripeTilgaengelig,
+  type AdminPrisSvar,
+} from "@/lib/erhverv/betaling";
 import { ADMIN_ERHVERV_BETALING as AB } from "@/lib/tekster/erhverv";
 import {
   EMAIL,
@@ -559,7 +568,12 @@ export async function gensendFirmaVelkomst(firmaId: string) {
 }
 
 // Staff ændrer et firma. Udeladte felter er uændrede. pakkeId skifter pakken
-// MED DET SAMME (fx efter en aftale/betaling uden for Stripe).
+// MED DET SAMME (kun chef, fx efter en aftale med firmaet). Har firmaet et
+// abonnement i Stripe, ændres det FØRST (skiftPrisAdmin: ventende
+// opgraderinger annulleres, en planlagt nedgradering frigives, og prisen
+// skifter med proration 'none' - dvs. fra firmaets næste betaling; en evt.
+// forskel i indeværende periode aftaler chefen med firmaet). Fejler Stripe,
+// ændres databasen ikke; fejler databasen, sættes prisen i Stripe tilbage.
 export async function opdaterFirma(input: {
   firmaId: string;
   pakkeId?: string | null;
@@ -568,7 +582,7 @@ export async function opdaterFirma(input: {
   note?: string | null;
 }) {
   return koer("opdaterFirma", async () => {
-    const { admin, userId } = await assertErhverv();
+    const { admin, userId, rolle } = await assertErhverv();
     const firmaId = tjekUuid(input?.firmaId);
     const pakkeId = input.pakkeId ? tjekUuid(input.pakkeId, KODE_FEJL.ugyldig_pakke) : null;
     if (input.status != null && !erAbonnementStatus(input.status)) throw new BrugerFejl("Ugyldig status.");
@@ -592,6 +606,23 @@ export async function opdaterFirma(input: {
       if (r?.stripe_subscription_id && r.stripe_abonnement_status !== "canceled") throw new BrugerFejl(AB.brugOpsigKnap);
     }
 
+    // Pakkeskift: Stripe først (se ovenfor).
+    let stripePris: AdminPrisSvar | null = null;
+    if (pakkeId) {
+      const { data: fp, error: fpFejl } = await admin.from("firmaer").select("pakke_id").eq("id", firmaId).maybeSingle();
+      if (fpFejl) throw new Error(fpFejl.message);
+      const nuvaerende = (fp as { pakke_id: string } | null)?.pakke_id ?? null;
+      if (nuvaerende && nuvaerende !== pakkeId) {
+        if (rolle !== "chef") kodeFejl("kun_chef");
+        try {
+          stripePris = await skiftPrisAdmin(firmaId, pakkeId);
+        } catch (err) {
+          await logDriftFejl({ kilde: "action", hvor: "adminErhverv.opdaterFirma/stripe", fejl: err, brugerId: userId });
+          throw new BrugerFejl(AB.pakkeStripeFejl);
+        }
+      }
+    }
+
     const { data, error } = await admin.rpc("erhverv_firma_opdater", {
       p_staff: userId,
       p_firma: firmaId,
@@ -607,11 +638,14 @@ export async function opdaterFirma(input: {
       p_kontaktperson: f?.kontaktperson ?? null,
       p_note: note || null,
     });
-    if (error) throw new Error(error.message);
     const kode = (data as { kode?: string } | null)?.kode;
-    if (kode !== "ok") kodeFejl(kode);
+    if (error || kode !== "ok") {
+      if (stripePris?.status === "ok") await saetAdminPrisTilbage(stripePris);
+      if (error) throw new Error(error.message);
+      kodeFejl(kode);
+    }
     revalidatePath("/admin/erhverv");
-    return { ok: true as const };
+    return { ok: true as const, besked: stripePris?.status === "ok" ? AB.pakkeSkiftetStripe : undefined };
   });
 }
 

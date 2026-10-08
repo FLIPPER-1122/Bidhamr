@@ -48,8 +48,8 @@ const HANDLINGER: Record<string, Handling> = {
   "dsa-klage-afgoerelse": klagOverAfgoerelse,
   "dsa-klage-anmelder": klagSomAnmelder,
   "erhverv-henvendelse": sendErhvervHenvendelse,
-  // skiftFirmaPakke kræver selv login, og firma_skift_pakke afviser alle
-  // andre end firmakontoen selv.
+  // skiftFirmaPakke kræver selv login, og firma_skift_pakke_server afviser
+  // alle andre end firmakontoen selv (src/lib/erhverv/pakkeskift.ts).
   "firma-skift-pakke": (fd) => skiftFirmaPakke(tekst(fd, "pakkeId") ?? ""),
   // Kræver login som firmakonto (src/lib/erhverv/betalingHandlinger.ts).
   "firma-betal": (_fd, origin) => betalForPakke(origin),
