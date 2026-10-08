@@ -52,7 +52,10 @@ alter table public.saelger_udbetalinger
   add column if not exists betaling_ids      uuid[] not null default '{}',
   add column if not exists stripe_bankkonto  text,
   add column if not exists fejlkode          text,
-  add column if not exists oprettet_hos_stripe_kl timestamptz;
+  add column if not exists oprettet_hos_stripe_kl timestamptz,
+  add column if not exists sidst_sendt_kl    timestamptz,
+  add column if not exists alarm_stoppet_kl  timestamptz,
+  add column if not exists alarm_saldo_kl    timestamptz;
 
 do $do$
 begin
@@ -75,6 +78,12 @@ comment on column public.saelger_udbetalinger.status is
   'claimet: betalingerne er låst, payout oprettes nu. oprettet: payout findes hos Stripe (pending/in_transit). paid/failed/canceled: spejlet fra payout.*. usikker: svaret fra Stripe er ukendt (netværk/5xx) - prøves igen med samme nøgle. afvist: Stripe afviste at oprette payout (intet har forladt kontoen).';
 comment on column public.saelger_udbetalinger.betaling_ids is
   'Betalingerne, udbetalingen dækker (låst ved claim). Bevares, også når udbetalingen fejler, og betalingerne frigøres til en ny udbetaling.';
+comment on column public.saelger_udbetalinger.sidst_sendt_kl is
+  'Sidste gang payouts.create blev kaldt for udbetalingen (sat lige før kaldet). En uafklaret claim frigøres tidligst 24 t herefter (idempotency-nøglen er udløbet). null = aldrig sendt.';
+comment on column public.saelger_udbetalinger.alarm_stoppet_kl is
+  'Drift-alarm givet for en blokeret, uafklaret claim (højst én pr. claim).';
+comment on column public.saelger_udbetalinger.alarm_saldo_kl is
+  'Drift-alarm givet for lav saldo på en uafklaret claim (højst én pr. claim).';
 comment on column public.saelger_udbetalinger.stripe_bankkonto is
   'Sælgerens bankkonto hos Stripe (payout.destination, ba_...).';
 

@@ -78,7 +78,30 @@ type UdbetalingRaekke = {
   oprettet: string;
   opdateret: string;
   betaling_ids: string[];
+  // 20261011030000: sidste gang payouts.create blev kaldt (null = aldrig) og
+  // hvornår der er givet drift-alarm for claimen (højst én af hver).
+  sidst_sendt_kl?: string | null;
+  alarm_stoppet_kl?: string | null;
+  alarm_saldo_kl?: string | null;
 };
+
+// Højst én drift-alarm pr. claim og slags (feltet claimes atomisk).
+async function alarmEnGang(
+  admin: Admin,
+  u: UdbetalingRaekke,
+  felt: "alarm_stoppet_kl" | "alarm_saldo_kl",
+  hvor: string,
+  tekst: string,
+): Promise<void> {
+  const { data } = await admin
+    .from("saelger_udbetalinger")
+    .update({ [felt]: new Date().toISOString() })
+    .eq("id", u.id)
+    .is(felt, null)
+    .select("id");
+  if (!data || data.length === 0) return;
+  await logDriftFejl({ kilde: "server", hvor, fejl: tekst, brugerId: u.seller_id });
+}
 
 function stripeId(v: string | { id: string } | null | undefined): string | null {
   if (!v) return null;
@@ -445,19 +468,21 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
 // En ældre claim er blokeret, før den er sendt (igen). Den frigøres kun, når
 // intet kald med dens nøgle kan være i gang eller gemt hos Stripe: opslaget
 // via metadata har ikke fundet en payout, OG nøglen er udløbet (over 24 t
-// siden sidste forsøg). Ellers beholdes den, og betalingerne markeres.
+// siden payouts.create sidst blev kaldt - sidst_sendt_kl; er den aldrig
+// kaldt, er intet sendt). Ellers beholdes den (én drift-alarm pr. claim).
 async function frigoerGammelClaim(admin: Admin, u: UdbetalingRaekke, aarsag: string): Promise<string> {
-  const sidst = new Date(u.opdateret).getTime();
-  if (Date.now() - sidst > 24 * 60 * 60_000) {
+  const sidst = u.sidst_sendt_kl ? new Date(u.sidst_sendt_kl).getTime() : null;
+  if (sidst === null || Date.now() - sidst > 24 * 60 * 60_000) {
     await admin.rpc("saelger_udbetaling_afvist", { p_udbetaling: u.id, p_fejl: aarsag, p_marker: true });
     return "afvist";
   }
-  await logDriftFejl({
-    kilde: "server",
-    hvor: "betaling/udbetaling-stoppet",
-    fejl: `${aarsag}. Uafklaret udbetaling ${u.id} sendes ikke til Stripe; den beholdes (et tidligere kald kan være gemt hos Stripe) og frigøres automatisk efter 24 timer, hvis Stripe ingen payout har.`,
-    brugerId: u.seller_id,
-  });
+  await alarmEnGang(
+    admin,
+    u,
+    "alarm_stoppet_kl",
+    "betaling/udbetaling-stoppet",
+    `${aarsag}. Uafklaret udbetaling ${u.id} sendes ikke til Stripe; den beholdes (et tidligere kald kan være gemt hos Stripe) og frigøres automatisk 24 timer efter sidste kald, hvis Stripe ingen payout har.`,
+  );
   return "stoppet";
 }
 
@@ -470,11 +495,17 @@ async function opretPayout(admin: Admin, u: UdbetalingRaekke): Promise<string> {
 
   // Findes payouten allerede (fx svaret gik tabt)? Slås op via metadata.
   if (gammel) {
-    const liste = await stripe.payouts.list(
+    // Alle sider (auto-paginering) siden claimen blev oprettet.
+    let fundet: Stripe.Payout | null = null;
+    for await (const p of stripe.payouts.list(
       { limit: 100, created: { gte: Math.floor(new Date(u.oprettet).getTime() / 1000) - 3600 } },
       valg,
-    );
-    const fundet = liste.data.find((p) => p.metadata?.saelger_udbetaling_id === u.id);
+    )) {
+      if (p.metadata?.saelger_udbetaling_id === u.id) {
+        fundet = p;
+        break;
+      }
+    }
     if (fundet) return registrerOprettet(admin, u, fundet);
   }
 
@@ -502,6 +533,13 @@ async function opretPayout(admin: Admin, u: UdbetalingRaekke): Promise<string> {
         p_fejl: "Saldoen dækker ikke beløbet - claimen beholdes, prøves igen med samme nøgle",
         p_ny_noegle: false,
       });
+      await alarmEnGang(
+        admin,
+        u,
+        "alarm_saldo_kl",
+        "betaling/saldo",
+        `Saldo-afstemning: sælgerkonto ${u.stripe_konto} dækker ikke den uafklarede udbetaling ${u.id}. Claimen beholdes og prøves igen med samme nøgle.`,
+      );
       return "venter_saldo";
     }
   }
@@ -517,6 +555,14 @@ async function opretPayout(admin: Admin, u: UdbetalingRaekke): Promise<string> {
       p_ny_noegle: true,
     });
   }
+
+  // Sidste kald med nøglen (24-timers-uret i frigoerGammelClaim).
+  const { error: sendtFejl } = await admin
+    .from("saelger_udbetalinger")
+    .update({ sidst_sendt_kl: new Date().toISOString() })
+    .eq("id", u.id)
+    .in("status", ["claimet", "usikker"]);
+  if (sendtFejl) throw new Error(`sidst_sendt_kl: ${sendtFejl.message}`);
 
   let payout: Stripe.Payout;
   try {
