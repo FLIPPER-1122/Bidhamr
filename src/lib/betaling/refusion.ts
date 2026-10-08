@@ -47,6 +47,10 @@ type Plan = {
   tilbagefoert?: boolean;
 };
 
+// Indsigelser, der er afgjort til BidHamrs fordel (samme som
+// betaling_indsigelse_blokerer i databasen).
+export const INDSIGELSE_AFGJORT: string[] = ["won", "warning_closed", "prevented"];
+
 function stripeId(v: string | { id: string } | null | undefined): string | null {
   if (!v) return null;
   return typeof v === "string" ? v : v.id;
@@ -128,7 +132,14 @@ export async function forberedDestinationRefusion(
     { expand: ["transfer", "application_fee"] },
     opts,
   );
-  if (charge.disputed) return { kode: "indsigelse" };
+  if (charge.disputed) {
+    // charge.disputed bliver stående efter en vundet indsigelse - kun en åben
+    // eller tabt indsigelse stopper refusionen (som tjekFoerUdbetaling).
+    const d = await stripe.disputes.list({ charge: charge.id, limit: 10 }, opts);
+    if (!d.data.length || d.has_more || d.data.some((x) => !INDSIGELSE_AFGJORT.includes(x.status))) {
+      return { kode: "indsigelse" };
+    }
+  }
   const transfer = charge.transfer && typeof charge.transfer !== "string" ? charge.transfer : null;
   const fee =
     charge.application_fee && typeof charge.application_fee !== "string" ? charge.application_fee : null;

@@ -135,6 +135,9 @@ export type BetalingTilHandling = {
     tilstand: "venter" | "gennemfoert" | "opgivet" | "udbetalt";
     forsoeg: number;
   } | null;
+  // Destination (trin 4): forklaring til staff om indsigelsen og markeringen
+  // (beviser lagt klar / vundet). null = ingen.
+  indsigelseNote: string | null;
   // Link til betalingen i Stripes dashboard. Kun sat for admin/chef.
   stripeLink: string | null;
   // Handlens status (fx 'annulleret' - så vises fragten som refunderet).
@@ -507,15 +510,29 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
     // er beløbet hentet tilbage fra sælgerens konto? Mangler kolonnerne,
     // vises intet.
     const tilbageMap = new Map<string, NonNullable<BetalingTilHandling["indsigelseTilbagefoersel"]>>();
-    const tabteIds = raekker.filter((r) => r.indsigelse_status === "lost").map((r) => r.id as string);
-    if (tabteIds.length) {
+    const noteMap = new Map<string, string>();
+    const indsigelseIds = raekker.filter((r) => !!r.indsigelse_kl).map((r) => r.id as string);
+    if (indsigelseIds.length) {
       const { data: tb, error: tbErr } = await admin
         .from("betalinger")
-        .select("id, pengemodel, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoersel_forsoeg, saelger_udbetaling_id, overfoersel_paabegyndt_kl")
-        .in("id", tabteIds);
+        .select("id, pengemodel, indsigelse_status, indsigelse_beviser_kl, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoersel_forsoeg, saelger_udbetaling_id, overfoersel_paabegyndt_kl")
+        .in("id", indsigelseIds);
       if (tbErr && !manglerKolonne(tbErr)) throw new Error(tbErr.message);
       for (const t of tb ?? []) {
         if (t.pengemodel !== "destination") continue;
+        const st = (t.indsigelse_status as string | null) ?? "";
+        if (["won", "warning_closed", "prevented"].includes(st)) {
+          noteMap.set(
+            t.id as string,
+            "Indsigelsen er afgjort til BidHamrs fordel, og handlen fortsætter. Markeringen holder stadig udbetalingen til sælgeren, indtil du trykker \"Markér som løst\". Den lukkes ikke af sig selv, fordi den også kan dække over en anden grund - læs fejlbeskeden og tjek betalingen først.",
+          );
+        } else if (st !== "lost" && t.indsigelse_beviser_kl) {
+          noteMap.set(
+            t.id as string,
+            "BidHamr har lagt beviserne klar hos Stripe, men de er IKKE sendt til banken. Gennemse dem, tilføj beskeder og billeder fra handlen, og indsend dem i Stripe inden fristen - ellers er indsigelsen tabt. Pengene udbetales ikke, før indsigelsen er afgjort, og markeringen er lukket.",
+          );
+        }
+        if (st !== "lost") continue;
         const forsoeg = Number(t.indsigelse_tilbagefoersel_forsoeg ?? 0);
         tilbageMap.set(t.id as string, {
           tilstand: t.indsigelse_tilbagefoersel_id
@@ -590,6 +607,7 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
               })()
             : null,
         indsigelseTilbagefoersel: tilbageMap.get(r.id as string) ?? null,
+        indsigelseNote: noteMap.get(r.id as string) ?? null,
         stripeLink:
           kanLoese && r.stripe_payment_intent_id
             ? stripeBetalingLink(r.stripe_payment_intent_id as string)

@@ -73,6 +73,11 @@ export async function sendIndsigelseTilSaelger(
   paymentIntentId: string | null,
   chargeId: string | null,
   udfald: IndsigelseUdfald,
+  // Destination (trin 4): beskeden om en TABT indsigelse sendes først, når
+  // det er afklaret, om handlen var udbetalt (tilbagefoerVedTabtIndsigelse) -
+  // ikke fra spejlingen, hvor en claimet udbetaling ellers ville ligne en
+  // gennemført. overfoert = afklaringens svar.
+  tabtAfklaret?: { overfoert: boolean },
 ): Promise<void> {
   try {
     const admin = createAdminClient();
@@ -107,6 +112,10 @@ export async function sendIndsigelseTilSaelger(
       overfoert: !!b.stripe_transfer_id || !!b.overfoersel_paabegyndt_kl,
       destination: b.pengemodel === "destination",
     };
+    if (t.destination && udfald === "tabt") {
+      if (!tabtAfklaret) return;
+      t.overfoert = tabtAfklaret.overfoert;
+    }
     const { titel, tekst } = indsigelseTekst(udfald, t);
     await send(b.seller_id, "sag", {
       titel,

@@ -162,6 +162,10 @@ export default function BetalingHandlinger({
 
   return (
     <ul className="mt-4 space-y-3 border-t border-neutral-100 pt-4">
+      {b.indsigelseNote && (
+        <li className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-700">{b.indsigelseNote}</li>
+      )}
+
       {tilbageTekst && (
         <li className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-700">{tilbageTekst}</li>
       )}
@@ -173,7 +177,7 @@ export default function BetalingHandlinger({
               triggerLabel="Hent beløbet fra sælgeren igen"
               triggerClassName={KNAP_ORANGE}
               title="Hent beløbet fra sælgerens Stripe-konto igen?"
-              description="Køberens bank har givet køberen pengene tilbage, og BidHamr er trukket for beløbet. Sælgerens del hentes nu tilbage fra hans Stripe-konto (aldrig mere, end der står på kontoen). Stripe spørges først, så der aldrig trækkes to gange."
+              description="Køberens bank har givet køberen pengene tilbage, og BidHamr er trukket for beløbet. Sælgerens del hentes nu tilbage fra sælgerens Stripe-konto (aldrig mere, end der står på kontoen). Stripe spørges først, så der aldrig trækkes to gange."
               confirmLabel="Prøv igen"
               action={hentFraSaelgerIgenForm}
               hiddenFields={{ betalingId: b.id }}

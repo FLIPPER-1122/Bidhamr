@@ -1179,9 +1179,13 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
 
 // Stripe-kald under refusionslåsen: højst 20 sekunder pr. forsøg og højst ét
 // automatisk genforsøg (stripe-node's standard er 80 sekunder). Alle kald
-// under låsen (højst 5 Stripe-kald) tager dermed højst ca. 4 minutter, og
-// låsen (betaling_refusion_laas) varer 15 minutter - den udløber ikke, mens
-// et kald stadig er i gang. Genforsøg sker med samme idempotency key.
+// under låsen (højst ca. 12 Stripe-kald med destination-trinnene i
+// refusion.ts: refusion, PaymentIntent, refusionsliste, charge, indsigelser,
+// saldo x2, gebyr-refusion, tilbageførsel, opslag og refusion) tager dermed
+// højst ca. 8-9 minutter, og låsen (betaling_refusion_laas) varer 15
+// minutter - den udløber ikke, mens et kald stadig er i gang. Genforsøg sker
+// med samme idempotency key. Et trin registreres kun, mens låsen holdes
+// (betaling_refusion_trin) - ellers stopper forsøget.
 const UNDER_LAAS: Stripe.RequestOptions = { timeout: 20_000, maxNetworkRetries: 1 };
 
 function manglerFunktion(err: { code?: string; message?: string } | null): boolean {
@@ -1831,10 +1835,25 @@ async function refusionFejletEfterRefunderet(
 // vundet/lukket, prøves en ventende overførsel med det samme.
 export async function spejlIndsigelse(disputeId: string): Promise<string> {
   const stripe = getStripe();
-  const d = await stripe.disputes.retrieve(disputeId);
+  let d: Stripe.Dispute = await stripe.disputes.retrieve(disputeId);
   const piId =
     typeof d.payment_intent === "string" ? d.payment_intent : (d.payment_intent?.id ?? null);
   const chId = typeof d.charge === "string" ? d.charge : d.charge.id;
+  // Destination (trin 4): har chargen flere indsigelser, spejles den "værste"
+  // (tabt før åben før afgjort til BidHamrs fordel) - ikke blot den sidst
+  // spejlede. Separat uændret.
+  {
+    const { data: model } = await createAdminClient()
+      .from("betalinger")
+      .select("pengemodel")
+      .eq(piId ? "stripe_payment_intent_id" : "stripe_charge_id", piId ?? chId)
+      .maybeSingle<{ pengemodel: string | null }>();
+    if (model?.pengemodel === "destination") {
+      const alle = await stripe.disputes.list({ charge: chId, limit: 10 });
+      const rang = (st: string) => (st === "lost" ? 3 : ["won", "warning_closed", "prevented"].includes(st) ? 1 : 2);
+      for (const x of alle.data) if (rang(x.status) > rang(d.status)) d = x;
+    }
+  }
   const { data, error } = await createAdminClient().rpc("betaling_registrer_indsigelse", {
     p_payment_intent: piId,
     p_charge: chId,

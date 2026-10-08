@@ -29,6 +29,7 @@ import { getStripe, StripeTilstandFejl } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { send } from "@/lib/notifikationer/send";
+import { sendIndsigelseTilSaelger } from "@/lib/betaling/indsigelseBeskeder";
 
 type Admin = ReturnType<typeof createAdminClient>;
 const KALD: Stripe.RequestOptions = { timeout: 20_000, maxNetworkRetries: 1 };
@@ -84,6 +85,13 @@ export async function efterIndsigelseDestination(d: Stripe.Dispute, resultat: st
       return;
     }
     if (!b || b.pengemodel !== "destination") return;
+
+    // Svarfristen gemmes (varsler 48 og 12 timer før - varslIndsigelsesfrister).
+    const frist = d.evidence_details?.due_by ? new Date(d.evidence_details.due_by * 1000).toISOString() : null;
+    if (frist) {
+      const { error: fFejl } = await admin.from("betalinger").update({ indsigelse_frist_kl: frist }).eq("id", b.id);
+      if (fFejl && !manglerIDatabasen(fFejl)) console.error("indsigelse_frist_kl:", b.id, fFejl.message);
+    }
 
     if (resultat === "blokeret") {
       await forberedBeviser(admin, b, d);
@@ -165,13 +173,32 @@ export async function tilbagefoerVedTabtIndsigelse(
   dArg?: Stripe.Dispute,
 ): Promise<string> {
   const r = await tilbagefoerUdenBesked(betalingId, dArg);
-  // "venter" = endnu uafklaret (fx en udbetaling er i gang) - besked senere.
-  if (r !== "venter") {
-    const admin = createAdminClient();
-    const { data: b } = await admin.from("betalinger").select(KOLONNER).eq("id", betalingId).maybeSingle<Raekke>();
-    if (b?.pengemodel === "destination" && b.stripe_dispute_id) {
-      await beskedTilKoeberVedTabt(admin, b, b.stripe_dispute_id, r === "udbetalt");
+  // "venter" = endnu uafklaret (fx en udbetaling er claimet/usikker): ingen
+  // beskeder endnu - cron'en behandler betalingen igen, når udbetalingen er
+  // afklaret (indsigelse_tabt_afklaret er tom).
+  if (r === "venter") return r;
+  const udfald = r === "udbetalt" ? "udbetalt" : r === "stoppet" ? "stoppet" : "tilbagefoert";
+  const admin = createAdminClient();
+  const { data: nyt, error: aFejl } = await admin.rpc("betaling_indsigelse_tabt_afklar", {
+    p_betaling: betalingId,
+    p_udfald: udfald,
+  });
+  if (aFejl && !manglerIDatabasen(aFejl)) console.error("betaling_indsigelse_tabt_afklar:", betalingId, aFejl.message);
+  const { data: b } = await admin.from("betalinger").select(KOLONNER).eq("id", betalingId).maybeSingle<Raekke>();
+  if (b?.pengemodel === "destination" && b.stripe_dispute_id) {
+    if (nyt === true && udfald === "udbetalt") {
+      await marker(
+        admin,
+        b.id,
+        "Indsigelse tabt efter udbetaling: BidHamr bærer tabet - intet trækkes fra sælgeren. Køberen skal sende varen til BidHamr",
+      );
     }
+    // Først nu vides, om handlen var udbetalt. Én besked pr. indsigelse
+    // (nøglerne), også hvis dette kaldes flere gange.
+    await sendIndsigelseTilSaelger(b.stripe_dispute_id, b.stripe_payment_intent_id, b.stripe_charge_id, "tabt", {
+      overfoert: udfald === "udbetalt",
+    });
+    await beskedTilKoeberVedTabt(admin, b, b.stripe_dispute_id, udfald === "udbetalt");
   }
   return r;
 }
@@ -209,11 +236,7 @@ async function tilbagefoerUdenBesked(betalingId: string, dArg?: Stripe.Dispute):
     case "allerede":
       return "allerede";
     case "udbetalt":
-      await marker(
-        admin,
-        b.id,
-        "Indsigelse tabt efter udbetaling: BidHamr bærer tabet - intet trækkes fra sælgeren. Køberen skal sende varen til BidHamr",
-      );
+      // Markering og beskeder i tilbagefoerVedTabtIndsigelse (én gang).
       return "udbetalt";
     case "refusion":
       await stop(admin, b, "en refusion til køberen er allerede i gang eller gennemført - afgør pengene manuelt");
@@ -378,13 +401,16 @@ async function beskedTilKoeberVedTabt(admin: Admin, b: Raekke, disputeId: string
 export async function tilbagefoerTabteIndsigelserVentende(): Promise<number> {
   const admin = createAdminClient();
   const nu = new Date().toISOString();
+  await udbetalingFejletEfterTabt(admin);
+  // Alle tabte indsigelser, hvis udfald ikke er afklaret endnu - også dem med
+  // en udbetaling (claimet/usikker -> vent; oprettet/betalt -> 'udbetalt').
   const { data, error } = await admin
     .from("betalinger")
     .select("id")
     .eq("pengemodel", "destination")
     .eq("indsigelse_status", "lost")
+    .is("indsigelse_tabt_afklaret", null)
     .is("indsigelse_tilbagefoersel_id", null)
-    .is("saelger_udbetaling_id", null)
     .lt("indsigelse_tilbagefoersel_forsoeg", 5)
     .or(`indsigelse_tilbagefoersel_naeste_kl.is.null,indsigelse_tilbagefoersel_naeste_kl.lte.${nu}`)
     .limit(50);
@@ -401,6 +427,96 @@ export async function tilbagefoerTabteIndsigelserVentende(): Promise<number> {
       console.error("Tilbageførsel ved tabt indsigelse fejlede (prøves igen):", r.id, err);
       await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Tilbageførsel ved tabt indsigelse", fejl: err });
     }
+  }
+  return antal;
+}
+
+// Udfaldet var 'udbetalt' (BidHamr bærer tabet), men udbetalingen til
+// sælgerens bank fejlede/blev annulleret bagefter (payout.failed efter paid):
+// pengene står igen på sælgerens Stripe-konto. Chefens valg: intet flyttes
+// automatisk (hverken tilbageførsel eller ny udbetaling) - markering og
+// drift-alarm, staff afgør. Én gang pr. betaling. Kaster aldrig.
+async function udbetalingFejletEfterTabt(admin: Admin): Promise<void> {
+  try {
+    const { data, error } = await admin
+      .from("betalinger")
+      .select("id, trade_id, seller_id")
+      .eq("pengemodel", "destination")
+      .eq("indsigelse_status", "lost")
+      .eq("indsigelse_tabt_afklaret", "udbetalt")
+      .is("saelger_udbetaling_id", null)
+      .is("overfoersel_paabegyndt_kl", null)
+      .limit(50);
+    if (error) {
+      if (!manglerIDatabasen(error)) throw new Error(error.message);
+      return;
+    }
+    for (const r of data ?? []) {
+      const { data: nyt } = await admin.rpc("betaling_indsigelse_tabt_afklar", {
+        p_betaling: r.id,
+        p_udfald: "udbetaling_fejlet",
+      });
+      if (nyt !== true) continue;
+      await marker(
+        admin,
+        r.id as string,
+        "Indsigelse tabt efter udbetaling, men udbetalingen til sælgerens bank fejlede bagefter: pengene står igen på sælgerens Stripe-konto og flyttes ikke automatisk - afgør manuelt",
+      );
+      await logDriftFejl({
+        kilde: "cron",
+        sti: "betalings-cron",
+        hvor: "betaling/indsigelse",
+        fejl: `Tabt indsigelse på handel ${r.trade_id}: udbetalingen til sælgerens bank fejlede efter afklaringen ('udbetalt'). Pengene står på sælgerens Stripe-konto - se /admin/betalinger.`,
+        brugerId: r.seller_id as string,
+      });
+    }
+  } catch (err) {
+    console.error("udbetalingFejletEfterTabt fejlede:", err);
+    await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Tilbageførsel ved tabt indsigelse", fejl: err });
+  }
+}
+
+// Svarfristen for åbne indsigelser (destination): markering til staff og
+// drift-alarm 48 og 12 timer før fristen (én gang hver). Beviser, der kun er
+// lagt klar (submit: false), sendes IKKE til banken af sig selv - svarer
+// BidHamr ikke inden fristen, er indsigelsen tabt (Stripes dokumentation).
+export async function varslIndsigelsesfrister(): Promise<number> {
+  const admin = createAdminClient();
+  const graense = new Date(Date.now() + 48 * 60 * 60_000).toISOString();
+  const { data, error } = await admin
+    .from("betalinger")
+    .select("id, trade_id, seller_id, indsigelse_frist_kl, indsigelse_frist_varslet_48_kl, indsigelse_frist_varslet_12_kl")
+    .eq("pengemodel", "destination")
+    .in("indsigelse_status", ["needs_response", "warning_needs_response"])
+    .not("indsigelse_frist_kl", "is", null)
+    .lte("indsigelse_frist_kl", graense)
+    .limit(100);
+  if (error) {
+    if (manglerIDatabasen(error)) return 0;
+    await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Indsigelsesfrister", fejl: error });
+    return 0;
+  }
+  let antal = 0;
+  for (const r of data ?? []) {
+    const tilbage = new Date(r.indsigelse_frist_kl as string).getTime() - Date.now();
+    const timer = tilbage <= 12 * 60 * 60_000 ? 12 : 48;
+    if (timer === 48 && r.indsigelse_frist_varslet_48_kl) continue;
+    if (timer === 12 && r.indsigelse_frist_varslet_12_kl) continue;
+    const { data: nyt } = await admin.rpc("betaling_indsigelse_frist_varsel", { p_betaling: r.id, p_timer: timer });
+    if (nyt !== true) continue;
+    antal++;
+    const tekst =
+      timer === 12
+        ? "Indsigelse: fristen for at svare banken udløber inden for 12 timer - indsend beviserne i Stripe nu, ellers er indsigelsen tabt"
+        : "Indsigelse: fristen for at svare banken udløber inden for 48 timer - gennemse og indsend beviserne i Stripe";
+    await marker(admin, r.id as string, tekst);
+    await logDriftFejl({
+      kilde: "cron",
+      sti: "betalings-cron",
+      hvor: "betaling/indsigelse-frist",
+      fejl: `${tekst} (handel ${r.trade_id}).`,
+      brugerId: r.seller_id as string,
+    });
   }
   return antal;
 }

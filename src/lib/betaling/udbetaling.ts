@@ -349,14 +349,16 @@ export function staarPaaKontoen(r: {
   if (r.gebyr_refunderet_kl) beloeb += g;
   if (r.refusion_tilbagefoert_kl) beloeb -= s + g;
   if (r.indsigelse_tilbagefoersel_id) beloeb -= Number(r.indsigelse_tilbagefoert_oere ?? 0);
-  return Math.max(beloeb, 0);
+  // Kan være negativ, hvis der er taget mere fra kontoen end handlen - det
+  // skjules ikke (skyldigOere markerer og alarmerer).
+  return beloeb;
 }
 
 async function skyldigOere(admin: Admin, saelgerId: string, konto: string): Promise<number> {
   const { data, error } = await admin
     .from("betalinger")
     .select(
-      "udbetaling_oere, refusion_fra_saelger_oere, refusion_gebyr_oere, gebyr_refunderet_kl, refusion_tilbagefoert_kl, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoert_oere",
+      "id, trade_id, udbetaling_oere, refusion_fra_saelger_oere, refusion_gebyr_oere, gebyr_refunderet_kl, refusion_tilbagefoert_kl, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoert_oere",
     )
     .eq("seller_id", saelgerId)
     .eq("pengemodel", "destination")
@@ -366,7 +368,28 @@ async function skyldigOere(admin: Admin, saelgerId: string, konto: string): Prom
     .is("saelger_udbetaling_id", null)
     .limit(1000);
   if (error) throw new Error(`skyldigOere: ${error.message}`);
-  return (data ?? []).reduce((sum, r) => sum + staarPaaKontoen(r), 0);
+  let sum = 0;
+  for (const r of data ?? []) {
+    const x = staarPaaKontoen(r);
+    if (x < 0) {
+      // Mere taget fra sælgerens konto end handlen: aldrig skjult. Tæller 0 i
+      // summen (så andre handler ikke ser dækket ud af et minus), markeres
+      // til staff og giver drift-alarm.
+      await admin.rpc("betaling_marker_refusion", {
+        p_betaling: r.id,
+        p_besked: "Saldo-afstemning: der er taget mere fra sælgerens Stripe-konto for handlen, end handlen gav - kontrollér tilbageførsler og refusioner i Stripe",
+      });
+      await logDriftFejl({
+        kilde: "server",
+        hvor: "betaling/saldo",
+        fejl: `Saldo-afstemning: der er taget mere fra sælgerkonto ${konto} for handel ${r.trade_id}, end handlen gav (negativt beløb). Kontrollér i Stripe.`,
+        brugerId: saelgerId,
+      });
+      continue;
+    }
+    sum += x;
+  }
+  return sum;
 }
 
 // --------------------------------------------------------------- én sælger
