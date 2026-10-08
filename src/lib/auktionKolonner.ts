@@ -44,7 +44,40 @@ export const AUKTION_KOLONNER: string = [
   "sikkerhedsoplysninger",
 ].join(",");
 
-// Rækken, som select(AUKTION_KOLONNER) giver - samme løse type, som
-// select("*") gav på den utypede klient.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AuktionRaekke = any;
+// Rækken, som select(AUKTION_KOLONNER) giver. Holdes i trit med listen
+// ovenfor (numeric kommer som tal fra PostgREST, interval som tekst).
+export type AuktionRaekke = {
+  id: string;
+  bruger_id: string;
+  titel: string;
+  beskrivelse: string | null;
+  billeder: string[];
+  startpris: number;
+  nuværende_bud: number | null;
+  lokation: string | null;
+  forsendelse_mulig: boolean;
+  status: string;
+  slutter_kl: string;
+  oprettet: string;
+  kategori: string | null;
+  postnummer: string | null;
+  lat: number | null;
+  lng: number | null;
+  skjult: boolean;
+  stand: string | null;
+  maerke: string | null;
+  antal_bud: number;
+  afsluttet_kl: string | null;
+  arkiveret_kl: string | null;
+  varighed_dage: number | null;
+  redigeret_kl: string;
+  spoergsmaal_aktiv: boolean;
+  forbudt_bekraeftet: boolean;
+  idempotens_noegle: string | null;
+  visningspris: number | null;
+  pauset_kl: string | null;
+  pause_resterende: string | null;
+  erhverv: boolean;
+  producent: string | null;
+  sikkerhedsoplysninger: string | null;
+};

@@ -52,7 +52,11 @@ export default async function AuktionPage({
   // ikke venter på to runder til databasen efter hinanden.
   // Auktionsrækken deles med layout.tsx og generateMetadata (cache()), og
   // brugeren med topbaren (src/lib/supabase/bruger.ts).
-  const [{ data: auktion }, bruger, { data: budRaw }] = await Promise.all([
+  // auctions.vinder_id kan ikke læses af brugere (Niels M03), så den hentes
+  // med service role i samme runde. Den BRUGES først nedenfor, efter at RLS
+  // (auktionen) har vist, at brugeren må se auktionen, og kun på serveren
+  // ("Dig"/"Byder N") - id'et sendes aldrig til browseren.
+  const [{ data: auktion }, bruger, { data: budRaw }, { data: vinderRaekke }] = await Promise.all([
     hentAuktionRaekke(id),
     hentBruger(),
     createAdminClient()
@@ -76,6 +80,11 @@ export default async function AuktionPage({
         }[],
         { merge: false }
       >(),
+    createAdminClient()
+      .from("auctions")
+      .select("vinder_id")
+      .eq("id", id)
+      .maybeSingle<{ vinder_id: string | null }>(),
   ]);
 
   // layout.tsx har allerede givet 404 (med rigtig status), hvis brugeren
@@ -116,18 +125,10 @@ export default async function AuktionPage({
     ) ?? null;
   // auctions.vinder_id er sandheden: den flyttes til næste byder, hvis
   // vinderen ikke betalte, og byderen sagde ja til at købe varen.
-  // Kolonnen kan ikke læses af brugere (Niels M03), så den hentes med
-  // service role - først her, hvor RLS (auktionen ovenfor) har vist, at
-  // brugeren må se auktionen. Id'et bruges kun på serveren ("Dig"/"Byder N").
-  const { data: vinderRaekke } = auktionErSlut || auktion.status !== "aktiv"
-    ? await createAdminClient()
-        .from("auctions")
-        .select("vinder_id")
-        .eq("id", id)
-        .maybeSingle<{ vinder_id: string | null }>()
-    : { data: null };
+  // Hentet med service role i Promise.all øverst; bruges kun, når auktionen
+  // er slut eller afsluttet.
   const vinderId: string | null =
-    vinderRaekke?.vinder_id ??
+    (auktionErSlut || auktion.status !== "aktiv" ? vinderRaekke?.vinder_id : null) ??
     (auktion.status !== "aktiv" ? (vinderBud?.bruger_id ?? null) : null);
   const erVinder = Boolean(auktionErSlut && vinderBud && bruger && bruger.id === vinderId);
   const erSælger = bruger?.id === auktion.bruger_id;

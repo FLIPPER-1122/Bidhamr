@@ -131,9 +131,10 @@ as $$
           )
      );
 $$;
-revoke all on function public.auktion_billede_laast(text) from public;
--- anon skal kunne evaluere den restriktive policy (svarer kun ja/nej).
-grant execute on function public.auktion_billede_laast(text) to anon, authenticated;
+revoke all on function public.auktion_billede_laast(text) from public, anon;
+-- Kun indloggede brugere (og service_role) evaluerer sletnings-policyen
+-- nedenfor. anon kan ikke slette i storage og skal ikke kunne kalde den.
+grant execute on function public.auktion_billede_laast(text) to authenticated, service_role;
 
 -- Opdatering af et objekt i auktion-billeder er aldrig tilladt for brugere:
 -- det dækker upsert (insert ... on conflict do update), flyt (move) og
@@ -152,7 +153,7 @@ drop policy if exists auktion_billeder_slet_ikke_laast on storage.objects;
 create policy auktion_billeder_slet_ikke_laast on storage.objects
   as restrictive
   for delete
-  to anon, authenticated
+  to authenticated
   using (bucket_id <> 'auktion-billeder' or not public.auktion_billede_laast(name));
 
 -- ---------------------------------------------------------------------
