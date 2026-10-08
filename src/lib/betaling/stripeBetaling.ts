@@ -19,6 +19,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { totalOere } from "@/lib/betaling/beregn";
 import { sendIndsigelseTilSaelger } from "@/lib/betaling/indsigelseBeskeder";
+import { kontoSpejl, nyKontoParametre, sikrKontoopsaetning } from "@/lib/betaling/connect";
+import { aktivBetalingsmodel } from "@/lib/betaling/model";
 
 // Offentlig https-adresse til Stripes business_profile.url. Lokalt
 // (http/localhost) bruges produktionsdomaenet, da Stripe afviser andet.
@@ -139,6 +141,12 @@ export type ProfilRaekke = {
   // udbetalingskontoen (indgår i idempotency key og beskednøgler).
   connect_nulstillet_antal?: number | null;
   connect_tidligere_konti?: string[] | null;
+  // Fra 20261011010000_betalingsmodel_fundament.sql (valgfri, indtil kørt).
+  connect_charges_enabled?: boolean | null;
+  connect_kort_aktiv?: boolean | null;
+  connect_betalingsmetoder?: Record<string, string> | null;
+  connect_udbetalingsplan?: string | null;
+  connect_plan_ok?: boolean | null;
 };
 
 // ------------------------------------------------------------------ profiler
@@ -1647,16 +1655,28 @@ export async function spejlConnectKonto(konto: Stripe.Account): Promise<string |
     connect_udbetalinger_aktiv: udbetalinger,
     opdateret: nu,
   };
-  const { error } = await admin
+  const status = {
+    ...basis,
+    connect_mangler_nu: manglerNu,
+    connect_mangler_forfaldne: forfaldne,
+    connect_spaerret_aarsag: spaerret,
+    ...(mangler ? {} : { connect_mangler_siden: null }),
+  };
+  // Destination-felterne (20261011010000). En frakoblet konto kan ikke tage
+  // imod betaling, uanset hvad Stripe siger.
+  const spejl = kontoSpejl(konto);
+  if (frakoblet) {
+    spejl.connect_charges_enabled = false;
+    spejl.connect_kort_aktiv = false;
+  }
+  let { error } = await admin
     .from("betalingsprofiler")
-    .update({
-      ...basis,
-      connect_mangler_nu: manglerNu,
-      connect_mangler_forfaldne: forfaldne,
-      connect_spaerret_aarsag: spaerret,
-      ...(mangler ? {} : { connect_mangler_siden: null }),
-    })
+    .update({ ...status, ...spejl })
     .eq("user_id", userId);
+  if (erManglerKolonne(error)) {
+    // Migrationen 20261011010000 er ikke kørt endnu: spejl uden de nye felter.
+    ({ error } = await admin.from("betalingsprofiler").update(status).eq("user_id", userId));
+  }
   if (erManglerKolonne(error)) {
     // Migrationen 20261003060000 er ikke kørt endnu: spejl kun de tre felter.
     console.error("spejlConnectKonto: kør migrationen 20261003060000_connect_status.sql");
@@ -1719,7 +1739,55 @@ export async function spejlConnectKonto(konto: Stripe.Account): Promise<string |
     );
   }
 
+  if (!frakoblet) await kontrollerUdbetalingsplan(konto.id, profil, spejl.connect_udbetalingsplan);
+
   return userId;
+}
+
+// Niels F01: udbetalingsplanen på sælgerens konto.
+//   destination: planen SKAL være manual (BidHamr udbetaler, når handlen er
+//     afsluttet). Står den til andet, sættes den tilbage hos Stripe, og der
+//     gives drift-alarm.
+//   separat (i dag): Stripe udbetaler automatisk fra sælgerens konto - planen
+//     ændres ikke. Stod kontoen til manual og er ændret, gives kun drift-alarm
+//     (én gang - profilen har derefter den nye plan).
+// Kaster aldrig (spejlingen må ikke fejle pga. kontrollen).
+async function kontrollerUdbetalingsplan(
+  kontoId: string,
+  profil: ProfilRaekke,
+  plan: string | null,
+): Promise<void> {
+  if (plan === "manual") return;
+  try {
+    if ((await aktivBetalingsmodel()) === "destination") {
+      const rettet = await getStripe().accounts.update(kontoId, {
+        settings: { payouts: { schedule: { interval: "manual" } } },
+      });
+      const nyPlan = rettet.settings?.payouts?.schedule?.interval ?? null;
+      await createAdminClient()
+        .from("betalingsprofiler")
+        .update({ connect_udbetalingsplan: nyPlan, connect_plan_ok: nyPlan === "manual" })
+        .eq("user_id", profil.user_id);
+      await logDriftFejl({
+        kilde: "server",
+        hvor: "connect/udbetalingsplan",
+        fejl: `Sælgerkonto ${kontoId} havde udbetalingsplan '${plan ?? "ukendt"}' - sat tilbage til '${nyPlan ?? "ukendt"}' (destination kræver manual).`,
+        brugerId: profil.user_id,
+      });
+      return;
+    }
+    if (profil.connect_udbetalingsplan === "manual") {
+      await logDriftFejl({
+        kilde: "server",
+        hvor: "connect/udbetalingsplan",
+        fejl: `Sælgerkonto ${kontoId} stod til manuel udbetaling, men er ændret til '${plan ?? "ukendt"}' (betalingsmodel separat - ikke rettet).`,
+        brugerId: profil.user_id,
+      });
+    }
+  } catch (err) {
+    console.error("kontrollerUdbetalingsplan fejlede:", kontoId, err);
+    await logDriftFejl({ kilde: "server", hvor: "connect/udbetalingsplan", fejl: err, brugerId: profil.user_id });
+  }
 }
 
 // account.application.deauthorized: sælgeren har frakoblet/lukket sin
@@ -1996,29 +2064,21 @@ export async function onboardingLink(
     );
   }
 
-  if (!profil?.stripe_account_id) {
-    const { data: bruger } = await createAdminClient()
-      .from("users")
-      .select("email")
-      .eq("id", userId)
-      .single<{ email: string }>();
+  const { data: bruger } = await createAdminClient()
+    .from("users")
+    .select("email, konto_type")
+    .eq("id", userId)
+    .single<{ email: string; konto_type: string | null }>();
+  const erFirma = bruger?.konto_type === "erhverv";
+  // Manuel udbetalingsplan KUN i destination-modellen: i den nuværende model
+  // (separat) udbetaler Stripe automatisk fra sælgerens konto til banken.
+  const manuelPlan = (await aktivBetalingsmodel()) === "destination";
 
+  if (!profil?.stripe_account_id) {
     const konto = await stripe.accounts.create(
-      {
-        type: "express",
-        country: "DK",
-        email: bruger?.email,
-        business_type: "individual",
-        // Separate charges and transfers: sælgeren modtager kun overførsler.
-        capabilities: { transfers: { requested: true } },
-        business_profile: {
-          product_description: "Privat salg af brugte ting på BidHamr",
-          // Stripe afviser http- og localhost-adresser som virksomheds-URL.
-          // refresh_url/return_url maa gerne vaere http://localhost i testmode.
-          url: offentligSideUrl(),
-        },
-        metadata: { bruger_id: userId },
-      },
+      // Kontoen oprettes klar til den nye model (card_payments + transfers +
+      // MobilePay, MCC, firma/privat) - src/lib/betaling/connect.ts.
+      nyKontoParametre({ userId, email: bruger?.email, erFirma, manuelPlan, url: offentligSideUrl() }),
       // Efter en admin-nulstilling (udbetalingskonto_nulstil) skal der
       // oprettes en NY konto - med den gamle nøgle ville Stripe (inden for
       // 24 timer) svare med den gamle, frakoblede konto.
@@ -2035,6 +2095,23 @@ export async function onboardingLink(
       .eq("user_id", userId)
       .is("stripe_account_id", null);
     profil = await hentProfil(userId);
+  } else if (manuelPlan) {
+    // Destination: eksisterende konto - anmod om det, der mangler (fx
+    // card_payments) og sæt manuel plan, så onboarding-linket også samler de
+    // oplysninger ind. IKKE i separat-modellen: en ny capability på en
+    // eksisterende konto kan straks gøre overførsler inaktive, indtil
+    // sælgeren er færdig (connect.ts). Fejl her må ikke stoppe onboardingen.
+    try {
+      await sikrKontoopsaetning(stripe, profil.stripe_account_id, {
+        erFirma,
+        manuelPlan,
+        capabilities: true,
+        url: offentligSideUrl(),
+      });
+    } catch (err) {
+      console.error("sikrKontoopsaetning fejlede:", profil.stripe_account_id, err);
+      await logDriftFejl({ kilde: "server", hvor: "connect/kontoopsaetning", fejl: err, brugerId: userId });
+    }
   }
 
   const link = await stripe.accountLinks.create({

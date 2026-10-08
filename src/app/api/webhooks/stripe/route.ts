@@ -21,7 +21,8 @@ import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/
 //
 // Signaturen verificeres altid. Platform-events signeres med
 // STRIPE_WEBHOOK_SECRET; events fra Connect-konti (account.updated,
-// account.application.deauthorized, payout.paid, payout.failed) kommer fra en
+// account.application.deauthorized, capability.updated, payout.paid,
+// payout.failed) kommer fra en
 // separat Connect-destination i Stripe ("Events from: Connected accounts")
 // og signeres med STRIPE_CONNECT_WEBHOOK_SECRET (samme rute bruges til begge).
 // Connect-events har event.account = sælgerens Connect-konto.
@@ -59,9 +60,32 @@ function verificer(rawBody: string, signatur: string): Stripe.Event | null {
 const CONNECT_EVENTS = new Set<string>([
   "account.updated",
   "account.application.deauthorized",
+  "capability.updated",
   "payout.paid",
   "payout.failed",
 ]);
+
+// Hent sælgerens konto frisk (events kan komme i forkert rækkefølge) og spejl
+// den. Er kontoen nu klar til overførsler, overføres frigivne beløb, der
+// ventede (betalingsmodel separat).
+async function spejlKonto(kontoId: string, eventType: string): Promise<void> {
+  let konto: Stripe.Account;
+  try {
+    konto = await getStripe().accounts.retrieve(kontoId);
+  } catch (err) {
+    // Ingen adgang længere (kontoen er frakoblet/lukket): intet at spejle.
+    // account.application.deauthorized håndterer frakoblingen.
+    if (err instanceof Stripe.errors.StripePermissionError) {
+      console.warn(`${eventType} for konto uden adgang:`, kontoId);
+      return;
+    }
+    throw err;
+  }
+  const brugerId = await spejlConnectKonto(konto);
+  if (brugerId && konto.capabilities?.transfers === "active") {
+    await overfoerVentende(brugerId);
+  }
+}
 
 async function haandter(event: Stripe.Event): Promise<void> {
   if (event.account && !CONNECT_EVENTS.has(event.type)) return;
@@ -120,25 +144,18 @@ async function haandter(event: Stripe.Event): Promise<void> {
     }
 
     case "account.updated": {
-      // Hent kontoen frisk (events kan komme i forkert rækkefølge).
-      const fraEvent = event.data.object as Stripe.Account;
-      let konto: Stripe.Account;
-      try {
-        konto = await getStripe().accounts.retrieve(fraEvent.id);
-      } catch (err) {
-        // Ingen adgang længere (kontoen er frakoblet/lukket): intet at spejle.
-        // account.application.deauthorized håndterer frakoblingen.
-        if (err instanceof Stripe.errors.StripePermissionError) {
-          console.warn("account.updated for konto uden adgang:", fraEvent.id);
-          return;
-        }
-        throw err;
-      }
-      const brugerId = await spejlConnectKonto(konto);
-      // Er sælgerens konto nu klar, overføres frigivne beløb, der ventede.
-      if (brugerId && konto.capabilities?.transfers === "active") {
-        await overfoerVentende(brugerId);
-      }
+      await spejlKonto((event.data.object as Stripe.Account).id, event.type);
+      return;
+    }
+
+    case "capability.updated": {
+      // En capability (card_payments, transfers, mobilepay_payments ...) på
+      // sælgerens konto har skiftet status. Kontoen spejles som ved
+      // account.updated.
+      const cap = event.data.object as Stripe.Capability;
+      const kontoId = typeof cap.account === "string" ? cap.account : cap.account?.id;
+      if (!kontoId) return;
+      await spejlKonto(kontoId, event.type);
       return;
     }
 
