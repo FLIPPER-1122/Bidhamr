@@ -44,6 +44,8 @@ type DbSvar = {
   gaelder_fra?: string;
   pakke?: ErhvervPakke;
   tilbagerul?: Tilbagerul;
+  // "I gang"-markering (20261010051000): kun ét skift pr. firma ad gangen.
+  laas?: string;
 };
 
 function stripeFejl(b: Extract<BetalingsStatus, { status: "fejl" }>): SkiftPakkeSvar {
@@ -60,12 +62,31 @@ export async function skiftPakkeForBruger(brugerId: string, pakkeId: unknown): P
   });
   if (error) {
     const tekst = erhvervFejlTekst(error.message, error.code);
-    if (tekst) return { fejl: tekst, kode: "ikke_tilladt" };
+    if (tekst) return { fejl: tekst, kode: error.code === "BHE07" ? "i_gang" : "ikke_tilladt" };
     if (error.code === "BHR01") return { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" };
     await logDriftFejl({ kilde: "action", hvor: "skiftPakke", fejl: error, brugerId });
     return { fejl: GENERISK, kode: "fejl" };
   }
   const svar = (data ?? null) as DbSvar | null;
+  try {
+    return await stripeDel(brugerId, svar);
+  } finally {
+    // Stripe-delen er færdig (eller rullet tilbage): et nyt skift må startes.
+    // Fejler det, udløber markeringen selv efter 5 minutter.
+    if (svar?.laas) {
+      const firma = await createAdminClient().from("firmaer").select("id").eq("bruger_id", brugerId).maybeSingle<{ id: string }>();
+      if (firma.data) {
+        const { error: lf } = await createAdminClient().rpc("firma_pakkeskift_laas_frigiv", {
+          p_firma: firma.data.id,
+          p_laas: svar.laas,
+        });
+        if (lf) await logDriftFejl({ kilde: "action", hvor: "skiftPakke/frigiv", fejl: lf, brugerId });
+      }
+    }
+  }
+}
+
+async function stripeDel(brugerId: string, svar: DbSvar | null): Promise<SkiftPakkeSvar> {
   const tilbagerul = svar?.tilbagerul ?? null;
 
   if (svar?.kode === "opgradering_afventer_betaling" && svar.pakke && svar.skift_id) {

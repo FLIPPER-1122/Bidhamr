@@ -254,6 +254,9 @@ export const ERHVERV_FEJL = {
   intetAbonnement: `Firmaet har ikke et aktivt abonnement. Kontakt BidHamr på ${ERHVERV_EMAIL}.`,
   gpsr: "Når varen er ny, skal du udfylde producent (navn og adresse) og sikkerhedsoplysninger.",
   kvote: "Du har brugt ugens auktioner. Du kan oprette den næste mandag.",
+  kontoSpaerret: `Din konto er spærret, så du kan ikke skifte pakke. Skriv til ${ERHVERV_EMAIL}.`,
+  skiftIGang: "Vi er ved at skifte din pakke. Vent et øjeblik, og opdater siden.",
+  opsagtNedgradering: `Dit abonnement er opsagt, så du kan ikke skifte til en mindre pakke. Skriv til ${ERHVERV_EMAIL}, hvis du vil fortsætte.`,
   ingenBeskeder:
     "Du kan ikke skrive til en erhvervssælger. Kontakt firmaet på mail eller telefon - se firmaets profil.",
 } as const;
@@ -265,6 +268,14 @@ export function erhvervFejlTekst(besked: string | null | undefined, kode?: strin
     return ERHVERV_FEJL.skalBetale;
   }
   if (kode === "BHE02" || b.includes("erhverv_intet_abonnement")) return ERHVERV_FEJL.intetAbonnement;
+  // Pakkeskift (20261010051000): spærret konto, skift allerede i gang,
+  // nedgradering mens abonnementet er opsagt. Databasens tekst er dansk.
+  if (kode === "BHE06" || b.includes("erhverv_konto_spaerret")) return ERHVERV_FEJL.kontoSpaerret;
+  if (kode === "BHE07" || b.includes("erhverv_skift_i_gang")) return ERHVERV_FEJL.skiftIGang;
+  if (kode === "BHE08" || b.includes("erhverv_opsagt")) {
+    const m = b.match(/erhverv_opsagt:\s*(.+)$/);
+    return m ? m[1].trim() : ERHVERV_FEJL.opsagtNedgradering;
+  }
   if (kode === "BHE04" || b.includes("erhverv_gpsr")) return ERHVERV_FEJL.gpsr;
   if (kode === "BHE05" || b.includes("erhverv_ingen_beskeder")) return ERHVERV_FEJL.ingenBeskeder;
   if (kode === "BHE03" || b.includes("erhverv_kvote")) {
