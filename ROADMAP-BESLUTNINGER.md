@@ -365,7 +365,9 @@ Baggrund og research: `ERHVERV-OVERBLIK.md`. Lovspørgsmålene er sendt til advo
 - **Konto før auktion:** Man skal have oprettet sin Stripe-konto og sendt oplysningerne ind, før man kan oprette en auktion. Auktionen må gerne oprettes og køre, mens Stripe godkender kontoen. Pengene venter, til kontoen er godkendt (som besluttet 2. okt.).
 - **Ventetid før udbetaling (F02):** Ved afhentning venter udbetalingen 3 dage, hvis sælgeren har under 5 gennemførte handler, eller hvis købet er over 2.000 kr.
 - **Tidligt svindelvarsel fra Stripe:** Ingen automatisk refusion. Udbetalingen stoppes, til staff har kigget på sagen.
-- **Tabt indsigelse, hvor varen er leveret (før udbetaling):** Køberen sender pakken tilbage til sælgeren. Køberen har fået pengene tilbage gennem banken, og sælgeren får varen tilbage og ingen udbetaling – samme princip som en sag.
+- **Pengene er låst, til handlen er helt færdig (Filip, 8. okt. 2026 – ufravigeligt):** Intet udbetales fra Stripe, før handlen er gået helt igennem. Opretter køberen en sag, eller kommer der en indsigelse fra banken, er pengene frosset, til sagen er afgjort – derefter går de til den, der får medhold (sælger eller køber).
+- **Tabt indsigelse, hvor varen er leveret:** Køberen sender pakken tilbage til sælgeren. Køberen har fået pengene gennem banken; sælgeren får varen tilbage og ingen udbetaling.
+- **Sælgerkontoen bliver aldrig godkendt (Filip, 8. okt. 2026):** Auktionen annulleres (køberen trækkes ikke), og sælgerens konto fryses (kan ikke oprette eller køre auktioner), til Stripe har godkendt den. Frist: annulleres, hvis kontoen ikke er godkendt senest 7 dage efter auktionens slutning (chefens valg – Filip kan ændre).
 
 ## Virksomhedsoplysninger (Filip, 8. okt. 2026)
 - **BidHamr**, CVR **46836219**, Ellegårdsvej 40 [postnummer og by mangler]. Bruges på fakturaer, i Stripe og på "Om BidHamr"/kontakt.
