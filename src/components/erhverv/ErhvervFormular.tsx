@@ -23,7 +23,6 @@ type Navn =
   | "postnummer"
   | "by"
   | "hvad_saelger_i"
-  | "antal_varer_ca"
   | "besked";
 
 type Felt = {
@@ -47,7 +46,6 @@ const FELTER: Felt[] = [
   { navn: "postnummer", tekst: F.felter.postnummer, valgfri: true, inputMode: "numeric", autoComplete: "postal-code", maks: 4 },
   { navn: "by", tekst: F.felter.by, valgfri: true, autoComplete: "address-level2", maks: G.by },
   { navn: "hvad_saelger_i", tekst: F.felter.hvadSaelger, lang: true, maks: G.hvadSaelgerI },
-  { navn: "antal_varer_ca", tekst: F.felter.antalVarer, valgfri: true, inputMode: "numeric", maks: 10 },
   { navn: "besked", tekst: F.felter.besked, valgfri: true, lang: true, maks: G.besked },
 ];
 
@@ -66,10 +64,6 @@ function valider(v: Vaerdier): Partial<Record<Navn, string>> {
   if (!f.email && !EMAIL.test(v.email.trim())) f.email = F.fejl.emailUgyldig;
   if (!f.postnummer && v.postnummer.trim() && !POSTNUMMER.test(v.postnummer.trim())) {
     f.postnummer = F.fejl.postnummerUgyldigt;
-  }
-  const antalRaa = v.antal_varer_ca.replace(/[.\s]/g, "");
-  if (!f.antal_varer_ca && antalRaa && (!/^\d{1,8}$/.test(antalRaa) || Number(antalRaa) > G.antalVarerMaks)) {
-    f.antal_varer_ca = F.fejl.antalUgyldigt;
   }
   return f;
 }
