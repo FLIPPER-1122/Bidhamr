@@ -116,8 +116,18 @@ export default async function AuktionPage({
     ) ?? null;
   // auctions.vinder_id er sandheden: den flyttes til næste byder, hvis
   // vinderen ikke betalte, og byderen sagde ja til at købe varen.
+  // Kolonnen kan ikke læses af brugere (Niels M03), så den hentes med
+  // service role - først her, hvor RLS (auktionen ovenfor) har vist, at
+  // brugeren må se auktionen. Id'et bruges kun på serveren ("Dig"/"Byder N").
+  const { data: vinderRaekke } = auktionErSlut || auktion.status !== "aktiv"
+    ? await createAdminClient()
+        .from("auctions")
+        .select("vinder_id")
+        .eq("id", id)
+        .maybeSingle<{ vinder_id: string | null }>()
+    : { data: null };
   const vinderId: string | null =
-    (auktion.vinder_id as string | null | undefined) ??
+    vinderRaekke?.vinder_id ??
     (auktion.status !== "aktiv" ? (vinderBud?.bruger_id ?? null) : null);
   const erVinder = Boolean(auktionErSlut && vinderBud && bruger && bruger.id === vinderId);
   const erSælger = bruger?.id === auktion.bruger_id;

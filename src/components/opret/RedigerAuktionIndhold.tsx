@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import RedigerAuktionForm from "@/components/RedigerAuktionForm";
 import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
+import { AUKTION_KOLONNER, type AuktionRaekke } from "@/lib/auktionKolonner";
 
 // Indholdet af "Redigér auktion" - fælles for /auktion/[id]/rediger og
 // /firma/auktioner/[id]/rediger (firma-dashboardet).
@@ -14,8 +15,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export default async function RedigerAuktionIndhold({ auktionId, brugerId }: { auktionId: string; brugerId: string }) {
   if (!UUID.test(auktionId)) notFound();
   const supabase = await createClient();
-  // "*": supabase-js kan ikke parse "nuværende_bud" i en select-streng.
-  const { data: auktion } = await supabase.from("auctions").select("*").eq("id", auktionId).maybeSingle();
+  // Kolonneliste (ikke "*"): vinder_id kan ikke læses af brugere.
+  const { data: auktion } = await supabase.from("auctions").select(AUKTION_KOLONNER).eq("id", auktionId).maybeSingle<AuktionRaekke>();
 
   if (!auktion || auktion.skjult || auktion.bruger_id !== brugerId) notFound();
 
