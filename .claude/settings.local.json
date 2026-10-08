@@ -54,7 +54,8 @@
       "Skill(fewer-permission-prompts:*)",
       "Bash(ls \"C:\\\\Users\\\\jeppe\\\\.claude\\\\projects\\\\\" 2>/dev/null || ls /c/Users/jeppe/.claude/projects/ 2>/dev/null)",
       "mcp__3c002b25-09c0-4a64-b17c-9dc87832112a__get_project",
-      "mcp__3c002b25-09c0-4a64-b17c-9dc87832112a__get_organization"
+      "mcp__3c002b25-09c0-4a64-b17c-9dc87832112a__get_organization",
+      "Bash(git commit *)"
     ]
   }
 }
