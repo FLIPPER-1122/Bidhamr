@@ -1,5 +1,8 @@
 # Noter til advokaten – samlet liste over åbne spørgsmål
 
+> **VIGTIGSTE SPØRGSMÅL (8. okt. 2026) – tag det først:** BidHamr vil bygge betalingen om, så købers penge ALDRIG står på BidHamrs egen Stripe-saldo. I stedet sker betalingen *på sælgerens vegne* (Stripe Connect, `on_behalf_of`/destination charge): pengene lander direkte på sælgerens egen Stripe-konto (en Express-konto, som Stripe har identitetstjekket), BidHamrs gebyr trækkes fra med det samme, og sælgerens konto står på *manuel udbetaling*, så pengene først kan udbetales til sælgers bank, når handlen er afsluttet (eller refunderes til køberen ved en sag/fortrydelse). **Fjerner den model kravet om tilladelse som betalingsinstitut/e-pengeinstitut (spørgsmål 76–77)?** Hvem hæfter ved en dispute, når sælgerens Stripe-konto er tom? Hvad skal stå i vilkårene?
+
+
 > UDKAST – til mødet med advokaten. Skrevet 6. oktober 2026 ud fra `jura/brugerbetingelser-udkast.md`, `jura/privatlivspolitik-udkast.md` og `ROADMAP-BESLUTNINGER.md`. Opdateret samme dag med: Vercel-region i EU (dub1), GPS fjernes fra sags- og pakkebilleder, gemt accept af brugerbetingelser, daglig oprydning af IP-tællere, og pause/annullering af skjulte og fjernede auktioner (spm. 21, 34, 45, 46 og 52).
 > Henvisninger i parentes: **B** = brugerbetingelser (afsnitsnummer), **P** = privatlivspolitik (afsnitsnummer), **RB** = ROADMAP-BESLUTNINGER.md.
 

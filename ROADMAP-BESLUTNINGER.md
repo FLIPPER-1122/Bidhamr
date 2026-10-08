@@ -11,6 +11,9 @@
 
 Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md og PRODUKT.md.
 
+
+> **Betalingsmodel ændres (Filip, 8. oktober 2026):** Efter Niels' gennemgang står købers penge i dag på BidHamrs egen Stripe-saldo (separate charges and transfers uden `on_behalf_of`). Udgangspunktet er nu, at betalingen bygges om, så pengene står på **sælgerens Stripe Connect-konto** (betaling på sælgerens vegne; BidHamrs gebyr trækkes fra med det samme; manuel udbetaling på sælgerens konto, så pengene først kan udbetales, når handlen er afsluttet, og kan refunderes ved sag/fortrydelse). Filip afklarer med advokaten, om det er lovligt/nok (jura/noter-til-advokat.md øverst og nr. 76–81). Reserve-/bufferkonto bygges IKKE.
+
 ## 1. Frigivelse af penge
 - Uret starter, når sporingen viser, at køberen har **hentet** pakken.
 - Køberen har **48 timer** til at oprette en sag. Derefter frigives pengene automatisk til sælgeren.
