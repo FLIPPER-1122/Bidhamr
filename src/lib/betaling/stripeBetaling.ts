@@ -95,6 +95,12 @@ export type BetalingRaekke = {
   midler_tilgaengelige_kl?: string | null;
   svindelvarsel_kl?: string | null;
   svindelvarsel_loest_kl?: string | null;
+  // Trin 3 (udbetaling, 20261011030000): payout til sælgerens bank påbegyndt,
+  // tidligste udbetaling (F02) og åbent Radar-review.
+  saelger_udbetaling_id?: string | null;
+  udbetal_tidligst?: string | null;
+  radar_review_aaben?: boolean;
+  indsigelse_tilbagefoersel_id?: string | null;
   // Betalingen venter på sælgerens konto (betal_senest = fristen for
   // kontoens godkendelse, ikke købers betalingsfrist).
   venter_paa_saelgerkonto_kl?: string | null;
@@ -170,6 +176,9 @@ export type ProfilRaekke = {
   connect_plan_ok?: boolean | null;
   // Fra 20261011020000: sælgeren er frosset (kontoen blev ikke godkendt i tide).
   saelger_frosset_kl?: string | null;
+  // Fra 20261011030000: en udbetaling til sælgerens bank er fejlet ("venter
+  // på bank").
+  connect_udbetaling_fejlet_kl?: string | null;
 };
 
 // ------------------------------------------------------------------ profiler
@@ -310,11 +319,15 @@ export async function kontrollerSaelgerkonto(kontoId: string): Promise<KontoTjek
 // retter tilstanden. Kun account.application.deauthorized frakobler kontoen.
 export async function markerKontoUdenAdgang(kontoId: string): Promise<void> {
   const admin = createAdminClient();
+  // Kun en konto, der stod til at kunne tage imod betaling, ændres - og kun
+  // en ændret række giver markering og drift-alarm (ellers ville hvert kald
+  // markere og alarmere igen).
   const { data, error } = await admin
     .from("betalingsprofiler")
     .update({ connect_charges_enabled: false, opdateret: new Date().toISOString() })
     .eq("stripe_account_id", kontoId)
     .is("connect_frakoblet_kl", null)
+    .eq("connect_charges_enabled", true)
     .select("user_id")
     .maybeSingle<{ user_id: string }>();
   if (error && !erManglerKolonne(error)) throw new Error(`markerKontoUdenAdgang: ${error.message}`);
@@ -1829,7 +1842,9 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
       .maybeSingle<{ id: string }>();
     if (b) {
       try {
-        await overfoerTilSaelger(b.id);
+        // Begge modeller: transfer (separat) eller payout (destination).
+        const { pengeTilSaelger } = await import("@/lib/betaling/udbetaling");
+        await pengeTilSaelger(b.id);
       } catch (err) {
         console.error("Overførsel efter afsluttet indsigelse fejlede (cron prøver igen):", err);
       }
@@ -2034,6 +2049,9 @@ export async function overfoerVentende(saelgerId?: string): Promise<number> {
       .not("frigivet_kl", "is", null)
       .is("stripe_transfer_id", null)
       .is("refusion_anmodet_kl", null)
+      // Kun den gamle model - destination udbetales af udbetalVentende
+      // (src/lib/betaling/udbetaling.ts).
+      .eq("pengemodel", "separat")
       .order("id", { ascending: true })
       .limit(OVERFOERSEL_SIDE);
     if (efterId) q = q.gt("id", efterId);
@@ -2157,7 +2175,7 @@ async function fjernAfvistKort(userId: string, pmId: string): Promise<void> {
 
 // Markering af sælgerens udbetalingskonto til admin (/admin/betalinger).
 // Teksten må aldrig indeholde beløb (medarbejdere ser den).
-async function markerUdbetalingskonto(
+export async function markerUdbetalingskonto(
   stripeAccountId: string,
   aarsag: string,
 ): Promise<void> {
@@ -2416,6 +2434,13 @@ export async function spejlUdbetaling(
     if (err instanceof Stripe.errors.StripePermissionError) return "ingen_adgang";
     throw err;
   }
+
+  // Destination (trin 3): BidHamrs egen udbetaling (metadata
+  // saelger_udbetaling_id) spejles i saelger_udbetalinger. Andre payouts
+  // (Stripes automatiske udbetaling i separat) som før.
+  const { spejlBidhamrPayout } = await import("@/lib/betaling/udbetaling");
+  const bidhamr = await spejlBidhamrPayout(stripeAccountId, payout);
+  if (bidhamr !== null) return bidhamr;
 
   if (payout.status === "failed") {
     await markerUdbetalingskonto(
@@ -2766,6 +2791,16 @@ async function paamindSaelgerkonto(b: BetalingRaekke): Promise<void> {
 // Admin: giv en fejlet overførsel nye forsøg og prøv med det samme.
 // Kaldes kun fra en admin-server-action (assertRole).
 export async function proevOverfoerselIgen(betalingId: string): Promise<string> {
+  // Destination (trin 3): payout til sælgerens bank i stedet for transfer.
+  const { data: model } = await createAdminClient()
+    .from("betalinger")
+    .select("pengemodel")
+    .eq("id", betalingId)
+    .maybeSingle<{ pengemodel: string | null }>();
+  if (model?.pengemodel === "destination") {
+    const { proevUdbetalingIgen } = await import("@/lib/betaling/udbetaling");
+    return proevUdbetalingIgen(betalingId);
+  }
   const { data, error } = await createAdminClient().rpc("betaling_overfoersel_nulstil", {
     p_betaling: betalingId,
   });

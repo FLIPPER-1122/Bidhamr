@@ -12,7 +12,8 @@ import "server-only";
 // vej" fra overførslen (eller påmindelsen om udbetalingskonto). Kaster aldrig.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
-import { indsigelseBlokerer, overfoerTilSaelger } from "@/lib/betaling/stripeBetaling";
+import { indsigelseBlokerer } from "@/lib/betaling/stripeBetaling";
+import { pengeTilSaelger } from "@/lib/betaling/udbetaling";
 import { sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 import { SAG_AUTO_FRIGIV_EFTER_DAGE } from "@/lib/sager";
 
@@ -48,7 +49,7 @@ export async function frigivAutomatisk(): Promise<number> {
       f.grund === "48_timer" ? "automatisk_48" : "automatisk_14",
     );
     try {
-      await overfoerTilSaelger(f.betaling_id);
+      await pengeTilSaelger(f.betaling_id);
     } catch (err) {
       console.error("Overførsel efter automatisk frigivelse fejlede (cron prøver igen):", f.betaling_id, err);
     }

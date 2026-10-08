@@ -143,9 +143,14 @@ export async function sendSaelgerAfregning(tradeId: string, grund: FrigivGrund):
     const [{ data: b }, { data: t }] = await Promise.all([
       admin
         .from("betalinger")
-        .select("seller_id, indsigelse_kl, indsigelse_status")
+        .select("seller_id, indsigelse_kl, indsigelse_status, pengemodel")
         .eq("trade_id", tradeId)
-        .maybeSingle<{ seller_id: string; indsigelse_kl: string | null; indsigelse_status: string | null }>(),
+        .maybeSingle<{
+          seller_id: string;
+          indsigelse_kl: string | null;
+          indsigelse_status: string | null;
+          pengemodel?: string | null;
+        }>(),
       admin
         .from("trades")
         .select("status, sag_aaben")
@@ -166,7 +171,12 @@ export async function sendSaelgerAfregning(tradeId: string, grund: FrigivGrund):
       // Intet løfte om, at pengene er i banken: afregningen sendes, før
       // overførslen er låst (en refusion, indsigelse, genåbnet sag eller
       // lukket udbetalingskonto kan stadig komme imellem).
-      tekst: `${tekst.tekst} Pengene er frigivet. Udbetalingen på ${kronerFraOere(k.udbetalingOere)} kr (salgsprisen minus 5 % i sælgergebyr) sendes til din udbetalingskonto hos vores betalingspartner Stripe. Din afregning ligger på handelssiden.`,
+      // Destination (trin 3): pengene udbetales fra sælgerens Stripe-konto
+      // direkte til banken - evt. efter Stripes ventetid / 3 dage ved afhentning.
+      tekst:
+        b.pengemodel === "destination"
+          ? `${tekst.tekst} Pengene er frigivet. Udbetalingen på ${kronerFraOere(k.udbetalingOere)} kr (salgsprisen minus 5 % i sælgergebyr) sendes til din bankkonto af vores betalingspartner Stripe. Du får besked, når den er sendt. Din afregning ligger på handelssiden.`
+          : `${tekst.tekst} Pengene er frigivet. Udbetalingen på ${kronerFraOere(k.udbetalingOere)} kr (salgsprisen minus 5 % i sælgergebyr) sendes til din udbetalingskonto hos vores betalingspartner Stripe. Din afregning ligger på handelssiden.`,
       link: `/mine-handler/${tradeId}`,
       data: { trade_id: tradeId },
       mail: saelgerAfregningMail(k as SaelgerKvittering, tekst.titel, tekst.tekst),

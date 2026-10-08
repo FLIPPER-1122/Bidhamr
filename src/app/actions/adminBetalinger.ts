@@ -266,11 +266,12 @@ async function hentBetalingRaekker(
     error: { code?: string; message?: string } | null;
   }>,
 ): Promise<{ data: Raekke[]; count: number }> {
-  // Svindelvarsel-kolonnerne (20261011020000) - findes de ikke, hentes uden.
+  // Svindelvarsel-kolonnerne (20261011020000) og saelger_udbetaling_id
+  // (20261011010000) - findes de ikke, hentes uden.
   const medSvindel = await byg(
     admin
       .from("betalinger")
-      .select(`${kolonner}, indsigelse_kl, indsigelse_status, svindelvarsel_kl, svindelvarsel_loest_kl`, {
+      .select(`${kolonner}, indsigelse_kl, indsigelse_status, svindelvarsel_kl, svindelvarsel_loest_kl, saelger_udbetaling_id`, {
         count: "exact",
       }),
   );
@@ -459,6 +460,8 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
         r.status === "betalt" &&
         !!r.frigivet_kl &&
         !r.stripe_transfer_id &&
+        // Destination (trin 3): en udbetaling til sælgerens bank er i gang.
+        !r.saelger_udbetaling_id &&
         !r.refusion_anmodet_kl &&
         !(r.svindelvarsel_kl && !r.svindelvarsel_loest_kl) &&
         !indsigelseBlokerer({

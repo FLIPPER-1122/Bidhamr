@@ -238,6 +238,11 @@ export type Betalingsindstillinger = {
     // sætte varer til salg, før Stripe har godkendt kontoen (betalingsmodel
     // destination, 20261011020000).
     frosset: boolean;
+    // Betalingsmodel destination (trin 3): BidHamr sender pengene fra
+    // sælgerens Stripe-konto til banken (manuel udbetalingsplan), og en
+    // udbetaling er fejlet - sælgeren skal rette bankkontoen hos Stripe.
+    bidhamrUdbetaler: boolean;
+    venterPaaBank: boolean;
   };
 };
 
@@ -266,6 +271,8 @@ export async function hentBetalingsindstillinger(): Promise<
         afvist: !!p?.connect_spaerret_aarsag?.startsWith("rejected."),
         frakoblet: !!p?.connect_frakoblet_kl,
         frosset: !!p?.saelger_frosset_kl,
+        bidhamrUdbetaler: !!p?.connect_plan_ok,
+        venterPaaBank: !!p?.connect_udbetaling_fejlet_kl,
       },
     };
   } catch (err) {
@@ -452,4 +459,83 @@ export async function hentMineOverfoersler(): Promise<
     console.error("hentMineOverfoersler fejlede:", err);
     return { fejl: GENERISK };
   }
+}
+
+// ------------------------------------------------------------------ udbetaling (destination)
+
+// Sælgerens udbetaling til banken (betalingsmodel destination, trin 3).
+// Samme databasefunktioner som appen (handel_udbetalingsstatus og
+// mine_bankudbetalinger, 20261011030000) - kun egne data (auth.uid()).
+export type Udbetalingsvisning = {
+  status: "venter" | "stoppet" | "paa_vej" | "udbetalt" | "venter_paa_bank";
+  // Tidligst, hvornår udbetalingen sendes (venter).
+  tidligstKl: string | null;
+  sendtKl: string | null;
+  beloebOere: number;
+};
+
+export type Bankudbetaling = {
+  id: string;
+  oprettetKl: string;
+  beloebOere: number;
+  status: "paa_vej" | "udbetalt" | "fejlet";
+  antalHandler: number;
+};
+
+// null = ikke relevant (gammel model, ikke frigivet, eller ikke din handel).
+export async function hentMinUdbetalingsstatus(
+  handelId: string,
+): Promise<{ ok: true; visning: Udbetalingsvisning | null } | Fejl> {
+  const user = await indloggetBruger();
+  if (!user) return { fejl: "Du skal være logget ind." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("handel_udbetalingsstatus", { p_trade: handelId });
+  if (error) {
+    console.error("handel_udbetalingsstatus fejlede:", error.message);
+    return { fejl: GENERISK };
+  }
+  const v = data as {
+    status: Udbetalingsvisning["status"];
+    tidligst_kl: string | null;
+    sendt_kl: string | null;
+    beloeb_oere: number;
+  } | null;
+  return {
+    ok: true,
+    visning: v
+      ? { status: v.status, tidligstKl: v.tidligst_kl, sendtKl: v.sendt_kl, beloebOere: Number(v.beloeb_oere) }
+      : null,
+  };
+}
+
+export async function hentMineBankudbetalinger(): Promise<
+  { ok: true; udbetalinger: Bankudbetaling[] } | Fejl
+> {
+  const user = await indloggetBruger();
+  if (!user) return { fejl: "Du skal være logget ind." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("mine_bankudbetalinger");
+  if (error) {
+    // Før migrationen 20261011030000: ingen udbetalinger at vise.
+    if (error.code === "PGRST202" || error.code === "42883") return { ok: true, udbetalinger: [] };
+    console.error("mine_bankudbetalinger fejlede:", error.message);
+    return { fejl: GENERISK };
+  }
+  const liste = (Array.isArray(data) ? data : []) as {
+    id: string;
+    kl: string;
+    beloeb_oere: number;
+    status: Bankudbetaling["status"];
+    antal_handler: number;
+  }[];
+  return {
+    ok: true,
+    udbetalinger: liste.map((u) => ({
+      id: u.id,
+      oprettetKl: u.kl,
+      beloebOere: Number(u.beloeb_oere),
+      status: u.status,
+      antalHandler: Number(u.antal_handler),
+    })),
+  };
 }

@@ -11,7 +11,8 @@ import {
   MarkerModtagetKnap,
   GodkendPakkeKnap,
 } from "@/components/HandelHandlinger";
-import { hentBetalingsstatus } from "@/app/actions/betaling";
+import { hentBetalingsstatus, hentMinUdbetalingsstatus } from "@/app/actions/betaling";
+import UdbetalingStatusBoks from "@/components/betaling/UdbetalingStatusBoks";
 import BetalingSektion from "@/components/betaling/BetalingSektion";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
 import ForlaengBetalingsfrist from "@/components/betaling/ForlaengBetalingsfrist";
@@ -171,6 +172,7 @@ export default async function HandelDetalje({
     afhentningsAnnullering,
     kvittering,
     saelgerKontoType,
+    udbetalingSvar,
   ] = await Promise.all([
     supabase.from("auctions").select("titel, billeder, startpris, erhverv").eq("id", handel.auction_id).maybeSingle(),
     supabase.from("users").select("navn").eq("id", modpartId).maybeSingle(),
@@ -217,7 +219,13 @@ export default async function HandelDetalje({
     handel.status === "afventer_betaling" ? Promise.resolve(null) : hentMinKvittering(handel.id),
     // users.konto_type kan læses af alle (20261010030000_erhverv.sql).
     hentKontoType(handel.seller_id),
+    // Sælgerens udbetaling til banken (betalingsmodel destination, trin 3) -
+    // null i den gamle model.
+    erSaelger && (handel.status === "leveret" || handel.status === "afsluttet")
+      ? hentMinUdbetalingsstatus(handel.id)
+      : Promise.resolve(null),
   ]);
+  const udbetaling = udbetalingSvar && "ok" in udbetalingSvar ? udbetalingSvar.visning : null;
 
   // Erhvervshandel: ingen chat mellem køber og firma.
   const erhvervHandel = auktion?.erhverv === true || saelgerKontoType === "erhverv";
@@ -724,6 +732,7 @@ export default async function HandelDetalje({
           </div>
         )}
 
+        {udbetaling && <UdbetalingStatusBoks v={udbetaling} />}
         {kvittering && <KvitteringBoks k={kvittering} />}
 
         {/* Køberen kan oprette en sag */}

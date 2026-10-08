@@ -18,7 +18,7 @@ Lavet 8. okt. 2026 efter Niels' gennemgang (F07). Bruges, når BidHamr skifter f
 - [ ] Betalingsmetoder (kort, MobilePay, Apple Pay, Google Pay …) slået til i live.
 - [ ] Radar-regler (fx bloker ved høj risiko, 3D Secure-regler) gennemgået.
 - [ ] Billing (erhverv): Smart Retries, fakturaindstillinger (firmanavn, CVR, nummerering), kundeportal, e-mail-kvitteringer.
-- [ ] Webhook-endpoints oprettet i **live** med de samme events som i test (platform: se `src/app/api/webhooks/stripe/route.ts`; Connect: `account.updated`, `account.application.deauthorized`, `capability.updated`, `payout.paid`, `payout.failed`). Noter signatur-hemmelighederne.
+- [ ] Webhook-endpoints oprettet i **live** med de samme events som i test (platform: se `src/app/api/webhooks/stripe/route.ts`, fra trin 3 også `review.opened` og `review.closed`; Connect: `account.updated`, `account.application.deauthorized`, `capability.updated`, `payout.paid`, `payout.failed`, fra trin 3 også `payout.canceled`, `balance.available`, `account.external_account.created`, `account.external_account.updated`). Noter signatur-hemmelighederne. Samme events skal tilføjes webhook-destinationerne i **test**, før destination slås til på testdatabasen.
 - [ ] **Ny betalingsmodel (destination, docs/BETALINGSMODEL-PLAN.md):** ombygningen skal være færdig (trin 1–5). Derefter:
   - Migrationen `20261011010000_betalingsmodel_fundament.sql` (og trin 2–5) er kørt i produktion.
   - **Rækkefølgen er vigtig** (`har_udbetalingskonto` bruger KUN databasens indstilling og kræver med destination card_payments aktiv, charges_enabled og manuel plan – ud fra spejlet i `betalingsprofiler`):
@@ -27,7 +27,8 @@ Lavet 8. okt. 2026 efter Niels' gennemgang (F07). Bruges, når BidHamr skifter f
     3. **Databasen:** `update public.stripe_tilstand set betalingsmodel = 'destination' where id;` – afvises af vagten (`betalingsmodel_backfill_mangler`), hvis en aktiv sælgerkonto ikke er spejlet (trin 1 ikke gennemført). Sæt den IKKE før serverflaget: står databasen til destination, mens serveren kører separat, oprettes nye konti kun med transfers og blokeres af den strammere regel.
     4. **Backfill igen** (nu destination): `--udfoer` anmoder om card_payments + mobilepay_payments og sætter manuel plan og debit_negative_balances. Mangler en konto oplysninger til card_payments, bliver overførsler/udbetalinger inaktive, og sælgeren kan ikke oprette auktioner, indtil onboardingen er færdig – giv sælgerne besked først.
     - Tilbage til separat: databasen først (`betalingsmodel = 'separat'`), derefter serverflaget.
-  - **STOP: databasen må IKKE sættes til destination, før trin 3 (udbetaling) og trin 4 (refusioner og indsigelser) er bygget og testet.** Efter trin 2 kan pengene tages ind på sælgerens konto, men der findes endnu ingen kode til at udbetale dem, til delvise refusioner eller til indsigelser i den nye model.
+  - **STOP: databasen må IKKE sættes til destination, før trin 4 (refusioner og indsigelser) er bygget og testet.** Trin 3 (udbetaling) er bygget 9. okt. 2026, men der findes endnu ingen kode til delvise refusioner eller til indsigelser (model A) i den nye model.
+  - **Trin 3 (udbetaling):** `20261011030000_betalingsmodel_udbetaling.sql` SKAL være kørt, før databasen sættes til destination (ellers kan pengene ikke udbetales fra sælgerens konto). Kør den efter trin 2. Webhook-events: se punktet ovenfor. Efter skiftet: ingen `betaling/saldo`-alarmer på /admin/drift, og den første rigtige udbetaling ses under Min konto → "Udbetalt til din bank".
   - **Trin 2 (betaling ind):** `20261011020000_betalingsmodel_betaling_ind.sql` SKAL være kørt, før databasen sættes til destination (ellers venter betalinger ikke på sælgerens konto). Platform-webhooken skal også have `charge.succeeded`, `charge.updated`, `radar.early_fraud_warning.created` og `radar.early_fraud_warning.updated`. Med destination (trin 2) kræver `har_udbetalingskonto` kun, at card_payments er anmodet (ikke aktiv) – betalingen venter, til kontoen er godkendt (Filip 8. okt. 2026).
   - Mens databasen står til destination, får ALLE auktioner, der slutter (pg_cron hvert minut), betalinger, der venter, hvis sælgerens konto ikke er klar - også når serveren kører separat. Skift derfor databasen tæt på serverflaget.
   - Kontrol: ingen `connect/udbetalingsplan`- eller `betaling/betalingsmodel`-alarmer på /admin/drift; alle sælgerkonti står til manuel udbetaling.
@@ -52,7 +53,7 @@ Nulstil (sæt til `null`, slet ikke rækkerne – handelsdata arkiveres):
 ## 4. Kontrol efter skiftet
 - [ ] /admin/drift: ingen `stripe/tilstand`-alarmer, betalings-cron kører (`drift_cron_koersler.ok`).
 - [ ] Webhooks i Stripe-dashboardet: 2xx.
-- [ ] Én rigtig handel med et lille beløb (≥ 3 kr.): betal, frigiv, udbetaling – og en refusion.
+- [ ] Én rigtig handel med et lille beløb (≥ 3 kr.): betal, frigiv, udbetaling – og en refusion. Med destination: udbetalingen sendes, når Stripes ventetid på sælgerens konto er gået (nye konti ca. 7 dage) - ved afhentning tidligst 3 dage efter frigivelsen for nye sælgere.
 - [ ] Ekstern heartbeat (`HEARTBEAT_URL`) får livstegn hvert 5. minut.
 
 ## 5. Erhvervsabonnement

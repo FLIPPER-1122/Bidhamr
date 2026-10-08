@@ -6,10 +6,10 @@ import {
   annullerBetaling,
   hentBetalingForHandel,
   indsigelseBlokerer,
-  overfoerTilSaelger,
   proevOverfoerselIgen,
   refunderBetaling,
 } from "@/lib/betaling/stripeBetaling";
+import { erSendtTilSaelger, pengeTilSaelger } from "@/lib/betaling/udbetaling";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
@@ -893,11 +893,13 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
 
   let overfoersel: string;
   try {
-    const r = await overfoerTilSaelger(betaling.id);
+    const r = await pengeTilSaelger(betaling.id);
     overfoersel =
       r === "overfoert" || r === "allerede_overfoert"
         ? " (overført via Stripe)"
-        : ` (overførsel venter: ${r})`;
+        : r === "udbetalt" || r === "allerede_udbetalt"
+          ? " (udbetalt til sælgers bank via Stripe)"
+          : ` (overførsel venter: ${r})`;
   } catch (err) {
     console.error("Overførsel efter admin-frigivelse fejlede (prøves igen af cron):", err);
     overfoersel = " (overførsel fejlede - prøves igen automatisk)";
@@ -1211,6 +1213,20 @@ const OVERFOERSEL_TEKST: Record<string, string> = {
   sag_aaben: "Handlen har en åben sag. Overførslen afventer, at sagen afgøres.",
   annulleret: "Handlen er annulleret og kan ikke overføres.",
   intet_at_overfoere: "Der er intet at overføre til sælger.",
+  // Destination (trin 3): payout fra sælgerens Stripe-konto til banken.
+  udbetalt: "Udbetalingen til sælgerens bank er sendt via Stripe.",
+  allerede_udbetalt: "Udbetalingen til sælgerens bank var allerede sendt.",
+  venter_midler_ikke_tilgaengelige: "Pengene er endnu ikke tilgængelige på sælgerens Stripe-konto. Udbetalingen sendes automatisk, når de er.",
+  venter_ventetid: "Udbetalingen venter de 3 dage ved afhentning og sendes derefter automatisk.",
+  venter_kraever_opmaerksomhed: "Betalingen er stadig markeret. Luk markeringen, og prøv igen.",
+  venter_svindelvarsel: "Svindelvarslet skal gennemgås, før pengene kan udbetales.",
+  venter_radar_review: "Stripe Radar gennemgår betalingen. Udbetalingen venter, til det er lukket.",
+  venter_venter_paa_bank: "Sælgerens bankkonto hos Stripe skal rettes, før udbetalingen kan sendes.",
+  venter_udbetalinger_inaktive: "Udbetalinger er ikke aktive på sælgerens Stripe-konto. Sælger skal gøre kontoen færdig hos Stripe.",
+  venter_plan_ikke_manuel: "Sælgerens Stripe-konto står ikke til manuel udbetaling. Den sættes tilbage automatisk - prøv igen om lidt.",
+  venter_saldo: "Saldoen på sælgerens Stripe-konto dækker ikke udbetalingen endnu. Den prøves igen automatisk.",
+  saldo_afviger: "Saldoen på sælgerens Stripe-konto passer ikke med handlerne. Udbetalinger er stoppet - se /admin/drift.",
+  afvist: "Stripe afviste udbetalingen. Se fejlen på betalingen.",
 };
 
 type OverfoerselUdfald = { ok: true; overfoert: boolean; besked: string };
@@ -1231,6 +1247,9 @@ export async function prøvOverfoerselIgen(tradeId: string) {
     if (betaling.stripe_transfer_id) {
       return { ok: true, overfoert: true, besked: OVERFOERSEL_TEKST.allerede_overfoert };
     }
+    if (betaling.saelger_udbetaling_id) {
+      return { ok: true, overfoert: true, besked: OVERFOERSEL_TEKST.allerede_udbetalt };
+    }
     if (indsigelseBlokerer(betaling)) throw new BrugerFejl(OVERFOERSEL_TEKST.indsigelse);
 
     let r: string;
@@ -1248,7 +1267,7 @@ export async function prøvOverfoerselIgen(tradeId: string) {
       );
     }
 
-    const overfoert = r === "overfoert" || r === "allerede_overfoert";
+    const overfoert = erSendtTilSaelger(r);
     await logModerationBloedt(admin, {
       medarbejder_id: staffId,
       handling: "overfoersel_proevet_igen",

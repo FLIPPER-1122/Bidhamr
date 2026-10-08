@@ -12,10 +12,8 @@ import { after } from "next/server";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import {
-  hentBetalingForHandel,
-  overfoerTilSaelger,
-} from "@/lib/betaling/stripeBetaling";
+import { hentBetalingForHandel } from "@/lib/betaling/stripeBetaling";
+import { erSendtTilSaelger, pengeTilSaelger } from "@/lib/betaling/udbetaling";
 import { sendKoeberAfsluttet, sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 import { notificerAfhentningsfristForlaengelser } from "@/lib/betaling/afhentningsfrist";
 import { AFHENTNING_MAKS_FORLAENGELSER } from "@/lib/afhentningsfrist";
@@ -283,8 +281,10 @@ export async function bekraeftAfhentning(
   try {
     const betaling = await hentBetalingForHandel(tradeId);
     if (betaling) {
-      const r = await overfoerTilSaelger(betaling.id);
-      if (r !== "overfoert" && r !== "allerede_overfoert") {
+      // Begge modeller: transfer (separat) eller payout til banken
+      // (destination - venter evt. 3 dage, udbetal_tidligst).
+      const r = await pengeTilSaelger(betaling.id);
+      if (!erSendtTilSaelger(r)) {
         console.warn("Overførsel ikke gennemført endnu:", tradeId, r);
       }
     }

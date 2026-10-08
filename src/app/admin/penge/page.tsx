@@ -35,6 +35,9 @@ const GRUND: Record<HoldtGrund, string> = {
   refusion_i_gang: "Refusion i gang",
   overfoersel_i_gang: "Overførsel i gang",
   afventer_overfoersel: "Frigivet – overføres til sælger",
+  afventer_udbetaling: "Frigivet – venter på udbetaling til bank",
+  udbetaling_paa_vej: "Udbetaling til sælgers bank i gang",
+  venter_paa_bank: "Udbetaling fejlede – venter på sælgers bank",
   afventer_anke: "Afventer anke",
   afventer_sag: "Afventer sag",
   afventer_retur: "Afventer returpakke",
@@ -68,6 +71,14 @@ function forventet(r: HoldtRaekke): string {
       return "Overføres til sælger (venter på Stripe)";
     case "afventer_overfoersel":
       return "Overføres til sælger, når udbetalingskontoen er klar";
+    case "afventer_udbetaling":
+      return tid
+        ? `Udbetales fra sælgers Stripe-konto til banken (tidligst ${tid})`
+        : "Udbetales fra sælgers Stripe-konto til banken";
+    case "udbetaling_paa_vej":
+      return "Sendt til sælgers bank (venter på Stripe)";
+    case "venter_paa_bank":
+      return "Sælger skal rette sin bankkonto hos Stripe – eller tryk Prøv igen under Betalinger";
     case "afventer_anke":
       return "Afventer anke – pengene flyttes efter ankeafgørelsen";
     case "afventer_sag":
