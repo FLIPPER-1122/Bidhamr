@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import RedigerAuktionForm from "@/components/RedigerAuktionForm";
 import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
 import { AUKTION_KOLONNER, type AuktionRaekke } from "@/lib/auktionKolonner";
+import { logDriftFejl } from "@/lib/drift";
 
 // Indholdet af "Redigér auktion" - fælles for /auktion/[id]/rediger og
 // /firma/auktioner/[id]/rediger (firma-dashboardet).
@@ -16,7 +17,17 @@ export default async function RedigerAuktionIndhold({ auktionId, brugerId }: { a
   if (!UUID.test(auktionId)) notFound();
   const supabase = await createClient();
   // Kolonneliste (ikke "*"): vinder_id kan ikke læses af brugere.
-  const { data: auktion } = await supabase.from("auctions").select(AUKTION_KOLONNER).eq("id", auktionId).maybeSingle<AuktionRaekke>();
+  const { data: auktion, error: auktionFejl } = await supabase.from("auctions").select(AUKTION_KOLONNER).eq("id", auktionId).maybeSingle<AuktionRaekke>();
+  // En fejl (fx en kolonne, der mangler i databasen) må ikke bare ligne en 404.
+  if (auktionFejl) {
+    console.error("RedigerAuktionIndhold:", auktionFejl);
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "RedigerAuktionIndhold",
+      sti: `/auktion/${auktionId}/rediger`,
+      fejl: `${auktionFejl.code ?? ""} ${auktionFejl.message}`.trim(),
+    });
+  }
 
   if (!auktion || auktion.skjult || auktion.bruger_id !== brugerId) notFound();
 

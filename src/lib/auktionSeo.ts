@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { kortBeskrivelse, seoIndeksering, sideUrl } from "@/lib/seo";
 import { standNavn } from "@/lib/stand";
 import { AUKTION_KOLONNER, type AuktionRaekke } from "@/lib/auktionKolonner";
+import { logDriftFejl } from "@/lib/drift";
 
 // SEO for /auktion/[id]: metadata (generateMetadata i page.tsx) og JSON-LD
 // (layout.tsx). Hentes med brugerens egen klient (RLS), og én gang pr.
@@ -33,7 +34,23 @@ type AuktionSeo = {
 export const hentAuktionRaekke = cache(async (id: string) => {
   if (!UUID.test(id)) return { data: null, error: null };
   const supabase = await createClient();
-  return supabase.from("auctions").select(AUKTION_KOLONNER).eq("id", id).maybeSingle<AuktionRaekke>();
+  const svar = await supabase
+    .from("auctions")
+    .select(AUKTION_KOLONNER)
+    .eq("id", id)
+    .maybeSingle<AuktionRaekke>();
+  // En fejl (fx en kolonne i AUKTION_KOLONNER, der mangler i databasen, eller
+  // manglende kolonne-grant) må ikke bare ligne en 404 - log den.
+  if (svar.error) {
+    console.error("hentAuktionRaekke:", svar.error);
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "hentAuktionRaekke",
+      sti: `/auktion/${id}`,
+      fejl: `${svar.error.code ?? ""} ${svar.error.message}`.trim(),
+    });
+  }
+  return svar;
 });
 
 export const hentAuktionSeo = cache(async (id: string): Promise<AuktionSeo | null> => {
