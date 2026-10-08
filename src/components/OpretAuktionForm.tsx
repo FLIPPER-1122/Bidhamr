@@ -132,9 +132,13 @@ const ingenAbonnement = () => () => {};
 
 // erFirma: firmakonto (users.konto_type = 'erhverv'). Ved stand "Ny med
 // mærke" skal producent og sikkerhedsoplysninger udfyldes (GPSR). Private ser
-// ikke felterne.
+// ikke felterne. Købere kan ikke stille spørgsmål til et firma ("Ingen
+// beskeder med erhvervssælgere") - så vises sektionen ikke, og auktionen
+// oprettes med spørgsmål slået fra (databasen afviser dem også, BHE05).
+// Firmaet opretter fra firma-dashboardet og sendes tilbage dertil.
 export default function OpretAuktionForm({ brugerId, erFirma = false }: { brugerId: string; erFirma?: boolean }) {
   const router = useRouter();
+  const tilAuktion = (id: string) => (erFirma ? "/firma/auktioner?oprettet=1" : `/auktion/${id}`);
   const noegle = kladdeNoegle(brugerId);
   const fejlBoksRef = useRef<HTMLDivElement>(null);
   // Idempotens: én nøgle pr. formular. Databasen afviser en anden auktion med
@@ -325,7 +329,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           lat: koordinater?.lat ?? null,
           lng: koordinater?.lng ?? null,
           forsendelse_mulig: forsendelseMulig,
-          spoergsmaal_aktiv: spoergsmaalAktiv,
+          spoergsmaal_aktiv: erFirma ? false : spoergsmaalAktiv,
           forbudt_bekraeftet: bekraeftet,
           // Databasen beregner selv sluttidspunktet ud fra varigheden.
           varighed_dage: varighed,
@@ -342,7 +346,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         });
         if (typeof eksisterende === "string") {
           sletKladde(noegle);
-          router.push(`/auktion/${eksisterende}`);
+          router.push(tilAuktion(eksisterende));
           return;
         }
       }
@@ -381,7 +385,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
       }
 
       sletKladde(noegle);
-      router.push(`/auktion/${data.id}`);
+      router.push(tilAuktion(data.id));
     } catch (err) {
       console.error("Fejl ved oprettelse af auktion:", err);
       setError(err instanceof Error ? err.message : "Auktionen kunne ikke oprettes. Prøv igen om lidt.");
@@ -475,9 +479,11 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
                 <p className="mt-1 whitespace-pre-line break-words text-[15px] text-tekst-daempet">{beskrivelse.trim()}</p>
               </div>
             )}
-            <p className="text-[13px] text-tekst-daempet">
-              {spoergsmaalAktiv ? "Købere kan stille dig spørgsmål, mens auktionen kører." : SPOERGSMAAL_SLAAET_FRA}
-            </p>
+            {!erFirma && (
+              <p className="text-[13px] text-tekst-daempet">
+                {spoergsmaalAktiv ? "Købere kan stille dig spørgsmål, mens auktionen kører." : SPOERGSMAAL_SLAAET_FRA}
+              </p>
+            )}
           </div>
         </article>
 
@@ -753,6 +759,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         </Afkrydsning>
       </Sektion>
 
+      {!erFirma && (
       <Sektion nr={6} titel="Spørgsmål fra købere" id="sektion-spoergsmaal">
         <Afkrydsning
           id="spoergsmaal-aktiv"
@@ -767,6 +774,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           Købere må stille mig spørgsmål
         </Afkrydsning>
       </Sektion>
+      )}
 
       <div className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
         <Afkrydsning

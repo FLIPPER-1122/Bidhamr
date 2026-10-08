@@ -22,7 +22,7 @@ import { auktionMetadata, hentAuktionRaekke } from "@/lib/auktionSeo";
 import { hentBruger, hentKontoType } from "@/lib/supabase/bruger";
 import { erPaaPause } from "@/lib/auctionTid";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
-import { ERHVERVSSAELGER, ERHVERV_GPSR } from "@/lib/tekster/erhverv";
+import { ERHVERVSSAELGER, ERHVERV_GPSR, FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 
 // Titel, beskrivelse (pris + slut), første billede som delebillede og
 // canonical. JSON-LD ligger i layout.tsx.
@@ -456,14 +456,16 @@ export default async function AuktionPage({
                 Du har vundet denne auktion!
               </p>
               <p className="mt-1 text-sm text-tekst-daempet">
-                Betal inden for 48 timer under handlen. Aftal det
-                praktiske med sælgeren i handelschatten.
+                {erhvervAuktion
+                  ? "Betal inden for 48 timer under handlen. Har du spørgsmål, så kontakt firmaet - kontaktoplysningerne står på handlen."
+                  : "Betal inden for 48 timer under handlen. Aftal det praktiske med sælgeren i handelschatten."}
               </p>
               {/* Knappen vises altid; findes handlen endnu ikke, venter
                   komponenten på at pg_cron opretter den. */}
               <StartChatKnap
                 auktionId={auktion.id}
                 tradeId={handel?.id ?? null}
+                utenChat={erhvervAuktion}
               />
             </div>
           )}
@@ -474,13 +476,16 @@ export default async function AuktionPage({
                 Din auktion er solgt
               </p>
               <p className="mt-1 text-sm text-tekst-daempet">
-                {auktion.forsendelse_mulig
+                {erhvervAuktion
+                  ? "Køberen har 48 timer til at betale. Du kan følge handlen under Salg i Firma oversigt."
+                  : auktion.forsendelse_mulig
                   ? "Køberen har 48 timer til at betale. Du får pengene udbetalt, når køberen har godkendt varen. Aftal levering med køberen i handelschatten."
                   : "Køberen har 48 timer til at betale. Aftal tid og sted for afhentning i handelschatten. Du får pengene udbetalt, når køberen har hentet varen, og du har tastet køberens afhentningskode ind."}
               </p>
               <StartChatKnap
                 auktionId={auktion.id}
                 tradeId={handel?.id ?? null}
+                utenChat={erhvervAuktion}
               />
             </div>
           )}
@@ -640,7 +645,24 @@ export default async function AuktionPage({
 
           {/* En firmakonto kan ikke købe - så heller ikke spørge sælgeren
               på andres auktioner (erFirmakonto er false på egne). */}
-          {!erFirmakonto && (
+          {/* Ingen beskeder med erhvervssælgere (Filip, 8. okt. 2026): på en
+              erhvervsauktion er der ingen "Spørg sælger" - kun et link til
+              firmaets kontaktoplysninger. Databasen afviser også nye
+              spørgsmål (BHE05). */}
+          {erhvervAuktion && !erSælger && (
+            <>
+              <div className={sektionsLinje} />
+              <h2 id="spoergsmaal" className={sektionsTitel}>{FIRMA_DASHBOARD.spoergFirma.titel}</h2>
+              <p className="mt-2 max-w-[65ch] text-[16px] leading-relaxed text-tekst">{FIRMA_DASHBOARD.spoergFirma.tekst}</p>
+              <Link
+                href={`/erhvervssaelger/${auktion.bruger_id}`}
+                className="mt-3 inline-flex min-h-12 items-center text-[17px] font-semibold text-groen underline underline-offset-2"
+              >
+                {FIRMA_DASHBOARD.spoergFirma.seProfil} →
+              </Link>
+            </>
+          )}
+          {!erFirmakonto && !erhvervAuktion && (
             <>
               <div className={sektionsLinje} />
               <SpoergSaelger

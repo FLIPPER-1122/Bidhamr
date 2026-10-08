@@ -153,6 +153,71 @@ export type FirmaOversigt = {
   kontakt_bidhamr: string;
 };
 
+// Firma-dashboardet (20261010040000_firma_dashboard.sql).
+export const AUKTION_GRUPPER = ["aktive", "solgte", "usolgte", "annullerede"] as const;
+export type AuktionGruppe = (typeof AUKTION_GRUPPER)[number];
+
+export function erAuktionGruppe(s: unknown): s is AuktionGruppe {
+  return typeof s === "string" && (AUKTION_GRUPPER as readonly string[]).includes(s);
+}
+
+// firma_auktioner(p_gruppe)
+export type FirmaAuktioner = {
+  antal: Record<AuktionGruppe, number>;
+  gruppe: AuktionGruppe;
+  auktioner: {
+    id: string;
+    titel: string;
+    billede: string | null;
+    status: "aktiv" | "afsluttet" | "annulleret";
+    slutter_kl: string;
+    oprettet: string;
+    startpris: number;
+    nuvaerende_bud: number | null;
+    antal_bud: number;
+    skjult: boolean;
+    trade_id: string | null;
+    solgt_for: number | null;
+    visninger: number;
+  }[];
+};
+
+// firma_statistik()
+export type FirmaStatistik = {
+  // maaned: "2026-10"
+  maaneder: { maaned: string; visninger: number; bud: number; solgte: number; omsaetning: number }[];
+  auktioner: {
+    id: string;
+    titel: string;
+    status: "aktiv" | "afsluttet" | "annulleret";
+    oprettet: string;
+    slutter_kl: string;
+    bud: number;
+    visninger: number;
+    solgt_for: number | null;
+  }[];
+};
+
+// firma_salg()
+export type FirmaSalg = {
+  trade_id: string;
+  auktion_id: string;
+  titel: string | null;
+  billede: string | null;
+  beloeb: number;
+  status: string;
+  afhentning: boolean;
+  oprettet: string;
+  sendt_kl: string | null;
+  modtaget_kl: string | null;
+  retur: boolean;
+  udbetaling_oere: number | null;
+  betaling_status: string | null;
+  betalt_kl: string | null;
+  overfoert_kl: string | null;
+  refunderet_kl: string | null;
+}[];
+
 // Offentlige firmaoplysninger (firma_offentlig) til mærket "Erhvervssælger"
 // og firmaprofilen.
 export type FirmaOffentlig = {
@@ -175,6 +240,8 @@ export const ERHVERV_FEJL = {
   intetAbonnement: `Firmaet har ikke et aktivt abonnement. Kontakt BidHamr på ${ERHVERV_EMAIL}.`,
   gpsr: "Når varen er ny, skal du udfylde producent (navn og adresse) og sikkerhedsoplysninger.",
   kvote: "Du har brugt ugens auktioner. Du kan oprette den næste mandag.",
+  ingenBeskeder:
+    "Du kan ikke skrive til en erhvervssælger. Kontakt firmaet på mail eller telefon - se firmaets profil.",
 } as const;
 
 export function erhvervFejlTekst(besked: string | null | undefined, kode?: string | null): string | null {
@@ -182,6 +249,7 @@ export function erhvervFejlTekst(besked: string | null | undefined, kode?: strin
   if (kode === "BHE01" || b.includes("erhverv_kan_ikke_byde")) return ERHVERV_FEJL.kanIkkeByde;
   if (kode === "BHE02" || b.includes("erhverv_intet_abonnement")) return ERHVERV_FEJL.intetAbonnement;
   if (kode === "BHE04" || b.includes("erhverv_gpsr")) return ERHVERV_FEJL.gpsr;
+  if (kode === "BHE05" || b.includes("erhverv_ingen_beskeder")) return ERHVERV_FEJL.ingenBeskeder;
   if (kode === "BHE03" || b.includes("erhverv_kvote")) {
     const m = b.match(/oprettet (\d+) af (\d+) auktioner.*mandag den (\d{2}\.\d{2}\.\d{4})/);
     return m

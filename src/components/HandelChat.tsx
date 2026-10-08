@@ -6,6 +6,8 @@ import { fjernFaellesPraefiks } from "@/lib/staffChat";
 import { BidhamrMaerke } from "@/components/staffchat/visning";
 import RapporterDialog from "@/components/tryghed/RapporterDialog";
 import { spamForklaring } from "@/lib/tryghed";
+import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
+import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 
 export interface Besked {
   id: string;
@@ -24,11 +26,15 @@ export default function HandelChat({
   brugerId,
   modpartNavn,
   startBeskeder,
+  kunFraBidhamr = false,
 }: {
   tradeId: string;
   brugerId: string;
   modpartNavn: string;
   startBeskeder: Besked[];
+  // Handel med en erhvervssælger: ingen chat mellem køber og firma - kun
+  // beskeder fra BidHamr vises, og der er intet svarfelt.
+  kunFraBidhamr?: boolean;
 }) {
   const [beskeder, setBeskeder] = useState<Besked[]>(startBeskeder);
   const [tekst, setTekst] = useState("");
@@ -52,6 +58,7 @@ export default function HandelChat({
         },
         (payload) => {
           const r = payload.new as Besked;
+          if (kunFraBidhamr && r.fra_bidhamr !== true) return;
           const ny: Besked = {
             id: r.id,
             sender_id: r.sender_id,
@@ -71,7 +78,7 @@ export default function HandelChat({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [tradeId]);
+  }, [tradeId, kunFraBidhamr]);
 
   useEffect(() => {
     bundRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -102,8 +109,10 @@ export default function HandelChat({
       // BHS02: kontoen er suspenderet (kraev_ikke_suspenderet).
       // BHB01: en af jer har blokeret den anden, og handlen er afsluttet.
       // BHM03: for mange beskeder på kort tid (messages_tryghed).
+      // BHE05: sælgeren er et firma - ingen beskeder (erhverv_ingen_beskeder).
       setFejl(
-        error.code === "BHM01"
+        erhvervFejlTekst(error.message, error.code) ??
+        (error.code === "BHM01"
           ? "Beskeder må ikke starte med 'Besked fra BidHamr'."
           : error.code === "BHS02"
             ? "Din konto er suspenderet, og du kan ikke sende beskeder. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl."
@@ -111,7 +120,7 @@ export default function HandelChat({
               ? "Du kan ikke skrive til denne bruger længere."
               : error.code === "BHM03"
                 ? "Du sender beskeder meget hurtigt. Vent et øjeblik, og prøv så igen."
-                : "Beskeden kunne ikke sendes.",
+                : "Beskeden kunne ikke sendes."),
       );
       return;
     }
@@ -133,7 +142,7 @@ export default function HandelChat({
     <div className="rounded-xl border border-kant bg-white">
       <div className="border-b border-kant px-5 py-4">
         <h2 className="text-sm font-semibold text-tekst">
-          Beskeder med {modpartNavn}
+          {kunFraBidhamr ? FIRMA_DASHBOARD.bidhamrBeskeder : `Beskeder med ${modpartNavn}`}
         </h2>
       </div>
 
@@ -220,6 +229,7 @@ export default function HandelChat({
         <div ref={bundRef} />
       </div>
 
+      {!kunFraBidhamr && (
       <form onSubmit={handleSubmit} className="flex gap-2 border-t border-kant p-4">
         <input
           type="text"
@@ -237,6 +247,7 @@ export default function HandelChat({
           {sender ? "Sender…" : "Send"}
         </button>
       </form>
+      )}
 
       {stoppet && (
         <p role="status" className="mx-4 mb-4 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">

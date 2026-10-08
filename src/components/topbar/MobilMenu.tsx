@@ -124,7 +124,7 @@ export default function MobilMenu({
           </div>
 
           <nav aria-label="Hovedmenu" className="flex-1 overflow-y-auto overscroll-contain px-2 py-4">
-            {!kunFirma && (
+            {!erFirma && (
             <div className="px-2">
               <Link href="/opret-auktion" className="btn btn-primaer btn-stor w-full">
                 <Ikon navn="plus" />
