@@ -8,7 +8,14 @@ import "server-only";
 // - Ingen personfølsomme data eller hemmeligheder: teksten renses for
 //   e-mails, telefonnumre/CPR, nøgler og tokens, og stier gemmes uden
 //   query-streng. Databasen afkorter og dedupper.
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createAdminClient } from "@/lib/supabase/admin";
+
+// Samler de fejl, der logges med kilde 'cron' under en cron-kørsel (Niels
+// F06): betalings-cron'en markerer kørslen som FEJLET i drift_cron_koersler,
+// når et af pengetrinnene har logget en fejl - også når trinnet selv fanger
+// fejlen og fortsætter. Brug: driftFejlSamler.run(liste, () => ...).
+export const driftFejlSamler = new AsyncLocalStorage<string[]>();
 
 export type DriftKilde = "klient" | "server" | "action" | "cron" | "webhook" | "notifikation";
 
@@ -105,6 +112,7 @@ export async function logDriftFejl(input: DriftFejlInput): Promise<string | null
     if (erNextAfbrydelse(input.fejl, input.digest)) return null;
     const tekst = renFejltekst(input.fejl, 900);
     const besked = input.hvor ? `${renFejltekst(input.hvor, 80)}: ${tekst}` : tekst;
+    if (input.kilde === "cron") driftFejlSamler.getStore()?.push(besked.slice(0, 200));
     const digest =
       typeof input.digest === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(input.digest)
         ? input.digest

@@ -25,7 +25,7 @@ Formål: rydde op, så agent-teamet kan arbejde sikkert og ens.
 - [x] Next.js opgraderet til 16.3.6 (sikkerhedshuller lukket)
 - [x] **Sikkerhed-agent** oprettet og første fulde sikkerhedsgennemgang af hele systemet (RLS på alle tabeller inkl. dem lavet direkte i Supabase, funktioner, storage, nøgler, login, admin-adgang). Kritiske fund rettes, før fase 1 fortsætter. Agenten køres derefter efter hver fase
 - [ ] **Filip – afklar med rådgiver/advokat (blokerer IKKE fase 1 – agenterne bygger videre i testmiljøet):**
-  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 24 timer, og gemt kort med automatisk betaling er et tilvalg.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Opsætningen er besluttet: separate charges and transfers. Tag Stripes svar med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
+  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 48 timer (sælger kan forlænge til højst 7 dage), og gemt kort med automatisk betaling er et tilvalg.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Opsætningen er besluttet: separate charges and transfers. Tag Stripes svar med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
   - BESLUTTET: Det hedder **"BidHamr Beskyttelse"** – aldrig "forsikring" nogen steder på siden, i mails eller i koden
   - **Hvidvaskloven**: gælder den for BidHamr, når I håndterer betalinger (kundekendskab ved store beløb)?
 
@@ -34,7 +34,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 
 - [x] **Ny betalingsmodel: betal når du vinder – ingen saldo** (stort punkt – tages først i fasen). Stripe har bekræftet, at en købersaldo ikke passer til Stripe Connect og kan kræve e-penge-tilladelse. Derfor:
   - Den nuværende wallet med indbetaling før bud, låsning af beløb og wallet-tabel **fjernes**
-  - Når auktionen slutter, har vinderen **24 timer til selv at betale** (bud + købergebyr + fragt + evt. BidHamr Beskyttelse) med kort, **MobilePay**, Apple Pay eller Google Pay. Påmindelser efter 12 og 20 timer
+  - Når auktionen slutter, har vinderen **48 timer til selv at betale** (sælger kan forlænge til højst 7 dage) (bud + købergebyr + fragt + evt. BidHamr Beskyttelse) med kort, **MobilePay**, Apple Pay eller Google Pay. Påmindelser 24 og 8 timer før fristen
   - **Valgfrit: automatisk betaling.** Brugeren kan i sine indstillinger gemme et kort og slå "Betal automatisk, når jeg vinder" til. Så trækkes kortet med det samme, når auktionen slutter. Det er et tilvalg, ikke et krav
   - Pengene ligger på BidHamrs Stripe-konto (manuelle udbetalinger), indtil køber bekræfter / 48 timer uden sag / sag er afgjort
   - Sælger oprettes som **Stripe Connect-konto** (Express), og Stripe tjekker sælgerens identitet. Pengene overføres minus sælgergebyr, og Stripe udbetaler til sælgerens bank
@@ -45,7 +45,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - Opret falske sælgerkonti i Stripe Connect test mode til at teste udbetalinger
   - **Fjern** admin-værktøjerne "Sæt saldo" og "Justér saldo" og siden med wallet-transaktioner – de hører til den gamle model
   - **Fjern** wallet-tabellerne og wallet-funktionerne i databasen (`wallets`, `wallet_entries`, `bid_reservations`, `wallet_*`-funktionerne) med en migration, når det nye flow virker
-- [x] **Hvis vinderen ikke betaler inden 24 timer** (eller den automatiske betaling fejler og han ikke betaler selv inden for fristen): handlen annulleres, køber får en advarsel (tæller med i 3-advarsler-reglen), og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen
+- [x] **Hvis vinderen ikke betaler inden 48 timer** (eller den automatiske betaling fejler og han ikke betaler selv inden for fristen): handlen annulleres, køber får en advarsel (tæller med i 3-advarsler-reglen), og sælger kan tilbyde varen til næsthøjeste byder eller sætte den op igen
 - [x] Gennemgang af hele pengestrømmen (reviewer): køb, gebyrer, frigivelse, refusion, ingen huller
 - [x] Gebyrer: 5% køber + 5% sælger, altid
 - [x] **BidHamr Beskyttelse**: 5% tilkøb for køber (min 25 / maks 250 kr), vælges ved bud (låst)
@@ -163,7 +163,7 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 - [ ] Filip: flyt den færdige app-kode fra MacBook til den stationære (via GitHub)
 - [ ] Sammenlign app og hjemmeside skærm for skærm – lav en liste over forskelle
 - [ ] Ret forskellene, så funktioner, tekster og design er ens (DESIGN.md gælder også appen)
-- [ ] Appen bruger samme Supabase-database og samme Stripe-betalingsflow som hjemmesiden (vinderen betaler selv inden for 24 timer, valgfrit gemt kort, ingen saldo)
+- [ ] Appen bruger samme Supabase-database og samme Stripe-betalingsflow som hjemmesiden (vinderen betaler selv inden for 48 timer, valgfrit gemt kort, ingen saldo)
 - [ ] Appen: ubekræftet e-mail håndteres (indtast koden fra mailen: `verifyOtp({ email, token, type: "signup" })`, ny kode med `resend({ type: "signup", email })`), og kontosletning direkte i appen (Apples krav 5.1.1(v)) via et sikkert endpoint (POST /api/konto/slet er bygget på hjemmesiden: Bearer-token, adgangskode + "SLET"). *(To-trins-login/AAL2 i appen er udgået – to-trins-login er fjernet 7. okt. 2026, og 20261007032000_mfa_database_haandhaevelse.sql er slettet.)*
 - [ ] Appen: følgere tælles med `antal_foelgere()` og kun insert/delete på `seller_follows` – kør derefter `20261007012000_seller_follows_stramning.sql` i produktion (i dag kan alle se, hvem der følger hvem)
 - [ ] Appen kender fase 4: `stand`, `idempotens_noegle` ved opret auktion (+ `min_auktion_for_noegle`), fejlkoden BHN02 (navn), `blokeret_grund = 'socialt_medie'`, `profil_offentlige_tal()`, svar på bedømmelser (`skriv_bedoemmelse_svar`, `bedoemmelse_svar`), gemte søgninger (`gemte_soegninger`) og notifikationstyperne `gemt_soegning` og `bedoemmelse`

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { getStripe } from "@/lib/stripe";
+import { databasensStripeTilstand, getStripe, noeglensTilstand } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import {
@@ -215,10 +215,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Ugyldig signatur." }, { status: 400 });
   }
 
-  // Kun testmiljø indtil fase 6.
-  if (event.livemode) {
-    console.error("Live-event modtaget, men kun test mode er tilladt:", event.id);
-    return NextResponse.json({ received: true });
+  // Eventets tilstand (test/live) skal passe til nøglen OG databasen
+  // (stripe_tilstand, Niels F07). Ellers kvitteres der IKKE: drift-alarm og
+  // 503, så Stripe prøver igen (op til 3 dage), når databasen er klar - og
+  // fejlen ses i Stripe-dashboardet. Kun testmiljø indtil fase 6.
+  {
+    const eventTilstand = event.livemode ? "live" : "test";
+    const noegle = noeglensTilstand();
+    const db = await databasensStripeTilstand();
+    if (eventTilstand !== noegle || (db !== null && db !== eventTilstand) || (db === null && eventTilstand === "live")) {
+      console.error(`Stripe-event ${event.id} er ${eventTilstand}, men nøglen er ${noegle ?? "?"} og databasen ${db ?? "?"}.`);
+      await logDriftFejl({
+        kilde: "webhook",
+        sti: "stripe-webhook",
+        hvor: "tilstand",
+        fejl: `${eventTilstand.toUpperCase()}-event (${event.type}) modtaget, men nøglen er ${noegle ?? "ukendt"} og databasens Stripe-tilstand er ${db ?? "ukendt"} - ikke behandlet. Se docs/GO-LIVE-STRIPE.md.`,
+      });
+      return NextResponse.json({ error: "Stripe-tilstanden passer ikke." }, { status: 503 });
+    }
   }
 
   const admin = createAdminClient();

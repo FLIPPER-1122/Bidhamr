@@ -45,6 +45,16 @@ På det **eksisterende** endpoint `https://bidhamr.dk/api/webhooks/stripe` (samm
 - **Genaktivering:** `firma_regninger.stripe_subscription_id` – kun mislykkede regninger fra det nuværende abonnement holder firmaet på pause.
 - **Refusion af en opgradering** sætter kun prisen tilbage, når intet andet pakkeskift venter.
 
+## Rettelser efter gen-review (8. okt. 2026, migration `20261010051000_erhverv_pakkeskift_laas.sql`)
+- **Ét pakkeskift ad gangen pr. firma:** `firma_skift_pakke_server` sætter `firmaer.pakkeskift_i_gang_kl` + `pakkeskift_laas` i samme transaktion som skiftet. Et nyt skift (dobbeltklik, to faner, app + hjemmeside) afvises med BHE07 "Vi er ved at skifte din pakke …" (appen: 409 `i_gang`). Markeringen ryddes, når Stripe-delen er færdig eller rullet tilbage (`firma_pakkeskift_laas_frigiv` / `firma_pakkeskift_rul_tilbage`), og udløber selv efter 5 minutter.
+- **Opsigelse** annullerer også den planlagte nedgradering i databasen (`firma_pakkeskift_annuller_planlagt`, note "Abonnementet er opsagt"). "Fortryd opsigelsen" genskaber den ikke, og `rul_tilbage` gendanner aldrig en nedgradering, mens abonnementet er opsagt. Nedgradering mens opsagt afvises med en dansk forklaring (BHE08).
+- **Chefens pakkeskift** (`skiftPrisAdmin`): fejler Stripe midt i, eller databasen bagefter, sættes prisen tilbage, og det, der ikke kan genskabes i Stripe (frigivet plan, annullerede opgraderingsfakturaer), rettes i databasen (planlagt nedgradering annulleres) med drift-alarm `erhverv/admin-pakke-delvist` – firmaet skal vælge skiftet igen.
+- **Betalt med det samme, men webhooken er ikke færdig** (`ProevIgen`): firmaet får "Betalingen er gået igennem. Din nye pakke bliver aktiveret om et øjeblik" – ikke "betalingen fejlede".
+- `skift_id` fjernes fra abonnementets metadata, når skiftet er betalt, annulleret, udløbet eller refunderet.
+- Refusionsloggen siger nu, om der faktisk blev refunderet (beløb), eller om der intet var at refundere.
+- Spærrede/suspenderede/lukkede/slettede brugere kan ikke skifte pakke (BHE06).
+- `POST /api/firma/skift-pakke` tjekker `Content-Length` og læser højst 1 KB af kroppen (413 ved for stor krop).
+
 ## Bør gennemgås
 1. **Smart Retries / "efter sidste forsøg"** (Billing → Revenue recovery): anbefaling "mark subscription as unpaid" eller "leave past due". Vælges "cancel", sætter koden firmaet på pause og fjerner abonnementet, så firmaet må betale på ny med Checkout.
 2. **Fast Tax Rate vs. Stripe Tax:** valgt fast 25 % (kun danske firmaer). Skal udenlandske firmaer med senere, skal det laves om (reverse charge).

@@ -8,6 +8,7 @@ import { notificerAdvarsler } from "@/lib/notifikationer/cron";
 import {
   indsigelseBlokerer,
   proevRefusionIgen,
+  REFUSION_FEJLET_FLERE_GANGE,
   sendUdbetalingskontoNulstillet,
 } from "@/lib/betaling/stripeBetaling";
 
@@ -73,6 +74,9 @@ export type BetalingBeloeb = {
 //   overfoersel    - frigivet, men overførslen til sælger er ikke lykkedes.
 //   refusion       - refusion til køber er påbegyndt/fejlet.
 //   indsigelse     - åben indsigelse hos køberens bank.
+//   indsigelse_tabt- køberens bank har givet køberen pengene tilbage (dispute
+//                    lost). Kan lukkes (markerBetalingLøst -> handlen
+//                    annulleres, hvis intet er overført); pengene flyttes ikke.
 //   andet          - alt andet.
 export type BetalingProblem =
   | "afhentning"
@@ -80,6 +84,7 @@ export type BetalingProblem =
   | "overfoersel"
   | "refusion"
   | "indsigelse"
+  | "indsigelse_tabt"
   | "andet";
 
 export type BetalingTilHandling = {
@@ -112,9 +117,12 @@ export type BetalingTilHandling = {
     tilstand: "gennemfoert" | "fejlet" | "afventer";
     forsoeg: number;
     maksForsoeg: number;
-    // Prøver cron selv igen (kun sags- og afsendelsesfristrefusioner, op til
-    // maksForsoeg).
+    // Prøver cron selv igen (alle lovede refusioner undtagen Dashboard-
+    // refusioner, op til maksForsoeg, med backoff).
     proeverSelv: boolean;
+    // Tydeligt flag: fejlet flere gange / prøves ikke mere automatisk.
+    fejletFlereGange: boolean;
+    opgivet: boolean;
   } | null;
   // Link til betalingen i Stripes dashboard. Kun sat for admin/chef.
   stripeLink: string | null;
@@ -203,7 +211,9 @@ const BASIS_KOLONNER =
 // afsendelsesfristens proevIgen: refusion_forsoeg < refusion_graense, standard
 // 5). "Prøv tilbagebetaling igen" hæver grænsen pr. betaling.
 const MAKS_REFUSION_FORSOEG = 5;
-const CRON_REFUSION_AARSAGER = ["sag", "afsendelsesfrist"];
+// Cron prøver ALLE lovede refusioner igen (refunderLoveteVentende, Niels F05)
+// - undtagen en delvis refusion lavet direkte i Stripe Dashboard.
+const IKKE_CRON_REFUSION = "delvis_refusion_stripe";
 
 function stripeBetalingLink(pi: string): string {
   const live = /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "");
@@ -430,6 +440,8 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
     const problemFor = (r: Raekke, proeve: boolean): BetalingProblem => {
       const h = handelMap.get(r.trade_id as string);
       const fejl = (r.sidste_fejl as string | null) ?? "";
+      // Tabt indsigelse: fast sluttilstand - kan lukkes (Niels F04).
+      if (r.indsigelse_status === "lost") return "indsigelse_tabt";
       if (
         indsigelseBlokerer({
           indsigelse_kl: (r.indsigelse_kl as string | null | undefined) ?? null,
@@ -496,8 +508,10 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
                     !gennemfoert &&
                     r.status === "betalt" &&
                     !r.stripe_transfer_id &&
-                    CRON_REFUSION_AARSAGER.includes((r.refusion_aarsag as string | null) ?? "") &&
+                    (r.refusion_aarsag as string | null) !== IKKE_CRON_REFUSION &&
                     forsoeg < graense,
+                  fejletFlereGange: !gennemfoert && forsoeg >= REFUSION_FEJLET_FLERE_GANGE,
+                  opgivet: !gennemfoert && forsoeg >= graense,
                 } as const;
               })()
             : null,
@@ -573,6 +587,16 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
   });
 }
 
+const TABT_LUK_FEJL: Record<string, string> = {
+  ingen_adgang: "Du har ikke adgang til at lukke handlen.",
+  note_mangler: "Skriv en note om, hvad der er gjort.",
+  note_for_lang: "Noten er for lang (højst 2000 tegn).",
+  ikke_fundet: "Betalingen blev ikke fundet.",
+  inhabil: INHABIL,
+  ikke_tabt: "Indsigelsen er ikke tabt. Opdatér siden.",
+  allerede_lukket: "Handlen er allerede lukket.",
+};
+
 export async function markerBetalingLøst(betalingId: string, note: string) {
   return koer("markerBetalingLøst", async () => {
     const { admin, userId } = await assertRole("admin");
@@ -593,6 +617,22 @@ export async function markerBetalingLøst(betalingId: string, note: string) {
     if (nuErr) throw new Error(nuErr.message);
     if (!nu) throw new BrugerFejl("Betalingen blev ikke fundet.");
     if (userId === nu.buyer_id || userId === nu.seller_id) throw new BrugerFejl(INHABIL);
+
+    // Tabt indsigelse: sluttilstand (Niels F04). Lukkes atomisk i databasen -
+    // handlen annulleres, hvis intet er overført til sælger. Pengene flyttes
+    // ikke (køberens bank har givet køberen pengene).
+    if (nu.indsigelse_status === "lost") {
+      const { data: luk, error: lukErr } = await admin.rpc("betaling_indsigelse_tabt_luk", {
+        p_medarbejder: userId,
+        p_betaling: id,
+        p_note: n,
+      });
+      if (lukErr) throw new Error(lukErr.message);
+      const kode = (luk as { kode?: string } | null)?.kode;
+      if (kode !== "ok") throw new BrugerFejl(TABT_LUK_FEJL[kode ?? ""] ?? GENERISK_FEJL);
+      revalidatePath("/admin", "layout");
+      return { ok: true as const };
+    }
     if (indsigelseBlokerer(nu)) throw new BrugerFejl(INDSIGELSE_FEJL);
 
     // Atomisk: kun rækker, der stadig kræver opmærksomhed og ikke har en
@@ -799,6 +839,24 @@ export async function givAdvarselBetaling(
     if (kode !== "ok") {
       if (kode && ADVARSEL_FEJL[kode]) throw new BrugerFejl(ADVARSEL_FEJL[kode]);
       throw new Error(`admin_advarsel_betaling returnerede ${kode}`);
+    }
+    // Tabt indsigelse (falsk indsigelse -> advarsel): handlen lukkes også, så
+    // den ikke står åben (Niels F04).
+    const { data: efter } = await admin
+      .from("betalinger")
+      .select("indsigelse_status, indsigelse_lukket_kl")
+      .eq("id", id)
+      .maybeSingle<{ indsigelse_status: string | null; indsigelse_lukket_kl: string | null }>();
+    if (efter?.indsigelse_status === "lost" && !efter.indsigelse_lukket_kl) {
+      const { data: luk, error: lukErr } = await admin.rpc("betaling_indsigelse_tabt_luk", {
+        p_medarbejder: userId,
+        p_betaling: id,
+        p_note: `Advarsel givet: ${note || tilBruger}`.slice(0, 2000),
+      });
+      const kode = (luk as { kode?: string } | null)?.kode;
+      if (lukErr || (kode !== "ok" && kode !== "allerede_lukket")) {
+        console.error("Lukning af tabt indsigelse efter advarsel fejlede:", id, lukErr?.message ?? kode);
+      }
     }
     after(() => notificerAdvarsler());
     revalidatePath("/admin", "layout");

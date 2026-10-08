@@ -18,6 +18,7 @@ import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { totalOere } from "@/lib/betaling/beregn";
+import { sendIndsigelseTilSaelger } from "@/lib/betaling/indsigelseBeskeder";
 
 // Offentlig https-adresse til Stripes business_profile.url. Lokalt
 // (http/localhost) bruges produktionsdomaenet, da Stripe afviser andet.
@@ -899,6 +900,10 @@ async function refunderUnderLaas(
           err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt"
         }`,
       );
+      // Næste forsøg med ny idempotency key (Stripe gemmer fejlsvaret under
+      // den gamle i 24 t) og backoff. En evt. oprettet refusion (usikker fejl)
+      // findes næste gang via refunds.list (metadata.betaling_id).
+      await registrerRefusionsfejl(b.id, laas);
       throw err;
     }
   }
@@ -911,6 +916,7 @@ async function refunderUnderLaas(
       .is("stripe_refund_id", null);
     if (refund.status === "failed" || refund.status === "canceled") {
       await markerRefusion(b.id, `Refusion ${refund.status} hos Stripe`);
+      await udskydRefusion(b.id);
       return `refusion_${refund.status}`;
     }
     if (refund.status === "succeeded") {
@@ -943,40 +949,92 @@ function refusionsbeloeb(
   return beloeb === total ? null : beloeb;
 }
 
-// Cron: sagsrefusioner, der er claimet (sag_claim_refusion), men hvor kaldet
-// til Stripe fejlede eller aldrig blev lavet (fx serveren døde midt i
-// afgørelsen). Kun betalinger, der er claimet for mindst 10 minutter siden,
-// så cron ikke kører samtidig med afgørelsen. refunderBetaling er idempotent
-// (idempotency key + eksisterende refund tjekkes først).
-export async function refunderSagerVentende(): Promise<number> {
+// Refusionen fejlede (Stripe-kaldet): nyt forsøg + backoff. Under låsen.
+// Kaster aldrig.
+async function registrerRefusionsfejl(betalingId: string, laas: string): Promise<void> {
+  const { error } = await createAdminClient().rpc("betaling_refusion_fejl", {
+    p_betaling: betalingId,
+    p_noegle: laas,
+  });
+  if (error) console.error("betaling_refusion_fejl:", betalingId, error.message);
+}
+
+// Refusionen fejlede hos Stripe bagefter: næste forsøg efter backoff.
+async function udskydRefusion(betalingId: string): Promise<void> {
+  const { error } = await createAdminClient().rpc("betaling_refusion_udskyd", { p_betaling: betalingId });
+  if (error) console.error("betaling_refusion_udskyd:", betalingId, error.message);
+}
+
+// Fra dette antal mislykkede forsøg står refusionen som "fejlet flere gange"
+// i admin (/admin/betalinger), og der gives drift-alarm, når forsøgene er
+// brugt op (refusion_graense, standard 5).
+export const REFUSION_FEJLET_FLERE_GANGE = 2;
+
+// Cron (Niels F05): ALLE lovede refusioner (refusion_anmodet_kl sat), uanset
+// årsag - sag, admin ("Refundér køber"), sen betaling på annulleret handel,
+// afsendelses- og afhentningsfrist - hvor Stripe-kaldet fejlede eller aldrig
+// blev lavet. Kun:
+//   - claimet for mindst 10 minutter siden (ikke samtidig med første forsøg),
+//   - ikke overført til sælger, ikke en Dashboard-refusion
+//     ('delvis_refusion_stripe' - den afgør staff), ingen blokerende
+//     indsigelse (refusionen afgøres af banken),
+//   - forsøg tilbage (refusion_forsoeg < refusion_graense; admin kan give
+//     flere med "Prøv tilbagebetaling igen"),
+//   - backoff udløbet (refusion_naeste_forsoeg_kl).
+// refunderBetaling er idempotent (lås, idempotency key pr. forsøg, og
+// eksisterende refusioner slås op hos Stripe først). Virker uanset hvor
+// pengene står - refunderBetaling refunderer PaymentIntenten.
+export async function refunderLoveteVentende(): Promise<number> {
+  const nu = new Date().toISOString();
   const { data, error } = await createAdminClient()
     .from("betalinger")
-    .select("id")
+    .select("id, trade_id, refusion_forsoeg, refusion_graense")
     .eq("status", "betalt")
-    .eq("refusion_aarsag", "sag")
     .not("refusion_anmodet_kl", "is", null)
     .lt("refusion_anmodet_kl", new Date(Date.now() - 10 * 60 * 1000).toISOString())
     .is("stripe_transfer_id", null)
     .is("overfoersel_paabegyndt_kl", null)
-    // refusion_forsoeg < refusion_graense (standard 5; admin kan hæve den med
-    // "Prøv tilbagebetaling igen").
     .eq("refusion_opbrugt", false)
+    .or("refusion_aarsag.is.null,refusion_aarsag.neq.delvis_refusion_stripe")
+    .or("indsigelse_kl.is.null,indsigelse_status.in.(won,warning_closed,prevented)")
+    .or(`refusion_naeste_forsoeg_kl.is.null,refusion_naeste_forsoeg_kl.lte.${nu}`)
+    .order("refusion_anmodet_kl", { ascending: true })
     .limit(50);
   if (error) {
-    console.error("Hentning af ventende sagsrefusioner fejlede:", error.message);
+    console.error("Hentning af lovede refusioner fejlede:", error.message);
+    await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Lovede refusioner", fejl: error });
     return 0;
   }
   let antal = 0;
-  for (const { id } of (data ?? []) as { id: string }[]) {
+  for (const r of (data ?? []) as { id: string; trade_id: string; refusion_forsoeg: number; refusion_graense: number }[]) {
     try {
-      if ((await refunderBetaling(id)) === "refunderet") antal++;
+      if ((await refunderBetaling(r.id)) === "refunderet") antal++;
     } catch (err) {
-      console.error("Sagsrefusion fejlede (prøves igen):", id, err);
-      await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Sagsrefusion", fejl: err });
+      console.error("Lovet refusion fejlede (prøves igen):", r.id, err);
+      await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Lovet refusion", fejl: err });
+      // Backoff også ved fejl før Stripe-kaldet (fx Stripe svarer ikke).
+      await udskydRefusion(r.id);
+      // Forsøgene er brugt op: tydelig alarm (admin skal tage over).
+      const { data: efter } = await createAdminClient()
+        .from("betalinger")
+        .select("refusion_opbrugt, refusion_forsoeg")
+        .eq("id", r.id)
+        .maybeSingle<{ refusion_opbrugt: boolean; refusion_forsoeg: number }>();
+      if (efter?.refusion_opbrugt) {
+        await logDriftFejl({
+          kilde: "cron",
+          sti: "betalings-cron",
+          hvor: "Refusion opgivet",
+          fejl: `Tilbagebetalingen for handel ${r.trade_id} er fejlet ${efter.refusion_forsoeg} gange og prøves ikke mere automatisk - se /admin/betalinger.`,
+        });
+      }
     }
   }
   return antal;
 }
+
+// Bagudkompatibelt navn (sagsrefusioner er nu en del af de lovede).
+export const refunderSagerVentende = refunderLoveteVentende;
 
 // Refunderer en kasseret PaymentIntent med afvigende beløb (betaling_afvigelser).
 // Rører aldrig handlen eller den nye betaling. Idempotent: key pr.
@@ -1193,6 +1251,8 @@ export async function spejlRefusionsfejl(refundId: string): Promise<string> {
       p_besked: besked,
     });
     if (error) throw new Error(`betaling_marker_opmaerksomhed: ${error.message}`);
+    // Cron laver et nyt forsøg efter backoff (refunderLoveteVentende).
+    await udskydRefusion(b.id);
     // Køberen får besked om, at pengene er forsinket (én gang pr. refusion).
     await sendRefusionForsinket(b.id, refund.id);
     return "markeret";
@@ -1269,6 +1329,16 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
   const resultat = String(data);
   if (resultat === "ukendt") {
     console.error("Indsigelse på ukendt betaling:", d.id, piId, chId);
+  }
+  // Sælgeren får besked, når indsigelsen åbnes (så varen ikke sendes) og når
+  // den er afgjort (Niels F04). Én besked pr. dispute og udfald.
+  if (resultat === "blokeret" || resultat === "tabt" || resultat === "afsluttet") {
+    const udfald = resultat === "blokeret" ? "aaben" : resultat === "tabt" ? "tabt" : "afgjort";
+    // Et tidligt svindelvarsel, der lukkes uden en egentlig indsigelse
+    // (warning_closed uden forudgående åben indsigelse), giver ingen besked.
+    if (!(udfald === "afgjort" && d.status === "warning_closed")) {
+      await sendIndsigelseTilSaelger(d.id, piId, chId, udfald);
+    }
   }
   if (resultat === "afsluttet" && piId) {
     const { data: b } = await createAdminClient()
@@ -1401,20 +1471,42 @@ export async function registrerGemtKort(si: Stripe.SetupIntent): Promise<boolean
   if (!profil) return false;
   if (profil.gemt_betalingsmetode_id === pmId) return true;
 
+  // Et forsinket Stripe-svar (fx en genleveret setup_intent.succeeded) må
+  // ikke genskabe et kort, brugeren har fjernet, eller erstatte et nyere kort
+  // (Niels M04): SetupIntenten skal være nyere end både det gemte kort og
+  // seneste "Fjern kort", og kortet skal stadig sidde på kunden hos Stripe.
+  const siKl = new Date(si.created * 1000);
+  const p = profil as ProfilRaekke & { gemt_kort_kl?: string | null; kort_fjernet_kl?: string | null };
+  for (const graense of [p.gemt_kort_kl, p.kort_fjernet_kl]) {
+    if (graense && siKl.getTime() <= new Date(graense).getTime()) return false;
+  }
+
   const stripe = getStripe();
   const pm = await stripe.paymentMethods.retrieve(pmId);
+  const pmKunde = typeof pm.customer === "string" ? pm.customer : (pm.customer?.id ?? null);
+  if (pmKunde !== kundeId) return false; // fjernet (detached) i mellemtiden
   const kort = pm.card;
 
-  await admin
+  // Kun hvis profilen ikke er ændret siden læsningen (samtidigt "Fjern kort"
+  // eller et andet kort).
+  let q = admin
     .from("betalingsprofiler")
     .update({
       gemt_betalingsmetode_id: pmId,
       gemt_kort_maerke: kort?.brand ?? pm.type,
       gemt_kort_sidste4: kort?.last4 ?? null,
       gemt_kort_udloeb: kort ? `${String(kort.exp_month).padStart(2, "0")}/${kort.exp_year}` : null,
+      gemt_kort_kl: siKl.toISOString(),
       opdateret: new Date().toISOString(),
     })
     .eq("user_id", profil.user_id);
+  q = profil.gemt_betalingsmetode_id
+    ? q.eq("gemt_betalingsmetode_id", profil.gemt_betalingsmetode_id)
+    : q.is("gemt_betalingsmetode_id", null);
+  q = p.kort_fjernet_kl ? q.eq("kort_fjernet_kl", p.kort_fjernet_kl) : q.is("kort_fjernet_kl", null);
+  const { data: gemt, error: gemFejl } = await q.select("user_id");
+  if (gemFejl) throw new Error(`registrerGemtKort: ${gemFejl.message}`);
+  if (!gemt?.length) return false;
 
   // Det tidligere gemte kort fjernes hos Stripe, så der kun er ét.
   if (profil.gemt_betalingsmetode_id) {

@@ -35,17 +35,23 @@ export function budstigning(nuvaerende: number): number {
   return 100;
 }
 
+// Mindste bud på en auktion: 3 kr (Niels M04, 8. okt. 2026). Stripes
+// mindstebeløb i DKK er 2,50 kr., og en afhentningshandel er kun bud + 5 %
+// købergebyr - så et vindende bud på 1-2 kr. kunne ikke betales.
+export const MINDSTE_BUD = 3;
+
 // Mindste tilladte næste bud. Uden bud: startprisen. Med bud: nuværende bud
-// + budstigning. Altid mindst 1 kr (også på gamle auktioner med startpris 0).
+// + budstigning. Altid mindst MINDSTE_BUD (også ved startpris 1-2 kr.).
 // Samme regel som public.naeste_bud_minimum
-// (20261005021000_startpris_anke_rettelser.sql).
+// (20261010070000_niels_betaling.sql).
 export function mindsteNaesteBud(nuvaerendeBud: number | null, startpris: number): number {
-  if (nuvaerendeBud === null) return Math.max(Math.ceil(startpris || 0), 1);
-  return Math.max(nuvaerendeBud + budstigning(nuvaerendeBud), 1);
+  if (nuvaerendeBud === null) return Math.max(Math.ceil(startpris || 0), MINDSTE_BUD);
+  return Math.max(nuvaerendeBud + budstigning(nuvaerendeBud), MINDSTE_BUD);
 }
 
 // Startpris i hele kroner, mindst 1 kr (Filip, 5. oktober 2026 – som
-// formularens felt: min 1, trin 1). Samme regel i databasen
+// formularens felt: min 1, trin 1). Første bud er dog altid mindst
+// MINDSTE_BUD (3 kr.). Samme regel i databasen
 // (auctions_beskyt_ny, auctions_beskyt_kolonner, rediger_auktion,
 // genopsaet_auktion - 20261005020000_startpris_anke.sql).
 export const MINDSTE_STARTPRIS = 1;

@@ -11,7 +11,8 @@
 //       påmindelse på dag 12.
 //   4. Overfør frigivne beløb, der ventede på sælgerens Connect-konto.
 //   5. Refundér betalinger med afvigende beløb.
-//   5b. Sagsrefusioner, der er claimet, men ikke gennemført hos Stripe.
+//   5b. Alle lovede refusioner (uanset årsag), der er claimet, men ikke
+//       gennemført hos Stripe - med backoff (Niels F05).
 //   5c. "Sag oprettet"-beskeder for sager, der ikke er notificeret (fx fra appen).
 //   6. Fristen overskredet: annullér handlen (+ Stripe), opret sag til admin,
 //      mail til køber og sælger.
@@ -60,7 +61,7 @@ import {
   forsoegAutobetaling,
   overfoerVentende,
   refunderAfvigelserVentende,
-  refunderSagerVentende,
+  refunderLoveteVentende,
 } from "@/lib/betaling/stripeBetaling";
 
 const TIME = 60 * 60 * 1000;
@@ -290,8 +291,9 @@ export async function koerBetalingsCron() {
   // 5) Betalinger med afvigende beløb, der endnu ikke er refunderet.
   resultat.afvigelsesrefusioner = await refunderAfvigelserVentende();
 
-  // 5b) Sagsrefusioner (medhold til køber), hvor Stripe-kaldet fejlede.
-  resultat.sagsrefusioner = await refunderSagerVentende();
+  // 5b) ALLE lovede refusioner (sag, admin, sen betaling, frister), hvor
+  //     Stripe-kaldet fejlede eller aldrig blev lavet - med backoff.
+  resultat.sagsrefusioner = await refunderLoveteVentende();
 
   // 5c) Nye sager, hvor køber og sælger ikke har fået besked endnu.
   resultat.sagsbeskeder = await notificerNyeSager();

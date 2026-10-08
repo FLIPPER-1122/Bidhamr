@@ -11,6 +11,7 @@ import {
   type Betalingsindstillinger,
 } from "@/app/actions/betaling";
 import { FejlBoks } from "@/components/betaling/FejlBoks";
+import { AUTOBETALING_SAMTYKKE } from "@/lib/betaling/samtykke";
 
 // Stripe.js og Payment Element indlæses først, når brugeren har trykket
 // "Gem et kort" – ikke ved hvert besøg på Min konto.
@@ -139,10 +140,10 @@ export default function KontoBetaling({
           className="mt-0.5 h-5 w-5 shrink-0 accent-groen"
         />
         <span className="text-sm">
-          <span className="font-semibold text-groen-mork">Betal automatisk, når jeg vinder</span>
+          <span className="font-semibold text-groen-mork">{AUTOBETALING_SAMTYKKE.overskrift}</span>
           <span className="mt-1 block text-tekst-daempet">
             {gemtKort
-              ? "Tilvalg: Vinder du, trækkes totalprisen på dit gemte kort. Du kan slå det fra når som helst."
+              ? AUTOBETALING_SAMTYKKE.tekst
               : "Gem et kort for at kunne slå automatisk betaling til. Det er et tilvalg."}
           </span>
         </span>

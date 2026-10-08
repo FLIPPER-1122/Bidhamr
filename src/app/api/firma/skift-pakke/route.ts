@@ -20,8 +20,11 @@ import { skiftPakkeForBruger } from "@/lib/erhverv/pakkeskift";
 //         "betal_forskellen" (url = Stripes fakturaside, åbn i browser) |
 //         "nedgradering_planlagt" (gaelderFra) | "uaendret", besked, pakke? }
 //   400 { fejl, kode: "ugyldig" | "ugyldig_pakke" }
+//   413 { fejl, kode: "ugyldig" }            (kroppen er over 1 KB)
 //   401 { fejl, kode: "ikke_logget_ind" }
-//   403 { fejl, kode: "ikke_tilladt" }       (ikke firmakonto / ikke aktiv)
+//   403 { fejl, kode: "ikke_tilladt" }       (ikke firmakonto / ikke aktiv /
+//                                             spærret konto / opsagt)
+//   409 { fejl, kode: "i_gang" }             (et andet pakkeskift er i gang)
 //   409 { fejl, kode: "betal_foerst" | "stripe_fejl" }  (pakken er uændret)
 //   429 { fejl, kode: "for_mange" }
 //   500 { fejl, kode: "fejl" }
@@ -49,6 +52,33 @@ function fremmedOrigin(req: NextRequest): boolean {
   }
 }
 
+const MAKS_KROP = 1024;
+
+// Læser højst `maks` bytes; null hvis kroppen er større (læsningen afbrydes).
+async function laesBegraenset(req: NextRequest, maks: number): Promise<string | null> {
+  if (!req.body) return "";
+  const laeser = req.body.getReader();
+  const dele: Uint8Array[] = [];
+  let i = 0;
+  for (;;) {
+    const { done, value } = await laeser.read();
+    if (done) break;
+    i += value.byteLength;
+    if (i > maks) {
+      await laeser.cancel().catch(() => {});
+      return null;
+    }
+    dele.push(value);
+  }
+  const samlet = new Uint8Array(i);
+  let pos = 0;
+  for (const d of dele) {
+    samlet.set(d, pos);
+    pos += d.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(samlet);
+}
+
 const IKKE_LOGGET_IND = { fejl: "Du er ikke logget ind længere. Log ind igen.", kode: "ikke_logget_ind" };
 
 export async function POST(req: NextRequest) {
@@ -66,10 +96,16 @@ export async function POST(req: NextRequest) {
   if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
     return svar(400, { fejl: "Ugyldig forespørgsel.", kode: "ugyldig" });
   }
+  // Længden tjekkes FØR kroppen læses: først Content-Length, og derefter
+  // læses højst MAKS_KROP bytes fra strømmen (også uden Content-Length).
+  const laengde = req.headers.get("content-length");
+  if (laengde !== null && !(/^\d{1,6}$/.test(laengde) && Number(laengde) <= MAKS_KROP)) {
+    return svar(413, { fejl: "Ugyldig forespørgsel.", kode: "ugyldig" });
+  }
   let krop: { pakkeId?: unknown };
   try {
-    const raa = await req.text();
-    if (raa.length > 1024) return svar(400, { fejl: "Ugyldig forespørgsel.", kode: "ugyldig" });
+    const raa = await laesBegraenset(req, MAKS_KROP);
+    if (raa === null) return svar(413, { fejl: "Ugyldig forespørgsel.", kode: "ugyldig" });
     krop = JSON.parse(raa) as typeof krop;
     if (!krop || typeof krop !== "object") throw new Error("ikke et objekt");
   } catch {
@@ -89,7 +125,7 @@ export async function POST(req: NextRequest) {
     const status =
       res.kode === "ugyldig_pakke" ? 400
       : res.kode === "ikke_tilladt" ? 403
-      : res.kode === "betal_foerst" || res.kode === "stripe_fejl" ? 409
+      : res.kode === "betal_foerst" || res.kode === "stripe_fejl" || res.kode === "i_gang" ? 409
       : res.kode === "for_mange" ? 429
       : 500;
     return svar(status, { fejl: res.fejl, kode: res.kode ?? "fejl" });

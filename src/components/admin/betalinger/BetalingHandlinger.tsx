@@ -66,6 +66,12 @@ export function problemTekst(b: BetalingTilHandling): { titel: string; tekst: st
           ? "Køberens penge kunne ikke sendes tilbage. Systemet prøver selv igen, og du kan prøve igen med det samme. Lykkes det ikke: tjek årsagen i Stripe, kontakt køberen, og markér som løst, når køberen har fået pengene på anden vis."
           : "Køberens penge kunne ikke sendes tilbage, og systemet prøver ikke selv igen. Prøv tilbagebetalingen igen. Lykkes det ikke: tjek årsagen i Stripe, kontakt køberen, og markér som løst, når køberen har fået pengene på anden vis.",
       };
+    case "indsigelse_tabt":
+      return {
+        titel: "Køberens bank har givet køberen pengene tilbage",
+        tekst:
+          "Indsigelsen er tabt. Pengene flyttes ikke mere – der frigives og refunderes intet. Luk handlen: er intet udbetalt til sælgeren, annulleres handlen. Er der udbetalt, bærer BidHamr tabet. Var indsigelsen falsk (køberen fik varen), kan du give køberen en advarsel – så lukkes handlen samtidig.",
+      };
     case "indsigelse":
       return {
         titel: "Køberen har gjort indsigelse hos sin bank",
@@ -86,6 +92,15 @@ export function statusBadge(b: BetalingTilHandling, standard: string): { tekst: 
   const graa = "bg-neutral-100 text-neutral-700";
   if (b.refusion) {
     if (b.refusion.tilstand === "fejlet") {
+      if (b.refusion.opgivet) {
+        return { tekst: "Tilbagebetaling opgivet – kræver handling", farve: "bg-fejl-bg text-fejl-tekst" };
+      }
+      if (b.refusion.fejletFlereGange) {
+        return {
+          tekst: `Tilbagebetaling fejlet ${b.refusion.forsoeg} gange`,
+          farve: "bg-fejl-bg text-fejl-tekst",
+        };
+      }
       return { tekst: "Tilbagebetaling fejlet", farve: "bg-fejl-bg text-fejl-tekst" };
     }
     if (b.refusion.tilstand === "afventer") return { tekst: "Tilbagebetaling i gang", farve: graa };
@@ -113,7 +128,9 @@ export default function BetalingHandlinger({
 }) {
   const p = b.problem;
   const visPengeKnapper = b.kanFlyttePenge && (p === "afhentning" || p === "ikke_afsluttet");
-  const visAdvarsel = kanLoese && (p === "afhentning" || p === "ikke_afsluttet" || p === "andet");
+  const visAdvarsel =
+    kanLoese && (p === "afhentning" || p === "ikke_afsluttet" || p === "andet" || p === "indsigelse_tabt");
+  const tabt = p === "indsigelse_tabt";
   const visLoest = kanLoese && p !== "indsigelse";
 
   const seChat = (
@@ -250,11 +267,15 @@ export default function BetalingHandlinger({
         <Handling
           knap={
             <ConfirmDialog
-              triggerLabel="Markér som løst"
+              triggerLabel={tabt ? "Luk handlen" : "Markér som løst"}
               triggerClassName={KNAP_HVID}
-              title="Markér betalingen som løst?"
-              description="Betalingen forsvinder fra listen. Pengene flyttes ikke. Skriv, hvad der er gjort."
-              confirmLabel="Markér som løst"
+              title={tabt ? "Luk handlen efter den tabte indsigelse?" : "Markér betalingen som løst?"}
+              description={
+                tabt
+                  ? "Handlen lukkes og annulleres, hvis intet er udbetalt til sælgeren. Pengene flyttes ikke. Skriv, hvad der er gjort."
+                  : "Betalingen forsvinder fra listen. Pengene flyttes ikke. Skriv, hvad der er gjort."
+              }
+              confirmLabel={tabt ? "Luk handlen" : "Markér som løst"}
               action={markerBetalingLøstForm}
               hiddenFields={{ betalingId: b.id }}
               aarsagField={{
@@ -265,7 +286,11 @@ export default function BetalingHandlinger({
               }}
             />
           }
-          forklaring="Fjerner markeringen. Pengene flyttes ikke."
+          forklaring={
+            tabt
+              ? "Lukker handlen. Der frigives og refunderes intet."
+              : "Fjerner markeringen. Pengene flyttes ikke."
+          }
         />
       )}
     </ul>
