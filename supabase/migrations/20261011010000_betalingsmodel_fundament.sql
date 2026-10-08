@@ -14,7 +14,7 @@
 --     på sælgerens Connect-konto, manuel udbetaling). CHECK: en 'separat'-række
 --     har ALDRIG destination-kolonner udfyldt - derfor ændrer vagterne i 5
 --     intet for 'separat'. pengemodel kan kun skiftes, mens betalingen afventer
---     og ingen charge findes.
+--     og hverken PaymentIntent eller charge findes.
 --  3. saelger_udbetalinger: BidHamrs payouts fra sælgerens Connect-konto til
 --     banken (bruges fra trin 3). Kun service role, slettes aldrig.
 --  4. betalingsprofiler: connect_charges_enabled, connect_kort_aktiv,
@@ -34,7 +34,12 @@
 --     udbetalingskonto_nulstil.
 --  6. har_udbetalingskonto: med betalingsmodel 'destination' kræves også
 --     charges_enabled, card_payments aktiv og manuel udbetalingsplan. Med
---     'separat' (i dag) uændret.
+--     'separat' (i dag) uændret. Databasen kan kun skiftes til 'destination',
+--     når alle aktive sælgerkonti er spejlet (backfill), så ingen sælger
+--     blokeres af et spejl, der aldrig er udfyldt (stripe_tilstand_
+--     betalingsmodel_vagt). Rækkefølgen: docs/GO-LIVE-STRIPE.md.
+--  7. betaling_claim_overfoersel afviser pengemodel <> 'separat': en
+--     destination-betaling får aldrig en separat transfer (dobbeltudbetaling).
 --
 -- Idempotent. Ændrer ingen handelsdata.
 
@@ -71,6 +76,43 @@ $$;
 
 revoke all on function public.betalingsmodel_aktiv() from public, anon, authenticated;
 grant execute on function public.betalingsmodel_aktiv() to service_role;
+
+-- Vagt: databasen kan kun skiftes til 'destination', når backfill er
+-- gennemført - dvs. alle aktive sælgerkonti (indsendt, ikke frakoblet) er
+-- spejlet med de nye felter (connect_udbetalingsplan udfyldes af hvert spejl,
+-- afsnit 4). Ellers ville har_udbetalingskonto (afsnit 6) blokere sælgere,
+-- hvis spejl aldrig er udfyldt. Rækkefølgen (backfill -> serverflag ->
+-- database): docs/GO-LIVE-STRIPE.md.
+create or replace function public.stripe_tilstand_betalingsmodel_vagt()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  if new.betalingsmodel = 'destination'
+     and new.betalingsmodel is distinct from old.betalingsmodel then
+    select count(*) into n
+      from public.betalingsprofiler
+     where stripe_account_id is not null
+       and connect_detaljer_indsendt
+       and connect_frakoblet_kl is null
+       and connect_udbetalingsplan is null;
+    if n > 0 then
+      raise exception 'betalingsmodel_backfill_mangler: % sælgerkonto(er) er ikke spejlet - kør scripts/betalingsmodel-backfill.mts --udfoer først', n;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.stripe_tilstand_betalingsmodel_vagt() from public, anon, authenticated;
+
+drop trigger if exists stripe_tilstand_betalingsmodel_vagt on public.stripe_tilstand;
+create trigger stripe_tilstand_betalingsmodel_vagt
+  before update of betalingsmodel on public.stripe_tilstand
+  for each row execute function public.stripe_tilstand_betalingsmodel_vagt();
 
 -- ===========================================================================
 -- 3. saelger_udbetalinger (før 2: betalinger refererer til den)
@@ -207,7 +249,7 @@ create index if not exists betalinger_saelger_udbetaling_idx
   where saelger_udbetaling_id is not null;
 
 comment on column public.betalinger.pengemodel is
-  'separat: betaling på BidHamrs saldo + transfer ved frigivelse (stripe_transfer_id). destination: betaling på sælgerens vegne (on_behalf_of + transfer_data), pengene står på sælgerens Connect-konto, manuel payout (saelger_udbetaling_id). Kan kun skiftes, mens betalingen afventer uden charge.';
+  'separat: betaling på BidHamrs saldo + transfer ved frigivelse (stripe_transfer_id). destination: betaling på sælgerens vegne (on_behalf_of + transfer_data), pengene står på sælgerens Connect-konto, manuel payout (saelger_udbetaling_id). Kan kun skiftes, mens betalingen afventer uden PaymentIntent og charge.';
 comment on column public.betalinger.saelger_stripe_konto is
   'Destination: sælgerens Connect-konto (acct_...), låst når PaymentIntenten oprettes.';
 comment on column public.betalinger.application_fee_oere is
@@ -221,7 +263,9 @@ comment on column public.betalinger.midler_tilgaengelige_kl is
 comment on column public.betalinger.udbetal_tidligst is
   'Destination: tidligste payout (Niels F02 - ventetid ved fx afhentning).';
 
--- pengemodel må kun skiftes, mens betalingen afventer og ingen charge findes.
+-- pengemodel må kun skiftes, mens betalingen afventer og hverken en
+-- PaymentIntent eller charge findes (en separat-PaymentIntent må aldrig blive
+-- til en destination-betaling og omvendt).
 create or replace function public.betalinger_pengemodel_laas()
 returns trigger
 language plpgsql
@@ -229,7 +273,8 @@ set search_path = public
 as $$
 begin
   if new.pengemodel is distinct from old.pengemodel
-     and (old.status <> 'afventer' or old.stripe_charge_id is not null) then
+     and (old.status <> 'afventer' or old.stripe_charge_id is not null
+          or old.stripe_payment_intent_id is not null) then
     raise exception 'betalinger_pengemodel_laast: pengemodel kan ikke ændres efter betaling';
   end if;
   return new;
@@ -391,7 +436,9 @@ drop function pg_temp.bm_ret(text, jsonb);
 -- ===========================================================================
 -- 6. har_udbetalingskonto: strammere regel med destination
 -- ===========================================================================
--- Uændret med 'separat'. Med 'destination' skal kontoen også kunne tage imod
+-- Uændret med 'separat'. Databasen kan først stå til 'destination', når alle
+-- aktive konti er spejlet (vagten i afsnit 1) - så de nye felter er altid
+-- udfyldt fra Stripe, når reglen gælder. Med 'destination' skal kontoen også kunne tage imod
 -- betaling på sælgerens vegne (charges_enabled + card_payments aktiv) og stå
 -- til manuel udbetaling. Gælder auctions_kraev_udbetalingskonto (opret
 -- auktion) og alle andre kaldere (genopsæt, andenchance ...).
@@ -412,3 +459,45 @@ $fn$;
 
 revoke all on function public.har_udbetalingskonto(uuid) from public, anon, authenticated;
 grant execute on function public.har_udbetalingskonto(uuid) to service_role;
+
+-- ===========================================================================
+-- 7. betaling_claim_overfoersel: kun 'separat'
+-- ===========================================================================
+-- Den gamle transfer (overfoerTilSaelger) må aldrig køre for en destination-
+-- betaling - pengene står allerede på sælgerens konto, og en transfer oven i
+-- ville være en dobbeltudbetaling. Ellers uændret (20261002040000).
+create or replace function public.betaling_claim_overfoersel(p_betaling uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  b record;
+  t record;
+begin
+  select * into b from public.betalinger where id = p_betaling for update;
+  if not found then return false; end if;
+  select * into t from public.trades where id = b.trade_id for update;
+
+  if b.pengemodel <> 'separat'
+     or b.status <> 'betalt'
+     or b.frigivet_kl is null
+     or b.refusion_anmodet_kl is not null
+     or b.stripe_charge_id is null
+     or public.betaling_indsigelse_blokerer(b.indsigelse_kl, b.indsigelse_status)
+     or t.sag_aaben
+     or t.status = 'annulleret' then
+    return false;
+  end if;
+
+  update public.betalinger
+     set overfoersel_paabegyndt_kl = coalesce(overfoersel_paabegyndt_kl, now()),
+         opdateret = now()
+   where id = b.id;
+  return true;
+end;
+$$;
+
+revoke all on function public.betaling_claim_overfoersel(uuid) from public, anon, authenticated;
+grant execute on function public.betaling_claim_overfoersel(uuid) to service_role;

@@ -10,6 +10,28 @@
 //   node scripts/betalingsmodel-backfill.mts --env .env.local --udfoer
 //   node scripts/betalingsmodel-backfill.mts --udfoer --capabilities   # se nedenfor
 //
+// Hvad --udfoer ÆNDRER hos Stripe (kun det, der mangler - en kørsel mere
+// ændrer intet):
+//   separat (i dag), uden --capabilities:
+//     - business_profile.mcc 5931, hvis kontoen ingen MCC har (en anden MCC
+//       ændres ikke - kun advarsel)
+//     - business_profile.url (https://bidhamr.dk), hvis den mangler
+//     - business_profile.product_description, hvis både den og url mangler
+//     - settings.payments.statement_descriptor "BIDHAMR.DK", hvis den mangler
+//     Udbetalingsindstillingerne (plan, debit_negative_balances) og
+//     capabilities røres IKKE. Disse felter kræver ingen nye oplysninger fra
+//     sælgeren, så overførsler/udbetalinger påvirkes ikke.
+//   separat med --capabilities: også card_payments og mobilepay_payments
+//     (se advarslen nedenfor).
+//   destination (begge flag): det hele - capabilities, debit_negative_
+//     balances = true og manuel udbetalingsplan.
+//   business_type ændres aldrig (kun advarsel).
+// I databasen (alle modeller): spejlet (connect_charges_enabled,
+// connect_kort_aktiv, connect_betalingsmetoder, connect_udbetalingsplan,
+// connect_plan_ok) for hver konto. Databasen kan først sættes til
+// 'destination', når alle aktive konti er spejlet (vagt i 20261011010000).
+// Rækkefølge ved skift: docs/GO-LIVE-STRIPE.md.
+//
 // Sikringer:
 //   - Kun Stripes TESTnøgle (sk_test_/rk_test_) indtil fase 6. Live afvises.
 //   - Databasens stripe_tilstand skal være 'test'.

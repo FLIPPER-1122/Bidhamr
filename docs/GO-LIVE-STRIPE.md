@@ -21,8 +21,12 @@ Lavet 8. okt. 2026 efter Niels' gennemgang (F07). Bruges, når BidHamr skifter f
 - [ ] Webhook-endpoints oprettet i **live** med de samme events som i test (platform: se `src/app/api/webhooks/stripe/route.ts`; Connect: `account.updated`, `account.application.deauthorized`, `capability.updated`, `payout.paid`, `payout.failed`). Noter signatur-hemmelighederne.
 - [ ] **Ny betalingsmodel (destination, docs/BETALINGSMODEL-PLAN.md):** ombygningen skal være færdig (trin 1–5). Derefter:
   - Migrationen `20261011010000_betalingsmodel_fundament.sql` (og trin 2–5) er kørt i produktion.
-  - Alle sælgerkonti er sat op: `node scripts/betalingsmodel-backfill.mts --udfoer` (prøvekørsel uden `--udfoer` først). Mangler en konto oplysninger til card_payments, bliver overførsler/udbetalinger inaktive, indtil sælgeren har gjort onboardingen færdig – giv sælgerne besked først.
-  - Vercel (Filip selv): `STRIPE_BETALINGSMODEL=destination`, og databasen: `update public.stripe_tilstand set betalingsmodel = 'destination' where id;` – begge skal være sat, ellers kører koden den gamle model (og giver drift-alarm).
+  - **Rækkefølgen er vigtig** (`har_udbetalingskonto` bruger KUN databasens indstilling og kræver med destination card_payments aktiv, charges_enabled og manuel plan – ud fra spejlet i `betalingsprofiler`):
+    1. **Backfill (spejl):** `node scripts/betalingsmodel-backfill.mts` (prøvekørsel), derefter `--udfoer`. I separat ændrer den kun MCC/url/beskrivelse/descriptor, hvis de mangler, og spejler alle konti i databasen – plan, debit_negative_balances og capabilities røres ikke. Alle konti skal ende uden FEJL (en konto, Stripe ikke kender, skal frakobles/nulstilles først).
+    2. **Serverflaget (Vercel, Filip selv):** `STRIPE_BETALINGSMODEL=destination`. Koden kører stadig separat (med drift-alarm), indtil databasen også er sat.
+    3. **Databasen:** `update public.stripe_tilstand set betalingsmodel = 'destination' where id;` – afvises af vagten (`betalingsmodel_backfill_mangler`), hvis en aktiv sælgerkonto ikke er spejlet (trin 1 ikke gennemført). Sæt den IKKE før serverflaget: står databasen til destination, mens serveren kører separat, oprettes nye konti kun med transfers og blokeres af den strammere regel.
+    4. **Backfill igen** (nu destination): `--udfoer` anmoder om card_payments + mobilepay_payments og sætter manuel plan og debit_negative_balances. Mangler en konto oplysninger til card_payments, bliver overførsler/udbetalinger inaktive, og sælgeren kan ikke oprette auktioner, indtil onboardingen er færdig – giv sælgerne besked først.
+    - Tilbage til separat: databasen først (`betalingsmodel = 'separat'`), derefter serverflaget.
   - Kontrol: ingen `connect/udbetalingsplan`- eller `betaling/betalingsmodel`-alarmer på /admin/drift; alle sælgerkonti står til manuel udbetaling.
 
 ## 2. Ryd testdata i produktionsdatabasen (kræver Filips "ja" – skriv det som en migration)
