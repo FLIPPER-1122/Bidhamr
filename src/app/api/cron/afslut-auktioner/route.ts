@@ -5,15 +5,16 @@ import { driftFejlSamler, logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
 import { harCronAdgang } from "@/lib/cronAdgang";
 
-// Lukker auktioner, opretter handel + betaling (48 timers frist), forsøger
-// autobetaling, sender "du vandt"-mails og betalingspåmindelser og overfører
+// Lukker auktioner, opretter handel + betaling (48 timers frist; vinderen
+// betaler selv - ingen automatisk betaling), sender "du vandt"-mails og
+// betalingspåmindelser og overfører
 // frigivne beløb til sælgere. Annullerer og refunderer handler, hvor pakken
 // ikke er sendt 5 dage efter betalingen. Se src/lib/betaling/cron.ts.
 // Henter derefter sporing for aktive forsendelser (src/lib/fragt/server.ts).
 //
 // Kaldes hvert 5. minut af pg_cron + pg_net (job 'betalings-cron', se migration
 // 20261001020000) og dagligt kl. 03 af Vercel Cron som backup. Ruten er
-// idempotent: mails, autobetaling og overførsler claimes atomisk i databasen,
+// idempotent: mails og overførsler claimes atomisk i databasen,
 // og alle Stripe-kald har idempotency keys - samtidige kald giver ingen
 // dobbelt effekt.
 //

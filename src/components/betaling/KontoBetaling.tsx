@@ -6,12 +6,10 @@ import { useRouter } from "next/navigation";
 import {
   bekraeftGemtKort,
   fjernGemtKort,
-  saetAutobetaling,
   startGemKort,
   type Betalingsindstillinger,
 } from "@/app/actions/betaling";
 import { FejlBoks } from "@/components/betaling/FejlBoks";
-import { AUTOBETALING_SAMTYKKE } from "@/lib/betaling/samtykke";
 
 // Stripe.js og Payment Element indlæses først, når brugeren har trykket
 // "Gem et kort" – ikke ved hvert besøg på Min konto.
@@ -34,11 +32,9 @@ const MAERKE: Record<string, string> = {
 
 export default function KontoBetaling({
   gemtKort,
-  autobetaling,
   setupIntentId,
 }: {
   gemtKort: Betalingsindstillinger["gemtKort"];
-  autobetaling: boolean;
   setupIntentId: string | null;
 }) {
   const router = useRouter();
@@ -71,7 +67,7 @@ export default function KontoBetaling({
   }
 
   function fjern() {
-    if (!confirm("Vil du fjerne dit gemte kort? Automatisk betaling slås fra.")) return;
+    if (!confirm("Vil du fjerne dit gemte kort?")) return;
     setFejl(null);
     startTransition(async () => {
       const svar = await fjernGemtKort();
@@ -83,19 +79,11 @@ export default function KontoBetaling({
     });
   }
 
-  function skiftAuto(til: boolean) {
-    setFejl(null);
-    startTransition(async () => {
-      const svar = await saetAutobetaling(til);
-      if ("fejl" in svar) setFejl(svar.fejl);
-      else router.refresh();
-    });
-  }
-
   return (
     <div className="space-y-4">
       <p className="text-sm text-tekst-daempet">
-        Du kan byde uden at gemme et kort. Vinder du, betaler du inden for 48 timer.
+        Du kan byde uden at gemme et kort. Vinder du, betaler du selv på betalingssiden inden for 48 timer.
+        Har du gemt et kort, er det valgt på forhånd dér – det bliver først trukket, når du selv trykker Betal.
       </p>
 
       {besked && (
@@ -126,28 +114,6 @@ export default function KontoBetaling({
           {venter ? "Henter…" : "Gem et kort"}
         </button>
       )}
-
-      <label
-        className={`flex gap-3 rounded-xl border border-kant p-4 ${
-          gemtKort ? "cursor-pointer bg-groen-lys" : "cursor-not-allowed opacity-60"
-        }`}
-      >
-        <input
-          type="checkbox"
-          checked={autobetaling && !!gemtKort}
-          disabled={!gemtKort || venter}
-          onChange={(e) => skiftAuto(e.target.checked)}
-          className="mt-0.5 h-5 w-5 shrink-0 accent-groen"
-        />
-        <span className="text-sm">
-          <span className="font-semibold text-groen-mork">{AUTOBETALING_SAMTYKKE.overskrift}</span>
-          <span className="mt-1 block text-tekst-daempet">
-            {gemtKort
-              ? AUTOBETALING_SAMTYKKE.tekst
-              : "Gem et kort for at kunne slå automatisk betaling til. Det er et tilvalg."}
-          </span>
-        </span>
-      </label>
     </div>
   );
 }

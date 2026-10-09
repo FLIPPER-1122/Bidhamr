@@ -62,7 +62,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvordan kan jeg betale?",
-          svar: "Med kort, MobilePay, Apple Pay, Google Pay eller en anden metode, der vises ved betalingen. Du kan også gemme et kort og slå automatisk betaling til. Det er et tilvalg – du kan sagtens byde uden.",
+          svar: "Med kort, MobilePay, Apple Pay, Google Pay eller en anden metode, der vises ved betalingen. Du betaler altid selv på betalingssiden, når du har vundet – vi trækker aldrig penge automatisk. Du kan gemme et kort under Min konto, så er det valgt på forhånd, når du betaler. Det er et tilvalg – du kan sagtens byde uden.",
         },
         {
           spoergsmaal: "Hvad koster det?",

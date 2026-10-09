@@ -34,7 +34,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Betal inden 48 timer",
           tekst:
-            "Du betaler med kort, MobilePay, Apple Pay, Google Pay eller en anden metode, der vises ved betalingen. Har du gemt et kort og slået automatisk betaling til, sker det af sig selv. Sælgeren kan give dig mere tid, hvis I aftaler det.",
+            "Du betaler med kort, MobilePay, Apple Pay, Google Pay eller en anden metode, der vises ved betalingen. Du betaler selv på betalingssiden – har du gemt et kort, er det valgt på forhånd. Sælgeren kan give dig mere tid, hvis I aftaler det.",
         },
         {
           titel: "Få varen",

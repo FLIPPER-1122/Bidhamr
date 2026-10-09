@@ -10,7 +10,7 @@ import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
 import { logDriftFejl } from "@/lib/drift";
-import { fjernGemtKortForBruger, saetAutobetalingForBruger } from "@/lib/betaling/kort";
+import { fjernGemtKortForBruger } from "@/lib/betaling/kort";
 import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import {
@@ -20,6 +20,7 @@ import {
   VENTER_TEKST,
   hentBetalingForHandel,
   hentProfil,
+  kundeSessionTilCheckout,
   erOnboardingRetur,
   onboardingLink,
   registrerGemtKort,
@@ -72,7 +73,6 @@ export type KoeberBetalingsstatus = FaellesBetalingsstatus & {
   beskyttelsePrisOere: number;
   totalOere: number;
   sidsteFejl: string | null;
-  autobetalingResultat: string | null;
 };
 
 // Sælgerens visning. Sælgeren må ikke kunne se, om køberen har købt BidHamr
@@ -160,12 +160,6 @@ export async function hentBetalingsstatus(
         (b.status === "afventer" || b.status === "behandles")
           ? "Betalingen kunne ikke gennemføres."
           : null,
-      // Stripes fejlkode sendes ikke til klienten - kun "fejlet_" eller "betalt".
-      autobetalingResultat: b.autobetaling_resultat?.startsWith("fejlet_")
-        ? "fejlet_autobetaling"
-        : b.autobetaling_resultat === "betalt"
-          ? "betalt"
-          : null,
     };
   } catch (err) {
     console.error("hentBetalingsstatus fejlede:", err);
@@ -179,10 +173,18 @@ export async function hentBetalingsstatus(
 // client_secret til Stripes Payment Element. Beløbet kommer udelukkende fra
 // betalingsrækken (BidHamr Beskyttelse er låst ved buddet) - klienten sender
 // intet, der påvirker beløbet.
+//
+// Ingen automatisk betaling: køberen betaler altid selv her. Har han et gemt
+// kort, følger customerSessionClientSecret med, så Payment Element viser (og
+// forvælger) kortet - giv den til <Elements options={{ clientSecret,
+// customerSessionClientSecret }}>. Kortet trækkes først, når køberen trykker
+// Betal (stripe.confirmPayment). null = intet gemt kort (eller det kunne ikke
+// hentes) - betalingen virker som altid.
 export async function startBetaling(
   handelId: string,
 ): Promise<
-  { ok: true; clientSecret: string; totalOere: number } | (Fejl & { betalt?: true; kode?: "vaelg_levering" })
+  | { ok: true; clientSecret: string; totalOere: number; customerSessionClientSecret: string | null }
+  | (Fejl & { betalt?: true; kode?: "vaelg_levering" })
 > {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
@@ -210,7 +212,12 @@ export async function startBetaling(
     if (pi.amount !== Number(b.total_oere)) return { fejl: GENERISK };
     if (!pi.client_secret) return { fejl: GENERISK };
 
-    return { ok: true, clientSecret: pi.client_secret, totalOere: pi.amount };
+    return {
+      ok: true,
+      clientSecret: pi.client_secret,
+      totalOere: pi.amount,
+      customerSessionClientSecret: await kundeSessionTilCheckout(user.id, pi),
+    };
   } catch (err) {
     // Fragt: køberen skal vælge levering i checkout først.
     if (err instanceof LeveringManglerFejl) return { fejl: err.message, kode: "vaelg_levering" };
@@ -224,8 +231,8 @@ export async function startBetaling(
 // ------------------------------------------------------------------ gemt kort
 
 export type Betalingsindstillinger = {
+  // Gemt kort bruges kun til at forudfylde checkout (ingen automatisk betaling).
   gemtKort: { maerke: string | null; sidste4: string | null; udloeb: string | null } | null;
-  autobetaling: boolean;
   saelger: {
     harKonto: boolean;
     detaljerIndsendt: boolean;
@@ -259,7 +266,6 @@ export async function hentBetalingsindstillinger(): Promise<
       gemtKort: p?.gemt_betalingsmetode_id
         ? { maerke: p.gemt_kort_maerke, sidste4: p.gemt_kort_sidste4, udloeb: p.gemt_kort_udloeb }
         : null,
-      autobetaling: !!p?.autobetaling,
       saelger: {
         harKonto: !!p?.stripe_account_id,
         detaljerIndsendt: !!p?.connect_detaljer_indsendt,
@@ -303,13 +309,15 @@ export async function startGemKort(): Promise<{ ok: true; clientSecret: string }
     let aaben: (typeof aabne.data)[number] | undefined;
     for (const s of aabne.data) {
       if (
-        s.usage !== "off_session" ||
+        (s.usage !== "on_session" && s.usage !== "off_session") ||
         s.metadata?.bruger_id !== user.id ||
         !(s.status === "requires_payment_method" || s.status === "requires_confirmation" || s.status === "requires_action")
       ) {
         continue;
       }
-      if (s.created <= graense) {
+      // off_session er fra før automatisk betaling blev fjernet: genbruges
+      // aldrig (kortet må kun gemmes til on-session brug) - annulleres.
+      if (s.usage === "off_session" || s.created <= graense) {
         try {
           await stripe.setupIntents.cancel(s.id);
         } catch (err) {
@@ -328,7 +336,9 @@ export async function startGemKort(): Promise<{ ok: true; clientSecret: string }
     const si = await stripe.setupIntents.create(
       {
         customer: kunde,
-        usage: "off_session",
+        // Kortet bruges kun, når køberen selv betaler i checkout (ingen
+        // automatisk betaling, Filip 9. okt. 2026).
+        usage: "on_session",
         // Kort (inkl. Apple Pay / Google Pay, som gemmes som kort).
         payment_method_types: ["card"],
         metadata: { bruger_id: user.id },
@@ -373,21 +383,6 @@ export async function bekraeftGemtKort(
   } catch (err) {
     console.error("bekraeftGemtKort fejlede:", err);
     await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "bekraeftGemtKort", fejl: err, brugerId: user.id });
-    return { fejl: GENERISK };
-  }
-}
-
-export async function saetAutobetaling(til: boolean): Promise<{ ok: true } | Fejl> {
-  const user = await indloggetBruger();
-  if (!user) return { fejl: "Du skal være logget ind." };
-  if (typeof til !== "boolean") return { fejl: "Ugyldigt valg." };
-  try {
-    const svar = await saetAutobetalingForBruger(user.id, til);
-    if ("ok" in svar) revalidatePath("/konto");
-    return svar;
-  } catch (err) {
-    console.error("saetAutobetaling fejlede:", err);
-    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "saetAutobetaling", fejl: err, brugerId: user.id });
     return { fejl: GENERISK };
   }
 }
