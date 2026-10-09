@@ -4,13 +4,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { driftFejlSamler, logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
 import { harCronAdgang } from "@/lib/cronAdgang";
+import { koerDac7Cron } from "@/lib/dac7/server";
 
 // Lukker auktioner, opretter handel + betaling (48 timers frist; vinderen
 // betaler selv - ingen automatisk betaling), sender "du vandt"-mails og
 // betalingspåmindelser og overfører
 // frigivne beløb til sælgere. Annullerer og refunderer handler, hvor pakken
 // ikke er sendt 5 dage efter betalingen. Se src/lib/betaling/cron.ts.
-// Henter derefter sporing for aktive forsendelser (src/lib/fragt/server.ts).
+// Henter derefter sporing for aktive forsendelser (src/lib/fragt/server.ts)
+// og kører DAC7-påmindelserne (src/lib/dac7/server.ts).
 //
 // Kaldes hvert 5. minut af pg_cron + pg_net (job 'betalings-cron', se migration
 // 20261001020000) og dagligt kl. 03 af Vercel Cron som backup. Ruten er
@@ -124,7 +126,16 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Fragt-cron", fejl: err });
     }
-    const r = { ...betaling, fragt };
+    // DAC7: anmodninger om skatteoplysninger, påmindelser og spærring
+    // (højst én gang i timen i databasen; flytter ingen penge). Fejl her
+    // stopper ikke resten og logges i drift_fejl.
+    let dac7: Awaited<ReturnType<typeof koerDac7Cron>> | null = null;
+    try {
+      dac7 = await koerDac7Cron();
+    } catch (err) {
+      await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "DAC7-cron", fejl: err });
+    }
+    const r = { ...betaling, fragt, dac7 };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);

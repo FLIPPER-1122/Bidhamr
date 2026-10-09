@@ -66,7 +66,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [x] Advarselssystem: dårlig indpakning giver påmindelse første gang, derefter en advarsel pr. gang. 3 advarsler = permanent lukning (byg videre på den eksisterende advarsel-funktion i admin)
 - [x] Mails ved alle trin i handlen
 - [x] **Udbetaling til sælgers bankkonto** via Stripe Connect (testmiljø – ingen rigtige penge endnu)
-- [ ] **DAC7**: brug Stripes "Platform Tax Reporting" til at indsamle og indberette sælgeroplysninger
+- [~] **DAC7**: brug Stripes "Platform Tax Reporting" til at indsamle og indberette sælgeroplysninger *(bygget 9. okt. 2026 – Stripes produkt er i lukket beta og laver ikke Danmarks CSV, så BidHamr beregner og laver selv Skattestyrelsens fil; CPR krypteret. `20261014010000_dac7.sql`, docs/DAC7.md; mangler nøgle i Vercel, migration i produktion og revisor/advokat nr. 111–113)*
 - [x] Kvittering til køber og sælger efter handel med opdeling af pris, gebyr, BidHamr Beskyttelse og fragt (kvittering/handelsbekræftelse for selve varen – IKKE en faktura, fordi varen sælges mellem private)
 - [ ] Filip: spørg revisor, om **Dinero** er et godkendt digitalt bogføringssystem, og vælg regnskabsprogram (Dinero, Billy eller e-conomic)
 - [~] **Automatiske fakturaer på BidHamrs egne gebyrer** med moms: køber får faktura på købergebyr + evt. BidHamr Beskyttelse, sælger får faktura på sælgergebyr. Oprettes automatisk i det valgte regnskabsprogram via API, så alle fakturaer ligger samlet ét sted. Fakturaerne vises også under brugerens profil. **Venter på Filips valg af regnskabsprogram** – byg kvitteringen først *(bygget 9. okt. 2026 i Dinero-sandbox – `20261012080000_fakturaer.sql`, docs/FAKTURA.md; mangler Dinero-live + revisor)*

@@ -1,6 +1,7 @@
 "use server";
 
 import { erMitIdFejl } from "@/lib/mitid/fejl";
+import { erDac7Fejl, DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
 import { MITID } from "@/lib/tekster/mitid";
 
 // Vinderen betaler ikke (ROADMAP-BESLUTNINGER.md, 2. oktober 2026).
@@ -228,6 +229,7 @@ export async function sendAndenchanceTilbud(
     if (error) {
       // MitID mangler (BHV01, a0_andenchance_mitid).
       if (erMitIdFejl(error.code, error.message)) return { fejl: MITID.fejlMangler, mitid: true };
+      if (erDac7Fejl(error.code, error.message)) return { fejl: DAC7_FEJL_TEKST };
       // To samtidige klik: det partielle unikke index afviser det andet.
       if (error.code === "23505") return { fejl: OPRET_FEJL.aktivt_tilbud };
       console.error("andenchance_opret fejlede:", error);
@@ -457,6 +459,7 @@ export async function genopsaetAuktion(
     if (error) {
       // MitID mangler (BHV01, auctions_a0_mitid).
       if (erMitIdFejl(error.code, error.message)) return { fejl: MITID.fejlMangler, mitid: true };
+      if (erDac7Fejl(error.code, error.message)) return { fejl: DAC7_FEJL_TEKST };
       if (error.code === "23505") return { fejl: GENOPSAET_FEJL.allerede_genopsat };
       console.error("genopsaet_auktion fejlede:", error);
       return { fejl: GENERISK };

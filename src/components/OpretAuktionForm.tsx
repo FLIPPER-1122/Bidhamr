@@ -22,6 +22,7 @@ import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand, standNavn } from "@/lib/stand";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { erMitIdFejl } from "@/lib/mitid/fejl";
+import { erDac7Fejl, DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
 import { MITID } from "@/lib/tekster/mitid";
 import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
 import { ERHVERV_GPSR, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
@@ -393,6 +394,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         // MitID mangler (BHV01). Siden viser normalt "Bekræft med MitID" før
         // formularen; her er MitID fx nulstillet imens.
         else if (erMitIdFejl(insertError.code, insertError.message)) besked = MITID.fejlMangler;
+        // DAC7-oplysninger mangler efter fristen (BHD01).
+        else if (erDac7Fejl(insertError.code, insertError.message)) besked = DAC7_FEJL_TEKST;
         else if (insertError.code === "BHU01") besked = "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.";
         else if (insertError.code === "22023") besked = "Tjek startpris og varighed (3, 5, 7 eller 10 dage), og prøv igen.";
         else if (insertError.code === "BHA01") besked = "Et af billederne kunne ikke bruges. Fjern det, tilføj det igen, og prøv igen.";

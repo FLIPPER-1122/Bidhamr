@@ -6,7 +6,8 @@
 // 20261007020000_bedoemmelse_svar.sql; 'afgoerelse' (påkrævet) i
 // 20261009010000_dsa.sql; 'auktion_status' i
 // 20261009040000_skjult_auktion_pause.sql; 'pakke_indleveret' (påkrævet) i
-// 20261012010000_fragt_dao_shipmondo.sql). Ændres listen her,
+// 20261012010000_fragt_dao_shipmondo.sql; 'skat' (påkrævet) i
+// 20261014010000_dac7.sql). Ændres listen her,
 // skal SQL'en også rettes i en ny migration.
 //
 // Ingen server-only-import: frontend må gerne bruge navne og beskrivelser.
@@ -32,6 +33,7 @@ export type NotifikationType =
   | "gemt_soegning"
   | "bedoemmelse"
   | "afgoerelse"
+  | "skat"
   | "auktion_status";
 
 export type Kanal = "klokke" | "mail" | "push";
@@ -56,6 +58,7 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "sag", navn: "Sager", beskrivelse: "Nyt i en sag om en handel, og når BidHamr åbner en samtale med dig.", paakraevet: true },
   { type: "advarsel", navn: "Advarsler", beskrivelse: "Når du får en advarsel fra BidHamr, eller når noget, du har skrevet (fx en bedømmelse), bliver skjult.", paakraevet: true },
   { type: "afgoerelse", navn: "Afgørelser og klager", beskrivelse: "Når BidHamr fjerner eller begrænser noget af dit indhold eller din konto, svar på dine klager, og svar på det, du har anmeldt. Mail sendes altid.", paakraevet: true },
+  { type: "skat", navn: "Skatteoplysninger (DAC7)", beskrivelse: "Når vi mangler dine oplysninger til Skattestyrelsen, og når vi har indberettet dine salg.", paakraevet: true },
   { type: "andenchance", navn: "Tilbud til næste byder", beskrivelse: "Når du får tilbudt en vare, eller når byderen svarer på dit tilbud.", paakraevet: true },
   { type: "overbudt", navn: "Du er overbudt", beskrivelse: "Når en anden byder mere end dig.", paakraevet: false },
   { type: "bud_paa_egen", navn: "Bud på din auktion", beskrivelse: "Når nogen byder på en af dine auktioner.", paakraevet: false },
