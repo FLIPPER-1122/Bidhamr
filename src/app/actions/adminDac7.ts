@@ -22,6 +22,8 @@ const KODER: Record<string, string> = {
   kvittering_mangler: "Skriv kvitteringsnummeret fra TastSelv Erhverv.",
   platform_mangler: "Udfyld BidHamrs CVR-nummer under Indstillinger først.",
   eksport_mangler: "Vælg den fil (eksport), du har uploadet til Skattestyrelsen.",
+  eksport_for_tidlig:
+    "Filen er hentet, før året var slut, og mangler derfor salg. Hent en ny fil, upload den, og vælg den her.",
   hash_forkert:
     "Den valgte fil passer ikke med eksporten. Vælg præcis den fil, du hentede her og uploadede i TastSelv Erhverv.",
 };

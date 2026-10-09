@@ -93,7 +93,10 @@ laves her.
   der peger på sælgerens bruger-id – værdien rettes aldrig stiltiende.
 - "Markér som sendt": chefen vælger eksporten og den fil, han uploadede. Browseren
   beregner filens SHA-256 (filen sendes ikke), og den skal passe med eksporten.
-  Sælgernes kopi er netop den eksports øjebliksbillede.
+  Sælgernes kopi er netop den eksports øjebliksbillede. Kun en eksport hentet
+  **efter årets udløb** (dansk tid) kan markeres som sendt.
+- Øjebliksbilleder kan aldrig ændres, og en eksport kan ikke ændres, når
+  hashen er gemt – heller ikke af service_role (trigger `dac7_eksport_laas`).
 
 ## Anmodning, påmindelser og spærring
 
@@ -182,7 +185,10 @@ udlandet, får han besked om at skrive til support. Revisor: nr. 113.
 
 ## Appen (Expo)
 
-- Status: `supabase.rpc("dac7_min_status")` → `{ aar, konto_type, antal,
+- Status: `supabase.rpc("dac7_min_status")` – **skal kaldes med POST**
+  (standard i supabase-js; brug ikke `{ get: true }`): funktionen skriver en
+  rate limit (300 kald pr. time) og kan ikke køre i en GET (skrivebeskyttet).
+  Ved for mange kald svarer den `{ for_mange: true }`. Ellers → `{ aar, konto_type, antal,
   vederlag_oere, gebyr_oere, graense_antal, graense_oere, varsel_antal,
   varsel_oere, pligtig, naer, mangler: ('mitid'|'oplysninger'|'firma')[],
   mitid: { navn, foedselsdato } | null, oplysninger: { adresse, postnummer,

@@ -235,6 +235,33 @@ begin
   end loop;
 end $$;
 
+-- Øjebliksbilleder kan aldrig ændres, og en eksport kan ikke ændres, når
+-- filens hash er sat - heller ikke af service_role.
+create or replace function public.dac7_eksport_laas()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if tg_table_name = 'dac7_eksport_saelgere' then
+    raise exception 'Et DAC7-øjebliksbillede kan ikke ændres.' using errcode = '42501';
+  end if;
+  if old.fil_hash is not null then
+    raise exception 'En DAC7-eksport kan ikke ændres, når filens hash er gemt.' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+revoke all on function public.dac7_eksport_laas() from public, anon, authenticated;
+
+drop trigger if exists dac7_eksport_saelgere_laas on public.dac7_eksport_saelgere;
+create trigger dac7_eksport_saelgere_laas
+  before update on public.dac7_eksport_saelgere
+  for each row execute function public.dac7_eksport_laas();
+drop trigger if exists dac7_eksporter_laas on public.dac7_eksporter;
+create trigger dac7_eksporter_laas
+  before update on public.dac7_eksporter
+  for each row execute function public.dac7_eksport_laas();
+
 -- Indeks til årsopgørelsen (betalte handler pr. sælger og år).
 create index if not exists betalinger_dac7_saelger
   on public.betalinger (seller_id, betalt_kl) where status = 'betalt';
@@ -891,6 +918,10 @@ begin
   end if;
   select * into e from public.dac7_eksporter where id = p_eksport and aar = p_aar;
   if not found or e.fil_hash is null then return jsonb_build_object('kode', 'eksport_mangler'); end if;
+  -- Kun en eksport lavet efter årets udløb (dansk tid) - ellers mangler salg.
+  if e.oprettet_kl < make_timestamptz(p_aar + 1, 1, 1, 0, 0, 0, 'Europe/Copenhagen') then
+    return jsonb_build_object('kode', 'eksport_for_tidlig');
+  end if;
   if lower(coalesce(p_hash, '')) <> e.fil_hash then return jsonb_build_object('kode', 'hash_forkert'); end if;
 
   insert into public.dac7_aar (aar) values (p_aar) on conflict (aar) do nothing;
