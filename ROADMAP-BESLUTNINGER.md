@@ -28,6 +28,10 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 
 ## 2. Fragt
 - **Store og tunge ting sendes ikke (Filip, 8. oktober 2026):** varer over en vægtgrænse (og varer, der er for store til en almindelig pakke) kan kun afhentes. Filip aftaler vægtgrænsen med fragtfirmaet; når den er fastsat, skal opret auktion håndhæve den (kun afhentning over grænsen).
+- **Fragtfirma og priser (Filip, 9. oktober 2026):** DAO via Shipmondo (sandbox nu; aftalen er ikke underskrevet endnu). Pakkestørrelser: **Lille op til 1 kg, Mellem op til 5 kg, Stor op til 15 kg** (Stor kun pakkeshop). Over 15 kg: kun afhentning.
+  - **Pakkeshop – køberen betaler (inkl. moms): Lille 40 kr., Mellem 50 kr., Stor 65 kr.** BidHamr betaler forskellen til DAO's faktiske pris (ca. 54/70/88 kr. inkl. moms med tillæg), indtil priserne er forhandlet ned. Priserne skal kunne ændres ét sted uden ny kode-logik.
+  - **Levering til døren fra start (højst 5 kg) til fuld pris: Lille ca. 60 kr., Mellem ca. 85 kr.** (DAO-pris + tillæg inkl. moms, rundet op til hele kroner).
+  - Fragten indgår i BidHamrs gebyr på betalingen (application fee); BidHamr betaler DAO's faktura.
 - Sælgeren får en **fragtlabel/QR-kode via BidHamr**, og sporingen kommer automatisk (fx Shipmondo).
 - **Køberen betaler fragten** og ser prisen, før han byder.
 - **Afhentning hos sælger** er en valgmulighed. Køberen viser en kode ved afhentning, og pengene frigives med det samme. Ingen klagefrist bagefter.
