@@ -199,9 +199,8 @@ export default function CheckoutSide({
     }
     setClientSecret(svar.clientSecret);
     setPiTotal(svar.totalOere);
-    // Gemt kort (findes kun, når serveren sender feltet - betalingsagentens branch).
-    const cs = (svar as { customerSessionClientSecret?: string | null }).customerSessionClientSecret;
-    setKundeSession(typeof cs === "string" && cs ? cs : null);
+    // Gemt kort: Stripe-kundesession, så Payment Element viser kortet forvalgt.
+    setKundeSession(svar.customerSessionClientSecret || null);
     hentetKl.current = Date.now();
     return true;
   }, [tradeId]);
