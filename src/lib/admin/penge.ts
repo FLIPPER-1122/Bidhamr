@@ -187,8 +187,8 @@ export type StripeBevaegelser = {
 };
 
 // Saldo-afstemning af sælgernes Stripe-konti (overvågningen, F06): åbne
-// tilfælde i drift_tilfaelde (saldo:, saldo-tilgaengelig:, saldo-ingen-adgang:)
-// og hvornår overvågningen sidst kørte.
+// tilfælde i drift_tilfaelde (saldo: og saldo-ingen-adgang:) og hvornår
+// overvågningen sidst kørte.
 export type SaldoAfstemning = {
   afvigende: number;
   sidstKoertKl: string | null;
@@ -346,7 +346,8 @@ export async function hentPengeOversigt(periode: PeriodeKey): Promise<PengeOvers
       .from("drift_tilfaelde")
       .select("noegle", { count: "exact", head: true })
       .is("loest_kl", null)
-      .like("noegle", "saldo%"),
+      // Kun reelle afvigelser - ikke "saldo-tilgaengelig:" (venter på midler).
+      .or("noegle.like.saldo:*,noegle.like.saldo-ingen-adgang:*"),
     admin.from("betaling_overvaagning").select("sidst_startet_kl").eq("id", true).maybeSingle<{ sidst_startet_kl: string | null }>(),
   ]);
   const saldo: Resultat<SaldoAfstemning> =

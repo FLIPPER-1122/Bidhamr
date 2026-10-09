@@ -64,6 +64,7 @@ async function alarm(tekst: string) {
 // Den offentlige nøgle (betalingsformularen i browseren) skal være i samme
 // tilstand som den hemmelige - ellers kan køberne ikke betale de
 // PaymentIntents, serveren laver (trin 5, F07). null = ikke sat (fx scripts).
+// Tjekkes af kraevSammeOffentligeNoegle (nedenfor).
 export function offentligNoeglesTilstand(
   noegle = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
 ): StripeTilstand | null {
@@ -72,15 +73,20 @@ export function offentligNoeglesTilstand(
   return null;
 }
 
+// Kun før en NY betaling (PaymentIntent) - refusioner, udbetalinger og
+// webhooks kører videre, da de ikke bruger den offentlige nøgle.
+export async function kraevSammeOffentligeNoegle(): Promise<void> {
+  const noegle = noeglensTilstand();
+  const offentlig = offentligNoeglesTilstand();
+  if (!noegle || !offentlig || offentlig === noegle) return;
+  const tekst = `Stripe-nøglerne passer ikke sammen: STRIPE_SECRET_KEY er ${noegle.toUpperCase()}, men NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY er ${offentlig.toUpperCase()} - nye betalinger er stoppet. Se docs/GO-LIVE-STRIPE.md.`;
+  await alarm(tekst);
+  throw new StripeTilstandFejl(tekst);
+}
+
 export async function kraevSammeStripeTilstand(): Promise<StripeTilstand> {
   const noegle = noeglensTilstand();
   if (!noegle) throw new StripeTilstandFejl("STRIPE_SECRET_KEY er hverken en test- eller live-nøgle.");
-  const offentlig = offentligNoeglesTilstand();
-  if (offentlig && offentlig !== noegle) {
-    const tekst = `Stripe-nøglerne passer ikke sammen: STRIPE_SECRET_KEY er ${noegle.toUpperCase()}, men NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY er ${offentlig.toUpperCase()} - alle Stripe-kald er stoppet. Se docs/GO-LIVE-STRIPE.md.`;
-    await alarm(tekst);
-    throw new StripeTilstandFejl(tekst);
-  }
   const db = await databasensStripeTilstand();
   if (db === noegle) return noegle;
   if (db === null && noegle === "test") return noegle;

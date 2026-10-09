@@ -11,9 +11,10 @@ export function register() {
   if (!process.env.STRIPE_SECRET_KEY || !(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return;
   void (async () => {
     try {
-      const { kraevSammeStripeTilstand } = await import("@/lib/stripe");
+      const { kraevSammeOffentligeNoegle, kraevSammeStripeTilstand } = await import("@/lib/stripe");
       const { kraevDestination } = await import("@/lib/betaling/model");
       await kraevSammeStripeTilstand().catch(() => {});
+      await kraevSammeOffentligeNoegle().catch(() => {});
       await kraevDestination().catch(() => {});
     } catch (e) {
       console.error("Start-tjek af Stripe fejlede:", e);

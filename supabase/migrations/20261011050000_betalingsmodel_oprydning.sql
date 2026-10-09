@@ -67,6 +67,17 @@ begin
   if n > 0 then
     raise exception 'separat_betalinger_i_gang: % betaling(er) i den gamle model er ikke afsluttet (afventer, betalt uden overførsel eller refusion i gang). Afslut dem først - se docs/GO-LIVE-STRIPE.md', n;
   end if;
+
+  -- Kasserede betalinger med afvigende beløb skal være refunderet: en
+  -- afvigelse fra den gamle model refunderes ikke automatisk efter trin 5.
+  select count(*) into n from public.betaling_afvigelser where refunderet_kl is null;
+  if n > 0 then
+    raise exception 'afvigelser_ikke_refunderet: % betaling(er) med afvigende beløb er ikke refunderet - refundér dem først (cron eller Stripe)', n;
+  end if;
+
+  if not exists (select 1 from public.stripe_tilstand where id) then
+    raise exception 'trin5: rækken i stripe_tilstand mangler - kør 20261010070000_niels_betaling.sql og 20261011010000 først';
+  end if;
 end $do$;
 
 -- Drift-tjek: kroppene skal være repoets seneste version (trin 1-4 / ældre)

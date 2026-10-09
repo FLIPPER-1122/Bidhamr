@@ -130,9 +130,22 @@ for (const p of profiler ?? []) {
         (r.konto.requirements?.disabled_reason ? `  disabled_reason: ${r.konto.requirements.disabled_reason}` : ""),
     );
     if (udfoer) {
+      // Hele spejlet (som spejlConnectKonto): også status for overførsler,
+      // udbetalinger og manglende oplysninger - en ny capability kan gøre
+      // dem inaktive, og databasen må ikke stå med en gammel status.
+      const krav = r.konto.requirements;
       const { error } = await db
         .from("betalingsprofiler")
-        .update({ ...s, opdateret: new Date().toISOString() })
+        .update({
+          ...s,
+          connect_detaljer_indsendt: !!r.konto.details_submitted,
+          connect_overfoersler_aktiv: r.konto.capabilities?.transfers === "active",
+          connect_udbetalinger_aktiv: !!r.konto.payouts_enabled,
+          connect_mangler_nu: [...(krav?.currently_due ?? [])].sort(),
+          connect_mangler_forfaldne: [...(krav?.past_due ?? [])].sort(),
+          connect_spaerret_aarsag: krav?.disabled_reason ?? null,
+          opdateret: new Date().toISOString(),
+        })
         .eq("user_id", p.user_id);
       if (error) throw new Error(`spejl i databasen: ${error.message}`);
     }

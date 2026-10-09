@@ -116,6 +116,8 @@ async function payoutEvents(admin: Admin, r: Overvaagning, alarm: Alarm): Promis
       throw err;
     }
     if (p.status !== "paid" && p.status !== "failed" && p.status !== "canceled") continue;
+    // Lige blevet betalt: eventet kan stadig være på vej (ingen falsk alarm).
+    if (p.status === "paid" && p.arrival_date * 1000 > Date.now() - 60 * 60_000) continue;
     await spejlBidhamrPayout(u.stripe_konto as string, p);
     r.udbetalingerSpejlet++;
     await alarm({
@@ -256,11 +258,26 @@ async function saldoAfstemning(admin: Admin, r: Overvaagning, alarm: Alarm): Pro
   if (error) throw new Error(`saldo-afstemning: ${error.message}`);
   const konti = new Map<string, string>();
   for (const b of data ?? []) konti.set(b.saelger_stripe_konto as string, b.seller_id as string);
+
+  // Åbne saldo-tilfælde for konti, der ikke længere har betalte,
+  // ikke-udbetalte handler, er løst (intet at afstemme).
+  const { data: aabne } = await admin
+    .from("drift_tilfaelde")
+    .select("noegle")
+    .is("loest_kl", null)
+    .like("noegle", "saldo%");
+  for (const t of aabne ?? []) {
+    const konto = String(t.noegle).split(":")[1] ?? "";
+    if (!konti.has(konto)) await lukTilfaelde(t.noegle as string);
+  }
+
+  // Alle konti, sorteret, højst 200 pr. kørsel (hver time).
   const stripe = getStripe();
-  for (const [konto, saelger] of [...konti].slice(0, 50)) {
+  for (const [konto, saelger] of [...konti].sort(([a], [b]) => a.localeCompare(b)).slice(0, 200)) {
     let saldo: Stripe.Balance;
     try {
       saldo = await stripe.balance.retrieve({}, { stripeAccount: konto, ...KALD });
+      await lukTilfaelde(`saldo-ingen-adgang:${konto}`);
     } catch (err) {
       if (err instanceof Stripe.errors.StripePermissionError) {
         await alarm({

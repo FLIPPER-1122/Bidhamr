@@ -18,7 +18,7 @@
 // kun - Stripe er sandheden om penge. Alle beløb i øre.
 
 import Stripe from "stripe";
-import { getStripe, StripeTilstandFejl } from "@/lib/stripe";
+import { getStripe, kraevSammeOffentligeNoegle, StripeTilstandFejl } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { applicationFeeOere, totalOere } from "@/lib/betaling/beregn";
@@ -504,8 +504,11 @@ export async function sikrPaymentIntent(
   const beloeb = Number(betaling.total_oere);
   try {
     await kraevDestination();
+    await kraevSammeOffentligeNoegle();
   } catch (err) {
-    if (err instanceof BetalingsmodelFejl) throw new BetalingsFejl(err.message);
+    if (err instanceof BetalingsmodelFejl || err instanceof StripeTilstandFejl) {
+      throw new BetalingsFejl(new BetalingsmodelFejl().message);
+    }
     throw err;
   }
   if (betaling.pengemodel !== "destination") {
@@ -1775,7 +1778,7 @@ export async function spejlDestinationCharge(chargeIdArg: string): Promise<strin
 // radar.early_fraud_warning.created/updated (Filip 8. okt. 2026): INGEN
 // automatisk refusion. Betalingen markeres til staff under Betalinger, og
 // pengene gives ikke til sælger, før staff har lukket markeringen
-// (svindelvarsel_loest_kl - betaling_claim_overfoersel og trin 3's
+// (svindelvarsel_loest_kl - trin 3's
 // betaling_udbetaling_blokeret). Varslet hentes frisk hos Stripe.
 export async function spejlSvindelvarsel(varselId: string): Promise<string> {
   const v = await getStripe().radar.earlyFraudWarnings.retrieve(varselId);
@@ -2112,7 +2115,15 @@ async function kontrollerUdbetalingsplan(
     });
   } catch (err) {
     console.error("kontrollerUdbetalingsplan fejlede:", kontoId, err);
-    await logDriftFejl({ kilde: "server", hvor: "connect/udbetalingsplan", fejl: err, brugerId: profil.user_id });
+    // Én alarm pr. konto (hvert account.updated ville ellers alarmere igen).
+    // Betalinger og udbetalinger stoppes alligevel (connect_plan_ok = false).
+    const { alarmPrTilfaelde } = await import("@/lib/betaling/driftTilfaelde");
+    await alarmPrTilfaelde({
+      noegle: `plan-fejl:${kontoId}`,
+      hvor: "connect/udbetalingsplan",
+      fejl: `Sælgerkonto ${kontoId} står ikke til manuel udbetaling, og den kunne ikke sættes tilbage: ${err instanceof Error ? err.message : String(err)}`,
+      brugerId: profil.user_id,
+    });
   }
 }
 

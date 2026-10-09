@@ -22,7 +22,7 @@
 // Fejler Stripe-kaldet, er refusionen stadig claimet; cron prøver igen
 // (refunderSagerVentende), og betalingen markeres til admin.
 // Aldrig dobbelt refusion (refusion_anmodet_kl + idempotency key), aldrig
-// refusion efter overførsel (samme rækkelås som betaling_claim_overfoersel),
+// refusion efter udbetaling (samme rækkelås som saelger_udbetaling_claim),
 // og en åben indsigelse afviser både refusion og frigivelse.
 //
 // Fejl RETURNERES som { fejl } (Next skjuler kastede fejl i produktion).
