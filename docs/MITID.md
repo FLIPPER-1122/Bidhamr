@@ -112,6 +112,10 @@ engangs-tokenet, der binder forløbet til brugeren.
 | `MITID_CALLBACK_URL` | (valgfri) | (valgfri – standard `https://bidhamr.dk/api/mitid/callback`) |
 | `MITID_APP_RETUR` | (valgfri, standard `bidhamr://mitid`) | (valgfri) |
 
+**bidhamr.dk skal være den faste adresse** (www.bidhamr.dk skal omdirigere til
+bidhamr.dk i Vercel): state-cookien sættes på det domæne, flowet startes fra,
+og callbacken ligger altid på `https://bidhamr.dk/api/mitid/callback`.
+
 Generér en nøgle: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
 Mangler en variabel, viser knappen "MitID er ikke tilgængelig lige nu" (fail closed).
 
