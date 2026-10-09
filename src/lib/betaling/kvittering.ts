@@ -72,11 +72,7 @@ export async function bygKvittering(
 
   const modpartId = rolle === "koeber" ? b.seller_id : b.buyer_id;
   const [{ data: a }, { data: t }, { data: u }, { data: fm }] = await Promise.all([
-    admin
-      .from("auctions")
-      .select("titel, erhverv")
-      .eq("id", b.auction_id)
-      .maybeSingle<{ titel: string | null; erhverv: boolean | null }>(),
+    admin.from("auctions").select("titel").eq("id", b.auction_id).maybeSingle<{ titel: string | null }>(),
     admin.from("trades").select("afhentning").eq("id", tradeId).maybeSingle<{ afhentning: boolean | null }>(),
     admin.from("users").select("navn").eq("id", modpartId).maybeSingle<{ navn: string | null }>(),
     // Firmasalg: sælgeren har en firmakonto (firmaer-rækken findes kun for

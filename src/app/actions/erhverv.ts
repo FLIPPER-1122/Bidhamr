@@ -201,6 +201,8 @@ export async function saetFirmaBrugtmoms(
       data: { user },
     } = await hentLoggetIndBruger(supabase);
     if (!user) return { fejl: "Du skal være logget ind." };
+    // Server actions kan kaldes med hvad som helst: kun et ægte ja/nej.
+    if (typeof til !== "boolean") return { fejl: GENERISK };
     const { data, error } = await supabase.rpc("firma_saet_brugtmoms", { p_til: til });
     if (error) {
       if (error.code === "42501") return { fejl: "Kun firmakonti kan ændre dette." };

@@ -56,7 +56,12 @@ const HANDLINGER: Record<string, Handling> = {
   "firma-betal": (_fd, origin) => betalForPakke(origin),
   "firma-betalingskort": (_fd, origin) => skiftBetalingskort(origin),
   // firma_saet_brugtmoms afviser alle andre end firmakontoen selv.
-  "firma-brugtmoms": (fd) => saetFirmaBrugtmoms(tekst(fd, "brugtmoms") === "ja"),
+  // Kræver et eksplicit "ja" eller "nej" - alt andet afvises.
+  "firma-brugtmoms": async (fd) => {
+    const v = tekst(fd, "brugtmoms");
+    if (v !== "ja" && v !== "nej") return { fejl: GENERISK, kode: "ugyldig" };
+    return saetFirmaBrugtmoms(v === "ja");
+  },
 };
 
 function svar(status: number, krop: unknown) {

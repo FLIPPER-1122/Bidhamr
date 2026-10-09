@@ -51,9 +51,6 @@ export function FakturaOplysningerListe({ salg, firma }: { salg: FakturaSalg; fi
       <dl className="space-y-3">
         <Raekke label={T.koeber}>
           {salg.koeber_navn ?? "–"}
-          {salg.koeber_navn_mitid && (
-            <span className="block text-[15px] font-normal text-tekst-daempet">{T.navnMitid}</span>
-          )}
         </Raekke>
         <Raekke label={T.adresse}>
           {adr ? (

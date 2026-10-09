@@ -19,7 +19,6 @@ export type FakturaSalg = {
   afhentning: boolean;
   levering: "doer" | "pakkeshop" | null;
   koeber_navn: string | null;
-  koeber_navn_mitid: boolean;
   koeber_email: string | null;
   adresse: string | null;
   postnummer: string | null;
@@ -34,7 +33,6 @@ export const FAKTURA_TEKST = {
     "Du sender selv fakturaen på varen til køberen fra dit eget regnskabsprogram. Her er de oplysninger, du skal bruge.",
   ikkeBetalt: "Oplysningerne til fakturaen vises her, når køberen har betalt.",
   koeber: "Køber",
-  navnMitid: "Navnet er bekræftet med MitID.",
   adresse: "Adresse",
   ingenAdresse: "Køberen har ikke oplyst adresse",
   email: "E-mail",
@@ -111,13 +109,15 @@ export function fakturaKopiTekst(s: FakturaSalg, firma: FakturaFirma): string {
   return linjer.join("\n");
 }
 
-// CSV til Excel (dansk): semikolon, decimalkomma, UTF-8 med BOM. Celler,
-// der starter med = + - @ (eller tab/CR), får et ' foran, så et regneark
-// ikke tolker brugerindhold (fx en titel) som en formel.
+// CSV til Excel (dansk): semikolon, decimalkomma, UTF-8 med BOM. Linjeskift
+// bliver til mellemrum, og værdien trimmes. Celler, der derefter starter med
+// = + - @ (eller tab), får et ' foran, så et regneark ikke tolker
+// brugerindhold (fx en titel) som en formel. Celler med ; " eller linjeskift
+// citeres.
 function celle(v: string): string {
-  let t = v.replace(/\r?\n/g, " ");
-  if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
-  return /[;"]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  let t = v.replace(/[\r\n]+/g, " ").trim();
+  if (/^[=+\-@\t]/.test(t)) t = `'${t}`;
+  return /[;"\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
 }
 
 function isoDato(iso: string): string {
