@@ -271,7 +271,7 @@ export default function FragtlabelBoks({
         }}
         className="mt-5"
       >
-        <fieldset disabled={arbejder}>
+        <fieldset className="min-w-0" disabled={arbejder}>
           <legend className="mb-2 text-sm font-medium text-tekst">Din adresse (afsender)</legend>
           <div className="grid gap-4 sm:grid-cols-2">
             <Felt id={`${id}-navn`} label="Fulde navn" className="sm:col-span-2">

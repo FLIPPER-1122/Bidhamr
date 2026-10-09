@@ -444,7 +444,7 @@ export default function CheckoutSide({
                 </div>
               ) : (
                 <>
-                  <fieldset className="mt-4" disabled={travl}>
+                  <fieldset className="mt-4 min-w-0" disabled={travl}>
                     <legend className="mb-2 text-sm font-medium text-tekst">Leveringsmulighed</legend>
                     <div className="grid gap-3">
                       {(kanSkifteMaade || maade === "pakkeshop") && (
@@ -520,7 +520,7 @@ export default function CheckoutSide({
                   )}
 
                   {/* Modtager */}
-                  <fieldset className="mt-5" disabled={travl}>
+                  <fieldset className="mt-5 min-w-0" disabled={travl}>
                     <legend className="mb-2 text-sm font-medium text-tekst">
                       {maade === "doer" ? "Leveringsadresse" : "Modtager"}
                     </legend>
@@ -853,7 +853,7 @@ function LeveringKort({
 }) {
   return (
     <label
-      className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-4 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-groen ${
+      className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-3.5 transition-colors sm:p-4 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-groen ${
         valgt ? "border-groen bg-groen-lys" : "border-kant hover:border-kant-staerk"
       }`}
     >
@@ -866,7 +866,7 @@ function LeveringKort({
       >
         {valgt && <span className="h-2.5 w-2.5 rounded-full bg-groen" />}
       </span>
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-white text-groen-mork">
+      <span className="hidden h-10 w-10 shrink-0 place-items-center rounded-lg bg-white text-groen-mork sm:grid">
         <Ikon navn={ikon} className="h-[22px] w-[22px]" />
       </span>
       <span className="min-w-0 flex-1">

@@ -264,7 +264,7 @@ export default function PakkeshopVaelger({
                 </p>
               </div>
             ) : (
-              <fieldset className="p-3 sm:p-4">
+              <fieldset className="min-w-0 p-3 sm:p-4">
                 <legend className="sr-only">Pakkeshops nær {soegning}</legend>
                 <p className="px-1 pb-2 text-[13px] text-tekst-svag" aria-live="polite">
                   {shops.length} pakkeshops – nærmeste først

@@ -120,7 +120,7 @@ export default function PakkestoerrelseVaelger({
 
   return (
     <div>
-      <fieldset disabled={deaktiveret}>
+      <fieldset className="min-w-0" disabled={deaktiveret}>
         <legend className="mb-1.5 block text-sm font-medium text-tekst">Forsendelse</legend>
         <p id={`${id}-hjaelp`} className="mb-3 text-[13px] text-tekst-daempet">
           Vælg den mindste pakke, varen kan være i. Køberen betaler fragten og ser prisen, før han byder.
