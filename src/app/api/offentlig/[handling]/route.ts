@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { gemNyAdgangskode } from "@/app/actions/auth";
 import { anmeldIndhold, klagOverAfgoerelse, klagSomAnmelder } from "@/app/actions/dsa";
-import { sendErhvervHenvendelse, skiftFirmaPakke } from "@/app/actions/erhverv";
+import { saetFirmaBrugtmoms, sendErhvervHenvendelse, skiftFirmaPakke } from "@/app/actions/erhverv";
 import { betalForPakke, skiftBetalingskort } from "@/lib/erhverv/betalingHandlinger";
 
 // De få handlinger, som en indlogget ALMINDELIG bruger skal kunne udføre på
@@ -17,6 +17,7 @@ import { betalForPakke, skiftBetalingskort } from "@/lib/erhverv/betalingHandlin
 //                         med Stripe Checkout-adressen ({ ok, url })
 //   firma-betalingskort   /firma/abonnement "Skift betalingskort" -> Stripes
 //                         kundeportal (kun kort og fakturaer)
+//   firma-brugtmoms       /firma/oplysninger "Vi bruger brugtmomsordningen"
 //
 // Hvorfor ikke bare server actions: gaten i src/lib/supabase/middleware.ts
 // afviser alle POST'er fra indloggede almindelige brugere på offentlige
@@ -54,6 +55,8 @@ const HANDLINGER: Record<string, Handling> = {
   // Kræver login som firmakonto (src/lib/erhverv/betalingHandlinger.ts).
   "firma-betal": (_fd, origin) => betalForPakke(origin),
   "firma-betalingskort": (_fd, origin) => skiftBetalingskort(origin),
+  // firma_saet_brugtmoms afviser alle andre end firmakontoen selv.
+  "firma-brugtmoms": (fd) => saetFirmaBrugtmoms(tekst(fd, "brugtmoms") === "ja"),
 };
 
 function svar(status: number, krop: unknown) {

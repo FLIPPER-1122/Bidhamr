@@ -1,6 +1,7 @@
-// Kvittering/handelsbekræftelse for selve varen (ROADMAP fase 5). Varen
-// sælges mellem private, så det er IKKE en faktura. BidHamrs fakturaer på
-// egne gebyrer kommer senere fra regnskabsprogrammet.
+// Kvittering/handelsbekræftelse for selve varen (ROADMAP fase 5). Det er
+// IKKE en faktura: mellem private er der ingen faktura på varen, og ved
+// firmasalg sender firmaet selv fakturaen på varen (Filip, 9. okt. 2026 -
+// "Faktura på varen ved firmasalg"). BidHamr fakturerer kun egne gebyrer.
 //
 // Ingen server-only-import: typerne og opdelingen bruges både af mails
 // (server) og af kvitteringsvisningen (server-komponent). Data hentes i
@@ -8,6 +9,20 @@
 
 export const KVITTERING_IKKE_FAKTURA =
   "Varen sælges mellem private. Dette er en kvittering/handelsbekræftelse – ikke en faktura.";
+// Sælgeren er et firma (erhvervskonto): firmanavn og CVR til teksten om, at
+// firmaet selv sender fakturaen på varen.
+export type KvitteringFirma = { firmanavn: string; cvr: string };
+
+// Teksten under kvitteringen/afregningen. Vælges ud fra, om sælgeren er et
+// firma - aldrig "mellem private" ved firmasalg.
+export function kvitteringFakturaTekst(k: Kvittering): string {
+  if (!k.firma) return KVITTERING_IKKE_FAKTURA;
+  if (k.rolle === "koeber") {
+    return `Varen er købt hos ${k.firma.firmanavn} (CVR ${k.firma.cvr}). Fakturaen på varen sendes til dig af ${k.firma.firmanavn}. Dette er en kvittering/handelsbekræftelse – ikke en faktura på varen.`;
+  }
+  return "Dette er en afregning – ikke en faktura på varen. Fakturaen på varen til køberen sender I selv fra jeres eget regnskabsprogram. Oplysningerne til den finder I under Salg i Firma oversigt.";
+}
+
 export const KVITTERING_STRIPE = "Betalingen håndteres af vores betalingspartner Stripe.";
 
 // Køberens kvittering: alt, køberen har betalt.
@@ -29,6 +44,8 @@ export type KoeberKvittering = {
   // Sat, når betalingen er refunderet (helt eller delvist).
   refunderetOere: number | null;
   refunderetKl: string | null;
+  // Sat, når sælgeren er et firma.
+  firma: KvitteringFirma | null;
 };
 
 // Sælgerens afregning: buddet minus sælgergebyr. Fragten og en evt. BidHamr
@@ -46,6 +63,8 @@ export type SaelgerKvittering = {
   saelgergebyrOere: number;
   udbetalingOere: number;
   overfoertKl: string | null;
+  // Sat, når sælgeren (brugeren selv) er et firma.
+  firma: KvitteringFirma | null;
 };
 
 export type Kvittering = KoeberKvittering | SaelgerKvittering;

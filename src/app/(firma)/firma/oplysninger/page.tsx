@@ -1,19 +1,31 @@
 import { kraevFirma } from "@/lib/erhverv/firmaData";
+import { createClient } from "@/lib/supabase/server";
+import BrugtmomsValg from "@/components/firma/BrugtmomsValg";
+import { BRUGTMOMS_TEKST } from "@/lib/erhverv/fakturaOplysninger";
 import { FirmaSide, Kort } from "@/components/firma/dele";
 import { E_FEJL, E_HJAELP, E_KNAP_SEKUNDAER, E_TEKST } from "@/components/erhverv/stil";
 import { FIRMA_DASHBOARD as D, FIRMA_OVERSIGT as T } from "@/lib/tekster/erhverv";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
 import { visTelefon } from "@/lib/erhverv/visning";
 
-// Firmaoplysninger: kun læse. Rettelser sker hos BidHamr (sælger/chef i
+// Firmaoplysninger: kun læse (undtagen "Vi bruger brugtmomsordningen", som
+// firmaet selv vælger). Rettelser sker hos BidHamr (sælger/chef i
 // admin), så det stemmer med aftalen.
 
 export const metadata = { title: T.firmaoplysninger.titel };
 
 export default async function FirmaOplysninger({ searchParams }: { searchParams: Promise<{ data?: string }> }) {
   const { data: dataStatus } = await searchParams;
-  const { oversigt: o } = await kraevFirma("/firma/oplysninger");
+  const { bruger, oversigt: o } = await kraevFirma("/firma/oplysninger");
   const f = o.firma;
+  // Egen række (RLS firmaer_select_egen).
+  const supabase = await createClient();
+  const { data: moms } = await supabase
+    .from("firmaer")
+    .select("bruger_brugtmoms")
+    .eq("bruger_id", bruger.id)
+    .maybeSingle<{ bruger_brugtmoms: boolean | null }>();
+  const brugtmoms = moms?.bruger_brugtmoms === true;
   const raekker: [string, string][] = [
     [T.firmaoplysninger.firmanavn, f.firmanavn],
     [T.firmaoplysninger.cvr, f.cvr],
@@ -43,6 +55,10 @@ export default async function FirmaOplysninger({ searchParams }: { searchParams:
             {ERHVERV_EMAIL}
           </a>
         </p>
+      </Kort>
+
+      <Kort id="brugtmoms" titel={BRUGTMOMS_TEKST.titel}>
+        <BrugtmomsValg brugtmoms={brugtmoms} />
       </Kort>
 
       {/* "Download dine data" (GDPR): samme udtræk som /konto (mine_data).

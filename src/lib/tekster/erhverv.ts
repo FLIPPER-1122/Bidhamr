@@ -114,6 +114,10 @@ export const ERHVERV_SIDE = {
       spoergsmaal: "Jeg sælger fra mit firma. Må jeg bruge min private konto?",
       svar: "Nej. Sælger du varer fra dit firma, skal du have en firmakonto.",
     },
+    {
+      spoergsmaal: "Hvem sender fakturaen på varen?",
+      svar: "Det gør dit firma selv, fra dit eget regnskabsprogram. Dit firma står også for momsen af varen (eller brugtmoms). Under Salg i Firma oversigt finder du alt, du skal bruge til fakturaen: købers navn, adresse og e-mail, varen, prisen og datoen. BidHamr sender kun faktura på vores egne gebyrer og på dit abonnement.",
+    },
   ],
 } as const;
 

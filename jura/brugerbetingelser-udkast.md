@@ -150,7 +150,7 @@ Der er intet mindste- eller højeste gebyr.
 
 5.5 **Moms.** Alle beløb, du ser på BidHamr, er inkl. moms. Selve varen sælges mellem private, så der er ingen moms på den. BidHamr betaler moms af sine egne gebyrer og af BidHamr Beskyttelse. Du betaler aldrig moms oveni.
 
-5.6 **Kvittering og faktura.** Køber og sælger får en kvittering for handlen. På BidHamrs egne gebyrer (købergebyr, sælgergebyr og BidHamr Beskyttelse) får du en faktura med moms, som du også kan se på din profil. [TODO Filip: fakturaerne laves endnu ikke automatisk – regnskabsprogram afventer revisor.]
+5.6 **Kvittering og faktura.** Køber og sælger får en kvittering for handlen. På BidHamrs egne gebyrer (købergebyr, sælgergebyr og BidHamr Beskyttelse) får du en faktura med moms, som du også kan se på din profil. [TODO Filip: fakturaerne laves endnu ikke automatisk – regnskabsprogram afventer revisor.] Køber du af en erhvervssælger (et firma), sender firmaet selv fakturaen på varen til dig. Firmaet står for momsen af varen (eller brugtmoms) – ikke BidHamr. BidHamr fakturerer kun sine egne gebyrer. [ADVOKAT: Erhvervsvilkårene skal sige, at firmaet selv udsteder faktura på varen og håndterer moms/brugtmoms; BidHamr stiller købers navn, adresse, e-mail, vare, pris og dato til rådighed i Firma oversigt.]
 
 **Eksempel:** Du vinder en auktion med et bud på 1.000 kr og har valgt BidHamr Beskyttelse. Du betaler 1.000 kr + 50 kr i købergebyr + 35 kr i fragt + 50 kr for BidHamr Beskyttelse = **1.135 kr**. Sælgeren får 1.000 kr − 50 kr i sælgergebyr = **950 kr**.
 
