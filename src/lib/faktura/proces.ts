@@ -51,6 +51,8 @@ export type Fremskridt = {
   pdfSti?: string;
   fil?: string;
   frigiv?: boolean;
+  // Abonnements-modpostering: dato efter Stripes refusion (kun før afsendelse).
+  betaltDato?: string;
 };
 
 export type FakturaKontekst = {
@@ -72,8 +74,11 @@ export type ProcesDeps = {
   gemPdf: (r: FakturaRaekke, pdf: Uint8Array) => Promise<string | null>;
   // Abonnement: Stripe-fakturaens PDF som bilag (null = ingen).
   hentStripePdf: (r: FakturaRaekke) => Promise<Uint8Array | null>;
-  // Abonnement refunderet: hvor meget Stripe faktisk har refunderet (øre).
-  stripeRefunderetOere: (r: FakturaRaekke) => Promise<number>;
+  // Abonnement refunderet: hvor meget Stripe faktisk har refunderet (øre),
+  // og hvornår (seneste refusion, ISO) - null, hvis ingen refusion.
+  stripeRefusion: (r: FakturaRaekke) => Promise<{ oere: number; kl: string | null }>;
+  // Gemmer refusionstidspunktet på regningen, hvis det mangler (bagud).
+  gemKrediteretKl: (r: FakturaRaekke, kl: string) => Promise<void>;
 };
 
 export type ProcesResultat =
@@ -85,6 +90,13 @@ export type ProcesResultat =
 class LaasTabt extends Error {}
 
 const kr = (oere: number) => Math.round(oere) / 100;
+
+// ÅÅÅÅ-MM-DD i dansk tid.
+export function danskDato(iso: string): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit" }).format(
+    new Date(iso),
+  );
+}
 const tilOere = (kroner: number) => Math.round(Number(kroner) * 100);
 
 const ENHED: Record<string, string> = { fragt: "shipment" };
@@ -255,15 +267,21 @@ async function behandlKladde(r: FakturaRaekke, deps: ProcesDeps): Promise<Proces
   }
 
   let st = await dinero.kladdeStatus(r.id);
+  let dato = r.betalt_dato;
   if (!st && retur) {
     // Kun en fuld refusion bogføres automatisk (M5). Delvis -> staff.
-    const refunderet = await deps.stripeRefunderetOere(r);
-    if (refunderet !== Number(r.beloeb_oere)) {
+    const ref = await deps.stripeRefusion(r);
+    if (ref.oere !== Number(r.beloeb_oere) || !ref.kl) {
       return {
         kode: "kraever_handling",
-        besked: `Stripe har refunderet ${kr(refunderet)} kr. af abonnementsfakturaen (${kr(Number(r.beloeb_oere))} kr.) - bogfør refusionen manuelt i Dinero.`,
+        besked: `Stripe har refunderet ${kr(ref.oere)} kr. af abonnementsfakturaen (${kr(Number(r.beloeb_oere))} kr.) - bogfør refusionen manuelt i Dinero.`,
       };
     }
+    // Modposteringen dateres refusionsdagen hos Stripe (dansk tid) - også for
+    // regninger krediteret før krediteret_kl fandtes.
+    await deps.gemKrediteretKl(r, ref.kl);
+    dato = danskDato(ref.kl);
+    if (dato !== r.betalt_dato && r.status === "venter") await gem(deps, { betaltDato: dato });
   }
   if (!st) {
     if (r.status !== "venter") {
@@ -279,7 +297,7 @@ async function behandlKladde(r: FakturaRaekke, deps: ProcesDeps): Promise<Proces
     }
     await dinero.opretKladde({
       Id: r.id,
-      VoucherDate: r.betalt_dato,
+      VoucherDate: dato,
       FileGuid: fil ?? null,
       Lines: [
         {

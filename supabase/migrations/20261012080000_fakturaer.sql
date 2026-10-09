@@ -181,7 +181,12 @@ begin
      or new.firma_regning_id is distinct from old.firma_regning_id
      or new.krediterer_id is distinct from old.krediterer_id
      or new.linjer <> old.linjer or new.beloeb_oere <> old.beloeb_oere
-     or new.moms_oere <> old.moms_oere or new.betalt_dato <> old.betalt_dato
+     or new.moms_oere <> old.moms_oere
+     or (new.betalt_dato <> old.betalt_dato
+         -- Undtagelse: en abonnements-modpostering, der ikke er sendt til
+         -- Dinero endnu, dateres efter Stripes refusionstidspunkt.
+         and not (old.dokument = 'abonnement_retur' and old.status = 'venter'
+                  and old.dinero_org is null and old.dinero_nummer is null))
      or new.stripe_reference is distinct from old.stripe_reference
      or (old.manuel and not new.manuel) then
     raise exception 'Fakturaens indhold kan ikke ændres, når den er oprettet';
@@ -532,6 +537,7 @@ $fn$;
 -- null = uændret. p_frigiv: slip låsen (fx venter på Dineros bogføring eller
 -- kaldegrænse) uden at bruge et forsøg. Returnerer false, hvis låsen er tabt
 -- eller organisationen ikke passer.
+drop function if exists public.faktura_registrer(uuid, uuid, text, text, uuid, bigint, bigint, text, text, text, boolean);
 create or replace function public.faktura_registrer(
   p_id          uuid,
   p_noegle      uuid,
@@ -543,7 +549,8 @@ create or replace function public.faktura_registrer(
   p_pdf_sti     text default null,
   p_fil         text default null,
   p_fejl        text default null,
-  p_frigiv      boolean default false)
+  p_frigiv      boolean default false,
+  p_betalt_dato date default null)
 returns boolean
 language plpgsql security definer set search_path = '' as $fn$
 declare
@@ -575,6 +582,9 @@ begin
          dinero_moms_oere = coalesce(p_moms, dinero_moms_oere),
          pdf_sti = coalesce(p_pdf_sti, pdf_sti),
          dinero_fil_guid = coalesce(p_fil, dinero_fil_guid),
+         betalt_dato = case when p_betalt_dato is not null and dokument = 'abonnement_retur' and status = 'venter'
+                                 and dinero_org is null and dinero_nummer is null
+                            then p_betalt_dato else betalt_dato end,
          forsoeg = case when p_status is not null and p_status <> status and p_status <> 'kraever_handling'
                         then 0 else forsoeg end,
          sidste_fejl = case when p_status = 'kraever_handling' then left(p_fejl, 1000)
@@ -645,6 +655,22 @@ declare n integer;
 begin
   update public.fakturaer set alarm_kl = now()
    where id = p_id and alarm_kl is null and (opgivet or status = 'kraever_handling');
+  get diagnostics n = row_count;
+  return n > 0;
+end
+$fn$;
+
+-- Udfylder firma_regninger.krediteret_kl bagud fra Stripes refusionstidspunkt
+-- (regninger krediteret før denne migration; serveren slår refusionen op hos
+-- Stripe). Sætter kun, når den mangler.
+create or replace function public.faktura_regning_krediteret_kl(p_regning uuid, p_kl timestamptz)
+returns boolean
+language plpgsql security definer set search_path = '' as $fn$
+declare n integer;
+begin
+  if p_kl is null or p_kl > now() + interval '1 hour' then return false; end if;
+  update public.firma_regninger set krediteret_kl = p_kl
+   where id = p_regning and status = 'krediteret' and krediteret_kl is null;
   get diagnostics n = row_count;
   return n > 0;
 end
@@ -830,7 +856,7 @@ revoke all on function public.faktura_moms(jsonb) from public, anon, authenticat
 revoke all on function public.faktura_sum(jsonb) from public, anon, authenticated;
 revoke all on function public.faktura_planlaeg(integer) from public, anon, authenticated;
 revoke all on function public.faktura_claim(integer) from public, anon, authenticated;
-revoke all on function public.faktura_registrer(uuid, uuid, text, text, uuid, bigint, bigint, text, text, text, boolean) from public, anon, authenticated;
+revoke all on function public.faktura_registrer(uuid, uuid, text, text, uuid, bigint, bigint, text, text, text, boolean, date) from public, anon, authenticated;
 revoke all on function public.faktura_gem_pdf(uuid, text) from public, anon, authenticated;
 revoke all on function public.faktura_fejl(uuid, uuid, text, boolean, boolean) from public, anon, authenticated;
 revoke all on function public.faktura_alarm_claim(uuid) from public, anon, authenticated;
@@ -838,6 +864,7 @@ revoke all on function public.faktura_kontakt_reserver(uuid, text, boolean) from
 revoke all on function public.faktura_kontakt_gemt(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.faktura_proev_igen(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.faktura_inhabil(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.faktura_regning_krediteret_kl(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public.firma_regninger_krediteret_kl() from public, anon, authenticated;
 revoke all on function public.faktura_haandteret_manuelt(uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.mine_fakturaer(uuid) from public, anon, authenticated;
@@ -847,7 +874,7 @@ grant execute on function public.faktura_moms(jsonb) to service_role;
 grant execute on function public.faktura_sum(jsonb) to service_role;
 grant execute on function public.faktura_planlaeg(integer) to service_role;
 grant execute on function public.faktura_claim(integer) to service_role;
-grant execute on function public.faktura_registrer(uuid, uuid, text, text, uuid, bigint, bigint, text, text, text, boolean) to service_role;
+grant execute on function public.faktura_registrer(uuid, uuid, text, text, uuid, bigint, bigint, text, text, text, boolean, date) to service_role;
 grant execute on function public.faktura_gem_pdf(uuid, text) to service_role;
 grant execute on function public.faktura_fejl(uuid, uuid, text, boolean, boolean) to service_role;
 grant execute on function public.faktura_alarm_claim(uuid) to service_role;
@@ -855,5 +882,6 @@ grant execute on function public.faktura_kontakt_reserver(uuid, text, boolean) t
 grant execute on function public.faktura_kontakt_gemt(uuid, text, text) to service_role;
 grant execute on function public.faktura_proev_igen(uuid, uuid) to service_role;
 grant execute on function public.faktura_inhabil(uuid, uuid) to service_role;
+grant execute on function public.faktura_regning_krediteret_kl(uuid, timestamptz) to service_role;
 grant execute on function public.faktura_haandteret_manuelt(uuid, uuid, text) to service_role;
 grant execute on function public.mine_fakturaer(uuid) to authenticated, service_role;

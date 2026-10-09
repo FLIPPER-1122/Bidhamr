@@ -282,13 +282,15 @@ async function hentStripePdf(admin: Admin, r: FakturaRaekke): Promise<Uint8Array
 }
 
 // Abonnement refunderet: det, Stripe faktisk har refunderet på fakturaens
-// betaling(er), i øre. Kun læsning hos Stripe.
-async function stripeRefunderetOere(r: FakturaRaekke): Promise<number> {
+// betaling(er), i øre, og hvornår den seneste refusion blev lavet. Kun
+// læsning hos Stripe.
+async function stripeRefusion(r: FakturaRaekke): Promise<{ oere: number; kl: string | null }> {
   if (!r.stripe_reference?.startsWith("in_")) throw new Error("Abonnementsbilaget mangler Stripe-faktura-id");
   const { getStripe } = await import("@/lib/stripe");
   const s = getStripe();
   const betalinger = await s.invoicePayments.list({ invoice: r.stripe_reference, limit: 10 });
   let sum = 0;
+  let senest = 0;
   for (const b of betalinger.data) {
     if (b.status !== "paid") continue;
     const piRef = b.payment.payment_intent;
@@ -297,8 +299,12 @@ async function stripeRefunderetOere(r: FakturaRaekke): Promise<number> {
     const pi = await s.paymentIntents.retrieve(piId, { expand: ["latest_charge"] });
     const ch = pi.latest_charge && typeof pi.latest_charge !== "string" ? pi.latest_charge : null;
     sum += Number(ch?.amount_refunded ?? 0);
+    const refusioner = await s.refunds.list({ payment_intent: piId, limit: 20 });
+    for (const x of refusioner.data) {
+      if (x.status === "succeeded" && Number(x.created) > senest) senest = Number(x.created);
+    }
   }
-  return sum;
+  return { oere: sum, kl: senest ? new Date(senest * 1000).toISOString() : null };
 }
 
 // ---------------------------------------------------------------- køen
@@ -443,6 +449,7 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
           p_pdf_sti: f.pdfSti ?? null,
           p_fil: f.fil ?? null,
           p_frigiv: f.frigiv ?? false,
+          p_betalt_dato: f.betaltDato ?? null,
         });
         if (error) throw new Error(`faktura_registrer: ${error.message}`);
         return data === true;
@@ -451,7 +458,12 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
       kontekst: (x) => kontekst(admin, x),
       gemPdf: (x, pdf) => gemPdf(admin, x, pdf),
       hentStripePdf: (x) => hentStripePdf(admin, x),
-      stripeRefunderetOere,
+      stripeRefusion,
+      gemKrediteretKl: async (x, kl) => {
+        if (!x.firma_regning_id) return;
+        const { error } = await admin.rpc("faktura_regning_krediteret_kl", { p_regning: x.firma_regning_id, p_kl: kl });
+        if (error) throw new Error(`faktura_regning_krediteret_kl: ${error.message}`);
+      },
     };
     try {
       const ud = await behandlDokument(r, deps);
