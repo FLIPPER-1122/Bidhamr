@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { kraevFirma } from "@/lib/erhverv/firmaData";
+import { hentFirmaFakturaSalg, kraevFirma } from "@/lib/erhverv/firmaData";
+import { Kort } from "@/components/firma/dele";
+import { FakturaOplysningerListe } from "@/components/firma/FakturaOplysninger";
+import { FAKTURA_TEKST } from "@/lib/erhverv/fakturaOplysninger";
 import HandelDetalje from "@/components/handel/HandelDetalje";
 import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 
@@ -19,5 +22,20 @@ export default async function FirmaHandel({ params }: { params: Promise<{ trade_
   const { trade_id } = await params;
   await kraevFirma(`/firma/salg/${trade_id}`);
   if (!UUID.test(trade_id)) notFound();
-  return <HandelDetalje trade_id={trade_id} sted="firma" />;
+  // Oplysninger til firmaets egen faktura (kun firmaets egne, betalte salg -
+  // firma_faktura_salg filtrerer på auth.uid()).
+  const faktura = await hentFirmaFakturaSalg(null, null, trade_id);
+  const salg = faktura?.salg[0];
+  return (
+    <>
+      <HandelDetalje trade_id={trade_id} sted="firma" />
+      {faktura && salg && (
+        <div className="mx-auto mt-6 max-w-3xl">
+          <Kort id="faktura-oplysninger" titel={FAKTURA_TEKST.titel} forklaring={FAKTURA_TEKST.forklaring}>
+            <FakturaOplysningerListe salg={salg} firma={faktura.firma} />
+          </Kort>
+        </div>
+      )}
+    </>
+  );
 }

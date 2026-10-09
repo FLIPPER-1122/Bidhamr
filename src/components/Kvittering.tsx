@@ -4,7 +4,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
-  KVITTERING_IKKE_FAKTURA,
+  kvitteringFakturaTekst,
   KVITTERING_STRIPE,
   kvitteringDato,
   kvitteringKroner,
@@ -53,7 +53,7 @@ export function KvitteringBoks({ k }: { k: Kvittering }) {
       <div className="mt-3">
         <Beloebslinjer k={k} />
       </div>
-      <p className="mt-3 text-xs text-tekst-svag">{KVITTERING_IKKE_FAKTURA}</p>
+      <p className="mt-3 text-xs text-tekst-svag">{kvitteringFakturaTekst(k)}</p>
     </section>
   );
 }
@@ -109,7 +109,7 @@ export function KvitteringFuld({ k }: { k: Kvittering }) {
               " Fragten betaler køberen, og den går til fragtfirmaet – den indgår ikke i din udbetaling."}
           </p>
         )}
-        <p>{KVITTERING_IKKE_FAKTURA}</p>
+        <p>{kvitteringFakturaTekst(k)}</p>
         <p>{KVITTERING_STRIPE}</p>
         <p>BidHamr · bidhamr.dk · support@bidhamr.dk</p>
       </div>

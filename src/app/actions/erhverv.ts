@@ -187,3 +187,32 @@ export async function skiftFirmaPakke(pakkeId: string): Promise<SkiftPakkeSvar> 
     return { fejl: GENERISK };
   }
 }
+
+// "Vi bruger brugtmomsordningen" (Firmaoplysninger). Kaldes via
+// /api/offentlig/firma-brugtmoms. firma_saet_brugtmoms afviser alle andre
+// end firmakontoen selv (auth.uid()). Bestemmer kun, om momsen vises i
+// oplysningerne til firmaets egen faktura på varen.
+export async function saetFirmaBrugtmoms(
+  til: boolean,
+): Promise<{ ok: true; brugtmoms: boolean } | { fejl: string }> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await hentLoggetIndBruger(supabase);
+    if (!user) return { fejl: "Du skal være logget ind." };
+    // Server actions kan kaldes med hvad som helst: kun et ægte ja/nej.
+    if (typeof til !== "boolean") return { fejl: GENERISK };
+    const { data, error } = await supabase.rpc("firma_saet_brugtmoms", { p_til: til });
+    if (error) {
+      if (error.code === "42501") return { fejl: "Kun firmakonti kan ændre dette." };
+      await logDriftFejl({ kilde: "action", hvor: "saetFirmaBrugtmoms", fejl: error, brugerId: user.id });
+      return { fejl: GENERISK };
+    }
+    revalidatePath("/firma", "layout");
+    return { ok: true, brugtmoms: data === true };
+  } catch (err) {
+    await logDriftFejl({ kilde: "action", hvor: "saetFirmaBrugtmoms", fejl: err });
+    return { fejl: GENERISK };
+  }
+}

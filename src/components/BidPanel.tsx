@@ -21,6 +21,11 @@ import {
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
 import { ERHVERV_BIDPANEL, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import { BINDENDE_BUD_TEKST, mindsteNaesteBud } from "@/lib/auktionRegler";
+import {
+  BUD_SAELGER_FROSSET_FORKLARING,
+  BUD_SAELGER_FROSSET_NOTE,
+  BUD_SAELGER_FROSSET_TITEL,
+} from "@/lib/betaling/frosset";
 
 // Budhistorikken er anonymiseret paa serveren: ingen bruger-id'er eller navne
 // i browseren - kun "Byder 3" eller "Dig".
@@ -672,10 +677,9 @@ export default function BidPanel({
         </p>
       ) : saelgerFrosset ? (
         <div role="note" className="mt-4 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-4 text-advarsel-tekst">
-          <p className="text-[17px] font-semibold">Der kan ikke bydes lige nu</p>
-          <p className="mt-1 text-base">
-            Sælgerens konto er sat på pause, til vores betalingspartner Stripe har godkendt den. Du kan ikke byde lige nu.
-          </p>
+          <p className="text-[17px] font-semibold">{BUD_SAELGER_FROSSET_TITEL}</p>
+          <p className="mt-1 text-base">{BUD_SAELGER_FROSSET_FORKLARING}</p>
+          <p className="mt-2 text-sm">{BUD_SAELGER_FROSSET_NOTE}</p>
         </div>
       ) : erFirmakonto ? (
         <div role="note" className="mt-4 rounded-xl border border-info-kant bg-info-bg px-4 py-4 text-info-tekst">

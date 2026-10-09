@@ -3,7 +3,7 @@
 // mails ser ens ud.
 import { bygMail, escapeHtml, sideUrl, type InfoRaekke, type MailLayoutInput } from "./layout";
 import {
-  KVITTERING_IKKE_FAKTURA,
+  kvitteringFakturaTekst,
   KVITTERING_STRIPE,
   kvitteringDato,
   kvitteringLinjer,
@@ -207,7 +207,7 @@ export function koeberAfhentningMail(
       ...(kvittering
         ? [
             "Herunder er din kvittering for købet.",
-            `${escapeHtml(KVITTERING_IKKE_FAKTURA)} ${escapeHtml(KVITTERING_STRIPE)}`,
+            `${escapeHtml(kvitteringFakturaTekst(kvittering))} ${escapeHtml(KVITTERING_STRIPE)}`,
             FAKTURA_AFSNIT,
           ]
         : []),
@@ -250,7 +250,7 @@ export function koeberKvitteringMail(k: KoeberKvittering) {
     afsnitHtml: [
       `Tak for din betaling for <strong>${escapeHtml(k.titel)}</strong>. Sælgeren får besked om at sende varen, og du får besked, når pakken er på vej.`,
       STRIPE_KOEBER,
-      escapeHtml(KVITTERING_IKKE_FAKTURA),
+      escapeHtml(kvitteringFakturaTekst(k)),
       FAKTURA_AFSNIT,
     ],
     info: kvitteringInfo(k),
@@ -273,7 +273,7 @@ export function saelgerAfregningMail(
       `Pengene er frigivet. Udbetalingen på ${escapeHtml(kronerFraOere(k.udbetalingOere))} kr sendes til din udbetalingskonto hos vores betalingspartner Stripe. Udbetalingen er salgsprisen minus 5 % i sælgergebyr.${
         k.afhentning ? "" : " Fragten betaler køberen, og den går til fragtfirmaet – den indgår ikke i din udbetaling."
       }`,
-      escapeHtml(KVITTERING_IKKE_FAKTURA),
+      escapeHtml(kvitteringFakturaTekst(k)),
       FAKTURA_AFSNIT,
     ],
     info: kvitteringInfo(k),

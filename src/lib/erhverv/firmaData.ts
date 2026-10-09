@@ -7,6 +7,7 @@ import { hentBruger } from "@/lib/supabase/bruger";
 import { hentFirmaOversigt } from "@/app/actions/erhverv";
 import { logDriftFejl } from "@/lib/drift";
 import { FIRMA_DASHBOARD, FIRMA_OVERSIGT } from "@/lib/tekster/erhverv";
+import type { FakturaData } from "@/lib/erhverv/fakturaOplysninger";
 import type {
   AuktionGruppe,
   FirmaAuktioner,
@@ -71,3 +72,10 @@ export const hentFirmaAuktioner = cache((gruppe: AuktionGruppe) =>
 );
 export const hentFirmaStatistik = cache(() => rpc<FirmaStatistik>("firma_statistik"));
 export const hentFirmaSalg = cache(async () => (await rpc<FirmaSalg>("firma_salg")) ?? []);
+
+// Oplysninger til firmaets egen faktura på varen (kun betalte salg).
+// firma_faktura_salg tjekker auth.uid() i databasen: kun firmaet selv.
+export const hentFirmaFakturaSalg = cache(
+  async (fra: string | null = null, til: string | null = null, trade: string | null = null) =>
+    rpc<FakturaData>("firma_faktura_salg", { p_fra: fra, p_til: til, p_trade: trade }),
+);
