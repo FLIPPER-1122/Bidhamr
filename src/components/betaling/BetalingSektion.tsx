@@ -116,6 +116,7 @@ function BetalForm({
   const elements = useElements();
   const [sender, setSender] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
+  const [alleredeBetalt, setAlleredeBetalt] = useState(false);
 
   async function betal(e: FormEvent) {
     e.preventDefault();
@@ -132,6 +133,7 @@ function BetalForm({
     // Er PaymentIntenten allerede betalt (fx i en anden fane), siges det.
     if (error?.code === "payment_intent_unexpected_state" && error.payment_intent?.status === "succeeded") {
       setFejl("Handlen er allerede betalt. Genindlæs siden for at se status.");
+      setAlleredeBetalt(true);
     } else {
       setFejl(error?.message ?? "Betalingen kunne ikke gennemføres. Prøv igen.");
     }
@@ -142,13 +144,19 @@ function BetalForm({
     <form onSubmit={betal} className="space-y-4">
       <PaymentElement options={{ layout: "tabs" }} />
       {fejl && <FejlBoks tekst={fejl} />}
-      <button
-        type="submit"
-        disabled={!stripe || sender || laast}
-        className="btn btn-primaer w-full"
-      >
-        {sender ? "Betaler…" : `Betal ${kroner(totalOere)}`}
-      </button>
+      {alleredeBetalt ? (
+        <button type="button" onClick={() => window.location.reload()} className="btn btn-primaer w-full">
+          Genindlæs siden
+        </button>
+      ) : (
+        <button
+          type="submit"
+          disabled={!stripe || sender || laast}
+          className="btn btn-primaer w-full"
+        >
+          {sender ? "Betaler…" : `Betal ${kroner(totalOere)}`}
+        </button>
+      )}
       {/* Kun tekst - ændrer ikke betalingen. Åbner i ny fane, så betalingen ikke afbrydes. */}
       <p className="text-center text-[13px] text-tekst-daempet">
         Ved at betale accepterer du BidHamrs{" "}

@@ -136,9 +136,8 @@ export default function KontoUdbetaling({
         <div role="alert" className="rounded-xl border border-advarsel-kant bg-advarsel-bg p-4 text-sm text-advarsel-tekst">
           <p className="font-semibold">Dine auktioner og bud er sat på pause</p>
           <p className="mt-1">
-            Dine auktioner og bud er sat på pause, til Stripe har godkendt din konto. Gør
-            opsætningen færdig hos Stripe med knappen ovenfor - pausen ophæves automatisk, når
-            kontoen er godkendt.
+            Stripe har endnu ikke godkendt din udbetalingskonto. Gør opsætningen færdig hos
+            Stripe med knappen ovenfor – pausen ophæves automatisk, når kontoen er godkendt.
           </p>
         </div>
       )}
