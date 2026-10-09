@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { bekraeftetBruger, hentBruger, sessionBrugerId } from "@/lib/supabase/bruger";
-import { hentBetalingsindstillinger, hentMineBankudbetalinger, hentMineOverfoersler } from "@/app/actions/betaling";
+import { hentBetalingsindstillinger, hentMineBankudbetalinger } from "@/app/actions/betaling";
 import KontoBetaling from "@/components/betaling/KontoBetaling";
 import KontoUdbetaling from "@/components/betaling/KontoUdbetaling";
 import BlokeredeBrugere, { type Blokering } from "@/components/tryghed/BlokeredeBrugere";
@@ -66,7 +66,6 @@ export default async function KontoSide({
   const [
     bruger,
     indstillinger,
-    overfoerslerSvar,
     bankudbetalingerSvar,
     { data: advarselData, error: advarselFejl },
     { data: paamindelseData, error: paamindelseFejl },
@@ -75,7 +74,6 @@ export default async function KontoSide({
   ] = await Promise.all([
     sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
     hentBetalingsindstillinger(),
-    hentMineOverfoersler(),
     hentMineBankudbetalinger(),
     supabase.rpc("mine_advarsler"),
     supabase.rpc("mine_paamindelser"),
@@ -225,7 +223,6 @@ export default async function KontoSide({
               <KontoUdbetaling
                 saelger={indstillinger.saelger}
                 erRetur={stripe === "retur"}
-                overfoersler={"fejl" in overfoerslerSvar ? null : overfoerslerSvar.overfoersler}
                 bankudbetalinger={"fejl" in bankudbetalingerSvar ? null : bankudbetalingerSvar.udbetalinger}
               />
             </div>

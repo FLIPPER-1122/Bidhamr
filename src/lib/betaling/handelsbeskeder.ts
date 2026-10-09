@@ -18,7 +18,7 @@ import type { KoeberKvittering, SaelgerKvittering } from "@/lib/kvittering";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
-// Billigt forhåndstjek, så cron (overfoerVentende kalder overfoerTilSaelger
+// Billigt forhåndstjek, så cron (udbetalVentende kalder udbetalTilSaelger
 // igen og igen for betalinger, der venter på en udbetalingskonto) ikke bygger
 // kvitteringen hver gang. send() claimer stadig nøglen atomisk.
 async function alleredeSendt(admin: Admin, noegle: string): Promise<boolean> {
@@ -131,7 +131,7 @@ function afregningTekst(grund: FrigivGrund, titel: string): { titel: string; tek
 // Afregning til sælgeren. Sendes kun, når pengene faktisk er frigivet
 // (bygKvittering kræver frigivet_kl, status 'betalt' og ingen refusion) - og
 // ikke ved en åben indsigelse, annulleret handel eller åben sag (samme værn
-// som overfoerTilSaelger). Én gang pr. handel, uanset hvilken vej der frigav.
+// som udbetalTilSaelger). Én gang pr. handel, uanset hvilken vej der frigav.
 // Kalderne sender den FØR overførslen, så grunden kommer med; overførslen
 // sender den generiske udgave som fallback.
 export async function sendSaelgerAfregning(tradeId: string, grund: FrigivGrund): Promise<void> {

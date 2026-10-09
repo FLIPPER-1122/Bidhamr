@@ -11,13 +11,14 @@ import {
   type PengeHoldes,
   type PengeTal,
   type Resultat,
+  type SaldoAfstemning,
   type StripeBalance,
   type StripeBevaegelser,
 } from "@/lib/admin/penge";
 
 // Penge - KUN for rollen chef (ROADMAP fase 1B). Admin og medarbejder får 404,
 // også ved direkte URL. Rollen tjekkes her OG igen i hentPengeOversigt.
-// BidHamr har ingen saldo/wallet: pengene ligger hos Stripe, til de frigives.
+// BidHamr har ingen saldo/wallet: købers penge står på sælgerens Stripe-konto, til de udbetales.
 
 const kr = (oere: number) =>
   (oere / 100).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
@@ -33,8 +34,6 @@ const dato = (iso: string) =>
 const GRUND: Record<HoldtGrund, string> = {
   indsigelse: "Indsigelse hos købers bank",
   refusion_i_gang: "Refusion i gang",
-  overfoersel_i_gang: "Overførsel i gang",
-  afventer_overfoersel: "Frigivet – overføres til sælger",
   afventer_udbetaling: "Frigivet – venter på udbetaling til bank",
   udbetaling_paa_vej: "Udbetaling til sælgers bank i gang",
   venter_paa_bank: "Udbetaling fejlede – venter på sælgers bank",
@@ -67,10 +66,6 @@ function forventet(r: HoldtRaekke): string {
       return "Afventer bankens afgørelse";
     case "refusion_i_gang":
       return "Refunderes til køber (venter på Stripe)";
-    case "overfoersel_i_gang":
-      return "Overføres til sælger (venter på Stripe)";
-    case "afventer_overfoersel":
-      return "Overføres til sælger, når udbetalingskontoen er klar";
     case "afventer_udbetaling":
       return tid
         ? `Udbetales fra sælgers Stripe-konto til banken (tidligst ${tid})`
@@ -195,7 +190,7 @@ function Indtjening({ t }: { t: PengeTal }) {
       <Linje label="Indtjening i alt" vaerdi={kr(i.i_alt)} fremhaev />
       {i.heraf_ikke_frigivet > 0 && (
         <p className="pb-1 text-xs text-neutral-500">
-          Heraf {kr(i.heraf_ikke_frigivet)} på handler, hvor pengene ikke er overført til sælger endnu – de kan stadig
+          Heraf {kr(i.heraf_ikke_frigivet)} på handler, hvor pengene ikke er udbetalt til sælger endnu – de kan stadig
           blive refunderet.
         </p>
       )}
@@ -223,7 +218,7 @@ function Pengestroem({ t }: { t: PengeTal }) {
           vaerdi={kr(t.forkerte_beloeb_modtaget.beloeb)}
         />
       )}
-      <Linje label="Overført til sælgere" antal={t.udbetalinger.antal} vaerdi={kr(t.udbetalinger.beloeb)} />
+      <Linje label="Udbetalt til sælgere" antal={t.udbetalinger.antal} vaerdi={kr(t.udbetalinger.beloeb)} />
 
       <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">Refusioner</p>
       <Linje label="Fulde refusioner" antal={r.fulde.antal} vaerdi={kr(r.fulde.beloeb)} />
@@ -236,7 +231,7 @@ function Pengestroem({ t }: { t: PengeTal }) {
       )}
       {r.efter_udbetaling.antal > 0 && (
         <Linje
-          label="Refunderet EFTER overførsel til sælger – tjek hos Stripe"
+          label="Refunderet EFTER udbetaling til sælger – tjek hos Stripe"
           antal={r.efter_udbetaling.antal}
           vaerdi={kr(r.efter_udbetaling.udbetalt)}
           tone="roed"
@@ -279,47 +274,43 @@ function Pengestroem({ t }: { t: PengeTal }) {
 
 function Afstemning({
   tal,
-  holdes,
+  saldo,
   balance,
   bevaegelser,
 }: {
   tal: Resultat<PengeTal>;
-  holdes: Resultat<PengeHoldes>;
+  saldo: Resultat<SaldoAfstemning>;
   balance: Resultat<StripeBalance>;
   bevaegelser: Resultat<StripeBevaegelser>;
 }) {
-  // Dækning: beløb hos Stripe skal mindst dække de penge, der holdes for
-  // handler. Ved en åben indsigelse har Stripe allerede trukket beløbet.
+  // Købers penge står på sælgernes Stripe-konti (ikke på BidHamrs saldo).
+  // Hver sælgerkonto afstemmes automatisk (overvågningen hver time og før
+  // hver udbetaling): tilgængelig + afventende saldo skal dække de betalte,
+  // ikke-udbetalte handler. Afvigelser giver drift-alarm.
   let daekning: React.ReactNode = null;
-  if (balance.ok && holdes.ok) {
-    const stripeIAlt = balance.data.tilgaengelig + balance.data.afventer;
-    const indsigelse = holdes.data.efter_grund.find((g) => g.grund === "indsigelse")?.beloeb ?? 0;
-    const skalDaekkes = holdes.data.beloeb - indsigelse + holdes.data.forkerte_beloeb.beloeb;
-    const forskel = stripeIAlt - skalDaekkes;
+  if (saldo.ok) {
     daekning = (
       <div className="space-y-1">
-        <Linje label="Beløb hos Stripe i alt (tilgængeligt + afventer)" vaerdi={kr(stripeIAlt)} />
-        <Linje label="Penge der holdes for handler (databasen)" vaerdi={kr(holdes.data.beloeb)} />
-        {indsigelse > 0 && (
-          <Linje label="– heraf midlertidigt trukket af banken (åbne indsigelser)" vaerdi={`−${kr(indsigelse)}`} />
-        )}
-        {holdes.data.forkerte_beloeb.beloeb > 0 && (
-          <Linje label="+ forkerte beløb, der skal refunderes" vaerdi={kr(holdes.data.forkerte_beloeb.beloeb)} />
-        )}
-        <Linje label="Skal være hos Stripe" vaerdi={kr(skalDaekkes)} fremhaev />
-        {forskel < 0 ? (
+        {saldo.data.afvigende > 0 ? (
           <div className="mt-2 rounded-lg border-2 border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800" role="alert">
-            Afvigelse: Stripe har {kr(-forskel)} mindre, end der holdes for handler. Tjek Stripe
-            Dashboard med det samme.
+            Saldo-afstemning: {saldo.data.afvigende} {saldo.data.afvigende === 1 ? "sælgerkonto afviger" : "sælgerkonti afviger"}{" "}
+            – saldoen hos Stripe dækker ikke handlerne. Se /admin/drift og tjek kontoen i Stripe.
           </div>
         ) : (
           <div className="mt-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-            Dækket. De resterende {kr(forskel)} hos Stripe er BidHamrs egne gebyrer og fragt, der
-            endnu ikke er udbetalt til BidHamrs bankkonto.
+            Saldo-afstemning: alle sælgerkonti dækker deres betalte, ikke-udbetalte handler.
           </div>
         )}
+        <p className="text-xs text-neutral-500">
+          {saldo.data.sidstKoertKl
+            ? `Overvågningen kørte sidst ${dato(saldo.data.sidstKoertKl)} (hver time).`
+            : "Overvågningen har ikke kørt endnu."}{" "}
+          BidHamrs egen saldo hos Stripe (ovenfor) er kun gebyrer, fragt og BidHamr Beskyttelse.
+        </p>
       </div>
     );
+  } else {
+    daekning = <Fejlboks tekst={saldo.fejl} />;
   }
 
   // Periodens bevægelser: databasen mod Stripes balance transactions.
@@ -330,6 +321,7 @@ function Afstemning({
     const t = tal.data;
     const kendte = new Set([
       "charge", "refund", "refund_failure", "transfer", "transfer_reversal",
+      "platform_earning", "platform_earning_refund",
       "dispute", "dispute_reversal", "fee", "payout", "payout_reversal",
     ]);
     const oevrigt = Object.entries(k)
@@ -346,10 +338,17 @@ function Afstemning({
         db: t.refusioner.fulde.beloeb + t.refusioner.delvise.beloeb + t.refusioner.forkerte_beloeb.beloeb,
         stripe: -(s("refund") + s("refund_failure")),
       },
+      // Betalingen sendes videre til sælgerens Stripe-konto med det samme
+      // (hele beløbet), og BidHamrs gebyr kommer tilbage som application fee.
       {
-        label: "Overførsler til sælgere",
-        db: t.udbetalinger.beloeb,
+        label: "Sendt videre til sælgernes Stripe-konti (netto)",
+        db: null,
         stripe: -(s("transfer") + s("transfer_reversal")),
+      },
+      {
+        label: "BidHamrs gebyrer fra sælgerkonti (netto)",
+        db: null,
+        stripe: s("platform_earning") + s("platform_earning_refund"),
       },
       { label: "Indsigelser (netto trukket)", db: null, stripe: -(s("dispute") + s("dispute_reversal")) },
       { label: "Stripe-gebyrer", db: null, stripe: bevaegelser.data.gebyrer },
@@ -446,7 +445,7 @@ function Holdes({ h, nu }: { h: PengeHoldes; nu: number }) {
   return (
     <Sektion
       titel="Penge der holdes lige nu"
-      note="Betalt, men endnu ikke frigivet, overført eller refunderet. Beløbet ligger hos Stripe."
+      note="Betalt, men endnu ikke udbetalt til sælgers bank eller refunderet. Beløbet står på sælgers Stripe-konto."
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Kort titel="Beløb hos Stripe for handler" vaerdi={kr(h.beloeb)} under={`${h.antal} handler`} />
@@ -601,7 +600,7 @@ export default async function AdminPenge({
           <Kort titel="BidHamrs indtjening" vaerdi={kr(t.indtjening.i_alt)} tone="groen" under="Gebyrer og BidHamr Beskyttelse" />
           <Kort titel="Fragt" vaerdi={kr(t.fragt.beloeb)} under="Går videre til fragtfirmaet" />
           <Kort
-            titel="Holdes hos Stripe nu"
+            titel="På sælgernes Stripe-konti nu"
             vaerdi={o.holdes.ok ? kr(o.holdes.data.beloeb) : "–"}
             under={o.holdes.ok ? `${o.holdes.data.antal} handler (uanset periode)` : undefined}
             tone="orange"
@@ -616,7 +615,7 @@ export default async function AdminPenge({
         </div>
       )}
 
-      <Afstemning tal={o.tal} holdes={o.holdes} balance={o.balance} bevaegelser={o.bevaegelser} />
+      <Afstemning tal={o.tal} saldo={o.saldo} balance={o.balance} bevaegelser={o.bevaegelser} />
 
       {o.holdes.ok ? <Holdes h={o.holdes.data} nu={new Date(o.til).getTime()} /> : <Fejlboks tekst={o.holdes.fejl} />}
     </div>

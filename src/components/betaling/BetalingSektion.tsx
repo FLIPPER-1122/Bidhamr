@@ -17,6 +17,9 @@ export default function BetalingSektion({ status }: { status: KoeberBetalingssta
   const [totalOere, setTotalOere] = useState(status.totalOere);
   const [henter, setHenter] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
+  // Betalingen er allerede gennemført (fx i en anden fane): vis det og
+  // tilbyd at genindlæse siden i stedet for betalingsformularen.
+  const [alleredeBetalt, setAlleredeBetalt] = useState<string | null>(null);
 
   async function hent() {
     setHenter(true);
@@ -24,7 +27,8 @@ export default function BetalingSektion({ status }: { status: KoeberBetalingssta
     const svar = await startBetaling(status.handelId);
     setHenter(false);
     if ("fejl" in svar) {
-      setFejl(svar.fejl);
+      if (svar.betalt) setAlleredeBetalt(svar.fejl);
+      else setFejl(svar.fejl);
       return;
     }
     setClientSecret(svar.clientSecret);
@@ -51,7 +55,14 @@ export default function BetalingSektion({ status }: { status: KoeberBetalingssta
 
       {fejl && <FejlBoks tekst={fejl} />}
 
-      {!clientSecret ? (
+      {alleredeBetalt ? (
+        <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
+          <p className="font-semibold">{alleredeBetalt}</p>
+          <button type="button" onClick={() => window.location.reload()} className="btn btn-sekundaer mt-3 w-full sm:w-auto">
+            Genindlæs siden
+          </button>
+        </div>
+      ) : !clientSecret ? (
         <button
           type="button"
           onClick={() => hent()}
@@ -118,7 +129,12 @@ function BetalForm({
       },
     });
     // Kommer vi hertil, er betalingen ikke gennemført (ellers omdirigeres der).
-    setFejl(error?.message ?? "Betalingen kunne ikke gennemføres. Prøv igen.");
+    // Er PaymentIntenten allerede betalt (fx i en anden fane), siges det.
+    if (error?.code === "payment_intent_unexpected_state" && error.payment_intent?.status === "succeeded") {
+      setFejl("Handlen er allerede betalt. Genindlæs siden for at se status.");
+    } else {
+      setFejl(error?.message ?? "Betalingen kunne ikke gennemføres. Prøv igen.");
+    }
     setSender(false);
   }
 

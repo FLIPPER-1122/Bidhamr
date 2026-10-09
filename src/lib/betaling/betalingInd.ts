@@ -15,7 +15,6 @@
 //   - er kontoen ikke godkendt 7 dage efter auktionens slutning, annulleres
 //     handlen og auktionen (køberen trækkes ikke), og sælgeren fryses, til
 //     Stripe har godkendt kontoen (annullerIkkeGodkendte)
-// Med separat findes der ingen ventende betalinger (alt herinde er no-ops).
 // Kaster aldrig fra cron-funktionerne (fejl logges i drift_fejl).
 
 import Stripe from "stripe";

@@ -285,7 +285,7 @@ export type SagAfvikling = {
 // Kører Stripe-delen, efter sag_afvikl har flyttet pengene i databasen, og
 // giver parterne besked. Kaster aldrig: refusionen/frigivelsen er claimet i
 // databasen, og cron prøver Stripe igen (refunderSagerVentende /
-// overfoerVentende). Returnerer resultatet fra Stripe-kaldet (uden beløb).
+// udbetalVentende). Returnerer resultatet fra Stripe-kaldet (uden beløb).
 // notificer: false, når kalderen selv sender én samlet besked (anke og
 // endelig afgørelse efter anke), så parterne ikke får to beskeder.
 export async function udfoerSagAfvikling(

@@ -280,7 +280,7 @@ export async function godkendPakke(
   try {
     const betaling = await hentBetalingForHandel(tradeId);
     if (betaling) {
-      // Begge modeller: transfer (separat) eller payout til banken (destination).
+      // Udbetaling fra sælgerens Stripe-konto til banken.
       const r = await pengeTilSaelger(betaling.id);
       if (!erSendtTilSaelger(r)) {
         console.warn("Overførsel ikke gennemført endnu:", tradeId, r);

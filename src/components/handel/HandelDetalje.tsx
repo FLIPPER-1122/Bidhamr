@@ -287,7 +287,7 @@ export default async function HandelDetalje({
 
         {/* Overblik */}
         <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
-          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <div className="flex items-start gap-3 sm:items-center sm:gap-4">
             <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-skelet">
               {billede ? (
                 <Image
@@ -305,15 +305,21 @@ export default async function HandelDetalje({
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-[22px] leading-tight break-words sm:text-[26px]">
+              <h1 className="text-[22px] leading-tight break-words hyphens-none sm:text-[26px]">
                 {auktion?.titel ?? "Slettet auktion"}
               </h1>
               <p className="mt-0.5 text-sm text-tekst-svag">
                 {erKoeber ? "Du er køber" : "Du er sælger"} ·{" "}
                 {Number(handel.amount).toLocaleString("da-DK")} kr
               </p>
+              {/* Mobil: statusmærket under titlen, så titlen har hele bredden. */}
+              <div className="mt-2 sm:hidden">
+                <HandelStatusBadge status={handel.status} />
+              </div>
             </div>
-            <HandelStatusBadge status={handel.status} />
+            <div className="hidden shrink-0 sm:block">
+              <HandelStatusBadge status={handel.status} />
+            </div>
           </div>
 
           {/* Statustidslinje */}

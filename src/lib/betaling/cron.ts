@@ -9,9 +9,8 @@
 //   3c. Automatisk frigivelse: 48 t efter "modtaget" uden sag, eller 14 dage
 //       efter afsendelse uden "modtaget" og uden sag. Køberen får en
 //       påmindelse på dag 12.
-//   4. Overfør frigivne beløb, der ventede på sælgerens Connect-konto.
-//   4b. Destination: udbetal frigivne beløb fra sælgerens Connect-konto til
-//       banken (udbetalVentende - F03, saldo-afstemning, udbetal_tidligst).
+//   4. Udbetal frigivne beløb fra sælgerens Connect-konto til banken
+//      (udbetalVentende - F03, saldo-afstemning, udbetal_tidligst).
 //   5. Refundér betalinger med afvigende beløb.
 //   5b. Alle lovede refusioner (uanset årsag), der er claimet, men ikke
 //       gennemført hos Stripe - med backoff (Niels F05).
@@ -33,8 +32,10 @@
 //       (dag 5). Er varen ikke hentet, og har staff ikke afgjort handlen 14
 //       dage efter betalingen (og mindst 7 dage efter fristen), annulleres
 //       handlen, og køberen får alle pengene tilbage via Stripe.
-//   Trin 4 sender også påmindelser til sælgere uden udbetalingskonto
-//   (straks, efter 3 og 7 dage) og markerer til admin efter 7 dage.
+//   10. Overvågning (Niels F06, overvaagning.ts - højst én gang i timen):
+//       udbetalinger, der hænger, tabte indsigelser uden afklaring,
+//       saldo-afstemning og udeblevne payout-/indsigelses-events. Én
+//       drift-alarm pr. tilfælde.
 //
 // Hver mail "claimes" atomisk i databasen FØR afsendelse, så samme mail aldrig
 // sendes to gange, selv hvis to kørsler overlapper.
@@ -69,11 +70,12 @@ import { tilbagefoerTabteIndsigelserVentende, varslIndsigelsesfrister } from "@/
 import {
   type BetalingRaekke,
   forsoegAutobetaling,
-  overfoerVentende,
   refunderAfvigelserVentende,
   refunderLoveteVentende,
-  skiftVentendeTilDestination,
 } from "@/lib/betaling/stripeBetaling";
+import { koerBetalingsovervaagning } from "@/lib/betaling/overvaagning";
+import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
+import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 
 const TIME = 60 * 60 * 1000;
 
@@ -124,7 +126,6 @@ export async function koerBetalingsCron() {
     autobetalinger: 0,
     vundetMails: 0,
     paamindelser: 0,
-    overfoersler: 0,
     udbetalinger: 0,
     afvigelsesrefusioner: 0,
     sagsrefusioner: 0,
@@ -148,24 +149,39 @@ export async function koerBetalingsCron() {
     afhentningsPaamindelser: 0,
     ikkeHentetAnnulleret: 0,
     ikkeHentetRefunderet: 0,
-    skiftetTilDestination: 0,
+    overvaagning: {} as Awaited<ReturnType<typeof koerBetalingsovervaagning>>,
     ventende: {} as Awaited<ReturnType<typeof behandlVentendeBetalinger>>,
   };
+
+  // 0) Databasen er ikke migreret til betalingsmodellen destination (trin
+  //    1-5): ingen pengetrin (de ville fejle eller bruge den gamle model).
+  //    Kun notifikationer kører. Én drift-alarm, til det er løst - ikke
+  //    en fejlet kørsel hvert 5. minut. Se docs/GO-LIVE-STRIPE.md.
+  //    Kunne status ikke læses ("ukendt"), kører cron'en som normalt - fejl
+  //    i trinnene logges som altid.
+  const modelStatus = await databasensBetalingsmodelStatus();
+  if (modelStatus === "ikke_destination") {
+    await alarmPrTilfaelde({
+      noegle: "cron:betalingsmodel",
+      hvor: "betaling/betalingsmodel",
+      fejl: "Betalings-cron springer alle pengetrin over: databasens betalingsmodel er ikke 'destination' (migrationerne for trin 1-5 er ikke kørt). Kør prod-koersel-filen - se docs/GO-LIVE-STRIPE.md.",
+    });
+    const notifikationer = await koerNotifikationsCron();
+    return { ...resultat, springetOver: 1, notifikationer };
+  }
+  if (modelStatus === "destination") {
+    await lukTilfaelde("cron:betalingsmodel");
+    // Webhook-alarmen (503 før migrationen) lukkes også her.
+    await lukTilfaelde("webhook:ikke-migreret");
+  }
 
   // 1) Luk auktioner og opret handel + betaling.
   const { data: lukkede, error: rpcFejl } = await admin.rpc("afslut_udloebne_auktioner");
   if (rpcFejl) await trinFejl("afslut_udloebne_auktioner", rpcFejl);
   resultat.lukkede = Number(lukkede ?? 0);
 
-  // 1b) Betalingsmodel destination (trin 2): afventende separat-betalinger
-  //     skiftes til destination (den gamle PaymentIntent annulleres), og
-  //     betalinger, der venter på sælgerens Stripe-konto, åbnes, påmindes
-  //     eller annulleres (betalingInd.ts). Med separat: intet.
-  try {
-    resultat.skiftetTilDestination = await skiftVentendeTilDestination();
-  } catch (err) {
-    await trinFejl("Skift til destination", err);
-  }
+  // 1b) Betalinger, der venter på sælgerens Stripe-konto, åbnes, påmindes
+  //     eller annulleres (betalingInd.ts).
   resultat.ventende = await behandlVentendeBetalinger();
 
   // 2) Nye betalinger uden "du vandt"-mail.
@@ -337,10 +353,8 @@ export async function koerBetalingsCron() {
     await trinFejl("Automatisk frigivelse", err);
   }
 
-  // 4) Frigivne beløb, der ventede på sælgerens konto (eller fejlede).
-  resultat.overfoersler = await overfoerVentende();
-  // 4b) Destination (trin 3): udbetaling fra sælgerens Stripe-konto til
-  //     banken for handler, der er helt færdige (samlet pr. sælger).
+  // 4) Udbetaling fra sælgerens Stripe-konto til banken for handler, der er
+  //    helt færdige (samlet pr. sælger).
   resultat.udbetalinger = await udbetalVentende();
 
   // 5) Betalinger med afvigende beløb, der endnu ikke er refunderet.
@@ -417,6 +431,10 @@ export async function koerBetalingsCron() {
   } catch (err) {
     await trinFejl("Andenchance-trinnet", err);
   }
+
+  // 10) Overvågning (F06). Kaster aldrig; et fejlet tjek logges med kilde
+  //     'cron' (kørslen markeres som fejlet).
+  resultat.overvaagning = await koerBetalingsovervaagning();
 
   // 9) Notifikationer om likes, beskeder, favoritter der slutter snart, nye
   //    auktioner fra fulgte sælgere og advarsler. Kaster aldrig.

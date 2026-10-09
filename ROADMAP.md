@@ -38,7 +38,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
   - **Valgfrit: automatisk betaling.** Brugeren kan i sine indstillinger gemme et kort og slå "Betal automatisk, når jeg vinder" til. Så trækkes kortet med det samme, når auktionen slutter. Det er et tilvalg, ikke et krav
   - Pengene ligger på BidHamrs Stripe-konto (manuelle udbetalinger), indtil køber bekræfter / 48 timer uden sag / sag er afgjort
   - Sælger oprettes som **Stripe Connect-konto** (Express), og Stripe tjekker sælgerens identitet. Pengene overføres minus sælgergebyr, og Stripe udbetaler til sælgerens bank
-  - Opsætning: **BESLUTTET – "separate charges and transfers"** med manuelle udbetalinger. Køber betaler til BidHamrs platformskonto, og pengene overføres til sælgerens Connect-konto, når de frigives. Bekræftes med Stripes team, når de svarer, men der bygges videre på det nu
+  - Opsætning: **ÆNDRET 8. okt. 2026 – destination charges** (docs/BETALINGSMODEL-PLAN.md, trin 1–5 bygget 8.–9. okt.): køber betaler på sælgerens vegne, pengene står på sælgerens Connect-konto med manuel udbetaling, og BidHamr udbetaler til sælgerens bank, når handlen er helt færdig. Den gamle model ("separate charges and transfers") er fjernet
 - [x] **Testmiljøet flyttes til Stripe**: al test af penge sker i **Stripes testmiljø** (test mode), ikke med testsaldoer i BidHamrs egen database
   - Opret Stripe-testnøgler (`sk_test_` / `pk_test_`) på Filips Stripe-konto og læg dem i Vercel + `.env.local` i stedet for de gamle nøgler
   - Test med Stripes testkort (fx 4242 4242 4242 4242) og testkort, der bliver afvist eller kræver 3D Secure

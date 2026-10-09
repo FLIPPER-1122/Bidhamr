@@ -1,52 +1,40 @@
-// Betalingsmodel trin 1: gør alle eksisterende sælgerkonti (betalingsprofiler.
-// stripe_account_id) klar til den nye model med sikrKontoopsaetning
-// (src/lib/betaling/connect.ts) og spejler de nye felter (connect_charges_
-// enabled, connect_kort_aktiv, connect_betalingsmetoder, connect_udbetalings-
-// plan, connect_plan_ok) i databasen.
+// Betalingsmodel (destination): gør alle eksisterende sælgerkonti
+// (betalingsprofiler.stripe_account_id) klar til betaling på sælgerens vegne
+// med sikrKontoopsaetning (src/lib/betaling/connect.ts) og spejler de nye
+// felter (connect_charges_enabled, connect_kort_aktiv, connect_betalings-
+// metoder, connect_udbetalingsplan, connect_plan_ok) i databasen.
+//
+// Skal køres FØR 20261011050000_betalingsmodel_oprydning.sql (trin 5): den
+// sætter databasen til destination, og vagten (betalingsmodel_backfill_mangler)
+// afviser det, hvis en aktiv sælgerkonto ikke er spejlet. Kan køres igen når
+// som helst (en kørsel mere ændrer intet). Rækkefølge: docs/GO-LIVE-STRIPE.md.
 //
 // Kørsel (Node 24 kører TypeScript direkte):
 //   node scripts/betalingsmodel-backfill.mts                # prøvekørsel, ændrer intet
 //   node scripts/betalingsmodel-backfill.mts --udfoer       # udfør
-//   node scripts/betalingsmodel-backfill.mts --env .env.local --udfoer
-//   node scripts/betalingsmodel-backfill.mts --udfoer --capabilities   # se nedenfor
+//   node scripts/betalingsmodel-backfill.mts --env .env.production.local --produktion --udfoer
 //
-// Hvad --udfoer ÆNDRER hos Stripe (kun det, der mangler - en kørsel mere
-// ændrer intet):
-//   separat (i dag), uden --capabilities:
-//     - business_profile.mcc 5931, hvis kontoen ingen MCC har (en anden MCC
-//       ændres ikke - kun advarsel)
-//     - business_profile.url (https://bidhamr.dk), hvis den mangler
-//     - business_profile.product_description, hvis både den og url mangler
-//     - settings.payments.statement_descriptor "BIDHAMR.DK", hvis den mangler
-//     Udbetalingsindstillingerne (plan, debit_negative_balances) og
-//     capabilities røres IKKE. Disse felter kræver ingen nye oplysninger fra
-//     sælgeren, så overførsler/udbetalinger påvirkes ikke.
-//   separat med --capabilities: også card_payments og mobilepay_payments
-//     (se advarslen nedenfor).
-//   destination (begge flag): det hele - capabilities, debit_negative_
-//     balances = true og manuel udbetalingsplan.
-//   business_type ændres aldrig (kun advarsel).
-// I databasen (alle modeller): spejlet (connect_charges_enabled,
-// connect_kort_aktiv, connect_betalingsmetoder, connect_udbetalingsplan,
-// connect_plan_ok) for hver konto. Databasen kan først sættes til
-// 'destination', når alle aktive konti er spejlet (vagt i 20261011010000).
-// Rækkefølge ved skift: docs/GO-LIVE-STRIPE.md.
+// Hvad --udfoer ÆNDRER hos Stripe (kun det, der mangler):
+//   - capabilities card_payments, transfers og mobilepay_payments
+//   - debit_negative_balances = true og MANUEL udbetalingsplan (BidHamr
+//     udbetaler først, når handlen er helt færdig)
+//   - business_profile.mcc 5931, hvis kontoen ingen MCC har (en anden MCC
+//     ændres ikke - kun advarsel), url og beskrivelse, hvis de mangler
+//   - statement descriptor "BIDHAMR.DK", hvis den mangler
+//   - business_type ændres aldrig (kun advarsel)
+// Verificeret 8. okt. 2026: mangler en konto oplysninger til card_payments
+// (fx telefon, nationalitet), bliver overførsler/udbetalinger inaktive, indtil
+// sælgeren har gjort onboardingen færdig - giv sælgerne besked først.
+// I databasen: spejlet for hver konto.
 //
 // Sikringer:
 //   - Kun Stripes TESTnøgle (sk_test_/rk_test_) indtil fase 6. Live afvises.
 //   - Databasens stripe_tilstand skal være 'test'.
 //   - Produktionsdatabasen (lkifkrexeldimmghnsie) kræver også --produktion
 //     (og Filips "ja").
-//   - Manuel udbetalingsplan sættes KUN, når både STRIPE_BETALINGSMODEL og
-//     databasens stripe_tilstand.betalingsmodel er 'destination' (samme regel
-//     som src/lib/betaling/model.ts). Med 'separat' udbetaler Stripe stadig
-//     automatisk til sælgerens bank.
-//   - Nye capabilities (card_payments, mobilepay_payments) anmodes med
-//     destination - med 'separat' KUN med --capabilities. Verificeret 8. okt.
-//     2026: mangler kontoen oplysninger til card_payments (fx telefon,
-//     nationalitet), bliver transfers og udbetalinger STRAKS inaktive
-//     (requirements.past_due), indtil sælgeren har gjort onboardingen færdig.
 //   - Nøgler skrives aldrig ud.
+//   - En konto, Stripe ikke kender (fx falske testdata), giver FEJL og
+//     springes over - den skal frakobles/nulstilles i databasen først.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -101,12 +89,9 @@ const { data: tilstand, error: tFejl } = await db
   .maybeSingle<{ tilstand: string; betalingsmodel: string }>();
 if (tFejl || !tilstand) stop(`stripe_tilstand kunne ikke læses (er migrationen 20261011010000 kørt?): ${tFejl?.message ?? "ingen række"}`);
 if (tilstand.tilstand !== "test") stop(`Databasens Stripe-tilstand er '${tilstand.tilstand}', ikke 'test'.`);
-const manuelPlan =
-  (process.env.STRIPE_BETALINGSMODEL ?? "").trim().toLowerCase() === "destination" &&
-  tilstand.betalingsmodel === "destination";
 
 console.log(
-  `Database: ${ref}  Stripe: test  Betalingsmodel: ${manuelPlan ? "destination (manuel plan)" : "separat (planen røres ikke)"}  ${udfoer ? "UDFØRER" : "PRØVEKØRSEL"}`,
+  `Database: ${ref}  Stripe: test  Databasens betalingsmodel: ${tilstand.betalingsmodel}  ${udfoer ? "UDFØRER" : "PRØVEKØRSEL"}`,
 );
 
 const { data: profiler, error: pFejl } = await db
@@ -131,8 +116,6 @@ for (const p of profiler ?? []) {
   try {
     const r = await sikrKontoopsaetning(stripe, acct, {
       erFirma: kontoType.get(p.user_id as string) === "erhverv",
-      manuelPlan,
-      capabilities: manuelPlan || args.includes("--capabilities"),
       url: "https://bidhamr.dk",
       kunVis: !udfoer,
     });
@@ -147,9 +130,22 @@ for (const p of profiler ?? []) {
         (r.konto.requirements?.disabled_reason ? `  disabled_reason: ${r.konto.requirements.disabled_reason}` : ""),
     );
     if (udfoer) {
+      // Hele spejlet (som spejlConnectKonto): også status for overførsler,
+      // udbetalinger og manglende oplysninger - en ny capability kan gøre
+      // dem inaktive, og databasen må ikke stå med en gammel status.
+      const krav = r.konto.requirements;
       const { error } = await db
         .from("betalingsprofiler")
-        .update({ ...s, opdateret: new Date().toISOString() })
+        .update({
+          ...s,
+          connect_detaljer_indsendt: !!r.konto.details_submitted,
+          connect_overfoersler_aktiv: r.konto.capabilities?.transfers === "active",
+          connect_udbetalinger_aktiv: !!r.konto.payouts_enabled,
+          connect_mangler_nu: [...(krav?.currently_due ?? [])].sort(),
+          connect_mangler_forfaldne: [...(krav?.past_due ?? [])].sort(),
+          connect_spaerret_aarsag: krav?.disabled_reason ?? null,
+          opdateret: new Date().toISOString(),
+        })
         .eq("user_id", p.user_id);
       if (error) throw new Error(`spejl i databasen: ${error.message}`);
     }
@@ -158,7 +154,11 @@ for (const p of profiler ?? []) {
     fejl++;
     // Stripes fejltekster kan indeholde en maskeret nøgle - skrives aldrig ud.
     const tekst = String((err as Error)?.message ?? err).replace(/\b(sk|rk|pk)_(test|live)_[A-Za-z0-9*]+/g, "<nøgle>");
-    console.log(`- ${acct}: FEJL ${tekst}`);
+    const ukendt = (err as { code?: string })?.code === "resource_missing" || /No such account/i.test(tekst);
+    console.log(
+      `- ${acct}: FEJL ${tekst}` +
+        (ukendt ? "\n    Stripe kender ikke kontoen - frakobl/nulstil den i databasen (fx admin \"Nulstil udbetalingskonto\"), før trin 5 køres." : ""),
+    );
   }
 }
 console.log(`Færdig: ${ok} ok, ${fejl} fejl.`);

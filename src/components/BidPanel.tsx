@@ -55,6 +55,7 @@ export default function BidPanel({
   pauseResterende = null,
   erhvervAuktion = false,
   erFirmakonto = false,
+  saelgerFrosset = false,
 }: {
   auktionId: string;
   initialNuværendeBud: number;
@@ -92,6 +93,9 @@ export default function BidPanel({
   // Den indloggede er en firmakonto: firmakonti kan kun sælge, ikke byde
   // (databasen afviser det også, BHE01).
   erFirmakonto?: boolean;
+  // Sælgerens konto er frosset (Stripe godkendte ikke udbetalingskontoen i
+  // tide - 20261011020000). Databasen afviser bud (BHU03).
+  saelgerFrosset?: boolean;
 }) {
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
   const [harBud, setHarBud] = useState(initialHarBud);
@@ -494,7 +498,7 @@ export default function BidPanel({
 
   const visteBud = visAlle ? budListe : budListe.slice(0, VIST_SOM_STANDARD);
   const visningsBud = harBud ? nuværendeBud : startpris;
-  const kanByde = auktionStatus === "aktiv" && !erSælger && !erFirmakonto;
+  const kanByde = auktionStatus === "aktiv" && !erSælger && !erFirmakonto && !saelgerFrosset;
   // Afsluttet eller annulleret: ingen opfordringer til at byde. En skjult
   // eller pauset auktion kan blive aktiv igen og tæller ikke som slut.
   const auktionSlut = auktionStatus !== "aktiv" && auktionStatus !== "skjult";
@@ -642,6 +646,13 @@ export default function BidPanel({
         <p className="mt-4 rounded-xl bg-groen-lys px-4 py-3 text-center text-sm text-groen-mork">
           Det er din egen auktion – du kan ikke byde på den.
         </p>
+      ) : saelgerFrosset ? (
+        <div role="note" className="mt-4 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-4 text-advarsel-tekst">
+          <p className="text-[17px] font-semibold">Der kan ikke bydes lige nu</p>
+          <p className="mt-1 text-base">
+            Sælgerens konto er sat på pause, til vores betalingspartner Stripe har godkendt den. Du kan ikke byde lige nu.
+          </p>
+        </div>
       ) : erFirmakonto ? (
         <div role="note" className="mt-4 rounded-xl border border-info-kant bg-info-bg px-4 py-4 text-info-tekst">
           <p className="text-[17px] font-semibold">{ERHVERV_BIDPANEL.firmakontoTitel}</p>

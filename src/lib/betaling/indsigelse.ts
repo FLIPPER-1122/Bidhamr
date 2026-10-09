@@ -22,7 +22,7 @@ import "server-only";
 // trykke "Hent beløbet fra sælgeren". Sælgerens saldo må aldrig blive
 // negativ af BidHamrs tilbageførsel: saldoen tjekkes først.
 //
-// I separat-modellen ændres intet (alt her kræver pengemodel 'destination').
+// Kun destination (den eneste model, trin 5): alt her kræver pengemodel 'destination'.
 
 import Stripe from "stripe";
 import { getStripe, StripeTilstandFejl } from "@/lib/stripe";

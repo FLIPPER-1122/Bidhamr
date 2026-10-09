@@ -6,10 +6,9 @@ import {
   annullerBetaling,
   hentBetalingForHandel,
   indsigelseBlokerer,
-  proevOverfoerselIgen,
   refunderBetaling,
 } from "@/lib/betaling/stripeBetaling";
-import { erSendtTilSaelger, pengeTilSaelger } from "@/lib/betaling/udbetaling";
+import { erSendtTilSaelger, pengeTilSaelger, proevUdbetalingIgen } from "@/lib/betaling/udbetaling";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
@@ -894,15 +893,14 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
   let overfoersel: string;
   try {
     const r = await pengeTilSaelger(betaling.id);
-    overfoersel =
-      r === "overfoert" || r === "allerede_overfoert"
-        ? " (overført via Stripe)"
-        : r === "udbetalt" || r === "allerede_udbetalt"
-          ? " (udbetalt til sælgers bank via Stripe)"
-          : ` (overførsel venter: ${r})`;
+    overfoersel = erSendtTilSaelger(r)
+      ? " (udbetalt til sælgers bank via Stripe)"
+      : r === "gammel_model"
+        ? ` (${OVERFOERSEL_TEKST.gammel_model})`
+        : ` (udbetaling venter: ${r})`;
   } catch (err) {
-    console.error("Overførsel efter admin-frigivelse fejlede (prøves igen af cron):", err);
-    overfoersel = " (overførsel fejlede - prøves igen automatisk)";
+    console.error("Udbetaling efter admin-frigivelse fejlede (prøves igen af cron):", err);
+    overfoersel = " (udbetaling fejlede - prøves igen automatisk)";
   }
 
   const beloeb = `Frigivet til sælger${overfoersel}`;
@@ -1197,23 +1195,19 @@ export async function hentAntalUbetalte() {
   });
 }
 
-// --- Overførsel til sælger ------------------------------------------------------
-// Admin: prøv en fejlet overførsel igen. Giver nye forsøg (grænsen hæves -
-// tælleren nulstilles ikke, da den indgår i Stripes idempotency key) og prøver
-// med det samme. Afvises for refunderede, ikke-frigivne eller indsigelses-
-// blokerede betalinger.
+// --- Udbetaling til sælger ------------------------------------------------------
+// Admin: prøv en fejlet/ventende udbetaling til sælgerens bank igen
+// (proevUdbetalingIgen - payout fra sælgerens Stripe-konto). Afvises for
+// refunderede, ikke-frigivne eller indsigelsesblokerede betalinger.
 const OVERFOERSEL_TEKST: Record<string, string> = {
-  overfoert: "Pengene er overført til sælger.",
-  allerede_overfoert: "Pengene var allerede overført til sælger.",
-  afventer_saelgerkonto:
-    "Overførslen afventer sælgerens udbetalingskonto. Sælger har fået en mail, og betalingen forbliver markeret.",
-  saelgerkonto_frakoblet:
-    "Sælger har lukket eller frakoblet sin udbetalingskonto hos Stripe. Der kan ikke overføres, før sagen er løst med sælgeren.",
-  indsigelse: "Der er en åben indsigelse hos køberens bank. Overførslen afventer indsigelsen.",
-  sag_aaben: "Handlen har en åben sag. Overførslen afventer, at sagen afgøres.",
-  annulleret: "Handlen er annulleret og kan ikke overføres.",
-  intet_at_overfoere: "Der er intet at overføre til sælger.",
-  // Destination (trin 3): payout fra sælgerens Stripe-konto til banken.
+  indsigelse: "Der er en åben indsigelse hos køberens bank. Udbetalingen afventer indsigelsen.",
+  sag_aaben: "Handlen har en åben sag. Udbetalingen afventer, at sagen afgøres.",
+  annulleret: "Handlen er annulleret, og der udbetales ikke.",
+  gammel_model: "Betalingen er fra den gamle betalingsmodel og kan ikke udbetales automatisk. Håndtér den manuelt i Stripe.",
+  venter_konto_frakoblet:
+    "Sælger har lukket eller frakoblet sin udbetalingskonto hos Stripe. Der kan ikke udbetales, før sagen er løst med sælgeren.",
+  venter_konto_skiftet:
+    "Sælgerens udbetalingskonto er skiftet. Pengene står på den gamle Stripe-konto - kontrollér kontoen i Stripe.",
   udbetalt: "Udbetalingen til sælgerens bank er sendt via Stripe.",
   allerede_udbetalt: "Udbetalingen til sælgerens bank var allerede sendt.",
   venter_midler_ikke_tilgaengelige: "Pengene er endnu ikke tilgængelige på sælgerens Stripe-konto. Udbetalingen sendes automatisk, når de er.",
@@ -1244,9 +1238,7 @@ export async function prøvOverfoerselIgen(tradeId: string) {
 
     const betaling = await hentBetalingForHandel(tradeId);
     if (!betaling) throw new BrugerFejl("Handlen har ingen betaling.");
-    if (betaling.stripe_transfer_id) {
-      return { ok: true, overfoert: true, besked: OVERFOERSEL_TEKST.allerede_overfoert };
-    }
+    if (betaling.pengemodel !== "destination") throw new BrugerFejl(OVERFOERSEL_TEKST.gammel_model);
     if (betaling.saelger_udbetaling_id) {
       return { ok: true, overfoert: true, besked: OVERFOERSEL_TEKST.allerede_udbetalt };
     }
@@ -1254,16 +1246,16 @@ export async function prøvOverfoerselIgen(tradeId: string) {
 
     let r: string;
     try {
-      r = await proevOverfoerselIgen(betaling.id);
+      r = await proevUdbetalingIgen(betaling.id);
     } catch (err) {
-      console.error("Admin: overførsel fejlede igen:", tradeId, err);
+      console.error("Admin: udbetaling fejlede igen:", tradeId, err);
       throw new BrugerFejl(
-        "Overførslen fejlede igen hos Stripe. Betalingen forbliver markeret - se fejlen på betalingen.",
+        "Udbetalingen fejlede igen hos Stripe. Betalingen forbliver markeret - se fejlen på betalingen.",
       );
     }
-    if (r === "ikke_tilladt" || r === "refunderet" || r === "ikke_klar") {
+    if (r === "ikke_tilladt" || r === "ikke_klar") {
       throw new BrugerFejl(
-        "Overførslen kan ikke prøves igen: betalingen er ikke frigivet, er refunderet, har en indsigelse, eller handlen er annulleret eller har en åben sag.",
+        "Udbetalingen kan ikke prøves igen: betalingen er ikke frigivet, er refunderet, har en indsigelse, eller handlen er annulleret eller har en åben sag.",
       );
     }
 
@@ -1274,7 +1266,7 @@ export async function prøvOverfoerselIgen(tradeId: string) {
       maal_type: "handel",
       maal_id: tradeId,
       bruger_id: betaling.seller_id,
-      aarsag: `Overførsel prøvet igen: ${r}`,
+      aarsag: `Udbetaling prøvet igen: ${r}`,
     });
     revaliderSag(tradeId);
     revalidatePath("/admin/betalinger");
@@ -1283,7 +1275,7 @@ export async function prøvOverfoerselIgen(tradeId: string) {
       overfoert,
       besked:
         OVERFOERSEL_TEKST[r] ??
-        "Overførslen blev ikke gennemført. Betalingen forbliver markeret.",
+        "Udbetalingen blev ikke gennemført. Betalingen forbliver markeret.",
     };
   });
 }

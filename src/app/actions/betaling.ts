@@ -13,7 +13,6 @@ import { logDriftFejl } from "@/lib/drift";
 import { fjernGemtKortForBruger, saetAutobetalingForBruger } from "@/lib/betaling/kort";
 import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
-import { aktivBetalingsmodel } from "@/lib/betaling/model";
 import {
   BetalingsFejl,
   BetalingVenterFejl,
@@ -28,8 +27,6 @@ import {
   spejlConnectKonto,
   spejlPaymentIntent,
   stripeOversigtLink,
-  hentOverfoersler,
-  type Overfoersel,
 } from "@/lib/betaling/stripeBetaling";
 
 type Fejl = { fejl: string };
@@ -183,16 +180,17 @@ export async function hentBetalingsstatus(
 // intet, der påvirker beløbet.
 export async function startBetaling(
   handelId: string,
-): Promise<{ ok: true; clientSecret: string; totalOere: number } | Fejl> {
+): Promise<{ ok: true; clientSecret: string; totalOere: number } | (Fejl & { betalt?: true })> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
 
   try {
     const b = await hentBetalingForHandel(handelId);
     if (!b || b.buyer_id !== user.id) return { fejl: "Betalingen findes ikke." };
-    if (b.status === "betalt") return { fejl: "Handlen er allerede betalt." };
+    // Fx en gammel fane: siden genindlæses, så den nye status vises.
+    if (b.status === "betalt") return { fejl: "Handlen er allerede betalt.", betalt: true };
     if (b.status === "behandles") {
-      return { fejl: "Din betaling behandles. Du hører fra os, når den er gennemført." };
+      return { fejl: "Din betaling behandles. Du hører fra os, når den er gennemført.", betalt: true };
     }
     if (b.status !== "afventer") return { fejl: "Handlen kan ikke længere betales." };
     if (b.venter_paa_saelgerkonto_kl) return { fejl: VENTER_TEKST };
@@ -203,7 +201,7 @@ export async function startBetaling(
     const pi = await sikrPaymentIntent(b);
     if (pi.status === "succeeded" || pi.status === "processing") {
       await spejlPaymentIntent(pi);
-      return { fejl: "Betalingen er allerede i gang eller gennemført." };
+      return { fejl: "Handlen er allerede betalt.", betalt: true };
     }
     if (pi.status === "canceled") return { fejl: "Handlen kan ikke længere betales." };
     if (pi.amount !== Number(b.total_oere)) return { fejl: GENERISK };
@@ -239,10 +237,7 @@ export type Betalingsindstillinger = {
     // sætte varer til salg, før Stripe har godkendt kontoen (betalingsmodel
     // destination, 20261011020000).
     frosset: boolean;
-    // Betalingsmodel destination (trin 3): BidHamr sender pengene fra
-    // sælgerens Stripe-konto til banken (manuel udbetalingsplan), og en
-    // udbetaling er fejlet - sælgeren skal rette bankkontoen hos Stripe.
-    bidhamrUdbetaler: boolean;
+    // En udbetaling til banken er fejlet - sælgeren skal rette bankkontoen hos Stripe.
     venterPaaBank: boolean;
   };
 };
@@ -272,7 +267,6 @@ export async function hentBetalingsindstillinger(): Promise<
         afvist: !!p?.connect_spaerret_aarsag?.startsWith("rejected."),
         frakoblet: !!p?.connect_frakoblet_kl,
         frosset: !!p?.saelger_frosset_kl,
-        bidhamrUdbetaler: (await aktivBetalingsmodel()) === "destination",
         venterPaaBank: !!p?.connect_udbetaling_fejlet_kl,
       },
     };
@@ -292,16 +286,34 @@ export async function startGemKort(): Promise<{ ok: true; clientSecret: string }
     const stripe = getStripe();
 
     // Genbrug en åben SetupIntent for kunden, så gentagne klik ikke opretter
-    // en ny hver gang.
-    const aabne = await stripe.setupIntents.list({ customer: kunde, limit: 10 });
-    const aaben = aabne.data.find(
-      (s) =>
-        s.usage === "off_session" &&
-        s.metadata?.bruger_id === user.id &&
-        (s.status === "requires_payment_method" ||
-          s.status === "requires_confirmation" ||
-          s.status === "requires_action"),
+    // en ny hver gang - men kun en, der er NYERE end det gemte kort og seneste
+    // "Fjern kort". En ældre ville registrerGemtKort afvise bagefter (kortet
+    // blev ikke gemt), så den annulleres, og der laves en ny.
+    const profil = await hentProfil(user.id);
+    const p2 = profil as (typeof profil & { gemt_kort_kl?: string | null; kort_fjernet_kl?: string | null }) | null;
+    const graense = Math.max(
+      ...[p2?.gemt_kort_kl, p2?.kort_fjernet_kl].map((x) => (x ? Math.floor(new Date(x).getTime() / 1000) : 0)),
     );
+    const aabne = await stripe.setupIntents.list({ customer: kunde, limit: 10 });
+    let aaben: (typeof aabne.data)[number] | undefined;
+    for (const s of aabne.data) {
+      if (
+        s.usage !== "off_session" ||
+        s.metadata?.bruger_id !== user.id ||
+        !(s.status === "requires_payment_method" || s.status === "requires_confirmation" || s.status === "requires_action")
+      ) {
+        continue;
+      }
+      if (s.created <= graense) {
+        try {
+          await stripe.setupIntents.cancel(s.id);
+        } catch (err) {
+          console.warn("Kunne ikke annullere gammel SetupIntent:", s.id, err instanceof Error ? err.message : err);
+        }
+        continue;
+      }
+      aaben ??= s;
+    }
     if (aaben?.client_secret) return { ok: true, clientSecret: aaben.client_secret };
 
     // Idempotency key bygget på kundens seneste SetupIntent: samtidige kald
@@ -345,7 +357,12 @@ export async function bekraeftGemtKort(
       return { fejl: "Ugyldig forespørgsel." };
     }
     if (si.status !== "succeeded") return { fejl: "Kortet blev ikke gemt." };
-    await registrerGemtKort(si);
+    if (!(await registrerGemtKort(si))) {
+      // Afvist (fx et forsinket svar efter "Fjern kort", eller kortet er
+      // fjernet hos Stripe i mellemtiden).
+      revalidatePath("/konto");
+      return { fejl: "Kortet blev ikke gemt. Prøv at tilføje det igen." };
+    }
     revalidatePath("/konto");
     return { ok: true };
   } catch (err) {
@@ -441,23 +458,6 @@ export async function aabnStripeOversigt(): Promise<{ ok: true; url: string } | 
     return { ok: true, url };
   } catch (err) {
     console.error("aabnStripeOversigt fejlede:", err);
-    return { fejl: GENERISK };
-  }
-}
-
-export type { Overfoersel };
-
-// Sælgerens egne overførsler fra handler på BidHamr til udbetalingskontoen
-// hos Stripe (vare, dato, beløb). Kun egne - id'et kommer fra sessionen.
-export async function hentMineOverfoersler(): Promise<
-  { ok: true; overfoersler: Overfoersel[] } | Fejl
-> {
-  const user = await indloggetBruger();
-  if (!user) return { fejl: "Du skal være logget ind." };
-  try {
-    return { ok: true, overfoersler: await hentOverfoersler(user.id) };
-  } catch (err) {
-    console.error("hentMineOverfoersler fejlede:", err);
     return { fejl: GENERISK };
   }
 }

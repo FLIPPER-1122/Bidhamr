@@ -34,6 +34,8 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
         connect_overfoersler_aktiv: boolean;
         connect_frakoblet_kl?: string | null;
         connect_spaerret_aarsag?: string | null;
+        connect_betalingsmetoder?: Record<string, string> | null;
+        saelger_frosset_kl?: string | null;
       }>(),
   ]);
   const erFirma = kontoType === "erhverv";
@@ -47,7 +49,13 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
   // Stripe har afvist kontoen (disabled_reason rejected.*): den kan aldrig
   // modtage penge, så der kan ikke sælges (samme regel i databasen).
   const afvist = !!profil?.connect_spaerret_aarsag?.startsWith("rejected.");
-  const kanSaelge = harKonto && !!profil?.connect_detaljer_indsendt && !frakoblet && !afvist;
+  // Frosset (kontoen blev ikke godkendt i tide - 20261011020000, BHU02).
+  const frosset = !!profil?.saelger_frosset_kl;
+  // Databasen kræver også, at kortbetaling er anmodet på kontoen
+  // (har_udbetalingskonto, 20261011050000) - ellers skal opsætningen
+  // fortsættes hos Stripe.
+  const kortAnmodet = !!profil?.connect_betalingsmetoder && "card_payments" in profil.connect_betalingsmetoder;
+  const kanSaelge = harKonto && !!profil?.connect_detaljer_indsendt && kortAnmodet && !frakoblet && !afvist && !frosset;
   const aktiv = kanSaelge && !!profil?.connect_overfoersler_aktiv;
 
   if (firmaSpaerret) {
@@ -69,6 +77,18 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
       <p className="rounded-lg border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
         Din udbetalingskonto hos vores betalingspartner Stripe er lukket, så du kan ikke sætte
         varer til salg lige nu. Skriv til support@bidhamr.dk, så hjælper vi dig.
+      </p>
+    );
+  }
+  if (frosset) {
+    return (
+      <p className="rounded-lg border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+        Din udbetalingskonto er ikke godkendt af vores betalingspartner Stripe, så du kan ikke sætte
+        varer til salg lige nu. Gør opsætningen færdig under{" "}
+        <Link href="/konto#udbetaling" className="font-medium underline">
+          Min konto
+        </Link>
+        . Du kan sætte varer til salg igen, når Stripe har godkendt kontoen.
       </p>
     );
   }

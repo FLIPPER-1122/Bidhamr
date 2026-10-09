@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -9,20 +8,11 @@ import {
   startSaelgerOnboarding,
   type Bankudbetaling,
   type Betalingsindstillinger,
-  type Overfoersel,
 } from "@/app/actions/betaling";
 import { FejlBoks } from "@/components/betaling/FejlBoks";
 import { kroner } from "@/lib/kroner";
 
-// Overførsler, der ikke længere står hos sælgeren, vises med status.
-const OVERFOERSEL_STATUS: Record<Overfoersel["status"], string> = {
-  overfoert: "Overført",
-  tilbagefoert: "Tilbageført",
-  refunderet: "Pengene er sendt tilbage til køberen",
-  indsigelse: "Indsigelse fra køberens bank",
-};
-
-// Udbetalinger til banken (betalingsmodel destination).
+// Udbetalinger fra sælgerens Stripe-konto til banken.
 const BANK_STATUS: Record<Bankudbetaling["status"], { tekst: string; stil: string }> = {
   paa_vej: { tekst: "På vej til din bank", stil: "text-info-tekst" },
   udbetalt: { tekst: "Sendt til din bank", stil: "text-groen-mork" },
@@ -43,15 +33,11 @@ function datoTekst(iso: string) {
 export default function KontoUdbetaling({
   saelger,
   erRetur,
-  overfoersler,
   bankudbetalinger = [],
 }: {
   saelger: Betalingsindstillinger["saelger"];
   erRetur: boolean;
-  // null = kunne ikke hentes.
-  overfoersler: Overfoersel[] | null;
-  // Udbetalinger fra din Stripe-konto til banken (destination). null = kunne
-  // ikke hentes.
+  // Udbetalinger fra din Stripe-konto til banken. null = kunne ikke hentes.
   bankudbetalinger?: Bankudbetaling[] | null;
 }) {
   const router = useRouter();
@@ -146,6 +132,17 @@ export default function KontoUdbetaling({
         </p>
       )}
 
+      {saelger.frosset && !lukket && (
+        <div role="alert" className="rounded-xl border border-advarsel-kant bg-advarsel-bg p-4 text-sm text-advarsel-tekst">
+          <p className="font-semibold">Dine auktioner og bud er sat på pause</p>
+          <p className="mt-1">
+            Dine auktioner og bud er sat på pause, til Stripe har godkendt din konto. Gør
+            opsætningen færdig hos Stripe med knappen ovenfor - pausen ophæves automatisk, når
+            kontoen er godkendt.
+          </p>
+        </div>
+      )}
+
       {saelger.venterPaaBank && !lukket && (
         <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
           <p className="font-semibold">Udbetalingen til din bank fejlede</p>
@@ -160,9 +157,8 @@ export default function KontoUdbetaling({
       {visOversigt && (
         <div className="space-y-2 border-t border-kant pt-4">
           <p className="text-sm text-tekst-daempet">
-            {saelger.bidhamrUdbetaler
-              ? "Når en handel er helt færdig, sender vores betalingspartner Stripe pengene til din bank. Hos Stripe kan du se dine udbetalinger og rette din bankkonto."
-              : "Stripe udbetaler automatisk pengene fra din udbetalingskonto til din bank. Hos Stripe kan du se dine udbetalinger, hvornår pengene kommer, og rette din bankkonto."}
+            Når en handel er helt færdig, sender vores betalingspartner Stripe pengene til din bank.
+            Hos Stripe kan du se dine udbetalinger og rette din bankkonto.
           </p>
           <button
             type="button"
@@ -175,7 +171,7 @@ export default function KontoUdbetaling({
         </div>
       )}
 
-      {(saelger.bidhamrUdbetaler || (bankudbetalinger?.length ?? 0) > 0) && bankudbetalinger !== undefined && (
+      {(saelger.harKonto || (bankudbetalinger?.length ?? 0) > 0) && bankudbetalinger !== undefined && (
         <div className="border-t border-kant pt-4">
           <h3 className="text-sm font-semibold text-tekst">Udbetalt til din bank</h3>
           {bankudbetalinger === null ? (
@@ -208,53 +204,6 @@ export default function KontoUdbetaling({
                 </li>
               ))}
             </ul>
-          )}
-        </div>
-      )}
-
-      {(saelger.harKonto || (overfoersler?.length ?? 0) > 0) && (
-        <div className="border-t border-kant pt-4">
-          <h3 className="text-sm font-semibold text-tekst">Overført fra dine salg</h3>
-          {overfoersler === null ? (
-            <p className="mt-2 text-sm text-tekst-daempet">Dine overførsler kunne ikke hentes lige nu.</p>
-          ) : overfoersler.length === 0 ? (
-            <p className="mt-2 text-sm text-tekst-daempet">
-              Ingen overførsler endnu. Pengene overføres til din udbetalingskonto, når køberen har
-              godkendt varen, eller fristen for at oprette en sag er udløbet.
-            </p>
-          ) : (
-            <ul className="mt-2 divide-y divide-kant rounded-xl border border-kant">
-              {overfoersler.map((o) => (
-                <li key={o.handelId} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
-                  <div className="min-w-0">
-                    <Link
-                      href={`/mine-handler/${o.handelId}`}
-                      className="block truncate font-medium text-tekst hover:underline"
-                    >
-                      {o.titel}
-                    </Link>
-                    <span className="text-xs text-tekst-daempet">
-                      {datoTekst(o.overfoertKl)}
-                      {o.status !== "overfoert" && (
-                        <span className={`ml-2 font-medium ${o.status === "tilbagefoert" ? "text-fejl-tekst" : "text-tekst-daempet"}`}>{OVERFOERSEL_STATUS[o.status]}</span>
-                      )}
-                    </span>
-                  </div>
-                  <span
-                    className={`shrink-0 font-medium tabular-nums ${
-                      o.status === "tilbagefoert" ? "text-tekst-daempet line-through" : "text-tekst"
-                    }`}
-                  >
-                    {kroner(o.beloebOere)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {overfoersler && overfoersler.length > 0 && (
-            <p className="mt-2 text-xs text-tekst-daempet">
-              Beløbet er din salgspris minus sælgergebyret. Stripe sender det videre til din bank.
-            </p>
           )}
         </div>
       )}

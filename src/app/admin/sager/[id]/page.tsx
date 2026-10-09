@@ -409,7 +409,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
               <Felt navn="Status">{BETALING_STATUS[b.status] ?? b.status}</Felt>
               <Felt navn="BidHamr Beskyttelse">{jaNej(b.beskyttelse)}</Felt>
               <Felt navn="Frigivet til sælger">{jaNej(b.frigivet)}</Felt>
-              <Felt navn="Overført til sælger">{jaNej(b.overfoert)}</Felt>
+              <Felt navn="Udbetalt til sælger">{jaNej(b.overfoert)}</Felt>
               <Felt navn="Refusion anmodet">{jaNej(b.refusionAnmodet)}</Felt>
               <Felt navn="Refunderet">{jaNej(b.refunderet)}</Felt>
               {sag.kan.seBeloeb && (

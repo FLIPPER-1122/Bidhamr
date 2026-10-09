@@ -276,12 +276,12 @@ export async function bekraeftAfhentning(
 
   // Pengene overføres til sælgerens Stripe Connect-konto. Fejler det (eller
   // har sælgeren ingen aktiv konto endnu), prøver cron og account.updated-
-  // webhooken igen - frigivelsen står fast uanset. overfoerTilSaelger sender
+  // webhooken igen - frigivelsen står fast uanset. pengeTilSaelger sender
   // selv udbetalingsbeskeden til sælgeren.
   try {
     const betaling = await hentBetalingForHandel(tradeId);
     if (betaling) {
-      // Begge modeller: transfer (separat) eller payout til banken
+      // Udbetaling fra sælgerens Stripe-konto til banken
       // (destination - venter evt. 3 dage, udbetal_tidligst).
       const r = await pengeTilSaelger(betaling.id);
       if (!erSendtTilSaelger(r)) {

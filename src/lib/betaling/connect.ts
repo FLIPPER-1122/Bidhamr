@@ -1,8 +1,8 @@
-// Opsætning af sælgerens Stripe Connect Express-konto (betalingsmodel trin 1,
-// docs/BETALINGSMODEL-PLAN.md 1.1).
+// Opsætning af sælgerens Stripe Connect Express-konto (betalingsmodel
+// destination, docs/BETALINGSMODEL-PLAN.md 1.1).
 //
 // Rene funktioner uden import af server-moduler: Stripe-klienten gives med,
-// så backfill-scriptet (scripts/betalingsmodel-backfill.ts) kan bruge samme
+// så backfill-scriptet (scripts/betalingsmodel-backfill.mts) kan bruge samme
 // kode som serveren. Serveren giver altid getStripe() (med tilstandsvagten).
 //
 // Verificeret i Stripes testmiljø 8. okt. 2026 (API 2026-05-27.dahlia, DK
@@ -12,9 +12,9 @@
 // "BIDHAMR.DK" accepteres (og er allerede standard på eksisterende konti).
 // business_type ændres aldrig på en eksisterende konto - kun meldt.
 //
-// Nye konti: card_payments, mobilepay_payments, business_type 'company' og
-// manuel plan KUN med destination (nyKontoParametre). I separat oprettes
-// kontoen som før (kun transfers, individual).
+// Den gamle model (separate charges and transfers) er fjernet (trin 5): alle
+// konti sættes op til betaling på sælgerens vegne med manuel udbetalingsplan
+// - BidHamr udbetaler først, når handlen er helt færdig.
 
 import type Stripe from "stripe";
 
@@ -28,48 +28,33 @@ export function produktbeskrivelse(erFirma: boolean): string {
   return erFirma ? "Salg af brugte ting på BidHamr" : "Privat salg af brugte ting på BidHamr";
 }
 
-// Parametre til accounts.create for en ny sælgerkonto.
-//
-// destination (begge flag sat, src/lib/betaling/model.ts): kontoen oprettes
-// klar til betaling på sælgerens vegne - card_payments + transfers +
-// mobilepay_payments, business_type 'company' for firmaer, manuel
-// udbetalingsplan og debit_negative_balances.
-//
-// separat (i dag): som før - kun transfers og business_type 'individual'.
-// card_payments/mobilepay og 'company' gør onboardingen tungere (flere
-// oplysninger), og forfaldne krav til dem kan gøre transfers og udbetalinger
-// inaktive (verificeret 8. okt. 2026) - det rammer separat-modellen, som kun
-// har brug for transfers. MCC, url, beskrivelse og statement descriptor
-// sættes i begge modeller (kræver ingen ekstra oplysninger). Udbetalingsplanen
-// røres ikke i separat: Stripe udbetaler automatisk til banken
-// (spejlUdbetaling) - en manuel plan ville få sælgerens penge til at stå fast.
+// Parametre til accounts.create for en ny sælgerkonto: card_payments +
+// transfers + mobilepay_payments, business_type 'company' for firmaer, manuel
+// udbetalingsplan og debit_negative_balances, MCC, url, beskrivelse og
+// statement descriptor.
 export function nyKontoParametre(o: {
   userId: string;
   email?: string;
   erFirma: boolean;
-  destination: boolean;
   url: string;
 }): Stripe.AccountCreateParams {
-  const capabilities = o.destination ? KONTO_CAPABILITIES : (["transfers"] as const);
   return {
     type: "express",
     country: "DK",
     email: o.email,
-    business_type: o.destination && o.erFirma ? "company" : "individual",
+    business_type: o.erFirma ? "company" : "individual",
     capabilities: Object.fromEntries(
-      capabilities.map((c) => [c, { requested: true }]),
+      KONTO_CAPABILITIES.map((c) => [c, { requested: true }]),
     ) as Stripe.AccountCreateParams.Capabilities,
     business_profile: {
       mcc: BIDHAMR_MCC,
-      product_description: produktbeskrivelse(o.destination && o.erFirma),
+      product_description: produktbeskrivelse(o.erFirma),
       // Stripe afviser http- og localhost-adresser som virksomheds-URL.
       url: o.url,
     },
     settings: {
       payments: { statement_descriptor: BIDHAMR_STATEMENT_DESCRIPTOR },
-      ...(o.destination
-        ? { payouts: { debit_negative_balances: true, schedule: { interval: "manual" as const } } }
-        : {}),
+      payouts: { debit_negative_balances: true, schedule: { interval: "manual" } },
     },
     metadata: { bruger_id: o.userId },
   };
@@ -83,30 +68,22 @@ export type KontoOpsaetningResultat = {
   advarsler: string[];
 };
 
-// Gør en eksisterende sælgerkonto klar til den nye model.
-// I separat (manuelPlan og capabilities falsk) ændres KUN MCC, url,
-// product_description og statement descriptor - og kun hvis de mangler. Idempotent: kun det,
-// der mangler, sendes til Stripe; intet kald, hvis kontoen allerede er sat op.
-//   - anmoder om card_payments, transfers og mobilepay_payments (kun med
-//     capabilities: true - se nedenfor)
+// Gør en eksisterende sælgerkonto klar. Idempotent: kun det, der mangler,
+// sendes til Stripe; intet kald, hvis kontoen allerede er sat op.
+//   - anmoder om card_payments, transfers og mobilepay_payments. Verificeret
+//     8. okt. 2026: mangler kontoen oplysninger til card_payments (fx telefon,
+//     nationalitet), bliver transfers og udbetalinger inaktive, indtil
+//     sælgeren har gjort onboardingen færdig (betalinger venter imens).
 //   - business_profile: MCC, url og beskrivelse, hvis de mangler (en MCC, som
 //     sælgeren selv har valgt i onboarding, overskrives ikke - kun meldt)
 //   - statement descriptor, hvis den mangler
-//   - debit_negative_balances og manuel udbetalingsplan - KUN når manuelPlan
-//     er sand (destination). I separat røres udbetalingsindstillingerne ikke.
+//   - debit_negative_balances og manuel udbetalingsplan
 //   - business_type ændres aldrig (meldes, hvis den ikke passer til kontotypen)
 export async function sikrKontoopsaetning(
   stripe: Stripe,
   kontoId: string,
   // kunVis: beregn ændringerne uden at sende dem til Stripe (prøvekørsel).
-  // capabilities: anmod om manglende capabilities. PAS PÅ i den nuværende
-  // model (separat): verificeret i testmiljøet 8. okt. 2026 - en ny
-  // capability (card_payments) på en eksisterende konto, der mangler
-  // oplysninger (fx individual.phone/nationality), gør STRAKS transfers og
-  // udbetalinger inaktive (disabled_reason requirements.past_due), indtil
-  // sælgeren har gjort onboardingen færdig. Derfor kun med destination eller
-  // bevidst (backfill --capabilities).
-  o: { erFirma: boolean; manuelPlan: boolean; url: string; kunVis?: boolean; capabilities: boolean },
+  o: { erFirma: boolean; url: string; kunVis?: boolean },
 ): Promise<KontoOpsaetningResultat> {
   const konto = await stripe.accounts.retrieve(kontoId);
   const aendret: string[] = [];
@@ -116,10 +93,6 @@ export async function sikrKontoopsaetning(
   const caps: Record<string, { requested: true }> = {};
   for (const c of KONTO_CAPABILITIES) {
     if (!(konto.capabilities as Record<string, string | undefined> | undefined)?.[c]) {
-      if (!o.capabilities) {
-        advarsler.push(`capability ${c} mangler - ikke anmodet`);
-        continue;
-      }
       caps[c] = { requested: true };
       aendret.push(`capability ${c}`);
     }
@@ -148,14 +121,12 @@ export async function sikrKontoopsaetning(
 
   const settings: Stripe.AccountUpdateParams.Settings = {};
   const payouts: Stripe.AccountUpdateParams.Settings.Payouts = {};
-  // debit_negative_balances kun med destination (manuelPlan) - i separat
-  // røres udbetalingsindstillingerne slet ikke.
-  if (o.manuelPlan && konto.settings?.payouts?.debit_negative_balances === false) {
+  if (konto.settings?.payouts?.debit_negative_balances === false) {
     payouts.debit_negative_balances = true;
     aendret.push("debit_negative_balances");
   }
   const interval = konto.settings?.payouts?.schedule?.interval;
-  if (o.manuelPlan && interval !== "manual") {
+  if (interval !== "manual") {
     payouts.schedule = { interval: "manual" };
     aendret.push(`udbetalingsplan ${interval ?? "?"} -> manual`);
   }
