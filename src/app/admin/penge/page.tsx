@@ -10,6 +10,7 @@ import {
   type HoldtRaekke,
   type PengeHoldes,
   type PengeTal,
+  type FragtTilskud,
   type Resultat,
   type SaldoAfstemning,
   type StripeBalance,
@@ -542,6 +543,35 @@ function Holdes({ h, nu }: { h: PengeHoldes; nu: number }) {
   );
 }
 
+function Fragttilskud({ r }: { r: Resultat<FragtTilskud> }) {
+  if (!r.ok) return <Fejlboks tekst={r.fejl} />;
+  const d = r.data;
+  return (
+    <Sektion
+      titel="Fragttilskud"
+      note="Forsendelser oprettet i perioden (ikke annullerede). Tilskud = DAO's forventede pris inkl. moms minus det, køberne har betalt i fragt."
+    >
+      <Linje label="Købere har betalt i fragt" antal={d.antal} vaerdi={kr(d.koeber_betalt_oere)} />
+      <Linje label="Forventet pris hos DAO (ekskl. moms)" vaerdi={kr(d.forventet_kost_ex_moms_oere)} />
+      <Linje label="Forventet pris hos DAO (inkl. moms)" vaerdi={kr(d.forventet_kost_inkl_moms_oere)} />
+      {d.fragtfirma_pris_inkl_moms_oere > 0 && (
+        <Linje label="Pris oplyst af Shipmondo (inkl. moms)" vaerdi={kr(d.fragtfirma_pris_inkl_moms_oere)} />
+      )}
+      <Linje
+        label="BidHamrs fragttilskud"
+        vaerdi={kr(d.tilskud_inkl_moms_oere)}
+        fremhaev
+        tone={d.tilskud_inkl_moms_oere > 0 ? "roed" : "groen"}
+      />
+      {d.uden_kostpris > 0 && (
+        <p className="pb-1 text-xs text-neutral-500">
+          {d.uden_kostpris} forsendelser har ingen forventet pris og tæller ikke med i tilskuddet.
+        </p>
+      )}
+    </Sektion>
+  );
+}
+
 // ------------------------------------------------------------ side
 
 export default async function AdminPenge({
@@ -614,6 +644,8 @@ export default async function AdminPenge({
           <Pengestroem t={t} />
         </div>
       )}
+
+      <Fragttilskud r={o.fragtTilskud} />
 
       <Afstemning tal={o.tal} saldo={o.saldo} balance={o.balance} bevaegelser={o.bevaegelser} />
 
