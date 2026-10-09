@@ -26,6 +26,23 @@ const feltKlasse = (fejl: boolean) =>
 
 const MAKS_LABELS = 2;
 
+type FeltFejl = Partial<Record<keyof Afsender, string>>;
+
+// Egen dansk validering (formularen har noValidate - ingen browser-bobler).
+// Serveren validerer igen (valideerAdresse).
+function validerAfsender(a: Afsender): FeltFejl {
+  const f: FeltFejl = {};
+  if (a.navn.trim().length < 2) f.navn = "Skriv dit fulde navn.";
+  if (a.adresse.trim().length < 3) f.adresse = "Skriv vejnavn og husnummer.";
+  if (!slaaPostnummerOp(a.postnummer)) f.postnummer = "Skriv et gyldigt dansk postnummer (4 cifre).";
+  if (!a.by.trim()) f.by = "Skriv byen.";
+  const tlf = a.telefon.replace(/[\s().-]/g, "");
+  if (tlf && !/^(\d{8}|(\+|00)\d{8,14})$/.test(tlf)) {
+    f.telefon = "Skriv et gyldigt telefonnummer (8 cifre), eller lad feltet være tomt.";
+  }
+  return f;
+}
+
 export default function FragtlabelBoks({
   tradeId,
   forsendelse,
@@ -50,6 +67,7 @@ export default function FragtlabelBoks({
   const router = useRouter();
   const [a, setA] = useState<Afsender>(afsender);
   const [fejl, setFejl] = useState<string | null>(null);
+  const [feltFejl, setFeltFejl] = useState<FeltFejl>({});
   const [arbejder, setArbejder] = useState(false);
   const laas = useRef(false);
   const fejlRef = useRef<HTMLDivElement>(null);
@@ -63,6 +81,7 @@ export default function FragtlabelBoks({
       }
       return ny;
     });
+    if (feltFejl[k]) setFeltFejl((f) => ({ ...f, [k]: undefined }));
   }
 
   async function lav(medAdresse: boolean) {
@@ -267,8 +286,16 @@ export default function FragtlabelBoks({
       )}
 
       <form
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
+          const f = validerAfsender(a);
+          setFeltFejl(f);
+          const foerste = (Object.keys(f) as (keyof Afsender)[])[0];
+          if (foerste) {
+            document.getElementById(`${id}-${foerste}`)?.focus();
+            return;
+          }
           void lav(true);
         }}
         className="mt-5"
@@ -276,29 +303,27 @@ export default function FragtlabelBoks({
         <fieldset className="min-w-0" disabled={arbejder}>
           <legend className="mb-2 text-sm font-medium text-tekst">Din adresse (afsender)</legend>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Felt id={`${id}-navn`} label="Fulde navn" className="sm:col-span-2">
-              <input id={`${id}-navn`} required minLength={2} maxLength={100} autoComplete="name" value={a.navn} onChange={(e) => saet("navn", e.target.value)} className={feltKlasse(false)} />
+            <Felt id={`${id}-navn`} fejl={feltFejl.navn} label="Fulde navn" className="sm:col-span-2">
+              <input id={`${id}-navn`} aria-invalid={feltFejl.navn ? true : undefined} aria-describedby={feltFejl.navn ? `${id}-navn-fejl` : undefined} minLength={2} maxLength={100} autoComplete="name" value={a.navn} onChange={(e) => saet("navn", e.target.value)} className={feltKlasse(!!feltFejl.navn)} />
             </Felt>
-            <Felt id={`${id}-adresse`} label="Adresse" className="sm:col-span-2">
-              <input id={`${id}-adresse`} required minLength={3} maxLength={200} autoComplete="street-address" placeholder="Vejnavn og husnummer" value={a.adresse} onChange={(e) => saet("adresse", e.target.value)} className={feltKlasse(false)} />
+            <Felt id={`${id}-adresse`} fejl={feltFejl.adresse} label="Adresse" className="sm:col-span-2">
+              <input id={`${id}-adresse`} aria-invalid={feltFejl.adresse ? true : undefined} aria-describedby={feltFejl.adresse ? `${id}-adresse-fejl` : undefined} minLength={3} maxLength={200} autoComplete="street-address" placeholder="Vejnavn og husnummer" value={a.adresse} onChange={(e) => saet("adresse", e.target.value)} className={feltKlasse(!!feltFejl.adresse)} />
             </Felt>
-            <Felt id={`${id}-postnummer`} label="Postnummer">
+            <Felt id={`${id}-postnummer`} fejl={feltFejl.postnummer} label="Postnummer">
               <input
-                id={`${id}-postnummer`}
-                required
-                pattern="\d{4}"
+                id={`${id}-postnummer`} aria-invalid={feltFejl.postnummer ? true : undefined} aria-describedby={feltFejl.postnummer ? `${id}-postnummer-fejl` : undefined}
                 inputMode="numeric"
                 autoComplete="postal-code"
                 value={a.postnummer}
                 onChange={(e) => saet("postnummer", e.target.value.replace(/\D/g, "").slice(0, 4))}
-                className={feltKlasse(false)}
+                className={feltKlasse(!!feltFejl.postnummer)}
               />
             </Felt>
-            <Felt id={`${id}-by`} label="By">
-              <input id={`${id}-by`} required maxLength={80} autoComplete="address-level2" value={a.by} onChange={(e) => saet("by", e.target.value)} className={feltKlasse(false)} />
+            <Felt id={`${id}-by`} fejl={feltFejl.by} label="By">
+              <input id={`${id}-by`} aria-invalid={feltFejl.by ? true : undefined} aria-describedby={feltFejl.by ? `${id}-by-fejl` : undefined} maxLength={80} autoComplete="address-level2" value={a.by} onChange={(e) => saet("by", e.target.value)} className={feltKlasse(!!feltFejl.by)} />
             </Felt>
-            <Felt id={`${id}-telefon`} label="Mobilnummer (valgfrit)" className="sm:col-span-2">
-              <input id={`${id}-telefon`} type="tel" maxLength={20} autoComplete="tel" inputMode="tel" value={a.telefon} onChange={(e) => saet("telefon", e.target.value)} className={`${feltKlasse(false)} sm:max-w-[260px]`} />
+            <Felt id={`${id}-telefon`} fejl={feltFejl.telefon} label="Mobilnummer (valgfrit)" className="sm:col-span-2">
+              <input id={`${id}-telefon`} aria-invalid={feltFejl.telefon ? true : undefined} aria-describedby={feltFejl.telefon ? `${id}-telefon-fejl` : undefined} type="tel" maxLength={20} autoComplete="tel" inputMode="tel" value={a.telefon} onChange={(e) => saet("telefon", e.target.value)} className={`${feltKlasse(!!feltFejl.telefon)} sm:max-w-[260px]`} />
             </Felt>
           </div>
         </fieldset>
@@ -319,13 +344,30 @@ export default function FragtlabelBoks({
   );
 }
 
-function Felt({ id, label, className = "", children }: { id: string; label: string; className?: string; children: React.ReactNode }) {
+function Felt({
+  id,
+  label,
+  fejl,
+  className = "",
+  children,
+}: {
+  id: string;
+  label: string;
+  fejl?: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className={className}>
       <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-tekst">
         {label}
       </label>
       {children}
+      {fejl && (
+        <p id={`${id}-fejl`} className="mt-1.5 text-[13px] font-medium text-fejl-tekst">
+          {fejl}
+        </p>
+      )}
     </div>
   );
 }

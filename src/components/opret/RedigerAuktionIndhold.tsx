@@ -61,6 +61,7 @@ export default async function RedigerAuktionIndhold({ auktionId, brugerId }: { a
         kategori: auktion.kategori ?? "",
         startpris: Number(auktion.startpris),
         forsendelseMulig: Boolean(auktion.forsendelse_mulig),
+        afhentningMulig: Boolean(auktion.afhentning_mulig),
         fragtPakkeshopOere: auktion.fragt_pakkeshop_oere ?? null,
         fragtDoerOere: auktion.fragt_doer_oere ?? null,
         pakkestoerrelse: auktion.pakkestoerrelse ?? null,

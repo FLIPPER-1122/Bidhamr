@@ -76,6 +76,10 @@ export function erLeveringsmaade(v: unknown): v is Leveringsmaade {
   return typeof v === "string" && (LEVERINGSMAADER as readonly string[]).includes(v);
 }
 
+// Købers valg i checkout: en forsendelse eller afhentning hos sælger (kun når
+// auktionen tilbyder både forsendelse og afhentning).
+export type CheckoutMaade = Leveringsmaade | "afhentning";
+
 // En pakkeshop fra fragtfirmaet (normaliseret).
 export type Pakkeshop = {
   id: string;

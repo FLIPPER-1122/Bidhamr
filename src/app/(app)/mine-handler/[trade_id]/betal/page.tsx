@@ -41,7 +41,7 @@ export default async function BetalPage({ params }: { params: Promise<{ trade_id
   if (handel.buyer_id !== user.id || handel.status !== "afventer_betaling") redirect(handelSti);
 
   const [{ data: auktion }, { data: saelger }, { data: mig }, betaling, checkoutSvar] = await Promise.all([
-    supabase.from("auctions").select("titel, billeder").eq("id", handel.auction_id).maybeSingle(),
+    supabase.from("auctions").select("titel, billeder, erhverv").eq("id", handel.auction_id).maybeSingle(),
     supabase.from("users").select("navn").eq("id", handel.seller_id).maybeSingle<{ navn: string | null }>(),
     supabase.from("users").select("navn").eq("id", user.id).maybeSingle<{ navn: string | null }>(),
     hentBetalingsstatus(handel.id),
@@ -52,6 +52,8 @@ export default async function BetalPage({ params }: { params: Promise<{ trade_id
     titel: (auktion?.titel as string | undefined) ?? "Slettet auktion",
     billede: ((auktion?.billeder as string[] | null) ?? [])[0] ?? null,
     saelgerNavn: saelger?.navn ?? null,
+    // Erhvervshandel: ingen chat med firmaet.
+    erhverv: auktion?.erhverv === true,
   };
 
   if ("fejl" in betaling || !betaling.erKoeber) {

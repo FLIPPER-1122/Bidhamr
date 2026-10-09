@@ -538,6 +538,7 @@ export default async function AuktionPage({
               brugerId={bruger?.id ?? null}
               saelgerId={auktion.bruger_id}
               forsendelseMulig={auktion.forsendelse_mulig}
+              afhentningMulig={auktion.afhentning_mulig === true}
               fragtPakkeshopOere={auktion.fragt_pakkeshop_oere ?? null}
               fragtDoerOere={auktion.fragt_doer_oere ?? null}
               status={auktion.status}
@@ -562,22 +563,23 @@ export default async function AuktionPage({
             )}
 
             <div className="mt-4 space-y-2">
-              {/* Med forsendelse kan køberen ikke vælge afhentning
-                  (ROADMAP-BESLUTNINGER.md afsnit 3, fragt). */}
-              {!auktion.forsendelse_mulig && (
+              {/* Afhentning: kun afhentning, eller et valg i checkout, når
+                  sælgeren også tilbyder afhentning (auctions.afhentning_mulig). */}
+              {(!auktion.forsendelse_mulig || auktion.afhentning_mulig) && (
                 <Accordion title="Sådan fungerer afhentning">
-                  Varen kan afhentes i{" "}
+                  {auktion.forsendelse_mulig ? "Du kan også hente varen i " : "Varen kan afhentes i "}
                   {auktion.lokation
                     ? `${auktion.lokation} (postnr. ${auktion.postnummer})`
                     : `postnr. ${auktion.postnummer}`}
-                  . Kontakt sælger efter vundet auktion for at aftale tid og
-                  sted.
+                  {auktion.forsendelse_mulig
+                    ? ". Du vælger afhentning (0 kr. i fragt), når du betaler, og aftaler tid og sted med sælgeren i chatten. Du har 7 dage til at hente varen."
+                    : ". Kontakt sælger efter vundet auktion for at aftale tid og sted."}
                 </Accordion>
               )}
 
               <Accordion title="Forsendelse">
                 {auktion.forsendelse_mulig
-                  ? `Sælger sender varen. Fragt til en pakkeshop koster ${kroner(fragtOere(true, auktion.fragt_pakkeshop_oere))}${auktion.fragt_doer_oere ? `, levering til døren ${kroner(auktion.fragt_doer_oere)}` : ""}. Du vælger, når du betaler, og fragten lægges oven i din betaling.`
+                  ? `Sælger sender varen. Fragt til en pakkeshop koster ${kroner(fragtOere(true, auktion.fragt_pakkeshop_oere))}${auktion.fragt_doer_oere ? `, levering til døren ${kroner(auktion.fragt_doer_oere)}` : ""}. Du vælger, når du betaler, og fragten lægges oven i din betaling.${auktion.afhentning_mulig ? " Du kan også vælge at hente varen hos sælgeren (0 kr.)." : ""}`
                   : "Ikke tilbudt – varen skal afhentes."}
               </Accordion>
 
@@ -663,6 +665,12 @@ export default async function AuktionPage({
                 <dt className="text-tekst-svag">Forsendelse</dt>
                 <dd className="text-tekst">
                   {auktion.forsendelse_mulig ? "Tilbydes" : "Ikke tilbudt"}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-tekst-svag">Afhentning</dt>
+                <dd className="text-tekst">
+                  {!auktion.forsendelse_mulig ? "Kun afhentning" : auktion.afhentning_mulig ? "Muligt" : "Ikke tilbudt"}
                 </dd>
               </div>
             </dl>

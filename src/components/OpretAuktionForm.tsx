@@ -65,6 +65,8 @@ type Kladde = {
   startpris: string;
   varighed: number;
   forsendelseMulig: boolean;
+  // Også afhentning ved siden af forsendelse (ældre kladder: false).
+  afhentningOgsaa?: boolean;
   postnummer: string;
   spoergsmaalAktiv: boolean;
 };
@@ -135,6 +137,7 @@ function fortolkKladde(raa: string | null): Kladde | null {
       startpris: typeof k.startpris === "string" ? k.startpris.replace(/\D/g, "").slice(0, 10) : "",
       varighed: erGyldigVarighed(k.varighed) ? k.varighed : STANDARD_VARIGHED,
       forsendelseMulig: k.forsendelseMulig === true,
+      afhentningOgsaa: k.afhentningOgsaa === true,
       postnummer: typeof k.postnummer === "string" ? k.postnummer.replace(/\D/g, "").slice(0, 4) : "",
       spoergsmaalAktiv: k.spoergsmaalAktiv !== false,
     };
@@ -173,6 +176,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
   const [startprisTekst, setStartprisTekst] = useState("");
   const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
+  // Sælgeren tilbyder også afhentning (auctions.afhentning_mulig).
+  const [afhentningOgsaa, setAfhentningOgsaa] = useState(false);
   // Pakkestørrelse og vægt (kg som tekst). Vægten er altid krævet ved forsendelse.
   const [pakkestoerrelse, setPakkestoerrelse] = useState<Fragtstoerrelse["kode"]>("lille");
   const [vaegtTekst, setVaegtTekst] = useState("");
@@ -206,6 +211,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
     startpris: startprisTekst,
     varighed,
     forsendelseMulig,
+    afhentningOgsaa,
     postnummer,
     spoergsmaalAktiv,
   };
@@ -235,6 +241,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
     setStartprisTekst(gemtKladde.startpris);
     setVarighed(gemtKladde.varighed as VarighedDage);
     setForsendelseMulig(gemtKladde.forsendelseMulig);
+    setAfhentningOgsaa(gemtKladde.afhentningOgsaa === true);
     setPostnummer(gemtKladde.postnummer);
     setSpoergsmaalAktiv(gemtKladde.spoergsmaalAktiv);
     setKladdeHaandteret(true);
@@ -356,7 +363,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           lng: koordinater?.lng ?? null,
           forsendelse_mulig: forsendelseMulig,
           // Databasen låser fragtprisen ud fra størrelsen og håndhæver vægten.
-          ...(forsendelseMulig ? { pakkestoerrelse, vaegt_gram: vaegtGram } : {}),
+          ...(forsendelseMulig ? { pakkestoerrelse, vaegt_gram: vaegtGram, afhentning_mulig: afhentningOgsaa } : {}),
           spoergsmaal_aktiv: erFirma ? false : spoergsmaalAktiv,
           forbudt_bekraeftet: bekraeftet,
           // Databasen beregner selv sluttidspunktet ud fra varigheden.
@@ -494,8 +501,12 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
                 <dt className="text-tekst-svag">Levering</dt>
                 <dd className="text-tekst">{forsendelseMulig
                     ? valgtStoerrelse
-                      ? `${valgtStoerrelse.navn} pakke – køberen betaler fragt fra ${kroner(valgtStoerrelse.pakkeshop_oere)}`
-                      : "Forsendelse"
+                      ? `${valgtStoerrelse.navn} pakke – køberen betaler fragt fra ${kroner(valgtStoerrelse.pakkeshop_oere)}${
+                          afhentningOgsaa ? ", eller henter varen hos dig" : ""
+                        }`
+                      : afhentningOgsaa
+                        ? "Forsendelse eller afhentning"
+                        : "Forsendelse"
                     : "Kun afhentning"}</dd>
               </div>
               <div>
@@ -812,6 +823,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           onVaegt={(v) => aendret(setVaegtTekst)(v)}
           vaegtFejlTekst={feltFejl.vaegt}
           vaegtId={FELT_ID.vaegt}
+          afhentningOgsaa={afhentningOgsaa}
+          onAfhentningOgsaa={(v) => aendret(setAfhentningOgsaa)(v)}
         />
       </Sektion>
 

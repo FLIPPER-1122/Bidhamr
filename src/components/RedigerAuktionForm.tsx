@@ -65,6 +65,8 @@ export default function RedigerAuktionForm({
     kategori: string;
     startpris: number;
     forsendelseMulig: boolean;
+    // Sælgeren tilbyder også afhentning (auctions.afhentning_mulig).
+    afhentningMulig?: boolean;
     // Den låste fragtpris (øre) og pakkestørrelse - se 20261012010000.
     fragtPakkeshopOere?: number | null;
     fragtDoerOere?: number | null;
@@ -85,6 +87,7 @@ export default function RedigerAuktionForm({
   const [beskrivelse, setBeskrivelse] = useState(start.beskrivelse);
   const [startprisTekst, setStartprisTekst] = useState(String(start.startpris));
   const [forsendelseMulig, setForsendelseMulig] = useState(start.forsendelseMulig);
+  const [afhentningOgsaa, setAfhentningOgsaa] = useState(Boolean(start.afhentningMulig));
   // Pakkestørrelse og vægt: gemmes med saet_auktion_fragt (kun før første bud).
   const startStoerrelse: Fragtstoerrelse["kode"] =
     start.pakkestoerrelse === "lille" || start.pakkestoerrelse === "stor" ? start.pakkestoerrelse : "mellem";
@@ -172,6 +175,7 @@ export default function RedigerAuktionForm({
         kategori,
         startpris,
         forsendelseMulig,
+        afhentningMulig: forsendelseMulig && afhentningOgsaa,
         stand: erStand(stand) ? stand : null,
         // Kun firmakonti sender felterne (null = uændret).
         producent: erFirma ? producent : null,
@@ -361,6 +365,8 @@ export default function RedigerAuktionForm({
           vaegtFejlTekst={vaegtFejlTekst}
           vaegtId="vaegt"
           deaktiveret={loading}
+          afhentningOgsaa={afhentningOgsaa}
+          onAfhentningOgsaa={setAfhentningOgsaa}
         />
       </Sektion>
 

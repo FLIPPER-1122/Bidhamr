@@ -61,6 +61,9 @@ export type RedigerAuktionInput = {
   kategori: string;
   startpris: number;
   forsendelseMulig: boolean;
+  // Også afhentning ved siden af forsendelse (auctions.afhentning_mulig).
+  // Udeladt = uændret.
+  afhentningMulig?: boolean;
   // Kode fra src/lib/stand.ts. null = uændret (gamle auktioner uden stand).
   stand: string | null;
   // GPSR (kun firmakonti). Udeladt/null = uændret, "" = ryd. Databasen
@@ -149,6 +152,10 @@ export async function redigerAuktion(
       p_stand: input.stand,
       p_producent: producent,
       p_sikkerhedsoplysninger: sikkerhedsoplysninger,
+      // Også afhentning (null = uændret) - i samme transaktion. Uden
+      // forsendelse sætter databasen den til false.
+      p_afhentning_mulig:
+        typeof input.afhentningMulig === "boolean" ? input.forsendelseMulig === true && input.afhentningMulig : null,
     });
     if (error) {
       if (erAuktionLaastFejl(error)) return { fejl: LAAST };

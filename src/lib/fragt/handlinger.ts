@@ -10,6 +10,7 @@ import { fragtLabelsAktiv } from "@/lib/fragt";
 import {
   type AdresseInput,
   type Fragtpris,
+  type GemtLeveringsvalg,
   type LeveringsvalgInput,
   FRAGT_LABEL_BUCKET,
   annullerUdgaaendeForsendelse,
@@ -19,7 +20,7 @@ import {
   opretUdgaaendeForsendelse,
   soegPakkeshops,
 } from "@/lib/fragt/server";
-import { SPORINGS_NAVN, type SporingsType } from "@/lib/fragt/types";
+import { SPORINGS_NAVN, type CheckoutMaade, type SporingsType } from "@/lib/fragt/types";
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IKKE_AKTIV = "Fragtlabels er ikke slået til endnu.";
@@ -64,20 +65,30 @@ export { soegPakkeshops };
 
 export type Checkout = {
   tradeId: string;
-  // true = afhentning hos sælger: intet leveringsvalg, betal direkte.
+  // true = afhentning hos sælger er valgt (eller den eneste mulighed).
   afhentning: boolean;
+  // true = auktionen tilbyder kun afhentning: intet valg, betal direkte.
+  kunAfhentning: boolean;
+  // true = sælgeren tilbyder både forsendelse og afhentning: køberen kan
+  // vælge "Afhent hos sælger – 0 kr." (maade "afhentning") før betaling.
+  afhentningMulig: boolean;
+  // BidHamr Beskyttelse (øre), hvis der vælges forsendelse. Ved afhentning
+  // fjernes den fra betalingen (ingen sag ved afhentning) og lægges på igen
+  // ved skift til forsendelse.
+  beskyttelseVedForsendelseOere: number;
   pakkestoerrelse: string | null;
   // Købers fragt (inkl. moms, øre) pr. leveringsmåde. doerOere null = ikke muligt.
   pakkeshopOere: number | null;
   doerOere: number | null;
   valgt: {
-    maade: "pakkeshop" | "doer";
+    maade: CheckoutMaade;
     pakkeshopId: string | null;
     pakkeshopNavn: string | null;
     pakkeshopAdresse: string | null;
     pakkeshopPostnummer: string | null;
     pakkeshopBy: string | null;
-    modtager: { navn: string; adresse: string | null; postnummer: string | null; by: string | null; telefon: string };
+    // Tom ved afhentning.
+    modtager: { navn: string | null; adresse: string | null; postnummer: string | null; by: string | null; telefon: string | null };
     fragtOere: number;
   } | null;
   // Forudfyldning fra sidste køb (kun køberens egne data).
@@ -109,7 +120,11 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
   if (!h || h.buyer_id !== brugerId) return { fejl: "Handlen findes ikke." };
   const admin = createAdminClient();
   const [a, b, l, f, forslag] = await Promise.all([
-    admin.from("auctions").select("pakkestoerrelse, fragt_pakkeshop_oere, fragt_doer_oere").eq("id", h.auction_id).maybeSingle(),
+    admin
+      .from("auctions")
+      .select("forsendelse_mulig, afhentning_mulig, pakkestoerrelse, fragt_pakkeshop_oere, fragt_doer_oere")
+      .eq("id", h.auction_id)
+      .maybeSingle(),
     admin
       .from("betalinger")
       .select("status, bud_oere, koebergebyr_oere, beskyttelse_oere, fragt_oere, total_oere, stripe_charge_id")
@@ -117,7 +132,7 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
       .maybeSingle(),
     admin
       .from("handel_levering")
-      .select("maade, pakkeshop_id, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by, modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, fragt_oere")
+      .select("maade, pakkeshop_id, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by, modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, fragt_oere, beskyttelse_ved_forsendelse_oere")
       .eq("trade_id", h.id)
       .maybeSingle(),
     admin
@@ -140,11 +155,18 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
   const bet = b.data;
   const lev = l.data;
   const fs = forslag.data;
+  const afhentning = Boolean(h.afhentning) || Number(bet?.fragt_oere ?? 0) === 0;
+  const afhentningMulig = Boolean(a.data?.forsendelse_mulig) && Boolean(a.data?.afhentning_mulig);
   return {
     ok: true,
     checkout: {
       tradeId: h.id,
-      afhentning: Boolean(h.afhentning) || Number(bet?.fragt_oere ?? 0) === 0,
+      afhentning,
+      kunAfhentning: afhentning && !afhentningMulig,
+      afhentningMulig,
+      beskyttelseVedForsendelseOere: h.afhentning
+        ? Number(lev?.maade === "afhentning" ? (lev.beskyttelse_ved_forsendelse_oere ?? 0) : 0)
+        : Number(bet?.beskyttelse_oere ?? 0),
       pakkestoerrelse: a.data?.pakkestoerrelse ?? null,
       pakkeshopOere: a.data?.fragt_pakkeshop_oere ?? null,
       doerOere: a.data?.fragt_doer_oere ?? null,
@@ -203,7 +225,7 @@ export async function gemLevering(
   tradeId: unknown,
   brugerId: string,
   input: LeveringsvalgInput,
-): Promise<{ ok: true; fragtOere: number; totalOere: number; prisAendret: boolean } | Fejl> {
+): Promise<GemtLeveringsvalg | Fejl> {
   const h = await hentHandel(tradeId, brugerId);
   if (!h || h.buyer_id !== brugerId) return { fejl: "Handlen findes ikke." };
   return gemLeveringsvalg(h.id, brugerId, input);

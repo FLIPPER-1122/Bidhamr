@@ -9,7 +9,12 @@
 //   minus dens fragt (bud + købergebyr + evt. BidHamr Beskyttelse) plus
 //   auktionens låste fragtpris for den valgte levering. Beløbet på
 //   "Betal"-knappen er altid PaymentIntentens.
-// - Afhentning hos sælger kræver intet valg (handlen er en afhentning).
+// - Kun afhentning (auktionen tilbyder ikke forsendelse) kræver intet valg.
+// - Tilbyder sælgeren både forsendelse og afhentning, kan køberen vælge
+//   "Afhent hos sælger – 0 kr." før betaling. Så er fragten 0, og BidHamr
+//   Beskyttelse trækkes fra (ingen sag ved afhentning); den lægges på igen
+//   ved skift tilbage til forsendelse. Serveren retter beløbet og annullerer
+//   en gammel PaymentIntent (samme regler som ved prisskift).
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -26,7 +31,7 @@ import Ikon, { type IkonNavn } from "@/components/Ikon";
 import PakkeshopVaelger, { type ValgtPakkeshop } from "@/components/checkout/PakkeshopVaelger";
 import CheckoutBetaling, { CHECKOUT_FORM } from "@/components/checkout/CheckoutBetaling";
 
-type Maade = "pakkeshop" | "doer";
+type Maade = "pakkeshop" | "doer" | "afhentning";
 type Modtager = { navn: string; telefon: string; adresse: string; postnummer: string; by: string };
 type FeltFejl = Partial<Record<"navn" | "telefon" | "adresse" | "postnummer" | "by" | "shop", string>>;
 
@@ -38,6 +43,7 @@ function visTelefon(t: string | null | undefined) {
 
 function signatur(maade: Maade, shopId: string | null, m: Modtager) {
   const ren = (s: string) => s.replace(/\s+/g, " ").trim();
+  if (maade === "afhentning") return JSON.stringify([maade]);
   return JSON.stringify(
     maade === "doer"
       ? [maade, ren(m.navn), ren(m.telefon).replace(/\s/g, ""), ren(m.adresse), ren(m.postnummer), ren(m.by)]
@@ -47,6 +53,7 @@ function signatur(maade: Maade, shopId: string | null, m: Modtager) {
 
 function valider(maade: Maade, shop: ValgtPakkeshop | null, m: Modtager): FeltFejl {
   const f: FeltFejl = {};
+  if (maade === "afhentning") return f;
   if (m.navn.trim().length < 2) f.navn = "Skriv dit fulde navn.";
   const tlf = m.telefon.replace(/[\s().-]/g, "");
   if (!/^(\d{8}|(\+|00)\d{8,14})$/.test(tlf)) f.telefon = "Skriv et gyldigt telefonnummer (8 cifre).";
@@ -81,14 +88,17 @@ export default function CheckoutSide({
   standardNavn,
 }: {
   tradeId: string;
-  vare: { titel: string; billede: string | null; saelgerNavn: string | null };
+  // erhverv: firmasalg - ingen chat med sælgeren.
+  vare: { titel: string; billede: string | null; saelgerNavn: string | null; erhverv?: boolean };
   status: KoeberBetalingsstatus;
   checkout: Checkout;
   standardNavn: string | null;
 }) {
   const id = useId();
   const bet = checkout.betaling;
-  const afhentning = checkout.afhentning;
+  // Kun afhentning: intet valg. Ellers kan afhentning være et af valgene.
+  const kunAfhentning = checkout.kunAfhentning;
+  const afhentningMulig = checkout.afhentningMulig;
   const doerMulig = checkout.doerOere !== null && checkout.doerOere > 0;
   const kanSkifteMaade = Boolean(bet?.kanAendrePris) && !checkout.labelLavet;
   const kanSkifteShop = !checkout.labelLavet;
@@ -97,7 +107,9 @@ export default function CheckoutSide({
 
   // ---------------------------------------------------------------- startværdier
   const startMaade: Maade =
-    valgt?.maade ?? (forslag?.maade === "doer" && doerMulig && kanSkifteMaade ? "doer" : "pakkeshop");
+    valgt?.maade === "afhentning" && !afhentningMulig
+      ? "pakkeshop"
+      : (valgt?.maade ?? (forslag?.maade === "doer" && doerMulig && kanSkifteMaade ? "doer" : "pakkeshop"));
   const startShop: ValgtPakkeshop | null =
     valgt?.maade === "pakkeshop" && valgt.pakkeshopId
       ? {
@@ -120,7 +132,8 @@ export default function CheckoutSide({
             soegAdresse: forslag.pakkeshopAdresse ?? null,
           }
         : null;
-  const kilde = valgt?.modtager ?? forslag?.modtager ?? null;
+  // Ved afhentning er der ingen modtager på valget - forslaget forudfylder.
+  const kilde = (valgt && valgt.maade !== "afhentning" ? valgt.modtager : null) ?? forslag?.modtager ?? null;
   const startModtager: Modtager = {
     navn: kilde?.navn ?? standardNavn ?? "",
     telefon: visTelefon(kilde?.telefon),
@@ -143,6 +156,9 @@ export default function CheckoutSide({
 
   const [serverFragt, setServerFragt] = useState(bet?.fragt_oere ?? status.fragtOere);
   const [serverTotal, setServerTotal] = useState(bet?.total_oere ?? status.totalOere);
+  const [serverBesk, setServerBesk] = useState(bet?.beskyttelse_oere ?? status.beskyttelseOere);
+  // BidHamr Beskyttelse, hvis der vælges forsendelse (0 kr. ved afhentning).
+  const [beskForsendelse, setBeskForsendelse] = useState(checkout.beskyttelseVedForsendelseOere);
 
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [piTotal, setPiTotal] = useState<number | null>(null);
@@ -162,7 +178,8 @@ export default function CheckoutSide({
   const laas = useRef(false);
 
   const aktuelSignatur = signatur(maade, maade === "pakkeshop" ? (shop?.id ?? null) : null, modtager);
-  const leveringGemt = afhentning || gemt === aktuelSignatur;
+  const leveringGemt = kunAfhentning || gemt === aktuelSignatur;
+  const afhentningValgt = kunAfhentning || maade === "afhentning";
   const betalingKlar = Boolean(clientSecret) && leveringGemt;
 
   // Kan der overhovedet betales nu?
@@ -170,16 +187,19 @@ export default function CheckoutSide({
     status.venterPaaSaelgerkonto || status.fristOverskredet || status.status !== "afventer" || !bet || Boolean(alleredeBetalt);
 
   // ---------------------------------------------------------------- priser
-  const grundOere = serverTotal - serverFragt; // bud + købergebyr + evt. BidHamr Beskyttelse
-  // Når betalingen er klar, vises serverens fragt, så linjerne summerer til totalen.
-  const fragtVist = afhentning
+  const grundOere = serverTotal - serverFragt - serverBesk; // bud + købergebyr
+  // Når betalingen er klar, vises serverens tal, så linjerne summerer til totalen.
+  const fragtVist = afhentningValgt
     ? 0
     : betalingKlar
       ? serverFragt
     : maade === "doer"
       ? (checkout.doerOere ?? serverFragt)
       : (checkout.pakkeshopOere ?? serverFragt);
-  const totalVist = betalingKlar && piTotal !== null ? piTotal : grundOere + fragtVist;
+  const beskVist = kunAfhentning || betalingKlar ? serverBesk : maade === "afhentning" ? 0 : beskForsendelse;
+  const totalVist = betalingKlar && piTotal !== null ? piTotal : grundOere + fragtVist + beskVist;
+  // Køberen har BidHamr Beskyttelse, men har valgt afhentning: den gælder ikke.
+  const beskFjernet = maade === "afhentning" && !kunAfhentning && beskForsendelse > 0;
 
   // ---------------------------------------------------------------- handlinger
   const visBetalFejl = useCallback((tekst: string | null, betalt?: boolean) => {
@@ -243,7 +263,7 @@ export default function CheckoutSide({
     if (laas.current || lukket) return;
     setBetalFejl(null);
     setLeveringFejl(null);
-    if (!afhentning) {
+    if (!kunAfhentning) {
       const f = valider(maade, shop, modtager);
       setFeltFejl(f);
       if (Object.keys(f).length > 0) {
@@ -256,7 +276,7 @@ export default function CheckoutSide({
     setArbejder(true);
     try {
       if (!leveringGemt) {
-        const r = await gemLeveringsvalgAction(tradeId, {
+        const r = await gemLeveringsvalgAction(tradeId, maade === "afhentning" ? { maade } : {
           maade,
           pakkeshopId: maade === "pakkeshop" ? shop?.id : undefined,
           pakkeshopPostnummer: maade === "pakkeshop" ? shop?.soegPostnummer || shop?.postnummer : undefined,
@@ -277,6 +297,8 @@ export default function CheckoutSide({
         }
         setServerFragt(r.fragtOere);
         setServerTotal(r.totalOere);
+        setServerBesk(r.beskyttelseOere);
+        if (!r.afhentning) setBeskForsendelse(r.beskyttelseOere);
         setGemt(aktuelSignatur);
         // Beløbet kan være ændret: den gamle PaymentIntent er annulleret.
         setClientSecret(null);
@@ -341,7 +363,7 @@ export default function CheckoutSide({
   }
 
   const handelSti = `/mine-handler/${tradeId}`;
-  const fragtNavn = afhentning ? "Afhentning hos sælger" : maade === "doer" ? "Fragt – levering hjem" : "Fragt – pakkeshop";
+  const fragtNavn = afhentningValgt ? "Afhentning hos sælger" : maade === "doer" ? "Fragt – levering hjem" : "Fragt – pakkeshop";
 
   // ---------------------------------------------------------------- visning
   return (
@@ -429,7 +451,7 @@ export default function CheckoutSide({
                 Levering
               </h2>
 
-              {afhentning ? (
+              {kunAfhentning ? (
                 <div className="mt-4">
                   <LeveringKort
                     ikon="bruger"
@@ -470,6 +492,17 @@ export default function CheckoutSide({
                           onVaelg={() => setMaade("doer")}
                         />
                       )}
+                      {afhentningMulig && (kanSkifteMaade || maade === "afhentning") && (
+                        <LeveringKort
+                          navn={`${id}-maade`}
+                          ikon="bruger"
+                          titel="Afhent hos sælger"
+                          tekst="Du henter varen hos sælgeren og viser din afhentningskode."
+                          pris={kroner(0)}
+                          valgt={maade === "afhentning"}
+                          onVaelg={() => setMaade("afhentning")}
+                        />
+                      )}
                     </div>
                     {!kanSkifteMaade && (
                       <p className="mt-2 text-[13px] text-tekst-daempet">
@@ -482,6 +515,24 @@ export default function CheckoutSide({
                       </p>
                     )}
                   </fieldset>
+
+                  {maade === "afhentning" && (
+                    <div className="mt-5 space-y-2 rounded-xl bg-groen-lys p-4 text-sm text-tekst-daempet">
+                      <p>
+                        Når du har betalt, ser du sælgerens adresse og din afhentningskode på handelssiden. Du har 7
+                        dage til at hente varen.{" "}
+                        {vare.erhverv
+                          ? "Kontakt firmaet via oplysningerne på handelssiden."
+                          : "Aftal tidspunktet med sælgeren i chatten."}
+                      </p>
+                      {beskFjernet && (
+                        <p>
+                          BidHamr Beskyttelse gælder ikke ved afhentning, så den er trukket fra prisen. Du ser varen,
+                          før du viser koden.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {maade === "pakkeshop" && (
                     <div className="mt-5">
@@ -521,6 +572,7 @@ export default function CheckoutSide({
                   )}
 
                   {/* Modtager */}
+                  {maade !== "afhentning" && (
                   <fieldset className="mt-5 min-w-0" disabled={travl}>
                     <legend className="mb-2 text-sm font-medium text-tekst">
                       {maade === "doer" ? "Leveringsadresse" : "Modtager"}
@@ -610,6 +662,7 @@ export default function CheckoutSide({
                       Husk mine oplysninger og min pakkeshop til næste køb
                     </label>
                   </fieldset>
+                  )}
                 </>
               )}
 
@@ -708,9 +761,7 @@ export default function CheckoutSide({
                 <Linje navn="Vinderbud" vaerdi={kroner(status.budOere)} />
                 <Linje navn="Købergebyr" vaerdi={kroner(status.koebergebyrOere)} />
                 <Linje navn={fragtNavn} vaerdi={kroner(fragtVist)} />
-                {status.beskyttelse && (
-                  <Linje navn="BidHamr Beskyttelse" vaerdi={kroner(status.beskyttelseOere)} />
-                )}
+                {beskVist > 0 && <Linje navn="BidHamr Beskyttelse" vaerdi={kroner(beskVist)} />}
                 <div className="flex items-baseline justify-between gap-4 border-t border-kant pt-3">
                   <dt className="text-[15px] font-semibold text-tekst">Samlet beløb</dt>
                   <dd className="text-lg font-bold text-tekst tabular-nums">{kroner(totalVist)}</dd>
@@ -740,13 +791,18 @@ export default function CheckoutSide({
               <div className="mt-5 rounded-xl bg-groen-lys p-4 text-sm text-groen-mork">
                 <p className="flex items-center gap-2 font-semibold">
                   <Ikon navn="skjold" className="h-5 w-5 shrink-0" />
-                  Sælgeren får først pengene, når du har fået varen
+                  {afhentningValgt
+                    ? "Sælgeren får først pengene, når du har hentet varen"
+                    : "Sælgeren får først pengene, når du har fået varen"}
                 </p>
                 <p className="mt-1.5 text-tekst-daempet">
-                  Pengene udbetales, når du har godkendt varen, eller når fristen for at oprette en sag er gået.{" "}
-                  {status.beskyttelse
-                    ? "Du har valgt BidHamr Beskyttelse, så vi hjælper dig, hvis varen går i stykker under forsendelsen."
-                    : "Kommer pakken ikke frem, hjælper vi dig."}{" "}
+                  {afhentningValgt
+                    ? "Pengene udbetales, når du har set varen og vist sælgeren din afhentningskode. Vis kun koden, hvis varen er, som den skal være."
+                    : `Pengene udbetales, når du har godkendt varen, eller når fristen for at oprette en sag er gået. ${
+                        beskVist > 0
+                          ? "Du har valgt BidHamr Beskyttelse, så vi hjælper dig, hvis varen går i stykker under forsendelsen."
+                          : "Kommer pakken ikke frem, hjælper vi dig."
+                      }`}{" "}
                   <Link
                     href="/bidhamr-beskyttelse"
                     className="font-medium text-groen underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
@@ -780,7 +836,7 @@ export default function CheckoutSide({
         </div>
       )}
 
-      {!afhentning && vaelgerAaben && (
+      {!kunAfhentning && maade === "pakkeshop" && vaelgerAaben && (
         <PakkeshopVaelger
           onLuk={() => setVaelgerAaben(false)}
           onBekraeft={(s) => {

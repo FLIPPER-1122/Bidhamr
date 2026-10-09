@@ -51,7 +51,7 @@ export default function FakturaListe({
               <p className="mt-2 text-[15px] font-semibold text-tekst tabular-nums">
                 I alt {kredit ? "− " : ""}
                 {kroner(f.beloeb_oere)}{" "}
-                <span className="text-sm font-normal text-tekst-daempet">({T.hermoms(kroner(f.moms_oere))})</span>
+                <span className="text-sm font-normal text-tekst-daempet">({T.hermoms(`${kredit ? "− " : ""}${kroner(f.moms_oere)}`)})</span>
               </p>
               {kredit && <p className="mt-1 text-sm text-tekst-daempet">{T.kreditForklaring}</p>}
               {visHandel && f.trade_id && (
