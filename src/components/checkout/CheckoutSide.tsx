@@ -88,7 +88,8 @@ export default function CheckoutSide({
   standardNavn,
 }: {
   tradeId: string;
-  vare: { titel: string; billede: string | null; saelgerNavn: string | null };
+  // erhverv: firmasalg - ingen chat med sælgeren.
+  vare: { titel: string; billede: string | null; saelgerNavn: string | null; erhverv?: boolean };
   status: KoeberBetalingsstatus;
   checkout: Checkout;
   standardNavn: string | null;
@@ -519,7 +520,10 @@ export default function CheckoutSide({
                     <div className="mt-5 space-y-2 rounded-xl bg-groen-lys p-4 text-sm text-tekst-daempet">
                       <p>
                         Når du har betalt, ser du sælgerens adresse og din afhentningskode på handelssiden. Du har 7
-                        dage til at hente varen. Aftal tidspunktet med sælgeren i chatten.
+                        dage til at hente varen.{" "}
+                        {vare.erhverv
+                          ? "Kontakt firmaet via oplysningerne på handelssiden."
+                          : "Aftal tidspunktet med sælgeren i chatten."}
                       </p>
                       {beskFjernet && (
                         <p>

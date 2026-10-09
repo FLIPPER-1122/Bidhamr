@@ -1,7 +1,7 @@
 -- Afhentning som valg i checkout (ROADMAP-BESLUTNINGER afsnit 1 "Ingen
 -- automatisk betaling": køberen vælger "pakkeshop via liste/kort, levering
 -- hjem eller afhentning, hvis sælger tilbyder det") + BHT04/BHT05.
--- Køres EFTER 20261012010000_fragt_dao_shipmondo.sql. Idempotent.
+-- Køres EFTER 20261012010000_fragt_dao_shipmondo.sql og 20261013010000_mitid.sql. Idempotent.
 --
 -- Ændringer:
 --   1. auctions.afhentning_mulig: sælgeren tilbyder OGSÅ afhentning ved siden
@@ -27,6 +27,8 @@
 --      på igen, hvis køberen skifter tilbage til forsendelse før betaling.
 --   5. handel_checkout (fuld genoprettelse): afhentning_mulig, kun_afhentning
 --      og beskyttelse_ved_forsendelse_oere.
+--   7. rediger_auktion (fuld genoprettelse, ny signatur med standardværdi):
+--      p_afhentning_mulig (null = uændret) i samme transaktion som resten.
 --   6. auctions_fragt (fuld genoprettelse): egne fejlkoder BHT04 (vægt <= 0)
 --      og BHT05 (ukendt pakkestørrelse) i stedet for BHT01/BHT02.
 --
@@ -587,3 +589,170 @@ begin
 end;
 $fn$;
 revoke all on function public.auctions_fragt() from public, anon, authenticated;
+
+-- ============================================================ 7. rediger_auktion: afhentning_mulig
+
+-- Fuld genoprettelse af rediger_auktion (20261010030000_erhverv.sql) med ny
+-- parameter p_afhentning_mulig (null = uændret), så "også afhentning" gemmes
+-- i samme transaktion som resten af redigeringen. Ny signatur med
+-- standardværdi: gamle kaldere (hjemmesiden, appen) virker uændret.
+-- Drift-tjek: den gamle krop skal være repoets version, eller den nye skal
+-- allerede findes (genkørsel).
+do $$
+declare
+  h text;
+begin
+  if to_regprocedure('public.rediger_auktion(uuid,text,text,text[],text,numeric,boolean,text,text,text,boolean)') is not null then
+    select md5(lower(regexp_replace(regexp_replace(replace(p.prosrc, chr(13), ''), '--[^\n]*', '', 'g'), '\s', '', 'g')))
+      into h from pg_proc p
+     where p.oid = to_regprocedure('public.rediger_auktion(uuid,text,text,text[],text,numeric,boolean,text,text,text,boolean)');
+    if h is distinct from '132104d225b0c9928b52ce66b92913fa' then
+      raise exception 'public.rediger_auktion (ny signatur): kroppen afviger fra repoets version (md5 %)', h;
+    end if;
+  elsif to_regprocedure('public.rediger_auktion(uuid,text,text,text[],text,numeric,boolean,text,text,text)') is not null then
+    select md5(lower(regexp_replace(regexp_replace(replace(p.prosrc, chr(13), ''), '--[^\n]*', '', 'g'), '\s', '', 'g')))
+      into h from pg_proc p
+     where p.oid = to_regprocedure('public.rediger_auktion(uuid,text,text,text[],text,numeric,boolean,text,text,text)');
+    if h is distinct from '76fa1be8097a9a862200c958f4328740' then
+      raise exception 'public.rediger_auktion: kroppen afviger fra repoets version (md5 %) - kontrollér funktionen, før migrationen køres', h;
+    end if;
+  else
+    raise exception 'afhentning_valg: public.rediger_auktion findes ikke - kør 20261010030000_erhverv.sql først';
+  end if;
+end $$;
+
+drop function if exists public.rediger_auktion(uuid, text, text, text[], text, numeric, boolean, text, text, text);
+
+create or replace function public.rediger_auktion(
+  p_auktion uuid, p_titel text, p_beskrivelse text, p_billeder text[], p_kategori text,
+  p_startpris numeric, p_forsendelse_mulig boolean, p_stand text default null::text,
+  p_producent text default null::text, p_sikkerhedsoplysninger text default null::text,
+  p_afhentning_mulig boolean default null::boolean)
+ returns jsonb
+ language plpgsql
+ security definer
+ set search_path = ''
+as $function$
+declare
+  v_uid   uuid := auth.uid();
+  a       record;
+  u       record;
+  v_titel   text := btrim(coalesce(p_titel, ''));
+  v_beskr   text := nullif(btrim(coalesce(p_beskrivelse, '')), '');
+  v_kat     text := btrim(coalesce(p_kategori, ''));
+  v_ver     timestamptz := date_trunc('milliseconds', clock_timestamp());
+  v_stand   text;
+  v_forbudt jsonb;
+  v_prod    text;
+  v_sikker  text;
+begin
+  if v_uid is null then
+    raise exception 'Du skal være logget ind.' using errcode = '42501';
+  end if;
+
+  -- Laaser raekken: et samtidigt bud (handle_new_bid, "for update") venter,
+  -- til redigeringen er faerdig, eller er naaet foerst og ses herunder.
+  select * into a from public.auctions where id = p_auktion for update;
+  if not found or a.bruger_id is distinct from v_uid or a.skjult then
+    return jsonb_build_object('kode', 'ikke_fundet');
+  end if;
+
+  select suspenderet, suspenderet_til into u from public.users where id = v_uid;
+  if u.suspenderet and (u.suspenderet_til is null or u.suspenderet_til > now()) then
+    return jsonb_build_object('kode', 'suspenderet');
+  end if;
+
+  if a.status <> 'aktiv' then
+    return jsonb_build_object('kode', 'ikke_aktiv');
+  end if;
+  if a.slutter_kl <= now() then
+    return jsonb_build_object('kode', 'slut');
+  end if;
+  if a."nuværende_bud" is not null
+     or exists (select 1 from public.bids b where b.auktion_id = a.id) then
+    return jsonb_build_object('kode', 'har_bud');
+  end if;
+
+  if char_length(v_titel) < 1 or char_length(v_titel) > 120 then
+    return jsonb_build_object('kode', 'ugyldig_titel');
+  end if;
+  if v_beskr is not null and char_length(v_beskr) > 500 then
+    return jsonb_build_object('kode', 'ugyldig_beskrivelse');
+  end if;
+  if not public.er_gyldig_auktionskategori(v_kat) then
+    return jsonb_build_object('kode', 'ugyldig_kategori');
+  end if;
+  if p_startpris is null or p_startpris < 0 or p_startpris > 9999999999
+     or p_startpris <> trunc(p_startpris) then
+    return jsonb_build_object('kode', 'ugyldig_startpris');
+  end if;
+  -- Mindste startpris 1 kr - kun naar startprisen AENDRES, saa en gammel
+  -- auktion med startpris 0 stadig kan faa rettet titel/billeder
+  -- (samme regel som auctions_beskyt_kolonner).
+  if p_startpris is distinct from a.startpris and p_startpris < 1 then
+    return jsonb_build_object('kode', 'startpris_for_lav');
+  end if;
+
+  if not public.auktion_billeder_gyldige(v_uid, p_billeder) then
+    return jsonb_build_object('kode', 'ugyldige_billeder');
+  end if;
+
+  -- Stand. null = uaendret (gamle kaldere uden p_stand).
+  v_stand := coalesce(public.stand_normaliser(p_stand), a.stand);
+  if v_stand is not null
+     and v_stand not in ('ny_med_maerke', 'som_ny', 'god', 'brugt', 'defekt') then
+    return jsonb_build_object('kode', 'ugyldig_stand');
+  end if;
+
+  -- GPSR-felter. null = uaendret, '' = ryd. Private: altid null
+  -- (auctions_zz_erhverv).
+  v_prod   := case when p_producent is null then a.producent
+                   else nullif(btrim(p_producent), '') end;
+  v_sikker := case when p_sikkerhedsoplysninger is null then a.sikkerhedsoplysninger
+                   else nullif(btrim(p_sikkerhedsoplysninger), '') end;
+  if coalesce(a.erhverv, false) then
+    if char_length(coalesce(v_prod, '')) > 500 or char_length(coalesce(v_sikker, '')) > 2000 then
+      return jsonb_build_object('kode', 'erhverv_gpsr');
+    end if;
+    if v_stand = 'ny_med_maerke'
+       and (char_length(coalesce(v_prod, '')) < 3 or char_length(coalesce(v_sikker, '')) < 3) then
+      return jsonb_build_object('kode', 'erhverv_gpsr');
+    end if;
+  else
+    v_prod := null;
+    v_sikker := null;
+  end if;
+
+  -- Forbudte ord - kun naar teksten aendres (samme regel som
+  -- auctions_indhold_kontrol, som ogsaa koerer ved selve opdateringen).
+  if v_titel is distinct from a.titel or v_beskr is distinct from a.beskrivelse then
+    v_forbudt := public.forbudt_tekst_tjek(v_titel || ' ' || coalesce(v_beskr, ''));
+    if v_forbudt->>'resultat' = 'blokeret' then
+      return jsonb_build_object('kode', 'forbudt_vare',
+                                'kategori', v_forbudt->>'kategori',
+                                'ord', v_forbudt->>'ord');
+    end if;
+  end if;
+
+  -- NYT: også afhentning (null = uændret). Uden forsendelse sætter
+  -- auctions_afhentning_mulig den altid til false.
+  update public.auctions
+     set titel                 = v_titel,
+         beskrivelse           = v_beskr,
+         billeder              = p_billeder,
+         kategori              = v_kat,
+         startpris             = p_startpris,
+         forsendelse_mulig     = coalesce(p_forsendelse_mulig, false),
+         afhentning_mulig      = coalesce(p_afhentning_mulig, a.afhentning_mulig),
+         stand                 = v_stand,
+         producent             = v_prod,
+         sikkerhedsoplysninger = v_sikker,
+         redigeret_kl          = v_ver
+   where id = a.id;
+
+  return jsonb_build_object('kode', 'ok', 'redigeret_kl', v_ver);
+end;
+$function$;
+
+revoke all on function public.rediger_auktion(uuid, text, text, text[], text, numeric, boolean, text, text, text, boolean) from public, anon;
+grant execute on function public.rediger_auktion(uuid, text, text, text[], text, numeric, boolean, text, text, text, boolean) to authenticated, service_role;

@@ -50,6 +50,7 @@ export default function BidPanel({
   brugerId,
   saelgerId,
   forsendelseMulig,
+  afhentningMulig = false,
   fragtPakkeshopOere = null,
   fragtDoerOere = null,
   status,
@@ -86,6 +87,8 @@ export default function BidPanel({
   // billigste og indgår i totalen; levering til døren vælges i checkout.
   fragtPakkeshopOere?: number | null;
   fragtDoerOere?: number | null;
+  // Sælgeren tilbyder også afhentning (0 kr. i fragt) - køberen vælger i checkout.
+  afhentningMulig?: boolean;
   status: string;
   // Anonym vinderbetegnelse fra serveren ("Dig" / "Byder 2") - aldrig navn/id.
   vinderVisning: string | null;
@@ -861,7 +864,12 @@ export default function BidPanel({
               </div>
               <div className={linje}>
                 <dt>{forsendelseMulig ? "Fragt (pakkeshop)" : "Fragt (kun afhentning)"}</dt>
-                <dd className="tabular-nums">{kroner(fragtOere(forsendelseMulig, fragtPakkeshopOere))}</dd>
+                <dd className="tabular-nums">
+                  {kroner(fragtOere(forsendelseMulig, fragtPakkeshopOere))}
+                  {forsendelseMulig && afhentningMulig && (
+                    <span className="block text-[12px] font-normal text-tekst-svag">eller 0 kr. ved afhentning</span>
+                  )}
+                </dd>
               </div>
               {beskyttelseVist !== null && (
                 <div className={linje}>
@@ -973,6 +981,14 @@ export default function BidPanel({
                   </span>
                 </>
               ) : null}
+              {afhentningMulig && (
+                <>
+                  <span className="mx-1.5 text-tekst-svag" aria-hidden="true">
+                    ·
+                  </span>
+                  <span className="whitespace-nowrap">eller 0 kr. ved afhentning</span>
+                </>
+              )}
             </p>
             <p className="text-[13px] text-tekst-daempet">Sendes med DAO. Du vælger levering, når du betaler. Priserne er inkl. moms.</p>
           </div>

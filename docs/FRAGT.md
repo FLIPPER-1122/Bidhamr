@@ -2,7 +2,7 @@
 
 Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md afsnit 2
 ("Fragtfirma og priser", Filip 9. okt. 2026). Migrationer: `supabase/migrations/20261012010000_fragt_dao_shipmondo.sql`
-og `20261012090000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/BHT05).
+og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/BHT05).
 
 > **Produktion:** migrationen må IKKE køres i produktion, før både hjemmesiden OG appen viser den låste
 > fragtpris (`fragt_pakkeshop_oere`) og har checkout før betaling. Ellers ser byderne 35 kr. og betaler
@@ -125,7 +125,7 @@ Direkte fra Supabase i appen (med brugerens session):
 
 1. Opret auktion: send `pakkestoerrelse` (`lille`/`mellem`/`stor`) og `vaegt_gram` (altid krævet)
    sammen med `forsendelse_mulig` – og `afhentning_mulig: true`, hvis sælgeren også tilbyder afhentning
-   (kan ændres med en almindelig update før første bud). Fejlkoder fra insert/update: `BHT01` (over 15 kg – kun afhentning),
+   (ved redigering før første bud: `rediger_auktion(..., p_afhentning_mulig)`, null = uændret). Fejlkoder fra insert/update: `BHT01` (over 15 kg – kun afhentning),
    `BHT02` (vægten passer ikke til størrelsen), `BHT03` (vægt mangler), `BHT04` ("Angiv en gyldig vægt" – vægt 0
    eller negativ) og `BHT05` ("Ukendt pakkestørrelse"). Sendes størrelsen ikke (den
    nuværende app), bliver den Mellem uden krav om vægt – når appen sender størrelsen, gøres kravet generelt.

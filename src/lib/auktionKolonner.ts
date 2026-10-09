@@ -47,7 +47,7 @@ export const AUKTION_KOLONNER: string = [
   "vaegt_gram",
   "fragt_pakkeshop_oere",
   "fragt_doer_oere",
-  // Afhentning som valg (20261012090000): også afhentning ved forsendelse.
+  // Afhentning som valg (20261013020000): også afhentning ved forsendelse.
   "afhentning_mulig",
 ].join(",");
 

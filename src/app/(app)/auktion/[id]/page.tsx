@@ -538,6 +538,7 @@ export default async function AuktionPage({
               brugerId={bruger?.id ?? null}
               saelgerId={auktion.bruger_id}
               forsendelseMulig={auktion.forsendelse_mulig}
+              afhentningMulig={auktion.afhentning_mulig === true}
               fragtPakkeshopOere={auktion.fragt_pakkeshop_oere ?? null}
               fragtDoerOere={auktion.fragt_doer_oere ?? null}
               status={auktion.status}
