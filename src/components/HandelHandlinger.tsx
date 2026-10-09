@@ -16,18 +16,18 @@ import {
 
 // Pakkebilleder (ROADMAP-BESLUTNINGER: "Pakkebilleder (krævet)"): de
 // dokumenterer indpakningen og bruges af BidHamr i sager. Mobilen åbner
-// kameraet direkte (capture="environment"). TODO(indhold): gennemse teksterne.
+// kameraet direkte (capture="environment").
 const PAKKE_FELTER: KategoriFelt<PakkeBilledeKategori>[] = [
   {
     kategori: "aaben_kasse",
     overskrift: PAKKE_KATEGORI_NAVN.aaben_kasse,
-    hjaelp: "Tag billedet ovenfra, så både varen og fyldet omkring den kan ses.",
+    hjaelp: "Tag billedet ovenfra, mens kassen er åben, så både varen og fyldet omkring den kan ses.",
     paakraevet: true,
   },
   {
     kategori: "lukket_kasse",
     overskrift: PAKKE_KATEGORI_NAVN.lukket_kasse,
-    hjaelp: "Hele kassen, lukket og tapet, med fragtlabelen tydeligt på.",
+    hjaelp: "Hele kassen, lukket og tapet. Har du sat en label på eller skrevet koden på kassen, skal den kunne ses.",
     paakraevet: true,
   },
 ];
@@ -104,8 +104,9 @@ export function SendPakkeForm({
           <li>Pak skrøbelige ting ind hver for sig, og tape kassen godt til.</li>
         </ul>
         <p className="mt-2">
-          Tag billederne med kameraet, mens du pakker. De viser, hvordan varen er pakket, og
-          bruges af BidHamr, hvis der opstår en sag.
+          Tag billederne med kameraet, mens du pakker. De viser, hvordan du har pakket varen, og
+          BidHamr bruger dem, hvis der bliver oprettet en sag. Du har altid selv ansvaret for at pakke
+          varen godt.
         </p>
       </div>
 
@@ -152,7 +153,7 @@ export function SendPakkeForm({
       </button>
       {!klar && !sender && (
         <p className="text-xs text-tekst-svag">
-          Tag begge billeder og indtast sporingsnummeret for at markere pakken som sendt.
+          Tag begge billeder, og skriv sporingsnummeret. Så kan du markere pakken som sendt.
         </p>
       )}
     </form>
@@ -205,7 +206,7 @@ export function GodkendPakkeKnap({ tradeId }: { tradeId: string }) {
     <BekraeftDialog
       triggerLabel="Godkend pakke"
       title="Godkend varen og bedøm sælgeren"
-      description="Din bedømmelse vises på sælgerens profil. Når du godkender, udbetales pengene til sælgeren – betalingen håndteres af vores betalingspartner Stripe. Det kan ikke fortrydes."
+      description="Din bedømmelse vises på sælgerens profil. Når du godkender, får sælgeren pengene. Betalingen håndteres af vores betalingspartner Stripe. Du kan ikke fortryde en godkendelse."
       confirmLabel="Godkend og bedøm"
       confirmDisabled={stjerner === 0 || antalTegn > KOMMENTAR_MAKS}
       onConfirm={() => godkendPakke(tradeId, stjerner, kommentar)}

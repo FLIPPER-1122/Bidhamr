@@ -62,7 +62,19 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvordan kan jeg betale?",
-          svar: "Med kort, MobilePay, Apple Pay, Google Pay eller en anden metode, der vises ved betalingen. Du betaler altid selv på betalingssiden, når du har vundet – vi trækker aldrig penge automatisk. Du kan gemme et kort under Min konto, så er det valgt på forhånd, når du betaler. Det er et tilvalg – du kan sagtens byde uden.",
+          svar: "Når du har vundet, går du til betalingssiden. Her vælger du levering, ser den samlede pris og betaler med kort, MobilePay, Apple Pay, Google Pay eller en anden metode, der vises. Du betaler altid selv – vi trækker aldrig penge automatisk, heller ikke hvis du har gemt et kort.",
+        },
+        {
+          spoergsmaal: "Kan jeg gemme mit kort og min adresse?",
+          svar: "Ja. Et gemt kort, din adresse og din foretrukne pakkeshop bliver udfyldt på forhånd næste gang, du betaler. Du skal stadig selv trykke \"Betal\".",
+        },
+        {
+          spoergsmaal: "Får jeg en faktura?",
+          svar: "Ja, på BidHamrs gebyrer. Som køber får du en faktura på købergebyret, fragten og BidHamr Beskyttelse, hvis du valgte den. Som sælger får du en faktura på sælgergebyret. Alle beløb er inkl. moms. Du finder fakturaerne under Min konto → Fakturaer og på handelssiden.",
+        },
+        {
+          spoergsmaal: "Får jeg en faktura på selve varen?",
+          svar: "Nej, ikke når du handler med en privatperson. Så får du en kvittering for handlen. Køber du af en erhvervssælger, sender firmaet selv fakturaen på varen.",
         },
         {
           spoergsmaal: "Hvad koster det?",
@@ -88,7 +100,19 @@ export const FAQ_SIDE: Tekstside = {
       punkter: [
         {
           spoergsmaal: "Hvem betaler fragten?",
-          svar: "Køberen. Prisen afhænger af pakkens størrelse: til en pakkeshop 40 kr. (Lille, op til 1 kg), 50 kr. (Mellem, op til 5 kg) eller 65 kr. (Stor, op til 15 kg). Levering til døren koster 60 kr. (Lille) eller 85 kr. (Mellem) – store pakker kan kun sendes til en pakkeshop. Fragten står på auktionen, før du byder, og du vælger levering, når du betaler. Varer over 15 kg kan kun afhentes.",
+          svar: "Køberen. Prisen afhænger af pakkens størrelse: til en pakkeshop 40 kr. (Lille, op til 1 kg), 50 kr. (Mellem, op til 5 kg) eller 65 kr. (Stor, op til 15 kg). Levering hjem koster 60 kr. (Lille) eller 85 kr. (Mellem). Store pakker kan kun sendes til en pakkeshop. Alle priser er inkl. moms. Fragten står på auktionen, før du byder.",
+        },
+        {
+          spoergsmaal: "Hvornår vælger jeg levering?",
+          svar: "Når du betaler. På betalingssiden vælger du en pakkeshop fra en liste eller et kort, eller levering hjem, hvis pakken ikke er for stor. Du ser den samlede pris, før du betaler.",
+        },
+        {
+          spoergsmaal: "Hvilket fragtfirma bruger I?",
+          svar: "Pakkerne sendes med DAO. Du kan følge pakken på handelssiden.",
+        },
+        {
+          spoergsmaal: "Kan store og tunge ting sendes?",
+          svar: "Nej. Varer over 15 kg kan kun afhentes hos sælgeren. Det samme gælder ting, der er for store til en almindelig pakke.",
         },
         {
           spoergsmaal: "Hvornår bliver min vare sendt?",
@@ -167,6 +191,14 @@ export const FAQ_SIDE: Tekstside = {
         {
           spoergsmaal: "Kan jeg rette eller annullere min auktion?",
           svar: "Ja, så længe der ikke er bud på den. Når det første bud er kommet, er auktionen låst: du kan ikke ændre noget, tilføje noget eller annullere den. Er der et problem med varen, så kontakt BidHamr.",
+        },
+        {
+          spoergsmaal: "Hvordan sender jeg pakken?",
+          svar: "Når køberen har betalt, laver du fragtlabelen på handelssiden. Du får en kode, som du viser i en daoSHOP, når du afleverer pakken – du behøver ikke en printer. Du kan også hente labelen som PDF. Tag derefter de to pakkebilleder, og marker pakken som sendt på handelssiden.",
+        },
+        {
+          spoergsmaal: "Hvilken pakkestørrelse skal jeg vælge?",
+          svar: "Den mindste, varen kan sendes i: Lille (op til 1 kg), Mellem (op til 5 kg) eller Stor (op til 15 kg). Vægten er med kasse og fyld. Vejer varen mere end 15 kg, kan den kun afhentes.",
         },
         {
           spoergsmaal: "Hvem har ansvaret, hvis varen går i stykker i posten?",

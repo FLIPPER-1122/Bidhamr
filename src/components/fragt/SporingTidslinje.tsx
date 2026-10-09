@@ -1,7 +1,6 @@
 // Sporingstidslinje for en forsendelse (køber og sælger). Ingen hooks og
 // ingen "use client": kan bruges i både server- og klientkomponenter.
 // Tiderne vises i dansk tid, så server og browser viser det samme.
-// TODO(indhold): gennemse teksterne.
 import type { ForsendelseVisning } from "@/lib/fragt/handlinger";
 
 const tidFormat = new Intl.DateTimeFormat("da-DK", {
@@ -21,7 +20,7 @@ function foersteHaendelse(f: ForsendelseVisning, type: string) {
 export default function SporingTidslinje({ f }: { f: ForsendelseVisning }) {
   const doer = f.levering === "doer";
   const trin: Trin[] = [
-    { noegle: "oprettet", navn: "Label lavet", tid: f.oprettetKl },
+    { noegle: "oprettet", navn: "Fragtlabel lavet", tid: f.oprettetKl },
     { noegle: "afleveret", navn: "Pakken er indleveret", tid: f.afleveretKl ?? foersteHaendelse(f, "afleveret") },
     { noegle: "i_transit", navn: "Pakken er undervejs", tid: foersteHaendelse(f, "i_transit") },
     ...(doer
@@ -29,7 +28,7 @@ export default function SporingTidslinje({ f }: { f: ForsendelseVisning }) {
       : [
           {
             noegle: "klar_til_afhentning",
-            navn: "Klar til afhentning i pakkeshoppen",
+            navn: "Klar til at blive hentet i pakkeshoppen",
             tid: f.klarTilAfhentningKl ?? foersteHaendelse(f, "klar_til_afhentning"),
           },
         ]),

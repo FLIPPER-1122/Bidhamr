@@ -936,8 +936,8 @@ export default function BidPanel({
           </span>
           <div className="min-w-0 text-sm">
             <p className="text-tekst">
-              Fragt fra <span className="font-semibold tabular-nums">{kroner(fragtOere(true, fragtPakkeshopOere))}</span>{" "}
-              <span className="text-tekst-daempet">(pakkeshop)</span>
+              Fragt <span className="font-semibold tabular-nums">{kroner(fragtOere(true, fragtPakkeshopOere))}</span>{" "}
+              <span className="text-tekst-daempet">til pakkeshop</span>
               {fragtDoerOere ? (
                 <>
                   <span className="mx-1.5 text-tekst-svag" aria-hidden="true">
@@ -949,7 +949,7 @@ export default function BidPanel({
                 </>
               ) : null}
             </p>
-            <p className="text-[13px] text-tekst-daempet">Sendes med DAO. Du vælger levering, når du betaler.</p>
+            <p className="text-[13px] text-tekst-daempet">Sendes med DAO. Du vælger levering, når du betaler. Priserne er inkl. moms.</p>
           </div>
         </div>
       )}

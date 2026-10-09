@@ -10,8 +10,6 @@
 //   auktionens låste fragtpris for den valgte levering. Beløbet på
 //   "Betal"-knappen er altid PaymentIntentens.
 // - Afhentning hos sælger kræver intet valg (handlen er en afhentning).
-//
-// TODO(indhold): gennemse alle tekster på siden.
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -368,7 +366,7 @@ export default function CheckoutSide({
             </p>
           ) : status.fristOverskredet ? (
             <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
-              Fristen for at betale er overskredet. Kontakt os, hvis du mener, det er en fejl.
+              Fristen for at betale er gået, så du kan ikke betale længere. Kontakt os, hvis du mener, det er en fejl.
             </p>
           ) : (
             <p className="flex items-start gap-3 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
@@ -436,13 +434,13 @@ export default function CheckoutSide({
                   <LeveringKort
                     ikon="bruger"
                     titel="Afhentning hos sælger"
-                    tekst="Du henter varen hos sælgeren og viser en kode, når du får den."
+                    tekst="Du henter varen hos sælgeren og viser din afhentningskode, når du får varen."
                     pris="0 kr"
                     valgt
                   />
                   <p className="mt-3 text-sm text-tekst-daempet">
-                    Sælgeren tilbyder kun afhentning. Når du har betalt, ser du adressen og din afhentningskode på
-                    handelssiden.
+                    Varen kan kun hentes hos sælgeren. Når du har betalt, ser du adressen og din afhentningskode på
+                    handelssiden. Du har 7 dage til at hente varen.
                   </p>
                 </div>
               ) : (
@@ -454,9 +452,9 @@ export default function CheckoutSide({
                         <LeveringKort
                           navn={`${id}-maade`}
                           ikon="butik"
-                          titel="Send til pakkeshop"
-                          tekst="Hent pakken i en DAO-pakkeshop nær dig."
-                          pris={`fra ${kroner(checkout.pakkeshopOere ?? serverFragt)}`}
+                          titel="Pakkeshop"
+                          tekst="Du henter pakken i en DAO-pakkeshop, du selv vælger."
+                          pris={kroner(checkout.pakkeshopOere ?? serverFragt)}
                           valgt={maade === "pakkeshop"}
                           onVaelg={() => setMaade("pakkeshop")}
                         />
@@ -465,8 +463,8 @@ export default function CheckoutSide({
                         <LeveringKort
                           navn={`${id}-maade`}
                           ikon="hjem"
-                          titel="Send hjem"
-                          tekst="DAO bringer pakken til din dør."
+                          titel="Levering hjem"
+                          tekst="DAO bringer pakken hjem til din dør."
                           pris={kroner(checkout.doerOere!)}
                           valgt={maade === "doer"}
                           onVaelg={() => setMaade("doer")}
@@ -480,7 +478,7 @@ export default function CheckoutSide({
                     )}
                     {!doerMulig && kanSkifteMaade && (
                       <p className="mt-2 text-[13px] text-tekst-daempet">
-                        Pakken er for stor til levering hjem – den kan kun sendes til en pakkeshop.
+                        Pakken er for stor til levering hjem. Den kan kun sendes til en pakkeshop.
                       </p>
                     )}
                   </fieldset>
@@ -585,7 +583,7 @@ export default function CheckoutSide({
                         id={`${id}-telefon`}
                         label="Mobilnummer"
                         fejl={feltFejl.telefon}
-                        hjaelp="DAO sender dig besked om pakken på sms."
+                        hjaelp="DAO bruger nummeret til at give dig besked om pakken."
                         className="sm:col-span-2"
                       >
                         <input
@@ -609,7 +607,7 @@ export default function CheckoutSide({
                         onChange={(e) => setGemForslag(e.target.checked)}
                         className="h-5 w-5 shrink-0 rounded-[6px] accent-groen"
                       />
-                      Husk adresse og pakkeshop til næste køb
+                      Husk mine oplysninger og min pakkeshop til næste køb
                     </label>
                   </fieldset>
                 </>
@@ -636,7 +634,7 @@ export default function CheckoutSide({
                 {alleredeBetalt ? (
                   <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
                     {/behandles/i.test(alleredeBetalt) ? (
-                      <p className="font-semibold">Betalingen behandles – vi giver besked, når den er gennemført.</p>
+                      <p className="font-semibold">Betalingen behandles. Vi giver dig besked, når den er gennemført.</p>
                     ) : (
                       <>
                         <p className="font-semibold">{alleredeBetalt}</p>
@@ -649,7 +647,7 @@ export default function CheckoutSide({
                   </div>
                 ) : status.status === "behandles" ? (
                   <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
-                    <p className="font-semibold">Betalingen behandles – vi giver besked, når den er gennemført.</p>
+                    <p className="font-semibold">Betalingen behandles. Vi giver dig besked, når den er gennemført.</p>
                     <p className="mt-1">Det tager normalt kun et øjeblik.</p>
                   </div>
                 ) : lukket ? (
@@ -742,10 +740,10 @@ export default function CheckoutSide({
               <div className="mt-5 rounded-xl bg-groen-lys p-4 text-sm text-groen-mork">
                 <p className="flex items-center gap-2 font-semibold">
                   <Ikon navn="skjold" className="h-5 w-5 shrink-0" />
-                  Pengene holdes, til du har fået varen
+                  Sælgeren får først pengene, når du har fået varen
                 </p>
                 <p className="mt-1.5 text-tekst-daempet">
-                  Sælgeren får først pengene, når du har godkendt varen.{" "}
+                  Pengene udbetales, når du har godkendt varen, eller når fristen for at oprette en sag er gået.{" "}
                   {status.beskyttelse
                     ? "Du har valgt BidHamr Beskyttelse, så vi hjælper dig, hvis varen går i stykker under forsendelsen."
                     : "Kommer pakken ikke frem, hjælper vi dig."}{" "}
@@ -760,7 +758,7 @@ export default function CheckoutSide({
 
               <p className="mt-4 flex items-center justify-center gap-2 text-[13px] text-tekst-daempet">
                 <Ikon navn="laas" className="h-4 w-4 shrink-0" />
-                Betalingen er krypteret og sikker – den håndteres af Stripe.
+                Betalingen er krypteret og håndteres af vores betalingspartner Stripe.
               </p>
             </div>
           </aside>
