@@ -62,6 +62,12 @@ const ikkeSatOpFirma: Fragtfirma = {
   async fortolkWebhook() {
     return { ok: false, status: 404, fejl: "Fragt er ikke sat op" };
   },
+  async soegPakkeshops() {
+    return ikkeSatOp();
+  },
+  async hentPakkeshop() {
+    return ikkeSatOp();
+  },
 };
 
 // Adapteren for et bestemt firma (fx til webhooks og sporing af forsendelser,

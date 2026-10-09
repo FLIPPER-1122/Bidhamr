@@ -108,6 +108,12 @@ export const GRAENSER = {
   // Stripe).
   betaling_kort_bruger: { maks: 20, vindueSek: 60 * 60 },
   cvr_opslag_staff: { maks: 60, vindueSek: 60 * 60 },
+  // Fragt: pakkeshop-søgning (rammer fragtfirmaets API) og handlinger
+  // (leveringsvalg, label, annullering) pr. bruger; appens API pr. IP, før
+  // tokenet er valideret.
+  fragt_pakkeshop_bruger: { maks: 60, vindueSek: 10 * 60 },
+  fragt_handling_bruger: { maks: 30, vindueSek: 10 * 60 },
+  fragt_app_ip: { maks: 600, vindueSek: 60 * 60 },
   // Klager og visning af en DSA-sag via signeret link.
   dsa_klage_ip: { maks: 10, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;

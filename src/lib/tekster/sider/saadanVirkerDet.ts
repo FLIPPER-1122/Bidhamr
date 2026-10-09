@@ -7,7 +7,6 @@
 // OPDATER, når GLS-sporing er bygget: i dag starter 48-timers fristen, når
 // køberen trykker "Jeg har modtaget pakken". Bagefter starter den, når
 // sporingen viser, at pakken er hentet.
-// OPDATER, når fragtprisen ikke længere er fast 35 kr.
 
 import type { Tekstside } from "./typer";
 
@@ -101,11 +100,11 @@ export const SAADAN_VIRKER_DET: Tekstside = {
       punkter: [
         "Køber betaler et gebyr på 5 % af buddet.",
         "Sælger betaler et gebyr på 5 % af buddet. Det trækkes fra, før pengene udbetales.",
-        "Fragt koster omkring 35 kr. og betales af køberen. Skal varen hentes, er der ingen fragt.",
+        "Fragt betales af køberen: til en pakkeshop fra 40 kr. og levering til døren fra 60 kr., alt efter pakkens størrelse. Skal varen hentes, er der ingen fragt.",
         "BidHamr Beskyttelse er et frivilligt tilvalg for køberen: 5 % af buddet, mindst 25 kr. og højst 250 kr.",
         "Alle priser er inkl. moms. Der kommer ikke noget oveni.",
       ],
-      note: "Eksempel: Du vinder en vare til 200 kr., som skal sendes. Du betaler 200 kr. + 10 kr. i gebyr + 35 kr. i fragt = 245 kr. Sælgeren får 190 kr.",
+      note: "Eksempel: Du vinder en vare til 200 kr., som skal sendes. Du betaler 200 kr. + 10 kr. i gebyr + 40 kr. i fragt (lille pakke til en pakkeshop) = 250 kr. Sælgeren får 190 kr.",
     },
     {
       id: "betaling",
