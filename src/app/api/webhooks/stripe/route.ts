@@ -4,7 +4,6 @@ import { databasensStripeTilstand, getStripe, noeglensTilstand } from "@/lib/str
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import {
-  overfoerVentende,
   registrerGemtKort,
   spejlConnectKonto,
   spejlDestinationCharge,
@@ -20,15 +19,15 @@ import { aabnVentende } from "@/lib/betaling/betalingInd";
 import { bankKontoRettet, spejlReview, udbetalForKonto, udbetalVentende } from "@/lib/betaling/udbetaling";
 import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/betaling";
 
-// Stripe-webhook for den nye betalingsmodel. Spejler Stripes status i
-// databasen - Stripe er sandheden om penge.
+// Stripe-webhook for betalingen (destination charges - den eneste model).
+// Spejler Stripes status i databasen - Stripe er sandheden om penge.
 //
 // Signaturen verificeres altid. Platform-events signeres med
 // STRIPE_WEBHOOK_SECRET; events fra Connect-konti (account.updated,
 // account.application.deauthorized, capability.updated, payout.paid,
 // payout.failed, payout.canceled, balance.available,
 // account.external_account.created/updated) kommer fra en
-// separat Connect-destination i Stripe ("Events from: Connected accounts")
+// særskilt Connect-destination i Stripe ("Events from: Connected accounts")
 // og signeres med STRIPE_CONNECT_WEBHOOK_SECRET (samme rute bruges til begge).
 // Connect-events har event.account = sælgerens Connect-konto.
 //
@@ -37,7 +36,7 @@ import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/
 // invoice.finalized/paid/payment_failed/voided/marked_uncollectible. Kun for
 // kunder, der er et firma (firmaer.stripe_customer_id); alle andre ignoreres.
 //
-// Betalingsmodel destination (trin 2, platform-events): charge.succeeded og
+// Betaling ind (trin 2, platform-events): charge.succeeded og
 // charge.updated spejler transfer/application fee/available_on;
 // radar.early_fraud_warning.created/updated markerer betalingen til staff
 // (ingen automatisk refusion).
@@ -85,8 +84,8 @@ const CONNECT_EVENTS = new Set<string>([
 ]);
 
 // Hent sælgerens konto frisk (events kan komme i forkert rækkefølge) og spejl
-// den. Er kontoen nu klar til overførsler, overføres frigivne beløb, der
-// ventede (betalingsmodel separat).
+// den. Betalinger, der ventede på kontoen, åbnes, og ventende udbetalinger
+// forsøges.
 async function spejlKonto(kontoId: string, eventType: string): Promise<void> {
   let konto: Stripe.Account;
   try {
@@ -101,14 +100,11 @@ async function spejlKonto(kontoId: string, eventType: string): Promise<void> {
     throw err;
   }
   const brugerId = await spejlConnectKonto(konto);
-  if (brugerId && konto.capabilities?.transfers === "active") {
-    await overfoerVentende(brugerId);
-  }
-  // Betalinger, der ventede på sælgerens konto (destination), åbnes nu,
-  // hvis kontoen kan tage imod betaling.
+  // Betalinger, der ventede på sælgerens konto, åbnes nu, hvis kontoen kan
+  // tage imod betaling.
   if (brugerId) await aabnVentende(brugerId);
-  // Destination (trin 3): har sælgeren rettet bankkontoen efter en fejlet
-  // udbetaling, sendes pengene igen; ellers forsøges ventende udbetalinger.
+  // Har sælgeren rettet bankkontoen efter en fejlet udbetaling, sendes
+  // pengene igen; ellers forsøges ventende udbetalinger.
   if (brugerId && !(await bankKontoRettet(konto, brugerId)) && konto.payouts_enabled) {
     await udbetalVentende(brugerId);
   }
@@ -244,8 +240,8 @@ async function haandter(event: Stripe.Event): Promise<void> {
     case "payout.failed":
     case "payout.canceled": {
       // Udbetaling fra sælgerens Connect-konto til banken: BidHamrs egen
-      // (destination, saelger_udbetalinger) eller Stripes automatiske
-      // (separat).
+      // (saelger_udbetalinger). En udbetaling, BidHamr ikke har lavet, giver
+      // drift-alarm (sælgerkonti har manuel plan).
       if (!event.account) return; // platformens egne udbetalinger
       const payout = event.data.object as Stripe.Payout;
       const resultat = await spejlUdbetaling(event.account, payout.id);

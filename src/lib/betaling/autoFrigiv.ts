@@ -7,7 +7,7 @@ import "server-only";
 //     eller oprettet en sag (indtil GLS-sporing erstatter det).
 // Databasen afgør og frigiver atomisk (handel_auto_frigiv - respekterer
 // frysning, åbne/afgjorte sager, indsigelse og refusion). Bagefter overføres
-// pengene som ved køberens godkendelse (overfoerTilSaelger), og køberen får
+// pengene som ved køberens godkendelse (pengeTilSaelger), og køberen får
 // besked. Sælgeren får afregningen (med grunden) og "Din udbetaling er på
 // vej" fra overførslen (eller påmindelsen om udbetalingskonto). Kaster aldrig.
 import { createAdminClient } from "@/lib/supabase/admin";

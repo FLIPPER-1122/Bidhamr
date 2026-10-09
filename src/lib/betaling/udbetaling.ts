@@ -30,8 +30,9 @@ import "server-only";
 //      bidhamr-payout-<udbetaling>-<forsøg>.
 // Flere handler samles i én payout pr. sælger pr. kørsel (højst 50).
 //
-// I separat-modellen ændres intet: pengeTilSaelger kalder overfoerTilSaelger
-// uændret, og alt her virker kun på betalinger med pengemodel 'destination'.
+// Destination er den eneste model (trin 5): alt her virker kun på betalinger
+// med pengemodel 'destination'. Historiske rækker fra den gamle model
+// (separat) udbetales aldrig herfra (drift-alarm - staff).
 
 import Stripe from "stripe";
 import { getStripe, StripeTilstandFejl } from "@/lib/stripe";
@@ -39,11 +40,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { send } from "@/lib/notifikationer/send";
 import { sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
+import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { kronerFraOere } from "@/lib/mails/handel";
 import {
+  alarmGammelModel,
   type BetalingRaekke,
   markerUdbetalingskonto,
-  overfoerTilSaelger,
   spejlConnectKonto,
   spejlIndsigelse,
   spejlSvindelvarsel,
@@ -144,30 +146,21 @@ async function markerBetaling(admin: Admin, b: BetalingRaekke, tekst: string): P
 
 // Pengene gives til sælgeren efter frigivelse. Bruges af ALLE frigivelsesveje
 // (køberens godkendelse, afhentningskode, 48 t/14 dage uden sag, sag afgjort
-// til sælger, admin-frigivelse, afsluttet indsigelse, cron og webhook).
-//   separat:     uændret - overfoerTilSaelger (transfer til Connect-kontoen).
-//   destination: udbetalTilSaelger (payout fra Connect-kontoen til banken).
-// Resultat "overfoert"/"allerede_overfoert" (separat) eller
-// "udbetalt"/"allerede_udbetalt" (destination) = pengene er sendt videre.
+// til sælger, admin-frigivelse, afsluttet indsigelse, cron og webhook):
+// udbetalTilSaelger (payout fra sælgerens Connect-konto til banken).
+// Resultat "udbetalt"/"allerede_udbetalt" = pengene er sendt videre.
 export async function pengeTilSaelger(betalingId: string): Promise<string> {
-  const { data, error } = await createAdminClient()
-    .from("betalinger")
-    .select("pengemodel")
-    .eq("id", betalingId)
-    .maybeSingle<{ pengemodel: string | null }>();
-  if (error) throw new Error(`pengeTilSaelger: ${error.message}`);
-  if (data?.pengemodel === "destination") return udbetalTilSaelger(betalingId);
-  return overfoerTilSaelger(betalingId);
+  return udbetalTilSaelger(betalingId);
 }
 
 export function erSendtTilSaelger(resultat: string): boolean {
-  return ["overfoert", "allerede_overfoert", "udbetalt", "allerede_udbetalt"].includes(resultat);
+  return resultat === "udbetalt" || resultat === "allerede_udbetalt";
 }
 
 // Grunde, hvor handlen ER færdig for sælgeren, og afregningen ("pengene er
 // frigivet") må sendes - pengene venter kun på Stripe/kontoen. Ved sag,
 // indsigelse, refusion, svindelvarsel og annullering sendes den ikke (samme
-// værn som overfoerTilSaelger).
+// værn som før hver udbetaling).
 const AFREGNING_OK = new Set([
   "midler_ikke_tilgaengelige",
   "ventetid",
@@ -186,7 +179,13 @@ export async function udbetalTilSaelger(betalingId: string): Promise<string> {
   const admin = createAdminClient();
   const b = await hentBetaling(admin, betalingId);
   if (!b) return "ikke_fundet";
-  if (b.pengemodel !== "destination") return "ikke_destination";
+  if (b.pengemodel !== "destination") {
+    // Historisk række fra den gamle model: aldrig automatisk (staff).
+    if (b.status === "betalt" && b.frigivet_kl && !b.stripe_transfer_id && !b.refusion_anmodet_kl) {
+      await alarmGammelModel(b.id, "Udbetaling");
+    }
+    return "gammel_model";
+  }
   if (b.saelger_udbetaling_id) {
     const { data: u } = await admin
       .from("saelger_udbetalinger")
@@ -316,7 +315,7 @@ export async function tjekFoerUdbetaling(b: BetalingRaekke): Promise<string | nu
 
 // --------------------------------------------------------------- saldo
 
-function dkk(liste: Stripe.Balance.Available[] | Stripe.Balance.Pending[] | undefined, kunKort: boolean): number {
+export function dkk(liste: Stripe.Balance.Available[] | Stripe.Balance.Pending[] | undefined, kunKort: boolean): number {
   let sum = 0;
   for (const x of liste ?? []) {
     if (x.currency !== "dkk") continue;
@@ -354,7 +353,7 @@ export function staarPaaKontoen(r: {
   return beloeb;
 }
 
-async function skyldigOere(admin: Admin, saelgerId: string, konto: string): Promise<number> {
+export async function skyldigOere(admin: Admin, saelgerId: string, konto: string): Promise<number> {
   const { data, error } = await admin
     .from("betalinger")
     .select(
@@ -469,15 +468,18 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
   const tilgaengelig = dkk(saldo.available, true);
   const iAlt = dkk(saldo.available, false) + dkk(saldo.pending, false);
   const skyldig = await skyldigOere(admin, saelgerId, konto);
+  // Én drift-alarm pr. tilfælde (F06): samme konto alarmerer først igen, når
+  // afstemningen har passet imellem.
   if (iAlt < skyldig) {
-    await logDriftFejl({
-      kilde: "server",
+    await alarmPrTilfaelde({
+      noegle: `saldo:${konto}`,
       hvor: "betaling/saldo",
       fejl: `Saldo-afstemning: sælgerkonto ${konto} har mindre på saldoen (tilgængelig + afventende) end de betalte, ikke-udbetalte handler kræver. Udbetalinger til sælgeren er stoppet - kontrollér kontoen i Stripe.`,
       brugerId: saelgerId,
     });
     return "saldo_afviger";
   }
+  await lukTilfaelde(`saldo:${konto}`);
   const valgte: BetalingRaekke[] = [];
   let sum = 0;
   for (const b of klar) {
@@ -486,12 +488,14 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
     sum += Number(b.udbetaling_oere);
   }
   if (valgte.length < klar.length) {
-    await logDriftFejl({
-      kilde: "server",
+    await alarmPrTilfaelde({
+      noegle: `saldo-tilgaengelig:${konto}`,
       hvor: "betaling/saldo",
       fejl: `Saldo-afstemning: sælgerkonto ${konto} har ikke nok tilgængelige midler til ${klar.length - valgte.length} frigivne handel(er), selv om de burde være tilgængelige - udbetalingen venter og prøves igen.`,
       brugerId: saelgerId,
     });
+  } else {
+    await lukTilfaelde(`saldo-tilgaengelig:${konto}`);
   }
   if (!valgte.length) return "venter_saldo";
 
@@ -826,7 +830,7 @@ export async function udbetalVentende(saelgerId?: string): Promise<number> {
 // --------------------------------------------------------------- webhook
 
 // payout.paid/failed/canceled (Connect). Returnerer null, hvis payouten ikke
-// er en BidHamr-udbetaling (fx Stripes automatiske udbetaling i separat).
+// er en BidHamr-udbetaling (så giver spejlUdbetaling drift-alarm).
 export async function spejlBidhamrPayout(konto: string, payoutArg: Stripe.Payout): Promise<string | null> {
   let payout = payoutArg;
   const admin = createAdminClient();

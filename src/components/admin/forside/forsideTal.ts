@@ -1,6 +1,6 @@
 // Tallene fra admin_forside_tal() (supabase/migrations/20261005030000_admin_forside.sql,
 // rettet i 20261005031000_admin_forside_rettelser.sql og
-// 20261006011000_fragt_rettelser.sql).
+// 20261006011000_fragt_rettelser.sql og 20261011050000_betalingsmodel_oprydning.sql).
 // Kun antal - ingen beløb og ingen personoplysninger.
 
 export type HandlingTal = {
@@ -13,7 +13,7 @@ export type HandlingTal = {
   afhentning: number;
   ubetalte: number;
   betalinger: number;
-  overfoersel_fejlet: number;
+  udbetaling_fejlet: number;
   refusion_fejlet: number;
   afvigelser: number;
   udbetalingskonti: number;
@@ -56,7 +56,7 @@ const HANDLING_NOEGLER: (keyof HandlingTal)[] = [
   "afhentning",
   "ubetalte",
   "betalinger",
-  "overfoersel_fejlet",
+  "udbetaling_fejlet",
   "refusion_fejlet",
   "afvigelser",
   "udbetalingskonti",

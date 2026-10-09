@@ -42,9 +42,9 @@ export function problemTekst(b: BetalingTilHandling): { titel: string; tekst: st
       };
     case "overfoersel":
       return {
-        titel: "Overførslen til sælgeren fejlede",
+        titel: "Udbetalingen til sælgeren er ikke gennemført",
         tekst:
-          "Pengene er frigivet, men nåede ikke frem til sælgerens konto. Prøv overførslen igen. Fejler den igen, så kontakt sælgeren om udbetalingskontoen.",
+          "Pengene er frigivet, men udbetalingen fra sælgerens Stripe-konto til banken er ikke gennemført. Se fejlen, og prøv udbetalingen igen. Fejler den igen, så kontakt sælgeren om udbetalingskontoen.",
       };
     case "refusion":
       if (b.refusion?.tilstand === "gennemfoert") {
@@ -202,10 +202,10 @@ export default function BetalingHandlinger({
         <Handling
           knap={
             <ConfirmDialog
-              triggerLabel="Prøv overførsel igen"
+              triggerLabel="Prøv udbetaling igen"
               triggerClassName={KNAP_ORANGE}
-              title="Prøv overførslen til sælger igen?"
-              description="Overførslen får nye forsøg og prøves med det samme. Betalingen forbliver markeret, indtil pengene faktisk er overført."
+              title="Prøv udbetalingen til sælger igen?"
+              description="Udbetalingen fra sælgerens Stripe-konto til banken prøves med det samme (Stripe tjekker betalingen igen først). Betalingen forbliver markeret, hvis den ikke kan udbetales."
               confirmLabel="Prøv igen"
               action={prøvOverfoerselIgenForm}
               hiddenFields={{ tradeId: b.trade_id }}
@@ -279,7 +279,7 @@ export default function BetalingHandlinger({
                 }}
               />
             }
-            forklaring="Sælgeren får sin udbetaling. Markeringen forsvinder, når pengene er overført."
+            forklaring="Sælgeren får sin udbetaling. Markeringen forsvinder, når udbetalingen er sendt."
           />
         </>
       )}

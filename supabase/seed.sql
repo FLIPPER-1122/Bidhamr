@@ -114,6 +114,14 @@ on conflict (id) do nothing;
 -- Seed koerer som postgres uden JWT og er derfor undtaget fra
 -- auctions_kraev_udbetalingskonto. Via UI/appen kraever oprettelse en
 -- udbetalingskonto (saelger@ har en rigtig Stripe-testkonto paa testdatabasen).
+--
+-- Betalingsmodel (20261011050000): kun destination - købers penge står på
+-- sælgerens Stripe Connect-konto. Seed opretter BEVIDST ingen Stripe-konti
+-- (stripe_account_id), betalinger eller Stripe-id'er: et falsk id (fx
+-- acct_test_...) findes ikke hos Stripe og stopper betalinger, backfill og
+-- vagten i 20261011050000. En sælger, der skal sælge i testen, opretter sin
+-- udbetalingskonto via Min konto (Stripes testonboarding - card_payments og
+-- manuel udbetalingsplan sættes automatisk).
 -- ---------------------------------------------------------
 insert into public.auctions
   (id, bruger_id, titel, beskrivelse, billeder, startpris, kategori, postnummer,
@@ -173,3 +181,14 @@ values ('55555555-5555-4555-8555-000000000001',
         '11111111-1111-4111-8111-000000000002',
         'Hej! Glæder mig til sættet. Hvornår sender du?')
 on conflict (id) do nothing;
+
+-- ---------------------------------------------------------
+-- Betalingsmodellen skal være destination (20261011050000). Ellers nægter
+-- serveren at oprette betalinger - kør migrationerne, før seed bruges.
+-- ---------------------------------------------------------
+do $$
+begin
+  if coalesce((select betalingsmodel from public.stripe_tilstand where id), '') <> 'destination' then
+    raise warning 'seed.sql: stripe_tilstand.betalingsmodel er ikke destination - kør supabase/migrations (20261011050000_betalingsmodel_oprydning.sql).';
+  end if;
+end $$;

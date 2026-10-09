@@ -1,32 +1,33 @@
-// Server-only: hvilken betalingsmodel er aktiv (docs/BETALINGSMODEL-PLAN.md).
+// Server-only: vagt for betalingsmodellen (docs/BETALINGSMODEL-PLAN.md).
 //
-//   separat     - i dag: køberen betaler på BidHamrs platformskonto, og
-//                 pengene overføres (transfer) til sælgeren ved frigivelse.
-//   destination - ny model: betaling på sælgerens vegne (on_behalf_of +
-//                 transfer_data); pengene står på sælgerens Connect-konto med
-//                 manuel udbetalingsplan, og BidHamr udbetaler, når handlen
-//                 er afsluttet.
+// BidHamr kører KUN med destination (Filip, 8. okt. 2026 - trin 5): betaling
+// på sælgerens vegne (on_behalf_of + transfer_data); pengene står på
+// sælgerens Connect-konto med manuel udbetalingsplan, og BidHamr udbetaler,
+// når handlen er afsluttet. Den gamle model (separate charges and transfers)
+// er fjernet, og der er intet serverflag (STRIPE_BETALINGSMODEL bruges ikke).
 //
-// Destination er KUN aktiv, når BÅDE serverflaget STRIPE_BETALINGSMODEL er
-// 'destination' OG databasens indstilling (stripe_tilstand.betalingsmodel,
-// 20261011010000) er 'destination'. Databasen bruger sin indstilling i
-// har_udbetalingskonto (strammere krav til sælgerkontoen). Er de uenige,
-// gives drift-alarm, og koden kører 'separat' (sikreste valg: ingen nye
-// pengestrømme). Standard (flaget ikke sat) = 'separat' uden databaseopslag.
-//
-// Trin 1 (fundament): kun onboarding/kontoopsætning og spejling af
-// sælgerkontoen læser modellen. Pengestrømmen er uændret.
+// Vagt: databasens stripe_tilstand.betalingsmodel er 'destination', når
+// migrationerne for trin 1-5 er kørt (20261011050000 sætter den og låser den).
+// Står den til noget andet, eller kan den ikke læses (databasen er ikke
+// migreret), nægter serveren at oprette betalinger (PaymentIntents) og giver
+// drift-alarm (betaling/betalingsmodel) - der faldes ALDRIG tilbage til den
+// gamle model.
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 
-export type Betalingsmodel = "separat" | "destination";
-
 const CACHE_MS = 60_000;
 const CACHE_FEJL_MS = 5_000;
 const ALARM_MS = 10 * 60_000;
-let cache: { model: Betalingsmodel | null; kl: number } | null = null;
+let cache: { klar: boolean; kl: number } | null = null;
 let sidsteAlarm = 0;
+
+// Teksten må vises for brugeren.
+export class BetalingsmodelFejl extends Error {
+  constructor() {
+    super("Betalingen kan ikke startes lige nu. Prøv igen senere – vi kigger på det.");
+  }
+}
 
 async function alarm(tekst: string) {
   if (Date.now() - sidsteAlarm < ALARM_MS) return;
@@ -34,48 +35,32 @@ async function alarm(tekst: string) {
   await logDriftFejl({ kilde: "server", hvor: "betaling/betalingsmodel", fejl: tekst });
 }
 
-// Serverflaget. Tomt/ikke sat = 'separat'. En ukendt værdi = 'separat' + alarm.
-export function serverensBetalingsmodel(): { model: Betalingsmodel; ugyldig: boolean } {
-  const v = (process.env.STRIPE_BETALINGSMODEL ?? "").trim().toLowerCase();
-  if (v === "destination") return { model: "destination", ugyldig: false };
-  if (v === "" || v === "separat") return { model: "separat", ugyldig: false };
-  return { model: "separat", ugyldig: true };
-}
-
-// Databasens indstilling (null = kunne ikke læses, fx før migrationen).
-export async function databasensBetalingsmodel(): Promise<Betalingsmodel | null> {
-  if (cache && Date.now() - cache.kl < (cache.model ? CACHE_MS : CACHE_FEJL_MS)) return cache.model;
-  let model: Betalingsmodel | null = null;
+// true = databasen er migreret til destination (stripe_tilstand.betalingsmodel).
+export async function databasenErDestination(): Promise<boolean> {
+  if (cache && Date.now() - cache.kl < (cache.klar ? CACHE_MS : CACHE_FEJL_MS)) return cache.klar;
+  let klar = false;
   try {
     const { data, error } = await createAdminClient()
       .from("stripe_tilstand")
       .select("betalingsmodel")
       .eq("id", true)
       .maybeSingle<{ betalingsmodel: string }>();
-    if (!error && (data?.betalingsmodel === "separat" || data?.betalingsmodel === "destination")) {
-      model = data.betalingsmodel;
-    }
+    klar = !error && data?.betalingsmodel === "destination";
   } catch {
-    model = null;
+    klar = false;
   }
-  cache = { model, kl: Date.now() };
-  return model;
+  cache = { klar, kl: Date.now() };
+  return klar;
 }
 
-export async function aktivBetalingsmodel(): Promise<Betalingsmodel> {
-  const server = serverensBetalingsmodel();
-  if (server.ugyldig) {
-    await alarm("STRIPE_BETALINGSMODEL har en ukendt værdi - kører 'separat'. Brug 'separat' eller 'destination'.");
-  }
-  if (server.model === "separat") return "separat";
-  const db = await databasensBetalingsmodel();
-  if (db === "destination") return "destination";
+// Kaster BetalingsmodelFejl (og giver drift-alarm), hvis databasen ikke er
+// migreret til destination. Kaldes før en betaling (PaymentIntent) oprettes.
+export async function kraevDestination(): Promise<void> {
+  if (await databasenErDestination()) return;
   await alarm(
-    db === null
-      ? "STRIPE_BETALINGSMODEL=destination, men databasens betalingsmodel (stripe_tilstand.betalingsmodel) kan ikke læses - kører 'separat'."
-      : "STRIPE_BETALINGSMODEL=destination, men databasens betalingsmodel er 'separat' - kører 'separat'. Sæt begge, når destination skal bruges.",
+    "Betaling stoppet: databasens betalingsmodel (stripe_tilstand.betalingsmodel) er ikke 'destination' eller kan ikke læses. Kør migrationerne for betalingsmodellen (trin 1-5, se docs/GO-LIVE-STRIPE.md). Der oprettes ingen betalinger, før det er gjort.",
   );
-  return "separat";
+  throw new BetalingsmodelFejl();
 }
 
 // Kun til test: nulstil cachen.

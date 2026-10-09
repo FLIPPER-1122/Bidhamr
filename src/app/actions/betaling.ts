@@ -13,7 +13,6 @@ import { logDriftFejl } from "@/lib/drift";
 import { fjernGemtKortForBruger, saetAutobetalingForBruger } from "@/lib/betaling/kort";
 import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
-import { aktivBetalingsmodel } from "@/lib/betaling/model";
 import {
   BetalingsFejl,
   BetalingVenterFejl,
@@ -28,8 +27,6 @@ import {
   spejlConnectKonto,
   spejlPaymentIntent,
   stripeOversigtLink,
-  hentOverfoersler,
-  type Overfoersel,
 } from "@/lib/betaling/stripeBetaling";
 
 type Fejl = { fejl: string };
@@ -239,10 +236,7 @@ export type Betalingsindstillinger = {
     // sætte varer til salg, før Stripe har godkendt kontoen (betalingsmodel
     // destination, 20261011020000).
     frosset: boolean;
-    // Betalingsmodel destination (trin 3): BidHamr sender pengene fra
-    // sælgerens Stripe-konto til banken (manuel udbetalingsplan), og en
-    // udbetaling er fejlet - sælgeren skal rette bankkontoen hos Stripe.
-    bidhamrUdbetaler: boolean;
+    // En udbetaling til banken er fejlet - sælgeren skal rette bankkontoen hos Stripe.
     venterPaaBank: boolean;
   };
 };
@@ -272,7 +266,6 @@ export async function hentBetalingsindstillinger(): Promise<
         afvist: !!p?.connect_spaerret_aarsag?.startsWith("rejected."),
         frakoblet: !!p?.connect_frakoblet_kl,
         frosset: !!p?.saelger_frosset_kl,
-        bidhamrUdbetaler: (await aktivBetalingsmodel()) === "destination",
         venterPaaBank: !!p?.connect_udbetaling_fejlet_kl,
       },
     };
@@ -441,23 +434,6 @@ export async function aabnStripeOversigt(): Promise<{ ok: true; url: string } | 
     return { ok: true, url };
   } catch (err) {
     console.error("aabnStripeOversigt fejlede:", err);
-    return { fejl: GENERISK };
-  }
-}
-
-export type { Overfoersel };
-
-// Sælgerens egne overførsler fra handler på BidHamr til udbetalingskontoen
-// hos Stripe (vare, dato, beløb). Kun egne - id'et kommer fra sessionen.
-export async function hentMineOverfoersler(): Promise<
-  { ok: true; overfoersler: Overfoersel[] } | Fejl
-> {
-  const user = await indloggetBruger();
-  if (!user) return { fejl: "Du skal være logget ind." };
-  try {
-    return { ok: true, overfoersler: await hentOverfoersler(user.id) };
-  } catch (err) {
-    console.error("hentMineOverfoersler fejlede:", err);
     return { fejl: GENERISK };
   }
 }

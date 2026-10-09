@@ -17,7 +17,7 @@
 //       (alt undtagen BidHamr Beskyttelse) -> refunderBetaling (delvis refusion)
 //   medhold køber, skadet/ikke som beskrevet -> 'afventer_retur'; refusion når
 //       BÅDE "Retur afleveret" er registreret OG fristen er udløbet
-//   medhold sælger -> frigivelse efter fristen -> overfoerTilSaelger
+//   medhold sælger -> frigivelse efter fristen -> udbetaling til sælgerens bank (pengeTilSaelger)
 //   luk sag        -> frysningen fjernes efter fristen; handlen fortsætter
 // Fejler Stripe-kaldet, er refusionen stadig claimet; cron prøver igen
 // (refunderSagerVentende), og betalingen markeres til admin.

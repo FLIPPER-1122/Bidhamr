@@ -130,8 +130,6 @@ export type PengeTal = {
 export type HoldtGrund =
   | "indsigelse"
   | "refusion_i_gang"
-  | "overfoersel_i_gang"
-  | "afventer_overfoersel"
   | "afventer_udbetaling"
   | "udbetaling_paa_vej"
   | "venter_paa_bank"
@@ -186,6 +184,14 @@ export type StripeBevaegelser = {
   antal: number;
   ufuldstaendig: boolean;
   hentetKl: string;
+};
+
+// Saldo-afstemning af sælgernes Stripe-konti (overvågningen, F06): åbne
+// tilfælde i drift_tilfaelde (saldo:, saldo-tilgaengelig:, saldo-ingen-adgang:)
+// og hvornår overvågningen sidst kørte.
+export type SaldoAfstemning = {
+  afvigende: number;
+  sidstKoertKl: string | null;
 };
 
 export type Resultat<T> = { ok: true; data: T } | { ok: false; fejl: string };
@@ -316,6 +322,7 @@ export type PengeOversigt = {
   holdes: Resultat<PengeHoldes>;
   balance: Resultat<StripeBalance>;
   bevaegelser: Resultat<StripeBevaegelser>;
+  saldo: Resultat<SaldoAfstemning>;
   testnoegle: boolean;
 };
 
@@ -330,12 +337,22 @@ export async function hentPengeOversigt(periode: PeriodeKey): Promise<PengeOvers
 
   const { fra, til } = periodeInterval(periode);
 
-  const [talSvar, holdesSvar, balance, bevaegelser] = await Promise.all([
+  const [talSvar, holdesSvar, balance, bevaegelser, saldoSvar, koerselSvar] = await Promise.all([
     admin.rpc("admin_penge_tal", { p_fra: fra?.toISOString() ?? null, p_til: til.toISOString() }),
     admin.rpc("admin_penge_holdes", { p_graense: HOLDT_GRAENSE }),
     hentStripeBalance(),
     hentStripeBevaegelser(fra, til),
+    admin
+      .from("drift_tilfaelde")
+      .select("noegle", { count: "exact", head: true })
+      .is("loest_kl", null)
+      .like("noegle", "saldo%"),
+    admin.from("betaling_overvaagning").select("sidst_startet_kl").eq("id", true).maybeSingle<{ sidst_startet_kl: string | null }>(),
   ]);
+  const saldo: Resultat<SaldoAfstemning> =
+    saldoSvar.error || koerselSvar.error
+      ? { ok: false, fejl: "Saldo-afstemningen kunne ikke hentes fra databasen." }
+      : { ok: true, data: { afvigende: saldoSvar.count ?? 0, sidstKoertKl: koerselSvar.data?.sidst_startet_kl ?? null } };
 
   if (talSvar.error) console.error("admin_penge_tal:", talSvar.error.message);
   if (holdesSvar.error) console.error("admin_penge_holdes:", holdesSvar.error.message);
@@ -352,6 +369,7 @@ export async function hentPengeOversigt(periode: PeriodeKey): Promise<PengeOvers
       : { ok: true, data: holdesSvar.data as PengeHoldes },
     balance,
     bevaegelser,
+    saldo,
     testnoegle: erTestnoegle(),
   };
 }

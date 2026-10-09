@@ -1217,9 +1217,9 @@ const NULSTIL_FEJL: Record<string, string> = {
 
 // Admin: nulstil en sælgers lukkede (frakoblede) udbetalingskonto, så sælgeren
 // kan oprette en ny hos Stripe. Atomisk i udbetalingskonto_nulstil (rolle,
-// inhabilitet, log i moderation_log, nye overførselsforsøg for ventende
-// betalinger). Pengene overføres, når den nye konto er klar (account.updated
-// -> overfoerVentende) - der flyttes ingen penge her.
+// inhabilitet, log i moderation_log). Betalte handler, der ikke er udbetalt,
+// står på den gamle Stripe-konto og markeres til staff - der flyttes ingen
+// penge her.
 export async function nulstilUdbetalingskonto(brugerId: string, begrundelse: string) {
   return koer("nulstilUdbetalingskonto", async () => {
     const { admin, userId } = await assertRole("admin");
@@ -1242,7 +1242,7 @@ export async function nulstilUdbetalingskonto(brugerId: string, begrundelse: str
       throw new Error(`udbetalingskonto_nulstil returnerede ${svar.kode}`);
     }
     const antal = Number(svar.nulstillet_antal ?? 0);
-    // Sælgeren har ingen konto endnu, så der er intet at overføre nu.
+    // Sælgeren har ingen konto endnu - der udbetales intet nu.
     after(() => sendUdbetalingskontoNulstillet(id, antal));
     revalidatePath("/admin", "layout");
     return { ok: true as const };

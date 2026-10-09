@@ -40,8 +40,8 @@ function HandlingKort({ titel, antal, href, forklaring, detalje }: Kort) {
 
 function betalingDetalje(h: HandlingTal) {
   const dele: string[] = [];
-  if (h.overfoersel_fejlet > 0) {
-    dele.push(`${h.overfoersel_fejlet} ${h.overfoersel_fejlet === 1 ? "fejlet udbetaling" : "fejlede udbetalinger"}`);
+  if (h.udbetaling_fejlet > 0) {
+    dele.push(`${h.udbetaling_fejlet} ${h.udbetaling_fejlet === 1 ? "fejlet udbetaling" : "fejlede udbetalinger"}`);
   }
   if (h.refusion_fejlet > 0) {
     dele.push(`${h.refusion_fejlet} ${h.refusion_fejlet === 1 ? "fejlet refusion" : "fejlede refusioner"}`);

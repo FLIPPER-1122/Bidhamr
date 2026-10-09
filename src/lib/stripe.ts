@@ -61,9 +61,26 @@ async function alarm(tekst: string) {
 }
 
 // Kaster StripeTilstandFejl, hvis nøglen og databasen ikke er i samme tilstand.
+// Den offentlige nøgle (betalingsformularen i browseren) skal være i samme
+// tilstand som den hemmelige - ellers kan køberne ikke betale de
+// PaymentIntents, serveren laver (trin 5, F07). null = ikke sat (fx scripts).
+export function offentligNoeglesTilstand(
+  noegle = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
+): StripeTilstand | null {
+  if (/^pk_live_/.test(noegle)) return "live";
+  if (/^pk_test_/.test(noegle)) return "test";
+  return null;
+}
+
 export async function kraevSammeStripeTilstand(): Promise<StripeTilstand> {
   const noegle = noeglensTilstand();
   if (!noegle) throw new StripeTilstandFejl("STRIPE_SECRET_KEY er hverken en test- eller live-nøgle.");
+  const offentlig = offentligNoeglesTilstand();
+  if (offentlig && offentlig !== noegle) {
+    const tekst = `Stripe-nøglerne passer ikke sammen: STRIPE_SECRET_KEY er ${noegle.toUpperCase()}, men NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY er ${offentlig.toUpperCase()} - alle Stripe-kald er stoppet. Se docs/GO-LIVE-STRIPE.md.`;
+    await alarm(tekst);
+    throw new StripeTilstandFejl(tekst);
+  }
   const db = await databasensStripeTilstand();
   if (db === noegle) return noegle;
   if (db === null && noegle === "test") return noegle;
