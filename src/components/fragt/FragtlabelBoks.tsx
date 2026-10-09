@@ -7,7 +7,6 @@
 //   3. Sporingstidslinje og "Annullér label".
 // Pakkestørrelsen er altid auktionens. Fejl fra serveren er danske og vises
 // direkte (fx højst 2 labels pr. handel).
-// TODO(indhold): gennemse teksterne.
 import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -126,7 +125,7 @@ export default function FragtlabelBoks({
 
         {forsendelse.labelfriKode && (
           <div className="mt-4 rounded-xl bg-groen-lys p-4 text-center sm:p-5">
-            <p className="text-sm font-semibold text-groen-mork">Vis denne kode i pakkeshoppen</p>
+            <p className="text-sm font-semibold text-groen-mork">Vis denne kode i en daoSHOP</p>
             <p
               className="mt-2 font-mono text-[28px] leading-tight font-bold tracking-[0.08em] break-all text-tekst sm:text-[34px]"
               aria-label={`Labelfri-kode: ${forsendelse.labelfriKode.split("").join(" ")}`}
@@ -134,8 +133,8 @@ export default function FragtlabelBoks({
               {forsendelse.labelfriKode}
             </p>
             <p className="mx-auto mt-2 max-w-[44ch] text-[13px] text-tekst-daempet">
-              Pakkeshoppen printer labelen for dig – du behøver ikke en printer. Du kan også skrive koden
-              tydeligt på pakken.
+              Du behøver ikke en printer. Vis koden, når du afleverer pakken i en daoSHOP. Du kan også skrive
+              koden tydeligt på pakken.
             </p>
           </div>
         )}
@@ -156,7 +155,7 @@ export default function FragtlabelBoks({
               triggerLabel="Annullér label"
               triggerClassName="btn btn-fare w-full sm:w-auto"
               title="Annullér fragtlabelen?"
-              description={`Labelen kan ikke bruges bagefter. DAO kan ikke annullere labels gennem os, så vi annullerer den hos BidHamr og beder DAO om at kreditere den. Du kan højst lave ${MAKS_LABELS} labels til en handel (også annullerede).`}
+              description={`En annulleret label kan ikke bruges. Du kan højst lave ${MAKS_LABELS} labels til en handel – også dem, du har annulleret. Har du allerede afleveret pakken, skal du ikke annullere labelen.`}
               confirmLabel="Annullér label"
               cancelLabel="Behold label"
               onConfirm={async () => {
@@ -197,7 +196,8 @@ export default function FragtlabelBoks({
         </div>
 
         <p className="mt-4 rounded-lg bg-groen-lys px-4 py-3 text-[13px] text-tekst-daempet">
-          Husk at tage de to pakkebilleder og markere pakken sendt herunder.
+          Husk at tage de to pakkebilleder og trykke “Marker som sendt” herunder. Det skal du gøre, selvom du har
+          afleveret pakken.
         </p>
       </section>
     );
@@ -214,7 +214,7 @@ export default function FragtlabelBoks({
         <p className="mt-1 text-sm">
           {annulleres
             ? "Opdatér siden om lidt."
-            : "Fragtfirmaet har ikke svaret endnu. Vent et minut, og prøv igen – du får ikke to labels."}
+            : "Fragtfirmaet har ikke svaret endnu. Vent et minut, og prøv igen. Du får ikke to labels."}
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           {!annulleres && (
@@ -245,7 +245,8 @@ export default function FragtlabelBoks({
         Lav fragtlabel
       </h2>
       <p className="mt-1 text-sm text-tekst-svag">
-        Fragten er betalt af køberen. Du får en kode, du viser i pakkeshoppen, og en label som PDF.
+        Køberen har betalt fragten. Du får en kode, som du viser i en daoSHOP, når du afleverer pakken. Du
+        behøver ikke en printer, men du kan også hente labelen som PDF.
       </p>
 
       {(pakke || levering) && (

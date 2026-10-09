@@ -20,7 +20,7 @@ export const HANDEL_AFSENDER = "BidHamr <noreply@bidhamr.dk>";
 const AARSAG_HANDEL = "Du får denne mail, fordi du er køber eller sælger i en handel på BidHamr.";
 const MINE_HANDLER = { tekst: "Se alle dine handler", url: sideUrl("/mine-handler") };
 const STRIPE_KOEBER =
-  "Betalingen håndteres af vores betalingspartner Stripe. Sælgeren får først pengene, når du har bekræftet, at du har modtaget varen, og at den er som beskrevet.";
+  "Betalingen håndteres af vores betalingspartner Stripe. Sælgeren får først pengene, når du har godkendt varen, eller når fristen for at oprette en sag er gået.";
 
 // Link til BidHamrs faktura på gebyrerne (src/lib/faktura - laves i Dinero
 // få minutter efter betalingen).
@@ -74,8 +74,9 @@ export function koeberVandtMail(
     preheader: `Betal ${kronerFraOere(totalOere)} kr senest ${fristTekst(betalSenest)}.`,
     overskriftHtml: "Tillykke, du vandt",
     afsnitHtml: [
-      `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Beløbet nedenfor er inkl. købergebyr og fragt samt BidHamr Beskyttelse, hvis du valgte den.`,
-      "Betal inden for 48 timer, fx med kort, MobilePay, Apple Pay eller Google Pay. Betaler du ikke til tiden, bliver handlen annulleret.",
+      `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Beløbet nedenfor er inkl. købergebyr, eventuel fragt og BidHamr Beskyttelse, hvis du valgte den.`,
+      "Gå til betalingssiden inden for 48 timer. Skal varen sendes, vælger du levering der – til en pakkeshop eller hjem, hvis pakken kan det. Prisen kan ændre sig lidt efter dit valg, og du ser den samlede pris, før du betaler. Du kan betale med fx kort, MobilePay, Apple Pay eller Google Pay.",
+      "Betaler du ikke til tiden, bliver handlen annulleret.",
       STRIPE_KOEBER,
     ],
     info: [
@@ -83,7 +84,7 @@ export function koeberVandtMail(
       beloeb("At betale i alt", totalOere, true),
       { noegle: "Betal senest", vaerdiHtml: fristTekst(betalSenest) },
     ],
-    knap: { tekst: "Betal nu", url: sideUrl(`/mine-handler/${tradeId}`) },
+    knap: { tekst: "Gå til betaling", url: sideUrl(`/mine-handler/${tradeId}`) },
   });
 }
 

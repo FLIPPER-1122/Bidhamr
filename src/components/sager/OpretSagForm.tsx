@@ -21,11 +21,11 @@ import BilledVaelger, { KATEGORI_FELTER, useFrigivPreviews, type KategoriFelt } 
 import { uploadBilleder, type ValgtBillede } from "./sagUpload";
 import { sagTid } from "./visning";
 
-// Korte forklaringer under hver type. TODO(indhold): gennemse.
+// Korte forklaringer under hver type.
 const TYPE_HJAELP: Record<SagType, string> = {
-  bortkommet: "Pakken er ikke kommet frem, selvom den er sendt for mere end 7 dage siden.",
+  bortkommet: "Pakken er ikke kommet frem, selvom den blev sendt for mere end 7 dage siden.",
   skadet: "Varen er gået i stykker under forsendelsen.",
-  ikke_som_beskrevet: "Varen afviger tydeligt fra beskrivelsen i auktionen.",
+  ikke_som_beskrevet: "Varen er tydeligt anderledes end beskrevet i auktionen.",
   svindel: "Fx en tom pakke, en helt anden vare, en falsk kopi eller en vare, der aldrig er sendt.",
 };
 

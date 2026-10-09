@@ -67,7 +67,7 @@ function BetalForm({ handelId, sender, onSender, onKlar, onFejl, onGenstart }: P
       onGenstart();
       return;
     } else {
-      onFejl(error?.message ?? "Betalingen kunne ikke gennemføres. Prøv igen.");
+      onFejl(error?.message ?? "Betalingen gik ikke igennem. Prøv igen, eller vælg en anden betalingsmetode.");
     }
     onSender(false);
   }

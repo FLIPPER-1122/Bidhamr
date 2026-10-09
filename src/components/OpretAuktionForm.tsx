@@ -489,7 +489,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
                 <dt className="text-tekst-svag">Levering</dt>
                 <dd className="text-tekst">{forsendelseMulig
                     ? valgtStoerrelse
-                      ? `${valgtStoerrelse.navn} pakke – fragt fra ${kroner(valgtStoerrelse.pakkeshop_oere)}`
+                      ? `${valgtStoerrelse.navn} pakke – køberen betaler fragt fra ${kroner(valgtStoerrelse.pakkeshop_oere)}`
                       : "Forsendelse"
                     : "Kun afhentning"}</dd>
               </div>

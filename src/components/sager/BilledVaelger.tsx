@@ -14,27 +14,27 @@ export type KategoriFelt<K extends string = SagBilledeKategori> = {
   paakraevet: boolean;
 };
 
-// Hjælpetekster. TODO(indhold): gennemse og evt. udvid eksemplerne.
+// Hjælpetekster.
 export const KATEGORI_FELTER: Record<SagBilledeKategori, Omit<KategoriFelt, "paakraevet">> = {
   pakke: {
     kategori: "pakke",
     overskrift: "Pakken udefra",
-    hjaelp: "Hele pakken, så skader på kassen kan ses. Tag gerne billeder fra flere sider.",
+    hjaelp: "Hele pakken, så buler, huller eller våde pletter på kassen kan ses. Tag gerne billeder fra flere sider.",
   },
   label: {
     kategori: "label",
     overskrift: "Labelen",
-    hjaelp: "Fragtlabelen på pakken, så sporingsnummeret kan læses.",
+    hjaelp: "Fragtlabelen på pakken, tæt nok på til at sporingsnummeret kan læses.",
   },
   indhold: {
     kategori: "indhold",
     overskrift: "Indholdet",
-    hjaelp: "Varen og indpakningen, som du fandt dem, da du åbnede pakken. Vis skaden tæt på.",
+    hjaelp: "Varen og indpakningen, som du fandt dem, da du åbnede pakken. Vis skaden eller fejlen tæt på.",
   },
   andet: {
     kategori: "andet",
     overskrift: "Andre billeder",
-    hjaelp: "Fx et skærmbillede af sporingen eller af annoncen.",
+    hjaelp: "Fx et skærmbillede af sporingen, af auktionen eller af en besked fra sælgeren.",
   },
 };
 

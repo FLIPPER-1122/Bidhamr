@@ -34,7 +34,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Betal inden 48 timer",
           tekst:
-            "Du betaler med kort, MobilePay, Apple Pay, Google Pay eller en anden metode, der vises ved betalingen. Du betaler selv på betalingssiden – har du gemt et kort, er det valgt på forhånd. Sælgeren kan give dig mere tid, hvis I aftaler det.",
+            "På betalingssiden vælger du levering – en pakkeshop eller levering hjem – og ser den samlede pris. Du betaler selv med kort, MobilePay, Apple Pay, Google Pay eller en anden metode, der vises. Vi trækker aldrig penge automatisk. Sælgeren kan give dig mere tid, hvis I aftaler det.",
         },
         {
           titel: "Få varen",
@@ -65,7 +65,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Opret din auktion",
           tekst:
-            "Tag gode billeder, skriv en ærlig beskrivelse, og vælg en startpris på mindst 1 kr. Startprisen er også den laveste pris, du sælger for. Du vælger, om auktionen skal køre i 3, 5, 7 eller 10 dage, og om varen sendes eller hentes hos dig.",
+            "Tag gode billeder, skriv en ærlig beskrivelse, og vælg en startpris på mindst 1 kr. Startprisen er også den laveste pris, du sælger for. Du vælger, om auktionen skal køre i 3, 5, 7 eller 10 dage, og om varen sendes eller hentes hos dig. Sendes den, vælger du pakkestørrelse og skriver vægten. Varer over 15 kg kan kun afhentes.",
         },
         {
           titel: "Vent på bud",
@@ -80,7 +80,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Send eller udlever varen",
           tekst:
-            "Sendes varen, har du 5 dage fra betalingen til at sende pakken. Når du har afleveret den, trykker du \"Send pakken\", tager to billeder af indpakningen og skriver sporingsnummeret. Skal varen hentes, viser køberen en kode, som du taster ind, når du udleverer varen.",
+            "Sendes varen, har du 5 dage fra betalingen til at sende pakken. Du laver fragtlabelen på handelssiden og får en kode, som du viser i en daoSHOP – du behøver ikke en printer. Tag to billeder af indpakningen, og marker pakken som sendt. Skal varen hentes, viser køberen en kode, som du taster ind, når du udleverer varen.",
         },
         {
           titel: "Få dine penge",
@@ -100,9 +100,10 @@ export const SAADAN_VIRKER_DET: Tekstside = {
       punkter: [
         "Køber betaler et gebyr på 5 % af buddet.",
         "Sælger betaler et gebyr på 5 % af buddet. Det trækkes fra, før pengene udbetales.",
-        "Fragt betales af køberen: til en pakkeshop fra 40 kr. og levering til døren fra 60 kr., alt efter pakkens størrelse. Skal varen hentes, er der ingen fragt.",
+        "Fragt betales af køberen: til en pakkeshop fra 40 kr. og levering hjem fra 60 kr., alt efter pakkens størrelse (Lille op til 1 kg, Mellem op til 5 kg, Stor op til 15 kg – kun pakkeshop). Varer over 15 kg kan kun afhentes, og så er der ingen fragt.",
         "BidHamr Beskyttelse er et frivilligt tilvalg for køberen: 5 % af buddet, mindst 25 kr. og højst 250 kr.",
         "Alle priser er inkl. moms. Der kommer ikke noget oveni.",
+        "Både køber og sælger får en faktura fra BidHamr på gebyrerne under Min konto → Fakturaer. Selve varen handles mellem jer, så på den får du en kvittering. Køber du af en erhvervssælger, sender firmaet selv fakturaen på varen.",
       ],
       note: "Eksempel: Du vinder en vare til 200 kr., som skal sendes. Du betaler 200 kr. + 10 kr. i gebyr + 40 kr. i fragt (lille pakke til en pakkeshop) = 250 kr. Sælgeren får 190 kr.",
     },

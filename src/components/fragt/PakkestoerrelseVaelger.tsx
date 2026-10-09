@@ -4,7 +4,6 @@
 // Kun afhentning, med købers fragtpriser fra databasen (fragt_pakkestoerrelser -
 // det ene sted, priserne står) og vægtfelt (altid krævet ved forsendelse).
 // Databasen håndhæver grænserne igen (BHT01/BHT02/BHT03).
-// TODO(indhold): gennemse teksterne.
 import { useEffect, useId, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { kroner } from "@/lib/kroner";
@@ -123,7 +122,8 @@ export default function PakkestoerrelseVaelger({
       <fieldset className="min-w-0" disabled={deaktiveret}>
         <legend className="mb-1.5 block text-sm font-medium text-tekst">Forsendelse</legend>
         <p id={`${id}-hjaelp`} className="mb-3 text-[13px] text-tekst-daempet">
-          Vælg den mindste pakke, varen kan være i. Køberen betaler fragten og ser prisen, før han byder.
+          Vælg den mindste pakke, varen kan sendes i. Køberen betaler fragten og ser prisen, før der bydes.
+          Varer over 15 kg kan kun afhentes.
         </p>
         {stoerrelser === null && !hentFejl ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-hidden="true">
@@ -180,7 +180,7 @@ export default function PakkestoerrelseVaelger({
                     ) : (
                       <>
                         <span className="font-semibold">0 kr</span> fragt
-                        <span className="block text-tekst-daempet">Fx møbler, over 15 kg</span>
+                        <span className="block text-tekst-daempet">Fx møbler og alt over 15 kg</span>
                       </>
                     )}
                   </span>
@@ -230,7 +230,8 @@ export default function PakkestoerrelseVaelger({
             </span>
           </div>
           <p id={`${vaegtId}-hjaelp`} className="mt-1.5 text-[13px] text-tekst-daempet">
-            Vej pakken med kasse og fyld. Vægten kommer på fragtlabelen.
+            Vej pakken med kasse og fyld, og skriv den rigtige vægt. Den kommer på fragtlabelen, og
+            fragtfirmaet vejer pakken.
           </p>
           {vaegtFejlTekst && (
             <p id={`${vaegtId}-fejl`} className="mt-1.5 text-[13px] font-medium text-fejl-tekst">

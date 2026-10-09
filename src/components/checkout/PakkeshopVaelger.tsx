@@ -4,7 +4,6 @@
 // (fuld skærm på mobil, kortet øverst). Listen er en radiogruppe, så den kan
 // bruges med tastatur (piletaster) og skærmlæser. Esc lukker, Tab holdes inde
 // i vinduet, og fokus går tilbage til knappen, der åbnede det.
-// TODO(indhold): gennemse teksterne.
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { soegPakkeshopsAction } from "@/app/actions/fragt";
@@ -70,7 +69,7 @@ export default function PakkeshopVaelger({
   const soeg = useCallback(async (tekst: string) => {
     const q = fortolkSoegning(tekst);
     if (!q) {
-      setFejl("Skriv et postnummer (4 cifre) – gerne med vejnavn, så finder vi de nærmeste.");
+      setFejl("Skriv et postnummer med 4 cifre. Skriver du også din adresse, finder vi de nærmeste pakkeshops.");
       return;
     }
     setHenter(true);
@@ -267,7 +266,7 @@ export default function PakkeshopVaelger({
               <fieldset className="min-w-0 p-3 sm:p-4">
                 <legend className="sr-only">Pakkeshops nær {soegning}</legend>
                 <p className="px-1 pb-2 text-[13px] text-tekst-svag" aria-live="polite">
-                  {shops.length} pakkeshops – nærmeste først
+                  {shops.length === 1 ? "1 pakkeshop" : `${shops.length} pakkeshops`} – nærmeste først
                 </p>
                 <div className="space-y-2">
                   {shops.map((s, i) => {

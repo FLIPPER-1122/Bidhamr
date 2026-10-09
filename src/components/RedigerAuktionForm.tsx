@@ -211,7 +211,7 @@ export default function RedigerAuktionForm({
                 ? fragtFejlTekst("BHT02")
                 : kode === "vaegt_mangler"
                   ? fragtFejlTekst("BHT03")
-                  : "Resten er gemt, men pakkestørrelsen kunne ikke gemmes. Prøv igen.";
+                  : "Dine andre ændringer er gemt, men pakkestørrelsen blev ikke gemt. Prøv igen.";
           if (kode === "for_tung" || kode === "stoerrelse" || kode === "vaegt_mangler") setVaegtFejlTekst(tekst);
           setError(tekst);
           setStatus(null);
