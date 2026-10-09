@@ -11,6 +11,7 @@ import {
   type Kvittering,
   type SaelgerKvittering,
 } from "@/lib/kvittering";
+import { FAKTURA_TEKST } from "@/lib/faktura/tekster";
 
 export { escapeHtml, sideUrl };
 
@@ -20,6 +21,10 @@ const AARSAG_HANDEL = "Du får denne mail, fordi du er køber eller sælger i en
 const MINE_HANDLER = { tekst: "Se alle dine handler", url: sideUrl("/mine-handler") };
 const STRIPE_KOEBER =
   "Betalingen håndteres af vores betalingspartner Stripe. Sælgeren får først pengene, når du har bekræftet, at du har modtaget varen, og at den er som beskrevet.";
+
+// Link til BidHamrs faktura på gebyrerne (src/lib/faktura - laves i Dinero
+// få minutter efter betalingen).
+const FAKTURA_AFSNIT = `${escapeHtml(FAKTURA_TEKST.mailLinkTekst)} <a href="${sideUrl("/konto/fakturaer")}">Se dine fakturaer</a>.`;
 
 export function kronerFraOere(oere: number) {
   return (oere / 100).toLocaleString("da-DK", {
@@ -201,6 +206,7 @@ export function koeberAfhentningMail(
         ? [
             "Herunder er din kvittering for købet.",
             `${escapeHtml(KVITTERING_IKKE_FAKTURA)} ${escapeHtml(KVITTERING_STRIPE)}`,
+            FAKTURA_AFSNIT,
           ]
         : []),
     ],
@@ -243,6 +249,7 @@ export function koeberKvitteringMail(k: KoeberKvittering) {
       `Tak for din betaling for <strong>${escapeHtml(k.titel)}</strong>. Sælgeren får besked om at sende varen, og du får besked, når pakken er på vej.`,
       STRIPE_KOEBER,
       escapeHtml(KVITTERING_IKKE_FAKTURA),
+      FAKTURA_AFSNIT,
     ],
     info: kvitteringInfo(k),
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${k.handelId}`) },
@@ -265,6 +272,7 @@ export function saelgerAfregningMail(
         k.afhentning ? "" : " Fragten betaler køberen, og den går til fragtfirmaet – den indgår ikke i din udbetaling."
       }`,
       escapeHtml(KVITTERING_IKKE_FAKTURA),
+      FAKTURA_AFSNIT,
     ],
     info: kvitteringInfo(k),
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${k.handelId}`) },

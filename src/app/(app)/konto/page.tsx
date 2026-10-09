@@ -29,6 +29,7 @@ const OVERBLIK: { href: string; ikon: IkonNavn; titel: string; tekst: string }[]
   { href: "/konto/statistik", ikon: "statistik", titel: "Min statistik", tekst: "Salg, indtjening og dine bud" },
   { href: "/konto/foelger", ikon: "foelgere", titel: "Sælgere du følger", tekst: "Få besked om nye varer" },
   { href: "/konto/soegninger", ikon: "soeg", titel: "Gemte søgninger", tekst: "Besked, når der kommer nyt" },
+  { href: "/konto/fakturaer", ikon: "handler", titel: "Fakturaer", tekst: "Fakturaer fra BidHamr på gebyrer" },
 ];
 
 function datoTekst(iso: string) {
@@ -173,7 +174,7 @@ export default async function KontoSide({
       )}
 
       <nav aria-label="Dit overblik" className="mt-6">
-        <ul className="grid gap-3 sm:grid-cols-3">
+        <ul className="grid gap-3 sm:grid-cols-2">
           {OVERBLIK.map((o) => (
             <li key={o.href}>
               <Link

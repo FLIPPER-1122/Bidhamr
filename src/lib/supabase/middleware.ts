@@ -18,6 +18,8 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 // Bearer-token (ingen cookies); login og firmakonto tjekkes i ruten/databasen.
 // /api/betaling/kort er appens automatisk betaling / "Fjern kort": kun
 // Bearer-token (ingen cookies); login tjekkes i ruten.
+// /api/faktura/<id> er PDF'en af en faktura (hjemmesiden med cookie, appen
+// med Bearer-token); login og ejerskab tjekkes i ruten. Kun GET.
 // /api/helbred er sundhedstjekket til uptime-tjenesten: svarer kun {ok}, ingen
 // detaljer, grænse pr. IP i ruten selv.
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
@@ -58,6 +60,7 @@ const OFFENTLIGE_RUTER = [
   "/api/konto/slet",
   "/api/firma/skift-pakke",
   "/api/betaling/kort",
+  "/api/faktura",
   "/api/helbred",
   "/robots.txt",
   "/sitemap.xml",

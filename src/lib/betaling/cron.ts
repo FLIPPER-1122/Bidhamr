@@ -36,6 +36,9 @@
 //       udbetalinger, der hænger, tabte indsigelser uden afklaring,
 //       saldo-afstemning og udeblevne payout-/indsigelses-events. Én
 //       drift-alarm pr. tilfælde.
+//   11. Fakturaer i Dinero på BidHamrs gebyrer, fragt og BidHamr Beskyttelse
+//       (købers og sælgers), kreditnotaer ved refusion og bogføring af
+//       betalte abonnementsfakturaer (src/lib/faktura/koe.ts, docs/FAKTURA.md).
 //
 // Hver mail "claimes" atomisk i databasen FØR afsendelse, så samme mail aldrig
 // sendes to gange, selv hvis to kørsler overlapper.
@@ -76,6 +79,7 @@ import {
 import { koerBetalingsovervaagning } from "@/lib/betaling/overvaagning";
 import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
+import { koerFakturaKoe } from "@/lib/faktura/koe";
 
 const TIME = 60 * 60 * 1000;
 
@@ -150,6 +154,7 @@ export async function koerBetalingsCron() {
     ikkeHentetAnnulleret: 0,
     ikkeHentetRefunderet: 0,
     overvaagning: {} as Awaited<ReturnType<typeof koerBetalingsovervaagning>>,
+    fakturaer: null as Awaited<ReturnType<typeof koerFakturaKoe>> | null,
     ventende: {} as Awaited<ReturnType<typeof behandlVentendeBetalinger>>,
   };
 
@@ -435,6 +440,16 @@ export async function koerBetalingsCron() {
   // 10) Overvågning (F06). Kaster aldrig; et fejlet tjek logges med kilde
   //     'cron' (kørslen markeres som fejlet).
   resultat.overvaagning = await koerBetalingsovervaagning();
+
+  // 11) Fakturaer i Dinero (efter refusionerne, så en refusion i denne
+  //     kørsel giver kreditnotaen med det samme). Et enkelt dokument, der
+  //     fejler, prøves igen senere (spredte forsøg) - kun en fejl i selve
+  //     køen markerer kørslen som fejlet.
+  try {
+    resultat.fakturaer = await koerFakturaKoe();
+  } catch (err) {
+    await trinFejl("Fakturaer (Dinero)", err);
+  }
 
   // 9) Notifikationer om likes, beskeder, favoritter der slutter snart, nye
   //    auktioner fra fulgte sælgere og advarsler. Kaster aldrig.
