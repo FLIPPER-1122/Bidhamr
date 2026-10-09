@@ -88,6 +88,7 @@ Brugeren får besked når:
 - **Mål for lancering: juni 2027.**
 - Cookie-banner skal laves.
 - **MitID virker ikke endnu** og skal på plads før lancering (verificering ved oprettelse af profil, via Criipto).
+- **MitID (Filip, 9. okt. 2026):** Man kan oprette konto og kigge uden MitID, men skal verificere sig med MitID (Criipto/Idura) **før første bud og før første auktion** – én gang. **Én MitID = én konto** (MitIDs unikke id gemmes kun sløret/hashet – aldrig CPR). **18 år** (fødselsdato fra MitID). Navnet fra MitID gemmes som juridisk navn og bruges **kun internt** (handler, fakturaer, DAC7) – offentligt vises brugernavnet og mærket "MitID-verificeret". Eksisterende brugere verificerer sig næste gang de byder/sælger. **Erhvervskonti er undtaget** (oprettet af BidHamr og godkendt med CVR).
 - Handelsbetingelser og privatlivspolitik skrives af **advokat/jurist**, når CVR-nummeret er på plads. Det er noget af det sidste før lancering.
 - Claude laver et kort uddrag/oplæg af forretningsreglerne, som Filip kan tage med til rådgiver og advokat.
 
