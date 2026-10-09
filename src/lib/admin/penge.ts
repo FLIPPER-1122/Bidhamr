@@ -314,6 +314,17 @@ async function hentStripeBevaegelser(
 
 // ------------------------------------------------------------ samlet
 
+// admin_fragt_tilskud (20261012010000): fragt på forsendelser oprettet i perioden.
+export type FragtTilskud = {
+  antal: number;
+  koeber_betalt_oere: number;
+  forventet_kost_ex_moms_oere: number;
+  forventet_kost_inkl_moms_oere: number;
+  tilskud_inkl_moms_oere: number;
+  fragtfirma_pris_inkl_moms_oere: number;
+  uden_kostpris: number;
+};
+
 export type PengeOversigt = {
   periode: PeriodeKey;
   fra: string | null;
@@ -323,6 +334,7 @@ export type PengeOversigt = {
   balance: Resultat<StripeBalance>;
   bevaegelser: Resultat<StripeBevaegelser>;
   saldo: Resultat<SaldoAfstemning>;
+  fragtTilskud: Resultat<FragtTilskud>;
   testnoegle: boolean;
 };
 
@@ -337,7 +349,7 @@ export async function hentPengeOversigt(periode: PeriodeKey): Promise<PengeOvers
 
   const { fra, til } = periodeInterval(periode);
 
-  const [talSvar, holdesSvar, balance, bevaegelser, saldoSvar, koerselSvar] = await Promise.all([
+  const [talSvar, holdesSvar, balance, bevaegelser, saldoSvar, koerselSvar, tilskudSvar] = await Promise.all([
     admin.rpc("admin_penge_tal", { p_fra: fra?.toISOString() ?? null, p_til: til.toISOString() }),
     admin.rpc("admin_penge_holdes", { p_graense: HOLDT_GRAENSE }),
     hentStripeBalance(),
@@ -349,6 +361,8 @@ export async function hentPengeOversigt(periode: PeriodeKey): Promise<PengeOvers
       // Kun reelle afvigelser - ikke "saldo-tilgaengelig:" (venter på midler).
       .or("noegle.like.saldo:*,noegle.like.saldo-ingen-adgang:*"),
     admin.from("betaling_overvaagning").select("sidst_startet_kl").eq("id", true).maybeSingle<{ sidst_startet_kl: string | null }>(),
+    // "Alt" har ingen startdato - funktionen kræver en.
+    admin.rpc("admin_fragt_tilskud", { p_fra: (fra ?? new Date(0)).toISOString(), p_til: til.toISOString() }),
   ]);
   const saldo: Resultat<SaldoAfstemning> =
     saldoSvar.error || koerselSvar.error
@@ -357,6 +371,7 @@ export async function hentPengeOversigt(periode: PeriodeKey): Promise<PengeOvers
 
   if (talSvar.error) console.error("admin_penge_tal:", talSvar.error.message);
   if (holdesSvar.error) console.error("admin_penge_holdes:", holdesSvar.error.message);
+  if (tilskudSvar.error) console.error("admin_fragt_tilskud:", tilskudSvar.error.message);
 
   return {
     periode,
@@ -371,6 +386,9 @@ export async function hentPengeOversigt(periode: PeriodeKey): Promise<PengeOvers
     balance,
     bevaegelser,
     saldo,
+    fragtTilskud: tilskudSvar.error
+      ? { ok: false, fejl: "Fragttilskuddet kunne ikke hentes fra databasen." }
+      : { ok: true, data: tilskudSvar.data as FragtTilskud },
     testnoegle: erTestnoegle(),
   };
 }

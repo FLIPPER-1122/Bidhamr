@@ -11,7 +11,11 @@ import FlereHandlinger from "@/components/admin/FlereHandlinger";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { UUID_RE, handelChatSti } from "@/lib/moderationLog";
 import { SPORINGS_NAVN, erSporingsType } from "@/lib/fragt/types";
-import { fragtMarkerHaandteret } from "@/app/actions/adminFragt";
+import {
+  fragtAfslutHaengendeLabel,
+  fragtGodkendEkstraLabel,
+  fragtMarkerHaandteret,
+} from "@/app/actions/adminFragt";
 import { HAENGER_TEKST, erHaengerGrund, type HaengerGrund } from "@/lib/adminGraenser";
 import {
   sagAabn,
@@ -360,6 +364,64 @@ export default async function AdminSager({
                       required: true,
                     }}
                   />
+                  {/* Hængende label (ukendt udfald hos Shipmondo): staff tjekker i Shipmondo først. */}
+                  {f.status === "opretter" && (
+                    <ConfirmDialog
+                      triggerLabel="Afslut hængende label"
+                      triggerClassName="whitespace-nowrap rounded-md bg-amber-100 px-2 py-1 text-xs text-amber-800 transition-colors hover:bg-amber-200"
+                      title="Afslut den hængende fragtlabel"
+                      description={`Tjek i Shipmondo, om der findes en forsendelse med referencen ${f.id}. Findes den: tilknyt den. Findes den ikke: markér labelen fejlet, så sælgeren kan prøve igen.`}
+                      confirmLabel="Afslut label"
+                      action={fragtAfslutHaengendeLabel}
+                      hiddenFields={{ forsendelseId: f.id }}
+                      valgField={{
+                        name: "valg",
+                        label: "Hvad fandt du i Shipmondo?",
+                        valg: [
+                          { value: "tilknyt", label: "Forsendelsen findes – tilknyt" },
+                          { value: "fejlet", label: "Intet oprettet – markér fejlet" },
+                        ],
+                      }}
+                      tekstFelter={[
+                        {
+                          name: "shipmondoId",
+                          label: "Shipmondos forsendelses-id",
+                          placeholder: "Kun tal, fx 123456789",
+                          required: false,
+                          maxLength: 20,
+                          hjaelp: "Kræves ved tilknyt.",
+                        },
+                      ]}
+                      valgKraeverTekst={{
+                        valg: "tilknyt",
+                        felt: "shipmondoId",
+                        besked: "Skriv Shipmondos forsendelses-id.",
+                      }}
+                      aarsagField={{
+                        label: "Hvad har du tjekket?",
+                        placeholder: "Fx: søgte på referencen i Shipmondo – ingen forsendelse fundet",
+                        required: true,
+                      }}
+                      kvittering="Den hængende label er afsluttet"
+                    />
+                  )}
+                  {f.type === "udgaaende" && (
+                    <ConfirmDialog
+                      triggerLabel="Godkend ekstra label"
+                      triggerClassName="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
+                      title="Godkend én ekstra fragtlabel?"
+                      description="Sælgeren må højst lave 2 labels pr. handel. Hvert klik giver én label mere. Ingen penge flyttes, men BidHamr betaler den ekstra label hos fragtfirmaet."
+                      confirmLabel="Godkend ekstra label"
+                      action={fragtGodkendEkstraLabel}
+                      hiddenFields={{ tradeId: f.trade_id }}
+                      aarsagField={{
+                        label: "Hvorfor må sælgeren lave en label mere?",
+                        placeholder: "Fx: første label annulleret pga. forkert adresse, anden blev beskadiget",
+                        required: true,
+                      }}
+                      kvittering="Ekstra label godkendt"
+                    />
+                  )}
                 </div>
               </li>
             );
@@ -482,6 +544,20 @@ export default async function AdminSager({
                       {(kanSkriveFaelles || (aktiv && (!h.sag_aaben || kanFlyttePenge))) && (
                         <FlereHandlinger>
                           {kanSkriveFaelles && <FaellesbeskedKnap tradeId={h.id} />}
+                          {/* Sælgeren har brugt sine 2 fragtlabels og har skrevet til os. */}
+                          {h.status === "betaling_modtaget" && (
+                            <ConfirmDialog
+                              triggerLabel="Godkend ekstra fragtlabel"
+                              triggerClassName="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-200"
+                              title="Godkend én ekstra fragtlabel?"
+                              description="Sælgeren må højst lave 2 labels pr. handel. Hvert klik giver én label mere. Kræver, at køberen har valgt levering."
+                              confirmLabel="Godkend ekstra label"
+                              action={fragtGodkendEkstraLabel}
+                              hiddenFields={{ tradeId: h.id }}
+                              aarsagField={{ label: "Hvorfor?", placeholder: "Fx: sælgeren skrev til support – labelen blev beskadiget", required: true }}
+                              kvittering="Ekstra label godkendt"
+                            />
+                          )}
                           {aktiv && !h.sag_aaben && (
                             <ConfirmDialog
                               triggerLabel="Markér handel"

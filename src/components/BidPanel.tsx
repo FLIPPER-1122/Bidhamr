@@ -835,7 +835,7 @@ export default function BidPanel({
                 <dd className="tabular-nums">{gebyrOereVist !== null ? kroner(gebyrOereVist) : "–"}</dd>
               </div>
               <div className={linje}>
-                <dt>{forsendelseMulig ? "Fragt (pakkeshop, fra)" : "Fragt (kun afhentning)"}</dt>
+                <dt>{forsendelseMulig ? "Fragt (pakkeshop)" : "Fragt (kun afhentning)"}</dt>
                 <dd className="tabular-nums">{kroner(fragtOere(forsendelseMulig, fragtPakkeshopOere))}</dd>
               </div>
               {beskyttelseVist !== null && (
@@ -930,10 +930,28 @@ export default function BidPanel({
         </p>
       )}
       {forsendelseMulig && !auktionSlut && (
-        <p className="mt-1 text-[13px] text-tekst-daempet">
-          Fragt fra {kroner(fragtOere(true, fragtPakkeshopOere))} til en pakkeshop
-          {fragtDoerOere ? ` – levering til døren ${kroner(fragtDoerOere)}` : ""}. Du vælger, når du betaler.
-        </p>
+        <div className="mt-3 flex items-start gap-3 rounded-xl border border-kant px-3.5 py-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-groen-lys text-groen-mork">
+            <Ikon navn="pakke" className="h-[18px] w-[18px]" />
+          </span>
+          <div className="min-w-0 text-sm">
+            <p className="text-tekst">
+              Fragt fra <span className="font-semibold tabular-nums">{kroner(fragtOere(true, fragtPakkeshopOere))}</span>{" "}
+              <span className="text-tekst-daempet">(pakkeshop)</span>
+              {fragtDoerOere ? (
+                <>
+                  <span className="mx-1.5 text-tekst-svag" aria-hidden="true">
+                    ·
+                  </span>
+                  <span className="whitespace-nowrap">
+                    levering hjem <span className="font-semibold tabular-nums">{kroner(fragtDoerOere)}</span>
+                  </span>
+                </>
+              ) : null}
+            </p>
+            <p className="text-[13px] text-tekst-daempet">Sendes med DAO. Du vælger levering, når du betaler.</p>
+          </div>
+        </div>
       )}
 
       {info && (

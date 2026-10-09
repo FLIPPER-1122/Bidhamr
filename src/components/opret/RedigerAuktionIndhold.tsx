@@ -64,6 +64,7 @@ export default async function RedigerAuktionIndhold({ auktionId, brugerId }: { a
         fragtPakkeshopOere: auktion.fragt_pakkeshop_oere ?? null,
         fragtDoerOere: auktion.fragt_doer_oere ?? null,
         pakkestoerrelse: auktion.pakkestoerrelse ?? null,
+        vaegtGram: auktion.vaegt_gram ?? null,
         stand: (auktion.stand as string | null | undefined) ?? null,
         producent: (auktion.producent as string | null | undefined) ?? null,
         sikkerhedsoplysninger: (auktion.sikkerhedsoplysninger as string | null | undefined) ?? null,
