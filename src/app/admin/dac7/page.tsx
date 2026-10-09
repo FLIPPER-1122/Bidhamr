@@ -2,7 +2,7 @@ import Link from "next/link";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import { krypteringKlar } from "@/lib/dac7/krypto";
 import { indberetningsfrist, kr } from "@/lib/dac7/regler";
-import { Dac7FilKnap, Dac7IndstillingerForm, Dac7SendtForm } from "@/components/admin/Dac7Handlinger";
+import { Dac7FilKnap, Dac7IndstillingerForm, Dac7SendtForm, type Dac7Eksport } from "@/components/admin/Dac7Handlinger";
 
 // DAC7 - indberetning af sælgere til Skattestyrelsen. KUN chef (beløb og
 // skatteoplysninger). Viser pr. år de sælgere, der skal indberettes eller
@@ -48,6 +48,7 @@ type Oversigt = {
     kontakt: string | null;
   } | null;
   saelgere: Saelger[];
+  eksporter?: Dac7Eksport[];
 };
 
 const MANGLER: Record<string, string> = {
@@ -188,7 +189,7 @@ export default async function AdminDac7({ searchParams }: { searchParams: Promis
               {!aaretSlut && <p className="mt-1 text-xs text-gray-500">Året er ikke slut – filen er kun en prøve.</p>}
             </li>
             <li>Upload filen i TastSelv Erhverv og vent på, at valideringen er godkendt. Slet filen bagefter.</li>
-            <li>{aaretSlut ? <Dac7SendtForm aar={aar} /> : "Markér som sendt, når året er slut og filen er uploadet."}</li>
+            <li>{aaretSlut ? <Dac7SendtForm aar={aar} eksporter={o.eksporter ?? []} /> : "Markér som sendt, når året er slut og filen er uploadet."}</li>
           </ol>
         )}
       </section>

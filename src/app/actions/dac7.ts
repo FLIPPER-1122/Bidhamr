@@ -29,6 +29,7 @@ export async function gemMineSkatteoplysninger(formData: FormData): Promise<GemS
       andetTinLand: formData.get("andetTinLand"),
       andetTinNummer: formData.get("andetTinNummer"),
       beholdAndetTin: formData.get("beholdAndetTin") === "ja",
+      bopaelDk: formData.get("bopaelDk") === "ja",
       bekraeft: formData.get("bekraeft") === "ja",
     });
     if ("ok" in res) revalidatePath("/konto/skat");

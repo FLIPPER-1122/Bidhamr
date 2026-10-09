@@ -159,7 +159,7 @@ Kun du selv og vores medarbejdere kan se navnet og fødselsdatoen fra MitID. Du 
 
 Som markedsplads har BidHamr pligt til at indberette oplysninger om sælgere til Skattestyrelsen (DAC7 – skatteindberetningslovens regler om platformsoperatører). Det gælder sælgere, der i løbet af et kalenderår har **mindst 30 salg** eller har solgt for **over 2.000 euro**. Sælgere under begge grænser indberettes ikke.
 
-**Hvornår beder vi om oplysningerne?** Når du nærmer dig grænsen (25 salg eller 1.500 euro i et kalenderår), beder vi dig om de oplysninger, loven kræver, under Min konto → Skatteoplysninger. Du har 60 dage og får to påmindelser. Har du ikke givet oplysningerne inden fristen, kan du ikke sætte nye varer til salg, før de er givet – dine igangværende auktioner og handler fortsætter. Loven kræver, at vi gør noget, hvis oplysningerne mangler. [ADVOKAT: se noter-til-advokat.md nr. 111.]
+**Hvornår beder vi om oplysningerne?** Når du nærmer dig grænsen (25 salg eller 1.500 euro i et kalenderår), beder vi dig om de oplysninger, loven kræver, under Min konto → Skatteoplysninger. Du har 60 dage og får to påmindelser. Har du ikke givet oplysningerne inden fristen, kan du ikke sætte nye varer til salg eller tilbyde en vare til næste byder, før de er givet – dine igangværende auktioner og handler fortsætter. Vi kan kun indberette sælgere med bopæl i Danmark; bor du i udlandet, så kontakt os. Når året er slut, og du ikke nåede grænsen, bortfalder anmodningen. Loven kræver, at vi gør noget, hvis oplysningerne mangler. [ADVOKAT: se noter-til-advokat.md nr. 111 og 113.]
 
 **Hvad indberetter vi?**
 
@@ -173,7 +173,7 @@ Som markedsplads har BidHamr pligt til at indberette oplysninger om sælgere til
 
 **Indberetningen og din kopi.** Vi indberetter én gang om året, senest 31. januar for året før. Du får besked, og en kopi af det, vi har indberettet om dig, ligger under Min konto → Skatteoplysninger. Skattestyrelsen kan dele oplysningerne med skattemyndigheder i andre EU-lande, hvis du bor eller har skatte-id dér.
 
-**Hvor længe gemmer vi dem?** Oplysningerne og kopien af indberetningen gemmer vi, så længe loven kræver det – også hvis du sletter din konto. Har du ikke solgt noget, sletter vi dine skatteoplysninger, når du sletter kontoen. [ADVOKAT/revisor: 5 eller 10 år – se nr. 111.]
+**Hvor længe gemmer vi dem?** Oplysningerne og kopien af indberetningen gemmer vi, så længe loven kræver det – også hvis du sletter din konto. Har vi ikke bedt dig om oplysningerne, og er du ikke tæt på grænsen, sletter vi dine skatteoplysninger, når du sletter kontoen. Vi forventer at gemme dem i 10 år efter indberetningsåret. [ADVOKAT/revisor: 5 eller 10 år – se nr. 111.]
 
 Retsgrundlag: retlig forpligtelse (GDPR art. 6, stk. 1, litra c). CPR-nummeret behandles efter databeskyttelseslovens § 11, stk. 2, nr. 1 (hjemmel i lovgivningen).
 

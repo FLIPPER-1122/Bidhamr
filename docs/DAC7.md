@@ -82,23 +82,69 @@ laves her.
   så kan de ikke læses igen, og sælgerne skal udfylde dem på ny. Mangler nøglen,
   kan der hverken gemmes CPR eller laves fil (fail closed).
 
+## Indberetningsfilen (eksport) og "sendt"
+
+- Hver gang chefen henter filen, gemmes en **eksport** (`dac7_eksporter`) med et
+  **øjebliksbillede pr. sælger** (`dac7_eksport_saelgere` – CPR kun krypteret) og
+  **SHA-256 af filen**. Filen bygges af øjebliksbilledet.
+- Alle tekstfelter valideres, før filen laves: de skal starte med et bogstav
+  eller tal og må ikke indeholde kontroltegn (beskytter mod formler, når filen
+  åbnes i et regneark). Fejler et felt, stoppes eksporten med en dansk besked,
+  der peger på sælgerens bruger-id – værdien rettes aldrig stiltiende.
+- "Markér som sendt": chefen vælger eksporten og den fil, han uploadede. Browseren
+  beregner filens SHA-256 (filen sendes ikke), og den skal passe med eksporten.
+  Sælgernes kopi er netop den eksports øjebliksbillede.
+
 ## Anmodning, påmindelser og spærring
 
 Cron (`/api/cron/afslut-auktioner` → `koerDac7Cron` → `dac7_koer_cron`, højst
 én gang i timen):
 
-1. Private sælgere, der nærmer sig (i år eller sidste år) og mangler
-   oplysninger, får en **anmodning** (frist 60 dage).
+1. Private sælgere, der mangler oplysninger, får en **anmodning** (frist 60
+   dage): for i år, når de nærmer sig grænsen; for sidste år kun, hvis de blev
+   indberetningspligtige. En åben anmodning for et afsluttet år, hvor sælgeren
+   ikke blev indberetningspligtig, **bortfalder** (`bortfaldet_kl`), og en
+   spærring ophæves.
 2. **Påmindelse 1** efter 20 dage, **påmindelse 2** efter 40 dage (mindst 7 dage
    efter nr. 1).
 3. Efter fristen (og mindst 7 dage efter påmindelse 2): **spærret for nye
-   auktioner** (trigger `auctions_a1_dac7`, `BHD01`). Igangværende auktioner,
-   handler og udbetalinger fortsætter.
+   auktioner og "tilbud til næste byder"** (et nyt salg – chefens valg;
+   triggere `auctions_a1_dac7` og `a1_andenchance_dac7`, `BHD01`).
+   Igangværende auktioner, handler og udbetalinger fortsætter.
 4. Så snart oplysningerne er gemt, lukkes anmodningen, og spærringen ophæves.
 
 Beskederne er notifikationstypen **`skat`** (påkrævet) med link til
 `/konto/skat`, sendt én gang pr. trin (nøgle `dac7:<år>:<trin>:<bruger>`).
 Firmakonti får ingen anmodning – staff retter firmaets oplysninger.
+
+## Bopæl uden for Danmark (chefens valg)
+
+Kun sælgere med bopæl i Danmark kan give oplysningerne (formularen kræver
+"Jeg bor i Danmark", og databasen afviser andet end land DK). Bor sælgeren i
+udlandet, får han besked om at skrive til support. Revisor: nr. 113.
+
+## Opbevaring og kontosletning
+
+- Anmodninger, eksporter, kopier og log slettes aldrig (handelsdata).
+- Ved kontosletning bevares CPR og adresse kun for sælgere, der har en
+  anmodning eller indberetning, eller som nærmer sig/har nået grænsen i år
+  eller sidste år. Ellers slettes de.
+- Vi antager **10 år** efter indberetningsåret (direktivet nævner op til 10 år;
+  Skattestyrelsen nævner 5 år for filerne). Der er endnu ingen automatisk
+  sletning – afventer advokat/revisor (nr. 111).
+
+## Til revisor (også i noter-til-advokat.md nr. 111–113)
+
+- **Vederlag:** bud − sælgergebyr (det sælgeren får), pr. betalt handel, dateret
+  på betalingsdagen (pengene krediteres sælgerens Stripe-konto) – ikke
+  udbetalingen til banken.
+- **Gebyr:** kun sælgergebyret. Købergebyr, fragt og BidHamr Beskyttelse
+  betales af køberen og indberettes ikke.
+- **Kurs:** 7,46 DKK/EUR som standard; chefen kan rette årets kurs.
+- **Kontonummer:** indberettes ikke (ligger hos Stripe; vi har kun 4 cifre).
+- **Rettelser:** korrektionsfiler laves ikke af systemet – rettes manuelt i
+  Skattestyrelsens Excel-værktøj. Sælgerens kopi er den oprindelige.
+- **Bopæl uden for DK:** afvises i dag.
 
 ## Hvad Filip skal gøre
 
@@ -119,7 +165,9 @@ Firmakonti får ingen anmodning – staff retter firmaets oplysninger.
    2. "Hent indberetningsfil" → upload i TastSelv Erhverv → Øvrige
       indberetninger → Platformsøkonomi → Indberet via fil. Vent på godkendt
       validering. **Slet filen bagefter** (den indeholder CPR-numre).
-   3. "Markér som sendt" med kvitteringsnummeret. Sælgerne får besked og kopien.
+   3. "Markér som sendt": vælg eksporten og den uploadede fil (tjekkes med
+      hash) og skriv kvitteringsnummeret. Sælgerne får besked og kopien. Slet
+      filen bagefter.
 6. **Revisor/advokat:** spørgsmål nr. 111–112 (vederlag, gebyr, kurs,
    sanktion, opbevaring, bankkonto).
 
@@ -143,7 +191,7 @@ Firmakonti får ingen anmodning – staff retter firmaets oplysninger.
   indberetninger: [{ aar, indberettet_kl, data }] }`. Intet CPR.
 - Gem: `POST https://bidhamr.dk/api/dac7/oplysninger` med
   `Authorization: Bearer <access token>` og JSON `{ adresse, postnummer, bynavn,
-  cpr?, andetTinLand?, andetTinNummer?, beholdAndetTin?, bekraeft: true }` (se
+  cpr?, andetTinLand?, andetTinNummer?, beholdAndetTin?, bopaelDk: true, bekraeft: true }` (se
   kommentaren i ruten for svar og fejlkoder). Appen må aldrig gemme CPR lokalt.
 - Maskeret CPR: `GET /api/dac7/oplysninger` → `{ cpr: "010190-••••" | null }`.
 - Ny fejl ved oprettelse/genopsætning af auktion: errcode **`BHD01`**, besked

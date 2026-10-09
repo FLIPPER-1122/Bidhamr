@@ -141,24 +141,62 @@ export function Dac7IndstillingerForm(p: Indstillinger) {
   );
 }
 
-export function Dac7SendtForm({ aar }: { aar: number }) {
+export type Dac7Eksport = { id: string; oprettet_kl: string; antal: number; har_hash: boolean };
+
+// SHA-256 (hex) af filen - beregnes i browseren. Selve filen (med CPR-numre)
+// sendes ALDRIG til serveren; kun hashen.
+async function sha256Hex(fil: File): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", await fil.arrayBuffer());
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export function Dac7SendtForm({ aar, eksporter }: { aar: number; eksporter: Dac7Eksport[] }) {
   const [pending, start] = useTransition();
   const [fejl, setFejl] = useState<string | null>(null);
   const [sikker, setSikker] = useState(false);
+  const brugbare = eksporter.filter((e) => e.har_hash);
 
   function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const filFelt = form.querySelector<HTMLInputElement>("input[type=file]");
+    const fil = filFelt?.files?.[0];
+    const fd = new FormData();
+    fd.set("aar", String(aar));
+    fd.set("eksport", String(new FormData(form).get("eksport") ?? ""));
+    fd.set("kvittering", String(new FormData(form).get("kvittering") ?? ""));
     setFejl(null);
+    if (!fil) {
+      setFejl("Vælg den fil, du har uploadet til Skattestyrelsen.");
+      return;
+    }
     start(async () => {
+      fd.set("hash", await sha256Hex(fil));
       const res = await markerDac7Sendt(fd);
       if ("fejl" in res) setFejl(res.fejl);
     });
   }
 
+  if (brugbare.length === 0) {
+    return <p className="text-sm text-gray-600">Hent indberetningsfilen først (trin 2).</p>;
+  }
+
   return (
     <form onSubmit={send} method="post" className="space-y-2">
-      <input type="hidden" name="aar" value={aar} />
+      <label className="block text-sm">
+        Hvilken fil har du uploadet?
+        <select name="eksport" className={FELT} defaultValue={brugbare[0].id}>
+          {brugbare.map((e) => (
+            <option key={e.id} value={e.id}>
+              {new Date(e.oprettet_kl).toLocaleString("da-DK", { timeZone: "Europe/Copenhagen" })} ({e.antal} sælgere)
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-sm">
+        Vælg samme fil igen (den bliver ikke sendt – vi tjekker kun, at det er den rigtige)
+        <input type="file" accept=".csv,text/csv" className={FELT} />
+      </label>
       <label className="block text-sm">
         Kvitteringsnummer fra TastSelv Erhverv
         <input name="kvittering" maxLength={200} required className={FELT} />

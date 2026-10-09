@@ -47,6 +47,7 @@ export type Adresse = { vej: string | null; postnummer: string | null; bynavn: s
 export type EksportSaelger =
   | {
       type: "privat";
+      id: string; // bruger-id (kun til fejlbeskeder - står ikke i filen)
       docRefId: string;
       fornavn: string | null;
       efternavn: string | null;
@@ -58,6 +59,7 @@ export type EksportSaelger =
     }
   | {
       type: "erhverv";
+      id: string;
       docRefId: string;
       navn: string | null;
       cvr: string | null;
@@ -72,6 +74,64 @@ export type CsvInput = {
   platform: Platform;
   saelgere: EksportSaelger[];
 };
+
+// Fejl i indholdet: eksporten stoppes, og chefen får en dansk besked, der
+// peger på sælgeren (bruger-id - aldrig CPR eller selve værdien).
+export class Dac7CsvFejl extends Error {}
+
+// Tekstfelter skal starte med et bogstav eller tal (ingen = + - @ tab eller
+// linjeskift i starten - de kan tolkes som en formel, når filen åbnes i et
+// regneark) og må ikke indeholde kontroltegn. Værdier rettes ALDRIG
+// stiltiende (fx med ' foran) - det ville ændre det, Skattestyrelsen får.
+const GYLDIG_START = /^[\p{L}\p{N}]/u;
+const KONTROLTEGN = /[\u0000-\u001F\u007F]/;
+
+function tjekTekst(v: string | null | undefined, felt: string, hvem: string) {
+  if (v === null || v === undefined || v === "") return;
+  if (!GYLDIG_START.test(v) || KONTROLTEGN.test(v)) {
+    throw new Dac7CsvFejl(
+      `${hvem}: feltet "${felt}" starter med et ugyldigt tegn eller indeholder kontroltegn. Ret oplysningen, og hent filen igen.`,
+    );
+  }
+}
+
+function tjekMoenster(v: string | null | undefined, re: RegExp, felt: string, hvem: string) {
+  if (v === null || v === undefined || v === "") return;
+  if (!re.test(v)) {
+    throw new Dac7CsvFejl(`${hvem}: feltet "${felt}" har et ugyldigt format. Ret oplysningen, og hent filen igen.`);
+  }
+}
+
+function valider(input: CsvInput) {
+  const po = input.platform;
+  const hvemPo = "BidHamrs oplysninger (Indstillinger)";
+  tjekMoenster(po.cvr, /^[0-9]{8}$/, "CVR-nummer", hvemPo);
+  tjekTekst(po.navn, "juridisk navn", hvemPo);
+  tjekTekst(po.vej, "vej", hvemPo);
+  tjekMoenster(po.postnummer, /^[0-9]{4}$/, "postnummer", hvemPo);
+  tjekTekst(po.bynavn, "by", hvemPo);
+  tjekTekst(po.kontakt, "kontakt", hvemPo);
+  for (const s of input.saelgere) {
+    const hvem = `Sælger ${s.id}`;
+    tjekTekst(s.adresse.vej, "adresse", hvem);
+    tjekTekst(s.adresse.postnummer, "postnummer", hvem);
+    tjekTekst(s.adresse.bynavn, "by", hvem);
+    tjekMoenster(s.adresse.land, /^[A-Z]{2}$/, "land", hvem);
+    if (s.type === "privat") {
+      tjekTekst(s.fornavn, "fornavn", hvem);
+      tjekTekst(s.efternavn, "efternavn", hvem);
+      tjekMoenster(s.cpr, /^[0-9]{10}$/, "CPR-nummer", hvem);
+      tjekMoenster(s.foedselsdato, /^\d{4}-\d{2}-\d{2}/, "fødselsdato", hvem);
+      if (s.andetTin) {
+        tjekMoenster(s.andetTin.land, /^[A-Z]{2}$/, "skatte-id-land", hvem);
+        tjekMoenster(s.andetTin.tin, /^[A-Z0-9][A-Z0-9 ./-]{2,28}[A-Z0-9]$/, "andet skatte-id", hvem);
+      }
+    } else {
+      tjekTekst(s.navn, "firmanavn", hvem);
+      tjekMoenster(s.cvr, /^[0-9]{8}$/, "CVR-nummer", hvem);
+    }
+  }
+}
 
 // Felter med ; " eller linjeskift sættes i anførselstegn. Linjeskift fjernes.
 function felt(v: string | undefined): string {
@@ -120,7 +180,9 @@ function aktivitet(docRefId: string, kv: Kvartal[]): Raekke {
   return r;
 }
 
+// Kaster Dac7CsvFejl, hvis et felt er ugyldigt.
 export function byggDac7Csv(input: CsvInput): string {
+  valider(input);
   const { aar, platform: po } = input;
   const ref = input.beskedRef.replace(/[^A-Za-z0-9]/g, "").slice(0, 100);
   const raekker: Raekke[] = [];

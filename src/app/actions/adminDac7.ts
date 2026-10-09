@@ -21,7 +21,12 @@ const KODER: Record<string, string> = {
   aaret_er_ikke_slut: "Året er ikke slut endnu - indberetningen laves efter nytår.",
   kvittering_mangler: "Skriv kvitteringsnummeret fra TastSelv Erhverv.",
   platform_mangler: "Udfyld BidHamrs CVR-nummer under Indstillinger først.",
+  eksport_mangler: "Vælg den fil (eksport), du har uploadet til Skattestyrelsen.",
+  hash_forkert:
+    "Den valgte fil passer ikke med eksporten. Vælg præcis den fil, du hentede her og uploadede i TastSelv Erhverv.",
 };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function aarFra(v: FormDataEntryValue | null): number | null {
   const n = Number(String(v ?? ""));
@@ -80,7 +85,11 @@ export async function markerDac7Sendt(formData: FormData): Promise<{ ok: true } 
     const aar = aarFra(formData.get("aar"));
     if (!aar) return { fejl: KODER.ugyldig };
     const kvittering = String(formData.get("kvittering") ?? "").trim().slice(0, 200);
-    const res = await markerIndberetningSendt(userId, aar, kvittering);
+    const eksportId = String(formData.get("eksport") ?? "");
+    const hash = String(formData.get("hash") ?? "").toLowerCase();
+    if (!UUID.test(eksportId)) return { fejl: KODER.eksport_mangler };
+    if (!/^[0-9a-f]{64}$/.test(hash)) return { fejl: KODER.hash_forkert };
+    const res = await markerIndberetningSendt(userId, aar, eksportId, hash, kvittering);
     if (!("ok" in res)) return { fejl: KODER[res.kode] ?? GENERISK };
     revalidatePath("/admin/dac7");
     return { ok: true };

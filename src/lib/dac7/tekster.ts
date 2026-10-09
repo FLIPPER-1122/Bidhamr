@@ -41,6 +41,7 @@ export const DAC7 = {
   andetTinLand: "Land",
   andetTinNummer: "Skatte-id i det land",
   andetTinFjern: "Fjern",
+  bopaelDk: "Jeg bor i Danmark (min folkeregisteradresse er i Danmark).",
   bekraeft: "Jeg bekræfter, at oplysningerne er rigtige.",
   gem: "Gem oplysninger",
   gemmer: "Gemmer …",
@@ -69,6 +70,8 @@ export const DAC7 = {
     bekraeft: "Sæt flueben for at bekræfte, at oplysningerne er rigtige.",
     mitid: "Bekræft dig med MitID først.",
     erhverv: "Firmakonti skal ikke udfylde dette – vi bruger firmaets CVR-nummer.",
+    udland:
+      "Vi kan kun indberette sælgere med bopæl i Danmark. Bor du i udlandet, så skriv til support@bidhamr.dk, så finder vi en løsning.",
     ikkeTilgaengelig: "Vi kan ikke gemme skatteoplysninger lige nu. Prøv igen senere.",
     forMange: "Du har prøvet for mange gange. Vent lidt, og prøv så igen.",
   },

@@ -222,6 +222,11 @@ export default function SkatteoplysningerForm(p: Props) {
       </div>
 
       <label className="flex items-start gap-3 text-sm">
+        <input type="checkbox" name="bopaelDk" value="ja" defaultChecked={!!p.adresse} className="mt-0.5 h-5 w-5" />
+        <span>{DAC7.bopaelDk}</span>
+      </label>
+
+      <label className="flex items-start gap-3 text-sm">
         <input type="checkbox" name="bekraeft" value="ja" className="mt-0.5 h-5 w-5" />
         <span>{DAC7.bekraeft}</span>
       </label>

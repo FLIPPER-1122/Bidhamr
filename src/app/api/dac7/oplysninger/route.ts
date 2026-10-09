@@ -18,11 +18,13 @@ import { DAC7 } from "@/lib/dac7/tekster";
 // POST /api/dac7/oplysninger          Authorization: Bearer <access token>
 //   Content-Type: application/json
 //   { adresse, postnummer, bynavn, cpr?, andetTinLand?, andetTinNummer?,
-//     beholdAndetTin?: boolean, bekraeft: true }
+//     beholdAndetTin?: boolean, bopaelDk: true, bekraeft: true }
+//   bopaelDk skal være true (kun sælgere med bopæl i Danmark - ellers
+//   400 { kode: "udland" }).
 //   cpr tom/udeladt = behold det gemte. beholdAndetTin = behold et gemt
 //   skatte-id fra et andet EU-land uændret.
 //   200 { ok: true }
-//   400 { fejl, kode: "ugyldig", felt? } | { fejl, kode: "mitid" | "erhverv" }
+//   400 { fejl, kode: "ugyldig", felt? } | { fejl, kode: "mitid" | "erhverv" | "udland" }
 //   401 { fejl, kode: "ikke_logget_ind" }   413 { fejl, kode: "ugyldig" }
 //   429 { fejl, kode: "for_mange" }         503 { fejl, kode: "ikke_tilgaengelig" }
 //   500 { fejl, kode: "fejl" }
@@ -140,6 +142,7 @@ export async function POST(req: NextRequest) {
       andetTinLand: krop.andetTinLand,
       andetTinNummer: krop.andetTinNummer,
       beholdAndetTin: krop.beholdAndetTin === true,
+      bopaelDk: krop.bopaelDk === true,
       bekraeft: krop.bekraeft === true,
     });
     if ("ok" in res) return svar(200, res);

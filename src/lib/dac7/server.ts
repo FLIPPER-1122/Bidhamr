@@ -11,7 +11,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { send } from "@/lib/notifikationer/send";
 import { logDriftFejl } from "@/lib/drift";
 import { dekrypter, krypter, krypteringKlar } from "@/lib/dac7/krypto";
-import { byggDac7Csv, type EksportSaelger, type Kvartal } from "@/lib/dac7/csv";
+import { createHash } from "node:crypto";
+import { byggDac7Csv, Dac7CsvFejl, type EksportSaelger, type Kvartal } from "@/lib/dac7/csv";
 import {
   cprPasserMedFoedselsdato,
   delNavn,
@@ -91,6 +92,8 @@ export async function hentMinDac7Status(
     console.error("dac7_min_status fejlede:", error.message);
     return null;
   }
+  // Rate limit i databasen (300 kald pr. time) - vis fejlen i stedet for tal.
+  if (data && typeof data === "object" && "for_mange" in data) return null;
   return (data as Dac7Status | null) ?? null;
 }
 
@@ -114,6 +117,7 @@ export type GemInput = {
   andetTinLand: unknown; // tom = intet
   andetTinNummer: unknown;
   beholdAndetTin: unknown; // true = behold det gemte andet skatte-id uændret
+  bopaelDk: unknown; // true = sælgeren bor i Danmark (krævet)
   bekraeft: unknown;
 };
 
@@ -126,6 +130,8 @@ const s = (v: unknown) => (typeof v === "string" ? v : "");
 export async function gemSkatteoplysninger(brugerId: string, input: GemInput): Promise<GemSvar> {
   const F = DAC7.fejl;
   if (!krypteringKlar()) return { fejl: F.ikkeTilgaengelig, kode: "ikke_tilgaengelig" };
+  // Kun bopæl i Danmark (chefens valg - docs/DAC7.md, advokat/revisor nr. 113).
+  if (input.bopaelDk !== true) return { fejl: F.udland, kode: "udland", felt: "bopaelDk" };
   if (input.bekraeft !== true) return { fejl: F.bekraeft, kode: "ugyldig", felt: "bekraeft" };
 
   const adresse = s(input.adresse).trim();
@@ -188,6 +194,7 @@ export async function gemSkatteoplysninger(brugerId: string, input: GemInput): P
   if (kode === "cpr_mangler") return { fejl: F.cprMangler, kode: "ugyldig", felt: "cpr" };
   if (kode === "mitid") return { fejl: F.mitid, kode: "mitid" };
   if (kode === "erhverv") return { fejl: F.erhverv, kode: "erhverv" };
+  if (kode === "udland") return { fejl: F.udland, kode: "udland" };
   return { fejl: F.generisk, kode: "fejl" };
 }
 
@@ -233,30 +240,32 @@ export async function koerDac7Cron(): Promise<{ sendt: number; nye: number }> {
 
 // --- Chef: indberetningsfil -----------------------------------------------------
 
-type EksportRaekke = {
-  bruger_id: string;
+// Øjebliksbilledet pr. sælger fra dac7_admin_eksport (samme form som kopien).
+type EksportData = {
   konto_type: "privat" | "erhverv";
-  kvartaler: { antal: number; vederlag_oere: number; gebyr_oere: number }[];
-  juridisk_navn: string | null;
+  navn: string | null;
   foedselsdato: string | null;
+  cvr: string | null;
   adresse: string | null;
   postnummer: string | null;
   bynavn: string | null;
   land: string | null;
-  cpr_krypteret: string | null;
   andet_tin_land: string | null;
-  andet_tin_krypteret: string | null;
-  firmanavn: string | null;
-  cvr: string | null;
-  firma_adresse: string | null;
-  firma_postnummer: string | null;
-  firma_bynavn: string | null;
+  kvartaler: { antal: number; vederlag_oere: number; gebyr_oere: number }[];
   mangler: string[];
 };
 
+type EksportRaekke = {
+  bruger_id: string;
+  doc_ref_id: string;
+  data: EksportData;
+  cpr_krypteret: string | null;
+  andet_tin_krypteret: string | null;
+};
+
 type PlatformRaekke = {
-  cvr: string | null;
-  navn: string | null;
+  cvr: string;
+  navn: string;
   vej: string | null;
   postnummer: string | null;
   bynavn: string | null;
@@ -267,97 +276,113 @@ export type EksportSvar =
   | { ok: true; fil: string; filnavn: string; antal: number; ufuldstaendige: number; ulaeselige: number }
   | { fejl: string };
 
+// SHA-256 (hex) af filen præcis som den sendes til browseren (UTF-8 med BOM).
+// Browseren beregner det samme af den fil, chefen vælger ved "Markér som sendt".
+export function filHash(fil: string): string {
+  return createHash("sha256").update(Buffer.from(fil, "utf8")).digest("hex");
+}
+
 // Bygger Skattestyrelsens CSV for et år. Kun chef (tjekkes i databasen OG af
-// kalderen). CPR dekrypteres kun her, i hukommelsen.
+// kalderen). Databasen gemmer et øjebliksbillede pr. sælger (eksporten), og
+// filens hash registreres bagefter. CPR dekrypteres kun her, i hukommelsen.
 export async function lavIndberetningsfil(medarbejderId: string, aar: number): Promise<EksportSvar> {
   if (!krypteringKlar()) return { fejl: "DAC7_KRYPTERINGSNOEGLE mangler på serveren - CPR-numrene kan ikke læses." };
   const admin: Admin = createAdminClient();
   const { data, error } = await admin.rpc("dac7_admin_eksport", { p_medarbejder: medarbejderId, p_aar: aar });
-  if (error) throw new Error(`dac7_admin_eksport: ${error.message}`);
-  const r = data as { kode: string; platform: PlatformRaekke | null; saelgere: EksportRaekke[] };
+  if (error) throw new Error(`dac7_admin_eksport fejlede: ${error.code ?? "ukendt"}`);
+  const r = data as {
+    kode: string;
+    eksport_id?: string;
+    besked_ref?: string;
+    platform?: PlatformRaekke;
+    saelgere?: EksportRaekke[];
+  };
   if (r.kode === "ingen_adgang") return { fejl: "Kun chefen kan hente indberetningsfilen." };
+  if (r.kode === "platform_mangler") return { fejl: "Udfyld BidHamrs CVR-nummer og navn under Indstillinger først." };
+  if (r.kode !== "ok" || !r.eksport_id || !r.besked_ref || !r.platform) return { fejl: "Filen kunne ikke laves." };
   const po = r.platform;
-  if (!po?.cvr || !po.navn) {
-    return { fejl: "Udfyld BidHamrs CVR-nummer og navn under Indstillinger først." };
-  }
 
   let ufuldstaendige = 0;
   let ulaeselige = 0;
-  const saelgere: EksportSaelger[] = r.saelgere.map((x) => {
-    const docRefId = `DK${aar}${po.cvr}S${x.bruger_id.replace(/-/g, "")}`;
-    const kvartaler: Kvartal[] = x.kvartaler.map((q) => ({
+  const saelgere: EksportSaelger[] = (r.saelgere ?? []).map((x) => {
+    const d = x.data;
+    const kvartaler: Kvartal[] = d.kvartaler.map((q) => ({
       antal: q.antal,
       vederlagOere: q.vederlag_oere,
       gebyrOere: q.gebyr_oere,
     }));
-    if (x.mangler.length > 0) ufuldstaendige++;
-    if (x.konto_type === "erhverv") {
-      return {
-        type: "erhverv",
-        docRefId,
-        navn: x.firmanavn,
-        cvr: x.cvr,
-        adresse: { vej: x.firma_adresse, postnummer: x.firma_postnummer, bynavn: x.firma_bynavn, land: "DK" },
-        kvartaler,
-      };
+    if (d.mangler.length > 0) ufuldstaendige++;
+    const adresse = { vej: d.adresse, postnummer: d.postnummer, bynavn: d.bynavn, land: d.land ?? "DK" };
+    if (d.konto_type === "erhverv") {
+      return { type: "erhverv", id: x.bruger_id, docRefId: x.doc_ref_id, navn: d.navn, cvr: d.cvr, adresse, kvartaler };
     }
     const cpr = dekrypter(x.cpr_krypteret, x.bruger_id, "cpr");
     if (x.cpr_krypteret && !cpr) ulaeselige++;
-    const andet = x.andet_tin_land ? dekrypter(x.andet_tin_krypteret, x.bruger_id, "andet_tin") : null;
+    const andet = d.andet_tin_land ? dekrypter(x.andet_tin_krypteret, x.bruger_id, "andet_tin") : null;
     if (x.andet_tin_krypteret && !andet) ulaeselige++;
-    const navn = x.juridisk_navn ? delNavn(x.juridisk_navn) : null;
+    const navn = d.navn ? delNavn(d.navn) : null;
     return {
       type: "privat",
-      docRefId,
+      id: x.bruger_id,
+      docRefId: x.doc_ref_id,
       fornavn: navn?.fornavn ?? null,
       efternavn: navn?.efternavn ?? null,
-      foedselsdato: x.foedselsdato,
+      foedselsdato: d.foedselsdato,
       cpr,
-      andetTin: andet && x.andet_tin_land ? { land: x.andet_tin_land, tin: andet } : null,
-      adresse: { vej: x.adresse, postnummer: x.postnummer, bynavn: x.bynavn, land: x.land ?? "DK" },
+      andetTin: andet && d.andet_tin_land ? { land: d.andet_tin_land, tin: andet } : null,
+      adresse,
       kvartaler,
     };
   });
 
-  const nu = new Date();
-  const beskedRef = `BH${nu.toISOString().replace(/[^0-9]/g, "").slice(0, 14)}`;
-  const fil = byggDac7Csv({
-    aar,
-    beskedRef,
-    platform: {
-      cvr: po.cvr,
-      navn: po.navn,
-      vej: po.vej,
-      postnummer: po.postnummer,
-      bynavn: po.bynavn,
-      kontakt: po.kontakt,
-    },
-    saelgere,
+  let fil: string;
+  try {
+    fil = byggDac7Csv({ aar, beskedRef: r.besked_ref, platform: po, saelgere });
+  } catch (err) {
+    // Ugyldigt indhold: eksporten står uden hash og kan ikke markeres som sendt.
+    if (err instanceof Dac7CsvFejl) return { fejl: err.message };
+    throw err;
+  }
+
+  const { data: h, error: hFejl } = await admin.rpc("dac7_admin_eksport_hash", {
+    p_medarbejder: medarbejderId,
+    p_eksport: r.eksport_id,
+    p_hash: filHash(fil),
   });
+  if (hFejl || (h as { kode?: string } | null)?.kode !== "ok") {
+    throw new Error(`dac7_admin_eksport_hash fejlede: ${hFejl?.code ?? (h as { kode?: string } | null)?.kode ?? "ukendt"}`);
+  }
+
   return {
     ok: true,
     fil,
-    filnavn: `dac7-bidhamr-${aar}-${beskedRef}.csv`,
+    filnavn: `dac7-bidhamr-${aar}-${r.besked_ref}.csv`,
     antal: saelgere.length,
     ufuldstaendige,
     ulaeselige,
   };
 }
 
-// "Sendt til Skattestyrelsen": markerer året, gemmer kopierne og giver hver
-// indberettet sælger besked (DAC7 kræver, at sælgeren får en kopi).
+// "Sendt til Skattestyrelsen": chefen vælger eksporten og den fil, han har
+// uploadet (hashen beregnes i browseren og skal passe). Kopierne er
+// eksportens øjebliksbillede. Hver indberettet sælger får besked (DAC7 kræver,
+// at sælgeren får en kopi).
 export async function markerIndberetningSendt(
   medarbejderId: string,
   aar: number,
+  eksportId: string,
+  hash: string,
   kvittering: string,
 ): Promise<{ ok: true; antal: number } | { kode: string }> {
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("dac7_admin_marker_sendt", {
     p_medarbejder: medarbejderId,
     p_aar: aar,
+    p_eksport: eksportId,
+    p_hash: hash,
     p_kvittering: kvittering,
   });
-  if (error) throw new Error(`dac7_admin_marker_sendt: ${error.message}`);
+  if (error) throw new Error(`dac7_admin_marker_sendt fejlede: ${error.code ?? "ukendt"}`);
   const r = data as { kode: string; antal?: number; brugere?: string[] };
   if (r.kode !== "ok") return { kode: r.kode };
   const besked = DAC7.besked.indberettet(aar);
