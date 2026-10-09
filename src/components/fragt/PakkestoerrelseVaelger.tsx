@@ -3,7 +3,7 @@
 // Vælger for forsendelse ved opret/redigér auktion: Lille / Mellem / Stor /
 // Kun afhentning, med købers fragtpriser fra databasen (fragt_pakkestoerrelser -
 // det ene sted, priserne står) og vægtfelt (altid krævet ved forsendelse).
-// Databasen håndhæver grænserne igen (BHT01/BHT02/BHT03).
+// Databasen håndhæver grænserne igen (BHT01-BHT05).
 import { useEffect, useId, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { kroner } from "@/lib/kroner";
@@ -37,6 +37,8 @@ export function fragtFejlTekst(kode: string | undefined | null): string | null {
   if (kode === "BHT01") return "Varer over 15 kg kan kun afhentes. Vælg “Kun afhentning”.";
   if (kode === "BHT02") return "Vægten passer ikke til pakkestørrelsen. Vælg en større pakke.";
   if (kode === "BHT03") return "Skriv, hvor meget pakken vejer.";
+  if (kode === "BHT04") return "Angiv en gyldig vægt.";
+  if (kode === "BHT05") return "Ukendt pakkestørrelse. Vælg Lille, Mellem eller Stor.";
   return null;
 }
 
@@ -99,6 +101,8 @@ export default function PakkestoerrelseVaelger({
   vaegtFejlTekst,
   vaegtId,
   deaktiveret = false,
+  afhentningOgsaa,
+  onAfhentningOgsaa,
 }: {
   stoerrelser: Fragtstoerrelse[] | null;
   hentFejl?: boolean;
@@ -109,6 +113,10 @@ export default function PakkestoerrelseVaelger({
   vaegtFejlTekst?: string | null;
   vaegtId: string;
   deaktiveret?: boolean;
+  // Sælgeren tilbyder også afhentning ved siden af forsendelse
+  // (auctions.afhentning_mulig). Vises kun, når onAfhentningOgsaa er givet.
+  afhentningOgsaa?: boolean;
+  onAfhentningOgsaa?: (v: boolean) => void;
 }) {
   const id = useId();
   const valgt = stoerrelser?.find((s) => s.kode === vaerdi) ?? null;
@@ -239,6 +247,26 @@ export default function PakkestoerrelseVaelger({
             </p>
           )}
         </div>
+      )}
+
+      {vaerdi !== "afhentning" && onAfhentningOgsaa && (
+        <label className="mt-4 flex min-h-11 cursor-pointer items-start gap-3 text-sm text-tekst has-[:disabled]:cursor-not-allowed">
+          <input
+            type="checkbox"
+            checked={Boolean(afhentningOgsaa)}
+            onChange={(e) => onAfhentningOgsaa(e.target.checked)}
+            disabled={deaktiveret}
+            aria-describedby={`${id}-afhentning-hjaelp`}
+            className="mt-0.5 h-5 w-5 shrink-0 rounded-[6px] accent-groen"
+          />
+          <span>
+            <span className="font-medium">Køberen må også hente varen hos mig</span>
+            <span id={`${id}-afhentning-hjaelp`} className="block text-[13px] text-tekst-daempet">
+              Køberen vælger i checkout mellem forsendelse og afhentning (0 kr. i fragt). Ved afhentning viser
+              køberen en kode, og du får pengene, når du har tastet den.
+            </span>
+          </span>
+        </label>
       )}
     </div>
   );

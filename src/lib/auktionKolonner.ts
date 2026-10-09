@@ -47,6 +47,8 @@ export const AUKTION_KOLONNER: string = [
   "vaegt_gram",
   "fragt_pakkeshop_oere",
   "fragt_doer_oere",
+  // Afhentning som valg (20261012090000): også afhentning ved forsendelse.
+  "afhentning_mulig",
 ].join(",");
 
 // Rækken, som select(AUKTION_KOLONNER) giver. Holdes i trit med listen
@@ -89,4 +91,5 @@ export type AuktionRaekke = {
   vaegt_gram: number | null;
   fragt_pakkeshop_oere: number | null;
   fragt_doer_oere: number | null;
+  afhentning_mulig: boolean;
 };

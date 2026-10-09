@@ -238,6 +238,88 @@ const LEVERING_FEJL: Record<string, string> = {
   ugyldig: "Ugyldigt valg.",
 };
 
+const AFHENTNING_IKKE_MULIG = "Sælgeren tilbyder ikke afhentning af denne vare. Vælg en pakkeshop eller levering hjem.";
+
+type GemSvar = {
+  kode?: string;
+  pi?: string;
+  fragt_oere?: number;
+  total_oere?: number;
+  beskyttelse_oere?: number;
+  afhentning?: boolean;
+  pris_aendret?: boolean;
+};
+
+export type GemtLeveringsvalg = {
+  ok: true;
+  fragtOere: number;
+  totalOere: number;
+  // BidHamr Beskyttelse på betalingen efter valget (0 ved afhentning).
+  beskyttelseOere: number;
+  afhentning: boolean;
+  prisAendret: boolean;
+};
+
+// Kalder handel_gem_levering. Svarer databasen 'pi_skal_annulleres' (beløbet
+// ændres, og der findes en PaymentIntent), annulleres den hos Stripe først,
+// og kaldet gentages med dens id.
+async function gemValgIDatabasen(
+  admin: Admin,
+  tradeId: string,
+  koeberId: string,
+  valg: Record<string, unknown>,
+  fejlTekster: Record<string, string>,
+): Promise<GemtLeveringsvalg | { fejl: string }> {
+  const kald = (pi: string | null) =>
+    admin.rpc("handel_gem_levering", {
+      p_trade: tradeId,
+      p_bruger: koeberId,
+      p_valg: valg,
+      p_annulleret_pi: pi,
+    });
+
+  try {
+    let { data, error } = await kald(null);
+    if (error) throw new Error(`handel_gem_levering: ${error.message}`);
+    let svar = data as GemSvar;
+    if (svar?.kode === "pi_skal_annulleres" && svar.pi) {
+      // Beløbet ændres: den gamle PaymentIntent må aldrig kunne betales.
+      const r = await annullerPaymentIntentForLevering(svar.pi);
+      if (r === "betalt") {
+        return { fejl: "Betalingen er allerede gennemført, så leveringsmåden kan ikke ændres. Genindlæs siden." };
+      }
+      ({ data, error } = await kald(svar.pi));
+      if (error) throw new Error(`handel_gem_levering: ${error.message}`);
+      svar = data as GemSvar;
+    }
+    if (svar?.kode !== "ok") {
+      return { fejl: fejlTekster[svar?.kode ?? ""] ?? LEVERING_FEJL[svar?.kode ?? ""] ?? GENERISK_FEJL };
+    }
+    return {
+      ok: true,
+      fragtOere: Number(svar.fragt_oere),
+      totalOere: Number(svar.total_oere),
+      beskyttelseOere: Number(svar.beskyttelse_oere ?? 0),
+      afhentning: Boolean(svar.afhentning),
+      prisAendret: Boolean(svar.pris_aendret),
+    };
+  } catch (err) {
+    await logDriftFejl({ kilde: "server", hvor: "Fragt: gem leveringsvalg", fejl: err, brugerId: koeberId });
+    return { fejl: GENERISK_FEJL };
+  }
+}
+
+// Køberen vælger afhentning hos sælger (kun når auktionen tilbyder både
+// forsendelse og afhentning, og kun før betaling). Fragten bliver 0, og
+// handlen følger afhentningsflowet (kode, 7 dages frist). Kræver ikke, at
+// fragtfirmaet er sat op.
+async function gemAfhentning(tradeId: string, koeberId: string): Promise<GemtLeveringsvalg | { fejl: string }> {
+  return gemValgIDatabasen(createAdminClient(), tradeId, koeberId, { maade: "afhentning" }, {
+    ikke_mulig: AFHENTNING_IKKE_MULIG,
+    pris_laast: "Du har allerede betalt, så leveringsmåden kan ikke ændres.",
+  });
+}
+
 // Gemmer købers leveringsvalg (checkout før betalingen) og retter
 // betalingens fragt. koeberId SKAL være verificeret med auth af kalderen;
 // databasen tjekker igen under lås (handel_gem_levering). Ændres beløbet, og
@@ -247,10 +329,8 @@ export async function gemLeveringsvalg(
   tradeId: string,
   koeberId: string,
   input: LeveringsvalgInput,
-): Promise<
-  | { ok: true; fragtOere: number; totalOere: number; prisAendret: boolean }
-  | { fejl: string }
-> {
+): Promise<GemtLeveringsvalg | { fejl: string }> {
+  if (input.maade === "afhentning") return gemAfhentning(tradeId, koeberId);
   if (!fragtErSatOp()) return { fejl: FRAGT_IKKE_SAT_OP };
   if (!erLeveringsmaade(input.maade)) return { fejl: "Vælg pakkeshop eller levering til døren." };
   const maade = input.maade;
@@ -299,41 +379,7 @@ export async function gemLeveringsvalg(
     gem_forslag: input.gemForslag !== false,
   };
 
-  const kald = (pi: string | null) =>
-    admin.rpc("handel_gem_levering", {
-      p_trade: tradeId,
-      p_bruger: koeberId,
-      p_valg: valg,
-      p_annulleret_pi: pi,
-    });
-
-  try {
-    let { data, error } = await kald(null);
-    if (error) throw new Error(`handel_gem_levering: ${error.message}`);
-    let svar = data as { kode?: string; pi?: string; fragt_oere?: number; total_oere?: number; pris_aendret?: boolean };
-    if (svar?.kode === "pi_skal_annulleres" && svar.pi) {
-      // Beløbet ændres: den gamle PaymentIntent må aldrig kunne betales.
-      const r = await annullerPaymentIntentForLevering(svar.pi);
-      if (r === "betalt") {
-        return { fejl: "Betalingen er allerede gennemført, så leveringsmåden kan ikke ændres. Genindlæs siden." };
-      }
-      ({ data, error } = await kald(svar.pi));
-      if (error) throw new Error(`handel_gem_levering: ${error.message}`);
-      svar = data as typeof svar;
-    }
-    if (svar?.kode !== "ok") {
-      return { fejl: LEVERING_FEJL[svar?.kode ?? ""] ?? GENERISK_FEJL };
-    }
-    return {
-      ok: true,
-      fragtOere: Number(svar.fragt_oere),
-      totalOere: Number(svar.total_oere),
-      prisAendret: Boolean(svar.pris_aendret),
-    };
-  } catch (err) {
-    await logDriftFejl({ kilde: "server", hvor: "Fragt: gem leveringsvalg", fejl: err, brugerId: koeberId });
-    return { fejl: GENERISK_FEJL };
-  }
+  return gemValgIDatabasen(admin, tradeId, koeberId, valg, {});
 }
 
 type LeveringRaekke = {

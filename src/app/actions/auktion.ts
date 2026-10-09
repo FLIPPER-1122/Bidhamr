@@ -58,6 +58,9 @@ export type RedigerAuktionInput = {
   kategori: string;
   startpris: number;
   forsendelseMulig: boolean;
+  // Også afhentning ved siden af forsendelse (auctions.afhentning_mulig).
+  // Udeladt = uændret.
+  afhentningMulig?: boolean;
   // Kode fra src/lib/stand.ts. null = uændret (gamle auktioner uden stand).
   stand: string | null;
   // GPSR (kun firmakonti). Udeladt/null = uændret, "" = ryd. Databasen
@@ -130,10 +133,10 @@ export async function redigerAuktion(
     // fjernes, kan slettes fra storage bagefter.
     const { data: foer } = await supabase
       .from("auctions")
-      .select("billeder")
+      .select("billeder, afhentning_mulig")
       .eq("id", auktionId)
       .eq("bruger_id", user.id)
-      .maybeSingle<{ billeder: string[] | null }>();
+      .maybeSingle<{ billeder: string[] | null; afhentning_mulig: boolean | null }>();
 
     const { data, error } = await supabase.rpc("rediger_auktion", {
       p_auktion: auktionId,
@@ -160,6 +163,23 @@ export async function redigerAuktion(
       return { fejl: forbudtBesked(svar?.ord ?? "", svar?.kategori ?? "") };
     }
     if (kode !== "ok") return { fejl: (kode && REDIGER_FEJL[kode]) || GENERISK };
+
+    // Også afhentning: en almindelig UPDATE med brugerens session (kolonne-
+    // grant + auctions_beskyt_kolonner: kun egen aktiv auktion uden bud).
+    // Kun når den ændres, så redigeret_kl ikke flytter sig unødigt.
+    const afhentningMulig = input.forsendelseMulig === true && input.afhentningMulig === true;
+    if (typeof input.afhentningMulig === "boolean" && afhentningMulig !== Boolean(foer?.afhentning_mulig)) {
+      const { error: afhFejl } = await supabase
+        .from("auctions")
+        .update({ afhentning_mulig: afhentningMulig })
+        .eq("id", auktionId)
+        .eq("bruger_id", user.id);
+      if (afhFejl) {
+        if (erAuktionLaastFejl(afhFejl)) return { fejl: LAAST };
+        console.error("afhentning_mulig kunne ikke gemmes:", afhFejl.code, afhFejl.message);
+        return { fejl: "Dine andre ændringer er gemt, men afhentningen blev ikke gemt. Prøv igen." };
+      }
+    }
 
     // rediger_auktion lykkes kun på brugerens egen aktive auktion uden bud
     // (og dermed uden handel), så de fjernede billeder er ikke længere i brug

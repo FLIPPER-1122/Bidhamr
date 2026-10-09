@@ -1,7 +1,8 @@
 # Fragt – DAO via Shipmondo
 
 Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md afsnit 2
-("Fragtfirma og priser", Filip 9. okt. 2026). Migration: `supabase/migrations/20261012010000_fragt_dao_shipmondo.sql`.
+("Fragtfirma og priser", Filip 9. okt. 2026). Migrationer: `supabase/migrations/20261012010000_fragt_dao_shipmondo.sql`
+og `20261012090000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/BHT05).
 
 > **Produktion:** migrationen må IKKE køres i produktion, før både hjemmesiden OG appen viser den låste
 > fragtpris (`fragt_pakkeshop_oere`) og har checkout før betaling. Ellers ser byderne 35 kr. og betaler
@@ -13,13 +14,21 @@ Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md 
 1. **Opret auktion**: sælgeren vælger forsendelse + pakkestørrelse (Lille ≤ 1 kg, Mellem ≤ 5 kg, Stor ≤ 15 kg)
    og vægt (altid krævet). Databasen håndhæver grænserne (også fra appen) og **låser
    fragtprisen på auktionen** (`auctions.fragt_pakkeshop_oere` / `fragt_doer_oere`). Over 15 kg: kun afhentning.
+   Sælgeren kan desuden sætte flueben i "Køberen må også hente varen hos mig" (`auctions.afhentning_mulig`).
+   Uden forsendelse er auktionen kun afhentning (flaget er da altid false).
 2. **Budpanelet** viser `fragt_pakkeshop_oere` (billigste levering) før buddet.
 3. **Auktionen slutter**: betalingen oprettes med pakkeshop-prisen som fragt.
 4. **Checkout (før betaling)**: køberen vælger *pakkeshop* (søg + vælg shop) eller *levering til døren*
-   (kun Lille/Mellem). Valget gemmes på handlen (`handel_levering`), og betalingens fragt, total og
+   (kun Lille/Mellem) – eller *afhent hos sælger – 0 kr.*, når auktionen tilbyder både forsendelse og
+   afhentning. Valget gemmes på handlen (`handel_levering`), og betalingens fragt, total og
    BidHamrs gebyr (application fee) rettes. **Betalingen kan ikke startes uden et gyldigt valg**
    (`startBetaling` svarer `{ fejl, kode: "vaelg_levering" }`; databasen afviser også en PaymentIntent).
-   Afhentning hos sælger kræver intet valg.
+   Kun afhentning (auktionen tilbyder ikke forsendelse) kræver intet valg.
+   **Afhentning som valg** (kun før betaling): fragten bliver 0 (også i application fee), BidHamr Beskyttelse
+   trækkes fra (ingen sag ved afhentning – gemmes i `handel_levering.beskyttelse_ved_forsendelse_oere` og lægges
+   på igen ved skift tilbage), og `trades.afhentning` sættes til true, så afhentningsflowet bruges (kode ved
+   afhentning, 7 dages frist, ingen sag). Samme PaymentIntent-regler som ved prisskift: en gammel PaymentIntent
+   annulleres hos Stripe, før beløbet ændres (pi_forsoeg + 1). Efter betaling kan leveringsformen ikke skiftes.
 5. **Send pakke**: sælgeren udfylder sin afsenderadresse → forsendelsen oprettes hos Shipmondo (DAO) →
    PDF-label + DAO's labelfri-kode. Sælgeren tager stadig de to pakkebilleder og trykker "Send pakke"
    som i dag (labelen flytter ikke handlen). Højst 2 labels pr. handel (også annullerede) – flere kræver,
@@ -62,7 +71,7 @@ Igangværende auktioner beholder den pris, byderne har set. DAO's kostpris (eksk
 | `hentFragtpriser()` | alle | `{ ok, priser: [{ kode, navn, maksGram, pakkeshopOere, doerOere }] }` |
 | `soegPakkeshopsAction({ postnummer, adresse?, by?, antal? })` | logget ind | `{ ok, fragtfirma, pakkeshops: Pakkeshop[] }` |
 | `hentCheckoutAction(tradeId)` | køber | `{ ok, checkout }` (se Checkout i `src/lib/fragt/handlinger.ts`) |
-| `gemLeveringsvalgAction(tradeId, { maade, pakkeshopId?, pakkeshopPostnummer?, pakkeshopAdresse?, modtager, gemForslag? })` | køber | `{ ok, fragtOere, totalOere, prisAendret }` |
+| `gemLeveringsvalgAction(tradeId, { maade, pakkeshopId?, pakkeshopPostnummer?, pakkeshopAdresse?, modtager, gemForslag? })` – eller `{ maade: "afhentning" }` | køber | `{ ok, fragtOere, totalOere, beskyttelseOere, afhentning, prisAendret }` |
 | `lavFragtlabel(tradeId, afsender?)` | sælger | `{ ok }` – uden afsender bruges sidst brugte adresse |
 | `annullerFragtlabel(tradeId, forsendelseId)` | sælger | `{ ok }` |
 | `hentFragtlabelLink(forsendelseId)` | sælger (udgående) / køber (retur) | `{ url }` (5 min) |
@@ -91,7 +100,7 @@ Svar: `200 { ok: true, ... }` eller `409 { fejl, kode: "afvist" }` (vis `fejl`),
 |---|---|---|
 | `pakkeshops` | `{ postnummer, adresse?, by?, antal? }` | `{ fragtfirma, pakkeshops }` |
 | `checkout` | `{ trade_id }` | `{ checkout }` |
-| `levering` | `{ trade_id, maade: "pakkeshop" \| "doer", pakkeshop_id?, pakkeshop_postnummer?, pakkeshop_adresse?, modtager: { navn, telefon, adresse?, postnummer?, by? }, gem_forslag? }` | `{ fragtOere, totalOere, prisAendret }` |
+| `levering` | `{ trade_id, maade: "pakkeshop" \| "doer", pakkeshop_id?, pakkeshop_postnummer?, pakkeshop_adresse?, modtager: { navn, telefon, adresse?, postnummer?, by? }, gem_forslag? }` eller `{ trade_id, maade: "afhentning" }` | `{ fragtOere, totalOere, beskyttelseOere, afhentning, prisAendret }` |
 | `book` | `{ trade_id, afsender? }` | `{ forsendelseId }` |
 | `annuller` | `{ trade_id, forsendelse_id }` | `{}` |
 | `forsendelser` | `{ trade_id }` | `{ forsendelser }` |
@@ -101,8 +110,11 @@ Svar: `200 { ok: true, ... }` eller `409 { fejl, kode: "afvist" }` (vis `fejl`),
 Direkte fra Supabase i appen (med brugerens session):
 
 - Priser: `supabase.from("fragt_pakkestoerrelser").select("kode, navn, maks_gram, pakkeshop_oere, doer_oere").order("sortering")`
-- Auktionens fragt: kolonnerne `pakkestoerrelse, vaegt_gram, fragt_pakkeshop_oere, fragt_doer_oere` på `auctions`.
-- Checkout-overblik: `supabase.rpc("handel_checkout", { p_trade })` (kun køberen).
+- Auktionens fragt: kolonnerne `pakkestoerrelse, vaegt_gram, fragt_pakkeshop_oere, fragt_doer_oere, afhentning_mulig` på `auctions`.
+- Checkout-overblik: `supabase.rpc("handel_checkout", { p_trade })` (kun køberen) →
+  `{ afhentning, kun_afhentning, afhentning_mulig, pakkeshop_oere, doer_oere, beskyttelse_ved_forsendelse_oere, valgt, betaling, label_lavet }`.
+  `afhentning` = afhentning er valgt (eller eneste mulighed); `kun_afhentning` = intet valg; `afhentning_mulig` = vis
+  kortet "Afhent hos sælger – 0 kr." (`valgt.maade` er da `"afhentning"`, når det er valgt).
 - Eget leveringsvalg inkl. adresse: `supabase.rpc("mit_leveringsvalg", { p_trade })`.
 - Forslag (sidst brugte adresse/pakkeshop): `supabase.from("leveringsforslag").select("*").maybeSingle()`;
   slet: `supabase.rpc("slet_mit_leveringsforslag")`.
@@ -112,12 +124,15 @@ Direkte fra Supabase i appen (med brugerens session):
 **Appen skal ændre:**
 
 1. Opret auktion: send `pakkestoerrelse` (`lille`/`mellem`/`stor`) og `vaegt_gram` (altid krævet)
-   sammen med `forsendelse_mulig`. Fejlkoder fra insert/update: `BHT01` (over 15 kg – kun afhentning),
-   `BHT02` (vægten passer ikke til størrelsen) og `BHT03` (vægt mangler). Sendes størrelsen ikke (den
+   sammen med `forsendelse_mulig` – og `afhentning_mulig: true`, hvis sælgeren også tilbyder afhentning
+   (kan ændres med en almindelig update før første bud). Fejlkoder fra insert/update: `BHT01` (over 15 kg – kun afhentning),
+   `BHT02` (vægten passer ikke til størrelsen), `BHT03` (vægt mangler), `BHT04` ("Angiv en gyldig vægt" – vægt 0
+   eller negativ) og `BHT05` ("Ukendt pakkestørrelse"). Sendes størrelsen ikke (den
    nuværende app), bliver den Mellem uden krav om vægt – når appen sender størrelsen, gøres kravet generelt.
 2. Auktionssiden/budpanelet: vis `fragt_pakkeshop_oere` i stedet for de faste 35 kr.
-3. Checkout-skærm før betalingen (pakkeshop med kort/liste, eller levering til døren) → `levering`.
-   Først derefter "Betal". Får betalingen `kode: "vaelg_levering"`, så send køberen til checkout.
+3. Checkout-skærm før betalingen (pakkeshop med kort/liste, levering til døren, eller "Afhent hos sælger – 0 kr."
+   når `afhentningMulig`) → `levering`. Først derefter "Betal". Ved afhentning: vis den nye total (uden fragt og
+   uden BidHamr Beskyttelse) og efter betaling afhentningskoden som ved kun afhentning. Får betalingen `kode: "vaelg_levering"`, så send køberen til checkout.
 4. "Send pakke": afsenderadresse → `book`, vis PDF (`label`) og labelfri-koden.
 5. Tidslinje fra `forsendelser`, notifikationstypen `pakke_leveret` findes allerede.
 
@@ -191,5 +206,9 @@ Localhost kan ikke modtage webhooks fra Shipmondo – test på en Vercel-preview
 - Højst 2 udgående labels pr. handel (inkl. annullerede); flere kræver staffs godkendelse.
 - Gamle handler, hvor køberen har startet betalingen før checkout: den gamle PaymentIntent annulleres, når
   køberen prøver at betale, og køberen får én besked "Vælg levering" (fragt-cron).
+- Afhentning som valg: BidHamr Beskyttelse kan ikke bruges ved afhentning (ingen sag), så den trækkes fra
+  betalingen, når køberen vælger afhentning, og lægges på igen ved skift til forsendelse før betaling.
+  Leveringsformen (afhentning/forsendelse) kan kun skiftes før betaling. Eksisterende auktioner med forsendelse
+  tilbyder ikke afhentning (`afhentning_mulig` = false), før sælgeren slår det til.
 - Ingen automatisk betaling (Filip 9. okt.): alle vindere går gennem checkout. Autobetalingskoden er
   fjernet (`20261012020000_ingen_autobetaling.sql`, docs/BETALINGSMODEL-PLAN.md 1.3); et gemt kort forudfylder kun checkout.

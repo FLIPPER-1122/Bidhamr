@@ -24,6 +24,7 @@ import {
 //   checkout     { trade_id }
 //   levering     { trade_id, maade: "pakkeshop" | "doer", pakkeshop_id?, pakkeshop_postnummer?, pakkeshop_adresse?,
 //                  modtager: { navn, adresse?, postnummer?, by?, telefon }, gem_forslag? }
+//                eller { trade_id, maade: "afhentning" } (kun når checkout.afhentningMulig)
 //   book         { trade_id, afsender?: { navn, adresse, postnummer, by, telefon? } }
 //   annuller     { trade_id, forsendelse_id }
 //   forsendelser { trade_id }
