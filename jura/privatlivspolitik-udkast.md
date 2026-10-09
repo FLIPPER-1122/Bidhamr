@@ -5,7 +5,7 @@
 > **Til Filip og advokaten (fjernes, før siden går live):**
 > - Udkastet er skrevet ud fra Filips skabelon (`jura/privatlivspolitik-skabelon.md`), `ROADMAP-BESLUTNINGER.md` og en gennemgang af koden og databasen pr. 6. oktober 2026 (`src/`, `supabase/migrations/`, `src/lib/tekster/sider/cookies.ts` og navnene på miljøvariablerne – ingen værdier er læst ud).
 > - Opdateret 6. oktober 2026 med dagens ændringer: serverkoden hos Vercel kører i EU (dub1, Dublin), skjulte oplysninger (fx GPS) fjernes nu også fra billeder i sager og fra pakkebilleder, accept af brugerbetingelserne gemmes (version og tidspunkt), og IP-tællerne ryddes af et dagligt oprydningsjob.
-> - Politikken beskriver, hvad BidHamr gør **i dag**. MitID (Idura) er bygget (afsnit 3.10) - testmiljø, indtil Filip har en produktionsaftale. Ting, der ikke er bygget endnu (fragtfirma, regnskabsprogram, DAC7-indsamling), står som markerede afsnit, der skal rettes, når de er i drift.
+> - Politikken beskriver, hvad BidHamr gør **i dag**. MitID (Idura) er bygget (afsnit 3.10) - testmiljø, indtil Filip har en produktionsaftale. DAC7-indsamlingen er bygget (afsnit 5, testmiljø). Ting, der ikke er bygget endnu (fragtfirma, regnskabsprogram), står som markerede afsnit, der skal rettes, når de er i drift.
 > - `[TODO Filip: …]` = oplysninger eller tjek, Filip skal lave. `[ADVOKAT: …]` = juridiske spørgsmål. Alle spørgsmål er samlet i `jura/noter-til-advokat.md`.
 > - Siden skal ligge på `/privatliv` (linket findes allerede i footeren).
 
@@ -104,7 +104,7 @@ Skriver du dig op til ventelisten før lanceringen, gemmer vi din e-mail og send
 ### 3.9 Det gemmer vi ikke
 
 - Kortnumre og bankkontonumre (de ligger hos Stripe).
-- CPR-nummer. Vi beder ikke Idura om dit CPR-nummer, når du bekræfter dig med MitID (afsnit 3.10). [TODO Filip/ADVOKAT: DAC7 kan kræve skatte-id – se afsnit 5.]
+- CPR-nummer fra MitID. Vi beder ikke Idura om dit CPR-nummer, når du bekræfter dig med MitID (afsnit 3.10). Sælger du så meget, at vi skal indberette dig til Skattestyrelsen (DAC7), beder vi dig selv om dit CPR-nummer – se afsnit 5.
 - GPS-position fra dine billeder: når du lægger billeder op – til en auktion, som profilbillede, i en sag eller som pakkebillede – bliver billedet lavet om i din browser, før det sendes til os. Det fjerner skjulte oplysninger som GPS-position. [TODO Filip: bekræft, at det også gælder billeder og dokumentation, der uploades til en anke, og i appen.]
 
 ### 3.10 MitID
@@ -126,7 +126,6 @@ Kun du selv og vores medarbejdere kan se navnet og fødselsdatoen fra MitID. Du 
 
 - **Fragtfirma** [TODO Filip: ikke i drift endnu]: når fragtintegrationen er på plads, sender vi de oplysninger, der skal til for at sende pakken – fx sælgerens og købers navn, købers pakkeshop, e-mail og telefonnummer – til fragtfirmaet DAO (Dansk Avis Omdeling A/S) [TODO: i testperioden går det via Shipmondo; når DAO-aftalen er i drift, sendes det direkte til DAO].
 - **Regnskabsprogram** [TODO Filip: ikke i drift endnu]: fakturaer på BidHamrs gebyrer laves i et regnskabsprogram (sandsynligvis Dinero).
-- **DAC7** [TODO Filip: ikke bygget endnu]: se afsnit 5.
 
 ---
 
@@ -158,9 +157,25 @@ Kun du selv og vores medarbejdere kan se navnet og fødselsdatoen fra MitID. Du 
 
 ## 5. Indberetning til Skattestyrelsen (DAC7)
 
-Som markedsplads har BidHamr pligt til at indberette oplysninger om sælgere til Skattestyrelsen, når en sælger i løbet af et kalenderår har mindst 30 salg eller har solgt for mindst 2.000 euro. Indberetningen omfatter fx navn, adresse, fødselsdato, skatte-id (CPR-nummer), bankkonto, antal salg, beløb og gebyrer. Skattestyrelsen kan dele oplysningerne med skattemyndigheder i andre EU-lande.
+Som markedsplads har BidHamr pligt til at indberette oplysninger om sælgere til Skattestyrelsen (DAC7 – skatteindberetningslovens regler om platformsoperatører). Det gælder sælgere, der i løbet af et kalenderår har **mindst 30 salg** eller har solgt for **over 2.000 euro**. Sælgere under begge grænser indberettes ikke.
 
-Rammer du grænserne, beder vi dig om de oplysninger, loven kræver, og giver dig besked om indberetningen. [TODO Filip: indsamlingen af skatte-id og fødselsdato er ikke bygget. Afklar med revisor, hvordan og hvornår – evt. via Stripe.] [ADVOKAT/revisor: bekræft grænser, indhold, hvordan sælgerne skal informeres, og hvor længe oplysningerne skal gemmes.]
+**Hvornår beder vi om oplysningerne?** Når du nærmer dig grænsen (25 salg eller 1.500 euro i et kalenderår), beder vi dig om de oplysninger, loven kræver, under Min konto → Skatteoplysninger. Du har 60 dage og får to påmindelser. Har du ikke givet oplysningerne inden fristen, kan du ikke sætte nye varer til salg, før de er givet – dine igangværende auktioner og handler fortsætter. Loven kræver, at vi gør noget, hvis oplysningerne mangler. [ADVOKAT: se noter-til-advokat.md nr. 111.]
+
+**Hvad indberetter vi?**
+
+- Private sælgere: navn og fødselsdato (fra dit MitID, afsnit 3.10), din bopælsadresse og dit CPR-nummer (skatte-id) – og et skatte-id fra et andet EU-land, hvis du har et.
+- Firmakonti: firmanavn, CVR-nummer og adresse.
+- Antal salg, det beløb, du har fået for varerne (efter BidHamrs sælgergebyr), og de gebyrer, BidHamr har trukket – pr. kvartal.
+
+**Sådan beskytter vi dit CPR-nummer.** Vi gemmer det krypteret. Det kan kun læses af dig selv (under Min konto, hvor vi kun viser fødselsdato-delen) og af BidHamrs ledelse, når indberetningsfilen laves. Vi tjekker, at de første 6 cifre passer med fødselsdatoen fra dit MitID. Vi viser det aldrig for andre brugere eller medarbejdere og skriver det aldrig i mails eller logs.
+
+**Bankkonto.** Vi har ikke dit kontonummer – det ligger hos Stripe, som udbetaler pengene. [ADVOKAT/revisor: se nr. 112.]
+
+**Indberetningen og din kopi.** Vi indberetter én gang om året, senest 31. januar for året før. Du får besked, og en kopi af det, vi har indberettet om dig, ligger under Min konto → Skatteoplysninger. Skattestyrelsen kan dele oplysningerne med skattemyndigheder i andre EU-lande, hvis du bor eller har skatte-id dér.
+
+**Hvor længe gemmer vi dem?** Oplysningerne og kopien af indberetningen gemmer vi, så længe loven kræver det – også hvis du sletter din konto. Har du ikke solgt noget, sletter vi dine skatteoplysninger, når du sletter kontoen. [ADVOKAT/revisor: 5 eller 10 år – se nr. 111.]
+
+Retsgrundlag: retlig forpligtelse (GDPR art. 6, stk. 1, litra c). CPR-nummeret behandles efter databeskyttelseslovens § 11, stk. 2, nr. 1 (hjemmel i lovgivningen).
 
 ---
 
@@ -245,7 +260,7 @@ Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverand
 | Venteliste | [TODO Filip: fx til lanceringen + 3 måneder] |
 | Tekniske logs hos Supabase og Vercel | [TODO Filip: indsæt leverandørernes frister] |
 | Cookies | Se `/cookies` |
-| DAC7-oplysninger | [ADVOKAT/revisor: fx 10 år] |
+| DAC7-oplysninger (adresse, krypteret CPR) og kopier af indberetningen | Så længe loven kræver det (vi antager 10 år efter indberetningsåret) – også efter kontosletning, hvis du har solgt. Har du ikke solgt, slettes de med kontoen. [ADVOKAT/revisor: nr. 111] |
 
 [ADVOKAT: Forretningsreglen er i dag, at handelsdata, samtaler, kontakthenvendelser, rapporter og begrundelser "slettes aldrig". Bogføringsloven kræver 5 år. Hvor længe må vi gemme de enkelte typer efter GDPR's princip om opbevaringsbegrænsning, og skal vi bygge automatisk sletning eller anonymisering efter fx 5 år (+ indeværende regnskabsår)?]
 

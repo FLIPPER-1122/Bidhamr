@@ -28,6 +28,8 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 // appens engangs-token, callback kræver state-cookie + ubrugt forløb, og
 // /api/mitid/app kræver Bearer-token - alt tjekkes i ruterne selv. Appens
 // in-app browser har ingen session, så gaten må ikke stoppe den.
+// /api/dac7/oplysninger er appens DAC7-skatteoplysninger: kun Bearer-token
+// (ingen cookies); login tjekkes i ruten.
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
 // "Disallow: /" og er tomme, indtil SEO_INDEKSERING=true (src/lib/seo.ts).
 // Statiske filer (public/, delebilledet opengraph-image.jpg, ikoner) rammer
@@ -70,6 +72,7 @@ const OFFENTLIGE_RUTER = [
   "/api/fragt/app",
   "/api/helbred",
   "/api/mitid",
+  "/api/dac7/oplysninger",
   "/robots.txt",
   "/sitemap.xml",
   "/dsa",

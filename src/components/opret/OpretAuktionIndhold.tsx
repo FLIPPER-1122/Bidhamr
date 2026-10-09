@@ -5,6 +5,7 @@ import OpretAuktionForm from "@/components/OpretAuktionForm";
 import UdbetalingskontoKraeves from "@/components/betaling/UdbetalingskontoKraeves";
 import MitIDKraeves from "@/components/mitid/MitIDKraeves";
 import { hentMitIdStatus } from "@/lib/mitid/status";
+import { DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
 import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA } from "@/lib/tekster/erhverv";
 import { naesteLedigeTekst } from "@/lib/erhverv/visning";
 import type { Ugekvote } from "@/lib/erhverv/regler";
@@ -21,7 +22,7 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
 
   // Firmakonto? Så gælder ugekvote og abonnement (databasen håndhæver det
   // også, BHE02/BHE03) - vis det her, før firmaet udfylder hele formularen.
-  const [kontoType, { data: kvoteData }, { data: profil }, mitid] = await Promise.all([
+  const [kontoType, { data: kvoteData }, { data: profil }, mitid, { data: dac7Data }] = await Promise.all([
     hentKontoType(brugerId),
     supabase.rpc("firma_ugekvote"),
     // RLS: brugeren kan kun læse sin egen betalingsprofil.
@@ -41,7 +42,11 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
       }>(),
     // MitID kræves før første auktion (databasen håndhæver det, BHV01).
     hentMitIdStatus(brugerId),
+    // DAC7: spærret for nye auktioner, når skatteoplysningerne mangler efter
+    // fristen (databasen håndhæver det, BHD01).
+    supabase.rpc("dac7_min_status"),
   ]);
+  const dac7Spaerret = !!(dac7Data as { anmodning?: { spaerret?: boolean } | null } | null)?.anmodning?.spaerret;
   const erFirma = kontoType === "erhverv";
   const kvote = erFirma ? ((kvoteData as Ugekvote | null) ?? null) : null;
   const firmaSpaerret = erFirma && (!kvote || !kvote.aktivt_abonnement || kvote.brugt >= kvote.max);
@@ -79,6 +84,16 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
   // Privat sælger uden MitID: først MitID, så udbetalingskonto og formular.
   if (!erFirma && mitid.mangler) {
     return <MitIDKraeves sted="saelg" retur="/opret-auktion" />;
+  }
+  if (dac7Spaerret) {
+    return (
+      <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 text-fejl-tekst">
+        <p className="font-semibold">{DAC7_FEJL_TEKST}</p>
+        <Link href="/konto/skat" className="btn btn-sekundaer mt-4">
+          Udfyld skatteoplysninger
+        </Link>
+      </div>
+    );
   }
   if (frakoblet) {
     return (

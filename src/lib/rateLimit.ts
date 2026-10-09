@@ -122,6 +122,10 @@ export const GRAENSER = {
   mitid_start_ip: { maks: 60, vindueSek: 60 * 60 },
   mitid_app_ip: { maks: 60, vindueSek: 60 * 60 },
   mitid_callback_ip: { maks: 120, vindueSek: 60 * 60 },
+  // DAC7-skatteoplysninger (CPR): forsøg pr. bruger (mod gætteri på CPR mod
+  // fødselsdatoen) og appens API pr. IP, før tokenet er valideret.
+  dac7_gem_bruger: { maks: 10, vindueSek: 60 * 60 },
+  dac7_app_ip: { maks: 60, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;

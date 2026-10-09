@@ -33,6 +33,7 @@ const OVERBLIK: { href: string; ikon: IkonNavn; titel: string; tekst: string }[]
   { href: "/konto/foelger", ikon: "foelgere", titel: "Sælgere du følger", tekst: "Få besked om nye varer" },
   { href: "/konto/soegninger", ikon: "soeg", titel: "Gemte søgninger", tekst: "Besked, når der kommer nyt" },
   { href: "/konto/fakturaer", ikon: "handler", titel: "Fakturaer", tekst: "Fakturaer fra BidHamr på gebyrer" },
+  { href: "/konto/skat", ikon: "laas", titel: "Skatteoplysninger", tekst: "Indberetning til Skattestyrelsen (DAC7)" },
 ];
 
 function datoTekst(iso: string) {
@@ -76,6 +77,7 @@ export default async function KontoSide({
     { data: blokeringData, error: blokeringFejl },
     { data: vilkaarData, error: vilkaarFejl },
     { data: mitidData },
+    { data: dac7Data },
   ] = await Promise.all([
     sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
     hentBetalingsindstillinger(),
@@ -97,6 +99,8 @@ export default async function KontoSide({
           .eq("status", "aktiv")
           .maybeSingle<{ juridisk_navn: string | null; verificeret_kl: string }>()
       : Promise.resolve({ data: null }),
+    // DAC7: åben anmodning om skatteoplysninger (kun egne, auth.uid()).
+    supabase.rpc("dac7_min_status"),
   ]);
   if (!bruger) {
     redirect("/login?redirect=/konto");
@@ -129,12 +133,35 @@ export default async function KontoSide({
   if (paamindelseFejl) console.error("Konto: påmindelser kunne ikke hentes:", paamindelseFejl.message);
   const advarsler = (advarselData ?? []) as MinAdvarsel[];
   const paamindelser = (paamindelseData ?? []) as MinPaamindelse[];
+  const dac7Anmodning =
+    (dac7Data as { anmodning?: { frist: string; spaerret: boolean } | null } | null)?.anmodning ?? null;
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
       <h1 className="text-[26px] leading-tight sm:text-[32px]">Min konto</h1>
       <KontoNavigation />
       {visVilkaarBjaelke && <VilkaarBjaelke />}
+
+      {dac7Anmodning && (
+        <section
+          id="skat"
+          className={`mt-6 scroll-mt-24 rounded-[14px] border p-5 sm:p-6 ${
+            dac7Anmodning.spaerret
+              ? "border-fejl-kant bg-fejl-bg text-fejl-tekst"
+              : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"
+          }`}
+        >
+          <h2 className="text-[20px] leading-tight lg:text-[22px]">Vi mangler dine skatteoplysninger</h2>
+          <p className="mt-1 text-sm">
+            {dac7Anmodning.spaerret
+              ? "Du kan ikke sætte nye varer til salg, før du har udfyldt dem."
+              : `Udfyld dem senest ${datoTekst(dac7Anmodning.frist)}.`}
+          </p>
+          <Link href="/konto/skat" className="btn btn-sekundaer mt-4">
+            Udfyld skatteoplysninger
+          </Link>
+        </section>
+      )}
 
       {advarsler.length > 0 && (
         <section
