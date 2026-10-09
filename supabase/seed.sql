@@ -19,6 +19,8 @@
 --   staff-rolle 'saelger' (kun Erhverv i admin)
 --                erhvervssaelger@test.bidhamr.dk PXXou0dC3YLbNy5G
 --   firmakonto   firma@test.bidhamr.dk         51Ha-G0X21hAIx7k   (Testfirma ApS, pakke "Basis")
+--   MitID-test A mitid-a@test.bidhamr.dk       T1BhHXyuCjKWGA8C   (UDEN MitID - til test af MitID-flowet)
+--   MitID-test B mitid-b@test.bidhamr.dk       _TMNedfgLQRuRlaA   (UDEN MitID - prøv samme MitID som A = dobbeltkonto)
 --
 -- Adgangskoderne gælder kun testdatabasen. De må ikke genbruges andre steder.
 --
@@ -44,7 +46,9 @@ declare
     {"id":"11111111-1111-4111-8111-000000000006","email":"niels-koeber@test.bidhamr.dk","pw":"WjzVSXnvJAYX4wHs","navn":"Niels Køber"},
     {"id":"11111111-1111-4111-8111-000000000007","email":"niels-saelger@test.bidhamr.dk","pw":"qdsG-8MIOUFOZ3w9","navn":"Niels Sælger"},
     {"id":"11111111-1111-4111-8111-000000000008","email":"erhvervssaelger@test.bidhamr.dk","pw":"PXXou0dC3YLbNy5G","navn":"Ebbe Erhvervssælger"},
-    {"id":"11111111-1111-4111-8111-000000000009","email":"firma@test.bidhamr.dk","pw":"51Ha-G0X21hAIx7k","navn":"Testfirma ApS"}
+    {"id":"11111111-1111-4111-8111-000000000009","email":"firma@test.bidhamr.dk","pw":"51Ha-G0X21hAIx7k","navn":"Testfirma ApS"},
+    {"id":"11111111-1111-4111-8111-000000000010","email":"mitid-a@test.bidhamr.dk","pw":"T1BhHXyuCjKWGA8C","navn":"Mia MitID"},
+    {"id":"11111111-1111-4111-8111-000000000011","email":"mitid-b@test.bidhamr.dk","pw":"_TMNedfgLQRuRlaA","navn":"Mads MitID"}
   ]';
   b jsonb;
 begin
@@ -108,6 +112,28 @@ values ('77777777-7777-4777-8777-000000000001', '11111111-1111-4111-8111-0000000
         -- 'afventer_betaling' og betaler selv via Stripe - 20261010050000).
         'aktiv')
 on conflict (id) do nothing;
+
+-- ---------------------------------------------------------
+-- MitID (20261013010000_mitid.sql): de private testbrugere er verificeret
+-- med et falsk MitID-id (hash af "seed:<id>"), så de kan byde og sælge med
+-- det samme - og så auktionerne herunder kan oprettes (auctions_a0_mitid).
+-- Test af selve MitID-flowet: opret en ny bruger (starter uden MitID), eller
+-- nulstil en testbrugers MitID i admin (admin@/chef@).
+-- ---------------------------------------------------------
+insert into public.mitid_verificeringer (bruger_id, id_hash, juridisk_navn, foedselsdato)
+select u.id, encode(sha256(convert_to('seed:' || u.id::text, 'UTF8')), 'hex'), u.navn, date '1990-01-01'
+  from public.users u
+ where u.id in ('11111111-1111-4111-8111-000000000001', '11111111-1111-4111-8111-000000000002',
+                '11111111-1111-4111-8111-000000000003', '11111111-1111-4111-8111-000000000004',
+                '11111111-1111-4111-8111-000000000005', '11111111-1111-4111-8111-000000000006',
+                '11111111-1111-4111-8111-000000000007', '11111111-1111-4111-8111-000000000008')
+   and not exists (select 1 from public.mitid_verificeringer v where v.bruger_id = u.id and v.status = 'aktiv')
+on conflict do nothing;
+
+update public.users u
+   set mitid_verificeret_kl = now()
+ where u.mitid_verificeret_kl is null
+   and exists (select 1 from public.mitid_verificeringer v where v.bruger_id = u.id and v.status = 'aktiv');
 
 -- ---------------------------------------------------------
 -- Auktioner (sælger)

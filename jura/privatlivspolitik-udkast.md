@@ -5,7 +5,7 @@
 > **Til Filip og advokaten (fjernes, før siden går live):**
 > - Udkastet er skrevet ud fra Filips skabelon (`jura/privatlivspolitik-skabelon.md`), `ROADMAP-BESLUTNINGER.md` og en gennemgang af koden og databasen pr. 6. oktober 2026 (`src/`, `supabase/migrations/`, `src/lib/tekster/sider/cookies.ts` og navnene på miljøvariablerne – ingen værdier er læst ud).
 > - Opdateret 6. oktober 2026 med dagens ændringer: serverkoden hos Vercel kører i EU (dub1, Dublin), skjulte oplysninger (fx GPS) fjernes nu også fra billeder i sager og fra pakkebilleder, accept af brugerbetingelserne gemmes (version og tidspunkt), og IP-tællerne ryddes af et dagligt oprydningsjob.
-> - Politikken beskriver, hvad BidHamr gør **i dag**. Ting, der ikke er bygget endnu (MitID, fragtfirma, regnskabsprogram, DAC7-indsamling), står som markerede afsnit, der skal rettes, når de er i drift.
+> - Politikken beskriver, hvad BidHamr gør **i dag**. MitID (Idura) er bygget (afsnit 3.10) - testmiljø, indtil Filip har en produktionsaftale. Ting, der ikke er bygget endnu (fragtfirma, regnskabsprogram, DAC7-indsamling), står som markerede afsnit, der skal rettes, når de er i drift.
 > - `[TODO Filip: …]` = oplysninger eller tjek, Filip skal lave. `[ADVOKAT: …]` = juridiske spørgsmål. Alle spørgsmål er samlet i `jura/noter-til-advokat.md`.
 > - Siden skal ligge på `/privatliv` (linket findes allerede i footeren).
 
@@ -104,12 +104,26 @@ Skriver du dig op til ventelisten før lanceringen, gemmer vi din e-mail og send
 ### 3.9 Det gemmer vi ikke
 
 - Kortnumre og bankkontonumre (de ligger hos Stripe).
-- CPR-nummer. [TODO Filip/ADVOKAT: se afsnit 3.10 om MitID og DAC7.]
+- CPR-nummer. Vi beder ikke Idura om dit CPR-nummer, når du bekræfter dig med MitID (afsnit 3.10). [TODO Filip/ADVOKAT: DAC7 kan kræve skatte-id – se afsnit 5.]
 - GPS-position fra dine billeder: når du lægger billeder op – til en auktion, som profilbillede, i en sag eller som pakkebillede – bliver billedet lavet om i din browser, før det sendes til os. Det fjerner skjulte oplysninger som GPS-position. [TODO Filip: bekræft, at det også gælder billeder og dokumentation, der uploades til en anke, og i appen.]
 
-### 3.10 Kommer senere (rettes, når det er i drift)
+### 3.10 MitID
 
-- **MitID** [TODO Filip: ikke bygget endnu]: når du verificerer dig med MitID via vores leverandør Criipto, får vi bekræftet din identitet og [TODO: hvilke oplysninger – fx navn og fødselsdato, og et id, der forhindrer en ny konto efter lukning]. Vi gemmer ikke dit CPR-nummer, medmindre loven kræver det. [ADVOKAT: hvilke MitID-oplysninger må vi gemme for at forhindre, at lukkede brugere opretter en ny konto?]
+Før dit første bud og før du sætter din første vare til salg, skal du bekræfte, hvem du er, med MitID. Det sker via vores leverandør **Idura ApS** (tidligere Criipto), en dansk virksomhed, som er godkendt MitID-broker. Firmakonti (erhverv) er undtaget – de er godkendt med CVR.
+
+Når du bekræfter dig, får vi fra MitID:
+
+- **dit navn** (juridisk navn) – vi gemmer det, men viser det **aldrig** for andre brugere. Det bruges kun internt: i dine handler, på fakturaer og til indberetning til Skattestyrelsen (DAC7). Andre ser kun dit brugernavn og mærket "MitID-verificeret".
+- **din fødselsdato** – for at sikre, at du er fyldt 18 år, og fordi DAC7 kræver fødselsdato på sælgere. Er du under 18, gemmer vi ikke fødselsdatoen – kun at et forsøg blev afvist.
+- **dit MitID-id** (MitIDs Person-ID) – vi gemmer det **kun sløret**: som en kode (HMAC-hash med en hemmelig nøgle), som ikke kan regnes tilbage til id'et. Den bruges til at sikre, at samme MitID kun kan bruges til én konto, og at en konto, der er lukket permanent for svindel, ikke kan oprettes igen.
+- **ikke dit CPR-nummer**. Vi beder ikke om det, og vi får det ikke.
+
+Hvis en anden konto prøver at bruge et MitID, der allerede er brugt, afviser vi det og giver vores medarbejdere besked, så de kan se, om der er tale om en dobbeltkonto.
+
+Kun du selv og vores medarbejdere kan se navnet og fødselsdatoen fra MitID. Du kan se dem under Min konto og i "Download dine data". [ADVOKAT: se noter-til-advokat.md om retsgrundlag og opbevaring af MitID-oplysningerne.]
+
+### 3.11 Kommer senere (rettes, når det er i drift)
+
 - **Fragtfirma** [TODO Filip: ikke i drift endnu]: når fragtintegrationen er på plads, sender vi de oplysninger, der skal til for at sende pakken – fx sælgerens og købers navn, købers pakkeshop, e-mail og telefonnummer – til fragtfirmaet DAO (Dansk Avis Omdeling A/S) [TODO: i testperioden går det via Shipmondo; når DAO-aftalen er i drift, sendes det direkte til DAO].
 - **Regnskabsprogram** [TODO Filip: ikke i drift endnu]: fakturaer på BidHamrs gebyrer laves i et regnskabsprogram (sandsynligvis Dinero).
 - **DAC7** [TODO Filip: ikke bygget endnu]: se afsnit 5.
@@ -129,6 +143,7 @@ Skriver du dig op til ventelisten før lanceringen, gemmer vi din e-mail og send
 | Indberetning af sælgere til Skattestyrelsen (DAC7) | Sælgeroplysninger og salg | Retlig forpligtelse – litra c (skatteindberetningsloven/DAC7) |
 | Behandle anmeldelser af ulovligt indhold, begrundelser og klager | Anmeldelser, afgørelser, klager | Retlig forpligtelse – litra c (DSA) |
 | Forebygge svindel og misbrug, spamfilter, filter for forbudte varer, grænser for antal forsøg, mail ved nyt login, advarsler og lukning af konti | Sikkerhedsdata, IP-tællere, beskeder, rapporter, advarsler | Legitim interesse – litra f (at beskytte brugerne og BidHamr) |
+| Bekræfte din identitet med MitID: 18 år, én konto pr. person og at lukkede svindlere ikke kommer igen | Navn, fødselsdato og sløret MitID-id fra MitID | Aftale – litra b (det er en betingelse for at byde og sælge), og legitim interesse i at forebygge svindel og dobbeltkonti – litra f [ADVOKAT] |
 | Fejlfinding og drift | Fejllog, tekniske logs | Legitim interesse – litra f |
 | Besvare henvendelser | Kontaktformular, e-mail | Legitim interesse – litra f (og aftale, hvis det handler om en handel) |
 | Venteliste | E-mail | [ADVOKAT: samtykke – litra a – eller legitim interesse?] |
@@ -153,7 +168,7 @@ Rammer du grænserne, beder vi dig om de oplysninger, loven kræver, og giver di
 
 ### 6.1 Andre brugere
 
-- **Offentligt**: dit navn, profilbillede, dine auktioner, spørgsmål og svar, dine bedømmelser og dine offentlige tal (fx antal auktioner og salg). Bud vises uden navn.
+- **Offentligt**: dit navn, profilbillede, dine auktioner, spørgsmål og svar, dine bedømmelser og dine offentlige tal (fx antal auktioner og salg), og om du er MitID-verificeret (mærket – aldrig navnet fra MitID). Bud vises uden navn.
 - **Køber og sælger i en handel** ser hinandens navn og beskederne i handlen.
 - **Ved afhentning** ser køberen sælgerens adresse og telefonnummer, når varen er betalt, og indtil den er hentet.
 - Din e-mail vises aldrig for andre brugere. Telefonnummer og adresse vises kun ved afhentning som beskrevet ovenfor.
@@ -170,10 +185,11 @@ Vores medarbejdere har adgang til de oplysninger, de skal bruge til fx sager, an
 | **Supabase** | Database, login, filer (billeder) og planlagte opgaver | Data lagres i EU – AWS-region eu-west-1 (Irland) | Supabase Inc. er en amerikansk virksomhed. Mulig adgang fra USA (support/drift) [ADVOKAT] |
 | **Vercel** | Hosting af hjemmesiden, billedvisning og serverkode | Serverkoden kører i EU – Vercel-region dub1 (Dublin, Irland) [TODO Filip: tjek, hvor Vercel gemmer logs, og om sider og billeder også leveres fra servere uden for EU via Vercels netværk] | Vercel Inc. er en amerikansk virksomhed. Overførsel eller adgang fra USA kan forekomme (fx support, drift og logs) [ADVOKAT] |
 | **Resend** | Afsendelse af mails (fx bekræftelse, notifikationer, kvitteringer) | [TODO Filip: tjek, om bidhamr.dk-domænet i Resend er sat op i en EU-region] | Resend Inc., USA |
+| **Idura ApS** (tidligere Criipto) | MitID-login (broker): bekræfter din identitet og sender os navn, fødselsdato og MitID-id | Danmark/EU | Nej [TODO Filip: bekræft i Iduras databehandleraftale, hvor data behandles] |
 | **Expo** (650 Industries) | Sender push-beskeder til appen videre til Apple og Google | USA | Ja |
 | **Apple** og **Google** | Levering af push-beskeder til din telefon | – | [ADVOKAT: databehandlere eller selvstændigt dataansvarlige?] |
 
-[TODO Filip: bekræft databehandleraftale (DPA) med Supabase, Vercel, Resend og Expo – de fleste har en standardaftale, der skal accepteres i deres dashboard.]
+[TODO Filip: bekræft databehandleraftale (DPA) med Supabase, Vercel, Resend, Idura og Expo – de fleste har en standardaftale, der skal accepteres i deres dashboard.]
 
 Vi bruger ikke Google Analytics, Facebook Pixel, reklamenetværk eller andre sporingsværktøjer. Skrifttyper og billeder hentes fra vores eget domæne.
 
@@ -219,6 +235,8 @@ Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverand
 | Henvendelser via kontaktformularen | Slettes ikke automatisk i dag [ADVOKAT] |
 | Advarsler, begrundelser for indgreb og medarbejder-log | Slettes ikke automatisk i dag (dokumentation for afgørelser) [ADVOKAT] |
 | Anmeldelser og rapporter | Behandlede rapporter flyttes til et arkiv efter 48 timer og gemmes der. Anmelderens navn, e-mail, konto-kobling og fritekst i DSA-anmeldelser anonymiseres 12 måneder efter afgørelsen. Statistik og begrundelser gemmes |
+| MitID: sløret MitID-id | Også efter, at du har slettet din konto – så en konto, der er lukket for svindel, ikke kan oprettes igen, og så vi kan se, hvis samme person kommer tilbage (fx med advarsler på den gamle konto) [ADVOKAT: hvor længe?] |
+| MitID: navn og fødselsdato | Så længe du har en konto. Har du handlet, gemmes de som handelsdata (fakturaer, DAC7) – ellers slettes de, når du sletter kontoen |
 | Enheder | Til du fjerner enheden, til den bliver skubbet ud af listen over de 30 seneste, eller til du sletter kontoen |
 | Tællere med IP-adresse og e-mail (misbrug) | Højst ca. et døgn. Et dagligt oprydningsjob sletter dem |
 | Fejllog | 90 dage efter, fejlen sidst er set |
@@ -235,7 +253,7 @@ Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverand
 
 ## 9. Når du sletter din konto
 
-Du sletter din konto under Min konto → Slet konto. Det kan ikke lade sig gøre, mens du har noget i gang (fx bud, handler, sager eller penge undervejs) – siden viser, hvad der mangler.
+Du sletter din konto under Min konto → Slet konto. Det kan ikke lade sig gøre, mens du har noget i gang (fx bud, handler, sager eller penge undervejs), eller mens kontoen er suspenderet – siden viser, hvad der mangler. Har du advarsler, kan du godt slette kontoen, men vi gemmer antallet sammen med det slørede MitID-id: havde kontoen 3 advarsler eller var den suspenderet, kan samme MitID ikke bruges til en ny konto. [ADVOKAT: se noter-til-advokat.md nr. 110.]
 
 Når kontoen slettes:
 
@@ -245,6 +263,7 @@ Når kontoen slettes:
 - Auktioner uden bud afsluttes og arkiveres.
 - Din login-bruger spærres, og e-mailen sløres, så du ikke kan logge ind. Du kan senere oprette en ny konto med samme e-mail.
 - Du får en mail om, at kontoen er slettet.
+- Mærket "MitID-verificeret" fjernes. Navn og fødselsdato fra MitID slettes, medmindre du har handlet (så gemmes de som handelsdata). Det slørede MitID-id gemmes, så samme MitID ikke kan bruges til at omgå en lukning. Du kan godt oprette en ny konto med samme MitID senere, medmindre din konto er lukket permanent.
 
 Det gemmer vi, fordi loven kræver det: handler, betalinger, gebyrer, sager, anker, beskeder i handler og medarbejder-loggen (bogføringsloven og DAC7). Vi gemmer også, hvilken version af brugerbetingelserne du accepterede, og hvornår, som dokumentation for de handler, du har lavet. Bedømmelser og svar bliver stående, men står som fra "Slettet bruger". Referencer til din kunde- og udbetalingskonto hos Stripe gemmes som en del af handelsdata. [TODO Filip: gemte kort hos Stripe ryddes, når Stripe-arbejdet genoptages.]
 
@@ -293,7 +312,7 @@ Sker der et brud på sikkerheden, der kan skade dig, giver vi dig og Datatilsyne
 
 ## 13. Ændringer
 
-Vi opdaterer politikken, når vi ændrer, hvordan vi behandler oplysninger – fx når MitID, fragtfirmaet eller regnskabsprogrammet kommer til. Ved væsentlige ændringer giver vi dig besked på mail eller i appen. Datoen øverst viser, hvornår politikken sidst er ændret.
+Vi opdaterer politikken, når vi ændrer, hvordan vi behandler oplysninger – fx når fragtfirmaet eller regnskabsprogrammet kommer til. Ved væsentlige ændringer giver vi dig besked på mail eller i appen. Datoen øverst viser, hvornår politikken sidst er ændret.
 
 ---
 

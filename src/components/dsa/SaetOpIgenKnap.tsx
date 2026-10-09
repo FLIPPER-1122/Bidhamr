@@ -1,14 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { saetVarenOpIgen } from "@/app/actions/auktion";
+import { MitIDKnap } from "@/components/mitid/MitIDKraeves";
 
 // "Sæt varen op igen" med ét klik. En annulleret auktion genåbnes aldrig -
 // der oprettes en ny auktion med samme indhold, startpris og varighed.
 export default function SaetOpIgenKnap({ auktionId }: { auktionId: string }) {
   const router = useRouter();
+  const sti = usePathname();
   const [fejl, setFejl] = useState<string | null>(null);
+  const [mitid, setMitid] = useState(false);
   const [sender, start] = useTransition();
 
   function klik() {
@@ -17,6 +20,7 @@ export default function SaetOpIgenKnap({ auktionId }: { auktionId: string }) {
       const r = await saetVarenOpIgen(auktionId);
       if ("fejl" in r) {
         setFejl(r.fejl);
+        setMitid(r.mitid === true);
         return;
       }
       router.push(`/auktion/${r.auktionId}`);
@@ -33,6 +37,11 @@ export default function SaetOpIgenKnap({ auktionId }: { auktionId: string }) {
         <p role="alert" className="mt-3 rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
           {fejl}
         </p>
+      )}
+      {mitid && (
+        <div className="mt-3">
+          <MitIDKnap retur={sti} />
+        </div>
       )}
     </div>
   );

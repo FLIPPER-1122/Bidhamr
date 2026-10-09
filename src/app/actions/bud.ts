@@ -9,6 +9,8 @@ import { logDriftFejl } from "@/lib/drift";
 import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
 import { notificerEgetNyesteBud } from "@/lib/notifikationer/bud";
 import { ERHVERV_FEJL } from "@/lib/erhverv/regler";
+import { erMitIdFejl } from "@/lib/mitid/fejl";
+import { MITID } from "@/lib/tekster/mitid";
 
 // Bud afgives paa serveren, saa det kan rate-limites pr. bruger og pr. IP.
 // Selve buddet indsaettes stadig med brugerens egen session, saa RLS
@@ -88,7 +90,7 @@ export async function afgivBud(
   redigeretKl?: string | null,
 ): Promise<
   | { ok: true; slutterKl: string | null; foerer: boolean | null; nuvaerendeBud: number | null }
-  | { fejl: string; auktionAendret?: true }
+  | { fejl: string; auktionAendret?: true; mitid?: true }
 > {
   const supabase = await createClient();
   const {
@@ -125,6 +127,8 @@ export async function afgivBud(
 
   if (error) {
     const besked = error.message ?? "";
+    // MitID mangler (BHV01): budpanelet viser "Bekræft med MitID".
+    if (erMitIdFejl(error.code, besked)) return { fejl: MITID.fejlMangler, mitid: true };
     // Databasens fejltekst sendes aldrig ordret til brugeren - kun kendte
     // beskeder (whitelist). Alt andet logges og giver en generisk besked.
     if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
@@ -183,7 +187,7 @@ export async function saetMaksimum(
       slutterKl: string | null;
       budAfgivet: boolean;
     }
-  | { fejl: string; auktionAendret?: true }
+  | { fejl: string; auktionAendret?: true; mitid?: true }
 > {
   const supabase = await createClient();
   const {
@@ -219,6 +223,7 @@ export async function saetMaksimum(
   if (error) {
     const besked = error.message ?? "";
     const kr = (re: RegExp) => Number(besked.match(re)?.[1]);
+    if (erMitIdFejl(error.code, besked)) return { fejl: MITID.fejlMangler, mitid: true };
     if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
     if (besked.includes("erhverv_kan_ikke_byde")) return { fejl: ERHVERV_FEJL.kanIkkeByde };
     if (erBudSaelgerFrossetFejl(error.code, besked)) return { fejl: BUD_SAELGER_FROSSET_TEKST };

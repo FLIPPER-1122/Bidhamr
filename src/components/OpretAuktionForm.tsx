@@ -21,6 +21,8 @@ import {
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand, standNavn } from "@/lib/stand";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
+import { erMitIdFejl } from "@/lib/mitid/fejl";
+import { MITID } from "@/lib/tekster/mitid";
 import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
 import { ERHVERV_GPSR, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import { SPOERGSMAAL_SLAAET_FRA } from "@/lib/spoergsmaal";
@@ -381,6 +383,9 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         console.error("Fejl ved oprettelse af auktion:", insertError.code, insertError.message);
         let besked = "Auktionen kunne ikke oprettes. Prøv igen om lidt – din kladde er gemt.";
         if (erSaelgerFrossetFejl(insertError.code, insertError.message)) besked = SAELGER_FROSSET_TEKST;
+        // MitID mangler (BHV01). Siden viser normalt "Bekræft med MitID" før
+        // formularen; her er MitID fx nulstillet imens.
+        else if (erMitIdFejl(insertError.code, insertError.message)) besked = MITID.fejlMangler;
         else if (insertError.code === "BHU01") besked = "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.";
         else if (insertError.code === "22023") besked = "Tjek startpris og varighed (3, 5, 7 eller 10 dage), og prøv igen.";
         else if (insertError.code === "BHA01") besked = "Et af billederne kunne ikke bruges. Fjern det, tilføj det igen, og prøv igen.";

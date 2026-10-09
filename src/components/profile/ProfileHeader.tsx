@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { kanOptimeres } from "@/lib/billedUrl";
+import MitIDMaerke from "@/components/mitid/MitIDMaerke";
 
 interface ProfileHeaderProps {
   navn: string;
@@ -21,6 +22,8 @@ interface ProfileHeaderProps {
   antalFoelgere?: number;
   // Fx "Følg"-knappen på en andens profil.
   handling?: ReactNode;
+  // users.mitid_verificeret_kl er sat: mærket "MitID-verificeret".
+  mitidVerificeret?: boolean;
 }
 
 export default function ProfileHeader({
@@ -35,6 +38,7 @@ export default function ProfileHeader({
   brugerId,
   antalFoelgere,
   handling,
+  mitidVerificeret = false,
 }: ProfileHeaderProps) {
   return (
     <div className="overflow-hidden rounded-[14px] border border-kant bg-white">
@@ -86,6 +90,11 @@ export default function ProfileHeader({
             </div>
             {email && (
               <p className="mt-0.5 text-sm break-all text-tekst-svag">{email}</p>
+            )}
+            {mitidVerificeret && (
+              <div className="mt-1.5">
+                <MitIDMaerke />
+              </div>
             )}
 
             <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-tekst-svag">

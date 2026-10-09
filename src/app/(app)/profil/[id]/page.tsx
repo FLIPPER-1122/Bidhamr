@@ -92,7 +92,7 @@ export default async function ProfilPage({
     supabase.auth.getUser(),
     supabase
       .from("users")
-      .select("id, navn, avatar_url, oprettet, konto_type")
+      .select("id, navn, avatar_url, oprettet, konto_type, mitid_verificeret_kl")
       .eq("id", id)
       .single(),
   ]);
@@ -255,6 +255,7 @@ export default async function ProfilPage({
             }}
             erEgenProfil={true}
             brugerId={id}
+            mitidVerificeret={!!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
             antalFoelgere={typeof egneFoelgere === "number" ? egneFoelgere : undefined}
           />
 
@@ -349,6 +350,7 @@ export default async function ProfilPage({
           }}
           erEgenProfil={false}
           brugerId={id}
+          mitidVerificeret={!!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
           antalFoelgere={typeof antalFoelgere === "number" ? antalFoelgere : undefined}
           handling={
             !blokeretAfProfil && harBlokeret !== true ? (

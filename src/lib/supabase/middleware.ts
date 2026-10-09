@@ -24,6 +24,10 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 // Bearer-token (ingen cookies); login tjekkes i ruten.
 // /api/helbred er sundhedstjekket til uptime-tjenesten: svarer kun {ok}, ingen
 // detaljer, grænse pr. IP i ruten selv.
+// /api/mitid er MitID-verificeringen (Idura): start kræver cookie-login eller
+// appens engangs-token, callback kræver state-cookie + ubrugt forløb, og
+// /api/mitid/app kræver Bearer-token - alt tjekkes i ruterne selv. Appens
+// in-app browser har ingen session, så gaten må ikke stoppe den.
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
 // "Disallow: /" og er tomme, indtil SEO_INDEKSERING=true (src/lib/seo.ts).
 // Statiske filer (public/, delebilledet opengraph-image.jpg, ikoner) rammer
@@ -65,6 +69,7 @@ const OFFENTLIGE_RUTER = [
   "/api/faktura",
   "/api/fragt/app",
   "/api/helbred",
+  "/api/mitid",
   "/robots.txt",
   "/sitemap.xml",
   "/dsa",

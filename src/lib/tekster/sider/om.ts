@@ -2,8 +2,8 @@
 // Ingen tal, priser eller løfter, der ikke står i ROADMAP-BESLUTNINGER.md.
 // Ejerens navn står ikke her: CLAUDE.md nævner ejeren, men der står ikke, at
 // navnet må vises offentligt. Filip skal sige ja, før det tilføjes.
-// OPDATER, når MitID er på plads (ROADMAP-BESLUTNINGER afsnit 7): tilføj et
-// punkt om MitID-verificerede brugere. Det må ikke stå her før.
+// MitID er bygget (20261013010000_mitid.sql): punktet om MitID-verificerede
+// brugere står under "Tryghed".
 
 import type { Tekstside } from "./typer";
 
@@ -30,6 +30,7 @@ export const OM: Tekstside = {
         "Vi hjælper altid, hvis en pakke ikke kommer frem, og ved åbenlys svindel.",
         "Med BidHamr Beskyttelse kan køberen også få hjælp, hvis varen går i stykker under forsendelsen eller ikke er som beskrevet.",
         "Du ser altid den samlede pris med gebyr og fragt, før du byder.",
+        "Private skal bekræfte deres identitet med MitID, før de byder eller sælger. Det kan du se på mærket \"MitID-verificeret\". Du kan kun have én konto, og du skal være fyldt 18 år.",
         // OPDATER: når ROADMAP-punktet om sælgerens adresse/telefon er færdigt
         // og testet, kan dette tilføjes: "Sælgerens adresse og telefonnummer
         // vises aldrig offentligt."
