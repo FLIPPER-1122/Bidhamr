@@ -15,6 +15,7 @@ import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import {
   BetalingsFejl,
+  LeveringManglerFejl,
   BetalingVenterFejl,
   VENTER_TEKST,
   hentBetalingForHandel,
@@ -180,7 +181,9 @@ export async function hentBetalingsstatus(
 // intet, der påvirker beløbet.
 export async function startBetaling(
   handelId: string,
-): Promise<{ ok: true; clientSecret: string; totalOere: number } | (Fejl & { betalt?: true })> {
+): Promise<
+  { ok: true; clientSecret: string; totalOere: number } | (Fejl & { betalt?: true; kode?: "vaelg_levering" })
+> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
 
@@ -209,6 +212,8 @@ export async function startBetaling(
 
     return { ok: true, clientSecret: pi.client_secret, totalOere: pi.amount };
   } catch (err) {
+    // Fragt: køberen skal vælge levering i checkout først.
+    if (err instanceof LeveringManglerFejl) return { fejl: err.message, kode: "vaelg_levering" };
     if (err instanceof BetalingsFejl || err instanceof BetalingVenterFejl) return { fejl: err.message };
     console.error("startBetaling fejlede:", err);
     await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "startBetaling", fejl: err, brugerId: user.id });

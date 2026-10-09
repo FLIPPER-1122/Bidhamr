@@ -62,4 +62,10 @@ export const glsFirma: Fragtfirma = {
   async fortolkWebhook() {
     return { ok: false, status: 501, fejl: "GLS er ikke sat op endnu" };
   },
+  async soegPakkeshops() {
+    return ikkeSatOp();
+  },
+  async hentPakkeshop() {
+    return ikkeSatOp();
+  },
 };

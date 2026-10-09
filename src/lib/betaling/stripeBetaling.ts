@@ -451,6 +451,33 @@ async function annullerAfventendePi(piId: string): Promise<Stripe.PaymentIntent 
   }
 }
 
+// Købers leveringsvalg ændrer fragten (checkout før betaling): den gemte
+// PaymentIntent annulleres hos Stripe, før databasen nulstiller den
+// (handel_gem_levering, pi_forsoeg + 1). Svar: 'annulleret' (eller var det
+// allerede) | 'betalt' (succeeded/processing - spejlet, beløbet må ikke ændres).
+export async function annullerPaymentIntentForLevering(
+  piId: string,
+): Promise<"annulleret" | "betalt"> {
+  const pi = await annullerAfventendePi(piId);
+  if (!pi) return "annulleret";
+  if (pi.status === "succeeded" || pi.status === "processing") {
+    await spejlPaymentIntent(pi);
+    return "betalt";
+  }
+  throw new Error(`PaymentIntent ${piId} kunne ikke annulleres (${pi.status})`);
+}
+
+async function kraevLeveringsvalg(b: BetalingRaekke): Promise<void> {
+  if (Number(b.fragt_oere) <= 0) return;
+  const { data, error } = await createAdminClient()
+    .from("handel_levering")
+    .select("fragt_oere")
+    .eq("trade_id", b.trade_id)
+    .maybeSingle<{ fragt_oere: number }>();
+  if (error) throw new Error(`handel_levering: ${error.message}`);
+  if (!data || Number(data.fragt_oere) !== Number(b.fragt_oere)) throw new LeveringManglerFejl();
+}
+
 // Låser sælgerkonto og gebyr i databasen før en PaymentIntent
 // (betaling_klargoer_destination).
 async function klargoerDestination(b: BetalingRaekke, konto: string): Promise<BetalingRaekke> {
@@ -516,6 +543,10 @@ export async function sikrPaymentIntent(
     throw new BetalingsFejl("Betalingen kunne ikke startes. Skriv til support@bidhamr.dk, så hjælper vi dig.");
   }
   if (betaling.venter_paa_saelgerkonto_kl) throw new BetalingVenterFejl();
+  // Ingen ny PaymentIntent uden leveringsvalg (databasen håndhæver det også:
+  // betalinger_kraev_levering). En eksisterende PaymentIntent er altid lavet
+  // efter et gyldigt valg - et nyt valg med anden pris nulstiller den.
+  if (!betaling.stripe_payment_intent_id) await kraevLeveringsvalg(betaling);
 
   if (betaling.stripe_payment_intent_id) {
     // Frisk kontotjek, også før en eksisterende PaymentIntent betales.
@@ -654,6 +685,16 @@ const OPDATERBARE: Stripe.PaymentIntent.Status[] = [
 
 // Fejl, hvis tekst må vises for brugeren.
 export class BetalingsFejl extends Error {}
+
+// Fragt kræver købers leveringsvalg, før der kan betales (Filip 9. okt. 2026).
+// Klassen står efter BetalingsFejl (klasser hoistes ikke).
+export const LEVERING_MANGLER_TEKST = "Vælg levering, før du betaler.";
+export class LeveringManglerFejl extends BetalingsFejl {
+  readonly kode = "vaelg_levering";
+  constructor() {
+    super(LEVERING_MANGLER_TEKST);
+  }
+}
 
 function chargeId(pi: Stripe.PaymentIntent): string | null {
   if (!pi.latest_charge) return null;

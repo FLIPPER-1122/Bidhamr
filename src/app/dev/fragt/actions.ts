@@ -47,7 +47,14 @@ export async function opretTestforsendelse(formData: FormData): Promise<void> {
     .maybeSingle<{ seller_id: string }>();
   if (!t) tilbage("Handlen findes ikke.");
   // Som sælgeren (det er en testside - i appen kommer id'et fra auth).
-  const r = await opretUdgaaendeForsendelse(tradeId, t.seller_id, stoerrelse);
+  // Pakkestørrelsen er auktionens; køberen skal have valgt levering.
+  const r = await opretUdgaaendeForsendelse(tradeId, t.seller_id, {
+    navn: "Test Sælger",
+    adresse: "Ellegårdsvej 40",
+    postnummer: "4684",
+    by: "Holmegaard",
+    telefon: "12345678",
+  });
   tilbage("fejl" in r ? `Fejl: ${r.fejl}` : "Testforsendelsen er oprettet.");
 }
 

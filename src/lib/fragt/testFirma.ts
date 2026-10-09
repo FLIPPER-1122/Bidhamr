@@ -18,10 +18,12 @@ import "server-only";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lavTestLabelPdf } from "@/lib/fragt/testLabel";
+import { slaaPostnummerOp } from "@/lib/postnumre";
 import {
   type Fragtfirma,
   type ForsendelseInput,
   type OprettetForsendelse,
+  type Pakkeshop,
   type Pakkestoerrelse,
   type Sporingshaendelse,
   type WebhookHaendelse,
@@ -78,6 +80,22 @@ function signaturGyldig(header: string | null, body: string): boolean {
   const forventet = Buffer.from(hmac(secret, t, body), "hex");
   const givet = Buffer.from(v1, "hex");
   return forventet.length === givet.length && timingSafeEqual(forventet, givet);
+}
+
+function testPakkeshops(postnummer: string): Pakkeshop[] {
+  const o = slaaPostnummerOp(postnummer);
+  if (!o) throw new FragtFejl("Ukendt postnummer.");
+  return [0, 1, 2].map((i) => ({
+    id: `TEST-${o.postnummer}-${i + 1}`,
+    navn: `Testpakkeshop ${i + 1} ${o.by}`,
+    adresse: `Testvej ${i + 1}`,
+    postnummer: o.postnummer,
+    by: o.by,
+    lat: o.lat + 0.002 * (i + 1),
+    lng: o.lng + 0.002 * (i + 1),
+    afstandM: 250 * (i + 1),
+    aabningstider: [{ dag: "Mandag", tider: "09:00 - 18:00" }],
+  }));
 }
 
 async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetForsendelse> {
@@ -139,6 +157,15 @@ export const testFirma: Fragtfirma = {
         beskrivelse: (r.beskrivelse as string | null) ?? null,
         raa: { id: r.id, type: r.type },
       }));
+  },
+
+  // Tre fiktive pakkeshops omkring postnummerets midte.
+  async soegPakkeshops(q) {
+    return testPakkeshops(q.postnummer);
+  },
+
+  async hentPakkeshop(id, naer) {
+    return testPakkeshops(naer.postnummer).find((p) => p.id === id) ?? null;
   },
 
   async fortolkWebhook(request): Promise<WebhookResultat> {
