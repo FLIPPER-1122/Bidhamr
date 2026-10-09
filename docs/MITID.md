@@ -108,7 +108,7 @@ app-hemmelighed, som kun appen kender.
    "Bekræft med MitID for at fortsætte dit maksimumbud." Egen status:
    `users.mitid_verificeret_kl` og `mitid_verificeringer` (kun egne rækker).
    `mine_data()` har en `mitid`-nøgle. Kontosletning kan nu blokeres af
-   typerne `suspenderet` og `advarsler`.
+   typen `suspenderet`.
 
 Krav i appen: deep link-skemaet `bidhamr` skal være registreret (`scheme` i
 `app.json`).
@@ -125,12 +125,12 @@ Krav i appen: deep link-skemaet `bidhamr` skal være registreret (`scheme` i
 
 ## Kontosletning og maksimumbud (chefens valg)
 
-- Kontoen kan ikke slettes, mens den er suspenderet eller har advarsler
-  ("Du kan ikke slette din konto, mens den er suspenderet." / "… mens du har
-  advarsler.") - ellers kunne man starte forfra uden advarsler.
-- Er en konto alligevel slettet, mens den var suspenderet eller havde
-  advarsler (fx før reglen), afvises en ny konto med samme MitID
-  (`tidligere_spaerret`) og markeres til staff.
+- Kontoen kan ikke slettes, mens den er suspenderet ("Du kan ikke slette din
+  konto, mens den er suspenderet"). Advarsler blokerer ikke sletning (GDPR).
+- Ved sletning gemmes suspensionsflag og antal advarsler på MitID-rækken. En
+  ny konto med samme MitID afvises (`tidligere_spaerret`), hvis den slettede
+  konto var suspenderet, lukket eller havde 3 advarsler; ellers tilladt, men
+  markeret til staff (`tidligere_slettet`, med antal advarsler).
 - Maksimumbud fra brugere uden MitID afgiver ikke flere automatiske bud
   (`autobud_maa_byde`) – også maksima sat før migrationen. Afgivne bud står.
 - Hashen bevares (status `slettet`), så en lukket konto aldrig kan få en ny

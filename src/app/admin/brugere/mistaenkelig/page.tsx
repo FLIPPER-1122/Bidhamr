@@ -18,13 +18,14 @@ type MitIdForsoeg = {
   anden_email: string | null;
   anden_lukket: boolean | null;
   anden_slettet: boolean | null;
+  anden_advarsler: number | null;
 };
 
 const MITID_AARSAG: Record<string, string> = {
   dobbeltkonto: "prøvede at bruge en MitID, der allerede hører til en anden konto",
   lukket_konto: "prøvede at bruge MitID'en fra en permanent lukket konto",
   tidligere_spaerret:
-    "blev afvist: samme MitID som en slettet konto, der var suspenderet eller havde advarsler",
+    "blev afvist: samme MitID som en slettet konto, der var suspenderet eller havde 3 advarsler",
   tidligere_slettet: "bruger samme MitID som en slettet konto (tilladt – tjek evt. advarsler på den gamle konto)",
 };
 
@@ -155,6 +156,7 @@ export default async function AdminMistaenkelig() {
                       {f.anden_navn ?? "Anden konto"}
                     </Link>
                     {f.anden_lukket ? " (lukket)" : f.anden_slettet ? " (slettet)" : ""}
+                    {f.anden_advarsler ? ` · ${f.anden_advarsler} ${f.anden_advarsler === 1 ? "advarsel" : "advarsler"}` : ""}
                   </>
                 )}
               </p>

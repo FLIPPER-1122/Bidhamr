@@ -31,9 +31,12 @@
 --   - Maksimumbud fra brugere uden MitID afgiver ikke flere automatiske bud
 --     (autobud_maa_byde) - også maksima sat før denne migration. Allerede
 --     afgivne bud står. Budpanelet beder brugeren bekræfte sig for at fortsætte.
---   - Sletning af kontoen afvises, mens den er suspenderet eller har advarsler
---     (konto_sletning_blokeringer), og en ny konto afvises, hvis den slettede
---     konto med samme MitID var suspenderet eller havde advarsler ved sletningen.
+--   - Sletning af kontoen afvises, mens den er suspenderet
+--     (konto_sletning_blokeringer) - ikke pga. advarsler (GDPR: sletning må
+--     ikke være spærret for altid). En ny konto med samme MitID afvises, hvis
+--     den slettede konto var suspenderet ved sletningen eller havde nået
+--     lukningsgrænsen (3 advarsler); ellers tilladt, men markeret til staff
+--     med antal advarsler.
 --   - Svar på "tilbud til næste byder" (andenchance_svar) kræver ikke MitID:
 --     byderen har allerede budt. Kun sælgerens tilbud kræver det.
 --   - Fødselsdatoen gemmes (internt, som navnet), fordi DAC7 kræver
@@ -470,13 +473,14 @@ begin
     return jsonb_build_object('kode', 'dobbeltkonto');
   end if;
 
-  -- Samme MitID som en slettet konto, der var suspenderet eller havde
-  -- advarsler, da den blev slettet: afvis (ellers kunne advarsler nulstilles
-  -- ved at slette kontoen og oprette en ny). Staff får besked.
+  -- Samme MitID som en slettet konto, der var suspenderet eller havde nået
+  -- lukningsgrænsen (3 advarsler), da den blev slettet: afvis (ellers kunne
+  -- en lukning undgås ved at slette kontoen og oprette en ny). Staff får
+  -- besked. (Permanent lukkede konti er afvist ovenfor.)
   select v.bruger_id into v_anden
     from public.mitid_verificeringer v
    where v.id_hash = p_hash and v.status = 'slettet' and v.bruger_id <> p_bruger
-     and (coalesce(v.slettet_suspenderet, false) or coalesce(v.slettet_advarsler, 0) > 0)
+     and (coalesce(v.slettet_suspenderet, false) or coalesce(v.slettet_advarsler, 0) >= 3)
    order by v.verificeret_kl desc
    limit 1;
   if v_anden is not null then
@@ -705,6 +709,8 @@ grant execute on function public.mine_data() to authenticated, service_role;
 -- ---------------------------------------------------------------------------
 -- 7. Admin: liste over åbne MitID-forsøg (Mistænkelig aktivitet). service_role.
 -- ---------------------------------------------------------------------------
+-- Returtypen er udvidet (anden_advarsler) - derfor drop først.
+drop function if exists public.admin_mitid_forsoeg();
 create or replace function public.admin_mitid_forsoeg()
 returns table (
   id uuid,
@@ -717,7 +723,9 @@ returns table (
   anden_navn text,
   anden_email text,
   anden_lukket boolean,
-  anden_slettet boolean
+  anden_slettet boolean,
+  -- Antal advarsler på den anden konto (fx den slettede).
+  anden_advarsler integer
 )
 language sql
 stable
@@ -727,7 +735,8 @@ as $$
   select f.id, f.aarsag, f.oprettet_kl,
          f.bruger_id, u.navn, u.email,
          f.anden_bruger_id, a.navn, a.email,
-         a.konto_lukket_kl is not null, a.konto_slettet_kl is not null
+         a.konto_lukket_kl is not null, a.konto_slettet_kl is not null,
+         (select count(*)::integer from public.advarsler x where x.bruger_id = f.anden_bruger_id)
     from public.mitid_forsoeg f
     join public.users u on u.id = f.bruger_id
     left join public.users a on a.id = f.anden_bruger_id
@@ -759,9 +768,11 @@ revoke all on function public.mitid_flow_oprydning() from public, anon, authenti
 grant execute on function public.mitid_flow_oprydning() to service_role;
 
 -- ---------------------------------------------------------------------------
--- 8. Kontosletning afvises, mens kontoen er suspenderet eller har advarsler
---    (chefens valg): ellers kunne man slette kontoen og starte forfra med
---    samme MitID uden advarsler. Den eksisterende funktion omdøbes én gang til
+-- 8. Kontosletning afvises, mens kontoen er suspenderet (chefens valg) -
+--    ellers kunne en suspension omgås ved at slette kontoen og starte forfra
+--    med samme MitID. Advarsler blokerer ikke (GDPR - de udløber ikke, så
+--    sletning ville være spærret for altid); de gemmes i stedet ved sletningen
+--    og tæller ved en ny konto med samme MitID (mitid_registrer). Den eksisterende funktion omdøbes én gang til
 --    konto_sletning_blokeringer_grund og kaldes herfra (konto_slet og
 --    hjemmesiden bruger navnet konto_sletning_blokeringer).
 -- ---------------------------------------------------------------------------
@@ -790,10 +801,6 @@ as $$
        where u.id = p_bruger
          and coalesce(u.suspenderet, false)
          and (u.suspenderet_til is null or u.suspenderet_til > now())
-      union all
-      select jsonb_build_object('type', 'advarsler',
-               'tekst', 'Du kan ikke slette din konto, mens du har advarsler.', 'link', null)
-       where exists (select 1 from public.advarsler a where a.bruger_id = p_bruger)
     ) x), '[]'::jsonb)
   || public.konto_sletning_blokeringer_grund(p_bruger);
 $$;

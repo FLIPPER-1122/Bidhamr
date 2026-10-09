@@ -33,7 +33,7 @@ export const MITID = {
     lukket:
       "Dit MitID hører til en konto, som BidHamr har lukket permanent. Derfor kan det ikke bruges til en ny konto. Skriv til support@bidhamr.dk, hvis du har spørgsmål.",
     tidligereSpaerret:
-      "Dit MitID hører til en konto, der blev slettet, mens den var suspenderet eller havde advarsler. Derfor kan det ikke bruges til en ny konto. Skriv til support@bidhamr.dk, hvis du har spørgsmål.",
+      "Dit MitID hører til en konto, der blev slettet, mens den var suspenderet eller havde for mange advarsler. Derfor kan det ikke bruges til en ny konto. Skriv til support@bidhamr.dk, hvis du har spørgsmål.",
     andenMitid:
       "Din konto er allerede bekræftet med et andet MitID. Skriv til support@bidhamr.dk, hvis du mener, det er en fejl.",
     erhverv: "Firmakonti skal ikke bekræftes med MitID.",

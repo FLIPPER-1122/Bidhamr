@@ -253,7 +253,7 @@ Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverand
 
 ## 9. Når du sletter din konto
 
-Du sletter din konto under Min konto → Slet konto. Det kan ikke lade sig gøre, mens du har noget i gang (fx bud, handler, sager eller penge undervejs), mens kontoen er suspenderet, eller mens du har advarsler – siden viser, hvad der mangler. [ADVOKAT: se noter-til-advokat.md nr. 110.]
+Du sletter din konto under Min konto → Slet konto. Det kan ikke lade sig gøre, mens du har noget i gang (fx bud, handler, sager eller penge undervejs), eller mens kontoen er suspenderet – siden viser, hvad der mangler. Har du advarsler, kan du godt slette kontoen, men vi gemmer antallet sammen med det slørede MitID-id: havde kontoen 3 advarsler eller var den suspenderet, kan samme MitID ikke bruges til en ny konto. [ADVOKAT: se noter-til-advokat.md nr. 110.]
 
 Når kontoen slettes:
 
