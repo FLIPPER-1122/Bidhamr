@@ -69,7 +69,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [ ] **DAC7**: brug Stripes "Platform Tax Reporting" til at indsamle og indberette sælgeroplysninger
 - [x] Kvittering til køber og sælger efter handel med opdeling af pris, gebyr, BidHamr Beskyttelse og fragt (kvittering/handelsbekræftelse for selve varen – IKKE en faktura, fordi varen sælges mellem private)
 - [ ] Filip: spørg revisor, om **Dinero** er et godkendt digitalt bogføringssystem, og vælg regnskabsprogram (Dinero, Billy eller e-conomic)
-- [ ] **Automatiske fakturaer på BidHamrs egne gebyrer** med moms: køber får faktura på købergebyr + evt. BidHamr Beskyttelse, sælger får faktura på sælgergebyr. Oprettes automatisk i det valgte regnskabsprogram via API, så alle fakturaer ligger samlet ét sted. Fakturaerne vises også under brugerens profil. **Venter på Filips valg af regnskabsprogram** – byg kvitteringen først
+- [~] **Automatiske fakturaer på BidHamrs egne gebyrer** med moms: køber får faktura på købergebyr + evt. BidHamr Beskyttelse, sælger får faktura på sælgergebyr. Oprettes automatisk i det valgte regnskabsprogram via API, så alle fakturaer ligger samlet ét sted. Fakturaerne vises også under brugerens profil. **Venter på Filips valg af regnskabsprogram** – byg kvitteringen først *(bygget 9. okt. 2026 i Dinero-sandbox – `20261012080000_fakturaer.sql`, docs/FAKTURA.md; mangler Dinero-live + revisor)*
 - [x] Sælger kan redigere eller annullere sin auktion, så længe der ikke er bud
 - [x] **Startpris = mindstepris**: sælger sætter én synlig startpris, som alle kan se. Første bud skal mindst være startprisen. Ingen skjult mindstepris
 - [x] Ved oprettelse vises en tydelig anbefaling: "Sæt startprisen lidt under det, du regner med at få – er den for høj, byder ingen"
@@ -93,7 +93,7 @@ Formål: ét samlet sted, hvor staff kan styre hele BidHamr. Bygges efter fase 1
 ## Fase 2 – Fragt og automatisk frigivelse
 Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel indgriben.
 
-- [ ] Byg og test fragt mod **Shipmondos testmiljø** (Filip 8. okt. 2026: i stedet for GLS direkte – Filip får adgang ca. 9. okt.) – skal være færdigt inden nytår
+- [~] Byg og test fragt mod **Shipmondos testmiljø** (Filip 8. okt. 2026: i stedet for GLS direkte – Filip får adgang ca. 9. okt.) – skal være færdigt inden nytår *(bygget 9. okt. 2026 – erstattes af DAO direkte)*
 - [ ] Filip: møde med Shipmondo om den bedste løsning
 - [ ] Filip: skaf API-adgang (kunde-id + kode) og testmiljø hos DAO – vi integrerer **direkte med DAO** i stedet for Shipmondo (sparer Shipmondo Pro 200 kr./md., labelgebyr og integrationsgebyr; DAO's API har booking, labelfri kode, pakkeshops, sporing, annullering og retur). Shipmondo-adapteren bliver liggende til evt. flere fragtfirmaer senere *(Filip 9. okt. 2026)*
 - [ ] DAO-adapter (`src/lib/fragt/dao.ts`) mod DAO's testmiljø, sporing via cron – når Filip har API-adgang
@@ -102,15 +102,15 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 - [ ] **Reklamation hos fragtfirma**: når en sag om transportskade afgøres til købers fordel, og sælger har pakket ordentligt, opretter staff (eller systemet via fragtfirmaets API) en reklamation med pakkebilleder, købers skadebilleder og sporingsdata. Status vises på sagen for sælger. Erstatning fra fragtfirmaet udbetales til sælger. Afvises den, lukkes reklamationen, og sælger får besked (se ROADMAP-BESLUTNINGER.md afsnit 4)
 - [ ] Når GLS melder pakken leveret: notifikation "Pakken er kommet frem" til **køberen** (type pakke_leveret, påkrævet) – sælgeren får fortsat besked, når køberen bekræfter
 - [x] Byg koden, så fragtfirmaet kan skiftes (GLS nu, evt. Shipmondo senere) uden at omskrive handelsflowet
-- [ ] Sælger får fragtlabel/QR-kode direkte i BidHamr
+- [~] Sælger får fragtlabel/QR-kode direkte i BidHamr *(bygget: labelfri kode + PDF)*
 - [ ] **Returlabel i sager**: når en sag afgøres med retur, får køberen et returlabel fra BidHamr via fragtfirmaet (køberen betaler returfragten). Sagsflowet med retur er bygget, men selve labelen mangler, indtil Filips aftale med fragtfirmaet er på plads – derfor er sagsretur kun delvist færdig
-- [ ] Køber betaler fragt og ser prisen, før han byder
+- [~] Køber betaler fragt og ser prisen, før han byder *(bygget: låst pris på auktionen + checkout)*
 - [ ] Sporing hentes automatisk – status "afhentet" registreres
 - [ ] Auto-frigivelse 48 timer efter afhentning, hvis ingen sag
-- [ ] Sælger kan annullere/ændre en fragtbooking, så længe pakken ikke er afleveret
+- [~] Sælger kan annullere/ændre en fragtbooking, så længe pakken ikke er afleveret *(bygget; DAO via Shipmondo kan ikke annullere – højst 2 labels)*
 - [ ] Filip: aftal vægtgrænse med fragtfirmaet – alt over grænsen kan kun afhentes
-- [ ] Håndhæv vægtgrænsen ved opret auktion: over grænsen kan kun "afhentning" vælges
-- [ ] Fragtberegner: sælger vælger pakkestørrelse (Lille/Mellem/Stor) ved oprettelse, prisen hentes fra GLS og vises på auktionssiden. Findes også som selvstændig side
+- [~] Håndhæv vægtgrænsen ved opret auktion: over grænsen kan kun "afhentning" vælges *(bygget: BHT01–05)*
+- [~] Fragtberegner: sælger vælger pakkestørrelse (Lille/Mellem/Stor) ved oprettelse, prisen hentes fra GLS og vises på auktionssiden. Findes også som selvstændig side *(bygget med faste priser 40/50/65 og 60/85 kr.)*
 - [ ] Vælger sælger en for lille pakkestørrelse, og fragtfirmaet opkræver ekstra, betaler sælgeren forskellen
 - [ ] Ikke-afhentet pakke (GLS returnerer efter 7 dage): sælger beholder varen og får fragten dækket, køber refunderes minus gebyrer og fragt begge veje. Afhentning udløser aldrig udbetaling – kun købers bekræftelse (eller 48 timer uden sag) gør
 
