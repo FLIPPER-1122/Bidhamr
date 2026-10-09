@@ -70,6 +70,7 @@ type FeltNavn =
   | "sikkerhedsoplysninger"
   | "startpris"
   | "postnummer"
+  | "vaegt"
   | "bekraeft";
 
 const FELT_ID: Record<FeltNavn, string> = {
@@ -82,8 +83,12 @@ const FELT_ID: Record<FeltNavn, string> = {
   sikkerhedsoplysninger: "sikkerhedsoplysninger",
   startpris: "startpris",
   postnummer: "postnummer",
+  vaegt: "vaegt",
   bekraeft: "bekraeft",
 };
+
+// Pakkestørrelser og købers fragt (fra databasen: fragt_pakkestoerrelser).
+type Fragtstoerrelse = { kode: "lille" | "mellem" | "stor"; navn: string; maks_gram: number; pakkeshop_oere: number; doer_oere: number | null };
 
 const kladdeNoegle = (brugerId: string) => `bidhamr:opret-kladde:${brugerId}`;
 
@@ -159,6 +164,27 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
   const [startprisTekst, setStartprisTekst] = useState("");
   const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
+  // Pakkestørrelse og vægt (kg som tekst). Vægten er altid krævet ved forsendelse.
+  const [pakkestoerrelse, setPakkestoerrelse] = useState<Fragtstoerrelse["kode"]>("lille");
+  const [vaegtTekst, setVaegtTekst] = useState("");
+  const [fragtstoerrelser, setFragtstoerrelser] = useState<Fragtstoerrelse[]>([]);
+  useEffect(() => {
+    let aktiv = true;
+    createClient()
+      .from("fragt_pakkestoerrelser")
+      .select("kode, navn, maks_gram, pakkeshop_oere, doer_oere")
+      .order("sortering", { ascending: true })
+      .then(({ data }) => {
+        if (aktiv && data) setFragtstoerrelser(data as Fragtstoerrelse[]);
+      });
+    return () => {
+      aktiv = false;
+    };
+  }, []);
+  const vaegtGram = /^\d+([.,]\d{1,3})?$/.test(vaegtTekst.trim())
+    ? Math.round(Number(vaegtTekst.trim().replace(",", ".")) * 1000)
+    : null;
+  const valgtStoerrelse = fragtstoerrelser.find((s) => s.kode === pakkestoerrelse) ?? null;
   const [postnummer, setPostnummer] = useState("");
   const [spoergsmaalAktiv, setSpoergsmaalAktiv] = useState(true);
   const [bekraeftet, setBekraeftet] = useState(false);
@@ -259,6 +285,13 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
     if (prisFejl) f.startpris = prisFejl;
     if (!gyldigtPostnummer) f.postnummer = "Skriv et postnummer med 4 cifre.";
     else if (byStatus !== "fundet" || !by) f.postnummer = UKENDT_POSTNUMMER;
+    if (forsendelseMulig) {
+      const maks = valgtStoerrelse?.maks_gram ?? null;
+      if (vaegtTekst.trim() && (vaegtGram === null || vaegtGram <= 0)) f.vaegt = "Skriv vægten i kg, fx 2,5.";
+      else if (vaegtGram !== null && vaegtGram > 15000) f.vaegt = "Varer over 15 kg kan kun afhentes. Vælg \"Kun afhentning\".";
+      else if (vaegtGram !== null && maks !== null && vaegtGram > maks) f.vaegt = "Vægten passer ikke til pakkestørrelsen. Vælg en større pakke.";
+      else if (vaegtGram === null) f.vaegt = "Skriv, hvor meget pakken vejer.";
+    }
     if (!bekraeftet) f.bekraeft = "Bekræft, at varen ikke er forbudt.";
     return f;
   }
@@ -330,6 +363,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           lat: koordinater?.lat ?? null,
           lng: koordinater?.lng ?? null,
           forsendelse_mulig: forsendelseMulig,
+          // Databasen låser fragtprisen ud fra størrelsen og håndhæver vægten.
+          ...(forsendelseMulig ? { pakkestoerrelse, vaegt_gram: vaegtGram } : {}),
           spoergsmaal_aktiv: erFirma ? false : spoergsmaalAktiv,
           forbudt_bekraeftet: bekraeftet,
           // Databasen beregner selv sluttidspunktet ud fra varigheden.
@@ -365,6 +400,9 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         else if (insertError.code === "BHA05") besked = `Beskrivelsen må højst være ${MAKS_BESKRIVELSE} tegn.`;
         else if (erhvervFejlTekst(insertError.message, insertError.code))
           besked = erhvervFejlTekst(insertError.message, insertError.code)!;
+        else if (insertError.code === "BHT01") besked = "Varer over 15 kg kan kun afhentes. Vælg \"Kun afhentning\".";
+        else if (insertError.code === "BHT02") besked = "Vægten passer ikke til pakkestørrelsen. Vælg en større pakke.";
+        else if (insertError.code === "BHT03") besked = "Skriv, hvor meget pakken vejer.";
         else if (insertError.code === "BHS02")
           besked = "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl.";
         else if (insertError.code === "BHF01") {
@@ -761,14 +799,64 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           {feltFejl.postnummer && <FeltFejl id="postnummer-fejl">{feltFejl.postnummer}</FeltFejl>}
         </div>
 
-        <Afkrydsning
-          id="forsendelse"
-          checked={forsendelseMulig}
-          onChange={aendret(setForsendelseMulig)}
-          hjaelp="Varen sendes til køberen, som betaler omkring 35 kr. i fragt. Uden forsendelse skal køberen hente varen hos dig."
-        >
-          Jeg tilbyder forsendelse
-        </Afkrydsning>
+        <div>
+          <label htmlFor="levering" className="mb-1.5 block text-sm font-medium text-tekst">
+            Forsendelse
+          </label>
+          <select
+            id="levering"
+            value={forsendelseMulig ? pakkestoerrelse : "afhentning"}
+            onChange={(e) => {
+              const v = e.target.value;
+              setRoert(true);
+              if (v === "afhentning") setForsendelseMulig(false);
+              else {
+                setForsendelseMulig(true);
+                setPakkestoerrelse(v as Fragtstoerrelse["kode"]);
+              }
+            }}
+            className={`${feltKlasse(false)} sm:max-w-[360px]`}
+          >
+            <option value="afhentning">Kun afhentning hos mig</option>
+            {(fragtstoerrelser.length > 0
+              ? fragtstoerrelser
+              : ([
+                  { kode: "lille", navn: "Lille", maks_gram: 1000 },
+                  { kode: "mellem", navn: "Mellem", maks_gram: 5000 },
+                  { kode: "stor", navn: "Stor", maks_gram: 15000 },
+                ] as Pick<Fragtstoerrelse, "kode" | "navn" | "maks_gram">[])
+            ).map((s) => (
+              <option key={s.kode} value={s.kode}>
+                {s.navn} pakke (op til {s.maks_gram / 1000} kg)
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-[13px] text-tekst-daempet">
+            {!forsendelseMulig
+              ? "Køberen henter varen hos dig. Varer over 15 kg kan kun afhentes."
+              : valgtStoerrelse
+                ? `Køberen betaler ${kroner(valgtStoerrelse.pakkeshop_oere)} i fragt til en pakkeshop${valgtStoerrelse.doer_oere ? ` eller ${kroner(valgtStoerrelse.doer_oere)} for levering til døren` : " (kun pakkeshop)"}.`
+                : "Køberen betaler fragten."}
+          </p>
+        </div>
+        {forsendelseMulig && (
+          <div>
+            <label htmlFor={FELT_ID.vaegt} className="mb-1.5 block text-sm font-medium text-tekst">
+              Vægt med emballage (kg)
+            </label>
+            <input
+              id={FELT_ID.vaegt}
+              inputMode="decimal"
+              value={vaegtTekst}
+              onChange={(e) => aendret(setVaegtTekst)(e.target.value)}
+              aria-invalid={feltFejl.vaegt ? true : undefined}
+              aria-describedby={describedBy("vaegt")}
+              className={`${feltKlasse(!!feltFejl.vaegt)} sm:max-w-[200px]`}
+              placeholder="fx 2,5"
+            />
+            {feltFejl.vaegt && <FeltFejl id="vaegt-fejl">{feltFejl.vaegt}</FeltFejl>}
+          </div>
+        )}
       </Sektion>
 
       {!erFirma && (

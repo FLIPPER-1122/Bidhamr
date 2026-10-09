@@ -18,6 +18,7 @@ import {
 import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand } from "@/lib/stand";
+import { kroner } from "@/lib/kroner";
 import { uploadAuktionsbilleder } from "@/lib/auktionUpload";
 import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
 import { ERHVERV_MOMS } from "@/lib/tekster/erhverv";
@@ -59,6 +60,10 @@ export default function RedigerAuktionForm({
     kategori: string;
     startpris: number;
     forsendelseMulig: boolean;
+    // Den låste fragtpris (øre) og pakkestørrelse - se 20261012010000.
+    fragtPakkeshopOere?: number | null;
+    fragtDoerOere?: number | null;
+    pakkestoerrelse?: string | null;
     stand: string | null;
     producent?: string | null;
     sikkerhedsoplysninger?: string | null;
@@ -282,7 +287,11 @@ export default function RedigerAuktionForm({
           id="forsendelse"
           checked={forsendelseMulig}
           onChange={setForsendelseMulig}
-          hjaelp="Varen sendes til køberen, som betaler omkring 35 kr. i fragt. Uden forsendelse skal køberen hente varen hos dig."
+          hjaelp={
+            start.fragtPakkeshopOere
+              ? `Varen sendes til køberen, som betaler ${kroner(start.fragtPakkeshopOere)} i fragt til en pakkeshop${start.fragtDoerOere ? ` eller ${kroner(start.fragtDoerOere)} for levering til døren` : ""}. Uden forsendelse skal køberen hente varen hos dig.`
+              : "Varen sendes til køberen, som betaler fragten efter pakkestørrelse (Mellem, hvis du ikke har valgt). Uden forsendelse skal køberen hente varen hos dig."
+          }
         >
           Jeg tilbyder forsendelse
         </Afkrydsning>

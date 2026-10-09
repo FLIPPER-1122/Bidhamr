@@ -295,13 +295,13 @@ export async function hentMitTilbud(tilbudId: string): Promise<MitTilbud | Fejl>
     // Byderen har adgang via tilbuddet, også hvis auktionen senere er skjult.
     const { data: a } = await createAdminClient()
       .from("auctions")
-      .select("titel, billeder, forsendelse_mulig")
+      .select("titel, billeder, forsendelse_mulig, fragt_pakkeshop_oere")
       .eq("id", t.auction_id)
       .maybeSingle();
 
     const bud = Number(t.bud_oere);
     const koeb = Math.round((bud * KOEBERGEBYR_PROCENT) / 100);
-    const fragt = fragtOere(Boolean(a?.forsendelse_mulig));
+    const fragt = fragtOere(Boolean(a?.forsendelse_mulig), a?.fragt_pakkeshop_oere as number | null | undefined);
     const besk = t.beskyttelse ? beskyttelseOere(bud) : 0;
     // Tilbuddet er udløbet, selv om cron endnu ikke har markeret det.
     const status: AndenchanceTilbudStatus =

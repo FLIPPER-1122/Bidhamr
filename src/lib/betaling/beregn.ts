@@ -6,8 +6,11 @@
 //   købergebyr 5%, sælgergebyr 5%, altid.
 //   BidHamr Beskyttelse 5% af buddet, min 25 kr / maks 250 kr. Vælges, når
 //   man byder, og kan ikke ændres bagefter.
-//   Fragt: fast 35 kr pr. handel, betalt af køber, når auktionen tilbyder
-//   forsendelse. Kun afhentning = 0 kr.
+//   Fragt (Filip 9. okt. 2026): pris efter pakkestørrelse og leveringsmåde i
+//   tabellen fragt_pakkestoerrelser (ét sted). Prisen låses på auktionen
+//   (auctions.fragt_pakkeshop_oere / fragt_doer_oere), og betalingens
+//   fragt_oere sættes af databasen ud fra købers leveringsvalg i checkout.
+//   Kun afhentning = 0 kr.
 //   Udbetaling til sælger = bud - sælgergebyr. Fragten bliver på BidHamrs
 //   platformskonto og går videre til fragtfirmaet.
 
@@ -16,6 +19,8 @@ export const SAELGERGEBYR_PROCENT = 5;
 export const BESKYTTELSE_PROCENT = 5;
 export const BESKYTTELSE_MIN_OERE = 2500;
 export const BESKYTTELSE_MAKS_OERE = 25000;
+// Den gamle faste fragt. Bruges kun til visning på auktioner uden låst pris
+// (oprettet før 20261012010000 - databasen gav dem samme 35 kr.).
 export const FRAGT_OERE = 3500;
 
 // Halv op til nærmeste øre, som Postgres' round() på positive tal.
@@ -30,8 +35,11 @@ export function beskyttelseOere(budOere: number): number {
   );
 }
 
-export function fragtOere(forsendelseMulig: boolean): number {
-  return forsendelseMulig ? FRAGT_OERE : 0;
+// Fragten køberen ser før buddet: auktionens låste pakkeshop-pris (billigste
+// leveringsmåde). Visning - beløbet i betalingen sætter databasen.
+export function fragtOere(forsendelseMulig: boolean, pakkeshopOere?: number | null): number {
+  if (!forsendelseMulig) return 0;
+  return typeof pakkeshopOere === "number" && pakkeshopOere > 0 ? pakkeshopOere : FRAGT_OERE;
 }
 
 export function udbetalingOere(budOere: number): number {

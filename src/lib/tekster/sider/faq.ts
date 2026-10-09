@@ -66,7 +66,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvad koster det?",
-          svar: "Køber og sælger betaler hver 5 % af buddet i gebyr. Fragt koster omkring 35 kr. og betales af køberen. Alle priser er inkl. moms. Du ser altid den samlede pris, før du byder.",
+          svar: "Køber og sælger betaler hver 5 % af buddet i gebyr. Fragt betales af køberen og koster fra 40 kr. til en pakkeshop eller fra 60 kr. med levering til døren, alt efter pakkens størrelse. Alle priser er inkl. moms. Du ser altid den samlede pris, før du byder.",
         },
         {
           spoergsmaal: "Holder BidHamr mine penge?",
@@ -88,7 +88,7 @@ export const FAQ_SIDE: Tekstside = {
       punkter: [
         {
           spoergsmaal: "Hvem betaler fragten?",
-          svar: "Køberen. Fragten koster omkring 35 kr. og står i prisen, før du byder.",
+          svar: "Køberen. Prisen afhænger af pakkens størrelse: til en pakkeshop 40 kr. (Lille, op til 1 kg), 50 kr. (Mellem, op til 5 kg) eller 65 kr. (Stor, op til 15 kg). Levering til døren koster 60 kr. (Lille) eller 85 kr. (Mellem) – store pakker kan kun sendes til en pakkeshop. Fragten står på auktionen, før du byder, og du vælger levering, når du betaler. Varer over 15 kg kan kun afhentes.",
         },
         {
           spoergsmaal: "Hvornår bliver min vare sendt?",
