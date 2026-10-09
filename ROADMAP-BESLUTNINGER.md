@@ -32,6 +32,7 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
   - **Pakkeshop – køberen betaler (inkl. moms): Lille 40 kr., Mellem 50 kr., Stor 65 kr.** BidHamr betaler forskellen til DAO's faktiske pris (ca. 54/70/88 kr. inkl. moms med tillæg), indtil priserne er forhandlet ned. Priserne skal kunne ændres ét sted uden ny kode-logik.
   - **Levering til døren fra start (højst 5 kg) til fuld pris: Lille ca. 60 kr., Mellem ca. 85 kr.** (DAO-pris + tillæg inkl. moms, rundet op til hele kroner).
   - Fragten indgår i BidHamrs gebyr på betalingen (application fee); BidHamr betaler DAO's faktura.
+  - **Afhentning som valg (Filip, 9. okt. 2026):** sælger kan tilbyde både forsendelse og afhentning (flueben ved oprettelse). Køberen vælger i checkout før betaling: pakkeshop, hjem eller "Afhent hos sælger – 0 kr.". Ved afhentning bruges det almindelige afhentningsflow (kode, 7 dages frist, ingen sag). **BidHamr Beskyttelse fjernes ved afhentning** (køberen betaler den ikke, da der ikke kan oprettes sag) og lægges på igen, hvis køberen skifter tilbage til forsendelse før betaling. Leveringsform kan kun skiftes før betaling.
 - Sælgeren får en **fragtlabel/QR-kode via BidHamr**, og sporingen kommer automatisk (fx Shipmondo).
 - **Køberen betaler fragten** og ser prisen, før han byder.
 - **Afhentning hos sælger** er en valgmulighed. Køberen viser en kode ved afhentning, og pengene frigives med det samme. Ingen klagefrist bagefter.
@@ -149,7 +150,7 @@ Brugeren får besked når:
   - Den, der skrev teksten, får en notifikation med begrundelsen (påkrævet, så den altid når frem – DSA).
 
 ## Midlertidige beslutninger (1. oktober 2026)
-- **Fragt: fast 35 kr** pr. handel, når auktionen tilbyder forsendelse (køber kan ikke vælge afhentning i stedet; kun-afhentning-auktioner = 0 kr), betalt af køber, indtil priser er forhandlet med fragtfirmaerne. Fragten udbetales IKKE til sælger – den bliver hos BidHamr og går videre til fragtfirmaet, som Filip laver aftale med (Filip, 1. oktober 2026). Sælger får bud minus 5 %. Sælgergebyret på 5% beregnes kun af buddet, ikke af fragten.
+- **[Forældet – se "2. Fragt" (Fragtfirma og priser + afhentning som valg, 9. okt. 2026)]** **Fragt: fast 35 kr** pr. handel, når auktionen tilbyder forsendelse (køber kan ikke vælge afhentning i stedet; kun-afhentning-auktioner = 0 kr), betalt af køber, indtil priser er forhandlet med fragtfirmaerne. Fragten udbetales IKKE til sælger – den bliver hos BidHamr og går videre til fragtfirmaet, som Filip laver aftale med (Filip, 1. oktober 2026). Sælger får bud minus 5 %. Sælgergebyret på 5% beregnes kun af buddet, ikke af fragten.
 - **Udbetaling til sælger** sker automatisk via Stripe (dagligt; nye konti har Stripes ventetid på ca. 7 dage).
 - **Cron**: kører hvert 5. minut via pg_cron + pg_net i Supabase (gratis). Vercel Pro overvejes tættere på lancering.
 - **Moms:** Alle beløb, køberen ser, er **inkl. moms**. BidHamr afregner selv moms af sine gebyrer; køberen betaler aldrig moms oveni (Filip, 1. oktober 2026).
