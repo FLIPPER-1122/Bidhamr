@@ -133,7 +133,8 @@ export default async function AdminFakturaer() {
               </p>
               <ul className="divide-y divide-amber-100">
                 {((haenger ?? []) as Raekke[]).map((r) => (
-                  <li key={r.id} className="px-4 py-3 text-sm">
+                  <li key={r.id} className="flex flex-col gap-3 px-4 py-3 text-sm lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
                     <p className="font-medium">
                       {DOKUMENT[r.dokument] ?? r.dokument} til {PART[r.part] ?? r.part} · {kr(r.beloeb_oere)} · {r.betalt_dato} ·{" "}
                       status {r.status}
@@ -144,6 +145,16 @@ export default async function AdminFakturaer() {
                       {r.trade_id ? ` · handel ${r.trade_id}` : ""}
                     </p>
                     {r.sidste_fejl && <p className="mt-1 break-words text-red-700">{r.sidste_fejl}</p>}
+                    </div>
+                    <div className="flex shrink-0 flex-col gap-3 lg:w-72">
+                      <AdminActionKnap
+                        label="Prøv igen nu"
+                        className="btn btn-sekundaer btn-lille w-full"
+                        action={proevFakturaIgen}
+                        hiddenFields={{ id: r.id }}
+                      />
+                      <FakturaHaandterForm id={r.id} action={fakturaHaandteretManuelt} />
+                    </div>
                   </li>
                 ))}
               </ul>

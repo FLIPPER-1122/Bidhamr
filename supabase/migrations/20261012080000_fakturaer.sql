@@ -183,7 +183,7 @@ begin
      or new.linjer <> old.linjer or new.beloeb_oere <> old.beloeb_oere
      or new.moms_oere <> old.moms_oere or new.betalt_dato <> old.betalt_dato
      or new.stripe_reference is distinct from old.stripe_reference
-     or new.manuel <> old.manuel then
+     or (old.manuel and not new.manuel) then
     raise exception 'Fakturaens indhold kan ikke ændres, når den er oprettet';
   end if;
   if old.dinero_org is not null and new.dinero_org is distinct from old.dinero_org then
@@ -278,6 +278,22 @@ declare
   v_fragt    text;
   v_moder    text := 'Fakturaen blev håndteret manuelt – lav kreditnotaen manuelt i Dinero.';
 begin
+  -- 0) Kreditnotaer/modposteringer, der venter, men hvis faktura/bilag
+  --    siden er håndteret manuelt (eller stoppet som manuel): de kan ikke
+  --    laves automatisk (dokumentet findes ikke sikkert i Dinero med vores
+  --    guid) -> kræver handling, manuel. Drift-alarmen gives af serveren
+  --    (én pr. dokument, alarm_kl).
+  update public.fakturaer k
+     set status = 'kraever_handling',
+         manuel = true,
+         sidste_fejl = case when k.dokument = 'kreditnota' then v_moder
+                            else 'Bilaget blev håndteret manuelt – lav modposteringen manuelt i Dinero.' end
+    from public.fakturaer m
+   where m.id = k.krediterer_id
+     and k.status = 'venter'
+     and (k.laas_til is null or k.laas_til < now())
+     and (m.status = 'haandteret_manuelt' or (m.manuel and m.status = 'kraever_handling'));
+
   -- 1) Fakturaer: betalte destination-betalinger, hvor BidHamrs gebyr er
   --    trukket og spejlet fra Stripe.
   for rb in
@@ -698,8 +714,17 @@ begin
   if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
   if public.faktura_inhabil(p_medarbejder, f.id) then return jsonb_build_object('kode', 'inhabil'); end if;
   if f.manuel then return jsonb_build_object('kode', 'manuel'); end if;
+  if f.krediterer_id is not null and exists (
+       select 1 from public.fakturaer m
+        where m.id = f.krediterer_id and (m.status = 'haandteret_manuelt' or m.manuel)) then
+    return jsonb_build_object('kode', 'manuel');
+  end if;
   if f.status in ('faerdig', 'haandteret_manuelt') then return jsonb_build_object('kode', 'faerdig'); end if;
-  if not f.opgivet and f.status <> 'kraever_handling' then return jsonb_build_object('kode', 'koerer'); end if;
+  if f.laas_til is not null and f.laas_til > now() then return jsonb_build_object('kode', 'koerer'); end if;
+  -- Opgivet, stoppet - eller har ventet over 2 timer (prøves med det samme).
+  if not f.opgivet and f.status <> 'kraever_handling' and f.oprettet_kl > now() - interval '2 hours' then
+    return jsonb_build_object('kode', 'koerer');
+  end if;
 
   update public.fakturaer
      set opgivet = false,
@@ -740,7 +765,9 @@ begin
   if public.faktura_inhabil(p_medarbejder, f.id) then return jsonb_build_object('kode', 'inhabil'); end if;
   if f.status in ('faerdig', 'haandteret_manuelt') then return jsonb_build_object('kode', 'faerdig'); end if;
   if f.laas_til is not null and f.laas_til > now() then return jsonb_build_object('kode', 'koerer'); end if;
-  if not f.opgivet and f.status <> 'kraever_handling' then return jsonb_build_object('kode', 'koerer'); end if;
+  if not f.opgivet and f.status <> 'kraever_handling' and f.oprettet_kl > now() - interval '2 hours' then
+    return jsonb_build_object('kode', 'koerer');
+  end if;
 
   update public.fakturaer
      set status = 'haandteret_manuelt',

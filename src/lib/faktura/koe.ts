@@ -389,10 +389,14 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
         return { ...res, springetOver: "ikke_konfigureret" };
       }
     } catch (err) {
-      if (err instanceof DineroFejl && err.adgang) {
-        await alarmPrTilfaelde({ noegle: "faktura:adgang", hvor: "faktura/dinero", fejl: err.message });
-      }
-      return { ...res, springetOver: err instanceof DineroFejl && err.adgang ? "adgang" : "graense" };
+      const d = err instanceof DineroFejl ? err : null;
+      if (d?.graense) return { ...res, springetOver: "graense" };
+      await alarmPrTilfaelde({
+        noegle: d?.adgang ? "faktura:adgang" : "faktura:konfiguration",
+        hvor: "faktura/dinero",
+        fejl: `Fakturaer laves ikke: Dinero-regnskabet kunne ikke kontrolleres (CVR) - ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return { ...res, springetOver: d?.adgang ? "adgang" : "ikke_konfigureret" };
     }
   }
 
