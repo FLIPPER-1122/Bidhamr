@@ -37,7 +37,7 @@ Er fakturaen selv stoppet, håndteret manuelt eller oprettet som "skal laves man
 
 Konkret: en faktura laves, når betalingen er gennemført og BidHamrs gebyr er spejlet fra Stripe (`betalinger.betalt_kl` og `stripe_application_fee_id`). Kreditnotaen laves, når refusionen er gennemført (`refunderet_kl`) – for præcis det, BidHamr har givet tilbage af sit gebyr (`refusion_gebyr_oere`). Passer det beløb hverken med "alt" eller "alt undtagen BidHamr Beskyttelse", laves INGEN automatisk kreditnota; den står under Admin → Fakturaer som "skal laves manuelt".
 
-Skal Filip/revisoren hellere have fakturaen ved frigivelsen, er det én betingelse i `faktura_planlaeg` (`x.betalt_kl` → `x.frigivet_kl`) – men så skal annullerede handler, der er betalt og refunderet før frigivelsen, slet ikke have faktura/kreditnota, og momsperioden skal vurderes (spørgsmål til revisor nr. 96).
+Skal Filip/revisoren hellere have fakturaen ved frigivelsen, er det én betingelse i `faktura_planlaeg` (`x.betalt_kl` → `x.frigivet_kl`) – men så skal annullerede handler, der er betalt og refunderet før frigivelsen, slet ikke have faktura/kreditnota, og momsperioden skal vurderes (spørgsmål til revisor nr. 97).
 
 ## 3. Sådan virker køen (idempotens)
 
@@ -57,7 +57,7 @@ Verificeret i sandkassen: et genforsøg efter et tabt svar (både efter bogføri
 
 ## 4. Det skal Filip gøre for at gå live i Dinero
 
-1. Revisoren bekræfter Dinero (ROADMAP fase 1) og svarer på spørgsmålene i `jura/noter-til-advokat.md` nr. 93 og 96–103.
+1. Revisoren bekræfter Dinero (ROADMAP fase 1) og svarer på spørgsmålene i `jura/noter-til-advokat.md` nr. 93 og 97–104.
 2. I det rigtige Dinero-regnskab (Pro eller Total): **Indstillinger → Virksomhed**: firmanavn **Bidhamr ApS**, CVR **46836219**, Ellegårdsvej 40, 4684 Holmegaard, e-mail og evt. logo (står på hver faktura). Fakturaskabelonen kan tilpasses (logo, farver).
 3. Kontoplan: tjek at 1000 og 1350 har momskode U25. **Opret en egen likvid konto "Stripe"** (fx 55100) – pengene står på Stripe, ikke i banken, indtil Stripe udbetaler – og sæt `DINERO_KONTO_INDBETALING` til den (revisoren bestemmer).
 4. **Integrationer → API-nøgler → Personlig integration**: hent client id og secret, og lav en API-nøgle for regnskabet. Organisations-id står i Dinero (eller hentes med `GET /v1/organizations`).
@@ -69,7 +69,7 @@ Før det er sat op, laves der ingen fakturaer – men rækkerne planlægges, og 
 
 ## 5. Abonnementet (chefens valg – Filip kan ændre)
 
-Opgaven foreslog "en faktura i Dinero, der henviser til Stripe-fakturaen". Stripe Billing har allerede udstedt en faktura med nummer og moms til firmaet. En ny faktura i Dinero på samme ydelse ville give firmaet **to fakturaer med moms for samme ydelse** (risiko for dobbelt moms, momsloven § 52, stk. 5, og forvirring hos firmaet). Derfor bogføres den betalte Stripe-faktura som et **finansbilag** i Dineros kassekladde (debet indbetaling, kredit 1000 m/moms) med Stripe-fakturaens PDF som bilag og fakturanummeret i teksten. Firmaet ser stadig Stripes faktura under Regninger. Refunderes en abonnementsfaktura, laves en modpostering. Revisoren bør bekræfte (nr. 99).
+Opgaven foreslog "en faktura i Dinero, der henviser til Stripe-fakturaen". Stripe Billing har allerede udstedt en faktura med nummer og moms til firmaet. En ny faktura i Dinero på samme ydelse ville give firmaet **to fakturaer med moms for samme ydelse** (risiko for dobbelt moms, momsloven § 52, stk. 5, og forvirring hos firmaet). Derfor bogføres den betalte Stripe-faktura som et **finansbilag** i Dineros kassekladde (debet indbetaling, kredit 1000 m/moms) med Stripe-fakturaens PDF som bilag og fakturanummeret i teksten. Firmaet ser stadig Stripes faktura under Regninger. Refunderes en abonnementsfaktura, laves en modpostering. Revisoren bør bekræfte (nr. 100).
 
 ## 6. Hvad brugeren ser
 

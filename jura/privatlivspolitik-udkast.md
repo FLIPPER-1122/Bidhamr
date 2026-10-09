@@ -48,7 +48,7 @@ Dataansvarlig for behandlingen af dine personoplysninger på bidhamr.dk og i Bid
 - **Sikkerhedskode ved oprettelse**: når du opretter en konto, sender vi en 6-cifret kode til din e-mail for at bekræfte, at e-mailen er din. Koden gemmes kun i kort tid (højst 1 time) hos Supabase.
 - **Kontostatus**: fx om din e-mail er bekræftet, om kontoen er suspenderet eller lukket, og din rolle (bruger eller medarbejder).
 - **Udbetalingskonto**: hvis du sælger, gemmer vi id'et på din udbetalingskonto hos Stripe og status for den (fx om Stripe har godkendt dine oplysninger). Selve dine oplysninger til Stripe (fx ID og bankkonto) giver du direkte til Stripe.
-- **Gemt kort (tilvalg)**: hvis du gemmer et kort, gemmer vi kun kortets mærke, de sidste 4 cifre og udløbsdatoen, så du kan genkende det. Selve kortet ligger hos Stripe.
+- **Gemt kort (tilvalg)**: hvis du gemmer et kort, gemmer vi kun kortets mærke, de sidste 4 cifre og udløbsdatoen, så du kan genkende det. Selve kortet ligger hos Stripe. Har du tidligere slået automatisk betaling til (findes ikke længere), gemmer vi fortsat, hvornår du sagde ja, hvilken version af teksten du så, og hvornår det blev slået fra – som dokumentation for de betalinger, der blev lavet. [ADVOKAT: Er det et gyldigt grundlag at gemme denne samtykkehistorik (art. 6, stk. 1, litra c/f), og hvor længe må den gemmes?]
 
 ### 3.2 Auktioner, bud og handler
 
@@ -236,7 +236,7 @@ Du sletter din konto under Min konto → Slet konto. Det kan ikke lade sig gøre
 Når kontoen slettes:
 
 - Dit navn bliver til "Slettet bruger".
-- Din e-mail, dit telefonnummer, din adresse, dit profilbillede (også selve filen), dine push-tokens, dit gemte kort og automatisk betaling fjernes.
+- Din e-mail, dit telefonnummer, din adresse, dit profilbillede (også selve filen), dine push-tokens og dit gemte kort fjernes.
 - Favoritter, følger (begge veje), gemte søgninger, notifikationer, blokeringer, skabeloner og enheder slettes.
 - Auktioner uden bud afsluttes og arkiveres.
 - Din login-bruger spærres, og e-mailen sløres, så du ikke kan logge ind. Du kan senere oprette en ny konto med samme e-mail.

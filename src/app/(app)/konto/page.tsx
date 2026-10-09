@@ -210,7 +210,6 @@ export default async function KontoSide({
             <div className="mt-3">
               <KontoBetaling
                 gemtKort={indstillinger.gemtKort}
-                autobetaling={indstillinger.autobetaling}
                 setupIntentId={
                   setup_intent?.startsWith("seti_") ? setup_intent : null
                 }

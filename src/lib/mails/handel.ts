@@ -87,13 +87,14 @@ export function koeberVandtMail(
   });
 }
 
-// Vinderens gemte kort blev trukket automatisk.
-export function koeberAutobetaltMail(titel: string, totalOere: number, tradeId: string) {
+// Vinderen har allerede betalt på checkout-siden, før "du vandt" blev sendt.
+// (Ingen automatisk betaling - Filip, 9. okt. 2026.)
+export function koeberVandtBetaltMail(titel: string, totalOere: number, tradeId: string) {
   return handelsMail(`Du vandt og har betalt: ${titel}`, {
-    preheader: `${kronerFraOere(totalOere)} kr er trukket på dit gemte kort. Sælgeren får besked om at sende varen.`,
+    preheader: `Din betaling på ${kronerFraOere(totalOere)} kr er gennemført. Sælgeren har fået besked.`,
     overskriftHtml: "Tillykke, du vandt",
     afsnitHtml: [
-      `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Beløbet er trukket automatisk på dit gemte kort, og sælgeren får besked om at sende varen.`,
+      `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Din betaling er gennemført, og sælgeren har fået besked.`,
       STRIPE_KOEBER,
     ],
     info: [vare(titel), beloeb("Betalt i alt", totalOere, true)],
@@ -429,12 +430,13 @@ export function koeberAndenchanceBetalMail(
   });
 }
 
-export function koeberAndenchanceAutobetaltMail(titel: string, totalOere: number, tradeId: string) {
+// Køberen har allerede betalt på checkout-siden (handel fra et tilbud).
+export function koeberAndenchanceBetaltMail(titel: string, totalOere: number, tradeId: string) {
   return handelsMail(`Du har købt og betalt: ${titel}`, {
-    preheader: `${kronerFraOere(totalOere)} kr er trukket på dit gemte kort. Sælgeren får besked om at sende varen.`,
+    preheader: `Din betaling på ${kronerFraOere(totalOere)} kr er gennemført. Sælgeren har fået besked.`,
     overskriftHtml: "Du har købt varen",
     afsnitHtml: [
-      `Du har købt <strong>${escapeHtml(titel)}</strong>. Beløbet er trukket automatisk på dit gemte kort, og sælgeren får besked om at sende varen.`,
+      `Du har købt <strong>${escapeHtml(titel)}</strong>. Din betaling er gennemført, og sælgeren har fået besked.`,
       STRIPE_KOEBER,
     ],
     info: [vare(titel), beloeb("Betalt i alt", totalOere, true)],

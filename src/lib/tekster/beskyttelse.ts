@@ -64,7 +64,7 @@ export const SEKTION_PRIS: Sektion = {
     "BidHamr Beskyttelse koster 5 % af dit bud – mindst 25 kr og højst 250 kr.",
     "Du vælger det selv, når du byder. Det er ikke slået til på forhånd.",
     "Dit valg følger buddet og kan ikke ændres bagefter.",
-    "Vinder du auktionen, indgår prisen i din betaling – også hvis du har slået automatisk betaling til.",
+    "Vinder du auktionen, indgår prisen i det beløb, du betaler på betalingssiden.",
     "Alle beløb er inkl. moms.",
   ],
 };

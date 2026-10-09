@@ -2,7 +2,8 @@
 //
 //   1. Luk udløbne auktioner (samme SQL-funktion som pg_cron kører hvert
 //      minut). Den opretter handel + betaling med 48 timers frist.
-//   2. Nye betalinger: forsøg autobetaling (tilvalg), send "du vandt"-mails.
+//   2. Nye betalinger: send "du vandt"-mails. Ingen automatisk betaling
+//      (Filip, 9. okt. 2026) - vinderen betaler altid selv på checkout-siden.
 //   3. Påmindelser 24 og 8 timer før fristen.
 //   3b. Sager, hvor ankefristen (4 dage efter afgørelsen) er udløbet: refusion
 //       til køber / frigivelse til sælger / frysningen fjernes.
@@ -59,9 +60,9 @@ import { annullerIkkeSendte, paamindSaelgerOmAfsendelse } from "@/lib/betaling/a
 import { annullerIkkeHentede, paamindOmAfhentning } from "@/lib/betaling/afhentningsfrist";
 import {
   betalingsPaamindelseMail,
-  koeberAndenchanceAutobetaltMail,
+  koeberAndenchanceBetaltMail,
   koeberAndenchanceBetalMail,
-  koeberAutobetaltMail,
+  koeberVandtBetaltMail,
   koeberVandtMail,
   koeberVandtVenterMail,
   saelgerKontoIkkeKlarMail,
@@ -72,7 +73,6 @@ import { udbetalVentende } from "@/lib/betaling/udbetaling";
 import { tilbagefoerTabteIndsigelserVentende, varslIndsigelsesfrister } from "@/lib/betaling/indsigelse";
 import {
   type BetalingRaekke,
-  forsoegAutobetaling,
   refunderAfvigelserVentende,
   refunderLoveteVentende,
 } from "@/lib/betaling/stripeBetaling";
@@ -127,7 +127,6 @@ export async function koerBetalingsCron() {
   const admin = createAdminClient();
   const resultat = {
     lukkede: 0,
-    autobetalinger: 0,
     vundetMails: 0,
     paamindelser: 0,
     udbetalinger: 0,
@@ -198,17 +197,6 @@ export async function koerBetalingsCron() {
     .limit(200)
     .overrideTypes<BetalingRaekke[], { merge: false }>();
 
-  for (const b of nye ?? []) {
-    try {
-      if (!b.autobetaling_forsoegt_kl && b.status === "afventer") {
-        const r = await forsoegAutobetaling(b.id);
-        if (r === "betalt" || r === "allerede_betalt") resultat.autobetalinger++;
-      }
-    } catch (err) {
-      await trinFejl("Autobetaling", err, b.id);
-    }
-  }
-
   if (nye && nye.length > 0) {
     const ids = nye.map((b) => b.id);
     const { data: friske } = await admin
@@ -251,9 +239,11 @@ export async function koerBetalingsCron() {
         });
         continue;
       }
+      // Køberen kan have betalt på checkout-siden, før kørslen nåede at
+      // sende "du vandt" - så bekræftes det i stedet for at bede om betaling.
       const koeberMail =
         b.status === "betalt"
-          ? (erAndenchance ? koeberAndenchanceAutobetaltMail : koeberAutobetaltMail)(
+          ? (erAndenchance ? koeberAndenchanceBetaltMail : koeberVandtBetaltMail)(
               titel,
               Number(b.total_oere),
               b.trade_id,
@@ -273,7 +263,7 @@ export async function koerBetalingsCron() {
               : "Du vandt auktionen",
         tekst:
           b.status === "betalt"
-            ? `Du har købt "${titel}", og beløbet er trukket automatisk på dit gemte kort.`
+            ? `Du har købt "${titel}", og din betaling er gennemført.`
             : `Du har købt "${titel}". Betal inden for 48 timer, ellers bliver handlen annulleret.`,
         link,
         data: { trade_id: b.trade_id, auction_id: b.auction_id },

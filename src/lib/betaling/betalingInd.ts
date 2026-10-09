@@ -10,8 +10,8 @@
 //   - sælgeren påmindes efter 3 dage (paamindVentendeSaelgere)
 //   - kontoen tjekkes frisk hos Stripe (opdaterVentendeSaelgerkonti), og
 //     account.updated åbner betalingen (aabnVentende): 48-timersfristen
-//     starter nu, autobetaling forsøges, og køberen får "nu kan du betale"
-//     (notificerAabnede)
+//     starter nu, og køberen får "nu kan du betale" (notificerAabnede). Der
+//     trækkes aldrig automatisk - køberen betaler selv på checkout-siden.
 //   - er kontoen ikke godkendt 7 dage efter auktionens slutning, annulleres
 //     handlen og auktionen (køberen trækkes ikke), og sælgeren fryses, til
 //     Stripe har godkendt kontoen (annullerIkkeGodkendte)
@@ -24,14 +24,13 @@ import { logDriftFejl } from "@/lib/drift";
 import { send } from "@/lib/notifikationer/send";
 import {
   koeberAnnulleretSaelgerkontoMail,
-  koeberAutobetaltMail,
   koeberBetalingAabnetMail,
+  koeberVandtBetaltMail,
   saelgerAnnulleretSaelgerkontoMail,
   saelgerKontoIkkeKlarMail,
 } from "@/lib/mails/handel";
 import {
   type BetalingRaekke,
-  forsoegAutobetaling,
   spejlConnectKonto,
   markerKontoUdenAdgang,
   spejlPaymentIntent,
@@ -72,8 +71,8 @@ export async function aabnVentende(saelgerId?: string): Promise<number> {
   return antal;
 }
 
-// Åbnede betalinger, hvor køberen ikke har fået besked: autobetaling (hvis
-// slået til) og derefter "nu kan du betale" / "du har betalt".
+// Åbnede betalinger, hvor køberen ikke har fået besked: "nu kan du betale"
+// (eller "du har betalt", hvis køberen allerede har nået at betale).
 export async function notificerAabnede(): Promise<number> {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -94,14 +93,13 @@ export async function notificerAabnede(): Promise<number> {
   let antal = 0;
   for (const b of data ?? []) {
     try {
-      if (b.status === "afventer" && !b.autobetaling_forsoegt_kl) await forsoegAutobetaling(b.id);
       const { data: claimet } = await admin
         .from("betalinger")
         .update({ aabnet_besked_sendt_kl: new Date().toISOString() })
         .eq("id", b.id)
         .is("aabnet_besked_sendt_kl", null)
-        // Satte autobetalingens friske kontotjek betalingen til at vente
-        // igen, sendes "nu kan du betale" ikke (den sendes ved næste åbning).
+        // Venter betalingen igen (fx et frisk kontotjek ved betaling), sendes
+        // "nu kan du betale" ikke (den sendes ved næste åbning).
         .is("venter_paa_saelgerkonto_kl", null)
         .select("*")
         .overrideTypes<BetalingRaekke[], { merge: false }>();
@@ -113,10 +111,10 @@ export async function notificerAabnede(): Promise<number> {
         // Sælgeren har fået "køberen har betalt" (efterBetalt).
         await send(b.buyer_id, "vundet", {
           titel: "Du har betalt",
-          tekst: `Sælgerens konto er godkendt, og beløbet for "${titel}" er trukket automatisk på dit gemte kort.`,
+          tekst: `Sælgerens konto er godkendt, og din betaling for "${titel}" er gennemført.`,
           link,
           data: { trade_id: b.trade_id },
-          mail: koeberAutobetaltMail(titel, Number(b.total_oere), b.trade_id),
+          mail: koeberVandtBetaltMail(titel, Number(b.total_oere), b.trade_id),
           noegle: `aabnet:${b.id}:${b.betaling_aabnet_kl}`,
         });
       } else {

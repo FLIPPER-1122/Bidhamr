@@ -16,7 +16,7 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 // adgangskode og "SLET" tjekkes i ruten selv.
 // /api/firma/skift-pakke er appens pakkeskift for firmakonti: kun
 // Bearer-token (ingen cookies); login og firmakonto tjekkes i ruten/databasen.
-// /api/betaling/kort er appens automatisk betaling / "Fjern kort": kun
+// /api/betaling/kort er appens "Fjern kort": kun
 // Bearer-token (ingen cookies); login tjekkes i ruten.
 // /api/faktura/<id> er PDF'en af en faktura (hjemmesiden med cookie, appen
 // med Bearer-token); login og ejerskab tjekkes i ruten. Kun GET.
