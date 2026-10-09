@@ -34,7 +34,13 @@ export async function hentMineFakturaer(
     console.error("mine_fakturaer:", error.message);
     return null;
   }
-  return (Array.isArray(data) ? data : []) as MinFaktura[];
+  // Nyeste først: dato, derefter nummer (et dokument uden nummer endnu er det
+  // nyeste på dagen).
+  return ((Array.isArray(data) ? data : []) as MinFaktura[]).sort(
+    (a, b) =>
+      b.dato.localeCompare(a.dato) ||
+      (b.nummer ?? Number.MAX_SAFE_INTEGER) - (a.nummer ?? Number.MAX_SAFE_INTEGER),
+  );
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
