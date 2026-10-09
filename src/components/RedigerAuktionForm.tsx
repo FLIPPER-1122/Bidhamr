@@ -18,12 +18,17 @@ import {
 import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { erStand } from "@/lib/stand";
-import { kroner } from "@/lib/kroner";
+import PakkestoerrelseVaelger, {
+  fragtFejlTekst,
+  useFragtstoerrelser,
+  vaegtFejl,
+  vaegtTilGram,
+  type Fragtstoerrelse,
+} from "@/components/fragt/PakkestoerrelseVaelger";
 import { uploadAuktionsbilleder } from "@/lib/auktionUpload";
 import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
 import { ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import {
-  Afkrydsning,
   BilledVaelger,
   FeltFejl,
   Hjaelp,
@@ -64,6 +69,7 @@ export default function RedigerAuktionForm({
     fragtPakkeshopOere?: number | null;
     fragtDoerOere?: number | null;
     pakkestoerrelse?: string | null;
+    vaegtGram?: number | null;
     stand: string | null;
     producent?: string | null;
     sikkerhedsoplysninger?: string | null;
@@ -79,6 +85,14 @@ export default function RedigerAuktionForm({
   const [beskrivelse, setBeskrivelse] = useState(start.beskrivelse);
   const [startprisTekst, setStartprisTekst] = useState(String(start.startpris));
   const [forsendelseMulig, setForsendelseMulig] = useState(start.forsendelseMulig);
+  // Pakkestørrelse og vægt: gemmes med saet_auktion_fragt (kun før første bud).
+  const startStoerrelse: Fragtstoerrelse["kode"] =
+    start.pakkestoerrelse === "lille" || start.pakkestoerrelse === "stor" ? start.pakkestoerrelse : "mellem";
+  const startVaegt = start.vaegtGram ? String(start.vaegtGram / 1000).replace(".", ",") : "";
+  const [pakkestoerrelse, setPakkestoerrelse] = useState<Fragtstoerrelse["kode"]>(startStoerrelse);
+  const [vaegtTekst, setVaegtTekst] = useState(startVaegt);
+  const [vaegtFejlTekst, setVaegtFejlTekst] = useState<string | null>(null);
+  const { stoerrelser, fejl: fragtHentFejl } = useFragtstoerrelser();
   const [stand, setStand] = useState<string>(erStand(start.stand) ? start.stand : "");
   const [producent, setProducent] = useState(start.producent ?? "");
   const [sikkerhed, setSikkerhed] = useState(start.sikkerhedsoplysninger ?? "");
@@ -119,6 +133,21 @@ export default function RedigerAuktionForm({
     // tjekker kun mindst 1 kr, når startprisen ændres).
     const prisFejl = startpris === start.startpris && startpris === 0 ? null : valideStartpris(startpris);
     if (prisFejl) return setError(prisFejl);
+    // Størrelse/vægt sættes kun, når noget er ændret (eller forsendelse slås til).
+    const fragtAendret =
+      forsendelseMulig &&
+      (!start.forsendelseMulig ||
+        !start.pakkestoerrelse ||
+        pakkestoerrelse !== startStoerrelse ||
+        vaegtTekst.trim() !== startVaegt);
+    if (fragtAendret) {
+      const vf = vaegtFejl(vaegtTekst, stoerrelser?.find((s) => s.kode === pakkestoerrelse) ?? null, stoerrelser ?? []);
+      setVaegtFejlTekst(vf);
+      if (vf) {
+        document.getElementById("vaegt")?.focus();
+        return;
+      }
+    }
 
     setLoading(true);
     const supabase = createClient();
@@ -159,6 +188,36 @@ export default function RedigerAuktionForm({
         setStatus(null);
         setLoading(false);
         return;
+      }
+
+      // Pakkestørrelse og vægt (databasen genberegner og låser fragtprisen).
+      if (fragtAendret) {
+        const { data: fragtSvar, error: fragtFejl } = await supabase.rpc("saet_auktion_fragt", {
+          p_auktion: auktionId,
+          p_pakkestoerrelse: pakkestoerrelse,
+          p_vaegt_gram: vaegtTilGram(vaegtTekst),
+        });
+        const kode = (fragtSvar as { kode?: string } | null)?.kode;
+        if (fragtFejl || kode !== "ok") {
+          if (kode === "har_bud") {
+            setLaast(true);
+            router.refresh();
+            return;
+          }
+          const tekst =
+            kode === "for_tung"
+              ? fragtFejlTekst("BHT01")
+              : kode === "stoerrelse"
+                ? fragtFejlTekst("BHT02")
+                : kode === "vaegt_mangler"
+                  ? fragtFejlTekst("BHT03")
+                  : "Resten er gemt, men pakkestørrelsen kunne ikke gemmes. Prøv igen.";
+          if (kode === "for_tung" || kode === "stoerrelse" || kode === "vaegt_mangler") setVaegtFejlTekst(tekst);
+          setError(tekst);
+          setStatus(null);
+          setLoading(false);
+          return;
+        }
       }
 
       // Firmaet redigerer i firma-dashboardet og bliver dér.
@@ -283,18 +342,26 @@ export default function RedigerAuktionForm({
             {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
           </Hjaelp>
         </div>
-        <Afkrydsning
-          id="forsendelse"
-          checked={forsendelseMulig}
-          onChange={setForsendelseMulig}
-          hjaelp={
-            start.fragtPakkeshopOere
-              ? `Varen sendes til køberen, som betaler ${kroner(start.fragtPakkeshopOere)} i fragt til en pakkeshop${start.fragtDoerOere ? ` eller ${kroner(start.fragtDoerOere)} for levering til døren` : ""}. Uden forsendelse skal køberen hente varen hos dig.`
-              : "Varen sendes til køberen, som betaler fragten efter pakkestørrelse (Mellem, hvis du ikke har valgt). Uden forsendelse skal køberen hente varen hos dig."
-          }
-        >
-          Jeg tilbyder forsendelse
-        </Afkrydsning>
+        <PakkestoerrelseVaelger
+          stoerrelser={stoerrelser}
+          hentFejl={fragtHentFejl}
+          vaerdi={forsendelseMulig ? pakkestoerrelse : "afhentning"}
+          onVaerdi={(v) => {
+            if (v === "afhentning") setForsendelseMulig(false);
+            else {
+              setForsendelseMulig(true);
+              setPakkestoerrelse(v);
+            }
+          }}
+          vaegt={vaegtTekst}
+          onVaegt={(v) => {
+            setVaegtTekst(v);
+            if (vaegtFejlTekst) setVaegtFejlTekst(null);
+          }}
+          vaegtFejlTekst={vaegtFejlTekst}
+          vaegtId="vaegt"
+          deaktiveret={loading}
+        />
       </Sektion>
 
       {error && (
