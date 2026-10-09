@@ -280,8 +280,12 @@ async function behandlKladde(r: FakturaRaekke, deps: ProcesDeps): Promise<Proces
     // Modposteringen dateres refusionsdagen hos Stripe (dansk tid) - også for
     // regninger krediteret før krediteret_kl fandtes.
     await deps.gemKrediteretKl(r, ref.kl);
-    dato = danskDato(ref.kl);
-    if (dato !== r.betalt_dato && r.status === "venter") await gem(deps, { betaltDato: dato });
+    // Datoen rettes kun på et ikke-bogført bilag i 'venter' (databasen);
+    // ellers bruges den gemte, så Dinero og databasen altid er enige.
+    if (r.status === "venter" && r.dinero_nummer === null) {
+      dato = danskDato(ref.kl);
+      if (dato !== r.betalt_dato) await gem(deps, { betaltDato: dato });
+    }
   }
   if (!st) {
     if (r.status !== "venter") {

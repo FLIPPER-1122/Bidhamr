@@ -39,6 +39,14 @@ const DOKUMENT: Record<string, string> = {
 };
 const PART: Record<string, string> = { koeber: "køber", saelger: "sælger", firma: "firma" };
 
+// Er dokumentet allerede nået til Dinero, kan "håndteret manuelt" give en
+// dublet - staff skal tjekke Dinero først.
+function dineroAdvarsel(r: Raekke): string | null {
+  if (r.status !== "bogfoert" && r.status !== "kladde" && !r.dinero_nummer) return null;
+  const tilstand = r.status === "bogfoert" ? "bogført, betaling ikke registreret" : r.status === "kladde" ? "sendt til bogføring" : r.status;
+  return `Dinero: ${r.dinero_nummer ? `nr. ${r.dinero_nummer}, ` : ""}${tilstand}. Tjek først i Dinero, om dokumentet findes (id ${r.id}), før du laver det manuelt.`;
+}
+
 // Dokumenter oprettet før dette tidspunkt har ventet over 2 timer.
 function haengerGraense(): string {
   return new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
@@ -153,7 +161,7 @@ export default async function AdminFakturaer() {
                         action={proevFakturaIgen}
                         hiddenFields={{ id: r.id }}
                       />
-                      <FakturaHaandterForm id={r.id} action={fakturaHaandteretManuelt} />
+                      <FakturaHaandterForm id={r.id} action={fakturaHaandteretManuelt} advarsel={dineroAdvarsel(r)} />
                     </div>
                   </li>
                 ))}
@@ -191,7 +199,7 @@ export default async function AdminFakturaer() {
                           hiddenFields={{ id: r.id }}
                         />
                       )}
-                      <FakturaHaandterForm id={r.id} action={fakturaHaandteretManuelt} />
+                      <FakturaHaandterForm id={r.id} action={fakturaHaandteretManuelt} advarsel={dineroAdvarsel(r)} />
                     </div>
                   </li>
                 ))}

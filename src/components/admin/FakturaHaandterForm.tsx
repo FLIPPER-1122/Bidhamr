@@ -6,9 +6,12 @@ import { useState, useTransition } from "react";
 export default function FakturaHaandterForm({
   id,
   action,
+  advarsel,
 }: {
   id: string;
   action: (formData: FormData) => Promise<{ ok: true } | { fejl: string }>;
+  // Fx når dokumentet allerede er nået til Dinero (bogført/kladde).
+  advarsel?: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [fejl, setFejl] = useState<string | null>(null);
@@ -25,6 +28,11 @@ export default function FakturaHaandterForm({
       className="flex flex-col gap-2"
     >
       <input type="hidden" name="id" value={id} />
+      {advarsel && (
+        <p role="note" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          {advarsel}
+        </p>
+      )}
       <label className="text-xs font-medium text-tekst-daempet" htmlFor={`note-${id}`}>
         Hvad har du gjort i Dinero?
       </label>

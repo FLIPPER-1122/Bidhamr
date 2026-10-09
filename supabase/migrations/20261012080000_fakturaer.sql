@@ -186,7 +186,7 @@ begin
          -- Undtagelse: en abonnements-modpostering, der ikke er sendt til
          -- Dinero endnu, dateres efter Stripes refusionstidspunkt.
          and not (old.dokument = 'abonnement_retur' and old.status = 'venter'
-                  and old.dinero_org is null and old.dinero_nummer is null))
+                  and old.dinero_nummer is null))
      or new.stripe_reference is distinct from old.stripe_reference
      or (old.manuel and not new.manuel) then
     raise exception 'Fakturaens indhold kan ikke ændres, når den er oprettet';
@@ -583,7 +583,7 @@ begin
          pdf_sti = coalesce(p_pdf_sti, pdf_sti),
          dinero_fil_guid = coalesce(p_fil, dinero_fil_guid),
          betalt_dato = case when p_betalt_dato is not null and dokument = 'abonnement_retur' and status = 'venter'
-                                 and dinero_org is null and dinero_nummer is null
+                                 and dinero_nummer is null
                             then p_betalt_dato else betalt_dato end,
          forsoeg = case when p_status is not null and p_status <> status and p_status <> 'kraever_handling'
                         then 0 else forsoeg end,

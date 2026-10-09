@@ -378,8 +378,6 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
     }
     return { ...res, springetOver: "ikke_konfigureret" };
   }
-  await lukTilfaelde("faktura:konfiguration");
-
   const dinero = lavDineroKlient(konfig.dinero, { maksKald: 45 });
   // Live: Dinero-regnskabet skal være BidHamrs eget (CVR 46836219) - ellers
   // laves intet (fx sandkassens nøgler sat i produktionen).
@@ -405,6 +403,8 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
       return { ...res, springetOver: d?.adgang ? "adgang" : "ikke_konfigureret" };
     }
   }
+  // Først nu er opsætningen i orden (test, eller live med BidHamrs CVR).
+  await lukTilfaelde("faktura:konfiguration");
 
   // 3) Behandl køen.
   const { data: claimet, error: claimFejl } = await admin.rpc("faktura_claim", { p_antal: PR_KOERSEL });
