@@ -44,6 +44,17 @@ export function tilApp(resultat: MitIdResultat): NextResponse {
   return udenCookie(NextResponse.redirect(u.toString(), 303));
 }
 
+// Appen: MitID er gennemført - appen afslutter selv med sit engangs-id
+// (POST /api/mitid/app/afslut med Bearer-session og app-hemmelighed).
+export function tilAppAfslut(k: string): NextResponse {
+  const u = new URL(appRetur());
+  u.searchParams.set("k", k);
+  return udenCookie(NextResponse.redirect(u.toString(), 303));
+}
+
+// Hvor længe appen har til at afslutte efter MitID.
+export const APP_AFSLUT_LEVETID_SEK = 5 * 60;
+
 export function udenCookie(res: NextResponse): NextResponse {
   res.cookies.set(MITID_COOKIE, "", { path: MITID_COOKIE_STI, maxAge: 0, httpOnly: true, sameSite: "lax" });
   res.headers.set("Cache-Control", "no-store");
@@ -65,6 +76,8 @@ export function resultatFraKode(kode: string | undefined): MitIdResultat {
     case "lukket_konto":
     case "lukket_konto_mitid":
       return "lukket";
+    case "tidligere_spaerret":
+      return "tidligereSpaerret";
     case "anden_mitid":
       return "andenMitid";
     case "erhverv":

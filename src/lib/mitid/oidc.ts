@@ -264,7 +264,8 @@ export async function hentIdentitet(
   // Kun dansk MitID på niveau betydelig eller højere.
   if (c.identityscheme !== "dkmitid") throw new Error("MitID: forkert eID");
   const acr = typeof c.acr === "string" ? c.acr : "";
-  if (acr && acr !== MITID_ACR && acr !== "urn:grn:authn:dk:mitid:high") {
+  // acr SKAL være med - mangler det, afvises login.
+  if (acr !== MITID_ACR && acr !== "urn:grn:authn:dk:mitid:high") {
     throw new Error("MitID: for lavt sikringsniveau");
   }
   const personId = typeof c.uuid === "string" ? c.uuid.trim() : "";

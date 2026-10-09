@@ -28,8 +28,12 @@
 --   6. mine_data() får MitID-oplysningerne med (GDPR)
 --
 -- CHEFENS VALG (til Filips godkendelse):
---   - Maksimumbud sat FØR denne migration fortsætter (automatiske bud,
---     bids.automatisk) - byderen bød før reglen. Nye/ændrede maksimum kræver MitID.
+--   - Maksimumbud fra brugere uden MitID afgiver ikke flere automatiske bud
+--     (autobud_maa_byde) - også maksima sat før denne migration. Allerede
+--     afgivne bud står. Budpanelet beder brugeren bekræfte sig for at fortsætte.
+--   - Sletning af kontoen afvises, mens den er suspenderet eller har advarsler
+--     (konto_sletning_blokeringer), og en ny konto afvises, hvis den slettede
+--     konto med samme MitID var suspenderet eller havde advarsler ved sletningen.
 --   - Svar på "tilbud til næste byder" (andenchance_svar) kræver ikke MitID:
 --     byderen har allerede budt. Kun sælgerens tilbud kræver det.
 --   - Fødselsdatoen gemmes (internt, som navnet), fordi DAC7 kræver
@@ -38,6 +42,10 @@
 --     ny konto, og så staff kan se, at en ny konto er samme person som en
 --     slettet). Navn og fødselsdato bevares kun, hvis brugeren har handler
 --     (handelsdata), ellers slettes de.
+--   - Appen: callbacken registrerer IKKE appens forløb. Identiteten gemmes kort
+--     (5 min) på forløbet, og appen afslutter selv med Bearer-session +
+--     app-hemmelighed (POST /api/mitid/app/afslut) - så et link kan ikke
+--     bruges til at verificere en andens konto (phishing).
 --   - Nulstilling kræver admin eller chef (den frigiver MitID'en til en
 --     anden konto). Lukkede konti kan ikke nulstilles.
 --
@@ -122,8 +130,15 @@ create table if not exists public.mitid_verificeringer (
   nulstillet_kl   timestamptz,
   nulstillet_af   uuid references public.users(id),
   nulstil_aarsag  text check (nulstil_aarsag is null or char_length(nulstil_aarsag) <= 1000),
-  slettet_kl      timestamptz
+  slettet_kl      timestamptz,
+  -- Status ved kontosletning (svindelværn): var kontoen suspenderet, og hvor
+  -- mange advarsler havde den?
+  slettet_suspenderet boolean,
+  slettet_advarsler   integer
 );
+
+alter table public.mitid_verificeringer add column if not exists slettet_suspenderet boolean;
+alter table public.mitid_verificeringer add column if not exists slettet_advarsler integer;
 
 -- Én MitID = én aktiv konto, og højst én aktiv verificering pr. konto.
 create unique index if not exists mitid_verificeringer_hash_aktiv
@@ -173,7 +188,7 @@ create trigger mitid_verificeringer_ingen_truncate
 create table if not exists public.mitid_forsoeg (
   id               uuid primary key default gen_random_uuid(),
   bruger_id        uuid not null references public.users(id),
-  aarsag           text not null check (aarsag in ('dobbeltkonto', 'lukket_konto', 'under_18', 'tidligere_slettet')),
+  aarsag           text not null,
   -- Den anden konto, som MitID'en allerede hører til (dobbeltkonto, lukket
   -- konto, tidligere slettet).
   anden_bruger_id  uuid references public.users(id),
@@ -181,6 +196,10 @@ create table if not exists public.mitid_forsoeg (
   behandlet_kl     timestamptz,
   behandlet_af     uuid references public.users(id)
 );
+
+alter table public.mitid_forsoeg drop constraint if exists mitid_forsoeg_aarsag_check;
+alter table public.mitid_forsoeg add constraint mitid_forsoeg_aarsag_check
+  check (aarsag in ('dobbeltkonto', 'lukket_konto', 'under_18', 'tidligere_slettet', 'tidligere_spaerret'));
 
 create index if not exists mitid_forsoeg_bruger on public.mitid_forsoeg (bruger_id, oprettet_kl desc);
 create index if not exists mitid_forsoeg_aabne on public.mitid_forsoeg (oprettet_kl desc) where behandlet_kl is null;
@@ -208,6 +227,21 @@ create table if not exists public.mitid_flow (
   startet_kl       timestamptz,
   brugt_kl         timestamptz
 );
+
+-- Appens forløb (se /api/mitid/app/afslut): callbacken gemmer den
+-- verificerede identitet her i højst 5 minutter, og appen afslutter med sin
+-- Bearer-session + app-hemmeligheden. Ryddes ved afslutning og af oprydningen.
+alter table public.mitid_flow add column if not exists app_hemmelighed_hash text
+  check (app_hemmelighed_hash is null or app_hemmelighed_hash ~ '^[0-9a-f]{64}$');
+alter table public.mitid_flow add column if not exists afslut_hash text unique
+  check (afslut_hash is null or afslut_hash ~ '^[0-9a-f]{64}$');
+alter table public.mitid_flow add column if not exists id_hash text
+  check (id_hash is null or id_hash ~ '^[0-9a-f]{64}$');
+alter table public.mitid_flow add column if not exists juridisk_navn text
+  check (juridisk_navn is null or char_length(juridisk_navn) <= 300);
+alter table public.mitid_flow add column if not exists foedselsdato date;
+alter table public.mitid_flow add column if not exists identitet_udloeber_kl timestamptz;
+alter table public.mitid_flow add column if not exists afsluttet_kl timestamptz;
 
 create index if not exists mitid_flow_udloeber on public.mitid_flow (udloeber_kl);
 
@@ -344,7 +378,8 @@ create trigger a0_andenchance_mitid
 -- 4a. mitid_registrer: kaldes af /api/mitid/callback (service_role), når
 --     id_token er verificeret. Afgør alle regler i én transaktion.
 --     Returnerer {kode}: ok | allerede | dobbeltkonto | lukket_konto |
---     under_18 | erhverv | ugyldig_bruger | ugyldig
+--     lukket_konto_mitid | tidligere_spaerret | anden_mitid | under_18 |
+--     erhverv | ugyldig_bruger | ugyldig
 -- ---------------------------------------------------------------------------
 create or replace function public.mitid_registrer(
   p_bruger uuid,
@@ -363,6 +398,7 @@ declare
   v_idag     date := (now() at time zone 'Europe/Copenhagen')::date;
   v_anden    uuid;
   v_eksist   record;
+  v_constraint text;
 begin
   if p_bruger is null or p_bruger = public.bidhamr_system_id() then
     return jsonb_build_object('kode', 'ugyldig_bruger');
@@ -434,6 +470,21 @@ begin
     return jsonb_build_object('kode', 'dobbeltkonto');
   end if;
 
+  -- Samme MitID som en slettet konto, der var suspenderet eller havde
+  -- advarsler, da den blev slettet: afvis (ellers kunne advarsler nulstilles
+  -- ved at slette kontoen og oprette en ny). Staff får besked.
+  select v.bruger_id into v_anden
+    from public.mitid_verificeringer v
+   where v.id_hash = p_hash and v.status = 'slettet' and v.bruger_id <> p_bruger
+     and (coalesce(v.slettet_suspenderet, false) or coalesce(v.slettet_advarsler, 0) > 0)
+   order by v.verificeret_kl desc
+   limit 1;
+  if v_anden is not null then
+    insert into public.mitid_forsoeg (bruger_id, aarsag, anden_bruger_id)
+    values (p_bruger, 'tidligere_spaerret', v_anden);
+    return jsonb_build_object('kode', 'tidligere_spaerret');
+  end if;
+
   -- Tilladt, men staff får besked: samme person har haft en konto, der er slettet.
   select v.bruger_id into v_anden
     from public.mitid_verificeringer v
@@ -453,7 +504,18 @@ begin
   return jsonb_build_object('kode', 'ok');
 exception
   when unique_violation then
-    -- To samtidige forløb: det unikke index afgør det.
+    -- To samtidige forløb: det unikke index afgør det. (Ændringerne ovenfor
+    -- er rullet tilbage - forsøget logges her.)
+    get stacked diagnostics v_constraint = constraint_name;
+    if v_constraint = 'mitid_verificeringer_bruger_aktiv' then
+      return jsonb_build_object('kode', 'allerede');
+    end if;
+    select v.bruger_id into v_anden
+      from public.mitid_verificeringer v
+     where v.id_hash = p_hash and v.status = 'aktiv' and v.bruger_id <> p_bruger
+     limit 1;
+    insert into public.mitid_forsoeg (bruger_id, aarsag, anden_bruger_id)
+    values (p_bruger, 'dobbeltkonto', v_anden);
     return jsonb_build_object('kode', 'dobbeltkonto');
 end $$;
 
@@ -579,7 +641,11 @@ begin
        set status = case when status = 'aktiv' then 'slettet' else status end,
            slettet_kl = coalesce(slettet_kl, now()),
            juridisk_navn = case when v_handler then juridisk_navn else null end,
-           foedselsdato  = case when v_handler then foedselsdato else null end
+           foedselsdato  = case when v_handler then foedselsdato else null end,
+           slettet_suspenderet = coalesce(slettet_suspenderet,
+             coalesce(old.suspenderet, false) and (old.suspenderet_til is null or old.suspenderet_til > now())),
+           slettet_advarsler = coalesce(slettet_advarsler,
+             (select count(*)::integer from public.advarsler a where a.bruger_id = new.id))
      where bruger_id = new.id;
     new.mitid_verificeret_kl := null;
   end if;
@@ -666,7 +732,7 @@ as $$
     join public.users u on u.id = f.bruger_id
     left join public.users a on a.id = f.anden_bruger_id
    where f.behandlet_kl is null
-     and f.aarsag in ('dobbeltkonto', 'lukket_konto', 'tidligere_slettet')
+     and f.aarsag in ('dobbeltkonto', 'lukket_konto', 'tidligere_slettet', 'tidligere_spaerret')
    order by f.oprettet_kl desc
    limit 200;
 $$;
@@ -681,8 +747,131 @@ language sql
 security definer
 set search_path = ''
 as $$
+  -- Identitet fra MitID, som appen ikke har afsluttet, slettes efter 5 min.
+  update public.mitid_flow
+     set id_hash = null, juridisk_navn = null, foedselsdato = null
+   where identitet_udloeber_kl < now()
+     and (id_hash is not null or juridisk_navn is not null or foedselsdato is not null);
   delete from public.mitid_flow where udloeber_kl < now() - interval '1 day';
 $$;
 
 revoke all on function public.mitid_flow_oprydning() from public, anon, authenticated;
 grant execute on function public.mitid_flow_oprydning() to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 8. Kontosletning afvises, mens kontoen er suspenderet eller har advarsler
+--    (chefens valg): ellers kunne man slette kontoen og starte forfra med
+--    samme MitID uden advarsler. Den eksisterende funktion omdøbes én gang til
+--    konto_sletning_blokeringer_grund og kaldes herfra (konto_slet og
+--    hjemmesiden bruger navnet konto_sletning_blokeringer).
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'konto_sletning_blokeringer_grund') then
+    alter function public.konto_sletning_blokeringer(uuid) rename to konto_sletning_blokeringer_grund;
+  end if;
+end $$;
+
+revoke all on function public.konto_sletning_blokeringer_grund(uuid) from public, anon, authenticated;
+
+create or replace function public.konto_sletning_blokeringer(p_bruger uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce((
+    select jsonb_agg(b) from (
+      select jsonb_build_object('type', 'suspenderet',
+               'tekst', 'Du kan ikke slette din konto, mens den er suspenderet.', 'link', null) as b
+        from public.users u
+       where u.id = p_bruger
+         and coalesce(u.suspenderet, false)
+         and (u.suspenderet_til is null or u.suspenderet_til > now())
+      union all
+      select jsonb_build_object('type', 'advarsler',
+               'tekst', 'Du kan ikke slette din konto, mens du har advarsler.', 'link', null)
+       where exists (select 1 from public.advarsler a where a.bruger_id = p_bruger)
+    ) x), '[]'::jsonb)
+  || public.konto_sletning_blokeringer_grund(p_bruger);
+$$;
+
+revoke all on function public.konto_sletning_blokeringer(uuid) from public, anon, authenticated;
+grant execute on function public.konto_sletning_blokeringer(uuid) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 9. Automatiske bud (maksimum) kun for MitID-verificerede (chefens valg):
+--    maksima fra brugere uden MitID - også dem, der er sat før denne
+--    migration - afgiver ikke flere bud. Allerede afgivne bud står.
+--    Som 20261010010000_autobud.sql + MitID.
+-- ---------------------------------------------------------------------------
+create or replace function public.autobud_maa_byde(p_saelger uuid, p_bruger uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p_bruger <> p_saelger
+     and exists (
+       select 1 from public.users u
+        where u.id = p_bruger
+          and u.konto_slettet_kl is null
+          and not (coalesce(u.suspenderet, false)
+                   and (u.suspenderet_til is null or u.suspenderet_til > now()))
+          -- NYT (MitID): kun verificerede (firmakonti kan ikke byde).
+          and u.mitid_verificeret_kl is not null)
+     and not public.er_blokeret(p_saelger, p_bruger);
+$$;
+
+revoke all on function public.autobud_maa_byde(uuid, uuid) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 10. Appens afslutning (POST /api/mitid/app/afslut, service_role).
+--     Callbacken registrerer ikke appens forløb - den gemmer identiteten på
+--     forløbet i højst 5 minutter og sender appen et engangs-id (k). Kun den
+--     bruger, der startede forløbet (Bearer-session), og som kender
+--     app-hemmeligheden (kun dens SHA-256 er gemt), kan afslutte. Engangsbrug
+--     og atomisk: forløbet låses, identiteten ryddes, og mitid_registrer køres
+--     i samme transaktion.
+-- ---------------------------------------------------------------------------
+create or replace function public.mitid_app_afslut(p_bruger uuid, p_afslut_hash text, p_hemmelighed_hash text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  f record;
+begin
+  if p_bruger is null or p_afslut_hash is null or p_hemmelighed_hash is null
+     or p_afslut_hash !~ '^[0-9a-f]{64}$' or p_hemmelighed_hash !~ '^[0-9a-f]{64}$' then
+    return jsonb_build_object('kode', 'udloebet');
+  end if;
+
+  select id, id_hash, juridisk_navn, foedselsdato into f
+    from public.mitid_flow
+   where afslut_hash = p_afslut_hash
+     and app
+     and afsluttet_kl is null
+     and identitet_udloeber_kl > now()
+     and bruger_id = p_bruger
+     and app_hemmelighed_hash = p_hemmelighed_hash
+     and id_hash is not null
+   for update;
+  if not found then
+    return jsonb_build_object('kode', 'udloebet');
+  end if;
+
+  update public.mitid_flow
+     set afsluttet_kl = now(), afslut_hash = null,
+         id_hash = null, juridisk_navn = null, foedselsdato = null
+   where id = f.id;
+
+  return public.mitid_registrer(p_bruger, f.id_hash, f.juridisk_navn, f.foedselsdato);
+end $$;
+
+revoke all on function public.mitid_app_afslut(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.mitid_app_afslut(uuid, text, text) to service_role;

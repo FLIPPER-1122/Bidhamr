@@ -253,7 +253,7 @@ Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverand
 
 ## 9. Når du sletter din konto
 
-Du sletter din konto under Min konto → Slet konto. Det kan ikke lade sig gøre, mens du har noget i gang (fx bud, handler, sager eller penge undervejs) – siden viser, hvad der mangler.
+Du sletter din konto under Min konto → Slet konto. Det kan ikke lade sig gøre, mens du har noget i gang (fx bud, handler, sager eller penge undervejs), mens kontoen er suspenderet, eller mens du har advarsler – siden viser, hvad der mangler. [ADVOKAT: se noter-til-advokat.md nr. 110.]
 
 Når kontoen slettes:
 

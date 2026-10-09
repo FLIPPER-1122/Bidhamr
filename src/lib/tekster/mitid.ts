@@ -14,6 +14,11 @@ export const MITID = {
   kraevesPrivat:
     "Andre ser kun dit brugernavn og mærket \"MitID-verificeret\" – aldrig dit navn fra MitID. Vi gemmer ikke dit CPR-nummer.",
 
+  // Maksimum (automatisk bud) fra en bruger uden MitID byder ikke videre.
+  maksimumStoppet: "Bekræft med MitID for at fortsætte dit maksimumbud.",
+  maksimumStoppetTekst:
+    "Dit maksimumbud byder ikke automatisk for dig, før du har bekræftet dig med MitID. De bud, du allerede har afgivet, gælder stadig.",
+
   // Fejl fra databasen (BHV01).
   fejlMangler: "Bekræft dig med MitID, før du byder eller sætter varer til salg. Det gør du kun én gang.",
 
@@ -27,6 +32,8 @@ export const MITID = {
     under18: "Du skal være fyldt 18 år for at byde og sælge på BidHamr.",
     lukket:
       "Dit MitID hører til en konto, som BidHamr har lukket permanent. Derfor kan det ikke bruges til en ny konto. Skriv til support@bidhamr.dk, hvis du har spørgsmål.",
+    tidligereSpaerret:
+      "Dit MitID hører til en konto, der blev slettet, mens den var suspenderet eller havde advarsler. Derfor kan det ikke bruges til en ny konto. Skriv til support@bidhamr.dk, hvis du har spørgsmål.",
     andenMitid:
       "Din konto er allerede bekræftet med et andet MitID. Skriv til support@bidhamr.dk, hvis du mener, det er en fejl.",
     erhverv: "Firmakonti skal ikke bekræftes med MitID.",

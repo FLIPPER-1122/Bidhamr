@@ -21,6 +21,19 @@ const TYPE: Record<string, TypeInfo> = {
     hjaelp: "En chef skal fjerne din medarbejderrolle, før kontoen kan slettes.",
     enkelt: "",
   },
+  // Kontoen kan ikke slettes, mens den er suspenderet eller har advarsler
+  // (MitID, chefens valg 9. okt. 2026): ellers kunne man starte forfra.
+  suspenderet: {
+    titel: () => "Du kan ikke slette din konto, mens den er suspenderet",
+    hjaelp: "Vent, til suspensionen er ophævet. Skriv til support@bidhamr.dk, hvis du har spørgsmål.",
+    enkelt: "",
+  },
+  advarsler: {
+    titel: () => "Du kan ikke slette din konto, mens du har advarsler",
+    hjaelp:
+      "Advarsler følger kontoen, så de ikke kan nulstilles ved at oprette en ny. Skriv til support@bidhamr.dk, hvis du mener, en advarsel er forkert.",
+    enkelt: "",
+  },
   firmakonto: {
     titel: () => "Det er en firmakonto",
     hjaelp: "En firmakonto lukkes af BidHamr. Skriv til erhverv@bidhamr.dk, så hjælper vi dig.",
@@ -113,7 +126,7 @@ export default function Blokeringer({
       {[...grupper].map(([type, liste]) => {
         const t = TYPE[type] ?? UKENDT;
         const oversigt = t.oversigt?.(brugerId) ?? null;
-        const medLink = type === "staff" || type === "firmakonto" ? [] : liste.filter((b) => b.link);
+        const medLink = ["staff", "firmakonto", "suspenderet", "advarsler"].includes(type) ? [] : liste.filter((b) => b.link);
         const vist = medLink.slice(0, MAKS_LINKS);
         const resten = medLink.length - vist.length;
         return (

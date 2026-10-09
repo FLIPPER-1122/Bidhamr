@@ -51,37 +51,67 @@ markedsplads.
 
 ## Appen (Expo)
 
-Appen bruger hjemmesidens server – ingen hemmeligheder i appen.
+Appen bruger hjemmesidens server – ingen Idura-hemmeligheder i appen.
 
-1. `POST https://bidhamr.dk/api/mitid/app` med `Authorization: Bearer <Supabase access token>`.
+**Sikkerhed (vigtigt):** callbacken registrerer IKKE appens forløb. Ellers
+kunne en angriber starte et forløb på sin egen konto og sende linket til et
+offer, der så bekræftede angriberens konto med sit MitID (phishing). I stedet
+gemmes den verificerede identitet på forløbet i højst 5 minutter, og appen
+afslutter selv – kun med samme Bearer-session som ved start og med en
+app-hemmelighed, som kun appen kender.
+
+1. Lav en tilfældig **app-hemmelighed** (mindst 32 bytes, fx
+   `Crypto.getRandomBytesAsync(32)` → hex) og hold den kun i hukommelsen.
+2. `POST https://bidhamr.dk/api/mitid/app` med `Authorization: Bearer <Supabase access token>`
+   og JSON `{ "hemmelighed_hash": "<hex SHA-256 af hemmeligheden>" }`.
    Svar `200 { url, udloeber }` – `url` er `https://bidhamr.dk/api/mitid/start?t=<engangs-token>`
    (gyldig i 2 minutter, kan bruges én gang; kun SHA-256 af tokenet gemmes).
-   Fejl: `401 ikke_logget_ind`, `409 allerede | erhverv`, `429 for_mange`,
-   `503 ikke_tilgaengelig`, `500 fejl` (JSON `{ fejl, kode }`).
-2. Åbn `url` i en in-app browser med callback-skemaet `bidhamr://mitid`:
+   Fejl: `400 ugyldig`, `401 ikke_logget_ind`, `409 allerede | erhverv`,
+   `429 for_mange`, `503 ikke_tilgaengelig`, `500 fejl` (JSON `{ fejl, kode }`).
+3. Åbn `url` i en in-app browser med callback-skemaet `bidhamr://mitid`.
+4. Efter MitID ender in-app browseren på
+   - `bidhamr://mitid?k=<engangs-id>` – MitID gennemført, appen skal afslutte, eller
+   - `bidhamr://mitid?status=<resultat>` – afbrudt/udløbet/fejl (intet at afslutte).
+5. Afslut: `POST https://bidhamr.dk/api/mitid/app/afslut` med samme Bearer-token og
+   JSON `{ "k": "<engangs-id>", "hemmelighed": "<hemmeligheden i klartekst>" }`.
+   Svar `200 { status, besked }` (`ok`, `allerede`, `dobbeltkonto`, `under18`,
+   `lukket`, `tidligereSpaerret`, `andenMitid`, `erhverv`, `udloebet`, `fejl`).
+   Kan bruges én gang og kun inden for 5 minutter; forkert bruger eller
+   hemmelighed giver `udloebet`.
 
    ```ts
    import * as WebBrowser from "expo-web-browser";
-   const r = await fetch(`${SITE}/api/mitid/app`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}` } });
+   import * as Crypto from "expo-crypto";
+
+   const bytes = await Crypto.getRandomBytesAsync(32);
+   const hemmelighed = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+   const hemmelighed_hash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, hemmelighed);
+   const auth = { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" };
+
+   const r = await fetch(`${SITE}/api/mitid/app`, { method: "POST", headers: auth, body: JSON.stringify({ hemmelighed_hash }) });
    const { url } = await r.json();
    const res = await WebBrowser.openAuthSessionAsync(url, "bidhamr://mitid");
    if (res.type === "success") {
-     const status = new URL(res.url).searchParams.get("status"); // ok | dobbeltkonto | under18 | …
-     // Vis teksten fra MITID.resultat[status], og hent profilen igen.
+     const q = new URL(res.url).searchParams;
+     const k = q.get("k");
+     const svar = k
+       ? await (await fetch(`${SITE}/api/mitid/app/afslut`, { method: "POST", headers: auth, body: JSON.stringify({ k, hemmelighed }) })).json()
+       : { status: q.get("status") };
+     // Vis teksten (svar.besked eller MITID.resultat[svar.status]), og hent profilen igen.
    }
    ```
-3. Efter MitID ender in-app browseren på `bidhamr://mitid?status=<resultat>`
-   (samme værdier som `?mitid=` på hjemmesiden). Skemaet kan ændres med
-   `MITID_APP_RETUR` (kun et eget app-skema – aldrig http/https).
-4. Appen skal kende fejlkoden **BHV01** på `bids`-insert, `saet_maksimum`,
+6. Skemaet kan ændres med `MITID_APP_RETUR` (kun et eget app-skema – aldrig http/https).
+7. Appen skal kende fejlkoden **BHV01** på `bids`-insert, `saet_maksimum`,
    `auctions`-insert og vise "Bekræft med MitID" – og vise mærket
-   "MitID-verificeret" ud fra `users.mitid_verificeret_kl` (kan læses af alle).
-   Egen status: `users.mitid_verificeret_kl` og `mitid_verificeringer`
-   (kun egne rækker). `mine_data()` har nu en `mitid`-nøgle.
+   "MitID-verificeret" ud fra `users.mitid_verificeret_kl` (kan læses af alle;
+   ikke for firmakonti). Har brugeren et maksimumbud uden MitID: vis
+   "Bekræft med MitID for at fortsætte dit maksimumbud." Egen status:
+   `users.mitid_verificeret_kl` og `mitid_verificeringer` (kun egne rækker).
+   `mine_data()` har en `mitid`-nøgle. Kontosletning kan nu blokeres af
+   typerne `suspenderet` og `advarsler`.
 
 Krav i appen: deep link-skemaet `bidhamr` skal være registreret (`scheme` i
-`app.json`). Bemærk: in-app browseren har ingen hjemmeside-session – det er
-engangs-tokenet, der binder forløbet til brugeren.
+`app.json`).
 
 ## Admin
 
@@ -93,8 +123,16 @@ engangs-tokenet, der binder forløbet til brugeren.
   dobbeltkonti" (`admin_mitid_forsoeg()`), kan markeres som gennemgået
   (`mitid_forsoeg_behandlet`).
 
-## Kontosletning (chefens valg)
+## Kontosletning og maksimumbud (chefens valg)
 
+- Kontoen kan ikke slettes, mens den er suspenderet eller har advarsler
+  ("Du kan ikke slette din konto, mens den er suspenderet." / "… mens du har
+  advarsler.") - ellers kunne man starte forfra uden advarsler.
+- Er en konto alligevel slettet, mens den var suspenderet eller havde
+  advarsler (fx før reglen), afvises en ny konto med samme MitID
+  (`tidligere_spaerret`) og markeres til staff.
+- Maksimumbud fra brugere uden MitID afgiver ikke flere automatiske bud
+  (`autobud_maa_byde`) – også maksima sat før migrationen. Afgivne bud står.
 - Hashen bevares (status `slettet`), så en lukket konto aldrig kan få en ny
   konto verificeret, og så staff ser det, når en slettet bruger kommer igen
   (`mitid_forsoeg.aarsag = 'tidligere_slettet'` – tilladt, men markeret).
@@ -112,9 +150,18 @@ engangs-tokenet, der binder forløbet til brugeren.
 | `MITID_CALLBACK_URL` | (valgfri) | (valgfri – standard `https://bidhamr.dk/api/mitid/callback`) |
 | `MITID_APP_RETUR` | (valgfri, standard `bidhamr://mitid`) | (valgfri) |
 
-**bidhamr.dk skal være den faste adresse** (www.bidhamr.dk skal omdirigere til
-bidhamr.dk i Vercel): state-cookien sættes på det domæne, flowet startes fra,
-og callbacken ligger altid på `https://bidhamr.dk/api/mitid/callback`.
+## Go-live (Filip)
+
+1. **www.bidhamr.dk SKAL omdirigere til bidhamr.dk i Vercel** (Project →
+   Settings → Domains: `bidhamr.dk` som primært domæne, `www.bidhamr.dk` →
+   "Redirect to bidhamr.dk"). State-cookien sættes på det domæne, flowet
+   startes fra, og callbacken ligger altid på `https://bidhamr.dk/api/mitid/callback`
+   – uden omdirigering fejler MitID for alle, der kommer ind via www.
+2. Idura: produktions-application, callback `https://bidhamr.dk/api/mitid/callback`,
+   databehandleraftale og MitID-ansøgning.
+3. Vercel-variablerne i tabellen ovenfor (ny `MITID_HASH_NOEGLE`).
+4. Kør `20261013010000_mitid.sql` i produktion (Filips "ja") – først når
+   appen kan MitID, ellers kan appbrugere uden MitID ikke byde/sælge.
 
 Generér en nøgle: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
 Mangler en variabel, viser knappen "MitID er ikke tilgængelig lige nu" (fail closed).

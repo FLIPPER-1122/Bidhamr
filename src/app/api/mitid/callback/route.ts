@@ -6,13 +6,22 @@ import { logDriftFejl } from "@/lib/drift";
 import {
   callbackUrl,
   ensStrenge,
+  tilfaeldig,
   hentIdentitet,
   mitIdHash,
   mitIdKonfig,
   sha256Hex,
   sideOrigin,
 } from "@/lib/mitid/oidc";
-import { MITID_COOKIE, STANDARD_RETUR, resultatFraKode, tilApp, tilSide } from "@/lib/mitid/flow";
+import {
+  APP_AFSLUT_LEVETID_SEK,
+  MITID_COOKIE,
+  STANDARD_RETUR,
+  resultatFraKode,
+  tilApp,
+  tilAppAfslut,
+  tilSide,
+} from "@/lib/mitid/flow";
 import type { MitIdResultat } from "@/lib/tekster/mitid";
 
 // Idura sender brugeren hertil efter MitID (registreret som
@@ -22,13 +31,18 @@ import type { MitIdResultat } from "@/lib/tekster/mitid";
 //    i mitid_flow (forbruges atomisk - kan kun bruges én gang).
 // 2. Koden byttes til tokens med client secret + PKCE-verifier.
 // 3. id_token verificeres (RS256-signatur mod JWKS, issuer, audience, exp, iat, nonce).
-// 4. mitid_registrer afgør reglerne i databasen: 18 år, én MitID = én konto,
-//    lukkede konti. Kun en HMAC af MitIDs Person-ID gemmes - aldrig CPR (der
-//    bedes ikke om scope "ssn").
+// 4. Hjemmesiden: mitid_registrer afgør reglerne i databasen: 18 år, én
+//    MitID = én konto, lukkede konti. Kun en HMAC af MitIDs Person-ID gemmes -
+//    aldrig CPR (der bedes ikke om scope "ssn").
+//    Appen: callbacken registrerer IKKE. Identiteten gemmes på forløbet i
+//    højst 5 minutter, og appen får et engangs-id (bidhamr://mitid?k=…), som
+//    kun kan indløses af den bruger, der startede, med app-hemmeligheden
+//    (POST /api/mitid/app/afslut). Så kan et link sendt til en anden person
+//    ikke bruges til at verificere angriberens konto med offerets MitID.
 
 export const dynamic = "force-dynamic";
 
-type Flow = { bruger_id: string; nonce: string; code_verifier: string; retur: string | null; app: boolean };
+type Flow = { id: string; bruger_id: string; nonce: string; code_verifier: string; retur: string | null; app: boolean };
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -54,7 +68,7 @@ export async function GET(req: NextRequest) {
       .eq("state_hash", sha256Hex(state))
       .is("brugt_kl", null)
       .gt("udloeber_kl", new Date().toISOString())
-      .select("bruger_id, nonce, code_verifier, retur, app")
+      .select("id, bruger_id, nonce, code_verifier, retur, app")
       .maybeSingle<Flow>();
     if (error) throw error;
     flow = data;
@@ -86,9 +100,26 @@ export async function GET(req: NextRequest) {
       codeVerifier: flow.code_verifier,
       nonce: flow.nonce,
     });
+    const idHash = mitIdHash(k, id.personId);
+    if (flow.app) {
+      const afslut = tilfaeldig(32);
+      const { error: gemFejl } = await admin
+        .from("mitid_flow")
+        .update({
+          id_hash: idHash,
+          juridisk_navn: id.navn,
+          foedselsdato: id.foedselsdato,
+          afslut_hash: sha256Hex(afslut),
+          identitet_udloeber_kl: new Date(Date.now() + APP_AFSLUT_LEVETID_SEK * 1000).toISOString(),
+        })
+        .eq("id", flow.id)
+        .is("afsluttet_kl", null);
+      if (gemFejl) throw gemFejl;
+      return tilAppAfslut(afslut);
+    }
     const { data, error } = await admin.rpc("mitid_registrer", {
       p_bruger: flow.bruger_id,
-      p_hash: mitIdHash(k, id.personId),
+      p_hash: idHash,
       p_navn: id.navn,
       p_foedselsdato: id.foedselsdato,
     });

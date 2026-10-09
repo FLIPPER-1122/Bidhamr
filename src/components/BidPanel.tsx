@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import MitIDKraeves from "@/components/mitid/MitIDKraeves";
+import { MITID } from "@/lib/tekster/mitid";
 import Ikon from "@/components/Ikon";
 import { createClient } from "@/lib/supabase/client";
 import { afgivBud, saetMaksimum } from "@/app/actions/bud";
@@ -680,6 +681,12 @@ export default function BidPanel({
         </div>
       ) : brugerId && mitidMangler ? (
         <div className="mt-4">
+          {mitMaksimum !== null && (
+            <div role="note" className="mb-3 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+              <p className="font-semibold">{MITID.maksimumStoppet}</p>
+              <p className="mt-1">{MITID.maksimumStoppetTekst}</p>
+            </div>
+          )}
           <MitIDKraeves sted="bud" retur={`/auktion/${auktionId}`} />
         </div>
       ) : brugerId ? (

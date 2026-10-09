@@ -33,6 +33,7 @@ const FORSOEG_TEKST: Record<string, string> = {
   lukket_konto: "MitID'en hører til en permanent lukket konto",
   under_18: "Under 18 år",
   tidligere_slettet: "Samme MitID som en slettet konto (tilladt)",
+  tidligere_spaerret: "Afvist: samme MitID som en slettet konto, der var suspenderet eller havde advarsler",
 };
 
 const STATUS_TEKST: Record<Verificering["status"], string> = {
