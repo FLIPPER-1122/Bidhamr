@@ -110,7 +110,7 @@ Skriver du dig op til ventelisten før lanceringen, gemmer vi din e-mail og send
 ### 3.10 Kommer senere (rettes, når det er i drift)
 
 - **MitID** [TODO Filip: ikke bygget endnu]: når du verificerer dig med MitID via vores leverandør Criipto, får vi bekræftet din identitet og [TODO: hvilke oplysninger – fx navn og fødselsdato, og et id, der forhindrer en ny konto efter lukning]. Vi gemmer ikke dit CPR-nummer, medmindre loven kræver det. [ADVOKAT: hvilke MitID-oplysninger må vi gemme for at forhindre, at lukkede brugere opretter en ny konto?]
-- **Fragtfirma** [TODO Filip: ikke i drift endnu]: når fragtintegrationen er på plads, sender vi de oplysninger, der skal til for at sende pakken – fx sælgerens og købers navn, købers pakkeshop, e-mail og telefonnummer – til fragtfirmaet [TODO: GLS og/eller Shipmondo].
+- **Fragtfirma** [TODO Filip: ikke i drift endnu]: når fragtintegrationen er på plads, sender vi de oplysninger, der skal til for at sende pakken – fx sælgerens og købers navn, købers pakkeshop, e-mail og telefonnummer – til fragtfirmaet DAO (Dansk Avis Omdeling A/S) [TODO: i testperioden går det via Shipmondo; når DAO-aftalen er i drift, sendes det direkte til DAO].
 - **Regnskabsprogram** [TODO Filip: ikke i drift endnu]: fakturaer på BidHamrs gebyrer laves i et regnskabsprogram (sandsynligvis Dinero).
 - **DAC7** [TODO Filip: ikke bygget endnu]: se afsnit 5.
 
@@ -182,6 +182,10 @@ Vi bruger ikke Google Analytics, Facebook Pixel, reklamenetværk eller andre spo
 Betalingen håndteres af vores betalingspartner Stripe. Når du betaler, gemmer et kort eller opretter en udbetalingskonto, giver du dine oplysninger direkte til Stripe. Vi deler fx dit navn, din e-mail og handlens beløb med Stripe, så betalingen kan gennemføres. Stripe er selvstændigt dataansvarlig for en del af behandlingen, fx kontrol af identitet ved udbetalingskonti, svindelforebyggelse og krav efter hvidvaskloven. Læs Stripes privatlivspolitik på stripe.com/privacy. Stripe Payments Europe Ltd. ligger i Irland, men oplysninger kan blive overført til Stripe i USA.
 
 [ADVOKAT: Hvilke dele er Stripe databehandler for, og hvilke er Stripe selvstændigt dataansvarlig for?]
+
+### 6.4a MapTiler (kort i checkout)
+
+Når du vælger en pakkeshop, viser vi et kort. Kortbillederne hentes fra MapTiler AG i Schweiz (kortdata fra OpenStreetMap). Din browser henter billederne direkte fra MapTiler, så MapTiler modtager din IP-adresse og oplysninger om din browser – men ikke dit navn, din adresse eller hvad du har købt. Søgningen efter pakkeshops sker gennem os, ikke gennem MapTiler. Schweiz er af EU-Kommissionen godkendt som et land med tilstrækkeligt beskyttelsesniveau. Læs MapTilers privatlivspolitik på maptiler.com/privacy-policy. [ADVOKAT: Er MapTiler databehandler for os, eller selvstændigt dataansvarlig for de tekniske oplysninger? Kræver det en databehandleraftale?]
 
 ### 6.5 Myndigheder og andre
 

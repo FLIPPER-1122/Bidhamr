@@ -46,10 +46,22 @@ export default function PakkeshopKort({
   useEffect(() => {
     if (!elRef.current) return;
     const kort = L.map(elRef.current, { center: DANMARK, zoom: 6, scrollWheelZoom: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(kort);
+    // Kortfliser fra MapTiler (betalt udbyder, nøglen er låst til vores
+    // domæner). Uden nøgle (fx lokalt) bruges OpenStreetMaps gratis fliser.
+    const maptilerNoegle = process.env.NEXT_PUBLIC_MAPTILER_KEY;
+    const osm =
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+    L.tileLayer(
+      maptilerNoegle
+        ? `https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=${encodeURIComponent(maptilerNoegle)}`
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      {
+        maxZoom: 19,
+        attribution: maptilerNoegle
+          ? `&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> ${osm}`
+          : osm,
+      },
+    ).addTo(kort);
     kort.attributionControl.setPrefix(false);
     lagRef.current = L.layerGroup().addTo(kort);
     kortRef.current = kort;
