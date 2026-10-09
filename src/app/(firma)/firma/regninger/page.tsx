@@ -3,11 +3,17 @@ import { FirmaSide, Kort } from "@/components/firma/dele";
 import { E_KNAP_PRIMAER, E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
 import { FIRMA_BETALING as B, FIRMA_OVERSIGT as T, FIRMA_OVERSIGT_EKSTRA as X } from "@/lib/tekster/erhverv";
 import { krFraOere, langDato } from "@/lib/erhverv/visning";
+import { createClient } from "@/lib/supabase/server";
+import { hentMineFakturaer } from "@/lib/faktura/data";
+import { FAKTURA_TEKST as F } from "@/lib/faktura/tekster";
+import FakturaListe from "@/components/faktura/FakturaListe";
 
 // Regninger fra BidHamr (firma_regninger via firma_oversigt). Fakturaerne
 // laves af Stripe Billing (src/lib/erhverv/betaling.ts): beløb ekskl. moms,
 // moms (25 %) og i alt, "Hent faktura (PDF)" og - for en ubetalt regning -
 // Stripes fakturaside. Kun https-links.
+// Nederst: BidHamrs fakturaer på sælgergebyret ved hvert salg (Dinero,
+// src/lib/faktura) - udstedt til firmaet med CVR.
 
 export const metadata = { title: T.regninger.titel };
 
@@ -17,6 +23,7 @@ function https(url: string | null): url is string {
 
 export default async function FirmaRegninger() {
   const { oversigt: o } = await kraevFirma("/firma/regninger");
+  const fakturaer = await hentMineFakturaer(await createClient());
 
   return (
     <FirmaSide titel={T.regninger.titel} intro={T.regninger.forklaring}>
@@ -60,6 +67,15 @@ export default async function FirmaRegninger() {
               );
             })}
           </ul>
+        )}
+      </Kort>
+      <Kort id="fakturaer-gebyrer" titel={F.firmaTitel} forklaring={F.firmaIntro}>
+        {fakturaer === null ? (
+          <p role="alert" className={E_TEKST}>{F.fejl}</p>
+        ) : fakturaer.length === 0 ? (
+          <p className={E_TEKST}>{F.firmaTom}</p>
+        ) : (
+          <FakturaListe fakturaer={fakturaer} handelSti={(id) => `/firma/salg/${id}`} />
         )}
       </Kort>
     </FirmaSide>
