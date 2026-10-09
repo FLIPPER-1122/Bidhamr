@@ -28,6 +28,7 @@ import { hentAfhentningInfo } from "@/app/actions/afhentning";
 import { VisAfhentningskode, IndtastAfhentningskode } from "@/components/Afhentning";
 import { hentMinKvittering } from "@/lib/betaling/kvittering";
 import { KvitteringBoks } from "@/components/Kvittering";
+import FakturaBoks from "@/components/faktura/FakturaBoks";
 import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
 import { hentAfsendelsesfristAnnullering } from "@/lib/betaling/afsendelsesfrist";
 import { hentAfhentningsfristAnnullering } from "@/lib/betaling/afhentningsfrist";
@@ -734,6 +735,8 @@ export default async function HandelDetalje({
 
         {udbetaling && <UdbetalingStatusBoks v={udbetaling} />}
         {kvittering && <KvitteringBoks k={kvittering} />}
+        {/* BidHamrs fakturaer på gebyrer, fragt og BidHamr Beskyttelse (src/lib/faktura). */}
+        <FakturaBoks tradeId={handel.id} />
 
         {/* Køberen kan oprette en sag */}
         {muligheder && !muligheder.harSag && (muligheder.typer.length > 0 || muligheder.kraeverBeskyttelse.length > 0) && (
