@@ -13,6 +13,7 @@ const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
 
 const KODER: Record<string, string> = {
   ingen_adgang: "Kun chefen kan gøre det.",
+  inhabil: "Du kan ikke behandle en faktura, hvor du selv er modtager, køber eller sælger.",
   ikke_fundet: "Fakturaen findes ikke.",
   manuel: "Denne faktura skal laves manuelt i Dinero og derefter markeres som håndteret.",
   faerdig: "Fakturaen er allerede færdig.",

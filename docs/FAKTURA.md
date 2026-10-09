@@ -15,6 +15,8 @@ Kode: `src/lib/faktura/` (dinero.ts, konfig.ts, proces.ts, koe.ts, data.ts, teks
 | Erhvervsabonnement betalt (Stripe Billing) | Finansbilag i kassekladden, Stripe-fakturaen vedhæftet | – (firmaet har Stripes faktura) | Abonnement (salg m/moms) |
 | Abonnementsfaktura refunderet | Modpostering i kassekladden | – | Samme beløb negativt |
 
+- Kun betalinger i betalingsmodellen destination (`betalinger.pengemodel = 'destination'`) faktureres. Gamle betalinger fra den tidligere model ("separate charges and transfers", `separat`) faktureres ikke – de findes kun i testdatabasen; produktionen har ingen.
+- Fragtlinjen er `betalinger.fragt_oere` (låst ved betalingen) og hedder efter købers leveringsvalg i checkout: "Fragt (levering til pakkeshop)" eller "Fragt (levering til døren)" (`handel_levering.maade`). Afhentning = ingen fragtlinje.
 - Ingen faktura på selve varen (privatsalg). Faktura på varen ved firmasalg er IKKE bygget (venter på revisor, `jura/noter-til-advokat.md` nr. 95).
 - Momsen udskilles af Dinero pr. linje: netto = beløb × 4/5 afrundet til hele øre, moms = resten (fx købergebyr 12,35 kr. = 9,88 + 2,47 moms). Verificeret mod sandkassen: totalen i Dinero er altid præcis det beløb, Stripe har trukket.
 - Konti (kan ændres med miljøvariabler): gebyrer, BidHamr Beskyttelse og abonnement på **1000 "Salg af varer/ydelser m/moms"** (U25), fragt på **1350 "Salg af fragt – momspligtig"** (U25), betalinger på **55000** (se afsnit 4).
@@ -31,6 +33,8 @@ Kode: `src/lib/faktura/` (dinero.ts, konfig.ts, proces.ts, koe.ts, data.ts, teks
 2. **Bogføringsloven** kræver, at transaktioner registreres løbende. Gebyret er en pengebevægelse på BidHamrs Stripe-konto den dag.
 3. Annulleres handlen bagefter, er en kreditnota den korrekte måde at tilbageføre på (fakturaer slettes aldrig).
 
+Er fakturaen selv stoppet, håndteret manuelt eller oprettet som "skal laves manuelt", laves kreditnotaen (og en abonnements-modpostering) også som "skal laves manuelt" med teksten "Fakturaen blev håndteret manuelt – lav kreditnotaen manuelt i Dinero".
+
 Konkret: en faktura laves, når betalingen er gennemført og BidHamrs gebyr er spejlet fra Stripe (`betalinger.betalt_kl` og `stripe_application_fee_id`). Kreditnotaen laves, når refusionen er gennemført (`refunderet_kl`) – for præcis det, BidHamr har givet tilbage af sit gebyr (`refusion_gebyr_oere`). Passer det beløb hverken med "alt" eller "alt undtagen BidHamr Beskyttelse", laves INGEN automatisk kreditnota; den står under Admin → Fakturaer som "skal laves manuelt".
 
 Skal Filip/revisoren hellere have fakturaen ved frigivelsen, er det én betingelse i `faktura_planlaeg` (`x.betalt_kl` → `x.frigivet_kl`) – men så skal annullerede handler, der er betalt og refunderet før frigivelsen, slet ikke have faktura/kreditnota, og momsperioden skal vurderes (spørgsmål til revisor nr. 96).
@@ -44,8 +48,10 @@ Skal Filip/revisoren hellere have fakturaen ved frigivelsen, er det én betingel
    - Faktura/kreditnota: oprettes med **vores guid = `fakturaer.id`**. Findes den allerede (genforsøg), svarer Dinero 409 – den genbruges. Kontrol: kontakt, beløb og linjer skal passe, ellers stop til staff. Bogføres, nummer og moms gemmes.
    - Betaling: registreres kun, hvis der ikke allerede er en betaling med samme reference (`bidhamr-betaling-<id>` / `bidhamr-refusion-<id>`), og restbeløbet passer præcis.
    - PDF'en gemmes privat i storage-bucket `fakturaer` (kun service role).
-4. Fejl: spredte forsøg (5, 10, 20, 40 min), efter 5 fejl "opgivet" + drift-alarm `faktura/dinero` (som refusionskøen). Dinero afviser indholdet (fx et ugyldigt CVR-nummer): stoppet med det samme + drift-alarm. Dineros grænse (60 kald i minuttet → 429) bruger ikke et forsøg; højst ca. 45 kald og 60 sekunder pr. kørsel.
-5. Admin → Fakturaer (kun chef): "Prøv igen" og "Markér som håndteret i Dinero" (med note).
+4. Fejl: spredte forsøg (5, 10, 20, 40 min), efter 5 fejl "opgivet" + drift-alarm `faktura/dinero` (som refusionskøen). Dinero afviser indholdet (fx et ugyldigt CVR-nummer): stoppet med det samme + drift-alarm. Dineros grænse (60 kald i minuttet → 429) bruger ikke et forsøg. Tidsbudget: højst 8 s pr. kald, og nye dokumenter påbegyndes ikke efter 20 s (højst ca. 45 kald pr. kørsel), så betalings-cron'en ikke trækker ud.
+5. Drift-alarmer: én pr. dokument, der oprettes eller ender som "kræver handling" (også dem, planlægningen selv opretter som manuelle), og én samlet (`faktura:haenger`), når dokumenter har ventet over 2 timer – også når Dinero er sat op.
+6. Admin → Fakturaer (kun chef): "Har ventet over 2 timer", "Kræver handling", "Prøv igen" (logges: `proevet_igen_af`/`_kl`) og "Markér som håndteret i Dinero" (med note, logges: `haandteret_af`/`_kl`). Chefen kan ikke behandle et dokument, hvor han selv er modtager, køber eller sælger (inhabil).
+7. Abonnement refunderet: modposteringen dateres refusionsdagen (`firma_regninger.krediteret_kl`, sat af en trigger), og før den bogføres, slås det op hos Stripe, hvor meget der faktisk er refunderet. Kun en fuld refusion bogføres automatisk – en delvis stoppes til staff.
 
 Verificeret i sandkassen: et genforsøg efter et tabt svar (både efter bogføring og efter betaling) gav præcis én faktura og én betaling.
 
@@ -55,7 +61,7 @@ Verificeret i sandkassen: et genforsøg efter et tabt svar (både efter bogføri
 2. I det rigtige Dinero-regnskab (Pro eller Total): **Indstillinger → Virksomhed**: firmanavn **Bidhamr ApS**, CVR **46836219**, Ellegårdsvej 40, 4684 Holmegaard, e-mail og evt. logo (står på hver faktura). Fakturaskabelonen kan tilpasses (logo, farver).
 3. Kontoplan: tjek at 1000 og 1350 har momskode U25. **Opret en egen likvid konto "Stripe"** (fx 55100) – pengene står på Stripe, ikke i banken, indtil Stripe udbetaler – og sæt `DINERO_KONTO_INDBETALING` til den (revisoren bestemmer).
 4. **Integrationer → API-nøgler → Personlig integration**: hent client id og secret, og lav en API-nøgle for regnskabet. Organisations-id står i Dinero (eller hentes med `GET /v1/organizations`).
-5. Sæt miljøvariablerne i Vercel (Filip selv – agenter rører dem ikke): `DINERO_CLIENT_ID`, `DINERO_CLIENT_SECRET`, `DINERO_API_KEY`, `DINERO_ORG_ID`, `DINERO_MILJOE=live`, `DINERO_KONTO_INDBETALING` (og evt. `DINERO_KONTO_SALG`/`DINERO_KONTO_FRAGT`). Produktionen nægter at lave fakturaer uden `DINERO_MILJOE=live`, og testdatabasen nægter `live`.
+5. Sæt miljøvariablerne i Vercel (Filip selv – agenter rører dem ikke): `DINERO_CLIENT_ID`, `DINERO_CLIENT_SECRET`, `DINERO_API_KEY`, `DINERO_ORG_ID`, `DINERO_MILJOE=live`, `DINERO_LIVE_ORG_ID` (= det rigtige regnskabs id), `DINERO_KONTO_INDBETALING` (og evt. `DINERO_KONTO_SALG`/`DINERO_KONTO_FRAGT`). Produktionen nægter at lave fakturaer uden `DINERO_MILJOE=live`, og med `live` skal `DINERO_ORG_ID` være præcis `DINERO_LIVE_ORG_ID` (så sandkassens nøgler aldrig kan få rigtige kunders fakturaer). Testdatabasen nægter `live` og nægter at bruge `DINERO_LIVE_ORG_ID`. Dineros API har intet "demo"-flag på organisationen, så derudover tjekkes det før hver kørsel i live, at regnskabet har BidHamrs CVR 46836219 (`GET /v1.1/organizations`) – ellers laves intet, og der gives drift-alarm. Sæt derfor CVR i Dinero (punkt 2) før go-live.
 6. Kør migrationen `20261012080000_fakturaer.sql` i produktion (Filips "ja").
 7. Tjek Admin → Fakturaer: "Dinero: sat op (live-regnskab …)". Første betaling → faktura i Dinero inden for få minutter.
 

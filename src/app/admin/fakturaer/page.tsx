@@ -39,12 +39,19 @@ const DOKUMENT: Record<string, string> = {
 };
 const PART: Record<string, string> = { koeber: "køber", saelger: "sælger", firma: "firma" };
 
+// Dokumenter oprettet før dette tidspunkt har ventet over 2 timer.
+function haengerGraense(): string {
+  return new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+}
+
 export default async function AdminFakturaer() {
   const { admin } = await kraevSideRolle("chef");
   const konfig = hentFakturaKonfig();
 
   const taelle = () => admin.from("fakturaer").select("id", { count: "exact", head: true });
-  const [{ data: problemer, error: pFejl }, faerdig, venter, stoppet, manuelt] = await Promise.all([
+  // Dokumenter, der har ventet over 2 timer (drift-alarm faktura:haenger).
+  const haengerFra = haengerGraense();
+  const [{ data: problemer, error: pFejl }, faerdig, venter, stoppet, manuelt, { data: haenger }] = await Promise.all([
     admin
       .from("fakturaer")
       .select("id, dokument, part, trade_id, beloeb_oere, status, manuel, opgivet, forsoeg, sidste_fejl, dinero_nummer, betalt_dato, oprettet_kl")
@@ -56,6 +63,15 @@ export default async function AdminFakturaer() {
     taelle().in("status", ["venter", "kladde", "bogfoert"]).eq("opgivet", false),
     taelle().or("opgivet.eq.true,status.eq.kraever_handling").not("status", "in", "(faerdig,haandteret_manuelt)"),
     taelle().eq("status", "haandteret_manuelt"),
+    admin
+      .from("fakturaer")
+      .select("id, dokument, part, trade_id, beloeb_oere, status, manuel, opgivet, forsoeg, sidste_fejl, dinero_nummer, betalt_dato, oprettet_kl")
+      .in("status", ["venter", "kladde", "bogfoert"])
+      .eq("opgivet", false)
+      .eq("manuel", false)
+      .lt("oprettet_kl", haengerFra)
+      .order("oprettet_kl", { ascending: true })
+      .limit(100),
   ]);
   const aFejl = faerdig.error ?? venter.error ?? stoppet.error ?? manuelt.error;
   const tal = {
@@ -105,6 +121,34 @@ export default async function AdminFakturaer() {
               </div>
             ))}
           </dl>
+
+          {(haenger ?? []).length > 0 && (
+            <section className="rounded-lg border border-amber-200 bg-amber-50">
+              <h2 className="border-b border-amber-200 px-4 py-3 text-base font-semibold">
+                Har ventet over 2 timer ({(haenger ?? []).length})
+              </h2>
+              <p className="px-4 pt-3 text-sm text-gray-700">
+                Systemet prøver stadig selv. Står de længe, så tjek, at Dinero er sat op, og om en faktura, de venter på
+                (kreditnotaer venter på deres faktura), er stoppet herunder.
+              </p>
+              <ul className="divide-y divide-amber-100">
+                {((haenger ?? []) as Raekke[]).map((r) => (
+                  <li key={r.id} className="px-4 py-3 text-sm">
+                    <p className="font-medium">
+                      {DOKUMENT[r.dokument] ?? r.dokument} til {PART[r.part] ?? r.part} · {kr(r.beloeb_oere)} · {r.betalt_dato} ·{" "}
+                      status {r.status}
+                      {r.forsoeg ? ` · ${r.forsoeg} fejl` : ""}
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      Id {r.id}
+                      {r.trade_id ? ` · handel ${r.trade_id}` : ""}
+                    </p>
+                    {r.sidste_fejl && <p className="mt-1 break-words text-red-700">{r.sidste_fejl}</p>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <section className="rounded-lg border border-gray-200 bg-white">
             <h2 className="border-b border-gray-200 px-4 py-3 text-base font-semibold">Kræver handling</h2>

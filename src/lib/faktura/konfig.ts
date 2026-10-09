@@ -7,6 +7,9 @@ import type { DineroKonfig } from "./dinero";
 //   DINERO_CLIENT_ID, DINERO_CLIENT_SECRET  - "personlig integration" i Dinero
 //   DINERO_API_KEY                          - API-nøglen for organisationen
 //   DINERO_ORG_ID                           - organisationens id (tal)
+//   DINERO_LIVE_ORG_ID BidHamrs rigtige regnskabs id. Med DINERO_MILJOE=live
+//                      SKAL DINERO_ORG_ID være netop det (ellers ingen
+//                      fakturaer); i test må DINERO_ORG_ID aldrig være det.
 //   DINERO_MILJOE      test | live (standard test). Produktionsdatabasen
 //                      kræver live, testdatabasen må aldrig bruge live - så
 //                      rigtige kunder aldrig havner i sandkassen og omvendt.
@@ -55,6 +58,19 @@ export function hentFakturaKonfig(): FakturaKonfig {
       grund: "forkert_miljoe",
       besked: "Produktionsdatabasen kræver DINERO_MILJOE=live (ellers ville rigtige kunder havne i Dineros testregnskab).",
     };
+  }
+  // Låst org-id for live: en forkert nøgle/org (fx sandkassen i Vercel)
+  // kan aldrig få rigtige kunders fakturaer - og testen aldrig ramme live.
+  const liveOrg = (process.env.DINERO_LIVE_ORG_ID ?? "").trim();
+  if (miljoe === "live" && (!/^[0-9]{1,12}$/.test(liveOrg) || liveOrg !== orgId)) {
+    return {
+      ok: false,
+      grund: "forkert_miljoe",
+      besked: "DINERO_MILJOE=live kræver, at DINERO_ORG_ID er det samme som DINERO_LIVE_ORG_ID (BidHamrs rigtige regnskab).",
+    };
+  }
+  if (miljoe === "test" && liveOrg && liveOrg === orgId) {
+    return { ok: false, grund: "forkert_miljoe", besked: "Testmiljøet må ikke bruge BidHamrs rigtige regnskab (DINERO_LIVE_ORG_ID)." };
   }
   const salg = konto("DINERO_KONTO_SALG", 1000);
   const fragt = konto("DINERO_KONTO_FRAGT", 1350);

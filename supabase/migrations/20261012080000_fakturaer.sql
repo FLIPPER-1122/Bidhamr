@@ -126,6 +126,31 @@ create index if not exists fakturaer_trade_idx on public.fakturaer (trade_id) wh
 create index if not exists fakturaer_koe_idx
   on public.fakturaer (oprettet_kl) where status in ('venter', 'kladde', 'bogfoert') and not opgivet;
 
+-- Tilføjet efter review (kan køres oven på den første version af migrationen).
+alter table public.fakturaer
+  add column if not exists proevet_igen_af uuid references public.users(id),
+  add column if not exists proevet_igen_kl timestamptz;
+
+-- Abonnement: hvornår regningen blev krediteret (refunderet), så modposteringen
+-- dateres refusionsdagen. Sættes af en trigger, når status bliver 'krediteret'.
+alter table public.firma_regninger add column if not exists krediteret_kl timestamptz;
+comment on column public.firma_regninger.krediteret_kl is
+  'Hvornår regningen fik status krediteret (refunderet). Sat af trigger firma_regninger_krediteret_kl (20261012080000_fakturaer.sql).';
+
+create or replace function public.firma_regninger_krediteret_kl()
+returns trigger language plpgsql set search_path = '' as $fn$
+begin
+  if new.status = 'krediteret' and (tg_op = 'INSERT' or old.status is distinct from 'krediteret') then
+    new.krediteret_kl := coalesce(new.krediteret_kl, now());
+  end if;
+  return new;
+end
+$fn$;
+
+drop trigger if exists firma_regninger_krediteret_kl on public.firma_regninger;
+create trigger firma_regninger_krediteret_kl before insert or update of status on public.firma_regninger
+  for each row execute function public.firma_regninger_krediteret_kl();
+
 comment on table public.fakturaer is
   'BidHamrs fakturaer/kreditnotaer i Dinero (gebyrer, fragt, BidHamr Beskyttelse) og bogførte abonnementsfakturaer. Spejl + kø (faktura_planlaeg / faktura_claim). Brugeren ser egne fakturaer og kreditnotaer. Slettes aldrig (bogføringsloven).';
 
@@ -249,6 +274,9 @@ declare
   v_fejl     text;
   v_dato     date;
   v_tekst    text;
+  v_maade    text;
+  v_fragt    text;
+  v_moder    text := 'Fakturaen blev håndteret manuelt – lav kreditnotaen manuelt i Dinero.';
 begin
   -- 1) Fakturaer: betalte destination-betalinger, hvor BidHamrs gebyr er
   --    trukket og spejlet fra Stripe.
@@ -278,10 +306,20 @@ begin
       v_fejl := 'BidHamrs gebyr hos Stripe passer ikke med handlens købergebyr, sælgergebyr, fragt og BidHamr Beskyttelse - lav fakturaen manuelt i Dinero.';
     end if;
 
+    -- Fragtlinjen efter købers leveringsvalg i checkout (handel_levering,
+    -- 20261012010000_fragt_dao_shipmondo.sql). fragt_oere er låst ved betalingen.
+    v_maade := null;
+    if rb.fragt_oere > 0 and to_regclass('public.handel_levering') is not null then
+      execute 'select maade from public.handel_levering where trade_id = $1' into v_maade using rb.trade_id;
+    end if;
+    v_fragt := case v_maade when 'pakkeshop' then 'Fragt (levering til pakkeshop)'
+                            when 'doer' then 'Fragt (levering til døren)'
+                            else 'Fragt' end;
+
     -- Køberen: købergebyr + fragt + BidHamr Beskyttelse.
     select coalesce(jsonb_agg(v.l order by v.o), '[]'::jsonb) into v_linjer
       from (values (1, public.faktura_linje('koebergebyr', 'Købergebyr (5 %)', rb.koebergebyr_oere)),
-                   (2, public.faktura_linje('fragt', 'Fragt', rb.fragt_oere)),
+                   (2, public.faktura_linje('fragt', v_fragt, rb.fragt_oere)),
                    (3, public.faktura_linje('beskyttelse', 'BidHamr Beskyttelse', rb.beskyttelse_oere))) v(o, l)
      where v.l is not null;
     if jsonb_array_length(v_linjer) > 0 then
@@ -317,6 +355,7 @@ begin
   --      andet / ikke registreret  -> kræver handling (laves manuelt)
   for rf in
     select fa.id, fa.part, fa.bruger_id, fa.betaling_id, fa.trade_id, fa.linjer,
+           fa.manuel as moder_manuel, fa.status as moder_status,
            x.refunderet_kl, x.gebyr_refunderet_kl, x.refusion_gebyr_oere, x.application_fee_oere,
            x.beskyttelse_oere, x.stripe_refund_id
       from public.fakturaer fa
@@ -331,7 +370,13 @@ begin
     v_status := 'venter';
     v_manuel := false;
     v_fejl := null;
-    if rf.gebyr_refunderet_kl is null or rf.refusion_gebyr_oere is null then
+    if rf.moder_manuel or rf.moder_status in ('kraever_handling', 'haandteret_manuelt') then
+      -- Fakturaen findes ikke (sikkert) i Dinero med vores guid.
+      v_linjer := rf.linjer;
+      v_status := 'kraever_handling';
+      v_manuel := true;
+      v_fejl := v_moder;
+    elsif rf.gebyr_refunderet_kl is null or rf.refusion_gebyr_oere is null then
       v_linjer := rf.linjer;
       v_status := 'kraever_handling';
       v_manuel := true;
@@ -406,7 +451,8 @@ begin
 
   -- 3b) Refunderet abonnementsfaktura (krediteret efter betaling): modpostering.
   for rf in
-    select fa.id, fa.bruger_id, fa.firma_regning_id, fa.linjer, fa.beloeb_oere, fa.moms_oere, fa.stripe_reference
+    select fa.id, fa.bruger_id, fa.firma_regning_id, fa.linjer, fa.beloeb_oere, fa.moms_oere, fa.stripe_reference,
+           fa.manuel as moder_manuel, fa.status as moder_status, rg.krediteret_kl
       from public.fakturaer fa
       join public.firma_regninger rg on rg.id = fa.firma_regning_id
      where fa.dokument = 'abonnement'
@@ -414,10 +460,15 @@ begin
        and not exists (select 1 from public.fakturaer k where k.krediterer_id = fa.id)
      limit v_graense
   loop
+    v_manuel := rf.moder_manuel or rf.moder_status in ('kraever_handling', 'haandteret_manuelt');
+    -- Delvis refusion hos Stripe kontrolleres, før modposteringen bogføres
+    -- (src/lib/faktura/koe.ts) - passer beløbet ikke, stoppes den til staff.
     insert into public.fakturaer (dokument, part, bruger_id, firma_regning_id, krediterer_id, linjer, beloeb_oere,
-                                  moms_oere, betalt_dato, stripe_reference, status)
+                                  moms_oere, betalt_dato, stripe_reference, status, manuel, sidste_fejl)
     values ('abonnement_retur', 'firma', rf.bruger_id, rf.firma_regning_id, rf.id, rf.linjer, rf.beloeb_oere,
-            rf.moms_oere, (now() at time zone 'Europe/Copenhagen')::date, rf.stripe_reference, 'venter')
+            rf.moms_oere, (coalesce(rf.krediteret_kl, now()) at time zone 'Europe/Copenhagen')::date, rf.stripe_reference,
+            case when v_manuel then 'kraever_handling' else 'venter' end, v_manuel,
+            case when v_manuel then 'Bilaget blev håndteret manuelt – lav modposteringen manuelt i Dinero.' end)
     on conflict do nothing;
     get diagnostics n = row_count;
     v_retur := v_retur + n;
@@ -619,6 +670,17 @@ $fn$;
 
 -- ============================================================ 6. staff (chef)
 
+-- Inhabil: medarbejderen er selv modtager af dokumentet eller køber/sælger i
+-- handlen, det hører til.
+create or replace function public.faktura_inhabil(p_medarbejder uuid, p_id uuid)
+returns boolean language sql stable security definer set search_path = '' as $fn$
+  select exists (
+    select 1 from public.fakturaer f
+      left join public.betalinger b on b.id = f.betaling_id
+     where f.id = p_id
+       and (f.bruger_id = p_medarbejder or b.buyer_id = p_medarbejder or b.seller_id = p_medarbejder))
+$fn$;
+
 -- "Prøv igen": et opgivet dokument eller et, der er stoppet under
 -- behandlingen (ikke ved oprettelsen - manuel). Kun chef.
 create or replace function public.faktura_proev_igen(p_medarbejder uuid, p_id uuid)
@@ -634,6 +696,7 @@ begin
   end if;
   select * into f from public.fakturaer where id = p_id for update;
   if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
+  if public.faktura_inhabil(p_medarbejder, f.id) then return jsonb_build_object('kode', 'inhabil'); end if;
   if f.manuel then return jsonb_build_object('kode', 'manuel'); end if;
   if f.status in ('faerdig', 'haandteret_manuelt') then return jsonb_build_object('kode', 'faerdig'); end if;
   if not f.opgivet and f.status <> 'kraever_handling' then return jsonb_build_object('kode', 'koerer'); end if;
@@ -649,6 +712,8 @@ begin
                        then case when dinero_nummer is not null and dokument in ('faktura', 'kreditnota')
                                  then 'bogfoert' else 'venter' end
                        else status end,
+         proevet_igen_af = p_medarbejder,
+         proevet_igen_kl = now(),
          laas_til = null,
          laas_noegle = null
    where id = p_id;
@@ -672,6 +737,7 @@ begin
   if v_note is null then return jsonb_build_object('kode', 'note_mangler'); end if;
   select * into f from public.fakturaer where id = p_id for update;
   if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
+  if public.faktura_inhabil(p_medarbejder, f.id) then return jsonb_build_object('kode', 'inhabil'); end if;
   if f.status in ('faerdig', 'haandteret_manuelt') then return jsonb_build_object('kode', 'faerdig'); end if;
   if f.laas_til is not null and f.laas_til > now() then return jsonb_build_object('kode', 'koerer'); end if;
   if not f.opgivet and f.status <> 'kraever_handling' then return jsonb_build_object('kode', 'koerer'); end if;
@@ -744,6 +810,8 @@ revoke all on function public.faktura_alarm_claim(uuid) from public, anon, authe
 revoke all on function public.faktura_kontakt_reserver(uuid, text, boolean) from public, anon, authenticated;
 revoke all on function public.faktura_kontakt_gemt(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.faktura_proev_igen(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.faktura_inhabil(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.firma_regninger_krediteret_kl() from public, anon, authenticated;
 revoke all on function public.faktura_haandteret_manuelt(uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.mine_fakturaer(uuid) from public, anon, authenticated;
 
@@ -759,5 +827,6 @@ grant execute on function public.faktura_alarm_claim(uuid) to service_role;
 grant execute on function public.faktura_kontakt_reserver(uuid, text, boolean) to service_role;
 grant execute on function public.faktura_kontakt_gemt(uuid, text, text) to service_role;
 grant execute on function public.faktura_proev_igen(uuid, uuid) to service_role;
+grant execute on function public.faktura_inhabil(uuid, uuid) to service_role;
 grant execute on function public.faktura_haandteret_manuelt(uuid, uuid, text) to service_role;
 grant execute on function public.mine_fakturaer(uuid) to authenticated, service_role;

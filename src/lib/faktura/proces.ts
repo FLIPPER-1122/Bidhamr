@@ -72,6 +72,8 @@ export type ProcesDeps = {
   gemPdf: (r: FakturaRaekke, pdf: Uint8Array) => Promise<string | null>;
   // Abonnement: Stripe-fakturaens PDF som bilag (null = ingen).
   hentStripePdf: (r: FakturaRaekke) => Promise<Uint8Array | null>;
+  // Abonnement refunderet: hvor meget Stripe faktisk har refunderet (øre).
+  stripeRefunderetOere: (r: FakturaRaekke) => Promise<number>;
 };
 
 export type ProcesResultat =
@@ -253,6 +255,16 @@ async function behandlKladde(r: FakturaRaekke, deps: ProcesDeps): Promise<Proces
   }
 
   let st = await dinero.kladdeStatus(r.id);
+  if (!st && retur) {
+    // Kun en fuld refusion bogføres automatisk (M5). Delvis -> staff.
+    const refunderet = await deps.stripeRefunderetOere(r);
+    if (refunderet !== Number(r.beloeb_oere)) {
+      return {
+        kode: "kraever_handling",
+        besked: `Stripe har refunderet ${kr(refunderet)} kr. af abonnementsfakturaen (${kr(Number(r.beloeb_oere))} kr.) - bogfør refusionen manuelt i Dinero.`,
+      };
+    }
+  }
   if (!st) {
     if (r.status !== "venter") {
       return { kode: "kraever_handling", besked: "Bilaget er sendt til Dinero, men findes ikke i kassekladden - kontrollér i Dinero." };

@@ -27,7 +27,8 @@ export type DineroKonfig = {
 
 const API = "https://api.dinero.dk";
 const AUTH = "https://authz.dinero.dk/dineroapi/oauth/token";
-const TIMEOUT_MS = 20_000;
+// Kort timeout pr. kald: fakturakøen har et samlet tidsbudget i cron'en.
+const TIMEOUT_MS = 8_000;
 
 export class DineroFejl extends Error {
   status: number;
@@ -226,6 +227,12 @@ export function lavDineroKlient(k: DineroKonfig, o: { maksKald?: number } = {}) 
     orgId: k.orgId,
     antalKald: () => kald,
     budgetOpbrugt: (reserve = 0) => kald + reserve >= maksKald,
+
+    // Organisationens stamdata (CVR m.m.) - til live-vagten.
+    hentOrganisation: async (): Promise<{ Id: number; Name: string; VatNumber: string | null } | null> => {
+      const r = (await kaldApi("GET", "v1.1/organizations")).json as { Id: number; Name: string; VatNumber: string | null }[];
+      return (r ?? []).find((o) => String(o.Id) === k.orgId) ?? null;
+    },
 
     // ---------------------------------------------------------------- kontakter
     hentKontakt: (guid: string) => hentEllerNull<DineroKontakt>(`v1/{org}/contacts/${guid}`),

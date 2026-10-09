@@ -30,8 +30,14 @@ import {
 } from "./proces";
 
 const PR_KOERSEL = 8;
-// Nye dokumenter påbegyndes ikke efter 60 s (cron-kørslen skal nå resten).
-const MAKS_TID_MS = 60_000;
+// BidHamrs CVR - live-regnskabet i Dinero skal have det (ROADMAP-BESLUTNINGER
+// "Virksomhedsoplysninger").
+const BIDHAMR_CVR = "46836219";
+// Samlet tidsbudget for trin 11: nye dokumenter påbegyndes ikke efter 20 s
+// (et påbegyndt dokument tager højst få kald à højst 8 s).
+const MAKS_TID_MS = 20_000;
+// Dokumenter, der har ventet så længe uden at blive færdige -> drift-alarm.
+const HAENGER_EFTER_MS = 2 * 60 * 60 * 1000;
 const MAKS_PDF = 6 * 1024 * 1024;
 
 export type FakturaKoeResultat = {
@@ -257,7 +263,7 @@ async function hentStripePdf(admin: Admin, r: FakturaRaekke): Promise<Uint8Array
     let url = data.pdf_url;
     let svar: Response | null = null;
     for (let hop = 0; hop < 4; hop++) {
-      svar = await fetch(url, { signal: AbortSignal.timeout(20_000), cache: "no-store", redirect: "manual" });
+      svar = await fetch(url, { signal: AbortSignal.timeout(8_000), cache: "no-store", redirect: "manual" });
       const videre = svar.status >= 300 && svar.status < 400 ? svar.headers.get("location") : null;
       if (!videre) break;
       url = new URL(videre, url).toString();
@@ -273,6 +279,26 @@ async function hentStripePdf(admin: Admin, r: FakturaRaekke): Promise<Uint8Array
     console.error("Stripe-fakturaens PDF kunne ikke hentes (bogføres uden bilag):", r.id, err instanceof Error ? err.message : err);
     return null;
   }
+}
+
+// Abonnement refunderet: det, Stripe faktisk har refunderet på fakturaens
+// betaling(er), i øre. Kun læsning hos Stripe.
+async function stripeRefunderetOere(r: FakturaRaekke): Promise<number> {
+  if (!r.stripe_reference?.startsWith("in_")) throw new Error("Abonnementsbilaget mangler Stripe-faktura-id");
+  const { getStripe } = await import("@/lib/stripe");
+  const s = getStripe();
+  const betalinger = await s.invoicePayments.list({ invoice: r.stripe_reference, limit: 10 });
+  let sum = 0;
+  for (const b of betalinger.data) {
+    if (b.status !== "paid") continue;
+    const piRef = b.payment.payment_intent;
+    const piId = typeof piRef === "string" ? piRef : piRef?.id;
+    if (!piId) continue;
+    const pi = await s.paymentIntents.retrieve(piId, { expand: ["latest_charge"] });
+    const ch = pi.latest_charge && typeof pi.latest_charge !== "string" ? pi.latest_charge : null;
+    sum += Number(ch?.amount_refunded ?? 0);
+  }
+  return sum;
 }
 
 // ---------------------------------------------------------------- køen
@@ -301,24 +327,74 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
   }
   res.planlagt = plan as Record<string, number>;
 
+  // 1b) Én drift-alarm pr. dokument, der er oprettet som "kræver handling"
+  //     (fx gebyret passer ikke, eller fakturaen blev håndteret manuelt).
+  const { data: nyeStoppede } = await admin
+    .from("fakturaer")
+    .select("id, dokument, part, bruger_id, sidste_fejl")
+    .eq("status", "kraever_handling")
+    .is("alarm_kl", null)
+    .limit(50);
+  for (const x of (nyeStoppede ?? []) as (FakturaRaekke & { sidste_fejl: string | null })[]) {
+    await alarm(admin, x, "kræver handling", x.sidste_fejl ?? "Se fakturaen.");
+  }
+
+  // 1c) Dokumenter, der har ventet over 2 timer (også når Dinero er sat op -
+  //     fx en kreditnota, hvis faktura står fast). Én alarm, til det er løst.
+  const { count: haenger } = await admin
+    .from("fakturaer")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["venter", "kladde", "bogfoert"])
+    .eq("opgivet", false)
+    .eq("manuel", false)
+    .lt("oprettet_kl", new Date(Date.now() - HAENGER_EFTER_MS).toISOString());
+
   // 2) Dinero sat op?
   const konfig = hentFakturaKonfig();
+  if ((haenger ?? 0) > 0) {
+    await alarmPrTilfaelde({
+      noegle: "faktura:haenger",
+      hvor: "faktura/dinero",
+      fejl: `${haenger} faktura-dokument(er) har ventet over 2 timer uden at blive lavet i Dinero${
+        konfig.ok ? "" : ` (${konfig.besked})`
+      }. Se Admin -> Fakturaer.`,
+    });
+  } else {
+    await lukTilfaelde("faktura:haenger");
+  }
   if (!konfig.ok) {
-    const { count } = await admin
-      .from("fakturaer")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["venter", "kladde", "bogfoert"])
-      .lt("oprettet_kl", new Date(Date.now() - 60 * 60 * 1000).toISOString());
-    if ((count ?? 0) > 0 || konfig.grund !== "mangler") {
+    if (konfig.grund !== "mangler") {
       await alarmPrTilfaelde({
         noegle: "faktura:konfiguration",
         hvor: "faktura/dinero",
-        fejl: `Fakturaer laves ikke i Dinero: ${konfig.besked} ${count ?? 0} dokument(er) venter. Se docs/FAKTURA.md.`,
+        fejl: `Fakturaer laves ikke i Dinero: ${konfig.besked} Se docs/FAKTURA.md.`,
       });
     }
     return { ...res, springetOver: "ikke_konfigureret" };
   }
   await lukTilfaelde("faktura:konfiguration");
+
+  const dinero = lavDineroKlient(konfig.dinero, { maksKald: 45 });
+  // Live: Dinero-regnskabet skal være BidHamrs eget (CVR 46836219) - ellers
+  // laves intet (fx sandkassens nøgler sat i produktionen).
+  if (konfig.miljoe === "live") {
+    try {
+      const org = await dinero.hentOrganisation();
+      if (!org || (org.VatNumber ?? "").replace(/\D/g, "") !== BIDHAMR_CVR) {
+        await alarmPrTilfaelde({
+          noegle: "faktura:konfiguration",
+          hvor: "faktura/dinero",
+          fejl: `Fakturaer laves ikke: Dinero-regnskabet ${konfig.dinero.orgId} har ikke BidHamrs CVR (${BIDHAMR_CVR}). Se docs/FAKTURA.md.`,
+        });
+        return { ...res, springetOver: "ikke_konfigureret" };
+      }
+    } catch (err) {
+      if (err instanceof DineroFejl && err.adgang) {
+        await alarmPrTilfaelde({ noegle: "faktura:adgang", hvor: "faktura/dinero", fejl: err.message });
+      }
+      return { ...res, springetOver: err instanceof DineroFejl && err.adgang ? "adgang" : "graense" };
+    }
+  }
 
   // 3) Behandl køen.
   const { data: claimet, error: claimFejl } = await admin.rpc("faktura_claim", { p_antal: PR_KOERSEL });
@@ -326,7 +402,6 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
   const raekker = (claimet ?? []) as FakturaRaekke[];
   if (raekker.length === 0) return res;
 
-  const dinero = lavDineroKlient(konfig.dinero, { maksKald: 45 });
   const start = Date.now();
   let stop: FakturaKoeResultat["springetOver"] | undefined;
 
@@ -372,6 +447,7 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
       kontekst: (x) => kontekst(admin, x),
       gemPdf: (x, pdf) => gemPdf(admin, x, pdf),
       hentStripePdf: (x) => hentStripePdf(admin, x),
+      stripeRefunderetOere,
     };
     try {
       const ud = await behandlDokument(r, deps);
