@@ -7,6 +7,7 @@ import {
   markerBetalingLøstForm,
   givAdvarselBetalingForm,
   proevTilbagebetalingIgenForm,
+  hentFraSaelgerIgenForm,
   type BetalingTilHandling,
 } from "@/app/actions/adminBetalinger";
 import { prøvOverfoerselIgenForm, handelFrigiv, handelRefunder } from "@/app/actions/adminActions";
@@ -145,8 +146,58 @@ export default function BetalingHandlinger({
     />
   );
 
+  // Betalingsmodel trin 4: tabt indsigelse på en betaling, hvor pengene står
+  // på sælgerens Stripe-konto.
+  const tilbage = tabt ? b.indsigelseTilbagefoersel : null;
+  const selvIgen = tilbage?.proeverSelv
+    ? " Systemet prøver selv igen."
+    : " Systemet prøver ikke selv igen - tjek fejlen og kontoen i Stripe, og tryk \"Hent beløbet fra sælgeren\"."
+  const tilbageTekst =
+    tilbage?.tilstand === "gennemfoert"
+      ? "Beløbet er hentet tilbage fra sælgerens Stripe-konto. Sælgeren får ingen udbetaling, og køberen skal sende varen tilbage til sælgeren."
+      : tilbage?.tilstand === "udbetalt"
+        ? "Handlen var udbetalt til sælgerens bank: BidHamr bærer tabet, og der trækkes intet fra sælgeren. Køberen skal sende varen til BidHamr."
+        : tilbage?.tilstand === "venter_udbetaling"
+          ? "En udbetaling til sælgerens bank er i gang. Når den er gennemført, bærer BidHamr tabet; fejler den, hentes beløbet tilbage fra sælgerens Stripe-konto. Det afgøres automatisk."
+          : tilbage?.tilstand === "udbetaling_fejlet"
+            ? `Udbetalingen til sælgerens bank fejlede efter den tabte indsigelse, så pengene står igen på sælgerens Stripe-konto. Beløbet hentes tilbage, og sælger og køber får en rettelse (køberen sender varen til sælgeren i stedet for BidHamr).${selvIgen}`
+            : tilbage?.tilstand === "opgivet"
+              ? `Beløbet kunne ikke hentes tilbage fra sælgerens Stripe-konto.${selvIgen}`
+              : tilbage
+                ? `Beløbet hentes tilbage fra sælgerens Stripe-konto.${selvIgen}`
+                : null;
+  const visHentKnap =
+    kanLoese &&
+    !!tilbage &&
+    !tilbage.proeverSelv &&
+    (tilbage.tilstand === "opgivet" || tilbage.tilstand === "udbetaling_fejlet" || tilbage.tilstand === "venter");
+
   return (
     <ul className="mt-4 space-y-3 border-t border-neutral-100 pt-4">
+      {b.indsigelseNote && (
+        <li className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-700">{b.indsigelseNote}</li>
+      )}
+
+      {tilbageTekst && (
+        <li className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-700">{tilbageTekst}</li>
+      )}
+
+      {visHentKnap && (
+        <Handling
+          knap={
+            <ConfirmDialog
+              triggerLabel="Hent beløbet fra sælgeren"
+              triggerClassName={KNAP_ORANGE}
+              title="Hent beløbet fra sælgerens Stripe-konto igen?"
+              description="Køberens bank har givet køberen pengene tilbage, og BidHamr er trukket for beløbet. Sælgerens del hentes nu tilbage fra sælgerens Stripe-konto (aldrig mere, end der står på kontoen). Stripe spørges først, så der aldrig trækkes to gange."
+              confirmLabel="Prøv igen"
+              action={hentFraSaelgerIgenForm}
+              hiddenFields={{ betalingId: b.id }}
+            />
+          }
+          forklaring="Prøver at hente beløbet tilbage fra sælgerens Stripe-konto igen."
+        />
+      )}
       {b.kanProeveOverfoersel && p === "overfoersel" && (
         <Handling
           knap={

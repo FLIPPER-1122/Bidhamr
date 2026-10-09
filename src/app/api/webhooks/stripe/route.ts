@@ -173,7 +173,9 @@ async function haandter(event: Stripe.Event): Promise<void> {
 
     case "charge.dispute.created":
     case "charge.dispute.updated":
-    case "charge.dispute.closed": {
+    case "charge.dispute.closed":
+    case "charge.dispute.funds_withdrawn":
+    case "charge.dispute.funds_reinstated": {
       // Indsigelse (chargeback). Disputen hentes frisk fra Stripe i
       // spejlIndsigelse, så rækkefølgen af events er ligegyldig.
       const dispute = event.data.object as Stripe.Dispute;

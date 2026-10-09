@@ -15,6 +15,9 @@
 //   5. Refundér betalinger med afvigende beløb.
 //   5b. Alle lovede refusioner (uanset årsag), der er claimet, men ikke
 //       gennemført hos Stripe - med backoff (Niels F05).
+//   5b2. Destination: tabte indsigelser før udbetaling - beløbet hentes
+//       tilbage fra sælgerens Stripe-konto (spredte forsøg, højst 5).
+//   5b3. Destination: varsel til staff 48 og 12 timer før indsigelsens svarfrist.
 //   5c. "Sag oprettet"-beskeder for sager, der ikke er notificeret (fx fra appen).
 //   6. Fristen overskredet: annullér handlen (+ Stripe), opret sag til admin,
 //      mail til køber og sælger.
@@ -62,6 +65,7 @@ import {
 } from "@/lib/mails/handel";
 import { behandlVentendeBetalinger } from "@/lib/betaling/betalingInd";
 import { udbetalVentende } from "@/lib/betaling/udbetaling";
+import { tilbagefoerTabteIndsigelserVentende, varslIndsigelsesfrister } from "@/lib/betaling/indsigelse";
 import {
   type BetalingRaekke,
   forsoegAutobetaling,
@@ -124,6 +128,8 @@ export async function koerBetalingsCron() {
     udbetalinger: 0,
     afvigelsesrefusioner: 0,
     sagsrefusioner: 0,
+    indsigelseTilbagefoersler: 0,
+    indsigelseFristVarsler: 0,
     sagsbeskeder: 0,
     ankebeskeder: 0,
     returbeskeder: 0,
@@ -343,6 +349,11 @@ export async function koerBetalingsCron() {
   // 5b) ALLE lovede refusioner (sag, admin, sen betaling, frister), hvor
   //     Stripe-kaldet fejlede eller aldrig blev lavet - med backoff.
   resultat.sagsrefusioner = await refunderLoveteVentende();
+  // 5b2) Destination (trin 4): tabte indsigelser før udbetaling - beløbet
+  //      hentes tilbage fra sælgerens Stripe-konto (spredte forsøg, højst 5).
+  resultat.indsigelseTilbagefoersler = await tilbagefoerTabteIndsigelserVentende();
+  // 5b3) Destination: svarfristen for åbne indsigelser - varsel 48 og 12 t før.
+  resultat.indsigelseFristVarsler = await varslIndsigelsesfrister();
 
   // 5c) Nye sager, hvor køber og sælger ikke har fået besked endnu.
   resultat.sagsbeskeder = await notificerNyeSager();

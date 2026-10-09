@@ -1179,9 +1179,13 @@ export async function refunderBetaling(betalingId: string): Promise<string> {
 
 // Stripe-kald under refusionslåsen: højst 20 sekunder pr. forsøg og højst ét
 // automatisk genforsøg (stripe-node's standard er 80 sekunder). Alle kald
-// under låsen (højst 5 Stripe-kald) tager dermed højst ca. 4 minutter, og
-// låsen (betaling_refusion_laas) varer 15 minutter - den udløber ikke, mens
-// et kald stadig er i gang. Genforsøg sker med samme idempotency key.
+// under låsen (højst ca. 12 Stripe-kald med destination-trinnene i
+// refusion.ts: refusion, PaymentIntent, refusionsliste, charge, indsigelser,
+// saldo x2, gebyr-refusion, tilbageførsel, opslag og refusion) tager dermed
+// højst ca. 8-9 minutter, og låsen (betaling_refusion_laas) varer 15
+// minutter - den udløber ikke, mens et kald stadig er i gang. Genforsøg sker
+// med samme idempotency key. Et trin registreres kun, mens låsen holdes
+// (betaling_refusion_trin) - ellers stopper forsøget.
 const UNDER_LAAS: Stripe.RequestOptions = { timeout: 20_000, maxNetworkRetries: 1 };
 
 function manglerFunktion(err: { code?: string; message?: string } | null): boolean {
@@ -1294,17 +1298,18 @@ async function refunderUnderLaas(
     await markerRefusion(b.id, "Refusionsbeløbet er ugyldigt - refusion stoppet");
     throw new Error(`Refusionsbeløbet overstiger det modtagne for betaling ${b.id}`);
   }
-  // Betalingsmodel destination: pengene står på sælgerens Connect-konto. En
-  // fuld refusion tager dem tilbage derfra (reverse_transfer) og giver
-  // BidHamrs gebyr tilbage (refund_application_fee) - ellers ville BidHamr
-  // betale køberen af sin egen saldo, mens sælgeren beholdt pengene. Delvis
-  // refusion kræver en refusionsplan (trin 4) - stoppes til staff.
+  // Betalingsmodel destination: pengene står på sælgerens Connect-konto.
+  // Refusionen (fuld og delvis) laves efter en låst refusionsplan i tre
+  // eksakte trin (src/lib/betaling/refusion.ts): BidHamrs gebyr tilbage til
+  // sælgerens konto, tilbageførsel fra sælgerens konto, refusion til køberen
+  // fra platformen - ellers ville BidHamr betale køberen af sin egen saldo,
+  // mens sælgeren beholdt pengene.
   const destination = !!pi.transfer_data?.destination;
-  if (destination && delvis !== null) {
+  if (destination !== (b.pengemodel === "destination")) {
     await markerRefusionskonflikt(
       b.id,
       laas,
-      "Delvis refusion af en betaling på sælgerens Stripe-konto kan ikke laves automatisk endnu (betalingsmodel trin 4) - håndtér den manuelt",
+      "Betalingens pengemodel passer ikke med Stripe - refusion stoppet",
     );
     return "refusion_konflikt";
   }
@@ -1341,12 +1346,27 @@ async function refunderUnderLaas(
   }
 
   try {
+    if (!refund && destination) {
+      // Trin (a) gebyr og (b) tilbageførsel - kun det, der mangler hos Stripe.
+      const { forberedDestinationRefusion } = await import("@/lib/betaling/refusion");
+      const klar = await forberedDestinationRefusion(b, laas, forsoeg, maal, UNDER_LAAS);
+      if (klar.kode === "indsigelse") {
+        // Banken afgør pengene (cron prøver ikke, mens indsigelsen er åben).
+        await markerRefusion(b.id, "Refusion venter: køberen har lavet en indsigelse hos sin bank");
+        return "refusion_afventer";
+      }
+      if (klar.kode === "konflikt") {
+        await markerRefusionskonflikt(b.id, laas, klar.besked);
+        return "refusion_konflikt";
+      }
+    }
     if (!refund) {
       refund = await stripe.refunds.create(
         {
           payment_intent: piId,
-          ...(delvis !== null ? { amount: delvis } : {}),
-          ...(destination ? { reverse_transfer: true, refund_application_fee: true } : {}),
+          // Destination: altid det eksakte beløb fra planen; pengene er
+          // allerede hentet tilbage til platformen (trin a og b).
+          ...(delvis !== null || destination ? { amount: maal } : {}),
           reason: "requested_by_customer",
           metadata: {
             betaling_id: b.id,
@@ -1660,6 +1680,12 @@ export async function registrerRefunderet(
     p_refund: refundId,
   });
   if (error) throw new Error(`betaling_registrer_refunderet: ${error.message}`);
+  // Destination (trin 4): sælgeren skal stå med 0 på handlen bagefter - også
+  // når refusionen er lavet i Stripe-dashboardet. Kaster aldrig.
+  if (String(data) === "refunderet") {
+    const { kontrollerDestinationRefusion } = await import("@/lib/betaling/refusion");
+    await kontrollerDestinationRefusion(paymentIntentId);
+  }
   return String(data);
 }
 
@@ -1809,10 +1835,25 @@ async function refusionFejletEfterRefunderet(
 // vundet/lukket, prøves en ventende overførsel med det samme.
 export async function spejlIndsigelse(disputeId: string): Promise<string> {
   const stripe = getStripe();
-  const d = await stripe.disputes.retrieve(disputeId);
+  let d: Stripe.Dispute = await stripe.disputes.retrieve(disputeId);
   const piId =
     typeof d.payment_intent === "string" ? d.payment_intent : (d.payment_intent?.id ?? null);
   const chId = typeof d.charge === "string" ? d.charge : d.charge.id;
+  // Destination (trin 4): har chargen flere indsigelser, spejles den "værste"
+  // (tabt før åben før afgjort til BidHamrs fordel) - ikke blot den sidst
+  // spejlede. Separat uændret.
+  {
+    const { data: model } = await createAdminClient()
+      .from("betalinger")
+      .select("pengemodel")
+      .eq(piId ? "stripe_payment_intent_id" : "stripe_charge_id", piId ?? chId)
+      .maybeSingle<{ pengemodel: string | null }>();
+    if (model?.pengemodel === "destination") {
+      const alle = await stripe.disputes.list({ charge: chId, limit: 10 });
+      const rang = (st: string) => (st === "lost" ? 3 : ["won", "warning_closed", "prevented"].includes(st) ? 1 : 2);
+      for (const x of alle.data) if (rang(x.status) > rang(d.status)) d = x;
+    }
+  }
   const { data, error } = await createAdminClient().rpc("betaling_registrer_indsigelse", {
     p_payment_intent: piId,
     p_charge: chId,
@@ -1833,6 +1874,13 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
     if (!(udfald === "afgjort" && d.status === "warning_closed")) {
       await sendIndsigelseTilSaelger(d.id, piId, chId, udfald);
     }
+  }
+  // Destination (trin 4): beviser lægges klar ved en åben indsigelse; en tabt
+  // indsigelse før udbetaling henter beløbet tilbage fra sælgerens konto, og
+  // køberen får besked om at sende varen retur. Kaster aldrig. Intet i separat.
+  if (resultat === "blokeret" || resultat === "tabt") {
+    const { efterIndsigelseDestination } = await import("@/lib/betaling/indsigelse");
+    await efterIndsigelseDestination(d, resultat);
   }
   if (resultat === "afsluttet" && piId) {
     const { data: b } = await createAdminClient()

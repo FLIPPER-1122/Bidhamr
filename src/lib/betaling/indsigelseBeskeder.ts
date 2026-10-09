@@ -19,6 +19,9 @@ type Tilstand = {
   sendt: boolean; // varen er sendt / hentet / modtaget
   afhentning: boolean;
   overfoert: boolean; // udbetalingen er sendt til sælgeren
+  // Betalingsmodel destination (trin 4): ved tabt indsigelse før udbetaling
+  // sender køberen varen tilbage til sælgeren (Filip 8. okt. 2026).
+  destination?: boolean;
 };
 
 export function indsigelseTekst(u: IndsigelseUdfald, t: Tilstand): { titel: string; tekst: string } {
@@ -49,6 +52,12 @@ export function indsigelseTekst(u: IndsigelseUdfald, t: Tilstand): { titel: stri
         : `Køberens bank har afgjort indsigelsen mod betalingen for ${vare}, og handlen fortsætter som normalt.`,
     };
   }
+  if (t.destination && !t.overfoert && t.sendt) {
+    return {
+      titel: "Køberen har fået pengene tilbage af sin bank",
+      tekst: `Køberens bank har givet køberen pengene tilbage for ${vare}. Handlen bliver annulleret, og der udbetales ikke for den. Køberen skal sende varen tilbage til dig - vi skriver til jer begge om, hvordan det sker.`,
+    };
+  }
   return {
     titel: "Køberen har fået pengene tilbage af sin bank",
     tekst: t.overfoert
@@ -64,12 +73,17 @@ export async function sendIndsigelseTilSaelger(
   paymentIntentId: string | null,
   chargeId: string | null,
   udfald: IndsigelseUdfald,
+  // Destination (trin 4): beskeden om en TABT indsigelse sendes først, når
+  // det er afklaret, om handlen var udbetalt (tilbagefoerVedTabtIndsigelse) -
+  // ikke fra spejlingen, hvor en claimet udbetaling ellers ville ligne en
+  // gennemført. overfoert = afklaringens svar.
+  tabtAfklaret?: { overfoert: boolean },
 ): Promise<void> {
   try {
     const admin = createAdminClient();
     let q = admin
       .from("betalinger")
-      .select("trade_id, auction_id, seller_id, status, stripe_transfer_id, overfoersel_paabegyndt_kl")
+      .select("trade_id, auction_id, seller_id, status, stripe_transfer_id, overfoersel_paabegyndt_kl, pengemodel")
       .limit(1);
     if (paymentIntentId) q = q.eq("stripe_payment_intent_id", paymentIntentId);
     else if (chargeId) q = q.eq("stripe_charge_id", chargeId);
@@ -81,6 +95,7 @@ export async function sendIndsigelseTilSaelger(
       status: string;
       stripe_transfer_id: string | null;
       overfoersel_paabegyndt_kl: string | null;
+      pengemodel?: string | null;
     }>();
     if (!b) return;
     const [{ data: h }, { data: a }] = await Promise.all([
@@ -95,7 +110,12 @@ export async function sendIndsigelseTilSaelger(
       sendt: ["pakke_sendt", "modtaget", "leveret", "afsluttet"].includes(status),
       afhentning: !!h?.afhentning,
       overfoert: !!b.stripe_transfer_id || !!b.overfoersel_paabegyndt_kl,
+      destination: b.pengemodel === "destination",
     };
+    if (t.destination && udfald === "tabt") {
+      if (!tabtAfklaret) return;
+      t.overfoert = tabtAfklaret.overfoert;
+    }
     const { titel, tekst } = indsigelseTekst(udfald, t);
     await send(b.seller_id, "sag", {
       titel,
