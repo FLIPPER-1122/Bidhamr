@@ -14,9 +14,9 @@ export default async function HandelDetaljePage({
   searchParams,
 }: {
   params: Promise<{ trade_id: string }>;
-  searchParams: Promise<{ betaling?: string }>;
+  searchParams: Promise<{ betaling?: string; vis?: string }>;
 }) {
   const { trade_id } = await params;
-  const { betaling } = await searchParams;
-  return <HandelDetalje trade_id={trade_id} betalingParam={betaling} />;
+  const { betaling, vis } = await searchParams;
+  return <HandelDetalje trade_id={trade_id} betalingParam={betaling} visHandel={vis === "handel"} />;
 }

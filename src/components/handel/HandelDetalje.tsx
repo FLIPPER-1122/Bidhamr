@@ -13,7 +13,6 @@ import {
 } from "@/components/HandelHandlinger";
 import { hentBetalingsstatus, hentMinUdbetalingsstatus } from "@/app/actions/betaling";
 import UdbetalingStatusBoks from "@/components/betaling/UdbetalingStatusBoks";
-import BetalingSektion from "@/components/betaling/BetalingSektion";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
 import ForlaengBetalingsfrist from "@/components/betaling/ForlaengBetalingsfrist";
 import { hentAndenchanceStatus } from "@/app/actions/andenchance";
@@ -34,7 +33,9 @@ import { hentAfhentningsfristAnnullering } from "@/lib/betaling/afhentningsfrist
 import { afhentningTilbagebetalKl, afhentningsfristTekst } from "@/lib/afhentningsfrist";
 import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
 import FragtlabelBoks from "@/components/fragt/FragtlabelBoks";
-import { hentMinForsendelse } from "@/app/actions/fragt";
+import { hentForsendelserAction } from "@/app/actions/fragt";
+import SporingTidslinje from "@/components/fragt/SporingTidslinje";
+import { PAKKESTOERRELSE_NAVN, erPakkestoerrelse } from "@/lib/fragt/types";
 import { fragtLabelsAktiv } from "@/lib/fragt";
 import { hentKontoType } from "@/lib/supabase/bruger";
 import { foerLancering } from "@/lib/lancering";
@@ -73,9 +74,12 @@ export default async function HandelDetalje({
   trade_id,
   betalingParam,
   sted = "mine-handler",
+  visHandel = false,
 }: {
   trade_id: string;
   betalingParam?: string;
+  // ?vis=handel: køberen vil se handlen (fx chatten) i stedet for checkout.
+  visHandel?: boolean;
   // "firma": vist i firma-dashboardet (tilbage-link og stier dertil).
   sted?: "mine-handler" | "firma";
 }) {
@@ -125,6 +129,15 @@ export default async function HandelDetalje({
 
   const erSaelger = handel.seller_id === user.id;
   const erKoeber = handel.buyer_id === user.id;
+
+  // Ingen automatisk betaling (Filip, 9. okt. 2026): vinderen betaler altid i
+  // checkout. Links i mails og notifikationer peger hertil, så køberen sendes
+  // videre, så længe handlen ikke er betalt - også efter en mislykket
+  // betaling hos Stripe (?betaling=retur). ?vis=handel viser handlen (chat).
+  if (!erFirmaSted && erKoeber && handel.status === "afventer_betaling" && !visHandel) {
+    redirect(`/mine-handler/${encodeURIComponent(handel.id)}/betal`);
+  }
+
   const afhentning = handel.afhentning === true;
   const annulleret = handel.status === "annulleret";
   // Afsendelsesfrist (kun forsendelse): pakken skal markeres sendt senest 5
@@ -134,6 +147,8 @@ export default async function HandelDetalje({
   // Fragtlabel i BidHamr (kun bag flaget FRAGT_LABELS_AKTIV=true). Uden flaget
   // er "Send pakke" præcis som før.
   const visFragtlabel = fragtLabelsAktiv() && erSaelger && venterPaaAfsendelse;
+  // Forsendelse, leveringsvalg og sporing (køber og sælger), mens pakken er på vej.
+  const visFragt = !afhentning && ["betaling_modtaget", "pakke_sendt", "modtaget"].includes(handel.status);
 
   // Alt, der kun afhænger af handlen, hentes samtidig (før: ét opslag ad
   // gangen, op til 12 runder til databasen efter hinanden).
@@ -166,7 +181,8 @@ export default async function HandelDetalje({
     [mulighederRes, samtaleRes],
     afhentningInfo,
     afhentningsadresseSvar,
-    forsendelse,
+    forsendelserSvar,
+    fragtInfo,
     { data: betaltRaekke },
     afsendelsesAnnullering,
     afhentningsAnnullering,
@@ -174,7 +190,7 @@ export default async function HandelDetalje({
     saelgerKontoType,
     udbetalingSvar,
   ] = await Promise.all([
-    supabase.from("auctions").select("titel, billeder, startpris, erhverv").eq("id", handel.auction_id).maybeSingle(),
+    supabase.from("auctions").select("titel, billeder, startpris, erhverv, pakkestoerrelse, vaegt_gram").eq("id", handel.auction_id).maybeSingle(),
     supabase.from("users").select("navn").eq("id", modpartId).maybeSingle(),
     // Sikker uden medlemskabsfilter, fordi notFound() ovenfor allerede har
     // afvist alle andre end køber og sælger. Flyttes denne query op over
@@ -202,7 +218,40 @@ export default async function HandelDetalje({
     afhentning && erKoeber && handel.status === "betaling_modtaget"
       ? supabase.rpc("handel_afhentningsadresse", { p_trade: handel.id }).then((r) => r.data)
       : Promise.resolve(null),
-    visFragtlabel ? hentMinForsendelse(handel.id) : Promise.resolve(null),
+    visFragt ? hentForsendelserAction(handel.id) : Promise.resolve(null),
+    // Køberens leveringsvalg (parterne kan læse pakkeshoppen, ikke adressen) og
+    // - til "Send pakke" - sælgerens sidst brugte afsenderadresse (RLS: egen række).
+    visFragt
+      ? Promise.all([
+          supabase
+            .from("handel_levering")
+            .select("maade, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by")
+            .eq("trade_id", handel.id)
+            .maybeSingle<{
+              maade: string;
+              pakkeshop_navn: string | null;
+              pakkeshop_adresse: string | null;
+              pakkeshop_postnummer: string | null;
+              pakkeshop_by: string | null;
+            }>(),
+          visFragtlabel
+            ? supabase
+                .from("leveringsforslag")
+                .select("afsender_navn, afsender_adresse, afsender_postnummer, afsender_by, afsender_telefon")
+                .eq("user_id", user.id)
+                .maybeSingle<{
+                  afsender_navn: string | null;
+                  afsender_adresse: string | null;
+                  afsender_postnummer: string | null;
+                  afsender_by: string | null;
+                  afsender_telefon: string | null;
+                }>()
+            : Promise.resolve({ data: null }),
+          visFragtlabel
+            ? supabase.from("users").select("navn").eq("id", user.id).maybeSingle<{ navn: string | null }>()
+            : Promise.resolve({ data: null }),
+        ]).then(([lev, afs, mig]) => ({ levering: lev.data, afsender: afs.data, mitNavn: mig.data?.navn ?? null }))
+      : Promise.resolve(null),
     venterPaaAfsendelse
       ? supabase
           .from("betalinger")
@@ -226,6 +275,39 @@ export default async function HandelDetalje({
       : Promise.resolve(null),
   ]);
   const udbetaling = udbetalingSvar && "ok" in udbetalingSvar ? udbetalingSvar.visning : null;
+
+  // Fragt: den aktive udgående forsendelse, antal labels og visningstekster.
+  const forsendelser = forsendelserSvar && "ok" in forsendelserSvar ? forsendelserSvar.forsendelser : [];
+  const udgaaende = forsendelser.filter((f) => f.type === "udgaaende");
+  const forsendelse = udgaaende.find((f) => f.status !== "annulleret") ?? null;
+  const lev = fragtInfo?.levering ?? null;
+  const leveringTekst = !lev
+    ? null
+    : lev.maade === "doer"
+      ? "Køberens adresse (levering hjem)"
+      : `Pakkeshop: ${[
+          lev.pakkeshop_navn,
+          lev.pakkeshop_adresse,
+          [lev.pakkeshop_postnummer, lev.pakkeshop_by].filter(Boolean).join(" "),
+        ]
+          .filter(Boolean)
+          .join(", ")}`;
+  const pakkestoerrelse: unknown = auktion?.pakkestoerrelse;
+  const vaegtGram = Number(auktion?.vaegt_gram ?? 0);
+  const pakkeTekst = erPakkestoerrelse(pakkestoerrelse)
+    ? `${PAKKESTOERRELSE_NAVN[pakkestoerrelse]}${
+        vaegtGram > 0 ? ` · ${(vaegtGram / 1000).toLocaleString("da-DK", { maximumFractionDigits: 2 })} kg` : ""
+      }`
+    : null;
+  const afs = fragtInfo?.afsender ?? null;
+  const afsTelefon = afs?.afsender_telefon ?? "";
+  const afsenderStart = {
+    navn: afs?.afsender_navn ?? fragtInfo?.mitNavn ?? "",
+    adresse: afs?.afsender_adresse ?? "",
+    postnummer: afs?.afsender_postnummer ?? "",
+    by: afs?.afsender_by ?? "",
+    telefon: /^\+45\d{8}$/.test(afsTelefon) ? afsTelefon.slice(3) : afsTelefon,
+  };
 
   // Erhvervshandel: ingen chat mellem køber og firma.
   const erhvervHandel = auktion?.erhverv === true || saelgerKontoType === "erhverv";
@@ -414,7 +496,10 @@ export default async function HandelDetalje({
                     Betalingen gik ikke igennem. Prøv igen, eller vælg en anden betalingsmetode.
                   </p>
                 ) : null}
-                <BetalingSektion status={betalingsstatus} />
+                {/* Betalingen sker i checkout (levering + betaling). */}
+                <Link href={`/mine-handler/${handel.id}/betal`} className="btn btn-primaer w-full sm:w-auto">
+                  Gå til betaling
+                </Link>
               </>
             )}
           </section>
@@ -599,7 +684,29 @@ export default async function HandelDetalje({
               )}
               Sendes den ikke i tide, annulleres handlen, og du får hele beløbet tilbage.
             </p>
+            {leveringTekst && (
+              <p className="mt-3 rounded-lg bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
+                Leveres til: <span className="font-medium text-tekst">{leveringTekst.replace(/^Køberens adresse/, "Din adresse")}</span>
+              </p>
+            )}
           </div>
+        )}
+
+        {/* Sporing for køberen, når pakken er på vej (sælgeren ser den i "Din fragtlabel"). */}
+        {erKoeber && forsendelse && (handel.status === "pakke_sendt" || handel.status === "modtaget") && (
+          <section aria-labelledby="sporing-titel" className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 id="sporing-titel" className="text-[17px] leading-snug lg:text-lg">
+              Følg pakken
+            </h2>
+            {leveringTekst && (
+              <p className="mt-1 text-sm text-tekst-svag">
+                {leveringTekst.replace(/^Køberens adresse/, "Din adresse")}
+              </p>
+            )}
+            <div className="mt-4">
+              <SporingTidslinje f={forsendelse} />
+            </div>
+          </section>
         )}
 
         {afsendelsesAnnullering && (
@@ -655,7 +762,16 @@ export default async function HandelDetalje({
         )}
 
         {/* Handlinger */}
-        {visFragtlabel && !(erFirmaSted && lukket) && <FragtlabelBoks tradeId={handel.id} forsendelse={forsendelse} />}
+        {visFragtlabel && !(erFirmaSted && lukket) && (
+          <FragtlabelBoks
+            tradeId={handel.id}
+            forsendelse={forsendelse}
+            afsender={afsenderStart}
+            pakke={pakkeTekst}
+            levering={leveringTekst}
+            brugteLabels={udgaaende.length}
+          />
+        )}
 
         {erSaelger && !afhentning && handel.status === "betaling_modtaget" && (
           <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
