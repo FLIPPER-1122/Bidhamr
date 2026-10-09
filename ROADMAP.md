@@ -95,6 +95,8 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 
 - [ ] Byg og test fragt mod **Shipmondos testmiljø** (Filip 8. okt. 2026: i stedet for GLS direkte – Filip får adgang ca. 9. okt.) – skal være færdigt inden nytår
 - [ ] Filip: møde med Shipmondo om den bedste løsning
+- [ ] Filip: skaf API-adgang (kunde-id + kode) og testmiljø hos DAO – vi integrerer **direkte med DAO** i stedet for Shipmondo (sparer Shipmondo Pro 200 kr./md., labelgebyr og integrationsgebyr; DAO's API har booking, labelfri kode, pakkeshops, sporing, annullering og retur). Shipmondo-adapteren bliver liggende til evt. flere fragtfirmaer senere *(Filip 9. okt. 2026)*
+- [ ] DAO-adapter (`src/lib/fragt/dao.ts`) mod DAO's testmiljø, sporing via cron – når Filip har API-adgang
 - [ ] Filip: spørg GLS/Shipmondo, om fragtfirmaet selv **vejer pakken**, og om den målte vægt kan hentes via API (bruges som bevis i svindelsager)
 - [ ] Filip: spørg GLS/Shipmondo om **reklamation ved transportskade**: kan BidHamr reklamere på sælgers vegne (fragten er på BidHamrs aftale), hvad er maks. erstatning pr. pakke, er elektronik/glas undtaget, og findes der tillægsforsikring?
 - [ ] **Reklamation hos fragtfirma**: når en sag om transportskade afgøres til købers fordel, og sælger har pakket ordentligt, opretter staff (eller systemet via fragtfirmaets API) en reklamation med pakkebilleder, købers skadebilleder og sporingsdata. Status vises på sagen for sælger. Erstatning fra fragtfirmaet udbetales til sælger. Afvises den, lukkes reklamationen, og sælger får besked (se ROADMAP-BESLUTNINGER.md afsnit 4)
@@ -222,7 +224,7 @@ Formål: firmaer med CVR kan sælge på BidHamr med abonnement – og det skal v
 - [~] Ingen BidHamr Beskyttelse ved køb fra erhverv
 - [ ] Fortrydelsesret 14 dage: "Fortryd køb", returlabel, refusion via Stripe ved modtagelse, udbetaling til erhverv først efter fristen *(venter på Stripe/Niels og fragt)*
 - [~] Abonnementsbetaling med **Stripe Billing** (testmiljø, Filip 8. okt. 2026 – Niels gennemgår): "Betal for din pakke" (Checkout, kort), opgradering med det samme med betaling af forskellen (faktura, 3DS via Stripes fakturaside), nedgradering fra næste periode (Subscription Schedule), opsigelse kun via admin (chef, ved periodens slut), mislykket betaling → pause efter 7 dage → genaktivering ved betaling, regninger med moms og PDF, "Skift betalingskort" (kundeportal). Priser ekskl. moms + fast Tax Rate 25 %. Migration `20261010050000_erhverv_stripe.sql`. Kode: `src/lib/erhverv/betaling.ts`, webhook `src/app/api/webhooks/stripe/route.ts`. Tjekliste til Niels: `STRIPE-ERHVERV-NOTE.md`. Valg af regnskabsprogram mangler stadig
-- [ ] **Faktura på varen ved firmasalg**: BidHamr laver automatisk fakturaen på firmaets vegne (firmanavn, CVR, moms), og både køber og firma får den *(venter på revisorens svar, nr. 95)*
+- [ ] **Faktura på varen ved firmasalg**: firmaet fakturerer selv (Filip, 9. okt. 2026). Firma oversigt → Salg viser pr. salg de oplysninger, firmaet skal bruge til fakturaen (købers navn, adresse, e-mail, vare, pris inkl. moms, dato), evt. med "Kopiér"/CSV-eksport, og erhvervsvilkårene siger, at firmaet selv fakturerer
 - [ ] Reklamation: køber kan se virksomhedens kontaktoplysninger og klage; gentagne klager → advarsel/lukning
 - [ ] Brugerbetingelser og FAQ for erhverv (indhold + advokat)
 - [ ] Appen: samme erhvervsfunktioner (Filip)
