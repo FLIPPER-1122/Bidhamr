@@ -318,7 +318,7 @@ Billederne viser, hvordan varen er pakket. De bruges, hvis der bliver oprettet e
 
 14.1 BidHamr Beskyttelse er en frivillig ekstra ydelse fra BidHamr, som du kan vælge, når du byder. Den er ikke valgt på forhånd.
 
-14.2 **Pris.** 5 % af buddet, dog mindst 25 kr og højst 250 kr, inkl. moms. Prisen indgår i betalingen, hvis du vinder – også ved automatisk betaling.
+14.2 **Pris.** 5 % af buddet, dog mindst 25 kr og højst 250 kr, inkl. moms. Prisen indgår i det beløb, du betaler på betalingssiden, hvis du vinder.
 
 14.3 **Valget følger buddet.** Du vælger BidHamr Beskyttelse, når du byder. Valget kan ikke ændres bagefter.
 

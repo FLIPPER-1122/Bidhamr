@@ -309,14 +309,15 @@ export async function startGemKort(): Promise<{ ok: true; clientSecret: string }
     let aaben: (typeof aabne.data)[number] | undefined;
     for (const s of aabne.data) {
       if (
-        // off_session: SetupIntents fra før automatisk betaling blev fjernet.
         (s.usage !== "on_session" && s.usage !== "off_session") ||
         s.metadata?.bruger_id !== user.id ||
         !(s.status === "requires_payment_method" || s.status === "requires_confirmation" || s.status === "requires_action")
       ) {
         continue;
       }
-      if (s.created <= graense) {
+      // off_session er fra før automatisk betaling blev fjernet: genbruges
+      // aldrig (kortet må kun gemmes til on-session brug) - annulleres.
+      if (s.usage === "off_session" || s.created <= graense) {
         try {
           await stripe.setupIntents.cancel(s.id);
         } catch (err) {
