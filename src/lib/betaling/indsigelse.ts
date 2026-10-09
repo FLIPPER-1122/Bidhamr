@@ -19,7 +19,7 @@ import "server-only";
 //     INTET trækkes fra sælgeren. Køberen skal sende varen til BidHamr.
 // Tilbageførslen prøves igen med spredte forsøg (5 min, 10 min ... højst 6 t)
 // af betalings-cron'en; efter 5 forsøg markeres betalingen til staff, som kan
-// trykke "Hent beløbet fra sælgeren igen". Sælgerens saldo må aldrig blive
+// trykke "Hent beløbet fra sælgeren". Sælgerens saldo må aldrig blive
 // negativ af BidHamrs tilbageførsel: saldoen tjekkes først.
 //
 // I separat-modellen ændres intet (alt her kræver pengemodel 'destination').
@@ -172,35 +172,98 @@ export async function tilbagefoerVedTabtIndsigelse(
   betalingId: string,
   dArg?: Stripe.Dispute,
 ): Promise<string> {
+  const admin = createAdminClient();
+  const { data: foer } = await admin
+    .from("betalinger")
+    .select("indsigelse_tabt_afklaret")
+    .eq("id", betalingId)
+    .maybeSingle<{ indsigelse_tabt_afklaret: string | null }>();
+  const forrige = foer?.indsigelse_tabt_afklaret ?? null;
   const r = await tilbagefoerUdenBesked(betalingId, dArg);
-  // "venter" = endnu uafklaret (fx en udbetaling er claimet/usikker): ingen
-  // beskeder endnu - cron'en behandler betalingen igen, når udbetalingen er
-  // afklaret (indsigelse_tabt_afklaret er tom).
+  // "venter" = endnu uafklaret (fx en udbetaling er claimet, usikker eller på
+  // vej): ingen beskeder - cron behandler betalingen igen, når udbetalingen er
+  // paid eller fejlet.
   if (r === "venter") return r;
   const udfald = r === "udbetalt" ? "udbetalt" : r === "stoppet" ? "stoppet" : "tilbagefoert";
-  const admin = createAdminClient();
+  // En udbetaling, der fejlede efter 'udbetalt', står som 'udbetaling_fejlet',
+  // til beløbet er hentet tilbage (stop = staff, knappen i admin).
+  if (forrige === "udbetaling_fejlet" && udfald !== "tilbagefoert") return r;
   const { data: nyt, error: aFejl } = await admin.rpc("betaling_indsigelse_tabt_afklar", {
     p_betaling: betalingId,
     p_udfald: udfald,
   });
   if (aFejl && !manglerIDatabasen(aFejl)) console.error("betaling_indsigelse_tabt_afklar:", betalingId, aFejl.message);
-  const { data: b } = await admin.from("betalinger").select(KOLONNER).eq("id", betalingId).maybeSingle<Raekke>();
-  if (b?.pengemodel === "destination" && b.stripe_dispute_id) {
-    if (nyt === true && udfald === "udbetalt") {
+  const { data: b } = await admin
+    .from("betalinger")
+    .select(`${KOLONNER}, indsigelse_tabt_afklaret`)
+    .eq("id", betalingId)
+    .maybeSingle<Raekke & { indsigelse_tabt_afklaret: string | null }>();
+  if (b?.pengemodel !== "destination" || !b.stripe_dispute_id) return r;
+  // Beskeder kun, når den gemte afklaring ER udfaldet (ellers er noget
+  // ændret imens - næste kørsel afgør det).
+  if (!(nyt === true || b.indsigelse_tabt_afklaret === udfald)) return r;
+
+  if (forrige === "udbetaling_fejlet" && udfald === "tilbagefoert") {
+    // Chefens valg: udbetalingen fejlede efter 'udbetalt' - behandlet som
+    // ikke udbetalt. Rettelse til begge (egne nøgler).
+    if (nyt === true) {
       await marker(
         admin,
         b.id,
-        "Indsigelse tabt efter udbetaling: BidHamr bærer tabet - intet trækkes fra sælgeren. Køberen skal sende varen til BidHamr",
+        "Udbetalingen fejlede efter den tabte indsigelse: beløbet er hentet tilbage fra sælgerens Stripe-konto, og køberen er bedt om at sende varen til sælgeren - tjek, om varen allerede er sendt til BidHamr",
       );
     }
-    // Først nu vides, om handlen var udbetalt. Én besked pr. indsigelse
-    // (nøglerne), også hvis dette kaldes flere gange.
-    await sendIndsigelseTilSaelger(b.stripe_dispute_id, b.stripe_payment_intent_id, b.stripe_charge_id, "tabt", {
-      overfoert: udfald === "udbetalt",
-    });
-    await beskedTilKoeberVedTabt(admin, b, b.stripe_dispute_id, udfald === "udbetalt");
+    await beskedRettelseEfterFejletUdbetaling(admin, b, b.stripe_dispute_id);
+    return r;
   }
+  if (nyt === true && udfald === "udbetalt") {
+    await marker(
+      admin,
+      b.id,
+      "Indsigelse tabt efter udbetaling: BidHamr bærer tabet - intet trækkes fra sælgeren. Køberen skal sende varen til BidHamr",
+    );
+  }
+  // Én besked pr. indsigelse (nøglerne), også hvis dette kaldes flere gange.
+  await sendIndsigelseTilSaelger(b.stripe_dispute_id, b.stripe_payment_intent_id, b.stripe_charge_id, "tabt", {
+    overfoert: udfald === "udbetalt",
+  });
+  await beskedTilKoeberVedTabt(admin, b, b.stripe_dispute_id, udfald === "udbetalt");
   return r;
+}
+
+// Rettelse efter en udbetaling, der fejlede, efter at sælgeren havde fået at
+// vide, at udbetalingen ikke trækkes tilbage, og køberen, at varen skal til
+// BidHamr. Kaster aldrig.
+async function beskedRettelseEfterFejletUdbetaling(admin: Admin, b: Raekke, disputeId: string): Promise<void> {
+  try {
+    const [{ data: h }, { data: a }] = await Promise.all([
+      admin.from("trades").select("status").eq("id", b.trade_id).maybeSingle(),
+      admin.from("auctions").select("titel").eq("id", b.auction_id).maybeSingle(),
+    ]);
+    const vare = `"${(a?.titel as string | undefined) ?? "varen"}"`;
+    const status = (h?.status as string | undefined) ?? "";
+    const harVaren = ["pakke_sendt", "modtaget", "leveret", "afsluttet"].includes(status) || !!b.frigivet_kl;
+    await send(b.seller_id, "sag", {
+      titel: "Udbetalingen fejlede - beløbet er hentet tilbage",
+      tekst: `Udbetalingen til din bank for ${vare} fejlede. Fordi køberens bank har givet køberen pengene tilbage, er beløbet hentet tilbage fra din Stripe-konto, og der udbetales ikke for handlen.${
+        harVaren ? " Køberen sender varen tilbage til dig - vi skriver til jer begge om, hvordan det sker." : ""
+      }`,
+      link: `/mine-handler/${b.trade_id}`,
+      data: { trade_id: b.trade_id },
+      noegle: `indsigelse_tabt_rettelse:${disputeId}`,
+    });
+    if (harVaren) {
+      await send(b.buyer_id, "sag", {
+        titel: "Send varen til sælgeren i stedet",
+        tekst: `Rettelse om ${vare}: send varen tilbage til sælgeren i stedet for til BidHamr. Har du allerede sendt den til BidHamr, skal du ikke gøre mere - så skriver vi til dig.`,
+        link: `/mine-handler/${b.trade_id}`,
+        data: { trade_id: b.trade_id },
+        noegle: `indsigelse_tabt_rettelse_koeber:${disputeId}`,
+      });
+    }
+  } catch (err) {
+    console.error("Rettelse efter fejlet udbetaling fejlede:", disputeId, err);
+  }
 }
 
 async function tilbagefoerUdenBesked(betalingId: string, dArg?: Stripe.Dispute): Promise<string> {
@@ -403,13 +466,14 @@ export async function tilbagefoerTabteIndsigelserVentende(): Promise<number> {
   const nu = new Date().toISOString();
   await udbetalingFejletEfterTabt(admin);
   // Alle tabte indsigelser, hvis udfald ikke er afklaret endnu - også dem med
-  // en udbetaling (claimet/usikker -> vent; oprettet/betalt -> 'udbetalt').
+  // en udbetaling (claimet/usikker/på vej -> vent; paid -> 'udbetalt') - og
+  // 'udbetaling_fejlet' (udbetalingen fejlede efter 'udbetalt': hentes tilbage).
   const { data, error } = await admin
     .from("betalinger")
     .select("id")
     .eq("pengemodel", "destination")
     .eq("indsigelse_status", "lost")
-    .is("indsigelse_tabt_afklaret", null)
+    .or("indsigelse_tabt_afklaret.is.null,indsigelse_tabt_afklaret.eq.udbetaling_fejlet")
     .is("indsigelse_tilbagefoersel_id", null)
     .lt("indsigelse_tilbagefoersel_forsoeg", 5)
     .or(`indsigelse_tilbagefoersel_naeste_kl.is.null,indsigelse_tilbagefoersel_naeste_kl.lte.${nu}`)
@@ -433,9 +497,11 @@ export async function tilbagefoerTabteIndsigelserVentende(): Promise<number> {
 
 // Udfaldet var 'udbetalt' (BidHamr bærer tabet), men udbetalingen til
 // sælgerens bank fejlede/blev annulleret bagefter (payout.failed efter paid):
-// pengene står igen på sælgerens Stripe-konto. Chefens valg: intet flyttes
-// automatisk (hverken tilbageførsel eller ny udbetaling) - markering og
-// drift-alarm, staff afgør. Én gang pr. betaling. Kaster aldrig.
+// pengene står igen på sælgerens Stripe-konto. Chefens valg (Filips regel:
+// intet er udbetalt, før pengene har forladt Stripe): behandles som ikke
+// udbetalt - 'udbetaling_fejlet', og cron'en henter beløbet tilbage (samme vej
+// som før udbetaling) og sender en rettelse til sælger og køber. Markering og
+// drift-alarm én gang pr. betaling. Kaster aldrig.
 async function udbetalingFejletEfterTabt(admin: Admin): Promise<void> {
   try {
     const { data, error } = await admin
@@ -460,13 +526,13 @@ async function udbetalingFejletEfterTabt(admin: Admin): Promise<void> {
       await marker(
         admin,
         r.id as string,
-        "Indsigelse tabt efter udbetaling, men udbetalingen til sælgerens bank fejlede bagefter: pengene står igen på sælgerens Stripe-konto og flyttes ikke automatisk - afgør manuelt",
+        "Indsigelse tabt efter udbetaling, men udbetalingen til sælgerens bank fejlede bagefter: pengene står igen på sælgerens Stripe-konto og hentes nu tilbage (som før udbetaling)",
       );
       await logDriftFejl({
         kilde: "cron",
         sti: "betalings-cron",
         hvor: "betaling/indsigelse",
-        fejl: `Tabt indsigelse på handel ${r.trade_id}: udbetalingen til sælgerens bank fejlede efter afklaringen ('udbetalt'). Pengene står på sælgerens Stripe-konto - se /admin/betalinger.`,
+        fejl: `Tabt indsigelse på handel ${r.trade_id}: udbetalingen til sælgerens bank fejlede efter afklaringen ('udbetalt'). Beløbet hentes tilbage fra sælgerens Stripe-konto - se /admin/betalinger.`,
         brugerId: r.seller_id as string,
       });
     }
@@ -521,7 +587,7 @@ export async function varslIndsigelsesfrister(): Promise<number> {
   return antal;
 }
 
-// Admin/chef: "Hent beløbet fra sælgeren igen" (rolle og inhabilitet tjekkes
+// Admin/chef: "Hent beløbet fra sælgeren" (rolle og inhabilitet tjekkes
 // i databasen). Kaldes kun fra en admin-server-action.
 export async function proevIndsigelseTilbagefoerselIgen(betalingId: string, medarbejderId: string): Promise<string> {
   const { data, error } = await createAdminClient().rpc("betaling_indsigelse_tilbagefoersel_proev_igen", {

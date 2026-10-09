@@ -374,7 +374,9 @@ async function skyldigOere(admin: Admin, saelgerId: string, konto: string): Prom
     if (x < 0) {
       // Mere taget fra sælgerens konto end handlen: aldrig skjult. Tæller 0 i
       // summen (så andre handler ikke ser dækket ud af et minus), markeres
-      // til staff og giver drift-alarm.
+      // til staff og giver drift-alarm - højst én gang pr. handel.
+      const { data: foerste } = await admin.rpc("betaling_saldo_negativ_alarm", { p_betaling: r.id });
+      if (foerste !== true) continue;
       await admin.rpc("betaling_marker_refusion", {
         p_betaling: r.id,
         p_besked: "Saldo-afstemning: der er taget mere fra sælgerens Stripe-konto for handlen, end handlen gav - kontrollér tilbageførsler og refusioner i Stripe",

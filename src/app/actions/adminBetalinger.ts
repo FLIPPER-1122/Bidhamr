@@ -131,9 +131,13 @@ export type BetalingTilHandling = {
   // Kun for tabt indsigelse på en destination-betaling (betalingsmodel
   // trin 4): er beløbet hentet tilbage fra sælgerens Stripe-konto? 'udbetalt'
   // = handlen var udbetalt, BidHamr bærer tabet (intet trækkes fra sælgeren).
+  //   venter_udbetaling = en udbetaling er claimet/på vej - afgøres, når den
+  //   er paid eller fejlet; udbetaling_fejlet = udbetalingen fejlede efter
+  //   'udbetalt', beløbet hentes tilbage. proeverSelv = cron prøver igen.
   indsigelseTilbagefoersel: {
-    tilstand: "venter" | "gennemfoert" | "opgivet" | "udbetalt";
+    tilstand: "venter" | "venter_udbetaling" | "gennemfoert" | "opgivet" | "udbetalt" | "udbetaling_fejlet";
     forsoeg: number;
+    proeverSelv: boolean;
   } | null;
   // Destination (trin 4): forklaring til staff om indsigelsen og markeringen
   // (beviser lagt klar / vundet). null = ingen.
@@ -515,7 +519,7 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
     if (indsigelseIds.length) {
       const { data: tb, error: tbErr } = await admin
         .from("betalinger")
-        .select("id, pengemodel, indsigelse_status, indsigelse_beviser_kl, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoersel_forsoeg, saelger_udbetaling_id, overfoersel_paabegyndt_kl")
+        .select("id, pengemodel, indsigelse_status, indsigelse_beviser_kl, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoersel_forsoeg, indsigelse_tabt_afklaret, saelger_udbetaling_id, overfoersel_paabegyndt_kl")
         .in("id", indsigelseIds);
       if (tbErr && !manglerKolonne(tbErr)) throw new Error(tbErr.message);
       for (const t of tb ?? []) {
@@ -534,15 +538,28 @@ export async function hentBetalingerTilHandling(side: number, fane: "aaben" | "l
         }
         if (st !== "lost") continue;
         const forsoeg = Number(t.indsigelse_tilbagefoersel_forsoeg ?? 0);
-        tilbageMap.set(t.id as string, {
-          tilstand: t.indsigelse_tilbagefoersel_id
+        const afklaret = (t.indsigelse_tabt_afklaret as string | null) ?? null;
+        const tilstand: NonNullable<BetalingTilHandling["indsigelseTilbagefoersel"]>["tilstand"] =
+          t.indsigelse_tilbagefoersel_id
             ? "gennemfoert"
-            : t.saelger_udbetaling_id || t.overfoersel_paabegyndt_kl
+            : afklaret === "udbetalt" && t.saelger_udbetaling_id
               ? "udbetalt"
-              : forsoeg >= 5
-                ? "opgivet"
-                : "venter",
+              : afklaret === "udbetaling_fejlet" || (afklaret === "udbetalt" && !t.saelger_udbetaling_id)
+                ? "udbetaling_fejlet"
+                : t.saelger_udbetaling_id || t.overfoersel_paabegyndt_kl
+                  ? "venter_udbetaling"
+                  : forsoeg >= 5
+                    ? "opgivet"
+                    : "venter";
+        tilbageMap.set(t.id as string, {
+          tilstand,
           forsoeg,
+          // Samme betingelse som tilbagefoerTabteIndsigelserVentende.
+          proeverSelv:
+            (tilstand === "venter" || tilstand === "udbetaling_fejlet") &&
+            forsoeg < 5 &&
+            !t.saelger_udbetaling_id &&
+            !t.overfoersel_paabegyndt_kl,
         });
       }
     }
