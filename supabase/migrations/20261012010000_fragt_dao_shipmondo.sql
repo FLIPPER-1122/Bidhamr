@@ -52,13 +52,21 @@ create table if not exists public.fragt_pakkestoerrelser (
   constraint fragt_pakkestoerrelser_kode_check check (kode in ('lille', 'mellem', 'stor')),
   constraint fragt_pakkestoerrelser_vaerdier_check check (
         maks_gram between 1 and 100000
-    and pakkeshop_oere between 0 and 1000000
-    and (doer_oere is null or doer_oere between 0 and 1000000))
+    and pakkeshop_oere between 100 and 1000000
+    and (doer_oere is null or doer_oere between 100 and 1000000))
 );
 
 comment on table public.fragt_pakkestoerrelser is
   'Pakkestørrelser, vægtgrænser og købers fragtpris inkl. moms (Filip 9. okt. 2026). '
   'Ét sted: auktionerne låser prisen herfra, når pakkestørrelsen sættes.';
+
+-- Pakkeshop-prisen er mindst 1 kr. (betalingens fragt > 0 er det, der gør en
+-- handel til en forsendelse).
+alter table public.fragt_pakkestoerrelser drop constraint if exists fragt_pakkestoerrelser_vaerdier_check;
+alter table public.fragt_pakkestoerrelser add constraint fragt_pakkestoerrelser_vaerdier_check check (
+      maks_gram between 1 and 100000
+  and pakkeshop_oere between 100 and 1000000
+  and (doer_oere is null or doer_oere between 100 and 1000000));
 
 insert into public.fragt_pakkestoerrelser (kode, navn, maks_gram, pakkeshop_oere, doer_oere, sortering)
 values ('lille',  'Lille',  1000,  4000, 6000, 1),
@@ -228,26 +236,27 @@ comment on column public.auctions.vaegt_gram is
 
 -- Håndhæver vægtgrænsen og låser fragtprisen. BEFORE INSERT/UPDATE - også
 -- for appens direkte insert/update. Fejlkoder:
---   BHF01 'fragt_for_tung: ...'      over 15 kg med forsendelse
---   BHF02 'fragt_stoerrelse: ...'    vægten passer ikke til pakkestørrelsen
+--   BHT01 'fragt_for_tung: ...'      over 15 kg med forsendelse
+--   BHT02 'fragt_stoerrelse: ...'    vægten passer ikke til pakkestørrelsen
+--   BHT03 'fragt_vaegt: ...'         Mellem/Stor uden vægt (kun brugerens
+--                                    egne ændringer - ikke systemet)
 -- Ved UPDATE genberegnes prisen kun, når forsendelse/størrelse/vægt ændres;
 -- ellers bevares den låste pris (klienten kan ikke sætte den selv).
+-- Chefens valg: sender klienten INGEN størrelse (ældre web/app), bliver den
+-- Mellem uden krav om vægt, så den nuværende app ikke går i stykker. Når
+-- appen sender størrelsen, kan kravet gøres generelt.
 create or replace function public.auctions_fragt()
 returns trigger
 language plpgsql
 set search_path = ''
 as $fn$
 declare
-  v_min  text;
-  v_maks integer;
-  p      record;
+  v_min    text;
+  v_maks   integer;
+  v_system boolean := coalesce(auth.role(), '') = 'service_role'
+                      or current_user in ('postgres', 'supabase_admin', 'service_role');
+  p        record;
 begin
-  -- Engangs-backfill i migrationen (kun postgres kan sætte flaget).
-  if current_user in ('postgres', 'supabase_admin')
-     and coalesce(current_setting('bidhamr.fragt_backfill', true), '') = 'on' then
-    return new;
-  end if;
-
   if tg_op = 'UPDATE'
      and new.forsendelse_mulig is not distinct from old.forsendelse_mulig
      and new.pakkestoerrelse is not distinct from old.pakkestoerrelse
@@ -267,7 +276,7 @@ begin
     v_min := public.fragt_stoerrelse_for_vaegt(new.vaegt_gram);
     if v_min is null then
       raise exception 'fragt_for_tung: Varer over 15 kg kan kun afhentes. Slå forsendelse fra.'
-        using errcode = 'BHF01';
+        using errcode = 'BHT01';
     end if;
     if new.pakkestoerrelse is null then
       new.pakkestoerrelse := v_min;
@@ -275,9 +284,13 @@ begin
       select maks_gram into v_maks from public.fragt_pakkestoerrelser where kode = new.pakkestoerrelse;
       if v_maks is null or new.vaegt_gram > v_maks then
         raise exception 'fragt_stoerrelse: Vægten passer ikke til pakkestørrelsen. Vælg en større pakke.'
-          using errcode = 'BHF02';
+          using errcode = 'BHT02';
       end if;
     end if;
+  elsif not v_system and new.pakkestoerrelse in ('mellem', 'stor')
+        and (tg_op = 'INSERT' or new.pakkestoerrelse is distinct from old.pakkestoerrelse) then
+    raise exception 'fragt_vaegt: Skriv, hvor meget pakken vejer (Mellem og Stor).'
+      using errcode = 'BHT03';
   end if;
 
   -- Ældre klienter, der ikke sender størrelsen: Mellem (chefens valg).
@@ -285,7 +298,7 @@ begin
 
   select * into p from public.fragt_pakkestoerrelser where kode = new.pakkestoerrelse;
   if p.kode is null then
-    raise exception 'fragt_stoerrelse: Ukendt pakkestørrelse.' using errcode = 'BHF02';
+    raise exception 'fragt_stoerrelse: Ukendt pakkestørrelse.' using errcode = 'BHT02';
   end if;
   new.fragt_pakkeshop_oere := p.pakkeshop_oere;
   new.fragt_doer_oere := p.doer_oere;
@@ -302,14 +315,15 @@ create trigger auctions_fragt
 -- Backfill: eksisterende auktioner med forsendelse er budt på med "35 kr."
 -- (den gamle faste fragt). De beholder 35 kr. til pakkeshop; levering til
 -- døren til Mellem-prisen (et frivilligt tilvalg i checkout). Chefens valg.
-select set_config('bidhamr.fragt_backfill', 'on', false);
+-- Triggeren er slået fra under opdateringen (den ville sætte dagens pris).
+alter table public.auctions disable trigger auctions_fragt;
 update public.auctions a
    set pakkestoerrelse = 'mellem',
        fragt_pakkeshop_oere = 3500,
        fragt_doer_oere = (select doer_oere from public.fragt_pakkestoerrelser where kode = 'mellem')
  where a.forsendelse_mulig
    and a.pakkestoerrelse is null;
-select set_config('bidhamr.fragt_backfill', 'off', false);
+alter table public.auctions enable trigger auctions_fragt;
 
 -- Kolonne-læsning (auctions har kolonne-grants efter 20261010061000).
 grant select (pakkestoerrelse, vaegt_gram, fragt_pakkeshop_oere, fragt_doer_oere)
@@ -349,9 +363,11 @@ begin
 end $$;
 
 -- Sælger ændrer pakkestørrelse/vægt på sin egen auktion (før første bud).
+-- Samme beskyttelse som en direkte UPDATE (auctions_beskyt_kolonner): ikke
+-- efter første bud, ikke skjult/pauset, ikke slut, ikke suspenderet.
 -- Svar: {kode: 'ok', fragt_pakkeshop_oere, fragt_doer_oere} | {kode:
--- 'ikke_fundet' | 'har_bud' | 'ikke_aktiv' | 'skjult' | 'for_tung' |
--- 'stoerrelse' | 'ugyldig'}.
+-- 'ikke_fundet' | 'har_bud' | 'ikke_aktiv' | 'skjult' | 'pauset' |
+-- 'suspenderet' | 'for_tung' | 'stoerrelse' | 'vaegt_mangler' | 'ugyldig'}.
 create or replace function public.saet_auktion_fragt(
   p_auktion         uuid,
   p_pakkestoerrelse text,
@@ -374,12 +390,20 @@ begin
   if p_vaegt_gram is not null and (p_vaegt_gram < 1 or p_vaegt_gram > 1000000) then
     return jsonb_build_object('kode', 'ugyldig');
   end if;
+  -- Samme krav som ved oprettelse: vægt ved Mellem og Stor.
+  if p_vaegt_gram is null and coalesce(p_pakkestoerrelse, 'mellem') in ('mellem', 'stor') then
+    return jsonb_build_object('kode', 'vaegt_mangler');
+  end if;
+  if public.jeg_er_suspenderet() then
+    return jsonb_build_object('kode', 'suspenderet');
+  end if;
 
   select * into a from public.auctions where id = p_auktion for update;
   if not found or a.bruger_id is distinct from v_uid then
     return jsonb_build_object('kode', 'ikke_fundet');
   end if;
   if a.skjult then return jsonb_build_object('kode', 'skjult'); end if;
+  if a.pauset_kl is not null then return jsonb_build_object('kode', 'pauset'); end if;
   if a.status <> 'aktiv' or a.slutter_kl <= now() then
     return jsonb_build_object('kode', 'ikke_aktiv');
   end if;
@@ -398,8 +422,9 @@ begin
            redigeret_kl = date_trunc('milliseconds', clock_timestamp())
      where id = a.id;
   exception
-    when sqlstate 'BHF01' then return jsonb_build_object('kode', 'for_tung');
-    when sqlstate 'BHF02' then return jsonb_build_object('kode', 'stoerrelse');
+    when sqlstate 'BHT01' then return jsonb_build_object('kode', 'for_tung');
+    when sqlstate 'BHT02' then return jsonb_build_object('kode', 'stoerrelse');
+    when sqlstate 'BHT03' then return jsonb_build_object('kode', 'vaegt_mangler');
   end;
 
   return (select jsonb_build_object('kode', 'ok',
@@ -706,9 +731,14 @@ begin
            and stripe_payment_intent_id = b.stripe_payment_intent_id;
         v_pi_nul := true;
       else
+        -- pi_forsoeg + 1 også uden PaymentIntent: en PaymentIntent, der er ved
+        -- at blive lavet med det gamle beløb (samme idempotency key), kan så
+        -- ikke gemmes (sikrPaymentIntent gemmer kun ved samme pi_forsoeg,
+        -- total og gebyr).
         update public.betalinger
            set fragt_oere = v_pris,
                total_oere = total_oere - fragt_oere + v_pris,
+               pi_forsoeg = pi_forsoeg + 1,
                opdateret = now()
          where id = b.id and status = 'afventer' and stripe_charge_id is null
            and stripe_payment_intent_id is null;
@@ -823,10 +853,10 @@ begin
      and coalesce(new.fragt_oere, 0) > 0 then
     select hl.fragt_oere into v_fragt from public.handel_levering hl where hl.trade_id = new.trade_id;
     if v_fragt is null then
-      raise exception 'levering_mangler: Vælg levering, før du betaler.' using errcode = 'BHF10';
+      raise exception 'levering_mangler: Vælg levering, før du betaler.' using errcode = 'BHT10';
     end if;
     if v_fragt <> new.fragt_oere then
-      raise exception 'levering_mangler: Fragten passer ikke til leveringsvalget.' using errcode = 'BHF10';
+      raise exception 'levering_mangler: Fragten passer ikke til leveringsvalget.' using errcode = 'BHT10';
     end if;
   end if;
   return new;
@@ -853,7 +883,18 @@ alter table public.forsendelser
   add column if not exists pakkeshop_id             text,
   -- Snapshot af adresserne på labelen (kun staff/service_role).
   add column if not exists afsender                 jsonb,
-  add column if not exists modtager                 jsonb;
+  add column if not exists modtager                 jsonb,
+  -- Oprettelsen fik et ukendt udfald (timeout/netværk, eller fejl efter at
+  -- fragtfirmaet havde oprettet den). Claimet bliver stående, og næste forsøg
+  -- genbruger SAMME reference, så der aldrig bestilles en ny label, før det
+  -- er afklaret.
+  add column if not exists ukendt_udfald_kl         timestamptz,
+  -- Seneste forsøg på at oprette (claim eller genoptag).
+  add column if not exists forsoegt_kl              timestamptz;
+
+-- Staff kan godkende flere udgående labels end de 2 tilladte pr. handel.
+alter table public.handel_levering
+  add column if not exists ekstra_labels_godkendt integer not null default 0;
 
 alter table public.forsendelser drop constraint if exists forsendelser_levering_check;
 alter table public.forsendelser add constraint forsendelser_levering_check check (
@@ -867,10 +908,20 @@ alter table public.forsendelser add constraint forsendelser_levering_check check
 
 grant select (levering, produkt, pakkeshop_id) on public.forsendelser to authenticated;
 
--- Som i 20261006010000, plus: en udgående forsendelse kræver købers
--- leveringsvalg (handel_levering), og pakkestørrelsen er auktionens (sælgeren
--- kan ikke vælge en anden - prisen er låst på auktionen). p_pakkestoerrelse
--- bruges kun, når auktionen ingen størrelse har (gamle auktioner).
+-- Som i 20261006010000, plus:
+--   - en udgående forsendelse kræver købers leveringsvalg (handel_levering),
+--   - pakkestørrelsen er auktionens (sælgeren kan ikke vælge en anden - prisen
+--     er låst på auktionen); p_pakkestoerrelse bruges kun, når auktionen ingen
+--     størrelse har,
+--   - et afbrudt forsøg eller et ukendt udfald markeres IKKE længere fejlet:
+--     det genoptages med samme id/reference ('genoptag'), så der aldrig
+--     bestilles en ny label, før det er afklaret,
+--   - højst 2 udgående labels pr. handel ('for_mange_labels'), medmindre
+--     staff har godkendt flere.
+-- Svar: {kode: 'ok' | 'genoptag', id, pakkestoerrelse, levering, fragtfirma} |
+--       {kode: 'findes', id} | {kode: 'i_gang' | 'ikke_fundet' | 'afhentning' |
+--       'forkert_status' | 'mangler_levering' | 'ingen_retur' |
+--       'for_mange_labels' | 'ugyldig'}
 create or replace function public.forsendelse_claim(
   p_trade           uuid,
   p_bruger          uuid,
@@ -888,6 +939,8 @@ declare
   v_id uuid;
   v_stoerrelse text;
   v_levering text;
+  v_ekstra integer;
+  v_antal integer;
 begin
   if p_trade is null or p_bruger is null
      or p_type not in ('udgaaende', 'retur')
@@ -913,28 +966,12 @@ begin
 
   v_stoerrelse := coalesce(t.a_stoerrelse, p_pakkestoerrelse, 'mellem');
 
-  select id, status, oprettet_kl into f
-    from public.forsendelser
-   where trade_id = p_trade and type = p_type
-     and status not in ('annulleret', 'fejlet')
-   for update;
-  if f.id is not null then
-    if f.status <> 'opretter' then
-      return jsonb_build_object('kode', 'findes', 'id', f.id);
-    end if;
-    if f.oprettet_kl > now() - interval '10 minutes' then
-      return jsonb_build_object('kode', 'i_gang');
-    end if;
-    update public.forsendelser
-       set status = 'fejlet', fejl = 'Oprettelsen blev afbrudt (over 10 minutter).'
-     where id = f.id and status = 'opretter';
-  end if;
-
   if p_type = 'udgaaende' then
     if t.status <> 'betaling_modtaget' then
       return jsonb_build_object('kode', 'forkert_status');
     end if;
-    select hl.maade into v_levering from public.handel_levering hl where hl.trade_id = p_trade;
+    select hl.maade, hl.ekstra_labels_godkendt into v_levering, v_ekstra
+      from public.handel_levering hl where hl.trade_id = p_trade;
     if v_levering is null then
       return jsonb_build_object('kode', 'mangler_levering');
     end if;
@@ -948,11 +985,47 @@ begin
     v_levering := 'retur';
   end if;
 
-  insert into public.forsendelser (trade_id, type, fragtfirma, status, pakkestoerrelse, oprettet_af, levering)
-  values (p_trade, p_type, p_fragtfirma, 'opretter', v_stoerrelse, p_bruger, v_levering)
+  select id, status, oprettet_kl, forsoegt_kl, ukendt_udfald_kl, fragtfirma, pakkestoerrelse into f
+    from public.forsendelser
+   where trade_id = p_trade and type = p_type
+     and status not in ('annulleret', 'fejlet')
+   for update;
+  if f.id is not null then
+    if f.status <> 'opretter' then
+      return jsonb_build_object('kode', 'findes', 'id', f.id);
+    end if;
+    -- Et forsøg er i gang (eller fik et ukendt udfald for under 1 minut
+    -- siden - fragtfirmaets søgning på reference er nogle sekunder bagud).
+    if (f.ukendt_udfald_kl is null and coalesce(f.forsoegt_kl, f.oprettet_kl) > now() - interval '10 minutes')
+       or f.ukendt_udfald_kl > now() - interval '1 minute' then
+      return jsonb_build_object('kode', 'i_gang');
+    end if;
+    -- Ukendt udfald eller afbrudt forsøg: genoptag med SAMME id/reference,
+    -- så fragtfirmaet giver den eksisterende forsendelse tilbage, hvis den findes.
+    update public.forsendelser
+       set forsoegt_kl = now(), ukendt_udfald_kl = null
+     where id = f.id and status = 'opretter';
+    return jsonb_build_object('kode', 'genoptag', 'id', f.id, 'pakkestoerrelse', f.pakkestoerrelse,
+                              'levering', v_levering, 'fragtfirma', f.fragtfirma);
+  end if;
+
+  -- Højst 2 udgående labels pr. handel (også annullerede); flere kræver, at
+  -- staff godkender (fragt_godkend_ekstra_label). Fejlede tæller ikke - dér
+  -- blev intet oprettet hos fragtfirmaet.
+  if p_type = 'udgaaende' then
+    select count(*) into v_antal from public.forsendelser
+     where trade_id = p_trade and type = 'udgaaende' and status <> 'fejlet';
+    if v_antal >= 2 + coalesce(v_ekstra, 0) then
+      return jsonb_build_object('kode', 'for_mange_labels');
+    end if;
+  end if;
+
+  insert into public.forsendelser (trade_id, type, fragtfirma, status, pakkestoerrelse, oprettet_af, levering, forsoegt_kl)
+  values (p_trade, p_type, p_fragtfirma, 'opretter', v_stoerrelse, p_bruger, v_levering, now())
   returning id into v_id;
 
-  return jsonb_build_object('kode', 'ok', 'id', v_id, 'pakkestoerrelse', v_stoerrelse, 'levering', v_levering);
+  return jsonb_build_object('kode', 'ok', 'id', v_id, 'pakkestoerrelse', v_stoerrelse, 'levering', v_levering,
+                            'fragtfirma', p_fragtfirma);
 end;
 $fn$;
 revoke all on function public.forsendelse_claim(uuid, uuid, text, text, text) from public, anon, authenticated;
@@ -992,6 +1065,112 @@ end;
 $fn$;
 revoke all on function public.forsendelse_gem_detaljer(uuid, text, integer, boolean, text, jsonb, jsonb) from public, anon, authenticated;
 grant execute on function public.forsendelse_gem_detaljer(uuid, text, integer, boolean, text, jsonb, jsonb) to service_role;
+
+-- Ukendt udfald: claimet bliver stående ('opretter'), og næste forsøg (efter
+-- mindst 1 minut) genoptager med samme reference. Staff markeres.
+create or replace function public.forsendelse_marker_ukendt(p_id uuid, p_fejl text)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  update public.forsendelser
+     set ukendt_udfald_kl = now(),
+         fejl = left(coalesce(p_fejl, 'Ukendt udfald'), 500),
+         kraever_opmaerksomhed = true,
+         opmaerksomhed_tekst = public.forsendelse_note_tilfoej(opmaerksomhed_tekst,
+           'Oprettelsen hos fragtfirmaet fik et ukendt udfald. Næste forsøg genbruger samme reference ('
+           || p_id || '). Tjek hos fragtfirmaet, hvis det bliver ved.')
+   where id = p_id and status = 'opretter';
+  return found;
+end;
+$fn$;
+revoke all on function public.forsendelse_marker_ukendt(uuid, text) from public, anon, authenticated;
+grant execute on function public.forsendelse_marker_ukendt(uuid, text) to service_role;
+
+-- Staff godkender én ekstra udgående label på handlen (efter 2). Kun
+-- service_role - serveren har tjekket staff-rollen og inhabilitet og logger i
+-- moderation_log. Svar: 'ok' | 'ikke_fundet'.
+create or replace function public.fragt_godkend_ekstra_label(p_trade uuid)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  update public.handel_levering
+     set ekstra_labels_godkendt = ekstra_labels_godkendt + 1, opdateret_kl = now()
+   where trade_id = p_trade;
+  if not found then return 'ikke_fundet'; end if;
+  return 'ok';
+end;
+$fn$;
+revoke all on function public.fragt_godkend_ekstra_label(uuid) from public, anon, authenticated;
+grant execute on function public.fragt_godkend_ekstra_label(uuid) to service_role;
+
+-- Fragtfirmaets målte vægt (webhook). Er den over pakkestørrelsens maksimum,
+-- markeres forsendelsen OG betalingen til staff (betalinger.kraever_opmaerksomhed
+-- holder udbetalingen, se betaling_udbetaling_blokeret). ROADMAP: sælgeren
+-- betaler forskellen - chefens valg: kun markering + note nu, modregning senere.
+-- Idempotent (noten tilføjes kun én gang). Svar: true = for tung.
+create or replace function public.forsendelse_tjek_vaegt(p_id uuid, p_maalt_gram integer)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  f      record;
+  v_maks integer;
+  v_note text;
+begin
+  if p_maalt_gram is null or p_maalt_gram <= 0 then return false; end if;
+  select id, trade_id, type, pakkestoerrelse, vaegt_gram into f from public.forsendelser where id = p_id;
+  if f.id is null or f.type <> 'udgaaende' then return false; end if;
+  select maks_gram into v_maks from public.fragt_pakkestoerrelser where kode = f.pakkestoerrelse;
+  if v_maks is null or p_maalt_gram <= v_maks then return false; end if;
+  v_note := 'Fragtfirmaet har vejet pakken til ' || p_maalt_gram || ' g, men pakkestørrelsen '
+            || f.pakkestoerrelse || ' er højst ' || v_maks || ' g. Sælgeren skal betale forskellen '
+            || '(modregning er ikke bygget) - udbetalingen holdes, til staff har set det.';
+  update public.forsendelser
+     set kraever_opmaerksomhed = true,
+         opmaerksomhed_tekst = public.forsendelse_note_tilfoej(opmaerksomhed_tekst, v_note)
+   where id = f.id;
+  update public.betalinger
+     set kraever_opmaerksomhed = true, opdateret = now()
+   where trade_id = f.trade_id and not kraever_opmaerksomhed;
+  return true;
+end;
+$fn$;
+revoke all on function public.forsendelse_tjek_vaegt(uuid, integer) from public, anon, authenticated;
+grant execute on function public.forsendelse_tjek_vaegt(uuid, integer) to service_role;
+
+-- Gamle handler (før denne migration), hvor køberen har startet betalingen
+-- uden leveringsvalg: køberen skal vælge levering (fragt-cron sender én besked
+-- pr. handel). Kun service_role.
+create or replace function public.fragt_mangler_leveringsvalg(p_graense integer)
+returns table (trade_id uuid, buyer_id uuid, auction_id uuid)
+language sql
+stable
+security definer
+set search_path = ''
+as $fn$
+  select b.trade_id, b.buyer_id, b.auction_id
+    from public.betalinger b
+    join public.trades t on t.id = b.trade_id
+   where b.status = 'afventer'
+     and b.fragt_oere > 0
+     and b.stripe_payment_intent_id is not null
+     and t.status = 'afventer_betaling'
+     and not exists (select 1 from public.handel_levering hl where hl.trade_id = b.trade_id)
+     and not exists (select 1 from public.notifikation_afsendelser n
+                      where n.noegle = 'vaelg_levering:' || b.trade_id)
+   order by b.oprettet
+   limit greatest(1, least(coalesce(p_graense, 20), 100));
+$fn$;
+revoke all on function public.fragt_mangler_leveringsvalg(integer) from public, anon, authenticated;
+grant execute on function public.fragt_mangler_leveringsvalg(integer) to service_role;
 
 -- ============================================================ 9. læse-RPC'er (web og app)
 
@@ -1097,5 +1276,31 @@ as $fn$
 $fn$;
 revoke all on function public.admin_fragt_tilskud(timestamptz, timestamptz) from public, anon, authenticated;
 grant execute on function public.admin_fragt_tilskud(timestamptz, timestamptz) to service_role;
+
+-- ============================================================ 12. notifikationstype 'pakke_indleveret'
+
+-- "Pakken er indleveret" til sælgeren (påkrævet). FLETTES ind i de nuværende
+-- værdier (som 20261009010000/20261009040000). HOLD SYNKRON med
+-- src/lib/notifikationer/typer.ts.
+do $do$
+declare
+  v_src  text;
+  v_vals text[];
+begin
+  if to_regprocedure('public.notifikation_paakraevet(text)') is null then return; end if;
+  select p.prosrc into v_src from pg_proc p where p.oid = to_regprocedure('public.notifikation_paakraevet(text)');
+  select array_agg(distinct x order by x) into v_vals from (
+    select m[1] as x from regexp_matches(coalesce(v_src, ''), '''([a-z0-9_]+)''', 'g') as m
+    union select 'pakke_indleveret'
+  ) s;
+  execute format($f$
+    create or replace function public.notifikation_paakraevet(p_type text)
+    returns boolean
+    language sql immutable set search_path = '' as $b$
+      select p_type = any (array[%s]);
+    $b$
+    $f$,
+    (select string_agg(quote_literal(v), ', ' order by v) from unnest(v_vals) as v));
+end $do$;
 
 reset lock_timeout;

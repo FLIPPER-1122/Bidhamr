@@ -39,6 +39,7 @@ import {
   FragtAnnulleringIkkeMulig,
   FragtFejl,
   FRAGT_IKKE_SAT_OP,
+  UKENDT_UDFALD_TEKST,
   erLeveringsmaade,
   erSporingsType,
 } from "@/lib/fragt/types";
@@ -59,6 +60,8 @@ const CLAIM_FEJL: Record<string, string> = {
   ingen_retur: "Der er ingen sag, hvor varen skal sendes retur.",
   i_gang: "Fragtlabelen er ved at blive lavet. Vent et øjeblik, og opdatér siden.",
   mangler_levering: "Køberen har ikke valgt levering endnu.",
+  for_mange_labels:
+    "Du har allerede lavet 2 fragtlabels til denne handel. Skriv til BidHamr, hvis du skal bruge en ny – så godkender vi den.",
   ugyldig: "Ugyldigt valg.",
 };
 
@@ -380,10 +383,16 @@ function modtagerFraLevering(l: LeveringRaekke): Adresse {
 
 const MAKS_GRAM_STANDARD: Record<Pakkestoerrelse, number> = { lille: 1000, mellem: 5000, stor: 15000 };
 
-type ClaimSvar = { kode?: string; id?: string; pakkestoerrelse?: Pakkestoerrelse; levering?: string };
+type ClaimSvar = { kode?: string; id?: string; pakkestoerrelse?: Pakkestoerrelse; levering?: string; fragtfirma?: string };
 
-// Fælles: claim -> fragtfirma -> gem label -> gem detaljer. Annullerer hos
-// fragtfirmaet, hvis noget fejler efter oprettelsen.
+// Fælles: claim -> fragtfirma -> gem label -> gem detaljer.
+// Fejl:
+//   FragtFejl før oprettelsen (afvist, ugyldige data): claimet markeres
+//     fejlet - intet er oprettet hos fragtfirmaet.
+//   Alt andet (timeout, netværk, 5xx, fejl efter oprettelsen): ukendt udfald.
+//     Claimet bliver stående, og næste forsøg genoptager med SAMME reference
+//     ('genoptag'), så fragtfirmaet giver den eksisterende forsendelse
+//     tilbage. Der bestilles aldrig en ny label, før det er afklaret.
 async function opretForsendelse(
   admin: Admin,
   args: {
@@ -394,12 +403,12 @@ async function opretForsendelse(
     byg: (claim: Required<Pick<ClaimSvar, "id" | "pakkestoerrelse">>) => Promise<ForsendelseInput>;
   },
 ): Promise<{ ok: true; forsendelseId: string } | { fejl: string }> {
-  const { tradeId, brugerId, type, firma } = args;
+  const { tradeId, brugerId, type } = args;
   const { data: claim, error: claimFejl } = await admin.rpc("forsendelse_claim", {
     p_trade: tradeId,
     p_bruger: brugerId,
     p_type: type,
-    p_fragtfirma: firma.navn,
+    p_fragtfirma: args.firma.navn,
     p_pakkestoerrelse: null,
   });
   if (claimFejl) {
@@ -408,11 +417,18 @@ async function opretForsendelse(
   }
   const svar = claim as ClaimSvar | null;
   if (svar?.kode === "findes" && svar.id) return { ok: true, forsendelseId: svar.id };
-  if (svar?.kode !== "ok" || !svar.id || !svar.pakkestoerrelse) {
+  if ((svar?.kode !== "ok" && svar?.kode !== "genoptag") || !svar.id || !svar.pakkestoerrelse) {
     return { fejl: CLAIM_FEJL[svar?.kode ?? ""] ?? GENERISK_FEJL };
   }
   const id = svar.id;
+  // Genoptag: samme fragtfirma som det første forsøg.
+  if (svar.kode === "genoptag" && svar.fragtfirma && svar.fragtfirma !== args.firma.navn) {
+    const tidligere = adapterFor(svar.fragtfirma);
+    if (!tidligere) return { fejl: FRAGT_IKKE_SAT_OP };
+    args = { ...args, firma: tidligere };
+  }
 
+  const firma = args.firma;
   let oprettetHosFirma: string | null = null;
   try {
     const input = await args.byg({ id, pakkestoerrelse: svar.pakkestoerrelse });
@@ -455,30 +471,21 @@ async function opretForsendelse(
     if (!gemt) throw new Error("Forsendelsen var ikke længere claimet");
   } catch (err) {
     console.error("Fragtlabel kunne ikke laves:", err);
-    await admin.rpc("forsendelse_marker_fejlet", { p_id: id, p_fejl: renFejltekst(err, 500) });
-    // Blev forsendelsen oprettet hos fragtfirmaet, så annullér den igen,
-    // så der ikke ligger en betalt label, som ingen kan se.
-    if (oprettetHosFirma) {
-      try {
-        await firma.annullerForsendelse(oprettetHosFirma);
-      } catch (annErr) {
-        await logDriftFejl({
-          kilde: "server",
-          hvor: "Fragt: annullér efter fejl",
-          fejl: `Forsendelse ${oprettetHosFirma} hos ${firma.navn} (BidHamr ${id}) kunne ikke annulleres - kreditér den hos fragtfirmaet: ${renFejltekst(annErr, 200)}`,
-        });
-      }
+    if (err instanceof FragtFejl && !oprettetHosFirma) {
+      await admin.rpc("forsendelse_marker_fejlet", { p_id: id, p_fejl: renFejltekst(err, 500) });
+      return { fejl: err.brugerbesked };
     }
-    if (!(err instanceof FragtFejl)) {
-      // Ukendt udfald (fx timeout): fragtfirmaet kan have oprettet
-      // forsendelsen alligevel. Referencen er BidHamrs forsendelses-id.
-      await logDriftFejl({
-        kilde: "server",
-        hvor: "Fragt: opret label",
-        fejl: `${renFejltekst(err, 300)} - tjek hos ${firma.visningsnavn}, om der findes en forsendelse med reference ${id}${oprettetHosFirma ? ` (id ${oprettetHosFirma})` : ""}.`,
-      });
-    }
-    return { fejl: brugerFejl(err) };
+    // Ukendt udfald: lad claimet stå - næste forsøg genbruger referencen.
+    await admin.rpc("forsendelse_marker_ukendt", { p_id: id, p_fejl: renFejltekst(err, 500) });
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "Fragt: ukendt udfald",
+      fejl:
+        `${renFejltekst(err, 300)} - forsendelse ${id} hos ${firma.visningsnavn}` +
+        (oprettetHosFirma ? ` (oprettet som ${oprettetHosFirma})` : "") +
+        ". Næste forsøg genbruger samme reference.",
+    });
+    return { fejl: UKENDT_UDFALD_TEKST };
   }
 
   // Første hændelse (oprettet) - giver en tidslinje fra start. Labelen er
@@ -534,7 +541,6 @@ export async function opretUdgaaendeForsendelse(
     return { fejl: GENERISK_FEJL };
   }
   if (!levering) return { fejl: CLAIM_FEJL.mangler_levering };
-  const lev = levering;
   const firma = adapterFor(levering.fragtfirma);
   if (!firma) return { fejl: FRAGT_IKKE_SAT_OP };
   const afsender: Adresse = { ...afs.adresse, email: await brugerEmail(admin, saelgerId) };
@@ -545,6 +551,13 @@ export async function opretUdgaaendeForsendelse(
     type: "udgaaende",
     firma,
     byg: async ({ id, pakkestoerrelse }) => {
+      // Læs valget igen EFTER claimet: nu er det låst (handel_gem_levering
+      // svarer 'laast', når der findes en forsendelse), så køberen kan ikke
+      // have ændret det mellem læsning og oprettelse.
+      const lev = await hentLevering(admin, tradeId);
+      if (!lev || lev.fragtfirma !== firma.navn) {
+        throw new FragtFejl("Køberens levering er ændret. Prøv igen.");
+      }
       const { titel, vaegtGram } = await vaegtOgTitel(admin, tradeId);
       return {
         reference: id,
@@ -764,6 +777,12 @@ export async function registrerForsendelseshaendelse(
   });
   if (error) throw new Error(`forsendelse_registrer_haendelse: ${error.message}`);
   const ny = Boolean((data as { ny?: boolean } | null)?.ny);
+  // Fragtfirmaets målte vægt over pakkestørrelsen: staff + udbetalingen holdes.
+  const maalt = h.raa && typeof h.raa.maalt_vaegt_gram === "number" ? Math.round(h.raa.maalt_vaegt_gram) : null;
+  if (ny && maalt && maalt > 0) {
+    const { error: vFejl } = await admin.rpc("forsendelse_tjek_vaegt", { p_id: forsendelseId, p_maalt_gram: maalt });
+    if (vFejl) throw new Error("forsendelse_tjek_vaegt: " + vFejl.message);
+  }
   if (ny && opts.effekter !== false) await udfoerHandelseffekter(admin, forsendelseId);
   return { ny };
 }
@@ -837,7 +856,7 @@ async function udfoerHandelseffekter(admin: Admin, forsendelseId: string): Promi
           "Fragtfirmaet har pakken, men sælger har ikke trykket Send pakke – afsendelsesfristen annullerer handlen " +
           (frist ? sendSenestTekst(frist) : "når fristen udløber") +
           ". Kontakt sælgeren.";
-        await send(t.seller_id, "betaling_modtaget", {
+        await send(t.seller_id, "pakke_indleveret", {
           titel: "Pakken er indleveret",
           tekst: `Fragtfirmaet har modtaget pakken med "${titel}". Har du ikke allerede gjort det, så markér pakken sendt med de to pakkebilleder på handelssiden - ellers bliver handlen annulleret, når fristen for afsendelse udløber.`,
           link,
@@ -993,6 +1012,31 @@ export async function koerFragtCron(): Promise<{
       r.fejl++;
       if (!(err instanceof FragtFejl)) {
         await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: "Fragt: hent sporing", fejl: err });
+      }
+    }
+  }
+
+  // Gamle handler (fra før checkout), hvor køberen har startet betalingen
+  // uden at vælge levering: én besked om at vælge levering. Betalingen kan
+  // ikke gennemføres uden valget (sikrPaymentIntent annullerer den gamle
+  // PaymentIntent).
+  if (Date.now() - start < CRON_BUDGET_MS) {
+    const { data: mangler, error: mFejl } = await admin.rpc("fragt_mangler_leveringsvalg", { p_graense: 20 });
+    if (mFejl) {
+      r.fejl++;
+      await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: "Fragt: mangler leveringsvalg", fejl: mFejl });
+    } else {
+      for (const m of (mangler ?? []) as { trade_id: string; buyer_id: string; auction_id: string }[]) {
+        if (Date.now() - start > CRON_BUDGET_MS) break;
+        const { data: a } = await admin.from("auctions").select("titel").eq("id", m.auction_id).maybeSingle<{ titel: string | null }>();
+        await send(m.buyer_id, "betalingsfrist", {
+          titel: "Vælg levering",
+          tekst: `Vælg, hvor du vil have "${a?.titel ?? "din vare"}" leveret – en pakkeshop eller levering til døren. Derefter kan du betale.`,
+          link: `/mine-handler/${m.trade_id}`,
+          data: { trade_id: m.trade_id },
+          noegle: `vaelg_levering:${m.trade_id}`,
+        });
+        r.beskeder++;
       }
     }
   }

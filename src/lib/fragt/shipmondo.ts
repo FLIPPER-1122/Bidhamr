@@ -46,6 +46,7 @@ import {
   type WebhookResultat,
   FragtAnnulleringIkkeMulig,
   FragtFejl,
+  FragtUkendtUdfald,
   FRAGT_IKKE_SAT_OP,
 } from "@/lib/fragt/types";
 
@@ -250,13 +251,18 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
   try {
     s = await kald<ShipmondoForsendelse>("POST", "/shipments", body);
   } catch (err) {
-    if (err instanceof ShipmondoFejl && err.status === 422) {
+    // Afvist (4xx): intet er oprettet.
+    if (err instanceof ShipmondoFejl && err.status >= 400 && err.status < 500) {
       throw new FragtFejl(
-        "Fragtfirmaet kunne ikke oprette pakken. Tjek adresserne og prøv igen.",
+        err.status === 422
+          ? "Fragtfirmaet kunne ikke oprette pakken. Tjek adresserne og prøv igen."
+          : GENERISK,
         err.message,
       );
     }
-    throw err;
+    // Timeout, netværk, 5xx eller et svar, der ikke er JSON: forsendelsen kan
+    // være oprettet. Næste forsøg finder den via referencen.
+    throw new FragtUkendtUdfald(`Shipmondo POST /shipments (${input.reference}): ${String(err instanceof Error ? err.message : err)}`);
   }
   const label = s.labels?.find((l) => l.file_format === "pdf")?.base64;
   return tilOprettet(s, label ? base64TilBytes(label) : await hentLabel(s.id));
@@ -444,6 +450,8 @@ async function fortolk(request: Request): Promise<WebhookResultat> {
   // Fail closed: uden nøgle afvises alt.
   if (!noegle) return { ok: false, status: 503, fejl: "Webhook-nøglen er ikke sat op" };
   const body = await request.text();
+  // Ruten har allerede et loft på 64 KB; her et ekstra loft for adapteren.
+  if (body.length > 64 * 1024) return { ok: false, status: 413, fejl: "For stor" };
   let json: unknown;
   try {
     json = JSON.parse(body);

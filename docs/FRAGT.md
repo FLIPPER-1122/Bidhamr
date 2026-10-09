@@ -3,11 +3,16 @@
 Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md afsnit 2
 ("Fragtfirma og priser", Filip 9. okt. 2026). Migration: `supabase/migrations/20261012010000_fragt_dao_shipmondo.sql`.
 
+> **Produktion:** migrationen må IKKE køres i produktion, før både hjemmesiden OG appen viser den låste
+> fragtpris (`fragt_pakkeshop_oere`) og har checkout før betaling. Ellers ser byderne 35 kr. og betaler
+> 40/50/65 kr., og betalingen kan ikke startes uden leveringsvalg. Kør migrationen og deploy hjemmesiden
+> lige efter hinanden (koden læser de nye kolonner).
+
 ## Flowet
 
 1. **Opret auktion**: sælgeren vælger forsendelse + pakkestørrelse (Lille ≤ 1 kg, Mellem ≤ 5 kg, Stor ≤ 15 kg)
-   og evt. vægt. Databasen håndhæver grænserne (også fra appen) og **låser fragtprisen på auktionen**
-   (`auctions.fragt_pakkeshop_oere` / `fragt_doer_oere`). Over 15 kg: kun afhentning.
+   og vægt (krævet ved Mellem og Stor). Databasen håndhæver grænserne (også fra appen) og **låser
+   fragtprisen på auktionen** (`auctions.fragt_pakkeshop_oere` / `fragt_doer_oere`). Over 15 kg: kun afhentning.
 2. **Budpanelet** viser `fragt_pakkeshop_oere` (billigste levering) før buddet.
 3. **Auktionen slutter**: betalingen oprettes med pakkeshop-prisen som fragt.
 4. **Checkout (før betaling)**: køberen vælger *pakkeshop* (søg + vælg shop) eller *levering til døren*
@@ -17,11 +22,17 @@ Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md 
    Afhentning hos sælger kræver intet valg.
 5. **Send pakke**: sælgeren udfylder sin afsenderadresse → forsendelsen oprettes hos Shipmondo (DAO) →
    PDF-label + DAO's labelfri-kode. Sælgeren tager stadig de to pakkebilleder og trykker "Send pakke"
-   som i dag (labelen flytter ikke handlen).
+   som i dag (labelen flytter ikke handlen). Højst 2 labels pr. handel (også annullerede) – flere kræver,
+   at staff godkender (`fragtGodkendEkstraLabel` i `src/app/actions/adminFragt.ts`).
+   Svarer fragtfirmaet ikke (timeout/netværk/5xx, eller fejl efter oprettelsen), bliver forsøget stående,
+   og næste "Send pakke" (efter mindst 1 minut) genbruger samme reference – der bestilles aldrig en ny label,
+   før det er afklaret. Drift-loggen får "Fragt: ukendt udfald".
 6. **Annullering**: så længe pakken ikke er indleveret. DAO kan ikke annullere via Shipmondo – labelen
    annulleres i BidHamr, og staff får en markering (bed Shipmondo/DAO kreditere den).
 7. **Sporing**: kun via Shipmondos webhook "Shipment Monitor" → `/api/fragt/webhook/shipmondo`.
-   "Pakken er kommet frem" (`pakke_leveret`) til køberen. **Levering/afhentning udløser aldrig
+   "Pakken er kommet frem" (`pakke_leveret`) til køberen og "Pakken er indleveret" (ny type
+   `pakke_indleveret`, påkrævet) til sælgeren. Vejer fragtfirmaet pakken tungere end størrelsens maksimum,
+   markeres forsendelsen og betalingen til staff (udbetalingen holdes); modregning hos sælgeren er ikke bygget. **Levering/afhentning udløser aldrig
    udbetaling** – kun købers bekræftelse eller de eksisterende regler i autoFrigiv.
 8. **Retur i sager**: returlabel (køber → pakkeshop nær sælgeren). Slået fra (`FRAGT_RETURLABEL_AKTIV`),
    indtil opkrævningen af returfragten hos køberen er bygget.
@@ -97,9 +108,10 @@ Direkte fra Supabase i appen (med brugerens session):
 
 **Appen skal ændre:**
 
-1. Opret auktion: send `pakkestoerrelse` (`lille`/`mellem`/`stor`) og evt. `vaegt_gram` sammen med
-   `forsendelse_mulig`. Fejlkoder fra insert/update: `BHF01` (over 15 kg – kun afhentning) og `BHF02`
-   (vægten passer ikke til størrelsen). Sendes størrelsen ikke, bliver den Mellem.
+1. Opret auktion: send `pakkestoerrelse` (`lille`/`mellem`/`stor`) og `vaegt_gram` (krævet ved Mellem og
+   Stor) sammen med `forsendelse_mulig`. Fejlkoder fra insert/update: `BHT01` (over 15 kg – kun afhentning),
+   `BHT02` (vægten passer ikke til størrelsen) og `BHT03` (vægt mangler). Sendes størrelsen ikke (den
+   nuværende app), bliver den Mellem uden krav om vægt – når appen sender størrelsen, gøres kravet generelt.
 2. Auktionssiden/budpanelet: vis `fragt_pakkeshop_oere` i stedet for de faste 35 kr.
 3. Checkout-skærm før betalingen (pakkeshop med kort/liste, eller levering til døren) → `levering`.
    Først derefter "Betal". Får betalingen `kode: "vaelg_levering"`, så send køberen til checkout.
@@ -155,5 +167,12 @@ Localhost kan ikke modtage webhooks fra Shipmondo – test på en Vercel-preview
 - Shipment Monitor har ingen retur-status: en tekst med "retur" giver `returneret`, `DANGER` giver `fejl` –
   begge kun som markering til staff.
 - Returlabel er slået fra, indtil returfragten opkræves hos køberen.
+- Vægt er krævet ved Mellem og Stor, når klienten sender en størrelse; uden størrelse (nuværende app) bliver
+  det Mellem uden vægt.
+- Målt vægt over størrelsens maksimum: kun markering til staff + udbetalingen holdes; sælgeren betaler
+  forskellen (ROADMAP), men modregningen er ikke bygget.
+- Højst 2 udgående labels pr. handel (inkl. annullerede); flere kræver staffs godkendelse.
+- Gamle handler, hvor køberen har startet betalingen før checkout: den gamle PaymentIntent annulleres, når
+  køberen prøver at betale, og køberen får én besked "Vælg levering" (fragt-cron).
 - Ingen automatisk betaling (Filip 9. okt.): alle vindere går gennem checkout. Autobetalingskoden fjernes
   af betalingsagenten; med fragt fejler den nu pænt (kræver leveringsvalg), og køberen betaler selv.

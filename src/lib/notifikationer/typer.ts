@@ -5,7 +5,8 @@
 // 20261007010000_brugerens_egne_ting.sql; 'bedoemmelse' i
 // 20261007020000_bedoemmelse_svar.sql; 'afgoerelse' (påkrævet) i
 // 20261009010000_dsa.sql; 'auktion_status' i
-// 20261009040000_skjult_auktion_pause.sql). Ændres listen her,
+// 20261009040000_skjult_auktion_pause.sql; 'pakke_indleveret' (påkrævet) i
+// 20261012010000_fragt_dao_shipmondo.sql). Ændres listen her,
 // skal SQL'en også rettes i en ny migration.
 //
 // Ingen server-only-import: frontend må gerne bruge navne og beskrivelser.
@@ -15,6 +16,7 @@ export type NotifikationType =
   | "betalingsfrist"
   | "betaling_modtaget"
   | "pakke_sendt"
+  | "pakke_indleveret"
   | "pakke_leveret"
   | "udbetaling"
   | "sag"
@@ -48,6 +50,7 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "betalingsfrist", navn: "Betalingsfrist", beskrivelse: "Påmindelser om at betale, når sælgeren forlænger fristen, og hvis en handel bliver annulleret, fordi den ikke blev betalt.", paakraevet: true },
   { type: "betaling_modtaget", navn: "Køberen har betalt", beskrivelse: "Når køberen har betalt, og du skal sende varen – eller når en afhentning skal aftales.", paakraevet: true },
   { type: "pakke_sendt", navn: "Pakken er sendt", beskrivelse: "Når sælgeren har sendt din vare.", paakraevet: true },
+  { type: "pakke_indleveret", navn: "Pakken er indleveret", beskrivelse: "Når fragtfirmaet har modtaget den pakke, du sender.", paakraevet: true },
   { type: "pakke_leveret", navn: "Pakken er kommet frem", beskrivelse: "Når pakken er kommet frem til køberen.", paakraevet: true },
   { type: "udbetaling", navn: "Udbetaling", beskrivelse: "Når pengene er sendt til din udbetalingskonto, eller du mangler at oprette den.", paakraevet: true },
   { type: "sag", navn: "Sager", beskrivelse: "Nyt i en sag om en handel, og når BidHamr åbner en samtale med dig.", paakraevet: true },

@@ -48,6 +48,8 @@ export default function BidPanel({
   brugerId,
   saelgerId,
   forsendelseMulig,
+  fragtPakkeshopOere = null,
+  fragtDoerOere = null,
   status,
   vinderVisning,
   skjult = false,
@@ -77,6 +79,10 @@ export default function BidPanel({
   brugerId: string | null;
   saelgerId: string;
   forsendelseMulig: boolean;
+  // Den låste fragtpris på auktionen (øre, inkl. moms): pakkeshop er den
+  // billigste og indgår i totalen; levering til døren vælges i checkout.
+  fragtPakkeshopOere?: number | null;
+  fragtDoerOere?: number | null;
   status: string;
   // Anonym vinderbetegnelse fra serveren ("Dig" / "Byder 2") - aldrig navn/id.
   vinderVisning: string | null;
@@ -289,7 +295,7 @@ export default function BidPanel({
               {
                 bud_oere: budOere,
                 koebergebyr_oere: Math.round((budOere * KOEBERGEBYR_PROCENT) / 100),
-                fragt_oere: fragtOere(forsendelseMulig),
+                fragt_oere: fragtOere(forsendelseMulig, fragtPakkeshopOere),
               },
               beskyttelseValgt && beskyttelseMulig,
             )
@@ -520,7 +526,7 @@ export default function BidPanel({
       {
         bud_oere: budOere,
         koebergebyr_oere: Math.round((budOere * KOEBERGEBYR_PROCENT) / 100),
-        fragt_oere: fragtOere(forsendelseMulig),
+        fragt_oere: fragtOere(forsendelseMulig, fragtPakkeshopOere),
       },
       false,
     );
@@ -829,8 +835,8 @@ export default function BidPanel({
                 <dd className="tabular-nums">{gebyrOereVist !== null ? kroner(gebyrOereVist) : "–"}</dd>
               </div>
               <div className={linje}>
-                <dt>{forsendelseMulig ? "Fragt" : "Fragt (kun afhentning)"}</dt>
-                <dd className="tabular-nums">{kroner(fragtOere(forsendelseMulig))}</dd>
+                <dt>{forsendelseMulig ? "Fragt (pakkeshop, fra)" : "Fragt (kun afhentning)"}</dt>
+                <dd className="tabular-nums">{kroner(fragtOere(forsendelseMulig, fragtPakkeshopOere))}</dd>
               </div>
               {beskyttelseVist !== null && (
                 <div className={linje}>
@@ -921,6 +927,12 @@ export default function BidPanel({
       {!forsendelseMulig && (
         <p className="mt-1 text-[13px] text-tekst-daempet">
           Kun afhentning – ingen fragt.
+        </p>
+      )}
+      {forsendelseMulig && !auktionSlut && (
+        <p className="mt-1 text-[13px] text-tekst-daempet">
+          Fragt fra {kroner(fragtOere(true, fragtPakkeshopOere))} til en pakkeshop
+          {fragtDoerOere ? ` – levering til døren ${kroner(fragtDoerOere)}` : ""}. Du vælger, når du betaler.
         </p>
       )}
 

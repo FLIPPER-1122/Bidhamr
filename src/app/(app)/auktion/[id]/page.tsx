@@ -21,6 +21,8 @@ import type { SpoergsmaalVisning } from "@/lib/spoergsmaal";
 import { auktionMetadata, hentAuktionRaekke } from "@/lib/auktionSeo";
 import { hentBruger, hentKontoType } from "@/lib/supabase/bruger";
 import { erPaaPause } from "@/lib/auctionTid";
+import { kroner } from "@/lib/kroner";
+import { fragtOere } from "@/lib/betaling/beregn";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
 import { ERHVERVSSAELGER, ERHVERV_GPSR, FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 
@@ -531,6 +533,8 @@ export default async function AuktionPage({
               brugerId={bruger?.id ?? null}
               saelgerId={auktion.bruger_id}
               forsendelseMulig={auktion.forsendelse_mulig}
+              fragtPakkeshopOere={auktion.fragt_pakkeshop_oere ?? null}
+              fragtDoerOere={auktion.fragt_doer_oere ?? null}
               status={auktion.status}
               vinderVisning={vinderVisning}
               skjult={skjult}
@@ -567,7 +571,7 @@ export default async function AuktionPage({
 
               <Accordion title="Forsendelse">
                 {auktion.forsendelse_mulig
-                  ? "Sælger sender varen. Fragt koster omkring 35 kr. og lægges oven i din betaling."
+                  ? `Sælger sender varen. Fragt til en pakkeshop koster ${kroner(fragtOere(true, auktion.fragt_pakkeshop_oere))}${auktion.fragt_doer_oere ? `, levering til døren ${kroner(auktion.fragt_doer_oere)}` : ""}. Du vælger, når du betaler, og fragten lægges oven i din betaling.`
                   : "Ikke tilbudt – varen skal afhentes."}
               </Accordion>
 

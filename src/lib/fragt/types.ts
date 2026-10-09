@@ -179,6 +179,19 @@ export interface Fragtfirma {
   hentPakkeshop(id: string, naer: PakkeshopSoegning): Promise<Pakkeshop | null>;
 }
 
+// Vi ved ikke, om fragtfirmaet har oprettet forsendelsen (timeout, netværk,
+// 5xx på oprettelsen). Claimet bliver stående, og næste forsøg genbruger
+// samme reference - der bestilles aldrig en ny label, før det er afklaret.
+export class FragtUkendtUdfald extends Error {
+  constructor(detalje: string) {
+    super(detalje);
+    this.name = "FragtUkendtUdfald";
+  }
+}
+
+export const UKENDT_UDFALD_TEKST =
+  "Fragtfirmaet svarede ikke i tide. Vent et minut, og prøv igen – du får ikke to labels.";
+
 // Fragtfirmaet kan ikke annullere forsendelsen (fx DAO via Shipmondo). BidHamr
 // annullerer labelen hos sig selv, og staff får besked, så de kan bede
 // fragtfirmaet om at kreditere den.

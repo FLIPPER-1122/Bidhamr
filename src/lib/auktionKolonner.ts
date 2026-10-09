@@ -42,6 +42,11 @@ export const AUKTION_KOLONNER: string = [
   "erhverv",
   "producent",
   "sikkerhedsoplysninger",
+  // Fragt (20261012010000): pakkestørrelse, vægt og den låste fragtpris.
+  "pakkestoerrelse",
+  "vaegt_gram",
+  "fragt_pakkeshop_oere",
+  "fragt_doer_oere",
 ].join(",");
 
 // Rækken, som select(AUKTION_KOLONNER) giver. Holdes i trit med listen
@@ -80,4 +85,8 @@ export type AuktionRaekke = {
   erhverv: boolean;
   producent: string | null;
   sikkerhedsoplysninger: string | null;
+  pakkestoerrelse: string | null;
+  vaegt_gram: number | null;
+  fragt_pakkeshop_oere: number | null;
+  fragt_doer_oere: number | null;
 };

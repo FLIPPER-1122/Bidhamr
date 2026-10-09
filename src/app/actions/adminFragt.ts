@@ -73,3 +73,47 @@ export async function fragtMarkerHaandteret(formData: FormData): Promise<{ ok: t
     return { fejl: GENERISK_FEJL };
   }
 }
+
+// Godkender én ekstra udgående fragtlabel på en handel (sælgeren har brugt de
+// 2 tilladte - fx efter to annulleringer). Logges i medarbejder-loggen.
+// Hvert klik giver én label mere; loggen viser hvem og hvorfor.
+export async function fragtGodkendEkstraLabel(formData: FormData): Promise<{ ok: true } | { fejl: string }> {
+  try {
+    const tradeId = String(formData.get("tradeId") ?? "");
+    const aarsag = String(formData.get("aarsag") ?? "").trim();
+    const { admin, userId: staffId } = await assertRole("medarbejder");
+    if (!UUID_RE.test(tradeId)) throw new BrugerFejl("Handlen findes ikke.");
+    if (!aarsag) throw new BrugerFejl("Skriv, hvorfor sælgeren må lave en label mere.");
+    if (aarsag.length > 500) throw new BrugerFejl("Noten må højst være 500 tegn.");
+
+    const { data: t } = await admin
+      .from("trades")
+      .select("buyer_id, seller_id")
+      .eq("id", tradeId)
+      .maybeSingle<{ buyer_id: string; seller_id: string }>();
+    if (!t) throw new BrugerFejl("Handlen findes ikke.");
+    if (t.buyer_id === staffId || t.seller_id === staffId) throw new BrugerFejl(INHABIL);
+
+    const { data: svar, error } = await admin.rpc("fragt_godkend_ekstra_label", { p_trade: tradeId });
+    if (error) throw new Error(error.message);
+    if (svar !== "ok") throw new BrugerFejl("Køberen har ikke valgt levering på handlen.");
+
+    const { error: logFejl } = await admin.from("moderation_log").insert({
+      medarbejder_id: staffId,
+      handling: "fragt_haandteret",
+      maal_type: "handel",
+      maal_id: tradeId,
+      bruger_id: null,
+      aarsag: `Ekstra fragtlabel godkendt: ${aarsag}`,
+    });
+    if (logFejl) console.error("Kunne ikke skrive til moderation_log:", logFejl.message);
+
+    revalidatePath("/admin/handler");
+    return { ok: true };
+  } catch (err) {
+    unstable_rethrow(err);
+    if (err instanceof BrugerFejl) return { fejl: err.message };
+    console.error("Admin-handling fragtGodkendEkstraLabel fejlede:", err);
+    return { fejl: GENERISK_FEJL };
+  }
+}
