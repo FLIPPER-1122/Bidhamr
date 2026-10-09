@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { assertRole } from "@/lib/adminAuth";
 import { UUID_RE } from "@/lib/moderationLog";
+import { staffAfslutHaengendeClaim } from "@/lib/fragt/server";
 
 class BrugerFejl extends Error {}
 
@@ -70,6 +71,64 @@ export async function fragtMarkerHaandteret(formData: FormData): Promise<{ ok: t
     unstable_rethrow(err);
     if (err instanceof BrugerFejl) return { fejl: err.message };
     console.error("Admin-handling fragtMarkerHaandteret fejlede:", err);
+    return { fejl: GENERISK_FEJL };
+  }
+}
+
+// Afslutter en hængende fragtlabel (status 'opretter' efter ukendt udfald),
+// efter staff har tjekket i Shipmondo:
+//   valg=fejlet   intet er oprettet hos Shipmondo (note krævet) - sælgeren kan prøve igen.
+//   valg=tilknyt  forsendelsen findes: shipmondoId = Shipmondos forsendelses-id
+//                 (referencen skal være BidHamrs forsendelses-id).
+// Logges i medarbejder-loggen. Knappen bygges af frontend (fanen Fragt på /admin/handler).
+export async function fragtAfslutHaengendeLabel(formData: FormData): Promise<{ ok: true } | { fejl: string }> {
+  try {
+    const forsendelseId = String(formData.get("forsendelseId") ?? "");
+    const valg = String(formData.get("valg") ?? "");
+    const note = String(formData.get("aarsag") ?? "").trim();
+    const shipmondoId = String(formData.get("shipmondoId") ?? "").trim();
+    const { admin, userId: staffId } = await assertRole("medarbejder");
+    if (!UUID_RE.test(forsendelseId)) throw new BrugerFejl("Forsendelsen findes ikke.");
+    if (valg !== "fejlet" && valg !== "tilknyt") throw new BrugerFejl("Vælg, hvad der skal ske.");
+    if (!note) throw new BrugerFejl("Skriv, hvad du har tjekket i Shipmondo.");
+    if (note.length > 500) throw new BrugerFejl("Noten må højst være 500 tegn.");
+    if (valg === "tilknyt" && !/^\d{1,20}$/.test(shipmondoId)) throw new BrugerFejl("Skriv Shipmondos forsendelses-id (kun tal).");
+
+    const { data: f } = await admin
+      .from("forsendelser")
+      .select("trade_id")
+      .eq("id", forsendelseId)
+      .maybeSingle<{ trade_id: string }>();
+    if (!f) throw new BrugerFejl("Forsendelsen findes ikke.");
+    const { data: t } = await admin
+      .from("trades")
+      .select("buyer_id, seller_id")
+      .eq("id", f.trade_id)
+      .maybeSingle<{ buyer_id: string; seller_id: string }>();
+    if (t && (t.buyer_id === staffId || t.seller_id === staffId)) throw new BrugerFejl(INHABIL);
+
+    const r = await staffAfslutHaengendeClaim(forsendelseId, valg, { note, forsendelsesId: shipmondoId || null });
+    if ("fejl" in r) throw new BrugerFejl(r.fejl);
+
+    const { error: logFejl } = await admin.from("moderation_log").insert({
+      medarbejder_id: staffId,
+      handling: "fragt_haandteret",
+      maal_type: "handel",
+      maal_id: r.tradeId,
+      bruger_id: null,
+      aarsag:
+        valg === "tilknyt"
+          ? `Hængende fragtlabel tilknyttet Shipmondo-forsendelse ${shipmondoId}: ${note}`
+          : `Hængende fragtlabel markeret fejlet: ${note}`,
+    });
+    if (logFejl) console.error("Kunne ikke skrive til moderation_log:", logFejl.message);
+
+    revalidatePath("/admin/handler");
+    return { ok: true };
+  } catch (err) {
+    unstable_rethrow(err);
+    if (err instanceof BrugerFejl) return { fejl: err.message };
+    console.error("Admin-handling fragtAfslutHaengendeLabel fejlede:", err);
     return { fejl: GENERISK_FEJL };
   }
 }

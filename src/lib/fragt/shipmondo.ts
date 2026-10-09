@@ -104,7 +104,8 @@ async function kald<T>(metode: "GET" | "POST" | "PUT", sti: string, body?: unkno
       cache: "no-store",
     });
   } catch (err) {
-    throw new FragtFejl(GENERISK, `Shipmondo ${metode} ${sti}: ${String(err)}`);
+    // Netværk/timeout: vi ved ikke, om Shipmondo har udført kaldet.
+    throw new FragtUkendtUdfald(`Shipmondo ${metode} ${sti}: ${String(err)}`);
   }
   const tekst = await svar.text();
   // Ukendte stier giver en HTML-side med status 200 - kræv JSON.
@@ -217,7 +218,16 @@ async function findMedReference(reference: string): Promise<ShipmondoForsendelse
   return (Array.isArray(liste) ? liste : []).find((s) => s.reference === reference) ?? null;
 }
 
+// Fejl fra opret():
+//   FragtFejl          kun valideringsfejl FØR ethvert kald og 4xx-svar på
+//                      POST /shipments - dér er intet oprettet.
+//   FragtUkendtUdfald  alt andet: netværk/timeout/5xx/ikke-JSON på opslaget
+//                      efter referencen, på POST eller på hentning af labelen,
+//                      og fejl i svaret efter en vellykket POST. Forsendelsen
+//                      kan findes hos Shipmondo - næste forsøg genbruger
+//                      referencen.
 async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetForsendelse> {
+  // 1. Validering før ethvert kald (FragtFejl).
   const levering = retur ? "pakkeshop" : (input.levering ?? "pakkeshop");
   const vaegt = Math.max(1, Math.round(input.vaegtGram ?? MAKS_GRAM[input.pakkestoerrelse]));
   if (vaegt > MAKS_GRAM.stor) throw new FragtFejl("Pakken er for tung til at blive sendt.");
@@ -227,10 +237,6 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
   if (levering === "pakkeshop" && !retur && !input.pakkeshopId) {
     throw new FragtFejl("Køberen har ikke valgt en pakkeshop.");
   }
-
-  const findes = await findMedReference(input.reference);
-  if (findes) return tilOprettet(findes, await hentLabel(findes.id));
-
   const body: Record<string, unknown> = {
     own_agreement: process.env.SHIPMONDO_EGEN_AFTALE === "true",
     product_code: levering === "doer" ? DAO_DOER : DAO_PAKKESHOP,
@@ -246,7 +252,29 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
     // Retur: Shipmondo vælger pakkeshoppen nærmest sælgerens adresse.
     else body.automatic_select_service_point = true;
   }
+  konfig();
 
+  const ukendt = (hvor: string, err: unknown) =>
+    err instanceof FragtUkendtUdfald
+      ? err
+      : new FragtUkendtUdfald(`Shipmondo ${hvor} (${input.reference}): ${err instanceof Error ? err.message : String(err)}`);
+
+  // 2. Findes forsendelsen allerede (genforsøg)?
+  let findes: ShipmondoForsendelse | null;
+  try {
+    findes = await findMedReference(input.reference);
+  } catch (err) {
+    throw ukendt("opslag på reference", err);
+  }
+  if (findes) {
+    try {
+      return tilOprettet(findes, await hentLabel(findes.id));
+    } catch (err) {
+      throw ukendt("label til eksisterende forsendelse", err);
+    }
+  }
+
+  // 3. Opret.
   let s: ShipmondoForsendelse;
   try {
     s = await kald<ShipmondoForsendelse>("POST", "/shipments", body);
@@ -260,12 +288,50 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
         err.message,
       );
     }
-    // Timeout, netværk, 5xx eller et svar, der ikke er JSON: forsendelsen kan
-    // være oprettet. Næste forsøg finder den via referencen.
-    throw new FragtUkendtUdfald(`Shipmondo POST /shipments (${input.reference}): ${String(err instanceof Error ? err.message : err)}`);
+    throw ukendt("POST /shipments", err);
   }
-  const label = s.labels?.find((l) => l.file_format === "pdf")?.base64;
-  return tilOprettet(s, label ? base64TilBytes(label) : await hentLabel(s.id));
+  try {
+    const label = s.labels?.find((l) => l.file_format === "pdf")?.base64;
+    return tilOprettet(s, label ? base64TilBytes(label) : await hentLabel(s.id));
+  } catch (err) {
+    throw ukendt("svar/label efter oprettelse", err);
+  }
+}
+
+// Staff: hent en eksisterende forsendelse (fx for at tilknytte en hængende
+// claim). Kaster FragtFejl, hvis den ikke findes.
+export async function hentEksisterende(
+  forsendelsesId: string,
+): Promise<OprettetForsendelse & { reference: string | null; vaegtGram: number | null; afsender: Adresse | null }> {
+  if (!/^\d{1,20}$/.test(forsendelsesId)) throw new FragtFejl("Ugyldigt Shipmondo-id.");
+  let f: ShipmondoForsendelse & {
+    sender?: { name?: string; address1?: string; zipcode?: string; city?: string; email?: string; mobile?: string } | null;
+    parcels?: { weight?: number; pkg_no?: string | null; labelless_code?: string | null }[];
+  };
+  try {
+    f = await kald("GET", `/shipments/${forsendelsesId}`);
+  } catch (err) {
+    if (err instanceof ShipmondoFejl && err.status === 404) throw new FragtFejl("Forsendelsen findes ikke hos Shipmondo.");
+    throw err;
+  }
+  const o = tilOprettet(f, await hentLabel(f.id));
+  const v = f.parcels?.[0]?.weight;
+  return {
+    ...o,
+    reference: f.reference,
+    vaegtGram: typeof v === "number" ? v : null,
+    afsender: f.sender
+      ? {
+          navn: String(f.sender.name ?? ""),
+          adresse: f.sender.address1 ?? null,
+          postnummer: f.sender.zipcode ?? null,
+          by: f.sender.city ?? null,
+          email: f.sender.email ?? null,
+          telefon: f.sender.mobile ?? null,
+          land: "DK",
+        }
+      : null,
+  };
 }
 
 // ------------------------------------------------------------ pakkeshops

@@ -238,13 +238,15 @@ comment on column public.auctions.vaegt_gram is
 -- for appens direkte insert/update. Fejlkoder:
 --   BHT01 'fragt_for_tung: ...'      over 15 kg med forsendelse
 --   BHT02 'fragt_stoerrelse: ...'    vægten passer ikke til pakkestørrelsen
---   BHT03 'fragt_vaegt: ...'         Mellem/Stor uden vægt (kun brugerens
+--   BHT03 'fragt_vaegt: ...'         størrelse uden vægt (kun brugerens
 --                                    egne ændringer - ikke systemet)
 -- Ved UPDATE genberegnes prisen kun, når forsendelse/størrelse/vægt ændres;
 -- ellers bevares den låste pris (klienten kan ikke sætte den selv).
--- Chefens valg: sender klienten INGEN størrelse (ældre web/app), bliver den
--- Mellem uden krav om vægt, så den nuværende app ikke går i stykker. Når
--- appen sender størrelsen, kan kravet gøres generelt.
+-- Chefens valg: sætter klienten en størrelse, er vægten krævet (alle
+-- størrelser), og over 15 kg kan aldrig sendes. MIDLERTIDIGT: sender klienten
+-- INGEN størrelse (den nuværende app), bliver den Mellem uden krav om vægt.
+-- Migrationen kommer ikke i produktion, før appen sender størrelse + vægt -
+-- fjern så undtagelsen (se docs/FRAGT.md, go-live).
 create or replace function public.auctions_fragt()
 returns trigger
 language plpgsql
@@ -287,9 +289,11 @@ begin
           using errcode = 'BHT02';
       end if;
     end if;
-  elsif not v_system and new.pakkestoerrelse in ('mellem', 'stor')
-        and (tg_op = 'INSERT' or new.pakkestoerrelse is distinct from old.pakkestoerrelse) then
-    raise exception 'fragt_vaegt: Skriv, hvor meget pakken vejer (Mellem og Stor).'
+  elsif not v_system and new.pakkestoerrelse is not null
+        and (tg_op = 'INSERT'
+             or new.pakkestoerrelse is distinct from old.pakkestoerrelse
+             or new.vaegt_gram is distinct from old.vaegt_gram) then
+    raise exception 'fragt_vaegt: Skriv, hvor meget pakken vejer.'
       using errcode = 'BHT03';
   end if;
 
@@ -390,8 +394,8 @@ begin
   if p_vaegt_gram is not null and (p_vaegt_gram < 1 or p_vaegt_gram > 1000000) then
     return jsonb_build_object('kode', 'ugyldig');
   end if;
-  -- Samme krav som ved oprettelse: vægt ved Mellem og Stor.
-  if p_vaegt_gram is null and coalesce(p_pakkestoerrelse, 'mellem') in ('mellem', 'stor') then
+  -- Samme krav som ved oprettelse: vægt er altid krævet (chefens valg).
+  if p_vaegt_gram is null then
     return jsonb_build_object('kode', 'vaegt_mangler');
   end if;
   if public.jeg_er_suspenderet() then
@@ -1088,6 +1092,32 @@ end;
 $fn$;
 revoke all on function public.forsendelse_marker_ukendt(uuid, text) from public, anon, authenticated;
 grant execute on function public.forsendelse_marker_ukendt(uuid, text) to service_role;
+
+-- Staff afslutter en hængende claim ('opretter', fx efter ukendt udfald),
+-- efter at have tjekket hos fragtfirmaet, at der INTET er oprettet: markeres
+-- 'fejlet' med staffs note, så sælgeren kan prøve igen med en ny reference.
+-- (Findes forsendelsen hos fragtfirmaet, tilknyttes den i stedet af serveren
+-- med forsendelse_gem_detaljer + forsendelse_gem_oprettet.) Kun service_role -
+-- serveren har tjekket staff-rollen og inhabilitet og logger i moderation_log.
+create or replace function public.forsendelse_staff_marker_fejlet(p_id uuid, p_note text)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  if nullif(btrim(coalesce(p_note, '')), '') is null then return false; end if;
+  update public.forsendelser
+     set status = 'fejlet',
+         ukendt_udfald_kl = null,
+         fejl = left('Afsluttet af staff: ' || p_note, 500),
+         kraever_opmaerksomhed = false
+   where id = p_id and status = 'opretter';
+  return found;
+end;
+$fn$;
+revoke all on function public.forsendelse_staff_marker_fejlet(uuid, text) from public, anon, authenticated;
+grant execute on function public.forsendelse_staff_marker_fejlet(uuid, text) to service_role;
 
 -- Staff godkender én ekstra udgående label på handlen (efter 2). Kun
 -- service_role - serveren har tjekket staff-rollen og inhabilitet og logger i

@@ -27,6 +27,7 @@ import { adapterFor, fragtErSatOp, hentFragtfirma } from "@/lib/fragt";
 import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { annullerPaymentIntentForLevering } from "@/lib/betaling/stripeBetaling";
+import { hentEksisterende } from "@/lib/fragt/shipmondo";
 import {
   type Adresse,
   type ForsendelseInput,
@@ -471,7 +472,11 @@ async function opretForsendelse(
     if (!gemt) throw new Error("Forsendelsen var ikke længere claimet");
   } catch (err) {
     console.error("Fragtlabel kunne ikke laves:", err);
-    if (err instanceof FragtFejl && !oprettetHosFirma) {
+    // 'fejlet' KUN når vi ved, at intet er oprettet: en FragtFejl (validering
+    // før første kald eller 4xx på oprettelsen) i et FØRSTE forsøg. Et
+    // genoptaget forsøg kan stamme fra en tidligere POST - det bliver aldrig
+    // 'fejlet' her (kun staff kan afslutte det, se staffAfslutClaim).
+    if (err instanceof FragtFejl && !oprettetHosFirma && svar.kode !== "genoptag") {
       await admin.rpc("forsendelse_marker_fejlet", { p_id: id, p_fejl: renFejltekst(err, 500) });
       return { fejl: err.brugerbesked };
     }
@@ -485,7 +490,7 @@ async function opretForsendelse(
         (oprettetHosFirma ? ` (oprettet som ${oprettetHosFirma})` : "") +
         ". Næste forsøg genbruger samme reference.",
     });
-    return { fejl: UKENDT_UDFALD_TEKST };
+    return { fejl: err instanceof FragtFejl ? err.brugerbesked : UKENDT_UDFALD_TEKST };
   }
 
   // Første hændelse (oprettet) - giver en tidslinje fra start. Labelen er
@@ -633,6 +638,79 @@ export async function opretReturForsendelse(
       };
     },
   });
+}
+
+// Staff afslutter en hængende claim ('opretter' efter ukendt udfald), efter
+// at have tjekket hos fragtfirmaet:
+//   'fejlet'   intet er oprettet - sælgeren kan prøve igen (ny reference).
+//   'tilknyt'  forsendelsen findes (Shipmondo-id): labelen hentes og gemmes,
+//              og forsendelsen bliver 'oprettet'. Referencen hos Shipmondo
+//              SKAL være BidHamrs forsendelses-id.
+// Kaldere SKAL have tjekket staff-rollen og inhabilitet og logger selv.
+export async function staffAfslutHaengendeClaim(
+  forsendelseId: string,
+  valg: "fejlet" | "tilknyt",
+  opts: { note: string; forsendelsesId?: string | null },
+): Promise<{ ok: true; tradeId: string } | { fejl: string }> {
+  const admin = createAdminClient();
+  const { data: f } = await admin
+    .from("forsendelser")
+    .select("id, trade_id, status, fragtfirma, pakkeshop_id, modtager")
+    .eq("id", forsendelseId)
+    .maybeSingle<{ id: string; trade_id: string; status: string; fragtfirma: string; pakkeshop_id: string | null; modtager: Adresse | null }>();
+  if (!f) return { fejl: "Forsendelsen findes ikke." };
+  if (f.status !== "opretter") return { fejl: "Forsendelsen hænger ikke (status er " + f.status + ")." };
+
+  if (valg === "fejlet") {
+    const { data, error } = await admin.rpc("forsendelse_staff_marker_fejlet", { p_id: f.id, p_note: opts.note });
+    if (error) throw new Error("forsendelse_staff_marker_fejlet: " + error.message);
+    return data ? { ok: true, tradeId: f.trade_id } : { fejl: "Forsendelsen blev ændret imens. Opdatér siden." };
+  }
+
+  if (f.fragtfirma !== "shipmondo") return { fejl: "Kun Shipmondo-forsendelser kan tilknyttes." };
+  const sid = (opts.forsendelsesId ?? "").trim();
+  let eks: Awaited<ReturnType<typeof hentEksisterende>>;
+  try {
+    eks = await medTimeout(hentEksisterende(sid), 20_000, "hentEksisterende");
+  } catch (err) {
+    return { fejl: err instanceof FragtFejl ? err.brugerbesked : "Shipmondo svarede ikke. Prøv igen om lidt." };
+  }
+  if (eks.reference !== f.id) {
+    return { fejl: `Forsendelsen hos Shipmondo har en anden reference (${eks.reference ?? "ingen"}) end BidHamrs (${f.id}).` };
+  }
+  const sti = `${f.trade_id}/${f.id}.pdf`;
+  const bytes = await labelBytes(eks.label);
+  const { error: upFejl } = await admin.storage
+    .from(FRAGT_LABEL_BUCKET)
+    .upload(sti, bytes, { contentType: "application/pdf", upsert: false });
+  if (upFejl && !/exists|duplicate/i.test(upFejl.message)) throw new Error("Label kunne ikke gemmes: " + upFejl.message);
+  const { error: detFejl } = await admin.rpc("forsendelse_gem_detaljer", {
+    p_id: f.id,
+    p_produkt: eks.produkt ?? null,
+    p_vaegt_gram: eks.vaegtGram,
+    p_labelfri: Boolean(eks.qrKode),
+    p_pakkeshop_id: f.pakkeshop_id,
+    p_afsender: eks.afsender,
+    p_modtager: f.modtager,
+  });
+  if (detFejl) throw new Error("forsendelse_gem_detaljer: " + detFejl.message);
+  const { data: gemt, error: gemFejl } = await admin.rpc("forsendelse_gem_oprettet", {
+    p_id: f.id,
+    p_forsendelses_id: eks.forsendelsesId,
+    p_sporingsnummer: eks.sporingsnummer,
+    p_label_sti: sti,
+    p_qr_kode: eks.qrKode ?? null,
+    p_pris_oere: eks.prisOere ?? null,
+  });
+  if (gemFejl) throw new Error("forsendelse_gem_oprettet: " + gemFejl.message);
+  if (!gemt) return { fejl: "Forsendelsen blev ændret imens. Opdatér siden." };
+  await registrerForsendelseshaendelse(f.id, {
+    type: "oprettet",
+    tidspunkt: new Date().toISOString(),
+    noegle: "bidhamr:oprettet",
+    beskrivelse: "Fragtlabel tilknyttet af BidHamr",
+  }, "sporing");
+  return { ok: true, tradeId: f.trade_id };
 }
 
 // Annullerer en label hos fragtfirmaet i to trin, så en samtidig "afleveret"

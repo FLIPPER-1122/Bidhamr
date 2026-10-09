@@ -164,7 +164,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
   const [startprisTekst, setStartprisTekst] = useState("");
   const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
-  // Pakkestørrelse og vægt (kg som tekst). Vægt er krævet ved Mellem og Stor.
+  // Pakkestørrelse og vægt (kg som tekst). Vægten er altid krævet ved forsendelse.
   const [pakkestoerrelse, setPakkestoerrelse] = useState<Fragtstoerrelse["kode"]>("lille");
   const [vaegtTekst, setVaegtTekst] = useState("");
   const [fragtstoerrelser, setFragtstoerrelser] = useState<Fragtstoerrelse[]>([]);
@@ -290,7 +290,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
       if (vaegtTekst.trim() && (vaegtGram === null || vaegtGram <= 0)) f.vaegt = "Skriv vægten i kg, fx 2,5.";
       else if (vaegtGram !== null && vaegtGram > 15000) f.vaegt = "Varer over 15 kg kan kun afhentes. Vælg \"Kun afhentning\".";
       else if (vaegtGram !== null && maks !== null && vaegtGram > maks) f.vaegt = "Vægten passer ikke til pakkestørrelsen. Vælg en større pakke.";
-      else if (vaegtGram === null && pakkestoerrelse !== "lille") f.vaegt = "Skriv, hvor meget pakken vejer.";
+      else if (vaegtGram === null) f.vaegt = "Skriv, hvor meget pakken vejer.";
     }
     if (!bekraeftet) f.bekraeft = "Bekræft, at varen ikke er forbudt.";
     return f;
@@ -842,7 +842,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         {forsendelseMulig && (
           <div>
             <label htmlFor={FELT_ID.vaegt} className="mb-1.5 block text-sm font-medium text-tekst">
-              Vægt med emballage (kg){pakkestoerrelse === "lille" ? " – valgfri" : ""}
+              Vægt med emballage (kg)
             </label>
             <input
               id={FELT_ID.vaegt}

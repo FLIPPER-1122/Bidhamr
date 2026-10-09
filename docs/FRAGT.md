@@ -11,7 +11,7 @@ Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md 
 ## Flowet
 
 1. **Opret auktion**: sælgeren vælger forsendelse + pakkestørrelse (Lille ≤ 1 kg, Mellem ≤ 5 kg, Stor ≤ 15 kg)
-   og vægt (krævet ved Mellem og Stor). Databasen håndhæver grænserne (også fra appen) og **låser
+   og vægt (altid krævet). Databasen håndhæver grænserne (også fra appen) og **låser
    fragtprisen på auktionen** (`auctions.fragt_pakkeshop_oere` / `fragt_doer_oere`). Over 15 kg: kun afhentning.
 2. **Budpanelet** viser `fragt_pakkeshop_oere` (billigste levering) før buddet.
 3. **Auktionen slutter**: betalingen oprettes med pakkeshop-prisen som fragt.
@@ -26,7 +26,10 @@ Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md 
    at staff godkender (`fragtGodkendEkstraLabel` i `src/app/actions/adminFragt.ts`).
    Svarer fragtfirmaet ikke (timeout/netværk/5xx, eller fejl efter oprettelsen), bliver forsøget stående,
    og næste "Send pakke" (efter mindst 1 minut) genbruger samme reference – der bestilles aldrig en ny label,
-   før det er afklaret. Drift-loggen får "Fragt: ukendt udfald".
+   før det er afklaret. Drift-loggen får "Fragt: ukendt udfald". Et genoptaget forsøg markeres aldrig
+   'fejlet' af systemet – staff afslutter det med `fragtAfslutHaengendeLabel` (adminFragt.ts): "markér
+   fejlet" (intet oprettet hos Shipmondo, note krævet) eller "tilknyt" (Shipmondos forsendelses-id; referencen
+   skal være BidHamrs forsendelses-id). Begge logges i medarbejder-loggen. Knappen bygges af frontend.
 6. **Annullering**: så længe pakken ikke er indleveret. DAO kan ikke annullere via Shipmondo – labelen
    annulleres i BidHamr, og staff får en markering (bed Shipmondo/DAO kreditere den).
 7. **Sporing**: kun via Shipmondos webhook "Shipment Monitor" → `/api/fragt/webhook/shipmondo`.
@@ -108,8 +111,8 @@ Direkte fra Supabase i appen (med brugerens session):
 
 **Appen skal ændre:**
 
-1. Opret auktion: send `pakkestoerrelse` (`lille`/`mellem`/`stor`) og `vaegt_gram` (krævet ved Mellem og
-   Stor) sammen med `forsendelse_mulig`. Fejlkoder fra insert/update: `BHT01` (over 15 kg – kun afhentning),
+1. Opret auktion: send `pakkestoerrelse` (`lille`/`mellem`/`stor`) og `vaegt_gram` (altid krævet)
+   sammen med `forsendelse_mulig`. Fejlkoder fra insert/update: `BHT01` (over 15 kg – kun afhentning),
    `BHT02` (vægten passer ikke til størrelsen) og `BHT03` (vægt mangler). Sendes størrelsen ikke (den
    nuværende app), bliver den Mellem uden krav om vægt – når appen sender størrelsen, gøres kravet generelt.
 2. Auktionssiden/budpanelet: vis `fragt_pakkeshop_oere` i stedet for de faste 35 kr.
@@ -117,6 +120,15 @@ Direkte fra Supabase i appen (med brugerens session):
    Først derefter "Betal". Får betalingen `kode: "vaelg_levering"`, så send køberen til checkout.
 4. "Send pakke": afsenderadresse → `book`, vis PDF (`label`) og labelfri-koden.
 5. Tidslinje fra `forsendelser`, notifikationstypen `pakke_leveret` findes allerede.
+
+## Go-live (produktion)
+
+1. Appen sender `pakkestoerrelse` + `vaegt_gram`, viser den låste fragtpris og har checkout før betaling.
+2. Hjemmesiden er klar (budpanel, opret, checkout, Send pakke).
+3. **Fjern undtagelsen** i `auctions_fragt` (klienter uden størrelse får Mellem uden vægt) i en ny migration,
+   så vægt altid kræves ved forsendelse.
+4. Kør migrationen og deploy hjemmesiden lige efter hinanden.
+5. Opret Shipmondo-webhooks (se nedenfor) og sæt `SHIPMONDO_*` + `FRAGTFIRMA=shipmondo` i Vercel (Filip).
 
 ## Shipmondo (verificeret mod sandboxen 9. okt. 2026)
 
@@ -134,6 +146,11 @@ Direkte fra Supabase i appen (med brugerens session):
 - Sporing: intet sporings-endpoint i API v3 – kun webhooken. `hentSporing` giver derfor ingen hændelser,
   og fragt-cron'en kan ikke hente sporing som reserve. Mister vi en webhook, kommer den næste status
   ("latest") stadig. Shipmondo skriver, at Shipment Monitor "updates once a day" – spørg på mødet.
+- Målt vægt: shipmondo.dev's eksempel på en Shipment Monitor-hændelse har `"weight": "0.6"` (tekst, kg;
+  også `length`/`height`/`width`). Det kan **ikke** verificeres i sandboxen: OpenAPI-specifikationen beskriver
+  ikke Shipment Monitor-payloaden, sandboxen har ingen rigtige scanninger, og webhooks kan ikke nå localhost.
+  Koden læser `weight` som kg, hvis den er et tal, og ignorerer den ellers. Bekræft med Shipmondo, om DAO
+  sender den målte vægt (og i hvilken enhed), før den bruges som bevis.
 - Webhook: `{ "data": "<JWT>" }`, HS256 med webhook-nøglen. Kun `alg: HS256` accepteres. Ruten svarer
   200 hurtigt og sender beskeder bagefter (`after()`); fragt-cron'en sender manglende beskeder.
 
@@ -167,8 +184,8 @@ Localhost kan ikke modtage webhooks fra Shipmondo – test på en Vercel-preview
 - Shipment Monitor har ingen retur-status: en tekst med "retur" giver `returneret`, `DANGER` giver `fejl` –
   begge kun som markering til staff.
 - Returlabel er slået fra, indtil returfragten opkræves hos køberen.
-- Vægt er krævet ved Mellem og Stor, når klienten sender en størrelse; uden størrelse (nuværende app) bliver
-  det Mellem uden vægt.
+- Vægt er krævet for ALLE størrelser, når klienten sender en størrelse, og over 15 kg kan aldrig sendes.
+  Midlertidigt: uden størrelse (nuværende app) bliver det Mellem uden vægt – se go-live.
 - Målt vægt over størrelsens maksimum: kun markering til staff + udbetalingen holdes; sælgeren betaler
   forskellen (ROADMAP), men modregningen er ikke bygget.
 - Højst 2 udgående labels pr. handel (inkl. annullerede); flere kræver staffs godkendelse.
