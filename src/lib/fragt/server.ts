@@ -664,7 +664,15 @@ export async function staffAfslutHaengendeClaim(
   if (valg === "fejlet") {
     const { data, error } = await admin.rpc("forsendelse_staff_marker_fejlet", { p_id: f.id, p_note: opts.note });
     if (error) throw new Error("forsendelse_staff_marker_fejlet: " + error.message);
-    return data ? { ok: true, tradeId: f.trade_id } : { fejl: "Forsendelsen blev ændret imens. Opdatér siden." };
+    if (data === "ok") return { ok: true, tradeId: f.trade_id };
+    const STAFF_FEJL: Record<string, string> = {
+      note_mangler: "Skriv, hvad du har tjekket i Shipmondo.",
+      ikke_fundet: "Forsendelsen findes ikke.",
+      ikke_haengende: "Forsendelsen hænger ikke længere. Opdatér siden.",
+      i_gang:
+        "Oprettelsen kan stadig være i gang. Vent, til der er gået 10 minutter siden sidste forsøg (eller til den er markeret med ukendt udfald), og tjek Shipmondo igen.",
+    };
+    return { fejl: STAFF_FEJL[String(data)] ?? "Forsendelsen blev ændret imens. Opdatér siden." };
   }
 
   if (f.fragtfirma !== "shipmondo") return { fejl: "Kun Shipmondo-forsendelser kan tilknyttes." };

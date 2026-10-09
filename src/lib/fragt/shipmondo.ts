@@ -279,8 +279,9 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
   try {
     s = await kald<ShipmondoForsendelse>("POST", "/shipments", body);
   } catch (err) {
-    // Afvist (4xx): intet er oprettet.
-    if (err instanceof ShipmondoFejl && err.status >= 400 && err.status < 500) {
+    // Afvist (4xx): intet er oprettet. Undtagen 408 (timeout hos Shipmondo):
+    // dér ved vi ikke, om forsendelsen blev oprettet.
+    if (err instanceof ShipmondoFejl && err.status >= 400 && err.status < 500 && err.status !== 408) {
       throw new FragtFejl(
         err.status === 422
           ? "Fragtfirmaet kunne ikke oprette pakken. Tjek adresserne og prøv igen."
@@ -311,8 +312,16 @@ export async function hentEksisterende(
   try {
     f = await kald("GET", `/shipments/${forsendelsesId}`);
   } catch (err) {
-    if (err instanceof ShipmondoFejl && err.status === 404) throw new FragtFejl("Forsendelsen findes ikke hos Shipmondo.");
+    // En annulleret forsendelse giver 404 hos Shipmondo (verificeret i sandboxen).
+    if (err instanceof ShipmondoFejl && err.status === 404) {
+      throw new FragtFejl("Forsendelsen findes ikke hos Shipmondo (eller er annulleret).");
+    }
     throw err;
+  }
+  // Ekstra værn, hvis svaret en dag har en annulleringsstatus.
+  const r = f as unknown as Record<string, unknown>;
+  if (r.cancelled === true || r.cancelled_at || String(r.status ?? "").toLowerCase().includes("cancel")) {
+    throw new FragtFejl("Forsendelsen er annulleret hos Shipmondo og kan ikke tilknyttes.");
   }
   const o = tilOprettet(f, await hentLabel(f.id));
   const v = f.parcels?.[0]?.weight;

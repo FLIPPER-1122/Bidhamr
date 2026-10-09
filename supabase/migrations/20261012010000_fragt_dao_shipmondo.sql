@@ -1099,21 +1099,35 @@ grant execute on function public.forsendelse_marker_ukendt(uuid, text) to servic
 -- (Findes forsendelsen hos fragtfirmaet, tilknyttes den i stedet af serveren
 -- med forsendelse_gem_detaljer + forsendelse_gem_oprettet.) Kun service_role -
 -- serveren har tjekket staff-rollen og inhabilitet og logger i moderation_log.
-create or replace function public.forsendelse_staff_marker_fejlet(p_id uuid, p_note text)
-returns boolean
+-- Kun en claim, der reelt hænger: ukendt udfald, eller seneste forsøg over
+-- 10 minutter gammelt (ellers kan et forsøg være i gang lige nu).
+-- Svar: 'ok' | 'note_mangler' | 'ikke_fundet' | 'ikke_haengende' | 'i_gang'.
+drop function if exists public.forsendelse_staff_marker_fejlet(uuid, text);
+create function public.forsendelse_staff_marker_fejlet(p_id uuid, p_note text)
+returns text
 language plpgsql
 security definer
 set search_path = ''
 as $fn$
+declare
+  f record;
 begin
-  if nullif(btrim(coalesce(p_note, '')), '') is null then return false; end if;
+  if nullif(btrim(coalesce(p_note, '')), '') is null then return 'note_mangler'; end if;
+  select id, status, ukendt_udfald_kl, forsoegt_kl, oprettet_kl into f
+    from public.forsendelser where id = p_id for update;
+  if f.id is null then return 'ikke_fundet'; end if;
+  if f.status <> 'opretter' then return 'ikke_haengende'; end if;
+  if f.ukendt_udfald_kl is null
+     and coalesce(f.forsoegt_kl, f.oprettet_kl) > now() - interval '10 minutes' then
+    return 'i_gang';
+  end if;
   update public.forsendelser
      set status = 'fejlet',
          ukendt_udfald_kl = null,
          fejl = left('Afsluttet af staff: ' || p_note, 500),
          kraever_opmaerksomhed = false
    where id = p_id and status = 'opretter';
-  return found;
+  return 'ok';
 end;
 $fn$;
 revoke all on function public.forsendelse_staff_marker_fejlet(uuid, text) from public, anon, authenticated;
