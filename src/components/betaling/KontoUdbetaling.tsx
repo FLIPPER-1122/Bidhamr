@@ -132,6 +132,17 @@ export default function KontoUdbetaling({
         </p>
       )}
 
+      {saelger.frosset && !lukket && (
+        <div role="alert" className="rounded-xl border border-advarsel-kant bg-advarsel-bg p-4 text-sm text-advarsel-tekst">
+          <p className="font-semibold">Dine auktioner og bud er sat på pause</p>
+          <p className="mt-1">
+            Dine auktioner og bud er sat på pause, til Stripe har godkendt din konto. Gør
+            opsætningen færdig hos Stripe med knappen ovenfor - pausen ophæves automatisk, når
+            kontoen er godkendt.
+          </p>
+        </div>
+      )}
+
       {saelger.venterPaaBank && !lukket && (
         <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
           <p className="font-semibold">Udbetalingen til din bank fejlede</p>

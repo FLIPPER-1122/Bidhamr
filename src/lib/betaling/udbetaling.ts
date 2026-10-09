@@ -47,6 +47,7 @@ import {
   type BetalingRaekke,
   markerUdbetalingskonto,
   spejlConnectKonto,
+  spejlDestinationCharge,
   spejlIndsigelse,
   spejlSvindelvarsel,
 } from "@/lib/betaling/stripeBetaling";
@@ -194,7 +195,12 @@ export async function udbetalTilSaelger(betalingId: string): Promise<string> {
       .maybeSingle<{ status: string }>();
     if (u && (u.status === "oprettet" || u.status === "paid")) return "allerede_udbetalt";
   }
-  const grund = await blokeret(admin, b.id);
+  let grund = await blokeret(admin, b.id);
+  // Webhooken (charge.updated) er ikke kommet endnu: hent chargen frisk.
+  if (grund === "transfer_ukendt" || (grund === "midler_ikke_tilgaengelige" && !b.midler_tilgaengelige_kl)) {
+    await spejlManglendeCharges(undefined, b.id);
+    grund = await blokeret(admin, b.id);
+  }
   if (grund === null || AFREGNING_OK.has(grund)) await sendSaelgerAfregning(b.trade_id, "standard");
   if (grund !== null && grund !== "allerede_udbetalt") return `venter_${grund}`;
 
@@ -779,8 +785,65 @@ async function beskedUdbetalingPaaVej(admin: Admin, u: UdbetalingRaekke): Promis
 // Alle sælgere med frigivne destination-betalinger, der kan være klar til
 // udbetaling (eller en uafklaret udbetaling). Kaster aldrig - fejl logges
 // (kilde 'cron' = kørslen markeres som fejlet, Niels F06).
+// Betalte destination-betalinger, hvor transferen eller available_on endnu
+// ikke er spejlet (charge.updated-webhooken er ikke kommet - transfer_ukendt
+// / midler_ikke_tilgaengelige): chargen hentes frisk hos Stripe, så
+// udbetalingen ikke afhænger af webhooken. Mangler det stadig over 1 time
+// efter betalingen, gives én drift-alarm pr. betaling. Kaster aldrig.
+export async function spejlManglendeCharges(saelgerId?: string, betalingId?: string): Promise<number> {
+  const admin = createAdminClient();
+  let q = admin
+    .from("betalinger")
+    .select("id, seller_id, stripe_charge_id, betalt_kl")
+    .eq("pengemodel", "destination")
+    .eq("status", "betalt")
+    .not("stripe_charge_id", "is", null)
+    .is("saelger_udbetaling_id", null)
+    .or("stripe_destination_transfer_id.is.null,midler_tilgaengelige_kl.is.null")
+    .order("betalt_kl", { ascending: true })
+    .limit(50);
+  if (saelgerId) q = q.eq("seller_id", saelgerId);
+  if (betalingId) q = q.eq("id", betalingId);
+  const { data, error } = await q;
+  if (error) {
+    if (!manglerIDatabasen(error)) {
+      await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Spejling af charges", fejl: error });
+    }
+    return 0;
+  }
+  let antal = 0;
+  for (const b of data ?? []) {
+    try {
+      const r = await spejlDestinationCharge(b.stripe_charge_id as string);
+      const { data: efter } = await admin
+        .from("betalinger")
+        .select("stripe_destination_transfer_id, midler_tilgaengelige_kl")
+        .eq("id", b.id)
+        .maybeSingle<{ stripe_destination_transfer_id: string | null; midler_tilgaengelige_kl: string | null }>();
+      if (efter?.stripe_destination_transfer_id && efter.midler_tilgaengelige_kl) {
+        antal++;
+        await lukTilfaelde(`charge-mangler:${b.id}`);
+        continue;
+      }
+      if (b.betalt_kl && Date.now() - new Date(b.betalt_kl as string).getTime() > 60 * 60_000) {
+        await alarmPrTilfaelde({
+          noegle: `charge-mangler:${b.id}`,
+          hvor: "betaling/charge-mangler",
+          fejl: `Betaling ${b.id} er betalt for over 1 time siden, men transferen til sælgerens konto eller tidspunktet for tilgængelige midler kendes ikke (${r}). Pengene kan ikke udbetales - kontrollér chargen i Stripe.`,
+          brugerId: b.seller_id as string,
+        });
+      }
+    } catch (err) {
+      console.error("Spejling af charge fejlede:", b.id, err);
+      await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Spejling af charges", fejl: err, brugerId: b.seller_id as string });
+    }
+  }
+  return antal;
+}
+
 export async function udbetalVentende(saelgerId?: string): Promise<number> {
   const admin = createAdminClient();
+  await spejlManglendeCharges(saelgerId);
   const saelgere = new Set<string>();
   if (saelgerId) {
     saelgere.add(saelgerId);
@@ -1011,5 +1074,7 @@ export async function proevUdbetalingIgen(betalingId: string): Promise<string> {
     p_tving: true,
   });
   if (error) throw new Error(`saelger_udbetaling_bank_rettet: ${error.message}`);
+  // Uafhængigt af charge.updated-webhooken: transfer/available_on hentes frisk.
+  if (!b.stripe_destination_transfer_id || !b.midler_tilgaengelige_kl) await spejlManglendeCharges(undefined, b.id);
   return udbetalTilSaelger(betalingId);
 }

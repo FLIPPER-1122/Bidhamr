@@ -74,6 +74,8 @@ import {
   refunderLoveteVentende,
 } from "@/lib/betaling/stripeBetaling";
 import { koerBetalingsovervaagning } from "@/lib/betaling/overvaagning";
+import { databasenErDestination } from "@/lib/betaling/model";
+import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 
 const TIME = 60 * 60 * 1000;
 
@@ -150,6 +152,21 @@ export async function koerBetalingsCron() {
     overvaagning: {} as Awaited<ReturnType<typeof koerBetalingsovervaagning>>,
     ventende: {} as Awaited<ReturnType<typeof behandlVentendeBetalinger>>,
   };
+
+  // 0) Databasen er ikke migreret til betalingsmodellen destination (trin
+  //    1-5): ingen pengetrin (de ville fejle eller bruge den gamle model).
+  //    Kun notifikationer kører. Én drift-alarm, til det er løst - ikke
+  //    en fejlet kørsel hvert 5. minut. Se docs/GO-LIVE-STRIPE.md.
+  if (!(await databasenErDestination())) {
+    await alarmPrTilfaelde({
+      noegle: "cron:betalingsmodel",
+      hvor: "betaling/betalingsmodel",
+      fejl: "Betalings-cron springer alle pengetrin over: databasens betalingsmodel er ikke 'destination' (migrationerne for trin 1-5 er ikke kørt). Kør prod-koersel-filen - se docs/GO-LIVE-STRIPE.md.",
+    });
+    const notifikationer = await koerNotifikationsCron();
+    return { ...resultat, springetOver: 1, notifikationer };
+  }
+  await lukTilfaelde("cron:betalingsmodel");
 
   // 1) Luk auktioner og opret handel + betaling.
   const { data: lukkede, error: rpcFejl } = await admin.rpc("afslut_udloebne_auktioner");

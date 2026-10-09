@@ -813,8 +813,9 @@ export async function forsoegAutobetaling(betalingId: string): Promise<string> {
   if (foer.pengemodel !== "destination") return "ikke_relevant";
   try {
     await kraevDestination();
+    await kraevSammeOffentligeNoegle();
   } catch (err) {
-    if (err instanceof BetalingsmodelFejl) return "stoppet";
+    if (err instanceof BetalingsmodelFejl || err instanceof StripeTilstandFejl) return "stoppet";
     throw err;
   }
 

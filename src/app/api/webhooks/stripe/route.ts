@@ -18,6 +18,8 @@ import {
 import { aabnVentende } from "@/lib/betaling/betalingInd";
 import { bankKontoRettet, spejlReview, udbetalForKonto, udbetalVentende } from "@/lib/betaling/udbetaling";
 import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/betaling";
+import { databasenErDestination } from "@/lib/betaling/model";
+import { alarmPrTilfaelde } from "@/lib/betaling/driftTilfaelde";
 
 // Stripe-webhook for betalingen (destination charges - den eneste model).
 // Spejler Stripes status i databasen - Stripe er sandheden om penge.
@@ -335,6 +337,24 @@ export async function POST(req: NextRequest) {
   try {
     await haandter(event);
   } catch (err) {
+    // Databasen er ikke migreret (funktion/kolonne mangler - PGRST202,
+    // 42883, 42703): et nyt forsøg hjælper ikke, før migrationerne er kørt.
+    // Kvittér (200) med én drift-alarm i stedet for 500 i 3 dage. Efter
+    // migrationen spejler overvågningen udeblevne payout-/indsigelses-events.
+    const tekst = err instanceof Error ? err.message : String(err);
+    if (
+      !(await databasenErDestination()) ||
+      /Could not find the function|PGRST202|PGRST204|function [^ ]+ does not exist|column [^ ]+ does not exist/i.test(tekst)
+    ) {
+      console.error(`Webhook ${event.type} (${event.id}) ikke behandlet - databasen er ikke migreret:`, tekst);
+      await alarmPrTilfaelde({
+        noegle: "webhook:ikke-migreret",
+        kilde: "webhook",
+        hvor: "betaling/betalingsmodel",
+        fejl: `Stripe-webhooks kan ikke behandles: databasen mangler betalingsmodellens migrationer (fx ${event.type}). Events kvitteres uden behandling - kør prod-koersel-filen (docs/GO-LIVE-STRIPE.md).`,
+      });
+      return NextResponse.json({ received: true, behandlet: false });
+    }
     // 500 får Stripe til at prøve igen. Handlerne er idempotente.
     console.error(`Webhook ${event.type} (${event.id}) fejlede:`, err);
     await logDriftFejl({ kilde: "webhook", sti: "stripe-webhook", hvor: event.type, fejl: err });

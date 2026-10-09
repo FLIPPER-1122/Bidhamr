@@ -94,6 +94,14 @@ export default async function AuktionPage({
     notFound();
   }
   const skjult = Boolean(auktion.skjult);
+  // Er sælgeren frosset (BHU03 - der kan ikke bydes)? Kun ja/nej bruges -
+  // intet fra sælgerens betalingsprofil sendes til browseren.
+  const { data: frossen } = await createAdminClient()
+    .from("betalingsprofiler")
+    .select("user_id")
+    .eq("user_id", auktion.bruger_id)
+    .not("saelger_frosset_kl", "is", null)
+    .maybeSingle();
   // Skjult og på pause (Filip, 6. okt. 2026): den slutter ikke, før den er
   // vist igen - slutter_kl gælder ikke imens.
   const pauset = erPaaPause(auktion);
@@ -530,6 +538,7 @@ export default async function AuktionPage({
               pauseResterende={(auktion.pause_resterende as string | null | undefined) ?? null}
               erhvervAuktion={erhvervAuktion}
               erFirmakonto={erFirmakonto}
+              saelgerFrosset={!!frossen}
             />
 
             {/* Kvittering for bedømmelsen – den afgives ved godkendelse af varen */}

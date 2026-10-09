@@ -53,16 +53,17 @@ begin
     raise exception 'trin5: trin 4 (20261011041000_betalingsmodel_trin4_rettelser.sql) er ikke kørt - kør trin 1-4 først';
   end if;
 
+  -- En betalt separat-række er kun afsluttet, når pengene er overført
+  -- (stripe_transfer_id), refunderet (refunderet_kl) eller tabt ved indsigelse.
+  -- En annulleret handel frigiver IKKE rækken: pengene kan stadig stå på
+  -- BidHamrs saldo.
   select count(*) into n
     from public.betalinger b
-    left join public.trades t on t.id = b.trade_id
    where b.pengemodel = 'separat'
      and (b.status in ('afventer', 'behandles')
-          or (b.status = 'betalt' and b.refusion_anmodet_kl is not null and b.refunderet_kl is null)
           or (b.status = 'betalt'
               and b.stripe_transfer_id is null
-              and b.refusion_anmodet_kl is null
-              and coalesce(t.status, '') <> 'annulleret'
+              and b.refunderet_kl is null
               and coalesce(b.indsigelse_status, '') <> 'lost'));
   if n > 0 then
     raise exception 'separat_betalinger_i_gang: % betaling(er) i den gamle model er ikke afsluttet (afventer, betalt uden overførsel eller refusion i gang). Afslut dem først - se docs/GO-LIVE-STRIPE.md', n;

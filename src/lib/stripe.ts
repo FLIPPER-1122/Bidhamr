@@ -60,7 +60,6 @@ async function alarm(tekst: string) {
   await logDriftFejl({ kilde: "server", hvor: "stripe/tilstand", fejl: tekst });
 }
 
-// Kaster StripeTilstandFejl, hvis nøglen og databasen ikke er i samme tilstand.
 // Den offentlige nøgle (betalingsformularen i browseren) skal være i samme
 // tilstand som den hemmelige - ellers kan køberne ikke betale de
 // PaymentIntents, serveren laver (trin 5, F07). null = ikke sat (fx scripts).
@@ -84,6 +83,7 @@ export async function kraevSammeOffentligeNoegle(): Promise<void> {
   throw new StripeTilstandFejl(tekst);
 }
 
+// Kaster StripeTilstandFejl, hvis nøglen og databasen ikke er i samme tilstand.
 export async function kraevSammeStripeTilstand(): Promise<StripeTilstand> {
   const noegle = noeglensTilstand();
   if (!noegle) throw new StripeTilstandFejl("STRIPE_SECRET_KEY er hverken en test- eller live-nøgle.");

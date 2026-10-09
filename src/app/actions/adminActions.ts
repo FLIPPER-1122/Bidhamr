@@ -895,7 +895,9 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
     const r = await pengeTilSaelger(betaling.id);
     overfoersel = erSendtTilSaelger(r)
       ? " (udbetalt til sælgers bank via Stripe)"
-      : ` (udbetaling venter: ${r})`;
+      : r === "gammel_model"
+        ? ` (${OVERFOERSEL_TEKST.gammel_model})`
+        : ` (udbetaling venter: ${r})`;
   } catch (err) {
     console.error("Udbetaling efter admin-frigivelse fejlede (prøves igen af cron):", err);
     overfoersel = " (udbetaling fejlede - prøves igen automatisk)";
