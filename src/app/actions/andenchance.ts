@@ -1,5 +1,8 @@
 "use server";
 
+import { erMitIdFejl } from "@/lib/mitid/fejl";
+import { MITID } from "@/lib/tekster/mitid";
+
 // Vinderen betaler ikke (ROADMAP-BESLUTNINGER.md, 2. oktober 2026).
 // Sælgeren vælger selv næste skridt: tilbyd varen til næste byder, eller sæt
 // den op igen gratis.
@@ -22,7 +25,7 @@ import {
   STARTPRIS_FOR_LAV,
 } from "@/lib/auktionRegler";
 
-type Fejl = { fejl: string };
+type Fejl = { fejl: string; mitid?: true };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -223,6 +226,8 @@ export async function sendAndenchanceTilbud(
       p_seller: uid,
     });
     if (error) {
+      // MitID mangler (BHV01, a0_andenchance_mitid).
+      if (erMitIdFejl(error.code, error.message)) return { fejl: MITID.fejlMangler, mitid: true };
       // To samtidige klik: det partielle unikke index afviser det andet.
       if (error.code === "23505") return { fejl: OPRET_FEJL.aktivt_tilbud };
       console.error("andenchance_opret fejlede:", error);
@@ -450,6 +455,8 @@ export async function genopsaetAuktion(
       p_slutter_kl: slutterKlFraVarighed(varighed).toISOString(),
     });
     if (error) {
+      // MitID mangler (BHV01, auctions_a0_mitid).
+      if (erMitIdFejl(error.code, error.message)) return { fejl: MITID.fejlMangler, mitid: true };
       if (error.code === "23505") return { fejl: GENOPSAET_FEJL.allerede_genopsat };
       console.error("genopsaet_auktion fejlede:", error);
       return { fejl: GENERISK };

@@ -139,7 +139,7 @@ Formål: siden bliver troværdig, professionel, tryg og moderne.
 - [x] **Stand på varen** som faste valg ved oprettelse (Ny med mærke / Som ny / God / Brugt / Defekt) – gør "ikke som beskrevet"-sager lettere at afgøre
 - [x] Billeder: op til 10 pr. auktion, understøt iPhone-formatet HEIC, automatisk komprimering
 - [x] Pakkeguide i FAQ: "Sådan pakker du din vare" (hænger sammen med reglen om, at sælger har ansvaret for indpakning)
-- [ ] "MitID-verificeret"-mærke på alle profiler *(venter på MitID – Filip, 6. okt.)*
+- [~] "MitID-verificeret"-mærke på alle profiler *(bygget 9. okt. 2026: profil, auktionsside (sælger), Min konto – se docs/MITID.md)*
 - [x] Sælgerens adresse og telefonnummer vises aldrig offentligt – kun det nødvendige deles med køberen efter handlen
 - [x] Opret auktion: gennemgå hele flowet, så det er hurtigt og nemt (billeder, kategorier, fragtvalg, forhåndsvisning)
 
@@ -178,7 +178,7 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 Formål: alt det juridiske og praktiske er på plads.
 
 - [ ] CVR-nummer
-- [ ] MitID-verificering ved oprettelse (Criipto) – virker ikke i dag
+- [~] MitID-verificering (Idura/Criipto) før første bud og første auktion *(bygget 9. okt. 2026 i testmiljøet – `20261013010000_mitid.sql`, docs/MITID.md. Mangler: Filip tester med test-MitID, Idura-produktionsaftale + Vercel-variabler, appen)*
 - [x] Cookie-banner
 - [ ] Handelsbetingelser og privatlivspolitik skrevet af advokat
 - [ ] Afklar med advokat: svindel og platformens ansvar

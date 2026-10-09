@@ -36,6 +36,8 @@ export const HANDLING_NAVNE: Record<string, string> = {
   konto_lukning_afvist: "Afviste kontolukning",
   udbetalingskonto_loest: "Markerede udbetalingskonto som løst",
   udbetalingskonto_nulstillet: "Nulstillede udbetalingskonto",
+  mitid_nulstillet: "Nulstillede MitID",
+  mitid_forsoeg_behandlet: "Gennemgik MitID-forsøg",
   rapport_behandlet: "Behandlede rapport",
   sag_anke_indgivet: "Anke indgivet",
   sag_anke_stadfaestet: "Stadfæstede afgørelse efter anke",

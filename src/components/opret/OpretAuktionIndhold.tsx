@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { hentKontoType } from "@/lib/supabase/bruger";
 import OpretAuktionForm from "@/components/OpretAuktionForm";
 import UdbetalingskontoKraeves from "@/components/betaling/UdbetalingskontoKraeves";
+import MitIDKraeves from "@/components/mitid/MitIDKraeves";
+import { hentMitIdStatus } from "@/lib/mitid/status";
 import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA } from "@/lib/tekster/erhverv";
 import { naesteLedigeTekst } from "@/lib/erhverv/visning";
 import type { Ugekvote } from "@/lib/erhverv/regler";
@@ -19,7 +21,7 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
 
   // Firmakonto? Så gælder ugekvote og abonnement (databasen håndhæver det
   // også, BHE02/BHE03) - vis det her, før firmaet udfylder hele formularen.
-  const [kontoType, { data: kvoteData }, { data: profil }] = await Promise.all([
+  const [kontoType, { data: kvoteData }, { data: profil }, mitid] = await Promise.all([
     hentKontoType(brugerId),
     supabase.rpc("firma_ugekvote"),
     // RLS: brugeren kan kun læse sin egen betalingsprofil.
@@ -37,6 +39,8 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
         connect_betalingsmetoder?: Record<string, string> | null;
         saelger_frosset_kl?: string | null;
       }>(),
+    // MitID kræves før første auktion (databasen håndhæver det, BHV01).
+    hentMitIdStatus(brugerId),
   ]);
   const erFirma = kontoType === "erhverv";
   const kvote = erFirma ? ((kvoteData as Ugekvote | null) ?? null) : null;
@@ -71,6 +75,10 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
         </Link>
       </div>
     );
+  }
+  // Privat sælger uden MitID: først MitID, så udbetalingskonto og formular.
+  if (!erFirma && mitid.mangler) {
+    return <MitIDKraeves sted="saelg" retur="/opret-auktion" />;
   }
   if (frakoblet) {
     return (

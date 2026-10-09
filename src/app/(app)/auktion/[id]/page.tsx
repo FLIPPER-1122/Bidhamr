@@ -24,6 +24,8 @@ import { erPaaPause } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
 import { fragtOere } from "@/lib/betaling/beregn";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
+import MitIDMaerke from "@/components/mitid/MitIDMaerke";
+import { hentMitIdStatus } from "@/lib/mitid/status";
 import { ERHVERVSSAELGER, ERHVERV_GPSR, FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 
 // Titel, beskrivelse (pris + slut), første billede som delebillede og
@@ -113,9 +115,9 @@ export default async function AuktionPage({
   // Sælgerens navn hentes sammen med resten nedenfor (Promise.all).
   const saelgerOpslag = supabase
     .from("users")
-    .select("navn")
+    .select("navn, mitid_verificeret_kl")
     .eq("id", auktion.bruger_id)
-    .maybeSingle();
+    .maybeSingle<{ navn: string | null; mitid_verificeret_kl: string | null }>();
 
   // "Byder 1", "Byder 2" ... i den raekkefoelge, de foerst bød. Egne bud vises som "Dig".
   const byderNr = new Map<string, number>();
@@ -238,6 +240,7 @@ export default async function AuktionPage({
     { data: minFoelgning },
     { data: saelger },
     minKontoType,
+    minMitId,
   ] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     bruger ? getStaffRole() : Promise.resolve(null),
@@ -256,6 +259,8 @@ export default async function AuktionPage({
     // Er jeg en firmakonto? Så kan jeg ikke byde (users.konto_type). Delt
     // med topbaren (cache() i src/lib/supabase/bruger.ts).
     mitId && mitId !== auktion.bruger_id ? hentKontoType(mitId) : Promise.resolve(null),
+    // MitID kræves før første bud (BHV01) - budpanelet viser knappen i stedet.
+    mitId && mitId !== auktion.bruger_id ? hentMitIdStatus(mitId) : Promise.resolve(null),
   ]);
   const erhvervAuktion = auktion.erhverv === true;
   const erFirmakonto = minKontoType === "erhverv";
@@ -543,6 +548,7 @@ export default async function AuktionPage({
               erhvervAuktion={erhvervAuktion}
               erFirmakonto={erFirmakonto}
               saelgerFrosset={!!frossen}
+              mitidMangler={minMitId?.mangler ?? false}
             />
 
             {/* Kvittering for bedømmelsen – den afgives ved godkendelse af varen */}
@@ -619,6 +625,11 @@ export default async function AuktionPage({
                   >
                     {sælgerNavn}
                   </Link>
+                  {!erhvervAuktion && saelger?.mitid_verificeret_kl && (
+                    <div className="mt-1">
+                      <MitIDMaerke lille />
+                    </div>
+                  )}
                   {mitId !== auktion.bruger_id && !blokeretMedSaelger && !skjult && (
                     <div className="mt-1.5">
                       <FoelgKnap

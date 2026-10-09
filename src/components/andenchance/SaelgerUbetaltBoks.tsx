@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { MitIDKnap } from "@/components/mitid/MitIDKraeves";
 import { useState, useTransition } from "react";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
@@ -36,7 +37,10 @@ type Props = {
 
 export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standardStartpris }: Props) {
   const router = useRouter();
+  const sti = usePathname();
   const [visGenopsaet, setVisGenopsaet] = useState(false);
+  // MitID mangler (BHV01): vis "Bekræft med MitID" under knapperne.
+  const [mitid, setMitid] = useState(false);
 
   // naesteBudOere er næste byders bud (fra andenchance_naeste_bud), så
   // sælgeren ser beløbet før tilbuddet sendes. null = ingen flere bydere.
@@ -115,7 +119,10 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
               confirmLabel="Send tilbud"
               onConfirm={async () => {
                 const svar = await sendAndenchanceTilbud(tradeId);
-                if ("fejl" in svar) return { fejl: svar.fejl };
+                if ("fejl" in svar) {
+                  if (svar.mitid) setMitid(true);
+                  return { fejl: svar.fejl };
+                }
               }}
               onSuccess={() => router.refresh()}
             />
@@ -129,6 +136,11 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
               Sæt varen op igen (gratis)
             </button>
           )}
+        </div>
+      )}
+      {mitid && (
+        <div className="mt-3">
+          <MitIDKnap retur={sti} />
         </div>
       )}
 
@@ -177,6 +189,8 @@ function GenopsaetForm({
   const [startpris, setStartpris] = useState(Math.max(standardStartpris, MINDSTE_STARTPRIS));
   const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [fejl, setFejl] = useState<string | null>(null);
+  const [mitid, setMitid] = useState(false);
+  const sti = usePathname();
   const [pending, startTransition] = useTransition();
 
   function send(e: React.FormEvent) {
@@ -186,6 +200,7 @@ function GenopsaetForm({
       const svar = await genopsaetAuktion(auktionId, startpris, varighed);
       if ("fejl" in svar) {
         setFejl(svar.fejl);
+        setMitid(svar.mitid === true);
         return;
       }
       router.push(`/auktion/${svar.auktionId}`);
@@ -239,6 +254,7 @@ function GenopsaetForm({
           {fejl}
         </p>
       )}
+      {mitid && <MitIDKnap retur={sti} />}
       <div className="flex flex-col gap-2 sm:flex-row">
         <button type="submit" disabled={pending} className="btn btn-primaer w-full sm:w-auto">
           {pending ? "Sætter op…" : "Sæt varen op igen"}
