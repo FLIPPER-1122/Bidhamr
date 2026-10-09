@@ -1764,7 +1764,13 @@ export async function spejlDestinationCharge(chargeIdArg: string): Promise<strin
 
   if (afvigelser.length) {
     const tekst = `Destination-betaling afviger fra databasen (${afvigelser.join(", ")}) - kontrollér betalingen i Stripe. Pengene udbetales ikke automatisk.`;
-    await logDriftFejl({ kilde: "server", hvor: "betaling/destination-charge", fejl: `${tekst} Charge ${charge.id}.` });
+    // Én alarm pr. betaling (spejlingen gentages af webhooks og cron).
+    const { alarmPrTilfaelde } = await import("@/lib/betaling/driftTilfaelde");
+    await alarmPrTilfaelde({
+      noegle: `destination-charge:${b.id}`,
+      hvor: "betaling/destination-charge",
+      fejl: `${tekst} Charge ${charge.id}.`,
+    });
     await admin
       .from("betalinger")
       .update({ kraever_opmaerksomhed: true, sidste_fejl: tekst, opdateret: new Date().toISOString() })

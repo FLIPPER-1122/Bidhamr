@@ -19,7 +19,7 @@ import { logDriftFejl } from "@/lib/drift";
 const CACHE_MS = 60_000;
 const CACHE_FEJL_MS = 5_000;
 const ALARM_MS = 10 * 60_000;
-let cache: { klar: boolean; kl: number } | null = null;
+let cache: { status: BetalingsmodelStatus; kl: number } | null = null;
 let sidsteAlarm = 0;
 
 // Teksten må vises for brugeren.
@@ -35,22 +35,37 @@ async function alarm(tekst: string) {
   await logDriftFejl({ kilde: "server", hvor: "betaling/betalingsmodel", fejl: tekst });
 }
 
-// true = databasen er migreret til destination (stripe_tilstand.betalingsmodel).
-export async function databasenErDestination(): Promise<boolean> {
-  if (cache && Date.now() - cache.kl < (cache.klar ? CACHE_MS : CACHE_FEJL_MS)) return cache.klar;
-  let klar = false;
+// Databasens betalingsmodel:
+//   destination      - migreret (stripe_tilstand.betalingsmodel = destination)
+//   ikke_destination - LÆST: står til noget andet, eller tabellen/kolonnen/
+//                      rækken findes ikke (migrationen er ikke kørt)
+//   ukendt           - kunne ikke læses (fx netværks- eller databasefejl)
+export type BetalingsmodelStatus = "destination" | "ikke_destination" | "ukendt";
+
+export async function databasensBetalingsmodelStatus(): Promise<BetalingsmodelStatus> {
+  if (cache && Date.now() - cache.kl < (cache.status === "destination" ? CACHE_MS : CACHE_FEJL_MS)) {
+    return cache.status;
+  }
+  let status: BetalingsmodelStatus = "ukendt";
   try {
     const { data, error } = await createAdminClient()
       .from("stripe_tilstand")
       .select("betalingsmodel")
       .eq("id", true)
       .maybeSingle<{ betalingsmodel: string }>();
-    klar = !error && data?.betalingsmodel === "destination";
+    if (!error) status = data?.betalingsmodel === "destination" ? "destination" : "ikke_destination";
+    else if (["42P01", "42703", "PGRST204", "PGRST205"].includes(error.code ?? "")) status = "ikke_destination";
   } catch {
-    klar = false;
+    status = "ukendt";
   }
-  cache = { klar, kl: Date.now() };
-  return klar;
+  cache = { status, kl: Date.now() };
+  return status;
+}
+
+// true = databasen er migreret til destination. Ukendt tæller som nej (ingen
+// nye betalinger, når det ikke kan afgøres).
+export async function databasenErDestination(): Promise<boolean> {
+  return (await databasensBetalingsmodelStatus()) === "destination";
 }
 
 // Kaster BetalingsmodelFejl (og giver drift-alarm), hvis databasen ikke er

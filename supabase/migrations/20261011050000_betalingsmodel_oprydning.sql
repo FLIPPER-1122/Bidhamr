@@ -61,6 +61,7 @@ begin
     from public.betalinger b
    where b.pengemodel = 'separat'
      and (b.status in ('afventer', 'behandles')
+          or (b.status = 'betalt' and b.refusion_anmodet_kl is not null and b.refunderet_kl is null)
           or (b.status = 'betalt'
               and b.stripe_transfer_id is null
               and b.refunderet_kl is null

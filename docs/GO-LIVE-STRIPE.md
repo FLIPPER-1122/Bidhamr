@@ -34,7 +34,7 @@ De er samlet i én transaktionel fil: `prod-koersel/2026-10-09-betalingsmodel-tr
 
 ## B. Push koden (Filip)
 
-- [ ] **Migrationerne i A SKAL være kørt, før du pusher.** Push derefter `main` (Vercel deployer) med det samme. Pushes koden alligevel først, er det sikkert, men handlerne går i stå: serveren opretter ingen betalinger, betalings-cron'en springer alle pengetrin over, og webhooks kvitteres uden behandling – alt med én drift-alarm (`betaling/betalingsmodel`). Den falder aldrig tilbage til den gamle model. Kør A hurtigst muligt i så fald.
+- [ ] **Migrationerne i A SKAL være kørt, før du pusher.** Push derefter `main` (Vercel deployer) med det samme. Pushes koden alligevel først, er det sikkert, men handlerne går i stå: serveren opretter ingen betalinger, betalings-cron'en springer alle pengetrin over, og webhooks svarer 503 (Stripe prøver igen i op til 3 dage) – alt med én drift-alarm (`betaling/betalingsmodel`). Den falder aldrig tilbage til den gamle model. Kør A hurtigst muligt i så fald.
 
 ## C. Stripe-dashboardet: webhook-events (test nu, live i fase 6)
 

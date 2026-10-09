@@ -74,7 +74,7 @@ import {
   refunderLoveteVentende,
 } from "@/lib/betaling/stripeBetaling";
 import { koerBetalingsovervaagning } from "@/lib/betaling/overvaagning";
-import { databasenErDestination } from "@/lib/betaling/model";
+import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 
 const TIME = 60 * 60 * 1000;
@@ -157,7 +157,10 @@ export async function koerBetalingsCron() {
   //    1-5): ingen pengetrin (de ville fejle eller bruge den gamle model).
   //    Kun notifikationer kører. Én drift-alarm, til det er løst - ikke
   //    en fejlet kørsel hvert 5. minut. Se docs/GO-LIVE-STRIPE.md.
-  if (!(await databasenErDestination())) {
+  //    Kunne status ikke læses ("ukendt"), kører cron'en som normalt - fejl
+  //    i trinnene logges som altid.
+  const modelStatus = await databasensBetalingsmodelStatus();
+  if (modelStatus === "ikke_destination") {
     await alarmPrTilfaelde({
       noegle: "cron:betalingsmodel",
       hvor: "betaling/betalingsmodel",
@@ -166,7 +169,11 @@ export async function koerBetalingsCron() {
     const notifikationer = await koerNotifikationsCron();
     return { ...resultat, springetOver: 1, notifikationer };
   }
-  await lukTilfaelde("cron:betalingsmodel");
+  if (modelStatus === "destination") {
+    await lukTilfaelde("cron:betalingsmodel");
+    // Webhook-alarmen (503 før migrationen) lukkes også her.
+    await lukTilfaelde("webhook:ikke-migreret");
+  }
 
   // 1) Luk auktioner og opret handel + betaling.
   const { data: lukkede, error: rpcFejl } = await admin.rpc("afslut_udloebne_auktioner");

@@ -792,27 +792,52 @@ async function beskedUdbetalingPaaVej(admin: Admin, u: UdbetalingRaekke): Promis
 // efter betalingen, gives én drift-alarm pr. betaling. Kaster aldrig.
 export async function spejlManglendeCharges(saelgerId?: string, betalingId?: string): Promise<number> {
   const admin = createAdminClient();
-  let q = admin
-    .from("betalinger")
-    .select("id, seller_id, stripe_charge_id, betalt_kl")
-    .eq("pengemodel", "destination")
-    .eq("status", "betalt")
-    .not("stripe_charge_id", "is", null)
-    .is("saelger_udbetaling_id", null)
-    .or("stripe_destination_transfer_id.is.null,midler_tilgaengelige_kl.is.null")
-    .order("betalt_kl", { ascending: true })
-    .limit(50);
-  if (saelgerId) q = q.eq("seller_id", saelgerId);
-  if (betalingId) q = q.eq("id", betalingId);
-  const { data, error } = await q;
+  // Betalinger, der allerede har en åben charge-mangler-alarm, prøves kun
+  // med højst 10 pr. kørsel bagefter, og markerede betalinger (staff ser på
+  // dem) springes over - så de ikke skubber nyere betalinger ud af grænsen.
+  const { data: aabne } = await admin
+    .from("drift_tilfaelde")
+    .select("noegle")
+    .is("loest_kl", null)
+    .like("noegle", "charge-mangler:%")
+    .limit(500);
+  const alarmeret = (aabne ?? []).map((x) => String(x.noegle).slice("charge-mangler:".length)).filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+  type Raekke = { id: string; seller_id: string; stripe_charge_id: string; betalt_kl: string | null };
+  const hent = async (gamle: boolean) => {
+    let q = admin
+      .from("betalinger")
+      .select("id, seller_id, stripe_charge_id, betalt_kl")
+      .eq("pengemodel", "destination")
+      .eq("status", "betalt")
+      .not("stripe_charge_id", "is", null)
+      .is("saelger_udbetaling_id", null)
+      .or("stripe_destination_transfer_id.is.null,midler_tilgaengelige_kl.is.null");
+    if (saelgerId) q = q.eq("seller_id", saelgerId);
+    if (betalingId) q = q.eq("id", betalingId);
+    else if (gamle) q = q.in("id", alarmeret.slice(0, 200));
+    else {
+      q = q.eq("kraever_opmaerksomhed", false);
+      if (alarmeret.length) q = q.filter("id", "not.in", `(${alarmeret.join(",")})`);
+    }
+    return q
+      .order("betalt_kl", { ascending: true })
+      .limit(gamle ? 10 : 50)
+      .overrideTypes<Raekke[], { merge: false }>();
+  };
+  const { data, error } = await hent(false);
   if (error) {
     if (!manglerIDatabasen(error)) {
       await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Spejling af charges", fejl: error });
     }
     return 0;
   }
+  const raekker: Raekke[] = [...(data ?? [])];
+  if (alarmeret.length && !betalingId) {
+    const { data: gamle } = await hent(true);
+    raekker.push(...(gamle ?? []));
+  }
   let antal = 0;
-  for (const b of data ?? []) {
+  for (const b of raekker) {
     try {
       const r = await spejlDestinationCharge(b.stripe_charge_id as string);
       const { data: efter } = await admin
