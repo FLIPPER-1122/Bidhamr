@@ -3,6 +3,31 @@ import BrugereFaner from "@/components/admin/BrugereFaner";
 import { RolleBadge } from "@/components/admin/StatusBadge";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import { behandlMitIdForsoeg } from "@/app/actions/adminMitid";
+
+type MitIdForsoeg = {
+  id: string;
+  aarsag: string;
+  oprettet_kl: string;
+  bruger_id: string;
+  bruger_navn: string | null;
+  bruger_email: string;
+  anden_bruger_id: string | null;
+  anden_navn: string | null;
+  anden_email: string | null;
+  anden_lukket: boolean | null;
+  anden_slettet: boolean | null;
+  anden_advarsler: number | null;
+};
+
+const MITID_AARSAG: Record<string, string> = {
+  dobbeltkonto: "prøvede at bruge en MitID, der allerede hører til en anden konto",
+  lukket_konto: "prøvede at bruge MitID'en fra en permanent lukket konto",
+  tidligere_spaerret:
+    "blev afvist: samme MitID som en slettet konto, der var suspenderet eller havde 3 advarsler",
+  tidligere_slettet: "bruger samme MitID som en slettet konto (tilladt – tjek evt. advarsler på den gamle konto)",
+};
 
 // Mistænkelig aktivitet: reglerne ligger samlet i SQL-funktionen
 // admin_mistaenkelige_brugere() (service_role). Listen viser kun, hvilke
@@ -41,7 +66,13 @@ function regelTekst(r: Regel): string {
 export default async function AdminMistaenkelig() {
   const { admin } = await kraevSideRolle("medarbejder");
 
-  const { data, error } = await admin.rpc("admin_mistaenkelige_brugere");
+  const [{ data, error }, { data: mitidData, error: mitidFejl }] = await Promise.all([
+    admin.rpc("admin_mistaenkelige_brugere"),
+    // MitID: mulige dobbeltkonti (20261013010000_mitid.sql).
+    admin.rpc("admin_mitid_forsoeg"),
+  ]);
+  if (mitidFejl) console.error("admin_mitid_forsoeg fejlede:", mitidFejl);
+  const mitidForsoeg = (mitidData ?? []) as MitIdForsoeg[];
   if (error) console.error("admin_mistaenkelige_brugere fejlede:", error);
   const raekker = (data ?? []) as MistaenkeligRaekke[];
 
@@ -104,6 +135,47 @@ export default async function AdminMistaenkelig() {
           </div>
         )}
       </div>
+
+      {mitidForsoeg.length > 0 && (
+        <section aria-labelledby="mitid-forsoeg" className="space-y-2">
+          <h2 id="mitid-forsoeg" className="text-sm font-semibold text-neutral-800">
+            MitID – mulige dobbeltkonti ({mitidForsoeg.length})
+          </h2>
+          {mitidForsoeg.map((f) => (
+            <div key={f.id} className="rounded-xl border border-orange-200 bg-white p-4 text-sm text-neutral-700">
+              <p>
+                <Link href={`/admin/brugere/${f.bruger_id}`} className="font-semibold text-neutral-900 underline">
+                  {f.bruger_navn ?? "Uden navn"}
+                </Link>{" "}
+                <span className="text-neutral-500">{f.bruger_email}</span> {MITID_AARSAG[f.aarsag] ?? f.aarsag}
+                {f.anden_bruger_id && (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <Link href={`/admin/brugere/${f.anden_bruger_id}`} className="font-medium text-groen underline">
+                      {f.anden_navn ?? "Anden konto"}
+                    </Link>
+                    {f.anden_lukket ? " (lukket)" : f.anden_slettet ? " (slettet)" : ""}
+                    {f.anden_advarsler ? ` · ${f.anden_advarsler} ${f.anden_advarsler === 1 ? "advarsel" : "advarsler"}` : ""}
+                  </>
+                )}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span className="text-xs text-neutral-400">{new Date(f.oprettet_kl).toLocaleString("da-DK")}</span>
+                <ConfirmDialog
+                  triggerLabel="Markér som gennemgået"
+                  triggerClassName="rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-200"
+                  title="Markér forsøget som gennemgået?"
+                  description="Forsøget forsvinder fra listen, men står stadig på brugersiden. Handlingen logges."
+                  confirmLabel="Ja, markér"
+                  action={behandlMitIdForsoeg}
+                  hiddenFields={{ forsoegId: f.id }}
+                />
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       <details className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
         <summary className="cursor-pointer font-medium text-neutral-800">Reglerne</summary>

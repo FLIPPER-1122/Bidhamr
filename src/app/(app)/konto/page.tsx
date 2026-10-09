@@ -16,6 +16,9 @@ import {
 } from "@/components/konto/KontoSektioner";
 import Ikon, { type IkonNavn } from "@/components/Ikon";
 import VilkaarBjaelke from "@/components/konto/VilkaarBjaelke";
+import MitIDMaerke from "@/components/mitid/MitIDMaerke";
+import { MitIDKnap } from "@/components/mitid/MitIDKraeves";
+import { MITID } from "@/lib/tekster/mitid";
 import { vilkaarErAccepteret } from "@/lib/vilkaar";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +75,7 @@ export default async function KontoSide({
     { data: paamindelseData, error: paamindelseFejl },
     { data: blokeringData, error: blokeringFejl },
     { data: vilkaarData, error: vilkaarFejl },
+    { data: mitidData },
   ] = await Promise.all([
     sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
     hentBetalingsindstillinger(),
@@ -82,6 +86,17 @@ export default async function KontoSide({
     supabase.rpc("mine_blokeringer"),
     // Accepteret version af brugerbetingelserne (kun brugerens egen).
     supabase.rpc("mine_vilkaar"),
+    // Egen MitID-verificering (RLS: kun brugeren selv og staff). Navnet fra
+    // MitID vises kun her - aldrig for andre.
+    // Filtreret på eget id: staff kan læse alle rækker.
+    sessionId
+      ? supabase
+          .from("mitid_verificeringer")
+          .select("juridisk_navn, verificeret_kl")
+          .eq("bruger_id", sessionId)
+          .eq("status", "aktiv")
+          .maybeSingle<{ juridisk_navn: string | null; verificeret_kl: string }>()
+      : Promise.resolve({ data: null }),
   ]);
   if (!bruger) {
     redirect("/login?redirect=/konto");
@@ -195,6 +210,27 @@ export default async function KontoSide({
       </nav>
       <ProfilSektion bruger={authData.user} />
       <SikkerhedSektion bruger={authData.user} />
+
+      <section id="mitid" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+        <h2 className="text-[20px] leading-tight lg:text-[22px]">{MITID.kontoTitel}</h2>
+        {mitidData ? (
+          <div className="mt-2 space-y-2 text-sm text-tekst-daempet">
+            <MitIDMaerke />
+            <p>{MITID.kontoVerificeret(datoTekst(mitidData.verificeret_kl))}</p>
+            {mitidData.juridisk_navn && (
+              <p>
+                {MITID.kontoNavn} <span className="font-medium text-tekst">{mitidData.juridisk_navn}</span>
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="mt-2 space-y-3 text-sm text-tekst-daempet">
+            <p>{MITID.kontoIkkeVerificeret}</p>
+            <p>{MITID.kraevesPrivat}</p>
+            <MitIDKnap retur="/konto#mitid" />
+          </div>
+        )}
+      </section>
 
       {"fejl" in indstillinger ? (
         <p

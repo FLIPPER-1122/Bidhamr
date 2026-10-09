@@ -68,7 +68,7 @@ For BidHamrs egne ydelser betaler du gebyrer (se afsnit 5).
 
 3.2 **Rigtige oplysninger.** Du skal oplyse dit rigtige navn og en e-mail, du selv bruger. Dit navn må ikke indeholde e-mail, telefonnummer eller links. Du må kun have én konto.
 
-3.3 **MitID.** Når vi indfører verificering med MitID, skal du bekræfte din identitet med MitID for at oprette en konto og for at kunne byde og sælge. Det er med til at forhindre, at en lukket bruger opretter en ny profil. [TODO Filip: MitID (Criipto) er ikke bygget endnu. Ret teksten, når det virker – fx om eksisterende brugere skal verificere sig.]
+3.3 **MitID.** Du kan oprette en konto og kigge uden MitID. Før dit første bud (også et automatisk bud) og før du sætter din første vare til salg, skal du bekræfte din identitet med MitID. Det gør du kun én gang – også hvis du havde en konto, før kravet blev indført. Du kan kun have én konto pr. MitID, og du skal være fyldt 18 år. Er en konto lukket permanent, kan samme MitID ikke bruges til en ny konto. Andre brugere ser kun dit brugernavn og mærket "MitID-verificeret" – aldrig dit navn fra MitID. Firmakonti er undtaget. Se privatlivspolitikken om, hvilke oplysninger vi gemmer. [ADVOKAT: se noter-til-advokat.md nr. 105–109.]
 
 3.4 **Bekræft din e-mail.** Du kan først logge ind, når du har bekræftet din e-mail med den sikkerhedskode, vi sender til dig på e-mail. Koden udløber efter 1 time; du kan få en ny.
 

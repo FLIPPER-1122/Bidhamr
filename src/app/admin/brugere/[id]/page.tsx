@@ -19,6 +19,7 @@ import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import AabnChatKnap from "@/components/admin/staffchat/AabnChatKnap";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 import { handlingNavn } from "@/lib/moderationLog";
+import MitIdAdminKort, { MitIdBadge } from "@/components/admin/MitIdAdminKort";
 import KontoLukningKort, {
   type KontoLukningAdvarsel,
   type KontoLukningForslag,
@@ -131,11 +132,12 @@ export default async function AdminBrugerDetalje({
               {user.email}
               {user.telefon ? ` · ${user.telefon}` : ""}
             </p>
-            {/* MitID er ikke bygget endnu (kommer før lancering via Criipto). */}
+            {/* MitID (Idura) - detaljer i kortet under handlingerne. */}
             <p className="mt-1 text-xs text-neutral-500">
-              <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 font-medium text-neutral-600">
-                MitID: ikke tilgængelig endnu
-              </span>
+              <MitIdBadge
+                verificeretKl={(user as { mitid_verificeret_kl?: string | null }).mitid_verificeret_kl ?? null}
+                erFirma={(user as { konto_type?: string | null }).konto_type === "erhverv"}
+              />
               <span className="ml-2 select-all font-mono text-neutral-400">{user.id}</span>
             </p>
           </div>
@@ -224,6 +226,16 @@ export default async function AdminBrugerDetalje({
             ))}
         </div>
       </div>
+
+      <MitIdAdminKort
+        admin={supabase}
+        brugerId={user.id}
+        brugerNavn={user.navn ?? "brugeren"}
+        verificeretKl={(user as { mitid_verificeret_kl?: string | null }).mitid_verificeret_kl ?? null}
+        erFirma={(user as { konto_type?: string | null }).konto_type === "erhverv"}
+        kanNulstille={kanLukke}
+        erLukket={!!kontoLukketKl}
+      />
 
       {lukningForslag && (
         <section aria-labelledby="lukning-titel" className="space-y-2">

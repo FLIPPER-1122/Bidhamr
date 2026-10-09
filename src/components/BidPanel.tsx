@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
+import MitIDKraeves from "@/components/mitid/MitIDKraeves";
+import { MITID } from "@/lib/tekster/mitid";
 import Ikon from "@/components/Ikon";
 import { createClient } from "@/lib/supabase/client";
 import { afgivBud, saetMaksimum } from "@/app/actions/bud";
@@ -58,6 +60,7 @@ export default function BidPanel({
   erhvervAuktion = false,
   erFirmakonto = false,
   saelgerFrosset = false,
+  mitidMangler: initialMitidMangler = false,
 }: {
   auktionId: string;
   initialNuværendeBud: number;
@@ -102,7 +105,11 @@ export default function BidPanel({
   // Sælgerens konto er frosset (Stripe godkendte ikke udbetalingskontoen i
   // tide - 20261011020000). Databasen afviser bud (BHU03).
   saelgerFrosset?: boolean;
+  // Den indloggede er ikke MitID-verificeret endnu (kræves før første bud -
+  // databasen afviser det også, BHV01). Firmakonti er undtaget.
+  mitidMangler?: boolean;
 }) {
+  const [mitidMangler, setMitidMangler] = useState(initialMitidMangler);
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
   const [harBud, setHarBud] = useState(initialHarBud);
   if (initialHarBud && !harBud) setHarBud(true);
@@ -379,6 +386,10 @@ export default function BidPanel({
 
     if ("fejl" in svar) {
       setLoading(false);
+      if (svar.mitid) {
+        setMitidMangler(true);
+        return;
+      }
       setError(svar.fejl);
       if (svar.auktionAendret) router.refresh();
       return;
@@ -434,6 +445,10 @@ export default function BidPanel({
     }
     setLoading(false);
     if ("fejl" in maksSvar) {
+      if (maksSvar.mitid) {
+        setMitidMangler(true);
+        return;
+      }
       setError(maksSvar.fejl);
       if (maksSvar.auktionAendret) router.refresh();
       return;
@@ -663,6 +678,16 @@ export default function BidPanel({
         <div role="note" className="mt-4 rounded-xl border border-info-kant bg-info-bg px-4 py-4 text-info-tekst">
           <p className="text-[17px] font-semibold">{ERHVERV_BIDPANEL.firmakontoTitel}</p>
           <p className="mt-1 text-base">{ERHVERV_BIDPANEL.firmakontoTekst}</p>
+        </div>
+      ) : brugerId && mitidMangler ? (
+        <div className="mt-4">
+          {mitMaksimum !== null && (
+            <div role="note" className="mb-3 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+              <p className="font-semibold">{MITID.maksimumStoppet}</p>
+              <p className="mt-1">{MITID.maksimumStoppetTekst}</p>
+            </div>
+          )}
+          <MitIDKraeves sted="bud" retur={`/auktion/${auktionId}`} />
         </div>
       ) : brugerId ? (
         <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3">

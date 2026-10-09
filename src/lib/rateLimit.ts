@@ -116,6 +116,12 @@ export const GRAENSER = {
   fragt_app_ip: { maks: 600, vindueSek: 60 * 60 },
   // Klager og visning af en DSA-sag via signeret link.
   dsa_klage_ip: { maks: 10, vindueSek: 60 * 60 },
+  // MitID (/api/mitid/*): hvert login koster penge hos Idura. Pr. bruger og
+  // pr. IP (rummelig pga. CGNAT); callback pr. IP.
+  mitid_start_bruger: { maks: 10, vindueSek: 60 * 60 },
+  mitid_start_ip: { maks: 60, vindueSek: 60 * 60 },
+  mitid_app_ip: { maks: 60, vindueSek: 60 * 60 },
+  mitid_callback_ip: { maks: 120, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;

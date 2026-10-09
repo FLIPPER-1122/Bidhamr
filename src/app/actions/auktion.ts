@@ -1,5 +1,8 @@
 "use server";
 
+import { erMitIdFejl } from "@/lib/mitid/fejl";
+import { MITID } from "@/lib/tekster/mitid";
+
 // Sælgeren redigerer eller annullerer sin egen auktion – kun så længe der
 // ikke er bud (ROADMAP-BESLUTNINGER.md, "Midlertidige beslutninger",
 // 4. oktober 2026).
@@ -30,7 +33,7 @@ import { forbudtBesked } from "@/lib/forbudteVarer";
 import { ERHVERV_FEJL, ERHVERV_GRAENSER, erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { udbetalingskontoFejltekst } from "@/lib/betaling/frossetServer";
 
-type Fejl = { fejl: string };
+type Fejl = { fejl: string; mitid?: true };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LAAST = AUKTION_LAAST;
@@ -358,6 +361,8 @@ export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; au
       p_seller: user.id,
     });
     if (error) {
+      // MitID mangler (BHV01, auctions_a0_mitid).
+      if (erMitIdFejl(error.code, error.message)) return { fejl: MITID.fejlMangler, mitid: true };
       if (error.code === "23505") return { fejl: SAET_OP_IGEN_FEJL.allerede_genopsat };
       console.error("saet_annulleret_op_igen fejlede:", error.code, error.message);
       return { fejl: GENERISK };
