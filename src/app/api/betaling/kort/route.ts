@@ -3,25 +3,26 @@ import { createClient } from "@supabase/supabase-js";
 import { offentligNoegle } from "@/lib/supabase/noegler";
 import { klientIp, tjekGraenser, FOR_MANGE_FORSOEG } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
-import { fjernGemtKortForBruger, saetAutobetalingForBruger } from "@/lib/betaling/kort";
+import { fjernGemtKortForBruger } from "@/lib/betaling/kort";
 
-// Automatisk betaling og "Fjern kort" direkte fra appen. Samme kode som Min
-// konto på hjemmesiden (src/lib/betaling/kort.ts). Appen kan ikke selv ændre
-// betalingsprofiler (authenticated har kun select).
+// "Fjern kort" direkte fra appen. Samme kode som Min konto på hjemmesiden
+// (src/lib/betaling/kort.ts). Appen kan ikke selv ændre betalingsprofiler
+// (authenticated har kun select).
 //
 // POST /api/betaling/kort
 //   Authorization: Bearer <Supabase access token>
 //   Content-Type: application/json
-//   { "handling": "autobetaling", "til": true | false }
-//     - til: true gemmer samtykket (tidspunkt + tekstversion, se
-//       src/lib/betaling/samtykke.ts - appen skal vise samme tekst).
 //   { "handling": "fjern-kort" }
-//     - fjerner det gemte kort (også hos Stripe) og slår automatisk betaling fra.
+//     - fjerner det gemte kort (også hos Stripe).
+//
+// Automatisk betaling findes ikke længere (Filip, 9. okt. 2026): alle vindere
+// betaler selv på checkout-siden. { "handling": "autobetaling", ... } svarer
+// 410 { fejl, kode: "findes_ikke" }, og intet ændres.
 //
 // Svar (JSON):
 //   200 { ok: true }
 //   400 { fejl, kode: "ugyldig" }            (forkert krop)
-//   409 { fejl, kode: "intet_kort" }         (automatisk betaling uden gemt kort)
+//   410 { fejl, kode: "findes_ikke" }        (handlingen "autobetaling")
 //   401 { fejl, kode: "ikke_logget_ind" }
 //   403 { fejl, kode: "ikke_tilladt" }       (fremmed Origin)
 //   413 { fejl, kode: "ugyldig" }            (kroppen er over 1 KB)
@@ -38,6 +39,10 @@ export const dynamic = "force-dynamic";
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const UGYLDIG = { fejl: "Ugyldig forespørgsel.", kode: "ugyldig" };
 const IKKE_LOGGET_IND = { fejl: "Du er ikke logget ind længere. Log ind igen.", kode: "ikke_logget_ind" };
+const FINDES_IKKE = {
+  fejl: "Automatisk betaling findes ikke længere. Når du vinder, betaler du selv på betalingssiden – har du gemt et kort, er det valgt på forhånd dér.",
+  kode: "findes_ikke",
+};
 const MAKS_KROP = 1024;
 
 function svar(status: number, krop: Record<string, unknown>) {
@@ -99,7 +104,7 @@ export async function POST(req: NextRequest) {
   if (laengde !== null && !(/^\d{1,6}$/.test(laengde) && Number(laengde) <= MAKS_KROP)) {
     return svar(413, UGYLDIG);
   }
-  let krop: { handling?: unknown; til?: unknown };
+  let krop: { handling?: unknown };
   try {
     const raa = await laesBegraenset(req, MAKS_KROP);
     if (raa === null) return svar(413, UGYLDIG);
@@ -108,8 +113,9 @@ export async function POST(req: NextRequest) {
   } catch {
     return svar(400, UGYLDIG);
   }
-  const erAutobetaling = krop.handling === "autobetaling" && typeof krop.til === "boolean";
-  if (!erAutobetaling && krop.handling !== "fjern-kort") return svar(400, UGYLDIG);
+  // Ældre app-versioner: klar besked i stedet for en generisk fejl.
+  if (krop.handling === "autobetaling") return svar(410, FINDES_IKKE);
+  if (krop.handling !== "fjern-kort") return svar(400, UGYLDIG);
 
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, offentligNoegle(), {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -122,11 +128,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    if (erAutobetaling) {
-      const res = await saetAutobetalingForBruger(bruger.id, krop.til as boolean);
-      if ("fejl" in res) return svar(409, { fejl: res.fejl, kode: "intet_kort" });
-      return svar(200, { ok: true });
-    }
     await fjernGemtKortForBruger(bruger.id);
     return svar(200, { ok: true });
   } catch (err) {

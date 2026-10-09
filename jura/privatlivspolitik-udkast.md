@@ -236,7 +236,7 @@ Du sletter din konto under Min konto → Slet konto. Det kan ikke lade sig gøre
 Når kontoen slettes:
 
 - Dit navn bliver til "Slettet bruger".
-- Din e-mail, dit telefonnummer, din adresse, dit profilbillede (også selve filen), dine push-tokens, dit gemte kort og automatisk betaling fjernes.
+- Din e-mail, dit telefonnummer, din adresse, dit profilbillede (også selve filen), dine push-tokens og dit gemte kort fjernes.
 - Favoritter, følger (begge veje), gemte søgninger, notifikationer, blokeringer, skabeloner og enheder slettes.
 - Auktioner uden bud afsluttes og arkiveres.
 - Din login-bruger spærres, og e-mailen sløres, så du ikke kan logge ind. Du kan senere oprette en ny konto med samme e-mail.

@@ -191,5 +191,5 @@ Localhost kan ikke modtage webhooks fra Shipmondo – test på en Vercel-preview
 - Højst 2 udgående labels pr. handel (inkl. annullerede); flere kræver staffs godkendelse.
 - Gamle handler, hvor køberen har startet betalingen før checkout: den gamle PaymentIntent annulleres, når
   køberen prøver at betale, og køberen får én besked "Vælg levering" (fragt-cron).
-- Ingen automatisk betaling (Filip 9. okt.): alle vindere går gennem checkout. Autobetalingskoden fjernes
-  af betalingsagenten; med fragt fejler den nu pænt (kræver leveringsvalg), og køberen betaler selv.
+- Ingen automatisk betaling (Filip 9. okt.): alle vindere går gennem checkout. Autobetalingskoden er
+  fjernet (`20261012020000_ingen_autobetaling.sql`, docs/BETALINGSMODEL-PLAN.md 1.3); et gemt kort forudfylder kun checkout.

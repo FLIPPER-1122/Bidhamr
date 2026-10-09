@@ -31,6 +31,7 @@ De er samlet i én transaktionel fil: `prod-koersel/2026-10-09-betalingsmodel-tr
   - en funktion i produktionen afviger fra repoets version (md5-tjek – bekræftet ens 9. okt. 2026),
   - backfill mangler (se ovenfor).
 - [ ] Kør dem i ÉN omgang (ingen pause mellem trin 2 og 5).
+- [ ] **Ingen automatisk betaling** (Filip, 9. okt. 2026): kør `20261012020000_ingen_autobetaling.sql` efter fragt-migrationen `20261012010000_fragt_dao_shipmondo.sql`. Den slår automatisk betaling fra for alle (samtykkehistorikken bevares), tilføjer `CHECK (autobetaling = false)` og dropper triggeren/funktionen `betalingsprofiler_samtykke`. Den stopper (og ændrer intet), hvis funktionen i databasen afviger fra repoets version (md5 `cc6e4f6cffba780ed060509d773e4273`). Koden virker også før migrationen (serveren trækker aldrig automatisk længere), men kør den sammen med pushet.
 
 ## B. Push koden (Filip)
 
@@ -88,7 +89,7 @@ Betalings-cron'en (hvert 5. min) markeres som fejlet, når et pengetrin fejler; 
 
 ### E2. Ryd testdata i produktionsdatabasen (kræver Filips "ja" – skriv det som en migration)
 Stripe-id'er fra testtilstand virker ikke med live-nøglen. Nulstil (sæt til `null`, slet ikke rækkerne – handelsdata arkiveres):
-- [ ] `betalingsprofiler`: `stripe_customer_id`, `gemt_betalingsmetode_id`, `gemt_kort_*`, `autobetaling = false`, `stripe_account_id`, `connect_tidligere_konti`, alle `connect_*`-felter (også `connect_charges_enabled`, `connect_kort_aktiv`, `connect_betalingsmetoder`, `connect_udbetalingsplan`, `connect_plan_ok`, `connect_udbetaling_fejlet_*`).
+- [ ] `betalingsprofiler`: `stripe_customer_id`, `gemt_betalingsmetode_id`, `gemt_kort_*` (`autobetaling` er allerede altid `false` – CHECK fra `20261012020000_ingen_autobetaling.sql`; samtykkekolonnerne `autobetaling_samtykke_*`/`autobetaling_fravalgt_kl` er historik og røres ikke), `stripe_account_id`, `connect_tidligere_konti`, alle `connect_*`-felter (også `connect_charges_enabled`, `connect_kort_aktiv`, `connect_betalingsmetoder`, `connect_udbetalingsplan`, `connect_plan_ok`, `connect_udbetaling_fejlet_*`).
 - [ ] `firmaer`: `stripe_customer_id`, `stripe_subscription_id`, `stripe_abonnement_status`, `opsiges_fra`, `periode_slut` (når erhverv er i prod).
 - [ ] `erhverv_pakker`: `stripe_price_id`, `stripe_price_oere` (priserne laves igen i live af koden).
 - [ ] Evt. testhandler (`betalinger`, `saelger_udbetalinger`, `betaling_afvigelser`, `firma_regninger`, `transactions`): arkivér/markér som testhandler (bogføringsloven: slettes ikke), og sørg for, at ingen cron prøver dem igen.

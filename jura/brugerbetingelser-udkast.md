@@ -166,7 +166,7 @@ Der er intet mindste- eller højeste gebyr.
 
 6.3 **48 timer til at betale.** Vinder du en auktion, har du 48 timer til at betale den samlede pris. Fristen starter, når auktionen slutter (eller når du siger ja til et tilbud som næste byder, se afsnit 7). Sælgeren kan forlænge fristen, fx hvis I har aftalt det i chatten – men højst til 7 dage efter, at fristen startede. Du får besked om den nye frist.
 
-6.4 **Automatisk betaling (tilvalg).** Du kan gemme et kort og slå "Betal automatisk, når jeg vinder" til. Så bliver kortet trukket, så snart du vinder. Du kan byde uden at gemme et kort. Du kan altid slå automatisk betaling fra og slette kortet under Min konto.
+6.4 **Gemt kort (tilvalg).** Du kan gemme et kort under Min konto. Når du har vundet, betaler du altid selv på betalingssiden, og dit gemte kort er valgt på forhånd. Kortet bliver kun trukket, når du selv trykker Betal – vi trækker aldrig penge automatisk. Du kan byde uden at gemme et kort, og du kan altid slette kortet under Min konto.
 
 6.5 **Hvor er pengene?** Beløbet bliver hos Stripe, indtil handlen er afsluttet. Først derefter overføres sælgerens andel til sælgerens udbetalingskonto hos Stripe (se afsnit 10). Stripe udbetaler til sælgerens bank – som regel dagligt. Nye udbetalingskonti har en ventetid hos Stripe på ca. 7 dage.
 
@@ -527,7 +527,7 @@ Vi vælger et indgreb, der står i forhold til overtrædelsen.
 26.3 Når kontoen slettes:
 
 - Auktioner uden bud bliver afsluttet og arkiveret.
-- Dit navn bliver erstattet med "Slettet bruger". Din e-mail, dit telefonnummer, din adresse, dit profilbillede, gemte kort og automatisk betaling bliver fjernet.
+- Dit navn bliver erstattet med "Slettet bruger". Din e-mail, dit telefonnummer, din adresse, dit profilbillede og gemte kort bliver fjernet.
 - Favoritter, følger, gemte søgninger, notifikationer, blokeringer, skabeloner og enheder bliver slettet.
 - **Handelsdata bliver gemt**, fordi vi har pligt til det efter bogføringsloven og reglerne om indberetning til Skattestyrelsen (DAC7). Det gælder fx handler, betalinger, gebyrer, sager, anker og beskeder i handler. Vi gemmer også, hvilken version af betingelserne du accepterede, og hvornår, som dokumentation for dine handler.
 - Bedømmelser, du har givet eller fået, og dine svar på bedømmelser bliver stående, men vises som fra "Slettet bruger".

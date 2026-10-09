@@ -403,13 +403,7 @@ export default async function HandelDetalje({
                   })}{" "}
                   · <span className="font-semibold text-advarsel-tekst"><Nedtaelling til={betalingsstatus.betalSenest} /></span>
                 </p>
-                {/* Kun når en automatisk betaling med gemt kort faktisk er
-                    forsøgt og fejlet - ikke efter et afvist manuelt kort. */}
-                {betalingsstatus.autobetalingResultat?.startsWith("fejlet_") ? (
-                  <p className="mb-4 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
-                    Den automatiske betaling gik ikke igennem. Betal herunder.
-                  </p>
-                ) : betalingsstatus.sidsteFejl ? (
+                {betalingsstatus.sidsteFejl ? (
                   <p className="mb-4 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
                     Betalingen gik ikke igennem. Prøv igen, eller vælg en anden betalingsmetode.
                   </p>

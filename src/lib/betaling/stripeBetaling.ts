@@ -78,6 +78,8 @@ export type BetalingRaekke = {
   stripe_charge_id: string | null;
   betalt_kl: string | null;
   sidste_fejl: string | null;
+  // Historik: automatisk betaling findes ikke længere (Filip, 9. okt. 2026).
+  // Kolonnerne bevares (handelsdata), men skrives aldrig mere.
   autobetaling_forsoegt_kl: string | null;
   autobetaling_resultat: string | null;
   vundet_mail_sendt_kl: string | null;
@@ -153,7 +155,8 @@ export type ProfilRaekke = {
   gemt_kort_maerke: string | null;
   gemt_kort_sidste4: string | null;
   gemt_kort_udloeb: string | null;
-  autobetaling: boolean;
+  // Altid false (20261012020000_ingen_autobetaling.sql) - bruges ikke.
+  autobetaling?: boolean;
   stripe_account_id: string | null;
   connect_detaljer_indsendt: boolean;
   connect_overfoersler_aktiv: boolean;
@@ -202,7 +205,7 @@ async function sikrProfilRaekke(userId: string): Promise<void> {
   if (error) throw new Error(`sikrProfilRaekke: ${error.message}`);
 }
 
-// Stripe Customer til køberen (bruges til gemt kort og autobetaling).
+// Stripe Customer til køberen (bruges til gemt kort og checkout).
 export async function sikrStripeKunde(userId: string): Promise<string> {
   await sikrProfilRaekke(userId);
   const profil = await hentProfil(userId);
@@ -742,8 +745,8 @@ function chargeId(pi: Stripe.PaymentIntent): string | null {
   return typeof pi.latest_charge === "string" ? pi.latest_charge : pi.latest_charge.id;
 }
 
-// Spejler en PaymentIntent fra Stripe ind i databasen. Bruges af webhooken,
-// af autobetalingen og når køberen vender tilbage fra betalingen. Idempotent.
+// Spejler en PaymentIntent fra Stripe ind i databasen. Bruges af webhooken og
+// når køberen vender tilbage fra betalingen. Idempotent.
 export async function spejlPaymentIntent(pi: Stripe.PaymentIntent): Promise<string> {
   const admin = createAdminClient();
 
@@ -832,7 +835,7 @@ async function efterBetalt(paymentIntentId: string) {
     ]);
     const titel = (a?.titel as string | undefined) ?? "din vare";
     const link = `/mine-handler/${b.trade_id}`;
-    // Nøglen sikrer, at webhook + autobetaling + retur fra betaling ikke giver
+    // Nøglen sikrer, at webhook + retur fra betaling ikke giver
     // flere beskeder for samme handel.
     if (t?.afhentning) {
       // Kun afhentning: ingen pakke. Køber og sælger aftaler afhentning, og
@@ -871,114 +874,65 @@ async function efterBetalt(paymentIntentId: string) {
   }
 }
 
-// ------------------------------------------------------------------ autobetaling
+// ------------------------------------------------------------------ gemt kort i checkout
 
-// Forsøger at trække vinderens gemte kort off-session. Kører højst én gang
-// pr. betaling (atomisk claim i databasen + idempotency key hos Stripe).
-// Fejler det (fx 3D Secure kræves), står PaymentIntenten tilbage som
-// requires_payment_method, og køberen betaler selv inden for 48 timer med
-// samme PaymentIntent.
-export async function forsoegAutobetaling(betalingId: string): Promise<string> {
-  const admin = createAdminClient();
-  const nu = new Date().toISOString();
-
-  // Venter betalingen på sælgerens konto, forsøges der ikke endnu (forsøget
-  // må ikke bruges op) - det sker, når betalingen åbner (betalingInd.ts).
-  const { data: foer } = await admin
-    .from("betalinger")
-    .select("*")
-    .eq("id", betalingId)
-    .maybeSingle<BetalingRaekke>();
-  if (!foer || foer.venter_paa_saelgerkonto_kl) return foer ? "venter" : "ikke_relevant";
-  // Databasen er ikke migreret (eller en historisk række fra den gamle
-  // model): forsøget bruges ikke op - sikrPaymentIntent ville afvise.
-  if (foer.pengemodel !== "destination") return "ikke_relevant";
+// Ingen automatisk betaling (Filip, 9. okt. 2026): vinderen betaler ALTID
+// selv på checkout-siden. Et gemt kort bruges kun til at forudfylde
+// betalingen - det trækkes først, når køberen selv trykker Betal (on-session,
+// stripe.confirmPayment i Payment Element; 3D Secure vises, hvis banken
+// kræver det).
+//
+// Payment Element viser kun kundens gemte kort med en CustomerSession
+// (components.payment_element.features.payment_method_redisplay = enabled), og
+// kun kort med allow_redisplay = 'always' (standardfilteret). Kortet er gemt
+// af brugeren selv under Min konto ("Gem kort"), så det markeres 'always' her,
+// hvis det ikke allerede er det (kort gemt før denne ændring).
+//   - Kun brugerens ENE gemte kort (betalingsprofiler.gemt_betalingsmetode_id),
+//     og kun hvis det sidder på samme Stripe-kunde som PaymentIntenten.
+//   - Fjern og gem i checkout er slået fra: kortet styres kun fra Min konto,
+//     så databasen altid er i trit.
+// Returnerer CustomerSessionens client_secret (til Elements-optionen
+// customerSessionClientSecret) eller null. Kaster aldrig - uden sessionen kan
+// køberen stadig betale med et nyt kort, MobilePay osv.
+export async function kundeSessionTilCheckout(
+  koeberId: string,
+  pi: Stripe.PaymentIntent,
+): Promise<string | null> {
   try {
-    await kraevDestination();
-    await kraevSammeOffentligeNoegle();
-  } catch (err) {
-    if (err instanceof BetalingsmodelFejl || err instanceof StripeTilstandFejl) return "stoppet";
-    throw err;
-  }
+    const kunde = typeof pi.customer === "string" ? pi.customer : (pi.customer?.id ?? null);
+    if (!kunde) return null;
+    const profil = await hentProfil(koeberId);
+    if (!profil?.gemt_betalingsmetode_id || profil.stripe_customer_id !== kunde) return null;
 
-  const { data: claimed } = await admin
-    .from("betalinger")
-    .update({ autobetaling_forsoegt_kl: nu, opdateret: nu })
-    .eq("id", betalingId)
-    .is("autobetaling_forsoegt_kl", null)
-    .eq("status", "afventer")
-    .select("*")
-    .maybeSingle<BetalingRaekke>();
-  if (!claimed) return "ikke_relevant";
-
-  const saetResultat = (resultat: string, fejl?: string | null) =>
-    admin
-      .from("betalinger")
-      .update({
-        autobetaling_resultat: resultat,
-        ...(fejl !== undefined ? { sidste_fejl: fejl } : {}),
-        opdateret: new Date().toISOString(),
-      })
-      .eq("id", betalingId);
-
-  const profil = await hentProfil(claimed.buyer_id);
-  if (
-    !profil?.autobetaling ||
-    !profil.gemt_betalingsmetode_id ||
-    !profil.stripe_customer_id
-  ) {
-    await saetResultat("ikke_slaaet_til");
-    return "ikke_slaaet_til";
-  }
-
-  try {
-    const pi = await sikrPaymentIntent(claimed);
-    if (pi.status === "succeeded") {
-      await spejlPaymentIntent(pi);
-      await saetResultat("betalt");
-      return "betalt";
-    }
-    if (!OPDATERBARE.includes(pi.status)) {
-      await saetResultat(`springet_over_${pi.status}`);
-      return "springet_over";
+    const stripe = getStripe();
+    const pm = await stripe.paymentMethods.retrieve(profil.gemt_betalingsmetode_id);
+    const pmKunde = typeof pm.customer === "string" ? pm.customer : (pm.customer?.id ?? null);
+    if (pmKunde !== kunde) return null; // fjernet hos Stripe i mellemtiden
+    if (pm.allow_redisplay !== "always") {
+      await stripe.paymentMethods.update(pm.id, { allow_redisplay: "always" });
     }
 
-    const bekraeftet = await getStripe().paymentIntents.confirm(
-      pi.id,
-      {
-        payment_method: profil.gemt_betalingsmetode_id,
-        off_session: true,
-        return_url: sideUrl(`/mine-handler/${claimed.trade_id}`),
+    // Ingen penge flyttes - en CustomerSession giver kun Payment Element
+    // adgang til at vise kortet (kortlivet client_secret).
+    const session = await stripe.customerSessions.create({
+      customer: kunde,
+      components: {
+        payment_element: {
+          enabled: true,
+          features: {
+            payment_method_redisplay: "enabled",
+            payment_method_redisplay_limit: 1,
+            payment_method_remove: "disabled",
+            payment_method_save: "disabled",
+          },
+        },
       },
-      // Nøglen indeholder PaymentIntentens id (en ny PaymentIntent efter
-      // ventetid på sælgerens konto giver en ny nøgle).
-      { idempotencyKey: `bidhamr-autobetal-dest-${claimed.id}-${pi.id}` },
-    );
-    const resultat = await spejlPaymentIntent(bekraeftet);
-    await saetResultat(resultat === "betalt" || resultat === "allerede_betalt" ? "betalt" : resultat);
-    return resultat;
+    });
+    return session.client_secret;
   } catch (err) {
-    if (err instanceof BetalingVenterFejl) {
-      // Sælgerens konto var ikke klar (frisk tjek): betalingen venter nu.
-      // Forsøget gives tilbage, så kortet trækkes, når betalingen åbner.
-      await admin
-        .from("betalinger")
-        .update({ autobetaling_forsoegt_kl: null, autobetaling_resultat: null, opdateret: new Date().toISOString() })
-        .eq("id", betalingId)
-        .eq("status", "afventer");
-      return "venter";
-    }
-    // Typisk authentication_required eller card_declined. Køberen falder
-    // tilbage til den almindelige 48-timers betaling.
-    const kode =
-      err instanceof Stripe.errors.StripeError
-        ? (err.code ?? err.decline_code ?? err.type)
-        : err instanceof StripeTilstandFejl
-          ? "stripe_stoppet"
-          : "ukendt_fejl";
-    console.warn("Autobetaling fejlede:", betalingId, kode);
-    await saetResultat(`fejlet_${kode}`, kode);
-    return `fejlet_${kode}`;
+    console.warn("Gemt kort kunne ikke vises i checkout:", err instanceof Error ? err.message : err);
+    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "kundeSessionTilCheckout", fejl: err, brugerId: koeberId });
+    return null;
   }
 }
 
