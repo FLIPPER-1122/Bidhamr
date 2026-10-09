@@ -134,7 +134,14 @@ export default async function HandelDetalje({
   // checkout. Links i mails og notifikationer peger hertil, så køberen sendes
   // videre, så længe handlen ikke er betalt - også efter en mislykket
   // betaling hos Stripe (?betaling=retur). ?vis=handel viser handlen (chat).
-  if (!erFirmaSted && erKoeber && handel.status === "afventer_betaling" && !visHandel) {
+  // Undtagelse: lige tilbage fra Stripe, og betalingen er betalt/behandles,
+  // men handlen er endnu ikke opdateret - så vises status her (checkout ville
+  // sende tilbage hertil og give en løkke).
+  const returUnderBehandling =
+    returBetaling !== null &&
+    "ok" in returBetaling &&
+    (returBetaling.status === "betalt" || returBetaling.status === "behandles");
+  if (!erFirmaSted && erKoeber && handel.status === "afventer_betaling" && !visHandel && !returUnderBehandling) {
     redirect(`/mine-handler/${encodeURIComponent(handel.id)}/betal`);
   }
 

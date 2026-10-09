@@ -173,8 +173,11 @@ export default function CheckoutSide({
 
   // ---------------------------------------------------------------- priser
   const grundOere = serverTotal - serverFragt; // bud + købergebyr + evt. BidHamr Beskyttelse
+  // Når betalingen er klar, vises serverens fragt, så linjerne summerer til totalen.
   const fragtVist = afhentning
     ? 0
+    : betalingKlar
+      ? serverFragt
     : maade === "doer"
       ? (checkout.doerOere ?? serverFragt)
       : (checkout.pakkeshopOere ?? serverFragt);
@@ -632,16 +635,22 @@ export default function CheckoutSide({
               <div className="mt-4 space-y-4">
                 {alleredeBetalt ? (
                   <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
-                    <p className="font-semibold">{alleredeBetalt}</p>
-                    <p className="mt-1">Betalingen er gennemført, måske i en anden fane. Se status på handelssiden.</p>
-                    <a href={handelSti} className="btn btn-sekundaer mt-3">
+                    {/behandles/i.test(alleredeBetalt) ? (
+                      <p className="font-semibold">Betalingen behandles – vi giver besked, når den er gennemført.</p>
+                    ) : (
+                      <>
+                        <p className="font-semibold">{alleredeBetalt}</p>
+                        <p className="mt-1">Betalingen er gennemført, måske i en anden fane. Se status på handelssiden.</p>
+                      </>
+                    )}
+                    <a href={`${handelSti}?vis=handel`} className="btn btn-sekundaer mt-3">
                       Gå til handlen
                     </a>
                   </div>
                 ) : status.status === "behandles" ? (
                   <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
-                    <p className="font-semibold">Din betaling behandles</p>
-                    <p className="mt-1">Det tager normalt kun et øjeblik. Genindlæs siden om lidt.</p>
+                    <p className="font-semibold">Betalingen behandles – vi giver besked, når den er gennemført.</p>
+                    <p className="mt-1">Det tager normalt kun et øjeblik.</p>
                   </div>
                 ) : lukket ? (
                   <p className="text-sm text-tekst-daempet">Betalingen er ikke åben lige nu.</p>
@@ -661,6 +670,12 @@ export default function CheckoutSide({
                         onSender={setSender}
                         onKlar={setStripeKlar}
                         onFejl={visBetalFejl}
+                        onGenstart={() => {
+                          setClientSecret(null);
+                          setPiTotal(null);
+                          setBetalFejl("Betalingen blev ændret i mellemtiden. Vi har gjort den klar igen – prøv at betale igen.");
+                          void hentBetaling();
+                        }}
                       />
                     ) : arbejder && leveringGemt ? (
                       <div className="space-y-3" aria-hidden="true">

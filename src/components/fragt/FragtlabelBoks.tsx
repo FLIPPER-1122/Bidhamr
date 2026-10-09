@@ -89,13 +89,14 @@ export default function FragtlabelBoks({
     setFejl(null);
     // Vinduet åbnes med det samme (ellers blokerer browseren det efter await).
     const vindue = window.open("", "_blank");
+    // Den nye fane må ikke kunne styre BidHamr-fanen (window.opener).
+    if (vindue) vindue.opener = null;
     try {
       const r = await hentFragtlabelLink(fid);
       if ("fejl" in r) {
         vindue?.close();
         setFejl(r.fejl);
       } else if (vindue) {
-        vindue.opener = null;
         vindue.location.href = r.url;
       } else window.location.href = r.url;
     } catch {

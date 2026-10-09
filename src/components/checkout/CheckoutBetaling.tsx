@@ -19,6 +19,8 @@ type Props = {
   onSender: (v: boolean) => void;
   onKlar: (v: boolean) => void;
   onFejl: (tekst: string | null, alleredeBetalt?: boolean) => void;
+  // PaymentIntenten er annulleret (fx leveringen er ændret i en anden fane): hent en ny.
+  onGenstart: () => void;
 };
 
 export default function CheckoutBetaling(props: Props) {
@@ -38,7 +40,7 @@ export default function CheckoutBetaling(props: Props) {
   );
 }
 
-function BetalForm({ handelId, sender, onSender, onKlar, onFejl }: Props) {
+function BetalForm({ handelId, sender, onSender, onKlar, onFejl, onGenstart }: Props) {
   const stripe = useStripe();
   const elements = useElements();
 
@@ -60,6 +62,10 @@ function BetalForm({ handelId, sender, onSender, onKlar, onFejl }: Props) {
     // Kommer vi hertil, er betalingen ikke gennemført (ellers omdirigeres der).
     if (error?.code === "payment_intent_unexpected_state" && error.payment_intent?.status === "succeeded") {
       onFejl("Handlen er allerede betalt.", true);
+    } else if (error?.code === "payment_intent_unexpected_state" && error.payment_intent?.status === "canceled") {
+      onSender(false);
+      onGenstart();
+      return;
     } else {
       onFejl(error?.message ?? "Betalingen kunne ikke gennemføres. Prøv igen.");
     }
