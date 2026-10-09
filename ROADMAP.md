@@ -25,7 +25,7 @@ Formål: rydde op, så agent-teamet kan arbejde sikkert og ens.
 - [x] Next.js opgraderet til 16.3.6 (sikkerhedshuller lukket)
 - [x] **Sikkerhed-agent** oprettet og første fulde sikkerhedsgennemgang af hele systemet (RLS på alle tabeller inkl. dem lavet direkte i Supabase, funktioner, storage, nøgler, login, admin-adgang). Kritiske fund rettes, før fase 1 fortsætter. Agenten køres derefter efter hver fase
 - [ ] **Filip – afklar med rådgiver/advokat (blokerer IKKE fase 1 – agenterne bygger videre i testmiljøet):**
-  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 48 timer (sælger kan forlænge til højst 7 dage), og gemt kort med automatisk betaling er et tilvalg.** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Opsætningen er besluttet: separate charges and transfers. Tag Stripes svar med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
+  - BESLUTTET: **Stripe holder pengene (Stripe Connect), ikke BidHamr. Ingen købersaldo – vinderen betaler selv inden for 48 timer (sælger kan forlænge til højst 7 dage), og gemt kort er et tilvalg, der kun forudfylder checkout (ingen automatisk betaling, Filip 9. okt. 2026).** Stripe har bekræftet det overordnede (se chat-udskrift på mail). Opsætningen er besluttet: separate charges and transfers. Tag Stripes svar med til rådgiveren, så han kan bekræfte, at BidHamr ikke selv skal have tilladelse
   - BESLUTTET: Det hedder **"BidHamr Beskyttelse"** – aldrig "forsikring" nogen steder på siden, i mails eller i koden
   - **Hvidvaskloven**: gælder den for BidHamr, når I håndterer betalinger (kundekendskab ved store beløb)?
 
@@ -35,7 +35,7 @@ Formål: alt efter auktionen virker hele vejen, med testpenge. Sikkerheden i top
 - [x] **Ny betalingsmodel: betal når du vinder – ingen saldo** (stort punkt – tages først i fasen). Stripe har bekræftet, at en købersaldo ikke passer til Stripe Connect og kan kræve e-penge-tilladelse. Derfor:
   - Den nuværende wallet med indbetaling før bud, låsning af beløb og wallet-tabel **fjernes**
   - Når auktionen slutter, har vinderen **48 timer til selv at betale** (sælger kan forlænge til højst 7 dage) (bud + købergebyr + fragt + evt. BidHamr Beskyttelse) med kort, **MobilePay**, Apple Pay eller Google Pay. Påmindelser 24 og 8 timer før fristen
-  - **Valgfrit: automatisk betaling.** Brugeren kan i sine indstillinger gemme et kort og slå "Betal automatisk, når jeg vinder" til. Så trækkes kortet med det samme, når auktionen slutter. Det er et tilvalg, ikke et krav
+  - ~~**Valgfrit: automatisk betaling.**~~ **Fjernet (Filip, 9. okt. 2026):** ingen automatisk betaling – alle vindere betaler selv på checkout-siden. Man kan gemme et kort under Min konto, men kun til at forudfylde checkout
   - Pengene ligger på BidHamrs Stripe-konto (manuelle udbetalinger), indtil køber bekræfter / 48 timer uden sag / sag er afgjort
   - Sælger oprettes som **Stripe Connect-konto** (Express), og Stripe tjekker sælgerens identitet. Pengene overføres minus sælgergebyr, og Stripe udbetaler til sælgerens bank
   - Opsætning: **ÆNDRET 8. okt. 2026 – destination charges** (docs/BETALINGSMODEL-PLAN.md, trin 1–5 bygget 8.–9. okt.): køber betaler på sælgerens vegne, pengene står på sælgerens Connect-konto med manuel udbetaling, og BidHamr udbetaler til sælgerens bank, når handlen er helt færdig. Den gamle model ("separate charges and transfers") er fjernet
