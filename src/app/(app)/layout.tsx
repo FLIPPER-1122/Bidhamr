@@ -2,7 +2,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Suspense } from "react";
 import FavoritterProvider from "@/components/FavoritterProvider";
-import MitIDResultat from "@/components/mitid/MitIDResultat";
+import MitIDResultatBoks from "@/components/mitid/MitIDResultatBoks";
 import VilkaarVindue from "@/components/vilkaar/VilkaarVindue";
 
 export default function AppLayout({
@@ -19,7 +19,7 @@ export default function AppLayout({
       <div id="indhold" tabIndex={-1} className="flex flex-1 flex-col outline-none max-lg:min-h-svh">
         {/* Besked efter MitID (?mitid=...) - se src/app/api/mitid/callback. */}
         <Suspense fallback={null}>
-          <MitIDResultat />
+          <MitIDResultatBoks />
         </Suspense>
         {children}
       </div>
