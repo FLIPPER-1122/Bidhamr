@@ -72,6 +72,11 @@ export default async function ErhvervKlageSide({ params }: { params: Promise<{ i
 
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
         <h2 className="font-sans text-base font-semibold text-neutral-900">{A.beskrivelse}</h2>
+        {/* Inhabil: databasen sender hverken beskrivelse eller billeder. */}
+        {d.inhabil ? (
+          <p className="mt-2 text-[15px] font-semibold text-[#8A4210]">{A.inhabilSkjult}</p>
+        ) : (
+          <>
         <p className="mt-2 whitespace-pre-line break-words text-[15px] text-neutral-900">{k.beskrivelse}</p>
         <h3 className="mt-4 text-sm font-semibold text-neutral-900">{A.billeder}</h3>
         {d.billeder.length === 0 ? (
@@ -91,6 +96,8 @@ export default async function ErhvervKlageSide({ params }: { params: Promise<{ i
               </li>
             ))}
           </ul>
+        )}
+          </>
         )}
         {k.status === "afsluttet" && k.begrundelse && (
           <div className="mt-4 rounded-lg bg-neutral-50 p-3 text-sm">

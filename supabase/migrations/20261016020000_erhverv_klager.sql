@@ -43,10 +43,16 @@
 --      Advarslen er en almindelig advarsel (public.advarsler, grund
 --      'erhverv_klage'), så 3-advarsler-reglen (advarsler_tre_foreslaa_lukning)
 --      giver et forslag om lukning som for alle andre konti.
---   6. Lukning af en firmakonto kræver chef: bruger_luk_konto_permanent (som
---      både dsa_indgreb og konto_lukning_godkend kalder) og konto_lukning_afvis
---      svarer 'kun_chef' for firmakonti, når kalderen ikke er chef.
---      Begge erstattes med md5-drift-tjek.
+--   6. Firmakonti (Filip, 10. okt. 2026: "Både chefen og rollen sælger skal
+--      kunne gøre alt ved firmaer"): lukning, godkendelse/afvisning af
+--      lukningsforslag og PERMANENT suspension kræver chef eller sælger-rollen
+--      (erhverv_har_adgang). Admin/medarbejder får 'kun_erhverv'. Andre konti
+--      er uændrede. bruger_luk_konto_permanent, konto_lukning_afvis og
+--      konto_lukning_godkend erstattes (md5-drift-tjek); dsa_indgreb rettes
+--      med tekst-erstatning (normaliseret md5-tjek).
+--   7. "Download dine data" (mine_data) får købers egne klager under
+--      'erhverv_klager'.
+--   8. Forslag om advarsel kan ikke ændres efter behandling (trigger).
 --
 -- Klagefrist (chefens valg): op til 2 år og 3 måneder efter betalingen
 -- (reklamationsretten er 2 år; lidt ekstra, så en afvist reklamation sent i
@@ -292,6 +298,39 @@ create trigger erhverv_klager_beskyt
   before update on public.erhverv_klager
   for each row execute function public.erhverv_klager_beskyt();
 
+-- Forslag: firma og grundlag ændres aldrig. Et behandlet forslag (advarsel
+-- givet / afvist) kan ikke ændres: status, advarsel, hvem, hvornår,
+-- begrundelse og antal klager står fast.
+create or replace function public.erhverv_advarsel_forslag_beskyt()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.firma_id is distinct from old.firma_id
+     or new.firma_bruger_id is distinct from old.firma_bruger_id
+     or new.grundlag is distinct from old.grundlag
+     or new.oprettet_kl is distinct from old.oprettet_kl then
+    raise exception 'Forslagets oplysninger kan ikke ændres.' using errcode = '42501';
+  end if;
+  if old.status <> 'afventer'
+     and (new.status is distinct from old.status
+          or new.advarsel_id is distinct from old.advarsel_id
+          or new.behandlet_af is distinct from old.behandlet_af
+          or new.behandlet_kl is distinct from old.behandlet_kl
+          or new.begrundelse is distinct from old.begrundelse
+          or new.antal_klager is distinct from old.antal_klager) then
+    raise exception 'Et behandlet forslag kan ikke ændres.' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+revoke all on function public.erhverv_advarsel_forslag_beskyt() from public, anon, authenticated;
+
+drop trigger if exists erhverv_advarsel_forslag_beskyt on public.erhverv_advarsel_forslag;
+create trigger erhverv_advarsel_forslag_beskyt
+  before update on public.erhverv_advarsel_forslag
+  for each row execute function public.erhverv_advarsel_forslag_beskyt();
+
 -- ---------------------------------------------------------------------------
 -- 2. Hjælpere
 -- ---------------------------------------------------------------------------
@@ -306,9 +345,12 @@ stable
 security definer
 set search_path = ''
 as $$
+  -- Erhvervshandel afgøres af auctions.erhverv (sat ved oprettelsen af
+  -- auktionen), ikke af om sælgeren er et firma nu. Firma-opslaget bruges kun
+  -- til at finde firma_id (og kræver, at firmaet findes).
   select case
            when t.id is null then 'ikke_fundet'
-           when f.id is null then 'ikke_erhverv'
+           when not coalesce(a.erhverv, false) or f.id is null then 'ikke_erhverv'
            when b.betalt_kl is null then 'ikke_betalt'
            when b.betalt_kl < now() - interval '2 years 3 months' then 'for_sent'
            else null
@@ -316,6 +358,7 @@ as $$
     from (select 1) x
     left join public.trades t
            on p_koeber is not null and t.id = p_trade and t.buyer_id = p_koeber
+    left join public.auctions a on a.id = t.auction_id
     left join public.firmaer f on f.bruger_id = t.seller_id
     left join public.betalinger b on b.trade_id = t.id;
 $$;
@@ -394,7 +437,8 @@ begin
   if v_dele[2] !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     return false;
   end if;
-  if v_dele[3] !~ '^[A-Za-z0-9._-]{1,100}$' then return false; end if;
+  -- Filnavnet starter med et bogstav/tal (ingen ".", "..", "-x").
+  if v_dele[3] !~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$' then return false; end if;
   v_trade := v_dele[2]::uuid;
 
   if public.erhverv_klage_adgang(v_bruger, v_trade) is not null then
@@ -561,7 +605,7 @@ begin
     end if;
     v_sti := e->>'sti';
     if v_sti is null
-       or v_sti !~ '^[0-9a-f-]{36}/[0-9a-f-]{36}/[A-Za-z0-9._-]{1,100}$'
+       or v_sti !~ '^[0-9a-f-]{36}/[0-9a-f-]{36}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$'
        or split_part(v_sti, '/', 1) <> v_uid::text
        or split_part(v_sti, '/', 2) <> p_trade::text
        or v_sti = any(v_stier) then
@@ -837,10 +881,11 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_chef boolean;
-  k      record;
-  fm     record;
-  fs     record;
+  v_chef    boolean;
+  v_inhabil boolean;
+  k         record;
+  fm        record;
+  fs        record;
 begin
   if not public.erhverv_har_adgang(p_staff) then
     return jsonb_build_object('kode', 'ingen_adgang');
@@ -852,21 +897,26 @@ begin
   select * into fm from public.firmaer where id = k.firma_id;
   select * into fs from public.erhverv_advarsel_forslag
    where firma_id = k.firma_id and status = 'afventer';
+  -- Inhabil (har handlet med firmaet eller er køberen): beskrivelse og
+  -- billeder vises ikke.
+  v_inhabil := public.erhverv_klage_inhabil(p_staff, k.firma_bruger_id) or p_staff = k.koeber_id;
 
   return jsonb_build_object(
     'kode', 'ok',
     'er_chef', v_chef,
-    'inhabil', public.erhverv_klage_inhabil(p_staff, k.firma_bruger_id) or p_staff = k.koeber_id,
+    'inhabil', v_inhabil,
     'klage', jsonb_build_object(
       'id', k.id, 'nummer', k.nummer, 'trade_id', k.trade_id, 'kategori', k.kategori,
-      'beskrivelse', k.beskrivelse, 'status', k.status, 'afgoerelse', k.afgoerelse,
+      'beskrivelse', case when v_inhabil then null else k.beskrivelse end,
+      'status', k.status, 'afgoerelse', k.afgoerelse,
       'begrundelse', k.begrundelse, 'oprettet_kl', k.oprettet_kl, 'afgjort_kl', k.afgjort_kl,
       'afgjort_af_navn', (select u.navn from public.users u where u.id = k.afgjort_af),
       'behandles_af_navn', (select u.navn from public.users u where u.id = k.behandles_af),
       'behandling_startet_kl', k.behandling_startet_kl,
       'forslag_id', k.forslag_id),
-    'billeder', coalesce((select jsonb_agg(b.sti order by b.oprettet_kl)
-                            from public.erhverv_klage_billeder b where b.klage_id = k.id), '[]'::jsonb),
+    'billeder', case when v_inhabil then '[]'::jsonb else
+                coalesce((select jsonb_agg(b.sti order by b.oprettet_kl)
+                            from public.erhverv_klage_billeder b where b.klage_id = k.id), '[]'::jsonb) end,
     'noter', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id', n.id, 'type', n.type, 'kanal', n.kanal, 'tekst', n.tekst,
@@ -1075,7 +1125,8 @@ grant execute on function public.erhverv_klage_afgoer(uuid, uuid, text, text) to
 -- Giv firmaet en advarsel ud fra et forslag (chef eller saelger). Samme
 -- advarsel som alle andre (public.advarsler): brugeren får besked via
 -- notifikations-cron'en, og 3 advarsler giver et forslag om lukning
--- (advarsler_tre_foreslaa_lukning) - lukningen godkendes kun af chef.
+-- (advarsler_tre_foreslaa_lukning) - lukningen godkendes af chef eller
+-- sælger-rollen.
 -- { kode: 'ok', advarsel_id, advarsler_antal, lukning_foreslaaet } eller
 -- ingen_adgang | begrundelse_bruger_mangler | begrundelse_bruger_for_lang |
 -- for_lang_tekst | ikke_fundet | behandlet | inhabil | konto_lukket
@@ -1192,12 +1243,17 @@ revoke all on function public.erhverv_forslag_afvis(uuid, uuid, text) from publi
 grant execute on function public.erhverv_forslag_afvis(uuid, uuid, text) to service_role;
 
 -- ---------------------------------------------------------------------------
--- 8. Lukning af en firmakonto kræver chef
+-- 8. Firmakonti: lukning og permanent suspension kun af chef og sælger-rollen
 -- ---------------------------------------------------------------------------
+-- Filip, 10. okt. 2026: "Både chefen og rollen sælger skal kunne gøre alt
+-- ved firmaer." For en firmakonto kræves erhverv_har_adgang (chef eller
+-- saelger) - admin/medarbejder får 'kun_erhverv'. Andre konti er uændrede
+-- (admin/chef).
 -- bruger_luk_konto_permanent kaldes af dsa_indgreb (luk konto) og
 -- konto_lukning_godkend (3 advarsler). Kopieret præcist fra
--- 20261003011000_sager_rettelser.sql med ét nyt tjek: er brugeren en
--- firmakonto, skal medarbejderen være chef ('kun_chef').
+-- 20261003011000_sager_rettelser.sql med det nye tjek.
+-- md5 (prosrc, CRLF -> LF): original | første udgave af denne migration
+-- (kørt på test, 'kun_chef') | denne udgave.
 do $$
 declare
   v_md5 text;
@@ -1206,7 +1262,8 @@ begin
     from pg_proc p
    where p.oid = 'public.bruger_luk_konto_permanent(uuid, uuid, text, uuid)'::regprocedure;
   if v_md5 is distinct from '664e673cfd531acd6371e3dd948da1e1'
-     and v_md5 is distinct from 'dacb6bfa0ba76e148fd9442bf40d9ce0' then
+     and v_md5 is distinct from 'dacb6bfa0ba76e148fd9442bf40d9ce0'
+     and v_md5 is distinct from '4fc2013bded2e3dd6b92d8a8d43f354f' then
     raise exception 'bruger_luk_konto_permanent er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
   end if;
 end $$;
@@ -1224,8 +1281,11 @@ as $fn$
 declare
   v_aarsag text := nullif(btrim(coalesce(p_aarsag, '')), '');
   u        record;
+  v_admin  boolean := public.staff_chat_har_rolle(p_medarbejder, 'admin');
 begin
-  if not public.staff_chat_har_rolle(p_medarbejder, 'admin') then
+  -- Erhverv (20261016020000): chef og sælger-rollen lukker firmakonti
+  -- (tjekkes nedenfor, når brugeren er slået op).
+  if not v_admin and not public.erhverv_har_adgang(p_medarbejder) then
     return jsonb_build_object('kode', 'ingen_adgang');
   end if;
   if v_aarsag is null then return jsonb_build_object('kode', 'aarsag_mangler'); end if;
@@ -1243,9 +1303,14 @@ begin
   if u.konto_lukket_kl is not null then
     return jsonb_build_object('kode', 'allerede_lukket');
   end if;
-  -- Erhverv (20261016020000): en firmakonto lukkes kun af chef.
-  if u.konto_type = 'erhverv' and not public.erhverv_har_adgang(p_medarbejder, true) then
-    return jsonb_build_object('kode', 'kun_chef');
+  -- Erhverv (20261016020000): en firmakonto lukkes kun af chef eller
+  -- sælger-rollen; andre konti kun af admin/chef (uændret).
+  if u.konto_type = 'erhverv' then
+    if not public.erhverv_har_adgang(p_medarbejder) then
+      return jsonb_build_object('kode', 'kun_erhverv');
+    end if;
+  elsif not v_admin then
+    return jsonb_build_object('kode', 'ingen_adgang');
   end if;
   if p_sag is not null and not exists (
     select 1 from public.sager s join public.trades t on t.id = s.trade_id
@@ -1284,9 +1349,9 @@ revoke all on function public.bruger_luk_konto_permanent(uuid, uuid, text, uuid)
 grant execute on function public.bruger_luk_konto_permanent(uuid, uuid, text, uuid)
   to service_role;
 
--- konto_lukning_afvis: også at afvise et forslag om at lukke en firmakonto
--- kræver chef. Kopieret præcist fra 20261003050000_indpakning_advarsel.sql
--- med ét nyt tjek.
+-- konto_lukning_afvis: at afvise et forslag om at lukke en firmakonto kræver
+-- chef eller sælger-rollen. Kopieret præcist fra
+-- 20261003050000_indpakning_advarsel.sql med det nye tjek.
 do $$
 declare
   v_md5 text;
@@ -1295,7 +1360,8 @@ begin
     from pg_proc p
    where p.oid = 'public.konto_lukning_afvis(uuid, uuid, text)'::regprocedure;
   if v_md5 is distinct from '18882b17fc7fc174c5f525318188b23d'
-     and v_md5 is distinct from '6d3c575842d2fd97b4ef1315f5d58896' then
+     and v_md5 is distinct from '6d3c575842d2fd97b4ef1315f5d58896'
+     and v_md5 is distinct from '8974da5f0b3a01d90886a02e5df4883e' then
     raise exception 'konto_lukning_afvis er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
   end if;
 end $$;
@@ -1312,8 +1378,9 @@ as $fn$
 declare
   f      record;
   v_grund text := nullif(btrim(coalesce(p_begrundelse, '')), '');
+  v_admin boolean := public.staff_chat_har_rolle(p_medarbejder, 'admin');
 begin
-  if not public.staff_chat_har_rolle(p_medarbejder, 'admin') then
+  if not v_admin and not public.erhverv_har_adgang(p_medarbejder) then
     return jsonb_build_object('kode', 'ingen_adgang');
   end if;
   if v_grund is null then return jsonb_build_object('kode', 'begrundelse_mangler'); end if;
@@ -1325,10 +1392,14 @@ begin
     return jsonb_build_object('kode', 'behandlet', 'status', f.status);
   end if;
   if f.bruger_id = p_medarbejder then return jsonb_build_object('kode', 'sig_selv'); end if;
-  -- Erhverv (20261016020000): et forslag om en firmakonto behandles kun af chef.
-  if exists (select 1 from public.users u where u.id = f.bruger_id and u.konto_type = 'erhverv')
-     and not public.erhverv_har_adgang(p_medarbejder, true) then
-    return jsonb_build_object('kode', 'kun_chef');
+  -- Erhverv (20261016020000): et forslag om en firmakonto behandles kun af
+  -- chef eller sælger-rollen; andre konti kun af admin/chef (uændret).
+  if exists (select 1 from public.users u where u.id = f.bruger_id and u.konto_type = 'erhverv') then
+    if not public.erhverv_har_adgang(p_medarbejder) then
+      return jsonb_build_object('kode', 'kun_erhverv');
+    end if;
+  elsif not v_admin then
+    return jsonb_build_object('kode', 'ingen_adgang');
   end if;
   if exists (
     select 1 from public.sager s join public.trades t on t.id = s.trade_id
@@ -1353,3 +1424,191 @@ $fn$;
 
 revoke all on function public.konto_lukning_afvis(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.konto_lukning_afvis(uuid, uuid, text) to service_role;
+
+-- konto_lukning_godkend: chef og sælger-rollen kan også godkende lukning af
+-- en firmakonto (bruger_luk_konto_permanent afgør rollen pr. konto). Andre
+-- konti: kun admin/chef (uændret). Kopieret præcist fra
+-- 20261003051000_advarsel_inhabil.sql med det nye tjek.
+do $$
+declare
+  v_md5 text;
+begin
+  select md5(replace(p.prosrc, E'\r\n', E'\n')) into v_md5
+    from pg_proc p
+   where p.oid = 'public.konto_lukning_godkend(uuid, uuid, text)'::regprocedure;
+  if v_md5 is distinct from 'fdfd67a3f3e2b5f9bb42fab0f100b87c'
+     and v_md5 is distinct from '67a0aeb472c9402200784f7eb84e8cec' then
+    raise exception 'konto_lukning_godkend er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
+  end if;
+end $$;
+
+create or replace function public.konto_lukning_godkend(
+  p_medarbejder uuid,
+  p_forslag     uuid,
+  p_note        text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  f      record;
+  v_note text := nullif(btrim(coalesce(p_note, '')), '');
+  r      jsonb;
+  v_bruger uuid;
+  v_admin  boolean := public.staff_chat_har_rolle(p_medarbejder, 'admin');
+begin
+  if not v_admin and not public.erhverv_har_adgang(p_medarbejder) then
+    return jsonb_build_object('kode', 'ingen_adgang');
+  end if;
+  if v_note is not null and char_length(v_note) > 2000 then
+    return jsonb_build_object('kode', 'for_lang_tekst');
+  end if;
+
+  -- Laas brugeren FOER forslaget (samme raekkefoelge som triggeren
+  -- advarsler_tre_foreslaa_lukning: bruger -> forslag). bruger_id paa et
+  -- forslag kan ikke aendres (konto_lukning_forslag_beskyt).
+  select bruger_id into v_bruger from public.konto_lukning_forslag where id = p_forslag;
+  if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
+  -- Erhverv (20261016020000): sælger-rollen kun ved firmakonti.
+  if not v_admin and not exists (select 1 from public.users x
+                                  where x.id = v_bruger and x.konto_type = 'erhverv') then
+    return jsonb_build_object('kode', 'ingen_adgang');
+  end if;
+  perform 1 from public.users where id = v_bruger for update;
+
+  select * into f from public.konto_lukning_forslag where id = p_forslag for update;
+  if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
+  if f.status <> 'afventer' then
+    return jsonb_build_object('kode', 'behandlet', 'status', f.status);
+  end if;
+
+  r := public.bruger_luk_konto_permanent(p_medarbejder, f.bruger_id, '3 advarsler', null);
+
+  if r->>'kode' = 'allerede_lukket' then
+    update public.konto_lukning_forslag
+       set status = 'bortfaldet', behandlet_af = p_medarbejder, behandlet_kl = now(),
+           begrundelse = coalesce(v_note, 'Kontoen var allerede lukket.'), opdateret_kl = now()
+     where id = f.id and status = 'afventer';
+    return jsonb_build_object('kode', 'bortfaldet', 'bruger_id', f.bruger_id);
+  end if;
+  if r->>'kode' <> 'ok' then
+    return r;
+  end if;
+
+  update public.konto_lukning_forslag
+     set status = 'godkendt', behandlet_af = p_medarbejder, behandlet_kl = now(),
+         begrundelse = v_note, opdateret_kl = now()
+   where id = f.id and status = 'afventer';
+
+  return jsonb_build_object('kode', 'ok', 'bruger_id', f.bruger_id, 'forslag_id', f.id);
+end;
+$fn$;
+
+revoke all on function public.konto_lukning_godkend(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.konto_lukning_godkend(uuid, uuid, text) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 9. Tekst-rettelser i store funktioner (dsa_indgreb, mine_data)
+-- ---------------------------------------------------------------------------
+-- Samme mønster som 20261016010000_fjern_gemte_soegninger.sql: md5 af den
+-- normaliserede krop (CRLF -> LF, tomme linjer og rene kommentarlinjer
+-- fjernes), og en tekst-erstatning i pg_get_functiondef, der kræver, at den
+-- gamle tekst findes præcis én gang. Før-md5 = kroppen fra den seneste
+-- migration; efter-md5 = efter denne rettelse (så filen kan køres igen).
+create or replace function pg_temp.krop_md5(p_fn regprocedure)
+returns text language sql stable as $$
+  select md5(regexp_replace(replace(pr.prosrc, E'\r\n', E'\n'),
+                            E'^[ \t]*(--[^\n]*)?\n', '', 'gn'))
+    from pg_proc pr where pr.oid = p_fn
+$$;
+
+create or replace function pg_temp.ret_krop(p regprocedure, p_gl text, p_ny text)
+returns void language plpgsql as $$
+declare
+  v_def text := replace(pg_get_functiondef(p), E'\r\n', E'\n');
+  v_n   integer;
+begin
+  v_n := (length(v_def) - length(replace(v_def, p_gl, ''))) / nullif(length(p_gl), 0);
+  if v_n is distinct from 1 then
+    raise exception '%: forventet tekst fundet % gange (skal være 1) - ret manuelt', p, coalesce(v_n, 0);
+  end if;
+  execute replace(v_def, p_gl, p_ny);
+end $$;
+
+-- 9a. dsa_indgreb (20261009011000_dsa_rettelser.sql): chef og sælger-rollen
+-- kan suspendere og lukke en firmakonto, og en PERMANENT suspension af en
+-- firmakonto kræver chef eller sælger-rollen (admin/medarbejder får
+-- 'kun_erhverv'). Midlertidige suspensioner (1/7 dage) er uændrede for
+-- admin/medarbejder. Lukning går videre til bruger_luk_konto_permanent.
+do $$
+declare
+  v_md5 text := pg_temp.krop_md5('public.dsa_indgreb(uuid, text, uuid, text, text, text, text, uuid, boolean, jsonb)'::regprocedure);
+begin
+  if v_md5 = 'df81fd23a2e354a196b645057e3fbf9b' then
+    perform pg_temp.ret_krop(
+      'public.dsa_indgreb(uuid, text, uuid, text, text, text, text, uuid, boolean, jsonb)'::regprocedure,
+      E'  if p_medarbejder is null or not public.staff_chat_har_rolle(p_medarbejder, public.dsa_min_rolle(p_handling)) then\n',
+      E'  if p_medarbejder is null or not (\n' ||
+      E'       public.staff_chat_har_rolle(p_medarbejder, public.dsa_min_rolle(p_handling))\n' ||
+      E'       or (p_type = ''profil'' and p_handling in (''konto_suspenderet'', ''konto_lukket'')\n' ||
+      E'           and public.erhverv_har_adgang(p_medarbejder)\n' ||
+      E'           and exists (select 1 from public.users x where x.id = p_id and x.konto_type = ''erhverv''))) then\n');
+    perform pg_temp.ret_krop(
+      'public.dsa_indgreb(uuid, text, uuid, text, text, text, text, uuid, boolean, jsonb)'::regprocedure,
+      E'    if u.konto_lukket_kl is not null then return jsonb_build_object(''kode'', ''allerede_lukket''); end if;\n',
+      E'    if u.konto_lukket_kl is not null then return jsonb_build_object(''kode'', ''allerede_lukket''); end if;\n' ||
+      E'    -- Erhverv (20261016020000): permanent suspension af en firmakonto kun af chef og saelger.\n' ||
+      E'    if p_handling = ''konto_suspenderet'' and coalesce(v_ekstra->>''varighed'', '''') = ''permanent''\n' ||
+      E'       and exists (select 1 from public.users x where x.id = p_id and x.konto_type = ''erhverv'')\n' ||
+      E'       and not public.erhverv_har_adgang(p_medarbejder) then\n' ||
+      E'      return jsonb_build_object(''kode'', ''kun_erhverv'');\n' ||
+      E'    end if;\n');
+  elsif v_md5 is distinct from '79542a6bc6c86d1c409e960e87e091a8' then
+    raise exception 'dsa_indgreb er ændret uden for migrationerne (md5 %). Tjek den, før den rettes.', v_md5;
+  end if;
+end $$;
+
+-- 9b. "Download dine data": købers egne klager over firmaer. Hjælperen
+-- kaldes kun af mine_data (security definer, ejer postgres).
+create or replace function public.mine_data_erhverv_klager(p_uid uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'nummer', k.nummer,
+           'handel_id', k.trade_id,
+           'kategori', k.kategori,
+           'beskrivelse', k.beskrivelse,
+           'status', k.status,
+           'afgoerelse', k.afgoerelse,
+           'begrundelse', k.begrundelse,
+           'oprettet_kl', k.oprettet_kl,
+           'afgjort_kl', k.afgjort_kl,
+           'billeder', coalesce((select jsonb_agg(b.sti order by b.oprettet_kl)
+                                   from public.erhverv_klage_billeder b where b.klage_id = k.id), '[]'::jsonb))
+         order by k.oprettet_kl), '[]'::jsonb)
+    from public.erhverv_klager k
+   where p_uid is not null and k.koeber_id = p_uid;
+$$;
+revoke all on function public.mine_data_erhverv_klager(uuid) from public, anon, authenticated, service_role;
+
+-- mine_data (20261014010000_dac7.sql): nøglen 'erhverv_klager'. Rettes i
+-- mine_data og ikke i mine_data_grund, fordi mine_datas krop står i
+-- migrationerne (mine_data_grund kun i databasen).
+do $$
+declare
+  v_md5 text := pg_temp.krop_md5('public.mine_data()'::regprocedure);
+begin
+  if v_md5 = '335229b73f0a5fb4c0df84f24e88ad5c' then
+    perform pg_temp.ret_krop('public.mine_data()'::regprocedure,
+      E'  v := public.mine_data_grund();\n',
+      E'  v := public.mine_data_grund()\n' ||
+      E'       || jsonb_build_object(''erhverv_klager'', public.mine_data_erhverv_klager(v_uid));\n');
+  elsif v_md5 is distinct from 'bc54b3a527910673294e1da06daf5588' then
+    raise exception 'mine_data er ændret uden for migrationerne (md5 %). Tjek den, før den rettes.', v_md5;
+  end if;
+end $$;

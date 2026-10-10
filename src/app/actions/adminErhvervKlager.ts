@@ -7,8 +7,8 @@
 // logges i moderation_log af databasen. Fejl RETURNERES som { fejl }.
 //
 // Lukning af en firmakonto sker IKKE her: 3 advarsler giver et forslag under
-// Kontolukninger, som kun chefen kan godkende (bruger_luk_konto_permanent
-// svarer 'kun_chef' for firmakonti).
+// Kontolukninger, som kun chefen og sælger-rollen kan godkende
+// (bruger_luk_konto_permanent svarer 'kun_erhverv' for firmakonti).
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
@@ -150,7 +150,8 @@ export type AdminKlageDetalje = {
     nummer: number;
     trade_id: string;
     kategori: KlageKategori;
-    beskrivelse: string;
+    // null, når staff er inhabil (databasen sender den ikke).
+    beskrivelse: string | null;
     status: KlageStatus;
     afgoerelse: KlageAfgoerelse | null;
     begrundelse: string | null;

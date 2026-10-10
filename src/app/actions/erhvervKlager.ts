@@ -29,7 +29,8 @@ import {
 import { KLAGE_KOEBER as T } from "@/lib/tekster/erhvervKlager";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const STI = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\/[A-Za-z0-9._-]{1,100}$/;
+// Filnavnet starter med et bogstav/tal (som i databasen).
+const STI = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
 function rensStier(stier: unknown): string[] | null {
   if (!Array.isArray(stier) || stier.length > KLAGE_MAKS_BILLEDER) return null;
