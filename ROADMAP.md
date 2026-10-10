@@ -226,7 +226,7 @@ Formål: firmaer med CVR kan sælge på BidHamr med abonnement – og det skal v
 - [~] Abonnementsbetaling med **Stripe Billing** (testmiljø, Filip 8. okt. 2026 – Niels gennemgår): "Betal for din pakke" (Checkout, kort), opgradering med det samme med betaling af forskellen (faktura, 3DS via Stripes fakturaside), nedgradering fra næste periode (Subscription Schedule), opsigelse kun via admin (chef, ved periodens slut), mislykket betaling → pause efter 7 dage → genaktivering ved betaling, regninger med moms og PDF, "Skift betalingskort" (kundeportal). Priser ekskl. moms + fast Tax Rate 25 %. Migration `20261010050000_erhverv_stripe.sql`. Kode: `src/lib/erhverv/betaling.ts`, webhook `src/app/api/webhooks/stripe/route.ts`. Tjekliste til Niels: `STRIPE-ERHVERV-NOTE.md`. Valg af regnskabsprogram mangler stadig
 - [~] **Faktura på varen ved firmasalg**: firmaet fakturerer selv (Filip, 9. okt. 2026). Firma oversigt → Salg viser pr. salg de oplysninger, firmaet skal bruge til fakturaen (købers navn, adresse, e-mail, vare, pris inkl. moms, dato), evt. med "Kopiér"/CSV-eksport, og erhvervsvilkårene siger, at firmaet selv fakturerer
 - [ ] Reklamation: køber kan se virksomhedens kontaktoplysninger og klage; gentagne klager → advarsel/lukning
-- [ ] Brugerbetingelser og FAQ for erhverv (indhold + advokat)
+- [~] Brugerbetingelser og FAQ for erhverv (indhold + advokat) *(udkast 10. okt. 2026: jura/erhvervsvilkaar-udkast.md, brugerbetingelser afsnit 29, FAQ-gruppe; advokat nr. 114–121)*
 - [ ] Appen: samme erhvervsfunktioner (Filip)
 
 ---
