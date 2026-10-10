@@ -276,15 +276,24 @@ export async function hentIdentitet(
 
   // Kun dansk MitID på niveau betydelig eller højere.
   if (c.identityscheme !== "dkmitid") throw new Error("MitID: forkert eID");
-  const acr = typeof c.acr === "string" ? c.acr : "";
-  // acr SKAL være med - mangler det, afvises login.
-  if (acr !== MITID_ACR && acr !== "urn:grn:authn:dk:mitid:high") {
-    // acr-værdien og claim-navnene er ikke personoplysninger - kun værdierne er.
+  // Idura sender niveauet i authenticationtype (URN) og/eller
+  // gov:saml:attribute:LoA (NSIS-URI) - ikke altid i acr. Mindst én skal sige
+  // betydelig/høj, og ingen må sige lavere.
+  const niveauer = [c.acr, c.authenticationtype, c["gov:saml:attribute:LoA"]]
+    .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+    .map((v) => v.trim());
+  const godkendt = (v: string) =>
+    v === MITID_ACR ||
+    v === "urn:grn:authn:dk:mitid:high" ||
+    /^https?:\/\/data\.gov\.dk\/concept\/core\/nsis\/loa\/(substantial|high)$/i.test(v);
+  if (niveauer.length === 0 || !niveauer.every(godkendt)) {
+    // Niveau-værdierne er ikke personoplysninger.
     throw new Error(
-      `MitID: for lavt sikringsniveau (acr=${acr.slice(0, 80) || "mangler"}; claims=${Object.keys(c).sort().join(",").slice(0, 400)})`,
+      `MitID: for lavt sikringsniveau (${niveauer.map((v) => v.slice(0, 80)).join(" | ") || "intet niveau"}; claims=${Object.keys(c).sort().join(",").slice(0, 400)})`,
     );
   }
-  const personId = typeof c.uuid === "string" ? c.uuid.trim() : "";
+  const raaId = typeof c.uuid === "string" ? c.uuid : typeof c["gov:saml:attribute:UUID"] === "string" ? c["gov:saml:attribute:UUID"] : "";
+  const personId = raaId.trim().replace(/^urn:uuid:/i, "").toLowerCase();
   if (!/^[0-9a-f-]{16,64}$/i.test(personId)) throw new Error("MitID: mangler Person-ID");
   const foedselsdato = typeof c.birthdate === "string" ? c.birthdate.trim() : "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(foedselsdato)) throw new Error("MitID: mangler fødselsdato");
