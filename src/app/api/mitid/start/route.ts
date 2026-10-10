@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { klientIp, tjekGraenser } from "@/lib/rateLimit";
+import { klientIp, tjekGraenserLukket } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
 import { authorizeUrl, callbackUrl, mitIdKonfig, sha256Hex, sideOrigin, tilfaeldig } from "@/lib/mitid/oidc";
 import {
@@ -52,7 +52,9 @@ export async function GET(req: NextRequest) {
   try {
     if (appToken) {
       if (!/^[A-Za-z0-9_-]{40,64}$/.test(appToken)) return tilApp("udloebet");
-      if (!(await tjekGraenser([["mitid_start_ip", ip]]))) return tilApp("forMange");
+      // Fail closed: hvert MitID-login koster penge hos Idura.
+      const graense = await tjekGraenserLukket([["mitid_start_ip", ip]]);
+      if (graense !== "ok") return tilApp(graense === "for_mange" ? "forMange" : "fejl");
       // Indløs tokenet atomisk (kun én gang, kun inden for levetiden).
       const { data, error } = await admin
         .from("mitid_flow")
@@ -81,9 +83,8 @@ export async function GET(req: NextRequest) {
         login.searchParams.set("redirect", `/api/mitid/start?retur=${encodeURIComponent(retur)}`);
         return NextResponse.redirect(login, 303);
       }
-      if (!(await tjekGraenser([["mitid_start_bruger", bruger.id], ["mitid_start_ip", ip]]))) {
-        return tilSide(origin, retur, "forMange");
-      }
+      const graense = await tjekGraenserLukket([["mitid_start_bruger", bruger.id], ["mitid_start_ip", ip]]);
+      if (graense !== "ok") return tilSide(origin, retur, graense === "for_mange" ? "forMange" : "fejl");
       const { data: u } = await supabase
         .from("users")
         .select("konto_type, mitid_verificeret_kl")

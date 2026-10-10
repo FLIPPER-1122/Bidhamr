@@ -1,3 +1,5 @@
+import "server-only";
+
 // Kortlivet, signeret cookie med brugerens staff-rolle og konto_type til
 // gaten før lancering (src/lib/supabase/middleware.ts). konto_type er med,
 // fordi en firmakonto (konto_type 'erhverv') må nå Firma oversigt før

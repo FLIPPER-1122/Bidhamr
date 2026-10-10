@@ -5,9 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   FOR_MANGE_FORSOEG,
+  graenseFejl,
   klientIp,
   nulstilGraense,
   tjekGraenser,
+  tjekGraenserLukket,
 } from "@/lib/rateLimit";
 import { sideUrl } from "@/lib/mails/handel";
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
@@ -100,9 +102,8 @@ export async function logInd(
   // atomisk), så loftet holder ved samtidige forsøg: 8 pr. e-mail+IP og 50
   // pr. IP pr. 15 min. Et gennemført login nulstiller e-mail+IP-tælleren.
   const ip = await klientIp();
-  if (!(await tjekGraenser([["login_ip", ip], ["login_email_ip", `${email}|${ip}`]]))) {
-    return { fejl: FOR_MANGE_FORSOEG };
-  }
+  const graense = graenseFejl(await tjekGraenserLukket([["login_ip", ip], ["login_email_ip", `${email}|${ip}`]]));
+  if (graense) return { fejl: graense };
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -160,9 +161,8 @@ export async function opretKonto(input: {
   }
 
   const ip = await klientIp();
-  if (!(await tjekGraenser([["opret_ip", ip], ["gensend_email", email]]))) {
-    return { fejl: FOR_MANGE_FORSOEG };
-  }
+  const graense = graenseFejl(await tjekGraenserLukket([["opret_ip", ip], ["gensend_email", email]]));
+  if (graense) return { fejl: graense };
 
   const supabase = await createClient();
   const navn = [fornavn, efternavn].filter(Boolean).join(" ");
@@ -256,15 +256,14 @@ export async function verificerSignupKode(
   if (!email) return { fejl: "Indtast den e-mail, du oprettede kontoen med.", kode: "mangler_email" };
 
   const ip = await klientIp();
-  if (
-    !(await tjekGraenser([
+  const graense = graenseFejl(
+    await tjekGraenserLukket([
       ["signup_kode_ip", ip],
       ["signup_kode_email_ip", `${email}|${ip}`],
       ["signup_kode_email", email],
-    ]))
-  ) {
-    return { fejl: FOR_MANGE_FORSOEG };
-  }
+    ]),
+  );
+  if (graense) return { fejl: graense };
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.verifyOtp({ email, token: kode, type: "signup" });
@@ -289,9 +288,8 @@ export async function nulstilAdgangskode(emailInput: string): Promise<Resultat> 
   if (!email) return { fejl: "Indtast en gyldig e-mail." };
 
   const ip = await klientIp();
-  if (!(await tjekGraenser([["nulstil_ip", ip], ["nulstil_email", email]]))) {
-    return { fejl: FOR_MANGE_FORSOEG };
-  }
+  const graense = graenseFejl(await tjekGraenserLukket([["nulstil_ip", ip], ["nulstil_email", email]]));
+  if (graense) return { fejl: graense };
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -320,9 +318,8 @@ export async function gemNyAdgangskode(password: string): Promise<Resultat> {
   if (!bruger) return { fejl: "Linket er udløbet. Bed om et nyt og prøv igen." };
 
   const ip = await klientIp();
-  if (!(await tjekGraenser([["adgangskode_bruger", bruger.id], ["nulstil_ip", ip]]))) {
-    return { fejl: FOR_MANGE_FORSOEG };
-  }
+  const graense = graenseFejl(await tjekGraenserLukket([["adgangskode_bruger", bruger.id], ["nulstil_ip", ip]]));
+  if (graense) return { fejl: graense };
 
   const { data: profil } = await createAdminClient()
     .from("users")

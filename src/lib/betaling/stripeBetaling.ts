@@ -1,3 +1,5 @@
+import "server-only";
+
 // Server-only: Stripe-kald for betalingen ("betal når du vinder").
 // Må aldrig importeres i klientkode - bruger STRIPE_SECRET_KEY og service-role.
 //

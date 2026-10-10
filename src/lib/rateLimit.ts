@@ -6,11 +6,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // rate_limit_tjek, kun service_role). Ingen betalt tjeneste.
 //
 // Fast tidsvindue: hver noegle maa bruges hoejst `maks` gange pr. `vindueSek`.
-// Fejler databasen, slippes forespoergslen igennem (fail open), saa en fejl
-// her ikke laaser alle ude - Supabase Auth har desuden sine egne graenser.
+// indenForGraense/tjekGraenser: fejler databasen, slippes forespoergslen
+// igennem (fail open), saa en fejl her ikke laaser alle ude.
+// tjekGraenserLukket: fejler databasen, afvises forespoergslen (fail closed).
+// Bruges til login, oprettelse, nulstilling af adgangskode og MitID-start
+// (sikkerhedsgennemgangen 10. okt. 2026), hvor et udfald ellers ville give
+// fri adgang til at gaette adgangskoder eller koste penge hos Idura.
 
 export const FOR_MANGE_FORSOEG =
   "Du har prøvet for mange gange. Vent lidt, og prøv så igen.";
+
+// Vises, naar graensen ikke kunne tjekkes (fail closed).
+export const PROEV_IGEN_OM_LIDT = "Noget gik galt. Prøv igen om lidt.";
 
 export type Graense = { maks: number; vindueSek: number };
 
@@ -146,8 +153,9 @@ export async function klientIp(): Promise<string> {
   return fwd || "ukendt";
 }
 
-// Returnerer true, hvis forespoergslen er inden for graensen.
-export async function indenForGraense(navn: GraenseNavn, id: string): Promise<boolean> {
+type GraenseSvar = "ok" | "for_mange" | "fejl";
+
+async function tjekEn(navn: GraenseNavn, id: string): Promise<GraenseSvar> {
   const g = GRAENSER[navn];
   try {
     const { data, error } = await createAdminClient().rpc("rate_limit_tjek", {
@@ -156,22 +164,46 @@ export async function indenForGraense(navn: GraenseNavn, id: string): Promise<bo
       p_vindue_sek: g.vindueSek,
     });
     if (error) {
-      console.error(`[rate-limit] fejl – slipper igennem (${navn}):`, error.message);
-      return true;
+      console.error(`[rate-limit] fejl (${navn}):`, error.message);
+      return "fejl";
     }
-    return data !== false;
+    return data === false ? "for_mange" : "ok";
   } catch (err) {
-    console.error(`[rate-limit] fejl – slipper igennem (${navn}):`, err);
-    return true;
+    console.error(`[rate-limit] fejl (${navn}):`, err);
+    return "fejl";
   }
 }
 
-// Tjekker flere graenser; alle skal vaere overholdt.
+// Returnerer true, hvis forespoergslen er inden for graensen. Fail open.
+export async function indenForGraense(navn: GraenseNavn, id: string): Promise<boolean> {
+  return (await tjekEn(navn, id)) !== "for_mange";
+}
+
+// Tjekker flere graenser; alle skal vaere overholdt. Fail open.
 export async function tjekGraenser(
   tjek: [GraenseNavn, string][],
 ): Promise<boolean> {
   const svar = await Promise.all(tjek.map(([n, id]) => indenForGraense(n, id)));
   return svar.every(Boolean);
+}
+
+// Som tjekGraenser, men fail closed: "fejl", hvis en graense ikke kunne
+// tjekkes (vis PROEV_IGEN_OM_LIDT), "for_mange", hvis en er overskredet
+// (vis FOR_MANGE_FORSOEG), ellers "ok".
+export async function tjekGraenserLukket(
+  tjek: [GraenseNavn, string][],
+): Promise<GraenseSvar> {
+  const svar = await Promise.all(tjek.map(([n, id]) => tjekEn(n, id)));
+  if (svar.includes("for_mange")) return "for_mange";
+  if (svar.includes("fejl")) return "fejl";
+  return "ok";
+}
+
+// Besked til brugeren for et svar fra tjekGraenserLukket (null ved "ok").
+export function graenseFejl(svar: GraenseSvar): string | null {
+  if (svar === "for_mange") return FOR_MANGE_FORSOEG;
+  if (svar === "fejl") return PROEV_IGEN_OM_LIDT;
+  return null;
 }
 
 // Nulstiller en grænse (fx login pr. e-mail+IP efter et gennemført login),

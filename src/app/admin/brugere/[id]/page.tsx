@@ -60,7 +60,7 @@ export default async function AdminBrugerDetalje({
     : "oversigt";
 
   // Rollen tjekkes paa selve siden (ikke kun i layoutet), foer service-role bruges.
-  const { rolle: staffRolle, admin: supabase } = await kraevSideRolle("medarbejder");
+  const { rolle: staffRolle, admin: supabase, userId: medarbejderId } = await kraevSideRolle("medarbejder");
   // Sletning af auktioner/anmeldelser kræver admin+; medarbejdere ser ikke knapperne.
   const kanModerereIndhold = !!staffRolle && harMindstRolle(staffRolle, "admin");
 
@@ -229,6 +229,7 @@ export default async function AdminBrugerDetalje({
 
       <MitIdAdminKort
         admin={supabase}
+        medarbejderId={medarbejderId}
         brugerId={user.id}
         brugerNavn={user.navn ?? "brugeren"}
         verificeretKl={(user as { mitid_verificeret_kl?: string | null }).mitid_verificeret_kl ?? null}

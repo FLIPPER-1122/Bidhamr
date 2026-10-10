@@ -38,6 +38,8 @@ export const HANDLING_NAVNE: Record<string, string> = {
   udbetalingskonto_nulstillet: "Nulstillede udbetalingskonto",
   mitid_nulstillet: "Nulstillede MitID",
   mitid_forsoeg_behandlet: "Gennemgik MitID-forsøg",
+  // 20261015010000_sikkerhed_gennemgang.sql
+  mitid_opslag: "Så MitID-oplysninger (juridisk navn og fødselsdato)",
   rapport_behandlet: "Behandlede rapport",
   sag_anke_indgivet: "Anke indgivet",
   sag_anke_stadfaestet: "Stadfæstede afgørelse efter anke",
