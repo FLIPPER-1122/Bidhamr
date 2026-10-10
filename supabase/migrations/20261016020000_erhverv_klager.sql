@@ -1425,10 +1425,12 @@ $fn$;
 revoke all on function public.konto_lukning_afvis(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.konto_lukning_afvis(uuid, uuid, text) to service_role;
 
--- konto_lukning_godkend: chef og sælger-rollen kan også godkende lukning af
--- en firmakonto (bruger_luk_konto_permanent afgør rollen pr. konto). Andre
--- konti: kun admin/chef (uændret). Kopieret præcist fra
--- 20261003051000_advarsel_inhabil.sql med det nye tjek.
+-- konto_lukning_godkend: lukning af en firmakonto godkendes kun af chef
+-- eller sælger-rollen (admin/medarbejder får 'kun_erhverv'). Andre konti:
+-- kun admin/chef (uændret). Kopieret præcist fra prod-versionen (= kroppen
+-- fra 20261003051000_advarsel_inhabil.sql uden kommentaren om
+-- låserækkefølgen; plain md5 89f1f741... på både prod og test) med det nye
+-- tjek. md5: prod/test før | denne udgave.
 do $$
 declare
   v_md5 text;
@@ -1436,8 +1438,8 @@ begin
   select md5(replace(p.prosrc, E'\r\n', E'\n')) into v_md5
     from pg_proc p
    where p.oid = 'public.konto_lukning_godkend(uuid, uuid, text)'::regprocedure;
-  if v_md5 is distinct from 'fdfd67a3f3e2b5f9bb42fab0f100b87c'
-     and v_md5 is distinct from '67a0aeb472c9402200784f7eb84e8cec' then
+  if v_md5 is distinct from '89f1f741ed9d60e5a92c9fc2707e6d64'
+     and v_md5 is distinct from 'f3544b797db51a6da74ca5fbf3c71038' then
     raise exception 'konto_lukning_godkend er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
   end if;
 end $$;
@@ -1465,14 +1467,15 @@ begin
     return jsonb_build_object('kode', 'for_lang_tekst');
   end if;
 
-  -- Laas brugeren FOER forslaget (samme raekkefoelge som triggeren
-  -- advarsler_tre_foreslaa_lukning: bruger -> forslag). bruger_id paa et
-  -- forslag kan ikke aendres (konto_lukning_forslag_beskyt).
   select bruger_id into v_bruger from public.konto_lukning_forslag where id = p_forslag;
   if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
-  -- Erhverv (20261016020000): sælger-rollen kun ved firmakonti.
-  if not v_admin and not exists (select 1 from public.users x
-                                  where x.id = v_bruger and x.konto_type = 'erhverv') then
+  -- Erhverv (20261016020000): en firmakonto lukkes kun af chef eller
+  -- sælger-rollen; andre konti kun af admin/chef (uændret).
+  if exists (select 1 from public.users x where x.id = v_bruger and x.konto_type = 'erhverv') then
+    if not public.erhverv_har_adgang(p_medarbejder) then
+      return jsonb_build_object('kode', 'kun_erhverv');
+    end if;
+  elsif not v_admin then
     return jsonb_build_object('kode', 'ingen_adgang');
   end if;
   perform 1 from public.users where id = v_bruger for update;
@@ -1545,7 +1548,11 @@ do $$
 declare
   v_md5 text := pg_temp.krop_md5('public.dsa_indgreb(uuid, text, uuid, text, text, text, text, uuid, boolean, jsonb)'::regprocedure);
 begin
-  if v_md5 = 'df81fd23a2e354a196b645057e3fbf9b' then
+  -- df81fd23...: prod (fra 20261009011000_dsa_rettelser.sql). 0db5525e...:
+  -- test - samme kode, men lagt ind uden kommentarer (også dem efter 'else'),
+  -- så den normaliserede krop afviger. Begge ankre findes præcis én gang i
+  -- begge udgaver (ret_krop tjekker det igen).
+  if v_md5 in ('df81fd23a2e354a196b645057e3fbf9b', '0db5525ecedefbcdcbbd69a4b2dd2616') then
     perform pg_temp.ret_krop(
       'public.dsa_indgreb(uuid, text, uuid, text, text, text, text, uuid, boolean, jsonb)'::regprocedure,
       E'  if p_medarbejder is null or not public.staff_chat_har_rolle(p_medarbejder, public.dsa_min_rolle(p_handling)) then\n',
@@ -1564,7 +1571,7 @@ begin
       E'       and not public.erhverv_har_adgang(p_medarbejder) then\n' ||
       E'      return jsonb_build_object(''kode'', ''kun_erhverv'');\n' ||
       E'    end if;\n');
-  elsif v_md5 is distinct from '79542a6bc6c86d1c409e960e87e091a8' then
+  elsif v_md5 not in ('79542a6bc6c86d1c409e960e87e091a8', 'a189b160bb59852f20fddf24fcc4a5e3') then
     raise exception 'dsa_indgreb er ændret uden for migrationerne (md5 %). Tjek den, før den rettes.', v_md5;
   end if;
 end $$;
