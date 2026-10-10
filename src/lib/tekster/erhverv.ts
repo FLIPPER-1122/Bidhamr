@@ -886,9 +886,10 @@ export const FIRMA_DASHBOARD = {
   dineData: {
     titel: "Dine data",
     tekst:
-      "Få en fil med alt det, BidHamr har gemt om dig og dit firma: konto, auktioner, handler og indstillinger. Filen er i JSON-format og kan åbnes i en teksteditor.",
-    knap: "Download dine data",
-    hjaelp: "Du kan hente filen én gang i timen.",
+      "Få en fil med alt det, BidHamr har gemt om dig og dit firma: konto, auktioner, handler og indstillinger. Vælg PDF for at læse den, eller JSON, hvis du vil flytte dine data til en anden tjeneste.",
+    knapPdf: "Download som PDF",
+    knapJson: "Download som JSON",
+    hjaelp: "Du kan hente én fil i timen – enten PDF eller JSON.",
     vent: "Du har lige hentet dine data. Du kan hente dem igen om højst en time.",
     fejl: "Dine data kunne ikke hentes lige nu. Prøv igen om lidt.",
   },
