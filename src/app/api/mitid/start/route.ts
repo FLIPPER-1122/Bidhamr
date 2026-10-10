@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { klientIp, tjekGraenser } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
-import { authorizeUrl, callbackUrl, mitIdKonfig, sha256Hex, sideOrigin, tilfaeldig } from "@/lib/mitid/oidc";
+import { authorizeUrl, callbackUrl, mitIdKonfig, mitIdKonfigMangler, sha256Hex, sideOrigin, tilfaeldig } from "@/lib/mitid/oidc";
 import {
   FLOW_LEVETID_SEK,
   MITID_COOKIE,
@@ -37,7 +37,8 @@ export async function GET(req: NextRequest) {
   const origin = cb ? sideOrigin(cb) : req.nextUrl.origin;
   const fejl = (r: Parameters<typeof tilSide>[2]) => (appToken ? tilApp(r) : tilSide(origin, retur, r));
   if (!k || !cb) {
-    console.error("MitID: mangler konfiguration (CRIIPTO_* / MITID_HASH_NOEGLE) eller ukendt origin");
+    const aarsag = [...mitIdKonfigMangler(), ...(cb ? [] : [`ukendt origin ${req.nextUrl.origin}`])];
+    console.error(`MitID ikke tilgængelig: ${aarsag.join("; ")}`);
     return fejl("ikkeTilgaengelig");
   }
 

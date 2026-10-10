@@ -45,6 +45,19 @@ export function mitIdKonfig(): MitIdKonfig | null {
   return { domaene, clientId, clientSecret, hashNoegle };
 }
 
+// Til fejlloggen: hvad der mangler i konfigurationen (aldrig selve værdierne).
+export function mitIdKonfigMangler(): string[] {
+  const domaene = (process.env.CRIIPTO_DOMAIN ?? "").trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const mangler: string[] = [];
+  if (!domaene) mangler.push("CRIIPTO_DOMAIN mangler");
+  else if (!/^[a-z0-9.-]+$/i.test(domaene)) mangler.push("CRIIPTO_DOMAIN har ugyldige tegn (kun domænet, fx bidhamr-test.test.idura.broker)");
+  if (!(process.env.CRIIPTO_CLIENT_ID ?? "").trim()) mangler.push("CRIIPTO_CLIENT_ID mangler");
+  if (!(process.env.CRIIPTO_CLIENT_SECRET ?? "").trim()) mangler.push("CRIIPTO_CLIENT_SECRET mangler");
+  const n = (process.env.MITID_HASH_NOEGLE ?? "").trim().length;
+  if (n < 32) mangler.push(`MITID_HASH_NOEGLE er ${n} tegn (skal være mindst 32)`);
+  return mangler;
+}
+
 // Callback-adressen skal være præcis den, der er registreret hos Idura.
 // Kun disse to (Filip, 9. okt. 2026). MITID_CALLBACK_URL kan overstyre (fx
 // en anden port), men skal stadig være registreret hos Idura.
