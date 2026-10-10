@@ -157,7 +157,7 @@ async function sendBeskeder(
         tekst:
           R > 0
             ? `Du hentede ikke "${t}" i tide, så pakken er sendt retur til sælgeren, og handlen er annulleret. Du får ${kronerFraOere(R)} kr tilbage – købsbeløbet minus gebyrerne og fragten begge veje. Betalingen håndteres af vores betalingspartner Stripe.`
-            : `Du hentede ikke "${t}" i tide, så pakken er sendt retur til sælgeren, og handlen er annulleret. Købsbeløbet minus gebyrerne og fragten begge veje bliver 0 kr., så du får ikke noget tilbage.`,
+            : `Du hentede ikke "${t}" i tide, så pakken er sendt retur til sælgeren, og handlen er annulleret. Købsbeløbet minus gebyrerne og fragten begge veje bliver 0 kr., så du får ikke noget tilbage – og du skylder heller ikke noget.`,
         link,
         data: { trade_id: h.trade_id },
         mail: koeberIkkeAfhentetMail(
@@ -236,18 +236,8 @@ export async function registrerIkkeAfhentet(input: IkkeAfhentetInput): Promise<I
     await sendBeskeder(admin, h, { buyer_id: r.buyer_id, seller_id: r.seller_id, auction_id: r.auction_id });
   }
 
-  if (r.kode === "ok_intet") {
-    // Intet at refundere: sælgerens del står på hans Stripe-konto og må ikke
-    // udbetales (handlen er annulleret). Staff henter den tilbage.
-    await logDriftFejl({
-      kilde: "server",
-      hvor: "betaling/ikke-afhentet",
-      fejl: `Ikke-afhentet pakke på handel ${input.tradeId}: returfragten er mindst varens pris, så køberen får intet tilbage. Hent sælgerens del tilbage fra sælgerens Stripe-konto (se Admin -> Betalinger).`,
-      brugerId: r.seller_id ?? null,
-    });
-    return svar;
-  }
-
+  // ok_intet (R = 0, Filip 10. okt. 2026): køberen får 0 kr. og skylder
+  // intet; refunderBetaling tilbagefører kun sælgerens del (X = U).
   if (input.refunderNu && r.betaling_id) {
     try {
       svar.refusion = await refunderBetaling(r.betaling_id);
@@ -288,7 +278,7 @@ export async function ikkeAfhentetFraFragt(forsendelseId: string): Promise<IkkeA
       svar.kode === "ok"
         ? "Registreret som ikke afhentet: handlen er annulleret, og køberen refunderes automatisk (minus gebyrer og fragt begge veje). Sælgeren får pakken retur."
         : svar.kode === "ok_intet"
-          ? "Registreret som ikke afhentet, men køberen får intet tilbage (returfragten er mindst varens pris). Hent sælgerens del tilbage fra sælgerens Stripe-konto."
+          ? "Registreret som ikke afhentet: handlen er annulleret. Køberen får 0 kr. (returfragten er mindst buddet), og sælgerens del tilbageføres automatisk. Sælgeren får pakken retur."
           : svar.kode === "allerede"
             ? null
             : `Pakken er meldt retur (ikke afhentet), men handlen kunne ikke annulleres automatisk: ${IKKE_AFHENTET_FEJL[svar.kode] ?? svar.kode} Afgør handlen.`;

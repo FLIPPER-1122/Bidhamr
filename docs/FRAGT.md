@@ -53,8 +53,9 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    `registrerIkkeAfhentet` → `handel_ikke_afhentet_registrer` (låser betaling og handel, idempotent - én
    hændelse pr. handel i `handel_ikke_afhentet`, som aldrig kan ændres eller slettes). Handlen annulleres,
    køberen refunderes `bud − returfragt` (= total − købergebyr − BidHamr Beskyttelse − fragt − returfragt,
-   aldrig under 0), sælgeren beholder varen og får intet udbetalt. Returfragten er fragten ud, medmindre
-   adapteren giver DAO's beløb (`returfragtOere`). Kaldes af:
+   aldrig under 0), sælgeren beholder varen og får intet udbetalt. Returfragten er fragten ud (Filip,
+   10. okt. 2026). Er returfragten mindst buddet, får køberen 0 kr. og skylder intet, og sælgerens del
+   tilbageføres stadig automatisk (BidHamr dækker resten). Kaldes af:
    - **fragten**: en udgående pakke meldt `returneret`, som aldrig er `leveret`, når adapteren har
      `returErIkkeAfhentet: true` (testfragtfirmaet; DAO-adapteren sætter den, når DAO's returkode er kendt).
      Shipmondo gætter `returneret` ud fra en tekst og har den derfor ikke - der bliver det kun en markering.
@@ -220,9 +221,9 @@ Localhost kan ikke modtage webhooks fra Shipmondo – test på en Vercel-preview
 - Shipment Monitor har ingen retur-status: en tekst med "retur" giver `returneret`, `DANGER` giver `fejl` –
   begge kun som markering til staff. Staff trykker "Ikke afhentet", når pakken er sendt retur, fordi
   køberen ikke hentede den (se Flowet, punkt 9).
-- Ikke-afhentet pakke: returfragten = fragten ud (det køberen betalte), indtil DAO's faktiske returpris kan
-  hentes. Får køberen intet tilbage (returfragten er mindst varens pris), markeres betalingen til staff,
-  der henter sælgerens del tilbage fra sælgerens Stripe-konto (ikke bygget automatisk).
+- Ikke-afhentet pakke: returfragten = fragten ud (det køberen betalte - Filip, 10. okt. 2026). Er den
+  mindst buddet, får køberen 0 kr.; refusionsvejen tilbagefører kun sælgerens del (X = U) og afslutter
+  betalingen uden Stripe-refusion (`betaling_ikke_afhentet_uden_refusion`).
 - Returlabel er slået fra, indtil returfragten opkræves hos køberen.
 - Vægt er krævet for ALLE størrelser, når klienten sender en størrelse, og over 15 kg kan aldrig sendes.
   Midlertidigt: uden størrelse (nuværende app) bliver det Mellem uden vægt – se go-live.

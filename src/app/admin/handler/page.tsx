@@ -87,7 +87,7 @@ const FANER = [
 // "Ikke afhentet" (ROADMAP-BESLUTNINGER afsnit 1, model 3).
 const IKKE_AFHENTET_TITEL = "Pakken blev ikke afhentet?";
 const IKKE_AFHENTET_TEKST =
-  "Brug det, når fragtfirmaet har sendt pakken retur til sælgeren, fordi køberen ikke hentede den. Handlen annulleres. Køberen får købsbeløbet tilbage minus købergebyr, BidHamr Beskyttelse og fragten begge veje (returfragten = fragten ud). Sælgeren beholder varen, betaler ikke for fragten og får intet udbetalt. Begge får besked. Kan ikke fortrydes.";
+  "Brug det, når fragtfirmaet har sendt pakken retur til sælgeren, fordi køberen ikke hentede den. Handlen annulleres. Køberen får købsbeløbet tilbage minus købergebyr, BidHamr Beskyttelse og fragten begge veje (returfragten = fragten ud) – aldrig under 0 kr. Sælgeren beholder varen, betaler ikke for fragten og får intet udbetalt. Begge får besked. Kan ikke fortrydes.";
 const IKKE_AFHENTET_AARSAG = {
   label: "Begrundelse (intern)",
   placeholder: "Fx: DAO-sporing viser retur til afsender efter 7 dage i pakkeshoppen",

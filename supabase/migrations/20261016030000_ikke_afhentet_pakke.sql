@@ -8,15 +8,17 @@
 --   - Køberen refunderes købsbeløbet MINUS gebyrer og fragt begge veje:
 --       R = total - købergebyr - BidHamr Beskyttelse - fragt - returfragt
 --         = bud - returfragt   (total = bud + købergebyr + fragt + Beskyttelse)
---     aldrig under 0 ("ingen af parterne hæftes for ekstra penge").
+--     aldrig under 0 (Filip, 10. okt. 2026: er returfragten mindst buddet,
+--     får køberen 0 kr. og skylder intet; sælgerens del tilbageføres stadig
+--     helt automatisk, og BidHamr dækker resten af returfragten).
 --   - Afhentning udløser aldrig udbetaling; kun købers bekræftelse eller 48
 --     timer uden sag gør det. En returneret pakke frigives derfor aldrig
 --     automatisk (handel_auto_frigiv nedenfor).
 --   - Køberen kan ikke oprette en sag (handlen annulleres).
 --
--- Returfragten (chefens valg - Filip skal bekræfte): samme beløb som den
--- fragt, køberen betalte ud (betalinger.fragt_oere), medmindre adapteren/
--- kalderen angiver DAO's faktiske beløb (p_returfragt_oere).
+-- Returfragten (Filip, 10. okt. 2026): samme beløb som den fragt, køberen
+-- betalte ud (betalinger.fragt_oere). p_returfragt_oere findes kun til
+-- test/fremtidig brug - kalderne i koden sender den ikke.
 --
 -- Indhold:
 --   0. Forudsætninger og md5-drift-tjek af de 4 funktioner, der genoprettes.
@@ -70,9 +72,9 @@ begin
   for r in
     select * from (values
       ('public.betaling_refusionsplan(uuid,uuid)',
-       '795e94c093b681f5c80636d5fdef942d', '817e01f9df14bed2961d0209351393e0'),
+       '795e94c093b681f5c80636d5fdef942d', '4f0c6ac7face8b4fb52b42f56020af90'),
       ('public.faktura_planlaeg(integer)',
-       'd5a5c3eff0c84de032345f51e2b1a280', 'e8a559bbc46120d06bb13e07d0ae8a77'),
+       'd5a5c3eff0c84de032345f51e2b1a280', 'bfbdedf311ba334efd676cf3ba5a59e7'),
       ('public.handel_auto_frigiv()',
        'd15efc91893d30200360aca5db9aa336', '52bab8ddd30985f672fe60bb380acd97'),
       ('public.dac7_salg(integer,uuid)',
@@ -152,6 +154,24 @@ create trigger handel_ikke_afhentet_ingen_truncate
   before truncate on public.handel_ikke_afhentet
   for each statement execute function public.handel_ikke_afhentet_uaendret();
 
+-- refusion_oere = 0 er tilladt KUN ved ikke-afhentet pakke (R = 0: køberen
+-- får intet, men sælgerens del tilbageføres). Ellers som før (> 0).
+do $do$
+begin
+  if exists (select 1 from pg_constraint
+              where conname = 'betalinger_refusion_oere_check' and conrelid = 'public.betalinger'::regclass
+                and pg_get_constraintdef(oid) not like '%ikke_afhentet%') then
+    alter table public.betalinger drop constraint betalinger_refusion_oere_check;
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conname = 'betalinger_refusion_oere_check' and conrelid = 'public.betalinger'::regclass) then
+    alter table public.betalinger add constraint betalinger_refusion_oere_check
+      check (refusion_oere is null
+             or (refusion_oere <= total_oere
+                 and (refusion_oere > 0 or (refusion_oere = 0 and refusion_aarsag = 'ikke_afhentet'))));
+  end if;
+end $do$;
+
 -- ===========================================================================
 -- 2. Registrering (adapter-neutral)
 -- ===========================================================================
@@ -166,9 +186,10 @@ create trigger handel_ikke_afhentet_ingen_truncate
 -- Kode:
 --   ok        hændelsen er registreret, handlen annulleret og refusionen
 --             claimet (refusion_oere > 0) - serveren refunderer nu
---   ok_intet  som ok, men R = 0 (returfragten er mindst varens pris): ingen
---             refusion; betalingen markeres til staff, der skal hente
---             sælgerens del tilbage fra sælgerens Stripe-konto
+--   ok_intet  som ok, men R = 0 (returfragten er mindst buddet): køberen får
+--             0 kr. og skylder intet (Filip, 10. okt. 2026). Sælgerens del
+--             tilbageføres stadig helt automatisk (X = U) - uden refusion
+--             til køberen (refusion_oere = 0, samme refusionsvej og lås)
 --   allerede  registreret før (samme svar som ok/ok_intet - idempotent)
 --   ingen_adgang, inhabil, begrundelse_mangler, ugyldig, ikke_fundet,
 --   ingen_betaling, afhentning, forkert_status, gammel_model, ikke_betalt,
@@ -303,28 +324,17 @@ begin
      set status = 'annulleret', sag_aaben = false
    where id = p_trade;
 
-  if v_r > 0 then
-    -- Refusionen er lovet: betalings-cron'en prøver altid igen
-    -- (refunderLoveteVentende), til Stripe har gennemført den.
-    update public.betalinger
-       set refusion_oere = v_r,
-           refusion_aarsag = 'ikke_afhentet',
-           refusion_anmodet_kl = now(),
-           opdateret = now()
-     where id = b.id;
-  else
-    -- Intet at refundere (returfragten er mindst varens pris). Sælgerens del
-    -- står stadig på hans Stripe-konto og må aldrig udbetales (handlen er
-    -- annulleret - betaling_udbetaling_blokeret). Staff henter den tilbage.
-    update public.betalinger
-       set sidste_fejl = public.betaling_fejl_tilfoej(
-             sidste_fejl,
-             'Pakken blev ikke afhentet, og returfragten er mindst varens pris: køberen får intet tilbage. Hent sælgerens del tilbage fra sælgerens Stripe-konto til BidHamr (tilbageførsel af overførslen) og bogfør det manuelt.',
-             kraever_opmaerksomhed),
-           kraever_opmaerksomhed = true,
-           opdateret = now()
-     where id = b.id;
-  end if;
+  -- Refusionen er lovet: betalings-cron'en prøver altid igen
+  -- (refunderLoveteVentende), til Stripe har gennemført den. R = 0 (Filip,
+  -- 10. okt. 2026): samme vej, men kun tilbageførslen af sælgerens del
+  -- (X = U) og ingen refusion til køberen (src/lib/betaling/refusion.ts,
+  -- betaling_ikke_afhentet_uden_refusion).
+  update public.betalinger
+     set refusion_oere = v_r,
+         refusion_aarsag = 'ikke_afhentet',
+         refusion_anmodet_kl = now(),
+         opdateret = now()
+   where id = b.id;
 
   return jsonb_build_object(
     'kode', case when v_r > 0 then 'ok' else 'ok_intet' end,
@@ -457,7 +467,8 @@ begin
     v_s := b.udbetaling_oere;
   end if;
   v_g := v_r - v_s;
-  if v_r <= 0 or v_r > b.total_oere or v_s < 0 or v_g < 0 or v_g > b.application_fee_oere then
+  if v_r < 0 or (v_r = 0 and b.refusion_aarsag is distinct from 'ikke_afhentet')
+     or v_r > b.total_oere or v_s < 0 or v_g < 0 or v_g > b.application_fee_oere then
     return jsonb_build_object('kode', 'ugyldig');
   end if;
 
@@ -485,6 +496,54 @@ $fn$;
 
 revoke all on function public.betaling_refusionsplan(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.betaling_refusionsplan(uuid, uuid) to service_role;
+
+-- Ikke-afhentet pakke med R = 0 (Filip, 10. okt. 2026): køberen får intet
+-- tilbage, men sælgerens del er tilbageført (X = U, refusionsplanens trin a og
+-- b - gebyr-refusion 0). Der er ingen Stripe-refusion, så betalingen
+-- afsluttes her som 'refunderet' (= pengene er afgjort: køberen 0, sælgeren
+-- 0, BidHamr resten). Under refusionslåsen, og kun når begge trin er
+-- registreret, og planen er S = 0, G = 0. Idempotent.
+-- Kode: ok | allerede | ikke_laast | ugyldig | ikke_fundet
+create or replace function public.betaling_ikke_afhentet_uden_refusion(p_betaling uuid, p_noegle uuid)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  b record;
+begin
+  select * into b from public.betalinger where id = p_betaling for update;
+  if not found then return 'ikke_fundet'; end if;
+  if b.status = 'refunderet' then return 'allerede'; end if;
+  if p_noegle is null or b.refusion_laas_noegle is distinct from p_noegle
+     or b.refusion_laas_til is null or b.refusion_laas_til <= now() then
+    return 'ikke_laast';
+  end if;
+  if b.pengemodel <> 'destination' or b.status <> 'betalt'
+     or b.refusion_aarsag is distinct from 'ikke_afhentet'
+     or b.refusion_oere is distinct from 0
+     or b.refusion_anmodet_kl is null
+     or b.refusion_fra_saelger_oere is distinct from 0
+     or b.refusion_gebyr_oere is distinct from 0
+     or b.gebyr_refunderet_kl is null
+     or b.refusion_tilbagefoert_kl is null
+     or b.stripe_refund_id is not null
+     or b.stripe_transfer_id is not null or b.saelger_udbetaling_id is not null
+     or b.overfoersel_paabegyndt_kl is not null
+     or not exists (select 1 from public.handel_ikke_afhentet i
+                     where i.betaling_id = b.id and i.refusion_oere = 0) then
+    return 'ugyldig';
+  end if;
+  update public.betalinger
+     set status = 'refunderet', refunderet_kl = now(), opdateret = now()
+   where id = b.id;
+  return 'ok';
+end;
+$fn$;
+
+revoke all on function public.betaling_ikke_afhentet_uden_refusion(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.betaling_ikke_afhentet_uden_refusion(uuid, uuid) to service_role;
 
 -- ===========================================================================
 -- 4. Automatisk frigivelse: aldrig en returneret pakke
@@ -637,7 +696,9 @@ create trigger fakturaer_slags_laast before update on public.fakturaer
 --   - hændelsen findes og har betalingens refusionsbeløb
 --   - S = min(U, R), G = R - S, begge Stripe-trin gennemført
 --   - det, BidHamr står tilbage med (gebyret - G + U - S), er præcis
---     købergebyr + fragt + Beskyttelse + returfragt
+--     total - R = købergebyr + fragt + Beskyttelse + den beholdte returfragt
+--     (= returfragten, eller buddet, når returfragten er større - så dækker
+--     BidHamr resten)
 create or replace function public.faktura_ikke_afhentet_ok(p_betaling uuid)
 returns boolean
 language sql stable security definer set search_path = '' as $fn$
@@ -648,7 +709,10 @@ language sql stable security definer set search_path = '' as $fn$
        and x.gebyr_refunderet_kl is not null
        and x.refusion_tilbagefoert_kl is not null
        and x.application_fee_oere - x.refusion_gebyr_oere + (x.udbetaling_oere - x.refusion_fra_saelger_oere)
-           = x.koebergebyr_oere + x.fragt_oere + x.beskyttelse_oere + ia.returfragt_oere
+           = x.total_oere - x.refusion_oere
+       and x.total_oere - x.refusion_oere
+           = x.koebergebyr_oere + x.fragt_oere + x.beskyttelse_oere
+             + least(ia.returfragt_oere, x.total_oere - x.koebergebyr_oere - x.fragt_oere - x.beskyttelse_oere)
       from public.betalinger x
       join public.handel_ikke_afhentet ia on ia.betaling_id = x.id
      where x.id = p_betaling
@@ -859,14 +923,17 @@ begin
 
   -- 2b) Ikke afhentet: returfragten, der blev trukket fra købers refusion, er
   --     BidHamrs ydelse og faktureres køberen (fragtkonto). Dateres på
-  --     refusionsdagen. Kun når refusionen er gennemført (R > 0).
+  --     refusionsdagen. Kun når refusionen er gennemført (ved R = 0: når
+  --     sælgerens del er tilbageført). Beløbet er den beholdte returfragt -
+  --     højst buddet; er returfragten større, dækker BidHamr resten.
   for rf in
     select x.id, x.buyer_id, x.trade_id, x.refunderet_kl, x.stripe_charge_id, x.stripe_payment_intent_id,
-           ia.returfragt_oere, public.faktura_ikke_afhentet_ok(x.id) as ia_ok
+           -- Den returfragt, der faktisk er beholdt (højst buddet - resten dækker BidHamr).
+           ia.total_oere - ia.koebergebyr_oere - ia.beskyttelse_oere - ia.fragt_oere - ia.refusion_oere as returfragt_oere,
+           public.faktura_ikke_afhentet_ok(x.id) as ia_ok
       from public.handel_ikke_afhentet ia
       join public.betalinger x on x.id = ia.betaling_id
-     where ia.returfragt_oere > 0
-       and ia.refusion_oere > 0
+     where ia.total_oere - ia.koebergebyr_oere - ia.beskyttelse_oere - ia.fragt_oere - ia.refusion_oere > 0
        and x.pengemodel = 'destination'
        and x.status = 'refunderet'
        and x.refunderet_kl is not null
@@ -967,7 +1034,7 @@ grant execute on function public.faktura_planlaeg(integer) to service_role;
 -- ===========================================================================
 -- Som 20261014010000, men handler med en ikke-afhentet pakke tæller aldrig
 -- (sælgeren fik intet). Også mens refusionen er undervejs (status stadig
--- 'betalt'), og når køberen intet fik (staff henter sælgerens del tilbage).
+-- 'betalt'), og når køberen intet fik (R = 0).
 create or replace function public.dac7_salg(p_aar integer, p_bruger uuid default null)
 returns table (bruger_id uuid, betaling_id uuid, dato timestamptz, kvartal integer,
                vederlag_oere bigint, gebyr_oere bigint)

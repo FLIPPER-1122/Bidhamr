@@ -69,7 +69,7 @@ export async function handelIkkeAfhentet(formData: FormData): Promise<{ ok: true
     // i loggen - pengetal er kun for chef).
     const udfald =
       svar.kode === "ok_intet"
-        ? "Ingen tilbagebetaling (returfragten er mindst varens pris) - sælgerens del skal hentes tilbage manuelt"
+        ? `Køberen får 0 kr. (returfragten er mindst buddet) - sælgerens del tilbageføres (${svar.refusion ?? "sat i gang"})`
         : `Tilbagebetaling minus gebyrer og fragt begge veje (${svar.refusion ?? "sat i gang"})`;
     const { error: logFejl } = await admin.from("moderation_log").insert({
       medarbejder_id: staffId,
@@ -84,16 +84,11 @@ export async function handelIkkeAfhentet(formData: FormData): Promise<{ ok: true
     revalidatePath("/admin", "layout");
     revalidatePath(`/mine-handler/${tradeId}`);
 
-    if (svar.kode === "ok_intet") {
-      throw new BrugerFejl(
-        "Handlen er annulleret, men køberen får intet tilbage, fordi returfragten er mindst varens pris. Sælgerens del skal hentes tilbage fra sælgerens Stripe-konto - se Betalinger.",
-      );
-    }
     if (svar.refusion === "refusion_konflikt") throw new BrugerFejl(REFUSION_KONFLIKT);
     if (svar.refusion === "refusion_i_gang") throw new BrugerFejl(REFUSION_I_GANG);
     if (svar.refusion === "fejlet") {
       throw new BrugerFejl(
-        "Handlen er annulleret, men tilbagebetalingen fejlede hos Stripe. Den prøves igen automatisk - følg den under Betalinger.",
+        "Handlen er annulleret, men tilbagebetalingen (eller tilbageførslen fra sælgeren) fejlede hos Stripe. Den prøves igen automatisk - følg den under Betalinger.",
       );
     }
     return { ok: true };

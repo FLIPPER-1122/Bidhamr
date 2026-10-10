@@ -644,7 +644,8 @@ export function koeberIkkeAfhentetMail(titel: string, b: IkkeAfhentetBeloeb, tra
     beloeb("Købergebyr", -b.koebergebyrOere),
     ...(b.beskyttelseOere > 0 ? [beloeb("BidHamr Beskyttelse", -b.beskyttelseOere)] : []),
     beloeb("Fragt", -b.fragtOere),
-    beloeb("Returfragt", -b.returfragtOere),
+    // Højst det, der er tilbage af købsbeløbet - resten dækker BidHamr.
+    beloeb("Returfragt", -Math.min(b.returfragtOere, b.totalOere - b.koebergebyrOere - b.beskyttelseOere - b.fragtOere)),
     beloeb("Du får tilbage", b.refusionOere, true),
   ];
   return handelsMail(`Pakken blev ikke hentet: ${titel}`, {
@@ -657,13 +658,13 @@ export function koeberIkkeAfhentetMail(titel: string, b: IkkeAfhentetBeloeb, tra
       `Du hentede ikke <strong>${escapeHtml(titel)}</strong> i tide, så fragtfirmaet har sendt pakken retur til sælgeren. Handlen er derfor annulleret.`,
       b.refusionOere > 0
         ? `Du får købsbeløbet tilbage minus ${escapeHtml(fradragTekst)}. Fragten og gebyrerne er brugt, selvom pakken ikke blev hentet.`
-        : `Købsbeløbet minus ${escapeHtml(fradragTekst)} bliver 0 kr., så du får ikke noget tilbage. Har du spørgsmål, så skriv til support@bidhamr.dk.`,
+        : `Købsbeløbet minus ${escapeHtml(fradragTekst)} bliver 0 kr., så du får ikke noget tilbage – og du skylder heller ikke noget. Har du spørgsmål, så skriv til support@bidhamr.dk.`,
       ...(b.refusionOere > 0
         ? [
             "Pengene sendes tilbage til den betalingsmetode, du betalte med. Der kan gå nogle dage, før de står på din konto. Betalingen håndteres af vores betalingspartner Stripe.",
-            `Du får en faktura på returfragten. ${FAKTURA_AFSNIT}`,
           ]
         : []),
+      `Du får en faktura på returfragten. ${FAKTURA_AFSNIT}`,
     ],
     info,
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },

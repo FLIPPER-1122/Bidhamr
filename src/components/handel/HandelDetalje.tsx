@@ -770,7 +770,8 @@ export default async function HandelDetalje({
                 ) : (
                   <p className="mt-1">
                     Købsbeløbet minus gebyrerne og fragten begge veje bliver 0 kr., så du får ikke noget
-                    tilbage. Har du spørgsmål, så skriv til support@bidhamr.dk.
+                    tilbage – og du skylder heller ikke noget. Har du spørgsmål, så skriv til
+                    support@bidhamr.dk.
                   </p>
                 )}
               </>

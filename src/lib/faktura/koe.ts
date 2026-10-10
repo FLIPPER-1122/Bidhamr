@@ -197,7 +197,7 @@ async function kontekst(admin: Admin, r: FakturaRaekke): Promise<FakturaKontekst
       `Kreditnota for faktura nr. ${m?.dinero_nummer ?? "-"} - ${varen} på BidHamr${handel}. Refunderet via vores betalingspartner Stripe den ${dato}.` +
       (beholdt ? " BidHamr Beskyttelse refunderes ikke." : "");
   } else if (r.slags === "returfragt") {
-    kommentar = `Returfragt for ${varen} på BidHamr${handel}. Pakken blev ikke afhentet og er sendt retur til sælgeren. Returfragten er trukket fra tilbagebetalingen via vores betalingspartner Stripe den ${dato}.`;
+    kommentar = `Returfragt for ${varen} på BidHamr${handel}. Pakken blev ikke afhentet og er sendt retur til sælgeren. Returfragten er modregnet i købsbeløbet via vores betalingspartner Stripe den ${dato}.`;
   } else if (r.part === "saelger") {
     kommentar = `Salg af ${varen} på BidHamr${handel}. Sælgergebyret er trukket i købers betaling via vores betalingspartner Stripe den ${dato}.`;
   } else {
