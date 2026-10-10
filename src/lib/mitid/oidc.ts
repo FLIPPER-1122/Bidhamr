@@ -279,7 +279,10 @@ export async function hentIdentitet(
   const acr = typeof c.acr === "string" ? c.acr : "";
   // acr SKAL være med - mangler det, afvises login.
   if (acr !== MITID_ACR && acr !== "urn:grn:authn:dk:mitid:high") {
-    throw new Error("MitID: for lavt sikringsniveau");
+    // acr-værdien og claim-navnene er ikke personoplysninger - kun værdierne er.
+    throw new Error(
+      `MitID: for lavt sikringsniveau (acr=${acr.slice(0, 80) || "mangler"}; claims=${Object.keys(c).sort().join(",").slice(0, 400)})`,
+    );
   }
   const personId = typeof c.uuid === "string" ? c.uuid.trim() : "";
   if (!/^[0-9a-f-]{16,64}$/i.test(personId)) throw new Error("MitID: mangler Person-ID");
