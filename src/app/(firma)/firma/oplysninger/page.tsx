@@ -70,10 +70,13 @@ export default async function FirmaOplysninger({ searchParams }: { searchParams:
               {dataStatus === "vent" ? D.dineData.vent : D.dineData.fejl}
             </p>
           )}
-          <form action="/konto/data" method="POST">
+          <form action="/konto/data" method="POST" className="flex flex-col gap-3 sm:flex-row">
             <input type="hidden" name="fra" value="firma" />
-            <button type="submit" className={`${E_KNAP_SEKUNDAER} w-full sm:w-auto`}>
-              {D.dineData.knap}
+            <button type="submit" name="format" value="pdf" className={`${E_KNAP_SEKUNDAER} w-full sm:w-auto`}>
+              {D.dineData.knapPdf}
+            </button>
+            <button type="submit" name="format" value="json" className={`${E_KNAP_SEKUNDAER} w-full sm:w-auto`}>
+              {D.dineData.knapJson}
             </button>
           </form>
           <p className={E_HJAELP}>{D.dineData.hjaelp}</p>

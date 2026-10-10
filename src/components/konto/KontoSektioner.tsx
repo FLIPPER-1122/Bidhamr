@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { nuvaerendeEnhedHash } from "@/lib/enheder";
 import { BETINGELSER_STI, PRIVATLIV_STI } from "@/lib/vilkaar";
+import { DINE_DATA } from "@/lib/tekster/dineData";
 import SkiftAdgangskode from "./SkiftAdgangskode";
 import Enheder, { type Enhed } from "./Enheder";
 import { FORMULAR_FEJL, KORT, LINK } from "./felter";
@@ -158,27 +159,28 @@ export function DineDataSektion({ dataStatus }: { dataStatus?: string }) {
       <h2 className={H2}>Dine data</h2>
 
       <div className="mt-3">
-        <h3 className={H3}>Download dine data</h3>
-        <p className="mt-1 text-sm text-tekst-daempet">
-          Få en fil med alt det, BidHamr har gemt om dig: profil, auktioner, bud, handler, beskeder, bedømmelser og
-          indstillinger. Filen er i JSON-format og kan åbnes i en teksteditor.
-        </p>
+        <h3 className={H3}>{DINE_DATA.titel}</h3>
+        <p className="mt-1 text-sm text-tekst-daempet">{DINE_DATA.tekst}</p>
         {dataStatus === "vent" && (
           <p role="alert" className={`mt-3 ${FORMULAR_FEJL}`}>
-            Du har lige hentet dine data. Du kan hente dem igen om højst en time.
+            {DINE_DATA.vent}
           </p>
         )}
         {dataStatus === "fejl" && (
           <p role="alert" className={`mt-3 ${FORMULAR_FEJL}`}>
-            Dine data kunne ikke hentes lige nu. Prøv igen om lidt.
+            {DINE_DATA.fejl}
           </p>
         )}
-        <form action="/konto/data" method="POST" className="mt-3">
-          <button type="submit" className="btn btn-sekundaer w-full sm:w-auto">
-            Download dine data
+        {/* Én formular, to knapper (format=pdf/json). Se src/app/(app)/konto/data/route.ts. */}
+        <form action="/konto/data" method="POST" className="mt-3 flex flex-col gap-2 sm:flex-row sm:gap-3">
+          <button type="submit" name="format" value="pdf" className="btn btn-sekundaer w-full sm:w-auto">
+            {DINE_DATA.knapPdf}
+          </button>
+          <button type="submit" name="format" value="json" className="btn btn-sekundaer w-full sm:w-auto">
+            {DINE_DATA.knapJson}
           </button>
         </form>
-        <p className="mt-1.5 text-[13px] text-tekst-daempet">Du kan hente filen én gang i timen.</p>
+        <p className="mt-1.5 text-[13px] text-tekst-daempet">{DINE_DATA.hjaelp}</p>
       </div>
 
       <div className="mt-5 border-t border-kant pt-5">

@@ -58,6 +58,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/betingelser": ["./jura/brugerbetingelser-udkast.md"],
     "/privatliv": ["./jura/privatlivspolitik-udkast.md"],
+    // "Download dine data" som PDF læser skrifttypen (æøå) ved runtime.
+    "/konto/data": ["./src/lib/pdf/skrifter/*.ttf"],
   },
   images: {
     remotePatterns: supabaseBilleder,
