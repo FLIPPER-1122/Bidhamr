@@ -15,6 +15,7 @@
 //   Beskyttelse trækkes fra (ingen sag ved afhentning); den lægges på igen
 //   ved skift tilbage til forsendelse. Serveren retter beløbet og annullerer
 //   en gammel PaymentIntent (samme regler som ved prisskift).
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -28,8 +29,28 @@ import { BETINGELSER_STI } from "@/lib/vilkaar";
 import { FejlBoks } from "@/components/betaling/FejlBoks";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
 import Ikon, { type IkonNavn } from "@/components/Ikon";
-import PakkeshopVaelger, { type ValgtPakkeshop } from "@/components/checkout/PakkeshopVaelger";
-import CheckoutBetaling, { CHECKOUT_FORM } from "@/components/checkout/CheckoutBetaling";
+import type { ValgtPakkeshop } from "@/components/checkout/PakkeshopVaelger";
+import { CHECKOUT_FORM } from "@/components/checkout/konstanter";
+
+// Indlæses først, når de skal bruges (mindre JavaScript ved sidens start):
+// pakkeshop-vinduet ved klik på "Vælg pakkeshop", Stripes Payment Element når
+// betalingen er klar. Skelettet har samme højde som feltet nedenfor.
+const hentVaelger = () => void import("@/components/checkout/PakkeshopVaelger");
+const PakkeshopVaelger = dynamic(() => import("@/components/checkout/PakkeshopVaelger"), { ssr: false });
+const CheckoutBetaling = dynamic(() => import("@/components/checkout/CheckoutBetaling"), {
+  ssr: false,
+  loading: () => <BetalingSkelet />,
+});
+
+function BetalingSkelet() {
+  return (
+    <div className="space-y-3" aria-hidden="true">
+      <div className="h-12 animate-pulse rounded-xl bg-groen-lys" />
+      <div className="h-12 animate-pulse rounded-xl bg-groen-lys" />
+      <div className="h-12 animate-pulse rounded-xl bg-groen-lys" />
+    </div>
+  );
+}
 
 type Maade = "pakkeshop" | "doer" | "afhentning";
 type Modtager = { navn: string; telefon: string; adresse: string; postnummer: string; by: string };
@@ -559,6 +580,9 @@ export default function CheckoutSide({
                         <button
                           type="button"
                           onClick={() => setVaelgerAaben(true)}
+                          // Hent vinduets kode, så snart knappen er i spil.
+                          onPointerEnter={hentVaelger}
+                          onFocus={hentVaelger}
                           disabled={!kanSkifteShop || travl}
                           aria-haspopup="dialog"
                           aria-describedby={`${id}-shop`}
@@ -729,11 +753,7 @@ export default function CheckoutSide({
                         }}
                       />
                     ) : arbejder && leveringGemt ? (
-                      <div className="space-y-3" aria-hidden="true">
-                        <div className="h-12 animate-pulse rounded-xl bg-groen-lys" />
-                        <div className="h-12 animate-pulse rounded-xl bg-groen-lys" />
-                        <div className="h-12 animate-pulse rounded-xl bg-groen-lys" />
-                      </div>
+                      <BetalingSkelet />
                     ) : (
                       <div className="flex items-start gap-3 rounded-xl border border-dashed border-kant-staerk px-4 py-4 text-sm text-tekst-daempet">
                         <Ikon navn="kort" className="mt-px h-5 w-5 shrink-0 text-groen" />

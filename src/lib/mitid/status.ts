@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cache } from "react";
-import { createClient } from "@/lib/supabase/server";
+import { hentKontoFelter } from "@/lib/supabase/bruger";
 
 // MitID-status for en bruger - hentet højst én gang pr. forespørgsel.
 // users.mitid_verificeret_kl og konto_type kan læses af alle (offentligt
@@ -13,12 +13,8 @@ export type MitIdStatus = {
 };
 
 export const hentMitIdStatus = cache(async (brugerId: string): Promise<MitIdStatus> => {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("users")
-    .select("konto_type, mitid_verificeret_kl")
-    .eq("id", brugerId)
-    .maybeSingle<{ konto_type: string | null; mitid_verificeret_kl: string | null }>();
+  // Samme opslag som hentKontoType (delt med topbaren - ét kald pr. side).
+  const data = await hentKontoFelter(brugerId);
   const verificeretKl = data?.mitid_verificeret_kl ?? null;
   return { verificeretKl, mangler: !!data && data.konto_type !== "erhverv" && !verificeretKl };
 });

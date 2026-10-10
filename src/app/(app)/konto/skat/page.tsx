@@ -112,7 +112,7 @@ export default async function SkatSide() {
             <div className="mt-3">
               <p className="text-sm">{DAC7.mitidMangler}</p>
               <div className="mt-3">
-                <MitIDKnap retur="/konto/skat" />
+                <MitIDKnap retur="/konto/skat" fuldBredde />
               </div>
             </div>
           ) : (
@@ -176,22 +176,22 @@ export default async function SkatSide() {
                   <dd>{kr(i.data.gebyr_oere)}</dd>
                 </dl>
                 <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[420px] text-left text-sm">
+                  <table className="w-full text-left text-sm">
                     <thead className="text-tekst-daempet">
                       <tr>
-                        <th className="py-1 font-medium">Kvartal</th>
-                        <th className="py-1 font-medium">{DAC7.antalSalg}</th>
-                        <th className="py-1 font-medium">{DAC7.vederlag}</th>
-                        <th className="py-1 font-medium">{DAC7.gebyr}</th>
+                        <th scope="col" className="py-1 pr-2 font-medium">Kvartal</th>
+                        <th scope="col" className="py-1 pr-2 font-medium">{DAC7.antalSalg}</th>
+                        <th scope="col" className="py-1 pr-2 font-medium">{DAC7.vederlag}</th>
+                        <th scope="col" className="py-1 pr-2 font-medium">{DAC7.gebyr}</th>
                       </tr>
                     </thead>
                     <tbody className="tabular-nums">
                       {i.data.kvartaler.map((q, n) => (
                         <tr key={n} className="border-t border-kant">
-                          <td className="py-1">{DAC7.kvartal(n + 1)}</td>
-                          <td className="py-1">{q.antal}</td>
-                          <td className="py-1">{kr(q.vederlag_oere)}</td>
-                          <td className="py-1">{kr(q.gebyr_oere)}</td>
+                          <td className="py-1 pr-2">{DAC7.kvartal(n + 1)}</td>
+                          <td className="py-1 pr-2">{q.antal}</td>
+                          <td className="py-1 pr-2">{kr(q.vederlag_oere)}</td>
+                          <td className="py-1 pr-2">{kr(q.gebyr_oere)}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -8,7 +8,7 @@ import { useEffect, type FormEvent } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
 
-export const CHECKOUT_FORM = "checkout-betal";
+import { CHECKOUT_FORM } from "@/components/checkout/konstanter";
 
 type Props = {
   clientSecret: string;

@@ -5,7 +5,6 @@
 // med { upsert: false } - storage-policyerne tillader kun upload i brugerens
 // egen mappe, og der er ingen update-policy.
 import { BilledFejl, klargoerBillede } from "@/lib/billedBehandling";
-import { createClient } from "@/lib/supabase/client";
 import {
   SAG_BILLEDTYPER,
   SAG_BUCKET,
@@ -70,7 +69,14 @@ export async function uploadBilleder<K extends string>(
   onFremskridt: (faerdige: number, ialt: number, opdateret: ValgtBillede<K>[]) => void,
   bucket: string = SAG_BUCKET,
 ): Promise<{ billeder: ValgtBillede<K>[] } | { fejl: string; billeder: ValgtBillede<K>[] }> {
-  const supabase = createClient();
+  // Supabase-klienten hentes først ved upload (ikke med handelssidens første
+  // JavaScript). Kan den ikke hentes, er det som en mislykket upload.
+  let supabase;
+  try {
+    supabase = (await import("@/lib/supabase/client")).createClient();
+  } catch {
+    return { fejl: UPLOAD_FEJL.upload, billeder };
+  }
   const ud = [...billeder];
   const ialt = ud.length;
   let faerdige = ud.filter((b) => b.sti).length;

@@ -256,6 +256,7 @@ export default async function ProfilPage({
             erEgenProfil={true}
             brugerId={id}
             mitidVerificeret={!!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
+            mitidManglerEjer={!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
             antalFoelgere={typeof egneFoelgere === "number" ? egneFoelgere : undefined}
           />
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
-import { bekraeftetBruger, hentBruger, hentKontoType, hentMinRolle, sessionBrugerId } from "@/lib/supabase/bruger";
+import { bekraeftetBruger, hentBruger, hentKontoFelter, hentMinRolle, sessionBrugerId } from "@/lib/supabase/bruger";
 import KontoMenu from "@/components/KontoMenu";
 import Klokke from "@/components/notifikationer/Klokke";
 import Ikon from "@/components/Ikon";
@@ -30,18 +30,22 @@ export default async function Header() {
   // adminAuth (cache() i src/lib/supabase/bruger.ts).
   const sessionId = await sessionBrugerId();
   const supabase = sessionId ? await createClient() : null;
-  const [bruger, rolle, antal, antalBeskeder, kontoType] = await Promise.all([
+  const [bruger, rolle, antal, antalBeskeder, kontoFelter] = await Promise.all([
     sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
     sessionId ? hentMinRolle() : null,
     supabase ? supabase.rpc("notifikationer_antal_ulaeste").then((r) => r.data) : null,
     supabase ? supabase.rpc("antal_ulaeste_staff_beskeder").then((r) => r.data) : null,
     // Delt med siden (cache() i src/lib/supabase/bruger.ts).
-    sessionId ? hentKontoType(sessionId) : null,
+    sessionId ? hentKontoFelter(sessionId) : null,
   ]);
   const loggetInd = !!bruger;
 
   // Firmakonto: profilmenuen viser kun "Firma oversigt" og "Log ud".
-  const erFirma = !!bruger && kontoType === "erhverv";
+  const erFirma = !!bruger && kontoFelter?.konto_type === "erhverv";
+  // Privat bruger uden MitID: lille markering på profilmenuen og et punkt
+  // "Bekræft med MitID" (kræves før første bud/auktion - firmaer er undtaget).
+  // Kun visning; databasen håndhæver kravet (BHV01).
+  const mitidMangler = !!bruger && !!kontoFelter && !erFirma && !kontoFelter.mitid_verificeret_kl;
   // Før lancering kan en firmakonto kun nå Firma oversigt (gaten i
   // src/lib/supabase/middleware.ts). Så vises kun logo, profilmenu og log ud -
   // ingen søgning, kategorier, klokke eller beskeder, der alligevel bare
@@ -161,12 +165,12 @@ export default async function Header() {
 
             {loggetInd && (
               <div className="hidden lg:block">
-                <KontoMenu erAdmin={erAdmin} erFirma={erFirma} />
+                <KontoMenu erAdmin={erAdmin} erFirma={erFirma} mitidMangler={mitidMangler} />
               </div>
             )}
 
             <div className="lg:hidden">
-              <MobilMenu loggetInd={loggetInd} erAdmin={erAdmin} erFirma={erFirma} kunFirma={kunFirma} />
+              <MobilMenu loggetInd={loggetInd} erAdmin={erAdmin} erFirma={erFirma} kunFirma={kunFirma} mitidMangler={mitidMangler} />
             </div>
           </div>
         </div>

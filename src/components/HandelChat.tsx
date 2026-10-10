@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { createClient } from "@/lib/supabase/client";
+// Supabase-klienten (ca. 60 kB komprimeret) hentes efter sidens første
+// JavaScript, så handelssiden bliver hurtigere klar (Lighthouse/TBT).
+const hentKlient = () => import("@/lib/supabase/client").then((m) => m.createClient());
 import { fjernFaellesPraefiks } from "@/lib/staffChat";
 import { BidhamrMaerke } from "@/components/staffchat/visning";
 import RapporterDialog from "@/components/tryghed/RapporterDialog";
@@ -45,38 +47,46 @@ export default function HandelChat({
   const bundRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`handel-${tradeId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `trade_id=eq.${tradeId}`,
-        },
-        (payload) => {
-          const r = payload.new as Besked;
-          if (kunFraBidhamr && r.fra_bidhamr !== true) return;
-          const ny: Besked = {
-            id: r.id,
-            sender_id: r.sender_id,
-            content: r.content,
-            created_at: r.created_at,
-            fra_bidhamr: r.fra_bidhamr === true,
-            blokeret_grund: r.blokeret_grund ?? null,
-          };
-          // Dedup: egne beskeder kan nå frem både via insert-svaret og realtime.
-          setBeskeder((tidligere) =>
-            tidligere.some((b) => b.id === ny.id) ? tidligere : [...tidligere, ny],
-          );
-        },
-      )
-      .subscribe();
+    let afbrudt = false;
+    let ryd: (() => void) | null = null;
+    void hentKlient().then((supabase) => {
+      if (afbrudt) return;
+      const channel = supabase
+        .channel(`handel-${tradeId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter: `trade_id=eq.${tradeId}`,
+          },
+          (payload) => {
+            const r = payload.new as Besked;
+            if (kunFraBidhamr && r.fra_bidhamr !== true) return;
+            const ny: Besked = {
+              id: r.id,
+              sender_id: r.sender_id,
+              content: r.content,
+              created_at: r.created_at,
+              fra_bidhamr: r.fra_bidhamr === true,
+              blokeret_grund: r.blokeret_grund ?? null,
+            };
+            // Dedup: egne beskeder kan nå frem både via insert-svaret og realtime.
+            setBeskeder((tidligere) =>
+              tidligere.some((b) => b.id === ny.id) ? tidligere : [...tidligere, ny],
+            );
+          },
+        )
+        .subscribe();
+      ryd = () => {
+        supabase.removeChannel(channel);
+      };
+    }).catch((err) => console.error("Chat: kunne ikke starte live-opdatering:", err));
 
     return () => {
-      supabase.removeChannel(channel);
+      afbrudt = true;
+      ryd?.();
     };
   }, [tradeId, kunFraBidhamr]);
 
@@ -95,7 +105,14 @@ export default function HandelChat({
 
     // Indsættes direkte fra klienten - RLS er autoriteten på hvem der må
     // skrive i hvilken handel.
-    const supabase = createClient();
+    let supabase;
+    try {
+      supabase = await hentKlient();
+    } catch {
+      setSender(false);
+      setFejl("Beskeden kunne ikke sendes. Tjek din forbindelse, og prøv igen.");
+      return;
+    }
     const { data, error } = await supabase
       .from("messages")
       .insert({ trade_id: tradeId, sender_id: brugerId, content: renTekst })

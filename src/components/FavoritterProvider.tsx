@@ -22,12 +22,20 @@ type FavoritContext = {
   erFavorit: (auktionId: string) => boolean;
   toggle: (auktionId: string) => void;
   klar: boolean;
+  // Kaldes af de komponenter, der viser hjerter. Først da hentes
+  // favoritterne (og Supabase-klienten) - sider uden hjerter (fx checkout og
+  // handelssiden) slipper for ca. 60 kB JavaScript under indlæsningen.
+  aktiver: () => void;
 };
 
 const Ctx = createContext<FavoritContext | null>(null);
 
 export function useFavoritter() {
   const ctx = useContext(Ctx);
+  const aktiver = ctx?.aktiver;
+  useEffect(() => {
+    aktiver?.();
+  }, [aktiver]);
   if (!ctx) {
     // Et kort uden provider skal ikke vælte siden - det viser bare et tomt
     // hjerte, der sender til login.
@@ -46,8 +54,11 @@ export default function FavoritterProvider({
   const [ider, setIder] = useState<Set<string>>(new Set());
   const [bruger, setBruger] = useState<string | null>(null);
   const [klar, setKlar] = useState(false);
+  const [aktiv, setAktiv] = useState(false);
+  const aktiver = useCallback(() => setAktiv(true), []);
 
   useEffect(() => {
+    if (!aktiv) return;
     let afbrudt = false;
 
     async function hent() {
@@ -83,7 +94,7 @@ export default function FavoritterProvider({
     return () => {
       afbrudt = true;
     };
-  }, []);
+  }, [aktiv]);
 
   const erFavorit = useCallback(
     (auktionId: string) => ider.has(auktionId),
@@ -144,6 +155,6 @@ export default function FavoritterProvider({
   );
 
   return (
-    <Ctx.Provider value={{ erFavorit, toggle, klar }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ erFavorit, toggle, klar, aktiver }}>{children}</Ctx.Provider>
   );
 }

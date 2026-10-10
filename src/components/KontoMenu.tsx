@@ -3,8 +3,11 @@
 // Profil-menuen i topbaren på store skærme (kun for indloggede).
 // På mobil ligger de samme links i MobilMenu.
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import Ikon from "@/components/Ikon";
+import { mitIdStartHref } from "@/components/mitid/MitIDKraeves";
+import { MITID } from "@/lib/tekster/mitid";
 import { badgeTekst } from "@/lib/notifikationer/visning";
 import { beskederTekst, useAntalUlaesteBeskeder } from "@/components/topbar/UlaesteBeskeder";
 import { useLogUd } from "@/components/topbar/useLogUd";
@@ -15,8 +18,19 @@ const punkt =
 
 // erFirma: en firmakonto (users.konto_type = 'erhverv') ser kun "Firma
 // oversigt" og "Log ud" - alt andet nås fra Firma oversigt.
-export default function KontoMenu({ erAdmin, erFirma = false }: { erAdmin: boolean; erFirma?: boolean }) {
+// mitidMangler: privat bruger uden MitID - lille markering på knappen og
+// "Bekræft med MitID" øverst i menuen (tilbage til samme side bagefter).
+export default function KontoMenu({
+  erAdmin,
+  erFirma = false,
+  mitidMangler = false,
+}: {
+  erAdmin: boolean;
+  erFirma?: boolean;
+  mitidMangler?: boolean;
+}) {
   const antalBeskeder = useAntalUlaesteBeskeder();
+  const sti = usePathname();
   const [aaben, setAaben] = useState(false);
   const rodRef = useRef<HTMLDivElement>(null);
   const knapRef = useRef<HTMLButtonElement>(null);
@@ -55,13 +69,25 @@ export default function KontoMenu({ erAdmin, erFirma = false }: { erAdmin: boole
         type="button"
         aria-expanded={aaben}
         aria-controls={menuId}
-        aria-label={antalBeskeder > 0 ? `Min konto, ${beskederTekst(antalBeskeder)}` : "Min konto"}
+        aria-label={[
+          "Min konto",
+          antalBeskeder > 0 ? beskederTekst(antalBeskeder) : null,
+          mitidMangler ? MITID.menuMangler : null,
+        ]
+          .filter(Boolean)
+          .join(", ")}
         onClick={() => setAaben((v) => !v)}
         className="relative flex h-11 items-center gap-1.5 rounded-full border-[1.5px] border-kant-staerk pr-2.5 pl-1.5 text-sm font-medium text-tekst hover:border-groen hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
       >
         <span className="grid h-8 w-8 place-items-center rounded-full bg-groen-lys text-groen-mork">
           <Ikon navn="bruger" className="h-[18px] w-[18px]" />
         </span>
+        {mitidMangler && (
+          <span
+            aria-hidden="true"
+            className="absolute top-0.5 left-7 h-3 w-3 rounded-full bg-orange ring-2 ring-white"
+          />
+        )}
         <Ikon navn="ned" className={`h-4 w-4 transition-transform ${aaben ? "rotate-180" : ""}`} />
       </button>
 
@@ -80,6 +106,19 @@ export default function KontoMenu({ erAdmin, erFirma = false }: { erAdmin: boole
                 </li>
               ) : (
               <>
+              {mitidMangler && (
+                <li className="mb-1 border-b border-kant pb-1">
+                  {/* Almindeligt link: route handleren sender videre til MitID. */}
+                  <a
+                    href={mitIdStartHref(sti || "/")}
+                    onClick={luk}
+                    className="flex min-h-11 w-full items-center gap-2.5 rounded-lg bg-advarsel-bg px-3 text-left text-[15px] font-semibold text-advarsel-tekst hover:underline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen"
+                  >
+                    <Ikon navn="personTjek" className="h-[18px] w-[18px] shrink-0" strøg={2} />
+                    {MITID.menuPunkt}
+                  </a>
+                </li>
+              )}
               <li><Link href="/profil/mig" onClick={luk} className={punkt}>Min profil</Link></li>
               <li><Link href="/mine-handler" onClick={luk} className={punkt}>Mine handler</Link></li>
               <li>

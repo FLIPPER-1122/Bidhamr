@@ -17,7 +17,7 @@ import {
 import Ikon, { type IkonNavn } from "@/components/Ikon";
 import VilkaarBjaelke from "@/components/konto/VilkaarBjaelke";
 import MitIDMaerke from "@/components/mitid/MitIDMaerke";
-import { MitIDKnap } from "@/components/mitid/MitIDKraeves";
+import { MitIDIkon, MitIDKnap } from "@/components/mitid/MitIDKraeves";
 import { MITID } from "@/lib/tekster/mitid";
 import { vilkaarErAccepteret } from "@/lib/vilkaar";
 
@@ -141,6 +141,38 @@ export default async function KontoSide({
       <KontoNavigation />
       {visVilkaarBjaelke && <VilkaarBjaelke />}
 
+      {/* Ikke MitID-verificeret: fremtrædende kort øverst (kræves før første
+          bud og første auktion). Firmakonti når aldrig hertil (proxyen sender
+          dem til /firma). */}
+      {!mitidData && (
+        <section
+          id="mitid"
+          aria-labelledby="mitid-kort-titel"
+          className="mt-6 scroll-mt-24 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst sm:p-6"
+        >
+          <div className="flex items-start gap-3">
+            <MitIDIkon />
+            <div className="min-w-0">
+              <h2 id="mitid-kort-titel" className="text-[20px] leading-tight text-advarsel-tekst lg:text-[22px]">
+                {MITID.kontoKortTitel}
+              </h2>
+              <p className="mt-1 text-[15px]">{MITID.kontoKortTekst}</p>
+            </div>
+          </div>
+          <ul className="mt-4 space-y-1.5 text-sm">
+            {MITID.hvorfor.map((h) => (
+              <li key={h} className="flex items-start gap-2">
+                <Ikon navn="flueben" className="mt-0.5 h-4 w-4 shrink-0" strøg={2.25} />
+                <span>{h}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4">
+            <MitIDKnap retur="/konto#mitid" fuldBredde />
+          </div>
+        </section>
+      )}
+
       {dac7Anmodning && (
         <section
           id="skat"
@@ -237,9 +269,10 @@ export default async function KontoSide({
       <ProfilSektion bruger={authData.user} />
       <SikkerhedSektion bruger={authData.user} />
 
-      <section id="mitid" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
-        <h2 className="text-[20px] leading-tight lg:text-[22px]">{MITID.kontoTitel}</h2>
-        {mitidData ? (
+      {/* Ikke verificeret: kortet står øverst på siden (se ovenfor). */}
+      {mitidData && (
+        <section id="mitid" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <h2 className="text-[20px] leading-tight lg:text-[22px]">{MITID.kontoTitel}</h2>
           <div className="mt-2 space-y-2 text-sm text-tekst-daempet">
             <MitIDMaerke />
             <p>{MITID.kontoVerificeret(datoTekst(mitidData.verificeret_kl))}</p>
@@ -249,14 +282,8 @@ export default async function KontoSide({
               </p>
             )}
           </div>
-        ) : (
-          <div className="mt-2 space-y-3 text-sm text-tekst-daempet">
-            <p>{MITID.kontoIkkeVerificeret}</p>
-            <p>{MITID.kraevesPrivat}</p>
-            <MitIDKnap retur="/konto#mitid" />
-          </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {"fejl" in indstillinger ? (
         <p

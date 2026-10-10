@@ -4,6 +4,7 @@
 // oversigt -> Salg og på handelssiden. Firmaet sender selv fakturaen.
 import { useState } from "react";
 import { E_KNAP_SEKUNDAER } from "@/components/erhverv/stil";
+import Ikon from "@/components/Ikon";
 import {
   FAKTURA_TEKST as T,
   adresseLinjer,
@@ -93,12 +94,14 @@ export function FakturaOplysningerListe({ salg, firma }: { salg: FakturaSalg; fi
 // Foldbar udgave til listen over salg.
 export function FakturaOplysningerFold({ salg, firma }: { salg: FakturaSalg; firma: FakturaFirma }) {
   return (
-    <details className="group mt-4 rounded-[12px] border-2 border-kant-staerk bg-white">
-      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2 text-[17px] font-semibold text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
+    <details className="group mt-4 rounded-xl border-2 border-kant-staerk bg-white">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-2 text-[17px] font-semibold text-groen hover:bg-groen-lys focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen [&::-webkit-details-marker]:hidden">
         {T.titel}
-        <span aria-hidden className="transition-transform group-open:rotate-180">
-          ▾
-        </span>
+        <Ikon
+          navn="ned"
+          className="h-5 w-5 shrink-0 transition-transform duration-150 ease-out group-open:rotate-180 motion-reduce:transition-none"
+          strøg={2}
+        />
       </summary>
       <div className="border-t border-kant px-4 py-4">
         <FakturaOplysningerListe salg={salg} firma={firma} />
