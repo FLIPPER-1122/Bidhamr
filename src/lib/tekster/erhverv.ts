@@ -118,6 +118,18 @@ export const ERHVERV_SIDE = {
       spoergsmaal: "Hvem sender fakturaen på varen?",
       svar: "Det gør dit firma selv, fra dit eget regnskabsprogram. Dit firma står også for momsen af varen (eller brugtmoms). Under Salg i Firma oversigt finder du alt, du skal bruge til fakturaen: købers navn, adresse og e-mail, varen, prisen og datoen. BidHamr sender kun faktura på vores egne gebyrer og på dit abonnement.",
     },
+    {
+      spoergsmaal: "Hvilke regler gælder for mine købere?",
+      svar: "Dine købere er forbrugere. De har 14 dages fortrydelsesret og 2 års reklamationsret efter loven. Fortryder en køber, får køberen en returlabel gennem BidHamr, og du skal tage imod varen. Vi gennemgår reglerne med dig, når vi laver aftalen.",
+    },
+    {
+      spoergsmaal: "Kan købere skrive til mig på BidHamr?",
+      svar: "Nej. Der er ingen chat med firmaer. Købere ser dit firmas e-mail og telefon og kontakter dig dér.",
+    },
+    {
+      spoergsmaal: "Hvornår får jeg pengene for et salg?",
+      svar: "Når handlen er færdig, og køberens frist for at fortryde er gået. Så sendes pengene til din bankkonto. Betalingen håndteres af vores betalingspartner Stripe.",
+    },
   ],
 } as const;
 
@@ -565,7 +577,8 @@ export const FIRMA_OVERSIGT_EKSTRA = {
     handler: "Dine handler",
     handlerTekst: "Solgte varer, pakker der skal sendes, og betalinger.",
     beskeder: "Beskeder",
-    beskederTekst: "Beskeder fra købere og fra BidHamr.",
+    // Købere kan ikke skrive til firmaer (BHE05) - kun BidHamr.
+    beskederTekst: "Beskeder fra BidHamr.",
     auktioner: "Dine auktioner",
     auktionerTekst: "Alle de auktioner, du har oprettet.",
   },

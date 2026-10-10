@@ -6,24 +6,25 @@
 > - Udkastet er skrevet ud fra Filips skabelon (`jura/brugerbetingelser-skabelon.md`) og forretningsreglerne i `ROADMAP-BESLUTNINGER.md` (stand 6. oktober 2026). Hvor de to strider, følger udkastet beslutningerne.
 > - Opdateret 6. oktober 2026 med dagens ændringer: accept af betingelserne gemmes (1.3), og skjulte auktioner sættes på pause, fjernede auktioner åbnes aldrig igen, og en auktion på pause annulleres efter 14 dage (20.7 og 21.5, Filips beslutninger 6. oktober 2026).
 > - Opdateret 7. oktober 2026: auktionen er helt låst efter første bud – intet kan ændres, tilføjes, slettes eller annulleres af sælgeren (4.7, Filips beslutning 7. oktober 2026).
+> - Opdateret 10. oktober 2026: køb fra erhvervssælgere (nyt afsnit 29 – fortrydelsesret, reklamation, ingen BidHamr Beskyttelse, hvem man klager til), firmakonti i 1.1, 1.4, 2.3, 2.4, 5.5 og 17, og BidHamrs firmaoplysninger i 1.2 og 30. Kontakt er flyttet fra 29 til 30. Vilkårene for firmaerne selv står i `jura/erhvervsvilkaar-udkast.md`.
 > - `[TODO Filip: …]` = oplysninger eller beslutninger, Filip skal udfylde.
 > - `[ADVOKAT: …]` = juridiske spørgsmål, advokaten skal tage stilling til. Alle spørgsmål er samlet i `jura/noter-til-advokat.md`.
 > - Udkastet er ikke et juridisk løfte. Intet her må vises som endelige betingelser, før advokaten har godkendt det.
 > - Siden skal ligge på `/betingelser` (linket findes allerede i footeren). Brugeren skal acceptere betingelserne ved oprettelse af konto (ROADMAP fase 3).
 
-**Version:** udkast 2 · **Senest opdateret:** [TODO Filip: dato ved offentliggørelse]
+**Version:** udkast 3 · **Senest opdateret:** [TODO Filip: dato ved offentliggørelse]
 
 ---
 
 ## 1. Om BidHamr og disse betingelser
 
-1.1 BidHamr (bidhamr.dk og BidHamr-appen) er en online markedsplads, hvor privatpersoner sælger brugte ting til hinanden på auktioner med en fast sluttid.
+1.1 BidHamr (bidhamr.dk og BidHamr-appen) er en online markedsplads, hvor privatpersoner sælger brugte ting til hinanden på auktioner med en fast sluttid. Firmaer, som BidHamr har godkendt, kan også sælge med en firmakonto. Deres auktioner er mærket "Erhvervssælger" (se afsnit 29).
 
 1.2 BidHamr drives af:
 
-- [TODO Filip: firmanavn]
-- CVR-nr.: [TODO Filip: CVR-nummer]
-- Adresse: [TODO Filip: adresse]
+- BidHamr
+- CVR-nr.: 46836219
+- Adresse: Ellegårdsvej 40, 4684 Holmegaard
 - E-mail: support@bidhamr.dk
 - Henvendelser om ulovligt indhold (DSA): dsa@bidhamr.dk [TODO Filip: opret postkassen]
 
@@ -37,7 +38,7 @@
 - BidHamr Beskyttelse (`/bidhamr-beskyttelse`)
 - Ulovligt indhold og DSA (`/dsa`)
 
-1.4 "Vi" og "BidHamr" betyder virksomheden ovenfor. "Du" betyder dig som bruger. "Køber" er den, der vinder en auktion. "Sælger" er den, der har oprettet auktionen.
+1.4 "Vi" og "BidHamr" betyder virksomheden ovenfor. "Du" betyder dig som bruger. "Køber" er den, der vinder en auktion. "Sælger" er den, der har oprettet auktionen. En "erhvervssælger" er et firma med en firmakonto på BidHamr.
 
 ---
 
@@ -54,9 +55,9 @@
 
 For BidHamrs egne ydelser betaler du gebyrer (se afsnit 5).
 
-2.3 **Du må kun sælge som privatperson.** Sælger du varer som en del af en virksomhed eller som erhverv, må du ikke bruge BidHamr. [ADVOKAT: Er det tilstrækkeligt kun at tillade private sælgere? Skal vi have en erklæring ved oprettelse af auktion, og hvad gør vi med brugere, der reelt handler erhvervsmæssigt (fx mange salg af nye varer)? Se også DSA art. 30–31 og kravet om at oplyse, om sælger er erhvervsdrivende.]
+2.3 **En almindelig konto er til private.** Med en almindelig konto må du kun sælge som privatperson. Sælger du varer fra en virksomhed eller som erhverv, skal virksomheden have en firmakonto, som BidHamr opretter efter aftale (se `/erhverv`). Det gælder, uanset hvor meget eller hvor lidt du sælger. En firmakonto kan kun sælge – ikke byde eller købe. [ADVOKAT: Er det tilstrækkeligt kun at tillade private sælgere? Skal vi have en erklæring ved oprettelse af auktion, og hvad gør vi med brugere, der reelt handler erhvervsmæssigt (fx mange salg af nye varer)? Se også DSA art. 30–31 og kravet om at oplyse, om sælger er erhvervsdrivende.]
 
-2.4 Fordi både køber og sælger er privatpersoner, gælder reglerne om forbrugerkøb ikke for selve varen. Der er derfor ingen fortrydelsesret, når du køber en vare på BidHamr, og du kan ikke fortryde et køb, når du har vundet auktionen. Mellem køber og sælger gælder købeloven. [ADVOKAT: Skabelonen skrev, at der ikke er "2 års reklamationsret". Hvad må vi skrive om købers rettigheder over for en privat sælger efter købeloven (mangler, frister, "købt som beset")? Vi har bevidst ikke nævnt konkrete frister.]
+2.4 Køber du af en privatperson, gælder reglerne om forbrugerkøb ikke for selve varen. Der er derfor ingen fortrydelsesret, og du kan ikke fortryde et køb, når du har vundet auktionen. Mellem køber og sælger gælder købeloven. Køber du af en erhvervssælger, har du fortrydelsesret og reklamationsret efter loven (se afsnit 29). [ADVOKAT: Skabelonen skrev, at der ikke er "2 års reklamationsret". Hvad må vi skrive om købers rettigheder over for en privat sælger efter købeloven (mangler, frister, "købt som beset")? Vi har bevidst ikke nævnt konkrete frister.]
 
 2.5 BidHamrs regler for sager (afsnit 12–13) bestemmer, hvad der sker med betalingen på BidHamr. De ændrer ikke de rettigheder, køber og sælger har over for hinanden efter loven. [ADVOKAT: Bekræft, at det er den rigtige måde at beskrive forholdet mellem BidHamrs sagsafgørelser og parternes rettigheder efter købeloven.]
 
@@ -148,7 +149,7 @@ Der er intet mindste- eller højeste gebyr.
 
 5.4 **Samlet pris.** Før du byder, kan du se, hvad du skal betale i alt, hvis du vinder: dit bud + købergebyr + fragt + evt. BidHamr Beskyttelse.
 
-5.5 **Moms.** Alle beløb, du ser på BidHamr, er inkl. moms. Selve varen sælges mellem private, så der er ingen moms på den. BidHamr betaler moms af sine egne gebyrer og af BidHamr Beskyttelse. Du betaler aldrig moms oveni.
+5.5 **Moms.** Alle beløb, du ser på BidHamr, er inkl. moms. Sælges varen af en privatperson, er der ingen moms på den. Sælges varen af en erhvervssælger, er prisen inkl. moms, og det står ved prisen. Momsen af varen er firmaets. BidHamr betaler moms af sine egne gebyrer og af BidHamr Beskyttelse. Du betaler aldrig moms oveni.
 
 5.6 **Kvittering og faktura.** Køber og sælger får en kvittering for handlen. På BidHamrs egne gebyrer (købergebyr, sælgergebyr og BidHamr Beskyttelse) får du en faktura med moms, som du også kan se på din profil. [TODO Filip: fakturaerne laves endnu ikke automatisk – regnskabsprogram afventer revisor.] Køber du af en erhvervssælger (et firma), sender firmaet selv fakturaen på varen til dig. Firmaet står for momsen af varen (eller brugtmoms) – ikke BidHamr. BidHamr fakturerer kun sine egne gebyrer. [ADVOKAT: Erhvervsvilkårene skal sige, at firmaet selv udsteder faktura på varen og håndterer moms/brugtmoms; BidHamr stiller købers navn, adresse, e-mail, vare, pris og dato til rådighed i Firma oversigt.]
 
@@ -378,7 +379,6 @@ Billederne viser, hvordan varen er pakket. De bruges, hvis der bliver oprettet e
 17.1 **Chat i handlen.** Når en handel er i gang, kan køber og sælger skrive sammen på handelssiden.
 
 17.2 **"Spørg sælger".** Før du byder, kan du stille sælgeren et spørgsmål på auktionen. Spørgsmål og svar kan være synlige for andre brugere.
-
 17.3 **Hold handlen på BidHamr.** Du må ikke dele kontaktoplysninger (links, e-mail, telefonnummer, MobilePay-nummer eller brugernavne på beskedtjenester) i chatten, i "Spørg sælger", i auktionens tekst eller i dit navn. Du må ikke foreslå at betale eller handle uden om BidHamr. Undtagelse: ved afhentning viser vi selv sælgerens adresse og telefonnummer for køberen (se 9.1).
 
 17.4 **Automatisk filter.** Beskeder med kontaktoplysninger eller gentagne ens beskeder bliver stoppet automatisk og vist som "Ikke sendt" for dig. Modtageren ser dem ikke. Beskeder, der tyder på handel uden om BidHamr, bliver sendt til en medarbejder.
@@ -386,6 +386,8 @@ Billederne viser, hvordan varen er pakket. De bruges, hvis der bliver oprettet e
 17.5 **BidHamrs medarbejdere kan læse beskederne** i handler, når det er nødvendigt for at hjælpe i en sag, behandle en anmeldelse eller forhindre svindel. Beskeder bliver gemt, også når handlen er afsluttet.
 
 17.6 **Beskeder fra BidHamr.** Kun BidHamrs medarbejdere kan starte en samtale med dig fra BidHamr. Beskeder fra BidHamr er tydeligt markeret. Du kan svare, indtil medarbejderen lukker samtalen. Vil du selv kontakte os, så brug kontaktformularen (`/kontakt`) eller skriv til support@bidhamr.dk.
+
+17.7 **Erhvervssælgere.** Du kan ikke skrive til en erhvervssælger på BidHamr – hverken i handlen eller med "Spørg sælger". Firmaets e-mail og telefon står på firmaets profil, på auktionen og på handelssiden, så du kan kontakte firmaet direkte (se 29.6).
 
 ---
 
@@ -560,8 +562,29 @@ Vi behandler dine personoplysninger efter privatlivspolitikken (`/privatliv`). V
 
 ---
 
-## 29. Kontakt
+## 29. Køb fra erhvervssælgere
+
+29.1 **Hvem er erhvervssælgere?** Nogle auktioner er oprettet af et firma med et aktivt dansk CVR-nummer, som BidHamr har godkendt. De har mærket "Erhvervssælger". Med ét klik kan du se firmaets profil med firmanavn, CVR-nummer, adresse, telefon og e-mail. Køber du af et firma, er købsaftalen mellem dig og firmaet, og du handler som forbruger.
+
+29.2 **Pris og faktura.** Prisen på en erhvervsauktion er inkl. moms. Du betaler købergebyr og fragt som ved andre køb og ser den samlede pris, før du betaler. Firmaet sender selv fakturaen på varen til dig. BidHamr sender kun faktura på sine egne gebyrer.
+
+29.3 **14 dages fortrydelsesret.** Køber du af et firma, kan du fortryde købet inden for 14 dage efter, at du har fået varen. Vi bruger leveringsdatoen fra sporingen. Du fortryder med knappen "Fortryd køb" på handelssiden og får en returlabel gennem BidHamr. Du får pengene tilbage gennem vores betalingspartner Stripe, når firmaet har fået varen retur. [ADVOKAT: Bekræft fortrydelsesretten ved netauktion (nr. 56), hvad der refunderes – også købergebyr og fragt – og hvem der betaler returfragten (nr. 57). Gælder fortrydelsesretten også ved afhentning hos firmaet (nr. 114)?]
+
+29.4 **Ingen BidHamr Beskyttelse.** BidHamr Beskyttelse kan ikke vælges, når du køber af et firma. Du har i stedet fortrydelsesret og reklamationsret efter loven. [ADVOKAT: Hvilke sager kan køberen oprette ved køb fra et firma – fx bortkommet pakke og åbenlys svindel som i 12.4 (nr. 115)? Er forklaringen om, at BidHamr Beskyttelse ikke kan vælges, tilstrækkelig og ikke vildledende (nr. 62)?]
+
+29.5 **Fejl ved varen (reklamation).** Har varen en fejl, kan du klage til firmaet i 2 år efter, at du har fået den. Det kaldes reklamationsret. Firmaet skal behandle din reklamation efter købeloven, fx med reparation, en ny vare, afslag i prisen eller pengene tilbage. Når firmaet har fået pengene udbetalt, kan BidHamr ikke trække dem tilbage. [ADVOKAT: Har BidHamr noget ansvar, hvis firmaet ikke betaler eller er gået konkurs (nr. 63)?]
+
+29.6 **Kontakt firmaet direkte.** Du kan ikke skrive til et firma på BidHamr. Har du spørgsmål til varen eller handlen, eller vil du reklamere, så kontakt firmaet på den e-mail eller det telefonnummer, der står på firmaets profil og på handelssiden.
+
+29.7 **Klage over firmaet til BidHamr.** Svarer firmaet ikke, eller mener du, at firmaet ikke overholder dine rettigheder, kan du oprette en klage over firmaet på handelssiden. En medarbejder hos BidHamr ser på klagen. Får et firma gentagne klager, som vi vurderer er berettigede, kan firmaet få en advarsel, og firmakontoen kan blive sat på pause eller lukket. BidHamr afgør ikke, hvem der har ret efter loven, og kan ikke tvinge firmaet til at betale. Dine rettigheder over for firmaet efter loven er de samme.
+
+29.8 **Klage til Forbrugerklagenævnet.** Kan du og firmaet ikke blive enige, kan du klage til Nævnenes Hus, Forbrugerklagenævnet, via forbrug.dk. Du kan også gå til domstolene. [ADVOKAT: Bekræft henvisningen, og hvad firmaet selv skal oplyse om klageadgang (nr. 68).]
+
+---
+
+## 30. Kontakt
 
 - Kundeservice: support@bidhamr.dk eller kontaktformularen på `/kontakt`
+- Erhverv og firmakonti: erhverv@bidhamr.dk
 - Ulovligt indhold og DSA: dsa@bidhamr.dk eller `/dsa`
-- Post: [TODO Filip: firmanavn og adresse]
+- Post: BidHamr, Ellegårdsvej 40, 4684 Holmegaard
