@@ -1251,6 +1251,25 @@ async function annullerOpgraderingerVedLukning(k: LukKandidat): Promise<void> {
   }
 }
 
+// Et afsluttet abonnement spejles i databasen og kvitteres. Svarer databasen
+// ikke som forventet, KASTES der - så sætter firma_luk_opsigelse_fejl en
+// ventetid, og der gives drift-alarm (i stedet for at firmaet tages op igen
+// hvert 5. minut uden alarm).
+//   'opsagt'         - normalt (cancellation_requested eller opsiges_fra sat)
+//   'pause_betaling' - Stripe havde selv afsluttet det pga. manglende betaling;
+//                      abonnements-id'et er fjernet, så intet at kvittere
+async function spejlAfsluttet(k: LukKandidat, sub: Stripe.Subscription): Promise<void> {
+  const spejl = await synkAbonnement(sub, true);
+  if (spejl === "pause_betaling") return;
+  if (spejl !== "opsagt") {
+    throw new Error(`Databasen spejlede ikke abonnementet ${sub.id} som opsagt (svar: ${spejl})`);
+  }
+  const kvit = await rpc("firma_luk_opsigelse_udfoert", { p_firma: k.firma_id, p_subscription_id: sub.id });
+  if (kvit.kode !== "ok" && kvit.kode !== "allerede") {
+    throw new Error(`firma_luk_opsigelse_udfoert svarede ${String(kvit.kode)} for ${sub.id}`);
+  }
+}
+
 async function opsigKandidat(k: LukKandidat, kilde: "action" | "cron"): Promise<LukOpsigelseUdfald> {
   let opsagtIStripe = false;
   try {
@@ -1258,8 +1277,8 @@ async function opsigKandidat(k: LukKandidat, kilde: "action" | "cron"): Promise<
     let sub = await s.subscriptions.retrieve(k.subscription_id);
     if (erAfsluttet(sub)) {
       // Allerede afsluttet i Stripe (fx webhooken er ikke nået frem endnu).
-      await synkAbonnement(sub, true);
-      await rpc("firma_luk_opsigelse_udfoert", { p_firma: k.firma_id, p_subscription_id: sub.id });
+      opsagtIStripe = true;
+      await spejlAfsluttet(k, sub);
       return "allerede_afsluttet";
     }
     // Lige før opsigelsen: er kontoen stadig lukket? (En omgjort afgørelse
@@ -1280,17 +1299,18 @@ async function opsigKandidat(k: LukKandidat, kilde: "action" | "cron"): Promise<
         { idempotencyKey: idempotensNoegle.lukOpsigelse(k.bruger_id, sub.id) },
       );
     } catch (err) {
-      // Et abonnement, der allerede er opsagt, svarer Stripe 404 på. Så
-      // tjekkes det frisk - kun et afsluttet abonnement tæller som opsagt.
-      if (!(err instanceof Stripe.errors.StripeInvalidRequestError) || err.code !== "resource_missing") throw err;
-      sub = await s.subscriptions.retrieve(k.subscription_id);
+      // Fejl fra Stripe (fx 404 på et abonnement, der allerede er opsagt, eller
+      // en timeout, hvor opsigelsen alligevel gik igennem): abonnementet hentes
+      // ALTID frisk - kun et afsluttet abonnement tæller som opsagt.
+      const frisk = await s.subscriptions.retrieve(k.subscription_id).catch(() => null);
+      if (!frisk || !erAfsluttet(frisk)) throw err;
+      sub = frisk;
     }
     if (!erAfsluttet(sub)) sub = await s.subscriptions.retrieve(k.subscription_id);
     if (!erAfsluttet(sub)) throw new Error(`Stripe viser abonnementet ${sub.id} som ${sub.status} efter opsigelsen`);
     opsagtIStripe = true;
 
-    await synkAbonnement(sub, true);
-    await rpc("firma_luk_opsigelse_udfoert", { p_firma: k.firma_id, p_subscription_id: sub.id });
+    await spejlAfsluttet(k, sub);
     await annullerOpgraderingerVedLukning(k);
 
     // Abonnementet er startet EFTER lukningen (fx en åben Checkout, der blev
@@ -1359,14 +1379,20 @@ export async function koerLukOpsigelser(): Promise<{ opsagt: number; fejl: numbe
 }
 
 // Webhooken/serveren har spejlet et afsluttet abonnement ('opsagt'): er
-// kontoen lukket, kvitteres opsigelsen ved lukning (nulstiller forsøg og
-// logger én gang). Kaster ikke - spejlingen er det vigtige.
+// kontoen lukket, registreres det (nulstiller forsøg og logger én neutral
+// linje: "Abonnementet er afsluttet i Stripe (kontoen er lukket permanent)" -
+// det kan også være en almindelig opsigelse, der udløb). Kaster ikke -
+// spejlingen er det vigtige.
 async function kvitterLukOpsigelse(f: FirmaRaekke, subId: string): Promise<void> {
   try {
     if (!(await kontoLukket(f.bruger_id))) return;
     await rpc("firma_luk_opsigelse_udfoert", { p_firma: f.id, p_subscription_id: subId });
   } catch (err) {
-    await logDriftFejl({ kilde: "server", hvor: "erhverv/luk-kvitter", fejl: `${f.id}/${subId}: ${fejltekst(err)}` });
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "erhverv/luk-kvitter",
+      fejl: `Abonnementet er afsluttet (kontoen er lukket), men det kunne ikke registreres for firma ${f.id} (${subId}): ${fejltekst(err)}`,
+    });
   }
 }
 

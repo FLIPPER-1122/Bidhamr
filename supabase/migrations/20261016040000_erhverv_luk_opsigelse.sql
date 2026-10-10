@@ -137,7 +137,7 @@ begin
   if f.luk_opsigelse_kl is null then
     insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
     values (public.bidhamr_system_id(), 'firma_opdateret', 'firma', f.id, f.bruger_id,
-            left('Abonnement opsagt med det samme i Stripe, fordi kontoen er lukket permanent (ingen refusion); '
+            left('Abonnementet er afsluttet i Stripe (kontoen er lukket permanent); '
                  || f.firmanavn || ' (CVR ' || f.cvr || ')', 1000));
   end if;
   return jsonb_build_object('kode', 'ok');
