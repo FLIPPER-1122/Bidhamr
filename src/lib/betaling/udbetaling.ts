@@ -335,10 +335,13 @@ export function dkk(liste: Stripe.Balance.Available[] | Stripe.Balance.Pending[]
 // handlen (trin 4 - hænger sammen med refusioner og indsigelser):
 //   udbetaling_oere (U)
 //   + gebyr-refusionen (G), når den er gennemført, og tilbageførslen endnu ikke
-//   - refusionsbeløbet (R = S + G), når tilbageførslen er gennemført
+//   - tilbageførslen (U + G), når den er gennemført. Normalt er S = U, så det
+//     er refusionsbeløbet R = S + G. Ved ikke-afhentet pakke kan S < U (køberen
+//     får mindre end sælgerens del), men hele U + G tages stadig tilbage
+//     (betaling_refusionsplan, 20261016030000).
 //   - det tilbageførte ved tabt indsigelse
 // Betalinger med en refusion i gang tæller altså med, til tilbageførslen er
-// gennemført; en refunderet betaling står med 0 (S = U).
+// gennemført; en refunderet betaling står med 0.
 export function staarPaaKontoen(r: {
   udbetaling_oere: number;
   refusion_fra_saelger_oere?: number | null;
@@ -350,9 +353,9 @@ export function staarPaaKontoen(r: {
 }): number {
   let beloeb = Number(r.udbetaling_oere);
   const g = Number(r.refusion_gebyr_oere ?? 0);
-  const s = Number(r.refusion_fra_saelger_oere ?? 0);
   if (r.gebyr_refunderet_kl) beloeb += g;
-  if (r.refusion_tilbagefoert_kl) beloeb -= s + g;
+  // Tilbageførslen er U + G (refusion.ts) - uanset S.
+  if (r.refusion_tilbagefoert_kl) beloeb -= Number(r.udbetaling_oere) + g;
   if (r.indsigelse_tilbagefoersel_id) beloeb -= Number(r.indsigelse_tilbagefoert_oere ?? 0);
   // Kan være negativ, hvis der er taget mere fra kontoen end handlen - det
   // skjules ikke (skyldigOere markerer og alarmerer).

@@ -116,7 +116,7 @@ export async function paamindKoeberOmModtagelse(): Promise<number> {
     if (liste.length === 0) return 0;
     const ids = liste.map((t) => t.id);
 
-    const [{ data: sager }, { data: betalinger }, { data: auktioner }] = await Promise.all([
+    const [{ data: sager }, { data: betalinger }, { data: auktioner }, { data: retur }] = await Promise.all([
       admin.from("sager").select("trade_id").in("trade_id", ids),
       admin
         .from("betalinger")
@@ -131,8 +131,19 @@ export async function paamindKoeberOmModtagelse(): Promise<number> {
         .from("auctions")
         .select("id, titel")
         .in("id", [...new Set(liste.map((t) => t.auction_id))]),
+      // Pakken er sendt retur (ikke afhentet): frigives aldrig automatisk
+      // (handel_auto_frigiv, 20261016030000) - ingen påmindelse.
+      admin
+        .from("forsendelser")
+        .select("trade_id")
+        .in("trade_id", ids)
+        .eq("type", "udgaaende")
+        .not("returneret_kl", "is", null),
     ]);
-    const medSag = new Set((sager ?? []).map((s) => s.trade_id as string));
+    const medSag = new Set([
+      ...(sager ?? []).map((s) => s.trade_id as string),
+      ...(retur ?? []).map((f) => f.trade_id as string),
+    ]);
     const betalt = new Set(
       (betalinger ?? [])
         .filter(

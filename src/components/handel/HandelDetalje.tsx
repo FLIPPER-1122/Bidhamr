@@ -31,6 +31,8 @@ import FakturaBoks from "@/components/faktura/FakturaBoks";
 import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
 import { hentAfsendelsesfristAnnullering } from "@/lib/betaling/afsendelsesfrist";
 import { hentAfhentningsfristAnnullering } from "@/lib/betaling/afhentningsfrist";
+import { hentIkkeAfhentet } from "@/lib/betaling/ikkeAfhentet";
+import { kroner } from "@/lib/kroner";
 import { afhentningTilbagebetalKl, afhentningsfristTekst } from "@/lib/afhentningsfrist";
 import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
 import FragtlabelBoks from "@/components/fragt/FragtlabelBoks";
@@ -197,6 +199,7 @@ export default async function HandelDetalje({
     kvittering,
     saelgerKontoType,
     udbetalingSvar,
+    ikkeAfhentet,
   ] = await Promise.all([
     supabase.from("auctions").select("titel, billeder, startpris, erhverv, pakkestoerrelse, vaegt_gram").eq("id", handel.auction_id).maybeSingle(),
     supabase.from("users").select("navn").eq("id", modpartId).maybeSingle(),
@@ -281,6 +284,8 @@ export default async function HandelDetalje({
     erSaelger && (handel.status === "leveret" || handel.status === "afsluttet")
       ? hentMinUdbetalingsstatus(handel.id)
       : Promise.resolve(null),
+    // Pakken blev ikke afhentet og er sendt retur til sælgeren.
+    annulleret && !afhentning ? hentIkkeAfhentet(handel.id, user.id) : Promise.resolve(null),
   ]);
   const udbetaling = udbetalingSvar && "ok" in udbetalingSvar ? udbetalingSvar.visning : null;
 
@@ -732,6 +737,52 @@ export default async function HandelDetalje({
                 </p>
                 <p className="mt-1">
                   Har du allerede sendt den, så skriv straks til support@bidhamr.dk med
+                  sporingsnummeret.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
+        {ikkeAfhentet && (
+          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
+            <p className="font-semibold">Pakken blev ikke hentet</p>
+            {erKoeber ? (
+              <>
+                <p className="mt-1">
+                  Pakken blev ikke hentet i tide og er sendt retur til sælgeren. Handlen er annulleret.
+                </p>
+                {ikkeAfhentet.refusionOere > 0 ? (
+                  <>
+                    <p className="mt-1">
+                      Du får {kroner(ikkeAfhentet.refusionOere)} tilbage – købsbeløbet minus
+                      købergebyret{ikkeAfhentet.beskyttelseOere > 0 ? ", BidHamr Beskyttelse" : ""} og
+                      fragten begge veje (fragt {kroner(ikkeAfhentet.fragtOere)} og returfragt{" "}
+                      {kroner(ikkeAfhentet.returfragtOere)}).
+                    </p>
+                    <p className="mt-1">
+                      {ikkeAfhentet.refunderet
+                        ? "Pengene er sendt tilbage til den betalingsmetode, du betalte med. Der kan gå nogle dage, før de står på din konto."
+                        : "Tilbagebetalingen er sat i gang. Der kan gå nogle dage, før pengene står på din konto."}{" "}
+                      Betalingen håndteres af vores betalingspartner Stripe.
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-1">
+                    Købsbeløbet minus gebyrerne og fragten begge veje bliver 0 kr., så du får ikke noget
+                    tilbage. Har du spørgsmål, så skriv til support@bidhamr.dk.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="mt-1">
+                  Køberen hentede ikke pakken, så fragtfirmaet sender den retur til dig. Handlen er
+                  annulleret, og du beholder varen.
+                </p>
+                <p className="mt-1">
+                  Du betaler ikke for fragten – hverken ud eller retur – og der udbetales ikke penge for
+                  handlen. Kommer pakken ikke frem til dig, så skriv til support@bidhamr.dk med
                   sporingsnummeret.
                 </p>
               </>

@@ -125,6 +125,9 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
 export const testFirma: Fragtfirma = {
   navn: "test",
   visningsnavn: "Testfragt",
+  // /dev/fragt "returneret" = køberen hentede ikke pakken (afprøver
+  // ikke-afhentet-flowet uden et rigtigt fragtfirma).
+  returErIkkeAfhentet: true,
 
   async beregnPris(pakkestoerrelse) {
     return TEST_PRISER_OERE[pakkestoerrelse];

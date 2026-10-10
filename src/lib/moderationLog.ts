@@ -47,6 +47,8 @@ export const HANDLING_NAVNE: Record<string, string> = {
   chat_laest: "Læste handelschat",
   refusion_proevet_igen: "Prøvede tilbagebetaling igen",
   fragt_haandteret: "Markerede forsendelse som håndteret",
+  // 20261016030000_ikke_afhentet_pakke.sql
+  handel_ikke_afhentet: "Markerede pakke som ikke afhentet (retur til sælger)",
   spoergsmaal_skjult: "Skjulte spørgsmål på auktion",
   spoergsmaal_vist: "Viste spørgsmål på auktion igen",
   konto_slettet: "Brugeren slettede selv sin konto",

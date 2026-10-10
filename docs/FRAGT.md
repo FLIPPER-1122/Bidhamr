@@ -48,6 +48,27 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    udbetaling** – kun købers bekræftelse eller de eksisterende regler i autoFrigiv.
 8. **Retur i sager**: returlabel (køber → pakkeshop nær sælgeren). Slået fra (`FRAGT_RETURLABEL_AKTIV`),
    indtil opkrævningen af returfragten hos køberen er bygget.
+9. **Ikke-afhentet pakke** (`20261016030000_ikke_afhentet_pakke.sql`, `src/lib/betaling/ikkeAfhentet.ts`):
+   fragtfirmaet sender pakken retur, fordi køberen ikke hentede den. Én adapter-neutral indgang
+   `registrerIkkeAfhentet` → `handel_ikke_afhentet_registrer` (låser betaling og handel, idempotent - én
+   hændelse pr. handel i `handel_ikke_afhentet`, som aldrig kan ændres eller slettes). Handlen annulleres,
+   køberen refunderes `bud − returfragt` (= total − købergebyr − BidHamr Beskyttelse − fragt − returfragt,
+   aldrig under 0), sælgeren beholder varen og får intet udbetalt. Returfragten er fragten ud, medmindre
+   adapteren giver DAO's beløb (`returfragtOere`). Kaldes af:
+   - **fragten**: en udgående pakke meldt `returneret`, som aldrig er `leveret`, når adapteren har
+     `returErIkkeAfhentet: true` (testfragtfirmaet; DAO-adapteren sætter den, når DAO's returkode er kendt).
+     Shipmondo gætter `returneret` ud fra en tekst og har den derfor ikke - der bliver det kun en markering.
+     Webhookens handelseffekter registrerer med det samme; betalings-cron'en er reserve
+     (`koerIkkeAfhentet`, før den automatiske frigivelse). Refusionen laves af betalings-cron'en (lovede
+     refusioner).
+   - **staff**: knappen "Ikke afhentet" under Admin → Handler (på handlen og på en returneret forsendelse
+     under fanen Fragt), med begrundelse; logges i medarbejder-loggen (`handel_ikke_afhentet`). Medarbejder,
+     admin og chef; ikke inhabil. Refusionen laves med det samme.
+   - En returneret pakke frigives aldrig automatisk (`handel_auto_frigiv`), og køberen får ikke
+     påmindelsen "Har du modtaget din vare?".
+   - Appen: `supabase.rpc("mit_ikke_afhentet", { p_trade })` → køberen `{ rolle: 'koeber', registreret_kl,
+     refusion_oere, koebergebyr_oere, beskyttelse_oere, fragt_oere, returfragt_oere, refunderet }`,
+     sælgeren `{ rolle: 'saelger', registreret_kl }`, ellers `null`. Handlen står som `annulleret`.
 
 ## Priser – ét sted
 
@@ -197,7 +218,11 @@ Localhost kan ikke modtage webhooks fra Shipmondo – test på en Vercel-preview
   regnes altid med.
 - DAO kan ikke annullere: labelen annulleres i BidHamr, og staff markeres.
 - Shipment Monitor har ingen retur-status: en tekst med "retur" giver `returneret`, `DANGER` giver `fejl` –
-  begge kun som markering til staff.
+  begge kun som markering til staff. Staff trykker "Ikke afhentet", når pakken er sendt retur, fordi
+  køberen ikke hentede den (se Flowet, punkt 9).
+- Ikke-afhentet pakke: returfragten = fragten ud (det køberen betalte), indtil DAO's faktiske returpris kan
+  hentes. Får køberen intet tilbage (returfragten er mindst varens pris), markeres betalingen til staff,
+  der henter sælgerens del tilbage fra sælgerens Stripe-konto (ikke bygget automatisk).
 - Returlabel er slået fra, indtil returfragten opkræves hos køberen.
 - Vægt er krævet for ALLE størrelser, når klienten sender en størrelse, og over 15 kg kan aldrig sendes.
   Midlertidigt: uden størrelse (nuværende app) bliver det Mellem uden vægt – se go-live.

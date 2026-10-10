@@ -616,6 +616,74 @@ export function saelgerAfhentningAnnulleretMail(titel: string, tradeId: string) 
   });
 }
 
+// ---------------------------------------------------------------- ikke-afhentet pakke
+// Fragtfirmaet har sendt pakken retur til sælgeren, fordi køberen ikke
+// hentede den (ROADMAP-BESLUTNINGER afsnit 1, model 3). Køberen får
+// købsbeløbet minus gebyrer og fragt begge veje; sælgeren beholder varen.
+
+export type IkkeAfhentetBeloeb = {
+  totalOere: number;
+  koebergebyrOere: number;
+  beskyttelseOere: number;
+  fragtOere: number;
+  returfragtOere: number;
+  refusionOere: number;
+};
+
+// Køberen: pakken er sendt retur, og handlen er annulleret.
+export function koeberIkkeAfhentetMail(titel: string, b: IkkeAfhentetBeloeb, tradeId: string) {
+  const fradrag = [
+    "købergebyret",
+    ...(b.beskyttelseOere > 0 ? ["BidHamr Beskyttelse"] : []),
+    "fragten begge veje (ud og retur)",
+  ];
+  const fradragTekst = `${fradrag.slice(0, -1).join(", ")} og ${fradrag[fradrag.length - 1]}`;
+  const info: InfoRaekke[] = [
+    vare(titel),
+    beloeb("Du betalte", b.totalOere),
+    beloeb("Købergebyr", -b.koebergebyrOere),
+    ...(b.beskyttelseOere > 0 ? [beloeb("BidHamr Beskyttelse", -b.beskyttelseOere)] : []),
+    beloeb("Fragt", -b.fragtOere),
+    beloeb("Returfragt", -b.returfragtOere),
+    beloeb("Du får tilbage", b.refusionOere, true),
+  ];
+  return handelsMail(`Pakken blev ikke hentet: ${titel}`, {
+    preheader:
+      b.refusionOere > 0
+        ? `Pakken er sendt retur til sælgeren. Du får ${kronerFraOere(b.refusionOere)} kr tilbage.`
+        : "Pakken er sendt retur til sælgeren, og handlen er annulleret.",
+    overskriftHtml: "Pakken er sendt retur",
+    afsnitHtml: [
+      `Du hentede ikke <strong>${escapeHtml(titel)}</strong> i tide, så fragtfirmaet har sendt pakken retur til sælgeren. Handlen er derfor annulleret.`,
+      b.refusionOere > 0
+        ? `Du får købsbeløbet tilbage minus ${escapeHtml(fradragTekst)}. Fragten og gebyrerne er brugt, selvom pakken ikke blev hentet.`
+        : `Købsbeløbet minus ${escapeHtml(fradragTekst)} bliver 0 kr., så du får ikke noget tilbage. Har du spørgsmål, så skriv til support@bidhamr.dk.`,
+      ...(b.refusionOere > 0
+        ? [
+            "Pengene sendes tilbage til den betalingsmetode, du betalte med. Der kan gå nogle dage, før de står på din konto. Betalingen håndteres af vores betalingspartner Stripe.",
+            `Du får en faktura på returfragten. ${FAKTURA_AFSNIT}`,
+          ]
+        : []),
+    ],
+    info,
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
+// Sælgeren: pakken kommer retur, og han beholder varen.
+export function saelgerIkkeAfhentetMail(titel: string, tradeId: string) {
+  return handelsMail(`Pakken kommer retur til dig: ${titel}`, {
+    preheader: "Køberen hentede ikke pakken. Du beholder varen og betaler ikke for fragten.",
+    overskriftHtml: "Pakken kommer retur",
+    afsnitHtml: [
+      `Køberen hentede ikke <strong>${escapeHtml(titel)}</strong>, så fragtfirmaet sender pakken retur til dig. Handlen er annulleret, og du beholder varen.`,
+      "Du betaler ikke for fragten – hverken ud eller retur – og du betaler ikke sælgergebyr. Der bliver ikke udbetalt penge for handlen. Du får en kreditnota på sælgergebyret.",
+      "Kommer pakken ikke frem til dig, eller er den beskadiget, så skriv til support@bidhamr.dk med sporingsnummeret. Når du har varen igen, kan du sætte den til salg på ny.",
+    ],
+    knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
+  });
+}
+
 // ---------------------------------------------------------------- betalingen venter på sælgerens konto
 // Betalingsmodel destination (trin 2): sælgerens Stripe-konto er ikke
 // godkendt endnu, når auktionen slutter. Betalingen (og 48-timersfristen)

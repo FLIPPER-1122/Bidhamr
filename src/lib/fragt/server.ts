@@ -17,9 +17,13 @@ import "server-only";
 //              nøgle). Ingen penge frigives, og 48-timers uret startes IKKE -
 //              det gør stadig køberens "modtaget" / den eksisterende
 //              automatiske frigivelse, indtil Filip beslutter andet.
-//   returneret Markeres til staff (kraever_opmaerksomhed, sat i SQL).
+//   returneret Markeres til staff (kraever_opmaerksomhed, sat i SQL). Er
+//              pakken aldrig leveret, og adapteren har returErIkkeAfhentet,
+//              registreres "ikke afhentet" (src/lib/betaling/ikkeAfhentet.ts):
+//              handlen annulleres, og refusionen claimes - selve refusionen
+//              laver betalings-cron'en. Ingen udbetaling.
 //   fejl       Markeres til staff.
-// Ingen pengeflytning her.
+// Ingen pengeflytning her (refusionen sker i betalings-cron'en).
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl, renFejltekst } from "@/lib/drift";
 import { send } from "@/lib/notifikationer/send";
@@ -932,6 +936,7 @@ type ForsendelseFuld = {
   sporingsnummer: string | null;
   afleveret_kl: string | null;
   leveret_kl: string | null;
+  returneret_kl: string | null;
   afleveret_besked_kl: string | null;
   leveret_besked_kl: string | null;
 };
@@ -944,11 +949,18 @@ async function udfoerHandelseffekter(admin: Admin, forsendelseId: string): Promi
   try {
     const { data: f } = await admin
       .from("forsendelser")
-      .select("id, trade_id, type, status, sporingsnummer, afleveret_kl, leveret_kl, afleveret_besked_kl, leveret_besked_kl")
+      .select("id, trade_id, type, status, sporingsnummer, afleveret_kl, leveret_kl, returneret_kl, afleveret_besked_kl, leveret_besked_kl")
       .eq("id", forsendelseId)
       .maybeSingle<ForsendelseFuld>();
     if (!f || f.type !== "udgaaende") return 0;
     if (["opretter", "annulleret", "fejlet"].includes(f.status)) return 0;
+    // Pakken er sendt retur uden at være leveret: ikke afhentet (kun når
+    // adapterens signal er sikkert - ellers afgør staff). Idempotent; kaster
+    // aldrig. Beskederne sendes af ikkeAfhentet.ts.
+    if (f.returneret_kl && !f.leveret_kl) {
+      const { ikkeAfhentetFraFragt } = await import("@/lib/betaling/ikkeAfhentet");
+      await ikkeAfhentetFraFragt(f.id);
+    }
     const mangler =
       (f.afleveret_kl && !f.afleveret_besked_kl) || (f.leveret_kl && !f.leveret_besked_kl);
     if (!mangler) return 0;

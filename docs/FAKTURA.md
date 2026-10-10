@@ -12,6 +12,7 @@ Kode: `src/lib/faktura/` (dinero.ts, konfig.ts, proces.ts, koe.ts, data.ts, teks
 | Samme betaling | Faktura | Sælger (firma: med CVR og adresse) | Sælgergebyr (5 %) |
 | Betalingen refunderes (hele BidHamrs gebyr tilbage) | Kreditnota for hver faktura | Køber og sælger | Alle linjer |
 | Refusion efter sag med medhold (BidHamr beholder BidHamr Beskyttelse) | Kreditnota for hver faktura | Køber og sælger | Køber: købergebyr + fragt. Sælger: sælgergebyr |
+| Ikke-afhentet pakke refunderet (køberen får købsbeløbet minus gebyrer og fragt begge veje) | Kreditnota for sælgers faktura + ny faktura til køberen (`slags = 'returfragt'`) | Sælger / køber | Sælger: sælgergebyr (krediteres helt - sælgeren fik intet). Køber: ingen kreditnota (købergebyr, fragt og Beskyttelse refunderes ikke) + "Returfragt (pakken blev ikke afhentet)" på fragtkontoen |
 | Erhvervsabonnement betalt (Stripe Billing) | Finansbilag i kassekladden, Stripe-fakturaen vedhæftet | – (firmaet har Stripes faktura) | Abonnement (salg m/moms) |
 | Abonnementsfaktura refunderet | Modpostering i kassekladden | – | Samme beløb negativt |
 
@@ -36,6 +37,8 @@ Kode: `src/lib/faktura/` (dinero.ts, konfig.ts, proces.ts, koe.ts, data.ts, teks
 Er fakturaen selv stoppet, håndteret manuelt eller oprettet som "skal laves manuelt", laves kreditnotaen (og en abonnements-modpostering) også som "skal laves manuelt" med teksten "Fakturaen blev håndteret manuelt – lav kreditnotaen manuelt i Dinero".
 
 Konkret: en faktura laves, når betalingen er gennemført og BidHamrs gebyr er spejlet fra Stripe (`betalinger.betalt_kl` og `stripe_application_fee_id`). Kreditnotaen laves, når refusionen er gennemført (`refunderet_kl`) – for præcis det, BidHamr har givet tilbage af sit gebyr (`refusion_gebyr_oere`). Passer det beløb hverken med "alt" eller "alt undtagen BidHamr Beskyttelse", laves INGEN automatisk kreditnota; den står under Admin → Fakturaer som "skal laves manuelt".
+
+**Ikke-afhentet pakke** (`20261016030000_ikke_afhentet_pakke.sql`, chefens valg – revisor bør bekræfte): BidHamr beholder købergebyr, fragt, BidHamr Beskyttelse og returfragten (= total − refusion) og intet sælgergebyr. Derfor: sælgerens faktura krediteres helt, købers faktura står uændret, og returfragten faktureres køberen på en ny faktura (`fakturaer.slags = 'returfragt'`, dateret refusionsdagen, fragtkonto). Begge laves kun automatisk, når Stripe-trinnene passer præcis med planen (`faktura_ikke_afhentet_ok`: gebyr-refusion G = R − min(U, R), tilbageførsel gennemført, og det BidHamr står tilbage med = købergebyr + fragt + Beskyttelse + returfragt) – ellers "skal laves manuelt". Får køberen intet tilbage (returfragten er mindst varens pris), refunderes intet, og staff laver bogføringen manuelt sammen med tilbageførslen fra sælgeren.
 
 Skal Filip/revisoren hellere have fakturaen ved frigivelsen, er det én betingelse i `faktura_planlaeg` (`x.betalt_kl` → `x.frigivet_kl`) – men så skal annullerede handler, der er betalt og refunderet før frigivelsen, slet ikke have faktura/kreditnota, og momsperioden skal vurderes (spørgsmål til revisor nr. 97).
 
