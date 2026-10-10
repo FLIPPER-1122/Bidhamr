@@ -1,3 +1,4 @@
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import Image from "next/image";
 import Link from "next/link";
 import { kanOptimeres } from "@/lib/billedUrl";
@@ -357,7 +358,7 @@ export default async function HandelDetalje({
           </Link>
         ) : (
         <Link
-          href="/mine-handler"
+          href={MINE_HANDLER_HREF}
           className="-mb-1 inline-flex min-h-11 items-center gap-1.5 rounded-md text-sm font-medium text-tekst-daempet hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">

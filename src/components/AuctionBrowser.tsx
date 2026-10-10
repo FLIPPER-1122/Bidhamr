@@ -15,7 +15,6 @@ import {
   AFSTAND_TRIN_KM,
 } from "@/lib/auktionFiltre";
 import { antalFundet, antalTekst, type TotalType } from "@/lib/soegeTotal";
-import GemSoegningKnap from "@/components/soegning/GemSoegningKnap";
 
 // Felter i filterbjælken (DESIGN.md 8.2).
 const felt =
@@ -58,7 +57,6 @@ export default function AuctionBrowser({
   urlPostnummer,
   urlRadiusKm,
   onAfstandChange,
-  erLoggetInd = false,
 }: {
   // Første side er hentet på serveren med de samme filtre (src/lib/auktionSoegning.ts).
   initialAuktioner: DummyAuction[];
@@ -67,7 +65,7 @@ export default function AuctionBrowser({
   initialQuery: string;
   initialKategori?: string;
   initialSortering?: Sortering;
-  // Fra ?postnummer=&afstand= (fx linket i en notifikation om en gemt søgning).
+  // Fra ?postnummer=&afstand= (fx et delt link til en søgning).
   initialPostnummer?: string;
   initialRadiusKm?: number;
   // Serveren har filtreret på afstand (postnummeret findes, og radius er
@@ -81,12 +79,11 @@ export default function AuctionBrowser({
   urlPostnummer: string;
   urlRadiusKm: number | undefined;
   onAfstandChange: (postnummer: string, radiusKm: number) => void;
-  erLoggetInd?: boolean;
 }) {
   const query = initialQuery;
   // Postnummerfeltet og skyderen har egen tilstand (man taster ét ciffer ad
   // gangen), men følger URL'en, når den skifter udefra (et menulink, Tilbage
-  // eller en gemt søgning).
+  // eller et delt link).
   const [postnummer, setPostnummer] = useState(initialPostnummer);
   const [radiusKm, setRadiusKm] = useState(initialRadiusKm);
   const urlNoegle = urlAfstandNoegle(urlPostnummer, urlRadiusKm);
@@ -334,15 +331,6 @@ export default function AuctionBrowser({
             ? "Søger…"
             : antalFundet(total, totalType)}
         </p>
-        <GemSoegningKnap
-          erLoggetInd={erLoggetInd}
-          kriterier={{
-            soegeord: query.trim(),
-            kategori: kategori || null,
-            postnummer: !erHeleDanmark && postStatus === "fundet" ? postnummer : null,
-            radiusKm: !erHeleDanmark && postStatus === "fundet" ? radiusKm : null,
-          }}
-        />
       </div>
 
       {fejl && (

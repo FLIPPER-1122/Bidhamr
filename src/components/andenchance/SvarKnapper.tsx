@@ -1,5 +1,6 @@
 "use client";
 
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import { useRouter } from "next/navigation";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import { svarAndenchance } from "@/app/actions/andenchance";
@@ -18,7 +19,7 @@ export default function SvarKnapper({ tilbudId, total }: { tilbudId: string; tot
         onConfirm={async () => {
           const svar = await svarAndenchance(tilbudId, true);
           if ("fejl" in svar) return { fejl: svar.fejl };
-          router.push(svar.tradeId ? `/mine-handler/${svar.tradeId}` : "/mine-handler");
+          router.push(svar.tradeId ? `/mine-handler/${svar.tradeId}` : MINE_HANDLER_HREF);
         }}
       />
       <BekraeftDialog

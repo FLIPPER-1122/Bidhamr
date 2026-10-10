@@ -24,7 +24,6 @@ import { betalingsfristForlaengetMail } from "@/lib/mails/handel";
 import { koerDsaNotifikationer } from "@/lib/dsa/notifikationer";
 import { notificerAuktionPauser } from "@/lib/notifikationer/auktionPause";
 import { notificerAfhentningsfristForlaengelser } from "@/lib/betaling/afhentningsfrist";
-import { soegningHref } from "@/lib/gemteSoegninger";
 import {
   spoergsmaalInput,
   svarInput,
@@ -590,63 +589,6 @@ async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
   return sendNye(admin, opgaver);
 }
 
-// Gemte søgninger med besked: gemte_soegninger_find_nye (migration
-// 20261007010000, rettet i 011000) finder nye matchende auktioner og markerer
-// søgningen som behandlet i samme kald. Fejler afsendelsen herunder, tabes
-// den ene besked bevidst (hellere det end dobbelte beskeder). Højst én besked
-// pr. søgning pr. 6 timer; egne auktioner og blokerede sælgere er sorteret
-// fra. Her sendes kun beskeden.
-type SoegningsMatch = {
-  soegning_id: string;
-  bruger_id: string;
-  navn: string;
-  soegeord: string;
-  kategori: string | null;
-  postnummer: string | null;
-  radius_km: number | null;
-  antal: number;
-  foerste_id: string;
-  foerste_titel: string;
-  besked_kl: string;
-};
-
-async function gemteSoegninger(admin: Admin): Promise<number> {
-  const { data, error } = await admin.rpc("gemte_soegninger_find_nye", { p_maks: MAKS });
-  if (error) {
-    // Migrationen er ikke kørt endnu (funktionen findes ikke): spring over.
-    if (error.code !== "PGRST202" && error.code !== "42883") {
-      console.error("Notifikationer: gemte søgninger fejlede:", error.message);
-    }
-    return 0;
-  }
-  const opgaver: Opgave[] = ((data ?? []) as SoegningsMatch[]).map((m) => {
-    const link = soegningHref(
-      {
-        soegeord: m.soegeord ?? "",
-        kategori: m.kategori,
-        postnummer: m.postnummer,
-        radiusKm: m.radius_km,
-      },
-      true,
-    );
-    const navn = m.navn.slice(0, 60);
-    return {
-      brugerId: m.bruger_id,
-      type: "gemt_soegning",
-      input: {
-        titel: m.antal === 1 ? "Ny auktion i din søgning" : `${m.antal} nye auktioner i din søgning`,
-        tekst:
-          m.antal === 1
-            ? `"${m.foerste_titel}" matcher din søgning "${navn}".`
-            : `${m.antal} nye auktioner matcher din søgning "${navn}", bl.a. "${m.foerste_titel}".`,
-        link,
-        data: { gemt_soegning_id: m.soegning_id },
-        noegle: `gemt_soegning:${m.soegning_id}:${new Date(m.besked_kl).getTime()}`,
-      },
-    };
-  });
-  return sendNye(admin, opgaver);
-}
 
 // Bud, der ikke kom gennem afgivBud (appen indsætter direkte via RLS), eller
 // hvor afsendelsen fejlede. Samme nøgler og logik som afgivBud
@@ -830,7 +772,6 @@ export async function koerNotifikationsCron() {
     bedoemmelseSvar: 0,
     slutterSnart: 0,
     nyAuktion: 0,
-    gemteSoegninger: 0,
     beskeder: 0,
     fristForlaengelser: 0,
     afhentningsfristForlaengelser: 0,
@@ -861,9 +802,6 @@ export async function koerNotifikationsCron() {
   trin.push(["fristForlaengelser", () => notificerFristForlaengelser()]);
   // Ny afhentningsfrist fra sælgeren (tabellen er ny, 5. oktober 2026).
   trin.push(["afhentningsfristForlaengelser", () => notificerAfhentningsfristForlaengelser()]);
-  // Gemte søgninger holder selv styr på, hvad der er vurderet (tabellen er
-  // ny, 7. oktober 2026), og kræver ikke start_kl.
-  trin.push(["gemteSoegninger", () => gemteSoegninger(admin)]);
   // DSA: kvitteringer, begrundelser og svar, der ikke blev sendt med det samme.
   trin.push(["dsa", () => koerDsaNotifikationer()]);
   // Skjult auktion sat på pause / åben igen (tabellen er ny, 6. okt. 2026).

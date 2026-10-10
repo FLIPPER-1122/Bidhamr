@@ -1,5 +1,6 @@
-import { ListeSkelet } from "@/components/Skeletter";
+import { ProfilSkelet } from "@/components/Skeletter";
 
+// /mine-handler sender videre til fanen på profilen.
 export default function Loading() {
-  return <ListeSkelet tekst="Indlæser dine handler…" />;
+  return <ProfilSkelet />;
 }

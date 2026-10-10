@@ -12,11 +12,15 @@ import { UlaesteBeskederProvider } from "@/components/topbar/UlaesteBeskeder";
 import { KATEGORIER_I_LINJEN, UDFORSK, kategoriHref } from "@/components/topbar/navigation";
 import { ERHVERV_MENU } from "@/lib/tekster/erhverv";
 import { foerLancering } from "@/lib/lancering";
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 
 const ikonKnap =
   "flex h-11 w-11 items-center justify-center rounded-full text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
 const linjeLink =
   "flex min-h-11 items-center rounded-lg font-medium text-[#444] hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
+// I rullefeltet: fokusringen lægges indenfor, så den ikke klippes.
+const linjeLinkRul =
+  "flex min-h-11 items-center rounded-lg px-1 font-medium whitespace-nowrap text-[#444] hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen";
 
 // Topbar efter DESIGN.md afsnit 9 og mockup D.
 // Mobil (< lg): logo, klokke og burger; søgefeltet i fuld bredde nedenunder.
@@ -52,6 +56,9 @@ export default async function Header() {
   // sender tilbage til /firma (og klokken/beskeder spørger serveren via server
   // actions, som firmaet ikke må kalde før lancering).
   const kunFirma = erFirma && foerLancering();
+  // "Sælgere du følger" i kategorilinjen (kun indloggede private). På
+  // 1024-1279 px gives der plads ved at vise kategorierne fra xl.
+  const visFoelger = loggetInd && !erFirma;
   // Også efter lancering har firmaet alt sit eget i firma-dashboardet
   // (/firma/*, eget layout uden denne header). På de offentlige sider vises
   // derfor ikke favoritter, beskeder, mine handler, klokke eller "Sælg en
@@ -124,17 +131,19 @@ export default async function Header() {
           )}
 
           <div className="flex shrink-0 items-center gap-1 lg:gap-2">
-            {/* Kun store skærme: genveje som ikoner */}
+            {/* Favoritter: hjertet er den eneste vej til favoritterne (også på
+                mobil - punktet er ikke længere i menuerne). */}
             {!erFirma && (
-              <Link href="/favoritter" aria-label="Favoritter" title="Favoritter" className={`${ikonKnap} hidden lg:flex`}>
+              <Link href="/favoritter" aria-label="Favoritter" title="Favoritter" className={ikonKnap}>
                 <Ikon navn="hjerte" />
               </Link>
             )}
+            {/* Kun store skærme: genveje som ikoner */}
             {loggetInd && !erFirma && (
               <>
                 <BeskederLink className={`${ikonKnap} hidden lg:flex`} />
                 <Link
-                  href="/mine-handler"
+                  href={MINE_HANDLER_HREF}
                   className="hidden h-11 items-center gap-2 rounded-full px-3 text-sm font-medium text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex"
                 >
                   <Ikon navn="handler" />
@@ -178,19 +187,33 @@ export default async function Header() {
         {/* Kategorilinje – kun store skærme; på mobil ligger den i menuen. */}
         {!kunFirma && (
         <nav aria-label="Kategorier og genveje" className="hidden border-t border-kant lg:block">
-          <div className="mx-auto flex max-w-[1280px] items-center gap-7 px-8 text-sm">
-            <KategoriMenu />
-            {UDFORSK.slice(1).map((l) => (
-              <Link key={l.href} href={l.href} className={linjeLink}>
-                {l.tekst}
-              </Link>
-            ))}
-            {KATEGORIER_I_LINJEN.map((k, i) => (
-              <Link key={k} href={kategoriHref(k)} className={`${linjeLink} ${i > 1 ? "hidden xl:flex" : ""}`}>
-                {k}
-              </Link>
-            ))}
-            <div className="ml-auto flex items-center gap-7">
+          <div className="mx-auto flex max-w-[1280px] items-center gap-5 px-8 text-sm">
+            {/* Uden for rullefeltet, så dropdown'en ikke bliver klippet. */}
+            <div className="shrink-0">
+              <KategoriMenu />
+            </div>
+            {/* Ruller vandret, hvis der ikke er plads (fx 1024 px med
+                "Sælgere du følger"), så linjen aldrig brydes. */}
+            <div className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto [scrollbar-width:none]">
+              {UDFORSK.slice(1).map((l) => (
+                <Link key={l.href} href={l.href} className={`${linjeLinkRul} shrink-0`}>
+                  {l.tekst}
+                </Link>
+              ))}
+              {KATEGORIER_I_LINJEN.map((k, i) => (
+                <Link key={k} href={kategoriHref(k)} className={`${linjeLinkRul} shrink-0 ${i > 1 || visFoelger ? "hidden xl:flex" : ""}`}>
+                  {k}
+                </Link>
+              ))}
+              {/* Kun for indloggede (ikke firmakonti) - lige efter "Sport". */}
+              {visFoelger && (
+                <Link href="/konto/foelger" className={`${linjeLinkRul} shrink-0 gap-1.5`}>
+                  <Ikon navn="foelgere" className="h-[18px] w-[18px]" />
+                  Sælgere du følger
+                </Link>
+              )}
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-5">
               <Link href="/bidhamr-beskyttelse" className="flex min-h-11 items-center gap-1.5 rounded-lg font-medium text-groen-mork hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
                 <Ikon navn="skjold" className="h-[18px] w-[18px]" />
                 BidHamr Beskyttelse

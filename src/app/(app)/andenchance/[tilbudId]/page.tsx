@@ -1,3 +1,4 @@
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -37,7 +38,7 @@ export default async function AndenchancePage({ params }: { params: Promise<{ ti
     <main className="flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10">
       <div className="mx-auto max-w-xl space-y-6">
         <Link
-          href="/mine-handler"
+          href={MINE_HANDLER_HREF}
           className="inline-flex min-h-11 items-center gap-1.5 rounded-md text-sm font-medium text-tekst-daempet hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">

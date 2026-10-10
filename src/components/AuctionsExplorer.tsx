@@ -17,7 +17,6 @@ export default function AuctionsExplorer({
   initialPostnummer,
   initialRadiusKm,
   initialAfstandAktiv,
-  erLoggetInd,
 }: {
   initialAuktioner: DummyAuction[];
   initialTotal: number;
@@ -28,7 +27,6 @@ export default function AuctionsExplorer({
   initialPostnummer?: string;
   initialRadiusKm?: number;
   initialAfstandAktiv?: boolean;
-  erLoggetInd?: boolean;
 }) {
   // Filtrene ligger i URL'en (?kategori=&sortering=&postnummer=&afstand=),
   // så de kan deles, Tilbage-knappen husker dem, og menulinks som "Slutter
@@ -88,7 +86,6 @@ export default function AuctionsExplorer({
           initialPostnummer={initialPostnummer}
           initialRadiusKm={initialRadiusKm}
           initialAfstandAktiv={initialAfstandAktiv}
-          erLoggetInd={erLoggetInd}
           kategori={kategori}
           onKategoriChange={setKategori}
           sortering={sortering}

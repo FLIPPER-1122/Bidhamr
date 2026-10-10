@@ -119,8 +119,9 @@ export default function KontoMenu({
                   </a>
                 </li>
               )}
+              {/* Mine handler er en fane på profilen, favoritter nås via
+                  hjertet og "Sælgere du følger" via kategorilinjen. */}
               <li><Link href="/profil/mig" onClick={luk} className={punkt}>Min profil</Link></li>
-              <li><Link href="/mine-handler" onClick={luk} className={punkt}>Mine handler</Link></li>
               <li>
                 <Link
                   href="/beskeder"
@@ -139,10 +140,7 @@ export default function KontoMenu({
                   )}
                 </Link>
               </li>
-              <li><Link href="/favoritter" onClick={luk} className={punkt}>Favoritter</Link></li>
               <li><Link href="/konto/statistik" onClick={luk} className={punkt}>Min statistik</Link></li>
-              <li><Link href="/konto/foelger" onClick={luk} className={punkt}>Sælgere du følger</Link></li>
-              <li><Link href="/konto/soegninger" onClick={luk} className={punkt}>Gemte søgninger</Link></li>
               <li><Link href="/konto" onClick={luk} className={punkt}>Min konto</Link></li>
               <li><Link href="/konto/notifikationer" onClick={luk} className={punkt}>Notifikationsindstillinger</Link></li>
               <li><Link href="/konto/afgoerelser" onClick={luk} className={punkt}>Afgørelser og anmeldelser</Link></li>

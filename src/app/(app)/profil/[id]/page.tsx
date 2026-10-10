@@ -19,6 +19,8 @@ import ProfileTabs, {
   type EgenAuktion,
   type Rating,
 } from "@/components/profile/ProfileTabs";
+import MineHandlerListe, { MineHandlerSkelet, visAfsluttedeFra } from "@/components/handel/MineHandlerListe";
+import { tilProfilFane } from "@/lib/profilFaner";
 
 // public.profil_offentlige_tal (20261007050000/051000): kun antal, ingen beløb.
 // Samme definitioner som min_statistik (/konto/statistik).
@@ -80,10 +82,12 @@ export async function generateMetadata({
 
 export default async function ProfilPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { id } = await params;
+  const [{ id }, sp] = await Promise.all([params, searchParams]);
   // Systembrugeren "BidHamr" (afsender af fællesbeskeder) har ingen profil.
   if (id.toLowerCase() === BIDHAMR_SYSTEM_ID) notFound();
   const supabase = await createClient();
@@ -116,6 +120,7 @@ export default async function ProfilPage({
 
   // ── Egen profil ────────────────────────────────────────────────────────────
   if (erEgenProfil) {
+    const fane = tilProfilFane(sp.fane);
     const [
       { data: egneAuktionerRaw },
       { data: mineBidsRaw },
@@ -134,9 +139,11 @@ export default async function ProfilPage({
         .overrideTypes<AuktionRaekke[], { merge: false }>(),
       supabase
         .from("bids")
-        .select("*")
+        .select("auktion_id, beløb")
         .eq("bruger_id", id)
-        .order("oprettet", { ascending: false }),
+        .order("oprettet", { ascending: false })
+        // Typeparseren kan ikke læse "ø" i kolonnenavnet.
+        .overrideTypes<{ auktion_id: string; beløb: number | string }[], { merge: false }>(),
       // Egen profil (erEgenProfil): email/telefon via min_profil(), da
       // kolonnerne ikke er laesbare direkte.
       supabase.rpc("min_profil").maybeSingle<{ email: string; telefon: string | null }>(),
@@ -168,7 +175,7 @@ export default async function ProfilPage({
     const egneBudPerAuktion = new Map<string, number>();
     for (const bud of mineBidsRaw ?? []) {
       const nuværende = egneBudPerAuktion.get(bud.auktion_id) ?? 0;
-      if (bud.beløb > nuværende) {
+      if (Number(bud.beløb) > nuværende) {
         egneBudPerAuktion.set(bud.auktion_id, Number(bud.beløb));
       }
     }
@@ -262,6 +269,19 @@ export default async function ProfilPage({
 
           <Suspense>
             <ProfileTabs
+              fane={fane}
+              handlerIndhold={
+                // Handlerne hentes kun, når fanen er åben.
+                fane === "handler" ? (
+                  <Suspense fallback={<MineHandlerSkelet />}>
+                    <MineHandlerListe
+                      brugerId={id}
+                      visAfsluttede={visAfsluttedeFra(sp.vis)}
+                      visFlereBasis={`/profil/${id}?fane=handler&vis=`}
+                    />
+                  </Suspense>
+                ) : null
+              }
               egneAuktioner={egneAuktioner}
               mineBud={mineBud}
               ratings={ratings}

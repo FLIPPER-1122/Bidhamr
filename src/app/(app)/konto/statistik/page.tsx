@@ -1,3 +1,4 @@
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -260,7 +261,7 @@ export default async function StatistikSide({
                   const href = vundet
                     ? handelId
                       ? `/mine-handler/${handelId}`
-                      : "/mine-handler"
+                      : MINE_HANDLER_HREF
                     : `/auktion/${b.auktion_id}`;
                   return (
                     <li key={b.auktion_id}>
@@ -311,7 +312,7 @@ export default async function StatistikSide({
         {vist.some((b) => b.min_status === "vundet") && (
           <p className="mt-3 text-sm text-tekst-daempet">
             Betaling og levering af det, du har vundet, finder du under{" "}
-            <Link href="/mine-handler" className="font-medium text-groen hover:underline">
+            <Link href={MINE_HANDLER_HREF} className="font-medium text-groen hover:underline">
               Mine handler
             </Link>
             .

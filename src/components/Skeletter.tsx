@@ -170,19 +170,27 @@ export function KontoSkelet() {
 
 export function ProfilSkelet() {
   return (
-    <main className="flex-1 bg-neutral-50 px-4 py-8 sm:px-8" aria-busy="true">
+    <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:px-8 lg:py-10" aria-busy="true">
       <Indlaeser tekst="Indlæser profilen…" />
       <div className="mx-auto max-w-5xl space-y-6">
-        <div className="flex items-center gap-4 rounded-[14px] border border-kant bg-white p-5">
-          <div className="h-20 w-20 shrink-0 animate-pulse rounded-full bg-skelet" />
-          <div className="flex-1 space-y-2">
-            <div className={`h-6 w-48 ${blok}`} />
-            <div className={`h-4 w-32 ${blok}`} />
+        <div className="rounded-[14px] bg-white p-5 sm:p-8">
+          <div className="flex items-center gap-4 sm:gap-6">
+            <div className="h-20 w-20 shrink-0 animate-pulse rounded-full bg-skelet sm:h-24 sm:w-24" />
+            <div className="flex-1 space-y-2">
+              <div className={`h-7 w-48 max-w-full ${blok}`} />
+              <div className={`h-4 w-32 ${blok}`} />
+              <div className={`h-4 w-56 max-w-full ${blok}`} />
+            </div>
+          </div>
+          <div className="mt-6 grid grid-cols-3 gap-3">
+            {Array.from({ length: 3 }, (_, i) => (
+              <div key={i} className={`h-[70px] ${flade}`} />
+            ))}
           </div>
         </div>
-        <div className="flex gap-2">
-          {Array.from({ length: 3 }, (_, i) => (
-            <div key={i} className="h-9 w-28 animate-pulse rounded-full bg-groen-lys" />
+        <div className="flex gap-4 overflow-hidden border-b border-kant pb-3">
+          {Array.from({ length: 5 }, (_, i) => (
+            <div key={i} className="h-5 w-24 shrink-0 animate-pulse rounded bg-white/80" />
           ))}
         </div>
         <KortGitterSkelet antal={4} />

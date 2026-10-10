@@ -1,3 +1,4 @@
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -31,7 +32,7 @@ const GRUND_NAVN: Record<string, string> = { daarlig_indpakning: "Dårlig indpak
 const OVERBLIK: { href: string; ikon: IkonNavn; titel: string; tekst: string }[] = [
   { href: "/konto/statistik", ikon: "statistik", titel: "Min statistik", tekst: "Salg, indtjening og dine bud" },
   { href: "/konto/foelger", ikon: "foelgere", titel: "Sælgere du følger", tekst: "Få besked om nye varer" },
-  { href: "/konto/soegninger", ikon: "soeg", titel: "Gemte søgninger", tekst: "Besked, når der kommer nyt" },
+  { href: MINE_HANDLER_HREF, ikon: "handler", titel: "Mine handler", tekst: "Køb og salg, du er i gang med" },
   { href: "/konto/fakturaer", ikon: "handler", titel: "Fakturaer", tekst: "Fakturaer fra BidHamr på gebyrer" },
   { href: "/konto/skat", ikon: "laas", titel: "Skatteoplysninger", tekst: "Indberetning til Skattestyrelsen (DAC7)" },
 ];
@@ -358,14 +359,6 @@ export default async function KontoSide({
       </section>
 
       <DineDataSektion dataStatus={dataStatus} />
-
-      <p className="mt-6 text-sm text-tekst-daempet">
-        Se dine køb og salg under{" "}
-        <Link href="/mine-handler" className="font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
-          Mine handler
-        </Link>
-        .
-      </p>
     </main>
   );
 }
