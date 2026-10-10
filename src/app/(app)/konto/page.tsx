@@ -15,11 +15,9 @@ import {
   SikkerhedSektion,
 } from "@/components/konto/KontoSektioner";
 import Ikon, { type IkonNavn } from "@/components/Ikon";
-import VilkaarBjaelke from "@/components/konto/VilkaarBjaelke";
 import MitIDMaerke from "@/components/mitid/MitIDMaerke";
 import { MitIDIkon, MitIDKnap } from "@/components/mitid/MitIDKraeves";
 import { MITID } from "@/lib/tekster/mitid";
-import { vilkaarErAccepteret } from "@/lib/vilkaar";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +73,6 @@ export default async function KontoSide({
     { data: advarselData, error: advarselFejl },
     { data: paamindelseData, error: paamindelseFejl },
     { data: blokeringData, error: blokeringFejl },
-    { data: vilkaarData, error: vilkaarFejl },
     { data: mitidData },
     { data: dac7Data },
   ] = await Promise.all([
@@ -86,8 +83,6 @@ export default async function KontoSide({
     supabase.rpc("mine_paamindelser"),
     // Anonyme spærringer af bydere returneres uden navn og bruger-id.
     supabase.rpc("mine_blokeringer"),
-    // Accepteret version af brugerbetingelserne (kun brugerens egen).
-    supabase.rpc("mine_vilkaar"),
     // Egen MitID-verificering (RLS: kun brugeren selv). Navnet fra MitID
     // vises kun her - aldrig for andre.
     sessionId
@@ -106,10 +101,6 @@ export default async function KontoSide({
   }
   const authData = { user: bruger };
 
-  if (vilkaarFejl) console.error("Konto: accept af betingelser kunne ikke hentes:", vilkaarFejl.message);
-  const vilkaarVersion = ((vilkaarData ?? []) as { version: string | null }[])[0]?.version ?? null;
-  // Ved en fejl vises bjælken ikke (den er kun en venlig påmindelse).
-  const visVilkaarBjaelke = !vilkaarFejl && !vilkaarErAccepteret(vilkaarVersion);
   if (blokeringFejl) console.error("Konto: blokeringer kunne ikke hentes:", blokeringFejl.message);
   const blokeringer: Blokering[] = (
     (blokeringData ?? []) as {
@@ -139,7 +130,6 @@ export default async function KontoSide({
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
       <h1 className="text-[26px] leading-tight sm:text-[32px]">Min konto</h1>
       <KontoNavigation />
-      {visVilkaarBjaelke && <VilkaarBjaelke />}
 
       {/* Ikke MitID-verificeret: fremtrædende kort øverst (kræves før første
           bud og første auktion). Firmakonti når aldrig hertil (proxyen sender

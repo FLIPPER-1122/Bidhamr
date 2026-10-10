@@ -1,6 +1,7 @@
 "use server";
 
-// Accept af brugerbetingelserne for eksisterende brugere (bjælken på /konto).
+// Accept af brugerbetingelserne for eksisterende brugere (det blokerende
+// vindue, src/components/vilkaar/VilkaarDialog.tsx).
 // accepter_vilkaar(p_version) udleder brugeren af auth.uid(), godtager kun
 // den aktuelle version og gemmer databasens tidspunkt
 // (supabase/migrations/20261009050000_vilkaar_accept.sql).

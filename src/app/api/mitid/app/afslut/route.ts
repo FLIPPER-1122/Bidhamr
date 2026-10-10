@@ -46,14 +46,29 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await createAdminClient().rpc("mitid_app_afslut", {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("mitid_app_afslut", {
       p_bruger: bruger.id,
       p_afslut_hash: sha256Hex(k),
       p_hemmelighed_hash: sha256Hex(hemmelighed),
     });
     if (error) throw error;
     const kode = (data as { kode?: string } | null)?.kode;
-    const status = kode === "udloebet" ? "udloebet" : resultatFraKode(kode);
+    if (kode === "udloebet") {
+      // Databasen skelner ikke mellem udløbet, allerede brugt og forkert
+      // bruger/hemmelighed (engangs-id'et slettes ved brug). Er brugeren
+      // allerede verificeret (fx et dobbelttryk efter et gennemført forløb),
+      // svares "allerede" - en status appen kender i forvejen. Ellers beholdes
+      // "udloebet" med en tekst, der også dækker et brugt engangs-id.
+      const { data: u } = await admin
+        .from("users")
+        .select("mitid_verificeret_kl")
+        .eq("id", bruger.id)
+        .maybeSingle<{ mitid_verificeret_kl: string | null }>();
+      if (u?.mitid_verificeret_kl) return svar(200, { status: "allerede", besked: MITID.resultat.allerede });
+      return svar(200, { status: "udloebet", besked: MITID.appUdloebet });
+    }
+    const status = resultatFraKode(kode);
     return svar(200, { status, besked: MITID.resultat[status] });
   } catch (err) {
     await logDriftFejl({ kilde: "server", sti: "/api/mitid/app/afslut", fejl: err, brugerId: bruger.id });

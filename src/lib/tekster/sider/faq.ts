@@ -13,7 +13,7 @@ import type { Tekstside } from "./typer";
 export const FAQ_SIDE: Tekstside = {
   titel: "Spørgsmål og svar",
   metabeskrivelse:
-    "Svar på de mest stillede spørgsmål om BidHamr: bud, betaling, gebyrer, fragt, afhentning, sager, anke, BidHamr Beskyttelse og din konto.",
+    "Svar på de mest stillede spørgsmål om BidHamr: bud, betaling, gebyrer, fragt, afhentning, sager, anke, BidHamr Beskyttelse, køb fra erhverv og din konto.",
   intro:
     "Her finder du korte svar på det, de fleste spørger om. Finder du ikke dit svar, er du velkommen til at skrive til os.",
   afsnit: [],
@@ -48,7 +48,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Kan jeg fortryde et køb?",
-          svar: "Nej. Du handler med en privatperson, så der er ingen fortrydelsesret.",
+          svar: "Ikke når du køber af en privatperson. Så er der ingen fortrydelsesret. Køber du af en erhvervssælger, har du 14 dages fortrydelsesret efter loven.",
         },
       ],
     },
@@ -206,6 +206,47 @@ export const FAQ_SIDE: Tekstside = {
         },
       ],
     },
+    // Erhverv: regler i ROADMAP-BESLUTNINGER.md "Erhvervskonti" og
+    // jura/erhvervsvilkaar-udkast.md. "Fortryd køb" og klager over firmaer er
+    // besluttet, men ikke bygget endnu (ROADMAP fase 7) – tjek svarene, når de er.
+    {
+      id: "erhverv",
+      overskrift: "Køb fra og salg som erhverv",
+      punkter: [
+        {
+          spoergsmaal: "Hvad betyder \"Erhvervssælger\"?",
+          svar: "At sælgeren er et firma med et dansk CVR-nummer, som BidHamr har godkendt. Tryk på mærket for at se firmanavn, CVR-nummer, adresse, telefon og e-mail. Prisen på varen er inkl. moms, og firmaet sender selv fakturaen på varen til dig.",
+        },
+        {
+          spoergsmaal: "Kan jeg fortryde et køb fra et firma?",
+          svar: "Ja. Du har 14 dages fortrydelsesret fra den dag, du har fået varen. Tryk \"Fortryd køb\" på handelssiden, så får du en returlabel. Du får pengene tilbage, når firmaet har fået varen retur.",
+        },
+        {
+          spoergsmaal: "Kan jeg vælge BidHamr Beskyttelse, når jeg køber af et firma?",
+          svar: "Nej. Når du køber af et firma, har du i stedet fortrydelsesret og reklamationsret efter loven.",
+        },
+        {
+          spoergsmaal: "Varen fra firmaet har en fejl. Hvad gør jeg?",
+          svar: "Kontakt firmaet på mail eller telefon. Du har 2 års reklamationsret, så firmaet skal hjælpe dig. Svarer firmaet ikke, eller hjælper det dig ikke, kan du oprette en klage over firmaet på handelssiden. En medarbejder ser på klagen, og får et firma flere berettigede klager, kan det få en advarsel. Du kan også klage til Forbrugerklagenævnet via forbrug.dk.",
+        },
+        {
+          spoergsmaal: "Hvorfor kan jeg ikke skrive til firmaet?",
+          svar: "Der er ingen chat med firmaer på BidHamr. Firmaets e-mail og telefon står på firmaets profil og på handelssiden, så du kan kontakte firmaet direkte.",
+        },
+        {
+          spoergsmaal: "Hvordan kan mit firma sælge på BidHamr?",
+          svar: "Udfyld formularen på siden Erhverv. Så kontakter vi dig, laver en aftale og opretter firmakontoen for dig. Dit firma skal have et aktivt dansk CVR-nummer og et abonnement. Du kan ikke selv oprette en firmakonto.",
+        },
+        {
+          spoergsmaal: "Hvad skal mit firma sørge for over for køberne?",
+          svar: "Køberne har 14 dages fortrydelsesret og 2 års reklamationsret, og dit firma skal tage imod returvarer og behandle reklamationer. Dit firma sender selv fakturaen på varen. Sælger du en ny vare, skal du skrive producent og sikkerhedsoplysninger på auktionen. Dit firmas e-mail og telefon skal være rigtige, så køberne kan kontakte jer.",
+        },
+        {
+          spoergsmaal: "Hvornår får mit firma pengene for et salg?",
+          svar: "Når handlen er færdig, og køberens frist for at fortryde er gået. Så sendes pengene til jeres bankkonto. Betalingen håndteres af vores betalingspartner Stripe.",
+        },
+      ],
+    },
     {
       id: "forbudte-varer",
       overskrift: "Forbudte varer",
@@ -220,22 +261,21 @@ export const FAQ_SIDE: Tekstside = {
         },
       ],
     },
-    // TODO indhold-agent: gennemlæs MitID-svarene (korte pladsholdere).
     {
       id: "mitid",
       overskrift: "MitID",
       punkter: [
         {
           spoergsmaal: "Hvorfor skal jeg bruge MitID?",
-          svar: "Så alle, der byder og sælger, er rigtige personer. Det gør det trygt at handle med fremmede. Du kan kun have én konto, og du skal være fyldt 18 år.",
+          svar: "Det gør det trygt at handle med fremmede. Når alle, der byder og sælger, har bekræftet sig med MitID, ved du, at du handler med en rigtig person. Hver person kan kun have én konto, så det er svært at lave falske konti. Bliver en konto lukket for svindel, kan personen ikke oprette en ny. Du skal være fyldt 18 år. Firmakonti skal ikke bekræftes med MitID.",
         },
         {
           spoergsmaal: "Hvornår skal jeg bekræfte mig?",
-          svar: "Du kan oprette en konto og kigge uden MitID. Før dit første bud eller din første auktion skal du bekræfte dig én gang. Det tager et minut. Du kan gøre det med det samme under Min konto.",
+          svar: "Du kan oprette en konto og kigge rundt uden MitID. Du skal først bekræfte dig, før du afgiver dit første bud eller opretter din første auktion. Det tager et minut, og du gør det kun én gang. Vil du gøre det med det samme, kan du gøre det under Min konto.",
         },
         {
           spoergsmaal: "Kan andre se mit navn fra MitID?",
-          svar: "Nej. Andre ser kun dit brugernavn og mærket \"MitID-verificeret\". Vi gemmer ikke dit CPR-nummer.",
+          svar: "Nej. Andre ser kun dit brugernavn og mærket \"MitID-verificeret\". Dit navn fra MitID bruger vi kun internt. Det vises aldrig for andre brugere og står ikke på fakturaer. Vi får ikke dit CPR-nummer fra MitID.",
         },
       ],
     },

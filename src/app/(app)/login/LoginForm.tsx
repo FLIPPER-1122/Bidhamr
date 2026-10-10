@@ -59,7 +59,16 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
       return;
     }
 
-    router.push(svar.firma && !redirectParam ? "/firma" : redirectTo);
+    const maal = svar.firma && !redirectParam ? "/firma" : redirectTo;
+    // Route handlers (fx /api/mitid/start) skal have en fuld sideindlæsning:
+    // router.push henter dem som RSC (to gange) og derefter som side, så
+    // handleren køres tre gange - fx tre MitID-forløb. maal er allerede
+    // valideret af sikkerSti ovenfor.
+    if (maal.startsWith("/api/") || maal.startsWith("/auth/")) {
+      window.location.assign(maal);
+      return;
+    }
+    router.push(maal);
     router.refresh();
   }
 

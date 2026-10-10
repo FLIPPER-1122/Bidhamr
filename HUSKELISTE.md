@@ -1,5 +1,13 @@
 # Huskeliste til Filip
 
+## Lancering – slå den rigtige forside til
+I dag viser bidhamr.dk `/coming-soon` for alle uden staff-rolle. Den rigtige forside og resten af siden åbnes med **én kontakt**:
+- **Vercel → Project → Settings → Environment Variables → `LANCERET` = `1`** (kun miljøet *Production*), og **deploy igen** (Deployments → Redeploy). Variablen virker først efter en ny deploy.
+- Hvad sker der: besøgende uden login ser forsiden, søgning, auktioner, offentlige profiler og tekstsiderne. Alt andet (Min konto, Mine handler, Opret auktion, beskeder ...) sender til login. Indloggede brugere kommer ind overalt, firmakonti får hele siden, og `/coming-soon` sender videre til forsiden. Admin er stadig kun for staff.
+- Fail closed: alt andet end præcis `1` (eller `true`) holder siden lukket. Fortryder du, så slet variablen og deploy igen.
+- Samme dag (separate kontakter): `TILMELDING_AABEN=true` (åbner oprettelse af konti) og `SEO_INDEKSERING=true` (lader Google indeksere siden).
+- Lokalt (`npm run dev`, testdatabasen) er siden altid "lanceret", så forsiden kan ses på http://localhost:3000. `SIMULER_FOER_LANCERING=true` i `.env.local` viser den lukkede udgave med coming-soon. `LANCERET` har ingen virkning på testdatabasen.
+
 ## MitID (Idura) – før det går live (se docs/MITID.md, "Go-live")
 - **www.bidhamr.dk SKAL omdirigere til bidhamr.dk** (Vercel → Project → Settings → Domains: sæt `bidhamr.dk` som primært domæne og `www.bidhamr.dk` til "Redirect to bidhamr.dk"). Ellers virker MitID ikke for dem, der kommer ind via www (cookien sættes på www, men Idura sender tilbage til bidhamr.dk).
 - Idura: opret produktions-application, callback `https://bidhamr.dk/api/mitid/callback`, godkend databehandleraftalen og MitID-ansøgningen.
