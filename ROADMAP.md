@@ -178,7 +178,7 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 Formål: alt det juridiske og praktiske er på plads.
 
 - [ ] CVR-nummer
-- [~] MitID-verificering (Idura/Criipto) før første bud og første auktion *(bygget 9. okt. 2026 i testmiljøet – `20261013010000_mitid.sql`, docs/MITID.md. Mangler: Filip tester med test-MitID, Idura-produktionsaftale + Vercel-variabler, appen)*
+- [~] MitID-verificering (Idura/Criipto) før første bud og første auktion *(bygget 9. okt. 2026 i testmiljøet – `20261013010000_mitid.sql`, docs/MITID.md. Testet på bidhamr.dk med test-MitID 10. okt. 2026 – virker, også "én MitID = én konto". Mangler: Idura-produktionsaftale + Vercel-variabler, appen)*
 - [x] Cookie-banner
 - [ ] Handelsbetingelser og privatlivspolitik skrevet af advokat
 - [ ] Afklar med advokat: svindel og platformens ansvar
@@ -224,7 +224,7 @@ Formål: firmaer med CVR kan sælge på BidHamr med abonnement – og det skal v
 - [~] Ingen BidHamr Beskyttelse ved køb fra erhverv
 - [ ] Fortrydelsesret 14 dage: "Fortryd køb", returlabel, refusion via Stripe ved modtagelse, udbetaling til erhverv først efter fristen *(venter på Stripe/Niels og fragt)*
 - [~] Abonnementsbetaling med **Stripe Billing** (testmiljø, Filip 8. okt. 2026 – Niels gennemgår): "Betal for din pakke" (Checkout, kort), opgradering med det samme med betaling af forskellen (faktura, 3DS via Stripes fakturaside), nedgradering fra næste periode (Subscription Schedule), opsigelse kun via admin (chef, ved periodens slut), mislykket betaling → pause efter 7 dage → genaktivering ved betaling, regninger med moms og PDF, "Skift betalingskort" (kundeportal). Priser ekskl. moms + fast Tax Rate 25 %. Migration `20261010050000_erhverv_stripe.sql`. Kode: `src/lib/erhverv/betaling.ts`, webhook `src/app/api/webhooks/stripe/route.ts`. Tjekliste til Niels: `STRIPE-ERHVERV-NOTE.md`. Valg af regnskabsprogram mangler stadig
-- [ ] **Faktura på varen ved firmasalg**: firmaet fakturerer selv (Filip, 9. okt. 2026). Firma oversigt → Salg viser pr. salg de oplysninger, firmaet skal bruge til fakturaen (købers navn, adresse, e-mail, vare, pris inkl. moms, dato), evt. med "Kopiér"/CSV-eksport, og erhvervsvilkårene siger, at firmaet selv fakturerer
+- [~] **Faktura på varen ved firmasalg**: firmaet fakturerer selv (Filip, 9. okt. 2026). Firma oversigt → Salg viser pr. salg de oplysninger, firmaet skal bruge til fakturaen (købers navn, adresse, e-mail, vare, pris inkl. moms, dato), evt. med "Kopiér"/CSV-eksport, og erhvervsvilkårene siger, at firmaet selv fakturerer
 - [ ] Reklamation: køber kan se virksomhedens kontaktoplysninger og klage; gentagne klager → advarsel/lukning
 - [ ] Brugerbetingelser og FAQ for erhverv (indhold + advokat)
 - [ ] Appen: samme erhvervsfunktioner (Filip)
