@@ -17,7 +17,6 @@ export default function AuctionsExplorer({
   initialPostnummer,
   initialRadiusKm,
   initialAfstandAktiv,
-  erLoggetInd,
 }: {
   initialAuktioner: DummyAuction[];
   initialTotal: number;
@@ -28,7 +27,6 @@ export default function AuctionsExplorer({
   initialPostnummer?: string;
   initialRadiusKm?: number;
   initialAfstandAktiv?: boolean;
-  erLoggetInd?: boolean;
 }) {
   // Filtrene ligger i URL'en (?kategori=&sortering=&postnummer=&afstand=),
   // så de kan deles, Tilbage-knappen husker dem, og menulinks som "Slutter
@@ -73,7 +71,13 @@ export default function AuctionsExplorer({
           <h2 id="kategorier-titel" className="sr-only">
             Kategorier
           </h2>
-          <CategoryGrid valgt={kategori} onVælg={setKategori} />
+          {/* Mobil: en rullende række, så auktionerne kommer højere op. */}
+          <div className="md:hidden">
+            <CategoryGrid valgt={kategori} onVælg={setKategori} variant="chips" />
+          </div>
+          <div className="hidden md:block">
+            <CategoryGrid valgt={kategori} onVælg={setKategori} />
+          </div>
         </section>
       )}
 
@@ -88,7 +92,6 @@ export default function AuctionsExplorer({
           initialPostnummer={initialPostnummer}
           initialRadiusKm={initialRadiusKm}
           initialAfstandAktiv={initialAfstandAktiv}
-          erLoggetInd={erLoggetInd}
           kategori={kategori}
           onKategoriChange={setKategori}
           sortering={sortering}

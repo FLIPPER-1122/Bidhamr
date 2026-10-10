@@ -1,3 +1,4 @@
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import Link from "next/link";
 import type { Blokering } from "@/app/actions/kontoSletning";
 
@@ -13,7 +14,7 @@ type TypeInfo = {
   oversigt?: (brugerId: string | null) => { href: string; tekst: string } | null;
 };
 
-const MINE_HANDLER = () => ({ href: "/mine-handler", tekst: "Se Mine handler" });
+const MINE_HANDLER = () => ({ href: MINE_HANDLER_HREF, tekst: "Se Mine handler" });
 
 const TYPE: Record<string, TypeInfo> = {
   staff: {

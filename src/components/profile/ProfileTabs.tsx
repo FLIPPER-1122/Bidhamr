@@ -2,12 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { kanOptimeres } from "@/lib/billedUrl";
-import { useSearchParams, useRouter } from "next/navigation";
 import AuctionCard, { type DummyAuction } from "@/components/AuctionCard";
 import SettingsForm from "@/components/profile/SettingsForm";
 import BedoemmelseListe from "@/components/profile/BedoemmelseListe";
+import TomTilstand from "@/components/TomTilstand";
 import type { BedoemmelseVisning } from "@/lib/bedoemmelser";
+import { PROFIL_FANER, PROFIL_FANE_NAVN, type ProfilFane } from "@/lib/profilFaner";
 
 export type BudStatus = "vinder" | "overbud" | "aktiv" | "pause";
 
@@ -44,8 +46,6 @@ const BUD_LABEL: Record<BudStatus, string> = {
   pause: "På pause",
 };
 
-type Fane = "auktioner" | "bud" | "bedommelser" | "indstillinger";
-
 function auktionStatusBadge(slutterKl: string, harBud: boolean, status?: string, pauset?: boolean) {
   if (status === "annulleret") return { label: "Annulleret", cls: "bg-kant text-tekst-daempet" };
   if (pauset) return { label: "På pause", cls: "bg-advarsel-bg text-advarsel-tekst" };
@@ -55,7 +55,11 @@ function auktionStatusBadge(slutterKl: string, harBud: boolean, status?: string,
   return { label: "Afsluttet", cls: "bg-kant text-tekst-daempet" };
 }
 
+// Fanerne er almindelige links (?fane=...), så siden læser fanen på serveren,
+// og "Mine handler" kun hentes, når den fane er åben.
 export default function ProfileTabs({
+  fane,
+  handlerIndhold,
   egneAuktioner,
   mineBud,
   ratings,
@@ -66,6 +70,9 @@ export default function ProfileTabs({
   email,
   avatarUrl,
 }: {
+  fane: ProfilFane;
+  // Fanen "Mine handler" (server-renderet MineHandlerListe), ellers null.
+  handlerIndhold: ReactNode;
   egneAuktioner: EgenAuktion[];
   mineBud: MitBud[];
   ratings: Rating[];
@@ -76,63 +83,40 @@ export default function ProfileTabs({
   email: string;
   avatarUrl: string | null;
 }) {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const raw = searchParams.get("fane");
-  const fane: Fane =
-    raw === "indstillinger" || raw === "bud" || raw === "bedommelser"
-      ? (raw as Fane)
-      : "auktioner";
-
-  function setFane(f: Fane) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("fane", f);
-    router.push(`?${params.toString()}`);
-  }
-
-  const faner: [Fane, string][] = [
-    ["auktioner", "Mine auktioner"],
-    ["bud", "Mine bud"],
-    ["bedommelser", "Bedømmelser"],
-    ["indstillinger", "Indstillinger"],
-  ];
-
   return (
     <div className="mt-6">
-      {/* Tab-bar */}
-      <div className="-mx-4 flex gap-1 overflow-x-auto border-b border-kant px-4 sm:mx-0 sm:px-0">
-        {faner.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setFane(key)}
-            aria-pressed={fane === key}
-            className={`flex min-h-11 shrink-0 items-center border-b-2 px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen ${
-              fane === key
-                ? "border-groen text-groen"
-                : "border-transparent text-tekst-daempet hover:text-tekst"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* Fanebjælke: ruller vandret på smalle skærme. */}
+      <nav aria-label="Min profil" className="-mx-4 overflow-x-auto border-b border-kant px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
+        <ul className="flex gap-1">
+          {PROFIL_FANER.map((key) => (
+            <li key={key} className="shrink-0">
+              <Link
+                href={`?fane=${key}`}
+                scroll={false}
+                aria-current={fane === key ? "page" : undefined}
+                className={`-mb-px flex min-h-11 items-center border-b-2 px-4 text-sm whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen ${
+                  fane === key
+                    ? "border-groen font-semibold text-groen"
+                    : "border-transparent font-medium text-tekst-daempet hover:border-kant-staerk hover:text-tekst"
+                }`}
+              >
+                {PROFIL_FANE_NAVN[key]}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
       <div className="mt-6">
         {/* Mine auktioner */}
         {fane === "auktioner" && (
           egneAuktioner.length === 0 ? (
-            <div className="rounded-[14px] border border-kant bg-white px-6 py-10 text-center">
-              <p className="text-sm text-tekst-svag">
-                Du har ikke oprettet nogen auktioner endnu.
-              </p>
-              <Link
-                href="/opret-auktion"
-                className="btn btn-primaer mt-4"
-              >
-                Opret din første auktion
-              </Link>
-            </div>
+            <TomTilstand
+              ikon="plus"
+              titel="Du har ingen auktioner endnu"
+              tekst="Sæt noget til salg på få minutter."
+              knap={{ href: "/opret-auktion", tekst: "Opret din første auktion" }}
+            />
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
               {egneAuktioner.map((auktion) => {
@@ -140,7 +124,7 @@ export default function ProfileTabs({
                 return (
                   <div key={auktion.id} className="relative">
                     <span
-                      className={`absolute top-2 left-2 z-10 rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.cls}`}
+                      className={`absolute top-2 left-2 z-10 rounded-full px-2 py-0.5 text-xs font-semibold ${badge.cls}`}
                     >
                       {badge.label}
                     </span>
@@ -155,21 +139,16 @@ export default function ProfileTabs({
         {/* Mine bud */}
         {fane === "bud" && (
           mineBud.length === 0 ? (
-            <div className="rounded-[14px] border border-kant bg-white px-6 py-10 text-center">
-              <p className="text-sm text-tekst-svag">
-                Du har ikke afgivet nogen bud endnu.
-              </p>
-              <Link
-                href="/auktioner"
-                className="btn btn-primaer mt-4"
-              >
-                Se alle auktioner
-              </Link>
-            </div>
+            <TomTilstand
+              ikon="ur"
+              titel="Du har ikke budt endnu"
+              tekst="Find noget, du kan lide, og giv dit første bud."
+              knap={{ href: "/auktioner", tekst: "Se alle auktioner" }}
+            />
           ) : (
             <ul className="divide-y divide-kant rounded-[14px] border border-kant bg-white">
               {mineBud.map((bud) => (
-                <li key={bud.auktionId} className="flex items-center gap-3 px-4 py-3.5 sm:gap-4">
+                <li key={bud.auktionId} className="relative flex items-center gap-3 px-4 py-3.5 sm:gap-4">
                   <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-skelet">
                     {bud.billede && (
                       <Image
@@ -184,13 +163,14 @@ export default function ProfileTabs({
                   </div>
 
                   <div className="min-w-0 flex-1">
+                    {/* Hele rækken er klikbar (after:inset-0), så touch-målet er stort. */}
                     <Link
                       href={`/auktion/${bud.auktionId}`}
-                      className="block truncate rounded-md text-sm font-medium text-tekst hover:text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+                      className="block truncate rounded-md text-[15px] font-medium text-tekst after:absolute after:inset-0 hover:text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
                     >
                       {bud.titel}
                     </Link>
-                    <p className="mt-0.5 text-xs text-tekst-svag">
+                    <p className="mt-0.5 text-[13px] text-tekst-svag">
                       Dit bud:{" "}
                       <span className="font-semibold text-tekst">
                         {bud.egetBud.toLocaleString("da-DK")} kr
@@ -217,14 +197,17 @@ export default function ProfileTabs({
           )
         )}
 
+        {/* Mine handler */}
+        {fane === "handler" && handlerIndhold}
+
         {/* Bedømmelser */}
         {fane === "bedommelser" && (
           ratings.length === 0 ? (
-            <div className="rounded-[14px] border border-kant bg-white px-6 py-10 text-center">
-              <p className="text-sm text-tekst-svag">
-                Du har ingen bedømmelser endnu.
-              </p>
-            </div>
+            <TomTilstand
+              ikon="bruger"
+              titel="Ingen bedømmelser endnu"
+              tekst="Når du har handlet, kan den anden part give dig en bedømmelse."
+            />
           ) : (
             // Med "Svar fra sælger": ét offentligt svar pr. bedømmelse.
             <div className="space-y-3">

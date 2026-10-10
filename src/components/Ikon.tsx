@@ -151,6 +151,20 @@ const STIER = {
     "M16 5.25l-8 4.5",
   ],
   hent: ["M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2", "M7 11l5 5l5 -5", "M12 4v12"],
+  faktura: [
+    "M14 3v4a1 1 0 0 0 1 1h4",
+    "M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z",
+    "M9 7h1",
+    "M9 13h6",
+    "M13 17h2",
+  ],
+  // Pladsholder, når en vare ikke har et billede.
+  billede: [
+    "M15 8h.01",
+    "M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z",
+    "M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5",
+    "M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3",
+  ],
 } as const;
 
 export type IkonNavn = keyof typeof STIER;

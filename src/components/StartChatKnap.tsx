@@ -1,5 +1,6 @@
 "use client";
 
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -102,7 +103,7 @@ export default function StartChatKnap({
       <p className="mt-3 text-sm text-tekst-daempet">
         Handlen er ikke oprettet endnu. Prøv at genindlæse siden om lidt — eller
         find den under{" "}
-        <Link href="/mine-handler" className="font-medium text-groen underline">
+        <Link href={MINE_HANDLER_HREF} className="font-medium text-groen underline">
           Mine handler
         </Link>
         .

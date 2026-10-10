@@ -1,3 +1,4 @@
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -187,7 +188,7 @@ export default async function StatistikSide({
           <section aria-labelledby="auktioner" className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="auktioner" className="text-[20px] leading-tight lg:text-[22px]">Dine auktioner</h2>
-              <Link href="/opret-auktion" className="text-sm font-medium text-groen hover:underline">
+              <Link href="/opret-auktion" className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:min-h-0">
                 Opret auktion →
               </Link>
             </div>
@@ -260,7 +261,7 @@ export default async function StatistikSide({
                   const href = vundet
                     ? handelId
                       ? `/mine-handler/${handelId}`
-                      : "/mine-handler"
+                      : MINE_HANDLER_HREF
                     : `/auktion/${b.auktion_id}`;
                   return (
                     <li key={b.auktion_id}>
@@ -311,7 +312,7 @@ export default async function StatistikSide({
         {vist.some((b) => b.min_status === "vundet") && (
           <p className="mt-3 text-sm text-tekst-daempet">
             Betaling og levering af det, du har vundet, finder du under{" "}
-            <Link href="/mine-handler" className="font-medium text-groen hover:underline">
+            <Link href={MINE_HANDLER_HREF} className="font-medium text-groen hover:underline">
               Mine handler
             </Link>
             .

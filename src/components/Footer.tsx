@@ -46,7 +46,9 @@ const link =
 
 export default function Footer() {
   return (
-    <footer className="mt-16 border-t border-kant bg-groen-lys">
+    // Sider med lys grøn baggrund (profil) går helt ned til footeren -
+    // ellers ville margenen give en hvid stribe mellem to grønne flader.
+    <footer className="mt-16 border-t border-kant bg-groen-lys [#indhold:has(>main.bg-groen-lys)+&]:mt-0">
       <div className="mx-auto max-w-[1280px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
         <div className="grid gap-10 lg:grid-cols-[1.4fr_repeat(3,1fr)] lg:gap-8">
           <div className="max-w-[40ch]">

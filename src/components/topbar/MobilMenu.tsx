@@ -154,20 +154,6 @@ export default function MobilMenu({
             </div>
             )}
 
-            {/* Ikke logget ind: Favoritter sender til login og tilbage igen. */}
-            {!loggetInd && (
-              <section className="mt-6" aria-labelledby="mobil-mig">
-                <h2 id="mobil-mig" className={`${overskrift}`}>Min side</h2>
-                <ul>
-                  <li>
-                    <Link href="/login?redirect=/favoritter" className={punkt}>
-                      <Ikon navn="hjerte" />Favoritter
-                    </Link>
-                  </li>
-                </ul>
-              </section>
-            )}
-
             {loggetInd && erFirma && (
               <section className="mt-6" aria-labelledby="mobil-mig">
                 <h2 id="mobil-mig" className={`${overskrift}`}>Min side</h2>
@@ -194,8 +180,10 @@ export default function MobilMenu({
                     {MITID.menuPunkt}
                   </a>
                 )}
+                {/* Favoritter nås via hjertet i topbaren, Mine handler er en
+                    fane på profilen, og "Sælgere du følger" står under Udforsk. */}
                 <ul>
-                  <li><Link href="/mine-handler" className={punkt}><Ikon navn="handler" />Mine handler</Link></li>
+                  <li><Link href="/profil/mig" className={punkt}><Ikon navn="bruger" />Min profil</Link></li>
                   <li>
                     <Link
                       href="/beskeder"
@@ -213,11 +201,7 @@ export default function MobilMenu({
                       )}
                     </Link>
                   </li>
-                  <li><Link href="/favoritter" className={punkt}><Ikon navn="hjerte" />Favoritter</Link></li>
-                  <li><Link href="/profil/mig" className={punkt}><Ikon navn="bruger" />Min profil</Link></li>
                   <li><Link href="/konto/statistik" className={punkt}><Ikon navn="statistik" />Min statistik</Link></li>
-                  <li><Link href="/konto/foelger" className={punkt}><Ikon navn="foelgere" />Sælgere du følger</Link></li>
-                  <li><Link href="/konto/soegninger" className={punkt}><Ikon navn="soeg" />Gemte søgninger</Link></li>
                   <li><Link href="/konto" className={punkt}><Ikon navn="indstillinger" />Min konto</Link></li>
                   <li><Link href="/konto/notifikationer" className={punkt}><Ikon navn="klokke" />Notifikationsindstillinger</Link></li>
                   {erAdmin && (
@@ -235,7 +219,10 @@ export default function MobilMenu({
                 {UDFORSK.map((l) => (
                   <li key={l.href}><Link href={l.href} className={punkt}>{l.tekst}</Link></li>
                 ))}
-
+                {/* Som i kategorilinjen på store skærme: kun for indloggede. */}
+                {loggetInd && !erFirma && (
+                  <li><Link href="/konto/foelger" className={punkt}>Sælgere du følger</Link></li>
+                )}
               </ul>
             </section>
 

@@ -2,7 +2,9 @@
 // Påkrævet-listen er spejlet i SQL (notifikation_paakraevet / notifikation_kendt_type
 // i supabase/migrations/20261002060000_notifikationer.sql; 'spoergsmaal' tilføjet i
 // 20261006040000_auktionsfunktioner.sql; 'gemt_soegning' i
-// 20261007010000_brugerens_egne_ting.sql; 'bedoemmelse' i
+// 20261007010000_brugerens_egne_ting.sql (gemte søgninger er fjernet fra
+// hjemmesiden 10. okt. 2026 - typen står stadig i SQL'en, indtil den ryddes
+// op i en migration); 'bedoemmelse' i
 // 20261007020000_bedoemmelse_svar.sql; 'afgoerelse' (påkrævet) i
 // 20261009010000_dsa.sql; 'auktion_status' i
 // 20261009040000_skjult_auktion_pause.sql; 'pakke_indleveret' (påkrævet) i
@@ -30,7 +32,6 @@ export type NotifikationType =
   | "ny_auktion_fulgt_saelger"
   | "ny_besked"
   | "spoergsmaal"
-  | "gemt_soegning"
   | "bedoemmelse"
   | "afgoerelse"
   | "skat"
@@ -66,7 +67,6 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "auktion_status", navn: "Auktion på pause", beskrivelse: "Når BidHamr sætter en auktion, du sælger eller har budt på, på pause, og når den åbner igen.", paakraevet: false },
   { type: "fulgt_slutter_snart", navn: "Favorit slutter snart", beskrivelse: "En time før en auktion, du har gemt, slutter.", paakraevet: false },
   { type: "ny_auktion_fulgt_saelger", navn: "Ny auktion fra en sælger, du følger", beskrivelse: "Når en sælger, du følger, sætter en ny vare til salg.", paakraevet: false },
-  { type: "gemt_soegning", navn: "Gemte søgninger", beskrivelse: "Når nye auktioner matcher en søgning, du har gemt. Højst én besked pr. søgning hver 6. time.", paakraevet: false },
   { type: "ny_besked", navn: "Nye beskeder", beskrivelse: "Når du får en ny besked i en handel eller fra BidHamr.", paakraevet: false },
   { type: "spoergsmaal", navn: "Spørgsmål til auktioner", beskrivelse: "Når nogen stiller et spørgsmål til din auktion, eller sælgeren svarer på dit spørgsmål.", paakraevet: false },
   { type: "bedoemmelse", navn: "Dine bedømmelser", beskrivelse: "Når en sælger svarer på en bedømmelse, du har givet, eller når noget, du har skrevet, er synligt igen efter en gennemgang.", paakraevet: false },

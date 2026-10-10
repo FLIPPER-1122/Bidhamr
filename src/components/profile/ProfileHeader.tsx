@@ -49,9 +49,11 @@ export default function ProfileHeader({
   return (
     <div className="overflow-hidden rounded-[14px] border border-kant bg-white">
       <div className="px-5 pb-6 pt-6 sm:px-8">
-        {/* Avatar + navn */}
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-kant bg-groen-lys sm:h-24 sm:w-24">
+        {/* Avatar, navn, oplysninger og knap. Mobil: avatar og navn side om
+            side, oplysninger og knap i fuld bredde under. Fra sm: avatar til
+            venstre, knappen til højre. Knappen renderes kun én gang. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-x-5 sm:gap-y-2">
+          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border border-kant bg-groen-lys col-start-1 row-start-1 sm:row-span-2 sm:h-24 sm:w-24 sm:self-start">
             {avatarUrl ? (
               <Image
                 src={avatarUrl}
@@ -64,7 +66,7 @@ export default function ProfileHeader({
             ) : (
               <svg
                 viewBox="0 0 24 24"
-                className="h-full w-full p-5 text-groen-mork"
+                className="h-full w-full p-4 text-groen-mork sm:p-5"
                 aria-hidden="true"
                 fill="none"
                 stroke="currentColor"
@@ -79,21 +81,10 @@ export default function ProfileHeader({
             )}
           </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <h1 className="min-w-0 text-[26px] leading-tight break-words sm:text-[32px]">
-                {navn}
-              </h1>
-              {erEgenProfil && (
-                <Link
-                  href={`/profil/${brugerId}?fane=indstillinger`}
-                  className="btn btn-sekundaer"
-                >
-                  Rediger profil
-                </Link>
-              )}
-              {handling}
-            </div>
+          <div className="col-start-2 row-start-1 min-w-0 sm:self-end">
+            <h1 className="min-w-0 text-[26px] leading-tight break-words sm:text-[32px]">
+              {navn}
+            </h1>
             {email && (
               <p className="mt-0.5 text-sm break-all text-tekst-svag">{email}</p>
             )}
@@ -114,8 +105,24 @@ export default function ProfileHeader({
                 </a>
               </div>
             )}
+          </div>
 
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-tekst-svag">
+          {(erEgenProfil || handling) && (
+            <div className="col-span-2 row-start-3 flex flex-wrap gap-2 sm:col-span-1 sm:col-start-3 sm:row-span-2 sm:row-start-1 max-sm:[&_.btn]:w-full max-sm:[&>*]:w-full sm:self-start">
+              {erEgenProfil && (
+                <Link
+                  href={`/profil/${brugerId}?fane=indstillinger`}
+                  className="btn btn-sekundaer"
+                >
+                  Rediger profil
+                </Link>
+              )}
+              {handling}
+            </div>
+          )}
+
+          <div className="col-span-2 row-start-2 min-w-0 sm:col-span-1 sm:col-start-2 sm:self-start">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-tekst-svag">
               <span className="flex items-center gap-1.5">
                 <svg
                   viewBox="0 0 24 24"

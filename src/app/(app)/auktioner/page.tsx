@@ -1,6 +1,5 @@
 import AuctionsExplorer from "@/components/AuctionsExplorer";
 import { AFSTAND_STANDARD_KM, læsAfstand, læsPostnummer, læsSortering } from "@/lib/auktionFiltre";
-import { hentBruger } from "@/lib/supabase/bruger";
 import { RADIUS_MAX_KM, hentAuktionsside } from "@/lib/auktionSoegning";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import type { Metadata } from "next";
@@ -55,7 +54,7 @@ export default async function AuktionerPage({
   const initialKategori = kategorier.find((k) => k === kategori?.trim()) ?? "";
   // ?sortering= fra forsiden og menuen ("Slutter snart", "Nye auktioner").
   const initialSortering = læsSortering(sortering);
-  // ?postnummer=&afstand= fra filterbjælken eller en gemt søgning.
+  // ?postnummer=&afstand= fra filterbjælken eller et delt link.
   // Ugyldige værdier ignoreres (samme regler som klienten, src/lib/auktionFiltre.ts).
   const initialPostnummer = læsPostnummer(postnummer);
   const initialRadiusKm = læsAfstand(initialPostnummer, afstand);
@@ -64,17 +63,13 @@ export default async function AuktionerPage({
   const radiusKm = initialRadiusKm ?? AFSTAND_STANDARD_KM;
   const initialAfstandAktiv = Boolean(slaaPostnummerOp(initialPostnummer)) && radiusKm < RADIUS_MAX_KM;
 
-  const [bruger, side] = await Promise.all([
-    // Delt med topbaren (cache() i src/lib/supabase/bruger.ts).
-    hentBruger(),
-    hentAuktionsside({
-      q: søgetekst,
-      kategori: initialKategori,
-      sortering: initialSortering,
-      postnummer: initialPostnummer,
-      radiusKm,
-    }),
-  ]);
+  const side = await hentAuktionsside({
+    q: søgetekst,
+    kategori: initialKategori,
+    sortering: initialSortering,
+    postnummer: initialPostnummer,
+    radiusKm,
+  });
 
   // Vises af error.tsx - en tom liste ville fejlagtigt sige "ingen auktioner".
   if (!side.ok) throw new Error("Auktionerne kunne ikke hentes");
@@ -95,7 +90,6 @@ export default async function AuktionerPage({
         initialPostnummer={initialPostnummer}
         initialRadiusKm={initialRadiusKm}
         initialAfstandAktiv={initialAfstandAktiv}
-        erLoggetInd={Boolean(bruger)}
       />
     </main>
   );

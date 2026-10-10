@@ -1,3 +1,4 @@
+import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -157,7 +158,7 @@ export default async function BeskederPage() {
             <h2 id="handler-overskrift" className="font-serif text-xl font-semibold text-tekst">
               Handler
             </h2>
-            <Link href="/mine-handler" className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
+            <Link href={MINE_HANDLER_HREF} className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
               Mine handler →
             </Link>
           </div>

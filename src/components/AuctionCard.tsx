@@ -51,7 +51,7 @@ export default function AuctionCard({
           className="relative aspect-[4/3] w-full bg-skelet"
           style={auktion.billede || !auktion.farve ? undefined : { backgroundColor: auktion.farve }}
         >
-          {auktion.billede && (
+          {auktion.billede ? (
             <Image
               src={auktion.billede}
               alt=""
@@ -60,6 +60,12 @@ export default function AuctionCard({
               unoptimized={!kanOptimeres(auktion.billede)}
               className="object-cover"
             />
+          ) : (
+            !auktion.farve && (
+              <span className="absolute inset-0 grid place-items-center bg-groen-lys text-groen/40">
+                <Ikon navn="billede" className="h-9 w-9" strøg={1.5} />
+              </span>
+            )
           )}
 
           <span
