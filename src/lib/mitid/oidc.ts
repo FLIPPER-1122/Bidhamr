@@ -285,15 +285,19 @@ export async function hentIdentitet(
   const godkendt = (v: string) =>
     v === MITID_ACR ||
     v === "urn:grn:authn:dk:mitid:high" ||
-    /^https?:\/\/data\.gov\.dk\/concept\/core\/nsis\/loa\/(substantial|high)$/i.test(v);
+    /^https:\/\/data\.gov\.dk\/concept\/core\/nsis\/loa\/(substantial|high)$/i.test(v);
   if (niveauer.length === 0 || !niveauer.every(godkendt)) {
     // Niveau-værdierne er ikke personoplysninger.
     throw new Error(
       `MitID: for lavt sikringsniveau (${niveauer.map((v) => v.slice(0, 80)).join(" | ") || "intet niveau"}; claims=${Object.keys(c).sort().join(",").slice(0, 400)})`,
     );
   }
-  const raaId = typeof c.uuid === "string" ? c.uuid : typeof c["gov:saml:attribute:UUID"] === "string" ? c["gov:saml:attribute:UUID"] : "";
-  const personId = raaId.trim().replace(/^urn:uuid:/i, "").toLowerCase();
+  // Person-ID står i uuid eller gov:saml:attribute:UUID. Er begge sat, skal de
+  // være ens - ellers kunne samme person få to forskellige hashes.
+  const normId = (v: unknown) => (typeof v === "string" ? v.trim().replace(/^urn:uuid:/i, "").toLowerCase() : "");
+  const ids = [normId(c.uuid), normId(c["gov:saml:attribute:UUID"])].filter(Boolean);
+  if (ids.length === 2 && ids[0] !== ids[1]) throw new Error("MitID: modstridende Person-ID");
+  const personId = ids[0] ?? "";
   if (!/^[0-9a-f-]{16,64}$/i.test(personId)) throw new Error("MitID: mangler Person-ID");
   const foedselsdato = typeof c.birthdate === "string" ? c.birthdate.trim() : "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(foedselsdato)) throw new Error("MitID: mangler fødselsdato");
