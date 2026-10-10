@@ -183,24 +183,30 @@ export default async function AdminSager({
   // medarbejdere knappen; uden returmelding kun admin/chef (databasen afgør
   // det også - 'kraever_admin').
   const sendteIds = alle.filter((h) => h.status === "pakke_sendt" && !h.afhentning).map((h) => h.id);
-  const [{ data: auktioner }, { data: brugere }, { data: returMeldt }] = await Promise.all([
+  // Hentes i bidder á 150 id'er (kort URL), så alle sendte handler på siden er med.
+  const bidder: string[][] = [];
+  for (let i = 0; i < sendteIds.length; i += 150) bidder.push(sendteIds.slice(i, i + 150));
+  const [{ data: auktioner }, { data: brugere }, returMeldt] = await Promise.all([
     auktionIds.length
       ? supabase.from("auctions").select("id, titel").in("id", auktionIds)
       : Promise.resolve({ data: [] as { id: string; titel: string }[] }),
     brugerIds.length
       ? supabase.from("users").select("id, navn, email").in("id", brugerIds)
       : Promise.resolve({ data: [] as { id: string; navn: string | null; email: string }[] }),
-    sendteIds.length
-      ? supabase
+    Promise.all(
+      bidder.map((ids) =>
+        supabase
           .from("forsendelser")
           .select("trade_id")
-          .in("trade_id", sendteIds.slice(0, 300))
+          .in("trade_id", ids)
           .eq("type", "udgaaende")
+          .not("status", "in", "(annulleret,fejlet)")
           .not("returneret_kl", "is", null)
-          .is("leveret_kl", null)
-      : Promise.resolve({ data: [] as { trade_id: string }[] }),
+          .is("leveret_kl", null),
+      ),
+    ),
   ]);
-  const returMeldtIds = new Set((returMeldt ?? []).map((f) => f.trade_id as string));
+  const returMeldtIds = new Set(returMeldt.flatMap((r) => (r.data ?? []).map((f) => f.trade_id as string)));
 
   const titelMap = new Map((auktioner ?? []).map((a) => [a.id, a.titel as string]));
   const brugerMap = new Map(

@@ -29,9 +29,12 @@ begin
   select md5(lower(regexp_replace(regexp_replace(replace(p.prosrc, chr(13), ''), '--[^\n]*', '', 'g'), '\s', '', 'g')))
     into h
     from pg_proc p where p.oid = 'public.handel_ikke_afhentet_registrer(uuid,text,uuid,text,uuid,bigint)'::regprocedure;
-  if h = '9c88ad4a340ff9084680eca441284201' then
+  -- Gammel: 20261016030000 (ce997b0e) eller første udgave af denne fil
+  -- (9c88ad4a - kørt på testdatabasen før B3-rettelsen). Ny: a77a954c.
+  if h = 'a77a954c936018065e902a67376a3d5d' then
     raise notice 'handel_ikke_afhentet_registrer: allerede rettet';
-  elsif h is distinct from 'ce997b0ea7ccc8c2846bb99fab24ac7a' then
+  elsif h is distinct from 'ce997b0ea7ccc8c2846bb99fab24ac7a'
+        and h is distinct from '9c88ad4a340ff9084680eca441284201' then
     raise exception 'handel_ikke_afhentet_registrer: kroppen afviger fra 20261016030000 (md5 %) - kontrollér funktionen, før migrationen køres', h;
   end if;
 end $do$;
@@ -119,6 +122,7 @@ begin
   -- en medarbejder må kun, når pakken er meldt retur.
   v_retur_meldt := exists (select 1 from public.forsendelser fo
                             where fo.trade_id = p_trade and fo.type = 'udgaaende'
+                              and fo.status not in ('annulleret', 'fejlet')
                               and fo.returneret_kl is not null and fo.leveret_kl is null);
   if p_kilde = 'staff' and not v_retur_meldt and v_rolle not in ('admin', 'chef') then
     return jsonb_build_object('kode', 'kraever_admin');
@@ -250,7 +254,12 @@ as $fn$
      and t.status = 'pakke_sendt'
      and not coalesce(t.afhentning, false)
      and not coalesce(t.sag_aaben, false)
+     -- Samme betingelser som handel_ikke_afhentet_registrer.
+     and b.pengemodel = 'destination'
      and b.status = 'betalt'
+     and b.stripe_charge_id is not null
+     and b.refunderet_kl is null
+     and b.indsigelse_tilbagefoert_oere is null
      and b.frigivet_kl is null
      and b.refusion_anmodet_kl is null
      and b.stripe_transfer_id is null and b.saelger_udbetaling_id is null
