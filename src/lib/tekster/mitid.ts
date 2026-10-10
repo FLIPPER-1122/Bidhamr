@@ -49,6 +49,29 @@ export const MITID = {
   kontoIkkeVerificeret:
     "Du er ikke bekræftet med MitID endnu. Det kræves, før du kan byde eller sætte varer til salg.",
   kontoNavn: "Navn fra MitID (vises aldrig for andre):",
+
+  // Mere synlig MitID (Filip, 10. okt. 2026: "den er gemt lidt væk").
+  // TODO indhold-agent: gennemlæs de korte pladsholdere herunder.
+  // Velkomstsiden efter oprettelse.
+  velkommenTitel: "Bekræft dig med MitID nu",
+  velkommenTekst: "Så er du klar til at byde og sælge. Det tager et minut og sker kun én gang.",
+  springOver: "Spring over, jeg gør det senere",
+  // Kortet øverst på Min konto.
+  kontoKortTitel: "Du er ikke MitID-verificeret endnu",
+  kontoKortTekst: "Bekræft dig én gang med MitID, så kan du byde og sætte varer til salg.",
+  // Profilmenuen i topbaren.
+  menuPunkt: "Bekræft med MitID",
+  menuMangler: "MitID mangler",
+  // Egen profil (kun ejeren ser det).
+  profilEjer: "Ikke MitID-verificeret – bekræft nu",
+  // Hvorfor MitID - kort liste (velkomst, Min konto, boksen før bud/salg).
+  hvorforTitel: "Hvorfor MitID?",
+  hvorfor: [
+    "Tryghed: alle, der byder og sælger, er rigtige personer.",
+    "Én konto pr. person – det stopper falske konti.",
+    "Du skal være fyldt 18 år for at handle.",
+    "Dit navn fra MitID vises aldrig. Andre ser kun dit brugernavn.",
+  ],
 } as const;
 
 export type MitIdResultat = keyof typeof MITID.resultat;

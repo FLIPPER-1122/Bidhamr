@@ -43,18 +43,25 @@ export const sessionBrugerId = cache(async (): Promise<string | null> => {
   return typeof sub === "string" ? sub : null;
 });
 
-// Kontotypen ('privat' | 'erhverv') for en bruger - hentet højst ÉN gang pr.
-// forespørgsel pr. bruger-id (topbaren, auktionssiden og Opret auktion
-// spørger alle). users.konto_type kan læses af alle
-// (20261010030000_erhverv.sql). null, hvis opslaget fejler.
-export const hentKontoType = cache(async (brugerId: string): Promise<string | null> => {
+// Kontotype og MitID-tidspunkt for en bruger - hentet højst ÉN gang pr.
+// forespørgsel pr. bruger-id (topbaren, auktionssiden, Opret auktion og
+// MitID-status spørger alle). Begge kolonner kan læses af alle
+// (20261010030000_erhverv.sql, 20261013010000_mitid.sql). null, hvis
+// opslaget fejler.
+export type KontoFelter = { konto_type: string | null; mitid_verificeret_kl: string | null };
+export const hentKontoFelter = cache(async (brugerId: string): Promise<KontoFelter | null> => {
   const supabase = await createClient();
   const { data } = await supabase
     .from("users")
-    .select("konto_type")
+    .select("konto_type, mitid_verificeret_kl")
     .eq("id", brugerId)
-    .maybeSingle<{ konto_type: string | null }>();
-  return data?.konto_type ?? null;
+    .maybeSingle<KontoFelter>();
+  return data ?? null;
+});
+
+// Kontotypen ('privat' | 'erhverv'). null, hvis opslaget fejler.
+export const hentKontoType = cache(async (brugerId: string): Promise<string | null> => {
+  return (await hentKontoFelter(brugerId))?.konto_type ?? null;
 });
 
 // Den bekræftede bruger, men kun hvis den er den samme som i JWT'en, som

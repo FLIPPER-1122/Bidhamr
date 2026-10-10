@@ -3,6 +3,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { kanOptimeres } from "@/lib/billedUrl";
 import MitIDMaerke from "@/components/mitid/MitIDMaerke";
+import Ikon from "@/components/Ikon";
+import { mitIdStartHref } from "@/components/mitid/MitIDKraeves";
+import { MITID } from "@/lib/tekster/mitid";
 
 interface ProfileHeaderProps {
   navn: string;
@@ -24,6 +27,8 @@ interface ProfileHeaderProps {
   handling?: ReactNode;
   // users.mitid_verificeret_kl er sat: mærket "MitID-verificeret".
   mitidVerificeret?: boolean;
+  // Kun på egen profil: ejeren er ikke MitID-verificeret (vises aldrig for andre).
+  mitidManglerEjer?: boolean;
 }
 
 export default function ProfileHeader({
@@ -39,6 +44,7 @@ export default function ProfileHeader({
   antalFoelgere,
   handling,
   mitidVerificeret = false,
+  mitidManglerEjer = false,
 }: ProfileHeaderProps) {
   return (
     <div className="overflow-hidden rounded-[14px] border border-kant bg-white">
@@ -94,6 +100,18 @@ export default function ProfileHeader({
             {mitidVerificeret && (
               <div className="mt-1.5">
                 <MitIDMaerke />
+              </div>
+            )}
+            {erEgenProfil && mitidManglerEjer && (
+              <div className="mt-1.5">
+                {/* Almindeligt link: route handleren sender videre til MitID. */}
+                <a
+                  href={mitIdStartHref(`/profil/${brugerId}`)}
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-advarsel-kant bg-advarsel-bg px-3 py-1.5 text-left text-[13px] font-semibold text-advarsel-tekst hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+                >
+                  <Ikon navn="personTjek" className="h-4 w-4 shrink-0" strøg={2} />
+                  {MITID.profilEjer}
+                </a>
               </div>
             )}
 

@@ -6,6 +6,7 @@
 // Lukket er skuffen display:none og dermed helt ude af tab-rækkefølgen.
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Ikon, { KATEGORI_IKON } from "@/components/Ikon";
 import { badgeTekst } from "@/lib/notifikationer/visning";
@@ -14,6 +15,8 @@ import { HJAELP, UDFORSK, kategoriHref } from "@/components/topbar/navigation";
 import { beskederTekst, useAntalUlaesteBeskeder } from "@/components/topbar/UlaesteBeskeder";
 import { useLogUd } from "@/components/topbar/useLogUd";
 import { ERHVERV_MENU } from "@/lib/tekster/erhverv";
+import { mitIdStartHref } from "@/components/mitid/MitIDKraeves";
+import { MITID } from "@/lib/tekster/mitid";
 
 const punkt =
   "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[15px] font-medium text-tekst hover:bg-groen-lys hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen";
@@ -24,6 +27,7 @@ export default function MobilMenu({
   erAdmin,
   erFirma = false,
   kunFirma = false,
+  mitidMangler = false,
 }: {
   loggetInd: boolean;
   erAdmin: boolean;
@@ -32,7 +36,10 @@ export default function MobilMenu({
   // Firmakonto før lancering: kun Firma oversigt og Log ud (resten af siden
   // er lukket for firmaet - se Header).
   kunFirma?: boolean;
+  // Privat bruger uden MitID: markering på burgeren og "Bekræft med MitID".
+  mitidMangler?: boolean;
 }) {
+  const sti = usePathname();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lukRef = useRef<HTMLButtonElement>(null);
   const [aaben, setAaben] = useState(false);
@@ -80,9 +87,13 @@ export default function MobilMenu({
         onClick={aabn}
         aria-haspopup="dialog"
         aria-expanded={aaben}
-        aria-label={
-          loggetInd && antalBeskeder > 0 ? `Menu, ${beskederTekst(antalBeskeder)}` : "Menu"
-        }
+        aria-label={[
+          "Menu",
+          loggetInd && antalBeskeder > 0 ? beskederTekst(antalBeskeder) : null,
+          loggetInd && mitidMangler ? MITID.menuMangler : null,
+        ]
+          .filter(Boolean)
+          .join(", ")}
         className="relative flex h-11 w-11 items-center justify-center rounded-full border-[1.5px] border-kant-staerk text-tekst hover:border-groen hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
       >
         <Ikon navn="menu" />
@@ -93,6 +104,9 @@ export default function MobilMenu({
           >
             {badgeTekst(antalBeskeder)}
           </span>
+        )}
+        {loggetInd && mitidMangler && !(antalBeskeder > 0) && (
+          <span aria-hidden="true" className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-orange ring-2 ring-white" />
         )}
       </button>
 
@@ -171,6 +185,15 @@ export default function MobilMenu({
             {loggetInd && !erFirma && (
               <section className="mt-6" aria-labelledby="mobil-mig">
                 <h2 id="mobil-mig" className={`${overskrift}`}>Min side</h2>
+                {mitidMangler && (
+                  <a
+                    href={mitIdStartHref(sti || "/")}
+                    className="mx-1 mb-2 flex min-h-11 items-center gap-3 rounded-lg bg-advarsel-bg px-3 text-[15px] font-semibold text-advarsel-tekst hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+                  >
+                    <Ikon navn="personTjek" strøg={2} />
+                    {MITID.menuPunkt}
+                  </a>
+                )}
                 <ul>
                   <li><Link href="/mine-handler" className={punkt}><Ikon navn="handler" />Mine handler</Link></li>
                   <li>

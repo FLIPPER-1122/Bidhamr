@@ -17,6 +17,21 @@ export const SAADAN_VIRKER_DET: Tekstside = {
   intro:
     "På BidHamr sælger privatpersoner brugte ting til hinanden på auktion. Her kan du se, hvad der sker fra første bud, til sælgeren har fået sine penge.",
   afsnit: [
+    // TODO indhold-agent: gennemlæs MitID-afsnittet (kort pladsholder).
+    {
+      id: "mitid",
+      overskrift: "Først: bekræft dig med MitID",
+      tekst: [
+        "Du kan oprette en konto og kigge med det samme. Før dit første bud eller din første auktion bekræfter du dig én gang med MitID. Det tager et minut.",
+      ],
+      punkter: [
+        "Tryghed: alle, der byder og sælger, er rigtige personer.",
+        "Én konto pr. person – det stopper falske konti.",
+        "Du skal være fyldt 18 år.",
+        "Dit navn fra MitID vises aldrig. Andre ser kun dit brugernavn og mærket \"MitID-verificeret\".",
+      ],
+      links: [{ tekst: "Bekræft dig under Min konto", href: "/konto#mitid" }],
+    },
     {
       id: "koeber",
       overskrift: "Når du køber",
