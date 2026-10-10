@@ -134,3 +134,27 @@ export function lytTilAabn(l: () => void): () => void {
   window.addEventListener(AABN_EVENT, l);
   return () => window.removeEventListener(AABN_EVENT, l);
 }
+
+// Står cookie-banneret (eller cookieindstillingerne) på skærmen lige nu?
+// Sættes af CookieBanner. Vinduet med brugerbetingelserne
+// (src/components/vilkaar/VilkaarDialog.tsx) venter, til det er væk, så det
+// aldrig ligger oven på banneret.
+let bannerAabent = false;
+const bannerLyttere = new Set<() => void>();
+
+export function saetCookieBannerAabent(aabent: boolean) {
+  if (bannerAabent === aabent) return;
+  bannerAabent = aabent;
+  bannerLyttere.forEach((l) => l());
+}
+
+export function erCookieBannerAabent(): boolean {
+  return bannerAabent;
+}
+
+export function lytTilCookieBanner(l: () => void): () => void {
+  bannerLyttere.add(l);
+  return () => {
+    bannerLyttere.delete(l);
+  };
+}

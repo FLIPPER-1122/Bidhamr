@@ -88,6 +88,38 @@ const OFFENTLIGE_RUTER = [
 // /auth/callback) - den skal kunne vises for alle, også før lancering.
 const OFFENTLIGE_LAESESIDER = ["/betingelser", "/privatliv", "/bekraeft"];
 
+// Efter lancering (LANCERET=1 i produktion, altid på testdatabasen - se
+// src/lib/lancering.ts) må besøgende UDEN login kigge rundt: forsiden,
+// søgningen, en auktion, offentlige profiler og de faste tekstsider. Alt
+// andet (Min konto, Mine handler, Opret auktion, beskeder, admin ...) kræver
+// stadig login - besøgende uden login sendes til /login og tilbage bagefter.
+// Server actions på disse stier tjekker selv brugeren (fx afgivBud), ligesom
+// de altid har skullet på /login. Før lancering gælder listen ikke: så ser
+// besøgende uden login kun /coming-soon og de offentlige ruter ovenfor.
+const AABNE_SIDER_EFTER_LANCERING = [
+  "/auktioner",
+  "/saadan-virker-det",
+  "/faq",
+  "/pakkeguide",
+  "/forbudte-varer",
+  "/om",
+  "/kontakt",
+  "/tilgaengelighed",
+];
+// /auktion/<id> (men ikke /auktion/<id>/rediger), /profil/<uuid> (men ikke
+// /profil/mig) og /erhvervssaelger/<id>.
+const AABNE_MOENSTRE_EFTER_LANCERING = [
+  /^\/auktion\/[^/]+\/?$/,
+  new RegExp(`^/profil/[0-9a-fA-F-]{36}/?$`),
+  /^\/erhvervssaelger\/[^/]+\/?$/,
+];
+
+function erAabenEfterLancering(pathname: string) {
+  if (pathname === "/") return true;
+  if (AABNE_SIDER_EFTER_LANCERING.some((rute) => pathname === rute || pathname === `${rute}/`)) return true;
+  return AABNE_MOENSTRE_EFTER_LANCERING.some((m) => m.test(pathname));
+}
+
 function erOffentligLaeseside(pathname: string, metode: string) {
   if (metode !== "GET" && metode !== "HEAD") return false;
   return OFFENTLIGE_LAESESIDER.some(
@@ -370,6 +402,18 @@ export async function updateSession(
     return supabaseResponse;
   }
 
+  // Efter lancering er venteliste-siden overflødig: gamle links og
+  // bogmærker sendes til forsiden. Hash-fragmentet (#access_token=... fra
+  // Supabase) bevares af browseren gennem omdirigeringen, og forsiden har
+  // samme AuthHashRedirect som coming-soon.
+  if (
+    (pathname === "/coming-soon" || pathname === "/coming-soon/") &&
+    (request.method === "GET" || request.method === "HEAD") &&
+    !foerLancering()
+  ) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
   if (erOffentligRute(pathname)) {
     if (await afvisSkrivningPaaOffentligSti(request, supabase)) {
       return new NextResponse("Ingen adgang", { status: 403 });
@@ -382,13 +426,26 @@ export async function updateSession(
 
   // Ikke logget ind og forsøger at tilgå noget andet end de offentlige ruter
   // -> hele appen er bag venteliste-gaten, ingen adgang uden login.
+  // Efter lancering: de åbne sider (forside, søgning, auktion ...) og
+  // statiske filer må ses uden login; resten sender til /login.
   if (!session) {
+    if (!foerLancering()) {
+      if (erAabenEfterLancering(pathname) || erStatiskFil(pathname, request.method)) {
+        return supabaseResponse;
+      }
+      if (request.method === "GET" || request.method === "HEAD") {
+        const login = new URL("/login", request.url);
+        login.searchParams.set("redirect", `${pathname}${request.nextUrl.search}`);
+        return NextResponse.redirect(login);
+      }
+      return new NextResponse("Log ind først", { status: 401 });
+    }
     return NextResponse.redirect(new URL("/coming-soon", request.url));
   }
 
-  // Efter lancering (i dag kun på testdatabasen - npm run dev via .env.local,
-  // se src/lib/lancering.ts) må alle indloggede brugere komme forbi gaten, så
-  // almindelige testbrugere kan bruge siden. Admin er stadig beskyttet af
+  // Efter lancering (på testdatabasen altid - npm run dev via .env.local - og
+  // i produktion først når LANCERET=1, se src/lib/lancering.ts) må alle
+  // indloggede brugere komme forbi gaten. Admin er stadig beskyttet af
   // rolle-tjekket i src/app/admin/layout.tsx. foerLancering() er fail closed,
   // så produktion er uændret. Admin-stier tjekkes dog altid for rollen
   // 'saelger' herunder.
