@@ -277,7 +277,7 @@ export async function hentIdentitet(
   // Kun dansk MitID på niveau betydelig eller højere.
   if (c.identityscheme !== "dkmitid") throw new Error("MitID: forkert eID");
   // Idura sender niveauet i authenticationtype (URN) og/eller
-  // gov:saml:attribute:LoA (NSIS-URI) - ikke altid i acr. Mindst én skal sige
+  // gov:saml:attribute:LoA ("SUBSTANTIAL" eller NSIS-URI) - ikke altid i acr. Mindst én skal sige
   // betydelig/høj, og ingen må sige lavere.
   const niveauer = [c.acr, c.authenticationtype, c["gov:saml:attribute:LoA"]]
     .filter((v): v is string => typeof v === "string" && v.trim() !== "")
@@ -285,7 +285,9 @@ export async function hentIdentitet(
   const godkendt = (v: string) =>
     v === MITID_ACR ||
     v === "urn:grn:authn:dk:mitid:high" ||
-    /^https:\/\/data\.gov\.dk\/concept\/core\/nsis\/loa\/(substantial|high)$/i.test(v);
+    /^https:\/\/data\.gov\.dk\/concept\/core\/nsis\/loa\/(substantial|high)$/i.test(v) ||
+    // gov:saml:attribute:LoA kommer fra Idura som "SUBSTANTIAL"/"HIGH".
+    /^(substantial|high)$/i.test(v);
   if (niveauer.length === 0 || !niveauer.every(godkendt)) {
     // Niveau-værdierne er ikke personoplysninger.
     throw new Error(
