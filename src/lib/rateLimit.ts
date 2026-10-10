@@ -1,6 +1,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logDriftFejl } from "@/lib/drift";
 
 // Lille Postgres-baseret rate limiter (tabel rate_limits + funktionen
 // rate_limit_tjek, kun service_role). Ingen betalt tjeneste.
@@ -155,7 +156,7 @@ export async function klientIp(): Promise<string> {
 
 type GraenseSvar = "ok" | "for_mange" | "fejl";
 
-async function tjekEn(navn: GraenseNavn, id: string): Promise<GraenseSvar> {
+async function tjekEtForsoeg(navn: GraenseNavn, id: string): Promise<GraenseSvar> {
   const g = GRAENSER[navn];
   try {
     const { data, error } = await createAdminClient().rpc("rate_limit_tjek", {
@@ -174,9 +175,35 @@ async function tjekEn(navn: GraenseNavn, id: string): Promise<GraenseSvar> {
   }
 }
 
+// Ét hurtigt nyt forsøg ved fejl (fx et kortvarigt netværksudfald), før der
+// svares "fejl".
+async function tjekEn(navn: GraenseNavn, id: string): Promise<GraenseSvar> {
+  const svar = await tjekEtForsoeg(navn, id);
+  if (svar !== "fejl") return svar;
+  await new Promise((r) => setTimeout(r, 150));
+  return tjekEtForsoeg(navn, id);
+}
+
+// Fail closed-afvisninger logges i /admin/drift, så et udfald ikke er
+// usynligt - højst én gang pr. minut pr. proces. Kun grænsens navn, aldrig
+// nøglen (e-mail/IP).
+const LOG_INTERVAL_MS = 60 * 1000;
+let sidstLoggetMs = 0;
+
+async function logLukketFejl(navne: GraenseNavn[]): Promise<void> {
+  const nu = Date.now();
+  if (nu - sidstLoggetMs < LOG_INTERVAL_MS) return;
+  sidstLoggetMs = nu;
+  await logDriftFejl({
+    kilde: "server",
+    hvor: "rateLimit",
+    fejl: `Rate limit kunne ikke tjekkes - forespørgslen blev afvist (fail closed): ${navne.join(", ")}`,
+  });
+}
+
 // Returnerer true, hvis forespoergslen er inden for graensen. Fail open.
 export async function indenForGraense(navn: GraenseNavn, id: string): Promise<boolean> {
-  return (await tjekEn(navn, id)) !== "for_mange";
+  return (await tjekEtForsoeg(navn, id)) !== "for_mange";
 }
 
 // Tjekker flere graenser; alle skal vaere overholdt. Fail open.
@@ -195,7 +222,10 @@ export async function tjekGraenserLukket(
 ): Promise<GraenseSvar> {
   const svar = await Promise.all(tjek.map(([n, id]) => tjekEn(n, id)));
   if (svar.includes("for_mange")) return "for_mange";
-  if (svar.includes("fejl")) return "fejl";
+  if (svar.includes("fejl")) {
+    await logLukketFejl(tjek.filter((_, i) => svar[i] === "fejl").map(([n]) => n));
+    return "fejl";
+  }
   return "ok";
 }
 

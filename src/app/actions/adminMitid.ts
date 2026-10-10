@@ -47,6 +47,48 @@ export async function nulstilMitId(formData: FormData): Promise<{ ok: true } | {
   }
 }
 
+// Juridisk navn og fødselsdato fra MitID vises først i admin, når en
+// medarbejder trykker "Vis" (sikkerhedsgennemgangen 10. okt. 2026). Staff kan
+// ikke læse mitid_verificeringer direkte (RLS: kun brugeren selv); her læses
+// via service role efter rolletjekket, og opslaget logges i moderation_log
+// ('mitid_opslag'). Fail closed: kan opslaget ikke logges, returneres intet.
+export type MitIdOplysninger = { juridiskNavn: string | null; foedselsdato: string | null };
+
+export async function visMitIdOplysninger(
+  brugerId: string,
+): Promise<{ ok: true; data: MitIdOplysninger } | { fejl: string }> {
+  try {
+    const id = String(brugerId ?? "").trim();
+    if (!UUID.test(id) || id === BIDHAMR_SYSTEM_ID) return { fejl: "Brugeren blev ikke fundet." };
+    const { admin, userId: staffId } = await assertRole("medarbejder");
+    const { data: v, error } = await admin
+      .from("mitid_verificeringer")
+      .select("juridisk_navn, foedselsdato")
+      .eq("bruger_id", id)
+      .eq("status", "aktiv")
+      .maybeSingle<{ juridisk_navn: string | null; foedselsdato: string | null }>();
+    if (error) throw error;
+    if (!v) return { fejl: "Brugeren er ikke MitID-verificeret." };
+    const { error: logFejl } = await admin.from("moderation_log").insert({
+      medarbejder_id: staffId,
+      handling: "mitid_opslag",
+      maal_type: "bruger",
+      maal_id: id,
+      bruger_id: id,
+      aarsag: "MitID-oplysninger (juridisk navn og fødselsdato) vist på brugersiden i admin",
+    });
+    if (logFejl) {
+      console.error("visMitIdOplysninger: kunne ikke logge opslaget:", logFejl.message);
+      return { fejl: "Opslaget kunne ikke logges, så oplysningerne vises ikke. Prøv igen om lidt." };
+    }
+    return { ok: true, data: { juridiskNavn: v.juridisk_navn, foedselsdato: v.foedselsdato } };
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error("visMitIdOplysninger fejlede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
 export async function behandlMitIdForsoeg(formData: FormData): Promise<{ ok: true } | { fejl: string }> {
   try {
     const forsoegId = String(formData.get("forsoegId") ?? "").trim();

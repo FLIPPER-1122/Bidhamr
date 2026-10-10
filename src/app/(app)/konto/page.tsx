@@ -88,9 +88,8 @@ export default async function KontoSide({
     supabase.rpc("mine_blokeringer"),
     // Accepteret version af brugerbetingelserne (kun brugerens egen).
     supabase.rpc("mine_vilkaar"),
-    // Egen MitID-verificering (RLS: kun brugeren selv og staff). Navnet fra
-    // MitID vises kun her - aldrig for andre.
-    // Filtreret på eget id: staff kan læse alle rækker.
+    // Egen MitID-verificering (RLS: kun brugeren selv). Navnet fra MitID
+    // vises kun her - aldrig for andre.
     sessionId
       ? supabase
           .from("mitid_verificeringer")

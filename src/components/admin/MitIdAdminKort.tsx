@@ -2,24 +2,24 @@ import Link from "next/link";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { nulstilMitId } from "@/app/actions/adminMitid";
+import MitIdVisOplysninger from "@/components/admin/MitIdVisOplysninger";
 
 // MitID på brugersiden i admin (20261013010000_mitid.sql): status,
 // tidspunkt, juridisk navn og fødselsdato (kun internt - staff), historik,
 // afviste forsøg (mulig dobbeltkonto) og "Nulstil MitID" (admin/chef).
 //
 // Staff kan ikke læse mitid_verificeringer direkte (RLS: kun brugeren selv,
-// 20261015010000_sikkerhed_gennemgang.sql). Siden læser via service role
-// efter rolletjekket på siden (kraevSideRolle), og hvert opslag af juridisk
-// navn og fødselsdato logges i moderation_log ('mitid_opslag'). Kan opslaget
-// ikke logges, vises oplysningerne ikke.
+// 20261015010000_sikkerhed_gennemgang.sql). Siden læser status og historik
+// via service role efter rolletjekket (kraevSideRolle) - aldrig juridisk navn
+// og fødselsdato. De hentes først ved tryk på "Vis" (server action
+// visMitIdOplysninger), som tjekker rollen og logger opslaget i
+// moderation_log ('mitid_opslag'); kan det ikke logges, vises intet.
 
 type Admin = ReturnType<typeof createAdminClient>;
 
 type Verificering = {
   id: string;
   status: "aktiv" | "nulstillet" | "slettet";
-  juridisk_navn: string | null;
-  foedselsdato: string | null;
   verificeret_kl: string;
   nulstillet_kl: string | null;
   nulstil_aarsag: string | null;
@@ -73,7 +73,6 @@ export function MitIdBadge({ verificeretKl, erFirma }: { verificeretKl: string |
 
 export default async function MitIdAdminKort({
   admin,
-  medarbejderId,
   brugerId,
   brugerNavn,
   verificeretKl,
@@ -82,8 +81,6 @@ export default async function MitIdAdminKort({
   erLukket,
 }: {
   admin: Admin;
-  // Den indloggede medarbejder (fra kraevSideRolle) - til loggen.
-  medarbejderId: string;
   brugerId: string;
   brugerNavn: string;
   verificeretKl: string | null;
@@ -95,7 +92,7 @@ export default async function MitIdAdminKort({
   const [{ data: v }, { data: f }] = await Promise.all([
     admin
       .from("mitid_verificeringer")
-      .select("id, status, juridisk_navn, foedselsdato, verificeret_kl, nulstillet_kl, nulstil_aarsag")
+      .select("id, status, verificeret_kl, nulstillet_kl, nulstil_aarsag")
       .eq("bruger_id", brugerId)
       .order("verificeret_kl", { ascending: false })
       .limit(20),
@@ -109,21 +106,6 @@ export default async function MitIdAdminKort({
   const verificeringer = (v ?? []) as Verificering[];
   const forsoeg = (f ?? []) as Forsoeg[];
   const aktiv = verificeringer.find((x) => x.status === "aktiv") ?? null;
-
-  // Juridisk navn og fødselsdato vises kun, hvis opslaget er logget.
-  let opslagLogget = false;
-  if (aktiv) {
-    const { error: logFejl } = await admin.from("moderation_log").insert({
-      medarbejder_id: medarbejderId,
-      handling: "mitid_opslag",
-      maal_type: "bruger",
-      maal_id: brugerId,
-      bruger_id: brugerId,
-      aarsag: "MitID-oplysninger (juridisk navn og fødselsdato) vist på brugersiden i admin",
-    });
-    if (logFejl) console.error("[mitid] kunne ikke logge opslag:", logFejl.message);
-    opslagLogget = !logFejl;
-  }
 
   if (erFirma && verificeringer.length === 0 && forsoeg.length === 0) return null;
 
@@ -140,25 +122,7 @@ export default async function MitIdAdminKort({
             <dt className="text-neutral-500">Verificeret</dt>
             <dd className="text-neutral-900">{tid(aktiv.verificeret_kl)}</dd>
           </div>
-          <div>
-            <dt className="text-neutral-500">Juridisk navn (kun internt)</dt>
-            <dd className="text-neutral-900">{opslagLogget ? (aktiv.juridisk_navn ?? "–") : "Ikke vist"}</dd>
-          </div>
-          <div>
-            <dt className="text-neutral-500">Fødselsdato (kun internt)</dt>
-            <dd className="text-neutral-900">
-              {!opslagLogget
-                ? "Ikke vist"
-                : aktiv.foedselsdato
-                  ? new Date(aktiv.foedselsdato).toLocaleDateString("da-DK")
-                  : "–"}
-            </dd>
-          </div>
-          {!opslagLogget && (
-            <p className="text-sm text-red-700 sm:col-span-3">
-              Opslaget kunne ikke logges, så juridisk navn og fødselsdato vises ikke. Prøv igen om lidt.
-            </p>
-          )}
+          <MitIdVisOplysninger brugerId={brugerId} />
         </dl>
       ) : (
         !erFirma && (
