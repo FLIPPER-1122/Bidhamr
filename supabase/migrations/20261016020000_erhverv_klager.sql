@@ -1206,7 +1206,7 @@ begin
     from pg_proc p
    where p.oid = 'public.bruger_luk_konto_permanent(uuid, uuid, text, uuid)'::regprocedure;
   if v_md5 is distinct from '664e673cfd531acd6371e3dd948da1e1'
-     and v_md5 is distinct from 'af779e44c42d90dc60ce6c36580ba8be' then
+     and v_md5 is distinct from 'dacb6bfa0ba76e148fd9442bf40d9ce0' then
     raise exception 'bruger_luk_konto_permanent er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
   end if;
 end $$;
@@ -1295,7 +1295,7 @@ begin
     from pg_proc p
    where p.oid = 'public.konto_lukning_afvis(uuid, uuid, text)'::regprocedure;
   if v_md5 is distinct from '18882b17fc7fc174c5f525318188b23d'
-     and v_md5 is distinct from 'b404c345538befc52c9867dc8910f3ac' then
+     and v_md5 is distinct from '6d3c575842d2fd97b4ef1315f5d58896' then
     raise exception 'konto_lukning_afvis er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
   end if;
 end $$;
