@@ -11,6 +11,7 @@ import { usePathname } from "next/navigation";
 import { useId, useState } from "react";
 import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
+import { KLAGE_FIRMA } from "@/lib/tekster/erhvervKlager";
 
 const M = FIRMA_DASHBOARD.menu;
 
@@ -18,6 +19,7 @@ const PUNKTER: { href: string; label: string }[] = [
   { href: "/firma", label: M.overblik },
   { href: "/firma/auktioner", label: M.auktioner },
   { href: "/firma/salg", label: M.salg },
+  { href: "/firma/klager", label: KLAGE_FIRMA.menupunkt },
   { href: "/firma/statistik", label: M.statistik },
   { href: "/firma/udbetalinger", label: M.udbetalinger },
   { href: "/firma/abonnement", label: M.abonnement },

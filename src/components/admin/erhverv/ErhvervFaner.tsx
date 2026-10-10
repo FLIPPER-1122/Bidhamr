@@ -1,8 +1,9 @@
 import AdminFaner from "@/components/admin/AdminFaner";
 import { ADMIN_ERHVERV } from "@/lib/tekster/erhverv";
+import { KLAGE_ADMIN } from "@/lib/tekster/erhvervKlager";
 
 // Faner under Admin → Erhverv (kun chef og saelger).
-export default function ErhvervFaner({ aktiv }: { aktiv: "henvendelser" | "firmaer" | "pakker" }) {
+export default function ErhvervFaner({ aktiv }: { aktiv: "henvendelser" | "firmaer" | "klager" | "pakker" }) {
   return (
     <AdminFaner
       label="Erhverv"
@@ -10,6 +11,7 @@ export default function ErhvervFaner({ aktiv }: { aktiv: "henvendelser" | "firma
       faner={[
         { id: "henvendelser", label: ADMIN_ERHVERV.faner.henvendelser, href: "/admin/erhverv" },
         { id: "firmaer", label: ADMIN_ERHVERV.faner.firmaer, href: "/admin/erhverv/firmaer" },
+        { id: "klager", label: KLAGE_ADMIN.fane, href: "/admin/erhverv/klager" },
         { id: "pakker", label: ADMIN_ERHVERV.faner.pakker, href: "/admin/erhverv/pakker" },
       ]}
     />
