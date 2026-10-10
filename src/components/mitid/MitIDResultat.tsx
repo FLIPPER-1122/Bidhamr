@@ -7,15 +7,20 @@ import { MITID, MITID_RESULTATER, erMitIdSucces, type MitIdResultat } from "@/li
 // Besked efter MitID: callbacken sender brugeren tilbage med ?mitid=<resultat>.
 // Kun kendte værdier vises (aldrig tekst fra URL'en). Parameteren fjernes fra
 // adressen, så beskeden ikke kommer igen ved genindlæsning.
-export default function MitIDResultat() {
+// Succesbeskederne (ok/allerede) vises kun, hvis serveren har set, at brugeren
+// faktisk er MitID-verificeret (se MitIDResultatBoks.tsx) - ellers kunne et
+// link med ?mitid=ok narre nogen til at tro, at de er bekræftet.
+export default function MitIDResultat({ verificeret }: { verificeret: boolean }) {
   const sp = useSearchParams();
   const sti = usePathname();
   const router = useRouter();
   const raa = sp.get("mitid");
   // Callbacken er en fuld sideindlæsning, så værdien læses ved første render.
-  const [resultat, setResultat] = useState<MitIdResultat | null>(() =>
-    raa && (MITID_RESULTATER as string[]).includes(raa) ? (raa as MitIdResultat) : null,
-  );
+  const [resultat, setResultat] = useState<MitIdResultat | null>(() => {
+    if (!raa || !(MITID_RESULTATER as string[]).includes(raa)) return null;
+    const r = raa as MitIdResultat;
+    return erMitIdSucces(r) && !verificeret ? null : r;
+  });
 
   useEffect(() => {
     if (!raa) return;

@@ -77,7 +77,10 @@ app-hemmelighed, som kun appen kender.
    Svar `200 { status, besked }` (`ok`, `allerede`, `dobbeltkonto`, `under18`,
    `lukket`, `tidligereSpaerret`, `andenMitid`, `erhverv`, `udloebet`, `fejl`).
    Kan bruges én gang og kun inden for 5 minutter; forkert bruger eller
-   hemmelighed giver `udloebet`.
+   hemmelighed giver `udloebet`. Et allerede brugt engangs-id giver også
+   `udloebet` (besked: "Bekræftelsen er udløbet eller allerede brugt. Start
+   forfra fra appen.") - eller `allerede`, hvis brugeren nu er verificeret
+   (fx et dobbelttryk). Vis helst `svar.besked`.
 
    ```ts
    import * as WebBrowser from "expo-web-browser";

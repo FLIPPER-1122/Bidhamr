@@ -43,6 +43,10 @@ export const MITID = {
     forMange: "Du har prøvet for mange gange. Vent lidt, og prøv så igen.",
   },
 
+  // Appen: afslutningen fejlede (udløbet, allerede brugt eller forkert
+  // session - databasen skelner ikke). Status er stadig "udloebet".
+  appUdloebet: "Bekræftelsen er udløbet eller allerede brugt. Start forfra fra appen.",
+
   // Min konto.
   kontoTitel: "MitID",
   kontoVerificeret: (dato: string) => `Du er MitID-verificeret (siden ${dato}).`,
