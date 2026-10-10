@@ -13,6 +13,7 @@ import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { assertRole, getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { notificerAfgoerelse } from "@/lib/dsa/notifikationer";
+import { opsigVedLukning } from "@/lib/erhverv/betaling";
 
 class BrugerFejl extends Error {}
 
@@ -104,6 +105,11 @@ export async function godkendKontoLukning(formData: FormData): Promise<{ ok: tru
     // Brugeren får begrundelsen (med klagemulighed). Cron samler op, hvis det fejler.
     const afgId = svar.afgoerelse_id;
     if (afgId) after(() => notificerAfgoerelse(afgId));
+    // Er det en firmakonto, opsiges abonnementet i Stripe med det samme.
+    // Lukningen står fast, også hvis Stripe fejler - betalings-cron'en
+    // prøver igen (koerLukOpsigelser i src/lib/erhverv/betaling.ts).
+    const lukketId = svar.bruger_id;
+    if (lukketId) after(() => opsigVedLukning(lukketId));
 
     revalider(svar.bruger_id);
     revalidatePath("/admin/brugere");

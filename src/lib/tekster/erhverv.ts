@@ -969,7 +969,7 @@ export const FIRMA_BETALING = {
   regningNummer: (nr: string) => `Faktura ${nr}`,
 } as const;
 
-// Admin -> Erhverv -> Firma: abonnementet i Stripe (kun chef).
+// Admin -> Erhverv -> Firma: abonnementet i Stripe (chef og sælger).
 export const ADMIN_ERHVERV_BETALING = {
   titel: "Betaling (Stripe)",
   ingenAbonnement: "Firmaet har ikke betalt for sin pakke endnu (intet abonnement i Stripe).",
@@ -983,7 +983,6 @@ export const ADMIN_ERHVERV_BETALING = {
   opsagtStraks: "Firmaet havde intet abonnement i Stripe, så det er opsagt med det samme.",
   knapFortryd: "Fortryd opsigelsen",
   fortrudt: "Opsigelsen er fortrudt. Abonnementet fortsætter.",
-  kunChef: "Kun chefen kan opsige abonnementet.",
   brugOpsigKnap: "Firmaet har et abonnement i Stripe. Brug knappen \"Opsig abonnement\", så stopper betalingen også.",
   prisNyStripe: (n: number) =>
     n === 0

@@ -5,6 +5,7 @@ import { driftFejlSamler, logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
 import { harCronAdgang } from "@/lib/cronAdgang";
 import { koerDac7Cron } from "@/lib/dac7/server";
+import { koerLukOpsigelser } from "@/lib/erhverv/betaling";
 
 // Lukker auktioner, opretter handel + betaling (48 timers frist; vinderen
 // betaler selv - ingen automatisk betaling), sender "du vandt"-mails og
@@ -12,7 +13,9 @@ import { koerDac7Cron } from "@/lib/dac7/server";
 // frigivne beløb til sælgere. Annullerer og refunderer handler, hvor pakken
 // ikke er sendt 5 dage efter betalingen. Se src/lib/betaling/cron.ts.
 // Henter derefter sporing for aktive forsendelser (src/lib/fragt/server.ts)
-// og kører DAC7-påmindelserne (src/lib/dac7/server.ts).
+// og kører DAC7-påmindelserne (src/lib/dac7/server.ts). Til sidst opsiges
+// abonnementet for lukkede firmakonti (koerLukOpsigelser i
+// src/lib/erhverv/betaling.ts - genforsøg, hvis det fejlede ved lukningen).
 //
 // Kaldes hvert 5. minut af pg_cron + pg_net (job 'betalings-cron', se migration
 // 20261001020000) og dagligt kl. 03 af Vercel Cron som backup. Ruten er
@@ -135,7 +138,19 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "DAC7-cron", fejl: err });
     }
-    const r = { ...betaling, fragt, dac7 };
+    // Lukkede firmakonti: abonnementet opsiges i Stripe med det samme (og
+    // prøves igen her, hvis det fejlede ved lukningen). Fejl tæller som
+    // trinfejl (logDriftFejl med kilde 'cron'), fordi Stripe ellers bliver ved
+    // med at trække penge fra et firma, der ikke kan sælge.
+    let erhvervLuk: Awaited<ReturnType<typeof koerLukOpsigelser>> | null = null;
+    try {
+      erhvervLuk = await driftFejlSamler.run(trinFejl, () => koerLukOpsigelser());
+    } catch (err) {
+      await driftFejlSamler.run(trinFejl, () =>
+        logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Erhverv: opsigelse ved lukning", fejl: err }),
+      );
+    }
+    const r = { ...betaling, fragt, dac7, erhvervLuk };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);

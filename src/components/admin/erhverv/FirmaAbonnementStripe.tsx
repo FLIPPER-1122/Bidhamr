@@ -1,6 +1,6 @@
 "use client";
 
-// Admin -> Erhverv -> Firma: abonnementet i Stripe. Kun chef kan opsige
+// Admin -> Erhverv -> Firma: abonnementet i Stripe. Chef og sælger kan opsige
 // (cancel_at_period_end - stopper ved periodens slut, ingen refusion) eller
 // fortryde opsigelsen. Firmaet kan ikke selv opsige.
 import { useRouter } from "next/navigation";
@@ -11,13 +11,11 @@ import { ADMIN_ERHVERV_BETALING as AB } from "@/lib/tekster/erhverv";
 
 export default function FirmaAbonnementStripe({
   firmaId,
-  erChef,
   harAbonnement,
   opsiges,
   opsagt,
 }: {
   firmaId: string;
-  erChef: boolean;
   harAbonnement: boolean;
   // Dansk dato, når abonnementet er opsagt og stopper; ellers null.
   opsiges: string | null;
@@ -26,7 +24,6 @@ export default function FirmaAbonnementStripe({
   const router = useRouter();
   const [besked, setBesked] = useState<string | null>(null);
 
-  if (!erChef) return <p className="text-sm text-tekst-daempet">{AB.kunChef}</p>;
   if (opsagt) return null;
 
   return (

@@ -1,8 +1,8 @@
 "use client";
 
 // Ret et firma (opdaterFirma) og send velkomstmailen igen (gensendFirmaVelkomst).
-// Rollen saelger må KUN rette adresse og kontaktoplysninger. Firmanavn, CVR,
-// pakke og abonnementsstatus kan kun chefen ændre (backend håndhæver det også).
+// Chef og sælger må ændre alt ved firmaet: firmanavn, CVR, adresse,
+// kontaktoplysninger, pakke og abonnementsstatus (Filip, 10. okt. 2026).
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import BekraeftDialog from "@/components/BekraeftDialog";
@@ -22,7 +22,6 @@ export default function FirmaRedigering({
   pakkeId: startPakke,
   status: startStatus,
   pakker,
-  erChef,
   harLoggetInd,
 }: {
   firmaId: string;
@@ -30,7 +29,6 @@ export default function FirmaRedigering({
   pakkeId: string;
   status: AbonnementStatus;
   pakker: ErhvervPakke[];
-  erChef: boolean;
   harLoggetInd: boolean;
 }) {
   const router = useRouter();
@@ -55,57 +53,54 @@ export default function FirmaRedigering({
         vaerdier={v}
         onChange={setV}
         idPraefiks="firma"
-        laaste={erChef ? [] : ["firmanavn", "cvr"]}
       />
 
-      {erChef && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="firma-pakke" className={ADMIN_LABEL}>
-              {A.opret.feltPakke}
-            </label>
-            <select
-              id="firma-pakke"
-              value={pakkeId}
-              onChange={(e) => setPakkeId(e.target.value)}
-              aria-describedby="firma-pakke-hjaelp"
-              className={ADMIN_FELT}
-            >
-              {pakker.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.navn} ({p.auktioner_pr_uge}/uge){p.aktiv ? "" : ` – ${X.skjult}`}
-                </option>
-              ))}
-            </select>
-            <p id="firma-pakke-hjaelp" className="mt-1.5 text-[13px] text-tekst-daempet">
-              {X.aendrPakkeHjaelp}
-            </p>
-          </div>
-          <div>
-            <label htmlFor="firma-status" className={ADMIN_LABEL}>
-              {X.feltStatus}
-            </label>
-            <select
-              id="firma-status"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as AbonnementStatus)}
-              className={ADMIN_FELT}
-            >
-              {/* 'Venter på første betaling' kan ikke vælges - kun vises. */}
-              {!(ABONNEMENT_STATUSSER as readonly string[]).includes(startStatus) && (
-                <option value={startStatus} disabled>
-                  {ABONNEMENT_STATUS_NAVN[startStatus]}
-                </option>
-              )}
-              {ABONNEMENT_STATUSSER.map((s) => (
-                <option key={s} value={s}>
-                  {ABONNEMENT_STATUS_NAVN[s]}
-                </option>
-              ))}
-            </select>
-          </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="firma-pakke" className={ADMIN_LABEL}>
+            {A.opret.feltPakke}
+          </label>
+          <select
+            id="firma-pakke"
+            value={pakkeId}
+            onChange={(e) => setPakkeId(e.target.value)}
+            aria-describedby="firma-pakke-hjaelp"
+            className={ADMIN_FELT}
+          >
+            {pakker.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.navn} ({p.auktioner_pr_uge}/uge){p.aktiv ? "" : ` – ${X.skjult}`}
+              </option>
+            ))}
+          </select>
+          <p id="firma-pakke-hjaelp" className="mt-1.5 text-[13px] text-tekst-daempet">
+            {X.aendrPakkeHjaelp}
+          </p>
         </div>
-      )}
+        <div>
+          <label htmlFor="firma-status" className={ADMIN_LABEL}>
+            {X.feltStatus}
+          </label>
+          <select
+            id="firma-status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as AbonnementStatus)}
+            className={ADMIN_FELT}
+          >
+            {/* 'Venter på første betaling' kan ikke vælges - kun vises. */}
+            {!(ABONNEMENT_STATUSSER as readonly string[]).includes(startStatus) && (
+              <option value={startStatus} disabled>
+                {ABONNEMENT_STATUS_NAVN[startStatus]}
+              </option>
+            )}
+            {ABONNEMENT_STATUSSER.map((s) => (
+              <option key={s} value={s}>
+                {ABONNEMENT_STATUS_NAVN[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       <div>
         <label htmlFor="firma-note" className={ADMIN_LABEL}>
@@ -124,8 +119,8 @@ export default function FirmaRedigering({
             const svar = await opdaterFirma({
               firmaId,
               felter: v,
-              pakkeId: erChef && pakkeId !== startPakke ? pakkeId : null,
-              status: erChef && status !== startStatus ? status : null,
+              pakkeId: pakkeId !== startPakke ? pakkeId : null,
+              status: status !== startStatus ? status : null,
               note: note || null,
             });
             if ("fejl" in svar) return { fejl: svar.fejl };

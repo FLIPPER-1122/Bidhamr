@@ -12,7 +12,7 @@ import { ABONNEMENT_STATUS_NAVN } from "@/lib/erhverv/regler";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function FirmaSide({ params }: { params: Promise<{ id: string }> }) {
-  const { rolle } = await kraevErhvervSide();
+  await kraevErhvervSide();
   const { id } = await params;
   if (!UUID.test(id)) notFound();
 
@@ -90,7 +90,6 @@ export default async function FirmaSide({ params }: { params: Promise<{ id: stri
         <div className="mt-4">
           <FirmaAbonnementStripe
             firmaId={f.id}
-            erChef={rolle === "chef"}
             harAbonnement={!!f.stripe_subscription_id}
             opsiges={f.opsiges_fra ? dato(f.opsiges_fra) : null}
             opsagt={f.abonnement_status === "opsagt"}
@@ -101,7 +100,6 @@ export default async function FirmaSide({ params }: { params: Promise<{ id: stri
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
         <FirmaRedigering
           firmaId={f.id}
-          erChef={rolle === "chef"}
           harLoggetInd={f.har_logget_ind}
           pakkeId={f.pakke_id}
           status={f.abonnement_status}
