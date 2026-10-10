@@ -6,9 +6,11 @@
 //
 // Expo-appen: send vilkaar_version i signup-metadata
 // (supabase.auth.signUp({ options: { data: { ..., vilkaar_version } } })) og
-// vis et påkrævet flueben. Uden den gemmes NULL, og brugeren ser bjælken på
-// /konto (eller appens tilsvarende), indtil de accepterer via
-// rpc("accepter_vilkaar", { p_version }).
+// vis et påkrævet flueben. Uden den gemmes NULL, og brugeren får det
+// blokerende vindue (src/components/vilkaar/VilkaarDialog.tsx - eller appens
+// tilsvarende), indtil de accepterer via rpc("accepter_vilkaar", { p_version }).
+// En ny version kræver ny accept: alle får vinduet igen ("Vi har opdateret
+// brugerbetingelserne").
 export const VILKAAR_VERSION = "0.1";
 export const VILKAAR_DATO = "6. oktober 2026";
 

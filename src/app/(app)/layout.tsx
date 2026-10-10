@@ -3,6 +3,7 @@ import Footer from "@/components/Footer";
 import { Suspense } from "react";
 import FavoritterProvider from "@/components/FavoritterProvider";
 import MitIDResultat from "@/components/mitid/MitIDResultat";
+import VilkaarVindue from "@/components/vilkaar/VilkaarVindue";
 
 export default function AppLayout({
   children,
@@ -23,6 +24,11 @@ export default function AppLayout({
         {children}
       </div>
       <Footer />
+      {/* Blokerende vindue med brugerbetingelserne (kun logget ind, ikke
+          accepteret den aktuelle version) - efter cookie-banneret. */}
+      <Suspense fallback={null}>
+        <VilkaarVindue />
+      </Suspense>
     </FavoritterProvider>
   );
 }
