@@ -63,8 +63,13 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
      (`koerIkkeAfhentet`, før den automatiske frigivelse). Refusionen laves af betalings-cron'en (lovede
      refusioner).
    - **staff**: knappen "Ikke afhentet" under Admin → Handler (på handlen og på en returneret forsendelse
-     under fanen Fragt), med begrundelse; logges i medarbejder-loggen (`handel_ikke_afhentet`). Medarbejder,
-     admin og chef; ikke inhabil. Refusionen laves med det samme.
+     under fanen Fragt), med begrundelse; logges i medarbejder-loggen (`handel_ikke_afhentet`) af databasen i
+     samme transaktion. Med returmelding fra fragtfirmaet: medarbejder, admin og chef; uden returmelding kun
+     admin og chef (`kraever_admin`). Aldrig når pakken er leveret eller køberen har trykket "modtaget"
+     (`leveret`). Ikke inhabil. Refusionen laves med det samme (`20261016031000_ikke_afhentet_rettelser.sql`).
+   - Reserven i betalings-cron'en henter kandidater med `ikke_afhentet_fragt_kandidater`, som sorterer
+     registrerede og ikke-registrerbare handler fra i databasen.
+   - Beskederne sendes som påkrævet type `betaling_modtaget` (som afhentningsfristen).
    - En returneret pakke frigives aldrig automatisk (`handel_auto_frigiv`), og køberen får ikke
      påmindelsen "Har du modtaget din vare?".
    - Appen: `supabase.rpc("mit_ikke_afhentet", { p_trade })` → køberen `{ rolle: 'koeber', registreret_kl,

@@ -178,14 +178,29 @@ export default async function AdminSager({
   const auktionIds = [...new Set(alle.map((h) => h.auction_id))];
   const brugerIds = [...new Set(alle.flatMap((h) => [h.buyer_id, h.seller_id]))];
 
-  const [{ data: auktioner }, { data: brugere }] = await Promise.all([
+  // "Ikke afhentet": handler (sendt, ikke afhentning), hvor fragtfirmaet har
+  // meldt den udgående pakke retur uden at have leveret den. Kun dem får
+  // medarbejdere knappen; uden returmelding kun admin/chef (databasen afgør
+  // det også - 'kraever_admin').
+  const sendteIds = alle.filter((h) => h.status === "pakke_sendt" && !h.afhentning).map((h) => h.id);
+  const [{ data: auktioner }, { data: brugere }, { data: returMeldt }] = await Promise.all([
     auktionIds.length
       ? supabase.from("auctions").select("id, titel").in("id", auktionIds)
       : Promise.resolve({ data: [] as { id: string; titel: string }[] }),
     brugerIds.length
       ? supabase.from("users").select("id, navn, email").in("id", brugerIds)
       : Promise.resolve({ data: [] as { id: string; navn: string | null; email: string }[] }),
+    sendteIds.length
+      ? supabase
+          .from("forsendelser")
+          .select("trade_id")
+          .in("trade_id", sendteIds.slice(0, 300))
+          .eq("type", "udgaaende")
+          .not("returneret_kl", "is", null)
+          .is("leveret_kl", null)
+      : Promise.resolve({ data: [] as { trade_id: string }[] }),
   ]);
+  const returMeldtIds = new Set((returMeldt ?? []).map((f) => f.trade_id as string));
 
   const titelMap = new Map((auktioner ?? []).map((a) => [a.id, a.titel as string]));
   const brugerMap = new Map(
@@ -422,7 +437,7 @@ export default async function AdminSager({
                   {f.type === "udgaaende" &&
                     f.status === "returneret" &&
                     h &&
-                    (h.status === "pakke_sendt" || h.status === "modtaget") && (
+                    h.status === "pakke_sendt" && (
                       <ConfirmDialog
                         triggerLabel="Ikke afhentet"
                         triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"
@@ -600,8 +615,11 @@ export default async function AdminSager({
                               aarsagField={{ label: "Hvad drejer sagen sig om?", placeholder: "Fx: køber melder varen defekt, sælger svarer ikke...", required: true }}
                             />
                           )}
-                          {/* Pakken er sendt retur, fordi køberen ikke hentede den. */}
-                          {!h.afhentning && (h.status === "pakke_sendt" || h.status === "modtaget") && (
+                          {/* Pakken er sendt retur, fordi køberen ikke hentede den.
+                              Med returmelding: medarbejder og op. Uden: kun admin/chef. */}
+                          {!h.afhentning &&
+                            h.status === "pakke_sendt" &&
+                            (returMeldtIds.has(h.id) || kanFlyttePenge) && (
                             <ConfirmDialog
                               triggerLabel="Ikke afhentet"
                               triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"

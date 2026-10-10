@@ -29,7 +29,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { send } from "@/lib/notifikationer/send";
 import { refunderBetaling } from "@/lib/betaling/stripeBetaling";
-import { adapterFor } from "@/lib/fragt";
+import { FRAGTFIRMAER, adapterFor } from "@/lib/fragt";
 import { koeberIkkeAfhentetMail, kronerFraOere, saelgerIkkeAfhentetMail } from "@/lib/mails/handel";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -74,7 +74,8 @@ export type IkkeAfhentetKode =
   | "markeret"
   | "forsendelse_ukendt"
   | "leveret"
-  | "ikke_returneret";
+  | "ikke_returneret"
+  | "kraever_admin";
 
 type RpcSvar = {
   kode: IkkeAfhentetKode;
@@ -116,7 +117,8 @@ export const IKKE_AFHENTET_FEJL: Partial<Record<IkkeAfhentetKode, string>> = {
   sag: "Køberen har en sag på handlen. Afgør sagen under Sager.",
   markeret: "Handlen er markeret til opfølgning.",
   forsendelse_ukendt: "Forsendelsen hører ikke til handlen.",
-  leveret: "Fragtfirmaet melder pakken leveret.",
+  leveret: "Pakken er leveret (fragtfirmaet melder den leveret, eller køberen har trykket modtaget) - den kan ikke markeres som ikke afhentet.",
+  kraever_admin: "Fragtfirmaet har ikke meldt pakken retur. Uden en returmelding kan kun en admin eller chef markere handlen som ikke afhentet.",
   ikke_returneret: "Fragtfirmaet har ikke meldt pakken retur.",
 };
 
@@ -152,7 +154,7 @@ async function sendBeskeder(
     const link = `/mine-handler/${h.trade_id}`;
     const R = Number(h.refusion_oere);
     if (mangler.koeber) {
-      await send(parter.buyer_id, "pakke_leveret", {
+      await send(parter.buyer_id, "betaling_modtaget", {
         titel: "Pakken blev ikke hentet",
         tekst:
           R > 0
@@ -176,7 +178,7 @@ async function sendBeskeder(
       });
     }
     if (mangler.saelger) {
-      await send(parter.seller_id, "pakke_indleveret", {
+      await send(parter.seller_id, "betaling_modtaget", {
         titel: "Pakken kommer retur til dig",
         tekst: `Køberen hentede ikke "${t}", så pakken er på vej retur til dig. Handlen er annulleret, og du beholder varen. Du betaler ikke for fragten, og der udbetales ikke penge for handlen.`,
         link,
@@ -306,28 +308,18 @@ export async function koerIkkeAfhentet(): Promise<{ registreret: number; beskede
   const res = { registreret: 0, beskeder: 0 };
   try {
     const admin = createAdminClient();
-    const { data: fors, error } = await admin
-      .from("forsendelser")
-      .select("id, trade_id, fragtfirma")
-      .eq("type", "udgaaende")
-      .not("returneret_kl", "is", null)
-      .is("leveret_kl", null)
-      .gte("returneret_kl", new Date(Date.now() - 30 * DAG).toISOString())
-      .order("returneret_kl", { ascending: true })
-      .limit(100);
-    if (error) throw new Error(`forsendelser: ${error.message}`);
-    const kandidater = (fors ?? []).filter((f) => adapterFor(f.fragtfirma as string)?.returErIkkeAfhentet);
-    if (kandidater.length > 0) {
-      const ids = [...new Set(kandidater.map((f) => f.trade_id as string))];
-      const [{ data: handler }, { data: registreret }] = await Promise.all([
-        admin.from("trades").select("id, status").in("id", ids),
-        admin.from("handel_ikke_afhentet").select("trade_id").in("trade_id", ids),
-      ]);
-      const aaben = new Set((handler ?? []).filter((t) => t.status === "pakke_sendt").map((t) => t.id as string));
-      const findes = new Set((registreret ?? []).map((x) => x.trade_id as string));
-      for (const f of kandidater.slice(0, 20)) {
-        if (!aaben.has(f.trade_id as string) || findes.has(f.trade_id as string)) continue;
-        const kode = await ikkeAfhentetFraFragt(f.id as string);
+    // Kun fragtfirmaer, hvor 'returneret' sikkert betyder "ikke afhentet".
+    // Databasen sorterer allerede registrerede (og handler, der ikke kan
+    // registreres nu) fra, før der tages 20 - så reserven aldrig går i stå.
+    const firmaer = FRAGTFIRMAER.filter((n) => adapterFor(n)?.returErIkkeAfhentet);
+    if (firmaer.length > 0) {
+      const { data: kandidater, error } = await admin.rpc("ikke_afhentet_fragt_kandidater", {
+        p_fragtfirmaer: firmaer,
+        p_graense: 20,
+      });
+      if (error) throw new Error(`ikke_afhentet_fragt_kandidater: ${error.message}`);
+      for (const k of (kandidater ?? []) as { forsendelse_id: string; trade_id: string }[]) {
+        const kode = await ikkeAfhentetFraFragt(k.forsendelse_id);
         if (kode === "ok" || kode === "ok_intet") res.registreret++;
       }
     }

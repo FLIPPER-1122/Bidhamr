@@ -9,9 +9,11 @@
 // Samme vej som fragtens automatik (src/lib/betaling/ikkeAfhentet.ts ->
 // handel_ikke_afhentet_registrer): handlen annulleres, køberen refunderes
 // købsbeløbet minus gebyrer og fragt begge veje, sælgeren får intet udbetalt
-// og beholder varen. Medarbejder, admin og chef må (som ved sager, hvor
-// pengene flyttes). Inhabil = køber eller sælger på handlen. Begrundelsen er
-// krævet og logges i medarbejder-loggen.
+// og beholder varen. Medarbejder, admin og chef må, når fragtfirmaet har
+// meldt pakken retur; uden returmelding kun admin og chef (databasen afgør:
+// 'kraever_admin'). Aldrig, når pakken er leveret eller køberen har trykket
+// "modtaget". Inhabil = køber eller sælger på handlen. Begrundelsen er
+// krævet og logges i medarbejder-loggen af databasen (samme transaktion).
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { assertRole } from "@/lib/adminAuth";
@@ -65,21 +67,8 @@ export async function handelIkkeAfhentet(formData: FormData): Promise<{ ok: true
       throw new BrugerFejl(IKKE_AFHENTET_FEJL[svar.kode] ?? GENERISK_FEJL);
     }
 
-    // Handlen er annulleret, og refusionen er claimet: log altid (ingen beløb
-    // i loggen - pengetal er kun for chef).
-    const udfald =
-      svar.kode === "ok_intet"
-        ? `Køberen får 0 kr. (returfragten er mindst buddet) - sælgerens del tilbageføres (${svar.refusion ?? "sat i gang"})`
-        : `Tilbagebetaling minus gebyrer og fragt begge veje (${svar.refusion ?? "sat i gang"})`;
-    const { error: logFejl } = await admin.from("moderation_log").insert({
-      medarbejder_id: staffId,
-      handling: "handel_ikke_afhentet",
-      maal_type: "handel",
-      maal_id: tradeId,
-      bruger_id: t.buyer_id,
-      aarsag: `${udfald} — ${aarsag}`,
-    });
-    if (logFejl) console.error("Kunne ikke skrive til moderation_log:", logFejl.message);
+    // Medarbejder-loggen skrives af databasen i samme transaktion som
+    // registreringen (20261016031000).
 
     revalidatePath("/admin", "layout");
     revalidatePath(`/mine-handler/${tradeId}`);
