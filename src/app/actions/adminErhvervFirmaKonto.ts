@@ -21,7 +21,8 @@ import { logDriftFejl } from "@/lib/drift";
 import { erRegel } from "@/lib/dsa/regler";
 import { indgrebFejl, udfoerIndgreb } from "@/lib/dsa/server";
 import { notificerAfgoerelse } from "@/lib/dsa/notifikationer";
-import { FIRMA_KONTO_FEJL as FEJL } from "@/lib/tekster/erhvervKlager";
+import { send } from "@/lib/notifikationer/send";
+import { FIRMA_KONTO as T, FIRMA_KONTO_FEJL as FEJL } from "@/lib/tekster/erhvervKlager";
 
 class BrugerFejl extends Error {}
 
@@ -154,6 +155,20 @@ export async function ophaevFirmaSuspension(formData: FormData): Promise<Svar> {
     if (error) throw new Error(error.message);
     const kode = (data as { kode?: string } | null)?.kode;
     if (kode !== "ok" && kode !== "uaendret") throw new BrugerFejl(kodeTekst(kode));
+    // Besked til firmaet (påkrævet type 'afgoerelse'). Kun når suspensionen
+    // faktisk blev ophævet nu ('ok' gives én gang - et dobbeltklik giver
+    // 'uaendret'). Kaster aldrig.
+    if (kode === "ok") {
+      const brugerId = firma.bruger_id;
+      after(() =>
+        send(brugerId, "afgoerelse", {
+          titel: T.ophaevetBeskedTitel,
+          tekst: T.ophaevetBeskedTekst,
+          link: "/firma",
+          noegle: `firma_suspension_ophaevet:${brugerId}:${Date.now()}`,
+        }),
+      );
+    }
     revalider(firma.id, firma.bruger_id);
   });
 }

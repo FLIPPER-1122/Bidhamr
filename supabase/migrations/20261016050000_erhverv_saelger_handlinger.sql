@@ -12,6 +12,12 @@
 --       'staff' (lukkes ikke som en almindelig bruger), og dsa_indgreb lukker
 --       heller ikke en sælger-medarbejder (som for medarbejder: suspension er
 --       stadig mulig for admin).
+--   A4. dsa_klage_afgoer (DSA-klage over en afgørelse): chef og sælger-rollen
+--       kan afgøre klager over suspension/lukning af en firmakonto, og MEDHOLD
+--       i en klage over lukning eller permanent suspension af en firmakonto
+--       kræver chef eller sælger-rollen ('kun_erhverv'). "Fastholdt" og
+--       midlertidige suspensioner er uændrede.
+--   Inhabil staff kan ikke ophæve en suspension ('inhabil', dsa_er_inhabil).
 --
 -- Drift-tjek mod efter-tilstanden af 20261016020000 og tekst-erstatning (som
 -- 20261016010000_fjern_gemte_soegninger.sql). Idempotent (kan køres igen).
@@ -92,7 +98,7 @@ end $$;
 -- ---------------------------------------------------------------------------
 -- 3. A2: ophæv suspension (med rolle-tjek)
 -- ---------------------------------------------------------------------------
--- { kode: 'ok' } eller ingen_adgang | kun_erhverv | ugyldig_bruger | sig_selv |
+-- { kode: 'ok' } eller ingen_adgang | kun_erhverv | ugyldig_bruger | sig_selv | inhabil |
 -- lukket (permanent lukket - åbnes aldrig) | uaendret (ikke suspenderet).
 create or replace function public.bruger_ophaev_suspension(p_staff uuid, p_bruger uuid)
 returns jsonb
@@ -114,6 +120,10 @@ begin
     return jsonb_build_object('kode', 'ugyldig_bruger');
   end if;
   if p_bruger = p_staff then return jsonb_build_object('kode', 'sig_selv'); end if;
+  -- Inhabil: staff, der har handlet med brugeren (samme regel som DSA).
+  if public.dsa_er_inhabil(p_staff, p_bruger) then
+    return jsonb_build_object('kode', 'inhabil');
+  end if;
 
   select x.id, x.konto_type, x.suspenderet, x.suspenderet_til, x.konto_lukket_kl into u
     from public.users x where x.id = p_bruger for update;
@@ -148,3 +158,49 @@ end;
 $$;
 revoke all on function public.bruger_ophaev_suspension(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.bruger_ophaev_suspension(uuid, uuid) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 4. A4: dsa_klage_afgoer - klager over lukning/suspension af en firmakonto
+-- ---------------------------------------------------------------------------
+-- Prod: kroppen fra 20261009040000_skjult_auktion_pause.sql (plain md5
+-- 527ef373dc830dd6af773340f3f0c35a, normaliseret 77750d60a7f6b4b31111711ce3492fe0).
+-- Testdatabasen kan have samme kode lagt ind uden kommentarer (som
+-- dsa_indgreb): så rettes den kun, hvis ankeret findes præcis én gang
+-- (ret_krop tjekker det) og rettelsen ikke allerede er der.
+-- Efter (normaliseret): 4454c7c82907a670ff5c6c219e07a545 - samme for prod og
+-- en test-udgave uden kommentarer (kroppen har kun hele kommentarlinjer).
+do $$
+declare
+  v_fn  regprocedure := 'public.dsa_klage_afgoer(uuid, uuid, text, text, text)'::regprocedure;
+  v_md5 text := pg_temp.krop_md5('public.dsa_klage_afgoer(uuid, uuid, text, text, text)'::regprocedure);
+  v_src text;
+begin
+  select replace(p.prosrc, E'\r\n', E'\n') into v_src from pg_proc p where p.oid = v_fn;
+  if v_md5 = '4454c7c82907a670ff5c6c219e07a545' then
+    return;
+  end if;
+  if v_md5 <> '77750d60a7f6b4b31111711ce3492fe0' then
+    if position('kun_erhverv' in v_src) > 0 then
+      raise exception 'dsa_klage_afgoer er rettet uden for migrationerne (md5 %). Tjek den.', v_md5;
+    end if;
+    raise notice 'dsa_klage_afgoer har en anden krop end prod (md5 %) - rettes kun, hvis ankeret findes præcis én gang.', v_md5;
+  end if;
+  perform pg_temp.ret_krop(v_fn,
+    E'  if p_medarbejder is null or not public.staff_chat_har_rolle(p_medarbejder, v_rolle) then\n' ||
+    E'    return jsonb_build_object(''kode'', ''ingen_adgang'');\n' ||
+    E'  end if;\n',
+    E'  if p_medarbejder is null or not (\n' ||
+    E'       public.staff_chat_har_rolle(p_medarbejder, v_rolle)\n' ||
+    E'       or (k.afgoerelse_id is not null\n' ||
+    E'           and af.handling in (''konto_suspenderet'', ''konto_lukket'')\n' ||
+    E'           and public.erhverv_har_adgang(p_medarbejder)\n' ||
+    E'           and exists (select 1 from public.users x where x.id = af.bruger_id and x.konto_type = ''erhverv''))) then\n' ||
+    E'    return jsonb_build_object(''kode'', ''ingen_adgang'');\n' ||
+    E'  end if;\n' ||
+    E'  if p_udfald = ''medhold'' and k.afgoerelse_id is not null\n' ||
+    E'     and (af.handling = ''konto_lukket'' or (af.handling = ''konto_suspenderet'' and af.varighed_til is null))\n' ||
+    E'     and exists (select 1 from public.users x where x.id = af.bruger_id and x.konto_type = ''erhverv'')\n' ||
+    E'     and not public.erhverv_har_adgang(p_medarbejder) then\n' ||
+    E'    return jsonb_build_object(''kode'', ''kun_erhverv'');\n' ||
+    E'  end if;\n');
+end $$;

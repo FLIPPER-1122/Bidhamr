@@ -199,20 +199,20 @@ export const FIRMA_KONTO = {
     "Luk, suspendér eller åbn firmakontoen igen. Firmaet får en begrundelse på mail og kan klage (som ved alle andre indgreb). Alt logges.",
   status: "Status",
   aktiv: "Aktiv",
-  lukket: (d: string) => `Lukket permanent ${d}. Kontoen kan ikke åbnes igen.`,
+  lukket: (d: string) => `Lukket permanent ${d}. Kontoen kan kun åbnes igen, hvis firmaet får medhold i en klage.`,
   suspenderetPermanent: "Suspenderet permanent",
   suspenderetTil: (d: string) => `Suspenderet til ${d}`,
   aarsag: "Årsag",
   knapLuk: "Luk firmakonto permanent",
   lukTitel: "Luk firmakontoen permanent?",
   lukTekst:
-    "Firmaet kan ikke logge ind, og kontoen kan ikke åbnes igen. Husk at opsige abonnementet i Stripe særskilt. Firmaet får begrundelsen på mail og kan klage.",
+    "Firmaet kan ikke logge ind, og kontoen kan kun åbnes igen, hvis firmaet får medhold i en klage. Firmaets abonnement opsiges automatisk. Firmaet får begrundelsen på mail og kan klage.",
   lukBekraeft: "Ja, luk firmakontoen",
   lukPladsholder: "Fx: Firmaet har fået gentagne berettigede klager over varer, der ikke blev leveret.",
   knapSuspender: "Suspendér firmakonto",
   suspenderTitel: "Suspendér firmakontoen?",
   suspenderTekst:
-    "Firmaet kan ikke logge ind, så længe suspensionen gælder. Vælg 1 dag, 7 dage eller permanent. Firmaet får begrundelsen på mail og kan klage.",
+    "Firmaet kan ikke logge ind, så længe suspensionen gælder. Vælg 1 dag, 7 dage eller permanent. Abonnementet kører videre, mens kontoen er suspenderet. Firmaet får begrundelsen på mail og kan klage.",
   suspenderBekraeft: "Ja, suspendér",
   suspenderPladsholder: "Fx: Firmaet har ikke svaret på vores henvendelser om flere klager.",
   knapOphaev: "Ophæv suspension",
@@ -224,13 +224,15 @@ export const FIRMA_KONTO = {
   knapGodkend: "Godkend lukning",
   godkendTitel: "Luk firmakontoen efter 3 advarsler?",
   godkendTekst:
-    "Kontoen lukkes permanent og kan ikke åbnes igen. Firmaet får begrundelsen på mail og kan klage. Husk at opsige abonnementet i Stripe særskilt.",
+    "Kontoen lukkes permanent og kan kun åbnes igen, hvis firmaet får medhold i en klage. Firmaets abonnement opsiges automatisk. Firmaet får begrundelsen på mail og kan klage.",
   godkendNote: "Intern note (kun staff)",
   knapAfvis: "Afvis forslag",
   afvisTitel: "Afvis forslaget om lukning?",
   afvisTekst: "Firmakontoen forbliver åben, og firmaet får ingen besked. En ny advarsel giver et nyt forslag.",
   afvisBegrundelse: "Hvorfor skal kontoen ikke lukkes? (kun staff)",
-  tilFirmaet: "Gå til firmaet for at godkende eller afvise",
+  // Besked til firmaet, når suspensionen ophæves (påkrævet type 'afgoerelse').
+  ophaevetBeskedTitel: "Din konto er åbnet igen",
+  ophaevetBeskedTekst: "BidHamr har ophævet suspensionen af jeres firmakonto. I kan logge ind og sælge igen.",
 } as const;
 
 export const FIRMA_KONTO_FEJL = {
@@ -245,7 +247,7 @@ export const FIRMA_KONTO_FEJL = {
   begrundelse_mangler: "Skriv en begrundelse.",
   bortfaldet: "Kontoen var allerede lukket. Forslaget er markeret som bortfaldet.",
   behandlet: "Forslaget er allerede behandlet. Opdater siden.",
-  lukket: "Kontoen er lukket permanent og kan ikke åbnes igen.",
+  lukket: "Kontoen er lukket permanent. Den kan kun åbnes igen, hvis firmaet får medhold i en klage.",
   allerede_lukket: "Kontoen er allerede lukket permanent.",
   inhabil: "Du kan ikke behandle dette firma, fordi du selv har handlet med det. Bed en kollega om at gøre det.",
   sig_selv: "Du kan ikke gøre dette mod dig selv.",
