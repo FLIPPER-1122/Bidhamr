@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { klientIp, tjekGraenser, FOR_MANGE_FORSOEG } from "@/lib/rateLimit";
+import { klientIp, tjekGraenserLukket, FOR_MANGE_FORSOEG, PROEV_IGEN_OM_LIDT } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
 import { callbackUrl, mitIdKonfig, sha256Hex, sideOrigin, tilfaeldig } from "@/lib/mitid/oidc";
 import { APP_TOKEN_LEVETID_SEK } from "@/lib/mitid/flow";
@@ -37,9 +37,11 @@ export async function POST(req: NextRequest) {
   if (fremmedOrigin(req)) return svar(403, { fejl: "Ugyldig forespørgsel.", kode: "ikke_tilladt" });
 
   const ip = await klientIp();
-  if (!(await tjekGraenser([["mitid_app_ip", ip]]))) {
-    return svar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
-  }
+  // Fail closed (hvert MitID-login koster penge hos Idura): kan grænsen ikke
+  // tjekkes, svares 503 "ikke_tilgaengelig".
+  const graenseIp = await tjekGraenserLukket([["mitid_app_ip", ip]]);
+  if (graenseIp === "for_mange") return svar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
+  if (graenseIp === "fejl") return svar(503, { fejl: PROEV_IGEN_OM_LIDT, kode: "ikke_tilgaengelig" });
 
   const k = mitIdKonfig();
   const cb = callbackUrl(req.nextUrl.origin);
@@ -54,9 +56,9 @@ export async function POST(req: NextRequest) {
   const hemmelighedHash = typeof krop?.hemmelighed_hash === "string" ? krop.hemmelighed_hash.toLowerCase() : "";
   if (!/^[0-9a-f]{64}$/.test(hemmelighedHash)) return svar(400, UGYLDIG);
 
-  if (!(await tjekGraenser([["mitid_start_bruger", bruger.id]]))) {
-    return svar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
-  }
+  const graenseBruger = await tjekGraenserLukket([["mitid_start_bruger", bruger.id]]);
+  if (graenseBruger === "for_mange") return svar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
+  if (graenseBruger === "fejl") return svar(503, { fejl: PROEV_IGEN_OM_LIDT, kode: "ikke_tilgaengelig" });
 
   try {
     const admin = createAdminClient();

@@ -1,7 +1,7 @@
 // Oplysninger til firmaets egen faktura på varen (Filip, 9. okt. 2026 -
 // "Faktura på varen ved firmasalg"). Firmaet sender selv fakturaen fra sit
 // eget regnskabsprogram; BidHamr giver kun oplysningerne. Data kommer fra
-// firma_faktura_salg (20261014020000) - kun firmaet selv (og chef/sælger).
+// firma_faktura_salg (20261015010000) - kun firmaet selv (og chef i admin).
 //
 // Ingen server-only: typerne, momsberegningen og kopiteksten bruges også i
 // klienten (Kopiér-knappen).

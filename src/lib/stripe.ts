@@ -1,3 +1,5 @@
+import "server-only";
+
 import Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";

@@ -2,18 +2,24 @@ import Link from "next/link";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { nulstilMitId } from "@/app/actions/adminMitid";
+import MitIdVisOplysninger from "@/components/admin/MitIdVisOplysninger";
 
 // MitID på brugersiden i admin (20261013010000_mitid.sql): status,
 // tidspunkt, juridisk navn og fødselsdato (kun internt - staff), historik,
 // afviste forsøg (mulig dobbeltkonto) og "Nulstil MitID" (admin/chef).
+//
+// Staff kan ikke læse mitid_verificeringer direkte (RLS: kun brugeren selv,
+// 20261015010000_sikkerhed_gennemgang.sql). Siden læser status og historik
+// via service role efter rolletjekket (kraevSideRolle) - aldrig juridisk navn
+// og fødselsdato. De hentes først ved tryk på "Vis" (server action
+// visMitIdOplysninger), som tjekker rollen og logger opslaget i
+// moderation_log ('mitid_opslag'); kan det ikke logges, vises intet.
 
 type Admin = ReturnType<typeof createAdminClient>;
 
 type Verificering = {
   id: string;
   status: "aktiv" | "nulstillet" | "slettet";
-  juridisk_navn: string | null;
-  foedselsdato: string | null;
   verificeret_kl: string;
   nulstillet_kl: string | null;
   nulstil_aarsag: string | null;
@@ -86,7 +92,7 @@ export default async function MitIdAdminKort({
   const [{ data: v }, { data: f }] = await Promise.all([
     admin
       .from("mitid_verificeringer")
-      .select("id, status, juridisk_navn, foedselsdato, verificeret_kl, nulstillet_kl, nulstil_aarsag")
+      .select("id, status, verificeret_kl, nulstillet_kl, nulstil_aarsag")
       .eq("bruger_id", brugerId)
       .order("verificeret_kl", { ascending: false })
       .limit(20),
@@ -116,16 +122,7 @@ export default async function MitIdAdminKort({
             <dt className="text-neutral-500">Verificeret</dt>
             <dd className="text-neutral-900">{tid(aktiv.verificeret_kl)}</dd>
           </div>
-          <div>
-            <dt className="text-neutral-500">Juridisk navn (kun internt)</dt>
-            <dd className="text-neutral-900">{aktiv.juridisk_navn ?? "–"}</dd>
-          </div>
-          <div>
-            <dt className="text-neutral-500">Fødselsdato (kun internt)</dt>
-            <dd className="text-neutral-900">
-              {aktiv.foedselsdato ? new Date(aktiv.foedselsdato).toLocaleDateString("da-DK") : "–"}
-            </dd>
-          </div>
+          <MitIdVisOplysninger brugerId={brugerId} />
         </dl>
       ) : (
         !erFirma && (
