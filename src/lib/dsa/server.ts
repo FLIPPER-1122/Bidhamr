@@ -414,7 +414,7 @@ export const INDGREB_FEJL: Record<string, string> = {
   ugyldig_bruger: "Brugeren findes ikke.",
   sig_selv: "Du kan ikke gøre dette mod dig selv.",
   ugyldig_sag: "Sagen hører ikke til brugeren.",
-  // 20261016010000_erhverv_klager.sql: firmakonti lukkes kun af chef.
+  // 20261016020000_erhverv_klager.sql: firmakonti lukkes kun af chef.
   kun_chef: "Det er en firmakonto. Kun chefen kan lukke en firmakonto.",
 };
 

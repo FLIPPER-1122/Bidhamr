@@ -46,7 +46,7 @@ const KODE_FEJL: Record<string, string> = {
   inhabil: "Du kan ikke behandle denne bruger, fordi I har en sag med hinanden.",
   ugyldig_bruger: "Brugeren findes ikke.",
   aarsag_mangler: GENERISK,
-  // 20261016010000_erhverv_klager.sql: firmakonti lukkes kun af chef.
+  // 20261016020000_erhverv_klager.sql: firmakonti lukkes kun af chef.
   kun_chef: "Det er en firmakonto. Kun chefen kan godkende eller afvise lukning af en firmakonto.",
 };
 

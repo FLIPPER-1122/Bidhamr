@@ -1,7 +1,7 @@
 // Klager over firmaer (reklamation) - fælles for køber, firma og admin.
 // Ingen server-only-import: må bruges i klientkomponenter.
 //
-// Databasen: supabase/migrations/20261016010000_erhverv_klager.sql.
+// Databasen: supabase/migrations/20261016020000_erhverv_klager.sql.
 // Alle regler håndhæves dér (også for appen). Tallene her er kun til
 // formularer og visning og skal følge migrationen.
 //

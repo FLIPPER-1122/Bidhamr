@@ -1243,7 +1243,7 @@ begin
   if u.konto_lukket_kl is not null then
     return jsonb_build_object('kode', 'allerede_lukket');
   end if;
-  -- Erhverv (20261016010000): en firmakonto lukkes kun af chef.
+  -- Erhverv (20261016020000): en firmakonto lukkes kun af chef.
   if u.konto_type = 'erhverv' and not public.erhverv_har_adgang(p_medarbejder, true) then
     return jsonb_build_object('kode', 'kun_chef');
   end if;
@@ -1325,7 +1325,7 @@ begin
     return jsonb_build_object('kode', 'behandlet', 'status', f.status);
   end if;
   if f.bruger_id = p_medarbejder then return jsonb_build_object('kode', 'sig_selv'); end if;
-  -- Erhverv (20261016010000): et forslag om en firmakonto behandles kun af chef.
+  -- Erhverv (20261016020000): et forslag om en firmakonto behandles kun af chef.
   if exists (select 1 from public.users u where u.id = f.bruger_id and u.konto_type = 'erhverv')
      and not public.erhverv_har_adgang(p_medarbejder, true) then
     return jsonb_build_object('kode', 'kun_chef');
