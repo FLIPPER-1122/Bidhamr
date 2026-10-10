@@ -220,22 +220,21 @@ export const FAQ_SIDE: Tekstside = {
         },
       ],
     },
-    // TODO indhold-agent: gennemlæs MitID-svarene (korte pladsholdere).
     {
       id: "mitid",
       overskrift: "MitID",
       punkter: [
         {
           spoergsmaal: "Hvorfor skal jeg bruge MitID?",
-          svar: "Så alle, der byder og sælger, er rigtige personer. Det gør det trygt at handle med fremmede. Du kan kun have én konto, og du skal være fyldt 18 år.",
+          svar: "Det gør det trygt at handle med fremmede. Når alle, der byder og sælger, har bekræftet sig med MitID, ved du, at du handler med en rigtig person. Hver person kan kun have én konto, så det er svært at lave falske konti. Bliver en konto lukket for svindel, kan personen ikke oprette en ny. Du skal være fyldt 18 år. Firmakonti skal ikke bekræftes med MitID.",
         },
         {
           spoergsmaal: "Hvornår skal jeg bekræfte mig?",
-          svar: "Du kan oprette en konto og kigge uden MitID. Før dit første bud eller din første auktion skal du bekræfte dig én gang. Det tager et minut. Du kan gøre det med det samme under Min konto.",
+          svar: "Du kan oprette en konto og kigge rundt uden MitID. Du skal først bekræfte dig, før du afgiver dit første bud eller opretter din første auktion. Det tager et minut, og du gør det kun én gang. Vil du gøre det med det samme, kan du gøre det under Min konto.",
         },
         {
           spoergsmaal: "Kan andre se mit navn fra MitID?",
-          svar: "Nej. Andre ser kun dit brugernavn og mærket \"MitID-verificeret\". Vi gemmer ikke dit CPR-nummer.",
+          svar: "Nej. Andre ser kun dit brugernavn og mærket \"MitID-verificeret\". Dit navn fra MitID bruger vi kun internt. Det vises aldrig for andre brugere og står ikke på fakturaer. Vi får ikke dit CPR-nummer fra MitID.",
         },
       ],
     },

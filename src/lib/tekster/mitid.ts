@@ -12,7 +12,7 @@ export const MITID = {
   kraevesTekst:
     "Før dit første bud eller din første auktion skal du bekræfte, hvem du er, med MitID. Det tager et minut og sker kun én gang. Så ved alle på BidHamr, at de handler med en rigtig person.",
   kraevesPrivat:
-    "Andre ser kun dit brugernavn og mærket \"MitID-verificeret\" – aldrig dit navn fra MitID. Vi gemmer ikke dit CPR-nummer.",
+    "Andre ser kun dit brugernavn og mærket \"MitID-verificeret\" – aldrig dit navn fra MitID. Vi får ikke dit CPR-nummer fra MitID.",
 
   // Maksimum (automatisk bud) fra en bruger uden MitID byder ikke videre.
   maksimumStoppet: "Bekræft med MitID for at fortsætte dit maksimumbud.",
@@ -24,7 +24,7 @@ export const MITID = {
 
   // Resultat efter MitID (?mitid=...).
   resultat: {
-    ok: "Tak! Du er nu MitID-verificeret og kan byde og sælge.",
+    ok: "Tak. Du er nu MitID-verificeret og kan byde og sælge.",
     allerede: "Du er allerede MitID-verificeret.",
     afbrudt: "Du afbrød MitID. Du kan prøve igen, når du er klar.",
     dobbeltkonto:
@@ -51,26 +51,27 @@ export const MITID = {
   kontoNavn: "Navn fra MitID (vises aldrig for andre):",
 
   // Mere synlig MitID (Filip, 10. okt. 2026: "den er gemt lidt væk").
-  // TODO indhold-agent: gennemlæs de korte pladsholdere herunder.
   // Velkomstsiden efter oprettelse.
-  velkommenTitel: "Bekræft dig med MitID nu",
-  velkommenTekst: "Så er du klar til at byde og sælge. Det tager et minut og sker kun én gang.",
-  springOver: "Spring over, jeg gør det senere",
+  velkommenTitel: "Bekræft dig med MitID",
+  velkommenTekst:
+    "Så er du klar til at byde og sælge. Det tager et minut, og du gør det kun én gang.",
+  springOver: "Spring over – jeg gør det senere",
   // Kortet øverst på Min konto.
-  kontoKortTitel: "Du er ikke MitID-verificeret endnu",
-  kontoKortTekst: "Bekræft dig én gang med MitID, så kan du byde og sætte varer til salg.",
+  kontoKortTitel: "Du er ikke bekræftet med MitID endnu",
+  kontoKortTekst:
+    "Du skal bekræfte dig med MitID, før du kan byde eller sætte varer til salg. Det tager et minut, og du gør det kun én gang.",
   // Profilmenuen i topbaren.
   menuPunkt: "Bekræft med MitID",
   menuMangler: "MitID mangler",
   // Egen profil (kun ejeren ser det).
-  profilEjer: "Ikke MitID-verificeret – bekræft nu",
+  profilEjer: "Ikke MitID-verificeret endnu – bekræft dig nu",
   // Hvorfor MitID - kort liste (velkomst, Min konto, boksen før bud/salg).
   hvorforTitel: "Hvorfor MitID?",
   hvorfor: [
     "Tryghed: alle, der byder og sælger, er rigtige personer.",
-    "Én konto pr. person – det stopper falske konti.",
-    "Du skal være fyldt 18 år for at handle.",
-    "Dit navn fra MitID vises aldrig. Andre ser kun dit brugernavn.",
+    "Mindre svindel: hver person kan kun have én konto. Bliver en konto lukket for svindel, kan personen ikke oprette en ny.",
+    "Du skal være fyldt 18 år.",
+    "Dit navn fra MitID bruger vi kun internt. Andre ser kun dit brugernavn.",
   ],
 } as const;
 
