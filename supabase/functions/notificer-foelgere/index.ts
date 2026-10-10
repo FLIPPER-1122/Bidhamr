@@ -2,7 +2,8 @@
 // oprettet en ny auktion. Kaldes fra Expo-appen lige efter auktionen er indsat.
 //
 // Indfanget fra produktion (version 1) og rettet i sikkerhedsgennemgangen
-// (M2, okt. 2026). IKKE DEPLOYET - Filip deployer selv:
+// (M2, okt. 2026). Deployet til produktion 10. okt. 2026 (version 2, Filips ja,
+// verify_jwt=true – funktionen tjekker desuden selv brugerens token). Senere:
 //   supabase functions deploy notificer-foelgere --project-ref <ref>
 //
 // Regler:
