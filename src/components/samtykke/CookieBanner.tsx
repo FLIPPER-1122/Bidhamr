@@ -15,6 +15,7 @@ import {
   laesGyldigSamtykkeRaa,
   lytTilAabn,
   lytTilSamtykke,
+  saetCookieBannerAabent,
 } from "@/lib/samtykkeKlient";
 import { KATEGORI_TEKST, SAMTYKKE_TEKST as T } from "@/lib/tekster/samtykke";
 
@@ -113,6 +114,12 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
       knap?.focus();
     }
   }, [iIndstillinger]);
+
+  // Fortæl vinduet med brugerbetingelserne, om banneret står der.
+  useEffect(() => {
+    saetCookieBannerAabent(vis);
+    return () => saetCookieBannerAabent(false);
+  }, [vis]);
 
   // Bannerets højde bliver til luft nederst på siden.
   useEffect(() => {

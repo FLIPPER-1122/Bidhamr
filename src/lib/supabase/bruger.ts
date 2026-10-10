@@ -59,6 +59,22 @@ export const hentKontoFelter = cache(async (brugerId: string): Promise<KontoFelt
   return data ?? null;
 });
 
+// Den version af brugerbetingelserne, brugeren selv har accepteret (NULL =
+// ikke accepteret) - højst ÉT kald pr. forespørgsel. Kolonnen kan ikke læses
+// direkte (ingen select-grant, 20261009050000_vilkaar_accept.sql), så den
+// hentes via mine_vilkaar(), der udleder brugeren af auth.uid(). null, hvis
+// opslaget fejler eller brugeren ikke har en profil.
+export const hentMineVilkaar = cache(async (): Promise<{ version: string | null } | null> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("mine_vilkaar");
+  if (error) {
+    console.error("mine_vilkaar fejlede:", error.message);
+    return null;
+  }
+  const raekke = ((data ?? []) as { version: string | null }[])[0];
+  return raekke ? { version: raekke.version ?? null } : null;
+});
+
 // Kontotypen ('privat' | 'erhverv'). null, hvis opslaget fejler.
 export const hentKontoType = cache(async (brugerId: string): Promise<string | null> => {
   return (await hentKontoFelter(brugerId))?.konto_type ?? null;
