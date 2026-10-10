@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 import { kanOptimeres } from "@/lib/billedUrl";
+import Ikon from "@/components/Ikon";
 
 const pil =
   "absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-tekst shadow-kort transition-colors hover:bg-white hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
@@ -42,6 +43,12 @@ export default function AuctionGallery({
             unoptimized={!kanOptimeres(aktivBillede)}
             className="object-cover"
           />
+        )}
+        {!aktivBillede && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-groen-lys text-groen/50">
+            <Ikon navn="billede" className="h-12 w-12" strøg={1.5} />
+            <span className="text-sm font-medium text-tekst-svag">Ingen billeder</span>
+          </div>
         )}
 
         {antal > 1 && (

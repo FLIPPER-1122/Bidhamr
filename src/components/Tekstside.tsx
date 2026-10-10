@@ -8,7 +8,7 @@ import type { Afsnit, FaqGruppe, Tabel, Tekstside as TekstsideData } from "@/lib
 
 function TekstLink({ href, tekst }: { href: string; tekst: string }) {
   const klasse =
-    "font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
+    "inline-flex min-h-11 items-center rounded-md font-medium text-groen hover:underline lg:min-h-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
   if (/^https?:\/\//.test(href)) {
     return (
       <a href={href} className={klasse} target="_blank" rel="noopener noreferrer">
@@ -148,7 +148,7 @@ function AfsnitBoks({ afsnit, ekstra }: { afsnit: Afsnit; ekstra?: ReactNode }) 
       )}
 
       {afsnit.links && afsnit.links.length > 0 && (
-        <ul className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+        <ul className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm lg:gap-y-2">
           {afsnit.links.map((l) => (
             <li key={l.href}>
               <TekstLink href={l.href} tekst={l.tekst} />

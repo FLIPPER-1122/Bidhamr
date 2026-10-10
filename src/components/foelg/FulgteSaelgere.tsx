@@ -40,7 +40,7 @@ export default function FulgteSaelgere({ start }: { start: FulgtSaelger[] }) {
     return (
       <TomTilstand
         className="mt-6"
-        ikon="bruger"
+        ikon="foelgere"
         titel="Du følger ingen sælgere endnu"
         tekst="Find en sælger, du kan lide, og tryk Følg på profilen eller auktionen. Så får du besked, når der kommer nyt."
         knap={{ href: "/auktioner", tekst: "Find auktioner" }}

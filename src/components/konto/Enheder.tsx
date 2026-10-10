@@ -25,6 +25,8 @@ function tid(iso: string) {
   });
 }
 
+const VIS_FOERST = 5;
+
 function EnhedIkon() {
   return (
     <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] text-groen-mork" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden="true">
@@ -38,6 +40,9 @@ export default function Enheder({ enheder }: { enheder: Enhed[] }) {
   const [arbejder, setArbejder] = useState<string | null>(null);
   const [fejl, setFejl] = useState<string | null>(null);
   const [besked, setBesked] = useState<string | null>(null);
+  // Lange lister (mange log ind) foldes sammen; de nyeste står øverst.
+  const [visAlle, setVisAlle] = useState(false);
+  const viste = visAlle ? enheder : enheder.slice(0, VIS_FOERST);
 
   async function fjern(id: string) {
     setFejl(null);
@@ -69,7 +74,7 @@ export default function Enheder({ enheder }: { enheder: Enhed[] }) {
         </p>
       ) : (
         <ul className="divide-y divide-kant rounded-xl border border-kant">
-          {enheder.map((e) => (
+          {viste.map((e) => (
             <li key={e.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
               <div className="flex min-w-0 flex-1 items-start gap-3">
                 <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-groen-lys">
@@ -105,6 +110,17 @@ export default function Enheder({ enheder }: { enheder: Enhed[] }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {enheder.length > VIS_FOERST && (
+        <button
+          type="button"
+          onClick={() => setVisAlle((v) => !v)}
+          aria-expanded={visAlle}
+          className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+        >
+          {visAlle ? "Vis færre" : `Vis alle ${enheder.length} enheder`}
+        </button>
       )}
 
       {fejl && (

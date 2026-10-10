@@ -37,6 +37,7 @@ import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
 import FragtlabelBoks from "@/components/fragt/FragtlabelBoks";
 import { hentForsendelserAction } from "@/app/actions/fragt";
 import SporingTidslinje from "@/components/fragt/SporingTidslinje";
+import Ikon from "@/components/Ikon";
 import { PAKKESTOERRELSE_NAVN, erPakkestoerrelse } from "@/lib/fragt/types";
 import { fragtLabelsAktiv } from "@/lib/fragt";
 import { hentKontoType } from "@/lib/supabase/bruger";
@@ -414,20 +415,37 @@ export default async function HandelDetalje({
           </div>
 
           {/* Statustidslinje */}
-          <ol className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" aria-label="Handlens forløb">
+          {/* Fremskridt: lodret liste på mobil, vandrette trin fra sm. Ikke
+              knapper - kun visning, så intet ser klikbart ud. */}
+          <ol className="mt-5 flex flex-col gap-2 sm:flex-row sm:gap-2" aria-label="Handlens forløb">
             {tidslinje.map((trin, i) => {
               const naaet = i <= aktivtTrin;
+              const aktiv = i === aktivtTrin;
               return (
                 <li
                   key={trin.vaerdi}
-                  aria-current={i === aktivtTrin ? "step" : undefined}
-                  className={`flex min-h-9 flex-1 items-center justify-center rounded-lg border px-3 py-2 text-center text-xs font-medium ${
-                    naaet
-                      ? "border-groen bg-groen-lys text-groen-mork"
-                      : "border-kant text-tekst-svag"
-                  }`}
+                  aria-current={aktiv ? "step" : undefined}
+                  className="flex items-center gap-2.5 sm:min-w-0 sm:flex-1 sm:flex-col sm:items-stretch sm:gap-2"
                 >
-                  {trin.label}
+                  <span aria-hidden="true" className={`hidden h-1.5 rounded-full sm:block ${naaet ? "bg-groen" : "bg-kant"}`} />
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${
+                        naaet ? "bg-groen text-white" : "border border-kant-staerk bg-white text-tekst-svag"
+                      }`}
+                    >
+                      {naaet && !aktiv ? <Ikon navn="flueben" className="h-3 w-3" strøg={2.5} /> : i + 1}
+                    </span>
+                    <span
+                      className={`text-[13px] leading-snug ${
+                        aktiv ? "font-semibold text-tekst" : naaet ? "font-medium text-groen-mork" : "text-tekst-svag"
+                      }`}
+                    >
+                      {trin.label}
+                      {naaet && !aktiv && <span className="sr-only"> (gennemført)</span>}
+                    </span>
+                  </span>
                 </li>
               );
             })}

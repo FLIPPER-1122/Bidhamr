@@ -150,6 +150,11 @@ h3:not(.font-sans) {
   .btn-lille {
     height: 44px;
   }
+  /* Tekstknapper ("Sådan virker det →") har ingen fast højde - på mobil
+     holdes touch-målet alligevel på 44px. */
+  .btn-tekst {
+    min-height: 44px;
+  }
 }
 
 .btn-stor {

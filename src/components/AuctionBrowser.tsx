@@ -85,6 +85,8 @@ export default function AuctionBrowser({
   // gangen), men følger URL'en, når den skifter udefra (et menulink, Tilbage
   // eller et delt link).
   const [postnummer, setPostnummer] = useState(initialPostnummer);
+  // Mobil: postnummer og afstand er åbne, hvis linket allerede har et postnummer.
+  const [afstandAaben, setAfstandAaben] = useState(Boolean(initialPostnummer));
   const [radiusKm, setRadiusKm] = useState(initialRadiusKm);
   const urlNoegle = urlAfstandNoegle(urlPostnummer, urlRadiusKm);
   const [sidsteUrlNoegle, setSidsteUrlNoegle] = useState(urlNoegle);
@@ -226,11 +228,17 @@ export default function AuctionBrowser({
   }
 
   const erHeleDanmark = radiusKm >= RADIUS_MAX;
+  // Mobil: kategorien vælges i rækken over (når den vises - ikke ved
+  // fritekstsøgning), og postnummer/afstand ligger bag en knap, så
+  // auktionerne kommer højere op. Fra md vises alle filtre altid.
+  const kategoriRaekkeVises = !query;
+  const afstandAktiv = !erHeleDanmark && postStatus === "fundet";
+  const afstandTekst = afstandAktiv ? `${radiusKm} km fra ${postnummer}` : "Hele Danmark";
 
   return (
     <div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-4 rounded-[14px] bg-groen-lys p-4 md:grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.4fr)] lg:gap-x-5">
-        <div className="min-w-0">
+        <div className={`min-w-0 ${kategoriRaekkeVises ? "hidden md:block" : ""}`}>
           <label htmlFor="filter-kategori" className={etiket}>Kategori</label>
           <select
             id="filter-kategori"
@@ -247,7 +255,7 @@ export default function AuctionBrowser({
           </select>
         </div>
 
-        <div className="min-w-0">
+        <div className={`min-w-0 ${kategoriRaekkeVises ? "col-span-2 md:col-span-1" : ""}`}>
           <label htmlFor="filter-sortering" className={etiket}>Sortér efter</label>
           <select
             id="filter-sortering"
@@ -263,6 +271,25 @@ export default function AuctionBrowser({
           </select>
         </div>
 
+        {/* Kun mobil: åbn/luk postnummer og afstand. */}
+        <button
+          type="button"
+          onClick={() => setAfstandAaben((v) => !v)}
+          aria-expanded={afstandAaben}
+          aria-controls="filter-afstand-felter"
+          className="col-span-2 flex min-h-11 items-center justify-between gap-3 rounded-xl border border-kant-staerk bg-white px-4 text-left text-[15px] text-tekst hover:border-[#BFBFBF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen md:hidden"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <Ikon navn="lokation" className="h-[18px] w-[18px] shrink-0 text-groen-mork" />
+            <span className="truncate">
+              Afstand: <span className="font-semibold text-groen-mork">{afstandTekst}</span>
+            </span>
+          </span>
+          <Ikon navn="ned" className={`h-4 w-4 shrink-0 transition-transform ${afstandAaben ? "rotate-180" : ""}`} />
+        </button>
+
+        {/* "contents": felterne indgår i gitteret, når de vises. */}
+        <div id="filter-afstand-felter" className={`${afstandAaben ? "contents" : "hidden"} md:contents`}>
         <div className="col-span-2 min-w-0 md:col-span-1">
           <label htmlFor="filter-postnummer" className={etiket}>Postnummer</label>
           <input
@@ -322,6 +349,7 @@ export default function AuctionBrowser({
               Hele Danmark
             </button>
           </div>
+        </div>
         </div>
       </div>
 

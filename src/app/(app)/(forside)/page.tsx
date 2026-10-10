@@ -102,7 +102,7 @@ export default async function Forside() {
               Byd, vind og handl trygt med andre danskere.
             </p>
 
-            <form action="/auktioner" method="GET" role="search" className="mt-6 flex items-center gap-2 rounded-xl bg-white p-1.5 pl-4 sm:pl-5">
+            <form action="/auktioner" method="GET" role="search" className="mt-6 flex items-center gap-2 rounded-xl bg-white p-1.5 pl-4 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-white sm:pl-5">
               <label htmlFor="hero-soeg" className="sr-only">
                 Hvad leder du efter?
               </label>
@@ -129,7 +129,7 @@ export default async function Forside() {
                   <li key={s}>
                     <Link
                       href={`/auktioner?q=${encodeURIComponent(s)}`}
-                      className="inline-flex min-h-9 items-center rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] text-white transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                      className="inline-flex min-h-11 items-center rounded-full border border-white/25 bg-white/15 px-3.5 py-1.5 text-[13px] text-white lg:min-h-9 lg:px-3 transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                     >
                       {s}
                     </Link>

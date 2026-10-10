@@ -71,7 +71,13 @@ export default function AuctionsExplorer({
           <h2 id="kategorier-titel" className="sr-only">
             Kategorier
           </h2>
-          <CategoryGrid valgt={kategori} onVælg={setKategori} />
+          {/* Mobil: en rullende række, så auktionerne kommer højere op. */}
+          <div className="md:hidden">
+            <CategoryGrid valgt={kategori} onVælg={setKategori} variant="chips" />
+          </div>
+          <div className="hidden md:block">
+            <CategoryGrid valgt={kategori} onVælg={setKategori} />
+          </div>
         </section>
       )}
 

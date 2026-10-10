@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { opdaterSaelgerStatus, startSaelgerOnboarding } from "@/app/actions/betaling";
 import { FejlBoks } from "@/components/betaling/FejlBoks";
 import Link from "next/link";
+import Ikon from "@/components/Ikon";
 import { FIRMA_UDBETALINGSKONTO } from "@/lib/tekster/erhverv";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
 import { E_KNAP_PRIMAER, E_KNAP_SEKUNDAER, E_TEKST } from "@/components/erhverv/stil";
@@ -94,12 +95,25 @@ export default function UdbetalingskontoKraeves({
   }
 
   return (
-    <div className="space-y-4 rounded-xl border border-advarsel-kant bg-advarsel-bg p-5">
-      <p className="text-sm text-advarsel-tekst">
+    // Kun udseende er ændret her (10. okt. 2026) - flowet er det samme.
+    <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
+      <span className="grid h-14 w-14 place-items-center rounded-full bg-groen-lys text-groen-mork">
+        <Ikon navn="kort" className="h-6 w-6" />
+      </span>
+      {/* TODO indhold: overskrift og tekst er pladsholdere. */}
+      <h2 className="mt-4 text-[20px] leading-tight lg:text-[22px]">Opret din udbetalingskonto</h2>
+      <p className="mt-2 max-w-[60ch] text-[15px] text-tekst-daempet">
         For at sælge skal du have en udbetalingskonto, så Stripe kan sende pengene til din bank.
       </p>
-      {fejl && <FejlBoks tekst={fejl} />}
-      <button type="button" onClick={start} disabled={venter} className="btn btn-primaer w-full">
+      {fejl && <div className="mt-4"><FejlBoks tekst={fejl} /></div>}
+      <button
+        type="button"
+        onClick={start}
+        disabled={venter}
+        aria-busy={venter || undefined}
+        className="btn btn-primaer btn-stor mt-6 w-full sm:w-auto"
+      >
+        {venter && <span className="btn-spinner" aria-hidden="true" />}
         {venter
           ? "Sender dig videre…"
           : harKonto
