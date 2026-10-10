@@ -6,13 +6,14 @@ import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { dato, datoTid } from "@/components/admin/erhverv/ErhvervFaner";
 import FirmaRedigering from "@/components/admin/erhverv/FirmaRedigering";
 import FirmaAbonnementStripe from "@/components/admin/erhverv/FirmaAbonnementStripe";
+import FirmaKontoSektion, { type FirmaKontoTilstand } from "@/components/admin/erhverv/FirmaKontoSektion";
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_BETALING as AB, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
 import { ABONNEMENT_STATUS_NAVN } from "@/lib/erhverv/regler";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function FirmaSide({ params }: { params: Promise<{ id: string }> }) {
-  const { rolle } = await kraevErhvervSide();
+  const { rolle, admin } = await kraevErhvervSide();
   const { id } = await params;
   if (!UUID.test(id)) notFound();
 
@@ -20,6 +21,22 @@ export default async function FirmaSide({ params }: { params: Promise<{ id: stri
   if ("fejl" in res) throw new Error(res.fejl);
   const f = res.firmaer.find((x) => x.id === id);
   if (!f) notFound();
+
+  // Firmakontoens tilstand og et evt. forslag om lukning (chef og
+  // sælger-rollen - kraevErhvervSide ovenfor).
+  const [{ data: konto }, { data: lukningForslag }] = await Promise.all([
+    admin
+      .from("users")
+      .select("suspenderet, suspenderet_til, suspenderet_aarsag, konto_lukket_kl")
+      .eq("id", f.bruger_id)
+      .maybeSingle<FirmaKontoTilstand>(),
+    admin
+      .from("konto_lukning_forslag")
+      .select("id, advarsler_antal")
+      .eq("bruger_id", f.bruger_id)
+      .eq("status", "afventer")
+      .maybeSingle<{ id: string; advarsler_antal: number }>(),
+  ]);
   const pakker = "fejl" in pakkerSvar ? [] : pakkerSvar.pakker;
 
   const info: [string, string][] = [
@@ -118,6 +135,8 @@ export default async function FirmaSide({ params }: { params: Promise<{ id: stri
           }}
         />
       </section>
+
+      {konto && <FirmaKontoSektion firmaId={f.id} konto={konto} forslag={lukningForslag ?? null} />}
     </div>
   );
 }

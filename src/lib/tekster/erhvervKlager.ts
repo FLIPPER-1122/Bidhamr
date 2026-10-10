@@ -129,7 +129,7 @@ export const KLAGE_ADMIN = {
   berettigede12: "Berettigede de seneste 12 måneder",
   advarsler: "Advarsler",
   lukningForeslaaet: "Der er et forslag om at lukke firmakontoen. Kun chefen og sælger-rollen kan godkende det.",
-  lukningLink: "Gå til Kontolukninger",
+  lukningLink: "Godkend eller afvis under firmaet",
   inhabil: "Du har selv handlet med firmaet (eller er køberen) og kan ikke behandle klagen. Bed en kollega om at tage den.",
   inhabilSkjult: "Du er inhabil i denne sag.",
   knapTag: "Tag klagen",
@@ -190,4 +190,64 @@ export const KLAGE_NOTIFIKATION = {
   firmaTitel: "En klage over jer er afgjort",
   firmaTekst: (nr: number, afg: string, begrundelse: string) =>
     `Klage nr. ${nr}: ${afg}. Begrundelse: ${begrundelse}`,
+} as const;
+
+// Admin → Erhverv → Firmaer → [firma]: firmakontoen (chef og sælger-rollen).
+export const FIRMA_KONTO = {
+  titel: "Firmakontoen",
+  forklaring:
+    "Luk, suspendér eller åbn firmakontoen igen. Firmaet får en begrundelse på mail og kan klage (som ved alle andre indgreb). Alt logges.",
+  status: "Status",
+  aktiv: "Aktiv",
+  lukket: (d: string) => `Lukket permanent ${d}. Kontoen kan ikke åbnes igen.`,
+  suspenderetPermanent: "Suspenderet permanent",
+  suspenderetTil: (d: string) => `Suspenderet til ${d}`,
+  aarsag: "Årsag",
+  knapLuk: "Luk firmakonto permanent",
+  lukTitel: "Luk firmakontoen permanent?",
+  lukTekst:
+    "Firmaet kan ikke logge ind, og kontoen kan ikke åbnes igen. Husk at opsige abonnementet i Stripe særskilt. Firmaet får begrundelsen på mail og kan klage.",
+  lukBekraeft: "Ja, luk firmakontoen",
+  lukPladsholder: "Fx: Firmaet har fået gentagne berettigede klager over varer, der ikke blev leveret.",
+  knapSuspender: "Suspendér firmakonto",
+  suspenderTitel: "Suspendér firmakontoen?",
+  suspenderTekst:
+    "Firmaet kan ikke logge ind, så længe suspensionen gælder. Vælg 1 dag, 7 dage eller permanent. Firmaet får begrundelsen på mail og kan klage.",
+  suspenderBekraeft: "Ja, suspendér",
+  suspenderPladsholder: "Fx: Firmaet har ikke svaret på vores henvendelser om flere klager.",
+  knapOphaev: "Ophæv suspension",
+  ophaevTitel: "Ophæv suspensionen?",
+  ophaevTekst: "Firmaet kan logge ind og sælge igen med det samme.",
+  ophaevBekraeft: "Ja, ophæv suspensionen",
+  forslagTitel: (n: number) => `Forslag om lukning: firmaet har ${n} advarsler`,
+  forslagTekst: "Efter 3 advarsler skal chefen eller sælger-rollen tage stilling til, om firmakontoen lukkes.",
+  knapGodkend: "Godkend lukning",
+  godkendTitel: "Luk firmakontoen efter 3 advarsler?",
+  godkendTekst:
+    "Kontoen lukkes permanent og kan ikke åbnes igen. Firmaet får begrundelsen på mail og kan klage. Husk at opsige abonnementet i Stripe særskilt.",
+  godkendNote: "Intern note (kun staff)",
+  knapAfvis: "Afvis forslag",
+  afvisTitel: "Afvis forslaget om lukning?",
+  afvisTekst: "Firmakontoen forbliver åben, og firmaet får ingen besked. En ny advarsel giver et nyt forslag.",
+  afvisBegrundelse: "Hvorfor skal kontoen ikke lukkes? (kun staff)",
+  tilFirmaet: "Gå til firmaet for at godkende eller afvise",
+} as const;
+
+export const FIRMA_KONTO_FEJL = {
+  ingen_adgang: "Kun chefen og sælger-rollen kan gøre dette.",
+  kun_erhverv: "Kun chefen og sælger-rollen kan gøre dette ved en firmakonto.",
+  ikke_fundet: "Findes ikke længere. Opdater siden.",
+  ikke_firma: "Det er ikke en firmakonto.",
+  regel_mangler: "Vælg hvilken regel eller lov, firmaet bryder.",
+  fakta_mangler: "Skriv en begrundelse til firmaet: hvad har firmaet gjort?",
+  for_lang_tekst: "En af teksterne er for lang (højst 2000 tegn).",
+  ugyldig_varighed: "Vælg, hvor længe kontoen skal suspenderes.",
+  begrundelse_mangler: "Skriv en begrundelse.",
+  bortfaldet: "Kontoen var allerede lukket. Forslaget er markeret som bortfaldet.",
+  behandlet: "Forslaget er allerede behandlet. Opdater siden.",
+  lukket: "Kontoen er lukket permanent og kan ikke åbnes igen.",
+  allerede_lukket: "Kontoen er allerede lukket permanent.",
+  inhabil: "Du kan ikke behandle dette firma, fordi du selv har handlet med det. Bed en kollega om at gøre det.",
+  sig_selv: "Du kan ikke gøre dette mod dig selv.",
+  ugyldig_bruger: "Kontoen findes ikke.",
 } as const;

@@ -62,11 +62,12 @@ export default async function ErhvervKlageSide({ params }: { params: Promise<{ i
       {d.statistik.lukning_foreslaaet && (
         <p className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
           {A.lukningForeslaaet}{" "}
-          {d.er_chef && (
-            <Link href="/admin/kontolukninger" className="font-semibold underline">
-              {A.lukningLink}
-            </Link>
-          )}
+          <Link
+            href={`/admin/erhverv/firmaer/${d.firma.id}#firmakonto`}
+            className="inline-flex min-h-11 items-center font-semibold underline"
+          >
+            {A.lukningLink}
+          </Link>
         </p>
       )}
 
