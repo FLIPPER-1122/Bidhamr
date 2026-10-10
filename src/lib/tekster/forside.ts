@@ -3,21 +3,22 @@
 // BidHamr Beskyttelse). Ordet "forsikring" bruges aldrig.
 // Sig aldrig, at BidHamr modtager eller holder pengene - betalingen
 // håndteres af vores betalingspartner Stripe.
-//
-// TODO indhold-agent: alle tekster her er korte pladsholdere fra frontend.
-// Gennemlæs og skriv dem endeligt (især hero, de tre trin og erhverv).
+// MitID gælder private. Firmaer (erhverv) er godkendt med CVR, ikke MitID.
+// Pengene udbetales først, når køberen har godkendt varen, eller når
+// fristen for at oprette en sag er udløbet.
+// Ingen priser for erhverv her.
 
 export const FORSIDE = {
   metaTitel: "BidHamr – auktioner mellem private",
   metaBeskrivelse:
-    "Køb og sælg brugte ting på auktion mellem private i Danmark. MitID-verificerede brugere, BidHamr Beskyttelse og sikker betaling via Stripe.",
+    "Køb og sælg brugte ting på auktion i Danmark. Private er bekræftet med MitID, du ser totalprisen, før du byder, og betalingen håndteres af Stripe.",
   ogTitel: "BidHamr – køb og sælg brugte ting på auktion",
   ogBeskrivelse:
-    "Byd, vind og handl trygt med andre danskere. Alle, der byder og sælger, er bekræftet med MitID.",
+    "Byd på brugte ting fra andre danskere. Du ser den samlede pris, før du byder, og betaler via Stripe.",
 
   hero: {
-    titel: "Gode ting fortjener et nyt hjem",
-    undertitel: "Byd, vind og handl trygt med andre danskere.",
+    titel: "Køb og sælg brugte ting på auktion",
+    undertitel: "Byd mod andre danskere. Du ser altid den samlede pris, før du byder.",
     soegLabel: "Hvad leder du efter?",
     soegKnap: "Søg",
     populaere: "Populære søgninger",
@@ -32,25 +33,25 @@ export const FORSIDE = {
     {
       ikon: "personTjek",
       titel: "MitID-verificerede brugere",
-      tekst: "Alle, der byder og sælger, er bekræftet med MitID.",
+      tekst: "Private bekræftes med MitID, før de byder eller sælger. Firmaer er godkendt med CVR.",
       href: "/saadan-virker-det#mitid",
     },
     {
       ikon: "skjold",
       titel: "BidHamr Beskyttelse",
-      tekst: "Ekstra hjælp, hvis varen ikke er som beskrevet.",
+      tekst: "Vælg det, når du byder. Så hjælper vi, hvis varen går i stykker under forsendelsen eller ikke er som beskrevet.",
       href: "/bidhamr-beskyttelse",
     },
     {
       ikon: "kort",
-      titel: "Sikker betaling via Stripe",
-      tekst: "Sælger får først pengene, når du har fået varen.",
+      titel: "Betaling via Stripe",
+      tekst: "Sælger får først pengene, når du har godkendt varen, eller når fristen for at oprette en sag er udløbet.",
       href: "/saadan-virker-det",
     },
     {
       ikon: "hjaelp",
       titel: "Hjælp ved svindel",
-      tekst: "Tom pakke eller en helt anden vare? Vi åbner altid en sag.",
+      tekst: "Tom pakke, en helt anden vare eller aldrig sendt? Så kan du altid oprette en sag.",
       href: "/faq",
     },
   ],
@@ -64,7 +65,7 @@ export const FORSIDE = {
   // Når der slet ingen aktive auktioner er.
   tom: {
     titel: "Ingen auktioner lige nu",
-    tekst: "Der er ingen aktive auktioner i øjeblikket. Sæt noget til salg, og vær den første.",
+    tekst: "Der er ingen aktive auktioner i øjeblikket. Det er gratis at sætte en vare til salg – du betaler kun gebyr, hvis den bliver solgt.",
     knap: "Sælg en vare",
     link: "Sådan virker det",
   },
@@ -75,15 +76,15 @@ export const FORSIDE = {
     trin: [
       {
         titel: "Bekræft dig og byd",
-        tekst: "Bekræft dig én gang med MitID. Før du byder, ser du altid totalprisen med gebyr og fragt.",
+        tekst: "Bekræft dig én gang med MitID. Før du byder, ser du den samlede pris med gebyr og fragt.",
       },
       {
-        titel: "Vind og betal trygt",
-        tekst: "Har du højeste bud, når tiden løber ud, betaler du inden 48 timer med kort, MobilePay, Apple Pay eller Google Pay.",
+        titel: "Vind og betal",
+        tekst: "Har du højeste bud, når auktionen slutter, har du 48 timer til at betale med kort, MobilePay, Apple Pay eller Google Pay. Betalingen håndteres af Stripe.",
       },
       {
         titel: "Få varen",
-        tekst: "Sælger sender eller du henter. Sælger får først pengene, når du har fået varen.",
+        tekst: "Sælger sender varen, eller du henter den. Sælger får først pengene, når du har godkendt varen, eller når fristen for at oprette en sag er udløbet.",
       },
     ],
     laesMere: "Læs mere om, hvordan det virker",
@@ -92,7 +93,7 @@ export const FORSIDE = {
 
   erhverv: {
     titel: "Har du et firma?",
-    tekst: "Sælg dine varer på auktion til hele Danmark med BidHamr Erhverv. Vi hjælper dig personligt i gang.",
+    tekst: "Har dit firma et dansk CVR-nummer, kan du sælge på auktion til hele Danmark med BidHamr Erhverv. Udfyld en kort formular, så kontakter vi dig.",
     knap: "Læs om BidHamr Erhverv",
   },
 } as const;
