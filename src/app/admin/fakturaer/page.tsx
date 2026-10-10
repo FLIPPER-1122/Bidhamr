@@ -90,7 +90,7 @@ export default async function AdminFakturaer() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-bold">Fakturaer (Dinero)</h1>
         <p className="mt-1 max-w-[70ch] text-sm text-gray-600">

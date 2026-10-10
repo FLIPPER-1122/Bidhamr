@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { gemMineSkatteoplysninger } from "@/app/actions/dac7";
 import { DAC7 } from "@/lib/dac7/tekster";
@@ -43,6 +43,11 @@ export default function SkatteoplysningerForm(p: Props) {
   const [visAndet, setVisAndet] = useState(false);
   const [fjernAndet, setFjernAndet] = useState(false);
   const hydreret = useHydreret();
+  const fejlRef = useRef<HTMLParagraphElement>(null);
+  // DESIGN.md 8.3: fokus flyttes til fejlen ved en mislykket indsendelse.
+  useEffect(() => {
+    if (fejl) fejlRef.current?.focus();
+  }, [fejl]);
 
   // onSubmit (ikke form action): en form action nulstiller alle felter
   // bagefter, så sælgeren ville miste det udfyldte ved en fejl.
@@ -75,6 +80,11 @@ export default function SkatteoplysningerForm(p: Props) {
   }
 
   const fk = (felt: string) => (fejl?.felt === felt ? FELT_FEJL : "");
+  // Feltet med fejlen peger på fejlteksten (skærmlæsere læser den op).
+  const beskrevet = (felt: string, hjaelp?: string) =>
+    [hjaelp, fejl?.felt === felt ? "dac7-fejl" : null].filter(Boolean).join(" ") || undefined;
+  const afkryds = "flex min-h-11 cursor-pointer items-start gap-3 py-2.5 text-sm";
+  const boks = "mt-0.5 h-5 w-5 shrink-0 rounded-[6px] accent-groen";
 
   return (
     <form onSubmit={indsend} method="post" className="space-y-4" noValidate>
@@ -101,9 +111,10 @@ export default function SkatteoplysningerForm(p: Props) {
           maxLength={200}
           defaultValue={p.adresse}
           aria-invalid={fejl?.felt === "adresse" || undefined}
+          aria-describedby={beskrevet("adresse", "dac7-adresse-hjaelp")}
           className={`mt-1.5 ${FELT} ${fk("adresse")}`}
         />
-        <p className="mt-1.5 text-[13px] text-tekst-daempet">{DAC7.adresseHjaelp}</p>
+        <p id="dac7-adresse-hjaelp" className="mt-1.5 text-[13px] text-tekst-daempet">{DAC7.adresseHjaelp}</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-[140px_1fr]">
@@ -120,6 +131,7 @@ export default function SkatteoplysningerForm(p: Props) {
             maxLength={4}
             defaultValue={p.postnummer}
             aria-invalid={fejl?.felt === "postnummer" || undefined}
+            aria-describedby={beskrevet("postnummer")}
             className={`mt-1.5 ${FELT} ${fk("postnummer")}`}
           />
         </div>
@@ -135,6 +147,7 @@ export default function SkatteoplysningerForm(p: Props) {
             maxLength={100}
             defaultValue={p.bynavn}
             aria-invalid={fejl?.felt === "bynavn" || undefined}
+            aria-describedby={beskrevet("bynavn")}
             className={`mt-1.5 ${FELT} ${fk("bynavn")}`}
           />
         </div>
@@ -154,7 +167,7 @@ export default function SkatteoplysningerForm(p: Props) {
           maxLength={11}
           placeholder={p.harCpr ? (p.cprMaske ?? "••••••-••••") : "DDMMÅÅ-XXXX"}
           aria-invalid={fejl?.felt === "cpr" || undefined}
-          aria-describedby="dac7-cpr-hjaelp"
+          aria-describedby={beskrevet("cpr", "dac7-cpr-hjaelp")}
           className={`mt-1.5 ${FELT} ${fk("cpr")}`}
         />
         <p id="dac7-cpr-hjaelp" className="mt-1.5 text-[13px] text-tekst-daempet">
@@ -169,7 +182,7 @@ export default function SkatteoplysningerForm(p: Props) {
             <span>
               {DAC7.andetTinSpm} <strong>{EU_LANDE.find((l) => l.kode === p.andetTinLand)?.navn ?? p.andetTinLand}</strong>
             </span>
-            <span className="flex gap-2">
+            <span className="flex flex-wrap gap-2">
               <button type="button" className="btn btn-sekundaer" onClick={() => setVisAndet(true)}>
                 Ret
               </button>
@@ -214,25 +227,25 @@ export default function SkatteoplysningerForm(p: Props) {
             </div>
           </div>
         ) : (
-          <label className="flex items-center gap-3 text-sm">
-            <input type="checkbox" className="h-5 w-5" onChange={(e) => setVisAndet(e.target.checked)} />
-            {DAC7.andetTinSpm}
+          <label className={`${afkryds} -my-2.5`}>
+            <input type="checkbox" className={boks} onChange={(e) => setVisAndet(e.target.checked)} />
+            <span>{DAC7.andetTinSpm}</span>
           </label>
         )}
       </div>
 
-      <label className="flex items-start gap-3 text-sm">
-        <input type="checkbox" name="bopaelDk" value="ja" defaultChecked={!!p.adresse} className="mt-0.5 h-5 w-5" />
+      <label className={afkryds}>
+        <input type="checkbox" name="bopaelDk" value="ja" defaultChecked={!!p.adresse} className={boks} />
         <span>{DAC7.bopaelDk}</span>
       </label>
 
-      <label className="flex items-start gap-3 text-sm">
-        <input type="checkbox" name="bekraeft" value="ja" className="mt-0.5 h-5 w-5" />
+      <label className={afkryds}>
+        <input type="checkbox" name="bekraeft" value="ja" className={boks} />
         <span>{DAC7.bekraeft}</span>
       </label>
 
       {fejl && (
-        <p role="alert" className={FORMULAR_FEJL}>
+        <p id="dac7-fejl" ref={fejlRef} tabIndex={-1} role="alert" className={`${FORMULAR_FEJL} outline-none`}>
           {fejl.tekst}
         </p>
       )}
@@ -242,9 +255,10 @@ export default function SkatteoplysningerForm(p: Props) {
         </p>
       )}
 
-      <button type="submit" disabled={pending || !hydreret} aria-busy={pending || undefined} className="btn btn-primaer btn-stor">
+      <button type="submit" disabled={pending || !hydreret} aria-busy={pending || undefined} className="btn btn-primaer btn-stor w-full sm:w-auto">
+        {/* DESIGN.md 6.6: teksten bliver stående, spinneren viser, at der gemmes. */}
         {pending && <span className="btn-spinner" aria-hidden="true" />}
-        {pending ? DAC7.gemmer : DAC7.gem}
+        {DAC7.gem}
       </button>
     </form>
   );
