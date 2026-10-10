@@ -45,6 +45,19 @@ export function mitIdKonfig(): MitIdKonfig | null {
   return { domaene, clientId, clientSecret, hashNoegle };
 }
 
+// Til fejlloggen: hvad der mangler i konfigurationen (aldrig selve værdierne).
+export function mitIdKonfigMangler(): string[] {
+  const domaene = (process.env.CRIIPTO_DOMAIN ?? "").trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const mangler: string[] = [];
+  if (!domaene) mangler.push("CRIIPTO_DOMAIN mangler");
+  else if (!/^[a-z0-9.-]+$/i.test(domaene)) mangler.push("CRIIPTO_DOMAIN har ugyldige tegn (kun domænet, fx bidhamr-test.test.idura.broker)");
+  if (!(process.env.CRIIPTO_CLIENT_ID ?? "").trim()) mangler.push("CRIIPTO_CLIENT_ID mangler");
+  if (!(process.env.CRIIPTO_CLIENT_SECRET ?? "").trim()) mangler.push("CRIIPTO_CLIENT_SECRET mangler");
+  const n = (process.env.MITID_HASH_NOEGLE ?? "").trim().length;
+  if (n < 32) mangler.push(`MITID_HASH_NOEGLE er ${n} tegn (skal være mindst 32)`);
+  return mangler;
+}
+
 // Callback-adressen skal være præcis den, der er registreret hos Idura.
 // Kun disse to (Filip, 9. okt. 2026). MITID_CALLBACK_URL kan overstyre (fx
 // en anden port), men skal stadig være registreret hos Idura.
@@ -263,12 +276,24 @@ export async function hentIdentitet(
 
   // Kun dansk MitID på niveau betydelig eller højere.
   if (c.identityscheme !== "dkmitid") throw new Error("MitID: forkert eID");
-  const acr = typeof c.acr === "string" ? c.acr : "";
-  // acr SKAL være med - mangler det, afvises login.
-  if (acr !== MITID_ACR && acr !== "urn:grn:authn:dk:mitid:high") {
-    throw new Error("MitID: for lavt sikringsniveau");
+  // Idura sender niveauet i authenticationtype (URN) og/eller
+  // gov:saml:attribute:LoA (NSIS-URI) - ikke altid i acr. Mindst én skal sige
+  // betydelig/høj, og ingen må sige lavere.
+  const niveauer = [c.acr, c.authenticationtype, c["gov:saml:attribute:LoA"]]
+    .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+    .map((v) => v.trim());
+  const godkendt = (v: string) =>
+    v === MITID_ACR ||
+    v === "urn:grn:authn:dk:mitid:high" ||
+    /^https?:\/\/data\.gov\.dk\/concept\/core\/nsis\/loa\/(substantial|high)$/i.test(v);
+  if (niveauer.length === 0 || !niveauer.every(godkendt)) {
+    // Niveau-værdierne er ikke personoplysninger.
+    throw new Error(
+      `MitID: for lavt sikringsniveau (${niveauer.map((v) => v.slice(0, 80)).join(" | ") || "intet niveau"}; claims=${Object.keys(c).sort().join(",").slice(0, 400)})`,
+    );
   }
-  const personId = typeof c.uuid === "string" ? c.uuid.trim() : "";
+  const raaId = typeof c.uuid === "string" ? c.uuid : typeof c["gov:saml:attribute:UUID"] === "string" ? c["gov:saml:attribute:UUID"] : "";
+  const personId = raaId.trim().replace(/^urn:uuid:/i, "").toLowerCase();
   if (!/^[0-9a-f-]{16,64}$/i.test(personId)) throw new Error("MitID: mangler Person-ID");
   const foedselsdato = typeof c.birthdate === "string" ? c.birthdate.trim() : "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(foedselsdato)) throw new Error("MitID: mangler fødselsdato");
