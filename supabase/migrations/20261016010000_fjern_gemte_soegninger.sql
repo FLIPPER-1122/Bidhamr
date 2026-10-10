@@ -32,8 +32,9 @@
 --        brugerens notifikationsliste og indgår i "Download dine data").
 --        CHECK-reglen notifikationer_type_gyldig udvides derfor med
 --        "or type = 'gemt_soegning'"; ellers ville fx "markér som læst"
---        (update) fejle på de gamle rækker. Nye kan ikke opstå: intet i
---        databasen eller på hjemmesiden opretter typen længere. Valgt frem for
+--        (update) fejle på de gamle rækker. Intet i databasen eller på
+--        hjemmesiden opretter typen længere, men CHECK-reglen tillader den
+--        stadig (også i nye rækker) af hensyn til de gamle. Valgt frem for
 --        sletning, fordi det ikke kan fortrydes at slette, og fordi en
 --        bevaret række ikke koster noget. (10. okt. 2026: 0 rækker i både
 --        test og produktion.)
@@ -115,9 +116,18 @@ begin
   if v_src !~ E'^\\s*select public\\.notifikation_paakraevet\\(p_type\\) or p_type = any \\(array\\[[^]]*\\]::text\\[\\]\\);\\s*$' then
     raise exception 'notifikation_kendt_type har ikke den forventede form - ret manuelt: %', v_src;
   end if;
+  -- search_path skal være '' (20261009040000). search_path=public accepteres
+  -- kun, fordi den første testkørsel af denne fil satte den; trin 5c
+  -- sætter den tilbage til ''.
+  if (select coalesce(p.proconfig::text, '') from pg_proc p
+       where p.oid = 'public.notifikation_kendt_type(text)'::regprocedure)
+     not in ('{"search_path=\"\""}', '{search_path=public}') then
+    raise exception 'notifikation_kendt_type har uventet search_path - ret manuelt';
+  end if;
 
-  -- CHECK på notifikationer: den oprindelige eller den udvidede herunder.
-  select pg_get_constraintdef(c.oid) into v_def
+  -- CHECK på notifikationer: den oprindelige eller den udvidede herunder
+  -- (med eller uden skemanavnet foran, alt efter search_path ved visningen).
+  select replace(pg_get_constraintdef(c.oid), 'public.notifikation_kendt_type(', 'notifikation_kendt_type(') into v_def
     from pg_constraint c
    where c.conrelid = 'public.notifikationer'::regclass and c.conname = 'notifikationer_type_gyldig';
   if v_def is distinct from 'CHECK (notifikation_kendt_type(type))'
@@ -209,7 +219,7 @@ begin
   execute format($f$
     create or replace function public.notifikation_kendt_type(p_type text)
     returns boolean
-    language sql immutable set search_path = public as $fn$
+    language sql immutable set search_path = '' as $fn$
       select public.notifikation_paakraevet(p_type) or p_type = any (array[%s]::text[]);
     $fn$;$f$,
     (select string_agg(quote_literal(v), ', ' order by v) from unnest(v_vals) v));
