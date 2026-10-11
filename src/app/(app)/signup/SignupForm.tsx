@@ -11,7 +11,9 @@ import { BETINGELSER_STI, PRIVATLIV_STI, VILKAAR_VERSION } from "@/lib/vilkaar";
 
 type Felt = "fornavn" | "email" | "password" | "vilkaar";
 
-export default function SignupForm() {
+// kunInviterede: tilmeldingen er lukket, og kun inviterede beta-testere kan
+// oprette sig (serveren og databasen tjekker invitationen).
+export default function SignupForm({ kunInviterede = false }: { kunInviterede?: boolean }) {
   const router = useRouter();
   const [fornavn, setFornavn] = useState("");
   const [efternavn, setEfternavn] = useState("");
@@ -73,6 +75,12 @@ export default function SignupForm() {
           <p className="mt-1 text-sm text-tekst-daempet">
             Det er gratis. Du betaler kun et gebyr, når du køber eller sælger noget.
           </p>
+
+          {kunInviterede && (
+            <p role="note" className="mt-4 rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
+              BidHamr er i lukket beta-test. Du kan kun oprette en konto med den e-mail, du har fået en invitation på.
+            </p>
+          )}
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -116,6 +116,10 @@ export const GRAENSER = {
   // Stripe).
   betaling_kort_bruger: { maks: 20, vindueSek: 60 * 60 },
   cvr_opslag_staff: { maks: 60, vindueSek: 60 * 60 },
+  // Admin → Beta-invitationer: invitationsmails (nye og "Send igen") pr.
+  // medarbejder. Databasen har sine egne lofter (60 nye pr. time pr.
+  // medarbejder, højst 10 mails og 1 pr. minut pr. invitation).
+  beta_invitation_staff: { maks: 60, vindueSek: 60 * 60 },
   // Fragt: pakkeshop-søgning (rammer fragtfirmaets API) og handlinger
   // (leveringsvalg, label, annullering) pr. bruger; appens API pr. IP, før
   // tokenet er valideret.

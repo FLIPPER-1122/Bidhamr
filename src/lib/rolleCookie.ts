@@ -32,6 +32,10 @@ import "server-only";
 //   så gaten heller ikke spørger databasen ved hvert klik for dem efter
 //   lancering. Cookien giver kun det, rollen i den giver: en privat bruger
 //   sendes stadig til venteliste-siden før lancering.
+// - Beta-adgang (v3): om brugeren har en aktiv beta-invitation, mens beta
+//   er åben (min_beta_adgang, 20261017010000_beta_invitationer.sql). Lukker
+//   chefen beta, eller tilbagekaldes en invitation, kommer brugeren derfor
+//   forbi gaten i op til 5 minutter mere. Admin er aldrig åben for beta.
 // - httpOnly, SameSite=Lax og Secure (undtagen lokalt på http).
 
 import { logDriftFejl } from "@/lib/drift";
@@ -40,10 +44,11 @@ import { afledningsNoegle } from "@/lib/supabase/noeglerServer";
 export const ROLLE_COOKIE = "bh_rolle";
 const LEVETID_SEKUNDER = 5 * 60;
 // NOEGLE_VERSION indgår i nøgleafledningen og er uændret, så nøglen er den
-// samme som før. VERSION er cookiens format: v2 har konto_type med (v1 havde
-// kun rollen). En gammel v1-cookie afvises bare, og rollen slås op igen.
+// samme som før. VERSION er cookiens format: v3 har beta-adgang med, v2 havde
+// konto_type (v1 kun rollen). En ældre cookie afvises bare, og identiteten
+// slås op igen.
 const NOEGLE_VERSION = "v1";
-const VERSION = "v2";
+const VERSION = "v3";
 
 let noegleLoefte: Promise<CryptoKey | null> | null = null;
 let advaret = false;
@@ -108,7 +113,7 @@ const SIKKER_DEL = /^[A-Za-z0-9-]{1,64}$/;
 // Konto_type til cookien: kun sikre tegn; mangler den, gemmes "ingen".
 const INGEN_KONTOTYPE = "ingen";
 
-export type GateIdentitet = { rolle: string; kontoType: string | null };
+export type GateIdentitet = { rolle: string; kontoType: string | null; beta: boolean };
 
 // Den signerede værdi til cookien, eller null hvis den ikke kan laves.
 export async function lavRolleCookie(
@@ -116,18 +121,19 @@ export async function lavRolleCookie(
   sessionId: string,
   rolle: string,
   kontoType: string | null,
+  beta: boolean,
 ): Promise<{ vaerdi: string; maxAge: number } | null> {
   const konto = kontoType ?? INGEN_KONTOTYPE;
   if (![brugerId, sessionId, rolle, konto].every((d) => SIKKER_DEL.test(d))) return null;
   const noegle = await hentNoegle();
   if (!noegle) return null;
   const udloeber = Math.floor(Date.now() / 1000) + LEVETID_SEKUNDER;
-  const data = `${VERSION}.${brugerId}.${sessionId}.${rolle}.${konto}.${udloeber}`;
+  const data = `${VERSION}.${brugerId}.${sessionId}.${rolle}.${konto}.${beta ? "1" : "0"}.${udloeber}`;
   const signatur = await crypto.subtle.sign("HMAC", noegle, new TextEncoder().encode(data));
   return { vaerdi: `${data}.${tilBase64Url(signatur)}`, maxAge: LEVETID_SEKUNDER };
 }
 
-// Rolle og konto_type fra cookien, hvis signaturen er gyldig, den ikke er
+// Rolle, konto_type og beta-adgang fra cookien, hvis signaturen er gyldig, den ikke er
 // udløbet, og den hører til præcis denne bruger og session. Ellers null.
 export async function laesRolleCookie(
   vaerdi: string | undefined,
@@ -136,9 +142,10 @@ export async function laesRolleCookie(
 ): Promise<GateIdentitet | null> {
   if (!vaerdi) return null;
   const dele = vaerdi.split(".");
-  if (dele.length !== 7) return null;
-  const [version, id, session, rolle, konto, udloeberTekst, signaturTekst] = dele;
+  if (dele.length !== 8) return null;
+  const [version, id, session, rolle, konto, beta, udloeberTekst, signaturTekst] = dele;
   if (version !== VERSION || id !== brugerId || session !== sessionId) return null;
+  if (beta !== "0" && beta !== "1") return null;
   const udloeber = Number(udloeberTekst);
   if (!Number.isInteger(udloeber) || udloeber <= Math.floor(Date.now() / 1000)) return null;
   if (udloeber > Math.floor(Date.now() / 1000) + LEVETID_SEKUNDER) return null;
@@ -146,9 +153,9 @@ export async function laesRolleCookie(
   if (!signatur) return null;
   const noegle = await hentNoegle();
   if (!noegle) return null;
-  const data = `${version}.${id}.${session}.${rolle}.${konto}.${udloeberTekst}`;
+  const data = `${version}.${id}.${session}.${rolle}.${konto}.${beta}.${udloeberTekst}`;
   // crypto.subtle.verify sammenligner i konstant tid.
   const gyldig = await crypto.subtle.verify("HMAC", noegle, signatur, new TextEncoder().encode(data));
   if (!gyldig) return null;
-  return { rolle, kontoType: konto === INGEN_KONTOTYPE ? null : konto };
+  return { rolle, kontoType: konto === INGEN_KONTOTYPE ? null : konto, beta: beta === "1" };
 }

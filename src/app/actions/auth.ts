@@ -20,6 +20,8 @@ import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
 import { logDriftFejl } from "@/lib/drift";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
+import { betaTilmeldingTilladt } from "@/lib/beta";
+import { betaKodeMail } from "@/lib/mails/beta";
 
 // Login, oprettelse, bekraeftelseskode (e-mail), gensend kode og nulstil
 // adgangskode koeres paa serveren, saa de kan rate-limites pr. IP og pr.
@@ -145,7 +147,9 @@ export async function opretKonto(input: {
 }): Promise<
   { ok: true; bekraeftMail: boolean } | { fejl: string; felt?: "email" | "password" | "fornavn" | "vilkaar" }
 > {
-  if (!tilmeldingAaben()) return { fejl: "Det er ikke muligt at oprette en konto endnu." };
+  // Lukket tilmelding: kun inviterede beta-testere (opretBetaKonto nedenfor).
+  // Siden /signup viser kun formularen, når beta er åben.
+  const kunBeta = !tilmeldingAaben();
 
   const email = renEmail(input?.email);
   const fornavn = renNavn(input?.fornavn);
@@ -164,8 +168,10 @@ export async function opretKonto(input: {
   const graense = graenseFejl(await tjekGraenserLukket([["opret_ip", ip], ["gensend_email", email]]));
   if (graense) return { fejl: graense };
 
-  const supabase = await createClient();
   const navn = [fornavn, efternavn].filter(Boolean).join(" ");
+  if (kunBeta) return opretBetaKonto({ email, password, navn, fornavn, efternavn });
+
+  const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -191,6 +197,16 @@ export async function opretKonto(input: {
       return { fejl: "Vi kan ikke sende mail til den adresse. Tjek, at den er skrevet rigtigt.", felt: "email" };
     }
     console.error("opretKonto fejlede:", error.code, error.message);
+    // Databasens værn (handle_new_user -> beta_tjek_ny_bruger) afviser nye
+    // konti, så længe beta_indstillinger.kun_inviterede er slået til. Er
+    // TILMELDING_AABEN sat uden at slå værnet fra, ender alle her.
+    if (error.status === 500 && /database error/i.test(error.message ?? "")) {
+      await logDriftFejl({
+        kilde: "action",
+        hvor: "opretKonto",
+        fejl: `Supabase afviste en ny konto (${error.code ?? ""}: ${error.message}). Er beta_indstillinger.kun_inviterede stadig slået til, selvom tilmeldingen er åben? Se HUSKELISTE.md under "Lancering".`,
+      });
+    }
     return { fejl: GENERISK };
   }
 
@@ -206,8 +222,94 @@ export async function opretKonto(input: {
   return { ok: true, bekraeftMail: true };
 }
 
+const IKKE_INVITERET =
+  "BidHamr er ikke åbnet endnu. Lige nu kan kun inviterede testpersoner oprette en konto – brug den e-mail, invitationen blev sendt til.";
+
+// Beta-testen (docs/BETA-TEST.md): mens tilmeldingen er lukket, kan kun en
+// e-mail med en aktiv invitation oprette sig - og kun mens chefen har beta
+// åben. Databasen tjekker det samme igen (handle_new_user ->
+// beta_tjek_ny_bruger), så det ikke kan omgås med anon-nøglen.
+// "Allow new users to sign up" er slået fra i Supabase i produktion, så
+// kontoen oprettes med service-role via generateLink('signup') (opretter
+// brugeren med adgangskoden og signup-metadata, men sender ingen mail).
+// Koden fra generateLink sendes i vores egen mail (betaKodeMail) og
+// indtastes på /tjek-indbakke som ved en almindelig oprettelse
+// (verifyOtp type 'signup').
+async function opretBetaKonto(input: {
+  email: string;
+  password: string;
+  navn: string;
+  fornavn: string;
+  efternavn: string;
+}): Promise<{ ok: true; bekraeftMail: boolean } | { fejl: string; felt?: "email" | "password" }> {
+  const { email, password, navn, fornavn, efternavn } = input;
+  const tilladt = await betaTilmeldingTilladt(email);
+  if (tilladt === null) return { fejl: GENERISK };
+  if (!tilladt) return { fejl: IKKE_INVITERET, felt: "email" };
+
+  const admin = createAdminClient();
+  const { data: link, error } = await admin.auth.admin.generateLink({
+    type: "signup",
+    email,
+    password,
+    options: {
+      redirectTo: sideUrl("/auth/callback?next=/velkommen"),
+      data: { navn, fornavn, efternavn, vilkaar_version: VILKAAR_VERSION },
+    },
+  });
+  if (error || !link?.user || !link.properties?.email_otp) {
+    if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
+    if (error?.code === "email_exists" || error?.code === "user_already_exists") {
+      return {
+        fejl: "Der findes allerede en konto med den e-mail. Log ind, eller nulstil din adgangskode.",
+        felt: "email",
+      };
+    }
+    if (error?.code === "weak_password") {
+      return { fejl: "Adgangskoden er for svag. Vælg en længere og mindre almindelig adgangskode.", felt: "password" };
+    }
+    // Databasens værn afviste (fx tilbagekaldt eller beta lukket i mellemtiden).
+    if (error?.status === 500 && /database error/i.test(error.message ?? "")) {
+      return { fejl: IKKE_INVITERET, felt: "email" };
+    }
+    await logDriftFejl({
+      kilde: "action",
+      hvor: "opretBetaKonto",
+      fejl: `generateLink signup: ${error?.status ?? ""} ${error?.code ?? ""}: ${error?.message ?? "intet svar"}`.replace(
+        /[^\s@]+@[^\s@]+/g,
+        "[e-mail]",
+      ),
+    });
+    return { fejl: GENERISK };
+  }
+
+  // Fandtes en ubekræftet konto allerede (fx et tidligere forsøg uden
+  // koden), opretter generateLink ingen ny og ignorerer adgangskoden - så
+  // sættes den, brugeren lige har valgt. Kontoen er ikke bekræftet, så
+  // ingen andre ejer den endnu; koden går kun til e-mailens indbakke.
+  const oprettet = link.user.created_at ? Date.parse(link.user.created_at) : Date.now();
+  if (!link.user.email_confirmed_at && Date.now() - oprettet > 60_000) {
+    const { error: pwFejl } = await admin.auth.admin.updateUserById(link.user.id, { password });
+    if (pwFejl) {
+      console.error("opretBetaKonto: adgangskode ikke opdateret:", pwFejl.code, pwFejl.message);
+      return { fejl: GENERISK };
+    }
+  }
+
+  const sendt = await sendHandelMailDetaljer(email, betaKodeMail({ email, kode: link.properties.email_otp }));
+  if (!sendt.ok) {
+    // Kontoen findes; brugeren kan få en ny kode på /tjek-indbakke.
+    await logDriftFejl({ kilde: "action", hvor: "opretBetaKonto.kodeMail", fejl: sendt.fejl, brugerId: link.user.id });
+  }
+
+  await saetTjekEmailCookie(email);
+  return { ok: true, bekraeftMail: true };
+}
+
 // Sender bekraeftelsesmailen (med en ny kode) igen. Uden emailInput bruges
 // adressen fra signup-cookien (siden "Indtast koden").
+// Mens tilmeldingen er lukket (beta), sendes der kun en ny kode til en
+// e-mail med en aktiv invitation; andre får samme svar uden mail.
 export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat> {
   const email = renEmail(emailInput ?? (await cookies()).get(TJEK_EMAIL_COOKIE)?.value);
   if (!email) return { fejl: "Indtast en gyldig e-mail." };
@@ -215,6 +317,12 @@ export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat
   const ip = await klientIp();
   if (!(await tjekGraenser([["gensend_ip", ip], ["gensend_email", email]]))) {
     return { fejl: FOR_MANGE_FORSOEG };
+  }
+
+  if (!tilmeldingAaben()) {
+    const tilladt = await betaTilmeldingTilladt(email);
+    if (tilladt === null) return { fejl: GENERISK };
+    if (!tilladt) return { ok: true };
   }
 
   const supabase = await createClient();
@@ -228,6 +336,10 @@ export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat
       return { fejl: "Vent lidt, før du beder om en ny kode. Den forrige mail kan stadig være på vej." };
     }
     console.error("gensendBekraeftelse fejlede:", error.code, error.message);
+    // Beta: opretBetaKonto kan altid lave en ny kode til en ubekræftet konto.
+    if (!tilmeldingAaben()) {
+      return { fejl: "Vi kunne ikke sende en ny kode. Opret kontoen igen med samme e-mail – så får du en ny kode." };
+    }
     return { fejl: GENERISK };
   }
 

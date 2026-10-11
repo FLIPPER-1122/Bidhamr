@@ -72,6 +72,14 @@ export const HANDLING_NAVNE: Record<string, string> = {
   firma_oprettet: "Oprettede firmakonto",
   firma_opdateret: "Ændrede firmakonto",
   firma_velkomst_gensendt: "Sendte velkomstmail til firma igen",
+  // 20261017010000_beta_invitationer.sql
+  beta_inviteret: "Inviterede til beta-testen",
+  beta_genaktiveret: "Genaktiverede beta-invitation",
+  beta_sendt_igen: "Sendte beta-invitation igen",
+  beta_tilbagekaldt: "Tilbagekaldte beta-invitation",
+  beta_aabnet: "Åbnede beta-testen",
+  beta_lukket: "Lukkede beta-testen",
+  konto_oprettelse_tilladt: "Gav tilladelse til at oprette en konto (fx firmakonto)",
 };
 
 export function handlingNavn(handling: string): string {
@@ -93,6 +101,8 @@ const MAAL_NAVNE: Record<string, string> = {
   firma: "Firmakonto",
   erhverv_henvendelse: "Erhvervshenvendelse",
   erhverv_pakke: "Erhvervspakke",
+  beta_invitation: "Beta-invitation",
+  beta: "Beta-testen",
 };
 
 // Link til det, handlingen handlede om. null, hvis der ikke findes en side.
@@ -125,6 +135,9 @@ export function maalLink(
       return { href: `/admin/sager/${id}`, label: "Se sag" };
     case "dsa":
       return { href: "/admin/dsa?fane=afsluttede", label: "Se anmeldelser" };
+    case "beta_invitation":
+    case "beta":
+      return { href: "/admin/beta", label: "Se beta-invitationer" };
     case "anmeldelse":
       // maal_id er bedømmelsens id (ratings.id) - vis den på Bedømmelser.
       // Meget gamle rækker kan mangle den, så brugerens anmeldelser er reserven.

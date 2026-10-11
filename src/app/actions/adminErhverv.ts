@@ -446,6 +446,20 @@ export async function opretFirmakonto(
     if (!pakke.data) kodeFejl("ugyldig_pakke");
     if ((brugtHenv.data ?? []).length > 0) kodeFejl("henvendelse_brugt");
 
+    // Før lancering afviser databasen nye konti uden beta-invitation
+    // (handle_new_user, 20261017010000_beta_invitationer.sql). Billetten
+    // lader netop denne e-mail oprette én konto inden for 10 minutter.
+    const { data: billet, error: billetFejl } = await admin.rpc("konto_oprettelse_tillad", {
+      p_staff: userId,
+      p_email: loginEmail,
+    });
+    // PGRST202: funktionen findes ikke (migrationen er ikke kørt endnu) - så
+    // findes værnet heller ikke, og kontoen kan oprettes som før.
+    const uden = billetFejl?.code === "PGRST202";
+    if (!uden && (billetFejl || (billet as { kode?: string } | null)?.kode !== "ok")) {
+      throw new Error(`konto_oprettelse_tillad: ${billetFejl?.message ?? (billet as { kode?: string } | null)?.kode ?? "intet svar"}`);
+    }
+
     // Ny auth-bruger + engangslink. generateLink sender ingen mail.
     const { data: link, error: linkFejl } = await admin.auth.admin.generateLink({
       type: "invite",

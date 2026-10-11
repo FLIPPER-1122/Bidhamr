@@ -8,7 +8,15 @@ import { logInd } from "@/app/actions/auth";
 import { FELT, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 import { ERHVERV_LOGIN } from "@/lib/tekster/erhverv";
 
-export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolean }) {
+// betaAaben: tilmeldingen er lukket, men beta-testen er åben - så vises et
+// link til "Opret konto" for inviterede.
+export default function LoginForm({
+  tilmeldingAaben,
+  betaAaben = false,
+}: {
+  tilmeldingAaben: boolean;
+  betaAaben?: boolean;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Kun relative stier - ellers kan ?redirect bruges til phishing-omdirigering.
@@ -152,6 +160,13 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
         {tilmeldingAaben ? (
           <p className="mt-6 text-center text-sm text-tekst-svag">
             Har du ikke en konto?{" "}
+            <Link href="/signup" className={LINK}>
+              Opret konto
+            </Link>
+          </p>
+        ) : betaAaben ? (
+          <p className="mt-6 text-center text-sm text-tekst-svag">
+            Inviteret til beta-testen?{" "}
             <Link href="/signup" className={LINK}>
               Opret konto
             </Link>

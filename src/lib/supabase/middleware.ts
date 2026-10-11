@@ -38,7 +38,7 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 // /signup, /tjek-indbakke og /konto-slettet er offentlige, fordi man ikke er
 // logget ind dér. /cookies (cookiepolitikken) skal kunne læses af alle, også
 // før login, fordi cookie-banneret linker til den. /signup lukker selv, så længe tilmeldingen er lukket
-// (src/lib/tilmelding.ts).
+// (src/lib/tilmelding.ts) - undtagen for inviterede, mens beta er åben (BETA).
 // /dsa (kontaktpunkt, anmeld ulovligt indhold, status og klage) og /api/dsa
 // (appens anmeldelse) skal kunne nås af alle, også før lancering og uden login
 // (DSA art. 12 og 16).
@@ -149,6 +149,21 @@ const ROLLER_MED_ADGANG = ["chef", "admin", "medarbejder", "saelger"];
 // konto"-siderne sender stadig firmaet til dashboardet (se updateSession).
 const FIRMA_KONTOTYPE = "erhverv";
 
+// BETA (Filip, 11. okt. 2026 - docs/BETA-TEST.md): en indlogget bruger med en
+// aktiv beta-invitation, mens chefen har beta åben (min_beta_adgang i
+// 20261017010000_beta_invitationer.sql), må før lancering bruge hele den
+// private del af siden og kalde server actions - som efter lancering. Men
+// ALDRIG admin: /admin* sender beta-brugeren til forsiden (admin-layoutet og
+// hver admin-action tjekker desuden rollen i databasen). Firmakonti og staff
+// følger deres egne regler, også hvis de har en invitation. Svaret ligger i
+// den signerede rolle-cookie i højst 5 minutter, så en lukket beta eller en
+// tilbagekaldt invitation slår igennem inden for 5 minutter.
+function erBetaBruger(rolle: string | null, kontoType: string | null, beta: boolean) {
+  if (!beta) return false;
+  if (kontoType === FIRMA_KONTOTYPE) return false;
+  return !(rolle && ROLLER_MED_ADGANG.includes(rolle));
+}
+
 function erFirmaSti(pathname: string) {
   return pathname === "/firma" || pathname.startsWith("/firma/");
 }
@@ -246,12 +261,14 @@ async function afvisSkrivningPaaOffentligSti(
   const session = await hentSession(supabase);
   if (!session) return false;
 
-  const { rolle, kontoType } = await hentGateIdentitet(request, supabase, session);
+  const { rolle, kontoType, beta } = await hentGateIdentitet(request, supabase, session);
   // Sælgeren må kun bruge Admin → Erhverv før lancering - ikke kalde fx
   // afgivBud eller opretAuktion via POST til en offentlig sti.
   const staff = !!rolle && ROLLER_MED_ADGANG.includes(rolle) && rolle !== "saelger";
   if (kontoType === FIRMA_KONTOTYPE && !staff) return true;
   if (process.env.TILMELDING_AABEN === "true") return false;
+  // Beta-testere må bruge siden som alle andre efter lancering (se BETA).
+  if (erBetaBruger(rolle, kontoType, beta)) return false;
   return !staff;
 }
 
@@ -297,6 +314,9 @@ async function hentSession(
 // session og gælder højst 5 minutter, og admin, staff-handlinger og RLS
 // tjekker stadig databasen.
 // Besøgende uden login når aldrig hertil (ingen opslag for dem).
+// Før lancering slås beta-adgangen op samtidig (min_beta_adgang, auth.uid()).
+// Fejler opslaget (fx migrationen ikke kørt), er svaret false (fail closed).
+// Efter lancering spørges der ikke, og cookien siger bare "ingen beta".
 
 async function hentGateIdentitet(
   request: NextRequest,
@@ -305,6 +325,7 @@ async function hentGateIdentitet(
 ): Promise<{
   rolle: string | null;
   kontoType: string | null;
+  beta: boolean;
   nyCookie: { vaerdi: string; maxAge: number } | null;
 }> {
   if (session.sessionId) {
@@ -314,27 +335,29 @@ async function hentGateIdentitet(
       session.sessionId,
     );
     if (fraCookie) {
-      return { rolle: fraCookie.rolle, kontoType: fraCookie.kontoType, nyCookie: null };
+      return { rolle: fraCookie.rolle, kontoType: fraCookie.kontoType, beta: fraCookie.beta, nyCookie: null };
     }
   }
   // rolle er ikke laesbar via kolonne-grants; min_rolle() bruger auth.uid().
   // konto_type kan læses af alle (20261010030000_erhverv.sql).
-  const [{ data: rolleData }, { data: kontoData }] = await Promise.all([
+  const [{ data: rolleData }, { data: kontoData }, { data: betaData }] = await Promise.all([
     supabase.rpc("min_rolle"),
     supabase
       .from("users")
       .select("konto_type")
       .eq("id", session.brugerId)
       .maybeSingle(),
+    foerLancering() ? supabase.rpc("min_beta_adgang") : Promise.resolve({ data: false }),
   ]);
   const rolle = typeof rolleData === "string" ? rolleData : null;
   const konto = (kontoData as { konto_type?: unknown } | null)?.konto_type;
   const kontoType = typeof konto === "string" ? konto : null;
+  const beta = betaData === true;
   const nyCookie =
     rolle && session.sessionId
-      ? await lavRolleCookie(session.brugerId, session.sessionId, rolle, kontoType)
+      ? await lavRolleCookie(session.brugerId, session.sessionId, rolle, kontoType, beta)
       : null;
-  return { rolle, kontoType, nyCookie };
+  return { rolle, kontoType, beta, nyCookie };
 }
 
 function saetRolleCookie(
@@ -472,7 +495,7 @@ export async function updateSession(
   // Logget ind er ikke nok inden launch: rollen (eller en firmakonto) skal
   // give adgang. Den læses fra den signerede rolle-cookie (højst 5 min.
   // gammel) eller databasen - se hentGateIdentitet.
-  const { rolle, kontoType, nyCookie } = await hentGateIdentitet(request, supabase, session);
+  const { rolle, kontoType, beta, nyCookie } = await hentGateIdentitet(request, supabase, session);
 
   const medCookie = (res: NextResponse) => saetRolleCookie(request, res, nyCookie);
 
@@ -486,6 +509,16 @@ export async function updateSession(
       if (!laesning) return new NextResponse("Ingen adgang", { status: 403 });
       if (erFirmaSti(pathname) || erStatiskFil(pathname, request.method)) return medCookie(supabaseResponse);
       return medCookie(NextResponse.redirect(firmaRedirectUrl(request, firmaOmdirigering(pathname, session.brugerId) ?? "/firma")));
+    }
+    // Beta-tester: hele den private del af siden, men aldrig admin.
+    if (erBetaBruger(rolle, kontoType, beta)) {
+      if (erAdminSti) {
+        if (request.method !== "GET" && request.method !== "HEAD") {
+          return medCookie(new NextResponse("Ingen adgang", { status: 403 }));
+        }
+        return medCookie(NextResponse.redirect(new URL("/", request.url)));
+      }
+      return medCookie(supabaseResponse);
     }
     return medCookie(NextResponse.redirect(new URL("/coming-soon", request.url)));
   }
