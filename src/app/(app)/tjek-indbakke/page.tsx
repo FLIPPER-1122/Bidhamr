@@ -52,7 +52,20 @@ export default async function IndtastKodeSide({
           </p>
         )}
 
-        {email ? (
+        {fra === "beta" && !linkFejl ? (
+          // Beta-signup: samme tekst, uanset om e-mailen er inviteret eller
+          // allerede har en konto (opretBetaKonto afslører det ikke).
+          <div className="mt-2 space-y-3 text-center text-[15px] text-tekst-daempet">
+            <p>
+              Tjek din indbakke{email ? <> på <span className="font-semibold break-all text-tekst">{email}</span></> : null}. Er
+              e-mailen inviteret til beta-testen, har vi sendt dig en kode.
+            </p>
+            <p className="text-sm">
+              Er du allerede i gang med at oprette dig, så brug koden fra mailen. Har du glemt din adgangskode, kan du
+              nulstille den bagefter. Har du allerede en konto, så log ind.
+            </p>
+          </div>
+        ) : email ? (
           <p className="mt-2 text-center text-[15px] text-tekst-daempet">
             Vi har sendt en kode til{" "}
             <span className="font-semibold break-all text-tekst">{email}</span>. Indtast den herunder for at

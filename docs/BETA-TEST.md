@@ -79,13 +79,24 @@ I dag er bidhamr.dk lukket: alle uden staff-rolle ser `/coming-soon`, og oprette
 
 **Anbefaling: A**, fordi det tester det rigtige setup (mails, domæne, MitID, cron), og fordi produktionen alligevel kører med testpenge indtil fase 6.
 
-**Sikker adgang ved A – invitationsliste [CHEF]:**
-- Ny liste over inviterede e-mails, som kun chef kan rette (Admin → fx "Beta").
-- Kun inviterede e-mails kan oprette en konto, mens `TILMELDING_AABEN` stadig er lukket. Fx via Supabases invitation (`inviteUserByEmail`), som virker, selvom "Allow new users to sign up" er slået fra.
-- Brugere med beta-markering kommer forbi coming-soon-gaten (`src/lib/supabase/middleware.ts`). Alle andre ser stadig coming-soon.
+**Sikker adgang ved A – invitationsliste (bygget 11. okt. 2026, Filips ja):**
+- Migration: `supabase/migrations/20261017010000_beta_invitationer.sql`. Skal køres i produktion (Filips ja), før testen starter. I produktion starter beta-testen **lukket**.
+- **Sådan inviterer du:** Admin → Indstillinger → **Beta-invitationer** (admin og chef). Skriv e-mailen og evt. en note, og tryk **Send invitation**. E-mailen gemmes med små bogstaver og uden mellemrum. Personen får en mail på dansk (via Resend) med et link til `/signup`. Har e-mailen allerede en konto, siger mailen "Log ind" i stedet.
+- **Sådan opretter testpersonen sig:** samme signup som ellers – fornavn, e-mail, adgangskode og fluebenet for brugerbetingelserne – og så den 6-cifrede kode på `/tjek-indbakke`. Under beta oprettes kontoen på serveren (`opretKonto` → `generateLink('signup')`), og koden sendes i vores egen mail, fordi "Allow new users to sign up" stadig er slået fra i Supabase. Det skal den blive ved med at være. Svaret er altid "Tjek din indbakke" (også for e-mails uden invitation, med en konto eller ved fejl, som logges i `/admin/drift`), så siden ikke afslører, hvem der er inviteret. Højst én kodemail pr. e-mail hvert 2. minut.
+- **Adgangskoden bestemmes kun af den, der har koden.** Beta-kontoen oprettes altid med en tilfældig adgangskode. Den valgte ligger krypteret (AES-256-GCM, `SIGNUP_ADGANGSKODE_HEMMELIGHED`) i en kort cookie i testpersonens browser (højst 30 min., bundet til e-mailen) og sættes først, når koden er indtastet. Bekræfter man i en anden browser eller efter 30 minutter, beder siden om at vælge adgangskode bagefter. En eksisterende konto får aldrig ny metadata eller adgangskode fra signup – kun en ny kode. Virker Supabases "send ny kode" ikke, laves koden med `generateLink` og sendes i vores egen mail.
+- **Kendte begrænsninger:**
+  - *Lås-ude (DoS):* kender nogen en inviteret e-mail, kan de bede om en ny kode til den hvert 2. minut. Hver ny kode gør den forrige ugyldig, så testpersonen kan blive ved med at få "Koden passer ikke". De kan ikke overtage kontoen. Sker det, kan staff tilbagekalde og genaktivere invitationen, eller testpersonen kan vente og bruge den nyeste kode.
+  - Samme tidsvindue: en fremmed kan bruge e-mailens 2-minutters vindue, så testpersonen må vente op til 2 minutter på en kode.
+  - Åben tilmelding (efter lancering, almindelig `signUp`): her sætter siden også den valgte adgangskode efter bekræftelsen. Bekræfter offeret i en anden browser, og har en anden oprettet kontoen først med sin egen adgangskode, bevares den anden persons adgangskode, indtil offeret nulstiller den. Det samme gælder appen, der kalder Supabase direkte. Det skal løses inden lancering.
+- **Kun inviterede kan oprette sig**, mens `TILMELDING_AABEN` ikke er `true`. Det tjekkes to steder: i signup-actionen og i databasen (`handle_new_user` afviser enhver ny auth-bruger uden aktiv invitation, så det ikke kan omgås via Supabase-API'et med anon-nøglen – heller ikke hvis nogen slår "Allow new users to sign up" til). Værnet hedder `beta_indstillinger.kun_inviterede`.
+- **Gaten:** en indlogget bruger med aktiv invitation kommer forbi coming-soon, mens beta er åben, og kan bruge hele den private del af siden – men aldrig admin (`/admin*` sender til forsiden). Firmakonti og staff følger deres egne regler. Svaret gemmes i den signerede rolle-cookie i højst 5 minutter, så der ikke er et databasekald pr. side.
+- **Status pr. invitation:** Inviteret, Oprettet konto, MitID-verificeret, Tilbagekaldt.
+- **Ét klik for at lukke:** **Luk beta-testen** (kun chef). Beta-testerne ser coming-soon igen inden for 5 minutter, og ingen kan oprette sig med en invitation. Konti og data bevares. Hver invitation kan også tilbagekaldes enkeltvis (**Tilbagekald**) og genaktiveres (**Invitér igen**).
+- Alt logges i `moderation_log` (se Admin → Medarbejder-log). Højst 60 nye invitationer pr. medarbejder pr. time; en invitation kan sendes højst 10 gange og højst én gang i minuttet.
 - Google må ikke indeksere siden (`SEO_INDEKSERING` forbliver slået fra).
-- Ét klik for at lukke beta-adgangen igen, når testen er slut.
-- Kræver en migration i produktion – Filips ja.
+- **Ved lancering skal det slås fra:** luk beta-testen, og slå værnet fra (`update public.beta_indstillinger set kun_inviterede = false;` som migration med Filips ja) samme dag som `TILMELDING_AABEN=true`. Se HUSKELISTE.md under "Lancering".
+- Opret bruger direkte i Supabase-dashboardet virker ikke, så længe værnet er slået til (medmindre e-mailen er inviteret). Firmakonti oprettes som før under Admin → Erhverv.
+- Lokalt på testdatabasen er værnet slået fra, og tilmeldingen er åben. `SIMULER_FOER_LANCERING=true` og `SIMULER_TILMELDING_LUKKET=true` i `.env.local` viser beta-udgaven.
 
 **Ikke anbefalet:** at sætte `TILMELDING_AABEN=true` og `LANCERET=1` midlertidigt. Så kan alle oprette sig og se siden, og en indlogget bruger uden staff-rolle kommer ikke forbi gaten uden `LANCERET` alligevel.
 
@@ -214,7 +225,7 @@ Morgen og aften, ca. 15 minutter.
 
 ## 9. Bagefter
 
-1. **Luk adgangen:** slå beta-invitationerne fra, så testpersonerne igen ser coming-soon. [CHEF]
+1. **Luk adgangen:** Admin → Beta-invitationer → **Luk beta-testen** (kun chef). Testpersonerne ser coming-soon igen inden for 5 minutter. Deres data bevares.
 2. **Spørgeskema** (se `docs/BETA-FEJLSKABELON.md`) sendes dag 15. Tak-mail til alle.
 3. **Ret fejlene:** Kritiske og alvorlige fejl rettes før lancering. Mindre ting lægges i `ROADMAP.md`. Forslag til ændrede regler skrives ind i `ROADMAP-BESLUTNINGER.md`, når Filip har besluttet dem.
 4. **Ryd testdata, før der bruges rigtige penge** – som en migration med Filips ja (følg `docs/GO-LIVE-STRIPE.md`, E2):
@@ -231,7 +242,8 @@ Morgen og aften, ca. 15 minutter.
 ## 10. Tjekliste før start
 
 - [ ] [CHEF] Valg af A eller B (afsnit 3)
-- [ ] [CHEF] Invitationsliste bygget, gennemgået af reviewer og testet af tester
+- [ ] [CHEF] Invitationsliste bygget (11. okt. 2026, migration `20261017010000`), gennemgået af reviewer og testet af tester
+- [ ] Migration `20261017010000_beta_invitationer.sql` kørt i produktion (Filips ja), testpersonerne inviteret, og beta-testen åbnet af chefen
 - [ ] [CHEF] Alle nødvendige migrationer kørt i produktion (Filips ja)
 - [ ] [CHEF] Stripe i testmiljø bekræftet (nøgler og `stripe_tilstand`)
 - [ ] [CHEF] Dinero i test eller slået fra. Testhandler tæller ikke i DAC7
