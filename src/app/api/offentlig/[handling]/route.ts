@@ -44,7 +44,14 @@ function tekst(fd: FormData, navn: string): string | undefined {
 }
 
 const HANDLINGER: Record<string, Handling> = {
-  "ny-adgangskode": (fd) => gemNyAdgangskode(tekst(fd, "password") ?? ""),
+  // fornavn/efternavn kun fra "Vælg din adgangskode" efter signup.
+  "ny-adgangskode": (fd) =>
+    gemNyAdgangskode(
+      tekst(fd, "password") ?? "",
+      fd.has("fornavn") || fd.has("efternavn")
+        ? { fornavn: tekst(fd, "fornavn") ?? "", efternavn: tekst(fd, "efternavn") ?? "" }
+        : undefined,
+    ),
   "dsa-anmeld": anmeldIndhold,
   "dsa-klage-afgoerelse": klagOverAfgoerelse,
   "dsa-klage-anmelder": klagSomAnmelder,

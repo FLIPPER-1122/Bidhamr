@@ -48,10 +48,12 @@ import {
 // fra serveren (src/lib/kontoOprettelse.ts).
 
 // firma: true = firmakonto (logInd) - login-siden sender så til /firma.
-// vaelgAdgangskode: efter bekræftelse skal brugeren vælge en adgangskode
-// (/reset-password) - se verificerSignupKode.
+// vaelgAdgangskode: efter bekræftelse skal brugeren vælge en adgangskode og
+// skrive sit navn (/reset-password?fra=signup) - se verificerSignupKode.
+// bekraeftNavn: adgangskoden er sat, men navnet kunne ikke gemmes
+// (/velkommen?navn=1).
 type Resultat =
-  | { ok: true; firma?: boolean; vaelgAdgangskode?: true }
+  | { ok: true; firma?: boolean; vaelgAdgangskode?: true; bekraeftNavn?: true }
   | { fejl: string; kode?: "email_ikke_bekraeftet" | "forkert_login" };
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -192,9 +194,14 @@ export async function opretKonto(input: {
   const graense = graenseFejl(await tjekGraenserLukket([["opret_ip", ip], ["gensend_email", email]]));
   if (graense) return { fejl: graense };
 
-  const gem = await opretKontoPaaServeren({ email, fornavn, efternavn });
+  // Navn, vilkår og adgangskode venter krypteret i browseren og sættes først,
+  // når koden er indtastet (verificerSignupKode) - af den, der har koden.
+  const gem = await opretKontoPaaServeren(email);
   if (gem === "ja" || (gem === "kun_hvis_ventende" && (await harVentendeAdgangskode(email)))) {
-    await gemVentendeAdgangskode(email, password);
+    await gemVentendeAdgangskode(email, {
+      adgangskode: password,
+      profil: { fornavn, efternavn, vilkaarVersion: VILKAAR_VERSION },
+    });
   }
   await saetTjekEmailCookie(email);
   // beta: siden "Indtast koden" viser beta-teksten (samme for alle e-mails).
@@ -236,15 +243,27 @@ export async function verificerSignupKode(
   const email = renEmail(emailInput || (await cookies()).get(TJEK_EMAIL_COOKIE)?.value);
   if (!email) return { fejl: "Indtast den e-mail, du oprettede kontoen med.", kode: "mangler_email" };
 
-  // Den adgangskode, brugeren valgte ved oprettelsen (krypteret cookie, bundet
-  // til e-mailen). Den sættes først i bekraeftKode, EFTER verifyOtp - altså
-  // kun af den, der har koden fra mailen.
+  // Adgangskode, navn og vilkårsaccept fra oprettelsen (krypteret cookie,
+  // bundet til e-mailen). De sættes først i bekraeftKode, EFTER verifyOtp -
+  // altså kun af den, der har koden fra mailen.
   const ventende = await hentVentendeAdgangskode(email);
 
   const ip = await klientIp();
   const supabase = await createClient();
-  const svar = await bekraeftKode(supabase, { email, kode, ip, adgangskode: ventende });
+  const svar = await bekraeftKode(supabase, {
+    email,
+    kode,
+    ip,
+    adgangskode: ventende?.adgangskode ?? null,
+    profil: ventende?.profil ?? null,
+  });
   if ("fejl" in svar) {
+    if (svar.fejl === "konto") {
+      await sletVentendeAdgangskode();
+      if (svar.status.kode === "suspenderet") return { fejl: svar.status.besked };
+      if (svar.status.kode === "slettet") return { fejl: "Forkert e-mail eller adgangskode.", kode: "forkert_login" };
+      return { fejl: GENERISK };
+    }
     if (svar.fejl === "for_mange") return { fejl: FOR_MANGE_FORSOEG };
     if (svar.fejl === "graense_fejl") return { fejl: PROEV_IGEN_OM_LIDT };
     if (svar.fejl === "kode_forkert") {
@@ -256,12 +275,14 @@ export async function verificerSignupKode(
   (await cookies()).delete(TJEK_EMAIL_COOKIE);
   await sletVentendeAdgangskode();
 
-  // Kontoen har kun den tilfældige adgangskode, hvis cookien manglede (anden
+  // Kontoen har kun en tilfældig adgangskode, hvis cookien manglede (anden
   // browser, over 30 min.) eller adgangskoden ikke kunne sættes: så sendes
-  // brugeren til "Vælg adgangskode" (/reset-password). Gælder både åben og
+  // brugeren til "Vælg adgangskode" (/reset-password?fra=signup), hvor navnet
+  // også skrives. Vilkårene accepteres i accept-vinduet. Gælder både åben og
   // lukket tilmelding.
   const resultat = await efterLogin(supabase, svar.user, svar.session?.access_token);
   if ("ok" in resultat && !svar.adgangskodeSat) return { ...resultat, vaelgAdgangskode: true };
+  if ("ok" in resultat && !svar.navnSat) return { ...resultat, bekraeftNavn: true };
   return resultat;
 }
 
@@ -293,7 +314,14 @@ export async function nulstilAdgangskode(emailInput: string): Promise<Resultat> 
 
 // Ny adgangskode efter nulstillingslinket (recovery-session). Brugeren
 // logges ud bagefter og skal logge ind med den nye kode.
-export async function gemNyAdgangskode(password: string): Promise<Resultat> {
+// navn: kun fra "Vælg din adgangskode" efter signup (/reset-password?fra=signup),
+// når navnet ikke kom fra den, der har koden (anden browser) - så skrives det
+// her. Gemmes med brugerens egen session, så databasens navneregler gælder
+// (BHN01-03), og før adgangskoden.
+export async function gemNyAdgangskode(
+  password: string,
+  navn?: { fornavn: unknown; efternavn: unknown },
+): Promise<Resultat> {
   const supabase = await createClient();
   const { data: brugerData } = await supabase.auth.getUser();
   const bruger = brugerData.user;
@@ -308,11 +336,31 @@ export async function gemNyAdgangskode(password: string): Promise<Resultat> {
     .select("navn, fornavn, efternavn")
     .eq("id", bruger.id)
     .maybeSingle();
+  const fornavn = navn ? renNavn(navn.fornavn) : "";
+  const efternavn = navn ? renNavn(navn.efternavn) : "";
+  if (navn && !fornavn) return { fejl: "Skriv dit fornavn." };
+  if (navn && !efternavn) return { fejl: "Skriv dit efternavn." };
   const v = vurderAdgangskode(password, {
     email: bruger.email,
-    navn: [profil?.navn, profil?.fornavn, profil?.efternavn],
+    navn: navn ? [fornavn, efternavn] : [profil?.navn, profil?.fornavn, profil?.efternavn],
   });
   if (!v.ok) return { fejl: v.fejl ?? GENERISK };
+
+  if (navn) {
+    const { error: navnFejl } = await supabase
+      .from("users")
+      .update({ navn: `${fornavn} ${efternavn}`, fornavn, efternavn })
+      .eq("id", bruger.id);
+    if (navnFejl) {
+      if (navnFejl.code === "BHN01") return { fejl: 'Navnet må ikke indeholde "BidHamr".' };
+      if (navnFejl.code === "BHN02") {
+        return { fejl: "Navnet må ikke indeholde en e-mail, et telefonnummer eller et link. Andre brugere kan se dit navn, så skriv kun dit navn." };
+      }
+      if (navnFejl.code === "BHN03") return { fejl: "Skriv dit efternavn." };
+      console.error("gemNyAdgangskode: navn fejlede:", navnFejl.code, navnFejl.message);
+      return { fejl: GENERISK };
+    }
+  }
 
   const { error } = await supabase.auth.updateUser({ password });
   if (error) {

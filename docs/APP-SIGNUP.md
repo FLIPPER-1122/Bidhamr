@@ -8,15 +8,15 @@ Med direkte `signUp` kunne en angriber oprette kontoen først med offerets e-mai
 
 Nu gælder:
 - "Allow new users to sign up" er **altid slået fra** i Supabase. `signUp` med anon-nøglen svarer `signup_disabled`.
-- Databasen afviser desuden enhver ny konto, som serveren ikke har lagt en billet til (`20261018010000_signup_billet_altid.sql`). Det gælder, selv hvis indstillingen i dashboardet ved en fejl bliver slået til.
-- Kontoen oprettes med en tilfældig adgangskode. Den valgte adgangskode sættes først, når koden fra mailen er indtastet. Det er altså kun den, der har adgang til e-mailen, der bestemmer adgangskoden.
+- Databasen afviser desuden enhver ny konto, som serveren ikke har lagt en billet til (`20261018010000_signup_billet_altid.sql`). Billetten er bundet til serverens eget kald med et tilfældigt engangs-nonce, så en direkte `signUp` afvises, også i det sekund billetten ligger. Det gælder, selv hvis indstillingen i dashboardet ved en fejl bliver slået til.
+- Kontoen oprettes med en tilfældig adgangskode og uden navn og vilkår. Adgangskoden, navnet og vilkårsaccepten sættes først, når koden fra mailen er indtastet. Det er altså kun den, der har adgang til e-mailen, der bestemmer dem.
 
 ## Flowet i appen
 
-1. **Opret konto-skærmen:** `POST /api/konto/opret`. Svaret er altid det samme ved gyldigt input, så vis "Tjek din indbakke" og gå videre til kode-skærmen. Hold e-mail og adgangskode i hukommelsen (ikke på disk), til koden er indtastet.
-2. **Kode-skærmen:** `POST /api/konto/bekraeft` med e-mail, kode og den samme adgangskode igen. Ved 200 gemmes sessionen med `supabase.auth.setSession({ access_token, refresh_token })`. Brugeren er så logget ind.
+1. **Opret konto-skærmen:** `POST /api/konto/opret`. Svaret er altid det samme ved gyldigt input, så vis "Tjek din indbakke" og gå videre til kode-skærmen. Hold oplysningerne i hukommelsen (adgangskoden ikke på disk), til koden er indtastet. Serveren gemmer dem ikke ved oprettelsen.
+2. **Kode-skærmen:** `POST /api/konto/bekraeft` med e-mail, kode, den samme adgangskode, fornavn, efternavn og vilkårsversion igen. Ved 200 gemmes sessionen med `supabase.auth.setSession({ access_token, refresh_token })`. Brugeren er så logget ind.
 3. **"Send ny kode":** kald `POST /api/konto/opret` igen med de samme oplysninger. Højst én kodemail pr. e-mail hvert 2. minut. Inden for de 2 minutter sendes intet, og den forrige kode gælder stadig.
-4. **Login med en ubekræftet konto:** Supabase svarer kun `email_not_confirmed`, hvis adgangskoden passer. En konto, der er oprettet på den nye måde, har ingen kendt adgangskode før bekræftelsen, så det sker kun for ældre konti. Send brugeren til kode-skærmen og kald "Send ny kode" (punkt 3), og lad brugeren skrive en ny adgangskode på kode-skærmen.
+4. **Login med en ubekræftet konto:** Supabase svarer kun `email_not_confirmed`, hvis adgangskoden passer. En konto, der er oprettet på den nye måde, har ingen kendt adgangskode før bekræftelsen, så det sker kun for ældre konti. Send brugeren til kode-skærmen og kald "Send ny kode" (punkt 3), og lad brugeren skrive navn og en ny adgangskode og acceptere betingelserne på kode-skærmen.
 
 Begge endpoints kræver `Content-Type: application/json`. Appen (native) sender ingen `Origin`. Kommer kaldet fra en browser på et andet domæne, afvises det.
 
@@ -43,24 +43,31 @@ Navnene renses som på hjemmesiden: trim, ét mellemrum og højst 100 tegn. Adga
 ## POST /api/konto/bekraeft
 
 ```json
-{ "email": "ida@example.dk", "kode": "123456", "password": "..." }
+{ "email": "ida@example.dk", "kode": "123456", "password": "...", "fornavn": "Ida", "efternavn": "Hansen", "vilkaar_version": "<VILKAAR_VERSION>" }
 ```
 
 Koden må have mellemrum (de fjernes). Produktion bruger 6 cifre, testdatabasen 8.
 
 | Status | Krop | Betyder |
 |---|---|---|
-| 200 | `{ ok: true, adgangskode_sat, session: { access_token, refresh_token, expires_in, expires_at, token_type }, bruger: { id, email } }` | E-mailen er bekræftet, og brugeren er logget ind |
+| 200 | `{ ok: true, adgangskode_sat, navn_sat, vilkaar_sat, session: { access_token, refresh_token, expires_in, expires_at, token_type }, bruger: { id, email } }` | E-mailen er bekræftet, og brugeren er logget ind |
 | 400 | `{ fejl, kode: "ugyldig" \| "email" }` | Ugyldig krop eller e-mail |
 | 400 | `{ fejl, kode: "kode_forkert" }` | Forkert eller udløbet kode (Supabase skelner ikke). Tilbyd "Send ny kode" |
-| 400 | `{ fejl, kode: "adgangskode" }` | Adgangskoden opfylder ikke kravene. Det tjekkes, **før** koden bruges, så koden gælder stadig |
+| 400 | `{ fejl, kode: "adgangskode" \| "fornavn" \| "efternavn" }` | Adgangskoden eller navnet opfylder ikke kravene. Det tjekkes, **før** koden bruges, så koden gælder stadig |
+| 400 | `{ fejl, kode: "vilkaar", vilkaar_version }` | Ikke den aktuelle version af betingelserne. Tjekket før koden bruges |
 | 403 | `{ fejl, kode: "ikke_tilladt" }` | Fremmed `Origin` |
 | 403 | `{ fejl, kode: "suspenderet" \| "slettet" }` | Kontoen må ikke logge ind. `fejl` forklarer hvorfor |
 | 429 | `{ fejl, kode: "for_mange" }` | For mange forsøg |
 | 503 | `{ fejl, kode: "ikke_tilgaengelig" }` | Grænserne kunne ikke tjekkes |
 | 500 | `{ fejl, kode: "fejl" }` | Noget gik galt |
 
-**`adgangskode_sat: false`:** e-mailen er bekræftet, men adgangskoden kunne ikke sættes (fx fordi den ligner navnet på kontoen). Kontoen har så en tilfældig adgangskode. Vis "Vælg adgangskode", og kald `supabase.auth.updateUser({ password })` med den nye session.
+Kontoens status (suspenderet eller slettet) tjekkes, **før** noget ændres. En suspenderet konto får hverken ny adgangskode, navn eller session.
+
+**`adgangskode_sat: false`:** e-mailen er bekræftet, men adgangskoden kunne ikke sættes. Kontoen har så en tilfældig adgangskode. Vis "Vælg adgangskode", og kald `supabase.auth.updateUser({ password })` med den nye session.
+
+**`navn_sat: false`:** databasen afviste navnet (fx `BHN01`: indeholder "BidHamr", `BHN02`: e-mail, telefon eller link). Kontoen hedder "Bruger". Bed om navnet igen, og gem det på `users` (`navn`, `fornavn`, `efternavn`) med den nye session.
+
+**`vilkaar_sat: false`:** accepten kunne ikke gemmes. Vis accept-vinduet (`rpc("accepter_vilkaar", { p_version })`). Databasen afviser bud og salg uden accept (`BHV02`).
 
 ## Grænser
 
@@ -80,6 +87,6 @@ Samme grænser som hjemmesiden (`src/lib/rateLimit.ts`):
 
 - Ingen cookies og ingen CORS-headere. En browser på et andet domæne kan ikke sende JSON hertil uden en preflight, som ikke godkendes, og en fremmed `Origin` afvises.
 - Svaret fra `/api/konto/opret` afslører ikke, om e-mailen findes, eller om den er inviteret.
-- Adgangskoden sættes kun efter en vellykket `verifyOtp`, i sessionen fra den. Uden koden kan en fremmed hverken bekræfte kontoen eller bestemme adgangskoden. Det gælder, uanset om angriberen opretter kontoen før eller efter offeret.
+- Adgangskoden, navnet og vilkårsaccepten sættes kun efter en vellykket `verifyOtp` (adgangskoden i sessionen fra den, navn og vilkår med service role). Uden koden kan en fremmed hverken bekræfte kontoen eller bestemme adgangskoden. Det gælder, uanset om angriberen opretter kontoen før eller efter offeret.
 - Bekræftes en konto uden adgangskode (hjemmesiden i en anden browser), sættes en ny tilfældig adgangskode, og brugeren vælger sin egen bagefter. Så overlever ingen adgangskode, som en anden måtte have sat.
 - Proxyen lukker begge stier igennem uden login (`src/lib/supabase/middleware.ts`), fordi man jo ikke har en konto endnu.

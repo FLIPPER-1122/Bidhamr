@@ -41,8 +41,15 @@ export default function KodeForm({ kendtEmail, startVentetid }: { kendtEmail: st
       return;
     }
     // Kunne den valgte adgangskode ikke sættes (fx åbnet i en anden browser),
-    // vælger brugeren en nu (src/app/actions/auth.ts, verificerSignupKode).
-    router.push("vaelgAdgangskode" in svar && svar.vaelgAdgangskode ? "/reset-password?fra=signup" : "/velkommen");
+    // vælger brugeren en nu og skriver sit navn. Kunne kun navnet ikke gemmes,
+    // beder /velkommen om det (src/app/actions/auth.ts, verificerSignupKode).
+    router.push(
+      "vaelgAdgangskode" in svar && svar.vaelgAdgangskode
+        ? "/reset-password?fra=signup"
+        : "bekraeftNavn" in svar && svar.bekraeftNavn
+          ? "/velkommen?navn=1"
+          : "/velkommen",
+    );
     router.refresh();
   }
 

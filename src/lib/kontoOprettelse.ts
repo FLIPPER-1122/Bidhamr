@@ -13,20 +13,25 @@ import "server-only";
 //   dashboardet). Kontoen oprettes kun her, på serveren, med
 //   generateLink('signup') og en TILFÆLDIG adgangskode. generateLink sender
 //   ingen mail; koden sendes i vores egen mail (betaKodeMail).
-// - Lige før generateLink lægger serveren en billet
-//   (konto_oprettelse_billet_signup, 20261018010000_signup_billet_altid.sql),
-//   som handle_new_user kræver. Så afviser databasen en direkte signUp med
-//   anon-nøglen, uanset hvad der står i dashboardet.
-// - Den valgte adgangskode sættes først efter en vellykket verifyOtp (i
-//   bekraeftKode herunder), så den kun bestemmes af den, der har koden fra
-//   mailen. Hjemmesiden gemmer den imens krypteret i en cookie
-//   (src/lib/ventendeAdgangskode.ts); appen sender den igen sammen med koden.
+// - Lige før generateLink lægger serveren en billet med hashen af et
+//   tilfældigt engangs-nonce (konto_oprettelse_billet_signup,
+//   20261018010000_signup_billet_altid.sql) og sender nonce'et med som
+//   metadata bh_billet. handle_new_user kræver, at de passer sammen. Så
+//   afviser databasen en direkte signUp med anon-nøglen - også i det sekund,
+//   billetten ligger - uanset hvad der står i dashboardet. bh_billet fjernes
+//   bagefter fra metadata (i databasen og her).
+// - Den valgte adgangskode, navnet og vilkårsaccepten sættes først efter en
+//   vellykket verifyOtp (bekraeftKode herunder), med oplysninger fra den, der
+//   har koden fra mailen. Hjemmesiden gemmer dem imens krypteret i en cookie
+//   (src/lib/ventendeAdgangskode.ts); appen sender dem igen sammen med koden.
+//   Signup-metadata indeholder derfor hverken navn eller vilkår.
 // - En EKSISTERENDE konto får aldrig ny metadata eller adgangskode herfra. Er
 //   den ubekræftet, sendes kun en ny kode.
 // - Neutrale svar: kalderen svarer det samme, uanset om e-mailen findes, er
 //   inviteret, eller noget fejlede (fejl logges i /admin/drift uden e-mail).
 // - Højst én kodemail pr. e-mail hvert 2. minut (kodemail_email, tjekket før
 //   alt andet). Inden for vinduet sendes intet, så den forrige kode gælder.
+import { createHash, randomBytes } from "node:crypto";
 import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createAnonClient } from "@/lib/supabase/anon";
@@ -39,6 +44,7 @@ import { tilmeldingAaben } from "@/lib/tilmelding";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import { betaAuthBruger, betaTilmeldingTilladt } from "@/lib/beta";
+import { hentKontoStatus, type KontoStatus } from "@/lib/kontoStatus";
 
 export function renEmail(email: unknown): string | null {
   if (typeof email !== "string") return null;
@@ -58,8 +64,39 @@ export function renKode(v: unknown): string | null {
 }
 
 function tilfaeldigAdgangskode(): string {
-  const b = crypto.getRandomValues(new Uint8Array(32));
-  return `Bh-${Buffer.from(b).toString("base64url")}-9x`;
+  return `Bh-${randomBytes(32).toString("base64url")}-9x`;
+}
+
+// Engangs-nonce til billetten. Kun hashen gemmes i databasen; nonce'et
+// sendes med i generateLink (metadata bh_billet) og findes ellers kun i
+// serverens hukommelse.
+export function nyBillet(): { nonce: string; hash: string } {
+  const nonce = randomBytes(32).toString("base64url");
+  return { nonce, hash: createHash("sha256").update(nonce, "utf8").digest("hex") };
+}
+
+// Fjerner bh_billet fra auth-brugerens metadata (Supabase sletter en nøgle,
+// der sættes til null). Databasen gør det også i handle_new_user. Kaster aldrig.
+export async function fjernBilletFraMetadata(brugerId: string): Promise<void> {
+  try {
+    const { error } = await createAdminClient().auth.admin.updateUserById(brugerId, {
+      user_metadata: { bh_billet: null },
+    });
+    if (error) await logSignupFejl("fjernBilletFraMetadata", `${error.status ?? ""} ${error.code ?? ""}: ${error.message}`, brugerId);
+  } catch (err) {
+    await logSignupFejl("fjernBilletFraMetadata", err, brugerId);
+  }
+}
+
+// Fjerner en ubrugt billet igen (generateLink fejlede), så den ikke ligger
+// og venter i de resterende minutter. Kaster aldrig.
+export async function fjernBillet(hash: string): Promise<void> {
+  try {
+    const { error } = await createAdminClient().from("konto_oprettelse_billetter").delete().eq("noegle_hash", hash);
+    if (error) await logSignupFejl("fjernBillet", `${error.code ?? ""}: ${error.message}`);
+  } catch (err) {
+    await logSignupFejl("fjernBillet", err);
+  }
 }
 
 export async function logSignupFejl(hvor: string, fejl: unknown, brugerId?: string) {
@@ -85,9 +122,12 @@ async function maaOpretteSig(email: string): Promise<boolean | null> {
 // Billet til netop denne oprettelse (handle_new_user kræver den). "ingen" =
 // funktionen findes ikke endnu (migrationen 20261018010000 er ikke kørt) - så
 // gælder databasens gamle værn, og kontoen kan oprettes som før.
-async function laegBillet(email: string): Promise<"ok" | "ikke_tilladt" | "ingen" | "fejl"> {
+async function laegBillet(email: string, hash: string): Promise<"ok" | "ikke_tilladt" | "ingen" | "fejl"> {
   try {
-    const { data, error } = await createAdminClient().rpc("konto_oprettelse_billet_signup", { p_email: email });
+    const { data, error } = await createAdminClient().rpc("konto_oprettelse_billet_signup", {
+      p_email: email,
+      p_hash: hash,
+    });
     if (error) {
       if (error.code === "PGRST202") return "ingen";
       await logSignupFejl("kontoOprettelse.billet", `${error.code ?? ""}: ${error.message}`);
@@ -101,21 +141,6 @@ async function laegBillet(email: string): Promise<"ok" | "ikke_tilladt" | "ingen
   } catch (err) {
     await logSignupFejl("kontoOprettelse.billet", err);
     return "fejl";
-  }
-}
-
-// Fjerner en ubrugt billet igen (generateLink fejlede), så den ikke kan
-// bruges af andre veje ind i de resterende minutter.
-async function fjernBillet(email: string) {
-  try {
-    const { error } = await createAdminClient()
-      .from("konto_oprettelse_billetter")
-      .delete()
-      .eq("email", email)
-      .eq("kilde", "signup");
-    if (error) await logSignupFejl("kontoOprettelse.fjernBillet", `${error.code ?? ""}: ${error.message}`);
-  } catch (err) {
-    await logSignupFejl("kontoOprettelse.fjernBillet", err);
   }
 }
 
@@ -152,26 +177,20 @@ async function sendKodeIgen(email: string): Promise<boolean> {
   return true;
 }
 
-// Hvad kalderen skal gøre med den valgte adgangskode (kun hjemmesiden gemmer
-// den - i cookien):
-//   "ja"                 en kode er sendt til e-mailen: gem den.
+// Hvad kalderen skal gøre med det ventende (kun hjemmesiden gemmer det - i
+// cookien):
+//   "ja"                 en kode er sendt til e-mailen: gem det.
 //   "kun_hvis_ventende"  inden for 2-minutters vinduet (ingen ny kode): opdatér
-//                        kun en ventende adgangskode til samme e-mail, som
-//                        denne browser allerede har (fx en rettet tastefejl).
+//                        kun det ventende til samme e-mail, som denne browser
+//                        allerede har (fx en rettet tastefejl).
 //   "nej"                ingen kode sendt (ikke inviteret, bekræftet konto, fejl).
 export type GemAdgangskode = "ja" | "kun_hvis_ventende" | "nej";
 
 // Opretter kontoen (eller sender en ny kode til en eksisterende, ubekræftet
 // konto). Kaster aldrig; kalderen svarer altid neutralt. Input skal være
-// valideret og renset (renEmail/renNavn, vurderAdgangskode, vilkår) og
-// rate-limitet pr. IP af kalderen.
-export async function opretKontoPaaServeren(input: {
-  email: string;
-  fornavn: string;
-  efternavn: string;
-}): Promise<GemAdgangskode> {
-  const { email, fornavn, efternavn } = input;
-  const navn = `${fornavn} ${efternavn}`;
+// valideret og renset af kalderen (navn, adgangskode, vilkår gemmes af
+// kalderen og bruges først efter koden) og rate-limitet pr. IP.
+export async function opretKontoPaaServeren(email: string): Promise<GemAdgangskode> {
   try {
     if (!(await indenForGraense("kodemail_email", email))) return "kun_hvis_ventende";
 
@@ -192,7 +211,8 @@ export async function opretKontoPaaServeren(input: {
       return !findes.bekraeftet && (await sendKodeIgen(email)) ? "ja" : "nej";
     }
 
-    const billet = await laegBillet(email);
+    const b = nyBillet();
+    const billet = await laegBillet(email, b.hash);
     if (billet === "fejl") return "nej";
     if (billet === "ikke_tilladt") {
       // Serveren sagde ja, databasen nej: åben tilmelding med værnet slået til
@@ -209,11 +229,12 @@ export async function opretKontoPaaServeren(input: {
       password: tilfaeldigAdgangskode(),
       options: {
         redirectTo: sideUrl("/auth/callback?next=/velkommen"),
-        data: { navn, fornavn, efternavn, vilkaar_version: VILKAAR_VERSION },
+        // Kun nonce'et - navn og vilkår sættes efter koden (bekraeftKode).
+        ...(billet === "ok" ? { data: { bh_billet: b.nonce } } : {}),
       },
     });
     if (error || !link?.user || !link.properties?.email_otp) {
-      if (billet === "ok") await fjernBillet(email);
+      if (billet === "ok") await fjernBillet(b.hash);
       // "Findes allerede" (to samtidige oprettelser) er forventet; alt andet
       // logges. Databasens afvisning ("Database error ...") med et tip.
       const findesAllerede = error?.code === "email_exists" || error?.code === "user_already_exists";
@@ -226,6 +247,7 @@ export async function opretKontoPaaServeren(input: {
       }
       return "nej";
     }
+    if (billet === "ok") await fjernBilletFraMetadata(link.user.id);
 
     const sendt = await sendHandelMailDetaljer(email, betaKodeMail({ email, kode: link.properties.email_otp }));
     if (!sendt.ok) {
@@ -257,7 +279,11 @@ export async function sendNyKodePaaServeren(email: string): Promise<"ok" | "vent
   return "ok";
 }
 
-type AuthKlient = { auth: Pick<SupabaseClient["auth"], "verifyOtp" | "updateUser"> };
+// Navn og vilkårsaccept fra den, der har koden (cookien på hjemmesiden, selve
+// kaldet fra appen).
+export type SignupProfil = { fornavn: string; efternavn: string; vilkaarVersion: string };
+
+type AuthKlient = { auth: Pick<SupabaseClient["auth"], "verifyOtp" | "updateUser" | "signOut"> };
 
 export type BekraeftSvar =
   | {
@@ -265,21 +291,80 @@ export type BekraeftSvar =
       user: User;
       session: Session | null;
       // false = ingen adgangskode givet, eller den kunne ikke sættes: kontoen
-      // har kun den tilfældige, og brugeren skal vælge en ("Vælg adgangskode").
+      // har en ny tilfældig, og brugeren skal vælge en ("Vælg adgangskode").
       adgangskodeSat: boolean;
+      // false = navnet mangler eller kunne ikke gemmes (kontoen hedder
+      // "Bruger"): brugeren skal skrive sit navn.
+      navnSat: boolean;
+      // false = vilkårene er ikke accepteret af den, der har koden:
+      // accept-vinduet vises, og databasen afviser bud og salg (BHV02).
+      vilkaarSat: boolean;
     }
-  | { fejl: "kode_forkert" | "for_mange" | "graense_fejl" | "fejl" };
+  | { fejl: "kode_forkert" | "for_mange" | "graense_fejl" | "fejl" }
+  | { fejl: "konto"; status: Exclude<KontoStatus, { kode: "ok" }> };
 
-// Bekræfter e-mailen med koden og sætter BAGEFTER den valgte adgangskode i
-// sessionen fra verifyOtp. Alle forsøg tælles: højst 5 pr. e-mail+IP og 30
-// pr. IP pr. 15 min. og 15 pr. e-mail pr. time; et gennemført forsøg
-// nulstiller e-mail+IP. supabase: hjemmesidens cookie-klient (sessionen
-// sættes som cookies) eller appens klient uden cookies (createAnonClient).
+// Gemmer navn og vilkårsaccept på public.users med service role, efter koden
+// er bekræftet. Kaster aldrig.
+async function gemProfil(brugerId: string, profil: SignupProfil | null): Promise<{ navnSat: boolean; vilkaarSat: boolean }> {
+  const fornavn = renNavn(profil?.fornavn);
+  const efternavn = renNavn(profil?.efternavn);
+  const vilkaar = profil?.vilkaarVersion === VILKAAR_VERSION;
+  const navnOk = !!fornavn && !!efternavn;
+  const admin = createAdminClient();
+  let navnSat = false;
+  let vilkaarSat = false;
+  if (!navnOk || !vilkaar) {
+    // Det, der mangler, nulstilles, så intet fra den, der oprettede kontoen
+    // (fx metadata på en ældre ubekræftet konto), står tilbage: navnet bliver
+    // "Bruger", og accept-vinduet vises (BHV02 afviser bud og salg imens).
+    const { error } = await admin
+      .from("users")
+      .update({
+        ...(!navnOk ? { navn: "Bruger", fornavn: null, efternavn: null } : {}),
+        ...(!vilkaar ? { vilkaar_version: null, vilkaar_accepteret_kl: null } : {}),
+      })
+      .eq("id", brugerId);
+    if (error) await logSignupFejl("bekraeftKode.nulstil", `${error.code ?? ""}: ${error.message}`, brugerId);
+  }
+  if (navnOk) {
+    const { error } = await admin
+      .from("users")
+      .update({ navn: `${fornavn} ${efternavn}`, fornavn, efternavn })
+      .eq("id", brugerId);
+    if (error) {
+      // Fx BHN01/BHN02 (navnet indeholder "BidHamr" eller kontaktoplysninger).
+      await logSignupFejl("bekraeftKode.navn", `${error.code ?? ""}: ${error.message}`, brugerId);
+    } else {
+      navnSat = true;
+    }
+  }
+  if (vilkaar) {
+    const { error } = await admin
+      .from("users")
+      .update({ vilkaar_version: VILKAAR_VERSION, vilkaar_accepteret_kl: new Date().toISOString() })
+      .eq("id", brugerId)
+      .is("konto_slettet_kl", null);
+    if (error) {
+      await logSignupFejl("bekraeftKode.vilkaar", `${error.code ?? ""}: ${error.message}`, brugerId);
+    } else {
+      vilkaarSat = true;
+    }
+  }
+  return { navnSat, vilkaarSat };
+}
+
+// Bekræfter e-mailen med koden og sætter BAGEFTER - kun for en konto, der må
+// logge ind - den valgte adgangskode (i sessionen fra verifyOtp) samt navn
+// og vilkårsaccept fra den, der har koden. Alle forsøg tælles: højst 5 pr.
+// e-mail+IP og 30 pr. IP pr. 15 min. og 15 pr. e-mail pr. time; et
+// gennemført forsøg nulstiller e-mail+IP. supabase: hjemmesidens
+// cookie-klient (sessionen sættes som cookies) eller appens klient uden
+// cookies (createAnonClient).
 export async function bekraeftKode(
   supabase: AuthKlient,
-  input: { email: string; kode: string; ip: string; adgangskode: string | null },
+  input: { email: string; kode: string; ip: string; adgangskode: string | null; profil: SignupProfil | null },
 ): Promise<BekraeftSvar> {
-  const { email, kode, ip, adgangskode } = input;
+  const { email, kode, ip, adgangskode, profil } = input;
   const graense = await tjekGraenserLukket([
     ["signup_kode_ip", ip],
     ["signup_kode_email_ip", `${email}|${ip}`],
@@ -300,12 +385,17 @@ export async function bekraeftKode(
   }
   await nulstilGraense("signup_kode_email_ip", `${email}|${ip}`);
 
+  // Suspenderet/slettet konto (eller profilen kan ikke læses): ingen
+  // ændringer og ingen session (fail closed).
+  const status = await hentKontoStatus(data.user.id);
+  if (status.kode !== "ok") {
+    await supabase.auth.signOut({ scope: "local" });
+    return { fejl: "konto", status };
+  }
+
+  const navne = [profil?.fornavn, profil?.efternavn].filter((x): x is string => typeof x === "string");
   let adgangskodeSat = false;
   if (adgangskode) {
-    // Samme krav som ved oprettelsen - også mod navnet på den konto, der
-    // faktisk blev bekræftet.
-    const meta = (data.user.user_metadata ?? {}) as Record<string, unknown>;
-    const navne = [meta.navn, meta.fornavn, meta.efternavn].filter((x): x is string => typeof x === "string");
     const v = vurderAdgangskode(adgangskode, { email: data.user.email ?? email, navn: navne });
     if (v.ok) {
       const { error: pwFejl } = await supabase.auth.updateUser({ password: adgangskode });
@@ -336,5 +426,7 @@ export async function bekraeftKode(
       });
     }
   }
-  return { ok: true, user: data.user, session: data.session, adgangskodeSat };
+
+  const { navnSat, vilkaarSat } = await gemProfil(data.user.id, profil);
+  return { ok: true, user: data.user, session: data.session, adgangskodeSat, navnSat, vilkaarSat };
 }

@@ -8,9 +8,9 @@ import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
 // Appen opretter konti her (docs/APP-SIGNUP.md) - aldrig med supabase.auth.signUp
 // (det afviser databasen). Samme kodevej som hjemmesidens opretKonto
 // (src/lib/kontoOprettelse.ts): kontoen oprettes på serveren med en
-// tilfældig adgangskode, og koden sendes til e-mailen. Den valgte adgangskode
-// gemmes IKKE her - appen sender den igen til POST /api/konto/bekraeft
-// sammen med koden.
+// tilfældig adgangskode, og koden sendes til e-mailen. Den valgte adgangskode,
+// navnet og vilkårsaccepten gemmes IKKE her (de tjekkes kun) - appen sender
+// dem igen til POST /api/konto/bekraeft sammen med koden.
 //
 // POST /api/konto/opret
 //   Content-Type: application/json
@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
   if (graense === "fejl") return svar(503, IKKE_TILGAENGELIG);
 
   // Kaster aldrig; fejl logges i /admin/drift. Svaret er det samme uanset udfald.
-  await opretKontoPaaServeren({ email, fornavn, efternavn });
+  // Navn, vilkår og adgangskode gemmes IKKE her - appen sender dem igen til
+  // /api/konto/bekraeft, så de kommer fra den, der har koden.
+  await opretKontoPaaServeren(email);
   return svar(200, { ok: true });
 }
