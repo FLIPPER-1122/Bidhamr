@@ -14,8 +14,7 @@ Punkter markeret **[CHEF]** kræver en teknisk beslutning eller noget, der skal 
 
 Tag dem i denne rækkefølge. Den fulde liste står i afsnit 10.
 
-1. **Kør beta-migrationen i produktion.**
-   Hvor: Supabase → projektet **Hamr** (`lkifkrexeldimmghnsie`) → SQL Editor. Filen er `supabase/migrations/20261017010000_beta_invitationer.sql`. Du kan også give Claude dit "ja" til at køre den.
+1. ✅ **Beta-migrationen er kørt i produktion** (11. okt. 2026), og invitationen er afprøvet på Filip selv.
 
 2. **Tjek, at alt kører med testpenge.**
    Hvor: Stripe-dashboardet med "Testmiljø" slået til (betalinger skal lande her). Vercel → Project → Settings → Environment Variables: nøglerne skal starte med `sk_test_` og `pk_test_` (kig kun, ret intet). Supabase (Hamr) → SQL Editor: `select tilstand from stripe_tilstand;` skal give `test`. Til sidst `/admin/drift`: ingen røde fejl, og "Sidste tjek" under 5 minutter gammelt.
