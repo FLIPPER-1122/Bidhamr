@@ -9,7 +9,9 @@ import KraeverHandling, { type HandlingRaekke } from "@/components/admin/forside
 import Noegletal, { somPeriode } from "@/components/admin/forside/Noegletal";
 import { tolkForsideTal, type ForsideTal } from "@/components/admin/forside/forsideTal";
 import { HAENGER_GRAENSER_DAGE } from "@/lib/adminGraenser";
-import { hentStaffTal, type StaffTal } from "@/lib/admin/taellere";
+import { hentNoedstopTal, hentStaffTal, type NoedstopTal, type StaffTal } from "@/lib/admin/taellere";
+import { hentPengesikkerhed, type Pengesikkerhed } from "@/app/actions/adminPengesikkerhed";
+import PengeStatus from "@/components/admin/forside/PengeStatus";
 import { hentErhvervTal, type ErhvervTal } from "@/lib/admin/erhvervTal";
 import { hentLamper, type Lampe } from "@/lib/admin/lamper";
 import { beregnStatus, koePunkter, type StatusPunkt } from "@/lib/admin/statuslinje";
@@ -21,8 +23,8 @@ import { beregnStatus, koePunkter, type StatusPunkt } from "@/lib/admin/statusli
 // personoplysninger.
 //
 // Trin 1-2: data fra det, der findes i dag (admin_forside_tal, menuens
-// tællere og drift-data). Nødstop, afstemning, godkendelser og pengestatus
-// kommer i trin 3, når penge-agenterne er flettet ind - indtil da er de skjult.
+// tællere, drift-data og sikkerhedsnet A: nødstop, godkendelser, frosne sælgere).
+// Daglig afstemning og "Hos Stripe" venter på sikkerhedsnet B - indtil da er de skjult.
 
 export const metadata = { title: "Admin" };
 
@@ -33,6 +35,9 @@ type Data = {
   lamper: Lampe[];
   erhverv: ErhvervTal | null;
   betaFejl: { nye: number; blokerer: number } | null;
+  noedstop: NoedstopTal;
+  // Kun chef (beløb og godkendelser). null for alle andre.
+  penge: Pengesikkerhed | null;
 };
 
 async function hentData(): Promise<Data | null> {
@@ -45,7 +50,7 @@ async function hentData(): Promise<Data | null> {
   const { admin, rolle } = adgang;
   const erAdmin = harMindstRolle(rolle, "admin");
 
-  const [forside, staff, erhverv, beta] = await Promise.all([
+  const [forside, staff, erhverv, beta, noedstop, pengeRes] = await Promise.all([
     admin.rpc("admin_forside_tal"),
     hentStaffTal(),
     rolle === "chef" ? hentErhvervTal(admin) : Promise.resolve(null),
@@ -55,13 +60,16 @@ async function hentData(): Promise<Data | null> {
           admin.from("beta_fejl").select("id", { count: "exact", head: true }).eq("status", "ny").eq("alvor", "blokerer"),
         ])
       : Promise.resolve(null),
+    hentNoedstopTal(),
+    rolle === "chef" ? hentPengesikkerhed() : Promise.resolve(null),
   ]);
+  const penge = pengeRes && "ok" in pengeRes ? pengeRes : null;
   if (forside.error) console.error("admin_forside_tal fejlede:", forside.error.message);
   const tal = forside.error ? null : tolkForsideTal(forside.data);
-  const lamper = erAdmin ? await hentLamper(admin, { fragtTilHandling: tal?.handling.fragt ?? 0 }) : [];
+  const lamper = erAdmin ? await hentLamper(admin, { fragtTilHandling: tal?.handling.fragt ?? 0, noedstop }) : [];
   const betaFejl =
     beta && !beta[0].error && !beta[1].error ? { nye: beta[0].count ?? 0, blokerer: beta[1].count ?? 0 } : null;
-  return { rolle, tal, staff, lamper, erhverv, betaFejl };
+  return { rolle, tal, staff, lamper, erhverv, betaFejl, noedstop, penge };
 }
 
 const flere = (n: number, en: string, mange: string) => (n === 1 ? en : mange);
@@ -72,6 +80,27 @@ function byggRaekker(d: Data): HandlingRaekke[] {
   const admin = harMindstRolle(rolle, "admin");
   const r: HandlingRaekke[] = [];
 
+  // Nødstop (sikkerhedsnet A) - alle skal vide det, så de kan svare brugerne.
+  if (d.noedstop.stoppet) {
+    r.push({
+      id: "noedstop",
+      alvor: "roed",
+      titel: d.noedstop.udbetalinger ? "Udbetalinger stoppet (nødstop)" : "Nye betalinger stoppet (nødstop)",
+      antal: 1,
+      forklaring: rolle === "chef" ? "Slå det fra under Penge, når det er sikkert" : "Chefen genoptager under Penge",
+      href: rolle === "chef" ? "/admin/penge" : "/admin",
+    });
+  }
+  if (d.penge && d.penge.godkendelser.length > 0) {
+    r.push({
+      id: "godkendelser",
+      alvor: "gul",
+      titel: "Udbetalinger til godkendelse",
+      antal: d.penge.godkendelser.length,
+      forklaring: "Godkend, før pengene sendes til sælgerens bank",
+      href: "/admin/penge",
+    });
+  }
   // Lovpligtige frister først.
   if (s.dsa > 0) {
     r.push({
@@ -177,9 +206,19 @@ export default async function AdminForside({ searchParams }: { searchParams: Pro
 
   // Statuslinjen: køerne (som menuen) + røde/gule systemlamper.
   const lampePunkter: StatusPunkt[] = d.lamper
-    .filter((l) => l.tone === "roed" || l.tone === "gul")
+    .filter((l) => (l.tone === "roed" || l.tone === "gul") && l.navn !== "Nødstop")
     .map((l) => ({ tone: l.tone as "roed" | "gul", tekst: l.statusTekst ?? `${l.navn}: ${l.tekst}`, href: l.href ?? "/admin/drift" }));
+  const noedstopPunkt: StatusPunkt[] = d.noedstop.stoppet
+    ? [
+        {
+          tone: "roed",
+          tekst: `${d.noedstop.udbetalinger ? "Udbetalinger" : "Nye betalinger"} stoppet (nødstop)`,
+          href: d.rolle === "chef" ? "/admin/penge" : "/admin",
+        },
+      ]
+    : [];
   const status = beregnStatus([
+    ...noedstopPunkt,
     ...lampePunkter.filter((p) => p.tone === "roed"),
     ...koePunkter({ dsaOverskredet: d.staff.dsaOverskredet, dsa: d.staff.dsa, sager: d.staff.sager, betalinger: d.staff.betalinger }),
     ...lampePunkter.filter((p) => p.tone === "gul"),
@@ -197,6 +236,8 @@ export default async function AdminForside({ searchParams }: { searchParams: Pro
       {!d.tal && <AdminFejl hvad="Tallene til forsiden" />}
 
       <KraeverHandling raekker={raekker} />
+
+      {d.penge && <PengeStatus penge={d.penge} />}
 
       {d.tal && <Noegletal tal={d.tal} periode={somPeriode(periode)} />}
     </AdminSide>

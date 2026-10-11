@@ -18,6 +18,7 @@ import type { BrugerAuktionRow } from "@/lib/adminRowTypes";
 import { hentSamtalerForBruger } from "@/app/actions/staffChat";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import AabnChatKnap from "@/components/admin/staffchat/AabnChatKnap";
+import { frysSaelgerManuelt } from "@/app/actions/adminPengesikkerhed";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 import { handlingNavn } from "@/lib/moderationLog";
 import MitIdAdminKort, { MitIdBadge } from "@/components/admin/MitIdAdminKort";
@@ -92,6 +93,18 @@ export default async function AdminBrugerDetalje({
     ]);
 
   if (!user) notFound();
+
+  // Sikkerhedsnet A: chefen kan fryse en sælgers udbetalinger. Kun når
+  // brugeren har en betalingsprofil. Før 20261019010000 findes kolonnen ikke
+  // (fejl -> ingen knap).
+  const erChef = staffRolle === "chef";
+  const { data: frysProfil } = erChef
+    ? await supabase
+        .from("betalingsprofiler")
+        .select("user_id, udbetaling_frosset_kl")
+        .eq("user_id", id)
+        .maybeSingle<{ user_id: string; udbetaling_frosset_kl: string | null }>()
+    : { data: null };
 
   const kontoLukketKl = (user as { konto_lukket_kl?: string | null }).konto_lukket_kl ?? null;
   const suspensionAktiv = erSuspensionAktiv(user);
@@ -225,6 +238,31 @@ export default async function AdminBrugerDetalje({
                 {...indgrebFelter({ faktaPlaceholder: "Fx: Du har skrevet truende beskeder til en køber i flere handler." })}
               />
             ))}
+
+          {erChef && frysProfil && !frysProfil.udbetaling_frosset_kl && (
+            <ConfirmDialog
+              triggerLabel="Frys sælger"
+              triggerClassName="btn btn-fare"
+              fakta={[{ label: "Sælger", vaerdi: user.navn ?? user.email ?? "Uden navn" }]}
+              fare
+              title={`Frys ${user.navn ?? "sælgerens"} udbetalinger?`}
+              description="Der sendes ingen penge fra sælgerens Stripe-konto til banken, og alle sælgerens ventende handler markeres under Betalinger. Sælgeren får ingen besked om grunden. Kun chefen kan ophæve frysningen (Admin → Penge → Frosne sælgere)."
+              confirmLabel="Frys sælgeren"
+              action={frysSaelgerManuelt}
+              hiddenFields={{ brugerId: user.id }}
+              aarsagField={{ name: "begrundelse", label: "Begrundelse (intern)", placeholder: "Hvorfor fryses sælgeren?", required: true }}
+              afkrydsning={{ name: "frysSalg", label: "Stop også nye auktioner og bud på sælgerens auktioner", value: "ja" }}
+              kvittering="Sælgeren er frosset"
+            />
+          )}
+          {erChef && frysProfil?.udbetaling_frosset_kl && (
+            <Link
+              href="/admin/penge"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-fejl-kant bg-fejl-bg px-4 text-sm font-semibold text-fejl-tekst hover:bg-white transition-colors"
+            >
+              Sælgeren er frosset – se Penge
+            </Link>
+          )}
         </div>
       </div>
 

@@ -9,6 +9,7 @@ import { hentAntalKontoLukninger } from "@/app/actions/adminKontoLukning";
 import { hentAntalTryghed } from "@/app/actions/adminTryghed";
 import { hentAntalDsa } from "@/app/actions/adminDsa";
 import { hentAntalNyeErhvervHenvendelser } from "@/app/actions/adminErhverv";
+import { hentNoedstopBjaelke } from "@/app/actions/adminPengesikkerhed";
 
 // Menuens tællere (kun antal - ingen beløb). cache() deler svaret mellem
 // admin/layout.tsx og siden i samme forespørgsel, så forsiden ikke spørger
@@ -63,3 +64,15 @@ export const hentStaffTal = cache(async (): Promise<StaffTal> => {
 
 // Nye erhvervshenvendelser (chef og sælger; andre får 0).
 export const hentErhvervNye = cache(async (): Promise<number> => n(await hentAntalNyeErhvervHenvendelser(), "antal"));
+
+// Nødstop (sikkerhedsnet A): hvad der er stoppet - for al staff. Årsagen
+// sendes kun med for chefen (hentNoedstopBjaelke). Delt mellem layoutets røde
+// bjælke og forsidens lampe/statuslinje.
+export type NoedstopTal = { udbetalinger: boolean; nyeBetalinger: boolean; aarsag: string | null; stoppet: string | null };
+
+export const hentNoedstopTal = cache(async (): Promise<NoedstopTal> => {
+  const n = await hentNoedstopBjaelke();
+  if (!("ok" in n)) return { udbetalinger: false, nyeBetalinger: false, aarsag: null, stoppet: null };
+  const dele = [n.udbetalinger && "udbetalinger til sælgerne", n.nyeBetalinger && "nye betalinger"].filter(Boolean);
+  return { udbetalinger: n.udbetalinger, nyeBetalinger: n.nyeBetalinger, aarsag: n.aarsag, stoppet: dele.length ? dele.join(" og ") : null };
+});

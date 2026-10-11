@@ -473,6 +473,9 @@ export type Udbetalingsvisning = {
   tidligstKl: string | null;
   sendtKl: string | null;
   beloebOere: number;
+  // 20261019010000: 'fortrydelsesfrist' (erhverv, venter) eller 'kontrol'
+  // (stoppet hos BidHamr - grunden vises ikke for sælgeren).
+  aarsag: "fortrydelsesfrist" | "kontrol" | null;
 };
 
 export type Bankudbetaling = {
@@ -500,11 +503,13 @@ export async function hentMinUdbetalingsstatus(
     tidligst_kl: string | null;
     sendt_kl: string | null;
     beloeb_oere: number;
+    aarsag?: string | null;
   } | null;
+  const aarsag = v?.aarsag === "fortrydelsesfrist" || v?.aarsag === "kontrol" ? v.aarsag : null;
   return {
     ok: true,
     visning: v
-      ? { status: v.status, tidligstKl: v.tidligst_kl, sendtKl: v.sendt_kl, beloebOere: Number(v.beloeb_oere) }
+      ? { status: v.status, tidligstKl: v.tidligst_kl, sendtKl: v.sendt_kl, beloebOere: Number(v.beloeb_oere), aarsag }
       : null,
   };
 }

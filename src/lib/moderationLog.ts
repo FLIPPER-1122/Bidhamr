@@ -49,6 +49,13 @@ export const HANDLING_NAVNE: Record<string, string> = {
   fragt_haandteret: "Markerede forsendelse som håndteret",
   // 20261016030000_ikke_afhentet_pakke.sql
   handel_ikke_afhentet: "Markerede pakke som ikke afhentet (retur til sælger)",
+  // Sikkerhedsnet A (20261019010000).
+  noedstop_udbetalinger: "Nødstop: udbetalinger",
+  noedstop_betalinger: "Nødstop: nye betalinger",
+  udbetaling_godkendt: "Godkendte udbetaling over beløbsgrænsen",
+  bidhamr_daekker: "BidHamr dækker refusionen",
+  udbetaling_frosset: "Sælgerens udbetalinger frosset",
+  udbetaling_frysning_ophaevet: "Ophævede frysning af sælger",
   spoergsmaal_skjult: "Skjulte spørgsmål på auktion",
   spoergsmaal_vist: "Viste spørgsmål på auktion igen",
   konto_slettet: "Brugeren slettede selv sin konto",
@@ -97,6 +104,7 @@ const MAAL_NAVNE: Record<string, string> = {
   handel: "Handel",
   samtale: "Chat",
   sag: "Sag",
+  system: "System",
   dsa: "Anmeldelse/klage (DSA)",
   firma: "Firmakonto",
   erhverv_henvendelse: "Erhvervshenvendelse",

@@ -13,6 +13,7 @@ import { erMitIdFejl } from "@/lib/mitid/fejl";
 import { MITID } from "@/lib/tekster/mitid";
 import { erVilkaarFejl } from "@/lib/vilkaar";
 import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
+import { MAKS_BUD } from "@/lib/auktionRegler";
 
 // Bud afgives paa serveren, saa det kan rate-limites pr. bruger og pr. IP.
 // Selve buddet indsaettes stadig med brugerens egen session, saa RLS
@@ -81,6 +82,11 @@ const KENDTE_BUDFEJL = [
   "Sælgeren har spærret dig fra at byde på sine auktioner.",
   "Du skal være logget ind.",
   "Du har prøvet for mange gange. Vent lidt, og prøv så igen.",
+  // Beløbsloft (20261019010000, chefens valg): højst 500.000 kr.
+  "Det højeste tilladte bud er 500.000 kr.",
+  "Dit maksimum kan højst være 500.000 kr.",
+  // Sælgeren er frosset (fremmed udbetaling, 20261019010000).
+  "Der kan ikke bydes på sælgerens auktioner lige nu.",
   AUKTION_AENDRET,
 ];
 
@@ -108,6 +114,7 @@ export async function afgivBud(
   ) {
     return { fejl: "Ugyldigt bud." };
   }
+  if (beloeb > MAKS_BUD) return { fejl: "Det højeste tilladte bud er 500.000 kr." };
   const version =
     typeof redigeretKl === "string" && !Number.isNaN(Date.parse(redigeretKl))
       ? redigeretKl
@@ -207,6 +214,7 @@ export async function saetMaksimum(
   ) {
     return { fejl: "Skriv dit maksimum i hele kroner." };
   }
+  if (maks > MAKS_BUD) return { fejl: "Dit maksimum kan højst være 500.000 kr." };
   const version =
     typeof redigeretKl === "string" && !Number.isNaN(Date.parse(redigeretKl))
       ? redigeretKl

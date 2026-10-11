@@ -20,6 +20,8 @@ import HandelStatusBadge, { statusLabel } from "@/components/HandelStatusBadge";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
 import SagHandlinger from "@/components/admin/sager/SagHandlinger";
+import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import { bidhamrDaekkerRefusion } from "@/app/actions/adminPengesikkerhed";
 import { BeskyttelseBadge, SagBilleder, SagStatusBadge, sagTid } from "@/components/sager/visning";
 
 // Navne på handlingerne i moderation_log for sager.
@@ -261,6 +263,28 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
                   {!sag.afvikletKl && sag.status === "afventer_retur" && " (og først når returpakken er afleveret)"}
                   {sag.pengeFejl && (
                     <span className="mt-1 block text-fejl-tekst">Kan ikke gennemføres: {sag.pengeFejl}.</span>
+                  )}
+                  {/* Sikkerhedsnet A: pengene er udbetalt til sælgeren - kun chefen kan lade BidHamr dække refusionen. */}
+                  {sag.pengeFejl && rolle === "chef" && sag.pengeHandling === "refunder" && !sag.afvikletKl && (
+                    <span className="mt-2 block">
+                      <ConfirmDialog
+                        triggerLabel="BidHamr dækker refusionen"
+                        title="Skal BidHamr dække refusionen?"
+                        description="Pengene er udbetalt til sælgeren, og en udbetaling trækkes aldrig tilbage. Køberen refunderes i stedet af BidHamrs egen saldo hos Stripe (alt undtagen BidHamr Beskyttelse). Kan først bruges, når udbetalingen er gennemført hos banken. Det kan ikke fortrydes."
+                        confirmLabel="Refundér køberen"
+                        action={bidhamrDaekkerRefusion}
+                        hiddenFields={{ tradeId: sag.tradeId }}
+                        triggerClassName="btn btn-fare btn-lille"
+                        fakta={[
+                          { label: "Får pengene", vaerdi: `${koeberNavn} (køber)` },
+                          { label: "Betales af", vaerdi: "BidHamrs egen saldo hos Stripe" },
+                          ...(sag.kan.seBeloeb && b?.refusionOere != null ? [{ label: "Beløb", vaerdi: kroner(b.refusionOere) }] : []),
+                        ]}
+                        fare
+                        aarsagField={{ name: "begrundelse", label: "Begrundelse", placeholder: "Hvorfor dækker BidHamr?", required: true }}
+                        kvittering="Refusionen er sendt"
+                      />
+                    </span>
                   )}
                 </Felt>
               )}

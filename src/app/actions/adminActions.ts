@@ -24,6 +24,7 @@ import { notificerAuktionPauser } from "@/lib/notifikationer/auktionPause";
 import { send } from "@/lib/notifikationer/send";
 import { afgoerelseSti } from "@/lib/dsa/link";
 import { erRegel, regelNavn } from "@/lib/dsa/regler";
+import { logDriftFejl } from "@/lib/drift";
 
 // --- Fejlhaandtering ---------------------------------------------------------
 // Next skjuler beskeden fra fejl, der kastes i server actions, i produktion.
@@ -768,15 +769,27 @@ async function afvisVedAabenKoeberSag(admin: AdminClient, tradeId: string) {
 // sælger. Databasen afviser det også, hvor funktionen kender medarbejderen
 // (20261003012000_inhabil_handel.sql); admin_frigiv_handel og
 // betaling_paabegynd_refusion gør ikke, så tjekket her er værnet.
-const INHABIL_HANDEL = "Du kan ikke behandle en handel, hvor du selv er køber eller sælger.";
+const INHABIL_HANDEL =
+  "Du kan ikke behandle en handel, hvor du selv er køber eller sælger, eller hvor du har handlet med en af dem.";
 
-function afvisInhabil(
+// Inhabil: part i handlen ELLER har handlet med en af parterne (databasens
+// penge_inhabil, 20261019010000 - samme regel som DSA-klager og sager).
+async function afvisInhabil(
+  admin: AdminClient,
   staffId: string,
   parter: { buyer_id: string | null; seller_id: string | null },
 ) {
   if (staffId === parter.buyer_id || staffId === parter.seller_id) {
     throw new BrugerFejl(INHABIL_HANDEL);
   }
+  const { data, error } = await admin.rpc("penge_inhabil", {
+    p_medarbejder: staffId,
+    p_koeber: parter.buyer_id,
+    p_saelger: parter.seller_id,
+  });
+  // Før migrationen findes funktionen ikke: kun tjekket ovenfor.
+  if (error && !["PGRST202", "42883"].includes(error.code ?? "")) throw new Error(error.message);
+  if (data === true) throw new BrugerFejl(INHABIL_HANDEL);
 }
 
 function revaliderSag(tradeId: string) {
@@ -795,7 +808,7 @@ async function sagAabnImpl(formData: FormData): Promise<void> {
   if (!aarsag) throw new BrugerFejl("Beskriv hvorfor sagen åbnes.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
-  afvisInhabil(staffId, handel);
+  await afvisInhabil(admin, staffId, handel);
   if (!AKTIVE_HANDEL_STATUSSER.includes(handel.status)) {
     throw new BrugerFejl("Handlen er allerede afsluttet.");
   }
@@ -828,7 +841,7 @@ async function sagLukImpl(formData: FormData): Promise<void> {
   const aarsag = ((formData.get("aarsag") as string) ?? "").trim();
   const { admin, userId: staffId } = await assertRole("medarbejder");
   if (!aarsag) throw new BrugerFejl("Skriv en afsluttende note.");
-  afvisInhabil(staffId, await hentHandelTilSag(admin, tradeId));
+  await afvisInhabil(admin, staffId, await hentHandelTilSag(admin, tradeId));
   await afvisVedAabenKoeberSag(admin, tradeId);
 
   const { error } = await admin
@@ -851,6 +864,28 @@ async function sagLukImpl(formData: FormData): Promise<void> {
 // Moderationsloggen ses af medarbejdere og indeholder derfor aldrig beløb -
 // beløb ses kun af chef i betalingernes beløbskolonner.
 
+const FRIGIV_FEJL: Record<string, string> = {
+  ugyldig: "Handlen findes ikke.",
+  ikke_fundet: "Handlen findes ikke.",
+  ingen_adgang: "Kun admin og chef kan frigive pengene.",
+  begrundelse_mangler: "Angiv en begrundelse.",
+  begrundelse_for_lang: "Begrundelsen er for lang (højst 2000 tegn).",
+  ingen_betaling: "Handlen har ingen betaling og kan ikke frigives.",
+  inhabil: INHABIL_HANDEL,
+  ikke_betalt: "Handlen er ikke betalt og kan ikke frigives.",
+  allerede: "Pengene er allerede frigivet eller udbetalt.",
+  refusion: "Køberen er ved at få pengene tilbage, så handlen kan ikke frigives.",
+  indsigelse: "Køberen har en indsigelse mod betalingen hos sin bank. Handlen kan ikke frigives, før den er afgjort.",
+  svindelvarsel: 'Der er et tidligt svindelvarsel fra Stripe. Tryk først "Svindelvarsel gennemgået" under Betalinger.',
+  radar_review: "Stripe Radar gennemgår betalingen. Handlen kan ikke frigives, før det er lukket.",
+  forkert_status: "Handlen er allerede afsluttet.",
+  ikke_sendt: "Sælgeren har ikke sendt pakken endnu, så pengene kan ikke frigives.",
+  sag_aaben: "Handlen er markeret som sag. Luk sagen først, hvis pengene skal frigives.",
+  sag: AABEN_KOEBERSAG,
+  ikke_afhentet: "Pakken er ikke afhentet eller er sendt retur, så pengene kan ikke frigives.",
+  kraever_chef: "Handler over 5.000 kr. kan kun frigives af chefen.",
+};
+
 // Afregn saelgeren uden koeberens godkendelse. Kun admin og opefter.
 // Handler med en Stripe-betaling: frigivet_kl saettes i databasen, og
 // beloebet (bud minus 5% saelgergebyr) overfoeres til saelgerens Connect-konto.
@@ -862,7 +897,7 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
   if (!aarsag) throw new BrugerFejl("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
-  afvisInhabil(staffId, handel);
+  await afvisInhabil(admin, staffId, handel);
   await afvisVedAabenKoeberSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
   if (!betaling) throw new BrugerFejl("Handlen har ingen betaling og kan ikke frigives.");
@@ -875,41 +910,43 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
     );
   }
 
-  const { data: frigivet, error } = await admin.rpc("admin_frigiv_handel", {
+  // Databasen afgør alt under lås (20261019010000): inhabilitet (også "har
+  // handlet med"), intet afsendt, staffs markering, sag/anke, svindelvarsel,
+  // ikke-afhentet/returneret pakke, indsigelse og chef over 5.000 kr.
+  const { data: svar, error } = await admin.rpc("admin_frigiv_handel", {
     p_trade: tradeId,
+    p_medarbejder: staffId,
+    p_begrundelse: aarsag,
   });
   if (error) throw new Error(error.message);
-  if (!frigivet) throw new BrugerFejl("Handlen er allerede afsluttet.");
+  const frigiv = (svar ?? {}) as { kode?: string; betaling_id?: string; over_graense?: boolean };
+  if (frigiv.kode !== "ok") {
+    throw new BrugerFejl(FRIGIV_FEJL[frigiv.kode ?? ""] ?? "Handlen kan ikke frigives.");
+  }
+  // Admin-frigivelse over 5.000 kr. (kun chef kan): drift-alarm til chefen.
+  if (frigiv.over_graense) {
+    await logDriftFejl({
+      kilde: "action",
+      hvor: "betaling/admin-frigivelse",
+      fejl: `Handel ${tradeId} er frigivet til sælgeren af BidHamr (over 5.000 kr.) uden købers godkendelse. Kontrollér, at det er rigtigt.`,
+      brugerId: handel.seller_id,
+    });
+  }
 
   // Afregning til sælgeren ("Pengene er frigivet") og besked til køberen.
   // Idempotente nøgler pr. handel; kaster aldrig.
   await sendSaelgerAfregning(tradeId, "bidhamr");
   await sendKoeberAfsluttet(tradeId, "bidhamr");
 
-  let overfoersel: string;
+  // Frigivelsen er logget i moderation_log af databasen (samme transaktion).
+  // Udbetalingen følger alle de almindelige regler (betaling_udbetaling_
+  // blokeret) og prøves igen af cron, hvis den venter eller fejler.
   try {
     const r = await pengeTilSaelger(betaling.id);
-    overfoersel = erSendtTilSaelger(r)
-      ? " (udbetalt til sælgers bank via Stripe)"
-      : r === "gammel_model"
-        ? ` (${OVERFOERSEL_TEKST.gammel_model})`
-        : ` (udbetaling venter: ${r})`;
+    if (!erSendtTilSaelger(r)) console.log("Udbetaling efter admin-frigivelse venter:", tradeId, r);
   } catch (err) {
     console.error("Udbetaling efter admin-frigivelse fejlede (prøves igen af cron):", err);
-    overfoersel = " (udbetaling fejlede - prøves igen automatisk)";
   }
-
-  const beloeb = `Frigivet til sælger${overfoersel}`;
-
-  // Pengene er frigivet - logfejl maa ikke se ud som om intet skete.
-  await logModerationBloedt(admin, {
-    medarbejder_id: staffId,
-    handling: "handel_frigivet",
-    maal_type: "handel",
-    maal_id: tradeId,
-    bruger_id: handel.seller_id,
-    aarsag: `${beloeb} — ${aarsag}`,
-  });
   revaliderSag(tradeId);
 }
 
@@ -927,7 +964,7 @@ async function handelRefunderImpl(formData: FormData): Promise<void> {
   if (!aarsag) throw new BrugerFejl("Angiv en begrundelse.");
 
   const handel = await hentHandelTilSag(admin, tradeId);
-  afvisInhabil(staffId, handel);
+  await afvisInhabil(admin, staffId, handel);
   await afvisVedAabenKoeberSag(admin, tradeId);
   const betaling = await hentBetalingForHandel(tradeId);
 
@@ -1217,6 +1254,16 @@ const OVERFOERSEL_TEKST: Record<string, string> = {
   venter_saldo: "Saldoen på sælgerens Stripe-konto dækker ikke udbetalingen endnu. Den prøves igen automatisk.",
   saldo_afviger: "Saldoen på sælgerens Stripe-konto passer ikke med handlerne. Udbetalinger er stoppet - se /admin/drift.",
   afvist: "Stripe afviste udbetalingen. Se fejlen på betalingen.",
+  // Sikkerhedsnet A (20261019010000).
+  stoppet: "Udbetalinger er stoppet med nødstoppet under Admin → Penge.",
+  frosset: "Sælgerens udbetalinger er frosset, til chefen har set på kontoen (Admin → Penge).",
+  venter_udbetalinger_stoppet: "Udbetalinger er stoppet med nødstoppet under Admin → Penge.",
+  venter_udbetaling_frosset: "Sælgerens udbetalinger er frosset, til chefen har set på kontoen (Admin → Penge).",
+  venter_kraever_godkendelse: "Udbetalingen er over 10.000 kr. og skal godkendes af chefen under Admin → Penge.",
+  venter_fortrydelsesfrist: "Sælgeren er erhverv. Udbetalingen venter, til købers fortrydelsesfrist (14 dage efter levering) er udløbet.",
+  venter_sag: "Handlen har en sag eller anke, der holder pengene.",
+  venter_ikke_afhentet: "Pakken blev ikke afhentet, og der udbetales ikke.",
+  venter_returneret: "Pakken er sendt retur, og der udbetales ikke automatisk.",
 };
 
 type OverfoerselUdfald = { ok: true; overfoert: boolean; besked: string };
@@ -1228,7 +1275,7 @@ export async function prøvOverfoerselIgen(tradeId: string) {
 
     // Handlen tjekkes før nye forsøg gives (databasen tjekker det igen atomisk).
     const handel = await hentHandelTilSag(admin, tradeId);
-    afvisInhabil(staffId, handel);
+    await afvisInhabil(admin, staffId, handel);
     if (handel.status === "annulleret") throw new BrugerFejl(OVERFOERSEL_TEKST.annulleret);
     if (handel.sag_aaben) throw new BrugerFejl(OVERFOERSEL_TEKST.sag_aaben);
 

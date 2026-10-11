@@ -6,17 +6,19 @@ import AdminSidebar, { INGEN_TAELLERE, type MiniStatus } from "@/components/admi
 import AdminTopSoeg from "@/components/admin/AdminTopSoeg";
 import Kvittering from "@/components/admin/Kvittering";
 import { beregnStatus, koePunkter } from "@/lib/admin/statuslinje";
-import { hentErhvervNye, hentStaffTal } from "@/lib/admin/taellere";
+import { hentErhvervNye, hentNoedstopTal, hentStaffTal, type NoedstopTal } from "@/lib/admin/taellere";
 
 // Fælles ramme for hele admin: menu, søgning øverst og kvitteringen efter en
 // handling (<Kvittering />, så den virker på alle sider).
 function Ramme({
   menu,
   erhverv,
+  noedstop,
   children,
 }: {
   menu: React.ReactNode;
   erhverv: boolean;
+  noedstop?: NoedstopTal | null;
   children: React.ReactNode;
 }) {
   // Højden trækker cookie-bannerets højde fra (--samtykke-hoejde), så
@@ -25,6 +27,14 @@ function Ramme({
     <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-admin-bg">
       {menu}
       <main id="admin-indhold" className="min-w-0 flex-1 overflow-auto bg-admin-bg pt-14 lg:pt-0">
+        {/* Nødstop (sikkerhedsnet A): tydelig rød bjælke øverst for al staff.
+            Årsagen vises kun for chefen (hentNoedstopBjaelke). */}
+        {noedstop?.stoppet && (
+          <div role="alert" className="bg-fejl-tekst px-4 py-3 text-sm font-semibold text-white sm:px-6">
+            NØDSTOP: {noedstop.stoppet} er stoppet.
+            {noedstop.aarsag ? ` Årsag: ${noedstop.aarsag}` : ""} Chefen genoptager under Admin → Penge.
+          </div>
+        )}
         <div className="border-b border-admin-kant bg-white/70 px-4 py-2.5 sm:px-6">
           <AdminTopSoeg erhverv={erhverv} />
         </div>
@@ -45,6 +55,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // rollen er kendt. Tællerne deles med siden via cache() (src/lib/admin/taellere.ts).
   const erStaff = (r: string | null) => r === "chef" || r === "admin" || r === "medarbejder";
   const taellerLoefte = hentMinRolle().then((r) => (erStaff(r) ? hentStaffTal() : null));
+  const noedstopLoefte = hentMinRolle().then((r) => (erStaff(r) ? hentNoedstopTal() : null));
   // Erhverv-tælleren (nye henvendelser) kun for chef og saelger.
   const erhvervLoefte = hentMinRolle().then((r) => (r === "chef" || r === "saelger" ? hentErhvervNye() : 0));
   const [user, rolle] = await Promise.all([hentBruger(), hentMinRolle()]);
@@ -77,13 +88,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const t = await taellerLoefte;
   if (!t) redirect("/");
   const antalErhverv = await erhvervLoefte;
-  const status = beregnStatus(
-    koePunkter({ dsaOverskredet: t.dsaOverskredet, dsa: t.dsa, sager: t.sager, betalinger: t.betalinger }),
-  );
+  const noedstop = await noedstopLoefte;
+  const status = beregnStatus([
+    ...(noedstop?.stoppet
+      ? [{ tone: "roed" as const, tekst: noedstop.udbetalinger ? "Udbetalinger stoppet (nødstop)" : "Nye betalinger stoppet (nødstop)", href: rolle === "chef" ? "/admin/penge" : "/admin" }]
+      : []),
+    ...koePunkter({ dsaOverskredet: t.dsaOverskredet, dsa: t.dsa, sager: t.sager, betalinger: t.betalinger }),
+  ]);
 
   return (
     <Ramme
       erhverv={false}
+      noedstop={noedstop}
       menu={
         <AdminSidebar
           rolle={rolle}

@@ -87,6 +87,11 @@ export async function koerBetalingsovervaagning(tving = false): Promise<Overvaag
   await tjek("svindelvarsler", () => svindelvarselEvents(admin, alarm));
   await tjek("saldo", () => saldoAfstemning(admin, r, alarm));
   await tjek("gamle midler", () => gamleMidler(admin, alarm));
+  // G. Sikkerhedsnet A: hver sælgerkontos udbetalingsplan (dagligt pr. konto).
+  await tjek("udbetalingsplan", async () => {
+    const { kontrollerAllePlaner } = await import("@/lib/betaling/kontoVagt");
+    await kontrollerAllePlaner();
+  });
   return r;
 }
 

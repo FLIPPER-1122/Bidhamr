@@ -77,6 +77,9 @@ const CONNECT_EVENTS = new Set<string>([
   "account.updated",
   "account.application.deauthorized",
   "capability.updated",
+  // Sikkerhedsnet A: en udbetaling, BidHamr ikke har lavet (fx Instant
+  // Payout), fanges allerede, når den oprettes.
+  "payout.created",
   "payout.paid",
   "payout.failed",
   "payout.canceled",
@@ -112,6 +115,31 @@ async function spejlKonto(kontoId: string, eventType: string): Promise<void> {
   }
 }
 
+// En gennemført PaymentIntent uden BidHamr-metadata. Firmaers abonnementer
+// (Stripe Billing - kunden er et firma) er forventede; alt andet er ukendt for
+// databasen og giver én drift-alarm pr. betaling. Kaster aldrig.
+async function alarmUkendtBetaling(pi: Stripe.PaymentIntent): Promise<void> {
+  try {
+    const kunde = typeof pi.customer === "string" ? pi.customer : (pi.customer?.id ?? null);
+    if (kunde) {
+      const { data } = await createAdminClient()
+        .from("firmaer")
+        .select("id")
+        .eq("stripe_customer_id", kunde)
+        .limit(1);
+      if ((data ?? []).length > 0) return;
+    }
+    await alarmPrTilfaelde({
+      noegle: `ukendt-pi:${pi.id}`,
+      kilde: "webhook",
+      hvor: "betaling/ukendt-betaling",
+      fejl: `PaymentIntent ${pi.id} er gennemført på BidHamrs Stripe-konto, men den hører hverken til en handel eller et firmas abonnement. Kontrollér betalingen i Stripe.`,
+    });
+  } catch (err) {
+    console.error("alarmUkendtBetaling fejlede:", pi.id, err);
+  }
+}
+
 async function haandter(event: Stripe.Event): Promise<void> {
   if (event.account && !CONNECT_EVENTS.has(event.type)) return;
 
@@ -123,9 +151,23 @@ async function haandter(event: Stripe.Event): Promise<void> {
       // Hent den aktuelle PaymentIntent i stedet for at stole på event-
       // payloaden: events kan komme i forkert rækkefølge.
       const fraEvent = event.data.object as Stripe.PaymentIntent;
-      if (!fraEvent.metadata?.betaling_id) return; // ikke en BidHamr-handel
+      if (!fraEvent.metadata?.betaling_id) {
+        // Ikke en BidHamr-handel. En gennemført betaling, som hverken er en
+        // handel eller et firmas abonnement, er ukendt for databasen: alarm
+        // (sikkerhedsnet A).
+        if (event.type === "payment_intent.succeeded") await alarmUkendtBetaling(fraEvent);
+        return;
+      }
       const pi = await getStripe().paymentIntents.retrieve(fraEvent.id);
       const resultat = await spejlPaymentIntent(pi);
+      if (resultat === "ukendt" && pi.status === "succeeded") {
+        await alarmPrTilfaelde({
+          noegle: `ukendt-pi:${pi.id}`,
+          kilde: "webhook",
+          hvor: "betaling/ukendt-betaling",
+          fejl: `PaymentIntent ${pi.id} er gennemført hos Stripe med en BidHamr-handel i metadata, men databasen kender den ikke. Pengene kan være trukket uden en handel - kontrollér og refundér i Stripe.`,
+        });
+      }
       console.log(`Stripe ${event.type}: ${pi.id} -> ${resultat}`);
       return;
     }
@@ -136,6 +178,14 @@ async function haandter(event: Stripe.Event): Promise<void> {
       const fraEvent = event.data.object as Stripe.Charge;
       if (!fraEvent.payment_intent || !fraEvent.transfer_data?.destination) return;
       const resultat = await spejlDestinationCharge(fraEvent.id);
+      if (resultat === "ukendt" && event.type === "charge.succeeded") {
+        await alarmPrTilfaelde({
+          noegle: `ukendt-charge:${fraEvent.id}`,
+          kilde: "webhook",
+          hvor: "betaling/ukendt-betaling",
+          fejl: `Charge ${fraEvent.id} til en sælgerkonto er gennemført hos Stripe, men databasen kender den ikke. Kontrollér betalingen i Stripe.`,
+        });
+      }
       console.log(`Stripe ${event.type}: ${fraEvent.id} -> ${resultat}`);
       return;
     }
@@ -238,6 +288,7 @@ async function haandter(event: Stripe.Event): Promise<void> {
       return;
     }
 
+    case "payout.created":
     case "payout.paid":
     case "payout.failed":
     case "payout.canceled": {

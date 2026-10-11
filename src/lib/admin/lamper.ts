@@ -5,12 +5,13 @@ import { CRON_ADVARSEL_MIN, hentAlarmStatus, hentCronRute } from "@/lib/driftDat
 import { alarmModtagere } from "@/lib/driftAlarm";
 import { erTestdatabase } from "@/lib/miljoe";
 import { noeglensTilstand } from "@/lib/stripe";
+import type { NoedstopTal } from "@/lib/admin/taellere";
 
 // Systemlamper på forsiden (docs/ADMIN-REDESIGN.md 3.2), kun admin og chef.
 // Trin 1-2: KUN de lamper, der kan beregnes ud fra data, vi har i dag
-// (drift-data og miljøet). Nødstop, daglig afstemning, fakturering og MitID
-// kommer i trin 3 (admin_status()) - de vises slet ikke indtil da, så der
-// aldrig står en grøn lampe, vi ikke kan stå inde for.
+// (drift-data, miljøet og sikkerhedsnet A's nødstop). Daglig afstemning
+// (sikkerhedsnet B), fakturering og MitID kommer i trin 3 - de vises slet ikke
+// indtil da, så der aldrig står en grøn lampe, vi ikke kan stå inde for.
 // Ingen nøgler, URL'er eller adresser sendes til siden - kun tone og tekst.
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -30,7 +31,7 @@ function siden(iso: string, nu: number): string {
   return `${Math.floor(t / 24)} dage siden`;
 }
 
-export async function hentLamper(admin: Admin, opts: { fragtTilHandling: number }): Promise<Lampe[]> {
+export async function hentLamper(admin: Admin, opts: { fragtTilHandling: number; noedstop: NoedstopTal }): Promise<Lampe[]> {
   const nu = Date.now();
   const test = erTestdatabase();
   const fra24 = new Date(nu - 24 * 60 * MIN).toISOString();
@@ -83,6 +84,14 @@ export async function hentLamper(admin: Admin, opts: { fragtTilHandling: number 
       href: "/admin/drift",
     });
   }
+
+  // Nødstop (sikkerhedsnet A, hentNoedstop). Rød lampe = noget er stoppet.
+  // Statuslinjen viser nødstoppet for sig selv (lampen springes over dér).
+  lamper.push(
+    opts.noedstop.stoppet
+      ? { navn: "Nødstop", tone: "roed", tekst: `TIL · ${opts.noedstop.stoppet}` }
+      : { navn: "Nødstop", tone: "groen", tekst: "fra" },
+  );
 
   // Test eller live: Stripe-nøglen og databasen skal passe sammen.
   const noegle = noeglensTilstand();

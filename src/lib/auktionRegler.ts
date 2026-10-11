@@ -55,7 +55,11 @@ export function mindsteNaesteBud(nuvaerendeBud: number | null, startpris: number
 // (auctions_beskyt_ny, auctions_beskyt_kolonner, rediger_auktion,
 // genopsaet_auktion - 20261005020000_startpris_anke.sql).
 export const MINDSTE_STARTPRIS = 1;
-export const MAKS_STARTPRIS = 9_999_999_999;
+// Beløbsloft (sikkerhedsnet A, chefens valg - til Filips godkendelse):
+// startpris, bud og maksimum højst 500.000 kr. Databasen håndhæver det
+// (beloebsloft_*, 20261019010000).
+export const MAKS_STARTPRIS = 500_000;
+export const MAKS_BUD = 500_000;
 export const STARTPRIS_FOR_LAV = "Startprisen skal være mindst 1 kr.";
 
 export function valideStartpris(startpris: unknown): string | null {
@@ -64,7 +68,7 @@ export function valideStartpris(startpris: unknown): string | null {
   }
   if (!Number.isInteger(startpris)) return "Startprisen skal være i hele kroner.";
   if (startpris < MINDSTE_STARTPRIS) return STARTPRIS_FOR_LAV;
-  if (startpris > MAKS_STARTPRIS) return "Startprisen er for høj.";
+  if (startpris > MAKS_STARTPRIS) return "Startprisen kan højst være 500.000 kr.";
   return null;
 }
 
