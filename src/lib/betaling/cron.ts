@@ -85,6 +85,7 @@ import { koerBetalingsovervaagning } from "@/lib/betaling/overvaagning";
 import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { koerFakturaKoe } from "@/lib/faktura/koe";
+import { hentNoedstop } from "@/lib/betaling/noedstop";
 
 const TIME = 60 * 60 * 1000;
 
@@ -297,11 +298,15 @@ export async function koerBetalingsCron() {
   //    Påmindelserne regnes fra fristen, så de også passer, når sælgeren har
   //    forlænget den (handel_forlaeng_betalingsfrist nulstiller begge felter,
   //    og nøglen indeholder fristen, så køberen påmindes igen).
+  //    Under et nødstop for nye betalinger kan køberne ikke betale: ingen
+  //    påmindelser (fristen forlænges og felterne nulstilles, når chefen
+  //    genoptager - stripe_noedstop_saet).
   const nu = Date.now();
-  for (const [felt, timerFoerFrist] of [
+  const betalingerStoppet = (await hentNoedstop(true)).nyeBetalingerStoppet;
+  for (const [felt, timerFoerFrist] of betalingerStoppet ? [] : ([
     ["paamindelse_40_sendt_kl", 8],
     ["paamindelse_24_sendt_kl", 24],
-  ] as const) {
+  ] as const)) {
     const { data: mangler } = await admin
       .from("betalinger")
       .select("*")

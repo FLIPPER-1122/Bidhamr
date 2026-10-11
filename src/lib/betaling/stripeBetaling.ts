@@ -27,6 +27,7 @@ import { applicationFeeOere, totalOere } from "@/lib/betaling/beregn";
 import { sendIndsigelseTilSaelger } from "@/lib/betaling/indsigelseBeskeder";
 import { kontoSpejl, nyKontoParametre, sikrKontoopsaetning } from "@/lib/betaling/connect";
 import { BetalingsmodelFejl, kraevDestination } from "@/lib/betaling/model";
+import { hentNoedstop, NYE_BETALINGER_STOPPET_TEKST } from "@/lib/betaling/noedstop";
 
 // Offentlig https-adresse til Stripes business_profile.url. Lokalt
 // (http/localhost) bruges produktionsdomaenet, da Stripe afviser andet.
@@ -544,6 +545,10 @@ export async function sikrPaymentIntent(
     }
     throw err;
   }
+  // Nødstop (chefen, Admin → Penge): ingen nye betalinger - heller ikke en
+  // eksisterende PaymentIntent gives videre til betaling. Databasen afviser
+  // også at gemme en ny PaymentIntent (betalinger_noedstop_pi).
+  if ((await hentNoedstop()).nyeBetalingerStoppet) throw new BetalingsFejl(NYE_BETALINGER_STOPPET_TEKST);
   if (betaling.pengemodel !== "destination") {
     await alarmGammelModel(betaling.id, "Betaling");
     throw new BetalingsFejl("Betalingen kunne ikke startes. Skriv til support@bidhamr.dk, så hjælper vi dig.");
@@ -589,14 +594,17 @@ export async function sikrPaymentIntent(
     // buddet: beløbet bringes i trit med databasens total. Klienten har
     // aldrig indflydelse på beløbet. Gebyret følger med.
     const fee = Number(betaling.application_fee_oere);
+    // Tvungen 3D Secure (sikkerhedsnet A): også PaymentIntents oprettet før.
+    const mangler3ds = eksisterende.payment_method_options?.card?.request_three_d_secure !== "any";
     if (
-      (eksisterende.amount !== beloeb || eksisterende.application_fee_amount !== fee) &&
+      (eksisterende.amount !== beloeb || eksisterende.application_fee_amount !== fee || mangler3ds) &&
       OPDATERBARE.includes(eksisterende.status)
     ) {
       return stripe.paymentIntents.update(eksisterende.id, {
         amount: beloeb,
         application_fee_amount: fee,
         metadata: { beskyttelse: betaling.beskyttelse ? "ja" : "nej" },
+        payment_method_options: { card: { request_three_d_secure: "any" } },
       });
     }
     return eksisterende;
@@ -636,6 +644,11 @@ export async function sikrPaymentIntent(
       customer: kunde,
       // Kort, MobilePay, Apple Pay, Google Pay - styres fra Stripe Dashboard.
       automatic_payment_methods: { enabled: true },
+      // Tvungen 3D Secure på alle kortbetalinger (sikkerhedsnet A, 11. okt.
+      // 2026): Stripe beder banken om 3D Secure, når kortet understøtter det
+      // (helst uden udfordring - banken afgør det). Wallets (Apple Pay,
+      // Google Pay) og MobilePay godkendes i appen og påvirkes ikke.
+      payment_method_options: { card: { request_three_d_secure: "any" } },
       transfer_group: `handel_${b.trade_id}`,
       description: `BidHamr handel ${b.trade_id}`,
       on_behalf_of: b.saelger_stripe_konto,
@@ -1568,6 +1581,14 @@ export async function registrerRefunderet(
   // Destination (trin 4): sælgeren skal stå med 0 på handlen bagefter - også
   // når refusionen er lavet i Stripe-dashboardet. Kaster aldrig.
   if (String(data) === "refunderet") {
+    // "BidHamr dækker" afsluttes (markeringen "refunderet efter overførsel"
+    // er forventet og lukkes). Gør intet for andre betalinger.
+    const { error: aFejl } = await createAdminClient().rpc("betaling_bidhamr_daekker_afslut", {
+      p_payment_intent: paymentIntentId,
+    });
+    if (aFejl && !["PGRST202", "42883"].includes(aFejl.code ?? "")) {
+      console.error("betaling_bidhamr_daekker_afslut:", paymentIntentId, aFejl.message);
+    }
     const { kontrollerDestinationRefusion } = await import("@/lib/betaling/refusion");
     await kontrollerDestinationRefusion(paymentIntentId);
   }
@@ -1584,11 +1605,34 @@ export async function spejlRefusion(charge: Stripe.Charge): Promise<string> {
       ? charge.payment_intent
       : (charge.payment_intent?.id ?? null);
   if (!piId) return "ingen_payment_intent";
-  const { data: bestilt } = await createAdminClient()
+  type Bestilt = {
+    refusion_oere: number | null;
+    refusion_anmodet_kl: string | null;
+    bidhamr_daekker_oere?: number | null;
+    bidhamr_daekker_kl?: string | null;
+  };
+  let { data: raa, error: bFejl } = await createAdminClient()
     .from("betalinger")
-    .select("refusion_oere, refusion_anmodet_kl")
+    .select("refusion_oere, refusion_anmodet_kl, bidhamr_daekker_oere, bidhamr_daekker_kl")
     .eq("stripe_payment_intent_id", piId)
-    .maybeSingle<{ refusion_oere: number | null; refusion_anmodet_kl: string | null }>();
+    .maybeSingle<Bestilt>();
+  if (bFejl && erManglerKolonne(bFejl)) {
+    // 20261019010000 er ikke kørt endnu.
+    ({ data: raa, error: bFejl } = await createAdminClient()
+      .from("betalinger")
+      .select("refusion_oere, refusion_anmodet_kl")
+      .eq("stripe_payment_intent_id", piId)
+      .maybeSingle<Bestilt>());
+  }
+  if (bFejl) throw new Error(`spejlRefusion: ${bFejl.message}`);
+  // "BidHamr dækker" (sikkerhedsnet A): refusionen efter udbetaling er bestilt
+  // af chefen med det låste beløb - den er ikke en "delvis refusion i Stripe".
+  const bestilt = raa
+    ? {
+        refusion_oere: raa.refusion_oere ?? raa.bidhamr_daekker_oere ?? null,
+        refusion_anmodet_kl: raa.refusion_anmodet_kl ?? raa.bidhamr_daekker_kl ?? null,
+      }
+    : null;
   // Der er refunderet MERE end sagens afgørelse (fx en ekstra refusion i
   // Stripe Dashboard, eller BidHamr Beskyttelse refunderet ved en fejl):
   // registreres som refunderet, men markeres til admin. Ingen beløb i teksten.
@@ -1714,6 +1758,51 @@ async function refusionFejletEfterRefunderet(
   return "refusion_genaabnet";
 }
 
+// Sikkerhedsnet A - alarmer ved indsigelser (én pr. indsigelse):
+//   - på en betaling, der allerede er refunderet (køberen kan få pengene to
+//     gange: svar banken med refusionen som bevis),
+//   - på et firmas abonnementsfaktura (ingen handel - staff svarer i Stripe),
+//   - på en betaling, databasen ikke kender.
+// Kaster aldrig.
+async function alarmIndsigelse(d: Stripe.Dispute, piId: string | null, chId: string, resultat: string): Promise<void> {
+  try {
+    const { alarmPrTilfaelde } = await import("@/lib/betaling/driftTilfaelde");
+    const admin = createAdminClient();
+    if (resultat === "ukendt") {
+      const charge = await getStripe().charges.retrieve(chId);
+      const kunde = typeof charge.customer === "string" ? charge.customer : (charge.customer?.id ?? null);
+      const { data: firma } = kunde
+        ? await admin.from("firmaer").select("id").eq("stripe_customer_id", kunde).limit(1)
+        : { data: [] as { id: string }[] };
+      const abonnement = (firma ?? []).length > 0;
+      await alarmPrTilfaelde({
+        noegle: `indsigelse-${abonnement ? "abonnement" : "ukendt"}:${d.id}`,
+        hvor: abonnement ? "betaling/indsigelse-abonnement" : "betaling/indsigelse-ukendt",
+        fejl: abonnement
+          ? `Indsigelse ${d.id} (status '${d.status}') på et firmas abonnementsbetaling (charge ${chId}). Svar banken i Stripe-dashboardet inden fristen, og tag stilling til firmaets abonnement.`
+          : `Indsigelse ${d.id} (status '${d.status}') på en betaling, databasen ikke kender (charge ${chId}). Kontrollér betalingen i Stripe.`,
+      });
+      return;
+    }
+    if (!piId) return;
+    const { data: b } = await admin
+      .from("betalinger")
+      .select("id, trade_id, refunderet_kl, seller_id")
+      .eq("stripe_payment_intent_id", piId)
+      .maybeSingle<{ id: string; trade_id: string; refunderet_kl: string | null; seller_id: string }>();
+    if (b?.refunderet_kl) {
+      await alarmPrTilfaelde({
+        noegle: `indsigelse-efter-refusion:${d.id}`,
+        hvor: "betaling/indsigelse-efter-refusion",
+        fejl: `Indsigelse ${d.id} (status '${d.status}') på handel ${b.trade_id}, som allerede er refunderet til køberen. Køberen kan få pengene to gange - svar banken i Stripe med refusionen som bevis inden fristen.`,
+        brugerId: b.seller_id,
+      });
+    }
+  } catch (err) {
+    console.error("alarmIndsigelse fejlede:", d.id, err);
+  }
+}
+
 // Spejler en indsigelse (chargeback) fra Stripe. Disputen hentes frisk, så
 // events i forkert rækkefølge giver den aktuelle status. Åben eller tabt
 // indsigelse blokerer frigivelse og udbetaling og markeres til admin. Er den
@@ -1742,6 +1831,7 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
   if (resultat === "ukendt") {
     console.error("Indsigelse på ukendt betaling:", d.id, piId, chId);
   }
+  await alarmIndsigelse(d, piId, chId, resultat);
   // Sælgeren får besked, når indsigelsen åbnes (så varen ikke sendes) og når
   // den er afgjort (Niels F04). Én besked pr. dispute og udfald.
   if (resultat === "blokeret" || resultat === "tabt" || resultat === "afsluttet") {
@@ -2054,7 +2144,10 @@ async function fjernAfvistKort(userId: string, pmId: string): Promise<void> {
 // ------------------------------------------------------------------ Connect
 
 // Markering af sælgerens udbetalingskonto til admin (/admin/betalinger).
-// Teksten må aldrig indeholde beløb (medarbejdere ser den).
+// Teksten må aldrig indeholde beløb (medarbejdere ser den). Sælgeren kan læse
+// sin egen betalingsprofil (RLS + select('*') i appen og på hjemmesiden):
+// teksten må derfor aldrig afsløre svindelmistanke eller en frysningsgrund -
+// detaljerne hører til i drift-alarmen eller saelger_frysning_grunde.
 export async function markerUdbetalingskonto(
   stripeAccountId: string,
   aarsag: string,
@@ -2193,10 +2286,18 @@ export async function spejlConnectKonto(konto: Stripe.Account): Promise<string |
 
   // Stripe har afvist kontoen (fx svindel eller vilkår). Kun admin kan hjælpe.
   if (spaerret?.startsWith("rejected.") && profil.connect_spaerret_aarsag !== spaerret) {
+    // Neutral tekst på profilen (sælgeren kan læse den); Stripes kode i
+    // drift-alarmen.
     await markerUdbetalingskonto(
       konto.id,
-      `Stripe har afvist sælgerens udbetalingskonto (${spaerret}). Betalinger og udbetalinger kan ikke gennemføres.`,
+      "Udbetalingskontoen kræver kontrol hos BidHamr. Betalinger og udbetalinger kan ikke gennemføres - se drift-loggen.",
     );
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "connect/afvist",
+      fejl: `Stripe har afvist sælgerkonto ${konto.id} (${spaerret}). Betalinger og udbetalinger kan ikke gennemføres.`,
+      brugerId: userId,
+    });
   }
 
   if (!frakoblet) await kontrollerUdbetalingsplan(konto.id, profil, spejl.connect_udbetalingsplan);
@@ -2214,6 +2315,17 @@ async function kontrollerUdbetalingsplan(
   plan: string | null,
 ): Promise<void> {
   if (plan === "manual") return;
+  // En kendt plan, der ikke er manuel (daily/weekly/monthly): sælgeren (eller
+  // en Stripe-indstilling) har ændret den. Planen sættes tilbage, og
+  // sælgerens udbetalinger fryses, til chefen har set på det (sikkerhedsnet A).
+  // Undtagelse fra "kaster aldrig": kan sælgeren ikke fryses, kastes fejlen
+  // (efter drift-alarm) - webhooken svarer 500, og Stripe prøver igen; før en
+  // payout stopper det udbetalingen.
+  if (plan) {
+    const { retPlanOgFrys } = await import("@/lib/betaling/kontoVagt");
+    await retPlanOgFrys(kontoId, profil.user_id, plan);
+    return;
+  }
   try {
     const rettet = await getStripe().accounts.update(kontoId, {
       settings: { payouts: { schedule: { interval: "manual" } } },
@@ -2317,6 +2429,19 @@ export async function spejlUdbetaling(
   if (bidhamr !== null) return bidhamr;
 
   const { alarmPrTilfaelde } = await import("@/lib/betaling/driftTilfaelde");
+  // Negativ udbetaling (amount < 0): Stripe henter et underskud på sælgerens
+  // konto fra hans bank (fx debit_negative_balances efter en refusion eller
+  // indsigelse). Der er ikke sendt penge ud - ingen frysning og ingen
+  // markering, kun én drift-alarm pr. udbetaling (sikkerhedsnet A).
+  if (Number(payout.amount) < 0) {
+    await alarmPrTilfaelde({
+      noegle: `negativ-payout:${payout.id}`,
+      hvor: "betaling/negativ-udbetaling",
+      fejl: `Stripe har hentet ${(-Number(payout.amount) / 100).toFixed(2)} ${String(payout.currency ?? "dkk").toUpperCase()} fra sælgerkonto ${stripeAccountId}s bank (udbetaling ${payout.id}, status '${payout.status}') for at dække et underskud på kontoen. Kontrollér hvorfor saldoen var negativ (refusion eller indsigelse) i Stripe.`,
+      brugerId: profil.user_id,
+    });
+    return `negativ_${payout.status}`;
+  }
   const ny = await alarmPrTilfaelde({
     noegle: `fremmed-payout:${payout.id}`,
     hvor: "betaling/fremmed-udbetaling",
@@ -2324,11 +2449,17 @@ export async function spejlUdbetaling(
     brugerId: profil.user_id,
   });
   if (ny) {
+    // Neutral tekst: sælgeren kan læse sin betalingsprofil. Udbetalingens id
+    // står i drift-alarmen ovenfor og i saelger_frysning_grunde (kun staff).
     await markerUdbetalingskonto(
       stripeAccountId,
-      `Stripe har lavet en udbetaling fra sælgerens konto, som BidHamr ikke har lavet (${payout.id}). Kontrollér kontoen og saldoen i Stripe.`,
+      "Udbetalingskontoen kræver kontrol hos BidHamr.",
     );
   }
+  // Sikkerhedsnet A: sælgeren fryses (nye auktioner, bud og udbetalinger),
+  // ventende handler markeres, og chefen får drift-alarm. Idempotent.
+  const { frysVedFremmedUdbetaling } = await import("@/lib/betaling/kontoVagt");
+  await frysVedFremmedUdbetaling(stripeAccountId, profil.user_id, payout);
   return `fremmed_${payout.status}`;
 }
 

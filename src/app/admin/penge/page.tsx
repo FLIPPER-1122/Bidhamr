@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStaffRole } from "@/lib/adminAuth";
+import Pengesikkerhed from "@/components/admin/penge/Pengesikkerhed";
 import {
   HOLDT_GRAENSE,
   PERIODER,
@@ -623,6 +624,8 @@ export default async function AdminPenge({
           </nav>
         </div>
       </div>
+
+      <Pengesikkerhed />
 
       <Oekonomioverblik o={oekonomi} besked={besked} />
 
