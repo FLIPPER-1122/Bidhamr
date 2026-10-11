@@ -178,7 +178,7 @@ export default function PakkeshopVaelger({
         {/* Hoved: titel, luk og søgning */}
         <div className="border-b border-kant px-4 pt-4 pb-3 sm:px-6">
           <div className="flex items-center justify-between gap-3">
-            <h2 id={`${id}-titel`} className="font-serif text-[20px] leading-tight lg:text-[22px]">
+            <h2 id={`${id}-titel`} className="text-[20px] leading-tight lg:text-[22px]">
               Vælg pakkeshop
             </h2>
             <button

@@ -154,7 +154,7 @@ export default function OpretSagForm({
         </div>
       ) : (
         <>
-        <h2 id={`${id}-titel`} className="font-serif text-xl font-semibold text-tekst">
+        <h2 id={`${id}-titel`} className="text-xl font-semibold text-tekst">
           Der er et problem med min vare
         </h2>
         <p className="mt-1 text-sm text-tekst-daempet">

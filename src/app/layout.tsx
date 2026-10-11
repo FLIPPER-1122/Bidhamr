@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
 import { cookies } from "next/headers";
-import { Inter, Fraunces } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidevisning from "@/components/statistik/Sidevisning";
 import CookieBanner from "@/components/samtykke/CookieBanner";
@@ -11,13 +11,6 @@ import { SAMTYKKE_COOKIE, gyldigSamtykkeVaerdi } from "@/lib/samtykke";
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
-  display: "swap",
-});
-
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  weight: ["600"],
-  variable: "--font-fraunces",
   display: "swap",
 });
 
@@ -61,7 +54,7 @@ export default async function RootLayout({
   return (
     <html
       lang="da"
-      className={`${inter.variable} ${fraunces.variable} h-full antialiased`}
+      className={`${inter.variable} h-full antialiased`}
     >
       <body className="font-sans min-h-full flex flex-col" suppressHydrationWarning>
         {children}

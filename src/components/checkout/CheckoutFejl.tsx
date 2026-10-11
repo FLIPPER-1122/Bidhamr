@@ -7,7 +7,7 @@ export default function CheckoutFejl({ handelSti, tekst }: { handelSti: string; 
   return (
     <main className="flex-1 px-4 pt-6 pb-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-2xl rounded-[14px] border border-fejl-kant bg-fejl-bg p-6 text-fejl-tekst">
-        <h1 className="font-serif text-[22px] leading-tight font-semibold">Betalingen kunne ikke vises</h1>
+        <h1 className="text-[22px] leading-tight font-semibold">Betalingen kunne ikke vises</h1>
         <p className="mt-2 text-sm">{tekst}</p>
         <div className="mt-4 flex flex-wrap items-center gap-4">
           <Link href={`${handelSti}?vis=handel`} className="btn btn-sekundaer">

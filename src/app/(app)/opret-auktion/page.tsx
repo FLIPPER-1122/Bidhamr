@@ -25,7 +25,7 @@ export default async function OpretAuktionPage({
   return (
     <main className="flex flex-1 justify-center px-4 py-8 sm:px-6 lg:py-10">
       <div className="w-full max-w-2xl">
-        <h1 className="font-serif text-[26px] font-semibold text-tekst sm:text-[32px]">
+        <h1 className="text-[26px] font-semibold text-tekst sm:text-[32px]">
           Opret auktion
         </h1>
 

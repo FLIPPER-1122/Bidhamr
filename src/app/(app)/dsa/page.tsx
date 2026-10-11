@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     "Sådan anmelder du ulovligt indhold på BidHamr, sådan følger du din anmeldelse, og sådan klager du over en afgørelse.",
 };
 
-const h2 = "font-serif text-[20px] leading-tight font-semibold text-tekst sm:text-[22px]";
+const h2 = "text-[20px] leading-tight font-semibold text-tekst sm:text-[22px]";
 const p = "mt-2 text-[15px] leading-relaxed text-tekst-daempet";
 const kort = "rounded-[14px] border border-kant bg-white p-5 sm:p-6";
 
@@ -60,7 +60,7 @@ export default function DsaSide() {
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
       <div className="max-w-3xl">
-        <h1 className="font-serif text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
+        <h1 className="text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
           Ulovligt indhold og dine rettigheder
         </h1>
         <p className="mt-2 text-base text-tekst-daempet">
@@ -75,7 +75,7 @@ export default function DsaSide() {
             <span className="grid h-[38px] w-[38px] place-items-center rounded-lg bg-groen-lys text-groen-mork">
               <Ikon navn={h.ikon} className="h-[18px] w-[18px]" />
             </span>
-            <h2 id={`handling-${h.id}`} className="mt-3 font-serif text-[18px] leading-tight font-semibold text-tekst">
+            <h2 id={`handling-${h.id}`} className="mt-3 text-[18px] leading-tight font-semibold text-tekst">
               {h.titel}
             </h2>
             <p className="mt-1.5 flex-1 text-sm leading-relaxed text-tekst-daempet">{h.tekst}</p>

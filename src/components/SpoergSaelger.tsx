@@ -160,7 +160,7 @@ export default function SpoergSaelger({
   return (
     <section id="spoergsmaal" aria-labelledby="spoergsmaal-overskrift" className="scroll-mt-24">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="spoergsmaal-overskrift" className="font-serif text-[17px] font-semibold text-tekst sm:text-lg">
+        <h2 id="spoergsmaal-overskrift" className="text-[17px] font-semibold text-tekst sm:text-lg">
           Spørg sælger
         </h2>
         {erSaelger && auktionKoerer && !erLaast && (

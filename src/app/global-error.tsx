@@ -32,7 +32,7 @@ export default function GlobalFejl({
       >
         <title>Noget gik galt · BidHamr</title>
         <div style={{ maxWidth: 420, textAlign: "center" }}>
-          <h1 style={{ fontSize: "1.5rem", margin: 0, fontFamily: "Georgia, serif", fontWeight: 600 }}>Noget gik galt</h1>
+          <h1 style={{ fontSize: "1.5rem", margin: 0, fontWeight: 700, letterSpacing: "-0.01em" }}>Noget gik galt</h1>
           <p style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "#737373" }}>
             Siden kunne ikke vises. Prøv igen om lidt.
             {error.digest && (

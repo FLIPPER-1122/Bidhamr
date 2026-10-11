@@ -47,7 +47,7 @@ export default async function FragtTestSide({
   if (!erTestdatabase()) {
     return (
       <main className="mx-auto w-full max-w-[1280px] px-4 py-8">
-        <h1 className="font-serif text-[26px] font-semibold text-tekst">Fragt-test</h1>
+        <h1 className="text-[26px] font-semibold text-tekst">Fragt-test</h1>
         <p className="mt-2 text-tekst-daempet">Siden virker kun mod testdatabasen.</p>
       </main>
     );
@@ -95,7 +95,7 @@ export default async function FragtTestSide({
 
   return (
     <main className="mx-auto w-full max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className="font-serif text-[26px] font-semibold leading-tight text-tekst sm:text-[32px]">Fragt-test</h1>
+      <h1 className="text-[26px] font-semibold leading-tight text-tekst sm:text-[32px]">Fragt-test</h1>
       <p className="mt-2 max-w-[65ch] text-[15px] text-tekst-daempet">
         Opret en testforsendelse, se labelen, og ryk pakken frem uden GLS. Siden findes kun i
         udviklingsmiljøet mod testdatabasen.
@@ -113,7 +113,7 @@ export default async function FragtTestSide({
       )}
 
       <section className="mt-8 rounded-xl border border-kant bg-white p-6">
-        <h2 className="font-serif text-xl font-semibold text-tekst">Opret testforsendelse</h2>
+        <h2 className="text-xl font-semibold text-tekst">Opret testforsendelse</h2>
         <form action={opretTestforsendelse} className="mt-4 flex flex-wrap items-end gap-3">
           <label className="text-sm">
             <span className="block text-tekst-daempet">Handels-id (betalt, med forsendelse)</span>
@@ -142,7 +142,7 @@ export default async function FragtTestSide({
       </section>
 
       <section className="mt-8 space-y-4">
-        <h2 className="font-serif text-xl font-semibold text-tekst">Seneste forsendelser</h2>
+        <h2 className="text-xl font-semibold text-tekst">Seneste forsendelser</h2>
         {(forsendelser ?? []).length === 0 && <p className="text-sm text-tekst-daempet">Ingen endnu.</p>}
         {(forsendelser ?? []).map((f) => (
           <article key={f.id} className="rounded-xl border border-kant bg-white p-5 text-sm">

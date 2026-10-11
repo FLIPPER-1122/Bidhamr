@@ -337,7 +337,7 @@ export default function SagVisning({
       className="scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="sag-titel" className="font-serif text-xl font-semibold text-tekst">
+        <h2 id="sag-titel" className="text-xl font-semibold text-tekst">
           {sag.erKoeber ? "Din sag" : "Sag fra køberen"}
         </h2>
         <SagStatusBadge status={sag.status} />

@@ -63,7 +63,10 @@
 
   /* Skrifttyper – variablerne sættes af next/font i layout.tsx */
   --font-sans: var(--font-inter), system-ui, sans-serif;
-  --font-serif: var(--font-fraunces), Georgia, serif;
+  /* Sikkerhedsnet for grene, der flettes senere: font-serif giver nu også
+     Inter. Brug det ALDRIG i ny kode – overskrifter skal ikke have en
+     skrift-klasse (DESIGN.md afsnit 2). */
+  --font-serif: var(--font-sans);
 
   /* Radier (DESIGN.md afsnit 5) */
   --radius-md: 8px;
@@ -92,22 +95,25 @@ body {
      next/font-variablerne ikke igennem. */
 }
 
-/* Skrifttypen ligger i base-laget, så font-sans på en overskrift virker
-   (fx små sektionsoverskrifter i menuer). Vægten står uden for laget med
-   vilje: Fraunces er kun indlæst i 600, så font-bold på en h1 må ikke give
-   en kunstigt fed serif. Overskrifter med font-sans styrer selv vægten. */
+/* Overskrifter bruger samme sans-serif som brødteksten (Inter, arves fra
+   html via font-sans). Ingen serif nogen steder (Filip, 11. okt. 2026).
+   Hierarkiet bæres af størrelse, vægt og en let negativ letter-spacing på
+   de store overskrifter. Alt ligger i base-laget, så klasser som
+   font-bold eller tracking-wide på den enkelte overskrift vinder. */
 @layer base {
   h1,
   h2,
   h3 {
-    font-family: var(--font-serif);
+    font-weight: 600;
   }
-}
 
-h1:not(.font-sans),
-h2:not(.font-sans),
-h3:not(.font-sans) {
-  font-weight: 600;
+  h1 {
+    letter-spacing: -0.02em;
+  }
+
+  h2 {
+    letter-spacing: -0.01em;
+  }
 }
 
 @layer components {

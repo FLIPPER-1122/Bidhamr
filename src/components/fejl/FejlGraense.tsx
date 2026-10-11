@@ -18,7 +18,7 @@ export default function FejlGraense({
   return (
     <main className="flex flex-1 items-center justify-center bg-white px-4 py-16 sm:py-24">
       <div role="alert" className="w-full max-w-md text-center">
-        <h2 className="font-serif text-2xl font-semibold text-tekst">Noget gik galt</h2>
+        <h2 className="text-2xl font-semibold text-tekst">Noget gik galt</h2>
         <p className="mt-2 text-[15px] text-tekst-daempet">
           Siden kunne ikke vises lige nu. Prøv igen om lidt. Sker det igen, må du gerne skrive til os, så
           kigger vi på det.

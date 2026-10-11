@@ -216,7 +216,7 @@ export default async function AfgoerelseSide({
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">
       <p className="text-sm text-tekst-svag">Sagsnummer {a.sagsnummer}</p>
-      <h1 className="mt-1 font-serif text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
+      <h1 className="mt-1 text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
         {HANDLING_BRUGER[a.handling] ?? "Afgørelse fra BidHamr"}
       </h1>
       <p className="mt-2 text-base text-tekst-daempet">{HANDLING_KONSEKVENS[a.handling]}</p>
@@ -238,7 +238,7 @@ export default async function AfgoerelseSide({
       )}
 
       <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="status-titel">
-        <h2 id="status-titel" className="font-serif text-[20px] leading-tight font-semibold text-tekst">
+        <h2 id="status-titel" className="text-[20px] leading-tight font-semibold text-tekst">
           Status
         </h2>
         <div className="mt-4">
@@ -310,7 +310,7 @@ export default async function AfgoerelseSide({
       </section>
 
       <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="klage-titel">
-        <h2 id="klage-titel" className="font-serif text-[20px] leading-tight font-semibold text-tekst">
+        <h2 id="klage-titel" className="text-[20px] leading-tight font-semibold text-tekst">
           {k ? "Din klage" : "Er du uenig?"}
         </h2>
         {k ? (

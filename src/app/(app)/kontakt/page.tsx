@@ -31,7 +31,7 @@ export default async function KontaktSide({
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">
-      <h1 className="font-serif text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
+      <h1 className="text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
         Kontakt os
       </h1>
       <p className="mt-2 text-base text-tekst-daempet">
