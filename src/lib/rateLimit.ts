@@ -124,6 +124,13 @@ export const GRAENSER = {
   // kodemail pr. e-mail hvert 2. minut (mod mailbomber). Inden for vinduet
   // sendes intet, så den forrige kode stadig gælder.
   beta_kode_email: { maks: 1, vindueSek: 2 * 60 },
+  // "Meld fejl" (beta-testere og staff) pr. bruger. Databasen har samme loft
+  // (beta_fejl_opret, 20261018020000_beta_fejl.sql).
+  beta_fejl_bruger: { maks: 20, vindueSek: 60 * 60 },
+  // Alarm-mail ved en beta-fejl, der blokerer: højst 6 i alt pr. time.
+  beta_fejl_alarm: { maks: 6, vindueSek: 60 * 60 },
+  // Oprydning af ubrugte beta-skærmbilleder i hovedcron'en: højst én gang i timen.
+  beta_fejl_oprydning: { maks: 1, vindueSek: 60 * 60 },
   // Fragt: pakkeshop-søgning (rammer fragtfirmaets API) og handlinger
   // (leveringsvalg, label, annullering) pr. bruger; appens API pr. IP, før
   // tokenet er valideret.

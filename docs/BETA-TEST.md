@@ -246,9 +246,10 @@ Fristerne i reglerne (48 timer til betaling, 48 timer til sag, 4 dages ankefrist
 ## 7. Hvordan fejl indsamles
 
 **Kanaler:**
-1. **Fejlformular** (Google Forms, se `docs/BETA-FEJLSKABELON.md`). Hovedkanalen.
-2. **E-mail med skærmbillede** til `beta@bidhamr.dk` (gruppe i Google Workspace, se HUSKELISTE.md "Mail på bidhamr.dk"). Filip opretter den (trin 4 øverst). Google Forms kræver Google-login for at uploade filer, så mail er nemmest til skærmbilleder.
-3. **Kontaktformularen på siden** (`/kontakt`) som reserve. Den lander i `/admin/kontakt`.
+1. **"Meld fejl"-knappen på siden** (bygget 11. okt. 2026). Kun beta-testere og staff ser den, og kun før lancering: en lille grøn knap nederst til højre, som kan minimeres til en fane i højre kant. Formularen spørger om alvor, hvad man gjorde og hvad der skete, hvad man forventede, og op til 3 skærmbilleder (højst 5 MB hver, gemmes som JPEG). Ubrugte billeder slettes efter 24 timer, og alle beta-skærmbilleder slettes efter testen (se afsnit 9). Siden, browseren og skærmstørrelsen kommer automatisk med. Fejlene ses under **Admin → Indstillinger → Beta-fejl** (admin og chef), hvor de kan filtreres på status og alvor og får status og en intern note. Alvor "blokerer" sender en mail til `DRIFT_ALARM_MAIL` (højst 6 i timen, uden testerens tekst). Højst 20 fejl pr. tester pr. time. Kræver migrationen `20261018020000_beta_fejl.sql`.
+2. **Fejlformular** (Google Forms, se `docs/BETA-FEJLSKABELON.md`). Reserve, hvis knappen ikke virker.
+3. **E-mail med skærmbillede** til `beta@bidhamr.dk` (gruppe i Google Workspace se HUSKELISTE.md "Mail på bidhamr.dk"). Google Forms kræver Google-login for at uploade filer, så mail er nemmest til skærmbilleder.
+4. **Kontaktformularen på siden** (`/kontakt`) som reserve. Den lander i `/admin/kontakt`.
 
 **Filip samler alt i ét regneark** med kolonnerne: nr., dato, testperson, side, alvor, beskrivelse, status (ny / rettes / rettet / ikke en fejl), commit.
 
@@ -297,6 +298,7 @@ Morgen og aften, ca. 15 minutter.
 4. **Ryd testdata, før der bruges rigtige penge** – som en migration med Filips ja (følg `docs/GO-LIVE-STRIPE.md`, E2):
    - Handelsdata slettes ikke. Testhandler, betalinger, sager og fakturaer arkiveres og markeres som test, så ingen cron prøver dem igen, og de ikke tæller i DAC7.
    - Auktioner fra testen arkiveres, så de ikke vises offentligt ved lancering.
+   - **Alle beta-skærmbilleder slettes** (hele bucket `beta-fejl-billeder`, via Storage-API'et eller Supabase-dashboardet), når fejlene er rettet. Fejlmeldingerne i `beta_fejl` er ikke handelsdata: browserinfo og tekst kan ryddes samtidig, eller rækkerne kan slettes. Ubrugte billeder (ikke i en fejlmelding) slettes allerede automatisk efter 24 timer af hovedcron'en.
    - Bedømmelser fra testen skjules, så sælgerprofiler starter forfra.
    - Stripe-id'er fra testmiljøet nulstilles (kunder, gemte kort, udbetalingskonti).
    - **[CHEF]** MitID-verificering fra testidentiteter skal nulstilles, så ingen konto bærer mærket "MitID-verificeret" på en testidentitet efter lancering. Beslut, om testpersonernes konti skal blive stående (de skal så verificere sig igen med rigtigt MitID og oprette udbetalingskonto på ny) eller lukkes.
