@@ -25,6 +25,7 @@ import { anmeldelseSti, erUuid } from "@/lib/dsa/link";
 import { send } from "@/lib/notifikationer/send";
 import { logDriftFejl } from "@/lib/drift";
 import { notificerAuktionPauser } from "@/lib/notifikationer/auktionPause";
+import { opsigVedLukning } from "@/lib/erhverv/betaling";
 import {
   notificerAfgoerelse,
   notificerAnmeldelseSvar,
@@ -328,6 +329,13 @@ export async function udfoerIndgreb(admin: Admin, input: IndgrebInput): Promise<
   const afgId = svar.afgoerelse_id;
   const anmeldelser = svar.anmeldelser ?? [];
   const andenPart = svar.ekstra_afgoerelser ?? [];
+  // En firmakonto, der lukkes permanent, kan ikke sælge mere: abonnementet
+  // opsiges i Stripe med det samme. Lukningen står fast, også hvis Stripe
+  // fejler - betalings-cron'en prøver igen (src/lib/erhverv/betaling.ts).
+  if (input.type === "profil" && input.handling === "konto_lukket") {
+    const lukketId = svar.bruger_id;
+    after(() => opsigVedLukning(lukketId));
+  }
   after(async () => {
     await notificerAfgoerelse(afgId);
     for (const x of andenPart) await notificerAfgoerelse(x);

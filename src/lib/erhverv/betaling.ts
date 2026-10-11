@@ -43,8 +43,11 @@ import { logDriftFejl } from "@/lib/drift";
 //      skifter ved periodens slut (ingen proration, intet refunderes).
 //      Fornyelsen (abonnementslinje) -> firma_abonnement_betalt, som også
 //      gennemfører nedgraderingen i databasen.
-//   4. Opsigelse (kun chef i admin): opsigAbonnement -> cancel_at_period_end.
-//      customer.subscription.deleted -> 'opsagt'.
+//   4. Opsigelse (chef og sælger i admin): opsigAbonnement ->
+//      cancel_at_period_end. customer.subscription.deleted -> 'opsagt'.
+//      Lukkes firmakontoen PERMANENT, opsiges abonnementet med det samme
+//      (opsigVedLukning lige efter lukningen + koerLukOpsigelser i
+//      betalings-cron'en, som prøver igen, hvis Stripe fejler). Ingen refusion.
 //   5. Mislykket betaling: invoice.payment_failed -> firma_abonnement_mislykket.
 //      Cron firma_abonnement_frist_koer pauser efter 7 dage; Stripes Smart
 //      Retries prøver igen, og en senere betaling genaktiverer. Kun
@@ -79,6 +82,17 @@ export const idempotensNoegle = {
   adminPakke: (firmaId: string, klik: string) => `admin-pakke:${firmaId}:${klik}`,
   prisRettelse: (subId: string, klik: string) => `pris-rettelse:${subId}:${klik}`,
   dobbeltAbonnement: (subId: string) => `dobbelt-abonnement:${subId}`,
+  // Opsigelse ved permanent lukning af kontoen. NB: Stripe ignorerer
+  // idempotency-nøgler på DELETE (subscriptions.cancel er idempotent i sig
+  // selv - et opsagt abonnement kan ikke opsiges igen); nøglen sendes alligevel,
+  // så kaldet kan genkendes i Stripes log. De ledsagende POST-kald (luk åbne
+  // Checkout-betalinger, annullér opgraderingsfakturaer) får nøgler med
+  // forsøgsnummeret, så et gemt fejlsvar ikke blokerer næste forsøg i 24 timer.
+  lukOpsigelse: (brugerId: string, subId: string) => `luk:${brugerId}:${subId}`,
+  lukCheckout: (brugerId: string, subId: string, forsoeg: number, sessionId: string) =>
+    `luk:${brugerId}:${subId}:${forsoeg}:checkout:${sessionId}`,
+  lukFaktura: (brugerId: string, subId: string, forsoeg: number, fakturaId: string) =>
+    `luk:${brugerId}:${subId}:${forsoeg}:void:${fakturaId}`,
   pris: (lookupKey: string) => `pris:${lookupKey}`,
   produkt: (produktId: string) => `produkt:${produktId}`,
   moms: () => "moms:dk25:v1",
@@ -359,6 +373,11 @@ export function kanStarteAbonnement(f: Pick<FirmaRaekke, "abonnement_status" | "
 export async function startBetaling(brugerId: string, base: string): Promise<LinkSvar> {
   const f = await hentFirma("bruger_id", brugerId);
   if (!f) return { fejl: "Kun firmakonti har et abonnement.", kode: "ikke_firma" };
+  // En lukket konto kan ikke starte et nyt abonnement (opsigVedLukning
+  // opsiger det gamle og lukker åbne betalinger).
+  if (await kontoLukket(brugerId)) {
+    return { fejl: "Din konto er lukket. Skriv til erhverv@bidhamr.dk, hvis du har spørgsmål.", kode: "konto_lukket" };
+  }
   if (!kanStarteAbonnement(f)) {
     return { fejl: "Din pakke er allerede betalt. Opdater siden.", kode: "allerede_betalt" };
   }
@@ -1055,7 +1074,8 @@ export type OpsigSvar =
   | { status: "i_gang"; fejl: string }
   | { status: "fejl"; fejl: string };
 
-// Opsigelse (kun chef): abonnementet stopper ved periodens slut. Ingen refusion.
+// Opsigelse (chef og sælger i admin): abonnementet stopper ved periodens slut.
+// Ingen refusion.
 // Ny idempotency-nøgle pr. klik, og abonnementet hentes frisk bagefter, så
 // opsig -> fortryd -> opsig igen altid virker i Stripe.
 export async function opsigAbonnement(firmaId: string): Promise<OpsigSvar> {
@@ -1123,6 +1143,259 @@ export async function fortrydOpsigelse(firmaId: string): Promise<{ status: "ok" 
   }
 }
 
+// --- Permanent lukning af en firmakonto ----------------------------------------
+//
+// Lukkes en firmakonto permanent (bruger_luk_konto_permanent - via
+// "3 advarsler"-forslaget eller DSA-indgrebet "luk konto"), kan firmaet ikke
+// sælge mere, så abonnementet opsiges i Stripe MED DET SAMME
+// (subscriptions.cancel, prorate: false, invoice_now: false): ingen refusion
+// eller kreditering for resten af perioden, og ingen ny faktura. Stripe stopper
+// selv automatisk opkrævning af åbne fakturaer, når abonnementet opsiges.
+//
+// Lukningen rulles ALDRIG tilbage, hvis Stripe fejler. I stedet:
+//   - opsigVedLukning kaldes lige efter lukningen (after() i server-handlingen),
+//   - koerLukOpsigelser kører i betalings-cron'en (hvert 5. minut) og finder
+//     ALLE lukkede firmakonti, hvis abonnement ikke er afsluttet i Stripe
+//     (firma_luk_opsigelse_kandidater - ud fra tilstanden, så alle veje til
+//     lukning er dækket). Fejl tælles op med stigende ventetid (5 min -> 6 t)
+//     og giver drift-alarm.
+// Stripe er sandheden: abonnementet hentes altid frisk, og databasen spejles
+// bagefter (synkAbonnement -> 'opsagt'). Webhooken customer.subscription.deleted
+// gør det samme, så rækkefølgen er ligegyldig.
+
+type LukKandidat = {
+  firma_id: string;
+  bruger_id: string;
+  subscription_id: string;
+  forsoeg: number;
+  konto_lukket_kl: string;
+};
+
+export type LukOpsigelseUdfald = "opsagt" | "allerede_afsluttet" | "ikke_lukket" | "ingen" | "fejl";
+
+async function kontoLukket(brugerId: string): Promise<boolean> {
+  const { data, error } = await createAdminClient()
+    .from("users")
+    .select("konto_lukket_kl")
+    .eq("id", brugerId)
+    .maybeSingle<{ konto_lukket_kl: string | null }>();
+  if (error) throw new Error(`users: ${error.message}`);
+  return !!data?.konto_lukket_kl;
+}
+
+async function lukKandidater(brugerId: string | null, graense = 20): Promise<LukKandidat[]> {
+  const { data, error } = await createAdminClient().rpc("firma_luk_opsigelse_kandidater", {
+    p_bruger: brugerId,
+    p_graense: graense,
+  });
+  if (error) {
+    // PGRST202: funktionen findes ikke - migrationen er ikke kørt endnu.
+    const mangler = error.code === "PGRST202" ? " (migration 20261016040000_erhverv_luk_opsigelse.sql mangler)" : "";
+    throw new Error(`firma_luk_opsigelse_kandidater: ${error.message}${mangler}`);
+  }
+  return (data ?? []) as LukKandidat[];
+}
+
+function erAfsluttet(sub: Stripe.Subscription): boolean {
+  return sub.status === "canceled" || sub.status === "incomplete_expired";
+}
+
+// Åbne Checkout-betalinger lukkes, så firmaet ikke kan starte et nyt
+// abonnement efter lukningen. Kaster ikke (logger).
+async function lukAabneBetalinger(k: LukKandidat, kunde: string): Promise<void> {
+  try {
+    const s = stripe();
+    for await (const sess of s.checkout.sessions.list({ customer: kunde, status: "open", limit: 20 })) {
+      await s.checkout.sessions.expire(sess.id, {}, {
+        idempotencyKey: idempotensNoegle.lukCheckout(k.bruger_id, k.subscription_id, k.forsoeg, sess.id),
+      });
+    }
+  } catch (err) {
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "erhverv/luk-checkout",
+      fejl: `Firma ${k.firma_id} er lukket, men åbne Checkout-betalinger kunne ikke lukkes i Stripe - luk dem manuelt: ${fejltekst(err)}`,
+    });
+  }
+}
+
+// Ventende opgraderingsfakturaer på abonnementet annulleres (void): pakken kan
+// aldrig gives, når kontoen er lukket, og fakturaen kan ellers betales via
+// Stripes fakturaside. Almindelige fornyelsesfakturaer, der ikke er betalt
+// (perioden er brugt), annulleres IKKE - Stripe stopper opkrævningen, og
+// staff afgør dem. Kaster ikke (logger).
+async function annullerOpgraderingerVedLukning(k: LukKandidat): Promise<void> {
+  const s = stripe();
+  try {
+    for await (const faktura of s.invoices.list({ subscription: k.subscription_id, status: "open", limit: 20 })) {
+      if (!faktura.id || fakturaType(faktura) !== "opgradering") continue;
+      try {
+        const annulleret = await s.invoices.voidInvoice(faktura.id, {}, {
+          idempotencyKey: idempotensNoegle.lukFaktura(k.bruger_id, k.subscription_id, k.forsoeg, faktura.id),
+        });
+        await synkFaktura(annulleret, null);
+      } catch (err) {
+        await logDriftFejl({
+          kilde: "server",
+          hvor: "erhverv/luk-opgradering",
+          fejl: `Firma ${k.firma_id} er lukket: opgraderingsfaktura ${faktura.id} kunne ikke annulleres - annullér den manuelt i Stripe: ${fejltekst(err)}`,
+        });
+      }
+    }
+  } catch (err) {
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "erhverv/luk-opgradering",
+      fejl: `Firma ${k.firma_id} er lukket: åbne fakturaer på ${k.subscription_id} kunne ikke hentes - tjek dem i Stripe: ${fejltekst(err)}`,
+    });
+  }
+}
+
+// Et afsluttet abonnement spejles i databasen og kvitteres. Svarer databasen
+// ikke som forventet, KASTES der - så sætter firma_luk_opsigelse_fejl en
+// ventetid, og der gives drift-alarm (i stedet for at firmaet tages op igen
+// hvert 5. minut uden alarm).
+//   'opsagt'         - normalt (cancellation_requested eller opsiges_fra sat)
+//   'pause_betaling' - Stripe havde selv afsluttet det pga. manglende betaling;
+//                      abonnements-id'et er fjernet, så intet at kvittere
+async function spejlAfsluttet(k: LukKandidat, sub: Stripe.Subscription): Promise<void> {
+  const spejl = await synkAbonnement(sub, true);
+  if (spejl === "pause_betaling") return;
+  if (spejl !== "opsagt") {
+    throw new Error(`Databasen spejlede ikke abonnementet ${sub.id} som opsagt (svar: ${spejl})`);
+  }
+  const kvit = await rpc("firma_luk_opsigelse_udfoert", { p_firma: k.firma_id, p_subscription_id: sub.id });
+  if (kvit.kode !== "ok" && kvit.kode !== "allerede") {
+    throw new Error(`firma_luk_opsigelse_udfoert svarede ${String(kvit.kode)} for ${sub.id}`);
+  }
+}
+
+async function opsigKandidat(k: LukKandidat, kilde: "action" | "cron"): Promise<LukOpsigelseUdfald> {
+  let opsagtIStripe = false;
+  try {
+    const s = stripe();
+    let sub = await s.subscriptions.retrieve(k.subscription_id);
+    if (erAfsluttet(sub)) {
+      // Allerede afsluttet i Stripe (fx webhooken er ikke nået frem endnu).
+      opsagtIStripe = true;
+      await spejlAfsluttet(k, sub);
+      return "allerede_afsluttet";
+    }
+    // Lige før opsigelsen: er kontoen stadig lukket? (En omgjort afgørelse
+    // kan have genåbnet den imens.)
+    if (!(await kontoLukket(k.bruger_id))) return "ikke_lukket";
+
+    const kunde = id(sub.customer);
+    if (kunde) await lukAabneBetalinger(k, kunde);
+
+    try {
+      sub = await s.subscriptions.cancel(
+        sub.id,
+        {
+          invoice_now: false,
+          prorate: false,
+          cancellation_details: { comment: "Kontoen er lukket permanent af BidHamr" },
+        },
+        { idempotencyKey: idempotensNoegle.lukOpsigelse(k.bruger_id, sub.id) },
+      );
+    } catch (err) {
+      // Fejl fra Stripe (fx 404 på et abonnement, der allerede er opsagt, eller
+      // en timeout, hvor opsigelsen alligevel gik igennem): abonnementet hentes
+      // ALTID frisk - kun et afsluttet abonnement tæller som opsagt.
+      const frisk = await s.subscriptions.retrieve(k.subscription_id).catch(() => null);
+      if (!frisk || !erAfsluttet(frisk)) throw err;
+      sub = frisk;
+    }
+    if (!erAfsluttet(sub)) sub = await s.subscriptions.retrieve(k.subscription_id);
+    if (!erAfsluttet(sub)) throw new Error(`Stripe viser abonnementet ${sub.id} som ${sub.status} efter opsigelsen`);
+    opsagtIStripe = true;
+
+    await spejlAfsluttet(k, sub);
+    await annullerOpgraderingerVedLukning(k);
+
+    // Abonnementet er startet EFTER lukningen (fx en åben Checkout, der blev
+    // betalt bagefter): firmaet har betalt for en periode, det ikke kan bruge.
+    if (sub.created * 1000 > new Date(k.konto_lukket_kl).getTime()) {
+      await logDriftFejl({
+        kilde,
+        hvor: "erhverv/luk-nyt-abonnement",
+        fejl: `Firma ${k.firma_id} startede abonnementet ${sub.id} efter, at kontoen blev lukket. Det er opsagt - refundér betalingen manuelt i Stripe.`,
+      });
+    }
+    return "opsagt";
+  } catch (err) {
+    const tekst = fejltekst(err).slice(0, 500);
+    let forsoeg: number | null = null;
+    try {
+      const svar = await rpc("firma_luk_opsigelse_fejl", {
+        p_firma: k.firma_id,
+        p_subscription_id: k.subscription_id,
+        p_fejl: tekst,
+      });
+      forsoeg = typeof svar.forsoeg === "number" ? svar.forsoeg : null;
+    } catch (dbFejl) {
+      await logDriftFejl({ kilde, hvor: "erhverv/luk-opsigelse-db", fejl: dbFejl });
+    }
+    await logDriftFejl({
+      kilde,
+      hvor: "erhverv/luk-opsigelse",
+      fejl: opsagtIStripe
+        ? `Firma ${k.firma_id}: abonnementet ${k.subscription_id} ER opsagt i Stripe, men databasen kunne ikke opdateres (forsøg ${forsoeg ?? "?"}) - betalings-cron'en spejler det igen: ${tekst}`
+        : `Firma ${k.firma_id} er lukket permanent, men abonnementet ${k.subscription_id} kunne ikke opsiges i Stripe (forsøg ${forsoeg ?? "?"}) - prøves igen af betalings-cron'en: ${tekst}`,
+    });
+    return "fejl";
+  }
+}
+
+// Lige efter en permanent lukning (server-handlingen, i after()). Kaster ikke.
+// Er brugeren ikke en firmakonto med et aktivt abonnement, sker intet.
+export async function opsigVedLukning(brugerId: string): Promise<LukOpsigelseUdfald> {
+  // Uden Stripe-testnøgle findes der ingen erhvervsabonnementer i Stripe.
+  if (!stripeTilgaengelig()) return "ingen";
+  try {
+    const [k] = await lukKandidater(brugerId, 1);
+    if (!k) return "ingen";
+    return await opsigKandidat(k, "action");
+  } catch (err) {
+    // Fx databasen svarer ikke: cron'en finder kontoen næste gang.
+    await logDriftFejl({ kilde: "action", hvor: "erhverv/luk-opsigelse", fejl: err, brugerId });
+    return "fejl";
+  }
+}
+
+// Betalings-cron'en: alle lukkede firmakonti med et abonnement, der ikke er
+// afsluttet i Stripe (og hvis ventetid er udløbet). Kaster ikke ved fejl på
+// det enkelte firma; kaster, hvis kandidaterne ikke kan hentes.
+export async function koerLukOpsigelser(): Promise<{ opsagt: number; fejl: number; ingen_handling: number }> {
+  const ud = { opsagt: 0, fejl: 0, ingen_handling: 0 };
+  if (!stripeTilgaengelig()) return ud;
+  for (const k of await lukKandidater(null, 20)) {
+    const r = await opsigKandidat(k, "cron");
+    if (r === "opsagt" || r === "allerede_afsluttet") ud.opsagt++;
+    else if (r === "fejl") ud.fejl++;
+    else ud.ingen_handling++;
+  }
+  return ud;
+}
+
+// Webhooken/serveren har spejlet et afsluttet abonnement ('opsagt'): er
+// kontoen lukket, registreres det (nulstiller forsøg og logger én neutral
+// linje: "Abonnementet er afsluttet i Stripe (kontoen er lukket permanent)" -
+// det kan også være en almindelig opsigelse, der udløb). Kaster ikke -
+// spejlingen er det vigtige.
+async function kvitterLukOpsigelse(f: FirmaRaekke, subId: string): Promise<void> {
+  try {
+    if (!(await kontoLukket(f.bruger_id))) return;
+    await rpc("firma_luk_opsigelse_udfoert", { p_firma: f.id, p_subscription_id: subId });
+  } catch (err) {
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "erhverv/luk-kvitter",
+      fejl: `Abonnementet er afsluttet (kontoen er lukket), men det kunne ikke registreres for firma ${f.id} (${subId}): ${fejltekst(err)}`,
+    });
+  }
+}
+
 // --- Spejling (webhook og retursider) ----------------------------------------
 
 async function firmaForKunde(kunde: string | null, metadataFirma?: string | null): Promise<FirmaRaekke | null> {
@@ -1169,6 +1442,7 @@ export async function synkAbonnement(sub: Stripe.Subscription, slettet = false):
       fejl: `Firma ${f.id} fik et ekstra abonnement ${sub.id} (har ${String(svar.nuvaerende)}). Det ekstra er stoppet i Stripe - refundér dets betaling manuelt.`,
     });
   }
+  if (svar.kode === "opsagt") await kvitterLukOpsigelse(f, sub.id);
   return svar.kode ?? "?";
 }
 

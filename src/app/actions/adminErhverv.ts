@@ -1,6 +1,8 @@
 "use server";
 
-// Admin → Erhverv (kun chef og sælger; pakker og priser kun chef).
+// Admin → Erhverv (kun chef og sælger). Chef og sælger må alt ved firmaer
+// (Filip, 10. okt. 2026) - også pakke, status, firmanavn, CVR og opsigelse.
+// Kun pakkerne selv (oprette/ændre pakker og priser) er kun chef.
 // Adgangen tjekkes her (assertErhverv) OG i databasen (erhverv_har_adgang i
 // hver staff-RPC, som kun service_role kan kalde). Alle ændringer logges i
 // moderation_log af databasen. Fejl RETURNERES som { fejl }.
@@ -570,7 +572,7 @@ export async function gensendFirmaVelkomst(firmaId: string) {
 }
 
 // Staff ændrer et firma. Udeladte felter er uændrede. pakkeId skifter pakken
-// MED DET SAMME (kun chef, fx efter en aftale med firmaet). Har firmaet et
+// MED DET SAMME (chef eller sælger, fx efter en aftale med firmaet). Har firmaet et
 // abonnement i Stripe, ændres det FØRST (skiftPrisAdmin: ventende
 // opgraderinger annulleres, en planlagt nedgradering frigives, og prisen
 // skifter med proration 'none' - dvs. fra firmaets næste betaling; en evt.
@@ -584,15 +586,13 @@ export async function opdaterFirma(input: {
   note?: string | null;
 }) {
   return koer("opdaterFirma", async () => {
-    const { admin, userId, rolle } = await assertErhverv();
+    const { admin, userId } = await assertErhverv();
     const firmaId = tjekUuid(input?.firmaId);
     const pakkeId = input.pakkeId ? tjekUuid(input.pakkeId, KODE_FEJL.ugyldig_pakke) : null;
     if (input.status != null && !erAbonnementStatus(input.status)) throw new BrugerFejl("Ugyldig status.");
     const f = input.felter ? tjekFirmaFelter(input.felter) : null;
-    // Sælger må kun rette adresse og kontaktoplysninger. ÆNDRER kaldet pakke,
-    // status, firmanavn eller CVR, kræver det chef - databasen sammenligner
-    // med de nuværende værdier og svarer 'kun_chef' (så en formular, der
-    // altid sender alle felter med uændret navn/CVR, stadig virker for sælger).
+    // Chef og sælger må ændre alle felter, pakke og status (Filip, 10. okt.
+    // 2026). Databasen tjekker igen (erhverv_firma_opdater, 20261016040000).
     const note = typeof input.note === "string" ? input.note.trim().slice(0, 1000) : null;
 
     // "Opsagt" må ikke sættes her, mens firmaet har et abonnement i Stripe -
@@ -615,7 +615,6 @@ export async function opdaterFirma(input: {
       if (fpFejl) throw new Error(fpFejl.message);
       const nuvaerende = (fp as { pakke_id: string } | null)?.pakke_id ?? null;
       if (nuvaerende && nuvaerende !== pakkeId) {
-        if (rolle !== "chef") kodeFejl("kun_chef");
         try {
           stripePris = await skiftPrisAdmin(firmaId, pakkeId);
         } catch (err) {
@@ -659,15 +658,17 @@ export async function opdaterFirma(input: {
   });
 }
 
-// --- Opsigelse (kun chef) -------------------------------------------------------
+// --- Opsigelse (chef og sælger) -------------------------------------------------
 
 // Opsiger firmaets abonnement: i Stripe stopper det ved slutningen af den
 // betalte periode (cancel_at_period_end, ingen refusion), og webhooken
 // customer.subscription.deleted sætter firmaet til 'opsagt'. Har firmaet
 // intet abonnement i Stripe, opsiges det med det samme i databasen.
+// (Lukkes kontoen permanent, opsiges abonnementet med det samme automatisk -
+// opsigVedLukning i src/lib/erhverv/betaling.ts.)
 export async function opsigFirmaAbonnement(firmaId: string) {
   return koer("opsigFirmaAbonnement", async () => {
-    const { admin, userId } = await assertErhverv(true);
+    const { admin, userId } = await assertErhverv();
     const id = tjekUuid(firmaId);
     const svar = await opsigAbonnement(id);
     if (svar.status === "i_gang") throw new BrugerFejl(svar.fejl);
@@ -699,7 +700,7 @@ export async function opsigFirmaAbonnement(firmaId: string) {
 
 export async function fortrydFirmaOpsigelse(firmaId: string) {
   return koer("fortrydFirmaOpsigelse", async () => {
-    const { admin, userId } = await assertErhverv(true);
+    const { admin, userId } = await assertErhverv();
     const id = tjekUuid(firmaId);
     const svar = await fortrydOpsigelse(id);
     if (svar.status === "fejl") throw new Error(svar.fejl);
