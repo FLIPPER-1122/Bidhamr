@@ -44,11 +44,13 @@ export default function LoginForm({
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forkertLogin, setForkertLogin] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setForkertLogin(false);
 
     // Login sker på serveren, så det kan rate-limites og tjekkes for
     // suspension og ny enhed (src/app/actions/auth.ts).
@@ -64,6 +66,7 @@ export default function LoginForm({
       }
       setLoading(false);
       setError(svar.fejl);
+      setForkertLogin(svar.kode === "forkert_login");
       return;
     }
 
@@ -142,6 +145,18 @@ export default function LoginForm({
             {fejlTekst && (
               <p role="alert" className={FORMULAR_FEJL}>
                 {fejlTekst}
+                {/* Beta: en ny konto har ingen kendt adgangskode, før koden
+                    er indtastet (src/lib/ventendeAdgangskode.ts). Vises ved
+                    alle forkerte logins - afslører ikke, om kontoen findes. */}
+                {betaAaben && forkertLogin && (
+                  <>
+                    {" "}
+                    Har du lige oprettet dig?{" "}
+                    <Link href="/tjek-indbakke" className="font-semibold underline">
+                      Indtast koden fra mailen.
+                    </Link>
+                  </>
+                )}
               </p>
             )}
 

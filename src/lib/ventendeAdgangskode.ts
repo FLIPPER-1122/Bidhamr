@@ -13,8 +13,9 @@ import "server-only";
 // updateUser i sessionen fra verifyOtp.
 //
 // Sikkerhed:
-// - AES-256-GCM. Nøglen er SIGNUP_ADGANGSKODE_HEMMELIGHED (lang, tilfældig,
-//   kun på serveren - Filip sætter den i Vercel). Mangler den, afledes
+// - AES-256-GCM. Nøglen er SIGNUP_ADGANGSKODE_HEMMELIGHED (mindst 32 tegn,
+//   tilfældig, kun på serveren - Filip sætter den i Vercel). Mangler den,
+//   eller er den for kort (logges i drift), afledes
 //   nøglen af service-role-nøglen (afledningsNoegle, som rolle-cookien), med
 //   eget formål i afledningen. Mangler alt, gemmes intet (brugeren vælger så
 //   adgangskode efter bekræftelsen).
@@ -22,21 +23,46 @@ import "server-only";
 //   højst 30 minutter, httpOnly, SameSite=Lax og Secure i produktion.
 // - Cookien slettes efter bekræftelsen, uanset udfaldet.
 import { cookies } from "next/headers";
+import { logDriftFejl } from "@/lib/drift";
 import { afledningsNoegle } from "@/lib/supabase/noeglerServer";
 
-export const VENTENDE_ADGANGSKODE_COOKIE = "bh_ny_adgangskode";
+// I produktion (https) bruges __Host--præfikset: browseren godtager kun
+// cookien med Secure, path "/" og uden domain, så den ikke kan sættes fra et
+// underdomæne. Lokalt på http beholdes det gamle navn (uden Secure).
+const PRODUKTION = process.env.NODE_ENV === "production";
+export const VENTENDE_ADGANGSKODE_COOKIE = PRODUKTION ? "__Host-bh_ny_adgangskode" : "bh_ny_adgangskode";
 const LEVETID_SEKUNDER = 30 * 60;
+// Den egne nøgle skal være lang nok til at være tilfældig nok.
+const MIN_HEMMELIGHED = 32;
 
 let noegleLoefte: Promise<CryptoKey | null> | null = null;
+let advaret = false;
+
+// Én advarsel pr. serverproces i drift, når fallback'en bruges i produktion.
+function advarOmFallback(grund: string) {
+  if (advaret || !PRODUKTION) return;
+  advaret = true;
+  void logDriftFejl({
+    kilde: "server",
+    sti: "/",
+    hvor: "Ventende adgangskode",
+    fejl: `${grund} - den valgte adgangskode krypteres med en nøgle afledt af Supabase-nøglen (fallback).`,
+  });
+}
 
 function hentNoegle(): Promise<CryptoKey | null> {
   if (!noegleLoefte) {
     noegleLoefte = (async () => {
-      const egen = process.env.SIGNUP_ADGANGSKODE_HEMMELIGHED;
+      const egen = process.env.SIGNUP_ADGANGSKODE_HEMMELIGHED?.trim();
       let tekst: string;
-      if (egen) {
+      if (egen && egen.length >= MIN_HEMMELIGHED) {
         tekst = `bidhamr-signup-adgangskode-v1|egen|${egen}`;
       } else {
+        advarOmFallback(
+          egen
+            ? `SIGNUP_ADGANGSKODE_HEMMELIGHED er for kort (under ${MIN_HEMMELIGHED} tegn)`
+            : "SIGNUP_ADGANGSKODE_HEMMELIGHED mangler",
+        );
         const afledt = afledningsNoegle();
         if (!afledt) return null;
         tekst = `bidhamr-signup-adgangskode-v1|${afledt}`;
@@ -85,7 +111,7 @@ export async function gemVentendeAdgangskode(email: string, adgangskode: string)
   samlet.set(krypteret, iv.length);
   (await cookies()).set(VENTENDE_ADGANGSKODE_COOKIE, tilBase64Url(samlet), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: PRODUKTION,
     sameSite: "lax",
     path: "/",
     maxAge: LEVETID_SEKUNDER,
@@ -116,6 +142,12 @@ export async function hentVentendeAdgangskode(email: string): Promise<string | n
   } catch {
     return null;
   }
+}
+
+// Er der allerede en gyldig ventende adgangskode til netop denne e-mail i
+// browseren? (Så kan den opdateres uden en ny kode - se opretBetaKonto.)
+export async function harVentendeAdgangskode(email: string): Promise<boolean> {
+  return (await hentVentendeAdgangskode(email)) !== null;
 }
 
 export async function sletVentendeAdgangskode(): Promise<void> {

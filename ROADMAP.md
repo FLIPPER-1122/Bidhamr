@@ -201,6 +201,7 @@ Formål: alt det juridiske og praktiske er på plads.
 - [ ] **Beta-test med 10-20 rigtige, fremmede personer**, der køber og sælger med testpenge. Ret det, de støder på
 - [~] Endelig sikkerhedsgennemgang og test af hele flowet (sikkerhed-agenten kører en fuld gennemgang) *(første fulde gennemgang og rettelser 7. okt. 2026 – gentages lige før lancering)*
 - [ ] **Ekstern pentest**: et professionelt sikkerhedsfirma tester siden, før der skiftes til rigtige penge
+- [ ] **Sikker signup for alle, før tilmeldingen åbnes** (`TILMELDING_AABEN=true`): samme model som beta-testen. "Allow new users to sign up" forbliver slået fra i Supabase. Kontoen oprettes på serveren med en tilfældig adgangskode, og den valgte adgangskode sættes først, når e-mailen er bekræftet med koden. Appen skal oprette konti via et server-endpoint i stedet for at kalde `signUp` direkte. Hvorfor: ved direkte `signUp` kan en fremmed oprette kontoen først med offerets e-mail og sin egen adgangskode og overtage den, når offeret bekræfter (se docs/BETA-TEST.md, "Kendte begrænsninger")
 - [ ] Erstat coming-soon-siden med den rigtige forside
 - [ ] Logo finpudset af designer, favicon og app store-billeder
 - [ ] **Lancering**

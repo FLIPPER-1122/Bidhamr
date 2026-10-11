@@ -22,7 +22,12 @@ import { logDriftFejl } from "@/lib/drift";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
 import { betaAuthBruger, betaTilmeldingTilladt } from "@/lib/beta";
-import { gemVentendeAdgangskode, hentVentendeAdgangskode, sletVentendeAdgangskode } from "@/lib/ventendeAdgangskode";
+import {
+  gemVentendeAdgangskode,
+  harVentendeAdgangskode,
+  hentVentendeAdgangskode,
+  sletVentendeAdgangskode,
+} from "@/lib/ventendeAdgangskode";
 import { betaKodeMail } from "@/lib/mails/beta";
 
 // Login, oprettelse, bekraeftelseskode (e-mail), gensend kode og nulstil
@@ -39,7 +44,7 @@ import { betaKodeMail } from "@/lib/mails/beta";
 // (/reset-password) - se verificerSignupKode.
 type Resultat =
   | { ok: true; firma?: boolean; vaelgAdgangskode?: true }
-  | { fejl: string; kode?: "email_ikke_bekraeftet" };
+  | { fejl: string; kode?: "email_ikke_bekraeftet" | "forkert_login" };
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 
@@ -78,7 +83,7 @@ async function efterLogin(
     await supabase.auth.signOut({ scope: "local" });
     // Kan profilen ikke laeses, lukkes der ikke ind (fail closed).
     if (status.kode === "fejl") return { fejl: GENERISK };
-    if (status.kode === "slettet") return { fejl: "Forkert e-mail eller adgangskode." };
+    if (status.kode === "slettet") return { fejl: "Forkert e-mail eller adgangskode.", kode: "forkert_login" };
     return { fejl: status.besked };
   }
 
@@ -103,7 +108,7 @@ export async function logInd(
 ): Promise<Resultat> {
   const email = renEmail(emailInput);
   if (!email || typeof password !== "string" || password.length === 0) {
-    return { fejl: "Forkert e-mail eller adgangskode." };
+    return { fejl: "Forkert e-mail eller adgangskode.", kode: "forkert_login" };
   }
 
   // Hvert forsøg tælles op, FØR adgangskoden tjekkes (rate_limit_tjek er
@@ -128,7 +133,7 @@ export async function logInd(
       };
     }
     if (error.code === "invalid_credentials" || error.code === "user_banned") {
-      return { fejl: "Forkert e-mail eller adgangskode." };
+      return { fejl: "Forkert e-mail eller adgangskode.", kode: "forkert_login" };
     }
     if (error.status === 429) return { fejl: FOR_MANGE_FORSOEG };
     console.error("logInd fejlede:", error.code, error.message);
@@ -320,7 +325,13 @@ async function opretBetaKonto(input: {
     return { ok: true as const, bekraeftMail: true as const, beta: true as const };
   };
 
-  if (!(await indenForGraense("beta_kode_email", email))) return svar();
+  if (!(await indenForGraense("beta_kode_email", email))) {
+    // Inden for 2 minutter sendes ingen ny kode. Har denne browser allerede
+    // en ventende adgangskode til samme e-mail (fx en rettet tastefejl),
+    // opdateres den, så den nyeste valgte adgangskode sættes efter koden.
+    if (await harVentendeAdgangskode(email)) await gemVentendeAdgangskode(email, password);
+    return svar();
+  }
 
   const tilladt = await betaTilmeldingTilladt(email);
   if (tilladt === null) {
