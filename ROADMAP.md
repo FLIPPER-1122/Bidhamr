@@ -182,6 +182,8 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 ## Fase 6 – Klar til lancering
 Formål: alt det juridiske og praktiske er på plads.
 
+- [ ] **Admin-kontrolpanel**: én forside i admin med penge (Stripe-saldo, sælgernes penge, reserve, nødstop), "kræver handling" (sager, indsigelser, godkendelser, hængende refusioner, beta-fejl, firmaklager), drift (alarmer, cron, afstemning) og dagens aktivitet – bygges efter sikkerhedsnettet for pengene (Filip, 12. okt. 2026)
+- [ ] **Admin på egen adresse**: flyt admin til `admin.bidhamr.dk` (separat Vercel-projekt fra samme kode), luk `/admin` på bidhamr.dk, og kræv 2-trins-login (app-kode/passkey) for alle staff-roller; evt. kun adgang fra egne IP'er – lige før lancering (Filip, 12. okt. 2026)
 - [ ] CVR-nummer
 - [~] MitID-verificering (Idura/Criipto) før første bud og første auktion *(bygget 9. okt. 2026 i testmiljøet – `20261013010000_mitid.sql`, docs/MITID.md. Testet på bidhamr.dk med test-MitID 10. okt. 2026 – virker, også "én MitID = én konto". Mangler: Idura-produktionsaftale + Vercel-variabler, appen)*
 - [x] Cookie-banner
