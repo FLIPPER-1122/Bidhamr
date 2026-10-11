@@ -1,46 +1,28 @@
-import { Suspense } from "react";
 import AdminFaner from "@/components/admin/AdminFaner";
 import { getErhvervRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { antalAabneFirmaDsaKlager } from "@/lib/dsa/firmaKlager";
+import { hentErhvervTal } from "@/lib/admin/erhvervTal";
 import { ADMIN_ERHVERV } from "@/lib/tekster/erhverv";
 import { KLAGE_ADMIN } from "@/lib/tekster/erhvervKlager";
 import { ERHVERV_DSA_KLAGER } from "@/lib/tekster/erhvervDsaKlager";
 
-// Antal åbne DSA-klager over firmakonti. Streames for sig (Suspense), så
-// siden ikke venter på tallet. Fejl logges i antalAabneFirmaDsaKlager.
-async function DsaKlagerAntal() {
-  if (!(await getErhvervRolle())) return null;
-  const antal = await antalAabneFirmaDsaKlager(createAdminClient());
-  return antal > 0 ? <> ({antal})</> : null;
-}
+export type ErhvervFane = "oversigt" | "henvendelser" | "firmaer" | "klager" | "dsa-klager" | "pakker";
 
-// Faner under Admin → Erhverv (kun chef og saelger).
-export default function ErhvervFaner({
-  aktiv,
-}: {
-  aktiv: "henvendelser" | "firmaer" | "klager" | "dsa-klager" | "pakker";
-}) {
+// Faner under Admin → Erhverv (kun chef og saelger). Tallene er kun antal og
+// hentes én gang pr. forespørgsel (cache() i src/lib/admin/erhvervTal.ts) -
+// først efter rolletjekket.
+export default async function ErhvervFaner({ aktiv }: { aktiv: ErhvervFane }) {
+  const tal = (await getErhvervRolle()) ? await hentErhvervTal(createAdminClient()) : null;
   return (
     <AdminFaner
       label="Erhverv"
       aktiv={aktiv}
       faner={[
-        { id: "henvendelser", label: ADMIN_ERHVERV.faner.henvendelser, href: "/admin/erhverv" },
+        { id: "oversigt", label: "Oversigt", href: "/admin/erhverv" },
+        { id: "henvendelser", label: ADMIN_ERHVERV.faner.henvendelser, href: "/admin/erhverv/henvendelser", antal: tal?.nyeHenvendelser, tone: "gul" },
         { id: "firmaer", label: ADMIN_ERHVERV.faner.firmaer, href: "/admin/erhverv/firmaer" },
-        { id: "klager", label: KLAGE_ADMIN.fane, href: "/admin/erhverv/klager" },
-        {
-          id: "dsa-klager",
-          label: (
-            <>
-              {ERHVERV_DSA_KLAGER.fane}
-              <Suspense fallback={null}>
-                <DsaKlagerAntal />
-              </Suspense>
-            </>
-          ),
-          href: "/admin/erhverv/dsa-klager",
-        },
+        { id: "klager", label: KLAGE_ADMIN.fane, href: "/admin/erhverv/klager", antal: tal?.aabneKlager, tone: "gul" },
+        { id: "dsa-klager", label: ERHVERV_DSA_KLAGER.fane, href: "/admin/erhverv/dsa-klager", antal: tal?.dsaKlager, tone: "gul" },
         { id: "pakker", label: ADMIN_ERHVERV.faner.pakker, href: "/admin/erhverv/pakker" },
       ]}
     />

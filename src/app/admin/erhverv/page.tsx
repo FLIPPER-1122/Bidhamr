@@ -1,115 +1,237 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { kraevErhvervSide } from "@/lib/adminAuth";
-import { hentErhvervHenvendelser } from "@/app/actions/adminErhverv";
+import { hentErhvervHenvendelser, hentFirmaer } from "@/app/actions/adminErhverv";
+import AdminSide from "@/components/admin/AdminSide";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
-import ErhvervFaner, { HenvendelseStatusBadge, datoTid } from "@/components/admin/erhverv/ErhvervFaner";
-import { ADMIN_ERHVERV, ADMIN_ERHVERV_EKSTRA } from "@/lib/tekster/erhverv";
-import { HENVENDELSE_STATUSSER, HENVENDELSE_STATUS_NAVN, erHenvendelseStatus } from "@/lib/erhverv/regler";
+import AdminFejl from "@/components/admin/AdminFejl";
+import AdminBadge from "@/components/admin/AdminBadge";
+import ErhvervFaner, { dato } from "@/components/admin/erhverv/ErhvervFaner";
+import HenvendelseKort from "@/components/admin/erhverv/HenvendelseKort";
+import KraeverHandling, { type HandlingRaekke } from "@/components/admin/forside/KraeverHandling";
+import { hentErhvervTal } from "@/lib/admin/erhvervTal";
+import { ABONNEMENT_STATUS_NAVN, type AbonnementStatus } from "@/lib/erhverv/regler";
 
-// Admin → Erhverv → Henvendelser (formularen fra /erhverv). Kun chef og
-// saelger (kraevErhvervSide + erhverv_har_adgang i databasen).
-export default async function ErhvervHenvendelserSide({
+// Admin → Erhverv → Oversigt: sælgerens (og chefens) forside for erhverv
+// (Filip, 12. okt. 2026). Øverst de nye henvendelser fra firmaformularen med
+// hurtighandlinger, så Kræver handling (klager, firmaers DSA-klager,
+// forslag), og nederst firmaer, abonnementer samt lukning og suspension.
+// Kun chef og saelger (kraevErhvervSide + erhverv_har_adgang i databasen).
+//
+// /admin/erhverv var før listen over henvendelser. Gamle links med ?status=
+// eller ?arkiv=1 sendes videre til /admin/erhverv/henvendelser.
+
+export const metadata = { title: "Erhverv" };
+
+const VIS_NYE = 5;
+
+// Uden for komponenten (React-reglen om rene komponenter).
+function naa() {
+  return Date.now();
+}
+
+function Sektion({ id, titel, link, children }: { id: string; titel: string; link?: { href: string; label: string }; children: React.ReactNode }) {
+  return (
+    <section aria-labelledby={id} className="space-y-2.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id={id} className="text-[13px] font-semibold uppercase tracking-[0.06em] text-tekst-svag">
+          {titel}
+        </h2>
+        {link && (
+          <Link href={link.href} className="text-[13.5px] font-semibold text-groen hover:underline">
+            {link.label}
+          </Link>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export default async function ErhvervOversigt({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string; arkiv?: string }>;
 }) {
-  await kraevErhvervSide();
-  const { status: raaStatus, arkiv } = await searchParams;
-  const status = erHenvendelseStatus(raaStatus) ? raaStatus : null;
-  const arkiverede = arkiv === "1";
+  const { admin } = await kraevErhvervSide();
+  const sp = await searchParams;
+  if (sp.status || sp.arkiv) {
+    const q = new URLSearchParams();
+    if (sp.status) q.set("status", sp.status);
+    if (sp.arkiv) q.set("arkiv", sp.arkiv);
+    redirect(`/admin/erhverv/henvendelser?${q}`);
+  }
 
-  const [res, alleAktive] = await Promise.all([
-    hentErhvervHenvendelser({ status, arkiverede }),
-    // Antal nye (til filteret) - samme liste uden filter.
-    status || arkiverede ? hentErhvervHenvendelser({}) : null,
+  const [tal, nye, firmaRes, lukning, suspenderede] = await Promise.all([
+    hentErhvervTal(admin),
+    hentErhvervHenvendelser({ status: "ny" }),
+    hentFirmaer(),
+    admin
+      .from("konto_lukning_forslag")
+      .select("id, bruger_id, oprettet_kl, bruger:users!konto_lukning_forslag_bruger_id_fkey!inner(konto_type)")
+      .eq("status", "afventer")
+      .eq("bruger.konto_type", "erhverv")
+      .order("oprettet_kl", { ascending: true })
+      .limit(20),
+    admin
+      .from("users")
+      .select("id, suspenderet_til")
+      .eq("konto_type", "erhverv")
+      .eq("suspenderet", true)
+      .is("konto_lukket_kl", null)
+      .limit(50),
   ]);
-  const fejl = "fejl" in res ? res.fejl : null;
-  const liste = "fejl" in res ? [] : res.henvendelser;
-  const ufiltreret = alleAktive && !("fejl" in alleAktive) ? alleAktive.henvendelser : liste;
-  const antalNye = ufiltreret.filter((h) => h.status === "ny").length;
 
-  const filtre: { id: string; label: string; href: string; antal?: number }[] = [
-    { id: "alle", label: ADMIN_ERHVERV.henvendelser.filterAlle, href: "/admin/erhverv" },
-    ...HENVENDELSE_STATUSSER.map((s) => ({
-      id: s,
-      label: HENVENDELSE_STATUS_NAVN[s],
-      href: `/admin/erhverv?status=${s}`,
-      antal: s === "ny" ? antalNye : undefined,
-    })),
-    { id: "arkiv", label: ADMIN_ERHVERV_EKSTRA.arkiverede, href: "/admin/erhverv?arkiv=1" },
+  const nyeListe = "fejl" in nye ? [] : nye.henvendelser;
+  const firmaer = "fejl" in firmaRes ? [] : firmaRes.firmaer;
+  const firmaFraBruger = new Map(firmaer.map((f) => [f.bruger_id, f]));
+  const lukningForslag = ((lukning.data ?? []) as { id: string; bruger_id: string; oprettet_kl: string }[])
+    .map((l) => ({ ...l, firma: firmaFraBruger.get(l.bruger_id) }))
+    .filter((l) => l.firma);
+  const nu = naa();
+  const susp = ((suspenderede.data ?? []) as { id: string; suspenderet_til: string | null }[])
+    .filter((u) => !u.suspenderet_til || new Date(u.suspenderet_til).getTime() > nu)
+    .map((u) => ({ ...u, firma: firmaFraBruger.get(u.id) }))
+    .filter((u) => u.firma);
+
+  // Abonnementer: antal pr. status + dem, der kræver opmærksomhed.
+  const pr = new Map<AbonnementStatus, number>();
+  for (const f of firmaer) pr.set(f.abonnement_status, (pr.get(f.abonnement_status) ?? 0) + 1);
+  const abonnementProblemer = firmaer.filter(
+    (f) => f.betaling_mislykket_kl || f.abonnement_status === "pauset" || f.abonnement_status === "afventer_betaling" || f.afventende_opgradering,
+  );
+
+  const raekker: HandlingRaekke[] = [
+    {
+      id: "henv",
+      alvor: "gul",
+      titel: tal.nyeHenvendelser === 1 ? "Ny henvendelse fra firmaformularen" : "Nye henvendelser fra firmaformularen",
+      antal: Math.max(0, tal.nyeHenvendelser - Math.min(VIS_NYE, nyeListe.length)),
+      forklaring: "Flere end dem, der står ovenfor",
+      href: "/admin/erhverv/henvendelser?status=ny",
+    },
+    { id: "klager", alvor: "gul", titel: "Klager over firmaer", antal: tal.aabneKlager, forklaring: "Køber klager over en erhvervssælger – tag sagen", href: "/admin/erhverv/klager?status=aaben" },
+    { id: "dsa", alvor: "gul", titel: "Firmaers klager (DSA)", antal: tal.dsaKlager, forklaring: "Et firma klager over vores afgørelse – frist 14 dage", href: "/admin/erhverv/dsa-klager" },
+    { id: "forslag", alvor: "gul", titel: "Forslag om advarsel", antal: tal.advarselForslag, forklaring: "Firmaet har fået flere berettigede klager", href: "/admin/erhverv/klager" },
+    { id: "lukning", alvor: "gul", titel: "Forslag om lukning af firmakonto", antal: lukningForslag.length, forklaring: "Godkend eller afvis på firmaets side", href: lukningForslag[0]?.firma ? `/admin/erhverv/firmaer/${lukningForslag[0].firma.id}` : "/admin/erhverv/firmaer" },
+    { id: "behandling", alvor: "graa", titel: "Klager under behandling", antal: tal.klagerUnderBehandling, href: "/admin/erhverv/klager?status=under_behandling" },
+    { id: "abonnement", alvor: "graa", titel: "Abonnementer, der kræver opmærksomhed", antal: abonnementProblemer.length, forklaring: "Betaling fejlet, på pause eller venter på første betaling", href: "#abonnementer" },
   ];
-  const aktivFilter = arkiverede ? "arkiv" : (status ?? "alle");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
-      <AdminSideHoved titel={ADMIN_ERHVERV.menupunkt} forklaring={ADMIN_ERHVERV_EKSTRA.forklaring} />
-      <ErhvervFaner aktiv="henvendelser" />
-
-      <div>
-        <h2 className="font-sans text-lg font-semibold text-neutral-900">{ADMIN_ERHVERV.henvendelser.titel}</h2>
-        <p className="text-sm text-neutral-600">{ADMIN_ERHVERV.henvendelser.forklaring}</p>
-      </div>
-
-      <nav aria-label="Filter" className="flex flex-wrap gap-2">
-        {filtre.map((f) => (
-          <Link
-            key={f.id}
-            href={f.href}
-            aria-current={aktivFilter === f.id ? "page" : undefined}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium ${
-              aktivFilter === f.id
-                ? "border-groen bg-groen text-white"
-                : "border-neutral-300 bg-white text-neutral-700 hover:border-groen"
-            }`}
-          >
-            {f.label}
-            {!!f.antal && (
-              <span className="rounded-full bg-[#A32020] px-2 py-0.5 text-xs font-bold text-white" aria-label={`${f.antal} nye`}>
-                {f.antal}
-              </span>
-            )}
+    <AdminSide className="space-y-[22px]">
+      <AdminSideHoved
+        titel="Erhverv"
+        forklaring="Dit overblik over firmaer på BidHamr. Øverst det, der venter på dig – svar på nye henvendelser direkte herfra."
+        handlinger={
+          <Link href="/admin/erhverv/henvendelser" className="btn btn-sekundaer btn-lille">
+            Alle henvendelser
           </Link>
-        ))}
-      </nav>
+        }
+      />
+      <ErhvervFaner aktiv="oversigt" />
 
-      {fejl && (
-        <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
-          {fejl}
-        </p>
-      )}
+      {"fejl" in nye && <AdminFejl hvad="Henvendelserne" detalje={nye.fejl} />}
 
-      {!fejl && liste.length === 0 ? (
-        <p className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-neutral-500">
-          {status || arkiverede ? ADMIN_ERHVERV.henvendelser.tomFilter : ADMIN_ERHVERV.henvendelser.tom}
-        </p>
-      ) : (
-        <ul className="divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-          {liste.map((h) => (
-            <li key={h.id}>
-              <Link
-                href={`/admin/erhverv/henvendelser/${h.id}`}
-                className="flex flex-col gap-1 px-5 py-4 hover:bg-neutral-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:gap-4"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2 font-semibold text-neutral-900">
-                    <span className="break-words">{h.firmanavn}</span>
-                    <HenvendelseStatusBadge status={h.status} />
-                    {h.firma_id && (
-                      <span className="rounded-full bg-succes-bg px-2.5 py-0.5 text-xs font-semibold text-succes-tekst">
-                        {ADMIN_ERHVERV_EKSTRA.kontoOprettet}
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-sm text-neutral-600">
-                    {ADMIN_ERHVERV.henvendelser.kolonneCvr} {h.cvr} · {h.kontaktperson} · {h.telefon}
-                  </p>
-                </div>
-                <p className="shrink-0 text-sm text-neutral-500">{datoTid(h.oprettet_kl)}</p>
-              </Link>
-            </li>
+      <Sektion
+        id="erhverv-nye"
+        titel={`Nye henvendelser (${tal.nyeHenvendelser})`}
+        link={tal.nyeHenvendelser > VIS_NYE ? { href: "/admin/erhverv/henvendelser?status=ny", label: "Se alle nye →" } : undefined}
+      >
+        {nyeListe.length === 0 ? (
+          <p className="rounded-[14px] border border-succes-kant bg-succes-bg px-5 py-4 text-sm text-succes-tekst">
+            <span aria-hidden="true">✓ </span>Ingen nye henvendelser.{" "}
+            <Link href="/admin/erhverv/henvendelser?status=i_gang" className="font-semibold underline">
+              Se dem, der er i gang
+            </Link>
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {nyeListe.slice(0, VIS_NYE).map((h) => (
+              <li key={h.id}>
+                <HenvendelseKort h={h} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Sektion>
+
+      <KraeverHandling raekker={raekker} tomLink={{ href: "/admin/erhverv/klager?status=afsluttet", label: "Se afsluttede klager" }} />
+
+      <Sektion id="erhverv-lukning" titel="Lukning, suspension og forslag">
+        {lukningForslag.length === 0 && susp.length === 0 && tal.advarselForslag === 0 ? (
+          <p className="rounded-[14px] border border-admin-kant bg-white px-5 py-4 text-sm text-tekst-daempet">
+            Ingen firmakonti er suspenderet, og der er ingen forslag om lukning eller advarsel.
+          </p>
+        ) : (
+          <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+            {lukningForslag.map((l) => (
+              <li key={l.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-admin-kant px-4 py-3 first:border-t-0">
+                <span className="min-w-0">
+                  <span className="font-semibold text-tekst">{l.firma!.firmanavn}</span>{" "}
+                  <AdminBadge tone="gul">Forslag om lukning</AdminBadge>
+                  <span className="block text-xs text-tekst-svag">Siden {dato(l.oprettet_kl)}</span>
+                </span>
+                <Link href={`/admin/erhverv/firmaer/${l.firma!.id}`} className="btn btn-primaer btn-lille">
+                  Behandl forslaget
+                </Link>
+              </li>
+            ))}
+            {susp.map((u) => (
+              <li key={u.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-admin-kant px-4 py-3 first:border-t-0">
+                <span className="min-w-0">
+                  <span className="font-semibold text-tekst">{u.firma!.firmanavn}</span>{" "}
+                  <AdminBadge tone="roed">Suspenderet</AdminBadge>
+                  <span className="block text-xs text-tekst-svag">
+                    {u.suspenderet_til ? `Til ${dato(u.suspenderet_til)}` : "Permanent"}
+                  </span>
+                </span>
+                <Link href={`/admin/erhverv/firmaer/${u.firma!.id}`} className="btn btn-sekundaer btn-lille">
+                  Se firma
+                </Link>
+              </li>
+            ))}
+            {tal.advarselForslag > 0 && (
+              <li className="flex flex-wrap items-center justify-between gap-2 border-t border-admin-kant px-4 py-3 first:border-t-0">
+                <span className="font-semibold text-tekst">
+                  {tal.advarselForslag} {tal.advarselForslag === 1 ? "forslag" : "forslag"} om advarsel
+                </span>
+                <Link href="/admin/erhverv/klager" className="btn btn-sekundaer btn-lille">
+                  Behandl
+                </Link>
+              </li>
+            )}
+          </ul>
+        )}
+      </Sektion>
+
+      <Sektion id="abonnementer" titel={`Firmaer og abonnementer (${firmaer.length})`} link={{ href: "/admin/erhverv/firmaer", label: "Alle firmaer →" }}>
+        {"fejl" in firmaRes && <AdminFejl hvad="Firmaerne" detalje={firmaRes.fejl} />}
+        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          {(Object.keys(ABONNEMENT_STATUS_NAVN) as AbonnementStatus[]).map((s) => (
+            <div key={s} className="rounded-xl border border-admin-kant bg-white px-4 py-3.5">
+              <small className="block text-[12.5px] text-tekst-svag">{ABONNEMENT_STATUS_NAVN[s]}</small>
+              <b className="mt-0.5 block text-[22px] font-bold tabular-nums text-tekst">{pr.get(s) ?? 0}</b>
+            </div>
           ))}
-        </ul>
-      )}
-    </div>
+        </div>
+        {abonnementProblemer.length > 0 && (
+          <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+            {abonnementProblemer.slice(0, 10).map((f) => (
+              <li key={f.id} className="border-t border-admin-kant first:border-t-0">
+                <Link href={`/admin/erhverv/firmaer/${f.id}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 hover:bg-admin-bg">
+                  <span className="min-w-0 font-semibold text-tekst">{f.firmanavn}</span>
+                  <span className="flex flex-wrap gap-1.5">
+                    {f.betaling_mislykket_kl && <AdminBadge tone="roed">Betaling fejlet</AdminBadge>}
+                    {f.afventende_opgradering && <AdminBadge tone="blaa">Opgradering venter på betaling</AdminBadge>}
+                    <AdminBadge tone={f.abonnement_status === "aktiv" ? "groen" : "gul"}>{ABONNEMENT_STATUS_NAVN[f.abonnement_status]}</AdminBadge>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Sektion>
+    </AdminSide>
   );
 }

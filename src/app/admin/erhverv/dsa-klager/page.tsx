@@ -4,8 +4,8 @@ import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import ErhvervFaner from "@/components/admin/erhverv/ErhvervFaner";
 import { Frist, Pille, tid } from "@/components/admin/dsa/DsaDele";
 import { FIRMA_KLAGER_SIDE, hentFirmaDsaKlager, hentFirmaFor, type FirmaKlageStatus } from "@/lib/dsa/firmaKlager";
-import { ADMIN_ERHVERV } from "@/lib/tekster/erhverv";
 import { ERHVERV_DSA_KLAGER as T } from "@/lib/tekster/erhvervDsaKlager";
+import AdminSide from "@/components/admin/AdminSide";
 
 // Admin → Erhverv → Firmaets klager: DSA-klager over suspension og
 // lukning af en firmakonto. Kun chef og saelger (kraevErhvervSide). Klagen
@@ -44,12 +44,12 @@ export default async function ErhvervDsaKlagerSide({
   const flereHref = `${filterHref(status)}${status === "afgjort" ? "&" : "?"}antal=${antal + FIRMA_KLAGER_SIDE}`;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
-      <AdminSideHoved titel={ADMIN_ERHVERV.menupunkt} forklaring={T.forklaring} />
+    <AdminSide>
+      <AdminSideHoved titel="Erhverv" forklaring={T.forklaring} />
       <ErhvervFaner aktiv="dsa-klager" />
 
       <div>
-        <h2 className="font-sans text-lg font-semibold text-neutral-900">{T.titel}</h2>
+        <h2 className="font-sans text-lg font-semibold text-tekst">{T.titel}</h2>
       </div>
 
       <nav aria-label="Filter" className="flex flex-wrap gap-2">
@@ -59,7 +59,7 @@ export default async function ErhvervDsaKlagerSide({
             href={filterHref(s)}
             aria-current={status === s ? "page" : undefined}
             className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium ${
-              status === s ? "border-groen bg-groen text-white" : "border-neutral-300 bg-white text-neutral-700 hover:border-groen"
+              status === s ? "border-groen bg-groen text-white" : "border-neutral-300 bg-white text-tekst hover:border-groen"
             }`}
           >
             {T.filter[s]}
@@ -74,9 +74,9 @@ export default async function ErhvervDsaKlagerSide({
       )}
 
       {!fejl && klager.length === 0 ? (
-        <p className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-neutral-500">{T.tom[status]}</p>
+        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-tekst-svag">{T.tom[status]}</p>
       ) : (
-        <ul className="divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+        <ul className="divide-y divide-admin-kant overflow-hidden rounded-[14px] border border-admin-kant bg-white">
           {klager.map((k) => {
             const firma = firmaer.get(k.afg.bruger_id);
             const lukket = k.afg.handling === "konto_lukket";
@@ -87,7 +87,7 @@ export default async function ErhvervDsaKlagerSide({
                   className="flex min-h-11 flex-col gap-1.5 px-5 py-4 hover:bg-neutral-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:gap-4"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-2 font-semibold text-neutral-900">
+                    <p className="flex flex-wrap items-center gap-2 font-semibold text-tekst">
                       <span>{k.sagsnummer}</span>
                       <span className="break-words">{firma?.firmanavn ?? "Firma"}</span>
                       <Pille farve={lukket ? "orange" : "blaa"}>
@@ -100,14 +100,14 @@ export default async function ErhvervDsaKlagerSide({
                         </Pille>
                       )}
                     </p>
-                    <p className="mt-0.5 line-clamp-2 break-words text-sm text-neutral-600">{k.begrundelse}</p>
+                    <p className="mt-0.5 line-clamp-2 break-words text-sm text-tekst-daempet">{k.begrundelse}</p>
                     {k.afgjort_kl && (
-                      <p className="mt-0.5 text-xs text-neutral-500">
+                      <p className="mt-0.5 text-xs text-tekst-svag">
                         {T.afgjortAf(navne.get(k.afgjort_af ?? "") ?? "–", tid(k.afgjort_kl))}
                       </p>
                     )}
                   </div>
-                  <div className="shrink-0 text-sm text-neutral-500">
+                  <div className="shrink-0 text-sm text-tekst-svag">
                     {status === "afventer" ? <Frist iso={k.frist_kl} /> : tid(k.oprettet_kl)}
                   </div>
                 </Link>
@@ -122,12 +122,12 @@ export default async function ErhvervDsaKlagerSide({
           <Link
             href={flereHref}
             scroll={false}
-            className="inline-flex min-h-11 items-center rounded-full border border-neutral-300 bg-white px-5 text-sm font-medium text-neutral-800 hover:border-groen"
+            className="inline-flex min-h-11 items-center rounded-full border border-neutral-300 bg-white px-5 text-sm font-medium text-tekst hover:border-groen"
           >
             {T.visFlere}
           </Link>
         </div>
       )}
-    </div>
+    </AdminSide>
   );
 }
