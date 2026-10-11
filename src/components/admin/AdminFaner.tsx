@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
+import RulAktivFane from "@/components/admin/RulAktivFane";
 
-export type AdminFane = { id: string; label: string; href: string };
+export type AdminFane = { id: string; label: ReactNode; href: string };
 
 // Fælles faner øverst på en admin-side (fx Brugere og Rapporter). Hver fane
 // er sin egen URL, så gamle links og bogmærker stadig virker.
@@ -29,6 +31,7 @@ export default function AdminFaner({
           {f.label}
         </Link>
       ))}
+      <RulAktivFane aktiv={aktiv} />
     </nav>
   );
 }

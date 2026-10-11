@@ -79,6 +79,8 @@ export type Afgoerelse = {
   oprettet_kl: string;
   ophaevet_kl: string | null;
   ophaevet_grund: string | null;
+  // Kun konto_suspenderet: null = permanent.
+  varighed_til?: string | null;
 };
 
 export type Klage = {
@@ -335,6 +337,10 @@ export function AnmeldelseGruppeKort({
   );
 }
 
+// Bruges også under Admin → Erhverv → Firmaets klager (klager over en
+// firmakonto): dér afgør chef og sælger-rollen via deres egen server action
+// (afgoerAction), og links til brugeren peger på firmasiden (brugerHref),
+// fordi sælger-rollen ikke har adgang til Admin → Brugere.
 export function KlageKort({
   k,
   afg,
@@ -342,6 +348,12 @@ export function KlageKort({
   navn,
   inhabil,
   erAdmin,
+  afgoerAction = dsaKlageAfgoer,
+  brugerHref = (id) => `/admin/brugere/${id}`,
+  erhverv = false,
+  som = "li",
+  afgjort = false,
+  medholdKunErhverv = false,
 }: {
   k: Klage;
   afg: Afgoerelse | null;
@@ -349,13 +361,34 @@ export function KlageKort({
   navn: Navn;
   inhabil: string | null;
   erAdmin: boolean;
+  afgoerAction?: (formData: FormData) => Promise<{ ok: true } | { fejl: string }>;
+  brugerHref?: (id: string) => string | null;
+  erhverv?: boolean;
+  som?: "li" | "div";
+  // Afgjort: kun visning (ingen frist og ingen knapper).
+  afgjort?: boolean;
+  // Klage over lukning/permanent suspension af en firmakonto, og brugeren
+  // har ikke erhvervsrolle: kun "Fasthold" vises.
+  medholdKunErhverv?: boolean;
 }) {
-  const kraeverAdmin = afg ? handlingKraeverAdmin(afg.handling) : false;
+  // Firmakonti: chef og sælger-rollen må afgøre (databasen tjekker det).
+  const kraeverAdmin = !erhverv && afg ? handlingKraeverAdmin(afg.handling) : false;
+  const Rod = som;
+  const brugerLink = (id: string) => {
+    const href = brugerHref(id);
+    return href ? (
+      <Link href={href} className="font-medium text-groen hover:underline">
+        {navn(id)}
+      </Link>
+    ) : (
+      <span className="font-medium text-neutral-800">{navn(id)}</span>
+    );
+  };
   const titelId = `klage-${k.id}`;
   const ramt = afg ? afg.bruger_id : (anm?.anmeldt_bruger_id ?? null);
 
   return (
-    <li aria-labelledby={titelId} className="rounded-[14px] border border-kant bg-white p-4 sm:p-5">
+    <Rod aria-labelledby={titelId} className="rounded-[14px] border border-kant bg-white p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 id={titelId} className="text-[15px] font-semibold text-neutral-900">
@@ -370,7 +403,7 @@ export function KlageKort({
             </p>
           )}
         </div>
-        <Frist iso={k.frist_kl} />
+        {!afgjort && <Frist iso={k.frist_kl} />}
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -400,10 +433,8 @@ export function KlageKort({
           )}
           {ramt && (
             <p className="mt-2">
-              <Rolle>Ejer</Rolle>
-              <Link href={`/admin/brugere/${ramt}`} className="font-medium text-groen hover:underline">
-                {navn(ramt)}
-              </Link>
+              <Rolle>{erhverv ? "Firma" : "Ejer"}</Rolle>
+              {brugerLink(ramt)}
             </p>
           )}
         </Boks>
@@ -411,9 +442,7 @@ export function KlageKort({
           <p>
             <Rolle>{afg ? "Klager" : "Anmelder"}</Rolle>
             {k.klager_id ? (
-              <Link href={`/admin/brugere/${k.klager_id}`} className="font-medium text-groen hover:underline">
-                {navn(k.klager_id)}
-              </Link>
+              brugerLink(k.klager_id)
             ) : (
               <span className="break-all text-neutral-800">{k.klager_email ?? "anmelder uden login"}</span>
             )}
@@ -422,41 +451,48 @@ export function KlageKort({
         </Boks>
       </div>
 
-      {inhabil ? (
+      {afgjort ? null : inhabil ? (
         <Inhabil grund={inhabil} />
       ) : kraeverAdmin && !erAdmin ? (
         <p className="mt-4 rounded-lg bg-info-bg px-3 py-2.5 text-sm text-info-tekst">
           Klager over auktioner og lukkede konti behandles af en admin eller chef.
         </p>
       ) : (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <ConfirmDialog
-            triggerLabel="Giv medhold"
-            triggerClassName={KNAP_BEHOLD}
-            title="Giv klageren medhold?"
-            description={
-              afg
-                ? afg.handling === "auktion_fjernet" || afg.handling === "auktion_annulleret"
-                  ? "Afgørelsen bliver ophævet, men auktionen åbnes ikke igen – buddene gælder ikke. Sælgeren får dit svar (husk en undskyldning) og kan sætte varen op igen med ét klik."
-                  : "Indgrebet bliver ophævet med det samme (indholdet vises igen / kontoen åbnes igen). Klageren får dit svar."
-                : "Anmeldelsen bliver genåbnet og skal behandles igen. Anmelderen får dit svar."
-            }
-            confirmLabel="Giv medhold"
-            action={dsaKlageAfgoer}
-            hiddenFields={{ klageId: k.id, udfald: "medhold" }}
-            kvittering="Klageren har fået medhold og får dit svar."
-            tekstFelter={[
-              { name: "svar", label: "Svar til klageren (vises for klageren)", required: true, maxLength: 2000 },
-              { name: "aarsag", label: "Intern note (kun staff)", required: false, maxLength: 2000 },
-            ]}
-          />
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {medholdKunErhverv && (
+            <p className="w-full rounded-lg bg-info-bg px-3 py-2.5 text-sm text-info-tekst">
+              Kun chefen og sælger-rollen kan give medhold – se Erhverv → Firmaets klager.
+            </p>
+          )}
+          {!medholdKunErhverv && (
+            <ConfirmDialog
+              triggerLabel="Giv medhold"
+              triggerClassName={KNAP_BEHOLD}
+              title="Giv klageren medhold?"
+              description={
+                afg
+                  ? afg.handling === "auktion_fjernet" || afg.handling === "auktion_annulleret"
+                    ? "Afgørelsen bliver ophævet, men auktionen åbnes ikke igen – buddene gælder ikke. Sælgeren får dit svar (husk en undskyldning) og kan sætte varen op igen med ét klik."
+                    : "Indgrebet bliver ophævet med det samme (indholdet vises igen / kontoen åbnes igen). Klageren får dit svar."
+                  : "Anmeldelsen bliver genåbnet og skal behandles igen. Anmelderen får dit svar."
+              }
+              confirmLabel="Giv medhold"
+              action={afgoerAction}
+              hiddenFields={{ klageId: k.id, udfald: "medhold" }}
+              kvittering="Klageren har fået medhold og får dit svar."
+              tekstFelter={[
+                { name: "svar", label: "Svar til klageren (vises for klageren)", required: true, maxLength: 2000 },
+                { name: "aarsag", label: "Intern note (kun staff)", required: false, maxLength: 2000 },
+              ]}
+            />
+          )}
           <ConfirmDialog
             triggerLabel="Fasthold afgørelsen"
             triggerClassName={KNAP_FJERN}
             title="Fasthold afgørelsen?"
             description="Afgørelsen står ved magt. Klageren får dit svar og besked om andre klagemuligheder. Der er kun ét klagetrin."
             confirmLabel="Fasthold"
-            action={dsaKlageAfgoer}
+            action={afgoerAction}
             hiddenFields={{ klageId: k.id, udfald: "fastholdt" }}
             kvittering="Afgørelsen er fastholdt. Klageren får dit svar."
             tekstFelter={[
@@ -466,6 +502,6 @@ export function KlageKort({
           />
         </div>
       )}
-    </li>
+    </Rod>
   );
 }

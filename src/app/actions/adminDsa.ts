@@ -225,6 +225,13 @@ export async function dsaKlageAfgoer(formData: FormData): Promise<{ ok: true } |
       if (kode === "ingen_adgang") {
         throw new BrugerFejl("Klager over fjernede auktioner og lukkede konti skal behandles af en admin eller chef.");
       }
+      // 20261016050000: medhold i en klage over lukning eller permanent
+      // suspension af en firmakonto kræver chef eller sælger-rollen.
+      if (kode === "kun_erhverv") {
+        throw new BrugerFejl(
+          "Kun chefen og sælger-rollen kan give medhold i en klage over lukning eller permanent suspension af en firmakonto. De finder klagen under Erhverv → Firmaets klager.",
+        );
+      }
       throw new BrugerFejl(KODE_FEJL[kode ?? ""] ?? indgrebFejl(kode ?? ""));
     }
     after(() => notificerKlageSvar(id));
