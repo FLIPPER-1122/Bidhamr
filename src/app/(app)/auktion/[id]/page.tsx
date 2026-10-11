@@ -60,7 +60,22 @@ export default async function AuktionPage({
   // med service role i samme runde. Den BRUGES først nedenfor, efter at RLS
   // (auktionen) har vist, at brugeren må se auktionen, og kun på serveren
   // ("Dig"/"Byder N") - id'et sendes aldrig til browseren.
-  const [{ data: auktion }, bruger, { data: budRaw }, { data: vinderRaekke }] = await Promise.all([
+  // Er sælgeren frosset (BHU03 - der kan ikke bydes)? Kun ja/nej bruges -
+  // intet fra sælgerens betalingsprofil sendes til browseren. Startes, så
+  // snart sælgeren kendes (auktionsrækken er cachet), i stedet for at vente
+  // på resten af første runde.
+  const frossenLoefte = hentAuktionRaekke(id).then(({ data: a }) =>
+    a
+      ? createAdminClient()
+          .from("betalingsprofiler")
+          .select("user_id")
+          .eq("user_id", a.bruger_id)
+          .not("saelger_frosset_kl", "is", null)
+          .maybeSingle()
+          .then((r) => Boolean(r.data))
+      : false,
+  );
+  const [{ data: auktion }, bruger, { data: budRaw }, { data: vinderRaekke }, frossen] = await Promise.all([
     hentAuktionRaekke(id),
     hentBruger(),
     createAdminClient()
@@ -89,6 +104,7 @@ export default async function AuktionPage({
       .select("vinder_id")
       .eq("id", id)
       .maybeSingle<{ vinder_id: string | null }>(),
+    frossenLoefte,
   ]);
 
   // layout.tsx har allerede givet 404 (med rigtig status), hvis brugeren
@@ -98,14 +114,6 @@ export default async function AuktionPage({
     notFound();
   }
   const skjult = Boolean(auktion.skjult);
-  // Er sælgeren frosset (BHU03 - der kan ikke bydes)? Kun ja/nej bruges -
-  // intet fra sælgerens betalingsprofil sendes til browseren.
-  const { data: frossen } = await createAdminClient()
-    .from("betalingsprofiler")
-    .select("user_id")
-    .eq("user_id", auktion.bruger_id)
-    .not("saelger_frosset_kl", "is", null)
-    .maybeSingle();
   // Skjult og på pause (Filip, 6. okt. 2026): den slutter ikke, før den er
   // vist igen - slutter_kl gælder ikke imens.
   const pauset = erPaaPause(auktion);
@@ -548,7 +556,7 @@ export default async function AuktionPage({
               pauseResterende={(auktion.pause_resterende as string | null | undefined) ?? null}
               erhvervAuktion={erhvervAuktion}
               erFirmakonto={erFirmakonto}
-              saelgerFrosset={!!frossen}
+              saelgerFrosset={frossen}
               mitidMangler={minMitId?.mangler ?? false}
             />
 

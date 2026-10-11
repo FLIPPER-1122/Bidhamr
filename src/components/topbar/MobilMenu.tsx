@@ -43,11 +43,16 @@ export default function MobilMenu({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lukRef = useRef<HTMLButtonElement>(null);
   const [aaben, setAaben] = useState(false);
+  // Skuffens indhold (ca. 40 links med ikoner) bygges først, når menuen
+  // åbnes første gang. Lukket er skuffen display:none, så intet ændrer sig for
+  // brugeren - men hver side slipper for at sende og hydrere det på forhånd.
+  const [vist, setVist] = useState(false);
   const antalBeskeder = useAntalUlaesteBeskeder();
   const luk = () => dialogRef.current?.close();
   const { logUd, loggerUd, fejl: logUdFejl } = useLogUd(luk);
 
   function aabn() {
+    setVist(true);
     dialogRef.current?.showModal();
     lukRef.current?.focus();
     setAaben(true);
@@ -137,6 +142,8 @@ export default function MobilMenu({
             </button>
           </div>
 
+          {vist && (
+          <>
           <nav aria-label="Hovedmenu" className="flex-1 overflow-y-auto overscroll-contain px-2 py-4">
             {!erFirma && (
             <div className="px-2">
@@ -281,6 +288,8 @@ export default function MobilMenu({
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
       </dialog>
     </>

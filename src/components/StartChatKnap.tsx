@@ -3,7 +3,6 @@
 import { MINE_HANDLER_HREF } from "@/lib/profilFaner";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 // Handlen oprettes af pg_cron op til et minut efter auktionen er slut, så i
 // det vindue findes den endnu ikke, når siden renderes. I stedet for at vise
@@ -33,6 +32,10 @@ export default function StartChatKnap({
     let forsoeg = 0;
 
     async function tjek() {
+      // Indlæses først her, så Supabase-klienten ikke er med i auktionssidens
+      // første JavaScript.
+      const { createClient } = await import("@/lib/supabase/client");
+      if (afbrudt) return;
       const supabase = createClient();
       const { data } = await supabase
         .from("trades")

@@ -384,9 +384,11 @@ export default function AuctionBrowser({
             loading ? "opacity-50" : ""
           }`}
         >
-          {auktioner.map((auktion) => (
+          {auktioner.map((auktion, i) => (
             <li key={auktion.id} className="min-w-0">
-              <AuctionCard auktion={auktion} />
+              {/* Første række (4 kort på store skærme, 2 rækker på mobil) er
+                  over folden - et af dem er LCP-billedet. */}
+              <AuctionCard auktion={auktion} foerst={i < 4} />
             </li>
           ))}
         </ul>

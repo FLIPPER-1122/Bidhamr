@@ -33,9 +33,13 @@ const STANDARD_SIZES = "(min-width: 1280px) 300px, (min-width: 1024px) 31vw, 46v
 export default function AuctionCard({
   auktion,
   sizes = STANDARD_SIZES,
+  foerst = false,
 }: {
   auktion: DummyAuction;
   sizes?: string;
+  // Kortet ligger i første række (over folden på mobil): billedet hentes med
+  // det samme og med høj prioritet, fordi det typisk er sidens LCP-billede.
+  foerst?: boolean;
 }) {
   const favoritter = useFavoritter();
   const gemt = favoritter?.erFavorit(auktion.id) ?? false;
@@ -58,6 +62,8 @@ export default function AuctionCard({
               fill
               sizes={sizes}
               unoptimized={!kanOptimeres(auktion.billede)}
+              loading={foerst ? "eager" : "lazy"}
+              fetchPriority={foerst ? "high" : undefined}
               className="object-cover"
             />
           ) : (

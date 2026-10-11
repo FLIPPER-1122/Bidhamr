@@ -14,6 +14,10 @@ import { usePathname, useRouter } from "next/navigation";
 // ville lægge den i JavaScript-pakken på hver side, før siden kan vises.
 const hentKlient = () => import("@/lib/supabase/client").then((m) => m.createClient());
 
+// Supabase gemmer sessionen i cookien sb-<projekt>-auth-token (evt. delt i
+// .0, .1 ...). Findes den ikke, er brugeren ikke logget ind.
+const harLoginCookie = () => /(?:^|;\s*)sb-[^=;]+-auth-token(?:\.\d+)?=/.test(document.cookie);
+
 // Favoritterne hentes EEN gang og deles af alle auktionskort på siden.
 // Alternativet - at hvert kort selv slår op - ville give ét kald pr. kort på
 // en side med 50 auktioner.
@@ -62,6 +66,14 @@ export default function FavoritterProvider({
     let afbrudt = false;
 
     async function hent() {
+      // Uden login-cookie er der ingen bruger og ingen favoritter, så
+      // Supabase-klienten hentes slet ikke (det gælder de fleste nye
+      // besøgende). Cookien er ikke httpOnly - browserklienten læser den selv.
+      if (!harLoginCookie()) {
+        setBruger(null);
+        setKlar(true);
+        return;
+      }
       const supabase = await hentKlient();
       if (afbrudt) return;
       const { data: auth } = await supabase.auth.getUser();
