@@ -43,6 +43,7 @@ import { fragtLabelsAktiv } from "@/lib/fragt";
 import { hentKontoType } from "@/lib/supabase/bruger";
 import { foerLancering } from "@/lib/lancering";
 import FirmaKontaktBoks from "@/components/erhverv/FirmaKontaktBoks";
+import KlageBoks from "@/components/erhverv/klager/KlageBoks";
 import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 
 // Handelssiden - fælles for /mine-handler/[trade_id] (private) og
@@ -898,6 +899,8 @@ export default async function HandelDetalje({
         {erhvervHandel ? (
           <>
             {erKoeber && <FirmaKontaktBoks saelgerId={handel.seller_id} />}
+            {/* Klage over firmaet (reklamation) - databasen afgør, om den vises. */}
+            {erKoeber && <KlageBoks tradeId={handel.id} koeberId={user.id} />}
             {erSaelger && (
               <p className="rounded-[14px] border border-kant bg-white p-5 text-[17px] text-tekst-daempet sm:p-6">
                 {FIRMA_DASHBOARD.salg.ingenChat}

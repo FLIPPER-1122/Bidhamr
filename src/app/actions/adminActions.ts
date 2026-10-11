@@ -162,25 +162,21 @@ async function unsuspendUserImpl(formData: FormData): Promise<void> {
     throw new BrugerFejl("Kontoen er lukket permanent og kan ikke åbnes igen.");
   }
 
-  const { error } = await admin
-    .from("users")
-    .update({
-      suspenderet: false,
-      suspenderet_aarsag: null,
-      suspenderet_kl: null,
-      suspenderet_til: null,
-    })
-    .eq("id", userId);
-  if (error) throw new Error(error.message);
-
-  await logModeration(admin, {
-    medarbejder_id: staffId,
-    handling: "ophaev_suspension",
-    maal_type: "bruger",
-    maal_id: userId,
-    bruger_id: userId,
-    aarsag: "Suspension ophævet",
+  // Databasen tjekker rollen og logger (20261016050000): en permanent
+  // suspension af en firmakonto kan kun ophæves af chef og sælger-rollen.
+  const { data, error } = await admin.rpc("bruger_ophaev_suspension", {
+    p_staff: staffId,
+    p_bruger: userId,
   });
+  if (error) throw new Error(error.message);
+  const kode = (data as { kode?: string } | null)?.kode;
+  if (kode === "kun_erhverv") {
+    throw new BrugerFejl(
+      "Det er en firmakonto, der er suspenderet permanent. Kun chefen og sælger-rollen kan ophæve suspensionen (under Erhverv → Firmaer).",
+    );
+  }
+  if (kode === "lukket") throw new BrugerFejl("Kontoen er lukket permanent og kan ikke åbnes igen.");
+  if (kode !== "ok" && kode !== "uaendret") throw new BrugerFejl(indgrebFejl(kode ?? ""));
 
   revalidatePath("/admin/brugere");
   revalidatePath(`/admin/brugere/${userId}`);

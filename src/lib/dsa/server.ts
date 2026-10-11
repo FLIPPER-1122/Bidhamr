@@ -414,6 +414,10 @@ export const INDGREB_FEJL: Record<string, string> = {
   ugyldig_bruger: "Brugeren findes ikke.",
   sig_selv: "Du kan ikke gøre dette mod dig selv.",
   ugyldig_sag: "Sagen hører ikke til brugeren.",
+  // 20261016020000_erhverv_klager.sql: firmakonti lukkes og suspenderes
+  // permanent kun af chef og sælger-rollen.
+  kun_erhverv:
+    "Det er en firmakonto. Kun chefen og sælger-rollen kan lukke en firmakonto eller suspendere den permanent.",
 };
 
 export function indgrebFejl(kode: string): string {
