@@ -54,7 +54,7 @@ export default async function IndtastKodeSide({
 
         {fra === "beta" && !linkFejl ? (
           // Beta-signup: samme tekst, uanset om e-mailen er inviteret eller
-          // allerede har en konto (opretBetaKonto afslører det ikke).
+          // allerede har en konto (opretKonto afslører det ikke).
           <div className="mt-2 space-y-3 text-center text-[15px] text-tekst-daempet">
             <p>
               Tjek din indbakke{email ? <> på <span className="font-semibold break-all text-tekst">{email}</span></> : null}. Er

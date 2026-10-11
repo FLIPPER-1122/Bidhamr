@@ -10,9 +10,11 @@ import SignupForm from "./SignupForm";
 // Mens den er lukket, vises formularen kun, når chefen har beta-testen åben -
 // og så kan kun inviterede e-mails oprette sig (opretKonto tjekker
 // invitationen, og databasen tjekker igen i handle_new_user).
-// BEMÆRK: dette er kun app-laget. Selve tilmeldingen skal også styres i
-// Supabase (Auth -> Sign In / Providers -> "Allow new users to sign up"),
-// ellers kan man stadig oprette konti direkte mod auth-API'et med anon-nøglen.
+// Kontoen oprettes altid på serveren (src/lib/kontoOprettelse.ts). "Allow new
+// users to sign up" i Supabase skal ALTID være slået fra, og databasen
+// afviser enhver ny konto uden en billet fra serveren
+// (20261018010000_signup_billet_altid.sql), så signUp med anon-nøglen aldrig
+// virker.
 export const metadata: Metadata = { title: "Opret konto", robots: { index: false, follow: false } };
 
 export default async function SignupSide() {

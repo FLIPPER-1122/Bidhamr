@@ -13,10 +13,13 @@ import { MITID } from "@/lib/tekster/mitid";
 // første bud/auktion). Firmakonti sendes til /firma af proxyen.
 export const metadata: Metadata = { title: "Velkommen", robots: { index: false, follow: false } };
 
-export default async function VelkommenSide() {
+// ?navn=1: e-mailen er bekræftet, men navnet fra oprettelsen kunne ikke gemmes
+// (verificerSignupKode i src/app/actions/auth.ts) - brugeren skal skrive det.
+export default async function VelkommenSide({ searchParams }: { searchParams: Promise<{ navn?: string }> }) {
   const bruger = await hentBruger();
   if (!bruger) redirect("/login");
   const mitid = await hentMitIdStatus(bruger.id);
+  const { navn } = await searchParams;
 
   return (
     <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
@@ -27,6 +30,16 @@ export default async function VelkommenSide() {
           </svg>
         </div>
         <h1 className="mt-4 text-[26px] leading-tight sm:text-[32px]">Velkommen til BidHamr</h1>
+
+        {navn === "1" && (
+          <p role="alert" className="mt-4 rounded-xl border border-advarsel-kant bg-advarsel-bg p-4 text-left text-sm text-advarsel-tekst">
+            Vi kunne ikke gemme dit navn. Skriv dit fornavn og efternavn under{" "}
+            <Link href={`/profil/${bruger.id}?fane=indstillinger`} className="font-semibold underline">
+              Indstillinger
+            </Link>
+            , før du byder eller sælger. Navnet må ikke indeholde en e-mail, et telefonnummer eller et link.
+          </p>
+        )}
 
         {mitid.mangler ? (
           <>

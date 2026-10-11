@@ -19,6 +19,7 @@ import { unstable_rethrow } from "next/navigation";
 import { assertErhverv } from "@/lib/adminAuth";
 import { FOR_MANGE_FORSOEG, indenForGraense } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
+import { fjernBillet, fjernBilletFraMetadata, nyBillet } from "@/lib/kontoOprettelse";
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { firmaVelkomstMail } from "@/lib/mails/erhverv";
 import { sideUrl } from "@/lib/mails/layout";
@@ -446,15 +447,28 @@ export async function opretFirmakonto(
     if (!pakke.data) kodeFejl("ugyldig_pakke");
     if ((brugtHenv.data ?? []).length > 0) kodeFejl("henvendelse_brugt");
 
-    // Før lancering afviser databasen nye konti uden beta-invitation
-    // (handle_new_user, 20261017010000_beta_invitationer.sql). Billetten
-    // lader netop denne e-mail oprette én konto inden for 10 minutter.
-    const { data: billet, error: billetFejl } = await admin.rpc("konto_oprettelse_tillad", {
+    // Databasen afviser enhver ny konto uden en billet fra serveren, bundet
+    // til netop dette kald med et engangs-nonce (handle_new_user,
+    // 20261018010000_signup_billet_altid.sql). Billetten lader netop denne
+    // e-mail oprette én konto inden for 10 minutter - kun med nonce'et, som
+    // sendes med i generateLink (metadata bh_billet) og fjernes bagefter.
+    const nb = nyBillet();
+    let { data: billet, error: billetFejl } = await admin.rpc("konto_oprettelse_tillad", {
       p_staff: userId,
       p_email: loginEmail,
+      p_hash: nb.hash,
     });
-    // PGRST202: funktionen findes ikke (migrationen er ikke kørt endnu) - så
-    // findes værnet heller ikke, og kontoen kan oprettes som før.
+    // PGRST202: migrationen 20261018010000 er ikke kørt endnu - så bruges den
+    // gamle billet uden nonce (20261017010000). Findes den heller ikke, er der
+    // intet værn, og kontoen kan oprettes som før.
+    let medNonce = true;
+    if (billetFejl?.code === "PGRST202") {
+      medNonce = false;
+      ({ data: billet, error: billetFejl } = await admin.rpc("konto_oprettelse_tillad", {
+        p_staff: userId,
+        p_email: loginEmail,
+      }));
+    }
     const uden = billetFejl?.code === "PGRST202";
     if (!uden && (billetFejl || (billet as { kode?: string } | null)?.kode !== "ok")) {
       throw new Error(`konto_oprettelse_tillad: ${billetFejl?.message ?? (billet as { kode?: string } | null)?.kode ?? "intet svar"}`);
@@ -464,18 +478,23 @@ export async function opretFirmakonto(
     const { data: link, error: linkFejl } = await admin.auth.admin.generateLink({
       type: "invite",
       email: loginEmail,
-      options: { data: { navn: felter.firmanavn } },
+      options: { data: { navn: felter.firmanavn, ...(medNonce ? { bh_billet: nb.nonce } : {}) } },
     });
     if (linkFejl || !link?.user || !link.properties?.hashed_token) {
-      // Ingen konto blev oprettet: fjern billetten igen, så den ikke kan
-      // bruges af andre veje ind i de resterende minutter.
-      const { error: sletFejl } = await admin.from("konto_oprettelse_billetter").delete().eq("email", loginEmail);
-      if (sletFejl && sletFejl.code !== "42P01" && sletFejl.code !== "PGRST205") {
-        console.error("opretFirmakonto: billet ikke slettet:", sletFejl.message);
+      // Ingen konto blev oprettet: fjern billetten igen, så den ikke ligger
+      // og venter i de resterende minutter.
+      if (medNonce) {
+        await fjernBillet(nb.hash);
+      } else {
+        const { error: sletFejl } = await admin.from("konto_oprettelse_billetter").delete().eq("email", loginEmail);
+        if (sletFejl && sletFejl.code !== "42P01" && sletFejl.code !== "PGRST205") {
+          console.error("opretFirmakonto: billet ikke slettet:", sletFejl.message);
+        }
       }
       if (linkFejl?.code === "email_exists" || linkFejl?.status === 422) kodeFejl("ikke_ny_konto");
       throw new Error(`generateLink: ${linkFejl?.code ?? ""} ${linkFejl?.message ?? "intet svar"}`);
     }
+    if (medNonce) await fjernBilletFraMetadata(link.user.id);
 
     const { data, error } = await admin.rpc("erhverv_firma_opret", {
       p_staff: userId,
