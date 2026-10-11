@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
-import { hentSag } from "@/app/actions/adminSager";
+import { hentSag, hentSager } from "@/app/actions/adminSager";
+import AdminSide from "@/components/admin/AdminSide";
+import { adminSagSti } from "@/lib/sager";
 import { hentSamtalerForSag } from "@/app/actions/staffChat";
 import {
   SAG_ANKE_STATUS_NAVN,
@@ -48,7 +50,7 @@ function logNavn(h: string) {
 
 function Kort({ titel, children }: { titel: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
+    <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
       <h2 className="mb-3 text-base font-semibold text-neutral-900">{titel}</h2>
       {children}
     </section>
@@ -86,25 +88,41 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
     throw new Error(res.fejl);
   }
   const { sag } = res;
+
+  // "Løs og gå til næste": næste sag i samme kø (anker eller åbne), ældste først.
+  const koe = sag.anke?.status === "afventer" ? "anker" : "aabne";
+  const koeRes = await hentSager(koe, 0);
+  const naeste =
+    "fejl" in koeRes
+      ? null
+      : koeRes.sager.find((s) => s.id !== sag.id && (koe === "anker" ? s.ankeVenter : s.status === "aaben"));
+  const naesteHref = naeste ? adminSagSti(naeste.id) : `/admin/sager?vis=${koe}`;
   const b = sag.betaling;
   const kanSkriveFaelles = rolle ? harMindstRolle(rolle, "admin") : false;
   const koeberNavn = sag.koeber.navn ?? "Uden navn";
   const saelgerNavn = sag.saelger.navn ?? "Uden navn";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
-      <Link
-        href="/admin/sager"
-        className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-neutral-500 hover:text-neutral-800"
-      >
-        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-        </svg>
-        Alle sager
-      </Link>
+    <AdminSide detalje>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link
+          href="/admin/sager"
+          className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-tekst-daempet hover:text-tekst"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Sager
+        </Link>
+        {naeste && (
+          <Link href={naesteHref} className="inline-flex min-h-11 items-center text-sm font-semibold text-groen hover:underline">
+            Spring over – næste sag →
+          </Link>
+        )}
+      </div>
 
       {/* Overblik og handlinger */}
-      <section className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
+      <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-2">
           <SagStatusBadge status={sag.status} />
           {sag.beskyttelse && <BeskyttelseBadge />}
@@ -154,6 +172,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
 
         <div className="mt-4">
           <SagHandlinger
+            naesteHref={naesteHref}
             sagId={sag.id}
             type={sag.type}
             indsigelse={!!b?.indsigelse}
@@ -463,6 +482,6 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
           </ol>
         )}
       </Kort>
-    </div>
+    </AdminSide>
   );
 }

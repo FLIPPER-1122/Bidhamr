@@ -17,6 +17,9 @@ import {
 import { SAG_BEGRUNDELSE_MAKS, type SagStatus, type SagType } from "@/lib/sager";
 import { STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
+import Skabeloner from "@/components/admin/Skabeloner";
+import { visKvittering } from "@/components/admin/Kvittering";
+import { SAG_BEGRUNDELSE } from "@/lib/tekster/adminSkabeloner";
 
 const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
 
@@ -97,18 +100,33 @@ function Knapper({
   bekraeft,
   fare = false,
   deaktiveret = false,
+  naeste = false,
 }: {
   sender: boolean;
   onLuk: () => void;
   bekraeft: string;
   fare?: boolean;
   deaktiveret?: boolean;
+  // Vis "Løs og gå til næste sag" (samme handling, derefter næste i køen).
+  naeste?: boolean;
 }) {
   return (
-    <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
+    <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:flex-wrap sm:justify-end">
       <button type="button" onClick={onLuk} disabled={sender} className="btn btn-sekundaer">
         Annullér
       </button>
+      {naeste && (
+        <button
+          type="submit"
+          name="__naeste"
+          value="1"
+          disabled={sender || deaktiveret}
+          aria-busy={sender}
+          className="btn btn-sekundaer"
+        >
+          Løs og gå til næste sag
+        </button>
+      )}
       <button
         type="submit"
         disabled={sender || deaktiveret}
@@ -130,7 +148,7 @@ function useSend(onResultat: (besked: string) => void, onLuk: () => void) {
   const [fejl, setFejl] = useState<string | null>(null);
   const laas = useRef(false);
 
-  async function send(fn: () => Promise<{ ok: true; besked: string } | { fejl: string }>) {
+  async function send(fn: () => Promise<{ ok: true; besked: string } | { fejl: string }>, videre?: string | null) {
     if (laas.current) return;
     laas.current = true;
     setSender(true);
@@ -142,6 +160,12 @@ function useSend(onResultat: (besked: string) => void, onLuk: () => void) {
         return;
       }
       onLuk();
+      if (videre) {
+        // "Løs og gå til næste": kvitteringen følger med til næste sag.
+        visKvittering(res.besked);
+        router.push(videre);
+        return;
+      }
       onResultat(res.besked);
       router.refresh();
     } catch {
@@ -182,10 +206,12 @@ function AfgoerKnap({
   indsigelse,
   afventerRetur,
   onResultat,
+  naesteHref,
 }: {
   sagId: string;
   type: SagType;
   indsigelse: boolean;
+  naesteHref?: string | null;
   // Sagen venter på retur (fx køberen sender aldrig varen): kun medhold til
   // sælger eller luk sagen (databasen afviser medhold til køber igen).
   afventerRetur: boolean;
@@ -214,10 +240,13 @@ function AfgoerKnap({
       return;
     }
     const fd = new FormData(e.currentTarget);
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const videre = naesteHref && submitter?.name === "__naeste" ? naesteHref : null;
+    fd.delete("__naeste");
     fd.set("sagId", sagId);
     fd.set("udfald", udfald);
     fd.set("retur_ikke_sendt", kraeverReturTjek && returTjekket ? "ja" : "nej");
-    void send(() => afgoerSag(fd));
+    void send(() => afgoerSag(fd), videre);
   }
 
   return (
@@ -293,6 +322,7 @@ function AfgoerKnap({
             <label htmlFor={`${id}-begr`} className="block text-sm font-medium text-neutral-800">
               Begrundelse til køber og sælger
             </label>
+            {udfald && <Skabeloner skabeloner={SAG_BEGRUNDELSE[udfald]} feltId={`${id}-begr`} />}
             <textarea
               id={`${id}-begr`}
               name="begrundelse"
@@ -330,6 +360,7 @@ function AfgoerKnap({
             onLuk={luk}
             bekraeft={udfald ? `Bekræft: ${UDFALD_NAVN[udfald].toLowerCase()}` : "Bekræft"}
             deaktiveret={!udfald || (kraeverReturTjek && !returTjekket)}
+            naeste={!!naesteHref}
           />
         </form>
       </Dialog>
@@ -345,10 +376,12 @@ function AnkeKnap({
   ankeId,
   anke,
   onResultat,
+  naesteHref,
 }: {
   ankeId: string;
   anke: AnkeInfo;
   onResultat: (b: string) => void;
+  naesteHref?: string | null;
 }) {
   const id = useId();
   const [aaben, setAaben] = useState(false);
@@ -395,10 +428,13 @@ function AnkeKnap({
       return;
     }
     const fd = new FormData(e.currentTarget);
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const videre = naesteHref && submitter?.name === "__naeste" ? naesteHref : null;
+    fd.delete("__naeste");
     fd.set("ankeId", ankeId);
     fd.set("udfald", udfald);
     fd.set("retur_ikke_sendt", kraeverReturTjek && returTjekket ? "ja" : "nej");
-    void send(() => afgoerAnke(fd));
+    void send(() => afgoerAnke(fd), videre);
   }
 
   return (
@@ -492,6 +528,7 @@ function AnkeKnap({
             onLuk={luk}
             bekraeft={udfald === "omgoer" ? "Bekræft: ændr afgørelsen" : udfald ? "Bekræft: afgørelsen står" : "Bekræft"}
             deaktiveret={!udfald || (kraeverReturTjek && !returTjekket)}
+            naeste={!!naesteHref}
           />
         </form>
       </Dialog>
@@ -996,6 +1033,7 @@ export type SagHandlingerProps = {
 };
 
 export default function SagHandlinger({
+  naesteHref,
   sagId,
   type,
   indsigelse,
@@ -1009,7 +1047,7 @@ export default function SagHandlinger({
   afventerRetur,
   returIkkeTilladt,
   returFristTekst,
-}: SagHandlingerProps) {
+}: SagHandlingerProps & { naesteHref?: string | null }) {
   const [resultat, setResultat] = useState<string | null>(null);
 
   return (
@@ -1028,7 +1066,7 @@ export default function SagHandlinger({
           </p>
           {kan.behandleAnke ? (
             <div className="mt-3">
-              <AnkeKnap ankeId={anke.id} anke={anke} onResultat={setResultat} />
+              <AnkeKnap ankeId={anke.id} anke={anke} onResultat={setResultat} naesteHref={naesteHref} />
             </div>
           ) : (
             ankeIkkeTilladt && <p className="mt-1">{ankeIkkeTilladt}</p>
@@ -1051,6 +1089,7 @@ export default function SagHandlinger({
               indsigelse={indsigelse}
               afventerRetur={afventerRetur}
               onResultat={setResultat}
+              naesteHref={naesteHref}
             />
           )}
           {kan.registrereRetur && <ReturKnap sagId={sagId} onResultat={setResultat} />}
