@@ -41,9 +41,9 @@
 //   11. Fakturaer i Dinero på BidHamrs gebyrer, fragt og BidHamr Beskyttelse
 //       (købers og sælgers), kreditnotaer ved refusion og bogføring af
 //       betalte abonnementsfakturaer (src/lib/faktura/koe.ts, docs/FAKTURA.md).
-//   11b. Daglig fuld pengeafstemning med Stripe (afstemning.ts, højst én gang
-//       pr. 20 timer, efter fakturaerne): charges, gebyrer, refusioner/
-//       tilbageførsler, payouts og indsigelser på abonnementer mod databasen.
+//   (Den daglige pengeafstemning med Stripe kører IKKE her, men i sin egen
+//   rute /api/cron/afstemning med eget pg_cron-job - den kan tage op til 3
+//   minutter, og pg_net giver op efter 60 s her.)
 //
 // Hver mail "claimes" atomisk i databasen FØR afsendelse, så samme mail aldrig
 // sendes to gange, selv hvis to kørsler overlapper.
@@ -82,7 +82,6 @@ import {
   refunderLoveteVentende,
 } from "@/lib/betaling/stripeBetaling";
 import { koerBetalingsovervaagning } from "@/lib/betaling/overvaagning";
-import { koerPengeafstemning } from "@/lib/betaling/afstemning";
 import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { koerFakturaKoe } from "@/lib/faktura/koe";
@@ -129,8 +128,7 @@ async function opslag(betalinger: BetalingRaekke[]) {
   };
 }
 
-// startKl: hvornår cron-forespørgslen startede (tidsbudget for afstemningen).
-export async function koerBetalingsCron(o: { startKl?: number } = {}) {
+export async function koerBetalingsCron() {
   const admin = createAdminClient();
   const resultat = {
     lukkede: 0,
@@ -161,7 +159,6 @@ export async function koerBetalingsCron(o: { startKl?: number } = {}) {
     ikkeHentetRefunderet: 0,
     ikkeAfhentetPakke: { registreret: 0, beskeder: 0 },
     overvaagning: {} as Awaited<ReturnType<typeof koerBetalingsovervaagning>>,
-    afstemning: {} as Awaited<ReturnType<typeof koerPengeafstemning>>,
     fakturaer: null as Awaited<ReturnType<typeof koerFakturaKoe>> | null,
     ventende: {} as Awaited<ReturnType<typeof behandlVentendeBetalinger>>,
   };
@@ -455,13 +452,6 @@ export async function koerBetalingsCron(o: { startKl?: number } = {}) {
   } catch (err) {
     await trinFejl("Fakturaer (Dinero)", err);
   }
-
-  // 11b) Daglig fuld pengeafstemning med Stripe (afstemning.ts - højst én
-  //      gang pr. 20 timer, efter fakturaerne, så den aldrig tager tid fra
-  //      dem). Tidsbudgettet regnes fra starten af hele forespørgslen.
-  //      Flytter ingen penge; afvigelser giver én drift-alarm hver og vises
-  //      under Admin -> Penge. Kaster aldrig.
-  resultat.afstemning = await koerPengeafstemning({ startKl: o.startKl });
 
   // 9) Notifikationer om likes, beskeder, favoritter der slutter snart, nye
   //    auktioner fra fulgte sælgere og advarsler. Kaster aldrig.

@@ -263,12 +263,14 @@ export default function Oekonomioverblik({ o, besked }: { o: Oekonomi; besked?: 
             Seneste kørsel {dato(r.afstemning.seneste_koersel.startet_kl)}:{" "}
             {r.afstemning.seneste_koersel.afsluttet_kl === null
               ? "kører stadig (eller blev afbrudt)"
-              : r.afstemning.seneste_koersel.ok
-                ? `ok · ${r.afstemning.seneste_koersel.antal_afvigelser} afvigelse(r), ${r.afstemning.seneste_koersel.antal_nye} nye`
-                : "fejlede - se /admin/drift"}
+              : !r.afstemning.seneste_koersel.ok
+                ? "fejlede - se /admin/drift"
+                : r.afstemning.seneste_koersel.ufuldstaendig
+                  ? `Ufuldstændig – ${Number(r.afstemning.seneste_koersel.resultat?.trinIkkeNaaet ?? 0)} trin ikke nået (fortsætter inden for 2 timer) · ${r.afstemning.seneste_koersel.antal_afvigelser} afvigelse(r)`
+                  : `ok · ${r.afstemning.seneste_koersel.antal_afvigelser} afvigelse(r), ${r.afstemning.seneste_koersel.antal_nye} nye`}
           </p>
         ) : (
-          <p className="text-sm text-neutral-500">Afstemningen har ikke kørt endnu (den kører én gang i døgnet fra betalings-cronen).</p>
+          <p className="text-sm text-neutral-500">Afstemningen har ikke kørt endnu (den kører én gang i døgnet).</p>
         )}
         {!o.afvigelser.ok && <Fejl tekst={o.afvigelser.fejl} />}
         {o.afvigelser.ok && o.afvigelser.data.length === 0 && (

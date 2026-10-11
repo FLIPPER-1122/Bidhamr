@@ -31,6 +31,7 @@ De er samlet i én transaktionel fil: `prod-koersel/2026-10-09-betalingsmodel-tr
   - en funktion i produktionen afviger fra repoets version (md5-tjek – bekræftet ens 9. okt. 2026),
   - backfill mangler (se ovenfor).
 - [ ] Kør dem i ÉN omgang (ingen pause mellem trin 2 og 5).
+- [ ] **Sikkerhedsnet B** (afstemning, overblik, reserve – slået fra): kør `20261019020000_pengeafstemning.sql` efter sikkerhedsnet A's `20261019010000`. Den kan køres flere gange og rører ingen eksisterende funktioner. Den opretter pg_cron-jobbet `pengeafstemning` (hver time, minut 37), som kalder `/api/cron/afstemning` med samme `cron_url`/`cron_secret` fra Vault som betalings-cron'en (stien skiftes ud automatisk; valgfri Vault-hemmelighed `afstemning_url`). Kør den på testdatabasen først (gjort 11. okt. 2026).
 - [ ] **Ingen automatisk betaling** (Filip, 9. okt. 2026): kør `20261012020000_ingen_autobetaling.sql` efter fragt-migrationen `20261012010000_fragt_dao_shipmondo.sql`. Den slår automatisk betaling fra for alle (samtykkehistorikken bevares), tilføjer `CHECK (autobetaling = false)` og dropper triggeren/funktionen `betalingsprofiler_samtykke`. Den stopper (og ændrer intet), hvis funktionen i databasen afviger fra repoets version (md5 `cc6e4f6cffba780ed060509d773e4273`). Koden virker også før migrationen (serveren trækker aldrig automatisk længere), men kør den sammen med pushet.
 
 ## B. Push koden (Filip)

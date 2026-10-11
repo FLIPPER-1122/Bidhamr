@@ -40,9 +40,6 @@ import { koerBetaFejlOprydning } from "@/lib/betaFejlOprydning";
 // livstegn hvert 5. minut - også hvis Supabase, pg_cron eller Vercel er nede.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-// Den daglige pengeafstemning (afstemning.ts) har et tidsbudget på 240 s regnet
-// fra starten af forespørgslen - inden for denne grænse.
-export const maxDuration = 300;
 
 const JOB = "betalings-cron";
 
@@ -146,7 +143,6 @@ async function healthcheck(ok: boolean, antalTrinFejl: number) {
 }
 
 async function haandter(req: NextRequest) {
-  const startKl = Date.now();
   if (!harCronAdgang(req)) {
     return NextResponse.json({ fejl: "Ingen adgang" }, { status: 401 });
   }
@@ -157,7 +153,7 @@ async function haandter(req: NextRequest) {
   let resultat: Record<string, unknown> | null = null;
   const trinFejl: string[] = [];
   try {
-    const betaling = await driftFejlSamler.run(trinFejl, () => koerBetalingsCron({ startKl }));
+    const betaling = await driftFejlSamler.run(trinFejl, () => koerBetalingsCron());
     // Stripe-vagten (nøgle og database i forskellig tilstand) stopper alle
     // Stripe-kald, men mange trin fanger den stille. Kørslen tæller så som
     // fejlet - også for vagten udefra (CRON_HEALTHCHECK_URL).

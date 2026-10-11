@@ -64,6 +64,7 @@ export type Reserveoverblik = {
       startet_kl: string;
       afsluttet_kl: string | null;
       ok: boolean | null;
+      ufuldstaendig: boolean;
       antal_afvigelser: number;
       antal_nye: number;
       resultat: Record<string, number> | null;
@@ -285,6 +286,7 @@ export function pengeCsv(rows: Postering[]): string {
         csvTal(csvKr(r.saelger_oere)),
       ].join(";"),
     );
-  // BOM (æ, ø, å) og "sep=;", så Excel bruger semikolon som skilletegn.
-  return "\uFEFF" + ["sep=;", hoved.map(csvTekst).join(";"), ...linjer].join("\r\n") + "\r\n";
+  // BOM, så Excel læser æ, ø og å rigtigt (ingen "sep="-linje - den får
+  // Excel til at ignorere BOM'en). Dansk Excel bruger semikolon som standard.
+  return "\uFEFF" + [hoved.map(csvTekst).join(";"), ...linjer].join("\r\n") + "\r\n";
 }

@@ -51,6 +51,7 @@ export function indlaesMiljoe(): void {
     "RESEND_API_KEY",
     "HEARTBEAT_URL",
     "CRON_HEALTHCHECK_URL",
+    "CRON_AFSTEMNING_HEALTHCHECK_URL",
     "DRIFT_ALARM_MAIL",
     "DINERO_CLIENT_ID",
     "DINERO_CLIENT_SECRET",

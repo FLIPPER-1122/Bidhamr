@@ -8,7 +8,7 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { csvKr, maanedInterval, pengeCsv } from "@/lib/admin/pengeOekonomi";
-import { forventetGebyrRefunderet, forventetTilbagefoert, payoutStatusPasser } from "@/lib/betaling/afstemning";
+import { forventetGebyrRefunderet, forventetTilbagefoert, payoutStatusPasser, TRIN, trinRaekkefoelge } from "@/lib/betaling/afstemning";
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261019020000_pengeafstemning.sql"),
@@ -20,6 +20,8 @@ const ADMIN = "00000000-0000-4000-8000-000000000002";
 
 const STUB = `
 create role anon; create role authenticated; create role service_role;
+-- Som Supabase: nye tabeller giver som standard alle rettigheder til rollerne.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 create table public.users (id uuid primary key, rolle text not null default 'bruger');
 insert into public.users values ('${CHEF}', 'chef'), ('${ADMIN}', 'admin');
 create function public.staff_chat_har_rolle(p uuid, r text) returns boolean language sql as
@@ -294,8 +296,9 @@ describe("rene regler", () => {
         saelger_oere: 47500,
       },
     ]);
-    expect(csv.startsWith("\uFEFFsep=;\r\n\"Dato")).toBe(true);
-    const linje = csv.split("\r\n")[2];
+    expect(csv.startsWith("\uFEFF\"Dato")).toBe(true);
+    expect(csv).not.toContain("sep=");
+    const linje = csv.split("\r\n")[1];
     expect(linje).toContain('"Betaling fra køber"');
     expect(linje).toContain('"t1";"b1";"pi_1"');
     expect(linje).toContain(";590,00;115,00;25,00;25,00;25,00;40,00;475,00");
@@ -353,6 +356,54 @@ describe("rettelser efter review", () => {
       [b],
     );
     expect((await en<{ id: string | null }>("select public.penge_afstemning_claim(20) as id")).id).toBeNull();
+  });
+
+  it("en ufuldstændig kørsel blokerer kun i 2 timer", async () => {
+    await db.exec("update public.penge_afstemning_koersler set startet_kl = now() - interval '30 days', afsluttet_kl = now() - interval '30 days'");
+    const a = (await en<{ id: string }>("select public.penge_afstemning_claim(20) as id")).id;
+    await db.query(`select public.penge_afstemning_afslut($1, true, null, '{"ufuldstaendig": 1, "naesteTrin": 4}'::jsonb)`, [a]);
+    const k = await en<{ ufuldstaendig: boolean }>("select ufuldstaendig from public.penge_afstemning_koersler where id = $1", [a]);
+    expect(k.ufuldstaendig).toBe(true);
+    expect((await en<{ id: string | null }>("select public.penge_afstemning_claim(20) as id")).id).toBeNull();
+    await db.query(
+      "update public.penge_afstemning_koersler set startet_kl = now() - interval '3 hours', afsluttet_kl = now() - interval '3 hours' where id = $1",
+      [a],
+    );
+    const b = (await en<{ id: string | null }>("select public.penge_afstemning_claim(20) as id")).id;
+    expect(b).not.toBeNull();
+    await db.query("select public.penge_afstemning_afslut($1, true, null, '{\"ufuldstaendig\": 0}'::jsonb)", [b]);
+  });
+
+  it("service role kan kun læse logs, afvigelser, snapshots og konfiguration", async () => {
+    for (const t of ["penge_konfiguration", "penge_konfiguration_historik", "penge_afstemning_koersler", "penge_afstemning_afvigelser", "penge_saldo_snapshot"]) {
+      const r = await en<{ i: boolean; u: boolean; d: boolean; t: boolean }>(
+        `select has_table_privilege('service_role', 'public.${t}', 'insert') as i,
+                has_table_privilege('service_role', 'public.${t}', 'update') as u,
+                has_table_privilege('service_role', 'public.${t}', 'delete') as d,
+                has_table_privilege('service_role', 'public.${t}', 'truncate') as t`,
+      );
+      expect([t, r.i, r.u, r.d, r.t]).toEqual([t, false, false, false, false]);
+    }
+    const w = await en<{ d: boolean; t: boolean }>(
+      `select has_table_privilege('service_role', 'public.betaling_webhook_tjek', 'delete') as d,
+              has_table_privilege('service_role', 'public.betaling_webhook_tjek', 'truncate') as t`,
+    );
+    expect([w.d, w.t]).toEqual([false, false]);
+  });
+
+  it("kald_pengeafstemning findes og kan ikke kaldes af anon/authenticated", async () => {
+    const r = await en<{ a: boolean; u: boolean }>(
+      `select has_function_privilege('anon', 'public.kald_pengeafstemning()', 'execute') as a,
+              has_function_privilege('authenticated', 'public.kald_pengeafstemning()', 'execute') as u`,
+    );
+    expect([r.a, r.u]).toEqual([false, false]);
+  });
+
+  it("trinrækkefølgen roterer fra det første trin, der ikke blev nået", () => {
+    expect(trinRaekkefoelge(0)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(trinRaekkefoelge(4)).toEqual([4, 5, 6, 0, 1, 2, 3]);
+    expect(trinRaekkefoelge(99)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(TRIN[4]).toBe("udbetalinger");
   });
 
   it("rotationstabellen til overvågningens tjek H er kun for service role", async () => {

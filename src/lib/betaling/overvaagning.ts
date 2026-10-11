@@ -161,22 +161,41 @@ export async function opsamlUdebleveneBetalinger(
     : kandidater.slice(0, MAKS_OPSLAG);
   const stripe = getStripe();
   let antal = 0;
+  let fejlede = 0;
   for (const b of valgte) {
-    const pi = await stripe.paymentIntents.retrieve(b.stripe_payment_intent_id as string, undefined, KALD);
+    // Tidsstemplet sættes FØR opslaget: en betaling, der fejler hver gang,
+    // kommer bagerst i køen og kan ikke blokere de andre.
     if (rotation) {
       const { error: uFejl } = await admin
         .from("betaling_webhook_tjek")
         .upsert({ betaling_id: b.id, sidst_tjekket_kl: new Date().toISOString() }, { onConflict: "betaling_id" });
       if (uFejl) console.error("betaling_webhook_tjek:", uFejl.message);
     }
-    if (pi.status !== "succeeded" && !(pi.status === "processing" && b.status === "afventer")) continue;
-    const resultat = await spejlPaymentIntent(pi);
-    antal++;
-    await alarm({
-      noegle: `betaling-event:${b.id}:${pi.id}`,
-      hvor: "betaling/webhook-udeblev",
-      fejl: `Betaling ${b.id} (${pi.id}) står som '${pi.status}' hos Stripe, men som '${b.status}' i databasen - webhooken har ikke leveret payment_intent-eventet. Spejlet nu (${resultat}). Kontrollér platform-webhooken i Stripe-dashboardet.`,
-      brugerId: b.buyer_id as string,
+    try {
+      const pi = await stripe.paymentIntents.retrieve(b.stripe_payment_intent_id as string, undefined, KALD);
+      if (pi.status !== "succeeded" && !(pi.status === "processing" && b.status === "afventer")) continue;
+      const resultat = await spejlPaymentIntent(pi);
+      antal++;
+      await alarm({
+        noegle: `betaling-event:${b.id}:${pi.id}`,
+        hvor: "betaling/webhook-udeblev",
+        fejl: `Betaling ${b.id} (${pi.id}) står som '${pi.status}' hos Stripe, men som '${b.status}' i databasen - webhooken har ikke leveret payment_intent-eventet. Spejlet nu (${resultat}). Kontrollér platform-webhooken i Stripe-dashboardet.`,
+        brugerId: b.buyer_id as string,
+      });
+    } catch (err) {
+      // Stripe-vagten stopper alle kald - giv den videre (tjek() logger den).
+      if (err instanceof StripeTilstandFejl) throw err;
+      // Én betaling, der fejler, stopper ikke resten.
+      fejlede++;
+      console.error("Tjek H: betaling kunne ikke tjekkes:", b.id, err);
+    }
+  }
+  if (fejlede > 0) {
+    await logDriftFejl({
+      kilde: "cron",
+      sti: "betalings-cron",
+      hvor: "Overvågning: betalings-events",
+      fejl: `${fejlede} ventende betaling(er) kunne ikke slås op hos Stripe (prøves igen i næste kørsel).`,
     });
   }
   return antal;

@@ -111,6 +111,11 @@ create table if not exists public.penge_afstemning_koersler (
 comment on table public.penge_afstemning_koersler is
   'Log over den daglige pengeafstemning med Stripe (src/lib/betaling/afstemning.ts). Slettes ikke.';
 
+-- Kørslen nåede ikke alle trin (tidsbudgettet). Blokerer kun i 2 timer, og
+-- næste kørsel starter ved det første trin, der ikke blev nået.
+alter table public.penge_afstemning_koersler
+  add column if not exists ufuldstaendig boolean not null default false;
+
 create index if not exists penge_afstemning_koersler_startet_idx
   on public.penge_afstemning_koersler (startet_kl desc);
 
@@ -209,6 +214,19 @@ alter table public.betaling_webhook_tjek enable row level security;
 revoke all on table public.betaling_webhook_tjek from public, anon, authenticated;
 grant select, insert, update on table public.betaling_webhook_tjek to service_role;
 
+-- Service role (serveren) kan kun læse logs, afvigelser, snapshots og
+-- konfiguration - alle ændringer går gennem funktionerne herunder (security
+-- definer). Supabase giver ellers service role alle rettigheder på nye
+-- tabeller som standard. Intet i koden sletter fra dem.
+revoke insert, update, delete, truncate on table
+  public.penge_konfiguration,
+  public.penge_konfiguration_historik,
+  public.penge_afstemning_koersler,
+  public.penge_afstemning_afvigelser,
+  public.penge_saldo_snapshot
+  from service_role;
+revoke delete, truncate on table public.betaling_webhook_tjek from service_role;
+
 -- Ingen sletning af logs/afvigelser/snapshots (bogføringsloven - handelsdata
 -- og deres afstemning bevares). Samme funktion som for betalinger.
 drop trigger if exists penge_afstemning_koersler_forbyd_sletning on public.penge_afstemning_koersler;
@@ -260,13 +278,14 @@ begin
     raise exception 'penge_afstemning_claim: ugyldigt interval';
   end if;
   perform pg_advisory_xact_lock(hashtext('bidhamr.penge_afstemning'));
-  -- Blokerer: en vellykket kørsel inden for intervallet, eller en fejlet/
-  -- afbrudt kørsel inden for de seneste 2 timer (så prøves der igen).
+  -- Blokerer: en vellykket, fuldstændig kørsel inden for intervallet, eller
+  -- en fejlet/ufuldstændig/afbrudt kørsel inden for de seneste 2 timer (så
+  -- prøves der igen).
   if exists (
     select 1 from public.penge_afstemning_koersler k
      where k.startet_kl > now() - make_interval(hours => p_timer)
-       and (   (k.afsluttet_kl is not null and coalesce(k.ok, false))
-            or (k.afsluttet_kl is not null and not coalesce(k.ok, false)
+       and (   (k.afsluttet_kl is not null and coalesce(k.ok, false) and not k.ufuldstaendig)
+            or (k.afsluttet_kl is not null and (not coalesce(k.ok, false) or k.ufuldstaendig)
                 and k.afsluttet_kl > now() - interval '2 hours')
             or (k.afsluttet_kl is null and k.startet_kl > now() - interval '2 hours'))
   ) then
@@ -294,6 +313,7 @@ begin
   update public.penge_afstemning_koersler k
      set afsluttet_kl = now(),
          ok = coalesce(p_ok, false),
+         ufuldstaendig = coalesce((p_resultat->>'ufuldstaendig')::integer, 0) > 0,
          fejl = left(p_fejl, 2000),
          resultat = p_resultat,
          antal_afvigelser = (select count(*) from public.penge_afstemning_afvigelser a
@@ -613,6 +633,7 @@ as $function$
         'seneste_afvigelse_kl', (select seneste from afv),
         'seneste_koersel', (select jsonb_build_object(
             'startet_kl', x.startet_kl, 'afsluttet_kl', x.afsluttet_kl, 'ok', x.ok,
+            'ufuldstaendig', x.ufuldstaendig,
             'antal_afvigelser', x.antal_afvigelser, 'antal_nye', x.antal_nye,
             'resultat', x.resultat) from koersel x))
   );
@@ -772,3 +793,74 @@ $fn$;
 
 revoke all on function public.admin_penge_posteringer(uuid, timestamptz, timestamptz, integer) from public, anon, authenticated;
 grant execute on function public.admin_penge_posteringer(uuid, timestamptz, timestamptz, integer) to service_role;
+
+-- ---------------------------------------------------------------------
+-- 6. Eget pg_cron-job for afstemningen (/api/cron/afstemning)
+-- ---------------------------------------------------------------------
+-- Afstemningen kan tage op til 3 minutter og kører derfor ikke i
+-- betalings-cron'en (pg_net giver op efter 60 s der). Samme mønster som
+-- kald_drift_alarm (20261008011000): Vault 'afstemning_url' (valgfri),
+-- ellers cron_url med stien skiftet ud (.../api/cron/afslut-auktioner ->
+-- .../api/cron/afstemning), og samme cron_secret - virker derfor også i
+-- produktion uden ny opsætning. Timeout 300 s (= rutens maxDuration), så
+-- pg_net ikke melder timeout på en kørsel, der stadig er i gang (drift-
+-- alarmen tæller kun timeouts, fejl og ikke-2xx). Jobbet kører hver time;
+-- databasen (penge_afstemning_claim) sørger for, at afstemningen kun kører
+-- én gang pr. 20 timer - og igen efter 2 timer, hvis den fejlede eller ikke
+-- nåede alle trin. Et kald uden noget at gøre svarer med det samme.
+create or replace function public.kald_pengeafstemning()
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_url    text;
+  v_secret text;
+begin
+  if to_regclass('vault.decrypted_secrets') is null then
+    perform public.drift_fejl_log('cron', 'pengeafstemning',
+      'kald_pengeafstemning: Vault findes ikke - afstemningen kaldes ikke', null, null);
+    return null;
+  end if;
+  execute $q$select decrypted_secret from vault.decrypted_secrets where name = 'afstemning_url' limit 1$q$
+     into v_url;
+  if coalesce(v_url, '') = '' then
+    execute $q$select decrypted_secret from vault.decrypted_secrets where name = 'cron_url' limit 1$q$
+       into v_url;
+    if coalesce(v_url, '') !~ '/api/cron/[A-Za-z0-9_-]+/?$' then
+      perform public.drift_fejl_log('cron', 'pengeafstemning',
+        'kald_pengeafstemning: cron_url mangler i Vault (eller er ikke en /api/cron/-adresse) - afstemningen kaldes ikke', null, null);
+      return null;
+    end if;
+    v_url := regexp_replace(v_url, '/api/cron/[A-Za-z0-9_-]+/?$', '/api/cron/afstemning');
+  end if;
+  execute $q$select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret' limit 1$q$
+     into v_secret;
+  if coalesce(v_secret, '') = '' then
+    perform public.drift_fejl_log('cron', 'pengeafstemning',
+      'kald_pengeafstemning: cron_secret mangler i Vault - afstemningen kaldes ikke', null, null);
+    return null;
+  end if;
+  return net.http_post(
+    url := v_url,
+    body := '{}'::jsonb,
+    headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_secret),
+    timeout_milliseconds := 300000);
+end;
+$fn$;
+
+revoke all on function public.kald_pengeafstemning() from public, anon, authenticated;
+
+-- Idempotent: et eksisterende job fjernes først. Kun hvor pg_cron findes.
+do $do$
+begin
+  if to_regnamespace('cron') is null then
+    raise notice 'pg_cron findes ikke - jobbet pengeafstemning oprettes ikke';
+    return;
+  end if;
+  perform cron.unschedule(j.jobid) from cron.job j where j.jobname = 'pengeafstemning';
+  -- Minut 37 hver time (væk fra betalings-cron'en på 0, 5, 10 ... og
+  -- drift-alarmen på 2, 7, 12 ...).
+  perform cron.schedule('pengeafstemning', '37 * * * *', 'select public.kald_pengeafstemning();');
+end $do$;
