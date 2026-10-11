@@ -16,6 +16,8 @@ import {
   type StripeBalance,
   type StripeBevaegelser,
 } from "@/lib/admin/penge";
+import { hentOekonomi } from "@/lib/admin/pengeOekonomi";
+import Oekonomioverblik from "@/components/admin/penge/Oekonomioverblik";
 
 // Penge - KUN for rollen chef (ROADMAP fase 1B). Admin og medarbejder får 404,
 // også ved direkte URL. Rollen tjekkes her OG igen i hentPengeOversigt.
@@ -577,14 +579,14 @@ function Fragttilskud({ r }: { r: Resultat<FragtTilskud> }) {
 export default async function AdminPenge({
   searchParams,
 }: {
-  searchParams: Promise<{ periode?: string }>;
+  searchParams: Promise<{ periode?: string; maaned?: string; besked?: string }>;
 }) {
   const rolle = await getStaffRole();
   if (rolle !== "chef") notFound();
 
-  const { periode: raa } = await searchParams;
+  const { periode: raa, maaned, besked } = await searchParams;
   const periode = somPeriode(raa);
-  const o = await hentPengeOversigt(periode);
+  const [o, oekonomi] = await Promise.all([hentPengeOversigt(periode), hentOekonomi(maaned)]);
   const t = o.tal.ok ? o.tal.data : null;
 
   return (
@@ -621,6 +623,8 @@ export default async function AdminPenge({
           </nav>
         </div>
       </div>
+
+      <Oekonomioverblik o={oekonomi} besked={besked} />
 
       {!o.tal.ok && <Fejlboks tekst={o.tal.fejl} />}
 

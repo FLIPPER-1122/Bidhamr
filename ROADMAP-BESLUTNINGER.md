@@ -212,6 +212,12 @@ Brugeren får besked når:
 - Betalings-cron'en markeres som **fejlet** i kørselsloggen, når et pengetrin fejler, og der logges en drift-fejl, hvis pg_cron ikke kan kalde den (manglende Vault-hemmelighed). Valgfri ekstern heartbeat: `HEARTBEAT_URL` (fx healthchecks.io eller UptimeRobot – Filip vælger).
 - Serveren kalder kun Stripe, når nøglens tilstand (test/live) passer til databasens (`stripe_tilstand`). Go-live følger `docs/GO-LIVE-STRIPE.md`.
 
+## Sikkerhedsnet B: afstemning, reserve og overblik (chefen, 11. okt. 2026 – til Filips godkendelse)
+- **Daglig fuld afstemning med Stripe** (betalings-cron'en, højst én gang pr. 20 timer, `src/lib/betaling/afstemning.ts`): de seneste 30 dages betalinger, gebyrer, refusioner/tilbageførsler, udbetalinger og indsigelser på abonnementer sammenlignes med databasen. Uoverensstemmelser vises under Admin → Penge (kun chef) med én drift-alarm hver; chefen markerer dem løst med en note. Flytter aldrig penge.
+- **Mistet betalings-webhook:** overvågningen (hver time) slår betalinger op, der har stået som "afventer" med en PaymentIntent i 15 minutter, og spejler dem, hvis Stripe har dem som betalt (+ drift-alarm). Før blev det først opdaget ved fristen.
+- **Vagt udefra:** `CRON_HEALTHCHECK_URL` (healthchecks.io) pinges ved hver vellykket kørsel - alarm efter 30 min uden. Se HUSKELISTE.md.
+- **Reserven: BYGGET, SLÅET FRA – afventer Filips beslutning.** Beslutningen ovenfor siger "Reserve-/bufferkonto bygges IKKE". Reserven er derfor kun bygget som visning og står slået fra (0 %): den vises ikke i overblikket, før chefen slår den til under Admin → Penge → "Reserve". Slået til er den en del af BidHamrs egne gebyrer, der markeres som "ikke til at trække ud" (fx 10 % af de seneste 90 dages gebyrer, mindst åbne indsigelser + forventede tab); tab ved indsigelser efter udbetaling vises trukket fra reserven. Den flytter ALDRIG penge (BidHamr har ingen wallet) - pengene bliver på BidHamrs Stripe-saldo.
+
 ## Småting (Niels M04, 8. okt. 2026)
 - **Mindste bud er 3 kr.** (Stripes mindstebeløb er 2,50 kr.). Startprisen kan stadig være 1 kr., men første bud er mindst 3 kr.
 - ~~Samtykke til automatisk betaling gemmes (tidspunkt og tekstversion, `src/lib/betaling/samtykke.ts`).~~ Automatisk betaling er fjernet (Filip, 9. okt. 2026). Den gemte samtykkehistorik (`autobetaling_samtykke_kl`/`_version`, `autobetaling_fravalgt_kl`) bevares og skrives ikke længere; teksten for version `2026-10-08` står i kolonnekommentaren (`20261012020000_ingen_autobetaling.sql`).

@@ -29,6 +29,17 @@ I dag viser bidhamr.dk `/coming-soon` for alle uden staff-rolle. Den rigtige for
 - Før lancering (fra reviewer): brug et verificeret Universal Link/App Link (`https://bidhamr.dk/...`) som returadresse for appen i stedet for `bidhamr://`, og kør `mitid_flow_oprydning` fra betalings-cron, så MitID-data fra uafsluttede app-forløb slettes efter 5 min.
 - Kør `20261013010000_mitid.sql` i produktion (dit "ja") først, når appen kan MitID (BHV01 + `/api/mitid/app` + `/api/mitid/app/afslut`).
 
+## Vagt udefra på betalings-cron'en (healthchecks.io, gratis – ca. 10 min)
+Hvis betalings-cron'en holder op med at køre (pg_cron, Vercel eller Supabase står stille), kan siden ikke selv sige det. En ekstern "dead man's switch" giver alarm, når der ikke er kommet et livstegn i 30 minutter.
+1. Opret en gratis konto på https://healthchecks.io (gratis plan: 20 checks, mail-alarmer).
+2. **Add Check**: navn `bidhamr betalings-cron`, **Period 5 minutes**, **Grace Time 25 minutes** (= alarm efter 30 min uden vellykket kørsel). Under *Integrations* slår du mail til (og gerne appen/Slack/SMS, hvis du vil).
+3. Kopiér checkens **ping-URL** (`https://hc-ping.com/<uuid>`).
+4. **Vercel → Project → Settings → Environment Variables → `CRON_HEALTHCHECK_URL`** = ping-URL'en (kun *Production*). Deploy igen.
+5. Tjek efter 5-10 minutter i healthchecks.io, at checken står grøn ("up") og får et ping hvert 5. minut.
+- Hvad sker der: cron'en pinger URL'en efter hver **vellykket** kørsel. Fejler et pengetrin, sendes kun en logbesked (`/log` – ændrer ikke status), så alarmen kommer, når der har været 30 min uden succes. Står cron'en helt stille, kommer der ingen ping – og så kommer alarmen også. Uden variablen sker der intet. Pinget indeholder ingen persondata.
+- Lokalt og på testdatabasen: sæt den ikke (eller brug en separat check).
+- Den gamle `HEARTBEAT_URL` virker stadig (pinger `/fail` ved hver fejl = alarm med det samme). Brug kun den ene af dem til samme check.
+
 ## Mail på bidhamr.dk (når erhvervskonto og CVR er på plads)
 - Google Workspace **Starter**, **1 bruger**, gerne **månedlig** betaling: opret `filip@bidhamr.dk`
 - Opret `support@bidhamr.dk`, `erhverv@bidhamr.dk` og `faktura@bidhamr.dk` som gratis **grupper** i Google Admin (erhverv@ bruges af firmaer – Filip, 7. okt. 2026)

@@ -110,17 +110,51 @@ async function heartbeat(ok: boolean) {
   }
 }
 
+// Vagt udefra / "dead man's switch" (sikkerhedsnet B): er
+// CRON_HEALTHCHECK_URL sat (fx en healthchecks.io-check med periode 5 min og
+// grace 25 min - se HUSKELISTE.md), pinges den KUN ved en vellykket kørsel.
+// Ved en fejlet kørsel sendes "<url>/log" (healthchecks.io: logges uden at
+// ændre status), så alarmen kommer, når der ikke har været en vellykket
+// kørsel i 30 minutter - også hvis cron-systemet står helt stille (pg_cron,
+// Vercel eller Supabase nede), for så kommer der slet ingen ping. Uden
+// variablen sker der intet. Ingen persondata i pinget (kun antal trin).
+// Kaster aldrig og venter højst 5 sekunder. Kun https.
+async function healthcheck(ok: boolean, antalTrinFejl: number) {
+  const url = process.env.CRON_HEALTHCHECK_URL;
+  if (!url) return;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return;
+    if (ok) {
+      await fetch(u.toString(), { method: "GET", signal: AbortSignal.timeout(5_000), cache: "no-store" });
+    } else {
+      await fetch(`${u.toString().replace(/\/+$/, "")}/log`, {
+        method: "POST",
+        body: `Betalings-cron fejlede (${antalTrinFejl} trin) - se /admin/drift`,
+        signal: AbortSignal.timeout(5_000),
+        cache: "no-store",
+      });
+    }
+  } catch (err) {
+    console.error("Healthcheck kunne ikke sendes:", renFejltekst(err));
+  }
+}
+
 async function haandter(req: NextRequest) {
   if (!harCronAdgang(req)) {
     return NextResponse.json({ fejl: "Ingen adgang" }, { status: 401 });
   }
   const logId = await startLog(req.method === "GET" ? "GET" : "POST");
   let ok = false;
+  let pengetrinSprunget = false;
   let fejl: string | null = null;
   let resultat: Record<string, unknown> | null = null;
   const trinFejl: string[] = [];
   try {
     const betaling = await driftFejlSamler.run(trinFejl, () => koerBetalingsCron());
+    // Pengetrinene er sprunget over (databasen er ikke migreret): ikke en
+    // vellykket betalingskørsel for vagten udefra.
+    pengetrinSprunget = "springetOver" in betaling;
     // Fragtsporing (let og begrænset; flytter ingen penge). Fejl her stopper
     // ikke betalings-cron'en og logges i drift_fejl af koerFragtCron selv.
     let fragt: Awaited<ReturnType<typeof koerFragtCron>> | null = null;
@@ -166,6 +200,7 @@ async function haandter(req: NextRequest) {
   } finally {
     await slutLog(logId, ok, ok ? null : (fejl ?? "Ukendt fejl"), resultat);
     await heartbeat(ok);
+    await healthcheck(ok && !pengetrinSprunget, trinFejl.length);
   }
 }
 

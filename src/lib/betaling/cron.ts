@@ -36,7 +36,11 @@
 //   10. Overvågning (Niels F06, overvaagning.ts - højst én gang i timen):
 //       udbetalinger, der hænger, tabte indsigelser uden afklaring,
 //       saldo-afstemning og udeblevne payout-/indsigelses-events. Én
-//       drift-alarm pr. tilfælde.
+//       drift-alarm pr. tilfælde. Også betalinger, hvor payment_intent-
+//       webhooken er udeblevet (opsamlUdebleveneBetalinger).
+//   10b. Daglig fuld pengeafstemning med Stripe (afstemning.ts, højst én gang
+//       pr. 20 timer): charges, gebyrer, refusioner/tilbageførsler, payouts
+//       og indsigelser på abonnementer mod databasen.
 //   11. Fakturaer i Dinero på BidHamrs gebyrer, fragt og BidHamr Beskyttelse
 //       (købers og sælgers), kreditnotaer ved refusion og bogføring af
 //       betalte abonnementsfakturaer (src/lib/faktura/koe.ts, docs/FAKTURA.md).
@@ -78,6 +82,7 @@ import {
   refunderLoveteVentende,
 } from "@/lib/betaling/stripeBetaling";
 import { koerBetalingsovervaagning } from "@/lib/betaling/overvaagning";
+import { koerPengeafstemning } from "@/lib/betaling/afstemning";
 import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { koerFakturaKoe } from "@/lib/faktura/koe";
@@ -155,6 +160,7 @@ export async function koerBetalingsCron() {
     ikkeHentetRefunderet: 0,
     ikkeAfhentetPakke: { registreret: 0, beskeder: 0 },
     overvaagning: {} as Awaited<ReturnType<typeof koerBetalingsovervaagning>>,
+    afstemning: {} as Awaited<ReturnType<typeof koerPengeafstemning>>,
     fakturaer: null as Awaited<ReturnType<typeof koerFakturaKoe>> | null,
     ventende: {} as Awaited<ReturnType<typeof behandlVentendeBetalinger>>,
   };
@@ -438,6 +444,11 @@ export async function koerBetalingsCron() {
   // 10) Overvågning (F06). Kaster aldrig; et fejlet tjek logges med kilde
   //     'cron' (kørslen markeres som fejlet).
   resultat.overvaagning = await koerBetalingsovervaagning();
+
+  // 10b) Daglig fuld pengeafstemning med Stripe (afstemning.ts - højst én
+  //      gang pr. 20 timer). Flytter ingen penge; afvigelser giver én
+  //      drift-alarm hver og vises under Admin -> Penge. Kaster aldrig.
+  resultat.afstemning = await koerPengeafstemning();
 
   // 11) Fakturaer i Dinero (efter refusionerne, så en refusion i denne
   //     kørsel giver kreditnotaen med det samme). Et enkelt dokument, der

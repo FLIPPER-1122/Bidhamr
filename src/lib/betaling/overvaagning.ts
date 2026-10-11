@@ -23,6 +23,12 @@ import "server-only";
 //      (samme regel som før hver udbetaling). Alarmen lukkes, når den passer.
 //   F. Penge, der har stået på sælgerens konto i over 60 og 80 dage uden
 //      udbetaling (Stripe kan returnere/udbetale ældre midler - [VERIFICÉR]).
+//   G. Betalinger, hvor payment_intent.succeeded er udeblevet (sikkerhedsnet
+//      B, okt. 2026): en betaling, der står som afventer/behandles med en
+//      PaymentIntent og ikke er rørt i 15 minutter, slås op hos Stripe. Er
+//      den betalt (eller under behandling), spejles den nu, og der gives
+//      alarm. Uden dette blev en mistet webhook først opdaget ved fristen
+//      (48 t), hvis køberen ikke selv vendte tilbage til handelssiden.
 //
 // Kaster aldrig. Fejl i et tjek logges med kilde 'cron' (kørslen markeres som
 // fejlet); Stripe-vagten (StripeTilstandFejl) giver selv alarm.
@@ -33,7 +39,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { dkk, skyldigOere, spejlBidhamrPayout } from "@/lib/betaling/udbetaling";
-import { spejlIndsigelse, spejlSvindelvarsel } from "@/lib/betaling/stripeBetaling";
+import { spejlIndsigelse, spejlPaymentIntent, spejlSvindelvarsel } from "@/lib/betaling/stripeBetaling";
 
 const INTERVAL_MIN = 60;
 const DAG = 24 * 60 * 60_000;
@@ -47,6 +53,7 @@ export type Overvaagning = {
   alarmer: number;
   udbetalingerSpejlet: number;
   indsigelserSpejlet: number;
+  betalingerSpejlet: number;
   konti: number;
 };
 
@@ -65,7 +72,14 @@ async function tjek(navn: string, fn: () => Promise<void>): Promise<void> {
 }
 
 export async function koerBetalingsovervaagning(tving = false): Promise<Overvaagning> {
-  const r: Overvaagning = { koert: 0, alarmer: 0, udbetalingerSpejlet: 0, indsigelserSpejlet: 0, konti: 0 };
+  const r: Overvaagning = {
+    koert: 0,
+    alarmer: 0,
+    udbetalingerSpejlet: 0,
+    indsigelserSpejlet: 0,
+    betalingerSpejlet: 0,
+    konti: 0,
+  };
   const admin = createAdminClient();
   if (!tving) {
     const { data, error } = await admin.rpc("betaling_overvaagning_claim", { p_minutter: INTERVAL_MIN });
@@ -80,6 +94,9 @@ export async function koerBetalingsovervaagning(tving = false): Promise<Overvaag
     if (await alarmPrTilfaelde(o)) r.alarmer++;
   };
 
+  await tjek("betalings-events", async () => {
+    r.betalingerSpejlet = await opsamlUdebleveneBetalinger(alarm);
+  });
   await tjek("payout-events", () => payoutEvents(admin, r, alarm));
   await tjek("udbetalinger", () => haengendeUdbetalinger(admin, alarm));
   await tjek("tabte indsigelser", () => tabteIndsigelser(admin, alarm));
@@ -91,6 +108,44 @@ export async function koerBetalingsovervaagning(tving = false): Promise<Overvaag
 }
 
 type Alarm = (o: Parameters<typeof alarmPrTilfaelde>[0]) => Promise<void>;
+
+// G. Udeblevne payment_intent.succeeded. Nyeste først (højst 100 pr. kørsel):
+// gamle, opgivne checkouts afgøres alligevel ved fristen (annullerUbetalte
+// spørger Stripe først), så de må ikke skubbe nye betalinger ud. minAlderMs
+// kan sættes ned i testene. Returnerer antal spejlede betalinger.
+export async function opsamlUdebleveneBetalinger(
+  alarm: Alarm = async (o) => {
+    await alarmPrTilfaelde(o);
+  },
+  minAlderMs = 15 * 60_000,
+): Promise<number> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("betalinger")
+    .select("id, trade_id, buyer_id, status, stripe_payment_intent_id")
+    .eq("pengemodel", "destination")
+    .in("status", ["afventer", "behandles"])
+    .not("stripe_payment_intent_id", "is", null)
+    .lte("opdateret", siden(minAlderMs))
+    .order("opdateret", { ascending: false })
+    .limit(100);
+  if (error) throw new Error(`udeblevne betalinger: ${error.message}`);
+  const stripe = getStripe();
+  let antal = 0;
+  for (const b of data ?? []) {
+    const pi = await stripe.paymentIntents.retrieve(b.stripe_payment_intent_id as string, undefined, KALD);
+    if (pi.status !== "succeeded" && !(pi.status === "processing" && b.status === "afventer")) continue;
+    const resultat = await spejlPaymentIntent(pi);
+    antal++;
+    await alarm({
+      noegle: `betaling-event:${b.id}:${pi.id}`,
+      hvor: "betaling/webhook-udeblev",
+      fejl: `Betaling ${b.id} (${pi.id}) står som '${pi.status}' hos Stripe, men som '${b.status}' i databasen - webhooken har ikke leveret payment_intent-eventet. Spejlet nu (${resultat}). Kontrollér platform-webhooken i Stripe-dashboardet.`,
+      brugerId: b.buyer_id as string,
+    });
+  }
+  return antal;
+}
 
 // B. Udeblevne payout-events.
 async function payoutEvents(admin: Admin, r: Overvaagning, alarm: Alarm): Promise<void> {
