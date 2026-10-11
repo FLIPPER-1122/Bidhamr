@@ -42,6 +42,10 @@
 --      updateUserById). Metadata bruges ikke længere til navn og vilkår ved
 --      signup: dem sætter serveren først efter bekræftelsen, med oplysninger
 --      fra den, der har koden (src/lib/kontoOprettelse.ts). Ellers som før.
+--   6. beta_auth_bruger svarer også inviteret (auth.users.invited_at) og firma
+--      (konto_type 'erhverv'), så signup-koden aldrig sender en ny
+--      signup-kode til en inviteret konto/firmakonto (det ville ugyldiggøre
+--      invitationslinket). kilde har ingen standardværdi.
 --
 -- kun_inviterede beholder sin betydning: slået til = kun inviterede (beta),
 -- slået fra = åben tilmelding. Ved lancering sættes den stadig til false
@@ -102,17 +106,29 @@ begin
   if v_md5 is not null and v_md5 <> '78ac8009e704dd91dc32312215cad1e3' then
     raise exception 'konto_oprettelse_billet_signup er ændret uden for migrationerne (md5 %).', v_md5;
   end if;
+
+  -- Efter 20261017010000 | efter denne.
+  v_md5 := pg_temp.plain_md5('public.beta_auth_bruger(text)');
+  if v_md5 is null or v_md5 not in ('80ace502f526a8749a0f424605442c61', '5aa0ee0b95bf2a8a4d8f31967b8725e6') then
+    raise exception 'beta_auth_bruger er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
+  end if;
 end $$;
 
 -- ---------------------------------------------------------------------------
 -- 2. Billet-tabellen: én række pr. nonce
 -- ---------------------------------------------------------------------------
 alter table public.konto_oprettelse_billetter
-  add column if not exists kilde text not null default 'staff',
+  add column if not exists kilde text,
   add column if not exists noegle_hash text;
 
 -- Gamle billetter (uden nonce) kan ikke bruges længere.
-delete from public.konto_oprettelse_billetter where noegle_hash is null;
+delete from public.konto_oprettelse_billetter where noegle_hash is null or kilde is null;
+
+-- Ingen standardværdi: hver billet skal sige, hvor den kommer fra (en
+-- glemt kilde må aldrig blive til en staff-billet).
+alter table public.konto_oprettelse_billetter
+  alter column kilde drop default,
+  alter column kilde set not null;
 
 do $$
 begin
@@ -344,6 +360,39 @@ $function$;
 
 drop function if exists public.beta_tjek_ny_bruger(text);
 
+-- ---------------------------------------------------------------------------
+-- 6b. beta_auth_bruger: også om kontoen er inviteret (invited_at, fx en
+--     firmakonto fra Admin -> Erhverv) eller er en firmakonto. Signup-koden
+--     sender så ingen ny signup-kode til den - ellers kunne en fremmed
+--     ugyldiggøre firmaets invitationslink. Svaret til kalderen er stadig
+--     neutralt. { findes: false } eller { findes: true, id, bekraeftet,
+--     inviteret, firma }.
+-- ---------------------------------------------------------------------------
+create or replace function public.beta_auth_bruger(p_email text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(
+    (select jsonb_build_object(
+              'findes', true,
+              'id', u.id,
+              'bekraeftet', u.email_confirmed_at is not null,
+              'inviteret', u.invited_at is not null,
+              'firma', exists (select 1 from public.users p
+                                where p.id = u.id and p.konto_type = 'erhverv'))
+       from auth.users u
+      where lower(u.email) = lower(btrim(coalesce(p_email, '')))
+      order by u.created_at
+      limit 1),
+    jsonb_build_object('findes', false))
+$$;
+
+revoke all on function public.beta_auth_bruger(text) from public, anon, authenticated;
+grant execute on function public.beta_auth_bruger(text) to service_role;
+
 comment on table public.beta_indstillinger is
   'Beta-testen: beta_aaben (kontakten i Admin -> Beta-invitationer, kun chef) og kun_inviterede (slået til: kun inviterede kan få en signup-billet; slås fra ved lancering). En ny konto kræver altid en billet med nonce (20261018010000). Én række.';
 
@@ -363,6 +412,9 @@ begin
   end if;
   if pg_temp.plain_md5('public.konto_oprettelse_billet_signup(text, text)') is distinct from '78ac8009e704dd91dc32312215cad1e3' then
     raise exception 'konto_oprettelse_billet_signup blev ikke oprettet som forventet (md5 %).', pg_temp.plain_md5('public.konto_oprettelse_billet_signup(text, text)');
+  end if;
+  if pg_temp.plain_md5('public.beta_auth_bruger(text)') is distinct from '5aa0ee0b95bf2a8a4d8f31967b8725e6' then
+    raise exception 'beta_auth_bruger blev ikke opdateret som forventet (md5 %).', pg_temp.plain_md5('public.beta_auth_bruger(text)');
   end if;
   if to_regprocedure('public.beta_tjek_ny_bruger(text)') is not null
      or to_regprocedure('public.konto_oprettelse_tillad(uuid, text)') is not null then

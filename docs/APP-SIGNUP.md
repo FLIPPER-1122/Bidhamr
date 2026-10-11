@@ -87,6 +87,7 @@ Samme grænser som hjemmesiden (`src/lib/rateLimit.ts`):
 
 - Ingen cookies og ingen CORS-headere. En browser på et andet domæne kan ikke sende JSON hertil uden en preflight, som ikke godkendes, og en fremmed `Origin` afvises.
 - Svaret fra `/api/konto/opret` afslører ikke, om e-mailen findes, eller om den er inviteret.
+- En bekræftet konto, en inviteret konto (fx en firmakonto fra Admin → Erhverv) eller en firmakonto får aldrig en ny signup-kode herfra, så en fremmed ikke kan ugyldiggøre et invitationslink. Svaret er det samme.
 - Adgangskoden, navnet og vilkårsaccepten sættes kun efter en vellykket `verifyOtp` (adgangskoden i sessionen fra den, navn og vilkår med service role). Uden koden kan en fremmed hverken bekræfte kontoen eller bestemme adgangskoden. Det gælder, uanset om angriberen opretter kontoen før eller efter offeret.
 - Bekræftes en konto uden adgangskode (hjemmesiden i en anden browser), sættes en ny tilfældig adgangskode, og brugeren vælger sin egen bagefter. Så overlever ingen adgangskode, som en anden måtte have sat.
 - Proxyen lukker begge stier igennem uden login (`src/lib/supabase/middleware.ts`), fordi man jo ikke har en konto endnu.

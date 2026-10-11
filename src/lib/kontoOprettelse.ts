@@ -177,6 +177,12 @@ async function sendKodeIgen(email: string): Promise<boolean> {
   return true;
 }
 
+// Kun en almindelig, ubekræftet signup-konto får en ny signup-kode - aldrig
+// en bekræftet, en inviteret (invited_at) eller en firmakonto.
+function kanFaaNyKode(b: { bekraeftet: boolean; inviteret: boolean; firma: boolean }): boolean {
+  return !b.bekraeftet && !b.inviteret && !b.firma;
+}
+
 // Hvad kalderen skal gøre med det ventende (kun hjemmesiden gemmer det - i
 // cookien):
 //   "ja"                 en kode er sendt til e-mailen: gem det.
@@ -207,8 +213,9 @@ export async function opretKontoPaaServeren(email: string): Promise<GemAdgangsko
       return "nej";
     }
     if (findes.findes) {
-      // Bekræftet konto: intet. Ubekræftet: kun en ny kode.
-      return !findes.bekraeftet && (await sendKodeIgen(email)) ? "ja" : "nej";
+      // Bekræftet, inviteret eller firmakonto: intet (en ny signup-kode ville
+      // ugyldiggøre fx firmaets invitationslink). Ellers kun en ny kode.
+      return kanFaaNyKode(findes) && (await sendKodeIgen(email)) ? "ja" : "nej";
     }
 
     const b = nyBillet();
@@ -272,7 +279,7 @@ export async function sendNyKodePaaServeren(email: string): Promise<"ok" | "vent
     if (!tilladt) return "ok";
     const findes = await betaAuthBruger(email);
     if (findes === null) await logSignupFejl("sendNyKodePaaServeren", "Kontoen kunne ikke slås op (beta_auth_bruger).");
-    if (findes?.findes && !findes.bekraeftet) await sendKodeIgen(email);
+    if (findes?.findes && kanFaaNyKode(findes)) await sendKodeIgen(email);
   } catch (err) {
     await logSignupFejl("sendNyKodePaaServeren", err);
   }
