@@ -163,6 +163,14 @@ export type WebhookResultat =
 export interface Fragtfirma {
   navn: FragtfirmaNavn;
   visningsnavn: string;
+  // true = adapterens 'returneret' på en udgående pakke, der aldrig er
+  // 'leveret', betyder sikkert, at køberen ikke hentede pakken. Så registreres
+  // "ikke afhentet" automatisk (src/lib/betaling/ikkeAfhentet.ts): handlen
+  // annulleres, og køberen refunderes minus gebyrer og fragt begge veje.
+  // Mangler/false (fx Shipmondo, hvor 'returneret' gættes ud fra en tekst):
+  // kun markering til staff, der selv trykker "Ikke afhentet" i admin.
+  // DAO-adapteren sætter den, når DAO's returkode er kendt.
+  returErIkkeAfhentet?: boolean;
   // Pris i øre for en pakke. Postnumre er valgfrie (fast pris i DK).
   beregnPris(
     pakkestoerrelse: Pakkestoerrelse,

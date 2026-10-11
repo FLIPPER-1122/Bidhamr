@@ -1076,6 +1076,13 @@ async function refunderUnderLaas(
   const nøgle =
     forsoeg > 0 ? `bidhamr-refusion-${b.id}-${forsoeg}` : `bidhamr-refusion-${b.id}`;
 
+  // Ikke-afhentet pakke med R = 0 (Filip, 10. okt. 2026): køberen får intet,
+  // men sælgerens del tilbageføres helt (X = U) - samme plan, lås og
+  // Stripe-tjek, bare uden trin (c).
+  if (b.refusion_aarsag === "ikke_afhentet" && b.refusion_oere !== null && Number(b.refusion_oere) === 0) {
+    return await tilbagefoerUdenRefusion(b, piId, laas, forsoeg);
+  }
+
   // Delvis refusion: beløbet er sat af databasen (sag_claim_refusion) og er
   // altid > 0 og <= total_oere (CHECK-constraint). Tjekkes igen her, så et
   // forkert beløb aldrig sendes til Stripe.
@@ -1228,6 +1235,70 @@ async function refunderUnderLaas(
   if (charge && typeof charge !== "string" && charge.refunded) {
     await registrerRefunderet(piId, null);
   }
+  return "refunderet";
+}
+
+// Ikke-afhentet pakke med R = 0: kun refusionsplanens trin (a) og (b) -
+// gebyr-refusion 0 og tilbageførsel af hele sælgerens del (X = U) - og ingen
+// refusion til køberen. Under refusionslåsen; samme Stripe-tjek som en
+// almindelig refusion (forberedDestinationRefusion: beløb, gebyr, konto,
+// indsigelse, ingen tidligere refusion, saldo, Stripes faktiske tilstand).
+// Derefter afsluttes betalingen i databasen (betaling_ikke_afhentet_uden_
+// refusion). Idempotent: et nyt forsøg laver kun det, der mangler.
+async function tilbagefoerUdenRefusion(
+  b: BetalingRaekke,
+  piId: string,
+  laas: string,
+  forsoeg: number,
+): Promise<string> {
+  const stripe = getStripe();
+  const pi = await stripe.paymentIntents.retrieve(piId, {}, UNDER_LAAS);
+  if (!pi.transfer_data?.destination || b.pengemodel !== "destination") {
+    await markerRefusionskonflikt(b.id, laas, "Betalingens pengemodel passer ikke med Stripe - tilbageførsel stoppet");
+    return "refusion_konflikt";
+  }
+  if (Number(pi.amount_received ?? 0) !== Number(b.total_oere)) {
+    await markerRefusionskonflikt(b.id, laas, "Det modtagne beløb hos Stripe passer ikke med handlen - tilbageførsel stoppet");
+    return "refusion_konflikt";
+  }
+  // Ingen refusion må findes hos Stripe (køberen skal have 0).
+  const eksisterende = await stripe.refunds.list({ payment_intent: piId, limit: 10 }, UNDER_LAAS);
+  if (eksisterende.has_more || eksisterende.data.some((r) => r.status !== "failed" && r.status !== "canceled")) {
+    await markerRefusionskonflikt(b.id, laas);
+    return "refusion_konflikt";
+  }
+  try {
+    const { forberedDestinationRefusion } = await import("@/lib/betaling/refusion");
+    const klar = await forberedDestinationRefusion(b, laas, forsoeg, 0, UNDER_LAAS);
+    if (klar.kode === "indsigelse") {
+      await markerRefusion(b.id, "Tilbageførsel venter: køberen har lavet en indsigelse hos sin bank");
+      return "refusion_afventer";
+    }
+    if (klar.kode === "konflikt") {
+      await markerRefusionskonflikt(b.id, laas, klar.besked);
+      return "refusion_konflikt";
+    }
+  } catch (err) {
+    if (err instanceof StripeTilstandFejl) throw err;
+    await markerRefusion(
+      b.id,
+      `Tilbageførsel fejlede: ${err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt"}`,
+    );
+    await registrerRefusionsfejl(b.id, laas);
+    throw err;
+  }
+  const { data, error } = await createAdminClient().rpc("betaling_ikke_afhentet_uden_refusion", {
+    p_betaling: b.id,
+    p_noegle: laas,
+  });
+  if (error) throw new Error(`betaling_ikke_afhentet_uden_refusion: ${error.message}`);
+  const kode = String(data);
+  if (kode !== "ok" && kode !== "allerede") {
+    throw new Error(`Tilbageførslen kunne ikke afsluttes (${kode}) for betaling ${b.id}`);
+  }
+  // Sælgeren skal stå med 0 på handlen (transfer - tilbageført - gebyr = 0).
+  const { kontrollerDestinationRefusion } = await import("@/lib/betaling/refusion");
+  await kontrollerDestinationRefusion(piId);
   return "refunderet";
 }
 

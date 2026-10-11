@@ -58,6 +58,7 @@ import {
 import { frigivAutomatisk, paamindKoeberOmModtagelse } from "@/lib/betaling/autoFrigiv";
 import { annullerIkkeSendte, paamindSaelgerOmAfsendelse } from "@/lib/betaling/afsendelsesfrist";
 import { annullerIkkeHentede, paamindOmAfhentning } from "@/lib/betaling/afhentningsfrist";
+import { koerIkkeAfhentet } from "@/lib/betaling/ikkeAfhentet";
 import {
   betalingsPaamindelseMail,
   koeberAndenchanceBetaltMail,
@@ -152,6 +153,7 @@ export async function koerBetalingsCron() {
     afhentningsPaamindelser: 0,
     ikkeHentetAnnulleret: 0,
     ikkeHentetRefunderet: 0,
+    ikkeAfhentetPakke: { registreret: 0, beskeder: 0 },
     overvaagning: {} as Awaited<ReturnType<typeof koerBetalingsovervaagning>>,
     fakturaer: null as Awaited<ReturnType<typeof koerFakturaKoe>> | null,
     ventende: {} as Awaited<ReturnType<typeof behandlVentendeBetalinger>>,
@@ -338,6 +340,12 @@ export async function koerBetalingsCron() {
   } catch (err) {
     await trinFejl("Afvikling af sager efter ankefristen", err);
   }
+
+  // 3b2) Ikke-afhentet pakke (sendt retur til sælgeren): reserve for
+  //      fragtens signal og beskeder, der mangler. Før den automatiske
+  //      frigivelse (som aldrig frigiver en returneret pakke). Refusionen
+  //      laves i 5b (lovede refusioner). Kaster aldrig.
+  resultat.ikkeAfhentetPakke = await koerIkkeAfhentet();
 
   // 3c) Automatisk frigivelse (48 t efter "modtaget" / 14 dage efter afsendelse).
   //     Først påmindelsen til køberen på dag 12 (kaster aldrig).

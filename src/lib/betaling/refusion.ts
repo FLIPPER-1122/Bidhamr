@@ -10,10 +10,15 @@ import "server-only";
 //   S = fra sælgerens konto  = U (sælgeren får intet, når køberen får pengene)
 //   G = gebyr-refusion       = R - S
 //   (a) applicationFees.createRefund(G)   -> sælgerens konto: U + G
-//   (b) transfers.createReversal(R)       -> sælgerens konto: U + G - R = 0
+//   (b) transfers.createReversal(X)       -> sælgerens konto: U + G - X = 0
 //   (c) refunds.create(R) fra platformen  -> køberen får R
+// X = U + G (planens tilbagefoersel_oere). Normalt er S = U, så X = R.
 // Fuld refusion (annullering): R = T, G = F. Sag med medhold: R = T -
 // Beskyttelse, G = F - Beskyttelse (BidHamr beholder kun Beskyttelsen).
+// Ikke-afhentet pakke (20261016030000): R = T - gebyrer - fragt begge veje
+// kan være mindre end U. Så er S = R, G = 0 og X = U: hele sælgerens del
+// tages tilbage, køberen får R, og platformen beholder U - R (returfragten
+// ud over sælgergebyret). Sælgeren står altid med 0.
 // Ingen proportionel afrunding hos Stripe (begge beløb angives eksakt), og
 // sælgerens saldo bliver aldrig negativ undervejs (gebyret først, så
 // tilbageførslen; saldoen tjekkes før begge).
@@ -41,6 +46,9 @@ type Plan = {
   refusion_oere?: number;
   fra_saelger_oere?: number;
   gebyr_oere?: number;
+  // Det, der tilbageføres fra sælgerens konto (U + G). Mangler i planer fra
+  // før 20261016030000 - så er det R.
+  tilbagefoersel_oere?: number;
   application_fee_oere?: number;
   saelger_stripe_konto?: string;
   gebyr_refunderet?: boolean;
@@ -121,8 +129,9 @@ export async function forberedDestinationRefusion(
   const R = Number(plan.refusion_oere);
   const S = Number(plan.fra_saelger_oere);
   const G = Number(plan.gebyr_oere);
+  const X = plan.tilbagefoersel_oere === undefined || plan.tilbagefoersel_oere === null ? R : Number(plan.tilbagefoersel_oere);
   const konto = String(plan.saelger_stripe_konto);
-  if (![R, S, G].every(Number.isInteger) || R !== S + G || R !== maal) {
+  if (![R, S, G, X].every(Number.isInteger) || R !== S + G || R !== maal || X < R || X - G < S) {
     return { kode: "konflikt", besked: "Refusionsplanen passer ikke med refusionsbeløbet - refusion stoppet" };
   }
 
@@ -196,25 +205,26 @@ export async function forberedDestinationRefusion(
     await registrerTrin(b.id, laas, "gebyr", id);
   }
 
-  // (b) R tilbage fra sælgerens konto til platformen.
-  if (tilbagefoert !== R) {
+  // (b) X tilbage fra sælgerens konto til platformen (X = R, undtagen ved
+  // ikke-afhentet pakke, hvor hele sælgerens del tages tilbage).
+  if (tilbagefoert !== X) {
     if (tilbagefoert !== 0 || plan.tilbagefoert) {
       return { kode: "konflikt", besked: "Overførslen til sælgeren er tilbageført med et andet beløb hos Stripe - refusion stoppet" };
     }
-    if ((await saldoIAlt(konto, opts)) < R) {
+    if ((await saldoIAlt(konto, opts)) < X) {
       await saldoAlarm(b, konto);
       return { kode: "konflikt", besked: "Sælgerens Stripe-konto har for lidt på saldoen til refusionen - refusion stoppet" };
     }
     const rev = await stripe.transfers.createReversal(
       transfer.id,
       {
-        amount: R,
+        amount: X,
         refund_application_fee: false,
         metadata: { betaling_id: b.id, handel_id: b.trade_id, trin: "refusion" },
       },
       { ...opts, idempotencyKey: `bidhamr-refusion-tilbagefoersel-${b.id}-${forsoeg}` },
     );
-    if (Number(rev.amount) !== R) {
+    if (Number(rev.amount) !== X) {
       return { kode: "konflikt", besked: "Tilbageførslen hos Stripe har et andet beløb end planen - refusion stoppet" };
     }
     await registrerTrin(b.id, laas, "tilbagefoersel", rev.id);

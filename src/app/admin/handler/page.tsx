@@ -16,6 +16,7 @@ import {
   fragtGodkendEkstraLabel,
   fragtMarkerHaandteret,
 } from "@/app/actions/adminFragt";
+import { handelIkkeAfhentet } from "@/app/actions/adminIkkeAfhentet";
 import { HAENGER_TEKST, erHaengerGrund, type HaengerGrund } from "@/lib/adminGraenser";
 import {
   sagAabn,
@@ -42,6 +43,7 @@ type HandelRow = {
   sag_aaben: boolean;
   sag_note: string | null;
   sag_aabnet_at: string | null;
+  afhentning: boolean | null;
 };
 
 const AKTIVE = ["betaling_modtaget", "pakke_sendt", "modtaget"];
@@ -82,6 +84,16 @@ const FANER = [
   { key: "alle", label: "Alle" },
 ] as const;
 
+// "Ikke afhentet" (ROADMAP-BESLUTNINGER afsnit 1, model 3).
+const IKKE_AFHENTET_TITEL = "Pakken blev ikke afhentet?";
+const IKKE_AFHENTET_TEKST =
+  "Brug det, når fragtfirmaet har sendt pakken retur til sælgeren, fordi køberen ikke hentede den. Handlen annulleres. Køberen får købsbeløbet tilbage minus købergebyr, BidHamr Beskyttelse og fragten begge veje (returfragten = fragten ud) – aldrig under 0 kr. Sælgeren beholder varen, betaler ikke for fragten og får intet udbetalt. Begge får besked. Kan ikke fortrydes.";
+const IKKE_AFHENTET_AARSAG = {
+  label: "Begrundelse (intern)",
+  placeholder: "Fx: DAO-sporing viser retur til afsender efter 7 dage i pakkeshoppen",
+  required: true,
+};
+
 function dageSiden(iso: string) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 }
@@ -106,7 +118,7 @@ export default async function AdminSager({
   const supabase = createAdminClient();
 
   const KOLONNER =
-    "id, auction_id, seller_id, buyer_id, amount, status, tracking_number, created_at, sag_aaben, sag_note, sag_aabnet_at";
+    "id, auction_id, seller_id, buyer_id, amount, status, tracking_number, created_at, sag_aaben, sag_note, sag_aabnet_at, afhentning";
 
   const [
     { data: handler },
@@ -166,14 +178,35 @@ export default async function AdminSager({
   const auktionIds = [...new Set(alle.map((h) => h.auction_id))];
   const brugerIds = [...new Set(alle.flatMap((h) => [h.buyer_id, h.seller_id]))];
 
-  const [{ data: auktioner }, { data: brugere }] = await Promise.all([
+  // "Ikke afhentet": handler (sendt, ikke afhentning), hvor fragtfirmaet har
+  // meldt den udgående pakke retur uden at have leveret den. Kun dem får
+  // medarbejdere knappen; uden returmelding kun admin/chef (databasen afgør
+  // det også - 'kraever_admin').
+  const sendteIds = alle.filter((h) => h.status === "pakke_sendt" && !h.afhentning).map((h) => h.id);
+  // Hentes i bidder á 150 id'er (kort URL), så alle sendte handler på siden er med.
+  const bidder: string[][] = [];
+  for (let i = 0; i < sendteIds.length; i += 150) bidder.push(sendteIds.slice(i, i + 150));
+  const [{ data: auktioner }, { data: brugere }, returMeldt] = await Promise.all([
     auktionIds.length
       ? supabase.from("auctions").select("id, titel").in("id", auktionIds)
       : Promise.resolve({ data: [] as { id: string; titel: string }[] }),
     brugerIds.length
       ? supabase.from("users").select("id, navn, email").in("id", brugerIds)
       : Promise.resolve({ data: [] as { id: string; navn: string | null; email: string }[] }),
+    Promise.all(
+      bidder.map((ids) =>
+        supabase
+          .from("forsendelser")
+          .select("trade_id")
+          .in("trade_id", ids)
+          .eq("type", "udgaaende")
+          .not("status", "in", "(annulleret,fejlet)")
+          .not("returneret_kl", "is", null)
+          .is("leveret_kl", null),
+      ),
+    ),
   ]);
+  const returMeldtIds = new Set(returMeldt.flatMap((r) => (r.data ?? []).map((f) => f.trade_id as string)));
 
   const titelMap = new Map((auktioner ?? []).map((a) => [a.id, a.titel as string]));
   const brugerMap = new Map(
@@ -405,6 +438,24 @@ export default async function AdminSager({
                       kvittering="Den hængende label er afsluttet"
                     />
                   )}
+                  {/* Pakken er meldt retur: staff registrerer "ikke afhentet" (når
+                      fragtfirmaets signal ikke gør det automatisk). */}
+                  {f.type === "udgaaende" &&
+                    f.status === "returneret" &&
+                    h &&
+                    h.status === "pakke_sendt" && (
+                      <ConfirmDialog
+                        triggerLabel="Ikke afhentet"
+                        triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"
+                        title={IKKE_AFHENTET_TITEL}
+                        description={IKKE_AFHENTET_TEKST}
+                        confirmLabel="Ja, pakken blev ikke afhentet"
+                        action={handelIkkeAfhentet}
+                        hiddenFields={{ tradeId: f.trade_id, forsendelseId: f.id }}
+                        aarsagField={IKKE_AFHENTET_AARSAG}
+                        kvittering="Registreret som ikke afhentet"
+                      />
+                    )}
                   {f.type === "udgaaende" && (
                     <ConfirmDialog
                       triggerLabel="Godkend ekstra label"
@@ -568,6 +619,23 @@ export default async function AdminSager({
                               action={sagAabn}
                               hiddenFields={{ tradeId: h.id }}
                               aarsagField={{ label: "Hvad drejer sagen sig om?", placeholder: "Fx: køber melder varen defekt, sælger svarer ikke...", required: true }}
+                            />
+                          )}
+                          {/* Pakken er sendt retur, fordi køberen ikke hentede den.
+                              Med returmelding: medarbejder og op. Uden: kun admin/chef. */}
+                          {!h.afhentning &&
+                            h.status === "pakke_sendt" &&
+                            (returMeldtIds.has(h.id) || kanFlyttePenge) && (
+                            <ConfirmDialog
+                              triggerLabel="Ikke afhentet"
+                              triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"
+                              title={IKKE_AFHENTET_TITEL}
+                              description={IKKE_AFHENTET_TEKST}
+                              confirmLabel="Ja, pakken blev ikke afhentet"
+                              action={handelIkkeAfhentet}
+                              hiddenFields={{ tradeId: h.id }}
+                              aarsagField={IKKE_AFHENTET_AARSAG}
+                              kvittering="Registreret som ikke afhentet"
                             />
                           )}
                           {aktiv && kanFlyttePenge && (
