@@ -244,12 +244,29 @@ export async function forberedDestinationRefusion(
 export async function kontrollerDestinationRefusion(paymentIntentId: string): Promise<void> {
   try {
     const admin = createAdminClient();
-    const { data: b } = await admin
+    type R = {
+      id: string;
+      trade_id: string;
+      seller_id: string;
+      pengemodel: string;
+      stripe_charge_id: string | null;
+      status: string;
+      bidhamr_daekker_kl?: string | null;
+    };
+    const basis = "id, trade_id, seller_id, pengemodel, stripe_charge_id, status";
+    const foerste = await admin
       .from("betalinger")
-      .select("id, trade_id, seller_id, pengemodel, stripe_charge_id, status")
+      .select(`${basis}, bidhamr_daekker_kl`)
       .eq("stripe_payment_intent_id", paymentIntentId)
-      .maybeSingle<{ id: string; trade_id: string; seller_id: string; pengemodel: string; stripe_charge_id: string | null; status: string }>();
+      .maybeSingle<R>();
+    let b = foerste.data;
+    if (foerste.error) {
+      // 20261019010000 er ikke kørt endnu: uden kolonnen.
+      ({ data: b } = await admin.from("betalinger").select(basis).eq("stripe_payment_intent_id", paymentIntentId).maybeSingle<R>());
+    }
     if (!b || b.pengemodel !== "destination" || b.status !== "refunderet" || !b.stripe_charge_id) return;
+    // "BidHamr dækker": sælgeren beholder sin udbetaling med vilje.
+    if (b.bidhamr_daekker_kl) return;
     const charge = await getStripe().charges.retrieve(b.stripe_charge_id, {
       expand: ["transfer", "application_fee"],
     });

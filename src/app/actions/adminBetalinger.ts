@@ -20,8 +20,27 @@ import {
 
 class BrugerFejl extends Error {}
 
-// Ingen medarbejder må behandle en betaling, hvor han selv er køber eller sælger.
-const INHABIL = "Du kan ikke behandle en handel, hvor du selv er køber eller sælger.";
+// Ingen medarbejder må behandle en betaling, hvor han selv er køber eller
+// sælger - eller har handlet med en af dem (penge_inhabil, 20261019010000).
+const INHABIL =
+  "Du kan ikke behandle en handel, hvor du selv er køber eller sælger, eller hvor du har handlet med en af dem.";
+
+async function erInhabil(
+  admin: AdminClient,
+  staffId: string,
+  koeber: string | null,
+  saelger: string | null,
+): Promise<boolean> {
+  if (staffId === koeber || staffId === saelger) return true;
+  const { data, error } = await admin.rpc("penge_inhabil", {
+    p_medarbejder: staffId,
+    p_koeber: koeber,
+    p_saelger: saelger,
+  });
+  // Før migrationen findes funktionen ikke: kun tjekket ovenfor.
+  if (error && !["PGRST202", "42883"].includes(error.code ?? "")) throw new Error(error.message);
+  return data === true;
+}
 
 const GENERISK_FEJL = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
 
@@ -743,7 +762,7 @@ export async function markerBetalingLøst(betalingId: string, note: string) {
       .maybeSingle<Indsigelse & { buyer_id: string | null; seller_id: string | null }>();
     if (nuErr) throw new Error(nuErr.message);
     if (!nu) throw new BrugerFejl("Betalingen blev ikke fundet.");
-    if (userId === nu.buyer_id || userId === nu.seller_id) throw new BrugerFejl(INHABIL);
+    if (await erInhabil(admin, userId, nu.buyer_id, nu.seller_id)) throw new BrugerFejl(INHABIL);
 
     // Tabt indsigelse: sluttilstand (Niels F04). Lukkes atomisk i databasen -
     // handlen annulleres, hvis intet er overført til sælger. Pengene flyttes
@@ -878,7 +897,7 @@ export async function proevTilbagebetalingIgen(betalingId: string) {
       }>();
     if (nuErr) throw new Error(nuErr.message);
     if (!nu) throw new BrugerFejl(REFUSION_AFVIST.ikke_fundet);
-    if (userId === nu.buyer_id || userId === nu.seller_id) throw new BrugerFejl(INHABIL);
+    if (await erInhabil(admin, userId, nu.buyer_id, nu.seller_id)) throw new BrugerFejl(INHABIL);
     if (indsigelseBlokerer(nu)) throw new BrugerFejl(REFUSION_AFVIST.indsigelse);
 
     let r: string;
@@ -935,7 +954,7 @@ export async function hentFraSaelgerIgen(betalingId: string) {
       .maybeSingle<{ buyer_id: string | null; seller_id: string | null }>();
     if (error) throw new Error(error.message);
     if (!nu) throw new BrugerFejl(HENT_FRA_SAELGER.ikke_fundet.besked);
-    if (userId === nu.buyer_id || userId === nu.seller_id) throw new BrugerFejl(INHABIL);
+    if (await erInhabil(admin, userId, nu.buyer_id, nu.seller_id)) throw new BrugerFejl(INHABIL);
     const { proevIndsigelseTilbagefoerselIgen } = await import("@/lib/betaling/indsigelse");
     let r: string;
     try {
@@ -1010,7 +1029,7 @@ export async function givAdvarselBetaling(
       .maybeSingle<{ buyer_id: string | null; seller_id: string | null }>();
     if (parterErr) throw new Error(parterErr.message);
     if (!parter) throw new BrugerFejl(ADVARSEL_FEJL.ikke_fundet);
-    if (userId === parter.buyer_id || userId === parter.seller_id) throw new BrugerFejl(INHABIL);
+    if (await erInhabil(admin, userId, parter.buyer_id, parter.seller_id)) throw new BrugerFejl(INHABIL);
     await afvisUloestSvindelvarsel(admin, id);
 
     const { data, error } = await admin.rpc("admin_advarsel_betaling", {

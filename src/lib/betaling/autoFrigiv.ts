@@ -4,7 +4,10 @@ import "server-only";
 // "Sager (Filip, 3. oktober 2026)"):
 //   - 48 timer efter køberen trykkede "modtaget", uden sag.
 //   - 14 dage efter afsendelse, hvis køberen hverken har trykket "modtaget"
-//     eller oprettet en sag (indtil GLS-sporing erstatter det).
+//     eller oprettet en sag - KUN når pakken er sendt med BidHamrs fragtlabel
+//     og fragtfirmaet har meldt den leveret/afhentet (Filip, 11. okt. 2026).
+//     Ellers får staff en opgave, og pengene frigives aldrig automatisk
+//     (handel_auto_frigiv, 20261019010000).
 // Databasen afgør og frigiver atomisk (handel_auto_frigiv - respekterer
 // frysning, åbne/afgjorte sager, indsigelse og refusion). Bagefter udbetales
 // pengene som ved køberens godkendelse (pengeTilSaelger), og køberen får
@@ -116,7 +119,7 @@ export async function paamindKoeberOmModtagelse(): Promise<number> {
     if (liste.length === 0) return 0;
     const ids = liste.map((t) => t.id);
 
-    const [{ data: sager }, { data: betalinger }, { data: auktioner }, { data: retur }] = await Promise.all([
+    const [{ data: sager }, { data: betalinger }, { data: auktioner }, { data: retur }, { data: leveret }] = await Promise.all([
       admin.from("sager").select("trade_id").in("trade_id", ids),
       admin
         .from("betalinger")
@@ -139,7 +142,17 @@ export async function paamindKoeberOmModtagelse(): Promise<number> {
         .in("trade_id", ids)
         .eq("type", "udgaaende")
         .not("returneret_kl", "is", null),
+      // Filip 11. okt. 2026: kun med BidHamrs fragtlabel og en
+      // leveringsmelding frigives der automatisk efter 14 dage.
+      admin
+        .from("forsendelser")
+        .select("trade_id")
+        .in("trade_id", ids)
+        .eq("type", "udgaaende")
+        .not("status", "in", "(annulleret,fejlet)")
+        .not("leveret_kl", "is", null),
     ]);
+    const autoMulig = new Set((leveret ?? []).map((f) => f.trade_id as string));
     const medSag = new Set([
       ...(sager ?? []).map((s) => s.trade_id as string),
       ...(retur ?? []).map((f) => f.trade_id as string),
@@ -165,7 +178,9 @@ export async function paamindKoeberOmModtagelse(): Promise<number> {
       const titel = titler.get(t.auction_id) ?? "din vare";
       const r = await send(t.buyer_id, "pakke_sendt", {
         titel: "Har du modtaget din vare?",
-        tekst: `Har du modtaget "${titel}"? Markér den som modtaget, eller meld den bortkommet – ellers udbetales pengene til sælgeren ${datoTekst(sendt + SAG_AUTO_FRIGIV_EFTER_DAGE * DAG)}.`,
+        tekst: autoMulig.has(t.id)
+          ? `Har du modtaget "${titel}"? Markér den som modtaget, eller meld den bortkommet – ellers udbetales pengene til sælgeren ${datoTekst(sendt + SAG_AUTO_FRIGIV_EFTER_DAGE * DAG)}.`
+          : `Har du modtaget "${titel}"? Markér den som modtaget, eller meld den bortkommet, så vi kan hjælpe dig.`,
         link: `/mine-handler/${t.id}`,
         data: { trade_id: t.id },
         noegle: `paamind_modtaget:${t.id}`,

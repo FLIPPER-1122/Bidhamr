@@ -55,6 +55,14 @@ export default function UdbetalingStatusBoks({ v }: { v: Udbetalingsvisning }) {
       stil = "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst";
       break;
     case "stoppet":
+      if (v.aarsag === "kontrol") {
+        // Neutral tekst: grunden (fx en frysning) vises ikke for sælgeren.
+        titel = "Udbetalingen afventer kontrol hos BidHamr";
+        tekst =
+          "Handlen er færdig, men udbetalingen afventer kontrol hos BidHamr. Du får besked, når pengene sendes. Har du spørgsmål, så skriv til support@bidhamr.dk.";
+        stil = "border-info-kant bg-info-bg text-info-tekst";
+        break;
+      }
       titel = "Udbetalingen er sat på pause";
       tekst =
         "Udbetalingen venter, mens vi kigger på handlen. Du får besked, når pengene sendes. Har du spørgsmål, så skriv til support@bidhamr.dk.";
@@ -62,9 +70,16 @@ export default function UdbetalingStatusBoks({ v }: { v: Udbetalingsvisning }) {
       break;
     default:
       titel = "Udbetalingen venter";
-      tekst = v.tidligstKl
-        ? `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe – tidligst ${kunDato(v.tidligstKl)}.`
-        : `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe inden for kort tid.`;
+      if (v.aarsag === "fortrydelsesfrist") {
+        // Erhverv: køberen har 14 dages fortrydelsesret efter levering.
+        tekst = v.tidligstKl
+          ? `Køberen har 14 dages fortrydelsesret efter modtagelsen. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe, når fristen er udløbet – tidligst ${kunDato(v.tidligstKl)}.`
+          : `Køberen har 14 dages fortrydelsesret efter modtagelsen. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe, når fristen er udløbet.`;
+      } else {
+        tekst = v.tidligstKl
+          ? `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe – tidligst ${kunDato(v.tidligstKl)}.`
+          : `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe inden for kort tid.`;
+      }
       stil = "border-info-kant bg-info-bg text-info-tekst";
   }
   return (
