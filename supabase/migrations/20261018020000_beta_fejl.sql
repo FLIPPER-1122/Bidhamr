@@ -8,18 +8,29 @@
 --      indsendBetaFejl (src/app/actions/betaFejl.ts) med service_role, som
 --      kalder beta_fejl_opret herunder. Admin-siden læser og opdaterer med
 --      service_role efter assertRole('admin').
---   2. Privat bucket 'beta-fejl-billeder' (5 MB, kun jpeg/png/webp).
+--   2. Privat bucket 'beta-fejl-billeder' (5 MB, kun image/jpeg - browseren
+--      laver altid billederne om til JPEG).
 --      Brugeren må kun uploade i sin egen mappe: <eget id>/<uuid>.jpg, og kun
---      som beta-tester (min_beta_adgang) eller staff (er_staff). Højst 30 filer
+--      som staff (er_staff) eller beta-tester (min_beta_adgang), men aldrig
+--      som firmakonto (konto_type 'erhverv') uden staff-rolle - som
+--      maaMeldeBetaFejl i src/lib/betaFejlAdgang.ts. Højst 30 filer
 --      pr. bruger pr. time. Ingen select/update/delete-policies: billederne
 --      vises kun for staff via signerede links (service_role).
 --   3. beta_fejl_opret(...) (kun service_role): validerer felterne og
 --      billedstierne (skal ligge i brugerens mappe, findes i storage, være
 --      uploadet af brugeren og ikke brugt før), har et ekstra loft på 20
 --      fejl pr. bruger pr. time og indsætter rækken.
+--   4. beta_fejl_ubrugte_billeder(p_graense) (kun service_role): filer i
+--      bucketen, der er ældre end 24 timer og ikke indgår i en beta_fejl
+--      (afbrudte forsøg). Hovedcron'en (/api/cron/afslut-auktioner, hvert 5.
+--      minut) sletter dem via Storage-API'et højst én gang i timen
+--      (src/lib/betaFejlOprydning.ts) - direkte SQL-sletning i storage.objects
+--      ville efterlade selve filen.
 --
 -- Ingen eksisterende funktioner ændres (derfor intet md5-drift-tjek).
--- Idempotent (kan køres flere gange). Kør først på testdatabasen.
+-- Idempotent (kan køres flere gange), også oven på den første udgave, der
+-- blev kørt på testdatabasen 11. okt. 2026 (create or replace, on conflict do
+-- update). Kør først på testdatabasen.
 
 set local lock_timeout = '5s';
 
@@ -70,14 +81,14 @@ grant select, insert, update on table public.beta_fejl to service_role;
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('beta-fejl-billeder', 'beta-fejl-billeder', false, 5242880,
-        array['image/jpeg', 'image/png', 'image/webp'])
+        array['image/jpeg'])
 on conflict (id) do update
   set public = false,
       file_size_limit = excluded.file_size_limit,
       allowed_mime_types = excluded.allowed_mime_types;
 
 -- Må den kaldende bruger uploade til stien? Kun i egen mappe
--- (<eget id>/<uuid>.jpg), kun som beta-tester eller staff, og højst 30 filer
+-- (<eget id>/<uuid>.jpg), kun som staff eller beta-tester (ikke firmakonti), og højst 30 filer
 -- pr. time (misbrugsværn - en fejl har højst 3 billeder, og der kan meldes
 -- højst 20 fejl i timen).
 create or replace function public.beta_fejl_billede_maa_uploade(p_sti text)
@@ -96,7 +107,13 @@ begin
   if v_dele[2] !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$' then
     return false;
   end if;
-  if not (public.min_beta_adgang() or public.er_staff()) then return false; end if;
+  if not public.er_staff() then
+    if not public.min_beta_adgang() then return false; end if;
+    if exists (select 1 from public.users u
+                where u.id = v_bruger and u.konto_type = 'erhverv') then
+      return false;
+    end if;
+  end if;
 
   return (select count(*) from storage.objects o
            where o.bucket_id = 'beta-fejl-billeder'
@@ -211,3 +228,29 @@ revoke all on function public.beta_fejl_opret(uuid, text, text, text, text, text
   from public, anon, authenticated;
 grant execute on function public.beta_fejl_opret(uuid, text, text, text, text, text, text, text[])
   to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 4. Oprydning af ubrugte billeder (kun service_role)
+-- ---------------------------------------------------------------------------
+-- Filer i bucketen, der er ældre end 24 timer og ikke indgår i nogen
+-- beta_fejl (fx en afbrudt indsendelse). Højst p_graense (1-1000) ad gangen,
+-- ældste først. Selve sletningen sker via Storage-API'et i
+-- src/lib/betaFejlOprydning.ts, så filen også forsvinder fra lageret.
+create or replace function public.beta_fejl_ubrugte_billeder(p_graense integer default 100)
+returns setof text
+language sql
+stable
+security definer
+set search_path = ''
+as $fn$
+  select o.name
+    from storage.objects o
+   where o.bucket_id = 'beta-fejl-billeder'
+     and o.created_at < now() - interval '24 hours'
+     and not exists (select 1 from public.beta_fejl f where o.name = any (f.billeder))
+   order by o.created_at
+   limit least(greatest(coalesce(p_graense, 100), 1), 1000);
+$fn$;
+
+revoke all on function public.beta_fejl_ubrugte_billeder(integer) from public, anon, authenticated;
+grant execute on function public.beta_fejl_ubrugte_billeder(integer) to service_role;

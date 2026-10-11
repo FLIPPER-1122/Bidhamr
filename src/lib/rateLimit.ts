@@ -129,6 +129,8 @@ export const GRAENSER = {
   beta_fejl_bruger: { maks: 20, vindueSek: 60 * 60 },
   // Alarm-mail ved en beta-fejl, der blokerer: højst 6 i alt pr. time.
   beta_fejl_alarm: { maks: 6, vindueSek: 60 * 60 },
+  // Oprydning af ubrugte beta-skærmbilleder i hovedcron'en: højst én gang i timen.
+  beta_fejl_oprydning: { maks: 1, vindueSek: 60 * 60 },
   // Fragt: pakkeshop-søgning (rammer fragtfirmaets API) og handlinger
   // (leveringsvalg, label, annullering) pr. bruger; appens API pr. IP, før
   // tokenet er valideret.

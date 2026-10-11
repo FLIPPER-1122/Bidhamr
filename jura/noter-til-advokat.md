@@ -206,3 +206,7 @@ Udkastet til erhvervsvilkår dækker oprettelse, abonnement, fakturering, forbru
 119. **Aftalen med firmaet.** Skal aftalen om pakke og pris være skriftlig og underskrevet, eller er en mail nok? Skal vi kende den person, der må handle på firmaets vegne (tegningsret/fuldmagt)? Kan BidHamrs ansvar over for firmaet begrænses (fx til betalt abonnement og gebyrer de seneste 12 måneder), og hvilket værneting skal gælde?
 120. **Klager over firmaer.** Købere kan oprette en klage over et firma på handlen; en medarbejder vurderer, om den er berettiget, og gentagne berettigede klager kan give advarsel, pause eller lukning. Hvordan skal BidHamrs rolle beskrives, så det ikke ligner en afgørelse af købers krav efter loven? Skal firmaet have ret til at svare, før klagen tæller, og er det en "afgørelse" efter DSA art. 17/20 eller P2B art. 4?
 121. **Ens billeder.** Må et firma, der sælger flere ens nye varer, bruge samme billede på flere auktioner, når brugerbetingelserne kræver billeder af "den vare, du sælger"?
+
+## Beta-test (11. okt. 2026 – se docs/BETA-TEST.md)
+
+122. **Beta-skærmbilleder og browserinfo i privatlivspolitikken.** Med "Meld fejl"-knappen gemmer vi testerens tekst, op til 3 skærmbilleder (de kan vise personoplysninger fra siden), siden, browseren (user agent) og skærmstørrelsen. Kun staff kan se dem. Ubrugte billeder slettes efter 24 timer, og alle beta-skærmbilleder slettes efter testen. Hvordan skal det stå i privatlivspolitikken (formål, hjemmel, opbevaring), og skal testerne have en særskilt oplysning, før de bruger knappen?

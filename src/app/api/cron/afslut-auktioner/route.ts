@@ -6,6 +6,7 @@ import { koerFragtCron } from "@/lib/fragt/server";
 import { harCronAdgang } from "@/lib/cronAdgang";
 import { koerDac7Cron } from "@/lib/dac7/server";
 import { koerLukOpsigelser } from "@/lib/erhverv/betaling";
+import { koerBetaFejlOprydning } from "@/lib/betaFejlOprydning";
 
 // Lukker auktioner, opretter handel + betaling (48 timers frist; vinderen
 // betaler selv - ingen automatisk betaling), sender "du vandt"-mails og
@@ -150,7 +151,16 @@ async function haandter(req: NextRequest) {
         logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Erhverv: opsigelse ved lukning", fejl: err }),
       );
     }
-    const r = { ...betaling, fragt, dac7, erhvervLuk };
+    // Ubrugte beta-skærmbilleder (ældre end 24 timer, ikke i en beta-fejl)
+    // slettes højst én gang i timen. Flytter ingen penge - fejl her tæller
+    // ikke som trinfejl, men logges i drift_fejl.
+    let betaFejlOprydning: Awaited<ReturnType<typeof koerBetaFejlOprydning>> = null;
+    try {
+      betaFejlOprydning = await koerBetaFejlOprydning();
+    } catch (err) {
+      await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Beta-fejl: oprydning af billeder", fejl: err });
+    }
+    const r = { ...betaling, fragt, dac7, erhvervLuk, betaFejlOprydning };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);
