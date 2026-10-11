@@ -7,7 +7,6 @@ import { createPortal } from "react-dom";
 import MitIDKraeves from "@/components/mitid/MitIDKraeves";
 import { MITID } from "@/lib/tekster/mitid";
 import Ikon from "@/components/Ikon";
-import { createClient } from "@/lib/supabase/client";
 import { afgivBud, saetMaksimum } from "@/app/actions/bud";
 import { AUTOBUD } from "@/lib/tekster/autobud";
 import { formatNedtælling, pauseTekst } from "@/lib/auctionTid";
@@ -205,63 +204,75 @@ export default function BidPanel({
   }, [slutterKl, router, pauset]);
 
   useEffect(() => {
-    const supabase = createClient();
+    // Supabase-klienten (realtime) indlæses efter hydreringen i stedet for at
+    // ligge i sidens første JavaScript. Lytningen er den samme som før.
+    let aktiv = true;
+    let ryd: (() => void) | null = null;
+    import("@/lib/supabase/client").then(({ createClient }) => {
+      if (!aktiv) return;
+      const supabase = createClient();
 
-    // Bud kan ikke laeses direkte (bydernes privatliv), saa der lyttes paa
-    // auktionen: aendres det foerende bud, hentes den anonymiserede
-    // budhistorik og min status igen fra serveren.
-    const channel = supabase
-      .channel(`auktion-${auktionId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "auctions",
-          filter: `id=eq.${auktionId}`,
-        },
-        (payload) => {
-          const opdateret = payload.new as {
-            "nuværende_bud": number | null;
-            slutter_kl: string;
-            status: string;
-            redigeret_kl?: string | null;
-          };
-          if (
-            opdateret["nuværende_bud"] != null &&
-            opdateret["nuværende_bud"] !== nuværendeBudRef.current
-          ) {
-            setNuværendeBud(opdateret["nuværende_bud"]);
-            setHarBud(true);
-            router.refresh();
-          }
-          // Sælgeren har redigeret auktionen (kun muligt før første bud):
-          // hent det nye indhold, så ingen byder på en forældet visning.
-          if (
-            opdateret.redigeret_kl &&
-            redigeretKlRef.current &&
-            new Date(opdateret.redigeret_kl).getTime() !==
-              new Date(redigeretKlRef.current).getTime()
-          ) {
-            router.refresh();
-          }
-          setSlutterKl(opdateret.slutter_kl);
-          // Anti-sniping kan forlænge auktionen efter at tælleren er nået
-          // nul; så skal den kunne udløse en genindlæsning igen.
-          if (new Date(opdateret.slutter_kl).getTime() > Date.now()) {
-            harLukketRef.current = false;
-          }
-          if (opdateret.status && opdateret.status !== "aktiv") {
-            setRealtimeStatus(opdateret.status);
-            // Vinderen hentes anonymt fra serveren (vinderVisning-prop).
-            router.refresh();
-          }
-        },
-      )
-      .subscribe();
+      // Bud kan ikke laeses direkte (bydernes privatliv), saa der lyttes paa
+      // auktionen: aendres det foerende bud, hentes den anonymiserede
+      // budhistorik og min status igen fra serveren.
+      const channel = supabase
+        .channel(`auktion-${auktionId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "auctions",
+            filter: `id=eq.${auktionId}`,
+          },
+          (payload) => {
+            const opdateret = payload.new as {
+              "nuværende_bud": number | null;
+              slutter_kl: string;
+              status: string;
+              redigeret_kl?: string | null;
+            };
+            if (
+              opdateret["nuværende_bud"] != null &&
+              opdateret["nuværende_bud"] !== nuværendeBudRef.current
+            ) {
+              setNuværendeBud(opdateret["nuværende_bud"]);
+              setHarBud(true);
+              router.refresh();
+            }
+            // Sælgeren har redigeret auktionen (kun muligt før første bud):
+            // hent det nye indhold, så ingen byder på en forældet visning.
+            if (
+              opdateret.redigeret_kl &&
+              redigeretKlRef.current &&
+              new Date(opdateret.redigeret_kl).getTime() !==
+                new Date(redigeretKlRef.current).getTime()
+            ) {
+              router.refresh();
+            }
+            setSlutterKl(opdateret.slutter_kl);
+            // Anti-sniping kan forlænge auktionen efter at tælleren er nået
+            // nul; så skal den kunne udløse en genindlæsning igen.
+            if (new Date(opdateret.slutter_kl).getTime() > Date.now()) {
+              harLukketRef.current = false;
+            }
+            if (opdateret.status && opdateret.status !== "aktiv") {
+              setRealtimeStatus(opdateret.status);
+              // Vinderen hentes anonymt fra serveren (vinderVisning-prop).
+              router.refresh();
+            }
+          },
+        )
+        .subscribe();
+
+      ryd = () => {
+        supabase.removeChannel(channel);
+      };
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      aktiv = false;
+      ryd?.();
     };
   }, [auktionId, brugerId, router]);
 

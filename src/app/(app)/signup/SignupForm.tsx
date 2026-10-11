@@ -155,7 +155,7 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
                 className={`mt-1.5 ${FELT} ${fejlFelt === "email" ? FELT_FEJL : ""}`}
               />
               <p className="mt-1.5 text-[13px] text-tekst-daempet">
-                Vi sender et link, som du skal klikke på for at bekræfte din e-mail.
+                Vi sender en kode, som du skal indtaste for at bekræfte din e-mail.
               </p>
             </div>
 

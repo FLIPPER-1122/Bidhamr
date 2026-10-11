@@ -29,7 +29,7 @@ export default function KodeForm({ kendtEmail, startVentetid }: { kendtEmail: st
   async function send(e: FormEvent) {
     e.preventDefault();
     if (kode.length < 6) {
-      setFejl("Koden består af 6 cifre.");
+      setFejl("Skriv hele koden fra mailen.");
       return;
     }
     setSender(true);
@@ -87,7 +87,7 @@ export default function KodeForm({ kendtEmail, startVentetid }: { kendtEmail: st
             className={`mt-1.5 ${FELT} h-14 text-center text-[24px] font-semibold tracking-[0.4em] ${fejl ? FELT_FEJL : ""}`}
           />
           <p id="kode-hjaelp" className="mt-1.5 text-[13px] text-tekst-daempet">
-            6 cifre. Koden udløber 1 time efter, mailen er sendt.
+            Skriv koden fra mailen. Den udløber 1 time efter, mailen er sendt.
           </p>
         </div>
 

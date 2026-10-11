@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { kraevErhvervSide } from "@/lib/adminAuth";
 import { hentErhvervKlage } from "@/app/actions/adminErhvervKlager";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import { statusLabel } from "@/components/HandelStatusBadge";
 import { datoTid } from "@/components/admin/erhverv/ErhvervFaner";
 import KlageHandlinger from "@/components/admin/erhverv/KlageHandlinger";
 import AdvarselForslagHandlinger from "@/components/admin/erhverv/AdvarselForslagHandlinger";
@@ -143,7 +144,7 @@ export default async function ErhvervKlageSide({ params }: { params: Promise<{ i
             <dl className="mt-3 grid gap-3">
               <Felt navn="Vare">{d.handel.titel ?? "–"}</Felt>
               <Felt navn="Pris">{kr(d.handel.beloeb)}</Felt>
-              <Felt navn="Status">{d.handel.status}</Felt>
+              <Felt navn="Status">{statusLabel(d.handel.status)}</Felt>
               <Felt navn="Købt">{datoTid(d.handel.oprettet_kl)}</Felt>
               <Felt navn="Betalt">{datoTid(d.handel.betalt_kl)}</Felt>
               <Felt navn={d.handel.afhentning ? "Afhentning" : "Sendt"}>
