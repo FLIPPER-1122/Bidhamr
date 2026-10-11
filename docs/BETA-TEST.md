@@ -89,7 +89,7 @@ I dag er bidhamr.dk lukket: alle uden staff-rolle ser `/coming-soon`, og oprette
 
 **Ikke anbefalet:** at sætte `TILMELDING_AABEN=true` og `LANCERET=1` midlertidigt. Så kan alle oprette sig og se siden, og en indlogget bruger uden staff-rolle kommer ikke forbi gaten uden `LANCERET` alligevel.
 
-**[CHEF] Før start skal produktionen være på samme stade som testdatabasen.** Alle migrationer, testen bruger (MitID, fragt, sager, betalingsmodel, DAC7, fakturaer m.m.), skal være kørt i produktion. Saml dem til én godkendelse fra Filip. Tjek især `20261013010000_mitid.sql` – HUSKELISTE.md siger, at den først skal køres, når appen kan MitID. Beslut, om det krav kan vente til efter testen, når testen kun er på hjemmesiden.
+**[CHEF] Før start skal produktionen være på samme stade som testdatabasen.** Alle migrationer, testen bruger (MitID, fragt, sager, betalingsmodel, DAC7, fakturaer m.m.), skal være kørt i produktion. Saml dem til én godkendelse fra Filip. Status 11. okt. 2026: alle migrationer til og med `20261016050000` er kørt i produktion, også MitID.
 
 ---
 
