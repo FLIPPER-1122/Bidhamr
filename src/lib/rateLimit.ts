@@ -120,10 +120,16 @@ export const GRAENSER = {
   // medarbejder. Databasen har sine egne lofter (60 nye pr. time pr.
   // medarbejder, højst 10 mails og 1 pr. minut pr. invitation).
   beta_invitation_staff: { maks: 60, vindueSek: 60 * 60 },
-  // Beta-signup og "Send ny kode" mens tilmeldingen er lukket: højst én
-  // kodemail pr. e-mail hvert 2. minut (mod mailbomber). Inden for vinduet
-  // sendes intet, så den forrige kode stadig gælder.
-  beta_kode_email: { maks: 1, vindueSek: 2 * 60 },
+  // Signup og "Send ny kode" (hjemmesiden og appens /api/konto/opret, åben
+  // og lukket tilmelding - src/lib/kontoOprettelse.ts): højst én kodemail pr.
+  // e-mail hvert 2. minut (mod mailbomber). Inden for vinduet sendes intet,
+  // så den forrige kode stadig gælder.
+  kodemail_email: { maks: 1, vindueSek: 2 * 60 },
+  // Appens /api/konto/opret og /api/konto/bekraeft pr. IP, før indholdet er
+  // tjekket. Rummelig, fordi mange mobilbrugere deler IP (CGNAT); de
+  // egentlige grænser er de samme som på hjemmesiden (opret_ip,
+  // gensend_email, signup_kode_*).
+  konto_app_ip: { maks: 60, vindueSek: 60 * 60 },
   // Fragt: pakkeshop-søgning (rammer fragtfirmaets API) og handlinger
   // (leveringsvalg, label, annullering) pr. bruger; appens API pr. IP, før
   // tokenet er valideret.

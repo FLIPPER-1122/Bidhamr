@@ -446,9 +446,10 @@ export async function opretFirmakonto(
     if (!pakke.data) kodeFejl("ugyldig_pakke");
     if ((brugtHenv.data ?? []).length > 0) kodeFejl("henvendelse_brugt");
 
-    // Før lancering afviser databasen nye konti uden beta-invitation
-    // (handle_new_user, 20261017010000_beta_invitationer.sql). Billetten
-    // lader netop denne e-mail oprette én konto inden for 10 minutter.
+    // Databasen afviser enhver ny konto uden en billet fra serveren
+    // (handle_new_user, 20261017010000_beta_invitationer.sql og
+    // 20261018010000_signup_billet_altid.sql). Billetten lader netop denne
+    // e-mail oprette én konto inden for 10 minutter.
     const { data: billet, error: billetFejl } = await admin.rpc("konto_oprettelse_tillad", {
       p_staff: userId,
       p_email: loginEmail,

@@ -2,13 +2,15 @@ import "server-only";
 
 // Den adgangskode, brugeren vælger ved oprettelse, sættes FØRST på kontoen,
 // når e-mailen er bekræftet med koden (verificerSignupKode i
-// src/app/actions/auth.ts). Indtil da ligger den krypteret i en kort cookie
-// i brugerens egen browser.
+// src/app/actions/auth.ts -> bekraeftKode i src/lib/kontoOprettelse.ts).
+// Indtil da ligger den krypteret i en kort cookie i brugerens egen browser.
+// Gælder både åben og lukket tilmelding. Appen har ingen cookie og sender
+// adgangskoden igen til POST /api/konto/bekraeft (docs/APP-SIGNUP.md).
 //
 // Hvorfor (review 11. okt. 2026): ellers kan en angriber, der kender en
 // (inviteret) e-mail, oprette kontoen først med sin egen adgangskode - eller
 // bagefter overskrive offerets - og logge ind, når offeret bekræfter. Nu
-// bestemmes adgangskoden kun af den, der har koden fra mailen: beta-kontoen
+// bestemmes adgangskoden kun af den, der har koden fra mailen: kontoen
 // oprettes med en tilfældig adgangskode, og den valgte sættes med
 // updateUser i sessionen fra verifyOtp.
 //
@@ -145,7 +147,7 @@ export async function hentVentendeAdgangskode(email: string): Promise<string | n
 }
 
 // Er der allerede en gyldig ventende adgangskode til netop denne e-mail i
-// browseren? (Så kan den opdateres uden en ny kode - se opretBetaKonto.)
+// browseren? (Så kan den opdateres uden en ny kode - se opretKonto.)
 export async function harVentendeAdgangskode(email: string): Promise<boolean> {
   return (await hentVentendeAdgangskode(email)) !== null;
 }

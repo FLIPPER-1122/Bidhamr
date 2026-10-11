@@ -14,6 +14,9 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 // kendt sidetype, rate-limit pr. IP), så også besøg på venteliste-siden tælles.
 // /api/konto/slet er appens kontosletning: kun Bearer-token (ingen cookies),
 // adgangskode og "SLET" tjekkes i ruten selv.
+// /api/konto/opret og /api/konto/bekraeft er appens oprettelse af konti
+// (docs/APP-SIGNUP.md): ingen cookies, ingen login - man har jo ingen konto
+// endnu. Neutrale svar, rate limits og Origin-tjek i ruterne selv.
 // /api/firma/skift-pakke er appens pakkeskift for firmakonti: kun
 // Bearer-token (ingen cookies); login og firmakonto tjekkes i ruten/databasen.
 // /api/betaling/kort er appens "Fjern kort": kun
@@ -66,6 +69,8 @@ const OFFENTLIGE_RUTER = [
   "/api/cron",
   "/api/statistik",
   "/api/konto/slet",
+  "/api/konto/opret",
+  "/api/konto/bekraeft",
   "/api/firma/skift-pakke",
   "/api/betaling/kort",
   "/api/faktura",
