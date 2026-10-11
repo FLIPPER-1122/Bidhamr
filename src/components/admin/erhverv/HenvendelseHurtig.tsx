@@ -40,7 +40,7 @@ export default function HenvendelseHurtig({
   const [noteAaben, setNoteAaben] = useState(false);
   const [note, setNote] = useState("");
 
-  function saet(nyStatus: HenvendelseStatus, kvittering: string) {
+  function saet(nyStatus: HenvendelseStatus, kvittering: string, link?: { href: string; label: string }) {
     setFejl(null);
     start(async () => {
       const svar = await opdaterErhvervHenvendelse({ id, status: nyStatus });
@@ -48,7 +48,7 @@ export default function HenvendelseHurtig({
         setFejl(svar.fejl);
         return;
       }
-      visKvittering(kvittering);
+      visKvittering(kvittering, link ? { link } : {});
       router.refresh();
     });
   }
@@ -83,7 +83,9 @@ export default function HenvendelseHurtig({
           <button
             type="button"
             disabled={gemmer}
-            onClick={() => saet("godkendt", `${firmanavn} er godkendt – opret firmakontoen`)}
+            onClick={() =>
+              saet("godkendt", `${firmanavn} er godkendt`, { href: `/admin/erhverv/henvendelser/${id}#opret`, label: "Opret firmakonto" })
+            }
             className="btn btn-primaer btn-lille"
           >
             {gemmer && <span className="btn-spinner" aria-hidden="true" />}
