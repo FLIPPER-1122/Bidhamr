@@ -180,9 +180,10 @@ Fristerne i reglerne (48 timer til betaling, 48 timer til sag, 4 dages ankefrist
 ## 7. Hvordan fejl indsamles
 
 **Kanaler:**
-1. **Fejlformular** (Google Forms, se `docs/BETA-FEJLSKABELON.md`). Hovedkanalen.
-2. **E-mail med skærmbillede** til en beta-adresse. **[CHEF]** Vælg adresse – fx `beta@bidhamr.dk` som gruppe i Google Workspace (se HUSKELISTE.md "Mail på bidhamr.dk"). Google Forms kræver Google-login for at uploade filer, så mail er nemmest til skærmbilleder.
-3. **Kontaktformularen på siden** (`/kontakt`) som reserve. Den lander i `/admin/kontakt`.
+1. **"Meld fejl"-knappen på siden** (bygget 11. okt. 2026). Kun beta-testere og staff ser den, og kun før lancering: en lille grøn knap nederst til højre, som kan minimeres til en fane i højre kant. Formularen spørger om alvor, hvad man gjorde og hvad der skete, hvad man forventede, og op til 3 skærmbilleder (højst 5 MB hver). Siden, browseren og skærmstørrelsen kommer automatisk med. Fejlene ses under **Admin → Indstillinger → Beta-fejl** (admin og chef), hvor de kan filtreres på status og alvor og får status og en intern note. Alvor "blokerer" sender en mail til `DRIFT_ALARM_MAIL` (højst 6 i timen, uden testerens tekst). Højst 20 fejl pr. tester pr. time. Kræver migrationen `20261018020000_beta_fejl.sql`.
+2. **Fejlformular** (Google Forms, se `docs/BETA-FEJLSKABELON.md`). Reserve, hvis knappen ikke virker.
+3. **E-mail med skærmbillede** til en beta-adresse. **[CHEF]** Vælg adresse – fx `beta@bidhamr.dk` som gruppe i Google Workspace (se HUSKELISTE.md "Mail på bidhamr.dk"). Google Forms kræver Google-login for at uploade filer, så mail er nemmest til skærmbilleder.
+4. **Kontaktformularen på siden** (`/kontakt`) som reserve. Den lander i `/admin/kontakt`.
 
 **Filip samler alt i ét regneark** med kolonnerne: nr., dato, testperson, side, alvor, beskrivelse, status (ny / rettes / rettet / ikke en fejl), commit.
 

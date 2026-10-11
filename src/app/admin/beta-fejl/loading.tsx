@@ -1,0 +1,15 @@
+export default function Loading() {
+  return (
+    <div className="space-y-4 p-4 sm:p-6" aria-busy="true">
+      <div className="h-8 w-40 animate-pulse rounded-lg bg-neutral-200" />
+      <div className="flex gap-2">
+        <div className="h-9 w-20 animate-pulse rounded-full bg-neutral-200" />
+        <div className="h-9 w-20 animate-pulse rounded-full bg-neutral-200" />
+        <div className="h-9 w-20 animate-pulse rounded-full bg-neutral-200" />
+      </div>
+      <div className="h-48 animate-pulse rounded-xl bg-neutral-200" />
+      <div className="h-48 animate-pulse rounded-xl bg-neutral-200" />
+      <span className="sr-only">Indlæser…</span>
+    </div>
+  );
+}
