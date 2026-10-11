@@ -6,6 +6,8 @@ import {
 } from "@/app/actions/staffChat";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import AdminSide from "@/components/admin/AdminSide";
+import { HenvendelserFaner } from "@/components/admin/OmraadeFaner";
 
 // Samtaler mellem BidHamr og brugere. Åbne øverst (dem, der venter på svar,
 // først), derefter afsluttede med "Vis flere".
@@ -31,22 +33,23 @@ export default async function AdminChats({
   const venter = aabne.samtaler.filter((s) => s.venter_paa_svar).length;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
-        titel="Chats"
-        forklaring="Samtaler mellem BidHamr og brugere. Svar her – en ny chat starter du fra brugerens side."
+        titel="Henvendelser"
+        forklaring="Samtaler mellem BidHamr og brugere. Svar her – en ny chat starter du fra brugerens side eller med Svar på en henvendelse."
       />
+      <HenvendelserFaner aktiv="chats" />
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-neutral-800">
+        <h2 className="text-sm font-semibold text-tekst">
           Åbne ({aabne.samtaler.length})
-          {venter > 0 && <span className="ml-2 font-normal text-red-700">{venter} venter på svar</span>}
+          {venter > 0 && <span className="ml-2 font-normal text-fejl-tekst">{venter} venter på svar</span>}
         </h2>
         <StaffSamtaleListe samtaler={aabne.samtaler} tom="Ingen åbne chats" />
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-neutral-800">Afsluttede</h2>
+        <h2 className="text-sm font-semibold text-tekst">Afsluttede</h2>
         <StaffSamtaleListe samtaler={lukket.samtaler} tom="Ingen afsluttede chats" />
         {lukket.flere && (
           <div className="text-center">
@@ -60,6 +63,6 @@ export default async function AdminChats({
           </div>
         )}
       </section>
-    </div>
+    </AdminSide>
   );
 }

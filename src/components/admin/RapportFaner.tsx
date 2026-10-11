@@ -1,7 +1,9 @@
-import AdminFaner from "./AdminFaner";
+import { AnmeldelserFaner } from "@/components/admin/OmraadeFaner";
 
-// Faner øverst på "Rapporter": åbne, opklarede (de seneste 48 timer),
-// rapporter af chatbeskeder/profiler (bruger_rapporter) og arkivet. Arkivet vises kun for admin og chef (siden tjekker selv rollen).
+// Faner øverst på de gamle "Rapporter"-sider. De hører nu til menupunktet
+// Anmeldelser (DSA, auktioner, chat og profiler, bedømmelser, opklarede,
+// arkiv) - samme faner alle steder. Arkivet vises kun for admin og chef
+// (siden tjekker selv rollen).
 export default function RapportFaner({
   aktiv,
   visArkiv,
@@ -9,13 +11,5 @@ export default function RapportFaner({
   aktiv: "aabne" | "opklarede" | "arkiv" | "chat";
   visArkiv: boolean;
 }) {
-  // Anmeldelser fra hjemmesiden (også uden login) ligger under DSA.
-  const faner = [
-    { id: "dsa", label: "Anmeldelser (DSA)", href: "/admin/dsa" },
-    { id: "aabne", label: "Åbne", href: "/admin/rapporter" },
-    { id: "opklarede", label: "Opklarede (48 t)", href: "/admin/opklarede-rapporter" },
-    { id: "chat", label: "Chat og profiler", href: "/admin/bruger-rapporter" },
-    ...(visArkiv ? [{ id: "arkiv", label: "Arkiv", href: "/admin/rapport-arkiv" }] : []),
-  ];
-  return <AdminFaner faner={faner} aktiv={aktiv} label="Rapporter" />;
+  return <AnmeldelserFaner aktiv={aktiv} rolle={visArkiv ? "admin" : "medarbejder"} />;
 }

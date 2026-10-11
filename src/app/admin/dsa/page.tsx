@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { kraevSideRolle, harMindstRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
-import AdminFaner from "@/components/admin/AdminFaner";
 import {
   AnmeldelseGruppeKort,
   KlageKort,
@@ -20,6 +19,9 @@ import {
   handlingerFor,
   indholdNavn,
 } from "@/lib/dsa/regler";
+import AdminSide from "@/components/admin/AdminSide";
+import { AnmeldelserFaner } from "@/components/admin/OmraadeFaner";
+import AdminFilterChips from "@/components/admin/AdminFilterChips";
 
 // DSA: anmeldelser af ulovligt indhold (art. 16) og klager over afgørelser
 // (art. 20). Medarbejder og op. At fjerne en auktion eller lukke en konto
@@ -344,13 +346,13 @@ export default async function DsaAdminSide({
 
   const chip = (aktiv: boolean) =>
     `inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
-      aktiv ? "border-groen bg-groen text-white" : "border-kant-staerk bg-white text-neutral-700 hover:bg-groen-lys"
+      aktiv ? "border-groen bg-groen text-white" : "border-kant-staerk bg-white text-tekst hover:bg-groen-lys"
     }`;
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
-        titel="Anmeldelser og klager"
+        titel="Anmeldelser"
         forklaring={
           <>
             Anmeldelser af ulovligt indhold og klager over vores afgørelser (DSA). Svar på anmeldelser inden for 7 dage
@@ -360,7 +362,7 @@ export default async function DsaAdminSide({
         }
         hoejre={
           erAdmin ? (
-            <Link href="/admin/dsa/rapport" className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-50">
+            <Link href="/admin/dsa/rapport" className="rounded-lg border border-admin-kant bg-white px-3 py-2 text-sm font-medium text-tekst hover:bg-neutral-50">
               Gennemsigtighedsrapport
             </Link>
           ) : undefined
@@ -373,10 +375,12 @@ export default async function DsaAdminSide({
         )}
       </AdminSideHoved>
 
-      <AdminFaner
-        label="Anmeldelser og klager"
+      <AnmeldelserFaner aktiv="dsa" rolle={rolle} />
+
+      <AdminFilterChips
+        label="Ulovligt indhold (DSA)"
         aktiv={fane}
-        faner={[
+        chips={[
           { id: "anmeldelser", label: `Anmeldelser (${grupper.length})`, href: "/admin/dsa" },
           { id: "klager", label: `Klager (${antalKlager.count ?? 0})`, href: "/admin/dsa?fane=klager" },
           { id: "afsluttede", label: "Afsluttede", href: "/admin/dsa?fane=afsluttede" },
@@ -403,7 +407,7 @@ export default async function DsaAdminSide({
                       className={chip(vis === v)}
                       title={v === "mine" ? "Sager, du selv har videresendt" : undefined}
                     >
-                      {VIS_NAVNE[v]} <span className={vis === v ? "text-white/85" : "text-neutral-500"}>({n})</span>
+                      {VIS_NAVNE[v]} <span className={vis === v ? "text-white/85" : "text-tekst-svag"}>({n})</span>
                     </Link>
                   </li>
                 );
@@ -423,14 +427,14 @@ export default async function DsaAdminSide({
                       aria-current={kategori === k ? "true" : undefined}
                       className={chip(kategori === k)}
                     >
-                      {anmeldKategoriNavn(k)} <span className={kategori === k ? "text-white/85" : "text-neutral-500"}>({n})</span>
+                      {anmeldKategoriNavn(k)} <span className={kategori === k ? "text-white/85" : "text-tekst-svag"}>({n})</span>
                     </Link>
                   </li>
                 ))}
               </ul>
             )}
             {vis === "mine" && (
-              <p className="text-xs text-neutral-600">Viser sager, du selv har videresendt til admin.</p>
+              <p className="text-xs text-tekst-daempet">Viser sager, du selv har videresendt til admin.</p>
             )}
           </nav>
 
@@ -441,7 +445,7 @@ export default async function DsaAdminSide({
               <section key={s.id} aria-labelledby={`sek-${s.id}`} className="space-y-3">
                 <h2
                   id={`sek-${s.id}`}
-                  className={`text-sm font-semibold ${s.id === "over" ? "text-fejl-tekst" : "text-neutral-800"}`}
+                  className={`text-sm font-semibold ${s.id === "over" ? "text-fejl-tekst" : "text-tekst"}`}
                 >
                   {s.titel} ({liste.length})
                 </h2>
@@ -455,7 +459,7 @@ export default async function DsaAdminSide({
           })}
 
           {viste.length === 0 && !fejl && (
-            <p className="rounded-[14px] border border-kant bg-white px-5 py-10 text-center text-sm text-neutral-600">
+            <p className="rounded-[14px] border border-kant bg-white px-5 py-10 text-center text-sm text-tekst-daempet">
               {grupper.length === 0 ? "Der er ingen åbne anmeldelser." : "Ingen anmeldelser passer til filteret."}
             </p>
           )}
@@ -477,7 +481,7 @@ export default async function DsaAdminSide({
             />
           ))}
           {klager.length === 0 && !fejl && (
-            <li className="rounded-[14px] border border-kant bg-white px-5 py-10 text-center text-sm text-neutral-600">
+            <li className="rounded-[14px] border border-kant bg-white px-5 py-10 text-center text-sm text-tekst-daempet">
               Der er ingen klager, der venter.
             </li>
           )}
@@ -487,10 +491,10 @@ export default async function DsaAdminSide({
       {fane === "afsluttede" && (
         <div className="space-y-6">
           <section aria-labelledby="afg-titel" className="space-y-2">
-            <h2 id="afg-titel" className="text-sm font-semibold text-neutral-800">Seneste indgreb (begrundelser sendt til brugeren)</h2>
-            <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+            <h2 id="afg-titel" className="text-sm font-semibold text-tekst">Seneste indgreb (begrundelser sendt til brugeren)</h2>
+            <div className="overflow-x-auto rounded-[14px] border border-admin-kant bg-white">
               <table className="w-full min-w-[720px] text-sm">
-                <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
+                <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-tekst-svag">
                   <tr>
                     <th className="px-4 py-2.5">Sag</th>
                     <th className="px-4 py-2.5">Indgreb</th>
@@ -500,27 +504,27 @@ export default async function DsaAdminSide({
                     <th className="px-4 py-2.5">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-100">
+                <tbody className="divide-y divide-admin-kant">
                   {afg.map((x) => (
                     <tr key={x.id}>
-                      <td className="px-4 py-2.5 text-neutral-500">
+                      <td className="px-4 py-2.5 text-tekst-svag">
                         {x.sagsnummer}
                         <br />
                         <span className="text-xs">{tid(x.oprettet_kl)}</span>
                       </td>
-                      <td className="px-4 py-2.5 text-neutral-800">
+                      <td className="px-4 py-2.5 text-tekst">
                         {handlingNavn(x.handling)}
-                        {x.automatisk_opdaget && <span className="ml-1 text-xs text-neutral-500">(automatisk opdaget)</span>}
-                        {x.indhold_tekst && <p className="max-w-[260px] truncate text-xs text-neutral-500">{x.indhold_tekst}</p>}
+                        {x.automatisk_opdaget && <span className="ml-1 text-xs text-tekst-svag">(automatisk opdaget)</span>}
+                        {x.indhold_tekst && <p className="max-w-[260px] truncate text-xs text-tekst-svag">{x.indhold_tekst}</p>}
                       </td>
-                      <td className="px-4 py-2.5 text-neutral-700">
+                      <td className="px-4 py-2.5 text-tekst">
                         {x.regel_tekst}
-                        <p className="text-xs text-neutral-600">{GRUNDLAG_NAVNE[x.grundlag] ?? x.grundlag}</p>
+                        <p className="text-xs text-tekst-daempet">{GRUNDLAG_NAVNE[x.grundlag] ?? x.grundlag}</p>
                       </td>
                       <td className="px-4 py-2.5">
                         <Link href={`/admin/brugere/${x.bruger_id}`} className="text-groen hover:underline">{navn(x.bruger_id)}</Link>
                       </td>
-                      <td className="px-4 py-2.5 text-neutral-600">{navn(x.medarbejder_id)}</td>
+                      <td className="px-4 py-2.5 text-tekst-daempet">{navn(x.medarbejder_id)}</td>
                       <td className="px-4 py-2.5">
                         {x.ophaevet_kl ? (
                           <Pille farve="blaa">
@@ -535,7 +539,7 @@ export default async function DsaAdminSide({
                     </tr>
                   ))}
                   {afg.length === 0 && (
-                    <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-600">Ingen indgreb endnu.</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-tekst-daempet">Ingen indgreb endnu.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -543,26 +547,26 @@ export default async function DsaAdminSide({
           </section>
 
           <section aria-labelledby="anm-titel" className="space-y-2">
-            <h2 id="anm-titel" className="text-sm font-semibold text-neutral-800">Seneste afsluttede anmeldelser</h2>
+            <h2 id="anm-titel" className="text-sm font-semibold text-tekst">Seneste afsluttede anmeldelser</h2>
             <ul className="space-y-2">
               {afsAnm.map((a) => (
-                <li key={a.id} className="rounded-xl border border-neutral-200 bg-white p-4 text-sm">
+                <li key={a.id} className="rounded-[14px] border border-admin-kant bg-white p-4 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-neutral-900">{a.sagsnummer}</span>
+                    <span className="font-semibold text-tekst">{a.sagsnummer}</span>
                     <Pille>{anmeldKategoriNavn(a.kategori)}</Pille>
                     <Pille farve={a.udfald === "indgreb" ? "lilla" : "neutral"}>{UDFALD_NAVNE[a.udfald ?? ""] ?? a.udfald}</Pille>
                     {a.politi_underrettet && <Pille farve="blaa">Politiet underrettet</Pille>}
                     {a.anonymiseret_kl && <Pille>Anonymiseret</Pille>}
                   </div>
-                  <p className="mt-1 text-xs text-neutral-500">
+                  <p className="mt-1 text-xs text-tekst-svag">
                     {indholdNavn(a.indhold_type)} · <PlaceringLink indholdType={a.indhold_type} placering={a.placering} /> · behandlet af {navn(a.behandlet_af)}
                     {a.behandlet_kl && ` ${tid(a.behandlet_kl)}`}
                   </p>
-                  {a.svar_til_anmelder && <p className="mt-1 whitespace-pre-wrap text-neutral-700">Svar: {a.svar_til_anmelder}</p>}
+                  {a.svar_til_anmelder && <p className="mt-1 whitespace-pre-wrap text-tekst">Svar: {a.svar_til_anmelder}</p>}
                 </li>
               ))}
               {afsAnm.length === 0 && (
-                <li className="rounded-xl border border-neutral-200 bg-white px-5 py-8 text-center text-sm text-neutral-600">
+                <li className="rounded-[14px] border border-admin-kant bg-white px-5 py-8 text-center text-sm text-tekst-daempet">
                   Ingen afsluttede anmeldelser endnu.
                 </li>
               )}
@@ -570,24 +574,24 @@ export default async function DsaAdminSide({
           </section>
 
           <section aria-labelledby="kl-titel" className="space-y-2">
-            <h2 id="kl-titel" className="text-sm font-semibold text-neutral-800">Seneste afgjorte klager</h2>
+            <h2 id="kl-titel" className="text-sm font-semibold text-tekst">Seneste afgjorte klager</h2>
             <ul className="space-y-2">
               {afsKlager.map((k) => (
-                <li key={k.id} className="rounded-xl border border-neutral-200 bg-white p-4 text-sm">
+                <li key={k.id} className="rounded-[14px] border border-admin-kant bg-white p-4 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-neutral-900">{k.sagsnummer}</span>
+                    <span className="font-semibold text-tekst">{k.sagsnummer}</span>
                     <Pille farve={k.udfald === "medhold" ? "blaa" : "neutral"}>
                       {k.udfald === "medhold" ? "Medhold" : "Fastholdt"}
                     </Pille>
-                    <span className="text-xs text-neutral-600">
+                    <span className="text-xs text-tekst-daempet">
                       afgjort af {navn(k.afgjort_af)} {k.afgjort_kl && tid(k.afgjort_kl)}
                     </span>
                   </div>
-                  {k.svar && <p className="mt-1 whitespace-pre-wrap text-neutral-700">{k.svar}</p>}
+                  {k.svar && <p className="mt-1 whitespace-pre-wrap text-tekst">{k.svar}</p>}
                 </li>
               ))}
               {afsKlager.length === 0 && (
-                <li className="rounded-xl border border-neutral-200 bg-white px-5 py-8 text-center text-sm text-neutral-600">
+                <li className="rounded-[14px] border border-admin-kant bg-white px-5 py-8 text-center text-sm text-tekst-daempet">
                   Ingen afgjorte klager endnu.
                 </li>
               )}
@@ -596,6 +600,6 @@ export default async function DsaAdminSide({
         </div>
       )}
 
-    </div>
+    </AdminSide>
   );
 }

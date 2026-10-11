@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
-import AdminFaner from "@/components/admin/AdminFaner";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { beholdBedoemmelse, skjulBedoemmelse, visBedoemmelse } from "@/app/actions/adminBedoemmelser";
@@ -12,6 +11,9 @@ import {
   skjulGrundNavn,
   type BedoemmelseDel,
 } from "@/lib/bedoemmelser";
+import AdminSide from "@/components/admin/AdminSide";
+import { AnmeldelserFaner } from "@/components/admin/OmraadeFaner";
+import AdminFilterChips from "@/components/admin/AdminFilterChips";
 
 // Bedømmelser og sælgernes svar: rapporterede (til gennemsyn), skjulte og
 // alle. Medarbejder og op. Intet slettes – en bedømmelse eller et svar
@@ -95,7 +97,7 @@ function Stjerner({ antal }: { antal: number }) {
 
 function Status({ skjult }: { skjult: boolean }) {
   return skjult ? (
-    <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700">Skjult</span>
+    <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-tekst">Skjult</span>
   ) : (
     <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">Synlig</span>
   );
@@ -104,7 +106,7 @@ function Status({ skjult }: { skjult: boolean }) {
 const KNAP_SKJUL =
   "rounded-md bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-800 transition-colors hover:bg-red-200";
 const KNAP_NEUTRAL =
-  "rounded-md bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-200";
+  "rounded-md bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-tekst transition-colors hover:bg-neutral-200";
 const KNAP_BEHOLD =
   "rounded-md bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-800 transition-colors hover:bg-green-200";
 
@@ -178,7 +180,7 @@ export default async function AdminBedommelser({
   searchParams: Promise<{ vis?: string; q?: string; id?: string }>;
 }) {
   // Rollen tjekkes på selve siden, før service-role bruges.
-  const { admin, userId } = await kraevSideRolle("medarbejder");
+  const { admin, userId, rolle } = await kraevSideRolle("medarbejder");
   const { vis: visParam, q, id: idParam } = await searchParams;
   const enkelt = idParam && UUID.test(idParam) ? idParam : null;
   const vis: Vis = enkelt
@@ -297,13 +299,15 @@ export default async function AdminBedommelser({
           : "Ingen bedømmelser fundet.";
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
-        titel="Bedømmelser"
+        titel="Anmeldelser"
         forklaring="Købernes bedømmelser af sælgere og sælgernes svar. Under Til gennemsyn ligger det, brugere har rapporteret: læs teksten, og vælg Skjul (med begrundelse) eller Behold. Intet slettes, og alt kan vises igen."
       />
 
-      <AdminFaner faner={faner} aktiv={vis} label="Bedømmelser" />
+      <AnmeldelserFaner aktiv="bedoemmelser" rolle={rolle} />
+
+      <AdminFilterChips chips={faner} aktiv={vis} label="Bedømmelser" />
 
       {rapportFejl && (
         <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
@@ -323,7 +327,7 @@ export default async function AdminBedommelser({
       )}
 
       {ratings.length === 0 ? (
-        <p className="rounded-xl border border-neutral-200 bg-white px-5 py-10 text-center text-sm text-neutral-500">
+        <p className="rounded-[14px] border border-admin-kant bg-white px-5 py-10 text-center text-sm text-tekst-svag">
           {tomTekst}
         </p>
       ) : (
@@ -342,15 +346,15 @@ export default async function AdminBedommelser({
             const egenSag =
               userId === r.fra_bruger_id || userId === r.til_bruger_id || userId === svar?.saelger_id;
             return (
-              <li key={r.id} className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+              <li key={r.id} className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
                 {/* Handlen */}
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 bg-neutral-50 px-4 py-3 text-xs text-neutral-600 sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 bg-neutral-50 px-4 py-3 text-xs text-tekst-daempet sm:px-5">
                   <span className="min-w-0">
-                    <Link href={`/admin/brugere/${r.fra_bruger_id}`} className="font-medium text-neutral-900 hover:underline">
+                    <Link href={`/admin/brugere/${r.fra_bruger_id}`} className="font-medium text-tekst hover:underline">
                       {navn(r.fra_bruger_id)}
                     </Link>{" "}
                     (køber) bedømte{" "}
-                    <Link href={`/admin/brugere/${r.til_bruger_id}`} className="font-medium text-neutral-900 hover:underline">
+                    <Link href={`/admin/brugere/${r.til_bruger_id}`} className="font-medium text-tekst hover:underline">
                       {navn(r.til_bruger_id)}
                     </Link>{" "}
                     (sælger) · {tid(r.oprettet)}
@@ -382,11 +386,11 @@ export default async function AdminBedommelser({
                         </span>
                       )}
                     </div>
-                    <p className="mt-2 whitespace-pre-wrap break-words text-sm text-neutral-800">
-                      {r.kommentar ?? <span className="italic text-neutral-500">Ingen kommentar – kun stjerner.</span>}
+                    <p className="mt-2 whitespace-pre-wrap break-words text-sm text-tekst">
+                      {r.kommentar ?? <span className="italic text-tekst-svag">Ingen kommentar – kun stjerner.</span>}
                     </p>
                     {r.skjult && modB && (
-                      <p className="mt-2 text-xs text-neutral-500">
+                      <p className="mt-2 text-xs text-tekst-svag">
                         Skjult af {navn(modB.medarbejder_id)} · {tid(modB.kl)} · {skjulGrundNavn(modB.grund)}
                         {modB.aarsag && `: ${modB.aarsag}`}
                       </p>
@@ -402,7 +406,7 @@ export default async function AdminBedommelser({
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-xs font-semibold uppercase tracking-wide text-groen-mork">Svar fra sælger</p>
                         {svar.slettet_kl ? (
-                          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700">
+                          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-tekst">
                             Slettet af sælger {tid(svar.slettet_kl)}
                           </span>
                         ) : (
@@ -413,14 +417,14 @@ export default async function AdminBedommelser({
                             {aabneS.length} {aabneS.length === 1 ? "rapport" : "rapporter"}
                           </span>
                         )}
-                        <span className="text-xs text-neutral-500">
+                        <span className="text-xs text-tekst-svag">
                           {tid(svar.oprettet)}
                           {svar.rettet_kl && ` · rettet ${tid(svar.rettet_kl)}`}
                         </span>
                       </div>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-800">{svar.tekst}</p>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-tekst">{svar.tekst}</p>
                       {svar.skjult && modS && (
-                        <p className="mt-2 text-xs text-neutral-500">
+                        <p className="mt-2 text-xs text-tekst-svag">
                           Skjult af {navn(modS.medarbejder_id)} · {tid(modS.kl)} · {skjulGrundNavn(modS.grund)}
                           {modS.aarsag && `: ${modS.aarsag}`}
                         </p>
@@ -435,14 +439,14 @@ export default async function AdminBedommelser({
                         <ul className="space-y-2">
                           {[...aabneB, ...aabneS].map((x) => (
                             <li key={x.id} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
-                              <p className="font-medium text-neutral-900">
+                              <p className="font-medium text-tekst">
                                 {kategoriNavn(x.category)}
-                                <span className="font-normal text-neutral-600">
+                                <span className="font-normal text-tekst-daempet">
                                   {" "}
                                   · om {x.rating_del === "svar" ? "sælgerens svar" : "bedømmelsen"}
                                 </span>
                               </p>
-                              <p className="text-xs text-neutral-600">
+                              <p className="text-xs text-tekst-daempet">
                                 {tid(x.created_at)} · Rapporteret af{" "}
                                 {x.reporter_id ? (
                                   <Link href={`/admin/brugere/${x.reporter_id}`} className="hover:underline">
@@ -453,14 +457,14 @@ export default async function AdminBedommelser({
                                 )}
                               </p>
                               {x.description && (
-                                <p className="mt-1 whitespace-pre-wrap break-words text-neutral-800">{x.description}</p>
+                                <p className="mt-1 whitespace-pre-wrap break-words text-tekst">{x.description}</p>
                               )}
                             </li>
                           ))}
                         </ul>
                       )}
                       {tidligere > 0 && (
-                        <p className="mt-2 text-xs text-neutral-500">
+                        <p className="mt-2 text-xs text-tekst-svag">
                           {tidligere} tidligere {tidligere === 1 ? "rapport er" : "rapporter er"} behandlet.
                         </p>
                       )}
@@ -470,7 +474,7 @@ export default async function AdminBedommelser({
                   {/* Handlinger */}
                   <div className="flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-3">
                     {egenSag && (
-                      <p className="text-sm text-neutral-600">
+                      <p className="text-sm text-tekst-daempet">
                         Du er selv part i denne bedømmelse. Lad en kollega tage den.
                       </p>
                     )}
@@ -508,7 +512,7 @@ export default async function AdminBedommelser({
                     )}
                     <Link
                       href={`/admin/bedommelser?id=${r.id}`}
-                      className="ml-auto text-xs font-medium text-neutral-500 hover:text-neutral-800 hover:underline"
+                      className="ml-auto text-xs font-medium text-tekst-svag hover:text-tekst hover:underline"
                     >
                       Direkte link
                     </Link>
@@ -519,6 +523,6 @@ export default async function AdminBedommelser({
           })}
         </ul>
       )}
-    </div>
+    </AdminSide>
   );
 }
