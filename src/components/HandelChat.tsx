@@ -7,7 +7,13 @@ const hentKlient = () => import("@/lib/supabase/client").then((m) => m.createCli
 import { fjernFaellesPraefiks } from "@/lib/staffChat";
 import { BidhamrMaerke } from "@/components/staffchat/visning";
 import RapporterDialog from "@/components/tryghed/RapporterDialog";
-import { spamForklaring } from "@/lib/tryghed";
+import { erMistaenkeligBesked, spamForklaring } from "@/lib/tryghed";
+
+// Vises, mens beskeden skrives, hvis den ligner et forsøg på at betale eller
+// handle uden om BidHamr (samme regler som public.besked_mistaenkelig, der
+// markerer beskeden til staff). Beskeden kan stadig sendes.
+const UDENOM_ADVARSEL =
+  "Husk: Al betaling skal ske gennem BidHamr. Betaler I uden om – fx kontant, via MobilePay-nummer eller bankoverførsel – er I ikke beskyttet, og vi kan ikke hjælpe, hvis noget går galt.";
 import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 
@@ -266,6 +272,14 @@ export default function HandelChat({
       </form>
       )}
 
+      {/* Live-området findes altid, så skærmlæsere læser advarslen op. */}
+      <div aria-live="polite">
+        {!kunFraBidhamr && !stoppet && erMistaenkeligBesked(tekst) && (
+          <p className="mx-4 mb-4 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
+            {UDENOM_ADVARSEL}
+          </p>
+        )}
+      </div>
       {stoppet && (
         <p role="status" className="mx-4 mb-4 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
           {stoppet}

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { Suspense } from "react";
+import VilkaarVindue from "@/components/vilkaar/VilkaarVindue";
 import { hentFirmaTilstand } from "@/lib/erhverv/firmaData";
 import { foerLancering } from "@/lib/lancering";
 import FirmaMenu from "@/components/firma/FirmaMenu";
@@ -99,6 +101,12 @@ export default async function FirmaLayout({ children }: { children: React.ReactN
           {children}
         </main>
       </div>
+      {/* Brugerbetingelserne (Filip, 11. okt. 2026): firmakonti skal også
+          acceptere dem, før de kan oprette auktioner (BHV02). Accepten
+          gemmes uden server action (virker også før lancering). */}
+      <Suspense fallback={null}>
+        <VilkaarVindue direkte />
+      </Suspense>
     </div>
   );
 }

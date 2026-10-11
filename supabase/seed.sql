@@ -136,6 +136,19 @@ update public.users u
    and exists (select 1 from public.mitid_verificeringer v where v.bruger_id = u.id and v.status = 'aktiv');
 
 -- ---------------------------------------------------------
+-- Brugerbetingelser (20261017030000_vilkaar_efternavn_chat.sql): alle
+-- testbrugere (også firmaet) har accepteret den aktuelle version, så de kan
+-- byde og sælge - og så auktionerne og buddene herunder kan oprettes
+-- (auctions_a0_vilkaar, a3_bids_vilkaar). Test af accept-vinduet: opret en
+-- ny bruger uden flueben (appen), eller sæt vilkaar_version til null.
+-- ---------------------------------------------------------
+update public.users u
+   set vilkaar_version = public.vilkaar_aktuel_version(),
+       vilkaar_accepteret_kl = now()
+ where u.id::text like '11111111-1111-4111-8111-0000000000%'
+   and u.vilkaar_version is distinct from public.vilkaar_aktuel_version();
+
+-- ---------------------------------------------------------
 -- Auktioner (sælger)
 -- Seed koerer som postgres uden JWT og er derfor undtaget fra
 -- auctions_kraev_udbetalingskonto. Via UI/appen kraever oprettelse en

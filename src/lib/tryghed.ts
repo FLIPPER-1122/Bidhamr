@@ -30,7 +30,7 @@ export function erRapportKategori(v: unknown): v is RapportKategori {
 }
 
 // messages.blokeret_grund -> venlig forklaring til afsenderen.
-export type SpamGrund = "link" | "email" | "telefon" | "mobilepay" | "socialt_medie" | "gentaget";
+export type SpamGrund = "link" | "email" | "telefon" | "mobilepay" | "bank" | "socialt_medie" | "gentaget";
 
 const SPAM_FORKLARING: Record<SpamGrund, string> = {
   link: "Beskeden blev ikke sendt, fordi den indeholder et link. Af hensyn til jeres tryghed må der ikke deles links i chatten.",
@@ -40,6 +40,8 @@ const SPAM_FORKLARING: Record<SpamGrund, string> = {
     "Beskeden blev ikke sendt, fordi den ser ud til at indeholde et telefonnummer. Skriv sammen her i chatten – så er I begge beskyttet af BidHamr.",
   mobilepay:
     "Beskeden blev ikke sendt, fordi den indeholder et MobilePay-nummer. Al betaling sker gennem BidHamr, så du er beskyttet.",
+  bank:
+    "Beskeden blev ikke sendt, fordi den ser ud til at indeholde bankoplysninger (reg.nr., kontonummer eller IBAN). Al betaling sker gennem BidHamr, så du er beskyttet.",
   socialt_medie:
     "Beskeden blev ikke sendt, fordi den ser ud til at flytte jeres snak til et socialt medie eller en anden app. Skriv sammen her i chatten – så er I begge beskyttet af BidHamr.",
   gentaget: "Beskeden blev ikke sendt, fordi du har sendt den samme besked flere gange lige efter hinanden.",
@@ -48,7 +50,8 @@ const SPAM_FORKLARING: Record<SpamGrund, string> = {
 // --- Spamfilter (spejl af databasen) -----------------------------------------
 // SPEJL af public.besked_normaliser + public.besked_spam_grund i
 // supabase/migrations/20261007050000_fase4_testrettelser.sql (testdatabasen:
-// rettet igen i 20261007051000_fase4_testrettelser_2.sql). Databasen
+// rettet igen i 20261007051000_fase4_testrettelser_2.sql; bankoplysninger og
+// besked_mistaenkelig: 20261017030000_vilkaar_efternavn_chat.sql). Databasen
 // afgør altid (triggeren messages_tryghed); denne kopi kan bruges til at
 // advare, før beskeden sendes. Ændres en regel, SKAL begge steder rettes.
 // Forskel: Postgres' \m/\M regner æøå som bogstaver; her bruges \p{L}.
@@ -160,6 +163,53 @@ function neutraliserTal(v: string): string {
 
 const RE = (s: string) => new RegExp(s, "u");
 
+// --- Bankoplysninger (20261017030000) ----------------------------------------
+// Reg.nr.: "reg", "regnr", "reg. nr.", "registreringsnummer" + 4 cifre.
+const P_REG =
+  B + "reg(istrerings(nummer|nr)?|\\.?\\s*(nr|nummer))?" + E + "[^0-9]{0,6}(?<![0-9])[0-9]{4}(?![0-9])";
+// Kontonr.: "kontonr", "kontonummer", "konto nr" + 6-10 cifre.
+const P_KONTONR =
+  B + "(kontonr|kontonummer|kontonummeret|konto\\s*nr|konto\\s*nummer)" + E + "[^0-9]{0,6}(?<![0-9])[0-9]{6,10}(?![0-9])";
+const P_KONTO_TAL = "(?<![0-9])[0-9]{6,10}(?![0-9])";
+// IBAN: DK + 2 kontrolcifre + 14 cifre, evt. i grupper.
+const P_IBAN_DK = B + "dk\\s?[0-9]{2}([\\s.-]?[0-9]){14}(?![0-9])";
+// 4 + 6-10 cifre, ikke ved siden af en anden cifferblok.
+const P_REG_KONTO_STREG = "(?<![0-9][\\s.,-])(?<![0-9])[0-9]{4}\\s?-\\s?[0-9]{6,10}(?![\\s.,-]?[0-9])";
+const P_REG_KONTO_MELLEMRUM = "(?<![0-9][\\s.,-])(?<![0-9])[0-9]{4}[\\s.]+[0-9]{6,10}(?![\\s.,-]?[0-9])";
+const P_BANK_ORD =
+  B + "(bank[a-zæøå]*|konto[a-zæøå]*|reg|regnr|overf(ø|o)r[a-zæøå]*|indbetal[a-zæøå]*|indsæt[a-zæøå]*)" + E;
+// Arbejdskopi til bankreglerne: tal lige efter model, ordre, sporing,
+// varenr. m.fl. -> '#' ('reg' og 'konto' bevares - de er bankord her).
+const NEUTRAL_BANK = new RegExp(
+  B +
+    "(model[a-zæøå]*|ordre[a-zæøå]*|post\\s*nr|postnummer[a-zæøå]*|sporing[a-zæøå]*|track[a-z]*" +
+    "|stregkode|ean|imei|serie\\s*nr|serienummer[a-zæøå]*|vare\\s*nr|varenummer[a-zæøå]*" +
+    "|faktura[a-zæøå]*|kunde\\s*nr|kundenummer[a-zæøå]*|pakke[a-zæøå]*|ref|reference)" +
+    E +
+    NR +
+    String.raw`[0-9][0-9\s.,/-]*`,
+  "gu",
+);
+const BANK_REGLER = {
+  altid: [
+    RE(P_IBAN_DK),
+    RE(`${B}iban${E}[^a-z0-9]{0,6}[a-z]{2}\\s?[0-9]{2}`),
+    RE(`${P_REG}[^]{0,40}${P_KONTO_TAL}`),
+    RE(`(?<![0-9])[0-9]{4}[\\s,/-]*${B}konto[a-zæøå]*${E}[^0-9]{0,6}${P_KONTO_TAL}`),
+    RE(P_REG_KONTO_STREG),
+  ],
+  // Begge skal findes.
+  par: [
+    [RE(P_KONTONR), RE(P_REG)],
+    [RE(P_BANK_ORD), RE(P_REG_KONTO_MELLEMRUM)],
+  ] as [RegExp, RegExp][],
+};
+
+function erBankoplysninger(v: string): boolean {
+  const k = v.replace(NEUTRAL_BANK, " # ");
+  return BANK_REGLER.altid.some((r) => r.test(k)) || BANK_REGLER.par.some(([a, b]) => a.test(k) && b.test(k));
+}
+
 const SPAM_REGLER = {
   email: RE(`[a-z0-9._%+-]+\\s*(@|\\(at\\)|\\[at\\]|${B}snabel-?a${E})\\s*[a-z0-9-]+(\\.|\\s+(punktum|dot)\\s+)[a-z]{2,}`),
   bidhamr: new RegExp(
@@ -212,19 +262,57 @@ function normaliserBesked(tekst: string): string {
     .replace(/[­​-‏⁠-⁤﻿]/g, "");
 }
 
-// Samme svar som public.besked_spam_grund: 'email' | 'link' | 'mobilepay' |
-// 'telefon' | 'socialt_medie' | null. ('gentaget' afgøres kun i databasen.)
+// Samme svar som public.besked_spam_grund: 'email' | 'link' | 'bank' |
+// 'mobilepay' | 'telefon' | 'socialt_medie' | null. ('gentaget' afgøres kun
+// i databasen.)
 export function spamGrund(tekst: string): Exclude<SpamGrund, "gentaget"> | null {
   const v = normaliserBesked(tekst ?? "");
   if (SPAM_REGLER.email.test(v)) return "email";
   const w = v.replace(SPAM_REGLER.bidhamr, " ").replace(SPAM_REGLER.fragt, " ");
   if (SPAM_REGLER.links.some((r) => r.test(w))) return "link";
+  if (erBankoplysninger(v)) return "bank";
   if (SPAM_REGLER.mobilepay.some((r) => r.test(v))) return "mobilepay";
   if (SPAM_REGLER.telefon.some((r) => r.test(v))) return "telefon";
   const g = neutraliserTal(v);
   if (SPAM_REGLER.telefonGrupperet.some((r) => r.test(g))) return "telefon";
   if (SPAM_REGLER.socialt.some((r) => r.test(v))) return "socialt_medie";
   return null;
+}
+
+// SPEJL af public.besked_mistaenkelig (20261017030000_vilkaar_efternavn_chat.sql):
+// et forsøg på at handle eller betale uden om BidHamr. Beskeden sendes, men
+// databasen markerer den til staff. Hjemmesiden bruger denne kopi til at
+// advare afsenderen, mens beskeden skrives. MobilePay alene giver ingen
+// advarsel (officiel betalingsmetode via Stripe).
+const BETALINGSAPP = `(mobile\\s*pay|${B}swish${E}|paypal|revolut|${B}vipps${E})`;
+const UDENOM = `(direkte|privat|til mig|udenom|uden om|uden (bidhamr|bid hamr))`;
+const MISTAENKELIG = RE(
+  [
+    "udenom|uden om (bidhamr|bid hamr|siden|appen|platformen|gebyr)",
+    "uden (gebyr|gebyret|gebyrer)|spar(e|er)? (gebyr|gebyret|gebyrerne)",
+    "betal(e|er)? (direkte|privat|kontant)|direkte (overf|betaling)",
+    "bankoverf|overf(ø|o)r(e|er|sel)? (pengene|beløbet|belobet|direkte)",
+    `${B}reg\\.?\\s*(nr|nummer)${E}|kontonummer|kontonr`,
+    `${BETALINGSAPP}[^]{0,40}${UDENOM}`,
+    `${UDENOM}[^]{0,40}${BETALINGSAPP}`,
+    `whats\\s*app|telegram|snapchat|${B}snap${E}|messenger`,
+    "ring til mig|sms (til )?mig|skriv (til mig )?på (mail|sms|face|insta|snap)",
+    // 20261017030000:
+    "betal[a-zæøå]*\\s+(mig|dig)\\s+(direkte|privat|kontant)",
+    "kontant\\s*betal|betal[a-zæøå]*\\s+(med\\s+|i\\s+)?kontant",
+    `${B}kontant(er|e)?${E}[^]{0,30}${B}(afhent[a-zæøå]*|hånden)${E}`,
+    `${B}afhent[a-zæøå]*${E}[^]{0,30}${B}kontant`,
+    `betal[a-zæøå]*\\s+uden\\s*(om|for)${E}|uden\\s*for\\s+(bidhamr|bid hamr|siden|appen|platformen)`,
+    `overf(ø|o)r(e|er|t|sel)?${E}[^]{0,30}(til mig|til min|min konto|kontonr|kontonummer|${B}reg${E}` +
+      `|mobile\\s*pay|${B}swish${E}|paypal|revolut|${B}vipps${E})`,
+    `mobile\\s*pay(e|er)?\\s+(mig|til mig|pengene|beløbet|resten)${E}`,
+    `(pengene|beløbet|resten)\\s+(på|via|over|med|til)\\s+(min\\s+)?${BETALINGSAPP}`,
+    `${BETALINGSAPP}[^]{0,40}uden (gebyr|gebyret|gebyrer)`,
+  ].join("|"),
+);
+
+export function erMistaenkeligBesked(tekst: string): boolean {
+  return MISTAENKELIG.test(normaliserBesked(tekst ?? ""));
 }
 
 export function spamForklaring(grund: string | null | undefined): string {
@@ -236,6 +324,7 @@ const SPAM_NAVN_STAFF: Record<SpamGrund, string> = {
   email: "e-mail",
   telefon: "telefonnummer",
   mobilepay: "MobilePay-nummer",
+  bank: "bankoplysninger",
   socialt_medie: "socialt medie",
   gentaget: "gentaget besked",
 };

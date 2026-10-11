@@ -49,7 +49,12 @@ export default function SettingsForm({
           ? 'Navnet må ikke indeholde "BidHamr".'
           : updateError.code === "BHN02"
             ? "Navnet må ikke indeholde en e-mail, et telefonnummer eller et link. Andre brugere kan se dit navn, så skriv kun dit navn."
-            : "Dine oplysninger kunne ikke gemmes. Prøv igen om lidt."
+            : // BHN03: kontoen mangler et efternavn (users_kraev_efternavn,
+              // 20261017030000). Telefon og adresse kan stadig gemmes, hvis
+              // navnet ikke ændres.
+              updateError.code === "BHN03"
+              ? "Vi mangler dit efternavn, før du kan ændre dit navn. Skriv til support@bidhamr.dk, så hjælper vi dig. Dit telefonnummer og din adresse kan du stadig gemme, hvis du ikke ændrer navnet."
+              : "Dine oplysninger kunne ikke gemmes. Prøv igen om lidt."
       );
       return;
     }
