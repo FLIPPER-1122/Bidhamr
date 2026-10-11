@@ -100,8 +100,8 @@ Læg dette i `src/app/globals.css` (erstatter det nuværende `--brand`-tema):
   --color-fejl-bg: #FDECEC;     --color-fejl-kant: #F3C4C4;     --color-fejl-tekst: #A32020;
   --color-info-bg: #EDF3F8;     --color-info-kant: #C9DCEB;     --color-info-tekst: #1F4E79;
 
-  --font-serif: var(--font-fraunces);
   --font-sans:  var(--font-inter);
+  /* --font-serif peger også på Inter (kun sikkerhedsnet – brug det aldrig) */
 }
 ```
 
@@ -112,27 +112,34 @@ Brug derefter almindelige Tailwind-klasser: `bg-groen`, `text-groen-mork`, `bg-o
 
 ## 2. Skrifttyper
 
-- **Fraunces** – alle overskrifter (h1–h3) og store beløb i hero. Vægt **600**. Variabel optisk størrelse
-  `opsz 9..144`. Klasse: `font-serif`. **[MOCKUP]**
-- **Inter** – al brødtekst, knapper, labels, felter, metatekst, navigation, tabeller. Vægte **400, 500, 600, 700**.
-  Klasse: `font-sans`. **[MOCKUP]**
+**Én skrifttype: Inter – også til overskrifter.** Ingen serif nogen steder (Filip, 11. okt. 2026:
+Fraunces er fravalgt). Gælder kundedel, admin, firma, mails og PDF.
+
+- **Inter** – alt: overskrifter, brødtekst, knapper, labels, felter, metatekst, navigation, tabeller.
+  Variabel vægt (alle vægte indlæst). Arves fra `html`, så overskrifter skal **ikke** have en skrift-klasse.
+- `font-serif` må ikke bruges. Variablen findes kun som sikkerhedsnet og peger på Inter.
+
+Overskrifternes hierarki bæres af størrelse, vægt og letter-spacing (sat globalt i `globals.css`):
+- h1–h3: vægt **600** som standard (en klasse som `font-bold` på den enkelte overskrift vinder).
+- h1: `letter-spacing: -0.02em`. h2: `-0.01em`. h3 og mindre: normal.
+- Mails (`src/lib/mails/layout.ts`, `supabase/templates/`): h1 i Inter-stakken, 700, `letter-spacing:-0.4px`.
 
 Vægtregler:
 - 400: brødtekst
 - 500: navigation, links, labels
-- 600: knapper, badges, h4, timere, alle Fraunces-overskrifter
-- 700: priser og beløb
+- 600: knapper, badges, overskrifter (h1–h4), timere
+- 700: priser og beløb, admin-sidetitler
 
 Indlæs via `next/font/google` i `src/app/layout.tsx` (ikke via `<link>` til Google), så der ikke laves
 eksterne kald ved hvert sidevisning:
 
 ```ts
-import { Inter, Fraunces } from "next/font/google";
+import { Inter } from "next/font/google";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const fraunces = Fraunces({ subsets: ["latin"], weight: ["600"], variable: "--font-fraunces", display: "swap" });
 ```
 
-Fallback-kæder: serif → `Fraunces, Georgia, serif`. Sans → `Inter, system-ui, sans-serif` **[MOCKUP]**.
+Fallback-kæde: `Inter, system-ui, sans-serif` **[MOCKUP]**. Mockup D viser Fraunces-overskrifter;
+det er bevidst fravalgt.
 
 ---
 
@@ -142,10 +149,10 @@ Desktop-værdierne for h1/h2/h3, brødtekst, pris og metatekst kommer fra mockup
 
 | Rolle | Mobil | Desktop | Vægt | Linjehøjde | Skrift |
 |---|---|---|---|---|---|
-| h1 (hero) | 30px | **42px** **[MOCKUP]** | 600 | 1.1 **[MOCKUP]** | Fraunces |
-| h1 (almindelig side) | 26px | 32px | 600 | 1.2 | Fraunces |
-| h2 (sektion) | 20px | **22px** **[MOCKUP]** | 600 | 1.25 | Fraunces |
-| h3 (underafsnit) | 17px | 18px | 600 | 1.3 | Fraunces |
+| h1 (hero) | 30px | **42px** **[MOCKUP]** | 600, -0.02em | 1.1 **[MOCKUP]** | Inter |
+| h1 (almindelig side) | 26px | 32px | 600, -0.02em | 1.2 | Inter |
+| h2 (sektion) | 20px | **22px** **[MOCKUP]** | 600, -0.01em | 1.25 | Inter |
+| h3 (underafsnit) | 17px | 18px | 600 | 1.3 | Inter |
 | h4 (mindre overskrift) | 15px | 15px | 600 | 1.4 | Inter |
 | Hero-underrubrik | 16px | **17px** **[MOCKUP]** | 400 | 1.5 **[MOCKUP]** | Inter |
 | Brødtekst | 15px | **15px** **[MOCKUP]** | 400 | 1.55 | Inter |

@@ -65,7 +65,7 @@ export function Sektion({
 }) {
   return (
     <section aria-labelledby={id} className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
-      <h2 id={id} className="flex items-center gap-3 font-serif text-[17px] font-semibold text-tekst sm:text-lg">
+      <h2 id={id} className="flex items-center gap-3 text-[17px] font-semibold text-tekst sm:text-lg">
         <span
           aria-hidden="true"
           className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-groen-lys font-sans text-[13px] font-semibold text-groen-mork"

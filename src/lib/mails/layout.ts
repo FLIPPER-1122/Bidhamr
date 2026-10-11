@@ -6,8 +6,9 @@
 // Regler:
 // - Mails kan ikke bruge CSS-variabler, så farverne fra DESIGN.md staves ud.
 // - Webfonts virker ikke i Outlook/Gmail, og vi henter dem ikke udefra
-//   (privatliv). Skriftstakkene starter med Fraunces/Inter, så de bruges, hvis
-//   modtageren har dem installeret, og falder ellers tilbage til systemskrift.
+//   (privatliv). Skriftstakken starter med Inter (også til overskrifter), så
+//   den bruges, hvis modtageren har den installeret, og falder ellers tilbage
+//   til systemskrift. Ingen serif nogen steder.
 // - Alt, der indsættes som tekst, skal være escapet af kalderen. Felter, der
 //   hedder "Html", forventes at være færdig, sikker HTML.
 
@@ -25,7 +26,6 @@ const FARVE = {
   flade: "#FFFFFF",
 } as const;
 
-const SERIF = "Fraunces, Georgia, 'Times New Roman', Times, serif";
 const SANS =
   "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
@@ -219,7 +219,7 @@ export function mailLayout(input: MailLayoutInput): string {
     <title>BidHamr</title>
     <!--[if mso]>
     <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
-    <style>td, p, a, h1, span { font-family: Arial, Helvetica, sans-serif !important; } h1 { font-family: Georgia, serif !important; }</style>
+    <style>td, p, a, h1, span { font-family: Arial, Helvetica, sans-serif !important; }</style>
     <![endif]-->
     <style>${STIL}</style>
   </head>
@@ -243,7 +243,7 @@ export function mailLayout(input: MailLayoutInput): string {
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
             <tr><td width="32" height="4" style="width:32px;height:4px;font-size:0;line-height:0;background-color:${FARVE.orangeDekor};border-radius:2px;">&nbsp;</td></tr>
           </table>
-          <h1 class="bh-h1" style="margin:0 0 16px 0;font-family:${SERIF};font-size:26px;font-weight:600;line-height:1.2;color:${FARVE.tekst};">${input.overskriftHtml}</h1>
+          <h1 class="bh-h1" style="margin:0 0 16px 0;font-family:${SANS};font-size:26px;font-weight:700;line-height:1.2;letter-spacing:-0.4px;color:${FARVE.tekst};">${input.overskriftHtml}</h1>
           ${afsnit}
           ${input.info && input.info.length > 0 ? infoboks(input.info) : ""}
           ${input.knap ? knapHtml(input.knap.tekst, input.knap.url) : ""}

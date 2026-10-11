@@ -53,7 +53,7 @@ export default function KontaktForm({
   if (sendt) {
     return (
       <div role="status" className="rounded-[14px] border border-succes-kant bg-succes-bg p-5 sm:p-6">
-        <h2 className="font-serif text-xl font-semibold text-succes-tekst">Tak for din besked</h2>
+        <h2 className="text-xl font-semibold text-succes-tekst">Tak for din besked</h2>
         <p className="mt-1 text-sm text-succes-tekst">
           Vi har modtaget den og svarer dig så hurtigt, vi kan – som regel inden for 1-2 hverdage.
         </p>

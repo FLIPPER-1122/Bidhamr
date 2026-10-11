@@ -29,7 +29,7 @@ export default function SideFindesIkke({ medLogo = false }: { medLogo?: boolean 
           <Ikon navn="soeg" className="h-6 w-6" />
         </div>
         <p className="mt-4 text-sm font-semibold text-tekst-svag">Fejl 404</p>
-        <h1 className="mt-1 font-serif text-2xl font-semibold text-tekst sm:text-3xl">Siden findes ikke</h1>
+        <h1 className="mt-1 text-2xl font-semibold text-tekst sm:text-3xl">Siden findes ikke</h1>
         <p className="mt-3 text-[15px] text-tekst-daempet">
           Siden er flyttet eller slettet, eller adressen er skrevet forkert. Er det en auktion, kan den være
           afsluttet og fjernet. Prøv at søge efter det, du leder efter.

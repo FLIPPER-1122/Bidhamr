@@ -474,7 +474,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           )}
           <div className="space-y-4 p-4 sm:p-6">
             <div>
-              <h2 className="break-words font-serif text-xl font-semibold text-tekst">{titel.trim()}</h2>
+              <h2 className="break-words text-xl font-semibold text-tekst">{titel.trim()}</h2>
               <div className="mt-2 flex flex-wrap gap-2">
                 <span className="rounded-full bg-groen-lys px-3 py-1.5 text-[13px] font-medium text-groen-mork">
                   {standNavn(stand)}

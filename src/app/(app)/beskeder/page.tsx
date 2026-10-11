@@ -86,12 +86,12 @@ export default async function BeskederPage() {
   return (
     <main className="flex-1 bg-white px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-3xl">
-        <h1 className="font-serif text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
+        <h1 className="text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
           Beskeder
         </h1>
 
         <section aria-labelledby="fra-bidhamr" className="mt-8">
-          <h2 id="fra-bidhamr" className="font-serif text-xl font-semibold text-tekst">
+          <h2 id="fra-bidhamr" className="text-xl font-semibold text-tekst">
             Fra BidHamr
           </h2>
           {"fejl" in staff ? (
@@ -155,7 +155,7 @@ export default async function BeskederPage() {
 
         <section aria-labelledby="handler-overskrift" className="mt-10">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 id="handler-overskrift" className="font-serif text-xl font-semibold text-tekst">
+            <h2 id="handler-overskrift" className="text-xl font-semibold text-tekst">
               Handler
             </h2>
             <Link href={MINE_HANDLER_HREF} className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">

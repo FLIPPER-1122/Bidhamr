@@ -19,7 +19,7 @@ export default async function MailPreviewSide({
 
   return (
     <main className="mx-auto w-full max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className="font-serif text-[26px] font-semibold leading-tight text-tekst sm:text-[32px]">
+      <h1 className="text-[26px] font-semibold leading-tight text-tekst sm:text-[32px]">
         Mail-preview
       </h1>
       <p className="mt-2 max-w-[65ch] text-[15px] text-tekst-daempet">
@@ -51,7 +51,7 @@ export default async function MailPreviewSide({
       <div className="mt-8 space-y-12">
         {eksempler.map((e) => (
           <section key={e.id} id={e.id} className="scroll-mt-6">
-            <h2 className="font-serif text-xl font-semibold text-tekst">{e.navn}</h2>
+            <h2 className="text-xl font-semibold text-tekst">{e.navn}</h2>
             <p className="mt-1 text-sm text-tekst-daempet">
               Emne: <span className="font-medium text-tekst">{e.mail.subject}</span>
             </p>

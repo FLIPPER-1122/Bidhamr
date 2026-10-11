@@ -47,7 +47,7 @@ export default async function StaffSamtalePage({
           <BidhamrMaerke />
           {samtale.lukket_kl && <AfsluttetMaerke />}
         </div>
-        <h1 className="mt-3 break-words font-serif text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
+        <h1 className="mt-3 break-words text-[26px] leading-tight font-semibold text-tekst sm:text-[32px]">
           {samtale.emne}
         </h1>
         <p className="mt-1 text-[13px] text-tekst-svag">Startet {dato(samtale.aabnet_kl)}</p>

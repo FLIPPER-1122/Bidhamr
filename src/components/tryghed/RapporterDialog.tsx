@@ -101,7 +101,7 @@ export default function RapporterDialog({
           >
             {sendt ? (
               <div className="text-center">
-                <h2 id={`${id}-titel`} className="font-serif text-xl font-semibold text-tekst">
+                <h2 id={`${id}-titel`} className="text-xl font-semibold text-tekst">
                   Tak for din rapport
                 </h2>
                 <p className="mt-2 text-sm text-tekst-daempet">
@@ -114,7 +114,7 @@ export default function RapporterDialog({
               </div>
             ) : (
               <>
-                <h2 id={`${id}-titel`} className="font-serif text-xl font-semibold text-tekst">
+                <h2 id={`${id}-titel`} className="text-xl font-semibold text-tekst">
                   {titel}
                 </h2>
                 <p className="mt-1 text-sm text-tekst-daempet">

@@ -17,7 +17,7 @@ export function FejlSide({ retry }: { retry?: () => void }) {
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
       <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-6 text-fejl-tekst">
-        <h1 className="font-serif text-xl font-semibold">Noget gik galt</h1>
+        <h1 className="text-xl font-semibold">Noget gik galt</h1>
         <p className="mt-1 text-sm">Siden kunne ikke vises. Prøv igen om lidt.</p>
         {retry && (
           <button type="button" onClick={retry} className="btn btn-sekundaer mt-4">

@@ -397,7 +397,7 @@ export default function CheckoutSide({
           <Ikon navn="venstre" className="h-4 w-4" />
           Tilbage til mine handler
         </Link>
-        <h1 className="mt-2 font-serif text-[26px] leading-tight lg:text-[32px]">Betal for din vare</h1>
+        <h1 className="mt-2 text-[26px] leading-tight lg:text-[32px]">Betal for din vare</h1>
 
         {/* Frist */}
         <div className="mt-4">
@@ -468,7 +468,7 @@ export default function CheckoutSide({
 
             {/* Levering */}
             <section aria-labelledby={`${id}-levering`} className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
-              <h2 id={`${id}-levering`} ref={leveringRef} tabIndex={-1} className="font-serif text-[20px] leading-tight outline-none lg:text-[22px]">
+              <h2 id={`${id}-levering`} ref={leveringRef} tabIndex={-1} className="text-[20px] leading-tight outline-none lg:text-[22px]">
                 Levering
               </h2>
 
@@ -704,7 +704,7 @@ export default function CheckoutSide({
 
             {/* Betaling */}
             <section aria-labelledby={`${id}-betaling`} className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
-              <h2 id={`${id}-betaling`} ref={betalingRef} tabIndex={-1} className="scroll-mt-6 font-serif text-[20px] leading-tight outline-none lg:text-[22px]">
+              <h2 id={`${id}-betaling`} ref={betalingRef} tabIndex={-1} className="scroll-mt-6 text-[20px] leading-tight outline-none lg:text-[22px]">
                 Betaling
               </h2>
               <div className="mt-4 space-y-4">
@@ -774,7 +774,7 @@ export default function CheckoutSide({
           {/* Prisoversigt */}
           <aside aria-labelledby={`${id}-pris`} className="lg:sticky lg:top-6">
             <div className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
-              <h2 id={`${id}-pris`} className="font-serif text-[20px] leading-tight lg:text-[22px]">
+              <h2 id={`${id}-pris`} className="text-[20px] leading-tight lg:text-[22px]">
                 Prisoversigt
               </h2>
               <dl className="mt-4 space-y-2 text-sm" aria-live="polite">
