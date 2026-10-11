@@ -164,49 +164,71 @@ function neutraliserTal(v: string): string {
 const RE = (s: string) => new RegExp(s, "u");
 
 // --- Bankoplysninger (20261017030000) ----------------------------------------
-// Reg.nr.: "reg", "regnr", "reg. nr.", "registreringsnummer" + 4 cifre.
+// Reg.nr.: "reg", "regnr", "reg. nr.", "registreringsnummer" + 4 cifre. Et
+// "reg" alene kan også være en bils første registrering ("1. reg. 2015"), så
+// det kræver et bankord andetsteds i beskeden (P_BANK_ORD).
 const P_REG =
   B + "reg(istrerings(nummer|nr)?|\\.?\\s*(nr|nummer))?" + E + "[^0-9]{0,6}(?<![0-9])[0-9]{4}(?![0-9])";
+// Kun tydelige former: "regnr", "reg.nr.", "reg nummer", "registreringsnr".
+const P_REG_STAERK =
+  B + "reg(istrerings(nummer|nr)|\\.?\\s*(nr|nummer))" + E + "[^0-9]{0,6}(?<![0-9])[0-9]{4}(?![0-9])";
 // Kontonr.: "kontonr", "kontonummer", "konto nr" + 6-10 cifre.
 const P_KONTONR =
   B + "(kontonr|kontonummer|kontonummeret|konto\\s*nr|konto\\s*nummer)" + E + "[^0-9]{0,6}(?<![0-9])[0-9]{6,10}(?![0-9])";
 const P_KONTO_TAL = "(?<![0-9])[0-9]{6,10}(?![0-9])";
 // IBAN: DK + 2 kontrolcifre + 14 cifre, evt. i grupper.
 const P_IBAN_DK = B + "dk\\s?[0-9]{2}([\\s.-]?[0-9]){14}(?![0-9])";
-// 4 + 6-10 cifre, ikke ved siden af en anden cifferblok.
-const P_REG_KONTO_STREG = "(?<![0-9][\\s.,-])(?<![0-9])[0-9]{4}\\s?-\\s?[0-9]{6,10}(?![\\s.,-]?[0-9])";
-const P_REG_KONTO_MELLEMRUM = "(?<![0-9][\\s.,-])(?<![0-9])[0-9]{4}[\\s.]+[0-9]{6,10}(?![\\s.,-]?[0-9])";
+// 4 + 6-10 cifre, ikke ved siden af en anden cifferblok. Kræver et bankord.
+const P_REG_KONTO = "(?<![0-9][\\s.,-])(?<![0-9])[0-9]{4}(\\s?-\\s?|[\\s.]+)[0-9]{6,10}(?![\\s.,-]?[0-9])";
+// Bankord: konto, kontonr, bank, overfør, indbetal, IBAN og tydelige
+// reg.nr.-former (IKKE et "reg" alene).
 const P_BANK_ORD =
-  B + "(bank[a-zæøå]*|konto[a-zæøå]*|reg|regnr|overf(ø|o)r[a-zæøå]*|indbetal[a-zæøå]*|indsæt[a-zæøå]*)" + E;
-// Arbejdskopi til bankreglerne: tal lige efter model, ordre, sporing,
-// varenr. m.fl. -> '#' ('reg' og 'konto' bevares - de er bankord her).
+  B +
+  "(bank[a-zæøå]*|konto[a-zæøå]*|overf(ø|o)r[a-zæøå]*|indbetal[a-zæøå]*|indsæt[a-zæøå]*|iban" +
+  "|regnr|registreringsn[a-zæøå]*|reg\\.?\\s*(nr|nummer))" +
+  E;
+// Arbejdskopi til bankreglerne (samme rækkefølge som i SQL):
+//   1. tal lige efter model, ordre, sporing, varenr., årgang, stelnr., art m.fl.
+//   2. tal med en enhed: km, kr, kg, cm ... ("145000 km", "125000 kr")
+//   3. et årstal lige efter et "reg" alene ("1. reg. 2015", "Reg. år 2016") -
+//      medmindre "konto" følger lige efter.
+// 'reg' og 'konto' bevares - de er bankord her.
 const NEUTRAL_BANK = new RegExp(
   B +
     "(model[a-zæøå]*|ordre[a-zæøå]*|post\\s*nr|postnummer[a-zæøå]*|sporing[a-zæøå]*|track[a-z]*" +
     "|stregkode|ean|imei|serie\\s*nr|serienummer[a-zæøå]*|vare\\s*nr|varenummer[a-zæøå]*" +
-    "|faktura[a-zæøå]*|kunde\\s*nr|kundenummer[a-zæøå]*|pakke[a-zæøå]*|ref|reference)" +
+    "|faktura[a-zæøå]*|kunde\\s*nr|kundenummer[a-zæøå]*|pakke[a-zæøå]*|ref|reference" +
+    "|årgang[a-zæøå]*|stel[a-zæøå]*|art)" +
     E +
     NR +
     String.raw`[0-9][0-9\s.,/-]*`,
+  "gu",
+);
+const NEUTRAL_BANK_ENHED = new RegExp(
+  `(?<![0-9])[0-9][0-9.]*(,[0-9]+)?\\s*(km${E}|kr${E}|kroner${E}|dkk${E}|kg${E}|gram${E}|cm${E}|mm${E}|,-|\\.-)`,
+  "gu",
+);
+const NEUTRAL_BANK_REG_AAR = new RegExp(
+  `${B}reg${E}\\.?(\\s*(år|dato))?[\\s.:,]*(19|20)[0-9]{2}(?![0-9])(?![^0-9]{0,15}konto)`,
   "gu",
 );
 const BANK_REGLER = {
   altid: [
     RE(P_IBAN_DK),
     RE(`${B}iban${E}[^a-z0-9]{0,6}[a-z]{2}\\s?[0-9]{2}`),
-    RE(`${P_REG}[^]{0,40}${P_KONTO_TAL}`),
+    RE(`${P_REG_STAERK}[^]{0,40}${P_KONTO_TAL}`),
     RE(`(?<![0-9])[0-9]{4}[\\s,/-]*${B}konto[a-zæøå]*${E}[^0-9]{0,6}${P_KONTO_TAL}`),
-    RE(P_REG_KONTO_STREG),
   ],
   // Begge skal findes.
   par: [
+    [RE(`${P_REG}[^]{0,40}${P_KONTO_TAL}`), RE(P_BANK_ORD)],
     [RE(P_KONTONR), RE(P_REG)],
-    [RE(P_BANK_ORD), RE(P_REG_KONTO_MELLEMRUM)],
+    [RE(P_REG_KONTO), RE(P_BANK_ORD)],
   ] as [RegExp, RegExp][],
 };
 
 function erBankoplysninger(v: string): boolean {
-  const k = v.replace(NEUTRAL_BANK, " # ");
+  const k = v.replace(NEUTRAL_BANK, " # ").replace(NEUTRAL_BANK_ENHED, " # ").replace(NEUTRAL_BANK_REG_AAR, " # ");
   return BANK_REGLER.altid.some((r) => r.test(k)) || BANK_REGLER.par.some(([a, b]) => a.test(k) && b.test(k));
 }
 
@@ -303,7 +325,9 @@ const MISTAENKELIG = RE(
     `${B}kontant(er|e)?${E}[^]{0,30}${B}(afhent[a-zæøå]*|hånden)${E}`,
     `${B}afhent[a-zæøå]*${E}[^]{0,30}${B}kontant`,
     `betal[a-zæøå]*\\s+uden\\s*(om|for)${E}|uden\\s*for\\s+(bidhamr|bid hamr|siden|appen|platformen)`,
-    `overf(ø|o)r(e|er|t|sel)?${E}[^]{0,30}(til mig|til min|min konto|kontonr|kontonummer|${B}reg${E}` +
+    // Ikke datid ("overført"): "Pengene er overført til min konto" er en
+    // sælger, der bekræfter BidHamrs udbetaling.
+    `overf(ø|o)r(e|er|sel)?${E}[^]{0,30}(til mig|til min|min konto|kontonr|kontonummer|${B}reg${E}` +
       `|mobile\\s*pay|${B}swish${E}|paypal|revolut|${B}vipps${E})`,
     `mobile\\s*pay(e|er)?\\s+(mig|til mig|pengene|beløbet|resten)${E}`,
     `(pengene|beløbet|resten)\\s+(på|via|over|med|til)\\s+(min\\s+)?${BETALINGSAPP}`,

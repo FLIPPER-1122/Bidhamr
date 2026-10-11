@@ -3,7 +3,8 @@
 --
 --   1. Brugerbetingelser er et hårdt krav i databasen: bud, maksimum
 --      (saet_maksimum -> bud_maksimum), nye auktioner (opret, genopsæt, sæt
---      op igen) og "tilbud til næste byder" afvises, hvis brugeren ikke har
+--      op igen), "tilbud til næste byder" (sælgerens tilbud og købers ja i
+--      andenchance_svar) afvises, hvis brugeren ikke har
 --      accepteret den aktuelle version (users.vilkaar_version mod
 --      vilkaar_aktuel_version(), samme sammenligning som vilkaarErAccepteret i
 --      src/lib/vilkaar.ts). Fejl: 'vilkaar_mangler: …', errcode BHV02.
@@ -25,7 +26,10 @@
 --      (appen sender ikke efternavn) - se ROADMAP fase 5.
 --   3. Chatten:
 --      - besked_spam_grund: ny grund 'bank' - dansk reg.nr. + kontonr. ("reg
---        1234 konto 12345678", "1234-12345678", "1234 konto 7654321"), IBAN
+--        1234 konto 12345678", "overfør til 1234-12345678", "1234 konto
+--        7654321"; formatet 4 + 6-10 cifre og et "reg" alene kræver et
+--        bankord, så "1. reg. 2015, 145000 km" og "Stelnr 1234-567890" går
+--        igennem), IBAN
 --        (DK + 16 cifre, eller "IBAN" + landekode). Et kontonr. alene (uden
 --        reg.nr.) stoppes ikke - det er en testet falsk positiv fra
 --        20261007051000 - men markeres stadig til staff. MobilePay-numre
@@ -75,12 +79,12 @@ begin
   end if;
   -- 20261007050000/20261007051000_fase4_testrettelser(_2).sql
   v_md5 := pg_temp.krop_md5('public.besked_spam_grund(text)'::regprocedure);
-  if v_md5 not in ('30441dd87e2fbd4606cfc85845817447', 'c434b652757a164e73409ca33562fbcc') then
+  if v_md5 not in ('30441dd87e2fbd4606cfc85845817447', '50e35c69db0797df6a2cbb99d3ebed63') then
     raise exception 'besked_spam_grund er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
   end if;
   -- 20261006031000_spamfilter_rettelser.sql
   v_md5 := pg_temp.krop_md5('public.besked_mistaenkelig(text)'::regprocedure);
-  if v_md5 not in ('7836c4b8837546e07c6e742af30e0bd5', '9d644aab053ab52bbcb4384aff784ac8') then
+  if v_md5 not in ('7836c4b8837546e07c6e742af30e0bd5', 'a6a6d0b9b3095c14d346e3e69537127c') then
     raise exception 'besked_mistaenkelig er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
   end if;
   -- besked_normaliser bruges uændret (20261006030000) - spejlet i TS forudsætter den.
@@ -233,6 +237,31 @@ create trigger a0_andenchance_vilkaar
   before insert on public.andenchance_tilbud
   for each row execute function public.andenchance_vilkaar();
 
+-- Køberen siger ja til tilbuddet (andenchance_svar sætter status
+-- 'accepteret' i samme transaktion som handlen oprettes): fejler tjekket,
+-- rulles hele svaret tilbage (ingen handel, tilbuddet står stadig åbent).
+-- Et nej kræver ikke accept.
+create or replace function public.andenchance_svar_vilkaar()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  if new.status = 'accepteret' and old.status is distinct from 'accepteret' then
+    perform public.vilkaar_kraev(new.byder_id);
+  end if;
+  return new;
+end;
+$fn$;
+
+revoke all on function public.andenchance_svar_vilkaar() from public, anon, authenticated;
+
+drop trigger if exists a0_andenchance_svar_vilkaar on public.andenchance_tilbud;
+create trigger a0_andenchance_svar_vilkaar
+  before update of status on public.andenchance_tilbud
+  for each row execute function public.andenchance_svar_vilkaar();
+
 -- Autobud: som 20261013010000, plus accept af brugerbetingelserne.
 create or replace function public.autobud_maa_byde(p_saelger uuid, p_bruger uuid)
 returns boolean
@@ -356,8 +385,13 @@ declare
   p_at constant text := '@(?=[a-z0-9_.]*[a-z_])';
   -- NYT: bankoplysninger.
   -- Reg.nr.: "reg", "regnr", "reg. nr.", "registreringsnummer" + 4 cifre.
+  -- Et "reg" alene kan også være en bils første registrering ("1. reg.
+  -- 2015"), så det kræver et bankord andetsteds i beskeden (p_bank_ord).
   p_reg constant text :=
     '\mreg(istrerings(nummer|nr)?|\.?\s*(nr|nummer))?\M[^0-9]{0,6}(?<![0-9])[0-9]{4}(?![0-9])';
+  -- Kun tydelige former: "regnr", "reg.nr.", "reg nummer", "registreringsnr".
+  p_reg_staerk constant text :=
+    '\mreg(istrerings(nummer|nr)|\.?\s*(nr|nummer))\M[^0-9]{0,6}(?<![0-9])[0-9]{4}(?![0-9])';
   -- Kontonr.: "kontonr", "kontonummer", "konto nr" + 6-10 cifre.
   p_kontonr constant text :=
     '\m(kontonr|kontonummer|kontonummeret|konto\s*nr|konto\s*nummer)\M[^0-9]{0,6}(?<![0-9])[0-9]{6,10}(?![0-9])';
@@ -366,13 +400,14 @@ declare
   -- IBAN: DK + 2 kontrolcifre + 14 cifre, evt. i grupper.
   p_iban_dk constant text := '\mdk\s?[0-9]{2}([\s.-]?[0-9]){14}(?![0-9])';
   -- 4 + 6-10 cifre ("1234-12345678", "1234 12345678"), ikke ved siden af en
-  -- anden cifferblok.
-  p_reg_konto_streg constant text :=
-    '(?<![0-9][\s.,-])(?<![0-9])[0-9]{4}\s?-\s?[0-9]{6,10}(?![\s.,-]?[0-9])';
-  p_reg_konto_mellemrum constant text :=
-    '(?<![0-9][\s.,-])(?<![0-9])[0-9]{4}[\s.]+[0-9]{6,10}(?![\s.,-]?[0-9])';
+  -- anden cifferblok. Kræver et bankord (p_bank_ord) i beskeden.
+  p_reg_konto constant text :=
+    '(?<![0-9][\s.,-])(?<![0-9])[0-9]{4}(\s?-\s?|[\s.]+)[0-9]{6,10}(?![\s.,-]?[0-9])';
+  -- Bankord: konto, kontonr, bank, overfør, indbetal, IBAN og tydelige
+  -- reg.nr.-former (IKKE et "reg" alene).
   p_bank_ord constant text :=
-    '\m(bank[a-zæøå]*|konto[a-zæøå]*|reg|regnr|overf(ø|o)r[a-zæøå]*|indbetal[a-zæøå]*|indsæt[a-zæøå]*)\M';
+    '\m(bank[a-zæøå]*|konto[a-zæøå]*|overf(ø|o)r[a-zæøå]*|indbetal[a-zæøå]*|indsæt[a-zæøå]*|iban'
+    || '|regnr|registreringsn[a-zæøå]*|reg\.?\s*(nr|nummer))\M';
 begin
   -- E-mail.
   if v ~ '[a-z0-9._%+-]+\s*(@|\(at\)|\[at\]|\msnabel-?a\M)\s*[a-z0-9-]+(\.|\s+(punktum|dot)\s+)[a-z]{2,}' then
@@ -396,22 +431,34 @@ begin
     return 'link';
   end if;
 
-  -- NYT: Bankoplysninger. Arbejdskopi k: tal lige efter model, ordre,
-  -- sporing, varenr. m.fl. er erstattet med '#', så "Model 1234-567890" ikke
-  -- ligner en bankkonto. 'reg' og 'konto' bevares (de er bankord her).
+  -- NYT: Bankoplysninger. Arbejdskopi k, hvor tal, der ikke er
+  -- bankoplysninger, er erstattet med '#' (samme rækkefølge som i TS):
+  --   1. tal lige efter model, ordre, sporing, varenr., årgang, stelnr., art
+  --      m.fl. ("Model 1234-567890", "Stelnr 1234-567890", "Årgang 2015")
+  --   2. tal med en enhed: km, kr, kg, cm ... ("145000 km", "125000 kr")
+  --   3. et årstal lige efter et "reg" alene ("1. reg. 2015", "Reg. år
+  --      2016") - medmindre "konto" følger lige efter (reg.nr. 2015 findes).
+  -- 'reg' og 'konto' bevares (de er bankord her).
   k := regexp_replace(v,
          '\m(model[a-zæøå]*|ordre[a-zæøå]*|post\s*nr|postnummer[a-zæøå]*|sporing[a-zæøå]*|track[a-z]*'
          || '|stregkode|ean|imei|serie\s*nr|serienummer[a-zæøå]*|vare\s*nr|varenummer[a-zæøå]*'
-         || '|faktura[a-zæøå]*|kunde\s*nr|kundenummer[a-zæøå]*|pakke[a-zæøå]*|ref|reference)\M'
+         || '|faktura[a-zæøå]*|kunde\s*nr|kundenummer[a-zæøå]*|pakke[a-zæøå]*|ref|reference'
+         || '|årgang[a-zæøå]*|stel[a-zæøå]*|art)\M'
          || p_nr || '[0-9][0-9\s.,/-]*',
+         ' # ', 'g');
+  k := regexp_replace(k,
+         '(?<![0-9])[0-9][0-9.]*(,[0-9]+)?\s*(km\M|kr\M|kroner\M|dkk\M|kg\M|gram\M|cm\M|mm\M|,-|\.-)',
+         ' # ', 'g');
+  k := regexp_replace(k,
+         '\mreg\M\.?(\s*(år|dato))?[\s.:,]*(19|20)[0-9]{2}(?![0-9])(?![^0-9]{0,15}konto)',
          ' # ', 'g');
   if k ~ p_iban_dk
      or k ~ '\miban\M[^a-z0-9]{0,6}[a-z]{2}\s?[0-9]{2}'
-     or k ~ (p_reg || '.{0,40}' || p_konto_tal)
+     or k ~ (p_reg_staerk || '.{0,40}' || p_konto_tal)
+     or (k ~ (p_reg || '.{0,40}' || p_konto_tal) and k ~ p_bank_ord)
      or (k ~ p_kontonr and k ~ p_reg)
      or k ~ ('(?<![0-9])[0-9]{4}[\s,/-]*\mkonto[a-zæøå]*\M[^0-9]{0,6}' || p_konto_tal)
-     or k ~ p_reg_konto_streg
-     or (k ~ p_bank_ord and k ~ p_reg_konto_mellemrum) then
+     or (k ~ p_reg_konto and k ~ p_bank_ord) then
     return 'bank';
   end if;
 
@@ -532,7 +579,9 @@ as $fn$
     || '|\mkontant(er|e)?\M.{0,30}\m(afhent[a-zæøå]*|hånden)\M'
     || '|\mafhent[a-zæøå]*\M.{0,30}\mkontant'
     || '|betal[a-zæøå]*\s+uden\s*(om|for)\M|uden\s*for\s+(bidhamr|bid hamr|siden|appen|platformen)'
-    || '|overf(ø|o)r(e|er|t|sel)?\M.{0,30}(til mig|til min|min konto|kontonr|kontonummer|\mreg\M'
+    -- Ikke datid ("overført"): "Pengene er overført til min konto" er en
+    -- sælger, der bekræfter BidHamrs udbetaling.
+    || '|overf(ø|o)r(e|er|sel)?\M.{0,30}(til mig|til min|min konto|kontonr|kontonummer|\mreg\M'
     ||   '|mobile\s*pay|\mswish\M|paypal|revolut|\mvipps\M)'
     || '|mobile\s*pay(e|er)?\s+(mig|til mig|pengene|beløbet|resten)\M'
     || '|(pengene|beløbet|resten)\s+(på|via|over|med|til)\s+(min\s+)?(mobile\s*pay|\mswish\M|paypal|revolut|\mvipps\M)'
@@ -607,7 +656,8 @@ begin
       ('regnr: 5301 og kontonummer 0123456789', 'bank'),
       ('Registreringsnummer 9570 konto 12345678', 'bank'),
       ('Du kan overføre til 1234-12345678', 'bank'),
-      ('1234 - 1234567890', 'bank'),
+      ('konto: 1234 - 1234567890', 'bank'),
+      ('reg 2015 konto 12345678', 'bank'),
       ('Overfør til min konto 1234 1234567', 'bank'),
       ('1234 konto 7654321', 'bank'),
       ('kontonr 1234567890, reg 1234', 'bank'),
@@ -620,6 +670,14 @@ begin
       ('send på mp 22 34 56 78', 'mobilepay'),
       -- Ikke bank: må IKKE stoppes.
       ('Model 1234-567890 virker fint', null),
+      -- Biler: første registrering, km, pris, årgang, stelnummer.
+      ('1. reg. 2015, kørt 145000 km', null),
+      ('Reg. år 2016 og 210000 km på uret', null),
+      ('1. reg 2018, pris 125000 kr', null),
+      ('Årgang 2015 - 145000 km', null),
+      ('Stelnr 1234-567890', null),
+      -- 4 + 6-10 cifre uden bankord.
+      ('1234 - 1234567890', null),
       -- Et kontonummer alene (uden reg.nr.) stoppes ikke (som 20261007051000),
       -- men markeres til staff (besked_mistaenkelig: kontonr).
       ('Kontonr 1234567890', null),
@@ -669,6 +727,7 @@ begin
       ('MobilePay virker ikke på min telefon', false),
       ('Hvornår kan jeg afhente varen?', false),
       ('Tak for handlen, pengene er overført af BidHamr', false),
+      ('Pengene er overført til min konto', false),
       ('Jeg har betalt nu', false),
       ('Varen er sendt med GLS', false),
       ('Kan du sende den i morgen?', false)

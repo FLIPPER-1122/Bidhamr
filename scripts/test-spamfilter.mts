@@ -20,7 +20,8 @@ const SPAM: [string, string | null][] = [
   ["regnr: 5301 og kontonummer 0123456789", "bank"],
   ["Registreringsnummer 9570 konto 12345678", "bank"],
   ["Du kan overføre til 1234-12345678", "bank"],
-  ["1234 - 1234567890", "bank"],
+  ["konto: 1234 - 1234567890", "bank"],
+  ["reg 2015 konto 12345678", "bank"],
   ["Overfør til min konto 1234 1234567", "bank"],
   ["1234 konto 7654321", "bank"],
   ["kontonr 1234567890, reg 1234", "bank"],
@@ -33,6 +34,14 @@ const SPAM: [string, string | null][] = [
   ["send på mp 22 34 56 78", "mobilepay"],
   // Ikke bank: må IKKE stoppes.
   ["Model 1234-567890 virker fint", null],
+  // Biler: første registrering, km, pris, årgang, stelnummer.
+  ["1. reg. 2015, kørt 145000 km", null],
+  ["Reg. år 2016 og 210000 km på uret", null],
+  ["1. reg 2018, pris 125000 kr", null],
+  ["Årgang 2015 - 145000 km", null],
+  ["Stelnr 1234-567890", null],
+  // 4 + 6-10 cifre uden bankord.
+  ["1234 - 1234567890", null],
   ["Kontonr 1234567890", null],
   ["Varenr 1234-123456", null],
   ["Ordrenr 2024 1234", null],
@@ -72,6 +81,7 @@ const MISTAENKELIG: [string, boolean][] = [
   ["MobilePay virker ikke på min telefon", false],
   ["Hvornår kan jeg afhente varen?", false],
   ["Tak for handlen, pengene er overført af BidHamr", false],
+  ["Pengene er overført til min konto", false],
   ["Jeg har betalt nu", false],
   ["Varen er sendt med GLS", false],
   ["Kan du sende den i morgen?", false],

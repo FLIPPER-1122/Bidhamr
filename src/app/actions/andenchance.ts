@@ -393,6 +393,9 @@ export async function svarAndenchance(
     });
     if (error) {
       if (error.code === "23505") return { fejl: SVAR_FEJL.solgt };
+      // Køberen har ikke accepteret brugerbetingelserne (BHV02,
+      // a0_andenchance_svar_vilkaar). Tilbuddet står stadig åbent.
+      if (erVilkaarFejl(error.code, error.message)) return { fejl: VILKAAR_TEKST.fejlMangler };
       console.error("andenchance_svar fejlede:", error);
       return { fejl: GENERISK };
     }
