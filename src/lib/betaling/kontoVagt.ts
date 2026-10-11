@@ -42,13 +42,16 @@ export async function frysSaelger(o: {
       p_tekst: o.tekst.slice(0, 300),
     });
     if (error) throw new Error(error.message);
+    // Lykkedes: en senere fejl må alarmere igen.
+    await lukTilfaelde(`frys-fejl:${o.userId}`);
     return data === true;
   } catch (err) {
     console.error("frysSaelger fejlede:", o.userId, err);
-    await logDriftFejl({
-      kilde: "server",
+    // Én alarm pr. sælger, selv om Stripe sender eventet mange gange.
+    await alarmPrTilfaelde({
+      noegle: `frys-fejl:${o.userId}`,
       hvor: "betaling/frysning",
-      fejl: `Sælgeren kunne ikke fryses (${o.grund}): ${err instanceof Error ? err.message : String(err)}. Der prøves igen (Stripe sender eventet igen) - frys sælgeren manuelt under Admin → brugeren, hvis alarmen gentager sig.`,
+      fejl: `Sælgeren kunne ikke fryses (${o.grund}): ${err instanceof Error ? err.message : String(err)}. Der prøves igen (Stripe sender eventet igen) - frys sælgeren manuelt under Admin → brugeren, hvis det ikke lykkes.`,
       brugerId: o.userId,
     });
     throw err;

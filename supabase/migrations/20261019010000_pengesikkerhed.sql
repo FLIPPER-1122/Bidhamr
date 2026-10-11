@@ -280,7 +280,8 @@ grant execute on function public.nye_betalinger_stoppet() to service_role;
 --
 -- Nye betalinger genoptages: køberne kunne ikke betale under stoppet, så
 -- betalingsfristen forlænges for alle åbne betalinger, hvis frist var i gang,
--- da stoppet startede (status 'afventer', ikke ventende på sælgerens konto,
+-- da stoppet startede (status 'afventer' eller 'behandles', ikke ventende på
+-- sælgerens konto,
 -- betal_senest efter stoppets start): + stoppets varighed, og mindst 24
 -- timer fra nu. Svaret har 'forlaenget' = [{trade_id, buyer_id, betal_senest}]
 -- (serveren giver køberne besked).
@@ -339,7 +340,7 @@ begin
     if not p_stop and st.nye_betalinger_stoppet_kl is not null then
       for r in
         select b.id from public.betalinger b
-         where b.status = 'afventer'
+         where b.status in ('afventer', 'behandles')
            and b.venter_paa_saelgerkonto_kl is null
            and b.betal_senest > st.nye_betalinger_stoppet_kl
          order by b.id
@@ -354,7 +355,7 @@ begin
                  paamindelse_24_sendt_kl = null,
                  paamindelse_40_sendt_kl = null,
                  opdateret = now()
-           where b.id = r.id and b.status = 'afventer'
+           where b.id = r.id and b.status in ('afventer', 'behandles')
           returning b.trade_id, b.buyer_id, b.betal_senest into v_trade, v_koeber, v_frist;
           if found then
             v_forl := v_forl || jsonb_build_array(jsonb_build_object(
@@ -854,7 +855,10 @@ set search_path = ''
 as $fn$
 declare
   bp     record;
-  v_tekst text := left(coalesce(nullif(btrim(coalesce(p_tekst, '')), ''), 'Sælgerens udbetalinger er frosset'), 300);
+  -- Hele teksten (fx chefens begrundelse på op til 1000 tegn) gemmes i
+  -- grunde og loggen; kun de første 300 tegn i betalingens sidste_fejl.
+  v_fuld  text := left(coalesce(nullif(btrim(coalesce(p_tekst, '')), ''), 'Sælgerens udbetalinger er frosset'), 1500);
+  v_tekst text := left(v_fuld, 300);
 begin
   if p_saelger is null or p_medarbejder is null
      or p_grund is null or p_grund not in ('fremmed_udbetaling', 'udbetalingsplan', 'manuel') then
@@ -873,7 +877,7 @@ begin
    where user_id = p_saelger;
   -- Første grund gælder (som før).
   insert into public.saelger_frysning_grunde (user_id, grund, tekst, frosset_af)
-  values (p_saelger, p_grund, v_tekst, p_medarbejder)
+  values (p_saelger, p_grund, v_fuld, p_medarbejder)
   on conflict (user_id) do nothing;
   update public.betalinger
      set kraever_opmaerksomhed = true,
@@ -886,7 +890,7 @@ begin
      and refunderet_kl is null;
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
   values (p_medarbejder, 'udbetaling_frosset', 'bruger', p_saelger, p_saelger,
-          left(v_tekst || case when coalesce(p_frys_salg, false) then ' (også nye auktioner og bud)' else '' end, 2000));
+          left(v_fuld || case when coalesce(p_frys_salg, false) then ' (også nye auktioner og bud)' else '' end, 2000));
   return true;
 end;
 $fn$;
@@ -1435,16 +1439,24 @@ begin
                         then coalesce(b.bidhamr_daekker_foer_fejl, '') || ' | ' else '' end
                    || coalesce(b.sidste_fejl, ''), ' | ')) with ordinality as u(x, n)
            where btrim(x) <> '' and btrim(x) <> c_mark
+             -- "Refusion fejlede" er netop løst af BidHamr dækker.
+             and not public.betaling_fejl_er_refusion(btrim(x))
            order by btrim(x), n) d;
   v_tekst := nullif(left(array_to_string(v_dele, ' | '), 500), '');
   v_frosset := exists (select 1 from public.betalingsprofiler bp
                         where bp.user_id = b.seller_id and bp.udbetaling_frosset_kl is not null);
   update public.betalinger
      set bidhamr_daekker_refunderet_kl = now(),
-         bidhamr_daekker_refund_id = coalesce(bidhamr_daekker_refund_id, stripe_refund_id),
+         -- Den gennemførte refusion (stripe_refund_id sættes af
+         -- betaling_registrer_refunderet) - aldrig et tidligere, fejlet id.
+         bidhamr_daekker_refund_id = coalesce(stripe_refund_id, bidhamr_daekker_refund_id),
          bidhamr_daekker_laas_til = null,
          sidste_fejl = v_tekst,
-         kraever_opmaerksomhed = (v_tekst is not null or v_frosset),
+         -- Var betalingen markeret uden tekst (ukendt grund), bevares
+         -- markeringen. Var grunden kun "refusion fejlede", er den løst.
+         kraever_opmaerksomhed = (v_tekst is not null or v_frosset
+                                  or (coalesce(b.bidhamr_daekker_foer_opm, false)
+                                      and nullif(btrim(coalesce(b.bidhamr_daekker_foer_fejl, '')), '') is null)),
          opdateret = now()
    where id = b.id;
   return 'ok';
@@ -1473,6 +1485,34 @@ end;
 $fn$;
 revoke all on function public.betaling_bidhamr_daekker_frigiv(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.betaling_bidhamr_daekker_frigiv(uuid, uuid, text) to service_role;
+
+-- Den gemte refusion (bidhamr_daekker_refund_id) er fejlet eller annulleret
+-- hos Stripe (serveren har slået den op): id'et nulstilles under låsen, før
+-- et nyt forsøg - ellers giver registrer en falsk 'konflikt', og
+-- kreditnotaen (faktura_planlaeg) får et forkert id. Virker kun med den
+-- rigtige låsenøgle og kun, når id'et matcher. Svar: true = nulstillet.
+create or replace function public.betaling_bidhamr_daekker_glem_refund(
+  p_betaling uuid, p_noegle uuid, p_fejlet_refund text)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  if p_noegle is null or p_fejlet_refund is null then return false; end if;
+  update public.betalinger
+     set bidhamr_daekker_refund_id = null, opdateret = now()
+   where id = p_betaling
+     and bidhamr_daekker_laas_noegle = p_noegle
+     and bidhamr_daekker_laas_til > now()
+     and bidhamr_daekker_refund_id = p_fejlet_refund
+     and bidhamr_daekker_refunderet_kl is null
+     and status <> 'refunderet';
+  return found;
+end;
+$fn$;
+revoke all on function public.betaling_bidhamr_daekker_glem_refund(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.betaling_bidhamr_daekker_glem_refund(uuid, uuid, text) to service_role;
 
 -- Kreditnota (købers faktura krediteres; sælgerens sælgergebyr står - han fik
 -- sin udbetaling) og DAC7 (salget tæller stadig).
@@ -1704,6 +1744,17 @@ $fn$;
 
 revoke all on function public.handel_udbetalingsstatus(uuid) from public, anon, authenticated;
 grant execute on function public.handel_udbetalingsstatus(uuid) to authenticated, service_role;
+
+-- Kroppen skal være præcis denne migrations version (samme "ny" som i
+-- drift-tjekket øverst - ellers fejler en anden kørsel).
+do $do$
+declare
+  h text := pg_temp.krop_md5('public.handel_udbetalingsstatus(uuid)');
+begin
+  if h is distinct from 'f8a957f59515b6bc97c61cbdb13b6544' then
+    raise exception 'handel_udbetalingsstatus: efter create or replace er md5 % (forventet f8a957f59515b6bc97c61cbdb13b6544)', h;
+  end if;
+end $do$;
 
 -- ===========================================================================
 -- 12. Grants

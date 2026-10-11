@@ -2144,7 +2144,10 @@ async function fjernAfvistKort(userId: string, pmId: string): Promise<void> {
 // ------------------------------------------------------------------ Connect
 
 // Markering af sælgerens udbetalingskonto til admin (/admin/betalinger).
-// Teksten må aldrig indeholde beløb (medarbejdere ser den).
+// Teksten må aldrig indeholde beløb (medarbejdere ser den). Sælgeren kan læse
+// sin egen betalingsprofil (RLS + select('*') i appen og på hjemmesiden):
+// teksten må derfor aldrig afsløre svindelmistanke eller en frysningsgrund -
+// detaljerne hører til i drift-alarmen eller saelger_frysning_grunde.
 export async function markerUdbetalingskonto(
   stripeAccountId: string,
   aarsag: string,
@@ -2283,10 +2286,18 @@ export async function spejlConnectKonto(konto: Stripe.Account): Promise<string |
 
   // Stripe har afvist kontoen (fx svindel eller vilkår). Kun admin kan hjælpe.
   if (spaerret?.startsWith("rejected.") && profil.connect_spaerret_aarsag !== spaerret) {
+    // Neutral tekst på profilen (sælgeren kan læse den); Stripes kode i
+    // drift-alarmen.
     await markerUdbetalingskonto(
       konto.id,
-      `Stripe har afvist sælgerens udbetalingskonto (${spaerret}). Betalinger og udbetalinger kan ikke gennemføres.`,
+      "Udbetalingskontoen kræver kontrol hos BidHamr. Betalinger og udbetalinger kan ikke gennemføres - se drift-loggen.",
     );
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "connect/afvist",
+      fejl: `Stripe har afvist sælgerkonto ${konto.id} (${spaerret}). Betalinger og udbetalinger kan ikke gennemføres.`,
+      brugerId: userId,
+    });
   }
 
   if (!frakoblet) await kontrollerUdbetalingsplan(konto.id, profil, spejl.connect_udbetalingsplan);
@@ -2438,9 +2449,11 @@ export async function spejlUdbetaling(
     brugerId: profil.user_id,
   });
   if (ny) {
+    // Neutral tekst: sælgeren kan læse sin betalingsprofil. Udbetalingens id
+    // står i drift-alarmen ovenfor og i saelger_frysning_grunde (kun staff).
     await markerUdbetalingskonto(
       stripeAccountId,
-      `Stripe har lavet en udbetaling fra sælgerens konto, som BidHamr ikke har lavet (${payout.id}). Kontrollér kontoen og saldoen i Stripe.`,
+      "Udbetalingskontoen kræver kontrol hos BidHamr. Se drift-loggen og Admin → Penge.",
     );
   }
   // Sikkerhedsnet A: sælgeren fryses (nye auktioner, bud og udbetalinger),

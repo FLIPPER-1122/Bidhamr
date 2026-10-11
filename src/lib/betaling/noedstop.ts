@@ -91,60 +91,108 @@ const AABNE: Stripe.PaymentIntent.Status[] = ["requires_payment_method", "requir
 // checkout-siden åben med en client_secret) annulleres hos Stripe, så de ikke
 // kan betales under stoppet. En betaling, der allerede er sendt til banken
 // ('processing', fx MobilePay), kan stadig gå igennem - webhooken registrerer
-// den som normalt. Efter stoppet laver checkout en ny PaymentIntent
-// (sikrPaymentIntent: annulleret + 'afventer' -> ny). Højst 500 pr. kald.
-// Kaster aldrig. Svar: antal annullerede, antal, der ikke kunne annulleres.
-export async function annullerAabneBetalinger(): Promise<{ annulleret: number; fejlet: number; igang: number }> {
-  const res = { annulleret: 0, fejlet: 0, igang: 0 };
-  let raekker: { id: string; stripe_payment_intent_id: string }[] = [];
-  try {
-    const { data, error } = await createAdminClient()
+// den som normalt.
+//
+// En annulleret PaymentIntent fjernes fra betalingen med det samme
+// (betaling_nulstil_annulleret_pi: gemmes i tidligere_payment_intents,
+// pi_forsoeg + 1), så den ikke slås op igen ved næste kørsel, og checkout
+// laver en ny efter stoppet. Sorteret efter id, 100 ad gangen, højst 500 pr.
+// kald og højst ca. 45 sekunder (Vercels tidsgrænse). 'tilbage' > 0 betyder:
+// kør igen. Kaster aldrig.
+export type Annullering = { annulleret: number; fejlet: number; igang: number; tilbage: number };
+
+const SIDE = 100;
+const MAKS = 500;
+const TIDSGRAENSE_MS = 45_000;
+
+export async function annullerAabneBetalinger(): Promise<Annullering> {
+  const res: Annullering = { annulleret: 0, fejlet: 0, igang: 0, tilbage: 0 };
+  const admin = createAdminClient();
+  const stripe = getStripe();
+  const start = Date.now();
+  let efterId: string | null = null;
+  let set = 0;
+  let stoppetTidligt = false;
+
+  ydre: while (true) {
+    let q = admin
       .from("betalinger")
       .select("id, stripe_payment_intent_id")
       .eq("status", "afventer")
       .not("stripe_payment_intent_id", "is", null)
-      .limit(500);
-    if (error) throw new Error(error.message);
-    raekker = (data ?? []) as typeof raekker;
-  } catch (err) {
-    console.error("annullerAabneBetalinger: kunne ikke hente betalinger:", err);
-    res.fejlet++;
-    return res;
-  }
-  const stripe = getStripe();
-  for (const r of raekker) {
-    const piId = r.stripe_payment_intent_id;
-    try {
-      const pi = await stripe.paymentIntents.retrieve(piId);
-      if (pi.status === "canceled" || pi.status === "succeeded") continue;
-      if (!AABNE.includes(pi.status)) {
-        res.igang++;
-        continue;
+      .order("id", { ascending: true })
+      .limit(SIDE);
+    if (efterId) q = q.gt("id", efterId);
+    const { data, error } = await q;
+    if (error) {
+      console.error("annullerAabneBetalinger: kunne ikke hente betalinger:", error.message);
+      res.fejlet++;
+      break;
+    }
+    const side = (data ?? []) as { id: string; stripe_payment_intent_id: string }[];
+    if (side.length === 0) break;
+    for (const r of side) {
+      if (set >= MAKS || Date.now() - start > TIDSGRAENSE_MS) {
+        stoppetTidligt = true;
+        break ydre;
       }
-      await stripe.paymentIntents.cancel(
-        piId,
-        { cancellation_reason: "abandoned" },
-        { idempotencyKey: `bidhamr-noedstop-annuller-${piId}` },
-      );
-      res.annulleret++;
-    } catch (err) {
-      // Fx er betalingen gået i gang i mellemtiden: tjek igen, ellers tæl den.
+      set++;
+      efterId = r.id;
+      const piId = r.stripe_payment_intent_id;
       try {
-        const igen = await stripe.paymentIntents.retrieve(piId);
-        if (igen.status === "canceled") {
-          res.annulleret++;
-          continue;
-        }
-        if (igen.status === "succeeded" || igen.status === "processing") {
+        let pi = await stripe.paymentIntents.retrieve(piId);
+        if (pi.status === "succeeded" || pi.status === "processing" || pi.status === "requires_capture") {
           res.igang++;
           continue;
         }
-      } catch {
-        // falder igennem
+        if (pi.status !== "canceled") {
+          if (!AABNE.includes(pi.status)) {
+            res.igang++;
+            continue;
+          }
+          try {
+            pi = await stripe.paymentIntents.cancel(
+              piId,
+              { cancellation_reason: "abandoned" },
+              { idempotencyKey: `bidhamr-noedstop-annuller-${piId}` },
+            );
+          } catch (err) {
+            // Fx er betalingen gået i gang i mellemtiden.
+            pi = await stripe.paymentIntents.retrieve(piId);
+            if (pi.status !== "canceled") {
+              if (pi.status === "succeeded" || pi.status === "processing") res.igang++;
+              else {
+                console.error("annullerAabneBetalinger: kunne ikke annullere:", piId, err);
+                res.fejlet++;
+              }
+              continue;
+            }
+          }
+        }
+        // Annulleret hos Stripe: fjernes fra betalingen (kun hvis den stadig
+        // er den gemte og betalingen afventer).
+        const { error: nFejl } = await admin.rpc("betaling_nulstil_annulleret_pi", {
+          p_betaling: r.id,
+          p_pi: piId,
+        });
+        if (nFejl) throw new Error(`betaling_nulstil_annulleret_pi: ${nFejl.message}`);
+        res.annulleret++;
+      } catch (err) {
+        console.error("annullerAabneBetalinger:", piId, err);
+        res.fejlet++;
       }
-      console.error("annullerAabneBetalinger: kunne ikke annullere:", piId, err);
-      res.fejlet++;
     }
+    if (side.length < SIDE) break;
+  }
+
+  if (stoppetTidligt) {
+    const { count } = await admin
+      .from("betalinger")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "afventer")
+      .not("stripe_payment_intent_id", "is", null)
+      .gt("id", efterId ?? "00000000-0000-0000-0000-000000000000");
+    res.tilbage = Math.max(1, count ?? 1);
   }
   return res;
 }

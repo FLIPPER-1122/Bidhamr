@@ -79,11 +79,12 @@ export async function saetNoedstop(formData: FormData) {
     glemNoedstop();
 
     let ekstra = "";
+    let tilbage = 0;
     if (hvad === "nye_betalinger" && stop) {
       // Åbne checkouts kan ikke betales under stoppet (sikkerhedsnet A).
-      const { annullerAabneBetalinger } = await import("@/lib/betaling/noedstop");
-      const a = await annullerAabneBetalinger();
-      ekstra = ` ${a.annulleret} åbne betaling(er) er annulleret hos Stripe.${a.igang ? ` ${a.igang} betaling(er) var allerede sendt til banken og kan nå at gå igennem (de registreres som normalt).` : ""}${a.fejlet ? ` ${a.fejlet} kunne ikke annulleres - de kan stadig betales; kontrollér dem i Stripe.` : ""}`;
+      const a = await annullerOgBeskriv();
+      ekstra = a.tekst;
+      tilbage = a.tilbage;
     }
     if (hvad === "nye_betalinger" && !stop) {
       const forl = svar.forlaenget ?? [];
@@ -97,6 +98,41 @@ export async function saetNoedstop(formData: FormData) {
       brugerId: userId,
     });
     revalidatePath("/admin", "layout");
+    if (tilbage > 0) throw new BrugerFejl(`Nye betalinger er stoppet.${ekstra}`);
+    return { ok: true as const };
+  });
+}
+
+async function annullerOgBeskriv(): Promise<{ tekst: string; tilbage: number }> {
+  const { annullerAabneBetalinger } = await import("@/lib/betaling/noedstop");
+  const a = await annullerAabneBetalinger();
+  const tekst =
+    ` ${a.annulleret} åbne betaling(er) er annulleret hos Stripe.` +
+    (a.igang ? ` ${a.igang} betaling(er) var allerede sendt til banken og kan nå at gå igennem (de registreres som normalt).` : "") +
+    (a.fejlet ? ` ${a.fejlet} kunne ikke annulleres - de kan stadig betales; kontrollér dem i Stripe.` : "") +
+    (a.tilbage > 0
+      ? ` Der er flere end der kunne nås på én gang (${a.tilbage} tilbage) - tryk "Annullér åbne betalinger" for at køre igen.`
+      : "");
+  return { tekst, tilbage: a.tilbage };
+}
+
+// Kør annulleringen af åbne betalinger igen (fx flere end 500, eller nogle
+// kunne ikke annulleres). Kun chef, kun mens nye betalinger er stoppet.
+export async function annullerAabneBetalingerIgen() {
+  return koer("annullerAabneBetalingerIgen", async () => {
+    const { userId } = await assertRole("chef");
+    if (!(await hentNoedstop(true)).nyeBetalingerStoppet) {
+      throw new BrugerFejl("Nye betalinger er ikke stoppet. Opdatér siden.");
+    }
+    const a = await annullerOgBeskriv();
+    await logDriftFejl({
+      kilde: "action",
+      hvor: "betaling/noedstop",
+      fejl: `Nødstop: åbne betalinger annulleret igen af chefen.${a.tekst}`,
+      brugerId: userId,
+    });
+    revalidatePath("/admin/penge");
+    if (a.tilbage > 0) throw new BrugerFejl(a.tekst.trim());
     return { ok: true as const };
   });
 }

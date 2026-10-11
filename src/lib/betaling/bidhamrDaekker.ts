@@ -52,6 +52,8 @@ type Claim = {
   charge?: string;
   trade_id?: string;
   buyer_id?: string;
+  // Refusionen fra et tidligere forsøg (null = ingen).
+  refund_id?: string | null;
 };
 
 const KALD: Stripe.RequestOptions = { timeout: 20_000, maxNetworkRetries: 1 };
@@ -95,6 +97,20 @@ export async function bidhamrDaekker(
   try {
     const charge = await stripe.charges.retrieve(String(c.charge), {}, KALD);
     liste = await stripe.refunds.list({ payment_intent: pi, limit: 100 }, KALD);
+    // Et tidligere forsøgs refusion er fejlet/annulleret hos Stripe: id'et
+    // nulstilles under låsen, så registreringen ikke giver en falsk konflikt,
+    // og kreditnotaen ikke får et forkert id.
+    if (c.refund_id) {
+      const gammel = liste.data.find((r) => r.id === c.refund_id);
+      if (gammel && (gammel.status === "failed" || gammel.status === "canceled")) {
+        const { error: gFejl } = await admin.rpc("betaling_bidhamr_daekker_glem_refund", {
+          p_betaling: betalingId,
+          p_noegle: noegle,
+          p_fejlet_refund: gammel.id,
+        });
+        if (gFejl) throw new Error(`betaling_bidhamr_daekker_glem_refund: ${gFejl.message}`);
+      }
+    }
     const aktive = liste.data.filter((r) => r.status !== "failed" && r.status !== "canceled");
     refund = aktive.find((r) => r.metadata?.bidhamr_daekker === betalingId) ?? null;
     if (!refund) {

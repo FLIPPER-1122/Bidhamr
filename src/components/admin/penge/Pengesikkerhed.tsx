@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import {
+  annullerAabneBetalingerIgen,
   godkendUdbetaling,
   hentPengesikkerhed,
   ophaevFrysning,
@@ -58,6 +59,19 @@ function NoedstopLinje({
           </p>
         )}
       </div>
+      <div className="flex flex-wrap gap-2">
+      {stoppet && hvad === "nye_betalinger" && (
+        <ConfirmDialog
+          triggerLabel="Annullér åbne betalinger"
+          triggerClassName={NEUTRAL_KNAP}
+          title="Annullér åbne betalinger igen?"
+          description="Åbne betalinger (checkout-sider, der står åbne) annulleres hos Stripe, højst 500 ad gangen. Betalinger, der allerede er sendt til banken, røres ikke."
+          confirmLabel="Annullér"
+          action={annullerAabneBetalingerIgen}
+          hiddenFields={{}}
+          kvittering="Åbne betalinger er annulleret"
+        />
+      )}
       <ConfirmDialog
         triggerLabel={stoppet ? "Genoptag" : "Stop"}
         triggerClassName={stoppet ? NEUTRAL_KNAP : ROED_KNAP}
@@ -73,6 +87,7 @@ function NoedstopLinje({
         aarsagField={{ name: "aarsag", label: "Begrundelse", placeholder: "Hvorfor?", required: true }}
         kvittering={stoppet ? "Genoptaget" : "Stoppet"}
       />
+      </div>
     </div>
   );
 }
