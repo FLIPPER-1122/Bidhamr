@@ -65,7 +65,9 @@ export function koePunkter(t: KoeTal): StatusPunkt[] {
 
 // Samler punkterne til én linje. Den vigtigste (røde først) står forrest,
 // resten tælles som "+2 mere".
-export function beregnStatus(punkter: StatusPunkt[]): Status {
+// systemerTjekket: systemlamperne er med (admin/chef på forsiden) - kun da
+// må den grønne linje sige "Alt kører".
+export function beregnStatus(punkter: StatusPunkt[], opts: { systemerTjekket?: boolean } = {}): Status {
   const roede = punkter.filter((p) => p.tone === "roed");
   const gule = punkter.filter((p) => p.tone === "gul");
   const sorteret = [...roede, ...gule];
@@ -95,8 +97,10 @@ export function beregnStatus(punkter: StatusPunkt[]): Status {
   }
   return {
     tone: "groen",
-    titel: "Intet haster lige nu",
-    tekst: "Ingen frister er overskredet, og der er ingen fejl, der venter.",
+    titel: opts.systemerTjekket ? "Alt kører" : "Intet haster lige nu",
+    tekst: opts.systemerTjekket
+      ? "Ingen systemfejl, og intet med høj alvor venter på dig."
+      : "Ingen frister er overskredet, og ingen fejl venter.",
     href: null,
     knap: null,
     punkter: [],

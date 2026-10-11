@@ -6,14 +6,7 @@ import AdminSidebar, { INGEN_TAELLERE, type MiniStatus } from "@/components/admi
 import AdminTopSoeg from "@/components/admin/AdminTopSoeg";
 import Kvittering from "@/components/admin/Kvittering";
 import { beregnStatus, koePunkter } from "@/lib/admin/statuslinje";
-import { hentAntalUbetalte } from "@/app/actions/adminActions";
-import { hentAntalBetalingerTilHandling } from "@/app/actions/adminBetalinger";
-import { antalUbesvaredeStaffSamtaler } from "@/app/actions/staffChat";
-import { hentAntalAabneSager } from "@/app/actions/adminSager";
-import { hentAntalKontoLukninger } from "@/app/actions/adminKontoLukning";
-import { hentAntalTryghed } from "@/app/actions/adminTryghed";
-import { hentAntalDsa } from "@/app/actions/adminDsa";
-import { hentAntalNyeErhvervHenvendelser } from "@/app/actions/adminErhverv";
+import { hentErhvervNye, hentStaffTal } from "@/lib/admin/taellere";
 
 // Fælles ramme for hele admin: menu, søgning øverst og kvitteringen efter en
 // handling (<Kvittering />, så den virker på alle sider).
@@ -49,27 +42,11 @@ function Ramme({
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Bruger og rolle hentes samtidig (højst én gang pr. forespørgsel, delt via
   // cache() i src/lib/supabase/bruger.ts). Menuens tællere startes, så snart
-  // rollen er kendt, i stedet for at vente på begge - hver tæller kalder
-  // desuden selv assertRole (samme delte svar) og giver ingen data uden adgang.
-  // Trin 3 (docs/ADMIN-REDESIGN.md) erstatter kaldene med én admin_status().
+  // rollen er kendt. Tællerne deles med siden via cache() (src/lib/admin/taellere.ts).
   const erStaff = (r: string | null) => r === "chef" || r === "admin" || r === "medarbejder";
-  const taellerLoefte = hentMinRolle().then((r) =>
-    erStaff(r)
-      ? Promise.all([
-          hentAntalUbetalte(),
-          hentAntalBetalingerTilHandling(),
-          antalUbesvaredeStaffSamtaler(),
-          hentAntalAabneSager(),
-          hentAntalKontoLukninger(),
-          hentAntalTryghed(),
-          hentAntalDsa(),
-        ])
-      : null,
-  );
+  const taellerLoefte = hentMinRolle().then((r) => (erStaff(r) ? hentStaffTal() : null));
   // Erhverv-tælleren (nye henvendelser) kun for chef og saelger.
-  const erhvervLoefte = hentMinRolle().then((r) =>
-    r === "chef" || r === "saelger" ? hentAntalNyeErhvervHenvendelser() : null,
-  );
+  const erhvervLoefte = hentMinRolle().then((r) => (r === "chef" || r === "saelger" ? hentErhvervNye() : 0));
   const [user, rolle] = await Promise.all([hentBruger(), hentMinRolle()]);
 
   // Rollen 'saelger' (erhvervssælger) kommer ind, men ser KUN Erhverv.
@@ -77,8 +54,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // kraevSideRolle kender den ikke), og proxyen sender saelger videre til
   // /admin/erhverv fra alle andre admin-stier (src/lib/supabase/middleware.ts).
   if (user && rolle === "saelger") {
-    const erhverv = await erhvervLoefte;
-    const antalErhverv = erhverv && "antal" in erhverv ? erhverv.antal : 0;
+    const antalErhverv = await erhvervLoefte;
     const status: MiniStatus =
       antalErhverv > 0
         ? {
@@ -98,20 +74,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect("/");
   }
 
-  // En fejl i en tæller må ikke vælte hele admin-panelet - den tæller bare 0.
-  const taellere = await taellerLoefte;
-  if (!taellere) redirect("/");
-  const [ubetalte, betalinger, chats, sager, lukninger, tryghed, dsa] = taellere;
-  const n = (r: object, k: string) => (k in r ? Number((r as Record<string, unknown>)[k]) || 0 : 0);
-  const erhverv = await erhvervLoefte;
-
-  const dsaAntal = n(dsa, "antal");
-  const dsaOverskredet = n(dsa, "overskredet");
-  const antalSager = n(sager, "antal");
-  const antalBetalinger = n(betalinger, "antal");
-
+  const t = await taellerLoefte;
+  if (!t) redirect("/");
+  const antalErhverv = await erhvervLoefte;
   const status = beregnStatus(
-    koePunkter({ dsaOverskredet, dsa: dsaAntal, sager: antalSager, betalinger: antalBetalinger }),
+    koePunkter({ dsaOverskredet: t.dsaOverskredet, dsa: t.dsa, sager: t.sager, betalinger: t.betalinger }),
   );
 
   return (
@@ -122,14 +89,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           rolle={rolle}
           status={{ tone: status.tone, titel: status.titel, href: status.tone === "groen" ? "/admin" : status.href }}
           taellere={{
-            handler: n(ubetalte, "antal"),
-            sager: antalSager,
-            betalinger: antalBetalinger,
-            brugere: n(lukninger, "antal"),
-            henvendelser: n(tryghed, "kontakt") + n(chats, "antal"),
-            anmeldelser: dsaAntal + n(tryghed, "rapporter") + n(tryghed, "bedoemmelser"),
-            anmeldelserKritisk: dsaOverskredet > 0,
-            erhverv: erhverv ? n(erhverv, "antal") : 0,
+            handler: t.ubetalte,
+            sager: t.sager,
+            betalinger: t.betalinger,
+            brugere: t.kontolukninger,
+            henvendelser: t.kontakt + t.chats,
+            anmeldelser: t.dsa + t.rapporter + t.bedoemmelser,
+            anmeldelserKritisk: t.dsaOverskredet > 0,
+            erhverv: antalErhverv,
           }}
         />
       }
