@@ -19,6 +19,7 @@ import {
   piId,
   rydOp,
   stripe,
+  udenTvungen3ds,
   type TestHandel,
 } from "./handel";
 import { FREMMED, KOEBER, SAELGER } from "./brugere";
@@ -78,12 +79,16 @@ describe("beløbsmanipulation afvises", () => {
     const pi = await stripe().paymentIntents.retrieve(id);
     expect(pi.amount).toBe(14_500);
     expect(pi.application_fee_amount).toBe(500 + 500 + 4_000);
+    // Og den tvungne 3D Secure (sikkerhedsnet A) står på.
+    expect(pi.payment_method_options?.card?.request_three_d_secure).toBe("any");
   });
 
   it("betales et forkert beløb alligevel, registreres det ikke som betalt og refunderes", async () => {
     const b = await betaling(manip.betalingId);
     const id = b.stripe_payment_intent_id!;
     await stripe().paymentIntents.update(id, { amount: 1_000, application_fee_amount: 100 });
+    // 3DS-siden kan ikke klikkes igennem uden browser (se udenTvungen3ds).
+    await udenTvungen3ds(id);
     const pi = await stripe().paymentIntents.confirm(id, {
       payment_method: "pm_card_bypassPending",
       return_url: "https://bidhamr.dk/test-betaling",

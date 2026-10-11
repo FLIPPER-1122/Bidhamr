@@ -8,7 +8,15 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { csvKr, maanedInterval, pengeCsv } from "@/lib/admin/pengeOekonomi";
-import { forventetGebyrRefunderet, forventetTilbagefoert, payoutStatusPasser, TRIN, trinRaekkefoelge } from "@/lib/betaling/afstemning";
+import {
+  erBidhamrsRefusion,
+  forventetGebyrRefunderet,
+  forventetTilbagefoert,
+  payoutAfstemmes,
+  payoutStatusPasser,
+  TRIN,
+  trinRaekkefoelge,
+} from "@/lib/betaling/afstemning";
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261019020000_pengeafstemning.sql"),
@@ -45,7 +53,10 @@ create table public.betalinger (
   indsigelse_tilbagefoersel_id text, indsigelse_tilbagefoert_oere bigint, indsigelse_tilbagefoert_kl timestamptz,
   saelger_udbetaling_id uuid, saelger_stripe_konto text, betalt_kl timestamptz,
   stripe_payment_intent_id text, stripe_fee_refund_id text, refusion_tilbagefoersel_id text,
-  stripe_refund_id text, stripe_dispute_id text, opdateret timestamptz not null default now());
+  stripe_refund_id text, stripe_dispute_id text, opdateret timestamptz not null default now(),
+  -- Sikkerhedsnet A (20261019010000): "BidHamr dækker".
+  bidhamr_daekker_kl timestamptz, bidhamr_daekker_oere bigint, bidhamr_daekker_refund_id text,
+  bidhamr_daekker_refunderet_kl timestamptz);
 create table public.saelger_udbetalinger (
   id uuid primary key default gen_random_uuid(), stripe_konto text, status text not null,
   beloeb_oere bigint not null, stripe_payout_id text, oprettet timestamptz not null default now(),
@@ -412,5 +423,79 @@ describe("rettelser efter review", () => {
               has_table_privilege('authenticated', 'public.betaling_webhook_tjek', 'select') as u`,
     );
     expect([r.s, r.u]).toEqual([true, false]);
+  });
+});
+
+describe("BidHamr dækker (sikkerhedsnet A)", () => {
+  let claimet: string;
+  let refunderet: string;
+
+  beforeAll(async () => {
+    // Udbetalt til sælgerens bank; chefen har valgt "BidHamr dækker" (claimet,
+    // Stripe-refusionen er ikke gennemført endnu).
+    claimet = (
+      await en<{ id: string }>(
+        `insert into public.betalinger (total_oere, udbetaling_oere, application_fee_oere, betalt_kl, saelger_stripe_konto,
+                                        saelger_udbetaling_id, bidhamr_daekker_kl, bidhamr_daekker_oere)
+         values (30000, 24000, 6000, now() - interval '9 days', 'acct_c', gen_random_uuid(), now(), 30000) returning id`,
+      )
+    ).id;
+    // Gennemført: køberen er refunderet af BidHamr (status refunderet).
+    refunderet = (
+      await en<{ id: string }>(
+        `insert into public.betalinger (status, total_oere, udbetaling_oere, application_fee_oere, betalt_kl, saelger_stripe_konto,
+                                        saelger_udbetaling_id, bidhamr_daekker_kl, bidhamr_daekker_oere, bidhamr_daekker_refund_id,
+                                        bidhamr_daekker_refunderet_kl, refunderet_kl, refusion_oere)
+         values ('refunderet', 20000, 15000, 5000, now() - interval '9 days', 'acct_c', gen_random_uuid(),
+                 now() - interval '1 hour', 17500, 're_daekker', now() - interval '1 hour', now() - interval '1 hour', 17500) returning id`,
+      )
+    ).id;
+  });
+
+  it("posteringer: 'bidhamr_daekker' som udgift for BidHamr - ikke også som almindelig refusion", async () => {
+    const r = (await en<{ r: { type: string; betaling_id: string; beloeb_oere: number; bidhamr_oere: number; stripe_id: string }[] }>(
+      "select public.admin_penge_posteringer($1, now() - interval '30 days', now() + interval '1 day', 1000) as r",
+      [CHEF],
+    )).r;
+    const egne = r.filter((x) => x.betaling_id === refunderet);
+    expect(egne.map((x) => x.type).sort()).toEqual(["betaling", "bidhamr_daekker"]);
+    const d = egne.find((x) => x.type === "bidhamr_daekker")!;
+    expect(Number(d.beloeb_oere)).toBe(17_500);
+    expect(Number(d.bidhamr_oere)).toBe(-17_500);
+    expect(d.stripe_id).toBe("re_daekker");
+    // Den claimede (ikke refunderet) giver ingen dækker-postering endnu.
+    expect(r.some((x) => x.betaling_id === claimet && x.type === "bidhamr_daekker")).toBe(false);
+  });
+
+  it("overblikket: claimet, ikke refunderet dækning tæller som skyld til købere og trækkes fra 'kan trækkes ud'", async () => {
+    const foer = (await en<{ r: { skylder_koebere_oere: number; kan_traekkes_ud_oere: number } }>(
+      "select public.admin_penge_reserve($1, 200000) as r",
+      [CHEF],
+    )).r;
+    // Uden den claimede dækning:
+    await db.query("update public.betalinger set bidhamr_daekker_refunderet_kl = now() where id = $1", [claimet]);
+    const efter = (await en<{ r: { skylder_koebere_oere: number; kan_traekkes_ud_oere: number } }>(
+      "select public.admin_penge_reserve($1, 200000) as r",
+      [CHEF],
+    )).r;
+    await db.query("update public.betalinger set bidhamr_daekker_refunderet_kl = null where id = $1", [claimet]);
+    expect(Number(foer.skylder_koebere_oere) - Number(efter.skylder_koebere_oere)).toBe(30_000);
+    expect(Number(efter.kan_traekkes_ud_oere) - Number(foer.kan_traekkes_ud_oere)).toBe(30_000);
+  });
+
+  it("afstemningen: dækker-refusion, BidHamrs refusioner og negative payouts giver ingen afvigelse", () => {
+    const b = { id: "b1", stripe_refund_id: null, bidhamr_daekker_refund_id: "re_daekker" };
+    // "BidHamr dækker": metadata.betaling_id + bidhamr_daekker (bidhamrDaekker.ts).
+    expect(erBidhamrsRefusion({ id: "re_x", metadata: { betaling_id: "b1", bidhamr_daekker: "b1" } }, b, null)).toBe(true);
+    // Registreret på betalingen, selv uden metadata.
+    expect(erBidhamrsRefusion({ id: "re_daekker", metadata: {} }, b, null)).toBe(true);
+    // Refusion af forkert beløb (betaling_afvigelser).
+    expect(erBidhamrsRefusion({ id: "re_a", metadata: { betaling_id: "b2" } }, null, { betaling_id: "b2", stripe_refund_id: null })).toBe(true);
+    // Lavet i dashboardet: ingen metadata, ikke registreret.
+    expect(erBidhamrsRefusion({ id: "re_dash", metadata: {} }, b, null)).toBe(false);
+    expect(erBidhamrsRefusion({ id: "re_dash", metadata: { betaling_id: "en-anden" } }, b, null)).toBe(false);
+    expect(payoutAfstemmes({ amount: -1500 })).toBe(false);
+    expect(payoutAfstemmes({ amount: 0 })).toBe(true);
+    expect(payoutAfstemmes({ amount: 47_500 })).toBe(true);
   });
 });

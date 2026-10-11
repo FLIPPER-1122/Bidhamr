@@ -43,6 +43,11 @@ begin
                     and column_name = 'indsigelse_tabt_afklaret') then
     raise exception 'pengeafstemning: 20261011041000 (trin 4-rettelser) er ikke kørt';
   end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'betalinger'
+                    and column_name = 'bidhamr_daekker_refunderet_kl') then
+    raise exception 'pengeafstemning: sikkerhedsnet A (20261019010000_pengesikkerhed) er ikke kørt - kør den først';
+  end if;
   if to_regprocedure('public.staff_chat_har_rolle(uuid, text)') is null then
     raise exception 'pengeafstemning: staff_chat_har_rolle mangler';
   end if;
@@ -547,7 +552,14 @@ as $function$
               from dest d
              where d.status = 'betalt' and d.refusion_tilbagefoert_kl is not null)::bigint
          + (select coalesce(sum(a.modtaget_oere), 0)
-              from public.betaling_afvigelser a where a.refunderet_kl is null)::bigint as oere
+              from public.betaling_afvigelser a where a.refunderet_kl is null)::bigint
+         -- "BidHamr dækker" (sikkerhedsnet A): claimet af chefen, men endnu
+         -- ikke refunderet - BidHamr skal betale køberen af sin egen saldo.
+         + (select coalesce(sum(d.bidhamr_daekker_oere), 0)
+              from dest d
+             where d.bidhamr_daekker_kl is not null
+               and d.bidhamr_daekker_refunderet_kl is null
+               and d.status <> 'refunderet')::bigint as oere
   ),
   gebyrer as (
     select coalesce(sum(d.application_fee_oere
@@ -673,6 +685,7 @@ grant execute on function public.admin_penge_reserve(uuid, bigint) to service_ro
 --   gebyr_refusion        gebyr refunderet til sælgerens konto (-)
 --   tilbagefoersel        sælgerens del + gebyr hentet tilbage ved refusion (+)
 --   refusion              køber refunderet (-)
+--   bidhamr_daekker       "BidHamr dækker": køber refunderet af BidHamrs saldo efter udbetaling (-)
 --   indsigelse            indsigelse åbnet hos køberens bank (beløb)
 --   indsigelse_tilbagefoersel  beløb hentet fra sælgeren efter tabt indsigelse (+)
 --   indsigelse_tab        tabt efter udbetaling - BidHamr bærer sælgerens del + fragt
@@ -721,6 +734,15 @@ as $function$
            coalesce(d.refusion_oere, d.total_oere), -coalesce(d.refusion_oere, d.total_oere),
            null, null, null, null, null
       from d where d.refunderet_kl is not null and d.status = 'refunderet'
+                 and d.bidhamr_daekker_refunderet_kl is null
+    union all
+    -- "BidHamr dækker": køberen refunderet af BidHamrs egen saldo efter
+    -- udbetaling (intet taget fra sælgeren) - en udgift for BidHamr.
+    select d.bidhamr_daekker_refunderet_kl, 'bidhamr_daekker', d.trade_id, d.id, d.bidhamr_daekker_refund_id, d.titel,
+           coalesce(d.bidhamr_daekker_oere, d.refusion_oere, d.total_oere),
+           -coalesce(d.bidhamr_daekker_oere, d.refusion_oere, d.total_oere),
+           null, null, null, null, null
+      from d where d.bidhamr_daekker_refunderet_kl is not null
     union all
     select d.indsigelse_kl, 'indsigelse', d.trade_id, d.id, d.stripe_dispute_id, d.titel,
            d.total_oere, 0, null, null, null, null, null

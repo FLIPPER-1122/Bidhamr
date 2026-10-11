@@ -236,6 +236,7 @@ export async function betal(
   const s = await startBetaling(h.tradeId);
   if (!("ok" in s)) throw new Error(`startBetaling: ${s.fejl}`);
   const id = piId(s.clientSecret);
+  await udenTvungen3ds(id);
   let pi = await stripe().paymentIntents.confirm(id, {
     payment_method: o.kort ?? "pm_card_bypassPending",
     return_url: "https://bidhamr.dk/test-betaling",
@@ -245,6 +246,21 @@ export async function betal(
     await leverBetalingsWebhooks(pi);
   }
   return pi;
+}
+
+// Sikkerhedsnet A tvinger 3D Secure (request_three_d_secure = 'any') på alle
+// PaymentIntents. Testmiljøets 3DS-side kan kun klikkes igennem i en browser,
+// så pengetestene kontrollerer først, at den rigtige kode HAR sat 3DS på, og
+// slår den derefter fra på netop testens egen PaymentIntent (kun testmiljøet)
+// lige før betalingen. Resten af pengestrømmen er uændret.
+export async function udenTvungen3ds(id: string): Promise<void> {
+  const pi = await stripe().paymentIntents.retrieve(id);
+  if (pi.payment_method_options?.card?.request_three_d_secure !== "any") {
+    throw new Error(`PaymentIntent ${id} har ikke tvungen 3D Secure (sikkerhedsnet A)`);
+  }
+  await stripe().paymentIntents.update(id, {
+    payment_method_options: { card: { request_three_d_secure: "automatic" } },
+  });
 }
 
 // payment_intent.succeeded + charge.updated (som Stripe sender dem).

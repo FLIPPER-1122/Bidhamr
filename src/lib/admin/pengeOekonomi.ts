@@ -211,6 +211,7 @@ export const POSTERING_NAVN: Record<string, string> = {
   gebyr_refusion: "Gebyr refunderet",
   tilbagefoersel: "Hentet tilbage fra sælger (refusion)",
   refusion: "Refunderet til køber",
+  bidhamr_daekker: "BidHamr dækker (køber refunderet af BidHamr)",
   indsigelse: "Indsigelse åbnet",
   indsigelse_tilbagefoersel: "Hentet tilbage fra sælger (indsigelse)",
   indsigelse_tab: "Tab ved indsigelse efter udbetaling",

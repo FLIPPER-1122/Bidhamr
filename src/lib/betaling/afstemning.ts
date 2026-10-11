@@ -86,6 +86,10 @@ export type Afvigelse = {
   stripeKonto?: string | null;
   beloebStripe?: number | null;
   beloebDb?: number | null;
+  // Samme alarmnøgle som webhookens alarm (sikkerhedsnet A), så samme tilfælde
+  // kun giver ÉN drift-alarm: webhooken alarmerer med det samme, afstemningen
+  // registrerer afvigelsen og alarmerer kun, hvis webhooken ikke har gjort det.
+  alarmNoegle?: string;
 };
 
 export type Afstemning = {
@@ -152,6 +156,7 @@ async function liste<T>(it: AsyncIterable<T>, r: Afstemning, budget: Budget): Pr
 
 type BetalingAfst = {
   id: string;
+  bidhamr_daekker_refund_id: string | null;
   status: string;
   total_oere: number;
   udbetaling_oere: number;
@@ -175,7 +180,7 @@ type BetalingAfst = {
 };
 
 const BETALING_KOLONNER =
-  "id, status, total_oere, udbetaling_oere, application_fee_oere, refusion_gebyr_oere, gebyr_refunderet_kl, refusion_tilbagefoert_kl, refusion_fra_saelger_oere, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoert_oere, stripe_payment_intent_id, stripe_charge_id, stripe_application_fee_id, stripe_destination_transfer_id, stripe_transfer_id, stripe_refund_id, tidligere_payment_intents, betalt_kl, saelger_stripe_konto, seller_id";
+  "id, bidhamr_daekker_refund_id, status, total_oere, udbetaling_oere, application_fee_oere, refusion_gebyr_oere, gebyr_refunderet_kl, refusion_tilbagefoert_kl, refusion_fra_saelger_oere, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoert_oere, stripe_payment_intent_id, stripe_charge_id, stripe_application_fee_id, stripe_destination_transfer_id, stripe_transfer_id, stripe_refund_id, tidligere_payment_intents, betalt_kl, saelger_stripe_konto, seller_id";
 
 async function betalingerVed(
   admin: Admin,
@@ -243,6 +248,29 @@ export function forventetTilbagefoert(
   if (b.refusion_tilbagefoert_kl) x += Number(b.udbetaling_oere) + Number(b.refusion_gebyr_oere ?? 0);
   if (b.indsigelse_tilbagefoersel_id) x += Number(b.indsigelse_tilbagefoert_oere ?? 0);
   return x;
+}
+
+// En refusion er BidHamrs egen, når den er registreret på betalingen
+// (stripe_refund_id), eller når metadata.betaling_id peger på betalingen -
+// det gælder alle BidHamrs refusioner: sag/admin/frister (refunderUnderLaas),
+// forkert beløb (refunderAfvigelse) og "BidHamr dækker" (sikkerhedsnet A,
+// bidhamrDaekker.ts - metadata.betaling_id + bidhamr_daekker).
+export function erBidhamrsRefusion(
+  x: { id: string; metadata?: Record<string, string> | null },
+  b: { id: string; stripe_refund_id?: string | null; bidhamr_daekker_refund_id?: string | null } | null,
+  a: { betaling_id: string; stripe_refund_id?: string | null } | null,
+): boolean {
+  const md = x.metadata ?? {};
+  if (a && (a.stripe_refund_id === x.id || md.betaling_id === a.betaling_id)) return true;
+  if (b && (b.stripe_refund_id === x.id || b.bidhamr_daekker_refund_id === x.id || md.betaling_id === b.id)) return true;
+  return false;
+}
+
+// Payouts med negativt beløb er Stripe, der henter et underskud på kontoen
+// fra sælgerens bank (debit_negative_balances) - ikke en udbetaling, og
+// webhooken alarmerer selv (negativ-payout, sikkerhedsnet A).
+export function payoutAfstemmes(p: { amount: number }): boolean {
+  return Number(p.amount) >= 0;
 }
 
 // Stripe-payoutens status passer til databasens? Lige betalte payouts kan
@@ -324,9 +352,9 @@ export async function koerPengeafstemning(
     if (ny === true) {
       r.nye++;
       // Ny (eller genopstået efter "Markér som løst"): én drift-alarm.
-      await lukTilfaelde(`afstemning:${a.noegle}`);
+      if (!a.alarmNoegle) await lukTilfaelde(`afstemning:${a.noegle}`);
       await alarmPrTilfaelde({
-        noegle: `afstemning:${a.noegle}`,
+        noegle: a.alarmNoegle ?? `afstemning:${a.noegle}`,
         kilde: "cron",
         hvor: "betaling/afstemning",
         fejl: `Pengeafstemning: ${a.beskrivelse} Se Admin -> Penge.`,
@@ -479,6 +507,7 @@ async function afstemBetalinger(
     if (kunde && firma.has(kunde) && !pi.metadata?.betaling_id) continue;
     await registrer({
       noegle: `ukendt-betaling:${pi.id}`,
+      alarmNoegle: `ukendt-pi:${pi.id}`,
       type: "ukendt_betaling",
       stripeId: pi.id,
       beskrivelse: `PaymentIntent ${pi.id} (${pi.status}) findes hos Stripe, men hverken som handel, kasseret betaling, forkert beløb eller abonnement i databasen.`,
@@ -587,8 +616,7 @@ async function afstemRefusioner(
     const ch = id(x.charge as string | { id: string } | null);
     const b = ch ? vedCharge.get(ch) : undefined;
     const a = ch ? afv.get(ch) : undefined;
-    if (a && (a.stripe_refund_id === x.id || x.metadata?.betaling_id === a.betaling_id)) continue;
-    if (b && (b.stripe_refund_id === x.id || x.metadata?.betaling_id === b.id)) continue;
+    if (erBidhamrsRefusion(x, b ?? null, a ?? null)) continue;
     if (!b && !a) {
       // Ikke en handel: abonnementets refusioner er Billing (firma).
       const piId = id(x.payment_intent as string | { id: string } | null);
@@ -685,6 +713,11 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
     for (const p of payouts) {
       r.payouts++;
       set.add(p.id);
+      // Negativ payout (Stripe henter et underskud på kontoen fra sælgerens
+      // bank, debit_negative_balances): ingen udbetaling fra BidHamr og ingen
+      // fremmed udbetaling - webhooken alarmerer (negativ-payout, sikkerhedsnet
+      // A). Ingen afvigelse her.
+      if (!payoutAfstemmes(p)) continue;
       const u = vedPayout.get(p.id);
       if (!u) {
         // Kan være oprettet før vinduet i databasen: slå op.
@@ -696,6 +729,7 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
         if (!aeldre) {
           await registrer({
             noegle: `payout-ukendt:${p.id}`,
+            alarmNoegle: `fremmed-payout:${p.id}`,
             type: "udbetaling_ukendt",
             stripeId: p.id,
             stripeKonto: konto,
@@ -770,6 +804,7 @@ async function afstemIndsigelser(
     const abonnement = !!kunde && firma.has(kunde);
     await registrer({
       noegle: `indsigelse:${d.id}`,
+      alarmNoegle: `indsigelse-${abonnement ? "abonnement" : "ukendt"}:${d.id}`,
       type: abonnement ? "abonnement_indsigelse" : "ukendt_indsigelse",
       stripeId: d.id,
       beskrivelse: abonnement

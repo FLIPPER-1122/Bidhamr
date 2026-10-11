@@ -57,6 +57,8 @@ PENGE_ENV_FIL=C:/Users/jeppe/Desktop/hamr/.env.local npm run test:penge
 
 ### Noter
 
+- **3D Secure (sikkerhedsnet A):** den rigtige kode sætter `request_three_d_secure = 'any'` på alle PaymentIntents. Testmiljøets 3DS-side kan kun klikkes igennem i en browser, så testene kontrollerer først, at 3DS står på (ellers fejler testen), og slår den derefter fra på netop testens egen PaymentIntent lige før betalingen (`udenTvungen3ds` i `handel.ts`). Scenarie 12 tjekker også, at koden sætter 3DS på igen, når en PaymentIntent er ændret.
+
 - **09 og 11 kører cron-trin mod ALLE data i testdatabasen**, ikke kun testens egne: `opsamlUdebleveneBetalinger` (09) slår alle ventende betalinger op hos Stripe og spejler dem, der er betalt, og `udbetalVentende`/`udbetalForKonto` (11) kører for pengetest-sælgeren. Det er det samme, betalings-cron'en gør hvert 5. minut, men det kan røre andres testdata i testdatabasen (fx spejle en betaling, en anden test har betalt uden webhook). Kør dem ikke, mens en anden tester midt i et betalingsflow uden webhooks. 98 kører hele afstemningen og registrerer afvigelser for alt i Stripes testkonto de seneste 24 timer.
 
 - **Test clocks** bruges ikke: de findes kun for Stripe Billing (kunder/abonnementer), ikke for betalinger, Connect-saldi og payouts. Tid simuleres i stedet i databasen (fx sagens `penge_flyttes_efter_kl`).
