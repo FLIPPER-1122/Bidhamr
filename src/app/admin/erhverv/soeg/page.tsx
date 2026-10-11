@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { kraevErhvervSide } from "@/lib/adminAuth";
-import { soegErhverv } from "@/lib/admin/soeg";
+import { direkteTil, soegErhverv } from "@/lib/admin/soeg";
 import SoegResultater from "@/components/admin/SoegResultater";
 
 // Søgning for sælgeren (og chefen) i Erhverv: firmaer, henvendelser og
@@ -11,6 +11,7 @@ export default async function ErhvervSoeg({ searchParams }: { searchParams: Prom
   const { admin } = await kraevErhvervSide();
   const q = ((await searchParams).q ?? "").trim().slice(0, 120);
   const traef = await soegErhverv(admin, q);
-  if (traef.length === 1) redirect(traef[0].href);
+  const til = direkteTil(traef);
+  if (til) redirect(til);
   return <SoegResultater q={q} traef={traef} erhverv />;
 }

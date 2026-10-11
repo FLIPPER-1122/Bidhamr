@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { kraevSideRolle } from "@/lib/adminAuth";
-import { soegErhverv, soegStaff } from "@/lib/admin/soeg";
+import { direkteTil, soegErhverv, soegStaff } from "@/lib/admin/soeg";
 import SoegResultater from "@/components/admin/SoegResultater";
 
 // Søgningen øverst i admin (medarbejder og op). Erhverv (firmaer m.m.) søges
@@ -15,6 +15,7 @@ export default async function AdminSoeg({ searchParams }: { searchParams: Promis
     rolle === "chef" ? soegErhverv(admin, q) : Promise.resolve([]),
   ]);
   const traef = [...staff, ...erhverv];
-  if (traef.length === 1) redirect(traef[0].href);
+  const til = direkteTil(traef);
+  if (til) redirect(til);
   return <SoegResultater q={q} traef={traef} />;
 }

@@ -79,8 +79,8 @@ export default async function AdminRapporter({
 
   const [{ data: auktioner }, { data: brugere }] = await Promise.all([
     auktionIds.length
-      ? supabase.from("auctions").select("id, titel, seller_id").in("id", auktionIds)
-      : Promise.resolve({ data: [] as { id: string; titel: string; seller_id: string }[] }),
+      ? supabase.from("auctions").select("id, titel").in("id", auktionIds)
+      : Promise.resolve({ data: [] as { id: string; titel: string }[] }),
     brugerIds.length
       ? supabase.from("users").select("id, navn, email").in("id", brugerIds)
       : Promise.resolve({ data: [] as { id: string; navn: string; email: string }[] }),

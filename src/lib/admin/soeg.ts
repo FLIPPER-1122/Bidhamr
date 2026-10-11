@@ -14,7 +14,15 @@ type Admin = ReturnType<typeof createAdminClient>;
 
 export type SoegType = "bruger" | "handel" | "auktion" | "sag" | "dsa" | "firma" | "henvendelse" | "firmaklage";
 
-export type SoegTraef = { type: SoegType; id: string; titel: string; under?: string; href: string };
+// eksakt: hele e-mailen, hele id'et, CVR'et eller nummeret passer præcist.
+export type SoegTraef = { type: SoegType; id: string; titel: string; under?: string; href: string; eksakt?: boolean };
+
+// Hvor skal søgningen hen? Ét resultat, eller præcis ét eksakt match.
+export function direkteTil(traef: SoegTraef[]): string | null {
+  if (traef.length === 1) return traef[0].href;
+  const eksakte = traef.filter((t) => t.eksakt);
+  return eksakte.length === 1 ? eksakte[0].href : null;
+}
 
 export const SOEG_TYPE_NAVN: Record<SoegType, string> = {
   bruger: "Brugere",
@@ -85,6 +93,7 @@ export async function soegStaff(admin: Admin, raa: string): Promise<SoegTraef[]>
       titel: u.navn ?? "Uden navn",
       under: [u.email, u.telefon].filter(Boolean).join(" · "),
       href: `/admin/brugere/${u.id}`,
+      eksakt: u.email?.toLowerCase() === q.toLowerCase() || u.id === q.toLowerCase(),
     });
   }
   const sete = new Set<string>();
@@ -99,16 +108,17 @@ export async function soegStaff(admin: Admin, raa: string): Promise<SoegTraef[]>
       titel: a?.titel ?? "(slettet auktion)",
       under: `Handel ${h.id.slice(0, 13)} · ${kr(h.amount)}`,
       href: `/admin/handler/${h.id}`,
+      eksakt: h.id === q.toLowerCase(),
     });
   }
   const seteA = new Set<string>();
   for (const a of [...((auktionerId.data ?? []) as { id: string; titel: string }[]), ...((auktioner.data ?? []) as { id: string; titel: string }[])]) {
     if (seteA.has(a.id) || seteA.size >= MAKS) continue;
     seteA.add(a.id);
-    ud.push({ type: "auktion", id: a.id, titel: a.titel, under: `Auktion ${a.id.slice(0, 13)}`, href: `/auktion/${a.id}` });
+    ud.push({ type: "auktion", id: a.id, titel: a.titel, under: `Auktion ${a.id.slice(0, 13)}`, href: `/auktion/${a.id}`, eksakt: a.id === q.toLowerCase() });
   }
   for (const s of (sager.data ?? []) as { id: string; status: string }[]) {
-    ud.push({ type: "sag", id: s.id, titel: `Sag ${s.id.slice(0, 13)}`, href: adminSagSti(s.id) });
+    ud.push({ type: "sag", id: s.id, titel: `Sag ${s.id.slice(0, 13)}`, href: adminSagSti(s.id), eksakt: s.id === q.toLowerCase() });
   }
   for (const d of [...((dsaAnm.data ?? []) as { id: string; sagsnummer: string }[]), ...((dsaKlager.data ?? []) as { id: string; sagsnummer: string }[])]) {
     ud.push({
@@ -117,6 +127,7 @@ export async function soegStaff(admin: Admin, raa: string): Promise<SoegTraef[]>
       titel: d.sagsnummer,
       under: d.sagsnummer.startsWith("KL") ? "Klage over afgørelse" : "Anmeldelse",
       href: d.sagsnummer.startsWith("ANM") ? "/admin/dsa" : "/admin/dsa?fane=klager",
+      eksakt: d.sagsnummer.toLowerCase() === q.toLowerCase(),
     });
   }
   return ud;
@@ -145,7 +156,7 @@ export async function soegErhverv(admin: Admin, raa: string): Promise<SoegTraef[
   for (const r of [...((firmaNavn.data ?? []) as { id: string; firmanavn: string; cvr: string }[]), ...((firmaCvr.data ?? []) as { id: string; firmanavn: string; cvr: string }[])]) {
     if (f.has(r.id)) continue;
     f.add(r.id);
-    ud.push({ type: "firma", id: r.id, titel: r.firmanavn, under: `CVR ${r.cvr}`, href: `/admin/erhverv/firmaer/${r.id}` });
+    ud.push({ type: "firma", id: r.id, titel: r.firmanavn, under: `CVR ${r.cvr}`, href: `/admin/erhverv/firmaer/${r.id}`, eksakt: r.cvr === cvr && cvr.length === 8 });
   }
   const h = new Set<string>();
   for (const r of [
@@ -158,7 +169,7 @@ export async function soegErhverv(admin: Admin, raa: string): Promise<SoegTraef[
     ud.push({ type: "henvendelse", id: r.id, titel: r.firmanavn, under: `CVR ${r.cvr}`, href: `/admin/erhverv/henvendelser/${r.id}` });
   }
   for (const k of (klager.data ?? []) as { id: string; nummer: number }[]) {
-    ud.push({ type: "firmaklage", id: k.id, titel: `Klage #${k.nummer}`, href: `/admin/erhverv/klager/${k.id}` });
+    ud.push({ type: "firmaklage", id: k.id, titel: `Klage #${k.nummer}`, href: `/admin/erhverv/klager/${k.id}`, eksakt: true });
   }
   return ud;
 }
