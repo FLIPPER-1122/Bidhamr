@@ -12,20 +12,22 @@ import { lavMineDataPdf } from "@/lib/pdf/mineDataPdf";
 // bruges til at omgå grænsen.
 // POST (ikke GET), så et link eller prefetch ikke kan bruge timens udtræk.
 export async function POST(req: NextRequest) {
-  // Kun fra vores egen side (formularen på /konto). Sammenlignes med
-  // Host-headeren, så det også virker bag Vercels proxy.
+  // Kun fra vores egen side (formularen på /konto). Origin SKAL være sat
+  // (browseren sender den altid ved POST) og være vores egen vært - samme
+  // tjek som /api/offentlig. Sammenlignes med Host-headeren, så det også
+  // virker bag Vercels proxy.
   const vaert = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
   const origin = req.headers.get("origin");
-  let fremmed = false;
+  let egen = false;
   try {
-    fremmed = !!origin && new URL(origin).host !== vaert;
+    egen = !!origin && !!vaert && new URL(origin).host === vaert;
   } catch {
-    fremmed = true;
+    egen = false;
   }
-  if (fremmed) {
+  if (!egen || !origin) {
     return NextResponse.json({ fejl: "Ugyldig forespørgsel." }, { status: 403 });
   }
-  const base = origin ?? req.nextUrl.origin;
+  const base = origin;
 
   // Firma-dashboardet (/firma/oplysninger) sender fra=firma med, så en fejl
   // ("vent"/"fejl") vises dér - /konto sender en firmakonto til /firma.
