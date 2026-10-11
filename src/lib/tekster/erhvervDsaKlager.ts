@@ -1,8 +1,8 @@
-// Admin → Erhverv → Klager over afgørelser (DSA-klager over suspension og
+// Admin → Erhverv → Firmaets klager (DSA-klager over suspension og
 // lukning af en firmakonto). Korte pladsholdertekster - indhold-agenten kan
 // finpudse dem.
 export const ERHVERV_DSA_KLAGER = {
-  fane: "Klager over afgørelser",
+  fane: "Firmaets klager",
   titel: "Klager over afgørelser",
   forklaring:
     "Firmaer, der klager over, at vi har suspenderet eller lukket deres konto (DSA). Svar inden for 14 dage. En klage behandles altid af en anden end den, der traf afgørelsen.",

@@ -7,6 +7,7 @@ import "server-only";
 // inhabilitet, ophævelse, log. Klageren får besked som i det almindelige
 // DSA-flow (notificerKlageSvar).
 import type { createAdminClient } from "@/lib/supabase/admin";
+import { logDriftFejl } from "@/lib/drift";
 import type { Afgoerelse, Klage } from "@/components/admin/dsa/DsaKort";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -42,7 +43,7 @@ function fraRaa(r: Raa): FirmaKlage | null {
 
 export type FirmaKlageStatus = "afventer" | "afgjort";
 
-// Listen (nyeste frist først for åbne, senest afgjort først for afgjorte).
+// Listen (tidligste frist først for åbne, senest afgjort først for afgjorte).
 export async function hentFirmaDsaKlager(
   admin: Admin,
   status: FirmaKlageStatus,
@@ -76,7 +77,11 @@ export async function antalAabneFirmaDsaKlager(admin: Admin): Promise<number> {
     .eq("status", "afventer")
     .in("afg.handling", [...FIRMA_KLAGE_HANDLINGER])
     .eq("afg.bruger.konto_type", "erhverv");
-  return error ? 0 : (count ?? 0);
+  if (error) {
+    await logDriftFejl({ kilde: "server", hvor: "erhverv: antal klager over afgørelser", fejl: error.message });
+    return 0;
+  }
+  return count ?? 0;
 }
 
 // Én klage - kun hvis den gælder en firmakonto. null ellers.
@@ -98,7 +103,11 @@ const GRUND = {
   selvAnmeldt: "Du har selv anmeldt dette indhold.",
   egen: "Sagen handler om dig selv.",
   handel: "Du har handlet med firmaet.",
+  ukendt: "Vi kunne ikke tjekke, om du er inhabil. Genindlæs siden om lidt.",
 };
+
+// firmaKlageInhabil svarer dette, hvis tjekket fejlede (vises som fejl).
+export const INHABIL_UKENDT = GRUND.ukendt;
 
 // Samme regler som dsa_klage_afgoer (konto-afgørelser), så knapperne slet
 // ikke vises. Databasen tjekker det igen.
@@ -115,7 +124,11 @@ export async function firmaKlageInhabil(admin: Admin, k: FirmaKlage, userId: str
     if (data?.anmelder_id === userId) return GRUND.selvAnmeldt;
   }
   const { data: handel, error } = await admin.rpc("dsa_er_inhabil", { p_medarbejder: userId, p_bruger: k.afg.bruger_id });
-  if (error) throw new Error(`dsa_er_inhabil: ${error.message}`);
+  if (error) {
+    // Knapperne skjules; databasen tjekker alligevel igen ved afgørelsen.
+    await logDriftFejl({ kilde: "server", hvor: "erhverv: inhabilitet ved klage", fejl: error.message });
+    return GRUND.ukendt;
+  }
   return handel === true ? GRUND.handel : null;
 }
 

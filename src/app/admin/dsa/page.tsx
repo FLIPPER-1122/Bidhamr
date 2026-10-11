@@ -37,7 +37,7 @@ export const metadata = { title: "Anmeldelser og klager" };
 const ANM_FELTER =
   "id, sagsnummer, indhold_type, indhold_id, auktion_id, anmeldt_bruger_id, placering, kategori, begrundelse, anmelder_id, anmelder_navn, anmelder_email, status, frist_kl, eskaleret_kl, eskaleret_af, eskaleret_note, udfald, svar_til_anmelder, intern_note, politi_underrettet, behandlet_af, behandlet_kl, genaabnet_kl, anonymiseret_kl, oprettet_kl";
 const AFG_FELTER =
-  "id, sagsnummer, bruger_id, indhold_type, indhold_id, indhold_tekst, handling, regel_kode, regel_tekst, grundlag, fakta, intern_note, automatisk_opdaget, anmeldelse_id, medarbejder_id, oprettet_kl, ophaevet_kl, ophaevet_grund";
+  "id, sagsnummer, bruger_id, indhold_type, indhold_id, indhold_tekst, handling, regel_kode, regel_tekst, grundlag, fakta, intern_note, automatisk_opdaget, anmeldelse_id, medarbejder_id, oprettet_kl, ophaevet_kl, ophaevet_grund, varighed_til";
 const KLAGE_FELTER =
   "id, sagsnummer, afgoerelse_id, anmeldelse_id, klager_id, klager_email, begrundelse, status, udfald, svar, afgjort_af, afgjort_kl, frist_kl, oprettet_kl";
 
@@ -118,6 +118,26 @@ export default async function DsaAdminSide({
       : Promise.resolve({ data: [] as Anmeldelse[] }),
   ]);
   const afgMap = new Map(((kAfg ?? []) as Afgoerelse[]).map((a) => [a.id, a]));
+  // Firmakonti blandt de ramte (klager over konto-afgørelser): medhold i en
+  // klage over lukning eller permanent suspension kræver chef eller
+  // sælger-rollen (dsa_klage_afgoer svarer 'kun_erhverv').
+  const kontoRamte = [
+    ...new Set(
+      ((kAfg ?? []) as Afgoerelse[])
+        .filter((a) => a.handling === "konto_lukket" || a.handling === "konto_suspenderet")
+        .map((a) => a.bruger_id),
+    ),
+  ];
+  const { data: firmaKonti } = kontoRamte.length
+    ? await admin.from("users").select("id").in("id", kontoRamte).eq("konto_type", "erhverv")
+    : { data: [] as { id: string }[] };
+  const erFirma = new Set(((firmaKonti ?? []) as { id: string }[]).map((u) => u.id));
+  const harErhvervRolle = rolle === "chef";
+  const medholdKunErhverv = (af: Afgoerelse | null) =>
+    !harErhvervRolle &&
+    !!af &&
+    erFirma.has(af.bruger_id) &&
+    (af.handling === "konto_lukket" || (af.handling === "konto_suspenderet" && !af.varighed_til));
   const anmMap = new Map(((kAnm ?? []) as Anmeldelse[]).map((a) => [a.id, a]));
   // Hvem anmeldte det, der førte til en påklaget afgørelse (inhabilitet).
   const afgAnmIds = klager
@@ -454,6 +474,7 @@ export default async function DsaAdminSide({
               navn={navn}
               inhabil={klageInhabil(k)}
               erAdmin={erAdmin}
+              medholdKunErhverv={medholdKunErhverv(k.afgoerelse_id ? (afgMap.get(k.afgoerelse_id) ?? null) : null)}
             />
           ))}
           {klager.length === 0 && !fejl && (

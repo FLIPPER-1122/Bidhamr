@@ -79,6 +79,8 @@ export type Afgoerelse = {
   oprettet_kl: string;
   ophaevet_kl: string | null;
   ophaevet_grund: string | null;
+  // Kun konto_suspenderet: null = permanent.
+  varighed_til?: string | null;
 };
 
 export type Klage = {
@@ -335,7 +337,7 @@ export function AnmeldelseGruppeKort({
   );
 }
 
-// Bruges også under Admin → Erhverv → Klager over afgørelser (klager over en
+// Bruges også under Admin → Erhverv → Firmaets klager (klager over en
 // firmakonto): dér afgør chef og sælger-rollen via deres egen server action
 // (afgoerAction), og links til brugeren peger på firmasiden (brugerHref),
 // fordi sælger-rollen ikke har adgang til Admin → Brugere.
@@ -351,6 +353,7 @@ export function KlageKort({
   erhverv = false,
   som = "li",
   afgjort = false,
+  medholdKunErhverv = false,
 }: {
   k: Klage;
   afg: Afgoerelse | null;
@@ -364,6 +367,9 @@ export function KlageKort({
   som?: "li" | "div";
   // Afgjort: kun visning (ingen frist og ingen knapper).
   afgjort?: boolean;
+  // Klage over lukning/permanent suspension af en firmakonto, og brugeren
+  // har ikke erhvervsrolle: kun "Fasthold" vises.
+  medholdKunErhverv?: boolean;
 }) {
   // Firmakonti: chef og sælger-rollen må afgøre (databasen tjekker det).
   const kraeverAdmin = !erhverv && afg ? handlingKraeverAdmin(afg.handling) : false;
@@ -452,27 +458,34 @@ export function KlageKort({
           Klager over auktioner og lukkede konti behandles af en admin eller chef.
         </p>
       ) : (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <ConfirmDialog
-            triggerLabel="Giv medhold"
-            triggerClassName={KNAP_BEHOLD}
-            title="Giv klageren medhold?"
-            description={
-              afg
-                ? afg.handling === "auktion_fjernet" || afg.handling === "auktion_annulleret"
-                  ? "Afgørelsen bliver ophævet, men auktionen åbnes ikke igen – buddene gælder ikke. Sælgeren får dit svar (husk en undskyldning) og kan sætte varen op igen med ét klik."
-                  : "Indgrebet bliver ophævet med det samme (indholdet vises igen / kontoen åbnes igen). Klageren får dit svar."
-                : "Anmeldelsen bliver genåbnet og skal behandles igen. Anmelderen får dit svar."
-            }
-            confirmLabel="Giv medhold"
-            action={afgoerAction}
-            hiddenFields={{ klageId: k.id, udfald: "medhold" }}
-            kvittering="Klageren har fået medhold og får dit svar."
-            tekstFelter={[
-              { name: "svar", label: "Svar til klageren (vises for klageren)", required: true, maxLength: 2000 },
-              { name: "aarsag", label: "Intern note (kun staff)", required: false, maxLength: 2000 },
-            ]}
-          />
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {medholdKunErhverv && (
+            <p className="w-full rounded-lg bg-info-bg px-3 py-2.5 text-sm text-info-tekst">
+              Kun chefen og sælger-rollen kan give medhold – se Erhverv → Firmaets klager.
+            </p>
+          )}
+          {!medholdKunErhverv && (
+            <ConfirmDialog
+              triggerLabel="Giv medhold"
+              triggerClassName={KNAP_BEHOLD}
+              title="Giv klageren medhold?"
+              description={
+                afg
+                  ? afg.handling === "auktion_fjernet" || afg.handling === "auktion_annulleret"
+                    ? "Afgørelsen bliver ophævet, men auktionen åbnes ikke igen – buddene gælder ikke. Sælgeren får dit svar (husk en undskyldning) og kan sætte varen op igen med ét klik."
+                    : "Indgrebet bliver ophævet med det samme (indholdet vises igen / kontoen åbnes igen). Klageren får dit svar."
+                  : "Anmeldelsen bliver genåbnet og skal behandles igen. Anmelderen får dit svar."
+              }
+              confirmLabel="Giv medhold"
+              action={afgoerAction}
+              hiddenFields={{ klageId: k.id, udfald: "medhold" }}
+              kvittering="Klageren har fået medhold og får dit svar."
+              tekstFelter={[
+                { name: "svar", label: "Svar til klageren (vises for klageren)", required: true, maxLength: 2000 },
+                { name: "aarsag", label: "Intern note (kun staff)", required: false, maxLength: 2000 },
+              ]}
+            />
+          )}
           <ConfirmDialog
             triggerLabel="Fasthold afgørelsen"
             triggerClassName={KNAP_FJERN}

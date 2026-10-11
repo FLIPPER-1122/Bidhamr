@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import AdminFaner from "@/components/admin/AdminFaner";
 import { getErhvervRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -6,14 +7,20 @@ import { ADMIN_ERHVERV } from "@/lib/tekster/erhverv";
 import { KLAGE_ADMIN } from "@/lib/tekster/erhvervKlager";
 import { ERHVERV_DSA_KLAGER } from "@/lib/tekster/erhvervDsaKlager";
 
-// Faner under Admin → Erhverv (kun chef og saelger). Server component: tallet
-// på "Klager over afgørelser" er åbne DSA-klager over firmakonti.
-export default async function ErhvervFaner({
+// Antal åbne DSA-klager over firmakonti. Streames for sig (Suspense), så
+// siden ikke venter på tallet. Fejl logges i antalAabneFirmaDsaKlager.
+async function DsaKlagerAntal() {
+  if (!(await getErhvervRolle())) return null;
+  const antal = await antalAabneFirmaDsaKlager(createAdminClient());
+  return antal > 0 ? <> ({antal})</> : null;
+}
+
+// Faner under Admin → Erhverv (kun chef og saelger).
+export default function ErhvervFaner({
   aktiv,
 }: {
   aktiv: "henvendelser" | "firmaer" | "klager" | "dsa-klager" | "pakker";
 }) {
-  const antalDsa = (await getErhvervRolle()) ? await antalAabneFirmaDsaKlager(createAdminClient()) : 0;
   return (
     <AdminFaner
       label="Erhverv"
@@ -24,7 +31,14 @@ export default async function ErhvervFaner({
         { id: "klager", label: KLAGE_ADMIN.fane, href: "/admin/erhverv/klager" },
         {
           id: "dsa-klager",
-          label: antalDsa > 0 ? `${ERHVERV_DSA_KLAGER.fane} (${antalDsa})` : ERHVERV_DSA_KLAGER.fane,
+          label: (
+            <>
+              {ERHVERV_DSA_KLAGER.fane}
+              <Suspense fallback={null}>
+                <DsaKlagerAntal />
+              </Suspense>
+            </>
+          ),
           href: "/admin/erhverv/dsa-klager",
         },
         { id: "pakker", label: ADMIN_ERHVERV.faner.pakker, href: "/admin/erhverv/pakker" },

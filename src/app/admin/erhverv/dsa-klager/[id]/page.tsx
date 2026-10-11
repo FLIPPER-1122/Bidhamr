@@ -6,10 +6,10 @@ import { KlageKort } from "@/components/admin/dsa/DsaKort";
 import { Pille, tid } from "@/components/admin/dsa/DsaDele";
 import { erhvervDsaKlageAfgoer } from "@/app/actions/adminErhvervDsa";
 import { erUuid } from "@/lib/dsa/link";
-import { firmaKlageInhabil, hentFirmaDsaKlage, hentFirmaFor } from "@/lib/dsa/firmaKlager";
+import { INHABIL_UKENDT, firmaKlageInhabil, hentFirmaDsaKlage, hentFirmaFor } from "@/lib/dsa/firmaKlager";
 import { ERHVERV_DSA_KLAGER as T } from "@/lib/tekster/erhvervDsaKlager";
 
-// Admin → Erhverv → Klager over afgørelser → én klage. Kun chef og saelger.
+// Admin → Erhverv → Firmaets klager → én klage. Kun chef og saelger.
 // Genbruger DSA-klagekortet (samme visning og knapper som DSA → Klager), men
 // afgør via erhvervDsaKlageAfgoer, der kun tager klager over en firmakonto.
 // Inhabilitet beregnes her med samme regler som databasen, så knapperne slet
@@ -77,6 +77,12 @@ export default async function ErhvervDsaKlageSide({ params }: { params: Promise<
         }
       />
 
+      {inhabil === INHABIL_UKENDT && (
+        <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">
+          {INHABIL_UKENDT}
+        </p>
+      )}
+
       {k.status === "afventer" ? (
         <>
           <KlageKort
@@ -88,6 +94,7 @@ export default async function ErhvervDsaKlageSide({ params }: { params: Promise<
             erAdmin
             erhverv
             som="div"
+            afgjort={inhabil === INHABIL_UKENDT}
             afgoerAction={erhvervDsaKlageAfgoer}
             brugerHref={brugerHref}
           />

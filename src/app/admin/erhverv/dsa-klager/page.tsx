@@ -7,7 +7,7 @@ import { FIRMA_KLAGER_SIDE, hentFirmaDsaKlager, hentFirmaFor, type FirmaKlageSta
 import { ADMIN_ERHVERV } from "@/lib/tekster/erhverv";
 import { ERHVERV_DSA_KLAGER as T } from "@/lib/tekster/erhvervDsaKlager";
 
-// Admin → Erhverv → Klager over afgørelser: DSA-klager over suspension og
+// Admin → Erhverv → Firmaets klager: DSA-klager over suspension og
 // lukning af en firmakonto. Kun chef og saelger (kraevErhvervSide). Klagen
 // læses og afgøres på /admin/erhverv/dsa-klager/[id].
 

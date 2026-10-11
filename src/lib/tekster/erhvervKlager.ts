@@ -100,7 +100,7 @@ export const KLAGE_FIRMA = {
 
 // Admin → Erhverv → Klager.
 export const KLAGE_ADMIN = {
-  fane: "Klager",
+  fane: "Købers klager",
   titel: "Klager over firmaer",
   forklaring:
     "Købernes klager over firmaer. Læs klagen, skriv noter, log kontakt med firmaet, og afgør klagen med en begrundelse (køber og firma ser den). Alt logges.",

@@ -1,6 +1,6 @@
 "use server";
 
-// Admin → Erhverv → Klager over afgørelser: chef og sælger-rollen afgør
+// Admin → Erhverv → Firmaets klager: chef og sælger-rollen afgør
 // DSA-klager over suspension og lukning af en FIRMAKONTO (Filip, 10. okt.
 // 2026: de kan gøre alt ved firmaer). Adgangen tjekkes her (assertErhverv),
 // og kun klager over en firmakonto accepteres. Databasen afgør resten
@@ -14,6 +14,7 @@ import { erUuid } from "@/lib/dsa/link";
 import { indgrebFejl } from "@/lib/dsa/server";
 import { hentFirmaDsaKlage } from "@/lib/dsa/firmaKlager";
 import { notificerKlageSvar } from "@/lib/dsa/notifikationer";
+import { notificerAuktionPauser } from "@/lib/notifikationer/auktionPause";
 import { logDriftFejl } from "@/lib/drift";
 
 class BrugerFejl extends Error {}
@@ -62,6 +63,8 @@ export async function erhvervDsaKlageAfgoer(formData: FormData): Promise<{ ok: t
     if (kode !== "ok") throw new BrugerFejl(KODE_FEJL[kode ?? ""] ?? indgrebFejl(kode ?? ""));
 
     after(() => notificerKlageSvar(id));
+    // Medhold kan have vist en pauset auktion igen (som dsaKlageAfgoer).
+    after(() => notificerAuktionPauser());
     revalidatePath("/admin/erhverv/dsa-klager");
     revalidatePath(`/admin/erhverv/dsa-klager/${id}`);
     revalidatePath("/admin/erhverv/firmaer");
