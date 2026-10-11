@@ -143,7 +143,7 @@ export async function opretKonto(input: {
   password: string;
   vilkaarVersion: string;
 }): Promise<
-  { ok: true; bekraeftMail: boolean } | { fejl: string; felt?: "email" | "password" | "fornavn" | "vilkaar" }
+  { ok: true; bekraeftMail: boolean } | { fejl: string; felt?: "email" | "password" | "fornavn" | "efternavn" | "vilkaar" }
 > {
   if (!tilmeldingAaben()) return { fejl: "Det er ikke muligt at oprette en konto endnu." };
 
@@ -152,7 +152,10 @@ export async function opretKonto(input: {
   const efternavn = renNavn(input?.efternavn);
   const password = typeof input?.password === "string" ? input.password : "";
 
+  // Fornavn og efternavn er begge paakraevet (Filip, 11. okt. 2026), ogsaa
+  // naar actionen kaldes direkte. renNavn trimmer og skaerer ved 100 tegn.
   if (!fornavn) return { fejl: "Skriv dit fornavn.", felt: "fornavn" };
+  if (!efternavn) return { fejl: "Skriv dit efternavn.", felt: "efternavn" };
   if (!email) return { fejl: "Indtast en gyldig e-mail.", felt: "email" };
   const v = vurderAdgangskode(password, { email, navn: [fornavn, efternavn] });
   if (!v.ok) return { fejl: v.fejl ?? GENERISK, felt: "password" };
@@ -165,7 +168,7 @@ export async function opretKonto(input: {
   if (graense) return { fejl: graense };
 
   const supabase = await createClient();
-  const navn = [fornavn, efternavn].filter(Boolean).join(" ");
+  const navn = `${fornavn} ${efternavn}`;
   const { data, error } = await supabase.auth.signUp({
     email,
     password,

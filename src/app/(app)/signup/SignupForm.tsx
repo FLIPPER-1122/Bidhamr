@@ -9,7 +9,13 @@ import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
 import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 import { BETINGELSER_STI, PRIVATLIV_STI, VILKAAR_VERSION } from "@/lib/vilkaar";
 
-type Felt = "fornavn" | "email" | "password" | "vilkaar";
+type Felt = "fornavn" | "efternavn" | "email" | "password" | "vilkaar";
+
+// Samme regel som på serveren (renNavn i actions/auth.ts): mellemrum samles og
+// trimmes, før vi tjekker, om feltet er tomt.
+function renset(v: string): string {
+  return v.replace(/\s+/g, " ").trim();
+}
 
 export default function SignupForm() {
   const router = useRouter();
@@ -24,21 +30,36 @@ export default function SignupForm() {
 
   const person = { email, navn: [fornavn, efternavn] };
 
+  // Viser fejlen og flytter fokus til feltet, så skærmlæsere og mobil
+  // lander det rigtige sted.
+  function visFejl(besked: string, felt: Felt | null) {
+    setFejl(besked);
+    setFejlFelt(felt);
+    if (felt) requestAnimationFrame(() => document.getElementById(felt)?.focus());
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFejl(null);
     setFejlFelt(null);
 
+    if (!renset(fornavn)) {
+      visFejl("Skriv dit fornavn.", "fornavn");
+      return;
+    }
+    if (!renset(efternavn)) {
+      visFejl("Skriv dit efternavn.", "efternavn");
+      return;
+    }
+
     const v = vurderAdgangskode(password, person);
     if (!v.ok) {
-      setFejl(v.fejl);
-      setFejlFelt("password");
+      visFejl(v.fejl ?? "Vælg en anden adgangskode.", "password");
       return;
     }
 
     if (!accepterer) {
-      setFejl("Du skal acceptere brugerbetingelserne for at oprette en konto.");
-      setFejlFelt("vilkaar");
+      visFejl("Du skal acceptere brugerbetingelserne for at oprette en konto.", "vilkaar");
       return;
     }
 
@@ -52,8 +73,7 @@ export default function SignupForm() {
     });
     if ("fejl" in svar) {
       setLoading(false);
-      setFejl(svar.fejl);
-      setFejlFelt(svar.felt ?? null);
+      visFejl(svar.fejl, svar.felt ?? null);
       return;
     }
 
@@ -94,16 +114,18 @@ export default function SignupForm() {
               </div>
               <div>
                 <label htmlFor="efternavn" className={LABEL}>
-                  Efternavn <span className="font-normal text-tekst-svag">(valgfrit)</span>
+                  Efternavn
                 </label>
                 <input
                   id="efternavn"
                   type="text"
                   autoComplete="family-name"
+                  required
                   maxLength={100}
                   value={efternavn}
                   onChange={(e) => setEfternavn(e.target.value)}
-                  className={`mt-1.5 ${FELT}`}
+                  aria-invalid={fejlFelt === "efternavn" || undefined}
+                  className={`mt-1.5 ${FELT} ${fejlFelt === "efternavn" ? FELT_FEJL : ""}`}
                 />
               </div>
             </div>
