@@ -3,6 +3,8 @@
 import { erMitIdFejl } from "@/lib/mitid/fejl";
 import { erDac7Fejl, DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
 import { MITID } from "@/lib/tekster/mitid";
+import { erVilkaarFejl } from "@/lib/vilkaar";
+import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
 
 // Sælgeren redigerer eller annullerer sin egen auktion – kun så længe der
 // ikke er bud (ROADMAP-BESLUTNINGER.md, "Midlertidige beslutninger",
@@ -351,6 +353,8 @@ export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; au
     if (error) {
       // MitID mangler (BHV01, auctions_a0_mitid).
       if (erMitIdFejl(error.code, error.message)) return { fejl: MITID.fejlMangler, mitid: true };
+      // Brugerbetingelserne er ikke accepteret (BHV02, auctions_a0_vilkaar).
+      if (erVilkaarFejl(error.code, error.message)) return { fejl: VILKAAR_TEKST.fejlMangler };
       if (erDac7Fejl(error.code, error.message)) return { fejl: DAC7_FEJL_TEKST };
       if (error.code === "23505") return { fejl: SAET_OP_IGEN_FEJL.allerede_genopsat };
       console.error("saet_annulleret_op_igen fejlede:", error.code, error.message);

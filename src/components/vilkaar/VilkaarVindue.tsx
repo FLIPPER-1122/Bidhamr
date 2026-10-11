@@ -11,11 +11,13 @@ import VilkaarDialog from "@/components/vilkaar/VilkaarDialog";
 // Hvilke sider der er undtaget, og at vinduet venter på cookie-banneret,
 // afgøres i browseren (VilkaarDialog), fordi layoutet ikke kender stien og
 // ikke bygges om ved navigation.
-// Ved en fejl i opslaget vises vinduet ikke (det er ikke en adgangskontrol).
-export default async function VilkaarVindue() {
+// Ved en fejl i opslaget vises vinduet ikke (det er ikke en adgangskontrol -
+// databasen afviser bud og nye auktioner uden accept, BHV02).
+// direkte: accepten gemmes uden server action (Firma oversigt, se VilkaarDialog).
+export default async function VilkaarVindue({ direkte = false }: { direkte?: boolean }) {
   const sessionId = await sessionBrugerId();
   if (!sessionId) return null;
   const [bruger, vilkaar] = await Promise.all([bekraeftetBruger(sessionId), hentMineVilkaar()]);
   if (!bruger || !vilkaar || vilkaarErAccepteret(vilkaar.version)) return null;
-  return <VilkaarDialog nyVersion={vilkaar.version !== null} />;
+  return <VilkaarDialog nyVersion={vilkaar.version !== null} direkte={direkte} />;
 }

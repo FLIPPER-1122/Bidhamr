@@ -21,8 +21,18 @@ export const VILKAAR_ER_UDKAST = true;
 export const BETINGELSER_STI = "/betingelser";
 export const PRIVATLIV_STI = "/privatliv";
 
+// Databasens fejl, når accepten mangler (vilkaar_kraev,
+// 20261017030000_vilkaar_efternavn_chat.sql): bud, maksimum, nye auktioner
+// og "tilbud til næste byder". Bruges både på serveren og i klientkomponenter.
+export const VILKAAR_FEJLKODE = "BHV02";
+
+export function erVilkaarFejl(code: string | null | undefined, message?: string | null): boolean {
+  return code === VILKAAR_FEJLKODE || (message ?? "").includes("vilkaar_mangler");
+}
+
 // true, hvis den accepterede version er mindst den aktuelle ("0.1" < "0.2" < "1.0").
-// NULL eller en ukendt værdi = ikke accepteret.
+// NULL eller en ukendt værdi = ikke accepteret. SKAL give samme svar som
+// public.vilkaar_er_accepteret i databasen.
 export function vilkaarErAccepteret(version: string | null | undefined): boolean {
   if (!version || !/^\d{1,3}\.\d{1,3}$/.test(version)) return false;
   const [a1, a2] = version.split(".").map(Number);

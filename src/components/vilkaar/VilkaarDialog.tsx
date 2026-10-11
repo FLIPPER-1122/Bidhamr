@@ -57,7 +57,22 @@ function NyFaneIkon() {
 // og vinduet ligger øverst). Vises først, når cookie-banneret er besvaret og
 // væk. Escape lukker ikke. Kun "Jeg accepterer" og "Log ud" fører videre;
 // betingelser og privatlivspolitik åbnes i en ny fane.
-export default function VilkaarDialog({ nyVersion }: { nyVersion: boolean }) {
+// direkte: accepten gemmes med browserens Supabase-klient (rpc
+// accepter_vilkaar - auth.uid(), kun den aktuelle version) i stedet for
+// server action'en. Bruges på Firma oversigt, fordi firmakonti ikke kan kalde
+// server actions før lancering (gaten i src/lib/supabase/middleware.ts).
+async function accepterDirekte(version: string): Promise<{ ok: true } | { fejl: string }> {
+  if (version !== VILKAAR_VERSION) return { fejl: T.nyVersionFejl };
+  const { createClient } = await import("@/lib/supabase/client");
+  const { error } = await createClient().rpc("accepter_vilkaar", { p_version: version });
+  if (error) {
+    console.error("accepter_vilkaar fejlede:", error.message);
+    return { fejl: T.gemFejl };
+  }
+  return { ok: true };
+}
+
+export default function VilkaarDialog({ nyVersion, direkte = false }: { nyVersion: boolean; direkte?: boolean }) {
   const router = useRouter();
   const sti = usePathname();
   const id = useId();
@@ -80,7 +95,7 @@ export default function VilkaarDialog({ nyVersion }: { nyVersion: boolean }) {
     setFejl(null);
     let svar: Awaited<ReturnType<typeof accepterVilkaar>>;
     try {
-      svar = await accepterVilkaar(VILKAAR_VERSION);
+      svar = direkte ? await accepterDirekte(VILKAAR_VERSION) : await accepterVilkaar(VILKAAR_VERSION);
     } catch (err) {
       console.error("accepterVilkaar fejlede:", err);
       setFejl(T.netvaerksfejl);

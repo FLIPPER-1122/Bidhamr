@@ -286,6 +286,7 @@ Bygget i `20261009040000_skjult_auktion_pause.sql` (testdatabasen rettet med `20
 - **Appen** skal vise samme flueben og sende `vilkaar_version` i signup-metadata. Sender den ikke versionen, oprettes kontoen stadig, men uden gemt accept.
 - **Eksisterende brugere** (og brugere uden gemt accept) ser en venlig bjælke på Min konto: "Vi har lavet brugerbetingelser – læs dem her" med knappen "Jeg har læst og accepterer". Den blokerer ikke noget, indtil videre.
 - **Ved lancering** kan accept af den aktuelle version gøres påkrævet, før man kan byde eller oprette en auktion (fx en side "Accepter de nye brugerbetingelser" i stedet for buddet). Det gælder også, når betingelserne ændres væsentligt (se betingelsernes afsnit 25).
+- **Hårdt krav i databasen (Filip, 11. okt. 2026):** bud, maksimum, nye auktioner (også genopsæt/sæt op igen) og "tilbud til næste byder" (sælgerens tilbud og købers ja) afvises uden accept af den aktuelle version (`BHV02`, `vilkaar_mangler: …`, `20261017030000_vilkaar_efternavn_chat.sql`). Automatiske bud afgives ikke for brugere uden accept. Firmakonti er ikke undtaget (der er ingen særskilt accept af erhvervsvilkår) – Firma oversigt viser samme accept-vindue.
 - Betingelserne og privatlivspolitikken vises som **UDKAST – skal godkendes af advokat** (version 0.1), indtil advokaten har godkendt dem i fase 6. Advokatens noter og interne noter vises aldrig på siderne; manglende oplysninger vises som "[udfyldes inden lancering]".
 
 ## Autobud (foreslået af Claude 7. oktober 2026 – afventer Filip; punkt 3 besluttet af Filip 7. okt. 2026)

@@ -87,6 +87,13 @@ export default function SettingsForm({
 
     if (updateError) {
       console.error("Profil kunne ikke gemmes:", updateError);
+      // BHN03: tomt efternavn (users_kraev_efternavn, 20261017030000) -
+      // sikkerhedsnet bag tjekket ovenfor.
+      if (updateError.code === "BHN03") {
+        setError("Skriv dit efternavn.");
+        setFejlFelt("efternavn");
+        return;
+      }
       setError(
         updateError.code === "BHN01"
           ? 'Navnet må ikke indeholde "BidHamr".'

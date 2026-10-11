@@ -24,6 +24,8 @@ import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { erMitIdFejl } from "@/lib/mitid/fejl";
 import { erDac7Fejl, DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
 import { MITID } from "@/lib/tekster/mitid";
+import { erVilkaarFejl } from "@/lib/vilkaar";
+import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
 import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
 import { ERHVERV_GPSR, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import { SPOERGSMAAL_SLAAET_FRA } from "@/lib/spoergsmaal";
@@ -394,6 +396,9 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         // MitID mangler (BHV01). Siden viser normalt "Bekræft med MitID" før
         // formularen; her er MitID fx nulstillet imens.
         else if (erMitIdFejl(insertError.code, insertError.message)) besked = MITID.fejlMangler;
+        // Brugerbetingelserne er ikke accepteret (BHV02). Vinduet vises
+        // normalt før; her er der fx kommet en ny version imens.
+        else if (erVilkaarFejl(insertError.code, insertError.message)) besked = VILKAAR_TEKST.fejlMangler;
         // DAC7-oplysninger mangler efter fristen (BHD01).
         else if (erDac7Fejl(insertError.code, insertError.message)) besked = DAC7_FEJL_TEKST;
         else if (insertError.code === "BHU01") besked = "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.";
