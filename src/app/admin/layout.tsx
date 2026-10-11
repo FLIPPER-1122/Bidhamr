@@ -9,6 +9,7 @@ import { hentAntalKontoLukninger } from "@/app/actions/adminKontoLukning";
 import { hentAntalTryghed } from "@/app/actions/adminTryghed";
 import { hentAntalDsa } from "@/app/actions/adminDsa";
 import { hentAntalNyeErhvervHenvendelser } from "@/app/actions/adminErhverv";
+import { hentNoedstopBjaelke } from "@/app/actions/adminPengesikkerhed";
 
 const INGEN_TAELLERE = {
   ubetalte: 0,
@@ -46,6 +47,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const erhvervLoefte = hentMinRolle().then((r) =>
     r === "chef" || r === "saelger" ? hentAntalNyeErhvervHenvendelser() : null,
   );
+  const noedstopLoefte = hentMinRolle().then((r) => (erStaff(r) ? hentNoedstopBjaelke() : null));
   const [user, rolle] = await Promise.all([hentBruger(), hentMinRolle()]);
 
   // Rollen 'saelger' (erhvervssælger) kommer ind, men ser KUN Erhverv.
@@ -82,6 +84,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const antalDsa = "antal" in dsa ? dsa.antal : 0;
   const erhverv = await erhvervLoefte;
   const antalErhverv = erhverv && "antal" in erhverv ? erhverv.antal : 0;
+  // Nødstop (sikkerhedsnet A): tydelig rød bjælke for al staff.
+  const noedstop = (await noedstopLoefte) ?? { fejl: "" };
+  const stoppet =
+    "ok" in noedstop && (noedstop.udbetalinger || noedstop.nyeBetalinger)
+      ? [noedstop.udbetalinger && "udbetalinger til sælgerne", noedstop.nyeBetalinger && "nye betalinger"]
+          .filter(Boolean)
+          .join(" og ")
+      : null;
 
   // Højden trækker cookie-bannerets højde fra (--samtykke-hoejde), så
   // banneret aldrig dækker knapper nederst i admin - heller ikke på mobil.
@@ -89,6 +99,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-neutral-50">
       <AdminSidebar rolle={rolle} taellere={{ ubetalte: antalUbetalte, betalinger: antalBetalinger, chats: antalChats, sager: antalSager, kontolukninger: antalLukninger, kontakt: antalKontakt, rapporter: antalRapporter, bedoemmelser: antalBedoemmelser, dsa: antalDsa, erhverv: antalErhverv }} />
       <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">
+        {stoppet && (
+          <div role="alert" className="bg-red-700 px-4 py-3 text-sm font-semibold text-white sm:px-6">
+            NØDSTOP: {stoppet} er stoppet.
+            {"ok" in noedstop && noedstop.aarsag ? ` Årsag: ${noedstop.aarsag}` : ""} Chefen genoptager under Admin → Penge.
+          </div>
+        )}
         {children}
       </main>
     </div>

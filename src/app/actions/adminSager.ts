@@ -125,7 +125,7 @@ const KODE_FEJL: Record<string, string> = {
   staff: "Medarbejdere, admins og chefer kan ikke lukkes herfra.",
   allerede_lukket: "Kontoen er allerede lukket permanent.",
   ugyldig_sag: "Brugeren er ikke part i sagen.",
-  inhabil: "Du kan ikke behandle en sag, hvor du selv er køber eller sælger.",
+  inhabil: "Du kan ikke behandle en sag, hvor du selv er køber eller sælger, eller hvor du har handlet med en af dem.",
   begrundelse_bruger_mangler: "Skriv en begrundelse til sælgeren. Den vises for sælgeren.",
   begrundelse_bruger_for_lang: "Begrundelsen til sælgeren er for lang (højst 1000 tegn).",
   afhentning: "Handlen var afhentning. Der er ingen indpakning at vurdere.",

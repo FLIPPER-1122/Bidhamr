@@ -1,0 +1,286 @@
+"use server";
+
+// Admin → Penge (kun chef): nødstop, godkendelse af udbetalinger over
+// 10.000 kr., frosne sælgere og "BidHamr dækker" (sikkerhedsnet A,
+// 20261019010000_pengesikkerhed.sql). Databasen tjekker rolle og
+// inhabilitet igen og logger i moderation_log.
+
+import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
+import { assertRole } from "@/lib/adminAuth";
+import { glemNoedstop, hentNoedstop, type Noedstop } from "@/lib/betaling/noedstop";
+import { logDriftFejl } from "@/lib/drift";
+
+class BrugerFejl extends Error {}
+const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
+const INHABIL =
+  "Du kan ikke behandle en handel, hvor du selv er køber eller sælger, eller hvor du har handlet med en af dem.";
+
+async function koer<T>(navn: string, fn: () => Promise<T>): Promise<T | { fejl: string }> {
+  try {
+    return await fn();
+  } catch (err) {
+    unstable_rethrow(err);
+    if (err instanceof BrugerFejl) return { fejl: err.message };
+    console.error(`Admin-handling ${navn} fejlede:`, err);
+    return { fejl: GENERISK };
+  }
+}
+
+const tekst = (f: FormData, n: string) => ((f.get(n) as string | null) ?? "").trim();
+
+// ------------------------------------------------------------------ nødstop
+
+// Bjælken i admin (alle staff): kun om noget er stoppet - årsagen ses af chefen.
+export async function hentNoedstopBjaelke() {
+  return koer("hentNoedstopBjaelke", async () => {
+    const { rolle } = await assertRole("medarbejder");
+    const n = await hentNoedstop(true);
+    return {
+      ok: true as const,
+      udbetalinger: n.udbetalingerStoppet,
+      nyeBetalinger: n.nyeBetalingerStoppet,
+      aarsag: rolle === "chef" ? (n.udbetalingerAarsag ?? n.nyeBetalingerAarsag) : null,
+    };
+  });
+}
+
+const NOEDSTOP_FEJL: Record<string, string> = {
+  ingen_adgang: "Kun chefen kan bruge nødstoppet.",
+  ugyldig: "Ugyldigt valg.",
+  begrundelse_mangler: "Skriv en begrundelse.",
+  begrundelse_for_lang: "Begrundelsen er for lang (højst 1000 tegn).",
+  uaendret: "Det er allerede sådan. Opdatér siden.",
+};
+
+// formData: hvad ('udbetalinger' | 'nye_betalinger'), stop ('ja' | 'nej'), aarsag.
+export async function saetNoedstop(formData: FormData) {
+  return koer("saetNoedstop", async () => {
+    const { admin, userId } = await assertRole("chef");
+    const hvad = tekst(formData, "hvad");
+    const stop = tekst(formData, "stop") === "ja";
+    const aarsag = tekst(formData, "aarsag");
+    if (hvad !== "udbetalinger" && hvad !== "nye_betalinger") throw new BrugerFejl(NOEDSTOP_FEJL.ugyldig);
+    if (!aarsag) throw new BrugerFejl(NOEDSTOP_FEJL.begrundelse_mangler);
+    const { data, error } = await admin.rpc("stripe_noedstop_saet", {
+      p_medarbejder: userId,
+      p_hvad: hvad,
+      p_stop: stop,
+      p_aarsag: aarsag,
+    });
+    if (error) throw new Error(error.message);
+    const kode = (data as { kode?: string } | null)?.kode ?? "";
+    if (kode !== "ok") throw new BrugerFejl(NOEDSTOP_FEJL[kode] ?? GENERISK);
+    glemNoedstop();
+    await logDriftFejl({
+      kilde: "action",
+      hvor: "betaling/noedstop",
+      fejl: `Nødstop: ${hvad === "udbetalinger" ? "udbetalinger til sælgernes bank" : "nye betalinger"} er ${stop ? "STOPPET" : "genoptaget"} af chefen.`,
+      brugerId: userId,
+    });
+    revalidatePath("/admin", "layout");
+    return { ok: true as const };
+  });
+}
+
+// ------------------------------------------------------------------ Penge-siden
+
+export type GodkendelseRaekke = {
+  betalingId: string;
+  tradeId: string;
+  titel: string | null;
+  saelger: string | null;
+  udbetalingOere: number;
+  frigivetKl: string | null;
+};
+
+export type FrossenSaelger = {
+  brugerId: string;
+  navn: string | null;
+  grund: string | null;
+  udbetalingFrossetKl: string | null;
+  salgFrosset: boolean;
+};
+
+export type Pengesikkerhed = {
+  ok: true;
+  noedstop: Noedstop;
+  godkendelser: GodkendelseRaekke[];
+  frosne: FrossenSaelger[];
+};
+
+export async function hentPengesikkerhed() {
+  return koer("hentPengesikkerhed", async (): Promise<Pengesikkerhed> => {
+    const { admin } = await assertRole("chef");
+    const noedstop = await hentNoedstop(true);
+    const [{ data: g, error: gFejl }, { data: f, error: fFejl }] = await Promise.all([
+      admin
+        .from("betalinger")
+        .select("id, trade_id, auction_id, seller_id, udbetaling_oere, frigivet_kl")
+        .eq("pengemodel", "destination")
+        .eq("status", "betalt")
+        .not("frigivet_kl", "is", null)
+        .is("saelger_udbetaling_id", null)
+        .is("udbetaling_godkendt_kl", null)
+        .gt("udbetaling_oere", 1_000_000)
+        .order("frigivet_kl", { ascending: true })
+        .limit(100),
+      admin
+        .from("betalingsprofiler")
+        .select("user_id, udbetaling_frosset_grund, udbetaling_frosset_kl, salg_frosset_kl")
+        .or("udbetaling_frosset_kl.not.is.null,salg_frosset_kl.not.is.null")
+        .limit(100),
+    ]);
+    // Før migrationen findes kolonnerne ikke: tomme lister.
+    const mangler = (e: { code?: string } | null) => !!e && ["42703", "PGRST204"].includes(e.code ?? "");
+    if (gFejl && !mangler(gFejl)) throw new Error(gFejl.message);
+    if (fFejl && !mangler(fFejl)) throw new Error(fFejl.message);
+    const brugere = [...new Set([...(g ?? []).map((x) => x.seller_id as string), ...(f ?? []).map((x) => x.user_id as string)])];
+    const auktioner = [...new Set((g ?? []).map((x) => x.auction_id as string))];
+    const [{ data: u }, { data: a }] = await Promise.all([
+      brugere.length ? admin.from("users").select("id, navn").in("id", brugere) : Promise.resolve({ data: [] }),
+      auktioner.length ? admin.from("auctions").select("id, titel").in("id", auktioner) : Promise.resolve({ data: [] }),
+    ]);
+    const navn = new Map(((u ?? []) as { id: string; navn: string | null }[]).map((x) => [x.id, x.navn]));
+    const titel = new Map(((a ?? []) as { id: string; titel: string | null }[]).map((x) => [x.id, x.titel]));
+    return {
+      ok: true,
+      noedstop,
+      godkendelser: (gFejl ? [] : (g ?? [])).map((x) => ({
+        betalingId: x.id as string,
+        tradeId: x.trade_id as string,
+        titel: titel.get(x.auction_id as string) ?? null,
+        saelger: navn.get(x.seller_id as string) ?? null,
+        udbetalingOere: Number(x.udbetaling_oere),
+        frigivetKl: (x.frigivet_kl as string | null) ?? null,
+      })),
+      frosne: (fFejl ? [] : (f ?? [])).map((x) => ({
+        brugerId: x.user_id as string,
+        navn: navn.get(x.user_id as string) ?? null,
+        grund: (x.udbetaling_frosset_grund as string | null) ?? null,
+        udbetalingFrossetKl: (x.udbetaling_frosset_kl as string | null) ?? null,
+        salgFrosset: !!x.salg_frosset_kl,
+      })),
+    };
+  });
+}
+
+const GODKEND_FEJL: Record<string, string> = {
+  ingen_adgang: "Kun chefen kan godkende udbetalinger.",
+  note_mangler: "Skriv, hvad du har kontrolleret.",
+  note_for_lang: "Noten er for lang (højst 2000 tegn).",
+  ikke_fundet: "Betalingen blev ikke fundet.",
+  inhabil: INHABIL,
+  ikke_noedvendig: "Udbetalingen er under beløbsgrænsen og kræver ingen godkendelse.",
+  allerede: "Udbetalingen er allerede godkendt.",
+  ikke_frigivet: "Handlen er ikke frigivet endnu.",
+  udbetalt: "Pengene er allerede udbetalt.",
+};
+
+// formData: betalingId, note.
+export async function godkendUdbetaling(formData: FormData) {
+  return koer("godkendUdbetaling", async () => {
+    const { admin, userId } = await assertRole("chef");
+    const id = tekst(formData, "betalingId");
+    const note = tekst(formData, "note");
+    if (!note) throw new BrugerFejl(GODKEND_FEJL.note_mangler);
+    const { data, error } = await admin.rpc("betaling_udbetaling_godkend", {
+      p_medarbejder: userId,
+      p_betaling: id,
+      p_note: note,
+    });
+    if (error) throw new Error(error.message);
+    const svar = (data ?? {}) as { kode?: string; seller_id?: string };
+    if (svar.kode !== "ok") throw new BrugerFejl(GODKEND_FEJL[svar.kode ?? ""] ?? GENERISK);
+    // Udbetalingen sendes med det samme (ellers af cron'en).
+    if (svar.seller_id) {
+      try {
+        const { udbetalVentende } = await import("@/lib/betaling/udbetaling");
+        await udbetalVentende(svar.seller_id);
+      } catch (err) {
+        console.error("Udbetaling efter godkendelse fejlede (cron prøver igen):", id, err);
+      }
+    }
+    revalidatePath("/admin/penge");
+    return { ok: true as const };
+  });
+}
+
+const OPHAEV_FEJL: Record<string, string> = {
+  ingen_adgang: "Kun chefen kan ophæve en frysning.",
+  note_mangler: "Skriv, hvad du har kontrolleret.",
+  note_for_lang: "Noten er for lang (højst 2000 tegn).",
+  inhabil: "Du kan ikke ophæve frysningen af en sælger, du selv har handlet med.",
+  ikke_frosset: "Sælgeren er ikke frosset. Opdatér siden.",
+};
+
+// formData: brugerId, note.
+export async function ophaevFrysning(formData: FormData) {
+  return koer("ophaevFrysning", async () => {
+    const { admin, userId } = await assertRole("chef");
+    const bruger = tekst(formData, "brugerId");
+    const note = tekst(formData, "note");
+    if (!note) throw new BrugerFejl(OPHAEV_FEJL.note_mangler);
+    const { data, error } = await admin.rpc("saelger_frysning_ophaev", {
+      p_medarbejder: userId,
+      p_saelger: bruger,
+      p_note: note,
+    });
+    if (error) throw new Error(error.message);
+    const kode = (data as { kode?: string } | null)?.kode ?? "";
+    if (kode !== "ok") throw new BrugerFejl(OPHAEV_FEJL[kode] ?? GENERISK);
+    revalidatePath("/admin", "layout");
+    return { ok: true as const };
+  });
+}
+
+// ------------------------------------------------------------------ BidHamr dækker
+
+const DAEKKER: Record<string, string> = {
+  ingen_adgang: "Kun chefen kan lade BidHamr dække en refusion.",
+  begrundelse_mangler: "Skriv en begrundelse.",
+  begrundelse_for_lang: "Begrundelsen er for lang (højst 2000 tegn).",
+  ikke_fundet: "Betalingen blev ikke fundet.",
+  inhabil: INHABIL,
+  ugyldig: "Betalingen kan ikke refunderes på denne måde.",
+  allerede: "Køberen har allerede fået pengene tilbage.",
+  i_gang: "En refusion er i gang lige nu. Vent et par minutter, og opdatér siden.",
+  ikke_betalt: "Handlen er ikke betalt.",
+  ikke_udbetalt:
+    "Pengene er ikke udbetalt til sælgeren. Brug den almindelige refusion (Refundér køber) - så hentes pengene fra sælgerens Stripe-konto.",
+  udbetaling_uafklaret: "Udbetalingen til sælgeren er ikke afklaret endnu. Vent, til den er gennemført eller fejlet.",
+  indsigelse: "Køberen har en indsigelse hos sin bank. Banken afgør pengene - der refunderes ikke herfra.",
+  konflikt: "Der findes allerede en refusion på betalingen hos Stripe. Intet er sendt - kontrollér betalingen i Stripe.",
+  stripe_afviste: "Stripe afviste refusionen. Se fejlen i Stripe, og prøv igen senere.",
+  ikke_laast: "Refusionen blev sendt, men kunne ikke registreres med det samme. Den registreres, når Stripe bekræfter den.",
+};
+
+// formData: tradeId, begrundelse.
+export async function bidhamrDaekkerRefusion(formData: FormData) {
+  return koer("bidhamrDaekkerRefusion", async () => {
+    const { admin, userId } = await assertRole("chef");
+    const tradeId = tekst(formData, "tradeId");
+    const begrundelse = tekst(formData, "begrundelse");
+    if (!tradeId) throw new BrugerFejl(DAEKKER.ikke_fundet);
+    if (!begrundelse) throw new BrugerFejl(DAEKKER.begrundelse_mangler);
+    const { data: b, error } = await admin
+      .from("betalinger")
+      .select("id")
+      .eq("trade_id", tradeId)
+      .maybeSingle<{ id: string }>();
+    if (error) throw new Error(error.message);
+    if (!b) throw new BrugerFejl(DAEKKER.ikke_fundet);
+    const { bidhamrDaekker } = await import("@/lib/betaling/bidhamrDaekker");
+    let r: string;
+    try {
+      r = await bidhamrDaekker(b.id, userId, begrundelse);
+    } catch (err) {
+      console.error("BidHamr dækker fejlede:", b.id, err);
+      revalidatePath("/admin", "layout");
+      throw new BrugerFejl("Refusionen fejlede hos Stripe. Intet er registreret som refunderet - prøv igen om lidt.");
+    }
+    revalidatePath("/admin", "layout");
+    if (r === "refunderet" || r === "afventer") return { ok: true as const };
+    throw new BrugerFejl(DAEKKER[r] ?? GENERISK);
+  });
+}
