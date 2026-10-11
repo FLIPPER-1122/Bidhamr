@@ -2453,7 +2453,7 @@ export async function spejlUdbetaling(
     // står i drift-alarmen ovenfor og i saelger_frysning_grunde (kun staff).
     await markerUdbetalingskonto(
       stripeAccountId,
-      "Udbetalingskontoen kræver kontrol hos BidHamr. Se drift-loggen og Admin → Penge.",
+      "Udbetalingskontoen kræver kontrol hos BidHamr.",
     );
   }
   // Sikkerhedsnet A: sælgeren fryses (nye auktioner, bud og udbetalinger),
