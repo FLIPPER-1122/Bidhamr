@@ -2307,6 +2307,9 @@ async function kontrollerUdbetalingsplan(
   // En kendt plan, der ikke er manuel (daily/weekly/monthly): sælgeren (eller
   // en Stripe-indstilling) har ændret den. Planen sættes tilbage, og
   // sælgerens udbetalinger fryses, til chefen har set på det (sikkerhedsnet A).
+  // Undtagelse fra "kaster aldrig": kan sælgeren ikke fryses, kastes fejlen
+  // (efter drift-alarm) - webhooken svarer 500, og Stripe prøver igen; før en
+  // payout stopper det udbetalingen.
   if (plan) {
     const { retPlanOgFrys } = await import("@/lib/betaling/kontoVagt");
     await retPlanOgFrys(kontoId, profil.user_id, plan);
@@ -2415,6 +2418,19 @@ export async function spejlUdbetaling(
   if (bidhamr !== null) return bidhamr;
 
   const { alarmPrTilfaelde } = await import("@/lib/betaling/driftTilfaelde");
+  // Negativ udbetaling (amount < 0): Stripe henter et underskud på sælgerens
+  // konto fra hans bank (fx debit_negative_balances efter en refusion eller
+  // indsigelse). Der er ikke sendt penge ud - ingen frysning og ingen
+  // markering, kun én drift-alarm pr. udbetaling (sikkerhedsnet A).
+  if (Number(payout.amount) < 0) {
+    await alarmPrTilfaelde({
+      noegle: `negativ-payout:${payout.id}`,
+      hvor: "betaling/negativ-udbetaling",
+      fejl: `Stripe har hentet ${(-Number(payout.amount) / 100).toFixed(2)} ${String(payout.currency ?? "dkk").toUpperCase()} fra sælgerkonto ${stripeAccountId}s bank (udbetaling ${payout.id}, status '${payout.status}') for at dække et underskud på kontoen. Kontrollér hvorfor saldoen var negativ (refusion eller indsigelse) i Stripe.`,
+      brugerId: profil.user_id,
+    });
+    return `negativ_${payout.status}`;
+  }
   const ny = await alarmPrTilfaelde({
     noegle: `fremmed-payout:${payout.id}`,
     hvor: "betaling/fremmed-udbetaling",

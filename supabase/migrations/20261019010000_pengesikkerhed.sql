@@ -44,7 +44,22 @@
 --  13. Fremmed udbetaling / ændret udbetalingsplan: sælgeren fryses
 --      (betalingsprofiler.udbetaling_frosset_kl, evt. salg_frosset_kl), alle
 --      ventende handler markeres til staff. Kun chefen ophæver
---      (saelger_frysning_ophaev).
+--      (saelger_frysning_ophaev). Chefen kan også selv fryse en sælger
+--      (saelger_frys_manuelt). Grunden står i saelger_frysning_grunde, som kun
+--      staff kan læse (sælgeren kan læse sin egen betalingsprofil).
+--
+-- Rettelser efter review (11. okt. 2026, før kørsel i produktion):
+--   - Nødstop for nye betalinger standser betalingsfristen: ubetalt_vinder_
+--     annuller annullerer ikke, mens stoppet er aktivt, og når stoppet
+--     ophæves, forlænges fristen for de berørte betalinger med stoppets
+--     varighed (mindst 24 timer tilbage) - stripe_noedstop_saet.
+--   - Triggeren betalinger_noedstop_pi reagerer på enhver ny PaymentIntent.
+--   - "BidHamr dækker" kræver, at udbetalingen er gennemført ('paid'), bruger
+--     refusion_oere uden sag, og afslut sletter ikke andre markeringer.
+--   - Inhabilitet ("har handlet med") også i sag_genaabn, admin_advarsel_
+--     betaling, indpakning_vurder og admin_annuller_ikke_betalt.
+--   - handel_udbetalingsstatus kender de nye grunde (neutral tekst ved
+--     frysning, fortrydelsesfristen med i tidligst_kl).
 --
 -- Kan køres flere gange. md5-drift-tjek af alle funktioner, der ændres
 -- (normaliseret krop som 20261016030000: CR fjernet, kommentarer fjernet, al
@@ -105,7 +120,22 @@ begin
       ('public.faktura_planlaeg(integer)',
        'bfbdedf311ba334efd676cf3ba5a59e7', 'eaccfc18b96f7d35e32abfd591253bbc'),
       ('public.dac7_salg(integer,uuid)',
-       'c3c37f9a49953460381c377274cbd4f8', 'cd6313fbe3e51ee638d7051ef0e6f043')
+       'c3c37f9a49953460381c377274cbd4f8', 'cd6313fbe3e51ee638d7051ef0e6f043'),
+      -- Rettelser efter review (gammel: 20261011020000, 20261005021000 +
+      -- 20261011010000, 20261003012000 (+ 20261010070000), 20261003051000,
+      -- 20261011030000).
+      ('public.ubetalt_vinder_annuller(uuid,boolean)',
+       'a63a21a81e2c9c82a22e71f2d00de606', '785545cb6f4c3695e68b2dc2d77098c5'),
+      ('public.sag_genaabn(uuid,uuid,text)',
+       '422b8577375cb6de0e96434f4eed94c6', 'd32e4ff28c96d5f5c8902b7d133b040b'),
+      ('public.admin_annuller_ikke_betalt(uuid,uuid,text)',
+       'cb5c0f654085c0268d004c6d0819ae9d', '58b0efde68a9d7fb74b2387afe0b6243'),
+      ('public.admin_advarsel_betaling(uuid,uuid,text,text,text)',
+       '01d6344ca3959df44f7eed8527dd8076', 'c7ce25df3cbe69683f4e35138dc44491'),
+      ('public.indpakning_vurder(uuid,uuid,text,text)',
+       'ea358f982cfa5cd6537a0b3ff6d00b95', 'caec8ce7ab4446a812562fafd01c4763'),
+      ('public.handel_udbetalingsstatus(uuid)',
+       '9deebf252afa42a3de077045714d5962', 'f8a957f59515b6bc97c61cbdb13b6544')
     ) as v(fn, gammel, ny)
   loop
     h := pg_temp.krop_md5(r.fn);
@@ -247,6 +277,13 @@ grant execute on function public.nye_betalinger_stoppet() to service_role;
 -- Kun chef. p_hvad: 'udbetalinger' | 'nye_betalinger'. Begrundelse kræves både
 -- ved stop og genoptagelse. Kode: ok | uaendret | ingen_adgang | ugyldig |
 -- begrundelse_mangler | begrundelse_for_lang.
+--
+-- Nye betalinger genoptages: køberne kunne ikke betale under stoppet, så
+-- betalingsfristen forlænges for alle åbne betalinger, hvis frist var i gang,
+-- da stoppet startede (status 'afventer', ikke ventende på sælgerens konto,
+-- betal_senest efter stoppets start): + stoppets varighed, og mindst 24
+-- timer fra nu. Svaret har 'forlaenget' = [{trade_id, buyer_id, betal_senest}]
+-- (serveren giver køberne besked).
 create or replace function public.stripe_noedstop_saet(
   p_medarbejder uuid, p_hvad text, p_stop boolean, p_aarsag text)
 returns jsonb
@@ -258,6 +295,12 @@ declare
   st     record;
   v_begr text := nullif(btrim(coalesce(p_aarsag, '')), '');
   v_nu   boolean;
+  v_forl jsonb := '[]'::jsonb;
+  v_fejl integer := 0;
+  r      record;
+  v_trade  uuid;
+  v_koeber uuid;
+  v_frist  timestamptz;
 begin
   if p_medarbejder is null or not exists (
        select 1 from public.users u where u.id = p_medarbejder and u.rolle = 'chef') then
@@ -288,14 +331,53 @@ begin
            nye_betalinger_stoppet_kl = case when p_stop then now() end,
            nye_betalinger_stoppet_af = case when p_stop then p_medarbejder end
      where id;
+    -- Genoptaget: fristen forlænges med stoppets varighed (mindst 24 t).
+    -- Én række ad gangen i sin egen undertransaktion: en række, der fx ikke
+    -- passer en NOT VALID-constraint, må ikke forhindre genoptagelsen - den
+    -- tælles i 'forlaengelse_fejlet' (serveren giver chefen drift-alarm), og
+    -- ubetalt_vinder_annuller annullerer den først efter fristen.
+    if not p_stop and st.nye_betalinger_stoppet_kl is not null then
+      for r in
+        select b.id from public.betalinger b
+         where b.status = 'afventer'
+           and b.venter_paa_saelgerkonto_kl is null
+           and b.betal_senest > st.nye_betalinger_stoppet_kl
+         order by b.id
+      loop
+        begin
+          update public.betalinger b
+             set betal_senest = date_trunc('second', greatest(
+                   b.betal_senest + (now() - st.nye_betalinger_stoppet_kl),
+                   now() + interval '24 hours')),
+                 -- Påmindelserne sendes igen ud fra den nye frist (som
+                 -- handel_forlaeng_betalingsfrist).
+                 paamindelse_24_sendt_kl = null,
+                 paamindelse_40_sendt_kl = null,
+                 opdateret = now()
+           where b.id = r.id and b.status = 'afventer'
+          returning b.trade_id, b.buyer_id, b.betal_senest into v_trade, v_koeber, v_frist;
+          if found then
+            v_forl := v_forl || jsonb_build_array(jsonb_build_object(
+              'trade_id', v_trade, 'buyer_id', v_koeber, 'betal_senest', v_frist));
+          end if;
+        exception when others then
+          raise warning 'stripe_noedstop_saet: fristen for betaling % kunne ikke forlænges: %', r.id, sqlerrm;
+          v_fejl := v_fejl + 1;
+        end;
+      end loop;
+    end if;
   end if;
 
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
   values (p_medarbejder,
           case when p_hvad = 'udbetalinger' then 'noedstop_udbetalinger' else 'noedstop_betalinger' end,
           'system', p_medarbejder, null,
-          left((case when p_stop then 'Stoppet: ' else 'Genoptaget: ' end) || v_begr, 2000));
-  return jsonb_build_object('kode', 'ok', 'hvad', p_hvad, 'stoppet', p_stop);
+          left((case when p_stop then 'Stoppet: ' else 'Genoptaget: ' end) || v_begr
+               || case when jsonb_array_length(v_forl) > 0
+                       then ' (betalingsfristen forlænget for ' || jsonb_array_length(v_forl) || ' handel(er))'
+                       else '' end, 2000));
+  return jsonb_build_object('kode', 'ok', 'hvad', p_hvad, 'stoppet', p_stop,
+                            'forlaenget', v_forl, 'forlaengelse_fejlet', v_fejl);
 end;
 $fn$;
 revoke all on function public.stripe_noedstop_saet(uuid, text, boolean, text) from public, anon, authenticated;
@@ -303,6 +385,9 @@ grant execute on function public.stripe_noedstop_saet(uuid, text, boolean, text)
 
 -- Værn i databasen: en ny PaymentIntent kan ikke gemmes på en betaling, mens
 -- nye betalinger er stoppet (serveren tjekker også, før den kalder Stripe).
+-- Gælder enhver ændring til en ny PaymentIntent (også en, der erstatter en
+-- anden). Webhooken skriver aldrig PaymentIntent-id'et - en betaling, der
+-- gennemføres under stoppet, registreres stadig (betaling_registrer_betalt).
 create or replace function public.betalinger_noedstop_pi()
 returns trigger
 language plpgsql
@@ -311,7 +396,7 @@ set search_path = ''
 as $fn$
 begin
   if new.stripe_payment_intent_id is not null
-     and (tg_op = 'INSERT' or old.stripe_payment_intent_id is null)
+     and (tg_op = 'INSERT' or old.stripe_payment_intent_id is distinct from new.stripe_payment_intent_id)
      and public.nye_betalinger_stoppet() then
     raise exception 'nye_betalinger_stoppet: Betalingen er midlertidigt sat på pause. Prøv igen senere.'
       using errcode = 'BHP01';
@@ -325,6 +410,20 @@ drop trigger if exists betalinger_noedstop_pi on public.betalinger;
 create trigger betalinger_noedstop_pi
   before insert or update of stripe_payment_intent_id on public.betalinger
   for each row execute function public.betalinger_noedstop_pi();
+
+-- Betalingsfristen står stille under et stop for nye betalinger: køberen kan
+-- ikke betale, så handlen annulleres ikke (og der oprettes ingen "ubetalt
+-- vinder"). Fristen forlænges, når stoppet ophæves (stripe_noedstop_saet).
+-- Serveren springer også selv over (annullerUbetalte) - dette er værnet under
+-- låsen, hvis stoppet sættes midt i en cron-kørsel.
+do $do$
+begin
+  raise notice 'ubetalt_vinder_annuller: %', pg_temp.ps_ret('public.ubetalt_vinder_annuller(uuid,boolean)',
+    'a63a21a81e2c9c82a22e71f2d00de606', '785545cb6f4c3695e68b2dc2d77098c5', jsonb_build_array(
+      jsonb_build_array(
+        'if b.venter_paa_saelgerkonto_kl is not null or not (',
+        'if public.nye_betalinger_stoppet() or b.venter_paa_saelgerkonto_kl is not null or not (', 1)));
+end $do$;
 
 -- ===========================================================================
 -- Nye kolonner (betalinger, betalingsprofiler)
@@ -341,7 +440,12 @@ alter table public.betalinger
   add column if not exists bidhamr_daekker_laas_til       timestamptz,
   add column if not exists bidhamr_daekker_refund_id      text,
   add column if not exists bidhamr_daekker_refunderet_kl  timestamptz,
-  add column if not exists bidhamr_daekker_fejl           text;
+  add column if not exists bidhamr_daekker_fejl           text,
+  -- Markeringen, som den stod, da chefen startede "BidHamr dækker"
+  -- (betaling_registrer_refunderet overskriver sidste_fejl): sættes tilbage
+  -- af betaling_bidhamr_daekker_afslut, så andre åbne grunde ikke forsvinder.
+  add column if not exists bidhamr_daekker_foer_fejl      text,
+  add column if not exists bidhamr_daekker_foer_opm       boolean;
 
 do $do$
 begin
@@ -368,21 +472,48 @@ comment on column public.betalinger.bidhamr_daekker_kl is
 -- sælgerens auktioner. Kun chefen ophæver.
 alter table public.betalingsprofiler
   add column if not exists udbetaling_frosset_kl    timestamptz,
-  add column if not exists udbetaling_frosset_grund text,
   add column if not exists salg_frosset_kl          timestamptz,
   add column if not exists connect_plan_tjekket_kl  timestamptz;
 
+-- Grunden til en frysning må sælgeren ikke se. Sælgeren kan læse hele sin
+-- egen betalingsprofil (RLS, select('*') bruges fra klienten), så grunden
+-- står i sin egen tabel, som kun service role kan læse og skrive.
+create table if not exists public.saelger_frysning_grunde (
+  user_id    uuid primary key references public.users(id) on delete cascade,
+  grund      text not null,
+  tekst      text,
+  frosset_af uuid references public.users(id) on delete set null,
+  oprettet   timestamptz not null default now(),
+  constraint saelger_frysning_grunde_grund_check
+    check (grund in ('fremmed_udbetaling', 'udbetalingsplan', 'manuel')),
+  constraint saelger_frysning_grunde_tekst_check
+    check (char_length(coalesce(tekst, '')) <= 2000)
+);
+alter table public.saelger_frysning_grunde enable row level security;
+revoke all on table public.saelger_frysning_grunde from public, anon, authenticated;
+grant all on table public.saelger_frysning_grunde to service_role;
+comment on table public.saelger_frysning_grunde is
+  'Hvorfor sælgerens udbetalinger er frosset (kun staff via service role). Rækken slettes, når chefen ophæver frysningen - historikken står i moderation_log.';
+
+-- En tidligere udgave af migrationen (kun testdatabasen) havde grunden som
+-- kolonne på betalingsprofiler: flyt den og fjern kolonnen.
 do $do$
 begin
-  if not exists (select 1 from pg_constraint where conname = 'betalingsprofiler_udbetaling_frosset_check'
-                   and conrelid = 'public.betalingsprofiler'::regclass) then
-    alter table public.betalingsprofiler add constraint betalingsprofiler_udbetaling_frosset_check check (
-      udbetaling_frosset_grund is null or udbetaling_frosset_grund in ('fremmed_udbetaling', 'udbetalingsplan'));
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'betalingsprofiler'
+                and column_name = 'udbetaling_frosset_grund') then
+    execute $q$
+      insert into public.saelger_frysning_grunde (user_id, grund, oprettet)
+      select bp.user_id, bp.udbetaling_frosset_grund, coalesce(bp.udbetaling_frosset_kl, now())
+        from public.betalingsprofiler bp
+       where bp.udbetaling_frosset_grund is not null
+      on conflict (user_id) do nothing$q$;
+    alter table public.betalingsprofiler drop column udbetaling_frosset_grund;
   end if;
 end $do$;
 
 comment on column public.betalingsprofiler.udbetaling_frosset_kl is
-  'Udbetalinger fra sælgerens Stripe-konto er frosset (fremmed udbetaling eller ændret udbetalingsplan), til chefen har ophævet det (saelger_frysning_ophaev). Kun service role skriver.';
+  'Udbetalinger fra sælgerens Stripe-konto er frosset (fremmed udbetaling, ændret udbetalingsplan eller chefens valg - grunden står i saelger_frysning_grunde), til chefen har ophævet det (saelger_frysning_ophaev). Kun service role skriver.';
 comment on column public.betalingsprofiler.salg_frosset_kl is
   'Sælgeren kan ikke oprette auktioner, og der kan ikke bydes på sælgerens auktioner (fremmed udbetaling). Ophæves sammen med udbetaling_frosset_kl.';
 
@@ -416,7 +547,19 @@ declare
   ia jsonb := jsonb_build_array(
     'if p_kilde = ''staff'' and p_medarbejder in (t.buyer_id, t.seller_id) then',
     'if p_kilde = ''staff'' and public.penge_inhabil(p_medarbejder, t.buyer_id, t.seller_id) then', 1);
+  an jsonb := jsonb_build_array(
+    'if p_admin = b.buyer_id or p_admin = b.seller_id then',
+    'if public.penge_inhabil(p_admin, b.buyer_id, b.seller_id) then', 1);
 begin
+  -- Rettelser efter review: de sidste fire pengefunktioner.
+  raise notice 'sag_genaabn: %', pg_temp.ps_ret('public.sag_genaabn(uuid,uuid,text)',
+    '422b8577375cb6de0e96434f4eed94c6', 'd32e4ff28c96d5f5c8902b7d133b040b', jsonb_build_array(t));
+  raise notice 'admin_annuller_ikke_betalt: %', pg_temp.ps_ret('public.admin_annuller_ikke_betalt(uuid,uuid,text)',
+    'cb5c0f654085c0268d004c6d0819ae9d', '58b0efde68a9d7fb74b2387afe0b6243', jsonb_build_array(an));
+  raise notice 'admin_advarsel_betaling: %', pg_temp.ps_ret('public.admin_advarsel_betaling(uuid,uuid,text,text,text)',
+    '01d6344ca3959df44f7eed8527dd8076', 'c7ce25df3cbe69683f4e35138dc44491', jsonb_build_array(b));
+  raise notice 'indpakning_vurder: %', pg_temp.ps_ret('public.indpakning_vurder(uuid,uuid,text,text)',
+    'ea358f982cfa5cd6537a0b3ff6d00b95', 'caec8ce7ab4446a812562fafd01c4763', jsonb_build_array(t));
   raise notice 'sag_afgoer: %', pg_temp.ps_ret('public.sag_afgoer(uuid,uuid,text,text,text,boolean)',
     '40967c98c12a7fa2d14add66c1f41488', 'ea0cd85a0d3c06f363650778ceb414cb', jsonb_build_array(t));
   raise notice 'sag_anke_afgoer: %', pg_temp.ps_ret('public.sag_anke_afgoer(uuid,uuid,text,text,text,boolean)',
@@ -699,11 +842,11 @@ grant execute on function public.betaling_udbetaling_godkend(uuid, uuid, text) t
 -- ===========================================================================
 -- 13. Frysning af sælgerens udbetalinger (fremmed udbetaling / plan ændret)
 -- ===========================================================================
--- Kun service role (webhook, overvågning). Alle sælgerens ventende handler
--- (betalt, ikke udbetalt, ikke refunderet) markeres til staff. Idempotent:
--- svarer true, når frysningen er ny.
-create or replace function public.saelger_frys_udbetaling(
-  p_saelger uuid, p_grund text, p_frys_salg boolean, p_tekst text)
+-- Fælles kerne. Alle sælgerens ventende handler (betalt, ikke udbetalt, ikke
+-- refunderet) markeres til staff. Idempotent: svarer true, når frysningen er
+-- ny (eller salget nu også fryses). p_medarbejder står i loggen.
+create or replace function public.saelger_frys_kerne(
+  p_saelger uuid, p_grund text, p_frys_salg boolean, p_tekst text, p_medarbejder uuid)
 returns boolean
 language plpgsql
 security definer
@@ -713,7 +856,10 @@ declare
   bp     record;
   v_tekst text := left(coalesce(nullif(btrim(coalesce(p_tekst, '')), ''), 'Sælgerens udbetalinger er frosset'), 300);
 begin
-  if p_saelger is null or p_grund not in ('fremmed_udbetaling', 'udbetalingsplan') then return false; end if;
+  if p_saelger is null or p_medarbejder is null
+     or p_grund is null or p_grund not in ('fremmed_udbetaling', 'udbetalingsplan', 'manuel') then
+    return false;
+  end if;
   select * into bp from public.betalingsprofiler where user_id = p_saelger for update;
   if not found then return false; end if;
   if bp.udbetaling_frosset_kl is not null
@@ -722,10 +868,13 @@ begin
   end if;
   update public.betalingsprofiler
      set udbetaling_frosset_kl = coalesce(udbetaling_frosset_kl, now()),
-         udbetaling_frosset_grund = coalesce(udbetaling_frosset_grund, p_grund),
          salg_frosset_kl = case when coalesce(p_frys_salg, false) then coalesce(salg_frosset_kl, now()) else salg_frosset_kl end,
          opdateret = now()
    where user_id = p_saelger;
+  -- Første grund gælder (som før).
+  insert into public.saelger_frysning_grunde (user_id, grund, tekst, frosset_af)
+  values (p_saelger, p_grund, v_tekst, p_medarbejder)
+  on conflict (user_id) do nothing;
   update public.betalinger
      set kraever_opmaerksomhed = true,
          sidste_fejl = left(coalesce(nullif(sidste_fejl, '') || ' | ', '') || v_tekst, 500),
@@ -736,13 +885,66 @@ begin
      and stripe_transfer_id is null
      and refunderet_kl is null;
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
-  values (public.bidhamr_system_id(), 'udbetaling_frosset', 'bruger', p_saelger, p_saelger,
+  values (p_medarbejder, 'udbetaling_frosset', 'bruger', p_saelger, p_saelger,
           left(v_tekst || case when coalesce(p_frys_salg, false) then ' (også nye auktioner og bud)' else '' end, 2000));
   return true;
 end;
 $fn$;
+revoke all on function public.saelger_frys_kerne(uuid, text, boolean, text, uuid) from public, anon, authenticated;
+
+-- Kun service role (webhook, overvågning): grund fremmed_udbetaling eller
+-- udbetalingsplan, logget som BidHamr (systemet).
+create or replace function public.saelger_frys_udbetaling(
+  p_saelger uuid, p_grund text, p_frys_salg boolean, p_tekst text)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  if p_grund is null or p_grund not in ('fremmed_udbetaling', 'udbetalingsplan') then return false; end if;
+  return public.saelger_frys_kerne(p_saelger, p_grund, p_frys_salg, p_tekst, public.bidhamr_system_id());
+end;
+$fn$;
 revoke all on function public.saelger_frys_udbetaling(uuid, text, boolean, text) from public, anon, authenticated;
 grant execute on function public.saelger_frys_udbetaling(uuid, text, boolean, text) to service_role;
+
+-- Chefen fryser selv en sælger (Admin → brugeren → "Frys sælger"). Kun chef,
+-- ikke inhabil, begrundelse påkrævet. p_frys_salg: også nye auktioner og bud.
+-- Kode: ok | ingen_adgang | inhabil | begrundelse_mangler |
+-- begrundelse_for_lang | ingen_profil | allerede
+create or replace function public.saelger_frys_manuelt(
+  p_medarbejder uuid, p_saelger uuid, p_begrundelse text, p_frys_salg boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  v_begr text := nullif(btrim(coalesce(p_begrundelse, '')), '');
+begin
+  if p_medarbejder is null or not exists (
+       select 1 from public.users u where u.id = p_medarbejder and u.rolle = 'chef') then
+    return jsonb_build_object('kode', 'ingen_adgang');
+  end if;
+  if v_begr is null then return jsonb_build_object('kode', 'begrundelse_mangler'); end if;
+  if char_length(v_begr) > 1000 then return jsonb_build_object('kode', 'begrundelse_for_lang'); end if;
+  if p_saelger is null then return jsonb_build_object('kode', 'ingen_profil'); end if;
+  if p_medarbejder = p_saelger or public.dsa_er_inhabil(p_medarbejder, p_saelger) then
+    return jsonb_build_object('kode', 'inhabil');
+  end if;
+  if not exists (select 1 from public.betalingsprofiler bp where bp.user_id = p_saelger) then
+    return jsonb_build_object('kode', 'ingen_profil');
+  end if;
+  if not public.saelger_frys_kerne(p_saelger, 'manuel', coalesce(p_frys_salg, false),
+                                   'Frosset af chefen: ' || v_begr, p_medarbejder) then
+    return jsonb_build_object('kode', 'allerede');
+  end if;
+  return jsonb_build_object('kode', 'ok');
+end;
+$fn$;
+revoke all on function public.saelger_frys_manuelt(uuid, uuid, text, boolean) from public, anon, authenticated;
+grant execute on function public.saelger_frys_manuelt(uuid, uuid, text, boolean) to service_role;
 
 -- Kun chef, ikke inhabil. Ophæver begge frysninger. Markeringerne på
 -- betalingerne lukker staff selv (Markér som løst).
@@ -771,8 +973,9 @@ begin
     return jsonb_build_object('kode', 'ikke_frosset');
   end if;
   update public.betalingsprofiler
-     set udbetaling_frosset_kl = null, udbetaling_frosset_grund = null, salg_frosset_kl = null, opdateret = now()
+     set udbetaling_frosset_kl = null, salg_frosset_kl = null, opdateret = now()
    where user_id = p_saelger;
+  delete from public.saelger_frysning_grunde where user_id = p_saelger;
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
   values (p_medarbejder, 'udbetaling_frysning_ophaevet', 'bruger', p_saelger, p_saelger, left(v_note, 2000));
   return jsonb_build_object('kode', 'ok');
@@ -1063,12 +1266,15 @@ grant execute on function public.handel_auto_frigiv() to service_role;
 -- ===========================================================================
 -- 6. "BidHamr dækker" - refusion fra platformen efter udbetaling (kun chef)
 -- ===========================================================================
--- Udbetalingen til sælgerens bank er gennemført (eller på vej); en udbetaling
--- trækkes aldrig tilbage fra sælgeren. Chefen kan lade BidHamr refundere
--- køberen af platformens egen saldo (refunds.create uden reverse_transfer og
--- uden refund_application_fee). Beløbet låses første gang:
+-- Udbetalingen til sælgerens bank er gennemført (saelger_udbetalinger.status
+-- = 'paid' - en udbetaling, der stadig er på vej, kan fejle og komme tilbage
+-- på sælgerens Stripe-konto, og så skal den almindelige refusion bruges); en
+-- udbetaling trækkes aldrig tilbage fra sælgeren. Chefen kan lade BidHamr
+-- refundere køberen af platformens egen saldo (refunds.create uden
+-- reverse_transfer og uden refund_application_fee). Beløbet låses første gang:
 --   en sag med medhold, der venter på refusion -> total - BidHamr Beskyttelse
---   ellers                                     -> total
+--   ellers                                     -> det bestilte refusionsbeløb
+--                                                 (refusion_oere), ellers total
 -- Kode: ok | ingen_adgang | begrundelse_mangler | begrundelse_for_lang |
 --   ikke_fundet | inhabil | ugyldig | allerede | i_gang | ikke_betalt |
 --   ikke_udbetalt | udbetaling_uafklaret | indsigelse | konflikt
@@ -1113,7 +1319,7 @@ begin
   if b.status <> 'betalt' or b.stripe_charge_id is null then return jsonb_build_object('kode', 'ikke_betalt'); end if;
   if b.saelger_udbetaling_id is null then return jsonb_build_object('kode', 'ikke_udbetalt'); end if;
   select u.status into v_ust from public.saelger_udbetalinger u where u.id = b.saelger_udbetaling_id;
-  if v_ust is null or v_ust not in ('oprettet', 'paid') then
+  if v_ust is null or v_ust <> 'paid' then
     return jsonb_build_object('kode', 'udbetaling_uafklaret');
   end if;
   if b.indsigelse_kl is not null
@@ -1129,13 +1335,15 @@ begin
       when exists (select 1 from public.sager s
                     where s.trade_id = b.trade_id and s.penge_handling = 'refunder' and s.afviklet_kl is null)
         then b.total_oere - coalesce(b.beskyttelse_oere, 0)
-      else b.total_oere end;
+      else coalesce(b.refusion_oere, b.total_oere) end;
     if v_r <= 0 or v_r > b.total_oere then return jsonb_build_object('kode', 'ugyldig'); end if;
     update public.betalinger
        set bidhamr_daekker_kl = now(),
            bidhamr_daekker_af = p_medarbejder,
            bidhamr_daekker_oere = v_r,
-           bidhamr_daekker_begrundelse = left(v_begr, 2000)
+           bidhamr_daekker_begrundelse = left(v_begr, 2000),
+           bidhamr_daekker_foer_fejl = sidste_fejl,
+           bidhamr_daekker_foer_opm = kraever_opmaerksomhed
      where id = b.id;
     insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
     values (p_medarbejder, 'bidhamr_daekker', 'handel', b.trade_id, b.buyer_id,
@@ -1196,7 +1404,10 @@ $fn$;
 
 -- Afslutter en "BidHamr dækker"-refusion, når betalingen er registreret som
 -- refunderet (også fra webhooken). Markeringen "Refunderet EFTER overfoersel"
--- er forventet her og lukkes. Idempotent. Svar: ok | intet
+-- er forventet her og fjernes - men kun den: markeringen fra før (gemt ved
+-- første claim, hvis den var åben) og alt, der er kommet til siden, bevares.
+-- kraever_opmaerksomhed nulstilles kun, når der ikke er andre åbne grunde
+-- (ingen anden tekst, sælgeren er ikke frosset). Idempotent. Svar: ok | intet
 create or replace function public.betaling_bidhamr_daekker_afslut(p_payment_intent text)
 returns text
 language plpgsql
@@ -1204,21 +1415,36 @@ security definer
 set search_path = ''
 as $fn$
 declare
-  b record;
+  b         record;
+  c_mark    constant text := 'Refunderet EFTER overfoersel til saelger - kontroller hos Stripe';
+  v_dele    text[];
+  v_tekst   text;
+  v_frosset boolean;
 begin
   select * into b from public.betalinger where stripe_payment_intent_id = p_payment_intent for update;
   if not found or b.bidhamr_daekker_kl is null or b.status <> 'refunderet'
      or b.bidhamr_daekker_refunderet_kl is not null then
     return 'intet';
   end if;
+  -- Delene (adskilt af ' | '): først markeringen fra før, så de nuværende -
+  -- uden den forventede markering og uden dubletter.
+  select array_agg(x order by n) into v_dele
+    from (select distinct on (btrim(x)) btrim(x) as x, n
+            from unnest(string_to_array(
+                   case when coalesce(b.bidhamr_daekker_foer_opm, false)
+                        then coalesce(b.bidhamr_daekker_foer_fejl, '') || ' | ' else '' end
+                   || coalesce(b.sidste_fejl, ''), ' | ')) with ordinality as u(x, n)
+           where btrim(x) <> '' and btrim(x) <> c_mark
+           order by btrim(x), n) d;
+  v_tekst := nullif(left(array_to_string(v_dele, ' | '), 500), '');
+  v_frosset := exists (select 1 from public.betalingsprofiler bp
+                        where bp.user_id = b.seller_id and bp.udbetaling_frosset_kl is not null);
   update public.betalinger
      set bidhamr_daekker_refunderet_kl = now(),
          bidhamr_daekker_refund_id = coalesce(bidhamr_daekker_refund_id, stripe_refund_id),
          bidhamr_daekker_laas_til = null,
-         kraever_opmaerksomhed = case when sidste_fejl = 'Refunderet EFTER overfoersel til saelger - kontroller hos Stripe'
-                                      then false else kraever_opmaerksomhed end,
-         sidste_fejl = case when sidste_fejl = 'Refunderet EFTER overfoersel til saelger - kontroller hos Stripe'
-                            then null else sidste_fejl end,
+         sidste_fejl = v_tekst,
+         kraever_opmaerksomhed = (v_tekst is not null or v_frosset),
          opdateret = now()
    where id = b.id;
   return 'ok';
@@ -1378,6 +1604,106 @@ begin
     raise notice 'Beløbsloft: % maksimum over 500.000 kr. findes - de kan ikke afgive automatiske bud over loftet', n;
   end if;
 end $do$;
+
+-- ===========================================================================
+-- 14. Sælgerens udbetalingsstatus (hjemmesiden og appen)
+-- ===========================================================================
+-- Som 20261011030000, men de nye grunde fra betaling_udbetaling_blokeret
+-- vises rigtigt. Statuskoderne er de samme som før (appen kender dem); nyt
+-- felt 'aarsag' (null | 'fortrydelsesfrist' | 'kontrol') til en mere præcis
+-- tekst:
+--   sag, ikke_afhentet, returneret                 -> stoppet
+--   udbetaling_frosset, kraever_godkendelse,
+--   udbetalinger_stoppet                           -> stoppet, aarsag 'kontrol'
+--                                                     (grunden afsløres ikke)
+--   fortrydelsesfrist                              -> venter, aarsag
+--                                                     'fortrydelsesfrist'
+-- tidligst_kl tager erhvervets fortrydelsesfrist (14 dage efter levering/
+-- modtagelse) med; er pakken ikke leveret endnu, er tidligst_kl null.
+create or replace function public.handel_udbetalingsstatus(p_trade uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $fn$
+declare
+  v_uid   uuid := auth.uid();
+  b       record;
+  u       record;
+  t       record;
+  v_grund text;
+  v_tid   timestamptz;
+  v_erhv  boolean;
+  v_lev   timestamptz;
+begin
+  if v_uid is null or p_trade is null then return null; end if;
+  select * into b from public.betalinger
+   where trade_id = p_trade and seller_id = v_uid
+   order by oprettet desc, id
+   limit 1;
+  if not found or b.pengemodel <> 'destination' or b.status <> 'betalt' or b.frigivet_kl is null then
+    return null;
+  end if;
+  if b.saelger_udbetaling_id is not null then
+    select * into u from public.saelger_udbetalinger where id = b.saelger_udbetaling_id;
+    if u.status = 'paid' then
+      return jsonb_build_object('status', 'udbetalt', 'tidligst_kl', null,
+                                'sendt_kl', u.betalt_kl, 'beloeb_oere', b.udbetaling_oere, 'aarsag', null);
+    end if;
+    return jsonb_build_object('status', 'paa_vej', 'tidligst_kl', null,
+                              'sendt_kl', coalesce(u.oprettet_hos_stripe_kl, b.overfoert_kl),
+                              'beloeb_oere', b.udbetaling_oere, 'aarsag', null);
+  end if;
+  v_grund := public.betaling_udbetaling_blokeret(b.id);
+  if v_grund = 'venter_paa_bank' then
+    return jsonb_build_object('status', 'venter_paa_bank', 'tidligst_kl', null,
+                              'sendt_kl', null, 'beloeb_oere', b.udbetaling_oere, 'aarsag', null);
+  end if;
+  if v_grund in ('udbetalinger_inaktive', 'plan_ikke_manuel', 'transfer_ukendt') then
+    return jsonb_build_object('status', 'kraever_handling', 'tidligst_kl', null,
+                              'sendt_kl', null, 'beloeb_oere', b.udbetaling_oere, 'aarsag', null);
+  end if;
+  if v_grund in ('udbetaling_frosset', 'kraever_godkendelse', 'udbetalinger_stoppet') then
+    return jsonb_build_object('status', 'stoppet', 'tidligst_kl', null,
+                              'sendt_kl', null, 'beloeb_oere', b.udbetaling_oere, 'aarsag', 'kontrol');
+  end if;
+  if v_grund is not null and v_grund not in ('midler_ikke_tilgaengelige', 'ventetid', 'fortrydelsesfrist') then
+    -- refusion, indsigelse, svindelvarsel, radar_review, handel_annulleret,
+    -- sag_aaben, sag, ikke_afhentet, returneret, kraever_opmaerksomhed,
+    -- konto_frakoblet, konto_skiftet og ukendte grunde.
+    return jsonb_build_object('status', 'stoppet', 'tidligst_kl', null,
+                              'sendt_kl', null, 'beloeb_oere', b.udbetaling_oere, 'aarsag', null);
+  end if;
+  v_tid := greatest(b.midler_tilgaengelige_kl, b.udbetal_tidligst);
+  -- Erhverv: tidligst 14 dage efter levering/modtagelse (som
+  -- betaling_udbetaling_blokeret). Ukendt levering: intet tidspunkt.
+  select * into t from public.trades where id = b.trade_id;
+  select coalesce(a.erhverv, false) into v_erhv from public.auctions a where a.id = t.auction_id;
+  v_erhv := coalesce(v_erhv, false)
+            or exists (select 1 from public.users us where us.id = b.seller_id and us.konto_type = 'erhverv');
+  if v_erhv then
+    select max(fo.leveret_kl) into v_lev
+      from public.forsendelser fo
+     where fo.trade_id = t.id and fo.type = 'udgaaende' and fo.status not in ('annulleret', 'fejlet');
+    v_lev := coalesce(v_lev, t.received_at, case when coalesce(t.afhentning, false) then b.frigivet_kl end);
+    if v_lev is null then
+      return jsonb_build_object('status', 'venter', 'tidligst_kl', null,
+                                'sendt_kl', null, 'beloeb_oere', b.udbetaling_oere, 'aarsag', 'fortrydelsesfrist');
+    end if;
+    v_tid := greatest(v_tid, v_lev + interval '14 days');
+  end if;
+  return jsonb_build_object('status', 'venter',
+                            'tidligst_kl', case when v_tid > now() then v_tid end,
+                            'sendt_kl', null, 'beloeb_oere', b.udbetaling_oere,
+                            'aarsag', case when v_grund = 'fortrydelsesfrist'
+                                             or (v_erhv and v_tid > now() and v_tid = v_lev + interval '14 days')
+                                           then 'fortrydelsesfrist' end);
+end;
+$fn$;
+
+revoke all on function public.handel_udbetalingsstatus(uuid) from public, anon, authenticated;
+grant execute on function public.handel_udbetalingsstatus(uuid) to authenticated, service_role;
 
 -- ===========================================================================
 -- 12. Grants

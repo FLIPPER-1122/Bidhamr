@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { annullerBetaling, spejlPaymentIntent } from "@/lib/betaling/stripeBetaling";
 import { getStripe } from "@/lib/stripe";
 import { send } from "@/lib/notifikationer/send";
+import { hentNoedstop } from "@/lib/betaling/noedstop";
 import {
   andenchanceTilbudMail,
   koeberAdminAnnulleretMail,
@@ -76,19 +77,29 @@ export async function annullerUbetalte(): Promise<{ annulleret: number; mails: n
   let annulleret = 0;
   let mails = 0;
 
+  // Nødstop for nye betalinger (sikkerhedsnet A): køberne kan ikke betale, så
+  // betalingsfristen står stille - ingen handel annulleres, og ingen får en
+  // "ubetalt vinder"-advarsel. Fristen forlænges, når chefen genoptager
+  // (stripe_noedstop_saet). Kan tilstanden ikke læses, regnes den som stoppet.
+  // Databasen afviser også selv (ubetalt_vinder_annuller). Allerede
+  // annullerede handler (Stripe-annullering og mails nedenfor) kører videre.
+  const stoppet = (await hentNoedstop(true)).nyeBetalingerStoppet;
+
   // Kun betalinger, der ikke er sat i gang. En betaling i gang ('behandles',
   // fx MobilePay) håndteres nedenfor efter et tjek hos Stripe.
-  const { data: forfaldne, error } = await admin
-    .from("betalinger")
-    .select("trade_id, stripe_payment_intent_id, betal_senest")
-    .eq("status", "afventer")
-    .lt("betal_senest", new Date().toISOString())
-    .order("betal_senest", { ascending: true })
-    .limit(200)
-    .overrideTypes<BetalingRaekke[], { merge: false }>();
+  const { data: forfaldne, error } = stoppet
+    ? { data: [] as BetalingRaekke[], error: null }
+    : await admin
+        .from("betalinger")
+        .select("trade_id, stripe_payment_intent_id, betal_senest")
+        .eq("status", "afventer")
+        .lt("betal_senest", new Date().toISOString())
+        .order("betal_senest", { ascending: true })
+        .limit(200)
+        .overrideTypes<BetalingRaekke[], { merge: false }>();
   if (error) console.error("Kunne ikke hente forfaldne betalinger:", error);
 
-  annulleret += await afklarBehandlede(admin);
+  if (!stoppet) annulleret += await afklarBehandlede(admin);
 
   for (const b of forfaldne ?? []) {
     const trade_id = b.trade_id;

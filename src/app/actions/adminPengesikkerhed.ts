@@ -69,18 +69,57 @@ export async function saetNoedstop(formData: FormData) {
       p_aarsag: aarsag,
     });
     if (error) throw new Error(error.message);
-    const kode = (data as { kode?: string } | null)?.kode ?? "";
+    const svar = (data ?? {}) as {
+      kode?: string;
+      forlaenget?: { trade_id: string; buyer_id: string; betal_senest: string }[];
+      forlaengelse_fejlet?: number;
+    };
+    const kode = svar.kode ?? "";
     if (kode !== "ok") throw new BrugerFejl(NOEDSTOP_FEJL[kode] ?? GENERISK);
     glemNoedstop();
+
+    let ekstra = "";
+    if (hvad === "nye_betalinger" && stop) {
+      // Åbne checkouts kan ikke betales under stoppet (sikkerhedsnet A).
+      const { annullerAabneBetalinger } = await import("@/lib/betaling/noedstop");
+      const a = await annullerAabneBetalinger();
+      ekstra = ` ${a.annulleret} åbne betaling(er) er annulleret hos Stripe.${a.igang ? ` ${a.igang} betaling(er) var allerede sendt til banken og kan nå at gå igennem (de registreres som normalt).` : ""}${a.fejlet ? ` ${a.fejlet} kunne ikke annulleres - de kan stadig betales; kontrollér dem i Stripe.` : ""}`;
+    }
+    if (hvad === "nye_betalinger" && !stop) {
+      const forl = svar.forlaenget ?? [];
+      await giveKoeberneBesked(forl);
+      ekstra = ` Betalingsfristen er forlænget for ${forl.length} handel(er).${svar.forlaengelse_fejlet ? ` ${svar.forlaengelse_fejlet} betaling(er) fik IKKE fristen forlænget - kontrollér dem under Betalinger, før fristen udløber.` : ""}`;
+    }
     await logDriftFejl({
       kilde: "action",
       hvor: "betaling/noedstop",
-      fejl: `Nødstop: ${hvad === "udbetalinger" ? "udbetalinger til sælgernes bank" : "nye betalinger"} er ${stop ? "STOPPET" : "genoptaget"} af chefen.`,
+      fejl: `Nødstop: ${hvad === "udbetalinger" ? "udbetalinger til sælgernes bank" : "nye betalinger"} er ${stop ? "STOPPET" : "genoptaget"} af chefen.${ekstra}`,
       brugerId: userId,
     });
     revalidatePath("/admin", "layout");
     return { ok: true as const };
   });
+}
+
+// Køberne, hvis frist er forlænget efter et stop for nye betalinger, får
+// besked (én pr. handel og frist). Kaster aldrig.
+async function giveKoeberneBesked(forl: { trade_id: string; buyer_id: string; betal_senest: string }[]) {
+  if (forl.length === 0) return;
+  const { send } = await import("@/lib/notifikationer/send");
+  const { fristDato } = await import("@/lib/betalingsfrist");
+  for (const f of forl) {
+    try {
+      await send(f.buyer_id, "betalingsfrist", {
+        titel: "Du kan betale igen",
+        tekst: `Betalingen var midlertidigt sat på pause. Du kan nu betale igen, og din frist er forlænget til ${fristDato(f.betal_senest)}.`,
+        link: `/mine-handler/${f.trade_id}`,
+        data: { trade_id: f.trade_id },
+        noegle: `noedstop_forlaenget:${f.trade_id}:${new Date(f.betal_senest).getTime()}`,
+      });
+    } catch (err) {
+      console.error("Besked om forlænget frist fejlede:", f.trade_id, err);
+    }
+  }
 }
 
 // ------------------------------------------------------------------ Penge-siden
@@ -127,22 +166,29 @@ export async function hentPengesikkerhed() {
         .limit(100),
       admin
         .from("betalingsprofiler")
-        .select("user_id, udbetaling_frosset_grund, udbetaling_frosset_kl, salg_frosset_kl")
+        .select("user_id, udbetaling_frosset_kl, salg_frosset_kl")
         .or("udbetaling_frosset_kl.not.is.null,salg_frosset_kl.not.is.null")
         .limit(100),
     ]);
     // Før migrationen findes kolonnerne ikke: tomme lister.
-    const mangler = (e: { code?: string } | null) => !!e && ["42703", "PGRST204"].includes(e.code ?? "");
+    const mangler = (e: { code?: string } | null) =>
+      !!e && ["42703", "PGRST204", "PGRST205", "42P01"].includes(e.code ?? "");
     if (gFejl && !mangler(gFejl)) throw new Error(gFejl.message);
     if (fFejl && !mangler(fFejl)) throw new Error(fFejl.message);
     const brugere = [...new Set([...(g ?? []).map((x) => x.seller_id as string), ...(f ?? []).map((x) => x.user_id as string)])];
     const auktioner = [...new Set((g ?? []).map((x) => x.auction_id as string))];
-    const [{ data: u }, { data: a }] = await Promise.all([
+    const frosneIds = (f ?? []).map((x) => x.user_id as string);
+    const [{ data: u }, { data: a }, { data: gr }] = await Promise.all([
       brugere.length ? admin.from("users").select("id, navn").in("id", brugere) : Promise.resolve({ data: [] }),
       auktioner.length ? admin.from("auctions").select("id, titel").in("id", auktioner) : Promise.resolve({ data: [] }),
+      // Grunden står i en tabel, kun staff kan læse (sælgeren ser den ikke).
+      frosneIds.length
+        ? admin.from("saelger_frysning_grunde").select("user_id, grund").in("user_id", frosneIds)
+        : Promise.resolve({ data: [] }),
     ]);
     const navn = new Map(((u ?? []) as { id: string; navn: string | null }[]).map((x) => [x.id, x.navn]));
     const titel = new Map(((a ?? []) as { id: string; titel: string | null }[]).map((x) => [x.id, x.titel]));
+    const grund = new Map(((gr ?? []) as { user_id: string; grund: string }[]).map((x) => [x.user_id, x.grund]));
     return {
       ok: true,
       noedstop,
@@ -157,7 +203,7 @@ export async function hentPengesikkerhed() {
       frosne: (fFejl ? [] : (f ?? [])).map((x) => ({
         brugerId: x.user_id as string,
         navn: navn.get(x.user_id as string) ?? null,
-        grund: (x.udbetaling_frosset_grund as string | null) ?? null,
+        grund: grund.get(x.user_id as string) ?? null,
         udbetalingFrossetKl: (x.udbetaling_frosset_kl as string | null) ?? null,
         salgFrosset: !!x.salg_frosset_kl,
       })),
@@ -234,6 +280,47 @@ export async function ophaevFrysning(formData: FormData) {
   });
 }
 
+const FRYS_FEJL: Record<string, string> = {
+  ingen_adgang: "Kun chefen kan fryse en sælger.",
+  begrundelse_mangler: "Skriv en begrundelse.",
+  begrundelse_for_lang: "Begrundelsen er for lang (højst 1000 tegn).",
+  inhabil: "Du kan ikke fryse en sælger, du selv har handlet med.",
+  ingen_profil: "Brugeren har ingen udbetalingskonto, så der er intet at fryse.",
+  allerede: "Sælgeren er allerede frosset. Opdatér siden.",
+};
+
+// Chefen fryser selv en sælger (Admin → brugeren): ingen udbetalinger, og alle
+// ventende handler markeres. formData: brugerId, begrundelse, frysSalg ('ja'
+// = også nye auktioner og bud på sælgerens auktioner). Ophæves under
+// Admin → Penge → "Frosne sælgere".
+export async function frysSaelgerManuelt(formData: FormData) {
+  return koer("frysSaelgerManuelt", async () => {
+    const { admin, userId } = await assertRole("chef");
+    const bruger = tekst(formData, "brugerId");
+    const begrundelse = tekst(formData, "begrundelse");
+    const frysSalg = tekst(formData, "frysSalg") === "ja";
+    if (!bruger) throw new BrugerFejl(FRYS_FEJL.ingen_profil);
+    if (!begrundelse) throw new BrugerFejl(FRYS_FEJL.begrundelse_mangler);
+    const { data, error } = await admin.rpc("saelger_frys_manuelt", {
+      p_medarbejder: userId,
+      p_saelger: bruger,
+      p_begrundelse: begrundelse,
+      p_frys_salg: frysSalg,
+    });
+    if (error) throw new Error(error.message);
+    const kode = (data as { kode?: string } | null)?.kode ?? "";
+    if (kode !== "ok") throw new BrugerFejl(FRYS_FEJL[kode] ?? GENERISK);
+    await logDriftFejl({
+      kilde: "action",
+      hvor: "betaling/frysning",
+      fejl: `Chefen har frosset sælgerens udbetalinger${frysSalg ? " (også nye auktioner og bud)" : ""}. Ophæves under Admin → Penge → Frosne sælgere.`,
+      brugerId: bruger,
+    });
+    revalidatePath("/admin", "layout");
+    return { ok: true as const };
+  });
+}
+
 // ------------------------------------------------------------------ BidHamr dækker
 
 const DAEKKER: Record<string, string> = {
@@ -248,10 +335,15 @@ const DAEKKER: Record<string, string> = {
   ikke_betalt: "Handlen er ikke betalt.",
   ikke_udbetalt:
     "Pengene er ikke udbetalt til sælgeren. Brug den almindelige refusion (Refundér køber) - så hentes pengene fra sælgerens Stripe-konto.",
-  udbetaling_uafklaret: "Udbetalingen til sælgeren er ikke afklaret endnu. Vent, til den er gennemført eller fejlet.",
+  udbetaling_uafklaret: "Kan først bruges, når udbetalingen er gennemført hos banken.",
   indsigelse: "Køberen har en indsigelse hos sin bank. Banken afgør pengene - der refunderes ikke herfra.",
   konflikt: "Der findes allerede en refusion på betalingen hos Stripe. Intet er sendt - kontrollér betalingen i Stripe.",
-  stripe_afviste: "Stripe afviste refusionen. Se fejlen i Stripe, og prøv igen senere.",
+  // Refusionen ER oprettet hos Stripe, men kunne ikke registreres her.
+  konflikt_efter:
+    "Refusionen kan være sendt til køberen hos Stripe, men den kunne ikke registreres her. Tjek betalingen i Stripe, før du gør mere.",
+  stripe_afviste: "Stripe afviste refusionen. Prøv igen i morgen, eller kontakt Stripe.",
+  uafklaret:
+    "Stripe svarede ikke. Refusionen kan være sendt - vent et par minutter, og prøv igen. Den sendes aldrig to gange.",
   ikke_laast: "Refusionen blev sendt, men kunne ikke registreres med det samme. Den registreres, når Stripe bekræfter den.",
 };
 
@@ -277,7 +369,8 @@ export async function bidhamrDaekkerRefusion(formData: FormData) {
     } catch (err) {
       console.error("BidHamr dækker fejlede:", b.id, err);
       revalidatePath("/admin", "layout");
-      throw new BrugerFejl("Refusionen fejlede hos Stripe. Intet er registreret som refunderet - prøv igen om lidt.");
+      // Kun fejl, før refusionen blev sendt (opslag hos Stripe eller i databasen).
+      throw new BrugerFejl("Refusionen kunne ikke startes. Intet er sendt - prøv igen om lidt.");
     }
     revalidatePath("/admin", "layout");
     if (r === "refunderet" || r === "afventer") return { ok: true as const };

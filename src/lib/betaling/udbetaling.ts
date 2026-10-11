@@ -586,6 +586,20 @@ async function frigoerGammelClaim(admin: Admin, u: UdbetalingRaekke, aarsag: str
 }
 
 // Opretter (eller finder) payouten for en claimet/usikker udbetaling.
+// Nødstop eller frosset sælger - frisk fra databasen. Kan det ikke læses,
+// regnes det som stoppet (fail closed). Før 20261019010000 (kolonnen findes
+// ikke): kun nødstoppet tæller.
+async function stoppetLigeFoer(admin: Admin, saelgerId: string): Promise<boolean> {
+  if ((await hentNoedstop(true)).udbetalingerStoppet) return true;
+  const { data, error } = await admin
+    .from("betalingsprofiler")
+    .select("udbetaling_frosset_kl")
+    .eq("user_id", saelgerId)
+    .maybeSingle<{ udbetaling_frosset_kl: string | null }>();
+  if (error) return !manglerIDatabasen(error);
+  return !!data?.udbetaling_frosset_kl;
+}
+
 async function opretPayout(admin: Admin, u: UdbetalingRaekke): Promise<string> {
   const stripe = getStripe();
   const valg = { stripeAccount: u.stripe_konto };
@@ -655,6 +669,13 @@ async function opretPayout(admin: Admin, u: UdbetalingRaekke): Promise<string> {
       p_ny_noegle: true,
     });
   }
+
+  // Sidste tjek lige før Stripe (sikkerhedsnet A): et nødstop eller en
+  // frysning, der er sat efter claimen, stopper udbetalingen her. Claimen
+  // beholdes og venter (VENT_I_CLAIM) - den sendes, når chefen ophæver det.
+  // Kapløbsvinduet herfra til payouts.create er beskrevet i
+  // docs/GO-LIVE-STRIPE.md ("Nødstop og kapløb").
+  if (await stoppetLigeFoer(admin, u.seller_id)) return "stoppet";
 
   // Sidste kald med nøglen (24-timers-uret i frigoerGammelClaim).
   const { error: sendtFejl } = await admin

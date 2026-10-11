@@ -8,10 +8,10 @@ import "server-only";
 // penge_fejl), kan chefen lade BidHamr betale af platformens egen saldo:
 //
 //   1. betaling_bidhamr_daekker_claim låser betalingen (15 min), tjekker rolle,
-//      inhabilitet, at udbetalingen er gennemført/på vej, ingen indsigelse og
-//      ingen tidligere refusionstrin, og låser beløbet første gang:
+//      inhabilitet, at udbetalingen er gennemført hos banken ('paid'), ingen
+//      indsigelse og ingen tidligere refusionstrin, og låser beløbet første gang:
 //        sag med medhold, der venter på refusion -> total - BidHamr Beskyttelse
-//        ellers                                  -> total
+//        ellers                                  -> refusion_oere, ellers total
 //   2. Stripe: refusionerne på PaymentIntenten slås op (en refusion med
 //      metadata.bidhamr_daekker = betalingen genbruges; findes en anden, eller
 //      er chargen allerede delvist refunderet, stoppes der). Ellers
@@ -38,8 +38,11 @@ import { kronerFraOere } from "@/lib/mails/handel";
 export type DaekkerUdfald =
   | "refunderet"
   | "afventer"
-  | "konflikt"
+  | "konflikt" // intet sendt
+  | "konflikt_efter" // refusionen er oprettet hos Stripe, men ikke registreret
+  | "uafklaret" // ukendt svar fra Stripe - samme kald igen er sikkert
   | "stripe_afviste"
+  | "ikke_laast"
   | string; // databasens koder (ingen_adgang, inhabil, ikke_udbetalt ...)
 
 type Claim = {
@@ -86,21 +89,36 @@ export async function bidhamrDaekker(
   }
 
   const stripe = getStripe();
+  // 1. Opslag hos Stripe (intet er sendt endnu - en fejl her kastes).
+  let refund: Stripe.Refund | null;
+  let liste: Stripe.ApiList<Stripe.Refund>;
   try {
     const charge = await stripe.charges.retrieve(String(c.charge), {}, KALD);
-    const liste = await stripe.refunds.list({ payment_intent: pi, limit: 100 }, KALD);
+    liste = await stripe.refunds.list({ payment_intent: pi, limit: 100 }, KALD);
     const aktive = liste.data.filter((r) => r.status !== "failed" && r.status !== "canceled");
-    let refund: Stripe.Refund | null = aktive.find((r) => r.metadata?.bidhamr_daekker === betalingId) ?? null;
+    refund = aktive.find((r) => r.metadata?.bidhamr_daekker === betalingId) ?? null;
     if (!refund) {
       if (liste.has_more || aktive.length > 0 || Number(charge.amount_refunded) > 0 || Number(charge.amount) < R) {
         await frigiv(betalingId, noegle, "Der findes allerede en anden refusion på betalingen hos Stripe");
         await logDriftFejl({
           kilde: "action",
           hvor: "betaling/bidhamr-daekker",
-          fejl: `BidHamr dækker stoppet for betaling ${betalingId}: der findes allerede en anden refusion hos Stripe (eller beløbet passer ikke). Kontrollér betalingen i Stripe.`,
+          fejl: `BidHamr dækker stoppet for betaling ${betalingId}: der findes allerede en anden refusion hos Stripe (eller beløbet passer ikke). Intet er sendt. Kontrollér betalingen i Stripe.`,
         });
         return "konflikt";
       }
+    }
+  } catch (err) {
+    const kode = err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt";
+    await frigiv(betalingId, noegle, `Fejl hos Stripe (${kode})`);
+    throw err;
+  }
+
+  // 2. Refusionen oprettes (fast nøgle: et gentaget kald giver samme
+  //    refusion tilbage og refunderer aldrig to gange - også et fejlsvar
+  //    gentages i op til 24 timer, deraf "prøv igen i morgen").
+  if (!refund) {
+    try {
       refund = await stripe.refunds.create(
         {
           payment_intent: pi,
@@ -118,29 +136,62 @@ export async function bidhamrDaekker(
         },
         { ...KALD, idempotencyKey: `bidhamr-daekker-${betalingId}` },
       );
+    } catch (err) {
+      // Stripe afviste kaldet (4xx): intet er sendt. Ellers (netværk, 5xx,
+      // timeout) ved vi ikke, om refusionen er oprettet - det samme kald med
+      // samme nøgle afklarer det uden risiko for to refusioner.
+      const afvist =
+        err instanceof Stripe.errors.StripeInvalidRequestError ||
+        err instanceof Stripe.errors.StripeCardError ||
+        err instanceof Stripe.errors.StripePermissionError;
+      const kode = err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt";
+      await frigiv(betalingId, noegle, afvist ? `Stripe afviste refusionen (${kode})` : `Ukendt svar fra Stripe (${kode})`);
+      console.error("BidHamr dækker: refunds.create fejlede:", betalingId, err);
+      return afvist ? "stripe_afviste" : "uafklaret";
     }
-    if (refund.status === "failed" || refund.status === "canceled") {
-      await frigiv(betalingId, noegle, `Stripe: refusionen er ${refund.status}`);
+    // Den faste nøgle kan give en tidligere refusion tilbage, som siden er
+    // fejlet hos Stripe (svaret er gemt med status fra dengang).
+    const tidligere = liste.data.find((r) => r.id === refund!.id);
+    if (tidligere && (tidligere.status === "failed" || tidligere.status === "canceled")) {
+      await frigiv(betalingId, noegle, `Stripe: refusionen er ${tidligere.status}`);
       return "stripe_afviste";
     }
+  }
+  if (refund.status === "failed" || refund.status === "canceled") {
+    await frigiv(betalingId, noegle, `Stripe: refusionen er ${refund.status}`);
+    return "stripe_afviste";
+  }
+
+  // 3. Refusionen findes hos Stripe: registreres. Fejler det, må UI'et ikke
+  //    sige "intet er sendt" - webhooken (charge.refunded) registrerer den.
+  const sendt = refund;
+  try {
     const { data: reg, error: rFejl } = await admin.rpc("betaling_bidhamr_daekker_registrer", {
       p_betaling: betalingId,
       p_noegle: noegle,
-      p_refund: refund.id,
-      p_status: refund.status ?? "pending",
+      p_refund: sendt.id,
+      p_status: sendt.status ?? "pending",
     });
     if (rFejl) throw new Error(`betaling_bidhamr_daekker_registrer: ${rFejl.message}`);
-    if (String(reg) === "ok") {
+    const svar = String(reg);
+    if (svar === "ok") {
       if (c.buyer_id && c.trade_id) await beskedTilKoeber(c.buyer_id, c.trade_id, R);
       return "refunderet";
     }
     // Afventer bekræftelse (webhooken afslutter) - låsen frigives.
     await frigiv(betalingId, noegle, null);
-    return String(reg) === "afventer" ? "afventer" : String(reg);
+    if (svar === "afventer") return "afventer";
+    if (svar === "ikke_laast") return "ikke_laast";
+    throw new Error(`betaling_bidhamr_daekker_registrer svarede '${svar}'`);
   } catch (err) {
-    const kode = err instanceof Stripe.errors.StripeError ? (err.code ?? err.type) : "ukendt";
-    await frigiv(betalingId, noegle, `Fejl hos Stripe (${kode})`);
-    throw err;
+    console.error("BidHamr dækker: refusionen er sendt, men ikke registreret:", betalingId, sendt.id, err);
+    await frigiv(betalingId, noegle, "Refusionen er oprettet hos Stripe, men kunne ikke registreres");
+    await logDriftFejl({
+      kilde: "action",
+      hvor: "betaling/bidhamr-daekker",
+      fejl: `BidHamr dækker: refusion ${sendt.id} (status '${sendt.status}') er oprettet hos Stripe for betaling ${betalingId}, men kunne ikke registreres i databasen: ${err instanceof Error ? err.message : String(err)}. Kontrollér betalingen i Stripe - webhooken registrerer den, når Stripe bekræfter.`,
+    });
+    return "konflikt_efter";
   }
 }
 

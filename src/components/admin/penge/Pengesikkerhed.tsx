@@ -21,6 +21,7 @@ const tid = (iso: string | null) =>
 const FROSSET_GRUND: Record<string, string> = {
   fremmed_udbetaling: "Udbetaling fra sælgerens Stripe-konto, som BidHamr ikke har lavet",
   udbetalingsplan: "Sælgerkontoens udbetalingsplan var ikke manuel",
+  manuel: "Frosset af chefen (se begrundelsen i medarbejder-loggen)",
 };
 
 const ROED_KNAP =
@@ -92,7 +93,7 @@ export default async function Pengesikkerhed() {
         <NoedstopLinje
           hvad="udbetalinger"
           titel="Udbetalinger"
-          forklaring="Når udbetalinger er stoppet, sendes ingen penge fra sælgernes Stripe-konti til deres bank."
+          forklaring="Når udbetalinger er stoppet, sendes ingen penge fra sælgernes Stripe-konti til deres bank. En udbetaling, der allerede er oprettet hos Stripe, stoppes ikke herfra - den kan annulleres i Stripe, så længe den ikke er sendt til banken."
           stoppet={n.udbetalingerStoppet}
           aarsag={n.udbetalingerAarsag}
           kl={n.udbetalingerKl}
@@ -100,7 +101,7 @@ export default async function Pengesikkerhed() {
         <NoedstopLinje
           hvad="nye_betalinger"
           titel="Nye betalinger"
-          forklaring="Når nye betalinger er stoppet, kan købere ikke betale for deres handler."
+          forklaring="Når nye betalinger er stoppet, kan købere ikke betale for deres handler. Betalingsfristerne står stille: ingen handel annulleres for manglende betaling, og når du genoptager, forlænges køberens frist med stoppets varighed (mindst 24 timer), og køberen får besked. Åbne betalinger annulleres hos Stripe, men en betaling, der allerede er sendt til banken (fx MobilePay under behandling), kan nå at gå igennem - den registreres som normalt."
           stoppet={n.nyeBetalingerStoppet}
           aarsag={n.nyeBetalingerAarsag}
           kl={n.nyeBetalingerKl}
