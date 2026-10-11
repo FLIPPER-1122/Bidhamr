@@ -21,7 +21,8 @@ import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
 import { logDriftFejl } from "@/lib/drift";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
-import { betaTilmeldingTilladt } from "@/lib/beta";
+import { betaAuthBruger, betaTilmeldingTilladt } from "@/lib/beta";
+import { gemVentendeAdgangskode, hentVentendeAdgangskode, sletVentendeAdgangskode } from "@/lib/ventendeAdgangskode";
 import { betaKodeMail } from "@/lib/mails/beta";
 
 // Login, oprettelse, bekraeftelseskode (e-mail), gensend kode og nulstil
@@ -34,7 +35,11 @@ import { betaKodeMail } from "@/lib/mails/beta";
 // egentlige vaern; dette er et ekstra lag for hjemmesiden.
 
 // firma: true = firmakonto (logInd) - login-siden sender så til /firma.
-type Resultat = { ok: true; firma?: boolean } | { fejl: string; kode?: "email_ikke_bekraeftet" };
+// vaelgAdgangskode: efter bekræftelse skal brugeren vælge en adgangskode
+// (/reset-password) - se verificerSignupKode.
+type Resultat =
+  | { ok: true; firma?: boolean; vaelgAdgangskode?: true }
+  | { fejl: string; kode?: "email_ikke_bekraeftet" };
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 
@@ -220,6 +225,11 @@ export async function opretKonto(input: {
     return { ok: true, bekraeftMail: false };
   }
 
+  // Samme værn som under beta: findes e-mailen allerede som ubekræftet konto
+  // (fx oprettet af en anden med en anden adgangskode), sender Supabase bare
+  // en ny kode. Den valgte adgangskode sættes derfor efter bekræftelsen
+  // (verificerSignupKode), så kun den, der har koden, bestemmer den.
+  await gemVentendeAdgangskode(email, password);
   await saetTjekEmailCookie(email);
   return { ok: true, bekraeftMail: true };
 }
@@ -229,32 +239,81 @@ export async function opretKonto(input: {
 // åben. Databasen tjekker det samme igen (handle_new_user ->
 // beta_tjek_ny_bruger), så det ikke kan omgås med anon-nøglen.
 // "Allow new users to sign up" er slået fra i Supabase i produktion, så en
-// NY konto oprettes med service-role via generateLink('signup') (opretter
-// brugeren med adgangskoden og signup-metadata, men sender ingen mail).
-// Koden fra generateLink sendes i vores egen mail (betaKodeMail) og
-// indtastes på /tjek-indbakke som ved en almindelig oprettelse
-// (verifyOtp type 'signup').
+// NY konto oprettes med service-role via generateLink('signup') (sender ingen
+// mail). Koden sendes i vores egen mail (betaKodeMail) og indtastes på
+// /tjek-indbakke (verifyOtp type 'signup').
 //
 // Sikkerhed (review 11. okt. 2026):
-// - En EKSISTERENDE konto (ubekræftet eller bekræftet) røres aldrig: ingen
-//   ny adgangskode, ingen ny metadata, intet generateLink. Ellers kunne en
-//   angriber sætte sin egen adgangskode på offerets ubekræftede konto og
-//   logge ind, når offeret bekræfter. Er kontoen ubekræftet, sendes kun en
-//   ny kode (auth.resend); har brugeren glemt adgangskoden, nulstilles den
-//   bagefter via "Glemt adgangskode".
+// - Adgangskoden bestemmes KUN af den, der har koden fra mailen. Kontoen
+//   oprettes ALTID med en tilfældig adgangskode. Den valgte gemmes krypteret
+//   i en kort cookie i brugerens browser (src/lib/ventendeAdgangskode.ts) og
+//   sættes først efter en vellykket verifyOtp (verificerSignupKode). Det
+//   gælder begge rækkefølger: opretter en angriber kontoen først, eller
+//   prøver han bagefter, overlever hans adgangskode aldrig offerets
+//   bekræftelse - og han kan ikke selv bekræfte uden koden.
+// - En EKSISTERENDE konto (slået op i auth.users) får aldrig ny metadata
+//   eller adgangskode herfra. Er den ubekræftet, sendes kun en ny kode
+//   (sendBetaKodeIgen).
 // - Samme svar i alle tilfælde (ikke inviteret, beta lukket, konto findes,
-//   ny konto): "tjek din indbakke" (beta: true). Svaret afslører ikke, om en
-//   e-mail er inviteret eller har en konto.
+//   ny konto, fejl): "tjek din indbakke" (beta: true). Fejl logges i drift.
 // - Højst én kodemail pr. e-mail hvert 2. minut (beta_kode_email, tjekket
-//   før alt andet). Inden for de 2 minutter sendes intet, så den forrige kode
-//   ikke ugyldiggøres.
+//   før alt andet). Inden for de 2 minutter sendes intet, så den forrige
+//   kode stadig gælder.
+function tilfaeldigAdgangskode(): string {
+  const b = crypto.getRandomValues(new Uint8Array(32));
+  return `Bh-${Buffer.from(b).toString("base64url")}-9x`;
+}
+
+async function logBetaFejl(hvor: string, fejl: unknown, brugerId?: string) {
+  const tekst = fejl instanceof Error ? fejl.message : typeof fejl === "string" ? fejl : JSON.stringify(fejl);
+  await logDriftFejl({
+    kilde: "action",
+    hvor,
+    fejl: String(tekst).replace(/[^\s@]+@[^\s@]+/g, "[e-mail]"),
+    ...(brugerId ? { brugerId } : {}),
+  });
+}
+
+// Ny kode til en EKSISTERENDE, ubekræftet konto. Først Supabases egen mail
+// (auth.resend). Virker den ikke (fx fordi "Allow new users to sign up" er
+// slået fra), laves en ny kode med generateLink('signup') på den
+// eksisterende konto - UDEN metadata og med en tilfældig adgangskode (den
+// rigtige sættes først efter bekræftelsen) - og den sendes i vores egen mail.
+// true = en kode er sendt.
+async function sendBetaKodeIgen(email: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { error: resendFejl } = await supabase.auth.resend({
+    type: "signup",
+    email,
+    options: { emailRedirectTo: sideUrl("/auth/callback?next=/velkommen") },
+  });
+  if (!resendFejl) return true;
+  await logBetaFejl("sendBetaKodeIgen.resend", `${resendFejl.status ?? ""} ${resendFejl.code ?? ""}: ${resendFejl.message}`);
+
+  const { data: link, error } = await createAdminClient().auth.admin.generateLink({
+    type: "signup",
+    email,
+    password: tilfaeldigAdgangskode(),
+  });
+  if (error || !link?.properties?.email_otp) {
+    await logBetaFejl("sendBetaKodeIgen.generateLink", `${error?.status ?? ""} ${error?.code ?? ""}: ${error?.message ?? "intet svar"}`);
+    return false;
+  }
+  const sendt = await sendHandelMailDetaljer(email, betaKodeMail({ email, kode: link.properties.email_otp }));
+  if (!sendt.ok) {
+    await logBetaFejl("sendBetaKodeIgen.kodeMail", sendt.fejl, link.user?.id);
+    return false;
+  }
+  return true;
+}
+
 async function opretBetaKonto(input: {
   email: string;
   password: string;
   navn: string;
   fornavn: string;
   efternavn: string;
-}): Promise<{ ok: true; bekraeftMail: true; beta: true } | { fejl: string; felt?: "password" }> {
+}): Promise<{ ok: true; bekraeftMail: true; beta: true }> {
   const { email, password, navn, fornavn, efternavn } = input;
   const svar = async () => {
     await saetTjekEmailCookie(email);
@@ -264,82 +323,54 @@ async function opretBetaKonto(input: {
   if (!(await indenForGraense("beta_kode_email", email))) return svar();
 
   const tilladt = await betaTilmeldingTilladt(email);
-  if (tilladt === null) return { fejl: GENERISK };
+  if (tilladt === null) {
+    await logBetaFejl("opretBetaKonto", "Invitationen kunne ikke tjekkes (beta_tilmelding_tilladt).");
+    return svar();
+  }
   if (!tilladt) return svar();
 
-  // Findes kontoen allerede? (handle_new_user laver altid public.users-rækken;
-  // GoTrue gemmer e-mails med små bogstaver.)
-  const admin = createAdminClient();
-  const { data: findes, error: findesFejl } = await admin
-    .from("users")
-    .select("id")
-    .eq("email", email)
-    .limit(1);
-  if (findesFejl) {
-    console.error("opretBetaKonto: opslag fejlede:", findesFejl.message);
-    return { fejl: GENERISK };
+  const findes = await betaAuthBruger(email);
+  if (findes === null) {
+    await logBetaFejl("opretBetaKonto", "Kontoen kunne ikke slås op (beta_auth_bruger).");
+    return svar();
   }
-  if ((findes ?? []).length > 0) {
-    // Kun en ny kode (Supabases egen mail). Er kontoen bekræftet, sender
-    // Supabase intet. Adgangskode og metadata røres ikke.
-    const supabase = await createClient();
-    const { error: resendFejl } = await supabase.auth.resend({
-      type: "signup",
-      email,
-      options: { emailRedirectTo: sideUrl("/auth/callback?next=/velkommen") },
-    });
-    if (resendFejl && resendFejl.status !== 429) {
-      console.error("opretBetaKonto: resend fejlede:", resendFejl.code, resendFejl.message);
+  if (findes.findes) {
+    // Bekræftet konto: intet. Ubekræftet: kun en ny kode - og den valgte
+    // adgangskode venter i cookien, til koden er indtastet.
+    if (!findes.bekraeftet && (await sendBetaKodeIgen(email))) {
+      await gemVentendeAdgangskode(email, password);
     }
     return svar();
   }
 
-  const { data: link, error } = await admin.auth.admin.generateLink({
+  const { data: link, error } = await createAdminClient().auth.admin.generateLink({
     type: "signup",
     email,
-    password,
+    password: tilfaeldigAdgangskode(),
     options: {
       redirectTo: sideUrl("/auth/callback?next=/velkommen"),
       data: { navn, fornavn, efternavn, vilkaar_version: VILKAAR_VERSION },
     },
   });
   if (error || !link?.user || !link.properties?.email_otp) {
-    if (error?.code === "weak_password") {
-      return { fejl: "Adgangskoden er for svag. Vælg en længere og mindre almindelig adgangskode.", felt: "password" };
-    }
-    // Konto oprettet i mellemtiden, eller databasens værn afviste (fx
-    // tilbagekaldt eller beta lukket i mellemtiden): samme svar.
-    if (
+    // Alt (også weak_password, 429, "findes allerede" og databasens værn)
+    // giver samme svar; det uventede logges.
+    const forventet =
       error?.code === "email_exists" ||
       error?.code === "user_already_exists" ||
-      (error?.status === 500 && /database error/i.test(error.message ?? ""))
-    ) {
-      return svar();
+      (error?.status === 500 && /database error/i.test(error.message ?? ""));
+    if (!forventet) {
+      await logBetaFejl("opretBetaKonto.generateLink", `${error?.status ?? ""} ${error?.code ?? ""}: ${error?.message ?? "intet svar"}`);
     }
-    if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
-    await logDriftFejl({
-      kilde: "action",
-      hvor: "opretBetaKonto",
-      fejl: `generateLink signup: ${error?.status ?? ""} ${error?.code ?? ""}: ${error?.message ?? "intet svar"}`.replace(
-        /[^\s@]+@[^\s@]+/g,
-        "[e-mail]",
-      ),
-    });
-    return { fejl: GENERISK };
+    return svar();
   }
-
-  // Sikkerhedsnet: generateLink returnerer en eksisterende ubekræftet konto
-  // i stedet for at oprette en ny, hvis den blev oprettet lige mellem
-  // opslaget og kaldet. Så sendes der ingen kode herfra (koden i den anden
-  // mail gælder).
-  const oprettet = link.user.created_at ? Date.parse(link.user.created_at) : Date.now();
-  if (Date.now() - oprettet > 60_000) return svar();
 
   const sendt = await sendHandelMailDetaljer(email, betaKodeMail({ email, kode: link.properties.email_otp }));
   if (!sendt.ok) {
     // Kontoen findes; brugeren kan få en ny kode på /tjek-indbakke.
-    await logDriftFejl({ kilde: "action", hvor: "opretBetaKonto.kodeMail", fejl: sendt.fejl, brugerId: link.user.id });
+    await logBetaFejl("opretBetaKonto.kodeMail", sendt.fejl, link.user.id);
   }
+  await gemVentendeAdgangskode(email, password);
   return svar();
 }
 
@@ -362,9 +393,19 @@ export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat
     if (!(await indenForGraense("beta_kode_email", email))) {
       return { fejl: "Vent lidt, før du beder om en ny kode. Den forrige mail kan stadig være på vej." };
     }
+    // Samme svar, uanset om e-mailen er inviteret eller har en konto. Kun en
+    // eksisterende, ubekræftet konto med aktiv invitation får en ny kode
+    // (resend, ellers generateLink + egen mail - sendBetaKodeIgen). Fejl
+    // logges i drift.
     const tilladt = await betaTilmeldingTilladt(email);
-    if (tilladt === null) return { fejl: GENERISK };
-    if (!tilladt) return { ok: true };
+    if (tilladt === null) await logBetaFejl("gensendBekraeftelse", "Invitationen kunne ikke tjekkes.");
+    if (tilladt) {
+      const findes = await betaAuthBruger(email);
+      if (findes === null) await logBetaFejl("gensendBekraeftelse", "Kontoen kunne ikke slås op (beta_auth_bruger).");
+      if (findes?.findes && !findes.bekraeftet) await sendBetaKodeIgen(email);
+    }
+    await saetTjekEmailCookie(email);
+    return { ok: true };
   }
 
   const supabase = await createClient();
@@ -378,10 +419,6 @@ export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat
       return { fejl: "Vent lidt, før du beder om en ny kode. Den forrige mail kan stadig være på vej." };
     }
     console.error("gensendBekraeftelse fejlede:", error.code, error.message);
-    // Beta: opretBetaKonto kan altid lave en ny kode til en ubekræftet konto.
-    if (!tilmeldingAaben()) {
-      return { fejl: "Vi kunne ikke sende en ny kode. Opret kontoen igen med samme e-mail – så får du en ny kode." };
-    }
     return { fejl: GENERISK };
   }
 
@@ -434,7 +471,34 @@ export async function verificerSignupKode(
 
   await nulstilGraense("signup_kode_email_ip", `${email}|${ip}`);
   (await cookies()).delete(TJEK_EMAIL_COOKIE);
-  return efterLogin(supabase, data.user, data.session?.access_token);
+
+  // Den adgangskode, brugeren valgte ved oprettelsen, sættes først nu - i
+  // sessionen fra verifyOtp, altså kun af den, der har koden fra mailen (se
+  // src/lib/ventendeAdgangskode.ts). Bundet til den bekræftede kontos e-mail.
+  // Under beta har kontoen ellers kun en tilfældig adgangskode: mangler
+  // cookien (anden browser, over 30 min.) eller kan adgangskoden ikke sættes,
+  // sendes brugeren til "Vælg adgangskode" (/reset-password).
+  const kontoEmail = (data.user.email ?? email).toLowerCase();
+  const ventende = await hentVentendeAdgangskode(kontoEmail);
+  await sletVentendeAdgangskode();
+  let vaelgAdgangskode = !tilmeldingAaben() && !ventende;
+  if (ventende) {
+    const { error: pwFejl } = await supabase.auth.updateUser({ password: ventende });
+    if (pwFejl && pwFejl.code !== "same_password") {
+      await logDriftFejl({
+        kilde: "action",
+        hvor: "verificerSignupKode.adgangskode",
+        fejl: `${pwFejl.status ?? ""} ${pwFejl.code ?? ""}: ${pwFejl.message}`,
+        brugerId: data.user.id,
+      });
+      // Uvist, hvis adgangskode kontoen har - brugeren vælger en ny.
+      vaelgAdgangskode = true;
+    }
+  }
+
+  const resultat = await efterLogin(supabase, data.user, data.session?.access_token);
+  if ("ok" in resultat && vaelgAdgangskode) return { ...resultat, vaelgAdgangskode: true };
+  return resultat;
 }
 
 export async function nulstilAdgangskode(emailInput: string): Promise<Resultat> {

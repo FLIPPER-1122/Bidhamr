@@ -51,7 +51,8 @@
 --      (authenticated, auth.uid()) og gemmer svaret i den signerede
 --      rolle-cookie i højst 5 minutter.
 --   5. Signup-actionen (opretKonto) spørger beta_tilmelding_tilladt(p_email)
---      (kun service_role), før den opretter kontoen.
+--      og beta_auth_bruger(p_email) (begge kun service_role), før den
+--      opretter kontoen. En eksisterende konto røres aldrig.
 --
 -- Drift-tjek: handle_new_user erstattes kun, hvis den er præcis som efter
 -- 20261009050000_vilkaar_accept.sql (eller allerede som efter denne).
@@ -571,6 +572,29 @@ $$;
 
 revoke all on function public.beta_tilmelding_tilladt(text) from public, anon, authenticated;
 grant execute on function public.beta_tilmelding_tilladt(text) to service_role;
+
+-- Findes der allerede en auth-bruger med e-mailen, og er den bekræftet?
+-- Slås op direkte i auth.users (ikke public.users), så opretBetaKonto aldrig
+-- kalder generateLink med metadata på en eksisterende konto.
+-- { findes: false } eller { findes: true, id, bekraeftet }.
+create or replace function public.beta_auth_bruger(p_email text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(
+    (select jsonb_build_object('findes', true, 'id', u.id, 'bekraeftet', u.email_confirmed_at is not null)
+       from auth.users u
+      where lower(u.email) = lower(btrim(coalesce(p_email, '')))
+      order by u.created_at
+      limit 1),
+    jsonb_build_object('findes', false))
+$$;
+
+revoke all on function public.beta_auth_bruger(text) from public, anon, authenticated;
+grant execute on function public.beta_auth_bruger(text) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 8. Gaten (authenticated): har den indloggede bruger beta-adgang lige nu?
