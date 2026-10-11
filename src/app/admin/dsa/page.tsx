@@ -2,7 +2,6 @@ import Link from "next/link";
 import { kraevSideRolle, harMindstRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import AdminFaner from "@/components/admin/AdminFaner";
-import Statuslinje from "@/components/admin/Statuslinje";
 import {
   AnmeldelseGruppeKort,
   KlageKort,
@@ -597,7 +596,6 @@ export default async function DsaAdminSide({
         </div>
       )}
 
-      <Statuslinje />
     </div>
   );
 }

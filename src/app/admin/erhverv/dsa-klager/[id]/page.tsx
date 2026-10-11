@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { kraevErhvervSide } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
-import Statuslinje from "@/components/admin/Statuslinje";
 import { KlageKort } from "@/components/admin/dsa/DsaKort";
 import { Pille, tid } from "@/components/admin/dsa/DsaDele";
 import { erhvervDsaKlageAfgoer } from "@/app/actions/adminErhvervDsa";
@@ -132,7 +131,6 @@ export default async function ErhvervDsaKlageSide({ params }: { params: Promise<
         </>
       )}
 
-      <Statuslinje />
     </div>
   );
 }

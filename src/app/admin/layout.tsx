@@ -2,7 +2,10 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import BetaFejlKnap from "@/components/betafejl/BetaFejlKnap";
 import { hentBruger, hentMinRolle } from "@/lib/supabase/bruger";
-import AdminSidebar from "@/components/admin/AdminSidebar";
+import AdminSidebar, { INGEN_TAELLERE, type MiniStatus } from "@/components/admin/AdminSidebar";
+import AdminTopSoeg from "@/components/admin/AdminTopSoeg";
+import Kvittering from "@/components/admin/Kvittering";
+import { beregnStatus, koePunkter } from "@/lib/admin/statuslinje";
 import { hentAntalUbetalte } from "@/app/actions/adminActions";
 import { hentAntalBetalingerTilHandling } from "@/app/actions/adminBetalinger";
 import { antalUbesvaredeStaffSamtaler } from "@/app/actions/staffChat";
@@ -12,24 +15,43 @@ import { hentAntalTryghed } from "@/app/actions/adminTryghed";
 import { hentAntalDsa } from "@/app/actions/adminDsa";
 import { hentAntalNyeErhvervHenvendelser } from "@/app/actions/adminErhverv";
 
-const INGEN_TAELLERE = {
-  ubetalte: 0,
-  betalinger: 0,
-  chats: 0,
-  sager: 0,
-  kontolukninger: 0,
-  kontakt: 0,
-  rapporter: 0,
-  bedoemmelser: 0,
-  dsa: 0,
-  erhverv: 0,
-};
+// Fælles ramme for hele admin: menu, søgning øverst og kvitteringen efter en
+// handling (<Kvittering />, så den virker på alle sider).
+function Ramme({
+  menu,
+  erhverv,
+  children,
+}: {
+  menu: React.ReactNode;
+  erhverv: boolean;
+  children: React.ReactNode;
+}) {
+  // Højden trækker cookie-bannerets højde fra (--samtykke-hoejde), så
+  // banneret aldrig dækker knapper nederst i admin - heller ikke på mobil.
+  return (
+    <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-admin-bg">
+      {menu}
+      <main id="admin-indhold" className="min-w-0 flex-1 overflow-auto bg-admin-bg pt-14 lg:pt-0">
+        <div className="border-b border-admin-kant bg-white/70 px-4 py-2.5 sm:px-6">
+          <AdminTopSoeg erhverv={erhverv} />
+        </div>
+        {children}
+      </main>
+      <Kvittering />
+      {/* "Meld fejl" til staff før lancering (ellers intet). */}
+      <Suspense fallback={null}>
+        <BetaFejlKnap />
+      </Suspense>
+    </div>
+  );
+}
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Bruger og rolle hentes samtidig (højst én gang pr. forespørgsel, delt via
   // cache() i src/lib/supabase/bruger.ts). Menuens tællere startes, så snart
   // rollen er kendt, i stedet for at vente på begge - hver tæller kalder
   // desuden selv assertRole (samme delte svar) og giver ingen data uden adgang.
+  // Trin 3 (docs/ADMIN-REDESIGN.md) erstatter kaldene med én admin_status().
   const erStaff = (r: string | null) => r === "chef" || r === "admin" || r === "medarbejder";
   const taellerLoefte = hentMinRolle().then((r) =>
     erStaff(r)
@@ -57,11 +79,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (user && rolle === "saelger") {
     const erhverv = await erhvervLoefte;
     const antalErhverv = erhverv && "antal" in erhverv ? erhverv.antal : 0;
+    const status: MiniStatus =
+      antalErhverv > 0
+        ? {
+            tone: "gul",
+            titel: `${antalErhverv} ${antalErhverv === 1 ? "ny henvendelse venter" : "nye henvendelser venter"}`,
+            href: "/admin/erhverv",
+          }
+        : { tone: "groen", titel: "Ingen nye henvendelser", href: "/admin/erhverv" };
     return (
-      <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-neutral-50">
-        <AdminSidebar rolle="saelger" taellere={{ ...INGEN_TAELLERE, erhverv: antalErhverv }} />
-        <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">{children}</main>
-      </div>
+      <Ramme erhverv menu={<AdminSidebar rolle="saelger" taellere={{ ...INGEN_TAELLERE, erhverv: antalErhverv }} status={status} />}>
+        {children}
+      </Ramme>
     );
   }
 
@@ -69,34 +98,43 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect("/");
   }
 
-  // Tallet til menuens badge. En fejl her må ikke vælte hele admin-panelet.
+  // En fejl i en tæller må ikke vælte hele admin-panelet - den tæller bare 0.
   const taellere = await taellerLoefte;
   if (!taellere) redirect("/");
   const [ubetalte, betalinger, chats, sager, lukninger, tryghed, dsa] = taellere;
-  const antalUbetalte = "antal" in ubetalte ? ubetalte.antal : 0;
-  const antalBetalinger = "antal" in betalinger ? betalinger.antal : 0;
-  const antalChats = "antal" in chats ? chats.antal : 0;
-  const antalSager = "antal" in sager ? sager.antal : 0;
-  const antalLukninger = "antal" in lukninger ? lukninger.antal : 0;
-  const antalKontakt = "kontakt" in tryghed ? tryghed.kontakt : 0;
-  const antalRapporter = "rapporter" in tryghed ? tryghed.rapporter : 0;
-  const antalBedoemmelser = "bedoemmelser" in tryghed ? tryghed.bedoemmelser : 0;
-  const antalDsa = "antal" in dsa ? dsa.antal : 0;
+  const n = (r: object, k: string) => (k in r ? Number((r as Record<string, unknown>)[k]) || 0 : 0);
   const erhverv = await erhvervLoefte;
-  const antalErhverv = erhverv && "antal" in erhverv ? erhverv.antal : 0;
 
-  // Højden trækker cookie-bannerets højde fra (--samtykke-hoejde), så
-  // banneret aldrig dækker knapper nederst i admin - heller ikke på mobil.
+  const dsaAntal = n(dsa, "antal");
+  const dsaOverskredet = n(dsa, "overskredet");
+  const antalSager = n(sager, "antal");
+  const antalBetalinger = n(betalinger, "antal");
+
+  const status = beregnStatus(
+    koePunkter({ dsaOverskredet, dsa: dsaAntal, sager: antalSager, betalinger: antalBetalinger }),
+  );
+
   return (
-    <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-neutral-50">
-      <AdminSidebar rolle={rolle} taellere={{ ubetalte: antalUbetalte, betalinger: antalBetalinger, chats: antalChats, sager: antalSager, kontolukninger: antalLukninger, kontakt: antalKontakt, rapporter: antalRapporter, bedoemmelser: antalBedoemmelser, dsa: antalDsa, erhverv: antalErhverv }} />
-      <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">
-        {children}
-      </main>
-      {/* "Meld fejl" til staff før lancering (ellers intet). */}
-      <Suspense fallback={null}>
-        <BetaFejlKnap />
-      </Suspense>
-    </div>
+    <Ramme
+      erhverv={false}
+      menu={
+        <AdminSidebar
+          rolle={rolle}
+          status={{ tone: status.tone, titel: status.titel, href: status.tone === "groen" ? "/admin" : status.href }}
+          taellere={{
+            handler: n(ubetalte, "antal"),
+            sager: antalSager,
+            betalinger: antalBetalinger,
+            brugere: n(lukninger, "antal"),
+            henvendelser: n(tryghed, "kontakt") + n(chats, "antal"),
+            anmeldelser: dsaAntal + n(tryghed, "rapporter") + n(tryghed, "bedoemmelser"),
+            anmeldelserKritisk: dsaOverskredet > 0,
+            erhverv: erhverv ? n(erhverv, "antal") : 0,
+          }}
+        />
+      }
+    >
+      {children}
+    </Ramme>
   );
 }

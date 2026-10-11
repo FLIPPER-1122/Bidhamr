@@ -50,6 +50,23 @@
   --color-info-kant: #c9dceb;
   --color-info-tekst: #1f4e79;
 
+  /* Admin (godkendt showcase, Filip 12. okt. 2026): lys grå-grøn bund,
+     lamper og tal-badges farvet efter alvor. Rød er kun til tal og prikker,
+     aldrig knapper. Hvid på tal-roed = 5,0:1, tekst på tal-gul = 8,9:1. */
+  --color-admin-bg: #f5f7f6;
+  --color-admin-kant: #e6eae8;
+  --color-admin-graa: #f1f3f2;
+  --color-lampe-groen: #2e9d6e;
+  --color-lampe-gul: #e2a13b;
+  --color-lampe-roed: #d24b4b;
+  --color-lampe-blaa: #4b7fd2;
+  --color-lampe-graa: #a0a8a5;
+  --color-status-groen: #2e7d5b;
+  --color-status-gul: #c77a17;
+  --color-status-roed: #c23b3b;
+  --color-tal-roed: #c23b3b;
+  --color-tal-gul: #e8a23e;
+
   /*
     UDFASET (fase 3): alle bg-brand/text-brand/border-brand er skiftet til
     groen-tokens. Aliaset bliver kun stående som sikkerhedsnet for grene, der
