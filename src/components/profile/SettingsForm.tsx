@@ -5,6 +5,22 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import AvatarUpload from "@/components/profile/AvatarUpload";
 
+// Samme rensning som ved oprettelse (renNavn i actions/auth.ts).
+function renset(v: string): string {
+  return v.replace(/\s+/g, " ").trim();
+}
+
+// users.fornavn/efternavn kan ikke læses fra klienten (kolonne-grants), så
+// felterne forudfyldes ud fra det samlede navn: sidste ord er efternavnet
+// (samme regel som delNavn i lib/dac7/regler.ts). Brugeren kan rette det.
+function delNavn(navn: string): { fornavn: string; efternavn: string } {
+  const dele = renset(navn).split(" ").filter(Boolean);
+  if (dele.length <= 1) return { fornavn: dele[0] ?? "", efternavn: "" };
+  return { fornavn: dele.slice(0, -1).join(" "), efternavn: dele[dele.length - 1] };
+}
+
+type Felt = "fornavn" | "efternavn";
+
 export default function SettingsForm({
   brugerId,
   navn: initialNavn,
@@ -21,7 +37,10 @@ export default function SettingsForm({
   avatarUrl: string | null;
 }) {
   const router = useRouter();
-  const [navn, setNavn] = useState(initialNavn);
+  const [start] = useState(() => delNavn(initialNavn));
+  const [fornavn, setFornavn] = useState(start.fornavn);
+  const [efternavn, setEfternavn] = useState(start.efternavn);
+  const [fejlFelt, setFejlFelt] = useState<Felt | null>(null);
   const [telefon, setTelefon] = useState(initialTelefon ?? "");
   const [adresse, setAdresse] = useState(initialAdresse ?? "");
   const [loading, setLoading] = useState(false);
@@ -30,31 +49,57 @@ export default function SettingsForm({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    setFejlFelt(null);
     setGemt(false);
 
+    // Fornavn og efternavn er begge påkrævet - også når navnet rettes.
+    const rensetFornavn = renset(fornavn).slice(0, 100);
+    const rensetEfternavn = renset(efternavn).slice(0, 100);
+    const tomtFelt: Felt | null = !rensetFornavn ? "fornavn" : !rensetEfternavn ? "efternavn" : null;
+    if (tomtFelt) {
+      setError(tomtFelt === "fornavn" ? "Skriv dit fornavn." : "Skriv dit efternavn.");
+      setFejlFelt(tomtFelt);
+      requestAnimationFrame(() => document.getElementById(tomtFelt)?.focus());
+      return;
+    }
+
+    setLoading(true);
     const supabase = createClient();
+    const navnRettet =
+      rensetFornavn !== renset(start.fornavn) ||
+      rensetEfternavn !== renset(start.efternavn) ||
+      `${rensetFornavn} ${rensetEfternavn}` !== renset(initialNavn);
     const { error: updateError } = await supabase
       .from("users")
-      .update({ navn, telefon: telefon.trim() || null, adresse: adresse.trim() || null })
+      .update({
+        // Navnet skrives kun, når det er ændret, så en gemt telefon ikke
+        // overskriver fornavn/efternavn med det gættede skel.
+        ...(navnRettet
+          ? { navn: `${rensetFornavn} ${rensetEfternavn}`, fornavn: rensetFornavn, efternavn: rensetEfternavn }
+          : {}),
+        telefon: telefon.trim() || null,
+        adresse: adresse.trim() || null,
+      })
       .eq("id", brugerId);
 
     setLoading(false);
 
     if (updateError) {
       console.error("Profil kunne ikke gemmes:", updateError);
+      // BHN03: tomt efternavn (users_kraev_efternavn, 20261017030000) -
+      // sikkerhedsnet bag tjekket ovenfor.
+      if (updateError.code === "BHN03") {
+        setError("Skriv dit efternavn.");
+        setFejlFelt("efternavn");
+        return;
+      }
       setError(
         updateError.code === "BHN01"
           ? 'Navnet må ikke indeholde "BidHamr".'
           : updateError.code === "BHN02"
             ? "Navnet må ikke indeholde en e-mail, et telefonnummer eller et link. Andre brugere kan se dit navn, så skriv kun dit navn."
-            : // BHN03: kontoen mangler et efternavn (users_kraev_efternavn,
-              // 20261017030000). Telefon og adresse kan stadig gemmes, hvis
-              // navnet ikke ændres.
-              updateError.code === "BHN03"
-              ? "Vi mangler dit efternavn, før du kan ændre dit navn. Skriv til support@bidhamr.dk, så hjælper vi dig. Dit telefonnummer og din adresse kan du stadig gemme, hvis du ikke ændrer navnet."
-              : "Dine oplysninger kunne ikke gemmes. Prøv igen om lidt."
+            : "Dine oplysninger kunne ikke gemmes. Prøv igen om lidt."
       );
       return;
     }
@@ -74,7 +119,7 @@ export default function SettingsForm({
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-tekst">
           E-mail
@@ -88,18 +133,39 @@ export default function SettingsForm({
         />
       </div>
 
-      <div>
-        <label htmlFor="navn" className="block text-sm font-medium text-tekst">
-          Navn
-        </label>
-        <input
-          id="navn"
-          type="text"
-          required
-          value={navn}
-          onChange={(e) => setNavn(e.target.value)}
-          className="min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk px-4 py-2.5 text-[15px] text-tekst bg-white placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
-        />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="fornavn" className="block text-sm font-medium text-tekst">
+            Fornavn
+          </label>
+          <input
+            id="fornavn"
+            type="text"
+            autoComplete="given-name"
+            required
+            maxLength={100}
+            value={fornavn}
+            onChange={(e) => setFornavn(e.target.value)}
+            aria-invalid={fejlFelt === "fornavn" || undefined}
+            className={`min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk px-4 py-2.5 text-[15px] text-tekst bg-white placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25 ${fejlFelt === "fornavn" ? "border-fejl-kant bg-fejl-bg/40" : ""}`}
+          />
+        </div>
+        <div>
+          <label htmlFor="efternavn" className="block text-sm font-medium text-tekst">
+            Efternavn
+          </label>
+          <input
+            id="efternavn"
+            type="text"
+            autoComplete="family-name"
+            required
+            maxLength={100}
+            value={efternavn}
+            onChange={(e) => setEfternavn(e.target.value)}
+            aria-invalid={fejlFelt === "efternavn" || undefined}
+            className={`min-h-11 mt-1.5 w-full rounded-xl border border-kant-staerk px-4 py-2.5 text-[15px] text-tekst bg-white placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25 ${fejlFelt === "efternavn" ? "border-fejl-kant bg-fejl-bg/40" : ""}`}
+          />
+        </div>
       </div>
 
       <div>

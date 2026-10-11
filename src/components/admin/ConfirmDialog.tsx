@@ -357,14 +357,14 @@ export default function ConfirmDialog({
                   type="button"
                   onClick={luk}
                   disabled={pending}
-                  className="rounded-lg bg-neutral-100 px-4 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-200 transition-colors disabled:opacity-50"
+                  className="min-h-11 rounded-lg bg-neutral-100 px-4 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-200 transition-colors disabled:opacity-50"
                 >
                   Annullér
                 </button>
                 <button
                   type="submit"
                   disabled={pending}
-                  className="rounded-lg bg-orange-knap px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork transition-colors disabled:opacity-50"
+                  className="min-h-11 rounded-lg bg-orange-knap px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork transition-colors disabled:opacity-50"
                 >
                   {pending ? "Arbejder…" : confirmLabel}
                 </button>

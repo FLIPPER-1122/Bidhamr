@@ -13,7 +13,9 @@ import { ERHVERV_VAELG_ADGANGSKODE as V } from "@/lib/tekster/erhverv";
 
 // velkommen: kommer fra velkomstmailen til en ny firmakonto
 // (src/lib/mails/erhverv.ts) - så hedder det "Vælg din adgangskode".
-export default function NulstilForm({ velkommen = false }: { velkommen?: boolean }) {
+// signup: e-mailen er lige bekræftet med koden, og brugeren skal vælge sin
+// adgangskode (src/app/actions/auth.ts, verificerSignupKode).
+export default function NulstilForm({ velkommen = false, signup = false }: { velkommen?: boolean; signup?: boolean }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [passwordGentag, setPasswordGentag] = useState("");
@@ -81,9 +83,15 @@ export default function NulstilForm({ velkommen = false }: { velkommen?: boolean
     <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
       <div className={`w-full ${velkommen ? "max-w-md" : "max-w-sm"}`}>
         <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
-          <h1 className="text-[26px] leading-tight sm:text-[32px]">{velkommen ? V.titel : "Ny adgangskode"}</h1>
+          <h1 className="text-[26px] leading-tight sm:text-[32px]">
+            {velkommen ? V.titel : signup ? "Vælg din adgangskode" : "Ny adgangskode"}
+          </h1>
           <p className={velkommen ? "mt-2 text-[17px] text-tekst-daempet" : "mt-1 text-sm text-tekst-svag"}>
-            {velkommen ? V.tekst : "Vælg en ny adgangskode til din konto."}
+            {velkommen
+              ? V.tekst
+              : signup
+                ? "Din e-mail er bekræftet. Vælg den adgangskode, du vil logge ind med. Bagefter logger du ind med den."
+                : "Vælg en ny adgangskode til din konto."}
           </p>
 
           {!klar && velkommen && (

@@ -8,11 +8,11 @@ export const tid = (iso: string) =>
   new Date(iso).toLocaleString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: TZ });
 
 export const KNAP_FJERN =
-  "inline-flex min-h-10 items-center whitespace-nowrap rounded-lg border border-fejl-kant bg-white px-3.5 py-2 text-sm font-semibold text-fejl-tekst transition-colors hover:bg-fejl-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fejl-fyldt";
+  "inline-flex min-h-11 items-center whitespace-nowrap rounded-lg border border-fejl-kant bg-white px-3.5 py-2 text-sm font-semibold text-fejl-tekst transition-colors hover:bg-fejl-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fejl-fyldt";
 export const KNAP_BEHOLD =
-  "inline-flex min-h-10 items-center whitespace-nowrap rounded-lg border border-groen bg-white px-3.5 py-2 text-sm font-semibold text-groen transition-colors hover:bg-groen-lys focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
+  "inline-flex min-h-11 items-center whitespace-nowrap rounded-lg border border-groen bg-white px-3.5 py-2 text-sm font-semibold text-groen transition-colors hover:bg-groen-lys focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
 export const KNAP_NEUTRAL =
-  "inline-flex min-h-10 items-center whitespace-nowrap rounded-lg border border-kant-staerk bg-white px-3.5 py-2 text-sm font-semibold text-neutral-700 transition-colors hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
+  "inline-flex min-h-11 items-center whitespace-nowrap rounded-lg border border-kant-staerk bg-white px-3.5 py-2 text-sm font-semibold text-neutral-700 transition-colors hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
 
 export type FristNiveau = "over" | "snart" | "senere";
 

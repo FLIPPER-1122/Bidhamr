@@ -9,9 +9,17 @@ import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
 import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 import { BETINGELSER_STI, PRIVATLIV_STI, VILKAAR_VERSION } from "@/lib/vilkaar";
 
-type Felt = "fornavn" | "email" | "password" | "vilkaar";
+type Felt = "fornavn" | "efternavn" | "email" | "password" | "vilkaar";
 
-export default function SignupForm() {
+// Samme regel som på serveren (renNavn i actions/auth.ts): mellemrum samles og
+// trimmes, før vi tjekker, om feltet er tomt.
+function renset(v: string): string {
+  return v.replace(/\s+/g, " ").trim();
+}
+
+// kunInviterede: tilmeldingen er lukket, og kun inviterede beta-testere kan
+// oprette sig (serveren og databasen tjekker invitationen).
+export default function SignupForm({ kunInviterede = false }: { kunInviterede?: boolean }) {
   const router = useRouter();
   const [fornavn, setFornavn] = useState("");
   const [efternavn, setEfternavn] = useState("");
@@ -24,21 +32,36 @@ export default function SignupForm() {
 
   const person = { email, navn: [fornavn, efternavn] };
 
+  // Viser fejlen og flytter fokus til feltet, så skærmlæsere og mobil
+  // lander det rigtige sted.
+  function visFejl(besked: string, felt: Felt | null) {
+    setFejl(besked);
+    setFejlFelt(felt);
+    if (felt) requestAnimationFrame(() => document.getElementById(felt)?.focus());
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFejl(null);
     setFejlFelt(null);
 
+    if (!renset(fornavn)) {
+      visFejl("Skriv dit fornavn.", "fornavn");
+      return;
+    }
+    if (!renset(efternavn)) {
+      visFejl("Skriv dit efternavn.", "efternavn");
+      return;
+    }
+
     const v = vurderAdgangskode(password, person);
     if (!v.ok) {
-      setFejl(v.fejl);
-      setFejlFelt("password");
+      visFejl(v.fejl ?? "Vælg en anden adgangskode.", "password");
       return;
     }
 
     if (!accepterer) {
-      setFejl("Du skal acceptere brugerbetingelserne for at oprette en konto.");
-      setFejlFelt("vilkaar");
+      visFejl("Du skal acceptere brugerbetingelserne for at oprette en konto.", "vilkaar");
       return;
     }
 
@@ -52,13 +75,13 @@ export default function SignupForm() {
     });
     if ("fejl" in svar) {
       setLoading(false);
-      setFejl(svar.fejl);
-      setFejlFelt(svar.felt ?? null);
+      visFejl(svar.fejl, svar.felt ?? null);
       return;
     }
 
     if (svar.bekraeftMail) {
-      router.push("/tjek-indbakke");
+      // Beta: samme svar, uanset om e-mailen er inviteret (ingen afsløring).
+      router.push(svar.beta ? "/tjek-indbakke?fra=beta" : "/tjek-indbakke");
     } else {
       router.push("/velkommen");
       router.refresh();
@@ -73,6 +96,12 @@ export default function SignupForm() {
           <p className="mt-1 text-sm text-tekst-daempet">
             Det er gratis. Du betaler kun et gebyr, når du køber eller sælger noget.
           </p>
+
+          {kunInviterede && (
+            <p role="note" className="mt-4 rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
+              BidHamr er i lukket beta-test. Du kan kun oprette en konto med den e-mail, du har fået en invitation på.
+            </p>
+          )}
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -94,16 +123,18 @@ export default function SignupForm() {
               </div>
               <div>
                 <label htmlFor="efternavn" className={LABEL}>
-                  Efternavn <span className="font-normal text-tekst-svag">(valgfrit)</span>
+                  Efternavn
                 </label>
                 <input
                   id="efternavn"
                   type="text"
                   autoComplete="family-name"
+                  required
                   maxLength={100}
                   value={efternavn}
                   onChange={(e) => setEfternavn(e.target.value)}
-                  className={`mt-1.5 ${FELT}`}
+                  aria-invalid={fejlFelt === "efternavn" || undefined}
+                  className={`mt-1.5 ${FELT} ${fejlFelt === "efternavn" ? FELT_FEJL : ""}`}
                 />
               </div>
             </div>

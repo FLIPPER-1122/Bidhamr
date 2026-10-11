@@ -8,7 +8,15 @@ import { logInd } from "@/app/actions/auth";
 import { FELT, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 import { ERHVERV_LOGIN } from "@/lib/tekster/erhverv";
 
-export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolean }) {
+// betaAaben: tilmeldingen er lukket, men beta-testen er åben - så vises et
+// link til "Opret konto" for inviterede.
+export default function LoginForm({
+  tilmeldingAaben,
+  betaAaben = false,
+}: {
+  tilmeldingAaben: boolean;
+  betaAaben?: boolean;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Kun relative stier - ellers kan ?redirect bruges til phishing-omdirigering.
@@ -36,11 +44,13 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forkertLogin, setForkertLogin] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setForkertLogin(false);
 
     // Login sker på serveren, så det kan rate-limites og tjekkes for
     // suspension og ny enhed (src/app/actions/auth.ts).
@@ -56,6 +66,7 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
       }
       setLoading(false);
       setError(svar.fejl);
+      setForkertLogin(svar.kode === "forkert_login");
       return;
     }
 
@@ -134,6 +145,18 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
             {fejlTekst && (
               <p role="alert" className={FORMULAR_FEJL}>
                 {fejlTekst}
+                {/* Beta: en ny konto har ingen kendt adgangskode, før koden
+                    er indtastet (src/lib/ventendeAdgangskode.ts). Vises ved
+                    alle forkerte logins - afslører ikke, om kontoen findes. */}
+                {betaAaben && forkertLogin && (
+                  <>
+                    {" "}
+                    Har du lige oprettet dig?{" "}
+                    <Link href="/tjek-indbakke" className="font-semibold underline">
+                      Indtast koden fra mailen.
+                    </Link>
+                  </>
+                )}
               </p>
             )}
 
@@ -152,6 +175,13 @@ export default function LoginForm({ tilmeldingAaben }: { tilmeldingAaben: boolea
         {tilmeldingAaben ? (
           <p className="mt-6 text-center text-sm text-tekst-svag">
             Har du ikke en konto?{" "}
+            <Link href="/signup" className={LINK}>
+              Opret konto
+            </Link>
+          </p>
+        ) : betaAaben ? (
+          <p className="mt-6 text-center text-sm text-tekst-svag">
+            Inviteret til beta-testen?{" "}
             <Link href="/signup" className={LINK}>
               Opret konto
             </Link>
