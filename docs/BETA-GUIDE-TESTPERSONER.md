@@ -23,7 +23,7 @@ Alle private brugere bekræfter sig med MitID, før de byder eller sælger førs
 2. Tryk på "Opret din konto" i mailen.
 3. Opret dig med **den samme e-mail, som invitationen kom til**. Andre e-mails virker ikke under testen.
 4. Skriv dit fornavn og efternavn, og vælg en adgangskode på mindst 10 tegn. Sæt flueben ved brugerbetingelserne, og tryk "Opret konto".
-5. Du får en ny mail med en kode på 6 cifre. Skriv koden ind på siden for at bekræfte din e-mail. Koden virker i 1 time.
+5. Du får en ny mail med en kode. Skriv koden ind på siden for at bekræfte din e-mail. Koden virker i 1 time.
 
 Har du allerede en konto med den e-mail, skal du bare logge ind.
 

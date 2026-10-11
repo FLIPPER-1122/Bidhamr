@@ -310,7 +310,8 @@ Morgen og aften, ca. 15 minutter.
 
 - [ ] [CHEF] Valg af A eller B (afsnit 3)
 - [ ] [CHEF] Invitationsliste bygget (11. okt. 2026, migration `20261017010000`), gennemgået af reviewer og testet af tester
-- [ ] Migration `20261017010000_beta_invitationer.sql` kørt i produktion (Filips ja), testpersonerne inviteret, og beta-testen åbnet af chefen
+- [x] Migration `20261017010000_beta_invitationer.sql` kørt i produktion (11. okt. 2026)
+- [ ] Testpersonerne inviteret, og beta-testen åbnet af chefen
 - [ ] [CHEF] Alle nødvendige migrationer kørt i produktion (Filips ja)
 - [ ] [CHEF] Stripe i testmiljø bekræftet (nøgler og `stripe_tilstand`)
 - [ ] [CHEF] Dinero i test eller slået fra. Testhandler tæller ikke i DAC7
