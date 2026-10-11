@@ -60,7 +60,8 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
     }
 
     if (svar.bekraeftMail) {
-      router.push("/tjek-indbakke");
+      // Beta: samme svar, uanset om e-mailen er inviteret (ingen afsløring).
+      router.push(svar.beta ? "/tjek-indbakke?fra=beta" : "/tjek-indbakke");
     } else {
       router.push("/velkommen");
       router.refresh();

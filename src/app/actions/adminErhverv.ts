@@ -467,6 +467,12 @@ export async function opretFirmakonto(
       options: { data: { navn: felter.firmanavn } },
     });
     if (linkFejl || !link?.user || !link.properties?.hashed_token) {
+      // Ingen konto blev oprettet: fjern billetten igen, så den ikke kan
+      // bruges af andre veje ind i de resterende minutter.
+      const { error: sletFejl } = await admin.from("konto_oprettelse_billetter").delete().eq("email", loginEmail);
+      if (sletFejl && sletFejl.code !== "42P01" && sletFejl.code !== "PGRST205") {
+        console.error("opretFirmakonto: billet ikke slettet:", sletFejl.message);
+      }
       if (linkFejl?.code === "email_exists" || linkFejl?.status === 422) kodeFejl("ikke_ny_konto");
       throw new Error(`generateLink: ${linkFejl?.code ?? ""} ${linkFejl?.message ?? "intet svar"}`);
     }

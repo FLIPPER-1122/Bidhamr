@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   FOR_MANGE_FORSOEG,
   graenseFejl,
+  indenForGraense,
   klientIp,
   nulstilGraense,
   tjekGraenser,
@@ -145,7 +146,8 @@ export async function opretKonto(input: {
   password: string;
   vilkaarVersion: string;
 }): Promise<
-  { ok: true; bekraeftMail: boolean } | { fejl: string; felt?: "email" | "password" | "fornavn" | "vilkaar" }
+  | { ok: true; bekraeftMail: boolean; beta?: true }
+  | { fejl: string; felt?: "email" | "password" | "fornavn" | "vilkaar" }
 > {
   // Lukket tilmelding: kun inviterede beta-testere (opretBetaKonto nedenfor).
   // Siden /signup viser kun formularen, når beta er åben.
@@ -222,32 +224,76 @@ export async function opretKonto(input: {
   return { ok: true, bekraeftMail: true };
 }
 
-const IKKE_INVITERET =
-  "BidHamr er ikke åbnet endnu. Lige nu kan kun inviterede testpersoner oprette en konto – brug den e-mail, invitationen blev sendt til.";
-
 // Beta-testen (docs/BETA-TEST.md): mens tilmeldingen er lukket, kan kun en
 // e-mail med en aktiv invitation oprette sig - og kun mens chefen har beta
 // åben. Databasen tjekker det samme igen (handle_new_user ->
 // beta_tjek_ny_bruger), så det ikke kan omgås med anon-nøglen.
-// "Allow new users to sign up" er slået fra i Supabase i produktion, så
-// kontoen oprettes med service-role via generateLink('signup') (opretter
+// "Allow new users to sign up" er slået fra i Supabase i produktion, så en
+// NY konto oprettes med service-role via generateLink('signup') (opretter
 // brugeren med adgangskoden og signup-metadata, men sender ingen mail).
 // Koden fra generateLink sendes i vores egen mail (betaKodeMail) og
 // indtastes på /tjek-indbakke som ved en almindelig oprettelse
 // (verifyOtp type 'signup').
+//
+// Sikkerhed (review 11. okt. 2026):
+// - En EKSISTERENDE konto (ubekræftet eller bekræftet) røres aldrig: ingen
+//   ny adgangskode, ingen ny metadata, intet generateLink. Ellers kunne en
+//   angriber sætte sin egen adgangskode på offerets ubekræftede konto og
+//   logge ind, når offeret bekræfter. Er kontoen ubekræftet, sendes kun en
+//   ny kode (auth.resend); har brugeren glemt adgangskoden, nulstilles den
+//   bagefter via "Glemt adgangskode".
+// - Samme svar i alle tilfælde (ikke inviteret, beta lukket, konto findes,
+//   ny konto): "tjek din indbakke" (beta: true). Svaret afslører ikke, om en
+//   e-mail er inviteret eller har en konto.
+// - Højst én kodemail pr. e-mail hvert 2. minut (beta_kode_email, tjekket
+//   før alt andet). Inden for de 2 minutter sendes intet, så den forrige kode
+//   ikke ugyldiggøres.
 async function opretBetaKonto(input: {
   email: string;
   password: string;
   navn: string;
   fornavn: string;
   efternavn: string;
-}): Promise<{ ok: true; bekraeftMail: boolean } | { fejl: string; felt?: "email" | "password" }> {
+}): Promise<{ ok: true; bekraeftMail: true; beta: true } | { fejl: string; felt?: "password" }> {
   const { email, password, navn, fornavn, efternavn } = input;
+  const svar = async () => {
+    await saetTjekEmailCookie(email);
+    return { ok: true as const, bekraeftMail: true as const, beta: true as const };
+  };
+
+  if (!(await indenForGraense("beta_kode_email", email))) return svar();
+
   const tilladt = await betaTilmeldingTilladt(email);
   if (tilladt === null) return { fejl: GENERISK };
-  if (!tilladt) return { fejl: IKKE_INVITERET, felt: "email" };
+  if (!tilladt) return svar();
 
+  // Findes kontoen allerede? (handle_new_user laver altid public.users-rækken;
+  // GoTrue gemmer e-mails med små bogstaver.)
   const admin = createAdminClient();
+  const { data: findes, error: findesFejl } = await admin
+    .from("users")
+    .select("id")
+    .eq("email", email)
+    .limit(1);
+  if (findesFejl) {
+    console.error("opretBetaKonto: opslag fejlede:", findesFejl.message);
+    return { fejl: GENERISK };
+  }
+  if ((findes ?? []).length > 0) {
+    // Kun en ny kode (Supabases egen mail). Er kontoen bekræftet, sender
+    // Supabase intet. Adgangskode og metadata røres ikke.
+    const supabase = await createClient();
+    const { error: resendFejl } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: sideUrl("/auth/callback?next=/velkommen") },
+    });
+    if (resendFejl && resendFejl.status !== 429) {
+      console.error("opretBetaKonto: resend fejlede:", resendFejl.code, resendFejl.message);
+    }
+    return svar();
+  }
+
   const { data: link, error } = await admin.auth.admin.generateLink({
     type: "signup",
     email,
@@ -258,20 +304,19 @@ async function opretBetaKonto(input: {
     },
   });
   if (error || !link?.user || !link.properties?.email_otp) {
-    if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
-    if (error?.code === "email_exists" || error?.code === "user_already_exists") {
-      return {
-        fejl: "Der findes allerede en konto med den e-mail. Log ind, eller nulstil din adgangskode.",
-        felt: "email",
-      };
-    }
     if (error?.code === "weak_password") {
       return { fejl: "Adgangskoden er for svag. Vælg en længere og mindre almindelig adgangskode.", felt: "password" };
     }
-    // Databasens værn afviste (fx tilbagekaldt eller beta lukket i mellemtiden).
-    if (error?.status === 500 && /database error/i.test(error.message ?? "")) {
-      return { fejl: IKKE_INVITERET, felt: "email" };
+    // Konto oprettet i mellemtiden, eller databasens værn afviste (fx
+    // tilbagekaldt eller beta lukket i mellemtiden): samme svar.
+    if (
+      error?.code === "email_exists" ||
+      error?.code === "user_already_exists" ||
+      (error?.status === 500 && /database error/i.test(error.message ?? ""))
+    ) {
+      return svar();
     }
+    if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
     await logDriftFejl({
       kilde: "action",
       hvor: "opretBetaKonto",
@@ -283,27 +328,19 @@ async function opretBetaKonto(input: {
     return { fejl: GENERISK };
   }
 
-  // Fandtes en ubekræftet konto allerede (fx et tidligere forsøg uden
-  // koden), opretter generateLink ingen ny og ignorerer adgangskoden - så
-  // sættes den, brugeren lige har valgt. Kontoen er ikke bekræftet, så
-  // ingen andre ejer den endnu; koden går kun til e-mailens indbakke.
+  // Sikkerhedsnet: generateLink returnerer en eksisterende ubekræftet konto
+  // i stedet for at oprette en ny, hvis den blev oprettet lige mellem
+  // opslaget og kaldet. Så sendes der ingen kode herfra (koden i den anden
+  // mail gælder).
   const oprettet = link.user.created_at ? Date.parse(link.user.created_at) : Date.now();
-  if (!link.user.email_confirmed_at && Date.now() - oprettet > 60_000) {
-    const { error: pwFejl } = await admin.auth.admin.updateUserById(link.user.id, { password });
-    if (pwFejl) {
-      console.error("opretBetaKonto: adgangskode ikke opdateret:", pwFejl.code, pwFejl.message);
-      return { fejl: GENERISK };
-    }
-  }
+  if (Date.now() - oprettet > 60_000) return svar();
 
   const sendt = await sendHandelMailDetaljer(email, betaKodeMail({ email, kode: link.properties.email_otp }));
   if (!sendt.ok) {
     // Kontoen findes; brugeren kan få en ny kode på /tjek-indbakke.
     await logDriftFejl({ kilde: "action", hvor: "opretBetaKonto.kodeMail", fejl: sendt.fejl, brugerId: link.user.id });
   }
-
-  await saetTjekEmailCookie(email);
-  return { ok: true, bekraeftMail: true };
+  return svar();
 }
 
 // Sender bekraeftelsesmailen (med en ny kode) igen. Uden emailInput bruges
@@ -320,6 +357,11 @@ export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat
   }
 
   if (!tilmeldingAaben()) {
+    // Samme 2-minutters loft pr. e-mail som opretBetaKonto - tjekket før
+    // invitationen, så svaret er det samme for alle e-mails.
+    if (!(await indenForGraense("beta_kode_email", email))) {
+      return { fejl: "Vent lidt, før du beder om en ny kode. Den forrige mail kan stadig være på vej." };
+    }
     const tilladt = await betaTilmeldingTilladt(email);
     if (tilladt === null) return { fejl: GENERISK };
     if (!tilladt) return { ok: true };
