@@ -158,7 +158,9 @@ begin
   select md5(replace(p.prosrc, E'\r\n', E'\n')) into v_md5
     from pg_proc p
    where p.oid = 'public.erhverv_firma_opdater(uuid, uuid, uuid, text, text, text, text, text, text, text, text, text, text)'::regprocedure;
+  -- 67d3629c: samme krop uden kommentarlinjer (testdatabasen).
   if v_md5 is distinct from '43870dfc3b3783e80ffb93305224c493'
+     and v_md5 is distinct from '67d3629c53e48ea2fbac3f21be35cb7c'
      and v_md5 is distinct from 'aee2b50af3dc7a44ddbb93a4f23d85c7' then
     raise exception 'erhverv_firma_opdater er ændret uden for migrationerne (md5 %). Tjek den, før den erstattes.', v_md5;
   end if;
