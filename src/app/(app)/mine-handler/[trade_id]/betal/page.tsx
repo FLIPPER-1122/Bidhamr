@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { hentBruger } from "@/lib/supabase/bruger";
 import { hentBetalingsstatus } from "@/app/actions/betaling";
 import { hentCheckoutAction } from "@/app/actions/fragt";
@@ -40,12 +41,21 @@ export default async function BetalPage({ params }: { params: Promise<{ trade_id
   // Sælgeren og en betalt/annulleret handel hører til på handelssiden.
   if (handel.buyer_id !== user.id || handel.status !== "afventer_betaling") redirect(handelSti);
 
-  const [{ data: auktion }, { data: saelger }, { data: mig }, betaling, checkoutSvar] = await Promise.all([
+  const [{ data: auktion }, { data: saelger }, { data: mig }, betaling, checkoutSvar, saelgerHarAdresse] = await Promise.all([
     supabase.from("auctions").select("titel, billeder, erhverv").eq("id", handel.auction_id).maybeSingle(),
     supabase.from("users").select("navn").eq("id", handel.seller_id).maybeSingle<{ navn: string | null }>(),
     supabase.from("users").select("navn").eq("id", user.id).maybeSingle<{ navn: string | null }>(),
     hentBetalingsstatus(handel.id),
     hentCheckoutAction(handel.id),
+    // Kun ja/nej: adressen selv vises først efter betaling
+    // (handel_afhentningsadresse). users.adresse kan ikke læses af køberen,
+    // så opslaget sker på serveren, og kun en boolean sendes til siden.
+    createAdminClient()
+      .from("users")
+      .select("adresse")
+      .eq("id", handel.seller_id)
+      .maybeSingle<{ adresse: string | null }>()
+      .then(({ data }) => Boolean(data?.adresse?.trim())),
   ]);
 
   const vare = {
@@ -54,6 +64,7 @@ export default async function BetalPage({ params }: { params: Promise<{ trade_id
     saelgerNavn: saelger?.navn ?? null,
     // Erhvervshandel: ingen chat med firmaet.
     erhverv: auktion?.erhverv === true,
+    saelgerHarAdresse,
   };
 
   if ("fejl" in betaling || !betaling.erKoeber) {

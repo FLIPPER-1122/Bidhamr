@@ -250,7 +250,7 @@ export async function verificerSignupKode(
   const kode = typeof kodeInput === "string" ? kodeInput.replace(/\D/g, "") : "";
   // Produktion bruger 6 cifre ("Email OTP length"). Supabase tillader 6-10,
   // så andre laengder afvises ikke her (testdatabasen bruger 8).
-  if (!/^\d{6,10}$/.test(kode)) return { fejl: "Koden består af 6 cifre.", kode: "kode_forkert" };
+  if (!/^\d{6,10}$/.test(kode)) return { fejl: "Skriv hele koden fra mailen.", kode: "kode_forkert" };
 
   const email = renEmail(emailInput || (await cookies()).get(TJEK_EMAIL_COOKIE)?.value);
   if (!email) return { fejl: "Indtast den e-mail, du oprettede kontoen med.", kode: "mangler_email" };

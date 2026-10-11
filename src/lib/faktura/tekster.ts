@@ -25,6 +25,8 @@ export const FAKTURA_TEKST = {
   koeb: (titel: string | null) => (titel ? `Dit køb af "${titel}"` : "Dit køb"),
   salg: (titel: string | null) => (titel ? `Dit salg af "${titel}"` : "Dit salg"),
   kreditForklaring: "Pengene er sendt tilbage via vores betalingspartner Stripe.",
+  // Sælgeren betaler ikke gebyret selv (det trækkes i købers betaling).
+  kreditForklaringSaelger: "Sælgergebyret er krediteret, fordi handlen blev annulleret.",
   // Mails efter købet/salget.
   mailLinkTekst:
     "Din faktura fra BidHamr på gebyrerne (inkl. moms) kommer under Min konto → Fakturaer få minutter efter betalingen.",

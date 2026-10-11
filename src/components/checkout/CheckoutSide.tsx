@@ -110,7 +110,8 @@ export default function CheckoutSide({
 }: {
   tradeId: string;
   // erhverv: firmasalg - ingen chat med sælgeren.
-  vare: { titel: string; billede: string | null; saelgerNavn: string | null; erhverv?: boolean };
+  // saelgerHarAdresse: sælgeren har gemt en afhentningsadresse (kun ja/nej).
+  vare: { titel: string; billede: string | null; saelgerNavn: string | null; erhverv?: boolean; saelgerHarAdresse?: boolean };
   status: KoeberBetalingsstatus;
   checkout: Checkout;
   standardNavn: string | null;
@@ -119,6 +120,12 @@ export default function CheckoutSide({
   const bet = checkout.betaling;
   // Kun afhentning: intet valg. Ellers kan afhentning være et af valgene.
   const kunAfhentning = checkout.kunAfhentning;
+  // Adressen vises på handelssiden efter betaling, men kun hvis sælgeren har
+  // gemt en. Ellers lover vi ikke en adresse.
+  const afhentningsAdresseTekst = Boolean(vare.saelgerHarAdresse);
+  const aftalAfhentning = vare.erhverv
+    ? "Kontakt firmaet via oplysningerne på handelssiden."
+    : "Aftal afhentningen med sælgeren i beskederne efter betalingen.";
   const afhentningMulig = checkout.afhentningMulig;
   const doerMulig = checkout.doerOere !== null && checkout.doerOere > 0;
   const kanSkifteMaade = Boolean(bet?.kanAendrePris) && !checkout.labelLavet;
@@ -482,8 +489,9 @@ export default function CheckoutSide({
                     valgt
                   />
                   <p className="mt-3 text-sm text-tekst-daempet">
-                    Varen kan kun hentes hos sælgeren. Når du har betalt, ser du adressen og din afhentningskode på
-                    handelssiden. Du har 7 dage til at hente varen.
+                    {afhentningsAdresseTekst
+                      ? "Varen kan kun hentes hos sælgeren. Når du har betalt, ser du adressen og din afhentningskode på handelssiden. Du har 7 dage til at hente varen."
+                      : `Varen kan kun hentes hos sælgeren. Når du har betalt, ser du din afhentningskode på handelssiden. ${aftalAfhentning} Du har 7 dage til at hente varen.`}
                   </p>
                 </div>
               ) : (
@@ -540,11 +548,14 @@ export default function CheckoutSide({
                   {maade === "afhentning" && (
                     <div className="mt-5 space-y-2 rounded-xl bg-groen-lys p-4 text-sm text-tekst-daempet">
                       <p>
-                        Når du har betalt, ser du sælgerens adresse og din afhentningskode på handelssiden. Du har 7
-                        dage til at hente varen.{" "}
+                        {afhentningsAdresseTekst
+                          ? "Når du har betalt, ser du sælgerens adresse og din afhentningskode på handelssiden. Du har 7 dage til at hente varen. "
+                          : "Når du har betalt, ser du din afhentningskode på handelssiden. Du har 7 dage til at hente varen. "}
                         {vare.erhverv
                           ? "Kontakt firmaet via oplysningerne på handelssiden."
-                          : "Aftal tidspunktet med sælgeren i chatten."}
+                          : vare.saelgerHarAdresse
+                            ? "Aftal tidspunktet med sælgeren i chatten."
+                            : aftalAfhentning}
                       </p>
                       {beskFjernet && (
                         <p>

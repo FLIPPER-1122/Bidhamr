@@ -233,7 +233,7 @@ function Hero() {
               <li key={s}>
                 <Link
                   href={`/auktioner?q=${encodeURIComponent(s)}`}
-                  className="inline-flex min-h-9 items-center rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] text-white transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  className="inline-flex min-h-11 items-center rounded-full border border-white/25 bg-white/15 px-4 py-2 text-[13px] text-white transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                 >
                   {s}
                 </Link>

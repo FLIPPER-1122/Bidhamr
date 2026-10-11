@@ -204,6 +204,7 @@ export default function MobilMenu({
                   <li><Link href="/konto/statistik" className={punkt}><Ikon navn="statistik" />Min statistik</Link></li>
                   <li><Link href="/konto" className={punkt}><Ikon navn="indstillinger" />Min konto</Link></li>
                   <li><Link href="/konto/notifikationer" className={punkt}><Ikon navn="klokke" />Notifikationsindstillinger</Link></li>
+                  <li><Link href="/konto/afgoerelser" className={punkt}><Ikon navn="skjold" />Afgørelser og anmeldelser</Link></li>
                   {erAdmin && (
                     <li><Link href="/admin" className={`${punkt} text-groen`}><Ikon navn="skjoldLaas" />Admin</Link></li>
                   )}

@@ -6,6 +6,16 @@ import { kroner } from "@/lib/kroner";
 // pengene sendes fra sælgerens Stripe-konto til banken, når handlen er helt
 // færdig. Ingen interne fejltekster - kun faste danske tekster.
 
+// "Tidligst"-tidspunktet er et teknisk skæringspunkt (ofte midnat UTC, dvs.
+// kl. 01/02 dansk tid), så kun datoen vises.
+function kunDato(iso: string) {
+  return new Date(iso).toLocaleDateString("da-DK", {
+    timeZone: "Europe/Copenhagen",
+    day: "numeric",
+    month: "long",
+  });
+}
+
 function dato(iso: string) {
   return new Date(iso).toLocaleString("da-DK", {
     timeZone: "Europe/Copenhagen",
@@ -53,7 +63,7 @@ export default function UdbetalingStatusBoks({ v }: { v: Udbetalingsvisning }) {
     default:
       titel = "Udbetalingen venter";
       tekst = v.tidligstKl
-        ? `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe – tidligst ${dato(v.tidligstKl)}.`
+        ? `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe – tidligst ${kunDato(v.tidligstKl)}.`
         : `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe inden for kort tid.`;
       stil = "border-info-kant bg-info-bg text-info-tekst";
   }
