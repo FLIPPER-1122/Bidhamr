@@ -1,47 +1,24 @@
 // Den daglige afstemning (src/lib/betaling/afstemning.ts) mod Stripes
 // RIGTIGE testmiljø og testdatabasen, efter alle scenarierne (01-12).
-//
-// Migrationen 20261019020000_pengeafstemning.sql er IKKE kørt på
-// testdatabasen (den kræver chefens ok). Derfor svarer testen selv på de
-// fire nye funktioner (penge_afstemning_claim/_afslut, penge_afvigelse_
-// registrer, penge_saldo_snapshot_gem) og samler afvigelserne i hukommelsen.
-// Alt andet - Stripe-listerne og databasens betalinger, refusioner,
-// udbetalinger - er rigtigt. Selve SQL-funktionerne testes i PGlite
-// (npm run test:penge:db).
+// Kræver migrationen 20261019020000_pengeafstemning.sql på testdatabasen.
 //
 // Forventet: refusionen lavet "i dashboardet" i scenarie 03 (og staff's
 // manuelle tilbageførsel bagefter) findes; ingen af BidHamrs egne
 // betalinger, gebyrer, refusioner eller udbetalinger fra denne kørsel giver
-// afvigelser.
-import { SupabaseClient } from "@supabase/supabase-js";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+// afvigelser. Afstemningen kører på hele Stripes testkonto (vindue 1 døgn) -
+// også andres testdata - og registrerer det, den finder, som cron'en gør.
+// Testens egne afvigelser markeres løst bagefter (som chefen ville).
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { koerPengeafstemning, type Afstemning } from "@/lib/betaling/afstemning";
 import { admin, kontekst } from "./handel";
+import { CHEF_ID } from "./brugere";
 
-type Reg = { p_noegle: string; p_type: string; p_betaling: string | null; p_stripe_id: string | null };
-const registreret: Reg[] = [];
-let snapshot: Record<string, unknown> | null = null;
+type Afv = { id: string; type: string; betaling_id: string | null; noegle: string };
 let r: Afstemning;
 let koerselsBetalinger: { id: string; titel: string }[] = [];
+let fundne: Afv[] = [];
 
 beforeAll(async () => {
-  const ægte = SupabaseClient.prototype.rpc;
-  vi.spyOn(SupabaseClient.prototype, "rpc").mockImplementation(function (this: SupabaseClient, fn: string, args?: object) {
-    const svar = (data: unknown) => Promise.resolve({ data, error: null, count: null, status: 200, statusText: "OK" });
-    if (fn === "penge_afstemning_claim") return svar(1) as never;
-    if (fn === "penge_afstemning_afslut") return svar(null) as never;
-    if (fn === "penge_afvigelse_registrer") {
-      registreret.push(args as Reg);
-      return svar(false) as never; // ingen drift-alarm fra testen
-    }
-    if (fn === "penge_saldo_snapshot_gem") {
-      snapshot = args as Record<string, unknown>;
-      return svar(true) as never;
-    }
-    return ægte.call(this, fn as never, args as never) as never;
-  } as never);
-
-  // Denne kørsels TEST-handler (titlen indeholder kørslens id).
   const { data: auk } = await admin()
     .from("auctions")
     .select("id, titel")
@@ -52,12 +29,19 @@ beforeAll(async () => {
   koerselsBetalinger = (bet ?? []).map((b) => ({ id: b.id as string, titel: titel.get(b.auction_id as string) ?? "" }));
 });
 
-afterAll(() => {
-  vi.restoreAllMocks();
+afterAll(async () => {
+  const egne = new Set(koerselsBetalinger.map((b) => b.id));
+  for (const a of fundne.filter((x) => x.betaling_id && egne.has(x.betaling_id))) {
+    await admin().rpc("admin_penge_afvigelse_loes", {
+      p_chef: CHEF_ID,
+      p_id: a.id,
+      p_note: "TEST pengetest: forventet afvigelse fra testen (dashboard-refusion) - løst af testen",
+    });
+  }
 });
 
 describe("daglig afstemning med Stripe", () => {
-  it("kører hele vejen igennem uden fejl", async () => {
+  it("kører hele vejen igennem og logges", async () => {
     r = await koerPengeafstemning({ tving: true, vindueDage: 1 });
     expect(r.koert).toBe(1);
     expect(r.betalinger).toBeGreaterThan(0);
@@ -65,23 +49,45 @@ describe("daglig afstemning med Stripe", () => {
     expect(r.refusioner).toBeGreaterThan(0);
     expect(r.konti).toBeGreaterThan(0);
     expect(r.payouts).toBeGreaterThan(0);
-    expect(snapshot).not.toBeNull();
-    expect(snapshot!.p_livemode).toBe(false);
+    const { data: k } = await admin()
+      .from("penge_afstemning_koersler")
+      .select("id, ok, afsluttet_kl, antal_afvigelser")
+      .order("startet_kl", { ascending: false })
+      .limit(1)
+      .single<{ id: number; ok: boolean; afsluttet_kl: string | null; antal_afvigelser: number }>();
+    expect(k?.afsluttet_kl).toBeTruthy();
+    expect(k?.ok).toBe(true);
+    const { data } = await admin()
+      .from("penge_afstemning_afvigelser")
+      .select("id, type, betaling_id, noegle")
+      .eq("sidste_koersel_id", k!.id);
+    fundne = (data ?? []) as Afv[];
+    expect(fundne.length).toBe(k!.antal_afvigelser);
+    const { data: s } = await admin()
+      .from("penge_saldo_snapshot")
+      .select("kilde, livemode")
+      .order("kl", { ascending: false })
+      .limit(1)
+      .single<{ kilde: string; livemode: boolean }>();
+    expect(s).toEqual({ kilde: "afstemning", livemode: false });
   });
 
   it("finder refusionen og tilbageførslen, der er lavet uden om BidHamr", () => {
     const dashboard = koerselsBetalinger.find((b) => b.titel.includes("refusion-i-dashboardet"));
     expect(dashboard).toBeTruthy();
-    const typer = registreret.filter((x) => x.p_betaling === dashboard!.id).map((x) => x.p_type);
+    const typer = fundne.filter((x) => x.betaling_id === dashboard!.id).map((x) => x.type);
     expect(typer).toContain("refusion_udenom");
     expect(typer).toContain("tilbagefoersel_udenom");
   });
 
   it("ingen afvigelser på BidHamrs egne pengebevægelser i denne kørsel", () => {
     const egne = new Set(koerselsBetalinger.filter((b) => !b.titel.includes("refusion-i-dashboardet")).map((b) => b.id));
-    const fund = registreret.filter((x) => x.p_betaling && egne.has(x.p_betaling));
-    expect(fund).toEqual([]);
-    // Gebyrsummen for de gebyrer, der kunne matches, passer.
-    expect(registreret.some((x) => x.p_type === "gebyrsum")).toBe(r.gebyrStripeOere !== r.gebyrDbOere);
+    expect(fundne.filter((x) => x.betaling_id && egne.has(x.betaling_id))).toEqual([]);
+  });
+
+  it("en ny tvungen kørsel registrerer de samme afvigelser uden at åbne dem som nye", async () => {
+    const r2 = await koerPengeafstemning({ tving: true, vindueDage: 1 });
+    expect(r2.koert).toBe(1);
+    expect(r2.nye).toBe(0);
   });
 });

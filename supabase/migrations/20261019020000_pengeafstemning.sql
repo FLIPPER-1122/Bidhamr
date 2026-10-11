@@ -194,6 +194,21 @@ alter table public.penge_saldo_snapshot enable row level security;
 revoke all on table public.penge_saldo_snapshot from public, anon, authenticated;
 grant select on table public.penge_saldo_snapshot to service_role;
 
+-- Overvågningens tjek H (udeblevne payment_intent-webhooks): hvornår hver
+-- ventende betaling sidst blev slået op hos Stripe, så de ældste ventende også
+-- kommer med (rotation - højst 100 opslag pr. kørsel). Kun drift-data.
+create table if not exists public.betaling_webhook_tjek (
+  betaling_id      uuid primary key references public.betalinger(id) on delete restrict,
+  sidst_tjekket_kl timestamptz not null default now()
+);
+
+comment on table public.betaling_webhook_tjek is
+  'Overvågningen (opsamlUdebleveneBetalinger): sidste opslag hos Stripe pr. ventende betaling. Kun service role.';
+
+alter table public.betaling_webhook_tjek enable row level security;
+revoke all on table public.betaling_webhook_tjek from public, anon, authenticated;
+grant select, insert, update on table public.betaling_webhook_tjek to service_role;
+
 -- Ingen sletning af logs/afvigelser/snapshots (bogføringsloven - handelsdata
 -- og deres afstemning bevares). Samme funktion som for betalinger.
 drop trigger if exists penge_afstemning_koersler_forbyd_sletning on public.penge_afstemning_koersler;
@@ -204,10 +219,23 @@ drop trigger if exists penge_afstemning_afvigelser_forbyd_sletning on public.pen
 create trigger penge_afstemning_afvigelser_forbyd_sletning
   before delete on public.penge_afstemning_afvigelser
   for each row execute function public.betalinger_forbyd_sletning();
+-- Historikken kan hverken ændres eller slettes.
+create or replace function public.penge_konfiguration_historik_laast()
+returns trigger
+language plpgsql
+set search_path = ''
+as $fn$
+begin
+  raise exception 'penge_konfiguration_historik kan ikke ændres eller slettes';
+end;
+$fn$;
+revoke all on function public.penge_konfiguration_historik_laast() from public, anon, authenticated;
+
 drop trigger if exists penge_konfiguration_historik_forbyd_sletning on public.penge_konfiguration_historik;
-create trigger penge_konfiguration_historik_forbyd_sletning
-  before delete on public.penge_konfiguration_historik
-  for each row execute function public.betalinger_forbyd_sletning();
+drop trigger if exists penge_konfiguration_historik_laast on public.penge_konfiguration_historik;
+create trigger penge_konfiguration_historik_laast
+  before update or delete on public.penge_konfiguration_historik
+  for each row execute function public.penge_konfiguration_historik_laast();
 drop trigger if exists penge_saldo_snapshot_forbyd_sletning on public.penge_saldo_snapshot;
 create trigger penge_saldo_snapshot_forbyd_sletning
   before delete on public.penge_saldo_snapshot
@@ -232,10 +260,15 @@ begin
     raise exception 'penge_afstemning_claim: ugyldigt interval';
   end if;
   perform pg_advisory_xact_lock(hashtext('bidhamr.penge_afstemning'));
+  -- Blokerer: en vellykket kørsel inden for intervallet, eller en fejlet/
+  -- afbrudt kørsel inden for de seneste 2 timer (så prøves der igen).
   if exists (
     select 1 from public.penge_afstemning_koersler k
      where k.startet_kl > now() - make_interval(hours => p_timer)
-       and (k.afsluttet_kl is not null or k.startet_kl > now() - interval '2 hours')
+       and (   (k.afsluttet_kl is not null and coalesce(k.ok, false))
+            or (k.afsluttet_kl is not null and not coalesce(k.ok, false)
+                and k.afsluttet_kl > now() - interval '2 hours')
+            or (k.afsluttet_kl is null and k.startet_kl > now() - interval '2 hours'))
   ) then
     return null;
   end if;
@@ -458,7 +491,7 @@ grant execute on function public.penge_saldo_snapshot_gem(text, boolean, bigint,
 -- sælgerens del + fragt - samme tal som admin_penge_tal) trækkes fra
 -- reserven. Kan trækkes ud = tilgængelig - skyldig til købere - reserven
 -- tilbage (aldrig under 0).
-create or replace function public.admin_penge_reserve(p_tilgaengelig_oere bigint default null)
+create or replace function public.penge_reserve_beregn(p_tilgaengelig_oere bigint)
 returns jsonb
 language sql
 stable
@@ -585,8 +618,28 @@ as $function$
   );
 $function$;
 
-revoke all on function public.admin_penge_reserve(bigint) from public, anon, authenticated;
-grant execute on function public.admin_penge_reserve(bigint) to service_role;
+-- Intern: kun via admin_penge_reserve (chef-tjek).
+revoke all on function public.penge_reserve_beregn(bigint) from public, anon, authenticated, service_role;
+
+-- Kun chef (p_chef tjekkes i databasen). Ældre udgave uden p_chef fjernes.
+drop function if exists public.admin_penge_reserve(bigint);
+create or replace function public.admin_penge_reserve(p_chef uuid, p_tilgaengelig_oere bigint default null)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $fn$
+begin
+  if p_chef is null or not public.staff_chat_har_rolle(p_chef, 'chef') then
+    raise exception 'ingen_adgang' using errcode = '42501';
+  end if;
+  return public.penge_reserve_beregn(p_tilgaengelig_oere);
+end;
+$fn$;
+
+revoke all on function public.admin_penge_reserve(uuid, bigint) from public, anon, authenticated;
+grant execute on function public.admin_penge_reserve(uuid, bigint) to service_role;
 
 -- ---------------------------------------------------------------------
 -- 5f. Posteringer (seneste bevægelser og månedens CSV til regnskabet)
@@ -605,8 +658,8 @@ grant execute on function public.admin_penge_reserve(bigint) to service_role;
 --   udbetaling            sendt fra sælgerens konto til hans bank (ikke BidHamrs penge)
 --   udbetaling_fejlet     udbetalingen kom retur (pengene står igen på sælgerens konto)
 --   afvigelse             betaling med forkert beløb modtaget / refunderet
-create or replace function public.admin_penge_posteringer(
-  p_fra timestamptz, p_til timestamptz, p_graense integer default 50)
+create or replace function public.penge_posteringer_hent(
+  p_fra timestamptz, p_til timestamptz, p_graense integer)
 returns jsonb
 language sql
 stable
@@ -616,7 +669,7 @@ as $function$
   with g as (
     select coalesce(p_fra, '-infinity'::timestamptz) as fra,
            coalesce(p_til, 'infinity'::timestamptz) as til,
-           greatest(1, least(coalesce(p_graense, 50), 20000)) as graense
+           greatest(1, least(coalesce(p_graense, 50), 20001)) as graense
   ),
   d as (
     select b.*, au.titel
@@ -696,5 +749,26 @@ as $function$
            limit (select graense from g)) x;
 $function$;
 
-revoke all on function public.admin_penge_posteringer(timestamptz, timestamptz, integer) from public, anon, authenticated;
-grant execute on function public.admin_penge_posteringer(timestamptz, timestamptz, integer) to service_role;
+revoke all on function public.penge_posteringer_hent(timestamptz, timestamptz, integer) from public, anon, authenticated, service_role;
+
+-- Kun chef. p_graense er højst 20000; CSV'en spørger efter 20001 for at kunne
+-- se, om måneden har flere rækker (så klippes der ikke stille).
+drop function if exists public.admin_penge_posteringer(timestamptz, timestamptz, integer);
+create or replace function public.admin_penge_posteringer(
+  p_chef uuid, p_fra timestamptz, p_til timestamptz, p_graense integer default 50)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $fn$
+begin
+  if p_chef is null or not public.staff_chat_har_rolle(p_chef, 'chef') then
+    raise exception 'ingen_adgang' using errcode = '42501';
+  end if;
+  return public.penge_posteringer_hent(p_fra, p_til, p_graense);
+end;
+$fn$;
+
+revoke all on function public.admin_penge_posteringer(uuid, timestamptz, timestamptz, integer) from public, anon, authenticated;
+grant execute on function public.admin_penge_posteringer(uuid, timestamptz, timestamptz, integer) to service_role;

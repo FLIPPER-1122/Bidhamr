@@ -43,7 +43,21 @@ const KALD: Stripe.RequestOptions = { timeout: 20_000, maxNetworkRetries: 1 };
 // står som "ufuldstændig" i loggen).
 const MAKS_OBJEKTER = 3000;
 const MAKS_KONTI = 200;
-const TIDSBUDGET_MS = 4 * 60_000;
+// Regnet fra starten af HELE cron-forespørgslen (cron-ruten har maxDuration
+// 300 s). Er der under 45 s tilbage, startes afstemningen slet ikke (den
+// claimes ikke og tages i næste kørsel). Budgettet tjekkes inde i alle
+// løkker med Stripe-kald; løber det ud, stoppes trinnet og kørslen står som
+// "ufuldstændig" (ikke fejlet).
+const TIDSBUDGET_MS = 240_000;
+const MINDST_TILBAGE_MS = 45_000;
+
+class TidenErGaaet extends Error {}
+// Én afstemning ad gangen pr. proces (claimet i databasen).
+let slutKl = Number.POSITIVE_INFINITY;
+
+function tjekTid(): void {
+  if (Date.now() > slutKl) throw new TidenErGaaet("Tidsbudgettet er brugt");
+}
 
 export type AfvigelseType =
   | "ukendt_betaling"
@@ -107,6 +121,7 @@ function bidder<T>(liste: T[], n = 100): T[][] {
 async function liste<T>(it: AsyncIterable<T>, r: Afstemning): Promise<T[]> {
   const ud: T[] = [];
   for await (const x of it) {
+    tjekTid();
     if (ud.length >= MAKS_OBJEKTER) {
       r.ufuldstaendig++;
       break;
@@ -223,7 +238,9 @@ export function payoutStatusPasser(stripeStatus: string, dbStatus: string, afgjo
 
 // ------------------------------------------------------------- kørslen
 
-export async function koerPengeafstemning(o: { tving?: boolean; vindueDage?: number } = {}): Promise<Afstemning> {
+export async function koerPengeafstemning(
+  o: { tving?: boolean; vindueDage?: number; startKl?: number } = {},
+): Promise<Afstemning> {
   const r: Afstemning = {
     koert: 0,
     afvigelser: 0,
@@ -239,6 +256,8 @@ export async function koerPengeafstemning(o: { tving?: boolean; vindueDage?: num
     gebyrStripeOere: 0,
     gebyrDbOere: 0,
   };
+  const slut = (o.startKl ?? Date.now()) + TIDSBUDGET_MS;
+  if (slut - Date.now() < MINDST_TILBAGE_MS) return r; // næste kørsel
   const admin = createAdminClient();
   const { data: koersel, error } = await admin.rpc("penge_afstemning_claim", { p_timer: o.tving ? 0 : INTERVAL_TIMER });
   if (error) {
@@ -250,7 +269,7 @@ export async function koerPengeafstemning(o: { tving?: boolean; vindueDage?: num
   if (koersel === null || koersel === undefined) return r;
   const koerselId = Number(koersel);
   r.koert = 1;
-  const start = Date.now();
+  slutKl = slut;
   const fra = Math.floor((Date.now() - (o.vindueDage ?? VINDUE_DAGE) * DAG) / 1000);
   const fejl: string[] = [];
 
@@ -282,15 +301,22 @@ export async function koerPengeafstemning(o: { tving?: boolean; vindueDage?: num
   };
 
   const trin = async (navn: string, fn: () => Promise<void>) => {
-    if (Date.now() - start > TIDSBUDGET_MS) {
+    if (Date.now() > slutKl) {
       r.ufuldstaendig++;
       return;
     }
     try {
       await fn();
     } catch (err) {
+      if (err instanceof TidenErGaaet) {
+        r.ufuldstaendig++;
+        return;
+      }
       if (err instanceof StripeTilstandFejl) {
+        // Vagten har givet alarm; kørslen tæller som fejlet (også for vagten
+        // udefra - kilde 'cron' gør betalings-cron'en fejlet).
         fejl.push(`${navn}: Stripe-tilstand`);
+        await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: `Pengeafstemning: ${navn} (Stripe-tilstand)`, fejl: err });
         return;
       }
       console.error(`Pengeafstemning (${navn}) fejlede:`, err);
@@ -349,6 +375,7 @@ async function afstemBetalinger(
   }
 
   for (const pi of betalte) {
+    tjekTid();
     const b = kendte.get(pi.id);
     const kunde = id(pi.customer as string | { id: string } | null);
     if (afv.has(pi.id)) continue; // forkert beløb - refunderes af betalings-cron'en
@@ -436,6 +463,7 @@ async function afstemGebyrer(admin: Admin, stripe: Stripe, fra: number, r: Afste
   const vedCharge = await betalingerVed(admin, "stripe_charge_id", charges);
   const afv = await afvigelsesRaekker(admin, "stripe_charge_id", charges);
   for (const f of fees) {
+    tjekTid();
     const ch = id(f.charge as string | { id: string });
     const b = vedId.get(f.id) ?? (ch ? vedCharge.get(ch) : undefined);
     if (!b) {
@@ -498,6 +526,7 @@ async function afstemRefusioner(
   const vedCharge = await betalingerVed(admin, "stripe_charge_id", charges);
   const afv = await afvigelsesRaekker(admin, "stripe_charge_id", charges);
   for (const x of refusioner) {
+    tjekTid();
     const ch = id(x.charge as string | { id: string } | null);
     const b = ch ? vedCharge.get(ch) : undefined;
     const a = ch ? afv.get(ch) : undefined;
@@ -531,6 +560,7 @@ async function afstemTilbagefoersler(admin: Admin, stripe: Stripe, fra: number, 
   const dest = await betalingerVed(admin, "stripe_destination_transfer_id", ids);
   const gammel = await betalingerVed(admin, "stripe_transfer_id", ids);
   for (const t of transfers) {
+    tjekTid();
     const b = dest.get(t.id);
     if (!b) {
       // Den gamle model (separat) eller en transfer, databasen ikke kender:
@@ -586,6 +616,7 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
   const vedPayout = new Map((rk ?? []).filter((u) => u.stripe_payout_id).map((u) => [u.stripe_payout_id as string, u]));
   const set = new Set<string>();
   for (const konto of konti.slice(0, MAKS_KONTI)) {
+    tjekTid();
     let payouts: Stripe.Payout[];
     try {
       payouts = await liste(stripe.payouts.list({ created: { gte: fra }, limit: 100 }, { stripeAccount: konto, ...KALD }), r);
@@ -633,6 +664,7 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
   }
   // Registreret som sendt i databasen inden for vinduet, men ukendt hos Stripe.
   for (const u of rk ?? []) {
+    tjekTid();
     if (!u.stripe_payout_id || set.has(u.stripe_payout_id as string)) continue;
     if (!["oprettet", "paid"].includes(u.status as string)) continue;
     if (new Date(u.oprettet as string).getTime() < fra * 1000) continue;
@@ -669,6 +701,7 @@ async function afstemIndsigelser(
   const kendte = await betalingerVed(admin, "stripe_payment_intent_id", pis);
   const afv = await afvigelsesRaekker(admin, "stripe_payment_intent_id", pis);
   for (const d of disputes) {
+    tjekTid();
     const piId = id(d.payment_intent as string | { id: string } | null);
     if (piId && (kendte.has(piId) || afv.has(piId))) continue; // handel - overvågningen spejler den
     let kunde: string | null = null;
@@ -705,6 +738,7 @@ async function gemSaldo(admin: Admin, stripe: Stripe): Promise<void> {
   const konti = [...new Set((data ?? []).map((x) => x.saelger_stripe_konto as string))].sort().slice(0, MAKS_KONTI);
   let saelgere: number | null = 0;
   for (const k of konti) {
+    tjekTid();
     try {
       const s = await stripe.balance.retrieve({}, { stripeAccount: k, ...KALD });
       saelgere += dkk(s.available, false) + dkk(s.pending, false);

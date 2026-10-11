@@ -57,8 +57,10 @@ PENGE_ENV_FIL=C:/Users/jeppe/Desktop/hamr/.env.local npm run test:penge
 
 ### Noter
 
+- **09 og 11 kører cron-trin mod ALLE data i testdatabasen**, ikke kun testens egne: `opsamlUdebleveneBetalinger` (09) slår alle ventende betalinger op hos Stripe og spejler dem, der er betalt, og `udbetalVentende`/`udbetalForKonto` (11) kører for pengetest-sælgeren. Det er det samme, betalings-cron'en gør hvert 5. minut, men det kan røre andres testdata i testdatabasen (fx spejle en betaling, en anden test har betalt uden webhook). Kør dem ikke, mens en anden tester midt i et betalingsflow uden webhooks. 98 kører hele afstemningen og registrerer afvigelser for alt i Stripes testkonto de seneste 24 timer.
+
 - **Test clocks** bruges ikke: de findes kun for Stripe Billing (kunder/abonnementer), ikke for betalinger, Connect-saldi og payouts. Tid simuleres i stedet i databasen (fx sagens `penge_flyttes_efter_kl`).
 - **06:** Stripes testmiljø kan kun lave en indsigelse i samme øjeblik som betalingen (0259), og så stopper BidHamrs tjek før udbetaling netop udbetalingen. Betaling, frigivelse og payout er rigtige; dispute-objektet (status `lost`) for den rigtige charge er simuleret i testen.
 - **07:** 5423-kortet lægger pengene som afventende i 7 dage, så den almindelige udbetaling venter alligevel - Stripe-tjekket (F03) kaldes derfor direkte.
-- **98:** migrationen er ikke kørt på testdatabasen (kræver chefens/Filips ok), så testen svarer selv på migrationens fire nye funktioner; Stripe og resten af databasen er rigtige. SQL-funktionerne testes i `test:penge:db`.
+- **98** kræver migrationen `20261019020000_pengeafstemning.sql` på testdatabasen (kørt 11. okt. 2026). Den kører den rigtige afstemning (tvunget, vindue 1 døgn) og læser afvigelserne i `penge_afstemning_afvigelser`. Afvigelser, testen selv laver (dashboard-refusionen fra 03), markeres løst af testen bagefter.
 - **Ikke testet end-to-end:** udeblevet `payout.paid` (overvågningen venter, til Stripe's ankomstdato + 1 time er passeret - testpayouts ankommer først næste midnat) og Express-sælgerens egen onboarding (testene bruger API-oprettede testkonti).

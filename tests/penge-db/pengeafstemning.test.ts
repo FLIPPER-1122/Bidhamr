@@ -94,8 +94,8 @@ describe("migrationen", () => {
     }
     for (const f of [
       "penge_afstemning_claim(integer)",
-      "admin_penge_reserve(bigint)",
-      "admin_penge_posteringer(timestamptz, timestamptz, integer)",
+      "admin_penge_reserve(uuid, bigint)",
+      "admin_penge_posteringer(uuid, timestamptz, timestamptz, integer)",
       "admin_penge_konfiguration_gem(uuid, boolean, numeric, integer, bigint, bigint)",
     ]) {
       const r = await en<{ a: boolean; u: boolean; s: boolean }>(
@@ -180,7 +180,7 @@ describe("overblikket (admin_penge_reserve)", () => {
   });
 
   it("reserven er slået fra: ingen reserve i svaret, kan trækkes ud = saldo - refusioner i gang", async () => {
-    const r = (await en<{ r: Record<string, unknown> }>("select public.admin_penge_reserve(100000) as r")).r as {
+    const r = (await en<{ r: Record<string, unknown> }>("select public.admin_penge_reserve($1, 100000) as r", [CHEF])).r as {
       reserve: unknown;
       saelgere: { oere: number; antal_handler: number };
       skylder_koebere_oere: number;
@@ -209,7 +209,7 @@ describe("overblikket (admin_penge_reserve)", () => {
   });
 
   it("slået til: mindst åbne indsigelser + forventede tab; tab efter udbetaling trækkes fra", async () => {
-    const r = (await en<{ r: Record<string, unknown> }>("select public.admin_penge_reserve(100000) as r")).r as {
+    const r = (await en<{ r: Record<string, unknown> }>("select public.admin_penge_reserve($1, 100000) as r", [CHEF])).r as {
       gebyrer_periode_oere: number;
       reserve: { procent_oere: number; minimum_oere: number; reserve_oere: number; brugt_paa_tab_oere: number; tilbage_oere: number };
       kan_traekkes_ud_oere: number;
@@ -224,7 +224,7 @@ describe("overblikket (admin_penge_reserve)", () => {
     expect(Number(r.reserve.tilbage_oere)).toBe(1_500);
     expect(Number(r.kan_traekkes_ud_oere)).toBe(100_000 - 25_000 - 1_500);
     // Uden en saldo fra Stripe bruges seneste snapshot (afstemningen: 1000).
-    const s = (await en<{ r: { kan_traekkes_ud_oere: number } }>("select public.admin_penge_reserve(null) as r")).r;
+    const s = (await en<{ r: { kan_traekkes_ud_oere: number } }>("select public.admin_penge_reserve($1, null) as r", [CHEF])).r;
     expect(Number(s.kan_traekkes_ud_oere)).toBe(0);
     await db.query("select public.admin_penge_konfiguration_gem($1, false, 0, 90, 0, 0)", [CHEF]);
   });
@@ -233,7 +233,8 @@ describe("overblikket (admin_penge_reserve)", () => {
 describe("posteringer", () => {
   it("giver betaling, gebyr-refusion, tilbageførsel, udbetaling og tab i tidsorden", async () => {
     const r = (await en<{ r: { type: string; bidhamr_oere: number; beloeb_oere: number }[] }>(
-      "select public.admin_penge_posteringer(now() - interval '30 days', now() + interval '1 day', 100) as r",
+      "select public.admin_penge_posteringer($1, now() - interval '30 days', now() + interval '1 day', 100) as r",
+      [CHEF],
     )).r;
     const typer = r.map((x) => x.type);
     expect(typer).toContain("betaling");
@@ -245,7 +246,7 @@ describe("posteringer", () => {
     expect(Number(tab.bidhamr_oere)).toBe(-13_500);
     const tilbage = r.find((x) => x.type === "tilbagefoersel")!;
     expect(Number(tilbage.beloeb_oere)).toBe(19_000 + 6_000);
-    expect((await en<{ r: unknown[] }>("select public.admin_penge_posteringer(null, null, 2) as r")).r.length).toBe(2);
+    expect((await en<{ r: unknown[] }>("select public.admin_penge_posteringer($1, null, null, 2) as r", [CHEF])).r.length).toBe(2);
   });
 });
 
@@ -293,9 +294,10 @@ describe("rene regler", () => {
         saelger_oere: 47500,
       },
     ]);
-    expect(csv.startsWith("﻿Dato")).toBe(true);
-    const linje = csv.split("\r\n")[1];
-    expect(linje).toContain("Betaling fra køber");
+    expect(csv.startsWith("\uFEFFsep=;\r\n\"Dato")).toBe(true);
+    const linje = csv.split("\r\n")[2];
+    expect(linje).toContain('"Betaling fra køber"');
+    expect(linje).toContain('"t1";"b1";"pi_1"');
     expect(linje).toContain(";590,00;115,00;25,00;25,00;25,00;40,00;475,00");
     expect(linje).toContain(`"'=HYPERLINK(""x"");""Sofa"""`);
   });
@@ -305,5 +307,59 @@ describe("rene regler", () => {
     expect(m.fra.toISOString()).toBe("2026-09-30T22:00:00.000Z");
     expect(m.til.toISOString()).toBe("2026-10-31T23:00:00.000Z");
     expect(maanedInterval("2026-13").maaned).toMatch(/^\d{4}-\d{2}$/);
+  });
+
+  it("CSV: over 20.000 rækker giver en fejl i stedet for at klippe stille", () => {
+    const r = { kl: "2026-10-01T00:00:00Z", type: "betaling", trade_id: null, betaling_id: null, stripe_id: null, titel: null,
+      beloeb_oere: 1, bidhamr_oere: 0, koebergebyr_oere: null, saelgergebyr_oere: null, beskyttelse_oere: null, fragt_oere: null, saelger_oere: null };
+    expect(() => pengeCsv(Array.from({ length: 20_001 }, () => r))).toThrow(/over 20000/);
+  });
+});
+
+describe("rettelser efter review", () => {
+  it("kun chef kan læse overblikket og posteringerne (p_chef)", async () => {
+    await expect(db.query("select public.admin_penge_reserve($1, 0)", [ADMIN])).rejects.toThrow(/ingen_adgang/);
+    await expect(db.query("select public.admin_penge_reserve(null, 0)")).rejects.toThrow(/ingen_adgang/);
+    await expect(db.query("select public.admin_penge_posteringer($1, null, null, 5)", [ADMIN])).rejects.toThrow(/ingen_adgang/);
+    const r = await en<{ a: boolean; b: boolean }>(
+      `select has_function_privilege('service_role', 'public.penge_reserve_beregn(bigint)', 'execute') as a,
+              has_function_privilege('service_role', 'public.penge_posteringer_hent(timestamptz, timestamptz, integer)', 'execute') as b`,
+    );
+    expect([r.a, r.b]).toEqual([false, false]);
+  });
+
+  it("historikken kan hverken ændres eller slettes", async () => {
+    await expect(db.query("update public.penge_konfiguration_historik set reserve_procent = 50")).rejects.toThrow(/kan ikke ændres/);
+    await expect(db.query("delete from public.penge_konfiguration_historik")).rejects.toThrow(/kan ikke ændres/);
+  });
+
+  it("en fejlet kørsel blokerer kun i 2 timer; en vellykket i hele intervallet", async () => {
+    await db.exec(
+      "update public.penge_afstemning_koersler set startet_kl = now() - interval '30 days', afsluttet_kl = coalesce(afsluttet_kl, now() - interval '30 days')",
+    );
+    const a = (await en<{ id: string }>("select public.penge_afstemning_claim(20) as id")).id;
+    await db.query("select public.penge_afstemning_afslut($1, false, 'fejl', null)", [a]);
+    expect((await en<{ id: string | null }>("select public.penge_afstemning_claim(20) as id")).id).toBeNull();
+    // 3 timer senere: den fejlede kørsel blokerer ikke længere.
+    await db.query(
+      "update public.penge_afstemning_koersler set startet_kl = now() - interval '3 hours', afsluttet_kl = now() - interval '3 hours' where id = $1",
+      [a],
+    );
+    const b = (await en<{ id: string | null }>("select public.penge_afstemning_claim(20) as id")).id;
+    expect(b).not.toBeNull();
+    await db.query("select public.penge_afstemning_afslut($1, true, null, null)", [b]);
+    await db.query(
+      "update public.penge_afstemning_koersler set startet_kl = now() - interval '3 hours', afsluttet_kl = now() - interval '3 hours' where id = $1",
+      [b],
+    );
+    expect((await en<{ id: string | null }>("select public.penge_afstemning_claim(20) as id")).id).toBeNull();
+  });
+
+  it("rotationstabellen til overvågningens tjek H er kun for service role", async () => {
+    const r = await en<{ s: boolean; u: boolean }>(
+      `select has_table_privilege('service_role', 'public.betaling_webhook_tjek', 'insert') as s,
+              has_table_privilege('authenticated', 'public.betaling_webhook_tjek', 'select') as u`,
+    );
+    expect([r.s, r.u]).toEqual([true, false]);
   });
 });

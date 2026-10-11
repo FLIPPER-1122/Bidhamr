@@ -149,8 +149,9 @@ function dbFejl(tekst: string, err: { code?: string; message: string }): { ok: f
 
 export async function hentOekonomi(maanedRaa: unknown): Promise<Oekonomi> {
   let admin: Awaited<ReturnType<typeof assertRole>>["admin"];
+  let chefId: string;
   try {
-    ({ admin } = await assertRole("chef"));
+    ({ admin, userId: chefId } = await assertRole("chef"));
   } catch {
     notFound();
   }
@@ -173,10 +174,10 @@ export async function hentOekonomi(maanedRaa: unknown): Promise<Oekonomi> {
   }
 
   const [r, t, f, p, a] = await Promise.all([
-    admin.rpc("admin_penge_reserve", { p_tilgaengelig_oere: tilg }),
+    admin.rpc("admin_penge_reserve", { p_chef: chefId, p_tilgaengelig_oere: tilg }),
     admin.rpc("admin_penge_tal", { p_fra: fra.toISOString(), p_til: til.toISOString() }),
     admin.rpc("admin_fragt_tilskud", { p_fra: fra.toISOString(), p_til: til.toISOString() }),
-    admin.rpc("admin_penge_posteringer", { p_fra: null, p_til: null, p_graense: 25 }),
+    admin.rpc("admin_penge_posteringer", { p_chef: chefId, p_fra: null, p_til: null, p_graense: 25 }),
     admin
       .from("penge_afstemning_afvigelser")
       .select("id, type, stripe_id, betaling_id, stripe_konto, beskrivelse, beloeb_stripe_oere, beloeb_db_oere, foerst_set_kl, sidst_set_kl, antal_set")
@@ -227,13 +228,27 @@ export function csvKr(oere: number | null | undefined): string {
   return `${fortegn}${Math.floor(a / 100)},${String(a % 100).padStart(2, "0")}`;
 }
 
-function csvFelt(v: string): string {
-  // Formel-injektion i regneark (=, +, -, @) neutraliseres - kun for tekst.
-  const s = /^[=+\-@\t\r]/.test(v) && !/^-?\d+,\d{2}$/.test(v) ? `'${v}` : v;
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+// Tekstfelter: altid i anførselstegn ("" for "). Starter teksten med =, +, -,
+// @, tab eller CR, sættes ' foran, så regnearket aldrig læser den som en
+// formel. Beløb er tal (fx 1234,50) og står uden anførselstegn - de kan ikke
+// indeholde ; , " eller linjeskift.
+export function csvTekst(v: string): string {
+  const s = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
+export function csvTal(v: string): string {
+  return /^-?\d+,\d{2}$/.test(v) || v === "" ? v : csvTekst(v);
+}
+
+export const CSV_MAKS_RAEKKER = 20_000;
+
+export class ForMangeRaekker extends Error {}
+
 export function pengeCsv(rows: Postering[]): string {
+  if (rows.length > CSV_MAKS_RAEKKER) {
+    throw new ForMangeRaekker(`Måneden har over ${CSV_MAKS_RAEKKER} posteringer`);
+  }
   const hoved = [
     "Dato (dansk tid)",
     "Type",
@@ -255,23 +270,21 @@ export function pengeCsv(rows: Postering[]): string {
     .sort((a, b) => a.kl.localeCompare(b.kl))
     .map((r) =>
       [
-        tid(r.kl),
-        POSTERING_NAVN[r.type] ?? r.type,
-        r.trade_id ?? "",
-        r.betaling_id ?? "",
-        r.stripe_id ?? "",
-        r.titel ?? "",
-        csvKr(r.beloeb_oere),
-        csvKr(r.bidhamr_oere),
-        csvKr(r.koebergebyr_oere),
-        csvKr(r.saelgergebyr_oere),
-        csvKr(r.beskyttelse_oere),
-        csvKr(r.fragt_oere),
-        csvKr(r.saelger_oere),
-      ]
-        .map(csvFelt)
-        .join(";"),
+        csvTekst(tid(r.kl)),
+        csvTekst(POSTERING_NAVN[r.type] ?? r.type),
+        csvTekst(r.trade_id ?? ""),
+        csvTekst(r.betaling_id ?? ""),
+        csvTekst(r.stripe_id ?? ""),
+        csvTekst(r.titel ?? ""),
+        csvTal(csvKr(r.beloeb_oere)),
+        csvTal(csvKr(r.bidhamr_oere)),
+        csvTal(csvKr(r.koebergebyr_oere)),
+        csvTal(csvKr(r.saelgergebyr_oere)),
+        csvTal(csvKr(r.beskyttelse_oere)),
+        csvTal(csvKr(r.fragt_oere)),
+        csvTal(csvKr(r.saelger_oere)),
+      ].join(";"),
     );
-  // BOM, så Excel læser æ, ø og å rigtigt.
-  return "﻿" + [hoved.join(";"), ...linjer].join("\r\n") + "\r\n";
+  // BOM (æ, ø, å) og "sep=;", så Excel bruger semikolon som skilletegn.
+  return "\uFEFF" + ["sep=;", hoved.map(csvTekst).join(";"), ...linjer].join("\r\n") + "\r\n";
 }

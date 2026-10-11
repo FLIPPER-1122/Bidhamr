@@ -59,6 +59,8 @@ export function indlaesMiljoe(): void {
     "SHIPMONDO_API_BRUGER",
     "SHIPMONDO_API_NOEGLE",
     "STRIPE_CONNECT_WEBHOOK_SECRET",
+    // Ingen rigtige push-beskeder (Expo) fra testene.
+    "EXPO_ACCESS_TOKEN",
   ]) {
     delete process.env[k];
   }

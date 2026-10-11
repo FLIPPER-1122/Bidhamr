@@ -38,12 +38,12 @@
 //       saldo-afstemning og udeblevne payout-/indsigelses-events. Én
 //       drift-alarm pr. tilfælde. Også betalinger, hvor payment_intent-
 //       webhooken er udeblevet (opsamlUdebleveneBetalinger).
-//   10b. Daglig fuld pengeafstemning med Stripe (afstemning.ts, højst én gang
-//       pr. 20 timer): charges, gebyrer, refusioner/tilbageførsler, payouts
-//       og indsigelser på abonnementer mod databasen.
 //   11. Fakturaer i Dinero på BidHamrs gebyrer, fragt og BidHamr Beskyttelse
 //       (købers og sælgers), kreditnotaer ved refusion og bogføring af
 //       betalte abonnementsfakturaer (src/lib/faktura/koe.ts, docs/FAKTURA.md).
+//   11b. Daglig fuld pengeafstemning med Stripe (afstemning.ts, højst én gang
+//       pr. 20 timer, efter fakturaerne): charges, gebyrer, refusioner/
+//       tilbageførsler, payouts og indsigelser på abonnementer mod databasen.
 //
 // Hver mail "claimes" atomisk i databasen FØR afsendelse, så samme mail aldrig
 // sendes to gange, selv hvis to kørsler overlapper.
@@ -129,7 +129,8 @@ async function opslag(betalinger: BetalingRaekke[]) {
   };
 }
 
-export async function koerBetalingsCron() {
+// startKl: hvornår cron-forespørgslen startede (tidsbudget for afstemningen).
+export async function koerBetalingsCron(o: { startKl?: number } = {}) {
   const admin = createAdminClient();
   const resultat = {
     lukkede: 0,
@@ -445,11 +446,6 @@ export async function koerBetalingsCron() {
   //     'cron' (kørslen markeres som fejlet).
   resultat.overvaagning = await koerBetalingsovervaagning();
 
-  // 10b) Daglig fuld pengeafstemning med Stripe (afstemning.ts - højst én
-  //      gang pr. 20 timer). Flytter ingen penge; afvigelser giver én
-  //      drift-alarm hver og vises under Admin -> Penge. Kaster aldrig.
-  resultat.afstemning = await koerPengeafstemning();
-
   // 11) Fakturaer i Dinero (efter refusionerne, så en refusion i denne
   //     kørsel giver kreditnotaen med det samme). Et enkelt dokument, der
   //     fejler, prøves igen senere (spredte forsøg) - kun en fejl i selve
@@ -459,6 +455,13 @@ export async function koerBetalingsCron() {
   } catch (err) {
     await trinFejl("Fakturaer (Dinero)", err);
   }
+
+  // 11b) Daglig fuld pengeafstemning med Stripe (afstemning.ts - højst én
+  //      gang pr. 20 timer, efter fakturaerne, så den aldrig tager tid fra
+  //      dem). Tidsbudgettet regnes fra starten af hele forespørgslen.
+  //      Flytter ingen penge; afvigelser giver én drift-alarm hver og vises
+  //      under Admin -> Penge. Kaster aldrig.
+  resultat.afstemning = await koerPengeafstemning({ startKl: o.startKl });
 
   // 9) Notifikationer om likes, beskeder, favoritter der slutter snart, nye
   //    auktioner fra fulgte sælgere og advarsler. Kaster aldrig.
