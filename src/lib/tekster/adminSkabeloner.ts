@@ -144,3 +144,24 @@ export const KONTOLUKNING_AFVIS: readonly Skabelon[] = [
   { label: "Gamle advarsler", tekst: "Advarslerne er gamle, og brugeren har handlet uden problemer siden." },
   { label: "Fejl i advarsel", tekst: "En af advarslerne var givet ved en fejl." },
 ];
+
+// --- Ubetalte vindere ------------------------------------------------------
+
+// Begrundelse til køberen ved advarsel (vises for køberen).
+export const UBETALT_ADVARSEL: readonly Skabelon[] = [
+  {
+    label: "Betalte ikke",
+    tekst: "Du vandt en auktion, men betalte ikke inden for fristen. Bud på BidHamr er bindende.",
+  },
+  {
+    label: "Gentagen",
+    tekst: "Du har igen vundet en auktion uden at betale inden for fristen. Bud på BidHamr er bindende.",
+  },
+];
+
+// Intern begrundelse, når sagen afvises (køberen får ingen advarsel).
+export const UBETALT_AFVIS: readonly Skabelon[] = [
+  { label: "Teknisk fejl", tekst: "Betalingen fejlede hos betalingsudbyderen – ikke købers skyld." },
+  { label: "Aftalt med sælger", tekst: "Køber og sælger har aftalt at annullere handlen." },
+  { label: "Særlige forhold", tekst: "Køberen har en god grund og har skrevet til os." },
+];

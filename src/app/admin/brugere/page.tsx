@@ -6,6 +6,7 @@ import BrugereFaner from "@/components/admin/BrugereFaner";
 import { StatusBadge, brugerStatus, RolleBadge } from "@/components/admin/StatusBadge";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import AdminSide from "@/components/admin/AdminSide";
 
 // Brugere og sikkerhed: søgning på navn, e-mail, telefon og bruger-id med
 // filtre. Data via admin_brugere_soeg (service_role) efter kraevSideRolle.
@@ -75,7 +76,7 @@ export default async function AdminBrugere({
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-5 max-w-4xl mx-auto">
+    <AdminSide>
       <AdminSideHoved
         titel="Brugere"
         forklaring="Find en bruger og se profil, advarsler, auktioner, bud og bedømmelser. Herfra kan du også advare eller suspendere."
@@ -96,7 +97,7 @@ export default async function AdminBrugere({
             className={`inline-flex min-h-9 items-center rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
               filter === f.id
                 ? "border-neutral-900 bg-neutral-900 text-white"
-                : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900"
+                : "border-admin-kant bg-white text-tekst-daempet hover:border-neutral-300 hover:text-tekst"
             }`}
           >
             {f.label}
@@ -105,7 +106,7 @@ export default async function AdminBrugere({
       </div>
 
       {error && (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+        <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg px-5 py-4 text-sm text-fejl-tekst">
           Brugerne kunne ikke hentes. Prøv igen om lidt.
         </p>
       )}
@@ -115,12 +116,12 @@ export default async function AdminBrugere({
           <Link
             key={user.id}
             href={`/admin/brugere/${user.id}`}
-            className="flex flex-wrap items-center gap-3 sm:gap-4 rounded-xl border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-md"
+            className="flex flex-wrap items-center gap-3 sm:gap-4 rounded-[14px] border border-admin-kant bg-white p-4 transition-shadow hover:shadow-md"
           >
             <Avatar url={user.avatar_url} navn={user.navn} size={48} />
             <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold text-neutral-900">{user.navn ?? "Uden navn"}</p>
-              <p className="truncate text-sm text-neutral-500">
+              <p className="truncate font-semibold text-tekst">{user.navn ?? "Uden navn"}</p>
+              <p className="truncate text-sm text-tekst-svag">
                 {user.email}
                 {user.telefon ? ` · ${user.telefon}` : ""}
               </p>
@@ -141,7 +142,7 @@ export default async function AdminBrugere({
                 </span>
               )}
               {user.paamindelser_antal > 0 && (
-                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-tekst-daempet">
                   {user.paamindelser_antal} {user.paamindelser_antal === 1 ? "påmindelse" : "påmindelser"}
                 </span>
               )}
@@ -152,16 +153,16 @@ export default async function AdminBrugere({
           </Link>
         ))}
         {!error && users.length === 0 && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-10 text-center text-neutral-400">
+          <div className="rounded-[14px] border border-admin-kant bg-white p-10 text-center text-tekst-svag">
             Ingen brugere fundet – prøv et andet navn, e-mail, telefonnummer eller bruger-id.
           </div>
         )}
         {users.length === 50 && (
-          <p className="text-center text-xs text-neutral-400">
+          <p className="text-center text-xs text-tekst-svag">
             Viser de 50 nyeste. Søg mere præcist for at finde andre.
           </p>
         )}
       </div>
-    </div>
+    </AdminSide>
   );
 }

@@ -72,3 +72,22 @@ export function DriftFaner({ aktiv }: { aktiv: "drift" | "rapport" }) {
     />
   );
 }
+
+// Handler-fanerne på sider uden for /admin/handler (Ubetalte vindere).
+export async function HandlerFaner({ aktiv }: { aktiv: "ubetalte" }) {
+  const t = await hentStaffTal();
+  return (
+    <AdminFaner
+      label="Handler"
+      aktiv={aktiv}
+      faner={[
+        { id: "haenger", label: "Hænger", href: "/admin/handler?vis=haenger" },
+        { id: "fragt", label: "Fragt", href: "/admin/handler?vis=fragt" },
+        { id: "markeret", label: "Markeret af os", href: "/admin/handler?vis=markeret" },
+        { id: "ubetalte", label: "Ubetalte vindere", href: "/admin/ubetalte", antal: t.ubetalte, tone: "graa" },
+        { id: "aktive", label: "Aktive handler", href: "/admin/handler?vis=aktive" },
+        { id: "alle", label: "Alle", href: "/admin/handler?vis=alle" },
+      ]}
+    />
+  );
+}

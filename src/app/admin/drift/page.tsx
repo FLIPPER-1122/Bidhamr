@@ -15,6 +15,8 @@ import {
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { hentBesoeg, stiNavn } from "@/lib/statistik";
 import { ALARM_INTERVAL_MIN, ALARM_SLAGS, alarmModtagere, type AlarmSlags } from "@/lib/driftAlarm";
+import AdminSide from "@/components/admin/AdminSide";
+import { DriftFaner } from "@/components/admin/OmraadeFaner";
 
 // Drift: cron-jobs, notifikationer der ikke er sendt, og fejl på siden.
 // Kun admin og chef (tjekkes på serveren). Ingen mailindhold og ingen
@@ -62,7 +64,7 @@ function Badge({ farve, children }: { farve: "groen" | "roed" | "gul" | "graa"; 
     groen: "bg-green-100 text-green-800",
     roed: "bg-red-100 text-red-800",
     gul: "bg-amber-100 text-amber-800",
-    graa: "bg-neutral-100 text-neutral-700",
+    graa: "bg-neutral-100 text-tekst",
   }[farve];
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${cls}`}>
@@ -73,9 +75,9 @@ function Badge({ farve, children }: { farve: "groen" | "roed" | "gul" | "graa"; 
 
 function Kort({ titel, children, hoejre }: { titel: string; children: React.ReactNode; hoejre?: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white">
+    <section className="rounded-[14px] border border-admin-kant bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3 sm:px-5">
-        <h2 className="text-base font-semibold text-neutral-900">{titel}</h2>
+        <h2 className="text-base font-semibold text-tekst">{titel}</h2>
         {hoejre}
       </div>
       <div className="p-4 sm:p-5">{children}</div>
@@ -93,7 +95,7 @@ function SektionFejl<T>({ s }: { s: Sektion<T> }) {
     );
   }
   if (s.tilstand === "fejl") {
-    return <p className="text-sm text-red-700">Kunne ikke hentes: {s.besked}</p>;
+    return <p className="text-sm text-fejl-tekst">Kunne ikke hentes: {s.besked}</p>;
   }
   return null;
 }
@@ -152,11 +154,12 @@ export default async function AdminDrift({
       : [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
         titel="Drift"
         forklaring="Teknisk overblik: besøg, cron-jobs, notifikationer der ikke er sendt, og fejl på siden. Opdateres, når siden genindlæses."
       />
+      <DriftFaner aktiv="drift" />
 
       {/* ---------------------------------------------------------- Besøg */}
       <Kort titel="Besøg (cookiefri statistik)">
@@ -166,7 +169,7 @@ export default async function AdminDrift({
             ikke kørt på denne database.
           </p>
         ) : besoeg.tilstand === "fejl" ? (
-          <p className="text-sm text-red-700">Kunne ikke hentes: {besoeg.besked}</p>
+          <p className="text-sm text-fejl-tekst">Kunne ikke hentes: {besoeg.besked}</p>
         ) : (
           <div className="space-y-5">
             <dl className="grid grid-cols-3 gap-3 text-sm">
@@ -176,15 +179,15 @@ export default async function AdminDrift({
                 { label: "Sidste 30 dage", v: besoeg.data.dage30 },
               ].map((t) => (
                 <div key={t.label} className="rounded-lg bg-neutral-50 p-3">
-                  <dt className="text-xs text-neutral-500">{t.label}</dt>
-                  <dd className="text-xl font-semibold text-neutral-900">{t.v.toLocaleString("da-DK")}</dd>
+                  <dt className="text-xs text-tekst-svag">{t.label}</dt>
+                  <dd className="text-xl font-semibold text-tekst">{t.v.toLocaleString("da-DK")}</dd>
                 </div>
               ))}
             </dl>
 
             {besoeg.data.prDag.length > 0 && (
               <div>
-                <h3 className="mb-2 text-sm font-semibold text-neutral-800">Sidevisninger pr. dag (30 dage)</h3>
+                <h3 className="mb-2 text-sm font-semibold text-tekst">Sidevisninger pr. dag (30 dage)</h3>
                 {(() => {
                   const maks = Math.max(1, ...besoeg.data.prDag.map((d) => d.antal));
                   return (
@@ -204,24 +207,24 @@ export default async function AdminDrift({
             )}
 
             <div>
-              <h3 className="mb-2 text-sm font-semibold text-neutral-800">Mest besøgte sider (30 dage)</h3>
+              <h3 className="mb-2 text-sm font-semibold text-tekst">Mest besøgte sider (30 dage)</h3>
               {besoeg.data.top.length === 0 ? (
-                <p className="text-sm text-neutral-500">Ingen besøg registreret endnu.</p>
+                <p className="text-sm text-tekst-svag">Ingen besøg registreret endnu.</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                    <tr className="bg-neutral-50 text-xs uppercase text-tekst-svag">
                       <th className={th}>Side</th>
                       <th className={`${th} text-right`}>Visninger</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-100">
+                  <tbody className="divide-y divide-admin-kant">
                     {besoeg.data.top.map((r) => (
                       <tr key={r.sti}>
                         <td className={td}>
-                          <span className="text-neutral-900">{stiNavn(r.sti)}</span>
+                          <span className="text-tekst">{stiNavn(r.sti)}</span>
                           {stiNavn(r.sti) !== r.sti && (
-                            <span className="ml-2 font-mono text-xs text-neutral-500">{r.sti}</span>
+                            <span className="ml-2 font-mono text-xs text-tekst-svag">{r.sti}</span>
                           )}
                         </td>
                         <td className={`${td} text-right tabular-nums`}>{r.antal.toLocaleString("da-DK")}</td>
@@ -231,7 +234,7 @@ export default async function AdminDrift({
                 </table>
               )}
             </div>
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-tekst-svag">
               Tæller kun sidevisninger pr. dag og sidetype. Ingen cookies, intet bruger-id, ingen IP og ingen
               tredjepart. Besøgende med Do Not Track tælles ikke. Admin-sider tælles ikke.
             </p>
@@ -258,7 +261,7 @@ export default async function AdminDrift({
             ikke kørt på denne database.
           </p>
         ) : alarm.tilstand === "fejl" ? (
-          <p className="text-sm text-red-700">Kunne ikke hentes: {alarm.besked}</p>
+          <p className="text-sm text-fejl-tekst">Kunne ikke hentes: {alarm.besked}</p>
         ) : (
           <div className="space-y-4">
             {!alarmModtagerSat && (
@@ -268,22 +271,22 @@ export default async function AdminDrift({
               </div>
             )}
             {alarm.data.sidsteFejl && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <div className="rounded-lg border border-fejl-kant bg-fejl-bg p-3 text-sm text-red-800">
                 Sidste alarm-mail kunne ikke sendes: {alarm.data.sidsteFejl}
               </div>
             )}
             <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
               <div>
-                <dt className="text-xs text-neutral-500">Modtager (DRIFT_ALARM_MAIL)</dt>
-                <dd className="font-medium text-neutral-900">{alarmModtagerSat ? "Sat" : "Ikke sat"}</dd>
+                <dt className="text-xs text-tekst-svag">Modtager (DRIFT_ALARM_MAIL)</dt>
+                <dd className="font-medium text-tekst">{alarmModtagerSat ? "Sat" : "Ikke sat"}</dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-500">Sidste tjek</dt>
-                <dd className="font-medium text-neutral-900">{siden(alarm.data.sidstTjekket, nu)}</dd>
-                <dd className="text-xs text-neutral-500">{tid(alarm.data.sidstTjekket)}</dd>
+                <dt className="text-xs text-tekst-svag">Sidste tjek</dt>
+                <dd className="font-medium text-tekst">{siden(alarm.data.sidstTjekket, nu)}</dd>
+                <dd className="text-xs text-tekst-svag">{tid(alarm.data.sidstTjekket)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-500">Sidst sendt</dt>
+                <dt className="text-xs text-tekst-svag">Sidst sendt</dt>
                 {(() => {
                   const sidst = alarm.data.alarmer
                     .map((a) => a.sidst_sendt_kl)
@@ -292,8 +295,8 @@ export default async function AdminDrift({
                     .at(-1) ?? null;
                   return (
                     <>
-                      <dd className="font-medium text-neutral-900">{siden(sidst, nu)}</dd>
-                      <dd className="text-xs text-neutral-500">{tid(sidst)}</dd>
+                      <dd className="font-medium text-tekst">{siden(sidst, nu)}</dd>
+                      <dd className="text-xs text-tekst-svag">{tid(sidst)}</dd>
                     </>
                   );
                 })()}
@@ -302,7 +305,7 @@ export default async function AdminDrift({
             <div className="-mx-4 overflow-x-auto sm:mx-0">
               <table className="w-full min-w-[520px] text-sm">
                 <thead>
-                  <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                  <tr className="bg-neutral-50 text-xs uppercase text-tekst-svag">
                     <th className={th}>Slags</th>
                     <th className={th}>Sidst sendt</th>
                     <th className={th}>Sidst udløst</th>
@@ -310,7 +313,7 @@ export default async function AdminDrift({
                     <th className={th}>Seneste</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-100">
+                <tbody className="divide-y divide-admin-kant">
                   {alarm.data.alarmer.map((a) => (
                     <tr key={a.slags}>
                       <td className={td}>{ALARM_SLAGS[a.slags as AlarmSlags] ?? a.slags}</td>
@@ -327,7 +330,7 @@ export default async function AdminDrift({
                         ) : a.sidste_resultat === "mail_fejlet" ? (
                           <Badge farve="roed">Mail fejlede</Badge>
                         ) : (
-                          <span className="text-neutral-500">—</span>
+                          <span className="text-tekst-svag">—</span>
                         )}
                       </td>
                     </tr>
@@ -335,7 +338,7 @@ export default async function AdminDrift({
                 </tbody>
               </table>
             </div>
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-tekst-svag">
               Tjekkes hvert 5. minut (pg_cron-jobbet <code>drift-alarm</code>). Der sendes én samlet mail ved en ny
               slags fejl, over 20 fejl på 15 minutter, cron-fejl og webhook-fejl – højst én mail pr. slags pr.{" "}
               {ALARM_INTERVAL_MIN} minutter. Hvis hele siden er nede, kan den ikke selv sende besked; det klarer den
@@ -364,13 +367,13 @@ export default async function AdminDrift({
         {rute.tilstand === "ok" && (
           <div className="space-y-4">
             {ruteIkkeKaldtPaaTest && (
-              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
+              <div className="rounded-lg border border-admin-kant bg-neutral-50 p-3 text-sm text-tekst">
                 Ingen kørsler logget endnu. Cron-ruten kaldes kun fra produktionsdatabasen – på
                 testdatabasen er det normalt.
               </div>
             )}
             {ruteAdvarsel && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <div className="rounded-lg border border-fejl-kant bg-fejl-bg p-3 text-sm text-red-800">
                 Sidste vellykkede kørsel: <strong>{siden(rute.data.sidsteOk, nu)}</strong>. Ruten skal
                 køre hvert 5. minut (pg_cron-jobbet <code>betalings-cron</code>). Tjek jobbet og
                 svarene fra pg_net nedenfor, og at <code>cron_url</code>/<code>cron_secret</code> i
@@ -379,23 +382,23 @@ export default async function AdminDrift({
             )}
             <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
               <div>
-                <dt className="text-xs text-neutral-500">Sidste vellykkede</dt>
-                <dd className="font-medium text-neutral-900">{siden(rute.data.sidsteOk, nu)}</dd>
-                <dd className="text-xs text-neutral-500">{tid(rute.data.sidsteOk)}</dd>
+                <dt className="text-xs text-tekst-svag">Sidste vellykkede</dt>
+                <dd className="font-medium text-tekst">{siden(rute.data.sidsteOk, nu)}</dd>
+                <dd className="text-xs text-tekst-svag">{tid(rute.data.sidsteOk)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-500">Kørsler sidste 24 t</dt>
-                <dd className="font-medium text-neutral-900">{rute.data.koersler24t}</dd>
+                <dt className="text-xs text-tekst-svag">Kørsler sidste 24 t</dt>
+                <dd className="font-medium text-tekst">{rute.data.koersler24t}</dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-500">Fejl sidste 24 t</dt>
-                <dd className={`font-medium ${rute.data.fejl24t > 0 ? "text-red-700" : "text-neutral-900"}`}>
+                <dt className="text-xs text-tekst-svag">Fejl sidste 24 t</dt>
+                <dd className={`font-medium ${rute.data.fejl24t > 0 ? "text-fejl-tekst" : "text-tekst"}`}>
                   {rute.data.fejl24t}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-500">pg_net-svar med fejl</dt>
-                <dd className={`font-medium ${httpFejl.length > 0 ? "text-red-700" : "text-neutral-900"}`}>
+                <dt className="text-xs text-tekst-svag">pg_net-svar med fejl</dt>
+                <dd className={`font-medium ${httpFejl.length > 0 ? "text-fejl-tekst" : "text-tekst"}`}>
                   {http.tilstand === "ok" ? `${httpFejl.length} af ${http.data.length}` : "—"}
                 </dd>
               </div>
@@ -403,12 +406,12 @@ export default async function AdminDrift({
             {http.tilstand !== "ok" && <SektionFejl s={http} />}
 
             {rute.data.seneste.length === 0 ? (
-              !ruteIkkeKaldtPaaTest && <p className="text-sm text-neutral-500">Ingen kørsler logget endnu.</p>
+              !ruteIkkeKaldtPaaTest && <p className="text-sm text-tekst-svag">Ingen kørsler logget endnu.</p>
             ) : (
               <div className="-mx-4 overflow-x-auto sm:mx-0">
                 <table className="w-full min-w-[560px] text-sm">
                   <thead>
-                    <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                    <tr className="bg-neutral-50 text-xs uppercase text-tekst-svag">
                       <th className={th}>Start</th>
                       <th className={th}>Varighed</th>
                       <th className={th}>Kald</th>
@@ -416,14 +419,14 @@ export default async function AdminDrift({
                       <th className={th}>Fejl</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-100">
+                  <tbody className="divide-y divide-admin-kant">
                     {rute.data.seneste.map((k) => (
                       <tr key={k.id}>
                         <td className={`${td} whitespace-nowrap`}>{tid(k.startet_kl)}</td>
-                        <td className={`${td} whitespace-nowrap text-neutral-600`}>
+                        <td className={`${td} whitespace-nowrap text-tekst-daempet`}>
                           {varighed(k.startet_kl, k.afsluttet_kl)}
                         </td>
-                        <td className={`${td} text-neutral-600`}>
+                        <td className={`${td} text-tekst-daempet`}>
                           {k.metode === "GET" ? "Vercel" : k.metode === "POST" ? "pg_cron" : "—"}
                         </td>
                         <td className={td}>
@@ -435,7 +438,7 @@ export default async function AdminDrift({
                             <Badge farve="gul">Ikke afsluttet</Badge>
                           )}
                         </td>
-                        <td className={`${td} break-words text-neutral-700`}>{k.fejl ?? ""}</td>
+                        <td className={`${td} break-words text-tekst`}>{k.fejl ?? ""}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -445,17 +448,17 @@ export default async function AdminDrift({
 
             {httpFejl.length > 0 && (
               <div>
-                <h3 className="mb-2 text-sm font-semibold text-neutral-800">
+                <h3 className="mb-2 text-sm font-semibold text-tekst">
                   Fejlede kald fra pg_net (seneste ca. 6 timer)
                 </h3>
                 <ul className="space-y-1 text-sm">
                   {httpFejl.slice(0, 10).map((h) => (
-                    <li key={h.id} className="flex flex-wrap gap-x-3 text-neutral-700">
+                    <li key={h.id} className="flex flex-wrap gap-x-3 text-tekst">
                       <span className="whitespace-nowrap">{tid(h.oprettet_kl)}</span>
                       <span className="font-medium">
                         {h.timed_out ? "Timeout" : h.status_code ? `HTTP ${h.status_code}` : "Intet svar"}
                       </span>
-                      {h.fejl && <span className="break-words text-neutral-500">{h.fejl}</span>}
+                      {h.fejl && <span className="break-words text-tekst-svag">{h.fejl}</span>}
                     </li>
                   ))}
                 </ul>
@@ -469,12 +472,12 @@ export default async function AdminDrift({
         <SektionFejl s={pgCron} />
         {pgCron.tilstand === "ok" &&
           (pgCron.data.length === 0 ? (
-            <p className="text-sm text-neutral-500">Ingen jobs fundet (pg_cron er ikke slået til).</p>
+            <p className="text-sm text-tekst-svag">Ingen jobs fundet (pg_cron er ikke slået til).</p>
           ) : (
             <div className="-mx-4 overflow-x-auto sm:mx-0">
               <table className="w-full min-w-[720px] text-sm">
                 <thead>
-                  <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                  <tr className="bg-neutral-50 text-xs uppercase text-tekst-svag">
                     <th className={th}>Job</th>
                     <th className={th}>Tidsplan</th>
                     <th className={th}>Sidste kørsel</th>
@@ -483,10 +486,10 @@ export default async function AdminDrift({
                     <th className={th}>Seneste fejl</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-100">
+                <tbody className="divide-y divide-admin-kant">
                   {pgCron.data.map((j) => (
                     <tr key={j.jobid}>
-                      <td className={`${td} font-medium text-neutral-900`}>
+                      <td className={`${td} font-medium text-tekst`}>
                         {j.jobname ?? `#${j.jobid}`}
                         {!j.active && (
                           <span className="ml-2">
@@ -494,10 +497,10 @@ export default async function AdminDrift({
                           </span>
                         )}
                       </td>
-                      <td className={`${td} whitespace-nowrap font-mono text-xs text-neutral-600`}>{j.schedule}</td>
+                      <td className={`${td} whitespace-nowrap font-mono text-xs text-tekst-daempet`}>{j.schedule}</td>
                       <td className={`${td} whitespace-nowrap`}>
                         {tid(j.sidste_start)}
-                        <span className="block text-xs text-neutral-500">{siden(j.sidste_start, nu)}</span>
+                        <span className="block text-xs text-tekst-svag">{siden(j.sidste_start, nu)}</span>
                       </td>
                       <td className={td}>
                         {j.sidste_status === "succeeded" ? (
@@ -511,22 +514,22 @@ export default async function AdminDrift({
                         )}
                       </td>
                       <td className={`${td} whitespace-nowrap`}>
-                        <span className={j.fejl_24t > 0 ? "font-semibold text-red-700" : ""}>{j.fejl_24t}</span>
-                        <span className="text-neutral-500"> / {j.koersler_24t}</span>
+                        <span className={j.fejl_24t > 0 ? "font-semibold text-fejl-tekst" : ""}>{j.fejl_24t}</span>
+                        <span className="text-tekst-svag"> / {j.koersler_24t}</span>
                       </td>
-                      <td className={`${td} break-words text-neutral-700`}>
+                      <td className={`${td} break-words text-tekst`}>
                         {j.seneste_fejl_kl ? (
                           // Fremhæv kun fejlen, hvis den er aktuel: fra de sidste 24 t,
                           // eller jobbets sidste kørsel fejlede (fx et dagligt job).
                           nu - new Date(j.seneste_fejl_kl).getTime() <= 24 * 60 * 60_000 ||
                           j.sidste_status === "failed" ? (
                             <>
-                              <span className="block text-xs text-neutral-500">{tid(j.seneste_fejl_kl)}</span>
-                              <span className="text-red-700">{j.seneste_fejl}</span>
+                              <span className="block text-xs text-tekst-svag">{tid(j.seneste_fejl_kl)}</span>
+                              <span className="text-fejl-tekst">{j.seneste_fejl}</span>
                             </>
                           ) : (
                             <span
-                              className="text-xs text-neutral-400"
+                              className="text-xs text-tekst-svag"
                               title={`${tid(j.seneste_fejl_kl)}: ${j.seneste_fejl ?? ""}`}
                             >
                               Seneste fejl for {siden(j.seneste_fejl_kl, nu)} (løst siden)
@@ -556,17 +559,17 @@ export default async function AdminDrift({
         <SektionFejl s={ikkeSendte} />
         {ikkeSendte.tilstand === "ok" &&
           (ikkeSendte.data.length === 0 ? (
-            <p className="text-sm text-neutral-500">Ingen fejlede eller hængende notifikationer.</p>
+            <p className="text-sm text-tekst-svag">Ingen fejlede eller hængende notifikationer.</p>
           ) : (
             <>
-              <p className="mb-3 text-xs text-neutral-500">
+              <p className="mb-3 text-xs text-tekst-svag">
                 Fejlede kanaler og afsendelser, der er claimet, men ikke meldt færdige efter{" "}
                 {CLAIM_HAENGER_MIN} minutter. Intet indhold vises.
               </p>
               <div className="-mx-4 overflow-x-auto sm:mx-0">
                 <table className="w-full min-w-[720px] text-sm">
                   <thead>
-                    <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                    <tr className="bg-neutral-50 text-xs uppercase text-tekst-svag">
                       <th className={th}>Tid</th>
                       <th className={th}>Type</th>
                       <th className={th}>Kanal</th>
@@ -575,7 +578,7 @@ export default async function AdminDrift({
                       <th className={th}>Fejl</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-100">
+                  <tbody className="divide-y divide-admin-kant">
                     {ikkeSendte.data.map((r) => (
                       <tr key={r.noegle}>
                         <td className={`${td} whitespace-nowrap`}>{tid(r.tid)}</td>
@@ -593,8 +596,8 @@ export default async function AdminDrift({
                         <td className={td}>
                           {r.brugerId ? (
                             <Link href={`/admin/brugere/${r.brugerId}`} className="block hover:underline">
-                              <span className="block text-neutral-800">{r.email}</span>
-                              <span className="block font-mono text-[11px] text-neutral-500">
+                              <span className="block text-tekst">{r.email}</span>
+                              <span className="block font-mono text-[11px] text-tekst-svag">
                                 {r.brugerId.slice(0, 8)}
                               </span>
                             </Link>
@@ -602,7 +605,7 @@ export default async function AdminDrift({
                             "—"
                           )}
                         </td>
-                        <td className={`${td} break-words text-neutral-700`}>{r.fejl ?? "—"}</td>
+                        <td className={`${td} break-words text-tekst`}>{r.fejl ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -622,7 +625,7 @@ export default async function AdminDrift({
                 key={d}
                 href={`/admin/drift?dage=${d}`}
                 className={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                  d === dage ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100"
+                  d === dage ? "bg-neutral-900 text-white" : "text-tekst-daempet hover:bg-neutral-100"
                 }`}
                 aria-current={d === dage ? "page" : undefined}
               >
@@ -635,16 +638,16 @@ export default async function AdminDrift({
         <SektionFejl s={fejl} />
         {fejl.tilstand === "ok" &&
           (fejl.data.grupper.length === 0 ? (
-            <p className="text-sm text-neutral-500">Ingen fejl registreret i perioden.</p>
+            <p className="text-sm text-tekst-svag">Ingen fejl registreret i perioden.</p>
           ) : (
             <>
-              <p className="mb-3 text-xs text-neutral-500">
+              <p className="mb-3 text-xs text-tekst-svag">
                 {fejl.data.iAlt} registreringer i {fejl.data.grupper.length}{" "}
                 {fejl.data.grupper.length === 1 ? "gruppe" : "grupper"}, grupperet pr. besked. Samme fejl
                 (samme fejlkode) tælles op i stedet for at blive gentaget.
                 {fejl.data.afkortet && " Kun de seneste 1000 rækker er medtaget."}
               </p>
-              <ul className="divide-y divide-neutral-100">
+              <ul className="divide-y divide-admin-kant">
                 {fejl.data.grupper.map((g) => (
                   <li key={g.noegle} className="py-3 first:pt-0 last:pb-0">
                     <div className="flex flex-wrap items-start gap-2">
@@ -652,9 +655,9 @@ export default async function AdminDrift({
                       <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-xs font-bold text-white">
                         {g.antal}×
                       </span>
-                      <p className="min-w-0 flex-1 break-words text-sm font-medium text-neutral-900">{g.besked}</p>
+                      <p className="min-w-0 flex-1 break-words text-sm font-medium text-tekst">{g.besked}</p>
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-tekst-svag">
                       <span>Senest {tid(g.senest)}</span>
                       <span>Først {tid(g.foerst)}</span>
                       {g.brugere > 0 && <span>{g.brugere} {g.brugere === 1 ? "bruger" : "brugere"}</span>}
@@ -672,10 +675,10 @@ export default async function AdminDrift({
           ))}
       </Kort>
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-tekst-svag">
         Driftsdata slettes automatisk efter 90 dage. Fejlteksterne er renset for e-mails, telefonnumre og
         nøgler.
       </p>
-    </div>
+    </AdminSide>
   );
 }

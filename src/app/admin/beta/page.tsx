@@ -3,6 +3,8 @@ import { kraevSideRolle } from "@/lib/adminAuth";
 import { hentBetaOversigt } from "@/app/actions/adminBeta";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import BetaAdmin from "@/components/admin/beta/BetaAdmin";
+import AdminSide from "@/components/admin/AdminSide";
+import { BetaFaner } from "@/components/admin/OmraadeFaner";
 
 export const metadata: Metadata = { title: "Beta-invitationer", robots: { index: false, follow: false } };
 
@@ -13,18 +15,19 @@ export default async function AdminBetaSide() {
   const oversigt = await hentBetaOversigt();
 
   return (
-    <div className="p-4 sm:p-6 space-y-5">
+    <AdminSide>
       <AdminSideHoved
-        titel="Beta-invitationer"
+        titel="Beta-test"
         forklaring="Invitér testpersoner til beta-testen. Kun inviterede e-mails kan oprette en konto og komme forbi coming-soon, og kun mens beta-testen er åben. Admin er altid lukket for dem."
       />
+      <BetaFaner aktiv="invitationer" />
       {"fejl" in oversigt ? (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-red-800">
           {oversigt.fejl}
         </p>
       ) : (
         <BetaAdmin oversigt={oversigt} erChef={rolle === "chef"} />
       )}
-    </div>
+    </AdminSide>
   );
 }

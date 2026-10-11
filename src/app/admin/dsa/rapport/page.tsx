@@ -3,6 +3,8 @@ import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import CsvKnap from "@/components/admin/CsvKnap";
 import { anmeldKategoriNavn, handlingNavn, indholdNavn, regelNavn } from "@/lib/dsa/regler";
+import AdminSide from "@/components/admin/AdminSide";
+import { DriftFaner } from "@/components/admin/OmraadeFaner";
 
 // Gennemsigtighedsrapport (DSA art. 15 og 24): tal for en valgt periode.
 // Kun admin og chef. Ingen persondata - kun antal (dsa_rapport i databasen).
@@ -70,37 +72,37 @@ function kbhMidnat(dato: string): Date {
 
 function Tal({ titel, vaerdi, note }: { titel: string; vaerdi: string | number; note?: string }) {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">{titel}</p>
-      <p className="mt-1 text-2xl font-bold tabular-nums text-neutral-900">{vaerdi}</p>
-      {note && <p className="mt-0.5 text-xs text-neutral-500">{note}</p>}
+    <div className="rounded-[14px] border border-admin-kant bg-white p-4">
+      <p className="text-xs font-medium uppercase tracking-wide text-tekst-svag">{titel}</p>
+      <p className="mt-1 text-2xl font-bold tabular-nums text-tekst">{vaerdi}</p>
+      {note && <p className="mt-0.5 text-xs text-tekst-svag">{note}</p>}
     </div>
   );
 }
 
 function Tabel({ titel, kolonner, raekker }: { titel: string; kolonner: string[]; raekker: (string | number)[][] }) {
   return (
-    <section className="space-y-2" aria-label={titel}>
-      <h2 className="text-sm font-semibold text-neutral-800">{titel}</h2>
-      <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+    <section className="min-w-0 space-y-2" aria-label={titel}>
+      <h2 className="text-sm font-semibold text-tekst">{titel}</h2>
+      <div className="overflow-x-auto rounded-[14px] border border-admin-kant bg-white">
         <table className="w-full min-w-[480px] text-sm">
-          <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
+          <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-tekst-svag">
             <tr>
               {kolonner.map((k, i) => (
                 <th key={k} className={`px-4 py-2.5 ${i > 0 ? "text-right" : ""}`}>{k}</th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-100">
+          <tbody className="divide-y divide-admin-kant">
             {raekker.map((r, i) => (
               <tr key={i}>
                 {r.map((c, j) => (
-                  <td key={j} className={`px-4 py-2.5 ${j > 0 ? "text-right tabular-nums" : "text-neutral-800"}`}>{c}</td>
+                  <td key={j} className={`px-4 py-2.5 ${j > 0 ? "text-right tabular-nums" : "text-tekst"}`}>{c}</td>
                 ))}
               </tr>
             ))}
             {raekker.length === 0 && (
-              <tr><td colSpan={kolonner.length} className="px-4 py-6 text-center text-neutral-400">Ingen i perioden.</td></tr>
+              <tr><td colSpan={kolonner.length} className="px-4 py-6 text-center text-tekst-svag">Ingen i perioden.</td></tr>
             )}
           </tbody>
         </table>
@@ -194,7 +196,7 @@ export default async function DsaRapportSide({
     : [];
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
         titel="Gennemsigtighedsrapport"
         forklaring="Tal til den årlige rapport efter EU's forordning om digitale tjenester (DSA artikel 15 og 24): anmeldelser, indgreb, klager og suspenderinger. Ingen persondata – kun antal."
@@ -204,15 +206,16 @@ export default async function DsaRapportSide({
           ← Tilbage til anmeldelser og klager
         </Link>
       </AdminSideHoved>
+      <DriftFaner aktiv="rapport" />
 
-      <form method="get" className="flex flex-wrap items-end gap-3 rounded-xl border border-neutral-200 bg-white p-4">
+      <form method="get" className="flex flex-wrap items-end gap-3 rounded-[14px] border border-admin-kant bg-white p-4">
         <div>
-          <label htmlFor="fra" className="block text-xs font-medium text-neutral-600">Fra</label>
-          <input id="fra" name="fra" type="date" defaultValue={fraDato} className="mt-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+          <label htmlFor="fra" className="block text-xs font-medium text-tekst-daempet">Fra</label>
+          <input id="fra" name="fra" type="date" defaultValue={fraDato} className="mt-1 rounded-lg border border-admin-kant px-3 py-2 text-sm" />
         </div>
         <div>
-          <label htmlFor="til" className="block text-xs font-medium text-neutral-600">Til og med</label>
-          <input id="til" name="til" type="date" defaultValue={tilDato} className="mt-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+          <label htmlFor="til" className="block text-xs font-medium text-tekst-daempet">Til og med</label>
+          <input id="til" name="til" type="date" defaultValue={tilDato} className="mt-1 rounded-lg border border-admin-kant px-3 py-2 text-sm" />
         </div>
         <button type="submit" className="rounded-lg bg-orange-knap px-4 py-2 text-sm font-semibold text-white hover:bg-orange-knap-mork">
           Vis
@@ -222,7 +225,7 @@ export default async function DsaRapportSide({
             <Link
               key={f.label}
               href={`/admin/dsa/rapport?fra=${f.fra}&til=${f.til}`}
-              className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200"
+              className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-medium text-tekst hover:bg-neutral-200"
             >
               {f.label}
             </Link>
@@ -258,16 +261,16 @@ export default async function DsaRapportSide({
           </div>
           <Tabel titel="Indgreb pr. grund" kolonner={["Regel", "Grundlag", "Antal"]} raekker={regelRaekker} />
 
-          <section className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-700">
-            <h2 className="text-sm font-semibold text-neutral-800">Øvrige rapporter i perioden</h2>
-            <p className="mt-1 text-xs text-neutral-500">Fra appen og det gamle rapport-system, som stadig kører ved siden af.</p>
+          <section className="rounded-[14px] border border-admin-kant bg-white p-4 text-sm text-tekst">
+            <h2 className="text-sm font-semibold text-tekst">Øvrige rapporter i perioden</h2>
+            <p className="mt-1 text-xs text-tekst-svag">Fra appen og det gamle rapport-system, som stadig kører ved siden af.</p>
             <ul className="mt-2 grid gap-1 sm:grid-cols-2">
               <li>Auktioner rapporteret af brugere: <strong>{r.oevrige_rapporter.auktioner_fra_brugere}</strong></li>
               <li>Auktioner markeret af automatisk kontrol: <strong>{r.oevrige_rapporter.auktioner_automatisk}</strong></li>
               <li>Brugere og bedømmelser rapporteret: <strong>{r.oevrige_rapporter.brugere_og_bedoemmelser}</strong></li>
               <li>Beskeder stoppet af spamfilteret: <strong>{r.oevrige_rapporter.spamfilter}</strong></li>
             </ul>
-            <p className="mt-3 text-xs text-neutral-500">
+            <p className="mt-3 text-xs text-tekst-svag">
               Varer, som forbudte-varer-filteret blokerer ved oprettelse, bliver aldrig offentliggjort og tælles ikke her.
               Videresendt til admin: {r.anmeldelser.videresendt} · politiet underrettet: {r.anmeldelser.politi_underrettet} ·
               indgreb ophævet senere: {r.indgreb.ophaevet}.
@@ -275,6 +278,6 @@ export default async function DsaRapportSide({
           </section>
         </>
       )}
-    </div>
+    </AdminSide>
   );
 }

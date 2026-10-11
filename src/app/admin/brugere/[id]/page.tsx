@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AdminSide from "@/components/admin/AdminSide";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -97,7 +98,7 @@ export default async function AdminBrugerDetalje({
   const status = brugerStatus(user, advarsler?.length ?? 0);
 
   return (
-    <div className="p-6 space-y-5 max-w-4xl mx-auto">
+    <AdminSide detalje>
       <Link
         href="/admin/brugere"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 hover:text-neutral-800"
@@ -300,7 +301,7 @@ export default async function AdminBrugerDetalje({
           </p>
         </div>
       )}
-    </div>
+    </AdminSide>
   );
 }
 
@@ -564,8 +565,8 @@ async function AuktionerFane({
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
+      <table className="block w-full text-sm lg:table">
+        <thead className="hidden lg:table-header-group">
           <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
             <th className="px-5 py-3 text-left font-medium">Titel</th>
             <th className="px-5 py-3 text-left font-medium">Status</th>
@@ -574,18 +575,18 @@ async function AuktionerFane({
             <th className="px-5 py-3 text-left font-medium">Handling</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-neutral-100">
+        <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 divide-y divide-neutral-100">
           {(auctions ?? []).map((a) => (
-            <tr key={a.id} className="hover:bg-neutral-50">
-              <td className="px-5 py-3 text-neutral-700">{a.titel}</td>
-              <td className="px-5 py-3">{statusBadge(a.status)}</td>
-              <td className="px-5 py-3 text-neutral-600">
+            <tr key={a.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-700">{a.titel}</td>
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">{statusBadge(a.status)}</td>
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-600">
                 {a["nuværende_bud"] != null ? `${a["nuværende_bud"]} kr` : "—"}
               </td>
-              <td className="px-5 py-3 text-neutral-500">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-500">
                 {new Date(a.oprettet).toLocaleDateString("da-DK")}
               </td>
-              <td className="px-5 py-3">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
                 {kanModerere ? (
                   <ConfirmDialog
                     triggerLabel="Slet auktion"
@@ -639,24 +640,24 @@ async function BudFane({ userId, supabase }: { userId: string; supabase: Admin }
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
+      <table className="block w-full text-sm lg:table">
+        <thead className="hidden lg:table-header-group">
           <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
             <th className="px-5 py-3 text-left font-medium">Auktion</th>
             <th className="px-5 py-3 text-left font-medium">Beløb</th>
             <th className="px-5 py-3 text-left font-medium">Tidspunkt</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-neutral-100">
+        <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 divide-y divide-neutral-100">
           {(bud ?? []).map((b) => (
-            <tr key={b.id} className="hover:bg-neutral-50">
-              <td className="px-5 py-3 text-neutral-700">
+            <tr key={b.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-700">
                 {titelMap[b.auktion_id] ?? b.auktion_id}
               </td>
-              <td className="px-5 py-3 text-neutral-600">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-600">
                 {Number(b.beløb).toLocaleString("da-DK")} kr
               </td>
-              <td className="px-5 py-3 text-neutral-500">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-500">
                 {new Date(b.oprettet).toLocaleString("da-DK")}
               </td>
             </tr>

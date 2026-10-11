@@ -109,10 +109,10 @@ export default async function AdminRapportArkiv({
 
       <RapportFaner aktiv="arkiv" visArkiv />
 
-      <div className="bg-white rounded-xl border border-admin-kant overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
+      <div className="lg:overflow-hidden lg:rounded-[14px] lg:border lg:border-admin-kant lg:bg-white">
+        <div className="lg:overflow-x-auto">
+          <table className="block w-full text-sm lg:table">
+            <thead className="hidden lg:table-header-group">
               <tr className="bg-neutral-50 text-xs text-tekst-svag uppercase">
                 <th className="px-5 py-3 text-left font-medium">Auktion</th>
                 <th className="px-5 py-3 text-left font-medium">Kategori</th>
@@ -125,10 +125,10 @@ export default async function AdminRapportArkiv({
                 <th className="px-5 py-3 text-left font-medium">Arkiveret</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-admin-kant">
+            <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 divide-y divide-admin-kant">
               {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-neutral-50 align-top">
-                  <td className="px-5 py-3">
+                <tr key={r.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50 align-top">
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
                     <Link
                       href={`/auktion/${r.auction_id}`}
                       className="font-medium text-tekst hover:text-groen hover:underline"
@@ -136,24 +136,24 @@ export default async function AdminRapportArkiv({
                       {titelMap[r.auction_id] ?? "(ukendt auktion)"}
                     </Link>
                   </td>
-                  <td className="px-5 py-3 whitespace-nowrap text-tekst">
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 whitespace-nowrap text-tekst">
                     {kategoriLabel(r.category)}
                   </td>
-                  <td className="px-5 py-3 text-tekst-daempet">
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-tekst-daempet">
                     {r.description ? (
                       <span className="block max-w-[220px]">{r.description}</span>
                     ) : (
                       <span className="text-tekst-svag">—</span>
                     )}
                   </td>
-                  <td className="px-5 py-3">{brugerCelle(r.reporter_id)}</td>
-                  <td className="px-5 py-3 whitespace-nowrap text-tekst-svag">
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">{brugerCelle(r.reporter_id)}</td>
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 whitespace-nowrap text-tekst-svag">
                     {new Date(r.created_at).toLocaleDateString("da-DK")}
                   </td>
-                  <td className="px-5 py-3 whitespace-nowrap text-tekst">
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 whitespace-nowrap text-tekst">
                     {UDFALD[r.status] ?? r.status}
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
                     {brugerCelle(r.handled_by)}
                     {r.handled_at && (
                       <span className="mt-0.5 block whitespace-nowrap text-xs text-tekst-svag">
@@ -161,14 +161,14 @@ export default async function AdminRapportArkiv({
                       </span>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-tekst">
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-tekst">
                     {r.handled_note ? (
                       <span className="block max-w-[260px]">{r.handled_note}</span>
                     ) : (
                       <span className="text-tekst-svag">—</span>
                     )}
                   </td>
-                  <td className="px-5 py-3 whitespace-nowrap text-tekst-svag">
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 whitespace-nowrap text-tekst-svag">
                     {new Date(r.arkiveret_kl).toLocaleDateString("da-DK")}
                   </td>
                 </tr>

@@ -5,6 +5,7 @@ import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { behandlMitIdForsoeg } from "@/app/actions/adminMitid";
+import AdminSide from "@/components/admin/AdminSide";
 
 type MitIdForsoeg = {
   id: string;
@@ -77,7 +78,7 @@ export default async function AdminMistaenkelig() {
   const raekker = (data ?? []) as MistaenkeligRaekke[];
 
   return (
-    <div className="p-4 sm:p-6 space-y-5 max-w-4xl mx-auto">
+    <AdminSide>
       <AdminSideHoved
         titel="Brugere"
         forklaring="Brugere, der opfører sig mistænkeligt. Listen er kun et signal – vurdér altid selv, før du advarer eller suspenderer."
@@ -86,7 +87,7 @@ export default async function AdminMistaenkelig() {
       <BrugereFaner aktiv="mistaenkelig" />
 
       {error && (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+        <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg px-5 py-4 text-sm text-fejl-tekst">
           Listen kunne ikke hentes. Prøv igen om lidt.
         </p>
       )}
@@ -96,12 +97,12 @@ export default async function AdminMistaenkelig() {
           <Link
             key={r.bruger_id}
             href={`/admin/brugere/${r.bruger_id}`}
-            className="block rounded-xl border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-md"
+            className="block rounded-[14px] border border-admin-kant bg-white p-4 transition-shadow hover:shadow-md"
           >
             <div className="flex flex-wrap items-center gap-2">
-              <p className="min-w-0 flex-1 truncate font-semibold text-neutral-900">
+              <p className="min-w-0 flex-1 truncate font-semibold text-tekst">
                 {r.navn ?? "Uden navn"}
-                <span className="ml-2 text-sm font-normal text-neutral-500">{r.email}</span>
+                <span className="ml-2 text-sm font-normal text-tekst-svag">{r.email}</span>
               </p>
               {r.rolle && r.rolle !== "bruger" && <RolleBadge rolle={r.rolle} />}
               {r.suspenderet_aktiv && (
@@ -113,24 +114,24 @@ export default async function AdminMistaenkelig() {
                 {r.antal_regler} {r.antal_regler === 1 ? "regel" : "regler"}
               </span>
             </div>
-            <ul className="mt-2 space-y-1 text-sm text-neutral-700">
+            <ul className="mt-2 space-y-1 text-sm text-tekst">
               {r.regler.map((regel) => (
                 <li key={regel.regel} className="flex gap-2">
                   <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500" />
                   <span>
                     {regelTekst(regel)}
-                    <span className="ml-1 text-xs text-neutral-400">(grænse {regel.graense})</span>
+                    <span className="ml-1 text-xs text-tekst-svag">(grænse {regel.graense})</span>
                   </span>
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-xs text-neutral-400">
+            <p className="mt-2 text-xs text-tekst-svag">
               Medlem siden {new Date(r.oprettet).toLocaleDateString("da-DK")}
             </p>
           </Link>
         ))}
         {!error && raekker.length === 0 && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-10 text-center text-neutral-400">
+          <div className="rounded-[14px] border border-admin-kant bg-white p-10 text-center text-tekst-svag">
             Ingen brugere rammer reglerne lige nu.
           </div>
         )}
@@ -138,16 +139,16 @@ export default async function AdminMistaenkelig() {
 
       {mitidForsoeg.length > 0 && (
         <section aria-labelledby="mitid-forsoeg" className="space-y-2">
-          <h2 id="mitid-forsoeg" className="text-sm font-semibold text-neutral-800">
+          <h2 id="mitid-forsoeg" className="text-sm font-semibold text-tekst">
             MitID – mulige dobbeltkonti ({mitidForsoeg.length})
           </h2>
           {mitidForsoeg.map((f) => (
-            <div key={f.id} className="rounded-xl border border-orange-200 bg-white p-4 text-sm text-neutral-700">
+            <div key={f.id} className="rounded-xl border border-orange-200 bg-white p-4 text-sm text-tekst">
               <p>
-                <Link href={`/admin/brugere/${f.bruger_id}`} className="font-semibold text-neutral-900 underline">
+                <Link href={`/admin/brugere/${f.bruger_id}`} className="font-semibold text-tekst underline">
                   {f.bruger_navn ?? "Uden navn"}
                 </Link>{" "}
-                <span className="text-neutral-500">{f.bruger_email}</span> {MITID_AARSAG[f.aarsag] ?? f.aarsag}
+                <span className="text-tekst-svag">{f.bruger_email}</span> {MITID_AARSAG[f.aarsag] ?? f.aarsag}
                 {f.anden_bruger_id && (
                   <>
                     {" "}
@@ -161,10 +162,10 @@ export default async function AdminMistaenkelig() {
                 )}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-3">
-                <span className="text-xs text-neutral-400">{new Date(f.oprettet_kl).toLocaleString("da-DK")}</span>
+                <span className="text-xs text-tekst-svag">{new Date(f.oprettet_kl).toLocaleString("da-DK")}</span>
                 <ConfirmDialog
                   triggerLabel="Markér som gennemgået"
-                  triggerClassName="rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-200"
+                  triggerClassName="rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-tekst hover:bg-neutral-200"
                   title="Markér forsøget som gennemgået?"
                   description="Forsøget forsvinder fra listen, men står stadig på brugersiden. Handlingen logges."
                   confirmLabel="Ja, markér"
@@ -177,8 +178,8 @@ export default async function AdminMistaenkelig() {
         </section>
       )}
 
-      <details className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
-        <summary className="cursor-pointer font-medium text-neutral-800">Reglerne</summary>
+      <details className="rounded-[14px] border border-admin-kant bg-white p-4 text-sm text-tekst-daempet">
+        <summary className="cursor-pointer font-medium text-tekst">Reglerne</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>Mindst 2 ubetalte vinderauktioner som køber (sidste 90 dage, afviste tæller ikke)</li>
           <li>Mindst 3 sager som køber (sidste 90 dage)</li>
@@ -188,8 +189,8 @@ export default async function AdminMistaenkelig() {
           <li>Mindst 3 forskellige brugere har rapporteret brugerens auktioner (sidste 90 dage)</li>
           <li>Konto under 7 dage gammel med mindst 20 bud</li>
         </ul>
-        <p className="mt-2 text-xs text-neutral-400">Lukkede konti vises ikke.</p>
+        <p className="mt-2 text-xs text-tekst-svag">Lukkede konti vises ikke.</p>
       </details>
-    </div>
+    </AdminSide>
   );
 }

@@ -12,6 +12,7 @@ import {
   maalNavn,
   visAarsag,
 } from "@/lib/moderationLog";
+import AdminSide from "@/components/admin/AdminSide";
 
 // Medarbejder-log: alt fra moderation_log. Admin og chef ser alle; en
 // medarbejder ser kun sin egen log (håndhæves her på serveren – filteret
@@ -67,7 +68,7 @@ function laesbarTekst(tekst: string): ReactNode[] {
     const start = m.index ?? 0;
     if (start > sidst) dele.push(tekst.slice(sidst, start));
     dele.push(
-      <span key={start} title={m[0]} className="font-mono text-[11px] text-neutral-400">
+      <span key={start} title={m[0]} className="font-mono text-[11px] text-tekst-svag">
         #{m[0].slice(0, 8)}
       </span>,
     );
@@ -214,12 +215,12 @@ export default async function MedarbejderLog({
 
   const handlinger = Object.entries(HANDLING_NAVNE).sort((a, b) => a[1].localeCompare(b[1], "da"));
   const feltKlasse =
-    "w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange";
+    "w-full rounded-lg border border-admin-kant bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
-        titel="Medarbejder-log"
+        titel="Handlingslog"
         forklaring={
           kanSeAlle
             ? "Alt, hvad medarbejdere og systemet har gjort i admin – nyeste først. Brug den, når du vil se, hvem der gjorde hvad."
@@ -230,10 +231,10 @@ export default async function MedarbejderLog({
       <form
         method="get"
         action="/admin/medarbejder-log"
-        className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-3"
+        className="grid grid-cols-1 gap-3 rounded-[14px] border border-admin-kant bg-white p-4 sm:grid-cols-2 lg:grid-cols-3"
       >
         {kanSeAlle && (
-          <label className="text-xs font-medium text-neutral-600">
+          <label className="text-xs font-medium text-tekst-daempet">
             Medarbejder
             <select name="medarbejder" defaultValue={medarbejder} className={`mt-1 ${feltKlasse}`}>
               <option value="">Alle</option>
@@ -247,7 +248,7 @@ export default async function MedarbejderLog({
             </select>
           </label>
         )}
-        <label className="text-xs font-medium text-neutral-600">
+        <label className="text-xs font-medium text-tekst-daempet">
           Handling
           <select name="handling" defaultValue={handlingGyldig} className={`mt-1 ${feltKlasse}`}>
             <option value="">Alle handlinger</option>
@@ -261,10 +262,10 @@ export default async function MedarbejderLog({
         {brugerErId ? (
           // Kommer man fra en brugers side, filtreres der på brugerens id. Vis
           // navnet i stedet for id'et.
-          <div className="text-xs font-medium text-neutral-600">
+          <div className="text-xs font-medium text-tekst-daempet">
             Bruger
             <input type="hidden" name="bruger" value={bruger} />
-            <p className="mt-1 flex min-h-10 items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-normal text-neutral-800">
+            <p className="mt-1 flex min-h-10 items-center justify-between gap-2 rounded-lg border border-admin-kant bg-neutral-50 px-3 py-2 text-sm font-normal text-tekst">
               <span className="truncate">{filterBrugerNavn ?? "Én bestemt bruger"}</span>
               <Link href={sideHref(1, { udenBruger: true })} className="shrink-0 text-xs font-medium text-groen hover:underline">
                 Fjern
@@ -272,16 +273,16 @@ export default async function MedarbejderLog({
             </p>
           </div>
         ) : (
-          <label className="text-xs font-medium text-neutral-600">
+          <label className="text-xs font-medium text-tekst-daempet">
             Bruger (navn eller e-mail)
             <input name="bruger" type="search" defaultValue={bruger} className={`mt-1 ${feltKlasse}`} />
           </label>
         )}
-        <label className="text-xs font-medium text-neutral-600">
+        <label className="text-xs font-medium text-tekst-daempet">
           Fra dato
           <input name="fra" type="date" defaultValue={fraIso ? fra : ""} className={`mt-1 ${feltKlasse}`} />
         </label>
-        <label className="text-xs font-medium text-neutral-600">
+        <label className="text-xs font-medium text-tekst-daempet">
           Til og med dato
           <input name="til" type="date" defaultValue={tilIso ? til : ""} className={`mt-1 ${feltKlasse}`} />
         </label>
@@ -294,7 +295,7 @@ export default async function MedarbejderLog({
           </button>
           <Link
             href="/admin/medarbejder-log"
-            className="inline-flex min-h-10 items-center rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
+            className="inline-flex min-h-10 items-center rounded-lg border border-admin-kant px-4 py-2 text-sm font-medium text-tekst-daempet hover:bg-neutral-50"
           >
             Nulstil
           </Link>
@@ -302,13 +303,13 @@ export default async function MedarbejderLog({
       </form>
 
       {logRes.error && (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+        <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg px-5 py-4 text-sm text-fejl-tekst">
           Loggen kunne ikke hentes. Prøv igen om lidt.
         </p>
       )}
 
       {!logRes.error && (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-tekst-svag">
           {total === 0
             ? side > 1
               ? "Ingen poster på denne side."
@@ -326,14 +327,14 @@ export default async function MedarbejderLog({
           const visBruger = r.bruger_id && !erSystem(r.bruger_id);
           const chat = r.handling === "chat_laest" ? chatHandler.get(r.maal_id.toLowerCase()) : undefined;
           const personLink = (p: { id: string; navn: string }) => (
-            <Link href={`/admin/brugere/${p.id}`} className="font-medium text-neutral-900 hover:underline">
+            <Link href={`/admin/brugere/${p.id}`} className="font-medium text-tekst hover:underline">
               {p.navn}
             </Link>
           );
           return (
-            <li key={r.id} className="rounded-xl border border-neutral-200 bg-white p-4">
+            <li key={r.id} className="rounded-[14px] border border-admin-kant bg-white p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <p className="min-w-0 text-sm text-neutral-900">
+                <p className="min-w-0 text-sm text-tekst">
                   <span className="font-semibold">
                     {r.er_system ? "Systemet" : r.medarbejder_navn ?? "Ukendt medarbejder"}
                   </span>{" "}
@@ -358,20 +359,20 @@ export default async function MedarbejderLog({
                   {!chat && visBruger && (
                     <>
                       {" – "}
-                      <Link href={`/admin/brugere/${r.bruger_id}`} className="font-medium text-neutral-900 hover:underline">
+                      <Link href={`/admin/brugere/${r.bruger_id}`} className="font-medium text-tekst hover:underline">
                         {r.bruger_navn ?? r.bruger_email ?? "ukendt bruger"}
                       </Link>
                     </>
                   )}
                 </p>
-                <time dateTime={r.oprettet_kl} className="text-xs text-neutral-500">
+                <time dateTime={r.oprettet_kl} className="text-xs text-tekst-svag">
                   {new Date(r.oprettet_kl).toLocaleString("da-DK", { timeZone: TZ })}
                 </time>
               </div>
               {r.aarsag && (
-                <p className="mt-2 whitespace-pre-line break-words text-sm text-neutral-700">{laesbarTekst(visAarsag(r.handling, r.aarsag))}</p>
+                <p className="mt-2 whitespace-pre-line break-words text-sm text-tekst">{laesbarTekst(visAarsag(r.handling, r.aarsag))}</p>
               )}
-              <p className="mt-2 text-xs text-neutral-500">
+              <p className="mt-2 text-xs text-tekst-svag">
                 {maalNavn(r.maal_type)}
                 {link && (
                   <>
@@ -388,7 +389,7 @@ export default async function MedarbejderLog({
                     <Link
                       href={handelChatSti(r.maal_id)}
                       prefetch={false}
-                      className="font-medium text-neutral-700 hover:underline"
+                      className="font-medium text-tekst hover:underline"
                     >
                       Se chat
                     </Link>
@@ -405,7 +406,7 @@ export default async function MedarbejderLog({
           {side > 1 ? (
             <Link
               href={sideHref(side - 1)}
-              className="inline-flex min-h-10 items-center rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              className="inline-flex min-h-10 items-center rounded-lg border border-admin-kant bg-white px-4 py-2 text-sm font-medium text-tekst hover:bg-neutral-50"
             >
               Forrige
             </Link>
@@ -415,13 +416,13 @@ export default async function MedarbejderLog({
           {side < sider && (
             <Link
               href={sideHref(side + 1)}
-              className="inline-flex min-h-10 items-center rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              className="inline-flex min-h-10 items-center rounded-lg border border-admin-kant bg-white px-4 py-2 text-sm font-medium text-tekst hover:bg-neutral-50"
             >
               Næste
             </Link>
           )}
         </nav>
       )}
-    </div>
+    </AdminSide>
   );
 }
