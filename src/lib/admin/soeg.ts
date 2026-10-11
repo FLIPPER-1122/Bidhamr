@@ -97,7 +97,7 @@ export async function soegStaff(admin: Admin, raa: string): Promise<SoegTraef[]>
       type: "handel",
       id: h.id,
       titel: a?.titel ?? "(slettet auktion)",
-      under: `Handel ${h.id.slice(0, 8)} · ${kr(h.amount)}`,
+      under: `Handel ${h.id.slice(0, 13)} · ${kr(h.amount)}`,
       href: `/admin/handler/${h.id}`,
     });
   }
@@ -105,10 +105,10 @@ export async function soegStaff(admin: Admin, raa: string): Promise<SoegTraef[]>
   for (const a of [...((auktionerId.data ?? []) as { id: string; titel: string }[]), ...((auktioner.data ?? []) as { id: string; titel: string }[])]) {
     if (seteA.has(a.id) || seteA.size >= MAKS) continue;
     seteA.add(a.id);
-    ud.push({ type: "auktion", id: a.id, titel: a.titel, under: `Auktion ${a.id.slice(0, 8)}`, href: `/auktion/${a.id}` });
+    ud.push({ type: "auktion", id: a.id, titel: a.titel, under: `Auktion ${a.id.slice(0, 13)}`, href: `/auktion/${a.id}` });
   }
   for (const s of (sager.data ?? []) as { id: string; status: string }[]) {
-    ud.push({ type: "sag", id: s.id, titel: `Sag ${s.id.slice(0, 8)}`, href: adminSagSti(s.id) });
+    ud.push({ type: "sag", id: s.id, titel: `Sag ${s.id.slice(0, 13)}`, href: adminSagSti(s.id) });
   }
   for (const d of [...((dsaAnm.data ?? []) as { id: string; sagsnummer: string }[]), ...((dsaKlager.data ?? []) as { id: string; sagsnummer: string }[])]) {
     ud.push({

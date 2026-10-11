@@ -361,7 +361,7 @@ export default async function AdminBedommelser({
                     </Link>
                     {r.trade_id && (
                       <Link
-                        href={`/admin/handler?vis=alle&q=${r.trade_id}`}
+                        href={`/admin/handler/${r.trade_id}`}
                         className="font-medium text-groen hover:underline"
                       >
                         Se handlen

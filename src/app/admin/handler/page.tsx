@@ -1,14 +1,21 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import { adminHref } from "@/components/admin/AdminSideskift";
+import { hentStaffTal } from "@/lib/admin/taellere";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import HandelStatusBadge from "@/components/HandelStatusBadge";
-import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
-import FlereHandlinger from "@/components/admin/FlereHandlinger";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import AdminSide from "@/components/admin/AdminSide";
+import AdminFaner, { type AdminFane } from "@/components/admin/AdminFaner";
+import AdminFejl from "@/components/admin/AdminFejl";
+import AdminTom from "@/components/admin/AdminTom";
+import AdminBadge from "@/components/admin/AdminBadge";
+import AdminListe, { type Kolonne } from "@/components/admin/AdminListe";
+import HandelHandlinger, { AKTIVE, kr } from "@/components/admin/handler/HandelHandlinger";
 import { UUID_RE, handelChatSti } from "@/lib/moderationLog";
 import { SPORINGS_NAVN, erSporingsType } from "@/lib/fragt/types";
 import {
@@ -18,12 +25,6 @@ import {
 } from "@/app/actions/adminFragt";
 import { handelIkkeAfhentet } from "@/app/actions/adminIkkeAfhentet";
 import { HAENGER_TEKST, erHaengerGrund, type HaengerGrund } from "@/lib/adminGraenser";
-import {
-  sagAabn,
-  sagLuk,
-  handelFrigiv,
-  handelRefunder,
-} from "@/app/actions/adminActions";
 
 // Overblik over handler (flyttet fra /admin/sager, da sager fra køberen nu
 // har deres egen side). Her kan staff markere en handel til opfølgning
@@ -46,7 +47,6 @@ type HandelRow = {
   afhentning: boolean | null;
 };
 
-const AKTIVE = ["betaling_modtaget", "pakke_sendt", "modtaget"];
 
 // Forsendelser, staff skal se på (forsendelser.kraever_opmaerksomhed - samme
 // tal som kortet "Fragt kræver handling" på admin-forsiden).
@@ -77,7 +77,7 @@ function forsendelseStatus(s: string) {
 type Haenger = { grund: HaengerGrund; siden: string };
 
 const FANER = [
-  { key: "sager", label: "Markerede" },
+  { key: "sager", label: "Markeret af os" },
   { key: "haenger", label: "Hænger" },
   { key: "fragt", label: "Fragt" },
   { key: "aktive", label: "Aktive handler" },
@@ -98,10 +98,7 @@ function dageSiden(iso: string) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 }
 
-const kr = (v: number | string) =>
-  Number(v).toLocaleString("da-DK", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " kr";
-
-export default async function AdminSager({
+export default async function AdminHandler({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string; vis?: string }>;
@@ -112,10 +109,15 @@ export default async function AdminSager({
   // Fællesbesked til køber og sælger: kun admin og chef.
   const kanSkriveFaelles = harMindstRolle(rolle, "admin");
 
-  const { q, vis } = await searchParams;
+  const { q, vis: raaVis } = await searchParams;
+  // "Markeret af os" hed før vis=sager (let at forveksle med Sager). Den gamle
+  // adresse sendes videre, så links og bogmærker virker.
+  if (raaVis === "sager") redirect(adminHref("/admin/handler", { vis: "markeret", q }));
+  const vis = raaVis === "markeret" ? "sager" : raaVis;
   const fane = FANER.some((f) => f.key === vis) ? vis! : "haenger";
   const søgetekst = q?.trim() ?? "";
   const supabase = createAdminClient();
+  const lavHref = (v: string) => adminHref("/admin/handler", { vis: v, q: søgetekst });
 
   const KOLONNER =
     "id, auction_id, seller_id, buyer_id, amount, status, tracking_number, created_at, sag_aaben, sag_note, sag_aabnet_at, afhentning";
@@ -258,102 +260,142 @@ export default async function AdminSager({
       ? antalVist === 1 ? "forsendelse" : "forsendelser"
       : antalVist === 1 ? "handel" : "handler";
 
-  // Køber og sælger står i samme kolonne. E-mailen vises kun, når der er
-  // plads (kort på mobil og meget brede skærme), så tabellen passer fra 1280px.
-  function Person({ id, rolle }: { id: string; rolle: "Køber" | "Sælger" }) {
-    const p = brugerMap.get(id);
+  const faner: AdminFane[] = [
+    { id: "haenger", label: "Hænger", href: lavHref("haenger"), antal: antal.haenger, tone: "gul" },
+    { id: "fragt", label: "Fragt", href: lavHref("fragt"), antal: antal.fragt, tone: "gul" },
+    { id: "sager", label: "Markeret af os", href: lavHref("markeret"), antal: antal.sager, tone: "graa" },
+    { id: "ubetalte", label: "Ubetalte vindere", href: "/admin/ubetalte", antal: (await hentStaffTal()).ubetalte, tone: "graa" },
+    { id: "aktive", label: "Aktive handler", href: lavHref("aktive") },
+    { id: "alle", label: "Alle", href: lavHref("alle") },
+  ];
+
+  const personer = (h: HandelRow) => {
+    const k = brugerMap.get(h.buyer_id);
+    const s = brugerMap.get(h.seller_id);
     return (
-      <div className="flex min-w-0 items-baseline gap-1.5">
-        <span className="w-12 shrink-0 text-xs text-neutral-500">{rolle}</span>
-        {p ? (
-          <Link href={`/admin/brugere/${id}`} className="block min-w-0 max-w-[180px] hover:underline">
-            <span className="block truncate text-neutral-800">{p.navn ?? "Uden navn"}</span>
-            <span className="block truncate text-xs text-neutral-500 lg:hidden 2xl:block">{p.email}</span>
+      <span className="block space-y-0.5 text-[13px]">
+        <span className="block min-w-0 truncate">
+          <span className="text-tekst-svag">Køber </span>
+          <Link href={`/admin/brugere/${h.buyer_id}`} className="text-tekst hover:underline">
+            {k?.navn ?? "Uden navn"}
           </Link>
-        ) : (
-          <span className="text-neutral-400">—</span>
-        )}
-      </div>
+        </span>
+        <span className="block min-w-0 truncate">
+          <span className="text-tekst-svag">Sælger </span>
+          <Link href={`/admin/brugere/${h.seller_id}`} className="text-tekst hover:underline">
+            {s?.navn ?? "Uden navn"}
+          </Link>
+        </span>
+      </span>
     );
-  }
+  };
+
+  const kolonner: Kolonne<HandelRow>[] = [
+    {
+      id: "status",
+      label: "Status",
+      mobil: "status",
+      className: "lg:w-44",
+      celle: (h) => {
+        const forsinket = haengerMap.get(h.id);
+        return (
+          <span className="flex flex-wrap items-center gap-1.5 lg:block lg:space-y-1">
+            <HandelStatusBadge status={h.status} />
+            {h.sag_aaben && <AdminBadge tone="roed">Markeret</AdminBadge>}
+            {forsinket && (
+              <span className="block text-xs font-semibold text-advarsel-tekst">
+                {HAENGER_TEKST[forsinket.grund]} · {dageSiden(forsinket.siden)} d
+              </span>
+            )}
+          </span>
+        );
+      },
+    },
+    {
+      id: "auktion",
+      label: "Handel",
+      mobil: "titel",
+      celle: (h) => (
+        <span className="block min-w-0">
+          <Link href={`/admin/handler/${h.id}`} className="font-semibold text-tekst hover:text-groen hover:underline">
+            {titelMap.get(h.auction_id) ?? "(slettet auktion)"}
+          </Link>
+          <span className="block text-xs font-normal text-tekst-svag">
+            {h.id.slice(0, 8)} · {dageSiden(h.created_at)} dage siden
+            {h.tracking_number && <> · Sporing {h.tracking_number}</>}
+          </span>
+          {h.sag_aaben && h.sag_note && <span className="mt-0.5 block text-xs font-normal text-fejl-tekst">{h.sag_note}</span>}
+        </span>
+      ),
+    },
+    { id: "parter", label: "Køber / sælger", celle: personer, className: "lg:w-56" },
+    { id: "beloeb", label: "Bud", hoejre: true, mobilLabel: true, className: "lg:w-24 whitespace-nowrap", celle: (h) => kr(h.amount) },
+    {
+      id: "handling",
+      label: "Handlinger",
+      mobil: "handling",
+      className: "lg:w-[300px]",
+      celle: (h) => (
+        <HandelHandlinger
+          h={h}
+          titel={titelMap.get(h.auction_id) ?? "(slettet auktion)"}
+          koeber={{ id: h.buyer_id, navn: brugerMap.get(h.buyer_id)?.navn ?? "Køber" }}
+          saelger={{ id: h.seller_id, navn: brugerMap.get(h.seller_id)?.navn ?? "Sælger" }}
+          haenger={haengerMap.get(h.id)?.grund ?? null}
+          returMeldt={returMeldtIds.has(h.id)}
+          kanFlyttePenge={kanFlyttePenge}
+          kanSkriveFaelles={kanSkriveFaelles}
+        />
+      ),
+    },
+  ];
 
   return (
-    <div className="p-4 sm:p-6 space-y-5">
+    <AdminSide>
       <AdminSideHoved
         titel="Handler"
         forklaring="Alle handler mellem køber og sælger. Brug siden, når en handel går i stå – fx hvis varen ikke er sendt."
         hoejre={
-          <span className="text-sm text-neutral-500">
+          <span className="text-sm text-tekst-daempet">
             {antalVist} {enhed}
           </span>
         }
-      >
-        <p className="mt-1 max-w-3xl text-xs text-neutral-500">
-          Klager fra køberen behandles under{" "}
-          <Link href="/admin/sager" className="font-medium text-groen hover:underline">
-            Sager
-          </Link>
-          . Markerer du en handel her, fryses pengene, indtil markeringen fjernes.
-        </p>
-      </AdminSideHoved>
-
-      {haengerFejl && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-          Handler, der hænger, kunne ikke hentes lige nu. Prøv at genindlæse siden.
-        </p>
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        {FANER.map((f) => {
-          const aktiv = f.key === fane;
-          const params = new URLSearchParams();
-          params.set("vis", f.key);
-          if (søgetekst) params.set("q", søgetekst);
-          return (
-            <Link
-              key={f.key}
-              href={`/admin/handler?${params}`}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-                aktiv
-                  ? "bg-orange-knap text-white"
-                  : "bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-100"
-              }`}
-            >
-              {f.label}
-              <span className={`ml-1.5 text-xs ${aktiv ? "text-white/80" : "text-neutral-400"}`}>
-                {antal[f.key]}
-              </span>
+        hjaelp={
+          <p>
+            Klager fra køberen behandles under{" "}
+            <Link href="/admin/sager" className="font-medium text-groen hover:underline">
+              Sager
             </Link>
-          );
-        })}
-      </div>
+            . Markerer du en handel her, fryses pengene, indtil markeringen fjernes. Hænger en handel, kan du sende en
+            påmindelse direkte fra rækken.
+          </p>
+        }
+      />
 
-      {fragtFejl && fane === "fragt" && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-          Forsendelserne kunne ikke hentes lige nu. Prøv at genindlæse siden.
-        </p>
-      )}
+      <AdminFaner faner={faner} aktiv={fane} label="Handler" />
+
+      {haengerFejl && <AdminFejl hvad="Handler, der hænger," />}
+      {fragtFejl && fane === "fragt" && <AdminFejl hvad="Forsendelserne" />}
 
       <Suspense>
-        <AdminSearchInput placeholder="Søg på auktion, køber, sælger, tracking eller note..." />
+        <AdminSearchInput placeholder="Søg på auktion, køber, sælger, sporing, note eller id" />
       </Suspense>
 
       {fane === "fragt" && (
         <ul className="space-y-3">
           {fragtVist.map((f) => {
             const h = handelMap.get(f.trade_id);
-            const handelSti = `/admin/handler?vis=alle&q=${encodeURIComponent(f.trade_id)}`;
+            const handelSti = `/admin/handler/${encodeURIComponent(f.trade_id)}`;
+            const lille =
+              "inline-flex min-h-10 items-center whitespace-nowrap rounded-lg border border-kant-staerk bg-white px-3 text-[13px] font-medium text-tekst transition-colors hover:bg-admin-bg lg:min-h-8";
             return (
-              <li key={f.id} className="rounded-xl border border-advarsel-kant bg-white p-4">
+              <li key={f.id} className="rounded-[14px] border border-advarsel-kant bg-white p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <Link
-                      href={handelSti}
-                      className="font-medium text-neutral-800 hover:text-groen hover:underline"
-                    >
+                    <Link href={handelSti} className="font-semibold text-tekst hover:text-groen hover:underline">
                       {h ? (titelMap.get(h.auction_id) ?? "(slettet auktion)") : "Handel"}
                     </Link>
-                    <p className="mt-0.5 text-xs text-neutral-500">
+                    <p className="mt-0.5 text-xs text-tekst-svag">
                       {f.type === "retur" ? "Returpakke" : "Pakke til køber"} · {forsendelseStatus(f.status)}
                       {f.sporingsnummer && (
                         <>
@@ -365,30 +407,14 @@ export default async function AdminSager({
                   </div>
                   {h && <HandelStatusBadge status={h.status} />}
                 </div>
-                <p className="mt-3 break-words text-sm text-neutral-800">
-                  {f.opmaerksomhed_tekst ?? "Ingen forklaring."}
-                </p>
+                <p className="mt-3 break-words text-sm text-tekst">{f.opmaerksomhed_tekst ?? "Ingen forklaring."}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {/* prefetch slået fra: chatsiden logger læsningen. */}
-                  <Link
-                    href={handelChatSti(f.trade_id)}
-                    prefetch={false}
-                    className="inline-flex whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
-                  >
-                    Se chat
-                  </Link>
-                  <Link
-                    href={handelSti}
-                    className="inline-flex whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
-                  >
-                    Se handlen
-                  </Link>
                   <ConfirmDialog
                     triggerLabel="Markér som håndteret"
-                    triggerClassName="whitespace-nowrap rounded-md bg-green-100 px-2 py-1 text-xs text-green-800 transition-colors hover:bg-green-200"
+                    triggerClassName="btn btn-primaer btn-lille"
                     title="Markér forsendelsen som håndteret?"
                     description="Markeringen fjernes. Ingen penge flyttes, og handlen ændres ikke."
-                    confirmLabel="Ja, markér som håndteret"
+                    confirmLabel="Markér som håndteret"
                     action={fragtMarkerHaandteret}
                     hiddenFields={{ forsendelseId: f.id }}
                     aarsagField={{
@@ -396,12 +422,20 @@ export default async function AdminSager({
                       placeholder: "Fx: ringede til sælgeren, der markerer pakken sendt i dag",
                       required: true,
                     }}
+                    kvittering="Forsendelsen er markeret som håndteret"
                   />
+                  <Link href={handelSti} className={lille}>
+                    Åbn handel
+                  </Link>
+                  {/* prefetch slået fra: chatsiden logger læsningen. */}
+                  <Link href={handelChatSti(f.trade_id)} prefetch={false} className={lille}>
+                    Se chat
+                  </Link>
                   {/* Hængende label (ukendt udfald hos Shipmondo): staff tjekker i Shipmondo først. */}
                   {f.status === "opretter" && (
                     <ConfirmDialog
                       triggerLabel="Afslut hængende label"
-                      triggerClassName="whitespace-nowrap rounded-md bg-amber-100 px-2 py-1 text-xs text-amber-800 transition-colors hover:bg-amber-200"
+                      triggerClassName={lille}
                       title="Afslut den hængende fragtlabel"
                       description={`Tjek i Shipmondo, om der findes en forsendelse med referencen ${f.id}. Findes den: tilknyt den. Findes den ikke: markér labelen fejlet, så sælgeren kan prøve igen.`}
                       confirmLabel="Afslut label"
@@ -440,26 +474,24 @@ export default async function AdminSager({
                   )}
                   {/* Pakken er meldt retur: staff registrerer "ikke afhentet" (når
                       fragtfirmaets signal ikke gør det automatisk). */}
-                  {f.type === "udgaaende" &&
-                    f.status === "returneret" &&
-                    h &&
-                    h.status === "pakke_sendt" && (
-                      <ConfirmDialog
-                        triggerLabel="Ikke afhentet"
-                        triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"
-                        title={IKKE_AFHENTET_TITEL}
-                        description={IKKE_AFHENTET_TEKST}
-                        confirmLabel="Ja, pakken blev ikke afhentet"
-                        action={handelIkkeAfhentet}
-                        hiddenFields={{ tradeId: f.trade_id, forsendelseId: f.id }}
-                        aarsagField={IKKE_AFHENTET_AARSAG}
-                        kvittering="Registreret som ikke afhentet"
-                      />
-                    )}
+                  {f.type === "udgaaende" && f.status === "returneret" && h && h.status === "pakke_sendt" && (
+                    <ConfirmDialog
+                      triggerLabel="Ikke afhentet"
+                      triggerClassName={lille}
+                      title={IKKE_AFHENTET_TITEL}
+                      description={IKKE_AFHENTET_TEKST}
+                      confirmLabel="Ja, pakken blev ikke afhentet"
+                      action={handelIkkeAfhentet}
+                      hiddenFields={{ tradeId: f.trade_id, forsendelseId: f.id }}
+                      aarsagField={IKKE_AFHENTET_AARSAG}
+                      fare
+                      kvittering="Registreret som ikke afhentet"
+                    />
+                  )}
                   {f.type === "udgaaende" && (
                     <ConfirmDialog
                       triggerLabel="Godkend ekstra label"
-                      triggerClassName="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
+                      triggerClassName={lille}
                       title="Godkend én ekstra fragtlabel?"
                       description="Sælgeren må højst lave 2 labels pr. handel. Hvert klik giver én label mere. Ingen penge flyttes, men BidHamr betaler den ekstra label hos fragtfirmaet."
                       confirmLabel="Godkend ekstra label"
@@ -478,214 +510,39 @@ export default async function AdminSager({
             );
           })}
           {fragtVist.length === 0 && (
-            <li className="rounded-xl border border-neutral-200 bg-white px-5 py-10 text-center text-neutral-400">
-              {søgetekst ? `Ingen forsendelser matcher "${søgetekst}"` : "Ingen forsendelser kræver handling lige nu"}
+            <li>
+              <AdminTom
+                tekst={søgetekst ? `Ingen forsendelser matcher "${søgetekst}".` : "Ingen forsendelser kræver handling lige nu."}
+                nulstilHref={søgetekst ? lavHref("fragt") : undefined}
+              />
             </li>
           )}
         </ul>
       )}
 
-      {/* Under lg vises hver handel som et kort (ingen vandret scroll på
-          mobil). Fra lg er det en tabel, hvor Handlinger-kolonnen står fast i
-          højre side, så Se chat og Flere handlinger altid kan ses. */}
-      <div
-        hidden={fane === "fragt"}
-        className="lg:overflow-hidden lg:rounded-xl lg:border lg:border-neutral-200 lg:bg-white"
-      >
-        <div className="lg:overflow-x-auto">
-          <table className="block w-full text-sm lg:table">
-            <thead className="hidden lg:table-header-group">
-              <tr className="bg-neutral-50 text-xs text-neutral-500 uppercase">
-                <th className="px-3 py-3 text-left font-medium">Auktion</th>
-                <th className="px-3 py-3 text-left font-medium">Køber / sælger</th>
-                <th className="px-3 py-3 text-right font-medium">Beløb</th>
-                <th className="px-3 py-3 text-left font-medium">Status</th>
-                <th className="px-3 py-3 text-left font-medium">Markering</th>
-                <th className="sticky right-0 bg-neutral-50 px-3 py-3 text-left font-medium shadow-[-1px_0_0_0_#e5e5e5]">
-                  Handlinger
-                </th>
-              </tr>
-            </thead>
-            <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 lg:divide-y lg:divide-neutral-100">
-              {rows.map((h) => {
-                const aktiv = AKTIVE.includes(h.status);
-                const forsinket = haengerMap.get(h.id);
-                // Uigennemsigtig baggrund, så den faste kolonne ikke viser
-                // indholdet bag sig, når tabellen rulles.
-                const bund = h.sag_aaben ? "bg-red-50" : "bg-white group-hover:bg-neutral-50";
-                return (
-                  <tr
-                    key={h.id}
-                    className={`group block rounded-xl border border-neutral-200 p-4 align-top lg:table-row lg:rounded-none lg:border-0 lg:p-0 ${bund}`}
-                  >
-                    <td className="block lg:table-cell lg:px-3 lg:py-3">
-                      <Link
-                        href={`/auktion/${h.auction_id}`}
-                        className="font-medium text-neutral-800 hover:text-groen hover:underline"
-                      >
-                        {titelMap.get(h.auction_id) ?? "(slettet auktion)"}
-                      </Link>
-                      {h.tracking_number && (
-                        <span className="mt-0.5 block break-all text-xs text-neutral-500">
-                          Tracking: {h.tracking_number}
-                        </span>
-                      )}
-                    </td>
-                    <td className="mt-3 block space-y-1 lg:mt-0 lg:table-cell lg:px-3 lg:py-3">
-                      <Person id={h.buyer_id} rolle="Køber" />
-                      <Person id={h.seller_id} rolle="Sælger" />
-                    </td>
-                    <td className="mt-3 block whitespace-nowrap font-medium text-neutral-800 lg:mt-0 lg:table-cell lg:px-3 lg:py-3 lg:text-right">
-                      <span className="mr-1.5 text-xs font-normal text-neutral-500 lg:hidden">Beløb</span>
-                      {kr(h.amount)}
-                    </td>
-                    <td className="mt-3 block lg:mt-0 lg:table-cell lg:px-3 lg:py-3">
-                      <HandelStatusBadge status={h.status} />
-                      <span
-                        className={`mt-1 block text-xs ${forsinket ? "font-semibold text-red-600" : "text-neutral-500"}`}
-                      >
-                        {dageSiden(forsinket ? forsinket.siden : h.created_at)} dage
-                        {forsinket && (
-                          <span className="block font-normal">{HAENGER_TEKST[forsinket.grund]}</span>
-                        )}
-                      </span>
-                    </td>
-                    <td className={`${h.sag_aaben ? "mt-3 block" : "hidden"} lg:table-cell lg:px-3 lg:py-3`}>
-                      {h.sag_aaben ? (
-                        <span className="block max-w-[200px] text-neutral-700">
-                          <span className="mb-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                            Markeret
-                          </span>
-                          <span className="block break-words text-xs">{h.sag_note}</span>
-                        </span>
-                      ) : (
-                        <span className="text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td
-                      className={`mt-4 block border-t border-neutral-100 pt-3 lg:sticky lg:right-0 lg:mt-0 lg:table-cell lg:border-t-0 lg:px-3 lg:py-3 lg:shadow-[-1px_0_0_0_#f5f5f5] ${bund}`}
-                    >
-                      {/* Højst én hovedknap pr. række. Sjældne og farlige
-                          handlinger ligger under "Flere handlinger". */}
-                      <div className="flex flex-col items-start gap-2">
-                        {/* prefetch slået fra: chatsiden logger læsningen. */}
-                        <Link
-                          href={handelChatSti(h.id)}
-                          prefetch={false}
-                          className="inline-flex whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
-                        >
-                          Se chat
-                        </Link>
-                      {!aktiv ? (
-                        <span className="text-xs text-neutral-400">Afsluttet</span>
-                      ) : (
-                        h.sag_aaben && (
-                          <ConfirmDialog
-                            triggerLabel="Fjern markering"
-                            triggerClassName="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-200"
-                            title="Fjern markeringen?"
-                            description="Handlen fortsætter normalt. Ingen penge flyttes."
-                            confirmLabel="Ja, fjern markeringen"
-                            action={sagLuk}
-                            hiddenFields={{ tradeId: h.id }}
-                            aarsagField={{ label: "Afsluttende note", placeholder: "Hvad blev udfaldet?", required: true }}
-                          />
-                        )
-                      )}
-                      {(kanSkriveFaelles || (aktiv && (!h.sag_aaben || kanFlyttePenge))) && (
-                        <FlereHandlinger>
-                          {kanSkriveFaelles && <FaellesbeskedKnap tradeId={h.id} />}
-                          {/* Sælgeren har brugt sine 2 fragtlabels og har skrevet til os. */}
-                          {h.status === "betaling_modtaget" && (
-                            <ConfirmDialog
-                              triggerLabel="Godkend ekstra fragtlabel"
-                              triggerClassName="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-700 transition-colors hover:bg-neutral-200"
-                              title="Godkend én ekstra fragtlabel?"
-                              description="Sælgeren må højst lave 2 labels pr. handel. Hvert klik giver én label mere. Kræver, at køberen har valgt levering."
-                              confirmLabel="Godkend ekstra label"
-                              action={fragtGodkendEkstraLabel}
-                              hiddenFields={{ tradeId: h.id }}
-                              aarsagField={{ label: "Hvorfor?", placeholder: "Fx: sælgeren skrev til support – labelen blev beskadiget", required: true }}
-                              kvittering="Ekstra label godkendt"
-                            />
-                          )}
-                          {aktiv && !h.sag_aaben && (
-                            <ConfirmDialog
-                              triggerLabel="Markér handel"
-                              triggerClassName="whitespace-nowrap rounded-md bg-amber-100 px-2 py-1 text-xs text-amber-800 transition-colors hover:bg-amber-200"
-                              title="Markér handlen til opfølgning?"
-                              description="Handlen markeres til opfølgning, og pengene fryses, indtil markeringen fjernes. Parterne kan stadig bruge handlen normalt."
-                              confirmLabel="Ja, markér handlen"
-                              action={sagAabn}
-                              hiddenFields={{ tradeId: h.id }}
-                              aarsagField={{ label: "Hvad drejer sagen sig om?", placeholder: "Fx: køber melder varen defekt, sælger svarer ikke...", required: true }}
-                            />
-                          )}
-                          {/* Pakken er sendt retur, fordi køberen ikke hentede den.
-                              Med returmelding: medarbejder og op. Uden: kun admin/chef. */}
-                          {!h.afhentning &&
-                            h.status === "pakke_sendt" &&
-                            (returMeldtIds.has(h.id) || kanFlyttePenge) && (
-                            <ConfirmDialog
-                              triggerLabel="Ikke afhentet"
-                              triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"
-                              title={IKKE_AFHENTET_TITEL}
-                              description={IKKE_AFHENTET_TEKST}
-                              confirmLabel="Ja, pakken blev ikke afhentet"
-                              action={handelIkkeAfhentet}
-                              hiddenFields={{ tradeId: h.id }}
-                              aarsagField={IKKE_AFHENTET_AARSAG}
-                              kvittering="Registreret som ikke afhentet"
-                            />
-                          )}
-                          {aktiv && kanFlyttePenge && (
-                            <>
-                              <ConfirmDialog
-                                triggerLabel="Frigiv til sælger"
-                                triggerClassName="whitespace-nowrap rounded-md bg-green-100 px-2 py-1 text-xs text-green-800 transition-colors hover:bg-green-200"
-                                title={`Frigiv ${kr(h.amount)} til sælgeren?`}
-                                description="Sælgeren afregnes (minus 5% gebyr), som om køberen havde godkendt varen. Kan ikke fortrydes."
-                                confirmLabel="Ja, frigiv pengene"
-                                action={handelFrigiv}
-                                hiddenFields={{ tradeId: h.id }}
-                                aarsagField={{ label: "Begrundelse", placeholder: "Hvorfor frigives beløbet uden køberens godkendelse?", required: true }}
-                              />
-                              <ConfirmDialog
-                                triggerLabel="Refundér køber"
-                                triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"
-                                title="Refundér køberen og annullér handlen?"
-                                description="Køberen får hele det betalte beløb (bud, købergebyr, fragt og evt. BidHamr Beskyttelse) tilbage via Stripe. Er handlen ikke betalt endnu, annulleres betalingen. Sælgeren får intet. Kan ikke fortrydes."
-                                confirmLabel="Ja, refundér"
-                                action={handelRefunder}
-                                hiddenFields={{ tradeId: h.id }}
-                                aarsagField={{ label: "Begrundelse", placeholder: "Hvorfor refunderes køberen?", required: true }}
-                              />
-                            </>
-                          )}
-                        </FlereHandlinger>
-                      )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {rows.length === 0 && (
-                <tr className="block rounded-xl border border-neutral-200 bg-white lg:table-row lg:rounded-none lg:border-0">
-                  <td colSpan={6} className="block px-5 py-10 text-center text-neutral-400 lg:table-cell">
-                    {søgetekst
-                      ? `Ingen handler matcher "${søgetekst}"`
-                      : fane === "sager"
-                        ? "Ingen markerede handler"
-                        : fane === "haenger"
-                          ? "Ingen handler hænger lige nu"
-                          : "Ingen handler endnu"}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+      {fane !== "fragt" && (
+        <AdminListe
+          label="Handler"
+          raekker={rows}
+          kolonner={kolonner}
+          noegle={(h) => h.id}
+          fremhaev={(h) => h.sag_aaben || haengerMap.has(h.id)}
+          tom={
+            <AdminTom
+              tekst={
+                søgetekst
+                  ? `Ingen handler matcher "${søgetekst}".`
+                  : fane === "sager"
+                    ? "Ingen handler er markeret af os."
+                    : fane === "haenger"
+                      ? "Ingen handler hænger lige nu."
+                      : "Ingen handler endnu."
+              }
+              nulstilHref={søgetekst ? lavHref(fane === "sager" ? "markeret" : fane) : undefined}
+            />
+          }
+        />
+      )}
+    </AdminSide>
   );
 }

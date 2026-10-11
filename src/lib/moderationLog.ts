@@ -128,7 +128,7 @@ export function maalLink(
     case "bruger":
       return erSystem(maalId) ? null : { href: `/admin/brugere/${id}`, label: "Se bruger" };
     case "handel":
-      return { href: `/admin/handler?vis=alle&q=${id}`, label: "Se handel" };
+      return { href: `/admin/handler/${id}`, label: "Se handel" };
     case "samtale":
       return { href: `/admin/chats/${id}`, label: "Se chat" };
     case "sag":
