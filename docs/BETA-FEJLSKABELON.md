@@ -57,7 +57,7 @@ Skærmbillede: (vedhæft)
 | 10 | Browser | Multiple choice | Safari / Chrome / Samsung Internet / Firefox / Edge / Ved ikke / Andet | Ja |
 | 11 | Sker det igen, hvis du prøver? | Multiple choice | Ja, hver gang / Nogle gange / Nej / Har ikke prøvet | Ja |
 | 12 | Hvor slemt er det? | Multiple choice | Jeg kan ikke komme videre / Jeg kan komme videre, men det er besværligt / Det er en lille ting, fx en tekst | Ja |
-| 13 | Skærmbillede | Filupload (kræver Google-login – ellers send det på mail til [beta-mail]) | – | Nej |
+| 13 | Skærmbillede | Filupload (kræver Google-login – ellers send det på mail til beta@bidhamr.dk) | – | Nej |
 
 ---
 

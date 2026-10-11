@@ -10,6 +10,73 @@ Punkter markeret **[CHEF]** kræver en teknisk beslutning eller noget, der skal 
 
 ---
 
+## Før beta-testen starter – 10 trin
+
+Tag dem i denne rækkefølge. Den fulde liste står i afsnit 10.
+
+1. **Kør beta-migrationen i produktion.**
+   Hvor: Supabase → projektet **Hamr** (`lkifkrexeldimmghnsie`) → SQL Editor. Filen er `supabase/migrations/20261017010000_beta_invitationer.sql`. Du kan også give Claude dit "ja" til at køre den.
+
+2. **Tjek, at alt kører med testpenge.**
+   Hvor: Stripe-dashboardet med "Testmiljø" slået til (betalinger skal lande her). Vercel → Project → Settings → Environment Variables: nøglerne skal starte med `sk_test_` og `pk_test_` (kig kun, ret intet). Supabase (Hamr) → SQL Editor: `select tilstand from stripe_tilstand;` skal give `test`. Til sidst `/admin/drift`: ingen røde fejl, og "Sidste tjek" under 5 minutter gammelt.
+
+3. **Opret MitID-testidentiteter.**
+   Hvor: MitID Test Tool på pp.mitid.dk. Lav én pr. testperson og 2 til dig selv. Alle skal være over 18 år og bruge MitID-appen (så de kan godkende i app-simulatoren). Skriv brugernavnene i dit regneark: ét brugernavn pr. person, og del aldrig det samme.
+
+4. **Opret beta@bidhamr.dk og den fælles gruppe.**
+   Hvor: Google Admin (admin.google.com) → Grupper → Opret gruppe `beta@bidhamr.dk`, med dig som modtager. Det kræver Google Workspace (se HUSKELISTE.md, "Mail på bidhamr.dk"). Send en prøvemail udefra, og tjek, at den kommer frem. Opret samtidig den fælles Messenger- eller Facebook-gruppe, og sæt navnet ind i guiden i stedet for [GRUPPE].
+
+5. **Lav de to Google Forms.**
+   Hvor: forms.google.com. Kopiér spørgsmålene fra `docs/BETA-FEJLSKABELON.md`: "Meld en fejl" og "Hvordan var det at bruge BidHamr?". Under fanen Svar trykker du "Link til Sheets", så svarene samles i et regneark. Sæt linket til fejlformularen ind i guiden i stedet for [LINK TIL FEJLFORMULAR]. Spørgeskemaet gemmer du til dag 15.
+
+6. **Åbn beta-testen.**
+   Hvor: Admin → Indstillinger → **Beta-invitationer** → **Åbn beta-testen** (kun chef). Det skal ske før trin 7, fordi ingen kan oprette sig med en invitation, mens beta er lukket. Kun inviterede kommer ind – alle andre ser stadig coming-soon.
+
+7. **Invitér dig selv, og test hele vejen.**
+   Hvor: samme side → **Send invitation** til 2 af dine private e-mails (ikke din chef-konto, den kommer altid forbi). Følg guiden i et privat browservindue: opret konto, kode, MitID, udbetalingskonto, opret auktion, byd med den anden konto, betal med testkortet, send, modtag, godkend og opret en sag. Tjek, at invitationens status skifter til "Oprettet konto" og "MitID-verificeret". Skriv ned, hvad Stripe og MitID-simulatoren præcis beder om, og ret de steder i guiden, der er markeret [TJEK].
+
+8. **Opret 10-15 startauktioner.**
+   Hvor: `/opret-auktion`, logget ind som dine egne testsælgere. Vælg 3 dages varighed, så der er noget at byde på fra dag 1.
+
+9. **Invitér testpersonerne.**
+   Hvor: Admin → Indstillinger → **Beta-invitationer** → **Send invitation**, én e-mail ad gangen, med en note (fx alder, telefon, og hvor du fandt personen). Send din egen invitationstekst (se "Invitationstekst" nedenfor) dagen før, så mailen fra BidHamr ikke kommer som en overraskelse. Højst 60 invitationer i timen.
+
+10. **Send guiden og MitID-brugernavnet.**
+    Hvor: fra beta@bidhamr.dk (eller din egen mail). Send `docs/BETA-GUIDE-TESTPERSONER.md` som PDF eller indsat i mailen, sammen med personens eget MitID-brugernavn og linket til app-simulatoren. Udfyld [DATO] først. Fra nu af tjekker du admin morgen og aften (afsnit 8).
+
+---
+
+## Invitationstekst (sendes af Filip før den automatiske invitation)
+
+**Som mail**
+
+> Emne: Vil du teste BidHamr med mig?
+>
+> Hej [NAVN]
+>
+> Tak, fordi du vil være med i beta-testen af BidHamr. BidHamr er en ny dansk side, hvor privatpersoner sælger brugte ting til hinanden på auktion.
+>
+> Testen varer 2 uger, fra [DATO] til [DATO]. Det tager ca. 15-30 minutter om dagen. Du byder, køber og sælger, som du ville gøre på en rigtig side.
+>
+> Alt er en test. Du betaler med testpenge, og der sendes ingen rigtige pakker. Du skal aldrig bruge dit rigtige betalingskort, dit rigtige MitID eller dit CPR-nummer.
+>
+> Sådan kommer du i gang:
+> 1. Om lidt får du en mail fra BidHamr med et link. Opret dig med den e-mail, mailen kommer til, og skriv koden fra mailen.
+> 2. Du får også en vejledning og et MitID-brugernavn til testen fra mig.
+>
+> Har du spørgsmål, så skriv til beta@bidhamr.dk.
+>
+> [Evt.: Som tak for hjælpen får du ...]
+>
+> Venlig hilsen
+> Filip, BidHamr
+
+**Som SMS**
+
+> Hej [NAVN]. Tak, fordi du vil teste BidHamr – en ny dansk auktionsside for brugte ting. Testen varer 2 uger fra [DATO], ca. 15-30 min. om dagen. Alt er testpenge, og der sendes ingen rigtige pakker. Du får snart en mail fra BidHamr med et link: opret dig med samme e-mail, og skriv koden fra mailen. Vejledning og MitID til testen kommer fra mig. Hilsen Filip
+
+---
+
 ## 1. Formål
 
 - Se om fremmede kan bruge hele forløbet uden hjælp: opret konto, MitID, opret auktion, byd, vind, betal, send, modtag, godkend og opret en sag.
@@ -56,7 +123,7 @@ Punkter markeret **[CHEF]** kræver en teknisk beslutning eller noget, der skal 
 3. Telefon: iPhone eller Android, og hvilken model
 4. Har du købt eller solgt brugte ting online det seneste år? Hvor?
 5. Vil du helst sælge, købe eller begge dele?
-6. Kan du være med i hele perioden [datoer]?
+6. Kan du være med i hele perioden [DATO] til [DATO]?
 
 **Tak for hjælpen:** Filip beslutter, om testpersonerne får noget for det (fx et gavekort). Skriv det tydeligt i invitationen, hvis det er tilfældet.
 
@@ -82,7 +149,7 @@ I dag er bidhamr.dk lukket: alle uden staff-rolle ser `/coming-soon`, og oprette
 **Sikker adgang ved A – invitationsliste (bygget 11. okt. 2026, Filips ja):**
 - Migration: `supabase/migrations/20261017010000_beta_invitationer.sql`. Skal køres i produktion (Filips ja), før testen starter. I produktion starter beta-testen **lukket**.
 - **Sådan inviterer du:** Admin → Indstillinger → **Beta-invitationer** (admin og chef). Skriv e-mailen og evt. en note, og tryk **Send invitation**. E-mailen gemmes med små bogstaver og uden mellemrum. Personen får en mail på dansk (via Resend) med et link til `/signup`. Har e-mailen allerede en konto, siger mailen "Log ind" i stedet.
-- **Sådan opretter testpersonen sig:** samme signup som ellers – fornavn, e-mail, adgangskode og fluebenet for brugerbetingelserne – og så den 6-cifrede kode på `/tjek-indbakke`. Under beta oprettes kontoen på serveren (`opretKonto` → `generateLink('signup')`), og koden sendes i vores egen mail, fordi "Allow new users to sign up" stadig er slået fra i Supabase. Det skal den blive ved med at være. Svaret er altid "Tjek din indbakke" (også for e-mails uden invitation, med en konto eller ved fejl, som logges i `/admin/drift`), så siden ikke afslører, hvem der er inviteret. Højst én kodemail pr. e-mail hvert 2. minut.
+- **Sådan opretter testpersonen sig:** samme signup som ellers – fornavn, e-mail, adgangskode og fluebenet for brugerbetingelserne – og så koden på `/tjek-indbakke`. Under beta oprettes kontoen på serveren (`opretKonto` → `generateLink('signup')`), og koden sendes i vores egen mail, fordi "Allow new users to sign up" stadig er slået fra i Supabase. Det skal den blive ved med at være. Svaret er altid "Tjek din indbakke" (også for e-mails uden invitation, med en konto eller ved fejl, som logges i `/admin/drift`), så siden ikke afslører, hvem der er inviteret. Højst én kodemail pr. e-mail hvert 2. minut.
 - **Adgangskoden bestemmes kun af den, der har koden.** Beta-kontoen oprettes altid med en tilfældig adgangskode. Den valgte ligger krypteret (AES-256-GCM, `SIGNUP_ADGANGSKODE_HEMMELIGHED`) i en kort cookie i testpersonens browser (højst 30 min., bundet til e-mailen) og sættes først, når koden er indtastet. Bekræfter man i en anden browser eller efter 30 minutter, beder siden om at vælge adgangskode bagefter. En eksisterende konto får aldrig ny metadata eller adgangskode fra signup – kun en ny kode. Virker Supabases "send ny kode" ikke, laves koden med `generateLink` og sendes i vores egen mail.
 - **Kendte begrænsninger:**
   - *Lås-ude (DoS):* kender nogen en inviteret e-mail, kan de bede om en ny kode til den hvert 2. minut. Hver ny kode gør den forrige ugyldig, så testpersonen kan blive ved med at få "Koden passer ikke". De kan ikke overtage kontoen. Sker det, kan staff tilbagekalde og genaktivere invitationen, eller testpersonen kan vente og bruge den nyeste kode.
@@ -109,8 +176,8 @@ I dag er bidhamr.dk lukket: alle uden staff-rolle ser `/coming-soon`, og oprette
 - **Stripe kører i testmiljøet.** Testpersonerne betaler med testkortet `4242 4242 4242 4242`, en vilkårlig fremtidig udløbsdato og en vilkårlig CVC. Ingen rigtige penge bevæger sig. Tjek før start, at `stripe_tilstand.tilstand = 'test'`, og at Vercel har `sk_test_`/`pk_test_`-nøgler.
 - **Testpersonerne skal aldrig bruge deres rigtige kort, MitID eller CPR-nummer.** Det står tydeligt i guiden.
 - **MitID:** Iduras testmiljø. Hver testperson skal have sin egen testidentitet, fordi én MitID = én konto. Testidentiteten skal være over 18 år.
-  - **[CHEF]** Beslut, om Filip opretter testidentiteterne på forhånd i MitID Test Tool (pp.mitid.dk) og sender brugernavnet til hver testperson, eller om testpersonerne selv opretter en. Anbefaling: Filip opretter dem, så de er 18+ og ikke deles. Skriv en kort trin-for-trin-vejledning med skærmbilleder til guiden, når det er afprøvet.
-- **Udbetalingskonto (Stripe Connect):** Sælgere skal oprette en udbetalingskonto, før de kan oprette en auktion. I testmiljøet bruger de Stripes testoplysninger. **[CHEF]** Afprøv onboardingen i testmiljøet og skriv præcis, hvad testpersonerne skal taste (fx SMS-kode `000000` og testbankkonto `DK5000400440116243`). Opdatér guiden.
+  - Filip opretter testidentiteterne på forhånd i MitID Test Tool (pp.mitid.dk) og sender brugernavnet til hver testperson, så de er 18+ og ikke deles. Trin-for-trin-vejledningen står i guiden. **[CHEF]** Afprøv den (trin 7 øverst), sæt linket til app-simulatoren ind, og ret de steder, der er markeret [TJEK].
+- **Udbetalingskonto (Stripe Connect):** Sælgere skal oprette en udbetalingskonto, før de kan oprette en auktion. I testmiljøet bruger de Stripes testoplysninger (SMS-kode `000000`, IBAN `DK5000400440116243`, "Brug testdata" til ID). Står i guiden. **[CHEF]** Fødselsdato, adresse og ID-nummer i guiden er Stripes almindelige testværdier og er markeret [TJEK] – de er ikke afprøvet i Stripes onboarding for Danmark endnu. Afprøv dem i trin 7.
 - **Fragt:** DAO/Shipmondo kører i sandkassen. Der sendes ingen rigtige pakker. Labelfri-koden er altid `123-456-789`. Sandkassen sender ingen sporingsmeldinger.
   - **[CHEF]** Tjek, at køberen kan trykke "Jeg har modtaget pakken" uden leveringsmelding fra DAO. Ellers skal staff kunne melde pakken leveret under testen, så sager og godkendelse kan testes.
 - **[CHEF] Fakturaer:** Fakturaer på BidHamrs gebyrer må ikke ende i det rigtige regnskab. Tjek, at Dinero kører i testmiljøet (eller er slået fra) under hele testen.
@@ -181,7 +248,7 @@ Fristerne i reglerne (48 timer til betaling, 48 timer til sag, 4 dages ankefrist
 
 **Kanaler:**
 1. **Fejlformular** (Google Forms, se `docs/BETA-FEJLSKABELON.md`). Hovedkanalen.
-2. **E-mail med skærmbillede** til en beta-adresse. **[CHEF]** Vælg adresse – fx `beta@bidhamr.dk` som gruppe i Google Workspace (se HUSKELISTE.md "Mail på bidhamr.dk"). Google Forms kræver Google-login for at uploade filer, så mail er nemmest til skærmbilleder.
+2. **E-mail med skærmbillede** til `beta@bidhamr.dk` (gruppe i Google Workspace, se HUSKELISTE.md "Mail på bidhamr.dk"). Filip opretter den (trin 4 øverst). Google Forms kræver Google-login for at uploade filer, så mail er nemmest til skærmbilleder.
 3. **Kontaktformularen på siden** (`/kontakt`) som reserve. Den lander i `/admin/kontakt`.
 
 **Filip samler alt i ét regneark** med kolonnerne: nr., dato, testperson, side, alvor, beskrivelse, status (ny / rettes / rettet / ikke en fejl), commit.
