@@ -10,6 +10,72 @@ Punkter markeret **[CHEF]** kræver en teknisk beslutning eller noget, der skal 
 
 ---
 
+## Før beta-testen starter – 10 trin
+
+Tag dem i denne rækkefølge. Den fulde liste står i afsnit 10.
+
+1. ✅ **Beta-migrationen er kørt i produktion** (11. okt. 2026), og invitationen er afprøvet på Filip selv.
+
+2. **Tjek, at alt kører med testpenge.**
+   Hvor: Stripe-dashboardet med "Testmiljø" slået til (betalinger skal lande her). Vercel → Project → Settings → Environment Variables: nøglerne skal starte med `sk_test_` og `pk_test_` (kig kun, ret intet). Supabase (Hamr) → SQL Editor: `select tilstand from stripe_tilstand;` skal give `test`. Til sidst `/admin/drift`: ingen røde fejl, og "Sidste tjek" under 5 minutter gammelt.
+
+3. **Opret MitID-testidentiteter.**
+   Hvor: MitID Test Tool på pp.mitid.dk. Lav én pr. testperson og 2 til dig selv. Alle skal være over 18 år og bruge MitID-appen (så de kan godkende i app-simulatoren). Skriv brugernavnene i dit regneark: ét brugernavn pr. person, og del aldrig det samme.
+
+4. **Opret beta@bidhamr.dk og den fælles gruppe.**
+   Hvor: Google Admin (admin.google.com) → Grupper → Opret gruppe `beta@bidhamr.dk`, med dig som modtager. Det kræver Google Workspace (se HUSKELISTE.md, "Mail på bidhamr.dk"). Send en prøvemail udefra, og tjek, at den kommer frem. Opret samtidig den fælles Messenger- eller Facebook-gruppe, og sæt navnet ind i guiden i stedet for [GRUPPE].
+
+5. **Lav de to Google Forms.**
+   Hvor: forms.google.com. Kopiér spørgsmålene fra `docs/BETA-FEJLSKABELON.md`: "Meld en fejl" og "Hvordan var det at bruge BidHamr?". Under fanen Svar trykker du "Link til Sheets", så svarene samles i et regneark. Sæt linket til fejlformularen ind i guiden i stedet for [LINK TIL FEJLFORMULAR]. Spørgeskemaet gemmer du til dag 15.
+
+6. **Åbn beta-testen.**
+   Hvor: Admin → Indstillinger → **Beta-invitationer** → **Åbn beta-testen** (kun chef). Det skal ske før trin 7, fordi ingen kan oprette sig med en invitation, mens beta er lukket. Kun inviterede kommer ind – alle andre ser stadig coming-soon.
+
+7. **Invitér dig selv, og test hele vejen.**
+   Hvor: samme side → **Send invitation** til 2 af dine private e-mails (ikke din chef-konto, den kommer altid forbi). Følg guiden i et privat browservindue: opret konto, kode, MitID, udbetalingskonto, opret auktion, byd med den anden konto, betal med testkortet, send, modtag, godkend og opret en sag. Tjek, at invitationens status skifter til "Oprettet konto" og "MitID-verificeret". Skriv ned, hvad Stripe og MitID-simulatoren præcis beder om, og ret de steder i guiden, der er markeret [TJEK].
+
+8. **Opret 10-15 startauktioner.**
+   Hvor: `/opret-auktion`, logget ind som dine egne testsælgere. Vælg 3 dages varighed, så der er noget at byde på fra dag 1.
+
+9. **Invitér testpersonerne.**
+   Hvor: Admin → Indstillinger → **Beta-invitationer** → **Send invitation**, én e-mail ad gangen, med en note (fx alder, telefon, og hvor du fandt personen). Send din egen invitationstekst (se "Invitationstekst" nedenfor) dagen før, så mailen fra BidHamr ikke kommer som en overraskelse. Højst 60 invitationer i timen.
+
+10. **Send guiden og MitID-brugernavnet.**
+    Hvor: fra beta@bidhamr.dk (eller din egen mail). Send `docs/BETA-GUIDE-TESTPERSONER.md` som PDF eller indsat i mailen, sammen med personens eget MitID-brugernavn og linket til app-simulatoren. Udfyld [DATO] først. Fra nu af tjekker du admin morgen og aften (afsnit 8).
+
+---
+
+## Invitationstekst (sendes af Filip før den automatiske invitation)
+
+**Som mail**
+
+> Emne: Vil du teste BidHamr med mig?
+>
+> Hej [NAVN]
+>
+> Tak, fordi du vil være med i beta-testen af BidHamr. BidHamr er en ny dansk side, hvor privatpersoner sælger brugte ting til hinanden på auktion.
+>
+> Testen varer 2 uger, fra [DATO] til [DATO]. Det tager ca. 15-30 minutter om dagen. Du byder, køber og sælger, som du ville gøre på en rigtig side.
+>
+> Alt er en test. Du betaler med testpenge, og der sendes ingen rigtige pakker. Du skal aldrig bruge dit rigtige betalingskort, dit rigtige MitID eller dit CPR-nummer.
+>
+> Sådan kommer du i gang:
+> 1. Om lidt får du en mail fra BidHamr med et link. Opret dig med den e-mail, mailen kommer til, og skriv koden fra mailen.
+> 2. Du får også en vejledning og et MitID-brugernavn til testen fra mig.
+>
+> Har du spørgsmål, så skriv til beta@bidhamr.dk.
+>
+> [Evt.: Som tak for hjælpen får du ...]
+>
+> Venlig hilsen
+> Filip, BidHamr
+
+**Som SMS**
+
+> Hej [NAVN]. Tak, fordi du vil teste BidHamr – en ny dansk auktionsside for brugte ting. Testen varer 2 uger fra [DATO], ca. 15-30 min. om dagen. Alt er testpenge, og der sendes ingen rigtige pakker. Du får snart en mail fra BidHamr med et link: opret dig med samme e-mail, og skriv koden fra mailen. Vejledning og MitID til testen kommer fra mig. Hilsen Filip
+
+---
+
 ## 1. Formål
 
 - Se om fremmede kan bruge hele forløbet uden hjælp: opret konto, MitID, opret auktion, byd, vind, betal, send, modtag, godkend og opret en sag.
@@ -56,7 +122,7 @@ Punkter markeret **[CHEF]** kræver en teknisk beslutning eller noget, der skal 
 3. Telefon: iPhone eller Android, og hvilken model
 4. Har du købt eller solgt brugte ting online det seneste år? Hvor?
 5. Vil du helst sælge, købe eller begge dele?
-6. Kan du være med i hele perioden [datoer]?
+6. Kan du være med i hele perioden [DATO] til [DATO]?
 
 **Tak for hjælpen:** Filip beslutter, om testpersonerne får noget for det (fx et gavekort). Skriv det tydeligt i invitationen, hvis det er tilfældet.
 
@@ -82,21 +148,21 @@ I dag er bidhamr.dk lukket: alle uden staff-rolle ser `/coming-soon`, og oprette
 **Sikker adgang ved A – invitationsliste (bygget 11. okt. 2026, Filips ja):**
 - Migration: `supabase/migrations/20261017010000_beta_invitationer.sql`. Skal køres i produktion (Filips ja), før testen starter. I produktion starter beta-testen **lukket**.
 - **Sådan inviterer du:** Admin → Indstillinger → **Beta-invitationer** (admin og chef). Skriv e-mailen og evt. en note, og tryk **Send invitation**. E-mailen gemmes med små bogstaver og uden mellemrum. Personen får en mail på dansk (via Resend) med et link til `/signup`. Har e-mailen allerede en konto, siger mailen "Log ind" i stedet.
-- **Sådan opretter testpersonen sig:** samme signup som ellers – fornavn, e-mail, adgangskode og fluebenet for brugerbetingelserne – og så den 6-cifrede kode på `/tjek-indbakke`. Under beta oprettes kontoen på serveren (`opretKonto` → `generateLink('signup')`), og koden sendes i vores egen mail, fordi "Allow new users to sign up" stadig er slået fra i Supabase. Det skal den blive ved med at være. Svaret er altid "Tjek din indbakke" (også for e-mails uden invitation, med en konto eller ved fejl, som logges i `/admin/drift`), så siden ikke afslører, hvem der er inviteret. Højst én kodemail pr. e-mail hvert 2. minut.
-- **Adgangskoden bestemmes kun af den, der har koden.** Beta-kontoen oprettes altid med en tilfældig adgangskode. Den valgte ligger krypteret (AES-256-GCM, `SIGNUP_ADGANGSKODE_HEMMELIGHED`) i en kort cookie i testpersonens browser (højst 30 min., bundet til e-mailen) og sættes først, når koden er indtastet. Bekræfter man i en anden browser eller efter 30 minutter, beder siden om at vælge adgangskode bagefter. En eksisterende konto får aldrig ny metadata eller adgangskode fra signup – kun en ny kode. Virker Supabases "send ny kode" ikke, laves koden med `generateLink` og sendes i vores egen mail.
+- **Sådan opretter testpersonen sig:** samme signup som ellers – fornavn, e-mail, adgangskode og fluebenet for brugerbetingelserne – og så den 6-cifrede kode på `/tjek-indbakke`. Kontoen oprettes på serveren (`opretKonto` → `src/lib/kontoOprettelse.ts` → `generateLink('signup')`), og koden sendes i vores egen mail, fordi "Allow new users to sign up" er slået fra i Supabase. Den skal **altid** være slået fra – også efter lancering. Samme kodevej bruges ved åben tilmelding og af appen (`POST /api/konto/opret`, docs/APP-SIGNUP.md); forskellen er kun invitationstjekket. Svaret er altid "Tjek din indbakke" (også for e-mails uden invitation, med en konto eller ved fejl, som logges i `/admin/drift`), så siden ikke afslører, hvem der er inviteret. Højst én kodemail pr. e-mail hvert 2. minut.
+- **Adgangskoden, navnet og vilkårsaccepten bestemmes kun af den, der har koden.** Kontoen oprettes altid med en tilfældig adgangskode og uden navn og vilkår. Det valgte ligger krypteret (AES-256-GCM, `SIGNUP_ADGANGSKODE_HEMMELIGHED`) i en kort cookie i testpersonens browser (højst 30 min., bundet til e-mailen) og sættes først, når koden er indtastet. Bekræfter man i en anden browser eller efter 30 minutter, sættes en ny tilfældig adgangskode, navnet bliver "Bruger", og vilkårene er ikke accepteret. Siden beder så om navn og adgangskode ("Vælg din adgangskode"), og accept-vinduet vises (databasen afviser bud og salg uden accept). Appen sender adgangskoden igen sammen med koden (`POST /api/konto/bekraeft`). En eksisterende konto får aldrig ny metadata eller adgangskode fra signup – kun en ny kode. Virker Supabases "send ny kode" ikke, laves koden med `generateLink` og sendes i vores egen mail.
 - **Kendte begrænsninger:**
   - *Lås-ude (DoS):* kender nogen en inviteret e-mail, kan de bede om en ny kode til den hvert 2. minut. Hver ny kode gør den forrige ugyldig, så testpersonen kan blive ved med at få "Koden passer ikke". De kan ikke overtage kontoen. Sker det, kan staff tilbagekalde og genaktivere invitationen, eller testpersonen kan vente og bruge den nyeste kode.
   - Samme tidsvindue: en fremmed kan bruge e-mailens 2-minutters vindue, så testpersonen må vente op til 2 minutter på en kode.
-  - Åben tilmelding (efter lancering, almindelig `signUp`): her sætter siden også den valgte adgangskode efter bekræftelsen. Bekræfter offeret i en anden browser, og har en anden oprettet kontoen først med sin egen adgangskode, bevares den anden persons adgangskode, indtil offeret nulstiller den. Det samme gælder appen, der kalder Supabase direkte. Det skal løses inden lancering.
-- **Kun inviterede kan oprette sig**, mens `TILMELDING_AABEN` ikke er `true`. Det tjekkes to steder: i signup-actionen og i databasen (`handle_new_user` afviser enhver ny auth-bruger uden aktiv invitation, så det ikke kan omgås via Supabase-API'et med anon-nøglen – heller ikke hvis nogen slår "Allow new users to sign up" til). Værnet hedder `beta_indstillinger.kun_inviterede`.
+  - *Løst 11. okt. 2026:* åben tilmelding brugte før almindelig `signUp`, så en fremmed kunne oprette kontoen først med sin egen adgangskode. Nu bruger åben tilmelding og appen samme model som beta, og databasen kræver altid en billet fra serveren (`20261018010000_signup_billet_altid.sql`), så `signUp` med anon-nøglen afvises, uanset hvad der står i dashboardet.
+- **Kun inviterede kan oprette sig**, mens `TILMELDING_AABEN` ikke er `true`. Det tjekkes to steder: i signup-koden og i databasen. Efter `20261018010000_signup_billet_altid.sql` afviser `handle_new_user` enhver ny auth-bruger, som serveren ikke har lagt en billet til (`konto_oprettelse_billet_signup`, gælder 2 min. og én gang). Billetten er bundet til serverens eget kald: kun hashen af et tilfældigt nonce gemmes, og nonce'et sendes med i `generateLink` (metadata `bh_billet`, som fjernes igen bagefter). En direkte `signUp` har ikke nonce'et og afvises, også mens billetten ligger. Mens `beta_indstillinger.kun_inviterede` er slået til, gives billetten kun til en e-mail med aktiv invitation, mens beta er åben, og invitationen tjekkes igen, når kontoen oprettes. Det kan ikke omgås via Supabase-API'et med anon-nøglen – heller ikke hvis nogen slår "Allow new users to sign up" til.
 - **Gaten:** en indlogget bruger med aktiv invitation kommer forbi coming-soon, mens beta er åben, og kan bruge hele den private del af siden – men aldrig admin (`/admin*` sender til forsiden). Firmakonti og staff følger deres egne regler. Svaret gemmes i den signerede rolle-cookie i højst 5 minutter, så der ikke er et databasekald pr. side.
 - **Status pr. invitation:** Inviteret, Oprettet konto, MitID-verificeret, Tilbagekaldt.
 - **Ét klik for at lukke:** **Luk beta-testen** (kun chef). Beta-testerne ser coming-soon igen inden for 5 minutter, og ingen kan oprette sig med en invitation. Konti og data bevares. Hver invitation kan også tilbagekaldes enkeltvis (**Tilbagekald**) og genaktiveres (**Invitér igen**).
 - Alt logges i `moderation_log` (se Admin → Medarbejder-log). Højst 60 nye invitationer pr. medarbejder pr. time; en invitation kan sendes højst 10 gange og højst én gang i minuttet.
 - Google må ikke indeksere siden (`SEO_INDEKSERING` forbliver slået fra).
-- **Ved lancering skal det slås fra:** luk beta-testen, og slå værnet fra (`update public.beta_indstillinger set kun_inviterede = false;` som migration med Filips ja) samme dag som `TILMELDING_AABEN=true`. Se HUSKELISTE.md under "Lancering".
-- Opret bruger direkte i Supabase-dashboardet virker ikke, så længe værnet er slået til (medmindre e-mailen er inviteret). Firmakonti oprettes som før under Admin → Erhverv.
-- Lokalt på testdatabasen er værnet slået fra, og tilmeldingen er åben. `SIMULER_FOER_LANCERING=true` og `SIMULER_TILMELDING_LUKKET=true` i `.env.local` viser beta-udgaven.
+- **Ved lancering skal invitationsværnet slås fra:** luk beta-testen, og slå værnet fra (`update public.beta_indstillinger set kun_inviterede = false;` som migration med Filips ja) samme dag som `TILMELDING_AABEN=true`. Billet-kravet gælder stadig, og "Allow new users to sign up" forbliver slået fra. Se HUSKELISTE.md under "Lancering".
+- Opret bruger direkte i Supabase-dashboardet virker ikke (ingen billet). Firmakonti oprettes som før under Admin → Erhverv, testbrugere via `supabase/seed.sql`.
+- Lokalt på testdatabasen er invitationsværnet slået fra, og tilmeldingen er åben (billet-kravet gælder også dér efter migrationen). Koden sendes via vores egen mail, som testdatabasen omdirigerer eller logger (`src/lib/resend.ts`). `SIMULER_FOER_LANCERING=true` og `SIMULER_TILMELDING_LUKKET=true` i `.env.local` viser beta-udgaven.
 
 **Ikke anbefalet:** at sætte `TILMELDING_AABEN=true` og `LANCERET=1` midlertidigt. Så kan alle oprette sig og se siden, og en indlogget bruger uden staff-rolle kommer ikke forbi gaten uden `LANCERET` alligevel.
 
@@ -109,8 +175,8 @@ I dag er bidhamr.dk lukket: alle uden staff-rolle ser `/coming-soon`, og oprette
 - **Stripe kører i testmiljøet.** Testpersonerne betaler med testkortet `4242 4242 4242 4242`, en vilkårlig fremtidig udløbsdato og en vilkårlig CVC. Ingen rigtige penge bevæger sig. Tjek før start, at `stripe_tilstand.tilstand = 'test'`, og at Vercel har `sk_test_`/`pk_test_`-nøgler.
 - **Testpersonerne skal aldrig bruge deres rigtige kort, MitID eller CPR-nummer.** Det står tydeligt i guiden.
 - **MitID:** Iduras testmiljø. Hver testperson skal have sin egen testidentitet, fordi én MitID = én konto. Testidentiteten skal være over 18 år.
-  - **[CHEF]** Beslut, om Filip opretter testidentiteterne på forhånd i MitID Test Tool (pp.mitid.dk) og sender brugernavnet til hver testperson, eller om testpersonerne selv opretter en. Anbefaling: Filip opretter dem, så de er 18+ og ikke deles. Skriv en kort trin-for-trin-vejledning med skærmbilleder til guiden, når det er afprøvet.
-- **Udbetalingskonto (Stripe Connect):** Sælgere skal oprette en udbetalingskonto, før de kan oprette en auktion. I testmiljøet bruger de Stripes testoplysninger. **[CHEF]** Afprøv onboardingen i testmiljøet og skriv præcis, hvad testpersonerne skal taste (fx SMS-kode `000000` og testbankkonto `DK5000400440116243`). Opdatér guiden.
+  - Filip opretter testidentiteterne på forhånd i MitID Test Tool (pp.mitid.dk) og sender brugernavnet til hver testperson, så de er 18+ og ikke deles. Trin-for-trin-vejledningen står i guiden. **[CHEF]** Afprøv den (trin 7 øverst), sæt linket til app-simulatoren ind, og ret de steder, der er markeret [TJEK].
+- **Udbetalingskonto (Stripe Connect):** Sælgere skal oprette en udbetalingskonto, før de kan oprette en auktion. I testmiljøet bruger de Stripes testoplysninger (SMS-kode `000000`, IBAN `DK5000400440116243`, "Brug testdata" til ID). Står i guiden. **[CHEF]** Fødselsdato, adresse og ID-nummer i guiden er Stripes almindelige testværdier og er markeret [TJEK] – de er ikke afprøvet i Stripes onboarding for Danmark endnu. Afprøv dem i trin 7.
 - **Fragt:** DAO/Shipmondo kører i sandkassen. Der sendes ingen rigtige pakker. Labelfri-koden er altid `123-456-789`. Sandkassen sender ingen sporingsmeldinger.
   - **[CHEF]** Tjek, at køberen kan trykke "Jeg har modtaget pakken" uden leveringsmelding fra DAO. Ellers skal staff kunne melde pakken leveret under testen, så sager og godkendelse kan testes.
 - **[CHEF] Fakturaer:** Fakturaer på BidHamrs gebyrer må ikke ende i det rigtige regnskab. Tjek, at Dinero kører i testmiljøet (eller er slået fra) under hele testen.
@@ -180,9 +246,10 @@ Fristerne i reglerne (48 timer til betaling, 48 timer til sag, 4 dages ankefrist
 ## 7. Hvordan fejl indsamles
 
 **Kanaler:**
-1. **Fejlformular** (Google Forms, se `docs/BETA-FEJLSKABELON.md`). Hovedkanalen.
-2. **E-mail med skærmbillede** til en beta-adresse. **[CHEF]** Vælg adresse – fx `beta@bidhamr.dk` som gruppe i Google Workspace (se HUSKELISTE.md "Mail på bidhamr.dk"). Google Forms kræver Google-login for at uploade filer, så mail er nemmest til skærmbilleder.
-3. **Kontaktformularen på siden** (`/kontakt`) som reserve. Den lander i `/admin/kontakt`.
+1. **"Meld fejl"-knappen på siden** (bygget 11. okt. 2026). Kun beta-testere og staff ser den, og kun før lancering: en lille grøn knap nederst til højre, som kan minimeres til en fane i højre kant. Formularen spørger om alvor, hvad man gjorde og hvad der skete, hvad man forventede, og op til 3 skærmbilleder (højst 5 MB hver, gemmes som JPEG). Ubrugte billeder slettes efter 24 timer, og alle beta-skærmbilleder slettes efter testen (se afsnit 9). Siden, browseren og skærmstørrelsen kommer automatisk med. Fejlene ses under **Admin → Indstillinger → Beta-fejl** (admin og chef), hvor de kan filtreres på status og alvor og får status og en intern note. Alvor "blokerer" sender en mail til `DRIFT_ALARM_MAIL` (højst 6 i timen, uden testerens tekst). Højst 20 fejl pr. tester pr. time. Kræver migrationen `20261018020000_beta_fejl.sql`.
+2. **Fejlformular** (Google Forms, se `docs/BETA-FEJLSKABELON.md`). Reserve, hvis knappen ikke virker.
+3. **E-mail med skærmbillede** til `beta@bidhamr.dk` (gruppe i Google Workspace se HUSKELISTE.md "Mail på bidhamr.dk"). Google Forms kræver Google-login for at uploade filer, så mail er nemmest til skærmbilleder.
+4. **Kontaktformularen på siden** (`/kontakt`) som reserve. Den lander i `/admin/kontakt`.
 
 **Filip samler alt i ét regneark** med kolonnerne: nr., dato, testperson, side, alvor, beskrivelse, status (ny / rettes / rettet / ikke en fejl), commit.
 
@@ -231,6 +298,7 @@ Morgen og aften, ca. 15 minutter.
 4. **Ryd testdata, før der bruges rigtige penge** – som en migration med Filips ja (følg `docs/GO-LIVE-STRIPE.md`, E2):
    - Handelsdata slettes ikke. Testhandler, betalinger, sager og fakturaer arkiveres og markeres som test, så ingen cron prøver dem igen, og de ikke tæller i DAC7.
    - Auktioner fra testen arkiveres, så de ikke vises offentligt ved lancering.
+   - **Alle beta-skærmbilleder slettes** (hele bucket `beta-fejl-billeder`, via Storage-API'et eller Supabase-dashboardet), når fejlene er rettet. Fejlmeldingerne i `beta_fejl` er ikke handelsdata: browserinfo og tekst kan ryddes samtidig, eller rækkerne kan slettes. Ubrugte billeder (ikke i en fejlmelding) slettes allerede automatisk efter 24 timer af hovedcron'en.
    - Bedømmelser fra testen skjules, så sælgerprofiler starter forfra.
    - Stripe-id'er fra testmiljøet nulstilles (kunder, gemte kort, udbetalingskonti).
    - **[CHEF]** MitID-verificering fra testidentiteter skal nulstilles, så ingen konto bærer mærket "MitID-verificeret" på en testidentitet efter lancering. Beslut, om testpersonernes konti skal blive stående (de skal så verificere sig igen med rigtigt MitID og oprette udbetalingskonto på ny) eller lukkes.
@@ -243,7 +311,8 @@ Morgen og aften, ca. 15 minutter.
 
 - [ ] [CHEF] Valg af A eller B (afsnit 3)
 - [ ] [CHEF] Invitationsliste bygget (11. okt. 2026, migration `20261017010000`), gennemgået af reviewer og testet af tester
-- [ ] Migration `20261017010000_beta_invitationer.sql` kørt i produktion (Filips ja), testpersonerne inviteret, og beta-testen åbnet af chefen
+- [x] Migration `20261017010000_beta_invitationer.sql` kørt i produktion (11. okt. 2026)
+- [ ] Testpersonerne inviteret, og beta-testen åbnet af chefen
 - [ ] [CHEF] Alle nødvendige migrationer kørt i produktion (Filips ja)
 - [ ] [CHEF] Stripe i testmiljø bekræftet (nøgler og `stripe_tilstand`)
 - [ ] [CHEF] Dinero i test eller slået fra. Testhandler tæller ikke i DAC7

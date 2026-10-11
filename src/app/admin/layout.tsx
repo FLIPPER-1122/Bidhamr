@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import BetaFejlKnap from "@/components/betafejl/BetaFejlKnap";
 import { hentBruger, hentMinRolle } from "@/lib/supabase/bruger";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import { hentAntalUbetalte } from "@/app/actions/adminActions";
@@ -91,6 +93,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">
         {children}
       </main>
+      {/* "Meld fejl" til staff før lancering (ellers intet). */}
+      <Suspense fallback={null}>
+        <BetaFejlKnap />
+      </Suspense>
     </div>
   );
 }

@@ -8,17 +8,21 @@ import type { gemNyAdgangskode } from "@/app/actions/auth";
 import { kaldOffentligHandling } from "@/lib/offentligHandling";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
-import { FORMULAR_FEJL } from "@/components/konto/felter";
+import { FELT, FORMULAR_FEJL, LABEL } from "@/components/konto/felter";
 import { ERHVERV_VAELG_ADGANGSKODE as V } from "@/lib/tekster/erhverv";
 
 // velkommen: kommer fra velkomstmailen til en ny firmakonto
 // (src/lib/mails/erhverv.ts) - så hedder det "Vælg din adgangskode".
 // signup: e-mailen er lige bekræftet med koden, og brugeren skal vælge sin
-// adgangskode (src/app/actions/auth.ts, verificerSignupKode).
+// adgangskode og skrive sit navn (src/app/actions/auth.ts, verificerSignupKode):
+// navnet fra oprettelsen bruges ikke, når den, der har koden, ikke er den
+// samme browser (det kunne være en anden, der oprettede kontoen).
 export default function NulstilForm({ velkommen = false, signup = false }: { velkommen?: boolean; signup?: boolean }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [passwordGentag, setPasswordGentag] = useState("");
+  const [fornavn, setFornavn] = useState("");
+  const [efternavn, setEfternavn] = useState("");
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +54,15 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
     e.preventDefault();
     setError(null);
 
-    const v = vurderAdgangskode(password, { email });
+    if (signup && !fornavn.replace(/\s+/g, " ").trim()) {
+      setError("Skriv dit fornavn.");
+      return;
+    }
+    if (signup && !efternavn.replace(/\s+/g, " ").trim()) {
+      setError("Skriv dit efternavn.");
+      return;
+    }
+    const v = vurderAdgangskode(password, { email, navn: signup ? [fornavn, efternavn] : [] });
     if (!v.ok) {
       setError(v.fejl);
       return;
@@ -65,6 +77,10 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
     // almindelig bruger, mens siden er lukket (gaten i middleware.ts).
     const fd = new FormData();
     fd.set("password", password);
+    if (signup) {
+      fd.set("fornavn", fornavn);
+      fd.set("efternavn", efternavn);
+    }
     const svar = await kaldOffentligHandling<Awaited<ReturnType<typeof gemNyAdgangskode>>>("ny-adgangskode", fd);
     setLoading(false);
 
@@ -90,7 +106,7 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
             {velkommen
               ? V.tekst
               : signup
-                ? "Din e-mail er bekræftet. Vælg den adgangskode, du vil logge ind med. Bagefter logger du ind med den."
+                ? "Din e-mail er bekræftet. Skriv dit navn, og vælg den adgangskode, du vil logge ind med. Bagefter logger du ind med den."
                 : "Vælg en ny adgangskode til din konto."}
           </p>
 
@@ -111,6 +127,40 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
           )}
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            {signup && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="fornavn" className={LABEL}>
+                    Fornavn
+                  </label>
+                  <input
+                    id="fornavn"
+                    type="text"
+                    autoComplete="given-name"
+                    required
+                    maxLength={100}
+                    value={fornavn}
+                    onChange={(e) => setFornavn(e.target.value)}
+                    className={`mt-1.5 ${FELT}`}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="efternavn" className={LABEL}>
+                    Efternavn
+                  </label>
+                  <input
+                    id="efternavn"
+                    type="text"
+                    autoComplete="family-name"
+                    required
+                    maxLength={100}
+                    value={efternavn}
+                    onChange={(e) => setEfternavn(e.target.value)}
+                    className={`mt-1.5 ${FELT}`}
+                  />
+                </div>
+              </div>
+            )}
             <AdgangskodeFelt
               id="password"
               label={velkommen ? V.felt : "Ny adgangskode"}

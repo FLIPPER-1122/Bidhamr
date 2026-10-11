@@ -25,7 +25,12 @@ export async function betaAaben(): Promise<boolean> {
   }
 }
 
-export type AuthBruger = { findes: false } | { findes: true; id: string; bekraeftet: boolean };
+// inviteret: auth.users.invited_at er sat (fx en firmakonto fra Admin -> Erhverv).
+// firma: users.konto_type = 'erhverv'. Begge false, hvis migrationen
+// 20261018010000 ikke er kørt endnu (felterne mangler).
+export type AuthBruger =
+  | { findes: false }
+  | { findes: true; id: string; bekraeftet: boolean; inviteret: boolean; firma: boolean };
 
 // Findes der en auth-bruger med e-mailen (slået op i auth.users), og er den
 // bekræftet? null = kunne ikke tjekkes (kalderen rører så intet).
@@ -36,9 +41,11 @@ export async function betaAuthBruger(email: string): Promise<AuthBruger | null> 
       console.error("beta_auth_bruger:", error.message);
       return null;
     }
-    const d = (data ?? {}) as { findes?: unknown; id?: unknown; bekraeftet?: unknown };
+    const d = (data ?? {}) as { findes?: unknown; id?: unknown; bekraeftet?: unknown; inviteret?: unknown; firma?: unknown };
     if (d.findes === false) return { findes: false };
-    if (d.findes === true && typeof d.id === "string") return { findes: true, id: d.id, bekraeftet: d.bekraeftet === true };
+    if (d.findes === true && typeof d.id === "string") {
+      return { findes: true, id: d.id, bekraeftet: d.bekraeftet === true, inviteret: d.inviteret === true, firma: d.firma === true };
+    }
     return null;
   } catch (err) {
     console.error("beta_auth_bruger kastede:", err);

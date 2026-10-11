@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import FavoritterProvider from "@/components/FavoritterProvider";
 import MitIDResultatBoks from "@/components/mitid/MitIDResultatBoks";
 import VilkaarVindue from "@/components/vilkaar/VilkaarVindue";
+import BetaFejlKnap from "@/components/betafejl/BetaFejlKnap";
 
 export default function AppLayout({
   children,
@@ -28,6 +29,10 @@ export default function AppLayout({
           accepteret den aktuelle version) - efter cookie-banneret. */}
       <Suspense fallback={null}>
         <VilkaarVindue />
+      </Suspense>
+      {/* "Meld fejl" til beta-testere og staff før lancering (ellers intet). */}
+      <Suspense fallback={null}>
+        <BetaFejlKnap />
       </Suspense>
     </FavoritterProvider>
   );

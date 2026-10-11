@@ -2,13 +2,15 @@ import "server-only";
 
 // Den adgangskode, brugeren vælger ved oprettelse, sættes FØRST på kontoen,
 // når e-mailen er bekræftet med koden (verificerSignupKode i
-// src/app/actions/auth.ts). Indtil da ligger den krypteret i en kort cookie
-// i brugerens egen browser.
+// src/app/actions/auth.ts -> bekraeftKode i src/lib/kontoOprettelse.ts).
+// Indtil da ligger den krypteret i en kort cookie i brugerens egen browser.
+// Gælder både åben og lukket tilmelding. Appen har ingen cookie og sender
+// adgangskoden igen til POST /api/konto/bekraeft (docs/APP-SIGNUP.md).
 //
 // Hvorfor (review 11. okt. 2026): ellers kan en angriber, der kender en
 // (inviteret) e-mail, oprette kontoen først med sin egen adgangskode - eller
 // bagefter overskrive offerets - og logge ind, når offeret bekræfter. Nu
-// bestemmes adgangskoden kun af den, der har koden fra mailen: beta-kontoen
+// bestemmes adgangskoden kun af den, der har koden fra mailen: kontoen
 // oprettes med en tilfældig adgangskode, og den valgte sættes med
 // updateUser i sessionen fra verifyOtp.
 //
@@ -94,14 +96,23 @@ function fraBase64Url(tekst: string): Uint8Array<ArrayBuffer> | null {
 
 const aad = (email: string) => new TextEncoder().encode(`bh-signup|${email.toLowerCase()}`);
 
-// Krypterer og gemmer adgangskoden til e-mailen. false = kunne ikke (ingen nøgle).
-export async function gemVentendeAdgangskode(email: string, adgangskode: string): Promise<boolean> {
+// Det, der venter på bekræftelsen: den valgte adgangskode og navn og
+// vilkårsaccept (review 11. okt. 2026, V2) - så de kommer fra den, der har
+// koden, og ikke fra den, der først oprettede kontoen.
+export type VentendeSignup = {
+  adgangskode: string;
+  profil: { fornavn: string; efternavn: string; vilkaarVersion: string };
+};
+
+// Krypterer og gemmer det ventende til e-mailen. false = kunne ikke (ingen nøgle).
+export async function gemVentendeAdgangskode(email: string, ventende: VentendeSignup): Promise<boolean> {
   const noegle = await hentNoegle();
   if (!noegle) return false;
   const e = email.toLowerCase();
   const iv = crypto.getRandomValues(new Uint8Array(12));
+  const { fornavn: f, efternavn: l, vilkaarVersion: v } = ventende.profil;
   const klar = new TextEncoder().encode(
-    JSON.stringify({ e, p: adgangskode, x: Math.floor(Date.now() / 1000) + LEVETID_SEKUNDER }),
+    JSON.stringify({ e, p: ventende.adgangskode, f, l, v, x: Math.floor(Date.now() / 1000) + LEVETID_SEKUNDER }),
   );
   const krypteret = new Uint8Array(
     await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad(e) }, noegle, klar),
@@ -119,9 +130,9 @@ export async function gemVentendeAdgangskode(email: string, adgangskode: string)
   return true;
 }
 
-// Adgangskoden, hvis cookien er gyldig, ikke udløbet og hører til netop
+// Det ventende, hvis cookien er gyldig, ikke udløbet og hører til netop
 // denne e-mail. Ellers null.
-export async function hentVentendeAdgangskode(email: string): Promise<string | null> {
+export async function hentVentendeAdgangskode(email: string): Promise<VentendeSignup | null> {
   const vaerdi = (await cookies()).get(VENTENDE_ADGANGSKODE_COOKIE)?.value;
   if (!vaerdi) return null;
   const bytes = fraBase64Url(vaerdi);
@@ -135,17 +146,18 @@ export async function hentVentendeAdgangskode(email: string): Promise<string | n
       noegle,
       bytes.slice(12),
     );
-    const data = JSON.parse(new TextDecoder().decode(klar)) as { e?: unknown; p?: unknown; x?: unknown };
+    const data = JSON.parse(new TextDecoder().decode(klar)) as Record<string, unknown>;
     if (data.e !== e || typeof data.p !== "string" || typeof data.x !== "number") return null;
     if (data.x <= Math.floor(Date.now() / 1000)) return null;
-    return data.p;
+    if (typeof data.f !== "string" || typeof data.l !== "string" || typeof data.v !== "string") return null;
+    return { adgangskode: data.p, profil: { fornavn: data.f, efternavn: data.l, vilkaarVersion: data.v } };
   } catch {
     return null;
   }
 }
 
 // Er der allerede en gyldig ventende adgangskode til netop denne e-mail i
-// browseren? (Så kan den opdateres uden en ny kode - se opretBetaKonto.)
+// browseren? (Så kan den opdateres uden en ny kode - se opretKonto.)
 export async function harVentendeAdgangskode(email: string): Promise<boolean> {
   return (await hentVentendeAdgangskode(email)) !== null;
 }

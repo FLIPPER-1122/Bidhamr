@@ -1,6 +1,7 @@
-// Mails til beta-testen (docs/BETA-TEST.md). Sendes via Resend
-// (sendHandelMailDetaljer) - ikke via Supabase - fordi tilmeldingen er lukket
-// for alle andre end inviterede.
+// Mails til beta-testen (docs/BETA-TEST.md) og koden ved oprettelse af en
+// konto. Sendes via Resend (sendHandelMailDetaljer) - ikke via Supabase -
+// fordi kontoen oprettes på serveren med generateLink, som ingen mail sender
+// (src/lib/kontoOprettelse.ts).
 import { bygMail, escapeHtml, sideUrl } from "./layout";
 
 export const BETA_MAIL = {
@@ -53,7 +54,7 @@ export function betaInvitationMail(input: { email: string; harKonto: boolean }) 
   };
 }
 
-// Bekræftelseskoden ved oprettelse under beta (samme indhold som
+// Bekræftelseskoden ved oprettelse - åben og lukket tilmelding (samme indhold som
 // supabase/templates/confirmation.html). Koden kommer fra
 // auth.admin.generateLink({ type: "signup" }) og indtastes på /tjek-indbakke.
 export function betaKodeMail(input: { email: string; kode: string }) {
