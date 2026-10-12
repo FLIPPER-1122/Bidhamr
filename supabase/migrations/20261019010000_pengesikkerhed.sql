@@ -251,7 +251,8 @@ end $$;
 
 select pg_temp.flet_check('public.moderation_log'::regclass, 'moderation_log_handling_check', 'handling',
   array['noedstop_udbetalinger', 'noedstop_betalinger', 'udbetaling_godkendt', 'bidhamr_daekker',
-        'udbetaling_frosset', 'udbetaling_frysning_ophaevet', 'handel_frigivet']);
+        'udbetaling_frosset', 'udbetaling_frysning_ophaevet', 'handel_frigivet',
+        'udbetaling_godkendelse_nulstillet', 'sag_aabnet']);
 select pg_temp.flet_check('public.moderation_log'::regclass, 'moderation_log_maal_type_check', 'maal_type',
   array['system']);
 
@@ -927,10 +928,55 @@ grant execute on function public.betaling_udbetaling_godkend(uuid, uuid, text) t
 
 -- Chefens godkendelse gælder kun den afgørelse, han så. Åbnes der en sag på
 -- handlen (ny sag, genåbnet sag, staffs markering trades.sag_aaben) eller
--- en anke, nulstilles godkendelsen på betalinger, der endnu ikke er sendt
--- til udbetaling - så en ny afgørelse kræver en ny godkendelse. Triggere
--- frem for rettelser i de enkelte funktioner: de fanger alle veje
--- (sag_opret, sag_genaabn, admin, fremtidige funktioner).
+-- en anke, nulstilles godkendelsen - så en ny afgørelse kræver en ny
+-- godkendelse. Kun betalinger, der FAKTISK er udbetalt, undtages
+-- (stripe_transfer_id, eller sælgerudbetalingen er 'paid' med et payout-id):
+-- saelger_udbetaling_id alene er ikke nok, for det sættes tilbage til null,
+-- når en claim afvises, eller en payout fejler/annulleres
+-- (saelger_udbetaling_afvist, saelger_udbetaling_spejl). Er betalingen midt
+-- i en claim, stopper _i_claim med 'sag' og derefter 'kraever_godkendelse'.
+-- Triggere frem for rettelser i de enkelte funktioner: de fanger alle veje
+-- (sag_opret, sag_genaabn, sag_anke_indgiv, admin_sag_aabn, fremtidige
+-- funktioner). Alle de veje låser betalingen før handlen (samme rækkefølge
+-- som betaling_udbetaling_godkend), så triggerens opdatering af betalinger
+-- giver ingen deadlock. Nulstillingen logges i moderation_log.
+create or replace function public.betalinger_godkendelse_nulstil_kerne(p_trade uuid, p_aarsag text)
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  n integer;
+begin
+  if p_trade is null then return 0; end if;
+  with x as (
+    update public.betalinger b
+       set udbetaling_godkendt_kl = null, udbetaling_godkendt_af = null, opdateret = now()
+     where b.trade_id = p_trade
+       and b.udbetaling_godkendt_kl is not null
+       and b.stripe_transfer_id is null
+       and not exists (select 1 from public.saelger_udbetalinger u
+                        where u.id = b.saelger_udbetaling_id
+                          and u.stripe_payout_id is not null
+                          and u.status = 'paid')
+    returning b.trade_id, b.seller_id
+  ), l as (
+    insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+    select public.bidhamr_system_id(), 'udbetaling_godkendelse_nulstillet', 'handel', x.trade_id, x.seller_id,
+           left('Chefens godkendelse af udbetalingen er nulstillet: ' || coalesce(p_aarsag, 'ny sag')
+                || ' - en ny afgørelse kræver en ny godkendelse', 2000)
+      from x
+    returning 1
+  )
+  select count(*) into n from l;
+  return n;
+end;
+$fn$;
+revoke all on function public.betalinger_godkendelse_nulstil_kerne(uuid, text) from public, anon, authenticated;
+
+-- Fælles triggerfunktion. TG_ARGV[0]: årsagen til loggen. På trades er
+-- handlens id new.id, ellers new.trade_id.
 create or replace function public.betalinger_godkendelse_nulstil()
 returns trigger
 language plpgsql
@@ -938,39 +984,26 @@ security definer
 set search_path = ''
 as $fn$
 begin
-  update public.betalinger
-     set udbetaling_godkendt_kl = null, udbetaling_godkendt_af = null, opdateret = now()
-   where trade_id = new.trade_id
-     and udbetaling_godkendt_kl is not null
-     and saelger_udbetaling_id is null
-     and stripe_transfer_id is null;
+  -- To sætninger: plpgsql forbereder hver for sig, og trades har ingen
+  -- trade_id-kolonne.
+  if tg_table_name = 'trades' then
+    perform public.betalinger_godkendelse_nulstil_kerne(new.id, tg_argv[0]);
+  else
+    perform public.betalinger_godkendelse_nulstil_kerne(new.trade_id, tg_argv[0]);
+  end if;
   return null;
 end;
 $fn$;
 revoke all on function public.betalinger_godkendelse_nulstil() from public, anon, authenticated;
 
-create or replace function public.betalinger_godkendelse_nulstil_handel()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $fn$
-begin
-  update public.betalinger
-     set udbetaling_godkendt_kl = null, udbetaling_godkendt_af = null, opdateret = now()
-   where trade_id = new.id
-     and udbetaling_godkendt_kl is not null
-     and saelger_udbetaling_id is null
-     and stripe_transfer_id is null;
-  return null;
-end;
-$fn$;
-revoke all on function public.betalinger_godkendelse_nulstil_handel() from public, anon, authenticated;
+-- Tidligere udgave (kun testdatabasen) havde en særskilt funktion til trades.
+drop trigger if exists trades_godkendelse_nulstil on public.trades;
+drop function if exists public.betalinger_godkendelse_nulstil_handel();
 
 drop trigger if exists sager_godkendelse_nulstil_ny on public.sager;
 create trigger sager_godkendelse_nulstil_ny
   after insert on public.sager
-  for each row execute function public.betalinger_godkendelse_nulstil();
+  for each row execute function public.betalinger_godkendelse_nulstil('der er åbnet en sag på handlen');
 
 -- Genåbning (sag_genaabn sætter status tilbage til 'aaben') eller anden vej
 -- tilbage til åben / afventer retur.
@@ -979,19 +1012,63 @@ create trigger sager_godkendelse_nulstil_aaben
   after update of status on public.sager
   for each row
   when (new.status in ('aaben', 'afventer_retur') and old.status is distinct from new.status)
-  execute function public.betalinger_godkendelse_nulstil();
+  execute function public.betalinger_godkendelse_nulstil('sagen er genåbnet');
 
 drop trigger if exists sag_anker_godkendelse_nulstil on public.sag_anker;
 create trigger sag_anker_godkendelse_nulstil
   after insert on public.sag_anker
-  for each row execute function public.betalinger_godkendelse_nulstil();
+  for each row execute function public.betalinger_godkendelse_nulstil('afgørelsen er anket');
 
-drop trigger if exists trades_godkendelse_nulstil on public.trades;
 create trigger trades_godkendelse_nulstil
   after update of sag_aaben on public.trades
   for each row
   when (new.sag_aaben and not coalesce(old.sag_aaben, false))
-  execute function public.betalinger_godkendelse_nulstil_handel();
+  execute function public.betalinger_godkendelse_nulstil('handlen er markeret som sag');
+
+-- Staff markerer en handel som sag (Admin → Handler → "Åbn sag"). Før en
+-- direkte update på trades fra serveren - det låste handlen før betalingen
+-- (modsat betaling_udbetaling_godkend og sag_*), og triggeren ovenfor
+-- opdaterer betalingen: risiko for deadlock. Låserækkefølge: betaling,
+-- handel. Medarbejdere må godt - det flytter ingen penge.
+-- Kode: ok | ugyldig | ingen_adgang | aarsag_mangler | aarsag_for_lang |
+--   ikke_fundet | inhabil | afsluttet
+create or replace function public.admin_sag_aabn(p_trade uuid, p_medarbejder uuid, p_aarsag text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  t      record;
+  v_tekst text := nullif(btrim(coalesce(p_aarsag, '')), '');
+begin
+  if p_trade is null or p_medarbejder is null then return jsonb_build_object('kode', 'ugyldig'); end if;
+  if not public.staff_chat_har_rolle(p_medarbejder, 'medarbejder') then
+    return jsonb_build_object('kode', 'ingen_adgang');
+  end if;
+  if v_tekst is null then return jsonb_build_object('kode', 'aarsag_mangler'); end if;
+  if char_length(v_tekst) > 2000 then return jsonb_build_object('kode', 'aarsag_for_lang'); end if;
+
+  perform 1 from public.betalinger where trade_id = p_trade order by id for update;
+  select * into t from public.trades where id = p_trade for update;
+  if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
+  if public.penge_inhabil(p_medarbejder, t.buyer_id, t.seller_id) then
+    return jsonb_build_object('kode', 'inhabil');
+  end if;
+  if t.status not in ('betaling_modtaget', 'pakke_sendt', 'modtaget') then
+    return jsonb_build_object('kode', 'afsluttet');
+  end if;
+
+  update public.trades
+     set sag_aaben = true, sag_note = v_tekst, sag_aabnet_af = p_medarbejder, sag_aabnet_at = now()
+   where id = t.id;
+  insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+  values (p_medarbejder, 'sag_aabnet', 'handel', t.id, null, v_tekst);
+  return jsonb_build_object('kode', 'ok', 'trade_id', t.id);
+end;
+$fn$;
+revoke all on function public.admin_sag_aabn(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.admin_sag_aabn(uuid, uuid, text) to service_role;
 
 -- ===========================================================================
 -- 13. Frysning af sælgerens udbetalinger (fremmed udbetaling / plan ændret)

@@ -269,6 +269,9 @@ const GODKEND_FEJL: Record<string, string> = {
 // Hvad der ellers holder udbetalingen tilbage (betaling_udbetaling_blokeret),
 // når chefen prøver at godkende for tidligt (kode andre_hindringer).
 const HINDRING: Record<string, string> = {
+  ikke_fundet: "betalingen blev ikke fundet",
+  ikke_betalt: "betalingen er ikke gennemført",
+  allerede_udbetalt: "pengene er allerede sendt til udbetaling",
   sag: "der er en sag eller anke på handlen, som ikke er færdig",
   sag_aaben: "handlen er markeret som sag",
   indsigelse: "køberen har lavet en indsigelse",
