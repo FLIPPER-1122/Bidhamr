@@ -23,6 +23,13 @@ export const BESKYTTELSE_MAKS_OERE = 25000;
 // (oprettet før 20261012010000 - databasen gav dem samme 35 kr.).
 export const FRAGT_OERE = 3500;
 
+// Chefens beløbsgrænse (Filip, 12. okt. 2026): 10.000 kr. Fra og med
+// grænsen kræver en admin-frigivelse chefen (købers samlede betaling), og en
+// udbetaling til sælgeren venter på chefens godkendelse. Under grænsen må
+// admin selv frigive. Databasen afgør det: public.chef_beloebsgraense_oere()
+// (20261019010000_pengesikkerhed.sql) - samme tal her til lister og tekster.
+export const CHEF_BELOEBSGRAENSE_OERE = 1_000_000;
+
 // Halv op til nærmeste øre, som Postgres' round() på positive tal.
 function procentAf(oere: number, procent: number): number {
   return Math.round((oere * procent) / 100);

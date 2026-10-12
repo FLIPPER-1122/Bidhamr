@@ -1,6 +1,6 @@
 "use server";
 
-// Admin → Penge (kun chef): nødstop, godkendelse af udbetalinger over
+// Admin → Penge (kun chef): nødstop, godkendelse af udbetalinger fra
 // 10.000 kr., frosne sælgere og "BidHamr dækker" (sikkerhedsnet A,
 // 20261019010000_pengesikkerhed.sql). Databasen tjekker rolle og
 // inhabilitet igen og logger i moderation_log.
@@ -8,6 +8,7 @@
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { assertRole } from "@/lib/adminAuth";
+import { CHEF_BELOEBSGRAENSE_OERE } from "@/lib/betaling/beregn";
 import { glemNoedstop, hentNoedstop, type Noedstop } from "@/lib/betaling/noedstop";
 import { logDriftFejl } from "@/lib/drift";
 
@@ -197,7 +198,7 @@ export async function hentPengesikkerhed() {
         .not("frigivet_kl", "is", null)
         .is("saelger_udbetaling_id", null)
         .is("udbetaling_godkendt_kl", null)
-        .gt("udbetaling_oere", 1_000_000)
+        .gte("udbetaling_oere", CHEF_BELOEBSGRAENSE_OERE)
         .order("frigivet_kl", { ascending: true })
         .limit(100),
       admin
