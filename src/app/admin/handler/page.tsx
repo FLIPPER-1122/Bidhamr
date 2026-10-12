@@ -99,7 +99,7 @@ function dageSiden(iso: string) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 }
 
-export default async function AdminHandler({
+async function HandlerIndhold({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string; vis?: string }>;
@@ -363,26 +363,10 @@ export default async function AdminHandler({
   ];
 
   return (
-    <AdminSide>
-      <AdminSideHoved
-        titel="Handler"
-        forklaring="Alle handler mellem køber og sælger. Brug siden, når en handel går i stå – fx hvis varen ikke er sendt."
-        hoejre={
-          <span className="text-sm text-tekst-daempet">
-            {antalVist} {enhed}
-          </span>
-        }
-        hjaelp={
-          <p>
-            Klager fra køberen behandles under{" "}
-            <Link href="/admin/sager" className="font-medium text-groen hover:underline">
-              Sager
-            </Link>
-            . Markerer du en handel her, fryses pengene, indtil markeringen fjernes. Hænger en handel, kan du sende en
-            påmindelse direkte fra rækken.
-          </p>
-        }
-      />
+    <div className="space-y-5">
+      <p className="text-sm text-tekst-daempet">
+        {antalVist} {enhed}
+      </p>
 
       <AdminFaner faner={faner} aktiv={fane} label="Handler" />
 
@@ -556,6 +540,44 @@ export default async function AdminHandler({
           }
         />
       )}
+    </div>
+  );
+}
+
+// Sidehovedet vises med det samme; listen (de tunge opslag) streames bagefter,
+// så første visning ikke venter på databasen.
+export default function AdminHandler(props: { searchParams: Promise<{ q?: string; vis?: string }> }) {
+  return (
+    <AdminSide>
+      <AdminSideHoved
+        titel="Handler"
+        forklaring="Alle handler mellem køber og sælger. Brug siden, når en handel går i stå – fx hvis varen ikke er sendt."
+        hjaelp={
+          <p>
+            Klager fra køberen behandles under{" "}
+            <Link href="/admin/sager" className="font-medium text-groen hover:underline">
+              Sager
+            </Link>
+            . Markerer du en handel her, fryses pengene, indtil markeringen fjernes. Hænger en handel, kan du sende en
+            påmindelse direkte fra rækken.
+          </p>
+        }
+      />
+      <Suspense fallback={<HandlerSkelet />}>
+        <HandlerIndhold {...props} />
+      </Suspense>
     </AdminSide>
+  );
+}
+
+function HandlerSkelet() {
+  return (
+    <div aria-busy="true" aria-label="Indlæser handler" className="space-y-4">
+      <div className="h-11 animate-pulse rounded-lg bg-skelet/60" />
+      <div className="h-11 animate-pulse rounded-lg bg-skelet/50" />
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="h-24 animate-pulse rounded-[14px] bg-skelet/40" />
+      ))}
+    </div>
   );
 }

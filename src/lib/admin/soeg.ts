@@ -156,11 +156,14 @@ export async function soegErhverv(admin: Admin, raa: string): Promise<SoegTraef[
   const nummer = /^#?\d{1,9}$/.test(q) ? Number(q.replace("#", "")) : null;
   const tom = Promise.resolve({ data: [] as never[], error: null });
 
+  // Et rent, kort tal ("4", "#12") er et klagenummer - så søges der ikke i
+  // navne (ellers ville "1" ramme alle firmaer med et 1 i navnet).
+  const kunNummer = /^#?\d{1,4}$/.test(q);
   const [firmaNavn, firmaCvr, henvNavn, henvEmail, henvCvr, klager] = (await Promise.all([
-    admin.from("firmaer").select("id, firmanavn, cvr").ilike("firmanavn", m).limit(MAKS),
+    kunNummer ? tom : admin.from("firmaer").select("id, firmanavn, cvr").ilike("firmanavn", m).limit(MAKS),
     cvr.length >= 4 ? admin.from("firmaer").select("id, firmanavn, cvr").ilike("cvr", `%${cvr}%`).limit(MAKS) : tom,
-    admin.from("erhverv_henvendelser").select("id, firmanavn, cvr, status").ilike("firmanavn", m).limit(MAKS),
-    admin.from("erhverv_henvendelser").select("id, firmanavn, cvr, status").ilike("email", m).limit(MAKS),
+    kunNummer ? tom : admin.from("erhverv_henvendelser").select("id, firmanavn, cvr, status").ilike("firmanavn", m).limit(MAKS),
+    kunNummer ? tom : admin.from("erhverv_henvendelser").select("id, firmanavn, cvr, status").ilike("email", m).limit(MAKS),
     cvr.length >= 4 ? admin.from("erhverv_henvendelser").select("id, firmanavn, cvr, status").ilike("cvr", `%${cvr}%`).limit(MAKS) : tom,
     nummer !== null ? admin.from("erhverv_klager").select("id, nummer, status").eq("nummer", nummer).limit(1) : tom,
   ])).map((r, i) => tjek(["firmaer (navn)", "firmaer (CVR)", "henvendelser (navn)", "henvendelser (e-mail)", "henvendelser (CVR)", "klager"][i], r));
