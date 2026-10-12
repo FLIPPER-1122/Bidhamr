@@ -335,6 +335,14 @@ export function refusionIGangSiden(
   return b?.refusion_anmodet_kl ?? b?.bidhamr_daekker_kl ?? null;
 }
 
+// En refusion "hænger" først, når både anmodningen i databasen OG den
+// nyeste ikke-fejlede refusion hos Stripe (Unix-sekunder, null = ingen) er
+// over et døgn gamle - en refusion, Stripe lige har oprettet, er i gang.
+export function refusionHaenger(siden: string | null, nyesteStripe: number | null, nu = Date.now()): boolean {
+  if (!siden || nu - new Date(siden).getTime() <= DAG) return false;
+  return nyesteStripe === null || nu - nyesteStripe * 1000 > DAG;
+}
+
 // Højst maks konti, startende ved et offset, der flytter sig for hver kørsel.
 export function kontoUdvalg<T>(konti: T[], maks: number, nr: number): T[] {
   if (konti.length <= maks) return konti;
@@ -598,6 +606,7 @@ async function afstemBetalinger(
       noegle: `ukendt-betaling:${pi.id}`,
       alarmNoegle: `ukendt-pi:${pi.id}`,
       type: "ukendt_betaling",
+      tilstand: pi.status,
       stripeId: pi.id,
       beskrivelse: `PaymentIntent ${pi.id} (${pi.status}) findes hos Stripe, men hverken som handel, kasseret betaling, forkert beløb eller abonnement i databasen.`,
       beloebStripe: pi.amount_received || pi.amount,
@@ -701,6 +710,7 @@ async function afstemRefusioner(
   const charges = refusioner.map((x) => id(x.charge as string | { id: string } | null)).filter((x): x is string => !!x);
   const vedCharge = await betalingerVed(admin, "stripe_charge_id", charges);
   const afv = await afvigelsesRaekker(admin, "stripe_charge_id", charges);
+  const udenom = new Set<string>();
   for (const x of refusioner) {
     tjekTid(budget);
     const ch = id(x.charge as string | { id: string } | null);
@@ -716,6 +726,7 @@ async function afstemRefusioner(
         if (kunde && firma.has(kunde) && !pi.metadata?.betaling_id) continue;
       }
     }
+    if (ch) udenom.add(ch);
     await registrer({
       noegle: `refusion:${x.id}`,
       type: "refusion_udenom",
@@ -736,15 +747,20 @@ async function afstemRefusioner(
     if (!b && !a) continue;
     const forventet = forventetRefunderet(b, a);
     let sum = 0;
+    let nyeste: number | null = null;
     for await (const x of stripe.refunds.list({ charge: ch, limit: 100 }, KALD)) {
-      if (x.status !== "failed" && x.status !== "canceled") sum += x.amount;
+      if (x.status === "failed" || x.status === "canceled") continue;
+      sum += x.amount;
+      nyeste = Math.max(nyeste ?? 0, x.created);
     }
     if (forventet === null) {
       // Refusion/dækning i gang: kan ikke afstemmes endnu. Har den været i
       // gang i over et døgn, er den en afvigelse for sig selv (hellere end at
       // regne med 0 og melde et forkert beløb).
+      // En refusion uden om BidHamr (fx delvis i dashboardet) er allerede
+      // meldt som refusion_udenom - ikke også som hængende.
       const siden = refusionIGangSiden(b, a);
-      if (siden && Date.now() - new Date(siden).getTime() > DAG) {
+      if (!udenom.has(ch) && refusionHaenger(siden, nyeste)) {
         await registrer({
           noegle: `refusion-haenger:${ch}`,
           type: "refusion_haenger",
@@ -858,6 +874,7 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
           noegle: `payout-negativ:${p.id}`,
           alarmNoegle: `negativ-payout:${p.id}`,
           type: "udbetaling_negativ",
+          tilstand: p.status,
           stripeId: p.id,
           stripeKonto: konto,
           beskrivelse: `Stripe har hentet ${(-Number(p.amount) / 100).toFixed(2)} kr. fra sælgerkonto ${konto}s bank (payout ${p.id}, '${p.status}') for at dække et underskud på kontoen. Kontrollér, hvorfor saldoen var negativ (refusion eller indsigelse).`,
@@ -878,6 +895,7 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
             noegle: `payout-ukendt:${p.id}`,
             alarmNoegle: `fremmed-payout:${p.id}`,
             type: "udbetaling_ukendt",
+            tilstand: p.status,
             stripeId: p.id,
             stripeKonto: konto,
             beskrivelse: `Payout ${p.id} (${p.status}) på sælgerkonto ${konto} er ikke lavet af BidHamr (findes ikke i saelger_udbetalinger).`,

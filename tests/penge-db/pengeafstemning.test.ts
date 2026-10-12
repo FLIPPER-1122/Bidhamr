@@ -13,6 +13,7 @@ import {
   forventetGebyrRefunderet,
   forventetRefunderet,
   kontoUdvalg,
+  refusionHaenger,
   refusionIGangSiden,
   forventetTilbagefoert,
   payoutAfstemmes,
@@ -228,6 +229,16 @@ describe("kørslen", () => {
     await db.query("select public.admin_penge_afvigelse_loes($1, $2, 'Kendt')", [CHEF, dA.id]);
     expect((await regD("needs_response")).svar).toBe("kendt");
     expect((await regD("lost")).svar).toBe("genaabnet");
+    await db.query("select public.penge_afstemning_afslut($1, true, null, null)", [k]);
+  });
+
+  it("gammel kode uden p_tilstand kan stadig registrere (default null)", async () => {
+    const k = (await en<{ id: string }>("select public.penge_afstemning_claim(0) as id")).id;
+    const r = await en<{ svar: string }>(
+      "select public.penge_afvigelse_registrer($1, 'gammel:1', 'ukendt_betaling', 'pi_g', null, null, 'Gammel kode', 100, null) as svar",
+      [k],
+    );
+    expect(r.svar).toBe("ny");
     await db.query("select public.penge_afstemning_afslut($1, true, null, null)", [k]);
   });
 
@@ -595,6 +606,15 @@ describe("refunderet i alt pr. charge (dobbelt-refusion) og kontorotation", () =
     expect(refusionIGangSiden({ refusion_anmodet_kl: null, bidhamr_daekker_kl: "t2" }, null)).toBe("t2");
     expect(refusionIGangSiden(null, { refunderet_kl: null, oprettet: "t3" })).toBe("t3");
     expect(refusionIGangSiden(null, { refunderet_kl: "x", oprettet: "t3" })).toBeNull();
+    // Hænger kun, når både anmodningen og den nyeste refusion hos Stripe er over et døgn gamle.
+    const nu = Date.parse("2026-10-12T12:00:00Z");
+    const gammel = "2026-10-10T12:00:00Z";
+    const sekunder = (iso: string) => Math.floor(Date.parse(iso) / 1000);
+    expect(refusionHaenger(gammel, null, nu)).toBe(true);
+    expect(refusionHaenger(gammel, sekunder("2026-10-10T13:00:00Z"), nu)).toBe(true);
+    expect(refusionHaenger(gammel, sekunder("2026-10-12T11:00:00Z"), nu)).toBe(false);
+    expect(refusionHaenger("2026-10-12T10:00:00Z", null, nu)).toBe(false);
+    expect(refusionHaenger(null, null, nu)).toBe(false);
     // En dobbelt refusion på 590 kr. (2 x 590) afviger fra de forventede 590 kr.
     expect(2 * 59_000).not.toBe(forventetRefunderet({ ...basis, status: "refunderet" }, null));
   });

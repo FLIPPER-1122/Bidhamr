@@ -336,7 +336,9 @@ create or replace function public.penge_afvigelse_registrer(
   p_beskrivelse  text,
   p_beloeb_stripe bigint,
   p_beloeb_db    bigint,
-  p_tilstand     text)
+  -- default null: ældre serverkode (uden p_tilstand) virker stadig, hvis
+  -- migrationen køres før deploy.
+  p_tilstand     text default null)
 returns text
 language plpgsql
 security definer
