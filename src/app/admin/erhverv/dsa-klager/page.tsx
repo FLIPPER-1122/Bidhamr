@@ -45,7 +45,7 @@ export default async function ErhvervDsaKlagerSide({
 
   return (
     <AdminSide>
-      <AdminSideHoved titel="Erhverv" forklaring={T.forklaring} />
+      <AdminSideHoved titel="Firmaers klager (DSA)" forklaring={T.forklaring} />
       <ErhvervFaner aktiv="dsa-klager" />
 
       <div>

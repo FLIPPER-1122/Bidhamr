@@ -3,8 +3,6 @@ import { getErhvervRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hentErhvervTal } from "@/lib/admin/erhvervTal";
 import { ADMIN_ERHVERV } from "@/lib/tekster/erhverv";
-import { KLAGE_ADMIN } from "@/lib/tekster/erhvervKlager";
-import { ERHVERV_DSA_KLAGER } from "@/lib/tekster/erhvervDsaKlager";
 
 export type ErhvervFane = "oversigt" | "henvendelser" | "firmaer" | "klager" | "dsa-klager" | "pakker";
 
@@ -19,11 +17,11 @@ export default async function ErhvervFaner({ aktiv }: { aktiv: ErhvervFane }) {
       aktiv={aktiv}
       faner={[
         { id: "oversigt", label: "Oversigt", href: "/admin/erhverv" },
-        { id: "henvendelser", label: ADMIN_ERHVERV.faner.henvendelser, href: "/admin/erhverv/henvendelser", antal: tal?.nyeHenvendelser, tone: "gul" },
-        { id: "firmaer", label: ADMIN_ERHVERV.faner.firmaer, href: "/admin/erhverv/firmaer" },
-        { id: "klager", label: KLAGE_ADMIN.fane, href: "/admin/erhverv/klager", antal: tal?.aabneKlager, tone: "gul" },
-        { id: "dsa-klager", label: ERHVERV_DSA_KLAGER.fane, href: "/admin/erhverv/dsa-klager", antal: tal?.dsaKlager, tone: "gul" },
-        { id: "pakker", label: ADMIN_ERHVERV.faner.pakker, href: "/admin/erhverv/pakker" },
+        { id: "henvendelser", label: "Henvendelser", href: "/admin/erhverv/henvendelser", antal: tal?.nyeHenvendelser, tone: "gul" },
+        { id: "firmaer", label: "Firmaer", href: "/admin/erhverv/firmaer" },
+        { id: "klager", label: "Købers klager over firmaer", href: "/admin/erhverv/klager", antal: tal?.aabneKlager, tone: "gul" },
+        { id: "dsa-klager", label: "Firmaers klager (DSA)", href: "/admin/erhverv/dsa-klager", antal: tal?.dsaKlager, tone: "gul" },
+        { id: "pakker", label: "Pakker", href: "/admin/erhverv/pakker" },
       ]}
     />
   );

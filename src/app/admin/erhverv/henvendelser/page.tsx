@@ -50,7 +50,7 @@ export default async function ErhvervHenvendelserListe({
 
   return (
     <AdminSide>
-      <AdminSideHoved titel="Erhverv" forklaring={ADMIN_ERHVERV.henvendelser.forklaring} />
+      <AdminSideHoved titel="Henvendelser" forklaring={ADMIN_ERHVERV.henvendelser.forklaring} />
       <ErhvervFaner aktiv="henvendelser" />
       <AdminFilterChips label="Filter" chips={filtre} aktiv={aktivFilter} />
 

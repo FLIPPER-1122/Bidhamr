@@ -142,7 +142,7 @@ const SAELGER_GRUPPER: MenuGruppe[] = [
       { href: "/admin/erhverv", label: "Oversigt", minRolle: "chef", tal: "erhverv", tone: "gul", ikon: "/admin" },
       { href: "/admin/erhverv/henvendelser", label: "Henvendelser", minRolle: "chef", ikon: "/admin/kontakt" },
       { href: "/admin/erhverv/firmaer", label: "Firmaer", minRolle: "chef", ikon: "/admin/erhverv" },
-      { href: "/admin/erhverv/klager", label: "Klager over firmaer", minRolle: "chef", ikon: "/admin/sager" },
+      { href: "/admin/erhverv/klager", label: "Købers klager over firmaer", minRolle: "chef", ikon: "/admin/sager" },
       { href: "/admin/erhverv/dsa-klager", label: "Firmaers klager (DSA)", minRolle: "chef", ikon: "/admin/dsa" },
       { href: "/admin/erhverv/pakker", label: "Pakker", minRolle: "chef", ikon: "/admin/fakturaer" },
     ],

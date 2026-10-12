@@ -224,6 +224,8 @@ export default async function AdminBrugerDetalje({
             ) : (
               <ConfirmDialog
                 triggerLabel="Suspendér konto"
+                triggerClassName="btn btn-fare"
+                fare
                 triggerIcon={
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
@@ -628,7 +630,9 @@ async function AuktionerFane({
                 {kanModerere ? (
                   <ConfirmDialog
                     triggerLabel="Slet auktion"
-                    triggerClassName="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
+                    triggerClassName="inline-flex min-h-10 items-center rounded-lg border border-fejl-kant bg-white px-3 text-xs font-medium text-fejl-tekst transition-colors hover:bg-fejl-bg lg:min-h-8"
+                    fare
+                    kanIkkeFortrydes
                     title="Er du sikker på, at du vil fjerne auktionen?"
                     description="Auktionen annulleres og skjules. Data bevares af hensyn til bogføringen. Sælgeren får begrundelsen og kan klage."
                     confirmLabel="Ja, fjern auktionen"

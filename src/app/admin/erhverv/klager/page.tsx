@@ -40,7 +40,7 @@ export default async function ErhvervKlagerSide({
 
   return (
     <AdminSide>
-      <AdminSideHoved titel="Erhverv" forklaring={A.forklaring} />
+      <AdminSideHoved titel="Købers klager over firmaer" forklaring={A.forklaring} />
       <ErhvervFaner aktiv="klager" />
 
       {fejl && (

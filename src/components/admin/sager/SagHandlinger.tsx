@@ -111,9 +111,17 @@ function Knapper({
   naeste?: boolean;
 }) {
   return (
-    <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:flex-wrap sm:justify-end">
-      <button type="button" onClick={onLuk} disabled={sender} className="btn btn-sekundaer">
-        Annullér
+    // Bekræft står FØRST i DOM'en, så Enter aldrig rammer "Løs og gå til
+    // næste sag". Placeringen styres med CSS order.
+    <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:justify-end">
+      <button
+        type="submit"
+        disabled={sender || deaktiveret}
+        aria-busy={sender}
+        className={`btn order-1 sm:order-3 ${fare ? "btn-fare-fyldt" : "btn-primaer"}`}
+      >
+        {sender && <span className="btn-spinner" aria-hidden="true" />}
+        {bekraeft}
       </button>
       {naeste && (
         <button
@@ -122,19 +130,13 @@ function Knapper({
           value="1"
           disabled={sender || deaktiveret}
           aria-busy={sender}
-          className="btn btn-sekundaer"
+          className={`btn order-2 ${fare ? "btn-fare" : "btn-sekundaer"}`}
         >
           Løs og gå til næste sag
         </button>
       )}
-      <button
-        type="submit"
-        disabled={sender || deaktiveret}
-        aria-busy={sender}
-        className={`btn ${fare ? "btn-fare-fyldt" : "btn-primaer"}`}
-      >
-        {sender && <span className="btn-spinner" aria-hidden="true" />}
-        {bekraeft}
+      <button type="button" onClick={onLuk} disabled={sender} className="btn btn-sekundaer order-3 sm:order-1">
+        Annullér
       </button>
     </div>
   );

@@ -270,11 +270,12 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
                       <ConfirmDialog
                         triggerLabel="BidHamr dækker refusionen"
                         title="Skal BidHamr dække refusionen?"
-                        description="Pengene er udbetalt til sælgeren, og en udbetaling trækkes aldrig tilbage. Køberen refunderes i stedet af BidHamrs egen saldo hos Stripe (alt undtagen BidHamr Beskyttelse). Kan først bruges, når udbetalingen er gennemført hos banken. Det kan ikke fortrydes."
+                        description="Pengene er udbetalt til sælgeren, og en udbetaling trækkes aldrig tilbage. Køberen refunderes i stedet af BidHamrs egen saldo hos Stripe (alt undtagen BidHamr Beskyttelse). Kan først bruges, når udbetalingen er gennemført hos banken."
                         confirmLabel="Refundér køberen"
                         action={bidhamrDaekkerRefusion}
                         hiddenFields={{ tradeId: sag.tradeId }}
                         triggerClassName="btn btn-fare btn-lille"
+                        kanIkkeFortrydes
                         fakta={[
                           { label: "Får pengene", vaerdi: `${koeberNavn} (køber)` },
                           { label: "Betales af", vaerdi: "BidHamrs egen saldo hos Stripe" },

@@ -346,7 +346,7 @@ export default async function AdminBetalinger({
                         <div className="mt-2">
                           <ConfirmDialog
                             triggerLabel="Svindelvarsel gennemgået"
-                            triggerClassName="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                            triggerClassName="btn btn-primaer btn-lille"
                             title="Er svindelvarslet gennemgået?"
                             description="Når varslet er gennemgået, kan pengene gives til sælgeren, når handlen er færdig. Skriv, hvad du har kontrolleret. Handlingen logges med dit navn."
                             confirmLabel="Svindelvarsel gennemgået"

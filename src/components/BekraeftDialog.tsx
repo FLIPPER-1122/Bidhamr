@@ -25,6 +25,9 @@ type Props = {
   children?: ReactNode;
   /** Deaktiverer bekræft-knappen, fx indtil et påkrævet felt er udfyldt. */
   confirmDisabled?: boolean;
+  /** Tjek før dialogen åbnes. Returnér false for at blive i formularen
+   *  (fx fordi et felt er ugyldigt og nu er markeret). */
+  foerAabning?: () => boolean;
 };
 
 export default function BekraeftDialog({
@@ -39,6 +42,7 @@ export default function BekraeftDialog({
   onSuccess,
   children,
   confirmDisabled = false,
+  foerAabning,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
@@ -114,7 +118,10 @@ export default function BekraeftDialog({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          if (foerAabning && !foerAabning()) return;
+          setOpen(true);
+        }}
         className={
           triggerClassName ??
           "btn btn-primaer"

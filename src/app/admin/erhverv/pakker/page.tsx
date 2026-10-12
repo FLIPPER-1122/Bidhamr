@@ -13,7 +13,7 @@ export default async function ErhvervPakkerSide() {
 
   return (
     <AdminSide>
-      <AdminSideHoved titel="Erhverv" forklaring={X.forklaring} />
+      <AdminSideHoved titel="Pakker" forklaring={X.forklaring} />
       <ErhvervFaner aktiv="pakker" />
       <div>
         <h2 className="font-sans text-lg font-semibold text-tekst">{A.pakker.titel}</h2>

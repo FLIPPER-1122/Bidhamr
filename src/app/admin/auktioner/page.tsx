@@ -306,7 +306,8 @@ export default async function AdminAuktioner({
                         {a.status === "aktiv" && (
                           <ConfirmDialog
                             triggerLabel="Annullér"
-                            triggerClassName="inline-flex min-h-10 items-center px-3 py-1 text-xs lg:min-h-0 lg:px-2 bg-amber-100 text-amber-700 rounded-md hover:bg-amber-200 transition-colors"
+                            triggerClassName="inline-flex min-h-10 items-center rounded-lg border border-fejl-kant bg-white px-3 text-xs font-medium text-fejl-tekst transition-colors hover:bg-fejl-bg lg:min-h-8"
+                            fare
                             title="Er du sikker på, at du vil annullere auktionen?"
                             description="Auktionen stoppes, og der kan ikke bydes længere. Sælgeren får begrundelsen og kan klage."
                             confirmLabel="Ja, annullér auktionen"
@@ -376,7 +377,9 @@ export default async function AdminAuktioner({
                         )}
                         <ConfirmDialog
                           triggerLabel="Slet"
-                          triggerClassName="inline-flex min-h-10 items-center px-3 py-1 text-xs lg:min-h-0 lg:px-2 bg-red-100 text-fejl-tekst rounded-md hover:bg-red-200 transition-colors"
+                          triggerClassName="inline-flex min-h-10 items-center rounded-lg border border-fejl-kant bg-white px-3 text-xs font-medium text-fejl-tekst transition-colors hover:bg-fejl-bg lg:min-h-8"
+                          fare
+                          kanIkkeFortrydes
                           title="Er du sikker på, at du vil fjerne auktionen?"
                           description="Auktionen annulleres og skjules. Data bevares af hensyn til bogføringen. Sælgeren får begrundelsen og kan klage."
                           confirmLabel="Ja, fjern auktionen"

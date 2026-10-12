@@ -16,7 +16,7 @@ export default async function ErhvervFirmaerSide() {
   return (
     <AdminSide>
       <AdminSideHoved
-        titel="Erhverv"
+        titel="Firmaer"
         forklaring={X.forklaring}
         hoejre={<span className="text-sm text-tekst-svag">{X.antalFirmaer(firmaer.length)}</span>}
       />

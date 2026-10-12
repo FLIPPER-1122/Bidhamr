@@ -9,7 +9,7 @@ import BekraeftDialog from "@/components/BekraeftDialog";
 import FirmaFelter, { ADMIN_FELT, ADMIN_LABEL, type FirmaVaerdier } from "@/components/admin/erhverv/FirmaFelter";
 import { opretFirmakonto, slaaCvrOp } from "@/app/actions/adminErhverv";
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
-import { EMAIL, type ErhvervPakke } from "@/lib/erhverv/regler";
+import { EMAIL, POSTNUMMER, type ErhvervPakke } from "@/lib/erhverv/regler";
 
 export default function OpretFirmakonto({
   henvendelseId,
@@ -27,11 +27,26 @@ export default function OpretFirmakonto({
   const [pakkeId, setPakkeId] = useState(pakker.length === 1 ? pakker[0].id : "");
   const [cvrBesked, setCvrBesked] = useState<{ tekst: string; ok: boolean } | null>(null);
   const [slaarOp, startOpslag] = useTransition();
+  const [feltFejl, setFeltFejl] = useState<Partial<Record<keyof FirmaVaerdier, string>>>({});
   const [resultat, setResultat] = useState<{ firmaId: string; besked: string; mailSendt: boolean } | null>(null);
 
   // Rettes CVR-nummeret, passer en gammel besked fra CVR-opslaget ikke
   // længere (fx "ikke fundet") - så fjernes den.
+  // Tjekkes, før bekræftelsen åbnes (serveren tjekker igen). Feltet markeres.
+  // TODO indhold-agenten: fejlteksten.
+  function tjekFelter(): boolean {
+    const f: Partial<Record<keyof FirmaVaerdier, string>> = {};
+    if (!POSTNUMMER.test(v.postnummer.trim())) f.postnummer = "Postnummeret skal have 4 cifre.";
+    setFeltFejl(f);
+    if (f.postnummer) {
+      document.getElementById("opret-postnummer")?.focus();
+      return false;
+    }
+    return true;
+  }
+
   function saetV(ny: FirmaVaerdier) {
+    if (ny.postnummer !== v.postnummer && feltFejl.postnummer) setFeltFejl((g) => ({ ...g, postnummer: undefined }));
     if (ny.cvr !== v.cvr) setCvrBesked(null);
     setV(ny);
   }
@@ -108,7 +123,7 @@ export default function OpretFirmakonto({
         </p>
       )}
 
-      <FirmaFelter vaerdier={v} onChange={saetV} idPraefiks="opret" />
+      <FirmaFelter vaerdier={v} onChange={saetV} idPraefiks="opret" fejl={feltFejl} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
@@ -150,6 +165,7 @@ export default function OpretFirmakonto({
         description={X.bekraeftOpret(loginEmail.trim())}
         confirmLabel={A.opret.knapOpret}
         confirmDisabled={!klar}
+        foerAabning={tjekFelter}
         onConfirm={async () => {
           if (!pakkeId) return { fejl: A.opret.fejl.ingenPakke };
           const svar = await opretFirmakonto({

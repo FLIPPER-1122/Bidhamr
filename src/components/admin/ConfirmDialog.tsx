@@ -395,23 +395,32 @@ export default function ConfirmDialog({
               )}
 
               {kanIkkeFortrydes && <p className="text-sm font-medium text-fejl-tekst">Kan ikke fortrydes.</p>}
-              <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
-                <button ref={annullerRef} type="button" onClick={luk} disabled={pending} className="btn btn-sekundaer">
-                  Annullér
-                </button>
-                {naeste && (
-                  <button type="submit" name="__naeste" value="1" disabled={pending} aria-busy={pending} className="btn btn-sekundaer">
-                    {naeste.label ?? `${confirmLabel} og gå til næste`}
-                  </button>
-                )}
+              {/* Bekræft står FØRST i DOM'en, så Enter i et felt altid rammer den -
+                  aldrig "... og gå til næste". Placeringen styres med CSS order. */}
+              <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
                 <button
                   type="submit"
                   disabled={pending}
                   aria-busy={pending}
-                  className={`btn ${fare ? "btn-fare-fyldt" : "btn-primaer"}`}
+                  className={`btn order-1 sm:order-3 ${fare ? "btn-fare-fyldt" : "btn-primaer"}`}
                 >
                   {pending && <span className="btn-spinner" aria-hidden="true" />}
                   {confirmLabel}
+                </button>
+                {naeste && (
+                  <button
+                    type="submit"
+                    name="__naeste"
+                    value="1"
+                    disabled={pending}
+                    aria-busy={pending}
+                    className={`btn order-2 ${fare ? "btn-fare" : "btn-sekundaer"}`}
+                  >
+                    {naeste.label ?? `${confirmLabel} og gå til næste`}
+                  </button>
+                )}
+                <button ref={annullerRef} type="button" onClick={luk} disabled={pending} className="btn btn-sekundaer order-3 sm:order-1">
+                  Annullér
                 </button>
               </div>
             </form>
