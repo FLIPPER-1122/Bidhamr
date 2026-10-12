@@ -1,10 +1,12 @@
 import Link from "next/link";
 import type { Pengesikkerhed } from "@/app/actions/adminPengesikkerhed";
+import type { Pengeoverblik } from "@/lib/admin/pengeOekonomi";
 
 // Pengestatus på forsiden - KUN chef (siden henter kun data for chefen, og
 // hentPengesikkerhed() tjekker rollen igen). Data fra sikkerhedsnet A:
-// nødstop, udbetalinger til godkendelse og frosne sælgere. "Hos Stripe nu" og
-// "Hos sælgerne" kræver afstemningen (sikkerhedsnet B) og vises ikke endnu.
+// nødstop, udbetalinger til godkendelse og frosne sælgere - og fra
+// sikkerhedsnet B (admin_penge_overblik): "Hos Stripe nu" (seneste kendte
+// saldo, ikke hentet live ved hver visning) og "Hos sælgerne".
 // Selve nødstop-knappen ligger kun på Penge - en farlig handling skal ikke
 // ligge ét klik fra startsiden.
 
@@ -21,7 +23,10 @@ function Kort({ titel, tal, under }: { titel: string; tal: string; under: string
   );
 }
 
-export default function PengeStatus({ penge }: { penge: Pengesikkerhed }) {
+const TZ = "Europe/Copenhagen";
+
+export default function PengeStatus({ penge, overblik }: { penge: Pengesikkerhed; overblik: Pengeoverblik | null }) {
+  const snap = overblik?.snapshot ?? null;
   const n = penge.noedstop;
   const stoppet = n.udbetalingerStoppet || n.nyeBetalingerStoppet;
   const sum = penge.godkendelser.reduce((s, g) => s + g.udbetalingOere, 0);
@@ -36,6 +41,20 @@ export default function PengeStatus({ penge }: { penge: Pengesikkerhed }) {
         </Link>
       </div>
       <div className="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2 lg:grid-cols-3">
+        {snap && (
+          <Kort
+            titel="Hos Stripe nu"
+            tal={kr(snap.tilgaengelig_oere)}
+            under={`tilgængeligt · ${kr(snap.afventer_oere)} afventer · opdateret ${new Date(snap.kl).toLocaleString("da-DK", { dateStyle: "short", timeStyle: "short", timeZone: TZ })}`}
+          />
+        )}
+        {overblik && (
+          <Kort
+            titel="Hos sælgerne (holdes)"
+            tal={kr(overblik.saelgere.oere)}
+            under={`${overblik.saelgere.antal_handler} igangværende ${overblik.saelgere.antal_handler === 1 ? "handel" : "handler"}`}
+          />
+        )}
         <Kort
           titel="Til godkendelse"
           tal={penge.godkendelser.length ? `${penge.godkendelser.length} · ${kr(sum)}` : "0"}

@@ -187,6 +187,23 @@ export async function hentOekonomi(maanedRaa: unknown): Promise<Oekonomi> {
   };
 }
 
+// ------------------------------------------------------------- Forsiden
+
+// Let udgave til admin-forsidens pengekort - KUN chef (assertRole, ellers
+// null). Intet Stripe-kald: admin_penge_overblik uden saldo bruger den seneste
+// kendte saldo (penge_saldo_snapshot, gemt af afstemningen og af Penge).
+export async function hentPengeoverblikKort(): Promise<Resultat<Pengeoverblik> | null> {
+  let admin: Awaited<ReturnType<typeof assertRole>>["admin"];
+  let chefId: string;
+  try {
+    ({ admin, userId: chefId } = await assertRole("chef"));
+  } catch {
+    return null;
+  }
+  const { data, error } = await admin.rpc("admin_penge_overblik", { p_chef: chefId, p_tilgaengelig_oere: null });
+  return error ? dbFejl("Overblikket kunne ikke hentes fra databasen.", error) : { ok: true, data: data as Pengeoverblik };
+}
+
 // ------------------------------------------------------------- CSV
 
 export const POSTERING_NAVN: Record<string, string> = {

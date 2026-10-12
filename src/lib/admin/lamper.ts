@@ -10,8 +10,8 @@ import { hentEksternVagt } from "@/lib/admin/healthchecks";
 
 // Systemlamper på forsiden (docs/ADMIN-REDESIGN.md 3.2), kun admin og chef.
 // Trin 1-2: KUN de lamper, der kan beregnes ud fra data, vi har i dag
-// (drift-data, miljøet og sikkerhedsnet A's nødstop). Daglig afstemning
-// (sikkerhedsnet B), fakturering og MitID kommer i trin 3 - de vises slet ikke
+// (drift-data, miljøet, sikkerhedsnet A's nødstop og sikkerhedsnet B's
+// daglige afstemning). Fakturering og MitID kommer senere - de vises slet ikke
 // indtil da, så der aldrig står en grøn lampe, vi ikke kan stå inde for.
 // Ingen nøgler, URL'er eller adresser sendes til siden - kun tone og tekst.
 
@@ -56,7 +56,7 @@ async function byg(admin: Admin): Promise<Lampe[]> {
   const test = erTestdatabase();
   const fra24 = new Date(nu - 24 * 60 * MIN).toISOString();
 
-  const [rute, alarm, webhook, fragt, vagt] = await Promise.all([
+  const [rute, alarm, webhook, fragt, vagt, afstemning, afvigelser] = await Promise.all([
     hentCronRute(admin, nu),
     hentAlarmStatus(admin),
     admin
@@ -67,6 +67,15 @@ async function byg(admin: Admin): Promise<Lampe[]> {
     // Samme tal som "Fragt kræver handling" (forsendelser.kraever_opmaerksomhed).
     admin.from("forsendelser").select("id", { count: "exact", head: true }).eq("kraever_opmaerksomhed", true),
     hentEksternVagt(),
+    // Daglig afstemning (sikkerhedsnet B): seneste kørsel og åbne afvigelser.
+    // Kun status og antal - ingen beløb (lampen ses også af admin).
+    admin
+      .from("penge_afstemning_koersler")
+      .select("startet_kl, afsluttet_kl, ok, ufuldstaendig, antal_afvigelser")
+      .order("startet_kl", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ startet_kl: string; afsluttet_kl: string | null; ok: boolean | null; ufuldstaendig: boolean; antal_afvigelser: number }>(),
+    admin.from("penge_afstemning_afvigelser").select("id", { count: "exact", head: true }).is("loest_kl", null),
   ]);
   const fragtTilHandling = fragt.error ? 0 : (fragt.count ?? 0);
 
@@ -149,6 +158,34 @@ async function byg(admin: Admin): Promise<Lampe[]> {
         href: "/admin/drift",
       });
     }
+  }
+
+  // Daglig afstemning. Mangler tabellerne (migrationen er ikke kørt), vises
+  // lampen ikke.
+  if (!afstemning.error && !afvigelser.error) {
+    const k = afstemning.data;
+    const aabne = afvigelser.count ?? 0;
+    const hvorLaenge = k ? (nu - new Date(k.startet_kl).getTime()) / MIN : Infinity;
+    const lampe: Lampe = !k
+      ? { navn: "Daglig afstemning", tone: test ? "graa" : "roed", tekst: "har aldrig kørt", statusTekst: "Den daglige afstemning har aldrig kørt" }
+      : k.ok === false
+        ? { navn: "Daglig afstemning", tone: "roed", tekst: `fejlede ${siden(k.startet_kl, nu)}`, statusTekst: "Den daglige afstemning fejlede" }
+        : k.ok === null && !k.afsluttet_kl
+          ? { navn: "Daglig afstemning", tone: "graa", tekst: `kører · startet ${siden(k.startet_kl, nu)}` }
+          : aabne > 0
+            ? {
+                navn: "Daglig afstemning",
+                tone: "gul",
+                tekst: `${aabne} ${aabne === 1 ? "åben afvigelse" : "åbne afvigelser"}`,
+                statusTekst: `Afstemningen har ${aabne} ${aabne === 1 ? "åben afvigelse" : "åbne afvigelser"}`,
+              }
+            : k.ufuldstaendig
+              ? { navn: "Daglig afstemning", tone: "gul", tekst: `ufuldstændig · ${siden(k.startet_kl, nu)}`, statusTekst: "Den daglige afstemning blev ufuldstændig" }
+              : hvorLaenge > 26 * 60
+                ? { navn: "Daglig afstemning", tone: test ? "graa" : "gul", tekst: `ikke kørt i ${siden(k.startet_kl, nu).replace(" siden", "")}`, statusTekst: "Den daglige afstemning har ikke kørt i over 26 timer" }
+                : { navn: "Daglig afstemning", tone: "groen", tekst: `stemmer · kørt ${siden(k.startet_kl, nu)}` };
+    // Kun chefen kan åbne Penge; admin ser lampen uden link.
+    lamper.push(lampe);
   }
 
   // Ekstern vagt (Healthchecks.io).

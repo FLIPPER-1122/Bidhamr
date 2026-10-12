@@ -16,6 +16,7 @@ import { HAENGER_GRAENSER_DAGE } from "@/lib/adminGraenser";
 import { hentErhvervTal } from "@/lib/admin/erhvervTal";
 import { hentAdminStatus } from "@/lib/admin/status";
 import { hentPengesikkerhed as hentPengesikkerhedRaa } from "@/app/actions/adminPengesikkerhed";
+import { hentPengeoverblikKort } from "@/lib/admin/pengeOekonomi";
 
 // Admin-forsiden = kontrolpanelet (docs/ADMIN-REDESIGN.md 3 og den godkendte
 // showcase). Rækkefølgen er prioriteten: er der noget galt? -> hvad skal jeg
@@ -25,7 +26,7 @@ import { hentPengesikkerhed as hentPengesikkerhedRaa } from "@/app/actions/admin
 // Hastighed: hver sektion er sin egen <Suspense>, så sidehovedet kommer med
 // det samme, og en langsom kilde (fx Healthchecks) ikke holder resten tilbage.
 // Statuslinjen er den samme beregning som menuens lampe (hentAdminStatus).
-// Daglig afstemning og "Hos Stripe" venter på sikkerhedsnet B og er skjult.
+// Daglig afstemning, "Hos Stripe nu" og "Hos sælgerne" kommer fra sikkerhedsnet B.
 
 export const metadata = { title: "Admin" };
 
@@ -33,6 +34,8 @@ const TZ = "Europe/Copenhagen";
 
 // Deles mellem Kræver handling og Penge-kortene (ét kald pr. visning).
 const hentPengesikkerhed = cache(hentPengesikkerhedRaa);
+// Sikkerhedsnet B - kun chef (null for alle andre).
+const hentOverblik = cache(hentPengeoverblikKort);
 
 // admin_forside_tal() deles mellem Kræver handling og Nøgletal (ét kald).
 const hentForsideTal = cache(async (): Promise<ForsideTal | null> => {
@@ -80,6 +83,8 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
       : Promise.resolve(null),
     rolle === "chef" ? hentPengesikkerhed() : Promise.resolve(null),
   ]);
+  const overblikRes = rolle === "chef" ? await hentOverblik() : null;
+  const overblik = overblikRes && overblikRes.ok ? overblikRes.data : null;
   const h = forside?.handling;
   const penge = pengeRes && "ok" in pengeRes ? pengeRes : null;
   const betaFejl = beta && !beta[0].error && !beta[1].error ? { nye: beta[0].count ?? 0, blokerer: beta[1].count ?? 0 } : null;
@@ -105,6 +110,16 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
       antal: roedeVagter.length,
       forklaring: roedeVagter.map((l) => l.navn.replace("Ekstern vagt – ", "")).join(" og ") + " har ikke meldt sig",
       href: "/admin/drift",
+    });
+  }
+  if (overblik && overblik.afstemning.aabne_afvigelser > 0) {
+    r.push({
+      id: "afvigelser",
+      alvor: "gul",
+      titel: "Afstemningen har fundet afvigelser",
+      antal: overblik.afstemning.aabne_afvigelser,
+      forklaring: "Stripe og databasen er ikke enige – se Penge",
+      href: "/admin/penge",
     });
   }
   if (penge && penge.godkendelser.length > 0) {
@@ -211,12 +226,12 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
 }
 
 async function PengeSektion() {
-  const res = await hentPengesikkerhed();
+  const [res, overblikRes] = await Promise.all([hentPengesikkerhed(), hentOverblik()]);
   if (!("ok" in res)) {
     const ingenAdgang = /adgang/i.test(res.fejl);
     return <AdminFejl>{ingenAdgang ? "Ingen adgang til pengetallene." : "Pengetallene kunne ikke hentes. Prøv at genindlæse siden."}</AdminFejl>;
   }
-  return <PengeStatus penge={res} />;
+  return <PengeStatus penge={res} overblik={overblikRes && overblikRes.ok ? overblikRes.data : null} />;
 }
 
 async function NoegletalSektion({ periode }: { periode: string | undefined }) {
