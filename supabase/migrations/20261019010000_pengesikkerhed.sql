@@ -929,12 +929,13 @@ grant execute on function public.betaling_udbetaling_godkend(uuid, uuid, text) t
 -- Chefens godkendelse gælder kun den afgørelse, han så. Åbnes der en sag på
 -- handlen (ny sag, genåbnet sag, staffs markering trades.sag_aaben) eller
 -- en anke, nulstilles godkendelsen - så en ny afgørelse kræver en ny
--- godkendelse. Kun betalinger, der FAKTISK er udbetalt, undtages
--- (stripe_transfer_id, eller sælgerudbetalingen er 'paid' med et payout-id):
--- saelger_udbetaling_id alene er ikke nok, for det sættes tilbage til null,
--- når en claim afvises, eller en payout fejler/annulleres
--- (saelger_udbetaling_afvist, saelger_udbetaling_spejl). Er betalingen midt
--- i en claim, stopper _i_claim med 'sag' og derefter 'kraever_godkendelse'.
+-- godkendelse. Kun stripe_transfer_id (den gamle model, endeligt overført)
+-- undtages. saelger_udbetaling_id - og selv en 'paid' sælgerudbetaling - er
+-- ikke nok: feltet sættes tilbage til null, når en claim afvises, eller en
+-- payout fejler/annulleres (saelger_udbetaling_afvist, saelger_udbetaling_
+-- spejl, også paid -> failed). Er betalingen midt i en udbetaling, siger
+-- loggen det. Er den midt i en claim, stopper _i_claim med 'sag' og
+-- derefter 'kraever_godkendelse'.
 -- Triggere frem for rettelser i de enkelte funktioner: de fanger alle veje
 -- (sag_opret, sag_genaabn, sag_anke_indgiv, admin_sag_aabn, fremtidige
 -- funktioner). Alle de veje låser betalingen før handlen (samme rækkefølge
@@ -956,16 +957,13 @@ begin
      where b.trade_id = p_trade
        and b.udbetaling_godkendt_kl is not null
        and b.stripe_transfer_id is null
-       and not exists (select 1 from public.saelger_udbetalinger u
-                        where u.id = b.saelger_udbetaling_id
-                          and u.stripe_payout_id is not null
-                          and u.status = 'paid')
-    returning b.trade_id, b.seller_id
+    returning b.trade_id, b.seller_id, b.saelger_udbetaling_id
   ), l as (
     insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
     select public.bidhamr_system_id(), 'udbetaling_godkendelse_nulstillet', 'handel', x.trade_id, x.seller_id,
            left('Chefens godkendelse af udbetalingen er nulstillet: ' || coalesce(p_aarsag, 'ny sag')
-                || ' - en ny afgørelse kræver en ny godkendelse', 2000)
+                || ' - en ny afgørelse kræver en ny godkendelse'
+                || case when x.saelger_udbetaling_id is not null then ' (udbetaling allerede i gang)' else '' end, 2000)
       from x
     returning 1
   )
