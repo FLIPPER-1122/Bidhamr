@@ -104,7 +104,9 @@ export default async function KlageBoks({ tradeId, koeberId }: { tradeId: string
       )}
 
       <div className="mt-5">
-        {info.kan_klage ? (
+        {info.annulleret_afvist ? (
+          <p className="text-[16px] text-tekst-daempet">{T.annulleret}</p>
+        ) : info.kan_klage ? (
           <OpretKlageForm tradeId={tradeId} koeberId={koeberId} />
         ) : (
           info.grund && <p className="text-[16px] text-tekst-daempet">{T.grund[info.grund]}</p>

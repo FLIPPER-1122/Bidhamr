@@ -813,27 +813,29 @@ async function sagAabnImpl(formData: FormData): Promise<void> {
     throw new BrugerFejl("Handlen er allerede afsluttet.");
   }
 
-  const { error } = await admin
-    .from("trades")
-    .update({
-      sag_aaben: true,
-      sag_note: aarsag,
-      sag_aabnet_af: staffId,
-      sag_aabnet_at: new Date().toISOString(),
-    })
-    .eq("id", tradeId);
-  if (error) throw new Error(error.message);
-
-  await logModeration(admin, {
-    medarbejder_id: staffId,
-    handling: "sag_aabnet",
-    maal_type: "handel",
-    maal_id: tradeId,
-    bruger_id: null,
-    aarsag,
+  // Databasen markerer handlen og logger (admin_sag_aabn, 20261019010000):
+  // den låser betalingen før handlen, så triggeren, der nulstiller chefens
+  // godkendelse af udbetalingen, ikke giver deadlock.
+  const { data, error } = await admin.rpc("admin_sag_aabn", {
+    p_trade: tradeId,
+    p_medarbejder: staffId,
+    p_aarsag: aarsag,
   });
+  if (error) throw new Error(error.message);
+  const kode = ((data ?? {}) as { kode?: string }).kode ?? "";
+  if (kode !== "ok") throw new BrugerFejl(SAG_AABN_FEJL[kode] ?? "Sagen kunne ikke åbnes. Prøv igen.");
   revaliderSag(tradeId);
 }
+
+const SAG_AABN_FEJL: Record<string, string> = {
+  ugyldig: "Ugyldig handel.",
+  ingen_adgang: "Du har ikke adgang til at åbne sager.",
+  aarsag_mangler: "Beskriv hvorfor sagen åbnes.",
+  aarsag_for_lang: "Beskrivelsen er for lang (højst 2000 tegn).",
+  ikke_fundet: "Handlen blev ikke fundet.",
+  inhabil: INHABIL_HANDEL,
+  afsluttet: "Handlen er allerede afsluttet.",
+};
 
 // Luk sagen uden at flytte penge - handlen fortsaetter normalt.
 async function sagLukImpl(formData: FormData): Promise<void> {
@@ -1260,7 +1262,7 @@ const OVERFOERSEL_TEKST: Record<string, string> = {
   frosset: "Sælgerens udbetalinger er frosset, til chefen har set på kontoen (Admin → Penge).",
   venter_udbetalinger_stoppet: "Udbetalinger er stoppet med nødstoppet under Admin → Penge.",
   venter_udbetaling_frosset: "Sælgerens udbetalinger er frosset, til chefen har set på kontoen (Admin → Penge).",
-  venter_kraever_godkendelse: "Udbetalingen er på 10.000 kr. eller mere og skal godkendes af chefen under Admin → Penge.",
+  venter_kraever_godkendelse: "Køberen har betalt 10.000 kr. eller mere, så udbetalingen skal godkendes af chefen under Admin → Penge.",
   venter_fortrydelsesfrist: "Sælgeren er erhverv. Udbetalingen venter, til købers fortrydelsesfrist (14 dage efter levering) er udløbet.",
   venter_sag: "Handlen har en sag eller anke, der holder pengene.",
   venter_ikke_afhentet: "Pakken blev ikke afhentet, og der udbetales ikke.",
