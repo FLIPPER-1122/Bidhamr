@@ -10,6 +10,21 @@ type Admin = ReturnType<typeof createAdminClient>;
 
 export type SagTaget = { brugerId: string; navn: string | null; kl: string };
 
+// Er staff inhabil i sagen? Samme regel som databasen bruger ved afgørelse og
+// "Tag sagen" (penge_inhabil: part i handlen eller har handlet med en part).
+// Fejler kaldet, regnes staff som inhabil (fail closed - knappen skjules, og
+// databasen afgør alligevel).
+export async function erInhabil(admin: Admin, mig: string, koeber: string | null, saelger: string | null): Promise<boolean> {
+  if (!mig) return true;
+  if (mig === koeber || mig === saelger) return true;
+  const { data, error } = await admin.rpc("penge_inhabil", { p_medarbejder: mig, p_koeber: koeber, p_saelger: saelger });
+  if (error) {
+    console.error("penge_inhabil fejlede:", error.message);
+    return true;
+  }
+  return data === true;
+}
+
 export async function hentSagTaget(admin: Admin, sagIds: string[]): Promise<Map<string, SagTaget>> {
   const ud = new Map<string, SagTaget>();
   if (sagIds.length === 0) return ud;

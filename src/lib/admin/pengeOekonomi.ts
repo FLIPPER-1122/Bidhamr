@@ -12,7 +12,7 @@ import "server-only";
 // Intet her flytter penge (BidHamr har ingen wallet). Stripe-kald er kun
 // læsning (platformens saldo, cachet 60 s i penge.ts).
 
-import { notFound } from "next/navigation";
+import { notFound, unstable_rethrow } from "next/navigation";
 import { assertRole } from "@/lib/adminAuth";
 import {
   hentStripeBalance,
@@ -197,7 +197,9 @@ export async function hentPengeoverblikKort(): Promise<Resultat<Pengeoverblik> |
   let chefId: string;
   try {
     ({ admin, userId: chefId } = await assertRole("chef"));
-  } catch {
+  } catch (err) {
+    // Next-afbrydelser (redirect, dynamisk rendering) skal slippe igennem.
+    unstable_rethrow(err);
     return null;
   }
   const { data, error } = await admin.rpc("admin_penge_overblik", { p_chef: chefId, p_tilgaengelig_oere: null });

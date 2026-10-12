@@ -265,7 +265,7 @@ async function HandlerIndhold({
   const paamindPar = rows
     .filter((h) => haengerMap.has(h.id))
     .map((h) => ({ tradeId: h.id, brugerId: haengerMap.get(h.id)!.grund === "ikke_sendt" ? h.seller_id : h.buyer_id }));
-  const sidstPaamindet = await sidsteStaffBeskedOmHandel(supabase, paamindPar);
+  const sidstPaamindet = (await sidsteStaffBeskedOmHandel(supabase, paamindPar)) ?? new Map<string, string>();
   const paamindKl = (h: HandelRow) => {
     const g = haengerMap.get(h.id);
     return g ? (sidstPaamindet.get(`${h.id}:${g.grund === "ikke_sendt" ? h.seller_id : h.buyer_id}`) ?? null) : null;

@@ -23,6 +23,13 @@ export type Lampe = { navn: string; tone: LampeTone; tekst: string; href?: strin
 
 const MIN = 60_000;
 
+// Et opslag fejlede: lampen er gul ("Kunne ikke hentes") - aldrig grøn og
+// aldrig udeladt - så statuslinjen ikke kan sige "Alt kører".
+export const IKKE_HENTET = "Kunne ikke hentes";
+function ikkeHentet(navn: string, href = "/admin/drift"): Lampe {
+  return { navn, tone: "gul", tekst: IKKE_HENTET, statusTekst: `${navn}: status kunne ikke hentes`, href };
+}
+
 function siden(iso: string, nu: number): string {
   const min = Math.max(0, Math.round((nu - new Date(iso).getTime()) / MIN));
   if (min < 1) return "lige nu";
@@ -40,7 +47,13 @@ let cache: { kl: number; v: Lampe[] } | null = null;
 
 export async function hentLamper(admin: Admin, opts: { noedstop: NoedstopTal }): Promise<Lampe[]> {
   if (!cache || Date.now() - cache.kl > CACHE_MS) {
-    cache = { kl: Date.now(), v: await byg(admin) };
+    try {
+      cache = { kl: Date.now(), v: await byg(admin) };
+    } catch (err) {
+      console.error("Systemlamperne kunne ikke hentes:", err instanceof Error ? err.message : err);
+      // Caches ikke - næste visning prøver igen.
+      return [ikkeHentet("Systemer")];
+    }
   }
   const noedstop: Lampe = opts.noedstop.stoppet
     ? { navn: "Nødstop", tone: "roed", tekst: `TIL · ${opts.noedstop.stoppet}` }
@@ -77,12 +90,14 @@ async function byg(admin: Admin): Promise<Lampe[]> {
       .maybeSingle<{ startet_kl: string; afsluttet_kl: string | null; ok: boolean | null; ufuldstaendig: boolean; antal_afvigelser: number }>(),
     admin.from("penge_afstemning_afvigelser").select("id", { count: "exact", head: true }).is("loest_kl", null),
   ]);
-  const fragtTilHandling = fragt.error ? 0 : (fragt.count ?? 0);
+  const fragtTilHandling = fragt.count ?? 0;
 
   const lamper: Lampe[] = [];
 
   // Betalings-cron
-  if (rute.tilstand === "ok") {
+  if (rute.tilstand !== "ok") {
+    lamper.push(ikkeHentet("Betalings-cron"));
+  } else {
     const ok = rute.data.sidsteOk;
     if (!ok && test && rute.data.seneste.length === 0) {
       // Testdatabasen kalder bevidst ikke cron-ruten (som Drift-siden).
@@ -108,7 +123,9 @@ async function byg(admin: Admin): Promise<Lampe[]> {
   }
 
   // Stripe-webhooks: fejl logget fra webhooken de sidste 24 timer.
-  if (!webhook.error) {
+  if (webhook.error) {
+    lamper.push(ikkeHentet("Stripe-webhooks"));
+  } else {
     const antal = webhook.count ?? 0;
     lamper.push({
       navn: "Stripe-webhooks",
@@ -131,7 +148,8 @@ async function byg(admin: Admin): Promise<Lampe[]> {
   }
 
   // Fragt: forsendelser, der kræver handling (samme tal som "Kræver handling").
-  lamper.push({
+  if (fragt.error) lamper.push(ikkeHentet("Fragt", "/admin/handler?vis=fragt"));
+  else lamper.push({
     navn: "Fragt",
     tone: fragtTilHandling > 0 ? "gul" : "groen",
     tekst:
@@ -142,7 +160,9 @@ async function byg(admin: Admin): Promise<Lampe[]> {
   });
 
   // Alarmer: er der en modtager, og kører alarmtjekket?
-  if (alarm.tilstand === "ok") {
+  if (alarm.tilstand !== "ok") {
+    lamper.push(ikkeHentet("Alarmer"));
+  } else {
     const modtager = alarmModtagere().length > 0;
     const tjek = alarm.data.sidstTjekket;
     if (!modtager) {
@@ -161,8 +181,11 @@ async function byg(admin: Admin): Promise<Lampe[]> {
   }
 
   // Daglig afstemning. Mangler tabellerne (migrationen er ikke kørt), vises
-  // lampen ikke.
-  if (!afstemning.error && !afvigelser.error) {
+  // lampen ikke; andre fejl giver en gul lampe.
+  const mangler = (e: { code?: string } | null) => !!e && ["42P01", "PGRST205", "42703", "PGRST204"].includes(e.code ?? "");
+  if (afstemning.error || afvigelser.error) {
+    if (!mangler(afstemning.error) && !mangler(afvigelser.error)) lamper.push(ikkeHentet("Daglig afstemning"));
+  } else {
     const k = afstemning.data;
     const aabne = afvigelser.count ?? 0;
     const hvorLaenge = k ? (nu - new Date(k.startet_kl).getTime()) / MIN : Infinity;

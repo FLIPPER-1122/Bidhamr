@@ -85,7 +85,7 @@ export default function SkrivTilBrugerKnap({
       setFejl("Skriv en besked.");
       return;
     }
-    if (nylig && !alligevel) {
+    if (nylig !== null && !alligevel) {
       setFejl("Sæt kryds i \"Send alligevel\", hvis parten skal have en påmindelse mere.");
       return;
     }
@@ -184,7 +184,7 @@ export default function SkrivTilBrugerKnap({
                   className="mt-1.5 w-full rounded-lg border border-kant-staerk px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-groen sm:text-sm"
                 />
               </div>
-              {nylig && (
+              {nylig !== null && (
                 <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 text-sm text-advarsel-tekst">
                   <input
                     type="checkbox"
@@ -192,8 +192,9 @@ export default function SkrivTilBrugerKnap({
                     onChange={(e) => setAlligevel(e.target.checked)}
                     className="h-5 w-5 shrink-0 accent-[#1E5E4A]"
                   />
-                  Send alligevel (sidst skrevet{" "}
-                  {new Date(nylig).toLocaleString("da-DK", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Copenhagen" })})
+                  {nylig
+                    ? `Send alligevel (sidst skrevet ${new Date(nylig).toLocaleString("da-DK", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Copenhagen" })})`
+                    : "Send alligevel"}
                 </label>
               )}
               {henvendelseId && (

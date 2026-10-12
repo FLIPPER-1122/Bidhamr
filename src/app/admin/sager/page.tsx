@@ -11,7 +11,7 @@ import AdminBadge from "@/components/admin/AdminBadge";
 import AdminSideskift from "@/components/admin/AdminSideskift";
 import { hentStaffTal } from "@/lib/admin/taellere";
 import { harMindstRolle, kraevSideRolle } from "@/lib/adminAuth";
-import { hentSagTaget } from "@/lib/admin/sagTaget";
+import { erInhabil, hentSagTaget } from "@/lib/admin/sagTaget";
 import TagSagKnap from "@/components/admin/sager/TagSagKnap";
 
 // Sager oprettet af køberen. Åbne sager (venter på afgørelse) står øverst.
@@ -59,14 +59,17 @@ export default async function AdminSager({
     fane === "aabne"
       ? [...liste].sort((a, b) => Number(b.status === "aaben") - Number(a.status === "aaben"))
       : liste;
-  const taget = await hentSagTaget(
-    admin,
-    sager.filter((s) => s.status === "aaben" || s.status === "afventer_retur").map((s) => s.id),
-  );
+  const aabne = sager.filter((s) => s.status === "aaben" || s.status === "afventer_retur");
+  const [taget, inhabilListe] = await Promise.all([
+    hentSagTaget(admin, aabne.map((s) => s.id)),
+    // "Tag sagen" skjules, hvor staff er inhabil (samme regel som databasen).
+    Promise.all(aabne.map((s) => erInhabil(admin, userId, s.koeber.id, s.saelger.id))),
+  ]);
+  const inhabil = new Set(aabne.filter((_, i) => inhabilListe[i]).map((s) => s.id));
   // "Afgør næste sag" springer over sager, en kollega har taget.
   const ledig = (s: SagListeRaekke) => {
     const t = taget.get(s.id);
-    return !t || t.brugerId === userId;
+    return (!t || t.brugerId === userId) && !inhabil.has(s.id);
   };
   const foersteAabne = fane === "aabne"
       ? sager.find((s) => s.status === "aaben" && ledig(s))
@@ -150,7 +153,7 @@ export default async function AdminSager({
               </Link>
               {(s.status === "aaben" || s.status === "afventer_retur") && (
                 <div className="px-4 pb-4 sm:px-5 sm:py-4">
-                  <TagSagKnap sagId={s.id} taget={taget.get(s.id) ?? null} mig={userId} />
+                  <TagSagKnap sagId={s.id} taget={taget.get(s.id) ?? null} mig={userId} inhabil={inhabil.has(s.id)} />
                 </div>
               )}
             </li>

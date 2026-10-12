@@ -153,7 +153,7 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
   const haengerGrund: HaengerGrund | null = haenger && erHaengerGrund(haenger.grund) ? haenger.grund : null;
   const paamindBruger = haengerGrund ? (haengerGrund === "ikke_sendt" ? h.seller_id : h.buyer_id) : null;
   const sidstPaamindet = paamindBruger
-    ? ((await sidsteStaffBeskedOmHandel(admin, [{ tradeId: h.id, brugerId: paamindBruger }])).get(`${h.id}:${paamindBruger}`) ?? null)
+    ? ((await sidsteStaffBeskedOmHandel(admin, [{ tradeId: h.id, brugerId: paamindBruger }]))?.get(`${h.id}:${paamindBruger}`) ?? null)
     : null;
   const returMeldt = fs.some(
     (f) => f.type === "udgaaende" && f.status !== "annulleret" && f.status !== "fejlet" && !!f.returneret_kl && !f.leveret_kl,

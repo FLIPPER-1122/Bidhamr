@@ -62,13 +62,43 @@ begin
 end $do$;
 
 comment on column public.sager.behandles_af is
-  'Staff, der har taget sagen (sag_tag). Kun til at undgå dobbeltarbejde - giver ingen ekstra rettigheder. Ses kun af staff.';
+  'Staff, der har taget sagen (sag_tag). Kun til at undgå dobbeltarbejde - giver ingen ekstra rettigheder. Ses kun af staff. Nulstilles, når sagen afsluttes (trigger sager_slip_ved_afslutning).';
 
 -- Køber og sælger læser sager via kolonne-grants (20261003010000_sager.sql).
 -- De nye kolonner er staff-data og gives ikke til authenticated.
 revoke select (behandles_af, behandles_kl) on public.sager from anon, authenticated;
 
 create index if not exists sager_behandles_af_idx on public.sager (behandles_af) where behandles_af is not null;
+
+-- En afsluttet sag har ingen behandler: "Taget af" nulstilles, når sagen
+-- afgøres eller lukkes - uanset hvilken vej (sag_afgoer, anke, retur, cron).
+create or replace function public.sager_slip_ved_afslutning()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.status not in ('aaben', 'afventer_retur') and new.behandles_af is not null then
+    new.behandles_af := null;
+    new.behandles_kl := null;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.sager_slip_ved_afslutning() from public, anon, authenticated;
+
+drop trigger if exists sager_slip_ved_afslutning on public.sager;
+create trigger sager_slip_ved_afslutning
+  before update of status on public.sager
+  for each row
+  when (new.status is distinct from old.status)
+  execute function public.sager_slip_ved_afslutning();
+
+-- Sager, der allerede er afsluttet, men stadig står som taget (fx taget før
+-- triggeren fandtes), ryddes.
+update public.sager set behandles_af = null, behandles_kl = null
+ where behandles_af is not null and status not in ('aaben', 'afventer_retur');
 
 -- Tag (eller overtag) en sag. Svar: {kode: 'ok' | 'uaendret' | 'taget' |
 -- 'ikke_fundet' | 'afsluttet' | 'inhabil', af_navn?, kl?}.
@@ -95,7 +125,9 @@ begin
     return jsonb_build_object('kode', 'afsluttet');
   end if;
   select * into t from public.trades where id = s.trade_id;
-  if t.buyer_id = p_medarbejder or t.seller_id = p_medarbejder then
+  -- Samme inhabilitetsregel som afgørelsen og sagssiden: part i handlen eller
+  -- har handlet med en af parterne (penge_inhabil, 20261019010000).
+  if public.penge_inhabil(p_medarbejder, t.buyer_id, t.seller_id) then
     return jsonb_build_object('kode', 'inhabil');
   end if;
   if s.behandles_af = p_medarbejder then

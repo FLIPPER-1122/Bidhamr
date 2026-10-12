@@ -43,7 +43,15 @@ export async function sendPaamindelse(input: {
     const brugerId = input.part === "koeber" ? h.buyer_id : h.seller_id;
 
     if (!input.alligevel) {
-      const sidste = (await sidsteStaffBeskedOmHandel(admin, [{ tradeId: h.id, brugerId }])).get(`${h.id}:${brugerId}`);
+      const kort = await sidsteStaffBeskedOmHandel(admin, [{ tradeId: h.id, brugerId }]);
+      if (!kort) {
+        return {
+          fejl: "Kunne ikke tjekke tidligere påmindelser – prøv igen eller vælg Send alligevel",
+          // Tom tid = ukendt; dialogen viser "Send alligevel" uden tidspunkt.
+          nylig: { sendtKl: "" },
+        };
+      }
+      const sidste = kort.get(`${h.id}:${brugerId}`);
       if (sidste && Date.now() - new Date(sidste).getTime() < SPAERRE_MS) {
         return {
           fejl: "Der er allerede skrevet til parten om denne handel inden for det sidste døgn.",

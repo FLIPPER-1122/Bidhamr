@@ -8,11 +8,12 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
+// null = databasen fejlede (vi ved det ikke).
 // Seneste staff-besked til brugeren om handlen (eller null).
 export async function sidsteStaffBeskedOmHandel(
   admin: Admin,
   par: { tradeId: string; brugerId: string }[],
-): Promise<Map<string, string>> {
+): Promise<Map<string, string> | null> {
   const ud = new Map<string, string>();
   if (par.length === 0) return ud;
   // aabnChat lægger en besked i en ÅBEN samtale med brugeren - også en
@@ -26,7 +27,7 @@ export async function sidsteStaffBeskedOmHandel(
     .limit(1000);
   if (error) {
     console.error("Påmindelser: staff_samtaler kunne ikke hentes:", error.message);
-    return ud;
+    return null;
   }
   const relevante = ((samtaler ?? []) as { id: string; bruger_id: string; trade_id: string | null }[]).filter((s) =>
     par.some((p) => p.brugerId === s.bruger_id && (s.trade_id === null || s.trade_id === p.tradeId)),
@@ -41,7 +42,7 @@ export async function sidsteStaffBeskedOmHandel(
     .limit(1000);
   if (bFejl) {
     console.error("Påmindelser: staff_beskeder kunne ikke hentes:", bFejl.message);
-    return ud;
+    return null;
   }
   const samtale = new Map(relevante.map((s) => [s.id, s]));
   // Beskederne kommer nyeste først - den første pr. par er den seneste.

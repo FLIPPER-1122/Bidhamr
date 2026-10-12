@@ -4,7 +4,7 @@ import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { harMindstRolle, type StaffRole } from "@/lib/adminAuth";
 import { hentNoedstopTal, hentStaffTal, type NoedstopTal, type StaffTal } from "@/lib/admin/taellere";
-import { hentLamper, type Lampe } from "@/lib/admin/lamper";
+import { IKKE_HENTET, hentLamper, type Lampe } from "@/lib/admin/lamper";
 import { beregnStatus, koePunkter, type Status, type StatusPunkt } from "@/lib/admin/statuslinje";
 
 // ÉN beregning af statuslinjen, som både menuens lille lampe og forsidens
@@ -47,7 +47,8 @@ export const hentAdminStatus = cache(async (rolle: StaffRole): Promise<AdminStat
       ...koePunkter({ dsaOverskredet: tal.dsaOverskredet, dsa: tal.dsa, sager: tal.sager, betalinger: tal.betalinger }),
       ...lampePunkter.filter((p) => p.tone === "gul"),
     ],
-    { systemerTjekket: erAdmin },
+    // "Alt kører" kun, når alle lamper faktisk kunne hentes.
+    { systemerTjekket: erAdmin && !lamper.some((l) => l.tekst === IKKE_HENTET) },
   );
   return { status, lamper, noedstop, tal };
 });
