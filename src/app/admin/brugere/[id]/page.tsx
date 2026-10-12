@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AdminSide from "@/components/admin/AdminSide";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -110,7 +111,7 @@ export default async function AdminBrugerDetalje({
   const status = brugerStatus(user, advarsler?.length ?? 0);
 
   return (
-    <div className="p-6 space-y-5 max-w-4xl mx-auto">
+    <AdminSide detalje>
       <Link
         href="/admin/brugere"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 hover:text-neutral-800"
@@ -223,6 +224,8 @@ export default async function AdminBrugerDetalje({
             ) : (
               <ConfirmDialog
                 triggerLabel="Suspendér konto"
+                triggerClassName="btn btn-fare"
+                fare
                 triggerIcon={
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
@@ -241,7 +244,9 @@ export default async function AdminBrugerDetalje({
           {erChef && frysProfil && !frysProfil.udbetaling_frosset_kl && (
             <ConfirmDialog
               triggerLabel="Frys sælger"
-              triggerClassName="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors"
+              triggerClassName="btn btn-fare"
+              fakta={[{ label: "Sælger", vaerdi: user.navn ?? user.email ?? "Uden navn" }]}
+              fare
               title={`Frys ${user.navn ?? "sælgerens"} udbetalinger?`}
               description="Der sendes ingen penge fra sælgerens Stripe-konto til banken, og alle sælgerens ventende handler markeres under Betalinger. Sælgeren får ingen besked om grunden. Kun chefen kan ophæve frysningen (Admin → Penge → Frosne sælgere)."
               confirmLabel="Frys sælgeren"
@@ -255,7 +260,7 @@ export default async function AdminBrugerDetalje({
           {erChef && frysProfil?.udbetaling_frosset_kl && (
             <Link
               href="/admin/penge"
-              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-100 transition-colors"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-fejl-kant bg-fejl-bg px-4 text-sm font-semibold text-fejl-tekst hover:bg-white transition-colors"
             >
               Sælgeren er frosset – se Penge
             </Link>
@@ -336,7 +341,7 @@ export default async function AdminBrugerDetalje({
           </p>
         </div>
       )}
-    </div>
+    </AdminSide>
   );
 }
 
@@ -600,8 +605,8 @@ async function AuktionerFane({
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
+      <table className="block w-full text-sm lg:table">
+        <thead className="hidden lg:table-header-group">
           <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
             <th className="px-5 py-3 text-left font-medium">Titel</th>
             <th className="px-5 py-3 text-left font-medium">Status</th>
@@ -610,22 +615,24 @@ async function AuktionerFane({
             <th className="px-5 py-3 text-left font-medium">Handling</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-neutral-100">
+        <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 divide-y divide-neutral-100">
           {(auctions ?? []).map((a) => (
-            <tr key={a.id} className="hover:bg-neutral-50">
-              <td className="px-5 py-3 text-neutral-700">{a.titel}</td>
-              <td className="px-5 py-3">{statusBadge(a.status)}</td>
-              <td className="px-5 py-3 text-neutral-600">
+            <tr key={a.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-700">{a.titel}</td>
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">{statusBadge(a.status)}</td>
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-600">
                 {a["nuværende_bud"] != null ? `${a["nuværende_bud"]} kr` : "—"}
               </td>
-              <td className="px-5 py-3 text-neutral-500">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-500">
                 {new Date(a.oprettet).toLocaleDateString("da-DK")}
               </td>
-              <td className="px-5 py-3">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
                 {kanModerere ? (
                   <ConfirmDialog
                     triggerLabel="Slet auktion"
-                    triggerClassName="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
+                    triggerClassName="inline-flex min-h-10 items-center rounded-lg border border-fejl-kant bg-white px-3 text-xs font-medium text-fejl-tekst transition-colors hover:bg-fejl-bg lg:min-h-8"
+                    fare
+                    kanIkkeFortrydes
                     title="Er du sikker på, at du vil fjerne auktionen?"
                     description="Auktionen annulleres og skjules. Data bevares af hensyn til bogføringen. Sælgeren får begrundelsen og kan klage."
                     confirmLabel="Ja, fjern auktionen"
@@ -675,24 +682,24 @@ async function BudFane({ userId, supabase }: { userId: string; supabase: Admin }
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
+      <table className="block w-full text-sm lg:table">
+        <thead className="hidden lg:table-header-group">
           <tr className="bg-neutral-50 text-xs uppercase text-neutral-500">
             <th className="px-5 py-3 text-left font-medium">Auktion</th>
             <th className="px-5 py-3 text-left font-medium">Beløb</th>
             <th className="px-5 py-3 text-left font-medium">Tidspunkt</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-neutral-100">
+        <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 divide-y divide-neutral-100">
           {(bud ?? []).map((b) => (
-            <tr key={b.id} className="hover:bg-neutral-50">
-              <td className="px-5 py-3 text-neutral-700">
+            <tr key={b.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-700">
                 {titelMap[b.auktion_id] ?? b.auktion_id}
               </td>
-              <td className="px-5 py-3 text-neutral-600">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-600">
                 {Number(b.beløb).toLocaleString("da-DK")} kr
               </td>
-              <td className="px-5 py-3 text-neutral-500">
+              <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-500">
                 {new Date(b.oprettet).toLocaleString("da-DK")}
               </td>
             </tr>

@@ -9,6 +9,12 @@ import KlageHandlinger from "@/components/admin/erhverv/KlageHandlinger";
 import AdvarselForslagHandlinger from "@/components/admin/erhverv/AdvarselForslagHandlinger";
 import { KlageStatusMaerke } from "@/components/erhverv/klager/visning";
 import { KLAGE_ADMIN as A, KLAGE_KANAL_NAVN, KLAGE_KATEGORI_NAVN } from "@/lib/tekster/erhvervKlager";
+import { klageTitel } from "@/lib/admin/erhvervTitel";
+
+// Browserfanen hedder det samme som overskriften.
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  return { title: await klageTitel((await params).id) };
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

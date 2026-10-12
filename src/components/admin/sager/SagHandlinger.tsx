@@ -17,6 +17,10 @@ import {
 import { SAG_BEGRUNDELSE_MAKS, type SagStatus, type SagType } from "@/lib/sager";
 import { STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
+import Skabeloner from "@/components/admin/Skabeloner";
+import { visKvittering } from "@/components/admin/Kvittering";
+import { SAG_BEGRUNDELSE } from "@/lib/tekster/adminSkabeloner";
+import { kroner } from "@/lib/kroner";
 
 const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
 
@@ -97,26 +101,43 @@ function Knapper({
   bekraeft,
   fare = false,
   deaktiveret = false,
+  naeste = false,
 }: {
   sender: boolean;
   onLuk: () => void;
   bekraeft: string;
   fare?: boolean;
   deaktiveret?: boolean;
+  // Vis "Løs og gå til næste sag" (samme handling, derefter næste i køen).
+  naeste?: boolean;
 }) {
   return (
-    <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
-      <button type="button" onClick={onLuk} disabled={sender} className="btn btn-sekundaer">
-        Annullér
-      </button>
+    // Bekræft står FØRST i DOM'en, så Enter aldrig rammer "Løs og gå til
+    // næste sag". Placeringen styres med CSS order.
+    <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:justify-end">
       <button
         type="submit"
         disabled={sender || deaktiveret}
         aria-busy={sender}
-        className={`btn ${fare ? "btn-fare-fyldt" : "btn-primaer"}`}
+        className={`btn order-1 sm:order-3 ${fare ? "btn-fare-fyldt" : "btn-primaer"}`}
       >
         {sender && <span className="btn-spinner" aria-hidden="true" />}
         {bekraeft}
+      </button>
+      {naeste && (
+        <button
+          type="submit"
+          name="__naeste"
+          value="1"
+          disabled={sender || deaktiveret}
+          aria-busy={sender}
+          className={`btn order-2 ${fare ? "btn-fare" : "btn-sekundaer"}`}
+        >
+          Løs og gå til næste sag
+        </button>
+      )}
+      <button type="button" onClick={onLuk} disabled={sender} className="btn btn-sekundaer order-3 sm:order-1">
+        Annullér
       </button>
     </div>
   );
@@ -130,7 +151,7 @@ function useSend(onResultat: (besked: string) => void, onLuk: () => void) {
   const [fejl, setFejl] = useState<string | null>(null);
   const laas = useRef(false);
 
-  async function send(fn: () => Promise<{ ok: true; besked: string } | { fejl: string }>) {
+  async function send(fn: () => Promise<{ ok: true; besked: string } | { fejl: string }>, videre?: string | null) {
     if (laas.current) return;
     laas.current = true;
     setSender(true);
@@ -142,6 +163,12 @@ function useSend(onResultat: (besked: string) => void, onLuk: () => void) {
         return;
       }
       onLuk();
+      if (videre) {
+        // "Løs og gå til næste": kvitteringen følger med til næste sag.
+        visKvittering(res.besked);
+        router.push(videre);
+        return;
+      }
       onResultat(res.besked);
       router.refresh();
     } catch {
@@ -182,10 +209,19 @@ function AfgoerKnap({
   indsigelse,
   afventerRetur,
   onResultat,
+  naesteHref,
+  koeberNavn,
+  saelgerNavn,
+  koeberBeloebOere,
 }: {
   sagId: string;
   type: SagType;
   indsigelse: boolean;
+  naesteHref?: string | null;
+  koeberNavn: string;
+  saelgerNavn: string;
+  // Kun for chef (ellers null): hvad køberen refunderes.
+  koeberBeloebOere: number | null;
   // Sagen venter på retur (fx køberen sender aldrig varen): kun medhold til
   // sælger eller luk sagen (databasen afviser medhold til køber igen).
   afventerRetur: boolean;
@@ -214,10 +250,13 @@ function AfgoerKnap({
       return;
     }
     const fd = new FormData(e.currentTarget);
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const videre = naesteHref && submitter?.name === "__naeste" ? naesteHref : null;
+    fd.delete("__naeste");
     fd.set("sagId", sagId);
     fd.set("udfald", udfald);
     fd.set("retur_ikke_sendt", kraeverReturTjek && returTjekket ? "ja" : "nej");
-    void send(() => afgoerSag(fd));
+    void send(() => afgoerSag(fd), videre);
   }
 
   return (
@@ -276,6 +315,22 @@ function AfgoerKnap({
                 ))}
             </div>
           </fieldset>
+          {udfald && udfald !== "lukket" && (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-xl bg-groen-lys px-4 py-3 text-sm">
+              <dt className="text-tekst-daempet">Får pengene</dt>
+              <dd className="font-semibold text-tekst">
+                {udfald === "koeber" ? `${koeberNavn} (køber) – refusion` : `${saelgerNavn} (sælger) – udbetaling`}
+              </dd>
+              {udfald === "koeber" && koeberBeloebOere != null && (
+                <>
+                  <dt className="text-tekst-daempet">Beløb</dt>
+                  <dd className="font-semibold text-tekst">{kroner(koeberBeloebOere)} (alt undtagen BidHamr Beskyttelse)</dd>
+                </>
+              )}
+              <dt className="text-tekst-daempet">Hvornår</dt>
+              <dd className="text-tekst">Efter ankefristen på 4 dage</dd>
+            </dl>
+          )}
           {kraeverReturTjek && (
             <label className="flex cursor-pointer gap-3 rounded-xl border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
               <input
@@ -293,6 +348,7 @@ function AfgoerKnap({
             <label htmlFor={`${id}-begr`} className="block text-sm font-medium text-neutral-800">
               Begrundelse til køber og sælger
             </label>
+            {udfald && <Skabeloner skabeloner={SAG_BEGRUNDELSE[udfald]} feltId={`${id}-begr`} />}
             <textarea
               id={`${id}-begr`}
               name="begrundelse"
@@ -330,6 +386,7 @@ function AfgoerKnap({
             onLuk={luk}
             bekraeft={udfald ? `Bekræft: ${UDFALD_NAVN[udfald].toLowerCase()}` : "Bekræft"}
             deaktiveret={!udfald || (kraeverReturTjek && !returTjekket)}
+            naeste={!!naesteHref}
           />
         </form>
       </Dialog>
@@ -345,10 +402,12 @@ function AnkeKnap({
   ankeId,
   anke,
   onResultat,
+  naesteHref,
 }: {
   ankeId: string;
   anke: AnkeInfo;
   onResultat: (b: string) => void;
+  naesteHref?: string | null;
 }) {
   const id = useId();
   const [aaben, setAaben] = useState(false);
@@ -395,10 +454,13 @@ function AnkeKnap({
       return;
     }
     const fd = new FormData(e.currentTarget);
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const videre = naesteHref && submitter?.name === "__naeste" ? naesteHref : null;
+    fd.delete("__naeste");
     fd.set("ankeId", ankeId);
     fd.set("udfald", udfald);
     fd.set("retur_ikke_sendt", kraeverReturTjek && returTjekket ? "ja" : "nej");
-    void send(() => afgoerAnke(fd));
+    void send(() => afgoerAnke(fd), videre);
   }
 
   return (
@@ -492,6 +554,7 @@ function AnkeKnap({
             onLuk={luk}
             bekraeft={udfald === "omgoer" ? "Bekræft: ændr afgørelsen" : udfald ? "Bekræft: afgørelsen står" : "Bekræft"}
             deaktiveret={!udfald || (kraeverReturTjek && !returTjekket)}
+            naeste={!!naesteHref}
           />
         </form>
       </Dialog>
@@ -996,6 +1059,9 @@ export type SagHandlingerProps = {
 };
 
 export default function SagHandlinger({
+  naesteHref,
+  inhabil = false,
+  koeberBeloebOere = null,
   sagId,
   type,
   indsigelse,
@@ -1009,7 +1075,7 @@ export default function SagHandlinger({
   afventerRetur,
   returIkkeTilladt,
   returFristTekst,
-}: SagHandlingerProps) {
+}: SagHandlingerProps & { naesteHref?: string | null; inhabil?: boolean; koeberBeloebOere?: number | null }) {
   const [resultat, setResultat] = useState<string | null>(null);
 
   return (
@@ -1028,7 +1094,7 @@ export default function SagHandlinger({
           </p>
           {kan.behandleAnke ? (
             <div className="mt-3">
-              <AnkeKnap ankeId={anke.id} anke={anke} onResultat={setResultat} />
+              <AnkeKnap ankeId={anke.id} anke={anke} onResultat={setResultat} naesteHref={naesteHref} />
             </div>
           ) : (
             ankeIkkeTilladt && <p className="mt-1">{ankeIkkeTilladt}</p>
@@ -1044,13 +1110,27 @@ export default function SagHandlinger({
 
       {(kan.afgoere || kan.registrereRetur || kan.genaabne) && (
         <div className="flex flex-wrap gap-3">
-          {kan.afgoere && (
+          {kan.afgoere && inhabil && (
+            <span className="flex flex-col gap-1">
+              <button type="button" disabled className="btn btn-primaer" aria-describedby="sag-inhabil">
+                Afgør sagen
+              </button>
+              <span id="sag-inhabil" className="text-xs text-tekst-daempet">
+                Du er inhabil: du er part i handlen eller har handlet med en af parterne. Lad en kollega afgøre den.
+              </span>
+            </span>
+          )}
+          {kan.afgoere && !inhabil && (
             <AfgoerKnap
+              koeberNavn={koeber.navn}
+              saelgerNavn={saelger.navn}
+              koeberBeloebOere={koeberBeloebOere}
               sagId={sagId}
               type={type}
               indsigelse={indsigelse}
               afventerRetur={afventerRetur}
               onResultat={setResultat}
+              naesteHref={naesteHref}
             />
           )}
           {kan.registrereRetur && <ReturKnap sagId={sagId} onResultat={setResultat} />}
@@ -1063,8 +1143,18 @@ export default function SagHandlinger({
 
       {(kan.vurdereIndpakning || indpakning.vurderet) && (
         <div className="flex flex-wrap items-center gap-3">
-          {kan.vurdereIndpakning && (
+          {kan.vurdereIndpakning && !inhabil && (
             <IndpakningKnap sagId={sagId} saelgerNavn={saelger.navn} info={indpakning} onResultat={setResultat} />
+          )}
+          {kan.vurdereIndpakning && inhabil && (
+            <span className="flex flex-col gap-1">
+              <button type="button" disabled className="btn btn-sekundaer" aria-describedby="indpakning-inhabil">
+                Dårlig indpakning
+              </button>
+              <span id="indpakning-inhabil" className="text-xs text-tekst-daempet">
+                Du er inhabil: du er part i handlen eller har handlet med en af parterne.
+              </span>
+            </span>
           )}
           {indpakning.vurderet && (
             <span className="text-sm text-neutral-600">

@@ -59,7 +59,7 @@ export default async function AdminHandelChat({ params }: { params: Promise<{ id
   const { id: raa } = await params;
   if (!UUID_RE.test(raa)) notFound();
   const tradeId = raa.toLowerCase();
-  const handelHref = `/admin/handler?vis=alle&q=${tradeId}`;
+  const handelHref = `/admin/handler/${tradeId}`;
 
   const { data: handel, error: handelFejl } = await admin
     .from("trades")

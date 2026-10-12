@@ -111,7 +111,9 @@ export default function KontoLukningKort({
           <div className="flex flex-wrap gap-2">
             <ConfirmDialog
               triggerLabel="Luk kontoen permanent"
-              triggerClassName="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+              triggerClassName="btn btn-fare btn-lille"
+              fare
+              kanIkkeFortrydes
               title="Luk kontoen permanent?"
               description={`Kontoen lukkes uden slutdato og kan ikke åbnes igen fra admin. Brugeren får beskeden: "Din konto er lukket permanent efter 3 advarsler. Kontakt support@bidhamr.dk".`}
               confirmLabel="Luk kontoen permanent"

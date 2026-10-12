@@ -7,6 +7,12 @@ import { HenvendelseStatusBadge, datoTid } from "@/components/admin/erhverv/Erhv
 import HenvendelseHandlinger from "@/components/admin/erhverv/HenvendelseHandlinger";
 import OpretFirmakonto from "@/components/admin/erhverv/OpretFirmakonto";
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
+import { henvendelseTitel } from "@/lib/admin/erhvervTitel";
+
+// Browserfanen hedder det samme som overskriften.
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  return { title: await henvendelseTitel((await params).id) };
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -44,7 +50,7 @@ export default async function HenvendelseSide({ params }: { params: Promise<{ id
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
-      <Link href="/admin/erhverv" className="inline-flex min-h-11 items-center text-sm font-medium text-groen hover:underline">
+      <Link href="/admin/erhverv/henvendelser" className="inline-flex min-h-11 items-center text-sm font-medium text-groen hover:underline">
         ← {X.tilbageTilListe}
       </Link>
       <AdminSideHoved
@@ -83,10 +89,10 @@ export default async function HenvendelseSide({ params }: { params: Promise<{ id
       </section>
 
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
-        <HenvendelseHandlinger id={h.id} status={h.status} noter={h.noter} arkiveret={!!h.arkiveret_kl} />
+        <HenvendelseHandlinger id={h.id} status={h.status} noter={h.noter} arkiveret={!!h.arkiveret_kl} firmaId={h.firma_id} />
       </section>
 
-      <section className="rounded-xl border border-neutral-200 bg-white p-5">
+      <section id="opret" className="scroll-mt-4 rounded-xl border border-neutral-200 bg-white p-5">
         <h2 className="font-sans text-lg font-semibold text-neutral-900">{A.opret.titel}</h2>
         <div className="mt-3">
           {h.firma_id ? (

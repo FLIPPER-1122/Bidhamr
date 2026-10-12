@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { sendKontakt } from "@/app/actions/kontakt";
 import { KONTAKT_BESKED_MAKS, KONTAKT_EMNER, type KontaktEmne } from "@/lib/tryghed";
 
@@ -25,6 +25,14 @@ export default function KontaktForm({
   // Synkron spærre mod dobbelt-submit: state når ikke at opdatere mellem to
   // hurtige klik/Enter, en ref gør.
   const senderRef = useRef(false);
+  // Først klar, når JavaScript kører (hydreret). Før det er knappen slået fra:
+  // ellers sendte browseren formularen som en almindelig GET, beskeden endte
+  // i adressen og blev aldrig gemt - uden fejlbesked (tester, 12. okt. 2026).
+  const klar = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   async function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -62,7 +70,7 @@ export default function KontaktForm({
   }
 
   return (
-    <form onSubmit={send} className="space-y-5" noValidate>
+    <form onSubmit={send} method="post" className="space-y-5" noValidate>
       <fieldset>
         <legend className="text-sm font-medium text-tekst">Hvad drejer det sig om?</legend>
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -152,7 +160,7 @@ export default function KontaktForm({
         </p>
       )}
 
-      <button type="submit" disabled={sender} className="btn btn-primaer w-full sm:w-auto">
+      <button type="submit" disabled={sender || !klar} aria-busy={sender} className="btn btn-primaer w-full sm:w-auto">
         {sender ? "Sender…" : "Send besked"}
       </button>
     </form>

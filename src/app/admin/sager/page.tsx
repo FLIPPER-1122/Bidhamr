@@ -2,12 +2,22 @@ import Link from "next/link";
 import { hentAntalVentendeAnker, hentSager, type SagListeRaekke } from "@/app/actions/adminSager";
 import { SAG_TYPE_NAVN, adminSagSti } from "@/lib/sager";
 import { BeskyttelseBadge, SagStatusBadge, sagTid } from "@/components/sager/visning";
+import AdminSide from "@/components/admin/AdminSide";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
-import { kraevSideRolle } from "@/lib/adminAuth";
+import AdminFaner from "@/components/admin/AdminFaner";
+import AdminFejl from "@/components/admin/AdminFejl";
+import AdminTom from "@/components/admin/AdminTom";
+import AdminBadge from "@/components/admin/AdminBadge";
+import AdminSideskift from "@/components/admin/AdminSideskift";
+import { hentStaffTal } from "@/lib/admin/taellere";
+import { harMindstRolle, kraevSideRolle } from "@/lib/adminAuth";
+import { erInhabil, hentSagTaget } from "@/lib/admin/sagTaget";
+import TagSagKnap from "@/components/admin/sager/TagSagKnap";
 
 // Sager oprettet af køberen. Åbne sager (venter på afgørelse) står øverst.
 // Handler uden sag (hænger, manuel markering, fællesbesked) ligger under
-// /admin/handler.
+// /admin/handler. Hurtigst: "Afgør næste" åbner den ældste åbne sag, og på
+// sagen går "Løs og gå til næste sag" direkte videre.
 
 const FANER = [
   { key: "aabne", label: "Åbne" },
@@ -33,12 +43,12 @@ export default async function AdminSager({
 }: {
   searchParams: Promise<{ vis?: string; side?: string }>;
 }) {
-  await kraevSideRolle("medarbejder");
+  const { rolle, admin, userId } = await kraevSideRolle("medarbejder");
   const { vis, side: sideParam } = await searchParams;
   const fane: Fane = FANER.some((f) => f.key === vis) ? (vis as Fane) : "aabne";
   const side = Math.max(0, Math.min(1000, Number.parseInt(sideParam ?? "0", 10) || 0));
 
-  const [res, ankerRes] = await Promise.all([hentSager(fane, side), hentAntalVentendeAnker()]);
+  const [res, ankerRes, tal] = await Promise.all([hentSager(fane, side), hentAntalVentendeAnker(), hentStaffTal()]);
   const antalAnker = "antal" in ankerRes ? ankerRes.antal : 0;
   const fejl = "fejl" in res ? res.fejl : null;
   const liste = "fejl" in res ? [] : res.sager;
@@ -49,124 +59,109 @@ export default async function AdminSager({
     fane === "aabne"
       ? [...liste].sort((a, b) => Number(b.status === "aaben") - Number(a.status === "aaben"))
       : liste;
+  const aabne = sager.filter((s) => s.status === "aaben" || s.status === "afventer_retur");
+  const [taget, inhabilListe] = await Promise.all([
+    hentSagTaget(admin, aabne.map((s) => s.id)),
+    // "Tag sagen" skjules, hvor staff er inhabil (samme regel som databasen).
+    Promise.all(aabne.map((s) => erInhabil(admin, userId, s.koeber.id, s.saelger.id))),
+  ]);
+  const inhabil = new Set(aabne.filter((_, i) => inhabilListe[i]).map((s) => s.id));
+  // "Afgør næste sag" springer over sager, en kollega har taget.
+  const ledig = (s: SagListeRaekke) => {
+    const t = taget.get(s.id);
+    return (!t || t.brugerId === userId) && !inhabil.has(s.id);
+  };
+  const foersteAabne = fane === "aabne"
+      ? sager.find((s) => s.status === "aaben" && ledig(s))
+      : fane === "anker"
+        ? sager.find((s) => s.ankeVenter && ledig(s))
+        : undefined;
 
-  function href(f: Fane, s = 0) {
-    const p = new URLSearchParams({ vis: f });
-    if (s > 0) p.set("side", String(s));
-    return `/admin/sager?${p}`;
-  }
+  // ?side= er 0-baseret her (hentSager), så den bygges selv.
+  const href = (f: Fane, s = 0) => `/admin/sager?vis=${f}${s > 0 ? `&side=${s}` : ""}`;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
         titel="Sager"
         forklaring={
           <>
-            Køberen har klaget over en handel. Læs sagen, og afgør hvem der har ret. Pengene er frosset,
-            mens sagen er åben. Handler uden sag finder du under{" "}
+            Køberen har klaget over en handel. Læs sagen, og afgør hvem der har ret. Pengene er frosset, mens sagen er åben.
+            Handler uden sag finder du under{" "}
             <Link href="/admin/handler" className="font-medium text-groen hover:underline">
               Handler
             </Link>
             .
           </>
         }
+        handlinger={
+          foersteAabne && (
+            <Link href={adminSagSti(foersteAabne.id)} className="btn btn-primaer w-full sm:w-auto">
+              {fane === "anker" ? "Afgør næste anke" : "Afgør næste sag"}
+            </Link>
+          )
+        }
       />
 
-      <nav aria-label="Filtrér sager" className="flex flex-wrap gap-2">
-        {FANER.map((f) => {
-          const aktiv = f.key === fane;
-          return (
-            <Link
-              key={f.key}
-              href={href(f.key)}
-              aria-current={aktiv ? "page" : undefined}
-              className={`inline-flex min-h-10 items-center rounded-full px-4 text-sm font-medium transition-colors ${
-                aktiv
-                  ? "bg-orange-knap text-white"
-                  : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
-              }`}
-            >
-              {f.label}
-              {f.key === "anker" && antalAnker > 0 && (
-                <span
-                  className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    aktiv ? "bg-white text-orange-knap" : "bg-orange-knap text-white"
-                  }`}
-                >
-                  {antalAnker}
-                  <span className="sr-only"> anker venter</span>
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
+      <AdminFaner
+        label="Sager"
+        aktiv={fane}
+        faner={FANER.filter((f) => f.key !== "anker" || harMindstRolle(rolle, "admin") || antalAnker > 0).map((f) => ({
+          id: f.key,
+          label: f.label,
+          href: href(f.key),
+          antal: f.key === "aabne" ? tal.sager : f.key === "anker" ? antalAnker : undefined,
+          tone: "gul" as const,
+        }))}
+      />
 
       {fejl ? (
-        <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg px-5 py-4 text-sm text-fejl-tekst">
-          Sagerne kunne ikke hentes: {fejl}
-        </p>
+        <AdminFejl hvad="Sagerne" detalje={fejl} />
       ) : sager.length === 0 ? (
-        <div className="rounded-xl border border-neutral-200 bg-white px-5 py-10 text-center text-sm text-neutral-500">
-          {side > 0 ? "Der er ikke flere sager." : TOMT[fane]}
-        </div>
+        <AdminTom
+          tekst={side > 0 ? "Der er ikke flere sager." : TOMT[fane]}
+          link={fane !== "afgjorte" ? { href: href("afgjorte"), label: "Se afgjorte sager" } : undefined}
+        />
       ) : (
-        <ul className="divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+        <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
           {sager.map((s) => (
-            <li key={s.id}>
+            <li key={s.id} className="flex flex-col border-t border-admin-kant first:border-t-0 sm:flex-row sm:items-center">
               <Link
                 href={adminSagSti(s.id)}
-                className={`block px-4 py-4 transition-colors hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen sm:px-5 ${
+                className={`flex min-w-0 flex-1 flex-col gap-1 px-4 py-4 transition-colors hover:bg-admin-bg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:gap-4 sm:px-5 ${
                   s.status === "aaben" || s.ankeVenter ? "bg-advarsel-bg/40" : ""
                 }`}
               >
-                <div className="flex flex-wrap items-center gap-2">
-                  <SagStatusBadge status={s.status} />
-                  {s.beskyttelse && <BeskyttelseBadge />}
-                  {s.ankeVenter && (
-                    <span className="inline-block rounded-full border border-advarsel-kant bg-advarsel-bg px-2.5 py-1 text-xs font-semibold text-advarsel-tekst">
-                      Anke venter
-                    </span>
-                  )}
-                  <span className="min-w-0 break-words font-semibold text-neutral-900">
-                    {s.auktionTitel ?? "(slettet auktion)"}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SagStatusBadge status={s.status} />
+                    {s.beskyttelse && <BeskyttelseBadge />}
+                    {s.ankeVenter && <AdminBadge tone="gul">Anke venter</AdminBadge>}
+                  </div>
+                  <p className="mt-1.5 min-w-0 break-words font-semibold text-tekst">{s.auktionTitel ?? "(slettet auktion)"}</p>
+                  <p className="text-sm text-tekst-daempet">
+                    {kortType(s)} · {s.koeber.navn ?? "Uden navn"} → {s.saelger.navn ?? "Uden navn"}
+                  </p>
                 </div>
-                <p className="mt-1 text-sm text-neutral-700">{kortType(s)}</p>
-                <p className="mt-1 text-sm text-neutral-500">
-                  Køber: <span className="text-neutral-700">{s.koeber.navn ?? "Uden navn"}</span>
-                  {" · "}Sælger: <span className="text-neutral-700">{s.saelger.navn ?? "Uden navn"}</span>
-                </p>
-                <p className="mt-1 text-xs text-neutral-500">
+                <p className="shrink-0 text-xs text-tekst-svag sm:text-right">
                   Oprettet {sagTid(s.oprettetKl)}
-                  {s.afgjortKl && s.status !== "aaben" && ` · Afgjort ${sagTid(s.afgjortKl)}`}
-                  {` · ${s.antalBilleder} ${s.antalBilleder === 1 ? "billede" : "billeder"}`}
+                  {s.afgjortKl && s.status !== "aaben" && <span className="block">Afgjort {sagTid(s.afgjortKl)}</span>}
+                  <span className="block">
+                    {s.antalBilleder} {s.antalBilleder === 1 ? "billede" : "billeder"}
+                  </span>
                 </p>
               </Link>
+              {(s.status === "aaben" || s.status === "afventer_retur") && (
+                <div className="px-4 pb-4 sm:px-5 sm:py-4">
+                  <TagSagKnap sagId={s.id} taget={taget.get(s.id) ?? null} mig={userId} inhabil={inhabil.has(s.id)} />
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
 
-      {(side > 0 || flere) && (
-        <div className="flex items-center justify-between gap-3">
-          {side > 0 ? (
-            <Link href={href(fane, side - 1)} className="btn btn-sekundaer btn-lille">
-              Forrige
-            </Link>
-          ) : (
-            <span />
-          )}
-          <span className="text-sm text-neutral-500">Side {side + 1}</span>
-          {flere ? (
-            <Link href={href(fane, side + 1)} className="btn btn-sekundaer btn-lille">
-              Næste
-            </Link>
-          ) : (
-            <span />
-          )}
-        </div>
-      )}
-    </div>
+      <AdminSideskift side={side + 1} harNaeste={flere} lavHref={(s) => href(fane, s - 1)} />
+    </AdminSide>
   );
 }

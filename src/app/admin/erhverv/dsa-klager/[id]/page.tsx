@@ -1,13 +1,18 @@
 import Link from "next/link";
 import { kraevErhvervSide } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
-import Statuslinje from "@/components/admin/Statuslinje";
 import { KlageKort } from "@/components/admin/dsa/DsaKort";
 import { Pille, tid } from "@/components/admin/dsa/DsaDele";
 import { erhvervDsaKlageAfgoer } from "@/app/actions/adminErhvervDsa";
 import { erUuid } from "@/lib/dsa/link";
 import { INHABIL_UKENDT, firmaKlageInhabil, hentFirmaDsaKlage, hentFirmaFor } from "@/lib/dsa/firmaKlager";
 import { ERHVERV_DSA_KLAGER as T } from "@/lib/tekster/erhvervDsaKlager";
+import { dsaKlageTitel } from "@/lib/admin/erhvervTitel";
+
+// Browserfanen hedder det samme som overskriften.
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  return { title: await dsaKlageTitel((await params).id) };
+}
 
 // Admin → Erhverv → Firmaets klager → én klage. Kun chef og saelger.
 // Genbruger DSA-klagekortet (samme visning og knapper som DSA → Klager), men
@@ -17,7 +22,6 @@ import { ERHVERV_DSA_KLAGER as T } from "@/lib/tekster/erhvervDsaKlager";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Klage over afgørelse" };
 
 function Tilbage() {
   return (
@@ -132,7 +136,6 @@ export default async function ErhvervDsaKlageSide({ params }: { params: Promise<
         </>
       )}
 
-      <Statuslinje />
     </div>
   );
 }

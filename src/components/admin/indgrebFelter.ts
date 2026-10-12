@@ -1,5 +1,6 @@
 import type { TekstFelt, VaelgFelt } from "@/components/admin/ConfirmDialog";
 import { REGEL_VALG } from "@/lib/dsa/regler";
+import { INDGREB_FAKTA } from "@/lib/tekster/adminSkabeloner";
 
 // De felter, staff udfylder ved et indgreb (DSA art. 17): hvilken regel/lov,
 // fakta til brugeren og en intern note. Samme felter alle steder, hvor indhold
@@ -26,6 +27,7 @@ export function indgrebFelter(opts: {
         placeholder: opts.faktaPlaceholder,
         required: true,
         maxLength: 2000,
+        skabeloner: INDGREB_FAKTA,
         hjaelp:
           "Skriv konkret, hvad brugeren har gjort. Brugeren får teksten på mail og kan klage. Skriv aldrig, hvem der har anmeldt.",
       },

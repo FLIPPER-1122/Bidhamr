@@ -34,12 +34,15 @@ export default function FirmaFelter({
   onChange,
   laaste = [],
   idPraefiks,
+  fejl = {},
 }: {
   vaerdier: FirmaVaerdier;
   onChange: (v: FirmaVaerdier) => void;
   // Felter, der kun kan læses (fx firmanavn og CVR for rollen saelger).
   laaste?: (keyof FirmaVaerdier)[];
   idPraefiks: string;
+  // Fejltekst pr. felt (markerer feltet og viser teksten under det).
+  fejl?: Partial<Record<keyof FirmaVaerdier, string>>;
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -57,8 +60,15 @@ export default function FirmaFelter({
               value={vaerdier[f.navn]}
               readOnly={laaste.includes(f.navn)}
               onChange={(e) => onChange({ ...vaerdier, [f.navn]: e.target.value })}
-              className={ADMIN_FELT}
+              aria-invalid={fejl[f.navn] ? true : undefined}
+              aria-describedby={fejl[f.navn] ? `${id}-fejl` : undefined}
+              className={`${ADMIN_FELT} ${fejl[f.navn] ? "border-fejl-kant bg-fejl-bg/40" : ""}`}
             />
+            {fejl[f.navn] && (
+              <p id={`${id}-fejl`} className="mt-1.5 text-[13px] font-medium text-fejl-tekst">
+                {fejl[f.navn]}
+              </p>
+            )}
           </div>
         );
       })}

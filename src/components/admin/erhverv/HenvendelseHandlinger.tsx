@@ -13,11 +13,14 @@ export default function HenvendelseHandlinger({
   status,
   noter: startNoter,
   arkiveret,
+  firmaId = null,
 }: {
   id: string;
   status: HenvendelseStatus;
   noter: string | null;
   arkiveret: boolean;
+  // Er der oprettet en firmakonto, kan henvendelsen ikke afvises.
+  firmaId?: string | null;
 }) {
   const router = useRouter();
   const [noter, setNoter] = useState(startNoter ?? "");
@@ -62,7 +65,7 @@ export default function HenvendelseHandlinger({
               onConfirm={() => opdater({ id, status: "godkendt" })}
             />
           )}
-          {status !== "afvist" && (
+          {status !== "afvist" && !firmaId && (
             <BekraeftDialog
               triggerLabel={A.henvendelser.knapAfvis}
               triggerClassName="btn btn-fare"

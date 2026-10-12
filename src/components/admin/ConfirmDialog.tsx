@@ -11,7 +11,9 @@ import {
   type ReactNode,
 } from "react";
 
-import { visKvittering } from "@/components/admin/Statuslinje";
+import { useRouter } from "next/navigation";
+import { visKvittering } from "@/components/admin/Kvittering";
+import Skabeloner, { type Skabelon } from "@/components/admin/Skabeloner";
 
 type Props = {
   triggerLabel: string;
@@ -22,7 +24,13 @@ type Props = {
   confirmLabel: string;
   action: (formData: FormData) => Promise<void | { fejl: string } | { ok: true }>;
   hiddenFields: Record<string, string>;
-  aarsagField?: { label: string; placeholder: string; required: boolean; name?: string };
+  aarsagField?: {
+    label: string;
+    placeholder: string;
+    required: boolean;
+    name?: string;
+    skabeloner?: readonly Skabelon[];
+  };
   varighedField?: boolean;
   // Påkrævet valg mellem nogle muligheder (radioknapper), fx Køber/Sælger.
   valgField?: { name: string; label: string; valg: { value: string; label: string }[] };
@@ -37,9 +45,19 @@ type Props = {
   vaelgFelter?: VaelgFelt[];
   // Et afkrydsningsfelt nederst (sendes som value, når det er krydset af).
   afkrydsning?: { name: string; label: string; value?: string };
-  // Kort kvittering, der vises i sidens statuslinje (<Statuslinje />), når
-  // handlingen er lykkedes - fx "Anmeldelsen er afsluttet".
+  // Kort kvittering, der vises nederst på skærmen (<Kvittering /> i
+  // admin/layout.tsx), når handlingen er lykkedes - fx "Anmeldelsen er afsluttet".
   kvittering?: string;
+  // De vigtigste fakta øverst i dialogen (beløb, hvem får pengene, hvem det
+  // gælder), så man ikke skal åbne en detaljeside for at være sikker.
+  fakta?: { label: string; vaerdi: ReactNode }[];
+  // Destruktiv handling eller handling, der flytter penge: rød bekræftknap.
+  fare?: boolean;
+  // Viser "Kan ikke fortrydes." ved knapperne.
+  kanIkkeFortrydes?: boolean;
+  // Ekstra knap "... og gå til næste": samme handling, og derefter videre
+  // til næste element i samme kø.
+  naeste?: { href: string; label?: string };
 };
 
 export type VaelgFelt = {
@@ -63,6 +81,8 @@ export type TekstFelt = {
   hjaelp?: string;
   // Forudfyldt tekst.
   standard?: string;
+  // Standardsvar, der kan sættes ind med ét klik (src/lib/tekster/adminSkabeloner.ts).
+  skabeloner?: readonly Skabelon[];
 };
 
 export default function ConfirmDialog({
@@ -82,7 +102,12 @@ export default function ConfirmDialog({
   vaelgFelter,
   afkrydsning,
   kvittering,
+  fakta,
+  fare = false,
+  kanIkkeFortrydes = false,
+  naeste,
 }: Props) {
+  const router = useRouter();
   const id = useId();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -141,6 +166,9 @@ export default function ConfirmDialog({
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
+    // Hvilken knap sendte formularen? "... og gå til næste" har name="__naeste".
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const videre = !!naeste && submitter?.name === "__naeste";
     const formData = new FormData(form);
     if (valgKraeverTekst && formData.get(valgField?.name ?? "") === valgKraeverTekst.valg) {
       const tekst = String(formData.get(valgKraeverTekst.felt) ?? "").trim();
@@ -160,6 +188,7 @@ export default function ConfirmDialog({
       if (kvittering) visKvittering(kvittering);
       setOpen(false);
       setValgt(null);
+      if (videre && naeste) router.push(naeste.href);
     });
   }
 
@@ -172,7 +201,7 @@ export default function ConfirmDialog({
         aria-haspopup="dialog"
         className={
           triggerClassName ??
-          "inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors"
+          "btn btn-sekundaer btn-lille"
         }
       >
         {triggerIcon}
@@ -181,7 +210,7 @@ export default function ConfirmDialog({
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
           onClick={luk}
         >
           <div
@@ -191,17 +220,27 @@ export default function ConfirmDialog({
             aria-labelledby={`${id}-titel`}
             aria-describedby={description ? `${id}-beskrivelse` : undefined}
             onKeyDown={onDialogKeyDown}
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 text-left shadow-xl"
+            className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 text-left shadow-stor sm:rounded-2xl sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id={`${id}-titel`} className="text-lg font-bold text-neutral-900">{title}</h2>
+            <h2 id={`${id}-titel`} className="text-lg font-bold text-tekst">{title}</h2>
             {description && (
-              <p id={`${id}-beskrivelse`} className="mt-1.5 text-sm text-neutral-500">{description}</p>
+              <p id={`${id}-beskrivelse`} className="mt-1.5 text-sm text-tekst-daempet">{description}</p>
+            )}
+            {fakta && fakta.length > 0 && (
+              <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-xl bg-groen-lys px-4 py-3 text-sm">
+                {fakta.map((f) => (
+                  <div key={f.label} className="contents">
+                    <dt className="text-tekst-daempet">{f.label}</dt>
+                    <dd className="min-w-0 break-words font-semibold text-tekst">{f.vaerdi}</dd>
+                  </div>
+                ))}
+              </dl>
             )}
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-4">
               {fejl && (
-                <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p role="alert" className="rounded-lg border border-fejl-kant bg-fejl-bg px-3 py-2 text-sm text-fejl-tekst">
                   {fejl}
                 </p>
               )}
@@ -214,7 +253,7 @@ export default function ConfirmDialog({
                 <div>
                   <label
                     htmlFor="varighed"
-                    className="block text-sm font-medium text-neutral-700"
+                    className="block text-sm font-medium text-tekst"
                   >
                     Hvor længe?
                   </label>
@@ -222,7 +261,7 @@ export default function ConfirmDialog({
                     id="varighed"
                     name="varighed"
                     required
-                    className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen bg-white"
+                    className="mt-1.5 w-full rounded-lg border border-kant-staerk px-3 py-2.5 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-groen bg-white"
                   >
                     <option value="1">1 dag</option>
                     <option value="7">7 dage</option>
@@ -233,12 +272,12 @@ export default function ConfirmDialog({
 
               {valgField && (
                 <fieldset>
-                  <legend className="block text-sm font-medium text-neutral-700">
+                  <legend className="block text-sm font-medium text-tekst">
                     {valgField.label}
                   </legend>
                   <div className="mt-1.5 flex flex-wrap gap-4">
                     {valgField.valg.map((v) => (
-                      <label key={v.value} className="inline-flex items-center gap-2 text-sm text-neutral-800">
+                      <label key={v.value} className="inline-flex items-center gap-2 text-sm text-tekst">
                         <input
                           type="radio"
                           name={valgField.name}
@@ -257,7 +296,7 @@ export default function ConfirmDialog({
                 const feltId = `${id}-${f.name}`;
                 return (
                   <div key={f.name}>
-                    <label htmlFor={feltId} className="block text-sm font-medium text-neutral-700">
+                    <label htmlFor={feltId} className="block text-sm font-medium text-tekst">
                       {f.label}
                     </label>
                     <select
@@ -280,7 +319,7 @@ export default function ConfirmDialog({
                       ))}
                     </select>
                     {f.hjaelp && (
-                      <p id={`${feltId}-hjaelp`} className="mt-1 text-xs text-neutral-500">
+                      <p id={`${feltId}-hjaelp`} className="mt-1 text-xs text-tekst-svag">
                         {f.hjaelp}
                       </p>
                     )}
@@ -291,18 +330,21 @@ export default function ConfirmDialog({
               {aarsagField && (
                 <div>
                   <label
-                    htmlFor="aarsag"
-                    className="block text-sm font-medium text-neutral-700"
+                    htmlFor={`${id}-aarsag`}
+                    className="block text-sm font-medium text-tekst"
                   >
                     {aarsagField.label}
                   </label>
+                  {aarsagField.skabeloner && (
+                    <Skabeloner skabeloner={aarsagField.skabeloner} feltId={`${id}-aarsag`} />
+                  )}
                   <textarea
-                    id="aarsag"
+                    id={`${id}-aarsag`}
                     name={aarsagField.name ?? "aarsag"}
                     required={aarsagField.required}
                     rows={3}
                     placeholder={aarsagField.placeholder}
-                    className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
+                    className="mt-1.5 w-full rounded-lg border border-kant-staerk px-3 py-2.5 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-groen"
                   />
                 </div>
               )}
@@ -314,10 +356,11 @@ export default function ConfirmDialog({
                   (valgKraeverTekst?.felt === f.name && valgt === valgKraeverTekst.valg);
                 return (
                   <div key={f.name}>
-                    <label htmlFor={feltId} className="block text-sm font-medium text-neutral-700">
+                    <label htmlFor={feltId} className="block text-sm font-medium text-tekst">
                       {f.label}
-                      {!paakraevet && <span className="font-normal text-neutral-500"> (valgfri)</span>}
+                      {!paakraevet && <span className="font-normal text-tekst-svag"> (valgfri)</span>}
                     </label>
+                    {f.skabeloner && <Skabeloner skabeloner={f.skabeloner} feltId={feltId} />}
                     <textarea
                       id={feltId}
                       name={f.name}
@@ -328,10 +371,10 @@ export default function ConfirmDialog({
                       placeholder={f.placeholder}
                       defaultValue={f.standard}
                       aria-describedby={f.hjaelp ? `${feltId}-hjaelp` : undefined}
-                      className="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-groen"
+                      className="mt-1.5 w-full rounded-lg border border-kant-staerk px-3 py-2.5 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-groen"
                     />
                     {f.hjaelp && (
-                      <p id={`${feltId}-hjaelp`} className="mt-1 text-xs text-neutral-500">
+                      <p id={`${feltId}-hjaelp`} className="mt-1 text-xs text-tekst-svag">
                         {f.hjaelp}
                       </p>
                     )}
@@ -340,7 +383,7 @@ export default function ConfirmDialog({
               })}
 
               {afkrydsning && (
-                <label className="flex items-start gap-2 text-sm text-neutral-800">
+                <label className="flex items-start gap-2 text-sm text-tekst">
                   <input
                     type="checkbox"
                     name={afkrydsning.name}
@@ -351,22 +394,33 @@ export default function ConfirmDialog({
                 </label>
               )}
 
-              <div className="flex justify-end gap-3 pt-1">
-                <button
-                  ref={annullerRef}
-                  type="button"
-                  onClick={luk}
-                  disabled={pending}
-                  className="min-h-11 rounded-lg bg-neutral-100 px-4 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-200 transition-colors disabled:opacity-50"
-                >
-                  Annullér
-                </button>
+              {kanIkkeFortrydes && <p className="text-sm font-medium text-fejl-tekst">Kan ikke fortrydes.</p>}
+              {/* Bekræft står FØRST i DOM'en, så Enter i et felt altid rammer den -
+                  aldrig "... og gå til næste". Placeringen styres med CSS order. */}
+              <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
                 <button
                   type="submit"
                   disabled={pending}
-                  className="min-h-11 rounded-lg bg-orange-knap px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-knap-mork transition-colors disabled:opacity-50"
+                  aria-busy={pending}
+                  className={`btn order-1 sm:order-3 ${fare ? "btn-fare-fyldt" : "btn-primaer"}`}
                 >
-                  {pending ? "Arbejder…" : confirmLabel}
+                  {pending && <span className="btn-spinner" aria-hidden="true" />}
+                  {confirmLabel}
+                </button>
+                {naeste && (
+                  <button
+                    type="submit"
+                    name="__naeste"
+                    value="1"
+                    disabled={pending}
+                    aria-busy={pending}
+                    className={`btn order-2 ${fare ? "btn-fare" : "btn-sekundaer"}`}
+                  >
+                    {naeste.label ?? `${confirmLabel} og gå til næste`}
+                  </button>
+                )}
+                <button ref={annullerRef} type="button" onClick={luk} disabled={pending} className="btn btn-sekundaer order-3 sm:order-1">
+                  Annullér
                 </button>
               </div>
             </form>

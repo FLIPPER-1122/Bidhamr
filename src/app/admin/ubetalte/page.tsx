@@ -3,7 +3,11 @@ import { kraevSideRolle } from "@/lib/adminAuth";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { advarselFelter } from "@/components/admin/advarselFelter";
 import { ubetaltAfvis, ubetaltGivAdvarsel } from "@/app/actions/adminActions";
+import { UBETALT_ADVARSEL, UBETALT_AFVIS } from "@/lib/tekster/adminSkabeloner";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import AdminFilterChips from "@/components/admin/AdminFilterChips";
+import AdminSide from "@/components/admin/AdminSide";
+import { HandlerFaner } from "@/components/admin/OmraadeFaner";
 
 // Sager "Ubetalt vinder": oprettes af cron, når vinderen ikke betaler inden
 // fristen. En medarbejder giver advarsel eller afviser sagen.
@@ -89,38 +93,27 @@ export default async function AdminUbetalte({
   const antalSider = Math.max(1, Math.ceil((count ?? 0) / PR_SIDE));
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
-        titel="Ubetalte vindere"
+        titel="Handler"
         forklaring="Vindere, der ikke betalte inden fristen. Giv en advarsel, eller afvis, hvis der er en god grund."
       />
+      <HandlerFaner aktiv="ubetalte" />
 
-      <div className="flex flex-wrap gap-2">
-        {FANER.map((f) => {
-          const aktiv = f.key === fane;
-          return (
-            <Link
-              key={f.key}
-              href={`/admin/ubetalte?vis=${f.key}`}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-                aktiv
-                  ? "bg-orange-knap text-white"
-                  : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
-              }`}
-            >
-              {f.label}
-              {f.key === "afventer" && (
-                <span className={`ml-1.5 text-xs ${aktiv ? "text-white/80" : "text-neutral-400"}`}>
-                  {antalAfventer ?? 0}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </div>
+      <AdminFilterChips
+        label="Vis"
+        aktiv={fane}
+        chips={FANER.map((f) => ({
+          id: f.key,
+          label: f.label,
+          href: `/admin/ubetalte?vis=${f.key}`,
+          antal: f.key === "afventer" ? (antalAfventer ?? 0) : undefined,
+          tone: "gul" as const,
+        }))}
+      />
 
       {sager.length === 0 ? (
-        <p className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500">
+        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-sm text-tekst-svag">
           {fane === "afventer" ? "Ingen sager venter." : "Ingen behandlede sager endnu."}
         </p>
       ) : (
@@ -130,36 +123,36 @@ export default async function AdminUbetalte({
             const tidligere = advarselAntal.get(s.buyer_id) ?? 0;
             const beloeb = beloebMap.get(s.trade_id);
             return (
-              <li key={s.id} className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
+              <li key={s.id} className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
                 <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                   <div className="min-w-0">
-                    <p className="text-xs uppercase text-neutral-500">Køber</p>
+                    <p className="text-xs uppercase text-tekst-svag">Køber</p>
                     <Link href={`/admin/brugere/${s.buyer_id}`} className="block hover:underline">
-                      <span className="block truncate font-medium text-neutral-800">
+                      <span className="block truncate font-medium text-tekst">
                         {(k?.navn as string | null) ?? "Uden navn"}
                       </span>
-                      <span className="block truncate text-xs text-neutral-500">{k?.email as string}</span>
+                      <span className="block truncate text-xs text-tekst-svag">{k?.email as string}</span>
                     </Link>
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs uppercase text-neutral-500">Auktion</p>
+                    <p className="text-xs uppercase text-tekst-svag">Auktion</p>
                     <Link
                       href={`/auktion/${s.auction_id}`}
-                      className="block truncate font-medium text-neutral-800 hover:underline"
+                      className="block truncate font-medium text-tekst hover:underline"
                     >
                       {titelMap.get(s.auction_id) ?? "(slettet auktion)"}
                     </Link>
-                    <span className="text-xs text-neutral-500">
+                    <span className="text-xs text-tekst-svag">
                       {beloeb !== undefined ? kr(beloeb) : "—"}
                     </span>
                   </div>
                   <div>
-                    <p className="text-xs uppercase text-neutral-500">Oprettet</p>
-                    <p className="text-neutral-800">{dato(s.oprettet)}</p>
+                    <p className="text-xs uppercase text-tekst-svag">Oprettet</p>
+                    <p className="text-tekst">{dato(s.oprettet)}</p>
                   </div>
                   <div>
-                    <p className="text-xs uppercase text-neutral-500">Advarsler i alt</p>
-                    <p className={tidligere > 0 ? "font-semibold text-red-700" : "text-neutral-800"}>
+                    <p className="text-xs uppercase text-tekst-svag">Advarsler i alt</p>
+                    <p className={tidligere > 0 ? "font-semibold text-fejl-tekst" : "text-tekst"}>
                       {tidligere}
                     </p>
                   </div>
@@ -169,7 +162,13 @@ export default async function AdminUbetalte({
                   <div className="mt-4 flex flex-wrap gap-2">
                     <ConfirmDialog
                       triggerLabel="Giv advarsel"
-                      triggerClassName="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                      triggerClassName="btn btn-primaer btn-lille"
+                      fakta={[
+                        { label: "Køber", vaerdi: (k?.navn as string | null) ?? "Uden navn" },
+                        { label: "Auktion", vaerdi: titelMap.get(s.auction_id) ?? "(slettet auktion)" },
+                        { label: "Advarsler nu", vaerdi: String(tidligere) },
+                      ]}
+                      kvittering="Advarslen er givet"
                       title="Giv køberen en advarsel?"
                       description="Advarslen registreres på køberens konto, og køberen får besked med begrundelsen."
                       confirmLabel="Giv advarsel"
@@ -179,11 +178,12 @@ export default async function AdminUbetalte({
                         internNavn: "begrundelse",
                         brugerPlaceholder: "Fx: Du betalte ikke for en auktion, du vandt, inden for fristen.",
                         internPlaceholder: "Betalte ikke for vundet auktion",
-                      })}
+                      }).map((f, i) => (i === 0 ? { ...f, skabeloner: UBETALT_ADVARSEL } : f))}
                     />
                     <ConfirmDialog
-                      triggerLabel="Afvis"
-                      triggerClassName="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
+                      triggerLabel="Afvis – ingen advarsel"
+                      triggerClassName="btn btn-sekundaer btn-lille"
+                      kvittering="Sagen er afvist"
                       title="Afvis sagen?"
                       description="Køberen får ingen advarsel."
                       confirmLabel="Afvis sagen"
@@ -194,19 +194,20 @@ export default async function AdminUbetalte({
                         label: "Begrundelse",
                         placeholder: "Hvorfor afvises sagen?",
                         required: true,
+                        skabeloner: UBETALT_AFVIS,
                       }}
                     />
                   </div>
                 ) : (
-                  <div className="mt-4 rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
+                  <div className="mt-4 rounded-lg bg-neutral-50 px-3 py-2 text-sm text-tekst">
                     <span
                       className={`mr-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                        s.status === "advarsel_givet" ? "bg-red-100 text-red-700" : "bg-neutral-200 text-neutral-700"
+                        s.status === "advarsel_givet" ? "bg-red-100 text-fejl-tekst" : "bg-neutral-200 text-tekst"
                       }`}
                     >
                       {s.status === "advarsel_givet" ? "Advarsel givet" : "Afvist"}
                     </span>
-                    {s.behandlet_kl && <span className="text-xs text-neutral-500">{dato(s.behandlet_kl)}</span>}
+                    {s.behandlet_kl && <span className="text-xs text-tekst-svag">{dato(s.behandlet_kl)}</span>}
                     {s.begrundelse && <p className="mt-1">{s.begrundelse}</p>}
                   </div>
                 )}
@@ -219,17 +220,17 @@ export default async function AdminUbetalte({
       {antalSider > 1 && (
         <div className="flex items-center justify-between text-sm">
           {side > 1 ? (
-            <Link href={`/admin/ubetalte?vis=${fane}&side=${side - 1}`} className="text-neutral-700 hover:underline">
+            <Link href={`/admin/ubetalte?vis=${fane}&side=${side - 1}`} className="text-tekst hover:underline">
               ← Forrige
             </Link>
           ) : (
             <span />
           )}
-          <span className="text-neutral-500">
+          <span className="text-tekst-svag">
             Side {side} af {antalSider}
           </span>
           {side < antalSider ? (
-            <Link href={`/admin/ubetalte?vis=${fane}&side=${side + 1}`} className="text-neutral-700 hover:underline">
+            <Link href={`/admin/ubetalte?vis=${fane}&side=${side + 1}`} className="text-tekst hover:underline">
               Næste →
             </Link>
           ) : (
@@ -237,6 +238,6 @@ export default async function AdminUbetalte({
           )}
         </div>
       )}
-    </div>
+    </AdminSide>
   );
 }

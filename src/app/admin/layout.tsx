@@ -2,54 +2,117 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import BetaFejlKnap from "@/components/betafejl/BetaFejlKnap";
 import { hentBruger, hentMinRolle } from "@/lib/supabase/bruger";
-import AdminSidebar from "@/components/admin/AdminSidebar";
-import { hentAntalUbetalte } from "@/app/actions/adminActions";
-import { hentAntalBetalingerTilHandling } from "@/app/actions/adminBetalinger";
-import { antalUbesvaredeStaffSamtaler } from "@/app/actions/staffChat";
-import { hentAntalAabneSager } from "@/app/actions/adminSager";
-import { hentAntalKontoLukninger } from "@/app/actions/adminKontoLukning";
-import { hentAntalTryghed } from "@/app/actions/adminTryghed";
-import { hentAntalDsa } from "@/app/actions/adminDsa";
-import { hentAntalNyeErhvervHenvendelser } from "@/app/actions/adminErhverv";
-import { hentNoedstopBjaelke } from "@/app/actions/adminPengesikkerhed";
+import AdminSidebar, { INGEN_TAELLERE, type MiniStatus } from "@/components/admin/AdminSidebar";
+import AdminTopSoeg from "@/components/admin/AdminTopSoeg";
+import Kvittering from "@/components/admin/Kvittering";
+import { hentErhvervNye, hentNoedstopTal } from "@/lib/admin/taellere";
+import { hentAdminStatus } from "@/lib/admin/status";
+import type { StaffRole } from "@/lib/adminAuth";
 
-const INGEN_TAELLERE = {
-  ubetalte: 0,
-  betalinger: 0,
-  chats: 0,
-  sager: 0,
-  kontolukninger: 0,
-  kontakt: 0,
-  rapporter: 0,
-  bedoemmelser: 0,
-  dsa: 0,
-  erhverv: 0,
-};
+// Fælles ramme for hele admin: menu, søgning øverst, nødstop-bjælken og
+// kvitteringen efter en handling (<Kvittering />, så den virker på alle
+// sider).
+//
+// Hastighed: menuens tal og nødstop-bjælken streames hver for sig
+// (Suspense), så siden ikke venter på dem. Menuen vises med det samme uden
+// tal og fyldes ud, når tallene er hentet.
+
+// Menuen med tal og statuslampe. Samme beregning som forsiden (hentAdminStatus).
+async function StaffMenu({ rolle }: { rolle: StaffRole }) {
+  const [{ status, tal: t }, antalErhverv] = await Promise.all([
+    hentAdminStatus(rolle),
+    rolle === "chef" ? hentErhvervNye() : Promise.resolve(0),
+  ]);
+  return (
+    <AdminSidebar
+      rolle={rolle}
+      status={{ tone: status.tone, titel: status.titel, href: status.tone === "groen" ? "/admin" : status.href }}
+      taellere={{
+        handler: t.haenger + t.fragt + t.markeret + t.ubetalte,
+        sager: t.sager,
+        betalinger: t.betalinger,
+        brugere: t.kontolukninger,
+        henvendelser: t.kontakt + t.chats,
+        anmeldelser: t.dsa + t.rapporter + t.bedoemmelser,
+        anmeldelserKritisk: t.dsaOverskredet > 0,
+        erhverv: antalErhverv,
+      }}
+    />
+  );
+}
+
+async function SaelgerMenu() {
+  const antalErhverv = await hentErhvervNye();
+  const status: MiniStatus =
+    antalErhverv > 0
+      ? {
+          tone: "gul",
+          titel: `${antalErhverv} ${antalErhverv === 1 ? "ny henvendelse venter" : "nye henvendelser venter"}`,
+          href: "/admin/erhverv",
+        }
+      : { tone: "groen", titel: "Ingen nye henvendelser", href: "/admin/erhverv" };
+  return <AdminSidebar rolle="saelger" taellere={{ ...INGEN_TAELLERE, erhverv: antalErhverv }} status={status} />;
+}
+
+// Mens menuens tal hentes: en let, statisk flade i samme størrelse (ingen
+// klientkomponent, der skal hydreres to gange).
+function MenuPladsholder() {
+  return (
+    <>
+      <div aria-hidden="true" className="fixed left-0 right-0 top-0 z-40 h-14 bg-groen-mork lg:hidden" />
+      <div aria-hidden="true" className="sticky top-0 hidden h-[calc(100vh-var(--samtykke-hoejde,0px))] w-[248px] shrink-0 bg-groen-mork lg:block" />
+    </>
+  );
+}
+
+// Nødstop (sikkerhedsnet A): tydelig rød bjælke øverst for al staff.
+// Årsagen vises kun for chefen (hentNoedstopBjaelke).
+async function NoedstopBjaelke() {
+  const n = await hentNoedstopTal();
+  if (!n.stoppet) return null;
+  return (
+    <div role="alert" className="bg-fejl-tekst px-4 py-3 text-sm font-semibold text-white sm:px-6">
+      NØDSTOP: {n.stoppet} er stoppet.
+      {n.aarsag ? ` Årsag: ${n.aarsag}` : ""} Chefen genoptager under Admin → Penge.
+    </div>
+  );
+}
+
+function Ramme({
+  menu,
+  erhverv,
+  bjaelke,
+  children,
+}: {
+  menu: React.ReactNode;
+  erhverv: boolean;
+  bjaelke?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  // Højden trækker cookie-bannerets højde fra (--samtykke-hoejde), så
+  // banneret aldrig dækker knapper nederst i admin - heller ikke på mobil.
+  return (
+    <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-admin-bg">
+      {menu}
+      <main id="admin-indhold" className="min-w-0 flex-1 overflow-auto bg-admin-bg pt-14 lg:pt-0">
+        {bjaelke}
+        <div className="border-b border-admin-kant bg-white/70 px-4 py-2.5 sm:px-6">
+          <AdminTopSoeg erhverv={erhverv} />
+        </div>
+        {children}
+      </main>
+      <Kvittering />
+      {/* "Meld fejl" til staff før lancering (ellers intet). */}
+      <Suspense fallback={null}>
+        <BetaFejlKnap />
+      </Suspense>
+    </div>
+  );
+}
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // Bruger og rolle hentes samtidig (højst én gang pr. forespørgsel, delt via
-  // cache() i src/lib/supabase/bruger.ts). Menuens tællere startes, så snart
-  // rollen er kendt, i stedet for at vente på begge - hver tæller kalder
-  // desuden selv assertRole (samme delte svar) og giver ingen data uden adgang.
-  const erStaff = (r: string | null) => r === "chef" || r === "admin" || r === "medarbejder";
-  const taellerLoefte = hentMinRolle().then((r) =>
-    erStaff(r)
-      ? Promise.all([
-          hentAntalUbetalte(),
-          hentAntalBetalingerTilHandling(),
-          antalUbesvaredeStaffSamtaler(),
-          hentAntalAabneSager(),
-          hentAntalKontoLukninger(),
-          hentAntalTryghed(),
-          hentAntalDsa(),
-        ])
-      : null,
-  );
-  // Erhverv-tælleren (nye henvendelser) kun for chef og saelger.
-  const erhvervLoefte = hentMinRolle().then((r) =>
-    r === "chef" || r === "saelger" ? hentAntalNyeErhvervHenvendelser() : null,
-  );
-  const noedstopLoefte = hentMinRolle().then((r) => (erStaff(r) ? hentNoedstopBjaelke() : null));
+  // cache() i src/lib/supabase/bruger.ts).
   const [user, rolle] = await Promise.all([hentBruger(), hentMinRolle()]);
 
   // Rollen 'saelger' (erhvervssælger) kommer ind, men ser KUN Erhverv.
@@ -57,62 +120,39 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // kraevSideRolle kender den ikke), og proxyen sender saelger videre til
   // /admin/erhverv fra alle andre admin-stier (src/lib/supabase/middleware.ts).
   if (user && rolle === "saelger") {
-    const erhverv = await erhvervLoefte;
-    const antalErhverv = erhverv && "antal" in erhverv ? erhverv.antal : 0;
     return (
-      <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-neutral-50">
-        <AdminSidebar rolle="saelger" taellere={{ ...INGEN_TAELLERE, erhverv: antalErhverv }} />
-        <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">{children}</main>
-      </div>
+      <Ramme
+        erhverv
+        menu={
+          <Suspense fallback={<MenuPladsholder />}>
+            <SaelgerMenu />
+          </Suspense>
+        }
+      >
+        {children}
+      </Ramme>
     );
   }
 
-  if (!user || !erStaff(rolle)) {
+  if (!user || (rolle !== "chef" && rolle !== "admin" && rolle !== "medarbejder")) {
     redirect("/");
   }
 
-  // Tallet til menuens badge. En fejl her må ikke vælte hele admin-panelet.
-  const taellere = await taellerLoefte;
-  if (!taellere) redirect("/");
-  const [ubetalte, betalinger, chats, sager, lukninger, tryghed, dsa] = taellere;
-  const antalUbetalte = "antal" in ubetalte ? ubetalte.antal : 0;
-  const antalBetalinger = "antal" in betalinger ? betalinger.antal : 0;
-  const antalChats = "antal" in chats ? chats.antal : 0;
-  const antalSager = "antal" in sager ? sager.antal : 0;
-  const antalLukninger = "antal" in lukninger ? lukninger.antal : 0;
-  const antalKontakt = "kontakt" in tryghed ? tryghed.kontakt : 0;
-  const antalRapporter = "rapporter" in tryghed ? tryghed.rapporter : 0;
-  const antalBedoemmelser = "bedoemmelser" in tryghed ? tryghed.bedoemmelser : 0;
-  const antalDsa = "antal" in dsa ? dsa.antal : 0;
-  const erhverv = await erhvervLoefte;
-  const antalErhverv = erhverv && "antal" in erhverv ? erhverv.antal : 0;
-  // Nødstop (sikkerhedsnet A): tydelig rød bjælke for al staff.
-  const noedstop = (await noedstopLoefte) ?? { fejl: "" };
-  const stoppet =
-    "ok" in noedstop && (noedstop.udbetalinger || noedstop.nyeBetalinger)
-      ? [noedstop.udbetalinger && "udbetalinger til sælgerne", noedstop.nyeBetalinger && "nye betalinger"]
-          .filter(Boolean)
-          .join(" og ")
-      : null;
-
-  // Højden trækker cookie-bannerets højde fra (--samtykke-hoejde), så
-  // banneret aldrig dækker knapper nederst i admin - heller ikke på mobil.
   return (
-    <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-neutral-50">
-      <AdminSidebar rolle={rolle} taellere={{ ubetalte: antalUbetalte, betalinger: antalBetalinger, chats: antalChats, sager: antalSager, kontolukninger: antalLukninger, kontakt: antalKontakt, rapporter: antalRapporter, bedoemmelser: antalBedoemmelser, dsa: antalDsa, erhverv: antalErhverv }} />
-      <main className="flex-1 overflow-auto bg-neutral-50 lg:ml-0 pt-14 lg:pt-0">
-        {stoppet && (
-          <div role="alert" className="bg-red-700 px-4 py-3 text-sm font-semibold text-white sm:px-6">
-            NØDSTOP: {stoppet} er stoppet.
-            {"ok" in noedstop && noedstop.aarsag ? ` Årsag: ${noedstop.aarsag}` : ""} Chefen genoptager under Admin → Penge.
-          </div>
-        )}
-        {children}
-      </main>
-      {/* "Meld fejl" til staff før lancering (ellers intet). */}
-      <Suspense fallback={null}>
-        <BetaFejlKnap />
-      </Suspense>
-    </div>
+    <Ramme
+      erhverv={false}
+      bjaelke={
+        <Suspense fallback={null}>
+          <NoedstopBjaelke />
+        </Suspense>
+      }
+      menu={
+        <Suspense fallback={<MenuPladsholder />}>
+          <StaffMenu rolle={rolle} />
+        </Suspense>
+      }
+    >
+      {children}
+    </Ramme>
   );
 }

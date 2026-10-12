@@ -15,6 +15,8 @@ import {
   type BetaFejlAlvor,
   type BetaFejlStatus,
 } from "@/lib/betaFejl";
+import AdminSide from "@/components/admin/AdminSide";
+import { BetaFaner } from "@/components/admin/OmraadeFaner";
 
 export const metadata: Metadata = { title: "Beta-fejl", robots: { index: false, follow: false } };
 
@@ -61,7 +63,7 @@ const STATUS_FARVE: Record<BetaFejlStatus, string> = {
   ny: "bg-orange-lys text-advarsel-tekst",
   i_gang: "bg-info-bg text-info-tekst",
   loest: "bg-succes-bg text-succes-tekst",
-  afvist: "bg-neutral-100 text-neutral-600",
+  afvist: "bg-neutral-100 text-tekst-daempet",
 };
 
 // "aabne" (standard) = ny + i gang.
@@ -82,7 +84,7 @@ function Fane({ href, aktiv, children }: { href: string; aktiv: boolean; childre
       href={href}
       aria-current={aktiv ? "page" : undefined}
       className={`inline-flex min-h-9 items-center rounded-full px-3 text-sm ${
-        aktiv ? "bg-groen text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+        aktiv ? "bg-groen text-white" : "bg-neutral-100 text-tekst hover:bg-neutral-200"
       }`}
     >
       {children}
@@ -148,19 +150,20 @@ export default async function AdminBetaFejlSide({
   ];
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
-        titel="Beta-fejl"
+        titel="Beta-test"
         forklaring="Fejl meldt af beta-testerne med knappen Meld fejl. Skift status, når du går i gang, og skriv en note til de andre. Fejl, der blokerer, sender en alarm-mail."
         hoejre={
           error ? undefined : (
-            <span className="text-sm text-neutral-500">
+            <span className="text-sm text-tekst-svag">
               {fejl.length}
               {flere ? "+" : ""} fejl
             </span>
           )
         }
       />
+      <BetaFaner aktiv="fejl" />
 
       <div className="space-y-2">
         <nav aria-label="Status" className="flex flex-wrap gap-2">
@@ -189,14 +192,14 @@ export default async function AdminBetaFejlSide({
       )}
 
       {!error && fejl.length === 0 && (
-        <p className="rounded-xl border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-600">
+        <p className="rounded-[14px] border border-admin-kant bg-white p-6 text-center text-sm text-tekst-daempet">
           Ingen fejl her.
         </p>
       )}
 
       <ul className="space-y-3">
         {fejl.map((f) => (
-          <li key={f.id} className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
+          <li key={f.id} className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${ALVOR_FARVE[f.alvor]}`}>
                 {ALVOR_KORT[f.alvor]}
@@ -204,7 +207,7 @@ export default async function AdminBetaFejlSide({
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_FARVE[f.status]}`}>
                 {STATUS_NAVN[f.status]}
               </span>
-              <span className="text-xs text-neutral-500">
+              <span className="text-xs text-tekst-svag">
                 {tid(f.oprettet_kl)}
                 {" · "}
                 {f.bruger_id ? (
@@ -218,19 +221,19 @@ export default async function AdminBetaFejlSide({
             </div>
 
             {f.sti && (
-              <p className="mt-2 break-all font-mono text-xs text-neutral-600">
-                Side: <span className="text-neutral-900">{f.sti}</span>
+              <p className="mt-2 break-all font-mono text-xs text-tekst-daempet">
+                Side: <span className="text-tekst">{f.sti}</span>
               </p>
             )}
 
-            <div className="mt-3 space-y-3 text-sm text-neutral-900">
+            <div className="mt-3 space-y-3 text-sm text-tekst">
               <div>
-                <p className="text-xs font-medium text-neutral-500">Hvad gjorde de, og hvad skete der?</p>
+                <p className="text-xs font-medium text-tekst-svag">Hvad gjorde de, og hvad skete der?</p>
                 <p className="mt-0.5 whitespace-pre-wrap break-words">{f.tekst}</p>
               </div>
               {f.forventet && (
                 <div>
-                  <p className="text-xs font-medium text-neutral-500">Hvad havde de forventet?</p>
+                  <p className="text-xs font-medium text-tekst-svag">Hvad havde de forventet?</p>
                   <p className="mt-0.5 whitespace-pre-wrap break-words">{f.forventet}</p>
                 </div>
               )}
@@ -247,7 +250,7 @@ export default async function AdminBetaFejlSide({
                           href={url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="block h-24 w-24 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100"
+                          className="block h-24 w-24 overflow-hidden rounded-lg border border-admin-kant bg-neutral-100"
                         >
                           {/* Signeret link (1 time) fra den private bucket - vises uden optimering. */}
                           <Image
@@ -261,7 +264,7 @@ export default async function AdminBetaFejlSide({
                           />
                         </a>
                       ) : (
-                        <span className="flex h-24 w-24 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-100 text-center text-xs text-neutral-500">
+                        <span className="flex h-24 w-24 items-center justify-center rounded-lg border border-admin-kant bg-neutral-100 text-center text-xs text-tekst-svag">
                           Billedet mangler
                         </span>
                       )}
@@ -271,7 +274,7 @@ export default async function AdminBetaFejlSide({
               </ul>
             )}
 
-            <details className="mt-3 text-xs text-neutral-600">
+            <details className="mt-3 text-xs text-tekst-daempet">
               <summary className="cursor-pointer select-none py-1">Browser og skærm</summary>
               <p className="mt-1 break-words">{f.skaerm ?? "Ukendt skærm"}</p>
               <p className="mt-1 break-words font-mono">{f.browser ?? "Ukendt browser"}</p>
@@ -294,6 +297,6 @@ export default async function AdminBetaFejlSide({
           </Link>
         </div>
       )}
-    </div>
+    </AdminSide>
   );
 }

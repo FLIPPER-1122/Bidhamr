@@ -12,7 +12,7 @@ import "server-only";
 // Intet her flytter penge (BidHamr har ingen wallet). Stripe-kald er kun
 // læsning (platformens saldo, cachet 60 s i penge.ts).
 
-import { notFound } from "next/navigation";
+import { notFound, unstable_rethrow } from "next/navigation";
 import { assertRole } from "@/lib/adminAuth";
 import {
   hentStripeBalance,
@@ -185,6 +185,25 @@ export async function hentOekonomi(maanedRaa: unknown): Promise<Oekonomi> {
       ? dbFejl("Afstemningens afvigelser kunne ikke hentes.", a.error)
       : { ok: true, data: (a.data ?? []) as PengeAfvigelse[] },
   };
+}
+
+// ------------------------------------------------------------- Forsiden
+
+// Let udgave til admin-forsidens pengekort - KUN chef (assertRole, ellers
+// null). Intet Stripe-kald: admin_penge_overblik uden saldo bruger den seneste
+// kendte saldo (penge_saldo_snapshot, gemt af afstemningen og af Penge).
+export async function hentPengeoverblikKort(): Promise<Resultat<Pengeoverblik> | null> {
+  let admin: Awaited<ReturnType<typeof assertRole>>["admin"];
+  let chefId: string;
+  try {
+    ({ admin, userId: chefId } = await assertRole("chef"));
+  } catch (err) {
+    // Next-afbrydelser (redirect, dynamisk rendering) skal slippe igennem.
+    unstable_rethrow(err);
+    return null;
+  }
+  const { data, error } = await admin.rpc("admin_penge_overblik", { p_chef: chefId, p_tilgaengelig_oere: null });
+  return error ? dbFejl("Overblikket kunne ikke hentes fra databasen.", error) : { ok: true, data: data as Pengeoverblik };
 }
 
 // ------------------------------------------------------------- CSV

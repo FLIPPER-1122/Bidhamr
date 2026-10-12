@@ -5,7 +5,6 @@ import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import ErhvervFaner, { datoTid } from "@/components/admin/erhverv/ErhvervFaner";
 import AdvarselForslagHandlinger from "@/components/admin/erhverv/AdvarselForslagHandlinger";
 import { KlageStatusMaerke } from "@/components/erhverv/klager/visning";
-import { ADMIN_ERHVERV } from "@/lib/tekster/erhverv";
 import { KLAGE_ADMIN as A, KLAGE_KATEGORI_NAVN } from "@/lib/tekster/erhvervKlager";
 import {
   KLAGE_FORSLAG_ANTAL,
@@ -14,6 +13,10 @@ import {
   erKlageStatus,
   type KlageStatus,
 } from "@/lib/erhverv/klager";
+import AdminSide from "@/components/admin/AdminSide";
+import TagKlageKnap from "@/components/admin/erhverv/TagKlageKnap";
+
+export const metadata = { title: "Købers klager over firmaer" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -38,8 +41,8 @@ export default async function ErhvervKlagerSide({
   const firmaQ = firma ? `&firma=${firma}` : "";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
-      <AdminSideHoved titel={ADMIN_ERHVERV.menupunkt} forklaring={A.forklaring} />
+    <AdminSide>
+      <AdminSideHoved titel="Købers klager over firmaer" forklaring={A.forklaring} />
       <ErhvervFaner aktiv="klager" />
 
       {fejl && (
@@ -51,17 +54,17 @@ export default async function ErhvervKlagerSide({
       {forslag.length > 0 && (
         <section aria-labelledby="forslag-titel" className="space-y-3 rounded-xl border border-orange-300 bg-orange-lys/40 p-5">
           <div>
-            <h2 id="forslag-titel" className="font-sans text-lg font-semibold text-neutral-900">
+            <h2 id="forslag-titel" className="font-sans text-lg font-semibold text-tekst">
               {A.forslagTitel} ({forslag.length})
             </h2>
-            <p className="text-sm text-neutral-600">{A.forslagForklaring(KLAGE_FORSLAG_ANTAL, KLAGE_FORSLAG_MAANEDER)}</p>
+            <p className="text-sm text-tekst-daempet">{A.forslagForklaring(KLAGE_FORSLAG_ANTAL, KLAGE_FORSLAG_MAANEDER)}</p>
           </div>
           <ul className="space-y-3">
             {forslag.map((f) => (
-              <li key={f.id} className="rounded-xl border border-neutral-200 bg-white p-4">
+              <li key={f.id} className="rounded-[14px] border border-admin-kant bg-white p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-semibold text-neutral-900">
-                    {f.firmanavn} <span className="font-normal text-neutral-500">· CVR {f.cvr}</span>
+                  <p className="font-semibold text-tekst">
+                    {f.firmanavn} <span className="font-normal text-tekst-svag">· CVR {f.cvr}</span>
                   </p>
                   <Link
                     href={`/admin/erhverv/klager?status=afsluttet&firma=${f.firma_id}`}
@@ -70,7 +73,7 @@ export default async function ErhvervKlagerSide({
                     {A.seFirma}
                   </Link>
                 </div>
-                <p className="mt-1 text-sm text-neutral-600">
+                <p className="mt-1 text-sm text-tekst-daempet">
                   {A.forslagGrundlag[f.grundlag](f.antal_klager)} · {A.advarslerAntal(f.advarsler_antal)} ·{" "}
                   {datoTid(f.oprettet_kl)}
                 </p>
@@ -84,7 +87,7 @@ export default async function ErhvervKlagerSide({
       )}
 
       <div>
-        <h2 className="font-sans text-lg font-semibold text-neutral-900">{A.titel}</h2>
+        <h2 className="font-sans text-lg font-semibold text-tekst">{A.titel}</h2>
       </div>
 
       <nav aria-label="Filter" className="flex flex-wrap gap-2">
@@ -96,7 +99,7 @@ export default async function ErhvervKlagerSide({
             className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium ${
               status === s
                 ? "border-groen bg-groen text-white"
-                : "border-neutral-300 bg-white text-neutral-700 hover:border-groen"
+                : "border-neutral-300 bg-white text-tekst hover:border-groen"
             }`}
           >
             {A.filter[s]}
@@ -108,7 +111,7 @@ export default async function ErhvervKlagerSide({
         {firma && (
           <Link
             href={`/admin/erhverv/klager?status=${status}`}
-            className="inline-flex min-h-11 items-center rounded-full border border-neutral-300 bg-white px-4 text-sm text-neutral-700 hover:border-groen"
+            className="inline-flex min-h-11 items-center rounded-full border border-neutral-300 bg-white px-4 text-sm text-tekst hover:border-groen"
           >
             × {A.tilbage}
           </Link>
@@ -116,33 +119,38 @@ export default async function ErhvervKlagerSide({
       </nav>
 
       {!fejl && liste.length === 0 ? (
-        <p className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-neutral-500">{A.tom}</p>
+        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-tekst-svag">{A.tom}</p>
       ) : (
-        <ul className="divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+        <ul className="divide-y divide-admin-kant overflow-hidden rounded-[14px] border border-admin-kant bg-white">
           {liste.map((k) => (
-            <li key={k.id}>
+            <li key={k.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:pr-4">
               <Link
                 href={`/admin/erhverv/klager/${k.id}`}
-                className="flex flex-col gap-1 px-5 py-4 hover:bg-neutral-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:gap-4"
+                className="flex min-w-0 flex-1 flex-col gap-1 px-5 py-4 hover:bg-neutral-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:gap-4"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2 font-semibold text-neutral-900">
+                  <p className="flex flex-wrap items-center gap-2 font-semibold text-tekst">
                     <span>{A.klageNr(k.nummer)}</span>
                     <span className="break-words">{k.firmanavn}</span>
                     <KlageStatusMaerke status={k.status} afgoerelse={k.afgoerelse} />
                   </p>
-                  <p className="text-sm text-neutral-600">
+                  <p className="text-sm text-tekst-daempet">
                     {KLAGE_KATEGORI_NAVN[k.kategori]} · {k.titel ?? "–"} · {A.kolonne.koeber}: {k.koeber_navn ?? "–"}
                     {k.behandles_af_navn && <> · {k.behandles_af_navn}</>}
                     {k.antal_noter > 0 && <> · {k.antal_noter} noter</>}
                   </p>
                 </div>
-                <p className="shrink-0 text-sm text-neutral-500">{datoTid(k.oprettet_kl)}</p>
+                <p className="shrink-0 text-sm text-tekst-svag">{datoTid(k.oprettet_kl)}</p>
               </Link>
+              {k.status === "aaben" && (
+                <div className="px-5 pb-4 sm:p-0">
+                  <TagKlageKnap id={k.id} nummer={k.nummer} />
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </AdminSide>
   );
 }

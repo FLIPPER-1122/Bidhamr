@@ -11,6 +11,8 @@ import {
   type Person,
 } from "@/app/actions/adminBetalinger";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import AdminSide from "@/components/admin/AdminSide";
+import AdminFilterChips from "@/components/admin/AdminFilterChips";
 
 // Betalinger, der kræver handling: markeret af webhook/cron (kraever_opmaerksomhed)
 // eller modtaget med forkert beløb (betaling_afvigelser). Beløb vises kun for chef.
@@ -57,16 +59,16 @@ function Problemlinje({ titel, tekst }: { titel: string; tekst: string }) {
 function PersonLink({ label, p }: { label: string; p: Person | null }) {
   return (
     <div className="min-w-0">
-      <p className="text-xs uppercase text-neutral-500">{label}</p>
+      <p className="text-xs uppercase text-tekst-svag">{label}</p>
       {p ? (
         <Link
           href={`/admin/brugere/${p.id}`}
-          className="block truncate font-medium text-neutral-800 hover:underline"
+          className="block truncate font-medium text-tekst hover:underline"
         >
           {p.navn ?? "Uden navn"}
         </Link>
       ) : (
-        <span className="text-neutral-500">—</span>
+        <span className="text-tekst-svag">—</span>
       )}
     </div>
   );
@@ -75,15 +77,15 @@ function PersonLink({ label, p }: { label: string; p: Person | null }) {
 function AuktionLink({ id, titel, tradeId }: { id: string | null; titel: string | null; tradeId: string }) {
   return (
     <div className="min-w-0">
-      <p className="text-xs uppercase text-neutral-500">Auktion</p>
+      <p className="text-xs uppercase text-tekst-svag">Auktion</p>
       {id ? (
-        <Link href={`/auktion/${id}`} className="block truncate font-medium text-neutral-800 hover:underline">
+        <Link href={`/auktion/${id}`} className="block truncate font-medium text-tekst hover:underline">
           {titel ?? "(slettet auktion)"}
         </Link>
       ) : (
-        <span className="text-neutral-500">—</span>
+        <span className="text-tekst-svag">—</span>
       )}
-      <span className="block truncate font-mono text-xs text-neutral-400" title={tradeId}>
+      <span className="block truncate font-mono text-xs text-tekst-svag" title={tradeId}>
         Handel {tradeId.slice(0, 8)}
       </span>
     </div>
@@ -103,8 +105,8 @@ function Beloeb({ b, annulleret }: { b: BetalingBeloeb; annulleret: boolean }) {
     <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg bg-neutral-50 px-3 py-2 text-xs sm:grid-cols-3 lg:grid-cols-6">
       {linjer.map(([l, v, note]) => (
         <div key={l}>
-          <dt className="text-neutral-500">{l}</dt>
-          <dd className="font-medium text-neutral-800">
+          <dt className="text-tekst-svag">{l}</dt>
+          <dd className="font-medium text-tekst">
             {kr(v)}
             {note}
           </dd>
@@ -133,45 +135,33 @@ export default async function AdminBetalinger({
     udbetalingskonti.length === 0;
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
-        titel="Betalinger"
+        titel="Betalingsfejl"
         forklaring="Betalinger, hvor noget er gået galt – fx en udbetaling eller refusion, der fejlede."
       />
 
-      <div className="flex flex-wrap gap-2">
-        {FANER.map((f) => {
-          const aktiv = f.key === fane;
-          return (
-            <Link
-              key={f.key}
-              href={`/admin/betalinger?vis=${f.key}`}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-                aktiv
-                  ? "bg-orange-knap text-white"
-                  : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
-              }`}
-            >
-              {f.label}
-              {f.key === "aaben" && (
-                <span className={`ml-1.5 text-xs ${aktiv ? "text-white/80" : "text-neutral-400"}`}>
-                  {antalAabne}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </div>
+      <AdminFilterChips
+        label="Vis"
+        aktiv={fane}
+        chips={FANER.map((f) => ({
+          id: f.key,
+          label: f.label,
+          href: `/admin/betalinger?vis=${f.key}`,
+          antal: f.key === "aaben" ? antalAabne : undefined,
+          tone: "gul" as const,
+        }))}
+      />
 
       {tom ? (
-        <p className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500">
+        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-sm text-tekst-svag">
           {fane === "aaben" ? "Ingen betalinger kræver handling." : "Ingen løste betalinger endnu."}
         </p>
       ) : (
         <>
           {afvigelser.length > 0 && (
             <section className="space-y-3">
-              <h2 className="text-sm font-semibold text-neutral-700">Forkert beløb – venter på refusion</h2>
+              <h2 className="text-sm font-semibold text-tekst">Forkert beløb – venter på refusion</h2>
               <ul className="space-y-3">
                 {afvigelser.map((a) => (
                   <li key={a.id} className="rounded-xl border border-amber-200 bg-white p-4 sm:p-5">
@@ -191,18 +181,18 @@ export default async function AdminBetalinger({
                       <PersonLink label="Køber" p={a.koeber} />
                       <PersonLink label="Sælger" p={a.saelger} />
                       <div>
-                        <p className="text-xs uppercase text-neutral-500">Modtaget</p>
-                        <p className="text-neutral-800">{dato(a.dato)}</p>
-                        <p className="text-xs text-neutral-500">
+                        <p className="text-xs uppercase text-tekst-svag">Modtaget</p>
+                        <p className="text-tekst">{dato(a.dato)}</p>
+                        <p className="text-xs text-tekst-svag">
                           Automatiske forsøg: {Math.min(a.refusion_forsoeg, 5)} af 5
                         </p>
                       </div>
                     </div>
-                    <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                    <p className="mt-3 rounded-lg bg-fejl-bg px-3 py-2 text-sm text-red-800">
                       {fejlPaaDansk(a.sidste_fejl ?? "Refunderes automatisk.")}
                     </p>
                     {a.beloeb && (
-                      <p className="mt-2 text-xs text-neutral-600">
+                      <p className="mt-2 text-xs text-tekst-daempet">
                         Modtaget {kr(a.beloeb.modtaget_oere)} · forventet {kr(a.beloeb.forventet_oere)}
                       </p>
                     )}
@@ -214,8 +204,8 @@ export default async function AdminBetalinger({
 
           {udbetalingskonti.length > 0 && (
             <section className="space-y-3">
-              <h2 className="text-sm font-semibold text-neutral-700">Udbetalingskonti hos Stripe</h2>
-              <p className="text-xs text-neutral-500">
+              <h2 className="text-sm font-semibold text-tekst">Udbetalingskonti hos Stripe</h2>
+              <p className="text-xs text-tekst-svag">
                 Sælgere, hvor en udbetaling til banken fejlede, eller hvor kontoen er lukket eller afvist hos Stripe.
               </p>
               <ul className="space-y-3">
@@ -234,11 +224,11 @@ export default async function AdminBetalinger({
                     <div className="grid gap-3 text-sm sm:grid-cols-2">
                       <PersonLink label="Sælger" p={k.saelger} />
                       <div>
-                        <p className="text-xs uppercase text-neutral-500">Markeret</p>
-                        <p className="text-neutral-800">{k.dato ? dato(k.dato) : "—"}</p>
+                        <p className="text-xs uppercase text-tekst-svag">Markeret</p>
+                        <p className="text-tekst">{k.dato ? dato(k.dato) : "—"}</p>
                       </div>
                     </div>
-                    <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                    <p className="mt-3 rounded-lg bg-fejl-bg px-3 py-2 text-sm text-red-800">
                       {k.aarsag ?? "Ingen beskrivelse."}
                     </p>
                     {kanLoese && (
@@ -261,7 +251,7 @@ export default async function AdminBetalinger({
                         {k.frakoblet && (
                           <ConfirmDialog
                             triggerLabel="Nulstil udbetalingskonto"
-                            triggerClassName="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition-colors hover:bg-neutral-50"
+                            triggerClassName="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-tekst transition-colors hover:bg-neutral-50"
                             title="Nulstil udbetalingskontoen?"
                             description="Den lukkede konto fjernes fra sælgeren, så sælgeren kan oprette en ny udbetalingskonto hos Stripe. Betalte handler, der ikke er udbetalt, står på den gamle Stripe-konto og markeres til staff (de kan ikke udbetales automatisk). Sælgeren får besked. Handlingen logges."
                             confirmLabel="Nulstil udbetalingskonto"
@@ -285,20 +275,20 @@ export default async function AdminBetalinger({
 
           {udenHandel.length > 0 && (
             <section className="space-y-3">
-              <h2 className="text-sm font-semibold text-neutral-700">Auktioner uden handel</h2>
-              <p className="text-xs text-neutral-500">
+              <h2 className="text-sm font-semibold text-tekst">Auktioner uden handel</h2>
+              <p className="text-xs text-tekst-svag">
                 Afsluttede auktioner med en vinder, hvor der ikke er oprettet en handel.
               </p>
-              <ul className="divide-y divide-neutral-100 rounded-xl border border-neutral-200 bg-white">
+              <ul className="divide-y divide-admin-kant rounded-[14px] border border-admin-kant bg-white">
                 {udenHandel.map((a) => (
                   <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
                     <Link
                       href={`/auktion/${a.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-neutral-800 hover:underline"
+                      className="min-w-0 flex-1 truncate font-medium text-tekst hover:underline"
                     >
                       {a.titel ?? "(uden titel)"}
                     </Link>
-                    <span className="text-xs text-neutral-500">Sluttede {dato(a.slutter_kl)}</span>
+                    <span className="text-xs text-tekst-svag">Sluttede {dato(a.slutter_kl)}</span>
                     {a.for_gammel_til_automatik && (
                       <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
                         for gammel til automatik
@@ -316,13 +306,13 @@ export default async function AdminBetalinger({
                 const badge = statusBadge(b, STATUS[b.status] ?? b.status);
                 const problem = problemTekst(b);
                 return (
-                <li key={b.id} className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
+                <li key={b.id} className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.farve}`}>
                       {badge.tekst}
                     </span>
                     {b.refusion && b.refusion.tilstand !== "gennemfoert" && (
-                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
+                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-tekst">
                         Automatiske forsøg: {Math.min(b.refusion.forsoeg, b.refusion.maksForsoeg)} af{" "}
                         {b.refusion.maksForsoeg}
                         {b.refusion.proeverSelv ? " · prøver selv igen" : " · prøver ikke selv igen"}
@@ -336,7 +326,7 @@ export default async function AdminBetalinger({
                     {b.svindelvarsel && (
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                          b.svindelvarsel.gennemgaaet ? "bg-neutral-200 text-neutral-700" : "bg-red-600 text-white"
+                          b.svindelvarsel.gennemgaaet ? "bg-neutral-200 text-tekst" : "bg-red-600 text-white"
                         }`}
                       >
                         Svindelvarsel fra Stripe {dato(b.svindelvarsel.kl)}
@@ -345,7 +335,7 @@ export default async function AdminBetalinger({
                     )}
                   </div>
                   {!b.loest && b.svindelvarsel && !b.svindelvarsel.gennemgaaet && (
-                    <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    <div className="mb-3 rounded-lg border border-red-300 bg-fejl-bg px-3 py-2 text-sm text-red-800">
                       <p className="font-semibold">Tidligt svindelvarsel fra Stripe</p>
                       <p className="mt-0.5">
                         Kortudstederen har meldt mulig svindel. Pengene gives ikke til sælgeren, og der refunderes
@@ -356,7 +346,7 @@ export default async function AdminBetalinger({
                         <div className="mt-2">
                           <ConfirmDialog
                             triggerLabel="Svindelvarsel gennemgået"
-                            triggerClassName="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                            triggerClassName="btn btn-primaer btn-lille"
                             title="Er svindelvarslet gennemgået?"
                             description="Når varslet er gennemgået, kan pengene gives til sælgeren, når handlen er færdig. Skriv, hvad du har kontrolleret. Handlingen logges med dit navn."
                             confirmLabel="Svindelvarsel gennemgået"
@@ -379,16 +369,16 @@ export default async function AdminBetalinger({
                     <PersonLink label="Køber" p={b.koeber} />
                     <PersonLink label="Sælger" p={b.saelger} />
                     <div>
-                      <p className="text-xs uppercase text-neutral-500">Senest ændret</p>
-                      <p className="text-neutral-800">{dato(b.dato)}</p>
+                      <p className="text-xs uppercase text-tekst-svag">Senest ændret</p>
+                      <p className="text-tekst">{dato(b.dato)}</p>
                     </div>
                   </div>
 
                   <p
                     className={`mt-3 rounded-lg px-3 py-2 text-sm ${
                       b.refusion?.tilstand === "gennemfoert"
-                        ? "bg-neutral-50 text-neutral-600"
-                        : "bg-red-50 text-red-800"
+                        ? "bg-neutral-50 text-tekst-daempet"
+                        : "bg-fejl-bg text-red-800"
                     }`}
                   >
                     <span className="block text-xs font-medium uppercase opacity-70">
@@ -400,11 +390,11 @@ export default async function AdminBetalinger({
                   {b.beloeb && <Beloeb b={b.beloeb} annulleret={b.handel_status === "annulleret"} />}
 
                   {b.loest ? (
-                    <div className="mt-3 rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
+                    <div className="mt-3 rounded-lg bg-neutral-50 px-3 py-2 text-sm text-tekst">
                       <span className="mr-2 inline-block rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
                         Løst
                       </span>
-                      <span className="text-xs text-neutral-500">
+                      <span className="text-xs text-tekst-svag">
                         {dato(b.loest.kl)}
                         {b.loest.af ? ` af ${b.loest.af}` : ""}
                       </span>
@@ -424,17 +414,17 @@ export default async function AdminBetalinger({
       {antalSider > 1 && (
         <div className="flex items-center justify-between text-sm">
           {s > 1 ? (
-            <Link href={`/admin/betalinger?vis=${fane}&side=${s - 1}`} className="text-neutral-700 hover:underline">
+            <Link href={`/admin/betalinger?vis=${fane}&side=${s - 1}`} className="text-tekst hover:underline">
               ← Forrige
             </Link>
           ) : (
             <span />
           )}
-          <span className="text-neutral-500">
+          <span className="text-tekst-svag">
             Side {s} af {antalSider}
           </span>
           {s < antalSider ? (
-            <Link href={`/admin/betalinger?vis=${fane}&side=${s + 1}`} className="text-neutral-700 hover:underline">
+            <Link href={`/admin/betalinger?vis=${fane}&side=${s + 1}`} className="text-tekst hover:underline">
               Næste →
             </Link>
           ) : (
@@ -442,6 +432,6 @@ export default async function AdminBetalinger({
           )}
         </div>
       )}
-    </div>
+    </AdminSide>
   );
 }

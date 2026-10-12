@@ -12,6 +12,11 @@ I dag viser bidhamr.dk `/coming-soon` for alle uden staff-rolle. Den rigtige for
 - **Opret bruger / Invite user i Supabase-dashboardet virker aldrig** efter migrationen (der er ingen billet). Testbrugere oprettes via `supabase/seed.sql`, firmakonti under Admin → Erhverv.
 - Lokalt (`npm run dev`, testdatabasen) er siden altid "lanceret", så forsiden kan ses på http://localhost:3000. `SIMULER_FOER_LANCERING=true` i `.env.local` viser den lukkede udgave med coming-soon. `LANCERET` har ingen virkning på testdatabasen. `SIMULER_TILMELDING_LUKKET=true` lukker tilmeldingen lokalt, så beta-tilmeldingen kan testes.
 
+## Ekstern vagt på admin-forsiden (Healthchecks.io)
+- **Sæt `HEALTHCHECKS_LAESENOEGLE`** i Vercel (Production) og i `.env.local`: den **read-only** API-nøgle fra Healthchecks.io (Project Settings → API Access). Brug aldrig den fulde nøgle.
+- Checks skal hedde præcis **"Betalings-cron"** og **"Daglig afstemning"** hos Healthchecks. Så viser Admin → Forside to lamper ("Ekstern vagt – …"): grøn = ok, gul = forsinket, rød = nede (også i Kræver handling og statuslinjen), grå = ny/pause/ikke sat op.
+- Mangler nøglen, står lamperne grå med "Ikke sat op" – aldrig grøn.
+
 ## Beta-test – invitationer (se docs/BETA-TEST.md afsnit 3)
 - **Sæt `SIGNUP_ADGANGSKODE_HEMMELIGHED` i Vercel** (Production), før testen starter: en lang, tilfældig værdi, fx fra `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Den krypterer den valgte adgangskode, mens e-mailen bekræftes. Mangler den, bruges en nøgle afledt af service-role-nøglen (virker, men en egen nøgle er bedre).
 - **Kør først migrationen** `supabase/migrations/20261017010000_beta_invitationer.sql` (testdatabasen først, så produktion med dit ja). Den laver invitationslisten, kontakten og databasens tilmeldingsværn. I produktion starter beta-testen **lukket**, og værnet er **slået til**.

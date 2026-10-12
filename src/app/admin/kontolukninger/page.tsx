@@ -5,6 +5,9 @@ import KontoLukningKort, {
   type KontoLukningForslag,
 } from "@/components/admin/KontoLukningKort";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import AdminFilterChips from "@/components/admin/AdminFilterChips";
+import AdminSide from "@/components/admin/AdminSide";
+import BrugereFaner from "@/components/admin/BrugereFaner";
 
 // "3 advarsler – skal kontoen lukkes?" Forslagene oprettes af databasen, når
 // en bruger når 3 advarsler (påmindelser tæller ikke). Kontoen lukkes aldrig
@@ -89,43 +92,32 @@ export default async function AdminKontolukninger({
   const antalSider = Math.max(1, Math.ceil((count ?? 0) / PR_SIDE));
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
+    <AdminSide>
       <AdminSideHoved
-        titel="Kontolukninger"
+        titel="Brugere"
         forklaring="Brugere med 3 advarsler. Godkend lukningen af kontoen, eller afvis med en begrundelse."
       >
-        <p className="mt-1 max-w-3xl text-xs text-neutral-500">
+        <p className="mt-1 max-w-3xl text-xs text-tekst-svag">
           Kontoen lukkes aldrig automatisk, og brugeren får først besked, når lukningen er godkendt.
           Påmindelser tæller ikke med.
         </p>
       </AdminSideHoved>
+      <BrugereFaner aktiv="kontolukninger" />
 
-      <div className="flex flex-wrap gap-2">
-        {FANER.map((f) => {
-          const aktiv = f.key === fane;
-          return (
-            <Link
-              key={f.key}
-              href={`/admin/kontolukninger?vis=${f.key}`}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-                aktiv
-                  ? "bg-orange-knap text-white"
-                  : "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100"
-              }`}
-            >
-              {f.label}
-              {f.key === "afventer" && (
-                <span className={`ml-1.5 text-xs ${aktiv ? "text-white/80" : "text-neutral-400"}`}>
-                  {antalAfventer ?? 0}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </div>
+      <AdminFilterChips
+        label="Vis"
+        aktiv={fane}
+        chips={FANER.map((f) => ({
+          id: f.key,
+          label: f.label,
+          href: `/admin/kontolukninger?vis=${f.key}`,
+          antal: f.key === "afventer" ? (antalAfventer ?? 0) : undefined,
+          tone: "gul" as const,
+        }))}
+      />
 
       {forslag.length === 0 ? (
-        <p className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500">
+        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-sm text-tekst-svag">
           {fane === "afventer" ? "Ingen konti venter på en afgørelse." : "Ingen behandlede forslag endnu."}
         </p>
       ) : (
@@ -147,17 +139,17 @@ export default async function AdminKontolukninger({
       {antalSider > 1 && (
         <div className="flex items-center justify-between text-sm">
           {side > 1 ? (
-            <Link href={`/admin/kontolukninger?vis=${fane}&side=${side - 1}`} className="text-neutral-700 hover:underline">
+            <Link href={`/admin/kontolukninger?vis=${fane}&side=${side - 1}`} className="text-tekst hover:underline">
               ← Forrige
             </Link>
           ) : (
             <span />
           )}
-          <span className="text-neutral-500">
+          <span className="text-tekst-svag">
             Side {side} af {antalSider}
           </span>
           {side < antalSider ? (
-            <Link href={`/admin/kontolukninger?vis=${fane}&side=${side + 1}`} className="text-neutral-700 hover:underline">
+            <Link href={`/admin/kontolukninger?vis=${fane}&side=${side + 1}`} className="text-tekst hover:underline">
               Næste →
             </Link>
           ) : (
@@ -165,6 +157,6 @@ export default async function AdminKontolukninger({
           )}
         </div>
       )}
-    </div>
+    </AdminSide>
   );
 }

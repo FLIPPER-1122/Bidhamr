@@ -1,21 +1,35 @@
-import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import Link from "next/link";
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
-import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { kraevSideRolle, harMindstRolle } from "@/lib/adminAuth";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
+import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import FlereHandlinger from "@/components/admin/FlereHandlinger";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
+import AdminSide from "@/components/admin/AdminSide";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
-import RapportFaner from "@/components/admin/RapportFaner";
+import AdminBadge from "@/components/admin/AdminBadge";
+import AdminTom from "@/components/admin/AdminTom";
+import AdminFejl from "@/components/admin/AdminFejl";
+import AdminListe, { type Kolonne } from "@/components/admin/AdminListe";
+import AdminSideskift, { adminHref, laesSide } from "@/components/admin/AdminSideskift";
+import { AnmeldelserFaner } from "@/components/admin/OmraadeFaner";
 import { kategoriLabel } from "@/lib/anmeldelseKategorier";
+import { RAPPORT_NOTE } from "@/lib/tekster/adminSkabeloner";
 import {
   rapportMarkerBehandlet,
   rapportSletMidlertidigt,
   rapportFjernOpslag,
   rapportGenaabn,
 } from "@/app/actions/adminActions";
+
+// Anmeldte auktioner (fane under Anmeldelser). Hurtighandlingerne står på
+// rækken: "Skjul auktion" (admin), "Markér som behandlet" og - under Flere
+// handlinger - "Fjern opslag". Uden søgning hentes 25 ad gangen i databasen.
+// Med søgning (titel og anmelder ligger i andre tabeller) søges blandt de
+// 500 nyeste åbne.
+
+const PR_SIDE = 25;
 
 type RapportRow = {
   id: string;
@@ -27,48 +41,39 @@ type RapportRow = {
   status: string;
 };
 
-const STATUS_STIL: Record<string, { klasse: string; tekst: string }> = {
-  pending: { klasse: "bg-yellow-100 text-yellow-800", tekst: "Afventer" },
-  under_behandling: { klasse: "bg-blue-100 text-blue-800", tekst: "Under behandling" },
-  fjernet: { klasse: "bg-red-100 text-red-800", tekst: "Opslag fjernet" },
+const STATUS: Record<string, { tone: "gul" | "blaa" | "roed"; tekst: string }> = {
+  pending: { tone: "gul", tekst: "Afventer" },
+  under_behandling: { tone: "blaa", tekst: "Skjult – undersøges" },
+  fjernet: { tone: "roed", tekst: "Opslag fjernet" },
 };
 
-function StatusMaerkat({ status }: { status: string }) {
-  const s = STATUS_STIL[status] ?? STATUS_STIL.pending;
-  return (
-    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${s.klasse}`}>
-      {s.tekst}
-    </span>
-  );
-}
+const lille =
+  "inline-flex min-h-10 items-center whitespace-nowrap rounded-lg border border-kant-staerk bg-white px-3 text-[13px] font-medium text-tekst transition-colors hover:bg-admin-bg lg:min-h-8";
 
 export default async function AdminRapporter({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; side?: string }>;
 }) {
-  const rolle = await getStaffRole();
-  if (!rolle) {
-    redirect("/");
-  }
-  // Kun de to handlinger der ændrer et opslag kræver admin.
+  const { admin: supabase, rolle } = await kraevSideRolle("medarbejder");
+  // Kun de to handlinger, der ændrer et opslag, kræver admin.
   const kanModerereOpslag = harMindstRolle(rolle, "admin");
 
-  const { q } = await searchParams;
+  const { q, side: sideParam } = await searchParams;
   const søgetekst = q?.trim() ?? "";
-  const supabase = createAdminClient();
+  const side = laesSide(sideParam);
 
-  // Behandlede rapporter flyttes til /admin/opklarede-rapporter og vises
-  // derfor ikke her.
-  const { data: rapporter } = await supabase
+  // Behandlede rapporter flyttes til /admin/opklarede-rapporter.
+  const basis = supabase
     .from("reports")
-    .select("id, auction_id, reporter_id, category, description, created_at, status")
+    .select("id, auction_id, reporter_id, category, description, created_at, status", { count: "exact" })
     .neq("status", "behandlet")
-    .order("created_at", { ascending: false })
-    .limit(500);
+    .order("created_at", { ascending: true });
+  const { data: rapporter, error, count } = søgetekst
+    ? await basis.limit(500)
+    : await basis.range((side - 1) * PR_SIDE, side * PR_SIDE - 1);
 
   const alle = (rapporter ?? []) as RapportRow[];
-
   const auktionIds = [...new Set(alle.map((r) => r.auction_id))];
   const brugerIds = [...new Set(alle.map((r) => r.reporter_id))];
 
@@ -81,183 +86,180 @@ export default async function AdminRapporter({
       : Promise.resolve({ data: [] as { id: string; navn: string; email: string }[] }),
   ]);
 
-  const titelMap: Record<string, string> = {};
-  (auktioner ?? []).forEach((a) => {
-    titelMap[a.id] = a.titel;
-  });
-  const brugerMap: Record<string, { navn: string | null; email: string }> = {};
-  (brugere ?? []).forEach((u) => {
-    brugerMap[u.id] = { navn: u.navn, email: u.email };
-  });
+  const titelMap = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
+  const brugerMap = new Map(
+    (brugere ?? []).map((u) => [u.id as string, { navn: u.navn as string | null, email: u.email as string }]),
+  );
 
-  // Filtrering sker i hukommelsen, fordi der søges på titel og anmeldernavn,
-  // som ligger i andre tabeller end reports.
   const rows = søgetekst
     ? alle.filter((r) => {
         const nål = søgetekst.toLowerCase();
-        const anmelder = brugerMap[r.reporter_id];
-        return (
-          (titelMap[r.auction_id] ?? "").toLowerCase().includes(nål) ||
-          kategoriLabel(r.category).toLowerCase().includes(nål) ||
-          (r.description ?? "").toLowerCase().includes(nål) ||
-          (anmelder?.navn ?? "").toLowerCase().includes(nål) ||
-          (anmelder?.email ?? "").toLowerCase().includes(nål)
+        const anmelder = brugerMap.get(r.reporter_id);
+        return [titelMap.get(r.auction_id), kategoriLabel(r.category), r.description, anmelder?.navn, anmelder?.email].some((v) =>
+          (v ?? "").toLowerCase().includes(nål),
         );
       })
     : alle;
+  const antal = søgetekst ? rows.length : (count ?? rows.length);
+
+  const kolonner: Kolonne<RapportRow>[] = [
+    {
+      id: "status",
+      label: "Status",
+      mobil: "status",
+      className: "lg:w-40",
+      celle: (r) => {
+        const s = STATUS[r.status] ?? STATUS.pending;
+        return (
+          <span className="flex flex-wrap gap-1.5">
+            <AdminBadge tone={s.tone}>{s.tekst}</AdminBadge>
+            <AdminBadge tone="graa">{kategoriLabel(r.category)}</AdminBadge>
+          </span>
+        );
+      },
+    },
+    {
+      id: "auktion",
+      label: "Auktion",
+      mobil: "titel",
+      celle: (r) => (
+        <span className="block min-w-0">
+          <Link href={`/auktion/${r.auction_id}`} className="font-semibold text-tekst hover:text-groen hover:underline">
+            {titelMap.get(r.auction_id) ?? "(slettet auktion)"}
+          </Link>
+          {r.description && <span className="mt-0.5 block text-[13px] font-normal text-tekst-daempet">{r.description}</span>}
+        </span>
+      ),
+    },
+    {
+      id: "anmelder",
+      label: "Anmelder",
+      className: "lg:w-48",
+      celle: (r) => {
+        const a = brugerMap.get(r.reporter_id);
+        return a ? (
+          <Link href={`/admin/brugere/${r.reporter_id}`} className="block min-w-0 truncate text-[13px] hover:underline">
+            {a.navn ?? "Uden navn"} · {new Date(r.created_at).toLocaleDateString("da-DK")}
+          </Link>
+        ) : (
+          <span className="text-tekst-svag">—</span>
+        );
+      },
+    },
+    {
+      id: "handling",
+      label: "Handlinger",
+      mobil: "handling",
+      className: "lg:w-[330px]",
+      celle: (r) =>
+        r.status !== "pending" ? (
+          <AdminActionKnap action={rapportGenaabn} hiddenFields={{ rapportId: r.id }} label="Genåbn" className={lille} kvittering="Anmeldelsen er genåbnet" />
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {kanModerereOpslag && (
+              <ConfirmDialog
+                triggerLabel="Skjul auktion"
+                triggerClassName="btn btn-primaer btn-lille"
+                title="Skjul auktionen, mens den undersøges?"
+                description="Auktionen skjules fra platformen. Den kan vises igen under Auktioner. Sælgeren får begrundelsen og kan klage."
+                confirmLabel="Skjul auktionen"
+                action={rapportSletMidlertidigt}
+                hiddenFields={{ rapportId: r.id }}
+                fakta={[
+                  { label: "Auktion", vaerdi: titelMap.get(r.auction_id) ?? "(slettet auktion)" },
+                  { label: "Anmeldt for", vaerdi: kategoriLabel(r.category) },
+                ]}
+                {...indgrebFelter({
+                  faktaPlaceholder: "Fx: Vi undersøger, om varen er en kopi. Auktionen er skjult imens.",
+                  standardRegel: r.category === "forbudt_vare" ? "forbudt_vare" : undefined,
+                })}
+                kvittering="Auktionen er skjult"
+              />
+            )}
+            <ConfirmDialog
+              triggerLabel="Intet brud – luk"
+              triggerClassName={kanModerereOpslag ? lille : "btn btn-primaer btn-lille"}
+              title="Markér anmeldelsen som behandlet?"
+              description="Auktionen forbliver aktiv. Anmeldelsen flyttes til Opklarede."
+              confirmLabel="Markér som behandlet"
+              action={rapportMarkerBehandlet}
+              hiddenFields={{ rapportId: r.id }}
+              aarsagField={{
+                label: "Note",
+                placeholder: "Hvad har du tjekket, og hvad er konklusionen?",
+                required: true,
+                skabeloner: RAPPORT_NOTE,
+              }}
+              kvittering="Anmeldelsen er markeret som behandlet"
+            />
+            {kanModerereOpslag && (
+              <FlereHandlinger>
+                <ConfirmDialog
+                  triggerLabel="Fjern opslag permanent"
+                  triggerClassName="inline-flex min-h-10 items-center rounded-lg border border-fejl-kant bg-white px-3 text-[13px] font-medium text-fejl-tekst hover:bg-fejl-bg lg:min-h-8"
+                  title="Fjern opslaget permanent?"
+                  description="Auktionen annulleres og skjules fra platformen. Anmeldelsen bevares som dokumentation. Sælgeren får begrundelsen og kan klage."
+                  confirmLabel="Fjern opslaget"
+                  action={rapportFjernOpslag}
+                  hiddenFields={{ rapportId: r.id }}
+                  fakta={[{ label: "Auktion", vaerdi: titelMap.get(r.auction_id) ?? "(slettet auktion)" }]}
+                  fare
+                  kanIkkeFortrydes
+                  {...indgrebFelter({
+                    faktaPlaceholder: "Fx: Auktionen sælger et skydevåben, som ikke må sælges på BidHamr.",
+                    standardRegel: r.category === "forbudt_vare" ? "forbudt_vare" : undefined,
+                  })}
+                  kvittering="Opslaget er fjernet"
+                />
+              </FlereHandlinger>
+            )}
+          </div>
+        ),
+    },
+  ];
 
   return (
-    <div className="p-4 sm:p-6 space-y-5">
+    <AdminSide>
       <AdminSideHoved
-        titel="Rapporter"
-        forklaring="Brugere har anmeldt en auktion. Kig opslaget igennem, og afgør om det skal fjernes eller kan blive."
+        titel="Anmeldelser"
+        forklaring="Brugere har anmeldt en auktion. Se opslaget, og skjul det eller luk anmeldelsen direkte fra rækken. Ældste først."
         hoejre={
-          <span className="text-sm text-neutral-500">
-            {rows.length} {rows.length === 1 ? "anmeldelse" : "anmeldelser"}
+          <span className="text-sm text-tekst-daempet">
+            {antal} {antal === 1 ? "anmeldelse" : "anmeldelser"}
           </span>
         }
       />
-
-      <RapportFaner aktiv="aabne" visArkiv={kanModerereOpslag} />
+      <AnmeldelserFaner aktiv="aabne" rolle={rolle} />
 
       <Suspense>
-        <AdminSearchInput placeholder="Søg på auktion, kategori, beskrivelse eller anmelder..." />
+        <AdminSearchInput placeholder="Søg på auktion, kategori, beskrivelse eller anmelder" />
       </Suspense>
 
-      <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-neutral-50 text-xs text-neutral-500 uppercase">
-                <th className="px-5 py-3 text-left font-medium">Auktion</th>
-                <th className="px-5 py-3 text-left font-medium">Kategori</th>
-                <th className="px-5 py-3 text-left font-medium">Beskrivelse</th>
-                <th className="px-5 py-3 text-left font-medium">Anmelder</th>
-                <th className="px-5 py-3 text-left font-medium">Dato</th>
-                <th className="px-5 py-3 text-left font-medium">Status</th>
-                <th className="px-5 py-3 text-left font-medium">Handlinger</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {rows.map((r) => {
-                const anmelder = brugerMap[r.reporter_id];
-                const afsluttet = r.status !== "pending";
-                return (
-                  <tr key={r.id} className="hover:bg-neutral-50 align-top">
-                    <td className="px-5 py-3">
-                      <Link
-                        href={`/auktion/${r.auction_id}`}
-                        className="font-medium text-neutral-800 hover:text-groen hover:underline"
-                      >
-                        {titelMap[r.auction_id] ?? "(slettet auktion)"}
-                      </Link>
-                    </td>
-                    <td className="px-5 py-3 whitespace-nowrap text-neutral-700">
-                      {kategoriLabel(r.category)}
-                    </td>
-                    <td className="px-5 py-3 text-neutral-600">
-                      {r.description ? (
-                        <span className="block max-w-[260px]">{r.description}</span>
-                      ) : (
-                        <span className="text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {anmelder ? (
-                        <Link
-                          href={`/admin/brugere/${r.reporter_id}`}
-                          className="block max-w-[160px] hover:underline"
-                        >
-                          <span className="block truncate text-neutral-800">
-                            {anmelder.navn ?? "Uden navn"}
-                          </span>
-                          <span className="block truncate text-xs text-neutral-500">
-                            {anmelder.email}
-                          </span>
-                        </Link>
-                      ) : (
-                        <span className="text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 whitespace-nowrap text-neutral-500">
-                      {new Date(r.created_at).toLocaleDateString("da-DK")}
-                    </td>
-                    <td className="px-5 py-3">
-                      <StatusMaerkat status={r.status} />
-                    </td>
-                    <td className="px-5 py-3">
-                      {afsluttet ? (
-                        <AdminActionKnap
-                          action={rapportGenaabn}
-                          hiddenFields={{ rapportId: r.id }}
-                          label="Genåbn"
-                          className="whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-200"
-                        />
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {kanModerereOpslag && (
-                            <ConfirmDialog
-                              triggerLabel="Fjern opslag"
-                              triggerClassName="whitespace-nowrap rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 transition-colors hover:bg-red-200"
-                              title="Er du sikker på, at du vil fjerne opslaget permanent?"
-                              description="Auktionen annulleres og skjules fra platformen. Anmeldelsen bevares som dokumentation. Sælgeren får begrundelsen og kan klage."
-                              confirmLabel="Ja, fjern opslaget"
-                              action={rapportFjernOpslag}
-                              hiddenFields={{ rapportId: r.id }}
-                              {...indgrebFelter({
-                                faktaPlaceholder: "Fx: Auktionen sælger et skydevåben, som ikke må sælges på BidHamr.",
-                                standardRegel: r.category === "forbudt_vare" ? "forbudt_vare" : undefined,
-                              })}
-                            />
-                          )}
-                          <ConfirmDialog
-                            triggerLabel="Markér som behandlet"
-                            triggerClassName="whitespace-nowrap rounded-md bg-green-100 px-2 py-1 text-xs text-green-800 transition-colors hover:bg-green-200"
-                            title="Markér anmeldelsen som behandlet?"
-                            description="Auktionen forbliver aktiv. Rapporten flyttes til fanen Opklarede."
-                            confirmLabel="Ja, markér som behandlet"
-                            action={rapportMarkerBehandlet}
-                            hiddenFields={{ rapportId: r.id }}
-                            aarsagField={{
-                              label: "Note",
-                              placeholder: "Hvad har du tjekket, og hvad er konklusionen?",
-                              required: true,
-                            }}
-                          />
-                          {kanModerereOpslag && (
-                            <ConfirmDialog
-                              triggerLabel="Slet midlertidigt"
-                              triggerClassName="whitespace-nowrap rounded-md bg-blue-100 px-2 py-1 text-xs text-blue-800 transition-colors hover:bg-blue-200"
-                              title="Skjul opslaget midlertidigt?"
-                              description="Auktionen skjules fra platformen, mens sagen undersøges. Den kan vises igen under Auktioner. Sælgeren får begrundelsen og kan klage."
-                              confirmLabel="Ja, skjul opslaget"
-                              action={rapportSletMidlertidigt}
-                              hiddenFields={{ rapportId: r.id }}
-                              {...indgrebFelter({
-                                faktaPlaceholder: "Fx: Vi undersøger, om varen er en kopi. Auktionen er skjult imens.",
-                                standardRegel: r.category === "forbudt_vare" ? "forbudt_vare" : undefined,
-                              })}
-                            />
-                          )}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-neutral-400">
-                    {søgetekst
-                      ? `Ingen anmeldelser matcher "${søgetekst}"`
-                      : "Der er ikke indsendt nogen anmeldelser endnu"}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+      {error && <AdminFejl hvad="Anmeldelserne" />}
+
+      <AdminListe
+        label="Anmeldte auktioner"
+        raekker={rows}
+        kolonner={kolonner}
+        noegle={(r) => r.id}
+        fremhaev={(r) => r.status === "pending"}
+        tom={
+          <AdminTom
+            tekst={søgetekst ? `Ingen anmeldelser matcher "${søgetekst}".` : "Der er ingen åbne anmeldelser af auktioner."}
+            nulstilHref={søgetekst ? "/admin/rapporter" : undefined}
+            link={{ href: "/admin/opklarede-rapporter", label: "Se opklarede" }}
+          />
+        }
+      />
+
+      {!søgetekst && (
+        <AdminSideskift
+          side={side}
+          harNaeste={side * PR_SIDE < antal}
+          antalSider={Math.max(1, Math.ceil(antal / PR_SIDE))}
+          lavHref={(s) => adminHref("/admin/rapporter", { side: s })}
+        />
+      )}
+    </AdminSide>
   );
 }

@@ -19,6 +19,7 @@ import {
   PAUSE_PAAMIND_DAGE,
 } from "@/lib/auctionTid";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import AdminSide from "@/components/admin/AdminSide";
 
 const statusOptions = [
   { value: "alle", label: "Alle" },
@@ -147,8 +148,8 @@ export default async function AdminAuktioner({
 
   const statusBadge = (s: string) => {
     if (s === "aktiv") return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Aktiv</span>;
-    if (s === "afsluttet") return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600">Afsluttet</span>;
-    return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Annulleret</span>;
+    if (s === "afsluttet") return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-tekst-daempet">Afsluttet</span>;
+    return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-fejl-tekst">Annulleret</span>;
   };
 
   // Bevar søgetekst når man skifter statusfilter
@@ -161,15 +162,15 @@ export default async function AdminAuktioner({
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-5">
+    <AdminSide>
       <AdminSideHoved
         titel="Auktioner"
         forklaring="Alle auktioner på BidHamr. Brug siden, når du skal finde, skjule eller vise en bestemt auktion."
-        hoejre={<span className="text-sm text-neutral-500">{auctions?.length ?? 0} resultater</span>}
+        hoejre={<span className="text-sm text-tekst-svag">{auctions?.length ?? 0} resultater</span>}
       />
 
       {(laengePause?.length ?? 0) > 0 && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-red-800">
           <p className="font-semibold">
             {laengePause!.length === 1
               ? "1 auktion har været på pause i over 3 dage"
@@ -204,10 +205,9 @@ export default async function AdminAuktioner({
             <Link
               key={s.value}
               href={filterHref(s.value)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                active
-                  ? "bg-orange-knap text-white"
-                  : "bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+              aria-current={active ? "true" : undefined}
+              className={`inline-flex min-h-10 items-center rounded-full px-4 text-[13px] font-medium transition-colors ${
+                active ? "bg-groen text-white" : "bg-groen-lys text-groen-mork hover:bg-[#DCEAE4]"
               }`}
             >
               {s.label}
@@ -216,11 +216,12 @@ export default async function AdminAuktioner({
         })}
       </div>
 
-      <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-neutral-50 text-xs text-neutral-500 uppercase">
+      <div className="lg:overflow-hidden lg:rounded-[14px] lg:border lg:border-admin-kant lg:bg-white">
+        {/* Under lg er hver auktion et kort (ingen vandret scroll), fra lg en tabel. */}
+        <div className="lg:overflow-x-auto">
+          <table className="block w-full text-sm lg:table">
+            <thead className="hidden lg:table-header-group">
+              <tr className="bg-neutral-50 text-xs text-tekst-svag uppercase">
                 <th className="px-5 py-3 text-left font-medium">Billede</th>
                 <th className="px-5 py-3 text-left font-medium">Titel</th>
                 <th className="px-5 py-3 text-left font-medium">Sælger</th>
@@ -231,81 +232,82 @@ export default async function AdminAuktioner({
                 <th className="px-5 py-3 text-left font-medium">Handlinger</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 lg:divide-y lg:divide-admin-kant">
               {(auctions ?? []).map((a) => {
                 const img = Array.isArray(a.billeder) ? a.billeder[0] : null;
                 const sælger = sælgerMap[a.bruger_id];
                 return (
-                  <tr key={a.id} className="hover:bg-neutral-50">
-                    <td className="px-5 py-3">
+                  <tr key={a.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 lg:hover:bg-neutral-50">
+                    <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
                       {img ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={img} alt={a.titel} className="w-10 h-10 rounded-lg object-cover" />
                       ) : (
                         <div className="w-10 h-10 rounded-lg bg-neutral-100 flex items-center justify-center">
-                          <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 text-tekst-svag" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
                           </svg>
                         </div>
                       )}
                     </td>
-                    <td className="px-5 py-3 font-medium text-neutral-800 max-w-[200px] truncate">{a.titel}</td>
-                    <td className="px-5 py-3">
+                    <td className="block py-1 font-semibold text-tekst lg:table-cell lg:max-w-[200px] lg:truncate lg:px-5 lg:py-3 lg:font-medium">{a.titel}</td>
+                    <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
                       {sælger ? (
                         <Link
                           href={`/admin/brugere/${a.bruger_id}`}
                           className="block max-w-[180px] hover:underline"
                         >
-                          <span className="block truncate text-neutral-800">
+                          <span className="block truncate text-tekst">
                             {sælger.navn ?? "Uden navn"}
                           </span>
-                          <span className="block truncate text-xs text-neutral-500">
+                          <span className="block truncate text-xs text-tekst-svag">
                             {sælger.email}
                           </span>
                         </Link>
                       ) : (
-                        <span className="text-neutral-400">—</span>
+                        <span className="text-tekst-svag">—</span>
                       )}
                     </td>
-                    <td className="px-5 py-3 text-neutral-600">{a.startpris?.toLocaleString("da-DK")} kr</td>
-                    <td className="px-5 py-3">
+                    <td className="block py-1 text-tekst-daempet lg:table-cell lg:px-5 lg:py-3"><span className="mr-1 text-xs text-tekst-svag lg:hidden">Startpris:</span>{a.startpris?.toLocaleString("da-DK")} kr</td>
+                    <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
                       {a["nuværende_bud"] != null ? (
-                        <span className="font-medium text-neutral-800">
+                        <span className="font-medium text-tekst">
                           {a["nuværende_bud"].toLocaleString("da-DK")} kr
                         </span>
                       ) : (
-                        <span className="text-neutral-400">Ingen bud</span>
+                        <span className="text-tekst-svag">Ingen bud</span>
                       )}
                     </td>
-                    <td className="px-5 py-3">
-                      <span className="inline-flex gap-1.5">
+                    <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
+                      <span className="inline-flex flex-wrap gap-1.5">
                         {statusBadge(a.status)}
                         {a.skjult && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-neutral-600">Skjult</span>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-tekst-daempet">Skjult</span>
                         )}
                         {erPaaPause(a) && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">På pause</span>
                         )}
                         {erPaaPause(a) && a.pauset_kl && pauseDage(a.pauset_kl, nu) >= PAUSE_PAAMIND_DAGE && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-fejl-tekst">
                             Pause i {pauseDage(a.pauset_kl, nu)} dage – {autoAnnulleringTekst(a.pauset_kl, nu)}
                           </span>
                         )}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-neutral-500">
+                    <td className="block py-1 text-tekst-svag lg:table-cell lg:px-5 lg:py-3">
                       {erPaaPause(a)
                         ? `${formatVarighed(intervalTilMs(a.pause_resterende))} tilbage`
                         : a["slutter_kl"]
                           ? new Date(a["slutter_kl"]).toLocaleDateString("da-DK")
                           : "—"}
                     </td>
-                    <td className="px-5 py-3">
-                      <div className="flex gap-2">
+                    <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
+                      <div className="flex flex-wrap gap-2">
                         {a.status === "aktiv" && (
                           <ConfirmDialog
                             triggerLabel="Annullér"
-                            triggerClassName="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded-md hover:bg-amber-200 transition-colors"
+                            triggerClassName="inline-flex min-h-10 items-center rounded-lg border border-fejl-kant bg-white px-3 text-xs font-medium text-fejl-tekst transition-colors hover:bg-fejl-bg lg:min-h-8"
+                            fare
                             title="Er du sikker på, at du vil annullere auktionen?"
                             description="Auktionen stoppes, og der kan ikke bydes længere. Sælgeren får begrundelsen og kan klage."
                             confirmLabel="Ja, annullér auktionen"
@@ -316,7 +318,7 @@ export default async function AdminAuktioner({
                         )}
                         {a.skjult && a.status === "annulleret" && !gaeldendeAfg[a.id] ? (
                           // Intet at ophæve (allerede ophævet, eller skjult uden afgørelse).
-                          <span className="px-2 py-1 text-xs text-neutral-500">
+                          <span className="px-2 py-1 text-xs text-tekst-svag">
                             {ophaevetAfg[a.id] === "fjernelse"
                               ? "Annulleret – fjernelse ophævet"
                               : ophaevetAfg[a.id] === "skjulning"
@@ -334,7 +336,7 @@ export default async function AdminAuktioner({
                                 : "Vis igen"
                               : "Skjul"
                           }
-                          triggerClassName="px-2 py-1 text-xs bg-neutral-100 text-neutral-600 rounded-md hover:bg-neutral-200 transition-colors"
+                          triggerClassName="inline-flex min-h-10 items-center px-3 py-1 text-xs lg:min-h-0 lg:px-2 bg-neutral-100 text-tekst-daempet rounded-md hover:bg-neutral-200 transition-colors"
                           title={
                             a.skjult
                               ? a.status === "annulleret"
@@ -375,7 +377,9 @@ export default async function AdminAuktioner({
                         )}
                         <ConfirmDialog
                           triggerLabel="Slet"
-                          triggerClassName="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
+                          triggerClassName="inline-flex min-h-10 items-center rounded-lg border border-fejl-kant bg-white px-3 text-xs font-medium text-fejl-tekst transition-colors hover:bg-fejl-bg lg:min-h-8"
+                          fare
+                          kanIkkeFortrydes
                           title="Er du sikker på, at du vil fjerne auktionen?"
                           description="Auktionen annulleres og skjules. Data bevares af hensyn til bogføringen. Sælgeren får begrundelsen og kan klage."
                           confirmLabel="Ja, fjern auktionen"
@@ -390,7 +394,7 @@ export default async function AdminAuktioner({
               })}
               {(auctions ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-neutral-400">
+                  <td colSpan={8} className="px-5 py-10 text-center text-tekst-svag">
                     {søgetekst
                       ? `Ingen auktioner matcher "${søgetekst}"`
                       : "Ingen auktioner fundet"}
@@ -401,6 +405,6 @@ export default async function AdminAuktioner({
           </table>
         </div>
       </div>
-    </div>
+    </AdminSide>
   );
 }
