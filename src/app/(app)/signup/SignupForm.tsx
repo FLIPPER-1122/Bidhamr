@@ -8,6 +8,7 @@ import { vurderAdgangskode } from "@/lib/adgangskode";
 import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
 import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 import { BETINGELSER_STI, PRIVATLIV_STI, VILKAAR_VERSION } from "@/lib/vilkaar";
+import { useHydreret } from "@/lib/useHydreret";
 
 type Felt = "fornavn" | "efternavn" | "email" | "password" | "vilkaar";
 
@@ -27,6 +28,8 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
   const [password, setPassword] = useState("");
   const [accepterer, setAccepterer] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
   const [fejlFelt, setFejlFelt] = useState<Felt | null>(null);
 
@@ -103,7 +106,7 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
             </p>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+          <form onSubmit={handleSubmit} method="post" className="mt-6 space-y-4" noValidate>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="fornavn" className={LABEL}>
@@ -213,7 +216,7 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !hydreret}
               aria-busy={loading || undefined}
               className="btn btn-primaer btn-stor w-full"
             >

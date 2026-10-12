@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { visAfhentningskode, bekraeftAfhentning } from "@/app/actions/afhentning";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import StjerneVaelger from "@/components/StjerneVaelger";
+import { useHydreret } from "@/lib/useHydreret";
 
 const KOMMENTAR_MAKS = 1000;
 
@@ -102,6 +103,8 @@ export function IndtastAfhentningskode({ tradeId }: { tradeId: string }) {
   const [kode, setKode] = useState("");
   const [fejl, setFejl] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const ren = kode.replace(/\s/g, "");
 
   function handleSubmit(e: FormEvent) {
@@ -119,7 +122,7 @@ export function IndtastAfhentningskode({ tradeId }: { tradeId: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    <form onSubmit={handleSubmit} method="post" className="space-y-3">
       <div>
         <label htmlFor={`afhentningskode-${tradeId}`} className="block text-sm font-medium text-tekst-daempet">
           Indtast køberens kode
@@ -140,7 +143,7 @@ export function IndtastAfhentningskode({ tradeId }: { tradeId: string }) {
       </div>
       <button
         type="submit"
-        disabled={pending || !/^[0-9]{6}$/.test(ren)}
+        disabled={pending || !hydreret || !/^[0-9]{6}$/.test(ren)}
         className="btn btn-primaer"
       >
         {pending ? "Tjekker…" : "Bekræft afhentning"}

@@ -12,6 +12,7 @@ import {
 import { STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import { beskedTid } from "@/components/staffchat/visning";
+import { useHydreret } from "@/lib/useHydreret";
 
 const POLL_MS = 15_000;
 
@@ -38,6 +39,8 @@ export default function StaffChatAdmin({
   const [sendte, setSendte] = useState<StaffBeskedAdmin[]>([]);
   const [tekst, setTekst] = useState("");
   const [sender, setSender] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
   const bundRef = useRef<HTMLLIElement>(null);
   const feltId = useId();
@@ -140,7 +143,7 @@ export default function StaffChatAdmin({
           Chatten er afsluttet. Brugeren kan ikke skrive mere, og der kan ikke sendes flere beskeder.
         </p>
       ) : (
-        <form onSubmit={send} className="border-t border-neutral-100 p-4 sm:px-5">
+        <form onSubmit={send} method="post" className="border-t border-neutral-100 p-4 sm:px-5">
           <label htmlFor={feltId} className="sr-only">
             Skriv til {brugerNavn}
           </label>
@@ -158,7 +161,7 @@ export default function StaffChatAdmin({
             />
             <button
               type="submit"
-              disabled={sender || !tekst.trim()}
+              disabled={sender || !hydreret || !tekst.trim()}
               aria-busy={sender}
               className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-orange-knap px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-knap-mork disabled:opacity-50"
             >

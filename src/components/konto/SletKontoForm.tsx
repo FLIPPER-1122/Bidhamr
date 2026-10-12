@@ -6,12 +6,15 @@ import { sletMinKonto, type Blokering } from "@/app/actions/kontoSletning";
 import AdgangskodeFelt from "./AdgangskodeFelt";
 import Blokeringer from "./Blokeringer";
 import { FELT, FORMULAR_FEJL, LABEL } from "./felter";
+import { useHydreret } from "@/lib/useHydreret";
 
 export default function SletKontoForm({ brugerId }: { brugerId: string }) {
   const router = useRouter();
   const [adgangskode, setAdgangskode] = useState("");
   const [bekraeftelse, setBekraeftelse] = useState("");
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
   const [blokeringer, setBlokeringer] = useState<Blokering[] | null>(null);
 
@@ -57,7 +60,7 @@ export default function SletKontoForm({ brugerId }: { brugerId: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-md space-y-4">
+    <form onSubmit={handleSubmit} method="post" className="max-w-md space-y-4">
       <AdgangskodeFelt id="slet-adgangskode" label="Din adgangskode" vaerdi={adgangskode} onChange={aendrAdgangskode} />
 
       <div>
@@ -86,7 +89,7 @@ export default function SletKontoForm({ brugerId }: { brugerId: string }) {
 
       <button
         type="submit"
-        disabled={!klar || loading}
+        disabled={!klar || loading || !hydreret}
         aria-busy={loading || undefined}
         aria-describedby={mangler ? "slet-mangler" : undefined}
         className="btn btn-fare-fyldt btn-stor w-full sm:w-auto"

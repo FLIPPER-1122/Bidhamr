@@ -199,7 +199,7 @@ export default function ConfirmDialog({
               <p id={`${id}-beskrivelse`} className="mt-1.5 text-sm text-neutral-500">{description}</p>
             )}
 
-            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+            <form onSubmit={handleSubmit} method="post" className="mt-4 space-y-4">
               {fejl && (
                 <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
                   {fejl}

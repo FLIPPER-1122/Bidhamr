@@ -16,6 +16,7 @@ import SporingTidslinje from "@/components/fragt/SporingTidslinje";
 import { annullerFragtlabel, hentFragtlabelLink, lavFragtlabel } from "@/app/actions/fragt";
 import type { ForsendelseVisning } from "@/lib/fragt/handlinger";
 import { slaaPostnummerOp } from "@/lib/postnumre";
+import { useHydreret } from "@/lib/useHydreret";
 
 export type Afsender = { navn: string; adresse: string; postnummer: string; by: string; telefon: string };
 
@@ -69,6 +70,8 @@ export default function FragtlabelBoks({
   const [fejl, setFejl] = useState<string | null>(null);
   const [feltFejl, setFeltFejl] = useState<FeltFejl>({});
   const [arbejder, setArbejder] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const laas = useRef(false);
   const fejlRef = useRef<HTMLDivElement>(null);
 
@@ -286,6 +289,7 @@ export default function FragtlabelBoks({
       )}
 
       <form
+        method="post"
         noValidate
         onSubmit={(e) => {
           e.preventDefault();
@@ -329,7 +333,7 @@ export default function FragtlabelBoks({
         </fieldset>
         {fejlBoks}
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-          <button type="submit" disabled={arbejder} aria-busy={arbejder || undefined} className="btn btn-primaer w-full sm:w-auto">
+          <button type="submit" disabled={arbejder || !hydreret} aria-busy={arbejder || undefined} className="btn btn-primaer w-full sm:w-auto">
             {arbejder && <span className="btn-spinner" aria-hidden="true" />}
             Lav fragtlabel
           </button>

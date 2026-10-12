@@ -16,6 +16,7 @@ import {
   type BetaOversigt,
   type BetaStatus,
 } from "@/app/actions/adminBeta";
+import { useHydreret } from "@/lib/useHydreret";
 
 const STATUS: Record<BetaStatus, { tekst: string; klasse: string }> = {
   inviteret: { tekst: "Inviteret", klasse: "bg-neutral-100 text-neutral-700" },
@@ -171,6 +172,8 @@ function InvitationsFormular({ onBesked, onFaerdig }: { onBesked: (b: Besked) =>
   const [note, setNote] = useState("");
   const [fejl, setFejl] = useState<string | null>(null);
   const [sender, start] = useTransition();
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
 
   function send(e: FormEvent) {
     e.preventDefault();
@@ -198,7 +201,7 @@ function InvitationsFormular({ onBesked, onFaerdig }: { onBesked: (b: Besked) =>
         Personen får en mail med et link til at oprette en konto med netop denne e-mail. Har e-mailen allerede en
         konto, står der i stedet, at personen bare skal logge ind.
       </p>
-      <form onSubmit={send} className="mt-4 space-y-4" noValidate>
+      <form onSubmit={send} method="post" className="mt-4 space-y-4" noValidate>
         <div>
           <label htmlFor="beta-email" className="block text-sm font-medium text-neutral-800">
             E-mail
@@ -238,7 +241,7 @@ function InvitationsFormular({ onBesked, onFaerdig }: { onBesked: (b: Besked) =>
         )}
         <button
           type="submit"
-          disabled={sender || !email.trim()}
+          disabled={sender || !hydreret || !email.trim()}
           aria-busy={sender || undefined}
           className="btn btn-primaer w-full sm:w-auto"
         >

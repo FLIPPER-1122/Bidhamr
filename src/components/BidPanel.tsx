@@ -25,6 +25,7 @@ import {
   BUD_SAELGER_FROSSET_NOTE,
   BUD_SAELGER_FROSSET_TITEL,
 } from "@/lib/betaling/frosset";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Budhistorikken er anonymiseret paa serveren: ingen bruger-id'er eller navne
 // i browseren - kun "Byder 3" eller "Dig".
@@ -139,6 +140,8 @@ export default function BidPanel({
   const [automatisk, setAutomatisk] = useState(mitMaksimum !== null);
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   // Kvittering efter et bud (fører / overbudt / gemt).
@@ -708,7 +711,7 @@ export default function BidPanel({
           <MitIDKraeves sted="bud" retur={`/auktion/${auktionId}`} />
         </div>
       ) : brugerId ? (
-        <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} method="post" noValidate className="mt-4 flex flex-col gap-3">
           {/* Budtype: ét bud eller automatisk bud op til et maksimum. */}
           <div
             role="radiogroup"
@@ -933,7 +936,7 @@ export default function BidPanel({
           <div ref={handlingRef} className="flex flex-col gap-2">
             <button
               type="submit"
-              disabled={loading || !gyldigtBud || bekraeftMaks !== null}
+              disabled={loading || !hydreret || !gyldigtBud || bekraeftMaks !== null}
               aria-busy={loading || undefined}
               className="btn btn-primaer btn-stor w-full"
             >

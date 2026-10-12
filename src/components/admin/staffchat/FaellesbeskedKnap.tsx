@@ -128,7 +128,7 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
             <p className="mt-1.5 text-sm text-neutral-500">
               Beskeden vises i chatten mellem køber og sælger, markeret som en besked fra BidHamr. Begge får besked.
             </p>
-            <form onSubmit={send} className="mt-4 space-y-4">
+            <form onSubmit={send} method="post" className="mt-4 space-y-4">
               {fejl && (
                 <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
                   {fejl}

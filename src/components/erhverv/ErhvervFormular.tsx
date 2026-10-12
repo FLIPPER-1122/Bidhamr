@@ -12,6 +12,7 @@ import type { sendErhvervHenvendelse } from "@/app/actions/erhverv";
 import { ERHVERV_FORMULAR as F } from "@/lib/tekster/erhverv";
 import { EMAIL, ERHVERV_GRAENSER as G, POSTNUMMER, renCvr, renTelefon } from "@/lib/erhverv/regler";
 import { E_FEJL, E_HJAELP, E_KNAP_PRIMAER, E_LABEL, eFelt, eTekstfelt } from "@/components/erhverv/stil";
+import { useHydreret } from "@/lib/useHydreret";
 
 type Navn =
   | "firmanavn"
@@ -78,6 +79,8 @@ export default function ErhvervFormular() {
   const [forsoegt, setForsoegt] = useState(false);
   const [serverFejl, setServerFejl] = useState<{ tekst: string; felt?: Navn } | null>(null);
   const [sender, setSender] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [sendt, setSendt] = useState(false);
   const startRef = useRef<number>(0);
   const senderRef = useRef(false);
@@ -156,7 +159,7 @@ export default function ErhvervFormular() {
   }
 
   return (
-    <form onSubmit={send} noValidate className="space-y-7">
+    <form onSubmit={send} method="post" noValidate className="space-y-7">
       {forsoegt && antalFejl > 0 && !serverFejl && (
         <div role="alert" className="rounded-xl border-2 border-fejl-kant bg-fejl-bg p-4 text-[18px] font-semibold text-fejl-tekst">
           {F.fejl.manglerFlere}
@@ -239,7 +242,7 @@ export default function ErhvervFormular() {
         />
       </div>
 
-      <button type="submit" disabled={sender} aria-busy={sender || undefined} className={`${E_KNAP_PRIMAER} w-full`}>
+      <button type="submit" disabled={sender || !hydreret} aria-busy={sender || undefined} className={`${E_KNAP_PRIMAER} w-full`}>
         {sender && <span className="btn-spinner" aria-hidden="true" />}
         {sender ? F.knapSender : F.knapSend}
       </button>

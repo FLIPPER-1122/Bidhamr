@@ -3,6 +3,7 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { gemDac7Indstillinger, hentDac7Indberetningsfil, markerDac7Sendt } from "@/app/actions/adminDac7";
 import { FELT as FELT_FAELLES } from "@/components/konto/felter";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Admin → DAC7 (kun chef): klientdelene. Filen hentes via en server action
 // og gemmes direkte i chefens browser (den ligger ingen andre steder).
@@ -82,6 +83,8 @@ type Indstillinger = {
 
 export function Dac7IndstillingerForm(p: Indstillinger) {
   const [pending, start] = useTransition();
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [besked, setBesked] = useState<{ fejl: boolean; tekst: string } | null>(null);
 
   function gem(e: FormEvent<HTMLFormElement>) {
@@ -136,7 +139,7 @@ export function Dac7IndstillingerForm(p: Indstillinger) {
       <div className="sm:col-span-2">
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || !hydreret}
           aria-busy={pending || undefined}
           className="btn btn-sekundaer"
         >

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
+import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { gemMineSkatteoplysninger } from "@/app/actions/dac7";
 import { DAC7 } from "@/lib/dac7/tekster";
 import { EU_LANDE } from "@/lib/dac7/regler";
 import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL, SUCCES_BOKS } from "@/components/konto/felter";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Sælgerens DAC7-oplysninger. CPR-feltet vises aldrig udfyldt: det gemte
 // CPR-nummer står kun maskeret (fødselsdato-delen), og feltet sendes kun,
@@ -20,14 +21,6 @@ type Props = {
   harCpr: boolean;
   andetTinLand: string | null;
 };
-
-// true først, når siden er hydreret i browseren. Indtil da er knappen slået
-// fra: ellers kunne formularen sendes som en almindelig GET, og CPR-nummeret
-// ville ende i adressen (browserhistorik og serverlogs).
-const ingenAbonnement = () => () => {};
-function useHydreret(): boolean {
-  return useSyncExternalStore(ingenAbonnement, () => true, () => false);
-}
 
 function foedselsdatoTekst(iso: string | null): string {
   if (!iso) return "–";

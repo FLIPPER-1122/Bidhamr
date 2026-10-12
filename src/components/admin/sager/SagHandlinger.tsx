@@ -17,6 +17,7 @@ import {
 import { SAG_BEGRUNDELSE_MAKS, type SagStatus, type SagType } from "@/lib/sager";
 import { STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
+import { useHydreret } from "@/lib/useHydreret";
 
 const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
 
@@ -104,6 +105,8 @@ function Knapper({
   fare?: boolean;
   deaktiveret?: boolean;
 }) {
+  // Send-knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   return (
     <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
       <button type="button" onClick={onLuk} disabled={sender} className="btn btn-sekundaer">
@@ -111,7 +114,7 @@ function Knapper({
       </button>
       <button
         type="submit"
-        disabled={sender || deaktiveret}
+        disabled={sender || deaktiveret || !hydreret}
         aria-busy={sender}
         className={`btn ${fare ? "btn-fare-fyldt" : "btn-primaer"}`}
       >
@@ -241,7 +244,7 @@ function AfgoerKnap({
         onLuk={luk}
         laast={sender}
       >
-        <form onSubmit={indsend} className="space-y-4">
+        <form onSubmit={indsend} method="post" className="space-y-4">
           {indsigelse && (
             <p className="rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
               Køberen har en åben indsigelse hos sin bank. Pengene kan ikke flyttes, før den er afgjort.
@@ -422,7 +425,7 @@ function AnkeKnap({
         onLuk={luk}
         laast={sender}
       >
-        <form onSubmit={indsend} className="space-y-4">
+        <form onSubmit={indsend} method="post" className="space-y-4">
           <fieldset>
             <legend className="text-sm font-medium text-neutral-800">Udfald</legend>
             <div className="mt-2 space-y-2">
@@ -533,7 +536,7 @@ function ReturKnap({ sagId, onResultat }: { sagId: string; onResultat: (b: strin
         onLuk={luk}
         laast={sender}
       >
-        <form onSubmit={indsend} className="space-y-4">
+        <form onSubmit={indsend} method="post" className="space-y-4">
           <div>
             <label htmlFor={`${id}-note`} className="block text-sm font-medium text-neutral-800">
               Intern note <span className="font-normal text-neutral-500">(valgfri)</span>
@@ -590,7 +593,7 @@ function GenaabnKnap({ sagId, onResultat }: { sagId: string; onResultat: (b: str
         onLuk={luk}
         laast={sender}
       >
-        <form onSubmit={indsend} className="space-y-4">
+        <form onSubmit={indsend} method="post" className="space-y-4">
           <div>
             <label htmlFor={`${id}-aarsag`} className="block text-sm font-medium text-neutral-800">
               Hvorfor genåbnes sagen?
@@ -670,7 +673,7 @@ function LukKontoKnap({
         onLuk={luk}
         laast={sender}
       >
-        <form onSubmit={indsend} className="space-y-4">
+        <form onSubmit={indsend} method="post" className="space-y-4">
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-neutral-800">
             Brugeren får en mail med reglen og begrundelsen nedenfor (DSA) og kan klage. Den interne note ses kun af staff.
           </p>
@@ -804,7 +807,7 @@ function IndpakningKnap({
         onLuk={luk}
         laast={sender}
       >
-        <form onSubmit={indsend} className="space-y-4">
+        <form onSubmit={indsend} method="post" className="space-y-4">
           <div
             className={`rounded-lg border px-3 py-2 text-sm ${
               blivAdvarsel
@@ -932,7 +935,7 @@ function ChatKnap({ sagId, part, navn }: { sagId: string; part: "koeber" | "sael
         onLuk={luk}
         laast={sender}
       >
-        <form onSubmit={indsend} className="space-y-4">
+        <form onSubmit={indsend} method="post" className="space-y-4">
           <div>
             <label htmlFor={`${id}-besked`} className="block text-sm font-medium text-neutral-800">
               Første besked <span className="font-normal text-neutral-500">(valgfri)</span>

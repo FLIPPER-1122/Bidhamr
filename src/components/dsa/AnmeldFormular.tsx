@@ -13,6 +13,7 @@ import {
   kraeverKontaktoplysninger,
   type IndholdType,
 } from "@/lib/dsa/regler";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Formularen til "Anmeld ulovligt indhold" (DSA art. 16). Bruges i dialogen
 // på auktioner, profiler, spørgsmål og bedømmelser (placeringen udfyldes
@@ -44,6 +45,8 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
     { anonym: true; medEmail: boolean } | { anonym: false; sagsnummer: string; statusSti: string; findes: boolean } | null
   >(null);
   const [sender, startSend] = useTransition();
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
 
 
   const medLink = !type || type === "andet";
@@ -128,7 +131,7 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
   }
 
   return (
-    <form onSubmit={indsend} className="space-y-4" noValidate>
+    <form onSubmit={indsend} method="post" className="space-y-4" noValidate>
       {/* Spambeskyttelse: usynligt for mennesker. */}
       <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
         <label htmlFor={`${uid}-hp`}>Lad dette felt være tomt</label>
@@ -266,7 +269,7 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
             Annullér
           </button>
         )}
-        <button type="submit" disabled={sender} aria-busy={sender || undefined} className="btn btn-primaer">
+        <button type="submit" disabled={sender || !hydreret} aria-busy={sender || undefined} className="btn btn-primaer">
           {sender && <span className="btn-spinner" aria-hidden="true" />}
           Send anmeldelse
         </button>

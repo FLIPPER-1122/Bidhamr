@@ -7,6 +7,7 @@ import { sikkerSti } from "@/lib/sikkerSti";
 import { logInd } from "@/app/actions/auth";
 import { FELT, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 import { ERHVERV_LOGIN } from "@/lib/tekster/erhverv";
+import { useHydreret } from "@/lib/useHydreret";
 
 // betaAaben: tilmeldingen er lukket, men beta-testen er åben - så vises et
 // link til "Opret konto" for inviterede.
@@ -45,6 +46,9 @@ export default function LoginForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forkertLogin, setForkertLogin] = useState(false);
+  // Knappen er slået fra, til siden er hydreret: ellers kan et tidligt
+  // submit sendes af browseren selv (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -103,7 +107,7 @@ export default function LoginForm({
             </p>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <form onSubmit={handleSubmit} method="post" className="mt-6 space-y-4">
             <div>
               <label htmlFor="email" className={LABEL}>
                 E-mail
@@ -162,7 +166,7 @@ export default function LoginForm({
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !hydreret}
               aria-busy={loading || undefined}
               className="btn btn-primaer btn-stor w-full"
             >

@@ -16,6 +16,7 @@ const UDENOM_ADVARSEL =
   "Husk: Al betaling skal ske gennem BidHamr. Betaler I uden om – fx kontant, via MobilePay-nummer eller bankoverførsel – er I ikke beskyttet, og vi kan ikke hjælpe, hvis noget går galt.";
 import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
+import { useHydreret } from "@/lib/useHydreret";
 
 export interface Besked {
   id: string;
@@ -47,6 +48,8 @@ export default function HandelChat({
   const [beskeder, setBeskeder] = useState<Besked[]>(startBeskeder);
   const [tekst, setTekst] = useState("");
   const [sender, setSender] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
   // Venlig forklaring, når spamfilteret har stoppet en besked.
   const [stoppet, setStoppet] = useState<string | null>(null);
@@ -253,7 +256,7 @@ export default function HandelChat({
       </div>
 
       {!kunFraBidhamr && (
-      <form onSubmit={handleSubmit} className="flex gap-2 border-t border-kant p-4">
+      <form onSubmit={handleSubmit} method="post" className="flex gap-2 border-t border-kant p-4">
         <input
           type="text"
           value={tekst}
@@ -264,7 +267,7 @@ export default function HandelChat({
         />
         <button
           type="submit"
-          disabled={sender || !tekst.trim()}
+          disabled={sender || !hydreret || !tekst.trim()}
           className="btn btn-primaer shrink-0"
         >
           {sender ? "Sender…" : "Send"}

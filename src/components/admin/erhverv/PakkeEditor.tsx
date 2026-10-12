@@ -10,6 +10,7 @@ import { gemErhvervPakke, type ErhvervPakkeAdmin } from "@/app/actions/adminErhv
 import { ADMIN_FELT, ADMIN_LABEL } from "@/components/admin/erhverv/FirmaFelter";
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
 import { ERHVERV_GRAENSER as G } from "@/lib/erhverv/regler";
+import { useHydreret } from "@/lib/useHydreret";
 
 type Kladde = {
   id: string | null;
@@ -47,6 +48,8 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
   const [fejl, setFejl] = useState<string | null>(null);
   const [gemt, setGemt] = useState<string | false>(false);
   const [gemmer, start] = useTransition();
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
 
   function valider(k: Kladde): string | null {
     if (!k.navn.trim()) return A.pakker.fejl.navnMangler;
@@ -150,6 +153,7 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
 
       {erChef && kladde && (
         <form
+          method="post"
           onSubmit={(e) => {
             e.preventDefault();
             gem(kladde, false);
@@ -218,7 +222,7 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <button type="submit" disabled={gemmer} aria-busy={gemmer || undefined} className="btn btn-primaer">
+              <button type="submit" disabled={gemmer || !hydreret} aria-busy={gemmer || undefined} className="btn btn-primaer">
                 {gemmer && <span className="btn-spinner" aria-hidden="true" />}
                 {A.pakker.knapGem}
               </button>

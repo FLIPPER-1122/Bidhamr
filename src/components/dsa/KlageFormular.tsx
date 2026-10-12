@@ -4,6 +4,7 @@ import { useId, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { kaldOffentligHandling } from "@/lib/offentligHandling";
 import { DSA_BEGRUNDELSE_MAKS, DSA_BEGRUNDELSE_MIN } from "@/lib/dsa/regler";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Klage over en afgørelse (DSA art. 20). Én klage pr. afgørelse.
 export default function KlageFormular({
@@ -21,6 +22,8 @@ export default function KlageFormular({
   const [fejl, setFejl] = useState<string | null>(null);
   const [sendt, setSendt] = useState(false);
   const [sender, startSend] = useTransition();
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
 
   function indsend(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -54,7 +57,7 @@ export default function KlageFormular({
   }
 
   return (
-    <form onSubmit={indsend} className="space-y-3" noValidate>
+    <form onSubmit={indsend} method="post" className="space-y-3" noValidate>
       <input type="hidden" name={type === "afgoerelse" ? "afgoerelseId" : "anmeldelseId"} value={id} />
       {token && <input type="hidden" name="t" value={token} />}
       <div>
@@ -82,7 +85,7 @@ export default function KlageFormular({
           {fejl}
         </p>
       )}
-      <button type="submit" disabled={sender} aria-busy={sender || undefined} className="btn btn-primaer">
+      <button type="submit" disabled={sender || !hydreret} aria-busy={sender || undefined} className="btn btn-primaer">
         {sender && <span className="btn-spinner" aria-hidden="true" />}
         Send klage
       </button>

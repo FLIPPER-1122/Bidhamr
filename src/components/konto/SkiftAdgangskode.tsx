@@ -5,6 +5,7 @@ import { skiftAdgangskode } from "@/app/actions/kontoSikkerhed";
 import { vurderAdgangskode, type Personinfo } from "@/lib/adgangskode";
 import AdgangskodeFelt from "./AdgangskodeFelt";
 import { FORMULAR_FEJL, SUCCES_BOKS } from "./felter";
+import { useHydreret } from "@/lib/useHydreret";
 
 export default function SkiftAdgangskode({ person }: { person: Personinfo }) {
   const [aaben, setAaben] = useState(false);
@@ -12,6 +13,8 @@ export default function SkiftAdgangskode({ person }: { person: Personinfo }) {
   const [ny, setNy] = useState("");
   const [gentag, setGentag] = useState("");
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
   const [gemt, setGemt] = useState(false);
 
@@ -61,7 +64,7 @@ export default function SkiftAdgangskode({ person }: { person: Personinfo }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-md space-y-4">
+    <form onSubmit={handleSubmit} method="post" className="max-w-md space-y-4">
       <AdgangskodeFelt
         id="nuvaerende-adgangskode"
         label="Nuværende adgangskode"
@@ -89,7 +92,7 @@ export default function SkiftAdgangskode({ person }: { person: Personinfo }) {
       )}
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        <button type="submit" disabled={loading} aria-busy={loading || undefined} className="btn btn-primaer w-full sm:w-auto">
+        <button type="submit" disabled={loading || !hydreret} aria-busy={loading || undefined} className="btn btn-primaer w-full sm:w-auto">
           {loading && <span className="btn-spinner" aria-hidden="true" />}
           Gem ny adgangskode
         </button>

@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import { verificerSignupKode } from "@/app/actions/auth";
 import GensendBekraeftelse from "@/components/konto/GensendBekraeftelse";
 import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL } from "@/components/konto/felter";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Indtast den 6-cifrede kode fra bekræftelsesmailen. Ét felt (så indsæt fra
 // udklipsholderen og iOS/Android's "udfyld fra mail" virker). Kendes e-mailen
@@ -16,6 +17,8 @@ export default function KodeForm({ kendtEmail, startVentetid }: { kendtEmail: st
   const [email, setEmail] = useState("");
   const [kode, setKode] = useState("");
   const [sender, setSender] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
 
   function opdaterKode(v: string) {
@@ -48,7 +51,7 @@ export default function KodeForm({ kendtEmail, startVentetid }: { kendtEmail: st
 
   return (
     <div className="w-full">
-      <form onSubmit={send} className="space-y-4" noValidate>
+      <form onSubmit={send} method="post" className="space-y-4" noValidate>
         {!kendtEmail && (
           <div>
             <label htmlFor="kode-email" className={LABEL}>
@@ -99,7 +102,7 @@ export default function KodeForm({ kendtEmail, startVentetid }: { kendtEmail: st
 
         <button
           type="submit"
-          disabled={sender || kode.length < 6 || (!kendtEmail && !email.trim())}
+          disabled={sender || !hydreret || kode.length < 6 || (!kendtEmail && !email.trim())}
           aria-busy={sender || undefined}
           className="btn btn-primaer btn-stor w-full"
         >

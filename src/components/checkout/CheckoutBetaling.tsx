@@ -73,7 +73,7 @@ function BetalForm({ handelId, sender, onSender, onKlar, onFejl, onGenstart }: P
   }
 
   return (
-    <form id={CHECKOUT_FORM} onSubmit={betal} aria-busy={sender || undefined}>
+    <form id={CHECKOUT_FORM} onSubmit={betal} method="post" aria-busy={sender || undefined}>
       <PaymentElement
         options={{ layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: true } }}
       />
