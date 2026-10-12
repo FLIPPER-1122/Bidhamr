@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { koerBetalingsCron } from "@/lib/betaling/cron";
+import { kraevSammeStripeTilstand } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { driftFejlSamler, logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
@@ -97,6 +98,13 @@ async function slutLog(
   }
 }
 
+// "<url>/fail" o.l.: endelsen på stien - query-strengen bevares.
+function medEndelse(u: URL, endelse: string): string {
+  const ny = new URL(u.toString());
+  ny.pathname = `${ny.pathname.replace(/\/+$/, "")}/${endelse}`;
+  return ny.toString();
+}
+
 // Kaster aldrig og venter højst 5 sekunder. Kun https.
 async function heartbeat(ok: boolean) {
   const url = process.env.HEARTBEAT_URL;
@@ -104,10 +112,40 @@ async function heartbeat(ok: boolean) {
   try {
     const u = new URL(url);
     if (u.protocol !== "https:") return;
-    const sti = ok ? u.toString() : `${u.toString().replace(/\/+$/, "")}/fail`;
+    const sti = ok ? u.toString() : medEndelse(u, "fail");
     await fetch(sti, { method: "GET", signal: AbortSignal.timeout(5_000), cache: "no-store" });
   } catch (err) {
     console.error("Heartbeat kunne ikke sendes:", renFejltekst(err));
+  }
+}
+
+// Vagt udefra / "dead man's switch" (sikkerhedsnet B): er
+// CRON_HEALTHCHECK_URL sat (fx en healthchecks.io-check med periode 5 min og
+// grace 25 min - se HUSKELISTE.md), pinges den KUN ved en vellykket kørsel.
+// Ved en fejlet kørsel sendes "<url>/log" (healthchecks.io: logges uden at
+// ændre status), så alarmen kommer, når der ikke har været en vellykket
+// kørsel i 30 minutter - også hvis cron-systemet står helt stille (pg_cron,
+// Vercel eller Supabase nede), for så kommer der slet ingen ping. Uden
+// variablen sker der intet. Ingen persondata i pinget (kun antal trin).
+// Kaster aldrig og venter højst 5 sekunder. Kun https.
+async function healthcheck(ok: boolean, antalTrinFejl: number) {
+  const url = process.env.CRON_HEALTHCHECK_URL;
+  if (!url) return;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return;
+    if (ok) {
+      await fetch(u.toString(), { method: "GET", signal: AbortSignal.timeout(5_000), cache: "no-store" });
+    } else {
+      await fetch(medEndelse(u, "log"), {
+        method: "POST",
+        body: `Betalings-cron fejlede (${antalTrinFejl} trin) - se /admin/drift`,
+        signal: AbortSignal.timeout(5_000),
+        cache: "no-store",
+      });
+    }
+  } catch (err) {
+    console.error("Healthcheck kunne ikke sendes:", renFejltekst(err));
   }
 }
 
@@ -117,11 +155,25 @@ async function haandter(req: NextRequest) {
   }
   const logId = await startLog(req.method === "GET" ? "GET" : "POST");
   let ok = false;
+  let pengetrinSprunget = false;
   let fejl: string | null = null;
   let resultat: Record<string, unknown> | null = null;
   const trinFejl: string[] = [];
   try {
     const betaling = await driftFejlSamler.run(trinFejl, () => koerBetalingsCron());
+    // Stripe-vagten (nøgle og database i forskellig tilstand) stopper alle
+    // Stripe-kald, men mange trin fanger den stille. Kørslen tæller så som
+    // fejlet - også for vagten udefra (CRON_HEALTHCHECK_URL).
+    try {
+      await kraevSammeStripeTilstand();
+    } catch (err) {
+      await driftFejlSamler.run(trinFejl, () =>
+        logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Stripe-tilstand", fejl: err }),
+      );
+    }
+    // Pengetrinene er sprunget over (databasen er ikke migreret): ikke en
+    // vellykket betalingskørsel for vagten udefra.
+    pengetrinSprunget = "springetOver" in betaling;
     // Fragtsporing (let og begrænset; flytter ingen penge). Fejl her stopper
     // ikke betalings-cron'en og logges i drift_fejl af koerFragtCron selv.
     let fragt: Awaited<ReturnType<typeof koerFragtCron>> | null = null;
@@ -176,6 +228,7 @@ async function haandter(req: NextRequest) {
   } finally {
     await slutLog(logId, ok, ok ? null : (fejl ?? "Ukendt fejl"), resultat);
     await heartbeat(ok);
+    await healthcheck(ok && !pengetrinSprunget, trinFejl.length);
   }
 }
 

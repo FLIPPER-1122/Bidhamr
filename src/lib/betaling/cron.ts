@@ -36,10 +36,14 @@
 //   10. Overvågning (Niels F06, overvaagning.ts - højst én gang i timen):
 //       udbetalinger, der hænger, tabte indsigelser uden afklaring,
 //       saldo-afstemning og udeblevne payout-/indsigelses-events. Én
-//       drift-alarm pr. tilfælde.
+//       drift-alarm pr. tilfælde. Også betalinger, hvor payment_intent-
+//       webhooken er udeblevet (opsamlUdebleveneBetalinger).
 //   11. Fakturaer i Dinero på BidHamrs gebyrer, fragt og BidHamr Beskyttelse
 //       (købers og sælgers), kreditnotaer ved refusion og bogføring af
 //       betalte abonnementsfakturaer (src/lib/faktura/koe.ts, docs/FAKTURA.md).
+//   (Den daglige pengeafstemning med Stripe kører IKKE her, men i sin egen
+//   rute /api/cron/afstemning med eget pg_cron-job - den kan tage op til 3
+//   minutter, og pg_net giver op efter 60 s her.)
 //
 // Hver mail "claimes" atomisk i databasen FØR afsendelse, så samme mail aldrig
 // sendes to gange, selv hvis to kørsler overlapper.

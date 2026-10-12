@@ -52,7 +52,7 @@ function kbhForskydning(t: Date): number {
 }
 
 // Midnat dansk tid på datoen (aar, maaned 1-12, dag), som UTC-tidspunkt.
-function kbhMidnat(aar: number, maaned: number, dag: number): Date {
+export function kbhMidnat(aar: number, maaned: number, dag: number): Date {
   const utcMidnat = Date.UTC(aar, maaned - 1, dag);
   let gaet = new Date(utcMidnat - kbhForskydning(new Date(utcMidnat)));
   // Sommer-/vintertid kan skifte samme nat - justér én gang.
@@ -60,7 +60,7 @@ function kbhMidnat(aar: number, maaned: number, dag: number): Date {
   return gaet;
 }
 
-function kbhDato(t: Date): { aar: number; maaned: number; dag: number } {
+export function kbhDato(t: Date): { aar: number; maaned: number; dag: number } {
   const dele = new Intl.DateTimeFormat("en-CA", {
     timeZone: TIDSZONE,
     year: "numeric",
@@ -231,7 +231,7 @@ function erTestnoegle(): boolean {
   return (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_test_");
 }
 
-async function hentStripeBalance(): Promise<Resultat<StripeBalance>> {
+export async function hentStripeBalance(): Promise<Resultat<StripeBalance>> {
   try {
     const data = await medCache("balance", async () => {
       const b = await getStripe().balance.retrieve({}, { timeout: STRIPE_TIMEOUT_MS });
