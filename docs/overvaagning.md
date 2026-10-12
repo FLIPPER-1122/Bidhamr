@@ -88,6 +88,15 @@ Svaret indeholder aldrig detaljer eller hemmeligheder.
 
 ---
 
+## 2b. Vagt udefra på betalings-cron'en (healthchecks.io)
+
+`/api/helbred` viser kun, at siden svarer - ikke at betalings-cron'en kører.
+Sæt `CRON_HEALTHCHECK_URL` (healthchecks.io-ping-URL, periode 5 min, grace
+25 min): cron'en pinger den efter hver vellykket kørsel, og healthchecks.io
+alarmerer efter 30 minutter uden. Opsætning: HUSKELISTE.md, "Vagt udefra".
+
+---
+
 ## 3. Vercel: fejl ved deploy
 
 1. Vercel → dit avatar → **Account Settings → Notifications** (eller Team
