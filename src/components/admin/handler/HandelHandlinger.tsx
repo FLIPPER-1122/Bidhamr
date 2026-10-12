@@ -110,7 +110,7 @@ export default function HandelHandlinger({
         />
       )}
       {paamind && aktiv && sidstPaamindet && (
-        <span className="text-xs text-tekst-svag">Påmindelse sendt for {siden(sidstPaamindet)}</span>
+        <span className="text-xs text-tekst-svag">Påmindelse sendt for {siden(sidstPaamindet)} siden</span>
       )}
       {visAabn && (
         <Link href={`/admin/handler/${h.id}`} className={lilleKnap}>
