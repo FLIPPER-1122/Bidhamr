@@ -28,7 +28,7 @@ export default function AdminTal({
           : "bg-admin-graa text-tekst-daempet";
   return (
     <span
-      className={`inline-flex min-w-[22px] items-center justify-center rounded-full px-1.5 py-px text-[11.5px] font-bold tabular-nums ${cls}`}
+      className={`relative inline-flex min-w-[22px] items-center justify-center rounded-full px-1.5 py-px text-[11.5px] font-bold tabular-nums ${cls}`}
     >
       {antal}
       <span className="sr-only"> {label ?? (tone === "roed" ? "kritiske" : "venter")}</span>

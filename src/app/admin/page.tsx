@@ -1,5 +1,8 @@
+import { Suspense } from "react";
+import { cache } from "react";
 import { redirect } from "next/navigation";
-import { assertRole, getErhvervRolle, harMindstRolle, type StaffRole } from "@/lib/adminAuth";
+import { getErhvervRolle, getStaffRole, harMindstRolle, type StaffRole } from "@/lib/adminAuth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import AdminSide from "@/components/admin/AdminSide";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import AdminFejl from "@/components/admin/AdminFejl";
@@ -7,52 +10,67 @@ import DriftStatuslinje from "@/components/admin/forside/DriftStatuslinje";
 import StatusLamper from "@/components/admin/forside/StatusLamper";
 import KraeverHandling, { type HandlingRaekke } from "@/components/admin/forside/KraeverHandling";
 import Noegletal, { somPeriode } from "@/components/admin/forside/Noegletal";
+import PengeStatus from "@/components/admin/forside/PengeStatus";
 import { tolkForsideTal, type ForsideTal } from "@/components/admin/forside/forsideTal";
 import { HAENGER_GRAENSER_DAGE } from "@/lib/adminGraenser";
-import { hentNoedstopTal, hentStaffTal, type NoedstopTal, type StaffTal } from "@/lib/admin/taellere";
-import { hentPengesikkerhed, type Pengesikkerhed } from "@/app/actions/adminPengesikkerhed";
-import PengeStatus from "@/components/admin/forside/PengeStatus";
-import { hentErhvervTal, type ErhvervTal } from "@/lib/admin/erhvervTal";
-import { hentLamper, type Lampe } from "@/lib/admin/lamper";
-import { beregnStatus, koePunkter, type StatusPunkt } from "@/lib/admin/statuslinje";
+import { hentErhvervTal } from "@/lib/admin/erhvervTal";
+import { hentAdminStatus } from "@/lib/admin/status";
+import { hentPengesikkerhed as hentPengesikkerhedRaa } from "@/app/actions/adminPengesikkerhed";
 
 // Admin-forsiden = kontrolpanelet (docs/ADMIN-REDESIGN.md 3 og den godkendte
 // showcase). Rækkefølgen er prioriteten: er der noget galt? -> hvad skal jeg
-// gøre? -> tal. Alle staff-roller må se den; systemlamper kun admin og chef.
-// Kun ANTAL - beløb og indtjening ligger på Penge (kun chef). Ingen
-// personoplysninger.
+// gøre? -> tal. Alle staff-roller må se den; systemlamper kun admin og chef,
+// beløb kun chef. Ingen personoplysninger.
 //
-// Trin 1-2: data fra det, der findes i dag (admin_forside_tal, menuens
-// tællere, drift-data og sikkerhedsnet A: nødstop, godkendelser, frosne sælgere).
-// Daglig afstemning og "Hos Stripe" venter på sikkerhedsnet B - indtil da er de skjult.
+// Hastighed: hver sektion er sin egen <Suspense>, så sidehovedet kommer med
+// det samme, og en langsom kilde (fx Healthchecks) ikke holder resten tilbage.
+// Statuslinjen er den samme beregning som menuens lampe (hentAdminStatus).
+// Daglig afstemning og "Hos Stripe" venter på sikkerhedsnet B og er skjult.
 
 export const metadata = { title: "Admin" };
 
-type Data = {
-  rolle: StaffRole;
-  tal: ForsideTal | null;
-  staff: StaffTal;
-  lamper: Lampe[];
-  erhverv: ErhvervTal | null;
-  betaFejl: { nye: number; blokerer: number } | null;
-  noedstop: NoedstopTal;
-  // Kun chef (beløb og godkendelser). null for alle andre.
-  penge: Pengesikkerhed | null;
-};
+const TZ = "Europe/Copenhagen";
 
-async function hentData(): Promise<Data | null> {
-  let adgang: Awaited<ReturnType<typeof assertRole>>;
-  try {
-    adgang = await assertRole("medarbejder");
-  } catch {
+// Deles mellem Kræver handling og Penge-kortene (ét kald pr. visning).
+const hentPengesikkerhed = cache(hentPengesikkerhedRaa);
+
+// admin_forside_tal() deles mellem Kræver handling og Nøgletal (ét kald).
+const hentForsideTal = cache(async (): Promise<ForsideTal | null> => {
+  const { data, error } = await createAdminClient().rpc("admin_forside_tal");
+  if (error) {
+    console.error("admin_forside_tal fejlede:", error.message);
     return null;
   }
-  const { admin, rolle } = adgang;
-  const erAdmin = harMindstRolle(rolle, "admin");
+  return tolkForsideTal(data);
+});
 
-  const [forside, staff, erhverv, beta, noedstop, pengeRes] = await Promise.all([
-    admin.rpc("admin_forside_tal"),
-    hentStaffTal(),
+function Skelet({ hoejde = "h-20", titel = true }: { hoejde?: string; titel?: boolean }) {
+  return (
+    <div aria-hidden="true" className="space-y-2.5">
+      {titel && <div className="h-4 w-32 animate-pulse rounded bg-skelet/70" />}
+      <div className={`${hoejde} animate-pulse rounded-[14px] bg-skelet/50`} />
+    </div>
+  );
+}
+
+async function StatusSektion({ rolle }: { rolle: StaffRole }) {
+  const { status } = await hentAdminStatus(rolle);
+  return <DriftStatuslinje status={status} />;
+}
+
+async function LampeSektion({ rolle }: { rolle: StaffRole }) {
+  const { lamper } = await hentAdminStatus(rolle);
+  return <StatusLamper lamper={lamper} />;
+}
+
+const flere = (n: number, en: string, mange: string) => (n === 1 ? en : mange);
+
+async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
+  const admin = createAdminClient();
+  const erAdmin = harMindstRolle(rolle, "admin");
+  const [{ tal: s, lamper, noedstop }, forside, erhverv, beta, pengeRes] = await Promise.all([
+    hentAdminStatus(rolle),
+    hentForsideTal(),
     rolle === "chef" ? hentErhvervTal(admin) : Promise.resolve(null),
     erAdmin
       ? Promise.all([
@@ -60,48 +78,45 @@ async function hentData(): Promise<Data | null> {
           admin.from("beta_fejl").select("id", { count: "exact", head: true }).eq("status", "ny").eq("alvor", "blokerer"),
         ])
       : Promise.resolve(null),
-    hentNoedstopTal(),
     rolle === "chef" ? hentPengesikkerhed() : Promise.resolve(null),
   ]);
+  const h = forside?.handling;
   const penge = pengeRes && "ok" in pengeRes ? pengeRes : null;
-  if (forside.error) console.error("admin_forside_tal fejlede:", forside.error.message);
-  const tal = forside.error ? null : tolkForsideTal(forside.data);
-  const lamper = erAdmin ? await hentLamper(admin, { fragtTilHandling: tal?.handling.fragt ?? 0, noedstop }) : [];
-  const betaFejl =
-    beta && !beta[0].error && !beta[1].error ? { nye: beta[0].count ?? 0, blokerer: beta[1].count ?? 0 } : null;
-  return { rolle, tal, staff, lamper, erhverv, betaFejl, noedstop, penge };
-}
-
-const flere = (n: number, en: string, mange: string) => (n === 1 ? en : mange);
-
-function byggRaekker(d: Data): HandlingRaekke[] {
-  const { rolle, staff: s, erhverv: e, betaFejl } = d;
-  const h = d.tal?.handling;
-  const admin = harMindstRolle(rolle, "admin");
+  const betaFejl = beta && !beta[0].error && !beta[1].error ? { nye: beta[0].count ?? 0, blokerer: beta[1].count ?? 0 } : null;
+  const roedeVagter = lamper.filter((l) => l.tone === "roed" && l.navn.startsWith("Ekstern vagt"));
   const r: HandlingRaekke[] = [];
 
   // Nødstop (sikkerhedsnet A) - alle skal vide det, så de kan svare brugerne.
-  if (d.noedstop.stoppet) {
+  if (noedstop.stoppet) {
     r.push({
       id: "noedstop",
       alvor: "roed",
-      titel: d.noedstop.udbetalinger ? "Udbetalinger stoppet (nødstop)" : "Nye betalinger stoppet (nødstop)",
+      titel: noedstop.udbetalinger ? "Udbetalinger stoppet (nødstop)" : "Nye betalinger stoppet (nødstop)",
       antal: 1,
       forklaring: rolle === "chef" ? "Slå det fra under Penge, når det er sikkert" : "Chefen genoptager under Penge",
       href: rolle === "chef" ? "/admin/penge" : "/admin",
     });
   }
-  if (d.penge && d.penge.godkendelser.length > 0) {
+  if (roedeVagter.length > 0) {
+    r.push({
+      id: "vagt",
+      alvor: "roed",
+      titel: "Ekstern vagt melder fejl",
+      antal: roedeVagter.length,
+      forklaring: roedeVagter.map((l) => l.navn.replace("Ekstern vagt – ", "")).join(" og ") + " har ikke meldt sig",
+      href: "/admin/drift",
+    });
+  }
+  if (penge && penge.godkendelser.length > 0) {
     r.push({
       id: "godkendelser",
       alvor: "gul",
       titel: "Udbetalinger til godkendelse",
-      antal: d.penge.godkendelser.length,
+      antal: penge.godkendelser.length,
       forklaring: "Godkend, før pengene sendes til sælgerens bank",
       href: "/admin/penge",
     });
   }
-  // Lovpligtige frister først.
   if (s.dsa > 0) {
     r.push({
       id: "dsa",
@@ -113,34 +128,33 @@ function byggRaekker(d: Data): HandlingRaekke[] {
       href: "/admin/dsa",
     });
   }
-  if (h) {
-    r.push(
-      { id: "sager", alvor: "gul", titel: "Åbne sager", antal: h.aabne_sager, forklaring: "Køber har klaget over en handel – afgør sagen", href: "/admin/sager" },
-      ...(admin
-        ? [{ id: "anker", alvor: "gul" as const, titel: "Anker", antal: h.anker, forklaring: "En part er uenig i afgørelsen – se på den igen", href: "/admin/sager?vis=anker" }]
-        : []),
-      {
-        id: "betalinger",
-        alvor: "gul",
-        titel: "Betalingsfejl",
-        antal: h.betalinger + h.afvigelser,
-        forklaring: "En udbetaling eller refusion fejlede, eller beløbet passer ikke",
-        href: "/admin/betalinger",
-      },
-    );
+  // Samme tal som menuen og Betalingsfejl-siden (betalinger + forkerte beløb + udbetalingskonti).
+  r.push(
+    { id: "sager", alvor: "gul", titel: "Åbne sager", antal: s.sager, forklaring: "Køber har klaget over en handel – afgør sagen", href: "/admin/sager" },
+    {
+      id: "betalinger",
+      alvor: "gul",
+      titel: "Betalingsfejl",
+      antal: s.betalinger,
+      forklaring: "En udbetaling eller refusion fejlede, beløbet passer ikke, eller en sælgers udbetalingskonto kræver hjælp",
+      href: "/admin/betalinger",
+    },
+  );
+  if (h && erAdmin) {
+    r.push({ id: "anker", alvor: "gul", titel: "Anker", antal: h.anker, forklaring: "En part er uenig i afgørelsen – se på den igen", href: "/admin/sager?vis=anker" });
   }
-  if (e) {
+  if (erhverv) {
     r.push(
       {
         id: "erhverv-henv",
         alvor: "gul",
-        titel: flere(e.nyeHenvendelser, "Ny erhvervshenvendelse", "Nye erhvervshenvendelser"),
-        antal: e.nyeHenvendelser,
+        titel: flere(erhverv.nyeHenvendelser, "Ny erhvervshenvendelse", "Nye erhvervshenvendelser"),
+        antal: erhverv.nyeHenvendelser,
         forklaring: "Et firma vil sælge på BidHamr – godkend eller afvis",
         href: "/admin/erhverv",
       },
-      { id: "erhverv-klager", alvor: "gul", titel: "Klager over firmaer", antal: e.aabneKlager, forklaring: "Køber klager over en erhvervssælger", href: "/admin/erhverv/klager?status=aaben" },
-      { id: "erhverv-dsa", alvor: "gul", titel: "Firmaers klager (DSA)", antal: e.dsaKlager, forklaring: "Et firma klager over vores afgørelse – frist 14 dage", href: "/admin/erhverv/dsa-klager" },
+      { id: "erhverv-klager", alvor: "gul", titel: "Købers klager over firmaer", antal: erhverv.aabneKlager, forklaring: "Tag sagen, og afgør den", href: "/admin/erhverv/klager?status=aaben" },
+      { id: "erhverv-dsa", alvor: "gul", titel: "Firmaers klager (DSA)", antal: erhverv.dsaKlager, forklaring: "Et firma klager over vores afgørelse – frist 14 dage", href: "/admin/erhverv/dsa-klager" },
     );
   }
   if (betaFejl) {
@@ -156,7 +170,7 @@ function byggRaekker(d: Data): HandlingRaekke[] {
   if (h) {
     r.push(
       { id: "retur", alvor: "graa", titel: "Returfrist udløbet", antal: h.retur_udloebet, forklaring: "Køber har ikke sendt varen retur inden for 7 dage", href: "/admin/sager?vis=afventer_retur" },
-      { id: "ubetalte", alvor: "graa", titel: "Ubetalte vindere", antal: h.ubetalte, forklaring: "Vinderen betalte ikke til tiden – advar eller afvis", href: "/admin/ubetalte" },
+      { id: "ubetalte", alvor: "graa", titel: "Ubetalte vindere", antal: s.ubetalte, forklaring: "Vinderen betalte ikke til tiden – advar eller afvis", href: "/admin/ubetalte" },
       {
         id: "ikke-sendt",
         alvor: "graa",
@@ -177,11 +191,10 @@ function byggRaekker(d: Data): HandlingRaekke[] {
       },
       { id: "afhentning", alvor: "graa", titel: "Afhentning ikke gennemført", antal: h.afhentning, forklaring: "Fristen for afhentning er overskredet", href: "/admin/handler?vis=haenger" },
       { id: "fragt", alvor: "graa", titel: "Fragt kræver handling", antal: h.fragt, forklaring: "Fragtfirmaet har meldt noget, der skal tjekkes", href: "/admin/handler?vis=fragt" },
-      { id: "konti", alvor: "graa", titel: "Sælgers udbetalingskonto", antal: h.udbetalingskonti, forklaring: "En sælger kan ikke få penge udbetalt", href: "/admin/betalinger" },
     );
-    if (admin) {
-      r.push({ id: "lukning", alvor: "graa", titel: "Forslag om kontolukning", antal: h.kontolukninger, forklaring: "En bruger har fået 3 advarsler", href: "/admin/kontolukninger" });
-    }
+  }
+  if (erAdmin) {
+    r.push({ id: "lukning", alvor: "graa", titel: "Forslag om kontolukning", antal: s.kontolukninger, forklaring: "En bruger har fået 3 advarsler", href: "/admin/kontolukninger" });
   }
   r.push(
     { id: "rapporter", alvor: "graa", titel: "Nye anmeldelser", antal: s.rapporter, forklaring: "Anmeldte auktioner, chatbeskeder og profiler", href: "/admin/rapporter" },
@@ -189,57 +202,66 @@ function byggRaekker(d: Data): HandlingRaekke[] {
     { id: "kontakt", alvor: "graa", titel: "Kontaktformular uden svar", antal: s.kontakt, href: "/admin/kontakt" },
     { id: "chats", alvor: "graa", titel: "Chats uden svar", antal: s.chats, href: "/admin/chats" },
   );
-  return r;
+  return (
+    <>
+      {!forside && <AdminFejl hvad="Nogle af tallene til forsiden" />}
+      <KraeverHandling raekker={r} />
+    </>
+  );
 }
 
-const TZ = "Europe/Copenhagen";
+async function PengeSektion() {
+  const res = await hentPengesikkerhed();
+  if (!("ok" in res)) {
+    const ingenAdgang = /adgang/i.test(res.fejl);
+    return <AdminFejl>{ingenAdgang ? "Ingen adgang til pengetallene." : "Pengetallene kunne ikke hentes. Prøv at genindlæse siden."}</AdminFejl>;
+  }
+  return <PengeStatus penge={res} />;
+}
+
+async function NoegletalSektion({ periode }: { periode: string | undefined }) {
+  const tal = await hentForsideTal();
+  return tal ? <Noegletal tal={tal} periode={somPeriode(periode)} /> : null;
+}
 
 export default async function AdminForside({ searchParams }: { searchParams: Promise<{ periode?: string }> }) {
-  const d = await hentData();
-  if (!d) {
+  const rolle = await getStaffRole();
+  if (!rolle) {
     // Sælger (erhverv) har kun adgang til Erhverv.
     if ((await getErhvervRolle()) === "saelger") redirect("/admin/erhverv");
     redirect("/");
   }
   const { periode } = await searchParams;
-  const raekker = byggRaekker(d);
-
-  // Statuslinjen: køerne (som menuen) + røde/gule systemlamper.
-  const lampePunkter: StatusPunkt[] = d.lamper
-    .filter((l) => (l.tone === "roed" || l.tone === "gul") && l.navn !== "Nødstop")
-    .map((l) => ({ tone: l.tone as "roed" | "gul", tekst: l.statusTekst ?? `${l.navn}: ${l.tekst}`, href: l.href ?? "/admin/drift" }));
-  const noedstopPunkt: StatusPunkt[] = d.noedstop.stoppet
-    ? [
-        {
-          tone: "roed",
-          tekst: `${d.noedstop.udbetalinger ? "Udbetalinger" : "Nye betalinger"} stoppet (nødstop)`,
-          href: d.rolle === "chef" ? "/admin/penge" : "/admin",
-        },
-      ]
-    : [];
-  const status = beregnStatus([
-    ...noedstopPunkt,
-    ...lampePunkter.filter((p) => p.tone === "roed"),
-    ...koePunkter({ dsaOverskredet: d.staff.dsaOverskredet, dsa: d.staff.dsa, sager: d.staff.sager, betalinger: d.staff.betalinger }),
-    ...lampePunkter.filter((p) => p.tone === "gul"),
-  ], { systemerTjekket: d.lamper.length > 0 });
+  const erAdmin = harMindstRolle(rolle, "admin");
   const opdateret = new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
 
   return (
     <AdminSide className="space-y-[22px]">
       <AdminSideHoved titel="Forside" forklaring={`Det vigtigste først. Opdateret ${opdateret}.`} />
 
-      <DriftStatuslinje status={status} />
+      <Suspense fallback={<Skelet hoejde="h-[72px]" titel={false} />}>
+        <StatusSektion rolle={rolle} />
+      </Suspense>
 
-      <StatusLamper lamper={d.lamper} />
+      {erAdmin && (
+        <Suspense fallback={<Skelet hoejde="h-36" />}>
+          <LampeSektion rolle={rolle} />
+        </Suspense>
+      )}
 
-      {!d.tal && <AdminFejl hvad="Tallene til forsiden" />}
+      <Suspense fallback={<Skelet hoejde="h-64" />}>
+        <HandlingSektion rolle={rolle} />
+      </Suspense>
 
-      <KraeverHandling raekker={raekker} />
+      {rolle === "chef" && (
+        <Suspense fallback={<Skelet hoejde="h-24" />}>
+          <PengeSektion />
+        </Suspense>
+      )}
 
-      {d.penge && <PengeStatus penge={d.penge} />}
-
-      {d.tal && <Noegletal tal={d.tal} periode={somPeriode(periode)} />}
+      <Suspense fallback={<Skelet hoejde="h-48" />}>
+        <NoegletalSektion periode={periode} />
+      </Suspense>
     </AdminSide>
   );
 }

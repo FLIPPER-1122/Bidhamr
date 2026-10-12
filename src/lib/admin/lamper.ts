@@ -6,6 +6,7 @@ import { alarmModtagere } from "@/lib/driftAlarm";
 import { erTestdatabase } from "@/lib/miljoe";
 import { noeglensTilstand } from "@/lib/stripe";
 import type { NoedstopTal } from "@/lib/admin/taellere";
+import { hentEksternVagt } from "@/lib/admin/healthchecks";
 
 // Systemlamper på forsiden (docs/ADMIN-REDESIGN.md 3.2), kun admin og chef.
 // Trin 1-2: KUN de lamper, der kan beregnes ud fra data, vi har i dag
@@ -31,12 +32,31 @@ function siden(iso: string, nu: number): string {
   return `${Math.floor(t / 24)} dage siden`;
 }
 
-export async function hentLamper(admin: Admin, opts: { fragtTilHandling: number; noedstop: NoedstopTal }): Promise<Lampe[]> {
+// Drift-lamperne ændrer sig langsomt; de caches 30 s i processen, så menuen
+// (som også bruger dem) ikke spørger databasen ved hvert klik. Nødstoppet
+// lægges på frisk hver gang.
+const CACHE_MS = 30_000;
+let cache: { kl: number; v: Lampe[] } | null = null;
+
+export async function hentLamper(admin: Admin, opts: { noedstop: NoedstopTal }): Promise<Lampe[]> {
+  if (!cache || Date.now() - cache.kl > CACHE_MS) {
+    cache = { kl: Date.now(), v: await byg(admin) };
+  }
+  const noedstop: Lampe = opts.noedstop.stoppet
+    ? { navn: "Nødstop", tone: "roed", tekst: `TIL · ${opts.noedstop.stoppet}` }
+    : { navn: "Nødstop", tone: "groen", tekst: "fra" };
+  // Nødstop som tredje lampe (efter cron og webhooks), som i showcasen.
+  const v = [...cache.v];
+  v.splice(Math.min(2, v.length), 0, noedstop);
+  return v;
+}
+
+async function byg(admin: Admin): Promise<Lampe[]> {
   const nu = Date.now();
   const test = erTestdatabase();
   const fra24 = new Date(nu - 24 * 60 * MIN).toISOString();
 
-  const [rute, alarm, webhook] = await Promise.all([
+  const [rute, alarm, webhook, fragt, vagt] = await Promise.all([
     hentCronRute(admin, nu),
     hentAlarmStatus(admin),
     admin
@@ -44,7 +64,11 @@ export async function hentLamper(admin: Admin, opts: { fragtTilHandling: number;
       .select("id", { count: "exact", head: true })
       .eq("kilde", "webhook")
       .gte("senest_kl", fra24),
+    // Samme tal som "Fragt kræver handling" (forsendelser.kraever_opmaerksomhed).
+    admin.from("forsendelser").select("id", { count: "exact", head: true }).eq("kraever_opmaerksomhed", true),
+    hentEksternVagt(),
   ]);
+  const fragtTilHandling = fragt.error ? 0 : (fragt.count ?? 0);
 
   const lamper: Lampe[] = [];
 
@@ -85,14 +109,6 @@ export async function hentLamper(admin: Admin, opts: { fragtTilHandling: number;
     });
   }
 
-  // Nødstop (sikkerhedsnet A, hentNoedstop). Rød lampe = noget er stoppet.
-  // Statuslinjen viser nødstoppet for sig selv (lampen springes over dér).
-  lamper.push(
-    opts.noedstop.stoppet
-      ? { navn: "Nødstop", tone: "roed", tekst: `TIL · ${opts.noedstop.stoppet}` }
-      : { navn: "Nødstop", tone: "groen", tekst: "fra" },
-  );
-
   // Test eller live: Stripe-nøglen og databasen skal passe sammen.
   const noegle = noeglensTilstand();
   if (noegle) {
@@ -108,10 +124,10 @@ export async function hentLamper(admin: Admin, opts: { fragtTilHandling: number;
   // Fragt: forsendelser, der kræver handling (samme tal som "Kræver handling").
   lamper.push({
     navn: "Fragt",
-    tone: opts.fragtTilHandling > 0 ? "gul" : "groen",
+    tone: fragtTilHandling > 0 ? "gul" : "groen",
     tekst:
-      opts.fragtTilHandling > 0
-        ? `${opts.fragtTilHandling} ${opts.fragtTilHandling === 1 ? "forsendelse kræver" : "forsendelser kræver"} handling`
+      fragtTilHandling > 0
+        ? `${fragtTilHandling} ${fragtTilHandling === 1 ? "forsendelse kræver" : "forsendelser kræver"} handling`
         : "ingen forsendelser venter",
     href: "/admin/handler?vis=fragt",
   });
@@ -134,6 +150,9 @@ export async function hentLamper(admin: Admin, opts: { fragtTilHandling: number;
       });
     }
   }
+
+  // Ekstern vagt (Healthchecks.io).
+  for (const x of vagt) lamper.push({ navn: x.navn, tone: x.tone, tekst: x.tekst, href: "/admin/drift" });
 
   return lamper;
 }

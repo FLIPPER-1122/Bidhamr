@@ -26,7 +26,7 @@ export default function AdminFaner({
           key={f.id}
           href={f.href}
           aria-current={aktiv === f.id ? "page" : undefined}
-          className={`inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:px-4 ${
+          className={`relative inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:px-4 ${
             aktiv === f.id
               ? "border-groen font-semibold text-groen-mork"
               : "border-transparent text-tekst-daempet hover:text-tekst"

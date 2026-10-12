@@ -23,6 +23,10 @@ async function koer<T>(navn: string, fn: () => Promise<T>): Promise<T | { fejl: 
   } catch (err) {
     unstable_rethrow(err);
     if (err instanceof BrugerFejl) return { fejl: err.message };
+    // Afvist af assertRole: sig det, i stedet for "Noget gik galt".
+    if (err instanceof Error && (err.message === "Ingen adgang" || err.message === "Ikke logget ind")) {
+      return { fejl: "Ingen adgang." };
+    }
     console.error(`Admin-handling ${navn} fejlede:`, err);
     return { fejl: GENERISK };
   }

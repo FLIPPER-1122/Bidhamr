@@ -181,7 +181,7 @@ function Tal({ antal, tone }: { antal: number; tone: "roed" | "gul" | "graa" }) 
   if (!antal) return null;
   const cls = tone === "roed" ? "bg-tal-roed text-white" : tone === "gul" ? "bg-tal-gul text-tekst" : "bg-white/20 text-white";
   return (
-    <span className={`min-w-[22px] rounded-full px-[7px] py-px text-center text-[11.5px] font-bold tabular-nums ${cls}`}>
+    <span className={`relative min-w-[22px] rounded-full px-[7px] py-px text-center text-[11.5px] font-bold tabular-nums ${cls}`}>
       {antal}
       <span className="sr-only">{tone === "roed" ? " – over fristen" : " venter"}</span>
     </span>
@@ -353,7 +353,7 @@ export default function AdminSidebar({
           {status && (
             <Link
               href={status.href ?? "/admin"}
-              className="grid h-11 w-11 place-items-center rounded-lg hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-orange"
+              className="relative grid h-11 w-11 place-items-center rounded-lg hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-orange"
             >
               <span aria-hidden="true" className={`h-3 w-3 rounded-full ring-2 ring-white/30 ${PRIK[status.tone]}`} />
               <span className="sr-only">Status: {status.titel}</span>

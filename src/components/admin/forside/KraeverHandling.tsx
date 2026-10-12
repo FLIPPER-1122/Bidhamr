@@ -79,7 +79,7 @@ export default function KraeverHandling({
                   )}
                   <Link
                     href={r.href}
-                    className="inline-flex min-h-10 items-center justify-center rounded-lg bg-orange-knap px-3.5 text-sm font-semibold text-white transition-colors hover:bg-orange-knap-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:order-3"
+                    className="relative inline-flex min-h-10 items-center justify-center rounded-lg bg-orange-knap px-3.5 text-sm font-semibold text-white transition-colors hover:bg-orange-knap-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:order-3"
                   >
                     Gå til<span className="sr-only">: {r.titel.toLowerCase()}</span>
                   </Link>
