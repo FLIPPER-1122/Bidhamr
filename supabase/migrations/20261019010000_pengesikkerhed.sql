@@ -866,7 +866,14 @@ grant execute on function public.saelger_udbetaling_claim(uuid, text, uuid[]) to
 -- 11. Chefens godkendelse af udbetaling (købers samlede betaling fra 10.000 kr.)
 -- ===========================================================================
 -- Kode: ok | ingen_adgang | inhabil | ikke_fundet | ikke_noedvendig |
--- allerede | ikke_frigivet | udbetalt | note_mangler | note_for_lang
+-- allerede | ikke_frigivet | udbetalt | note_mangler | note_for_lang |
+-- andre_hindringer (+ 'grund': betaling_udbetaling_blokeret's svar)
+-- Chefen kan kun godkende, når chefens godkendelse er det ENESTE, der
+-- mangler (betaling_udbetaling_blokeret = 'kraever_godkendelse'): en sag,
+-- anke, indsigelse, refusion, ventetid hos Stripe, fortrydelsesfrist ... skal
+-- være væk først, så godkendelsen altid gælder den endelige afgørelse.
+-- Godkendelsen nulstilles, hvis der senere åbnes en sag eller anke
+-- (betalinger_godkendelse_nulstil nedenfor).
 create or replace function public.betaling_udbetaling_godkend(
   p_medarbejder uuid, p_betaling uuid, p_note text)
 returns jsonb
@@ -877,6 +884,7 @@ as $fn$
 declare
   b      record;
   v_note text := nullif(btrim(coalesce(p_note, '')), '');
+  v_blok text;
 begin
   if p_medarbejder is null or not exists (
        select 1 from public.users u where u.id = p_medarbejder and u.rolle = 'chef') then
@@ -898,17 +906,92 @@ begin
   if b.saelger_udbetaling_id is not null or b.stripe_transfer_id is not null then
     return jsonb_build_object('kode', 'udbetalt');
   end if;
+  -- Handlen er låst (for update ovenfor), og trades låses også, så en sag
+  -- ikke kan åbnes mellem tjekket og godkendelsen.
+  perform 1 from public.trades t where t.id = b.trade_id for update;
+  v_blok := public.betaling_udbetaling_blokeret(b.id);
+  if v_blok is distinct from 'kraever_godkendelse' then
+    return jsonb_build_object('kode', 'andre_hindringer', 'grund', v_blok);
+  end if;
   update public.betalinger
      set udbetaling_godkendt_kl = now(), udbetaling_godkendt_af = p_medarbejder, opdateret = now()
    where id = b.id;
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
   values (p_medarbejder, 'udbetaling_godkendt', 'handel', b.trade_id, b.seller_id,
-          left('Udbetaling fra 10.000 kr. godkendt - ' || v_note, 2000));
+          left('Udbetaling godkendt (køber betalte 10.000 kr. eller mere) - ' || v_note, 2000));
   return jsonb_build_object('kode', 'ok', 'trade_id', b.trade_id, 'seller_id', b.seller_id);
 end;
 $fn$;
 revoke all on function public.betaling_udbetaling_godkend(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.betaling_udbetaling_godkend(uuid, uuid, text) to service_role;
+
+-- Chefens godkendelse gælder kun den afgørelse, han så. Åbnes der en sag på
+-- handlen (ny sag, genåbnet sag, staffs markering trades.sag_aaben) eller
+-- en anke, nulstilles godkendelsen på betalinger, der endnu ikke er sendt
+-- til udbetaling - så en ny afgørelse kræver en ny godkendelse. Triggere
+-- frem for rettelser i de enkelte funktioner: de fanger alle veje
+-- (sag_opret, sag_genaabn, admin, fremtidige funktioner).
+create or replace function public.betalinger_godkendelse_nulstil()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  update public.betalinger
+     set udbetaling_godkendt_kl = null, udbetaling_godkendt_af = null, opdateret = now()
+   where trade_id = new.trade_id
+     and udbetaling_godkendt_kl is not null
+     and saelger_udbetaling_id is null
+     and stripe_transfer_id is null;
+  return null;
+end;
+$fn$;
+revoke all on function public.betalinger_godkendelse_nulstil() from public, anon, authenticated;
+
+create or replace function public.betalinger_godkendelse_nulstil_handel()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  update public.betalinger
+     set udbetaling_godkendt_kl = null, udbetaling_godkendt_af = null, opdateret = now()
+   where trade_id = new.id
+     and udbetaling_godkendt_kl is not null
+     and saelger_udbetaling_id is null
+     and stripe_transfer_id is null;
+  return null;
+end;
+$fn$;
+revoke all on function public.betalinger_godkendelse_nulstil_handel() from public, anon, authenticated;
+
+drop trigger if exists sager_godkendelse_nulstil_ny on public.sager;
+create trigger sager_godkendelse_nulstil_ny
+  after insert on public.sager
+  for each row execute function public.betalinger_godkendelse_nulstil();
+
+-- Genåbning (sag_genaabn sætter status tilbage til 'aaben') eller anden vej
+-- tilbage til åben / afventer retur.
+drop trigger if exists sager_godkendelse_nulstil_aaben on public.sager;
+create trigger sager_godkendelse_nulstil_aaben
+  after update of status on public.sager
+  for each row
+  when (new.status in ('aaben', 'afventer_retur') and old.status is distinct from new.status)
+  execute function public.betalinger_godkendelse_nulstil();
+
+drop trigger if exists sag_anker_godkendelse_nulstil on public.sag_anker;
+create trigger sag_anker_godkendelse_nulstil
+  after insert on public.sag_anker
+  for each row execute function public.betalinger_godkendelse_nulstil();
+
+drop trigger if exists trades_godkendelse_nulstil on public.trades;
+create trigger trades_godkendelse_nulstil
+  after update of sag_aaben on public.trades
+  for each row
+  when (new.sag_aaben and not coalesce(old.sag_aaben, false))
+  execute function public.betalinger_godkendelse_nulstil_handel();
 
 -- ===========================================================================
 -- 13. Frysning af sælgerens udbetalinger (fremmed udbetaling / plan ændret)

@@ -266,6 +266,31 @@ const GODKEND_FEJL: Record<string, string> = {
   udbetalt: "Pengene er allerede udbetalt.",
 };
 
+// Hvad der ellers holder udbetalingen tilbage (betaling_udbetaling_blokeret),
+// når chefen prøver at godkende for tidligt (kode andre_hindringer).
+const HINDRING: Record<string, string> = {
+  sag: "der er en sag eller anke på handlen, som ikke er færdig",
+  sag_aaben: "handlen er markeret som sag",
+  indsigelse: "køberen har lavet en indsigelse",
+  refusion: "der er en refusion i gang",
+  svindelvarsel: "der er et uløst svindelvarsel",
+  radar_review: "Stripe gennemgår betalingen",
+  ikke_afhentet: "pakken er ikke afhentet",
+  returneret: "pakken er sendt retur",
+  kraever_opmaerksomhed: "handlen har en markering, der skal lukkes under Betalinger",
+  handel_annulleret: "handlen er annulleret",
+  midler_ikke_tilgaengelige: "pengene er ikke tilgængelige hos Stripe endnu",
+  ventetid: "ventetiden før udbetaling er ikke udløbet",
+  fortrydelsesfrist: "køberens fortrydelsesfrist er ikke udløbet",
+  udbetaling_frosset: "sælgerens udbetalinger er frosset",
+  konto_frakoblet: "sælgerens Stripe-konto er frakoblet",
+  konto_skiftet: "sælgeren har skiftet Stripe-konto",
+  plan_ikke_manuel: "sælgerkontoens udbetalingsplan er ikke manuel",
+  udbetalinger_inaktive: "sælgerkontoen kan ikke modtage udbetalinger",
+  venter_paa_bank: "en tidligere udbetaling til sælgerens bank fejlede",
+  transfer_ukendt: "overførslen til sælgerkontoen er ikke registreret",
+};
+
 // formData: betalingId, note.
 export async function godkendUdbetaling(formData: FormData) {
   return koer("godkendUdbetaling", async () => {
@@ -279,7 +304,13 @@ export async function godkendUdbetaling(formData: FormData) {
       p_note: note,
     });
     if (error) throw new Error(error.message);
-    const svar = (data ?? {}) as { kode?: string; seller_id?: string };
+    const svar = (data ?? {}) as { kode?: string; seller_id?: string; grund?: string | null };
+    if (svar.kode === "andre_hindringer") {
+      const hvad = HINDRING[svar.grund ?? ""];
+      throw new BrugerFejl(
+        `Udbetalingen kan ikke godkendes endnu${hvad ? `: ${hvad}` : ""}. Du kan først godkende, når din godkendelse er det eneste, der mangler.`,
+      );
+    }
     if (svar.kode !== "ok") throw new BrugerFejl(GODKEND_FEJL[svar.kode ?? ""] ?? GENERISK);
     // Udbetalingen sendes med det samme (ellers af cron'en).
     if (svar.seller_id) {

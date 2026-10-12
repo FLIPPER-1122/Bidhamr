@@ -127,7 +127,7 @@ export default async function Pengesikkerhed() {
       <div className="border-t border-neutral-100 px-4 py-3 sm:px-5">
         <h3 className="text-sm font-semibold text-neutral-900">Udbetalinger, der venter på din godkendelse</h3>
         <p className="mt-0.5 text-xs text-neutral-500">
-          Når køberen har betalt 10.000 kr. eller mere, kræver udbetalingen din godkendelse – også når pengene er frigivet via en sag.
+          Når køberen har betalt 10.000 kr. eller mere, kræver udbetalingen din godkendelse – også når pengene er frigivet via en sag. Du kan godkende, når din godkendelse er det eneste, der mangler. Åbnes der senere en sag eller anke på handlen, skal du godkende igen.
         </p>
         {r.godkendelser.length === 0 ? (
           <p className="mt-1 text-sm text-neutral-500">Ingen.</p>
