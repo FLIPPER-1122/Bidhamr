@@ -1143,8 +1143,18 @@ export default function SagHandlinger({
 
       {(kan.vurdereIndpakning || indpakning.vurderet) && (
         <div className="flex flex-wrap items-center gap-3">
-          {kan.vurdereIndpakning && (
+          {kan.vurdereIndpakning && !inhabil && (
             <IndpakningKnap sagId={sagId} saelgerNavn={saelger.navn} info={indpakning} onResultat={setResultat} />
+          )}
+          {kan.vurdereIndpakning && inhabil && (
+            <span className="flex flex-col gap-1">
+              <button type="button" disabled className="btn btn-sekundaer" aria-describedby="indpakning-inhabil">
+                Dårlig indpakning
+              </button>
+              <span id="indpakning-inhabil" className="text-xs text-tekst-daempet">
+                Du er inhabil: du er part i handlen eller har handlet med en af parterne.
+              </span>
+            </span>
           )}
           {indpakning.vurderet && (
             <span className="text-sm text-neutral-600">

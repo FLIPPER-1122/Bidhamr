@@ -216,13 +216,6 @@ async function HandlerIndhold({
     (brugere ?? []).map((u) => [u.id, { navn: u.navn as string | null, email: u.email as string }]),
   );
 
-  const antal = {
-    sager: alle.filter((h) => h.sag_aaben).length,
-    haenger: alle.filter(haenger).length,
-    fragt: fragtRaekker.length,
-    aktive: alle.filter((h) => AKTIVE.includes(h.status)).length,
-    alle: alle.length,
-  };
 
   let rows = alle.filter((h) => {
     if (fane === "sager") return h.sag_aaben;
@@ -271,11 +264,13 @@ async function HandlerIndhold({
     return g ? (sidstPaamindet.get(`${h.id}:${g.grund === "ikke_sendt" ? h.seller_id : h.buyer_id}`) ?? null) : null;
   };
 
+  // Samme kilde som menuens Handler-tal (hentStaffTal).
+  const tal = await hentStaffTal();
   const faner: AdminFane[] = [
-    { id: "haenger", label: "Hænger", href: lavHref("haenger"), antal: antal.haenger, tone: "gul" },
-    { id: "fragt", label: "Fragt", href: lavHref("fragt"), antal: antal.fragt, tone: "gul" },
-    { id: "sager", label: "Markeret af os", href: lavHref("markeret"), antal: antal.sager, tone: "graa" },
-    { id: "ubetalte", label: "Ubetalte vindere", href: "/admin/ubetalte", antal: (await hentStaffTal()).ubetalte, tone: "graa" },
+    { id: "haenger", label: "Hænger", href: lavHref("haenger"), antal: tal.haenger, tone: "gul" },
+    { id: "fragt", label: "Fragt", href: lavHref("fragt"), antal: tal.fragt, tone: "gul" },
+    { id: "sager", label: "Markeret af os", href: lavHref("markeret"), antal: tal.markeret, tone: "graa" },
+    { id: "ubetalte", label: "Ubetalte vindere", href: "/admin/ubetalte", antal: tal.ubetalte, tone: "graa" },
     { id: "aktive", label: "Aktive handler", href: lavHref("aktive") },
     { id: "alle", label: "Alle", href: lavHref("alle") },
   ];

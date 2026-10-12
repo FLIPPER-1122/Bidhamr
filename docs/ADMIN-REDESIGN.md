@@ -245,7 +245,7 @@ Små kort med prik + navn + "sidst ok"-tid. Grå = ikke relevant (fx testdatabas
 |---|---|---|---|---|
 | Betalings-cron | Sidste vellykkede kørsel < 15 min. | 15–30 min. | > 30 min. eller sidste kørsel fejlede | `drift_cron_koersler` (`CRON_ADVARSEL_MIN`, `src/lib/driftData.ts:18`) |
 | Stripe-webhooks | Ingen webhook-fejl i 24 t, og ingen åbne "udeblevet event"-tilfælde | Webhook-fejl i 24 t | Åbent tilfælde om udeblevne events | `drift_fejl` (kilde `webhook`), `drift_tilfaelde`, `stripe_haendelser.behandlet` |
-| Daglig afstemning | Kørt inden for 26 t, ingen afvigelser | Afvigelse under grænsen / ikke kørt i 26 t | Afvigelse over grænsen | **Penge-agenternes afstemning** (+ overvågningens tjek E i `src/lib/betaling/overvaagning.ts`) |
+| Daglig afstemning | Kørt inden for 26 t, ingen åbne afvigelser | 1–20 åbne afvigelser uden kritisk type / ufuldstændig / ikke kørt i 26 t | Mindst én åben afvigelse af typen `refusion_beloeb`, `ukendt_betaling` eller `udbetaling_ukendt` (fremmed udbetaling), **eller** flere end 20 åbne afvigelser, eller kørslen fejlede (`AFVIGELSE_KRITISKE_TYPER`/`AFVIGELSER_ROED_OVER` i `src/lib/admin/lamper.ts`). Linker til Penge for chefen | `penge_afstemning_koersler` + `penge_afstemning_afvigelser` (sikkerhedsnet B) |
 | Nødstop | Fra | – | Til ("Udbetalinger stoppet") | **Penge-agenternes nødstop** |
 | Test eller live | Live-nøgle + produktionsdatabase | Test-nøgle + testdatabase (vises blå "Testmiljø", ikke fejl) | Blanding (live-nøgle mod testdatabase eller omvendt) | `noeglensTilstand()` (`src/lib/stripe.ts:14`), `erTestdatabase()` (`src/lib/miljoe.ts:5`) |
 | Fragt | Shipmondo sat op, ingen fragtfejl i 24 t | Fragt kræver handling | Opsætning mangler / webhook fejler | fragtkonfiguration, `drift_fejl`, `tal.fragt` |

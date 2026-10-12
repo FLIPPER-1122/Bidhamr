@@ -7,6 +7,12 @@ import { HenvendelseStatusBadge, datoTid } from "@/components/admin/erhverv/Erhv
 import HenvendelseHandlinger from "@/components/admin/erhverv/HenvendelseHandlinger";
 import OpretFirmakonto from "@/components/admin/erhverv/OpretFirmakonto";
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
+import { henvendelseTitel } from "@/lib/admin/erhvervTitel";
+
+// Browserfanen hedder det samme som overskriften.
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  return { title: await henvendelseTitel((await params).id) };
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

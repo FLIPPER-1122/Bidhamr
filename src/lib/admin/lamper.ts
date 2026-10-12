@@ -23,6 +23,12 @@ export type Lampe = { navn: string; tone: LampeTone; tekst: string; href?: strin
 
 const MIN = 60_000;
 
+// Daglig afstemning bliver RØD (docs/ADMIN-REDESIGN.md 3.2), når mindst én
+// åben afvigelse er af en kritisk type (penge, vi ikke kan forklare), eller
+// når der er flere end AFVIGELSER_ROED_OVER åbne. Ellers gul ved afvigelser.
+export const AFVIGELSE_KRITISKE_TYPER = ["refusion_beloeb", "ukendt_betaling", "udbetaling_ukendt"] as const;
+export const AFVIGELSER_ROED_OVER = 20;
+
 // Et opslag fejlede: lampen er gul ("Kunne ikke hentes") - aldrig grøn og
 // aldrig udeladt - så statuslinjen ikke kan sige "Alt kører".
 export const IKKE_HENTET = "Kunne ikke hentes";
@@ -69,7 +75,7 @@ async function byg(admin: Admin): Promise<Lampe[]> {
   const test = erTestdatabase();
   const fra24 = new Date(nu - 24 * 60 * MIN).toISOString();
 
-  const [rute, alarm, webhook, fragt, vagt, afstemning, afvigelser] = await Promise.all([
+  const [rute, alarm, webhook, fragt, vagt, afstemning, afvigelser, kritiske] = await Promise.all([
     hentCronRute(admin, nu),
     hentAlarmStatus(admin),
     admin
@@ -89,6 +95,11 @@ async function byg(admin: Admin): Promise<Lampe[]> {
       .limit(1)
       .maybeSingle<{ startet_kl: string; afsluttet_kl: string | null; ok: boolean | null; ufuldstaendig: boolean; antal_afvigelser: number }>(),
     admin.from("penge_afstemning_afvigelser").select("id", { count: "exact", head: true }).is("loest_kl", null),
+    admin
+      .from("penge_afstemning_afvigelser")
+      .select("id", { count: "exact", head: true })
+      .is("loest_kl", null)
+      .in("type", [...AFVIGELSE_KRITISKE_TYPER]),
   ]);
   const fragtTilHandling = fragt.count ?? 0;
 
@@ -198,7 +209,7 @@ async function byg(admin: Admin): Promise<Lampe[]> {
           : aabne > 0
             ? {
                 navn: "Daglig afstemning",
-                tone: "gul",
+                tone: (kritiske.count ?? 0) > 0 || aabne > AFVIGELSER_ROED_OVER ? "roed" : "gul",
                 tekst: `${aabne} ${aabne === 1 ? "åben afvigelse" : "åbne afvigelser"}`,
                 statusTekst: `Afstemningen har ${aabne} ${aabne === 1 ? "åben afvigelse" : "åbne afvigelser"}`,
               }

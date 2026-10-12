@@ -17,7 +17,7 @@ const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
 const KODE: Record<string, string> = {
   ikke_fundet: "Sagen findes ikke.",
   afsluttet: "Sagen er afgjort og kan ikke tages.",
-  inhabil: "Du er inhabil: du er selv køber eller sælger i handlen.",
+  inhabil: "Du er inhabil: du er part i handlen eller har handlet med en af parterne.",
   ikke_din: "Kun den, der har sagen, eller en admin kan slippe den.",
 };
 

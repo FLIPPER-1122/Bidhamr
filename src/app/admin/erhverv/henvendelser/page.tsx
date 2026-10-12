@@ -11,6 +11,8 @@ import HenvendelseKort from "@/components/admin/erhverv/HenvendelseKort";
 import { ADMIN_ERHVERV, ADMIN_ERHVERV_EKSTRA } from "@/lib/tekster/erhverv";
 import { HENVENDELSE_STATUSSER, HENVENDELSE_STATUS_NAVN, erHenvendelseStatus } from "@/lib/erhverv/regler";
 
+export const metadata = { title: "Henvendelser" };
+
 // Admin → Erhverv → Henvendelser (formularen fra /erhverv). Kun chef og
 // saelger (kraevErhvervSide + erhverv_har_adgang i databasen). Lå før på
 // /admin/erhverv, som nu er sælgerens oversigt - de gamle adresser med

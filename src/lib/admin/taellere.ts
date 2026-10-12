@@ -10,6 +10,8 @@ import { hentAntalTryghed } from "@/app/actions/adminTryghed";
 import { hentAntalDsa } from "@/app/actions/adminDsa";
 import { hentAntalNyeErhvervHenvendelser } from "@/app/actions/adminErhverv";
 import { hentNoedstopBjaelke } from "@/app/actions/adminPengesikkerhed";
+import { getStaffRole } from "@/lib/adminAuth";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // Menuens tællere (kun antal - ingen beløb). cache() deler svaret mellem
 // admin/layout.tsx og siden i samme forespørgsel, så forsiden ikke spørger
@@ -30,6 +32,10 @@ export type StaffTal = {
   bedoemmelser: number;
   dsa: number;
   dsaOverskredet: number;
+  // Handler-fanerne (menuens Handler-tal er summen af dem + ubetalte).
+  haenger: number;
+  fragt: number;
+  markeret: number;
 };
 
 function n(r: object | null | undefined, k: string): number {
@@ -39,6 +45,7 @@ function n(r: object | null | undefined, k: string): number {
 }
 
 export const hentStaffTal = cache(async (): Promise<StaffTal> => {
+  const handler = hentHandlerTal();
   const [ubetalte, betalinger, chats, sager, lukninger, tryghed, dsa] = await Promise.all([
     hentAntalUbetalte(),
     hentAntalBetalingerTilHandling(),
@@ -48,7 +55,9 @@ export const hentStaffTal = cache(async (): Promise<StaffTal> => {
     hentAntalTryghed(),
     hentAntalDsa(),
   ]);
+  const h = await handler;
   return {
+    ...h,
     ubetalte: n(ubetalte, "antal"),
     betalinger: n(betalinger, "antal"),
     chats: n(chats, "antal"),
@@ -61,6 +70,24 @@ export const hentStaffTal = cache(async (): Promise<StaffTal> => {
     dsaOverskredet: n(dsa, "overskredet"),
   };
 });
+
+// Tallene på Handler-fanerne: hænger (admin_haengende_handler, samme som
+// forsiden), fragt (forsendelser.kraever_opmaerksomhed) og markeret af os
+// (trades.sag_aaben). Kun staff (getStaffRole); fejl giver 0.
+async function hentHandlerTal(): Promise<{ haenger: number; fragt: number; markeret: number }> {
+  if (!(await getStaffRole())) return { haenger: 0, fragt: 0, markeret: 0 };
+  const admin = createAdminClient();
+  const [haeng, fragt, markeret] = await Promise.all([
+    admin.rpc("admin_haengende_handler"),
+    admin.from("forsendelser").select("id", { count: "exact", head: true }).eq("kraever_opmaerksomhed", true),
+    admin.from("trades").select("id", { count: "exact", head: true }).eq("sag_aaben", true),
+  ]);
+  return {
+    haenger: haeng.error ? 0 : ((haeng.data ?? []) as unknown[]).length,
+    fragt: fragt.error ? 0 : (fragt.count ?? 0),
+    markeret: markeret.error ? 0 : (markeret.count ?? 0),
+  };
+}
 
 // Nye erhvervshenvendelser (chef og sælger; andre får 0).
 export const hentErhvervNye = cache(async (): Promise<number> => n(await hentAntalNyeErhvervHenvendelser(), "antal"));

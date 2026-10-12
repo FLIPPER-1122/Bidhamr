@@ -13,7 +13,7 @@ import AdminSide from "@/components/admin/AdminSide";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Klager over afgørelser" };
+export const metadata = { title: "Firmaers klager (DSA)" };
 
 const MAKS = 200;
 

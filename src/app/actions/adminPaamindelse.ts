@@ -6,6 +6,10 @@
 // "send alligevel" - så en part ikke kan blive spammet ved et uheld.
 // "Påmindelse" = enhver staff-besked til parten i en samtale om handlen
 // (staff_samtaler.trade_id + staff_beskeder.fra_staff). Ingen ny tabel.
+// Påmindelsen lægges ALTID i en samtale for den konkrete handel
+// (sag_type 'handel', sag_id = handlen - staff_samtaler_en_aaben_idx giver én
+// åben samtale pr. bruger pr. handel), aldrig i brugerens generelle samtale
+// eller en samtale om en anden handel. Beskeden nævner altid varen.
 // Medarbejder og op (assertRole + aabnChat tjekker selv igen).
 
 import { unstable_rethrow } from "next/navigation";
@@ -35,9 +39,9 @@ export async function sendPaamindelse(input: {
     }
     const { data: h, error } = await admin
       .from("trades")
-      .select("id, buyer_id, seller_id")
+      .select("id, buyer_id, seller_id, auction_id")
       .eq("id", input.tradeId)
-      .maybeSingle<{ id: string; buyer_id: string; seller_id: string }>();
+      .maybeSingle<{ id: string; buyer_id: string; seller_id: string; auction_id: string }>();
     if (error) throw new Error(error.message);
     if (!h) return { fejl: "Handlen findes ikke." };
     const brugerId = input.part === "koeber" ? h.buyer_id : h.seller_id;
@@ -60,7 +64,13 @@ export async function sendPaamindelse(input: {
       }
     }
 
-    const res = await aabnChat(brugerId, input.emne, { tradeId: h.id, besked: input.besked });
+    const { data: auk } = await admin.from("auctions").select("titel").eq("id", h.auction_id).maybeSingle<{ titel: string | null }>();
+    const vare = auk?.titel?.trim() || "din handel";
+    const kort = h.id.slice(0, 8);
+    const emne = `${input.emne.trim()} – ${vare}`.slice(0, 200);
+    // TODO indhold-agenten: indledningen.
+    const besked = `Det drejer sig om: ${vare} (handel ${kort}).\n\n${input.besked.trim()}`.slice(0, 4000);
+    const res = await aabnChat(brugerId, emne, { tradeId: h.id, sagType: "handel", sagId: h.id, besked });
     if ("fejl" in res) return { fejl: res.fejl };
     return { ok: true, samtaleId: res.samtaleId };
   } catch (err) {

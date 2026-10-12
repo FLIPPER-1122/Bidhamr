@@ -81,9 +81,9 @@ export async function HandlerFaner({ aktiv }: { aktiv: "ubetalte" }) {
       label="Handler"
       aktiv={aktiv}
       faner={[
-        { id: "haenger", label: "Hænger", href: "/admin/handler?vis=haenger" },
-        { id: "fragt", label: "Fragt", href: "/admin/handler?vis=fragt" },
-        { id: "markeret", label: "Markeret af os", href: "/admin/handler?vis=markeret" },
+        { id: "haenger", label: "Hænger", href: "/admin/handler?vis=haenger", antal: t.haenger, tone: "gul" },
+        { id: "fragt", label: "Fragt", href: "/admin/handler?vis=fragt", antal: t.fragt, tone: "gul" },
+        { id: "markeret", label: "Markeret af os", href: "/admin/handler?vis=markeret", antal: t.markeret, tone: "graa" },
         { id: "ubetalte", label: "Ubetalte vindere", href: "/admin/ubetalte", antal: t.ubetalte, tone: "graa" },
         { id: "aktive", label: "Aktive handler", href: "/admin/handler?vis=aktive" },
         { id: "alle", label: "Alle", href: "/admin/handler?vis=alle" },

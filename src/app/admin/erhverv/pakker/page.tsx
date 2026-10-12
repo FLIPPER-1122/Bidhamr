@@ -6,6 +6,8 @@ import PakkeEditor from "@/components/admin/erhverv/PakkeEditor";
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
 import AdminSide from "@/components/admin/AdminSide";
 
+export const metadata = { title: "Pakker" };
+
 // Pakker: chef opretter og ændrer, saelger kan kun se.
 export default async function ErhvervPakkerSide() {
   const { rolle } = await kraevErhvervSide();

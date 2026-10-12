@@ -16,6 +16,8 @@ import {
 import AdminSide from "@/components/admin/AdminSide";
 import TagKlageKnap from "@/components/admin/erhverv/TagKlageKnap";
 
+export const metadata = { title: "Købers klager over firmaer" };
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Admin → Erhverv → Klager: købernes klager over firmaer (åbne, under

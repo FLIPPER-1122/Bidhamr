@@ -7,6 +7,8 @@ import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erh
 import { ABONNEMENT_STATUS_NAVN } from "@/lib/erhverv/regler";
 import AdminSide from "@/components/admin/AdminSide";
 
+export const metadata = { title: "Firmaer" };
+
 export default async function ErhvervFirmaerSide() {
   await kraevErhvervSide();
   const res = await hentFirmaer();

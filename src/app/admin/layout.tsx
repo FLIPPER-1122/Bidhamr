@@ -28,7 +28,7 @@ async function StaffMenu({ rolle }: { rolle: StaffRole }) {
       rolle={rolle}
       status={{ tone: status.tone, titel: status.titel, href: status.tone === "groen" ? "/admin" : status.href }}
       taellere={{
-        handler: t.ubetalte,
+        handler: t.haenger + t.fragt + t.markeret + t.ubetalte,
         sager: t.sager,
         betalinger: t.betalinger,
         brugere: t.kontolukninger,

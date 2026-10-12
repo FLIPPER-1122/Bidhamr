@@ -16,21 +16,20 @@ export async function sidsteStaffBeskedOmHandel(
 ): Promise<Map<string, string> | null> {
   const ud = new Map<string, string>();
   if (par.length === 0) return ud;
-  // aabnChat lægger en besked i en ÅBEN samtale med brugeren - også en
-  // generel samtale uden handel. Derfor tæller både samtaler om handlen og
-  // generelle samtaler med parten (hellere spærre én gang for meget; staff
-  // kan altid vælge "Send alligevel").
+  // Kun samtaler, der er knyttet til den konkrete handel (trade_id). En
+  // generel samtale med parten spærrer ikke - den hører ikke til en handel.
+  // Påmindelser oprettes altid i en samtale for handlen (sendPaamindelse).
   const { data: samtaler, error } = await admin
     .from("staff_samtaler")
     .select("id, bruger_id, trade_id")
-    .in("bruger_id", [...new Set(par.map((p) => p.brugerId))])
+    .in("trade_id", [...new Set(par.map((p) => p.tradeId))])
     .limit(1000);
   if (error) {
     console.error("Påmindelser: staff_samtaler kunne ikke hentes:", error.message);
     return null;
   }
-  const relevante = ((samtaler ?? []) as { id: string; bruger_id: string; trade_id: string | null }[]).filter((s) =>
-    par.some((p) => p.brugerId === s.bruger_id && (s.trade_id === null || s.trade_id === p.tradeId)),
+  const relevante = ((samtaler ?? []) as { id: string; bruger_id: string; trade_id: string }[]).filter((s) =>
+    par.some((p) => p.brugerId === s.bruger_id && p.tradeId === s.trade_id),
   );
   if (relevante.length === 0) return ud;
   const { data: beskeder, error: bFejl } = await admin
@@ -44,16 +43,11 @@ export async function sidsteStaffBeskedOmHandel(
     console.error("Påmindelser: staff_beskeder kunne ikke hentes:", bFejl.message);
     return null;
   }
-  const samtale = new Map(relevante.map((s) => [s.id, s]));
-  // Beskederne kommer nyeste først - den første pr. par er den seneste.
+  const samtale = new Map(relevante.map((s) => [s.id, `${s.trade_id}:${s.bruger_id}`]));
+  // Nyeste først - den første pr. par er den seneste.
   for (const b of (beskeder ?? []) as { samtale_id: string; oprettet_kl: string }[]) {
-    const s = samtale.get(b.samtale_id);
-    if (!s) continue;
-    for (const p of par) {
-      if (p.brugerId !== s.bruger_id || (s.trade_id !== null && s.trade_id !== p.tradeId)) continue;
-      const n = `${p.tradeId}:${p.brugerId}`;
-      if (!ud.has(n)) ud.set(n, b.oprettet_kl);
-    }
+    const n = samtale.get(b.samtale_id);
+    if (n && !ud.has(n)) ud.set(n, b.oprettet_kl);
   }
   return ud;
 }

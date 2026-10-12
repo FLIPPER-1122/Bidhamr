@@ -9,6 +9,12 @@ import FirmaAbonnementStripe from "@/components/admin/erhverv/FirmaAbonnementStr
 import FirmaKontoSektion, { type FirmaKontoTilstand } from "@/components/admin/erhverv/FirmaKontoSektion";
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_BETALING as AB, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
 import { ABONNEMENT_STATUS_NAVN } from "@/lib/erhverv/regler";
+import { firmaTitel } from "@/lib/admin/erhvervTitel";
+
+// Browserfanen hedder det samme som overskriften.
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  return { title: await firmaTitel((await params).id) };
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

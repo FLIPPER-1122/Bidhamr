@@ -24,7 +24,10 @@ export type AdminStatus = {
 export const hentAdminStatus = cache(async (rolle: StaffRole): Promise<AdminStatus> => {
   const erAdmin = harMindstRolle(rolle, "admin");
   const [tal, noedstop] = await Promise.all([hentStaffTal(), hentNoedstopTal()]);
-  const lamper = erAdmin ? await hentLamper(createAdminClient(), { noedstop }) : [];
+  const lamper = (erAdmin ? await hentLamper(createAdminClient(), { noedstop }) : []).map((l) =>
+    // Kun chefen kan åbne Penge.
+    l.navn === "Daglig afstemning" && rolle === "chef" ? { ...l, href: "/admin/penge" } : l,
+  );
 
   const noedstopPunkt: StatusPunkt[] = noedstop.stoppet
     ? [

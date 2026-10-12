@@ -19,7 +19,7 @@ function tid(iso: string) {
 
 export default function TagSagKnap({
   sagId,
-  taget,
+  taget: fraServer,
   mig,
   inhabil = false,
 }: {
@@ -33,8 +33,16 @@ export default function TagSagKnap({
   const [gemmer, start] = useTransition();
   const [fejl, setFejl] = useState<string | null>(null);
   const laas = useRef(false);
+  // Optimistisk: knappen skifter, så snart handlingen er lykkedes - før
+  // siden er hentet igen. undefined = brug serverens værdi.
+  const [lokal, setLokal] = useState<{ brugerId: string; navn: string | null; kl: string } | null | undefined>(undefined);
+  const taget = lokal !== undefined ? lokal : fraServer;
 
-  function koer(fn: () => Promise<{ ok: true } | { fejl: string }>, kvittering: string) {
+  function koer(
+    fn: () => Promise<{ ok: true } | { fejl: string }>,
+    kvittering: string,
+    efter: { brugerId: string; navn: string | null; kl: string } | null,
+  ) {
     if (laas.current) return;
     laas.current = true;
     setFejl(null);
@@ -46,6 +54,7 @@ export default function TagSagKnap({
           router.refresh();
           return;
         }
+        setLokal(efter);
         visKvittering(kvittering);
         router.refresh();
       } finally {
@@ -55,20 +64,20 @@ export default function TagSagKnap({
   }
 
   if (inhabil) {
-    return <span className="text-xs text-tekst-svag">Du er inhabil og kan ikke tage sagen</span>;
+    return <span className="text-xs text-tekst-svag">Du er inhabil: du er part i handlen eller har handlet med en af parterne.</span>;
   }
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       {!taget ? (
-        <button type="button" disabled={gemmer} aria-busy={gemmer} onClick={() => koer(() => tagSag(sagId), "Du har taget sagen")} className={lille}>
+        <button type="button" disabled={gemmer} aria-busy={gemmer} onClick={() => koer(() => tagSag(sagId), "Du har taget sagen", { brugerId: mig, navn: null, kl: new Date().toISOString() })} className={lille}>
           {gemmer && <span className="btn-spinner" aria-hidden="true" />}
           Tag sagen
         </button>
       ) : taget.brugerId === mig ? (
         <>
           <span className="text-xs font-semibold text-succes-tekst">Du har sagen</span>
-          <button type="button" disabled={gemmer} onClick={() => koer(() => slipSag(sagId), "Du har sluppet sagen")} className={lille}>
+          <button type="button" disabled={gemmer} onClick={() => koer(() => slipSag(sagId), "Du har sluppet sagen", null)} className={lille}>
             Slip
           </button>
         </>
@@ -86,6 +95,7 @@ export default function TagSagKnap({
             onConfirm={async () => {
               const svar = await tagSag(sagId, true);
               if ("fejl" in svar) return { fejl: svar.fejl };
+              setLokal({ brugerId: mig, navn: null, kl: new Date().toISOString() });
               visKvittering("Du har overtaget sagen");
               router.refresh();
             }}
