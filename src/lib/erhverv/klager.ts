@@ -15,10 +15,15 @@
 //   supabase.rpc("erhverv_klage_opret", { p_trade, p_kategori, p_beskrivelse, p_billeder: [{ sti }] })
 //     -> { kode: "ok", klage_id, nummer }. Fejl: errcode BHE11-BHE14 med en
 //        dansk besked efter præfikset (se klageFejlTekst).
+//        Annulleret handel: BHE11 "erhverv_klage_annulleret: ..." - kun tilladt,
+//        når betalinger.refusion_aarsag er 'afsendelsesfrist' eller 'sag'
+//        (20261020020000). Vis KLAGE_KOEBER.annulleret.
 //   supabase.rpc("erhverv_klage_traek_tilbage", { p_klage }) -> { kode: "ok" | "afsluttet" }
 // Firmaet:
 //   supabase.rpc("firma_klager") -> null | { berettigede_12_mdr, klager: [{ id, nummer,
 //     trade_id, titel, kategori, status, afgoerelse, begrundelse, oprettet_kl, afgjort_kl }] }
+
+import { KLAGE_KOEBER } from "@/lib/tekster/erhvervKlager";
 
 export const KLAGE_BUCKET = "erhverv-klage-billeder";
 export const KLAGE_MAKS_BILLEDER = 6;
@@ -117,6 +122,9 @@ const KLAGE_KODER = new Set(["BHE11", "BHE12", "BHE13", "BHE14"]);
 
 export function klageFejlTekst(besked: string | null | undefined, kode?: string | null): string | null {
   const b = besked ?? "";
+  // Annulleret handel (20261020020000): fast tekst, så hjemmesiden og appen
+  // siger det samme, uanset databasens ordlyd.
+  if (b.includes("erhverv_klage_annulleret:")) return KLAGE_KOEBER.annulleret;
   for (const p of KLAGE_PRAEFIKSER) {
     const i = b.indexOf(`${p}:`);
     if (i >= 0) {

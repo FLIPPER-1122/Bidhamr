@@ -74,6 +74,10 @@ export const KLAGE_KOEBER = {
     ikke_betalt: "Du kan klage over firmaet, når handlen er betalt.",
     for_sent: "Fristen for at klage over denne handel er udløbet.",
   } satisfies Record<KlageGrund, string>,
+  // erhverv_klage_annulleret (BHE11, 20261020020000): annulleret handel, hvor
+  // firmaet hverken undlod at sende varen eller tabte en sag.
+  annulleret:
+    "Du kan kun klage over firmaet på en annulleret handel, hvis firmaet ikke sendte varen, eller hvis du har fået medhold i en sag.",
   fejlGenerisk: "Noget gik galt. Prøv igen om lidt.",
 } as const;
 
