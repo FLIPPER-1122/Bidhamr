@@ -54,6 +54,17 @@ async function SaelgerMenu() {
   return <AdminSidebar rolle="saelger" taellere={{ ...INGEN_TAELLERE, erhverv: antalErhverv }} status={status} />;
 }
 
+// Mens menuens tal hentes: en let, statisk flade i samme størrelse (ingen
+// klientkomponent, der skal hydreres to gange).
+function MenuPladsholder() {
+  return (
+    <>
+      <div aria-hidden="true" className="fixed left-0 right-0 top-0 z-40 h-14 bg-groen-mork lg:hidden" />
+      <div aria-hidden="true" className="sticky top-0 hidden h-[calc(100vh-var(--samtykke-hoejde,0px))] w-[248px] shrink-0 bg-groen-mork lg:block" />
+    </>
+  );
+}
+
 // Nødstop (sikkerhedsnet A): tydelig rød bjælke øverst for al staff.
 // Årsagen vises kun for chefen (hentNoedstopBjaelke).
 async function NoedstopBjaelke() {
@@ -113,7 +124,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <Ramme
         erhverv
         menu={
-          <Suspense fallback={<AdminSidebar rolle="saelger" />}>
+          <Suspense fallback={<MenuPladsholder />}>
             <SaelgerMenu />
           </Suspense>
         }
@@ -136,7 +147,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </Suspense>
       }
       menu={
-        <Suspense fallback={<AdminSidebar rolle={rolle} />}>
+        <Suspense fallback={<MenuPladsholder />}>
           <StaffMenu rolle={rolle} />
         </Suspense>
       }

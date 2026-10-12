@@ -201,6 +201,9 @@ export default function AdminSidebar({
   const router = useRouter();
   const id = useId();
   const [open, setOpen] = useState(false);
+  // Mobilskuffens indhold bygges først, når den åbnes første gang (mindre
+  // DOM og hydrering ved hver sidevisning).
+  const [bygget, setBygget] = useState(false);
   const [loggerUd, setLoggerUd] = useState(false);
   const menuKnapRef = useRef<HTMLButtonElement>(null);
   const mobilMenuRef = useRef<HTMLDivElement>(null);
@@ -362,7 +365,10 @@ export default function AdminSidebar({
           <button
             ref={menuKnapRef}
             type="button"
-            onClick={() => setOpen(!open)}
+            onClick={() => {
+              setBygget(true);
+              setOpen(!open);
+            }}
             className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-white/25 px-3 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-orange"
             aria-expanded={open}
             aria-controls={mobilMenuId}
@@ -392,7 +398,7 @@ export default function AdminSidebar({
           open ? "visible translate-x-0" : "invisible -translate-x-full"
         }`}
       >
-        {indhold("mobil")}
+        {bygget && indhold("mobil")}
       </div>
 
       {/* Computer */}
