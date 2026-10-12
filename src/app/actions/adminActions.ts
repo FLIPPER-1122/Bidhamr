@@ -1260,7 +1260,7 @@ const OVERFOERSEL_TEKST: Record<string, string> = {
   frosset: "Sælgerens udbetalinger er frosset, til chefen har set på kontoen (Admin → Penge).",
   venter_udbetalinger_stoppet: "Udbetalinger er stoppet med nødstoppet under Admin → Penge.",
   venter_udbetaling_frosset: "Sælgerens udbetalinger er frosset, til chefen har set på kontoen (Admin → Penge).",
-  venter_kraever_godkendelse: "Udbetalingen er på 10.000 kr. eller mere og skal godkendes af chefen under Admin → Penge.",
+  venter_kraever_godkendelse: "Køberen har betalt 10.000 kr. eller mere, så udbetalingen skal godkendes af chefen under Admin → Penge.",
   venter_fortrydelsesfrist: "Sælgeren er erhverv. Udbetalingen venter, til købers fortrydelsesfrist (14 dage efter levering) er udløbet.",
   venter_sag: "Handlen har en sag eller anke, der holder pengene.",
   venter_ikke_afhentet: "Pakken blev ikke afhentet, og der udbetales ikke.",

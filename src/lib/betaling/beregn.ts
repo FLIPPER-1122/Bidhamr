@@ -24,8 +24,10 @@ export const BESKYTTELSE_MAKS_OERE = 25000;
 export const FRAGT_OERE = 3500;
 
 // Chefens beløbsgrænse (Filip, 12. okt. 2026): 10.000 kr. Fra og med
-// grænsen kræver en admin-frigivelse chefen (købers samlede betaling), og en
-// udbetaling til sælgeren venter på chefens godkendelse. Under grænsen må
+// grænsen kræver en admin-frigivelse chefen, og en udbetaling til sælgeren
+// venter på chefens godkendelse - uanset hvordan pengene blev frigivet (også
+// via en sag). Begge regner på købers samlede betaling (i databasen
+// greatest(total_oere, udbetaling_oere)). Under grænsen må
 // admin selv frigive. Databasen afgør det: public.chef_beloebsgraense_oere()
 // (20261019010000_pengesikkerhed.sql) - samme tal her til lister og tekster.
 export const CHEF_BELOEBSGRAENSE_OERE = 1_000_000;

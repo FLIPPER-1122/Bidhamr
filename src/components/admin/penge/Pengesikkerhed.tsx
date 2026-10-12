@@ -8,8 +8,9 @@ import {
   saetNoedstop,
 } from "@/app/actions/adminPengesikkerhed";
 
-// Admin → Penge (kun chef): nødstop, udbetalinger fra 10.000 kr., der
-// venter på chefens godkendelse, og frosne sælgere (sikkerhedsnet A).
+// Admin → Penge (kun chef): nødstop, udbetalinger, der venter på chefens
+// godkendelse (købers samlede betaling 10.000 kr. eller mere, uanset hvordan
+// pengene blev frigivet), og frosne sælgere (sikkerhedsnet A).
 
 const kr = (oere: number) =>
   (oere / 100).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " kr";
@@ -124,7 +125,10 @@ export default async function Pengesikkerhed() {
       </div>
 
       <div className="border-t border-neutral-100 px-4 py-3 sm:px-5">
-        <h3 className="text-sm font-semibold text-neutral-900">Udbetalinger fra 10.000 kr., der venter på din godkendelse</h3>
+        <h3 className="text-sm font-semibold text-neutral-900">Udbetalinger, der venter på din godkendelse</h3>
+        <p className="mt-0.5 text-xs text-neutral-500">
+          Når køberen har betalt 10.000 kr. eller mere, kræver udbetalingen din godkendelse – også når pengene er frigivet via en sag.
+        </p>
         {r.godkendelser.length === 0 ? (
           <p className="mt-1 text-sm text-neutral-500">Ingen.</p>
         ) : (
@@ -135,7 +139,9 @@ export default async function Pengesikkerhed() {
                   <Link href={`/admin/handler/${g.tradeId}`} className="font-medium text-neutral-900 underline">
                     {g.titel ?? "Handel"}
                   </Link>
-                  <span className="text-neutral-600"> · {g.saelger ?? "Sælger"} · {kr(g.udbetalingOere)} · frigivet {tid(g.frigivetKl)}</span>
+                  <span className="text-neutral-600">
+                    {" "}· {g.saelger ?? "Sælger"} · køber betalte {kr(g.totalOere)} · til sælger {kr(g.udbetalingOere)} · frigivet {tid(g.frigivetKl)}
+                  </span>
                 </div>
                 <ConfirmDialog
                   triggerLabel="Godkend udbetaling"

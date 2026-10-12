@@ -52,7 +52,7 @@ export const HANDLING_NAVNE: Record<string, string> = {
   // Sikkerhedsnet A (20261019010000).
   noedstop_udbetalinger: "Nødstop: udbetalinger",
   noedstop_betalinger: "Nødstop: nye betalinger",
-  udbetaling_godkendt: "Godkendte udbetaling fra 10.000 kr.",
+  udbetaling_godkendt: "Godkendte udbetaling (købers betaling 10.000 kr. eller mere)",
   bidhamr_daekker: "BidHamr dækker refusionen",
   udbetaling_frosset: "Sælgerens udbetalinger frosset",
   udbetaling_frysning_ophaevet: "Ophævede frysning af sælger",

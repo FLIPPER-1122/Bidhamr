@@ -1,8 +1,8 @@
 "use server";
 
-// Admin → Penge (kun chef): nødstop, godkendelse af udbetalinger fra
-// 10.000 kr., frosne sælgere og "BidHamr dækker" (sikkerhedsnet A,
-// 20261019010000_pengesikkerhed.sql). Databasen tjekker rolle og
+// Admin → Penge (kun chef): nødstop, godkendelse af udbetalinger (når
+// købers samlede betaling er 10.000 kr. eller mere), frosne sælgere og
+// "BidHamr dækker" (sikkerhedsnet A, 20261019010000_pengesikkerhed.sql). Databasen tjekker rolle og
 // inhabilitet igen og logger i moderation_log.
 
 import { revalidatePath } from "next/cache";
@@ -166,6 +166,8 @@ export type GodkendelseRaekke = {
   tradeId: string;
   titel: string | null;
   saelger: string | null;
+  // Købers samlede betaling - det beløb, grænsen regnes på.
+  totalOere: number;
   udbetalingOere: number;
   frigivetKl: string | null;
 };
@@ -192,13 +194,16 @@ export async function hentPengesikkerhed() {
     const [{ data: g, error: gFejl }, { data: f, error: fFejl }] = await Promise.all([
       admin
         .from("betalinger")
-        .select("id, trade_id, auction_id, seller_id, udbetaling_oere, frigivet_kl")
+        .select("id, trade_id, auction_id, seller_id, total_oere, udbetaling_oere, frigivet_kl")
         .eq("pengemodel", "destination")
         .eq("status", "betalt")
         .not("frigivet_kl", "is", null)
         .is("saelger_udbetaling_id", null)
         .is("udbetaling_godkendt_kl", null)
-        .gte("udbetaling_oere", CHEF_BELOEBSGRAENSE_OERE)
+        // Samme grundlag som databasen (betaling_udbetaling_blokeret):
+        // greatest(total_oere, udbetaling_oere) >= grænsen, altså købers
+        // samlede betaling (Filip, 12. okt. 2026).
+        .or(`total_oere.gte.${CHEF_BELOEBSGRAENSE_OERE},udbetaling_oere.gte.${CHEF_BELOEBSGRAENSE_OERE}`)
         .order("frigivet_kl", { ascending: true })
         .limit(100),
       admin
@@ -234,6 +239,7 @@ export async function hentPengesikkerhed() {
         tradeId: x.trade_id as string,
         titel: titel.get(x.auction_id as string) ?? null,
         saelger: navn.get(x.seller_id as string) ?? null,
+        totalOere: Number(x.total_oere),
         udbetalingOere: Number(x.udbetaling_oere),
         frigivetKl: (x.frigivet_kl as string | null) ?? null,
       })),
