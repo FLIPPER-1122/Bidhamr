@@ -1,21 +1,21 @@
 -- =====================================================================
--- Sikkerhedsnet B: daglig pengeafstemning med Stripe, reserve (kun
--- visning, SLÅET FRA) og økonomioverblik i Admin -> Penge (kun chef).
+-- Sikkerhedsnet B: daglig pengeafstemning med Stripe og økonomioverblik i
+-- Admin -> Penge (kun chef).
 -- =====================================================================
 --
 -- INGEN penge flyttes af noget i denne migration. BidHamr har ingen wallet:
 -- købers penge står på sælgerens Stripe Connect-konto, og platformens saldo
 -- hos Stripe er BidHamrs gebyrer. Alt her er bogføring og visning.
 --
---   1. penge_konfiguration       én række: reserven (slået fra, 0 %) - kun chef
+--   1. (reserven er fjernet - afsnit 1 dropper den fra testdatabasen)
 --   2. penge_afstemning_koersler log over hver daglig afstemning
 --   3. penge_afstemning_afvigelser uoverensstemmelser mellem Stripe og databasen
 --   4. penge_saldo_snapshot      platformens saldo hos Stripe (fra afstemningen
 --                                 og fra Admin -> Penge), så databasen altid
 --                                 kan vise den seneste kendte saldo
 --   5. Funktioner (kun service role): claim/afslut af kørslen, registrering af
---      afvigelser, snapshot, chefens konfiguration og "markér som løst",
---      admin_penge_reserve (overblikket) og admin_penge_posteringer (seneste
+--      afvigelser, snapshot og "markér som løst", admin_penge_overblik
+--      (overblikket) og admin_penge_posteringer (seneste
 --      posteringer og månedens CSV).
 --
 -- Rører IKKE eksisterende funktioner (sikkerhedsnet A ændrer
@@ -23,10 +23,9 @@
 -- og handel_auto_frigiv i 20261019010000) - derfor intet md5-drift-tjek.
 -- Kan køres flere gange (if not exists / create or replace / on conflict).
 --
--- Reserven (Niels' oplæg, chefens forslag): ROADMAP-BESLUTNINGER siger
--- "Reserve-/bufferkonto bygges IKKE". Den er derfor bygget SLÅET FRA
--- (slaaet_til = false, procent 0) og vises ikke, før chefen slår den til -
--- afventer Filips beslutning. Selv slået til flytter den aldrig penge.
+-- Reserve-/bufferkonto bygges IKKE (Filip, 12. okt. 2026 - bekræftet). En
+-- tidligere udgave af denne migration (kun kørt på testdatabasen) havde en
+-- reserve (slået fra); den fjernes i afsnit 1.
 
 -- ---------------------------------------------------------------------
 -- 0. Forudsætninger
@@ -54,49 +53,17 @@ begin
 end $do$;
 
 -- ---------------------------------------------------------------------
--- 1. Konfiguration (én række, kun chef ændrer den)
+-- 1. Reserven er fjernet (Filip, 12. okt. 2026)
 -- ---------------------------------------------------------------------
-create table if not exists public.penge_konfiguration (
-  id                     boolean primary key default true check (id),
-  -- Reserven er slået fra, til Filip har besluttet sig (se toppen).
-  reserve_slaaet_til     boolean not null default false,
-  -- Reserven = mindst procent af BidHamrs gebyrer de seneste N dage ...
-  reserve_procent        numeric(5,2) not null default 0
-                           check (reserve_procent >= 0 and reserve_procent <= 100),
-  reserve_periode_dage   integer not null default 90
-                           check (reserve_periode_dage between 7 and 365),
-  -- ... men aldrig under et fast minimum ...
-  reserve_minimum_oere   bigint not null default 0 check (reserve_minimum_oere >= 0),
-  -- ... og aldrig under åbne indsigelser + forventede tab (chefens skøn).
-  forventet_tab_oere     bigint not null default 0 check (forventet_tab_oere >= 0),
-  aendret_kl             timestamptz not null default now(),
-  aendret_af             uuid references public.users(id) on delete restrict
-);
-
-comment on table public.penge_konfiguration is
-  'Pengeoverblikkets konfiguration (kun chef): reserven. Kun visning - flytter aldrig penge. Reserven er slået fra (afventer Filip; ROADMAP-BESLUTNINGER: "Reserve-/bufferkonto bygges IKKE").';
-
-insert into public.penge_konfiguration (id) values (true) on conflict (id) do nothing;
-
-alter table public.penge_konfiguration enable row level security;
-revoke all on table public.penge_konfiguration from public, anon, authenticated;
-grant select on table public.penge_konfiguration to service_role;
-
--- Hver ændring (hvem, hvornår, hvad). Slettes aldrig.
-create table if not exists public.penge_konfiguration_historik (
-  id                   bigint generated always as identity primary key,
-  aendret_kl           timestamptz not null default now(),
-  aendret_af           uuid not null references public.users(id) on delete restrict,
-  reserve_slaaet_til   boolean not null,
-  reserve_procent      numeric(5,2) not null,
-  reserve_periode_dage integer not null,
-  reserve_minimum_oere bigint not null,
-  forventet_tab_oere   bigint not null
-);
-
-alter table public.penge_konfiguration_historik enable row level security;
-revoke all on table public.penge_konfiguration_historik from public, anon, authenticated;
-grant select on table public.penge_konfiguration_historik to service_role;
+-- En tidligere udgave oprettede reservens konfiguration og historik (kun på
+-- testdatabasen). Det er ikke handelsdata og fjernes - idempotent.
+drop function if exists public.admin_penge_konfiguration_gem(uuid, boolean, numeric, integer, bigint, bigint);
+drop function if exists public.admin_penge_reserve(uuid, bigint);
+drop function if exists public.admin_penge_reserve(bigint);
+drop function if exists public.penge_reserve_beregn(bigint);
+drop table if exists public.penge_konfiguration_historik;
+drop table if exists public.penge_konfiguration;
+drop function if exists public.penge_konfiguration_historik_laast();
 
 -- ---------------------------------------------------------------------
 -- 2. Kørsler
@@ -142,10 +109,12 @@ create table if not exists public.penge_afstemning_afvigelser (
                        'gebyr',                  -- application fee/gebyr-refusion <> databasen
                        'ukendt_gebyr',           -- application fee uden betaling i databasen
                        'refusion_udenom',        -- refusion lavet uden for BidHamr (dashboardet)
+                       'refusion_beloeb',        -- refunderet i alt hos Stripe <> det, databasen forventer
                        'tilbagefoersel_udenom',  -- transfer reversal uden for BidHamr
                        'udbetaling_ukendt',      -- payout på sælgerkonto, som BidHamr ikke har lavet
                        'udbetaling_afviger',     -- payout-beløb/status <> saelger_udbetalinger
                        'udbetaling_mangler',     -- saelger_udbetalinger siger sendt, Stripe kender den ikke
+                       'udbetaling_negativ',     -- Stripe har hentet et underskud fra sælgerens bank (negativ payout)
                        'abonnement_indsigelse',  -- indsigelse på en abonnementsfaktura (firma)
                        'ukendt_indsigelse',      -- indsigelse, der hverken er handel eller abonnement
                        'gebyrsum'                -- summen af gebyrer passer ikke
@@ -167,6 +136,21 @@ create table if not exists public.penge_afstemning_afvigelser (
   loest_note         text check (loest_note is null or char_length(loest_note) <= 1000),
   constraint penge_afvigelse_loest_par check ((loest_kl is null) = (loest_af is null))
 );
+
+-- Beløbene, da afvigelsen blev markeret løst: den genåbnes kun, hvis de
+-- ændrer sig bagefter (gebyrsum: differencen). Ellers forbliver den løst.
+alter table public.penge_afstemning_afvigelser
+  add column if not exists loest_beloeb_stripe_oere bigint,
+  add column if not exists loest_beloeb_db_oere     bigint;
+
+-- Typerne (også på en tabel, der findes fra en tidligere kørsel).
+alter table public.penge_afstemning_afvigelser drop constraint if exists penge_afstemning_afvigelser_type_check;
+alter table public.penge_afstemning_afvigelser add constraint penge_afstemning_afvigelser_type_check
+  check (type in (
+    'ukendt_betaling', 'betaling_status', 'betaling_beloeb', 'gebyr', 'ukendt_gebyr',
+    'refusion_udenom', 'refusion_beloeb', 'tilbagefoersel_udenom', 'udbetaling_ukendt',
+    'udbetaling_afviger', 'udbetaling_mangler', 'udbetaling_negativ', 'abonnement_indsigelse', 'ukendt_indsigelse',
+    'gebyrsum'));
 
 comment on table public.penge_afstemning_afvigelser is
   'Uoverensstemmelser fra den daglige afstemning med Stripe. Én række pr. tilfælde (noegle); chefen markerer dem løst (med note). Slettes aldrig.';
@@ -219,13 +203,11 @@ alter table public.betaling_webhook_tjek enable row level security;
 revoke all on table public.betaling_webhook_tjek from public, anon, authenticated;
 grant select, insert, update on table public.betaling_webhook_tjek to service_role;
 
--- Service role (serveren) kan kun læse logs, afvigelser, snapshots og
--- konfiguration - alle ændringer går gennem funktionerne herunder (security
+-- Service role (serveren) kan kun læse logs, afvigelser og snapshots - alle
+-- ændringer går gennem funktionerne herunder (security
 -- definer). Supabase giver ellers service role alle rettigheder på nye
 -- tabeller som standard. Intet i koden sletter fra dem.
 revoke insert, update, delete, truncate on table
-  public.penge_konfiguration,
-  public.penge_konfiguration_historik,
   public.penge_afstemning_koersler,
   public.penge_afstemning_afvigelser,
   public.penge_saldo_snapshot
@@ -242,23 +224,6 @@ drop trigger if exists penge_afstemning_afvigelser_forbyd_sletning on public.pen
 create trigger penge_afstemning_afvigelser_forbyd_sletning
   before delete on public.penge_afstemning_afvigelser
   for each row execute function public.betalinger_forbyd_sletning();
--- Historikken kan hverken ændres eller slettes.
-create or replace function public.penge_konfiguration_historik_laast()
-returns trigger
-language plpgsql
-set search_path = ''
-as $fn$
-begin
-  raise exception 'penge_konfiguration_historik kan ikke ændres eller slettes';
-end;
-$fn$;
-revoke all on function public.penge_konfiguration_historik_laast() from public, anon, authenticated;
-
-drop trigger if exists penge_konfiguration_historik_forbyd_sletning on public.penge_konfiguration_historik;
-drop trigger if exists penge_konfiguration_historik_laast on public.penge_konfiguration_historik;
-create trigger penge_konfiguration_historik_laast
-  before update or delete on public.penge_konfiguration_historik
-  for each row execute function public.penge_konfiguration_historik_laast();
 drop trigger if exists penge_saldo_snapshot_forbyd_sletning on public.penge_saldo_snapshot;
 create trigger penge_saldo_snapshot_forbyd_sletning
   before delete on public.penge_saldo_snapshot
@@ -283,6 +248,15 @@ begin
     raise exception 'penge_afstemning_claim: ugyldigt interval';
   end if;
   perform pg_advisory_xact_lock(hashtext('bidhamr.penge_afstemning'));
+  -- En kørsel, der er i gang, blokerer ALTID (også tvungne kørsler). Ruten
+  -- kan højst køre 5 minutter (maxDuration 300), så en kørsel uden
+  -- afslutning efter 10 minutter er død.
+  if exists (
+    select 1 from public.penge_afstemning_koersler k
+     where k.afsluttet_kl is null and k.startet_kl > now() - interval '10 minutes'
+  ) then
+    return null;
+  end if;
   -- Blokerer: en vellykket, fuldstændig kørsel inden for intervallet, eller
   -- en fejlet/ufuldstændig/afbrudt kørsel inden for de seneste 2 timer (så
   -- prøves der igen).
@@ -335,8 +309,14 @@ grant execute on function public.penge_afstemning_afslut(bigint, boolean, text, 
 -- ---------------------------------------------------------------------
 -- 5b. Afvigelser
 -- ---------------------------------------------------------------------
--- true = ny afvigelse (eller genopstået efter at være markeret løst): giv
--- drift-alarm. false = kendt og stadig åben (kun "sidst set" opdateres).
+-- Svar:
+--   'ny'        første gang - giv drift-alarm (evt. med webhookens nøgle)
+--   'genaabnet' var markeret løst, men beløbene er ændret siden (gebyrsum:
+--               differencen) - giv drift-alarm med afstemningens egen nøgle
+--   'kendt'     åben og kendt, eller løst med uændrede beløb (forbliver løst -
+--               kun "sidst set" og antal opdateres). Ingen alarm.
+-- (Ældre udgave returnerede boolean - fjernes.)
+drop function if exists public.penge_afvigelse_registrer(bigint, text, text, text, uuid, text, text, bigint, bigint);
 create or replace function public.penge_afvigelse_registrer(
   p_koersel      bigint,
   p_noegle       text,
@@ -347,43 +327,65 @@ create or replace function public.penge_afvigelse_registrer(
   p_beskrivelse  text,
   p_beloeb_stripe bigint,
   p_beloeb_db    bigint)
-returns boolean
+returns text
 language plpgsql
 security definer
 set search_path = ''
 as $fn$
 declare
-  v_ny boolean;
+  a       record;
+  v_aendret boolean;
 begin
   if p_noegle is null or char_length(p_noegle) not between 1 and 200 then
     raise exception 'penge_afvigelse_registrer: ugyldig nøgle';
   end if;
-  -- Ny = findes ikke, eller er markeret løst (genopstået).
-  perform 1 from public.penge_afstemning_afvigelser a where a.noegle = p_noegle for update;
-  v_ny := not exists (select 1 from public.penge_afstemning_afvigelser a
-                       where a.noegle = p_noegle and a.loest_kl is null);
-  insert into public.penge_afstemning_afvigelser as a (
-    noegle, type, stripe_id, betaling_id, stripe_konto, beskrivelse,
-    beloeb_stripe_oere, beloeb_db_oere, foerste_koersel_id, sidste_koersel_id)
-  values (
-    p_noegle, p_type, left(p_stripe_id, 200),
-    -- En betaling, der ikke findes, gemmes ikke som reference.
-    (select b.id from public.betalinger b where b.id = p_betaling),
-    left(p_stripe_konto, 100), left(coalesce(nullif(btrim(p_beskrivelse), ''), p_type), 1000),
-    p_beloeb_stripe, p_beloeb_db, p_koersel, p_koersel)
-  on conflict (noegle) do update
-     set sidst_set_kl = now(),
-         sidste_koersel_id = excluded.sidste_koersel_id,
-         antal_set = a.antal_set + 1,
-         beskrivelse = excluded.beskrivelse,
-         beloeb_stripe_oere = excluded.beloeb_stripe_oere,
-         beloeb_db_oere = excluded.beloeb_db_oere,
-         -- Markeret løst, men stadig forkert: åbnes igen (ny alarm).
-         foerste_koersel_id = case when a.loest_kl is not null then excluded.foerste_koersel_id
-                                   else a.foerste_koersel_id end,
-         loest_kl = null,
-         loest_af = null;
-  return v_ny;
+  select * into a from public.penge_afstemning_afvigelser x where x.noegle = p_noegle for update;
+  if not found then
+    insert into public.penge_afstemning_afvigelser (
+      noegle, type, stripe_id, betaling_id, stripe_konto, beskrivelse,
+      beloeb_stripe_oere, beloeb_db_oere, foerste_koersel_id, sidste_koersel_id)
+    values (
+      p_noegle, p_type, left(p_stripe_id, 200),
+      -- En betaling, der ikke findes, gemmes ikke som reference.
+      (select b.id from public.betalinger b where b.id = p_betaling),
+      left(p_stripe_konto, 100), left(coalesce(nullif(btrim(p_beskrivelse), ''), p_type), 1000),
+      p_beloeb_stripe, p_beloeb_db, p_koersel, p_koersel)
+    on conflict (noegle) do nothing;
+    if found then return 'ny'; end if;
+    -- En samtidig kørsel nåede først (claimet forhindrer det normalt).
+    return 'kendt';
+  end if;
+
+  if a.loest_kl is not null then
+    v_aendret := case
+      when a.type = 'gebyrsum' then
+        (coalesce(p_beloeb_stripe, 0) - coalesce(p_beloeb_db, 0))
+          is distinct from (coalesce(a.loest_beloeb_stripe_oere, 0) - coalesce(a.loest_beloeb_db_oere, 0))
+      else p_beloeb_stripe is distinct from a.loest_beloeb_stripe_oere
+        or p_beloeb_db is distinct from a.loest_beloeb_db_oere
+    end;
+    if not v_aendret then
+      update public.penge_afstemning_afvigelser
+         set sidst_set_kl = now(), sidste_koersel_id = p_koersel, antal_set = antal_set + 1
+       where id = a.id;
+      return 'kendt';
+    end if;
+    update public.penge_afstemning_afvigelser
+       set sidst_set_kl = now(), sidste_koersel_id = p_koersel, antal_set = antal_set + 1,
+           beskrivelse = left(coalesce(nullif(btrim(p_beskrivelse), ''), p_type), 1000),
+           beloeb_stripe_oere = p_beloeb_stripe, beloeb_db_oere = p_beloeb_db,
+           foerste_koersel_id = p_koersel,
+           loest_kl = null, loest_af = null
+     where id = a.id;
+    return 'genaabnet';
+  end if;
+
+  update public.penge_afstemning_afvigelser
+     set sidst_set_kl = now(), sidste_koersel_id = p_koersel, antal_set = antal_set + 1,
+         beskrivelse = left(coalesce(nullif(btrim(p_beskrivelse), ''), p_type), 1000),
+         beloeb_stripe_oere = p_beloeb_stripe, beloeb_db_oere = p_beloeb_db
+   where id = a.id;
+  return 'kendt';
 end;
 $fn$;
 
@@ -405,7 +407,10 @@ begin
   if v_note is null then return 'note_mangler'; end if;
   if char_length(v_note) > 1000 then return 'for_lang'; end if;
   update public.penge_afstemning_afvigelser
-     set loest_kl = now(), loest_af = p_chef, loest_note = v_note
+     set loest_kl = now(), loest_af = p_chef, loest_note = v_note,
+         -- Beløbene nu: genåbnes kun, hvis de ændrer sig (penge_afvigelse_registrer).
+         loest_beloeb_stripe_oere = beloeb_stripe_oere,
+         loest_beloeb_db_oere = beloeb_db_oere
    where id = p_id and loest_kl is null;
   get diagnostics n = row_count;
   if n = 0 then return 'ikke_fundet'; end if;
@@ -416,49 +421,6 @@ $fn$;
 
 revoke all on function public.admin_penge_afvigelse_loes(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.admin_penge_afvigelse_loes(uuid, uuid, text) to service_role;
-
--- ---------------------------------------------------------------------
--- 5c. Konfiguration (kun chef)
--- ---------------------------------------------------------------------
-create or replace function public.admin_penge_konfiguration_gem(
-  p_chef           uuid,
-  p_slaaet_til     boolean,
-  p_procent        numeric,
-  p_periode_dage   integer,
-  p_minimum_oere   bigint,
-  p_forventet_tab_oere bigint)
-returns text
-language plpgsql
-security definer
-set search_path = ''
-as $fn$
-begin
-  if p_chef is null or not public.staff_chat_har_rolle(p_chef, 'chef') then return 'ingen_adgang'; end if;
-  if p_slaaet_til is null
-     or p_procent is null or p_procent < 0 or p_procent > 100
-     or p_periode_dage is null or p_periode_dage not between 7 and 365
-     or p_minimum_oere is null or p_minimum_oere < 0
-     or p_forventet_tab_oere is null or p_forventet_tab_oere < 0 then
-    return 'ugyldig';
-  end if;
-  update public.penge_konfiguration
-     set reserve_slaaet_til = p_slaaet_til,
-         reserve_procent = round(p_procent, 2),
-         reserve_periode_dage = p_periode_dage,
-         reserve_minimum_oere = p_minimum_oere,
-         forventet_tab_oere = p_forventet_tab_oere,
-         aendret_kl = now(),
-         aendret_af = p_chef
-   where id;
-  insert into public.penge_konfiguration_historik (aendret_af, reserve_slaaet_til, reserve_procent,
-                                                   reserve_periode_dage, reserve_minimum_oere, forventet_tab_oere)
-  values (p_chef, p_slaaet_til, round(p_procent, 2), p_periode_dage, p_minimum_oere, p_forventet_tab_oere);
-  return 'ok';
-end;
-$fn$;
-
-revoke all on function public.admin_penge_konfiguration_gem(uuid, boolean, numeric, integer, bigint, bigint) from public, anon, authenticated;
-grant execute on function public.admin_penge_konfiguration_gem(uuid, boolean, numeric, integer, bigint, bigint) to service_role;
 
 -- ---------------------------------------------------------------------
 -- 5d. Snapshot
@@ -498,35 +460,28 @@ revoke all on function public.penge_saldo_snapshot_gem(text, boolean, bigint, bi
 grant execute on function public.penge_saldo_snapshot_gem(text, boolean, bigint, bigint, bigint, integer) to service_role;
 
 -- ---------------------------------------------------------------------
--- 5e. Overblikket: hvad er sælgernes, hvad er BidHamrs, og (hvis slået
---     til) hvad er reserve. p_tilgaengelig_oere = platformens tilgængelige
---     saldo lige nu (fra Stripe); null = brug seneste snapshot.
+-- 5e. Overblikket: hvad er sælgernes, og hvad er BidHamrs.
+--     p_tilgaengelig_oere = platformens tilgængelige saldo lige nu (fra
+--     Stripe); null = brug seneste snapshot.
 -- ---------------------------------------------------------------------
 -- Sælgernes penge (på deres Connect-konti, ikke udbetalt) regnes som
 -- skyldigOere/staarPaaKontoen i src/lib/betaling/udbetaling.ts:
 --   U (+ G, når gebyret er refunderet) (- (U + G), når tilbageført)
 --   (- det tilbageførte ved tabt indsigelse), aldrig under 0 pr. handel.
--- BidHamr skylder købere (platformens saldo dækker det):
---   refusioner, hvor sælgerens del er tilbageført, men køberen endnu ikke
---   refunderet, og betalinger med forkert beløb, der ikke er refunderet.
--- Reserven (kun når slået til): mindst procent af BidHamrs gebyrer
--- (application fee minus gebyr-refusioner) for betalinger de seneste N dage,
--- mindst det faste minimum, og mindst åbne indsigelser + forventede tab.
--- Tab ved tabte indsigelser efter udbetaling i samme periode (BidHamr bærer
--- sælgerens del + fragt - samme tal som admin_penge_tal) trækkes fra
--- reserven. Kan trækkes ud = tilgængelig - skyldig til købere - reserven
--- tilbage (aldrig under 0).
-create or replace function public.penge_reserve_beregn(p_tilgaengelig_oere bigint)
+-- BidHamr skylder købere (platformens saldo dækker det): refusioner, hvor
+-- sælgerens del er tilbageført, men køberen endnu ikke refunderet,
+-- betalinger med forkert beløb, der ikke er refunderet, og "BidHamr dækker",
+-- der er claimet, men ikke refunderet. Kan trækkes ud = tilgængelig -
+-- skyldig til købere (aldrig under 0). Ingen reserve (Filip, 12. okt. 2026).
+-- Tab ved indsigelser efter udbetaling (90 dage) vises kun som tal.
+create or replace function public.penge_overblik_beregn(p_tilgaengelig_oere bigint)
 returns jsonb
 language sql
 stable
 security definer
 set search_path = ''
 as $function$
-  with k as (
-    select * from public.penge_konfiguration where id
-  ),
-  dest as (
+  with dest as (
     select b.* from public.betalinger b where b.pengemodel = 'destination'
   ),
   saelgere as (
@@ -561,14 +516,6 @@ as $function$
                and d.bidhamr_daekker_refunderet_kl is null
                and d.status <> 'refunderet')::bigint as oere
   ),
-  gebyrer as (
-    select coalesce(sum(d.application_fee_oere
-             - case when d.gebyr_refunderet_kl is not null then coalesce(d.refusion_gebyr_oere, 0) else 0 end), 0)::bigint as oere
-      from dest d, k
-     where d.betalt_kl is not null
-       and d.application_fee_oere is not null
-       and d.betalt_kl >= now() - make_interval(days => k.reserve_periode_dage)
-  ),
   aabne as (
     select (select coalesce(sum(d.total_oere), 0)
               from dest d
@@ -580,10 +527,9 @@ as $function$
   ),
   tab as (
     select coalesce(sum(d.udbetaling_oere + d.fragt_oere), 0)::bigint as oere, count(*)::integer as antal
-      from dest d, k
+      from dest d
      where d.indsigelse_tabt_afklaret = 'udbetalt'
-       and coalesce(d.indsigelse_tabt_afklaret_kl, d.indsigelse_tabt_kl, d.opdateret)
-           >= now() - make_interval(days => k.reserve_periode_dage)
+       and coalesce(d.indsigelse_tabt_afklaret_kl, d.indsigelse_tabt_kl, d.opdateret) >= now() - interval '90 days'
   ),
   snap as (
     select * from public.penge_saldo_snapshot order by kl desc limit 1
@@ -596,44 +542,17 @@ as $function$
   koersel as (
     select * from public.penge_afstemning_koersler order by startet_kl desc limit 1
   ),
-  r as (
-    select k.reserve_slaaet_til as slaaet_til,
-           round(gebyrer.oere * k.reserve_procent / 100)::bigint as procent_oere,
-           greatest(k.reserve_minimum_oere, aabne.oere + k.forventet_tab_oere)::bigint as minimum_oere
-      from k, gebyrer, aabne
-  ),
-  maal as (
-    select r.*, greatest(r.procent_oere, r.minimum_oere)::bigint as reserve_oere from r
-  ),
   tilg as (
     select coalesce(p_tilgaengelig_oere, (select platform_tilgaengelig_oere from snap)) as oere
   )
   select jsonb_build_object(
-    'konfiguration', (select jsonb_build_object(
-        'reserve_slaaet_til', k.reserve_slaaet_til,
-        'reserve_procent', k.reserve_procent,
-        'reserve_periode_dage', k.reserve_periode_dage,
-        'reserve_minimum_oere', k.reserve_minimum_oere,
-        'forventet_tab_oere', k.forventet_tab_oere,
-        'aendret_kl', k.aendret_kl) from k),
     'saelgere', (select jsonb_build_object('oere', oere, 'antal_handler', antal, 'konti', konti) from saelgere),
     'paa_vej_til_bank', (select jsonb_build_object('oere', oere, 'antal', antal) from paa_vej),
     'skylder_koebere_oere', (select oere from skylder),
-    'gebyrer_periode_oere', (select oere from gebyrer),
     'aabne_indsigelser_oere', (select oere from aabne),
     'tab_efter_udbetaling', (select jsonb_build_object('oere', oere, 'antal', antal) from tab),
-    -- Reserven vises KUN, når den er slået til (null ellers).
-    'reserve', (select case when m.slaaet_til then jsonb_build_object(
-        'procent_oere', m.procent_oere,
-        'minimum_oere', m.minimum_oere,
-        'reserve_oere', m.reserve_oere,
-        'brugt_paa_tab_oere', least(m.reserve_oere, (select oere from tab)),
-        'tilbage_oere', greatest(0, m.reserve_oere - (select oere from tab)))
-        else null end from maal m),
-    'kan_traekkes_ud_oere', (select case when tilg.oere is null then null else greatest(0,
-        tilg.oere - (select oere from skylder)
-        - (select case when m.slaaet_til then greatest(0, m.reserve_oere - (select oere from tab)) else 0 end from maal m))
-        end from tilg),
+    'kan_traekkes_ud_oere', (select case when tilg.oere is null then null
+                                         else greatest(0, tilg.oere - (select oere from skylder)) end from tilg),
     'snapshot', (select jsonb_build_object(
         'kl', s.kl, 'kilde', s.kilde, 'livemode', s.livemode,
         'tilgaengelig_oere', s.platform_tilgaengelig_oere,
@@ -651,12 +570,11 @@ as $function$
   );
 $function$;
 
--- Intern: kun via admin_penge_reserve (chef-tjek).
-revoke all on function public.penge_reserve_beregn(bigint) from public, anon, authenticated, service_role;
+-- Intern: kun via admin_penge_overblik (chef-tjek).
+revoke all on function public.penge_overblik_beregn(bigint) from public, anon, authenticated, service_role;
 
--- Kun chef (p_chef tjekkes i databasen). Ældre udgave uden p_chef fjernes.
-drop function if exists public.admin_penge_reserve(bigint);
-create or replace function public.admin_penge_reserve(p_chef uuid, p_tilgaengelig_oere bigint default null)
+-- Kun chef (p_chef tjekkes i databasen).
+create or replace function public.admin_penge_overblik(p_chef uuid, p_tilgaengelig_oere bigint default null)
 returns jsonb
 language plpgsql
 stable
@@ -667,12 +585,12 @@ begin
   if p_chef is null or not public.staff_chat_har_rolle(p_chef, 'chef') then
     raise exception 'ingen_adgang' using errcode = '42501';
   end if;
-  return public.penge_reserve_beregn(p_tilgaengelig_oere);
+  return public.penge_overblik_beregn(p_tilgaengelig_oere);
 end;
 $fn$;
 
-revoke all on function public.admin_penge_reserve(uuid, bigint) from public, anon, authenticated;
-grant execute on function public.admin_penge_reserve(uuid, bigint) to service_role;
+revoke all on function public.admin_penge_overblik(uuid, bigint) from public, anon, authenticated;
+grant execute on function public.admin_penge_overblik(uuid, bigint) to service_role;
 
 -- ---------------------------------------------------------------------
 -- 5f. Posteringer (seneste bevægelser og månedens CSV til regnskabet)
@@ -834,28 +752,41 @@ create or replace function public.kald_pengeafstemning()
 returns bigint
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 declare
+  v_cron   text;
   v_url    text;
+  v_egen   text;
   v_secret text;
+  v_vaert  text;
 begin
   if to_regclass('vault.decrypted_secrets') is null then
     perform public.drift_fejl_log('cron', 'pengeafstemning',
       'kald_pengeafstemning: Vault findes ikke - afstemningen kaldes ikke', null, null);
     return null;
   end if;
+  execute $q$select decrypted_secret from vault.decrypted_secrets where name = 'cron_url' limit 1$q$
+     into v_cron;
   execute $q$select decrypted_secret from vault.decrypted_secrets where name = 'afstemning_url' limit 1$q$
-     into v_url;
-  if coalesce(v_url, '') = '' then
-    execute $q$select decrypted_secret from vault.decrypted_secrets where name = 'cron_url' limit 1$q$
-       into v_url;
-    if coalesce(v_url, '') !~ '/api/cron/[A-Za-z0-9_-]+/?$' then
+     into v_egen;
+  -- cron_secret sendes kun til samme vært som betalings-cron'en (https).
+  v_vaert := substring(coalesce(v_cron, '') from '^https://([^/?#]+)');
+  if coalesce(v_egen, '') <> '' then
+    if v_vaert is not null and substring(v_egen from '^https://([^/?#]+)') = v_vaert then
+      v_url := v_egen;
+    else
       perform public.drift_fejl_log('cron', 'pengeafstemning',
-        'kald_pengeafstemning: cron_url mangler i Vault (eller er ikke en /api/cron/-adresse) - afstemningen kaldes ikke', null, null);
+        'kald_pengeafstemning: afstemning_url i Vault er ikke https eller ikke samme vært som cron_url - bruger cron_url i stedet', null, null);
+    end if;
+  end if;
+  if v_url is null then
+    if v_vaert is null or v_cron !~ '/api/cron/[A-Za-z0-9_-]+/?$' then
+      perform public.drift_fejl_log('cron', 'pengeafstemning',
+        'kald_pengeafstemning: cron_url mangler i Vault (eller er ikke en https://.../api/cron/-adresse) - afstemningen kaldes ikke', null, null);
       return null;
     end if;
-    v_url := regexp_replace(v_url, '/api/cron/[A-Za-z0-9_-]+/?$', '/api/cron/afstemning');
+    v_url := regexp_replace(v_cron, '/api/cron/[A-Za-z0-9_-]+/?$', '/api/cron/afstemning');
   end if;
   execute $q$select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret' limit 1$q$
      into v_secret;

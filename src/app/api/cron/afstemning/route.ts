@@ -15,22 +15,25 @@ import { koerPengeafstemning } from "@/lib/betaling/afstemning";
 // Flytter ingen penge. Kørslen logges i penge_afstemning_koersler; fejl giver
 // drift-alarm (drift_fejl). Svaret indeholder kun tal.
 //
-// Valgfri vagt udefra: CRON_AFSTEMNING_HEALTHCHECK_URL pinges, når en
-// afstemning er kørt fuldstændigt (fx en healthchecks.io-check med periode
-// 1 døgn og grace 3 timer).
+// Vagt udefra: CRON_AFSTEMNING_HEALTHCHECK_URL (bør sættes i produktion) pinges,
+// når en afstemning er kørt fuldstændigt uden fejl, og "/fail", når et trin
+// fejlede (fx en healthchecks.io-check med periode 1 døgn og grace 3 timer).
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 // Afstemningens tidsbudget (180 s minus Stripe-timeout) ligger inden for.
 export const maxDuration = 300;
 
-async function healthcheck() {
+// ok = fuldstændig kørsel uden fejlede trin -> "<url>"; fejl -> "<url>/fail"
+// (healthchecks.io alarmerer med det samme).
+async function healthcheck(ok: boolean) {
   const url = process.env.CRON_AFSTEMNING_HEALTHCHECK_URL;
   if (!url) return;
   try {
     const u = new URL(url);
     if (u.protocol !== "https:") return;
-    await fetch(u.toString(), { method: "GET", signal: AbortSignal.timeout(5_000), cache: "no-store" });
+    const sti = ok ? u.toString() : `${u.toString().replace(/\/+$/, "")}/fail`;
+    await fetch(sti, { method: "GET", signal: AbortSignal.timeout(5_000), cache: "no-store" });
   } catch (err) {
     console.error("Healthcheck (afstemning) kunne ikke sendes:", renFejltekst(err));
   }
@@ -43,12 +46,17 @@ async function haandter(req: NextRequest) {
   }
   try {
     const r = await koerPengeafstemning({ startKl });
-    if (r.koert && r.ufuldstaendig === 0) await healthcheck();
-    return NextResponse.json({ ok: true, ...r });
+    // Kørt helt igennem uden fejl: livstegn. Fejlede trin: fejl-ping og
+    // ok: false (fejlene er logget som drift-fejl). Ingen kørsel denne gang
+    // (claimet af en tidligere): intet ping.
+    const ok = r.fejlede === 0;
+    if (r.koert && (!ok || r.ufuldstaendig === 0)) await healthcheck(ok);
+    return NextResponse.json({ ...r, ok });
   } catch (err) {
     // koerPengeafstemning kaster ikke - men for en sikkerheds skyld.
     console.error("Pengeafstemning fejlede:", err);
     await logDriftFejl({ kilde: "cron", sti: "pengeafstemning", hvor: "Afstemningsruten", fejl: err });
+    await healthcheck(false);
     return NextResponse.json({ fejl: "Afstemningen fejlede" }, { status: 500 });
   }
 }

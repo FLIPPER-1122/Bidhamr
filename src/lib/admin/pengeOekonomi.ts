@@ -4,8 +4,8 @@ import "server-only";
 //
 // Hvad er sælgernes (på deres Stripe Connect-konti, ikke udbetalt), hvad er
 // BidHamrs (platformens saldo hos Stripe = gebyrer), hvad skylder BidHamr
-// købere (refusioner i gang), og - KUN hvis chefen har slået den til - hvad er
-// reserve. Månedens gebyrer, refusioner, indsigelser og fragt (indtægt minus
+// købere (refusioner i gang og "BidHamr dækker", der ikke er refunderet), og
+// hvad der kan trækkes ud. Ingen reserve (Filip, 12. okt. 2026). Månedens gebyrer, refusioner, indsigelser og fragt (indtægt minus
 // DAO-omkostning), de seneste posteringer, den daglige afstemnings åbne
 // afvigelser og månedens CSV til regnskabet.
 //
@@ -24,29 +24,12 @@ import {
   type StripeBalance,
 } from "@/lib/admin/penge";
 
-export type Reserveoverblik = {
-  konfiguration: {
-    reserve_slaaet_til: boolean;
-    reserve_procent: number;
-    reserve_periode_dage: number;
-    reserve_minimum_oere: number;
-    forventet_tab_oere: number;
-    aendret_kl: string;
-  };
+export type Pengeoverblik = {
   saelgere: { oere: number; antal_handler: number; konti: number };
   paa_vej_til_bank: { oere: number; antal: number };
   skylder_koebere_oere: number;
-  gebyrer_periode_oere: number;
   aabne_indsigelser_oere: number;
   tab_efter_udbetaling: { oere: number; antal: number };
-  // null, når reserven er slået fra (den vises så slet ikke).
-  reserve: {
-    procent_oere: number;
-    minimum_oere: number;
-    reserve_oere: number;
-    brugt_paa_tab_oere: number;
-    tilbage_oere: number;
-  } | null;
   kan_traekkes_ud_oere: number | null;
   snapshot: {
     kl: string;
@@ -107,7 +90,7 @@ export type Oekonomi = {
   fra: string;
   til: string;
   balance: Resultat<StripeBalance>;
-  reserve: Resultat<Reserveoverblik>;
+  overblik: Resultat<Pengeoverblik>;
   tal: Resultat<PengeTal>;
   fragt: Resultat<FragtTilskud>;
   posteringer: Resultat<Postering[]>;
@@ -175,7 +158,7 @@ export async function hentOekonomi(maanedRaa: unknown): Promise<Oekonomi> {
   }
 
   const [r, t, f, p, a] = await Promise.all([
-    admin.rpc("admin_penge_reserve", { p_chef: chefId, p_tilgaengelig_oere: tilg }),
+    admin.rpc("admin_penge_overblik", { p_chef: chefId, p_tilgaengelig_oere: tilg }),
     admin.rpc("admin_penge_tal", { p_fra: fra.toISOString(), p_til: til.toISOString() }),
     admin.rpc("admin_fragt_tilskud", { p_fra: fra.toISOString(), p_til: til.toISOString() }),
     admin.rpc("admin_penge_posteringer", { p_chef: chefId, p_fra: null, p_til: null, p_graense: 25 }),
@@ -192,7 +175,7 @@ export async function hentOekonomi(maanedRaa: unknown): Promise<Oekonomi> {
     fra: fra.toISOString(),
     til: til.toISOString(),
     balance,
-    reserve: r.error ? dbFejl("Overblikket kunne ikke hentes fra databasen.", r.error) : { ok: true, data: r.data as Reserveoverblik },
+    overblik: r.error ? dbFejl("Overblikket kunne ikke hentes fra databasen.", r.error) : { ok: true, data: r.data as Pengeoverblik },
     tal: t.error ? dbFejl("Månedens tal kunne ikke hentes.", t.error) : { ok: true, data: t.data as PengeTal },
     fragt: f.error ? dbFejl("Fragten kunne ikke hentes.", f.error) : { ok: true, data: f.data as FragtTilskud },
     posteringer: p.error

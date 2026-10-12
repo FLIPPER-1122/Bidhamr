@@ -11,6 +11,8 @@ import { csvKr, maanedInterval, pengeCsv } from "@/lib/admin/pengeOekonomi";
 import {
   erBidhamrsRefusion,
   forventetGebyrRefunderet,
+  forventetRefunderet,
+  kontoUdvalg,
   forventetTilbagefoert,
   payoutAfstemmes,
   payoutStatusPasser,
@@ -38,6 +40,9 @@ create function public.staff_chat_har_rolle(p uuid, r text) returns boolean lang
 create function public.betalinger_forbyd_sletning() returns trigger language plpgsql as
   $$ begin raise exception 'Handelsdata må ikke slettes'; end $$;
 create table public.auctions (id uuid primary key default gen_random_uuid(), titel text);
+-- Fra en tidligere udgave af migrationen (testdatabasen): reserven, som skal droppes.
+create table public.penge_konfiguration (id boolean primary key default true, reserve_procent numeric);
+create table public.penge_konfiguration_historik (id bigint primary key);
 create table public.betalinger (
   id uuid primary key default gen_random_uuid(),
   trade_id uuid not null default gen_random_uuid(), auction_id uuid,
@@ -87,17 +92,18 @@ afterAll(async () => {
 });
 
 describe("migrationen", () => {
-  it("opretter én konfiguration - reserven er slået FRA med 0 %", async () => {
-    const k = await en<{ n: number; slaaet_til: boolean; procent: string }>(
-      "select count(*)::int as n, bool_or(reserve_slaaet_til) as slaaet_til, max(reserve_procent)::text as procent from public.penge_konfiguration",
+  it("reserven findes ikke (fjernet - Filip, 12. okt. 2026)", async () => {
+    const r = await en<{ k: string | null; h: string | null; f: string | null; g: string | null }>(
+      `select to_regclass('public.penge_konfiguration')::text as k,
+              to_regclass('public.penge_konfiguration_historik')::text as h,
+              to_regprocedure('public.admin_penge_reserve(uuid, bigint)')::text as f,
+              to_regprocedure('public.admin_penge_konfiguration_gem(uuid, boolean, numeric, integer, bigint, bigint)')::text as g`,
     );
-    expect(k.n).toBe(1);
-    expect(k.slaaet_til).toBe(false);
-    expect(Number(k.procent)).toBe(0);
+    expect(r).toEqual({ k: null, h: null, f: null, g: null });
   });
 
   it("kun service role har adgang; anon og authenticated intet", async () => {
-    for (const t of ["penge_konfiguration", "penge_afstemning_koersler", "penge_afstemning_afvigelser", "penge_saldo_snapshot", "penge_konfiguration_historik"]) {
+    for (const t of ["penge_afstemning_koersler", "penge_afstemning_afvigelser", "penge_saldo_snapshot"]) {
       const r = await en<{ a: boolean; u: boolean; s: boolean }>(
         `select has_table_privilege('anon', 'public.${t}', 'select') as a,
                 has_table_privilege('authenticated', 'public.${t}', 'select') as u,
@@ -107,9 +113,8 @@ describe("migrationen", () => {
     }
     for (const f of [
       "penge_afstemning_claim(integer)",
-      "admin_penge_reserve(uuid, bigint)",
+      "admin_penge_overblik(uuid, bigint)",
       "admin_penge_posteringer(uuid, timestamptz, timestamptz, integer)",
-      "admin_penge_konfiguration_gem(uuid, boolean, numeric, integer, bigint, bigint)",
     ]) {
       const r = await en<{ a: boolean; u: boolean; s: boolean }>(
         `select has_function_privilege('anon', 'public.${f}', 'execute') as a,
@@ -134,30 +139,57 @@ describe("kørslen", () => {
     expect((await en<{ id: string | null }>("select public.penge_afstemning_claim(0) as id")).id).not.toBeNull();
   });
 
-  it("afvigelser: ny -> alarm, kendt -> ingen ny alarm, løst og igen -> ny alarm", async () => {
+  it("afvigelser: ny -> alarm, kendt -> ingen alarm; løst og uændret forbliver løst, løst og ændret genåbnes", async () => {
     const k = (await en<{ id: string }>("select public.penge_afstemning_claim(0) as id")).id;
-    const reg = (n: string) =>
-      en<{ ny: boolean }>(
-        "select public.penge_afvigelse_registrer($1, $2, 'refusion_udenom', 're_1', null, null, 'Refusion uden om BidHamr', 100, null) as ny",
-        [k, n],
+    await db.query("select public.penge_afstemning_afslut($1, true, null, null)", [k]);
+    const reg = (n: string, beloeb: number, koersel = k) =>
+      en<{ svar: string }>(
+        "select public.penge_afvigelse_registrer($1, $2, 'refusion_udenom', 're_1', null, null, 'Refusion uden om BidHamr', $3, null) as svar",
+        [koersel, n, beloeb],
       );
-    expect((await reg("refusion:re_1")).ny).toBe(true);
-    expect((await reg("refusion:re_1")).ny).toBe(false);
+    expect((await reg("refusion:re_1", 100)).svar).toBe("ny");
+    expect((await reg("refusion:re_1", 100)).svar).toBe("kendt");
     const a = await en<{ id: string; antal_set: number }>("select id, antal_set from public.penge_afstemning_afvigelser where noegle = 'refusion:re_1'");
     expect(a.antal_set).toBe(2);
     expect((await en<{ r: string }>("select public.admin_penge_afvigelse_loes($1, $2, 'ok') as r", [ADMIN, a.id])).r).toBe("ingen_adgang");
     expect((await en<{ r: string }>("select public.admin_penge_afvigelse_loes($1, $2, '  ') as r", [CHEF, a.id])).r).toBe("note_mangler");
     expect((await en<{ r: string }>("select public.admin_penge_afvigelse_loes($1, $2, 'Tjekket i Stripe') as r", [CHEF, a.id])).r).toBe("ok");
     expect((await en<{ r: string }>("select public.admin_penge_afvigelse_loes($1, $2, 'igen') as r", [CHEF, a.id])).r).toBe("ikke_fundet");
+    // Næste kørsel: samme (historiske) afvigelse, samme beløb -> forbliver løst, ingen alarm.
     const k2 = (await en<{ id: string }>("select public.penge_afstemning_claim(0) as id")).id;
-    const igen = await en<{ ny: boolean }>(
-      "select public.penge_afvigelse_registrer($1, 'refusion:re_1', 'refusion_udenom', 're_1', null, null, 'Stadig forkert', 100, null) as ny",
-      [k2],
+    expect((await reg("refusion:re_1", 100, k2)).svar).toBe("kendt");
+    const stadig = await en<{ loest_kl: string | null; antal_set: number }>(
+      "select loest_kl, antal_set from public.penge_afstemning_afvigelser where noegle = 'refusion:re_1'",
     );
-    expect(igen.ny).toBe(true);
-    const efter = await en<{ loest_kl: string | null }>("select loest_kl from public.penge_afstemning_afvigelser where noegle = 'refusion:re_1'");
+    expect(stadig.loest_kl).not.toBeNull();
+    expect(stadig.antal_set).toBe(3);
+    // Beløbet ændrer sig -> genåbnes (ny alarm med afstemningens egen nøgle).
+    expect((await reg("refusion:re_1", 250, k2)).svar).toBe("genaabnet");
+    const efter = await en<{ loest_kl: string | null; beloeb_stripe_oere: number }>(
+      "select loest_kl, beloeb_stripe_oere from public.penge_afstemning_afvigelser where noegle = 'refusion:re_1'",
+    );
     expect(efter.loest_kl).toBeNull();
+    expect(Number(efter.beloeb_stripe_oere)).toBe(250);
+    expect((await reg("refusion:re_1", 250, k2)).svar).toBe("kendt");
+    await db.query("select public.penge_afstemning_afslut($1, true, null, null)", [k2]);
     await expect(db.query("delete from public.penge_afstemning_afvigelser")).rejects.toThrow(/slettes/);
+  });
+
+  it("gebyrsum: løst afvigelse genåbnes kun, når differencen ændrer sig", async () => {
+    const k = (await en<{ id: string }>("select public.penge_afstemning_claim(0) as id")).id;
+    const reg = (stripe: number, db_: number) =>
+      en<{ svar: string }>(
+        "select public.penge_afvigelse_registrer($1, 'gebyrsum', 'gebyrsum', null, null, null, 'Gebyrsum', $2, $3) as svar",
+        [k, stripe, db_],
+      );
+    expect((await reg(10_000, 9_000)).svar).toBe("ny");
+    const a = await en<{ id: string }>("select id from public.penge_afstemning_afvigelser where noegle = 'gebyrsum'");
+    await db.query("select public.admin_penge_afvigelse_loes($1, $2, 'Kendt forskel')", [CHEF, a.id]);
+    // Begge summer vokser, differencen er den samme (1.000): forbliver løst.
+    expect((await reg(15_000, 14_000)).svar).toBe("kendt");
+    // Differencen ændrer sig: genåbnes.
+    expect((await reg(15_000, 13_000)).svar).toBe("genaabnet");
+    await db.query("select public.penge_afstemning_afslut($1, true, null, null)", [k]);
   });
 
   it("snapshot fra admin: højst ét pr. 10 minutter; afstemningen altid", async () => {
@@ -170,7 +202,7 @@ describe("kørslen", () => {
   });
 });
 
-describe("overblikket (admin_penge_reserve)", () => {
+describe("overblikket (admin_penge_overblik)", () => {
   beforeAll(async () => {
     await db.exec(`
       -- Betalt, ikke udbetalt: sælgerens 475 kr. står på hans konto.
@@ -192,9 +224,10 @@ describe("overblikket (admin_penge_reserve)", () => {
     `);
   });
 
-  it("reserven er slået fra: ingen reserve i svaret, kan trækkes ud = saldo - refusioner i gang", async () => {
-    const r = (await en<{ r: Record<string, unknown> }>("select public.admin_penge_reserve($1, 100000) as r", [CHEF])).r as {
-      reserve: unknown;
+  it("kan trækkes ud = saldo - refusioner i gang; ingen reserve", async () => {
+    const r = (await en<{ r: Record<string, unknown> }>("select public.admin_penge_overblik($1, 100000) as r", [CHEF])).r as {
+      reserve?: unknown;
+      konfiguration?: unknown;
       saelgere: { oere: number; antal_handler: number };
       skylder_koebere_oere: number;
       kan_traekkes_ud_oere: number;
@@ -202,7 +235,8 @@ describe("overblikket (admin_penge_reserve)", () => {
       aabne_indsigelser_oere: number;
       tab_efter_udbetaling: { oere: number };
     };
-    expect(r.reserve).toBeNull();
+    expect(r.reserve).toBeUndefined();
+    expect(r.konfiguration).toBeUndefined();
     // 475 kr. (den betalte) + 0 (refusion: tilbageført) = 475 kr.
     expect(Number(r.saelgere.oere)).toBe(47_500);
     expect(Number(r.skylder_koebere_oere)).toBe(25_000);
@@ -212,34 +246,10 @@ describe("overblikket (admin_penge_reserve)", () => {
     expect(Number(r.tab_efter_udbetaling.oere)).toBe(13_500);
   });
 
-  it("kun chef kan slå reserven til; ugyldige værdier afvises", async () => {
-    expect((await en<{ r: string }>("select public.admin_penge_konfiguration_gem($1, true, 10, 90, 0, 0) as r", [ADMIN])).r).toBe("ingen_adgang");
-    expect((await en<{ r: string }>("select public.admin_penge_konfiguration_gem($1, true, 101, 90, 0, 0) as r", [CHEF])).r).toBe("ugyldig");
-    expect((await en<{ r: string }>("select public.admin_penge_konfiguration_gem($1, true, 10, 3, 0, 0) as r", [CHEF])).r).toBe("ugyldig");
-    expect((await en<{ r: string }>("select public.admin_penge_konfiguration_gem($1, true, 10, 90, 0, 5000) as r", [CHEF])).r).toBe("ok");
-    const h = await en<{ n: number }>("select count(*)::int as n from public.penge_konfiguration_historik");
-    expect(h.n).toBe(1);
-  });
-
-  it("slået til: mindst åbne indsigelser + forventede tab; tab efter udbetaling trækkes fra", async () => {
-    const r = (await en<{ r: Record<string, unknown> }>("select public.admin_penge_reserve($1, 100000) as r", [CHEF])).r as {
-      gebyrer_periode_oere: number;
-      reserve: { procent_oere: number; minimum_oere: number; reserve_oere: number; brugt_paa_tab_oere: number; tilbage_oere: number };
-      kan_traekkes_ud_oere: number;
-    };
-    // Gebyrer: 11500 + (6000 - 6000) + 500 + 5000 = 17000; 10 % = 1700.
-    expect(Number(r.gebyrer_periode_oere)).toBe(17_000);
-    expect(Number(r.reserve.procent_oere)).toBe(1_700);
-    // Åbne indsigelser 10000 + forventet tab 5000 = 15000 > 1700.
-    expect(Number(r.reserve.minimum_oere)).toBe(15_000);
-    expect(Number(r.reserve.reserve_oere)).toBe(15_000);
-    expect(Number(r.reserve.brugt_paa_tab_oere)).toBe(13_500);
-    expect(Number(r.reserve.tilbage_oere)).toBe(1_500);
-    expect(Number(r.kan_traekkes_ud_oere)).toBe(100_000 - 25_000 - 1_500);
-    // Uden en saldo fra Stripe bruges seneste snapshot (afstemningen: 1000).
-    const s = (await en<{ r: { kan_traekkes_ud_oere: number } }>("select public.admin_penge_reserve($1, null) as r", [CHEF])).r;
-    expect(Number(s.kan_traekkes_ud_oere)).toBe(0);
-    await db.query("select public.admin_penge_konfiguration_gem($1, false, 0, 90, 0, 0)", [CHEF]);
+  it("uden saldo fra Stripe bruges seneste snapshot", async () => {
+    const r = (await en<{ r: { kan_traekkes_ud_oere: number } }>("select public.admin_penge_overblik($1, null) as r", [CHEF])).r;
+    // Seneste snapshot (afstemningen): 1.000 øre tilgængelig - 25.000 skyld = 0.
+    expect(Number(r.kan_traekkes_ud_oere)).toBe(0);
   });
 });
 
@@ -332,19 +342,14 @@ describe("rene regler", () => {
 
 describe("rettelser efter review", () => {
   it("kun chef kan læse overblikket og posteringerne (p_chef)", async () => {
-    await expect(db.query("select public.admin_penge_reserve($1, 0)", [ADMIN])).rejects.toThrow(/ingen_adgang/);
-    await expect(db.query("select public.admin_penge_reserve(null, 0)")).rejects.toThrow(/ingen_adgang/);
+    await expect(db.query("select public.admin_penge_overblik($1, 0)", [ADMIN])).rejects.toThrow(/ingen_adgang/);
+    await expect(db.query("select public.admin_penge_overblik(null, 0)")).rejects.toThrow(/ingen_adgang/);
     await expect(db.query("select public.admin_penge_posteringer($1, null, null, 5)", [ADMIN])).rejects.toThrow(/ingen_adgang/);
     const r = await en<{ a: boolean; b: boolean }>(
-      `select has_function_privilege('service_role', 'public.penge_reserve_beregn(bigint)', 'execute') as a,
+      `select has_function_privilege('service_role', 'public.penge_overblik_beregn(bigint)', 'execute') as a,
               has_function_privilege('service_role', 'public.penge_posteringer_hent(timestamptz, timestamptz, integer)', 'execute') as b`,
     );
     expect([r.a, r.b]).toEqual([false, false]);
-  });
-
-  it("historikken kan hverken ændres eller slettes", async () => {
-    await expect(db.query("update public.penge_konfiguration_historik set reserve_procent = 50")).rejects.toThrow(/kan ikke ændres/);
-    await expect(db.query("delete from public.penge_konfiguration_historik")).rejects.toThrow(/kan ikke ændres/);
   });
 
   it("en fejlet kørsel blokerer kun i 2 timer; en vellykket i hele intervallet", async () => {
@@ -385,8 +390,8 @@ describe("rettelser efter review", () => {
     await db.query("select public.penge_afstemning_afslut($1, true, null, '{\"ufuldstaendig\": 0}'::jsonb)", [b]);
   });
 
-  it("service role kan kun læse logs, afvigelser, snapshots og konfiguration", async () => {
-    for (const t of ["penge_konfiguration", "penge_konfiguration_historik", "penge_afstemning_koersler", "penge_afstemning_afvigelser", "penge_saldo_snapshot"]) {
+  it("service role kan kun læse logs, afvigelser og snapshots", async () => {
+    for (const t of ["penge_afstemning_koersler", "penge_afstemning_afvigelser", "penge_saldo_snapshot"]) {
       const r = await en<{ i: boolean; u: boolean; d: boolean; t: boolean }>(
         `select has_table_privilege('service_role', 'public.${t}', 'insert') as i,
                 has_table_privilege('service_role', 'public.${t}', 'update') as u,
@@ -469,13 +474,13 @@ describe("BidHamr dækker (sikkerhedsnet A)", () => {
 
   it("overblikket: claimet, ikke refunderet dækning tæller som skyld til købere og trækkes fra 'kan trækkes ud'", async () => {
     const foer = (await en<{ r: { skylder_koebere_oere: number; kan_traekkes_ud_oere: number } }>(
-      "select public.admin_penge_reserve($1, 200000) as r",
+      "select public.admin_penge_overblik($1, 200000) as r",
       [CHEF],
     )).r;
     // Uden den claimede dækning:
     await db.query("update public.betalinger set bidhamr_daekker_refunderet_kl = now() where id = $1", [claimet]);
     const efter = (await en<{ r: { skylder_koebere_oere: number; kan_traekkes_ud_oere: number } }>(
-      "select public.admin_penge_reserve($1, 200000) as r",
+      "select public.admin_penge_overblik($1, 200000) as r",
       [CHEF],
     )).r;
     await db.query("update public.betalinger set bidhamr_daekker_refunderet_kl = null where id = $1", [claimet]);
@@ -486,7 +491,8 @@ describe("BidHamr dækker (sikkerhedsnet A)", () => {
   it("afstemningen: dækker-refusion, BidHamrs refusioner og negative payouts giver ingen afvigelse", () => {
     const b = { id: "b1", stripe_refund_id: null, bidhamr_daekker_refund_id: "re_daekker" };
     // "BidHamr dækker": metadata.betaling_id + bidhamr_daekker (bidhamrDaekker.ts).
-    expect(erBidhamrsRefusion({ id: "re_x", metadata: { betaling_id: "b1", bidhamr_daekker: "b1" } }, b, null)).toBe(true);
+    // Endnu ikke registreret (refusion i gang): metadata godtages.
+    expect(erBidhamrsRefusion({ id: "re_x", metadata: { betaling_id: "b1", bidhamr_daekker: "b1" } }, { id: "b1" }, null)).toBe(true);
     // Registreret på betalingen, selv uden metadata.
     expect(erBidhamrsRefusion({ id: "re_daekker", metadata: {} }, b, null)).toBe(true);
     // Refusion af forkert beløb (betaling_afvigelser).
@@ -494,8 +500,57 @@ describe("BidHamr dækker (sikkerhedsnet A)", () => {
     // Lavet i dashboardet: ingen metadata, ikke registreret.
     expect(erBidhamrsRefusion({ id: "re_dash", metadata: {} }, b, null)).toBe(false);
     expect(erBidhamrsRefusion({ id: "re_dash", metadata: { betaling_id: "en-anden" } }, b, null)).toBe(false);
+    // Dobbelt refusion fra BidHamrs egen kode: databasen har allerede et andet id.
+    const registreret = { id: "b1", stripe_refund_id: "re_foerste", bidhamr_daekker_refund_id: null };
+    expect(erBidhamrsRefusion({ id: "re_foerste", metadata: { betaling_id: "b1" } }, registreret, null)).toBe(true);
+    expect(erBidhamrsRefusion({ id: "re_anden", metadata: { betaling_id: "b1" } }, registreret, null)).toBe(false);
+    // ... og en ekstra dækker-refusion, når dækningen allerede er registreret.
+    expect(erBidhamrsRefusion({ id: "re_x2", metadata: { betaling_id: "b1", bidhamr_daekker: "b1" } }, b, null)).toBe(false);
+    // Afvigelse: metadata kun godtaget, så længe afvigelsen ikke har et refund-id.
+    expect(erBidhamrsRefusion({ id: "re_a2", metadata: { betaling_id: "b2" } }, null, { betaling_id: "b2", stripe_refund_id: "re_a" })).toBe(false);
     expect(payoutAfstemmes({ amount: -1500 })).toBe(false);
     expect(payoutAfstemmes({ amount: 0 })).toBe(true);
     expect(payoutAfstemmes({ amount: 47_500 })).toBe(true);
+  });
+});
+
+describe("refunderet i alt pr. charge (dobbelt-refusion) og kontorotation", () => {
+  const basis = {
+    status: "betalt",
+    total_oere: 59_000,
+    refusion_oere: null,
+    refusion_anmodet_kl: null,
+    bidhamr_daekker_kl: null,
+    bidhamr_daekker_oere: null,
+    bidhamr_daekker_refunderet_kl: null,
+  };
+  it("forventet refunderet: 0, total, sagens beløb, dækning, afvigelse - og null under en refusion", () => {
+    expect(forventetRefunderet(basis, null)).toBe(0);
+    expect(forventetRefunderet({ ...basis, status: "refunderet" }, null)).toBe(59_000);
+    expect(forventetRefunderet({ ...basis, status: "refunderet", refusion_oere: 56_500 }, null)).toBe(56_500);
+    expect(forventetRefunderet({ ...basis, refusion_anmodet_kl: "x" }, null)).toBeNull();
+    expect(forventetRefunderet({ ...basis, bidhamr_daekker_kl: "x", bidhamr_daekker_oere: 59_000 }, null)).toBeNull();
+    expect(
+      forventetRefunderet(
+        { ...basis, status: "refunderet", refusion_oere: 56_500, bidhamr_daekker_kl: "x", bidhamr_daekker_oere: 59_000, bidhamr_daekker_refunderet_kl: "x" },
+        null,
+      ),
+    ).toBe(59_000);
+    expect(forventetRefunderet(null, { refunderet_kl: "x", modtaget_oere: 1_000 })).toBe(1_000);
+    expect(forventetRefunderet(null, { refunderet_kl: null, modtaget_oere: 1_000 })).toBeNull();
+    // En dobbelt refusion på 590 kr. (2 x 590) afviger fra de forventede 590 kr.
+    expect(2 * 59_000).not.toBe(forventetRefunderet({ ...basis, status: "refunderet" }, null));
+  });
+
+  it("over 200 konti: udvalget roterer, og alle kommer med over nogle dage", () => {
+    const konti = Array.from({ length: 450 }, (_, i) => `acct_${i}`);
+    const set = new Set<string>();
+    for (let dag = 0; dag < 3; dag++) {
+      const u = kontoUdvalg(konti, 200, dag);
+      expect(u.length).toBe(200);
+      u.forEach((k) => set.add(k));
+    }
+    expect(set.size).toBe(450);
+    expect(kontoUdvalg(["a", "b"], 200, 5)).toEqual(["a", "b"]);
   });
 });

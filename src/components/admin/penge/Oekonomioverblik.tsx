@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { gemPengeKonfiguration, loesPengeAfvigelse } from "@/app/actions/adminPenge";
+import { loesPengeAfvigelse } from "@/app/actions/adminPenge";
 import {
   forrigeMaaned,
   naesteMaaned,
@@ -33,7 +33,6 @@ function maanedNavn(m: string): string {
 }
 
 const BESKED: Record<string, { tekst: string; fejl?: boolean }> = {
-  gemt: { tekst: "Konfigurationen er gemt." },
   loest: { tekst: "Afvigelsen er markeret som løst." },
   ugyldig: { tekst: "Ugyldige værdier - tjek felterne.", fejl: true },
   note_mangler: { tekst: "Skriv en note om, hvad der er gjort.", fejl: true },
@@ -108,13 +107,12 @@ function PosteringRaekke({ p }: { p: Postering }) {
 }
 
 export default function Oekonomioverblik({ o, besked }: { o: Oekonomi; besked?: string }) {
-  const r = o.reserve.ok ? o.reserve.data : null;
+  const r = o.overblik.ok ? o.overblik.data : null;
   const b = o.balance.ok ? o.balance.data : null;
   const t = o.tal.ok ? o.tal.data : null;
   const f = o.fragt.ok ? o.fragt.data : null;
   const fragtKost = f ? (f.fragtfirma_pris_inkl_moms_oere > 0 ? f.fragtfirma_pris_inkl_moms_oere : f.forventet_kost_inkl_moms_oere) : null;
   const msg = besked ? BESKED[besked] : undefined;
-  const k = r?.konfiguration;
 
   return (
     <section id="oekonomi" className="space-y-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4 sm:p-5">
@@ -153,7 +151,7 @@ export default function Oekonomioverblik({ o, besked }: { o: Oekonomi; besked?: 
       )}
 
       {!o.balance.ok && <Fejl tekst={`Stripe-saldoen kunne ikke hentes: ${o.balance.fejl}`} />}
-      {!o.reserve.ok && <Fejl tekst={o.reserve.fejl} />}
+      {!o.overblik.ok && <Fejl tekst={o.overblik.fejl} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Boks
@@ -182,7 +180,7 @@ export default function Oekonomioverblik({ o, besked }: { o: Oekonomi; besked?: 
         <Boks
           titel="Kan trækkes ud nu"
           vaerdi={r ? kr(r.kan_traekkes_ud_oere) : "–"}
-          under={r?.reserve ? "Tilgængelig saldo minus refusioner i gang og reserven" : "Tilgængelig saldo minus refusioner i gang"}
+          under="Tilgængelig saldo minus refusioner i gang"
           tone="groen"
         />
       </div>
@@ -192,21 +190,6 @@ export default function Oekonomioverblik({ o, besked }: { o: Oekonomi; besked?: 
           Afstemningen {dato(r.snapshot.kl)}: sælgernes Stripe-saldi i alt {kr(r.snapshot.saelgere_stripe_oere)} på{" "}
           {r.snapshot.saelgerkonti} konti (databasen siger {kr(r.saelgere.oere)} nu).
         </p>
-      )}
-
-      {r?.reserve && (
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h3 className="font-semibold text-neutral-900">Reserve</h3>
-          <p className="mb-2 text-xs text-neutral-500">
-            En del af BidHamrs egne gebyrer, som ikke trækkes ud. Kun bogføring - pengene bliver på BidHamrs
-            Stripe-saldo.
-          </p>
-          <Linje label={`${k?.reserve_procent} % af gebyrerne de seneste ${k?.reserve_periode_dage} dage (${kr(r.gebyrer_periode_oere)})`} vaerdi={kr(r.reserve.procent_oere)} />
-          <Linje label={`Mindst: åbne indsigelser (${kr(r.aabne_indsigelser_oere)}) + forventede tab (${kr(k?.forventet_tab_oere)}), dog mindst ${kr(k?.reserve_minimum_oere)}`} vaerdi={kr(r.reserve.minimum_oere)} />
-          <Linje label="Reserve" vaerdi={kr(r.reserve.reserve_oere)} fremhaev />
-          <Linje label={`Brugt på tab ved indsigelser efter udbetaling (${r.tab_efter_udbetaling.antal})`} vaerdi={`- ${kr(r.reserve.brugt_paa_tab_oere)}`} />
-          <Linje label="Reserve tilbage (ikke til at trække ud)" vaerdi={kr(r.reserve.tilbage_oere)} fremhaev />
-        </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -306,46 +289,6 @@ export default function Oekonomioverblik({ o, besked }: { o: Oekonomi; besked?: 
         )}
       </div>
 
-      {k && (
-        <details className="rounded-xl border border-neutral-200 bg-white p-4">
-          <summary className="cursor-pointer font-semibold text-neutral-900">
-            Reserve: {k.reserve_slaaet_til ? "slået til" : "slået fra"}
-          </summary>
-          <p className="mt-2 text-xs text-neutral-500">
-            Reserven er en del af BidHamrs egne gebyrer, der markeres som ikke til at trække ud: mindst en procentdel
-            af gebyrerne i perioden, mindst et fast minimum, og mindst åbne indsigelser plus forventede tab. Den flytter
-            aldrig penge. Den er slået fra, til Filip har besluttet, om der skal være en reserve.
-          </p>
-          <form action={gemPengeKonfiguration} className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <input type="checkbox" name="slaaet_til" value="ja" defaultChecked={k.reserve_slaaet_til} />
-              Vis reserven og træk den fra &quot;Kan trækkes ud nu&quot;
-            </label>
-            <label className="text-sm">
-              Procent af gebyrerne
-              <input name="procent" inputMode="decimal" defaultValue={String(k.reserve_procent).replace(".", ",")} className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5" />
-            </label>
-            <label className="text-sm">
-              Periode (dage, 7-365)
-              <input name="periode_dage" inputMode="numeric" defaultValue={k.reserve_periode_dage} className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5" />
-            </label>
-            <label className="text-sm">
-              Fast minimum (kr)
-              <input name="minimum_kr" inputMode="decimal" defaultValue={(k.reserve_minimum_oere / 100).toFixed(2).replace(".", ",")} className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5" />
-            </label>
-            <label className="text-sm">
-              Forventede tab (kr)
-              <input name="forventet_tab_kr" inputMode="decimal" defaultValue={(k.forventet_tab_oere / 100).toFixed(2).replace(".", ",")} className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5" />
-            </label>
-            <div className="sm:col-span-2">
-              <button type="submit" className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700">
-                Gem
-              </button>
-              <span className="ml-2 text-xs text-neutral-500">Senest ændret {dato(k.aendret_kl)}</span>
-            </div>
-          </form>
-        </details>
-      )}
     </section>
   );
 }

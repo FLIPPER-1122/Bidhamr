@@ -69,6 +69,8 @@ export type AfvigelseType =
   | "gebyr"
   | "ukendt_gebyr"
   | "refusion_udenom"
+  | "refusion_beloeb"
+  | "udbetaling_negativ"
   | "tilbagefoersel_udenom"
   | "udbetaling_ukendt"
   | "udbetaling_afviger"
@@ -97,6 +99,8 @@ export type Afstemning = {
   afvigelser: number;
   nye: number;
   ufuldstaendig: number;
+  // Trin, der fejlede (kørslen er ok = false).
+  fejlede: number;
   betalinger: number;
   gebyrer: number;
   refusioner: number;
@@ -157,6 +161,11 @@ async function liste<T>(it: AsyncIterable<T>, r: Afstemning, budget: Budget): Pr
 type BetalingAfst = {
   id: string;
   bidhamr_daekker_refund_id: string | null;
+  bidhamr_daekker_oere: number | null;
+  bidhamr_daekker_kl: string | null;
+  bidhamr_daekker_refunderet_kl: string | null;
+  refusion_oere: number | null;
+  refusion_anmodet_kl: string | null;
   status: string;
   total_oere: number;
   udbetaling_oere: number;
@@ -180,7 +189,7 @@ type BetalingAfst = {
 };
 
 const BETALING_KOLONNER =
-  "id, bidhamr_daekker_refund_id, status, total_oere, udbetaling_oere, application_fee_oere, refusion_gebyr_oere, gebyr_refunderet_kl, refusion_tilbagefoert_kl, refusion_fra_saelger_oere, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoert_oere, stripe_payment_intent_id, stripe_charge_id, stripe_application_fee_id, stripe_destination_transfer_id, stripe_transfer_id, stripe_refund_id, tidligere_payment_intents, betalt_kl, saelger_stripe_konto, seller_id";
+  "id, bidhamr_daekker_refund_id, bidhamr_daekker_oere, bidhamr_daekker_kl, bidhamr_daekker_refunderet_kl, refusion_oere, refusion_anmodet_kl, status, total_oere, udbetaling_oere, application_fee_oere, refusion_gebyr_oere, gebyr_refunderet_kl, refusion_tilbagefoert_kl, refusion_fra_saelger_oere, indsigelse_tilbagefoersel_id, indsigelse_tilbagefoert_oere, stripe_payment_intent_id, stripe_charge_id, stripe_application_fee_id, stripe_destination_transfer_id, stripe_transfer_id, stripe_refund_id, tidligere_payment_intents, betalt_kl, saelger_stripe_konto, seller_id";
 
 async function betalingerVed(
   admin: Admin,
@@ -200,19 +209,26 @@ async function betalingerVed(
   return ud;
 }
 
+type AfvigelseRaekke = {
+  betaling_id: string;
+  stripe_refund_id: string | null;
+  refunderet_kl: string | null;
+  modtaget_oere: number;
+};
+
 // Kendte PaymentIntents/charges med forkert beløb (betaling_afvigelser).
 async function afvigelsesRaekker(admin: Admin, kolonne: "stripe_payment_intent_id" | "stripe_charge_id", ids: string[]) {
-  const ud = new Map<string, { betaling_id: string; stripe_refund_id: string | null; refunderet_kl: string | null }>();
+  const ud = new Map<string, AfvigelseRaekke>();
   for (const del of bidder([...new Set(ids)])) {
     if (!del.length) continue;
     const { data, error } = await admin
       .from("betaling_afvigelser")
-      .select("betaling_id, stripe_payment_intent_id, stripe_charge_id, stripe_refund_id, refunderet_kl")
+      .select("betaling_id, stripe_payment_intent_id, stripe_charge_id, stripe_refund_id, refunderet_kl, modtaget_oere")
       .in(kolonne, del);
     if (error) throw new Error(`betaling_afvigelser: ${error.message}`);
     for (const a of data ?? []) {
       const v = a[kolonne] as string | null;
-      if (v) ud.set(v, a as { betaling_id: string; stripe_refund_id: string | null; refunderet_kl: string | null });
+      if (v) ud.set(v, a as AfvigelseRaekke);
     }
   }
   return ud;
@@ -250,20 +266,53 @@ export function forventetTilbagefoert(
   return x;
 }
 
-// En refusion er BidHamrs egen, når den er registreret på betalingen
-// (stripe_refund_id), eller når metadata.betaling_id peger på betalingen -
-// det gælder alle BidHamrs refusioner: sag/admin/frister (refunderUnderLaas),
-// forkert beløb (refunderAfvigelse) og "BidHamr dækker" (sikkerhedsnet A,
-// bidhamrDaekker.ts - metadata.betaling_id + bidhamr_daekker).
+// En refusion er BidHamrs egen, når databasen har registreret netop den
+// (stripe_refund_id, bidhamr_daekker_refund_id eller afvigelsens
+// stripe_refund_id). Et rent metadata-match (betaling_id, eller
+// bidhamr_daekker for "BidHamr dækker") godtages kun, så længe databasen
+// endnu IKKE har et refund-id af den type - en refusion i gang, hvis id endnu
+// ikke er gemt. Har databasen allerede et andet id, er det en ekstra
+// (dobbelt) refusion, også selv om den er lavet af BidHamrs egen kode.
 export function erBidhamrsRefusion(
   x: { id: string; metadata?: Record<string, string> | null },
   b: { id: string; stripe_refund_id?: string | null; bidhamr_daekker_refund_id?: string | null } | null,
   a: { betaling_id: string; stripe_refund_id?: string | null } | null,
 ): boolean {
   const md = x.metadata ?? {};
-  if (a && (a.stripe_refund_id === x.id || md.betaling_id === a.betaling_id)) return true;
-  if (b && (b.stripe_refund_id === x.id || b.bidhamr_daekker_refund_id === x.id || md.betaling_id === b.id)) return true;
+  if (a?.stripe_refund_id === x.id) return true;
+  if (b && (b.stripe_refund_id === x.id || b.bidhamr_daekker_refund_id === x.id)) return true;
+  if (a && md.betaling_id === a.betaling_id && !a.stripe_refund_id) return true;
+  if (b && md.bidhamr_daekker === b.id) return !b.bidhamr_daekker_refund_id && !b.stripe_refund_id;
+  if (b && md.betaling_id === b.id) return !b.stripe_refund_id;
   return false;
+}
+
+// Hvad databasen forventer er refunderet på chargen i alt - null, når en
+// refusion er i gang (beløbet kan ikke afstemmes endnu):
+//   betaling refunderet med "BidHamr dækker" -> bidhamr_daekker_oere
+//   betaling refunderet ellers                -> refusion_oere, ellers total
+//   betaling med forkert beløb refunderet     -> modtaget_oere
+//   ikke refunderet (og intet i gang)         -> 0
+export function forventetRefunderet(
+  b: Pick<
+    BetalingAfst,
+    "status" | "total_oere" | "refusion_oere" | "refusion_anmodet_kl" | "bidhamr_daekker_kl" | "bidhamr_daekker_oere" | "bidhamr_daekker_refunderet_kl"
+  > | null,
+  a: Pick<AfvigelseRaekke, "refunderet_kl" | "modtaget_oere"> | null,
+): number | null {
+  if (a) return a.refunderet_kl ? Number(a.modtaget_oere) : null;
+  if (!b) return null;
+  if (b.bidhamr_daekker_refunderet_kl) return Number(b.bidhamr_daekker_oere ?? 0);
+  if (b.status === "refunderet") return Number(b.refusion_oere ?? b.total_oere);
+  if (b.refusion_anmodet_kl || b.bidhamr_daekker_kl) return null;
+  return 0;
+}
+
+// Højst maks konti, startende ved et offset, der flytter sig hver dag.
+export function kontoUdvalg<T>(konti: T[], maks: number, dag: number): T[] {
+  if (konti.length <= maks) return konti;
+  const start = (((dag * maks) % konti.length) + konti.length) % konti.length;
+  return [...konti.slice(start), ...konti.slice(0, start)].slice(0, maks);
 }
 
 // Payouts med negativt beløb er Stripe, der henter et underskud på kontoen
@@ -293,6 +342,7 @@ export async function koerPengeafstemning(
     afvigelser: 0,
     nye: 0,
     ufuldstaendig: 0,
+    fejlede: 0,
     betalinger: 0,
     gebyrer: 0,
     refusioner: 0,
@@ -336,7 +386,7 @@ export async function koerPengeafstemning(
   const fejl: string[] = [];
 
   const registrer = async (a: Afvigelse) => {
-    const { data: ny, error: rFejl } = await admin.rpc("penge_afvigelse_registrer", {
+    const { data: svar, error: rFejl } = await admin.rpc("penge_afvigelse_registrer", {
       p_koersel: koerselId,
       p_noegle: a.noegle.slice(0, 200),
       p_type: a.type,
@@ -349,12 +399,17 @@ export async function koerPengeafstemning(
     });
     if (rFejl) throw new Error(`penge_afvigelse_registrer: ${rFejl.message}`);
     r.afvigelser++;
-    if (ny === true) {
+    // 'ny': første gang - én drift-alarm, med webhookens nøgle, hvis den
+    //   findes (så webhook og afstemning kun giver én alarm).
+    // 'genaabnet': markeret løst, men beløbene er ændret siden - alarm med
+    //   afstemningens EGEN nøgle (webhookens tilfælde kan stå åbent).
+    // 'kendt': åben og kendt, eller løst med uændrede beløb - ingen alarm.
+    if (svar === "ny" || svar === "genaabnet") {
       r.nye++;
-      // Ny (eller genopstået efter "Markér som løst"): én drift-alarm.
-      if (!a.alarmNoegle) await lukTilfaelde(`afstemning:${a.noegle}`);
+      const noegle = svar === "ny" && a.alarmNoegle ? a.alarmNoegle : `afstemning:${a.noegle}`;
+      if (noegle.startsWith("afstemning:")) await lukTilfaelde(noegle);
       await alarmPrTilfaelde({
-        noegle: a.alarmNoegle ?? `afstemning:${a.noegle}`,
+        noegle,
         kilde: "cron",
         hvor: "betaling/afstemning",
         fejl: `Pengeafstemning: ${a.beskrivelse} Se Admin -> Penge.`,
@@ -419,6 +474,7 @@ export async function koerPengeafstemning(
     await lukTilfaelde("afstemning:ufuldstaendig");
   }
 
+  r.fejlede = fejl.length;
   const ok = fejl.length === 0;
   const { error: aFejl } = await admin.rpc("penge_afstemning_afslut", {
     p_koersel: koerselId,
@@ -631,9 +687,36 @@ async function afstemRefusioner(
       type: "refusion_udenom",
       stripeId: x.id,
       betalingId: b?.id ?? a?.betaling_id ?? null,
-      beskrivelse: `Refusion ${x.id}${ch ? ` på ${ch}` : ""} er ikke lavet af BidHamr (fx i Stripe-dashboardet)${b ? ` - betaling ${b.id}` : ""}. Kontrollér, at sælgerens del er taget tilbage, og at køberen ikke er refunderet to gange.`,
+      beskrivelse: `Refusion ${x.id}${ch ? ` på ${ch}` : ""} er ikke registreret af BidHamr (lavet i Stripe-dashboardet, eller en ekstra refusion)${b ? ` - betaling ${b.id}` : ""}. Kontrollér, at sælgerens del er taget tilbage, og at køberen ikke er refunderet to gange.`,
       beloebStripe: x.amount,
     });
+  }
+
+  // Summen pr. charge: alle ikke-fejlede refusioner hos Stripe mod det,
+  // databasen forventer er refunderet (fanger også en dobbelt refusion fra
+  // BidHamrs egen kode).
+  for (const ch of [...new Set(charges)]) {
+    tjekTid(budget);
+    const b = vedCharge.get(ch) ?? null;
+    const a = afv.get(ch) ?? null;
+    if (!b && !a) continue;
+    const forventet = forventetRefunderet(b, a);
+    if (forventet === null) continue; // refusion i gang
+    let sum = 0;
+    for await (const x of stripe.refunds.list({ charge: ch, limit: 100 }, KALD)) {
+      if (x.status !== "failed" && x.status !== "canceled") sum += x.amount;
+    }
+    if (sum !== forventet) {
+      await registrer({
+        noegle: `refusion-beloeb:${ch}`,
+        type: "refusion_beloeb",
+        stripeId: ch,
+        betalingId: b?.id ?? a?.betaling_id ?? null,
+        beskrivelse: `Der er refunderet et andet beløb i alt på charge ${ch} hos Stripe, end databasen forventer${b ? ` (betaling ${b.id})` : ""} - fx en dobbelt refusion. Kontrollér refusionerne i Stripe.`,
+        beloebStripe: sum,
+        beloebDb: forventet,
+      });
+    }
   }
 }
 
@@ -698,9 +781,12 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
     .filter(Boolean)
     .sort();
   if (konti.length > MAKS_KONTI) r.ufuldstaendig++;
+  // Flere konti end grænsen: start et nyt sted hver dag (rotation), så alle
+  // kommer med over nogle dage.
+  const udvalgte = kontoUdvalg(konti, MAKS_KONTI, Math.floor(Date.now() / DAG));
   const vedPayout = new Map((rk ?? []).filter((u) => u.stripe_payout_id).map((u) => [u.stripe_payout_id as string, u]));
   const set = new Set<string>();
-  for (const konto of konti.slice(0, MAKS_KONTI)) {
+  for (const konto of udvalgte) {
     tjekTid(budget);
     let payouts: Stripe.Payout[];
     try {
@@ -715,9 +801,20 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
       set.add(p.id);
       // Negativ payout (Stripe henter et underskud på kontoen fra sælgerens
       // bank, debit_negative_balances): ingen udbetaling fra BidHamr og ingen
-      // fremmed udbetaling - webhooken alarmerer (negativ-payout, sikkerhedsnet
-      // A). Ingen afvigelse her.
-      if (!payoutAfstemmes(p)) continue;
+      // fremmed udbetaling. Registreres for overblikket med webhookens
+      // alarmnøgle (negativ-payout, sikkerhedsnet A) - kun én alarm.
+      if (!payoutAfstemmes(p)) {
+        await registrer({
+          noegle: `payout-negativ:${p.id}`,
+          alarmNoegle: `negativ-payout:${p.id}`,
+          type: "udbetaling_negativ",
+          stripeId: p.id,
+          stripeKonto: konto,
+          beskrivelse: `Stripe har hentet ${(-Number(p.amount) / 100).toFixed(2)} kr. fra sælgerkonto ${konto}s bank (payout ${p.id}, '${p.status}') for at dække et underskud på kontoen. Kontrollér, hvorfor saldoen var negativ (refusion eller indsigelse).`,
+          beloebStripe: p.amount,
+        });
+        continue;
+      }
       const u = vedPayout.get(p.id);
       if (!u) {
         // Kan være oprettet før vinduet i databasen: slå op.
@@ -759,7 +856,7 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
     if (!u.stripe_payout_id || set.has(u.stripe_payout_id as string)) continue;
     if (!["oprettet", "paid"].includes(u.status as string)) continue;
     if (new Date(u.oprettet as string).getTime() < fra * 1000) continue;
-    if (!konti.slice(0, MAKS_KONTI).includes(u.stripe_konto as string)) continue;
+    if (!udvalgte.includes(u.stripe_konto as string)) continue;
     try {
       await stripe.payouts.retrieve(u.stripe_payout_id as string, undefined, { stripeAccount: u.stripe_konto as string, ...KALD });
       continue; // findes (fx oprettet lige på grænsen)

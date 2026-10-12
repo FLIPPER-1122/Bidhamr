@@ -41,7 +41,7 @@ Hvis betalings-cron'en holder op med at køre (pg_cron, Vercel eller Supabase st
 - Hvad sker der: cron'en pinger URL'en efter hver **vellykket** kørsel. Fejler et pengetrin, sendes kun en logbesked (`/log` – ændrer ikke status), så alarmen kommer, når der har været 30 min uden succes. Står cron'en helt stille, kommer der ingen ping – og så kommer alarmen også. Uden variablen sker der intet. Pinget indeholder ingen persondata.
 - Lokalt og på testdatabasen: sæt den ikke (eller brug en separat check).
 - Den gamle `HEARTBEAT_URL` virker stadig (pinger `/fail` ved hver fejl = alarm med det samme). Brug kun den ene af dem til samme check.
-- Valgfrit: den daglige pengeafstemning har sin egen rute (`/api/cron/afstemning`, eget pg_cron-job oprettet af migrationen `20261019020000`). Vil du også have alarm, hvis den ikke kører, så lav en ekstra check i healthchecks.io (**Period 1 day**, **Grace 3 hours**) og sæt `CRON_AFSTEMNING_HEALTHCHECK_URL` i Vercel. Den pinges, når en afstemning er kørt helt igennem.
+- **Bør sættes i produktion (Filip – Vercel):** den daglige pengeafstemning har sin egen rute (`/api/cron/afstemning`, eget pg_cron-job oprettet af migrationen `20261019020000`). Lav en ekstra check i healthchecks.io (**Period 1 day**, **Grace 3 hours**) og sæt `CRON_AFSTEMNING_HEALTHCHECK_URL` i Vercel. Den pinges, når en afstemning er kørt helt igennem uden fejl, og `/fail`, når et trin fejlede.
 
 ## Mail på bidhamr.dk (når erhvervskonto og CVR er på plads)
 - Google Workspace **Starter**, **1 bruger**, gerne **månedlig** betaling: opret `filip@bidhamr.dk`
