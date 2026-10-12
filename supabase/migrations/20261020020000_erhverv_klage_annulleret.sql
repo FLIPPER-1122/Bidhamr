@@ -8,17 +8,24 @@
 -- Alle andre årsager afvises med errcode BHE11 og præfikset
 -- 'erhverv_klage_annulleret:' - også null (fx ubetalt), 'admin', 'stripe',
 -- 'sen_betaling', 'ikke_afhentet', 'afhentningsfrist' og tabt indsigelse
--- (indsigelse_tabt_kl sat). Klager på handler, der ikke er annulleret, er
+-- (indsigelse_tabt_kl sat - også ved 'sag': køberen har fået pengene via
+-- banken, og en klage kan gå gennem kundeservice). Klager på handler, der ikke er annulleret, er
 -- uændrede.
 --
--- Kun erhverv_klage_opret ændres (erhverv_klage_adgang og dermed
--- klage-knappen/billed-upload er uændrede). Rettelsen sker på stedet i
--- funktionens definition, så search_path = '' og grants bevares.
+-- erhverv_klager_handel (købers klage-boks) får det NYE felt
+-- 'annulleret_afvist' (boolean): true, når handlen er annulleret, og reglen
+-- ovenfor afviser en klage. Så skjules klage-knappen, og der vises en kort
+-- forklaring. Eksisterende felter (kan_klage, grund, klager) er uændrede, så
+-- appen (Expo) ikke brydes - appen bør skjule knappen, når feltet er true.
+-- Reglen står inline (samme udtryk) i begge funktioner.
+--
+-- erhverv_klage_adgang (billed-upload m.m.) er uændret. Rettelserne sker på
+-- stedet i funktionernes definition, så search_path = '' og grants bevares.
 --
 -- Kan køres flere gange: md5-drift-tjek (normaliseret krop som
 -- 20261019010000: CR fjernet, kommentarer fjernet, al whitespace fjernet,
--- små bogstaver). "gammel" = prod og test før denne migration (hentet med
--- SELECT 12. okt. 2026), "ny" = efter denne. Andet afbryder migrationen
+-- små bogstaver). "gammel" = prod før denne migration (hentet med SELECT
+-- 12. okt. 2026), "ny" = efter denne. Andet afbryder migrationen
 -- (intet ændres). KØRES IKKE i produktion uden Filips "ja".
 
 set local lock_timeout = '5s';
@@ -98,12 +105,35 @@ $n$  elsif v_grund = 'for_sent' then
     raise exception 'erhverv_klage_annulleret: Du kan kun klage over firmaet på en annulleret handel, hvis firmaet ikke sendte varen, eller hvis du har fået medhold i en sag.' using errcode = 'BHE11';
   end if;
 $n$, 1)));
+
+  raise notice 'erhverv_klager_handel: %', pg_temp.ps_ret(
+    'public.erhverv_klager_handel(uuid)',
+    '05f515f7a7006fe2febd2ed94074a2ed',
+    '3f81597c7d5290298a22cc2e2b552838',
+    jsonb_build_array(jsonb_build_array(
+$g$    'kan_klage', v_grund is null,
+    'grund', v_grund,
+$g$,
+$n$    'kan_klage', v_grund is null,
+    'grund', v_grund,
+    -- Annulleret handel, hvor klage afvises (samme regel som
+    -- erhverv_klage_opret, 20261020020000).
+    'annulleret_afvist',
+      exists (select 1 from public.trades tr
+               where tr.id = p_trade and tr.status = 'annulleret')
+      and not exists (select 1 from public.betalinger bt
+                       where bt.trade_id = p_trade
+                         and bt.refusion_aarsag in ('afsendelsesfrist', 'sag')
+                         and bt.indsigelse_tabt_kl is null),
+$n$, 1)));
 end $do$;
 
 -- Grants som 20261016020000 (uændrede af rettelsen på stedet - gentages for
 -- en sikkerheds skyld).
 revoke all on function public.erhverv_klage_opret(uuid, text, text, jsonb) from public, anon;
 grant execute on function public.erhverv_klage_opret(uuid, text, text, jsonb) to authenticated;
+revoke all on function public.erhverv_klager_handel(uuid) from public, anon;
+grant execute on function public.erhverv_klager_handel(uuid) to authenticated;
 
 drop function pg_temp.ps_ret(text, text, text, jsonb);
 drop function pg_temp.krop_md5(text);
