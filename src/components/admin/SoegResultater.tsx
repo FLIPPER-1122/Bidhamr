@@ -20,7 +20,7 @@ export default function SoegResultater({ q, traef, erhverv = false }: { q: strin
             : "Søg på navn, e-mail, telefon, id (de første tegn er nok), sporingsnummer eller DSA-sagsnummer."
         }
       />
-      {q.trim().length < 2 ? (
+      {q.trim().length < 2 && !(erhverv && /^\d$/.test(q.trim())) ? (
         <p className="text-sm text-tekst-daempet">Skriv mindst 2 tegn.</p>
       ) : traef.length === 0 ? (
         <AdminTom ok={false} tekst={`Intet fundet for "${q}". Prøv en del af e-mailen, navnet eller id'et.`} />

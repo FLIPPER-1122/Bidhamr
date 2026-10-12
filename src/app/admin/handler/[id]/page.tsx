@@ -9,6 +9,7 @@ import HandelHandlinger, { kr } from "@/components/admin/handler/HandelHandlinge
 import { HAENGER_TEKST, erHaengerGrund, type HaengerGrund } from "@/lib/adminGraenser";
 import { SPORINGS_NAVN, erSporingsType } from "@/lib/fragt/types";
 import { UUID_RE, handlingNavn, visAarsag } from "@/lib/moderationLog";
+import { sidsteStaffBeskedOmHandel } from "@/lib/admin/paamindelse";
 import { SAG_TYPE_NAVN, adminSagSti, type SagStatus, type SagType } from "@/lib/sager";
 import { SAG_STATUS_KORT } from "@/components/sager/visning";
 
@@ -150,6 +151,10 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
   const fs = (forsendelser.data ?? []) as Forsendelse[];
   const haenger = ((haengende.data ?? []) as { trade_id: string; grund: unknown; siden: string }[]).find((r) => r.trade_id === h.id);
   const haengerGrund: HaengerGrund | null = haenger && erHaengerGrund(haenger.grund) ? haenger.grund : null;
+  const paamindBruger = haengerGrund ? (haengerGrund === "ikke_sendt" ? h.seller_id : h.buyer_id) : null;
+  const sidstPaamindet = paamindBruger
+    ? ((await sidsteStaffBeskedOmHandel(admin, [{ tradeId: h.id, brugerId: paamindBruger }])).get(`${h.id}:${paamindBruger}`) ?? null)
+    : null;
   const returMeldt = fs.some(
     (f) => f.type === "udgaaende" && f.status !== "annulleret" && f.status !== "fejlet" && !!f.returneret_kl && !f.leveret_kl,
   );
@@ -181,6 +186,7 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
           kanFlyttePenge={kanFlyttePenge}
           kanSkriveFaelles={kanFlyttePenge}
           visAabn={false}
+          sidstPaamindet={sidstPaamindet}
         />
         {h.sag_aaben && h.sag_note && (
           <p className="mt-3 rounded-lg border border-fejl-kant bg-fejl-bg px-3 py-2 text-sm text-fejl-tekst">

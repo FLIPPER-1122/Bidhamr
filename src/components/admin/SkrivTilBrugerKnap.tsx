@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { aabnChat } from "@/app/actions/staffChat";
 import { kontaktMarkerBesvaret } from "@/app/actions/adminTryghed";
+import { sendPaamindelse } from "@/app/actions/adminPaamindelse";
 import { STAFF_CHAT_MAKS_EMNE, STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
 import { visKvittering } from "@/components/admin/Kvittering";
 import Skabeloner, { type Skabelon } from "@/components/admin/Skabeloner";
@@ -26,6 +27,7 @@ export default function SkrivTilBrugerKnap({
   tekst: startTekst = "",
   skabeloner = [],
   henvendelseId,
+  paamindelse,
   kvittering = "Beskeden er sendt",
 }: {
   brugerId: string;
@@ -39,6 +41,9 @@ export default function SkrivTilBrugerKnap({
   skabeloner?: readonly Skabelon[];
   // Svar på en kontaktformular: markér den besvaret i samme klik.
   henvendelseId?: string;
+  // Påmindelse om en handel: serveren afviser en ny inden for 24 timer,
+  // medmindre man bekræfter "send alligevel" (sendPaamindelse).
+  paamindelse?: { tradeId: string; part: "koeber" | "saelger" };
   kvittering?: string;
 }) {
   const router = useRouter();
@@ -49,6 +54,10 @@ export default function SkrivTilBrugerKnap({
   const [marker, setMarker] = useState(true);
   const [sender, setSender] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
+  const [nylig, setNylig] = useState<string | null>(null);
+  const [alligevel, setAlligevel] = useState(false);
+  // Spærre mod dobbeltklik: state når ikke at opdatere mellem to hurtige klik.
+  const senderLaas = useRef(false);
   const tekstRef = useRef<HTMLTextAreaElement>(null);
   const knapRef = useRef<HTMLButtonElement>(null);
 
@@ -71,16 +80,25 @@ export default function SkrivTilBrugerKnap({
 
   async function send(e: FormEvent) {
     e.preventDefault();
-    if (sender) return;
+    if (senderLaas.current) return;
     if (!besked.trim()) {
       setFejl("Skriv en besked.");
       return;
     }
+    if (nylig && !alligevel) {
+      setFejl("Sæt kryds i \"Send alligevel\", hvis parten skal have en påmindelse mere.");
+      return;
+    }
+    senderLaas.current = true;
     setSender(true);
     setFejl(null);
     try {
-      const res = await aabnChat(brugerId, emne, { tradeId: tradeId ?? null, besked: besked.trim() });
+      const res = paamindelse
+        ? await sendPaamindelse({ ...paamindelse, emne, besked: besked.trim(), alligevel })
+        : await aabnChat(brugerId, emne, { tradeId: tradeId ?? null, besked: besked.trim() });
       if ("fejl" in res) {
+        const n = (res as { nylig?: { sendtKl: string } }).nylig;
+        if (n) setNylig(n.sendtKl);
         setFejl(res.fejl);
         return;
       }
@@ -104,6 +122,7 @@ export default function SkrivTilBrugerKnap({
     } catch {
       setFejl("Noget gik galt. Prøv igen.");
     } finally {
+      senderLaas.current = false;
       setSender(false);
     }
   }
@@ -165,6 +184,18 @@ export default function SkrivTilBrugerKnap({
                   className="mt-1.5 w-full rounded-lg border border-kant-staerk px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-groen sm:text-sm"
                 />
               </div>
+              {nylig && (
+                <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 text-sm text-advarsel-tekst">
+                  <input
+                    type="checkbox"
+                    checked={alligevel}
+                    onChange={(e) => setAlligevel(e.target.checked)}
+                    className="h-5 w-5 shrink-0 accent-[#1E5E4A]"
+                  />
+                  Send alligevel (sidst skrevet{" "}
+                  {new Date(nylig).toLocaleString("da-DK", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Copenhagen" })})
+                </label>
+              )}
               {henvendelseId && (
                 <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-tekst">
                   <input

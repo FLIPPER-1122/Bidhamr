@@ -39,6 +39,13 @@ const IKKE_AFHENTET_AARSAG = {
   required: true,
 };
 
+function siden(iso: string): string {
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (min < 60) return `${min} min.`;
+  const t = Math.floor(min / 60);
+  return t < 48 ? `${t} t` : `${Math.floor(t / 24)} dage`;
+}
+
 export const kr = (v: number | string) =>
   Number(v).toLocaleString("da-DK", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " kr";
 
@@ -57,6 +64,7 @@ export default function HandelHandlinger({
   kanFlyttePenge,
   kanSkriveFaelles,
   visAabn = true,
+  sidstPaamindet,
 }: {
   h: HandelTilHandling;
   titel: string;
@@ -68,14 +76,16 @@ export default function HandelHandlinger({
   kanSkriveFaelles: boolean;
   // Link til detaljesiden (ikke på selve detaljesiden).
   visAabn?: boolean;
+  // Hvornår staff sidst skrev til den part, påmindelsen går til (eller null).
+  sidstPaamindet?: string | null;
 }) {
   const aktiv = AKTIVE.includes(h.status);
   // Påmindelse til den part, der skal gøre noget: sælgeren sender, køberen
   // kvitterer for pakken/afhentningen.
   const paamind = haenger
     ? haenger === "ikke_sendt"
-      ? { part: saelger, ...PAAMINDELSE.ikke_sendt, hvem: "sælger" }
-      : { part: koeber, ...PAAMINDELSE[haenger], hvem: "køber" }
+      ? { part: saelger, ...PAAMINDELSE.ikke_sendt, hvem: "sælger", rolle: "saelger" as const }
+      : { part: koeber, ...PAAMINDELSE[haenger], hvem: "køber", rolle: "koeber" as const }
     : null;
   const parter = [
     { label: "Handel", vaerdi: titel },
@@ -96,7 +106,11 @@ export default function HandelHandlinger({
           emne={paamind.emne}
           tekst={paamind.tekst}
           kvittering="Påmindelsen er sendt"
+          paamindelse={{ tradeId: h.id, part: paamind.rolle }}
         />
+      )}
+      {paamind && aktiv && sidstPaamindet && (
+        <span className="text-xs text-tekst-svag">Påmindelse sendt for {siden(sidstPaamindet)}</span>
       )}
       {visAabn && (
         <Link href={`/admin/handler/${h.id}`} className={lilleKnap}>

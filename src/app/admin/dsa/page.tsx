@@ -75,28 +75,36 @@ function byggeHref(p: { fane?: string; vis?: Vis; kategori?: string | null }): s
 export default async function DsaAdminSide({
   searchParams,
 }: {
-  searchParams: Promise<{ fane?: string; vis?: string; kategori?: string }>;
+  searchParams: Promise<{ fane?: string; vis?: string; kategori?: string; nr?: string }>;
 }) {
   const { admin, rolle, userId } = await kraevSideRolle("medarbejder");
   const sp = await searchParams;
   const fane = sp.fane === "klager" || sp.fane === "afsluttede" ? sp.fane : "anmeldelser";
   const vis: Vis = sp.vis === "admin" || sp.vis === "videresendt" || sp.vis === "mine" ? sp.vis : "alle";
   const erAdmin = harMindstRolle(rolle, "admin");
+  // ?nr=ANM-2026-00012 / KLG-2026-00023 (fra søgningen): vis kun den sag.
+  const nr = sp.nr && /^(ANM|KLG)-\d{4}-\d{5}$/.test(sp.nr) ? sp.nr : null;
 
   const [aabneRes, klagerRes, antalKlager, afsAnmRes, afgRes, afsKlagerRes] = await Promise.all([
     admin.from("dsa_anmeldelser").select(ANM_FELTER).eq("status", "ny").order("frist_kl").limit(200),
     fane === "klager"
-      ? admin.from("dsa_klager").select(KLAGE_FELTER).eq("status", "afventer").order("frist_kl").limit(200)
+      ? (nr ? admin.from("dsa_klager").select(KLAGE_FELTER).eq("status", "afventer").eq("sagsnummer", nr) : admin.from("dsa_klager").select(KLAGE_FELTER).eq("status", "afventer").order("frist_kl").limit(200))
       : Promise.resolve({ data: [] as Klage[], error: null }),
     admin.from("dsa_klager").select("id", { count: "exact", head: true }).eq("status", "afventer"),
     fane === "afsluttede"
-      ? admin.from("dsa_anmeldelser").select(ANM_FELTER).eq("status", "afgjort").order("behandlet_kl", { ascending: false }).limit(50)
+      ? nr
+        ? admin.from("dsa_anmeldelser").select(ANM_FELTER).eq("status", "afgjort").eq("sagsnummer", nr)
+        : admin.from("dsa_anmeldelser").select(ANM_FELTER).eq("status", "afgjort").order("behandlet_kl", { ascending: false }).limit(50)
       : Promise.resolve({ data: [] as Anmeldelse[], error: null }),
     fane === "afsluttede"
-      ? admin.from("dsa_afgoerelser").select(AFG_FELTER).order("oprettet_kl", { ascending: false }).limit(50)
+      ? nr
+        ? Promise.resolve({ data: [] as Afgoerelse[], error: null })
+        : admin.from("dsa_afgoerelser").select(AFG_FELTER).order("oprettet_kl", { ascending: false }).limit(50)
       : Promise.resolve({ data: [] as Afgoerelse[], error: null }),
     fane === "afsluttede"
-      ? admin.from("dsa_klager").select(KLAGE_FELTER).eq("status", "afgjort").order("afgjort_kl", { ascending: false }).limit(50)
+      ? nr
+        ? admin.from("dsa_klager").select(KLAGE_FELTER).eq("status", "afgjort").eq("sagsnummer", nr)
+        : admin.from("dsa_klager").select(KLAGE_FELTER).eq("status", "afgjort").order("afgjort_kl", { ascending: false }).limit(50)
       : Promise.resolve({ data: [] as Klage[], error: null }),
   ]);
 
@@ -306,7 +314,9 @@ export default async function DsaAdminSide({
     for (const k of g.kategorier) kategoriTal.set(k, (kategoriTal.get(k) ?? 0) + 1);
   }
   const kategori = sp.kategori && kategoriTal.has(sp.kategori) ? sp.kategori : null;
-  const viste = grupper.filter((g) => passerVis(g, vis) && (!kategori || g.kategorier.includes(kategori)));
+  const viste = grupper.filter(
+    (g) => (nr ? g.anm.some((x) => x.sagsnummer === nr) : passerVis(g, vis) && (!kategori || g.kategorier.includes(kategori))),
+  );
 
   const SEKTIONER: { id: FristNiveau; titel: string }[] = [
     { id: "over", titel: "Over fristen" },
@@ -376,6 +386,14 @@ export default async function DsaAdminSide({
       </AdminSideHoved>
 
       <AnmeldelserFaner aktiv="dsa" rolle={rolle} />
+      {nr && (
+        <p className="flex flex-wrap items-center gap-2 rounded-lg border border-info-kant bg-info-bg px-3 py-2 text-sm text-info-tekst">
+          Viser kun sag {nr}.
+          <Link href={fane === "anmeldelser" ? "/admin/dsa" : `/admin/dsa?fane=${fane}`} className="font-semibold underline">
+            Vis alle
+          </Link>
+        </p>
+      )}
 
       <AdminFilterChips
         label="Ulovligt indhold (DSA)"

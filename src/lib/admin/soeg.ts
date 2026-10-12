@@ -57,6 +57,13 @@ function idSpaend(tekst: string): [string, string] | null {
   return idInterval(tekst);
 }
 
+// Et opslag, der fejler, må ikke bare give "intet fundet" - det logges
+// (uden søgeteksten, som kan være en e-mail), og resten af søgningen kører videre.
+function tjek<T extends { error: { message: string } | null }>(hvad: string, r: T): T {
+  if (r.error) console.error(`Admin-søgning: ${hvad} fejlede:`, r.error.message);
+  return r;
+}
+
 const kr = (v: number | string | null) =>
   v == null ? "" : `${Number(v).toLocaleString("da-DK", { maximumFractionDigits: 2 })} kr`;
 
@@ -68,7 +75,7 @@ export async function soegStaff(admin: Admin, raa: string): Promise<SoegTraef[]>
 
   const id = idSpaend(q);
 
-  const [brugere, handler, sporing, auktioner, auktionerId, sager, dsaAnm, dsaKlager] = await Promise.all([
+  const [brugere, handler, sporing, auktioner, auktionerId, sager, dsaAnm, dsaKlager] = (await Promise.all([
     admin.rpc("admin_brugere_soeg", { p_q: q, p_filter: null, p_graense: MAKS }),
     id
       ? admin.from("trades").select("id, status, amount, auction:auctions(titel)").gte("id", id[0]).lte("id", id[1]).limit(MAKS)
@@ -78,12 +85,12 @@ export async function soegStaff(admin: Admin, raa: string): Promise<SoegTraef[]>
       .select("id, status, amount, auction:auctions(titel)")
       .ilike("tracking_number", m)
       .limit(MAKS),
-    admin.from("auctions").select("id, titel, status").ilike("titel", m).order("created_at", { ascending: false }).limit(MAKS),
+    admin.from("auctions").select("id, titel, status").ilike("titel", m).order("oprettet", { ascending: false }).limit(MAKS),
     id ? admin.from("auctions").select("id, titel, status").gte("id", id[0]).lte("id", id[1]).limit(MAKS) : tom,
     id ? admin.from("sager").select("id, status").gte("id", id[0]).lte("id", id[1]).limit(MAKS) : tom,
     admin.from("dsa_anmeldelser").select("id, sagsnummer, status").ilike("sagsnummer", m).limit(MAKS),
     admin.from("dsa_klager").select("id, sagsnummer, status").ilike("sagsnummer", m).limit(MAKS),
-  ]);
+  ])).map((r, i) => tjek(["brugere", "handler", "sporing", "auktioner", "auktion-id", "sager", "DSA-anmeldelser", "DSA-klager"][i], r));
 
   const ud: SoegTraef[] = [];
   for (const u of (brugere.data ?? []) as { id: string; navn: string | null; email: string; telefon: string | null }[]) {
@@ -120,13 +127,19 @@ export async function soegStaff(admin: Admin, raa: string): Promise<SoegTraef[]>
   for (const s of (sager.data ?? []) as { id: string; status: string }[]) {
     ud.push({ type: "sag", id: s.id, titel: `Sag ${s.id.slice(0, 13)}`, href: adminSagSti(s.id), eksakt: s.id === q.toLowerCase() });
   }
-  for (const d of [...((dsaAnm.data ?? []) as { id: string; sagsnummer: string }[]), ...((dsaKlager.data ?? []) as { id: string; sagsnummer: string }[])]) {
+  for (const d of [
+    ...((dsaAnm.data ?? []) as { id: string; sagsnummer: string; status: string }[]),
+    ...((dsaKlager.data ?? []) as { id: string; sagsnummer: string; status: string }[]),
+  ]) {
+    // Direkte til den konkrete sag (DSA-siden viser kun den med ?nr=).
+    const aaben = d.status === "ny" || d.status === "afventer";
+    const fane = aaben ? (d.sagsnummer.startsWith("KLG") ? "klager" : null) : "afsluttede";
     ud.push({
       type: "dsa",
       id: d.id,
       titel: d.sagsnummer,
-      under: d.sagsnummer.startsWith("KL") ? "Klage over afgørelse" : "Anmeldelse",
-      href: d.sagsnummer.startsWith("ANM") ? "/admin/dsa" : "/admin/dsa?fane=klager",
+      under: `${d.sagsnummer.startsWith("KLG") ? "Klage over afgørelse" : "Anmeldelse"} · ${aaben ? "åben" : "afgjort"}`,
+      href: `/admin/dsa?${fane ? `fane=${fane}&` : ""}nr=${encodeURIComponent(d.sagsnummer)}`,
       eksakt: d.sagsnummer.toLowerCase() === q.toLowerCase(),
     });
   }
@@ -136,20 +149,21 @@ export async function soegStaff(admin: Admin, raa: string): Promise<SoegTraef[]>
 // Erhverv (chef og sælger): firmaer, henvendelser og klager over firmaer.
 export async function soegErhverv(admin: Admin, raa: string): Promise<SoegTraef[]> {
   const q = raa.trim().slice(0, 120);
-  if (q.length < 2) return [];
+  // Et klagenummer kan være ét ciffer ("4"); ellers mindst 2 tegn.
+  if (q.length < 2 && !/^\d$/.test(q)) return [];
   const m = moenster(q);
   const cvr = q.replace(/\D/g, "");
   const nummer = /^#?\d{1,9}$/.test(q) ? Number(q.replace("#", "")) : null;
   const tom = Promise.resolve({ data: [] as never[], error: null });
 
-  const [firmaNavn, firmaCvr, henvNavn, henvEmail, henvCvr, klager] = await Promise.all([
+  const [firmaNavn, firmaCvr, henvNavn, henvEmail, henvCvr, klager] = (await Promise.all([
     admin.from("firmaer").select("id, firmanavn, cvr").ilike("firmanavn", m).limit(MAKS),
     cvr.length >= 4 ? admin.from("firmaer").select("id, firmanavn, cvr").ilike("cvr", `%${cvr}%`).limit(MAKS) : tom,
     admin.from("erhverv_henvendelser").select("id, firmanavn, cvr, status").ilike("firmanavn", m).limit(MAKS),
     admin.from("erhverv_henvendelser").select("id, firmanavn, cvr, status").ilike("email", m).limit(MAKS),
     cvr.length >= 4 ? admin.from("erhverv_henvendelser").select("id, firmanavn, cvr, status").ilike("cvr", `%${cvr}%`).limit(MAKS) : tom,
     nummer !== null ? admin.from("erhverv_klager").select("id, nummer, status").eq("nummer", nummer).limit(1) : tom,
-  ]);
+  ])).map((r, i) => tjek(["firmaer (navn)", "firmaer (CVR)", "henvendelser (navn)", "henvendelser (e-mail)", "henvendelser (CVR)", "klager"][i], r));
 
   const ud: SoegTraef[] = [];
   const f = new Set<string>();

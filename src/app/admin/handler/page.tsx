@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { adminHref } from "@/components/admin/AdminSideskift";
 import { hentStaffTal } from "@/lib/admin/taellere";
+import { sidsteStaffBeskedOmHandel } from "@/lib/admin/paamindelse";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
@@ -260,6 +261,16 @@ export default async function AdminHandler({
       ? antalVist === 1 ? "forsendelse" : "forsendelser"
       : antalVist === 1 ? "handel" : "handler";
 
+  // "Påmindelse sendt for X t siden" på handler, der hænger.
+  const paamindPar = rows
+    .filter((h) => haengerMap.has(h.id))
+    .map((h) => ({ tradeId: h.id, brugerId: haengerMap.get(h.id)!.grund === "ikke_sendt" ? h.seller_id : h.buyer_id }));
+  const sidstPaamindet = await sidsteStaffBeskedOmHandel(supabase, paamindPar);
+  const paamindKl = (h: HandelRow) => {
+    const g = haengerMap.get(h.id);
+    return g ? (sidstPaamindet.get(`${h.id}:${g.grund === "ikke_sendt" ? h.seller_id : h.buyer_id}`) ?? null) : null;
+  };
+
   const faner: AdminFane[] = [
     { id: "haenger", label: "Hænger", href: lavHref("haenger"), antal: antal.haenger, tone: "gul" },
     { id: "fragt", label: "Fragt", href: lavHref("fragt"), antal: antal.fragt, tone: "gul" },
@@ -345,6 +356,7 @@ export default async function AdminHandler({
           returMeldt={returMeldtIds.has(h.id)}
           kanFlyttePenge={kanFlyttePenge}
           kanSkriveFaelles={kanSkriveFaelles}
+          sidstPaamindet={paamindKl(h)}
         />
       ),
     },
