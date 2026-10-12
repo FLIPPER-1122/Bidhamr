@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { nulstilAdgangskode } from "@/app/actions/auth";
+import { useHydreret } from "@/lib/useHydreret";
 
 export default function GlemtAdgangskodePage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [error, setError] = useState<string | null>(null);
   const [sendt, setSendt] = useState(false);
 
@@ -66,7 +69,7 @@ export default function GlemtAdgangskodePage() {
             adgangskode.
           </p>
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <form onSubmit={handleSubmit} method="post" className="mt-6 space-y-4">
             <div>
               <label
                 htmlFor="email"
@@ -94,7 +97,7 @@ export default function GlemtAdgangskodePage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !hydreret}
               aria-busy={loading || undefined}
               className="btn btn-primaer btn-stor w-full"
             >

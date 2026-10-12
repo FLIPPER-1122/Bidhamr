@@ -10,6 +10,7 @@ import { vurderAdgangskode } from "@/lib/adgangskode";
 import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
 import { FELT, FORMULAR_FEJL, LABEL } from "@/components/konto/felter";
 import { ERHVERV_VAELG_ADGANGSKODE as V } from "@/lib/tekster/erhverv";
+import { useHydreret } from "@/lib/useHydreret";
 
 // velkommen: kommer fra velkomstmailen til en ny firmakonto
 // (src/lib/mails/erhverv.ts) - så hedder det "Vælg din adgangskode".
@@ -25,6 +26,8 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
   const [efternavn, setEfternavn] = useState("");
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [error, setError] = useState<string | null>(null);
   const [klar, setKlar] = useState(false);
 
@@ -126,7 +129,7 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
             </p>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <form onSubmit={handleSubmit} method="post" className="mt-6 space-y-4">
             {signup && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -193,7 +196,7 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
 
             <button
               type="submit"
-              disabled={loading || !klar || (!!passwordGentag && password !== passwordGentag)}
+              disabled={loading || !hydreret || !klar || (!!passwordGentag && password !== passwordGentag)}
               aria-busy={loading || undefined}
               className="btn btn-primaer btn-stor w-full"
             >

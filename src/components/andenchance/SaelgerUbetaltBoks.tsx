@@ -19,6 +19,7 @@ import {
   type VarighedDage,
 } from "@/lib/auktionRegler";
 import { dato, kroner } from "./format";
+import { useHydreret } from "@/lib/useHydreret";
 
 const STATUS_TEKST: Record<string, string> = {
   afventer: "Venter på svar",
@@ -192,6 +193,8 @@ function GenopsaetForm({
   const [mitid, setMitid] = useState(false);
   const sti = usePathname();
   const [pending, startTransition] = useTransition();
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
 
   function send(e: React.FormEvent) {
     e.preventDefault();
@@ -208,7 +211,7 @@ function GenopsaetForm({
   }
 
   return (
-    <form onSubmit={send} className="mt-5 space-y-4 rounded-xl border border-kant bg-groen-lys p-4">
+    <form onSubmit={send} method="post" className="mt-5 space-y-4 rounded-xl border border-kant bg-groen-lys p-4">
       <p className="text-sm text-tekst-daempet">
         Varen sættes op som en ny auktion. Det er gratis.
       </p>
@@ -256,7 +259,7 @@ function GenopsaetForm({
       )}
       {mitid && <MitIDKnap retur={sti} />}
       <div className="flex flex-col gap-2 sm:flex-row">
-        <button type="submit" disabled={pending} className="btn btn-primaer w-full sm:w-auto">
+        <button type="submit" disabled={pending || !hydreret} className="btn btn-primaer w-full sm:w-auto">
           {pending ? "Sætter op…" : "Sæt varen op igen"}
         </button>
         <button type="button" onClick={onAnnuller} disabled={pending} className="btn btn-tekst w-full sm:w-auto">

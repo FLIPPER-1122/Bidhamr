@@ -89,7 +89,7 @@ export default function AabnChatKnap({
               Brugeren får besked og kan svare under Beskeder, indtil du afslutter chatten.
             </p>
 
-            <form onSubmit={opret} className="mt-4 space-y-4">
+            <form onSubmit={opret} method="post" className="mt-4 space-y-4">
               {fejl && (
                 <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
                   {fejl}

@@ -238,7 +238,7 @@ export default function ConfirmDialog({
               </dl>
             )}
 
-            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+            <form onSubmit={handleSubmit} method="post" className="mt-4 space-y-4">
               {fejl && (
                 <p role="alert" className="rounded-lg border border-fejl-kant bg-fejl-bg px-3 py-2 text-sm text-fejl-tekst">
                   {fejl}

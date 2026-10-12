@@ -20,6 +20,7 @@ import {
 import BilledVaelger, { KATEGORI_FELTER, useFrigivPreviews, type KategoriFelt } from "./BilledVaelger";
 import { uploadBilleder, type ValgtBillede } from "./sagUpload";
 import { sagTid } from "./visning";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Korte forklaringer under hver type.
 const TYPE_HJAELP: Record<SagType, string> = {
@@ -47,6 +48,8 @@ export default function OpretSagForm({
   const [beskrivelse, setBeskrivelse] = useState("");
   const [billeder, setBilleder] = useState<ValgtBillede[]>([]);
   const [sender, setSender] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fremskridt, setFremskridt] = useState<string | null>(null);
   const [fejl, setFejl] = useState<string | null>(null);
   const laas = useRef(false);
@@ -162,7 +165,7 @@ export default function OpretSagForm({
           {muligheder.fristKl && <> Frist: {sagTid(muligheder.fristKl)}.</>}
         </p>
         {beskyttelseInfo && <div className="mt-4">{beskyttelseInfo}</div>}
-        <form onSubmit={send} className="mt-5 space-y-6" noValidate>
+        <form onSubmit={send} method="post" className="mt-5 space-y-6" noValidate>
           <fieldset>
             <legend className="text-sm font-semibold text-tekst">Hvad drejer sagen sig om?</legend>
             <div className="mt-2 space-y-2">
@@ -254,7 +257,7 @@ export default function OpretSagForm({
             >
               Annullér
             </button>
-            <button type="submit" disabled={sender} aria-busy={sender} className="btn btn-primaer">
+            <button type="submit" disabled={sender || !hydreret} aria-busy={sender} className="btn btn-primaer">
               {sender && <span className="btn-spinner" aria-hidden="true" />}
               Opret sag
             </button>

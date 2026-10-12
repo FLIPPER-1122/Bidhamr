@@ -13,6 +13,7 @@ import {
 } from "@/app/actions/staffChat";
 import { STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
 import { BidhamrMaerke, LUKKET_TEKST, beskedTid } from "@/components/staffchat/visning";
+import { useHydreret } from "@/lib/useHydreret";
 
 function flet(a: StaffBesked[], b: StaffBesked[]): StaffBesked[] {
   const m = new Map<string, StaffBesked>();
@@ -37,6 +38,8 @@ export default function StaffChatBruger({
   const [lukketLokalt, setLukketLokalt] = useState(false);
   const [tekst, setTekst] = useState("");
   const [sender, setSender] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
   const bundRef = useRef<HTMLLIElement>(null);
   const feltId = useId();
@@ -154,7 +157,7 @@ export default function StaffChatBruger({
           {LUKKET_TEKST}
         </div>
       ) : (
-        <form onSubmit={send} className="border-t border-kant p-4 sm:px-5">
+        <form onSubmit={send} method="post" className="border-t border-kant p-4 sm:px-5">
           <label htmlFor={feltId} className="sr-only">
             Skriv et svar til BidHamr
           </label>
@@ -172,7 +175,7 @@ export default function StaffChatBruger({
             />
             <button
               type="submit"
-              disabled={sender || !tekst.trim()}
+              disabled={sender || !hydreret || !tekst.trim()}
               aria-busy={sender}
               className="btn btn-primaer w-full sm:w-auto"
             >

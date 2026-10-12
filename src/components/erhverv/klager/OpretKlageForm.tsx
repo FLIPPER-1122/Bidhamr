@@ -18,6 +18,7 @@ import {
   type KlageKategori,
 } from "@/lib/erhverv/klager";
 import { KLAGE_KATEGORI_HJAELP, KLAGE_KATEGORI_NAVN, KLAGE_KOEBER as T } from "@/lib/tekster/erhvervKlager";
+import { useHydreret } from "@/lib/useHydreret";
 
 type Kat = "andet";
 const FELTER: KategoriFelt<Kat>[] = [
@@ -32,6 +33,8 @@ export default function OpretKlageForm({ tradeId, koeberId }: { tradeId: string;
   const [beskrivelse, setBeskrivelse] = useState("");
   const [billeder, setBilleder] = useState<ValgtBillede<Kat>[]>([]);
   const [sender, setSender] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fremskridt, setFremskridt] = useState<string | null>(null);
   const [fejl, setFejl] = useState<string | null>(null);
   const [sendt, setSendt] = useState(false);
@@ -110,7 +113,7 @@ export default function OpretKlageForm({ tradeId, koeberId }: { tradeId: string;
   }
 
   return (
-    <form onSubmit={send} className="space-y-6" noValidate aria-labelledby={`${id}-titel`}>
+    <form onSubmit={send} method="post" className="space-y-6" noValidate aria-labelledby={`${id}-titel`}>
       <h3 id={`${id}-titel`} className="sr-only">
         {T.titel}
       </h3>
@@ -202,7 +205,7 @@ export default function OpretKlageForm({ tradeId, koeberId }: { tradeId: string;
         >
           {T.knapAnnuller}
         </button>
-        <button type="submit" disabled={sender} aria-busy={sender} className="btn btn-primaer">
+        <button type="submit" disabled={sender || !hydreret} aria-busy={sender} className="btn btn-primaer">
           {sender && <span className="btn-spinner" aria-hidden="true" />}
           {T.knapSend}
         </button>

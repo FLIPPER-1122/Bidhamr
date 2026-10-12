@@ -5,6 +5,7 @@ import { rapporter } from "@/app/actions/tryghed";
 import { rapporterBedoemmelse } from "@/app/actions/bedoemmelser";
 import { RAPPORT_BESKRIVELSE_MAKS, RAPPORT_KATEGORIER } from "@/lib/tryghed";
 import { BEDOEMMELSE_RAPPORT_KATEGORIER, type BedoemmelseDel } from "@/lib/bedoemmelser";
+import { useHydreret } from "@/lib/useHydreret";
 
 // "Rapportér" ved en chatbesked, på en profil eller ved en bedømmelse/et svar
 // fra sælger. Rapporter af beskeder/profiler lander i admin under Rapporter ->
@@ -33,6 +34,8 @@ export default function RapporterDialog({
   const [kategori, setKategori] = useState("");
   const [beskrivelse, setBeskrivelse] = useState("");
   const [sender, setSender] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
   const [sendt, setSendt] = useState(false);
 
@@ -120,7 +123,7 @@ export default function RapporterDialog({
                 <p className="mt-1 text-sm text-tekst-daempet">
                   Fortæl os, hvad der er galt, så kigger en medarbejder på det.
                 </p>
-                <form onSubmit={send} className="mt-4 space-y-4">
+                <form onSubmit={send} method="post" className="mt-4 space-y-4">
                   <fieldset className="space-y-2">
                     <legend className="text-sm font-medium text-tekst">Hvad drejer det sig om?</legend>
                     {kategorier.map((k) => (
@@ -169,7 +172,7 @@ export default function RapporterDialog({
                     <button type="button" onClick={luk} disabled={sender} className="btn btn-sekundaer">
                       Annullér
                     </button>
-                    <button type="submit" disabled={sender} className="btn btn-primaer">
+                    <button type="submit" disabled={sender || !hydreret} className="btn btn-primaer">
                       {sender ? "Sender…" : "Send rapport"}
                     </button>
                   </div>

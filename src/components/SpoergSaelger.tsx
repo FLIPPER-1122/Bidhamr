@@ -21,6 +21,7 @@ import {
   SPOERGSMAAL_SLAAET_FRA,
   type SpoergsmaalVisning,
 } from "@/lib/spoergsmaal";
+import { useHydreret } from "@/lib/useHydreret";
 
 // "Spørg sælger" på auktionssiden. Spørgsmål og svar er offentlige og vises
 // kun med fornavn + initial. Al kontrol sker igen i databasen.
@@ -93,6 +94,8 @@ export default function SpoergSaelger({
   const [sender, startSend] = useTransition();
   const [modtager, setModtager] = useState(aktiv);
   const [skifter, startSkift] = useTransition();
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [skiftFejl, setSkiftFejl] = useState<string | null>(null);
   // Gammel fane: serveren svarer, at auktionen er låst (der er budt, siden
   // siden blev åbnet). Kontakten skjules, og låst-beskeden vises med link.
@@ -212,7 +215,7 @@ export default function SpoergSaelger({
           Du kan ikke stille spørgsmål til denne sælger.
         </p>
       ) : (
-        <form onSubmit={send} className="mt-3" noValidate>
+        <form onSubmit={send} method="post" className="mt-3" noValidate>
           <label htmlFor="nyt-spoergsmaal" className="mb-1.5 block text-sm font-medium text-tekst">
             Dit spørgsmål
           </label>
@@ -242,7 +245,7 @@ export default function SpoergSaelger({
           )}
           <button
             type="submit"
-            disabled={sender || tekst.trim().length < MIN_SPOERGSMAAL}
+            disabled={sender || !hydreret || tekst.trim().length < MIN_SPOERGSMAAL}
             aria-busy={sender}
             className={`${primaer} mt-3 w-full sm:w-auto`}
           >
@@ -299,6 +302,8 @@ function SpoergsmaalPunkt({
   const [regel, setRegel] = useState("chikane");
   const [skjulFejl, setSkjulFejl] = useState<string | null>(null);
   const [skjuler, startSkjul] = useTransition();
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
 
   const kontaktAdvarsel = svar.length > 0 && indeholderKontaktinfo(svar);
   const svarId = `svar-${q.id}`;
@@ -402,7 +407,7 @@ function SpoergsmaalPunkt({
       )}
 
       {kanSvare && (
-        <form onSubmit={besvar} className="mt-3" noValidate>
+        <form onSubmit={besvar} method="post" className="mt-3" noValidate>
           <label htmlFor={svarId} className="mb-1.5 block text-sm font-medium text-tekst">
             Dit svar
           </label>
@@ -422,7 +427,7 @@ function SpoergsmaalPunkt({
           {fejl && <Fejltekst>{fejl}</Fejltekst>}
           <button
             type="submit"
-            disabled={sender || !svar.trim()}
+            disabled={sender || !hydreret || !svar.trim()}
             aria-busy={sender}
             className={`${sekundaer} mt-2 w-full sm:w-auto`}
           >
@@ -440,7 +445,7 @@ function SpoergsmaalPunkt({
               Vis spørgsmålet igen
             </button>
           ) : skjulAaben ? (
-            <form onSubmit={skjul} noValidate>
+            <form onSubmit={skjul} method="post" noValidate>
               <label htmlFor={`regel-${q.id}`} className="mb-1.5 block text-sm font-medium text-tekst">
                 Hvilken regel bryder det?
               </label>
@@ -467,7 +472,7 @@ function SpoergsmaalPunkt({
                 className={`${felt} h-11 py-0`}
               />
               <div className="mt-2 flex flex-wrap gap-2">
-                <button type="submit" disabled={skjuler} className={sekundaer}>
+                <button type="submit" disabled={skjuler || !hydreret} className={sekundaer}>
                   {skjuler && <Spinner />}
                   Skjul
                 </button>

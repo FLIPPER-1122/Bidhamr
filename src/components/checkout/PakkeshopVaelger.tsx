@@ -9,6 +9,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type K
 import { soegPakkeshopsAction } from "@/app/actions/fragt";
 import type { Pakkeshop } from "@/lib/fragt/types";
 import Ikon from "@/components/Ikon";
+import { useHydreret } from "@/lib/useHydreret";
 
 const PakkeshopKort = dynamic(() => import("@/components/checkout/PakkeshopKort"), {
   ssr: false,
@@ -61,6 +62,8 @@ export default function PakkeshopVaelger({
   const [soegt, setSoegt] = useState<{ postnummer: string; adresse: string | null } | null>(null);
   const [markeret, setMarkeret] = useState<string | null>(valgt?.id ?? null);
   const [henter, setHenter] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
   // Mobil: liste eller kort (begge vises fra lg).
   const [visning, setVisning] = useState<"liste" | "kort">("liste");
@@ -190,7 +193,7 @@ export default function PakkeshopVaelger({
               <span className="sr-only">Luk</span>
             </button>
           </div>
-          <form onSubmit={onSubmit} role="search" className="mt-3 flex gap-2">
+          <form onSubmit={onSubmit} method="post" role="search" className="mt-3 flex gap-2">
             <label htmlFor={`${id}-soeg`} className="sr-only">
               Adresse eller postnummer
             </label>
@@ -206,7 +209,7 @@ export default function PakkeshopVaelger({
               aria-describedby={fejl ? `${id}-fejl` : undefined}
               className="h-11 min-w-0 flex-1 rounded-xl border border-kant-staerk bg-white px-4 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
             />
-            <button type="submit" disabled={henter} aria-busy={henter || undefined} className="btn btn-primaer shrink-0 px-4">
+            <button type="submit" disabled={henter || !hydreret} aria-busy={henter || undefined} className="btn btn-primaer shrink-0 px-4">
               {henter && <span className="btn-spinner" aria-hidden="true" />}
               <Ikon navn="soeg" className="h-[18px] w-[18px]" />
               <span className="max-sm:sr-only">Søg</span>

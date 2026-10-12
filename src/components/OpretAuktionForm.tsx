@@ -54,6 +54,7 @@ import {
   tekstfeltKlasse,
   type Billede,
 } from "@/components/opret/formular";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Opret auktion i sektioner: billeder, titel/beskrivelse, kategori og stand,
 // pris og varighed, levering, spørgsmål - og en forhåndsvisning, før den
@@ -197,6 +198,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
   const [forsoegt, setForsoegt] = useState(false);
   const [visForhaandsvisning, setVisForhaandsvisning] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -581,7 +584,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
 
   // ------------------------------------------------------------ formular
   return (
-    <form onSubmit={visForhaand} noValidate className="space-y-5">
+    <form onSubmit={visForhaand} method="post" noValidate className="space-y-5">
       {visKladdeBanner && (
         <div className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
           <p className="font-semibold">Du har en kladde, der ikke er oprettet.</p>
@@ -879,7 +882,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
       )}
 
       <div className="sticky bottom-[var(--samtykke-hoejde,0px)] -mx-4 border-t border-kant bg-white p-4 sm:static sm:mx-0 sm:border-0 sm:p-0">
-        <button type="submit" className={`${primaerKnap} sm:w-full`}>
+        <button type="submit" disabled={!hydreret} className={`${primaerKnap} sm:w-full`}>
           Se forhåndsvisning
         </button>
         <p className="mt-2 text-center text-[13px] text-tekst-svag">

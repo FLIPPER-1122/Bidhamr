@@ -41,7 +41,7 @@ function GemKortForm({ onAnnuller }: { onAnnuller: () => void }) {
   }
 
   return (
-    <form onSubmit={gem} className="space-y-4 rounded-xl border border-kant p-4">
+    <form onSubmit={gem} method="post" className="space-y-4 rounded-xl border border-kant p-4">
       <PaymentElement options={{ layout: "tabs" }} />
       {fejl && <FejlBoks tekst={fejl} />}
       <div className="flex flex-col gap-2 sm:flex-row">

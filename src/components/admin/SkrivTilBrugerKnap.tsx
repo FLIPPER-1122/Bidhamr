@@ -149,7 +149,7 @@ export default function SkrivTilBrugerKnap({
               {brugerNavn} får beskeden i staff-chatten og en notifikation, og kan svare under Beskeder.
             </p>
 
-            <form onSubmit={send} className="mt-4 space-y-4">
+            <form onSubmit={send} method="post" className="mt-4 space-y-4">
               {fejl && (
                 <p role="alert" className="rounded-lg border border-fejl-kant bg-fejl-bg px-3 py-2 text-sm text-fejl-tekst">
                   {fejl}

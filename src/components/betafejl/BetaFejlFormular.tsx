@@ -246,7 +246,7 @@ export default function BetaFejlFormular({ brugerId, onLuk }: { brugerId: string
             </div>
           </div>
         ) : (
-          <form onSubmit={send} noValidate className="flex min-h-0 flex-1 flex-col">
+          <form onSubmit={send} method="post" noValidate className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
               {fejl && (
                 <p

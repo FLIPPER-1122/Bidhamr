@@ -41,6 +41,7 @@ import {
   tekstfeltKlasse,
   type Billede,
 } from "@/components/opret/formular";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Samme felter og byggesten som OpretAuktionForm. Postnummer og varighed kan
 // ikke ændres. Nye billeder klargøres (HEIC -> JPEG, maks 2000 px) og uploades
@@ -103,6 +104,8 @@ export default function RedigerAuktionForm({
   const kraeverGpsr = erFirma && stand === "ny_med_maerke";
   const gpsr = kraeverGpsr ? gpsrFejl(producent, sikkerhed) : null;
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Gammel fane: der er budt, siden siden blev åbnet. Serveren afviser, og
@@ -246,7 +249,7 @@ export default function RedigerAuktionForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+    <form onSubmit={handleSubmit} method="post" noValidate className="space-y-5">
       <p className="rounded-xl border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
         Du kan ændre auktionen, indtil der kommer det første bud. Varigheden og postnummeret kan ikke ændres.
       </p>
@@ -381,7 +384,7 @@ export default function RedigerAuktionForm({
         </p>
       )}
 
-      <button type="submit" disabled={loading} aria-busy={loading} className={`${primaerKnap} sm:w-full`}>
+      <button type="submit" disabled={loading || !hydreret} aria-busy={loading} className={`${primaerKnap} sm:w-full`}>
         {loading && <Spinner />}
         Gem ændringer
       </button>

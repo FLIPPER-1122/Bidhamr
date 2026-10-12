@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useHydreret } from "@/lib/useHydreret";
 
 const GENERISK_FEJL = "Vi kunne ikke skrive dig op lige nu. Prøv igen om lidt.";
 
 export default function WaitlistForm() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -52,7 +55,7 @@ export default function WaitlistForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-8 max-w-md">
+    <form onSubmit={handleSubmit} method="post" className="mt-8 max-w-md">
       <div className="flex flex-col gap-2.5 sm:flex-row">
         <label htmlFor="email" className="sr-only">
           E-mail
@@ -77,7 +80,7 @@ export default function WaitlistForm() {
         />
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !hydreret}
           aria-busy={loading}
           className="btn btn-primaer btn-stor shrink-0"
         >

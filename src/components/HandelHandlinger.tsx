@@ -13,6 +13,7 @@ import {
   PAKKE_MAKS_BILLEDER,
   type PakkeBilledeKategori,
 } from "@/lib/pakkebilleder";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Pakkebilleder (ROADMAP-BESLUTNINGER: "Pakkebilleder (krævet)"): de
 // dokumenterer indpakningen og bruges af BidHamr i sager. Mobilen åbner
@@ -49,6 +50,8 @@ export function SendPakkeForm({
   const [fejl, setFejl] = useState<string | null>(null);
   const [fremskridt, setFremskridt] = useState<string | null>(null);
   const [sender, setSender] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const laas = useRef(false);
   useFrigivPreviews(billeder);
 
@@ -95,7 +98,7 @@ export function SendPakkeForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} method="post" className="space-y-4">
       <div className="rounded-lg bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
         <p className="font-medium text-tekst">Sådan pakker du godt</p>
         <ul className="mt-1 list-disc space-y-0.5 pl-5">
@@ -146,7 +149,7 @@ export function SendPakkeForm({
       )}
       <button
         type="submit"
-        disabled={sender || !klar}
+        disabled={sender || !hydreret || !klar}
         className="btn btn-primaer"
       >
         {sender ? "Gemmer…" : "Marker som sendt"}

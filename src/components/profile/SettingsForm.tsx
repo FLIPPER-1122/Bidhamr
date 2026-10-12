@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import AvatarUpload from "@/components/profile/AvatarUpload";
+import { useHydreret } from "@/lib/useHydreret";
 
 // Samme rensning som ved oprettelse (renNavn i actions/auth.ts).
 function renset(v: string): string {
@@ -44,6 +45,8 @@ export default function SettingsForm({
   const [telefon, setTelefon] = useState(initialTelefon ?? "");
   const [adresse, setAdresse] = useState(initialAdresse ?? "");
   const [loading, setLoading] = useState(false);
+  // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
+  const hydreret = useHydreret();
   const [error, setError] = useState<string | null>(null);
   const [gemt, setGemt] = useState(false);
 
@@ -119,7 +122,7 @@ export default function SettingsForm({
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      <form onSubmit={handleSubmit} method="post" className="space-y-4" noValidate>
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-tekst">
           E-mail
@@ -215,7 +218,7 @@ export default function SettingsForm({
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || !hydreret}
         aria-busy={loading || undefined}
         className="btn btn-primaer w-full sm:w-auto"
       >
