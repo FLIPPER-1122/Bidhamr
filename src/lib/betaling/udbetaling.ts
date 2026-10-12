@@ -172,7 +172,7 @@ const AFREGNING_OK = new Set([
   "venter_paa_bank",
   "allerede_udbetalt",
   // Sikkerhedsnet A (20261019010000): handlen er færdig, men udbetalingen
-  // venter på erhvervets fortrydelsesfrist, chefens godkendelse (over
+  // venter på erhvervets fortrydelsesfrist, chefens godkendelse (fra
   // 10.000 kr.) eller et nødstop.
   "fortrydelsesfrist",
   "kraever_godkendelse",

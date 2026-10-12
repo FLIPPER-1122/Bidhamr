@@ -883,7 +883,7 @@ const FRIGIV_FEJL: Record<string, string> = {
   sag_aaben: "Handlen er markeret som sag. Luk sagen først, hvis pengene skal frigives.",
   sag: AABEN_KOEBERSAG,
   ikke_afhentet: "Pakken er ikke afhentet eller er sendt retur, så pengene kan ikke frigives.",
-  kraever_chef: "Handler over 5.000 kr. kan kun frigives af chefen.",
+  kraever_chef: "Handler fra 10.000 kr. kan kun frigives af chefen.",
 };
 
 // Afregn saelgeren uden koeberens godkendelse. Kun admin og opefter.
@@ -912,7 +912,8 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
 
   // Databasen afgør alt under lås (20261019010000): inhabilitet (også "har
   // handlet med"), intet afsendt, staffs markering, sag/anke, svindelvarsel,
-  // ikke-afhentet/returneret pakke, indsigelse og chef over 5.000 kr.
+  // ikke-afhentet/returneret pakke, indsigelse og chef fra 10.000 kr.
+  // (købers samlede betaling, public.chef_beloebsgraense_oere()).
   const { data: svar, error } = await admin.rpc("admin_frigiv_handel", {
     p_trade: tradeId,
     p_medarbejder: staffId,
@@ -923,12 +924,12 @@ async function handelFrigivImpl(formData: FormData): Promise<void> {
   if (frigiv.kode !== "ok") {
     throw new BrugerFejl(FRIGIV_FEJL[frigiv.kode ?? ""] ?? "Handlen kan ikke frigives.");
   }
-  // Admin-frigivelse over 5.000 kr. (kun chef kan): drift-alarm til chefen.
+  // Admin-frigivelse fra 10.000 kr. (kun chef kan): drift-alarm til chefen.
   if (frigiv.over_graense) {
     await logDriftFejl({
       kilde: "action",
       hvor: "betaling/admin-frigivelse",
-      fejl: `Handel ${tradeId} er frigivet til sælgeren af BidHamr (over 5.000 kr.) uden købers godkendelse. Kontrollér, at det er rigtigt.`,
+      fejl: `Handel ${tradeId} er frigivet til sælgeren af BidHamr (10.000 kr. eller mere) uden købers godkendelse. Kontrollér, at det er rigtigt.`,
       brugerId: handel.seller_id,
     });
   }
@@ -1259,7 +1260,7 @@ const OVERFOERSEL_TEKST: Record<string, string> = {
   frosset: "Sælgerens udbetalinger er frosset, til chefen har set på kontoen (Admin → Penge).",
   venter_udbetalinger_stoppet: "Udbetalinger er stoppet med nødstoppet under Admin → Penge.",
   venter_udbetaling_frosset: "Sælgerens udbetalinger er frosset, til chefen har set på kontoen (Admin → Penge).",
-  venter_kraever_godkendelse: "Udbetalingen er over 10.000 kr. og skal godkendes af chefen under Admin → Penge.",
+  venter_kraever_godkendelse: "Udbetalingen er på 10.000 kr. eller mere og skal godkendes af chefen under Admin → Penge.",
   venter_fortrydelsesfrist: "Sælgeren er erhverv. Udbetalingen venter, til købers fortrydelsesfrist (14 dage efter levering) er udløbet.",
   venter_sag: "Handlen har en sag eller anke, der holder pengene.",
   venter_ikke_afhentet: "Pakken blev ikke afhentet, og der udbetales ikke.",
