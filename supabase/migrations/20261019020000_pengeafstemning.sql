@@ -110,6 +110,7 @@ create table if not exists public.penge_afstemning_afvigelser (
                        'ukendt_gebyr',           -- application fee uden betaling i databasen
                        'refusion_udenom',        -- refusion lavet uden for BidHamr (dashboardet)
                        'refusion_beloeb',        -- refunderet i alt hos Stripe <> det, databasen forventer
+                       'refusion_haenger',       -- en refusion/dækning har været "i gang" i over et døgn
                        'tilbagefoersel_udenom',  -- transfer reversal uden for BidHamr
                        'udbetaling_ukendt',      -- payout på sælgerkonto, som BidHamr ikke har lavet
                        'udbetaling_afviger',     -- payout-beløb/status <> saelger_udbetalinger
@@ -141,14 +142,18 @@ create table if not exists public.penge_afstemning_afvigelser (
 -- ændrer sig bagefter (gebyrsum: differencen). Ellers forbliver den løst.
 alter table public.penge_afstemning_afvigelser
   add column if not exists loest_beloeb_stripe_oere bigint,
-  add column if not exists loest_beloeb_db_oere     bigint;
+  add column if not exists loest_beloeb_db_oere     bigint,
+  -- Tilstandsfingeraftryk (fx "paid|oprettet" for en payout eller dispute-
+  -- status): et statusskift med samme beløb genåbner også en løst afvigelse.
+  add column if not exists tilstand                 text check (tilstand is null or char_length(tilstand) <= 200),
+  add column if not exists loest_tilstand           text;
 
 -- Typerne (også på en tabel, der findes fra en tidligere kørsel).
 alter table public.penge_afstemning_afvigelser drop constraint if exists penge_afstemning_afvigelser_type_check;
 alter table public.penge_afstemning_afvigelser add constraint penge_afstemning_afvigelser_type_check
   check (type in (
     'ukendt_betaling', 'betaling_status', 'betaling_beloeb', 'gebyr', 'ukendt_gebyr',
-    'refusion_udenom', 'refusion_beloeb', 'tilbagefoersel_udenom', 'udbetaling_ukendt',
+    'refusion_udenom', 'refusion_beloeb', 'refusion_haenger', 'tilbagefoersel_udenom', 'udbetaling_ukendt',
     'udbetaling_afviger', 'udbetaling_mangler', 'udbetaling_negativ', 'abonnement_indsigelse', 'ukendt_indsigelse',
     'gebyrsum'));
 
@@ -311,11 +316,15 @@ grant execute on function public.penge_afstemning_afslut(bigint, boolean, text, 
 -- ---------------------------------------------------------------------
 -- Svar:
 --   'ny'        første gang - giv drift-alarm (evt. med webhookens nøgle)
---   'genaabnet' var markeret løst, men beløbene er ændret siden (gebyrsum:
---               differencen) - giv drift-alarm med afstemningens egen nøgle
---   'kendt'     åben og kendt, eller løst med uændrede beløb (forbliver løst -
---               kun "sidst set" og antal opdateres). Ingen alarm.
--- (Ældre udgave returnerede boolean - fjernes.)
+--   'genaabnet' var markeret løst, men beløbene eller tilstanden (p_tilstand,
+--               fx payout- eller dispute-status) er ændret siden - giv
+--               drift-alarm med afstemningens egen nøgle
+--   'kendt'     åben og kendt, eller løst med uændrede beløb og tilstand
+--               (forbliver løst - kun "sidst set" og antal opdateres). Ingen alarm.
+-- gebyrsum genåbnes aldrig, når den er løst: summen ændrer sig, hver gang et
+-- gebyr glider ind i eller ud af 30-dages-vinduet (falske genåbninger), og
+-- hvert enkelt gebyr afstemmes alligevel under sin egen nøgle (gebyr:<id>).
+-- (Ældre udgaver uden p_tilstand / med boolean-svar fjernes.)
 drop function if exists public.penge_afvigelse_registrer(bigint, text, text, text, uuid, text, text, bigint, bigint);
 create or replace function public.penge_afvigelse_registrer(
   p_koersel      bigint,
@@ -326,15 +335,18 @@ create or replace function public.penge_afvigelse_registrer(
   p_stripe_konto text,
   p_beskrivelse  text,
   p_beloeb_stripe bigint,
-  p_beloeb_db    bigint)
+  p_beloeb_db    bigint,
+  p_tilstand     text)
 returns text
 language plpgsql
 security definer
 set search_path = ''
 as $fn$
 declare
-  a       record;
+  a         record;
   v_aendret boolean;
+  v_tilst   text := left(nullif(btrim(coalesce(p_tilstand, '')), ''), 200);
+  v_beskr   text := left(coalesce(nullif(btrim(p_beskrivelse), ''), p_type), 1000);
 begin
   if p_noegle is null or char_length(p_noegle) not between 1 and 200 then
     raise exception 'penge_afvigelse_registrer: ugyldig nøgle';
@@ -343,13 +355,13 @@ begin
   if not found then
     insert into public.penge_afstemning_afvigelser (
       noegle, type, stripe_id, betaling_id, stripe_konto, beskrivelse,
-      beloeb_stripe_oere, beloeb_db_oere, foerste_koersel_id, sidste_koersel_id)
+      beloeb_stripe_oere, beloeb_db_oere, tilstand, foerste_koersel_id, sidste_koersel_id)
     values (
       p_noegle, p_type, left(p_stripe_id, 200),
       -- En betaling, der ikke findes, gemmes ikke som reference.
       (select b.id from public.betalinger b where b.id = p_betaling),
-      left(p_stripe_konto, 100), left(coalesce(nullif(btrim(p_beskrivelse), ''), p_type), 1000),
-      p_beloeb_stripe, p_beloeb_db, p_koersel, p_koersel)
+      left(p_stripe_konto, 100), v_beskr,
+      p_beloeb_stripe, p_beloeb_db, v_tilst, p_koersel, p_koersel)
     on conflict (noegle) do nothing;
     if found then return 'ny'; end if;
     -- En samtidig kørsel nåede først (claimet forhindrer det normalt).
@@ -357,13 +369,10 @@ begin
   end if;
 
   if a.loest_kl is not null then
-    v_aendret := case
-      when a.type = 'gebyrsum' then
-        (coalesce(p_beloeb_stripe, 0) - coalesce(p_beloeb_db, 0))
-          is distinct from (coalesce(a.loest_beloeb_stripe_oere, 0) - coalesce(a.loest_beloeb_db_oere, 0))
-      else p_beloeb_stripe is distinct from a.loest_beloeb_stripe_oere
-        or p_beloeb_db is distinct from a.loest_beloeb_db_oere
-    end;
+    v_aendret := a.type <> 'gebyrsum'
+      and (   p_beloeb_stripe is distinct from a.loest_beloeb_stripe_oere
+           or p_beloeb_db is distinct from a.loest_beloeb_db_oere
+           or v_tilst is distinct from a.loest_tilstand);
     if not v_aendret then
       update public.penge_afstemning_afvigelser
          set sidst_set_kl = now(), sidste_koersel_id = p_koersel, antal_set = antal_set + 1
@@ -372,8 +381,8 @@ begin
     end if;
     update public.penge_afstemning_afvigelser
        set sidst_set_kl = now(), sidste_koersel_id = p_koersel, antal_set = antal_set + 1,
-           beskrivelse = left(coalesce(nullif(btrim(p_beskrivelse), ''), p_type), 1000),
-           beloeb_stripe_oere = p_beloeb_stripe, beloeb_db_oere = p_beloeb_db,
+           beskrivelse = v_beskr,
+           beloeb_stripe_oere = p_beloeb_stripe, beloeb_db_oere = p_beloeb_db, tilstand = v_tilst,
            foerste_koersel_id = p_koersel,
            loest_kl = null, loest_af = null
      where id = a.id;
@@ -382,15 +391,15 @@ begin
 
   update public.penge_afstemning_afvigelser
      set sidst_set_kl = now(), sidste_koersel_id = p_koersel, antal_set = antal_set + 1,
-         beskrivelse = left(coalesce(nullif(btrim(p_beskrivelse), ''), p_type), 1000),
-         beloeb_stripe_oere = p_beloeb_stripe, beloeb_db_oere = p_beloeb_db
+         beskrivelse = v_beskr,
+         beloeb_stripe_oere = p_beloeb_stripe, beloeb_db_oere = p_beloeb_db, tilstand = v_tilst
    where id = a.id;
   return 'kendt';
 end;
 $fn$;
 
-revoke all on function public.penge_afvigelse_registrer(bigint, text, text, text, uuid, text, text, bigint, bigint) from public, anon, authenticated;
-grant execute on function public.penge_afvigelse_registrer(bigint, text, text, text, uuid, text, text, bigint, bigint) to service_role;
+revoke all on function public.penge_afvigelse_registrer(bigint, text, text, text, uuid, text, text, bigint, bigint, text) from public, anon, authenticated;
+grant execute on function public.penge_afvigelse_registrer(bigint, text, text, text, uuid, text, text, bigint, bigint, text) to service_role;
 
 -- Chefen markerer en afvigelse løst (note kræves). Kun chef.
 create or replace function public.admin_penge_afvigelse_loes(p_chef uuid, p_id uuid, p_note text)
@@ -410,7 +419,8 @@ begin
      set loest_kl = now(), loest_af = p_chef, loest_note = v_note,
          -- Beløbene nu: genåbnes kun, hvis de ændrer sig (penge_afvigelse_registrer).
          loest_beloeb_stripe_oere = beloeb_stripe_oere,
-         loest_beloeb_db_oere = beloeb_db_oere
+         loest_beloeb_db_oere = beloeb_db_oere,
+         loest_tilstand = tilstand
    where id = p_id and loest_kl is null;
   get diagnostics n = row_count;
   if n = 0 then return 'ikke_fundet'; end if;

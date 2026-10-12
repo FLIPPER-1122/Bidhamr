@@ -24,6 +24,13 @@ export const runtime = "nodejs";
 // Afstemningens tidsbudget (180 s minus Stripe-timeout) ligger inden for.
 export const maxDuration = 300;
 
+// "<url>/fail" o.l.: endelsen på stien - query-strengen bevares.
+function medEndelse(u: URL, endelse: string): string {
+  const ny = new URL(u.toString());
+  ny.pathname = `${ny.pathname.replace(/\/+$/, "")}/${endelse}`;
+  return ny.toString();
+}
+
 // ok = fuldstændig kørsel uden fejlede trin -> "<url>"; fejl -> "<url>/fail"
 // (healthchecks.io alarmerer med det samme).
 async function healthcheck(ok: boolean) {
@@ -32,7 +39,7 @@ async function healthcheck(ok: boolean) {
   try {
     const u = new URL(url);
     if (u.protocol !== "https:") return;
-    const sti = ok ? u.toString() : `${u.toString().replace(/\/+$/, "")}/fail`;
+    const sti = ok ? u.toString() : medEndelse(u, "fail");
     await fetch(sti, { method: "GET", signal: AbortSignal.timeout(5_000), cache: "no-store" });
   } catch (err) {
     console.error("Healthcheck (afstemning) kunne ikke sendes:", renFejltekst(err));

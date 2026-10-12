@@ -13,6 +13,7 @@ import {
   forventetGebyrRefunderet,
   forventetRefunderet,
   kontoUdvalg,
+  refusionIGangSiden,
   forventetTilbagefoert,
   payoutAfstemmes,
   payoutStatusPasser,
@@ -144,7 +145,7 @@ describe("kørslen", () => {
     await db.query("select public.penge_afstemning_afslut($1, true, null, null)", [k]);
     const reg = (n: string, beloeb: number, koersel = k) =>
       en<{ svar: string }>(
-        "select public.penge_afvigelse_registrer($1, $2, 'refusion_udenom', 're_1', null, null, 'Refusion uden om BidHamr', $3, null) as svar",
+        "select public.penge_afvigelse_registrer($1, $2, 'refusion_udenom', 're_1', null, null, 'Refusion uden om BidHamr', $3, null, null) as svar",
         [koersel, n, beloeb],
       );
     expect((await reg("refusion:re_1", 100)).svar).toBe("ny");
@@ -175,11 +176,11 @@ describe("kørslen", () => {
     await expect(db.query("delete from public.penge_afstemning_afvigelser")).rejects.toThrow(/slettes/);
   });
 
-  it("gebyrsum: løst afvigelse genåbnes kun, når differencen ændrer sig", async () => {
+  it("gebyrsum: en løst gebyrsum genåbnes ikke (de enkelte gebyrer afstemmes under egne nøgler)", async () => {
     const k = (await en<{ id: string }>("select public.penge_afstemning_claim(0) as id")).id;
     const reg = (stripe: number, db_: number) =>
       en<{ svar: string }>(
-        "select public.penge_afvigelse_registrer($1, 'gebyrsum', 'gebyrsum', null, null, null, 'Gebyrsum', $2, $3) as svar",
+        "select public.penge_afvigelse_registrer($1, 'gebyrsum', 'gebyrsum', null, null, null, 'Gebyrsum', $2, $3, null) as svar",
         [k, stripe, db_],
       );
     expect((await reg(10_000, 9_000)).svar).toBe("ny");
@@ -187,8 +188,46 @@ describe("kørslen", () => {
     await db.query("select public.admin_penge_afvigelse_loes($1, $2, 'Kendt forskel')", [CHEF, a.id]);
     // Begge summer vokser, differencen er den samme (1.000): forbliver løst.
     expect((await reg(15_000, 14_000)).svar).toBe("kendt");
-    // Differencen ændrer sig: genåbnes.
-    expect((await reg(15_000, 13_000)).svar).toBe("genaabnet");
+    // Heller ikke, når differencen ændrer sig (et gebyr gled ud af vinduet).
+    expect((await reg(15_000, 13_000)).svar).toBe("kendt");
+    await db.query("select public.penge_afstemning_afslut($1, true, null, null)", [k]);
+  });
+
+  it("tilstand: samme beløb med ny status genåbner; samme beløb og samme status forbliver løst", async () => {
+    const k = (await en<{ id: string }>("select public.penge_afstemning_claim(0) as id")).id;
+    const reg = (tilstand: string | null) =>
+      en<{ svar: string }>(
+        "select public.penge_afvigelse_registrer($1, 'payout-afviger:po_t', 'udbetaling_afviger', 'po_t', null, 'acct_t', 'Payout afviger', 5000, 5000, $2) as svar",
+        [k, tilstand],
+      );
+    expect((await reg("paid|oprettet")).svar).toBe("ny");
+    const a = await en<{ id: string }>("select id from public.penge_afstemning_afvigelser where noegle = 'payout-afviger:po_t'");
+    await db.query("select public.admin_penge_afvigelse_loes($1, $2, 'Kendt')", [CHEF, a.id]);
+    expect((await reg("paid|oprettet")).svar).toBe("kendt");
+    // paid -> failed med samme beløb: genåbnes.
+    expect((await reg("failed|oprettet")).svar).toBe("genaabnet");
+    // Betalingsstatus uden beløb (null mod null): statusskift genåbner.
+    const regB = (tilstand: string) =>
+      en<{ svar: string }>(
+        "select public.penge_afvigelse_registrer($1, 'betaling-status:pi_t', 'betaling_status', 'pi_t', null, null, 'Status', null, null, $2) as svar",
+        [k, tilstand],
+      );
+    expect((await regB("requires_payment_method|betalt")).svar).toBe("ny");
+    const bA = await en<{ id: string }>("select id from public.penge_afstemning_afvigelser where noegle = 'betaling-status:pi_t'");
+    await db.query("select public.admin_penge_afvigelse_loes($1, $2, 'Kendt')", [CHEF, bA.id]);
+    expect((await regB("requires_payment_method|betalt")).svar).toBe("kendt");
+    expect((await regB("canceled|betalt")).svar).toBe("genaabnet");
+    // Indsigelse needs_response -> lost (samme beløb): genåbnes.
+    const regD = (st: string) =>
+      en<{ svar: string }>(
+        "select public.penge_afvigelse_registrer($1, 'indsigelse:dp_t', 'ukendt_indsigelse', 'dp_t', null, null, 'Indsigelse', 1000, null, $2) as svar",
+        [k, st],
+      );
+    expect((await regD("needs_response")).svar).toBe("ny");
+    const dA = await en<{ id: string }>("select id from public.penge_afstemning_afvigelser where noegle = 'indsigelse:dp_t'");
+    await db.query("select public.admin_penge_afvigelse_loes($1, $2, 'Kendt')", [CHEF, dA.id]);
+    expect((await regD("needs_response")).svar).toBe("kendt");
+    expect((await regD("lost")).svar).toBe("genaabnet");
     await db.query("select public.penge_afstemning_afslut($1, true, null, null)", [k]);
   });
 
@@ -508,6 +547,8 @@ describe("BidHamr dækker (sikkerhedsnet A)", () => {
     expect(erBidhamrsRefusion({ id: "re_x2", metadata: { betaling_id: "b1", bidhamr_daekker: "b1" } }, b, null)).toBe(false);
     // Afvigelse: metadata kun godtaget, så længe afvigelsen ikke har et refund-id.
     expect(erBidhamrsRefusion({ id: "re_a2", metadata: { betaling_id: "b2" } }, null, { betaling_id: "b2", stripe_refund_id: "re_a" })).toBe(false);
+    // Charge med både betaling og en registreret afvigelses-refusion: metadata alene godtages ikke.
+    expect(erBidhamrsRefusion({ id: "re_y", metadata: { betaling_id: "b3" } }, { id: "b3" }, { betaling_id: "b3", stripe_refund_id: "re_z" })).toBe(false);
     expect(payoutAfstemmes({ amount: -1500 })).toBe(false);
     expect(payoutAfstemmes({ amount: 0 })).toBe(true);
     expect(payoutAfstemmes({ amount: 47_500 })).toBe(true);
@@ -520,9 +561,11 @@ describe("refunderet i alt pr. charge (dobbelt-refusion) og kontorotation", () =
     total_oere: 59_000,
     refusion_oere: null,
     refusion_anmodet_kl: null,
-    bidhamr_daekker_kl: null,
-    bidhamr_daekker_oere: null,
-    bidhamr_daekker_refunderet_kl: null,
+    stripe_refund_id: null as string | null,
+    bidhamr_daekker_kl: null as string | null,
+    bidhamr_daekker_oere: null as number | null,
+    bidhamr_daekker_refund_id: null as string | null,
+    bidhamr_daekker_refunderet_kl: null as string | null,
   };
   it("forventet refunderet: 0, total, sagens beløb, dækning, afvigelse - og null under en refusion", () => {
     expect(forventetRefunderet(basis, null)).toBe(0);
@@ -536,17 +579,31 @@ describe("refunderet i alt pr. charge (dobbelt-refusion) og kontorotation", () =
         null,
       ),
     ).toBe(59_000);
+    // Mellem A's to kald: dækningens refusion er oprettet (id gemt), men endnu
+    // ikke registreret - og lige efter registreringen, før afslutningen.
+    expect(forventetRefunderet({ ...basis, bidhamr_daekker_kl: "x", bidhamr_daekker_oere: 30_000, bidhamr_daekker_refund_id: "re_d" }, null)).toBe(30_000);
+    expect(
+      forventetRefunderet(
+        { ...basis, status: "refunderet", refusion_oere: 56_500, stripe_refund_id: "re_d", bidhamr_daekker_kl: "x", bidhamr_daekker_oere: 30_000, bidhamr_daekker_refund_id: "re_d" },
+        null,
+      ),
+    ).toBe(30_000);
     expect(forventetRefunderet(null, { refunderet_kl: "x", modtaget_oere: 1_000 })).toBe(1_000);
     expect(forventetRefunderet(null, { refunderet_kl: null, modtaget_oere: 1_000 })).toBeNull();
+    // I gang siden: refusion, dækning eller afvigelse.
+    expect(refusionIGangSiden({ refusion_anmodet_kl: "t1", bidhamr_daekker_kl: null }, null)).toBe("t1");
+    expect(refusionIGangSiden({ refusion_anmodet_kl: null, bidhamr_daekker_kl: "t2" }, null)).toBe("t2");
+    expect(refusionIGangSiden(null, { refunderet_kl: null, oprettet: "t3" })).toBe("t3");
+    expect(refusionIGangSiden(null, { refunderet_kl: "x", oprettet: "t3" })).toBeNull();
     // En dobbelt refusion på 590 kr. (2 x 590) afviger fra de forventede 590 kr.
     expect(2 * 59_000).not.toBe(forventetRefunderet({ ...basis, status: "refunderet" }, null));
   });
 
-  it("over 200 konti: udvalget roterer, og alle kommer med over nogle dage", () => {
+  it("over 200 konti: udvalget roterer pr. kørsel, og alle kommer med over nogle kørsler", () => {
     const konti = Array.from({ length: 450 }, (_, i) => `acct_${i}`);
     const set = new Set<string>();
-    for (let dag = 0; dag < 3; dag++) {
-      const u = kontoUdvalg(konti, 200, dag);
+    for (let koersel = 7; koersel < 10; koersel++) {
+      const u = kontoUdvalg(konti, 200, koersel);
       expect(u.length).toBe(200);
       u.forEach((k) => set.add(k));
     }

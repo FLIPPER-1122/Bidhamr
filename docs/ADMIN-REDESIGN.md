@@ -3,7 +3,7 @@
 Status: **plan, intet er bygget** (frontend-agent, 11. okt. 2026).
 Roadmap: "Overskueligt og brugervenligt admin" og "Admin-kontrolpanel" (fase 6, Filip 12. okt. 2026).
 Begge skal bygges **efter sikkerhedsnettet for pengene**. To andre agenter ændrer lige nu Admin → Penge og
-pengelogikken (nødstop, godkendelse af udbetalinger, reserve, økonomioverblik). Planen rører derfor ikke
+pengelogikken (nødstop, godkendelse af udbetalinger, økonomioverblik – Reserve bygges IKKE (Filip, 12. okt. 2026)). Planen rører derfor ikke
 pengelogikken. Den beskriver kun, hvor deres resultater skal vises.
 
 Bindende grundlag: `DESIGN.md` (farver, statusfarver 1.4, chips 7.5, mobil først 12), `ROADMAP-BESLUTNINGER.md`
@@ -296,8 +296,8 @@ Fire små kort og et link "Åbn Penge":
 - Nødstop: fra/til, med knap til Penge (selve knappen ligger kun på Penge, ikke på forsiden – en farlig handling
   skal ikke ligge ét klik fra startsiden)
 
-**Bemærk:** `ROADMAP-BESLUTNINGER.md` (øverst) siger "Reserve-/bufferkonto bygges IKKE", mens roadmap-punktet
-nævner "reserve". Kortet "Reserve" vises kun, hvis penge-agenterne bygger den. **Filip skal afklare det.**
+**Afgjort:** Reserve bygges IKKE (Filip, 12. okt. 2026). Der er intet kort "Reserve"; pengekortet viser i stedet
+"Kan trækkes ud nu" (tilgængelig saldo minus det, BidHamr skylder købere – `admin_penge_overblik`).
 
 Stripe-saldoen må ikke hentes live fra Stripe ved hver visning af forsiden (langsomt og rate-begrænset). Brug
 det seneste tal fra afstemningen eller en cache på få minutter, og vis "opdateret kl. 14.05".
@@ -646,7 +646,7 @@ Venter på, at penge-agenternes nødstop, godkendelser, afstemning og "fremmede 
 
 ### Åbne spørgsmål til Filip
 
-1. **Reserve:** roadmappen nævner reserve, `ROADMAP-BESLUTNINGER.md` siger "bygges IKKE". Hvilken gælder?
+1. ~~**Reserve:** roadmappen nævner reserve, `ROADMAP-BESLUTNINGER.md` siger "bygges IKKE". Hvilken gælder?~~ Afgjort: Reserve bygges IKKE (Filip, 12. okt. 2026).
 2. Må medarbejderen se statuslinjen "Udbetalinger stoppet"? (Planen siger ja – så de kan svare brugerne.)
 3. Er navnene i afsnit 2.2 i orden (især "Anmeldelser", "Henvendelser", "Betalingsfejl", "Handlingslog")?
 4. Skal admin-menuen være skovgrøn (som footeren) eller blive mørk neutral som i dag?
