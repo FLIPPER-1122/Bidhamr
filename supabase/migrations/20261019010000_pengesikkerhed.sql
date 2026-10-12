@@ -605,7 +605,7 @@ end $do$;
 create or replace function public.chef_beloebsgraense_oere()
 returns bigint
 language sql
-immutable
+stable
 parallel safe
 set search_path = ''
 as $fn$
@@ -872,7 +872,7 @@ begin
    where id = b.id;
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
   values (p_medarbejder, 'udbetaling_godkendt', 'handel', b.trade_id, b.seller_id,
-          left('Udbetaling over beløbsgrænsen godkendt - ' || v_note, 2000));
+          left('Udbetaling fra 10.000 kr. godkendt - ' || v_note, 2000));
   return jsonb_build_object('kode', 'ok', 'trade_id', b.trade_id, 'seller_id', b.seller_id);
 end;
 $fn$;
