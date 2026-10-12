@@ -8,7 +8,7 @@ import {
   saetNoedstop,
 } from "@/app/actions/adminPengesikkerhed";
 
-// Admin → Penge (kun chef): nødstop, udbetalinger over 10.000 kr., der
+// Admin → Penge (kun chef): nødstop, udbetalinger fra 10.000 kr., der
 // venter på chefens godkendelse, og frosne sælgere (sikkerhedsnet A).
 
 const kr = (oere: number) =>
@@ -124,7 +124,7 @@ export default async function Pengesikkerhed() {
       </div>
 
       <div className="border-t border-neutral-100 px-4 py-3 sm:px-5">
-        <h3 className="text-sm font-semibold text-neutral-900">Udbetalinger over 10.000 kr., der venter på din godkendelse</h3>
+        <h3 className="text-sm font-semibold text-neutral-900">Udbetalinger fra 10.000 kr., der venter på din godkendelse</h3>
         {r.godkendelser.length === 0 ? (
           <p className="mt-1 text-sm text-neutral-500">Ingen.</p>
         ) : (
