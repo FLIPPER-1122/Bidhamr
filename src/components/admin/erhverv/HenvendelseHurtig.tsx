@@ -14,7 +14,8 @@ import BekraeftDialog from "@/components/BekraeftDialog";
 import Skabeloner from "@/components/admin/Skabeloner";
 import { visKvittering } from "@/components/admin/Kvittering";
 import { opdaterErhvervHenvendelse } from "@/app/actions/adminErhverv";
-import { ERHVERV_GRAENSER, type HenvendelseStatus } from "@/lib/erhverv/regler";
+import { tilfoejErhvervNote } from "@/app/actions/adminErhvervNote";
+import type { HenvendelseStatus } from "@/lib/erhverv/regler";
 import { ERHVERV_NOTE } from "@/lib/tekster/adminSkabeloner";
 
 const lille =
@@ -24,13 +25,11 @@ export default function HenvendelseHurtig({
   id,
   firmanavn,
   status,
-  noter,
   firmaId,
 }: {
   id: string;
   firmanavn: string;
   status: HenvendelseStatus;
-  noter: string | null;
   firmaId: string | null;
 }) {
   const router = useRouter();
@@ -56,15 +55,10 @@ export default function HenvendelseHurtig({
   function gemNote() {
     const ren = note.trim();
     if (!ren) return;
-    const dato = new Date().toLocaleDateString("da-DK", { day: "numeric", month: "short", timeZone: "Europe/Copenhagen" });
-    const samlet = (noter ? `${noter}\n` : "") + `${dato}: ${ren}`;
-    if (samlet.length > ERHVERV_GRAENSER.noter) {
-      setFejl("Noterne er for lange. Ret dem på henvendelsen.");
-      return;
-    }
     setFejl(null);
     start(async () => {
-      const svar = await opdaterErhvervHenvendelse({ id, noter: samlet, status: status === "ny" ? "i_gang" : null });
+      // Kun den nye note - databasen lægger den til de gamle med dato og navn.
+      const svar = await tilfoejErhvervNote({ id, note: ren });
       if ("fejl" in svar) {
         setFejl(svar.fejl);
         return;

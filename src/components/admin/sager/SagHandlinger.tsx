@@ -20,6 +20,7 @@ import { indgrebFelter } from "@/components/admin/indgrebFelter";
 import Skabeloner from "@/components/admin/Skabeloner";
 import { visKvittering } from "@/components/admin/Kvittering";
 import { SAG_BEGRUNDELSE } from "@/lib/tekster/adminSkabeloner";
+import { kroner } from "@/lib/kroner";
 
 const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
 
@@ -209,11 +210,18 @@ function AfgoerKnap({
   afventerRetur,
   onResultat,
   naesteHref,
+  koeberNavn,
+  saelgerNavn,
+  koeberBeloebOere,
 }: {
   sagId: string;
   type: SagType;
   indsigelse: boolean;
   naesteHref?: string | null;
+  koeberNavn: string;
+  saelgerNavn: string;
+  // Kun for chef (ellers null): hvad køberen refunderes.
+  koeberBeloebOere: number | null;
   // Sagen venter på retur (fx køberen sender aldrig varen): kun medhold til
   // sælger eller luk sagen (databasen afviser medhold til køber igen).
   afventerRetur: boolean;
@@ -307,6 +315,22 @@ function AfgoerKnap({
                 ))}
             </div>
           </fieldset>
+          {udfald && udfald !== "lukket" && (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-xl bg-groen-lys px-4 py-3 text-sm">
+              <dt className="text-tekst-daempet">Får pengene</dt>
+              <dd className="font-semibold text-tekst">
+                {udfald === "koeber" ? `${koeberNavn} (køber) – refusion` : `${saelgerNavn} (sælger) – udbetaling`}
+              </dd>
+              {udfald === "koeber" && koeberBeloebOere != null && (
+                <>
+                  <dt className="text-tekst-daempet">Beløb</dt>
+                  <dd className="font-semibold text-tekst">{kroner(koeberBeloebOere)} (alt undtagen BidHamr Beskyttelse)</dd>
+                </>
+              )}
+              <dt className="text-tekst-daempet">Hvornår</dt>
+              <dd className="text-tekst">Efter ankefristen på 4 dage</dd>
+            </dl>
+          )}
           {kraeverReturTjek && (
             <label className="flex cursor-pointer gap-3 rounded-xl border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
               <input
@@ -1036,6 +1060,8 @@ export type SagHandlingerProps = {
 
 export default function SagHandlinger({
   naesteHref,
+  inhabil = false,
+  koeberBeloebOere = null,
   sagId,
   type,
   indsigelse,
@@ -1049,7 +1075,7 @@ export default function SagHandlinger({
   afventerRetur,
   returIkkeTilladt,
   returFristTekst,
-}: SagHandlingerProps & { naesteHref?: string | null }) {
+}: SagHandlingerProps & { naesteHref?: string | null; inhabil?: boolean; koeberBeloebOere?: number | null }) {
   const [resultat, setResultat] = useState<string | null>(null);
 
   return (
@@ -1084,8 +1110,21 @@ export default function SagHandlinger({
 
       {(kan.afgoere || kan.registrereRetur || kan.genaabne) && (
         <div className="flex flex-wrap gap-3">
-          {kan.afgoere && (
+          {kan.afgoere && inhabil && (
+            <span className="flex flex-col gap-1">
+              <button type="button" disabled className="btn btn-primaer" aria-describedby="sag-inhabil">
+                Afgør sagen
+              </button>
+              <span id="sag-inhabil" className="text-xs text-tekst-daempet">
+                Du er inhabil: du er part i handlen eller har handlet med en af parterne. Lad en kollega afgøre den.
+              </span>
+            </span>
+          )}
+          {kan.afgoere && !inhabil && (
             <AfgoerKnap
+              koeberNavn={koeber.navn}
+              saelgerNavn={saelger.navn}
+              koeberBeloebOere={koeberBeloebOere}
               sagId={sagId}
               type={type}
               indsigelse={indsigelse}

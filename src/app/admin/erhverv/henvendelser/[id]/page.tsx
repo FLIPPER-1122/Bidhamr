@@ -83,7 +83,7 @@ export default async function HenvendelseSide({ params }: { params: Promise<{ id
       </section>
 
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
-        <HenvendelseHandlinger id={h.id} status={h.status} noter={h.noter} arkiveret={!!h.arkiveret_kl} />
+        <HenvendelseHandlinger id={h.id} status={h.status} noter={h.noter} arkiveret={!!h.arkiveret_kl} firmaId={h.firma_id} />
       </section>
 
       <section id="opret" className="scroll-mt-4 rounded-xl border border-neutral-200 bg-white p-5">

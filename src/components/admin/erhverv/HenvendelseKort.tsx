@@ -44,7 +44,7 @@ export default function HenvendelseKort({ h }: { h: ErhvervHenvendelse }) {
         </p>
       )}
       <div className="mt-3">
-        <HenvendelseHurtig id={h.id} firmanavn={h.firmanavn} status={h.status} noter={h.noter} firmaId={h.firma_id} />
+        <HenvendelseHurtig id={h.id} firmanavn={h.firmanavn} status={h.status} firmaId={h.firma_id} />
       </div>
     </article>
   );

@@ -2,6 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { hentSag, hentSager } from "@/app/actions/adminSager";
+import { hentBruger } from "@/lib/supabase/bruger";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { hentSagTaget } from "@/lib/admin/sagTaget";
+import TagSagKnap from "@/components/admin/sager/TagSagKnap";
 import AdminSide from "@/components/admin/AdminSide";
 import { adminSagSti } from "@/lib/sager";
 import { hentSamtalerForSag } from "@/app/actions/staffChat";
@@ -99,6 +103,25 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
       ? null
       : koeRes.sager.find((s) => s.id !== sag.id && (koe === "anker" ? s.ankeVenter : s.status === "aaben"));
   const naesteHref = naeste ? adminSagSti(naeste.id) : `/admin/sager?vis=${koe}`;
+
+  // Inhabil: part i handlen eller har handlet med en af parterne (samme regel
+  // som databasen, som afviser igen). Så vises "Afgør sagen" ikke.
+  const mig = (await hentBruger())?.id ?? "";
+  const admin = createAdminClient();
+  const parter = [sag.koeber.id, sag.saelger.id].filter((x): x is string => !!x);
+  let inhabil = parter.includes(mig);
+  if (!inhabil && mig && parter.length) {
+    const [a, b] = await Promise.all([
+      admin.from("trades").select("id").eq("buyer_id", mig).in("seller_id", parter).limit(1),
+      admin.from("trades").select("id").eq("seller_id", mig).in("buyer_id", parter).limit(1),
+    ]);
+    inhabil = (a.data?.length ?? 0) > 0 || (b.data?.length ?? 0) > 0;
+  }
+  const aabenSag = sag.status === "aaben" || sag.status === "afventer_retur";
+  const taget = aabenSag ? ((await hentSagTaget(admin, [sag.id])).get(sag.id) ?? null) : null;
+  // Beløb til dialogen "Medhold til køber" - kun når man må se beløb (chef).
+  const koeberBeloebOere =
+    sag.kan.seBeloeb && sag.betaling?.totalOere != null ? sag.betaling.totalOere - (sag.betaling.beskyttelseOere ?? 0) : null;
   const b = sag.betaling;
   const kanSkriveFaelles = rolle ? harMindstRolle(rolle, "admin") : false;
   const koeberNavn = sag.koeber.navn ?? "Uden navn";
@@ -173,8 +196,15 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
         )}
 
         <div className="mt-4">
+          {aabenSag && (
+            <div className="mb-3">
+              <TagSagKnap sagId={sag.id} taget={taget} mig={mig} inhabil={inhabil} />
+            </div>
+          )}
           <SagHandlinger
             naesteHref={naesteHref}
+            inhabil={inhabil}
+            koeberBeloebOere={koeberBeloebOere}
             sagId={sag.id}
             type={sag.type}
             indsigelse={!!b?.indsigelse}

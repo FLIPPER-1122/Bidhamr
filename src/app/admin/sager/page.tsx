@@ -11,6 +11,8 @@ import AdminBadge from "@/components/admin/AdminBadge";
 import AdminSideskift from "@/components/admin/AdminSideskift";
 import { hentStaffTal } from "@/lib/admin/taellere";
 import { harMindstRolle, kraevSideRolle } from "@/lib/adminAuth";
+import { hentSagTaget } from "@/lib/admin/sagTaget";
+import TagSagKnap from "@/components/admin/sager/TagSagKnap";
 
 // Sager oprettet af køberen. Åbne sager (venter på afgørelse) står øverst.
 // Handler uden sag (hænger, manuel markering, fællesbesked) ligger under
@@ -41,7 +43,7 @@ export default async function AdminSager({
 }: {
   searchParams: Promise<{ vis?: string; side?: string }>;
 }) {
-  const { rolle } = await kraevSideRolle("medarbejder");
+  const { rolle, admin, userId } = await kraevSideRolle("medarbejder");
   const { vis, side: sideParam } = await searchParams;
   const fane: Fane = FANER.some((f) => f.key === vis) ? (vis as Fane) : "aabne";
   const side = Math.max(0, Math.min(1000, Number.parseInt(sideParam ?? "0", 10) || 0));
@@ -57,7 +59,20 @@ export default async function AdminSager({
     fane === "aabne"
       ? [...liste].sort((a, b) => Number(b.status === "aaben") - Number(a.status === "aaben"))
       : liste;
-  const foersteAabne = fane === "aabne" ? sager.find((s) => s.status === "aaben") : fane === "anker" ? sager.find((s) => s.ankeVenter) : undefined;
+  const taget = await hentSagTaget(
+    admin,
+    sager.filter((s) => s.status === "aaben" || s.status === "afventer_retur").map((s) => s.id),
+  );
+  // "Afgør næste sag" springer over sager, en kollega har taget.
+  const ledig = (s: SagListeRaekke) => {
+    const t = taget.get(s.id);
+    return !t || t.brugerId === userId;
+  };
+  const foersteAabne = fane === "aabne"
+      ? sager.find((s) => s.status === "aaben" && ledig(s))
+      : fane === "anker"
+        ? sager.find((s) => s.ankeVenter && ledig(s))
+        : undefined;
 
   // ?side= er 0-baseret her (hentSager), så den bygges selv.
   const href = (f: Fane, s = 0) => `/admin/sager?vis=${f}${s > 0 ? `&side=${s}` : ""}`;
@@ -107,10 +122,10 @@ export default async function AdminSager({
       ) : (
         <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
           {sager.map((s) => (
-            <li key={s.id} className="border-t border-admin-kant first:border-t-0">
+            <li key={s.id} className="flex flex-col border-t border-admin-kant first:border-t-0 sm:flex-row sm:items-center">
               <Link
                 href={adminSagSti(s.id)}
-                className={`flex min-w-0 flex-col gap-1 px-4 py-4 transition-colors hover:bg-admin-bg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:gap-4 sm:px-5 ${
+                className={`flex min-w-0 flex-1 flex-col gap-1 px-4 py-4 transition-colors hover:bg-admin-bg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:gap-4 sm:px-5 ${
                   s.status === "aaben" || s.ankeVenter ? "bg-advarsel-bg/40" : ""
                 }`}
               >
@@ -133,6 +148,11 @@ export default async function AdminSager({
                   </span>
                 </p>
               </Link>
+              {(s.status === "aaben" || s.status === "afventer_retur") && (
+                <div className="px-4 pb-4 sm:px-5 sm:py-4">
+                  <TagSagKnap sagId={s.id} taget={taget.get(s.id) ?? null} mig={userId} />
+                </div>
+              )}
             </li>
           ))}
         </ul>
