@@ -1,8 +1,8 @@
 "use server";
 
-// Admin → Penge (kun chef): nødstop, godkendelse af udbetalinger fra
-// 10.000 kr., frosne sælgere og "BidHamr dækker" (sikkerhedsnet A,
-// 20261019010000_pengesikkerhed.sql). Databasen tjekker rolle og
+// Admin → Penge (kun chef): nødstop, godkendelse af udbetalinger (når
+// købers samlede betaling er 10.000 kr. eller mere), frosne sælgere og
+// "BidHamr dækker" (sikkerhedsnet A, 20261019010000_pengesikkerhed.sql). Databasen tjekker rolle og
 // inhabilitet igen og logger i moderation_log.
 
 import { revalidatePath } from "next/cache";
@@ -166,6 +166,8 @@ export type GodkendelseRaekke = {
   tradeId: string;
   titel: string | null;
   saelger: string | null;
+  // Købers samlede betaling - det beløb, grænsen regnes på.
+  totalOere: number;
   udbetalingOere: number;
   frigivetKl: string | null;
 };
@@ -192,13 +194,16 @@ export async function hentPengesikkerhed() {
     const [{ data: g, error: gFejl }, { data: f, error: fFejl }] = await Promise.all([
       admin
         .from("betalinger")
-        .select("id, trade_id, auction_id, seller_id, udbetaling_oere, frigivet_kl")
+        .select("id, trade_id, auction_id, seller_id, total_oere, udbetaling_oere, frigivet_kl")
         .eq("pengemodel", "destination")
         .eq("status", "betalt")
         .not("frigivet_kl", "is", null)
         .is("saelger_udbetaling_id", null)
         .is("udbetaling_godkendt_kl", null)
-        .gte("udbetaling_oere", CHEF_BELOEBSGRAENSE_OERE)
+        // Samme grundlag som databasen (betaling_udbetaling_blokeret):
+        // greatest(total_oere, udbetaling_oere) >= grænsen, altså købers
+        // samlede betaling (Filip, 12. okt. 2026).
+        .or(`total_oere.gte.${CHEF_BELOEBSGRAENSE_OERE},udbetaling_oere.gte.${CHEF_BELOEBSGRAENSE_OERE}`)
         .order("frigivet_kl", { ascending: true })
         .limit(100),
       admin
@@ -234,6 +239,7 @@ export async function hentPengesikkerhed() {
         tradeId: x.trade_id as string,
         titel: titel.get(x.auction_id as string) ?? null,
         saelger: navn.get(x.seller_id as string) ?? null,
+        totalOere: Number(x.total_oere),
         udbetalingOere: Number(x.udbetaling_oere),
         frigivetKl: (x.frigivet_kl as string | null) ?? null,
       })),
@@ -260,6 +266,34 @@ const GODKEND_FEJL: Record<string, string> = {
   udbetalt: "Pengene er allerede udbetalt.",
 };
 
+// Hvad der ellers holder udbetalingen tilbage (betaling_udbetaling_blokeret),
+// når chefen prøver at godkende for tidligt (kode andre_hindringer).
+const HINDRING: Record<string, string> = {
+  ikke_fundet: "betalingen blev ikke fundet",
+  ikke_betalt: "betalingen er ikke gennemført",
+  allerede_udbetalt: "pengene er allerede sendt til udbetaling",
+  sag: "der er en sag eller anke på handlen, som ikke er færdig",
+  sag_aaben: "handlen er markeret som sag",
+  indsigelse: "køberen har lavet en indsigelse",
+  refusion: "der er en refusion i gang",
+  svindelvarsel: "der er et uløst svindelvarsel",
+  radar_review: "Stripe gennemgår betalingen",
+  ikke_afhentet: "pakken er ikke afhentet",
+  returneret: "pakken er sendt retur",
+  kraever_opmaerksomhed: "handlen har en markering, der skal lukkes under Betalinger",
+  handel_annulleret: "handlen er annulleret",
+  midler_ikke_tilgaengelige: "pengene er ikke tilgængelige hos Stripe endnu",
+  ventetid: "ventetiden før udbetaling er ikke udløbet",
+  fortrydelsesfrist: "køberens fortrydelsesfrist er ikke udløbet",
+  udbetaling_frosset: "sælgerens udbetalinger er frosset",
+  konto_frakoblet: "sælgerens Stripe-konto er frakoblet",
+  konto_skiftet: "sælgeren har skiftet Stripe-konto",
+  plan_ikke_manuel: "sælgerkontoens udbetalingsplan er ikke manuel",
+  udbetalinger_inaktive: "sælgerkontoen kan ikke modtage udbetalinger",
+  venter_paa_bank: "en tidligere udbetaling til sælgerens bank fejlede",
+  transfer_ukendt: "overførslen til sælgerkontoen er ikke registreret",
+};
+
 // formData: betalingId, note.
 export async function godkendUdbetaling(formData: FormData) {
   return koer("godkendUdbetaling", async () => {
@@ -273,7 +307,13 @@ export async function godkendUdbetaling(formData: FormData) {
       p_note: note,
     });
     if (error) throw new Error(error.message);
-    const svar = (data ?? {}) as { kode?: string; seller_id?: string };
+    const svar = (data ?? {}) as { kode?: string; seller_id?: string; grund?: string | null };
+    if (svar.kode === "andre_hindringer") {
+      const hvad = HINDRING[svar.grund ?? ""];
+      throw new BrugerFejl(
+        `Udbetalingen kan ikke godkendes endnu${hvad ? `: ${hvad}` : ""}. Du kan først godkende, når din godkendelse er det eneste, der mangler.`,
+      );
+    }
     if (svar.kode !== "ok") throw new BrugerFejl(GODKEND_FEJL[svar.kode ?? ""] ?? GENERISK);
     // Udbetalingen sendes med det samme (ellers af cron'en).
     if (svar.seller_id) {

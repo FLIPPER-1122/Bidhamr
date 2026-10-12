@@ -38,10 +38,12 @@
 --      afviger eksisterende rækker, bliver de stående NOT VALID (notice med
 --      antal) - nye og ændrede rækker skal altid passe.
 --  11. Beløbsloft: startpris, bud og maksimum højst 500.000 kr. (chefens valg).
---      Udbetaling fra 10.000 kr. pr. handel kræver chefens godkendelse
+--      Udbetalinger kræver chefens godkendelse, når købers samlede betaling
+--      er 10.000 kr. eller mere - også når pengene er frigivet via en sag
 --      ('kraever_godkendelse', betaling_udbetaling_godkend). Grænsen står ét
 --      sted: public.chef_beloebsgraense_oere() = 1.000.000 øre, og begge regler
---      bruger "beløb >= grænsen" (Filip, 12. okt. 2026).
+--      bruger "greatest(total_oere, udbetaling_oere) >= grænsen" (Filip,
+--      12. okt. 2026).
 --  12. Grants: authenticated mister insert/update/delete/truncate på
 --      transactions; anon mister insert/update på auctions.
 --  13. Fremmed udbetaling / ændret udbetalingsplan: sælgeren fryses
@@ -72,10 +74,24 @@
 --
 -- 12. okt. 2026 (Filip): admin må frigive handler under 10.000 kr. (før 5.000
 -- kr.), og udbetalingsgrænsen gælder "fra 10.000 kr." (før "over"). Begge
--- bruger public.chef_beloebsgraense_oere(). Testdatabasen har den tidligere
--- udgave af denne migration kørt: "foer" er md5 af den udgaves
+-- bruger public.chef_beloebsgraense_oere(). Testdatabasen har tidligere
+-- udgaver af denne migration kørt: "foer" er md5 af de udgavers
 -- betaling_udbetaling_blokeret og _i_claim, som opgraderes på samme måde
 -- som "gammel".
+--
+-- 12. okt. 2026 (Filip), senere samme dag: udbetalingen kræver chefens
+-- godkendelse, når KØBERS SAMLEDE BETALING (total_oere) er 10.000 kr. eller
+-- mere - samme grundlag som admin-frigivelsen - uanset hvordan pengene blev
+-- frigivet (køberen, admin, sag/anke med medhold til sælger, automatisk).
+-- Før regnede udbetalingsgrænsen på udbetaling_oere (bud minus 5 %), så en
+-- handel på ca. 9.300-10.526 kr. kunne nå banken uden chefen, når en
+-- medarbejder gav sælger medhold. Alle fire steder (betaling_udbetaling_
+-- blokeret, _i_claim, betaling_udbetaling_godkend, admin_frigiv_handel)
+-- bruger greatest(total_oere, udbetaling_oere): total_oere er altid størst i
+-- dag (total = bud + gebyr + fragt + Beskyttelse, udbetaling = bud - gebyr),
+-- men skulle en fremtidig prismodel gøre udbetalingen større end købers
+-- betaling, gælder grænsen stadig det største beløb (fejler mod "kræver
+-- chefen", aldrig mod "slipper igennem").
 
 set local lock_timeout = '5s';
 
@@ -92,10 +108,14 @@ do $do$
 declare
   r record;
   h text;
-  -- Den tidligere udgave af denne migration (11. okt., grænse "over 10.000").
+  -- Tidligere udgaver af denne migration (kun testdatabasen):
+  --   11. okt. (bf93d9d), grænse "over 10.000" på udbetaling_oere;
+  --   12. okt. (c2fd31d), "fra 10.000" på udbetaling_oere.
   v_foer jsonb := jsonb_build_object(
-    'public.betaling_udbetaling_blokeret(uuid)', '955079acd293e57cf88b281c9766af66',
-    'public.betaling_udbetaling_blokeret_i_claim(uuid,uuid)', '596af4384b413cb4a785f9e73b1d59e5');
+    'public.betaling_udbetaling_blokeret(uuid)',
+      jsonb_build_array('955079acd293e57cf88b281c9766af66', 'b8092d70724ea3d2ed7f15d7d502f245'),
+    'public.betaling_udbetaling_blokeret_i_claim(uuid,uuid)',
+      jsonb_build_array('596af4384b413cb4a785f9e73b1d59e5', '613e703e51f3530c0dd314036a327870'));
 begin
   if to_regclass('public.handel_ikke_afhentet') is null
      or to_regprocedure('public.dsa_er_inhabil(uuid,uuid)') is null
@@ -110,9 +130,9 @@ begin
   for r in
     select * from (values
       ('public.betaling_udbetaling_blokeret(uuid)',
-       'ebbc9160aea98bff95eb44692d0b8eaa', 'b8092d70724ea3d2ed7f15d7d502f245'),
+       'ebbc9160aea98bff95eb44692d0b8eaa', 'c924967b5acb6d38fb2ec7eada13158e'),
       ('public.betaling_udbetaling_blokeret_i_claim(uuid,uuid)',
-       'd42ea663b6510620d6ccb073f773491d', '613e703e51f3530c0dd314036a327870'),
+       'd42ea663b6510620d6ccb073f773491d', '88cdacbb780fecad980e305b9a575695'),
       ('public.saelger_udbetaling_claim(uuid,text,uuid[])',
        '0bc7bc82db57b73bb31d065efee84518', '788c61fb8c93db6f68d69902555763c7'),
       ('public.handel_auto_frigiv()',
@@ -157,7 +177,7 @@ begin
       raise exception '%: funktionen findes ikke - kør de tidligere migrationer først', r.fn;
     elsif h = r.ny then
       raise notice '%: allerede rettet', r.fn;
-    elsif h = v_foer->>r.fn then
+    elsif coalesce((v_foer->r.fn) @> to_jsonb(h), false) then
       raise notice '%: tidligere udgave af denne migration - opgraderes', r.fn;
     elsif h is distinct from r.gammel then
       raise exception '%: kroppen afviger fra repoets seneste version (md5 %) - kontrollér funktionen, før migrationen køres', r.fn, h;
@@ -231,7 +251,8 @@ end $$;
 
 select pg_temp.flet_check('public.moderation_log'::regclass, 'moderation_log_handling_check', 'handling',
   array['noedstop_udbetalinger', 'noedstop_betalinger', 'udbetaling_godkendt', 'bidhamr_daekker',
-        'udbetaling_frosset', 'udbetaling_frysning_ophaevet', 'handel_frigivet']);
+        'udbetaling_frosset', 'udbetaling_frysning_ophaevet', 'handel_frigivet',
+        'udbetaling_godkendelse_nulstillet', 'sag_aabnet']);
 select pg_temp.flet_check('public.moderation_log'::regclass, 'moderation_log_maal_type_check', 'maal_type',
   array['system']);
 
@@ -478,7 +499,7 @@ begin
 end $do$;
 
 comment on column public.betalinger.udbetaling_godkendt_kl is
-  'Chefens godkendelse af en udbetaling fra 10.000 kr. (betaling_udbetaling_godkend). Uden den blokerer betaling_udbetaling_blokeret med kraever_godkendelse.';
+  'Chefens godkendelse af en udbetaling, når købers samlede betaling er 10.000 kr. eller mere (betaling_udbetaling_godkend). Uden den blokerer betaling_udbetaling_blokeret med kraever_godkendelse.';
 comment on column public.betalinger.auto_frigiv_opgave_kl is
   '14 dage efter afsendelse uden leveringsmelding (eller uden BidHamrs fragtlabel): staff har fået en opgave (markering) i stedet for automatisk frigivelse (handel_auto_frigiv).';
 comment on column public.betalinger.bidhamr_daekker_kl is
@@ -599,7 +620,9 @@ end $do$;
 -- Ét sted for grænsen (1.000.000 øre). Fra og med grænsen kræver en
 -- admin-frigivelse chefen (admin_frigiv_handel, købers samlede betaling), og
 -- en udbetaling til sælgeren venter på chefens godkendelse
--- (betaling_udbetaling_blokeret, _i_claim, betaling_udbetaling_godkend).
+-- (betaling_udbetaling_blokeret, _i_claim, betaling_udbetaling_godkend) -
+-- også her regnet på købers samlede betaling, uanset hvordan pengene blev
+-- frigivet.
 -- Under grænsen må admin selv frigive. Samme tal i koden:
 -- CHEF_BELOEBSGRAENSE_OERE i src/lib/betaling/beregn.ts.
 create or replace function public.chef_beloebsgraense_oere()
@@ -612,7 +635,7 @@ as $fn$
   select 1000000::bigint;
 $fn$;
 comment on function public.chef_beloebsgraense_oere() is
-  'Chefens beløbsgrænse i øre (10.000 kr., Filip 12. okt. 2026): fra og med grænsen kræver admin-frigivelse chefen, og udbetalingen kræver chefens godkendelse.';
+  'Chefens beløbsgrænse i øre (10.000 kr., Filip 12. okt. 2026): fra og med grænsen (købers samlede betaling) kræver admin-frigivelse chefen, og udbetalingen kræver chefens godkendelse - uanset hvordan pengene blev frigivet.';
 revoke all on function public.chef_beloebsgraense_oere() from public, anon, authenticated;
 grant execute on function public.chef_beloebsgraense_oere() to service_role;
 
@@ -678,8 +701,13 @@ begin
     v_lev := coalesce(v_lev, t.received_at, case when coalesce(t.afhentning, false) then b.frigivet_kl end);
     if v_lev is null or v_lev > now() - interval '14 days' then return 'fortrydelsesfrist'; end if;
   end if;
-  -- Fra 10.000 kr. til sælgeren kræver chefens godkendelse (Filip, 12. okt. 2026).
-  if b.udbetaling_oere >= public.chef_beloebsgraense_oere() and b.udbetaling_godkendt_kl is null then return 'kraever_godkendelse'; end if;
+  -- Fra 10.000 kr. (købers samlede betaling) kræver udbetalingen chefens
+  -- godkendelse - uanset hvordan pengene blev frigivet: af køberen, af admin,
+  -- via en sag eller anke, automatisk efter fristen (Filip, 12. okt. 2026).
+  -- greatest(): total_oere er altid >= udbetaling_oere i dag, men skulle det
+  -- nogensinde ændre sig, gælder grænsen stadig det største af de to beløb.
+  if greatest(b.total_oere, b.udbetaling_oere) >= public.chef_beloebsgraense_oere()
+     and b.udbetaling_godkendt_kl is null then return 'kraever_godkendelse'; end if;
   if public.udbetalinger_stoppet() then return 'udbetalinger_stoppet'; end if;
   return null;
 end;
@@ -744,7 +772,8 @@ begin
     v_lev := coalesce(v_lev, t.received_at, case when coalesce(t.afhentning, false) then b.frigivet_kl end);
     if v_lev is null or v_lev > now() - interval '14 days' then return 'fortrydelsesfrist'; end if;
   end if;
-  if b.udbetaling_oere >= public.chef_beloebsgraense_oere() and b.udbetaling_godkendt_kl is null then return 'kraever_godkendelse'; end if;
+  if greatest(b.total_oere, b.udbetaling_oere) >= public.chef_beloebsgraense_oere()
+     and b.udbetaling_godkendt_kl is null then return 'kraever_godkendelse'; end if;
   if public.udbetalinger_stoppet() then return 'udbetalinger_stoppet'; end if;
   return null;
 end;
@@ -835,10 +864,17 @@ revoke all on function public.saelger_udbetaling_claim(uuid, text, uuid[]) from 
 grant execute on function public.saelger_udbetaling_claim(uuid, text, uuid[]) to service_role;
 
 -- ===========================================================================
--- 11. Chefens godkendelse af udbetaling fra 10.000 kr.
+-- 11. Chefens godkendelse af udbetaling (købers samlede betaling fra 10.000 kr.)
 -- ===========================================================================
 -- Kode: ok | ingen_adgang | inhabil | ikke_fundet | ikke_noedvendig |
--- allerede | ikke_frigivet | udbetalt | note_mangler | note_for_lang
+-- allerede | ikke_frigivet | udbetalt | note_mangler | note_for_lang |
+-- andre_hindringer (+ 'grund': betaling_udbetaling_blokeret's svar)
+-- Chefen kan kun godkende, når chefens godkendelse er det ENESTE, der
+-- mangler (betaling_udbetaling_blokeret = 'kraever_godkendelse'): en sag,
+-- anke, indsigelse, refusion, ventetid hos Stripe, fortrydelsesfrist ... skal
+-- være væk først, så godkendelsen altid gælder den endelige afgørelse.
+-- Godkendelsen nulstilles, hvis der senere åbnes en sag eller anke
+-- (betalinger_godkendelse_nulstil nedenfor).
 create or replace function public.betaling_udbetaling_godkend(
   p_medarbejder uuid, p_betaling uuid, p_note text)
 returns jsonb
@@ -849,6 +885,7 @@ as $fn$
 declare
   b      record;
   v_note text := nullif(btrim(coalesce(p_note, '')), '');
+  v_blok text;
 begin
   if p_medarbejder is null or not exists (
        select 1 from public.users u where u.id = p_medarbejder and u.rolle = 'chef') then
@@ -861,23 +898,175 @@ begin
   if public.penge_inhabil(p_medarbejder, b.buyer_id, b.seller_id) then
     return jsonb_build_object('kode', 'inhabil');
   end if;
-  if b.udbetaling_oere < public.chef_beloebsgraense_oere() then return jsonb_build_object('kode', 'ikke_noedvendig'); end if;
+  -- Samme grundlag som betaling_udbetaling_blokeret (købers samlede betaling).
+  if greatest(b.total_oere, b.udbetaling_oere) < public.chef_beloebsgraense_oere() then
+    return jsonb_build_object('kode', 'ikke_noedvendig');
+  end if;
   if b.udbetaling_godkendt_kl is not null then return jsonb_build_object('kode', 'allerede'); end if;
   if b.status <> 'betalt' or b.frigivet_kl is null then return jsonb_build_object('kode', 'ikke_frigivet'); end if;
   if b.saelger_udbetaling_id is not null or b.stripe_transfer_id is not null then
     return jsonb_build_object('kode', 'udbetalt');
+  end if;
+  -- Handlen er låst (for update ovenfor), og trades låses også, så en sag
+  -- ikke kan åbnes mellem tjekket og godkendelsen.
+  perform 1 from public.trades t where t.id = b.trade_id for update;
+  v_blok := public.betaling_udbetaling_blokeret(b.id);
+  if v_blok is distinct from 'kraever_godkendelse' then
+    return jsonb_build_object('kode', 'andre_hindringer', 'grund', v_blok);
   end if;
   update public.betalinger
      set udbetaling_godkendt_kl = now(), udbetaling_godkendt_af = p_medarbejder, opdateret = now()
    where id = b.id;
   insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
   values (p_medarbejder, 'udbetaling_godkendt', 'handel', b.trade_id, b.seller_id,
-          left('Udbetaling fra 10.000 kr. godkendt - ' || v_note, 2000));
+          left('Udbetaling godkendt (køber betalte 10.000 kr. eller mere) - ' || v_note, 2000));
   return jsonb_build_object('kode', 'ok', 'trade_id', b.trade_id, 'seller_id', b.seller_id);
 end;
 $fn$;
 revoke all on function public.betaling_udbetaling_godkend(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.betaling_udbetaling_godkend(uuid, uuid, text) to service_role;
+
+-- Chefens godkendelse gælder kun den afgørelse, han så. Åbnes der en sag på
+-- handlen (ny sag, genåbnet sag, staffs markering trades.sag_aaben) eller
+-- en anke, nulstilles godkendelsen - så en ny afgørelse kræver en ny
+-- godkendelse. Kun stripe_transfer_id (den gamle model, endeligt overført)
+-- undtages. saelger_udbetaling_id - og selv en 'paid' sælgerudbetaling - er
+-- ikke nok: feltet sættes tilbage til null, når en claim afvises, eller en
+-- payout fejler/annulleres (saelger_udbetaling_afvist, saelger_udbetaling_
+-- spejl, også paid -> failed). Er betalingen midt i en udbetaling, siger
+-- loggen det. Er den midt i en claim, stopper _i_claim med 'sag' og
+-- derefter 'kraever_godkendelse'.
+-- Triggere frem for rettelser i de enkelte funktioner: de fanger alle veje
+-- (sag_opret, sag_genaabn, sag_anke_indgiv, admin_sag_aabn, fremtidige
+-- funktioner). Alle de veje låser betalingen før handlen (samme rækkefølge
+-- som betaling_udbetaling_godkend), så triggerens opdatering af betalinger
+-- giver ingen deadlock. Nulstillingen logges i moderation_log.
+create or replace function public.betalinger_godkendelse_nulstil_kerne(p_trade uuid, p_aarsag text)
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  n integer;
+begin
+  if p_trade is null then return 0; end if;
+  with x as (
+    update public.betalinger b
+       set udbetaling_godkendt_kl = null, udbetaling_godkendt_af = null, opdateret = now()
+     where b.trade_id = p_trade
+       and b.udbetaling_godkendt_kl is not null
+       and b.stripe_transfer_id is null
+    returning b.trade_id, b.seller_id, b.saelger_udbetaling_id
+  ), l as (
+    insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+    select public.bidhamr_system_id(), 'udbetaling_godkendelse_nulstillet', 'handel', x.trade_id, x.seller_id,
+           left('Chefens godkendelse af udbetalingen er nulstillet: ' || coalesce(p_aarsag, 'ny sag')
+                || ' - en ny afgørelse kræver en ny godkendelse'
+                || case when x.saelger_udbetaling_id is not null then ' (udbetaling allerede i gang)' else '' end, 2000)
+      from x
+    returning 1
+  )
+  select count(*) into n from l;
+  return n;
+end;
+$fn$;
+revoke all on function public.betalinger_godkendelse_nulstil_kerne(uuid, text) from public, anon, authenticated;
+
+-- Fælles triggerfunktion. TG_ARGV[0]: årsagen til loggen. På trades er
+-- handlens id new.id, ellers new.trade_id.
+create or replace function public.betalinger_godkendelse_nulstil()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  -- To sætninger: plpgsql forbereder hver for sig, og trades har ingen
+  -- trade_id-kolonne.
+  if tg_table_name = 'trades' then
+    perform public.betalinger_godkendelse_nulstil_kerne(new.id, tg_argv[0]);
+  else
+    perform public.betalinger_godkendelse_nulstil_kerne(new.trade_id, tg_argv[0]);
+  end if;
+  return null;
+end;
+$fn$;
+revoke all on function public.betalinger_godkendelse_nulstil() from public, anon, authenticated;
+
+-- Tidligere udgave (kun testdatabasen) havde en særskilt funktion til trades.
+drop trigger if exists trades_godkendelse_nulstil on public.trades;
+drop function if exists public.betalinger_godkendelse_nulstil_handel();
+
+drop trigger if exists sager_godkendelse_nulstil_ny on public.sager;
+create trigger sager_godkendelse_nulstil_ny
+  after insert on public.sager
+  for each row execute function public.betalinger_godkendelse_nulstil('der er åbnet en sag på handlen');
+
+-- Genåbning (sag_genaabn sætter status tilbage til 'aaben') eller anden vej
+-- tilbage til åben / afventer retur.
+drop trigger if exists sager_godkendelse_nulstil_aaben on public.sager;
+create trigger sager_godkendelse_nulstil_aaben
+  after update of status on public.sager
+  for each row
+  when (new.status in ('aaben', 'afventer_retur') and old.status is distinct from new.status)
+  execute function public.betalinger_godkendelse_nulstil('sagen er genåbnet');
+
+drop trigger if exists sag_anker_godkendelse_nulstil on public.sag_anker;
+create trigger sag_anker_godkendelse_nulstil
+  after insert on public.sag_anker
+  for each row execute function public.betalinger_godkendelse_nulstil('afgørelsen er anket');
+
+create trigger trades_godkendelse_nulstil
+  after update of sag_aaben on public.trades
+  for each row
+  when (new.sag_aaben and not coalesce(old.sag_aaben, false))
+  execute function public.betalinger_godkendelse_nulstil('handlen er markeret som sag');
+
+-- Staff markerer en handel som sag (Admin → Handler → "Åbn sag"). Før en
+-- direkte update på trades fra serveren - det låste handlen før betalingen
+-- (modsat betaling_udbetaling_godkend og sag_*), og triggeren ovenfor
+-- opdaterer betalingen: risiko for deadlock. Låserækkefølge: betaling,
+-- handel. Medarbejdere må godt - det flytter ingen penge.
+-- Kode: ok | ugyldig | ingen_adgang | aarsag_mangler | aarsag_for_lang |
+--   ikke_fundet | inhabil | afsluttet
+create or replace function public.admin_sag_aabn(p_trade uuid, p_medarbejder uuid, p_aarsag text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  t      record;
+  v_tekst text := nullif(btrim(coalesce(p_aarsag, '')), '');
+begin
+  if p_trade is null or p_medarbejder is null then return jsonb_build_object('kode', 'ugyldig'); end if;
+  if not public.staff_chat_har_rolle(p_medarbejder, 'medarbejder') then
+    return jsonb_build_object('kode', 'ingen_adgang');
+  end if;
+  if v_tekst is null then return jsonb_build_object('kode', 'aarsag_mangler'); end if;
+  if char_length(v_tekst) > 2000 then return jsonb_build_object('kode', 'aarsag_for_lang'); end if;
+
+  perform 1 from public.betalinger where trade_id = p_trade order by id for update;
+  select * into t from public.trades where id = p_trade for update;
+  if not found then return jsonb_build_object('kode', 'ikke_fundet'); end if;
+  if public.penge_inhabil(p_medarbejder, t.buyer_id, t.seller_id) then
+    return jsonb_build_object('kode', 'inhabil');
+  end if;
+  if t.status not in ('betaling_modtaget', 'pakke_sendt', 'modtaget') then
+    return jsonb_build_object('kode', 'afsluttet');
+  end if;
+
+  update public.trades
+     set sag_aaben = true, sag_note = v_tekst, sag_aabnet_af = p_medarbejder, sag_aabnet_at = now()
+   where id = t.id;
+  insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+  values (p_medarbejder, 'sag_aabnet', 'handel', t.id, null, v_tekst);
+  return jsonb_build_object('kode', 'ok', 'trade_id', t.id);
+end;
+$fn$;
+revoke all on function public.admin_sag_aabn(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.admin_sag_aabn(uuid, uuid, text) to service_role;
 
 -- ===========================================================================
 -- 13. Frysning af sælgerens udbetalinger (fremmed udbetaling / plan ændret)
@@ -1148,7 +1337,7 @@ begin
                  where fo.trade_id = t.id and fo.type = 'udgaaende' and fo.returneret_kl is not null) then
     return jsonb_build_object('kode', 'ikke_afhentet');
   end if;
-  if b.total_oere >= public.chef_beloebsgraense_oere() and v_rolle <> 'chef' then
+  if greatest(b.total_oere, b.udbetaling_oere) >= public.chef_beloebsgraense_oere() and v_rolle <> 'chef' then
     return jsonb_build_object('kode', 'kraever_chef');
   end if;
 
@@ -1167,7 +1356,7 @@ begin
 
   return jsonb_build_object('kode', 'ok', 'betaling_id', b.id, 'trade_id', t.id,
                             'seller_id', t.seller_id, 'buyer_id', t.buyer_id,
-                            'over_graense', b.total_oere >= public.chef_beloebsgraense_oere());
+                            'over_graense', greatest(b.total_oere, b.udbetaling_oere) >= public.chef_beloebsgraense_oere());
 end;
 $fn$;
 revoke all on function public.admin_frigiv_handel(uuid, uuid, text) from public, anon, authenticated;
