@@ -115,6 +115,12 @@ export const GRAENSER = {
   // Samme endpoint pr. bruger, efter tokenet er godkendt (hvert kald rammer
   // Stripe).
   betaling_kort_bruger: { maks: 20, vindueSek: 60 * 60 },
+  // POST /api/betaling/app/<handling> (appens betaling, kort og
+  // udbetalingskonto) pr. IP før tokenet er valideret, og pr. bruger bagefter
+  // (hvert kald rammer Stripe). GET /api/betaling/app/retur pr. IP.
+  betaling_app_ip: { maks: 300, vindueSek: 60 * 60 },
+  betaling_app_bruger: { maks: 60, vindueSek: 10 * 60 },
+  betaling_app_retur_ip: { maks: 120, vindueSek: 60 * 60 },
   cvr_opslag_staff: { maks: 60, vindueSek: 60 * 60 },
   // Admin → Beta-invitationer: invitationsmails (nye og "Send igen") pr.
   // medarbejder. Databasen har sine egne lofter (60 nye pr. time pr.

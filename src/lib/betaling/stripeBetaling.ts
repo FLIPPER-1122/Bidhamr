@@ -923,9 +923,15 @@ async function efterBetalt(paymentIntentId: string) {
 // Returnerer CustomerSessionens client_secret (til Elements-optionen
 // customerSessionClientSecret) eller null. Kaster aldrig - uden sessionen kan
 // køberen stadig betale med et nyt kort, MobilePay osv.
+// kanal "app": appens PaymentSheet (stripe-react-native) kræver komponenten
+// mobile_payment_element i stedet for payment_element. Samme regler: kun
+// visning af det ene gemte kort, ingen fjern og ingen gem.
+export type BetalingsKanal = "web" | "app";
+
 export async function kundeSessionTilCheckout(
   koeberId: string,
   pi: Stripe.PaymentIntent,
+  kanal: BetalingsKanal = "web",
 ): Promise<string | null> {
   try {
     const kunde = typeof pi.customer === "string" ? pi.customer : (pi.customer?.id ?? null);
@@ -943,6 +949,23 @@ export async function kundeSessionTilCheckout(
 
     // Ingen penge flyttes - en CustomerSession giver kun Payment Element
     // adgang til at vise kortet (kortlivet client_secret).
+    if (kanal === "app") {
+      const session = await stripe.customerSessions.create({
+        customer: kunde,
+        components: {
+          mobile_payment_element: {
+            enabled: true,
+            features: {
+              payment_method_redisplay: "enabled",
+              payment_method_allow_redisplay_filters: ["always"],
+              payment_method_remove: "disabled",
+              payment_method_save: "disabled",
+            },
+          },
+        },
+      });
+      return session.client_secret;
+    }
     const session = await stripe.customerSessions.create({
       customer: kunde,
       components: {
@@ -2542,9 +2565,15 @@ export function erOnboardingRetur(v: unknown): v is OnboardingRetur {
   return v === "konto" || v === "opret-auktion";
 }
 
+// Appen (kanal "app"): Stripe kræver https i live-tilstand, så retur og
+// refresh går til GET /api/betaling/app/retur, som sender videre til appens
+// deep link (bidhamr://udbetalingskonto?status=retur|udloebet). Appen henter
+// selv et nyt link med sin Bearer-session, når status er "udloebet" - der
+// laves aldrig et link uden login.
 export async function onboardingLink(
   userId: string,
   retur: OnboardingRetur = "konto",
+  kanal: BetalingsKanal = "web",
 ): Promise<string> {
   const stripe = getStripe();
   await sikrStripeKunde(userId); // sikrer profilrækken
@@ -2601,10 +2630,13 @@ export async function onboardingLink(
 
   const link = await stripe.accountLinks.create({
     account: profil!.stripe_account_id!,
-    refresh_url: sideUrl(
-      retur === "konto" ? "/api/stripe/connect/onboarding" : `/api/stripe/connect/onboarding?retur=${retur}`,
-    ),
-    return_url: sideUrl(`/${retur}?stripe=retur`),
+    refresh_url:
+      kanal === "app"
+        ? sideUrl("/api/betaling/app/retur?status=udloebet")
+        : sideUrl(
+            retur === "konto" ? "/api/stripe/connect/onboarding" : `/api/stripe/connect/onboarding?retur=${retur}`,
+          ),
+    return_url: kanal === "app" ? sideUrl("/api/betaling/app/retur?status=retur") : sideUrl(`/${retur}?stripe=retur`),
     type: "account_onboarding",
   });
   return link.url;

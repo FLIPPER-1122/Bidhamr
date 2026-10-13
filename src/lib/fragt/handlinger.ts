@@ -310,10 +310,11 @@ export async function startReturfragt(
   tradeId: unknown,
   brugerId: string,
   afsender?: AdresseInput | null,
+  kanal: "web" | "app" = "web",
 ): Promise<ReturfragtStart> {
   const h = await hentHandel(tradeId, brugerId);
   if (!h || h.buyer_id !== brugerId) return { fejl: "Handlen findes ikke." };
-  return startReturfragtBetaling(h.id, brugerId, afsender ?? null);
+  return startReturfragtBetaling(h.id, brugerId, afsender ?? null, kanal);
 }
 
 // ------------------------------------------------------------ forsendelse, label, sporing

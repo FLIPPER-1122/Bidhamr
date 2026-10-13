@@ -796,15 +796,15 @@ Når trin 5–12 virker mod testdatabasen, er appen klar til at blive testet mod
 
 Kort og realistisk. Rækkefølgen er vigtigheden. Når kun én ting før torsdag: nr. 1.
 
-1. **Betaling fra appen** – `POST /api/betaling/app/<handling>` med Bearer-token (samme kode som server actions i
-   `src/app/actions/betaling.ts`): `betal` (checkout-betalingen: `clientSecret`, `customerSessionClientSecret`,
-   `customerId`, beløb og fejlen `vaelg_levering`), `status`, `gem-kort` + `bekraeft-kort` (SetupIntent),
-   `udbetalingskonto` (Stripes onboarding-link med retur til `bidhamr://`), `udbetalingskonto-status` og
-   `stripe-oversigt`. Uden det kan appen hverken tage imod betaling eller oprette sælgere. *Betaling-agenten + reviewer.*
+1. **Betaling fra appen** – **BYGGET (13. okt. 2026)**: `POST /api/betaling/app/<handling>` – `betal`,
+   `indstillinger`, `gem-kort`, `bekraeft-kort`, `fjern-kort`, `udbetalingskonto`, `udbetalingskonto-status`,
+   `stripe-oversigt`. Se `docs/APP-BETALING.md` (gælder også de **[MANGLER PÅ SERVEREN]**-punkter i 4.7 og 4.8).
+   Ingen ephemeral key – kun kundesession (`customerSessionClientSecret`).
 2. **Handelstrin fra appen** – `POST /api/handel/app/<handling>`: `send-pakke`, `modtaget`, `godkend`,
    `afhentning-bekraeft`, `sag-opret`, `sag-billeder`, `anke`, `andenchance-tilbud`, `andenchance-svar`, `genopsaet`.
    Hjemmesidens server actions sender mails/push og starter udbetalingen efter RPC'en. Kalder appen RPC'en direkte, sker
    det ikke (cron'en samler kun bud, beskeder, likes, spørgsmål, bedømmelsessvar og fristforlængelser op).
+   Ikke bygget endnu – listen står i `docs/APP-BETALING.md` (sag og anke klares allerede af cron).
    *Backend-agent + reviewer.*
 3. **Anonym budhistorik** – en RPC (fx `auktion_budhistorik(p_auktion)`), der giver det samme som auktionssiden på
    hjemmesiden ("Byder 1", beløb, tidspunkt, "automatisk") uden byder-id'er. *Backend-agent.*

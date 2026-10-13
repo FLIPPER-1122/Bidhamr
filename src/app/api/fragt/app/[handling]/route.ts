@@ -190,7 +190,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
         // Adressen kræves før betalingen, så returkoden kan laves bagefter.
         const afsender = obj(krop.afsender);
         if (!afsender) return svar(409, { fejl: "Skriv din adresse og dit mobilnummer.", kode: "afvist" });
-        const r = await startReturfragt(krop.trade_id, bruger.id, afsender);
+        // "app": kundesessionen laves til PaymentSheet (mobile_payment_element).
+        const r = await startReturfragt(krop.trade_id, bruger.id, afsender, "app");
         if ("fejl" in r) return svar(409, { fejl: r.fejl, kode: r.betalt ? "betalt" : "afvist" });
         return resultat(r);
       }
