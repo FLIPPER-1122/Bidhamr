@@ -5,8 +5,8 @@ import { harCronAdgang } from "@/lib/cronAdgang";
 
 // Drift-alarmer (src/lib/driftAlarm.ts). Kaldes hvert 5. minut af pg_cron-
 // jobbet 'drift-alarm' (migration 20261008010000_drift_alarmer.sql) med
-// samme CRON_SECRET som betalings-cron'en. Idempotent: "højst én mail pr.
-// slags pr. 30 min" håndhæves atomisk i databasen.
+// samme CRON_SECRET som betalings-cron'en. Idempotent: "samme blok højst én
+// gang i timen" håndhæves atomisk i databasen (drift_alarm_vurder_blokke).
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 

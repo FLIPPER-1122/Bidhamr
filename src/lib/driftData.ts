@@ -6,6 +6,7 @@ import "server-only";
 // kanal, status, fejltekst og modtagerens id + maskeret e-mail.
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { maskerEmail } from "@/lib/drift";
+import { alarmKode } from "@/lib/driftAlarmTyper";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -244,10 +245,16 @@ export async function hentIkkeSendte(admin: Admin, nu: number): Promise<Sektion<
 
 // ------------------------------------------------------------------ fejl
 
+// Grupperet som i alarm-mailen: samme kilde og kode (alarmKode, uden id'er),
+// så fx alle "betalinger, vi ikke kender" står i én gruppe med samme danske
+// titel som i mailen.
 export type FejlGruppe = {
   noegle: string;
   kilde: string;
+  kode: string;
+  // Seneste fejltekst og op til 3 forskellige eksempler (nyeste først).
   besked: string;
+  eksempler: string[];
   antal: number;
   foerst: string;
   senest: string;
@@ -275,13 +282,16 @@ export async function hentFejlGrupper(
   let iAlt = 0;
   for (const r of (data ?? []) as FejlRaekke[]) {
     iAlt += r.antal;
-    const noegle = `${r.kilde}\u0000${r.besked}`;
+    const kode = alarmKode(r.kilde, r.besked);
+    const noegle = `${r.kilde}|${kode}`;
     let g = grupper.get(noegle);
     if (!g) {
       g = {
         noegle,
         kilde: r.kilde,
+        kode,
         besked: r.besked,
+        eksempler: [],
         antal: 0,
         foerst: r.oprettet_kl,
         senest: r.senest_kl,
@@ -293,6 +303,8 @@ export async function hentFejlGrupper(
       grupper.set(noegle, g);
     }
     g.antal += r.antal;
+    // Rækkerne kommer nyeste først.
+    if (!g.eksempler.includes(r.besked) && g.eksempler.length < 3) g.eksempler.push(r.besked);
     if (r.oprettet_kl < g.foerst) g.foerst = r.oprettet_kl;
     if (r.senest_kl > g.senest) g.senest = r.senest_kl;
     if (r.sti && !g.stier.includes(r.sti) && g.stier.length < 3) g.stier.push(r.sti);
