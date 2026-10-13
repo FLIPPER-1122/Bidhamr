@@ -7,7 +7,8 @@ import "server-only";
 // Databasen (drift_alarm_vurder_blokke, migration
 // 20261021030000_drift_alarm_blokke.sql) finder hændelserne, samler dem i
 // blokke (samme kilde og kode) og afgør atomisk, hvilke blokke der sendes:
-// samme blok højst én gang i timen, medmindre antallet er steget markant.
+// nye fejl med det samme; gentagelser af samme fejl samles (røde højst hvert
+// 15. minut, gule højst én gang i timen).
 // Selve mailen bygges af src/lib/driftAlarmMail.ts.
 //
 // Er migrationen ikke kørt, bruges den gamle drift_alarm_vurder (én mail pr.
@@ -23,7 +24,14 @@ import "server-only";
 // 'klient') vises kun som antal.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl, renFejltekst, renSti } from "@/lib/drift";
-import { bygAlarmMail, grupperGamleAlarmer, GENSEND_MIN, type AlarmBlok, type GammelAlarm } from "@/lib/driftAlarmMail";
+import {
+  bygAlarmMail,
+  grupperGamleAlarmer,
+  GENSEND_MIN,
+  GENSEND_ROED_MIN,
+  type AlarmBlok,
+  type GammelAlarm,
+} from "@/lib/driftAlarmMail";
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { getResend } from "@/lib/resend";
 
@@ -38,9 +46,10 @@ export const ALARM_SLAGS: Record<AlarmSlags, string> = {
   webhook: "Beskeder udefra (webhooks)",
 };
 
-// Samme blok sendes højst én gang pr. ALARM_INTERVAL_MIN minutter, medmindre
-// antallet er steget markant.
+// Gentagelser af samme fejl: gule højst én gang pr. ALARM_INTERVAL_MIN
+// minutter, røde højst hvert ALARM_INTERVAL_ROED_MIN.
 export const ALARM_INTERVAL_MIN = GENSEND_MIN;
+export const ALARM_INTERVAL_ROED_MIN = GENSEND_ROED_MIN;
 
 const EMAIL = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]{2,}$/;
 

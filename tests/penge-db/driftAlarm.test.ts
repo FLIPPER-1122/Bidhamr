@@ -84,7 +84,23 @@ async function fejl(kilde: string, besked: string, sti: string | null = null) {
 // tilbage), så de næste rækker, der indsættes, ses - og kun de.
 const aabnVindue = () =>
   db.exec(`update public.drift_alarmer set daekket_til = greatest(now() - interval '1 minute',
-    coalesce((select max(greatest(f.oprettet_kl, f.senest_kl)) from public.drift_fejl f), '-infinity'))`);
+    coalesce((select max(greatest(f.oprettet_kl, f.senest_kl)) from public.drift_fejl f), '-infinity'),
+    coalesce((select max(k.afsluttet_kl) from public.drift_cron_koersler k), '-infinity'))`);
+
+// Præcis samme fejl igen: drift_fejl_log tæller den eksisterende række op.
+async function igen(besked: string) {
+  await db.query(
+    `update public.drift_fejl set antal = antal + 1, senest_kl = now() - interval '20 seconds' where besked = $1`,
+    [besked],
+  );
+}
+async function cronFejlede(fejl: string) {
+  await db.query(
+    `insert into public.drift_cron_koersler (job, ok, fejl, startet_kl, afsluttet_kl)
+     values ('betalings-cron', false, $1, now() - interval '40 seconds', now() - interval '30 seconds')`,
+    [fejl],
+  );
+}
 
 beforeAll(async () => {
   db = new PGlite();
@@ -130,6 +146,7 @@ describe("drift_alarm_er_roed = alarmType().alvor", () => {
 describe("drift_alarm_vurder_blokke", () => {
   beforeEach(async () => {
     await db.exec(`delete from public.drift_fejl; delete from public.drift_alarm_blokke; delete from public.drift_fejl_minut;
+      delete from public.drift_cron_koersler;
       update public.drift_alarmer set daekket_til = now(), sidst_sendt_kl = null;`);
   });
 
@@ -142,7 +159,7 @@ describe("drift_alarm_vurder_blokke", () => {
     expect(s.blokke.find((b) => b.noegle === "webhook|betaling/ukendt-betaling")?.antal).toBe(12);
   });
 
-  it("røde blokke sendes med det samme, også inden for timen", async () => {
+  it("rød: en ny særskilt fejltekst (ny pi_) sendes med det samme", async () => {
     await aabnVindue();
     await fejl("webhook", "betaling/ukendt-betaling: Charge ch_3UQ4Ab01XyZq ukendt");
     expect(noegler(await vurder())).toEqual(["webhook|betaling/ukendt-betaling"]);
@@ -151,6 +168,55 @@ describe("drift_alarm_vurder_blokke", () => {
     const s = await vurder();
     expect(noegler(s)).toEqual(["webhook|betaling/ukendt-betaling"]);
     expect(s.blokke[0].antal).toBe(1);
+  });
+
+  it("rød: præcis samme fejl igen inden for 15 minutter venter og tælles med i næste mail", async () => {
+    const t = "betaling/ukendt-betaling: Charge ch_3UQ4Ab01XyZq ukendt";
+    await aabnVindue();
+    await fejl("webhook", t);
+    expect(noegler(await vurder())).toEqual(["webhook|betaling/ukendt-betaling"]);
+    for (let i = 0; i < 2; i++) {
+      await aabnVindue();
+      await igen(t);
+      const s = await vurder();
+      expect(s.blokke).toEqual([]);
+      expect(s.holdt.map((h) => h.noegle)).toEqual(["webhook|betaling/ukendt-betaling"]);
+    }
+    // 15 minutter efter sidste mail: det ventende sendes, også uden nye hændelser.
+    await db.exec(`update public.drift_alarm_blokke set sidst_sendt_kl = now() - interval '16 minutes'`);
+    await aabnVindue();
+    const s = await vurder();
+    expect(noegler(s)).toEqual(["webhook|betaling/ukendt-betaling"]);
+    expect(s.blokke[0].antal).toBe(2);
+    expect(s.blokke[0].gentaget).toBe(false);
+  });
+
+  it("rød: samme fejl, der kommer igen efter over 15 minutters pause, sendes med det samme", async () => {
+    const t = "betaling/ukendt-betaling: Charge ch_3UQ4Ab01XyZq ukendt";
+    await aabnVindue();
+    await fejl("webhook", t);
+    await vurder();
+    await db.exec(`update public.drift_alarm_blokke
+      set sidst_sendt_kl = now() - interval '5 minutes', sidst_set_kl = now() - interval '20 minutes'`);
+    await aabnVindue();
+    await igen(t);
+    expect(noegler(await vurder())).toEqual(["webhook|betaling/ukendt-betaling"]);
+  });
+
+  it("rød cron: samme fejl hver kørsel sendes højst hvert 15. minut, en ny fejl straks", async () => {
+    await aabnVindue();
+    await cronFejlede("Stripe svarede ikke (req_AbCdEf123456)");
+    expect(noegler(await vurder())).toEqual(["cron|cron/koersel-fejlede"]);
+    // Samme fejl, kun et andet id: gentagelse.
+    await aabnVindue();
+    await cronFejlede("Stripe svarede ikke (req_ZzZzZz987654)");
+    expect((await vurder()).blokke).toEqual([]);
+    // En anden fejl: sendes straks, med den ventende med i antallet.
+    await aabnVindue();
+    await cronFejlede("relation \"betalinger\" does not exist");
+    const s = await vurder();
+    expect(noegler(s)).toEqual(["cron|cron/koersel-fejlede"]);
+    expect(s.blokke[0].antal).toBe(2);
   });
 
   it("en ny fejltekst sendes med det samme, også inden for timen", async () => {

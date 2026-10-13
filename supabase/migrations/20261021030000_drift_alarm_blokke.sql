@@ -17,16 +17,19 @@
 --      tests/penge-db/driftAlarm.test.ts).
 --   4. drift_alarm_vurder_blokke(p_kan_sende): finder hændelserne (samme
 --      kilder og vinduer som drift_alarm_vurder fra 20261008011000),
---      grupperer dem i blokke og afgør pr. blok. Sendes med det samme:
---        - røde blokke (hver gang der er nye hændelser)
---        - ny_fejl-blokke (en fejltekst, der ikke er set før) - undtagen
---          browser-fejl, som brugere selv kan fremkalde
---        - blokke, der aldrig er sendt eller sidst blev sendt for over
---          1 time siden, hvor antallet er steget markant (mindst det
---          dobbelte og mindst 3), eller hvor den sidste mail fejlede
---      Ellers (gule cron-blokke, browser-fejl) venter hændelserne og kommer
---      med, når timen er gået. 'mange_fejl' er en tilstand (seneste
---      15 min.) og venter ikke.
+--      grupperer dem i blokke og afgør pr. blok.
+--      Røde blokke sendes med det samme ved første forekomst, ved en ny
+--      særskilt fejltekst (fx en ny pi_ ved ukendt betaling) og når fejlen
+--      kommer igen efter over 15 minutters pause. Gentagelser af præcis
+--      samme fejl sendes højst hvert 15. minut - de tælles op og kommer med
+--      i næste mail.
+--      Gule blokke sendes med det samme ved første forekomst, ved en ny
+--      fejltekst i ny_fejl (ikke browser-fejl, som brugere selv kan
+--      fremkalde), når antallet er steget markant (mindst det dobbelte og
+--      mindst 3), eller når de sidst blev sendt for over 1 time siden.
+--      Ellers venter de og kommer med, når timen er gået. 'mange_fejl' er
+--      en tilstand (seneste 15 min.) og venter ikke.
+--      En blok, hvis sidste mail fejlede (tving_send), sendes altid.
 --      Slags-niveauets "højst én mail pr. 30 min." er erstattet af dette.
 --      Hændelserne læses stadig præcis én gang pr. slags (daekket_til).
 --   5. drift_alarm_blokke_fejlet(): mailen kunne ikke sendes - blokkene
@@ -68,6 +71,21 @@ $fn$;
 revoke all on function public.drift_alarm_kode(text, text) from public, anon, authenticated;
 grant execute on function public.drift_alarm_kode(text, text) to service_role;
 
+-- Fejltekst uden id'er (samme mønster som drift_alarm_kode): bruges til at se,
+-- om en cron-kørsel fejler med "præcis samme fejl" som sidst.
+create or replace function public.drift_alarm_norm(p_tekst text)
+returns text
+language sql
+immutable
+parallel safe
+set search_path = ''
+as $fn$
+  select regexp_replace(coalesce(p_tekst, ''), '(?=[A-Za-z_-]*[0-9])[A-Za-z0-9_-]{10,}', '#', 'g')
+$fn$;
+
+revoke all on function public.drift_alarm_norm(text) from public, anon, authenticated;
+grant execute on function public.drift_alarm_norm(text) to service_role;
+
 -- ============================================================ 2. blokke
 
 create table if not exists public.drift_alarm_blokke (
@@ -87,6 +105,10 @@ create table if not exists public.drift_alarm_blokke (
   venter_eksempler  jsonb not null default '[]'::jsonb,
   -- Sidste mail fejlede: send ved næste kørsel uanset timen.
   tving_send        boolean not null default false,
+  -- md5 af de fejltekster, der er set (til "ny særskilt fejltekst"), og
+  -- hvornår blokken sidst havde en hændelse (til "kommer igen efter pause").
+  sete_tekster      jsonb not null default '[]'::jsonb,
+  sidst_set_kl      timestamptz,
   opdateret_kl      timestamptz not null default now(),
   constraint drift_alarm_blokke_noegle_laengde check (char_length(noegle) <= 200),
   constraint drift_alarm_blokke_slags check (slags in ('ny_fejl', 'mange_fejl', 'cron', 'webhook')),
@@ -98,6 +120,8 @@ create index if not exists drift_alarm_blokke_venter_idx
 
 -- Fra en tidligere udgave af denne fil (kun testdatabasen).
 alter table public.drift_alarm_blokke add column if not exists tving_send boolean not null default false;
+alter table public.drift_alarm_blokke add column if not exists sete_tekster jsonb not null default '[]'::jsonb;
+alter table public.drift_alarm_blokke add column if not exists sidst_set_kl timestamptz;
 
 -- Kun funktionerne skriver (security definer); appen læser højst.
 alter table public.drift_alarm_blokke enable row level security;
@@ -211,6 +235,9 @@ declare
   -- Hændelser ses kun til og med 10 sekunder siden (se drift_alarm_vurder).
   v_graense  timestamptz := now() - interval '10 seconds';
   v_frist    constant interval := interval '1 hour';
+  -- Røde: gentagelser af samme fejl højst hvert 15. minut; en pause på over
+  -- 15 minutter gør næste forekomst "ny".
+  v_frist_roed constant interval := interval '15 minutes';
   r          record;
   b          public.drift_alarm_blokke%rowtype;
   g          jsonb;
@@ -227,6 +254,7 @@ declare
   v_eks      jsonb;
   v_sendes   boolean;
   v_roed     boolean;
+  v_ny_tekst boolean;
   v_set      text[] := '{}';
   v_send     jsonb := '[]'::jsonb;
   v_ingen    jsonb := '[]'::jsonb;
@@ -251,7 +279,7 @@ begin
       -- En ny slags fejl (kilde + besked ikke set de seneste 30 dage).
       select coalesce(jsonb_agg(jsonb_build_object(
                'kilde', q.kilde, 'kode', q.kode, 'antal', q.antal,
-               'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler)), '[]'::jsonb)
+               'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler, 'tekster', q.tekster)), '[]'::jsonb)
         into v_grupper
         from (
           select f.kilde,
@@ -261,7 +289,8 @@ begin
                  to_jsonb((array_agg(jsonb_build_object(
                      'sti', case when f.kilde = 'klient' then null else f.sti end,
                      'besked', case when f.kilde = 'klient' then null else left(f.besked, 300) end)
-                   order by f.id desc))[1:3]) as eksempler
+                   order by f.id desc))[1:3]) as eksempler,
+                 to_jsonb((array_agg(distinct md5(f.besked)))[1:100]) as tekster
             from public.drift_fejl f
            where f.oprettet_kl > r.daekket_til
              and f.oprettet_kl <= v_graense
@@ -302,14 +331,15 @@ begin
     elsif r.slags = 'webhook' then
       select coalesce(jsonb_agg(jsonb_build_object(
                'kilde', q.kilde, 'kode', q.kode, 'antal', q.antal,
-               'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler)), '[]'::jsonb)
+               'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler, 'tekster', q.tekster)), '[]'::jsonb)
         into v_grupper
         from (
           select f.kilde,
                  public.drift_alarm_kode(f.kilde, f.besked) as kode,
                  count(*) as antal, min(f.senest_kl) as fra, max(f.senest_kl) as til,
                  to_jsonb((array_agg(jsonb_build_object('sti', f.sti, 'besked', left(f.besked, 300))
-                   order by f.senest_kl desc))[1:3]) as eksempler
+                   order by f.senest_kl desc))[1:3]) as eksempler,
+                 to_jsonb((array_agg(distinct md5(f.besked)))[1:100]) as tekster
             from public.drift_fejl f
            where f.kilde = 'webhook'
              and f.senest_kl > r.daekket_til
@@ -320,14 +350,15 @@ begin
       -- 1) cron-fejl i drift_fejl
       select coalesce(jsonb_agg(jsonb_build_object(
                'kilde', q.kilde, 'kode', q.kode, 'antal', q.antal,
-               'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler)), '[]'::jsonb)
+               'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler, 'tekster', q.tekster)), '[]'::jsonb)
         into v_grupper
         from (
           select f.kilde,
                  public.drift_alarm_kode(f.kilde, f.besked) as kode,
                  count(*) as antal, min(f.senest_kl) as fra, max(f.senest_kl) as til,
                  to_jsonb((array_agg(jsonb_build_object('sti', f.sti, 'besked', left(f.besked, 300))
-                   order by f.senest_kl desc))[1:3]) as eksempler
+                   order by f.senest_kl desc))[1:3]) as eksempler,
+                 to_jsonb((array_agg(distinct md5(f.besked)))[1:100]) as tekster
             from public.drift_fejl f
            where f.kilde = 'cron'
              and f.senest_kl > r.daekket_til
@@ -337,13 +368,14 @@ begin
       -- 2) betalings-cron fejlede eller hænger (ikke afsluttet efter 10 min)
       select coalesce(jsonb_agg(jsonb_build_object(
                'kilde', 'cron', 'kode', q.kode, 'antal', q.antal,
-               'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler)), '[]'::jsonb)
+               'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler, 'tekster', q.tekster)), '[]'::jsonb)
         into v_ekstra
         from (
           select case when k.ok is false then 'cron/koersel-fejlede' else 'cron/koersel-haenger' end as kode,
                  count(*) as antal, min(k.startet_kl) as fra, max(k.startet_kl) as til,
                  to_jsonb((array_agg(jsonb_build_object('sti', k.job, 'besked', left(coalesce(k.fejl, ''), 300))
-                   order by k.startet_kl desc))[1:3]) as eksempler
+                   order by k.startet_kl desc))[1:3]) as eksempler,
+                 to_jsonb((array_agg(distinct md5(k.job || ':' || public.drift_alarm_norm(k.fejl))))[1:100]) as tekster
             from public.drift_cron_koersler k
            where (k.ok is false and k.afsluttet_kl > r.daekket_til and k.afsluttet_kl <= v_graense)
               or (k.afsluttet_kl is null
@@ -363,7 +395,8 @@ begin
         v_grupper := v_grupper || jsonb_build_array(jsonb_build_object(
           'kilde', 'cron', 'kode', 'cron/holdt-op', 'antal', 1,
           'fra', v_sidst_ok, 'til', v_sidst_ok,
-          'eksempler', jsonb_build_array(jsonb_build_object('sti', 'betalings-cron', 'besked', null))));
+          'eksempler', jsonb_build_array(jsonb_build_object('sti', 'betalings-cron', 'besked', null)),
+          'tekster', jsonb_build_array(md5('cron/holdt-op'))));
       end if;
 
       -- 4) pg_cron-jobs, der fejlede
@@ -371,12 +404,14 @@ begin
         execute $q$
           select coalesce(jsonb_agg(jsonb_build_object(
                    'kilde', 'cron', 'kode', 'cron/pg-cron-job', 'antal', q.antal,
-                   'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler)), '[]'::jsonb)
+                   'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler, 'tekster', q.tekster)), '[]'::jsonb)
             from (
               select count(*) as antal, min(d.start_time) as fra, max(d.start_time) as til,
                      to_jsonb((array_agg(jsonb_build_object(
                          'sti', j.jobname::text, 'besked', left(coalesce(d.return_message, ''), 300))
-                       order by d.runid desc))[1:3]) as eksempler
+                       order by d.runid desc))[1:3]) as eksempler,
+                     to_jsonb((array_agg(distinct md5(coalesce(j.jobname::text, '') || ':'
+                       || public.drift_alarm_norm(d.return_message))))[1:100]) as tekster
                 from cron.job_run_details d
                 left join cron.job j on j.jobid = d.jobid
                where d.status = 'failed'
@@ -392,7 +427,7 @@ begin
         execute $q$
           select coalesce(jsonb_agg(jsonb_build_object(
                    'kilde', 'cron', 'kode', 'cron/http-kald', 'antal', q.antal,
-                   'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler)), '[]'::jsonb)
+                   'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler, 'tekster', q.tekster)), '[]'::jsonb)
             from (
               select count(*) as antal, min(h.created) as fra, max(h.created) as til,
                      to_jsonb((array_agg(jsonb_build_object(
@@ -400,7 +435,10 @@ begin
                          'besked', case when h.timed_out then 'Timeout'
                                         when h.error_msg is not null then left(h.error_msg, 200)
                                         else 'HTTP ' || coalesce(h.status_code::text, '?') end)
-                       order by h.id desc))[1:3]) as eksempler
+                       order by h.id desc))[1:3]) as eksempler,
+                     to_jsonb((array_agg(distinct md5(case when h.timed_out then 'Timeout'
+                                        when h.error_msg is not null then public.drift_alarm_norm(h.error_msg)
+                                        else 'HTTP ' || coalesce(h.status_code::text, '?') end)))[1:100]) as tekster
                 from net._http_response h
                where h.created > $1
                  and h.created <= $2
@@ -454,12 +492,33 @@ begin
     end if;
 
     v_roed := public.drift_alarm_er_roed(b.kilde, b.kode);
-    v_sendes := v_roed
-             or b.tving_send
-             or (v_slags = 'ny_fejl' and b.kilde <> 'klient')
-             or b.sidst_sendt_kl is null
-             or b.sidst_sendt_kl <= v_nu - v_frist
-             or v_total >= greatest(3, 2 * b.sidst_sendt_antal);
+    select exists (select 1 from jsonb_array_elements_text(coalesce(g->'tekster', '[]'::jsonb)) t(x)
+                    where not (b.sete_tekster ? t.x))
+      into v_ny_tekst;
+    if v_roed then
+      v_sendes := b.tving_send
+               or b.sidst_sendt_kl is null
+               or b.sidst_sendt_kl <= v_nu - v_frist_roed
+               or v_ny_tekst
+               or b.sidst_set_kl is null
+               or (g->>'fra')::timestamptz > b.sidst_set_kl + v_frist_roed;
+    else
+      v_sendes := b.tving_send
+               or (v_slags = 'ny_fejl' and b.kilde <> 'klient')
+               or b.sidst_sendt_kl is null
+               or b.sidst_sendt_kl <= v_nu - v_frist
+               or v_total >= greatest(3, 2 * b.sidst_sendt_antal);
+    end if;
+
+    -- Husk, hvad der er set (også når intet sendes).
+    update public.drift_alarm_blokke k
+       set sidst_set_kl = greatest(k.sidst_set_kl, (g->>'til')::timestamptz),
+           sete_tekster = (select coalesce(jsonb_agg(distinct t.x), '[]'::jsonb)
+                             from jsonb_array_elements_text(
+                                    case when jsonb_array_length(k.sete_tekster) > 500 then '[]'::jsonb
+                                         else k.sete_tekster end
+                                    || coalesce(g->'tekster', '[]'::jsonb)) t(x))
+     where k.noegle = v_noegle;
 
     if not p_kan_sende then
       update public.drift_alarm_blokke
@@ -482,7 +541,9 @@ begin
       v_send := v_send || jsonb_build_array(jsonb_build_object(
         'noegle', v_noegle, 'slags', v_slags, 'kilde', b.kilde, 'kode', b.kode,
         'antal', v_total, 'fra', v_fra, 'til', v_til, 'eksempler', v_eks,
-        'gentaget', b.sidst_sendt_kl is not null and b.sidst_sendt_kl > v_nu - v_frist,
+        -- "Sendt igen, fordi antallet er steget" - kun gule (røde sendes ved ny fejl).
+        'gentaget', not v_roed and not b.tving_send
+                    and b.sidst_sendt_kl is not null and b.sidst_sendt_kl > v_nu - v_frist,
         'forrige_sendt_kl', b.sidst_sendt_kl, 'forrige_antal', b.sidst_sendt_antal));
       v_status := v_status || jsonb_build_object(v_slags, 'sendt');
     else
@@ -502,12 +563,15 @@ begin
   end loop;
 
   -- ---------------------------------------------------- ventende blokke
-  -- Holdt tilbage, og timen er gået: sendes nu, også uden nye hændelser.
+  -- Holdt tilbage, og fristen er gået (røde 15 min., gule 1 time): sendes
+  -- nu, også uden nye hændelser.
   for b in
     select * from public.drift_alarm_blokke k
      where k.venter_antal > 0
        and not (k.noegle = any (v_set))
-       and (k.tving_send or k.sidst_sendt_kl is null or k.sidst_sendt_kl <= v_nu - v_frist)
+       and (k.tving_send or k.sidst_sendt_kl is null
+            or k.sidst_sendt_kl <= v_nu - case when public.drift_alarm_er_roed(k.kilde, k.kode)
+                                               then v_frist_roed else v_frist end)
      order by k.noegle
      for update
   loop

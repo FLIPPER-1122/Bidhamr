@@ -7,6 +7,8 @@ import { ALARM_TYPER, ROEDE_PRAEFIKSER, UKENDT_TYPE, alarmKode, alarmType, idIEk
 import {
   bygAlarmMail,
   eksempelIder,
+  GENSEND_MIN,
+  GENSEND_ROED_MIN,
   grupperGamleAlarmer,
   renLinks,
   sorterBlokke,
@@ -306,6 +308,12 @@ describe("bygAlarmMail", () => {
     expect(m.html).not.toContain("evil.com");
     expect(m.html).not.toContain("<b>nu</b>");
     expect(m.html).toContain("&lt;b&gt;nu&lt;/b&gt;");
+  });
+  it("forklarer reglen for gentagelser i bunden", () => {
+    expect(GENSEND_ROED_MIN).toBe(15);
+    expect(GENSEND_MIN).toBe(60);
+    expect(mail.text).toContain("Nye fejl sendes med det samme.");
+    expect(mail.text).toContain("røde højst hvert 15. minut, gule højst én gang i timen");
   });
   it("sendt igen, fordi antallet er steget", () => {
     const m = bygAlarmMail([{ ...blokUkendt, gentaget: true, forrige_antal: 3 }], NU);

@@ -14,7 +14,13 @@ import {
 } from "@/lib/driftData";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { hentBesoeg, stiNavn } from "@/lib/statistik";
-import { ALARM_INTERVAL_MIN, ALARM_SLAGS, alarmModtagere, type AlarmSlags } from "@/lib/driftAlarm";
+import {
+  ALARM_INTERVAL_MIN,
+  ALARM_INTERVAL_ROED_MIN,
+  ALARM_SLAGS,
+  alarmModtagere,
+  type AlarmSlags,
+} from "@/lib/driftAlarm";
 import { alarmType } from "@/lib/driftAlarmTyper";
 import AdminSide from "@/components/admin/AdminSide";
 import { DriftFaner } from "@/components/admin/OmraadeFaner";
@@ -342,8 +348,9 @@ export default async function AdminDrift({
             <p className="text-xs text-tekst-svag">
               Tjekkes hvert 5. minut (pg_cron-jobbet <code>drift-alarm</code>). Der sendes én samlet mail ved en ny
               slags fejl, over 20 fejl på 15 minutter, cron-fejl og webhook-fejl. Hændelser af samme type samles i
-              én blok med samme titel som i listen nedenfor. Samme blok sendes højst én gang pr. {ALARM_INTERVAL_MIN}{" "}
-              minutter, medmindre antallet er steget markant. Hvis hele siden er nede, kan den ikke selv sende besked;
+              én blok med samme titel som i listen nedenfor. Nye fejl sendes med det samme. Gentagelser af samme
+              fejl samles: røde højst hvert {ALARM_INTERVAL_ROED_MIN}. minut, gule højst én gang pr.{" "}
+              {ALARM_INTERVAL_MIN} minutter (medmindre antallet er steget markant). Hvis hele siden er nede, kan den ikke selv sende besked;
               det klarer den eksterne overvågning af <code>/api/helbred</code>.
             </p>
           </div>

@@ -14,9 +14,12 @@
 import { bygMail, escapeHtml, sideUrl } from "@/lib/mails/layout";
 import { ALARM_TYPER, alarmKode, alarmType, idIEksempel, type AlarmType } from "@/lib/driftAlarmTyper";
 
-// Samme blok sendes højst én gang pr. time, medmindre antallet er steget
-// markant (håndhæves i databasen: drift_alarm_vurder_blokke).
+// Gentagelser af samme fejl: gule blokke højst én gang pr. time (medmindre
+// antallet er steget markant), røde højst hvert 15. minut. En ny fejltekst
+// eller en fejl, der kommer igen efter en pause, sendes med det samme.
+// Håndhæves i databasen (drift_alarm_vurder_blokke).
 export const GENSEND_MIN = 60;
+export const GENSEND_ROED_MIN = 15;
 
 export type AlarmEksempel = {
   kilde?: string | null;
@@ -315,7 +318,7 @@ export function bygAlarmMail(blokke: AlarmBlok[], nu: Date = new Date()) {
     blokkeHtml: html.join("\n          "),
     blokkeTekst: tekst.join("\n"),
     knap: { tekst: "Åbn drift-siden", url: sideUrl("/admin/drift") },
-    aarsag: `Du får denne mail, fordi din adresse står i DRIFT_ALARM_MAIL. Samme alarm sendes højst én gang i timen, medmindre antallet stiger markant. Fejl fra brugernes browser vises kun på drift-siden, og links i fejltekster er fjernet.`,
+    aarsag: `Du får denne mail, fordi din adresse står i DRIFT_ALARM_MAIL. Nye fejl sendes med det samme. Gentagelser af samme fejl samles: røde højst hvert ${GENSEND_ROED_MIN}. minut, gule højst én gang i timen. Fejl fra brugernes browser vises kun på drift-siden, og links i fejltekster er fjernet.`,
   });
   return { subject: emne, ...mail };
 }
