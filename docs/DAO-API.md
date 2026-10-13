@@ -4,7 +4,56 @@ Kilde: DAO's offentlige dokumentation, https://api.dao.as/docs/v1/ (samme side s
 parcelservice", **version 132, gældende fra 28. aug. 2026**. Læst 12. okt. 2026. Siden er én lang
 Slate/OpenAPI-side. Der er ikke logget ind nogen steder, og der er ikke sendt nogen kald til DAO.
 
-Ingen adapter-kode endnu. Notatet beskriver, hvad `src/lib/fragt/dao.ts` skal gøre, når Filip har kunde-id og kode.
+**Adapteren er bygget (13. okt. 2026), men ikke afprøvet mod DAO**: vi har endnu ingen nøgler og intet
+testmiljø, så alt er testet mod egne eksempelsvar (fixtures). Se "Bygget" og "Mangler" lige herunder. Resten af
+notatet er planen og dokumentationens indhold, som adapteren bygger på.
+
+---
+
+## Bygget (13. okt. 2026 – mangler nøgler)
+
+| Del | Fil | Status |
+|---|---|---|
+| Adapter (`Fragtfirma`) | `src/lib/fragt/dao.ts` | Shop2Shop (`c2cindleveringsordre.php`), Shop2Home (`ShoptildirekteLeveringsordre.php`), labelfri kode, PDF via `HentLabel.php`, pakkeshops med åbningstider (`FindPakkeshop.php`), annullering (`AnnullerePakke.php`), sporing (`TrackNTrace_v2.php` med stregkode og med token), efterlysning (`createclaim.php`, bortkommet). Ingen webhook (svarer 404). |
+| Parsning | `src/lib/fragt/daoParse.ts` | Tolerant: `OK`/`FEJL`/`ERROR`, engelske feltnavne, "pæne" anførselstegn, tal som tekst, dansk tid -> UTC, sanitering. |
+| Hændelseskoder | `src/lib/fragt/daoKoder.ts` | Kun dokumentationens eksempler (10 og 11 -> "undervejs"). **Ukendt kode ændrer aldrig status** (gemmes i `fragt_ukendte_koder`, drift får en advarsel første gang). |
+| Valg af firma | `src/lib/fragt/index.ts` | `FRAGTFIRMA=dao`. Tom i udvikling/test = testfragtfirmaet (som før). Shipmondo-adapteren bliver liggende. |
+| Migration | `supabase/migrations/20261021010000_fragt_dao_direkte.sql` | `'dao'` i alle checks og funktioner, lempet labelgrænse for DAO, `fragt_sporing_token`, `fragt_ukendte_koder`, `fragt_foraeldreloese`, `fragt_efterlysninger`, `forsendelse_gem_label`. Kørt to gange på testdatabasen. |
+| Sporing i cron | `koerFragtCron`/`koerSporingsfeed` i `src/lib/fragt/server.ts` | Ét feed-kald højst hvert 10. minut i betalings-cron'en (hvert 5. minut). Tokenet gemmes først, når alle hændelser er gemt (compare-and-set). Pakke-for-pakke kun som reserve (hver 12. time). |
+| "Pakken er kommet frem" | `udfoerHandelseffekter` (uændret) | Køberen får `pakke_leveret` (påkrævet, nøgle `fragt_leveret:<handel>`), så snart DAO's leveret-kode er kendt og står i `daoKoder.ts`. |
+| Efterlysning efter 14 dage | `koerEfterlysninger` + `fragt_efterlysning_*` | Én pr. forsendelse. Kalder kun DAO med `FRAGT_EFTERLYSNING_AKTIV=true` (ellers manuel). Staff får altid en markering under Fragt. Pengene holdes af `handel_auto_frigiv` (frigiver aldrig efter 14 dage uden `leveret_kl`). Opret-kaldet genforsøges aldrig. |
+| Retur i sager | `opretReturForsendelse` + `ReturlabelBoks` | Shop2Shop med køberen som afsender, sælgeren som modtager og `shopid=0` (DAO vælger shoppen nærmest sælgeren). **Stadig bag `FRAGT_RETURLABEL_AKTIV`** – returfragten opkræves ikke (se docs/FRAGT.md). |
+| Ikke afhentet | `DAO_RETUR_ER_IKKE_AFHENTET` i `daoKoder.ts` | Koblet på, men **slået fra** (`false`), indtil returkoden er set på en rigtig pakke. Indtil da kun markering til staff. |
+| Annullering og labelgrænse | `forsendelse_claim` | En DAO-label, som DAO har bekræftet annulleret, tæller ikke i "højst 2 labels". Loft: 10 DAO-labels i alt pr. handel (også annullerede). Adapteren sætter kun 'annulleret', når DAO svarer OK. |
+| Idempotens uden opslag | `opretForsendelse` i `server.ts` | `genforsoegOpretterNy`: efter et ukendt udfald laver næste forsøg (når sælgeren trykker igen) en NY forsendelse. En kendt, forældreløs stregkode gemmes i `fragt_foraeldreloese` og annulleres (straks og af cron'en, højst 5 gange, derefter staff). |
+| Label uden PDF | `sikrLabelPdf` | Kan PDF'en ikke hentes, men der er en labelfri kode, gemmes forsendelsen alligevel, og PDF'en hentes, når sælgeren trykker "Hent label". |
+| Tests | `tests/fragt/*.test.ts`, `src/lib/fragt/__fixtures__/dao/` | `npm run test:fragt` (70 tests): mapping, fejlhåndtering, genforsøg kun på læsekald, ét forsøg på ordrer, URL-sanitering, feed-token. |
+
+**Sikkerhed:** `kundeid` og `kode` står i URL'en. URL'en logges aldrig, og ingen fejl indeholder den: fejl bygges
+af stien, DAO's fejlkode og en saniteret fejltekst (`saniter()` fjerner også selve værdierne og URL-kodede udgaver).
+Kun `https://*.dao.as` accepteres som base-URL, og redirects afvises.
+
+**Fejl:** HTTP 200 med `FEJL`/`ERROR` er en `DaoFejl` (en `FragtFejl` med dansk tekst). Læsekald: 6 s timeout og op til
+2 genforsøg. Skrivekald (ordre, annullering, efterlysning): ét forsøg (20 s); udebliver svaret på en ordre, er det
+`FragtUkendtUdfald`.
+
+## Mangler (før DAO kan slås til)
+
+1. **Nøgler**: `DAO_KUNDEID` og `DAO_KODE` (Filip – se HUSKELISTE.md). Uden dem svarer alt "Fragt er ikke sat op
+   endnu.", og cron'en kalder ikke DAO.
+2. **Hændelseskoder**: kald `TrackNTraceKoder.php` (kun læsning) og send rigtige pakker (se "Sådan kan vi teste"),
+   og udfyld `daoKoder.ts`: indleveret, klar til afhentning, **leveret** (uden den får køberen ikke "Pakken er kommet
+   frem", og 14-dages-frigivelsen sker ikke), retur og fejl. `fragt_ukendte_koder` viser de koder, vi har set.
+3. **Ikke afhentet**: sæt `DAO_RETUR_ER_IKKE_AFHENTET = true` først, når returkoden er set på en pakke, der ikke
+   blev hentet.
+4. **Allans svar** (spørgsmålene herunder), især: idempotens/reference (1), base-URL og nøgler i header (2),
+   telefonformat med eller uden 45 (11), om `HentLabel.php` virker på c2c-stregkoder (7), hvad `pris` betyder i
+   `createclaim.php` (vi sender buddet i hele kroner) (9), tidszone i `tidspunkt` (3), og om mål (`l`, `h`, `b`) er
+   krævet (sendes ikke nu).
+5. **Vægtgrænse**: aftalen med DAO. Adapteren bruger Shipmondos grænser (Shop2Shop 15 kg, Shop2Home 5 kg).
+6. **Returfragt i sager**: opkrævningen hos køberen er ikke bygget (kræver en beslutning og evt. Stripe) – derfor
+   er `FRAGT_RETURLABEL_AKTIV` stadig slået fra.
+7. **Efterlysning**: slå `FRAGT_EFTERLYSNING_AKTIV=true` til, når Allan har bekræftet `createclaim.php`.
 
 ---
 
