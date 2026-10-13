@@ -43,10 +43,10 @@ export function fragtLabelsAktiv(): boolean {
   return process.env.FRAGT_LABELS_AKTIV === "true";
 }
 
-// Returlabel i sager (køber -> pakkeshop nær sælgeren) er slået fra, indtil
-// opkrævningen af returfragten hos køberen er bygget (ROADMAP-BESLUTNINGER,
-// Sager: "køberen betaler selv returfragten"). Tjekkes også i
-// opretReturForsendelse (server.ts).
+// Returlabel i sager (køber -> pakkeshop nær sælgeren): køberen betaler selv
+// returfragten først (src/lib/betaling/returfragt.ts, ROADMAP-BESLUTNINGER,
+// Sager). Slået fra, indtil Filip slår den til. Tjekkes også i
+// opretReturForsendelse (server.ts) og startReturfragtBetaling.
 export function fragtReturlabelAktiv(): boolean {
   return process.env.FRAGT_RETURLABEL_AKTIV === "true";
 }

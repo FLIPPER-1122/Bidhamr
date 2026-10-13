@@ -85,6 +85,18 @@ describe("daglig afstemning med Stripe", () => {
     expect(fundne.filter((x) => x.betaling_id && egne.has(x.betaling_id))).toEqual([]);
   });
 
+  it("ingen afvigelser på returfragt i sager (13) - betalinger og refusioner til platformen", async () => {
+    const { data: auk } = await admin().from("auctions").select("id").like("titel", `%[${kontekst().koersel}]%`);
+    const { data: t } = await admin().from("trades").select("id").in("auction_id", (auk ?? []).map((a) => a.id as string));
+    const { data: rf } = await admin()
+      .from("returfragt_betalinger")
+      .select("stripe_payment_intent_id, stripe_charge_id, stripe_refund_id")
+      .in("trade_id", (t ?? []).map((x) => x.id as string));
+    const ids = (rf ?? []).flatMap((x) => [x.stripe_payment_intent_id, x.stripe_charge_id, x.stripe_refund_id]).filter((x): x is string => !!x);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(fundne.filter((x) => ids.some((i) => x.noegle.includes(i)))).toEqual([]);
+  });
+
   it("en ny tvungen kørsel registrerer de samme afvigelser uden at åbne dem som nye", async () => {
     const r2 = await koerPengeafstemning({ tving: true, vindueDage: 1 });
     expect(r2.koert).toBe(1);

@@ -21,7 +21,10 @@ import {
   hentLabelLink,
   lavReturlabel,
   soegPakkeshops,
+  startReturfragt,
 } from "@/lib/fragt/handlinger";
+import { gemReturAfsenderForHandel } from "@/lib/betaling/returfragt";
+import { logDriftFejl } from "@/lib/drift";
 
 type Fejl = { fejl: string };
 
@@ -155,8 +158,32 @@ export async function hentFragtlabelLink(forsendelseId: string): Promise<{ url: 
   return "fejl" in r ? r : { url: r.url };
 }
 
-// Returlabel i en sag (køberen). Slået fra, indtil opkrævningen af
-// returfragten er bygget (FRAGT_RETURLABEL_AKTIV).
+// Returfragt i en sag (køberen): starter betalingen og giver Payment
+// Elements client_secret. Returkoden laves først, når webhooken har bekræftet
+// betalingen (src/lib/betaling/returfragt.ts). Bag FRAGT_RETURLABEL_AKTIV.
+export async function startReturfragtAction(tradeId: string) {
+  const u = await bruger();
+  if (!u) return { fejl: "Du skal være logget ind." };
+  if (!(await tjekGraenser([["fragt_handling_bruger", u.id]]))) return { fejl: FOR_MANGE_FORSOEG };
+  return startReturfragt(tradeId, u.id, null);
+}
+
+// Køberens adresse og mobil til returkoden - gemmes lige før betalingen.
+export async function gemReturAfsenderAction(tradeId: string, afsender: AdresseInput): Promise<{ ok: true } | Fejl> {
+  const u = await bruger();
+  if (!u) return { fejl: "Du skal være logget ind." };
+  if (typeof tradeId !== "string" || !UUID.test(tradeId)) return { fejl: "Handlen findes ikke." };
+  if (!(await tjekGraenser([["fragt_handling_bruger", u.id]]))) return { fejl: FOR_MANGE_FORSOEG };
+  try {
+    return await gemReturAfsenderForHandel(tradeId, u.id, afsender ?? {});
+  } catch (err) {
+    await logDriftFejl({ kilde: "action", sti: "fragt", hvor: "Returfragt: gem adresse", fejl: err, brugerId: u.id });
+    return { fejl: "Noget gik galt. Prøv igen om lidt." };
+  }
+}
+
+// Returlabel i en sag (køberen) EFTER betalt returfragt: ny/rettet adresse og
+// nyt forsøg. Bag FRAGT_RETURLABEL_AKTIV.
 export async function lavReturlabelAction(tradeId: string, afsender: AdresseInput) {
   const u = await bruger();
   if (!u) return { fejl: "Du skal være logget ind." };

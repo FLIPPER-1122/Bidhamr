@@ -21,6 +21,7 @@ import "server-only";
 //          det ikke henviser til noget, DENNE database kender:
 //            betaling   (metadata betaling_id/bidhamr_daekker = betalinger.id)
 //            betaling   (PaymentIntent, også kasseret, eller charge)
+//            returfragt (returfragt_betalinger: PaymentIntent eller charge)
 //            afvigelse  (betaling_afvigelser: PaymentIntent eller charge)
 //            udbetaling (metadata saelger_udbetaling_id)
 //            Connect-konto (betalingsprofiler, betalinger, saelger_udbetalinger)
@@ -128,6 +129,17 @@ async function findes(admin: Admin, tabel: string, kolonne: string, ids: string[
   }
 }
 
+// Som findes, men tabellen må mangle (returfragt_betalinger før migrationen
+// 20261022010000) - så kendes intet derfra.
+async function findesHvisTabel(admin: Admin, tabel: string, kolonne: string, ids: string[], ud: Set<string>): Promise<void> {
+  try {
+    await findes(admin, tabel, kolonne, ids, ud);
+  } catch (err) {
+    if (/does not exist|Could not find the table|42P01|PGRST205/i.test(String((err as Error)?.message ?? err))) return;
+    throw err;
+  }
+}
+
 // Slår op, hvilke af henvisningerne denne database kender. Kun i
 // testtilstand (live: tom - erFremmedTestdata er altid false dér).
 export async function hentKendte(
@@ -156,6 +168,9 @@ export async function hentKendte(
     if (error) throw new Error(`kendte (tidligere_payment_intents): ${error.message}`);
     for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) k.pis.add(x);
   }
+  // Returfragt i sager (betaling til platformen, returfragt.ts).
+  await findesHvisTabel(admin, "returfragt_betalinger", "stripe_payment_intent_id", pis, k.pis);
+  await findesHvisTabel(admin, "returfragt_betalinger", "stripe_charge_id", charges, k.charges);
   await findes(admin, "betalinger", "stripe_charge_id", charges, k.charges);
   await findes(admin, "betaling_afvigelser", "stripe_charge_id", charges, k.charges);
   await findes(admin, "betalingsprofiler", "stripe_account_id", konti, k.konti);

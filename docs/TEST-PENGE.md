@@ -52,6 +52,7 @@ PENGE_ENV_FIL=C:/Users/jeppe/Desktop/hamr/.env.local npm run test:penge
 | 10 | `payout.failed`: pengene tilbage på kontoen, sælgeren "venter på bank", ingen ny udbetaling før bankkontoen er rettet; derefter én ny udbetaling | 0077 + IBAN …9681 |
 | 11 | To samtidige cron-kørsler + `balance.available` på samme tid → én payout med begge handler | 0077 |
 | 12 | Beløbsmanipulation (RLS, ændret PaymentIntent rettes før betaling, forkert beløb betalt → ikke registreret, refunderet, ny PaymentIntent) og betaling for en andens handel (fremmed, sælgeren selv, uden login) | 0077 |
+| 13 | Retur i sag: køberen betaler returfragten til platformen (ingen destination charge, 3DS, metadata `type=returfragt`); ingen returkode før webhooken; gentaget webhook/betaling giver intet nyt; label afvist → staff-markering, ingen ny betaling → hele returfragten refunderes én gang; faktura og kreditnota | 0077 |
 | 98 | Den daglige afstemning mod Stripes rigtige testdata: finder dashboard-refusionen og -tilbageførslen fra 03 og intet på BidHamrs egne bevægelser (se note) | - |
 | 99 | Slutafstemning: saldo hos Stripe = databasen på begge testkonti; overvågningen finder intet | - |
 

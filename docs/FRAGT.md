@@ -54,10 +54,17 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    `pakke_indleveret`, påkrævet) til sælgeren. Vejer fragtfirmaet pakken tungere end størrelsens maksimum,
    markeres forsendelsen og betalingen til staff (udbetalingen holdes); modregning hos sælgeren er ikke bygget. **Levering/afhentning udløser aldrig
    udbetaling** – kun købers bekræftelse eller de eksisterende regler i autoFrigiv.
-8. **Retur i sager**: returlabel (køber → pakkeshop nær sælgeren). Slået fra (`FRAGT_RETURLABEL_AKTIV`),
-   indtil opkrævningen af returfragten hos køberen er bygget. DAO: Shop2Shop med køberen som afsender og
-   `shopid=0` (DAO vælger shoppen nærmest sælgeren). Med flaget slået til viser handelssiden køberen
-   `ReturlabelBoks` (adresse + mobil → labelfri kode og PDF), når sagen afventer retur, og ankefristen er udløbet.
+8. **Retur i sager**: returlabel (køber → pakkeshop nær sælgeren). Bag `FRAGT_RETURLABEL_AKTIV` (slået fra i
+   produktion). DAO: Shop2Shop med køberen som afsender og `shopid=0` (DAO vælger shoppen nærmest sælgeren).
+   **Køberen betaler selv returfragten, før returkoden laves** (Filip, 13. okt. 2026 -
+   `src/lib/betaling/returfragt.ts`, `20261022010000_returfragt_betaling.sql`): handelssiden viser køberen
+   "Send varen retur" med prisen (= fragten ud), adresse + mobil og Stripes Payment Element ("Betal returfragt
+   (X kr.)"), når sagen afventer retur, og ankefristen er udløbet. Betalingen går til BidHamrs platformskonto
+   (ingen destination charge). Koden laves først, når webhooken har bekræftet betalingen; databasen afviser en
+   returlabel uden betalt returfragt. Fejler labelen, prøver cron'en igen (5-80 min), og staff markeres på
+   returforsendelsen (Fragt → "Kræver handling"); efter 5 fejl, 48 timer, eller hvis sagen ikke længere kræver
+   retur, refunderes hele returfragten automatisk, og køberen får besked. Efter betaling vises koden, PDF'en og
+   den nærmeste pakkeshop; sælgeren ser "Returen er på vej" med sporing.
 9. **Ikke-afhentet pakke** (`20261016030000_ikke_afhentet_pakke.sql`, `src/lib/betaling/ikkeAfhentet.ts`):
    fragtfirmaet sender pakken retur, fordi køberen ikke hentede den. Én adapter-neutral indgang
    `registrerIkkeAfhentet` → `handel_ikke_afhentet_registrer` (låser betaling og handel, idempotent - én
@@ -114,7 +121,9 @@ Igangværende auktioner beholder den pris, byderne har set. DAO's kostpris (eksk
 | `hentFragtlabelLink(forsendelseId)` | sælger (udgående) / køber (retur) | `{ url }` (5 min) |
 | `hentMinForsendelse(tradeId)` | køber og sælger | aktiv udgående forsendelse (som før) |
 | `hentForsendelserAction(tradeId)` | køber og sælger | alle forsendelser + sporingstidslinje |
-| `lavReturlabelAction(tradeId, afsender)` | køber | `{ ok, forsendelseId }` (slået fra) |
+| `startReturfragtAction(tradeId)` | køber | `{ ok, clientSecret, beloebOere, customerSessionClientSecret }` eller `{ fejl, betalt? }` |
+| `gemReturAfsenderAction(tradeId, afsender)` | køber | `{ ok }` - adresse og mobil, lige før betalingen |
+| `lavReturlabelAction(tradeId, afsender)` | køber | `{ ok, forsendelseId }` - kun efter betalt returfragt (ny/rettet adresse) |
 
 Alle fejl returneres som `{ fejl: "<dansk tekst>" }`, der kan vises direkte.
 
@@ -142,7 +151,8 @@ Svar: `200 { ok: true, ... }` eller `409 { fejl, kode: "afvist" }` (vis `fejl`),
 | `annuller` | `{ trade_id, forsendelse_id }` | `{}` |
 | `forsendelser` | `{ trade_id }` | `{ forsendelser }` |
 | `label` | `{ forsendelse_id }` | `{ url }` (PDF, 5 min) |
-| `retur` | `{ trade_id, afsender }` | `{ forsendelseId }` (slået fra) |
+| `returfragt` | `{ trade_id, afsender }` | `{ clientSecret, beloebOere, customerSessionClientSecret }` til PaymentSheet (`409 kode "betalt"`, hvis den er betalt) |
+| `retur` | `{ trade_id, afsender }` | `{ forsendelseId }` - kun efter betalt returfragt |
 
 Direkte fra Supabase i appen (med brugerens session):
 
@@ -239,7 +249,11 @@ Localhost kan ikke modtage webhooks fra Shipmondo – test på en Vercel-preview
 - Ikke-afhentet pakke: returfragten = fragten ud (det køberen betalte - Filip, 10. okt. 2026). Er den
   mindst buddet, får køberen 0 kr.; refusionsvejen tilbagefører kun sælgerens del (X = U) og afslutter
   betalingen uden Stripe-refusion (`betaling_ikke_afhentet_uden_refusion`).
-- Returlabel er slået fra, indtil returfragten opkræves hos køberen.
+- Returlabel i sager: køberen betaler returfragten (= fragten ud, `betalinger.fragt_oere`; under 3 kr.: auktionens
+  pakkeshop-pris) før koden laves. Stadig bag `FRAGT_RETURLABEL_AKTIV`. Appen: `supabase.rpc("min_returfragt",
+  { p_trade })` → køberen `{ rolle: 'koeber', sag: { kode }, id, status, beloeb_oere, betalt_kl, label_klar,
+  label_fejl, refunderet_kl, refusion_aarsag }` (`sag.kode = 'ok'` = må sendes nu), sælgeren
+  `{ rolle: 'saelger', retur_paa_vej }`.
 - Vægt er krævet for ALLE størrelser, når klienten sender en størrelse, og over 15 kg kan aldrig sendes.
   Midlertidigt: uden størrelse (nuværende app) bliver det Mellem uden vægt – se go-live.
 - Målt vægt over størrelsens maksimum: kun markering til staff + udbetalingen holdes; sælgeren betaler

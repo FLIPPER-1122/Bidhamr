@@ -200,6 +200,8 @@ async function kontekst(admin: Admin, r: FakturaRaekke): Promise<FakturaKontekst
         ? `Kreditnota for faktura nr. ${m?.dinero_nummer ?? "-"} - ${varen} på BidHamr${handel}. Sælgergebyret er krediteret, fordi handlen blev annulleret.`
         : `Kreditnota for faktura nr. ${m?.dinero_nummer ?? "-"} - ${varen} på BidHamr${handel}. Refunderet via vores betalingspartner Stripe den ${dato}.` +
           (beholdt ? " BidHamr Beskyttelse refunderes ikke." : "");
+  } else if (r.slags === "sag_returfragt") {
+    kommentar = `Returfragt for ${varen} på BidHamr${handel}. Varen sendes retur til sælgeren i en sag. Betalt via vores betalingspartner Stripe den ${dato}.`;
   } else if (r.slags === "returfragt") {
     kommentar = `Returfragt for ${varen} på BidHamr${handel}. Pakken blev ikke afhentet og er sendt retur til sælgeren. Returfragten er modregnet i købsbeløbet via vores betalingspartner Stripe den ${dato}.`;
   } else if (r.part === "saelger") {
@@ -338,6 +340,16 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
     throw new Error(`faktura_planlaeg: ${planFejl.message}`);
   }
   res.planlagt = plan as Record<string, number>;
+  // Returfragt i sager (20261022010000): faktura ved betaling, kreditnota ved
+  // refusion. Mangler funktionen (migrationen er ikke kørt), springes det over.
+  {
+    const { data: rf, error: rfFejl } = await admin.rpc("faktura_planlaeg_returfragt", { p_graense: 200 });
+    if (rfFejl && !mangler(rfFejl)) throw new Error(`faktura_planlaeg_returfragt: ${rfFejl.message}`);
+    const t = rf as { fakturaer?: number; kreditnotaer?: number } | null;
+    if (t && res.planlagt) {
+      res.planlagt = { ...res.planlagt, returfragt_sag: Number(t.fakturaer ?? 0), returfragt_sag_kredit: Number(t.kreditnotaer ?? 0) };
+    }
+  }
 
   // 1b) Én drift-alarm pr. dokument, der er oprettet som "kræver handling"
   //     (fx gebyret passer ikke, eller fakturaen blev håndteret manuelt).

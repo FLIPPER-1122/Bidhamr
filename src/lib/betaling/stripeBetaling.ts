@@ -1783,6 +1783,18 @@ async function alarmIndsigelse(d: Stripe.Dispute, piId: string | null, chId: str
     const { alarmPrTilfaelde } = await import("@/lib/betaling/driftTilfaelde");
     const admin = createAdminClient();
     if (resultat === "ukendt") {
+      // Returfragt i en sag (betaling til platformen): staff svarer banken i
+      // Stripe - returfragten er BidHamrs egen fragt-indtægt.
+      const { returfragtForCharge } = await import("@/lib/betaling/returfragt");
+      const rf = await returfragtForCharge(chId);
+      if (rf) {
+        await alarmPrTilfaelde({
+          noegle: `indsigelse-returfragt:${d.id}`,
+          hvor: "betaling/indsigelse-returfragt",
+          fejl: `Indsigelse ${d.id} (status '${d.status}') på køberens betaling af returfragt ${rf.id} (handel ${rf.trade_id}, charge ${chId}). Svar banken i Stripe-dashboardet inden fristen med betalingen og returkoden som bevis.`,
+        });
+        return;
+      }
       const charge = await getStripe().charges.retrieve(chId);
       const kunde = typeof charge.customer === "string" ? charge.customer : (charge.customer?.id ?? null);
       const { data: firma } = kunde

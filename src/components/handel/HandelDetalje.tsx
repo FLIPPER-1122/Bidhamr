@@ -43,7 +43,7 @@ import SporingTidslinje from "@/components/fragt/SporingTidslinje";
 import Ikon from "@/components/Ikon";
 import { PAKKESTOERRELSE_NAVN, erPakkestoerrelse } from "@/lib/fragt/types";
 import { fragtLabelsAktiv, fragtReturlabelAktiv, labelGraense } from "@/lib/fragt";
-import ReturlabelBoks from "@/components/fragt/ReturlabelBoks";
+import ReturlabelBoks, { type Afsender as ReturAfsender, type ReturfragtVisning } from "@/components/fragt/ReturlabelBoks";
 import { hentKontoType } from "@/lib/supabase/bruger";
 import { foerLancering } from "@/lib/lancering";
 import FirmaKontaktBoks from "@/components/erhverv/FirmaKontaktBoks";
@@ -83,6 +83,7 @@ export default async function HandelDetalje({
   betalingParam,
   sted = "mine-handler",
   visHandel = false,
+  returfragtRetur = false,
 }: {
   trade_id: string;
   betalingParam?: string;
@@ -90,6 +91,8 @@ export default async function HandelDetalje({
   visHandel?: boolean;
   // "firma": vist i firma-dashboardet (tilbage-link og stier dertil).
   sted?: "mine-handler" | "firma";
+  // Køberen er lige vendt tilbage fra betalingen af returfragten.
+  returfragtRetur?: boolean;
 }) {
   const erFirmaSted = sted === "firma";
   // Firma-dashboardets layout har selv <main>.
@@ -350,20 +353,55 @@ export default async function HandelDetalje({
   const sagSamtale = samtaleRes && "samtale" in samtaleRes ? samtaleRes.samtale : null;
   const muligheder = mulighederRes && !("fejl" in mulighederRes) ? mulighederRes : null;
 
-  // Returlabel i sagen (køberen sender varen retur nu) - kun bag flaget
-  // FRAGT_RETURLABEL_AKTIV (returfragten opkræves ikke endnu).
-  const visReturlabel =
-    fragtReturlabelAktiv() &&
-    erKoeber &&
-    !!sag &&
-    sag.status === "afventer_retur" &&
-    sag.returKraeves &&
-    !sag.returVenterTilKl;
+  // Retur i sagen (køberen sender varen retur nu) - kun bag flaget
+  // FRAGT_RETURLABEL_AKTIV. Køberen betaler selv returfragten, før returkoden
+  // laves (src/lib/betaling/returfragt.ts); sælgeren ser, at returen er på vej.
+  const returSag = fragtReturlabelAktiv() && !!sag && sag.status === "afventer_retur" && sag.returKraeves;
   let returForsendelse: ForsendelseVisning | null = null;
-  if (visReturlabel) {
-    const alle = visFragt ? forsendelser : await hentForsendelserAction(handel.id).then((r) => ("ok" in r ? r.forsendelser : []));
-    returForsendelse = alle.find((f) => f.type === "retur" && f.status !== "annulleret") ?? null;
+  let returfragt: ReturfragtVisning | null = null;
+  let returAfsender: ReturAfsender | null = null;
+  if (returSag) {
+    const [alle, rf] = await Promise.all([
+      visFragt ? Promise.resolve(forsendelser) : hentForsendelserAction(handel.id).then((r) => ("ok" in r ? r.forsendelser : [])),
+      erKoeber ? supabase.rpc("min_returfragt", { p_trade: handel.id }).then((r) => r.data) : Promise.resolve(null),
+    ]);
+    returForsendelse = alle.find((f) => f.type === "retur" && f.status !== "annulleret" && f.status !== "fejlet") ?? null;
+    const m = rf as {
+      rolle?: string;
+      id?: string | null;
+      sag?: { kode?: string };
+      status?: ReturfragtVisning["status"];
+      beloeb_oere?: number | null;
+      label_fejl?: string | null;
+      refusion_aarsag?: string | null;
+    } | null;
+    if (erKoeber && m?.rolle === "koeber") {
+      returfragt = {
+        status: m.status ?? null,
+        beloebOere: m.beloeb_oere ?? null,
+        labelFejl: m.label_fejl ?? null,
+        refusionAarsag: m.refusion_aarsag ?? null,
+        kanSende: m.sag?.kode === "ok",
+      };
+      // Køberens gemte adresse (RLS: kun egen række) - ellers profilens navn.
+      const { data: gemt } = m.id
+        ? await supabase.from("returfragt_betalinger").select("afsender").eq("id", m.id).maybeSingle<{ afsender: Record<string, string | null> | null }>()
+        : { data: null };
+      const { data: mig } = await supabase.from("users").select("navn").eq("id", user.id).maybeSingle<{ navn: string | null }>();
+      const g = gemt?.afsender ?? null;
+      const tlf = g?.telefon ?? "";
+      returAfsender = {
+        navn: g?.navn ?? mig?.navn ?? "",
+        adresse: g?.adresse ?? "",
+        postnummer: g?.postnummer ?? "",
+        by: g?.by ?? "",
+        telefon: /^\+45\d{8}$/.test(tlf) ? tlf.slice(3) : tlf,
+      };
+    }
   }
+  const visReturlabel = erKoeber && !!returfragt && !!returAfsender;
+  const visReturPaaVej =
+    erSaelger && returSag && !!returForsendelse && !["opretter", "annulleres", "fejlet"].includes(returForsendelse.status);
 
   const adresseSvar = afhentningsadresseSvar as { kode?: string; adresse?: string | null; telefon?: string | null } | null;
   const afhentningsadresse: { adresse: string | null; telefon: string | null } | null =
@@ -400,7 +438,29 @@ export default async function HandelDetalje({
           </div>
         )}
         {sag && <SagVisning sag={sag} brugerId={user.id} samtale={sagSamtale} />}
-        {visReturlabel && <ReturlabelBoks tradeId={handel.id} retur={returForsendelse} navn="" />}
+        {visReturlabel && returfragt && returAfsender && (
+          <ReturlabelBoks
+            tradeId={handel.id}
+            retur={returForsendelse}
+            info={returfragt}
+            afsender={returAfsender}
+            venterPaaBekraeftelse={returfragtRetur}
+          />
+        )}
+        {visReturPaaVej && returForsendelse && (
+          <section aria-labelledby="retur-paa-vej" className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+            <h2 id="retur-paa-vej" className="text-[17px] leading-snug lg:text-lg">
+              Returen er på vej
+            </h2>
+            <p className="mt-1 text-sm text-tekst-svag">
+              Køberen har betalt returfragten og fået en returkode. Pakken sendes til en pakkeshop tæt på dig – du
+              får besked, når den er klar til afhentning.
+            </p>
+            <div className="mt-4">
+              <SporingTidslinje f={returForsendelse} />
+            </div>
+          </section>
+        )}
 
         {/* Overblik */}
         <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">

@@ -21,6 +21,12 @@ import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/
 import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
 import { alarmPrTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { erFremmedTestCharge, erFremmedTestobjekt, logFremmedTestdata, piHenvisning } from "@/lib/betaling/fremmedeTestdata";
+import {
+  erReturfragtMetadata,
+  returfragtForPi,
+  spejlReturfragtPi,
+  spejlReturfragtRefusionsfejl,
+} from "@/lib/betaling/returfragt";
 
 // Stripe-webhook for betalingen (destination charges - den eneste model).
 // Spejler Stripes status i databasen - Stripe er sandheden om penge.
@@ -54,6 +60,9 @@ import { erFremmedTestCharge, erFremmedTestobjekt, logFremmedTestdata, piHenvisn
 // over ved genlevering.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// Returfragt: returkoden laves efter svaret (after()) og kan tage op til ca.
+// 50 s hos DAO.
+export const maxDuration = 120;
 
 function verificer(rawBody: string, signatur: string): Stripe.Event | null {
   const hemmeligheder = [
@@ -158,6 +167,26 @@ async function haandter(event: Stripe.Event): Promise<void> {
       // Hent den aktuelle PaymentIntent i stedet for at stole på event-
       // payloaden: events kan komme i forkert rækkefølge.
       const fraEvent = event.data.object as Stripe.PaymentIntent;
+      // Returfragt i en sag (betaling til platformen, src/lib/betaling/returfragt.ts):
+      // returkoden laves først, når betalingen er bekræftet her.
+      if (erReturfragtMetadata(fraEvent.metadata)) {
+        const pi = await getStripe().paymentIntents.retrieve(fraEvent.id);
+        const resultat = await spejlReturfragtPi(pi);
+        if (resultat === "ukendt" && pi.status === "succeeded") {
+          if (await erFremmedTestobjekt(piHenvisning(pi))) {
+            logFremmedTestdata("PaymentIntent (returfragt)", pi.id);
+          } else {
+            await alarmPrTilfaelde({
+              noegle: `ukendt-pi:${pi.id}`,
+              kilde: "webhook",
+              hvor: "betaling/ukendt-betaling",
+              fejl: `PaymentIntent ${pi.id} er en gennemført returfragt hos Stripe, men databasen kender den ikke. Kontrollér og refundér i Stripe.`,
+            });
+          }
+        }
+        console.log(`Stripe ${event.type} (returfragt): ${pi.id} -> ${resultat}`);
+        return;
+      }
       if (!fraEvent.metadata?.betaling_id) {
         // Ikke en BidHamr-handel. En gennemført betaling, som hverken er en
         // handel eller et firmas abonnement, er ukendt for databasen: alarm
@@ -213,6 +242,15 @@ async function haandter(event: Stripe.Event): Promise<void> {
       // Hent den aktuelle charge (events kan komme i forkert rækkefølge).
       const fraEvent = event.data.object as Stripe.Charge;
       if (!fraEvent.payment_intent) return;
+      // Returfragt: refusionen registreres af returfragt.ts selv; en refusion
+      // uden om BidHamr fanges af den daglige afstemning.
+      {
+        const piRef = typeof fraEvent.payment_intent === "string" ? fraEvent.payment_intent : fraEvent.payment_intent.id;
+        if (await returfragtForPi(piRef)) {
+          console.log(`Stripe ${event.type} (returfragt): ${fraEvent.id}`);
+          return;
+        }
+      }
       const charge = await getStripe().charges.retrieve(fraEvent.id);
       const resultat = await spejlRefusion(charge);
       console.log(`Stripe ${event.type}: ${charge.id} -> ${resultat}`);
@@ -225,6 +263,12 @@ async function haandter(event: Stripe.Event): Promise<void> {
       // En refusion, der fejler hos Stripe (fx kortet er lukket), markeres til
       // admin. Refusionen hentes frisk i spejlRefusionsfejl.
       const refund = event.data.object as Stripe.Refund;
+      if (refund.metadata?.type === "returfragt") {
+        const frisk = await getStripe().refunds.retrieve(refund.id);
+        const r = await spejlReturfragtRefusionsfejl(frisk);
+        console.log(`Stripe ${event.type} (returfragt): ${refund.id} -> ${r}`);
+        return;
+      }
       const resultat = await spejlRefusionsfejl(refund.id);
       console.log(`Stripe ${event.type}: ${refund.id} -> ${resultat}`);
       return;

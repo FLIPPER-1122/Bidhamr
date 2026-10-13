@@ -26,7 +26,9 @@ export type FakturaRaekke = {
   dokument: "faktura" | "kreditnota" | "abonnement" | "abonnement_retur";
   // 'returfragt': købers faktura på returfragten ved ikke-afhentet pakke
   // (20261016030000). Mangler før migrationen = 'salg'.
-  slags?: "salg" | "returfragt";
+  // 'sag_returfragt': købers faktura (og kreditnota) på returfragten, køberen
+  // betalte i en sag (20261022010000).
+  slags?: "salg" | "returfragt" | "sag_returfragt";
   part: "koeber" | "saelger" | "firma";
   bruger_id: string;
   betaling_id: string | null;

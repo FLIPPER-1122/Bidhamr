@@ -845,13 +845,18 @@ export async function opretUdgaaendeForsendelse(
   return svar;
 }
 
+// Teksten, når et label-forsøg allerede er i gang (returfragt.ts tæller det
+// ikke som en fejl).
+export const RETUR_I_GANG_TEKST = CLAIM_FEJL.i_gang;
+
 // Returlabel i en sag (afgjort med retur): køberen sender varen tilbage til
 // sælgeren via en pakkeshop tæt på sælgerens adresse (fragtfirmaet vælger
 // den). koeberId SKAL være verificeret med auth; SQL'en kræver en sag i
 // 'afventer_retur' med retur_kraeves. Sælgerens adresse tages fra den
-// udgående label. Bag flaget FRAGT_RETURLABEL_AKTIV, fordi opkrævningen af
-// returfragten hos køberen (ROADMAP-BESLUTNINGER, Sager: "køberen betaler selv
-// returfragten") ikke er bygget endnu.
+// udgående label. Bag flaget FRAGT_RETURLABEL_AKTIV.
+// Kun når køberen HAR BETALT returfragten (Filip, 13. okt. 2026 -
+// src/lib/betaling/returfragt.ts): kaldes derfra efter betalingen. Databasen
+// afviser også en returlabel uden betalt returfragt (forsendelser_returfragt_vagt).
 export async function opretReturForsendelse(
   tradeId: string,
   koeberId: string,
@@ -863,6 +868,19 @@ export async function opretReturForsendelse(
   const afs = valideerAdresse(afsenderInput, { kraevAdresse: true, kraevTelefon: true });
   if ("fejl" in afs) return afs;
   const admin = createAdminClient();
+
+  const { data: betalt, error: bFejl } = await admin
+    .from("returfragt_betalinger")
+    .select("id")
+    .eq("trade_id", tradeId)
+    .eq("koeber_id", koeberId)
+    .eq("status", "betalt")
+    .maybeSingle<{ id: string }>();
+  if (bFejl) {
+    await logDriftFejl({ kilde: "server", hvor: "Fragt: returfragt-tjek", fejl: bFejl });
+    return { fejl: GENERISK_FEJL };
+  }
+  if (!betalt) return { fejl: "Betal returfragten, før returkoden kan laves." };
 
   const { data: ud } = await admin
     .from("forsendelser")
