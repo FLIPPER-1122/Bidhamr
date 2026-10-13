@@ -4,6 +4,7 @@ import { kraevSammeStripeTilstand } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { driftFejlSamler, logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
+import { koerReturfragtCron } from "@/lib/betaling/returfragt";
 import { harCronAdgang } from "@/lib/cronAdgang";
 import { koerDac7Cron } from "@/lib/dac7/server";
 import { koerLukOpsigelser } from "@/lib/erhverv/betaling";
@@ -184,6 +185,17 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Fragt-cron", fejl: err });
     }
+    // Returfragt i sager (betaling til platformen): mistede webhooks, nye
+    // forsøg på returkoden og automatisk refusion, når den ikke kan laves.
+    // Flytter penge (refusioner) - fejl tæller som trinfejl.
+    let returfragt: Awaited<ReturnType<typeof koerReturfragtCron>> = null;
+    try {
+      returfragt = await driftFejlSamler.run(trinFejl, () => koerReturfragtCron());
+    } catch (err) {
+      await driftFejlSamler.run(trinFejl, () =>
+        logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Returfragt-cron", fejl: err }),
+      );
+    }
     // DAC7: anmodninger om skatteoplysninger, påmindelser og spærring
     // (højst én gang i timen i databasen; flytter ingen penge). Fejl her
     // stopper ikke resten og logges i drift_fejl.
@@ -214,7 +226,7 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Beta-fejl: oprydning af billeder", fejl: err });
     }
-    const r = { ...betaling, fragt, dac7, erhvervLuk, betaFejlOprydning };
+    const r = { ...betaling, fragt, returfragt, dac7, erhvervLuk, betaFejlOprydning };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);

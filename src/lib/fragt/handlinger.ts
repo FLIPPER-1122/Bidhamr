@@ -16,12 +16,16 @@ import {
   annullerUdgaaendeForsendelse,
   gemLeveringsvalg,
   hentFragtpriser,
-  opretReturForsendelse,
   opretUdgaaendeForsendelse,
   sikrLabelPdf,
   soegPakkeshops,
 } from "@/lib/fragt/server";
 import { SPORINGS_NAVN, type CheckoutMaade, type SporingsType } from "@/lib/fragt/types";
+import {
+  proevReturlabelIgen,
+  startReturfragtBetaling,
+  type ReturfragtStart,
+} from "@/lib/betaling/returfragt";
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IKKE_AKTIV = "Fragtlabels er ikke slået til endnu.";
@@ -295,7 +299,21 @@ export async function lavReturlabel(
 ): Promise<{ ok: true; forsendelseId: string } | Fejl> {
   const h = await hentHandel(tradeId, brugerId);
   if (!h || h.buyer_id !== brugerId) return { fejl: "Handlen findes ikke." };
-  return opretReturForsendelse(h.id, brugerId, afsender ?? {});
+  // Returkoden laves kun, når returfragten er betalt (returfragt.ts). Her
+  // giver køberen en ny/rettet adresse og prøver igen efter betalingen.
+  return proevReturlabelIgen(h.id, brugerId, afsender ?? null);
+}
+
+// Køberen starter betalingen af returfragten (sag med retur). afsender
+// (valgfri): adresse og mobil til labelen - appen sender den her.
+export async function startReturfragt(
+  tradeId: unknown,
+  brugerId: string,
+  afsender?: AdresseInput | null,
+): Promise<ReturfragtStart> {
+  const h = await hentHandel(tradeId, brugerId);
+  if (!h || h.buyer_id !== brugerId) return { fejl: "Handlen findes ikke." };
+  return startReturfragtBetaling(h.id, brugerId, afsender ?? null);
 }
 
 // ------------------------------------------------------------ forsendelse, label, sporing

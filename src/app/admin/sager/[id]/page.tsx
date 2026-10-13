@@ -26,6 +26,7 @@ import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
 import SagHandlinger from "@/components/admin/sager/SagHandlinger";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { bidhamrDaekkerRefusion } from "@/app/actions/adminPengesikkerhed";
+import { refunderReturfragtAction } from "@/app/actions/adminReturfragt";
 import { BeskyttelseBadge, SagBilleder, SagStatusBadge, sagTid } from "@/components/sager/visning";
 
 // Navne på handlingerne i moderation_log for sager.
@@ -82,6 +83,15 @@ const BETALING_STATUS: Record<string, string> = {
 
 const jaNej = (v: boolean) => (v ? "Ja" : "Nej");
 
+const RETURFRAGT_STATUS: Record<string, string> = {
+  afventer: "ikke betalt",
+  behandles: "betalingen behandles",
+  betalt: "betalt",
+  refunderes: "refunderes",
+  refunderet: "refunderet",
+  annulleret: "annulleret",
+};
+
 export default async function AdminSag({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [res, samtalerRes, rolle] = await Promise.all([
@@ -117,6 +127,42 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
   const b = sag.betaling;
   const kanSkriveFaelles = rolle ? harMindstRolle(rolle, "admin") : false;
   const koeberNavn = sag.koeber.navn ?? "Uden navn";
+  // Returfragt i sagen (køberen betaler selv - src/lib/betaling/returfragt.ts).
+  // Tabellen kan mangle, før migrationen er kørt.
+  const { data: returfragt } = sag.returKraeves
+    ? await admin
+        .from("returfragt_betalinger")
+        .select("id, status, beloeb_oere, label_klar_kl, refusion_aarsag, kraever_opmaerksomhed, forsendelse_id")
+        .eq("trade_id", sag.tradeId)
+        .order("oprettet_kl", { ascending: false })
+        .limit(1)
+        .maybeSingle<{
+          id: string;
+          status: string;
+          beloeb_oere: number;
+          label_klar_kl: string | null;
+          refusion_aarsag: string | null;
+          kraever_opmaerksomhed: boolean;
+          forsendelse_id: string | null;
+        }>()
+    : { data: null };
+  // Seneste returkode: er den annulleret, kan den stadig være gyldig hos
+  // fragtfirmaet (DAO kan ofte ikke annullere selv) - fragtfirmaets note vises.
+  const { data: returKode } = returfragt?.forsendelse_id
+    ? await admin
+        .from("forsendelser")
+        .select("status, opmaerksomhed_tekst")
+        .eq("id", returfragt.forsendelse_id)
+        .maybeSingle<{ status: string; opmaerksomhed_tekst: string | null }>()
+    : { data: null };
+  const returKodeAnnulleret = returKode?.status === "annulleret";
+  const kanRefundereReturfragt =
+    !!returfragt &&
+    returfragt.status === "betalt" &&
+    (!returfragt.label_klar_kl || returKodeAnnulleret) &&
+    !inhabil &&
+    !!rolle &&
+    harMindstRolle(rolle, "admin");
   const saelgerNavn = sag.saelger.navn ?? "Uden navn";
 
   return (
@@ -319,6 +365,47 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
                   {sag.returfragtBetaler === "koeber" && " · Køberen betaler selv returfragten"}
                   {/* Sager afgjort før 3. oktober 2026, hvor BidHamr betalte. */}
                   {sag.returfragtBetaler === "bidhamr" && " · BidHamr betaler returfragten"}
+                  {returfragt && (
+                    <span className="mt-1 block">
+                      Returfragt: {RETURFRAGT_STATUS[returfragt.status] ?? returfragt.status}
+                      {sag.kan.seBeloeb && ` (${kroner(Number(returfragt.beloeb_oere))})`}
+                      {returfragt.status === "betalt" && (returfragt.label_klar_kl ? " · returkoden er lavet" : " · returkoden er ikke lavet")}
+                    </span>
+                  )}
+                  {returfragt && returKodeAnnulleret && (
+                    <span className="mt-1 block text-advarsel-tekst">
+                      Returkoden er annulleret
+                      {returfragt.label_klar_kl
+                        ? " i BidHamr, men fragtfirmaet kunne ikke annullere den selv – den kan stadig være gyldig."
+                        : " og bekræftet af fragtfirmaet."}
+                      {returKode?.opmaerksomhed_tekst && (
+                        <span className="mt-0.5 block whitespace-pre-line text-[13px] text-tekst-daempet">
+                          Fragtfirmaets note: {returKode.opmaerksomhed_tekst}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {returfragt && kanRefundereReturfragt && (
+                    <span className="mt-2 block">
+                      <ConfirmDialog
+                        triggerLabel="Refundér returfragt"
+                        title="Skal returfragten refunderes?"
+                        description="Hele returfragten sendes tilbage til køberen hos Stripe. Der laves ingen returkode bagefter, medmindre køberen betaler igen. Kan kun bruges, når køberen ikke har en aktiv returkode (annullér den først)."
+                        confirmLabel="Refundér returfragten"
+                        action={refunderReturfragtAction}
+                        hiddenFields={{ returfragtId: returfragt.id }}
+                        triggerClassName="btn btn-fare btn-lille"
+                        kanIkkeFortrydes
+                        fare
+                        fakta={[
+                          { label: "Får pengene", vaerdi: `${koeberNavn} (køber)` },
+                          ...(sag.kan.seBeloeb ? [{ label: "Beløb", vaerdi: kroner(Number(returfragt.beloeb_oere)) }] : []),
+                        ]}
+                        aarsagField={{ name: "begrundelse", label: "Begrundelse", placeholder: "Hvorfor refunderes returfragten?", required: true }}
+                        kvittering="Returfragten er refunderet"
+                      />
+                    </span>
+                  )}
                 </Felt>
               )}
             </dl>

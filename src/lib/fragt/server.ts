@@ -845,13 +845,18 @@ export async function opretUdgaaendeForsendelse(
   return svar;
 }
 
+// Teksten, når et label-forsøg allerede er i gang (returfragt.ts tæller det
+// ikke som en fejl).
+export const RETUR_I_GANG_TEKST = CLAIM_FEJL.i_gang;
+
 // Returlabel i en sag (afgjort med retur): køberen sender varen tilbage til
 // sælgeren via en pakkeshop tæt på sælgerens adresse (fragtfirmaet vælger
 // den). koeberId SKAL være verificeret med auth; SQL'en kræver en sag i
 // 'afventer_retur' med retur_kraeves. Sælgerens adresse tages fra den
-// udgående label. Bag flaget FRAGT_RETURLABEL_AKTIV, fordi opkrævningen af
-// returfragten hos køberen (ROADMAP-BESLUTNINGER, Sager: "køberen betaler selv
-// returfragten") ikke er bygget endnu.
+// udgående label. Bag flaget FRAGT_RETURLABEL_AKTIV.
+// Kun når køberen HAR BETALT returfragten (Filip, 13. okt. 2026 -
+// src/lib/betaling/returfragt.ts): kaldes derfra efter betalingen. Databasen
+// afviser også en returlabel uden betalt returfragt (forsendelser_returfragt_vagt).
 export async function opretReturForsendelse(
   tradeId: string,
   koeberId: string,
@@ -863,6 +868,19 @@ export async function opretReturForsendelse(
   const afs = valideerAdresse(afsenderInput, { kraevAdresse: true, kraevTelefon: true });
   if ("fejl" in afs) return afs;
   const admin = createAdminClient();
+
+  const { data: betalt, error: bFejl } = await admin
+    .from("returfragt_betalinger")
+    .select("id")
+    .eq("trade_id", tradeId)
+    .eq("koeber_id", koeberId)
+    .eq("status", "betalt")
+    .maybeSingle<{ id: string }>();
+  if (bFejl) {
+    await logDriftFejl({ kilde: "server", hvor: "Fragt: returfragt-tjek", fejl: bFejl });
+    return { fejl: GENERISK_FEJL };
+  }
+  if (!betalt) return { fejl: "Betal returfragten, før returkoden kan laves." };
 
   const { data: ud } = await admin
     .from("forsendelser")
@@ -1027,9 +1045,16 @@ async function annullerForsendelse(
 
   const { data: f } = await admin
     .from("forsendelser")
-    .select("fragtfirma, forsendelses_id")
+    .select("type, fragtfirma, forsendelses_id")
     .eq("id", forsendelseId)
-    .maybeSingle<{ fragtfirma: string; forsendelses_id: string | null }>();
+    .maybeSingle<{ type: string; fragtfirma: string; forsendelses_id: string | null }>();
+  // Returkode (returfragt i sager): kun en annullering, fragtfirmaet har
+  // BEKRÆFTET, giver køberen ret til en ny kode (returfragt_annullering_bekraeftet).
+  const returBekraeftet = async () => {
+    if (f?.type !== "retur") return;
+    const { error } = await admin.rpc("returfragt_annullering_bekraeftet", { p_forsendelse: forsendelseId });
+    if (error) await logDriftFejl({ kilde: "server", hvor: "Fragt: returkode annulleret", fejl: error });
+  };
   const adapter = f ? adapterFor(f.fragtfirma) : null;
   if (!f?.forsendelses_id || !adapter) {
     await afslut(
@@ -1054,7 +1079,9 @@ async function annullerForsendelse(
         p_id: forsendelseId,
         p_note:
           `Labelen er annulleret i BidHamr, men fragtfirmaet kan ikke annullere den selv (${f.fragtfirma} ${f.forsendelses_id}). ` +
-          "Bed fragtfirmaet kreditere den, hvis den ikke bliver brugt.",
+          (f.type === "retur"
+            ? "Returkoden kan stadig være gyldig: køberen får ikke en ny kode, og returfragten refunderes ikke automatisk - staff afgør (Refundér returfragt på sagen)."
+            : "Bed fragtfirmaet kreditere den, hvis den ikke bliver brugt."),
       });
       if (svar === "aendret") {
         return { fejl: "Fragtfirmaet har netop meldt pakken indleveret. BidHamr kigger på forsendelsen." };
@@ -1080,6 +1107,8 @@ async function annullerForsendelse(
   if (svar === "aendret") {
     return { fejl: "Fragtfirmaet har netop meldt pakken indleveret. BidHamr kigger på forsendelsen." };
   }
+  // Fragtfirmaet har bekræftet annulleringen.
+  await returBekraeftet();
   return { ok: true };
 }
 

@@ -10,6 +10,7 @@
     "test:enhed": "vitest run --config vitest.enhed.config.mts",
     "test:penge": "vitest run --config vitest.penge.config.mts",
     "test:penge:db": "vitest run --config vitest.penge-db.config.mts",
+    "test:penge-scenarie": "vitest run --config vitest.penge.config.mts",
     "test:fragt": "vitest run --config vitest.fragt.config.mts"
   },
   "dependencies": {

@@ -12,6 +12,7 @@ import {
   gemLevering,
   lavReturlabel,
   soegPakkeshops,
+  startReturfragt,
 } from "@/lib/fragt/handlinger";
 
 // Fragt fra appen (Expo). Samme kode som hjemmesidens server actions
@@ -29,7 +30,13 @@ import {
 //   annuller     { trade_id, forsendelse_id }
 //   forsendelser { trade_id }
 //   label        { forsendelse_id }   -> { url } (gyldig i 5 minutter)
+//   returfragt   { trade_id, afsender: { navn, adresse, postnummer, by, telefon } }
+//                -> { clientSecret, beloebOere, customerSessionClientSecret } til PaymentSheet.
+//                Køberen betaler returfragten (sag med retur) FØR returkoden laves;
+//                koden laves, når Stripe har bekræftet betalingen (webhook). Følg med
+//                via supabase.rpc("min_returfragt", { p_trade }).
 //   retur        { trade_id, afsender: { navn, adresse, postnummer, by, telefon } }
+//                Kun efter betalt returfragt: ny/rettet adresse og nyt forsøg.
 //
 // Svar: 200 { ok: true, ... } | 400/409 { fejl, kode } | 401 | 403 | 404 | 413 | 429 | 500.
 // En forretningsfejl (fx "Vælg en pakkeshop.") gives som 409 { fejl, kode: "afvist" }
@@ -45,7 +52,7 @@ export const runtime = "nodejs";
 // book/retur (DAO) kan tage op til ca. 50 s (server.ts: OPRET_MAKS_MS_UDEN_OPSLAG).
 export const maxDuration = 120;
 
-const HANDLINGER = ["pakkeshops", "checkout", "levering", "book", "annuller", "forsendelser", "label", "retur"] as const;
+const HANDLINGER = ["pakkeshops", "checkout", "levering", "book", "annuller", "forsendelser", "label", "retur", "returfragt"] as const;
 type Handling = (typeof HANDLINGER)[number];
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -179,6 +186,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
         return resultat(await hentLabelLink(krop.forsendelse_id, bruger.id));
       case "retur":
         return resultat(await lavReturlabel(krop.trade_id, bruger.id, obj(krop.afsender)));
+      case "returfragt": {
+        // Adressen kræves før betalingen, så returkoden kan laves bagefter.
+        const afsender = obj(krop.afsender);
+        if (!afsender) return svar(409, { fejl: "Skriv din adresse og dit mobilnummer.", kode: "afvist" });
+        const r = await startReturfragt(krop.trade_id, bruger.id, afsender);
+        if ("fejl" in r) return svar(409, { fejl: r.fejl, kode: r.betalt ? "betalt" : "afvist" });
+        return resultat(r);
+      }
     }
   } catch (err) {
     await logDriftFejl({ kilde: "server", sti: `/api/fragt/app/${handling}`, fejl: err, brugerId: bruger.id });
