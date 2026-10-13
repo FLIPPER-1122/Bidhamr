@@ -64,7 +64,7 @@ export default function Noegletal({ tal, periode }: { tal: ForsideTal; periode: 
             {dage.map((d) => (
               <span
                 key={d.dag}
-                className="min-w-0 flex-1 rounded-t bg-groen opacity-85"
+                className="min-w-0 flex-1 rounded-t bg-admin-graf opacity-85"
                 style={{ height: `${Math.max(2, (d.nye / maks) * 100)}%` }}
                 title={`${d.dag}: ${d.nye}`}
               />
