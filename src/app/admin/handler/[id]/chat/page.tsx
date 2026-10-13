@@ -204,7 +204,7 @@ export default async function AdminHandelChat({ params }: { params: Promise<{ id
                     <BidhamrMaerke lille />
                     <span className="text-xs font-semibold text-neutral-700">Besked fra BidHamr</span>
                   </div>
-                  <div className="w-full max-w-[92%] rounded-2xl border border-[#B9D8CC] bg-groen-lys px-4 py-2.5 text-sm text-tekst sm:max-w-[80%]">
+                  <div className="w-full max-w-[92%] rounded-2xl border border-succes-kant bg-groen-lys px-4 py-2.5 text-sm text-tekst sm:max-w-[80%]">
                     <p className="whitespace-pre-wrap break-words">
                       {fjernFaellesPraefiks(b.content, b.fra_bidhamr)}
                     </p>

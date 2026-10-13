@@ -66,6 +66,12 @@
   --color-status-roed: #c23b3b;
   --color-tal-roed: #c23b3b;
   --color-tal-gul: #e8a23e;
+  /* Hover på lys grøn flade (var hex #DCEAE4 i komponenterne). */
+  --color-groen-lys-hover: #dceae4;
+  /* Søjler i admin-grafer og skellet mellem menu og indhold. Mørke
+     værdier sættes af [data-tema="admin-moerk"] længere nede. */
+  --color-admin-graf: #1e5e4a;
+  --color-admin-skel: #e6eae8;
 
   /*
     UDFASET (fase 3): alle bg-brand/text-brand/border-brand er skiftet til
@@ -348,5 +354,203 @@ body {
   .firma-stor :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
     min-height: 48px;
     font-size: 17px;
+  }
+}
+
+/* ---------- Admin: mørkt navy-tema (Filip, 13. okt. 2026) ----------
+   Gælder KUN indholdsfladen i admin: src/app/admin/layout.tsx sætter
+   data-tema="admin-moerk" på indpakningen om <main> og kvitteringen. Menuen
+   (skovgrøn) og resten af hjemmesiden ligger uden for og røres ikke.
+
+   Alt sker ved at give de eksisterende tokens mørke værdier inden for
+   tema-indpakningen, så komponenterne ikke skal skrives om én for én:
+   - de semantiske tokens (flade, tekst, kant, status, groen ...)
+   - Tailwinds neutrale skala (neutral/gray) vendes: 50-300 bliver mørke
+     flader og kanter, 400-900 bliver lys tekst
+   - farveskalaerne (red, green, amber ...): 50-300 bliver mørke toninger
+     (baggrunde/kanter), 600-900 bliver lyse (tekst)
+   - --color-white bliver kortfarven, så alle bg-white-kort bliver navy
+
+   Kontrast (målt, WCAG AA 4,5:1 for tekst, 3:1 for grafik):
+   - tekst #E6ECF5 på kort #15233F: 13,2:1 - på bund #0B1426: 15,5:1
+   - dæmpet #B8C3D4: 8,8:1 - svag #9AA8BF: 6,5:1 - neutral-400 #8D9BB3: 5,6:1
+   - pladsholder #8D9BB3 på kort: 5,6:1
+   - links/groen #6FD3A8 på kort: 8,6:1 - på groen-lys #1A3947: 6,9:1
+   - statustekst på egen toning: succes 8,1, advarsel 7,5, fejl 7,2, info 7,4
+   - farveskala 700 på 100: mindst 6,8:1 (rød 7,0, blå 6,8, lilla 7,2)
+   - hvid på orange knap #B85518: 4,83:1 (uændret) - hvid på grøn fyld
+     #2E7D5B: 5,0:1 - hvid på rød fyld #C23B3B: 5,3:1 - hvid på #334A73: 8,9:1
+   - lamper på kort: grøn 4,6, gul 7,0, rød 3,6, blå 3,9, grå 6,4 (grafik ≥3:1)
+*/
+[data-tema="admin-moerk"] {
+  color-scheme: dark;
+  color: var(--color-tekst);
+
+  /* Flader og tekst */
+  --color-white: #15233f;
+  --color-flade: #15233f;
+  --color-background: #0b1426;
+  --color-foreground: #e6ecf5;
+  --color-tekst: #e6ecf5;
+  --color-tekst-daempet: #b8c3d4;
+  --color-tekst-svag: #9aa8bf;
+  --color-pladsholder: #8d9bb3;
+  --color-kant: #22324f;
+  --color-kant-staerk: #4a6189;
+  --color-skelet: #22324f;
+
+  /* Admin-tokens */
+  --color-admin-bg: #0b1426;
+  --color-admin-kant: #22324f;
+  --color-admin-graa: #1f3153;
+  --color-admin-graf: #3fb683;
+  --color-admin-skel: #2a3d60;
+
+  /* Brand: grøn som tekst/kant/fokus bliver lys. Grønne og røde fyld med
+     hvid tekst holdes mørke længere nede (bg-groen, bg-red-600 ...). */
+  --color-groen: #6fd3a8;
+  --color-groen-mork: #8fe0bc;
+  --color-groen-lys: #1a3947;
+  --color-groen-lys-hover: #1f4552;
+  --color-brand: #6fd3a8;
+  --color-orange-lys: #3d2e26;
+
+  /* Status: mørk toning, farvet kant, lys farvet tekst */
+  --color-succes-bg: #1a3947;
+  --color-succes-kant: #2a8a63;
+  --color-succes-tekst: #8fe0bc;
+  --color-advarsel-bg: #3b3424;
+  --color-advarsel-kant: #b9842f;
+  --color-advarsel-tekst: #f5c77e;
+  --color-fejl-bg: #372a41;
+  --color-fejl-kant: #b04549;
+  --color-fejl-tekst: #ffa3a3;
+  --color-info-bg: #20355c;
+  --color-info-kant: #4170ba;
+  --color-info-tekst: #a9c8f5;
+
+  /* Neutral skala (vendt). gray følger neutral. */
+  --color-neutral-50: #192a49;
+  --color-neutral-100: #1f3153;
+  --color-neutral-200: #273a5e;
+  --color-neutral-300: #4a6189;
+  --color-neutral-400: #8d9bb3;
+  --color-neutral-500: #9aa8bf;
+  --color-neutral-600: #aebacb;
+  --color-neutral-700: #c3cddb;
+  --color-neutral-800: #d6dee9;
+  --color-neutral-900: #e6ecf5;
+  --color-neutral-950: #f2f5fa;
+  --color-gray-50: #192a49;
+  --color-gray-100: #1f3153;
+  --color-gray-200: #273a5e;
+  --color-gray-300: #4a6189;
+  --color-gray-400: #8d9bb3;
+  --color-gray-500: #9aa8bf;
+  --color-gray-600: #aebacb;
+  --color-gray-700: #c3cddb;
+  --color-gray-800: #d6dee9;
+  --color-gray-900: #e6ecf5;
+
+  /* Farveskalaer: 50-300 = toning af farven i kortfarven (10/18/30/45 %),
+     600-700 = Tailwinds 300, 800 = 200, 900 = 100. 400-500 er uændrede. */
+  --color-red-50: #2b2640; --color-red-100: #3c2940; --color-red-200: #562d41; --color-red-300: #773241;
+  --color-red-600: #fca5a5; --color-red-700: #fca5a5; --color-red-800: #fecaca; --color-red-900: #fee2e2;
+  --color-green-50: #163342; --color-green-100: #174045; --color-green-200: #195448; --color-green-300: #1b6c4d;
+  --color-green-600: #86efac; --color-green-700: #86efac; --color-green-800: #bbf7d0; --color-green-900: #dcfce7;
+  --color-emerald-50: #153246; --color-emerald-100: #143e4b; --color-emerald-200: #145053; --color-emerald-300: #13675d;
+  --color-emerald-600: #6ee7b7; --color-emerald-700: #6ee7b7; --color-emerald-800: #a7f3d0; --color-emerald-900: #d1fae5;
+  --color-amber-50: #2b2f3a; --color-amber-100: #3d3936; --color-amber-200: #58482f; --color-amber-300: #7a5a28;
+  --color-amber-600: #fcd34d; --color-amber-700: #fcd34d; --color-amber-800: #fde68a; --color-amber-900: #fef3c7;
+  --color-yellow-50: #2a313a; --color-yellow-100: #3b3d35; --color-yellow-200: #554e2e; --color-yellow-300: #756426;
+  --color-yellow-600: #fde047; --color-yellow-700: #fde047; --color-yellow-800: #fef08a; --color-yellow-900: #fef9c3;
+  --color-orange-50: #2c2b3b; --color-orange-100: #3e3138; --color-orange-200: #593b33; --color-orange-300: #7c472d;
+  --color-orange-600: #fdba74; --color-orange-700: #fdba74; --color-orange-800: #fed7aa; --color-orange-900: #ffedd5;
+  --color-blue-50: #192d51; --color-blue-100: #1c3460; --color-blue-200: #204076; --color-blue-300: #264e91;
+  --color-blue-600: #93c5fd; --color-blue-700: #93c5fd; --color-blue-800: #bfdbfe; --color-blue-900: #dbeafe;
+  --color-purple-50: #242851; --color-purple-100: #2f2c60; --color-purple-200: #413276; --color-purple-300: #573a92;
+  --color-purple-600: #d8b4fe; --color-purple-700: #d8b4fe; --color-purple-800: #e9d5ff; --color-purple-900: #f3e8ff;
+
+  /* Skygger skal være mørkere for at kunne ses på navy. */
+  --shadow-kort: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-flyder: 0 10px 34px rgba(0, 0, 0, 0.6);
+  --shadow-stor: 0 12px 44px rgba(0, 0, 0, 0.6);
+}
+
+@layer base {
+  /* Felter: mørk bund, lys tekst, læselig pladsholder. Felter uden egen
+     baggrund får kortfarven i stedet for at være gennemsigtige. Tailwind-
+     klasser på feltet (bg-*, placeholder:*) vinder stadig. */
+  [data-tema="admin-moerk"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea) {
+    background-color: var(--color-flade);
+    color: var(--color-tekst);
+  }
+  [data-tema="admin-moerk"] ::placeholder {
+    color: var(--color-pladsholder);
+    opacity: 1;
+  }
+  [data-tema="admin-moerk"] :is(option, optgroup) {
+    background-color: var(--color-flade);
+    color: var(--color-tekst);
+  }
+}
+
+@layer components {
+  /* Knapperne har #fff som fast bund i det lyse tema. */
+  [data-tema="admin-moerk"] :is(.btn-sekundaer, .btn-fare) {
+    background-color: transparent;
+  }
+  [data-tema="admin-moerk"] :is(.btn-primaer:disabled, .btn-primaer[aria-disabled="true"]) {
+    background-color: color-mix(in srgb, var(--color-orange-knap) 45%, #15233f);
+    color: rgba(255, 255, 255, 0.75);
+  }
+}
+
+/* Dialoger: tynd lys kant, så panelet skiller sig ud fra det mørke tæppe.
+   Uden lag med vilje - skal stå oven på shadow-xl fra komponenten. */
+[data-tema="admin-moerk"] [role="dialog"][aria-modal="true"] {
+  box-shadow:
+    0 0 0 1px var(--color-kant-staerk),
+    0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+/* Fyld, der bærer hvid tekst, skal forblive mørke, selv om tokenet er blevet
+   lyst (fx er --color-groen lys tekstfarve i temaet). :where() holder
+   vægten på én klasse, og blokken ligger efter Tailwinds egne klasser i
+   samme lag: den vinder over grundklassen, men ikke over hover:/lg:-
+   varianter (de varianter, der skal ændres, står her selv). */
+@layer utilities {
+  /* text-white/85 og /70 bliver fuld hvid: halvgennemsigtig hvid består
+     ikke AA på grøn og orange fyld (4,1:1). */
+  :where([data-tema="admin-moerk"]) :is(.text-white, .text-white\/85, .text-white\/70) {
+    color: #fff;
+  }
+  :where([data-tema="admin-moerk"]) .bg-groen {
+    background-color: #2e7d5b;
+  }
+  :where([data-tema="admin-moerk"]) .border-groen.bg-groen {
+    border-color: #2e7d5b;
+  }
+  :where([data-tema="admin-moerk"]) :is(.bg-red-600, .bg-red-700, .bg-fejl-tekst) {
+    background-color: #c23b3b;
+  }
+  :where([data-tema="admin-moerk"]) .bg-neutral-900 {
+    background-color: #334a73;
+  }
+  :where([data-tema="admin-moerk"]) .border-neutral-900 {
+    border-color: #4a6189;
+  }
+  /* Gul tal-badge har altid mørk tekst (8,0:1). */
+  :where([data-tema="admin-moerk"]) .bg-tal-gul {
+    color: #1a1a1a;
+  }
+  @media (hover: hover) {
+    :where([data-tema="admin-moerk"]) :is(.hover\:bg-red-700, .hover\:bg-red-600):hover {
+      background-color: #a32020;
+    }
+    :where([data-tema="admin-moerk"]) :is(.hover\:bg-neutral-800, .hover\:bg-neutral-700):hover {
+      background-color: #3d5684;
+    }
   }
 }

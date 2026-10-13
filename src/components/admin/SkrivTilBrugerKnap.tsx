@@ -190,7 +190,7 @@ export default function SkrivTilBrugerKnap({
                     type="checkbox"
                     checked={alligevel}
                     onChange={(e) => setAlligevel(e.target.checked)}
-                    className="h-5 w-5 shrink-0 accent-[#1E5E4A]"
+                    className="h-5 w-5 shrink-0 accent-groen"
                   />
                   {nylig
                     ? `Send alligevel (sidst skrevet ${new Date(nylig).toLocaleString("da-DK", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Copenhagen" })})`
@@ -203,7 +203,7 @@ export default function SkrivTilBrugerKnap({
                     type="checkbox"
                     checked={marker}
                     onChange={(e) => setMarker(e.target.checked)}
-                    className="h-5 w-5 shrink-0 accent-[#1E5E4A]"
+                    className="h-5 w-5 shrink-0 accent-groen"
                   />
                   Markér henvendelsen som besvaret
                 </label>

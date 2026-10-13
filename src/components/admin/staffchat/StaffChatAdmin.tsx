@@ -122,7 +122,7 @@ export default function StaffChatAdmin({
           <li key={b.id} className={`flex ${b.fra_staff ? "justify-end" : "justify-start"}`}>
             <div
               className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm sm:max-w-[75%] ${
-                b.fra_staff ? "bg-[#E8F2EE] text-[#154537]" : "bg-neutral-100 text-neutral-800"
+                b.fra_staff ? "bg-groen-lys text-groen-mork" : "bg-neutral-100 text-neutral-800"
               }`}
             >
               <p className="mb-0.5 text-xs font-semibold">
