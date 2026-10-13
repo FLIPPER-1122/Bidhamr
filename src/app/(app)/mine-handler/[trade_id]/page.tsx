@@ -6,6 +6,8 @@ import HandelDetalje from "@/components/handel/HandelDetalje";
 // Medlemskab tjekkes i layout.tsx og igen i HandelDetalje.
 
 export const dynamic = "force-dynamic";
+// Fragtlabel/returlabel (DAO) kan tage op til ca. 50 s i en server action (server.ts: OPRET_MAKS_MS_UDEN_OPSLAG).
+export const maxDuration = 120;
 
 export const metadata: Metadata = { title: "Handel", robots: { index: false, follow: false } };
 

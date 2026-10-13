@@ -1,8 +1,16 @@
-# Fragt – DAO via Shipmondo
+# Fragt – DAO (direkte eller via Shipmondo)
 
 Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md afsnit 2
 ("Fragtfirma og priser", Filip 9. okt. 2026). Migrationer: `supabase/migrations/20261012010000_fragt_dao_shipmondo.sql`
 og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/BHT05).
+
+> **DAO direkte (13. okt. 2026, `FRAGTFIRMA=dao`):** adapteren `src/lib/fragt/dao.ts` og migrationen
+> `20261021010000_fragt_dao_direkte.sql` er bygget, men mangler nøgler og hændelseskoder – se
+> **docs/DAO-API.md, "Bygget" og "Mangler"**. Forskelle fra Shipmondo herunder: DAO kan annullere en label (en
+> bekræftet annulleret DAO-label tæller ikke i "højst 2 labels" – loft 10), der er intet opslag på reference (efter
+> et ukendt udfald laver næste forsøg en ny forsendelse, og kendte forældreløse annulleres), sporingen kommer via et
+> token-feed i fragt-cron'en (ingen webhook), og 14 dage uden leveringsmelding giver en efterlysning
+> (`fragt_efterlysninger`) og en markering til staff.
 
 > **Produktion:** migrationen må IKKE køres i produktion, før både hjemmesiden OG appen viser den låste
 > fragtpris (`fragt_pakkeshop_oere`) og har checkout før betaling. Ellers ser byderne 35 kr. og betaler
@@ -47,7 +55,9 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    markeres forsendelsen og betalingen til staff (udbetalingen holdes); modregning hos sælgeren er ikke bygget. **Levering/afhentning udløser aldrig
    udbetaling** – kun købers bekræftelse eller de eksisterende regler i autoFrigiv.
 8. **Retur i sager**: returlabel (køber → pakkeshop nær sælgeren). Slået fra (`FRAGT_RETURLABEL_AKTIV`),
-   indtil opkrævningen af returfragten hos køberen er bygget.
+   indtil opkrævningen af returfragten hos køberen er bygget. DAO: Shop2Shop med køberen som afsender og
+   `shopid=0` (DAO vælger shoppen nærmest sælgeren). Med flaget slået til viser handelssiden køberen
+   `ReturlabelBoks` (adresse + mobil → labelfri kode og PDF), når sagen afventer retur, og ankefristen er udløbet.
 9. **Ikke-afhentet pakke** (`20261016030000_ikke_afhentet_pakke.sql`, `src/lib/betaling/ikkeAfhentet.ts`):
    fragtfirmaet sender pakken retur, fordi køberen ikke hentede den. Én adapter-neutral indgang
    `registrerIkkeAfhentet` → `handel_ikke_afhentet_registrer` (låser betaling og handel, idempotent - én

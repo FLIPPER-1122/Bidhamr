@@ -1,0 +1,19 @@
+{
+  "status": "OK",
+  "fejlkode": 0,
+  "fejltekst": "",
+  "resultat": {
+    "stregkode": "00057099990000412345",
+    "pakketype": "Shop",
+    "eta": "2026-10-15",
+    "afsender": "Eksempel Sælger",
+    "modtager": { "navn": "Eksempel Køber", "adresse": "Prøvegade 2", "post": "8200 Aarhus N", "land": "DK" },
+    "ekstern_tracking": "",
+    "haendelser": [
+      { "tidspunkt": "2026-10-14 08:05:00", "haendelse": 10, "beskrivelse": "Pakke ankommet", "pakketype": "Shop", "sted": "Terminal" },
+      { "tidspunkt": "2026-10-14 09:40:00", "haendelse": "11", "beskrivelse": "Pakken har forladt terminalen", "pakketype": "Shop", "sted": "" },
+      { "tidspunkt": "2026-10-14 15:22:00", "haendelse": 87, "beskrivelse": "Ukendt hændelse i eksemplet", "pakketype": "Shop", "sted": "" },
+      { "tidspunkt": "ikke en dato", "haendelse": 10, "beskrivelse": "Ugyldig", "sted": "" }
+    ]
+  }
+}

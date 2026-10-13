@@ -21,6 +21,7 @@ import { UUID_RE, handelChatSti } from "@/lib/moderationLog";
 import { SPORINGS_NAVN, erSporingsType } from "@/lib/fragt/types";
 import {
   fragtAfslutHaengendeLabel,
+  fragtProevSporingIgen,
   fragtGodkendEkstraLabel,
   fragtMarkerHaandteret,
 } from "@/app/actions/adminFragt";
@@ -56,6 +57,7 @@ type FragtRow = {
   trade_id: string;
   type: "udgaaende" | "retur";
   status: string;
+  fragtfirma: string;
   sporingsnummer: string | null;
   opmaerksomhed_tekst: string | null;
   opdateret_kl: string;
@@ -132,7 +134,7 @@ async function HandlerIndhold({
     supabase.rpc("admin_haengende_handler"),
     supabase
       .from("forsendelser")
-      .select("id, trade_id, type, status, sporingsnummer, opmaerksomhed_tekst, opdateret_kl")
+      .select("id, trade_id, type, status, fragtfirma, sporingsnummer, opmaerksomhed_tekst, opdateret_kl")
       .eq("kraever_opmaerksomhed", true)
       .order("opdateret_kl", { ascending: true })
       .limit(200),
@@ -140,6 +142,16 @@ async function HandlerIndhold({
   if (haengerFejl) console.error("admin_haengende_handler fejlede:", haengerFejl.message);
   if (fragtFejl) console.error("Forsendelser til staff kunne ikke hentes:", fragtFejl.message);
   const fragtRaekker = (fragtData ?? []) as FragtRow[];
+  // Sporingshændelser, som feedet sprang over (fragt_feed_fejl) - "Prøv igen".
+  const { data: sprungneData } = fragtRaekker.length
+    ? await supabase
+        .from("fragt_feed_fejl")
+        .select("forsendelse_id")
+        .in("forsendelse_id", fragtRaekker.slice(0, 100).map((f) => f.id))
+        .not("opgivet_kl", "is", null)
+        .is("loest_kl", null)
+    : { data: [] as { forsendelse_id: string }[] };
+  const sprungne = new Set((sprungneData ?? []).map((r) => r.forsendelse_id as string));
 
   const haengerMap = new Map<string, Haenger>();
   for (const r of (haengende ?? []) as { trade_id: string; grund: unknown; siden: string }[]) {
@@ -422,8 +434,39 @@ async function HandlerIndhold({
                   <Link href={handelChatSti(f.trade_id)} prefetch={false} className={lille}>
                     Se chat
                   </Link>
+                  {sprungne.has(f.id) && (
+                    <ConfirmDialog
+                      triggerLabel="Prøv sporingen igen"
+                      triggerClassName={lille}
+                      title="Gem de sprungne sporingshændelser igen?"
+                      description="Fragtfirmaet sendte en eller flere sporingshændelser, som ikke kunne gemmes, og som derfor er sprunget over. BidHamr prøver at gemme dem igen nu. Ingen penge flyttes direkte, men en hændelse som leveret kan sende beskeder til køberen."
+                      confirmLabel="Prøv igen"
+                      action={fragtProevSporingIgen}
+                      hiddenFields={{ forsendelseId: f.id }}
+                      kvittering="Sporingshændelserne er gemt"
+                    />
+                  )}
+                  {/* Hængende DAO-label: DAO kan ikke slå op på reference, og en pakke,
+                      der aldrig indleveres, faktureres ikke - så den markeres blot fejlet. */}
+                  {f.status === "opretter" && f.fragtfirma === "dao" && (
+                    <ConfirmDialog
+                      triggerLabel="Afslut hængende label"
+                      triggerClassName={lille}
+                      title="Afslut den hængende fragtlabel"
+                      description="DAO kan ikke slå forsendelser op på BidHamrs reference. Markér labelen fejlet, så sælgeren kan lave en ny. En DAO-pakke, der aldrig bliver indleveret, faktureres ikke, og kendte pakker fra forsøget annulleres automatisk."
+                      confirmLabel="Markér fejlet"
+                      action={fragtAfslutHaengendeLabel}
+                      hiddenFields={{ forsendelseId: f.id, valg: "fejlet" }}
+                      aarsagField={{
+                        label: "Hvad har du tjekket?",
+                        placeholder: "Fx: sælgeren har ikke fået nogen kode – laver en ny label",
+                        required: true,
+                      }}
+                      kvittering="Den hængende label er afsluttet"
+                    />
+                  )}
                   {/* Hængende label (ukendt udfald hos Shipmondo): staff tjekker i Shipmondo først. */}
-                  {f.status === "opretter" && (
+                  {f.status === "opretter" && f.fragtfirma !== "dao" && (
                     <ConfirmDialog
                       triggerLabel="Afslut hængende label"
                       triggerClassName={lille}

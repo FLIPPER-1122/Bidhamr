@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:penge": "vitest run --config vitest.penge.config.mts",
-    "test:penge:db": "vitest run --config vitest.penge-db.config.mts"
+    "test:penge:db": "vitest run --config vitest.penge-db.config.mts",
+    "test:fragt": "vitest run --config vitest.fragt.config.mts"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "1.1.1",

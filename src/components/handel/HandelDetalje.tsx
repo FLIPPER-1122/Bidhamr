@@ -38,10 +38,12 @@ import { afhentningTilbagebetalKl, afhentningsfristTekst } from "@/lib/afhentnin
 import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
 import FragtlabelBoks from "@/components/fragt/FragtlabelBoks";
 import { hentForsendelserAction } from "@/app/actions/fragt";
+import type { ForsendelseVisning } from "@/lib/fragt/handlinger";
 import SporingTidslinje from "@/components/fragt/SporingTidslinje";
 import Ikon from "@/components/Ikon";
 import { PAKKESTOERRELSE_NAVN, erPakkestoerrelse } from "@/lib/fragt/types";
-import { fragtLabelsAktiv } from "@/lib/fragt";
+import { fragtLabelsAktiv, fragtReturlabelAktiv, labelGraense } from "@/lib/fragt";
+import ReturlabelBoks from "@/components/fragt/ReturlabelBoks";
 import { hentKontoType } from "@/lib/supabase/bruger";
 import { foerLancering } from "@/lib/lancering";
 import FirmaKontaktBoks from "@/components/erhverv/FirmaKontaktBoks";
@@ -239,10 +241,11 @@ export default async function HandelDetalje({
       ? Promise.all([
           supabase
             .from("handel_levering")
-            .select("maade, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by")
+            .select("maade, fragtfirma, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by")
             .eq("trade_id", handel.id)
             .maybeSingle<{
               maade: string;
+              fragtfirma: string | null;
               pakkeshop_navn: string | null;
               pakkeshop_adresse: string | null;
               pakkeshop_postnummer: string | null;
@@ -347,6 +350,21 @@ export default async function HandelDetalje({
   const sagSamtale = samtaleRes && "samtale" in samtaleRes ? samtaleRes.samtale : null;
   const muligheder = mulighederRes && !("fejl" in mulighederRes) ? mulighederRes : null;
 
+  // Returlabel i sagen (køberen sender varen retur nu) - kun bag flaget
+  // FRAGT_RETURLABEL_AKTIV (returfragten opkræves ikke endnu).
+  const visReturlabel =
+    fragtReturlabelAktiv() &&
+    erKoeber &&
+    !!sag &&
+    sag.status === "afventer_retur" &&
+    sag.returKraeves &&
+    !sag.returVenterTilKl;
+  let returForsendelse: ForsendelseVisning | null = null;
+  if (visReturlabel) {
+    const alle = visFragt ? forsendelser : await hentForsendelserAction(handel.id).then((r) => ("ok" in r ? r.forsendelser : []));
+    returForsendelse = alle.find((f) => f.type === "retur" && f.status !== "annulleret") ?? null;
+  }
+
   const adresseSvar = afhentningsadresseSvar as { kode?: string; adresse?: string | null; telefon?: string | null } | null;
   const afhentningsadresse: { adresse: string | null; telefon: string | null } | null =
     adresseSvar?.kode === "ok" ? { adresse: adresseSvar.adresse ?? null, telefon: adresseSvar.telefon ?? null } : null;
@@ -382,6 +400,7 @@ export default async function HandelDetalje({
           </div>
         )}
         {sag && <SagVisning sag={sag} brugerId={user.id} samtale={sagSamtale} />}
+        {visReturlabel && <ReturlabelBoks tradeId={handel.id} retur={returForsendelse} navn="" />}
 
         {/* Overblik */}
         <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
@@ -844,6 +863,7 @@ export default async function HandelDetalje({
             pakke={pakkeTekst}
             levering={leveringTekst}
             brugteLabels={udgaaende.length}
+            labelGraense={labelGraense(lev?.fragtfirma ?? forsendelse?.fragtfirma)}
           />
         )}
 

@@ -12,6 +12,15 @@ I dag viser bidhamr.dk `/coming-soon` for alle uden staff-rolle. Den rigtige for
 - **Opret bruger / Invite user i Supabase-dashboardet virker aldrig** efter migrationen (der er ingen billet). Testbrugere oprettes via `supabase/seed.sql`, firmakonti under Admin → Erhverv.
 - Lokalt (`npm run dev`, testdatabasen) er siden altid "lanceret", så forsiden kan ses på http://localhost:3000. `SIMULER_FOER_LANCERING=true` i `.env.local` viser den lukkede udgave med coming-soon. `LANCERET` har ingen virkning på testdatabasen. `SIMULER_TILMELDING_LUKKET=true` lukker tilmeldingen lokalt, så beta-tilmeldingen kan testes.
 
+## DAO direkte – når du har nøglerne (se docs/DAO-API.md, "Mangler")
+- **Kør migrationen** `supabase/migrations/20261021010000_fragt_dao_direkte.sql` i produktion (dit "ja"). Den er kørt to gange på testdatabasen. Den kan køres, før DAO slås til – den ændrer intet for Shipmondo/testfragt.
+- **Sæt i `.env.local` (testdatabasen) først**, og først bagefter i Vercel (Production): `DAO_KUNDEID` og `DAO_KODE` (fra DAO). De står i URL'en til DAO, så del dem aldrig i chat, mails eller skærmbilleder. Valgfrit: `DAO_API_URL` (standard `https://api.dao.as`), `DAO_LABEL_PAPIR` (standard `A4Foldable`).
+- **Lokalt først med `DAO_TESTMODE=true`** (DAO opretter ingen pakker) og `FRAGTFIRMA=dao`. Uden `FRAGTFIRMA` bruges testfragtfirmaet lokalt som hidtil.
+- **Få koderne:** bed Claude kalde `TrackNTraceKoder.php` og `FejlKoder.php` (kun læsning) og udfylde `src/lib/fragt/daoKoder.ts`. Send derefter 2-3 rigtige pakker – og én, der ikke hentes – så "leveret" og "retur" kan ses på rigtige pakker. Indtil "leveret" er kendt, får køberen ikke "Pakken er kommet frem", og 14-dages-frigivelsen sker ikke (pengene holdes, og staff får en opgave).
+- **Produktion:** `FRAGTFIRMA=dao` i Vercel, når ovenstående er gjort. `DAO_TESTMODE` må ikke sættes i produktion.
+- **Efterlysning efter 14 dage:** `FRAGT_EFTERLYSNING_AKTIV=true` slår den automatiske efterlysning hos DAO til (`createclaim.php`). Uden den får staff opgaven at efterlyse manuelt. Slå den først til, når Allan har bekræftet, hvad `pris` betyder.
+- **Returlabel i sager** (`FRAGT_RETURLABEL_AKTIV`) forbliver slået fra, indtil kortbetalingen af returfragten (din beslutning 13. okt. 2026) er bygget.
+
 ## Ekstern vagt på admin-forsiden (Healthchecks.io)
 - **Sæt `HEALTHCHECKS_LAESENOEGLE`** i Vercel (Production) og i `.env.local`: den **read-only** API-nøgle fra Healthchecks.io (Project Settings → API Access). Brug aldrig den fulde nøgle.
 - Checks skal hedde præcis **"Betalings-cron"** og **"Daglig afstemning"** hos Healthchecks. Så viser Admin → Forside to lamper ("Ekstern vagt – …"): grøn = ok, gul = forsinket, rød = nede (også i Kræver handling og statuslinjen), grå = ny/pause/ikke sat op.
