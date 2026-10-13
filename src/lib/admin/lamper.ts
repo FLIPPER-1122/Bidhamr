@@ -4,7 +4,8 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import { CRON_ADVARSEL_MIN, hentAlarmStatus, hentCronRute } from "@/lib/driftData";
 import { alarmModtagere } from "@/lib/driftAlarm";
 import { erTestdatabase } from "@/lib/miljoe";
-import { noeglensTilstand } from "@/lib/stripe";
+import { databasensStripeTilstand, noeglensTilstand, offentligNoeglesTilstand } from "@/lib/stripe";
+import { stripeTilstandLampe } from "@/lib/admin/stripeLampe";
 import type { NoedstopTal } from "@/lib/admin/taellere";
 import { hentEksternVagt } from "@/lib/admin/healthchecks";
 
@@ -75,7 +76,7 @@ async function byg(admin: Admin): Promise<Lampe[]> {
   const test = erTestdatabase();
   const fra24 = new Date(nu - 24 * 60 * MIN).toISOString();
 
-  const [rute, alarm, webhook, fragt, vagt, afstemning, afvigelser, kritiske] = await Promise.all([
+  const [rute, alarm, webhook, fragt, vagt, afstemning, afvigelser, kritiske, stripeDb] = await Promise.all([
     hentCronRute(admin, nu),
     hentAlarmStatus(admin),
     admin
@@ -100,6 +101,9 @@ async function byg(admin: Admin): Promise<Lampe[]> {
       .select("id", { count: "exact", head: true })
       .is("loest_kl", null)
       .in("type", [...AFVIGELSE_KRITISKE_TYPER]),
+    // Databasens stripe_tilstand (samme opslag og cache som Stripe-vagten;
+    // null, hvis den ikke kan læses).
+    databasensStripeTilstand(),
   ]);
   const fragtTilHandling = fragt.count ?? 0;
 
@@ -146,17 +150,10 @@ async function byg(admin: Admin): Promise<Lampe[]> {
     });
   }
 
-  // Test eller live: Stripe-nøglen og databasen skal passe sammen.
-  const noegle = noeglensTilstand();
-  if (noegle) {
-    if (noegle === "test" && test) {
-      lamper.push({ navn: "Testmiljø", tone: "blaa", tekst: "testnøgle + testdatabase" });
-    } else if (noegle === "live" && !test) {
-      lamper.push({ navn: "Live", tone: "groen", tekst: "live-nøgle + produktionsdatabase" });
-    } else {
-      lamper.push({ navn: "Test eller live", tone: "roed", tekst: "Stripe-nøglen passer ikke til databasen" });
-    }
-  }
+  // Test eller live: nøglens tilstand mod databasens stripe_tilstand - samme
+  // regel som Stripe-vagten (kraevSammeStripeTilstand). Produktionen kører
+  // bevidst med testnøgle og stripe_tilstand 'test' indtil fase 6.
+  lamper.push(stripeTilstandLampe(noeglensTilstand(), stripeDb, test, offentligNoeglesTilstand()));
 
   // Fragt: forsendelser, der kræver handling (samme tal som "Kræver handling").
   if (fragt.error) lamper.push(ikkeHentet("Fragt", "/admin/handler?vis=fragt"));

@@ -145,10 +145,12 @@ export async function annullerFragtlabel(tradeId: string, forsendelseId: string)
   return r;
 }
 
-// Kortlivet link (5 min) til label-PDF'en.
+// Kortlivet link (5 min) til label-PDF'en. Grænse pr. bruger, fordi linket kan
+// udløse et kald til fragtfirmaet (DAO: PDF'en hentes, hvis den manglede).
 export async function hentFragtlabelLink(forsendelseId: string): Promise<{ url: string } | Fejl> {
   const u = await bruger();
   if (!u) return { fejl: "Du skal være logget ind." };
+  if (!(await tjekGraenser([["fragt_handling_bruger", u.id]]))) return { fejl: FOR_MANGE_FORSOEG };
   const r = await hentLabelLink(forsendelseId, u.id);
   return "fejl" in r ? r : { url: r.url };
 }

@@ -24,6 +24,7 @@ import { getStripe, kraevSammeOffentligeNoegle, StripeTilstandFejl } from "@/lib
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { applicationFeeOere, totalOere } from "@/lib/betaling/beregn";
+import { egenDatabase } from "@/lib/betaling/fremmedeTestdata";
 import { sendIndsigelseTilSaelger } from "@/lib/betaling/indsigelseBeskeder";
 import { kontoSpejl, nyKontoParametre, sikrKontoopsaetning } from "@/lib/betaling/connect";
 import { BetalingsmodelFejl, kraevDestination } from "@/lib/betaling/model";
@@ -603,7 +604,9 @@ export async function sikrPaymentIntent(
       return stripe.paymentIntents.update(eksisterende.id, {
         amount: beloeb,
         application_fee_amount: fee,
-        metadata: { beskyttelse: betaling.beskyttelse ? "ja" : "nej" },
+        // bidhamr_db også på ældre PaymentIntents (fremmedeTestdata.ts). Ingen
+        // idempotency-nøgle her - en opdatering kan gentages.
+        metadata: { beskyttelse: betaling.beskyttelse ? "ja" : "nej", ...(egenDatabase() ? { bidhamr_db: egenDatabase()! } : {}) },
         payment_method_options: { card: { request_three_d_secure: "any" } },
       });
     }
@@ -636,7 +639,14 @@ export async function sikrPaymentIntent(
   // pi_forsoeg > 0 betyder, at en tidligere PaymentIntent er kasseret (fx
   // afvigende beløb, eller betalingen har ventet på sælgerens konto) - så
   // skal der en ny key til, ellers giver Stripe den gamle tilbage.
-  const nøgle = `bidhamr-pi-dest-${b.id}-${b.pi_forsoeg}`;
+  //
+  // bidhamr_db (metadata, 13. okt. 2026) er med i nøglen: Stripe afviser en
+  // gentagelse med samme nøgle og andre parametre (docs.stripe.com/api/
+  // idempotent_requests). En PaymentIntent oprettet før opdateringen, men
+  // aldrig gemt, giver derfor en ny i stedet for en idempotensfejl i 24 t; den
+  // gamle blev aldrig givet til køberen og kan ikke betales via BidHamr.
+  const db = egenDatabase();
+  const nøgle = `bidhamr-pi-dest-${b.id}-${b.pi_forsoeg}${db ? `-${db}` : ""}`;
   const pi = await stripe.paymentIntents.create(
     {
       amount: beloeb,
@@ -661,6 +671,10 @@ export async function sikrPaymentIntent(
         koeber_id: b.buyer_id,
         beskyttelse: b.beskyttelse ? "ja" : "nej",
         pengemodel: "destination",
+        // Hvilken database (Supabase-projekt-ref) betalingen hører til: den
+        // anden database kan genkende den som fremmede testdata, så længe de
+        // deler Stripe-testkontoen (fremmedeTestdata.ts).
+        ...(db ? { bidhamr_db: db } : {}),
       },
     },
     { idempotencyKey: nøgle },
@@ -1775,6 +1789,15 @@ async function alarmIndsigelse(d: Stripe.Dispute, piId: string | null, chId: str
         ? await admin.from("firmaer").select("id").eq("stripe_customer_id", kunde).limit(1)
         : { data: [] as { id: string }[] };
       const abonnement = (firma ?? []).length > 0;
+      // Stripe-testtilstand: en indsigelse på den anden databases (eller
+      // pengetestenes) betaling på den delte testkonto - ingen alarm.
+      if (!abonnement) {
+        const { erFremmedTestCharge, logFremmedTestdata } = await import("@/lib/betaling/fremmedeTestdata");
+        if (await erFremmedTestCharge(charge)) {
+          logFremmedTestdata("Indsigelse", d.id);
+          return;
+        }
+      }
       await alarmPrTilfaelde({
         noegle: `indsigelse-${abonnement ? "abonnement" : "ukendt"}:${d.id}`,
         hvor: abonnement ? "betaling/indsigelse-abonnement" : "betaling/indsigelse-ukendt",

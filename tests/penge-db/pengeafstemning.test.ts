@@ -27,10 +27,20 @@ const MIGRATION = readFileSync(
   "utf8",
 );
 
+// 20261021020000: løst afvigelse lukker også drift-tilfældet.
+const LUK_TILFAELDE = readFileSync(
+  path.resolve(import.meta.dirname, "../../supabase/migrations/20261021020000_afvigelse_loes_lukker_tilfaelde.sql"),
+  "utf8",
+);
+
 const CHEF = "00000000-0000-4000-8000-000000000001";
 const ADMIN = "00000000-0000-4000-8000-000000000002";
 
 const STUB = `
+create table public.drift_tilfaelde (noegle text primary key, aabnet_kl timestamptz not null default now(), loest_kl timestamptz, antal_aabnet integer not null default 1);
+create function public.drift_tilfaelde_luk(p_noegle text) returns boolean language plpgsql as
+  $$ declare n integer; begin update public.drift_tilfaelde set loest_kl = now() where noegle = p_noegle and loest_kl is null;
+     get diagnostics n = row_count; return n > 0; end $$;
 create role anon; create role authenticated; create role service_role;
 -- Som Supabase: nye tabeller giver som standard alle rettigheder til rollerne.
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
@@ -87,6 +97,9 @@ beforeAll(async () => {
   await db.exec(MIGRATION);
   // Kan køres igen.
   await db.exec(MIGRATION);
+  // 20261021020000 to gange (md5-drift-tjekket godkender både gammel og ny).
+  await db.exec(LUK_TILFAELDE);
+  await db.exec(LUK_TILFAELDE);
 });
 
 afterAll(async () => {
@@ -629,5 +642,28 @@ describe("refunderet i alt pr. charge (dobbelt-refusion) og kontorotation", () =
     }
     expect(set.size).toBe(450);
     expect(kontoUdvalg(["a", "b"], 200, 5)).toEqual(["a", "b"]);
+  });
+});
+
+describe("20261021020000: løst afvigelse lukker drift-tilfældet", () => {
+  it("afstemningens og webhookens nøgle lukkes; andre røres ikke; intet slettes", async () => {
+    const k = (await en<{ id: number }>("select public.penge_afstemning_claim(0) as id")).id;
+    await db.query("select public.penge_afvigelse_registrer($1, 'ukendt-betaling:pi_luk1', 'ukendt_betaling', 'pi_luk1', null, null, 'x', 1, null, null)", [k]);
+    await db.query("select public.penge_afvigelse_registrer($1, 'indsigelse:du_luk1', 'abonnement_indsigelse', 'du_luk1', null, null, 'x', 1, null, null)", [k]);
+    await db.query(
+      "insert into public.drift_tilfaelde (noegle) values ('afstemning:ukendt-betaling:pi_luk1'), ('ukendt-pi:pi_luk1'), ('indsigelse-abonnement:du_luk1'), ('ukendt-pi:pi_andet')",
+    );
+    for (const n of ["ukendt-betaling:pi_luk1", "indsigelse:du_luk1"]) {
+      const a = await en<{ id: string }>("select id from public.penge_afstemning_afvigelser where noegle = $1", [n]);
+      expect((await en<{ r: string }>("select public.admin_penge_afvigelse_loes($1, $2, 'Tjekket') as r", [CHEF, a.id])).r).toBe("ok");
+      expect((await en<{ r: string }>("select public.admin_penge_afvigelse_loes($1, $2, 'igen') as r", [CHEF, a.id])).r).toBe("ikke_fundet");
+    }
+    const t = await db.query<{ noegle: string; loest: boolean }>("select noegle, loest_kl is not null as loest from public.drift_tilfaelde order by noegle");
+    expect(Object.fromEntries(t.rows.map((r) => [r.noegle, r.loest]))).toEqual({
+      "afstemning:ukendt-betaling:pi_luk1": true,
+      "indsigelse-abonnement:du_luk1": true,
+      "ukendt-pi:pi_luk1": true,
+      "ukendt-pi:pi_andet": false,
+    });
   });
 });

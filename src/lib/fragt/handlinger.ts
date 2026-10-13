@@ -18,6 +18,7 @@ import {
   hentFragtpriser,
   opretReturForsendelse,
   opretUdgaaendeForsendelse,
+  sikrLabelPdf,
   soegPakkeshops,
 } from "@/lib/fragt/server";
 import { SPORINGS_NAVN, type CheckoutMaade, type SporingsType } from "@/lib/fragt/types";
@@ -303,6 +304,8 @@ export type ForsendelseVisning = {
   id: string;
   type: "udgaaende" | "retur";
   status: string;
+  // Fx "dao" (styrer bl.a. labelgrænsen i FragtlabelBoks).
+  fragtfirma: string;
   levering: string | null;
   pakkestoerrelse: string;
   sporingsnummer: string | null;
@@ -338,7 +341,7 @@ export async function hentForsendelser(
   const { data, error } = await admin
     .from("forsendelser")
     .select(
-      "id, type, status, levering, pakkestoerrelse, sporingsnummer, label_sti, qr_kode, oprettet_kl, afleveret_kl, klar_til_afhentning_kl, leveret_kl, returneret_kl, annulleret_kl",
+      "id, type, status, fragtfirma, levering, pakkestoerrelse, sporingsnummer, forsendelses_id, label_sti, qr_kode, oprettet_kl, afleveret_kl, klar_til_afhentning_kl, leveret_kl, returneret_kl, annulleret_kl",
     )
     .eq("trade_id", h.id)
     .neq("status", "fejlet")
@@ -365,10 +368,12 @@ export async function hentForsendelser(
         id: f.id,
         type: f.type,
         status: f.status,
+        fragtfirma: f.fragtfirma,
         levering: f.levering,
         pakkestoerrelse: f.pakkestoerrelse,
         sporingsnummer: f.sporingsnummer,
-        harLabel: maa && Boolean(f.label_sti),
+        // DAO uden PDF endnu: knappen vises, og PDF'en hentes ved klik.
+        harLabel: maa && (Boolean(f.label_sti) || (f.fragtfirma === "dao" && Boolean(f.forsendelses_id))),
         labelfriKode: maa ? f.qr_kode : null,
         oprettetKl: f.oprettet_kl,
         afleveretKl: f.afleveret_kl,
@@ -401,10 +406,15 @@ export async function hentLabelLink(
     .select("trade_id, type, status, label_sti")
     .eq("id", forsendelseId)
     .maybeSingle<{ trade_id: string; type: string; status: string; label_sti: string | null }>();
-  if (!f?.label_sti) return { fejl: "Fragtlabelen findes ikke." };
+  if (!f) return { fejl: "Fragtlabelen findes ikke." };
   const h = await hentHandel(f.trade_id, brugerId);
   if (!h || !maaSeLabel(f.type, h, brugerId, f.status)) return { fejl: "Fragtlabelen findes ikke." };
-  const { data, error } = await admin.storage.from(FRAGT_LABEL_BUCKET).createSignedUrl(f.label_sti, 300);
+  // PDF'en manglede ved oprettelsen (DAO med labelfri kode): hent den nu.
+  const sti = f.label_sti ?? (await sikrLabelPdf(forsendelseId));
+  if (!sti) {
+    return { fejl: "PDF-labelen kan ikke hentes lige nu. Brug koden ovenfor, eller prøv igen om lidt." };
+  }
+  const { data, error } = await admin.storage.from(FRAGT_LABEL_BUCKET).createSignedUrl(sti, 300);
   if (error || !data?.signedUrl) return { fejl: "Fragtlabelen kunne ikke hentes." };
   return { ok: true, url: data.signedUrl };
 }

@@ -653,7 +653,8 @@ export default async function AdminDrift({
               <p className="mb-3 text-xs text-tekst-svag">
                 {fejl.data.iAlt} registreringer i {fejl.data.grupper.length}{" "}
                 {fejl.data.grupper.length === 1 ? "gruppe" : "grupper"}, grupperet pr. type med samme titel som i
-                alarm-mailen. Røde skal ses på nu, gule er til orientering.
+                alarm-mailen. Røde skal ses på nu, gule er til orientering. Under hver gruppe står de enkelte
+                beskeder; beskeder, der kun adskiller sig ved et id (fx charge-id), står samlet.
                 {fejl.data.afkortet && " Kun de seneste 1000 rækker er medtaget."}
               </p>
               <ul className="divide-y divide-admin-kant">
@@ -676,14 +677,38 @@ export default async function AdminDrift({
                       <p className="mt-1 text-sm text-tekst-daempet">
                         {type.betyder} <span className="font-medium text-tekst">{type.goer}</span>
                       </p>
-                      <ul className="mt-2 space-y-1 border-l-2 border-admin-kant pl-3">
+                      <ul className="mt-2 space-y-1.5 border-l-2 border-admin-kant pl-3">
                         {g.beskeder.map((b) => (
-                          <li key={b.besked} className="flex items-start gap-2 text-xs">
-                            <span className="shrink-0 font-bold tabular-nums text-tekst">{b.antal}×</span>
-                            <span className="min-w-0 flex-1 break-words text-tekst">{b.besked}</span>
-                            <span className="shrink-0 whitespace-nowrap text-tekst-svag">{tid(b.senest)}</span>
+                          <li key={b.tekst} className="text-xs">
+                            <div className="flex items-start gap-2">
+                              <span className="shrink-0 font-bold tabular-nums text-tekst">{b.antal}×</span>
+                              <span className="min-w-0 flex-1 break-words text-tekst">{b.tekst}</span>
+                              <span className="shrink-0 whitespace-nowrap text-tekst-svag">{tid(b.senest)}</span>
+                            </div>
+                            {b.eksempler.length > 0 && (
+                              <details className="mt-0.5 pl-6 text-tekst-svag">
+                                <summary className="cursor-pointer select-none hover:text-tekst">
+                                  {b.varianter > 1
+                                    ? `${b.varianter} forskellige id'er - vis ${b.eksempler.length === 1 ? "eksempel" : `${b.eksempler.length} eksempler`}`
+                                    : "Vis id"}
+                                </summary>
+                                <ul className="mt-1 space-y-0.5 pl-4">
+                                  {b.eksempler.map((e) => (
+                                    <li key={e} className="break-all font-mono">
+                                      {e}
+                                    </li>
+                                  ))}
+                                </ul>
+                                {b.varianter > b.eksempler.length && (
+                                  <p className="mt-1 pl-4">… og {b.varianter - b.eksempler.length} flere.</p>
+                                )}
+                              </details>
+                            )}
                           </li>
                         ))}
+                        {g.flereBeskeder > 0 && (
+                          <li className="text-xs text-tekst-svag">+{g.flereBeskeder} flere forskellige beskeder</li>
+                        )}
                       </ul>
                       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-tekst-svag">
                         <span>Senest {tid(g.senest)}</span>

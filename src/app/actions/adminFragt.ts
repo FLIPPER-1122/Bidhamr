@@ -8,7 +8,7 @@ import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { assertRole } from "@/lib/adminAuth";
 import { UUID_RE } from "@/lib/moderationLog";
-import { staffAfslutHaengendeClaim } from "@/lib/fragt/server";
+import { staffAfslutHaengendeClaim, staffProevFeedHaendelserIgen } from "@/lib/fragt/server";
 
 class BrugerFejl extends Error {}
 
@@ -90,7 +90,7 @@ export async function fragtAfslutHaengendeLabel(formData: FormData): Promise<{ o
     const { admin, userId: staffId } = await assertRole("medarbejder");
     if (!UUID_RE.test(forsendelseId)) throw new BrugerFejl("Forsendelsen findes ikke.");
     if (valg !== "fejlet" && valg !== "tilknyt") throw new BrugerFejl("Vælg, hvad der skal ske.");
-    if (!note) throw new BrugerFejl("Skriv, hvad du har tjekket i Shipmondo.");
+    if (!note) throw new BrugerFejl("Skriv, hvad du har tjekket hos fragtfirmaet.");
     if (note.length > 500) throw new BrugerFejl("Noten må højst være 500 tegn.");
     if (valg === "tilknyt" && !/^\d{1,20}$/.test(shipmondoId)) throw new BrugerFejl("Skriv Shipmondos forsendelses-id (kun tal).");
 
@@ -173,6 +173,51 @@ export async function fragtGodkendEkstraLabel(formData: FormData): Promise<{ ok:
     unstable_rethrow(err);
     if (err instanceof BrugerFejl) return { fejl: err.message };
     console.error("Admin-handling fragtGodkendEkstraLabel fejlede:", err);
+    return { fejl: GENERISK_FEJL };
+  }
+}
+
+// "Prøv igen" på sporingshændelser, som feedet sprang over, fordi de ikke kunne
+// gemmes (fragt_feed_fejl). Hændelsen gemmes som en almindelig
+// sporingshændelse (idempotent), og det logges i medarbejder-loggen.
+export async function fragtProevSporingIgen(formData: FormData): Promise<{ ok: true } | { fejl: string }> {
+  try {
+    const forsendelseId = String(formData.get("forsendelseId") ?? "");
+    const { admin, userId: staffId } = await assertRole("medarbejder");
+    if (!UUID_RE.test(forsendelseId)) throw new BrugerFejl("Forsendelsen findes ikke.");
+
+    const { data: f } = await admin
+      .from("forsendelser")
+      .select("trade_id")
+      .eq("id", forsendelseId)
+      .maybeSingle<{ trade_id: string }>();
+    if (!f) throw new BrugerFejl("Forsendelsen findes ikke.");
+    const { data: t } = await admin
+      .from("trades")
+      .select("buyer_id, seller_id")
+      .eq("id", f.trade_id)
+      .maybeSingle<{ buyer_id: string; seller_id: string }>();
+    if (t && (t.buyer_id === staffId || t.seller_id === staffId)) throw new BrugerFejl(INHABIL);
+
+    const r = await staffProevFeedHaendelserIgen(forsendelseId, staffId);
+    if ("fejl" in r) throw new BrugerFejl(r.fejl);
+
+    const { error: logFejl } = await admin.from("moderation_log").insert({
+      medarbejder_id: staffId,
+      handling: "fragt_haandteret",
+      maal_type: "handel",
+      maal_id: r.tradeId,
+      bruger_id: null,
+      aarsag: `Sprungne sporingshændelser gemt igen (${r.gemt}).`,
+    });
+    if (logFejl) console.error("Kunne ikke skrive til moderation_log:", logFejl.message);
+
+    revalidatePath("/admin/handler");
+    return { ok: true };
+  } catch (err) {
+    unstable_rethrow(err);
+    if (err instanceof BrugerFejl) return { fejl: err.message };
+    console.error("Admin-handling fragtProevSporingIgen fejlede:", err);
     return { fejl: GENERISK_FEJL };
   }
 }

@@ -96,24 +96,24 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 - [~] Byg og test fragt mod **Shipmondos testmiljø** (Filip 8. okt. 2026: i stedet for GLS direkte – Filip får adgang ca. 9. okt.) – skal være færdigt inden nytår *(bygget 9. okt. 2026 – erstattes af DAO direkte)*
 - [ ] Filip: møde med Shipmondo om den bedste løsning
 - [ ] Filip: skaf API-adgang (kunde-id + kode) og testmiljø hos DAO – vi integrerer **direkte med DAO** i stedet for Shipmondo (sparer Shipmondo Pro 200 kr./md., labelgebyr og integrationsgebyr; DAO's API har booking, labelfri kode, pakkeshops, sporing, annullering og retur). Shipmondo-adapteren bliver liggende til evt. flere fragtfirmaer senere *(Filip 9. okt. 2026)*
-- [ ] DAO-adapter (`src/lib/fragt/dao.ts`) mod DAO's testmiljø, sporing via cron – når Filip har API-adgang
-- [ ] Ingen leveringsmelding fra DAO 14 dage efter afsendelse: ingen automatisk frigivelse – opret efterlysning/sag hos DAO (via API, hvis muligt) og en opgave til staff; pengene holdes tilbage, til sagen er afgjort (Filip, 11. okt. 2026)
+- [~] DAO-adapter (`src/lib/fragt/dao.ts`) mod DAO's testmiljø, sporing via cron – når Filip har API-adgang *(bygget 13. okt. 2026 mod egne eksempelsvar: Shop2Shop/Shop2Home, labelfri kode, PDF, pakkeshops, annullering, token-feed i cron; mangler nøgler og DAO's hændelseskoder – se docs/DAO-API.md)*
+- [~] Ingen leveringsmelding fra DAO 14 dage efter afsendelse: ingen automatisk frigivelse – opret efterlysning/sag hos DAO (via API, hvis muligt) og en opgave til staff; pengene holdes tilbage, til sagen er afgjort (Filip, 11. okt. 2026) *(bygget 13. okt. 2026: én efterlysning pr. forsendelse via createclaim.php bag FRAGT_EFTERLYSNING_AKTIV, ellers manuel; markering til staff under Fragt; mangler nøgler)*
 - [ ] Filip: spørg GLS/Shipmondo, om fragtfirmaet selv **vejer pakken**, og om den målte vægt kan hentes via API (bruges som bevis i svindelsager)
 - [ ] Filip: spørg GLS/Shipmondo om **reklamation ved transportskade**: kan BidHamr reklamere på sælgers vegne (fragten er på BidHamrs aftale), hvad er maks. erstatning pr. pakke, er elektronik/glas undtaget, og findes der tillægsforsikring?
 - [ ] **Reklamation hos fragtfirma**: når en sag om transportskade afgøres til købers fordel, og sælger har pakket ordentligt, opretter staff (eller systemet via fragtfirmaets API) en reklamation med pakkebilleder, købers skadebilleder og sporingsdata. Status vises på sagen for sælger. Erstatning fra fragtfirmaet udbetales til sælger. Afvises den, lukkes reklamationen, og sælger får besked (se ROADMAP-BESLUTNINGER.md afsnit 4)
-- [ ] Når GLS melder pakken leveret: notifikation "Pakken er kommet frem" til **køberen** (type pakke_leveret, påkrævet) – sælgeren får fortsat besked, når køberen bekræfter
+- [~] Når GLS melder pakken leveret: notifikation "Pakken er kommet frem" til **køberen** (type pakke_leveret, påkrævet) – sælgeren får fortsat besked, når køberen bekræfter *(bygget 13. okt. 2026 for DAO via sporingsfeedet; mangler nøgler og DAO's "leveret"-kode i daoKoder.ts)*
 - [x] Byg koden, så fragtfirmaet kan skiftes (GLS nu, evt. Shipmondo senere) uden at omskrive handelsflowet
 - [~] Sælger får fragtlabel/QR-kode direkte i BidHamr *(bygget: labelfri kode + PDF)*
-- [ ] **Returlabel i sager**: når en sag afgøres med retur, får køberen et returlabel fra BidHamr via fragtfirmaet (køberen betaler returfragten). Sagsflowet med retur er bygget, men selve labelen mangler, indtil Filips aftale med fragtfirmaet er på plads – derfor er sagsretur kun delvist færdig
+- [~] **Returlabel i sager**: når en sag afgøres med retur, får køberen et returlabel fra BidHamr via fragtfirmaet (køberen betaler returfragten). Sagsflowet med retur er bygget, men selve labelen mangler, indtil Filips aftale med fragtfirmaet er på plads – derfor er sagsretur kun delvist færdig *(bygget 13. okt. 2026 med DAO: labelfri Shop2Shop-returkode, køber → pakkeshop nær sælgeren; stadig slået fra (FRAGT_RETURLABEL_AKTIV), fordi opkrævningen af returfragten hos køberen mangler en beslutning; mangler nøgler)*
 - [~] Køber betaler fragt og ser prisen, før han byder *(bygget: låst pris på auktionen + checkout)*
-- [ ] Sporing hentes automatisk – status "afhentet" registreres
+- [~] Sporing hentes automatisk – status "afhentet" registreres *(bygget 13. okt. 2026: DAO Track & Trace V2-feed i fragt-cron'en; ukendte koder ændrer ikke status; mangler nøgler og hændelseskoder)*
 - [ ] Auto-frigivelse 48 timer efter afhentning, hvis ingen sag
-- [~] Sælger kan annullere/ændre en fragtbooking, så længe pakken ikke er afleveret *(bygget; DAO via Shipmondo kan ikke annullere – højst 2 labels)*
+- [~] Sælger kan annullere/ændre en fragtbooking, så længe pakken ikke er afleveret *(bygget; DAO via Shipmondo kan ikke annullere – højst 2 labels. DAO direkte (13. okt. 2026): en label, DAO har bekræftet annulleret, tæller ikke – loft 10; mangler nøgler)*
 - [ ] Filip: aftal vægtgrænse med fragtfirmaet – alt over grænsen kan kun afhentes
 - [~] Håndhæv vægtgrænsen ved opret auktion: over grænsen kan kun "afhentning" vælges *(bygget: BHT01–05)*
 - [~] Fragtberegner: sælger vælger pakkestørrelse (Lille/Mellem/Stor) ved oprettelse, prisen hentes fra GLS og vises på auktionssiden. Findes også som selvstændig side *(bygget med faste priser 40/50/65 og 60/85 kr.)*
 - [ ] Vælger sælger en for lille pakkestørrelse, og fragtfirmaet opkræver ekstra, betaler sælgeren forskellen
-- [ ] Ikke-afhentet pakke (GLS returnerer efter 7 dage): sælger beholder varen og får fragten dækket, køber refunderes minus gebyrer og fragt begge veje. Afhentning udløser aldrig udbetaling – kun købers bekræftelse (eller 48 timer uden sag) gør
+- [~] Ikke-afhentet pakke (GLS returnerer efter 7 dage): sælger beholder varen og får fragten dækket, køber refunderes minus gebyrer og fragt begge veje. Afhentning udløser aldrig udbetaling – kun købers bekræftelse (eller 48 timer uden sag) gør *(logikken bygget 10. okt. 2026; DAO's returhændelse koblet på 13. okt. 2026, men slået fra (DAO_RETUR_ER_IKKE_AFHENTET), til koden er set på en rigtig pakke; mangler nøgler)*
 
 ## Fase 3 – Nyt design og forside
 Formål: siden bliver troværdig, professionel, tryg og moderne.

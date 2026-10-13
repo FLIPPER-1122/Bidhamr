@@ -40,6 +40,8 @@ import { koerBetaFejlOprydning } from "@/lib/betaFejlOprydning";
 // livstegn hvert 5. minut - også hvis Supabase, pg_cron eller Vercel er nede.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// Betalings-, fragt- (inkl. DAO-feed og efterlysninger) og DAC7-trin skal kunne nå deres tidsbudgetter.
+export const maxDuration = 300;
 
 const JOB = "betalings-cron";
 

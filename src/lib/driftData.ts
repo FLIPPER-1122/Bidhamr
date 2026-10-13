@@ -7,6 +7,7 @@ import "server-only";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { maskerEmail } from "@/lib/drift";
 import { alarmKode } from "@/lib/driftAlarmTyper";
+import { normaliserFejlbesked, tilfoejEksempler } from "@/lib/driftGruppering";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -247,16 +248,32 @@ export async function hentIkkeSendte(admin: Admin, nu: number): Promise<Sektion<
 
 // Grupperet som i alarm-mailen: samme kilde og kode (alarmKode, uden id'er),
 // så fx alle "betalinger, vi ikke kender" står i én gruppe med samme danske
-// titel som i mailen.
+// titel som i mailen. Under gruppen står hver særskilt besked (id'er erstattet
+// af pladsholdere, driftGruppering.ts) med eget antal og eksempel-id'er, så
+// siden viser lige så meget som før grupperingen.
+export const MAKS_BESKEDER_PR_GRUPPE = 20;
+
+export type FejlBesked = {
+  // Beskeden med id'er erstattet af pladsholdere.
+  tekst: string;
+  antal: number;
+  senest: string;
+  // Antal forskellige rå beskeder (fx hvert sit charge-id).
+  varianter: number;
+  // Højst MAKS_EKSEMPLER eksempler: id'erne fra én besked, adskilt af " · ".
+  eksempler: string[];
+};
+
 export type FejlGruppe = {
   noegle: string;
   kilde: string;
   kode: string;
-  // Seneste fejltekst.
+  // Seneste besked (normaliseret).
   besked: string;
-  // Hver særskilt fejltekst i gruppen med eget antal (nyeste først) - siden
-  // viser stadig alle tekster, som før grupperingen.
-  beskeder: { besked: string; antal: number; senest: string }[];
+  // Højst MAKS_BESKEDER_PR_GRUPPE særskilte beskeder, nyeste først.
+  beskeder: FejlBesked[];
+  // Særskilte beskeder ud over dem i "beskeder".
+  flereBeskeder: number;
   antal: number;
   foerst: string;
   senest: string;
@@ -264,6 +281,8 @@ export type FejlGruppe = {
   digests: string[];
   brugere: number;
 };
+
+type FejlBeskedArb = FejlBesked & { raa: Set<string> };
 
 export async function hentFejlGrupper(
   admin: Admin,
@@ -280,20 +299,23 @@ export async function hentFejlGrupper(
     .limit(MAKS);
   if (error) return sektion(error, { grupper: [], iAlt: 0, afkortet: false });
 
-  const grupper = new Map<string, FejlGruppe & { brugerSet: Set<string> }>();
+  const grupper = new Map<
+    string,
+    Omit<FejlGruppe, "beskeder" | "flereBeskeder"> & { brugerSet: Set<string>; beskedMap: Map<string, FejlBeskedArb> }
+  >();
   let iAlt = 0;
   for (const r of (data ?? []) as FejlRaekke[]) {
     iAlt += r.antal;
     const kode = alarmKode(r.kilde, r.besked);
     const noegle = `${r.kilde}|${kode}`;
+    const norm = normaliserFejlbesked(r.besked);
     let g = grupper.get(noegle);
     if (!g) {
       g = {
         noegle,
         kilde: r.kilde,
         kode,
-        besked: r.besked,
-        beskeder: [],
+        besked: norm.tekst,
         antal: 0,
         foerst: r.oprettet_kl,
         senest: r.senest_kl,
@@ -301,26 +323,37 @@ export async function hentFejlGrupper(
         digests: [],
         brugere: 0,
         brugerSet: new Set(),
+        beskedMap: new Map(),
       };
       grupper.set(noegle, g);
     }
     g.antal += r.antal;
     // Rækkerne kommer nyeste først.
-    const b = g.beskeder.find((x) => x.besked === r.besked);
-    if (b) {
-      b.antal += r.antal;
-      if (r.senest_kl > b.senest) b.senest = r.senest_kl;
-    } else {
-      g.beskeder.push({ besked: r.besked, antal: r.antal, senest: r.senest_kl });
+    let b = g.beskedMap.get(norm.tekst);
+    if (!b) {
+      b = { tekst: norm.tekst, antal: 0, senest: r.senest_kl, varianter: 0, eksempler: [], raa: new Set() };
+      g.beskedMap.set(norm.tekst, b);
     }
+    b.antal += r.antal;
+    if (r.senest_kl > b.senest) b.senest = r.senest_kl;
+    b.raa.add(r.besked);
+    if (norm.ids.length > 0) tilfoejEksempler(b.eksempler, [norm.ids.join(" · ")]);
     if (r.oprettet_kl < g.foerst) g.foerst = r.oprettet_kl;
     if (r.senest_kl > g.senest) g.senest = r.senest_kl;
     if (r.sti && !g.stier.includes(r.sti) && g.stier.length < 3) g.stier.push(r.sti);
     if (r.digest && !g.digests.includes(r.digest) && g.digests.length < 3) g.digests.push(r.digest);
     if (r.bruger_id) g.brugerSet.add(r.bruger_id);
   }
-  const liste = [...grupper.values()]
-    .map(({ brugerSet, ...g }) => ({ ...g, brugere: brugerSet.size }))
+  const liste: FejlGruppe[] = [...grupper.values()]
+    .map(({ brugerSet, beskedMap, ...g }) => {
+      const alle = [...beskedMap.values()].map(({ raa, ...b }) => ({ ...b, varianter: raa.size }));
+      return {
+        ...g,
+        brugere: brugerSet.size,
+        beskeder: alle.slice(0, MAKS_BESKEDER_PR_GRUPPE),
+        flereBeskeder: Math.max(0, alle.length - MAKS_BESKEDER_PR_GRUPPE),
+      };
+    })
     .sort((a, b) => (a.senest < b.senest ? 1 : -1));
   return {
     tilstand: "ok",
