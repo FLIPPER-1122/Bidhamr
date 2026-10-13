@@ -23,15 +23,25 @@ import "server-only";
 //      og helt ukendte. (Indsigelser på handler spejles af overvågningen.)
 // Til sidst gemmes platformens saldo (snapshot) til økonomioverblikket.
 //
+// TESTtilstand (testnøgle) - kun denne databases egne objekter: indtil fase 6
+// deler produktionen og testdatabasen ÉN Stripe-testkonto. Et ukendt objekt
+// afstemmes derfor kun, hvis det henviser til noget, denne database kender;
+// ellers er det "fremmede testdata" (tælles, ingen afvigelse, ingen alarm).
+// LIVE-tilstand: fuldt streng som altid. Se "Fremmede testdata" herunder.
+//
 // Kaster aldrig. Fejl i et trin logges med kilde 'cron' (kørslen markeres
 // som fejlet, ligesom overvågningen). Før migrationen er kørt, gør den intet.
 
 import Stripe from "stripe";
-import { getStripe, StripeTilstandFejl } from "@/lib/stripe";
+import { getStripe, noeglensTilstand, StripeTilstandFejl, type StripeTilstand } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { dkk } from "@/lib/betaling/udbetaling";
+// Fremmede testdata (delt Stripe-testkonto før fase 6) - reglen står i
+// fremmedeTestdata.ts og bruges også af webhooken.
+import { erFremmedTestdata, flet, hentKendte, piHenvisning, type Henvisning } from "@/lib/betaling/fremmedeTestdata";
+export { erFremmedTestdata, henviserTilKendt, ingenKendte } from "@/lib/betaling/fremmedeTestdata";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -112,6 +122,10 @@ export type Afstemning = {
   konti: number;
   payouts: number;
   indsigelser: number;
+  // Kun i Stripe-TESTtilstand: objekter fra den delte testkonto, som denne
+  // database ikke kender (fx testdatabasens handler set fra produktionen).
+  // Sprunget over - ingen afvigelse, ingen alarm. Altid 0 i live.
+  fremmedeTestdata: number;
   // Summer i øre (kun tal - ingen persondata).
   gebyrStripeOere: number;
   gebyrDbOere: number;
@@ -385,6 +399,7 @@ export async function koerPengeafstemning(
     konti: 0,
     payouts: 0,
     indsigelser: 0,
+    fremmedeTestdata: 0,
     gebyrStripeOere: 0,
     gebyrDbOere: 0,
     trinIkkeNaaet: 0,
@@ -477,14 +492,18 @@ export async function koerPengeafstemning(
 
   const stripe = getStripe();
   const firma = await firmaKunder(admin).catch(() => new Set<string>());
+  // Test eller live (se "Fremmede testdata"). Nøglen er sandheden; Stripe-
+  // vagten (kraevSammeStripeTilstand) har sikret, at databasens
+  // stripe_tilstand passer. Kan nøglen ikke aflæses: null = streng.
+  const tilstand = noeglensTilstand();
 
   const koer: Record<(typeof TRIN)[number], () => Promise<void>> = {
-    betalinger: () => afstemBetalinger(admin, stripe, fra, firma, r, registrer, budget),
-    gebyrer: () => afstemGebyrer(admin, stripe, fra, r, registrer, budget),
-    refusioner: () => afstemRefusioner(admin, stripe, fra, firma, r, registrer, budget),
-    tilbageførsler: () => afstemTilbagefoersler(admin, stripe, fra, r, registrer, budget),
+    betalinger: () => afstemBetalinger(admin, stripe, fra, firma, r, registrer, budget, tilstand),
+    gebyrer: () => afstemGebyrer(admin, stripe, fra, firma, r, registrer, budget, tilstand),
+    refusioner: () => afstemRefusioner(admin, stripe, fra, firma, r, registrer, budget, tilstand),
+    tilbageførsler: () => afstemTilbagefoersler(admin, stripe, fra, firma, r, registrer, budget, tilstand),
     udbetalinger: () => afstemUdbetalinger(admin, stripe, fra, r, registrer, budget),
-    indsigelser: () => afstemIndsigelser(admin, stripe, fra, firma, r, registrer, budget),
+    indsigelser: () => afstemIndsigelser(admin, stripe, fra, firma, r, registrer, budget, tilstand),
     saldo: () => gemSaldo(admin, stripe, budget),
   };
   const raekkefoelge = trinRaekkefoelge(start);
@@ -537,6 +556,7 @@ async function afstemBetalinger(
   r: Afstemning,
   registrer: Registrer,
   budget: Budget,
+  tilstand: StripeTilstand | null,
 ): Promise<void> {
   const pis = await liste(stripe.paymentIntents.list({ created: { gte: fra }, limit: 100 }, KALD), r, budget);
   const betalte = pis.filter((p) => p.status === "succeeded" || p.status === "processing");
@@ -553,6 +573,14 @@ async function afstemBetalinger(
     if (error) throw new Error(`tidligere_payment_intents: ${error.message}`);
     for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[]) ?? []) tidligere.set(x, b.id as string);
   }
+  // Testtilstand: hvad kender databasen af det, de ukendte PaymentIntents
+  // henviser til (metadata, Connect-konto, kunde)?
+  const kendteRef = await hentKendte(
+    admin,
+    tilstand,
+    betalte.filter((p) => !kendte.has(p.id) && !afv.has(p.id) && !tidligere.has(p.id)).map(piHenvisning),
+    firma,
+  );
 
   for (const pi of betalte) {
     tjekTid(budget);
@@ -602,6 +630,10 @@ async function afstemBetalinger(
     }
     // Abonnement (firmaets kunde) eller noget, BidHamr ikke har lavet.
     if (kunde && firma.has(kunde) && !pi.metadata?.betaling_id) continue;
+    if (erFremmedTestdata(tilstand, piHenvisning(pi), kendteRef)) {
+      r.fremmedeTestdata++;
+      continue;
+    }
     await registrer({
       noegle: `ukendt-betaling:${pi.id}`,
       alarmNoegle: `ukendt-pi:${pi.id}`,
@@ -639,19 +671,47 @@ async function afstemBetalinger(
 }
 
 // 2. Application fees.
-async function afstemGebyrer(admin: Admin, stripe: Stripe, fra: number, r: Afstemning, registrer: Registrer, budget: Budget): Promise<void> {
+// Et gebyrs henvisninger: chargen på sælgerens konto, den oprindelige charge
+// på platformen (destination charges) og sælgerens Connect-konto.
+function gebyrHenvisning(f: Stripe.ApplicationFee): Henvisning {
+  return {
+    livemode: f.livemode,
+    charges: [id(f.charge as string | { id: string }), id(f.originating_transaction as string | { id: string } | null)],
+    konti: [id(f.account as string | { id: string })],
+  };
+}
+
+async function afstemGebyrer(
+  admin: Admin,
+  stripe: Stripe,
+  fra: number,
+  firma: Set<string>,
+  r: Afstemning,
+  registrer: Registrer,
+  budget: Budget,
+  tilstand: StripeTilstand | null,
+): Promise<void> {
   const fees = await liste(stripe.applicationFees.list({ created: { gte: fra }, limit: 100 }, KALD), r, budget);
   r.gebyrer = fees.length;
   const vedId = await betalingerVed(admin, "stripe_application_fee_id", fees.map((f) => f.id));
   const charges = fees.map((f) => id(f.charge as string | { id: string })).filter((x): x is string => !!x);
   const vedCharge = await betalingerVed(admin, "stripe_charge_id", charges);
   const afv = await afvigelsesRaekker(admin, "stripe_charge_id", charges);
+  const ukendt = (f: Stripe.ApplicationFee) => {
+    const ch = id(f.charge as string | { id: string });
+    return !vedId.has(f.id) && !(ch && (vedCharge.has(ch) || afv.has(ch)));
+  };
+  const kendteRef = await hentKendte(admin, tilstand, fees.filter(ukendt).map(gebyrHenvisning), firma);
   for (const f of fees) {
     tjekTid(budget);
     const ch = id(f.charge as string | { id: string });
     const b = vedId.get(f.id) ?? (ch ? vedCharge.get(ch) : undefined);
     if (!b) {
       if (ch && afv.has(ch)) continue; // betaling med forkert beløb (refunderes helt)
+      if (erFremmedTestdata(tilstand, gebyrHenvisning(f), kendteRef)) {
+        r.fremmedeTestdata++;
+        continue;
+      }
       await registrer({
         noegle: `ukendt-gebyr:${f.id}`,
         type: "ukendt_gebyr",
@@ -702,6 +762,7 @@ async function afstemRefusioner(
   r: Afstemning,
   registrer: Registrer,
   budget: Budget,
+  tilstand: StripeTilstand | null,
 ): Promise<void> {
   const refusioner = (await liste(stripe.refunds.list({ created: { gte: fra }, limit: 100 }, KALD), r, budget)).filter(
     (x) => x.status !== "failed" && x.status !== "canceled",
@@ -710,6 +771,33 @@ async function afstemRefusioner(
   const charges = refusioner.map((x) => id(x.charge as string | { id: string } | null)).filter((x): x is string => !!x);
   const vedCharge = await betalingerVed(admin, "stripe_charge_id", charges);
   const afv = await afvigelsesRaekker(admin, "stripe_charge_id", charges);
+  // Refusioner på charges, databasen ikke kender: deres PaymentIntent hentes
+  // én gang (abonnement? og i testtilstand: henviser den til noget, vi kender?).
+  const piVed = new Map<string, Stripe.PaymentIntent>();
+  const ukendte: Stripe.Refund[] = [];
+  for (const x of refusioner) {
+    const ch = id(x.charge as string | { id: string } | null);
+    if (ch && (vedCharge.has(ch) || afv.has(ch))) continue;
+    ukendte.push(x);
+    const piId = id(x.payment_intent as string | { id: string } | null);
+    if (piId && !piVed.has(piId)) {
+      tjekTid(budget);
+      piVed.set(piId, await stripe.paymentIntents.retrieve(piId, {}, KALD));
+    }
+  }
+  const refHenvisning = (x: Stripe.Refund): Henvisning => {
+    const md = x.metadata ?? {};
+    const piId = id(x.payment_intent as string | { id: string } | null);
+    return flet(
+      {
+        betalinger: [md.betaling_id, md.bidhamr_daekker],
+        pis: [piId],
+        charges: [id(x.charge as string | { id: string } | null)],
+      },
+      piHenvisning(piId ? (piVed.get(piId) ?? null) : null),
+    );
+  };
+  const kendteRef = await hentKendte(admin, tilstand, ukendte.map(refHenvisning), firma);
   const udenom = new Set<string>();
   for (const x of refusioner) {
     tjekTid(budget);
@@ -720,10 +808,14 @@ async function afstemRefusioner(
     if (!b && !a) {
       // Ikke en handel: abonnementets refusioner er Billing (firma).
       const piId = id(x.payment_intent as string | { id: string } | null);
-      if (piId) {
-        const pi = await stripe.paymentIntents.retrieve(piId, {}, KALD);
+      const pi = piId ? piVed.get(piId) : undefined;
+      if (pi) {
         const kunde = id(pi.customer as string | { id: string } | null);
         if (kunde && firma.has(kunde) && !pi.metadata?.betaling_id) continue;
+      }
+      if (erFremmedTestdata(tilstand, refHenvisning(x), kendteRef)) {
+        r.fremmedeTestdata++;
+        continue;
       }
     }
     if (ch) udenom.add(ch);
@@ -788,12 +880,38 @@ async function afstemRefusioner(
 }
 
 // 3b. Tilbageførsler (transfer reversals) på transfers til sælgerne.
-async function afstemTilbagefoersler(admin: Admin, stripe: Stripe, fra: number, r: Afstemning, registrer: Registrer, budget: Budget): Promise<void> {
+// En transfers henvisninger: sælgerens konto, chargen bag den og metadata.
+function transferHenvisning(t: Stripe.Transfer): Henvisning {
+  const md = t.metadata ?? {};
+  return {
+    livemode: t.livemode,
+    betalinger: [md.betaling_id],
+    charges: [id(t.source_transaction as string | { id: string } | null)],
+    konti: [id(t.destination as string | { id: string } | null)],
+  };
+}
+
+async function afstemTilbagefoersler(
+  admin: Admin,
+  stripe: Stripe,
+  fra: number,
+  firma: Set<string>,
+  r: Afstemning,
+  registrer: Registrer,
+  budget: Budget,
+  tilstand: StripeTilstand | null,
+): Promise<void> {
   const transfers = await liste(stripe.transfers.list({ created: { gte: fra }, limit: 100 }, KALD), r, budget);
   r.transfers = transfers.length;
   const ids = transfers.map((t) => t.id);
   const dest = await betalingerVed(admin, "stripe_destination_transfer_id", ids);
   const gammel = await betalingerVed(admin, "stripe_transfer_id", ids);
+  const kendteRef = await hentKendte(
+    admin,
+    tilstand,
+    transfers.filter((t) => !dest.has(t.id) && !gammel.has(t.id) && t.amount_reversed > 0).map(transferHenvisning),
+    firma,
+  );
   for (const t of transfers) {
     tjekTid(budget);
     const b = dest.get(t.id);
@@ -801,6 +919,10 @@ async function afstemTilbagefoersler(admin: Admin, stripe: Stripe, fra: number, 
       // Den gamle model (separat) eller en transfer, databasen ikke kender:
       // tilbageførsler kan ikke afstemmes - kun gamle med tilbageførsel nævnes.
       if (!gammel.has(t.id) && t.amount_reversed > 0) {
+        if (erFremmedTestdata(tilstand, transferHenvisning(t), kendteRef)) {
+          r.fremmedeTestdata++;
+          continue;
+        }
         await registrer({
           noegle: `tilbagefoersel:${t.id}`,
           type: "tilbagefoersel_udenom",
@@ -953,22 +1075,52 @@ async function afstemIndsigelser(
   r: Afstemning,
   registrer: Registrer,
   budget: Budget,
+  tilstand: StripeTilstand | null,
 ): Promise<void> {
   const disputes = await liste(stripe.disputes.list({ created: { gte: fra }, limit: 100 }, KALD), r, budget);
   r.indsigelser = disputes.length;
   const pis = disputes.map((d) => id(d.payment_intent as string | { id: string } | null)).filter((x): x is string => !!x);
   const kendte = await betalingerVed(admin, "stripe_payment_intent_id", pis);
   const afv = await afvigelsesRaekker(admin, "stripe_payment_intent_id", pis);
+  // Indsigelser, der ikke er på en handel: deres PaymentIntent hentes én gang
+  // (abonnement? og i testtilstand: henviser den til noget, vi kender?).
+  const piVed = new Map<string, Stripe.PaymentIntent>();
+  const ukendte = disputes.filter((d) => {
+    const piId = id(d.payment_intent as string | { id: string } | null);
+    return !(piId && (kendte.has(piId) || afv.has(piId)));
+  });
+  for (const d of ukendte) {
+    const piId = id(d.payment_intent as string | { id: string } | null);
+    if (piId && !piVed.has(piId)) {
+      tjekTid(budget);
+      piVed.set(piId, await stripe.paymentIntents.retrieve(piId, {}, KALD));
+    }
+  }
+  const dispHenvisning = (d: Stripe.Dispute): Henvisning => {
+    const piId = id(d.payment_intent as string | { id: string } | null);
+    return flet(
+      {
+        livemode: d.livemode,
+        betalinger: [d.metadata?.betaling_id],
+        pis: [piId],
+        charges: [id(d.charge as string | { id: string } | null)],
+      },
+      piHenvisning(piId ? (piVed.get(piId) ?? null) : null),
+    );
+  };
+  const kendteRef = await hentKendte(admin, tilstand, ukendte.map(dispHenvisning), firma);
   for (const d of disputes) {
     tjekTid(budget);
     const piId = id(d.payment_intent as string | { id: string } | null);
     if (piId && (kendte.has(piId) || afv.has(piId))) continue; // handel - overvågningen spejler den
-    let kunde: string | null = null;
-    if (piId) {
-      const pi = await stripe.paymentIntents.retrieve(piId, {}, KALD);
-      kunde = id(pi.customer as string | { id: string } | null);
-    }
+    const pi = piId ? piVed.get(piId) : undefined;
+    const kunde = pi ? id(pi.customer as string | { id: string } | null) : null;
     const abonnement = !!kunde && firma.has(kunde);
+    // Et firmas abonnement er kendt (firmaer) - kun helt fremmede springes over.
+    if (!abonnement && erFremmedTestdata(tilstand, dispHenvisning(d), kendteRef)) {
+      r.fremmedeTestdata++;
+      continue;
+    }
     await registrer({
       noegle: `indsigelse:${d.id}`,
       alarmNoegle: `indsigelse-${abonnement ? "abonnement" : "ukendt"}:${d.id}`,
