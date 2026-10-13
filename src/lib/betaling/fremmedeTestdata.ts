@@ -15,11 +15,10 @@ import "server-only";
 //     ukendt er en afvigelse/alarm - fuldt strengt, uændret.
 //   - Et objekt med livemode = true: aldrig fremmed (ekstra sikring).
 //   - TESTnøgle:
-//       1. metadata bidhamr_db (sættes på nye PaymentIntents): er det denne
-//          databases projekt-ref, er objektet vores; er det en anden, er det
-//          fremmed.
-//       2. ellers: objektet er kun vores, hvis det henviser til noget, DENNE
-//          database kender:
+//       1. metadata bidhamr_db (sættes på PaymentIntents): er det denne
+//          databases projekt-ref, er objektet vores.
+//       2. ellers (også ved en anden bidhamr_db): objektet er kun fremmed, hvis
+//          det ikke henviser til noget, DENNE database kender:
 //            betaling   (metadata betaling_id/bidhamr_daekker = betalinger.id)
 //            betaling   (PaymentIntent, også kasseret, eller charge)
 //            afvigelse  (betaling_afvigelser: PaymentIntent eller charge)
@@ -95,16 +94,15 @@ export function henviserTilKendt(h: Henvisning, k: Kendte): boolean {
 export function erFremmedTestdata(tilstand: StripeTilstand | null, h: Henvisning, k: Kendte): boolean {
   if (tilstand !== "test") return false;
   if (h.livemode === true) return false;
-  if (h.bidhamrDb && k.egenDb) return h.bidhamrDb.toLowerCase() !== k.egenDb;
+  // bidhamr_db = denne database: vores. En ANDEN bidhamr_db gør det ikke
+  // fremmed alene - det er kun fremmed, hvis det heller ikke henviser til noget,
+  // vi kender (betaling, PaymentIntent, konto ...).
+  if (h.bidhamrDb && k.egenDb && h.bidhamrDb.toLowerCase() === k.egenDb) return false;
   return !henviserTilKendt(h, k);
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STRIPE_ID_RE = /^[A-Za-z0-9_]{1,255}$/;
-
-function manglerIDatabasen(err: { code?: string } | null): boolean {
-  return !!err && ["PGRST202", "PGRST204", "PGRST205", "42883", "42703", "42P01"].includes(err.code ?? "");
-}
 
 function bidder<T>(liste: T[], n = 100): T[][] {
   const ud: T[][] = [];
@@ -120,10 +118,9 @@ async function findes(admin: Admin, tabel: string, kolonne: string, ids: string[
   for (const del of bidder(ids)) {
     if (!del.length) continue;
     const { data, error } = await admin.from(tabel).select(kolonne).in(kolonne, del);
-    if (error) {
-      if (manglerIDatabasen(error)) return;
-      throw new Error(`kendte (${tabel}.${kolonne}): ${error.message}`);
-    }
+    // Fail closed: mangler tabellen eller kolonnen, kastes der - trinnet
+    // fejler og logges (hellere end at alt ser fremmed ud).
+    if (error) throw new Error(`kendte (${tabel}.${kolonne}): ${error.message}`);
     for (const raekke of (data ?? []) as unknown as Record<string, unknown>[]) {
       const v = raekke[kolonne];
       if (typeof v === "string") ud.add(v);

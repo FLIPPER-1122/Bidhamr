@@ -5,7 +5,9 @@
 // nøglens tilstand skal passe til databasens stripe_tilstand ('test' indtil
 // fase 6 - også i produktionen, docs/GO-LIVE-STRIPE.md). Om Supabase-
 // projektet er testdatabasen, afgør KUN teksten - aldrig om lampen er rød.
-// Lampen (og dermed statuslinjen) er aldrig rød, når vagten ville godkende.
+// Lampen (og dermed statuslinjen) er aldrig rød, når vagten ville godkende -
+// og altid rød, når den afviser: ingen/ugyldig nøgle, nøgle mod database, og
+// hemmelig mod offentlig nøgle (kraevSammeOffentligeNoegle - nye betalinger).
 
 import type { Lampe } from "@/lib/admin/lamper";
 import type { StripeTilstand } from "@/lib/stripe";
@@ -14,9 +16,29 @@ export function stripeTilstandLampe(
   noegle: StripeTilstand | null,
   db: StripeTilstand | null,
   testdatabase: boolean,
-): Lampe | null {
-  // Ingen (gyldig) nøgle: ingen lampe (som før).
-  if (!noegle) return null;
+  // NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY's tilstand (null = ikke sat).
+  offentlig: StripeTilstand | null = null,
+): Lampe {
+  // Ingen (gyldig) nøgle: vagten afviser alle Stripe-kald.
+  if (!noegle) {
+    return {
+      navn: "Test eller live",
+      tone: "roed",
+      tekst: "STRIPE_SECRET_KEY mangler eller er ugyldig – alle Stripe-kald er stoppet",
+      statusTekst: "STRIPE_SECRET_KEY mangler eller er ugyldig – alle Stripe-kald er stoppet",
+    };
+  }
+  const vagtGodkender = db === noegle || (db === null && noegle === "test");
+  // Hemmelig og offentlig nøgle i hver sin tilstand: nye betalinger er stoppet
+  // (samme regel som kraevSammeOffentligeNoegle).
+  if (vagtGodkender && offentlig && offentlig !== noegle) {
+    return {
+      navn: "Test eller live",
+      tone: "roed",
+      tekst: "den hemmelige og den offentlige Stripe-nøgle passer ikke sammen – nye betalinger er stoppet",
+      statusTekst: "Stripe-nøglerne passer ikke sammen – nye betalinger er stoppet",
+    };
+  }
   if (noegle === "test" && db === "test") {
     return testdatabase
       ? { navn: "Testmiljø", tone: "blaa", tekst: "testnøgle + testdatabase" }

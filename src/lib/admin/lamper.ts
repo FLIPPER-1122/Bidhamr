@@ -4,7 +4,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import { CRON_ADVARSEL_MIN, hentAlarmStatus, hentCronRute } from "@/lib/driftData";
 import { alarmModtagere } from "@/lib/driftAlarm";
 import { erTestdatabase } from "@/lib/miljoe";
-import { databasensStripeTilstand, noeglensTilstand } from "@/lib/stripe";
+import { databasensStripeTilstand, noeglensTilstand, offentligNoeglesTilstand } from "@/lib/stripe";
 import { stripeTilstandLampe } from "@/lib/admin/stripeLampe";
 import type { NoedstopTal } from "@/lib/admin/taellere";
 import { hentEksternVagt } from "@/lib/admin/healthchecks";
@@ -153,8 +153,7 @@ async function byg(admin: Admin): Promise<Lampe[]> {
   // Test eller live: nøglens tilstand mod databasens stripe_tilstand - samme
   // regel som Stripe-vagten (kraevSammeStripeTilstand). Produktionen kører
   // bevidst med testnøgle og stripe_tilstand 'test' indtil fase 6.
-  const stripeLampe = stripeTilstandLampe(noeglensTilstand(), stripeDb, test);
-  if (stripeLampe) lamper.push(stripeLampe);
+  lamper.push(stripeTilstandLampe(noeglensTilstand(), stripeDb, test, offentligNoeglesTilstand()));
 
   // Fragt: forsendelser, der kræver handling (samme tal som "Kræver handling").
   if (fragt.error) lamper.push(ikkeHentet("Fragt", "/admin/handler?vis=fragt"));

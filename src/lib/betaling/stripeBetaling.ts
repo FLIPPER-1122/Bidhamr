@@ -604,7 +604,9 @@ export async function sikrPaymentIntent(
       return stripe.paymentIntents.update(eksisterende.id, {
         amount: beloeb,
         application_fee_amount: fee,
-        metadata: { beskyttelse: betaling.beskyttelse ? "ja" : "nej" },
+        // bidhamr_db også på ældre PaymentIntents (fremmedeTestdata.ts). Ingen
+        // idempotency-nøgle her - en opdatering kan gentages.
+        metadata: { beskyttelse: betaling.beskyttelse ? "ja" : "nej", ...(egenDatabase() ? { bidhamr_db: egenDatabase()! } : {}) },
         payment_method_options: { card: { request_three_d_secure: "any" } },
       });
     }

@@ -314,6 +314,11 @@ describe("webhooken: fremmede testdata giver ingen alarm (kun i testtilstand)", 
     expect(erFremmedTestdata("test", { bidhamrDb: "pjiigmzqwlfepxnjdvug" }, k)).toBe(true);
     expect(erFremmedTestdata("test", { bidhamrDb: "lkifkrexeldimmghnsie" }, k)).toBe(false);
     expect(erFremmedTestdata("live", { bidhamrDb: "pjiigmzqwlfepxnjdvug" }, k)).toBe(false);
+    // En anden bidhamr_db alene er ikke nok: henviser objektet til noget kendt, er det vores.
+    k.betalinger.add(B1);
+    k.pis.add("pi_kendt1");
+    expect(erFremmedTestdata("test", { bidhamrDb: "pjiigmzqwlfepxnjdvug", betalinger: [B1] }, k)).toBe(false);
+    expect(erFremmedTestdata("test", { bidhamrDb: "pjiigmzqwlfepxnjdvug", pis: ["pi_kendt1"] }, k)).toBe(false);
   });
 
   it("TESTnøgle: anden databases PaymentIntent er fremmed; en med vores betaling eller konto er ikke", async () => {
@@ -346,15 +351,28 @@ describe("webhooken: fremmede testdata giver ingen alarm (kun i testtilstand)", 
 // ------------------------------------------------------------- lampen
 
 describe("Test eller live-lampen følger Stripe-vagten", () => {
-  const vagtGodkender = (n: "test" | "live", d: "test" | "live" | null) => d === n || (d === null && n === "test");
+  // kraevSammeStripeTilstand + kraevSammeOffentligeNoegle.
+  const vagtGodkender = (n: "test" | "live" | null, d: "test" | "live" | null, o: "test" | "live" | null) =>
+    n !== null && (d === n || (d === null && n === "test")) && (o === null || o === n);
 
-  it("aldrig rød, når kraevSammeStripeTilstand ville godkende - og altid rød, når den afviser", () => {
-    for (const n of ["test", "live"] as const)
+  it("aldrig rød, når vagterne ville godkende - og altid rød, når de afviser", () => {
+    for (const n of ["test", "live", null] as const)
       for (const d of ["test", "live", null] as const)
-        for (const testdb of [true, false]) {
-          const l = stripeTilstandLampe(n, d, testdb)!;
-          expect(l.tone === "roed").toBe(!vagtGodkender(n, d));
-        }
+        for (const o of ["test", "live", null] as const)
+          for (const testdb of [true, false]) {
+            const l = stripeTilstandLampe(n, d, testdb, o);
+            expect(l.tone === "roed").toBe(!vagtGodkender(n, d, o));
+          }
+  });
+
+  it("ingen eller ugyldig nøgle og forkert offentlig nøgle er røde", () => {
+    expect(stripeTilstandLampe(null, "test", false)).toMatchObject({
+      tone: "roed",
+      tekst: "STRIPE_SECRET_KEY mangler eller er ugyldig – alle Stripe-kald er stoppet",
+    });
+    expect(stripeTilstandLampe("test", "test", false, "live")).toMatchObject({ tone: "roed" });
+    expect(stripeTilstandLampe("live", "live", false, "test")).toMatchObject({ tone: "roed" });
+    expect(stripeTilstandLampe("test", "test", false, "test")).toMatchObject({ tone: "blaa" });
   });
 
   it("teksterne", () => {
@@ -363,7 +381,7 @@ describe("Test eller live-lampen følger Stripe-vagten", () => {
     expect(stripeTilstandLampe("live", "live", false)).toMatchObject({ tone: "groen" });
     expect(stripeTilstandLampe("live", "test", false)).toMatchObject({ tone: "roed", tekst: "Stripe-nøglen passer ikke til databasen" });
     expect(stripeTilstandLampe("test", "live", true)).toMatchObject({ tone: "roed" });
-    expect(stripeTilstandLampe(null, "test", false)).toBeNull();
+
   });
 });
 
