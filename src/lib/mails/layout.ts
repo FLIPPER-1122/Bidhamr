@@ -61,6 +61,11 @@ export type MailLayoutInput = {
   // Afsnit som færdig HTML (escapet af kalderen).
   afsnitHtml: string[];
   info?: InfoRaekke[];
+  // Færdig HTML (escapet af kalderen), der står efter afsnittene - fx
+  // drift-alarmens blokke. Må indeholde tabeller (afsnit står i <p>).
+  blokkeHtml?: string;
+  // Tekstudgaven af blokkeHtml (ren tekst).
+  blokkeTekst?: string;
   // Ren tekst - escapes her. url skal være absolut.
   knap?: { tekst: string; url: string };
   sekundaer?: { tekst: string; url: string };
@@ -145,6 +150,19 @@ const STIL = `
       [data-ogsc] .bh-info { background-color:#1F3A30 !important; }
       [data-ogsc] .bh-info-noegle, [data-ogsc] .bh-footer-tekst { color:#C8D3CE !important; }
       [data-ogsc] .bh-logo, [data-ogsc] .bh-link { color:#9FD3BE !important; }
+      @media (prefers-color-scheme: dark) {
+        .bh-blok-roed { background-color:#3A1E1E !important; }
+        .bh-blok-gul { background-color:#3A2C17 !important; }
+        .bh-blok-titel, .bh-blok-tekst, .bh-blok-tekst strong { color:#F2F2F2 !important; }
+        .bh-blok-meta-roed { color:#F4A9A9 !important; }
+        .bh-blok-meta-gul, .bh-sektion-gul { color:#F2C48D !important; }
+        .bh-sektion-roed { color:#F4A9A9 !important; }
+        .bh-graa { color:#C8D3CE !important; }
+      }
+      [data-ogsc] .bh-blok-roed { background-color:#3A1E1E !important; }
+      [data-ogsc] .bh-blok-gul { background-color:#3A2C17 !important; }
+      [data-ogsc] .bh-blok-titel, [data-ogsc] .bh-blok-tekst { color:#F2F2F2 !important; }
+      [data-ogsc] .bh-graa { color:#C8D3CE !important; }
 `;
 
 // HTML-fragment til ren tekst (til tekstudgaven af mailen).
@@ -166,6 +184,7 @@ function tilRenTekst(html: string) {
 export function mailTekst(input: MailLayoutInput): string {
   const dele: string[] = ["BidHamr", "", tilRenTekst(input.overskriftHtml), ""];
   for (const a of input.afsnitHtml) dele.push(tilRenTekst(a), "");
+  if (input.blokkeTekst) dele.push(input.blokkeTekst.trim(), "");
   if (input.info && input.info.length > 0) {
     for (const r of input.info) dele.push(`${r.noegle}: ${tilRenTekst(r.vaerdiHtml)}`);
     dele.push("");
@@ -245,6 +264,7 @@ export function mailLayout(input: MailLayoutInput): string {
           </table>
           <h1 class="bh-h1" style="margin:0 0 16px 0;font-family:${SANS};font-size:26px;font-weight:700;line-height:1.2;letter-spacing:-0.4px;color:${FARVE.tekst};">${input.overskriftHtml}</h1>
           ${afsnit}
+          ${input.blokkeHtml ?? ""}
           ${input.info && input.info.length > 0 ? infoboks(input.info) : ""}
           ${input.knap ? knapHtml(input.knap.tekst, input.knap.url) : ""}
           ${sekundaer}

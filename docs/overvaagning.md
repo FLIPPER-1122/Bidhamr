@@ -20,8 +20,23 @@ mail, hvis der er:
   fejler, eller kaldet til cron-ruten fejler),
 - webhook-fejl (Stripe).
 
-Højst én mail pr. slags pr. 30 minutter. Mailen indeholder ingen persondata,
-kun fejltekst, sti og et link til `/admin/drift`.
+Hændelser af samme type samles i én blok med en dansk titel, hvad det
+betyder, og hvad du skal gøre (`src/lib/driftAlarmTyper.ts`). Røde blokke
+("Skal ses på nu") står før gule ("Hold øje"). Spam-værnet gælder pr. blok
+(migration `20261021030000_drift_alarm_blokke.sql`):
+
+- **Røde:** første forekomst, en ny særskilt fejltekst (fx en ny pi_) og en
+  fejl, der kommer igen efter over 15 minutters pause, sendes med det samme.
+  Gentagelser af præcis samme fejl sendes højst hvert 15. minut og tælles op
+  til næste mail.
+- **Gule:** første forekomst og en ny fejltekst sendes med det samme (dog
+  ikke browser-fejl). Ellers højst én mail pr. time, medmindre antallet er
+  mindst fordoblet.
+- Intet går tabt: det, der holdes tilbage, kommer med i næste mail.
+
+Mailen indeholder ingen persondata. Tekniske koder og eksempel-id'er står i
+lille grå tekst, browser-fejl kun som antal, og hver blok har en knap til den
+rigtige admin-side.
 
 **Det skal du gøre:**
 

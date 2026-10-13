@@ -14,7 +14,14 @@ import {
 } from "@/lib/driftData";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import { hentBesoeg, stiNavn } from "@/lib/statistik";
-import { ALARM_INTERVAL_MIN, ALARM_SLAGS, alarmModtagere, type AlarmSlags } from "@/lib/driftAlarm";
+import {
+  ALARM_INTERVAL_MIN,
+  ALARM_INTERVAL_ROED_MIN,
+  ALARM_SLAGS,
+  alarmModtagere,
+  type AlarmSlags,
+} from "@/lib/driftAlarm";
+import { alarmType } from "@/lib/driftAlarmTyper";
 import AdminSide from "@/components/admin/AdminSide";
 import { DriftFaner } from "@/components/admin/OmraadeFaner";
 
@@ -340,9 +347,11 @@ export default async function AdminDrift({
             </div>
             <p className="text-xs text-tekst-svag">
               Tjekkes hvert 5. minut (pg_cron-jobbet <code>drift-alarm</code>). Der sendes én samlet mail ved en ny
-              slags fejl, over 20 fejl på 15 minutter, cron-fejl og webhook-fejl – højst én mail pr. slags pr.{" "}
-              {ALARM_INTERVAL_MIN} minutter. Hvis hele siden er nede, kan den ikke selv sende besked; det klarer den
-              eksterne overvågning af <code>/api/helbred</code>.
+              slags fejl, over 20 fejl på 15 minutter, cron-fejl og webhook-fejl. Hændelser af samme type samles i
+              én blok med samme titel som i listen nedenfor. Nye fejl sendes med det samme. Gentagelser af samme
+              fejl samles: røde højst hvert {ALARM_INTERVAL_ROED_MIN}. minut, gule højst én gang pr.{" "}
+              {ALARM_INTERVAL_MIN} minutter (medmindre antallet er steget markant). Hvis hele siden er nede, kan den ikke selv sende besked;
+              det klarer den eksterne overvågning af <code>/api/helbred</code>.
             </p>
           </div>
         )}
@@ -643,53 +652,81 @@ export default async function AdminDrift({
             <>
               <p className="mb-3 text-xs text-tekst-svag">
                 {fejl.data.iAlt} registreringer i {fejl.data.grupper.length}{" "}
-                {fejl.data.grupper.length === 1 ? "gruppe" : "grupper"}, grupperet pr. besked. Samme fejl
-                (samme fejlkode) tælles op i stedet for at blive gentaget, og beskeder, der kun adskiller sig
-                ved et id (fx charge-id), står i samme gruppe.
+                {fejl.data.grupper.length === 1 ? "gruppe" : "grupper"}, grupperet pr. type med samme titel som i
+                alarm-mailen. Røde skal ses på nu, gule er til orientering. Under hver gruppe står de enkelte
+                beskeder; beskeder, der kun adskiller sig ved et id (fx charge-id), står samlet.
                 {fejl.data.afkortet && " Kun de seneste 1000 rækker er medtaget."}
               </p>
               <ul className="divide-y divide-admin-kant">
-                {fejl.data.grupper.map((g) => (
-                  <li key={g.noegle} className="py-3 first:pt-0 last:pb-0">
-                    <div className="flex flex-wrap items-start gap-2">
-                      <Badge farve={g.kilde === "klient" ? "graa" : "roed"}>{KILDE[g.kilde] ?? g.kilde}</Badge>
-                      <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-xs font-bold text-white">
-                        {g.antal}×
-                      </span>
-                      <p className="min-w-0 flex-1 break-words text-sm font-medium text-tekst">{g.besked}</p>
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-tekst-svag">
-                      <span>Senest {tid(g.senest)}</span>
-                      <span>Først {tid(g.foerst)}</span>
-                      {g.brugere > 0 && <span>{g.brugere} {g.brugere === 1 ? "bruger" : "brugere"}</span>}
-                      {g.stier.length > 0 && (
-                        <span className="break-all font-mono">{g.stier.join(", ")}</span>
-                      )}
-                      {g.digests.length > 0 && (
-                        <span className="font-mono">Fejlkode {g.digests.join(", ")}</span>
-                      )}
-                    </div>
-                    {g.eksempler.length > 0 && (
-                      <details className="mt-1 text-xs text-tekst-svag">
-                        <summary className="cursor-pointer select-none hover:text-tekst">
-                          {g.varianter > 1
-                            ? `${g.varianter} forskellige id'er - vis ${g.eksempler.length === 1 ? "eksempel" : `${g.eksempler.length} eksempler`}`
-                            : "Vis id"}
-                        </summary>
-                        <ul className="mt-1 space-y-0.5 pl-4">
-                          {g.eksempler.map((e) => (
-                            <li key={e} className="break-all font-mono">
-                              {e}
-                            </li>
-                          ))}
-                        </ul>
-                        {g.varianter > g.eksempler.length && (
-                          <p className="mt-1 pl-4">… og {g.varianter - g.eksempler.length} flere.</p>
+                {fejl.data.grupper.map((g) => {
+                  const type = alarmType(g.kilde, g.kode);
+                  return (
+                    <li key={g.noegle} className="py-3 first:pt-0 last:pb-0">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <Badge farve={type.alvor === "roed" ? "roed" : "gul"}>
+                          {type.alvor === "roed" ? "Skal ses på nu" : "Hold øje"}
+                        </Badge>
+                        <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-xs font-bold text-white">
+                          {g.antal}×
+                        </span>
+                        <p className="min-w-0 flex-1 break-words text-sm font-semibold text-tekst">{type.titel}</p>
+                        <Link href={type.side.sti} className="text-xs font-medium text-groen underline">
+                          {type.side.tekst}
+                        </Link>
+                      </div>
+                      <p className="mt-1 text-sm text-tekst-daempet">
+                        {type.betyder} <span className="font-medium text-tekst">{type.goer}</span>
+                      </p>
+                      <ul className="mt-2 space-y-1.5 border-l-2 border-admin-kant pl-3">
+                        {g.beskeder.map((b) => (
+                          <li key={b.tekst} className="text-xs">
+                            <div className="flex items-start gap-2">
+                              <span className="shrink-0 font-bold tabular-nums text-tekst">{b.antal}×</span>
+                              <span className="min-w-0 flex-1 break-words text-tekst">{b.tekst}</span>
+                              <span className="shrink-0 whitespace-nowrap text-tekst-svag">{tid(b.senest)}</span>
+                            </div>
+                            {b.eksempler.length > 0 && (
+                              <details className="mt-0.5 pl-6 text-tekst-svag">
+                                <summary className="cursor-pointer select-none hover:text-tekst">
+                                  {b.varianter > 1
+                                    ? `${b.varianter} forskellige id'er - vis ${b.eksempler.length === 1 ? "eksempel" : `${b.eksempler.length} eksempler`}`
+                                    : "Vis id"}
+                                </summary>
+                                <ul className="mt-1 space-y-0.5 pl-4">
+                                  {b.eksempler.map((e) => (
+                                    <li key={e} className="break-all font-mono">
+                                      {e}
+                                    </li>
+                                  ))}
+                                </ul>
+                                {b.varianter > b.eksempler.length && (
+                                  <p className="mt-1 pl-4">… og {b.varianter - b.eksempler.length} flere.</p>
+                                )}
+                              </details>
+                            )}
+                          </li>
+                        ))}
+                        {g.flereBeskeder > 0 && (
+                          <li className="text-xs text-tekst-svag">+{g.flereBeskeder} flere forskellige beskeder</li>
                         )}
-                      </details>
-                    )}
-                  </li>
-                ))}
+                      </ul>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-tekst-svag">
+                        <span>Senest {tid(g.senest)}</span>
+                        <span>Først {tid(g.foerst)}</span>
+                        <span className="font-mono">
+                          {KILDE[g.kilde] ?? g.kilde} · {g.kode}
+                        </span>
+                        {g.brugere > 0 && <span>{g.brugere} {g.brugere === 1 ? "bruger" : "brugere"}</span>}
+                        {g.stier.length > 0 && (
+                          <span className="break-all font-mono">{g.stier.join(", ")}</span>
+                        )}
+                        {g.digests.length > 0 && (
+                          <span className="font-mono">Fejlkode {g.digests.join(", ")}</span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </>
           ))}
