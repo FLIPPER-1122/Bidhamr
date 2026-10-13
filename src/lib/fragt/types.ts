@@ -1,11 +1,20 @@
 // Fælles typer for fragt. Handelsflowet kender KUN disse typer - aldrig GLS-
 // eller Shipmondo-specifikke felter. Et nyt fragtfirma = en ny adapter, der
-// implementerer `Fragtfirma` (se testFirma.ts, gls.ts, shipmondo.ts).
+// implementerer `Fragtfirma` (se testFirma.ts, gls.ts, shipmondo.ts, dao.ts).
 //
 // Ingen server-only-import: frontend må gerne bruge typer og navne.
 
-export const FRAGTFIRMAER = ["test", "gls", "shipmondo"] as const;
+export const FRAGTFIRMAER = ["test", "gls", "shipmondo", "dao"] as const;
 export type FragtfirmaNavn = (typeof FRAGTFIRMAER)[number];
+
+// Højst så mange udgående labels pr. handel (også annullerede), før staff skal
+// godkende flere. null = ingen fast grænse for sælgeren: DAO direkte kan
+// annullere en label (AnnullerePakke), så en label, som DAO har bekræftet
+// annulleret, tæller ikke. Databasen (forsendelse_claim) håndhæver reglen -
+// her står den kun til visning (FragtlabelBoks).
+export function labelGraense(fragtfirma: string | null | undefined): number | null {
+  return fragtfirma === "dao" ? null : 2;
+}
 
 export const PAKKESTOERRELSER = ["lille", "mellem", "stor"] as const;
 export type Pakkestoerrelse = (typeof PAKKESTOERRELSER)[number];
@@ -128,7 +137,10 @@ export type Label =
 export type OprettetForsendelse = {
   forsendelsesId: string;
   sporingsnummer: string;
-  label: Label;
+  // null: kun når forsendelsen har en labelfri kode (qrKode), men PDF'en ikke
+  // kunne hentes lige nu (DAO). Koden virker uden PDF, og PDF'en hentes, når
+  // sælgeren trykker "Hent label" (Fragtfirma.hentLabel).
+  label: Label | null;
   // Kode til indlevering uden printer, hvis firmaet har det. Shipmondo/DAO:
   // DAO's labelfri-kode (skrives på pakken / vises i pakkeshoppen).
   qrKode?: string | null;
@@ -156,6 +168,23 @@ export type WebhookHaendelse = Sporingshaendelse & {
   forsendelsesId?: string | null;
 };
 
+// En hændelseskode, som adapteren ikke kender (fx en ny DAO-kode). Ændrer
+// aldrig status - gemmes i fragt_ukendte_koder, og drift får en advarsel.
+export type UkendtSporingskode = {
+  kode: string;
+  liste: string | null;
+  beskrivelse: string | null;
+  sporingsnummer: string | null;
+};
+
+export type SporingsFeed = {
+  // Næste token. Gemmes først, når alle hændelser er gemt, så et nedbrud
+  // giver en gentagelse og aldrig et hul (hændelser er idempotente).
+  nyToken: string;
+  haendelser: WebhookHaendelse[];
+  ukendte: UkendtSporingskode[];
+};
+
 export type WebhookResultat =
   | { ok: true; haendelser: WebhookHaendelse[] }
   | { ok: false; status: number; fejl: string };
@@ -171,6 +200,14 @@ export interface Fragtfirma {
   // kun markering til staff, der selv trykker "Ikke afhentet" i admin.
   // DAO-adapteren sætter den, når DAO's returkode er kendt.
   returErIkkeAfhentet?: boolean;
+  // true = fragtfirmaet kan ikke slå en forsendelse op ud fra BidHamrs
+  // reference (DAO). Efter et ukendt udfald laver næste forsøg derfor en NY
+  // forsendelse i stedet for at genbruge referencen, og en kendt, forældreløs
+  // forsendelse annulleres (se opretForsendelse i server.ts).
+  genforsoegOpretterNy?: boolean;
+  // Er adapteren sat op (nøgler i env)? Bruges af cron, så et firma uden
+  // nøgler ikke kaldes hvert 5. minut. Mangler = antages sat op.
+  erSatOp?(): boolean;
   // Pris i øre for en pakke. Postnumre er valgfrie (fast pris i DK).
   beregnPris(
     pakkestoerrelse: Pakkestoerrelse,
@@ -189,15 +226,30 @@ export interface Fragtfirma {
   soegPakkeshops(q: PakkeshopSoegning): Promise<Pakkeshop[]>;
   // Slår én pakkeshop op (validering af købers valg). null = findes ikke.
   hentPakkeshop(id: string, naer: PakkeshopSoegning): Promise<Pakkeshop | null>;
+  // Valgfri: henter labelen igen (fx når PDF'en manglede ved oprettelsen).
+  hentLabel?(forsendelsesId: string): Promise<Label>;
+  // Valgfri: alle nye sporingshændelser på ALLE vores pakker siden tokenet
+  // (DAO Track & Trace V2). Kaldes højst én gang pr. cron-kørsel.
+  hentSporingFeed?(token: string): Promise<SporingsFeed>;
+  // Valgfri: efterlysning (bortkommet pakke) hos fragtfirmaet. Kaldes højst
+  // én gang pr. forsendelse (fragt_efterlysninger). Kaster FragtFejl, når
+  // fragtfirmaet afviser, og FragtUkendtUdfald, når svaret udebliver.
+  opretEfterlysning?(sporingsnummer: string, opts: { reference: string; vaerdiOere: number }): Promise<void>;
 }
 
 // Vi ved ikke, om fragtfirmaet har oprettet forsendelsen (timeout, netværk,
 // 5xx på oprettelsen). Claimet bliver stående, og næste forsøg genbruger
 // samme reference - der bestilles aldrig en ny label, før det er afklaret.
+//
+// foraeldreloesId: fragtfirmaets id på en forsendelse, der BLEV oprettet, men
+// som ikke kan bruges (fx fordi svaret ikke kunne gemmes). Bruges af adaptere
+// med genforsoegOpretterNy: serveren gemmer id'et og annullerer forsendelsen.
 export class FragtUkendtUdfald extends Error {
-  constructor(detalje: string) {
+  readonly foraeldreloesId: string | null;
+  constructor(detalje: string, opts: { foraeldreloesId?: string | null } = {}) {
     super(detalje);
     this.name = "FragtUkendtUdfald";
+    this.foraeldreloesId = opts.foraeldreloesId ?? null;
   }
 }
 

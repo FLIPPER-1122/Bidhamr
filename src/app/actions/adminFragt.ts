@@ -90,7 +90,7 @@ export async function fragtAfslutHaengendeLabel(formData: FormData): Promise<{ o
     const { admin, userId: staffId } = await assertRole("medarbejder");
     if (!UUID_RE.test(forsendelseId)) throw new BrugerFejl("Forsendelsen findes ikke.");
     if (valg !== "fejlet" && valg !== "tilknyt") throw new BrugerFejl("Vælg, hvad der skal ske.");
-    if (!note) throw new BrugerFejl("Skriv, hvad du har tjekket i Shipmondo.");
+    if (!note) throw new BrugerFejl("Skriv, hvad du har tjekket hos fragtfirmaet.");
     if (note.length > 500) throw new BrugerFejl("Noten må højst være 500 tegn.");
     if (valg === "tilknyt" && !/^\d{1,20}$/.test(shipmondoId)) throw new BrugerFejl("Skriv Shipmondos forsendelses-id (kun tal).");
 

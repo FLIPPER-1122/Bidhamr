@@ -25,8 +25,6 @@ const feltKlasse = (fejl: boolean) =>
     fejl ? "border-fejl-kant bg-fejl-bg/40" : "border-kant-staerk hover:border-[#BFBFBF]"
   }`;
 
-const MAKS_LABELS = 2;
-
 type FeltFejl = Partial<Record<keyof Afsender, string>>;
 
 // Egen dansk validering (formularen har noValidate - ingen browser-bobler).
@@ -51,6 +49,7 @@ export default function FragtlabelBoks({
   pakke,
   levering,
   brugteLabels,
+  labelGraense = 2,
 }: {
   tradeId: string;
   // Den aktive udgående forsendelse (ikke annulleret), eller null.
@@ -63,6 +62,10 @@ export default function FragtlabelBoks({
   levering: string | null;
   // Udgående labels lavet på handlen (også annullerede).
   brugteLabels: number;
+  // Højst så mange labels (også annullerede). null = ingen fast grænse: DAO
+  // annullerer labelen hos sig selv, så sælgeren kan lave en ny, så længe
+  // pakken ikke er afleveret (labelGraense i src/lib/fragt/types.ts).
+  labelGraense?: number | null;
 }) {
   const id = useId();
   const router = useRouter();
@@ -177,7 +180,11 @@ export default function FragtlabelBoks({
               triggerLabel="Annullér label"
               triggerClassName="btn btn-fare w-full sm:w-auto"
               title="Annullér fragtlabelen?"
-              description={`En annulleret label kan ikke bruges. Du kan højst lave ${MAKS_LABELS} labels til en handel – også dem, du har annulleret. Har du allerede afleveret pakken, skal du ikke annullere labelen.`}
+              description={
+                labelGraense === null
+                  ? "En annulleret label og dens kode kan ikke bruges. Du kan lave en ny label bagefter. Har du allerede afleveret pakken, skal du ikke annullere labelen."
+                  : `En annulleret label kan ikke bruges. Du kan højst lave ${labelGraense} labels til en handel – også dem, du har annulleret. Har du allerede afleveret pakken, skal du ikke annullere labelen.`
+              }
               confirmLabel="Annullér label"
               cancelLabel="Behold label"
               onConfirm={async () => {
@@ -337,9 +344,9 @@ export default function FragtlabelBoks({
             {arbejder && <span className="btn-spinner" aria-hidden="true" />}
             Lav fragtlabel
           </button>
-          {brugteLabels > 0 && (
+          {brugteLabels > 0 && labelGraense !== null && (
             <p className="text-[13px] text-tekst-daempet">
-              Du har brugt {brugteLabels} af {MAKS_LABELS} labels på handlen.
+              Du har brugt {brugteLabels} af {labelGraense} labels på handlen.
             </p>
           )}
         </div>

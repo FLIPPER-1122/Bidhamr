@@ -1,0 +1,1 @@
+{ ”status”: ”OK”, ”fejlkode”: 0, ”fejltekst”: ””, ”resultat”: { ”stregkode”: ”00057099990000455555”, ”labellesskode”: ”123 456 789” } }

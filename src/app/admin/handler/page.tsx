@@ -56,6 +56,7 @@ type FragtRow = {
   trade_id: string;
   type: "udgaaende" | "retur";
   status: string;
+  fragtfirma: string;
   sporingsnummer: string | null;
   opmaerksomhed_tekst: string | null;
   opdateret_kl: string;
@@ -132,7 +133,7 @@ async function HandlerIndhold({
     supabase.rpc("admin_haengende_handler"),
     supabase
       .from("forsendelser")
-      .select("id, trade_id, type, status, sporingsnummer, opmaerksomhed_tekst, opdateret_kl")
+      .select("id, trade_id, type, status, fragtfirma, sporingsnummer, opmaerksomhed_tekst, opdateret_kl")
       .eq("kraever_opmaerksomhed", true)
       .order("opdateret_kl", { ascending: true })
       .limit(200),
@@ -422,8 +423,27 @@ async function HandlerIndhold({
                   <Link href={handelChatSti(f.trade_id)} prefetch={false} className={lille}>
                     Se chat
                   </Link>
+                  {/* Hængende DAO-label: DAO kan ikke slå op på reference, og en pakke,
+                      der aldrig indleveres, faktureres ikke - så den markeres blot fejlet. */}
+                  {f.status === "opretter" && f.fragtfirma === "dao" && (
+                    <ConfirmDialog
+                      triggerLabel="Afslut hængende label"
+                      triggerClassName={lille}
+                      title="Afslut den hængende fragtlabel"
+                      description="DAO kan ikke slå forsendelser op på BidHamrs reference. Markér labelen fejlet, så sælgeren kan lave en ny. En DAO-pakke, der aldrig bliver indleveret, faktureres ikke, og kendte pakker fra forsøget annulleres automatisk."
+                      confirmLabel="Markér fejlet"
+                      action={fragtAfslutHaengendeLabel}
+                      hiddenFields={{ forsendelseId: f.id, valg: "fejlet" }}
+                      aarsagField={{
+                        label: "Hvad har du tjekket?",
+                        placeholder: "Fx: sælgeren har ikke fået nogen kode – laver en ny label",
+                        required: true,
+                      }}
+                      kvittering="Den hængende label er afsluttet"
+                    />
+                  )}
                   {/* Hængende label (ukendt udfald hos Shipmondo): staff tjekker i Shipmondo først. */}
-                  {f.status === "opretter" && (
+                  {f.status === "opretter" && f.fragtfirma !== "dao" && (
                     <ConfirmDialog
                       triggerLabel="Afslut hængende label"
                       triggerClassName={lille}

@@ -1,13 +1,20 @@
 import "server-only";
 
 // Vælger fragtfirma. Handelsflowet kalder KUN hentFragtfirma()/adapterFor()
-// og typerne i types.ts - aldrig GLS/Shipmondo direkte.
+// og typerne i types.ts - aldrig GLS/Shipmondo/DAO direkte.
 //
-// Env FRAGTFIRMA = test | gls | shipmondo.
-//   - Tom i udvikling (NODE_ENV !== "production"): testfragtfirmaet.
+// Env FRAGTFIRMA = test | gls | shipmondo | dao.
+//   - Tom i udvikling (NODE_ENV !== "production"): testfragtfirmaet (også på
+//     testdatabasen) - så handelsflowet kan testes uden DAO-nøgler.
 //   - Tom i produktion: "ikke sat op" - alle kald fejler pænt med
 //     "Fragt er ikke sat op endnu." (ingen falske labels).
 //   - "test" i produktion: kun hvis det er sat eksplicit.
+//   - "dao": DAO direkte (dao.ts). Kræver DAO_KUNDEID og DAO_KODE - mangler de,
+//     fejler kaldene pænt med "Fragt er ikke sat op endnu.".
+// Shipmondo-adapteren bliver liggende (fx til flere fragtfirmaer senere), og
+// forsendelser, der er oprettet hos et andet firma, følges stadig af det firmas
+// adapter (adapterFor).
+import { daoFirma } from "@/lib/fragt/dao";
 import { glsFirma } from "@/lib/fragt/gls";
 import { shipmondoFirma } from "@/lib/fragt/shipmondo";
 import { testFirma } from "@/lib/fragt/testFirma";
@@ -34,6 +41,14 @@ export function testErTilladt(): boolean {
 // Labels på handelssiden er bag et flag, indtil fragt er klar.
 export function fragtLabelsAktiv(): boolean {
   return process.env.FRAGT_LABELS_AKTIV === "true";
+}
+
+// Returlabel i sager (køber -> pakkeshop nær sælgeren) er slået fra, indtil
+// opkrævningen af returfragten hos køberen er bygget (ROADMAP-BESLUTNINGER,
+// Sager: "køberen betaler selv returfragten"). Tjekkes også i
+// opretReturForsendelse (server.ts).
+export function fragtReturlabelAktiv(): boolean {
+  return process.env.FRAGT_RETURLABEL_AKTIV === "true";
 }
 
 function ikkeSatOp(): never {
@@ -81,6 +96,8 @@ export function adapterFor(navn: string): Fragtfirma | null {
       return glsFirma;
     case "shipmondo":
       return shipmondoFirma;
+    case "dao":
+      return daoFirma;
     default:
       return null;
   }

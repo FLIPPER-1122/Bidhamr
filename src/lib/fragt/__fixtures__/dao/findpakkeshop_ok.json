@@ -1,0 +1,70 @@
+{
+  "status": "OK",
+  "fejlkode": 0,
+  "fejltekst": "",
+  "resultat": {
+    "udgangspunkt": { "latitude": "56.1700", "longtide": "10.2000", "position_from_postal": false },
+    "antal": 3,
+    "pakkeshops": [
+      {
+        "shopId": 9102,
+        "type": "Priority",
+        "navn": "Testkiosken Nord",
+        "adresse": "Eksempelvej 40",
+        "postnr": "8200",
+        "bynavn": "Aarhus N",
+        "udsortering": "K40",
+        "latitude": "56.1801",
+        "longitude": "10.1902",
+        "afstand": "1,4",
+        "afstand_direkte": "1.1",
+        "afstand_minutter": "4",
+        "aabningstider": {
+          "man": "08:00 - 21:00",
+          "tir": "08:00 - 21:00",
+          "ons": "08:00 - 21:00",
+          "tor": "08:00 - 21:00",
+          "fre": "08:00 - 21:00",
+          "lor": "09:00 - 18:00",
+          "son": "Lukket"
+        }
+      },
+      {
+        "shopId": "9101",
+        "type": "Priority",
+        "navn": "Eksempel Supermarked",
+        "adresse": "Prøvegade 2",
+        "postnr": "8200",
+        "bynavn": "Aarhus N",
+        "udsortering": "K41",
+        "latitude": "56.1712",
+        "longitude": "10.2011",
+        "afstand": "0.3",
+        "aabningstider": {
+          "man": "07:00 - 22:00",
+          "tir": "07:00 - 22:00",
+          "ons": "07:00 - 22:00",
+          "tor": "07:00 - 22:00",
+          "fre": "07:00 - 22:00",
+          "lor": "07:00 - 22:00",
+          "son": "07:00 - 22:00"
+        }
+      },
+      {
+        "shopId": "9103",
+        "navn": "Eksempel Tankstation",
+        "adresse": "Demovej 9",
+        "postnr": "8210",
+        "bynavn": "Aarhus V",
+        "latitude": "",
+        "longitude": null,
+        "afstand": "2.75"
+      },
+      {
+        "shopId": "9101",
+        "navn": "Dublet - må ikke vises to gange",
+        "postnr": "8200"
+      }
+    ]
+  }
+}

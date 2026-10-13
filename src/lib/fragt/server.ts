@@ -24,10 +24,28 @@ import "server-only";
 //              laver betalings-cron'en. Ingen udbetaling.
 //   fejl       Markeres til staff.
 // Ingen pengeflytning her (refusionen sker i betalings-cron'en).
+//
+// Sporing (koerFragtCron):
+//   - Firmaer med et feed (DAO Track & Trace V2, hentSporingFeed): ét kald pr.
+//     kørsel (højst hvert 10. minut) henter alle nye hændelser på alle vores
+//     pakker. Tokenet gemmes først, når ALLE hændelser er gemt - et nedbrud,
+//     en databasefejl eller et opbrugt tidsbudget giver en gentagelse næste
+//     gang og aldrig et hul (hændelser er idempotente via nøglen). DAO's
+//     sporing kan være op til 24 timer forsinket. Pakke-for-pakke-opslag er
+//     kun reserve (højst hver 12. time pr. pakke).
+//   - Andre firmaer: pakke for pakke (højst hvert 20. minut) som hidtil.
+//   - Ukendte hændelseskoder ændrer aldrig status: de gemmes i
+//     fragt_ukendte_koder, og drift får en advarsel første gang.
+//
+// Efterlysning (ROADMAP fase 2, Filip 11. okt. 2026): ingen leverings-
+// melding 14 dage efter afsendelse -> én efterlysning hos fragtfirmaet
+// (createclaim.php, kun med FRAGT_EFTERLYSNING_AKTIV=true - ellers manuel) og
+// en markering til staff under Fragt. Pengene holdes tilbage af
+// handel_auto_frigiv (frigiver aldrig efter 14 dage uden leveret_kl).
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl, renFejltekst } from "@/lib/drift";
 import { send } from "@/lib/notifikationer/send";
-import { adapterFor, fragtErSatOp, hentFragtfirma } from "@/lib/fragt";
+import { adapterFor, fragtErSatOp, hentFragtfirma, FRAGTFIRMAER } from "@/lib/fragt";
 import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { annullerPaymentIntentForLevering } from "@/lib/betaling/stripeBetaling";
@@ -41,8 +59,10 @@ import {
   type Pakkeshop,
   type Pakkestoerrelse,
   type Sporingshaendelse,
+  type WebhookHaendelse,
   FragtAnnulleringIkkeMulig,
   FragtFejl,
+  FragtUkendtUdfald,
   FRAGT_IKKE_SAT_OP,
   UKENDT_UDFALD_TEKST,
   erLeveringsmaade,
@@ -69,6 +89,15 @@ const CLAIM_FEJL: Record<string, string> = {
     "Du har allerede lavet 2 fragtlabels til denne handel. Skriv til BidHamr, hvis du skal bruge en ny – så godkender vi den.",
   ugyldig: "Ugyldigt valg.",
 };
+
+// DAO: annullerede labels tæller ikke, men der er et loft på 10 i alt.
+const FOR_MANGE_LABELS_DAO =
+  "Du har lavet mange fragtlabels til denne handel. Skriv til BidHamr, hvis du skal bruge en ny – så godkender vi den.";
+
+function claimFejlTekst(kode: string | undefined, firma: string): string {
+  if (kode === "for_mange_labels" && firma === "dao") return FOR_MANGE_LABELS_DAO;
+  return CLAIM_FEJL[kode ?? ""] ?? GENERISK_FEJL;
+}
 
 function brugerFejl(err: unknown): string {
   return err instanceof FragtFejl ? err.brugerbesked : GENERISK_FEJL;
@@ -444,6 +473,25 @@ type ClaimSvar = { kode?: string; id?: string; pakkestoerrelse?: Pakkestoerrelse
 //     Claimet bliver stående, og næste forsøg genoptager med SAMME reference
 //     ('genoptag'), så fragtfirmaet giver den eksisterende forsendelse
 //     tilbage. Der bestilles aldrig en ny label, før det er afklaret.
+//
+// Fragtfirmaer UDEN opslag på reference (genforsoegOpretterNy - DAO):
+//   DAO kan ikke give os en forsendelse tilbage ud fra referencen, men en
+//   forsendelse, der aldrig indleveres, faktureres ikke. Derfor:
+//   - Ukendt udfald UDEN stregkode (timeout/netværk/5xx på ordren): claimet
+//     bliver stående som ovenfor, og næste forsøg (efter mindst 1 minut)
+//     laver en NY forsendelse med samme BidHamr-id. En eventuel pakke fra det
+//     første forsøg kan ikke bruges - sælgeren har aldrig set dens labelfri
+//     kode - og koster derfor intet.
+//   - Ukendt udfald MED stregkode (DAO oprettede pakken, men vi kunne ikke
+//     gemme den): stregkoden gemmes i fragt_foraeldreloese og annulleres med
+//     det samme (og igen af fragt-cron'en, højst 5 gange, derefter staff).
+//     Næste forsøg annullerer også først forsendelsens kendte forældreløse.
+//   - En FragtFejl i et genoptaget forsøg betyder, at DAO afviste NETOP dette
+//     forsøg (intet nyt er oprettet), så claimet markeres fejlet, og sælgeren
+//     kan prøve igen. Hos Shipmondo kunne et genoptaget forsøg derimod stamme
+//     fra en tidligere POST og bliver aldrig 'fejlet' af systemet.
+//   Opret-kaldet genforsøges ALDRIG automatisk - kun når sælgeren selv
+//   trykker igen.
 async function opretForsendelse(
   admin: Admin,
   args: {
@@ -469,7 +517,7 @@ async function opretForsendelse(
   const svar = claim as ClaimSvar | null;
   if (svar?.kode === "findes" && svar.id) return { ok: true, forsendelseId: svar.id };
   if ((svar?.kode !== "ok" && svar?.kode !== "genoptag") || !svar.id || !svar.pakkestoerrelse) {
-    return { fejl: CLAIM_FEJL[svar?.kode ?? ""] ?? GENERISK_FEJL };
+    return { fejl: claimFejlTekst(svar?.kode, args.firma.navn) };
   }
   const id = svar.id;
   // Genoptag: samme fragtfirma som det første forsøg.
@@ -480,6 +528,13 @@ async function opretForsendelse(
   }
 
   const firma = args.firma;
+  const opretterNy = firma.genforsoegOpretterNy === true;
+  // Genoptag uden opslag på reference: annullér først de forældreløse, vi
+  // kender fra tidligere forsøg (fejl her stopper ikke det nye forsøg -
+  // cron'en prøver igen).
+  if (svar.kode === "genoptag" && opretterNy) {
+    await annullerForaeldreloese(admin, id, 5);
+  }
   let oprettetHosFirma: string | null = null;
   try {
     const input = await args.byg({ id, pakkestoerrelse: svar.pakkestoerrelse });
@@ -490,13 +545,20 @@ async function opretForsendelse(
     );
     oprettetHosFirma = oprettet.forsendelsesId;
 
-    const bytes = await labelBytes(oprettet.label);
-    const sti = `${tradeId}/${id}.pdf`;
-    const { error: upFejl } = await admin.storage
-      .from(FRAGT_LABEL_BUCKET)
-      .upload(sti, bytes, { contentType: "application/pdf", upsert: false });
-    if (upFejl && !/exists|duplicate/i.test(upFejl.message)) {
-      throw new Error(`Label kunne ikke gemmes: ${upFejl.message}`);
+    // Uden PDF (kun DAO med labelfri kode): gemmes uden label_sti; PDF'en
+    // hentes, når sælgeren trykker "Hent label" (sikrLabelPdf).
+    let sti: string | null = null;
+    if (oprettet.label) {
+      const bytes = await labelBytes(oprettet.label);
+      sti = `${tradeId}/${id}.pdf`;
+      const { error: upFejl } = await admin.storage
+        .from(FRAGT_LABEL_BUCKET)
+        .upload(sti, bytes, { contentType: "application/pdf", upsert: false });
+      if (upFejl && !/exists|duplicate/i.test(upFejl.message)) {
+        throw new Error(`Label kunne ikke gemmes: ${upFejl.message}`);
+      }
+    } else if (!oprettet.qrKode) {
+      throw new Error("Fragtfirmaet gav hverken label eller labelfri kode");
     }
 
     const { error: detFejl } = await admin.rpc("forsendelse_gem_detaljer", {
@@ -521,24 +583,43 @@ async function opretForsendelse(
     if (gemFejl) throw new Error(`forsendelse_gem_oprettet: ${gemFejl.message}`);
     if (!gemt) throw new Error("Forsendelsen var ikke længere claimet");
   } catch (err) {
-    console.error("Fragtlabel kunne ikke laves:", err);
+    // Kun den rensede tekst (aldrig rå fejl med evt. URL'er/nøgler).
+    console.error("Fragtlabel kunne ikke laves:", renFejltekst(err, 300));
     // 'fejlet' KUN når vi ved, at intet er oprettet: en FragtFejl (validering
     // før første kald eller 4xx på oprettelsen) i et FØRSTE forsøg. Et
     // genoptaget forsøg kan stamme fra en tidligere POST - det bliver aldrig
     // 'fejlet' her (kun staff kan afslutte det, se staffAfslutClaim).
-    if (err instanceof FragtFejl && !oprettetHosFirma && svar.kode !== "genoptag") {
+    // Undtagelse: genforsoegOpretterNy (DAO) - se kommentaren øverst.
+    if (err instanceof FragtFejl && !oprettetHosFirma && (svar.kode !== "genoptag" || opretterNy)) {
       await admin.rpc("forsendelse_marker_fejlet", { p_id: id, p_fejl: renFejltekst(err, 500) });
       return { fejl: err.brugerbesked };
     }
-    // Ukendt udfald: lad claimet stå - næste forsøg genbruger referencen.
+    // DAO oprettede pakken, men den kan ikke bruges: gem og annullér den.
+    const foraeldreloes =
+      opretterNy ? (oprettetHosFirma ?? (err instanceof FragtUkendtUdfald ? err.foraeldreloesId : null)) : null;
+    if (foraeldreloes) {
+      const { error: oFejl } = await admin.rpc("fragt_foraeldreloes_registrer", {
+        p_forsendelse: id,
+        p_forsendelses_id: foraeldreloes,
+      });
+      if (oFejl) {
+        await logDriftFejl({ kilde: "server", hvor: "Fragt: forældreløs forsendelse", fejl: oFejl });
+      } else {
+        await annullerForaeldreloese(admin, id, 5);
+      }
+    }
+    // Ukendt udfald: lad claimet stå - næste forsøg genbruger referencen
+    // (DAO: laver en ny forsendelse).
     await admin.rpc("forsendelse_marker_ukendt", { p_id: id, p_fejl: renFejltekst(err, 500) });
     await logDriftFejl({
       kilde: "server",
       hvor: "Fragt: ukendt udfald",
       fejl:
         `${renFejltekst(err, 300)} - forsendelse ${id} hos ${firma.visningsnavn}` +
-        (oprettetHosFirma ? ` (oprettet som ${oprettetHosFirma})` : "") +
-        ". Næste forsøg genbruger samme reference.",
+        (foraeldreloes ?? oprettetHosFirma ? ` (oprettet som ${foraeldreloes ?? oprettetHosFirma})` : "") +
+        (opretterNy
+          ? ". Næste forsøg laver en ny forsendelse (fragtfirmaet kan ikke slå op på reference)."
+          : ". Næste forsøg genbruger samme reference."),
     });
     return { fejl: err instanceof FragtFejl ? err.brugerbesked : UKENDT_UDFALD_TEKST };
   }
@@ -556,6 +637,73 @@ async function opretForsendelse(
     await logDriftFejl({ kilde: "server", hvor: "Fragt: oprettet-hændelse", fejl: err });
   }
   return { ok: true, forsendelseId: id };
+}
+
+// Annullerer forældreløse forsendelser hos fragtfirmaet (fragt_foraeldreloese).
+// forsendelseId: kun dem for den forsendelse (før et nyt forsøg) - ellers de
+// ældste (fragt-cron). Kaster aldrig. Svar: antal annulleret.
+async function annullerForaeldreloese(admin: Admin, forsendelseId: string | null, graense: number): Promise<number> {
+  let antal = 0;
+  try {
+    const { data, error } = await admin.rpc("fragt_foraeldreloese_claim", {
+      p_forsendelse: forsendelseId,
+      p_graense: graense,
+    });
+    if (error) throw new Error(`fragt_foraeldreloese_claim: ${error.message}`);
+    for (const o of (data ?? []) as { id: string; fragtfirma: string; forsendelses_id: string }[]) {
+      const adapter = adapterFor(o.fragtfirma);
+      let ok = false;
+      let fejl: string | null = null;
+      if (!adapter) {
+        fejl = "Fragtfirmaet er ikke sat op her";
+      } else {
+        try {
+          await medTimeout(adapter.annullerForsendelse(o.forsendelses_id), 20_000, "annullerForsendelse");
+          ok = true;
+        } catch (err) {
+          fejl = renFejltekst(err, 300);
+        }
+      }
+      const { error: aFejl } = await admin.rpc("fragt_foraeldreloes_afslut", { p_id: o.id, p_ok: ok, p_fejl: fejl });
+      if (aFejl) throw new Error(`fragt_foraeldreloes_afslut: ${aFejl.message}`);
+      if (ok) antal++;
+    }
+  } catch (err) {
+    await logDriftFejl({ kilde: "server", hvor: "Fragt: annullér forældreløse", fejl: err });
+  }
+  return antal;
+}
+
+// Henter og gemmer label-PDF'en, når den manglede ved oprettelsen (DAO med
+// labelfri kode). Kaldere SKAL have tjekket, at brugeren må se labelen.
+// Svar: stien i bucket'en, eller null (kan ikke hentes lige nu).
+export async function sikrLabelPdf(forsendelseId: string): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data: f } = await admin
+    .from("forsendelser")
+    .select("id, trade_id, fragtfirma, forsendelses_id, label_sti, status")
+    .eq("id", forsendelseId)
+    .maybeSingle<{ id: string; trade_id: string; fragtfirma: string; forsendelses_id: string | null; label_sti: string | null; status: string }>();
+  if (!f) return null;
+  if (f.label_sti) return f.label_sti;
+  if (!f.forsendelses_id || ["opretter", "annulleres", "annulleret", "fejlet"].includes(f.status)) return null;
+  const adapter = adapterFor(f.fragtfirma);
+  if (!adapter?.hentLabel) return null;
+  try {
+    const label = await medTimeout(adapter.hentLabel(f.forsendelses_id), 20_000, "hentLabel");
+    const bytes = await labelBytes(label);
+    const sti = `${f.trade_id}/${f.id}.pdf`;
+    const { error: upFejl } = await admin.storage
+      .from(FRAGT_LABEL_BUCKET)
+      .upload(sti, bytes, { contentType: "application/pdf", upsert: false });
+    if (upFejl && !/exists|duplicate/i.test(upFejl.message)) throw new Error(`Label kunne ikke gemmes: ${upFejl.message}`);
+    const { error } = await admin.rpc("forsendelse_gem_label", { p_id: f.id, p_sti: sti });
+    if (error) throw new Error(`forsendelse_gem_label: ${error.message}`);
+    return sti;
+  } catch (err) {
+    if (!(err instanceof FragtFejl)) await logDriftFejl({ kilde: "server", hvor: "Fragt: hent label senere", fejl: err });
+    return null;
+  }
 }
 
 async function vaegtOgTitel(admin: Admin, tradeId: string) {
@@ -716,11 +864,11 @@ export async function staffAfslutHaengendeClaim(
     if (error) throw new Error("forsendelse_staff_marker_fejlet: " + error.message);
     if (data === "ok") return { ok: true, tradeId: f.trade_id };
     const STAFF_FEJL: Record<string, string> = {
-      note_mangler: "Skriv, hvad du har tjekket i Shipmondo.",
+      note_mangler: "Skriv, hvad du har tjekket hos fragtfirmaet.",
       ikke_fundet: "Forsendelsen findes ikke.",
       ikke_haengende: "Forsendelsen hænger ikke længere. Opdatér siden.",
       i_gang:
-        "Oprettelsen kan stadig være i gang. Vent, til der er gået 10 minutter siden sidste forsøg (eller til den er markeret med ukendt udfald), og tjek Shipmondo igen.",
+        "Oprettelsen kan stadig være i gang. Vent, til der er gået 10 minutter siden sidste forsøg (eller til den er markeret med ukendt udfald), og tjek hos fragtfirmaet igen.",
     };
     return { fejl: STAFF_FEJL[String(data)] ?? "Forsendelsen blev ændret imens. Opdatér siden." };
   }
@@ -736,6 +884,7 @@ export async function staffAfslutHaengendeClaim(
   if (eks.reference !== f.id) {
     return { fejl: `Forsendelsen hos Shipmondo har en anden reference (${eks.reference ?? "ingen"}) end BidHamrs (${f.id}).` };
   }
+  if (!eks.label) return { fejl: "Shipmondo gav ingen label til forsendelsen." };
   const sti = `${f.trade_id}/${f.id}.pdf`;
   const bytes = await labelBytes(eks.label);
   const { error: upFejl } = await admin.storage
@@ -1081,20 +1230,218 @@ const CRON_BUDGET_MS = 25_000;
 
 const ANNULLER_MAKS = 10;
 
-// Henter sporing for aktive forsendelser (højst 20 pr. kørsel, hver højst hvert
-// 20. minut) og sender beskeder, der mangler. Annullerer desuden labels på
-// annullerede handler. Let og begrænset - kaldes fra betalings-cron-ruten.
-// Kaster aldrig.
+// Sporingsfeed (DAO): højst hvert 10. minut, og højst 12 sekunder til at gemme
+// hændelserne i én kørsel. Reserve: pakke for pakke højst hver 12. time.
+const FEED_INTERVAL_SEK = 10 * 60;
+const FEED_BUDGET_MS = 12_000;
+const FEED_RESERVE_INTERVAL_MIN = 12 * 60;
+const FEED_RESERVE_MAKS = 5;
+const EFTERLYSNING_MAKS = 5;
+
+// Firmaer, hvis sporing kommer fra et feed (og som er sat op).
+function feedFirmaer(): Fragtfirma[] {
+  return FRAGTFIRMAER.map((n) => adapterFor(n)).filter(
+    (a): a is Fragtfirma => !!a && typeof a.hentSporingFeed === "function",
+  );
+}
+
+type FeedResultat = { haendelser: number; nye: number; ukendte: number; gemt: boolean };
+
+// Ét feed-kald for et firma. Tokenet gemmes KUN, når alle hændelser er gemt
+// (fragt_sporing_token_gem, compare-and-set). Ellers registreres en fejl, og
+// næste kørsel henter de samme hændelser igen (idempotent). Kaster aldrig.
+export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET_MS): Promise<FeedResultat | null> {
+  if (!firma.hentSporingFeed) return null;
+  if (firma.erSatOp && !firma.erSatOp()) return null;
+  const admin = createAdminClient();
+  const res: FeedResultat = { haendelser: 0, nye: 0, ukendte: 0, gemt: false };
+  const { data: token, error: tFejl } = await admin.rpc("fragt_sporing_token_claim", {
+    p_fragtfirma: firma.navn,
+    p_interval_sek: FEED_INTERVAL_SEK,
+  });
+  if (tFejl) {
+    await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: "Fragt: sporings-token", fejl: tFejl });
+    return null;
+  }
+  if (typeof token !== "string") return null; // ikke tid endnu, eller en anden kørsel er i gang
+  const slut = Date.now() + budgetMs;
+  const fejl = async (grund: unknown, log: boolean) => {
+    const { data: iTraek } = await admin.rpc("fragt_sporing_token_fejl", {
+      p_fragtfirma: firma.navn,
+      p_fejl: renFejltekst(grund, 300),
+    });
+    // Drift ved første fejl og derefter hver 6. gang (ca. hver time).
+    if (log && (Number(iTraek) <= 1 || Number(iTraek) % 6 === 0)) {
+      await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: `Fragt: sporingsfeed (${firma.visningsnavn})`, fejl: grund });
+    }
+  };
+  try {
+    const feed = await medTimeout(firma.hentSporingFeed(token), 25_000, "hentSporingFeed");
+
+    // Ukendte koder: ændrer aldrig status. Gemmes, og drift får en advarsel
+    // første gang en kode ses.
+    const set = new Set<string>();
+    for (const u of feed.ukendte) {
+      const k = `${u.kode}|${u.liste ?? ""}`;
+      if (set.has(k) || set.size >= 50) continue;
+      set.add(k);
+      const { data: ny, error } = await admin.rpc("fragt_ukendt_kode_registrer", {
+        p_fragtfirma: firma.navn,
+        p_kode: u.kode,
+        p_liste: u.liste ?? "",
+        p_beskrivelse: u.beskrivelse,
+        p_sporingsnummer: u.sporingsnummer,
+      });
+      if (error) throw new Error(`fragt_ukendt_kode_registrer: ${error.message}`);
+      if (ny === true) {
+        res.ukendte++;
+        await logDriftFejl({
+          kilde: "server",
+          hvor: "Fragt: ukendt sporingskode",
+          fejl:
+            `${firma.visningsnavn} sendte hændelseskoden ${u.kode} (liste: ${u.liste ?? "ukendt"}), som BidHamr ikke kender. ` +
+            "Den ændrer ikke pakkens status. Tilføj den i src/lib/fragt/daoKoder.ts (se fragt_ukendte_koder).",
+        });
+      }
+    }
+
+    // Hændelserne: kun vores egne forsendelser (opslag på sporingsnummer i
+    // klumper - en databasefejl kaster, så tokenet ikke gemmes).
+    const haendelser = [...feed.haendelser].sort((a, b) => a.tidspunkt.localeCompare(b.tidspunkt));
+    const numre = [...new Set(haendelser.map((h) => h.sporingsnummer).filter((s): s is string => !!s))];
+    const tilId = new Map<string, string>();
+    for (let i = 0; i < numre.length; i += 100) {
+      const { data, error } = await admin
+        .from("forsendelser")
+        .select("id, sporingsnummer, oprettet_kl")
+        .eq("fragtfirma", firma.navn)
+        .in("sporingsnummer", numre.slice(i, i + 100))
+        .order("oprettet_kl", { ascending: true });
+      if (error) throw new Error(`forsendelser (feed): ${error.message}`);
+      // Nyeste vinder (som findForsendelse).
+      for (const f of data ?? []) tilId.set(f.sporingsnummer as string, f.id as string);
+    }
+    for (const h of haendelser as WebhookHaendelse[]) {
+      if (Date.now() > slut) {
+        await fejl(
+          `Tidsbudgettet slap op efter ${res.haendelser} af ${haendelser.length} hændelser - de hentes igen næste gang.`,
+          true,
+        );
+        return res;
+      }
+      const id = h.sporingsnummer ? tilId.get(h.sporingsnummer) : undefined;
+      if (!id) continue; // ikke vores (fx en forældreløs pakke)
+      const { ny } = await registrerForsendelseshaendelse(id, h, "sporing");
+      res.haendelser++;
+      if (ny) res.nye++;
+    }
+
+    const { data: gemt, error: gFejl } = await admin.rpc("fragt_sporing_token_gem", {
+      p_fragtfirma: firma.navn,
+      p_gammel: token,
+      p_ny: feed.nyToken,
+      p_antal: haendelser.length,
+    });
+    if (gFejl) throw new Error(`fragt_sporing_token_gem: ${gFejl.message}`);
+    res.gemt = gemt === true;
+    return res;
+  } catch (err) {
+    await fejl(err, !(err instanceof FragtFejl));
+    return res;
+  }
+}
+
+// Efterlysning hos fragtfirmaet (ingen leveringsmelding 14 dage efter
+// afsendelse). Højst én pr. forsendelse; opret-kaldet genforsøges aldrig
+// (udebliver svaret, bliver den 'ukendt', og staff tjekker hos DAO).
+// FRAGT_EFTERLYSNING_AKTIV=true slår kaldet til fragtfirmaet til; ellers
+// får staff opgaven at efterlyse manuelt. Kaster aldrig.
+async function koerEfterlysninger(admin: Admin, slut: number): Promise<number> {
+  let antal = 0;
+  const firmaer = FRAGTFIRMAER.filter((n) => typeof adapterFor(n)?.opretEfterlysning === "function");
+  if (firmaer.length === 0) return 0;
+  try {
+    const { data, error } = await admin.rpc("fragt_efterlysning_kandidater", {
+      p_fragtfirmaer: firmaer,
+      p_graense: EFTERLYSNING_MAKS,
+    });
+    if (error) throw new Error(`fragt_efterlysning_kandidater: ${error.message}`);
+    for (const k of (data ?? []) as { forsendelse_id: string; fragtfirma: string; sporingsnummer: string }[]) {
+      if (Date.now() > slut) break;
+      const adapter = adapterFor(k.fragtfirma);
+      const auto =
+        process.env.FRAGT_EFTERLYSNING_AKTIV === "true" &&
+        !!adapter?.opretEfterlysning &&
+        (!adapter.erSatOp || adapter.erSatOp());
+      const { data: c, error: cFejl } = await admin.rpc("fragt_efterlysning_claim", {
+        p_forsendelse: k.forsendelse_id,
+        p_auto: auto,
+      });
+      if (cFejl) throw new Error(`fragt_efterlysning_claim: ${cFejl.message}`);
+      const claim = c as { kode?: string; id?: string; sporingsnummer?: string; vaerdi_oere?: number } | null;
+      if (claim?.kode !== "ok" || !claim.id) continue;
+      antal++;
+      if (!auto || !adapter?.opretEfterlysning) continue;
+      let status: "oprettet" | "afvist" | "ukendt" = "oprettet";
+      let fejltekst: string | null = null;
+      try {
+        await medTimeout(
+          adapter.opretEfterlysning(claim.sporingsnummer ?? k.sporingsnummer, {
+            reference: k.forsendelse_id,
+            vaerdiOere: Number(claim.vaerdi_oere ?? 0),
+          }),
+          25_000,
+          "opretEfterlysning",
+        );
+      } catch (err) {
+        status = err instanceof FragtFejl ? "afvist" : "ukendt";
+        fejltekst = renFejltekst(err, 300);
+        if (!(err instanceof FragtFejl)) {
+          await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: "Fragt: efterlysning", fejl: err });
+        }
+      }
+      const { error: aFejl } = await admin.rpc("fragt_efterlysning_afslut", {
+        p_id: claim.id,
+        p_status: status,
+        p_fejl: fejltekst,
+      });
+      if (aFejl) throw new Error(`fragt_efterlysning_afslut: ${aFejl.message}`);
+    }
+  } catch (err) {
+    await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: "Fragt: efterlysninger", fejl: err });
+  }
+  return antal;
+}
+
+// Henter sporing for aktive forsendelser (feed for DAO; ellers højst 20 pr.
+// kørsel, hver højst hvert 20. minut) og sender beskeder, der mangler.
+// Annullerer desuden labels på annullerede handler og forældreløse
+// forsendelser og opretter efterlysninger. Let og begrænset - kaldes fra
+// betalings-cron-ruten. Kaster aldrig.
 export async function koerFragtCron(): Promise<{
   sporet: number;
   nyeHaendelser: number;
   beskeder: number;
   annulleret: number;
   fejl: number;
+  feedHaendelser: number;
+  foraeldreloese: number;
+  efterlysninger: number;
 }> {
-  const r = { sporet: 0, nyeHaendelser: 0, beskeder: 0, annulleret: 0, fejl: 0 };
+  const r = {
+    sporet: 0,
+    nyeHaendelser: 0,
+    beskeder: 0,
+    annulleret: 0,
+    fejl: 0,
+    feedHaendelser: 0,
+    foraeldreloese: 0,
+    efterlysninger: 0,
+  };
   const start = Date.now();
   const admin = createAdminClient();
+  const feeds = feedFirmaer();
+  const feedNavne = feeds.map((f) => f.navn);
 
   // Handlen er annulleret (afsendelsesfrist, afhentningsfrist, ubetalt, admin,
   // sag - uanset grund): annullér udgående labels, der ikke er afleveret, hos
@@ -1116,14 +1463,28 @@ export async function koerFragtCron(): Promise<{
     }
   }
 
+  // Feed (DAO): ét kald henter alle nye hændelser.
+  for (const firma of feeds) {
+    if (Date.now() - start > CRON_BUDGET_MS / 2) break;
+    const f = await koerSporingsfeed(firma, Math.min(FEED_BUDGET_MS, CRON_BUDGET_MS - (Date.now() - start) - 5_000));
+    if (f) {
+      r.feedHaendelser += f.haendelser;
+      r.nyeHaendelser += f.nye;
+      if (!f.gemt) r.fejl++;
+    }
+  }
+
   const graense = new Date(Date.now() - POLL_INTERVAL_MIN * 60_000).toISOString();
   const aeldst = new Date(Date.now() - 60 * 24 * 60 * 60_000).toISOString();
-  const { data: aktive, error } = await admin
+  let q = admin
     .from("forsendelser")
     .select("id, fragtfirma, sporingsnummer")
     .in("status", ["oprettet", "annulleres", "afleveret", "i_transit", "klar_til_afhentning"])
     .gte("oprettet_kl", aeldst)
-    .or(`sidst_polled_kl.is.null,sidst_polled_kl.lt.${graense}`)
+    .or(`sidst_polled_kl.is.null,sidst_polled_kl.lt.${graense}`);
+  // Feed-firmaer har deres egen (sjældnere) reserve herunder.
+  if (feedNavne.length > 0) q = q.not("fragtfirma", "in", `(${feedNavne.join(",")})`);
+  const { data: aktive, error } = await q
     .order("sidst_polled_kl", { ascending: true, nullsFirst: true })
     .limit(POLL_MAKS);
   if (error) {
@@ -1132,7 +1493,30 @@ export async function koerFragtCron(): Promise<{
     return r;
   }
 
-  for (const f of aktive ?? []) {
+  // Reserve for feed-firmaer: pakke for pakke, højst hver 12. time pr. pakke
+  // (fx hvis et token er gået tabt hos DAO).
+  let reserve: { id: string; fragtfirma: string; sporingsnummer: string | null }[] = [];
+  if (feedNavne.length > 0 && Date.now() - start < CRON_BUDGET_MS / 2) {
+    const rGraense = new Date(Date.now() - FEED_RESERVE_INTERVAL_MIN * 60_000).toISOString();
+    const { data: rs, error: rFejl } = await admin
+      .from("forsendelser")
+      .select("id, fragtfirma, sporingsnummer")
+      .in("fragtfirma", feedNavne)
+      .in("status", ["oprettet", "annulleres", "afleveret", "i_transit", "klar_til_afhentning"])
+      .gte("oprettet_kl", aeldst)
+      .lt("oprettet_kl", rGraense)
+      .or(`sidst_polled_kl.is.null,sidst_polled_kl.lt.${rGraense}`)
+      .order("sidst_polled_kl", { ascending: true, nullsFirst: true })
+      .limit(FEED_RESERVE_MAKS);
+    if (rFejl) {
+      r.fejl++;
+      await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: "Fragt: hent reserve", fejl: rFejl });
+    } else {
+      reserve = (rs ?? []) as typeof reserve;
+    }
+  }
+
+  for (const f of [...(aktive ?? []), ...reserve]) {
     if (Date.now() - start > CRON_BUDGET_MS) break;
     // Markér altid som hentet, så en fejlende forsendelse ikke blokerer køen.
     await admin
@@ -1141,6 +1525,7 @@ export async function koerFragtCron(): Promise<{
       .eq("id", f.id);
     const adapter = adapterFor(f.fragtfirma as string);
     if (!adapter || !f.sporingsnummer) continue;
+    if (adapter.erSatOp && !adapter.erSatOp()) continue;
     try {
       const haendelser = await medTimeout(
         adapter.hentSporing(f.sporingsnummer as string),
@@ -1158,6 +1543,16 @@ export async function koerFragtCron(): Promise<{
         await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: "Fragt: hent sporing", fejl: err });
       }
     }
+  }
+
+  // Forældreløse forsendelser (oprettet hos DAO, men ikke brugt): annulleres.
+  if (Date.now() - start < CRON_BUDGET_MS) {
+    r.foraeldreloese = await annullerForaeldreloese(admin, null, 5);
+  }
+
+  // Efterlysning: ingen leveringsmelding 14 dage efter afsendelse.
+  if (Date.now() - start < CRON_BUDGET_MS) {
+    r.efterlysninger = await koerEfterlysninger(admin, start + CRON_BUDGET_MS);
   }
 
   // Gamle handler (fra før checkout), hvor køberen har startet betalingen
