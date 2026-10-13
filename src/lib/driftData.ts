@@ -6,6 +6,7 @@ import "server-only";
 // kanal, status, fejltekst og modtagerens id + maskeret e-mail.
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { maskerEmail } from "@/lib/drift";
+import { fejlGruppeNoegle, normaliserFejlbesked, tilfoejEksempler } from "@/lib/driftGruppering";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -247,8 +248,13 @@ export async function hentIkkeSendte(admin: Admin, nu: number): Promise<Sektion<
 export type FejlGruppe = {
   noegle: string;
   kilde: string;
+  // Beskeden med id'er erstattet af pladsholdere (driftGruppering.ts).
   besked: string;
   antal: number;
+  // Antal forskellige rå beskeder (fx hvert sit charge-id) i gruppen.
+  varianter: number;
+  // Højst MAKS_EKSEMPLER eksempler: id'erne fra én besked, adskilt af " · ".
+  eksempler: string[];
   foerst: string;
   senest: string;
   stier: string[];
@@ -271,28 +277,36 @@ export async function hentFejlGrupper(
     .limit(MAKS);
   if (error) return sektion(error, { grupper: [], iAlt: 0, afkortet: false });
 
-  const grupper = new Map<string, FejlGruppe & { brugerSet: Set<string> }>();
+  // Grupperet pr. kilde + besked, hvor Stripe-id'er og uuid'er er erstattet af
+  // en pladsholder - ens fejl med hvert sit charge-id bliver én gruppe.
+  const grupper = new Map<string, FejlGruppe & { brugerSet: Set<string>; beskedSet: Set<string> }>();
   let iAlt = 0;
   for (const r of (data ?? []) as FejlRaekke[]) {
     iAlt += r.antal;
-    const noegle = `${r.kilde}\u0000${r.besked}`;
+    const norm = normaliserFejlbesked(r.besked);
+    const noegle = fejlGruppeNoegle(r.kilde, r.besked);
     let g = grupper.get(noegle);
     if (!g) {
       g = {
         noegle,
         kilde: r.kilde,
-        besked: r.besked,
+        besked: norm.tekst,
         antal: 0,
+        varianter: 0,
+        eksempler: [],
         foerst: r.oprettet_kl,
         senest: r.senest_kl,
         stier: [],
         digests: [],
         brugere: 0,
         brugerSet: new Set(),
+        beskedSet: new Set(),
       };
       grupper.set(noegle, g);
     }
     g.antal += r.antal;
+    g.beskedSet.add(r.besked);
+    if (norm.ids.length > 0) tilfoejEksempler(g.eksempler, [norm.ids.join(" · ")]);
     if (r.oprettet_kl < g.foerst) g.foerst = r.oprettet_kl;
     if (r.senest_kl > g.senest) g.senest = r.senest_kl;
     if (r.sti && !g.stier.includes(r.sti) && g.stier.length < 3) g.stier.push(r.sti);
@@ -300,7 +314,7 @@ export async function hentFejlGrupper(
     if (r.bruger_id) g.brugerSet.add(r.bruger_id);
   }
   const liste = [...grupper.values()]
-    .map(({ brugerSet, ...g }) => ({ ...g, brugere: brugerSet.size }))
+    .map(({ brugerSet, beskedSet, ...g }) => ({ ...g, brugere: brugerSet.size, varianter: beskedSet.size }))
     .sort((a, b) => (a.senest < b.senest ? 1 : -1));
   return {
     tilstand: "ok",

@@ -644,7 +644,8 @@ export default async function AdminDrift({
               <p className="mb-3 text-xs text-tekst-svag">
                 {fejl.data.iAlt} registreringer i {fejl.data.grupper.length}{" "}
                 {fejl.data.grupper.length === 1 ? "gruppe" : "grupper"}, grupperet pr. besked. Samme fejl
-                (samme fejlkode) tælles op i stedet for at blive gentaget.
+                (samme fejlkode) tælles op i stedet for at blive gentaget, og beskeder, der kun adskiller sig
+                ved et id (fx charge-id), står i samme gruppe.
                 {fejl.data.afkortet && " Kun de seneste 1000 rækker er medtaget."}
               </p>
               <ul className="divide-y divide-admin-kant">
@@ -668,6 +669,25 @@ export default async function AdminDrift({
                         <span className="font-mono">Fejlkode {g.digests.join(", ")}</span>
                       )}
                     </div>
+                    {g.eksempler.length > 0 && (
+                      <details className="mt-1 text-xs text-tekst-svag">
+                        <summary className="cursor-pointer select-none hover:text-tekst">
+                          {g.varianter > 1
+                            ? `${g.varianter} forskellige id'er - vis ${g.eksempler.length === 1 ? "eksempel" : `${g.eksempler.length} eksempler`}`
+                            : "Vis id"}
+                        </summary>
+                        <ul className="mt-1 space-y-0.5 pl-4">
+                          {g.eksempler.map((e) => (
+                            <li key={e} className="break-all font-mono">
+                              {e}
+                            </li>
+                          ))}
+                        </ul>
+                        {g.varianter > g.eksempler.length && (
+                          <p className="mt-1 pl-4">… og {g.varianter - g.eksempler.length} flere.</p>
+                        )}
+                      </details>
+                    )}
                   </li>
                 ))}
               </ul>

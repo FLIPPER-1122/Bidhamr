@@ -20,6 +20,7 @@ import { bankKontoRettet, spejlReview, udbetalForKonto, udbetalVentende } from "
 import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/betaling";
 import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
 import { alarmPrTilfaelde } from "@/lib/betaling/driftTilfaelde";
+import { erFremmedTestCharge, erFremmedTestobjekt, logFremmedTestdata, piHenvisning } from "@/lib/betaling/fremmedeTestdata";
 
 // Stripe-webhook for betalingen (destination charges - den eneste model).
 // Spejler Stripes status i databasen - Stripe er sandheden om penge.
@@ -129,6 +130,12 @@ async function alarmUkendtBetaling(pi: Stripe.PaymentIntent): Promise<void> {
         .limit(1);
       if ((data ?? []).length > 0) return;
     }
+    // Stripe-testtilstand: testdatabasens/pengetestenes betaling på den delte
+    // testkonto - ikke vores (fremmedeTestdata.ts). Ingen alarm.
+    if (await erFremmedTestobjekt(piHenvisning(pi))) {
+      logFremmedTestdata("PaymentIntent", pi.id);
+      return;
+    }
     await alarmPrTilfaelde({
       noegle: `ukendt-pi:${pi.id}`,
       kilde: "webhook",
@@ -160,7 +167,9 @@ async function haandter(event: Stripe.Event): Promise<void> {
       }
       const pi = await getStripe().paymentIntents.retrieve(fraEvent.id);
       const resultat = await spejlPaymentIntent(pi);
-      if (resultat === "ukendt" && pi.status === "succeeded") {
+      if (resultat === "ukendt" && pi.status === "succeeded" && (await erFremmedTestobjekt(piHenvisning(pi)))) {
+        logFremmedTestdata("PaymentIntent", pi.id);
+      } else if (resultat === "ukendt" && pi.status === "succeeded") {
         await alarmPrTilfaelde({
           noegle: `ukendt-pi:${pi.id}`,
           kilde: "webhook",
@@ -178,7 +187,9 @@ async function haandter(event: Stripe.Event): Promise<void> {
       const fraEvent = event.data.object as Stripe.Charge;
       if (!fraEvent.payment_intent || !fraEvent.transfer_data?.destination) return;
       const resultat = await spejlDestinationCharge(fraEvent.id);
-      if (resultat === "ukendt" && event.type === "charge.succeeded") {
+      if (resultat === "ukendt" && event.type === "charge.succeeded" && (await erFremmedTestCharge(fraEvent))) {
+        logFremmedTestdata("Charge", fraEvent.id);
+      } else if (resultat === "ukendt" && event.type === "charge.succeeded") {
         await alarmPrTilfaelde({
           noegle: `ukendt-charge:${fraEvent.id}`,
           kilde: "webhook",
