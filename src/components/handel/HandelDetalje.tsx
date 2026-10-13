@@ -374,6 +374,7 @@ export default async function HandelDetalje({
       beloeb_oere?: number | null;
       label_fejl?: string | null;
       refusion_aarsag?: string | null;
+      afsender?: Record<string, string | null> | null;
     } | null;
     if (erKoeber && m?.rolle === "koeber") {
       returfragt = {
@@ -383,12 +384,9 @@ export default async function HandelDetalje({
         refusionAarsag: m.refusion_aarsag ?? null,
         kanSende: m.sag?.kode === "ok",
       };
-      // Køberens gemte adresse (RLS: kun egen række) - ellers profilens navn.
-      const { data: gemt } = m.id
-        ? await supabase.from("returfragt_betalinger").select("afsender").eq("id", m.id).maybeSingle<{ afsender: Record<string, string | null> | null }>()
-        : { data: null };
+      // Køberens gemte adresse (fra min_returfragt) - ellers profilens navn.
       const { data: mig } = await supabase.from("users").select("navn").eq("id", user.id).maybeSingle<{ navn: string | null }>();
-      const g = gemt?.afsender ?? null;
+      const g = m.afsender ?? null;
       const tlf = g?.telefon ?? "";
       returAfsender = {
         navn: g?.navn ?? mig?.navn ?? "",

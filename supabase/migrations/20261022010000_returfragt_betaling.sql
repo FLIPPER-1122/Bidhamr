@@ -107,7 +107,7 @@ create table if not exists public.returfragt_betalinger (
   constraint returfragt_beloeb_check check (beloeb_oere between 300 and 1000000),
   constraint returfragt_valuta_check check (valuta = 'dkk'),
   constraint returfragt_refusion_aarsag_check check (
-    refusion_aarsag is null or refusion_aarsag in ('label_umulig', 'ikke_noedvendig', 'beloeb', 'staff')),
+    refusion_aarsag is null or refusion_aarsag in ('label_umulig', 'ikke_noedvendig', 'beloeb', 'staff', 'ekstern')),
   constraint returfragt_betalt_check check (
     status not in ('betalt', 'refunderes', 'refunderet') or betalt_kl is not null),
   constraint returfragt_refunderet_check check (status <> 'refunderet' or refunderet_kl is not null),
@@ -170,7 +170,17 @@ drop policy if exists returfragt_select_egen on public.returfragt_betalinger;
 create policy returfragt_select_egen on public.returfragt_betalinger
   for select to authenticated using (koeber_id = (select auth.uid()));
 revoke all on public.returfragt_betalinger from public, anon, authenticated, service_role;
-grant select on public.returfragt_betalinger to authenticated, service_role;
+grant select on public.returfragt_betalinger to service_role;
+-- Køberen: kun de felter, hjemmesiden og appen viser (ikke interne fejl,
+-- Stripe-id'er, staff-noter eller forsøgstællere).
+grant select (id, trade_id, status, beloeb_oere, afsender, betalt_kl, label_klar_kl, refunderet_kl, refusion_aarsag)
+  on public.returfragt_betalinger to authenticated;
+
+-- Genskab check'en på refusion_aarsag (tabellen kan være oprettet af en
+-- tidligere udgave af filen på testdatabasen).
+alter table public.returfragt_betalinger drop constraint if exists returfragt_refusion_aarsag_check;
+alter table public.returfragt_betalinger add constraint returfragt_refusion_aarsag_check check (
+  refusion_aarsag is null or refusion_aarsag in ('label_umulig', 'ikke_noedvendig', 'beloeb', 'staff', 'ekstern'));
 
 -- ===========================================================================
 -- 2. Sagen: må køberen sende varen retur nu?
@@ -454,6 +464,11 @@ language plpgsql security definer set search_path = '' as $fn$
 declare
   rf record;
 begin
+  -- En forsendelse kan aldrig skifte til eller fra retur (så vagten ikke kan
+  -- omgås ved at lave en udgående om til en returlabel).
+  if tg_op = 'UPDATE' and new.type is distinct from old.type and 'retur' in (new.type, old.type) then
+    raise exception 'returfragt_type: en forsendelse kan ikke skifte type til eller fra retur' using errcode = 'BHR04';
+  end if;
   if new.type <> 'retur' then return new; end if;
   if tg_op = 'INSERT' then
     select r.id, r.forsendelse_id, r.label_forsoeg into rf
@@ -489,12 +504,19 @@ begin
        set label_klar_kl = coalesce(label_klar_kl, now()), label_brugerfejl = null, label_naeste_kl = null
      where id = rf.id;
   end if;
+  -- Returkoden er annulleret: køberen kan få en ny kode uden at betale igen
+  -- (og staff kan refundere returfragten).
+  if new.status = 'annulleret' and old.status <> 'annulleret' then
+    update public.returfragt_betalinger
+       set label_klar_kl = null, label_naeste_kl = null
+     where forsendelse_id = new.id and status = 'betalt';
+  end if;
   return new;
 end;
 $fn$;
 revoke all on function public.forsendelser_returfragt_vagt() from public, anon, authenticated;
 drop trigger if exists forsendelser_returfragt_vagt on public.forsendelser;
-create trigger forsendelser_returfragt_vagt before insert or update of status on public.forsendelser
+create trigger forsendelser_returfragt_vagt before insert or update of status, type on public.forsendelser
   for each row execute function public.forsendelser_returfragt_vagt();
 
 -- Efter INSERT (vagten har godkendt): den betalte række får forsendelsens id.
@@ -514,6 +536,7 @@ begin
 end;
 $fn$;
 revoke all on function public.forsendelser_returfragt_tilknyt() from public, anon, authenticated;
+-- (triggerfunktion - ingen kan kalde den direkte)
 drop trigger if exists forsendelser_returfragt_tilknyt on public.forsendelser;
 create trigger forsendelser_returfragt_tilknyt after insert on public.forsendelser
   for each row execute function public.forsendelser_returfragt_tilknyt();
@@ -535,6 +558,19 @@ begin
    where id = p_id and status = 'betalt' and label_klar_kl is null
    returning label_fejl_antal into n;
   return coalesce(n, 0);
+end;
+$fn$;
+
+-- Køberens adresse mangler: ingen fejl hos fragtfirmaet, så det tæller ikke
+-- som et forsøg (kun 48-timersgrænsen gælder). Nyt forsøg om 15 min.
+create or replace function public.returfragt_label_venter(p_id uuid, p_brugerfejl text)
+returns boolean
+language plpgsql security definer set search_path = '' as $fn$
+begin
+  update public.returfragt_betalinger
+     set label_brugerfejl = left(p_brugerfejl, 500), label_naeste_kl = now() + interval '15 minutes'
+   where id = p_id and status = 'betalt' and label_klar_kl is null;
+  return found;
 end;
 $fn$;
 
@@ -661,11 +697,86 @@ begin
      where id = rf.id;
     return 'markeret';
   end if;
+  -- Nyt forsøg = ny idempotency key (ellers giver Stripe den fejlede tilbage).
   update public.returfragt_betalinger
      set status = 'refunderes', refunderet_kl = null, stripe_refund_id = null,
+         refusion_forsoeg = refusion_forsoeg + 1,
          refusion_sidste_fejl = left(p_fejl, 500), refusion_naeste_kl = now() + interval '5 minutes'
    where id = rf.id;
   return 'genaabnet';
+end;
+$fn$;
+
+-- charge.refunded på returfragtens charge (fx en refusion i Stripe-
+-- dashboardet, eller vores egen, før resultatet er gemt). p_fuld: chargen er
+-- helt refunderet. Fuld: rækken bliver 'refunderet' (en returkode kan
+-- derefter hverken laves eller gemmes - vagten kræver 'betalt'); var det ikke
+-- BidHamrs egen refusion, markeres staff. Delvis: kun staff.
+-- 'refunderet' | 'allerede' | 'markeret' | 'ukendt'
+create or replace function public.returfragt_registrer_charge_refusion(p_charge text, p_refund text, p_fuld boolean)
+returns text
+language plpgsql security definer set search_path = '' as $fn$
+declare
+  rf record;
+  v_note text;
+begin
+  select r.id, r.status, r.label_klar_kl into rf
+    from public.returfragt_betalinger r where r.stripe_charge_id = p_charge for update;
+  if rf.id is null then return 'ukendt'; end if;
+  if rf.status = 'refunderet' then return 'allerede'; end if;
+  if rf.status not in ('betalt', 'refunderes') then return 'ukendt'; end if;
+  if not p_fuld then
+    update public.returfragt_betalinger
+       set kraever_opmaerksomhed = true,
+           opmaerksomhed_tekst = left(concat_ws(E'\n', opmaerksomhed_tekst,
+             'Returfragten er delvist refunderet hos Stripe uden om BidHamr - kontrollér den.'), 4000)
+     where id = rf.id;
+    return 'markeret';
+  end if;
+  if rf.status = 'betalt' then
+    v_note := case when rf.label_klar_kl is not null
+                   then 'Returfragten er refunderet hos Stripe uden om BidHamr, men køberen har en returkode - vurdér returen.'
+                   else 'Returfragten er refunderet hos Stripe uden om BidHamr - der laves ingen returkode.' end;
+  end if;
+  update public.returfragt_betalinger
+     set status = 'refunderet', refunderet_kl = now(), stripe_refund_id = coalesce(stripe_refund_id, p_refund),
+         refusion_aarsag = coalesce(refusion_aarsag, 'ekstern'), refusion_anmodet_kl = coalesce(refusion_anmodet_kl, now()),
+         kraever_opmaerksomhed = kraever_opmaerksomhed or v_note is not null,
+         opmaerksomhed_tekst = case when v_note is null then opmaerksomhed_tekst
+                                    else left(concat_ws(E'\n', opmaerksomhed_tekst, v_note), 4000) end
+   where id = rf.id;
+  return 'refunderet';
+end;
+$fn$;
+
+-- Staff: "Refundér returfragt" (Admin -> sagen). Kun admin og chef, ikke
+-- inhabile (part i handlen eller har handlet med en af parterne). Kun når
+-- der ikke er en aktiv returkode (en annulleret kode er ok). Claimer
+-- refusionen og logger i moderation_log i samme transaktion; selve
+-- refusionen hos Stripe laver serveren bagefter (refunderReturfragt), og
+-- cron'en prøver igen, hvis den fejler.
+-- 'ok' | 'ingen_adgang' | 'inhabil' | 'begrundelse_mangler' | 'ikke_fundet' |
+-- 'forkert_status' | 'label_findes' | 'i_gang'
+create or replace function public.returfragt_staff_refusion(p_staff uuid, p_id uuid, p_begrundelse text)
+returns text
+language plpgsql security definer set search_path = '' as $fn$
+declare
+  v_grund text := nullif(btrim(coalesce(p_begrundelse, '')), '');
+  rf record;
+  t  record;
+  v_kode text;
+begin
+  if p_staff is null or not public.staff_chat_har_rolle(p_staff, 'admin') then return 'ingen_adgang'; end if;
+  if v_grund is null then return 'begrundelse_mangler'; end if;
+  select r.id, r.trade_id, r.koeber_id, r.status into rf from public.returfragt_betalinger r where r.id = p_id;
+  if rf.id is null then return 'ikke_fundet'; end if;
+  select tr.buyer_id, tr.seller_id into t from public.trades tr where tr.id = rf.trade_id;
+  if public.penge_inhabil(p_staff, t.buyer_id, t.seller_id) then return 'inhabil'; end if;
+  v_kode := public.returfragt_refusion_claim(p_id, 'staff');
+  if v_kode <> 'ok' then return v_kode; end if;
+  insert into public.moderation_log (medarbejder_id, handling, maal_type, maal_id, bruger_id, aarsag)
+  values (p_staff, 'returfragt_refunderet', 'handel', rf.trade_id, rf.koeber_id, left(v_grund, 1000));
+  return 'ok';
 end;
 $fn$;
 
@@ -680,12 +791,14 @@ $fn$;
 --   'refunder'  betalt uden returkode, og den kan ikke laves (5 fejl, 48 t,
 --               eller sagen kræver ikke længere retur)
 --   'refusion'  refusionen er claimet, men ikke gennemført
-create or replace function public.returfragt_cron(p_graense integer default 20)
+drop function if exists public.returfragt_cron(integer);
+create or replace function public.returfragt_cron(p_graense integer default 20, p_labels integer default 2)
 returns table (id uuid, handling text)
 language plpgsql security definer set search_path = '' as $fn$
 #variable_conflict use_column
 declare
   v_graense integer := least(greatest(coalesce(p_graense, 20), 1), 100);
+  v_labels  integer := least(greatest(coalesce(p_labels, 2), 0), 20);
 begin
   return query
   with k as (
@@ -698,7 +811,10 @@ begin
              when r.status = 'betalt' and r.label_klar_kl is null then 'label'
              when r.status = 'afventer' and public.returfragt_sag(r.trade_id)->>'kode' <> 'ok' then 'annuller'
              when r.status in ('afventer', 'behandles') and r.stripe_payment_intent_id is not null then 'synk'
-           end as handling
+           end as handling,
+           -- Penge og returkoder før synk af opgivne betalinger.
+           case when r.status in ('refunderes', 'betalt') then 0 else 1 end as prio,
+           coalesce(r.label_naeste_kl, r.refusion_naeste_kl, r.synket_kl, r.oprettet_kl) as kl
       from public.returfragt_betalinger r
      where r.status in ('afventer', 'behandles', 'betalt', 'refunderes')
        and (
@@ -710,23 +826,32 @@ begin
              and r.betalt_kl <= now() - interval '2 minutes')
          or (r.status in ('afventer', 'behandles')
              and r.opdateret <= now() - interval '15 minutes'
-             and (r.synket_kl is null or r.synket_kl <= now() - interval '15 minutes')
+             -- Opgivne betalinger: hvert 15. minut det første døgn, derefter hver 6. time.
+             and (r.synket_kl is null
+                  or r.synket_kl <= now() - case when r.oprettet_kl > now() - interval '24 hours'
+                                                 then interval '15 minutes' else interval '6 hours' end)
              -- Uden PaymentIntent er der intet at synke (køberen har kun
              -- åbnet betalingen) - kun annullering, hvis sagen er ændret.
              and (r.stripe_payment_intent_id is not null
                   or (r.status = 'afventer' and public.returfragt_sag(r.trade_id)->>'kode' <> 'ok')))
        )
-     order by coalesce(r.synket_kl, r.label_naeste_kl, r.refusion_naeste_kl, r.oprettet_kl)
+     order by prio, kl
      limit v_graense
      for update of r skip locked
+  ), valgt as (
+    -- Kun de label-rækker, kørslen faktisk tager (DAO er langsom).
+    select k.id, k.handling,
+           row_number() over (partition by k.handling order by k.prio, k.kl) as nr
+      from k
+     where k.handling is not null
   ), u as (
     update public.returfragt_betalinger x
-       set synket_kl = case when k.handling in ('synk', 'annuller') then now() else x.synket_kl end,
-           label_naeste_kl = case when k.handling = 'label' then now() + interval '15 minutes' else x.label_naeste_kl end,
-           refusion_naeste_kl = case when k.handling = 'refusion' then now() + interval '10 minutes' else x.refusion_naeste_kl end
-      from k
-     where x.id = k.id and k.handling is not null
-    returning x.id, k.handling
+       set synket_kl = case when v.handling in ('synk', 'annuller') then now() else x.synket_kl end,
+           label_naeste_kl = case when v.handling = 'label' then now() + interval '15 minutes' else x.label_naeste_kl end,
+           refusion_naeste_kl = case when v.handling = 'refusion' then now() + interval '10 minutes' else x.refusion_naeste_kl end
+      from valgt v
+     where x.id = v.id and (v.handling <> 'label' or v.nr <= v_labels)
+    returning x.id, v.handling
   )
   select u.id, u.handling from u;
 end;
@@ -738,7 +863,7 @@ $fn$;
 -- supabase.rpc("min_returfragt", { p_trade }) ->
 --   køberen: { rolle: 'koeber', sag: {kode, til_kl?}, id?, status?, beloeb_oere,
 --              betalt_kl?, label_klar: bool, label_fejl?, refunderet_kl?,
---              refusion_aarsag? }  (beloeb_oere er prisen, også før betaling)
+--              refusion_aarsag?, afsender? }  (beloeb_oere er prisen, også før betaling)
 --   sælgeren: { rolle: 'saelger', retur_paa_vej: bool }
 --   ellers null.
 create or replace function public.min_returfragt(p_trade uuid)
@@ -784,7 +909,9 @@ begin
     'label_klar', rf.label_klar_kl is not null,
     'label_fejl', case when rf.status = 'betalt' and rf.label_klar_kl is null then rf.label_brugerfejl end,
     'refunderet_kl', rf.refunderet_kl,
-    'refusion_aarsag', rf.refusion_aarsag);
+    'refusion_aarsag', rf.refusion_aarsag,
+    -- Køberens egen adresse (forudfylder formularen).
+    'afsender', rf.afsender);
 end;
 $fn$;
 
@@ -911,6 +1038,35 @@ end;
 $fn$;
 
 -- ===========================================================================
+-- 9b. moderation_log: handlingen 'returfragt_refunderet' (maal_type 'handel')
+-- ===========================================================================
+do $do$
+declare
+  v_navn text;
+  v_kol  text;
+  v_ny   text;
+  v_def  text;
+  v_vals text[];
+begin
+  foreach v_navn in array array['moderation_log_handling_check', 'moderation_log_maal_type_check'] loop
+    v_kol := case when v_navn = 'moderation_log_handling_check' then 'handling' else 'maal_type' end;
+    v_ny := case when v_navn = 'moderation_log_handling_check' then 'returfragt_refunderet' else 'handel' end;
+    select pg_get_constraintdef(c.oid) into v_def
+      from pg_constraint c where c.conrelid = 'public.moderation_log'::regclass and c.conname = v_navn;
+    -- Ingen CHECK (eller værdien er der allerede): intet at gøre.
+    if v_def is null or v_def like '%''' || v_ny || '''%' then continue; end if;
+    v_vals := array(
+      select distinct x from (
+        select btrim(unnest(string_to_array(btrim(m[1], '{}'), ',')), ' "') as x
+          from regexp_matches(v_def, '''([^'']+)''', 'g') as m
+        union select v_ny) s
+      where x <> '' order by 1);
+    execute format('alter table public.moderation_log drop constraint %I', v_navn);
+    execute format('alter table public.moderation_log add constraint %I check (%I = any (%L::text[]))', v_navn, v_kol, v_vals);
+  end loop;
+end $do$;
+
+-- ===========================================================================
 -- 10. Rettigheder: kun service role (min_returfragt også authenticated)
 -- ===========================================================================
 do $do$
@@ -930,7 +1086,10 @@ begin
     'public.returfragt_refusion_claim(uuid, text)',
     'public.returfragt_refusion_resultat(uuid, boolean, text, text)',
     'public.returfragt_refusion_fejlet(text, text)',
-    'public.returfragt_cron(integer)',
+    'public.returfragt_cron(integer, integer)',
+    'public.returfragt_label_venter(uuid, text)',
+    'public.returfragt_registrer_charge_refusion(text, text, boolean)',
+    'public.returfragt_staff_refusion(uuid, uuid, text)',
     'public.faktura_planlaeg_returfragt(integer)',
     'public.min_returfragt(uuid)'
   ] loop

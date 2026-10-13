@@ -424,14 +424,20 @@ export async function lavReturlabelEfterBetaling(
     const rf = await hentRaekke(admin, rfId);
     if (!rf || rf.status !== "betalt") return { fejl: "Betal returfragten, før returkoden kan laves." };
     if (rf.label_klar_kl && rf.forsendelse_id) return { ok: true, forsendelseId: rf.forsendelse_id };
+    // Kræver sagen ikke længere retur (fx genåbnet eller omgjort), laves der
+    // ingen kode: returfragten refunderes i stedet.
+    const { data: sag, error: sFejl } = await admin.rpc("returfragt_sag", { p_trade: rf.trade_id });
+    if (sFejl) throw new Error(`returfragt_sag: ${sFejl.message}`);
+    if ((sag as { kode?: string } | null)?.kode !== "ok") {
+      await claimOgRefunder(admin, rf);
+      return { fejl: "Sagen kræver ikke længere, at varen sendes retur. Returfragten sendes tilbage til dig." };
+    }
     if (!rf.afsender) {
-      // Ikke en fejl hos fragtfirmaet: køberen skal skrive sin adresse.
-      await admin.rpc("returfragt_label_fejlet", {
-        p_id: rf.id,
-        p_brugerfejl: "Skriv din adresse og dit mobilnummer, så laver vi returkoden.",
-        p_intern: "Køberens adresse mangler",
-      });
-      return { fejl: "Skriv din adresse og dit mobilnummer, så laver vi returkoden." };
+      // Ikke en fejl hos fragtfirmaet: køberen skal skrive sin adresse. Tæller
+      // ikke som et forsøg (kun 48-timersgrænsen gælder).
+      const tekst = "Skriv din adresse og dit mobilnummer, så laver vi returkoden.";
+      await admin.rpc("returfragt_label_venter", { p_id: rf.id, p_brugerfejl: tekst });
+      return { fejl: tekst };
     }
     const r = await opretReturForsendelse(rf.trade_id, rf.koeber_id, rf.afsender);
     if ("ok" in r) {
@@ -680,7 +686,8 @@ export async function koerReturfragtCron(): Promise<ReturfragtCronResultat | nul
   const r: ReturfragtCronResultat = { synket: 0, annulleret: 0, labels: 0, refunderet: 0, fejl: 0 };
   const start = Date.now();
   const admin = createAdminClient();
-  const { data, error } = await admin.rpc("returfragt_cron", { p_graense: 20 });
+  // Databasen reserverer kun LABELS_PR_KOERSEL label-rækker pr. kørsel.
+  const { data, error } = await admin.rpc("returfragt_cron", { p_graense: 20, p_labels: LABELS_PR_KOERSEL });
   if (error) {
     if (manglerTabel(error)) return null;
     throw new Error(`returfragt_cron: ${error.message}`);
@@ -688,7 +695,6 @@ export async function koerReturfragtCron(): Promise<ReturfragtCronResultat | nul
   const opgaver = (data ?? []) as { id: string; handling: string }[];
   if (opgaver.length === 0) return r;
   const stripe = getStripe();
-  let labels = 0;
   for (const k of opgaver) {
     try {
       const rf = await hentRaekke(admin, k.id);
@@ -712,8 +718,8 @@ export async function koerReturfragtCron(): Promise<ReturfragtCronResultat | nul
         if (aFejl) throw new Error(`returfragt_annuller: ${aFejl.message}`);
         r.annulleret++;
       } else if (k.handling === "label") {
-        if (labels >= LABELS_PR_KOERSEL || Date.now() - start > BUDGET_MS) continue;
-        labels++;
+        // Over budget: tages igen om 15 minutter (reservationen udløber).
+        if (Date.now() - start > BUDGET_MS) continue;
         const l = await lavReturlabelEfterBetaling(rf.id, "cron");
         if ("ok" in l) r.labels++;
       } else if (k.handling === "refunder") {
@@ -752,6 +758,63 @@ export async function spejlReturfragtRefusionsfejl(refund: Stripe.Refund): Promi
     });
   }
   return String(data);
+}
+
+// charge.refunded på en returfragt (fx refunderet i Stripe-dashboardet):
+// rækken markeres refunderet, så der aldrig laves en returkode bagefter.
+// Svar: kode eller null (ikke en returfragt).
+export async function spejlReturfragtChargeRefusion(charge: Stripe.Charge): Promise<string | null> {
+  const refusioner = (charge.refunds?.data ?? []).filter((r) => r.status !== "failed" && r.status !== "canceled");
+  const nyeste = refusioner.sort((a, b) => b.created - a.created)[0]?.id ?? null;
+  const { data, error } = await createAdminClient().rpc("returfragt_registrer_charge_refusion", {
+    p_charge: charge.id,
+    p_refund: nyeste,
+    p_fuld: charge.refunded === true,
+  });
+  if (error) {
+    if (manglerTabel(error)) return null;
+    throw new Error(`returfragt_registrer_charge_refusion: ${error.message}`);
+  }
+  const kode = String(data);
+  if (kode === "ukendt") return null;
+  if (kode === "markeret") {
+    await alarmPrTilfaelde({
+      noegle: `returfragt-delvis:${charge.id}`,
+      hvor: "betaling/returfragt",
+      fejl: `Returfragtens charge ${charge.id} er delvist refunderet hos Stripe uden om BidHamr. Kontrollér den.`,
+    });
+  }
+  return kode;
+}
+
+const STAFF_REFUSION_FEJL: Record<string, string> = {
+  ingen_adgang: "Kun admin og chef kan refundere returfragt.",
+  inhabil: "Du kan ikke behandle en handel, hvor du selv er køber eller sælger, eller hvor du har handlet med en af dem.",
+  begrundelse_mangler: "Skriv en begrundelse.",
+  ikke_fundet: "Returfragten findes ikke.",
+  forkert_status: "Returfragten er ikke betalt (eller er allerede refunderet).",
+  label_findes: "Køberen har en aktiv returkode. Annullér returkoden først.",
+  i_gang: "En returkode er ved at blive lavet. Prøv igen om 10 minutter.",
+};
+
+// Staff: "Refundér returfragt". staffId SKAL være verificeret (assertRole);
+// databasen tjekker rolle og inhabilitet igen og logger i moderation_log.
+export async function staffRefunderReturfragt(
+  staffId: string,
+  rfId: string,
+  begrundelse: string,
+): Promise<{ ok: true; kode: string } | { fejl: string }> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("returfragt_staff_refusion", {
+    p_staff: staffId,
+    p_id: rfId,
+    p_begrundelse: begrundelse,
+  });
+  if (error) throw new Error(`returfragt_staff_refusion: ${error.message}`);
+  const kode = String(data);
+  if (kode !== "ok") return { fejl: STAFF_REFUSION_FEJL[kode] ?? "Noget gik galt. Prøv igen om lidt." };
+  // Fejler Stripe-kaldet, prøver cron'en igen (status 'refunderes').
+  return { ok: true, kode: await refunderReturfragt(rfId) };
 }
 
 // Returfragt-rækken for en charge (indsigelse, afstemning). null = ikke vores.

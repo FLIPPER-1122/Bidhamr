@@ -9,6 +9,7 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  erKasseretReturfragtRefusion,
   erReturfragtRefusion,
   forventetReturfragtRefunderet,
   returfragtStatusAfviger,
@@ -22,6 +23,8 @@ const MIGRATION = readFileSync(
 const KOEBER = "00000000-0000-4000-8000-0000000000a1";
 const SAELGER = "00000000-0000-4000-8000-0000000000b1";
 const FREMMED = "00000000-0000-4000-8000-0000000000c1";
+const STAFF = "00000000-0000-4000-8000-0000000000d1";
+const MEDARBEJDER = "00000000-0000-4000-8000-0000000000d2";
 
 const STUB = `
 create role anon; create role authenticated; create role service_role;
@@ -31,8 +34,19 @@ create function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 grant usage on schema auth to anon, authenticated, service_role;
 grant execute on function auth.uid() to anon, authenticated, service_role;
-create table public.users (id uuid primary key, navn text);
-insert into public.users values ('${KOEBER}', 'Køber'), ('${SAELGER}', 'Sælger'), ('${FREMMED}', 'Fremmed');
+create table public.users (id uuid primary key, navn text, rolle text not null default 'bruger');
+insert into public.users values ('${KOEBER}', 'Køber', 'bruger'), ('${SAELGER}', 'Sælger', 'bruger'),
+  ('${FREMMED}', 'Fremmed', 'bruger'), ('${STAFF}', 'Admin', 'admin'), ('${MEDARBEJDER}', 'Medarbejder', 'medarbejder');
+create function public.staff_chat_har_rolle(p uuid, r text) returns boolean language sql as
+  $$ select exists (select 1 from public.users u where u.id = p and
+       case r when 'chef' then u.rolle = 'chef' when 'admin' then u.rolle in ('admin','chef') else u.rolle in ('medarbejder','admin','chef') end) $$;
+-- Stub: inhabil = part i handlen.
+create function public.penge_inhabil(p_m uuid, p_k uuid, p_s uuid) returns boolean language sql as
+  $$ select p_m = p_k or p_m = p_s $$;
+create table public.moderation_log (id uuid primary key default gen_random_uuid(), medarbejder_id uuid not null,
+  handling text not null, maal_type text not null, maal_id uuid not null, bruger_id uuid, aarsag text not null,
+  constraint moderation_log_handling_check check (handling = any (array['advarsel','sag_afgjort_koeber'])),
+  constraint moderation_log_maal_type_check check (maal_type = any (array['bruger','sag'])));
 create table public.auctions (id uuid primary key default gen_random_uuid(), titel text, pakkestoerrelse text,
   fragt_pakkeshop_oere bigint);
 create table public.trades (id uuid primary key default gen_random_uuid(), auction_id uuid references public.auctions(id),
@@ -139,6 +153,8 @@ describe("migrationen", () => {
              has_function_privilege('authenticated', 'public.min_returfragt(uuid)', 'execute') as auth_min,
              has_function_privilege('anon', 'public.min_returfragt(uuid)', 'execute') as anon_min,
              has_table_privilege('authenticated', 'public.returfragt_betalinger', 'select') as auth_sel,
+             has_column_privilege('authenticated', 'public.returfragt_betalinger', 'status', 'select') as auth_status,
+             has_column_privilege('authenticated', 'public.returfragt_betalinger', 'label_intern_fejl', 'select') as auth_intern,
              has_table_privilege('authenticated', 'public.returfragt_betalinger', 'insert') as auth_ins,
              has_table_privilege('service_role', 'public.returfragt_betalinger', 'insert') as sr_ins,
              has_table_privilege('service_role', 'public.returfragt_betalinger', 'update') as sr_upd,
@@ -149,7 +165,9 @@ describe("migrationen", () => {
       sr_start: true,
       auth_min: true,
       anon_min: false,
-      auth_sel: true,
+      auth_sel: false,
+      auth_status: true,
+      auth_intern: false,
       auth_ins: false,
       sr_ins: false,
       sr_upd: false,
@@ -310,17 +328,17 @@ describe("cron og refusion", () => {
     const h = await handel();
     const b = await betalt(h.tradeId);
     await db.query(`update public.returfragt_betalinger set betalt_kl = now() - interval '5 minutes' where id = $1`, [b.id]);
-    let k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(100)`);
+    let k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(100, 100)`);
     expect(k.rows.find((x) => x.id === b.id)?.handling).toBe("label");
     // Claimet: ikke igen med det samme.
-    k = await db.query(`select * from public.returfragt_cron(100)`);
+    k = await db.query(`select * from public.returfragt_cron(100, 100)`);
     expect(k.rows.find((x) => x.id === b.id)).toBeUndefined();
 
     await db.query(
       `update public.returfragt_betalinger set betalt_kl = now() - interval '49 hours', label_naeste_kl = null where id = $1`,
       [b.id],
     );
-    k = await db.query(`select * from public.returfragt_cron(100)`);
+    k = await db.query(`select * from public.returfragt_cron(100, 100)`);
     expect(k.rows.find((x) => x.id === b.id)?.handling).toBe("refunder");
     expect((await en<{ v: string }>(`select public.returfragt_refusion_claim($1, 'label_umulig') as v`, [b.id])).v).toBe("ok");
     expect((await en<{ v: string }>(`select public.returfragt_refusion_claim($1, 'label_umulig') as v`, [b.id])).v).toBe("forkert_status");
@@ -347,14 +365,14 @@ describe("cron og refusion", () => {
       expect((await en<{ v: number }>(`select public.returfragt_label_fejlet($1, 'Adressen blev afvist.', 'x') as v`, [b.id])).v).toBe(i);
     }
     await db.query(`update public.returfragt_betalinger set label_naeste_kl = null, betalt_kl = now() - interval '1 hour' where id = $1`, [b.id]);
-    let k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(100)`);
+    let k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(100, 100)`);
     expect(k.rows.find((x) => x.id === b.id)?.handling).toBe("refunder");
 
     const h2 = await handel();
     const b2 = await betalt(h2.tradeId);
     await db.query(`update public.returfragt_betalinger set betalt_kl = now() - interval '1 hour' where id = $1`, [b2.id]);
     await db.query(`update public.sager set status = 'afgjort_saelger' where id = $1`, [h2.sagId]);
-    k = await db.query(`select * from public.returfragt_cron(100)`);
+    k = await db.query(`select * from public.returfragt_cron(100, 100)`);
     expect(k.rows.find((x) => x.id === b2.id)?.handling).toBe("refunder");
   });
 
@@ -364,17 +382,17 @@ describe("cron og refusion", () => {
     await en(`select public.returfragt_gem_pi($1, 'pi_synk1', 0)`, [s.id]);
     await db.query(`alter table public.returfragt_betalinger disable trigger returfragt_laaste_felter`);
     await db.query(`update public.returfragt_betalinger set opdateret = now() - interval '20 minutes' where id = $1`, [s.id]);
-    let k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(100)`);
+    let k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(100, 100)`);
     expect(k.rows.find((x) => x.id === s.id)?.handling).toBe("synk");
 
     // Uden PaymentIntent og med sagen uændret: intet at gøre (sulter ikke køen).
     const h2 = await handel();
     const s2 = await start(h2.tradeId);
     await db.query(`update public.returfragt_betalinger set opdateret = now() - interval '20 minutes' where id = $1`, [s2.id]);
-    k = await db.query(`select * from public.returfragt_cron(100)`);
+    k = await db.query(`select * from public.returfragt_cron(100, 100)`);
     expect(k.rows.find((x) => x.id === s2.id)).toBeUndefined();
     await db.query(`update public.sager set status = 'lukket' where id = $1`, [h2.sagId]);
-    k = await db.query(`select * from public.returfragt_cron(100)`);
+    k = await db.query(`select * from public.returfragt_cron(100, 100)`);
     expect(k.rows.find((x) => x.id === s2.id)?.handling).toBe("annuller");
     await db.query(`alter table public.returfragt_betalinger enable trigger returfragt_laaste_felter`);
     expect((await en<{ v: boolean }>(`select public.returfragt_annuller($1) as v`, [s2.id])).v).toBe(true);
@@ -437,7 +455,13 @@ describe("RLS og visning", () => {
     expect(egne.n).toBe(1);
     const m = await j(`select public.min_returfragt('${h.tradeId}') as v`);
     expect(m).toMatchObject({ rolle: "koeber", status: "betalt", beloeb_oere: 4000, label_klar: false });
+    expect(m.afsender).toBeNull();
     await expect(db.query(`select public.returfragt_start('${h.tradeId}', '${KOEBER}')`)).rejects.toThrow(/permission denied/);
+    // Kun de viste felter - ikke interne fejl, Stripe-id'er eller staff-noter.
+    expect((await en<{ n: number }>(`select count(status)::int as n from public.returfragt_betalinger where trade_id = '${h.tradeId}'`)).n).toBe(1);
+    for (const kol of ["label_intern_fejl", "stripe_payment_intent_id", "opmaerksomhed_tekst", "koeber_id", "sidste_fejl"]) {
+      await expect(db.query(`select ${kol} from public.returfragt_betalinger`), kol).rejects.toThrow(/permission denied/);
+    }
     await expect(
       db.query(`update public.returfragt_betalinger set status = 'refunderet' where trade_id = '${h.tradeId}'`),
     ).rejects.toThrow(/permission denied/);
@@ -456,6 +480,105 @@ describe("RLS og visning", () => {
   });
 });
 
+describe("reviewer-rettelser", () => {
+  it("annulleret returkode: køberen kan få en ny uden at betale igen, og staff kan refundere", async () => {
+    const h = await handel();
+    const b = await betalt(h.tradeId);
+    const f1 = await en<{ id: string }>(`insert into public.forsendelser (trade_id, type) values ($1, 'retur') returning id`, [h.tradeId]);
+    await db.query(`update public.forsendelser set status = 'oprettet' where id = $1`, [f1.id]);
+    // Aktiv kode: staff kan ikke refundere.
+    expect((await en<{ v: string }>(`select public.returfragt_staff_refusion($1, $2, 'test') as v`, [STAFF, b.id])).v).toBe("label_findes");
+    await db.query(`update public.forsendelser set status = 'annulleret' where id = $1`, [f1.id]);
+    const rf = await en<{ label_klar_kl: string | null }>(`select label_klar_kl from public.returfragt_betalinger where id = $1`, [b.id]);
+    expect(rf.label_klar_kl).toBeNull();
+    // Ny kode uden ny betaling.
+    const f2 = await en<{ id: string }>(`insert into public.forsendelser (trade_id, type) values ($1, 'retur') returning id`, [h.tradeId]);
+    expect((await en<{ forsendelse_id: string }>(`select forsendelse_id from public.returfragt_betalinger where id = $1`, [b.id])).forsendelse_id).toBe(f2.id);
+    await db.query(`update public.forsendelser set status = 'annulleret' where id = $1`, [f2.id]);
+    // Rolle, begrundelse og inhabilitet.
+    expect((await en<{ v: string }>(`select public.returfragt_staff_refusion($1, $2, 'test') as v`, [MEDARBEJDER, b.id])).v).toBe("ingen_adgang");
+    expect((await en<{ v: string }>(`select public.returfragt_staff_refusion($1, $2, '  ') as v`, [STAFF, b.id])).v).toBe("begrundelse_mangler");
+    await db.query(`update public.users set rolle = 'admin' where id = $1`, [SAELGER]);
+    expect((await en<{ v: string }>(`select public.returfragt_staff_refusion($1, $2, 'test') as v`, [SAELGER, b.id])).v).toBe("inhabil");
+    await db.query(`update public.users set rolle = 'bruger' where id = $1`, [SAELGER]);
+    expect((await en<{ v: string }>(`select public.returfragt_staff_refusion($1, $2, 'Køberen sender selv') as v`, [STAFF, b.id])).v).toBe("ok");
+    const x = await en<{ status: string; refusion_aarsag: string }>(`select status, refusion_aarsag from public.returfragt_betalinger where id = $1`, [b.id]);
+    expect(x).toEqual({ status: "refunderes", refusion_aarsag: "staff" });
+    const log = await en<{ handling: string; maal_type: string; maal_id: string }>(
+      `select handling, maal_type, maal_id from public.moderation_log where medarbejder_id = $1`, [STAFF]);
+    expect(log).toEqual({ handling: "returfragt_refunderet", maal_type: "handel", maal_id: h.tradeId });
+  });
+
+  it("en forsendelse kan ikke skifte type til retur", async () => {
+    const h = await handel();
+    const f = await en<{ id: string }>(`select id from public.forsendelser where trade_id = $1 and type = 'udgaaende'`, [h.tradeId]);
+    await expect(db.query(`update public.forsendelser set type = 'retur' where id = $1`, [f.id])).rejects.toThrow(/returfragt_type/);
+  });
+
+  it("charge.refunded: fuld refusion uden om BidHamr -> refunderet, ingen ny kode; delvis -> staff", async () => {
+    const h = await handel();
+    const b = await betalt(h.tradeId);
+    const ch = `ch_x${b.pi}`;
+    expect((await en<{ v: string }>(`select public.returfragt_registrer_charge_refusion($1, 're_d', false) as v`, [ch])).v).toBe("markeret");
+    expect((await en<{ v: string }>(`select public.returfragt_registrer_charge_refusion($1, 're_d', true) as v`, [ch])).v).toBe("refunderet");
+    expect((await en<{ v: string }>(`select public.returfragt_registrer_charge_refusion($1, 're_d', true) as v`, [ch])).v).toBe("allerede");
+    const x = await en<{ status: string; refusion_aarsag: string; stripe_refund_id: string; kraever_opmaerksomhed: boolean }>(
+      `select status, refusion_aarsag, stripe_refund_id, kraever_opmaerksomhed from public.returfragt_betalinger where id = $1`, [b.id]);
+    expect(x).toEqual({ status: "refunderet", refusion_aarsag: "ekstern", stripe_refund_id: "re_d", kraever_opmaerksomhed: true });
+    await expect(db.query(`insert into public.forsendelser (trade_id, type) values ($1, 'retur')`, [h.tradeId])).rejects.toThrow(/returfragt_ikke_betalt/);
+    expect((await en<{ v: string }>(`select public.returfragt_registrer_charge_refusion('ch_ukendt', null, true) as v`)).v).toBe("ukendt");
+  });
+
+  it("manglende adresse tæller ikke som et forsøg", async () => {
+    const h = await handel();
+    const b = await betalt(h.tradeId);
+    expect((await en<{ v: boolean }>(`select public.returfragt_label_venter($1, 'Skriv din adresse') as v`, [b.id])).v).toBe(true);
+    const x = await en<{ label_fejl_antal: number; label_brugerfejl: string }>(
+      `select label_fejl_antal, label_brugerfejl from public.returfragt_betalinger where id = $1`, [b.id]);
+    expect(x).toEqual({ label_fejl_antal: 0, label_brugerfejl: "Skriv din adresse" });
+  });
+
+  it("cron: kun p_labels label-rækker reserveres, label/refusion før synk, opgivne synkes sjældnere", async () => {
+    // Ryd køen fra de andre tests (sæt alt i fremtiden).
+    await db.query(`alter table public.returfragt_betalinger disable trigger returfragt_laaste_felter`);
+    await db.query(`update public.returfragt_betalinger set label_naeste_kl = now() + interval '1 day', refusion_naeste_kl = now() + interval '1 day', synket_kl = now() + interval '1 day'`);
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const h = await handel();
+      const b = await betalt(h.tradeId);
+      await db.query(`update public.returfragt_betalinger set betalt_kl = now() - interval '5 minutes' where id = $1`, [b.id]);
+      ids.push(b.id);
+    }
+    const hs = await handel();
+    const s1 = await start(hs.tradeId);
+    await en(`select public.returfragt_gem_pi($1, 'pi_opgivet1', 0)`, [s1.id]);
+    await db.query(`update public.returfragt_betalinger set opdateret = now() - interval '20 minutes', oprettet_kl = now() - interval '2 days', synket_kl = now() - interval '1 hour' where id = $1`, [s1.id]);
+    let k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(2, 1)`);
+    // Grænse 2: label/refusion går før synk; kun 1 label reserveres.
+    expect(k.rows.filter((x) => x.handling === "label")).toHaveLength(1);
+    expect(k.rows.find((x) => x.id === s1.id)).toBeUndefined();
+    const reserveret = await en<{ n: number }>(
+      `select count(*)::int as n from public.returfragt_betalinger where id = any($1) and label_naeste_kl > now()`, [ids]);
+    expect(reserveret.n).toBe(1);
+    // Opgivet (over et døgn gammel): synket for 1 time siden -> ikke nu; for 7 timer siden -> nu.
+    k = await db.query(`select * from public.returfragt_cron(100, 0)`);
+    expect(k.rows.find((x) => x.id === s1.id)).toBeUndefined();
+    await db.query(`update public.returfragt_betalinger set synket_kl = now() - interval '7 hours', opdateret = now() - interval '20 minutes' where id = $1`, [s1.id]);
+    k = await db.query(`select * from public.returfragt_cron(100, 0)`);
+    expect(k.rows.find((x) => x.id === s1.id)?.handling).toBe("synk");
+    await db.query(`alter table public.returfragt_betalinger enable trigger returfragt_laaste_felter`);
+  });
+
+  it("genåbnet refusion får et nyt forsøgsnummer (ny idempotency key)", async () => {
+    const h = await handel();
+    const b = await betalt(h.tradeId);
+    await en(`select public.returfragt_refusion_claim($1, 'label_umulig')`, [b.id]);
+    await en(`select public.returfragt_refusion_resultat($1, true, 're_g1', null)`, [b.id]);
+    expect((await en<{ v: string }>(`select public.returfragt_refusion_fejlet('re_g1', 'x') as v`)).v).toBe("genaabnet");
+    expect((await en<{ n: number }>(`select refusion_forsoeg as n from public.returfragt_betalinger where id = $1`, [b.id])).n).toBe(1);
+  });
+});
+
 describe("afstemningens regler for returfragt", () => {
   it("forventet refunderet og status", () => {
     expect(forventetReturfragtRefunderet({ status: "betalt", beloeb_oere: 4000, modtaget_oere: 4000 })).toBe(0);
@@ -468,5 +591,8 @@ describe("afstemningens regler for returfragt", () => {
     expect(erReturfragtRefusion({ id: "re_1" }, { id: "x", stripe_refund_id: "re_1" })).toBe(true);
     expect(erReturfragtRefusion({ id: "re_2", metadata: { type: "returfragt", returfragt_id: "x" } }, { id: "x", stripe_refund_id: null })).toBe(true);
     expect(erReturfragtRefusion({ id: "re_3", metadata: {} }, { id: "x", stripe_refund_id: "re_1" })).toBe(false);
+    expect(erKasseretReturfragtRefusion({ metadata: { type: "returfragt", kasseret: "ja", returfragt_id: "x" } }, "x")).toBe(true);
+    expect(erKasseretReturfragtRefusion({ metadata: { type: "returfragt", returfragt_id: "x" } }, "x")).toBe(false);
+    expect(erKasseretReturfragtRefusion({ metadata: { type: "returfragt", kasseret: "ja", returfragt_id: "x" } }, null)).toBe(false);
   });
 });

@@ -185,6 +185,16 @@ export async function annullerAabneBetalinger(): Promise<Annullering> {
     if (side.length < SIDE) break;
   }
 
+  // Returfragt i sager (returfragt.ts): åbne returfragt-PaymentIntents
+  // annulleres på samme måde (annullerAabneReturfragter).
+  if (!stoppetTidligt) {
+    const rf = await annullerAabneReturfragter(Math.max(0, MAKS - set), start);
+    res.annulleret += rf.annulleret;
+    res.fejlet += rf.fejlet;
+    res.igang += rf.igang;
+    res.tilbage = Math.max(res.tilbage, rf.tilbage);
+  }
+
   if (stoppetTidligt) {
     const { count } = await admin
       .from("betalinger")
@@ -193,6 +203,74 @@ export async function annullerAabneBetalinger(): Promise<Annullering> {
       .not("stripe_payment_intent_id", "is", null)
       .gt("id", efterId ?? "00000000-0000-0000-0000-000000000000");
     res.tilbage = Math.max(1, count ?? 1);
+  }
+  return res;
+}
+
+// Åbne returfragt-PaymentIntents (status 'afventer') annulleres hos Stripe
+// (idempotency key) og kasseres i databasen (returfragt_nulstil_pi, pi_forsoeg
+// + 1) - næste start efter stoppet laver en ny. Mangler tabellen
+// (migrationen er ikke kørt), springes det over. Kaster aldrig.
+export async function annullerAabneReturfragter(maks = MAKS, start = Date.now()): Promise<Annullering> {
+  const res: Annullering = { annulleret: 0, fejlet: 0, igang: 0, tilbage: 0 };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("returfragt_betalinger")
+    .select("id, stripe_payment_intent_id")
+    .eq("status", "afventer")
+    .not("stripe_payment_intent_id", "is", null)
+    .order("id", { ascending: true })
+    .limit(Math.max(1, maks));
+  if (error) {
+    if (!/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) {
+      console.error("annullerAabneReturfragter: kunne ikke hente returfragter:", error.message);
+      res.fejlet++;
+    }
+    return res;
+  }
+  const raekker = (data ?? []) as { id: string; stripe_payment_intent_id: string }[];
+  if (raekker.length === 0) return res;
+  const stripe = getStripe();
+  let n = 0;
+  for (const r of raekker) {
+    if (n >= maks || Date.now() - start > TIDSGRAENSE_MS) {
+      res.tilbage = Math.max(1, raekker.length - n);
+      break;
+    }
+    n++;
+    const piId = r.stripe_payment_intent_id;
+    try {
+      let pi = await stripe.paymentIntents.retrieve(piId);
+      if (pi.status !== "canceled") {
+        if (!AABNE.includes(pi.status)) {
+          res.igang++;
+          continue;
+        }
+        try {
+          pi = await stripe.paymentIntents.cancel(
+            piId,
+            { cancellation_reason: "abandoned" },
+            { idempotencyKey: `bidhamr-noedstop-annuller-${piId}` },
+          );
+        } catch (err) {
+          pi = await stripe.paymentIntents.retrieve(piId);
+          if (pi.status !== "canceled") {
+            if (pi.status === "succeeded" || pi.status === "processing") res.igang++;
+            else {
+              console.error("annullerAabneReturfragter: kunne ikke annullere:", piId, err);
+              res.fejlet++;
+            }
+            continue;
+          }
+        }
+      }
+      const { error: nFejl } = await admin.rpc("returfragt_nulstil_pi", { p_id: r.id, p_pi: piId });
+      if (nFejl) throw new Error(`returfragt_nulstil_pi: ${nFejl.message}`);
+      res.annulleret++;
+    } catch (err) {
+      console.error("annullerAabneReturfragter:", piId, err);
+      res.fejlet++;
+    }
   }
   return res;
 }

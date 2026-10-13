@@ -24,6 +24,7 @@ import { erFremmedTestCharge, erFremmedTestobjekt, logFremmedTestdata, piHenvisn
 import {
   erReturfragtMetadata,
   returfragtForPi,
+  spejlReturfragtChargeRefusion,
   spejlReturfragtPi,
   spejlReturfragtRefusionsfejl,
 } from "@/lib/betaling/returfragt";
@@ -242,12 +243,14 @@ async function haandter(event: Stripe.Event): Promise<void> {
       // Hent den aktuelle charge (events kan komme i forkert rækkefølge).
       const fraEvent = event.data.object as Stripe.Charge;
       if (!fraEvent.payment_intent) return;
-      // Returfragt: refusionen registreres af returfragt.ts selv; en refusion
-      // uden om BidHamr fanges af den daglige afstemning.
+      // Returfragt: rækken spejles (også en refusion i dashboardet), så der
+      // aldrig laves en returkode på en refunderet returfragt.
       {
         const piRef = typeof fraEvent.payment_intent === "string" ? fraEvent.payment_intent : fraEvent.payment_intent.id;
         if (await returfragtForPi(piRef)) {
-          console.log(`Stripe ${event.type} (returfragt): ${fraEvent.id}`);
+          const frisk = await getStripe().charges.retrieve(fraEvent.id, { expand: ["refunds"] });
+          const r = await spejlReturfragtChargeRefusion(frisk);
+          console.log(`Stripe ${event.type} (returfragt): ${fraEvent.id} -> ${r ?? "kasseret/ukendt"}`);
           return;
         }
       }

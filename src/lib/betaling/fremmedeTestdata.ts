@@ -21,7 +21,7 @@ import "server-only";
 //          det ikke henviser til noget, DENNE database kender:
 //            betaling   (metadata betaling_id/bidhamr_daekker = betalinger.id)
 //            betaling   (PaymentIntent, også kasseret, eller charge)
-//            returfragt (returfragt_betalinger: PaymentIntent eller charge)
+//            returfragt (returfragt_betalinger: PaymentIntent, også kasseret, eller charge)
 //            afvigelse  (betaling_afvigelser: PaymentIntent eller charge)
 //            udbetaling (metadata saelger_udbetaling_id)
 //            Connect-konto (betalingsprofiler, betalinger, saelger_udbetalinger)
@@ -171,6 +171,19 @@ export async function hentKendte(
   // Returfragt i sager (betaling til platformen, returfragt.ts).
   await findesHvisTabel(admin, "returfragt_betalinger", "stripe_payment_intent_id", pis, k.pis);
   await findesHvisTabel(admin, "returfragt_betalinger", "stripe_charge_id", charges, k.charges);
+  // Kasserede returfragt-PaymentIntents (refunderes automatisk, hvis de betales).
+  for (const del of bidder(pis)) {
+    if (!del.length) continue;
+    const { data, error } = await admin
+      .from("returfragt_betalinger")
+      .select("tidligere_payment_intents")
+      .overlaps("tidligere_payment_intents", del);
+    if (error) {
+      if (/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) break;
+      throw new Error(`kendte (returfragt tidligere_payment_intents): ${error.message}`);
+    }
+    for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) k.pis.add(x);
+  }
   await findes(admin, "betalinger", "stripe_charge_id", charges, k.charges);
   await findes(admin, "betaling_afvigelser", "stripe_charge_id", charges, k.charges);
   await findes(admin, "betalingsprofiler", "stripe_account_id", konti, k.konti);

@@ -26,6 +26,7 @@ import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
 import SagHandlinger from "@/components/admin/sager/SagHandlinger";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { bidhamrDaekkerRefusion } from "@/app/actions/adminPengesikkerhed";
+import { refunderReturfragtAction } from "@/app/actions/adminReturfragt";
 import { BeskyttelseBadge, SagBilleder, SagStatusBadge, sagTid } from "@/components/sager/visning";
 
 // Navne på handlingerne i moderation_log for sager.
@@ -82,6 +83,15 @@ const BETALING_STATUS: Record<string, string> = {
 
 const jaNej = (v: boolean) => (v ? "Ja" : "Nej");
 
+const RETURFRAGT_STATUS: Record<string, string> = {
+  afventer: "ikke betalt",
+  behandles: "betalingen behandles",
+  betalt: "betalt",
+  refunderes: "refunderes",
+  refunderet: "refunderet",
+  annulleret: "annulleret",
+};
+
 export default async function AdminSag({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [res, samtalerRes, rolle] = await Promise.all([
@@ -117,6 +127,26 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
   const b = sag.betaling;
   const kanSkriveFaelles = rolle ? harMindstRolle(rolle, "admin") : false;
   const koeberNavn = sag.koeber.navn ?? "Uden navn";
+  // Returfragt i sagen (køberen betaler selv - src/lib/betaling/returfragt.ts).
+  // Tabellen kan mangle, før migrationen er kørt.
+  const { data: returfragt } = sag.returKraeves
+    ? await admin
+        .from("returfragt_betalinger")
+        .select("id, status, beloeb_oere, label_klar_kl, refusion_aarsag, kraever_opmaerksomhed")
+        .eq("trade_id", sag.tradeId)
+        .order("oprettet_kl", { ascending: false })
+        .limit(1)
+        .maybeSingle<{
+          id: string;
+          status: string;
+          beloeb_oere: number;
+          label_klar_kl: string | null;
+          refusion_aarsag: string | null;
+          kraever_opmaerksomhed: boolean;
+        }>()
+    : { data: null };
+  const kanRefundereReturfragt =
+    !!returfragt && returfragt.status === "betalt" && !returfragt.label_klar_kl && !inhabil && !!rolle && harMindstRolle(rolle, "admin");
   const saelgerNavn = sag.saelger.navn ?? "Uden navn";
 
   return (
@@ -319,6 +349,34 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
                   {sag.returfragtBetaler === "koeber" && " · Køberen betaler selv returfragten"}
                   {/* Sager afgjort før 3. oktober 2026, hvor BidHamr betalte. */}
                   {sag.returfragtBetaler === "bidhamr" && " · BidHamr betaler returfragten"}
+                  {returfragt && (
+                    <span className="mt-1 block">
+                      Returfragt: {RETURFRAGT_STATUS[returfragt.status] ?? returfragt.status}
+                      {sag.kan.seBeloeb && ` (${kroner(Number(returfragt.beloeb_oere))})`}
+                      {returfragt.status === "betalt" && (returfragt.label_klar_kl ? " · returkoden er lavet" : " · returkoden er ikke lavet")}
+                    </span>
+                  )}
+                  {returfragt && kanRefundereReturfragt && (
+                    <span className="mt-2 block">
+                      <ConfirmDialog
+                        triggerLabel="Refundér returfragt"
+                        title="Skal returfragten refunderes?"
+                        description="Hele returfragten sendes tilbage til køberen hos Stripe. Der laves ingen returkode bagefter, medmindre køberen betaler igen. Kan kun bruges, når køberen ikke har en aktiv returkode (annullér den først)."
+                        confirmLabel="Refundér returfragten"
+                        action={refunderReturfragtAction}
+                        hiddenFields={{ returfragtId: returfragt.id }}
+                        triggerClassName="btn btn-fare btn-lille"
+                        kanIkkeFortrydes
+                        fare
+                        fakta={[
+                          { label: "Får pengene", vaerdi: `${koeberNavn} (køber)` },
+                          ...(sag.kan.seBeloeb ? [{ label: "Beløb", vaerdi: kroner(Number(returfragt.beloeb_oere)) }] : []),
+                        ]}
+                        aarsagField={{ name: "begrundelse", label: "Begrundelse", placeholder: "Hvorfor refunderes returfragten?", required: true }}
+                        kvittering="Returfragten er refunderet"
+                      />
+                    </span>
+                  )}
                 </Felt>
               )}
             </dl>

@@ -326,6 +326,14 @@ export function erReturfragtRefusion(
   return x.metadata?.type === "returfragt" && x.metadata?.returfragt_id === r.id;
 }
 
+// BidHamrs automatiske refusion af en kasseret returfragt-PaymentIntent?
+export function erKasseretReturfragtRefusion(
+  x: { metadata?: Record<string, string> | null },
+  rfId: string | null,
+): boolean {
+  return !!rfId && x.metadata?.type === "returfragt" && x.metadata?.kasseret === "ja" && x.metadata?.returfragt_id === rfId;
+}
+
 // Afviger databasens status fra PaymentIntentens hos Stripe?
 export function returfragtStatusAfviger(piStatus: string, dbStatus: string): boolean {
   const dbBetalt = ["betalt", "refunderes", "refunderet"].includes(dbStatus);
@@ -949,6 +957,12 @@ async function afstemRefusioner(
     );
   };
   const kendteRef = await hentKendte(admin, tilstand, ukendte.map(refHenvisning), firma);
+  // Kasserede returfragt-PaymentIntents, der blev betalt alligevel, refunderes
+  // automatisk af returfragt.ts (metadata type=returfragt, kasseret=ja).
+  const rfKasseret = await returfragtKasserede(
+    admin,
+    ukendte.map((x) => id(x.payment_intent as string | { id: string } | null)).filter((x): x is string => !!x),
+  );
   const udenom = new Set<string>();
   for (const x of refusioner) {
     tjekTid(budget);
@@ -969,6 +983,10 @@ async function afstemRefusioner(
       continue;
     }
     if (erBidhamrsRefusion(x, b ?? null, a ?? null)) continue;
+    {
+      const piK = id(x.payment_intent as string | { id: string } | null);
+      if (!b && !a && piK && erKasseretReturfragtRefusion(x, rfKasseret.get(piK) ?? null)) continue;
+    }
     if (!b && !a) {
       // Ikke en handel: abonnementets refusioner er Billing (firma).
       const piId = id(x.payment_intent as string | { id: string } | null);

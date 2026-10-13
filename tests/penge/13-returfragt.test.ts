@@ -16,7 +16,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import Stripe from "stripe";
 import { udfoerSagAfvikling, type SagAfvikling } from "@/lib/sagerServer";
 import { lavReturlabel, startReturfragt } from "@/lib/fragt/handlinger";
-import { koerReturfragtCron, refunderReturfragt } from "@/lib/betaling/returfragt";
+import { koerReturfragtCron, refunderReturfragt, staffRefunderReturfragt } from "@/lib/betaling/returfragt";
+import { annullerAabneReturfragter } from "@/lib/betaling/noedstop";
 import { testFirma } from "@/lib/fragt/testFirma";
 import { FragtFejl } from "@/lib/fragt/types";
 import {
@@ -302,6 +303,50 @@ describe("returfragt i en sag", () => {
       { dokument: "faktura", beloeb_oere: 4000 },
       { dokument: "kreditnota", beloeb_oere: 4000 },
     ]);
+  });
+
+  it("nødstop: en åben returfragt-PaymentIntent annulleres og kasseres; næste start laver en ny", async () => {
+    const s1 = await startReturfragt(hB.tradeId, hB.koeber.id, AFSENDER);
+    if (!("ok" in s1)) throw new Error(`startReturfragt: ${s1.fejl}`);
+    const pi1 = piId(s1.clientSecret);
+    const r = await annullerAabneReturfragter();
+    expect(r.annulleret).toBeGreaterThanOrEqual(1);
+    expect((await stripe().paymentIntents.retrieve(pi1)).status).toBe("canceled");
+    const efter = (await rf(hB.tradeId))!;
+    expect(efter.status).toBe("afventer");
+    expect(efter.stripe_payment_intent_id).toBeNull();
+    const s2 = await startReturfragt(hB.tradeId, hB.koeber.id, AFSENDER);
+    if (!("ok" in s2)) throw new Error(`startReturfragt: ${s2.fejl}`);
+    expect(piId(s2.clientSecret)).not.toBe(pi1);
+  });
+
+  it("staff: 'Refundér returfragt' refunderer hele beløbet og logges", async () => {
+    // Labelen afvises stadig (spionen fra B), så der er ingen aktiv returkode.
+    const pi = await betalReturfragt(hB);
+    expect((await sendWebhook("payment_intent.succeeded", pi as unknown as { id: string })).status).toBe(200);
+    const r = await ventPaa(() => rf(hB.tradeId), (x) => x?.status === "betalt" && (x.label_fejl_antal ?? 0) >= 1, 60_000, 1000);
+    expect(await staffRefunderReturfragt(hB.koeber.id, r!.id, "test")).toMatchObject({ fejl: expect.stringContaining("admin og chef") });
+    expect(await staffRefunderReturfragt(CHEF_ID, r!.id, "TEST pengetest: staff refunderer returfragten")).toEqual({ ok: true, kode: "refunderet" });
+    const efter = (await rf(hB.tradeId))!;
+    expect(efter.status).toBe("refunderet");
+    const refusioner = await stripe().refunds.list({ payment_intent: pi.id, limit: 10 });
+    expect(refusioner.data.filter((x) => x.status !== "failed" && x.status !== "canceled").map((x) => x.amount)).toEqual([PAKKESHOP_FRAGT_OERE]);
+    const { data: log } = await admin()
+      .from("moderation_log")
+      .select("handling, maal_type")
+      .eq("maal_id", hB.tradeId)
+      .eq("handling", "returfragt_refunderet");
+    expect(log).toEqual([{ handling: "returfragt_refunderet", maal_type: "handel" }]);
     vi.restoreAllMocks();
+  });
+
+  it("charge.refunded uden om BidHamr (dashboardet) spejles: refunderet, staff markeres", async () => {
+    const r = (await rf(hA.tradeId))!;
+    // Som en refusion lavet i Stripe-dashboardet (uden BidHamrs metadata).
+    await stripe().refunds.create({ payment_intent: r.stripe_payment_intent_id! }, { idempotencyKey: `pengetest-dashboard-rf-${r.id}` });
+    const ch = await stripe().charges.retrieve(r.stripe_charge_id!);
+    expect((await sendWebhook("charge.refunded", ch as unknown as { id: string })).status).toBe(200);
+    const efter = (await rf(hA.tradeId))!;
+    expect(efter).toMatchObject({ status: "refunderet", kraever_opmaerksomhed: true });
   });
 });
