@@ -10,7 +10,7 @@ import { useHydreret } from "@/lib/useHydreret";
 
 // Felter og etiketter som resten af siden (DESIGN.md 8). Etiketten står over
 // feltet; selve feltet ligger inde i <label>, så klik på teksten virker.
-const FELT = `mt-1.5 ${FELT_FAELLES} font-normal disabled:cursor-not-allowed disabled:border-kant disabled:bg-[#F7F7F7] disabled:text-tekst-svag`;
+const FELT = `mt-1.5 ${FELT_FAELLES} font-normal disabled:cursor-not-allowed disabled:border-kant disabled:bg-admin-graa disabled:text-tekst-svag`;
 const ETIKET = "block text-sm font-medium text-tekst";
 const STATUS = (fejl: boolean) => `mt-2 text-sm font-medium ${fejl ? "text-fejl-tekst" : "text-succes-tekst"}`;
 

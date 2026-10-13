@@ -24,7 +24,7 @@ export function klageTid(iso: string | null | undefined): string {
 }
 
 const KLASSE: Record<string, string> = {
-  aaben: "bg-orange-lys text-[#8A4210]",
+  aaben: "bg-orange-lys text-advarsel-tekst",
   under_behandling: "bg-info-bg text-info-tekst",
   berettiget: "bg-fejl-bg text-fejl-tekst",
   ikke_berettiget: "bg-succes-bg text-succes-tekst",

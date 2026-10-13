@@ -62,7 +62,7 @@ export default async function ErhvervKlageSide({ params }: { params: Promise<{ i
       />
 
       {d.inhabil && (
-        <p role="note" className="rounded-xl border border-orange-300 bg-orange-lys p-4 text-sm text-[#8A4210]">
+        <p role="note" className="rounded-xl border border-orange-300 bg-orange-lys p-4 text-sm text-advarsel-tekst">
           {A.inhabil}
         </p>
       )}
@@ -82,7 +82,7 @@ export default async function ErhvervKlageSide({ params }: { params: Promise<{ i
         <h2 className="font-sans text-base font-semibold text-neutral-900">{A.beskrivelse}</h2>
         {/* Inhabil: databasen sender hverken beskrivelse eller billeder. */}
         {d.inhabil ? (
-          <p className="mt-2 text-[15px] font-semibold text-[#8A4210]">{A.inhabilSkjult}</p>
+          <p className="mt-2 text-[15px] font-semibold text-advarsel-tekst">{A.inhabilSkjult}</p>
         ) : (
           <>
         <p className="mt-2 whitespace-pre-line break-words text-[15px] text-neutral-900">{k.beskrivelse}</p>

@@ -91,17 +91,27 @@ function Ramme({
 }) {
   // Højden trækker cookie-bannerets højde fra (--samtykke-hoejde), så
   // banneret aldrig dækker knapper nederst i admin - heller ikke på mobil.
+  //
+  // Mørkt navy-tema: data-tema="admin-moerk" sidder på en indpakning (uden
+  // egen boks: display: contents) om indholdet og kvitteringen. Tokens får
+  // mørke værdier derinde (globals.css), så menuen beholder sin skovgrønne
+  // stil, og resten af hjemmesiden ikke påvirkes.
   return (
-    <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-admin-bg">
+    <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-groen-mork">
       {menu}
-      <main id="admin-indhold" className="min-w-0 flex-1 overflow-auto bg-admin-bg pt-14 lg:pt-0">
-        {bjaelke}
-        <div className="border-b border-admin-kant bg-white/70 px-4 py-2.5 sm:px-6">
-          <AdminTopSoeg erhverv={erhverv} />
-        </div>
-        {children}
-      </main>
-      <Kvittering />
+      <div data-tema="admin-moerk" className="contents">
+        <main
+          id="admin-indhold"
+          className="min-w-0 flex-1 overflow-auto bg-admin-bg pt-14 lg:border-l lg:border-admin-skel lg:pt-0"
+        >
+          {bjaelke}
+          <div className="border-b border-admin-kant bg-white/70 px-4 py-2.5 sm:px-6">
+            <AdminTopSoeg erhverv={erhverv} />
+          </div>
+          {children}
+        </main>
+        <Kvittering />
+      </div>
       {/* "Meld fejl" til staff før lancering (ellers intet). */}
       <Suspense fallback={null}>
         <BetaFejlKnap />

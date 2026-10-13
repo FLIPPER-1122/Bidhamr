@@ -108,6 +108,26 @@ Læg dette i `src/app/globals.css` (erstatter det nuværende `--brand`-tema):
 Brug derefter almindelige Tailwind-klasser: `bg-groen`, `text-groen-mork`, `bg-orange`, `border-kant`,
 `bg-groen-lys`, `text-tekst-daempet`.
 
+### 1.6 Admin: mørkt navy-tema (Filip, 13. okt. 2026)
+
+Admins indholdsflade (alt til højre for den skovgrønne menu) er mørk navy. Det styres alene af
+`data-tema="admin-moerk"` i `src/app/admin/layout.tsx`; `globals.css` giver tokens (`flade`, `tekst`, `kant`,
+status, `groen`, Tailwinds neutral- og farveskalaer, `white`) mørke værdier inden for indpakningen.
+Brug derfor de almindelige tokens i admin – **ingen hex-værdier** i komponenterne, ellers slår temaet ikke igennem.
+
+| Rolle | Hex |
+|---|---|
+| Bund | `#0B1426` |
+| Kort/flader (`bg-white`, `bg-flade`) | `#15233F` |
+| Kant | `#22324F` (felter `#4A6189`) |
+| Tekst / dæmpet / svag | `#E6ECF5` / `#B8C3D4` / `#9AA8BF` |
+| Links og fokus (`text-groen`) | `#6FD3A8` |
+| Grøn fyld med hvid tekst (`bg-groen`) | `#2E7D5B` |
+| Orange knap | uændret `#B85518` |
+| Skel mod menuen | `#2A3D60` (1px) |
+
+Målte kontraster står i kommentaren over temaet i `globals.css`.
+
 ---
 
 ## 2. Skrifttyper

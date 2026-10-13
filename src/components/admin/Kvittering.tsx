@@ -72,7 +72,7 @@ export default function Kvittering() {
       {besked && (
         <p
           key={besked.n}
-          className={`pointer-events-auto flex max-w-md flex-wrap items-start gap-x-3 gap-y-1 rounded-xl border px-4 py-3 text-sm font-medium shadow-flyder ${
+          className={`pointer-events-auto flex max-w-md flex-wrap items-start gap-x-3 gap-y-1 rounded-xl border-2 px-4 py-3 text-sm font-medium shadow-flyder ${
             fejl ? "border-fejl-kant bg-fejl-bg text-fejl-tekst" : "border-succes-kant bg-succes-bg text-succes-tekst"
           }`}
         >
