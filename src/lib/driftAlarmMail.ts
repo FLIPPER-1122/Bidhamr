@@ -309,7 +309,7 @@ export function bygAlarmMail(blokke: AlarmBlok[], nu: Date = new Date()) {
 
 // ------------------------------------------------------------ gammelt format
 
-// Hvis migrationen 20261021010000 ikke er kørt, svarer databasen i det gamle
+// Hvis migrationen 20261021030000 ikke er kørt, svarer databasen i det gamle
 // format (drift_alarm_vurder: punkter pr. slags). De samles her til blokke.
 export type GammeltPunkt = {
   type?: string;

@@ -9,7 +9,7 @@
 // udledes af fejlteksten (alarmKode): logDriftFejl skriver "hvor: fejl", så
 // koden er normalt "hvor" (fx "betaling/ukendt-betaling"). Databasen udleder
 // koden på samme måde i public.drift_alarm_kode() - de to SKAL følges ad
-// (migration 20261021010000_drift_alarm_blokke.sql).
+// (migration 20261021030000_drift_alarm_blokke.sql).
 
 export type Alvor = "roed" | "gul";
 

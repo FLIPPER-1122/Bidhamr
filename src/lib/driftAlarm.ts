@@ -5,7 +5,7 @@ import "server-only";
 // 20261008010000_drift_alarmer.sql).
 //
 // Databasen (drift_alarm_vurder_blokke, migration
-// 20261021010000_drift_alarm_blokke.sql) finder hændelserne, samler dem i
+// 20261021030000_drift_alarm_blokke.sql) finder hændelserne, samler dem i
 // blokke (samme kilde og kode) og afgør atomisk, hvilke blokke der sendes:
 // samme blok højst én gang i timen, medmindre antallet er steget markant.
 // Selve mailen bygges af src/lib/driftAlarmMail.ts.
@@ -135,7 +135,7 @@ export async function koerDriftAlarm(): Promise<AlarmResultat> {
       return error;
     };
   } else if (manglerFunktion(nyt.error)) {
-    // Migrationen 20261021010000 er ikke kørt: det gamle format.
+    // Migrationen 20261021030000 er ikke kørt: det gamle format.
     const gammel = await admin.rpc("drift_alarm_vurder", { p_kan_sende: kanSende });
     if (gammel.error) return vurderingFejlede(gammel.error.message);
     const v = gammel.data as GammeltSvar;
