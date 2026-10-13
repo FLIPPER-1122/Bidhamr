@@ -132,7 +132,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
   const { data: returfragt } = sag.returKraeves
     ? await admin
         .from("returfragt_betalinger")
-        .select("id, status, beloeb_oere, label_klar_kl, refusion_aarsag, kraever_opmaerksomhed")
+        .select("id, status, beloeb_oere, label_klar_kl, refusion_aarsag, kraever_opmaerksomhed, forsendelse_id")
         .eq("trade_id", sag.tradeId)
         .order("oprettet_kl", { ascending: false })
         .limit(1)
@@ -143,10 +143,26 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
           label_klar_kl: string | null;
           refusion_aarsag: string | null;
           kraever_opmaerksomhed: boolean;
+          forsendelse_id: string | null;
         }>()
     : { data: null };
+  // Seneste returkode: er den annulleret, kan den stadig være gyldig hos
+  // fragtfirmaet (DAO kan ofte ikke annullere selv) - fragtfirmaets note vises.
+  const { data: returKode } = returfragt?.forsendelse_id
+    ? await admin
+        .from("forsendelser")
+        .select("status, opmaerksomhed_tekst")
+        .eq("id", returfragt.forsendelse_id)
+        .maybeSingle<{ status: string; opmaerksomhed_tekst: string | null }>()
+    : { data: null };
+  const returKodeAnnulleret = returKode?.status === "annulleret";
   const kanRefundereReturfragt =
-    !!returfragt && returfragt.status === "betalt" && !returfragt.label_klar_kl && !inhabil && !!rolle && harMindstRolle(rolle, "admin");
+    !!returfragt &&
+    returfragt.status === "betalt" &&
+    (!returfragt.label_klar_kl || returKodeAnnulleret) &&
+    !inhabil &&
+    !!rolle &&
+    harMindstRolle(rolle, "admin");
   const saelgerNavn = sag.saelger.navn ?? "Uden navn";
 
   return (
@@ -354,6 +370,19 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
                       Returfragt: {RETURFRAGT_STATUS[returfragt.status] ?? returfragt.status}
                       {sag.kan.seBeloeb && ` (${kroner(Number(returfragt.beloeb_oere))})`}
                       {returfragt.status === "betalt" && (returfragt.label_klar_kl ? " · returkoden er lavet" : " · returkoden er ikke lavet")}
+                    </span>
+                  )}
+                  {returfragt && returKodeAnnulleret && (
+                    <span className="mt-1 block text-advarsel-tekst">
+                      Returkoden er annulleret
+                      {returfragt.label_klar_kl
+                        ? " i BidHamr, men fragtfirmaet kunne ikke annullere den selv – den kan stadig være gyldig."
+                        : " og bekræftet af fragtfirmaet."}
+                      {returKode?.opmaerksomhed_tekst && (
+                        <span className="mt-0.5 block whitespace-pre-line text-[13px] text-tekst-daempet">
+                          Fragtfirmaets note: {returKode.opmaerksomhed_tekst}
+                        </span>
+                      )}
                     </span>
                   )}
                   {returfragt && kanRefundereReturfragt && (

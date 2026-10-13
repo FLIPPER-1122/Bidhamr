@@ -373,6 +373,7 @@ export default async function HandelDetalje({
       status?: ReturfragtVisning["status"];
       beloeb_oere?: number | null;
       label_fejl?: string | null;
+      label_annulleret?: boolean;
       refusion_aarsag?: string | null;
       afsender?: Record<string, string | null> | null;
     } | null;
@@ -381,6 +382,7 @@ export default async function HandelDetalje({
         status: m.status ?? null,
         beloebOere: m.beloeb_oere ?? null,
         labelFejl: m.label_fejl ?? null,
+        labelAnnulleret: m.label_annulleret === true,
         refusionAarsag: m.refusion_aarsag ?? null,
         kanSende: m.sag?.kode === "ok",
       };

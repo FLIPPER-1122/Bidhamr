@@ -1045,9 +1045,16 @@ async function annullerForsendelse(
 
   const { data: f } = await admin
     .from("forsendelser")
-    .select("fragtfirma, forsendelses_id")
+    .select("type, fragtfirma, forsendelses_id")
     .eq("id", forsendelseId)
-    .maybeSingle<{ fragtfirma: string; forsendelses_id: string | null }>();
+    .maybeSingle<{ type: string; fragtfirma: string; forsendelses_id: string | null }>();
+  // Returkode (returfragt i sager): kun en annullering, fragtfirmaet har
+  // BEKRÆFTET, giver køberen ret til en ny kode (returfragt_annullering_bekraeftet).
+  const returBekraeftet = async () => {
+    if (f?.type !== "retur") return;
+    const { error } = await admin.rpc("returfragt_annullering_bekraeftet", { p_forsendelse: forsendelseId });
+    if (error) await logDriftFejl({ kilde: "server", hvor: "Fragt: returkode annulleret", fejl: error });
+  };
   const adapter = f ? adapterFor(f.fragtfirma) : null;
   if (!f?.forsendelses_id || !adapter) {
     await afslut(
@@ -1072,7 +1079,9 @@ async function annullerForsendelse(
         p_id: forsendelseId,
         p_note:
           `Labelen er annulleret i BidHamr, men fragtfirmaet kan ikke annullere den selv (${f.fragtfirma} ${f.forsendelses_id}). ` +
-          "Bed fragtfirmaet kreditere den, hvis den ikke bliver brugt.",
+          (f.type === "retur"
+            ? "Returkoden kan stadig være gyldig: køberen får ikke en ny kode, og returfragten refunderes ikke automatisk - staff afgør (Refundér returfragt på sagen)."
+            : "Bed fragtfirmaet kreditere den, hvis den ikke bliver brugt."),
       });
       if (svar === "aendret") {
         return { fejl: "Fragtfirmaet har netop meldt pakken indleveret. BidHamr kigger på forsendelsen." };
@@ -1098,6 +1107,8 @@ async function annullerForsendelse(
   if (svar === "aendret") {
     return { fejl: "Fragtfirmaet har netop meldt pakken indleveret. BidHamr kigger på forsendelsen." };
   }
+  // Fragtfirmaet har bekræftet annulleringen.
+  await returBekraeftet();
   return { ok: true };
 }
 

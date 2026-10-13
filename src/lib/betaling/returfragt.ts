@@ -562,7 +562,10 @@ export async function refunderReturfragt(rfId: string): Promise<string> {
   try {
     rf = await hentRaekke(admin, rfId);
     if (!rf) return "ikke_fundet";
-    if (rf.status === "refunderet") return "allerede";
+    if (rf.status === "refunderet") {
+      await beskedRefunderet(admin, rf.id);
+      return "allerede";
+    }
     if (rf.status !== "refunderes" || !rf.stripe_payment_intent_id) return "forkert_status";
     const piId = rf.stripe_payment_intent_id;
     const alle = await stripe.refunds.list({ payment_intent: piId, limit: 100 });
@@ -609,7 +612,9 @@ export async function refunderReturfragt(rfId: string): Promise<string> {
     });
     if (error) throw new Error(`returfragt_refusion_resultat: ${error.message}`);
     const kode = String(data);
-    if (kode === "refunderet") await beskedRefunderet(admin, rf);
+    // Også 'allerede' (charge.refunded kan nå at registrere refusionen først):
+    // beskeden har en fast nøgle pr. returfragt, så den sendes kun én gang.
+    if (kode === "refunderet" || kode === "allerede") await beskedRefunderet(admin, rf.id);
     if (kode === "opgivet") await markerStaff(rf.id, "Refusionen af returfragten er fejlet 5 gange - refundér manuelt i Stripe.");
     return kode;
   } catch (err) {
@@ -629,13 +634,20 @@ export async function refunderReturfragt(rfId: string): Promise<string> {
   }
 }
 
-async function beskedRefunderet(admin: Admin, rf: ReturfragtRaekke): Promise<void> {
+// Besked til køberen om, at returfragten er refunderet. Rækken læses frisk
+// (årsagen kan være sat af en anden vej, fx charge.refunded). Fast nøgle pr.
+// returfragt: sendes kun én gang, uanset hvilken vej der kommer først.
+async function beskedRefunderet(admin: Admin, rfId: string): Promise<void> {
+  const rf = await hentRaekke(admin, rfId);
+  if (!rf || rf.status !== "refunderet") return;
   const titel = await titelForHandel(admin, rf.trade_id);
   const beloeb = kroner(Number(rf.modtaget_oere ?? rf.beloeb_oere));
   const tekst =
     rf.refusion_aarsag === "ikke_noedvendig"
       ? `Sagen om "${titel}" kræver ikke længere, at du sender varen retur, så du har fået returfragten (${beloeb}) tilbage.`
-      : `Returkoden for "${titel}" kunne ikke laves, så du har fået returfragten (${beloeb}) tilbage. Skriv til BidHamr i sagen, så hjælper vi dig med at sende varen.`;
+      : rf.refusion_aarsag === "staff" || rf.refusion_aarsag === "ekstern"
+        ? `BidHamr har refunderet returfragten (${beloeb}) for "${titel}". Har du allerede fået en returkode, kan du ikke længere bruge den. Skriv til BidHamr i sagen, hvis du har spørgsmål.`
+        : `Returkoden for "${titel}" kunne ikke laves, så du har fået returfragten (${beloeb}) tilbage. Skriv til BidHamr i sagen, så hjælper vi dig med at sende varen.`;
   await send(rf.koeber_id, "sag", {
     titel: "Returfragten er sendt tilbage",
     tekst: `${tekst} Pengene går tilbage til den betalingsmetode, du betalte med - der kan gå nogle dage. Betalingen håndteres af vores betalingspartner Stripe.`,
@@ -652,6 +664,13 @@ async function claimOgRefunder(admin: Admin, rf: ReturfragtRaekke): Promise<stri
   const { data, error } = await admin.rpc("returfragt_refusion_claim", { p_id: rf.id, p_aarsag: aarsag });
   if (error) throw new Error(`returfragt_refusion_claim: ${error.message}`);
   const kode = String(data);
+  if (kode === "staff_afgoer") {
+    await markerStaff(
+      rf.id,
+      "Returfragten skal måske refunderes, men den seneste returkode er annulleret - evt. kun i BidHamr. Staff afgør (Refundér returfragt på sagen).",
+    );
+    return kode;
+  }
   if (kode === "label_findes") {
     await markerStaff(rf.id, "Sagen kræver ikke længere retur, men køberen har en returkode. Vurdér, om returfragten skal refunderes.");
     return kode;
@@ -777,6 +796,14 @@ export async function spejlReturfragtChargeRefusion(charge: Stripe.Charge): Prom
   }
   const kode = String(data);
   if (kode === "ukendt") return null;
+  if (kode === "refunderet" || kode === "allerede") {
+    const { data: r } = await createAdminClient()
+      .from("returfragt_betalinger")
+      .select("id")
+      .eq("stripe_charge_id", charge.id)
+      .maybeSingle<{ id: string }>();
+    if (r) await beskedRefunderet(createAdminClient(), r.id);
+  }
   if (kode === "markeret") {
     await alarmPrTilfaelde({
       noegle: `returfragt-delvis:${charge.id}`,
@@ -794,6 +821,7 @@ const STAFF_REFUSION_FEJL: Record<string, string> = {
   ikke_fundet: "Returfragten findes ikke.",
   forkert_status: "Returfragten er ikke betalt (eller er allerede refunderet).",
   label_findes: "Køberen har en aktiv returkode. Annullér returkoden først.",
+  staff_afgoer: "Den seneste returkode er annulleret. Refundér returfragten manuelt.",
   i_gang: "En returkode er ved at blive lavet. Prøv igen om 10 minutter.",
 };
 

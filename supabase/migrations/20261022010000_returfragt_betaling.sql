@@ -81,6 +81,9 @@ create table if not exists public.returfragt_betalinger (
   -- Labelen (returkoden): seneste returforsendelse og hvornår den var klar.
   forsendelse_id        uuid references public.forsendelser(id) on delete restrict,
   label_klar_kl         timestamptz,
+  -- Fragtfirmaet har BEKRÆFTET, at den seneste returkode er annulleret
+  -- (returfragt_annullering_bekraeftet). Kun da må en ny kode laves.
+  label_annulleret_bekraeftet_kl timestamptz,
   label_forsoeg         integer not null default 0,
   label_fejl_antal      integer not null default 0,
   label_naeste_kl       timestamptz,
@@ -131,6 +134,9 @@ create index if not exists returfragt_koeber on public.returfragt_betalinger (ko
 create index if not exists returfragt_aaben on public.returfragt_betalinger (status)
   where status in ('afventer', 'behandles', 'betalt', 'refunderes');
 create index if not exists returfragt_tidligere on public.returfragt_betalinger using gin (tidligere_payment_intents);
+
+-- Tabellen kan være oprettet af en tidligere udgave af filen (testdatabasen).
+alter table public.returfragt_betalinger add column if not exists label_annulleret_bekraeftet_kl timestamptz;
 
 -- Handelsdata slettes aldrig (bogføringsloven).
 create or replace function public.returfragt_forbyd_sletning()
@@ -501,16 +507,14 @@ begin
         using errcode = 'BHR01';
     end if;
     update public.returfragt_betalinger
-       set label_klar_kl = coalesce(label_klar_kl, now()), label_brugerfejl = null, label_naeste_kl = null
+       set label_klar_kl = coalesce(label_klar_kl, now()), label_brugerfejl = null, label_naeste_kl = null,
+           label_annulleret_bekraeftet_kl = null
      where id = rf.id;
   end if;
-  -- Returkoden er annulleret: køberen kan få en ny kode uden at betale igen
-  -- (og staff kan refundere returfragten).
-  if new.status = 'annulleret' and old.status <> 'annulleret' then
-    update public.returfragt_betalinger
-       set label_klar_kl = null, label_naeste_kl = null
-     where forsendelse_id = new.id and status = 'betalt';
-  end if;
+  -- En annulleret returkode rydder IKKE label_klar_kl her: DAO kan ofte ikke
+  -- annullere selv (labelen annulleres kun i BidHamr og kan stadig være
+  -- gyldig). Først når fragtfirmaet har bekræftet annulleringen
+  -- (returfragt_annullering_bekraeftet), må en ny kode laves.
   return new;
 end;
 $fn$;
@@ -540,6 +544,23 @@ revoke all on function public.forsendelser_returfragt_tilknyt() from public, ano
 drop trigger if exists forsendelser_returfragt_tilknyt on public.forsendelser;
 create trigger forsendelser_returfragt_tilknyt after insert on public.forsendelser
   for each row execute function public.forsendelser_returfragt_tilknyt();
+
+-- Fragtfirmaet har bekræftet, at returkoden (forsendelsen) er annulleret
+-- (kaldes af serveren efter et vellykket annullér-kald - ikke ved
+-- FragtAnnulleringIkkeMulig). Køberen kan så få en ny kode uden at betale
+-- igen. 'ok' | 'uaendret'
+create or replace function public.returfragt_annullering_bekraeftet(p_forsendelse uuid)
+returns text
+language plpgsql security definer set search_path = '' as $fn$
+begin
+  update public.returfragt_betalinger r
+     set label_klar_kl = null, label_naeste_kl = null, label_annulleret_bekraeftet_kl = now()
+   where r.forsendelse_id = p_forsendelse and r.status = 'betalt'
+     and exists (select 1 from public.forsendelser f
+                  where f.id = p_forsendelse and f.type = 'retur' and f.status = 'annulleret');
+  return case when found then 'ok' else 'uaendret' end;
+end;
+$fn$;
 
 -- Resultat af et label-forsøg, der IKKE gav en label. p_brugerfejl: den danske
 -- tekst til køberen (fx adressen blev afvist), p_intern: til staff/drift.
@@ -603,24 +624,32 @@ $fn$;
 -- ===========================================================================
 -- 6. Refusion (hele returfragten)
 -- ===========================================================================
--- 'ok' (claimet: status 'refunderes') | 'label_findes' (der er en returkode -
--- staff afgør) | 'i_gang' (et label-forsøg kører) | 'forkert_status' | 'ugyldig'
+-- 'ok' (claimet: status 'refunderes') | 'label_findes' (der er en aktiv
+-- returkode) | 'staff_afgoer' (seneste kode er annulleret - kun staff) |
+-- 'i_gang' (et label-forsøg kører) | 'forkert_status' | 'ugyldig'
 create or replace function public.returfragt_refusion_claim(p_id uuid, p_aarsag text)
 returns text
 language plpgsql security definer set search_path = '' as $fn$
 declare
   rf record;
   f  record;
+  v_fstatus text;
 begin
   if p_aarsag is null or p_aarsag not in ('label_umulig', 'ikke_noedvendig', 'staff') then return 'ugyldig'; end if;
   select r.id, r.status, r.label_klar_kl, r.forsendelse_id into rf
     from public.returfragt_betalinger r where r.id = p_id for update;
   if rf.id is null or rf.status <> 'betalt' then return 'forkert_status'; end if;
-  if rf.label_klar_kl is not null then return 'label_findes'; end if;
   if rf.forsendelse_id is not null then
     select fo.id, fo.status, fo.forsoegt_kl, fo.oprettet_kl, fo.ukendt_udfald_kl into f
       from public.forsendelser fo where fo.id = rf.forsendelse_id for update;
+    -- Seneste returkode er annulleret (evt. kun i BidHamr - den kan stadig
+    -- være gyldig hos fragtfirmaet): kun staff må refundere.
+    v_fstatus := f.status;
+    if f.status = 'annulleret' and p_aarsag <> 'staff' then return 'staff_afgoer'; end if;
     if f.status not in ('opretter', 'fejlet', 'annulleret') then return 'label_findes'; end if;
+  end if;
+  if rf.label_klar_kl is not null and v_fstatus is distinct from 'annulleret' then return 'label_findes'; end if;
+  if rf.forsendelse_id is not null then
     if f.status = 'opretter' then
       -- Et forsøg kan stadig være i gang hos fragtfirmaet.
       if f.ukendt_udfald_kl is null and coalesce(f.forsoegt_kl, f.oprettet_kl) > now() - interval '10 minutes' then
@@ -805,6 +834,10 @@ begin
     select r.id,
            case
              when r.status = 'refunderes' then 'refusion'
+             -- Seneste returkode annulleret: aldrig automatisk refusion (staff afgør).
+             when r.status = 'betalt' and r.label_klar_kl is null and fa.annulleret
+                  and (r.label_fejl_antal >= 5 or r.betalt_kl <= now() - interval '48 hours'
+                       or public.returfragt_sag(r.trade_id)->>'kode' <> 'ok') then null
              when r.status = 'betalt' and r.label_klar_kl is null
                   and (r.label_fejl_antal >= 5 or r.betalt_kl <= now() - interval '48 hours'
                        or public.returfragt_sag(r.trade_id)->>'kode' <> 'ok') then 'refunder'
@@ -816,6 +849,10 @@ begin
            case when r.status in ('refunderes', 'betalt') then 0 else 1 end as prio,
            coalesce(r.label_naeste_kl, r.refusion_naeste_kl, r.synket_kl, r.oprettet_kl) as kl
       from public.returfragt_betalinger r
+      left join lateral (
+        select coalesce(bool_or(f.status = 'annulleret'), false) as annulleret
+          from public.forsendelser f where f.id = r.forsendelse_id
+      ) fa on true
      where r.status in ('afventer', 'behandles', 'betalt', 'refunderes')
        and (
          (r.status = 'refunderes' and r.refusion_forsoeg < 5
@@ -823,7 +860,11 @@ begin
           and r.refusion_anmodet_kl <= now() - interval '2 minutes')
          or (r.status = 'betalt' and r.label_klar_kl is null
              and (r.label_naeste_kl is null or r.label_naeste_kl <= now())
-             and r.betalt_kl <= now() - interval '2 minutes')
+             and r.betalt_kl <= now() - interval '2 minutes'
+             -- Annulleret kode, hvor tiden/forsøgene er brugt: staff afgør (sulter ikke køen).
+             and not (fa.annulleret
+                      and (r.label_fejl_antal >= 5 or r.betalt_kl <= now() - interval '48 hours'
+                           or public.returfragt_sag(r.trade_id)->>'kode' <> 'ok')))
          or (r.status in ('afventer', 'behandles')
              and r.opdateret <= now() - interval '15 minutes'
              -- Opgivne betalinger: hvert 15. minut det første døgn, derefter hver 6. time.
@@ -876,6 +917,7 @@ declare
   v_pris bigint;
   v_shop bigint;
   v_stoerrelse text;
+  v_annulleret boolean;
 begin
   if v_bruger is null or p_trade is null then return null; end if;
   select tr.id, tr.buyer_id, tr.seller_id, tr.auction_id into t from public.trades tr where tr.id = p_trade;
@@ -888,6 +930,8 @@ begin
   if t.buyer_id <> v_bruger then return null; end if;
   select r.* into rf from public.returfragt_betalinger r
    where r.trade_id = p_trade order by r.oprettet_kl desc limit 1;
+  v_annulleret := rf.status = 'betalt' and rf.label_klar_kl is not null and exists (
+    select 1 from public.forsendelser f where f.id = rf.forsendelse_id and f.status = 'annulleret');
   if rf.id is not null and rf.status in ('afventer', 'behandles', 'betalt', 'refunderes', 'refunderet') then
     v_pris := rf.beloeb_oere;
   else
@@ -906,7 +950,10 @@ begin
     'status', rf.status,
     'beloeb_oere', v_pris,
     'betalt_kl', rf.betalt_kl,
-    'label_klar', rf.label_klar_kl is not null,
+    'label_klar', rf.label_klar_kl is not null and not coalesce(v_annulleret, false),
+    -- Seneste returkode er annulleret, men fragtfirmaet har ikke bekræftet
+    -- det: BidHamr kigger på returen (ingen ny kode endnu).
+    'label_annulleret', coalesce(v_annulleret, false),
     'label_fejl', case when rf.status = 'betalt' and rf.label_klar_kl is null then rf.label_brugerfejl end,
     'refunderet_kl', rf.refunderet_kl,
     'refusion_aarsag', rf.refusion_aarsag,
@@ -1088,6 +1135,7 @@ begin
     'public.returfragt_refusion_fejlet(text, text)',
     'public.returfragt_cron(integer, integer)',
     'public.returfragt_label_venter(uuid, text)',
+    'public.returfragt_annullering_bekraeftet(uuid)',
     'public.returfragt_registrer_charge_refusion(text, text, boolean)',
     'public.returfragt_staff_refusion(uuid, uuid, text)',
     'public.faktura_planlaeg_returfragt(integer)',

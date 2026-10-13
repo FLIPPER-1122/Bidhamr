@@ -41,6 +41,8 @@ export type ReturfragtVisning = {
   status: "afventer" | "behandles" | "betalt" | "refunderes" | "refunderet" | "annulleret" | null;
   beloebOere: number | null;
   labelFejl: string | null;
+  // Returkoden er annulleret, men fragtfirmaet har ikke bekræftet det.
+  labelAnnulleret: boolean;
   refusionAarsag: string | null;
   // Sagen tillader, at varen sendes nu (ankefristen er udløbet osv.).
   kanSende: boolean;
@@ -177,7 +179,7 @@ export default function ReturlabelBoks({
   const betalt = info.status === "betalt" || info.status === "refunderes";
   const labelKlar = !!retur && retur.status !== "opretter" && retur.status !== "annulleres" && retur.status !== "fejlet";
   const behandles = info.status === "behandles" || (venterPaaBekraeftelse && info.status === "afventer");
-  const venterPaaKode = info.status === "betalt" && !labelKlar && !info.labelFejl;
+  const venterPaaKode = info.status === "betalt" && !labelKlar && !info.labelFejl && !info.labelAnnulleret;
   useAutoOpdater(behandles || venterPaaKode);
 
   if (labelKlar && retur) return <KodeKlar id={id} retur={retur} postnummer={afsender.postnummer} />;
@@ -199,7 +201,11 @@ export default function ReturlabelBoks({
         <p className="mt-1 text-sm text-groen-mork">
           Tak – returfragten {info.beloebOere ? `(${kroner(info.beloebOere)}) ` : ""}er betalt. Du skal ikke betale igen.
         </p>
-        {info.labelFejl ? (
+        {info.labelAnnulleret ? (
+          <p className="mt-3 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+            Din returkode er annulleret. BidHamr kigger på returen og skriver til dig i sagen. Du skal ikke betale igen.
+          </p>
+        ) : info.labelFejl ? (
           <ProevIgen tradeId={tradeId} fejl={info.labelFejl} start={afsender} />
         ) : (
           <p role="status" className="mt-3 flex items-center gap-2 rounded-xl border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">

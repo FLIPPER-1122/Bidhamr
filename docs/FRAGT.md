@@ -66,7 +66,10 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    retur, refunderes hele returfragten automatisk, og køberen får besked. Efter betaling vises koden, PDF'en og
    den nærmeste pakkeshop; sælgeren ser "Returen er på vej" med sporing. Staff (admin/chef, ikke inhabile)
    kan trykke "Refundér returfragt" på sagen i admin, når der ikke er en aktiv returkode (logges i
-   moderation_log). Annulleres returkoden, kan køberen få en ny uden at betale igen. Nødstoppet for nye
+   moderation_log). Annulleres returkoden, og har fragtfirmaet BEKRÆFTET annulleringen, kan køberen få en ny
+   uden at betale igen. Kan fragtfirmaet ikke annullere selv (DAO), bliver koden stående, staff markeres, og
+   der refunderes aldrig automatisk - staff afgør (noten vises ved knappen). Appen læser kun via
+   `min_returfragt` (aldrig `select('*')` på `returfragt_betalinger`). Nødstoppet for nye
    betalinger annullerer også åbne returfragt-betalinger. En refusion i Stripe-dashboardet spejles
    (charge.refunded), så der aldrig laves en kode på en refunderet returfragt.
 9. **Ikke-afhentet pakke** (`20261016030000_ikke_afhentet_pakke.sql`, `src/lib/betaling/ikkeAfhentet.ts`):

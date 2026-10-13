@@ -481,21 +481,30 @@ describe("RLS og visning", () => {
 });
 
 describe("reviewer-rettelser", () => {
-  it("annulleret returkode: køberen kan få en ny uden at betale igen, og staff kan refundere", async () => {
+  it("annulleret UDEN fragtfirmaets bekræftelse: koden står, ingen ny kode, ingen auto-refusion - staff kan refundere", async () => {
     const h = await handel();
     const b = await betalt(h.tradeId);
     const f1 = await en<{ id: string }>(`insert into public.forsendelser (trade_id, type) values ($1, 'retur') returning id`, [h.tradeId]);
     await db.query(`update public.forsendelser set status = 'oprettet' where id = $1`, [f1.id]);
     // Aktiv kode: staff kan ikke refundere.
     expect((await en<{ v: string }>(`select public.returfragt_staff_refusion($1, $2, 'test') as v`, [STAFF, b.id])).v).toBe("label_findes");
+    // Annulleret kun i BidHamr (DAO: FragtAnnulleringIkkeMulig) - ingen bekræftelse.
     await db.query(`update public.forsendelser set status = 'annulleret' where id = $1`, [f1.id]);
     const rf = await en<{ label_klar_kl: string | null }>(`select label_klar_kl from public.returfragt_betalinger where id = $1`, [b.id]);
-    expect(rf.label_klar_kl).toBeNull();
-    // Ny kode uden ny betaling.
-    const f2 = await en<{ id: string }>(`insert into public.forsendelser (trade_id, type) values ($1, 'retur') returning id`, [h.tradeId]);
-    expect((await en<{ forsendelse_id: string }>(`select forsendelse_id from public.returfragt_betalinger where id = $1`, [b.id])).forsendelse_id).toBe(f2.id);
-    await db.query(`update public.forsendelser set status = 'annulleret' where id = $1`, [f2.id]);
-    // Rolle, begrundelse og inhabilitet.
+    expect(rf.label_klar_kl).not.toBeNull();
+    // Ingen ny kode (to gyldige koder) ...
+    await expect(db.query(`insert into public.forsendelser (trade_id, type) values ($1, 'retur')`, [h.tradeId])).rejects.toThrow(/returfragt_ikke_betalt/);
+    // ... og ingen automatisk refusion, heller ikke efter 48 timer.
+    await db.query(`update public.returfragt_betalinger set betalt_kl = now() - interval '49 hours', label_naeste_kl = null where id = $1`, [b.id]);
+    const k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(100, 100)`);
+    expect(k.rows.find((x) => x.id === b.id)).toBeUndefined();
+    expect((await en<{ v: string }>(`select public.returfragt_refusion_claim($1, 'label_umulig') as v`, [b.id])).v).toBe("staff_afgoer");
+    expect((await en<{ v: string }>(`select public.returfragt_refusion_claim($1, 'ikke_noedvendig') as v`, [b.id])).v).toBe("staff_afgoer");
+    // Køberen ser, at koden er annulleret (ikke klar).
+    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${KOEBER}', false);`);
+    expect(await j(`select public.min_returfragt('${h.tradeId}') as v`)).toMatchObject({ label_klar: false, label_annulleret: true });
+    await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false);`);
+    // Staff: rolle, begrundelse og inhabilitet - derefter ok.
     expect((await en<{ v: string }>(`select public.returfragt_staff_refusion($1, $2, 'test') as v`, [MEDARBEJDER, b.id])).v).toBe("ingen_adgang");
     expect((await en<{ v: string }>(`select public.returfragt_staff_refusion($1, $2, '  ') as v`, [STAFF, b.id])).v).toBe("begrundelse_mangler");
     await db.query(`update public.users set rolle = 'admin' where id = $1`, [SAELGER]);
@@ -507,6 +516,29 @@ describe("reviewer-rettelser", () => {
     const log = await en<{ handling: string; maal_type: string; maal_id: string }>(
       `select handling, maal_type, maal_id from public.moderation_log where medarbejder_id = $1`, [STAFF]);
     expect(log).toEqual({ handling: "returfragt_refunderet", maal_type: "handel", maal_id: h.tradeId });
+  });
+
+  it("annulleret MED fragtfirmaets bekræftelse: ny kode uden ny betaling", async () => {
+    const h = await handel();
+    const b = await betalt(h.tradeId);
+    const f1 = await en<{ id: string }>(`insert into public.forsendelser (trade_id, type) values ($1, 'retur') returning id`, [h.tradeId]);
+    await db.query(`update public.forsendelser set status = 'oprettet' where id = $1`, [f1.id]);
+    // Bekræftelse før annulleringen virker ikke.
+    expect((await en<{ v: string }>(`select public.returfragt_annullering_bekraeftet($1) as v`, [f1.id])).v).toBe("uaendret");
+    await db.query(`update public.forsendelser set status = 'annulleret' where id = $1`, [f1.id]);
+    expect((await en<{ v: string }>(`select public.returfragt_annullering_bekraeftet($1) as v`, [f1.id])).v).toBe("ok");
+    const rf = await en<{ label_klar_kl: string | null; label_annulleret_bekraeftet_kl: string | null }>(
+      `select label_klar_kl, label_annulleret_bekraeftet_kl from public.returfragt_betalinger where id = $1`, [b.id]);
+    expect(rf.label_klar_kl).toBeNull();
+    expect(rf.label_annulleret_bekraeftet_kl).not.toBeNull();
+    const f2 = await en<{ id: string }>(`insert into public.forsendelser (trade_id, type) values ($1, 'retur') returning id`, [h.tradeId]);
+    await db.query(`update public.forsendelser set status = 'oprettet' where id = $1`, [f2.id]);
+    const efter = await en<{ forsendelse_id: string; label_klar_kl: string | null; n: number }>(
+      `select forsendelse_id, label_klar_kl, (select count(*)::int from public.returfragt_betalinger where trade_id = $2) as n
+         from public.returfragt_betalinger where id = $1`, [b.id, h.tradeId]);
+    expect(efter.forsendelse_id).toBe(f2.id);
+    expect(efter.label_klar_kl).not.toBeNull();
+    expect(efter.n).toBe(1);
   });
 
   it("en forsendelse kan ikke skifte type til retur", async () => {
