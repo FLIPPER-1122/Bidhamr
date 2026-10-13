@@ -102,7 +102,7 @@ export default function FaellesbeskedKnap({ tradeId }: { tradeId: string }) {
         type="button"
         onClick={aabn}
         aria-haspopup="dialog"
-        className="whitespace-nowrap rounded-md bg-[#E8F2EE] px-2 py-1 text-xs text-[#154537] transition-colors hover:bg-[#DCEAE4]"
+        className="whitespace-nowrap rounded-md bg-groen-lys px-2 py-1 text-xs text-groen-mork transition-colors hover:bg-groen-lys-hover"
       >
         Fællesbesked
       </button>

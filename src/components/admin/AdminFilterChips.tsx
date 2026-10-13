@@ -25,7 +25,7 @@ export default function AdminFilterChips({
             href={c.href}
             aria-current={erAktiv ? "true" : undefined}
             className={`inline-flex min-h-10 items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
-              erAktiv ? "bg-groen text-white" : "bg-groen-lys text-groen-mork hover:bg-[#DCEAE4]"
+              erAktiv ? "bg-groen text-white" : "bg-groen-lys text-groen-mork hover:bg-groen-lys-hover"
             }`}
           >
             {c.label}

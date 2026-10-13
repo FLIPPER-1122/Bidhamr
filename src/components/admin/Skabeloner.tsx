@@ -45,7 +45,7 @@ export default function Skabeloner({
           key={s.label}
           type="button"
           onClick={() => vaelg(s.tekst)}
-          className="inline-flex min-h-10 items-center lg:min-h-8 rounded-full bg-groen-lys px-3 text-xs font-medium text-groen-mork transition-colors hover:bg-[#DCEAE4] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-groen"
+          className="inline-flex min-h-10 items-center lg:min-h-8 rounded-full bg-groen-lys px-3 text-xs font-medium text-groen-mork transition-colors hover:bg-groen-lys-hover focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-groen"
         >
           {s.label}
         </button>

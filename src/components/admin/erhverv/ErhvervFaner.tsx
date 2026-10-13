@@ -47,7 +47,7 @@ export const dato = (iso: string | null | undefined) =>
     : "–";
 
 const STATUS_KLASSE: Record<string, string> = {
-  ny: "bg-orange-lys text-[#8A4210]",
+  ny: "bg-orange-lys text-advarsel-tekst",
   i_gang: "bg-info-bg text-info-tekst",
   godkendt: "bg-succes-bg text-succes-tekst",
   afvist: "bg-neutral-100 text-neutral-700",

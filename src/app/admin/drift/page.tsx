@@ -196,7 +196,7 @@ export default async function AdminDrift({
                         <div
                           key={d.dag}
                           title={`${d.dag}: ${d.antal.toLocaleString("da-DK")}`}
-                          className="min-w-[3px] flex-1 rounded-t bg-groen"
+                          className="min-w-[3px] flex-1 rounded-t bg-admin-graf"
                           style={{ height: `${Math.max(4, Math.round((d.antal / maks) * 100))}%` }}
                         />
                       ))}

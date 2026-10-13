@@ -308,7 +308,7 @@ function AfgoerKnap({
                     checked={udfald === u}
                     onChange={() => setUdfald(u)}
                     disabled={sender}
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
                   />
                   <span>
                     <span className="block font-semibold text-neutral-900">{UDFALD_NAVN[u]}</span>
@@ -342,7 +342,7 @@ function AfgoerKnap({
                 onChange={(e) => setReturTjekket(e.target.checked)}
                 disabled={sender}
                 required
-                className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
               />
               <span>Jeg har tjekket, at køberen ikke har sendt varen retur (heller ikke undervejs)</span>
             </label>
@@ -505,7 +505,7 @@ function AnkeKnap({
                     checked={udfald === u}
                     onChange={() => setUdfald(u)}
                     disabled={sender}
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
                   />
                   <span>
                     <span className="block font-semibold text-neutral-900">{navn[u]}</span>
@@ -523,7 +523,7 @@ function AnkeKnap({
                 onChange={(e) => setReturTjekket(e.target.checked)}
                 disabled={sender}
                 required
-                className="mt-0.5 h-4 w-4 shrink-0 accent-[#1E5E4A]"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
               />
               <span>Jeg har tjekket, at køberen ikke har sendt varen retur</span>
             </label>

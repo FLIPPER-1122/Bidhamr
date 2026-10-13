@@ -207,7 +207,7 @@ export default async function AdminAuktioner({
               href={filterHref(s.value)}
               aria-current={active ? "true" : undefined}
               className={`inline-flex min-h-10 items-center rounded-full px-4 text-[13px] font-medium transition-colors ${
-                active ? "bg-groen text-white" : "bg-groen-lys text-groen-mork hover:bg-[#DCEAE4]"
+                active ? "bg-groen text-white" : "bg-groen-lys text-groen-mork hover:bg-groen-lys-hover"
               }`}
             >
               {s.label}
