@@ -21,6 +21,7 @@
 --   firmakonto   firma@test.bidhamr.dk         51Ha-G0X21hAIx7k   (Testfirma ApS, pakke "Basis")
 --   MitID-test A mitid-a@test.bidhamr.dk       T1BhHXyuCjKWGA8C   (UDEN MitID - til test af MitID-flowet)
 --   MitID-test B mitid-b@test.bidhamr.dk       _TMNedfgLQRuRlaA   (UDEN MitID - prøv samme MitID som A = dobbeltkonto)
+--   MacBook-test macbook@test.bidhamr.dk       2QCghTYbaYTESjP2   (Filips test af appen på MacBook)
 --
 -- Adgangskoderne gælder kun testdatabasen. De må ikke genbruges andre steder.
 --
@@ -48,7 +49,8 @@ declare
     {"id":"11111111-1111-4111-8111-000000000008","email":"erhvervssaelger@test.bidhamr.dk","pw":"PXXou0dC3YLbNy5G","navn":"Ebbe Erhvervssælger"},
     {"id":"11111111-1111-4111-8111-000000000009","email":"firma@test.bidhamr.dk","pw":"51Ha-G0X21hAIx7k","navn":"Testfirma ApS"},
     {"id":"11111111-1111-4111-8111-000000000010","email":"mitid-a@test.bidhamr.dk","pw":"T1BhHXyuCjKWGA8C","navn":"Mia MitID"},
-    {"id":"11111111-1111-4111-8111-000000000011","email":"mitid-b@test.bidhamr.dk","pw":"_TMNedfgLQRuRlaA","navn":"Mads MitID"}
+    {"id":"11111111-1111-4111-8111-000000000011","email":"mitid-b@test.bidhamr.dk","pw":"_TMNedfgLQRuRlaA","navn":"Mads MitID"},
+    {"id":"11111111-1111-4111-8111-000000000012","email":"macbook@test.bidhamr.dk","pw":"2QCghTYbaYTESjP2","navn":"Mac Test"}
   ]';
   b jsonb;
 begin
@@ -89,6 +91,7 @@ update public.users set rolle = 'admin'       where id = '11111111-1111-4111-811
 update public.users set rolle = 'chef'        where id = '11111111-1111-4111-8111-000000000004';
 update public.users set rolle = 'medarbejder' where id = '11111111-1111-4111-8111-000000000005';
 update public.users set rolle = 'saelger'     where id = '11111111-1111-4111-8111-000000000008';
+update public.users set fornavn = 'Mac', efternavn = 'Test' where id = '11111111-1111-4111-8111-000000000012' and fornavn is null;
 
 -- ---------------------------------------------------------
 -- Erhverv (20261010030000_erhverv.sql): én testpakke uden pris og én
