@@ -669,10 +669,12 @@ export default async function AdminDrift({
                       <p className="mt-1 text-sm text-tekst-daempet">
                         {type.betyder} <span className="font-medium text-tekst">{type.goer}</span>
                       </p>
-                      <ul className="mt-1 space-y-0.5">
-                        {g.eksempler.map((e) => (
-                          <li key={e} className="break-words font-mono text-xs text-tekst-svag">
-                            {e}
+                      <ul className="mt-2 space-y-1 border-l-2 border-admin-kant pl-3">
+                        {g.beskeder.map((b) => (
+                          <li key={b.besked} className="flex items-start gap-2 text-xs">
+                            <span className="shrink-0 font-bold tabular-nums text-tekst">{b.antal}×</span>
+                            <span className="min-w-0 flex-1 break-words text-tekst">{b.besked}</span>
+                            <span className="shrink-0 whitespace-nowrap text-tekst-svag">{tid(b.senest)}</span>
                           </li>
                         ))}
                       </ul>

@@ -252,9 +252,11 @@ export type FejlGruppe = {
   noegle: string;
   kilde: string;
   kode: string;
-  // Seneste fejltekst og op til 3 forskellige eksempler (nyeste først).
+  // Seneste fejltekst.
   besked: string;
-  eksempler: string[];
+  // Hver særskilt fejltekst i gruppen med eget antal (nyeste først) - siden
+  // viser stadig alle tekster, som før grupperingen.
+  beskeder: { besked: string; antal: number; senest: string }[];
   antal: number;
   foerst: string;
   senest: string;
@@ -291,7 +293,7 @@ export async function hentFejlGrupper(
         kilde: r.kilde,
         kode,
         besked: r.besked,
-        eksempler: [],
+        beskeder: [],
         antal: 0,
         foerst: r.oprettet_kl,
         senest: r.senest_kl,
@@ -304,7 +306,13 @@ export async function hentFejlGrupper(
     }
     g.antal += r.antal;
     // Rækkerne kommer nyeste først.
-    if (!g.eksempler.includes(r.besked) && g.eksempler.length < 3) g.eksempler.push(r.besked);
+    const b = g.beskeder.find((x) => x.besked === r.besked);
+    if (b) {
+      b.antal += r.antal;
+      if (r.senest_kl > b.senest) b.senest = r.senest_kl;
+    } else {
+      g.beskeder.push({ besked: r.besked, antal: r.antal, senest: r.senest_kl });
+    }
     if (r.oprettet_kl < g.foerst) g.foerst = r.oprettet_kl;
     if (r.senest_kl > g.senest) g.senest = r.senest_kl;
     if (r.sti && !g.stier.includes(r.sti) && g.stier.length < 3) g.stier.push(r.sti);

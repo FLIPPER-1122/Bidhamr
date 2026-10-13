@@ -36,12 +36,25 @@ const SIDE = {
   auktioner: { sti: "/admin/auktioner", tekst: "Åbn auktioner" },
 } as const;
 
+const STRIPE_TILSTAND_TEKST = {
+  titel: "Stripe-tilstand passer ikke",
+  betyder: "Stripe-nøglen og databasen er ikke enige om test eller live, så betalinger behandles ikke.",
+  goer: "Tjek Stripe-nøglerne og databasens Stripe-tilstand (se docs/GO-LIVE-STRIPE.md).",
+};
+
 const flertal = (n: number, en: string, flere: string) => (n === 1 ? en : flere);
 
 // Emne med antal: "2 betalinger kræver tjek".
 const emneAntal = (en: string, flere: string, resten: string) => (n: number) =>
   [String(n), flertal(n, en, flere), resten].filter(Boolean).join(" ");
 const emneFast = (tekst: string) => () => tekst;
+
+const STRIPE_TILSTAND: AlarmType = {
+  ...STRIPE_TILSTAND_TEKST,
+  alvor: "roed",
+  side: SIDE.penge,
+  emne: () => "Stripe-tilstand passer ikke",
+};
 
 // Kendte koder. Nøglen er koden, som den står i drift_fejl (hvor-delen).
 export const ALARM_TYPER: Record<string, AlarmType> = {
@@ -209,6 +222,105 @@ export const ALARM_TYPER: Record<string, AlarmType> = {
     emne: emneFast("Betalings-cron blev ikke færdig"),
   },
 
+  "Refusion opgivet": {
+    titel: "Tilbagebetaling er opgivet",
+    betyder: "En tilbagebetaling til en køber er fejlet flere gange og prøves ikke mere automatisk.",
+    goer: "Tilbagebetal køberen manuelt i Stripe, og se handlen under betalinger.",
+    alvor: "roed",
+    side: SIDE.betalinger,
+    emne: emneAntal("tilbagebetaling", "tilbagebetalinger", "er opgivet"),
+  },
+  "Lovet refusion": {
+    titel: "Lovet tilbagebetaling fejlede",
+    betyder: "En tilbagebetaling, som køberen er lovet, kunne ikke sendes. Den prøves igen om 5 minutter.",
+    goer: "Se handlen under betalinger. Fortsætter det, så tilbagebetal i Stripe.",
+    alvor: "roed",
+    side: SIDE.betalinger,
+    emne: emneFast("Lovet tilbagebetaling fejlede"),
+  },
+  "Lovede refusioner": {
+    titel: "Lovede tilbagebetalinger kunne ikke hentes",
+    betyder: "Betalings-cron kunne ikke finde de tilbagebetalinger, køberne er lovet. Ingen er sendt i denne kørsel.",
+    goer: "Se fejlen på drift-siden. Kommer den igen, skal den rettes.",
+    alvor: "roed",
+    side: SIDE.drift,
+    emne: emneFast("Lovede tilbagebetalinger kunne ikke hentes"),
+  },
+  "Refusion af afvigelse": {
+    titel: "Forkert beløb blev ikke tilbagebetalt",
+    betyder: "En køber har betalt et andet beløb end handlen, og det kunne ikke tilbagebetales automatisk.",
+    goer: "Tjek betalingen i Stripe, og tilbagebetal forskellen.",
+    alvor: "roed",
+    side: SIDE.betalinger,
+    emne: emneFast("Forkert beløb blev ikke tilbagebetalt"),
+  },
+  "Tilbageførsel ved tabt indsigelse": {
+    titel: "Tabt indsigelse blev ikke hentet hos sælgeren",
+    betyder: "Vi har tabt en indsigelse, men beløbet kunne ikke hentes tilbage fra sælgerens Stripe-konto i denne kørsel.",
+    goer: "Se handlen under betalinger. Fortsætter det, så hent beløbet i Stripe.",
+    alvor: "roed",
+    side: SIDE.betalinger,
+    emne: emneFast("Tabt indsigelse blev ikke hentet hos sælgeren"),
+  },
+  Indsigelsesfrister: {
+    titel: "Frister for indsigelser blev ikke tjekket",
+    betyder: "Betalings-cron kunne ikke tjekke, om der er indsigelser, som banken venter svar på.",
+    goer: "Se indsigelserne i Stripe, så ingen frist bliver overset.",
+    alvor: "roed",
+    side: SIDE.betalinger,
+    emne: emneFast("Frister for indsigelser blev ikke tjekket"),
+  },
+  "Kunne ikke gemme PaymentIntent": {
+    titel: "Betaling er startet, men ikke gemt",
+    betyder: "En køber har fået en betaling hos Stripe, som vi ikke fik gemt. Betaler køberen, kender vi ikke betalingen.",
+    goer: "Find betalingen i Stripe, og tjek, at den hører til handlen.",
+    alvor: "roed",
+    side: SIDE.betalinger,
+    emne: emneFast("Betaling er startet, men ikke gemt"),
+  },
+  "Forældet PaymentIntent ikke annulleret": {
+    titel: "Gammel betaling er ikke lukket",
+    betyder: "En gammel betaling hos Stripe kunne ikke annulleres. Køberen kan risikere at betale to gange.",
+    goer: "Annullér den gamle betaling i Stripe.",
+    alvor: "roed",
+    side: SIDE.betalinger,
+    emne: emneFast("Gammel betaling er ikke lukket"),
+  },
+  "Stripe-tilstand": STRIPE_TILSTAND,
+  "stripe/tilstand": STRIPE_TILSTAND,
+  tilstand: STRIPE_TILSTAND,
+  Afstemningsruten: {
+    titel: "Pengeafstemningen fejlede",
+    betyder: "Den daglige afstemning med Stripe gik i stå. Vi ved derfor ikke, om pengene passer.",
+    goer: "Se fejlen på drift-siden. Afstemningen prøves igen om 2 timer.",
+    alvor: "roed",
+    side: SIDE.penge,
+    emne: emneFast("Pengeafstemningen fejlede"),
+  },
+  "erhverv/opgradering-refusion-fejl": {
+    titel: "Refusion til firma fejlede",
+    betyder: "Et firma skulle have penge tilbage for en opgradering, men refusionen fejlede.",
+    goer: "Refundér firmaet manuelt i Stripe.",
+    alvor: "roed",
+    side: SIDE.erhverv,
+    emne: emneFast("Refusion til firma fejlede"),
+  },
+  "erhverv/admin-pris-tilbage": {
+    titel: "Firmaets pris står forkert i Stripe",
+    betyder: "En prisændring kunne ikke rulles tilbage i Stripe, så firmaet kan blive opkrævet forkert.",
+    goer: "Ret prisen på abonnementet i Stripe.",
+    alvor: "roed",
+    side: SIDE.erhverv,
+    emne: emneFast("Firmaets pris står forkert i Stripe"),
+  },
+  "erhverv/rul-tilbage": {
+    titel: "Pakkeskift blev ikke rullet tilbage",
+    betyder: "Et firmas pakkeskift fejlede hos Stripe og kunne ikke rulles tilbage. Stripe og databasen kan være uenige.",
+    goer: "Tjek abonnementet i Stripe mod firmaets pakke under erhverv.",
+    alvor: "roed",
+    side: SIDE.erhverv,
+    emne: emneFast("Pakkeskift blev ikke rullet tilbage"),
+  },
   kald_betalings_cron: {
     titel: "Betalings-cron kan ikke startes",
     betyder: "Databasen kan ikke kalde betalings-cron, fordi en indstilling i Supabase Vault mangler.",
@@ -223,7 +335,7 @@ export const ALARM_TYPER: Record<string, AlarmType> = {
     titel: "Pengeafstemningen kan ikke startes",
     betyder: "Databasen kan ikke starte den daglige afstemning med Stripe, fordi en indstilling i Supabase Vault mangler.",
     goer: "Tjek cron_url, cron_secret og afstemning_url i Supabase Vault.",
-    alvor: "gul",
+    alvor: "roed",
     side: SIDE.drift,
     emne: emneFast("Pengeafstemningen kan ikke startes"),
   },
@@ -309,9 +421,9 @@ export const ALARM_TYPER: Record<string, AlarmType> = {
   },
   "betaling/gammel-model": {
     titel: "Betaling fra den gamle model",
-    betyder: "En betaling er lavet med den gamle betalingsmodel, som er fjernet. Intet er sendt til Stripe.",
+    betyder: "En betaling er lavet med den gamle betalingsmodel, som er fjernet. Intet er sendt til Stripe, så pengene skal håndteres i hånden.",
     goer: "Håndtér betalingen manuelt i Stripe.",
-    alvor: "gul",
+    alvor: "roed",
     side: SIDE.betalinger,
     emne: emneAntal("gammel betaling", "gamle betalinger", "skal håndteres"),
   },
@@ -334,8 +446,8 @@ export const ALARM_TYPER: Record<string, AlarmType> = {
   "betaling/noedstop": {
     titel: "Nødstop slået til eller fra",
     betyder: "Chefen har stoppet eller genoptaget betalinger eller udbetalinger.",
-    goer: "Intet, hvis det var dig. Ellers: tjek Penge med det samme.",
-    alvor: "gul",
+    goer: "Tjek Penge med det samme, hvis det ikke var dig.",
+    alvor: "roed",
     side: SIDE.penge,
     emne: emneFast("Nødstop ændret"),
   },
@@ -425,10 +537,10 @@ const PRAEFIKS: { praefiks: string; type: AlarmType }[] = [
   {
     praefiks: "betaling/",
     type: {
-      titel: "Betaling kræver opmærksomhed",
+      titel: "Betaling kræver tjek",
       betyder: "Der er sket noget med en betaling eller udbetaling, som en person bør se på.",
       goer: "Se betalingerne, der er markeret.",
-      alvor: "gul",
+      alvor: "roed",
       side: SIDE.betalinger,
       emne: emneAntal("betaling", "betalinger", "kræver opmærksomhed"),
     },
@@ -530,12 +642,18 @@ export const UKENDT_TYPE: AlarmType = {
   emne: emneAntal("teknisk fejl", "tekniske fejl", ""),
 };
 
+// Rækkefølgen SKAL svare til public.drift_alarm_er_roed() i migrationen:
+// kendt kode -> kilde 'webhook' (altid rød) -> præfiks -> kilde -> ukendt.
 export function alarmType(kilde: string, kode: string): AlarmType {
   const direkte = ALARM_TYPER[kode];
   if (direkte) return direkte;
+  if (kilde === "webhook") return KILDE_TYPE.webhook;
   for (const p of PRAEFIKS) if (kode.startsWith(p.praefiks)) return p.type;
   return KILDE_TYPE[kilde] ?? UKENDT_TYPE;
 }
+
+// Præfikser, hvis ukendte koder er røde (spejlet i drift_alarm_er_roed).
+export const ROEDE_PRAEFIKSER = PRAEFIKS.filter((p) => p.type.alvor === "roed").map((p) => p.praefiks);
 
 // Id-agtige ord (mindst 10 tegn af [A-Za-z0-9_-] med mindst ét ciffer): Stripe-
 // id'er, uuid'er m.m. Erstattes med "#", så samme slags fejl får samme kode.

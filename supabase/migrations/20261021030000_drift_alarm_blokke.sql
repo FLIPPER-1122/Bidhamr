@@ -12,18 +12,26 @@
 --        - "hvor: fejl" (logDriftFejl) -> hvor; ellers de første 60 tegn
 --   2. drift_alarm_blokke: én række pr. blok (kilde|kode) - hvornår den sidst
 --      blev sendt, med hvilket antal, og hvad der venter.
---   3. drift_alarm_vurder_blokke(p_kan_sende): finder hændelserne (samme
+--   3. drift_alarm_er_roed(kilde, kode): blokkens alvor. Listerne SKAL
+--      svare til ALARM_TYPER i src/lib/driftAlarmTyper.ts (testes i
+--      tests/penge-db/driftAlarm.test.ts).
+--   4. drift_alarm_vurder_blokke(p_kan_sende): finder hændelserne (samme
 --      kilder og vinduer som drift_alarm_vurder fra 20261008011000),
---      grupperer dem i blokke og afgør pr. blok:
---        - aldrig sendt, eller sidst sendt for over 1 time siden: send
---        - sendt inden for timen: send kun igen, hvis antallet er steget
---          markant (mindst det dobbelte og mindst 3) - ellers venter
---          hændelserne og kommer med, når timen er gået
---        - 'mange_fejl' er en tilstand (seneste 15 min.) og venter ikke
+--      grupperer dem i blokke og afgør pr. blok. Sendes med det samme:
+--        - røde blokke (hver gang der er nye hændelser)
+--        - ny_fejl-blokke (en fejltekst, der ikke er set før) - undtagen
+--          browser-fejl, som brugere selv kan fremkalde
+--        - blokke, der aldrig er sendt eller sidst blev sendt for over
+--          1 time siden, hvor antallet er steget markant (mindst det
+--          dobbelte og mindst 3), eller hvor den sidste mail fejlede
+--      Ellers (gule cron-blokke, browser-fejl) venter hændelserne og kommer
+--      med, når timen er gået. 'mange_fejl' er en tilstand (seneste
+--      15 min.) og venter ikke.
 --      Slags-niveauets "højst én mail pr. 30 min." er erstattet af dette.
 --      Hændelserne læses stadig præcis én gang pr. slags (daekket_til).
---   4. drift_alarm_blokke_fejlet(): mailen kunne ikke sendes - blokkene
---      lægges tilbage som ventende og sendes ved næste kørsel.
+--   5. drift_alarm_blokke_fejlet(): mailen kunne ikke sendes - blokkene
+--      lægges tilbage som ventende (tving_send) og sendes ved næste
+--      kørsel; "sidst sendt" gendannes.
 --
 -- drift_alarm_vurder() og drift_alarm_mail_fejlet() er UÆNDREDE: en ældre
 -- app-version bruger dem stadig, og den nye app falder tilbage til dem,
@@ -77,6 +85,8 @@ create table if not exists public.drift_alarm_blokke (
   venter_fra        timestamptz,
   venter_til        timestamptz,
   venter_eksempler  jsonb not null default '[]'::jsonb,
+  -- Sidste mail fejlede: send ved næste kørsel uanset timen.
+  tving_send        boolean not null default false,
   opdateret_kl      timestamptz not null default now(),
   constraint drift_alarm_blokke_noegle_laengde check (char_length(noegle) <= 200),
   constraint drift_alarm_blokke_slags check (slags in ('ny_fejl', 'mange_fejl', 'cron', 'webhook')),
@@ -86,18 +96,106 @@ create table if not exists public.drift_alarm_blokke (
 create index if not exists drift_alarm_blokke_venter_idx
   on public.drift_alarm_blokke (sidst_sendt_kl) where venter_antal > 0;
 
+-- Fra en tidligere udgave af denne fil (kun testdatabasen).
+alter table public.drift_alarm_blokke add column if not exists tving_send boolean not null default false;
+
+-- Kun funktionerne skriver (security definer); appen læser højst.
 alter table public.drift_alarm_blokke enable row level security;
-revoke all on public.drift_alarm_blokke from public, anon, authenticated;
+revoke all on public.drift_alarm_blokke from public, anon, authenticated, service_role;
 grant select on public.drift_alarm_blokke to service_role;
 
--- ============================================================ 3. vurdering
+-- ============================================================ 3. alvor
+
+-- Rød = "Skal ses på nu". Samme rækkefølge som alarmType():
+-- kendt kode -> kilde 'webhook' -> præfiks -> ellers gul.
+create or replace function public.drift_alarm_er_roed(p_kilde text, p_kode text)
+returns boolean
+language sql
+immutable
+parallel safe
+set search_path = ''
+as $fn$
+  select case
+    when p_kode = any (array[
+      'Afstemningsruten',
+      'Forældet PaymentIntent ikke annulleret',
+      'Indsigelsesfrister',
+      'Kunne ikke gemme PaymentIntent',
+      'Lovede refusioner',
+      'Lovet refusion',
+      'Refusion af afvigelse',
+      'Refusion opgivet',
+      'Stripe-tilstand',
+      'Tilbageførsel ved tabt indsigelse',
+      'betaling/admin-frigivelse',
+      'betaling/afstemning',
+      'betaling/betalingsmodel',
+      'betaling/bidhamr-daekker',
+      'betaling/charge-mangler',
+      'betaling/destination-charge',
+      'betaling/fremmed-udbetaling',
+      'betaling/gammel-model',
+      'betaling/indsigelse',
+      'betaling/indsigelse-efter-refusion',
+      'betaling/indsigelse-frist',
+      'betaling/negativ-udbetaling',
+      'betaling/noedstop',
+      'betaling/refusion-afstemning',
+      'betaling/saldo',
+      'betaling/udbetaling-konflikt',
+      'betaling/ukendt-betaling',
+      'cron/holdt-op',
+      'cron/koersel-fejlede',
+      'cron/koersel-haenger',
+      'erhverv/admin-pris-tilbage',
+      'erhverv/dobbelt-abonnement',
+      'erhverv/opgradering-refusion-fejl',
+      'erhverv/opgradering-ukendt',
+      'erhverv/rul-tilbage',
+      'kald_betalings_cron',
+      'kald_pengeafstemning',
+      'stripe/tilstand',
+      'tilstand'
+    ]) then true
+    when p_kode = any (array[
+      'Automatisk annullering af pauset auktion fejlede',
+      'Spejling af charges',
+      'Udbetaling til sælger',
+      'betaling/frysning',
+      'betaling/gamle-midler',
+      'betaling/indsigelse-uafklaret',
+      'betaling/kontotjek',
+      'betaling/udbetaling',
+      'betaling/udbetaling-fejlet',
+      'betaling/udbetaling-haenger',
+      'betaling/udbetaling-stoppet',
+      'betaling/webhook-udeblev',
+      'connect/afvist',
+      'connect/ingen-adgang',
+      'connect/udbetalingsplan',
+      'cron/http-kald',
+      'cron/pg-cron-job',
+      'faktura/dinero',
+      'klient',
+      'mange-fejl'
+    ]) then false
+    when p_kilde = 'webhook' then true
+    when p_kode like 'Pengeafstemning%' or p_kode like 'betaling/%' then true
+    else false
+  end
+$fn$;
+
+revoke all on function public.drift_alarm_er_roed(text, text) from public, anon, authenticated;
+grant execute on function public.drift_alarm_er_roed(text, text) to service_role;
+
+-- ============================================================ 4. vurdering
 
 -- Returnerer:
 --   {"blokke": [{"noegle", "slags", "kilde", "kode", "antal", "fra", "til",
 --                "eksempler": [{"sti", "besked"} ...] (højst 3),
 --                "gentaget", "forrige_sendt_kl", "forrige_antal"}],
 --    "ingen_modtager": [{"slags", "noegle", "antal"}],
---    "holdt": <antal blokke, der venter>, "tidspunkt": "..."}
+--    "holdt": [{"slags", "noegle"}] (blokke, der venter), "tidspunkt": "..."}
 -- p_kan_sende = false (ingen modtager): intet markeres som sendt, men
 -- hændelserne regnes for set, så der ikke kommer en stor bunke, når
 -- modtageren sættes.
@@ -128,10 +226,11 @@ declare
   v_til      timestamptz;
   v_eks      jsonb;
   v_sendes   boolean;
+  v_roed     boolean;
   v_set      text[] := '{}';
   v_send     jsonb := '[]'::jsonb;
   v_ingen    jsonb := '[]'::jsonb;
-  v_holdt    integer := 0;
+  v_holdt    jsonb := '[]'::jsonb;
   -- slags -> 'sendt' | 'undertrykt' | 'ingen_modtager'
   v_status   jsonb := '{}'::jsonb;
   v_resultat text;
@@ -354,14 +453,18 @@ begin
        where t.i <= 3;
     end if;
 
-    v_sendes := b.sidst_sendt_kl is null
+    v_roed := public.drift_alarm_er_roed(b.kilde, b.kode);
+    v_sendes := v_roed
+             or b.tving_send
+             or (v_slags = 'ny_fejl' and b.kilde <> 'klient')
+             or b.sidst_sendt_kl is null
              or b.sidst_sendt_kl <= v_nu - v_frist
              or v_total >= greatest(3, 2 * b.sidst_sendt_antal);
 
     if not p_kan_sende then
       update public.drift_alarm_blokke
          set venter_antal = 0, venter_fra = null, venter_til = null,
-             venter_eksempler = '[]'::jsonb, opdateret_kl = v_nu
+             venter_eksempler = '[]'::jsonb, tving_send = false, opdateret_kl = v_nu
        where noegle = v_noegle;
       v_ingen := v_ingen || jsonb_build_array(jsonb_build_object(
         'slags', v_slags, 'noegle', v_noegle, 'antal', v_total));
@@ -374,7 +477,7 @@ begin
              sidst_sendt_antal = v_total,
              antal_sendt = least(antal_sendt, 2147483646) + 1,
              venter_antal = 0, venter_fra = null, venter_til = null,
-             venter_eksempler = '[]'::jsonb, opdateret_kl = v_nu
+             venter_eksempler = '[]'::jsonb, tving_send = false, opdateret_kl = v_nu
        where noegle = v_noegle;
       v_send := v_send || jsonb_build_array(jsonb_build_object(
         'noegle', v_noegle, 'slags', v_slags, 'kilde', b.kilde, 'kode', b.kode,
@@ -391,7 +494,7 @@ begin
                venter_eksempler = v_eks, opdateret_kl = v_nu
          where noegle = v_noegle;
       end if;
-      v_holdt := v_holdt + 1;
+      v_holdt := v_holdt || jsonb_build_array(jsonb_build_object('slags', v_slags, 'noegle', v_noegle));
       if not (v_status ? v_slags) then
         v_status := v_status || jsonb_build_object(v_slags, 'undertrykt');
       end if;
@@ -404,7 +507,7 @@ begin
     select * from public.drift_alarm_blokke k
      where k.venter_antal > 0
        and not (k.noegle = any (v_set))
-       and (k.sidst_sendt_kl is null or k.sidst_sendt_kl <= v_nu - v_frist)
+       and (k.tving_send or k.sidst_sendt_kl is null or k.sidst_sendt_kl <= v_nu - v_frist)
      order by k.noegle
      for update
   loop
@@ -414,7 +517,7 @@ begin
              sidst_sendt_antal = b.venter_antal,
              antal_sendt = least(antal_sendt, 2147483646) + 1,
              venter_antal = 0, venter_fra = null, venter_til = null,
-             venter_eksempler = '[]'::jsonb, opdateret_kl = v_nu
+             venter_eksempler = '[]'::jsonb, tving_send = false, opdateret_kl = v_nu
        where noegle = b.noegle;
       v_send := v_send || jsonb_build_array(jsonb_build_object(
         'noegle', b.noegle, 'slags', b.slags, 'kilde', b.kilde, 'kode', b.kode,
@@ -425,7 +528,7 @@ begin
     else
       update public.drift_alarm_blokke
          set venter_antal = 0, venter_fra = null, venter_til = null,
-             venter_eksempler = '[]'::jsonb, opdateret_kl = v_nu
+             venter_eksempler = '[]'::jsonb, tving_send = false, opdateret_kl = v_nu
        where noegle = b.noegle;
     end if;
   end loop;
@@ -442,7 +545,7 @@ begin
   v_resultat := case
     when jsonb_array_length(v_send) > 0 then 'sendt'
     when jsonb_array_length(v_ingen) > 0 then 'ingen_modtager'
-    when v_holdt > 0 then 'undertrykt'
+    when jsonb_array_length(v_holdt) > 0 then 'undertrykt'
     else 'ingen' end;
 
   update public.drift_alarm_tilstand
@@ -457,10 +560,10 @@ $fn$;
 revoke all on function public.drift_alarm_vurder_blokke(boolean) from public, anon, authenticated;
 grant execute on function public.drift_alarm_vurder_blokke(boolean) to service_role;
 
--- ============================================================ 4. mail fejlede
+-- ============================================================ 5. mail fejlede
 
--- Mailen kunne ikke sendes: blokkene lægges tilbage som ventende uden
--- "sidst sendt", så de sendes ved næste kørsel. p_tidspunkt er "tidspunkt"
+-- Mailen kunne ikke sendes: blokkene lægges tilbage som ventende med
+-- tving_send, så de sendes ved næste kørsel, og "sidst sendt" gendannes. p_tidspunkt er "tidspunkt"
 -- fra drift_alarm_vurder_blokke; kun rækker, der stadig er markeret af netop
 -- det kald, røres. p_blokke er "blokke" fra samme kald.
 create or replace function public.drift_alarm_blokke_fejlet(
@@ -486,8 +589,9 @@ begin
                                              from jsonb_array_elements(v_b->'eksempler') with ordinality t(e, i)
                                             where t.i <= 3)
                                      else venter_eksempler end,
-             sidst_sendt_kl = null,
+             sidst_sendt_kl = (v_b->>'forrige_sendt_kl')::timestamptz,
              sidst_sendt_antal = greatest(coalesce((v_b->>'forrige_antal')::bigint, 0), 0),
+             tving_send = true,
              antal_sendt = greatest(antal_sendt - 1, 0),
              opdateret_kl = now()
        where noegle = v_b->>'noegle'
@@ -495,10 +599,13 @@ begin
     end loop;
   end if;
 
-  update public.drift_alarmer
+  -- "Sidst sendt" pr. slags = den seneste blok, der faktisk blev sendt.
+  update public.drift_alarmer a
      set sidste_resultat = 'mail_fejlet',
-         antal_sendt = greatest(antal_sendt - 1, 0)
-   where sidst_sendt_kl = p_tidspunkt;
+         antal_sendt = greatest(a.antal_sendt - 1, 0),
+         sidst_sendt_kl = (select max(k.sidst_sendt_kl) from public.drift_alarm_blokke k
+                            where k.slags = a.slags)
+   where a.sidst_sendt_kl = p_tidspunkt;
 
   update public.drift_alarm_tilstand
      set sidste_resultat = 'mail_fejlet', sidste_fejl = left(p_fejl, 500)

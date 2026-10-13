@@ -1,7 +1,9 @@
 // Drift-alarmmailen: gruppering, alvor, emne, tekster og sikkerhed.
 // npm run test:enhed
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ALARM_TYPER, UKENDT_TYPE, alarmKode, alarmType, idIEksempel } from "@/lib/driftAlarmTyper";
+import { ALARM_TYPER, ROEDE_PRAEFIKSER, UKENDT_TYPE, alarmKode, alarmType, idIEksempel } from "@/lib/driftAlarmTyper";
 import {
   bygAlarmMail,
   eksempelIder,
@@ -91,6 +93,78 @@ describe("alarmType", () => {
     expect(alarmType("server", "betaling/noget-nyt").side.sti).toBe("/admin/betalinger");
     expect(alarmType("server", "Fragt").titel).toBe("Fejl i fragten");
     expect(alarmType("webhook", "payment_intent.succeeded").titel).toBe("Beskeder udefra fejler");
+  });
+  it("listen over røde koder er låst (ret også drift_alarm_er_roed i migrationen)", () => {
+    const roede = Object.entries(ALARM_TYPER)
+      .filter(([, t]) => t.alvor === "roed")
+      .map(([k]) => k)
+      .sort();
+    expect(roede).toEqual([
+      "Afstemningsruten",
+      "Forældet PaymentIntent ikke annulleret",
+      "Indsigelsesfrister",
+      "Kunne ikke gemme PaymentIntent",
+      "Lovede refusioner",
+      "Lovet refusion",
+      "Refusion af afvigelse",
+      "Refusion opgivet",
+      "Stripe-tilstand",
+      "Tilbageførsel ved tabt indsigelse",
+      "betaling/admin-frigivelse",
+      "betaling/afstemning",
+      "betaling/betalingsmodel",
+      "betaling/bidhamr-daekker",
+      "betaling/charge-mangler",
+      "betaling/destination-charge",
+      "betaling/fremmed-udbetaling",
+      "betaling/gammel-model",
+      "betaling/indsigelse",
+      "betaling/indsigelse-efter-refusion",
+      "betaling/indsigelse-frist",
+      "betaling/negativ-udbetaling",
+      "betaling/noedstop",
+      "betaling/refusion-afstemning",
+      "betaling/saldo",
+      "betaling/udbetaling-konflikt",
+      "betaling/ukendt-betaling",
+      "cron/holdt-op",
+      "cron/koersel-fejlede",
+      "cron/koersel-haenger",
+      "erhverv/admin-pris-tilbage",
+      "erhverv/dobbelt-abonnement",
+      "erhverv/opgradering-refusion-fejl",
+      "erhverv/opgradering-ukendt",
+      "erhverv/rul-tilbage",
+      "kald_betalings_cron",
+      "kald_pengeafstemning",
+      "stripe/tilstand",
+      "tilstand",
+    ]);
+    expect(ROEDE_PRAEFIKSER).toEqual(["Pengeafstemning", "betaling/"]);
+  });
+  it("webhook er rød uanset præfiks, ukendte betaling/* er røde", () => {
+    expect(alarmType("webhook", "Fragt").alvor).toBe("roed");
+    expect(alarmType("webhook", "erhverv/fornyelse-med-proration").alvor).toBe("roed");
+    expect(alarmType("server", "betaling/noget-nyt").alvor).toBe("roed");
+    expect(alarmType("server", "Fragt").alvor).toBe("gul");
+    expect(alarmType("cron", "Refusion opgivet").alvor).toBe("roed");
+  });
+  it("migrationens røde liste er den samme som ALARM_TYPER", () => {
+    const sql = readFileSync(
+      path.resolve(import.meta.dirname, "../../supabase/migrations/20261021030000_drift_alarm_blokke.sql"),
+      "utf8",
+    );
+    const fn = sql.slice(sql.indexOf("function public.drift_alarm_er_roed"));
+    const lister = [...fn.matchAll(/any \(array\[([\s\S]*?)\]\)/g)].map((m) =>
+      [...m[1].matchAll(/'((?:[^']|'')*)'/g)].map((x) => x[1].replace(/''/g, "'")).sort(),
+    );
+    const efter = (a: "roed" | "gul") =>
+      Object.entries(ALARM_TYPER)
+        .filter(([, t]) => t.alvor === a)
+        .map(([k]) => k)
+        .sort();
+    expect(lister[0]).toEqual(efter("roed"));
+    expect(lister[1]).toEqual(efter("gul"));
   });
   it("ukendte koder får den neutrale tekst", () => {
     expect(alarmType("server", "Noget helt andet")).toBe(UKENDT_TYPE);
@@ -290,5 +364,15 @@ describe("renLinks", () => {
     expect(renLinks("se https://evil.com/x").tekst).toBe("se [link fjernet]");
     expect(renLinks("se https://bidhamr.dk/admin").tekst).toBe("se hxxps://bidhamr.dk/admin");
     expect(renLinks("se evil.com/login").tekst).toBe("se [domæne fjernet]");
+  });
+  it("alle topdomæner, men ikke filnavne og Stripe-hændelser", () => {
+    expect(renLinks("se evil.museum og x.travel/a").tekst).toBe("se [domæne fjernet] og [domæne fjernet]");
+    expect(renLinks("fejl i drift.ts og charge.dispute.created").tekst).toBe("fejl i drift.ts og charge.dispute.created");
+    expect(renLinks("payment_intent.succeeded").renset).toBe(false);
+  });
+  it("query fjernes også fra egne domæner uden skema", () => {
+    expect(renLinks("bidhamr.dk/nulstil?token=abc").tekst).toBe("bidhamr.dk/nulstil");
+    expect(renLinks("https://bidhamr.dk/x?token=abc").tekst).toBe("hxxps://bidhamr.dk/x");
+    expect(renLinks("evil.com?x=1").tekst).toBe("[domæne fjernet]");
   });
 });

@@ -57,7 +57,7 @@ export function alarmModtagere(): string[] {
 type BlokSvar = {
   blokke?: AlarmBlok[];
   ingen_modtager?: { slags: string; noegle: string; antal: number }[];
-  holdt?: number;
+  holdt?: { slags: string; noegle: string }[];
   tidspunkt: string;
 };
 
@@ -118,7 +118,7 @@ export async function koerDriftAlarm(): Promise<AlarmResultat> {
     const v = nyt.data as BlokSvar;
     blokke = (Array.isArray(v?.blokke) ? v.blokke : []).map(rensBlok);
     ingenModtager = unikke((v?.ingen_modtager ?? []).map((b) => b.slags));
-    holdt = (v?.holdt ?? 0) > 0 ? ["blokke"] : [];
+    holdt = unikke((Array.isArray(v?.holdt) ? v.holdt : []).map((b) => b.slags));
     rulTilbage = async (fejl) => {
       const { error } = await admin.rpc("drift_alarm_blokke_fejlet", {
         p_tidspunkt: v.tidspunkt,
@@ -129,6 +129,7 @@ export async function koerDriftAlarm(): Promise<AlarmResultat> {
           til: b.til,
           eksempler: b.eksempler,
           forrige_antal: b.forrige_antal ?? 0,
+          forrige_sendt_kl: b.forrige_sendt_kl ?? null,
         })),
         p_fejl: fejl,
       });
@@ -174,13 +175,19 @@ export async function koerDriftAlarm(): Promise<AlarmResultat> {
   }
   const slags = unikke(blokke.map((b) => b.slags));
 
-  const mail = bygAlarmMail(blokke);
   const fejl: string[] = [];
   let mindstEn = false;
-  for (const til of modtagere) {
-    const r = await sendHandelMailDetaljer(til, mail);
-    if (r.ok) mindstEn = true;
-    else fejl.push(renFejltekst(r.fejl, 200));
+  try {
+    const mail = bygAlarmMail(blokke);
+    for (const til of modtagere) {
+      const r = await sendHandelMailDetaljer(til, mail);
+      if (r.ok) mindstEn = true;
+      else fejl.push(renFejltekst(r.fejl, 200));
+    }
+  } catch (err) {
+    // Fx en fejl i opbygningen: blokkene er markeret som sendt og skal
+    // rulles tilbage som ved en fejlet afsendelse.
+    fejl.push(renFejltekst(err, 200));
   }
 
   if (!mindstEn) {

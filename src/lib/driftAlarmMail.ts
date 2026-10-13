@@ -44,30 +44,43 @@ export type AlarmBlok = {
 
 const EGET_DOMAENE = /^(?:[a-z0-9-]+\.)*bidhamr\.dk$/i;
 
-// Almindelige topdomæner - bruges til at finde domæner uden http(s):// foran
-// (fx "evil.com/login"), uden at ramme filnavne som "drift.ts".
-const TLD =
-  "dk|com|net|org|io|co|info|biz|xyz|app|dev|me|eu|de|se|no|nl|uk|fr|ru|cn|top|online|site|shop|link|click|live|ly|gl|to|ai|gg|tk|ml|ga|cf|ws|cc|tv|us";
+// Domæner uden http(s):// foran (fx "evil.com/login"): ethvert topdomæne på
+// 2-24 bogstaver. Undtaget er endelser, der ikke er topdomæner, men som står
+// i fejltekster: filnavne ("drift.ts") og Stripe-hændelser
+// ("charge.dispute.created").
+const IKKE_TLD = new Set([
+  "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "sql", "css", "map", "txt", "log", "yml", "yaml",
+  "created", "updated", "deleted", "succeeded", "failed", "paid", "canceled", "cancelled", "refunded",
+  "closed", "completed", "expired", "processing", "reversed", "attached", "detached", "pending",
+  "available", "reinstated", "finalized", "voided", "dispute", "session", "subscription", "invoice",
+  "schedule", "payment", "refund", "payout", "charge", "account", "customer", "person", "capability",
+]);
 const URL_MED_SKEMA = /\b(https?):\/\/([^\s/?#:]+)(?::\d+)?(\S*)/gi;
-const BART_DOMAENE = new RegExp(
-  String.raw`\b((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:${TLD}))\b(/\S*)?`,
-  "gi",
-);
+const BART_DOMAENE =
+  /\b((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,24}))\b((?::\d+)?[/?#]\S*)?/gi;
+
+// Sti uden query og hash (kan indeholde tokens).
+const udenQuery = (rest: string) => rest.split(/[?#]/)[0];
 
 // Neutraliserer links i en fejltekst, så den ikke kan bruges til phishing i
 // alarm-mailen: bidhamr.dk-links bliver til "hxxps://bidhamr.dk/sti" (ikke
-// klikbare), alle andre domæner fjernes helt.
+// klikbare, uden query), alle andre domæner fjernes helt.
 export function renLinks(tekst: string): { tekst: string; renset: boolean } {
   let renset = false;
   let t = tekst.replace(URL_MED_SKEMA, (_m, skema: string, vaert: string, rest: string) => {
     renset = true;
     if (EGET_DOMAENE.test(vaert)) {
-      return `${skema.toLowerCase().replace("http", "hxxp")}://${vaert.toLowerCase()}${rest}`;
+      return `${skema.toLowerCase().replace("http", "hxxp")}://${vaert.toLowerCase()}${udenQuery(rest)}`;
     }
     return "[link fjernet]";
   });
-  t = t.replace(BART_DOMAENE, (m: string, vaert: string) => {
-    if (EGET_DOMAENE.test(vaert)) return m;
+  t = t.replace(BART_DOMAENE, (m: string, vaert: string, tld: string, rest: string | undefined) => {
+    if (IKKE_TLD.has(tld.toLowerCase())) return m;
+    if (EGET_DOMAENE.test(vaert)) {
+      if (!rest || !/[?#]/.test(rest)) return m;
+      renset = true;
+      return `${vaert}${udenQuery(rest)}`;
+    }
     renset = true;
     return "[domæne fjernet]";
   });
