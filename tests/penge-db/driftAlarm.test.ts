@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { ALARM_TYPER, alarmKode, alarmType } from "@/lib/driftAlarmTyper";
+import { ALARM_TYPER, ROEDE_PRAEFIKSER, alarmKode, alarmType } from "@/lib/driftAlarmTyper";
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261021030000_drift_alarm_blokke.sql"),
@@ -130,6 +130,7 @@ describe("drift_alarm_er_roed = alarmType().alvor", () => {
     "connect/noget",
     "Noget helt andet",
     "payment_intent.succeeded",
+    ...ROEDE_PRAEFIKSER.map((p) => `${p}ukendt-kode-xyz`),
   ];
   it("alle kendte koder og reserverne", async () => {
     const forskelle: string[] = [];
@@ -217,6 +218,34 @@ describe("drift_alarm_vurder_blokke", () => {
     const s = await vurder();
     expect(noegler(s)).toEqual(["cron|cron/koersel-fejlede"]);
     expect(s.blokke[0].antal).toBe(2);
+  });
+
+  it("rød fra action: sendes første gang, venter ved gentagelse og sendes efter 15 minutter", async () => {
+    const t = "Kunne ikke gemme PaymentIntent: x";
+    await aabnVindue();
+    await fejl("action", t, "betaling");
+    expect(noegler(await vurder())).toEqual(["action|Kunne ikke gemme PaymentIntent"]);
+    await aabnVindue();
+    await igen(t);
+    const s = await vurder();
+    expect(s.blokke).toEqual([]);
+    expect(s.holdt.map((h) => h.noegle)).toEqual(["action|Kunne ikke gemme PaymentIntent"]);
+    await db.exec(`update public.drift_alarm_blokke set sidst_sendt_kl = now() - interval '16 minutes'`);
+    await aabnVindue();
+    const efter = await vurder();
+    expect(noegler(efter)).toEqual(["action|Kunne ikke gemme PaymentIntent"]);
+    expect(efter.blokke[0].antal).toBe(1);
+  });
+
+  it("gul fra server: en gentagelse af samme tekst giver ingen ny alarm", async () => {
+    const t = "Fragt: priser: fejl A";
+    await aabnVindue();
+    await fejl("server", t);
+    expect(noegler(await vurder())).toEqual(["server|Fragt"]);
+    await db.exec(`update public.drift_alarm_blokke set sidst_sendt_kl = now() - interval '2 hours'`);
+    await aabnVindue();
+    await igen(t);
+    expect((await vurder()).blokke).toEqual([]);
   });
 
   it("en ny fejltekst sendes med det samme, også inden for timen", async () => {

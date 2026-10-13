@@ -276,32 +276,48 @@ begin
     v_grupper := '[]'::jsonb;
 
     if r.slags = 'ny_fejl' then
-      -- En ny slags fejl (kilde + besked ikke set de seneste 30 dage).
+      -- Øvrige kilder (server, action, klient, notifikation):
+      -- - gule: kun en ny slags fejl (kilde + besked ikke set de seneste
+      --   30 dage), målt på oprettet_kl.
+      -- - røde (drift_alarm_er_roed): alle registreringer - også
+      --   gentagelser, som drift_fejl_log lægger oven i den eksisterende
+      --   række (senest_kl/antal) - ligesom webhook og cron. Spam-værnet
+      --   for røde gentagelser står i afgørelsen nedenfor.
       select coalesce(jsonb_agg(jsonb_build_object(
                'kilde', q.kilde, 'kode', q.kode, 'antal', q.antal,
                'fra', q.fra, 'til', q.til, 'eksempler', q.eksempler, 'tekster', q.tekster)), '[]'::jsonb)
         into v_grupper
         from (
-          select f.kilde,
-                 public.drift_alarm_kode(f.kilde, f.besked) as kode,
-                 count(*) as antal, min(f.oprettet_kl) as fra, max(f.oprettet_kl) as til,
+          select f.kilde, f.kode,
+                 count(*) as antal, min(f.tid) as fra, max(f.tid) as til,
                  -- Browser-fejl er indsendt af brugere: aldrig tekst eller sti.
                  to_jsonb((array_agg(jsonb_build_object(
                      'sti', case when f.kilde = 'klient' then null else f.sti end,
                      'besked', case when f.kilde = 'klient' then null else left(f.besked, 300) end)
-                   order by f.id desc))[1:3]) as eksempler,
+                   order by f.tid desc, f.id desc))[1:3]) as eksempler,
+                 -- Højst 100 tekster pr. blok og kørsel er nok til at se, om
+                 -- der er en ny (loftet holder svaret lille).
                  to_jsonb((array_agg(distinct md5(f.besked)))[1:100]) as tekster
-            from public.drift_fejl f
-           where f.oprettet_kl > r.daekket_til
-             and f.oprettet_kl <= v_graense
-             and f.kilde not in ('cron', 'webhook')
-             and not exists (
-                   select 1 from public.drift_fejl o
-                    where o.id < f.id
-                      and o.kilde = f.kilde
-                      and md5(o.besked) = md5(f.besked)
-                      and o.besked = f.besked
-                      and o.oprettet_kl > f.oprettet_kl - interval '30 days')
+            from (
+              select x.*, case when x.roed then x.senest_kl else x.oprettet_kl end as tid
+                from (
+                  select d.id, d.kilde, d.sti, d.besked, d.oprettet_kl, d.senest_kl,
+                         public.drift_alarm_kode(d.kilde, d.besked) as kode,
+                         public.drift_alarm_er_roed(d.kilde, public.drift_alarm_kode(d.kilde, d.besked)) as roed
+                    from public.drift_fejl d
+                   where d.kilde not in ('cron', 'webhook')
+                     and (d.oprettet_kl > r.daekket_til or d.senest_kl > r.daekket_til)) x) f
+           where (f.roed and f.senest_kl > r.daekket_til and f.senest_kl <= v_graense)
+              or (not f.roed
+                  and f.oprettet_kl > r.daekket_til
+                  and f.oprettet_kl <= v_graense
+                  and not exists (
+                        select 1 from public.drift_fejl o
+                         where o.id < f.id
+                           and o.kilde = f.kilde
+                           and md5(o.besked) = md5(f.besked)
+                           and o.besked = f.besked
+                           and o.oprettet_kl > f.oprettet_kl - interval '30 days'))
            group by 1, 2) q;
 
     elsif r.slags = 'mange_fejl' then
@@ -339,6 +355,8 @@ begin
                  count(*) as antal, min(f.senest_kl) as fra, max(f.senest_kl) as til,
                  to_jsonb((array_agg(jsonb_build_object('sti', f.sti, 'besked', left(f.besked, 300))
                    order by f.senest_kl desc))[1:3]) as eksempler,
+                 -- Webhook: rå tekst, så en ny pi_ tæller som ny. Højst 100 pr. blok og
+                 -- kørsel (holder svaret lille).
                  to_jsonb((array_agg(distinct md5(f.besked)))[1:100]) as tekster
             from public.drift_fejl f
            where f.kilde = 'webhook'
@@ -358,7 +376,8 @@ begin
                  count(*) as antal, min(f.senest_kl) as fra, max(f.senest_kl) as til,
                  to_jsonb((array_agg(jsonb_build_object('sti', f.sti, 'besked', left(f.besked, 300))
                    order by f.senest_kl desc))[1:3]) as eksempler,
-                 to_jsonb((array_agg(distinct md5(f.besked)))[1:100]) as tekster
+                 -- Cron: samme fejl uden id'er = gentagelse (fx et nyt request-id).
+                 to_jsonb((array_agg(distinct md5(public.drift_alarm_norm(f.besked))))[1:100]) as tekster
             from public.drift_fejl f
            where f.kilde = 'cron'
              and f.senest_kl > r.daekket_til

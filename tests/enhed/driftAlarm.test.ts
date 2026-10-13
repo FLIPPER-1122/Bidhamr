@@ -144,6 +144,11 @@ describe("alarmType", () => {
     ]);
     expect(ROEDE_PRAEFIKSER).toEqual(["Pengeafstemning", "betaling/"]);
   });
+  it.each(ROEDE_PRAEFIKSER)("en ukendt kode efter det røde præfiks %s er rød", (p) => {
+    for (const kilde of ["server", "action", "cron"]) {
+      expect(alarmType(kilde, `${p}ukendt-kode-xyz`).alvor).toBe("roed");
+    }
+  });
   it("webhook er rød uanset præfiks, ukendte betaling/* er røde", () => {
     expect(alarmType("webhook", "Fragt").alvor).toBe("roed");
     expect(alarmType("webhook", "erhverv/fornyelse-med-proration").alvor).toBe("roed");
