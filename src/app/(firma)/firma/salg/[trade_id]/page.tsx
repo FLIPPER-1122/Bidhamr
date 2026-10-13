@@ -13,6 +13,8 @@ import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 // HandelDetalje (kun køber/sælger - ellers 404).
 
 export const dynamic = "force-dynamic";
+// Fragtlabel (DAO) kan tage op til ca. 50 s i en server action (server.ts: OPRET_MAKS_MS_UDEN_OPSLAG).
+export const maxDuration = 120;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

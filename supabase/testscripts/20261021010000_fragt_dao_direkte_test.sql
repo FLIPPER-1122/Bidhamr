@@ -10,7 +10,8 @@
 --   fremmedFejl=0,fremmedGem=false,laasStadigVores=true,gem=true,token=1234/null,
 --   fejl1=1 | ukendt1=true,ukendt2=false | mulig13dage=false,mulig15dage=true,
 --   kandidat=1,claim=ok,claim2=findes,afslut=true,afslut2=false,staff=true |
---   p1=false/false,p2=false/false,p3=true/true,p4=true/false,poisonStaff=true |
+--   p1=false/false,p2=false/false,p3=true/true,p4=true/false,poisonStaff=true,
+--   raa=i_transit,loest=true,loest2=false |
 --   reg=true,reg2=false,a1..a4=igen,a5=opgivet,regAktiv=false,reg3=true,
 --   gemForaeldreloes=afvist,gemNy=true,claimOrphan999=1 | stiUgyldig=afvist,
 --   label=true,label2=false | slet=afvist
@@ -88,11 +89,15 @@ begin
   -- Poison event: opgives efter 3 forsøg, staff markeres én gang.
   update public.forsendelser set kraever_opmaerksomhed = false, opmaerksomhed_tekst = null where id = v_f;
   for i in 1..4 loop
-    r := public.fragt_feed_haendelse_fejl('dao', 'dao:X:1:t', v_f, 'kaput', 3);
+    r := public.fragt_feed_haendelse_fejl('dao', 'dao:X:1:t', v_f, 'kaput', 3, jsonb_build_object('type', 'i_transit', 'noegle', 'dao:X:1:t', 'tidspunkt', '2026-10-14T06:05:00Z'));
     ud := ud || 'p' || i || '=' || (r->>'opgivet') || '/' || (r->>'nu') || ',';
   end loop;
   select kraever_opmaerksomhed::text into v_txt from public.forsendelser where id = v_f;
-  ud := ud || 'poisonStaff=' || v_txt || ' | ';
+  ud := ud || 'poisonStaff=' || v_txt || ',';
+  select (haendelse->>'type') into v_txt from public.fragt_feed_fejl where fragtfirma = 'dao' and noegle = 'dao:X:1:t';
+  ud := ud || 'raa=' || coalesce(v_txt, 'null') || ',';
+  ud := ud || 'loest=' || public.fragt_feed_fejl_loest('dao', 'dao:X:1:t', null)::text || ',';
+  ud := ud || 'loest2=' || public.fragt_feed_fejl_loest('dao', 'dao:X:1:t', null)::text || ' | ';
 
   -- Forældreløse.
   ud := ud || 'reg=' || public.fragt_foraeldreloes_registrer(v_f, 'ORPHAN123')::text || ',';

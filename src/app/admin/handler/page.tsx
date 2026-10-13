@@ -21,6 +21,7 @@ import { UUID_RE, handelChatSti } from "@/lib/moderationLog";
 import { SPORINGS_NAVN, erSporingsType } from "@/lib/fragt/types";
 import {
   fragtAfslutHaengendeLabel,
+  fragtProevSporingIgen,
   fragtGodkendEkstraLabel,
   fragtMarkerHaandteret,
 } from "@/app/actions/adminFragt";
@@ -141,6 +142,16 @@ async function HandlerIndhold({
   if (haengerFejl) console.error("admin_haengende_handler fejlede:", haengerFejl.message);
   if (fragtFejl) console.error("Forsendelser til staff kunne ikke hentes:", fragtFejl.message);
   const fragtRaekker = (fragtData ?? []) as FragtRow[];
+  // Sporingshændelser, som feedet sprang over (fragt_feed_fejl) - "Prøv igen".
+  const { data: sprungneData } = fragtRaekker.length
+    ? await supabase
+        .from("fragt_feed_fejl")
+        .select("forsendelse_id")
+        .in("forsendelse_id", fragtRaekker.slice(0, 100).map((f) => f.id))
+        .not("opgivet_kl", "is", null)
+        .is("loest_kl", null)
+    : { data: [] as { forsendelse_id: string }[] };
+  const sprungne = new Set((sprungneData ?? []).map((r) => r.forsendelse_id as string));
 
   const haengerMap = new Map<string, Haenger>();
   for (const r of (haengende ?? []) as { trade_id: string; grund: unknown; siden: string }[]) {
@@ -423,6 +434,18 @@ async function HandlerIndhold({
                   <Link href={handelChatSti(f.trade_id)} prefetch={false} className={lille}>
                     Se chat
                   </Link>
+                  {sprungne.has(f.id) && (
+                    <ConfirmDialog
+                      triggerLabel="Prøv sporingen igen"
+                      triggerClassName={lille}
+                      title="Gem de sprungne sporingshændelser igen?"
+                      description="Fragtfirmaet sendte en eller flere sporingshændelser, som ikke kunne gemmes, og som derfor er sprunget over. BidHamr prøver at gemme dem igen nu. Ingen penge flyttes direkte, men en hændelse som leveret kan sende beskeder til køberen."
+                      confirmLabel="Prøv igen"
+                      action={fragtProevSporingIgen}
+                      hiddenFields={{ forsendelseId: f.id }}
+                      kvittering="Sporingshændelserne er gemt"
+                    />
+                  )}
                   {/* Hængende DAO-label: DAO kan ikke slå op på reference, og en pakke,
                       der aldrig indleveres, faktureres ikke - så den markeres blot fejlet. */}
                   {f.status === "opretter" && f.fragtfirma === "dao" && (

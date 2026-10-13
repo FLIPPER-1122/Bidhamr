@@ -379,15 +379,23 @@ grant execute on function public.fragt_ukendt_kode_registrer(text, text, text, t
 -- En hændelse fra feedet, der ikke kan gemmes ("poison event"): efter
 -- p_maks forsøg (ét pr. feed-kørsel) springes den over, så feedet ikke står
 -- stille for altid. Forsendelsen markeres til staff, og drift alarmeres.
+-- Midlertidige fejl (serialisering, deadlock, timeout, lås, forbindelse, 5xx)
+-- tæller ikke - det afgør serveren, før den kalder fragt_feed_haendelse_fejl.
+-- Den rå hændelse gemmes, så staff kan trykke "Prøv igen" under Fragt.
 create table if not exists public.fragt_feed_fejl (
   fragtfirma      text not null,
   noegle          text not null,
   forsendelse_id  uuid references public.forsendelser(id) on delete restrict,
   forsoeg         integer not null default 1,
   sidste_fejl     text,
+  -- Den normaliserede hændelse (højst 4 KB), som "Prøv igen" gemmer.
+  haendelse       jsonb,
   foerst_kl       timestamptz not null default now(),
   sidst_kl        timestamptz not null default now(),
   opgivet_kl      timestamptz,
+  -- Staff har fået hændelsen gemt med "Prøv igen".
+  loest_kl        timestamptz,
+  loest_af        uuid references public.users(id) on delete set null,
   primary key (fragtfirma, noegle),
   constraint fragt_feed_fejl_check check (
         fragtfirma in ('test', 'gls', 'shipmondo', 'dao')
@@ -395,16 +403,26 @@ create table if not exists public.fragt_feed_fejl (
     and forsoeg >= 1
     and char_length(coalesce(sidste_fejl, '')) <= 500)
 );
+-- Testdatabasen havde tabellen fra en tidligere udgave af denne migration.
+alter table public.fragt_feed_fejl
+  add column if not exists haendelse jsonb,
+  add column if not exists loest_kl  timestamptz,
+  add column if not exists loest_af  uuid references public.users(id) on delete set null;
+alter table public.fragt_feed_fejl drop constraint if exists fragt_feed_fejl_haendelse_check;
+alter table public.fragt_feed_fejl add constraint fragt_feed_fejl_haendelse_check check (
+  haendelse is null or (jsonb_typeof(haendelse) = 'object' and pg_column_size(haendelse) <= 4096));
 comment on table public.fragt_feed_fejl is
-  'Sporingshændelser fra feedet, som ikke kunne gemmes. Efter 3 forsøg springes de over (opgivet_kl), og staff får en markering. Kun service_role.';
+  'Sporingshændelser fra feedet, som ikke kunne gemmes. Efter 3 forsøg springes de over (opgivet_kl), og staff får en markering og kan trykke "Prøv igen" (loest_kl). Kun service_role.';
 
 alter table public.fragt_feed_fejl enable row level security;
 revoke all on public.fragt_feed_fejl from public, anon, authenticated;
 grant all on public.fragt_feed_fejl to service_role;
 
--- Svar: { opgivet: true/false, nu: true, når den blev opgivet netop nu }.
+drop function if exists public.fragt_feed_haendelse_fejl(text, text, uuid, text, integer);
+
+-- Svar: { opgivet, nu (opgivet netop nu), forsoeg }.
 create or replace function public.fragt_feed_haendelse_fejl(
-  p_fragtfirma text, p_noegle text, p_forsendelse uuid, p_fejl text, p_maks integer)
+  p_fragtfirma text, p_noegle text, p_forsendelse uuid, p_fejl text, p_maks integer, p_haendelse jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -413,14 +431,19 @@ as $fn$
 declare
   r      record;
   v_maks integer := greatest(coalesce(p_maks, 3), 1);
+  v_h    jsonb := p_haendelse;
 begin
-  insert into public.fragt_feed_fejl as x (fragtfirma, noegle, forsendelse_id, sidste_fejl, opgivet_kl)
-  values (p_fragtfirma, left(p_noegle, 200), p_forsendelse, left(p_fejl, 500),
+  if v_h is not null and (jsonb_typeof(v_h) <> 'object' or pg_column_size(v_h) > 4096) then
+    v_h := null;
+  end if;
+  insert into public.fragt_feed_fejl as x (fragtfirma, noegle, forsendelse_id, sidste_fejl, haendelse, opgivet_kl)
+  values (p_fragtfirma, left(p_noegle, 200), p_forsendelse, left(p_fejl, 500), v_h,
           case when v_maks <= 1 then now() end)
   on conflict (fragtfirma, noegle) do update
      set forsoeg = x.forsoeg + 1,
          sidst_kl = now(),
          sidste_fejl = left(excluded.sidste_fejl, 500),
+         haendelse = coalesce(excluded.haendelse, x.haendelse),
          opgivet_kl = coalesce(x.opgivet_kl, case when x.forsoeg + 1 >= v_maks then now() end)
   returning x.opgivet_kl, x.forsoeg into r;
   if r.opgivet_kl is null then
@@ -433,7 +456,7 @@ begin
          set kraever_opmaerksomhed = true,
              opmaerksomhed_tekst = public.forsendelse_note_tilfoej(opmaerksomhed_tekst,
                'En sporingshændelse fra fragtfirmaet kunne ikke gemmes (' || r.forsoeg
-               || ' forsøg) og er sprunget over. Tjek pakkens sporing hos fragtfirmaet.')
+               || ' forsøg) og er sprunget over. Tryk "Prøv igen" under Fragt, eller tjek pakkens sporing hos fragtfirmaet.')
        where id = p_forsendelse;
     end if;
     return jsonb_build_object('opgivet', true, 'nu', true, 'forsoeg', r.forsoeg);
@@ -441,8 +464,26 @@ begin
   return jsonb_build_object('opgivet', true, 'nu', false, 'forsoeg', r.forsoeg);
 end;
 $fn$;
-revoke all on function public.fragt_feed_haendelse_fejl(text, text, uuid, text, integer) from public, anon, authenticated;
-grant execute on function public.fragt_feed_haendelse_fejl(text, text, uuid, text, integer) to service_role;
+revoke all on function public.fragt_feed_haendelse_fejl(text, text, uuid, text, integer, jsonb) from public, anon, authenticated;
+grant execute on function public.fragt_feed_haendelse_fejl(text, text, uuid, text, integer, jsonb) to service_role;
+
+-- Staff: hændelsen er gemt med "Prøv igen" (serveren har tjekket rolle og
+-- inhabilitet og logger i moderation_log). Svar: true = markeret løst nu.
+create or replace function public.fragt_feed_fejl_loest(p_fragtfirma text, p_noegle text, p_staff uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  update public.fragt_feed_fejl
+     set loest_kl = now(), loest_af = p_staff
+   where fragtfirma = p_fragtfirma and noegle = p_noegle and loest_kl is null;
+  return found;
+end;
+$fn$;
+revoke all on function public.fragt_feed_fejl_loest(text, text, uuid) from public, anon, authenticated;
+grant execute on function public.fragt_feed_fejl_loest(text, text, uuid) to service_role;
 
 -- ===========================================================================
 -- 5. Forældreløse forsendelser (oprettet hos DAO, men ikke brugt)
@@ -608,8 +649,14 @@ security definer
 set search_path = ''
 as $fn$
 declare
-  o record;
+  o     record;
+  v_fid uuid;
 begin
+  -- Låserækkefølge som fragt_foraeldreloes_registrer: FØRST forsendelsen,
+  -- derefter den forældreløse række (ellers kan de to give deadlock).
+  select x.forsendelse_id into v_fid from public.fragt_foraeldreloese x where x.id = p_id;
+  if v_fid is null then return 'igen'; end if;
+  perform 1 from public.forsendelser where id = v_fid for update;
   if p_ok then
     update public.fragt_foraeldreloese set annulleret_kl = now(), sidste_fejl = null
      where id = p_id and annulleret_kl is null;

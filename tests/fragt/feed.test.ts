@@ -3,7 +3,7 @@
 // falsk Supabase-klient, der logger kaldene.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-type Svar = { data: unknown; error: { message: string } | null };
+type Svar = { data: unknown; error: { message: string; code?: string } | null; status?: number };
 const rpcLog: { fn: string; args: Record<string, unknown> }[] = [];
 let rpcSvar: Record<string, (args: Record<string, unknown>) => Svar> = {};
 let forsendelserListe: Svar = { data: [], error: null };
@@ -132,7 +132,8 @@ describe("koerSporingsfeed", () => {
       ++n === 2 ? { data: null, error: { message: "timeout" } } : { data: { ny: true }, error: null };
     const r = await koerSporingsfeed(feedFirma(async () => toHaendelser));
     expect(r?.gemt).toBe(false);
-    expect(fns()).toContain("fragt_feed_haendelse_fejl");
+    // Uden kode/status er fejlen midlertidig: den tæller ikke som poison.
+    expect(fns()).not.toContain("fragt_feed_haendelse_fejl");
     expect(fns()).not.toContain("fragt_sporing_token_gem");
     expect(rpcLog.find((x) => x.fn === "fragt_sporing_token_fejl")?.args.p_laas).toBe(LAAS);
   });
@@ -140,20 +141,31 @@ describe("koerSporingsfeed", () => {
   it("poison event: efter 3 kørsler springes den over, drift alarmeres, og tokenet gemmes", async () => {
     let n = 0;
     rpcSvar.forsendelse_registrer_haendelse = () =>
-      ++n === 1 ? { data: null, error: { message: "kaput" } } : { data: { ny: true }, error: null };
+      ++n === 1 ? { data: null, error: { message: "kaput", code: "23514" }, status: 400 } : { data: { ny: true }, error: null };
     rpcSvar.fragt_feed_haendelse_fejl = () => ({ data: { opgivet: true, nu: true }, error: null });
     const r = await koerSporingsfeed(feedFirma(async () => toHaendelser));
     expect(r).toMatchObject({ haendelser: 1, sprunget: 1, gemt: true });
     expect(rpcLog.find((x) => x.fn === "fragt_feed_haendelse_fejl")?.args).toMatchObject({ p_forsendelse: "F1", p_maks: 3 });
+    expect((rpcLog.find((x) => x.fn === "fragt_feed_haendelse_fejl")?.args.p_haendelse as { type: string }).type).toBe("i_transit");
     expect(driftHvor()).toContain("Fragt: sporingshændelse sprunget over");
   });
 
   it("kan fejlen ikke engang registreres, er databasen nede: intet springes over", async () => {
-    rpcSvar.forsendelse_registrer_haendelse = () => ({ data: null, error: { message: "nede" } });
+    rpcSvar.forsendelse_registrer_haendelse = () => ({ data: null, error: { message: "nede", code: "23514" }, status: 400 });
     rpcSvar.fragt_feed_haendelse_fejl = () => ({ data: null, error: { message: "nede" } });
     const r = await koerSporingsfeed(feedFirma(async () => toHaendelser));
     expect(r?.gemt).toBe(false);
     expect(r?.sprunget).toBe(0);
+  });
+
+  it("midlertidige databasefejl (deadlock, timeout, lås, forbindelse, 5xx) tæller aldrig som poison", async () => {
+    for (const [code, status] of [["40001", 400], ["40P01", 400], ["57014", 400], ["55P03", 400], ["08006", 400], ["23514", 503]] as const) {
+      rpcLog.length = 0;
+      rpcSvar.forsendelse_registrer_haendelse = () => ({ data: null, error: { message: "x", code }, status });
+      const r = await koerSporingsfeed(feedFirma(async () => toHaendelser));
+      expect(r?.gemt).toBe(false);
+      expect(fns()).not.toContain("fragt_feed_haendelse_fejl");
+    }
   });
 
   it("fejl i opslaget på sporingsnumre: tokenet gemmes ikke", async () => {

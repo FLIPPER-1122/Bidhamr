@@ -42,6 +42,8 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// book/retur (DAO) kan tage op til ca. 50 s (server.ts: OPRET_MAKS_MS_UDEN_OPSLAG).
+export const maxDuration = 120;
 
 const HANDLINGER = ["pakkeshops", "checkout", "levering", "book", "annuller", "forsendelser", "label", "retur"] as const;
 type Handling = (typeof HANDLINGER)[number];
@@ -136,8 +138,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
   if (brugerFejl || !bruger) return svar(401, IKKE_LOGGET_IND);
 
   const graense: GraenseNavn = handling === "pakkeshops" ? "fragt_pakkeshop_bruger" : "fragt_handling_bruger";
-  // Læsninger tæller ikke mod handlingsgrænsen.
-  if (!["checkout", "forsendelser", "label"].includes(handling)) {
+  // Læsninger tæller ikke mod handlingsgrænsen. "label" gør (som server
+  // action'en hentFragtlabelLink): den kan udløse et kald til fragtfirmaet
+  // (DAO henter PDF'en, hvis den manglede).
+  if (!["checkout", "forsendelser"].includes(handling)) {
     if (!(await tjekGraenser([[graense, bruger.id]]))) {
       return svar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
     }

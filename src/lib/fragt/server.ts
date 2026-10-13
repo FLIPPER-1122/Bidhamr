@@ -544,7 +544,7 @@ async function opretForsendelse(
   // kender fra tidligere forsøg (fejl her stopper ikke det nye forsøg -
   // cron'en prøver igen).
   if (svar.kode === "genoptag" && opretterNy) {
-    await annullerForaeldreloese(admin, id, 5);
+    await annullerForaeldreloese(admin, id, FORAELDRELOESE_I_FORSOEG, 30_000);
   }
   let oprettetHosFirma: string | null = null;
   try {
@@ -627,7 +627,7 @@ async function opretForsendelse(
       if (oFejl) {
         await logDriftFejl({ kilde: "server", hvor: "Fragt: forældreløs forsendelse", fejl: oFejl });
       } else {
-        await annullerForaeldreloese(admin, id, 5);
+        await annullerForaeldreloese(admin, id, FORAELDRELOESE_I_FORSOEG, 30_000);
       }
     }
     // Ukendt udfald: lad claimet stå - næste forsøg genbruger referencen
@@ -660,6 +660,10 @@ async function opretForsendelse(
   }
   return { ok: true, forsendelseId: id };
 }
+
+// I sælgerens eget forsøg annulleres højst 2 forældreløse (og højst i 30 s),
+// så kaldet holder sig under maxDuration (120 s) - resten tager fragt-cron'en.
+const FORAELDRELOESE_I_FORSOEG = 2;
 
 // Mindst DAO_OPRET_VAERSTE_MS (ca. 45 s) + lidt luft.
 const OPRET_MAKS_MS_UDEN_OPSLAG = Math.max(50_000, DAO_OPRET_VAERSTE_MS + 5_000);
@@ -694,8 +698,14 @@ function efterOpgivetOpret(admin: Admin, forsendelseId: string, kald: Promise<Op
 // Annullerer forældreløse forsendelser hos fragtfirmaet (fragt_foraeldreloese).
 // forsendelseId: kun dem for den forsendelse (før et nyt forsøg) - ellers de
 // ældste (fragt-cron). Kaster aldrig. Svar: antal annulleret.
-async function annullerForaeldreloese(admin: Admin, forsendelseId: string | null, graense: number): Promise<number> {
+async function annullerForaeldreloese(
+  admin: Admin,
+  forsendelseId: string | null,
+  graense: number,
+  budgetMs = 60_000,
+): Promise<number> {
   let antal = 0;
+  const slut = Date.now() + budgetMs;
   try {
     const { data, error } = await admin.rpc("fragt_foraeldreloese_claim", {
       p_forsendelse: forsendelseId,
@@ -703,6 +713,8 @@ async function annullerForaeldreloese(admin: Admin, forsendelseId: string | null
     });
     if (error) throw new Error(`fragt_foraeldreloese_claim: ${error.message}`);
     for (const o of (data ?? []) as { id: string; fragtfirma: string; forsendelses_id: string }[]) {
+      // Tidsbudget: resten tager fragt-cron'en (claimet venter 1 time).
+      if (Date.now() > slut) break;
       const adapter = adapterFor(o.fragtfirma);
       let ok = false;
       let fejl: string | null = null;
@@ -1094,16 +1106,40 @@ export async function annullerUdgaaendeForsendelse(
 // effekter: false = kun gem (webhooken skal svare inden for 3 sekunder; den
 // kører effekterne bagefter med after(), og fragt-cron'en sender beskeder,
 // der mangler).
+// En databasefejl med Postgres-koden og HTTP-status fra PostgREST, så feedet
+// kan skelne en midlertidig fejl fra en hændelse, der aldrig kan gemmes.
+export class DbFejl extends Error {
+  readonly kode: string | null;
+  readonly status: number | null;
+  constructor(besked: string, kode: string | null, status: number | null) {
+    super(besked);
+    this.name = "DbFejl";
+    this.kode = kode;
+    this.status = status;
+  }
+}
+
+// Midlertidig: serialisering (40001), deadlock (40P01), statement timeout
+// (57014), lås ikke ledig (55P03), forbindelse (08xxx), HTTP 5xx/0, og alt,
+// der ikke er en kendt databasefejl (fx netværk). Tæller aldrig som poison.
+export function erMidlertidigFejl(err: unknown): boolean {
+  if (!(err instanceof DbFejl)) return true;
+  const k = (err.kode ?? "").toUpperCase();
+  if (["40001", "40P01", "57014", "55P03"].includes(k) || k.startsWith("08")) return true;
+  if (err.status === null || err.status === 0 || err.status >= 500) return true;
+  return false;
+}
+
 export async function registrerForsendelseshaendelse(
   forsendelseId: string,
   h: Sporingshaendelse,
   kilde: HaendelseKilde,
   opts: { effekter?: boolean } = {},
 ): Promise<{ ny: boolean }> {
-  if (!erSporingsType(h.type)) throw new Error(`Ukendt hændelsestype: ${String(h.type)}`);
+  if (!erSporingsType(h.type)) throw new DbFejl(`Ukendt hændelsestype: ${String(h.type)}`, "BHFRAGT", 400);
   const tid = Number.isNaN(Date.parse(h.tidspunkt)) ? new Date().toISOString() : h.tidspunkt;
   const admin = createAdminClient();
-  const { data, error } = await admin.rpc("forsendelse_registrer_haendelse", {
+  const { data, error, status } = await admin.rpc("forsendelse_registrer_haendelse", {
     p_forsendelse: forsendelseId,
     p_type: h.type,
     p_tidspunkt: tid,
@@ -1112,13 +1148,13 @@ export async function registrerForsendelseshaendelse(
     p_raa: h.raa ?? null,
     p_kilde: kilde,
   });
-  if (error) throw new Error(`forsendelse_registrer_haendelse: ${error.message}`);
+  if (error) throw new DbFejl(`forsendelse_registrer_haendelse: ${error.message}`, error.code ?? null, status ?? null);
   const ny = Boolean((data as { ny?: boolean } | null)?.ny);
   // Fragtfirmaets målte vægt over pakkestørrelsen: staff + udbetalingen holdes.
   const maalt = h.raa && typeof h.raa.maalt_vaegt_gram === "number" ? Math.round(h.raa.maalt_vaegt_gram) : null;
   if (ny && maalt && maalt > 0) {
-    const { error: vFejl } = await admin.rpc("forsendelse_tjek_vaegt", { p_id: forsendelseId, p_maalt_gram: maalt });
-    if (vFejl) throw new Error("forsendelse_tjek_vaegt: " + vFejl.message);
+    const { error: vFejl, status: vStatus } = await admin.rpc("forsendelse_tjek_vaegt", { p_id: forsendelseId, p_maalt_gram: maalt });
+    if (vFejl) throw new DbFejl("forsendelse_tjek_vaegt: " + vFejl.message, vFejl.code ?? null, vStatus ?? null);
   }
   if (ny && opts.effekter !== false) await udfoerHandelseffekter(admin, forsendelseId);
   return { ny };
@@ -1444,20 +1480,23 @@ export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET
     const egne = (haendelser as WebhookHaendelse[])
       .map((h) => ({ h, id: h.sporingsnummer ? tilId.get(h.sporingsnummer) : undefined, noegle: h.noegle.slice(0, 200) }))
       .filter((x): x is { h: WebhookHaendelse; id: string; noegle: string } => !!x.id);
+    // Klumper på højst 100 id'er og 100 nøgler pr. forespørgsel (URL-længde).
     const ids = [...new Set(egne.map((x) => x.id))];
-    const noegler = [...new Set(egne.map((x) => x.noegle))];
     const findes = new Set<string>();
-    for (let i = 0; i < noegler.length && ids.length > 0; i += 100) {
-      const { data, error } = await admin
-        .from("forsendelse_haendelser")
-        .select("forsendelse_id, noegle")
-        .in("forsendelse_id", ids.slice(0, 500))
-        .in("noegle", noegler.slice(i, i + 100));
-      if (error) throw new Error(`forsendelse_haendelser (feed): ${error.message}`);
-      for (const r of data ?? []) findes.add(`${r.forsendelse_id as string}|${r.noegle as string}`);
+    for (let i = 0; i < ids.length; i += 100) {
+      const idKlump = ids.slice(i, i + 100);
+      const idSet = new Set(idKlump);
+      const noegler = [...new Set(egne.filter((x) => idSet.has(x.id)).map((x) => x.noegle))];
+      for (let j = 0; j < noegler.length; j += 100) {
+        const { data, error } = await admin
+          .from("forsendelse_haendelser")
+          .select("forsendelse_id, noegle")
+          .in("forsendelse_id", idKlump)
+          .in("noegle", noegler.slice(j, j + 100));
+        if (error) throw new Error(`forsendelse_haendelser (feed): ${error.message}`);
+        for (const r of data ?? []) findes.add(`${r.forsendelse_id as string}|${r.noegle as string}`);
+      }
     }
-    // Mange forsendelser i ét svar: kun de første 500 er slået op - resten
-    // går den normale (idempotente) vej.
 
     for (const { h, id, noegle } of egne) {
       if (findes.has(`${id}|${noegle}`)) continue;
@@ -1473,6 +1512,9 @@ export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET
         res.haendelser++;
         if (ny) res.nye++;
       } catch (err) {
+        // Midlertidig fejl (lås, timeout, forbindelse, 5xx): stop uden at
+        // tælle - hele kørslen gentages næste gang.
+        if (erMidlertidigFejl(err)) throw err;
         // Er det hændelsen (poison) eller databasen? Kan fejlen ikke engang
         // registreres, er databasen nede: stop, og prøv det hele igen.
         const { data: p, error: pFejl } = await admin.rpc("fragt_feed_haendelse_fejl", {
@@ -1481,6 +1523,15 @@ export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET
           p_forsendelse: id,
           p_fejl: renFejltekst(err, 300),
           p_maks: FEED_POISON_MAKS,
+          // Den rå (normaliserede) hændelse, så staff kan trykke "Prøv igen".
+          p_haendelse: {
+            type: h.type,
+            tidspunkt: h.tidspunkt,
+            noegle,
+            beskrivelse: h.beskrivelse ?? null,
+            raa: h.raa ?? null,
+            sporingsnummer: h.sporingsnummer ?? null,
+          },
         });
         if (pFejl) throw err;
         const pp = p as { opgivet?: boolean; nu?: boolean } | null;
@@ -1513,6 +1564,61 @@ export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET
   }
 }
 
+
+// Staff: "Prøv igen" på sporingshændelser, som feedet opgav (fragt_feed_fejl).
+// Den gemte hændelse registreres som en almindelig sporingshændelse
+// (idempotent via nøglen) og markeres løst. Kaldere SKAL have tjekket
+// staff-rollen og inhabilitet og logger selv i moderation_log.
+export async function staffProevFeedHaendelserIgen(
+  forsendelseId: string,
+  staffId: string,
+): Promise<{ ok: true; gemt: number; tradeId: string } | { fejl: string }> {
+  const admin = createAdminClient();
+  const { data: f } = await admin
+    .from("forsendelser")
+    .select("id, trade_id")
+    .eq("id", forsendelseId)
+    .maybeSingle<{ id: string; trade_id: string }>();
+  if (!f) return { fejl: "Forsendelsen findes ikke." };
+  const { data: raekker, error } = await admin
+    .from("fragt_feed_fejl")
+    .select("fragtfirma, noegle, haendelse")
+    .eq("forsendelse_id", forsendelseId)
+    .not("opgivet_kl", "is", null)
+    .is("loest_kl", null)
+    .limit(50);
+  if (error) throw new Error(`fragt_feed_fejl: ${error.message}`);
+  if (!raekker || raekker.length === 0) return { fejl: "Der er ingen sprungne sporingshændelser på forsendelsen." };
+  let gemt = 0;
+  const fejl: string[] = [];
+  for (const r of raekker as { fragtfirma: string; noegle: string; haendelse: Record<string, unknown> | null }[]) {
+    const h = r.haendelse;
+    if (!h || !erSporingsType(h.type) || typeof h.tidspunkt !== "string" || h.noegle !== r.noegle) {
+      fejl.push("Hændelsen er ikke gemt i et brugbart format - tjek sporingen hos fragtfirmaet.");
+      continue;
+    }
+    try {
+      await registrerForsendelseshaendelse(forsendelseId, {
+        type: h.type,
+        tidspunkt: h.tidspunkt,
+        noegle: r.noegle,
+        beskrivelse: typeof h.beskrivelse === "string" ? h.beskrivelse : null,
+        raa: h.raa && typeof h.raa === "object" ? (h.raa as Record<string, unknown>) : null,
+      }, "sporing");
+      const { error: lFejl } = await admin.rpc("fragt_feed_fejl_loest", {
+        p_fragtfirma: r.fragtfirma,
+        p_noegle: r.noegle,
+        p_staff: staffId,
+      });
+      if (lFejl) throw new Error(`fragt_feed_fejl_loest: ${lFejl.message}`);
+      gemt++;
+    } catch (err) {
+      fejl.push(renFejltekst(err, 200));
+    }
+  }
+  if (gemt === 0) return { fejl: `Hændelsen kunne stadig ikke gemmes: ${fejl[0] ?? "ukendt fejl"}` };
+  return { ok: true, gemt, tradeId: f.trade_id };
+}
 
 // Efterlysning hos fragtfirmaet (ingen leveringsmelding 14 dage efter
 // afsendelse). Højst én pr. forsendelse; opret-kaldet genforsøges aldrig
@@ -1710,7 +1816,7 @@ export async function koerFragtCron(): Promise<{
 
   // Forældreløse forsendelser (oprettet hos DAO, men ikke brugt): annulleres.
   if (Date.now() - start < CRON_BUDGET_MS) {
-    r.foraeldreloese = await annullerForaeldreloese(admin, null, 5);
+    r.foraeldreloese = await annullerForaeldreloese(admin, null, 5, Math.max(0, CRON_BUDGET_MS - (Date.now() - start)));
   }
 
   // Efterlysning: ingen leveringsmelding 14 dage efter afsendelse.
