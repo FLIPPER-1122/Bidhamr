@@ -14,22 +14,20 @@ import { fjernGemtKortForBruger } from "@/lib/betaling/kort";
 import { beskyttelseOere } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import {
-  BetalingsFejl,
-  LeveringManglerFejl,
-  BetalingVenterFejl,
-  VENTER_TEKST,
-  hentBetalingForHandel,
-  hentProfil,
-  kundeSessionTilCheckout,
   erOnboardingRetur,
-  onboardingLink,
-  registrerGemtKort,
-  sikrPaymentIntent,
-  sikrStripeKunde,
-  spejlConnectKonto,
+  hentBetalingForHandel,
   spejlPaymentIntent,
-  stripeOversigtLink,
 } from "@/lib/betaling/stripeBetaling";
+import {
+  bekraeftGemtKortFor,
+  hentBetalingsindstillingerFor,
+  opdaterSaelgerStatusFor,
+  startBetalingFor,
+  startGemKortFor,
+  startOnboardingFor,
+  stripeOversigtFor,
+  type Betalingsindstillinger,
+} from "@/lib/betaling/betalingHandlinger";
 
 type Fejl = { fejl: string };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -170,16 +168,10 @@ export async function hentBetalingsstatus(
 // ------------------------------------------------------------------ betal
 
 // Starter (eller genoptager) betalingen for en vundet auktion og returnerer
-// client_secret til Stripes Payment Element. Beløbet kommer udelukkende fra
-// betalingsrækken (BidHamr Beskyttelse er låst ved buddet) - klienten sender
-// intet, der påvirker beløbet.
-//
-// Ingen automatisk betaling: køberen betaler altid selv her. Har han et gemt
-// kort, følger customerSessionClientSecret med, så Payment Element viser (og
-// forvælger) kortet - giv den til <Elements options={{ clientSecret,
-// customerSessionClientSecret }}>. Kortet trækkes først, når køberen trykker
-// Betal (stripe.confirmPayment). null = intet gemt kort (eller det kunne ikke
-// hentes) - betalingen virker som altid.
+// client_secret til Stripes Payment Element. Logikken deles med appen
+// (startBetalingFor i src/lib/betaling/betalingHandlinger.ts). Har køberen et
+// gemt kort, følger customerSessionClientSecret med (forudfylder kun - kortet
+// trækkes først, når køberen trykker Betal).
 export async function startBetaling(
   handelId: string,
 ): Promise<
@@ -188,71 +180,23 @@ export async function startBetaling(
 > {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
-
-  try {
-    const b = await hentBetalingForHandel(handelId);
-    if (!b || b.buyer_id !== user.id) return { fejl: "Betalingen findes ikke." };
-    // Fx en gammel fane: siden genindlæses, så den nye status vises.
-    if (b.status === "betalt") return { fejl: "Handlen er allerede betalt.", betalt: true };
-    if (b.status === "behandles") {
-      return { fejl: "Din betaling behandles. Du hører fra os, når den er gennemført.", betalt: true };
-    }
-    if (b.status !== "afventer") return { fejl: "Handlen kan ikke længere betales." };
-    if (b.venter_paa_saelgerkonto_kl) return { fejl: VENTER_TEKST };
-    if (new Date(b.betal_senest).getTime() < Date.now()) {
-      return { fejl: "Fristen for at betale er overskredet." };
-    }
-
-    const pi = await sikrPaymentIntent(b);
-    if (pi.status === "succeeded" || pi.status === "processing") {
-      await spejlPaymentIntent(pi);
-      return { fejl: "Handlen er allerede betalt.", betalt: true };
-    }
-    if (pi.status === "canceled") return { fejl: "Handlen kan ikke længere betales." };
-    if (pi.amount !== Number(b.total_oere)) return { fejl: GENERISK };
-    if (!pi.client_secret) return { fejl: GENERISK };
-
-    return {
-      ok: true,
-      clientSecret: pi.client_secret,
-      totalOere: pi.amount,
-      customerSessionClientSecret: await kundeSessionTilCheckout(user.id, pi),
-    };
-  } catch (err) {
-    // Fragt: køberen skal vælge levering i checkout først.
-    if (err instanceof LeveringManglerFejl) return { fejl: err.message, kode: "vaelg_levering" };
-    if (err instanceof BetalingsFejl || err instanceof BetalingVenterFejl) return { fejl: err.message };
-    console.error("startBetaling fejlede:", err);
-    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "startBetaling", fejl: err, brugerId: user.id });
-    return { fejl: GENERISK };
+  const r = await startBetalingFor(user.id, handelId, "web");
+  if ("fejl" in r) {
+    if (r.kode === "betalt") return { fejl: r.fejl, betalt: true };
+    if (r.kode === "vaelg_levering") return { fejl: r.fejl, kode: "vaelg_levering" };
+    return { fejl: r.fejl };
   }
+  return {
+    ok: true,
+    clientSecret: r.clientSecret,
+    totalOere: r.totalOere,
+    customerSessionClientSecret: r.customerSessionClientSecret,
+  };
 }
 
 // ------------------------------------------------------------------ gemt kort
 
-export type Betalingsindstillinger = {
-  // Gemt kort bruges kun til at forudfylde checkout (ingen automatisk betaling).
-  gemtKort: { maerke: string | null; sidste4: string | null; udloeb: string | null } | null;
-  saelger: {
-    harKonto: boolean;
-    detaljerIndsendt: boolean;
-    overfoerslerAktiv: boolean;
-    udbetalingerAktiv: boolean;
-    // Stripe mangler oplysninger efter indsendelse (requirements.currently_due
-    // eller past_due) - sælgeren skal fortsætte opsætningen.
-    manglerOplysninger: boolean;
-    // Stripe har afvist kontoen (disabled_reason rejected.*).
-    afvist: boolean;
-    // Sælgeren har lukket/frakoblet kontoen hos Stripe.
-    frakoblet: boolean;
-    // Kontoen blev ikke godkendt i tide, og en auktion er annulleret: kan ikke
-    // sætte varer til salg, før Stripe har godkendt kontoen (betalingsmodel
-    // destination, 20261011020000).
-    frosset: boolean;
-    // En udbetaling til banken er fejlet - sælgeren skal rette bankkontoen hos Stripe.
-    venterPaaBank: boolean;
-  };
-};
+export type { Betalingsindstillinger };
 
 export async function hentBetalingsindstillinger(): Promise<
   ({ ok: true } & Betalingsindstillinger) | Fejl
@@ -260,27 +204,7 @@ export async function hentBetalingsindstillinger(): Promise<
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
   try {
-    const p = await hentProfil(user.id);
-    return {
-      ok: true,
-      gemtKort: p?.gemt_betalingsmetode_id
-        ? { maerke: p.gemt_kort_maerke, sidste4: p.gemt_kort_sidste4, udloeb: p.gemt_kort_udloeb }
-        : null,
-      saelger: {
-        harKonto: !!p?.stripe_account_id,
-        detaljerIndsendt: !!p?.connect_detaljer_indsendt,
-        overfoerslerAktiv: !!p?.connect_overfoersler_aktiv,
-        udbetalingerAktiv: !!p?.connect_udbetalinger_aktiv,
-        manglerOplysninger:
-          !!p?.stripe_account_id &&
-          ((p.connect_mangler_nu?.length ?? 0) > 0 ||
-            (p.connect_mangler_forfaldne?.length ?? 0) > 0),
-        afvist: !!p?.connect_spaerret_aarsag?.startsWith("rejected."),
-        frakoblet: !!p?.connect_frakoblet_kl,
-        frosset: !!p?.saelger_frosset_kl,
-        venterPaaBank: !!p?.connect_udbetaling_fejlet_kl,
-      },
-    };
+    return { ok: true, ...(await hentBetalingsindstillingerFor(user.id)) };
   } catch (err) {
     console.error("hentBetalingsindstillinger fejlede:", err);
     return { fejl: GENERISK };
@@ -292,66 +216,9 @@ export async function hentBetalingsindstillinger(): Promise<
 export async function startGemKort(): Promise<{ ok: true; clientSecret: string } | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
-  try {
-    const kunde = await sikrStripeKunde(user.id);
-    const stripe = getStripe();
-
-    // Genbrug en åben SetupIntent for kunden, så gentagne klik ikke opretter
-    // en ny hver gang - men kun en, der er NYERE end det gemte kort og seneste
-    // "Fjern kort". En ældre ville registrerGemtKort afvise bagefter (kortet
-    // blev ikke gemt), så den annulleres, og der laves en ny.
-    const profil = await hentProfil(user.id);
-    const p2 = profil as (typeof profil & { gemt_kort_kl?: string | null; kort_fjernet_kl?: string | null }) | null;
-    const graense = Math.max(
-      ...[p2?.gemt_kort_kl, p2?.kort_fjernet_kl].map((x) => (x ? Math.floor(new Date(x).getTime() / 1000) : 0)),
-    );
-    const aabne = await stripe.setupIntents.list({ customer: kunde, limit: 10 });
-    let aaben: (typeof aabne.data)[number] | undefined;
-    for (const s of aabne.data) {
-      if (
-        (s.usage !== "on_session" && s.usage !== "off_session") ||
-        s.metadata?.bruger_id !== user.id ||
-        !(s.status === "requires_payment_method" || s.status === "requires_confirmation" || s.status === "requires_action")
-      ) {
-        continue;
-      }
-      // off_session er fra før automatisk betaling blev fjernet: genbruges
-      // aldrig (kortet må kun gemmes til on-session brug) - annulleres.
-      if (s.usage === "off_session" || s.created <= graense) {
-        try {
-          await stripe.setupIntents.cancel(s.id);
-        } catch (err) {
-          console.warn("Kunne ikke annullere gammel SetupIntent:", s.id, err instanceof Error ? err.message : err);
-        }
-        continue;
-      }
-      aaben ??= s;
-    }
-    if (aaben?.client_secret) return { ok: true, clientSecret: aaben.client_secret };
-
-    // Idempotency key bygget på kundens seneste SetupIntent: samtidige kald
-    // ser samme liste og får samme SetupIntent. Når den er brugt, er den selv
-    // den seneste, så næste "skift kort" får en ny nøgle.
-    const vindue = aabne.data[0]?.id ?? "foerste";
-    const si = await stripe.setupIntents.create(
-      {
-        customer: kunde,
-        // Kortet bruges kun, når køberen selv betaler i checkout (ingen
-        // automatisk betaling, Filip 9. okt. 2026).
-        usage: "on_session",
-        // Kort (inkl. Apple Pay / Google Pay, som gemmes som kort).
-        payment_method_types: ["card"],
-        metadata: { bruger_id: user.id },
-      },
-      { idempotencyKey: `bidhamr-gemkort-${user.id}-${vindue}` },
-    );
-    if (!si.client_secret) return { fejl: GENERISK };
-    return { ok: true, clientSecret: si.client_secret };
-  } catch (err) {
-    console.error("startGemKort fejlede:", err);
-    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "startGemKort", fejl: err, brugerId: user.id });
-    return { fejl: GENERISK };
-  }
+  const r = await startGemKortFor(user.id, "web");
+  if ("fejl" in r) return { fejl: r.fejl };
+  return { ok: true, clientSecret: r.clientSecret };
 }
 
 // Kaldes, når brugeren vender tilbage fra confirmSetup (setup_intent i URL'en),
@@ -361,30 +228,13 @@ export async function bekraeftGemtKort(
 ): Promise<{ ok: true } | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
-  if (typeof setupIntentId !== "string" || !setupIntentId.startsWith("seti_")) {
-    return { fejl: "Ugyldig forespørgsel." };
+  const r = await bekraeftGemtKortFor(user.id, setupIntentId);
+  if ("fejl" in r) {
+    if (r.kode === "afvist") revalidatePath("/konto");
+    return { fejl: r.fejl };
   }
-  try {
-    const profil = await hentProfil(user.id);
-    const si = await getStripe().setupIntents.retrieve(setupIntentId);
-    const kunde = typeof si.customer === "string" ? si.customer : si.customer?.id;
-    if (!profil?.stripe_customer_id || kunde !== profil.stripe_customer_id) {
-      return { fejl: "Ugyldig forespørgsel." };
-    }
-    if (si.status !== "succeeded") return { fejl: "Kortet blev ikke gemt." };
-    if (!(await registrerGemtKort(si))) {
-      // Afvist (fx et forsinket svar efter "Fjern kort", eller kortet er
-      // fjernet hos Stripe i mellemtiden).
-      revalidatePath("/konto");
-      return { fejl: "Kortet blev ikke gemt. Prøv at tilføje det igen." };
-    }
-    revalidatePath("/konto");
-    return { ok: true };
-  } catch (err) {
-    console.error("bekraeftGemtKort fejlede:", err);
-    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "bekraeftGemtKort", fejl: err, brugerId: user.id });
-    return { fejl: GENERISK };
-  }
+  revalidatePath("/konto");
+  return { ok: true };
 }
 
 export async function fjernGemtKort(): Promise<{ ok: true } | Fejl> {
@@ -410,57 +260,34 @@ export async function startSaelgerOnboarding(
 ): Promise<{ ok: true; url: string } | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
-  try {
-    const url = await onboardingLink(user.id, erOnboardingRetur(retur) ? retur : "konto");
-    return { ok: true, url };
-  } catch (err) {
-    if (err instanceof BetalingsFejl) return { fejl: err.message };
-    console.error("startSaelgerOnboarding fejlede:", err);
-    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "startSaelgerOnboarding", fejl: err, brugerId: user.id });
-    return { fejl: GENERISK };
-  }
+  const r = await startOnboardingFor(user.id, erOnboardingRetur(retur) ? retur : "konto", "web");
+  return "fejl" in r ? { fejl: r.fejl } : r;
 }
 
 // Henter sælgerkontoens status direkte fra Stripe (fx på return_url).
 export async function opdaterSaelgerStatus(): Promise<{ ok: true } | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
-  try {
-    const p = await hentProfil(user.id);
-    if (!p?.stripe_account_id) return { ok: true };
-    const konto = await getStripe().accounts.retrieve(p.stripe_account_id);
-    await spejlConnectKonto(konto);
-    revalidatePath("/konto");
-    revalidatePath("/opret-auktion");
-    return { ok: true };
-  } catch (err) {
-    console.error("opdaterSaelgerStatus fejlede:", err);
-    await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "opdaterSaelgerStatus", fejl: err, brugerId: user.id });
-    return { fejl: GENERISK };
-  }
+  const r = await opdaterSaelgerStatusFor(user.id);
+  if ("fejl" in r) return { fejl: r.fejl };
+  revalidatePath("/konto");
+  revalidatePath("/opret-auktion");
+  return { ok: true };
 }
 
 // ------------------------------------------------------------------ udbetalinger
 
 // Engangs-link til sælgerens egen oversigt hos Stripe (Express Dashboard:
-// udbetalinger til banken, bankkonto, saldo). Kun for den indloggede brugers
-// egen konto, og kun når oplysningerne er sendt ind. Linket returneres til
+// udbetalinger til banken, bankkonto, saldo). Linket returneres til
 // klienten, som sender brugeren videre med det samme (det må ikke gemmes
 // eller mailes).
 export async function aabnStripeOversigt(): Promise<{ ok: true; url: string } | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
-  try {
-    const url = await stripeOversigtLink(user.id);
-    if (!url) {
-      return { fejl: "Du skal først gøre opsætningen af din udbetalingskonto færdig." };
-    }
-    return { ok: true, url };
-  } catch (err) {
-    console.error("aabnStripeOversigt fejlede:", err);
-    return { fejl: GENERISK };
-  }
+  const r = await stripeOversigtFor(user.id);
+  return "fejl" in r ? { fejl: r.fejl } : r;
 }
+
 
 // ------------------------------------------------------------------ udbetaling (destination)
 

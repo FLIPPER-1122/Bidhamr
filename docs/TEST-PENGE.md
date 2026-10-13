@@ -53,6 +53,7 @@ PENGE_ENV_FIL=C:/Users/jeppe/Desktop/hamr/.env.local npm run test:penge
 | 11 | To samtidige cron-kørsler + `balance.available` på samme tid → én payout med begge handler | 0077 |
 | 12 | Beløbsmanipulation (RLS, ændret PaymentIntent rettes før betaling, forkert beløb betalt → ikke registreret, refunderet, ny PaymentIntent) og betaling for en andens handel (fremmed, sælgeren selv, uden login) | 0077 |
 | 13 | Retur i sag: køberen betaler returfragten til platformen (ingen destination charge, 3DS, metadata `type=returfragt`); ingen returkode før webhooken; gentaget webhook/betaling giver intet nyt; label afvist → staff-markering, ingen ny betaling → hele returfragten refunderes én gang; faktura og kreditnota | 0077 |
+| 14 | Appens `/api/betaling/app/*` med rigtig Bearer-session: uden login/fremmed afvist, gem kort (SetupIntent on_session) → betal (destination charge, gebyr, 3DS, samme PaymentIntent igen, kundesession, ingen ephemeral key) → webhook → `betalt` → fuld refusion; fjern kort; onboarding-link og retur-redirect | `pm_card_visa` (gem kort) + 0077 |
 | 98 | Den daglige afstemning mod Stripes rigtige testdata: finder dashboard-refusionen og -tilbageførslen fra 03 og intet på BidHamrs egne bevægelser (se note) | - |
 | 99 | Slutafstemning: saldo hos Stripe = databasen på begge testkonti; overvågningen finder intet | - |
 

@@ -35,7 +35,7 @@ import { logDriftFejl, renFejltekst } from "@/lib/drift";
 import { egenDatabase } from "@/lib/betaling/fremmedeTestdata";
 import { hentNoedstop, NYE_BETALINGER_STOPPET_TEKST } from "@/lib/betaling/noedstop";
 import { alarmPrTilfaelde } from "@/lib/betaling/driftTilfaelde";
-import { kundeSessionTilCheckout, sikrStripeKunde } from "@/lib/betaling/stripeBetaling";
+import { kundeSessionTilCheckout, sikrStripeKunde, type BetalingsKanal } from "@/lib/betaling/stripeBetaling";
 import { send } from "@/lib/notifikationer/send";
 import { kroner } from "@/lib/kroner";
 import { fragtReturlabelAktiv } from "@/lib/fragt";
@@ -171,6 +171,7 @@ export async function startReturfragtBetaling(
   tradeId: string,
   koeberId: string,
   afsender?: AdresseInput | null,
+  kanal: BetalingsKanal = "web",
 ): Promise<ReturfragtStart> {
   if (!fragtReturlabelAktiv()) return { fejl: RETURLABEL_SLAAET_FRA_TEKST };
   try {
@@ -203,7 +204,7 @@ export async function startReturfragtBetaling(
       ok: true,
       clientSecret: pi.client_secret,
       beloebOere: pi.amount,
-      customerSessionClientSecret: await kundeSessionTilCheckout(koeberId, pi),
+      customerSessionClientSecret: await kundeSessionTilCheckout(koeberId, pi, kanal),
     };
   } catch (err) {
     console.error("startReturfragtBetaling fejlede:", err);
