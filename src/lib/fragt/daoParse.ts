@@ -295,11 +295,20 @@ export function sporingFraResultat(
 // haendelser: [...] }] }. Tokenet kan også stå i resultat (tolerant). Kaster,
 // hvis der ikke er et gyldigt nyt token - så gemmes intet, og næste kørsel
 // prøver igen med det gamle.
+// Lofter for ét feed-svar. Rammes de, er svaret AFKORTET (afkortet: true), og
+// tokenet må ikke gemmes - ellers mistede vi hændelserne over loftet.
+export const FEED_MAKS_PAKKER = 20_000;
+export const FEED_MAKS_HAENDELSER_PR_PAKKE = 500;
+
 export function feedFraSvar(rod: Record<string, unknown>, resultat: unknown): {
   nyToken: string;
   haendelser: WebhookHaendelse[];
   ukendte: UkendtSporingskode[];
   pakker: number;
+  // Svaret var større end lofterne (tokenet må ikke gemmes).
+  afkortet: boolean;
+  // Hændelser, der ikke kunne læses (fx tidspunkt eller kode mangler).
+  ugyldige: number;
 } {
   const tok = felt(rod, "token") ?? felt(resultat, "token", "nexttoken");
   const nyToken = typeof tok === "number" ? String(tok) : typeof tok === "string" ? tok.trim() : "";
@@ -310,17 +319,27 @@ export function feedFraSvar(rod: Record<string, unknown>, resultat: unknown): {
         const l = felt(resultat, "pakker", "resultat", "parcels");
         return Array.isArray(l) ? l : [];
       })();
-  const ud = { nyToken, haendelser: [] as WebhookHaendelse[], ukendte: [] as UkendtSporingskode[], pakker: 0 };
-  for (const p of pakker.slice(0, 5000)) {
+  const ud = {
+    nyToken,
+    haendelser: [] as WebhookHaendelse[],
+    ukendte: [] as UkendtSporingskode[],
+    pakker: 0,
+    afkortet: pakker.length > FEED_MAKS_PAKKER,
+    ugyldige: 0,
+  };
+  for (const p of pakker.slice(0, FEED_MAKS_PAKKER)) {
     const stregkode = tekstFelt(p, 40, "stregkode", "barcode");
     if (!gyldigStregkode(stregkode)) continue;
     ud.pakker++;
     const liste = listeFraPakketype(felt(p, "pakketype"));
     const hs = felt(p, "haendelser", "hændelser", "events");
-    for (const h of Array.isArray(hs) ? hs.slice(0, 200) : []) {
+    const alle = Array.isArray(hs) ? hs : [];
+    if (alle.length > FEED_MAKS_HAENDELSER_PR_PAKKE) ud.afkortet = true;
+    for (const h of alle.slice(0, FEED_MAKS_HAENDELSER_PR_PAKKE)) {
       const r = tolkHaendelse(stregkode, h, liste);
       if (r.slags === "kendt") ud.haendelser.push({ ...r.haendelse, sporingsnummer: stregkode, forsendelsesId: stregkode });
       else if (r.slags === "ukendt") ud.ukendte.push(r.ukendt);
+      else ud.ugyldige++;
     }
   }
   return ud;

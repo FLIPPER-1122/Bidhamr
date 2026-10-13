@@ -117,6 +117,10 @@ describe("opret Shop2Shop", () => {
     expect(ordre.searchParams.get("reference")).toBe(input().reference);
     expect(ordre.searchParams.get("format")).toBe("JSON");
     expect(ordre.searchParams.get("test")).toBeNull();
+    // DAO må ikke selv sende koden/labelen til sælgeren.
+    expect(ordre.searchParams.get("afs_notifikation")).toBe("0");
+    expect(ordre.searchParams.get("afs_email")).toBeNull();
+    expect(ordre.searchParams.get("afs_mobil")).toBeNull();
     expect(kald[1].url.pathname).toBe("/HentLabel.php");
     expect(kald[1].url.searchParams.get("stregkode")).toBe("00057099990000412345");
     expect(kald[1].url.searchParams.get("papir")).toBe("A4Foldable");
@@ -190,12 +194,12 @@ describe("opret Shop2Shop", () => {
     expect(kald).toHaveLength(3);
   });
 
-  it("PDF kan ikke hentes, men labelfri kode findes: gemmes uden PDF (drift-advarsel)", async () => {
-    saetSvar(jsonSvar(fixture("c2c_ok.json")), jsonSvar({}, 503), jsonSvar({}, 503), jsonSvar({}, 503));
+  it("PDF kan ikke hentes (ét kort forsøg), men labelfri kode findes: gemmes uden PDF (drift-advarsel)", async () => {
+    saetSvar(jsonSvar(fixture("c2c_ok.json")), jsonSvar({}, 503));
     const o = await daoFirma.opretForsendelse(input());
     expect(o.label).toBeNull();
     expect(o.qrKode).toBe("482 913 556");
-    expect(kald.map((k) => k.url.pathname)).toEqual(["/DAOPakkeshop/c2cindleveringsordre.php", "/HentLabel.php", "/HentLabel.php", "/HentLabel.php"]);
+    expect(kald.map((k) => k.url.pathname)).toEqual(["/DAOPakkeshop/c2cindleveringsordre.php", "/HentLabel.php"]);
     expect(driftLog.some((l) => l.startsWith("DAO: label-PDF"))).toBe(true);
     driftLog.forEach(ingenHemmeligheder);
   });
@@ -339,6 +343,20 @@ describe("efterlysning", () => {
       FragtUkendtUdfald,
     );
     expect(kald).toHaveLength(1);
+  });
+});
+
+describe("tidsgrænser", () => {
+  it("værste tilfælde for opret (ordre + kort PDF + annullering) er under serverens 50 s", async () => {
+    const { DAO_OPRET_VAERSTE_MS } = await import("@/lib/fragt/dao");
+    expect(DAO_OPRET_VAERSTE_MS).toBeLessThanOrEqual(45_000);
+  });
+
+  it("'Hent label' senere bruger almindelige genforsøg", async () => {
+    saetSvar(jsonSvar({}, 503), pdfSvar());
+    const l = await daoFirma.hentLabel!("00057099990000412345");
+    expect(l.type).toBe("pdf");
+    expect(kald).toHaveLength(2);
   });
 });
 

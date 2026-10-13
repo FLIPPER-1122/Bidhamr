@@ -82,6 +82,11 @@ const MAKS_FELT = 45;
 const LAES_TIMEOUT_MS = 6_000;
 const LAES_FORSOEG = 3;
 const SKRIV_TIMEOUT_MS = 20_000;
+// Værste tilfælde for opret(): ordre (20 s) + PDF (5 s) + evt. annullering
+// (20 s) = ca. 45 s. Serveren venter OPRET_MAKS_MS (DAO_OPRET_MAKS_MS i
+// server.ts skal være mindst så meget).
+const OPRET_PDF_TIMEOUT_MS = 5_000;
+export const DAO_OPRET_VAERSTE_MS = SKRIV_TIMEOUT_MS + OPRET_PDF_TIMEOUT_MS + SKRIV_TIMEOUT_MS;
 
 const PAPIR = ["60x100", "100x150", "A4Foldable", "150x100", "100x150l", "100x150p"] as const;
 
@@ -241,15 +246,17 @@ async function laes<T>(
   medFormat: boolean,
   tolk: (r: RaaSvar, s: DaoSvar) => T | null,
   ugyldigTekst: string,
+  opts: { forsoeg?: number; timeoutMs?: number } = {},
 ): Promise<T> {
   const k = konfig();
   const url = byggUrl(k, sti, params, medFormat);
   let sidste = "ingen svar";
-  for (let forsoeg = 1; forsoeg <= LAES_FORSOEG; forsoeg++) {
+  const maks = opts.forsoeg ?? LAES_FORSOEG;
+  for (let forsoeg = 1; forsoeg <= maks; forsoeg++) {
     if (forsoeg > 1) await vent(300 * forsoeg);
     let r: RaaSvar;
     try {
-      r = await hent(url, sti, LAES_TIMEOUT_MS);
+      r = await hent(url, sti, opts.timeoutMs ?? LAES_TIMEOUT_MS);
     } catch (err) {
       sidste = err instanceof Error ? err.message : "netværksfejl";
       continue;
@@ -276,8 +283,13 @@ function laesJson(sti: string, params: Record<string, Param>, hvad: Hvad): Promi
   return laes(sti, params, hvad, true, (_r, s) => (s.status === "ok" ? s : null), "ugyldigt svar (ingen status)");
 }
 
-function laesPdf(sti: string, params: Record<string, Param>, hvad: Hvad): Promise<Uint8Array> {
-  return laes(sti, params, hvad, false, (r) => (erPdf(r) ? r.bytes : null), "svaret var hverken PDF eller en fejl");
+function laesPdf(
+  sti: string,
+  params: Record<string, Param>,
+  hvad: Hvad,
+  opts: { forsoeg?: number; timeoutMs?: number } = {},
+): Promise<Uint8Array> {
+  return laes(sti, params, hvad, false, (r) => (erPdf(r) ? r.bytes : null), "svaret var hverken PDF eller en fejl", opts);
 }
 
 // Skrivekald: ÉT forsøg. Netværk/timeout/5xx/ugyldigt svar -> FragtUkendtUdfald
@@ -337,10 +349,18 @@ function adresseFelt(a: Adresse, hvem: "afsender" | "modtager"): { adresse: stri
 
 // ------------------------------------------------------------ label
 
-async function hentLabelPdf(stregkode: string): Promise<Uint8Array> {
+// kort: ét forsøg på højst 5 s (ved oprettelsen - den labelfri kode virker
+// uden PDF, og ordren har allerede brugt op til 20 s). Ellers som et
+// almindeligt læsekald med genforsøg (når sælgeren trykker "Hent label").
+async function hentLabelPdf(stregkode: string, kort = false): Promise<Uint8Array> {
   if (!gyldigStregkode(stregkode)) throw new FragtFejl("Forsendelsen findes ikke hos fragtfirmaet.");
   const k = konfig();
-  const pdf = await laesPdf("/HentLabel.php", { stregkode, papir: k.papir }, "label");
+  const pdf = await laesPdf(
+    "/HentLabel.php",
+    { stregkode, papir: k.papir },
+    "label",
+    kort ? { forsoeg: 1, timeoutMs: OPRET_PDF_TIMEOUT_MS } : {},
+  );
   if (pdf.byteLength > 5 * 1024 * 1024) throw new DaoIkkeSvar("/HentLabel.php", "labelen er for stor");
   return pdf;
 }
@@ -386,8 +406,11 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
     afsender: navnFelt(input.afsender.navn),
     afsender_adresse: afs.adresse,
     afsender_postnr: afs.postnr,
-    afs_mobil: daoMobil(input.afsender.telefon),
-    afs_email: input.afsender.email ? input.afsender.email.trim().slice(0, 60) : null,
+    // DAO må ikke selv sende koden/labelen til afsenderen (sælgeren får den
+    // kun i BidHamr): afs_notifikation=0, og afsenderens mobil og e-mail
+    // sendes slet ikke (de er valgfrie i dokumentationen).
+    // TODO(DAO): bekræft med Allan, at det er nok, og at intet andet sendes.
+    afs_notifikation: 0,
     vaegt,
     // TODO(DAO): mål (l, h, b i cm) - dokumentationen siger intet om, de er
     // krævet. Sendes ikke, før Allan har svaret.
@@ -425,7 +448,7 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
   // igen hos DAO.
   let label: Label | null = null;
   try {
-    label = { type: "pdf", data: await hentLabelPdf(stregkode) };
+    label = { type: "pdf", data: await hentLabelPdf(stregkode, true) };
   } catch (err) {
     if (!labelfri) {
       try {
@@ -509,7 +532,7 @@ async function feed(token: string): Promise<SporingsFeed> {
   if (!/^\d{1,20}$/.test(token)) throw new Error("DAO Track & Trace: ugyldigt token");
   const r = await laesJson("/TrackNTrace_v2.php", { token, sprog: "DA" }, "sporing");
   const f = feedFraSvar(r.rod, r.resultat);
-  return { nyToken: f.nyToken, haendelser: f.haendelser, ukendte: f.ukendte };
+  return { nyToken: f.nyToken, haendelser: f.haendelser, ukendte: f.ukendte, afkortet: f.afkortet, ugyldige: f.ugyldige };
 }
 
 // ------------------------------------------------------------ efterlysning

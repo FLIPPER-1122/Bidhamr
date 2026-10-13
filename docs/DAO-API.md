@@ -19,15 +19,16 @@ notatet er planen og dokumentationens indhold, som adapteren bygger på.
 | Hændelseskoder | `src/lib/fragt/daoKoder.ts` | Kun dokumentationens eksempler (10 og 11 -> "undervejs"). **Ukendt kode ændrer aldrig status** (gemmes i `fragt_ukendte_koder`, drift får en advarsel første gang). |
 | Valg af firma | `src/lib/fragt/index.ts` | `FRAGTFIRMA=dao`. Tom i udvikling/test = testfragtfirmaet (som før). Shipmondo-adapteren bliver liggende. |
 | Migration | `supabase/migrations/20261021010000_fragt_dao_direkte.sql` | `'dao'` i alle checks og funktioner, lempet labelgrænse for DAO, `fragt_sporing_token`, `fragt_ukendte_koder`, `fragt_foraeldreloese`, `fragt_efterlysninger`, `forsendelse_gem_label`. Kørt to gange på testdatabasen. |
-| Sporing i cron | `koerFragtCron`/`koerSporingsfeed` i `src/lib/fragt/server.ts` | Ét feed-kald højst hvert 10. minut i betalings-cron'en (hvert 5. minut). Tokenet gemmes først, når alle hændelser er gemt (compare-and-set). Pakke-for-pakke kun som reserve (hver 12. time). |
+| Sporing i cron | `koerFragtCron`/`koerSporingsfeed` i `src/lib/fragt/server.ts` | Ét feed-kald højst hvert 10. minut i betalings-cron'en (hvert 5. minut). Tokenet gemmes først, når alle hændelser er gemt (compare-and-set, kun af den kørsel, der har låsen - `laas_id`). Budgettet (mindst 3 s) regnes fra, at svaret er hentet. Kendte hændelser slås op samlet. En hændelse, der ikke kan gemmes i 3 kørsler, springes over (`fragt_feed_fejl`, staff + drift). Afkortet svar gemmer ikke tokenet; ulæselige hændelser og 12 fejl i træk på samme token giver drift-alarm. Pakke-for-pakke kun som reserve (hver 12. time). |
 | "Pakken er kommet frem" | `udfoerHandelseffekter` (uændret) | Køberen får `pakke_leveret` (påkrævet, nøgle `fragt_leveret:<handel>`), så snart DAO's leveret-kode er kendt og står i `daoKoder.ts`. |
 | Efterlysning efter 14 dage | `koerEfterlysninger` + `fragt_efterlysning_*` | Én pr. forsendelse. Kalder kun DAO med `FRAGT_EFTERLYSNING_AKTIV=true` (ellers manuel). Staff får altid en markering under Fragt. Pengene holdes af `handel_auto_frigiv` (frigiver aldrig efter 14 dage uden `leveret_kl`). Opret-kaldet genforsøges aldrig. |
 | Retur i sager | `opretReturForsendelse` + `ReturlabelBoks` | Shop2Shop med køberen som afsender, sælgeren som modtager og `shopid=0` (DAO vælger shoppen nærmest sælgeren). **Stadig bag `FRAGT_RETURLABEL_AKTIV`** – returfragten opkræves ikke (se docs/FRAGT.md). |
 | Ikke afhentet | `DAO_RETUR_ER_IKKE_AFHENTET` i `daoKoder.ts` | Koblet på, men **slået fra** (`false`), indtil returkoden er set på en rigtig pakke. Indtil da kun markering til staff. |
 | Annullering og labelgrænse | `forsendelse_claim` | En DAO-label, som DAO har bekræftet annulleret, tæller ikke i "højst 2 labels". Loft: 10 DAO-labels i alt pr. handel (også annullerede). Adapteren sætter kun 'annulleret', når DAO svarer OK. |
-| Idempotens uden opslag | `opretForsendelse` i `server.ts` | `genforsoegOpretterNy`: efter et ukendt udfald laver næste forsøg (når sælgeren trykker igen) en NY forsendelse. En kendt, forældreløs stregkode gemmes i `fragt_foraeldreloese` og annulleres (straks og af cron'en, højst 5 gange, derefter staff). |
+| Idempotens uden opslag | `opretForsendelse` i `server.ts` | `genforsoegOpretterNy`: efter et ukendt udfald laver næste forsøg (når sælgeren trykker igen) en NY forsendelse. En kendt, forældreløs stregkode gemmes i `fragt_foraeldreloese` og annulleres (straks og af cron'en, højst 5 gange, derefter staff). Serveren venter 50 s på DAO (værste tilfælde ca. 45 s: ordre 20 s + PDF ét forsøg 5 s + evt. annullering 20 s). Giver den op, følges kaldet med `after()`: kommer der senere en stregkode, gemmes den som forældreløs og annulleres. Kapløbet med `forsendelse_gem_oprettet` er lukket i begge retninger (rækkelås i registreringen + triggeren `forsendelser_ikke_foraeldreloes`). |
+| Afsender-beskeder | `opret()` i `dao.ts` | `afs_notifikation=0`, og hverken `afs_mobil` eller `afs_email` sendes - DAO må ikke selv sende koden/labelen til sælgeren (spørgsmål 14). |
 | Label uden PDF | `sikrLabelPdf` | Kan PDF'en ikke hentes, men der er en labelfri kode, gemmes forsendelsen alligevel, og PDF'en hentes, når sælgeren trykker "Hent label". |
-| Tests | `tests/fragt/*.test.ts`, `src/lib/fragt/__fixtures__/dao/` | `npm run test:fragt` (70 tests): mapping, fejlhåndtering, genforsøg kun på læsekald, ét forsøg på ordrer, URL-sanitering, feed-token. |
+| Tests | `tests/fragt/*.test.ts`, `src/lib/fragt/__fixtures__/dao/` | `npm run test:fragt` (81 tests): mapping, fejlhåndtering, genforsøg kun på læsekald, ét forsøg på ordrer, URL-sanitering, feed-token. |
 
 **Sikkerhed:** `kundeid` og `kode` står i URL'en. URL'en logges aldrig, og ingen fejl indeholder den: fejl bygges
 af stien, DAO's fejlkode og en saniteret fejltekst (`saniter()` fjerner også selve værdierne og URL-kodede udgaver).
@@ -48,11 +49,11 @@ Kun `https://*.dao.as` accepteres som base-URL, og redirects afvises.
    blev hentet.
 4. **Allans svar** (spørgsmålene herunder), især: idempotens/reference (1), base-URL og nøgler i header (2),
    telefonformat med eller uden 45 (11), om `HentLabel.php` virker på c2c-stregkoder (7), hvad `pris` betyder i
-   `createclaim.php` (vi sender buddet i hele kroner) (9), tidszone i `tidspunkt` (3), og om mål (`l`, `h`, `b`) er
-   krævet (sendes ikke nu).
+   `createclaim.php` (vi sender buddet i hele kroner) (9), tidszone i `tidspunkt` (3), om mål (`l`, `h`, `b`) er
+   krævet (sendes ikke nu), beskeder til afsenderen (14) og annullering efter indlevering (15).
 5. **Vægtgrænse**: aftalen med DAO. Adapteren bruger Shipmondos grænser (Shop2Shop 15 kg, Shop2Home 5 kg).
-6. **Returfragt i sager**: opkrævningen hos køberen er ikke bygget (kræver en beslutning og evt. Stripe) – derfor
-   er `FRAGT_RETURLABEL_AKTIV` stadig slået fra.
+6. **Returfragt i sager**: Filip har besluttet (13. okt. 2026), at køberen betaler returfragten med kort, før
+   returkoden udleveres. Det bygges som en separat opgave – indtil da er `FRAGT_RETURLABEL_AKTIV` slået fra.
 7. **Efterlysning**: slå `FRAGT_EFTERLYSNING_AKTIV=true` til, når Allan har bekræftet `createclaim.php`.
 
 ---
@@ -369,6 +370,12 @@ Nye spørgsmål:
     (bevis for, at køberen har hentet pakken)?
 13. **Faktura og afstemning:** kan vi få forsendelser og priser pr. stregkode (API eller fil), så vi kan afstemme
     DAO's faktura med `forsendelser.forventet_kostpris_oere`?
+14. **Beskeder til afsenderen:** vi sender `afs_notifikation=0` og hverken `afs_mobil` eller `afs_email`, så DAO ikke
+    selv sender koden eller labelen til sælgeren (sælgeren får dem kun i BidHamr). Er det nok, til at DAO intet
+    sender til afsenderen? Er afsenderens mobil/e-mail krævet til noget (fx en returpakke, der ikke kan leveres)?
+15. **Annullering efter indlevering:** hvad svarer `AnnullerePakke.php`, når pakken allerede er indleveret (fejlkode)?
+    Kan en indleveret pakke annulleres ved en fejl, og faktureres en annulleret label? (Vi beholder loftet på 10
+    DAO-labels pr. handel, indtil det er afklaret.)
 
 ---
 

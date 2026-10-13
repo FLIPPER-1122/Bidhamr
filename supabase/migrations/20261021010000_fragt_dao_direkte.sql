@@ -16,11 +16,19 @@
 --      nye hændelser på alle vores pakker). Lås, så to cron-kørsler ikke
 --      henter samtidig, og compare-and-set, så tokenet aldrig går baglæns.
 --      Det nye token gemmes først, når alle hændelser er gemt.
+--      Låsen bærer et laas_id: kun den kørsel, der har låsen, kan gemme
+--      tokenet eller slippe låsen.
 --   4. fragt_ukendte_koder: hændelseskoder, vi ikke kender endnu (de ændrer
 --      aldrig status). Bruges til at udfylde src/lib/fragt/daoKoder.ts.
+--      fragt_feed_fejl: en hændelse, der aldrig kan gemmes ("poison event"),
+--      springes over efter 3 kørsler, så feedet ikke står stille for altid -
+--      forsendelsen markeres til staff.
 --   5. fragt_foraeldreloese: DAO-pakker, der blev oprettet, men ikke kunne
 --      bruges (DAO har intet opslag på reference). De annulleres af
---      fragt-cron'en; efter 5 forsøg får staff en markering.
+--      fragt-cron'en; efter 5 forsøg får staff en markering. Kapløb med
+--      forsendelse_gem_oprettet lukkes i begge retninger: registreringen låser
+--      forsendelsen og afviser en gemt stregkode, og triggeren
+--      forsendelser_ikke_foraeldreloes afviser at gemme en forældreløs.
 --   6. fragt_efterlysninger: ingen leveringsmelding 14 dage efter afsendelse
 --      -> én efterlysning (createclaim.php, bortkommet) pr. forsendelse og en
 --      markering til staff under Fragt. Pengene holdes allerede tilbage af
@@ -30,8 +38,14 @@
 --      den ved oprettelsen (den labelfri kode virker uden).
 --
 -- Alle nye tabeller: RLS slået til, ingen policies, kun service_role.
--- Alle nye funktioner: security definer, search_path = public, kun
--- service_role (serveren kalder dem med createAdminClient).
+-- Alle nye funktioner: security definer, search_path = '' (alt er
+-- schema-kvalificeret), kun service_role (serveren kalder dem med
+-- createAdminClient).
+--
+-- Tidligere udgaver af denne migration er kun kørt på testdatabasen. De
+-- funktioner, der er nye her, droppes og genskabes, når signaturen er ændret;
+-- forsendelse_claim/handel_gem_levering har samme "ny" md5 som før, så
+-- testdatabasen svarer 'allerede'.
 --
 -- Kan køres flere gange (idempotent) og kører som én transaktion (én fil = ét
 -- kald). Ændrede funktioner, der allerede ligger i produktion, rettes på
@@ -187,8 +201,10 @@ create table if not exists public.fragt_sporing_token (
   hentet_kl     timestamptz,
   -- Seneste gang et nyt token blev gemt (alle hændelser gemt).
   gemt_kl       timestamptz,
-  -- En kørsel er i gang (lås).
+  -- En kørsel er i gang (lås). Kun den, der har laas_id, må slippe den.
   laast_til     timestamptz,
+  laas_id       uuid,
+  -- Fejl i træk på det NUVÆRENDE token (nulstilles, når et nyt gemmes).
   fejl_i_traek  integer not null default 0,
   sidste_fejl   text,
   sidste_antal  integer,
@@ -200,6 +216,8 @@ create table if not exists public.fragt_sporing_token (
     and (sidste_antal is null or sidste_antal >= 0)
     and char_length(coalesce(sidste_fejl, '')) <= 500)
 );
+-- Testdatabasen havde tabellen fra en tidligere udgave af denne migration.
+alter table public.fragt_sporing_token add column if not exists laas_id uuid;
 comment on table public.fragt_sporing_token is
   'Fragtfirmaets sporings-token (DAO Track & Trace V2): ét kald giver alle nye hændelser siden tokenet. Kun service_role.';
 
@@ -207,42 +225,53 @@ alter table public.fragt_sporing_token enable row level security;
 revoke all on public.fragt_sporing_token from public, anon, authenticated;
 grant all on public.fragt_sporing_token to service_role;
 
--- Claimer en hentning: returnerer tokenet, hvis der er gået mindst
--- p_interval_sek siden sidste hentning, og ingen anden kørsel er i gang
--- (lås i 3 minutter). Ellers null.
-create or replace function public.fragt_sporing_token_claim(p_fragtfirma text, p_interval_sek integer)
-returns text
+-- Tidligere udgaver af denne migration (kun testdatabasen) havde andre
+-- signaturer/returtyper. Funktionerne er nye i denne migration og findes ikke
+-- i produktion, så de genskabes helt.
+drop function if exists public.fragt_sporing_token_claim(text, integer);
+drop function if exists public.fragt_sporing_token_gem(text, text, text, integer);
+drop function if exists public.fragt_sporing_token_gem(text, uuid, text, text, integer);
+drop function if exists public.fragt_sporing_token_fejl(text, text);
+drop function if exists public.fragt_sporing_token_fejl(text, uuid, text);
+
+-- Claimer en hentning: { token, laas } når der er gået mindst p_interval_sek
+-- siden sidste hentning, og ingen anden kørsel har låsen (3 minutter).
+-- Ellers null.
+create function public.fragt_sporing_token_claim(p_fragtfirma text, p_interval_sek integer)
+returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 declare
   v_token text;
+  v_laas  uuid := gen_random_uuid();
 begin
   insert into public.fragt_sporing_token (fragtfirma) values (p_fragtfirma)
   on conflict (fragtfirma) do nothing;
   update public.fragt_sporing_token
-     set laast_til = now() + interval '3 minutes'
+     set laast_til = now() + interval '3 minutes', laas_id = v_laas
    where fragtfirma = p_fragtfirma
      and (laast_til is null or laast_til < now())
      and (hentet_kl is null
           or hentet_kl < now() - make_interval(secs => greatest(coalesce(p_interval_sek, 0), 0)))
   returning token into v_token;
-  return v_token;
+  if v_token is null then return null; end if;
+  return jsonb_build_object('token', v_token, 'laas', v_laas);
 end;
 $fn$;
 revoke all on function public.fragt_sporing_token_claim(text, integer) from public, anon, authenticated;
 grant execute on function public.fragt_sporing_token_claim(text, integer) to service_role;
 
--- Gemmer det nye token - KUN når alle hændelser er gemt, og kun hvis tokenet
--- stadig er det gamle (compare-and-set: tokenet går aldrig baglæns).
--- Svar: true = gemt.
-create or replace function public.fragt_sporing_token_gem(
-  p_fragtfirma text, p_gammel text, p_ny text, p_antal integer)
+-- Gemmer det nye token - KUN når alle hændelser er gemt, kun af den, der har
+-- låsen, og kun hvis tokenet stadig er det gamle (compare-and-set: tokenet
+-- går aldrig baglæns). Svar: true = gemt.
+create function public.fragt_sporing_token_gem(
+  p_fragtfirma text, p_laas uuid, p_gammel text, p_ny text, p_antal integer)
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 begin
   if p_ny is null or p_ny !~ '^[0-9]{1,20}$' then
@@ -253,25 +282,28 @@ begin
          hentet_kl = now(),
          gemt_kl = now(),
          laast_til = null,
+         laas_id = null,
          fejl_i_traek = 0,
          sidste_fejl = null,
          sidste_antal = greatest(coalesce(p_antal, 0), 0)
-   where fragtfirma = p_fragtfirma and token = p_gammel;
+   where fragtfirma = p_fragtfirma and laas_id = p_laas and token = p_gammel;
   if found then return true; end if;
-  update public.fragt_sporing_token set laast_til = null where fragtfirma = p_fragtfirma;
+  update public.fragt_sporing_token set laast_til = null, laas_id = null
+   where fragtfirma = p_fragtfirma and laas_id = p_laas;
   return false;
 end;
 $fn$;
-revoke all on function public.fragt_sporing_token_gem(text, text, text, integer) from public, anon, authenticated;
-grant execute on function public.fragt_sporing_token_gem(text, text, text, integer) to service_role;
+revoke all on function public.fragt_sporing_token_gem(text, uuid, text, text, integer) from public, anon, authenticated;
+grant execute on function public.fragt_sporing_token_gem(text, uuid, text, text, integer) to service_role;
 
--- En hentning fejlede (eller blev afbrudt): tokenet er uændret, låsen
--- slippes, og næste forsøg venter intervallet. Svar: fejl i træk.
-create or replace function public.fragt_sporing_token_fejl(p_fragtfirma text, p_fejl text)
+-- En hentning fejlede (eller blev afbrudt): tokenet er uændret, låsen slippes
+-- (kun af den, der har den), og næste forsøg venter intervallet.
+-- Svar: fejl i træk på det nuværende token (0 = låsen var ikke vores).
+create function public.fragt_sporing_token_fejl(p_fragtfirma text, p_laas uuid, p_fejl text)
 returns integer
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 declare
   n integer;
@@ -279,18 +311,19 @@ begin
   update public.fragt_sporing_token
      set hentet_kl = now(),
          laast_til = null,
+         laas_id = null,
          fejl_i_traek = fejl_i_traek + 1,
          sidste_fejl = left(coalesce(p_fejl, 'ukendt fejl'), 500)
-   where fragtfirma = p_fragtfirma
+   where fragtfirma = p_fragtfirma and laas_id = p_laas
   returning fejl_i_traek into n;
   return coalesce(n, 0);
 end;
 $fn$;
-revoke all on function public.fragt_sporing_token_fejl(text, text) from public, anon, authenticated;
-grant execute on function public.fragt_sporing_token_fejl(text, text) to service_role;
+revoke all on function public.fragt_sporing_token_fejl(text, uuid, text) from public, anon, authenticated;
+grant execute on function public.fragt_sporing_token_fejl(text, uuid, text) to service_role;
 
 -- ===========================================================================
--- 4. Ukendte hændelseskoder
+-- 4. Ukendte hændelseskoder og hændelser, der ikke kan gemmes
 -- ===========================================================================
 create table if not exists public.fragt_ukendte_koder (
   fragtfirma               text not null,
@@ -324,7 +357,7 @@ create or replace function public.fragt_ukendt_kode_registrer(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 declare
   v_ny boolean;
@@ -342,6 +375,74 @@ end;
 $fn$;
 revoke all on function public.fragt_ukendt_kode_registrer(text, text, text, text, text) from public, anon, authenticated;
 grant execute on function public.fragt_ukendt_kode_registrer(text, text, text, text, text) to service_role;
+
+-- En hændelse fra feedet, der ikke kan gemmes ("poison event"): efter
+-- p_maks forsøg (ét pr. feed-kørsel) springes den over, så feedet ikke står
+-- stille for altid. Forsendelsen markeres til staff, og drift alarmeres.
+create table if not exists public.fragt_feed_fejl (
+  fragtfirma      text not null,
+  noegle          text not null,
+  forsendelse_id  uuid references public.forsendelser(id) on delete restrict,
+  forsoeg         integer not null default 1,
+  sidste_fejl     text,
+  foerst_kl       timestamptz not null default now(),
+  sidst_kl        timestamptz not null default now(),
+  opgivet_kl      timestamptz,
+  primary key (fragtfirma, noegle),
+  constraint fragt_feed_fejl_check check (
+        fragtfirma in ('test', 'gls', 'shipmondo', 'dao')
+    and char_length(noegle) between 1 and 200
+    and forsoeg >= 1
+    and char_length(coalesce(sidste_fejl, '')) <= 500)
+);
+comment on table public.fragt_feed_fejl is
+  'Sporingshændelser fra feedet, som ikke kunne gemmes. Efter 3 forsøg springes de over (opgivet_kl), og staff får en markering. Kun service_role.';
+
+alter table public.fragt_feed_fejl enable row level security;
+revoke all on public.fragt_feed_fejl from public, anon, authenticated;
+grant all on public.fragt_feed_fejl to service_role;
+
+-- Svar: { opgivet: true/false, nu: true, når den blev opgivet netop nu }.
+create or replace function public.fragt_feed_haendelse_fejl(
+  p_fragtfirma text, p_noegle text, p_forsendelse uuid, p_fejl text, p_maks integer)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  r      record;
+  v_maks integer := greatest(coalesce(p_maks, 3), 1);
+begin
+  insert into public.fragt_feed_fejl as x (fragtfirma, noegle, forsendelse_id, sidste_fejl, opgivet_kl)
+  values (p_fragtfirma, left(p_noegle, 200), p_forsendelse, left(p_fejl, 500),
+          case when v_maks <= 1 then now() end)
+  on conflict (fragtfirma, noegle) do update
+     set forsoeg = x.forsoeg + 1,
+         sidst_kl = now(),
+         sidste_fejl = left(excluded.sidste_fejl, 500),
+         opgivet_kl = coalesce(x.opgivet_kl, case when x.forsoeg + 1 >= v_maks then now() end)
+  returning x.opgivet_kl, x.forsoeg into r;
+  if r.opgivet_kl is null then
+    return jsonb_build_object('opgivet', false, 'nu', false, 'forsoeg', r.forsoeg);
+  end if;
+  -- Opgivet netop nu: forsøget, der nåede grænsen.
+  if r.forsoeg = v_maks then
+    if p_forsendelse is not null then
+      update public.forsendelser
+         set kraever_opmaerksomhed = true,
+             opmaerksomhed_tekst = public.forsendelse_note_tilfoej(opmaerksomhed_tekst,
+               'En sporingshændelse fra fragtfirmaet kunne ikke gemmes (' || r.forsoeg
+               || ' forsøg) og er sprunget over. Tjek pakkens sporing hos fragtfirmaet.')
+       where id = p_forsendelse;
+    end if;
+    return jsonb_build_object('opgivet', true, 'nu', true, 'forsoeg', r.forsoeg);
+  end if;
+  return jsonb_build_object('opgivet', true, 'nu', false, 'forsoeg', r.forsoeg);
+end;
+$fn$;
+revoke all on function public.fragt_feed_haendelse_fejl(text, text, uuid, text, integer) from public, anon, authenticated;
+grant execute on function public.fragt_feed_haendelse_fejl(text, text, uuid, text, integer) to service_role;
 
 -- ===========================================================================
 -- 5. Forældreløse forsendelser (oprettet hos DAO, men ikke brugt)
@@ -381,7 +482,7 @@ create or replace function public.fragt_ingen_sletning()
 returns trigger
 language plpgsql
 security invoker
-set search_path = public
+set search_path = ''
 as $fn$
 begin
   raise exception 'Fragtdata er handelsdata og kan ikke slettes.' using errcode = '42501';
@@ -396,22 +497,33 @@ create trigger fragt_foraeldreloese_ingen_sletning
 
 -- Registrerer en forældreløs forsendelse (idempotent) og noterer det på
 -- forsendelsen til staff (uden markering - cron'en annullerer den selv).
+--
+-- Kapløb med forsendelse_gem_oprettet (samme forsendelse, samme stregkode):
+--   - Rækken låses (for update), så de to aldrig ser hinanden halvt.
+--   - Er stregkoden allerede gemt på forsendelsen, er den IKKE forældreløs
+--     (sælgerens aktive label) - der registreres intet.
+--   - Omvendt afviser triggeren forsendelser_ikke_foraeldreloes, at en
+--     registreret forældreløs stregkode bagefter gemmes som aktiv label.
 create or replace function public.fragt_foraeldreloes_registrer(p_forsendelse uuid, p_forsendelses_id text)
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 declare
   v_firma text;
   v_id    text;
 begin
-  select fragtfirma, forsendelses_id into v_firma, v_id from public.forsendelser where id = p_forsendelse;
+  select fragtfirma, forsendelses_id into v_firma, v_id
+    from public.forsendelser where id = p_forsendelse
+   for update;
   if v_firma is null then return false; end if;
-  -- Værn: blev stregkoden alligevel gemt på forsendelsen (fx et svar fra
-  -- databasen, der gik tabt efter commit), er den IKKE forældreløs - den er
-  -- sælgerens aktive label og må aldrig annulleres herfra.
   if v_id is not distinct from p_forsendelses_id then return false; end if;
+  -- Gemt på en anden forsendelse (burde ikke ske): heller ikke forældreløs.
+  if exists (select 1 from public.forsendelser fo
+              where fo.fragtfirma = v_firma and fo.forsendelses_id = p_forsendelses_id) then
+    return false;
+  end if;
   insert into public.fragt_foraeldreloese (forsendelse_id, fragtfirma, forsendelses_id)
   values (p_forsendelse, v_firma, p_forsendelses_id)
   on conflict (fragtfirma, forsendelses_id) do nothing;
@@ -427,6 +539,32 @@ $fn$;
 revoke all on function public.fragt_foraeldreloes_registrer(uuid, text) from public, anon, authenticated;
 grant execute on function public.fragt_foraeldreloes_registrer(uuid, text) to service_role;
 
+-- En stregkode, der er registreret som forældreløs (og annulleres), må aldrig
+-- gemmes som aktiv label (fx et forsinket svar fra fragtfirmaet).
+create or replace function public.forsendelser_ikke_foraeldreloes()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  if new.forsendelses_id is not null
+     and (tg_op = 'INSERT' or new.forsendelses_id is distinct from old.forsendelses_id)
+     and exists (select 1 from public.fragt_foraeldreloese o
+                  where o.fragtfirma = new.fragtfirma and o.forsendelses_id = new.forsendelses_id) then
+    raise exception 'foraeldreloes: Forsendelsen % hos fragtfirmaet er registreret som forældreløs og annulleres - den kan ikke gemmes som aktiv label.',
+      new.forsendelses_id using errcode = '23505';
+  end if;
+  return new;
+end;
+$fn$;
+revoke execute on function public.forsendelser_ikke_foraeldreloes() from public, anon, authenticated;
+
+drop trigger if exists forsendelser_ikke_foraeldreloes on public.forsendelser;
+create trigger forsendelser_ikke_foraeldreloes
+  before insert or update of forsendelses_id on public.forsendelser
+  for each row execute function public.forsendelser_ikke_foraeldreloes();
+
 -- Claimer forældreløse til annullering (forsoegt_kl sættes, så to kørsler
 -- ikke tager samme). p_forsendelse: kun for den forsendelse og uden ventetid
 -- (før et nyt forsøg på samme label). Ellers: højst én gang i timen.
@@ -434,7 +572,7 @@ create or replace function public.fragt_foraeldreloese_claim(p_forsendelse uuid,
 returns table (id uuid, forsendelse_id uuid, fragtfirma text, forsendelses_id text)
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 #variable_conflict use_column
 begin
@@ -467,7 +605,7 @@ create or replace function public.fragt_foraeldreloes_afslut(p_id uuid, p_ok boo
 returns text
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 declare
   o record;
@@ -536,26 +674,30 @@ create trigger fragt_efterlysninger_ingen_sletning
   for each row execute function public.fragt_ingen_sletning();
 
 -- Fælles betingelse: en aktiv, udgående BidHamr-label på en handel i
--- 'pakke_sendt' uden leverings- eller returmelding, sendt for over 14 dage
--- siden (samme tidspunkt som handel_auto_frigiv: trades.sendt_kl).
+-- 'pakke_sendt' uden leverings- eller returmelding. Fristen er BOGSTAVELIGT
+-- samme udtryk som handel_auto_frigiv (20261019010000):
+--   coalesce(tr.sendt_kl, bt.betalt_kl) < now() - interval '14 days'
+-- på en betalt betaling for handlen.
 create or replace function public.fragt_efterlysning_mulig(p_forsendelse uuid)
 returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
   select exists (
     select 1
       from public.forsendelser f
-      join public.trades t on t.id = f.trade_id
+      join public.trades tr on tr.id = f.trade_id
+      join public.betalinger bt on bt.trade_id = tr.id
      where f.id = p_forsendelse
        and f.type = 'udgaaende'
        and f.status not in ('opretter', 'annulleres', 'annulleret', 'fejlet', 'leveret', 'returneret')
        and f.leveret_kl is null and f.returneret_kl is null
        and f.sporingsnummer is not null
-       and t.status = 'pakke_sendt'
-       and coalesce(t.sendt_kl, f.afleveret_kl, f.oprettet_kl) < now() - interval '14 days');
+       and tr.status = 'pakke_sendt'
+       and bt.status = 'betalt'
+       and coalesce(tr.sendt_kl, bt.betalt_kl) < now() - interval '14 days');
 $fn$;
 revoke all on function public.fragt_efterlysning_mulig(uuid) from public, anon, authenticated;
 grant execute on function public.fragt_efterlysning_mulig(uuid) to service_role;
@@ -567,7 +709,7 @@ create or replace function public.fragt_efterlysning_kandidater(p_fragtfirmaer t
 returns table (forsendelse_id uuid, trade_id uuid, fragtfirma text, sporingsnummer text)
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 #variable_conflict use_column
 begin
@@ -587,16 +729,11 @@ begin
   return query
     select f.id, f.trade_id, f.fragtfirma, f.sporingsnummer
       from public.forsendelser f
-      join public.trades t on t.id = f.trade_id
      where f.fragtfirma = any(coalesce(p_fragtfirmaer, '{}'::text[]))
        and f.type = 'udgaaende'
-       and f.status not in ('opretter', 'annulleres', 'annulleret', 'fejlet', 'leveret', 'returneret')
-       and f.leveret_kl is null and f.returneret_kl is null
-       and f.sporingsnummer is not null
-       and t.status = 'pakke_sendt'
-       and coalesce(t.sendt_kl, f.afleveret_kl, f.oprettet_kl) < now() - interval '14 days'
+       and public.fragt_efterlysning_mulig(f.id)
        and not exists (select 1 from public.fragt_efterlysninger e where e.forsendelse_id = f.id)
-     order by coalesce(t.sendt_kl, f.oprettet_kl)
+     order by f.oprettet_kl
      limit greatest(1, least(coalesce(p_graense, 10), 50));
 end;
 $fn$;
@@ -613,7 +750,7 @@ create or replace function public.fragt_efterlysning_claim(p_forsendelse uuid, p
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 declare
   f      record;
@@ -660,7 +797,7 @@ create or replace function public.fragt_efterlysning_afslut(p_id uuid, p_status 
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 declare
   e      record;
@@ -705,7 +842,7 @@ create or replace function public.forsendelse_gem_label(p_id uuid, p_sti text)
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $fn$
 begin
   if p_sti is null or p_sti !~ '^[0-9a-f-]{36}/[0-9a-f-]{36}\.pdf$' then

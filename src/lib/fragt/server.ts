@@ -42,8 +42,10 @@ import "server-only";
 // (createclaim.php, kun med FRAGT_EFTERLYSNING_AKTIV=true - ellers manuel) og
 // en markering til staff under Fragt. Pengene holdes tilbage af
 // handel_auto_frigiv (frigiver aldrig efter 14 dage uden leveret_kl).
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl, renFejltekst } from "@/lib/drift";
+import { DAO_OPRET_VAERSTE_MS } from "@/lib/fragt/dao";
 import { send } from "@/lib/notifikationer/send";
 import { adapterFor, fragtErSatOp, hentFragtfirma, FRAGTFIRMAER } from "@/lib/fragt";
 import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
@@ -55,6 +57,7 @@ import {
   type ForsendelseInput,
   type Fragtfirma,
   type Label,
+  type OprettetForsendelse,
   type Leveringsmaade,
   type Pakkeshop,
   type Pakkestoerrelse,
@@ -103,13 +106,21 @@ function brugerFejl(err: unknown): string {
   return err instanceof FragtFejl ? err.brugerbesked : GENERISK_FEJL;
 }
 
+// Vi gav op at vente (kaldet til fragtfirmaet kan stadig være i gang).
+class MedTimeoutFejl extends Error {
+  constructor(hvad: string, ms: number) {
+    super(`${hvad}: timeout efter ${ms} ms`);
+    this.name = "MedTimeoutFejl";
+  }
+}
+
 async function medTimeout<T>(p: Promise<T>, ms: number, hvad: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       p,
       new Promise<never>((_, afvis) => {
-        timer = setTimeout(() => afvis(new Error(`${hvad}: timeout efter ${ms} ms`)), ms);
+        timer = setTimeout(() => afvis(new MedTimeoutFejl(hvad, ms)), ms);
       }),
     ]);
   } finally {
@@ -538,11 +549,22 @@ async function opretForsendelse(
   let oprettetHosFirma: string | null = null;
   try {
     const input = await args.byg({ id, pakkestoerrelse: svar.pakkestoerrelse });
-    const oprettet = await medTimeout(
-      type === "retur" ? firma.opretReturforsendelse(input) : firma.opretForsendelse(input),
-      30_000,
-      type === "retur" ? "opretReturforsendelse" : "opretForsendelse",
-    );
+    const kald = type === "retur" ? firma.opretReturforsendelse(input) : firma.opretForsendelse(input);
+    let oprettet: OprettetForsendelse;
+    try {
+      oprettet = await medTimeout(
+        kald,
+        // DAO: ordre + kort PDF + evt. annullering kan tage ca. 45 s.
+        opretterNy ? OPRET_MAKS_MS_UDEN_OPSLAG : 30_000,
+        type === "retur" ? "opretReturforsendelse" : "opretForsendelse",
+      );
+    } catch (err) {
+      // Vi gav op at vente, men kaldet kører videre. Kommer der senere en
+      // stregkode, er den forældreløs (sælgeren ser den aldrig): gem og
+      // annullér den. after() holder funktionen i live efter svaret.
+      if (err instanceof MedTimeoutFejl && opretterNy) efterOpgivetOpret(admin, id, kald);
+      throw err;
+    }
     oprettetHosFirma = oprettet.forsendelsesId;
 
     // Uden PDF (kun DAO med labelfri kode): gemmes uden label_sti; PDF'en
@@ -637,6 +659,36 @@ async function opretForsendelse(
     await logDriftFejl({ kilde: "server", hvor: "Fragt: oprettet-hændelse", fejl: err });
   }
   return { ok: true, forsendelseId: id };
+}
+
+// Mindst DAO_OPRET_VAERSTE_MS (ca. 45 s) + lidt luft.
+const OPRET_MAKS_MS_UDEN_OPSLAG = Math.max(50_000, DAO_OPRET_VAERSTE_MS + 5_000);
+
+// Et opgivet opret-kald (MedTimeoutFejl) fortsætter i baggrunden. Giver det
+// senere en forsendelse - eller en forældreløs stregkode i fejlen - gemmes
+// den som forældreløs og annulleres. Kaster aldrig.
+function efterOpgivetOpret(admin: Admin, forsendelseId: string, kald: Promise<OprettetForsendelse>): void {
+  const opgave = kald.then(
+    (o) => o.forsendelsesId,
+    (err) => (err instanceof FragtUkendtUdfald ? err.foraeldreloesId : null),
+  ).then(async (stregkode) => {
+    if (!stregkode) return;
+    const { data, error } = await admin.rpc("fragt_foraeldreloes_registrer", {
+      p_forsendelse: forsendelseId,
+      p_forsendelses_id: stregkode,
+    });
+    if (error) {
+      await logDriftFejl({ kilde: "server", hvor: "Fragt: forsinket forældreløs", fejl: error });
+      return;
+    }
+    if (data === true) await annullerForaeldreloese(admin, forsendelseId, 5);
+  }).catch((err) => logDriftFejl({ kilde: "server", hvor: "Fragt: forsinket forældreløs", fejl: err }));
+  try {
+    after(() => opgave);
+  } catch {
+    // Uden for en request (fx cron eller test): promise'et kører alligevel.
+    void opgave;
+  }
 }
 
 // Annullerer forældreløse forsendelser hos fragtfirmaet (fragt_foraeldreloese).
@@ -1245,17 +1297,36 @@ function feedFirmaer(): Fragtfirma[] {
   );
 }
 
-type FeedResultat = { haendelser: number; nye: number; ukendte: number; gemt: boolean };
+type FeedResultat = {
+  haendelser: number;
+  nye: number;
+  ukendte: number;
+  // Hændelser, der aldrig kunne gemmes, og som er sprunget over (poison).
+  sprunget: number;
+  // Hændelser, fragtfirmaet sendte, men som ikke kunne læses.
+  ugyldige: number;
+  gemt: boolean;
+};
+
+// En hændelse, der fejler i så mange kørsler, springes over (fragt_feed_fejl).
+const FEED_POISON_MAKS = 3;
+// Budgettet til at gemme hændelserne er aldrig under dette.
+const FEED_MIN_BUDGET_MS = 3_000;
+// Alarm, når samme token har fejlet så mange gange i træk (ca. 2 timer).
+const FEED_ALARM_FEJL_I_TRAEK = 12;
 
 // Ét feed-kald for et firma. Tokenet gemmes KUN, når alle hændelser er gemt
-// (fragt_sporing_token_gem, compare-and-set). Ellers registreres en fejl, og
-// næste kørsel henter de samme hændelser igen (idempotent). Kaster aldrig.
+// (fragt_sporing_token_gem, compare-and-set, kun med vores lås). Ellers
+// registreres en fejl, og næste kørsel henter de samme hændelser igen
+// (idempotent). Budgettet regnes fra, at svaret er hentet. En hændelse, der
+// aldrig kan gemmes, springes over efter FEED_POISON_MAKS kørsler, så feedet
+// ikke står stille for altid. Kaster aldrig.
 export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET_MS): Promise<FeedResultat | null> {
   if (!firma.hentSporingFeed) return null;
   if (firma.erSatOp && !firma.erSatOp()) return null;
   const admin = createAdminClient();
-  const res: FeedResultat = { haendelser: 0, nye: 0, ukendte: 0, gemt: false };
-  const { data: token, error: tFejl } = await admin.rpc("fragt_sporing_token_claim", {
+  const res: FeedResultat = { haendelser: 0, nye: 0, ukendte: 0, sprunget: 0, ugyldige: 0, gemt: false };
+  const { data: claim, error: tFejl } = await admin.rpc("fragt_sporing_token_claim", {
     p_fragtfirma: firma.navn,
     p_interval_sek: FEED_INTERVAL_SEK,
   });
@@ -1263,20 +1334,62 @@ export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET
     await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: "Fragt: sporings-token", fejl: tFejl });
     return null;
   }
-  if (typeof token !== "string") return null; // ikke tid endnu, eller en anden kørsel er i gang
-  const slut = Date.now() + budgetMs;
+  const c = claim as { token?: unknown; laas?: unknown } | null;
+  // Ikke tid endnu, eller en anden kørsel har låsen.
+  if (!c || typeof c.token !== "string" || typeof c.laas !== "string") return null;
+  const token = c.token;
+  const laas = c.laas;
+  const budget = Math.max(FEED_MIN_BUDGET_MS, Number.isFinite(budgetMs) ? budgetMs : FEED_BUDGET_MS);
+
   const fejl = async (grund: unknown, log: boolean) => {
     const { data: iTraek } = await admin.rpc("fragt_sporing_token_fejl", {
       p_fragtfirma: firma.navn,
+      p_laas: laas,
       p_fejl: renFejltekst(grund, 300),
     });
+    const n = Number(iTraek);
     // Drift ved første fejl og derefter hver 6. gang (ca. hver time).
-    if (log && (Number(iTraek) <= 1 || Number(iTraek) % 6 === 0)) {
+    if (log && (n <= 1 || n % 6 === 0)) {
       await logDriftFejl({ kilde: "cron", sti: "fragt", hvor: `Fragt: sporingsfeed (${firma.visningsnavn})`, fejl: grund });
     }
+    if (n >= FEED_ALARM_FEJL_I_TRAEK && n % FEED_ALARM_FEJL_I_TRAEK === 0) {
+      await logDriftFejl({
+        kilde: "cron",
+        sti: "fragt",
+        hvor: "Fragt: sporingsfeed står stille",
+        fejl: `Samme token hos ${firma.visningsnavn} har fejlet ${n} gange i træk, så sporingen er gået i stå. Seneste fejl: ${renFejltekst(grund, 200)}`,
+      });
+    }
   };
+  const tidenEr = (slut: number) => Date.now() > slut;
+
   try {
     const feed = await medTimeout(firma.hentSporingFeed(token), 25_000, "hentSporingFeed");
+    // Budgettet starter, når svaret er hentet.
+    const slut = Date.now() + budget;
+
+    res.ugyldige = Math.max(0, Number(feed.ugyldige ?? 0));
+    if (res.ugyldige > 0) {
+      await logDriftFejl({
+        kilde: "cron",
+        sti: "fragt",
+        hvor: "Fragt: ulæselige sporingshændelser",
+        fejl: `${res.ugyldige} hændelse(r) fra ${firma.visningsnavn} kunne ikke læses (fx uden tidspunkt eller kode) og er sprunget over.`,
+      });
+    }
+    if (feed.afkortet) {
+      await fejl(
+        `Svaret fra ${firma.visningsnavn} var større end adapterens lofter og blev afkortet - tokenet gemmes ikke.`,
+        true,
+      );
+      await logDriftFejl({
+        kilde: "cron",
+        sti: "fragt",
+        hvor: "Fragt: sporingsfeed afkortet",
+        fejl: `Sporingsfeedet fra ${firma.visningsnavn} var for stort til at blive læst helt. Tokenet er ikke gemt. Hæv lofterne i daoParse.ts.`,
+      });
+      return res;
+    }
 
     // Ukendte koder: ændrer aldrig status. Gemmes, og drift får en advarsel
     // første gang en kode ses.
@@ -1284,6 +1397,10 @@ export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET
     for (const u of feed.ukendte) {
       const k = `${u.kode}|${u.liste ?? ""}`;
       if (set.has(k) || set.size >= 50) continue;
+      if (tidenEr(slut)) {
+        await fejl("Tidsbudgettet slap op under de ukendte koder - hændelserne hentes igen næste gang.", true);
+        return res;
+      }
       set.add(k);
       const { data: ny, error } = await admin.rpc("fragt_ukendt_kode_registrer", {
         p_fragtfirma: firma.navn,
@@ -1305,8 +1422,8 @@ export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET
       }
     }
 
-    // Hændelserne: kun vores egne forsendelser (opslag på sporingsnummer i
-    // klumper - en databasefejl kaster, så tokenet ikke gemmes).
+    // Kun vores egne forsendelser (opslag på sporingsnummer i klumper - en
+    // databasefejl kaster, så tokenet ikke gemmes).
     const haendelser = [...feed.haendelser].sort((a, b) => a.tidspunkt.localeCompare(b.tidspunkt));
     const numre = [...new Set(haendelser.map((h) => h.sporingsnummer).filter((s): s is string => !!s))];
     const tilId = new Map<string, string>();
@@ -1321,23 +1438,68 @@ export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET
       // Nyeste vinder (som findForsendelse).
       for (const f of data ?? []) tilId.set(f.sporingsnummer as string, f.id as string);
     }
-    for (const h of haendelser as WebhookHaendelse[]) {
-      if (Date.now() > slut) {
+
+    // Hændelser, vi allerede har (de fleste ved en gentagelse), springes over
+    // uden et kald pr. hændelse: ét opslag pr. klump af nøgler.
+    const egne = (haendelser as WebhookHaendelse[])
+      .map((h) => ({ h, id: h.sporingsnummer ? tilId.get(h.sporingsnummer) : undefined, noegle: h.noegle.slice(0, 200) }))
+      .filter((x): x is { h: WebhookHaendelse; id: string; noegle: string } => !!x.id);
+    const ids = [...new Set(egne.map((x) => x.id))];
+    const noegler = [...new Set(egne.map((x) => x.noegle))];
+    const findes = new Set<string>();
+    for (let i = 0; i < noegler.length && ids.length > 0; i += 100) {
+      const { data, error } = await admin
+        .from("forsendelse_haendelser")
+        .select("forsendelse_id, noegle")
+        .in("forsendelse_id", ids.slice(0, 500))
+        .in("noegle", noegler.slice(i, i + 100));
+      if (error) throw new Error(`forsendelse_haendelser (feed): ${error.message}`);
+      for (const r of data ?? []) findes.add(`${r.forsendelse_id as string}|${r.noegle as string}`);
+    }
+    // Mange forsendelser i ét svar: kun de første 500 er slået op - resten
+    // går den normale (idempotente) vej.
+
+    for (const { h, id, noegle } of egne) {
+      if (findes.has(`${id}|${noegle}`)) continue;
+      if (tidenEr(slut)) {
         await fejl(
-          `Tidsbudgettet slap op efter ${res.haendelser} af ${haendelser.length} hændelser - de hentes igen næste gang.`,
+          `Tidsbudgettet slap op efter ${res.haendelser} nye af ${egne.length} hændelser - resten hentes igen næste gang.`,
           true,
         );
         return res;
       }
-      const id = h.sporingsnummer ? tilId.get(h.sporingsnummer) : undefined;
-      if (!id) continue; // ikke vores (fx en forældreløs pakke)
-      const { ny } = await registrerForsendelseshaendelse(id, h, "sporing");
-      res.haendelser++;
-      if (ny) res.nye++;
+      try {
+        const { ny } = await registrerForsendelseshaendelse(id, h, "sporing");
+        res.haendelser++;
+        if (ny) res.nye++;
+      } catch (err) {
+        // Er det hændelsen (poison) eller databasen? Kan fejlen ikke engang
+        // registreres, er databasen nede: stop, og prøv det hele igen.
+        const { data: p, error: pFejl } = await admin.rpc("fragt_feed_haendelse_fejl", {
+          p_fragtfirma: firma.navn,
+          p_noegle: noegle,
+          p_forsendelse: id,
+          p_fejl: renFejltekst(err, 300),
+          p_maks: FEED_POISON_MAKS,
+        });
+        if (pFejl) throw err;
+        const pp = p as { opgivet?: boolean; nu?: boolean } | null;
+        if (!pp?.opgivet) throw err;
+        res.sprunget++;
+        if (pp.nu) {
+          await logDriftFejl({
+            kilde: "cron",
+            sti: "fragt",
+            hvor: "Fragt: sporingshændelse sprunget over",
+            fejl: `En hændelse fra ${firma.visningsnavn} kunne ikke gemmes i ${FEED_POISON_MAKS} kørsler og er sprunget over (forsendelse ${id}): ${renFejltekst(err, 200)}`,
+          });
+        }
+      }
     }
 
     const { data: gemt, error: gFejl } = await admin.rpc("fragt_sporing_token_gem", {
       p_fragtfirma: firma.navn,
+      p_laas: laas,
       p_gammel: token,
       p_ny: feed.nyToken,
       p_antal: haendelser.length,
@@ -1350,6 +1512,7 @@ export async function koerSporingsfeed(firma: Fragtfirma, budgetMs = FEED_BUDGET
     return res;
   }
 }
+
 
 // Efterlysning hos fragtfirmaet (ingen leveringsmelding 14 dage efter
 // afsendelse). Højst én pr. forsendelse; opret-kaldet genforsøges aldrig
@@ -1600,3 +1763,6 @@ export async function koerFragtCron(): Promise<{
 
   return r;
 }
+
+// Kun til test.
+export const _test = { efterOpgivetOpret };

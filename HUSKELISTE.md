@@ -19,7 +19,7 @@ I dag viser bidhamr.dk `/coming-soon` for alle uden staff-rolle. Den rigtige for
 - **Få koderne:** bed Claude kalde `TrackNTraceKoder.php` og `FejlKoder.php` (kun læsning) og udfylde `src/lib/fragt/daoKoder.ts`. Send derefter 2-3 rigtige pakker – og én, der ikke hentes – så "leveret" og "retur" kan ses på rigtige pakker. Indtil "leveret" er kendt, får køberen ikke "Pakken er kommet frem", og 14-dages-frigivelsen sker ikke (pengene holdes, og staff får en opgave).
 - **Produktion:** `FRAGTFIRMA=dao` i Vercel, når ovenstående er gjort. `DAO_TESTMODE` må ikke sættes i produktion.
 - **Efterlysning efter 14 dage:** `FRAGT_EFTERLYSNING_AKTIV=true` slår den automatiske efterlysning hos DAO til (`createclaim.php`). Uden den får staff opgaven at efterlyse manuelt. Slå den først til, når Allan har bekræftet, hvad `pris` betyder.
-- **Returlabel i sager** (`FRAGT_RETURLABEL_AKTIV`) forbliver slået fra, indtil du har besluttet, hvordan køberen betaler returfragten.
+- **Returlabel i sager** (`FRAGT_RETURLABEL_AKTIV`) forbliver slået fra, indtil kortbetalingen af returfragten (din beslutning 13. okt. 2026) er bygget.
 
 ## Ekstern vagt på admin-forsiden (Healthchecks.io)
 - **Sæt `HEALTHCHECKS_LAESENOEGLE`** i Vercel (Production) og i `.env.local`: den **read-only** API-nøgle fra Healthchecks.io (Project Settings → API Access). Brug aldrig den fulde nøgle.

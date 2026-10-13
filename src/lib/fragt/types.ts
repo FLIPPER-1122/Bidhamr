@@ -183,6 +183,10 @@ export type SporingsFeed = {
   nyToken: string;
   haendelser: WebhookHaendelse[];
   ukendte: UkendtSporingskode[];
+  // Svaret var større end adapterens lofter: tokenet må IKKE gemmes.
+  afkortet?: boolean;
+  // Hændelser, der ikke kunne læses (fx uden tidspunkt) - drift alarmeres.
+  ugyldige?: number;
 };
 
 export type WebhookResultat =

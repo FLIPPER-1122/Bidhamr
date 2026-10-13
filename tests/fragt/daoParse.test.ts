@@ -166,6 +166,18 @@ describe("feed (token)", () => {
     expect(f.haendelser).toHaveLength(2);
     expect(f.haendelser.every((h) => h.sporingsnummer === "00057099990000412345")).toBe(true);
     expect(f.ukendte.map((u) => u.kode)).toEqual(["77"]);
+    expect(f.afkortet).toBe(false);
+    expect(f.ugyldige).toBe(0);
+  });
+
+  it("afkortning og ulæselige hændelser tælles (tokenet må ikke gemmes ved afkortning)", () => {
+    const mange = Array.from({ length: 501 }, (_, i) => ({ tidspunkt: "2026-10-14 08:05:00", haendelse: 10 + (i % 2) }));
+    const f = feedFraSvar({ token: "5" }, [
+      { stregkode: "00057099990000412345", haendelser: mange },
+      { stregkode: "00057099990000498765", haendelser: [{ tidspunkt: "ikke en dato", haendelse: 10 }, { haendelse: 10 }] },
+    ]);
+    expect(f.afkortet).toBe(true);
+    expect(f.ugyldige).toBe(2);
   });
 
   it("token som tal og ingen hændelser", () => {
