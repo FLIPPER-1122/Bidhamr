@@ -427,6 +427,6 @@ Bygget i `20261019010000_pengesikkerhed.sql`. Reglen er uændret: penge udbetale
 - Claude må sætte en https-tunnel op til test på en rigtig telefon mod testdatabasen.
 
 ## Nye funktioner (Filip, 13. okt. 2026) – ikke bygget endnu
-- **Populær sælger-badge:** til sælgere, der har solgt over et bestemt antal gange.
-- **Boost:** man kan købe boost-point og bruge dem til at booste sit opslag til toppen af platformen; man får også point for at sælge en auktion.
-- **Månedlig konkurrence:** alle, der har solgt en auktion i en måned, er automatisk med i lodtrækningen om et gavekort – én lod pr. solgt auktion. Filip står for præmierne. Admin viser deltagerne for måneden og kan trække en vinder.
+- **Populær sælger-badge:** når en sælger har **50 gennemførte salg** (betalt og modtaget). Annullerede og refunderede handler tæller ikke.
+- **Boost:** man køber boost-point – **100 point for 39 kr.** (BidHamrs egen omsætning med moms og faktura, betales via Stripe). Et boost koster **50 point og lægger opslaget i toppen i 24 timer**. Man får **10 point pr. gennemført salg**. Et boostet opslag vises tydeligt som **"Boostet"** (markedsføringsloven). **Kun private** – firmaer kan ikke købe eller bruge boost.
+- **Månedlig konkurrence:** alle **private** sælgere med mindst ét **gennemført salg** i måneden er automatisk med i lodtrækningen om et gavekort – én lod pr. gennemført salg. Filip står for præmierne. Admin viser deltagerne for måneden og kan trække en vinder. Konkurrencebetingelser: udkast i jura/, skal godkendes af advokat.
