@@ -415,3 +415,18 @@ Bygget i `20261019010000_pengesikkerhed.sql`. Reglen er uændret: penge udbetale
 
 ## Virksomhedsoplysninger (Filip, 8. okt. 2026)
 - **BidHamr**, CVR **46836219**, Ellegårdsvej 40, 4684 Holmegaard. Bruges på fakturaer, i Stripe og på "Om BidHamr"/kontakt.
+
+## Revisor og app (Filip, 13. okt. 2026)
+- **Regnskabsprogram: Dinero.** Revisor har godkendt Dinero som digitalt bogføringssystem.
+- **Fragt og BidHamr Beskyttelse er BidHamrs egen omsætning** (med moms).
+- **"BidHamr dækker" bogføres som en udgift** for BidHamr.
+- **Fakturaer:** både køber og sælger får en faktura, når der er betalt, og fakturaen lægges ind i Dinero. *(Stripes egne gebyrer: afklares – Stripe sender en månedlig opgørelse.)*
+- **DAC7:** indberettes efter Skattestyrelsens vejledning – Filip viser den, når den skal bruges.
+- **Appen bygges forfra** (ny Expo-app; gode skærme flyttes over). App-id `dk.bidhamr.app` på iOS og Android; navnet i App Store og Google Play er **BidHamr**.
+- Apple Developer og Google Play tilmeldes i BidHamr ApS' navn (D-U-N-S-nummer skal skaffes til Apple).
+- Claude må sætte en https-tunnel op til test på en rigtig telefon mod testdatabasen.
+
+## Nye funktioner (Filip, 13. okt. 2026) – ikke bygget endnu
+- **Populær sælger-badge:** til sælgere, der har solgt over et bestemt antal gange.
+- **Boost:** man kan købe boost-point og bruge dem til at booste sit opslag til toppen af platformen; man får også point for at sælge en auktion.
+- **Månedlig konkurrence:** alle, der har solgt en auktion i en måned, er automatisk med i lodtrækningen om et gavekort – én lod pr. solgt auktion. Filip står for præmierne. Admin viser deltagerne for måneden og kan trække en vinder.
