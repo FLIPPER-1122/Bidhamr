@@ -541,6 +541,42 @@ describe("reviewer-rettelser", () => {
     expect(efter.n).toBe(1);
   });
 
+  it("bekræftet annullering over 48 timer efter betaling: ny kode (cron 'label'), ingen auto-refusion", async () => {
+    const h = await handel();
+    const b = await betalt(h.tradeId);
+    const f1 = await en<{ id: string }>(`insert into public.forsendelser (trade_id, type) values ($1, 'retur') returning id`, [h.tradeId]);
+    await db.query(`update public.forsendelser set status = 'oprettet' where id = $1`, [f1.id]);
+    await db.query(`update public.forsendelser set status = 'annulleret' where id = $1`, [f1.id]);
+    await db.query(`update public.returfragt_betalinger set betalt_kl = now() - interval '72 hours' where id = $1`, [b.id]);
+    expect((await en<{ v: string }>(`select public.returfragt_annullering_bekraeftet($1) as v`, [f1.id])).v).toBe("ok");
+    const k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(100, 100)`);
+    expect(k.rows.find((x) => x.id === b.id)?.handling).toBe("label");
+    // Ny kode uden ny betaling.
+    const f2 = await en<{ id: string }>(`insert into public.forsendelser (trade_id, type) values ($1, 'retur') returning id`, [h.tradeId]);
+    await db.query(`update public.forsendelser set status = 'oprettet' where id = $1`, [f2.id]);
+    const efter = await en<{ status: string; label_klar_kl: string | null; forsendelse_id: string }>(
+      `select status, label_klar_kl, forsendelse_id from public.returfragt_betalinger where id = $1`, [b.id]);
+    expect(efter.status).toBe("betalt");
+    expect(efter.label_klar_kl).not.toBeNull();
+    expect(efter.forsendelse_id).toBe(f2.id);
+  });
+
+  it("bekræftet annullering, og 48 timer er gået siden bekræftelsen: auto-refusion er tilladt", async () => {
+    const h = await handel();
+    const b = await betalt(h.tradeId);
+    const f1 = await en<{ id: string }>(`insert into public.forsendelser (trade_id, type) values ($1, 'retur') returning id`, [h.tradeId]);
+    await db.query(`update public.forsendelser set status = 'oprettet' where id = $1`, [f1.id]);
+    await db.query(`update public.forsendelser set status = 'annulleret' where id = $1`, [f1.id]);
+    await en(`select public.returfragt_annullering_bekraeftet($1)`, [f1.id]);
+    await db.query(
+      `update public.returfragt_betalinger set betalt_kl = now() - interval '5 days', label_annulleret_bekraeftet_kl = now() - interval '49 hours', label_naeste_kl = null where id = $1`,
+      [b.id],
+    );
+    const k = await db.query<{ id: string; handling: string }>(`select * from public.returfragt_cron(100, 100)`);
+    expect(k.rows.find((x) => x.id === b.id)?.handling).toBe("refunder");
+    expect((await en<{ v: string }>(`select public.returfragt_refusion_claim($1, 'label_umulig') as v`, [b.id])).v).toBe("ok");
+  });
+
   it("en forsendelse kan ikke skifte type til retur", async () => {
     const h = await handel();
     const f = await en<{ id: string }>(`select id from public.forsendelser where trade_id = $1 and type = 'udgaaende'`, [h.tradeId]);

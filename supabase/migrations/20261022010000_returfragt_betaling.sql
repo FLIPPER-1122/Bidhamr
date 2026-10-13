@@ -636,7 +636,7 @@ declare
   v_fstatus text;
 begin
   if p_aarsag is null or p_aarsag not in ('label_umulig', 'ikke_noedvendig', 'staff') then return 'ugyldig'; end if;
-  select r.id, r.status, r.label_klar_kl, r.forsendelse_id into rf
+  select r.id, r.status, r.label_klar_kl, r.forsendelse_id, r.label_annulleret_bekraeftet_kl into rf
     from public.returfragt_betalinger r where r.id = p_id for update;
   if rf.id is null or rf.status <> 'betalt' then return 'forkert_status'; end if;
   if rf.forsendelse_id is not null then
@@ -645,7 +645,10 @@ begin
     -- Seneste returkode er annulleret (evt. kun i BidHamr - den kan stadig
     -- være gyldig hos fragtfirmaet): kun staff må refundere.
     v_fstatus := f.status;
-    if f.status = 'annulleret' and p_aarsag <> 'staff' then return 'staff_afgoer'; end if;
+    -- (Er annulleringen bekræftet af fragtfirmaet, er der ingen gyldig kode.)
+    if f.status = 'annulleret' and rf.label_annulleret_bekraeftet_kl is null and p_aarsag <> 'staff' then
+      return 'staff_afgoer';
+    end if;
     if f.status not in ('opretter', 'fejlet', 'annulleret') then return 'label_findes'; end if;
   end if;
   if rf.label_klar_kl is not null and v_fstatus is distinct from 'annulleret' then return 'label_findes'; end if;
@@ -836,10 +839,10 @@ begin
              when r.status = 'refunderes' then 'refusion'
              -- Seneste returkode annulleret: aldrig automatisk refusion (staff afgør).
              when r.status = 'betalt' and r.label_klar_kl is null and fa.annulleret
-                  and (r.label_fejl_antal >= 5 or r.betalt_kl <= now() - interval '48 hours'
+                  and (r.label_fejl_antal >= 5 or coalesce(r.label_annulleret_bekraeftet_kl, r.betalt_kl) <= now() - interval '48 hours'
                        or public.returfragt_sag(r.trade_id)->>'kode' <> 'ok') then null
              when r.status = 'betalt' and r.label_klar_kl is null
-                  and (r.label_fejl_antal >= 5 or r.betalt_kl <= now() - interval '48 hours'
+                  and (r.label_fejl_antal >= 5 or coalesce(r.label_annulleret_bekraeftet_kl, r.betalt_kl) <= now() - interval '48 hours'
                        or public.returfragt_sag(r.trade_id)->>'kode' <> 'ok') then 'refunder'
              when r.status = 'betalt' and r.label_klar_kl is null then 'label'
              when r.status = 'afventer' and public.returfragt_sag(r.trade_id)->>'kode' <> 'ok' then 'annuller'
@@ -850,7 +853,9 @@ begin
            coalesce(r.label_naeste_kl, r.refusion_naeste_kl, r.synket_kl, r.oprettet_kl) as kl
       from public.returfragt_betalinger r
       left join lateral (
-        select coalesce(bool_or(f.status = 'annulleret'), false) as annulleret
+        -- Annulleret UDEN fragtfirmaets bekræftelse (koden kan stadig være
+        -- gyldig). Er annulleringen bekræftet, behandles rækken som "ingen kode".
+        select coalesce(bool_or(f.status = 'annulleret'), false) and r.label_annulleret_bekraeftet_kl is null as annulleret
           from public.forsendelser f where f.id = r.forsendelse_id
       ) fa on true
      where r.status in ('afventer', 'behandles', 'betalt', 'refunderes')
@@ -863,7 +868,7 @@ begin
              and r.betalt_kl <= now() - interval '2 minutes'
              -- Annulleret kode, hvor tiden/forsøgene er brugt: staff afgør (sulter ikke køen).
              and not (fa.annulleret
-                      and (r.label_fejl_antal >= 5 or r.betalt_kl <= now() - interval '48 hours'
+                      and (r.label_fejl_antal >= 5 or coalesce(r.label_annulleret_bekraeftet_kl, r.betalt_kl) <= now() - interval '48 hours'
                            or public.returfragt_sag(r.trade_id)->>'kode' <> 'ok')))
          or (r.status in ('afventer', 'behandles')
              and r.opdateret <= now() - interval '15 minutes'
