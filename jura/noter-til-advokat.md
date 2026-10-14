@@ -231,3 +231,10 @@ Kort om boost: man køber boost-point – 100 point for 39 kr. (BidHamrs egen om
 132. **Optjente point fra salg – værdi og regnskab.** Har de 10 point, man optjener pr. gennemført salg, en økonomisk værdi (de svarer til ca. 3,90 kr. købt pris), som skal håndteres regnskabsmæssigt eller momsmæssigt – fx som rabat på sælgergebyret eller som en forpligtelse? Tæller de med i DAC7-vederlaget? (Også til revisor.)
 133. **Snyd, refusion og tilbagekrav af præmien.** Må BidHamr udelukke en deltager og kræve præmien eller dens værdi tilbage ved snyd (fx fiktive handler mellem egne konti eller med familie), også efter udlevering? Hvad sker der, hvis vinderens lod bliver refunderet efter lodtrækningen (fx efter en anke) – er præmien så vundet endeligt? (K 4.5, 11)
 134. **Lodtrækningens kontrol og aflysning.** Er der krav om, at en uafhængig person (fx en advokat) overværer eller kontrollerer lodtrækningen, eller er en log i admin over hvem, hvornår, antal lod og vindende lod nok? Må BidHamr aflyse eller udskyde en måned ved tekniske fejl, og er klageadgangen til Forbrugerklagenævnet rigtig for en gratis konkurrence? (K 6.3, 12.3, 13.2)
+
+## Kunst og højrisiko-varer (14. okt. 2026)
+BidHamr forbyder kunst (malerier, tegninger, skulpturer, grafiske tryk/litografier og selvlavet kunst) pga. risiko for falsknerier og hvidvask. Plakater og masseproducerede billeder er tilladt.
+
+135. **Designerkeramik og -glas** (fx Royal Copenhagen, Kähler, Holmegaard): skal det behandles som kunst og forbydes, eller er det almindeligt brugt design? Hvor går grænsen juridisk og i forhold til hvidvaskloven?
+136. **Antikviteter generelt** (gamle møbler, ure, sølvtøj): bør de også forbydes eller begrænses (fx beløbsgrænse), og har BidHamr særlige pligter efter hvidvaskloven ved handel med kunst og antikviteter over en vis værdi?
+137. Kan BidHamr håndhæve forbuddet ved at fjerne opslag og annullere handler uden varsel, og hvad skal der stå i brugerbetingelserne for at det holder?
