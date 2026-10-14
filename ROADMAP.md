@@ -183,6 +183,7 @@ Formål: appen og hjemmesiden er ens 1:1. **Appen er det primære produkt** – 
 
 ## Fase 6 – Klar til lancering
 Formål: alt det juridiske og praktiske er på plads.
+- [ ] **Kunst er forbudt** (Filip, 14. okt. 2026): forbudt vare i brugerbetingelserne, ingen kunst-kategori, opret auktion fanger kunst-ord og sender til staff-tjek, anmeldelsesgrund "Kunst er ikke tilladt" – se ROADMAP-BESLUTNINGER
 
 - [~] **Overskueligt og brugervenligt admin** (Filip, 12. okt. 2026): ny grupperet menu, ens opbygning af alle undersider (filtre, lister der bliver til kort på mobil, tydelige handlinger), plan i docs/ADMIN-REDESIGN.md – bygges efter sikkerhedsnettet *(bygget og i prod 13. okt. 2026: grupperet menu, kontrolpanel, søgning, hurtighandlinger, Tag sagen, sælgerens forside – `20261020010000_admin_hurtig.sql`)*
 - [~] **Admin-kontrolpanel**: én forside i admin med penge (Stripe-saldo, sælgernes penge, hvad der kan trækkes ud, nødstop – Reserve bygges IKKE (Filip, 12. okt. 2026)), "kræver handling" (sager, indsigelser, godkendelser, hængende refusioner, beta-fejl, firmaklager), drift (alarmer, cron, afstemning) og dagens aktivitet, øverst en grøn/gul/rød statuslinje ("skal vi tage stilling til noget?") – bygges efter sikkerhedsnettet for pengene (Filip, 12. okt. 2026) *(bygget og i prod 13. okt. 2026 sammen med sikkerhedsnet A+B)*
