@@ -7,6 +7,7 @@ import { kanOptimeres } from "@/lib/billedUrl";
 import { useFavoritter } from "@/components/FavoritterProvider";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
 import BoostetMaerke from "@/components/boost/BoostetMaerke";
+import PopulaerSaelgerMaerke from "@/components/PopulaerSaelgerMaerke";
 import { ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 
 export interface DummyAuction {
@@ -25,6 +26,10 @@ export interface DummyAuction {
   erhverv?: boolean;
   // Auktionen er boostet lige nu (aktive_boosts) - vises som "Boostet".
   boostet?: boolean;
+  // auctions.bruger_id (offentligt) - bruges til at slå "Populær sælger" op.
+  saelgerId?: string;
+  // Sælgeren har mærket "Populær sælger" (src/lib/populaerSaelger.ts).
+  populaerSaelger?: boolean;
 }
 
 // Passer til gitteret 2 / 3 / 4 spalter, som alle kortlister bruger
@@ -104,9 +109,10 @@ export default function AuctionCard({
             {meta}
             {auktion.lokation && auktion.lokation !== "Ukendt" && <> · {auktion.lokation}</>}
           </p>
-          {auktion.erhverv && (
-            <p className="mt-2">
-              <ErhvervssaelgerMaerke lille />
+          {(auktion.erhverv || auktion.populaerSaelger) && (
+            <p className="mt-2 flex flex-wrap gap-1">
+              {auktion.erhverv && <ErhvervssaelgerMaerke lille />}
+              {auktion.populaerSaelger && <PopulaerSaelgerMaerke lille />}
             </p>
           )}
         </div>

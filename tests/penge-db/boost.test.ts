@@ -63,6 +63,23 @@ create table public.betalinger (id uuid primary key default gen_random_uuid(), t
   status text default 'betalt', frigivet_kl timestamptz, annulleret_kl timestamptz, refusion_anmodet_kl timestamptz,
   refunderet_kl timestamptz, refusion_oere bigint, bidhamr_daekker_kl timestamptz, indsigelse_tabt_kl timestamptz,
   indsigelse_kl timestamptz, indsigelse_status text);
+-- Den fælles definition fra 20261023020000_badge_konkurrence.sql (kopi).
+create function public.gennemfoerte_salg_min_bud_oere() returns bigint language sql immutable as $$ select 5000::bigint $$;
+create function public.gennemfoerte_salg(p_fra timestamptz default null, p_til timestamptz default null, p_saelger uuid default null)
+returns table (betaling_id uuid, trade_id uuid, seller_id uuid, buyer_id uuid, frigivet_kl timestamptz)
+language sql stable security definer set search_path = '' as $$
+  select b.id, b.trade_id, b.seller_id, b.buyer_id, b.frigivet_kl
+    from public.betalinger b left join public.trades t on t.id = b.trade_id
+   where b.status = 'betalt' and b.frigivet_kl is not null
+     and (p_fra is null or b.frigivet_kl >= p_fra) and (p_til is null or b.frigivet_kl < p_til)
+     and (p_saelger is null or b.seller_id = p_saelger)
+     and b.seller_id <> public.bidhamr_system_id()
+     and b.bud_oere >= public.gennemfoerte_salg_min_bud_oere()
+     and b.annulleret_kl is null and b.refusion_anmodet_kl is null and b.refunderet_kl is null
+     and coalesce(b.refusion_oere, 0) = 0 and b.bidhamr_daekker_kl is null and b.indsigelse_tabt_kl is null
+     and (b.indsigelse_kl is null or coalesce(b.indsigelse_status, '') in ('won', 'warning_closed', 'prevented'))
+     and coalesce(t.status, '') <> 'annulleret';
+$$;
 create table public.fakturaer (
   id uuid primary key default gen_random_uuid(), dokument text not null, part text not null, bruger_id uuid not null,
   betaling_id uuid, trade_id uuid, firma_regning_id uuid, krediterer_id uuid references public.fakturaer(id),
@@ -221,7 +238,7 @@ describe("migrationen", () => {
        where p.pronamespace = 'public'::regnamespace
          and (p.proname like 'boost%' or p.proname in ('mine_point', 'min_auktion_boost', 'aktive_boosts',
               'faktura_planlaeg_boost', 'auktion_boosts_et_aktivt'))
-         and p.proname not in ('boost_forbyd_aendring', 'boost_koeb_forbyd_sletning', 'boost_koeb_laaste_felter', 'boost_laas_bruger', 'boost_min_bud_oere')`);
+         and p.proname not in ('boost_forbyd_aendring', 'boost_koeb_forbyd_sletning', 'boost_koeb_laaste_felter', 'boost_laas_bruger')`);
     expect(rows.length).toBeGreaterThanOrEqual(22);
     for (const r of rows) {
       expect(r.sd, r.proname).toBe(true);
@@ -445,7 +462,7 @@ describe("point ved salg", () => {
     expect(await n(under)).toBe(0);
     expect(await n(praecis)).toBe(1);
     expect(await saldo(PRIVAT)).toBe(10);
-    expect((await en<{ v: number }>(`select public.boost_min_bud_oere()::int as v`)).v).toBe(5000);
+    expect((await en<{ v: number }>(`select public.gennemfoerte_salg_min_bud_oere()::int as v`)).v).toBe(5000);
   });
 
   it("højst 10 point pr. køber pr. sælger pr. måned: to salg til samme køber giver 10 point", async () => {

@@ -70,6 +70,13 @@ begin
   if to_regprocedure('public.bidhamr_system_id()') is null then
     raise exception 'Forudsætning mangler: public.bidhamr_system_id()';
   end if;
+  -- Den fælles definition af et gennemført salg (med køberen) og mindstebuddet.
+  if to_regprocedure('public.gennemfoerte_salg_min_bud_oere()') is null
+     or not exists (select 1 from pg_proc p
+                     where p.oid = to_regprocedure('public.gennemfoerte_salg(timestamptz, timestamptz, uuid)')
+                       and pg_get_function_result(p.oid) like '%buyer_id%') then
+    raise exception 'Forudsætning mangler: gennemfoerte_salg() med buyer_id og gennemfoerte_salg_min_bud_oere() (20261023020000_badge_konkurrence.sql)';
+  end if;
 end $do$;
 
 -- ===========================================================================
@@ -815,13 +822,12 @@ $fn$;
 -- højst 10 point pr. køber pr. sælger pr. måned (så en køber ikke kan "sælge"
 -- point til sælgeren med mange små handler).
 --
--- SKAL FØLGES AD med gennemfoerte_salg_min_bud_oere() i
--- 20261023020000_badge_konkurrence.sql (samme værdi, 5000 øre). Egen
--- konstant her, så de to migrationer kan flettes uafhængigt af hinanden.
-create or replace function public.boost_min_bud_oere()
-returns bigint language sql immutable set search_path = '' as $fn$
-  select 5000::bigint;
-$fn$;
+-- Mindstebuddet og "gennemført salg" er den FÆLLES definition fra
+-- 20261023020000_badge_konkurrence.sql: gennemfoerte_salg() og
+-- gennemfoerte_salg_min_bud_oere() (= 5000 øre) - badge, konkurrence og
+-- boost følges ad. (En tidligere udgave af denne fil havde sin egen kopi,
+-- boost_min_bud_oere(), på testdatabasen - den fjernes.)
+drop function if exists public.boost_min_bud_oere();
 
 alter table public.boost_indstillinger add column if not exists maks_point_pr_koeber_maaned integer not null default 10;
 alter table public.boost_indstillinger drop constraint if exists boost_indstillinger_maks_koeber;
@@ -873,28 +879,17 @@ begin
 
   if s.point_pr_salg > 0 then
     for r in
-      select b.id, b.seller_id, b.buyer_id,
-             to_char(b.frigivet_kl at time zone 'Europe/Copenhagen', 'YYYY-MM') as maaned
-        from public.betalinger b
-        join public.users u on u.id = b.seller_id
-        left join public.trades t on t.id = b.trade_id
-       where b.status = 'betalt'
-         and b.frigivet_kl is not null
-         and b.frigivet_kl >= s.optjening_fra_kl
-         and b.bud_oere >= public.boost_min_bud_oere()
-         and not exists (select 1 from public.boost_optjening_afvist x where x.betaling_id = b.id)
-         and b.seller_id <> public.bidhamr_system_id()
-         and b.annulleret_kl is null
-         and b.refusion_anmodet_kl is null
-         and b.refunderet_kl is null
-         and coalesce(b.refusion_oere, 0) = 0
-         and b.bidhamr_daekker_kl is null
-         and b.indsigelse_tabt_kl is null
-         and (b.indsigelse_kl is null or coalesce(b.indsigelse_status, '') in ('won', 'warning_closed', 'prevented'))
-         and coalesce(t.status, '') <> 'annulleret'
-         and u.konto_type = 'privat'
-         and not exists (select 1 from public.boost_posteringer p where p.betaling_id = b.id and p.type = 'optjening')
-       order by b.frigivet_kl
+      -- Den fælles definition (20261023020000_badge_konkurrence.sql): betalt,
+      -- frigivet, bud >= gennemfoerte_salg_min_bud_oere(), intet refunderet,
+      -- ingen åben/tabt indsigelse, ikke annulleret, ikke BidHamrs systemkonto.
+      select g.betaling_id as id, g.seller_id, g.buyer_id,
+             to_char(g.frigivet_kl at time zone 'Europe/Copenhagen', 'YYYY-MM') as maaned
+        from public.gennemfoerte_salg(s.optjening_fra_kl, null, null) g
+        join public.users u on u.id = g.seller_id
+       where u.konto_type = 'privat'
+         and not exists (select 1 from public.boost_optjening_afvist x where x.betaling_id = g.betaling_id)
+         and not exists (select 1 from public.boost_posteringer p where p.betaling_id = g.betaling_id and p.type = 'optjening')
+       order by g.frigivet_kl
        limit v_graense
     loop
       -- Højst maks_point_pr_koeber_maaned pr. køber pr. sælger pr. måned
@@ -1043,7 +1038,7 @@ begin
     'pakke', jsonb_build_object('point', s.pakke_point, 'pris_oere', s.pakke_pris_oere),
     'boost', jsonb_build_object('point', s.boost_point, 'timer', s.boost_timer),
     'point_pr_salg', s.point_pr_salg,
-    'min_bud_oere', public.boost_min_bud_oere(),
+    'min_bud_oere', public.gennemfoerte_salg_min_bud_oere(),
     'maks_pr_koeber_maaned', s.maks_point_pr_koeber_maaned,
     'kraev_samtykke', s.kraev_fortrydelse_samtykke,
     'aabent_koeb', (select jsonb_build_object('id', k.id, 'status', k.status)
@@ -1319,7 +1314,6 @@ declare
 begin
   foreach f in array array[
     'public.boost_saldo(uuid)',
-    'public.boost_min_bud_oere()',
     'public.boost_bruger_spaerret(uuid)',
     'public.boost_postering_indsaet(uuid, text, integer, uuid, uuid, uuid, uuid, text, uuid, integer)',
     'public.boost_koeb_start(uuid, boolean)',

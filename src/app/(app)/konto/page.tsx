@@ -20,8 +20,17 @@ import MitIDMaerke from "@/components/mitid/MitIDMaerke";
 import { MitIDIkon, MitIDKnap } from "@/components/mitid/MitIDKraeves";
 import { MITID } from "@/lib/tekster/mitid";
 import { BOOST_TEKST } from "@/lib/boost/tekster";
+import { KONKURRENCE_KONTO } from "@/lib/tekster/konkurrence";
 
 export const dynamic = "force-dynamic";
+
+// mine_konkurrence_lod() (20261023020000_badge_konkurrence.sql): kun egne lod.
+type MineLod = {
+  maaned: string;
+  antal_lod: number;
+  deltager: boolean;
+  grund: "erhverv" | "staff" | "konto" | null;
+};
 
 type MinAdvarsel = { id: string; begrundelse_bruger: string | null; oprettet_kl: string };
 type MinPaamindelse = { id: string; grund: string; begrundelse_bruger: string; oprettet_kl: string };
@@ -79,6 +88,7 @@ export default async function KontoSide({
     { data: mitidData },
     { data: dac7Data },
     { data: pointData },
+    { data: lodData, error: lodFejl },
   ] = await Promise.all([
     sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
     hentBetalingsindstillinger(),
@@ -101,6 +111,8 @@ export default async function KontoSide({
     supabase.rpc("dac7_min_status"),
     // Boost-point: saldo og pakkens pris (kun egne, auth.uid()).
     supabase.rpc("mine_point"),
+    // Månedens lodtrækning: egne lod i den aktuelle måned (auth.uid()).
+    supabase.rpc("mine_konkurrence_lod"),
   ]);
   const point = pointData as
     | { saldo: number; kan_bruge: boolean; pakke: { point: number; pris_oere: number } }
@@ -132,6 +144,8 @@ export default async function KontoSide({
   if (paamindelseFejl) console.error("Konto: påmindelser kunne ikke hentes:", paamindelseFejl.message);
   const advarsler = (advarselData ?? []) as MinAdvarsel[];
   const paamindelser = (paamindelseData ?? []) as MinPaamindelse[];
+  if (lodFejl) console.error("Konto: lod kunne ikke hentes:", lodFejl.message);
+  const mineLod = (lodData ?? null) as MineLod | null;
   const dac7Anmodning =
     (dac7Data as { anmodning?: { frist: string; spaerret: boolean } | null } | null)?.anmodning ?? null;
 
@@ -265,6 +279,35 @@ export default async function KontoSide({
           ))}
         </ul>
       </nav>
+      {mineLod && (
+        <section id="lodtraekning" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <div className="flex items-start gap-3">
+            <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-groen-lys text-groen-mork">
+              <Ikon navn="gave" className="h-[18px] w-[18px]" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-[20px] leading-tight lg:text-[22px]">{KONKURRENCE_KONTO.titel}</h2>
+              {mineLod.deltager ? (
+                <>
+                  <p className="mt-1 text-[15px] font-semibold text-tekst">
+                    {KONKURRENCE_KONTO.antal(mineLod.antal_lod, mineLod.maaned)}
+                  </p>
+                  {mineLod.antal_lod === 0 && <p className="mt-1 text-sm text-tekst-daempet">{KONKURRENCE_KONTO.ingen}</p>}
+                  <p className="mt-1 text-sm text-tekst-daempet">{KONKURRENCE_KONTO.regel}</p>
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-tekst-daempet">
+                  {mineLod.grund === "erhverv"
+                    ? KONKURRENCE_KONTO.erhverv
+                    : mineLod.grund === "staff"
+                      ? KONKURRENCE_KONTO.staff
+                      : KONKURRENCE_KONTO.konto}
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
       <ProfilSektion bruger={authData.user} />
       <SikkerhedSektion bruger={authData.user} />
 

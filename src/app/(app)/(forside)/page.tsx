@@ -8,6 +8,7 @@ import Ikon, { type IkonNavn } from "@/components/Ikon";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
 import { createClient } from "@/lib/supabase/server";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
+import { markerPopulaereSaelgere } from "@/lib/populaerSaelger";
 import { sideUrl } from "@/lib/seo";
 import { FORSIDE } from "@/lib/tekster/forside";
 import { hentBoostTop, markerBoostede } from "@/lib/boost/visning";
@@ -17,7 +18,7 @@ import heroBillede from "../../../../public/forside/hero.webp";
 // Kun de kolonner, kortene bruger. Typet som string: Supabase-typernes
 // select-parser kan ikke læse "ø" i nuværende_bud.
 const KORT_KOLONNER: string =
-  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv";
+  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv, bruger_id";
 const ANTAL_KORT = 8;
 type KortRaekke = Parameters<typeof mapAuctionTilKort>[0];
 type Kort = ReturnType<typeof mapAuctionTilKort>;
@@ -135,12 +136,14 @@ const hentForsideAuktioner = cache(async () => {
     .slice(0, ANTAL_KORT)
     .map(mapAuctionTilKort);
   // Mærket "Boostet" også på boostede auktioner i de andre lister (fx når
-  // rotationen ikke har dem øverst lige nu).
-  const [slutterSnart, nyeste] = await Promise.all([
-    markerBoostede(supabase, slutterSnartRaa),
-    markerBoostede(supabase, nyesteRaa),
-  ]);
-  return { boostede, slutterSnart, nyeste };
+  // rotationen ikke har dem øverst lige nu), og "Populær sælger" på alle
+  // kort: ét samlet opslag hver.
+  const alle = await markerPopulaereSaelgere(
+    await markerBoostede(supabase, [...boostede, ...slutterSnartRaa, ...nyesteRaa]),
+  );
+  const a = boostede.length;
+  const b = a + slutterSnartRaa.length;
+  return { boostede: alle.slice(0, a), slutterSnart: alle.slice(a, b), nyeste: alle.slice(b) };
 });
 
 // Hero, tryghed, kategorier, "Sådan virker det" og erhverv afhænger ikke af

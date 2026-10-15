@@ -6,6 +6,7 @@ import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import { beregnAfstandKm } from "@/lib/distance";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { logDriftFejl } from "@/lib/drift";
+import { markerPopulaereSaelgere } from "@/lib/populaerSaelger";
 import { læsSortering, type Sortering } from "@/lib/sortering";
 import { escapeLike, escapeRegex } from "@/lib/postgrest";
 import type { TotalType } from "@/lib/soegeTotal";
@@ -30,7 +31,7 @@ const PRAECIST_ANTAL_OP_TIL = 1000;
 // Kun de kolonner, kortet bruger. Typet som string: Supabase-typernes
 // select-parser kan ikke læse "ø" i nuværende_bud.
 const KORT_KOLONNER: string =
-  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv";
+  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv, bruger_id";
 const AFSTAND_KOLONNER: string = "id, lat, lng";
 
 type KortRaekke = Parameters<typeof mapAuctionTilKort>[0];
@@ -84,7 +85,8 @@ async function medBoost(
   }
   const iTop = new Set(top.map((r) => r.id));
   const kort = [...top, ...side.filter((r) => !iTop.has(r.id))].map(mapAuctionTilKort);
-  return markerBoostede(supabase, kort);
+  // Mærkerne "Boostet" og "Populær sælger".
+  return markerPopulaereSaelgere(await markerBoostede(supabase, kort));
 }
 
 const FEJL = "Auktionerne kunne ikke hentes. Prøv igen.";

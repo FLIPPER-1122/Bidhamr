@@ -22,6 +22,7 @@ import ProfileTabs, {
 } from "@/components/profile/ProfileTabs";
 import MineHandlerListe, { MineHandlerSkelet, visAfsluttedeFra } from "@/components/handel/MineHandlerListe";
 import { tilProfilFane } from "@/lib/profilFaner";
+import { erPopulaerSaelger } from "@/lib/populaerSaelger";
 
 // public.profil_offentlige_tal (20261007050000/051000): kun antal, ingen beløb.
 // Samme definitioner som min_statistik (/konto/statistik).
@@ -131,6 +132,7 @@ export default async function ProfilPage({
       { data: kontakt },
       { data: egneFoelgere },
       opsummering,
+      egenPopulaer,
     ] = await Promise.all([
       supabase
         .from("auctions")
@@ -157,6 +159,7 @@ export default async function ProfilPage({
       supabase.rpc("antal_foelgere", { p_bruger: id }),
       // Gennemsnit og antal fra databasen - listen er begrænset til 200.
       hentBedoemmelseOpsummering(supabase, id),
+      erPopulaerSaelger(id),
     ]);
 
     const antalRatings = opsummering.antal;
@@ -265,6 +268,7 @@ export default async function ProfilPage({
             brugerId={id}
             mitidVerificeret={!!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
             mitidManglerEjer={!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
+            populaerSaelger={egenPopulaer}
             antalFoelgere={typeof egneFoelgere === "number" ? egneFoelgere : undefined}
           />
 
@@ -311,6 +315,7 @@ export default async function ProfilPage({
     blokeretAfProfil,
     opsummering,
     profilTal,
+    populaer,
   ] = await Promise.all([
     supabase
       .from("auctions")
@@ -348,6 +353,7 @@ export default async function ProfilPage({
       : Promise.resolve(false),
     hentBedoemmelseOpsummering(supabase, id),
     hentProfilTal(supabase, id),
+    erPopulaerSaelger(id),
   ]);
 
   const aktiveAuktioner = await markerBoostede(supabase, (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort));
@@ -373,6 +379,7 @@ export default async function ProfilPage({
           erEgenProfil={false}
           brugerId={id}
           mitidVerificeret={!!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
+          populaerSaelger={populaer}
           antalFoelgere={typeof antalFoelgere === "number" ? antalFoelgere : undefined}
           handling={
             !blokeretAfProfil && harBlokeret !== true ? (
