@@ -24,6 +24,9 @@ import {
 import { alarmType } from "@/lib/driftAlarmTyper";
 import AdminSide from "@/components/admin/AdminSide";
 import { DriftFaner } from "@/components/admin/OmraadeFaner";
+import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import { vilkaarSlaaTil } from "@/app/actions/adminActions";
+import { VILKAAR_VERSION, vilkaarErAccepteret } from "@/lib/vilkaar";
 
 // Drift: cron-jobs, notifikationer der ikke er sendt, og fejl på siden.
 // Kun admin og chef (tjekkes på serveren). Ingen mailindhold og ingen
@@ -116,6 +119,13 @@ export default async function AdminDrift({
   searchParams: Promise<{ dage?: string }>;
 }) {
   const { admin } = await kraevSideRolle("admin");
+  // Den aktive version af brugerbetingelserne (vilkaar_indstilling,
+  // 20261023010000). null = migrationen er ikke kørt endnu.
+  const { data: vilkaarRaekke } = await admin
+    .from("vilkaar_indstilling")
+    .select("aktiv_version, skiftet_kl")
+    .maybeSingle<{ aktiv_version: string; skiftet_kl: string | null }>();
+  const vilkaarDb = vilkaarRaekke?.aktiv_version ?? null;
   const { dage: dageParam } = await searchParams;
   const dage = DAGE_VALG.find((d) => String(d) === dageParam) ?? 7;
   const nu = naa();
@@ -167,6 +177,32 @@ export default async function AdminDrift({
         forklaring="Teknisk overblik: besøg, cron-jobs, notifikationer der ikke er sendt, og fejl på siden. Opdateres, når siden genindlæses."
       />
       <DriftFaner aktiv="drift" />
+
+      {/* ---------------------------------------------------------- Brugerbetingelser */}
+      {vilkaarDb && (
+        <Kort titel="Brugerbetingelser">
+          <p className="text-sm text-tekst-daempet">
+            Aktiv version i databasen: <strong className="text-tekst">{vilkaarDb}</strong>. Hjemmesidens version:{" "}
+            <strong className="text-tekst">{VILKAAR_VERSION}</strong>.
+            {vilkaarRaekke?.skiftet_kl ? ` Skiftet ${new Date(vilkaarRaekke.skiftet_kl).toLocaleString("da-DK")}.` : ""}
+          </p>
+          {!vilkaarErAccepteret(vilkaarDb, VILKAAR_VERSION) && (
+            <div className="mt-3">
+              <ConfirmDialog
+                triggerLabel={`Slå brugerbetingelser ${VILKAAR_VERSION} til`}
+                triggerClassName="btn btn-primaer btn-lille"
+                title={`Slå brugerbetingelser ${VILKAAR_VERSION} til?`}
+                description={`Alle brugere får accept-vinduet ved næste besøg, og bud, maksimum og nye auktioner afvises, indtil de har accepteret version ${VILKAAR_VERSION}. Gør det kun, når den nye hjemmeside er deployet. Kan ikke rulles tilbage herfra.`}
+                confirmLabel="Ja, slå den til"
+                action={vilkaarSlaaTil}
+                hiddenFields={{}}
+                kanIkkeFortrydes
+                kvittering={`Brugerbetingelser ${VILKAAR_VERSION} er slået til`}
+              />
+            </div>
+          )}
+        </Kort>
+      )}
 
       {/* ---------------------------------------------------------- Besøg */}
       <Kort titel="Besøg (cookiefri statistik)">

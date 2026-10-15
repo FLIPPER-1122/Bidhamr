@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { connection } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { IKKE_KUNST_AFVENTER, manglerKunstSkema } from "@/lib/kunstSkema";
 import { kategorier } from "@/lib/kategorier";
 import { seoIndeksering, sideUrl, TEKSTSIDER } from "@/lib/seo";
 
@@ -37,18 +38,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // filtrene her er det eneste, der bestemmer, hvad der kommer med.
   let auktioner: MetadataRoute.Sitemap = [];
   try {
-    const { data, error } = await createAdminClient()
-      .from("auctions")
-      .select("id, oprettet")
-      .eq("status", "aktiv")
-      .eq("skjult", false)
-      // Ikke auktioner, der afventer kunst-kontrol (20261023010000_kunst_forbudt.sql).
-      .or("kunst_kontrol.is.null,kunst_kontrol.neq.afventer")
-      .is("arkiveret_kl", null)
-      .gt("slutter_kl", nu.toISOString())
-      .order("slutter_kl", { ascending: true })
-      .limit(MAKS_AUKTIONER)
-      .overrideTypes<{ id: string; oprettet: string }[], { merge: false }>();
+    // Ikke auktioner, der afventer kunst-kontrol (20261023010000_kunst_forbudt.sql).
+    // Er migrationen ikke kørt endnu, hentes de uden filteret.
+    const hent = (kunstFilter: boolean) => {
+      let q = createAdminClient()
+        .from("auctions")
+        .select("id, oprettet")
+        .eq("status", "aktiv")
+        .eq("skjult", false);
+      if (kunstFilter) q = q.or(IKKE_KUNST_AFVENTER);
+      return q
+        .is("arkiveret_kl", null)
+        .gt("slutter_kl", nu.toISOString())
+        .order("slutter_kl", { ascending: true })
+        .limit(MAKS_AUKTIONER)
+        .overrideTypes<{ id: string; oprettet: string }[], { merge: false }>();
+    };
+    let { data, error } = await hent(true);
+    if (error && manglerKunstSkema(error)) ({ data, error } = await hent(false));
     if (error) {
       console.error("[sitemap] auktioner kunne ikke hentes:", error.message);
     } else {

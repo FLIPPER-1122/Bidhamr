@@ -330,18 +330,30 @@ const SKILLE = "[-.·_*']";
 // public.kunst_sloer_variant.
 const ACCENT_FRA = "äöüéèáàâêëíìîïóòôúùûñç";
 const ACCENT_TIL = "aoueeaaaeeiiiiooouuunc";
+// Kyrilliske og græske bogstaver, der ligner latinske ("мaлeри"). Små og
+// store, så det ikke afhænger af, hvordan databasen laver små bogstaver.
+// HOLD SYNKRON med public.kunst_sloer_variant.
+export const HOMOGLYF_FRA = "аеорсухікмтнвАЕОРСУХІКМТНВαεορτκνιυχΑΕΟΡΤΚΝΙΥΧΒΗΜ";
+export const HOMOGLYF_TIL = "aeopcyxikmthbaeopcyxikmthbaeoptkviuxaeoptkniyxbhm";
 const SAML_SKILLE = new RegExp(`([${B}])${SKILLE}(?=[${B}])`, "g");
 const ET_BOGSTAV = new RegExp(`^[${B}]$`);
 
 // Afslører simple forsøg på at skjule et ord. Samme trin som
 // public.kunst_sloer_variant(p_tekst, p_et):
-//   1. små bogstaver (NFC), usynlige tegn fjernes
+//   1. kyrilliske/græske look-alikes -> latin, små bogstaver (NFC), usynlige tegn fjernes
 //   2. @ -> a, € -> e, accenter fjernes (é -> e)
 //   3. 3/1/0 ved siden af et bogstav -> e/<et>/o (et = "i" eller "l")
 //   4. skilletegn (- . · _ * ') mellem to bogstaver fjernes ("ma-leri")
 //   5. normalisering, og 3+ enkeltbogstaver i træk sættes sammen ("m a l e r i")
 export function kunstSloerVariant(raa: string, et: "i" | "l" = "i"): string {
-  let t = raa.normalize("NFC").toLowerCase().replace(USYNLIGE, "");
+  let t = Array.from(raa.normalize("NFC"))
+    .map((c) => {
+      const i = HOMOGLYF_FRA.indexOf(c);
+      return i >= 0 ? HOMOGLYF_TIL[i] : c;
+    })
+    .join("")
+    .toLowerCase()
+    .replace(USYNLIGE, "");
   t = t.replace(/@/g, "a").replace(/€/g, "e");
   t = Array.from(t)
     .map((c) => {
@@ -392,6 +404,11 @@ export function kunstPar(norm: string): string {
   if (ord.length < 2) return "";
   const par: string[] = [];
   for (let i = 0; i < ord.length - 1; i++) par.push(ord[i] + ord[i + 1]);
+  // Også tre korte ord i træk ("ma le ri") - kun når alle tre har højst to
+  // bogstaver, så almindelige sætninger ("mal er i") ikke giver træf.
+  for (let i = 0; i < ord.length - 2; i++) {
+    if (ord[i].length <= 2 && ord[i + 1].length <= 2 && ord[i + 2].length <= 2) par.push(ord[i] + ord[i + 1] + ord[i + 2]);
+  }
   return [...ord, ...par].join(" ");
 }
 

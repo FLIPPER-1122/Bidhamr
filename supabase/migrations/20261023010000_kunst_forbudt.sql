@@ -40,18 +40,30 @@
 -- 5. reports.category og dsa_anmeldelser.kategori får 'kunst';
 --    dsa_anmeldelse_opret godtager 'kunst'; dsa_regler() får 'kunst';
 --    forbudte_varer() får 'kunst'.
--- 6. Brugerbetingelser: vilkaar_aktuel_version() 0.1 -> 0.2 (kunst er en
---    forbudt vare). Alle eksisterende brugere skal acceptere igen (vinduet
---    ved næste besøg, og bud/maksimum/nye auktioner afvises med BHV02,
---    indtil de har). Hjemmesiden læser den aktuelle version fra databasen
---    (mine_vilkaar().aktuel_version), så rækkefølgen af migration og deploy
---    er ligegyldig. vilkaar_aktuel_version og vilkaar_er_accepteret er nu
---    stable (ikke immutable).
+-- 6. Brugerbetingelser 0.2 (kunst er en forbudt vare). Den aktive version
+--    står i den nye tabel vilkaar_indstilling og er 0.1 efter migrationen -
+--    INTET ændres for brugerne, før admin/chef slår 0.2 til (se herunder).
+--    vilkaar_aktuel_version læser tabellen og er stable (ikke immutable),
+--    og vilkaar_er_accepteret er også stable.
 -- 6b. Staff: dsa_afgoerelser_kunst (skjul/fjern med reglen 'kunst' ->
 --    'afvist'), kunst_ikke_kunst (luk anmeldelse + godkend i én
 --    transaktion), kunst_tjek_aktive ("Tjek aktive auktioner for kunst",
---    kun admin/chef, aldrig automatisk). Alle kun for service_role.
+--    kun admin/chef, aldrig automatisk, tør kørsel først; auktioner med bud
+--    får kun en anmeldelse), vilkaar_aktiver_version. Alle kun service_role.
 -- 7. Ingen kategori må hedde noget med kunst (der findes ingen i dag).
+--
+-- RÆKKEFØLGE I PRODUKTION (rækkefølgen af migration og hjemmeside-deploy er
+-- ligegyldig - koden tåler, at migrationen mangler, og migrationen ændrer
+-- ikke vilkårsversionen):
+--   1. FØR migrationen: deploy edge-funktionen (den tåler, at kolonnen mangler):
+--      npx supabase functions deploy notificer-foelgere --project-ref lkifkrexeldimmghnsie
+--   2. Kør denne migration (Filips "ja"). Hjemmesiden kan deployes før eller efter.
+--   3. Når den nye hjemmeside er deployet: Admin -> Drift -> "Slå
+--      brugerbetingelser 0.2 til" (admin/chef). Først nu får alle
+--      eksisterende brugere accept-vinduet, og bud/maksimum/nye auktioner
+--      afvises med BHV02, indtil de har accepteret. Gør det ikke, mens den
+--      gamle hjemmeside kører (den kender ikke 0.2).
+--   4. Valgfrit: Admin -> Auktioner -> "Tjek aktive auktioner for kunst".
 --
 -- Notifikationer (cron nyAuktionFraFulgt og slutterSnart, edge-funktionen
 -- notificer-foelgere) filtrerer 'afventer' fra i koden.
@@ -116,6 +128,19 @@ begin
   end if;
   if h is distinct from p_gammel and h is distinct from p_ny then
     raise exception '%: md5 % er hverken gammel eller ny - kontrollér funktionen, før migrationen køres', p_fn, h;
+  end if;
+end $f$;
+
+create or replace function pg_temp.drift_tjek_flere(p_fn text, p_tilladte text[])
+returns void language plpgsql as $f$
+declare
+  h text := pg_temp.krop_md5(p_fn);
+begin
+  if h is null then
+    raise exception '%: funktionen findes ikke', p_fn;
+  end if;
+  if not (h = any(p_tilladte)) then
+    raise exception '%: md5 % er ikke en kendt udgave - kontrollér funktionen, før migrationen køres', p_fn, h;
   end if;
 end $f$;
 
@@ -196,7 +221,10 @@ select pg_temp.drift_tjek('public.dsa_anmeldelse_opret(uuid,text,uuid,text,text,
 -- vilkaar_aktuel_version: gammel = 0.1 (prod), ny = 0.2. Den tidligere udgave
 -- af denne migration (0.2, immutable - kørt på test) har samme krop og md5
 -- som ny, så test opgraderes (til stable) uden at fejle.
-select pg_temp.drift_tjek('public.vilkaar_aktuel_version()', 'f87f0070b496a88af134964e29b310ce', '26f30051368fb71bd83d82c613eb7216');
+-- Den første udgave af denne migration (0.2 hårdkodet, kørt på test) har md5
+-- 26f30051368fb71bd83d82c613eb7216 og godtages også, så test kan opgraderes.
+select pg_temp.drift_tjek_flere('public.vilkaar_aktuel_version()',
+  array['f87f0070b496a88af134964e29b310ce', '26f30051368fb71bd83d82c613eb7216', '859bc356647bea84a155a1a18fbc3115']);
 select pg_temp.drift_tjek('public.vilkaar_er_accepteret(text)', '2985fecec0ac4740a4d17ebc244b8020', '2985fecec0ac4740a4d17ebc244b8020');
 select pg_temp.policy_tjek('auctions_select_anon', 'e8ff1c7e4468e4aa59f122841dc1a3fc');
 select pg_temp.policy_tjek('auctions_select_authenticated', '15a38a05e63952aaf613e3cea3111374');
@@ -291,7 +319,8 @@ as $fn$
 $fn$;
 
 -- Afslører simple forsøg på at skjule et ord (kunstSloerVariant i TS):
--- @ -> a, € -> e, accenter fjernes, 3/1/0 ved siden af bogstaver -> e/<p_et>/o,
+-- kyrilliske/græske look-alikes -> latin (HOMOGLYF_FRA/TIL i TS), @ -> a,
+-- € -> e, accenter fjernes, 3/1/0 ved siden af bogstaver -> e/<p_et>/o,
 -- skilletegn mellem to bogstaver fjernes ("ma-leri"), normalisering, og 3+
 -- enkeltbogstaver i træk sættes sammen ("m a l e r i").
 -- (Den første udgave i denne migration havde kun p_tekst - droppes.)
@@ -305,7 +334,9 @@ set search_path = public
 as $fn$
 declare
   b      constant text := 'a-zæøå';
-  t      text := regexp_replace(lower(normalize(coalesce(p_tekst, ''), NFC)),
+  t      text := regexp_replace(lower(translate(normalize(coalesce(p_tekst, ''), NFC),
+                                  'аеорсухікмтнвАЕОРСУХІКМТНВαεορτκνιυχΑΕΟΡΤΚΝΙΥΧΒΗΜ',
+                                  'aeopcyxikmthbaeopcyxikmthbaeoptkviuxaeoptkniyxbhm')),
                                 '[­​-‏‪-‮⁠-⁯﻿]', '', 'g');
   d      record;
   v_ord  text;
@@ -374,6 +405,12 @@ begin
   end if;
   for i in 1..cardinality(v_ord) - 1 loop
     v_par := v_par || (v_ord[i] || v_ord[i + 1]);
+  end loop;
+  -- Tre korte ord i træk ("ma le ri"), kun når alle tre har højst to bogstaver.
+  for i in 1..cardinality(v_ord) - 2 loop
+    if char_length(v_ord[i]) <= 2 and char_length(v_ord[i + 1]) <= 2 and char_length(v_ord[i + 2]) <= 2 then
+      v_par := v_par || (v_ord[i] || v_ord[i + 1] || v_ord[i + 2]);
+    end if;
   end loop;
   return array_to_string(v_ord || v_par, ' ');
 end;
@@ -446,21 +483,23 @@ begin
 end;
 $fn$;
 
--- Rene funktioner uden dataadgang - appen må gerne tjekke på forhånd.
-revoke all on function public.kunst_ord() from public;
-revoke all on function public.kunst_fjern() from public;
-revoke all on function public.kunst_sloer_variant(text, text) from public;
-revoke all on function public.kunst_rens(text) from public;
-revoke all on function public.kunst_par(text) from public;
-revoke all on function public.kunst_tjek_normaliseret(text) from public;
-revoke all on function public.kunst_tekst_tjek(text) from public;
-grant execute on function public.kunst_ord()                      to anon, authenticated, service_role;
-grant execute on function public.kunst_fjern()                    to anon, authenticated, service_role;
-grant execute on function public.kunst_sloer_variant(text, text)  to anon, authenticated, service_role;
-grant execute on function public.kunst_rens(text)                 to anon, authenticated, service_role;
-grant execute on function public.kunst_par(text)                  to anon, authenticated, service_role;
-grant execute on function public.kunst_tjek_normaliseret(text)    to anon, authenticated, service_role;
-grant execute on function public.kunst_tekst_tjek(text)           to anon, authenticated, service_role;
+-- Rene funktioner uden dataadgang - appen (logget ind) må gerne tjekke på
+-- forhånd. Ikke anon (review M2). Er de tidligere givet til anon (første
+-- udgave af migrationen på test), fjernes det her.
+revoke all on function public.kunst_ord() from public, anon;
+revoke all on function public.kunst_fjern() from public, anon;
+revoke all on function public.kunst_sloer_variant(text, text) from public, anon;
+revoke all on function public.kunst_rens(text) from public, anon;
+revoke all on function public.kunst_par(text) from public, anon;
+revoke all on function public.kunst_tjek_normaliseret(text) from public, anon;
+revoke all on function public.kunst_tekst_tjek(text) from public, anon;
+grant execute on function public.kunst_ord()                      to authenticated, service_role;
+grant execute on function public.kunst_fjern()                    to authenticated, service_role;
+grant execute on function public.kunst_sloer_variant(text, text)  to authenticated, service_role;
+grant execute on function public.kunst_rens(text)                 to authenticated, service_role;
+grant execute on function public.kunst_par(text)                  to authenticated, service_role;
+grant execute on function public.kunst_tjek_normaliseret(text)    to authenticated, service_role;
+grant execute on function public.kunst_tekst_tjek(text)           to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 3. Triggere
@@ -764,7 +803,37 @@ grant execute on function public.forbudte_varer() to anon, authenticated, servic
 -- 6. Brugerbetingelser version 0.2 (HOLD SYNKRON med VILKAAR_VERSION i
 --    src/lib/vilkaar.ts). Som 20261009050000 med ny version.
 -- ---------------------------------------------------------------------------
--- stable (ikke immutable), så planner ikke kan bage den gamle version ind.
+-- Den aktive version styres af en indstilling (review V2), så rækkefølgen af
+-- migration og deploy er ligegyldig: migrationen ændrer INTET for brugerne -
+-- versionen er stadig 0.1, til admin/chef efter deploy trykker "Slå
+-- brugerbetingelser 0.2 til" under Admin -> Drift (vilkaar_aktiver_version).
+-- Først da får alle accept-vinduet, og BHV02 gælder for 0.2.
+create table if not exists public.vilkaar_indstilling (
+  id            boolean primary key default true check (id),
+  aktiv_version text not null default '0.1' check (aktiv_version ~ '^[0-9]{1,3}\.[0-9]{1,3}$'),
+  skiftet_kl    timestamptz,
+  skiftet_af    uuid references public.users(id) on delete set null
+);
+
+insert into public.vilkaar_indstilling (id, aktiv_version) values (true, '0.1') on conflict (id) do nothing;
+
+comment on table public.vilkaar_indstilling is
+  'Den aktive version af brugerbetingelserne (vilkaar_aktuel_version). Skiftes kun via vilkaar_aktiver_version (admin/chef) - aldrig ned.';
+
+alter table public.vilkaar_indstilling enable row level security;
+revoke all on public.vilkaar_indstilling from public, anon, authenticated;
+-- Versionen er offentlig (signup og vinduet læser den); ingen må skrive.
+grant select (id, aktiv_version) on public.vilkaar_indstilling to anon, authenticated;
+
+do $do$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'vilkaar_indstilling'
+                   and policyname = 'vilkaar_indstilling_laes') then
+    create policy vilkaar_indstilling_laes on public.vilkaar_indstilling for select to anon, authenticated using (true);
+  end if;
+end $do$;
+
+-- stable (ikke immutable), så planner ikke kan bage en gammel version ind.
 create or replace function public.vilkaar_aktuel_version()
 returns text
 language sql
@@ -772,10 +841,42 @@ stable
 parallel safe
 set search_path = ''
 as $fn$
-  select '0.2'::text;
+  select coalesce((select v.aktiv_version from public.vilkaar_indstilling v where v.id), '0.1')::text;
 $fn$;
 
 grant execute on function public.vilkaar_aktuel_version() to anon, authenticated, service_role;
+
+-- Admin/chef slår en nyere version til (kun op, aldrig ned). Kun service_role
+-- (serveren); rollen tjekkes her igen. Et dobbeltklik giver 'uaendret'.
+create or replace function public.vilkaar_aktiver_version(p_staff uuid, p_version text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_gl text;
+begin
+  if coalesce(public.kunst_staff_rolle(p_staff), '') not in ('admin', 'chef') then
+    return jsonb_build_object('kode', 'ingen_adgang');
+  end if;
+  if p_version is null or p_version !~ '^[0-9]{1,3}\.[0-9]{1,3}$' then
+    return jsonb_build_object('kode', 'ugyldig_version');
+  end if;
+  select v.aktiv_version into v_gl from public.vilkaar_indstilling v where v.id for update;
+  if (split_part(p_version, '.', 1)::int, split_part(p_version, '.', 2)::int)
+     <= (split_part(v_gl, '.', 1)::int, split_part(v_gl, '.', 2)::int) then
+    return jsonb_build_object('kode', 'uaendret', 'version', v_gl);
+  end if;
+  update public.vilkaar_indstilling
+     set aktiv_version = p_version, skiftet_kl = now(), skiftet_af = p_staff
+   where id;
+  return jsonb_build_object('kode', 'ok', 'version', p_version, 'foer', v_gl);
+end;
+$fn$;
+
+revoke all on function public.vilkaar_aktiver_version(uuid, text) from public, anon, authenticated;
+grant execute on function public.vilkaar_aktiver_version(uuid, text) to service_role;
 
 -- vilkaar_er_accepteret (20261017030000) kalder vilkaar_aktuel_version() og
 -- var immutable - også stable nu. Kroppen er uændret (md5 tjekket øverst).
@@ -792,7 +893,7 @@ end $do$;
 select pg_temp.efter_tjek('public.forbudte_varer()', '2ffa99d5dbcb0dc6d559a77d22047963');
 select pg_temp.efter_tjek('public.dsa_regler()', '020c8c1d1a545e9588430c1b2898721f');
 select pg_temp.efter_tjek('public.dsa_anmeldelse_opret(uuid,text,uuid,text,text,text,text,text,boolean)', 'ab9150038013a607a91e708f57252322');
-select pg_temp.efter_tjek('public.vilkaar_aktuel_version()', '26f30051368fb71bd83d82c613eb7216');
+select pg_temp.efter_tjek('public.vilkaar_aktuel_version()', '859bc356647bea84a155a1a18fbc3115');
 
 -- ---------------------------------------------------------------------------
 -- 6b. Staff-handlinger
@@ -875,20 +976,28 @@ $fn$;
 revoke all on function public.kunst_ikke_kunst(uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.kunst_ikke_kunst(uuid, uuid, text) to service_role;
 
--- "Tjek aktive auktioner for kunst" (kun admin/chef, aldrig automatisk):
--- kører kunst_tekst_tjek på aktive auktioner uden kontrol og sætter de
--- fundne til 'afventer' (triggeren markerer og opretter anmeldelsen).
--- Højst p_maks pr. kørsel. Returnerer antal tjekkede og fundne.
-create or replace function public.kunst_tjek_aktive(p_staff uuid, p_maks integer default 2000)
+-- "Tjek aktive auktioner for kunst" (kun admin/chef, aldrig automatisk).
+-- Altid i to trin fra admin (review V1):
+--   p_toer = true (standard): tør kørsel - tæller kun, ændrer intet.
+--   p_toer = false: auktioner UDEN bud sættes til 'afventer' (triggeren
+--     markerer og opretter anmeldelsen). Auktioner MED bud ændres IKKE
+--     (ingen skjulning, buddene gælder) - de får kun en kunst-anmeldelse.
+-- Kun aktive auktioner uden kunst-kontrol og uden en tidligere
+-- kunst-anmeldelse. Højst p_maks pr. kørsel (standard 500, højst 2000).
+drop function if exists public.kunst_tjek_aktive(uuid, integer);
+
+create or replace function public.kunst_tjek_aktive(p_staff uuid, p_maks integer default 500, p_toer boolean default true)
 returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $fn$
 declare
-  a        record;
+  a         record;
+  v         jsonb;
   v_tjekket integer := 0;
-  v_fundet  integer := 0;
+  v_uden    integer := 0;
+  v_med     integer := 0;
 begin
   if coalesce(public.kunst_staff_rolle(p_staff), '') not in ('admin', 'chef') then
     return jsonb_build_object('kode', 'ingen_adgang');
@@ -897,21 +1006,39 @@ begin
     select x.id, x.titel, x.beskrivelse
       from public.auctions x
      where x.status = 'aktiv' and x.kunst_kontrol is null and x.arkiveret_kl is null
+       and not exists (select 1 from public.reports r where r.auction_id = x.id and r.category = 'kunst')
      order by x.oprettet desc
-     limit greatest(1, least(coalesce(p_maks, 2000), 10000))
+     limit greatest(1, least(coalesce(p_maks, 500), 2000))
   loop
     v_tjekket := v_tjekket + 1;
-    if public.kunst_tekst_tjek(coalesce(a.titel, '') || ' ' || coalesce(a.beskrivelse, ''))->>'resultat' = 'kunst' then
-      update public.auctions set kunst_kontrol = 'afventer' where id = a.id and kunst_kontrol is null;
-      if found then v_fundet := v_fundet + 1; end if;
+    v := public.kunst_tekst_tjek(coalesce(a.titel, '') || ' ' || coalesce(a.beskrivelse, ''));
+    if v->>'resultat' is distinct from 'kunst' then
+      continue;
+    end if;
+    if exists (select 1 from public.bids b where b.auktion_id = a.id) then
+      v_med := v_med + 1;
+      if not coalesce(p_toer, true) then
+        insert into public.reports (auction_id, reporter_id, category, description, status, created_at)
+        values (a.id, public.bidhamr_system_id(), 'kunst',
+                left(format('Kontrol (tjek af aktive auktioner): muligvis kunst. Ordet "%s" står i titlen eller beskrivelsen. '
+                            || 'Auktionen har bud og er IKKE skjult - buddene gælder. Vurdér, om den skal skjules eller fjernes.',
+                            v->>'ord'), 1000),
+                'pending', now());
+      end if;
+    else
+      v_uden := v_uden + 1;
+      if not coalesce(p_toer, true) then
+        update public.auctions set kunst_kontrol = 'afventer' where id = a.id and kunst_kontrol is null;
+      end if;
     end if;
   end loop;
-  return jsonb_build_object('kode', 'ok', 'tjekket', v_tjekket, 'fundet', v_fundet);
+  return jsonb_build_object('kode', 'ok', 'toer', coalesce(p_toer, true), 'tjekket', v_tjekket,
+                            'uden_bud', v_uden, 'med_bud', v_med);
 end;
 $fn$;
 
-revoke all on function public.kunst_tjek_aktive(uuid, integer) from public, anon, authenticated;
-grant execute on function public.kunst_tjek_aktive(uuid, integer) to service_role;
+revoke all on function public.kunst_tjek_aktive(uuid, integer, boolean) from public, anon, authenticated;
+grant execute on function public.kunst_tjek_aktive(uuid, integer, boolean) to service_role;
 
 -- gemte_soegninger_find_nye (20261007011000) sendte nye auktioner til gemte
 -- søgninger. Den er fjernet i 20261016010000_fjern_gemte_soegninger.sql og
@@ -1054,6 +1181,11 @@ begin
     ('Aquarelle', 'kunst'),
     ('Aquarell', 'kunst'),
     ('IKEA-maleri? Nej, oliemaleri', 'kunst'),
+    ('Mаlеri af skib', 'kunst'),
+    ('Skulрtur i træ', 'kunst'),
+    ('ΜΑLERI', 'kunst'),
+    ('ma le ri', 'kunst'),
+    ('Flot ma le ri af skib', 'kunst'),
     ('Maleritape', 'ok'),
     ('Malerpensel', 'ok'),
     ('Malerpensler 3 stk', 'ok'),
@@ -1138,7 +1270,9 @@ begin
     ('Lærred til maleri, blankt', 'ok'),
     ('IKEA-maleri', 'ok'),
     ('Info@firma.dk', 'ok'),
-    ('Mal er i god stand', 'ok')
+    ('Mal er i god stand', 'ok'),
+    ('Мама сумка', 'ok'),
+    ('Sofa er i god stand, se billeder', 'ok')
   ) as x(tekst, forventet)
   loop
     r := public.kunst_tekst_tjek(t.tekst)->>'resultat';
@@ -1155,6 +1289,7 @@ drop function pg_temp.policy_tjek(text, text);
 drop function pg_temp.ps_ret(text, text, text, jsonb);
 drop function pg_temp.efter_tjek(text, text);
 drop function pg_temp.drift_tjek(text, text, text);
+drop function pg_temp.drift_tjek_flere(text, text[]);
 drop function pg_temp.krop_md5(text);
 drop function pg_temp.flet_check(regclass, text, text, text[]);
 

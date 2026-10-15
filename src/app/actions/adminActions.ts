@@ -9,7 +9,7 @@ import {
   refunderBetaling,
 } from "@/lib/betaling/stripeBetaling";
 import { erSendtTilSaelger, pengeTilSaelger, proevUdbetalingIgen } from "@/lib/betaling/udbetaling";
-import { unstable_rethrow } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
@@ -25,6 +25,8 @@ import { send } from "@/lib/notifikationer/send";
 import { afgoerelseSti } from "@/lib/dsa/link";
 import { erRegel, regelNavn } from "@/lib/dsa/regler";
 import { logDriftFejl } from "@/lib/drift";
+import { manglerKunstSkema } from "@/lib/kunstSkema";
+import { VILKAAR_VERSION } from "@/lib/vilkaar";
 
 // --- Fejlhaandtering ---------------------------------------------------------
 // Next skjuler beskeden fra fejl, der kastes i server actions, i produktion.
@@ -611,7 +613,8 @@ async function rapportMarkerBehandletImpl(formData: FormData): Promise<void> {
     if (error) throw new Error(error.message);
     const kode = (data as { kode?: string } | null)?.kode;
     if (kode === "ingen_adgang") throw new BrugerFejl("Du har ikke adgang til at afgøre anmeldelsen.");
-    if (kode !== "ok" && kode !== "allerede") throw new Error(`kunst_ikke_kunst returnerede ${kode ?? "intet"}`);
+    if (kode === "allerede") throw new BrugerFejl("Anmeldelsen er allerede afgjort.");
+    if (kode !== "ok") throw new Error(`kunst_ikke_kunst returnerede ${kode ?? "intet"}`);
   } else {
     await afslutRapport(admin, staffId, rapportId, "behandlet", note);
   }
@@ -1159,27 +1162,89 @@ export async function hideAuction(formData: FormData) {
   return koer("hideAuction", () => hideAuctionImpl(formData));
 }
 
-// "Tjek aktive auktioner for kunst" (kun admin/chef): kører ordlisten på de
-// aktive auktioner, der ikke er tjekket, og sætter de fundne til staff-tjek
-// med en anmeldelse (kunst_tjek_aktive, 20261023010000). Kører aldrig af sig
-// selv. Svarer med antallet, så siden kan vise det.
-async function kunstTjekAktiveImpl(): Promise<{ ok: true; tjekket: number; fundet: number }> {
+// "Tjek aktive auktioner for kunst" (kun admin/chef, kunst_tjek_aktive,
+// 20261023010000). Kører aldrig af sig selv og altid i to trin:
+//   1. tør kørsel (p_toer = true): tæller kun. Siden viser "N uden bud sættes
+//      til kontrol, M med bud får kun en anmeldelse" (?kunsttjek=N-M-T).
+//   2. kør: auktioner uden bud sættes til kontrol (skjult for andre, ingen
+//      bud) med en anmeldelse; auktioner med bud får KUN en anmeldelse.
+// Højst 500 pr. kørsel.
+const KUNST_TJEK_MAKS = 500;
+
+type KunstTjekSvar = { kode?: string; tjekket?: number; uden_bud?: number; med_bud?: number };
+
+async function kunstTjekKald(toer: boolean): Promise<KunstTjekSvar> {
   const { admin, userId: staffId } = await assertRole("admin");
-  const { data, error } = await admin.rpc("kunst_tjek_aktive", { p_staff: staffId });
-  if (error) throw new Error(error.message);
-  const r = (data ?? {}) as { kode?: string; tjekket?: number; fundet?: number };
+  const { data, error } = await admin.rpc("kunst_tjek_aktive", {
+    p_staff: staffId,
+    p_maks: KUNST_TJEK_MAKS,
+    p_toer: toer,
+  });
+  if (error) {
+    if (error.code === "57014") {
+      throw new BrugerFejl("Tjekket tog for lang tid og blev stoppet af databasen. Intet er ændret. Prøv igen om lidt.");
+    }
+    if (manglerKunstSkema(error)) {
+      throw new BrugerFejl("Kunst-kontrollen er ikke slået til endnu (migrationen 20261023010000 mangler).");
+    }
+    throw new Error(error.message);
+  }
+  const r = (data ?? {}) as KunstTjekSvar;
   if (r.kode === "ingen_adgang") throw new BrugerFejl("Kun admin og chef kan tjekke auktionerne for kunst.");
   if (r.kode !== "ok") throw new Error(`kunst_tjek_aktive returnerede ${r.kode ?? "intet"}`);
+  return r;
+}
+
+async function kunstTjekToerImpl(): Promise<never> {
+  const r = await kunstTjekKald(true);
+  redirect(`/admin/auktioner?kunsttjek=${r.uden_bud ?? 0}-${r.med_bud ?? 0}-${r.tjekket ?? 0}`);
+}
+
+async function kunstTjekKoerImpl(): Promise<{ ok: true }> {
+  await kunstTjekKald(false);
   // De fundne får hver en automatisk anmeldelse (Admin -> Anmeldelser), hvor
   // afgørelsen logges som altid.
   revalidatePath("/admin/auktioner");
   revalidatePath("/admin/rapporter");
-  return { ok: true, tjekket: r.tjekket ?? 0, fundet: r.fundet ?? 0 };
+  return { ok: true };
 }
 
-export async function kunstTjekAktive(_formData: FormData) {
+// "Slå brugerbetingelser <VILKAAR_VERSION> til" (kun admin/chef, Admin ->
+// Drift). Versionen står i databasen (vilkaar_indstilling, 20261023010000) og
+// skiftes først her - efter deploy - så den gamle hjemmeside aldrig møder en
+// version, den ikke kender. Kun op, aldrig ned.
+async function vilkaarSlaaTilImpl(): Promise<{ ok: true }> {
+  const { admin, userId: staffId } = await assertRole("admin");
+  const { data, error } = await admin.rpc("vilkaar_aktiver_version", {
+    p_staff: staffId,
+    p_version: VILKAAR_VERSION,
+  });
+  if (error) {
+    if (manglerKunstSkema(error) || /vilkaar_aktiver_version/.test(error.message)) {
+      throw new BrugerFejl("Migrationen 20261023010000 er ikke kørt endnu.");
+    }
+    throw new Error(error.message);
+  }
+  const kode = (data as { kode?: string } | null)?.kode;
+  if (kode === "ingen_adgang") throw new BrugerFejl("Kun admin og chef kan slå en ny version af brugerbetingelserne til.");
+  if (kode !== "ok" && kode !== "uaendret") throw new Error(`vilkaar_aktiver_version returnerede ${kode ?? "intet"}`);
+  revalidatePath("/admin/drift");
+  return { ok: true };
+}
+
+export async function vilkaarSlaaTil(_formData: FormData) {
   void _formData;
-  return koer("kunstTjekAktive", () => kunstTjekAktiveImpl());
+  return koer("vilkaarSlaaTil", () => vilkaarSlaaTilImpl());
+}
+
+export async function kunstTjekToer(_formData: FormData) {
+  void _formData;
+  return koer("kunstTjekToer", () => kunstTjekToerImpl());
+}
+
+export async function kunstTjekKoer(_formData: FormData) {
+  void _formData;
+  return koer("kunstTjekKoer", () => kunstTjekKoerImpl());
 }
 
 export async function unhideAuction(formData: FormData) {

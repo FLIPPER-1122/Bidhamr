@@ -4,9 +4,10 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { deleteAuction, cancelAuction, hideAuction, unhideAuction, kunstTjekAktive } from "@/app/actions/adminActions";
+import { deleteAuction, cancelAuction, hideAuction, unhideAuction, kunstTjekKoer, kunstTjekToer } from "@/app/actions/adminActions";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
 import { KUNST_BEGRUNDELSE } from "@/lib/tekster/adminSkabeloner";
 import type { AdminAuktionRow } from "@/lib/adminRowTypes";
@@ -38,14 +39,16 @@ const UUID_REGEX =
 export default async function AdminAuktioner({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; kunsttjek?: string }>;
 }) {
   const rolle = await getStaffRole();
   if (!rolle || !harMindstRolle(rolle, "admin")) {
     notFound();
   }
 
-  const { status, q } = await searchParams;
+  const { status, q, kunsttjek } = await searchParams;
+  // Resultatet af en tør kørsel af kunst-tjekket ("N-M-T").
+  const toer = /^\d+-\d+-\d+$/.test(kunsttjek ?? "") ? (kunsttjek as string).split("-").map(Number) : null;
   const søgetekst = q?.trim() ?? "";
   const aktivStatus = status ?? "alle";
   const supabase = createAdminClient();
@@ -181,20 +184,43 @@ export default async function AdminAuktioner({
         hoejre={
           <span className="flex flex-wrap items-center gap-3">
             <span className="text-sm text-tekst-svag">{auctions?.length ?? 0} resultater</span>
-            {/* Kun admin/chef (siden kræver admin). Kører aldrig af sig selv. */}
-            <ConfirmDialog
-              triggerLabel="Tjek aktive auktioner for kunst"
-              triggerClassName="btn btn-sekundaer btn-lille"
-              title="Tjek alle aktive auktioner for kunst?"
-              description="Ordlisten for kunst køres på de aktive auktioner, der ikke er tjekket. De, der ligner kunst, bliver skjult for andre, kan ikke bydes på og kommer under Anmeldelser, hvor du afgør dem. Sælgerne får ingen besked."
-              confirmLabel="Ja, tjek auktionerne"
-              action={kunstTjekAktive}
+            {/* Kun admin/chef (siden kræver admin). Kører aldrig af sig selv -
+                først en tør kørsel, der kun tæller, derefter "Kør tjekket". */}
+            <AdminActionKnap
+              action={kunstTjekToer}
               hiddenFields={{}}
-              kvittering="Auktionerne er tjekket – de fundne står under Anmeldelser"
+              label="Tjek aktive auktioner for kunst"
+              className="btn btn-sekundaer btn-lille"
             />
           </span>
         }
       />
+
+      {toer && (
+        <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
+          <p className="font-semibold">Kunst-tjek af aktive auktioner (tør kørsel – intet er ændret endnu)</p>
+          <p className="mt-1">
+            {toer[2]} aktive auktioner uden kunst-kontrol er tjekket. {toer[0]} uden bud vil blive sat til kontrol
+            (skjult for andre, ingen bud) med en anmeldelse. {toer[1]} med bud får kun en anmeldelse – de forbliver
+            synlige, og buddene gælder.
+          </p>
+          {toer[0] + toer[1] > 0 && (
+            <div className="mt-3">
+              <ConfirmDialog
+                triggerLabel="Kør tjekket"
+                triggerClassName="btn btn-primaer btn-lille"
+                title="Kør kunst-tjekket nu?"
+                description={`${toer[0]} auktioner uden bud bliver skjult for andre, til de er tjekket. ${toer[1]} med bud får kun en anmeldelse. Alle kommer under Anmeldelser. Sælgerne får ingen besked.`}
+                confirmLabel="Ja, kør tjekket"
+                action={kunstTjekKoer}
+                hiddenFields={{}}
+                kvittering="Tjekket er kørt – de fundne står under Anmeldelser"
+                naeste={{ href: "/admin/rapporter", label: "Gå til Anmeldelser" }}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {(laengePause?.length ?? 0) > 0 && (
         <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-red-800">

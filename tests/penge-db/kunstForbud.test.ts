@@ -230,12 +230,37 @@ describe("migrationen", () => {
     expect(src.rows[0].prosrc).toContain("'vilkaar', 'kunst', 'andet'");
   });
 
-  it("brugerbetingelserne er version 0.2 - samme som hjemmesiden - og stable", async () => {
-    const r = await db.query<{ v: string; a: boolean; b: boolean }>(
-      "select public.vilkaar_aktuel_version() as v, public.vilkaar_er_accepteret('0.1') as a, public.vilkaar_er_accepteret('0.2') as b",
-    );
-    expect(r.rows[0]).toEqual({ v: "0.2", a: false, b: true });
+  it("brugerbetingelser: 0.1 efter migrationen, 0.2 først når admin/chef slår den til - og stable", async () => {
+    const tal = async () =>
+      (
+        await db.query<{ v: string; a: boolean; b: boolean }>(
+          "select public.vilkaar_aktuel_version() as v, public.vilkaar_er_accepteret('0.1') as a, public.vilkaar_er_accepteret('0.2') as b",
+        )
+      ).rows[0];
+    expect(await tal()).toEqual({ v: "0.1", a: true, b: true });
     expect(VILKAAR_VERSION).toBe("0.2");
+
+    const slaaTil = async (staff: string, v: string) =>
+      (await db.query<{ r: { kode: string } }>("select public.vilkaar_aktiver_version($1, $2) as r", [staff, v])).rows[0].r.kode;
+    expect(await slaaTil(MEDARBEJDER, "0.2")).toBe("ingen_adgang");
+    expect(await slaaTil(ADMIN, "x")).toBe("ugyldig_version");
+    expect(await slaaTil(ADMIN, "0.2")).toBe("ok");
+    expect(await slaaTil(ADMIN, "0.2")).toBe("uaendret");
+    expect(await slaaTil(ADMIN, "0.1")).toBe("uaendret");
+    expect(await tal()).toEqual({ v: "0.2", a: false, b: true });
+
+    // Versionen kan læses af alle, men ikke ændres direkte.
+    await db.exec("set role anon");
+    try {
+      const v = await db.query<{ v: string }>("select public.vilkaar_aktuel_version() as v");
+      expect(v.rows[0].v).toBe("0.2");
+      expect(await fejlkode("update public.vilkaar_indstilling set aktiv_version = '9.9'", [])).toBe("42501");
+    } finally {
+      await db.exec("reset role");
+    }
+    // Migrationen igen må ikke sætte den tilbage.
+    await db.exec(MIGRATION);
+    expect((await tal()).v).toBe("0.2");
     const vol = await db.query<{ proname: string; provolatile: string }>(
       "select proname, provolatile from pg_proc where proname in ('vilkaar_aktuel_version', 'vilkaar_er_accepteret')",
     );
@@ -249,6 +274,12 @@ describe("migrationen", () => {
           and privilege_type = 'SELECT' and grantee in ('anon', 'authenticated')`,
     );
     expect(r.rows[0].n).toBe(0);
+    // Ordlisten kan kaldes af logget-ind brugere (appen), ikke af anon.
+    const f = await db.query<{ anon: boolean; auth: boolean }>(
+      `select has_function_privilege('anon', 'public.kunst_tekst_tjek(text)', 'EXECUTE') as anon,
+              has_function_privilege('authenticated', 'public.kunst_tekst_tjek(text)', 'EXECUTE') as auth`,
+    );
+    expect(f.rows[0]).toEqual({ anon: false, auth: true });
   });
 
   it("policyerne skjuler 'afventer'", async () => {
@@ -470,15 +501,47 @@ describe("kontrol, synlighed og anmeldelse", () => {
     await db.query("update public.auctions set kunst_kontrol = null, kunst_markeret_kl = null where id = $1", [id]);
     await db.query("delete from public.reports where auction_id = $1", [id]);
 
-    const nej = await db.query<{ r: { kode: string } }>("select public.kunst_tjek_aktive($1) as r", [MEDARBEJDER]);
-    expect(nej.rows[0].r.kode).toBe("ingen_adgang");
-    const ja = await db.query<{ r: { kode: string; fundet: number } }>("select public.kunst_tjek_aktive($1) as r", [ADMIN]);
-    expect(ja.rows[0].r.kode).toBe("ok");
-    expect(ja.rows[0].r.fundet).toBeGreaterThanOrEqual(1);
+    // En gammel auktion med bud: må ikke skjules, kun anmeldes.
+    const medBud = await opret("Serigrafi af Warhol");
+    await db.query("update public.auctions set kunst_kontrol = null, kunst_markeret_kl = null where id = $1", [medBud]);
+    await db.query("delete from public.reports where auction_id = $1", [medBud]);
+    await db.query("insert into public.bids (auktion_id, bruger_id, beloeb) values ($1, $2, 100)", [medBud, ANDEN]);
+
+    type Svar = { kode: string; tjekket: number; uden_bud: number; med_bud: number; toer: boolean };
+    const kald = async (staff: string, toer?: boolean) =>
+      (
+        await db.query<{ r: Svar }>(
+          toer === undefined ? "select public.kunst_tjek_aktive($1) as r" : "select public.kunst_tjek_aktive($1, 500, $2) as r",
+          toer === undefined ? [staff] : [staff, toer],
+        )
+      ).rows[0].r;
+
+    expect((await kald(MEDARBEJDER)).kode).toBe("ingen_adgang");
+    // Tør kørsel er standard: tæller kun.
+    const toerSvar = await kald(ADMIN);
+    expect(toerSvar).toMatchObject({ kode: "ok", toer: true });
+    expect(toerSvar.uden_bud).toBeGreaterThanOrEqual(1);
+    expect(toerSvar.med_bud).toBe(1);
+    expect((await auktion(id)).kunst_kontrol).toBeNull();
+    expect(await rapporter(id)).toHaveLength(0);
+    expect(await rapporter(medBud)).toHaveLength(0);
+
+    const koer = await kald(ADMIN, false);
+    expect(koer).toMatchObject({ kode: "ok", toer: false, med_bud: 1 });
     const a = await auktion(id);
     expect(a.kunst_kontrol).toBe("afventer");
     expect(a.kunst_markeret_kl).not.toBeNull();
     expect(await rapporter(id)).toHaveLength(1);
+    // Med bud: kun en anmeldelse, ingen kontrol - stadig synlig og kan bydes på.
+    expect((await auktion(medBud)).kunst_kontrol).toBeNull();
+    const r = await rapporter(medBud);
+    expect(r).toHaveLength(1);
+    expect(r[0].description).toContain("har bud");
+    expect(await kanSe("anon", null, medBud)).toBe(true);
+
+    // Igen: intet nyt (de har nu en anmeldelse eller en kontrol).
+    const igen = await kald(ADMIN);
+    expect(igen.uden_bud + igen.med_bud).toBe(0);
   });
 
   it("ugyldig kontrol-værdi afvises", async () => {

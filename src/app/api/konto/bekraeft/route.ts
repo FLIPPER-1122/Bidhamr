@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server";
 import { FOR_MANGE_FORSOEG, PROEV_IGEN_OM_LIDT, klientIp, tjekGraenserLukket } from "@/lib/rateLimit";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
+import { godkendtSignupVersion } from "@/lib/vilkaarServer";
 import { bekraeftKode, renEmail, renKode, renNavn } from "@/lib/kontoOprettelse";
 import { createAnonClient } from "@/lib/supabase/anon";
 import { registrerLogin } from "@/lib/enheder";
@@ -72,7 +73,9 @@ export async function POST(req: NextRequest) {
   const efternavn = renNavn(krop.efternavn);
   if (!fornavn) return svar(400, { fejl: "Skriv dit fornavn.", kode: "fornavn" });
   if (!efternavn) return svar(400, { fejl: "Skriv dit efternavn.", kode: "efternavn" });
-  if (krop.vilkaar_version !== VILKAAR_VERSION) {
+  // Hjemmesidens eller databasens aktive version (appen sender databasens).
+  const vilkaarVersion = await godkendtSignupVersion(krop.vilkaar_version);
+  if (!vilkaarVersion) {
     return svar(400, {
       fejl: "Du skal acceptere brugerbetingelserne for at oprette en konto.",
       kode: "vilkaar",
@@ -89,7 +92,7 @@ export async function POST(req: NextRequest) {
     kode,
     ip,
     adgangskode: password,
-    profil: { fornavn, efternavn, vilkaarVersion: VILKAAR_VERSION },
+    profil: { fornavn, efternavn, vilkaarVersion },
   });
   if ("fejl" in res) {
     // Suspenderede/slettede konti får ingen session (som login på hjemmesiden).

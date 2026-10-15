@@ -21,6 +21,7 @@ import {
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { KUNST_TEKST, tjekKunstTekst } from "@/lib/kunstForbud";
 import KunstAdvarsel from "@/components/opret/KunstAdvarsel";
+import { manglerKunstSkema } from "@/lib/kunstSkema";
 import { erStand, standNavn } from "@/lib/stand";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { erMitIdFejl } from "@/lib/mitid/fejl";
@@ -362,9 +363,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
       );
       setStatus("Opretter auktionen …");
 
-      const { data, error: insertError } = await supabase
-        .from("auctions")
-        .insert({
+      const rad: Record<string, unknown> = {
           bruger_id: uid,
           titel: titel.trim(),
           beskrivelse: beskrivelse.trim() || null,
@@ -389,9 +388,16 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           varighed_dage: varighed,
           slutter_kl: slutterKlFraVarighed(varighed).toISOString(),
           idempotens_noegle: noegleTilOprettelse,
-        })
-        .select("id")
-        .single();
+      };
+      const indsaet = (r: Record<string, unknown>) => supabase.from("auctions").insert(r).select("id").single();
+      let { data, error: insertError } = await indsaet(rad);
+      // Kunst-migrationen (20261023010000) er ikke kørt endnu: opret uden
+      // kunst_bekraeftet (kun en oplysning til staff).
+      if (insertError && "kunst_bekraeftet" in rad && manglerKunstSkema(insertError)) {
+        const { kunst_bekraeftet: _udeladt, ...udenKunst } = rad;
+        void _udeladt;
+        ({ data, error: insertError } = await indsaet(udenKunst));
+      }
 
       // Dublet (fx to klik): auktionen findes allerede - vis den.
       if (insertError?.code === "23505" && insertError.message.includes("auctions_idempotens_unik")) {
@@ -448,6 +454,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         return;
       }
 
+      if (!data) throw new Error("Auktionen kunne ikke oprettes. Prøv igen om lidt – din kladde er gemt.");
       sletKladde(noegle);
       router.push(tilAuktion(data.id));
     } catch (err) {

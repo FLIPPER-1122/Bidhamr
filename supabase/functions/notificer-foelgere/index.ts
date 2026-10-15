@@ -101,11 +101,22 @@ Deno.serve(async (req) => {
     if (brugerFejl || !bruger) return svar({ error: "Ikke logget ind" }, 401);
 
     // Auktionen bestemmer afsender og tekst - intet fra klienten bruges.
-    const { data: auktion } = await supabase
-      .from("auctions")
-      .select("id, titel, bruger_id, status, skjult, oprettet, kunst_kontrol")
-      .eq("id", auktionId)
-      .maybeSingle();
+    // kunst_kontrol (20261023010000_kunst_forbudt.sql) hentes, hvis kolonnen
+    // findes - ellers hentes auktionen uden (migrationen er ikke kørt endnu).
+    const hent = (medKunst: boolean) =>
+      supabase
+        .from("auctions")
+        .select(
+          medKunst
+            ? "id, titel, bruger_id, status, skjult, oprettet, kunst_kontrol"
+            : "id, titel, bruger_id, status, skjult, oprettet",
+        )
+        .eq("id", auktionId)
+        .maybeSingle();
+    let { data: auktion, error: auktionFejl } = await hent(true);
+    if (auktionFejl && /kunst_kontrol/.test(auktionFejl.message ?? "")) {
+      ({ data: auktion, error: auktionFejl } = await hent(false));
+    }
 
     if (!auktion || auktion.bruger_id !== bruger.id) {
       return svar({ error: "Ingen adgang" }, 403);
@@ -116,7 +127,7 @@ Deno.serve(async (req) => {
       auktion.skjult === true ||
       // Afventer kunst-kontrol (20261023010000_kunst_forbudt.sql): følgerne får
       // besked fra cron (nyAuktionFraFulgt), når staff har godkendt den.
-      auktion.kunst_kontrol === "afventer" ||
+      (auktion as { kunst_kontrol?: string | null }).kunst_kontrol === "afventer" ||
       Number.isNaN(oprettet.getTime()) ||
       Date.now() - oprettet.getTime() > MAKS_ALDER_MS
     ) {

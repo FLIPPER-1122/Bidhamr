@@ -113,6 +113,12 @@ export const KUNST_JA: readonly string[] = [
   "Aquarelle",
   "Aquarell",
   "IKEA-maleri? Nej, oliemaleri",
+  // Slutreview 2: homoglyffer (kyrillisk а, е, р og græsk Μ, Α) og tre ord samlet.
+  "Mаlеri af skib",
+  "Skulрtur i træ",
+  "ΜΑLERI",
+  "ma le ri",
+  "Flot ma le ri af skib",
 ];
 
 // Må IKKE fanges (almindelige varer og tilladte billeder).
@@ -204,4 +210,6 @@ export const KUNST_NEJ: readonly string[] = [
   "IKEA-maleri",
   "Info@firma.dk",
   "Mal er i god stand",
+  "Мама сумка",
+  "Sofa er i god stand, se billeder",
 ];
