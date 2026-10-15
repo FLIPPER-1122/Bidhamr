@@ -17,6 +17,7 @@ import {
   VILKAAR_DATO,
   VILKAAR_ER_UDKAST,
   VILKAAR_VERSION,
+  erVilkaarVersion,
 } from "@/lib/vilkaar";
 
 // Sider, hvor vinduet aldrig vises: de to jura-sider (man skal kunne læse
@@ -62,7 +63,8 @@ function NyFaneIkon() {
 // server action'en. Bruges på Firma oversigt, fordi firmakonti ikke kan kalde
 // server actions før lancering (gaten i src/lib/supabase/middleware.ts).
 async function accepterDirekte(version: string): Promise<{ ok: true } | { fejl: string }> {
-  if (version !== VILKAAR_VERSION) return { fejl: T.nyVersionFejl };
+  // Databasen godtager kun den aktuelle version (accepter_vilkaar).
+  if (!erVilkaarVersion(version)) return { fejl: T.nyVersionFejl };
   const { createClient } = await import("@/lib/supabase/client");
   const { error } = await createClient().rpc("accepter_vilkaar", { p_version: version });
   if (error) {
@@ -72,7 +74,17 @@ async function accepterDirekte(version: string): Promise<{ ok: true } | { fejl: 
   return { ok: true };
 }
 
-export default function VilkaarDialog({ nyVersion, direkte = false }: { nyVersion: boolean; direkte?: boolean }) {
+// aktuelVersion: databasens aktuelle version (mine_vilkaar().aktuel_version) -
+// den, der vises og accepteres. VILKAAR_VERSION er kun en reserve.
+export default function VilkaarDialog({
+  nyVersion,
+  aktuelVersion = VILKAAR_VERSION,
+  direkte = false,
+}: {
+  nyVersion: boolean;
+  aktuelVersion?: string;
+  direkte?: boolean;
+}) {
   const router = useRouter();
   const sti = usePathname();
   const id = useId();
@@ -95,7 +107,7 @@ export default function VilkaarDialog({ nyVersion, direkte = false }: { nyVersio
     setFejl(null);
     let svar: Awaited<ReturnType<typeof accepterVilkaar>>;
     try {
-      svar = direkte ? await accepterDirekte(VILKAAR_VERSION) : await accepterVilkaar(VILKAAR_VERSION);
+      svar = direkte ? await accepterDirekte(aktuelVersion) : await accepterVilkaar(aktuelVersion);
     } catch (err) {
       console.error("accepterVilkaar fejlede:", err);
       setFejl(T.netvaerksfejl);
@@ -125,6 +137,7 @@ export default function VilkaarDialog({ nyVersion, direkte = false }: { nyVersio
         <Vindue
           id={id}
           nyVersion={nyVersion}
+          aktuelVersion={aktuelVersion}
           fejl={fejl ?? logUdFejl}
           sender={sender}
           loggerUd={loggerUd}
@@ -139,6 +152,7 @@ export default function VilkaarDialog({ nyVersion, direkte = false }: { nyVersio
 function Vindue({
   id,
   nyVersion,
+  aktuelVersion,
   fejl,
   sender,
   loggerUd,
@@ -147,6 +161,7 @@ function Vindue({
 }: {
   id: string;
   nyVersion: boolean;
+  aktuelVersion: string;
   fejl: string | null;
   sender: boolean;
   loggerUd: boolean;
@@ -232,7 +247,7 @@ function Vindue({
       <p id={`${id}-tekst`} className="mt-3 text-[15px] leading-relaxed text-tekst-daempet">
         {nyVersion ? T.tekstNy : T.tekstFoerste}
       </p>
-      <p className="mt-2 text-sm text-tekst-svag">{T.version(VILKAAR_VERSION, VILKAAR_DATO)}</p>
+      <p className="mt-2 text-sm text-tekst-svag">{aktuelVersion === VILKAAR_VERSION ? T.version(VILKAAR_VERSION, VILKAAR_DATO) : `Version ${aktuelVersion}`}</p>
 
       <ul className="mt-3 flex flex-col">
         <li>

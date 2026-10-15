@@ -21,6 +21,7 @@ export const DSA_KONTAKT_EMAIL = "dsa@bidhamr.dk";
 
 export type AnmeldKategori =
   | "forbudt_vare"
+  | "kunst"
   | "falske_varer"
   | "svindel"
   | "ophavsret"
@@ -32,6 +33,8 @@ export type AnmeldKategori =
 
 export const ANMELD_KATEGORIER: readonly { vaerdi: AnmeldKategori; label: string; hjaelp: string }[] = [
   { vaerdi: "forbudt_vare", label: "Forbudt eller ulovlig vare", hjaelp: "Fx våben, narkotika eller levende dyr." },
+  // 20261023010000_kunst_forbudt.sql (Filip, 14. okt. 2026).
+  { vaerdi: "kunst", label: "Kunst", hjaelp: "Fx et maleri, en tegning, en skulptur eller et grafisk tryk. Kunst må ikke sælges på BidHamr." },
   { vaerdi: "falske_varer", label: "Falsk vare eller kopi af et mærke", hjaelp: "Varen ser ud til at være en kopi solgt som ægte." },
   { vaerdi: "svindel", label: "Svindel eller vildledning", hjaelp: "Fx en auktion, der prøver at snyde købere." },
   { vaerdi: "ophavsret", label: "Krænkelse af ophavsret", hjaelp: "Fx dine egne billeder eller tekster brugt uden lov." },
@@ -105,6 +108,7 @@ export type DsaRegel = {
 // Spejl af dsa_regler() i SQL. Henvisningerne er foreløbige (afventer advokat).
 export const DSA_REGLER: readonly DsaRegel[] = [
   { kode: "forbudt_vare", navn: "Varen må ikke sælges på BidHamr", grundlag: "vilkaar", henvisning: "BidHamrs regler om forbudte varer, se bidhamr.dk/forbudte-varer" },
+  { kode: "kunst", navn: "Kunst er ikke tilladt", grundlag: "vilkaar", henvisning: "BidHamrs regler om forbudte varer: kunst må ikke sælges, se bidhamr.dk/forbudte-varer" },
   { kode: "ulovlig_vare", navn: "Varen er ulovlig at sælge", grundlag: "lov", henvisning: "Dansk lovgivning, fx våbenloven, lov om euforiserende stoffer og dyrevelfærdsloven" },
   { kode: "falsk_vare", navn: "Kopivare eller krænkelse af et varemærke", grundlag: "lov", henvisning: "Varemærkeloven" },
   { kode: "ophavsret", navn: "Krænkelse af ophavsret (fx kopierede billeder)", grundlag: "lov", henvisning: "Ophavsretsloven" },
@@ -137,6 +141,7 @@ export function regelNavn(kode: string): string {
 // Anmeldelsens kategori -> det mest oplagte regelvalg i admin.
 export const KATEGORI_TIL_REGEL: Record<string, string> = {
   forbudt_vare: "forbudt_vare",
+  kunst: "kunst",
   falske_varer: "falsk_vare",
   svindel: "svindel",
   ophavsret: "ophavsret",

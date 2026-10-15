@@ -12,6 +12,7 @@ import { ERHVERV_FEJL } from "@/lib/erhverv/regler";
 import { erMitIdFejl } from "@/lib/mitid/fejl";
 import { MITID } from "@/lib/tekster/mitid";
 import { erVilkaarFejl } from "@/lib/vilkaar";
+import { KUNST_TEKST, erKunstBudFejl } from "@/lib/kunstForbud";
 import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
 import { MAKS_BUD } from "@/lib/auktionRegler";
 
@@ -140,6 +141,8 @@ export async function afgivBud(
     if (erMitIdFejl(error.code, besked)) return { fejl: MITID.fejlMangler, mitid: true };
     // Brugerbetingelserne er ikke accepteret (BHV02, a3_bids_vilkaar).
     if (erVilkaarFejl(error.code, besked)) return { fejl: VILKAAR_TEKST.fejlMangler };
+    // Auktionen afventer kunst-kontrol (BHK01, 20261023010000_kunst_forbudt.sql).
+    if (erKunstBudFejl(error.code, besked)) return { fejl: KUNST_TEKST.budAfvist };
     // Databasens fejltekst sendes aldrig ordret til brugeren - kun kendte
     // beskeder (whitelist). Alt andet logges og giver en generisk besked.
     if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
@@ -238,6 +241,8 @@ export async function saetMaksimum(
     if (erMitIdFejl(error.code, besked)) return { fejl: MITID.fejlMangler, mitid: true };
     // Brugerbetingelserne er ikke accepteret (BHV02, a0_bud_maksimum_vilkaar).
     if (erVilkaarFejl(error.code, besked)) return { fejl: VILKAAR_TEKST.fejlMangler };
+    // Auktionen afventer kunst-kontrol (BHK01, 20261023010000_kunst_forbudt.sql).
+    if (erKunstBudFejl(error.code, besked)) return { fejl: KUNST_TEKST.budAfvist };
     if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion." };
     if (besked.includes("erhverv_kan_ikke_byde")) return { fejl: ERHVERV_FEJL.kanIkkeByde };
     if (erBudSaelgerFrossetFejl(error.code, besked)) return { fejl: BUD_SAELGER_FROSSET_TEKST };

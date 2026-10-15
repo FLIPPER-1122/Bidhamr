@@ -34,6 +34,7 @@ import {
   svarInput as bedoemmelseSvarInput,
   type SvarRaekke,
 } from "@/lib/notifikationer/bedoemmelse";
+import { IKKE_KUNST_AFVENTER, manglerKunstSkema } from "@/lib/kunstSkema";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -458,14 +459,22 @@ async function bedoemmelseSvar(admin: Admin, start: Date): Promise<number> {
 
 async function slutterSnart(admin: Admin): Promise<number> {
   const nu = Date.now();
-  const { data: auktioner } = await admin
-    .from("auctions")
-    .select("id, titel, bruger_id")
-    .eq("status", "aktiv")
-    .eq("skjult", false)
-    .gt("slutter_kl", new Date(nu).toISOString())
-    .lte("slutter_kl", new Date(nu + TIME).toISOString())
-    .limit(MAKS);
+  // Ikke auktioner, der afventer kunst-kontrol (20261023010000_kunst_forbudt.sql).
+  // Er migrationen ikke kørt endnu, hentes de uden filteret.
+  const hent = (kunstFilter: boolean) => {
+    let q = admin
+      .from("auctions")
+      .select("id, titel, bruger_id")
+      .eq("status", "aktiv")
+      .eq("skjult", false);
+    if (kunstFilter) q = q.or(IKKE_KUNST_AFVENTER);
+    return q
+      .gt("slutter_kl", new Date(nu).toISOString())
+      .lte("slutter_kl", new Date(nu + TIME).toISOString())
+      .limit(MAKS);
+  };
+  let { data: auktioner, error } = await hent(true);
+  if (error && manglerKunstSkema(error)) ({ data: auktioner, error } = await hent(false));
   if (!auktioner || auktioner.length === 0) return 0;
   const { data: fav } = await admin
     .from("favorites")
@@ -498,14 +507,22 @@ async function slutterSnart(admin: Admin): Promise<number> {
 // retningerne. En anonym spærring, FØLGEREN selv har lavet som sælger, stopper
 // ikke beskeden - ellers kunne han udlede, hvem den spærrede byder er.
 async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
-  const { data: auktioner } = await admin
-    .from("auctions")
-    .select("id, titel, bruger_id, oprettet")
-    .eq("status", "aktiv")
-    .eq("skjult", false)
-    .gte("oprettet", fraTid(start, 24))
-    .order("oprettet", { ascending: false })
-    .limit(MAKS);
+  // Afventer kunst-kontrol: først, når staff har godkendt (inden for 24 timer).
+  // Er migrationen ikke kørt endnu, hentes de uden filteret.
+  const hent = (kunstFilter: boolean) => {
+    let q = admin
+      .from("auctions")
+      .select("id, titel, bruger_id, oprettet")
+      .eq("status", "aktiv")
+      .eq("skjult", false);
+    if (kunstFilter) q = q.or(IKKE_KUNST_AFVENTER);
+    return q
+      .gte("oprettet", fraTid(start, 24))
+      .order("oprettet", { ascending: false })
+      .limit(MAKS);
+  };
+  let { data: auktioner, error } = await hent(true);
+  if (error && manglerKunstSkema(error)) ({ data: auktioner, error } = await hent(false));
   if (!auktioner || auktioner.length === 0) return 0;
   const saelgere = [...new Set(auktioner.map((a) => a.bruger_id as string))];
   const { data: foelgere, error: foelgFejl } = await admin

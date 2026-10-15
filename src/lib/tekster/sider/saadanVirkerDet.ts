@@ -79,7 +79,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Opret din auktion",
           tekst:
-            "Tag gode billeder, skriv en ærlig beskrivelse, og vælg en startpris på mindst 1 kr. Startprisen er også den laveste pris, du sælger for. Du vælger, om auktionen skal køre i 3, 5, 7 eller 10 dage, og om varen sendes eller hentes hos dig. Sendes den, vælger du pakkestørrelse og skriver vægten. Varer over 15 kg kan kun afhentes.",
+            "Tag gode billeder, skriv en ærlig beskrivelse, og vælg en startpris på mindst 1 kr. Startprisen er også den laveste pris, du sælger for. Du vælger, om auktionen skal køre i 3, 5, 7 eller 10 dage, og om varen sendes eller hentes hos dig. Sendes den, vælger du pakkestørrelse og skriver vægten. Varer over 15 kg kan kun afhentes. Nogle varer må ikke sælges, fx våben, narkotika, levende dyr og kunst (malerier, tegninger, skulpturer og grafiske tryk). Plakater og masseproducerede billeder må gerne sælges.",
         },
         {
           titel: "Vent på bud",
@@ -103,7 +103,10 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         },
       ],
       note: "Nye udbetalingskonter har typisk en ventetid hos Stripe på cirka 7 dage før den første udbetaling.",
-      links: [{ tekst: "Sådan pakker du din vare", href: "/pakkeguide" }],
+      links: [
+        { tekst: "Sådan pakker du din vare", href: "/pakkeguide" },
+        { tekst: "Forbudte varer", href: "/forbudte-varer" },
+      ],
     },
     {
       id: "gebyrer",

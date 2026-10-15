@@ -9,12 +9,14 @@
 import { revalidatePath } from "next/cache";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
-import { VILKAAR_VERSION } from "@/lib/vilkaar";
+import { erVilkaarVersion } from "@/lib/vilkaar";
 
 type Svar = { ok: true } | { fejl: string };
 
+// version: den version, brugeren har fået vist (databasens aktuelle, fra
+// mine_vilkaar). Databasen afviser alt andet end den aktuelle version.
 export async function accepterVilkaar(version: string): Promise<Svar> {
-  if (version !== VILKAAR_VERSION) {
+  if (!erVilkaarVersion(version)) {
     return { fejl: "Brugerbetingelserne er blevet opdateret. Genindlæs siden, og læs dem igen." };
   }
   const supabase = await createClient();
@@ -25,6 +27,10 @@ export async function accepterVilkaar(version: string): Promise<Svar> {
 
   const { error } = await supabase.rpc("accepter_vilkaar", { p_version: version });
   if (error) {
+    // Ny version imens (gammel fane): bed brugeren genindlæse.
+    if (error.message.includes("opdateret")) {
+      return { fejl: "Brugerbetingelserne er blevet opdateret. Genindlæs siden, og læs dem igen." };
+    }
     console.error("accepter_vilkaar fejlede:", error.message);
     return { fejl: "Din accept kunne ikke gemmes. Prøv igen om lidt." };
   }

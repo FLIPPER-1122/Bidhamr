@@ -17,6 +17,8 @@ import {
 } from "@/lib/auktionRegler";
 import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
+import { KUNST_TEKST, tjekKunstTekst } from "@/lib/kunstForbud";
+import KunstAdvarsel from "@/components/opret/KunstAdvarsel";
 import { erStand } from "@/lib/stand";
 import PakkestoerrelseVaelger, {
   fragtFejlTekst,
@@ -118,6 +120,13 @@ export default function RedigerAuktionForm({
   const tekstAendret = titel.trim() !== start.titel.trim() || beskrivelse.trim() !== start.beskrivelse.trim();
   const forbudt = tekstAendret ? tjekForbudtTekst(titel, beskrivelse) : null;
   const forbudtTekst = forbudt?.resultat === "blokeret" ? forbudtBesked(forbudt.ord, forbudt.kategori) : null;
+  // Kunst: kun når teksten er ændret (som databasen, auctions_kunst_rapport).
+  // Sælgeren bekræfter "Det er ikke kunst"; databasen sender auktionen til
+  // staff-tjek uanset hvad.
+  const kunst = tekstAendret && !forbudtTekst ? tjekKunstTekst(titel, beskrivelse) : null;
+  const kunstOrd = kunst?.resultat === "kunst" ? kunst.ord : null;
+  const [kunstBekraeftet, setKunstBekraeftet] = useState(false);
+  const [visKunstFejl, setVisKunstFejl] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -127,6 +136,11 @@ export default function RedigerAuktionForm({
     if (!billeder.every(billedeKlar)) return setError("Vent, til billederne er klar.");
     if (!titel.trim()) return setError("Skriv en titel.");
     if (forbudtTekst) return setError(forbudtTekst);
+    if (kunstOrd && !kunstBekraeftet) {
+      setVisKunstFejl(true);
+      document.getElementById("kunst-bekraeft")?.focus();
+      return setError(KUNST_TEKST.mangler);
+    }
     if (!kategori) return setError("Vælg en kategori.");
     // Gamle auktioner uden stand må gemmes uden (databasen kræver den kun ved oprettelse).
     if (start.stand && !erStand(stand)) return setError("Vælg varens stand.");
@@ -297,6 +311,17 @@ export default function RedigerAuktionForm({
           <Hjaelp>
             {beskrivelse.length}/{MAKS_BESKRIVELSE}
           </Hjaelp>
+        </div>
+        <div aria-live="polite">
+          {kunstOrd && (
+            <KunstAdvarsel
+              id="kunst-bekraeft"
+              ord={kunstOrd}
+              bekraeftet={kunstBekraeftet}
+              onBekraeft={setKunstBekraeftet}
+              fejl={visKunstFejl && !kunstBekraeftet ? KUNST_TEKST.mangler : null}
+            />
+          )}
         </div>
       </Sektion>
 

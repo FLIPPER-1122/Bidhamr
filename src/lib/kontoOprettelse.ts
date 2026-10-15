@@ -41,7 +41,7 @@ import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { betaKodeMail } from "@/lib/mails/beta";
 import { logDriftFejl } from "@/lib/drift";
 import { tilmeldingAaben } from "@/lib/tilmelding";
-import { VILKAAR_VERSION } from "@/lib/vilkaar";
+import { erVilkaarVersion } from "@/lib/vilkaar";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import { betaAuthBruger, betaTilmeldingTilladt } from "@/lib/beta";
 import { hentKontoStatus, type KontoStatus } from "@/lib/kontoStatus";
@@ -315,7 +315,9 @@ export type BekraeftSvar =
 async function gemProfil(brugerId: string, profil: SignupProfil | null): Promise<{ navnSat: boolean; vilkaarSat: boolean }> {
   const fornavn = renNavn(profil?.fornavn);
   const efternavn = renNavn(profil?.efternavn);
-  const vilkaar = profil?.vilkaarVersion === VILKAAR_VERSION;
+  // Versionen er tjekket af kalderen (VILKAAR_VERSION eller databasens aktive,
+  // godkendtSignupVersion).
+  const vilkaar = erVilkaarVersion(profil?.vilkaarVersion);
   const navnOk = !!fornavn && !!efternavn;
   const admin = createAdminClient();
   let navnSat = false;
@@ -348,7 +350,7 @@ async function gemProfil(brugerId: string, profil: SignupProfil | null): Promise
   if (vilkaar) {
     const { error } = await admin
       .from("users")
-      .update({ vilkaar_version: VILKAAR_VERSION, vilkaar_accepteret_kl: new Date().toISOString() })
+      .update({ vilkaar_version: profil?.vilkaarVersion, vilkaar_accepteret_kl: new Date().toISOString() })
       .eq("id", brugerId)
       .is("konto_slettet_kl", null);
     if (error) {
