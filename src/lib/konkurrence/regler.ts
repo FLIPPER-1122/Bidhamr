@@ -21,6 +21,7 @@ export const GENNEMFOERT_SALG_MIN_BUD_OERE = 5000; // gennemfoerte_salg_min_bud_
 export const MAX_LOD_PR_KOEBER = 1; // konkurrence_max_lod_pr_koeber()
 export const MAX_NYE_VINDERE = 1; // konkurrence_max_nye_vindere()
 export const START_MAANED = "2026-11"; // konkurrence_start_maaned()
+export const SVARFRIST_DAGE = 14; // konkurrence_svarfrist_dage() (konkurrencebetingelserne 7.2)
 
 export const GRUNDE_NY_VINDER = ["svarer_ikke", "opfylder_ikke"] as const;
 export type GrundNyVinder = (typeof GRUNDE_NY_VINDER)[number];

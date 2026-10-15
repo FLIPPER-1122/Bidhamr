@@ -52,6 +52,8 @@ import {
   sideUrl,
 } from "@/lib/mails/handel";
 import { send } from "@/lib/notifikationer/send";
+import { shipmondoGlsAktiv } from "@/lib/fragt/shipmondo";
+import { GLS_LUKKET } from "@/lib/fragt/types";
 import {
   koeberKvittering,
   sendKoeberKvittering,
@@ -474,15 +476,41 @@ export async function annullerPaymentIntentForLevering(
   throw new Error(`PaymentIntent ${piId} kunne ikke annulleres (${pi.status})`);
 }
 
-async function harGyldigtLeveringsvalg(b: BetalingRaekke): Promise<boolean> {
-  if (Number(b.fragt_oere) <= 0) return true;
-  const { data, error } = await createAdminClient()
+// "ok" | "mangler" (intet gyldigt valg) | "gls_lukket": køberen valgte GLS
+// via Shipmondo, før GLS blev slået fra (Filip, 15. okt. 2026 -
+// SHIPMONDO_GLS_AKTIV), og labelen er ikke lavet. Så skal køberen vælge
+// levering igen (DAO eller PostNord), før der kan betales.
+async function leveringsvalgStatus(b: BetalingRaekke): Promise<"ok" | "mangler" | "gls_lukket"> {
+  if (Number(b.fragt_oere) <= 0) return "ok";
+  const admin = createAdminClient();
+  type Lev = { fragt_oere: number; fragtfirma?: string | null; transportoer?: string | null };
+  let { data, error } = await admin
     .from("handel_levering")
-    .select("fragt_oere")
+    .select("fragt_oere, fragtfirma, transportoer")
     .eq("trade_id", b.trade_id)
-    .maybeSingle<{ fragt_oere: number }>();
+    .maybeSingle<Lev>();
+  // Før 20261024010000 findes kolonnen transportoer ikke (intet GLS-valg).
+  if (error && (error.code === "42703" || /transportoer/.test(error.message ?? ""))) {
+    ({ data, error } = await admin
+      .from("handel_levering")
+      .select("fragt_oere")
+      .eq("trade_id", b.trade_id)
+      .maybeSingle<Lev>());
+  }
   if (error) throw new Error(`handel_levering: ${error.message}`);
-  return data !== null && Number(data.fragt_oere) === Number(b.fragt_oere);
+  if (data === null || Number(data.fragt_oere) !== Number(b.fragt_oere)) return "mangler";
+  if (data.fragtfirma === "shipmondo" && data.transportoer === "gls" && !shipmondoGlsAktiv()) {
+    const { data: fs, error: fFejl } = await admin
+      .from("forsendelser")
+      .select("id")
+      .eq("trade_id", b.trade_id)
+      .eq("type", "udgaaende")
+      .not("status", "in", "(annulleret,fejlet)")
+      .limit(1);
+    if (fFejl) throw new Error(`forsendelser: ${fFejl.message}`);
+    if ((fs ?? []).length === 0) return "gls_lukket";
+  }
+  return "ok";
 }
 
 // Låser sælgerkonto og gebyr i databasen før en PaymentIntent
@@ -560,7 +588,8 @@ export async function sikrPaymentIntent(
   // checkout (intet gyldigt valg) annulleres og nulstilles, så køberen skal
   // vælge levering først; er den allerede betalt/i gang, gives den tilbage
   // (kalderen spejler den).
-  if (!(await harGyldigtLeveringsvalg(betaling))) {
+  const levering = await leveringsvalgStatus(betaling);
+  if (levering !== "ok") {
     if (betaling.stripe_payment_intent_id) {
       const ikkeAnnulleret = await annullerAfventendePi(betaling.stripe_payment_intent_id);
       if (ikkeAnnulleret) return ikkeAnnulleret;
@@ -570,7 +599,7 @@ export async function sikrPaymentIntent(
       });
       if (nFejl) throw new Error("betaling_nulstil_annulleret_pi: " + nFejl.message);
     }
-    throw new LeveringManglerFejl();
+    throw new LeveringManglerFejl(levering === "gls_lukket" ? GLS_LUKKET : undefined);
   }
 
   if (betaling.stripe_payment_intent_id) {
@@ -764,8 +793,9 @@ export class BetalingsFejl extends Error {}
 export const LEVERING_MANGLER_TEKST = "Vælg levering, før du betaler.";
 export class LeveringManglerFejl extends BetalingsFejl {
   readonly kode = "vaelg_levering";
-  constructor() {
-    super(LEVERING_MANGLER_TEKST);
+  // tekst: fx GLS_LUKKET, når køberen skal vælge et andet fragtfirma.
+  constructor(tekst: string = LEVERING_MANGLER_TEKST) {
+    super(tekst);
   }
 }
 

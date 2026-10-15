@@ -9,6 +9,7 @@
 // - regler mod falske salg (Filip 15. okt. 2026): bud under 50 kr. tæller
 //   ikke, badget kræver 20 forskellige købere, og højst 1 lod pr. køber pr.
 //   sælger pr. måned
+// - kun private konti får "Populær sælger" (20261024030000, Filip 15. okt. 2026)
 // - lodtrækningen: kun chef, kun afsluttede måneder, listen fastfryses,
 //   hash og vinderlod kan efterregnes (src/lib/konkurrence/regler.ts), ny
 //   vinder kræver begrundelse og udelukker den gamle, intet kan ændres
@@ -24,6 +25,10 @@ const tilfaeldigHex = () => randomBytes(32).toString("hex");
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261023020000_badge_konkurrence.sql"),
+  "utf8",
+);
+const KUN_PRIVATE = readFileSync(
+  path.resolve(import.meta.dirname, "../../supabase/migrations/20261024030000_populaer_saelger_kun_private.sql"),
   "utf8",
 );
 
@@ -140,6 +145,9 @@ beforeAll(async () => {
   await db.exec(MIGRATION);
   // Kan køres igen.
   await db.exec(MIGRATION);
+  // Kun private konti får "Populær sælger" (20261024030000) - også to gange.
+  await db.exec(KUN_PRIVATE);
+  await db.exec(KUN_PRIVATE);
 });
 
 afterAll(async () => {
@@ -230,6 +238,23 @@ describe("Populær sælger", () => {
       await salg(s);
       expect(await badge(s), JSON.stringify(t)).toBe(true);
     }
+  });
+
+  // Filip, 15. okt. 2026 (20261024030000): kun private konti får mærket.
+  it("firmakonti får aldrig mærket - heller ikke med 60 salg til 60 købere eller på auktionskort", async () => {
+    const firma = await bruger({ konto_type: "erhverv" });
+    const privat = await bruger();
+    await flereSalg(firma, 60);
+    await flereSalg(privat, 60);
+    expect(await badge(firma)).toBe(false);
+    expect(await badge(privat)).toBe(true);
+    const { rows } = await db.query<{ v: string }>(`select v from public.populaere_saelgere($1::uuid[]) v`, [[firma, privat]]);
+    expect(rows.map((r) => r.v)).toEqual([privat]);
+    // Skifter en privat konto til firma, forsvinder mærket med det samme.
+    await db.query(`update public.users set konto_type = 'erhverv' where id = $1`, [privat]);
+    expect(await badge(privat)).toBe(false);
+    await db.query(`update public.users set konto_type = 'privat' where id = $1`, [privat]);
+    expect(await badge(privat)).toBe(true);
   });
 
   it("en vundet indsigelse tæller som gennemført", async () => {

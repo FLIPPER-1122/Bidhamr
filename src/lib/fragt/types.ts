@@ -24,6 +24,10 @@ export function labelGraense(fragtfirma: string | null | undefined): number | nu
 export const TRANSPORTOERER = ["dao", "gls", "postnord"] as const;
 export type Transportoer = (typeof TRANSPORTOERER)[number];
 
+// GLS er slået fra, indtil Shipmondo har svaret (SHIPMONDO_GLS_AKTIV - se
+// shipmondoGlsAktiv i shipmondo.ts). Fejlteksten bruges af fragt og betaling.
+export const GLS_LUKKET = "GLS kan ikke vælges lige nu. Vælg DAO eller PostNord.";
+
 export function erTransportoer(v: unknown): v is Transportoer {
   return typeof v === "string" && (TRANSPORTOERER as readonly string[]).includes(v);
 }

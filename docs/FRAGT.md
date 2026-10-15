@@ -5,6 +5,16 @@
 > auktionen). Migration `20261024010000_fragt_shipmondo_transportoer.sql` (kolonnen `transportoer`). Se afsnittet
 > **"Shipmondo (verificeret mod sandboxen 9. og 15. okt. 2026)"** nederst for produkter, labelfri, annullering,
 > sporing og retur pr. fragtfirma.
+>
+> **GLS er slået fra, indtil Shipmondo har svaret** (Filip, 15. okt. 2026): GLS kan ikke sendes labelfrit via
+> Shipmondo i dag. **Slå til med `SHIPMONDO_GLS_AKTIV=true`** (alt andet = fra; fail closed). Uden flaget:
+> GLS vises ikke i `checkout.transportoerer` (hjemmesiden og appen), pakkeshop-søgning og `levering`/`betal`
+> med `transportoer: "gls"` afvises med "GLS kan ikke vælges lige nu. Vælg DAO eller PostNord.", og
+> `handel_gem_levering` afviser GLS med koden `gls_lukket`, medmindre serveren sender `gls_aktiv: true`
+> (migration `20261024020000_fragt_gls_slaaet_fra.sql`). En GLS-levering, der blev gemt før, men ikke er betalt,
+> afvises ved betaling (`sikrPaymentIntent`, også `/api/betaling/app/betal`) med samme tekst og `kode: "vaelg_levering"`,
+> så køberen vælger levering igen (medmindre labelen allerede er lavet). Forsendelser, der allerede er lavet med GLS
+> (labels, sporing, webhooks og retur), virker videre – også søgning efter indleveringssteder til retur.
 
 Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md afsnit 2
 ("Fragtfirma og priser", Filip 9. okt. 2026). Migrationer: `supabase/migrations/20261012010000_fragt_dao_shipmondo.sql`
@@ -183,6 +193,9 @@ Direkte fra Supabase i appen (med brugerens session):
 - Fragtfirma (Shipmondo): `checkout.transportoerer` fra `POST /api/fragt/app/checkout`. Køberen vælger ét
   (`transportoer` = `"dao" | "gls" | "postnord"`); pakkeshop-søgningen og `levering` sendes med samme
   `transportoer`. Sendes den ikke, bruges DAO (ældre app). Pakkeshop-id'er gælder kun hos deres eget fragtfirma.
+  Vis kun de firmaer, der står i `checkout.transportoerer` – **GLS er slået fra, indtil Shipmondo har svaret**
+  (`SHIPMONDO_GLS_AKTIV=true` slår det til), og GLS giver ellers `409 { fejl, kode: "afvist" }`
+  (`/api/betaling/app/betal` med levering: `kode: "levering"`).
 - Checkout-overblik: `supabase.rpc("handel_checkout", { p_trade })` (kun køberen) →
   `{ afhentning, kun_afhentning, afhentning_mulig, pakkeshop_oere, doer_oere, beskyttelse_ved_forsendelse_oere, valgt, betaling, label_lavet }`.
   `afhentning` = afhentning er valgt (eller eneste mulighed); `kun_afhentning` = intet valg; `afhentning_mulig` = vis
@@ -248,6 +261,8 @@ Pr. fragtfirma (sandbox 15. okt. 2026 – oprettet med BidHamrs adapter og annul
 - **Shipmondos leveret frigiver ikke pengene efter 14 dage**, før `SHIPMONDO_LEVERET_FRIGIVER=true`
   (`forsendelser.leveret_frigiver`, sat ved oprettelsen; `handel_auto_frigiv` kræver den). Købers "modtaget" er uændret.
 - Køberens fragtfirma: mangler det (gammel kode, appen), bruges DAO.
+- **GLS er slået fra, indtil Shipmondo har svaret. Slå til med `SHIPMONDO_GLS_AKTIV=true`** (se øverst).
+  Migrationen `20261024020000_fragt_gls_slaaet_fra.sql` (databasens værn) skal køres efter `20261024010000`.
 - **Migrationen `20261024010000` skal køres, FØR `FRAGTFIRMA=shipmondo` sættes.** Uden den nægter koden Shipmondo
   (fragt "ikke sat op", ingen labels) - ellers ville den gamle `handel_auto_frigiv` lade Shipmondos "leveret"
   frigive penge efter 14 dage. Den gamle kode virker efter migrationen (alt bliver DAO).

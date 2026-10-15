@@ -69,6 +69,7 @@ import {
   FragtFejl,
   FragtUkendtUdfald,
   FRAGT_IKKE_SAT_OP,
+  GLS_LUKKET,
   UKENDT_UDFALD_TEKST,
   erLeveringsmaade,
   erSporingsType,
@@ -274,14 +275,27 @@ export async function hentFragtpriser(): Promise<Fragtpris[]> {
 
 // ------------------------------------------------------------ pakkeshops
 
-// Transportøren fra klienten: kun en af adapterens (Shipmondo). Adaptere
-// uden valg: null. Mangler den hos en adapter med valg: den første (DAO).
-function valgtTransportoer(firma: Fragtfirma, v: unknown): Transportoer | null | { fejl: string } {
+// GLS er slået fra, indtil Shipmondo har svaret (SHIPMONDO_GLS_AKTIV, se
+// shipmondoGlsAktiv i shipmondo.ts). Teksten står i types.ts.
+export { GLS_LUKKET };
+
+// Transportøren fra klienten: kun en af dem, køberen kan vælge nu
+// (adapterens transportoerer - Shipmondo uden GLS, medmindre GLS er slået
+// til). Adaptere uden valg: null. Mangler den hos en adapter med valg: den
+// første (DAO). alle = true (kun søgning efter indleveringssteder til retur):
+// alle kendte transportører, så retur af en pakke, der allerede er sendt med
+// GLS, virker videre.
+function valgtTransportoer(
+  firma: Fragtfirma,
+  v: unknown,
+  alle = false,
+): Transportoer | null | { fejl: string } {
   const muligt = firma.transportoerer ?? [];
   if (muligt.length === 0) return null;
   if (v === undefined || v === null || v === "") return muligt[0];
-  if (!erTransportoer(v) || !muligt.includes(v)) return { fejl: "Vælg et fragtfirma." };
-  return v;
+  if (!erTransportoer(v)) return { fejl: "Vælg et fragtfirma." };
+  if (alle || muligt.includes(v)) return v;
+  return { fejl: v === "gls" ? GLS_LUKKET : "Vælg et fragtfirma." };
 }
 
 // Pakkeshops nær et postnummer/en adresse hos det aktive fragtfirma (og den
@@ -296,7 +310,7 @@ export async function soegPakkeshops(
   const antal = typeof q.antal === "number" && Number.isInteger(q.antal) ? Math.min(Math.max(q.antal, 1), 20) : 10;
   const firma = hentFragtfirma();
   if (!(await firmaKlar(firma))) return { fejl: FRAGT_IKKE_SAT_OP };
-  const transportoer = valgtTransportoer(firma, q.transportoer);
+  const transportoer = valgtTransportoer(firma, q.transportoer, q.indlevering === true);
   if (transportoer && typeof transportoer === "object") return transportoer;
   try {
     const pakkeshops = await medTimeout(
@@ -344,6 +358,8 @@ const LEVERING_FEJL: Record<string, string> = {
   ikke_mulig: "Levering til døren er ikke muligt for denne pakkestørrelse. Vælg en pakkeshop.",
   pris_laast: "Du har allerede betalt. Du kan skifte pakkeshop, men ikke leveringsmåde.",
   ugyldig: "Ugyldigt valg.",
+  // Databasens værn (20261024020000): GLS uden gls_aktiv fra serveren.
+  gls_lukket: GLS_LUKKET,
 };
 
 const AFHENTNING_IKKE_MULIG = "Sælgeren tilbyder ikke afhentning af denne vare. Vælg en pakkeshop eller levering hjem.";
@@ -481,6 +497,9 @@ export async function gemLeveringsvalg(
     fragtfirma: firma.navn,
     // Kun Shipmondo (databasen kræver den dér og ignorerer den ellers).
     transportoer,
+    // Databasen afviser GLS, medmindre serveren siger, at GLS er slået til
+    // (20261024020000) - fail closed, også for kode, der glemmer tjekket.
+    gls_aktiv: (firma.transportoerer ?? []).includes("gls"),
     pakkeshop: pakkeshop
       ? {
           id: pakkeshop.id,

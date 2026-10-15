@@ -2,7 +2,8 @@ import Link from "next/link";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
-import { traekNyVinder, traekVinder } from "@/app/actions/adminKonkurrence";
+import { sendVinderBesked, traekNyVinder, traekVinder } from "@/app/actions/adminKonkurrence";
+import { vinderMailStatus, vinderSamtale } from "@/lib/konkurrence/vinderBesked";
 import { denneMaaned, erMaaned, forrigeMaaned } from "@/lib/konkurrence/regler";
 import { KONKURRENCE_ADMIN, maanedNavn } from "@/lib/tekster/konkurrence";
 
@@ -110,6 +111,12 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
   const nyeVindere = gaeldende ? gaeldende.nr - 1 : 0;
   const loftNaaet = nyeVindere >= o.max_nye_vindere;
   const tidligereVindere = new Set(o.traekninger.filter((t) => t.erstattet_kl).map((t) => t.vinder_id));
+  // Samtalen med den gældende vinder (åbnes automatisk ved trækningen).
+  const samtale = gaeldende ? await vinderSamtale(admin, gaeldende.id) : null;
+  // Mailens faktiske status (notifikation_afsendelser), ikke bare om samtalen findes.
+  const mailStatus = gaeldende
+    ? await vinderMailStatus(admin, gaeldende.id, samtale && samtale !== "fejl" ? samtale : null)
+    : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
@@ -198,6 +205,34 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
               Svarfrist: {tidspunkt(gaeldende.svarfrist)} ({o.svarfrist_dage} dage efter trækningen). Nye vindere:{" "}
               {nyeVindere} af højst {o.max_nye_vindere}.
             </p>
+            {mailStatus && (
+              <p role={mailStatus === "sendt" ? undefined : "status"} className={mailStatus === "sendt" ? "text-tekst-daempet" : "text-tekst"}>
+                {KONKURRENCE_ADMIN.vinderMail[mailStatus]}
+              </p>
+            )}
+            {samtale && samtale !== "fejl" ? (
+              <p className="text-tekst-daempet">
+                {KONKURRENCE_ADMIN.vinderSamtaleFindes}{" "}
+                <Link href={`/admin/chats/${samtale}`} className={LINK}>
+                  {KONKURRENCE_ADMIN.vinderSamtale}
+                </Link>
+              </p>
+            ) : samtale === null ? (
+              <div className="space-y-2">
+                <p role="status" className="text-tekst">
+                  {KONKURRENCE_ADMIN.vinderBeskedMangler}
+                </p>
+                <ConfirmDialog
+                  triggerLabel={KONKURRENCE_ADMIN.vinderBeskedKnap}
+                  title={KONKURRENCE_ADMIN.vinderBeskedKnap}
+                  description={KONKURRENCE_ADMIN.vinderBeskedForklaring}
+                  confirmLabel={KONKURRENCE_ADMIN.vinderBeskedKnap}
+                  action={sendVinderBesked}
+                  hiddenFields={{ traekning: gaeldende.id }}
+                  kvittering={KONKURRENCE_ADMIN.vinderBeskedKvittering}
+                />
+              </div>
+            ) : null}
             {loftNaaet ? (
               <p className="text-tekst-daempet">{KONKURRENCE_ADMIN.koder.loft_naaet}</p>
             ) : (
@@ -219,7 +254,7 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
                 placeholder: "Fx: Skrevet på mail og i beskeder, intet svar.",
                 required: false,
               }}
-              kvittering="Der er trukket en ny vinder."
+              kvittering="Der er trukket en ny vinder, og vinderen har fået besked."
               kanIkkeFortrydes
             />
             )}
@@ -247,7 +282,7 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
                   { label: "Deltagere", vaerdi: liste.length },
                   { label: "Lod i alt", vaerdi: lodIalt },
                 ]}
-                kvittering="Vinderen er trukket."
+                kvittering={KONKURRENCE_ADMIN.kvitteringTrukket}
                 kanIkkeFortrydes
               />
             </div>
