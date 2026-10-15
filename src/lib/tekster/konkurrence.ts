@@ -41,6 +41,9 @@ export const KONKURRENCE_KONTO = {
   erhverv: "Firmakonti deltager ikke i lodtrækningen.",
   staff: "Medarbejdere hos BidHamr deltager ikke i lodtrækningen.",
   konto: "Din konto deltager ikke i lodtrækningen lige nu.",
+  // Før den første lodtrækning (START_MAANED i src/lib/konkurrence/regler.ts).
+  starter: (startMaaned: string) => `Lodtrækningen starter i ${maanedNavn(startMaaned)}.`,
+  starterRegel: "Fra da af får du lod for dine gennemførte salg. Du skal ikke tilmelde dig.",
 };
 
 // Besked til vinderen, så snart der er trukket lod (Filip, 15. okt. 2026).
