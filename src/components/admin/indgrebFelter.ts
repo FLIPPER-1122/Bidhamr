@@ -9,6 +9,8 @@ import { INDGREB_FAKTA } from "@/lib/tekster/adminSkabeloner";
 export function indgrebFelter(opts: {
   faktaPlaceholder: string;
   standardRegel?: string;
+  // Forudfyldt begrundelse til brugeren (kan rettes), fx ved kunst.
+  standardFakta?: string;
 }): { vaelgFelter: VaelgFelt[]; tekstFelter: TekstFelt[] } {
   return {
     vaelgFelter: [
@@ -28,6 +30,7 @@ export function indgrebFelter(opts: {
         required: true,
         maxLength: 2000,
         skabeloner: INDGREB_FAKTA,
+        ...(opts.standardFakta ? { standard: opts.standardFakta } : {}),
         hjaelp:
           "Skriv konkret, hvad brugeren har gjort. Brugeren får teksten på mail og kan klage. Skriv aldrig, hvem der har anmeldt.",
       },

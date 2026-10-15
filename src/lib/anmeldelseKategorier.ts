@@ -14,8 +14,11 @@ export type AnmeldelseKategori = (typeof ANMELDELSE_KATEGORIER)[number]["vaerdi"
 // Kategorier, som kun systemet bruger (brugere kan ikke vælge dem).
 // 'forbudt_vare': automatisk rapport fra kontrollen af forbudte ord
 // (20261006040000_auktionsfunktioner.sql, auctions_forbudt_rapport).
+// 'kunst': automatisk anmeldelse, når titel/beskrivelse ligner kunst
+// (20261023010000_kunst_forbudt.sql, auctions_kunst_rapport).
 const SYSTEM_KATEGORIER: Record<string, string> = {
   forbudt_vare: "Mulig forbudt vare (automatisk)",
+  kunst: "Mulig kunst (automatisk)",
 };
 
 export function kategoriLabel(vaerdi: string) {

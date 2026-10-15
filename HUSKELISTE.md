@@ -12,6 +12,14 @@ I dag viser bidhamr.dk `/coming-soon` for alle uden staff-rolle. Den rigtige for
 - **Opret bruger / Invite user i Supabase-dashboardet virker aldrig** efter migrationen (der er ingen billet). Testbrugere oprettes via `supabase/seed.sql`, firmakonti under Admin → Erhverv.
 - Lokalt (`npm run dev`, testdatabasen) er siden altid "lanceret", så forsiden kan ses på http://localhost:3000. `SIMULER_FOER_LANCERING=true` i `.env.local` viser den lukkede udgave med coming-soon. `LANCERET` har ingen virkning på testdatabasen. `SIMULER_TILMELDING_LUKKET=true` lukker tilmeldingen lokalt, så beta-tilmeldingen kan testes.
 
+## Kunst er forbudt + brugerbetingelser 0.2 (`20261023010000_kunst_forbudt.sql`)
+Rækkefølgen af migration og hjemmeside-deploy er ligegyldig (koden tåler, at migrationen mangler). Men:
+1. **FØR migrationen:** deploy edge-funktionen til produktion (den tåler, at kolonnen mangler, og skal kende kunst-kontrollen, når migrationen er kørt):
+   `npx supabase functions deploy notificer-foelgere --project-ref lkifkrexeldimmghnsie`
+2. **Kør migrationen** i produktion (dit "ja"). Den er kørt to gange på testdatabasen. Brugerbetingelserne forbliver på 0.1 – intet ændres for brugerne endnu.
+3. **Når den nye hjemmeside er deployet:** Admin → Drift → **"Slå brugerbetingelser 0.2 til"** (admin/chef). Først nu får alle accept-vinduet, og bud/maksimum/nye auktioner afvises, indtil de har accepteret. Gør det ikke, mens den gamle hjemmeside kører.
+4. Valgfrit: Admin → Auktioner → **"Tjek aktive auktioner for kunst"** (viser først, hvor mange der rammes; auktioner med bud får kun en anmeldelse).
+
 ## DAO direkte – når du har nøglerne (se docs/DAO-API.md, "Mangler")
 - **Kør migrationen** `supabase/migrations/20261021010000_fragt_dao_direkte.sql` i produktion (dit "ja"). Den er kørt to gange på testdatabasen. Den kan køres, før DAO slås til – den ændrer intet for Shipmondo/testfragt.
 - **Sæt i `.env.local` (testdatabasen) først**, og først bagefter i Vercel (Production): `DAO_KUNDEID` og `DAO_KODE` (fra DAO). De står i URL'en til DAO, så del dem aldrig i chat, mails eller skærmbilleder. Valgfrit: `DAO_API_URL` (standard `https://api.dao.as`), `DAO_LABEL_PAPIR` (standard `A4Foldable`).

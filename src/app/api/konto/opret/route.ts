@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server";
 import { FOR_MANGE_FORSOEG, PROEV_IGEN_OM_LIDT, klientIp, tjekGraenserLukket } from "@/lib/rateLimit";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
+import { godkendtSignupVersion } from "@/lib/vilkaarServer";
 import { opretKontoPaaServeren, renEmail, renNavn } from "@/lib/kontoOprettelse";
 import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
 
@@ -61,7 +62,9 @@ export async function POST(req: NextRequest) {
   if (!email) return svar(400, { fejl: "Indtast en gyldig e-mail.", kode: "email" });
   const v = vurderAdgangskode(password, { email, navn: [fornavn, efternavn] });
   if (!v.ok) return svar(400, { fejl: v.fejl ?? "Vælg en anden adgangskode.", kode: "adgangskode" });
-  if (krop.vilkaar_version !== VILKAAR_VERSION) {
+  // Hjemmesidens eller databasens aktive version (appen sender databasens).
+  const vilkaarVersion = await godkendtSignupVersion(krop.vilkaar_version);
+  if (!vilkaarVersion) {
     return svar(400, {
       fejl: "Du skal acceptere brugerbetingelserne for at oprette en konto.",
       kode: "vilkaar",

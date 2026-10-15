@@ -1,6 +1,7 @@
 // Version af brugerbetingelserne, som brugeren accepterer ved oprettelse.
 // SKAL holdes synkron med public.vilkaar_aktuel_version() i databasen
-// (supabase/migrations/20261009050000_vilkaar_accept.sql) - ellers gemmes
+// (supabase/migrations/20261009050000_vilkaar_accept.sql, senest ændret i
+// 20261023010000_kunst_forbudt.sql: 0.1 -> 0.2) - ellers gemmes
 // accepten ikke (handle_new_user og accepter_vilkaar godtager kun den
 // aktuelle version). Ved en ny version: ret begge steder og VILKAAR_DATO.
 //
@@ -11,8 +12,9 @@
 // tilsvarende), indtil de accepterer via rpc("accepter_vilkaar", { p_version }).
 // En ny version kræver ny accept: alle får vinduet igen ("Vi har opdateret
 // brugerbetingelserne").
-export const VILKAAR_VERSION = "0.1";
-export const VILKAAR_DATO = "6. oktober 2026";
+// 0.2 (15. okt. 2026): kunst er en forbudt vare. Alle accepterer igen.
+export const VILKAAR_VERSION = "0.2";
+export const VILKAAR_DATO = "15. oktober 2026";
 
 // Udkastet er endnu ikke godkendt af advokat (ROADMAP fase 6). Når det er
 // godkendt, sættes den til false, og banneret "UDKAST" forsvinder.
@@ -30,12 +32,20 @@ export function erVilkaarFejl(code: string | null | undefined, message?: string 
   return code === VILKAAR_FEJLKODE || (message ?? "").includes("vilkaar_mangler");
 }
 
+export function erVilkaarVersion(v: unknown): v is string {
+  return typeof v === "string" && /^\d{1,3}\.\d{1,3}$/.test(v);
+}
+
 // true, hvis den accepterede version er mindst den aktuelle ("0.1" < "0.2" < "1.0").
 // NULL eller en ukendt værdi = ikke accepteret. SKAL give samme svar som
 // public.vilkaar_er_accepteret i databasen.
-export function vilkaarErAccepteret(version: string | null | undefined): boolean {
-  if (!version || !/^\d{1,3}\.\d{1,3}$/.test(version)) return false;
+// aktuel: databasens aktuelle version (mine_vilkaar().aktuel_version), så
+// vinduet følger databasen, uanset om migrationen eller koden kom først.
+// VILKAAR_VERSION bruges kun, hvis databasen ikke har svaret.
+export function vilkaarErAccepteret(version: string | null | undefined, aktuel: string = VILKAAR_VERSION): boolean {
+  if (!erVilkaarVersion(version)) return false;
+  const mod = erVilkaarVersion(aktuel) ? aktuel : VILKAAR_VERSION;
   const [a1, a2] = version.split(".").map(Number);
-  const [b1, b2] = VILKAAR_VERSION.split(".").map(Number);
+  const [b1, b2] = mod.split(".").map(Number);
   return a1 > b1 || (a1 === b1 && a2 >= b2);
 }

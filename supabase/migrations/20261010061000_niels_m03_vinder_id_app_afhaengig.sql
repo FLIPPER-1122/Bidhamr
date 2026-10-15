@@ -6,7 +6,7 @@
 -- (jeg_er_vinder).
 --
 -- Kolonne-rettigheder: anon og authenticated kan læse alle kolonner på
--- auctions UNDTAGEN vinder_id. Det betyder, at select('*') på auctions
+-- auctions UNDTAGEN vinder_id (og kunst-kolonnerne, se nederst). Det betyder, at select('*') på auctions
 -- fejler ("permission denied for table auctions") – der skal altid stå en
 -- kolonneliste. Appen skal FØRST:
 --   1. Erstatte alle .from('auctions').select('*') (også indlejret
@@ -35,7 +35,9 @@ begin
    where attrelid = 'public.auctions'::regclass
      and attnum > 0
      and not attisdropped
-     and attname <> 'vinder_id';
+     -- Staff-kolonner fra 20261023010000_kunst_forbudt.sql gives heller ikke
+     -- (kunst-kontrollen må ikke kunne læses af brugere).
+     and attname not in ('vinder_id', 'kunst_bekraeftet', 'kunst_markeret_kl', 'kunst_kontrol', 'kunst_tekst_md5', 'kunst_tjekket_kl');
 
   revoke select on public.auctions from anon, authenticated;
   execute format('grant select (%s) on public.auctions to anon, authenticated', v_kolonner);
