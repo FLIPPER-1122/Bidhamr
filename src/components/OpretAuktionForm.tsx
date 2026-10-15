@@ -19,6 +19,8 @@ import {
   type VarighedDage,
 } from "@/lib/auktionRegler";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
+import { KUNST_TEKST, tjekKunstTekst } from "@/lib/kunstForbud";
+import KunstAdvarsel from "@/components/opret/KunstAdvarsel";
 import { erStand, standNavn } from "@/lib/stand";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { erMitIdFejl } from "@/lib/mitid/fejl";
@@ -79,6 +81,7 @@ type FeltNavn =
   | "billeder"
   | "titel"
   | "beskrivelse"
+  | "kunst"
   | "kategori"
   | "stand"
   | "producent"
@@ -92,6 +95,7 @@ const FELT_ID: Record<FeltNavn, string> = {
   billeder: "billeder",
   titel: "titel",
   beskrivelse: "beskrivelse",
+  kunst: "kunst-bekraeft",
   kategori: "kategori",
   stand: "stand",
   producent: "producent",
@@ -192,6 +196,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
   const [postnummer, setPostnummer] = useState("");
   const [spoergsmaalAktiv, setSpoergsmaalAktiv] = useState(true);
   const [bekraeftet, setBekraeftet] = useState(false);
+  // "Det er ikke kunst" (kun når teksten ligner kunst).
+  const [kunstBekraeftet, setKunstBekraeftet] = useState(false);
 
   const [roert, setRoert] = useState(false);
   const [kladdeHaandteret, setKladdeHaandteret] = useState(false);
@@ -275,6 +281,10 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
   const startpris = startprisTekst === "" ? NaN : Number(startprisTekst);
   const forbudt = tjekForbudtTekst(titel, beskrivelse);
   const forbudtTekst = forbudt.resultat === "blokeret" ? forbudtBesked(forbudt.ord, forbudt.kategori) : null;
+  // Kunst blokeres ikke: sælgeren bekræfter "Det er ikke kunst", og databasen
+  // markerer auktionen og sender den til staff-tjek.
+  const kunst = forbudtTekst ? null : tjekKunstTekst(titel, beskrivelse);
+  const kunstOrd = kunst?.resultat === "kunst" ? kunst.ord : null;
 
   function valider(): Partial<Record<FeltNavn, string>> {
     const f: Partial<Record<FeltNavn, string>> = {};
@@ -282,6 +292,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
     else if (!billeder.every(billedeKlar)) f.billeder = "Vent, til billederne er klar.";
     if (!titel.trim()) f.titel = "Skriv en titel, fx mærke og model.";
     else if (forbudtTekst) f.titel = forbudtTekst;
+    if (kunstOrd && !kunstBekraeftet) f.kunst = KUNST_TEKST.mangler;
     if (!kategori) f.kategori = "Vælg en kategori.";
     if (!erStand(stand)) f.stand = "Vælg varens stand.";
     if (kraeverGpsr) {
@@ -372,6 +383,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           ...(forsendelseMulig ? { pakkestoerrelse, vaegt_gram: vaegtGram, afhentning_mulig: afhentningOgsaa } : {}),
           spoergsmaal_aktiv: erFirma ? false : spoergsmaalAktiv,
           forbudt_bekraeftet: bekraeftet,
+          // Kun til staff: databasen markerer selv kunst (auctions_kunst_kontrol).
+          ...(kunstOrd ? { kunst_bekraeftet: kunstBekraeftet } : {}),
           // Databasen beregner selv sluttidspunktet ud fra varigheden.
           varighed_dage: varighed,
           slutter_kl: slutterKlFraVarighed(varighed).toISOString(),
@@ -696,6 +709,18 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
             En ærlig beskrivelse giver færre spørgsmål og sager. {beskrivelse.length}/{MAKS_BESKRIVELSE}
           </Hjaelp>
         </div>
+
+        <div aria-live="polite">
+          {kunstOrd && (
+            <KunstAdvarsel
+              id={FELT_ID.kunst}
+              ord={kunstOrd}
+              bekraeftet={kunstBekraeftet}
+              onBekraeft={aendret(setKunstBekraeftet)}
+              fejl={feltFejl.kunst}
+            />
+          )}
+        </div>
       </Sektion>
 
       <Sektion nr={3} titel="Kategori og stand" id="sektion-kategori">
@@ -864,7 +889,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           fejl={feltFejl.bekraeft}
           hjaelp={
             <>
-              Fx våben, narkotika, medicin, levende dyr og kopivarer.{" "}
+              Fx våben, narkotika, medicin, levende dyr, kopivarer og kunst.{" "}
               <Link href="/forbudte-varer" target="_blank" className="font-medium text-groen underline">
                 Se hele listen
               </Link>

@@ -6,6 +6,7 @@ import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import FlereHandlinger from "@/components/admin/FlereHandlinger";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
+import { advarselFelter } from "@/components/admin/advarselFelter";
 import AdminSide from "@/components/admin/AdminSide";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import AdminBadge from "@/components/admin/AdminBadge";
@@ -15,8 +16,9 @@ import AdminListe, { type Kolonne } from "@/components/admin/AdminListe";
 import AdminSideskift, { adminHref, laesSide } from "@/components/admin/AdminSideskift";
 import { AnmeldelserFaner } from "@/components/admin/OmraadeFaner";
 import { kategoriLabel } from "@/lib/anmeldelseKategorier";
-import { RAPPORT_NOTE } from "@/lib/tekster/adminSkabeloner";
+import { KUNST_ADVARSEL, KUNST_BEGRUNDELSE, RAPPORT_NOTE } from "@/lib/tekster/adminSkabeloner";
 import {
+  advarUser,
   rapportMarkerBehandlet,
   rapportSletMidlertidigt,
   rapportFjernOpslag,
@@ -28,6 +30,12 @@ import {
 // handlinger - "Fjern opslag". Uden søgning hentes 25 ad gangen i databasen.
 // Med søgning (titel og anmelder ligger i andre tabeller) søges blandt de
 // 500 nyeste åbne.
+//
+// Kunst (category 'kunst', 20261023010000_kunst_forbudt.sql): reglen "Kunst
+// er ikke tilladt" og standardbegrundelsen er forudfyldt, så "Skjul auktion"
+// er ét klik + bekræft. Rækken viser, hvor mange auktioner sælgeren i alt har
+// haft, der lignede kunst (auctions.kunst_markeret_kl), og under Flere
+// handlinger kan sælgeren få en advarsel efter de almindelige regler.
 
 const PR_SIDE = 25;
 
@@ -46,6 +54,13 @@ const STATUS: Record<string, { tone: "gul" | "blaa" | "roed"; tekst: string }> =
   under_behandling: { tone: "blaa", tekst: "Skjult – undersøges" },
   fjernet: { tone: "roed", tekst: "Opslag fjernet" },
 };
+
+// Det oplagte regelvalg i dialogen ud fra anmeldelsens kategori.
+function standardRegel(kategori: string): string | undefined {
+  if (kategori === "forbudt_vare") return "forbudt_vare";
+  if (kategori === "kunst") return "kunst";
+  return undefined;
+}
 
 const lille =
   "inline-flex min-h-10 items-center whitespace-nowrap rounded-lg border border-kant-staerk bg-white px-3 text-[13px] font-medium text-tekst transition-colors hover:bg-admin-bg lg:min-h-8";
@@ -79,14 +94,32 @@ export default async function AdminRapporter({
 
   const [{ data: auktioner }, { data: brugere }] = await Promise.all([
     auktionIds.length
-      ? supabase.from("auctions").select("id, titel").in("id", auktionIds)
-      : Promise.resolve({ data: [] as { id: string; titel: string }[] }),
+      ? supabase.from("auctions").select("id, titel, bruger_id").in("id", auktionIds)
+      : Promise.resolve({ data: [] as { id: string; titel: string; bruger_id: string }[] }),
     brugerIds.length
       ? supabase.from("users").select("id, navn, email").in("id", brugerIds)
       : Promise.resolve({ data: [] as { id: string; navn: string; email: string }[] }),
   ]);
 
   const titelMap = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
+  const saelgerMap = new Map((auktioner ?? []).map((a) => [a.id as string, a.bruger_id as string]));
+
+  // Gentagne forsøg med kunst: antal auktioner pr. sælger, der har lignet kunst.
+  const kunstSaelgere = [
+    ...new Set(alle.filter((r) => r.category === "kunst").map((r) => saelgerMap.get(r.auction_id)).filter(Boolean)),
+  ] as string[];
+  const kunstAntal = new Map<string, number>();
+  if (kunstSaelgere.length) {
+    const { data: markerede } = await supabase
+      .from("auctions")
+      .select("bruger_id")
+      .in("bruger_id", kunstSaelgere)
+      .not("kunst_markeret_kl", "is", null)
+      .limit(5000);
+    for (const m of (markerede ?? []) as { bruger_id: string }[]) {
+      kunstAntal.set(m.bruger_id, (kunstAntal.get(m.bruger_id) ?? 0) + 1);
+    }
+  }
   const brugerMap = new Map(
     (brugere ?? []).map((u) => [u.id as string, { navn: u.navn as string | null, email: u.email as string }]),
   );
@@ -110,10 +143,13 @@ export default async function AdminRapporter({
       className: "lg:w-40",
       celle: (r) => {
         const s = STATUS[r.status] ?? STATUS.pending;
+        const saelger = saelgerMap.get(r.auction_id);
+        const forsoeg = r.category === "kunst" && saelger ? (kunstAntal.get(saelger) ?? 0) : 0;
         return (
           <span className="flex flex-wrap gap-1.5">
             <AdminBadge tone={s.tone}>{s.tekst}</AdminBadge>
             <AdminBadge tone="graa">{kategoriLabel(r.category)}</AdminBadge>
+            {forsoeg > 1 && <AdminBadge tone="roed">{`${forsoeg} forsøg med kunst`}</AdminBadge>}
           </span>
         );
       },
@@ -171,7 +207,8 @@ export default async function AdminRapporter({
                 ]}
                 {...indgrebFelter({
                   faktaPlaceholder: "Fx: Vi undersøger, om varen er en kopi. Auktionen er skjult imens.",
-                  standardRegel: r.category === "forbudt_vare" ? "forbudt_vare" : undefined,
+                  standardRegel: standardRegel(r.category),
+                  standardFakta: r.category === "kunst" ? KUNST_BEGRUNDELSE : undefined,
                 })}
                 kvittering="Auktionen er skjult"
               />
@@ -192,8 +229,9 @@ export default async function AdminRapporter({
               }}
               kvittering="Anmeldelsen er markeret som behandlet"
             />
-            {kanModerereOpslag && (
+            {(kanModerereOpslag || (r.category === "kunst" && saelgerMap.get(r.auction_id))) && (
               <FlereHandlinger>
+                {kanModerereOpslag && (
                 <ConfirmDialog
                   triggerLabel="Fjern opslag permanent"
                   triggerClassName="inline-flex min-h-10 items-center rounded-lg border border-fejl-kant bg-white px-3 text-[13px] font-medium text-fejl-tekst hover:bg-fejl-bg lg:min-h-8"
@@ -207,10 +245,37 @@ export default async function AdminRapporter({
                   kanIkkeFortrydes
                   {...indgrebFelter({
                     faktaPlaceholder: "Fx: Auktionen sælger et skydevåben, som ikke må sælges på BidHamr.",
-                    standardRegel: r.category === "forbudt_vare" ? "forbudt_vare" : undefined,
+                    standardRegel: standardRegel(r.category),
+                    standardFakta: r.category === "kunst" ? KUNST_BEGRUNDELSE : undefined,
                   })}
                   kvittering="Opslaget er fjernet"
                 />
+                )}
+                {r.category === "kunst" && saelgerMap.get(r.auction_id) && (
+                  <ConfirmDialog
+                    triggerLabel="Giv sælgeren en advarsel"
+                    triggerClassName={lille}
+                    title="Giv sælgeren en advarsel for kunst?"
+                    description="Bruges ved gentagne forsøg på at sælge kunst. Advarslen gemmes på sælgerens profil, og sælgeren får besked med begrundelsen. Ved 3 advarsler skal en admin eller chef tage stilling til at lukke profilen (under Kontolukninger)."
+                    confirmLabel="Ja, send advarslen"
+                    action={advarUser}
+                    hiddenFields={{ userId: saelgerMap.get(r.auction_id)! }}
+                    fakta={[
+                      { label: "Auktion", vaerdi: titelMap.get(r.auction_id) ?? "(slettet auktion)" },
+                      {
+                        label: "Auktioner, der har lignet kunst",
+                        vaerdi: String(kunstAntal.get(saelgerMap.get(r.auction_id)!) ?? 0),
+                      },
+                    ]}
+                    tekstFelter={advarselFelter({
+                      internNavn: "aarsag",
+                      brugerPlaceholder: "Skriv, hvorfor sælgeren får advarslen...",
+                      internPlaceholder: "Fx: henvisning til anmeldelsen",
+                      brugerSkabeloner: KUNST_ADVARSEL,
+                    })}
+                    kvittering="Advarslen er sendt"
+                  />
+                )}
               </FlereHandlinger>
             )}
           </div>

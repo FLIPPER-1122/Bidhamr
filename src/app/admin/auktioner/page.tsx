@@ -8,6 +8,7 @@ import { deleteAuction, cancelAuction, hideAuction, unhideAuction } from "@/app/
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
+import { KUNST_BEGRUNDELSE } from "@/lib/tekster/adminSkabeloner";
 import type { AdminAuktionRow } from "@/lib/adminRowTypes";
 import { nuMs } from "@/lib/dsa/regler";
 import {
@@ -96,6 +97,14 @@ export default async function AdminAuktioner({
     .order("pauset_kl", { ascending: true })
     .limit(50)
     .overrideTypes<{ id: string; titel: string | null; pauset_kl: string }[], { merge: false }>();
+
+  // Auktioner, der har lignet kunst (20261023010000_kunst_forbudt.sql). Hentes
+  // for sig, så siden virker, selvom kolonnen mangler (fejl = ingen markering).
+  const visteIds = (auctions ?? []).map((a) => a.id);
+  const { data: kunstRaekker } = visteIds.length
+    ? await supabase.from("auctions").select("id").in("id", visteIds).not("kunst_markeret_kl", "is", null)
+    : { data: [] as { id: string }[] };
+  const kunstIds = new Set(((kunstRaekker ?? []) as { id: string }[]).map((k) => k.id));
 
   // Sælgerinfo til de viste auktioner
   const brugerIds = [...new Set((auctions ?? []).map((a) => a.bruger_id))];
@@ -284,6 +293,9 @@ export default async function AdminAuktioner({
                         {a.skjult && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-tekst-daempet">Skjult</span>
                         )}
+                        {kunstIds.has(a.id) && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-fejl-bg text-fejl-tekst">Ligner kunst</span>
+                        )}
                         {erPaaPause(a) && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">På pause</span>
                         )}
@@ -372,7 +384,11 @@ export default async function AdminAuktioner({
                           hiddenFields={{ auktionId: a.id }}
                           {...(a.skjult
                             ? {}
-                            : indgrebFelter({ faktaPlaceholder: "Fx: Billederne er kopieret fra en anden hjemmeside." }))}
+                            : indgrebFelter({
+                                faktaPlaceholder: "Fx: Billederne er kopieret fra en anden hjemmeside.",
+                                // Kunst-markeret: reglen og begrundelsen er forudfyldt (ét klik + bekræft).
+                                ...(kunstIds.has(a.id) ? { standardRegel: "kunst", standardFakta: KUNST_BEGRUNDELSE } : {}),
+                              }))}
                         />
                         )}
                         <ConfirmDialog

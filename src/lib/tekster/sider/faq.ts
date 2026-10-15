@@ -253,7 +253,11 @@ export const FAQ_SIDE: Tekstside = {
       punkter: [
         {
           spoergsmaal: "Er der ting, jeg ikke må sælge?",
-          svar: "Ja. Ulovlige varer – fx våben, narkotika, receptpligtig medicin, falske mærkevarer, levende dyr og stjålne ting – kan ikke sættes til salg. Enkelte lovlige varer, fx billetter, alkohol og tobak, bliver kontrolleret af BidHamr. Auktioner, der bryder reglerne, bliver fjernet. Se hele listen under \"Forbudte varer\".",
+          svar: "Ja. Ulovlige varer – fx våben, narkotika, receptpligtig medicin, falske mærkevarer, levende dyr og stjålne ting – kan ikke sættes til salg. Kunst må heller ikke sælges. Enkelte lovlige varer, fx billetter, alkohol og tobak, bliver kontrolleret af BidHamr. Auktioner, der bryder reglerne, bliver fjernet. Se hele listen under \"Forbudte varer\".",
+        },
+        {
+          spoergsmaal: "Må jeg sælge kunst eller plakater?",
+          svar: "Kunst må ikke sælges på BidHamr. Det gælder malerier, tegninger, skulpturer, grafiske tryk og litografier – også signerede og nummererede – og kunst, du selv har lavet. Plakater og masseproducerede billeder uden kunstner, fx et billede fra IKEA, må gerne sælges. Ligner din auktion kunst, spørger vi, om det er kunst, og en medarbejder kigger på den.",
         },
         {
           spoergsmaal: "Hvordan melder jeg en auktion, der ikke burde være der?",
