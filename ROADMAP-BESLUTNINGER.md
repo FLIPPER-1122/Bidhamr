@@ -434,3 +434,6 @@ Bygget i `20261019010000_pengesikkerhed.sql`. Reglen er uændret: penge udbetale
 ## Kunst er forbudt (Filip, 14. okt. 2026)
 - **Kunstgenstande må ikke sælges på BidHamr** – det er højrisiko (falsknerier, hvidvask, værdiansættelse). Strengt forbudt.
 - Skal bygges: står på listen over forbudte varer i brugerbetingelserne og i "Sådan virker det"/FAQ; ingen kunst-kategori; opret auktion afviser/advarer ved kunst-ord i titel og beskrivelse og sender til staff-tjek; ny anmeldelsesgrund og standardbegrundelse "Kunst er ikke tilladt" i admin; gentagne forsøg giver advarsel efter de eksisterende regler. **Afgrænsning (Filip, 14. okt. 2026):** forbudt: malerier, tegninger, skulpturer, grafiske tryk og litografier (også signerede og nummererede) og kunst lavet af sælgeren selv. Tilladt: plakater og masseproducerede billeder uden kunstner/værdi (fx IKEA). Uafklaret (advokat, spørgsmål 135-136): keramik og glas fra kendte designere og antikviteter generelt.
+
+## Fragt via Shipmondo igen (Filip, 15. okt. 2026)
+- **Vi bruger Shipmondo** i stedet for DAO direkte – DAO direkte er for bøvlet (efter samtale med GLS). Shipmondo-adapteren (bygget 9. okt.) genoptages og opdateres; DAO-adapteren bliver liggende bag `FRAGTFIRMA=dao`. Fragtfirmaer, labelfri/QR, priser, vægtgrænse og erstatning: afventer Filips svar.
