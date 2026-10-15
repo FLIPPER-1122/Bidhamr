@@ -179,6 +179,12 @@ comment on table public.boost_koeb is
 alter table public.boost_koeb add column if not exists indsigelse_tabt_kl timestamptz;
 alter table public.boost_koeb add column if not exists stripe_dispute_id text;
 alter table public.boost_koeb add column if not exists annulleret_kl timestamptz;
+-- Seneste indsigelses-status hos Stripe (null = ingen indsigelse). En åben
+-- indsigelse låser brugerens point (boost_point_laast).
+alter table public.boost_koeb add column if not exists indsigelse_status text;
+-- Seneste aktivitet på et åbent køb (startet/genoptaget, PaymentIntent
+-- gemt). 7 dage uden aktivitet: købet annulleres.
+alter table public.boost_koeb add column if not exists aktivitet_kl timestamptz not null default now();
 
 create unique index if not exists boost_koeb_et_aabent on public.boost_koeb (bruger_id) where status in ('afventer', 'behandles');
 create unique index if not exists boost_koeb_pi on public.boost_koeb (stripe_payment_intent_id) where stripe_payment_intent_id is not null;
@@ -464,6 +470,8 @@ declare
   s  public.boost_indstillinger%rowtype;
   k  record;
   v_id uuid;
+  v_gammel_pi text;
+  v_ny boolean := false;
 begin
   if p_bruger is null then return jsonb_build_object('kode', 'ugyldig'); end if;
   v_spaerret := public.boost_bruger_spaerret(p_bruger);
@@ -472,25 +480,37 @@ begin
   if not found then return jsonb_build_object('kode', 'ugyldig'); end if;
   perform public.boost_laas_bruger(p_bruger);
 
-  select b.id, b.point, b.beloeb_oere, b.stripe_payment_intent_id, b.pi_forsoeg, b.status into k
+  select b.id, b.point, b.beloeb_oere, b.stripe_payment_intent_id, b.pi_forsoeg, b.status, b.aktivitet_kl into k
     from public.boost_koeb b where b.bruger_id = p_bruger and b.status in ('afventer', 'behandles')
     for update;
-  if k.id is not null then
-    if s.kraev_fortrydelse_samtykke and coalesce(p_samtykke, false) then
-      update public.boost_koeb set fortrydelse_samtykke_kl = coalesce(fortrydelse_samtykke_kl, now()) where id = k.id;
+  -- Et ubetalt køb uden aktivitet i 7 dage er for gammelt (prisen kan være
+  -- ændret): det annulleres, og der startes et nyt. Serveren annullerer den
+  -- gamle PaymentIntent hos Stripe (gammel_pi); betales den alligevel, er
+  -- den kasseret og refunderes som dobbeltbetaling.
+  if k.id is not null and k.status = 'afventer' and k.aktivitet_kl <= now() - interval '7 days' then
+    if public.boost_koeb_annuller(k.id, k.stripe_payment_intent_id) then
+      v_gammel_pi := k.stripe_payment_intent_id;
+      v_ny := true;
     end if;
+  end if;
+  if k.id is not null and not v_ny then
+    update public.boost_koeb
+       set aktivitet_kl = now(),
+           fortrydelse_samtykke_kl = case when s.kraev_fortrydelse_samtykke and coalesce(p_samtykke, false)
+                                          then coalesce(fortrydelse_samtykke_kl, now()) else fortrydelse_samtykke_kl end
+     where id = k.id;
     return jsonb_build_object('kode', 'findes', 'id', k.id, 'point', k.point, 'beloeb_oere', k.beloeb_oere,
                               'pi', k.stripe_payment_intent_id, 'pi_forsoeg', k.pi_forsoeg, 'status', k.status);
   end if;
   if s.kraev_fortrydelse_samtykke and not coalesce(p_samtykke, false) then
-    return jsonb_build_object('kode', 'samtykke');
+    return jsonb_build_object('kode', 'samtykke', 'gammel_pi', v_gammel_pi);
   end if;
   insert into public.boost_koeb (bruger_id, point, beloeb_oere, fortrydelse_samtykke_kl)
   values (p_bruger, s.pakke_point, s.pakke_pris_oere,
           case when coalesce(p_samtykke, false) then now() end)
   returning id into v_id;
   return jsonb_build_object('kode', 'ok', 'id', v_id, 'point', s.pakke_point, 'beloeb_oere', s.pakke_pris_oere,
-                            'pi', null, 'pi_forsoeg', 0);
+                            'pi', null, 'pi_forsoeg', 0, 'gammel_pi', v_gammel_pi);
 end;
 $fn$;
 
@@ -502,7 +522,7 @@ begin
   if p_pi is null or p_pi !~ '^pi_[A-Za-z0-9_]{1,250}$' then return 'nej'; end if;
   if public.nye_betalinger_stoppet() then return 'noedstop'; end if;
   update public.boost_koeb
-     set stripe_payment_intent_id = p_pi
+     set stripe_payment_intent_id = p_pi, aktivitet_kl = now()
    where id = p_id and stripe_payment_intent_id is null and pi_forsoeg = p_forsoeg and status = 'afventer';
   return case when found then 'ok' else 'nej' end;
 end;
@@ -718,38 +738,83 @@ begin
 end;
 $fn$;
 
--- Indsigelse fra køberens bank på et boost-køb er TABT (dispute 'lost',
--- eller pengene er trukket - funds_withdrawn): banken har givet køberen
--- pengene, så pointene trækkes tilbage, så langt saldoen rækker, og købet
--- markeres til staff. Idempotent (tilbageførslen findes højst én gang pr.
--- køb). Købets status røres ikke (det er ikke en refusion fra BidHamr).
--- 'tilbagefoert' | 'allerede' | 'ukendt'
-create or replace function public.boost_koeb_indsigelse_tabt(p_charge text, p_dispute text default null)
+-- Indsigelse fra køberens bank på et boost-køb (chefens valg, til Filips
+-- godkendelse - som ved handler: intet flyttes, før indsigelsen er afgjort):
+--   - ÅBEN (needs_response, under_review, warning_needs_response,
+--     warning_under_review): brugerens boost-point er LÅST - de kan ikke
+--     bruges (boost_brug: 'laast'), til indsigelsen er afgjort. Intet trækkes.
+--   - TABT ('lost'): banken har givet køberen pengene, så pointene fra købet
+--     trækkes tilbage, så langt saldoen rækker (én gang), og købet markeres
+--     til staff. Låsen ophører.
+--   - VUNDET/lukket ('won', 'warning_closed', 'prevented'): låsen ophører af
+--     sig selv; intet trækkes.
+-- Købets status røres ikke (det er ikke en refusion fra BidHamr). Idempotent.
+-- 'tilbagefoert' | 'allerede' | 'laast' | 'afgjort' | 'ukendt'
+drop function if exists public.boost_koeb_indsigelse_tabt(text, text);
+create or replace function public.boost_indsigelse_aaben(p_status text)
+returns boolean language sql immutable set search_path = '' as $fn$
+  select coalesce(p_status in ('needs_response', 'under_review', 'warning_needs_response', 'warning_under_review'), false);
+$fn$;
+
+create or replace function public.boost_koeb_indsigelse(p_charge text, p_dispute text, p_status text)
 returns text language plpgsql security definer set search_path = '' as $fn$
 declare
   k record;
 begin
-  if p_charge is null then return 'ukendt'; end if;
-  select b.id, b.indsigelse_tabt_kl into k from public.boost_koeb b where b.stripe_charge_id = p_charge for update;
+  if p_charge is null or p_status is null then return 'ukendt'; end if;
+  select b.id, b.indsigelse_tabt_kl, b.indsigelse_status into k
+    from public.boost_koeb b where b.stripe_charge_id = p_charge for update;
   if k.id is null then return 'ukendt'; end if;
-  if k.indsigelse_tabt_kl is not null then
-    perform public.boost_koeb_tilbagefoer(k.id); -- no-op, hvis den findes
-    return 'allerede';
+
+  if p_status = 'lost' then
+    if k.indsigelse_tabt_kl is not null then
+      perform public.boost_koeb_tilbagefoer(k.id); -- no-op, hvis den findes
+      return 'allerede';
+    end if;
+    update public.boost_koeb
+       set indsigelse_status = 'lost', indsigelse_tabt_kl = now(),
+           stripe_dispute_id = coalesce(p_dispute, stripe_dispute_id),
+           kraever_opmaerksomhed = true,
+           opmaerksomhed_tekst = left(concat_ws(E'\n', opmaerksomhed_tekst,
+             'Indsigelsen fra køberens bank er tabt - pointene fra købet er trukket tilbage, så langt saldoen rakte, og brugerens point er låst op igen.'), 4000)
+     where id = k.id;
+    perform public.boost_koeb_tilbagefoer(k.id);
+    return 'tilbagefoert';
   end if;
+  -- En tabt indsigelse er en sluttilstand.
+  if k.indsigelse_tabt_kl is not null then return 'allerede'; end if;
+
+  if public.boost_indsigelse_aaben(p_status) then
+    update public.boost_koeb
+       set indsigelse_status = p_status, stripe_dispute_id = coalesce(p_dispute, stripe_dispute_id),
+           kraever_opmaerksomhed = true,
+           opmaerksomhed_tekst = case when public.boost_indsigelse_aaben(k.indsigelse_status) then opmaerksomhed_tekst
+                                      else left(concat_ws(E'\n', opmaerksomhed_tekst,
+                                        'Indsigelse fra køberens bank er åben - brugerens boost-point er låst, til den er afgjort. Pointene trækkes kun tilbage, hvis den tabes.'), 4000) end
+     where id = k.id;
+    return 'laast';
+  end if;
+
   update public.boost_koeb
-     set indsigelse_tabt_kl = now(), stripe_dispute_id = coalesce(p_dispute, stripe_dispute_id),
-         kraever_opmaerksomhed = true,
-         opmaerksomhed_tekst = left(concat_ws(E'\n', opmaerksomhed_tekst,
-           'Indsigelsen fra køberens bank er tabt - pointene er trukket tilbage, så langt saldoen rakte.'), 4000)
+     set indsigelse_status = p_status, stripe_dispute_id = coalesce(p_dispute, stripe_dispute_id)
    where id = k.id;
-  perform public.boost_koeb_tilbagefoer(k.id);
-  return 'tilbagefoert';
+  return 'afgjort';
 end;
 $fn$;
 
--- Et køb, der aldrig blev betalt, annulleres (cron, efter 7 dage - efter at
--- PaymentIntenten er annulleret hos Stripe). Kun fra 'afventer'.
-create or replace function public.boost_koeb_annuller(p_id uuid)
+-- Er brugerens boost-point låst af en åben indsigelse på et af brugerens køb?
+create or replace function public.boost_point_laast(p_bruger uuid)
+returns boolean language sql stable security definer set search_path = '' as $fn$
+  select exists (select 1 from public.boost_koeb b
+                  where b.bruger_id = p_bruger and public.boost_indsigelse_aaben(b.indsigelse_status));
+$fn$;
+
+-- Et køb, der aldrig blev betalt, annulleres (cron eller en ny start, efter
+-- 7 dage uden aktivitet - efter at PaymentIntenten er annulleret hos Stripe).
+-- Kun fra 'afventer', og kun hvis købets PaymentIntent er den, der blev
+-- annulleret (p_pi) eller der ingen er.
+drop function if exists public.boost_koeb_annuller(uuid);
+create or replace function public.boost_koeb_annuller(p_id uuid, p_pi text)
 returns boolean language plpgsql security definer set search_path = '' as $fn$
 begin
   update public.boost_koeb
@@ -757,7 +822,8 @@ begin
          tidligere_payment_intents = case when stripe_payment_intent_id is null then tidligere_payment_intents
                                           else array_append(tidligere_payment_intents, stripe_payment_intent_id) end,
          stripe_payment_intent_id = null
-   where id = p_id and status = 'afventer';
+   where id = p_id and status = 'afventer'
+     and (stripe_payment_intent_id is null or stripe_payment_intent_id = p_pi);
   return found;
 end;
 $fn$;
@@ -765,7 +831,8 @@ $fn$;
 -- Cron: hvad skal gøres? (claimet med synket_kl / refusion_naeste_kl)
 --   'synk'      åbent køb med PaymentIntent i over 15 min (mistet webhook)
 --   'refusion'  refusionen er claimet, men ikke gennemført
---   'annuller'  købet har stået ubetalt ('afventer') i 7 dage: PaymentIntenten
+--   'annuller'  købet har stået ubetalt ('afventer') i 7 dage uden aktivitet
+--               (aktivitet_kl - start/genoptag og ny PaymentIntent): PaymentIntenten
 --               annulleres hos Stripe, og købet annulleres (boost_koeb_annuller)
 -- Rækkefølge: refusioner, så nye køb, der aldrig er synket, så resten.
 create or replace function public.boost_koeb_cron(p_graense integer default 20)
@@ -779,14 +846,14 @@ begin
   with k as (
     select b.id,
            case when b.status = 'refunderes' then 'refusion'
-                when b.status = 'afventer' and b.oprettet_kl <= now() - interval '7 days' then 'annuller'
+                when b.status = 'afventer' and b.aktivitet_kl <= now() - interval '7 days' then 'annuller'
                 else 'synk' end as handling,
            b.status, b.synket_kl, b.refusion_naeste_kl, b.oprettet_kl
       from public.boost_koeb b
      where (b.status = 'refunderes' and b.refusion_forsoeg < 5
             and (b.refusion_naeste_kl is null or b.refusion_naeste_kl <= now())
             and b.refusion_anmodet_kl <= now() - interval '2 minutes')
-        or (b.status = 'afventer' and b.oprettet_kl <= now() - interval '7 days'
+        or (b.status = 'afventer' and b.aktivitet_kl <= now() - interval '7 days'
             and (b.synket_kl is null or b.synket_kl <= now() - interval '15 minutes'))
         or (b.status in ('afventer', 'behandles') and b.stripe_payment_intent_id is not null
             and b.opdateret <= now() - interval '15 minutes'
@@ -818,7 +885,7 @@ $fn$;
 --   'ok' | 'allerede' (samme nøgle) -> boost_id, start_kl, slut_kl, saldo
 --   'boostet'        auktionen har allerede et aktivt boost (slut_kl)
 --   'for_faa_point'  saldo, pris
---   'ikke_ejer' | 'ikke_aktiv' | 'slutter_snart' | 'erhverv' | 'spaerret' |
+--   'ikke_ejer' | 'ikke_aktiv' | 'slutter_snart' | 'erhverv' | 'spaerret' | 'laast' (åben indsigelse) |
 --   'ikke_fundet' | 'ugyldig'
 create or replace function public.boost_brug(p_bruger uuid, p_auktion uuid, p_noegle uuid)
 returns jsonb language plpgsql security definer set search_path = '' as $fn$
@@ -850,6 +917,10 @@ begin
 
   v_spaerret := public.boost_bruger_spaerret(p_bruger);
   if v_spaerret is not null then return jsonb_build_object('kode', v_spaerret); end if;
+  -- Åben indsigelse på et af brugerens køb: pointene er låst, til den er
+  -- afgjort (ophører af sig selv, når BidHamr vinder - eller pointene trækkes
+  -- tilbage, hvis den tabes).
+  if public.boost_point_laast(p_bruger) then return jsonb_build_object('kode', 'laast'); end if;
 
   select x.id, x.bruger_id, x.status, coalesce(x.skjult, false) as skjult, x.arkiveret_kl, x.pauset_kl,
          x.slutter_kl, coalesce(x.erhverv, false) as erhverv
@@ -1111,6 +1182,8 @@ begin
   return jsonb_build_object(
     'saldo', public.boost_saldo(v_bruger),
     'kan_bruge', v_spaerret is null,
+    -- Åben indsigelse på et af brugerens køb: pointene kan ikke bruges lige nu.
+    'point_laast', public.boost_point_laast(v_bruger),
     'spaerret', v_spaerret,
     'pakke', jsonb_build_object('point', s.pakke_point, 'pris_oere', s.pakke_pris_oere),
     'boost', jsonb_build_object('point', s.boost_point, 'timer', s.boost_timer),
@@ -1136,7 +1209,7 @@ $fn$;
 
 -- supabase.rpc("min_auktion_boost", { p_auktion }) -> for ejeren:
 -- { boostet, slut_kl, kan_booste, grund, saldo, pris, timer } ellers null.
--- grund: null | 'boostet' | 'for_faa_point' | 'ikke_aktiv' | 'slutter_snart' |
+-- grund: null | 'boostet' | 'laast' | 'for_faa_point' | 'ikke_aktiv' | 'slutter_snart' |
 -- 'erhverv' | 'spaerret'.
 create or replace function public.min_auktion_boost(p_auktion uuid)
 returns jsonb language plpgsql stable security definer set search_path = '' as $fn$
@@ -1163,6 +1236,7 @@ begin
     when public.boost_bruger_spaerret(v_bruger) is not null then coalesce(nullif(public.boost_bruger_spaerret(v_bruger), 'ikke_fundet'), 'spaerret')
     when a.status <> 'aktiv' or a.skjult or a.arkiveret_kl is not null or a.pauset_kl is not null or a.slutter_kl <= now() then 'ikke_aktiv'
     when v_slut is not null then 'boostet'
+    when public.boost_point_laast(v_bruger) then 'laast'
     when a.slutter_kl <= now() + make_interval(mins => s.min_tid_tilbage_minutter) then 'slutter_snart'
     when v_saldo < s.boost_point then 'for_faa_point'
     else null end;
@@ -1446,8 +1520,10 @@ begin
     'public.boost_koeb_refusion_fejlet(text, text)',
     'public.boost_koeb_registrer_charge_refusion(text, text, boolean)',
     'public.boost_koeb_cron(integer)',
-    'public.boost_koeb_indsigelse_tabt(text, text)',
-    'public.boost_koeb_annuller(uuid)',
+    'public.boost_koeb_indsigelse(text, text, text)',
+    'public.boost_indsigelse_aaben(text)',
+    'public.boost_point_laast(uuid)',
+    'public.boost_koeb_annuller(uuid, text)',
     'public.boost_brug(uuid, uuid, uuid)',
     'public.boost_point_synk(integer)',
     'public.boost_staff_justering(uuid, uuid, integer, text, uuid)',

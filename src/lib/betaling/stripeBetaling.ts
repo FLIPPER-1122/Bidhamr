@@ -1828,7 +1828,7 @@ async function alarmIndsigelse(d: Stripe.Dispute, piId: string | null, chId: str
         await alarmPrTilfaelde({
           noegle: `indsigelse-boost:${d.id}`,
           hvor: "betaling/indsigelse-boost",
-          fejl: `Indsigelse ${d.id} (status '${d.status}') på et køb af boost-point (køb ${bk.id}, bruger ${bk.bruger_id}, charge ${chId}). Svar banken i Stripe-dashboardet inden fristen, og justér brugerens point under Admin → brugeren, hvis indsigelsen tabes.`,
+          fejl: `Indsigelse ${d.id} (status '${d.status}') på et køb af boost-point (køb ${bk.id}, bruger ${bk.bruger_id}, charge ${chId}). Svar banken i Stripe-dashboardet inden fristen. Brugerens boost-point er låst, til indsigelsen er afgjort; tabes den, trækkes pointene fra købet automatisk tilbage, og vindes den, ophæves låsen af sig selv.`,
         });
         return;
       }
@@ -1913,9 +1913,9 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
   if (error) throw new Error(`betaling_registrer_indsigelse: ${error.message}`);
   const resultat = String(data);
   if (resultat === "ukendt") {
-    // Køb af boost-point: er indsigelsen tabt (lost / funds_withdrawn),
-    // trækkes pointene tilbage (idempotent). Kaster ved fejl, så webhooken
-    // prøver igen.
+    // Køb af boost-point: åben indsigelse låser brugerens point; 'lost' trækker
+    // pointene tilbage (idempotent); vundet ophæver låsen. Kaster ved fejl, så
+    // webhooken prøver igen.
     // Alarmen til chefen sendes stadig (alarmIndsigelse nedenfor).
     const { spejlBoostIndsigelse } = await import("@/lib/betaling/boost");
     const bk = await spejlBoostIndsigelse(d, chId);

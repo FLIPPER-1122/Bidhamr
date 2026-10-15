@@ -1534,7 +1534,7 @@ async function afstemIndsigelser(
         type: "ukendt_indsigelse",
         tilstand: d.status,
         stripeId: d.id,
-        beskrivelse: `Indsigelse ${d.id} (${d.status}) på et køb af boost-point (boost-køb ${bk.id}) - svar banken i Stripe, og justér brugerens point, hvis den tabes.`,
+        beskrivelse: `Indsigelse ${d.id} (${d.status}) på et køb af boost-point (boost-køb ${bk.id}) - svar banken i Stripe. Brugerens point er låst, til den er afgjort; tabes den, trækkes pointene automatisk tilbage.`,
         beloebStripe: d.amount,
       });
       continue;

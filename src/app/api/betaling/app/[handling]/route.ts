@@ -130,6 +130,7 @@ const BOOST_BRUG_STATUS: Record<string, number> = {
   ikke_ejer: 403,
   erhverv: 403,
   spaerret: 403,
+  laast: 409,
   boostet: 409,
   for_faa_point: 409,
   ikke_aktiv: 409,

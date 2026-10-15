@@ -72,10 +72,10 @@ firmaer får `403 erhverv`. Tallene står i databasen (`boost_indstillinger`) �
   `mine_point().kraev_samtykke` er `true` (fortrydelsesret – afventer advokaten; i dag `false`).
 - **Boost:** `boost-brug { auktion_id, noegle }`. `noegle` er en uuid, som appen laver én gang pr. skærm: samme
   nøgle giver samme boost (dobbelttryk/genforsøg trækker ikke point to gange). Fejl: `409 boostet` (har allerede et
-  aktivt boost, `slutKl`), `409 for_faa_point` (`saldo`, `pris` – vis "Køb 100 point – 39 kr."), `409 ikke_aktiv` /
+  aktivt boost, `slutKl`), `409 laast` (åben indsigelse fra banken på et køb af point – vis `fejl`), `409 for_faa_point` (`saldo`, `pris` – vis "Køb 100 point – 39 kr."), `409 ikke_aktiv` /
   `slutter_snart` (under 1 time tilbage), `403 ikke_ejer` / `erhverv` / `spaerret`.
 - **Læsning direkte fra Supabase** (ingen endpoint nødvendig):
-  - `supabase.rpc("mine_point")` → `{ saldo, kan_bruge, spaerret, pakke: { point, pris_oere }, boost: { point, timer },
+  - `supabase.rpc("mine_point")` → `{ saldo, kan_bruge, point_laast, spaerret, pakke: { point, pris_oere }, boost: { point, timer },
     point_pr_salg, kraev_samtykke, aabent_koeb, historik: [{ id, type: 'koeb' | 'optjening' | 'forbrug' |
     'tilbagefoersel' | 'staff', point, oensket_point, saldo_efter, kl, auktion_id, auktion_titel }] }`.
   - `supabase.rpc("min_auktion_boost", { p_auktion })` → for ejeren `{ boostet, slut_kl, kan_booste, grund, saldo,
@@ -105,7 +105,7 @@ giver ingen data og laver aldrig et nyt link uden login.
 | 401 | `ikke_logget_ind` | Manglende eller udløbet token |
 | 403 | `ikke_tilladt` | Fremmed `Origin` |
 | 403 | `erhverv` / `spaerret` / `ikke_ejer` | Boost: firmakonto, spærret konto, eller ikke din auktion |
-| 409 | `boostet` / `for_faa_point` / `ikke_aktiv` / `slutter_snart` / `samtykke` | Boost (se ovenfor) |
+| 409 | `boostet` / `laast` / `for_faa_point` / `ikke_aktiv` / `slutter_snart` / `samtykke` | Boost (se ovenfor) |
 | 404 | `ugyldig` / `ikke_fundet` | Ukendt handling / handlen findes ikke (eller er ikke din) |
 | 409 | `betalt` | Allerede betalt eller under behandling – hent handlen igen |
 | 409 | `vaelg_levering` | Vælg levering først |

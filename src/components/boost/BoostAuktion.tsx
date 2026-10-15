@@ -92,7 +92,9 @@ export default function BoostAuktion({ auktionId, status }: { auktionId: string;
                   ? BOOST_TEKST.kunPrivate
                   : status.grund === "spaerret"
                     ? BOOST_TEKST.spaerret
-                    : BOOST_TEKST.fejl.ikke_aktiv}
+                    : status.grund === "laast"
+                      ? BOOST_TEKST.fejl.laast
+                      : BOOST_TEKST.fejl.ikke_aktiv}
             </p>
           )}
         </>

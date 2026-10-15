@@ -242,7 +242,7 @@ describe("migrationen", () => {
        where p.pronamespace = 'public'::regnamespace
          and (p.proname like 'boost%' or p.proname in ('mine_point', 'min_auktion_boost', 'aktive_boosts',
               'faktura_planlaeg_boost', 'auktion_boosts_et_aktivt'))
-         and p.proname not in ('boost_forbyd_aendring', 'boost_koeb_forbyd_sletning', 'boost_koeb_laaste_felter', 'boost_laas_bruger')`);
+         and p.proname not in ('boost_forbyd_aendring', 'boost_koeb_forbyd_sletning', 'boost_koeb_laaste_felter', 'boost_laas_bruger', 'boost_indsigelse_aaben')`);
     expect(rows.length).toBeGreaterThanOrEqual(22);
     for (const r of rows) {
       expect(r.sd, r.proname).toBe(true);
@@ -637,40 +637,96 @@ describe("visning", () => {
 });
 
 describe("review-rettelser", () => {
-  it("tabt indsigelse på et køb: pointene trækkes tilbage én gang (idempotent); kun service role", async () => {
+  it("indsigelse på et køb: åben (også med trukne penge) låser brugen men trækker intet; lost trækker én gang; won ophæver låsen", async () => {
+    const indsigelse = (ch: string, status: string) =>
+      en<{ v: string }>(`select public.boost_koeb_indsigelse($1, 'dp_x', $2) as v`, [ch, status]).then((r) => r.v);
+    const laast = async () => (await en<{ v: boolean }>(`select public.boost_point_laast($1) as v`, [PRIVAT2])).v;
+    const charge = async (id: string) => (await en<{ c: string }>(`select stripe_charge_id as c from public.boost_koeb where id = $1`, [id])).c;
+
+    // 1) Åben indsigelse (needs_response - Stripe har trukket 39 kr.): intet trækkes, men brug er låst.
     await nulstil(PRIVAT2);
-    const k = await koebtPoint(PRIVAT2); // 100
-    await j(`select public.boost_staff_justering($1, $2, -30, 'brugt', $3) as v`, [CHEF, PRIVAT2, randomUUID()]); // 70
-    const ch = (await en<{ c: string }>(`select stripe_charge_id as c from public.boost_koeb where id = $1`, [k.id])).c;
-    expect((await en<{ v: string }>(`select public.boost_koeb_indsigelse_tabt($1, 'dp_1') as v`, [ch])).v).toBe("tilbagefoert");
+    const k1 = await koebtPoint(PRIVAT2); // 100
+    const a1 = await auktion(PRIVAT2);
+    expect(await indsigelse(await charge(k1.id), "needs_response")).toBe("laast");
+    expect(await saldo(PRIVAT2)).toBe(100);
+    expect(await laast()).toBe(true);
+    expect((await brug(PRIVAT2, a1)).kode).toBe("laast");
+    expect(await saldo(PRIVAT2)).toBe(100);
+    const minAuktion = await (async () => {
+      await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${PRIVAT2}', false);`);
+      try {
+        return (await en<{ v: { grund: string; kan_booste: boolean } }>(`select public.min_auktion_boost($1) as v`, [a1])).v;
+      } finally {
+        await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false);`);
+      }
+    })();
+    expect(minAuktion).toMatchObject({ grund: "laast", kan_booste: false });
+    expect(await indsigelse(await charge(k1.id), "under_review")).toBe("laast");
+    // 2) Vundet: låsen ophører af sig selv, intet trækkes.
+    expect(await indsigelse(await charge(k1.id), "won")).toBe("afgjort");
+    expect(await laast()).toBe(false);
+    expect(await saldo(PRIVAT2)).toBe(100);
+    expect((await brug(PRIVAT2, a1)).kode).toBe("ok");
+    expect(await saldo(PRIVAT2)).toBe(50);
+
+    // 3) Tabt (lost): pointene trækkes tilbage, så langt saldoen rækker - én gang.
+    const k2 = await koebtPoint(PRIVAT2); // 150
+    await j(`select public.boost_staff_justering($1, $2, -80, 'brugt', $3) as v`, [CHEF, PRIVAT2, randomUUID()]); // 70
+    expect(await indsigelse(await charge(k2.id), "needs_response")).toBe("laast");
+    expect(await saldo(PRIVAT2)).toBe(70);
+    expect(await indsigelse(await charge(k2.id), "lost")).toBe("tilbagefoert");
     expect(await saldo(PRIVAT2)).toBe(0);
-    expect((await en<{ v: string }>(`select public.boost_koeb_indsigelse_tabt($1, 'dp_1') as v`, [ch])).v).toBe("allerede");
-    expect((await en<{ v: string }>(`select public.boost_koeb_indsigelse_tabt('ch_findes_ikke') as v`)).v).toBe("ukendt");
-    const t = await en(`select point, oensket_point from public.boost_posteringer where boost_koeb_id = $1 and type = 'tilbagefoersel'`, [k.id]);
+    expect(await laast()).toBe(false);
+    expect(await indsigelse(await charge(k2.id), "lost")).toBe("allerede");
+    expect(await indsigelse(await charge(k2.id), "needs_response")).toBe("allerede"); // tabt er en sluttilstand
+    expect(await laast()).toBe(false);
+    expect(await indsigelse("ch_findes_ikke", "lost")).toBe("ukendt");
+    const t = await en(`select point, oensket_point from public.boost_posteringer where boost_koeb_id = $1 and type = 'tilbagefoersel'`, [k2.id]);
     expect(t).toEqual({ point: -70, oensket_point: 100 });
-    const s = await en(`select status, kraever_opmaerksomhed, stripe_dispute_id, (indsigelse_tabt_kl is not null) as tabt
-                          from public.boost_koeb where id = $1`, [k.id]);
-    expect(s).toEqual({ status: "betalt", kraever_opmaerksomhed: true, stripe_dispute_id: "dp_1", tabt: true });
+    // k1 (vundet) har ingen tilbageførsel.
+    const n = await en<{ n: number }>(`select count(*)::int as n from public.boost_posteringer where boost_koeb_id = $1 and type = 'tilbagefoersel'`, [k1.id]);
+    expect(n.n).toBe(0);
+    const s = await en(`select status, kraever_opmaerksomhed, indsigelse_status, (indsigelse_tabt_kl is not null) as tabt
+                          from public.boost_koeb where id = $1`, [k2.id]);
+    expect(s).toEqual({ status: "betalt", kraever_opmaerksomhed: true, indsigelse_status: "lost", tabt: true });
     const r = await en<Record<string, boolean>>(`
-      select has_function_privilege('service_role', 'public.boost_koeb_indsigelse_tabt(text,text)', 'execute') as sr,
-             has_function_privilege('authenticated', 'public.boost_koeb_indsigelse_tabt(text,text)', 'execute') as auth,
-             has_function_privilege('anon', 'public.boost_koeb_indsigelse_tabt(text,text)', 'execute') as anon`);
+      select has_function_privilege('service_role', 'public.boost_koeb_indsigelse(text,text,text)', 'execute') as sr,
+             has_function_privilege('authenticated', 'public.boost_koeb_indsigelse(text,text,text)', 'execute') as auth,
+             has_function_privilege('anon', 'public.boost_koeb_indsigelse(text,text,text)', 'execute') as anon`);
     expect(r).toEqual({ sr: true, auth: false, anon: false });
   });
 
-  it("cron: et køb, der har stået ubetalt i 7 dage, skal annulleres; nye køb først", async () => {
+  it("cron og start: 7 dage uden aktivitet annullerer købet (kun med samme PaymentIntent); start laver et nyt", async () => {
     const gammel = await en<{ id: string }>(
-      `insert into public.boost_koeb (bruger_id, point, beloeb_oere, oprettet_kl, stripe_payment_intent_id)
-       values ($1, 100, 3900, now() - interval '8 days', 'pi_gammel_boost') returning id`, [CHEF]);
+      `insert into public.boost_koeb (bruger_id, point, beloeb_oere, oprettet_kl, aktivitet_kl, stripe_payment_intent_id)
+       values ($1, 100, 3900, now() - interval '30 days', now() - interval '8 days', 'pi_gammel_boost') returning id`, [CHEF]);
     const { rows } = await db.query<{ id: string; handling: string }>(`select * from public.boost_koeb_cron(50)`);
     expect(rows.find((x) => x.id === gammel.id)?.handling).toBe("annuller");
-    expect((await en<{ v: boolean }>(`select public.boost_koeb_annuller($1) as v`, [gammel.id])).v).toBe(true);
+    // En anden PaymentIntent end købets: annulleres ikke.
+    expect((await en<{ v: boolean }>(`select public.boost_koeb_annuller($1, 'pi_anden') as v`, [gammel.id])).v).toBe(false);
+    expect((await en<{ v: boolean }>(`select public.boost_koeb_annuller($1, 'pi_gammel_boost') as v`, [gammel.id])).v).toBe(true);
     const k = await en(`select status, stripe_payment_intent_id, tidligere_payment_intents, (annulleret_kl is not null) as a
                           from public.boost_koeb where id = $1`, [gammel.id]);
     expect(k).toEqual({ status: "annulleret", stripe_payment_intent_id: null, tidligere_payment_intents: ["pi_gammel_boost"], a: true });
-    // Betales den annullerede PaymentIntent alligevel: dobbeltbetaling (refunderes).
     expect((await j(`select public.boost_koeb_registrer('pi_gammel_boost', 'succeeded', 'ch_g', 3900, null) as v`)).kode).toBe("kasseret");
-    expect((await en<{ v: boolean }>(`select public.boost_koeb_annuller($1) as v`, [gammel.id])).v).toBe(false);
+    expect((await en<{ v: boolean }>(`select public.boost_koeb_annuller($1, 'pi_gammel_boost') as v`, [gammel.id])).v).toBe(false);
+
+    // Seneste aktivitet tæller - ikke oprettelsen: et gammelt køb med ny aktivitet annulleres ikke.
+    const aktiv = await en<{ id: string }>(
+      `insert into public.boost_koeb (bruger_id, point, beloeb_oere, oprettet_kl, aktivitet_kl)
+       values ($1, 100, 3900, now() - interval '30 days', now() - interval '1 day') returning id`, [ADMIN]);
+    const { rows: r2 } = await db.query<{ id: string; handling: string }>(`select * from public.boost_koeb_cron(50)`);
+    expect(r2.find((x) => x.id === aktiv.id)?.handling).not.toBe("annuller");
+    const s1 = await koebStart(ADMIN);
+    expect(s1).toMatchObject({ kode: "findes", id: aktiv.id });
+
+    // Start på et for gammelt køb: det annulleres, og der laves et nyt (gammel_pi til serveren).
+    await db.query(`update public.boost_koeb set aktivitet_kl = now() - interval '8 days', stripe_payment_intent_id = 'pi_for_gammel' where id = $1`, [aktiv.id]);
+    const s2 = await koebStart(ADMIN);
+    expect(s2.kode).toBe("ok");
+    expect(s2.id).not.toBe(aktiv.id);
+    expect(s2.gammel_pi).toBe("pi_for_gammel");
+    expect((await en<{ status: string }>(`select status from public.boost_koeb where id = $1`, [aktiv.id])).status).toBe("annulleret");
   });
 
   it("aktive_boosts viser ikke skjulte, arkiverede eller pausede auktioner", async () => {
@@ -749,18 +805,6 @@ describe("fakturaer", () => {
     // Fakturaen hænger på købet - ikke på en handel.
     expect(await fejlkode(`insert into public.fakturaer (dokument, part, bruger_id, linjer, beloeb_oere, moms_oere, betalt_dato, slags)
                           values ('faktura', 'koeber', '${PRIVAT}', '[]', 1, 0, current_date, 'boost')`)).toBe("23514");
-  });
-});
-
-describe("tabt indsigelse (webhookens regel)", () => {
-  it("lost og trukne penge tæller som tabt; won og genindsatte penge gør ikke", async () => {
-    const { boostIndsigelseTabt } = await import("@/lib/betaling/boost");
-    const bt = (...a: number[]) => a.map((amount) => ({ amount })) as never;
-    expect(boostIndsigelseTabt({ status: "lost", balance_transactions: bt() })).toBe(true);
-    expect(boostIndsigelseTabt({ status: "needs_response", balance_transactions: bt(-3900) })).toBe(true);
-    expect(boostIndsigelseTabt({ status: "under_review", balance_transactions: bt(-3900, 3900) })).toBe(false);
-    expect(boostIndsigelseTabt({ status: "won", balance_transactions: bt(-3900) })).toBe(false);
-    expect(boostIndsigelseTabt({ status: "needs_response", balance_transactions: bt() })).toBe(false);
   });
 });
 

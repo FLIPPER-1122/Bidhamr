@@ -79,6 +79,7 @@ export const BOOST_TEKST = {
     erhverv: "Boost er kun for private sælgere. Firmakonti kan ikke købe eller bruge boost.",
     spaerret: "Din konto kan ikke bruge boost lige nu. Kontakt BidHamr, hvis du har spørgsmål.",
     ikke_fundet: "Auktionen findes ikke.",
+    laast: "Dine boost-point er midlertidigt låst, mens en betaling bliver undersøgt.",
     fejl: "Noget gik galt. Prøv igen om lidt.",
   },
 } as const;

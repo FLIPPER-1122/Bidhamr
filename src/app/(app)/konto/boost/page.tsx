@@ -14,6 +14,7 @@ export const metadata: Metadata = { title: "Boost-point", robots: { index: false
 type MinePoint = {
   saldo: number;
   kan_bruge: boolean;
+  point_laast: boolean;
   spaerret: string | null;
   pakke: { point: number; pris_oere: number };
   boost: { point: number; timer: number };
@@ -114,6 +115,11 @@ export default async function BoostSide({
               {BOOST_TEKST.saldoLabel}
             </h2>
             <p className="mt-1 text-[32px] leading-tight font-bold text-tekst">{BOOST_TEKST.saldo(p.saldo)}</p>
+            {p.point_laast && (
+              <p role="status" className="mt-2 rounded-lg border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
+                {BOOST_TEKST.fejl.laast}
+              </p>
+            )}
             <ul className="mt-4 space-y-1.5 text-sm text-tekst-daempet">
               {BOOST_TEKST.saadan(
                 p.pakke.point,

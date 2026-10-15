@@ -174,7 +174,11 @@ export async function startBoostKoeb(
     const admin = createAdminClient();
     const { data, error } = await admin.rpc("boost_koeb_start", { p_bruger: brugerId, p_samtykke: samtykke === true });
     if (error) throw new Error(`boost_koeb_start: ${error.message}`);
-    const s = data as { kode?: string; id?: string } | null;
+    const s = data as { kode?: string; id?: string; gammel_pi?: string | null } | null;
+    // Et gammelt ubetalt køb (7 dage uden aktivitet) er annulleret i
+    // databasen: dets PaymentIntent annulleres også hos Stripe (bliver den
+    // alligevel betalt, er den kasseret og refunderes som dobbeltbetaling).
+    if (s?.gammel_pi) await annullerGammelPi(s.gammel_pi);
     if ((s?.kode !== "ok" && s?.kode !== "findes") || !s.id) {
       return START_FEJL[s?.kode ?? ""] ?? { fejl: GENERISK, kode: "fejl" };
     }
@@ -207,6 +211,24 @@ export async function startBoostKoeb(
 }
 
 const OPDATERBARE: Stripe.PaymentIntent.Status[] = ["requires_payment_method", "requires_confirmation"];
+const AABNE_PI: Stripe.PaymentIntent.Status[] = ["requires_payment_method", "requires_confirmation", "requires_action"];
+
+// Annullerer en kasseret PaymentIntent hos Stripe, hvis den stadig kan
+// betales. Kaster aldrig (en betalt kasseret PaymentIntent refunderes af
+// spejlBoostPi som dobbeltbetaling).
+async function annullerGammelPi(piId: string): Promise<void> {
+  try {
+    const pi = await getStripe().paymentIntents.retrieve(piId);
+    if (!AABNE_PI.includes(pi.status)) return;
+    await getStripe().paymentIntents.cancel(
+      piId,
+      { cancellation_reason: "abandoned" },
+      { idempotencyKey: `bidhamr-boost-annuller-${piId}` },
+    );
+  } catch (err) {
+    await logDriftFejl({ kilde: "server", hvor: "Boost: annullér gammel PaymentIntent", fejl: err });
+  }
+}
 
 function metadata(k: BoostKoebRaekke): Stripe.MetadataParam {
   const db = egenDatabase();
@@ -542,28 +564,25 @@ export async function spejlBoostChargeRefusion(charge: Stripe.Charge): Promise<s
   return kode;
 }
 
-// Er indsigelsen tabt for BidHamr? Status 'lost', eller pengene er trukket
-// (funds_withdrawn: nettobeløbet af indsigelsens bevægelser er negativt) og
-// ikke vundet tilbage.
-export function boostIndsigelseTabt(d: Pick<Stripe.Dispute, "status" | "balance_transactions">): boolean {
-  if (d.status === "lost") return true;
-  if (d.status === "won") return false;
-  const netto = (d.balance_transactions ?? []).reduce((s, bt) => s + Number(bt.amount ?? 0), 0);
-  return netto < 0;
-}
-
-// Indsigelse på et boost-køb (webhooken): tabes den, trækkes pointene
-// tilbage, så langt saldoen rækker (idempotent i databasen). Svar: kode eller
-// null (ikke tabt / ikke et boost-køb).
-export async function spejlBoostIndsigelse(d: Stripe.Dispute, chargeId: string): Promise<string | null> {
-  if (!boostIndsigelseTabt(d)) return null;
-  const { data, error } = await createAdminClient().rpc("boost_koeb_indsigelse_tabt", {
+// Indsigelse på et boost-køb (webhooken). Som ved handler (chefens valg):
+//   - åben (needs_response, under_review, warning_*): brugerens point er
+//     LÅST (kan ikke bruges) - intet trækkes, heller ikke når pengene er
+//     trukket midlertidigt (funds_withdrawn),
+//   - 'lost' (lukket og tabt): pointene fra købet trækkes tilbage, så langt
+//     saldoen rækker (én gang),
+//   - vundet/lukket: låsen ophører af sig selv.
+// Databasen gør det idempotent (boost_koeb_indsigelse). Svar: 'laast' |
+// 'tilbagefoert' | 'allerede' | 'afgjort' | 'ukendt' (ikke et boost-køb) eller
+// null (migrationen er ikke kørt).
+export async function spejlBoostIndsigelse(d: Pick<Stripe.Dispute, "id" | "status">, chargeId: string): Promise<string | null> {
+  const { data, error } = await createAdminClient().rpc("boost_koeb_indsigelse", {
     p_charge: chargeId,
     p_dispute: d.id,
+    p_status: d.status,
   });
   if (error) {
     if (manglerBoost(error)) return null;
-    throw new Error(`boost_koeb_indsigelse_tabt: ${error.message}`);
+    throw new Error(`boost_koeb_indsigelse: ${error.message}`);
   }
   return String(data);
 }
@@ -580,6 +599,7 @@ export type BoostBrugKode =
   | "slutter_snart"
   | "erhverv"
   | "spaerret"
+  | "laast"
   | "ikke_fundet"
   | "ugyldig"
   | "fejl";
@@ -696,9 +716,13 @@ export async function koerBoostCron(): Promise<BoostCronResultat | null> {
             );
           }
         }
-        const { error: aFejl } = await admin.rpc("boost_koeb_annuller", { p_id: k.id });
+        // Kun hvis købets PaymentIntent stadig er den, vi annullerede.
+        const { data: ok, error: aFejl } = await admin.rpc("boost_koeb_annuller", {
+          p_id: k.id,
+          p_pi: k.stripe_payment_intent_id,
+        });
         if (aFejl) throw new Error(`boost_koeb_annuller: ${aFejl.message}`);
-        r.annulleret++;
+        if (ok === true) r.annulleret++;
       }
     } catch (err) {
       r.fejl++;
