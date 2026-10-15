@@ -25,6 +25,8 @@ import { kroner } from "@/lib/kroner";
 import { fragtOere } from "@/lib/betaling/beregn";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
 import MitIDMaerke from "@/components/mitid/MitIDMaerke";
+import PopulaerSaelgerMaerke from "@/components/PopulaerSaelgerMaerke";
+import { erPopulaerSaelger } from "@/lib/populaerSaelger";
 import { hentMitIdStatus } from "@/lib/mitid/status";
 import { ERHVERVSSAELGER, ERHVERV_GPSR, FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 
@@ -249,6 +251,7 @@ export default async function AuktionPage({
     { data: saelger },
     minKontoType,
     minMitId,
+    saelgerPopulaer,
   ] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     bruger ? getStaffRole() : Promise.resolve(null),
@@ -269,6 +272,8 @@ export default async function AuktionPage({
     mitId && mitId !== auktion.bruger_id ? hentKontoType(mitId) : Promise.resolve(null),
     // MitID kræves før første bud (BHV01) - budpanelet viser knappen i stedet.
     mitId && mitId !== auktion.bruger_id ? hentMitIdStatus(mitId) : Promise.resolve(null),
+    // "Populær sælger" (mindst 50 gennemførte salg) - offentligt.
+    erPopulaerSaelger(supabase, auktion.bruger_id),
   ]);
   const erhvervAuktion = auktion.erhverv === true;
   const erFirmakonto = minKontoType === "erhverv";
@@ -635,9 +640,10 @@ export default async function AuktionPage({
                   >
                     {sælgerNavn}
                   </Link>
-                  {!erhvervAuktion && saelger?.mitid_verificeret_kl && (
-                    <div className="mt-1">
-                      <MitIDMaerke lille />
+                  {((!erhvervAuktion && saelger?.mitid_verificeret_kl) || saelgerPopulaer) && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {!erhvervAuktion && saelger?.mitid_verificeret_kl && <MitIDMaerke lille />}
+                      {saelgerPopulaer && <PopulaerSaelgerMaerke lille />}
                     </div>
                   )}
                   {mitId !== auktion.bruger_id && !blokeretMedSaelger && !skjult && (
