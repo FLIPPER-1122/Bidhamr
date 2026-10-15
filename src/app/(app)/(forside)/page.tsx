@@ -8,6 +8,7 @@ import Ikon, { type IkonNavn } from "@/components/Ikon";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
 import { createClient } from "@/lib/supabase/server";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
+import { markerPopulaereSaelgere } from "@/lib/populaerSaelger";
 import { sideUrl } from "@/lib/seo";
 import { FORSIDE } from "@/lib/tekster/forside";
 import heroBillede from "../../../../public/forside/hero.webp";
@@ -15,7 +16,7 @@ import heroBillede from "../../../../public/forside/hero.webp";
 // Kun de kolonner, kortene bruger. Typet som string: Supabase-typernes
 // select-parser kan ikke læse "ø" i nuværende_bud.
 const KORT_KOLONNER: string =
-  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv";
+  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv, bruger_id";
 const ANTAL_KORT = 8;
 type KortRaekke = Parameters<typeof mapAuctionTilKort>[0];
 type Kort = ReturnType<typeof mapAuctionTilKort>;
@@ -115,7 +116,9 @@ const hentForsideAuktioner = cache(async () => {
     .filter((a) => !vist.has(a.id))
     .slice(0, ANTAL_KORT)
     .map(mapAuctionTilKort);
-  return { slutterSnart, nyeste };
+  // "Populær sælger" på kortene: ét samlet opslag for begge lister.
+  const markeret = await markerPopulaereSaelgere([...slutterSnart, ...nyeste]);
+  return { slutterSnart: markeret.slice(0, slutterSnart.length), nyeste: markeret.slice(slutterSnart.length) };
 });
 
 // Hero, tryghed, kategorier, "Sådan virker det" og erhverv afhænger ikke af
