@@ -18,7 +18,7 @@ import AdminBadge from "@/components/admin/AdminBadge";
 import AdminListe, { type Kolonne } from "@/components/admin/AdminListe";
 import HandelHandlinger, { AKTIVE, kr } from "@/components/admin/handler/HandelHandlinger";
 import { UUID_RE, handelChatSti } from "@/lib/moderationLog";
-import { SPORINGS_NAVN, erSporingsType } from "@/lib/fragt/types";
+import { SPORINGS_NAVN, erSporingsType, transportoerNavn } from "@/lib/fragt/types";
 import {
   fragtAfslutHaengendeLabel,
   fragtProevSporingIgen,
@@ -58,6 +58,7 @@ type FragtRow = {
   type: "udgaaende" | "retur";
   status: string;
   fragtfirma: string;
+  transportoer: string | null;
   sporingsnummer: string | null;
   opmaerksomhed_tekst: string | null;
   opdateret_kl: string;
@@ -134,7 +135,7 @@ async function HandlerIndhold({
     supabase.rpc("admin_haengende_handler"),
     supabase
       .from("forsendelser")
-      .select("id, trade_id, type, status, fragtfirma, sporingsnummer, opmaerksomhed_tekst, opdateret_kl")
+      .select("id, trade_id, type, status, fragtfirma, transportoer, sporingsnummer, opmaerksomhed_tekst, opdateret_kl")
       .eq("kraever_opmaerksomhed", true)
       .order("opdateret_kl", { ascending: true })
       .limit(200),
@@ -400,6 +401,7 @@ async function HandlerIndhold({
                     </Link>
                     <p className="mt-0.5 text-xs text-tekst-svag">
                       {f.type === "retur" ? "Returpakke" : "Pakke til køber"} · {forsendelseStatus(f.status)}
+                      {transportoerNavn(f.transportoer) && ` · ${transportoerNavn(f.transportoer)}`}
                       {f.sporingsnummer && (
                         <>
                           {" · Sporing: "}

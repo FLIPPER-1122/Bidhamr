@@ -41,7 +41,7 @@ import { hentForsendelserAction } from "@/app/actions/fragt";
 import type { ForsendelseVisning } from "@/lib/fragt/handlinger";
 import SporingTidslinje from "@/components/fragt/SporingTidslinje";
 import Ikon from "@/components/Ikon";
-import { PAKKESTOERRELSE_NAVN, erPakkestoerrelse } from "@/lib/fragt/types";
+import { PAKKESTOERRELSE_NAVN, erPakkestoerrelse, transportoerNavn } from "@/lib/fragt/types";
 import { fragtLabelsAktiv, fragtReturlabelAktiv, labelGraense } from "@/lib/fragt";
 import ReturlabelBoks, { type Afsender as ReturAfsender, type ReturfragtVisning } from "@/components/fragt/ReturlabelBoks";
 import { hentKontoType } from "@/lib/supabase/bruger";
@@ -244,11 +244,12 @@ export default async function HandelDetalje({
       ? Promise.all([
           supabase
             .from("handel_levering")
-            .select("maade, fragtfirma, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by")
+            .select("maade, fragtfirma, transportoer, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by")
             .eq("trade_id", handel.id)
             .maybeSingle<{
               maade: string;
               fragtfirma: string | null;
+              transportoer: string | null;
               pakkeshop_navn: string | null;
               pakkeshop_adresse: string | null;
               pakkeshop_postnummer: string | null;
@@ -303,11 +304,12 @@ export default async function HandelDetalje({
   const udgaaende = forsendelser.filter((f) => f.type === "udgaaende");
   const forsendelse = udgaaende.find((f) => f.status !== "annulleret") ?? null;
   const lev = fragtInfo?.levering ?? null;
+  const levFirma = transportoerNavn(lev?.transportoer);
   const leveringTekst = !lev
     ? null
     : lev.maade === "doer"
-      ? "Køberens adresse (levering hjem)"
-      : `Pakkeshop: ${[
+      ? `Køberens adresse (levering hjem${levFirma ? ` med ${levFirma}` : ""})`
+      : `Pakkeshop${levFirma ? ` hos ${levFirma}` : ""}: ${[
           lev.pakkeshop_navn,
           lev.pakkeshop_adresse,
           [lev.pakkeshop_postnummer, lev.pakkeshop_by].filter(Boolean).join(" "),
@@ -400,6 +402,12 @@ export default async function HandelDetalje({
     }
   }
   const visReturlabel = erKoeber && !!returfragt && !!returAfsender;
+  // Returen sendes med samme fragtfirma som pakken ud.
+  const returTransportoer =
+    returForsendelse?.transportoer ??
+    forsendelser.find((f) => f.type === "udgaaende" && f.status !== "annulleret" && f.status !== "fejlet")?.transportoer ??
+    lev?.transportoer ??
+    null;
   const visReturPaaVej =
     erSaelger && returSag && !!returForsendelse && !["opretter", "annulleres", "fejlet"].includes(returForsendelse.status);
 
@@ -445,6 +453,7 @@ export default async function HandelDetalje({
             info={returfragt}
             afsender={returAfsender}
             venterPaaBekraeftelse={returfragtRetur}
+            transportoer={returTransportoer}
           />
         )}
         {visReturPaaVej && returForsendelse && (
@@ -453,8 +462,9 @@ export default async function HandelDetalje({
               Returen er på vej
             </h2>
             <p className="mt-1 text-sm text-tekst-svag">
-              Køberen har betalt returfragten og fået en returkode. Pakken sendes til en pakkeshop tæt på dig – du
-              får besked, når den er klar til afhentning.
+              {returTransportoer === "gls"
+                ? "Køberen har betalt returfragten og fået en returkode. GLS bringer pakken til din adresse."
+                : "Køberen har betalt returfragten og fået en returkode. Pakken sendes til en pakkeshop tæt på dig – du får besked, når den er klar til afhentning."}
             </p>
             <div className="mt-4">
               <SporingTidslinje f={returForsendelse} />
@@ -924,6 +934,7 @@ export default async function HandelDetalje({
             levering={leveringTekst}
             brugteLabels={udgaaende.length}
             labelGraense={labelGraense(lev?.fragtfirma ?? forsendelse?.fragtfirma)}
+            transportoer={lev?.transportoer ?? null}
           />
         )}
 

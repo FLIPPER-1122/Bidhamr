@@ -46,11 +46,15 @@ export async function hentFragtpriser() {
   return fragtpriser();
 }
 
+// transportoer: køberens valgte fragtfirma (Shipmondo: "dao" | "gls" |
+// "postnord"). indlevering: shops, hvor man kan aflevere en pakke (retur).
 export async function soegPakkeshopsAction(q: {
   postnummer: string;
   adresse?: string | null;
   by?: string | null;
   antal?: number;
+  transportoer?: string | null;
+  indlevering?: boolean;
 }) {
   const u = await bruger();
   if (!u) return { fejl: "Du skal være logget ind." };

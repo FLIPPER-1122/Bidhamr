@@ -5,12 +5,14 @@
 //
 // Køberen betaler selv returfragten (Filip, 13. okt. 2026) på en lille
 // checkout her: adresse + mobil (til labelen) og Stripes Payment Element.
-// Returkoden (DAO labelfri, Shop2Shop til en pakkeshop tæt på sælgeren) laves
+// Fragtfirmaet er det samme som pakken ud (Shipmondo: DAO-kode, PostNord- og
+// GLS-QR-kode - se src/lib/fragt/shipmondo.ts). Returkoden laves
 // og vises FØRST, når Stripe har bekræftet betalingen (webhook). Indtil da
 // viser boksen "venter", og siden opdaterer sig selv.
 //
 // Fejl fra serveren er danske og vises direkte.
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Ikon from "@/components/Ikon";
@@ -23,7 +25,7 @@ import {
   startReturfragtAction,
 } from "@/app/actions/fragt";
 import type { ForsendelseVisning } from "@/lib/fragt/handlinger";
-import type { Pakkeshop } from "@/lib/fragt/types";
+import { TRANSPORTOER_INFO, erTransportoer, type Pakkeshop, type TransportoerInfo } from "@/lib/fragt/types";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { kroner } from "@/lib/kroner";
 import { useHydreret } from "@/lib/useHydreret";
@@ -165,8 +167,11 @@ export default function ReturlabelBoks({
   info,
   afsender,
   venterPaaBekraeftelse,
+  transportoer = null,
 }: {
   tradeId: string;
+  // Fragtfirmaet (samme som pakken ud). null = DAO-teksterne.
+  transportoer?: string | null;
   // Den aktive returforsendelse (ikke annulleret), eller null.
   retur: ForsendelseVisning | null;
   info: ReturfragtVisning;
@@ -181,8 +186,12 @@ export default function ReturlabelBoks({
   const behandles = info.status === "behandles" || (venterPaaBekraeftelse && info.status === "afventer");
   const venterPaaKode = info.status === "betalt" && !labelKlar && !info.labelFejl && !info.labelAnnulleret;
   useAutoOpdater(behandles || venterPaaKode);
+  const t = retur?.transportoer ?? transportoer;
+  const firma = erTransportoer(t) ? t : null;
 
-  if (labelKlar && retur) return <KodeKlar id={id} retur={retur} postnummer={afsender.postnummer} />;
+  if (labelKlar && retur) {
+    return <KodeKlar id={id} retur={retur} postnummer={afsender.postnummer} firmaInfo={firmaInfo(t)} firma={firma} />;
+  }
 
   if (info.status === "refunderes") {
     return (
@@ -237,8 +246,25 @@ export default function ReturlabelBoks({
       beloebOere={info.beloebOere}
       start={afsender}
       refunderet={info.status === "refunderet"}
+      firmaInfo={firmaInfo(t)}
     />
   );
+}
+
+function firmaInfo(t: string | null | undefined): TransportoerInfo {
+  return erTransportoer(t) ? TRANSPORTOER_INFO[t] : TRANSPORTOER_INFO.dao;
+}
+
+// Hvordan køberen afleverer returen, og hvor den ender.
+function returTekst(f: TransportoerInfo): string {
+  const aflever =
+    f.returLabelfri === "qr"
+      ? `en QR-kode, som du viser i en ${f.shopNavn}, når du afleverer pakken`
+      : f.returLabelfri === "kode"
+        ? `en kode, som du viser i en ${f.shopNavn}, når du afleverer pakken`
+        : `en label, som du printer og sætter på pakken, før du afleverer den i en ${f.shopNavn}`;
+  const til = f === TRANSPORTOER_INFO.gls ? "Pakken sendes til sælgerens adresse." : "Pakken sendes til en pakkeshop tæt på sælgeren.";
+  return `Når betalingen er gennemført, får du ${aflever}. ${til}`;
 }
 
 function Boks({ id, titel, children }: { id: string; titel: string; children: React.ReactNode }) {
@@ -259,12 +285,14 @@ function BetalReturfragt({
   beloebOere,
   start,
   refunderet,
+  firmaInfo: f,
 }: {
   id: string;
   tradeId: string;
   beloebOere: number;
   start: Afsender;
   refunderet: boolean;
+  firmaInfo: TransportoerInfo;
 }) {
   const router = useRouter();
   const { a, saet, feltFejl, setFeltFejl } = useAfsender(start);
@@ -348,9 +376,8 @@ function BetalReturfragt({
         </p>
       )}
       <p className="mt-1 text-sm text-tekst-svag">
-        Du betaler selv returfragten: <span className="font-semibold text-tekst">{kroner(pris)}</span>. Når betalingen er
-        gennemført, får du en kode, som du viser i en daoSHOP, når du afleverer pakken. Pakken sendes til en pakkeshop
-        tæt på sælgeren. Returfragten refunderes ikke.
+        Du betaler selv returfragten: <span className="font-semibold text-tekst">{kroner(pris)}</span>. {returTekst(f)}{" "}
+        Returfragten refunderes ikke.
       </p>
       <FejlBoks fejl={fejl} />
       {betaling ? (
@@ -441,15 +468,28 @@ function ProevIgen({ tradeId, fejl: startFejl, start }: { tradeId: string; fejl:
   );
 }
 
-// Efter betaling: koden, PDF og den nærmeste pakkeshop (ved køberens adresse).
-function KodeKlar({ id, retur, postnummer }: { id: string; retur: ForsendelseVisning; postnummer: string }) {
+// Efter betaling: koden/QR'en, PDF og den nærmeste pakkeshop (ved køberens
+// adresse) hos samme fragtfirma.
+function KodeKlar({
+  id,
+  retur,
+  postnummer,
+  firmaInfo: f,
+  firma,
+}: {
+  id: string;
+  retur: ForsendelseVisning;
+  postnummer: string;
+  firmaInfo: TransportoerInfo;
+  firma: string | null;
+}) {
   const [fejl, setFejl] = useState<string | null>(null);
   const [shop, setShop] = useState<Pakkeshop | null>(null);
 
   useEffect(() => {
     if (!slaaPostnummerOp(postnummer)) return;
     let aktiv = true;
-    soegPakkeshopsAction({ postnummer, antal: 1 })
+    soegPakkeshopsAction({ postnummer, antal: 1, transportoer: firma, indlevering: true })
       .then((r) => {
         if (aktiv && "ok" in r && r.pakkeshops[0]) setShop(r.pakkeshops[0]);
       })
@@ -457,7 +497,7 @@ function KodeKlar({ id, retur, postnummer }: { id: string; retur: ForsendelseVis
     return () => {
       aktiv = false;
     };
-  }, [postnummer]);
+  }, [postnummer, firma]);
 
   async function aabnLabel(fid: string) {
     setFejl(null);
@@ -478,9 +518,26 @@ function KodeKlar({ id, retur, postnummer }: { id: string; retur: ForsendelseVis
 
   return (
     <Boks id={id} titel="Din returkode er klar">
-      {retur.labelfriKode && (
+      {retur.qrBillede && (
         <div className="mt-4 rounded-xl bg-groen-lys p-4 text-center sm:p-5">
-          <p className="text-sm font-semibold text-groen-mork">Vis denne kode i en daoSHOP</p>
+          <p className="text-sm font-semibold text-groen-mork">Vis QR-koden i en {f.shopNavn}</p>
+          <Image
+            src={retur.qrBillede}
+            alt={`QR-kode til at aflevere returpakken hos ${f.navn}`}
+            width={220}
+            height={220}
+            unoptimized
+            className="mx-auto mt-3 h-[220px] w-[220px] rounded-lg bg-white p-2 [image-rendering:pixelated]"
+          />
+          <p className="mx-auto mt-2 max-w-[44ch] text-[13px] text-tekst-daempet">
+            Du behøver ikke en printer. Vis QR-koden på din mobil, når du afleverer pakken.{" "}
+            {f === TRANSPORTOER_INFO.gls ? "Pakken sendes til sælgerens adresse." : "Pakken sendes til en pakkeshop tæt på sælgeren."}
+          </p>
+        </div>
+      )}
+      {retur.labelfriKode && !retur.qrBillede && (
+        <div className="mt-4 rounded-xl bg-groen-lys p-4 text-center sm:p-5">
+          <p className="text-sm font-semibold text-groen-mork">Vis denne kode i en {f.shopNavn}</p>
           <p
             className="mt-2 font-mono text-[28px] leading-tight font-bold tracking-[0.08em] break-all text-tekst sm:text-[34px]"
             aria-label={`Returkode: ${retur.labelfriKode.split("").join(" ")}`}
@@ -488,10 +545,15 @@ function KodeKlar({ id, retur, postnummer }: { id: string; retur: ForsendelseVis
             {retur.labelfriKode}
           </p>
           <p className="mx-auto mt-2 max-w-[44ch] text-[13px] text-tekst-daempet">
-            Du behøver ikke en printer. Vis koden, når du afleverer pakken i en daoSHOP. Pakken sendes til en
+            Du behøver ikke en printer. Vis koden, når du afleverer pakken i en {f.shopNavn}. Pakken sendes til en
             pakkeshop tæt på sælgeren.
           </p>
         </div>
+      )}
+      {!retur.labelfriKode && !retur.qrBillede && retur.harLabel && (
+        <p className="mt-4 rounded-xl bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
+          Print labelen, og sæt den på pakken. Aflever pakken i en {f.shopNavn}.
+        </p>
       )}
       {shop && (
         <div className="mt-4 rounded-xl border border-kant px-4 py-3 text-sm">
@@ -499,7 +561,7 @@ function KodeKlar({ id, retur, postnummer }: { id: string; retur: ForsendelseVis
           <p className="mt-0.5 text-tekst-daempet">
             {shop.navn}, {shop.adresse}, {shop.postnummer} {shop.by}
           </p>
-          <p className="mt-1 text-[13px] text-tekst-svag">Du kan aflevere pakken i alle daoSHOPs.</p>
+          <p className="mt-1 text-[13px] text-tekst-svag">Du kan aflevere pakken i alle pakkeshops hos {f.navn}.</p>
         </div>
       )}
       {retur.harLabel && (

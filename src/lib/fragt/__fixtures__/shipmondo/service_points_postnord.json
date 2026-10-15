@@ -1,0 +1,78 @@
+[
+  {
+    "id": "5026",
+    "name": "Pakkeshop Trævarefabrikernes Udsalg",
+    "address": "Asylgade 19",
+    "address2": null,
+    "zipcode": "5000",
+    "city": "ODENSE C",
+    "country": "DK",
+    "distance": 221,
+    "longitude": 10.387799,
+    "latitude": 55.3980331,
+    "carrier_code": "pdk",
+    "type": "SP",
+    "type_name": "PostNord Service Point",
+    "opening_hours": [
+      "Monday: 10:00 - 17:30",
+      "Tuesday: 10:00 - 17:30",
+      "Wednesday: 10:00 - 17:30",
+      "Thursday: 10:00 - 17:30",
+      "Friday: 10:00 - 18:00",
+      "Saturday: 10:00 - 14:00"
+    ],
+    "drop_off_allowed": true,
+    "pickup_allowed": true
+  },
+  {
+    "id": "5021",
+    "name": "Pakkeshop Superbrugsen Vestergade",
+    "address": "Vestergade 76",
+    "address2": null,
+    "zipcode": "5000",
+    "city": "ODENSE C",
+    "country": "DK",
+    "distance": 1146,
+    "longitude": 10.3827517,
+    "latitude": 55.3945128,
+    "carrier_code": "pdk",
+    "type": "SP",
+    "type_name": "PostNord Service Point",
+    "opening_hours": [
+      "Monday: 07:00 - 21:45",
+      "Tuesday: 07:00 - 21:45",
+      "Wednesday: 07:00 - 21:45",
+      "Thursday: 07:00 - 21:45",
+      "Friday: 07:00 - 21:45",
+      "Saturday: 07:00 - 21:45",
+      "Sunday: 07:00 - 21:45"
+    ],
+    "drop_off_allowed": true,
+    "pickup_allowed": true
+  },
+  {
+    "id": "5022",
+    "name": "Pakkeshop Politikens Kiosk",
+    "address": "Skt. Knuds Kirkestræde 15",
+    "address2": null,
+    "zipcode": "5000",
+    "city": "ODENSE C",
+    "country": "DK",
+    "distance": 2126,
+    "longitude": 10.3861644,
+    "latitude": 55.3947066,
+    "carrier_code": "pdk",
+    "type": "SP",
+    "type_name": "PostNord Service Point",
+    "opening_hours": [
+      "Monday: 08:00 - 18:00",
+      "Tuesday: 08:00 - 18:00",
+      "Wednesday: 08:00 - 18:00",
+      "Thursday: 08:00 - 18:00",
+      "Friday: 08:00 - 18:00",
+      "Saturday: 09:00 - 15:00"
+    ],
+    "drop_off_allowed": true,
+    "pickup_allowed": true
+  }
+]

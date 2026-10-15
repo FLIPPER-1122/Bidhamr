@@ -7,7 +7,7 @@ import AdminBadge from "@/components/admin/AdminBadge";
 import HandelStatusBadge from "@/components/HandelStatusBadge";
 import HandelHandlinger, { kr } from "@/components/admin/handler/HandelHandlinger";
 import { HAENGER_TEKST, erHaengerGrund, type HaengerGrund } from "@/lib/adminGraenser";
-import { SPORINGS_NAVN, erSporingsType } from "@/lib/fragt/types";
+import { SPORINGS_NAVN, erSporingsType, transportoerNavn } from "@/lib/fragt/types";
 import { UUID_RE, handlingNavn, visAarsag } from "@/lib/moderationLog";
 import { sidsteStaffBeskedOmHandel } from "@/lib/admin/paamindelse";
 import { SAG_TYPE_NAVN, adminSagSti, type SagStatus, type SagType } from "@/lib/sager";
@@ -60,6 +60,7 @@ type Forsendelse = {
   id: string;
   type: "udgaaende" | "retur";
   status: string;
+  transportoer: string | null;
   sporingsnummer: string | null;
   opmaerksomhed_tekst: string | null;
   kraever_opmaerksomhed: boolean | null;
@@ -121,7 +122,7 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
     admin.from("betalinger").select(betalingKolonner).eq("trade_id", h.id).maybeSingle(),
     admin
       .from("forsendelser")
-      .select("id, type, status, sporingsnummer, opmaerksomhed_tekst, kraever_opmaerksomhed, opdateret_kl, returneret_kl, leveret_kl")
+      .select("id, type, status, transportoer, sporingsnummer, opmaerksomhed_tekst, kraever_opmaerksomhed, opdateret_kl, returneret_kl, leveret_kl")
       .eq("trade_id", h.id)
       .order("opdateret_kl", { ascending: false })
       .limit(10),
@@ -274,6 +275,7 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
                   {erSporingsType(f.status) ? SPORINGS_NAVN[f.status] : f.status}
                 </p>
                 <p className="text-xs text-tekst-daempet">
+                  {transportoerNavn(f.transportoer) && <span>{transportoerNavn(f.transportoer)} · </span>}
                   {f.sporingsnummer && <span className="break-all font-mono">{f.sporingsnummer} · </span>}
                   opdateret {tid(f.opdateret_kl)}
                 </p>

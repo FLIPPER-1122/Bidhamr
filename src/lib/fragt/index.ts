@@ -9,11 +9,13 @@ import "server-only";
 //   - Tom i produktion: "ikke sat op" - alle kald fejler pænt med
 //     "Fragt er ikke sat op endnu." (ingen falske labels).
 //   - "test" i produktion: kun hvis det er sat eksplicit.
+//   - "shipmondo": standard i produktion (Filip, 15. okt. 2026) - DAO, GLS og
+//     PostNord via Shipmondo, køberen vælger selv (shipmondo.ts). Sættes
+//     eksplicit i Vercel (HUSKELISTE.md), så fragt aldrig slås til af sig selv.
 //   - "dao": DAO direkte (dao.ts). Kræver DAO_KUNDEID og DAO_KODE - mangler de,
-//     fejler kaldene pænt med "Fragt er ikke sat op endnu.".
-// Shipmondo-adapteren bliver liggende (fx til flere fragtfirmaer senere), og
-// forsendelser, der er oprettet hos et andet firma, følges stadig af det firmas
-// adapter (adapterFor).
+//     fejler kaldene pænt med "Fragt er ikke sat op endnu.". Bliver liggende.
+// Forsendelser, der er oprettet hos et andet firma, følges stadig af det
+// firmas adapter (adapterFor).
 import { daoFirma } from "@/lib/fragt/dao";
 import { glsFirma } from "@/lib/fragt/gls";
 import { shipmondoFirma } from "@/lib/fragt/shipmondo";

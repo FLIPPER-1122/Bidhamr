@@ -1,0 +1,78 @@
+[
+  {
+    "id": "7100878",
+    "name": "Naturkost Odense",
+    "address": "Gravene 8",
+    "address2": null,
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country": "DK",
+    "distance": 252,
+    "longitude": 10.387789,
+    "latitude": 55.397684,
+    "carrier_code": "dao",
+    "type": "SP",
+    "type_name": "daoSHOP",
+    "opening_hours": [
+      "man: 10:00 - 17:30",
+      "tir: 10:00 - 17:30",
+      "ons: 10:00 - 17:30",
+      "tor: 10:00 - 17:30",
+      "fre: 10:00 - 17:30",
+      "lor: 10:00 - 14:00"
+    ],
+    "drop_off_allowed": true,
+    "pickup_allowed": true
+  },
+  {
+    "id": "59184",
+    "name": "SuperBrugsen City",
+    "address": "Vestergade 76",
+    "address2": null,
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country": "DK",
+    "distance": 1146,
+    "longitude": 10.382751,
+    "latitude": 55.394488,
+    "carrier_code": "dao",
+    "type": "SP",
+    "type_name": "daoSHOP",
+    "opening_hours": [
+      "man: 07:00 - 21:45",
+      "tir: 07:00 - 21:45",
+      "ons: 07:00 - 21:45",
+      "tor: 07:00 - 21:45",
+      "fre: 07:00 - 21:45",
+      "lor: 07:00 - 21:45",
+      "son: 07:00 - 21:45"
+    ],
+    "drop_off_allowed": true,
+    "pickup_allowed": true
+  },
+  {
+    "id": "58163",
+    "name": "Politikens Kiosk",
+    "address": "Skt. Knuds Kirkestr. 15",
+    "address2": null,
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country": "DK",
+    "distance": 2126,
+    "longitude": 10.386105,
+    "latitude": 55.394681,
+    "carrier_code": "dao",
+    "type": "SP",
+    "type_name": "daoSHOP",
+    "opening_hours": [
+      "man: 08:00 - 18:00",
+      "tir: 08:00 - 18:00",
+      "ons: 08:00 - 18:00",
+      "tor: 08:00 - 18:00",
+      "fre: 08:00 - 18:00",
+      "lor: 09:00 - 15:00"
+    ],
+    "drop_off_allowed": true,
+    "pickup_allowed": true
+  }
+]

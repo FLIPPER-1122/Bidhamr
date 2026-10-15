@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { adapterFor, erFragtfirmaNavn } from "@/lib/fragt";
 import {
-  findForsendelse,
+  findForsendelseInfo,
   registrerForsendelseshaendelse,
+  registrerUkendteKoder,
   udfoerHandelseffekterFor,
 } from "@/lib/fragt/server";
 import { logDriftFejl } from "@/lib/drift";
 
 // Webhook fra fragtfirmaet: /api/fragt/webhook/test | gls | shipmondo.
+// Shipmondo: "Shipment Monitor" (latest + delivered) for DAO, GLS og PostNord.
+// Signaturen (JWT HS256 med SHIPMONDO_WEBHOOK_NOEGLE) tjekkes i adapteren,
+// før noget læses. Ukendte statuskoder gemmes og ændrer aldrig status, og en
+// hændelse, hvis transportør ikke passer med forsendelsens, gemmes ikke.
 // Adapteren verificerer signaturen (fail closed) og oversætter til
 // normaliserede hændelser. Hændelserne gemmes idempotent - samme hændelse
 // to gange (eller via både webhook og sporings-cron) giver ingen dobbelt
@@ -90,17 +95,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ fir
     return NextResponse.json({ fejl: resultat.fejl }, { status: resultat.status });
   }
 
+  if (resultat.ukendte && resultat.ukendte.length > 0) {
+    await registrerUkendteKoder(firma, adapter.visningsnavn, resultat.ukendte);
+  }
+
   let gemt = 0;
   let ukendte = 0;
+  let forkertTransportoer = 0;
   const nye = new Set<string>();
   for (const h of resultat.haendelser) {
     try {
-      const id = await findForsendelse(firma, {
+      const info = await findForsendelseInfo(firma, {
         forsendelsesId: h.forsendelsesId,
         sporingsnummer: h.sporingsnummer,
       });
-      if (!id) {
+      if (!info) {
         ukendte++;
+        continue;
+      }
+      const id = info.id;
+      // Værn: fragtfirmaets transportør skal passe med forsendelsens (leveret
+      // styrer frigivelsen af penge). Ellers gemmes intet, og drift får besked.
+      if (h.transportoer && info.transportoer && h.transportoer !== info.transportoer) {
+        forkertTransportoer++;
+        await logDriftFejl({
+          kilde: "webhook",
+          sti: `/api/fragt/webhook/${firma}`,
+          hvor: "Fragt: forkert transportør",
+          fejl: `Hændelsen (${h.type}) for forsendelse ${id} kom fra ${h.transportoer}, men forsendelsen er sendt med ${info.transportoer}. Den er ikke gemt.`,
+        });
         continue;
       }
       const { ny } = await registrerForsendelseshaendelse(id, h, "webhook", { effekter: false });
@@ -119,5 +142,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ fir
       for (const id of nye) await udfoerHandelseffekterFor(id);
     });
   }
-  return NextResponse.json({ ok: true, gemt, ukendte });
+  return NextResponse.json({ ok: true, gemt, ukendte, forkertTransportoer });
 }

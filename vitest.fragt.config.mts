@@ -1,4 +1,4 @@
-// npm run test:fragt - enhedstests af fragt-adaptere (DAO) mod gemte
+// npm run test:fragt - enhedstests af fragt-adaptere (DAO, Shipmondo) mod gemte
 // eksempelsvar i src/lib/fragt/__fixtures__/. Ingen database, intet netværk:
 // fetch og Supabase er erstattet i testene.
 import path from "node:path";

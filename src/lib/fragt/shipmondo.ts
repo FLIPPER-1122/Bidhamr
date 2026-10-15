@@ -1,7 +1,8 @@
 import "server-only";
 
-// Shipmondo med DAO som fragtfirma (Filip, 9. okt. 2026). Verificeret mod
-// Shipmondos sandbox 9. okt. 2026 (API v3, shipmondo.dev).
+// Shipmondo med DAO, GLS og PostNord (Filip, 15. okt. 2026: fragt via
+// Shipmondo igen - køberen vælger selv transportør i checkout). Verificeret
+// mod Shipmondos sandbox 9. og 15. okt. 2026 (API v3, shipmondo.dev).
 //
 // Env:
 //   SHIPMONDO_API_URL          sandbox: https://sandbox.shipmondo.com/api/public/v3
@@ -10,25 +11,50 @@ import "server-only";
 //   SHIPMONDO_API_NOEGLE       API-nøgle (Basic auth)
 //   SHIPMONDO_WEBHOOK_NOEGLE   nøglen, der indtastes ved oprettelse af webhooken
 //                              (Shipmondo signerer med JWT HS256)
-//   SHIPMONDO_EGEN_AFTALE      "true" = book på BidHamrs egen DAO-aftale hos
-//                              Shipmondo (own_agreement). Standard: Shipmondos aftale.
+//   SHIPMONDO_EGEN_AFTALE      "true" = book på BidHamrs egne aftaler hos
+//                              Shipmondo (own_agreement). Standard: Shipmondos.
+//   SHIPMONDO_RETUR_ER_IKKE_AFHENTET  "true" = en udgående pakke, Shipmondo
+//                              melder sendt retur (tekst), registreres som
+//                              "ikke afhentet" automatisk. Standard: kun
+//                              markering til staff (se monitorTilType).
 //
-// DAO-produkter (GET /products?carrier_code=dao, sandbox 9. okt. 2026):
-//   DAO_STS  daoSHOP (drop-off)  = Shop2Shop: indlevering i pakkeshop, levering
-//            til pakkeshop. service_point krævet. Vægttrin 250 g - 15 kg.
-//   DAO_STH  daoHOME (drop-off)  = Shop2Home: indlevering i pakkeshop, levering
-//            til døren. Vægttrin 250 g - 5 kg.
-//   (DAO_P / DAO_H er med afhentning hos afsender, DAO_R "daoRETURN" kun til
-//   erhvervsadresser - bruges ikke.)
-//   Notifikation: mindst én af EMAIL_NT / SMS_NT er krævet.
-//   Labelfri: svaret har `labelless_code` (DAO's kode, der skrives på pakken).
-//   QR-kode (GET /shipments/{id}/qr_code) findes kun med servicen QR_CODE, som
-//   DAO ikke har - derfor PDF-label + labelfri-kode.
-//   Annullering (PUT /shipments/{id}/cancel): DAO svarer 422 "It's not
-//   possible to cancel this shipment." - se FragtAnnulleringIkkeMulig.
-//   Sporing: Shipmondo har intet sporings-endpoint i API v3 - sporingen kommer
-//   KUN via webhooken "Shipment Monitor" (latest/delivered). hentSporing
-//   returnerer derfor ingen hændelser (cron kan ikke hente sporing).
+// Produkter (GET /products, sandbox 15. okt. 2026):
+//   DAO       pakkeshop DAO_STS (daoSHOP drop-off, 15 kg, shop krævet)
+//             døren     DAO_STH (daoHOME drop-off, 5 kg)
+//             retur     DAO_STS med køberen som afsender og automatisk valgt
+//                       daoSHOP nær sælgeren.
+//             Labelfri: `labelless_code` i svaret (sandbox: altid 123-456-789).
+//             Ingen QR_CODE-service. Annullering: 422 "It's not possible to
+//             cancel this shipment." (også 15. okt.) -> FragtAnnulleringIkkeMulig.
+//   GLS       pakkeshop GLSDK_SD (ShopDelivery, shop krævet, EMAIL_NT krævet)
+//             døren     GLSDK_HD (PrivateDelivery)
+//             retur     GLSDK_SR (ShopReturn) + QR_CODE: køberen viser QR'en i
+//                       en GLS-pakkeshop, pakken leveres til sælgerens adresse.
+//                       Afviser Shipmondo/GLS ShopReturn (422 - fx fordi den
+//                       formelt er til erhvervsadresser), bruges GLSDK_SD til en
+//                       automatisk valgt GLS-pakkeshop nær sælgeren (PDF-label).
+//             Labelfri udgående: FINDES IKKE via Shipmondo (QR_CODE afvises på
+//             SD/HD med 422 "Service code QR_CODE is invalid", og intet
+//             labelless_code) -> PDF-label.
+//             Annullering: { cancelled: true, cancelled_at_carrier: false } i
+//             sandboxen.
+//   PostNord  pakkeshop PDK_MC (Service Point) + QR_CODE
+//             døren     PDK_MH (Home) + QR_CODE
+//             retur     PDK_MC + QR_CODE med automatisk valgt pakkeshop nær
+//                       sælgeren (PDK_RDO er til erhvervsadresser).
+//             QR: GET /shipments/{id}/qr_code?file_format=png -> { qr_codes:
+//             [base64 PNG] }. Annullering som GLS.
+//   Notifikation: mindst én af EMAIL_NT / SMS_NT (GLS: EMAIL_NT krævet).
+//
+// Sporing: Shipmondo har intet sporings-endpoint i API v3 (verificeret 15.
+// okt.: /shipments/{id}/tracking o.l. findes ikke) - sporingen kommer KUN via
+// webhooken "Shipment Monitor" (latest/delivered). Shipment Monitor oversætter
+// alle transportørers hændelser til de samme statusser (shipmondo.dev,
+// "Resources and actions"), så kortlægningen er fælles for DAO, GLS og
+// PostNord - se monitorTilType. hentSporing giver derfor ingen hændelser, og
+// fragt-cron'ens polling er kun reserve for andre firmaer. Mister vi en
+// webhook (Shipmondo prøver ikke igen), kommer næste "latest" stadig, og
+// efterlysningen efter 14 dage fanger en pakke uden leveringsmelding.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { beregnAfstandKm } from "@/lib/distance";
@@ -42,16 +68,75 @@ import {
   type Pakkestoerrelse,
   type Sporingshaendelse,
   type SporingsType,
+  type Transportoer,
+  type UkendtSporingskode,
   type WebhookHaendelse,
   type WebhookResultat,
   FragtAnnulleringIkkeMulig,
   FragtFejl,
   FragtUkendtUdfald,
   FRAGT_IKKE_SAT_OP,
+  TRANSPORTOERER,
+  erTransportoer,
 } from "@/lib/fragt/types";
 
 export const DAO_PAKKESHOP = "DAO_STS";
 export const DAO_DOER = "DAO_STH";
+
+type Produkter = {
+  // Shipmondos carrier_code.
+  carrier: string;
+  pakkeshop: string;
+  doer: string;
+  retur: string;
+  // Reserve, hvis returproduktet afvises (4xx - intet oprettet).
+  returReserve: string | null;
+  // Retur til en automatisk valgt pakkeshop nær sælgeren (ellers hans adresse).
+  returTilPakkeshop: boolean;
+  // EMAIL_NT er krævet (GLS).
+  kraeverEmail: boolean;
+};
+
+export const PRODUKTER: Record<Transportoer, Produkter> = {
+  dao: {
+    carrier: "dao",
+    pakkeshop: DAO_PAKKESHOP,
+    doer: DAO_DOER,
+    retur: DAO_PAKKESHOP,
+    returReserve: null,
+    returTilPakkeshop: true,
+    kraeverEmail: false,
+  },
+  gls: {
+    carrier: "gls",
+    pakkeshop: "GLSDK_SD",
+    doer: "GLSDK_HD",
+    retur: "GLSDK_SR",
+    returReserve: "GLSDK_SD",
+    returTilPakkeshop: false,
+    kraeverEmail: true,
+  },
+  postnord: {
+    carrier: "pdk",
+    pakkeshop: "PDK_MC",
+    doer: "PDK_MH",
+    retur: "PDK_MC",
+    returReserve: null,
+    returTilPakkeshop: true,
+    kraeverEmail: false,
+  },
+};
+
+// Produkter med servicen QR_CODE (labelfri QR i stedet for printet label).
+export const QR_PRODUKTER = new Set(["PDK_MC", "PDK_MH", "GLSDK_SR"]);
+// Produkter, der leverer til en pakkeshop (service point krævet).
+const PAKKESHOP_PRODUKTER = new Set(["DAO_STS", "GLSDK_SD", "PDK_MC"]);
+
+export function transportoerFraCarrier(carrier: unknown): Transportoer | null {
+  const c = String(carrier ?? "").toLowerCase();
+  for (const t of TRANSPORTOERER) if (PRODUKTER[t].carrier === c) return t;
+  return null;
+}
 
 // Vægt på labelen, når sælgeren ikke har angivet vægt: pakkestørrelsens
 // maksimum (samme som fragt_pakkestoerrelser).
@@ -64,6 +149,8 @@ const DOER_MAKS_GRAM = 5000;
 
 const TIMEOUT_MS = 15_000;
 const GENERISK = "Fragtfirmaet svarer ikke lige nu. Prøv igen om lidt.";
+// En QR-PNG fra Shipmondo er 0,5-2 KB. Større afvises (gemmes i databasen).
+const QR_MAKS_BASE64 = 20_000;
 
 type Konfig = { base: string; auth: string };
 
@@ -75,6 +162,15 @@ function konfig(): Konfig {
     throw new FragtFejl(FRAGT_IKKE_SAT_OP, "Shipmondo er ikke sat op (SHIPMONDO_API_URL/BRUGER/NOEGLE).");
   }
   return { base, auth: "Basic " + Buffer.from(`${bruger}:${noegle}`).toString("base64") };
+}
+
+function erSatOp(): boolean {
+  try {
+    konfig();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export class ShipmondoFejl extends Error {
@@ -135,7 +231,9 @@ async function kald<T>(metode: "GET" | "POST" | "PUT", sti: string, body?: unkno
 type ShipmondoForsendelse = {
   id: number;
   reference: string | null;
+  carrier_code?: string | null;
   product_code: string | null;
+  service_codes?: string | null;
   pkg_no: string | null;
   price: string | null;
   labelless_code?: string | null;
@@ -167,11 +265,15 @@ function part(type: "sender" | "receiver", a: Adresse) {
   };
 }
 
-function notifikationer(modtager: Adresse): string {
+// Servicekoder: notifikation (mindst én; GLS kræver e-mail) + QR_CODE på de
+// produkter, der har labelfri QR.
+export function servicekoder(modtager: Adresse, produkt: string, kraeverEmail: boolean): string {
   const koder: string[] = [];
   if (modtager.email) koder.push("EMAIL_NT");
+  else if (kraeverEmail) throw new FragtFejl("Modtagerens e-mail mangler.");
   if (telefon(modtager.telefon)) koder.push("SMS_NT");
   if (koder.length === 0) throw new FragtFejl("Modtagerens e-mail eller telefonnummer mangler.");
+  if (QR_PRODUKTER.has(produkt)) koder.push("QR_CODE");
   return koder.join(",");
 }
 
@@ -194,7 +296,31 @@ async function hentLabel(id: number): Promise<Uint8Array> {
   return base64TilBytes(pdf.base64);
 }
 
-function tilOprettet(s: ShipmondoForsendelse, label: Uint8Array): OprettetForsendelse {
+// Gyldig PNG i base64 (starter med PNG-signaturen) og ikke for stor.
+export function erQrPng(b64: unknown): b64 is string {
+  return (
+    typeof b64 === "string" &&
+    b64.length > 100 &&
+    b64.length <= QR_MAKS_BASE64 &&
+    /^iVBORw0KGgo[A-Za-z0-9+/]+=*$/.test(b64)
+  );
+}
+
+// QR-koden (PNG) for en forsendelse med QR_CODE. Kaster aldrig: uden QR kan
+// sælgeren stadig bruge PDF-labelen.
+async function hentQr(s: ShipmondoForsendelse): Promise<string | null> {
+  if (!s.product_code || !QR_PRODUKTER.has(s.product_code)) return null;
+  try {
+    const r = await kald<{ qr_codes?: unknown[] }>("GET", `/shipments/${s.id}/qr_code?file_format=png`);
+    const qr = Array.isArray(r?.qr_codes) ? r.qr_codes[0] : null;
+    return erQrPng(qr) ? qr : null;
+  } catch (err) {
+    console.error("Shipmondo: QR-koden kunne ikke hentes:", err instanceof Error ? err.message.slice(0, 200) : "ukendt");
+    return null;
+  }
+}
+
+function tilOprettet(s: ShipmondoForsendelse, label: Uint8Array, qrPng: string | null): OprettetForsendelse {
   const sporing = s.pkg_no ?? s.parcels?.[0]?.pkg_no ?? null;
   if (!s.id || !sporing) throw new Error("Shipmondo: svaret mangler id eller pakkenummer");
   const labelfri = s.labelless_code ?? s.parcels?.[0]?.labelless_code ?? null;
@@ -203,19 +329,50 @@ function tilOprettet(s: ShipmondoForsendelse, label: Uint8Array): OprettetForsen
     sporingsnummer: sporing,
     label: { type: "pdf", data: label },
     qrKode: labelfri ? String(labelfri).slice(0, 100) : null,
+    qrPng,
     prisOere: prisOere(s.price),
     produkt: s.product_code,
   };
 }
 
+// Referencen hos Shipmondo: BidHamrs forsendelses-id (uuid) UDEN bindestreger
+// - PostNord afviser referencer over 35 tegn (sandbox 15. okt. 2026: 422
+// "referenceNo cannot be ... longer than 35 characters"). 32 tegn.
+export function shipmondoReference(id: string): string {
+  return id.replace(/-/g, "");
+}
+
+// Tilbage til BidHamrs uuid (til staffs "tilknyt"). Andet returneres uændret.
+export function bidhamrReference(ref: string | null): string | null {
+  if (!ref) return ref;
+  const m = /^([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/i.exec(ref);
+  return m ? `${m[1]}-${m[2]}-${m[3]}-${m[4]}-${m[5]}`.toLowerCase() : ref;
+}
+
 // Idempotens: BidHamrs forsendelses-id er referencen. Findes der allerede en
 // forsendelse med referencen (genforsøg efter timeout), genbruges den.
-async function findMedReference(reference: string): Promise<ShipmondoForsendelse | null> {
+async function findMedReference(id: string): Promise<ShipmondoForsendelse | null> {
+  const reference = shipmondoReference(id);
   const liste = await kald<ShipmondoForsendelse[]>(
     "GET",
     `/shipments?reference=${encodeURIComponent(reference)}&per_page=5`,
   );
-  return (Array.isArray(liste) ? liste : []).find((s) => s.reference === reference) ?? null;
+  return (Array.isArray(liste) ? liste : []).find((s) => s.reference === reference || s.reference === id) ?? null;
+}
+
+// Hvilket produkt og hvilken pakkeshop? Ren funktion (testes i test:fragt).
+export function vaelgProdukt(
+  transportoer: Transportoer,
+  levering: "pakkeshop" | "doer",
+  retur: boolean,
+  reserve = false,
+): { produkt: string; pakkeshop: "valgt" | "automatisk" | null } {
+  const p = PRODUKTER[transportoer];
+  if (retur) {
+    const produkt = reserve && p.returReserve ? p.returReserve : p.retur;
+    return { produkt, pakkeshop: PAKKESHOP_PRODUKTER.has(produkt) ? "automatisk" : null };
+  }
+  return levering === "doer" ? { produkt: p.doer, pakkeshop: null } : { produkt: p.pakkeshop, pakkeshop: "valgt" };
 }
 
 // Fejl fra opret():
@@ -226,8 +383,11 @@ async function findMedReference(reference: string): Promise<ShipmondoForsendelse
 //                      og fejl i svaret efter en vellykket POST. Forsendelsen
 //                      kan findes hos Shipmondo - næste forsøg genbruger
 //                      referencen.
+// QR-koden hentes efter oprettelsen; mangler den, bruges PDF'en (ingen fejl).
 async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetForsendelse> {
   // 1. Validering før ethvert kald (FragtFejl).
+  const transportoer: Transportoer = input.transportoer ?? "dao";
+  if (!erTransportoer(transportoer)) throw new FragtFejl("Ukendt fragtfirma.");
   const levering = retur ? "pakkeshop" : (input.levering ?? "pakkeshop");
   const vaegt = Math.max(1, Math.round(input.vaegtGram ?? MAKS_GRAM[input.pakkestoerrelse]));
   if (vaegt > MAKS_GRAM.stor) throw new FragtFejl("Pakken er for tung til at blive sendt.");
@@ -237,21 +397,25 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
   if (levering === "pakkeshop" && !retur && !input.pakkeshopId) {
     throw new FragtFejl("Køberen har ikke valgt en pakkeshop.");
   }
-  const body: Record<string, unknown> = {
-    own_agreement: process.env.SHIPMONDO_EGEN_AFTALE === "true",
-    product_code: levering === "doer" ? DAO_DOER : DAO_PAKKESHOP,
-    service_codes: notifikationer(input.modtager),
-    reference: input.reference,
-    label_format: "a4_pdf",
-    contents: input.handel.titel.slice(0, 60),
-    parties: [part("sender", input.afsender), part("receiver", input.modtager)],
-    parcels: [{ quantity: 1, weight: vaegt }],
+  const byg = (reserve: boolean) => {
+    const valg = vaelgProdukt(transportoer, levering, retur, reserve);
+    const body: Record<string, unknown> = {
+      own_agreement: process.env.SHIPMONDO_EGEN_AFTALE === "true",
+      product_code: valg.produkt,
+      service_codes: servicekoder(input.modtager, valg.produkt, PRODUKTER[transportoer].kraeverEmail),
+      reference: shipmondoReference(input.reference),
+      label_format: "a4_pdf",
+      contents: input.handel.titel.slice(0, 60),
+      parties: [part("sender", input.afsender), part("receiver", input.modtager)],
+      parcels: [{ quantity: 1, weight: vaegt }],
+    };
+    if (valg.pakkeshop === "valgt") body.service_point_id = input.pakkeshopId;
+    // Retur: Shipmondo vælger pakkeshoppen nærmest modtageren (sælgeren).
+    if (valg.pakkeshop === "automatisk") body.automatic_select_service_point = true;
+    return body;
   };
-  if (levering === "pakkeshop") {
-    if (input.pakkeshopId) body.service_point_id = input.pakkeshopId;
-    // Retur: Shipmondo vælger pakkeshoppen nærmest sælgerens adresse.
-    else body.automatic_select_service_point = true;
-  }
+  const body = byg(false);
+  const reserveBody = retur && PRODUKTER[transportoer].returReserve ? byg(true) : null;
   konfig();
 
   const ukendt = (hvor: string, err: unknown) =>
@@ -268,32 +432,38 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
   }
   if (findes) {
     try {
-      return tilOprettet(findes, await hentLabel(findes.id));
+      return tilOprettet(findes, await hentLabel(findes.id), await hentQr(findes));
     } catch (err) {
       throw ukendt("label til eksisterende forsendelse", err);
     }
   }
 
-  // 3. Opret.
-  let s: ShipmondoForsendelse;
-  try {
-    s = await kald<ShipmondoForsendelse>("POST", "/shipments", body);
-  } catch (err) {
-    // Afvist (4xx): intet er oprettet. Undtagen 408 (timeout hos Shipmondo):
-    // dér ved vi ikke, om forsendelsen blev oprettet.
-    if (err instanceof ShipmondoFejl && err.status >= 400 && err.status < 500 && err.status !== 408) {
-      throw new FragtFejl(
-        err.status === 422
-          ? "Fragtfirmaet kunne ikke oprette pakken. Tjek adresserne og prøv igen."
-          : GENERISK,
-        err.message,
-      );
+  // 3. Opret (retur: evt. reserveproduktet, hvis det første afvises).
+  type PostSvar = { s: ShipmondoForsendelse; afvist: null } | { s: null; afvist: ShipmondoFejl };
+  const post = async (b: Record<string, unknown>): Promise<PostSvar> => {
+    try {
+      return { s: await kald<ShipmondoForsendelse>("POST", "/shipments", b), afvist: null };
+    } catch (err) {
+      // Afvist (4xx): intet er oprettet. Undtagen 408 (timeout hos Shipmondo):
+      // dér ved vi ikke, om forsendelsen blev oprettet.
+      if (err instanceof ShipmondoFejl && err.status >= 400 && err.status < 500 && err.status !== 408) {
+        return { s: null, afvist: err };
+      }
+      throw ukendt("POST /shipments", err);
     }
-    throw ukendt("POST /shipments", err);
+  };
+  let r = await post(body);
+  if (r.afvist && reserveBody) r = await post(reserveBody);
+  if (r.afvist) {
+    throw new FragtFejl(
+      r.afvist.status === 422 ? "Fragtfirmaet kunne ikke oprette pakken. Tjek adresserne og prøv igen." : GENERISK,
+      r.afvist.message,
+    );
   }
+  const s = r.s;
   try {
     const label = s.labels?.find((l) => l.file_format === "pdf")?.base64;
-    return tilOprettet(s, label ? base64TilBytes(label) : await hentLabel(s.id));
+    return tilOprettet(s, label ? base64TilBytes(label) : await hentLabel(s.id), await hentQr(s));
   } catch (err) {
     throw ukendt("svar/label efter oprettelse", err);
   }
@@ -323,11 +493,11 @@ export async function hentEksisterende(
   if (r.cancelled === true || r.cancelled_at || String(r.status ?? "").toLowerCase().includes("cancel")) {
     throw new FragtFejl("Forsendelsen er annulleret hos Shipmondo og kan ikke tilknyttes.");
   }
-  const o = tilOprettet(f, await hentLabel(f.id));
+  const o = tilOprettet(f, await hentLabel(f.id), await hentQr(f));
   const v = f.parcels?.[0]?.weight;
   return {
     ...o,
-    reference: f.reference,
+    reference: bidhamrReference(f.reference),
     vaegtGram: typeof v === "number" ? v : null,
     afsender: f.sender
       ? {
@@ -355,11 +525,13 @@ type ShipmondoPakkeshop = {
   distance: number | null;
   latitude: number | null;
   longitude: number | null;
+  carrier_code?: string | null;
   opening_hours?: string[];
   pickup_allowed?: boolean;
   drop_off_allowed?: boolean;
 };
 
+// DAO skriver "man"/"lor", GLS og PostNord "Monday".
 const DAGE: Record<string, string> = {
   man: "Mandag",
   tir: "Tirsdag",
@@ -370,15 +542,27 @@ const DAGE: Record<string, string> = {
   "lør": "Lørdag",
   son: "Søndag",
   "søn": "Søndag",
+  monday: "Mandag",
+  tuesday: "Tirsdag",
+  wednesday: "Onsdag",
+  thursday: "Torsdag",
+  friday: "Fredag",
+  saturday: "Lørdag",
+  sunday: "Søndag",
 };
 
-function aabningstider(linjer: string[] | undefined): { dag: string; tider: string }[] {
+export function aabningstider(linjer: string[] | undefined): { dag: string; tider: string }[] {
   return (linjer ?? []).slice(0, 14).flatMap((l) => {
     const m = /^\s*([^:]+):\s*(.+)$/.exec(String(l));
     if (!m) return [];
     const dag = DAGE[m[1].trim().toLowerCase()] ?? m[1].trim();
     return [{ dag: dag.slice(0, 20), tider: m[2].trim().slice(0, 60) }];
   });
+}
+
+// PostNord skriver byen med versaler ("ODENSE C").
+function paenBy(by: string): string {
+  return by === by.toUpperCase() ? by.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase()) : by;
 }
 
 function tilPakkeshop(p: ShipmondoPakkeshop, fra: { lat: number; lng: number } | null): Pakkeshop {
@@ -393,7 +577,7 @@ function tilPakkeshop(p: ShipmondoPakkeshop, fra: { lat: number; lng: number } |
     navn: String(p.name ?? "").slice(0, 120),
     adresse: String(p.address ?? "").slice(0, 200),
     postnummer: String(p.zipcode ?? "").slice(0, 4),
-    by: String(p.city ?? "").slice(0, 80),
+    by: paenBy(String(p.city ?? "")).slice(0, 80),
     lat,
     lng,
     afstandM: afstand,
@@ -404,8 +588,11 @@ function tilPakkeshop(p: ShipmondoPakkeshop, fra: { lat: number; lng: number } |
 async function soeg(q: PakkeshopSoegning): Promise<Pakkeshop[]> {
   const opslag = slaaPostnummerOp(q.postnummer);
   if (!opslag) throw new FragtFejl("Ukendt postnummer.");
+  const transportoer: Transportoer = q.transportoer ?? "dao";
+  if (!erTransportoer(transportoer)) throw new FragtFejl("Ukendt fragtfirma.");
+  const p = PRODUKTER[transportoer];
   const params = new URLSearchParams({
-    product_code: DAO_PAKKESHOP,
+    product_code: p.pakkeshop,
     country_code: "DK",
     zipcode: opslag.postnummer,
     city: (q.by ?? opslag.by).slice(0, 60),
@@ -415,8 +602,11 @@ async function soeg(q: PakkeshopSoegning): Promise<Pakkeshop[]> {
   if (q.adresse) params.set("address", q.adresse.slice(0, 100));
   const liste = await kald<ShipmondoPakkeshop[]>("GET", `/service_point/service_points?${params}`);
   return (Array.isArray(liste) ? liste : [])
-    .filter((p) => p && p.id && p.pickup_allowed !== false)
-    .map((p) => tilPakkeshop(p, { lat: opslag.lat, lng: opslag.lng }))
+    .filter((s) => s && s.id)
+    // Kun den valgte transportørs shops (værn mod et blandet svar).
+    .filter((s) => !s.carrier_code || String(s.carrier_code).toLowerCase() === p.carrier)
+    .filter((s) => (q.indlevering ? s.drop_off_allowed !== false : s.pickup_allowed !== false))
+    .map((s) => tilPakkeshop(s, { lat: opslag.lat, lng: opslag.lng }))
     .sort((a, b) => (a.afstandM ?? Infinity) - (b.afstandM ?? Infinity));
 }
 
@@ -477,47 +667,102 @@ type Monitor = {
   city?: string | null;
 };
 
-// Shipment Monitor-status -> normaliseret type. null = ingen hændelse.
-export function monitorTilType(m: Monitor): SporingsType | null {
-  const status = String(m.current_status ?? "").toUpperCase();
-  const state = String(m.current_state ?? "").toUpperCase();
-  const tekst = String(m.current_status_text ?? "");
-  if (status === "DELIVERED") return "leveret";
-  // Shipment Monitor har ingen retur-status. Teksten fra DAO bruges som tegn;
-  // staff vurderer altid (returneret markeres kun til staff).
-  if (/retur/i.test(tekst)) return "returneret";
-  if (state === "DANGER") return "fejl";
-  if (status === "AVAILABLE_FOR_DELIVERY") return "klar_til_afhentning";
-  if (status === "EN_ROUTE") return "i_transit";
-  return null;
+// Shipment Monitor-statusser (shipmondo.dev, "Resources and actions"). Samme
+// for alle transportører - Shipmondo oversætter DAO's, GLS' og PostNords
+// hændelser til dem:
+//   INFORMED                 fragtfirmaet har data, men ikke pakken  -> ingen hændelse
+//   PICKUP_REQUESTED         afhentning bestilt                      -> ingen hændelse
+//   GENERAL                  andet (fx forsinkelse)                  -> ingen hændelse
+//   EN_ROUTE                 pakken er i fragtfirmaets net           -> i_transit (sætter også afleveret_kl)
+//   AVAILABLE_FOR_DELIVERY   klar i pakkeshoppen                     -> klar_til_afhentning
+//   DELIVERED                leveret / hentet i pakkeshoppen         -> leveret
+// current_state DANGER (pakken sidder fast, er tabt eller sendes snart
+// retur) giver desuden en 'fejl'-hændelse (kun markering til staff).
+// Ukendte statusser ændrer aldrig status (gemmes i fragt_ukendte_koder).
+export const MONITOR_STATUSSER: Record<string, SporingsType | null> = {
+  INFORMED: null,
+  PICKUP_REQUESTED: null,
+  GENERAL: null,
+  EN_ROUTE: "i_transit",
+  AVAILABLE_FOR_DELIVERY: "klar_til_afhentning",
+  DELIVERED: "leveret",
+};
+const MONITOR_STATES = new Set(["NEUTRAL", "PROGRESSING", "WARNING", "DANGER", "SUCCESS"]);
+
+// Shipment Monitor har ingen retur-status. Teksten fra transportøren er det
+// eneste tegn (DAO/PostNord: "retur", "returneret til afsender"; GLS:
+// "return", "returned to sender").
+const RETUR_TEKST = /retur|return|til afsender|to sender|back to (the )?sender/i;
+
+// Til fragt_ukendte_koder: kun bogstaver, tal og _ (højst 40 tegn).
+function renKode(v: unknown): string {
+  return String(v ?? "").replace(/[^A-Za-z0-9_]/g, "_").slice(0, 40);
 }
 
-function monitorHaendelse(m: Monitor): WebhookHaendelse | null {
-  const type = monitorTilType(m);
-  if (!type || m.shipment_id === undefined || m.shipment_id === null) return null;
+// Shipment Monitor-hændelse -> normaliseret type. Ren funktion.
+//   { type } kendt status (type kan være null = ingen statusændring)
+//   { ukendt } ukendt status eller transportør - ændrer aldrig status
+// leveret gives KUN for DELIVERED uden returtekst: leveret_kl styrer
+// frigivelsen af penge. DELIVERED med returtekst (pakken er leveret tilbage
+// til afsenderen) bliver 'returneret' - aldrig 'leveret'.
+export function monitorTilType(m: Monitor): { type: SporingsType | null; ukendt?: undefined } | { ukendt: string; type?: undefined } {
+  const status = String(m.current_status ?? "").toUpperCase();
+  const tekst = String(m.current_status_text ?? "");
+  if (!transportoerFraCarrier(m.carrier_code)) return { ukendt: `carrier:${renKode(m.carrier_code) || "tom"}` };
+  if (!Object.hasOwn(MONITOR_STATUSSER, status)) return { ukendt: renKode(status) || "tom" };
+  if (RETUR_TEKST.test(tekst)) return { type: "returneret" };
+  return { type: MONITOR_STATUSSER[status] };
+}
+
+export function monitorHaendelser(m: Monitor): { haendelser: WebhookHaendelse[]; ukendte: UkendtSporingskode[] } {
+  const ud = { haendelser: [] as WebhookHaendelse[], ukendte: [] as UkendtSporingskode[] };
+  if (m.shipment_id === undefined || m.shipment_id === null) return ud;
   const id = String(m.shipment_id).slice(0, 50);
-  if (!/^\d{1,20}$/.test(id)) return null;
+  if (!/^\d{1,20}$/.test(id)) return ud;
+  const status = String(m.current_status ?? "").toUpperCase().slice(0, 40);
+  const state = String(m.current_state ?? "").toUpperCase().slice(0, 40);
+  const sporingsnummer = m.carrier_track_id ? String(m.carrier_track_id).slice(0, 100) : null;
+  const tekst = m.current_status_text ? String(m.current_status_text).slice(0, 300) : null;
+  const transportoer = transportoerFraCarrier(m.carrier_code);
+
+  const r = monitorTilType(m);
+  if (r.ukendt !== undefined) {
+    ud.ukendte.push({ kode: r.ukendt, liste: transportoer ?? "", beskrivelse: tekst, sporingsnummer });
+    return ud;
+  }
+  if (state && !MONITOR_STATES.has(state)) {
+    // En ukendt state ændrer ikke noget, men registreres.
+    ud.ukendte.push({ kode: `state:${renKode(state)}`, liste: transportoer ?? "", beskrivelse: tekst, sporingsnummer });
+  }
   const tid =
     m.current_status_registered_at && !Number.isNaN(Date.parse(m.current_status_registered_at))
       ? new Date(m.current_status_registered_at).toISOString()
       : new Date().toISOString();
   const maaltVaegt = m.weight && /^\d+(\.\d+)?$/.test(m.weight) ? Math.round(Number(m.weight) * 1000) : null;
-  return {
-    forsendelsesId: id,
-    sporingsnummer: m.carrier_track_id ? String(m.carrier_track_id).slice(0, 100) : null,
-    type,
-    tidspunkt: tid,
-    noegle: `shipmondo:${id}:${String(m.current_status ?? "")}:${String(m.current_state ?? "")}:${tid}`,
-    beskrivelse: m.current_status_text ? String(m.current_status_text).slice(0, 300) : null,
-    raa: {
-      status: m.current_status ?? null,
-      state: m.current_state ?? null,
-      tekst: m.current_status_text ? String(m.current_status_text).slice(0, 300) : null,
-      // Fragtfirmaets målte vægt i gram (bevis i sager), hvis den er med.
-      maalt_vaegt_gram: maaltVaegt,
-      by: m.city ? String(m.city).slice(0, 80) : null,
-    },
+  const raa = {
+    status: status || null,
+    state: state || null,
+    tekst,
+    transportoer,
+    // Fragtfirmaets målte vægt i gram (bevis i sager), hvis den er med.
+    maalt_vaegt_gram: maaltVaegt,
+    by: m.city ? String(m.city).slice(0, 80) : null,
   };
+  const basis = { forsendelsesId: id, sporingsnummer, transportoer, tidspunkt: tid, beskrivelse: tekst };
+  if (r.type) {
+    ud.haendelser.push({ ...basis, type: r.type, noegle: `shipmondo:${id}:${status}:${state}:${tid}`, raa });
+  }
+  // DANGER: markering til staff (ændrer ikke status). Én pr. status.
+  if (state === "DANGER" && r.type !== "fejl" && r.type !== "returneret") {
+    ud.haendelser.push({
+      ...basis,
+      type: "fejl",
+      noegle: `shipmondo:${id}:${status}:DANGER`,
+      beskrivelse: `Shipmondo: pakken er forsinket eller sidder fast (${status || "ukendt status"})${tekst ? ` - ${tekst}` : ""}`.slice(0, 300),
+      raa,
+    });
+  }
+  return ud;
 }
 
 async function fortolk(request: Request): Promise<WebhookResultat> {
@@ -547,15 +792,26 @@ async function fortolk(request: Request): Promise<WebhookResultat> {
   const erMonitor =
     ressource.includes("monitor") || ("current_status" in data && "shipment_id" in data);
   if (!erMonitor) return { ok: true, haendelser: [] };
-  const h = monitorHaendelse(data as Monitor);
-  return { ok: true, haendelser: h ? [h] : [] };
+  const r = monitorHaendelser(data as Monitor);
+  return { ok: true, haendelser: r.haendelser, ukendte: r.ukendte };
 }
 
 // ------------------------------------------------------------ adapter
 
 export const shipmondoFirma: Fragtfirma = {
   navn: "shipmondo",
-  visningsnavn: "DAO",
+  visningsnavn: "Shipmondo",
+  transportoerer: TRANSPORTOERER,
+  erSatOp,
+  // Shipmondo har intet efterlysnings-API: staff efterlyser hos
+  // transportøren efter 14 dage uden leveringsmelding.
+  efterlysningUdenApi: true,
+  // Shipment Monitor har ingen retur-status - 'returneret' gættes ud fra en
+  // tekst. Derfor kun automatisk "ikke afhentet", når Filip har slået det
+  // til efter at have set det på rigtige pakker.
+  get returErIkkeAfhentet() {
+    return process.env.SHIPMONDO_RETUR_ER_IKKE_AFHENTET === "true";
+  },
 
   // Købers pris kommer fra databasen (fragt_pakkestoerrelser) - ikke herfra.
   async beregnPris() {
@@ -565,22 +821,30 @@ export const shipmondoFirma: Fragtfirma = {
   opretForsendelse: (input) => opret(input, false),
   opretReturforsendelse: (input) => opret(input, true),
 
+  // { cancelled: true, cancelled_at_carrier } (GLS/PostNord). DAO: 422.
   async annullerForsendelse(forsendelsesId) {
     if (!/^\d{1,20}$/.test(forsendelsesId)) throw new FragtFejl("Forsendelsen findes ikke hos fragtfirmaet.");
+    let r: { cancelled?: boolean; cancelled_at_carrier?: boolean };
     try {
-      const r = await kald<{ cancelled?: boolean }>("PUT", `/shipments/${forsendelsesId}/cancel`);
-      if (!r?.cancelled) throw new FragtAnnulleringIkkeMulig("Shipmondo annullerede ikke forsendelsen.");
+      r = await kald<{ cancelled?: boolean; cancelled_at_carrier?: boolean }>("PUT", `/shipments/${forsendelsesId}/cancel`);
     } catch (err) {
       if (err instanceof ShipmondoFejl && (err.status === 422 || err.status === 404)) {
         throw new FragtAnnulleringIkkeMulig(err.message);
       }
       throw err;
     }
+    if (!r?.cancelled) throw new FragtAnnulleringIkkeMulig("Shipmondo annullerede ikke forsendelsen.");
+    return { bekraeftet: r.cancelled_at_carrier === true };
   },
 
   // Shipmondo API v3 har ingen sporing at hente - kun webhooken.
   async hentSporing(): Promise<Sporingshaendelse[]> {
     return [];
+  },
+
+  async hentLabel(forsendelsesId) {
+    if (!/^\d{1,20}$/.test(forsendelsesId)) throw new FragtFejl("Forsendelsen findes ikke hos fragtfirmaet.");
+    return { type: "pdf", data: await hentLabel(Number(forsendelsesId)) };
   },
 
   fortolkWebhook: fortolk,

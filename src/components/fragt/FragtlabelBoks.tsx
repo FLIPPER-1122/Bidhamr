@@ -3,10 +3,13 @@
 // "Send pakke" for sælgeren på handelssiden (kun når FRAGT_LABELS_AKTIV=true -
 // tjekkes på serveren i siden og i actions):
 //   1. Afsenderadresse (forudfyldt med den sidst brugte) -> "Lav fragtlabel".
-//   2. DAO's labelfri-kode stort og tydeligt + "Hent label (PDF)".
+//   2. Labelfri: DAO's kode eller PostNords QR-kode stort og tydeligt +
+//      "Hent label (PDF)". GLS via Shipmondo har ingen labelfri udgående -
+//      dér er PDF'en den primære knap.
 //   3. Sporingstidslinje og "Annullér label".
 // Pakkestørrelsen er altid auktionens. Fejl fra serveren er danske og vises
 // direkte (fx højst 2 labels pr. handel).
+import Image from "next/image";
 import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,6 +18,7 @@ import Ikon from "@/components/Ikon";
 import SporingTidslinje from "@/components/fragt/SporingTidslinje";
 import { annullerFragtlabel, hentFragtlabelLink, lavFragtlabel } from "@/app/actions/fragt";
 import type { ForsendelseVisning } from "@/lib/fragt/handlinger";
+import { TRANSPORTOER_INFO, erTransportoer } from "@/lib/fragt/types";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { useHydreret } from "@/lib/useHydreret";
 
@@ -50,6 +54,7 @@ export default function FragtlabelBoks({
   levering,
   brugteLabels,
   labelGraense = 2,
+  transportoer = null,
 }: {
   tradeId: string;
   // Den aktive udgående forsendelse (ikke annulleret), eller null.
@@ -66,6 +71,8 @@ export default function FragtlabelBoks({
   // annullerer labelen hos sig selv, så sælgeren kan lave en ny, så længe
   // pakken ikke er afleveret (labelGraense i src/lib/fragt/types.ts).
   labelGraense?: number | null;
+  // Køberens valgte fragtfirma (Shipmondo: dao | gls | postnord).
+  transportoer?: string | null;
 }) {
   const id = useId();
   const router = useRouter();
@@ -129,6 +136,11 @@ export default function FragtlabelBoks({
     }
   }
 
+  // Fragtfirmaet: labelens (når den findes), ellers køberens valg.
+  const t = forsendelse?.transportoer ?? transportoer;
+  const info = erTransportoer(t) ? TRANSPORTOER_INFO[t] : null;
+  const shopNavn = info?.shopNavn ?? "daoSHOP";
+
   const fejlBoks = fejl && (
     <div ref={fejlRef} tabIndex={-1} role="alert" className="mt-4 rounded-xl border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst outline-none">
       {fejl}
@@ -147,10 +159,29 @@ export default function FragtlabelBoks({
         <h2 id={`${id}-titel`} className="text-[17px] leading-snug lg:text-lg">
           Din fragtlabel er klar
         </h2>
+        {info && <p className="mt-1 text-sm text-tekst-svag">Fragtfirma: {info.navn}</p>}
 
-        {forsendelse.labelfriKode && (
+        {forsendelse.qrBillede && (
           <div className="mt-4 rounded-xl bg-groen-lys p-4 text-center sm:p-5">
-            <p className="text-sm font-semibold text-groen-mork">Vis denne kode i en daoSHOP</p>
+            <p className="text-sm font-semibold text-groen-mork">Vis QR-koden i en {shopNavn}</p>
+            <Image
+              src={forsendelse.qrBillede}
+              alt={`QR-kode til at aflevere pakken hos ${info?.navn ?? "fragtfirmaet"}`}
+              width={220}
+              height={220}
+              unoptimized
+              className="mx-auto mt-3 h-[220px] w-[220px] rounded-lg bg-white p-2 [image-rendering:pixelated]"
+            />
+            <p className="mx-auto mt-2 max-w-[44ch] text-[13px] text-tekst-daempet">
+              Du behøver ikke en printer. Vis QR-koden på din mobil, når du afleverer pakken, så printer
+              pakkeshoppen labelen.
+            </p>
+          </div>
+        )}
+
+        {forsendelse.labelfriKode && !forsendelse.qrBillede && (
+          <div className="mt-4 rounded-xl bg-groen-lys p-4 text-center sm:p-5">
+            <p className="text-sm font-semibold text-groen-mork">Vis denne kode i en {shopNavn}</p>
             <p
               className="mt-2 font-mono text-[28px] leading-tight font-bold tracking-[0.08em] break-all text-tekst sm:text-[34px]"
               aria-label={`Labelfri-kode: ${forsendelse.labelfriKode.split("").join(" ")}`}
@@ -158,10 +189,17 @@ export default function FragtlabelBoks({
               {forsendelse.labelfriKode}
             </p>
             <p className="mx-auto mt-2 max-w-[44ch] text-[13px] text-tekst-daempet">
-              Du behøver ikke en printer. Vis koden, når du afleverer pakken i en daoSHOP. Du kan også skrive
+              Du behøver ikke en printer. Vis koden, når du afleverer pakken i en {shopNavn}. Du kan også skrive
               koden tydeligt på pakken.
             </p>
           </div>
+        )}
+
+        {!forsendelse.labelfriKode && !forsendelse.qrBillede && forsendelse.harLabel && (
+          <p className="mt-4 rounded-xl bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
+            Print labelen, og sæt den på pakken. Aflever pakken i en {info?.shopNavn ?? "pakkeshop"}.
+            {info && info.labelfri === null && ` ${info.navn} kan ikke tage imod pakken uden en printet label.`}
+          </p>
         )}
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -169,7 +207,7 @@ export default function FragtlabelBoks({
             <button
               type="button"
               onClick={() => void aabnLabel(forsendelse.id)}
-              className={`btn ${forsendelse.labelfriKode ? "btn-sekundaer" : "btn-primaer"} w-full sm:w-auto`}
+              className={`btn ${forsendelse.labelfriKode || forsendelse.qrBillede ? "btn-sekundaer" : "btn-primaer"} w-full sm:w-auto`}
             >
               <Ikon navn="hent" className="h-[18px] w-[18px]" />
               Hent label (PDF)
@@ -274,8 +312,11 @@ export default function FragtlabelBoks({
         Lav fragtlabel
       </h2>
       <p className="mt-1 text-sm text-tekst-svag">
-        Køberen har betalt fragten. Du får en kode, som du viser i en daoSHOP, når du afleverer pakken. Du
-        behøver ikke en printer, men du kan også hente labelen som PDF.
+        {info?.labelfri === "qr"
+          ? `Køberen har betalt fragten og valgt ${info.navn}. Du får en QR-kode, som du viser i en ${info.shopNavn}, når du afleverer pakken. Du behøver ikke en printer, men du kan også hente labelen som PDF.`
+          : info && info.labelfri === null
+            ? `Køberen har betalt fragten og valgt ${info.navn}. Du får en label (PDF), som du printer og sætter på pakken, før du afleverer den i en ${info.shopNavn}.`
+            : `Køberen har betalt fragten${info ? ` og valgt ${info.navn}` : ""}. Du får en kode, som du viser i en ${shopNavn}, når du afleverer pakken. Du behøver ikke en printer, men du kan også hente labelen som PDF.`}
       </p>
 
       {(pakke || levering) && (

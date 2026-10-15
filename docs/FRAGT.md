@@ -1,4 +1,10 @@
-# Fragt – DAO (direkte eller via Shipmondo)
+# Fragt – Shipmondo (DAO, GLS og PostNord) eller DAO direkte
+
+> **Shipmondo igen (Filip, 15. okt. 2026, `FRAGTFIRMA=shipmondo`):** køberen vælger selv fragtfirma i
+> checkout – **DAO, GLS eller PostNord** – til pakkeshop eller døren. Prisen er den samme for alle tre (låst på
+> auktionen). Migration `20261024010000_fragt_shipmondo_transportoer.sql` (kolonnen `transportoer`). Se afsnittet
+> **"Shipmondo (verificeret mod sandboxen 9. og 15. okt. 2026)"** nederst for produkter, labelfri, annullering,
+> sporing og retur pr. fragtfirma.
 
 Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md afsnit 2
 ("Fragtfirma og priser", Filip 9. okt. 2026). Migrationer: `supabase/migrations/20261012010000_fragt_dao_shipmondo.sql`
@@ -37,8 +43,9 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    på igen ved skift tilbage), og `trades.afhentning` sættes til true, så afhentningsflowet bruges (kode ved
    afhentning, 7 dages frist, ingen sag). Samme PaymentIntent-regler som ved prisskift: en gammel PaymentIntent
    annulleres hos Stripe, før beløbet ændres (pi_forsoeg + 1). Efter betaling kan leveringsformen ikke skiftes.
-5. **Send pakke**: sælgeren udfylder sin afsenderadresse → forsendelsen oprettes hos Shipmondo (DAO) →
-   PDF-label + DAO's labelfri-kode. Sælgeren tager stadig de to pakkebilleder og trykker "Send pakke"
+5. **Send pakke**: sælgeren udfylder sin afsenderadresse → forsendelsen oprettes hos Shipmondo med køberens
+   fragtfirma → PDF-label + labelfri: DAO's kode, PostNords QR-kode (PNG, vises på skærmen) – GLS har ingen
+   labelfri udgående via Shipmondo, så dér printes PDF'en. Sælgeren tager stadig de to pakkebilleder og trykker "Send pakke"
    som i dag (labelen flytter ikke handlen). Højst 2 labels pr. handel (også annullerede) – flere kræver,
    at staff godkender (`fragtGodkendEkstraLabel` i `src/app/actions/adminFragt.ts`).
    Svarer fragtfirmaet ikke (timeout/netværk/5xx, eller fejl efter oprettelsen), bliver forsøget stående,
@@ -47,9 +54,14 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    'fejlet' af systemet – staff afslutter det med `fragtAfslutHaengendeLabel` (adminFragt.ts): "markér
    fejlet" (intet oprettet hos Shipmondo, note krævet) eller "tilknyt" (Shipmondos forsendelses-id; referencen
    skal være BidHamrs forsendelses-id). Begge logges i medarbejder-loggen. Knappen bygges af frontend.
-6. **Annullering**: så længe pakken ikke er indleveret. DAO kan ikke annullere via Shipmondo – labelen
-   annulleres i BidHamr, og staff får en markering (bed Shipmondo/DAO kreditere den).
-7. **Sporing**: kun via Shipmondos webhook "Shipment Monitor" → `/api/fragt/webhook/shipmondo`.
+6. **Annullering**: så længe pakken ikke er indleveret. DAO kan ikke annullere via Shipmondo (422) – labelen
+   annulleres i BidHamr, og staff får en markering (bed Shipmondo/DAO kreditere den). GLS og PostNord
+   annulleres hos Shipmondo; svarer Shipmondo `cancelled_at_carrier: true`, sættes
+   `forsendelser.annullering_bekraeftet_kl`, og labelen tæller ikke i "højst 2 labels" (loft 10). I sandboxen
+   svarer de `false` – så tæller labelen som før.
+7. **Sporing**: kun via Shipmondos webhook "Shipment Monitor" → `/api/fragt/webhook/shipmondo` (JWT HS256 med
+   `SHIPMONDO_WEBHOOK_NOEGLE`; hændelser fra en anden transportør end forsendelsens gemmes ikke; ukendte
+   statuskoder gemmes i `fragt_ukendte_koder` og ændrer aldrig status).
    "Pakken er kommet frem" (`pakke_leveret`) til køberen og "Pakken er indleveret" (ny type
    `pakke_indleveret`, påkrævet) til sælgeren. Vejer fragtfirmaet pakken tungere end størrelsens maksimum,
    markeres forsendelsen og betalingen til staff (udbetalingen holdes); modregning hos sælgeren er ikke bygget. **Levering/afhentning udløser aldrig
@@ -120,9 +132,9 @@ Igangværende auktioner beholder den pris, byderne har set. DAO's kostpris (eksk
 | Action | Hvem | Svar |
 |---|---|---|
 | `hentFragtpriser()` | alle | `{ ok, priser: [{ kode, navn, maksGram, pakkeshopOere, doerOere }] }` |
-| `soegPakkeshopsAction({ postnummer, adresse?, by?, antal? })` | logget ind | `{ ok, fragtfirma, pakkeshops: Pakkeshop[] }` |
+| `soegPakkeshopsAction({ postnummer, adresse?, by?, antal?, transportoer?, indlevering? })` | logget ind | `{ ok, fragtfirma, transportoer, pakkeshops: Pakkeshop[] }` |
 | `hentCheckoutAction(tradeId)` | køber | `{ ok, checkout }` (se Checkout i `src/lib/fragt/handlinger.ts`) |
-| `gemLeveringsvalgAction(tradeId, { maade, pakkeshopId?, pakkeshopPostnummer?, pakkeshopAdresse?, modtager, gemForslag? })` – eller `{ maade: "afhentning" }` | køber | `{ ok, fragtOere, totalOere, beskyttelseOere, afhentning, prisAendret }` |
+| `gemLeveringsvalgAction(tradeId, { maade, transportoer?, pakkeshopId?, pakkeshopPostnummer?, pakkeshopAdresse?, modtager, gemForslag? })` – eller `{ maade: "afhentning" }` | køber | `{ ok, fragtOere, totalOere, beskyttelseOere, afhentning, prisAendret }` |
 | `lavFragtlabel(tradeId, afsender?)` | sælger | `{ ok }` – uden afsender bruges sidst brugte adresse |
 | `annullerFragtlabel(tradeId, forsendelseId)` | sælger | `{ ok }` |
 | `hentFragtlabelLink(forsendelseId)` | sælger (udgående) / køber (retur) | `{ url }` (5 min) |
@@ -138,7 +150,10 @@ Alle fejl returneres som `{ fejl: "<dansk tekst>" }`, der kan vises direkte.
 `modtager = { navn, telefon, adresse?, postnummer?, by? }` – adresse krævet ved levering til døren.
 `afsender = { navn, adresse, postnummer, by, telefon? }`.
 
-Labelen og labelfri-koden vises kun for den part, der skal sende pakken (`harLabel`, `labelfriKode`).
+Labelen, labelfri-koden og QR-koden vises kun for den part, der skal sende pakken (`harLabel`, `labelfriKode`,
+`qrBillede` = data-URL med PNG). `ForsendelseVisning.transportoer` er fragtfirmaet (`dao` | `gls` | `postnord`).
+`Checkout.transportoerer` er listen, køberen kan vælge imellem (`[{ kode, navn, leveringstid, labelfri }]`, tom =
+intet valg), og `valgt.transportoer` / `forslag.transportoer` er valget.
 Labelfri-koden (DAO) skrives på pakken eller vises i pakkeshoppen, så sælgeren ikke behøver printer.
 **I sandboxen er koden altid `123-456-789`.**
 
@@ -151,9 +166,9 @@ Svar: `200 { ok: true, ... }` eller `409 { fejl, kode: "afvist" }` (vis `fejl`),
 
 | handling | krop | svar |
 |---|---|---|
-| `pakkeshops` | `{ postnummer, adresse?, by?, antal? }` | `{ fragtfirma, pakkeshops }` |
+| `pakkeshops` | `{ postnummer, adresse?, by?, antal?, transportoer?, indlevering? }` | `{ fragtfirma, transportoer, pakkeshops }` |
 | `checkout` | `{ trade_id }` | `{ checkout }` |
-| `levering` | `{ trade_id, maade: "pakkeshop" \| "doer", pakkeshop_id?, pakkeshop_postnummer?, pakkeshop_adresse?, modtager: { navn, telefon, adresse?, postnummer?, by? }, gem_forslag? }` eller `{ trade_id, maade: "afhentning" }` | `{ fragtOere, totalOere, beskyttelseOere, afhentning, prisAendret }` |
+| `levering` | `{ trade_id, maade: "pakkeshop" \| "doer", transportoer?, pakkeshop_id?, pakkeshop_postnummer?, pakkeshop_adresse?, modtager: { navn, telefon, adresse?, postnummer?, by? }, gem_forslag? }` eller `{ trade_id, maade: "afhentning" }` | `{ fragtOere, totalOere, beskyttelseOere, afhentning, prisAendret }` |
 | `book` | `{ trade_id, afsender? }` | `{ forsendelseId }` |
 | `annuller` | `{ trade_id, forsendelse_id }` | `{}` |
 | `forsendelser` | `{ trade_id }` | `{ forsendelser }` |
@@ -165,6 +180,9 @@ Direkte fra Supabase i appen (med brugerens session):
 
 - Priser: `supabase.from("fragt_pakkestoerrelser").select("kode, navn, maks_gram, pakkeshop_oere, doer_oere").order("sortering")`
 - Auktionens fragt: kolonnerne `pakkestoerrelse, vaegt_gram, fragt_pakkeshop_oere, fragt_doer_oere, afhentning_mulig` på `auctions`.
+- Fragtfirma (Shipmondo): `checkout.transportoerer` fra `POST /api/fragt/app/checkout`. Køberen vælger ét
+  (`transportoer` = `"dao" | "gls" | "postnord"`); pakkeshop-søgningen og `levering` sendes med samme
+  `transportoer`. Sendes den ikke, bruges DAO (ældre app). Pakkeshop-id'er gælder kun hos deres eget fragtfirma.
 - Checkout-overblik: `supabase.rpc("handel_checkout", { p_trade })` (kun køberen) →
   `{ afhentning, kun_afhentning, afhentning_mulig, pakkeshop_oere, doer_oere, beskyttelse_ved_forsendelse_oere, valgt, betaling, label_lavet }`.
   `afhentning` = afhentning er valgt (eller eneste mulighed); `kun_afhentning` = intet valg; `afhentning_mulig` = vis
@@ -199,22 +217,53 @@ Direkte fra Supabase i appen (med brugerens session):
 4. Kør migrationen og deploy hjemmesiden lige efter hinanden.
 5. Opret Shipmondo-webhooks (se nedenfor) og sæt `SHIPMONDO_*` + `FRAGTFIRMA=shipmondo` i Vercel (Filip).
 
-## Shipmondo (verificeret mod sandboxen 9. okt. 2026)
+## Shipmondo (verificeret mod sandboxen 9. og 15. okt. 2026)
+
+Pr. fragtfirma (sandbox 15. okt. 2026 – oprettet med BidHamrs adapter og annulleret igen):
+
+| | Pakkeshop | Døren | Labelfri udgående | Retur (køber → sælger) | Annullering |
+|---|---|---|---|---|---|
+| **DAO** | `DAO_STS` | `DAO_STH` (≤ 5 kg) | ja – kode (`labelless_code`, sandbox `123-456-789`) | `DAO_STS`, automatisk daoSHOP nær sælgeren, kode | **nej** (422) – annulleres kun i BidHamr + staff |
+| **GLS** | `GLSDK_SD` | `GLSDK_HD` | **nej** – PDF (QR_CODE afvises med 422, intet `labelless_code`) | `GLSDK_SR` (ShopReturn) + QR til sælgerens adresse; afvises den: `GLSDK_SD` til en GLS-pakkeshop nær sælgeren (PDF) | ja – `cancelled_at_carrier: false` i sandbox |
+| **PostNord** | `PDK_MC` + `QR_CODE` | `PDK_MH` + `QR_CODE` | ja – QR (`GET /shipments/{id}/qr_code?file_format=png`) | `PDK_MC` + QR, automatisk pakkeshop nær sælgeren | ja – `cancelled_at_carrier: false` i sandbox |
+
+- GLS kræver `EMAIL_NT` (modtagerens e-mail). Alle andre: mindst én af `EMAIL_NT`/`SMS_NT`.
+- **Reference højst 35 tegn** (PostNord afviser længere: "referenceNo ... cannot be longer than 35 characters").
+  Derfor sendes BidHamrs forsendelses-id **uden bindestreger** (32 tegn); `hentEksisterende` oversætter tilbage.
+- `GLSDK_SR` og `PDK_RDO` er formelt "business location"-produkter. ShopReturn til en privat sælger blev accepteret
+  i sandboxen, men bør bekræftes med Shipmondo/GLS (ellers bruges reserven `GLSDK_SD` automatisk).
+- Shipmondo-annullering: "This doesn't refund the shipment in Shipmondo" – en annulleret label kan stadig koste.
+- Pakkeshops: `GET /service_point/service_points?product_code=<fragtfirmaets pakkeshop-produkt>` – kun det valgte
+  fragtfirmas shops (id'erne overlapper ikke på tværs). Åbningstider kommer som "man:"/"Monday:".
+- QR-koden gemmes i `forsendelser.qr_png` (base64, ingen læseadgang for brugere) og vises som billede til den,
+  der skal aflevere pakken.
+- Sporing (Shipment Monitor) er ens for alle tre: `EN_ROUTE` → i_transit (sætter også afleveret_kl),
+  `AVAILABLE_FOR_DELIVERY` → klar_til_afhentning, `DELIVERED` → **leveret** (eneste kode, der sætter leveret_kl);
+  `INFORMED`/`PICKUP_REQUESTED`/`GENERAL` → ingen hændelse; `current_state: DANGER` → en ekstra `fejl`-hændelse
+  (markering). En tekst med "retur/return/til afsender" giver `returneret` (også ved `DELIVERED` – leveret tilbage
+  til afsenderen må aldrig frigive penge). Ukendte statusser og transportører gemmes i `fragt_ukendte_koder`.
+- "Ikke afhentet" automatisk kun med `SHIPMONDO_RETUR_ER_IKKE_AFHENTET=true` (Shipment Monitor har ingen
+  retur-status – det er en tekst). Ellers markering til staff, som trykker "Ikke afhentet".
+- Efterlysning efter 14 dage: Shipmondo har intet API til det – staff får opgaven (`fragt_efterlysninger`, status
+  `manuel`) og efterlyser hos fragtfirmaet. Pengene holdes tilbage (`handel_auto_frigiv`).
+
+Fra 9. okt. 2026 (gælder stadig):
 
 - DAO-produkter: `DAO_STS` (daoSHOP drop-off = Shop2Shop, 250 g–15 kg, pakkeshop krævet) og
   `DAO_STH` (daoHOME drop-off = Shop2Home, 250 g–5 kg). Notifikation: mindst én af `EMAIL_NT`/`SMS_NT`.
   `DAO_P`/`DAO_H` (afhentning hos afsender) og `DAO_R` (retur kun til erhverv) bruges ikke.
-- Idempotens: `reference` = BidHamrs forsendelses-id. Findes referencen allerede hos Shipmondo,
-  genbruges forsendelsen. Bemærk: Shipmondos søgning på reference er ikke opdateret med det samme
+- Idempotens: `reference` = BidHamrs forsendelses-id (uden bindestreger). Findes referencen allerede hos
+  Shipmondo, genbruges forsendelsen (verificeret 15. okt.: samme reference to gange → samme forsendelse). Bemærk: Shipmondos søgning på reference er ikke opdateret med det samme
   (få sekunder) – databasen (`forsendelse_claim`) forhindrer derfor selv dobbeltbestilling, og en
   fejl med ukendt udfald logges i drift med referencen.
 - Pakkeshops: `GET /service_point/service_points` (højst 20 pr. kald). Afstand fra Shipmondo, når
   adressen er med – ellers beregnet fra postnummerets midte.
 - QR-kode (`/shipments/{id}/qr_code`) kræver servicen `QR_CODE`, som DAO ikke har → PDF-label + labelfri-kode.
-- Annullering: DAO svarer 422 "It's not possible to cancel this shipment." (GLS kan annulleres).
-- Sporing: intet sporings-endpoint i API v3 – kun webhooken. `hentSporing` giver derfor ingen hændelser,
-  og fragt-cron'en kan ikke hente sporing som reserve. Mister vi en webhook, kommer den næste status
-  ("latest") stadig. Shipmondo skriver, at Shipment Monitor "updates once a day" – spørg på mødet.
+- Sporing: intet sporings-endpoint i API v3 (tjekket igen 15. okt.) – kun webhooken. `hentSporing` giver derfor
+  ingen hændelser, og fragt-cron'ens polling er kun reserve for andre firmaer. Shipmondo prøver **ikke** igen,
+  hvis vi ikke svarer 200 inden for 3 sekunder; mister vi en webhook, kommer den næste status ("latest") stadig,
+  og efterlysningen efter 14 dage fanger en pakke uden leveringsmelding. Shipmondo skriver, at Shipment
+  Monitor "updates once a day".
 - Målt vægt: shipmondo.dev's eksempel på en Shipment Monitor-hændelse har `"weight": "0.6"` (tekst, kg;
   også `length`/`height`/`width`). Det kan **ikke** verificeres i sandboxen: OpenAPI-specifikationen beskriver
   ikke Shipment Monitor-payloaden, sandboxen har ingen rigtige scanninger, og webhooks kan ikke nå localhost.
@@ -249,9 +298,10 @@ Localhost kan ikke modtage webhooks fra Shipmondo – test på en Vercel-preview
 - DAO-kostpris: Shop2Shop har 7 priser for 8 vægttrin – 33 kr. for både 250 g og 500 g (så 1 kg = 35 kr.,
   som giver Filips "ca. 54/70/88 kr."). Energitillæg 15 % + 2 % regnes begge af grundprisen. Labelfri (2 kr.)
   regnes altid med.
-- DAO kan ikke annullere: labelen annulleres i BidHamr, og staff markeres.
-- Shipment Monitor har ingen retur-status: en tekst med "retur" giver `returneret`, `DANGER` giver `fejl` –
-  begge kun som markering til staff. Staff trykker "Ikke afhentet", når pakken er sendt retur, fordi
+- DAO kan ikke annullere: labelen annulleres i BidHamr, og staff markeres. GLS/PostNord: se tabellen ovenfor.
+- Shipment Monitor har ingen retur-status: en tekst med "retur/return/til afsender" giver `returneret`,
+  `DANGER` giver en ekstra `fejl` – begge kun som markering til staff (medmindre
+  `SHIPMONDO_RETUR_ER_IKKE_AFHENTET=true`). Staff trykker "Ikke afhentet", når pakken er sendt retur, fordi
   køberen ikke hentede den (se Flowet, punkt 9).
 - Ikke-afhentet pakke: returfragten = fragten ud (det køberen betalte - Filip, 10. okt. 2026). Er den
   mindst buddet, får køberen 0 kr.; refusionsvejen tilbagefører kun sælgerens del (X = U) og afslutter

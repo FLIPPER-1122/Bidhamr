@@ -17,6 +17,8 @@ const PakkeshopKort = dynamic(() => import("@/components/checkout/PakkeshopKort"
 });
 
 export type ValgtPakkeshop = {
+  // Fragtfirmaet, shoppen hører til (Shipmondo: dao | gls | postnord).
+  transportoer?: string | null;
   id: string;
   navn: string;
   adresse: string;
@@ -46,11 +48,16 @@ export default function PakkeshopVaelger({
   onBekraeft,
   startSoegning,
   valgt,
+  transportoer = null,
+  firmaNavn = null,
 }: {
   onLuk: () => void;
   onBekraeft: (shop: ValgtPakkeshop) => void;
   startSoegning: string;
   valgt: ValgtPakkeshop | null;
+  // Det valgte fragtfirma (kun ved Shipmondo) - der søges kun hos det.
+  transportoer?: string | null;
+  firmaNavn?: string | null;
 }) {
   const id = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -78,7 +85,7 @@ export default function PakkeshopVaelger({
     setHenter(true);
     setFejl(null);
     try {
-      const r = await soegPakkeshopsAction({ postnummer: q.postnummer, adresse: q.adresse, antal: 20 });
+      const r = await soegPakkeshopsAction({ postnummer: q.postnummer, adresse: q.adresse, antal: 20, transportoer });
       if ("fejl" in r) {
         setFejl(r.fejl);
         setShops([]);
@@ -93,7 +100,7 @@ export default function PakkeshopVaelger({
       setHenter(false);
       setSoegt({ postnummer: q.postnummer, adresse: q.adresse });
     }
-  }, []);
+  }, [transportoer]);
 
   // Ved åbning (vinduet monteres først, når det åbnes): fokus i søgefeltet,
   // siden bagved ruller ikke, og der søges med det, vi kender (postnummer).
@@ -149,6 +156,7 @@ export default function PakkeshopVaelger({
     const s = shops.find((x) => x.id === markeret);
     if (!s) return;
     onBekraeft({
+      transportoer,
       id: s.id,
       navn: s.navn,
       adresse: s.adresse,
@@ -182,7 +190,7 @@ export default function PakkeshopVaelger({
         <div className="border-b border-kant px-4 pt-4 pb-3 sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <h2 id={`${id}-titel`} className="text-[20px] leading-tight lg:text-[22px]">
-              Vælg pakkeshop
+              {firmaNavn ? `Vælg pakkeshop hos ${firmaNavn}` : "Vælg pakkeshop"}
             </h2>
             <button
               type="button"
