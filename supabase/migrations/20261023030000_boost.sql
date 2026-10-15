@@ -561,9 +561,16 @@ begin
   -- rækken i boost_koeb (for update) - ellers deadlock (40P01) med fx en
   -- samtidig indsigelse, staff-refusion eller boost. Brugeren slås op uden lås.
   select b.bruger_id into v_bruger from public.boost_koeb b where b.stripe_payment_intent_id = p_pi;
-  if v_bruger is not null then perform public.boost_laas_bruger(v_bruger); end if;
-  select b.id, b.status, b.beloeb_oere, b.bruger_id, b.point into k
-    from public.boost_koeb b where b.stripe_payment_intent_id = p_pi for update;
+  if v_bruger is not null then
+    perform public.boost_laas_bruger(v_bruger);
+    select b.id, b.status, b.beloeb_oere, b.bruger_id, b.point into k
+      from public.boost_koeb b where b.stripe_payment_intent_id = p_pi for update;
+  else
+    -- Ikke den aktuelle PaymentIntent på et køb: ingen række at låse - videre
+    -- til grenen for kasserede PaymentIntents (k.id er null).
+    select b.id, b.status, b.beloeb_oere, b.bruger_id, b.point into k
+      from public.boost_koeb b where false;
+  end if;
   if k.id is null then
     select b.id into v_k from public.boost_koeb b where p_pi = any(b.tidligere_payment_intents) limit 1;
     if v_k is not null then
@@ -654,7 +661,8 @@ begin
   if v_grund is null then return jsonb_build_object('kode', 'begrundelse_mangler'); end if;
   -- Låserækkefølge: brugerens pointkonto før rækken (se boost_koeb_registrer).
   select b.bruger_id into v_bruger from public.boost_koeb b where b.id = p_id;
-  if v_bruger is not null then perform public.boost_laas_bruger(v_bruger); end if;
+  if v_bruger is null then return jsonb_build_object('kode', 'ikke_fundet'); end if;
+  perform public.boost_laas_bruger(v_bruger);
   select b.id, b.bruger_id, b.status, b.point into k from public.boost_koeb b where b.id = p_id for update;
   if k.id is null then return jsonb_build_object('kode', 'ikke_fundet'); end if;
   if k.bruger_id = p_staff then return jsonb_build_object('kode', 'inhabil'); end if;
@@ -725,7 +733,8 @@ declare
 begin
   -- Låserækkefølge: brugerens pointkonto før rækken (se boost_koeb_registrer).
   select b.bruger_id into v_bruger from public.boost_koeb b where b.stripe_charge_id = p_charge;
-  if v_bruger is not null then perform public.boost_laas_bruger(v_bruger); end if;
+  if v_bruger is null then return 'ukendt'; end if;
+  perform public.boost_laas_bruger(v_bruger);
   select b.id, b.status into k from public.boost_koeb b where b.stripe_charge_id = p_charge for update;
   if k.id is null then return 'ukendt'; end if;
   if k.status = 'refunderet' then return 'allerede'; end if;
@@ -1041,6 +1050,9 @@ declare
   v_brugt   integer;
   v_point   integer;
 begin
+  -- Én synk-kørsel ad gangen: kørslen tager flere brugerlåse efter hinanden,
+  -- og to samtidige kørsler må ikke tage dem i hver sin rækkefølge (deadlock).
+  perform pg_advisory_xact_lock(hashtextextended('bidhamr-boost-point-synk', 0));
   select * into s from public.boost_indstillinger where id;
   if not found then return jsonb_build_object('optjent', 0, 'tilbagefoert', 0); end if;
 
@@ -1103,6 +1115,8 @@ begin
             or b.bidhamr_daekker_kl is not null
             or b.indsigelse_tabt_kl is not null
             or coalesce(t.status, '') = 'annulleret')
+     -- Brugerlåse i fast rækkefølge (ledgeren låser pr. bruger).
+     order by p.bruger_id, p.betaling_id
      limit v_graense
   loop
     if public.boost_postering_indsaet(r.bruger_id, 'tilbagefoersel', 0, p_betaling => r.betaling_id, p_oensket => r.point) then

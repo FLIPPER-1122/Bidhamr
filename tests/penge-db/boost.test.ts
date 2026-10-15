@@ -763,6 +763,15 @@ describe("review-rettelser", () => {
     }
   });
 
+  it("ukendt køb: ingen lås og ingen 'for update' - samme svar som før", async () => {
+    expect((await j(`select public.boost_koeb_registrer('pi_ukendt_x', 'succeeded', 'ch_u', 3900, null) as v`)).kode).toBe("ukendt");
+    expect((await j(`select public.boost_staff_refusion($1, $2, 'x') as v`, [CHEF, randomUUID()])).kode).toBe("ikke_fundet");
+    expect((await en<{ v: string }>(`select public.boost_koeb_registrer_charge_refusion('ch_ukendt_x', null, true) as v`)).v).toBe("ukendt");
+    const { def } = await en<{ def: string }>(
+      `select pg_get_functiondef('public.boost_point_synk(integer)'::regprocedure) as def`);
+    expect(def).toContain("bidhamr-boost-point-synk");
+  });
+
   it("cron og start: 7 dage uden aktivitet annullerer købet (kun med samme PaymentIntent); start laver et nyt", async () => {
     const gammel = await en<{ id: string }>(
       `insert into public.boost_koeb (bruger_id, point, beloeb_oere, oprettet_kl, aktivitet_kl, stripe_payment_intent_id)
