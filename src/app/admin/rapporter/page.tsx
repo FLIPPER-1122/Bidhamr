@@ -104,21 +104,38 @@ export default async function AdminRapporter({
   const titelMap = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
   const saelgerMap = new Map((auktioner ?? []).map((a) => [a.id as string, a.bruger_id as string]));
 
-  // Gentagne forsøg med kunst: antal auktioner pr. sælger, der har lignet kunst.
+  // Gentagne forsøg med kunst: antal auktioner pr. sælger, der er skjult eller
+  // fjernet for kunst (kunst_kontrol 'afvist' eller en DSA-afgørelse med
+  // reglen 'kunst'), eller som ikke er godkendt endnu ('afventer').
+  // Godkendte ("Ikke kunst") tæller ikke.
   const kunstSaelgere = [
     ...new Set(alle.filter((r) => r.category === "kunst").map((r) => saelgerMap.get(r.auction_id)).filter(Boolean)),
   ] as string[];
   const kunstAntal = new Map<string, number>();
   if (kunstSaelgere.length) {
-    const { data: markerede } = await supabase
-      .from("auctions")
-      .select("bruger_id")
-      .in("bruger_id", kunstSaelgere)
-      .not("kunst_markeret_kl", "is", null)
-      .limit(5000);
-    for (const m of (markerede ?? []) as { bruger_id: string }[]) {
-      kunstAntal.set(m.bruger_id, (kunstAntal.get(m.bruger_id) ?? 0) + 1);
-    }
+    const [{ data: kontrol }, { data: afgoerelser }] = await Promise.all([
+      supabase
+        .from("auctions")
+        .select("id, bruger_id")
+        .in("bruger_id", kunstSaelgere)
+        .in("kunst_kontrol", ["afventer", "afvist"])
+        .limit(5000),
+      supabase
+        .from("dsa_afgoerelser")
+        .select("indhold_id, bruger_id")
+        .eq("indhold_type", "auktion")
+        .eq("regel_kode", "kunst")
+        .in("bruger_id", kunstSaelgere)
+        .limit(5000),
+    ]);
+    const pr = new Map<string, Set<string>>();
+    const tael = (saelger: string, auktion: string) => {
+      if (!pr.has(saelger)) pr.set(saelger, new Set());
+      pr.get(saelger)!.add(auktion);
+    };
+    for (const k of (kontrol ?? []) as { id: string; bruger_id: string }[]) tael(k.bruger_id, k.id);
+    for (const a of (afgoerelser ?? []) as { indhold_id: string; bruger_id: string }[]) tael(a.bruger_id, a.indhold_id);
+    for (const [s, ids] of pr) kunstAntal.set(s, ids.size);
   }
   const brugerMap = new Map(
     (brugere ?? []).map((u) => [u.id as string, { navn: u.navn as string | null, email: u.email as string }]),
@@ -214,10 +231,10 @@ export default async function AdminRapporter({
               />
             )}
             <ConfirmDialog
-              triggerLabel="Intet brud – luk"
+              triggerLabel={r.category === "kunst" ? "Ikke kunst – godkend" : "Intet brud – luk"}
               triggerClassName={kanModerereOpslag ? lille : "btn btn-primaer btn-lille"}
-              title="Markér anmeldelsen som behandlet?"
-              description="Auktionen forbliver aktiv. Anmeldelsen flyttes til Opklarede."
+              title={r.category === "kunst" ? "Er det ikke kunst? Godkend auktionen?" : "Markér anmeldelsen som behandlet?"}
+              description={r.category === "kunst" ? "Auktionen bliver synlig for alle, og der kan bydes. Anmeldelsen flyttes til Opklarede." : "Auktionen forbliver aktiv. Anmeldelsen flyttes til Opklarede."}
               confirmLabel="Markér som behandlet"
               action={rapportMarkerBehandlet}
               hiddenFields={{ rapportId: r.id }}
@@ -263,7 +280,7 @@ export default async function AdminRapporter({
                     fakta={[
                       { label: "Auktion", vaerdi: titelMap.get(r.auction_id) ?? "(slettet auktion)" },
                       {
-                        label: "Auktioner, der har lignet kunst",
+                        label: "Auktioner, der afventer eller er afvist for kunst",
                         vaerdi: String(kunstAntal.get(saelgerMap.get(r.auction_id)!) ?? 0),
                       },
                     ]}

@@ -257,7 +257,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Må jeg sælge kunst eller plakater?",
-          svar: "Kunst må ikke sælges på BidHamr. Det gælder malerier, tegninger, skulpturer, grafiske tryk og litografier – også signerede og nummererede – og kunst, du selv har lavet. Plakater og masseproducerede billeder uden kunstner, fx et billede fra IKEA, må gerne sælges. Ligner din auktion kunst, spørger vi, om det er kunst, og en medarbejder kigger på den.",
+          svar: "Kunst må ikke sælges på BidHamr. Det gælder malerier, tegninger, skulpturer, grafiske tryk og litografier – også signerede og nummererede – og kunst, du selv har lavet. Plakater og masseproducerede billeder uden kunstner, fx et billede fra IKEA, må gerne sælges. Ligner din auktion kunst, spørger vi, om det er kunst. Andre kan først se auktionen og byde, når en medarbejder har tjekket den.",
         },
         {
           spoergsmaal: "Hvordan melder jeg en auktion, der ikke burde være der?",

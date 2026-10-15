@@ -1,18 +1,22 @@
 // Migrationen 20261023010000_kunst_forbudt.sql i PGlite (Postgres i processen -
-// ingen database, intet netværk). De funktioner, migrationen ændrer, oprettes
-// først med deres hidtidige definition fra de ældre migrationer (md5 skal
-// være prods), resten stubbes. Migrationen køres TO gange, og der tjekkes:
+// ingen database, intet netværk). De funktioner og policyer, migrationen
+// ændrer, oprettes først med deres hidtidige definition fra de ældre
+// migrationer (md5 skal være prods), resten stubbes. Migrationen køres TO
+// gange, og der tjekkes:
 // - public.kunst_tekst_tjek giver præcis det samme som tjekKunstTekst (TS)
-// - markering og automatisk anmeldelse ved oprettelse og rettelse
-// - brugeren kan ikke selv sætte/fjerne markeringen eller ændre bekræftelsen
-// - 'kunst' i regler, kategorier og check-constraints
+// - markering, kontrol ('afventer') og automatisk anmeldelse
+// - en auktion, der afventer, er skjult for andre (RLS) og kan ikke bydes på
+// - brugeren kan ikke selv ændre kontrollen; staff kan godkende
+// - samme tekst, som staff har afgjort, sendes ikke til tjek igen
+// - 'kunst' i regler, kategorier og checks; brugerbetingelser 0.2
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { tjekKunstTekst } from "@/lib/kunstForbud";
+import { kunstSloerVariant, tjekKunstTekst } from "@/lib/kunstForbud";
 import { FORBUDTE_KATEGORIER } from "@/lib/forbudteVarer";
 import { DSA_REGLER } from "@/lib/dsa/regler";
+import { VILKAAR_VERSION } from "@/lib/vilkaar";
 import { KUNST_JA, KUNST_NEJ } from "../enhed/kunstEksempler";
 
 const mig = (navn: string) =>
@@ -31,12 +35,20 @@ function funktion(fil: string, navn: string): string {
 
 const SYSTEM = "00000000-0000-0000-0000-000000000001";
 const SAELGER = "00000000-0000-0000-0000-0000000000aa";
+const ANDEN = "00000000-0000-0000-0000-0000000000bb";
 
 const STUB = `
 create role anon; create role authenticated; create role service_role;
 create schema auth;
+grant usage on schema auth to anon, authenticated, service_role;
 create function auth.role() returns text language sql stable
   as $$ select nullif(current_setting('test.rolle', true), '') $$;
+create function auth.uid() returns uuid language sql stable
+  as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+create function public.er_staff() returns boolean language sql stable
+  as $$ select coalesce(current_setting('test.staff', true), '') = '1' $$;
+create function public.auktion_arkiv_adgang(p_auktion uuid) returns boolean language sql stable
+  as $$ select false $$;
 create function public.bidhamr_system_id() returns uuid language sql immutable
   as $$ select '${SYSTEM}'::uuid $$;
 create function public.auktion_kategorier() returns text[] language sql immutable
@@ -46,9 +58,20 @@ create table public.auctions (
   bruger_id uuid not null,
   titel text not null,
   beskrivelse text,
-  kategori text);
-grant select (id, bruger_id, titel, beskrivelse, kategori) on public.auctions to anon, authenticated;
+  kategori text,
+  skjult boolean not null default false,
+  arkiveret_kl timestamptz);
+grant select (id, bruger_id, titel, beskrivelse, kategori, skjult, arkiveret_kl) on public.auctions to anon, authenticated;
 grant insert, update on public.auctions to authenticated;
+alter table public.auctions enable row level security;
+create policy auctions_select_anon on public.auctions for select to anon
+  using ((arkiveret_kl IS NULL) AND (NOT COALESCE(skjult, false)));
+create policy auctions_select_authenticated on public.auctions for select to authenticated
+  using (((arkiveret_kl IS NULL) AND (NOT COALESCE(skjult, false))) OR (bruger_id = ( SELECT auth.uid() AS uid)) OR ( SELECT er_staff() AS er_staff) OR auktion_arkiv_adgang(id));
+create table public.bids (
+  id uuid primary key default gen_random_uuid(), auktion_id uuid not null, bruger_id uuid not null, beloeb numeric);
+create table public.bud_maksimum (
+  auktion_id uuid not null, bruger_id uuid not null, maks_beloeb numeric, primary key (auktion_id, bruger_id));
 create table public.reports (
   id uuid primary key default gen_random_uuid(),
   auction_id uuid, reporter_id uuid, category text, description text,
@@ -61,6 +84,7 @@ ${funktion("20261006042000_forbudte_varer_skaerpet.sql", "forbudt_normaliser")}
 ${funktion("20261006042000_forbudte_varer_skaerpet.sql", "forbudte_varer")}
 ${funktion("20261009030000_testrettelser_dsa_sikkerhed.sql", "dsa_regler")}
 ${funktion("20261009011000_dsa_rettelser.sql", "dsa_anmeldelse_opret")}
+${funktion("20261009050000_vilkaar_accept.sql", "vilkaar_aktuel_version")}
 `;
 
 const MD5 = `select md5(lower(regexp_replace(regexp_replace(replace(p.prosrc, chr(13), ''), '--[^\\n]*', '', 'g'), '\\s', '', 'g'))) as h
@@ -73,8 +97,11 @@ async function md5(fn: string): Promise<string> {
   return r.rows[0]?.h ?? "";
 }
 
-async function somRolle(rolle: string | null) {
-  await db.query("select set_config('test.rolle', $1, false)", [rolle ?? ""]);
+async function som(rolle: string | null, uid: string | null = SAELGER) {
+  await db.query("select set_config('test.rolle', $1, false), set_config('test.uid', $2, false)", [
+    rolle ?? "",
+    uid ?? "",
+  ]);
 }
 
 async function opret(titel: string, beskrivelse: string | null = null, bekraeftet?: boolean): Promise<string> {
@@ -88,34 +115,69 @@ async function opret(titel: string, beskrivelse: string | null = null, bekraefte
 }
 
 async function auktion(id: string) {
-  const r = await db.query<{ kunst_markeret_kl: string | null; kunst_bekraeftet: boolean }>(
-    "select kunst_markeret_kl, kunst_bekraeftet from public.auctions where id = $1",
+  const r = await db.query<{ kunst_markeret_kl: string | null; kunst_bekraeftet: boolean; kunst_kontrol: string | null }>(
+    "select kunst_markeret_kl, kunst_bekraeftet, kunst_kontrol from public.auctions where id = $1",
     [id],
   );
   return r.rows[0];
 }
 
 async function rapporter(id: string) {
-  const r = await db.query<{ category: string; description: string; reporter_id: string; status: string }>(
-    "select category, description, reporter_id, status from public.reports where auction_id = $1 order by created_at",
+  const r = await db.query<{ id: string; category: string; description: string; reporter_id: string; status: string }>(
+    "select id, category, description, reporter_id, status from public.reports where auction_id = $1 order by created_at",
     [id],
   );
   return r.rows;
+}
+
+// Kan rollen se auktionen (RLS)? Kører som rollen og sætter rollen tilbage.
+async function kanSe(rolle: "anon" | "authenticated", uid: string | null, id: string, staff = false): Promise<boolean> {
+  await db.query("select set_config('test.uid', $1, false), set_config('test.staff', $2, false)", [
+    uid ?? "",
+    staff ? "1" : "",
+  ]);
+  await db.exec(`set role ${rolle}`);
+  try {
+    const r = await db.query<{ id: string }>("select id from public.auctions where id = $1", [id]);
+    return r.rows.length === 1;
+  } finally {
+    await db.exec("reset role");
+    await db.query("select set_config('test.staff', '', false)");
+  }
+}
+
+async function fejlkode(sql: string, params: unknown[]): Promise<string | null> {
+  try {
+    await db.query(sql, params);
+    return null;
+  } catch (e) {
+    return (e as { code?: string }).code ?? "ukendt";
+  }
 }
 
 const GAMLE_MD5: Record<string, string> = {
   "public.forbudte_varer()": "26f66c209eafd8851d51bc524a5771bc",
   "public.dsa_regler()": "3c089e00118b314b50a3b2fcdc988c8d",
   "public.dsa_anmeldelse_opret(uuid,text,uuid,text,text,text,text,text,boolean)": "10671a6ecac0d9faaae0518587047ff9",
+  "public.vilkaar_aktuel_version()": "f87f0070b496a88af134964e29b310ce",
+};
+const GAMLE_POLICY_MD5: Record<string, string> = {
+  auctions_select_anon: "e8ff1c7e4468e4aa59f122841dc1a3fc",
+  auctions_select_authenticated: "15a38a05e63952aaf613e3cea3111374",
 };
 
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(STUB);
-  // Stubbene skal være prods funktioner - ellers tester drift-tjekket ingenting.
+  // Stubbene skal være prods funktioner og policyer - ellers tester
+  // drift-tjekket ingenting.
   for (const [fn, h] of Object.entries(GAMLE_MD5)) {
     expect(await md5(fn), fn).toBe(h);
   }
+  const pol = await db.query<{ polname: string; h: string }>(
+    "select polname, md5(pg_get_expr(polqual, polrelid)) as h from pg_policy where polrelid = 'public.auctions'::regclass",
+  );
+  for (const p of pol.rows) expect(p.h, p.polname).toBe(GAMLE_POLICY_MD5[p.polname]);
   await db.exec(MIGRATION);
   await db.exec(MIGRATION);
 }, 120_000);
@@ -141,7 +203,6 @@ describe("migrationen", () => {
       "select kode, navn, beskrivelse from public.forbudte_varer() where kode = 'kunst'",
     );
     expect(kat.rows[0]).toEqual(FORBUDTE_KATEGORIER.find((k) => k.kode === "kunst"));
-    // Hele listen af regler er den samme i TS og SQL.
     const alle = await db.query<{ kode: string }>("select kode from public.dsa_regler()");
     expect(alle.rows.map((r) => r.kode)).toEqual(DSA_REGLER.map((r) => r.kode));
     const checks = await db.query<{ def: string }>(
@@ -149,115 +210,196 @@ describe("migrationen", () => {
     );
     expect(checks.rows).toHaveLength(2);
     for (const c of checks.rows) expect(c.def).toContain("kunst");
-    const src = await db.query<{ prosrc: string }>(
-      "select prosrc from pg_proc where proname = 'dsa_anmeldelse_opret'",
-    );
+    const src = await db.query<{ prosrc: string }>("select prosrc from pg_proc where proname = 'dsa_anmeldelse_opret'");
     expect(src.rows[0].prosrc).toContain("'vilkaar', 'kunst', 'andet'");
+  });
+
+  it("brugerbetingelserne er version 0.2 - samme som hjemmesiden", async () => {
+    const r = await db.query<{ v: string }>("select public.vilkaar_aktuel_version() as v");
+    expect(r.rows[0].v).toBe("0.2");
+    expect(VILKAAR_VERSION).toBe("0.2");
   });
 
   it("nye kolonner kan ikke læses af brugere", async () => {
     const r = await db.query<{ n: number }>(
       `select count(*)::int as n from information_schema.column_privileges
-        where table_name = 'auctions' and column_name in ('kunst_bekraeftet', 'kunst_markeret_kl')
+        where table_name = 'auctions' and column_name like 'kunst%'
           and privilege_type = 'SELECT' and grantee in ('anon', 'authenticated')`,
     );
     expect(r.rows[0].n).toBe(0);
+  });
+
+  it("policyerne skjuler 'afventer'", async () => {
+    const pol = await db.query<{ q: string }>(
+      "select pg_get_expr(polqual, polrelid) as q from pg_policy where polrelid = 'public.auctions'::regclass",
+    );
+    for (const p of pol.rows) expect(p.q).toContain("kunst_kontrol");
   });
 });
 
 describe("kunst_tekst_tjek = tjekKunstTekst", () => {
   const ekstra = [
     "Maleri af Kirkeby, olie på lærred, signeret",
-    "Plakat af maleri af Monet. Maleri sælges også",
     "kunst læder kunst",
-    "IKEA billede. Oliemaleri af min farfar",
     "Grafik, signeret og nummereret 12/50",
     "Buste i bronze",
     "AKVAREL",
-    "Lito",
+    "m.a.l.e.r.i, m a l e r i og ma-leri",
+    "x".repeat(6000) + " maleri",
+    "maleri " + "x".repeat(6000),
+    "A3 3d 1a b0rd",
+    "😀".repeat(10) + " Ma-leri",
   ];
   it.each([...KUNST_JA, ...KUNST_NEJ, ...ekstra])("%s", async (t) => {
-    const r = await db.query<{ v: unknown }>("select public.kunst_tekst_tjek($1) as v", [t]);
+    const r = await db.query<{ v: unknown; s: string }>(
+      "select public.kunst_tekst_tjek($1) as v, public.kunst_sloer_variant($1) as s",
+      [t],
+    );
     expect(r.rows[0].v).toEqual(tjekKunstTekst(t));
+    expect(r.rows[0].s).toBe(kunstSloerVariant(t));
   });
 });
 
-describe("markering og anmeldelse", () => {
-  it("kunst ved oprettelse: markeres, og staff får én anmeldelse", async () => {
-    await somRolle("authenticated");
+describe("kontrol, synlighed og anmeldelse", () => {
+  it("kunst ved oprettelse: afventer, skjult for andre, én anmeldelse", async () => {
+    await som("authenticated");
     const id = await opret("Oliemaleri af skib", "60x80", true);
     const a = await auktion(id);
     expect(a.kunst_markeret_kl).not.toBeNull();
+    expect(a.kunst_kontrol).toBe("afventer");
     expect(a.kunst_bekraeftet).toBe(true);
     const r = await rapporter(id);
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ category: "kunst", reporter_id: SYSTEM, status: "pending" });
     expect(r[0].description).toContain('"oliemaleri"');
     expect(r[0].description).toContain('bekræftet "Det er ikke kunst"');
+
+    expect(await kanSe("anon", null, id)).toBe(false);
+    expect(await kanSe("authenticated", ANDEN, id)).toBe(false);
+    expect(await kanSe("authenticated", SAELGER, id)).toBe(true);
+    expect(await kanSe("authenticated", ANDEN, id, true)).toBe(true);
+
+    // Sælgeren kan læse sin egen status - andre får null.
+    await som("authenticated", SAELGER);
+    const mig = await db.query<{ k: string | null }>("select public.min_kunst_kontrol($1) as k", [id]);
+    expect(mig.rows[0].k).toBe("afventer");
+    await som("authenticated", ANDEN);
+    const anden = await db.query<{ k: string | null }>("select public.min_kunst_kontrol($1) as k", [id]);
+    expect(anden.rows[0].k).toBeNull();
   });
 
-  it("appens insert uden kunst_bekraeftet virker og markeres", async () => {
-    await somRolle("authenticated");
+  it("der kan ikke bydes, før staff har godkendt - derefter kan der", async () => {
+    await som("authenticated", ANDEN);
+    const id = await opret("Akvarel af fyrtårn");
+    expect(
+      await fejlkode("insert into public.bids (auktion_id, bruger_id, beloeb) values ($1, $2, 100)", [id, ANDEN]),
+    ).toBe("BHK01");
+    expect(
+      await fejlkode("insert into public.bud_maksimum (auktion_id, bruger_id, maks_beloeb) values ($1, $2, 500)", [id, ANDEN]),
+    ).toBe("BHK01");
+
+    // Brugeren kan ikke selv godkende.
+    await db.query("update public.auctions set kunst_kontrol = 'godkendt' where id = $1", [id]);
+    expect((await auktion(id)).kunst_kontrol).toBe("afventer");
+
+    // Staff godkender ("Ikke kunst").
+    await som("service_role", null);
+    await db.query("update public.auctions set kunst_kontrol = 'godkendt' where id = $1 and kunst_kontrol = 'afventer'", [id]);
+    expect((await auktion(id)).kunst_kontrol).toBe("godkendt");
+    expect(await kanSe("anon", null, id)).toBe(true);
+    expect(
+      await fejlkode("insert into public.bids (auktion_id, bruger_id, beloeb) values ($1, $2, 100)", [id, ANDEN]),
+    ).toBeNull();
+  });
+
+  it("appens insert uden kunst_bekraeftet virker og afventer", async () => {
+    await som("authenticated");
     const id = await opret("Litografi signeret");
-    expect((await auktion(id)).kunst_bekraeftet).toBe(false);
+    const a = await auktion(id);
+    expect(a.kunst_bekraeftet).toBe(false);
+    expect(a.kunst_kontrol).toBe("afventer");
     const r = await rapporter(id);
     expect(r).toHaveLength(1);
     expect(r[0].description).toContain("ikke bekræftet");
-    // Én tidligere kunst-markeret auktion fra samme sælger.
-    expect(r[0].description).toContain("1 andre auktioner");
+    expect(r[0].description).toMatch(/\d+ andre auktioner/);
   });
 
   it("almindelig vare: ingen markering og ingen anmeldelse", async () => {
-    await somRolle("authenticated");
+    await som("authenticated");
     const id = await opret("Maleritape og malerpensel");
-    expect((await auktion(id)).kunst_markeret_kl).toBeNull();
+    const a = await auktion(id);
+    expect(a.kunst_markeret_kl).toBeNull();
+    expect(a.kunst_kontrol).toBeNull();
     expect(await rapporter(id)).toHaveLength(0);
+    expect(await kanSe("anon", null, id)).toBe(true);
   });
 
-  it("rettelse til kunst: markeres og anmeldes - kun én åben anmeldelse", async () => {
-    await somRolle("authenticated");
+  it("brugeren kan ikke selv sætte kontrol eller markering ved oprettelse", async () => {
+    await som("authenticated");
+    const r = await db.query<{ id: string }>(
+      "insert into public.auctions (bruger_id, titel, kunst_markeret_kl, kunst_kontrol) values ($1, 'Sofa', now(), 'godkendt') returning id",
+      [SAELGER],
+    );
+    const a = await auktion(r.rows[0].id);
+    expect(a.kunst_markeret_kl).toBeNull();
+    expect(a.kunst_kontrol).toBeNull();
+    const k = await db.query<{ id: string }>(
+      "insert into public.auctions (bruger_id, titel, kunst_kontrol) values ($1, 'Oliemaleri', 'godkendt') returning id",
+      [SAELGER],
+    );
+    expect((await auktion(k.rows[0].id)).kunst_kontrol).toBe("afventer");
+  });
+
+  it("rettelse til kunst: afventer og anmeldes - kun én åben anmeldelse", async () => {
+    await som("authenticated");
     const id = await opret("Billede");
     await db.query("update public.auctions set titel = 'Akvarel af fyrtårn' where id = $1", [id]);
-    expect((await auktion(id)).kunst_markeret_kl).not.toBeNull();
+    expect((await auktion(id)).kunst_kontrol).toBe("afventer");
     await db.query("update public.auctions set beskrivelse = 'Akvarel, indrammet' where id = $1", [id]);
     const r = await rapporter(id);
     expect(r).toHaveLength(1);
     expect(r[0].description).toContain("den rettede titel eller beskrivelse");
   });
 
-  it("brugeren kan ikke fjerne markeringen eller ændre bekræftelsen", async () => {
-    await somRolle("authenticated");
-    const id = await opret("Kunstværk", null, false);
-    await db.query(
-      "update public.auctions set kunst_markeret_kl = null, kunst_bekraeftet = true, titel = 'Sofa' where id = $1",
-      [id],
-    );
-    const a = await auktion(id);
-    expect(a.kunst_markeret_kl).not.toBeNull();
-    expect(a.kunst_bekraeftet).toBe(false);
+  it("samme tekst, som staff har godkendt, sendes ikke til tjek igen - ny kunst-tekst gør", async () => {
+    await som("authenticated");
+    const id = await opret("Oliemaleri af skib");
+    const [rapport] = await rapporter(id);
+    await som("service_role", null);
+    await db.query("update public.reports set status = 'behandlet' where id = $1", [rapport.id]);
+    await db.query("update public.auctions set kunst_kontrol = 'godkendt' where id = $1", [id]);
+
+    await som("authenticated");
+    await db.query("update public.auctions set titel = 'Sofa' where id = $1", [id]);
+    await db.query("update public.auctions set titel = 'Oliemaleri af skib' where id = $1", [id]);
+    expect((await auktion(id)).kunst_kontrol).toBe("godkendt");
+    expect(await rapporter(id)).toHaveLength(1);
+
+    await db.query("update public.auctions set titel = 'Akvarel af skib' where id = $1", [id]);
+    expect((await auktion(id)).kunst_kontrol).toBe("afventer");
+    expect(await rapporter(id)).toHaveLength(2);
   });
 
-  it("brugeren kan ikke selv markere en almindelig vare", async () => {
-    await somRolle("authenticated");
-    const r = await db.query<{ id: string }>(
-      "insert into public.auctions (bruger_id, titel, kunst_markeret_kl) values ($1, 'Sofa', now()) returning id",
-      [SAELGER],
-    );
-    expect((await auktion(r.rows[0].id)).kunst_markeret_kl).toBeNull();
+  it("afvist (skjult/fjernet for kunst) forbliver afvist ved rettelser", async () => {
+    await som("authenticated");
+    const id = await opret("Skulptur");
+    await som("service_role", null);
+    await db.query("update public.auctions set kunst_kontrol = 'afvist', skjult = true where id = $1", [id]);
+    await som("authenticated");
+    await db.query("update public.auctions set titel = 'Bronzeskulptur' where id = $1", [id]);
+    expect((await auktion(id)).kunst_kontrol).toBe("afvist");
   });
 
-  it("staff/system-rettelser giver ingen ny anmeldelse", async () => {
-    await somRolle("service_role");
+  it("ugyldig kontrol-værdi afvises", async () => {
+    await som("service_role", null);
     const id = await opret("Sofa");
-    await db.query("update public.auctions set titel = 'Skulptur' where id = $1", [id]);
-    expect(await rapporter(id)).toHaveLength(0);
-    // ... men markeringen sættes stadig.
-    expect((await auktion(id)).kunst_markeret_kl).not.toBeNull();
+    expect(await fejlkode("update public.auctions set kunst_kontrol = 'noget' where id = $1", [id])).toBe("23514");
   });
 
-  it("oprettelse via service_role (fx 'sæt varen op igen') anmeldes", async () => {
-    await somRolle("service_role");
+  it("oprettelse via service_role (fx 'sæt varen op igen') afventer og anmeldes", async () => {
+    await som("service_role", null);
     const id = await opret("Bronzefigur");
+    expect((await auktion(id)).kunst_kontrol).toBe("afventer");
     expect(await rapporter(id)).toHaveLength(1);
   });
 });

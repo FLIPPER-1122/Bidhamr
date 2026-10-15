@@ -338,10 +338,16 @@ async function auktionIndgreb(
     fakta: f.fakta,
     internNote: f.internNote,
   });
-  if (!r.ok) {
-    if (r.kode === "uaendret") return { ok: true };
-    return { fejl: indgrebFejl(r.kode) };
+  if (!r.ok && r.kode !== "uaendret") return { fejl: indgrebFejl(r.kode) };
+  // Skjult/fjernet/stoppet for kunst: kontrollen er afgjort.
+  if (f.regel === "kunst") {
+    try {
+      await saetKunstKontrol(admin, auktionId, ["afventer"], "afvist");
+    } catch (err) {
+      console.error("Kunst-kontrol kunne ikke opdateres:", err);
+    }
   }
+  if (!r.ok) return { ok: true };
   revalidatePath("/admin/auktioner");
   revalidatePath(`/admin/brugere/${r.brugerId}`);
   revalidatePath(`/auktion/${auktionId}`);
@@ -554,11 +560,29 @@ async function afslutRapport(
 async function hentRapport(admin: AdminClient, rapportId: string) {
   const { data } = await admin
     .from("reports")
-    .select("id, auction_id")
+    .select("id, auction_id, category")
     .eq("id", rapportId)
-    .single();
+    .single<{ id: string; auction_id: string; category: string }>();
   if (!data) throw new BrugerFejl("Rapporten findes ikke.");
   return data;
+}
+
+// Kunst-kontrol (20261023010000_kunst_forbudt.sql): 'afventer' = skjult for
+// andre og ingen bud, 'godkendt' = ikke kunst, 'afvist' = skjult/fjernet for
+// kunst (så styrer skjult synligheden). Status tjekkes i samme update, så et
+// dobbeltklik ikke gør noget anden gang. Kun service role kan ændre feltet.
+async function saetKunstKontrol(
+  admin: AdminClient,
+  auktionId: string,
+  fra: readonly ("afventer" | "godkendt" | "afvist")[],
+  til: "afventer" | "godkendt" | "afvist",
+) {
+  const { error } = await admin
+    .from("auctions")
+    .update({ kunst_kontrol: til })
+    .eq("id", auktionId)
+    .in("kunst_kontrol", [...fra]);
+  if (error) throw new Error(error.message);
 }
 
 // Afslut uden handling - auktionen forbliver aktiv. Noten er obligatorisk og
@@ -573,9 +597,16 @@ async function rapportMarkerBehandletImpl(formData: FormData): Promise<void> {
     throw new BrugerFejl("Skriv en note om hvad du har tjekket, og hvad konklusionen er.");
   }
 
+  const rapport = await hentRapport(admin, rapportId);
+  // Kunst: "Ikke kunst" gør auktionen synlig, og der kan bydes.
+  if (rapport.category === "kunst") {
+    await saetKunstKontrol(admin, rapport.auction_id, ["afventer"], "godkendt");
+  }
   await afslutRapport(admin, staffId, rapportId, "behandlet", note);
   revalidatePath("/admin/rapporter");
   revalidatePath("/admin/opklarede-rapporter");
+  revalidatePath("/admin/auktioner");
+  revalidatePath(`/auktion/${rapport.auction_id}`);
 }
 
 // Skjul eller fjern opslaget efter en rapport. Går gennem den fælles
@@ -612,6 +643,12 @@ async function rapportIndgreb(
   });
   if (!r.ok && r.kode !== "uaendret") throw new BrugerFejl(indgrebFejl(r.kode));
 
+  // Skjult/fjernet for kunst: kontrollen er afgjort, og skjult styrer nu
+  // synligheden (så "Vis igen"/medhold virker som altid).
+  if (rapport.category === "kunst" || f.regel === "kunst") {
+    await saetKunstKontrol(admin, rapport.auction_id, ["afventer"], "afvist");
+  }
+
   await afslutRapport(
     admin,
     staffId,
@@ -643,9 +680,9 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
 
   const { data: rapport } = await admin
     .from("reports")
-    .select("id, auction_id, status")
+    .select("id, auction_id, status, category")
     .eq("id", rapportId)
-    .single();
+    .single<{ id: string; auction_id: string; status: string; category: string }>();
   if (!rapport) {
     throw new BrugerFejl(
       "Rapporten findes ikke. Den kan være flyttet til arkivet og kan ikke genåbnes.",
@@ -728,6 +765,12 @@ async function rapportGenaabnImpl(formData: FormData): Promise<void> {
         aarsag: "Opslag gjort synligt igen da anmeldelsen blev genåbnet",
       });
     }
+  }
+
+  // En genåbnet kunst-anmeldelse sætter auktionen til tjek igen (skjult for
+  // andre, ingen bud), til den er afgjort på ny.
+  if (rapport.category === "kunst") {
+    await saetKunstKontrol(admin, rapport.auction_id, ["godkendt", "afvist"], "afventer");
   }
 
   revalidatePath("/admin/rapporter");

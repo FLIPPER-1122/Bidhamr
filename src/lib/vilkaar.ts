@@ -1,6 +1,7 @@
 // Version af brugerbetingelserne, som brugeren accepterer ved oprettelse.
 // SKAL holdes synkron med public.vilkaar_aktuel_version() i databasen
-// (supabase/migrations/20261009050000_vilkaar_accept.sql) - ellers gemmes
+// (supabase/migrations/20261009050000_vilkaar_accept.sql, senest ændret i
+// 20261023010000_kunst_forbudt.sql: 0.1 -> 0.2) - ellers gemmes
 // accepten ikke (handle_new_user og accepter_vilkaar godtager kun den
 // aktuelle version). Ved en ny version: ret begge steder og VILKAAR_DATO.
 //
@@ -11,8 +12,9 @@
 // tilsvarende), indtil de accepterer via rpc("accepter_vilkaar", { p_version }).
 // En ny version kræver ny accept: alle får vinduet igen ("Vi har opdateret
 // brugerbetingelserne").
-export const VILKAAR_VERSION = "0.1";
-export const VILKAAR_DATO = "6. oktober 2026";
+// 0.2 (15. okt. 2026): kunst er en forbudt vare. Alle accepterer igen.
+export const VILKAAR_VERSION = "0.2";
+export const VILKAAR_DATO = "15. oktober 2026";
 
 // Udkastet er endnu ikke godkendt af advokat (ROADMAP fase 6). Når det er
 // godkendt, sættes den til false, og banneret "UDKAST" forsvinder.

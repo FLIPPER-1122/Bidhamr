@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Kunst er forbudt (Filip, 14. okt. 2026 - ROADMAP-BESLUTNINGER.md, "Kunst er
--- forbudt"; advokat-spørgsmål 135-137).
+-- forbudt"; advokat-spørgsmål 135-137) + brugerbetingelser version 0.2.
 --
 -- Forbudt: malerier, tegninger, skulpturer, grafiske tryk og litografier (også
 -- signerede og nummererede) og kunst, sælgeren selv har lavet. Tilladt:
@@ -8,45 +8,52 @@
 -- Uafklaret (designerkeramik/-glas og antikviteter) forbydes IKKE her - de
 -- står slået fra i src/lib/kunstForbud.ts (KUNST_UAFKLAREDE).
 --
--- Valg (forklaret for chefen): kunst MARKERES og sendes til staff-tjek som en
--- automatisk anmeldelse - auktionen blokeres og skjules ikke ved oprettelse.
--- Det er samme flow som "tvivl"-varerne (billetter, alkohol), og det knækker
--- ikke appens insert. At skjule auktionen fra start ville ramme pause-reglerne
--- for skjulte auktioner (uret stopper, 14-dages annullering, DSA-afgørelse
--- med mail til sælgeren) uden at nogen medarbejder har truffet en afgørelse.
+-- Flow (efter review 15. okt. 2026 - "strengt forbudt"): ligner titel eller
+-- beskrivelse kunst, oprettes auktionen stadig (appens insert virker), men
+-- den sættes til staff-tjek: auctions.kunst_kontrol = 'afventer'. Så længe:
+--   - kan kun sælgeren, staff og deltagere se den (RLS-select-policyerne på
+--     auctions - virker også i appen og afhænger IKKE af kolonne-grants),
+--   - afvises bud og maksimumbud (BHK01, 'kunst_kontrol: ...'),
+--   - kører uret videre: er den ikke tjekket ved slutning, slutter den uden
+--     bud. Ingen pause og ingen DSA-afgørelse.
+-- Staff afgør den automatiske anmeldelse (reports.category = 'kunst'):
+--   - "Ikke kunst" -> kunst_kontrol = 'godkendt' (synlig, kan bydes på),
+--   - Skjul/fjern (det eksisterende DSA-flow) -> 'afvist' (synligheden styres
+--     derefter af skjult; "Vis igen"/medhold virker som altid).
+-- Rettes teksten igen til noget, der ligner kunst, kommer den til tjek igen -
+-- medmindre det er præcis den tekst, staff allerede har afgjort
+-- (kunst_tekst_md5 + en lukket kunst-anmeldelse).
 --
--- 1. auctions.kunst_bekraeftet (sælgerens "Det er ikke kunst" ved oprettelse;
---    kan ikke ændres bagefter af brugeren) og auctions.kunst_markeret_kl
---    (sættes KUN af databasen, første gang titel/beskrivelse ligner kunst;
---    nulstilles aldrig - bruges til at tælle gentagne forsøg). Ingen af dem
---    kan læses af anon/authenticated (kolonne-grants på auctions).
--- 2. Ordlisten: kunst_ord(), kunst_fjern() og kunst_tekst_tjek(). HOLD
---    SYNKRON med src/lib/kunstForbud.ts (testen tests/enhed/kunstForbud.test.ts
---    sammenligner). Normaliseringen genbruger forbudt_normaliser().
--- 3. Triggere på auctions: auctions_kunst_kontrol (BEFORE: markering) og
---    auctions_kunst_rapport (AFTER: automatisk anmeldelse til staff med
---    category 'kunst', højst én åben pr. auktion). Ved oprettelse altid (også
---    service_role, fx "sæt varen op igen"); ved rettelse kun brugerens egne
---    rettelser (authenticated) - som forbudte varer.
--- 4. reports.category og dsa_anmeldelser.kategori får 'kunst';
---    dsa_anmeldelse_opret godtager 'kunst' (brugere kan anmelde kunst).
--- 5. dsa_regler() får reglen 'kunst' ("Kunst er ikke tilladt").
--- 6. forbudte_varer() får kategorien 'kunst' (vises på /forbudte-varer).
--- 7. Ingen kategori må hedde noget med kunst. Der findes ingen i dag
---    (auktion_kategorier() i prod og test, 15. okt. 2026, og ingen auktioner
---    med en kunst-kategori) - DO-blokken nederst stopper migrationen, hvis
---    der kommer en.
---
--- Appen (Expo): INGEN nye krav for at oprette en auktion. Sender appen ikke
--- kunst_bekraeftet, er den false, og auktionen bliver stadig oprettet og
--- markeret. Appen bør (ROADMAP fase 5) vise samme advarsel og sende
--- kunst_bekraeftet: true, når sælgeren trykker "Det er ikke kunst".
+-- 1. Kolonner på auctions: kunst_bekraeftet (sælgerens "Det er ikke kunst"),
+--    kunst_markeret_kl, kunst_kontrol, kunst_tekst_md5. Kun staff
+--    (service_role) læser dem. NB: i produktion har anon/authenticated stadig
+--    SELECT på hele auctions, indtil 20261010061000 er kørt (den udelader nu
+--    også disse kolonner). Indtil da kan de læses af alle - det er kun
+--    oplysninger om kontrollen; selve skjulningen afhænger IKKE af grants.
+-- 2. Ordlisten: kunst_ord(), kunst_fjern(), kunst_sloer_variant(),
+--    kunst_tjek_normaliseret() og kunst_tekst_tjek(). HOLD SYNKRON med
+--    src/lib/kunstForbud.ts (testene sammenligner).
+-- 3. Triggere: auctions_kunst_kontrol (BEFORE), auctions_kunst_rapport
+--    (AFTER), a0_bids_kunst_kontrol og a0_bud_maksimum_kunst_kontrol.
+-- 4. RLS: auctions_select_anon og auctions_select_authenticated skjuler
+--    kunst_kontrol = 'afventer' for andre end sælger/staff/deltagere.
+-- 5. reports.category og dsa_anmeldelser.kategori får 'kunst';
+--    dsa_anmeldelse_opret godtager 'kunst'; dsa_regler() får 'kunst';
+--    forbudte_varer() får 'kunst'.
+-- 6. Brugerbetingelser: vilkaar_aktuel_version() 0.1 -> 0.2 (kunst er en
+--    forbudt vare). Alle eksisterende brugere skal acceptere igen (vinduet
+--    ved næste besøg, og bud/maksimum/nye auktioner afvises med BHV02,
+--    indtil de har). HOLD SYNKRON med VILKAAR_VERSION i src/lib/vilkaar.ts.
+--    Hjemmesiden skal deployes lige efter migrationen (den gamle kode sender
+--    0.1 og får "Brugerbetingelserne er blevet opdateret").
+-- 7. Ingen kategori må hedde noget med kunst (der findes ingen i dag).
 --
 -- Kan køres flere gange (if not exists, create or replace, flettede checks,
 -- md5-drift-tjek). Én transaktion. md5 = normaliseret krop (CR og
 -- kommentarer fjernet, al whitespace fjernet, små bogstaver) som
 -- 20261020020000. "gammel" = prod og test før denne migration (hentet med
--- SELECT 15. okt. 2026), "ny" = efter. Andet afbryder migrationen.
+-- SELECT 15. okt. 2026), "ny" = efter. Policyerne tjekkes på samme måde
+-- (md5 af pg_get_expr). Andet afbryder migrationen.
 -- Køres først på testdatabasen (pjiigmzqwlfepxnjdvug). Produktion kræver
 -- Filips "ja".
 -- =============================================================================
@@ -59,7 +66,8 @@ set local lock_timeout = '5s';
 -- Hjælpere (midlertidige - droppes nederst)
 -- ---------------------------------------------------------------------------
 
--- Flet nye værdier ind i en check-constraint (som 20261020010000).
+-- Flet nye værdier ind i en check-constraint (som 20261020010000, men
+-- afbryder, hvis constraint'en ikke findes).
 create or replace function pg_temp.flet_check(p_tabel regclass, p_navn text, p_kolonne text, p_nye text[])
 returns void language plpgsql as $$
 declare
@@ -68,10 +76,13 @@ declare
 begin
   select pg_get_constraintdef(oid) into v_def
     from pg_constraint where conrelid = p_tabel and conname = p_navn;
+  if v_def is null then
+    raise exception '%: constraint % findes ikke - kontrollér tabellen, før migrationen køres', p_tabel, p_navn;
+  end if;
   v_vals := array(
     select distinct x from (
       select btrim(unnest(string_to_array(btrim(m[1], '{}'), ',')), ' "') as x
-        from regexp_matches(coalesce(v_def, ''), '''([^'']+)''', 'g') as m
+        from regexp_matches(v_def, '''([^'']+)''', 'g') as m
       union
       select unnest(p_nye)
     ) s where x <> '' order by 1);
@@ -110,9 +121,7 @@ begin
   end if;
 end $f$;
 
--- Retter en funktion på stedet (som 20261020020000): md5 før (gammel) eller
--- allerede rettet (ny); hvert mønster skal findes præcis det forventede antal
--- gange; md5 bagefter skal være "ny".
+-- Retter en funktion på stedet (som 20261020020000).
 create or replace function pg_temp.ps_ret(p_fn text, p_gammel text, p_ny text, p_par jsonb)
 returns text
 language plpgsql
@@ -151,31 +160,70 @@ begin
 end
 $f$;
 
--- Drift-tjek af de eksisterende funktioner, der ændres - FØR noget ændres.
+-- Policy-drift: md5 af pg_get_expr skal være den gamle - eller policyen er
+-- allerede rettet (indeholder kunst_kontrol). true = skal rettes.
+create or replace function pg_temp.policy_tjek(p_navn text, p_gammel text)
+returns boolean language plpgsql as $f$
+declare
+  v_q text;
+begin
+  select pg_get_expr(p.polqual, p.polrelid) into v_q
+    from pg_policy p where p.polrelid = 'public.auctions'::regclass and p.polname = p_navn;
+  if v_q is null then
+    raise exception 'policy % findes ikke på auctions', p_navn;
+  end if;
+  if v_q like '%kunst_kontrol%' then return false; end if;
+  if md5(v_q) is distinct from p_gammel then
+    raise exception 'policy %: md5 % er ikke den forventede (%), kontrollér den, før migrationen køres: %',
+      p_navn, md5(v_q), p_gammel, v_q;
+  end if;
+  return true;
+end $f$;
+
+-- Drift-tjek af alt det eksisterende, der ændres - FØR noget ændres.
 select pg_temp.drift_tjek('public.forbudte_varer()', '26f66c209eafd8851d51bc524a5771bc', '2ffa99d5dbcb0dc6d559a77d22047963');
 select pg_temp.drift_tjek('public.dsa_regler()', '3c089e00118b314b50a3b2fcdc988c8d', '020c8c1d1a545e9588430c1b2898721f');
 select pg_temp.drift_tjek('public.dsa_anmeldelse_opret(uuid,text,uuid,text,text,text,text,text,boolean)',
                           '10671a6ecac0d9faaae0518587047ff9', 'ab9150038013a607a91e708f57252322');
+select pg_temp.drift_tjek('public.vilkaar_aktuel_version()', 'f87f0070b496a88af134964e29b310ce', '26f30051368fb71bd83d82c613eb7216');
+select pg_temp.policy_tjek('auctions_select_anon', 'e8ff1c7e4468e4aa59f122841dc1a3fc');
+select pg_temp.policy_tjek('auctions_select_authenticated', '15a38a05e63952aaf613e3cea3111374');
 
 -- ---------------------------------------------------------------------------
 -- 1. Kolonner på auctions
 -- ---------------------------------------------------------------------------
 alter table public.auctions
   add column if not exists kunst_bekraeftet boolean not null default false,
-  add column if not exists kunst_markeret_kl timestamptz;
+  add column if not exists kunst_markeret_kl timestamptz,
+  add column if not exists kunst_kontrol text,
+  add column if not exists kunst_tekst_md5 text;
+
+do $do$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'auctions_kunst_kontrol_check'
+                   and conrelid = 'public.auctions'::regclass) then
+    alter table public.auctions add constraint auctions_kunst_kontrol_check
+      check (kunst_kontrol is null or kunst_kontrol in ('afventer', 'godkendt', 'afvist'));
+  end if;
+end $do$;
 
 comment on column public.auctions.kunst_bekraeftet is
   'Sælgerens "Det er ikke kunst" ved oprettelse (kun når teksten lignede kunst). Kan ikke ændres af brugeren bagefter. Ses kun af staff.';
 comment on column public.auctions.kunst_markeret_kl is
-  'Sat af databasen (auctions_kunst_kontrol), første gang titel/beskrivelse lignede kunst. Nulstilles aldrig - bruges til at tælle gentagne forsøg. Ses kun af staff.';
+  'Sat af databasen (auctions_kunst_kontrol), første gang titel/beskrivelse lignede kunst. Nulstilles aldrig. Ses kun af staff.';
+comment on column public.auctions.kunst_kontrol is
+  'Kunst-kontrol: null (ingen), afventer (skjult for andre end sælger/staff/deltagere, ingen bud), godkendt (staff: ikke kunst), afvist (staff skjulte/fjernede den for kunst). Brugere kan ikke ændre den.';
+comment on column public.auctions.kunst_tekst_md5 is
+  'md5 af den normaliserede tekst, der sidst lignede kunst. Samme tekst, som staff allerede har afgjort, sendes ikke til tjek igen.';
 
--- Kun staff (service_role) læser kolonnerne. auctions har kolonne-grants
--- (20261010061000), så nye kolonner er ikke synlige for anon/authenticated -
--- det gøres eksplicit her, hvis nogen har givet dem senere.
-revoke select (kunst_bekraeftet, kunst_markeret_kl) on public.auctions from anon, authenticated;
+-- Kun staff (service_role) læser kolonnerne (se punkt 1 i toppen om prod).
+revoke select (kunst_bekraeftet, kunst_markeret_kl, kunst_kontrol, kunst_tekst_md5)
+  on public.auctions from anon, authenticated;
 
 create index if not exists auctions_kunst_markeret_idx
   on public.auctions (bruger_id) where kunst_markeret_kl is not null;
+create index if not exists auctions_kunst_afventer_idx
+  on public.auctions (id) where kunst_kontrol = 'afventer';
 
 -- ---------------------------------------------------------------------------
 -- 2. Ordlisten (HOLD SYNKRON med src/lib/kunstForbud.ts)
@@ -194,19 +242,20 @@ as $fn$
       (1, '[a-zæøå]*maleri(et|er|erne)?', null, null),
       (2, '(kunstv(æ|ae)rk(et|er|erne)?|originalv(æ|ae)rk(et|er|erne)?|original(t|e)? v(æ|ae)rk(et|er)?)', null, null),
       (3, '(kunst|v(æ|ae)gkunst|billedkunst|fotokunst|kunstfoto|kunstfotografi|kunstgrafik|kunsttryk)', null, null),
-      (4, '(kunstner(e|en|ens|ne|nes)?|kunstmaler(e|en|ens|ne|nes)?|kunstnersigneret|kunstnersignatur)', null, '(cd|cder|vinyl|lp|lper|album|plade|plader|single|kassette|koncert|koncerter|musik|musiker|sang|sanger|sangerinde|band|rapper|festival|(plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet))'),
-      (5, 'l(æ|ae)rred(et|er|erne)?', '(olie|akryl|akvarel|gouache|malet|malede|h(å|aa)ndmalet|h(å|aa)ndmalede|kunstner|kunstneren|signeret|signerede|signatur|original|originalt|originalv(æ|ae)rk|unika)', '(projektor|projektorl(æ|ae)rred|l(æ|ae)rredssk(æ|ae)rm|blank|blankt|blanke|ubrugt|ubrugte)'),
+      (4, '(kunstner(e|en|ens|ne|nes)?|kunstmaler(e|en|ens|ne|nes)?|kunstnersigneret|kunstnersignatur)', null, '(cd|cder|vinyl|lp|lper|album|plade|plader|single|kassette|koncert|koncerter|musik|musiker|sang|sanger|sangerinde|band|rapper|festival)'),
+      (5, '(l(æ|ae)rred(et|er|erne)?|canvas)', '(olie|akryl|akvarel|gouache|malet|malede|h(å|aa)ndmalet|h(å|aa)ndmalede|kunstner|kunstneren|signeret|signerede|signatur|original|originalt|originalv(æ|ae)rk|unika|oil|acrylic|painted|signed)', '(projektor|projektorl(æ|ae)rred|l(æ|ae)rredssk(æ|ae)rm|blank|blankt|blanke|ubrugt|ubrugte)'),
       (6, '(akvarel(len|ler|lerne)?|gouache(r|n)?)', null, null),
-      (7, '(litografi(en|er|erne)?|serigrafi(en|er|erne)?|radering(en|er|erne)?|tr(æ|ae)snit(tet|ter|terne)?|linoleumssnit(tet|ter)?|linoleumsnit(tet|ter)?|linosnit(tet|ter)?|kobberstik(ket|ker|kene)?|st(å|aa)lstik(ket|ker)?|xylografi(en|er)?|akvatinta|mezzotinte|giclee|gicl(é|e)e|grafisk(e)? (tryk|blad|blade|v(æ|ae)rk|v(æ|ae)rker))', null, null),
+      (7, '(litografi(en|er|erne)?|lithografi(en|er|erne)?|lithography|lithographs?|litho|lito|serigrafi(en|er|erne)?|radering(en|er|erne)?|tr(æ|ae)snit(tet|ter|terne)?|linoleumssnit(tet|ter)?|linoleumsnit(tet|ter)?|linosnit(tet|ter)?|kobberstik(ket|ker|kene)?|st(å|aa)lstik(ket|ker)?|xylografi(en|er)?|akvatinta|mezzotinte|giclee|gicl(é|e)e|grafisk(e)? (tryk|blad|blade|v(æ|ae)rk|v(æ|ae)rker))', null, null),
       (8, 'grafik(ken|ker|kerne)?', '(signeret|signerede|signatur|nummereret|nummererede|original|originalt|kunstner|kunstneren|indrammet|indrammede|tryk|blad|oplag|(æ|ae)tsning)', '(t shirt|tshirt|tr(ø|oe)je|t(ø|oe)j|h(æ|ae)ttetr(ø|oe)je|hoodie|spil|gaming)'),
       (9, '(signere(t|de)|nummerere(t|de))', '(tryk|trykket|oplag|eksemplar|eksemplarer)', null),
       (10, '[a-zæøå]*skulptur(en|er|erne)?', null, null),
       (11, '(buste(n|r|rne)?|byste(n|r|rne)?)', null, '(sy|syning|skr(æ|ae)dder|syerbuste|skr(æ|ae)dderbuste|t(ø|oe)j|kjole|kjoler|bluse|top|mannequin|mannequindukke|udstillingsdukke|smykke|smykker|halsk(æ|ae)de|halsk(æ|ae)der|paryk|parykker|bh|undert(ø|oe)j|str|st(ø|oe)rrelse|cm|m(å|aa)l|vidde|justerbar)'),
       (12, '((bronze|bronce|marmor) ?(figur|figuren|figurer|statue|statuen|statuer|statuette|statuetter|relief)|(figur|figuren|figurer|statue|statuen|statuer|statuette|statuetter|relief) (i|af|udf(ø|oe)rt i|st(ø|oe)bt i) (bronze|bronce|marmor))', null, null),
-      (13, 'tegning(en|er|erne)?', null, '(teknisk|tekniske|samlevejledning|vejledning|monteringsvejledning|manual|m(ø|oe)nster|m(ø|oe)nstre|strikkem(ø|oe)nster|symønster|sym(ø|oe)nster|byggetegning|plantegning|tegneserie|tegneserier|tegnefilm)'),
+      (13, '(tegning(en|er|erne)?|drawings?)', null, '(teknisk|tekniske|samlevejledning|vejledning|monteringsvejledning|manual|m(ø|oe)nster|m(ø|oe)nstre|strikkem(ø|oe)nster|symønster|sym(ø|oe)nster|byggetegning|plantegning|tegneserie|tegneserier|tegnefilm)'),
       (14, '(selvmalet|selvmalede|selvtegnet|selvtegnede)', '(billede|billeder|l(æ|ae)rred|motiv|portr(æ|ae)t|ramme|indrammet)', null),
-      (15, '((olie|akryl|akvarel|gouache|tempera) p(å|aa) (l(æ|ae)rred|plade|tr(æ|ae)|pap|papir)|(blyant|kul|tusch|bl(æ|ae)k|pastel|pastelkridt|rødkridt) p(å|aa) papir)', null, null),
-      (16, '(painting|paintings|oil painting|artwork|artworks|sculpture|sculptures|lithograph|lithographs|etching|etchings|watercolou?r|watercolou?rs|art print|signed print)', null, null)
+      (15, '(h(å|aa)ndmalet|h(å|aa)ndmalede|malet|malede|olie|akryl) ?billede(t|r|rne)?', null, null),
+      (16, '((olie|akryl|akvarel|gouache|tempera) p(å|aa) (l(æ|ae)rred|plade|tr(æ|ae)|pap|papir)|(blyant|kul|tusch|bl(æ|ae)k|pastel|pastelkridt|rødkridt) p(å|aa) papir|portr(æ|ae)t(tet|ter)? (i|malet i|udf(ø|oe)rt i) (olie|akryl|akvarel|kul|blyant|pastel))', null, null),
+      (17, '(painting|paintings|oil painting|artwork|artworks|original art|sculpture|sculptures|etching|etchings|watercolou?r|watercolou?rs|art print|signed print|(oil|acrylic) on (canvas|board|paper|panel|wood|linen|card|masonite))', null, null)
       -- KUNST_ORD_SLUT
     ) as v(nr, moenster, kraever, undtagen)
    order by v.nr;
@@ -219,14 +268,55 @@ language sql
 immutable
 set search_path = public
 as $fn$
-  select '(kunst (l(æ|ae)der|gr(æ|ae)s|stof|stoffer|pels|blomst|blomster|plante|planter|silke|ruskind|negle|juletr(æ|ae)|sk(ø|oe)jtel(ø|oe)b|harpiks|is)|(akvarel|gouache|akryl|olie|pastel|kunstner|kunstmaler|tegne) (farve|farver|farvers(æ|ae)t|maling|pensel|pensler|papir|blok|blokke|s(æ|ae)t|kasse|kasser|(æ|ae)ske|(æ|ae)sker|kursus|kurser|staffeli|staffelier|ler|v(æ|ae)rkt(ø|oe)j|tape|lak|spartel|paletkniv|palet|paletter|udstyr|grej|artikler|forsyninger)|(maleri|kunst|tegning|skulptur|grafik) (kursus|kurser|artikler|udstyr|grej|forsyninger|v(æ|ae)rkt(ø|oe)j)|((farve|farver|farvers(æ|ae)t|maling|pensel|pensler|papir|blok|blokke|s(æ|ae)t|kasse|kasser|(æ|ae)ske|(æ|ae)sker|kursus|kurser|staffeli|staffelier|ler|v(æ|ae)rkt(ø|oe)j|tape|lak|spartel|paletkniv|palet|paletter|udstyr|grej|artikler|forsyninger)|(ramme|rammer|billedramme|billedrammer|lampe|lamper|oph(æ|ae)ng|krog|kroge|lys|l(æ|ae)rred|l(æ|ae)rreder|transportkasse)) (til|for) (et |en |dit |din |mit |min |dine |mine |de )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(bog|b(ø|oe)ger|bogen|b(ø|oe)rnebog|b(ø|oe)rneb(ø|oe)ger|billedbog|billedb(ø|oe)ger|malebog|maleb(ø|oe)ger|dvd|film|filmen|leksikon|katalog|kataloger|udstillingskatalog|tidsskrift|blad|blade|magasin|foredrag|kursus|kurser|puslespil|kort|postkort|kalender|plakatbog) (om|med|af|fra) (et |en |de |det |den )?(kendte |kendt |berømte |berømt |danske |dansk |moderne |gamle )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet) (af|med|fra|efter) (et |en |det |den )?(kendte |kendt |berømte |berømt )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst) (plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet)|(ikea|jysk|bilka|s(ø|oe)strene grene|imerco|kop og kande|kop & kande|ilva|bolia|h&m home|zara home|normal|flying tiger|tiger|jem og fix|jem & fix|harald nyborg|silvan|bauhaus|desenio|poster store) ((maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|billede|billeder|v(æ|ae)gbillede|v(æ|ae)gbilleder)|((maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|billede|billeder) (fra|k(ø|oe)bt i|k(ø|oe)bt hos|k(ø|oe)bt p(å|aa)) (ikea|jysk|bilka|s(ø|oe)strene grene|imerco|kop og kande|kop & kande|ilva|bolia|h&m home|zara home|normal|flying tiger|tiger|jem og fix|jem & fix|harald nyborg|silvan|bauhaus|desenio|poster store))'::text;
+  select '(kunst (l(æ|ae)der|gr(æ|ae)s|stof|stoffer|pels|blomst|blomster|plante|planter|silke|ruskind|negle|juletr(æ|ae)|sk(ø|oe)jtel(ø|oe)b|harpiks|is)|kunst (og|&) h(å|aa)ndv(æ|ae)rk|(akvarel|gouache|akryl|olie|pastel|kunstner|kunstmaler|tegne) (farve|farver|farvers(æ|ae)t|maling|pensel|pensler|papir|blok|blokke|s(æ|ae)t|kasse|kasser|(æ|ae)ske|(æ|ae)sker|kursus|kurser|staffeli|staffelier|ler|v(æ|ae)rkt(ø|oe)j|tape|lak|spartel|paletkniv|palet|paletter|udstyr|grej|artikler|forsyninger)|(maleri|kunst|tegning|skulptur|grafik) (kursus|kurser|artikler|udstyr|grej|forsyninger|v(æ|ae)rkt(ø|oe)j)|drawing (tablet|tablets|pad|board|table|book|set|kit)|((farve|farver|farvers(æ|ae)t|maling|pensel|pensler|papir|blok|blokke|s(æ|ae)t|kasse|kasser|(æ|ae)ske|(æ|ae)sker|kursus|kurser|staffeli|staffelier|ler|v(æ|ae)rkt(ø|oe)j|tape|lak|spartel|paletkniv|palet|paletter|udstyr|grej|artikler|forsyninger)|(ramme|rammer|billedramme|billedrammer|lampe|lamper|oph(æ|ae)ng|krog|kroge|lys|l(æ|ae)rred|l(æ|ae)rreder|transportkasse)) (til|for) (et |en |dit |din |mit |min |dine |mine |de )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(bog|b(ø|oe)ger|bogen|b(ø|oe)rnebog|b(ø|oe)rneb(ø|oe)ger|billedbog|billedb(ø|oe)ger|malebog|maleb(ø|oe)ger|dvd|film|filmen|leksikon|katalog|kataloger|udstillingskatalog|tidsskrift|blad|blade|magasin|foredrag|kursus|kurser|puslespil|kort|postkort|kalender|plakatbog) (om|med|af|fra) (et |en |de |det |den )?(kendte |kendt |berømte |berømt |danske |dansk |moderne |gamle )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet) (af|med|fra|efter) (et |en |det |den )?(kendte |kendt |berømte |berømt )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst) (plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet)|(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst) (til|for|i|med) [a-zæøå]+ (plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet)|(ikea|jysk|bilka|s(ø|oe)strene grene|imerco|kop og kande|kop & kande|ilva|bolia|h&m home|zara home|flying tiger|jem og fix|jem & fix|harald nyborg|silvan|bauhaus|desenio|poster store) ((maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|billede|billeder|v(æ|ae)gbillede|v(æ|ae)gbilleder)|((maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|billede|billeder) (fra|k(ø|oe)bt i|k(ø|oe)bt hos|k(ø|oe)bt p(å|aa)) ((ikea|jysk|bilka|s(ø|oe)strene grene|imerco|kop og kande|kop & kande|ilva|bolia|h&m home|zara home|flying tiger|jem og fix|jem & fix|harald nyborg|silvan|bauhaus|desenio|poster store)|tiger|normal)|(signeret|signerede|nummereret|nummererede) (bog|b(ø|oe)ger|bogen|roman|digtsamling|f(ø|oe)rsteudgave|udgave|tr(ø|oe)je|fodboldtr(ø|oe)je|bold|fodbold|kort|samlekort|billet|program|autograf|autografkort)|(bog|b(ø|oe)ger|bogen|roman|digtsamling|f(ø|oe)rsteudgave|udgave|tr(ø|oe)je|fodboldtr(ø|oe)je|bold|fodbold|kort|samlekort|billet|program|autograf|autografkort) (signeret|signerede|nummereret|nummererede)|(sikker |data )?radering (af |i )?(tekst|teksten|data|harddisk|harddiske|disk|filer|fil|ssd)|(buste|byste) (ramme|stativ|form|dukke|holder|top|bh)|(porcel(æ|ae)ns|porcel(æ|ae)n|keramik|stent(ø|oe)js) ?maleri(et|er|erne)?|maleri(et|er|erne)? p(å|aa) porcel(æ|ae)n)'::text;
 $fn$;
 
--- {"resultat": "ok"} eller {"resultat": "kunst", "ord", "nr"}. Samme logik
--- som tjekKunstTekst i TypeScript: normalisér, fjern tilladte fraser (første
--- forekomst ad gangen, højst 50 gange), og tjek reglerne som hele ord.
--- kraever og undtagen tjekkes mod hele teksten.
-create or replace function public.kunst_tekst_tjek(p_tekst text)
+-- Afslører simple forsøg på at skjule et ord (kunstSloerVariant i TS):
+-- 3/1/0 ved siden af bogstaver -> e/i/o, et stykke på 1-2 bogstaver sættes
+-- sammen over en bindestreg/prik ("ma-leri"), normalisering, og 3+
+-- enkeltbogstaver i træk sættes sammen ("m a l e r i").
+create or replace function public.kunst_sloer_variant(p_tekst text)
+returns text
+language plpgsql
+immutable
+set search_path = public
+as $fn$
+declare
+  b      constant text := 'a-zæøå';
+  t      text := regexp_replace(lower(normalize(coalesce(p_tekst, ''), NFC)),
+                                '[­​-‏‪-‮⁠-⁯﻿]', '', 'g');
+  d      record;
+  v_ord  text;
+  raekke text[] := '{}';
+  ud     text[] := '{}';
+begin
+  for d in select * from (values (1, '3', 'e'), (2, '1', 'i'), (3, '0', 'o')) as x(n, tal, bogstav) order by x.n loop
+    for i in 1..2 loop
+      t := regexp_replace(t, '([' || b || '])' || d.tal, '\1' || d.bogstav, 'g');
+      t := regexp_replace(t, d.tal || '([' || b || '])', d.bogstav || '\1', 'g');
+    end loop;
+  end loop;
+  t := regexp_replace(t, '(^|[^' || b || '])([' || b || ']{1,2})[-.·_*''](?=[' || b || ']{3})', '\1\2', 'g');
+  t := regexp_replace(t, '([' || b || ']{3})[-.·_*'']([' || b || ']{1,2})(?=$|[^' || b || '])', '\1\2', 'g');
+  t := public.forbudt_normaliser(t);
+  foreach v_ord in array string_to_array(t, ' ') loop
+    if v_ord ~ ('^[' || b || ']$') then
+      raekke := raekke || v_ord;
+    else
+      if cardinality(raekke) >= 3 then ud := ud || array_to_string(raekke, ''); else ud := ud || raekke; end if;
+      raekke := '{}';
+      ud := ud || v_ord;
+    end if;
+  end loop;
+  if cardinality(raekke) >= 3 then ud := ud || array_to_string(raekke, ''); else ud := ud || raekke; end if;
+  return array_to_string(array_remove(ud, ''), ' ');
+end;
+$fn$;
+
+-- Tjekker en normaliseret tekst: tilladte fraser fjernes (første forekomst ad
+-- gangen, højst 50 gange), og moenster, kraever og undtagen tjekkes som hele
+-- ord i den RENSEDE tekst. null = intet træf.
+create or replace function public.kunst_tjek_normaliseret(p_norm text)
 returns jsonb
 language plpgsql
 immutable
@@ -234,16 +324,11 @@ set search_path = public
 as $fn$
 declare
   g       constant text := '[^a-z0-9æøåäöüéèáàâêëíìîïóòôúùûñçß]';
-  v_norm  text := public.forbudt_normaliser(p_tekst);
-  v_tekst text;
+  v_tekst text := coalesce(p_norm, '');
   v_re    text;
   o       record;
   m       text[];
 begin
-  if v_norm = '' then
-    return jsonb_build_object('resultat', 'ok');
-  end if;
-  v_tekst := v_norm;
   v_re := '(^|' || g || ')(' || public.kunst_fjern() || ')($|' || g || ')';
   for i in 1..50 loop
     exit when v_tekst !~ v_re;
@@ -253,15 +338,43 @@ begin
     m := regexp_match(v_tekst, '(^|' || g || ')(' || o.moenster || ')($|' || g || ')');
     if m is null then continue; end if;
     if o.kraever is not null
-       and v_norm !~ ('(^|' || g || ')(' || o.kraever || ')($|' || g || ')') then
+       and v_tekst !~ ('(^|' || g || ')(' || o.kraever || ')($|' || g || ')') then
       continue;
     end if;
     if o.undtagen is not null
-       and v_norm ~ ('(^|' || g || ')(' || o.undtagen || ')($|' || g || ')') then
+       and v_tekst ~ ('(^|' || g || ')(' || o.undtagen || ')($|' || g || ')') then
       continue;
     end if;
     return jsonb_build_object('resultat', 'kunst', 'ord', m[2], 'nr', o.nr);
   end loop;
+  return null;
+end;
+$fn$;
+
+-- {"resultat": "ok"} eller {"resultat": "kunst", "ord", "nr"}. Samme logik
+-- som tjekKunstTekst i TypeScript. Højst 5000 tegn.
+create or replace function public.kunst_tekst_tjek(p_tekst text)
+returns jsonb
+language plpgsql
+immutable
+set search_path = public
+as $fn$
+declare
+  v_raa  text := left(coalesce(p_tekst, ''), 5000);
+  v_norm text := public.forbudt_normaliser(v_raa);
+  v_var  text;
+  r      jsonb;
+begin
+  if v_norm = '' then
+    return jsonb_build_object('resultat', 'ok');
+  end if;
+  r := public.kunst_tjek_normaliseret(v_norm);
+  if r is not null then return r; end if;
+  v_var := public.kunst_sloer_variant(v_raa);
+  if v_var <> v_norm and v_var <> '' then
+    r := public.kunst_tjek_normaliseret(v_var);
+    if r is not null then return r; end if;
+  end if;
   return jsonb_build_object('resultat', 'ok');
 end;
 $fn$;
@@ -269,44 +382,74 @@ $fn$;
 -- Rene funktioner uden dataadgang - appen må gerne tjekke på forhånd.
 revoke all on function public.kunst_ord() from public;
 revoke all on function public.kunst_fjern() from public;
+revoke all on function public.kunst_sloer_variant(text) from public;
+revoke all on function public.kunst_tjek_normaliseret(text) from public;
 revoke all on function public.kunst_tekst_tjek(text) from public;
-grant execute on function public.kunst_ord()             to anon, authenticated, service_role;
-grant execute on function public.kunst_fjern()           to anon, authenticated, service_role;
-grant execute on function public.kunst_tekst_tjek(text)  to anon, authenticated, service_role;
+grant execute on function public.kunst_ord()                    to anon, authenticated, service_role;
+grant execute on function public.kunst_fjern()                  to anon, authenticated, service_role;
+grant execute on function public.kunst_sloer_variant(text)      to anon, authenticated, service_role;
+grant execute on function public.kunst_tjek_normaliseret(text)  to anon, authenticated, service_role;
+grant execute on function public.kunst_tekst_tjek(text)         to anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- 3. Triggere på auctions
+-- 3. Triggere
 -- ---------------------------------------------------------------------------
 
--- BEFORE: markeringen. kunst_markeret_kl sættes kun her (brugerens værdi
--- ignoreres altid). kunst_bekraeftet hører til oprettelsen og kan ikke
--- ændres af brugeren bagefter (som forbudt_bekraeftet).
+-- BEFORE på auctions: markering og kontrol. Brugeren (authenticated/anon)
+-- kan aldrig selv sætte eller ændre kunst_kontrol, kunst_markeret_kl,
+-- kunst_tekst_md5 - og kunst_bekraeftet kun ved oprettelse. Staff
+-- (service_role) sætter kunst_kontrol til 'godkendt'/'afvist' (tjekkes af
+-- auctions_kunst_kontrol_check). security definer: læser reports.
 create or replace function public.auctions_kunst_kontrol()
 returns trigger
 language plpgsql
-security invoker
+security definer
 set search_path = public
 as $fn$
 declare
-  v jsonb;
+  v      jsonb;
+  v_md5  text;
+  v_tekst text := coalesce(new.titel, '') || ' ' || coalesce(new.beskrivelse, '');
 begin
   if tg_op = 'INSERT' then
     new.kunst_bekraeftet := coalesce(new.kunst_bekraeftet, false);
-    v := public.kunst_tekst_tjek(coalesce(new.titel, '') || ' ' || coalesce(new.beskrivelse, ''));
-    new.kunst_markeret_kl := case when v->>'resultat' = 'kunst' then now() end;
+    v := public.kunst_tekst_tjek(v_tekst);
+    if v->>'resultat' = 'kunst' then
+      new.kunst_markeret_kl := now();
+      new.kunst_kontrol := 'afventer';
+      new.kunst_tekst_md5 := md5(public.forbudt_normaliser(left(v_tekst, 5000)));
+    else
+      new.kunst_markeret_kl := null;
+      new.kunst_kontrol := null;
+      new.kunst_tekst_md5 := null;
+    end if;
     return new;
   end if;
 
   if coalesce(auth.role(), '') in ('authenticated', 'anon') then
     new.kunst_bekraeftet := old.kunst_bekraeftet;
+    new.kunst_kontrol := old.kunst_kontrol;
   end if;
   new.kunst_bekraeftet := coalesce(new.kunst_bekraeftet, old.kunst_bekraeftet, false);
   new.kunst_markeret_kl := old.kunst_markeret_kl;
-  if old.kunst_markeret_kl is null
-     and (new.titel is distinct from old.titel or new.beskrivelse is distinct from old.beskrivelse) then
-    v := public.kunst_tekst_tjek(coalesce(new.titel, '') || ' ' || coalesce(new.beskrivelse, ''));
+  new.kunst_tekst_md5 := old.kunst_tekst_md5;
+
+  if new.titel is distinct from old.titel or new.beskrivelse is distinct from old.beskrivelse then
+    v := public.kunst_tekst_tjek(v_tekst);
     if v->>'resultat' = 'kunst' then
-      new.kunst_markeret_kl := now();
+      v_md5 := md5(public.forbudt_normaliser(left(v_tekst, 5000)));
+      new.kunst_markeret_kl := coalesce(old.kunst_markeret_kl, now());
+      -- Samme tekst, som staff allerede har afgjort (lukket anmeldelse):
+      -- ingen ny kontrol. Ellers tilbage til tjek, medmindre den er afvist
+      -- (skjult/fjernet - så styrer skjult synligheden).
+      if not (v_md5 is not distinct from old.kunst_tekst_md5
+              and exists (select 1 from public.reports r
+                           where r.auction_id = new.id and r.category = 'kunst'
+                             and r.status not in ('pending', 'under_behandling')))
+         and new.kunst_kontrol is distinct from 'afvist' then
+        new.kunst_kontrol := 'afventer';
+      end if;
+      new.kunst_tekst_md5 := v_md5;
     end if;
   end if;
   return new;
@@ -320,9 +463,11 @@ create trigger auctions_kunst_kontrol
   before insert or update on public.auctions
   for each row execute function public.auctions_kunst_kontrol();
 
--- AFTER: automatisk anmeldelse til staff (Admin -> Anmeldelser), højst én
--- åben pr. auktion. Fejler den, oprettes/rettes auktionen alligevel (advarsel
--- i loggen) - som auctions_forbudt_rapport.
+-- AFTER på auctions: automatisk anmeldelse til staff (Admin -> Anmeldelser),
+-- når auktionen (igen) afventer kontrol. Højst én åben pr. auktion. Fejler
+-- den, oprettes/rettes auktionen alligevel (advarsel i loggen) - som
+-- auctions_forbudt_rapport; auktionen ses så under Admin -> Auktioner
+-- ("Afventer kunst-kontrol").
 create or replace function public.auctions_kunst_rapport()
 returns trigger
 language plpgsql
@@ -333,18 +478,13 @@ declare
   v       jsonb;
   v_antal integer;
 begin
-  if tg_op = 'UPDATE' then
-    if coalesce(auth.role(), '') <> 'authenticated' then
-      return null;
-    end if;
-    if new.titel is not distinct from old.titel
-       and new.beskrivelse is not distinct from old.beskrivelse then
-      return null;
-    end if;
+  if new.kunst_kontrol is distinct from 'afventer' then
+    return null;
   end if;
-
-  v := public.kunst_tekst_tjek(coalesce(new.titel, '') || ' ' || coalesce(new.beskrivelse, ''));
-  if v->>'resultat' is distinct from 'kunst' then
+  if tg_op = 'UPDATE'
+     and old.kunst_kontrol is not distinct from 'afventer'
+     and new.titel is not distinct from old.titel
+     and new.beskrivelse is not distinct from old.beskrivelse then
     return null;
   end if;
 
@@ -356,26 +496,31 @@ begin
       return null;
     end if;
 
-    -- Gentagne forsøg: andre auktioner fra samme sælger, der har lignet kunst.
+    v := public.kunst_tekst_tjek(coalesce(new.titel, '') || ' ' || coalesce(new.beskrivelse, ''));
+
+    -- Gentagne forsøg: andre auktioner fra samme sælger, der afventer eller
+    -- er afvist for kunst.
     select count(*) into v_antal
       from public.auctions a
      where a.bruger_id = new.bruger_id
        and a.id <> new.id
-       and a.kunst_markeret_kl is not null;
+       and a.kunst_kontrol in ('afventer', 'afvist');
 
     insert into public.reports (auction_id, reporter_id, category, description, status, created_at)
     values (new.id, public.bidhamr_system_id(), 'kunst',
             left(concat_ws(' ',
-              format('Kontrol: muligvis kunst. Ordet "%s" står i %s.', v->>'ord',
-                     case when tg_op = 'INSERT' then 'titlen eller beskrivelsen'
-                          else 'den rettede titel eller beskrivelse' end),
+              case when v->>'resultat' = 'kunst'
+                   then format('Kontrol: muligvis kunst. Ordet "%s" står i %s.', v->>'ord',
+                               case when tg_op = 'INSERT' then 'titlen eller beskrivelsen'
+                                    else 'den rettede titel eller beskrivelse' end)
+                   else 'Kontrol: muligvis kunst.' end,
               case when tg_op = 'INSERT' and new.kunst_bekraeftet
                      then 'Sælgeren har bekræftet "Det er ikke kunst".'
                    when tg_op = 'INSERT'
                      then 'Sælgeren har ikke bekræftet, at det ikke er kunst (fx oprettet fra appen).' end,
               case when v_antal > 0
-                     then format('Sælgeren har %s andre auktioner, der har lignet kunst – overvej en advarsel.', v_antal) end,
-              'Auktionen er oprettet – vurdér, om den skal skjules eller fjernes.'), 1000),
+                     then format('Sælgeren har %s andre auktioner, der afventer eller er afvist for kunst – overvej en advarsel.', v_antal) end,
+              'Auktionen er skjult for andre, og der kan ikke bydes, til den er tjekket: "Ikke kunst" gør den synlig, ellers skjul eller fjern den.'), 1000),
             'pending', now());
   exception when others then
     raise warning 'auctions_kunst_rapport: anmeldelse kunne ikke oprettes for %: %', new.id, sqlerrm;
@@ -388,11 +533,81 @@ revoke all on function public.auctions_kunst_rapport() from public, anon, authen
 
 drop trigger if exists auctions_kunst_rapport on public.auctions;
 create trigger auctions_kunst_rapport
-  after insert or update of titel, beskrivelse on public.auctions
+  after insert or update of titel, beskrivelse, kunst_kontrol on public.auctions
   for each row execute function public.auctions_kunst_rapport();
 
+-- Bud og maksimumbud afvises, mens auktionen afventer kontrol. a0_ = før de
+-- andre bud-triggere (alfabetisk). security definer: brugeren kan ikke læse
+-- kunst_kontrol.
+create or replace function public.bids_kunst_kontrol()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+begin
+  if exists (select 1 from public.auctions a
+              where a.id = new.auktion_id and a.kunst_kontrol = 'afventer') then
+    raise exception 'kunst_kontrol: Auktionen afventer kontrol hos BidHamr, og der kan ikke bydes endnu.'
+      using errcode = 'BHK01';
+  end if;
+  return new;
+end;
+$fn$;
+
+revoke all on function public.bids_kunst_kontrol() from public, anon, authenticated;
+
+drop trigger if exists a0_bids_kunst_kontrol on public.bids;
+create trigger a0_bids_kunst_kontrol
+  before insert on public.bids
+  for each row execute function public.bids_kunst_kontrol();
+
+drop trigger if exists a0_bud_maksimum_kunst_kontrol on public.bud_maksimum;
+create trigger a0_bud_maksimum_kunst_kontrol
+  before insert or update on public.bud_maksimum
+  for each row execute function public.bids_kunst_kontrol();
+
+-- Sælgerens egen kontrol-status (til "Afventer kontrol" i appen). Brugeren
+-- udledes af auth.uid(); andres auktioner giver null.
+create or replace function public.min_kunst_kontrol(p_auktion uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $fn$
+  select a.kunst_kontrol
+    from public.auctions a
+   where a.id = p_auktion
+     and a.bruger_id = auth.uid();
+$fn$;
+
+revoke all on function public.min_kunst_kontrol(uuid) from public, anon;
+grant execute on function public.min_kunst_kontrol(uuid) to authenticated, service_role;
+
 -- ---------------------------------------------------------------------------
--- 4. Kategorier på anmeldelser
+-- 4. RLS: auktioner, der afventer kunst-kontrol, er skjult for andre end
+--    sælgeren, staff og deltagere (som 'skjult'). Gælder også appen.
+-- ---------------------------------------------------------------------------
+do $do$
+begin
+  if pg_temp.policy_tjek('auctions_select_anon', 'e8ff1c7e4468e4aa59f122841dc1a3fc') then
+    alter policy auctions_select_anon on public.auctions
+      using ((arkiveret_kl is null) and (not coalesce(skjult, false))
+             and (kunst_kontrol is distinct from 'afventer'));
+  end if;
+  if pg_temp.policy_tjek('auctions_select_authenticated', '15a38a05e63952aaf613e3cea3111374') then
+    alter policy auctions_select_authenticated on public.auctions
+      using (((arkiveret_kl is null) and (not coalesce(skjult, false))
+              and (kunst_kontrol is distinct from 'afventer'))
+             or (bruger_id = (select auth.uid()))
+             or (select public.er_staff())
+             or public.auktion_arkiv_adgang(id));
+  end if;
+end $do$;
+
+-- ---------------------------------------------------------------------------
+-- 5. Kategorier på anmeldelser og regler
 -- ---------------------------------------------------------------------------
 select pg_temp.flet_check('public.reports'::regclass, 'reports_category_check', 'category', array['kunst']);
 select pg_temp.flet_check('public.dsa_anmeldelser'::regclass, 'dsa_anmeldelser_kategori_check', 'kategori', array['kunst']);
@@ -409,10 +624,8 @@ begin
       1)));
 end $do$;
 
--- ---------------------------------------------------------------------------
--- 5. Regel for indgreb: "Kunst er ikke tilladt" (spejl af DSA_REGLER i
---    src/lib/dsa/regler.ts). Som 20261009030000 + 'kunst'.
--- ---------------------------------------------------------------------------
+-- Regel for indgreb: "Kunst er ikke tilladt" (spejl af DSA_REGLER i
+-- src/lib/dsa/regler.ts). Som 20261009030000 + 'kunst'.
 create or replace function public.dsa_regler()
 returns table (kode text, navn text, grundlag text, henvisning text)
 language sql
@@ -441,10 +654,8 @@ $fn$;
 revoke all on function public.dsa_regler() from public, anon, authenticated;
 grant execute on function public.dsa_regler() to service_role;
 
--- ---------------------------------------------------------------------------
--- 6. Kategorien på /forbudte-varer (spejl af FORBUDTE_KATEGORIER i
---    src/lib/forbudteVarer.ts). Som 20261006042000 + 'kunst'.
--- ---------------------------------------------------------------------------
+-- Kategorien på /forbudte-varer (spejl af FORBUDTE_KATEGORIER i
+-- src/lib/forbudteVarer.ts). Som 20261006042000 + 'kunst'.
 create or replace function public.forbudte_varer()
 returns table (nr integer, kode text, navn text, beskrivelse text)
 language sql
@@ -469,9 +680,26 @@ $fn$;
 
 grant execute on function public.forbudte_varer() to anon, authenticated, service_role;
 
+-- ---------------------------------------------------------------------------
+-- 6. Brugerbetingelser version 0.2 (HOLD SYNKRON med VILKAAR_VERSION i
+--    src/lib/vilkaar.ts). Som 20261009050000 med ny version.
+-- ---------------------------------------------------------------------------
+create or replace function public.vilkaar_aktuel_version()
+returns text
+language sql
+immutable
+parallel safe
+set search_path = ''
+as $fn$
+  select '0.2'::text;
+$fn$;
+
+grant execute on function public.vilkaar_aktuel_version() to anon, authenticated, service_role;
+
 select pg_temp.efter_tjek('public.forbudte_varer()', '2ffa99d5dbcb0dc6d559a77d22047963');
 select pg_temp.efter_tjek('public.dsa_regler()', '020c8c1d1a545e9588430c1b2898721f');
 select pg_temp.efter_tjek('public.dsa_anmeldelse_opret(uuid,text,uuid,text,text,text,text,text,boolean)', 'ab9150038013a607a91e708f57252322');
+select pg_temp.efter_tjek('public.vilkaar_aktuel_version()', '26f30051368fb71bd83d82c613eb7216');
 
 -- ---------------------------------------------------------------------------
 -- 7. Ingen kunst-kategori + test af ordlisten
@@ -539,6 +767,38 @@ begin
     ('Maleri, ikke en plakat', 'kunst'),
     ('Maleri med ramme', 'kunst'),
     ('Olie på lærred, ramme medfølger', 'kunst'),
+    ('Oil on canvas', 'kunst'),
+    ('Acrylic on board', 'kunst'),
+    ('Canvas, olie, signeret', 'kunst'),
+    ('Original drawing', 'kunst'),
+    ('Drawings by Storm P', 'kunst'),
+    ('Original art', 'kunst'),
+    ('Lithography', 'kunst'),
+    ('Litho, signed', 'kunst'),
+    ('Lithografi', 'kunst'),
+    ('Håndmalet billede', 'kunst'),
+    ('Malet billede af skib', 'kunst'),
+    ('Oliebillede', 'kunst'),
+    ('Akryl-billede', 'kunst'),
+    ('Portræt i olie', 'kunst'),
+    ('Portræt malet i akryl', 'kunst'),
+    ('Tiger maleri', 'kunst'),
+    ('M.a.l.e.r.i', 'kunst'),
+    ('m a l e r i af skib', 'kunst'),
+    ('Ma-leri', 'kunst'),
+    ('Male-ri', 'kunst'),
+    ('Mal3ri', 'kunst'),
+    ('T3gning af Storm P', 'kunst'),
+    ('L1tografi', 'kunst'),
+    ('Sk0vmaleri', 'kunst'),
+    ('Kun-st til væggen', 'kunst'),
+    ('Plakat signeret af kunstneren', 'kunst'),
+    ('Kunstner: Asger Jorn, plakat', 'kunst'),
+    ('Plakat af maleri. Kunstner: Jorn', 'kunst'),
+    ('Kunstlæder sofa, oliemaleri medfølger', 'kunst'),
+    ('IKEA billede. Akvarel af skib', 'kunst'),
+    ('Signeret bog. Litografi signeret', 'kunst'),
+    ('Plakat af maleri. Maleri sælges også', 'kunst'),
     ('Maleritape', 'ok'),
     ('Malerpensel', 'ok'),
     ('Malerpensler 3 stk', 'ok'),
@@ -588,7 +848,26 @@ begin
     ('Antik kommode', 'ok'),
     ('Sofabord i eg', 'ok'),
     ('iPhone 13', 'ok'),
-    ('', 'ok')
+    ('', 'ok'),
+    ('Signeret bog, 1. oplag', 'ok'),
+    ('Bog signeret af forfatteren', 'ok'),
+    ('Radering af tekst', 'ok'),
+    ('Sikker radering af harddisk', 'ok'),
+    ('Kunst og håndværk bog', 'ok'),
+    ('Buste ramme', 'ok'),
+    ('Tegning til børneværelse plakat', 'ok'),
+    ('Porcelænsmaleri', 'ok'),
+    ('Converse canvas sko', 'ok'),
+    ('Canvas taske', 'ok'),
+    ('Canvas print fra IKEA', 'ok'),
+    ('Maleri fra Tiger', 'ok'),
+    ('Billede købt i Normal', 'ok'),
+    ('Drawing tablet Wacom', 'ok'),
+    ('A3 tegneblok', 'ok'),
+    ('PS4 med 3 spil', 'ok'),
+    ('T-shirt str. M', 'ok'),
+    ('H.C. Andersen eventyr', 'ok'),
+    ('B & O højttaler', 'ok')
   ) as x(tekst, forventet)
   loop
     r := public.kunst_tekst_tjek(t.tekst)->>'resultat';
@@ -601,6 +880,7 @@ begin
   end if;
 end $do$;
 
+drop function pg_temp.policy_tjek(text, text);
 drop function pg_temp.ps_ret(text, text, text, jsonb);
 drop function pg_temp.efter_tjek(text, text);
 drop function pg_temp.drift_tjek(text, text, text);

@@ -42,6 +42,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .select("id, oprettet")
       .eq("status", "aktiv")
       .eq("skjult", false)
+      // Ikke auktioner, der afventer kunst-kontrol (20261023010000_kunst_forbudt.sql).
+      .or("kunst_kontrol.is.null,kunst_kontrol.neq.afventer")
       .is("arkiveret_kl", null)
       .gt("slutter_kl", nu.toISOString())
       .order("slutter_kl", { ascending: true })

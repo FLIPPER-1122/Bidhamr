@@ -607,7 +607,7 @@ export const FORBUDTE_ORD: readonly {
 
 // Usynlige tegn og retningsmærker (samme som public.spoergsmaal_ryd_tekst),
 // så fx "ko​kain" ikke slipper igennem.
-const USYNLIGE = /[­​-‏‪-‮⁠-⁯﻿]/g;
+export const USYNLIGE = /[­​-‏‪-‮⁠-⁯﻿]/g;
 
 // Tegn, der tæller som bogstaver/tal. Alt andet (tegnsætning, bindestreg,
 // parenteser ...) bliver til mellemrum - undtagen % og &.

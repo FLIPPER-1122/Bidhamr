@@ -23,7 +23,7 @@ const SIDE: TekstsideData = {
       tekst: [
         "Kunst er fx et maleri, en tegning, en akvarel, en skulptur, en buste, en bronzefigur, en litografi, en serigrafi, en radering, et træsnit eller et andet grafisk tryk – også når det er signeret og nummereret, og også når du selv har lavet det.",
         "En plakat eller et billede, der er masseproduceret og ikke har en kunstner eller en særlig værdi – fx et billede på lærred fra IKEA – er ikke kunst og må gerne sælges.",
-        "Står der kunst-ord i titlen eller beskrivelsen, spørger vi, om varen er kunst. Er den ikke, bekræfter du det, og auktionen bliver oprettet. En medarbejder kigger på den, og er det kunst, bliver den fjernet.",
+        "Står der kunst-ord i titlen eller beskrivelsen, spørger vi, om varen er kunst. Er den ikke, bekræfter du det, og auktionen bliver oprettet. Andre kan først se den og byde, når en medarbejder har tjekket den. Er det kunst, bliver den fjernet.",
       ],
     },
     {
@@ -33,7 +33,7 @@ const SIDE: TekstsideData = {
         "Når du opretter en auktion, bekræfter du, at varen ikke er forbudt.",
         "Ulovlige varer kan ikke sættes til salg. Står der fx skydevåben, narkotika, falske mærkevarer eller levende dyr i titlen eller beskrivelsen, kan auktionen ikke oprettes.",
         "Enkelte lovlige varer – fx billetter, alkohol og tobak – bliver kontrolleret af BidHamr. Auktionen bliver oprettet, men en medarbejder kigger på den.",
-        "Ligner varen kunst, bliver auktionen også kontrolleret af en medarbejder. Kunst bliver fjernet.",
+        "Ligner varen kunst, bliver auktionen først synlig for andre, når en medarbejder har tjekket den. Kunst bliver fjernet.",
         "Forbudte varer bliver fjernet. Gentagne overtrædelser kan give en advarsel og i sidste ende lukning af kontoen.",
       ],
     },

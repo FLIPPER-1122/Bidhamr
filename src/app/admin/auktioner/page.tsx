@@ -102,9 +102,12 @@ export default async function AdminAuktioner({
   // for sig, så siden virker, selvom kolonnen mangler (fejl = ingen markering).
   const visteIds = (auctions ?? []).map((a) => a.id);
   const { data: kunstRaekker } = visteIds.length
-    ? await supabase.from("auctions").select("id").in("id", visteIds).not("kunst_markeret_kl", "is", null)
-    : { data: [] as { id: string }[] };
-  const kunstIds = new Set(((kunstRaekker ?? []) as { id: string }[]).map((k) => k.id));
+    ? await supabase.from("auctions").select("id, kunst_kontrol").in("id", visteIds).not("kunst_markeret_kl", "is", null)
+    : { data: [] as { id: string; kunst_kontrol: string | null }[] };
+  const kunstRk = (kunstRaekker ?? []) as { id: string; kunst_kontrol: string | null }[];
+  const kunstIds = new Set(kunstRk.map((k) => k.id));
+  // Afventer kunst-kontrol: skjult for andre, ingen bud (afgøres under Anmeldelser).
+  const kunstAfventer = new Set(kunstRk.filter((k) => k.kunst_kontrol === "afventer").map((k) => k.id));
 
   // Sælgerinfo til de viste auktioner
   const brugerIds = [...new Set((auctions ?? []).map((a) => a.bruger_id))];
@@ -294,7 +297,9 @@ export default async function AdminAuktioner({
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-tekst-daempet">Skjult</span>
                         )}
                         {kunstIds.has(a.id) && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-fejl-bg text-fejl-tekst">Ligner kunst</span>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-fejl-bg text-fejl-tekst">
+                            {kunstAfventer.has(a.id) ? "Afventer kunst-kontrol" : "Ligner kunst"}
+                          </span>
                         )}
                         {erPaaPause(a) && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">På pause</span>
