@@ -6,6 +6,9 @@
 // - konkurrencen: én lod pr. gennemført salg i den måned (dansk tid), hvor
 //   pengene blev frigivet; firmaer, staff, pause, frosne konti, åbne sager og
 //   anker er ikke med
+// - regler mod falske salg (Filip 15. okt. 2026): bud under 50 kr. tæller
+//   ikke, badget kræver 20 forskellige købere, og højst 1 lod pr. køber pr.
+//   sælger pr. måned
 // - lodtrækningen: kun chef, kun afsluttede måneder, listen fastfryses,
 //   hash og vinderlod kan efterregnes (src/lib/konkurrence/regler.ts), ny
 //   vinder kræver begrundelse og udelukker den gamle, intet kan ændres
@@ -50,6 +53,7 @@ create table public.trades (id uuid primary key default gen_random_uuid(), selle
   status text not null default 'afsluttet', sag_aaben boolean not null default false);
 create table public.betalinger (
   id uuid primary key default gen_random_uuid(), trade_id uuid references public.trades(id), seller_id uuid,
+  buyer_id uuid default gen_random_uuid(), bud_oere bigint not null default 10000,
   status text not null default 'betalt', betalt_kl timestamptz, frigivet_kl timestamptz,
   annulleret_kl timestamptz, refusion_anmodet_kl timestamptz, refunderet_kl timestamptz, refusion_oere bigint,
   bidhamr_daekker_kl timestamptz, indsigelse_kl timestamptz, indsigelse_status text, indsigelse_tabt_kl timestamptz);
@@ -235,6 +239,28 @@ describe("Populær sælger", () => {
     expect(await badge(s)).toBe(true);
   });
 
+  it("bud under 50 kr. tæller ikke (50,00 kr. gør)", async () => {
+    const s = await bruger();
+    await flereSalg(s, 49);
+    await salg(s, { betaling: { bud_oere: 4999 } });
+    expect(await badge(s)).toBe(false);
+    await salg(s, { betaling: { bud_oere: 5000 } });
+    expect(await badge(s)).toBe(true);
+    expect((await en<{ v: string }>(`select public.gennemfoerte_salg_min_bud_oere()::text as v`)).v).toBe("5000");
+  });
+
+  it("kræver mindst 20 forskellige købere", async () => {
+    const koebere = Array.from({ length: 20 }, () => nyId());
+    const s = await bruger();
+    // 50 salg til 19 købere: intet badge.
+    for (let i = 0; i < 50; i++) await salg(s, { betaling: { buyer_id: koebere[i % 19] } });
+    expect(await badge(s)).toBe(false);
+    // Én salg til køber nr. 20: badge.
+    await salg(s, { betaling: { buyer_id: koebere[19] } });
+    expect(await badge(s)).toBe(true);
+    expect((await en<{ v: number }>(`select public.populaer_saelger_min_koebere() as v`)).v).toBe(20);
+  });
+
   it("lukkede og slettede konti og systemkontoen får ikke badget", async () => {
     const s = await bruger();
     await flereSalg(s, 50);
@@ -261,6 +287,25 @@ describe("lod i konkurrencen", () => {
     expect((await lod("2026-10", s)).get(s)).toEqual({ antal: 1, grund: null });
     expect((await lod("2026-11", s)).get(s)).toEqual({ antal: 1, grund: null });
     expect((await lod("2026-08", s)).get(s)).toBeUndefined();
+  });
+
+  it("højst 1 lod pr. køber pr. sælger pr. måned, og bud under 50 kr. giver ikke lod", async () => {
+    const s = await bruger();
+    const anden = await bruger();
+    const koeber = nyId();
+    // Tre salg til samme køber i september: 1 lod.
+    for (let i = 0; i < 3; i++) await salg(s, { betaling: { buyer_id: koeber } });
+    // Samme køber i oktober: 1 lod i oktober.
+    await salg(s, { frigivet: "2026-10-10T10:00:00Z", betaling: { buyer_id: koeber } });
+    // Samme køber hos en anden sælger: også 1 lod dér.
+    await salg(anden, { betaling: { buyer_id: koeber } });
+    // To andre købere: 2 lod. En tredje med bud på 49,99 kr.: intet.
+    await salg(s);
+    await salg(s);
+    await salg(s, { betaling: { bud_oere: 4999 } });
+    expect((await lod("2026-09", s)).get(s)?.antal).toBe(3);
+    expect((await lod("2026-10", s)).get(s)?.antal).toBe(1);
+    expect((await lod("2026-09", anden)).get(anden)?.antal).toBe(1);
   });
 
   it("refunderede, annullerede og ikke-frigivne salg giver ikke lod", async () => {
@@ -385,11 +430,12 @@ describe("lodtrækningen", () => {
 
   it("kun chef, kun fra startmåneden og kun afsluttede måneder", async () => {
     expect((await en<{ m: string }>(`select public.konkurrence_start_maaned() as m`)).m).toBe("2026-11");
-    expect((await en<{ m: number }>(`select public.konkurrence_max_nye_vindere() as m`)).m).toBe(2);
+    expect((await en<{ m: number }>(`select public.konkurrence_max_nye_vindere() as m`)).m).toBe(1);
+    expect((await en<{ m: number }>(`select public.konkurrence_max_lod_pr_koeber() as m`)).m).toBe(1);
     expect((await en<{ m: number }>(`select public.konkurrence_svarfrist_dage() as m`)).m).toBe(14);
     expect(await traek(ADMIN, MAANED)).toEqual({ kode: "ingen_adgang" });
     expect(await traek(CHEF, "2026-13")).toEqual({ kode: "ugyldig_maaned" });
-    // Juni 2026 er før den foreløbige startmåned (november 2026).
+    // Juni 2026 er før startmåneden (november 2026).
     expect(await traek(CHEF, MAANED)).toEqual({ kode: "foer_start" });
 
     // Resten af testene trækker i juni: startmåneden flyttes til januar 2026.
@@ -407,7 +453,7 @@ describe("lodtrækningen", () => {
     const o = await j(`select public.konkurrence_admin_oversigt($1, $2) as v`, [CHEF, MAANED]);
     expect(o.kode).toBe("ok");
     expect(o.maaned_slut).toBe(true);
-    expect(o).toMatchObject({ start_maaned: "2026-01", max_nye_vindere: 2, svarfrist_dage: 14 });
+    expect(o).toMatchObject({ start_maaned: "2026-01", max_nye_vindere: 1, svarfrist_dage: 14 });
     expect(o.deltagere).toEqual([
       { bruger_id: C, navn: "Carl", antal_lod: 6 },
       { bruger_id: B, navn: "Bo", antal_lod: 3 },
@@ -471,7 +517,12 @@ describe("lodtrækningen", () => {
     // Svarfristen på 14 dage er ikke udløbet.
     expect((await igen(CHEF, foerste.id, "svarer_ikke")).kode).toBe("svarfrist_ikke_udloebet");
 
-    const r = await igen(CHEF, foerste.id, "opfylder_ikke", "Bor i samme husstand som en medarbejder");
+    // Svarfristen udløbet (trækningen flyttes 15 dage tilbage, kun i testen).
+    await db.exec(`alter table public.konkurrence_traekninger disable trigger konkurrence_traekninger_laas`);
+    await db.query(`update public.konkurrence_traekninger set trukket_kl = now() - interval '15 days' where id = $1`, [foerste.id]);
+    await db.exec(`alter table public.konkurrence_traekninger enable trigger konkurrence_traekninger_laas`);
+
+    const r = await igen(CHEF, foerste.id, "svarer_ikke", "Skrevet på mail og i beskeder");
     expect(r.kode).toBe("ok");
     expect(r.nr).toBe(2);
     expect(r.vinder_id).not.toBe(foerste.vinder_id);
@@ -487,15 +538,15 @@ describe("lodtrækningen", () => {
     expect(r.vinder_id).toBe(vinderAf(rest, r.vinder_lod as number));
 
     // Dobbeltklik på den gamle: ingen ny vinder.
-    const dobbelt = await igen(CHEF, foerste.id, "opfylder_ikke");
+    const dobbelt = await igen(CHEF, foerste.id, "svarer_ikke");
     expect(dobbelt).toEqual({ kode: "allerede_erstattet", traekning_id: r.traekning_id });
 
     const o2 = await j(`select public.konkurrence_admin_oversigt($1, $2) as v`, [CHEF, MAANED]);
     const t = o2.traekninger as Record<string, unknown>[];
     expect(t.map((x) => x.nr)).toEqual([2, 1]);
     expect(t[0]).toMatchObject({
-      grund: "opfylder_ikke",
-      begrundelse: "Bor i samme husstand som en medarbejder",
+      grund: "svarer_ikke",
+      begrundelse: "Skrevet på mail og i beskeder",
       erstatter_id: foerste.id,
       erstattet_kl: null,
       trukket_af_navn: "Chefen",
@@ -504,26 +555,21 @@ describe("lodtrækningen", () => {
     expect(t[1].erstattet_af_navn).toBe("Chefen");
     expect(o2.gaeldende_id).toBe(r.traekning_id);
 
-    // Svarfristen udløbet (trækningen flyttes 15 dage tilbage, kun i testen):
-    // "svarer ikke" virker, uden fritekst.
-    await db.exec(`alter table public.konkurrence_traekninger disable trigger konkurrence_traekninger_laas`);
-    await db.query(`update public.konkurrence_traekninger set trukket_kl = now() - interval '15 days' where id = $1`, [r.traekning_id]);
-    await db.exec(`alter table public.konkurrence_traekninger enable trigger konkurrence_traekninger_laas`);
-    const r3 = await igen(CHEF, r.traekning_id as string, "svarer_ikke");
-    expect(r3).toMatchObject({ kode: "ok", nr: 3 });
+    // Loftet: højst 1 ny vinder pr. måned (Filip 15. okt. 2026).
+    expect(await igen(CHEF, r.traekning_id as string, "opfylder_ikke")).toEqual({ kode: "loft_naaet" });
 
-    // Loftet: højst 2 nye vindere pr. måned.
-    expect(await igen(CHEF, r3.traekning_id as string, "opfylder_ikke")).toEqual({ kode: "loft_naaet" });
-
-    // Med et højere loft: til sidst er der ingen flere at trække.
+    // Med et højere loft (kun i testen): "opfylder ikke" virker straks, og til
+    // sidst er der ingen flere at trække.
     await db.exec(`create or replace function public.konkurrence_max_nye_vindere() returns integer language sql immutable
                    set search_path = '' as $$ select 10 $$`);
+    const r3 = await igen(CHEF, r.traekning_id as string, "opfylder_ikke");
+    expect(r3).toMatchObject({ kode: "ok", nr: 3 });
     expect(await igen(CHEF, r3.traekning_id as string, "opfylder_ikke")).toEqual({ kode: "ingen_flere" });
     // "ingen_flere" erstatter ikke den gældende.
     const g = await en<{ id: string }>(`select id from public.konkurrence_traekninger where maaned = $1 and erstattet_kl is null`, [MAANED]);
     expect(g.id).toBe(r3.traekning_id);
     await db.exec(`create or replace function public.konkurrence_max_nye_vindere() returns integer language sql immutable
-                   set search_path = '' as $$ select 2 $$`);
+                   set search_path = '' as $$ select 1 $$`);
   });
 
   it("trækninger og lister kan ikke ændres, slettes eller truncates", async () => {

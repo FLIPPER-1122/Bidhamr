@@ -127,7 +127,7 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
             <p>
               Svarer vinderen ikke, eller opfylder vinderen ikke betingelserne, kan du trække en ny vinder med en
               grund. Den trækkes på den samme fastfrosne liste uden de tidligere vindere. &quot;Svarer ikke&quot; kan først
-              vælges, når svarfristen er udløbet, og der kan højst trækkes et fast antal nye vindere pr. måned.
+              vælges, når svarfristen er udløbet, og der kan højst trækkes én ny vinder pr. måned.
             </p>
           </>
         }

@@ -11,16 +11,21 @@
 --     "BidHamr dækker"),
 --   - der ikke er en åben eller tabt indsigelse fra køberens bank
 --     (vundne/lukkede indsigelser tæller som gennemført),
---   - sælgeren ikke er BidHamrs systemkonto.
+--   - sælgeren ikke er BidHamrs systemkonto,
+--   - buddet er mindst gennemfoerte_salg_min_bud_oere() = 5.000 øre (50 kr.)
+--     (regel mod falske salg, Filip 15. okt. 2026 - gælder også boost).
 -- Tallene regnes altid ud fra betalingerne - der gemmes ingen kopi, der kan
 -- blive forkert. Først når chefen trækker en vinder, fastfryses listen.
 --
--- BADGE: mindst 50 gennemførte salg i alt (populaer_saelger_graense()).
+-- BADGE: mindst 50 gennemførte salg i alt (populaer_saelger_graense()) til
+-- mindst 20 forskellige købere (populaer_saelger_min_koebere()).
 -- Status er offentlig (anon + authenticated), men kun som ja/nej - ikke
 -- antallet. Lukkede og slettede konti får det ikke.
 --
 -- KONKURRENCE: én lod pr. gennemført salg i den måned (dansk tid), hvor
--- pengene blev frigivet til sælgeren. Desuden:
+-- pengene blev frigivet til sælgeren - men højst
+-- konkurrence_max_lod_pr_koeber() = 1 lod pr. køber pr. sælger pr. måned
+-- (Filip 15. okt. 2026). Desuden:
 --   - kun private konti (konto_type 'privat'); firmakonti er ikke med,
 --   - staff (rolle <> 'bruger', også 'saelger') er ikke med
 --     (konkurrencebetingelserne 2.2),
@@ -35,8 +40,8 @@
 --
 -- LODTRÆKNINGEN (kun chef, Admin → Konkurrence):
 --   - Kan først ske, når måneden er slut (dansk tid), og kun for måneder fra
---     og med konkurrence_start_maaned() (FORELØBIG '2026-11' - Filip
---     bekræfter; null = der kan ikke trækkes). Én trækning pr. måned; et
+--     og med konkurrence_start_maaned() = '2026-11' (Filip 15. okt. 2026;
+--     null = der kan ikke trækkes). Én trækning pr. måned; et
 --     dobbeltklik giver den samme trækning tilbage.
 --   - Listen fastfryses i konkurrence_traekning_lod: deltagerne sorteres efter
 --     bruger-id, og hver får et sammenhængende lod-interval (1..N).
@@ -53,8 +58,8 @@
 --   - Ny vinder: grund 'svarer_ikke' (først når svarfristen på
 --     konkurrence_svarfrist_dage() = 14 dage efter trækningen er udløbet) eller
 --     'opfylder_ikke', plus valgfri fritekst. Højst
---     konkurrence_max_nye_vindere() = 2 nye vindere pr. måned (FORELØBIG -
---     Filip bekræfter), derefter 'loft_naaet'. Den gamle trækning markeres
+--     konkurrence_max_nye_vindere() = 1 ny vinder pr. måned (Filip 15. okt.
+--     2026), derefter 'loft_naaet'. Den gamle trækning markeres
 --     som erstattet (aldrig slettet), og der trækkes på samme fastfrosne liste
 --     uden de tidligere vindere, med nyt seed. Dobbeltklik giver ikke to nye
 --     vindere.
@@ -107,17 +112,31 @@ create index if not exists betalinger_frigivet_kl
 -- 2. Gennemførte salg (internt - kun service role)
 -- ===========================================================================
 
+-- Regler mod falske salg (Filip, 15. okt. 2026). Fælles for badge,
+-- konkurrence og boost: brug disse konstanter, ikke tallene.
+create or replace function public.gennemfoerte_salg_min_bud_oere()
+returns bigint
+language sql
+immutable
+set search_path = ''
+as $$ select 5000::bigint $$;
+revoke all on function public.gennemfoerte_salg_min_bud_oere() from public;
+grant execute on function public.gennemfoerte_salg_min_bud_oere() to anon, authenticated, service_role;
+
 -- Alle gennemførte salg, evt. afgrænset til et tidsrum for frigivelsen
--- [p_fra, p_til) og/eller én sælger.
+-- [p_fra, p_til) og/eller én sælger. Med køberen, så reglerne om
+-- forskellige købere kan regnes. (En tidligere udgave på testdatabasen havde
+-- ingen buyer_id - returtypen kan ikke ændres med create or replace.)
+drop function if exists public.gennemfoerte_salg(timestamptz, timestamptz, uuid);
 create or replace function public.gennemfoerte_salg(
   p_fra timestamptz default null, p_til timestamptz default null, p_saelger uuid default null)
-returns table (betaling_id uuid, trade_id uuid, seller_id uuid, frigivet_kl timestamptz)
+returns table (betaling_id uuid, trade_id uuid, seller_id uuid, buyer_id uuid, frigivet_kl timestamptz)
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select b.id, b.trade_id, b.seller_id, b.frigivet_kl
+  select b.id, b.trade_id, b.seller_id, b.buyer_id, b.frigivet_kl
     from public.betalinger b
     left join public.trades t on t.id = b.trade_id
    where b.status = 'betalt'
@@ -126,6 +145,7 @@ as $$
      and (p_til is null or b.frigivet_kl < p_til)
      and (p_saelger is null or b.seller_id = p_saelger)
      and b.seller_id <> public.bidhamr_system_id()
+     and b.bud_oere >= public.gennemfoerte_salg_min_bud_oere()
      and b.annulleret_kl is null
      and b.refusion_anmodet_kl is null
      and b.refunderet_kl is null
@@ -151,6 +171,16 @@ as $$ select 50 $$;
 revoke all on function public.populaer_saelger_graense() from public;
 grant execute on function public.populaer_saelger_graense() to anon, authenticated, service_role;
 
+-- Salgene skal være til mindst så mange forskellige købere (Filip, 15. okt. 2026).
+create or replace function public.populaer_saelger_min_koebere()
+returns integer
+language sql
+immutable
+set search_path = ''
+as $$ select 20 $$;
+revoke all on function public.populaer_saelger_min_koebere() from public;
+grant execute on function public.populaer_saelger_min_koebere() to anon, authenticated, service_role;
+
 create or replace function public.populaer_saelger(p_bruger uuid)
 returns boolean
 language sql
@@ -161,9 +191,9 @@ as $$
   select p_bruger is not null
      and exists (select 1 from public.users u
                   where u.id = p_bruger and u.konto_lukket_kl is null and u.konto_slettet_kl is null)
-     and (select count(*) from (select 1 from public.gennemfoerte_salg(null, null, p_bruger)
-                                 limit public.populaer_saelger_graense()) x)
-         >= public.populaer_saelger_graense();
+     and (select count(*) >= public.populaer_saelger_graense()
+                 and count(distinct g.buyer_id) >= public.populaer_saelger_min_koebere()
+            from public.gennemfoerte_salg(null, null, p_bruger) g);
 $$;
 revoke all on function public.populaer_saelger(uuid) from public;
 grant execute on function public.populaer_saelger(uuid) to anon, authenticated, service_role;
@@ -249,7 +279,18 @@ $$;
 revoke all on function public.konkurrence_udelukket_grund(uuid) from public, anon, authenticated;
 grant execute on function public.konkurrence_udelukket_grund(uuid) to service_role;
 
--- Lod pr. sælger for salg frigivet i [p_fra, p_til). Medtager også udelukkede
+-- Højst så mange lod pr. køber pr. sælger pr. måned (Filip, 15. okt. 2026).
+create or replace function public.konkurrence_max_lod_pr_koeber()
+returns integer
+language sql
+immutable
+set search_path = ''
+as $$ select 1 $$;
+revoke all on function public.konkurrence_max_lod_pr_koeber() from public, anon, authenticated;
+grant execute on function public.konkurrence_max_lod_pr_koeber() to service_role;
+
+-- Lod pr. sælger for salg frigivet i [p_fra, p_til) (højst
+-- konkurrence_max_lod_pr_koeber() pr. køber). Medtager også udelukkede
 -- sælgere (grund er ikke null) - de deltager ikke.
 create or replace function public.konkurrence_lod_beregn(p_fra timestamptz, p_til timestamptz, p_bruger uuid default null)
 returns table (bruger_id uuid, antal_lod integer, grund text)
@@ -258,8 +299,8 @@ stable
 security definer
 set search_path = ''
 as $$
-  with s as (
-    select g.seller_id, count(*)::integer as antal
+  with pr_koeber as (
+    select g.seller_id, least(count(*), public.konkurrence_max_lod_pr_koeber())::integer as antal
       from public.gennemfoerte_salg(p_fra, p_til, p_bruger) g
      where not exists (select 1 from public.trades t
                         where t.id = g.trade_id and coalesce(t.sag_aaben, false))
@@ -269,7 +310,9 @@ as $$
                                or (sa.afviklet_kl is null and sa.penge_flyttes_efter_kl > now())))
        and not exists (select 1 from public.sag_anker an
                         where an.trade_id = g.trade_id and an.status = 'afventer')
-     group by g.seller_id
+     group by g.seller_id, g.buyer_id
+  ), s as (
+    select k.seller_id, sum(k.antal)::integer as antal from pr_koeber k group by k.seller_id
   )
   select s.seller_id, s.antal, public.konkurrence_udelukket_grund(s.seller_id)
     from s;
@@ -316,8 +359,8 @@ grant execute on function public.mine_konkurrence_lod() to authenticated, servic
 -- ===========================================================================
 -- 5. Lodtrækningen: fastfrosne lister og log
 -- ===========================================================================
--- Konstanter. FORELØBIGE værdier (Filip bekræfter - ROADMAP-BESLUTNINGER,
--- "Nye funktioner"): første måned med konkurrence, højst 2 nye vindere pr.
+-- Konstanter (Filip, 15. okt. 2026 - ROADMAP-BESLUTNINGER, "Nye funktioner"):
+-- første måned med konkurrence er november 2026, højst 1 ny vinder pr.
 -- måned og 14 dages svarfrist (konkurrencebetingelserne 7.2-7.3).
 -- konkurrence_start_maaned() = null betyder, at der slet ikke kan trækkes.
 create or replace function public.konkurrence_start_maaned()
@@ -334,7 +377,7 @@ returns integer
 language sql
 immutable
 set search_path = ''
-as $$ select 2 $$;
+as $$ select 1 $$;
 revoke all on function public.konkurrence_max_nye_vindere() from public, anon, authenticated;
 grant execute on function public.konkurrence_max_nye_vindere() to service_role;
 
