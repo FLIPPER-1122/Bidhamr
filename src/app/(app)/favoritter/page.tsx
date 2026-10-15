@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import AuctionCard from "@/components/AuctionCard";
 import TomTilstand from "@/components/TomTilstand";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
+import { markerBoostede } from "@/lib/boost/visning";
 
 export const dynamic = "force-dynamic";
 
@@ -53,10 +54,13 @@ export default async function FavoritterSide() {
   // (afsluttet handel for over 48 timer siden) vises ikke, selv om de stadig
   // ligger på favoritlisten. RLS skjuler arkiverede for alle andre end
   // parterne; her fjernes de også for parterne.
-  const auktioner = (data ?? [])
-    .map((f) => f.auctions)
-    .filter((a): a is NonNullable<FavoritRow["auctions"]> => !!a && !a.skjult && !a.arkiveret_kl)
-    .map(mapAuctionTilKort);
+  const auktioner = await markerBoostede(
+    supabase,
+    (data ?? [])
+      .map((f) => f.auctions)
+      .filter((a): a is NonNullable<FavoritRow["auctions"]> => !!a && !a.skjult && !a.arkiveret_kl)
+      .map(mapAuctionTilKort),
+  );
 
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">

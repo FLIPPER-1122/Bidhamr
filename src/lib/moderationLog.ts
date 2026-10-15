@@ -55,6 +55,8 @@ export const HANDLING_NAVNE: Record<string, string> = {
   udbetaling_godkendt: "Godkendte udbetaling (købers betaling 10.000 kr. eller mere)",
   udbetaling_godkendelse_nulstillet: "Chefens godkendelse af udbetaling nulstillet (ny sag eller anke)",
   bidhamr_daekker: "BidHamr dækker refusionen",
+  boost_justering: "Justerede boost-point",
+  boost_refunderet: "Refunderede køb af boost-point",
   udbetaling_frosset: "Sælgerens udbetalinger frosset",
   udbetaling_frysning_ophaevet: "Ophævede frysning af sælger",
   spoergsmaal_skjult: "Skjulte spørgsmål på auktion",

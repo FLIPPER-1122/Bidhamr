@@ -6,6 +6,7 @@ import Ikon from "@/components/Ikon";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { useFavoritter } from "@/components/FavoritterProvider";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
+import BoostetMaerke from "@/components/boost/BoostetMaerke";
 import { ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 
 export interface DummyAuction {
@@ -22,6 +23,8 @@ export interface DummyAuction {
   billede?: string | null;
   // Sælgeren er et firma (auctions.erhverv).
   erhverv?: boolean;
+  // Auktionen er boostet lige nu (aktive_boosts) - vises som "Boostet".
+  boostet?: boolean;
 }
 
 // Passer til gitteret 2 / 3 / 4 spalter, som alle kortlister bruger
@@ -73,6 +76,8 @@ export default function AuctionCard({
               </span>
             )
           )}
+
+          {auktion.boostet && <BoostetMaerke lille className="absolute top-3 left-3 shadow-kort" />}
 
           <span
             className={`absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full px-[9px] py-[5px] text-xs font-semibold ${

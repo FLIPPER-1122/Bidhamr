@@ -13,6 +13,8 @@ Kode: `src/lib/faktura/` (dinero.ts, konfig.ts, proces.ts, koe.ts, data.ts, teks
 | Betalingen refunderes (hele BidHamrs gebyr tilbage) | Kreditnota for hver faktura | Køber og sælger | Alle linjer |
 | Refusion efter sag med medhold (BidHamr beholder BidHamr Beskyttelse) | Kreditnota for hver faktura | Køber og sælger | Køber: købergebyr + fragt. Sælger: sælgergebyr |
 | Ikke-afhentet pakke refunderet (køberen får købsbeløbet minus gebyrer og fragt begge veje) | Kreditnota for sælgers faktura + ny faktura til køberen (`slags = 'returfragt'`) | Sælger / køber | Sælger: sælgergebyr (krediteres helt - sælgeren fik intet). Køber: ingen kreditnota (købergebyr, fragt og Beskyttelse refunderes ikke) + "Returfragt (pakken blev ikke afhentet)" på fragtkontoen |
+| Køb af boost-point betalt (BidHamrs egen omsætning, `slags = 'boost'`, `boost_koeb_id`, ingen handel) | Faktura | Køber | "Boost-point (100 point)" på salgskontoen (1000 m/moms) – dateret betalingsdagen |
+| Boost-køb refunderet (chefen eller Stripe-dashboardet) | Kreditnota | Køber | Samme linje – dateret refusionsdagen |
 | Erhvervsabonnement betalt (Stripe Billing) | Finansbilag i kassekladden, Stripe-fakturaen vedhæftet | – (firmaet har Stripes faktura) | Abonnement (salg m/moms) |
 | Abonnementsfaktura refunderet | Modpostering i kassekladden | – | Samme beløb negativt |
 

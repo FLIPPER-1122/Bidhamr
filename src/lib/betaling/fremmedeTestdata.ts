@@ -22,6 +22,7 @@ import "server-only";
 //            betaling   (metadata betaling_id/bidhamr_daekker = betalinger.id)
 //            betaling   (PaymentIntent, også kasseret, eller charge)
 //            returfragt (returfragt_betalinger: PaymentIntent, også kasseret, eller charge)
+//            boost      (boost_koeb: PaymentIntent, også kasseret, eller charge)
 //            afvigelse  (betaling_afvigelser: PaymentIntent eller charge)
 //            udbetaling (metadata saelger_udbetaling_id)
 //            Connect-konto (betalingsprofiler, betalinger, saelger_udbetalinger)
@@ -181,6 +182,19 @@ export async function hentKendte(
     if (error) {
       if (/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) break;
       throw new Error(`kendte (returfragt tidligere_payment_intents): ${error.message}`);
+    }
+    for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) k.pis.add(x);
+  }
+  // Køb af boost-point (betaling til platformen, boost.ts) - også kasserede
+  // PaymentIntents (refunderes automatisk, hvis de betales).
+  await findesHvisTabel(admin, "boost_koeb", "stripe_payment_intent_id", pis, k.pis);
+  await findesHvisTabel(admin, "boost_koeb", "stripe_charge_id", charges, k.charges);
+  for (const del of bidder(pis)) {
+    if (!del.length) continue;
+    const { data, error } = await admin.from("boost_koeb").select("tidligere_payment_intents").overlaps("tidligere_payment_intents", del);
+    if (error) {
+      if (/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) break;
+      throw new Error(`kendte (boost tidligere_payment_intents): ${error.message}`);
     }
     for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) k.pis.add(x);
   }

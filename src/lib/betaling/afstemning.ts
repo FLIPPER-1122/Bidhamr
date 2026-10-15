@@ -10,7 +10,8 @@ import "server-only";
 // Vindue: de seneste 30 dage hos Stripe.
 //   1. Platformens PaymentIntents: forældreløse (ukendte) betalinger, betalt
 //      hos Stripe men ikke i databasen (eller omvendt), forkert beløb.
-//      Returfragt i sager (returfragt_betalinger) afstemmes mod sin række.
+//      Returfragt i sager (returfragt_betalinger) og køb af boost-point
+//      (boost_koeb) afstemmes mod deres række.
 //      Abonnementer (firmaets Stripe-kunde) er ikke handler og springes over.
 //   2. Application fees: hvert gebyr og hver gebyr-refusion mod betalingens
 //      application_fee_oere og refusionsplanens G - og summen (Stripe:
@@ -340,6 +341,86 @@ export function returfragtStatusAfviger(piStatus: string, dbStatus: string): boo
   return piStatus === "succeeded" ? !dbBetalt : dbBetalt;
 }
 
+// Boost-køb (boost.ts, 20261023030000): BidHamrs egen omsætning - betalinger
+// til platformen som returfragten. Tabellen må mangle (før migrationen).
+export type BoostAfst = {
+  id: string;
+  status: string;
+  beloeb_oere: number;
+  modtaget_oere: number | null;
+  stripe_payment_intent_id: string | null;
+  stripe_charge_id: string | null;
+  stripe_refund_id: string | null;
+  tidligere_payment_intents: string[] | null;
+  betalt_kl: string | null;
+};
+
+const BOOST_KOLONNER =
+  "id, status, beloeb_oere, modtaget_oere, stripe_payment_intent_id, stripe_charge_id, stripe_refund_id, tidligere_payment_intents, betalt_kl";
+
+async function boostVed(
+  admin: Admin,
+  kolonne: "stripe_payment_intent_id" | "stripe_charge_id",
+  ids: string[],
+): Promise<Map<string, BoostAfst>> {
+  const ud = new Map<string, BoostAfst>();
+  for (const del of bidder([...new Set(ids)])) {
+    if (!del.length) continue;
+    const { data, error } = await admin.from("boost_koeb").select(BOOST_KOLONNER).in(kolonne, del);
+    if (error) {
+      if (manglerIDatabasen(error)) return ud;
+      throw new Error(`boost_koeb (${kolonne}): ${error.message}`);
+    }
+    for (const r of (data ?? []) as BoostAfst[]) {
+      const v = r[kolonne];
+      if (v) ud.set(v, r);
+    }
+  }
+  return ud;
+}
+
+// Kasserede boost-PaymentIntents (pi -> købets id).
+async function boostKasserede(admin: Admin, ids: string[]): Promise<Map<string, string>> {
+  const ud = new Map<string, string>();
+  for (const del of bidder([...new Set(ids)])) {
+    if (!del.length) continue;
+    const { data, error } = await admin.from("boost_koeb").select("id, tidligere_payment_intents").overlaps("tidligere_payment_intents", del);
+    if (error) {
+      if (manglerIDatabasen(error)) return ud;
+      throw new Error(`boost_koeb (tidligere): ${error.message}`);
+    }
+    for (const r of data ?? []) for (const x of (r.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) ud.set(x, r.id as string);
+  }
+  return ud;
+}
+
+// Hvad Stripe skal have refunderet på et boost-køb (null = i gang).
+export function forventetBoostRefunderet(r: Pick<BoostAfst, "status" | "beloeb_oere" | "modtaget_oere">): number | null {
+  if (r.status === "refunderes") return null;
+  if (r.status === "refunderet") return Number(r.modtaget_oere ?? r.beloeb_oere);
+  return 0;
+}
+
+// Er refusionen BidHamrs egen på boost-købet?
+export function erBoostRefusion(
+  x: { id: string; metadata?: Record<string, string> | null },
+  r: Pick<BoostAfst, "id" | "stripe_refund_id">,
+): boolean {
+  if (r.stripe_refund_id && x.id === r.stripe_refund_id) return true;
+  return x.metadata?.type === "boost" && x.metadata?.boost_koeb_id === r.id;
+}
+
+// BidHamrs automatiske refusion af en kasseret boost-PaymentIntent?
+export function erKasseretBoostRefusion(x: { metadata?: Record<string, string> | null }, koebId: string | null): boolean {
+  return !!koebId && x.metadata?.type === "boost" && x.metadata?.kasseret === "ja" && x.metadata?.boost_koeb_id === koebId;
+}
+
+// Afviger databasens status fra PaymentIntentens hos Stripe?
+export function boostStatusAfviger(piStatus: string, dbStatus: string): boolean {
+  const dbBetalt = ["betalt", "refunderes", "refunderet"].includes(dbStatus);
+  return piStatus === "succeeded" ? !dbBetalt : dbBetalt;
+}
+
 async function firmaKunder(admin: Admin): Promise<Set<string>> {
   const { data, error } = await admin.from("firmaer").select("stripe_customer_id").not("stripe_customer_id", "is", null);
   if (error) {
@@ -663,13 +744,25 @@ async function afstemBetalinger(
   // Returfragt i sager (betalinger til platformen).
   const rfVed = await returfragtVed(admin, "stripe_payment_intent_id", ids);
   const rfKasseret = await returfragtKasserede(admin, ids.filter((x) => !rfVed.has(x)));
+  // Køb af boost-point (betalinger til platformen - BidHamrs egen omsætning).
+  const bkVed = await boostVed(admin, "stripe_payment_intent_id", ids);
+  const bkKasseret = await boostKasserede(admin, ids.filter((x) => !bkVed.has(x)));
   // Testtilstand: hvad kender databasen af det, de ukendte PaymentIntents
   // henviser til (metadata, Connect-konto, kunde)?
   const kendteRef = await hentKendte(
     admin,
     tilstand,
     betalte
-      .filter((p) => !kendte.has(p.id) && !afv.has(p.id) && !tidligere.has(p.id) && !rfVed.has(p.id) && !rfKasseret.has(p.id))
+      .filter(
+        (p) =>
+          !kendte.has(p.id) &&
+          !afv.has(p.id) &&
+          !tidligere.has(p.id) &&
+          !rfVed.has(p.id) &&
+          !rfKasseret.has(p.id) &&
+          !bkVed.has(p.id) &&
+          !bkKasseret.has(p.id),
+      )
       .map(piHenvisning),
     firma,
   );
@@ -679,6 +772,50 @@ async function afstemBetalinger(
     const b = kendte.get(pi.id);
     const kunde = id(pi.customer as string | { id: string } | null);
     if (afv.has(pi.id)) continue; // forkert beløb - refunderes af betalings-cron'en
+    const bk = bkVed.get(pi.id);
+    if (bk) {
+      if (pi.status === "succeeded" && boostStatusAfviger(pi.status, bk.status)) {
+        await registrer({
+          noegle: `betaling-status:${pi.id}`,
+          type: "betaling_status",
+          stripeId: pi.id,
+          beskrivelse: `Boost-PaymentIntent ${pi.id} er betalt hos Stripe, men boost-køb ${bk.id} står som '${bk.status}' i databasen.`,
+          tilstand: `${pi.status}|${bk.status}`,
+          beloebStripe: pi.amount_received,
+          beloebDb: Number(bk.beloeb_oere),
+        });
+      }
+      // Et andet beløb refunderes automatisk (status refunderes/refunderet).
+      if (
+        pi.status === "succeeded" &&
+        pi.amount_received !== Number(bk.beloeb_oere) &&
+        !["refunderes", "refunderet"].includes(bk.status)
+      ) {
+        await registrer({
+          noegle: `betaling-beloeb:${pi.id}`,
+          type: "betaling_beloeb",
+          stripeId: pi.id,
+          beskrivelse: `Boost-PaymentIntent ${pi.id} har modtaget et andet beløb end boost-køb ${bk.id}'s pris.`,
+          beloebStripe: pi.amount_received,
+          beloebDb: Number(bk.beloeb_oere),
+        });
+      }
+      continue;
+    }
+    const bkGammel = bkKasseret.get(pi.id);
+    if (bkGammel) {
+      if (pi.status !== "succeeded") continue;
+      const ch = pi.latest_charge ? await stripe.charges.retrieve(id(pi.latest_charge as string)!, {}, KALD) : null;
+      if (ch?.refunded) continue;
+      await registrer({
+        noegle: `betaling-kasseret-betalt:${pi.id}`,
+        type: "betaling_status",
+        stripeId: pi.id,
+        beskrivelse: `En kasseret boost-PaymentIntent (${pi.id}) for boost-køb ${bkGammel} er betalt hos Stripe og ikke refunderet - mulig dobbeltbetaling.`,
+        beloebStripe: pi.amount_received,
+      });
+      continue;
+    }
     const rf = rfVed.get(pi.id);
     if (rf) {
       if (pi.status === "succeeded" && returfragtStatusAfviger(pi.status, rf.status)) {
@@ -813,6 +950,27 @@ async function afstemBetalinger(
       });
     }
   }
+  // Og for boost-køb: betalt i databasen, men ikke hos Stripe.
+  {
+    const { data: bkDb, error: bkFejl } = await admin
+      .from("boost_koeb")
+      .select("id, stripe_payment_intent_id, status")
+      .gte("betalt_kl", fraIso)
+      .not("stripe_payment_intent_id", "is", null)
+      .limit(MAKS_OBJEKTER);
+    if (bkFejl && !manglerIDatabasen(bkFejl)) throw new Error(`betalte boost-køb: ${bkFejl.message}`);
+    for (const x of bkDb ?? []) {
+      const st = stripeStatus.get(x.stripe_payment_intent_id as string);
+      if (!st || !boostStatusAfviger(st, x.status as string)) continue;
+      await registrer({
+        noegle: `betaling-status:${x.stripe_payment_intent_id}`,
+        type: "betaling_status",
+        stripeId: x.stripe_payment_intent_id as string,
+        beskrivelse: `Boost-køb ${x.id} står som '${x.status}' i databasen, men PaymentIntent ${x.stripe_payment_intent_id} er '${st}' hos Stripe.`,
+        tilstand: `${st}|${x.status}`,
+      });
+    }
+  }
   for (const b of db ?? []) {
     const st = stripeStatus.get(b.stripe_payment_intent_id as string);
     if (!st || st === "succeeded") continue; // oprettet før vinduet: ikke i listen
@@ -930,13 +1088,15 @@ async function afstemRefusioner(
   const afv = await afvigelsesRaekker(admin, "stripe_charge_id", charges);
   // Returfragt i sager: refusioner på returfragtens charge.
   const rfCharge = await returfragtVed(admin, "stripe_charge_id", charges);
+  // Boost-køb: refusioner på købets charge.
+  const bkCharge = await boostVed(admin, "stripe_charge_id", charges);
   // Refusioner på charges, databasen ikke kender: deres PaymentIntent hentes
   // én gang (abonnement? og i testtilstand: henviser den til noget, vi kender?).
   const piVed = new Map<string, Stripe.PaymentIntent>();
   const ukendte: Stripe.Refund[] = [];
   for (const x of refusioner) {
     const ch = id(x.charge as string | { id: string } | null);
-    if (ch && (vedCharge.has(ch) || afv.has(ch) || rfCharge.has(ch))) continue;
+    if (ch && (vedCharge.has(ch) || afv.has(ch) || rfCharge.has(ch) || bkCharge.has(ch))) continue;
     ukendte.push(x);
     const piId = id(x.payment_intent as string | { id: string } | null);
     if (piId && !piVed.has(piId)) {
@@ -963,12 +1123,35 @@ async function afstemRefusioner(
     admin,
     ukendte.map((x) => id(x.payment_intent as string | { id: string } | null)).filter((x): x is string => !!x),
   );
+  // Kasserede boost-PaymentIntents, der blev betalt alligevel, refunderes
+  // automatisk af boost.ts (metadata type=boost, kasseret=ja).
+  const bkKasseret = await boostKasserede(
+    admin,
+    ukendte.map((x) => id(x.payment_intent as string | { id: string } | null)).filter((x): x is string => !!x),
+  );
   const udenom = new Set<string>();
   for (const x of refusioner) {
     tjekTid(budget);
     const ch = id(x.charge as string | { id: string } | null);
     const b = ch ? vedCharge.get(ch) : undefined;
     const a = ch ? afv.get(ch) : undefined;
+    const bk = ch ? bkCharge.get(ch) : undefined;
+    if (ch && bk) {
+      if (erBoostRefusion(x, bk)) continue;
+      udenom.add(ch);
+      await registrer({
+        noegle: `refusion:${x.id}`,
+        type: "refusion_udenom",
+        stripeId: x.id,
+        beskrivelse: `Refusion ${x.id} på boost-købets charge ${ch} er ikke lavet af BidHamr (boost-køb ${bk.id}, status '${bk.status}'). Pointene er trukket tilbage, så langt saldoen rakte - kontrollér, at køberen ikke er refunderet to gange.`,
+        beloebStripe: x.amount,
+      });
+      continue;
+    }
+    {
+      const piB = id(x.payment_intent as string | { id: string } | null);
+      if (!b && !a && piB && erKasseretBoostRefusion(x, bkKasseret.get(piB) ?? null)) continue;
+    }
     const rf = ch ? rfCharge.get(ch) : undefined;
     if (ch && rf) {
       if (erReturfragtRefusion(x, rf)) continue;
@@ -1018,6 +1201,27 @@ async function afstemRefusioner(
     tjekTid(budget);
     const b = vedCharge.get(ch) ?? null;
     const a = afv.get(ch) ?? null;
+    const bk = bkCharge.get(ch) ?? null;
+    if (bk) {
+      const forv = forventetBoostRefunderet(bk);
+      if (forv === null) continue; // refusionen er i gang
+      let sumBk = 0;
+      for await (const x of stripe.refunds.list({ charge: ch, limit: 100 }, KALD)) {
+        if (x.status === "failed" || x.status === "canceled") continue;
+        sumBk += x.amount;
+      }
+      if (sumBk !== forv) {
+        await registrer({
+          noegle: `refusion-beloeb:${ch}`,
+          type: "refusion_beloeb",
+          stripeId: ch,
+          beskrivelse: `Der er refunderet et andet beløb på boost-købets charge ${ch} hos Stripe, end databasen forventer (boost-køb ${bk.id}, status '${bk.status}').`,
+          beloebStripe: sumBk,
+          beloebDb: forv,
+        });
+      }
+      continue;
+    }
     const rf = rfCharge.get(ch) ?? null;
     if (rf) {
       const forv = forventetReturfragtRefunderet(rf);
@@ -1312,10 +1516,29 @@ async function afstemIndsigelser(
     );
   };
   const kendteRef = await hentKendte(admin, tilstand, ukendte.map(dispHenvisning), firma);
+  // Indsigelser på køb af boost-point: samme alarm-nøgle som webhooken.
+  const bkPi = await boostVed(
+    admin,
+    "stripe_payment_intent_id",
+    ukendte.map((d) => id(d.payment_intent as string | { id: string } | null)).filter((x): x is string => !!x),
+  );
   for (const d of disputes) {
     tjekTid(budget);
     const piId = id(d.payment_intent as string | { id: string } | null);
     if (piId && (kendte.has(piId) || afv.has(piId))) continue; // handel - overvågningen spejler den
+    const bk = piId ? bkPi.get(piId) : undefined;
+    if (bk) {
+      await registrer({
+        noegle: `indsigelse:${d.id}`,
+        alarmNoegle: `indsigelse-boost:${d.id}`,
+        type: "ukendt_indsigelse",
+        tilstand: d.status,
+        stripeId: d.id,
+        beskrivelse: `Indsigelse ${d.id} (${d.status}) på et køb af boost-point (boost-køb ${bk.id}) - svar banken i Stripe, og justér brugerens point, hvis den tabes.`,
+        beloebStripe: d.amount,
+      });
+      continue;
+    }
     const pi = piId ? piVed.get(piId) : undefined;
     const kunde = pi ? id(pi.customer as string | { id: string } | null) : null;
     const abonnement = !!kunde && firma.has(kunde);

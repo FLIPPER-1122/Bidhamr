@@ -19,6 +19,7 @@ import Ikon, { type IkonNavn } from "@/components/Ikon";
 import MitIDMaerke from "@/components/mitid/MitIDMaerke";
 import { MitIDIkon, MitIDKnap } from "@/components/mitid/MitIDKraeves";
 import { MITID } from "@/lib/tekster/mitid";
+import { BOOST_TEKST } from "@/lib/boost/tekster";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ const OVERBLIK: { href: string; ikon: IkonNavn; titel: string; tekst: string }[]
   { href: "/konto/foelger", ikon: "foelgere", titel: "Sælgere du følger", tekst: "Få besked om nye varer" },
   { href: MINE_HANDLER_HREF, ikon: "handler", titel: "Mine handler", tekst: "Køb og salg, du er i gang med" },
   { href: "/konto/fakturaer", ikon: "faktura", titel: "Fakturaer", tekst: "Fakturaer fra BidHamr på gebyrer" },
+  { href: "/konto/boost", ikon: "statistik", titel: "Boost-point", tekst: "Saldo, historik og køb af point" },
   { href: "/konto/skat", ikon: "laas", titel: "Skatteoplysninger", tekst: "Indberetning til Skattestyrelsen (DAC7)" },
 ];
 
@@ -76,6 +78,7 @@ export default async function KontoSide({
     { data: blokeringData, error: blokeringFejl },
     { data: mitidData },
     { data: dac7Data },
+    { data: pointData },
   ] = await Promise.all([
     sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
     hentBetalingsindstillinger(),
@@ -96,7 +99,12 @@ export default async function KontoSide({
       : Promise.resolve({ data: null }),
     // DAC7: åben anmodning om skatteoplysninger (kun egne, auth.uid()).
     supabase.rpc("dac7_min_status"),
+    // Boost-point: saldo og pakkens pris (kun egne, auth.uid()).
+    supabase.rpc("mine_point"),
   ]);
+  const point = pointData as
+    | { saldo: number; kan_bruge: boolean; pakke: { point: number; pris_oere: number } }
+    | null;
   if (!bruger) {
     redirect("/login?redirect=/konto");
   }
@@ -308,6 +316,25 @@ export default async function KontoSide({
             </div>
           </section>
         </>
+      )}
+
+      {point && (
+        <section id="boost" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <h2 className="text-[20px] leading-tight lg:text-[22px]">{BOOST_TEKST.sideTitel}</h2>
+          <p className="mt-1 text-sm text-tekst-daempet">
+            {BOOST_TEKST.saldoLabel}: <span className="font-semibold text-tekst">{BOOST_TEKST.saldo(point.saldo)}</span>
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            {point.kan_bruge && (
+              <Link href="/konto/boost#koeb" className="btn btn-primaer">
+                {BOOST_TEKST.koebKnap(point.pakke.point, point.pakke.pris_oere)}
+              </Link>
+            )}
+            <Link href="/konto/boost" className="btn btn-sekundaer">
+              Se historik
+            </Link>
+          </div>
+        </section>
       )}
 
       <section id="notifikationer" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">

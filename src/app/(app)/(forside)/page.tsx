@@ -10,6 +10,8 @@ import { createClient } from "@/lib/supabase/server";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import { sideUrl } from "@/lib/seo";
 import { FORSIDE } from "@/lib/tekster/forside";
+import { hentBoostTop, markerBoostede } from "@/lib/boost/visning";
+import { BOOST_TEKST } from "@/lib/boost/tekster";
 import heroBillede from "../../../../public/forside/hero.webp";
 
 // Kun de kolonner, kortene bruger. Typet som string: Supabase-typernes
@@ -99,9 +101,14 @@ const hentForsideAuktioner = cache(async () => {
       .is("arkiveret_kl", null)
       .gt("slutter_kl", nu);
 
-  const [slutterSnartSvar, nyesteSvar] = await Promise.all([
-    grundforespoergsel().order("slutter_kl", { ascending: true }).limit(ANTAL_KORT),
-    grundforespoergsel().order("oprettet", { ascending: false }).limit(ANTAL_KORT * 2),
+  // Boost: højst 4 boostede auktioner øverst (roteret, efter boost-start -
+  // boost_top i databasen). De står i deres egen sektion "Boostede
+  // auktioner" og gentages ikke i listerne under den.
+  const boostIder = await hentBoostTop(supabase);
+  const [slutterSnartSvar, nyesteSvar, boostSvar] = await Promise.all([
+    grundforespoergsel().order("slutter_kl", { ascending: true }).limit(ANTAL_KORT + boostIder.length),
+    grundforespoergsel().order("oprettet", { ascending: false }).limit(ANTAL_KORT * 2 + boostIder.length),
+    boostIder.length > 0 ? grundforespoergsel().in("id", boostIder) : Promise.resolve({ data: [], error: null }),
   ]);
 
   // Vises af error.tsx – en tom liste ville fejlagtigt sige "ingen auktioner".
@@ -109,13 +116,31 @@ const hentForsideAuktioner = cache(async () => {
     throw new Error("Forsiden kunne ikke hente auktioner");
   }
 
-  const slutterSnart = ((slutterSnartSvar.data ?? []) as unknown as KortRaekke[]).map(mapAuctionTilKort);
-  const vist = new Set(slutterSnart.map((a) => a.id));
-  const nyeste = ((nyesteSvar.data ?? []) as unknown as KortRaekke[])
+  // Boost-sektionen må aldrig tage forsiden ned: fejl = ingen sektion.
+  const boostRaekker = new Map(
+    (boostSvar.error ? [] : ((boostSvar.data ?? []) as unknown as KortRaekke[])).map((r) => [r.id, r]),
+  );
+  const boostede = boostIder
+    .map((id) => boostRaekker.get(id))
+    .filter((r): r is KortRaekke => !!r)
+    .map((r) => ({ ...mapAuctionTilKort(r), boostet: true }));
+  const vist = new Set(boostede.map((a) => a.id));
+  const slutterSnartRaa = ((slutterSnartSvar.data ?? []) as unknown as KortRaekke[])
     .filter((a) => !vist.has(a.id))
     .slice(0, ANTAL_KORT)
     .map(mapAuctionTilKort);
-  return { slutterSnart, nyeste };
+  for (const a of slutterSnartRaa) vist.add(a.id);
+  const nyesteRaa = ((nyesteSvar.data ?? []) as unknown as KortRaekke[])
+    .filter((a) => !vist.has(a.id))
+    .slice(0, ANTAL_KORT)
+    .map(mapAuctionTilKort);
+  // Mærket "Boostet" også på boostede auktioner i de andre lister (fx når
+  // rotationen ikke har dem øverst lige nu).
+  const [slutterSnart, nyeste] = await Promise.all([
+    markerBoostede(supabase, slutterSnartRaa),
+    markerBoostede(supabase, nyesteRaa),
+  ]);
+  return { boostede, slutterSnart, nyeste };
 });
 
 // Hero, tryghed, kategorier, "Sådan virker det" og erhverv afhænger ikke af
@@ -276,15 +301,28 @@ function Hero() {
 }
 
 async function SlutterSnart() {
-  const { slutterSnart } = await hentForsideAuktioner();
-  if (slutterSnart.length === 0) return <IngenAuktioner />;
+  const { boostede, slutterSnart } = await hentForsideAuktioner();
+  if (slutterSnart.length === 0 && boostede.length === 0) return <IngenAuktioner />;
   return (
-    <AuktionsSektion
-      id="slutter-snart"
-      titel={FORSIDE.slutterSnartTitel}
-      seAlleHref="/auktioner?sortering=slutter_snart"
-      auktioner={slutterSnart}
-    />
+    <>
+      {/* Boostede auktioner først (betalt placering - tydeligt mærket). */}
+      {boostede.length > 0 && (
+        <AuktionsSektion
+          id="boostede-auktioner"
+          titel={BOOST_TEKST.sektionTitel}
+          intro={BOOST_TEKST.sektionIntro}
+          auktioner={boostede}
+        />
+      )}
+      {slutterSnart.length > 0 && (
+        <AuktionsSektion
+          id="slutter-snart"
+          titel={FORSIDE.slutterSnartTitel}
+          seAlleHref="/auktioner?sortering=slutter_snart"
+          auktioner={slutterSnart}
+        />
+      )}
+    </>
   );
 }
 
@@ -341,16 +379,19 @@ function AuktionsSektion({
   id,
   titel,
   seAlleHref,
+  intro,
   auktioner,
 }: {
   id: string;
   titel: string;
-  seAlleHref: string;
+  seAlleHref?: string;
+  intro?: string;
   auktioner: Kort[];
 }) {
   return (
     <section aria-labelledby={`${id}-titel`} className="py-8 lg:py-10">
       <SektionsOverskrift id={`${id}-titel`} titel={titel} seAlleHref={seAlleHref} />
+      {intro && <p className="-mt-3 mb-5 text-sm text-tekst-daempet">{intro}</p>}
       <ul className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
         {auktioner.map((a, i) => (
           // 3 spalter (lg): kun 6 kort, så sidste række ikke står halvtom.

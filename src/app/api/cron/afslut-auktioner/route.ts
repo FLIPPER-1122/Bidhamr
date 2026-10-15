@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { driftFejlSamler, logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
 import { koerReturfragtCron } from "@/lib/betaling/returfragt";
+import { koerBoostCron } from "@/lib/betaling/boost";
 import { harCronAdgang } from "@/lib/cronAdgang";
 import { koerDac7Cron } from "@/lib/dac7/server";
 import { koerLukOpsigelser } from "@/lib/erhverv/betaling";
@@ -196,6 +197,17 @@ async function haandter(req: NextRequest) {
         logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Returfragt-cron", fejl: err }),
       );
     }
+    // Boost (betaling til platformen): mistede webhooks på køb af point,
+    // refusioner, der skal prøves igen, og point ved salg (optjening og
+    // tilbageførsel). Flytter penge (refusioner) - fejl tæller som trinfejl.
+    let boost: Awaited<ReturnType<typeof koerBoostCron>> = null;
+    try {
+      boost = await driftFejlSamler.run(trinFejl, () => koerBoostCron());
+    } catch (err) {
+      await driftFejlSamler.run(trinFejl, () =>
+        logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Boost-cron", fejl: err }),
+      );
+    }
     // DAC7: anmodninger om skatteoplysninger, påmindelser og spærring
     // (højst én gang i timen i databasen; flytter ingen penge). Fejl her
     // stopper ikke resten og logges i drift_fejl.
@@ -226,7 +238,7 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Beta-fejl: oprydning af billeder", fejl: err });
     }
-    const r = { ...betaling, fragt, returfragt, dac7, erhvervLuk, betaFejlOprydning };
+    const r = { ...betaling, fragt, returfragt, boost, dac7, erhvervLuk, betaFejlOprydning };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);

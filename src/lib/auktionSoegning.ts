@@ -9,6 +9,7 @@ import { logDriftFejl } from "@/lib/drift";
 import { læsSortering, type Sortering } from "@/lib/sortering";
 import { escapeLike, escapeRegex } from "@/lib/postgrest";
 import type { TotalType } from "@/lib/soegeTotal";
+import { hentBoostTop, markerBoostede } from "@/lib/boost/visning";
 
 // Søgning på /auktioner med sidetal. Bruges både af siden (første side,
 // server-renderet) og af server-handlingen "Vis flere"/nye filtre, så
@@ -46,9 +47,45 @@ export interface AuktionsFiltre {
 
 export type { TotalType };
 
+// naesteOffset: hvor "Vis flere" skal fortsætte i den almindelige liste. På
+// første side står de boostede auktioner (højst 4) øverst oven i siden, så
+// antallet af viste kort er ikke det samme som offset.
 export type AuktionsSide =
-  | { ok: true; auktioner: DummyAuction[]; total: number; totalType: TotalType }
+  | { ok: true; auktioner: DummyAuction[]; total: number; totalType: TotalType; naesteOffset: number }
   | { ok: false; fejl: string };
+
+// Boost: på første side kommer de boostede auktioner, der passer til
+// søgningen/kategorien (og evt. afstanden), øverst - højst 4, roteret og
+// sorteret efter boost-start (boost_top i databasen). En boostet auktion,
+// der også er på første side af den almindelige liste, vises kun øverst.
+// Alle kort med et aktivt boost får mærket "Boostet".
+async function medBoost(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  side: KortRaekke[],
+  o: { offset: number; kategori: string; soeg: string; tilladte?: Set<string> },
+): Promise<DummyAuction[]> {
+  let top: KortRaekke[] = [];
+  if (o.offset === 0) {
+    const ider = (await hentBoostTop(supabase, { kategori: o.kategori || null, soeg: o.soeg || null })).filter(
+      (id) => !o.tilladte || o.tilladte.has(id),
+    );
+    if (ider.length > 0) {
+      const { data, error } = await supabase
+        .from("auctions")
+        .select(KORT_KOLONNER)
+        .in("id", ider)
+        .eq("status", "aktiv")
+        .eq("skjult", false)
+        .gt("slutter_kl", new Date().toISOString());
+      if (error) console.error("Boostede auktioner kunne ikke hentes:", error.message);
+      const efterId = new Map(((error ? [] : (data ?? [])) as unknown as KortRaekke[]).map((r) => [r.id, r]));
+      top = ider.map((id) => efterId.get(id)).filter((r): r is KortRaekke => !!r);
+    }
+  }
+  const iTop = new Set(top.map((r) => r.id));
+  const kort = [...top, ...side.filter((r) => !iTop.has(r.id))].map(mapAuctionTilKort);
+  return markerBoostede(supabase, kort);
+}
 
 const FEJL = "Auktionerne kunne ikke hentes. Prøv igen.";
 
@@ -57,7 +94,7 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
   const kategori = typeof filtre.kategori === "string" ? filtre.kategori.trim() : "";
   // Ukendt kategori giver ingen resultater (som et eq-filter på en ukendt værdi).
   if (kategori && !kategorier.includes(kategori)) {
-    return { ok: true, auktioner: [], total: 0, totalType: "praecis" };
+    return { ok: true, auktioner: [], total: 0, totalType: "praecis", naesteOffset: 0 };
   }
   const sortering: Sortering = læsSortering(filtre.sortering);
   const offset = Number.isInteger(filtre.offset) ? Math.min(Math.max(filtre.offset!, 0), MAKS_OFFSET) : 0;
@@ -122,10 +159,11 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
     const erSkoen = total > PRAECIST_ANTAL_OP_TIL;
     return {
       ok: true,
-      auktioner: rækker.map(mapAuctionTilKort),
+      auktioner: await medBoost(supabase, rækker, { offset, kategori, soeg: søgetekst }),
       // Et skøn afrundes til hele hundreder.
       total: erSkoen ? Math.round(total / 100) * 100 : total,
       totalType: erSkoen ? "ca" : "praecis",
+      naesteOffset: offset + rækker.length,
     };
   }
 
@@ -170,7 +208,17 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
       beregnAfstandKm(center.lat, center.lng, r.lat, r.lng) <= radiusKm,
   );
   const sideIder = indenfor.slice(offset, offset + AUKTIONER_PR_SIDE).map((r) => r.id);
-  if (sideIder.length === 0) return { ok: true, auktioner: [], total: indenfor.length, totalType };
+  // Boostede auktioner øverst - kun dem inden for afstanden.
+  const tilladte = new Set(indenfor.map((r) => r.id));
+  if (sideIder.length === 0) {
+    return {
+      ok: true,
+      auktioner: await medBoost(supabase, [], { offset, kategori, soeg: søgetekst, tilladte }),
+      total: indenfor.length,
+      totalType,
+      naesteOffset: offset,
+    };
+  }
 
   const { data: kort, error: kortFejl } = await supabase
     .from("auctions")
@@ -181,9 +229,7 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
     return { ok: false, fejl: FEJL };
   }
   const efterId = new Map(((kort ?? []) as unknown as KortRaekke[]).map((r) => [r.id, r]));
-  const auktioner = sideIder
-    .map((id) => efterId.get(id))
-    .filter((r): r is KortRaekke => !!r)
-    .map(mapAuctionTilKort);
-  return { ok: true, auktioner, total: indenfor.length, totalType };
+  const raekker = sideIder.map((id) => efterId.get(id)).filter((r): r is KortRaekke => !!r);
+  const auktioner = await medBoost(supabase, raekker, { offset, kategori, soeg: søgetekst, tilladte });
+  return { ok: true, auktioner, total: indenfor.length, totalType, naesteOffset: offset + sideIder.length };
 }

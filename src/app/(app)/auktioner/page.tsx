@@ -84,6 +84,7 @@ export default async function AuktionerPage({
         initialAuktioner={side.auktioner}
         initialTotal={side.total}
         initialTotalType={side.totalType}
+        initialNaesteOffset={side.naesteOffset}
         initialQuery={søgetekst}
         initialKategori={initialKategori}
         initialSortering={initialSortering}
