@@ -18,6 +18,9 @@ export default async function VilkaarVindue({ direkte = false }: { direkte?: boo
   const sessionId = await sessionBrugerId();
   if (!sessionId) return null;
   const [bruger, vilkaar] = await Promise.all([bekraeftetBruger(sessionId), hentMineVilkaar()]);
-  if (!bruger || !vilkaar || vilkaarErAccepteret(vilkaar.version)) return null;
-  return <VilkaarDialog nyVersion={vilkaar.version !== null} direkte={direkte} />;
+  // Databasens aktuelle version afgør både, om vinduet vises, og hvilken
+  // version der accepteres - så det virker, uanset om migrationen eller
+  // koden kom først.
+  if (!bruger || !vilkaar || vilkaarErAccepteret(vilkaar.version, vilkaar.aktuel)) return null;
+  return <VilkaarDialog nyVersion={vilkaar.version !== null} aktuelVersion={vilkaar.aktuel} direkte={direkte} />;
 }

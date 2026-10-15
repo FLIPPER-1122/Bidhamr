@@ -4,10 +4,12 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { deleteAuction, cancelAuction, hideAuction, unhideAuction } from "@/app/actions/adminActions";
+import { deleteAuction, cancelAuction, hideAuction, unhideAuction, kunstTjekKoer, kunstTjekToer } from "@/app/actions/adminActions";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
+import { KUNST_BEGRUNDELSE } from "@/lib/tekster/adminSkabeloner";
 import type { AdminAuktionRow } from "@/lib/adminRowTypes";
 import { nuMs } from "@/lib/dsa/regler";
 import {
@@ -37,14 +39,19 @@ const UUID_REGEX =
 export default async function AdminAuktioner({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; kunsttjek?: string; kunstkoert?: string }>;
 }) {
   const rolle = await getStaffRole();
   if (!rolle || !harMindstRolle(rolle, "admin")) {
     notFound();
   }
 
-  const { status, q } = await searchParams;
+  const { status, q, kunsttjek, kunstkoert } = await searchParams;
+  // Kunst-tjekket: resultat af en tør kørsel og af en kørsel ("N-M-T-X":
+  // uden bud, med bud, tjekket, mangler).
+  const tal4 = (v?: string) => (/^\d+-\d+-\d+-\d+$/.test(v ?? "") ? (v as string).split("-").map(Number) : null);
+  const toer = tal4(kunsttjek);
+  const koert = tal4(kunstkoert);
   const søgetekst = q?.trim() ?? "";
   const aktivStatus = status ?? "alle";
   const supabase = createAdminClient();
@@ -96,6 +103,17 @@ export default async function AdminAuktioner({
     .order("pauset_kl", { ascending: true })
     .limit(50)
     .overrideTypes<{ id: string; titel: string | null; pauset_kl: string }[], { merge: false }>();
+
+  // Auktioner, der har lignet kunst (20261023010000_kunst_forbudt.sql). Hentes
+  // for sig, så siden virker, selvom kolonnen mangler (fejl = ingen markering).
+  const visteIds = (auctions ?? []).map((a) => a.id);
+  const { data: kunstRaekker } = visteIds.length
+    ? await supabase.from("auctions").select("id, kunst_kontrol").in("id", visteIds).not("kunst_markeret_kl", "is", null)
+    : { data: [] as { id: string; kunst_kontrol: string | null }[] };
+  const kunstRk = (kunstRaekker ?? []) as { id: string; kunst_kontrol: string | null }[];
+  const kunstIds = new Set(kunstRk.map((k) => k.id));
+  // Afventer kunst-kontrol: skjult for andre, ingen bud (afgøres under Anmeldelser).
+  const kunstAfventer = new Set(kunstRk.filter((k) => k.kunst_kontrol === "afventer").map((k) => k.id));
 
   // Sælgerinfo til de viste auktioner
   const brugerIds = [...new Set((auctions ?? []).map((a) => a.bruger_id))];
@@ -166,8 +184,60 @@ export default async function AdminAuktioner({
       <AdminSideHoved
         titel="Auktioner"
         forklaring="Alle auktioner på BidHamr. Brug siden, når du skal finde, skjule eller vise en bestemt auktion."
-        hoejre={<span className="text-sm text-tekst-svag">{auctions?.length ?? 0} resultater</span>}
+        hoejre={
+          <span className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-tekst-svag">{auctions?.length ?? 0} resultater</span>
+            {/* Kun admin/chef (siden kræver admin). Kører aldrig af sig selv -
+                først en tør kørsel, der kun tæller, derefter "Kør tjekket". */}
+            <AdminActionKnap
+              action={kunstTjekToer}
+              hiddenFields={{}}
+              label="Tjek aktive auktioner for kunst"
+              className="btn btn-sekundaer btn-lille"
+            />
+          </span>
+        }
       />
+
+      {koert && (
+        <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
+          <p className="font-semibold">Kunst-tjekket er kørt</p>
+          <p className="mt-1">
+            {koert[2]} auktioner er tjekket: {koert[0]} er sat til kontrol, og {koert[1]} med bud har fået en anmeldelse.
+            {koert[3] > 0 ? ` ${koert[3]} mangler – kør igen.` : " Alle aktive auktioner er tjekket."}
+          </p>
+          {koert[3] > 0 && (
+            <div className="mt-3">
+              <AdminActionKnap action={kunstTjekToer} hiddenFields={{}} label="Tjek de næste" className="btn btn-sekundaer btn-lille" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {toer && (
+        <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
+          <p className="font-semibold">Kunst-tjek af aktive auktioner (tør kørsel – intet er ændret endnu)</p>
+          <p className="mt-1">
+            {toer[2]} aktive auktioner uden kunst-kontrol er tjekket. {toer[0]} uden bud vil blive sat til kontrol
+            (skjult for andre, ingen bud) med en anmeldelse. {toer[1]} med bud får kun en anmeldelse – de forbliver
+            synlige, og buddene gælder.
+            {toer[3] > 0 && ` Der er ${toer[3]} flere, der ikke er tjekket – de tages i næste kørsel (ældste først).`}
+          </p>
+          {toer[0] + toer[1] > 0 && (
+            <div className="mt-3">
+              <ConfirmDialog
+                triggerLabel="Kør tjekket"
+                triggerClassName="btn btn-primaer btn-lille"
+                title="Kør kunst-tjekket nu?"
+                description={`${toer[0]} auktioner uden bud bliver skjult for andre, til de er tjekket. ${toer[1]} med bud får kun en anmeldelse. Alle kommer under Anmeldelser. Sælgerne får ingen besked.`}
+                confirmLabel="Ja, kør tjekket"
+                action={kunstTjekKoer}
+                hiddenFields={{}}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {(laengePause?.length ?? 0) > 0 && (
         <div role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-red-800">
@@ -284,6 +354,11 @@ export default async function AdminAuktioner({
                         {a.skjult && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-tekst-daempet">Skjult</span>
                         )}
+                        {kunstIds.has(a.id) && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-fejl-bg text-fejl-tekst">
+                            {kunstAfventer.has(a.id) ? "Afventer kunst-kontrol" : "Ligner kunst"}
+                          </span>
+                        )}
                         {erPaaPause(a) && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">På pause</span>
                         )}
@@ -372,7 +447,11 @@ export default async function AdminAuktioner({
                           hiddenFields={{ auktionId: a.id }}
                           {...(a.skjult
                             ? {}
-                            : indgrebFelter({ faktaPlaceholder: "Fx: Billederne er kopieret fra en anden hjemmeside." }))}
+                            : indgrebFelter({
+                                faktaPlaceholder: "Fx: Billederne er kopieret fra en anden hjemmeside.",
+                                // Kunst-markeret: reglen og begrundelsen er forudfyldt (ét klik + bekræft).
+                                ...(kunstIds.has(a.id) ? { standardRegel: "kunst", standardFakta: KUNST_BEGRUNDELSE } : {}),
+                              }))}
                         />
                         )}
                         <ConfirmDialog

@@ -1,3 +1,4 @@
+import type { Skabelon } from "@/components/admin/Skabeloner";
 import type { TekstFelt } from "@/components/admin/ConfirmDialog";
 
 // De to tekster ved en advarsel (ROADMAP-BESLUTNINGER, "Advarsler og
@@ -7,6 +8,9 @@ export function advarselFelter(opts: {
   internNavn: string;
   brugerPlaceholder: string;
   internPlaceholder: string;
+  // Standardbegrundelser (ét klik) og forudfyldt tekst til brugeren.
+  brugerSkabeloner?: readonly Skabelon[];
+  brugerStandard?: string;
 }): TekstFelt[] {
   return [
     {
@@ -16,6 +20,8 @@ export function advarselFelter(opts: {
       required: true,
       maxLength: 1000,
       hjaelp: "Brugeren ser teksten i beskeden om advarslen og på sin konto. Højst 1000 tegn.",
+      ...(opts.brugerSkabeloner ? { skabeloner: opts.brugerSkabeloner } : {}),
+      ...(opts.brugerStandard ? { standard: opts.brugerStandard } : {}),
     },
     {
       name: opts.internNavn,

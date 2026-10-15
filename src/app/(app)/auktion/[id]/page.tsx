@@ -29,6 +29,7 @@ import PopulaerSaelgerMaerke from "@/components/PopulaerSaelgerMaerke";
 import { erPopulaerSaelger } from "@/lib/populaerSaelger";
 import { hentMitIdStatus } from "@/lib/mitid/status";
 import { ERHVERVSSAELGER, ERHVERV_GPSR, FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
+import { KUNST_TEKST } from "@/lib/kunstForbud";
 
 // Titel, beskrivelse (pris + slut), første billede som delebillede og
 // canonical. JSON-LD ligger i layout.tsx.
@@ -321,6 +322,19 @@ export default async function AuktionPage({
       }
     }
   }
+  // Kunst-kontrol (20261023010000_kunst_forbudt.sql): så længe staff ikke har
+  // tjekket auktionen, kan kun sælgeren og staff se den (RLS), og der kan ikke
+  // bydes. Kolonnen kan ikke læses af brugere, så den hentes med service role -
+  // kun for sælgeren og staff (andre når aldrig hertil).
+  let kunstAfventer = false;
+  if (!skjult && mitId && (erSælger || staffRolle)) {
+    const { data: k } = await createAdminClient()
+      .from("auctions")
+      .select("kunst_kontrol")
+      .eq("id", id)
+      .maybeSingle<{ kunst_kontrol: string | null }>();
+    kunstAfventer = k?.kunst_kontrol === "afventer";
+  }
   const sælgerNavn = kortNavn(saelger?.navn ?? null, erhvervAuktion);
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
@@ -365,6 +379,14 @@ export default async function AuktionPage({
 
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10">
+      {kunstAfventer && (
+        <div role="status" className="mb-4 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4">
+          <p className="font-semibold text-advarsel-tekst">{KUNST_TEKST.afventerTitel}</p>
+          <p className="mt-1 text-sm text-tekst-daempet">
+            {erSælger ? KUNST_TEKST.afventerSaelger : KUNST_TEKST.afventerStaff}
+          </p>
+        </div>
+      )}
       {skjult && (
         <div role="status" className="mb-4 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4">
           <p className="font-semibold text-advarsel-tekst">

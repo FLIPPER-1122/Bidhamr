@@ -17,7 +17,7 @@ import { logDriftFejl } from "@/lib/drift";
 //     "id": "<uuid>",            (auktion-, bruger-, spørgsmåls- eller bedømmelses-id;
 //                                 ved svar på en bedømmelse: bedømmelsens id)
 //     "link": "https://...",     (kun når type/id ikke kendes)
-//     "kategori": "forbudt_vare" | "falske_varer" | "svindel" | "ophavsret"
+//     "kategori": "forbudt_vare" | "kunst" | "falske_varer" | "svindel" | "ophavsret"
 //                 | "personoplysninger" | "hadefuld_tale" | "misbrug_boern"
 //                 | "vilkaar" | "andet",
 //     "begrundelse": "10-2000 tegn",

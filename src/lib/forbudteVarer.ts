@@ -9,6 +9,9 @@
 //   PLADSHOLDERE         <-> public.forbudt_ekspander()
 //   normaliserTekst      <-> public.forbudt_normaliser()
 //   tjekForbudtTekst     <-> public.forbudt_tekst_tjek()
+// Kategorien "kunst" (20261023010000_kunst_forbudt.sql) har sin egen ordliste
+// og sit eget tjek i src/lib/kunstForbud.ts: kunst blokeres ikke, men
+// markeres og sendes til staff-tjek.
 // Databasen er autoriteten: den afviser "blokeret" ved oprettelse/redigering
 // (fejlkode BHF01 / kode 'forbudt_vare') og opretter en automatisk rapport
 // til staff (reports.category = 'forbudt_vare') ved "tvivl".
@@ -69,7 +72,8 @@ export type ForbudtKategori =
   | "voksenindhold"
   | "kemikalier"
   | "persondata"
-  | "billetter";
+  | "billetter"
+  | "kunst";
 
 export const FORBUDTE_KATEGORIER: readonly {
   kode: ForbudtKategori;
@@ -138,6 +142,12 @@ export const FORBUDTE_KATEGORIER: readonly {
     navn: "Billetter med videresalgsforbud",
     beskrivelse:
       "Billetter, som arrangøren ikke tillader videresalg af, og billetter solgt til mere end den oprindelige pris (billetloven). Alle auktioner med billetter bliver kontrolleret af BidHamr.",
+  },
+  {
+    kode: "kunst",
+    navn: "Kunst",
+    beskrivelse:
+      "Malerier, tegninger, skulpturer, grafiske tryk og litografier – også signerede og nummererede – og kunst, du selv har lavet. Plakater og masseproducerede billeder uden kunstner, fx fra IKEA, må gerne sælges. Auktioner, der ligner kunst, bliver kontrolleret af BidHamr.",
   },
 ] as const;
 
@@ -597,7 +607,7 @@ export const FORBUDTE_ORD: readonly {
 
 // Usynlige tegn og retningsmærker (samme som public.spoergsmaal_ryd_tekst),
 // så fx "ko​kain" ikke slipper igennem.
-const USYNLIGE = /[­​-‏‪-‮⁠-⁯﻿]/g;
+export const USYNLIGE = /[­​-‏‪-‮⁠-⁯﻿]/g;
 
 // Tegn, der tæller som bogstaver/tal. Alt andet (tegnsætning, bindestreg,
 // parenteser ...) bliver til mellemrum - undtagen % og &.
@@ -620,7 +630,7 @@ export function normaliserTekst(tekst: string | null | undefined): string {
 
 // Hele ord: ingen bogstaver/tal lige før eller efter.
 const GRAENSE = `[^${ORDTEGN}]`;
-const helOrd = (m: string) => new RegExp(`(^|${GRAENSE})(${m})($|${GRAENSE})`, "u");
+export const helOrd = (m: string) => new RegExp(`(^|${GRAENSE})(${m})($|${GRAENSE})`, "u");
 
 const KOMPILEREDE = FORBUDTE_ORD.map((o) => ({
   ...o,
@@ -633,7 +643,7 @@ const KOMPILEREDE = FORBUDTE_ORD.map((o) => ({
 // Fjerner forekomsterne af en fjern-frase én ad gangen (første forekomst
 // erstattes af ét mellemrum), præcis som regexp_replace uden 'g' i
 // public.forbudt_tekst_tjek. Højst 50 gange.
-function fjernFraser(tekst: string, re: RegExp): string {
+export function fjernFraser(tekst: string, re: RegExp): string {
   let t = tekst;
   for (let i = 0; i < 50 && re.test(t); i++) t = t.replace(re, " ");
   return t;

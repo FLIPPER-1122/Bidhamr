@@ -89,12 +89,22 @@ export const RAPPORT_NOTE: readonly Skabelon[] = [
   { label: "Rettet af sælger", tekst: "Sælgeren har rettet opslaget, så det nu overholder reglerne." },
 ];
 
+// Standardbegrundelse, når en auktion med kunst skjules eller fjernes (Filip,
+// 14. okt. 2026 - "Kunst er ikke tilladt"). Vises for sælgeren og står
+// forudfyldt på kunst-anmeldelser under Anmeldelser.
+export const KUNST_BEGRUNDELSE =
+  "Kunst er ikke tilladt på BidHamr. Auktionen sælger kunst – fx et maleri, en tegning, en skulptur eller et grafisk tryk. Plakater og masseproducerede billeder uden kunstner må gerne sælges.";
+
 // Begrundelse til brugeren ved indgreb (fakta, vises for brugeren). Regel og
 // lov vælges for sig i dialogen.
 export const INDGREB_FAKTA: readonly Skabelon[] = [
   {
     label: "Forbudt vare",
     tekst: "Auktionen sælger en vare, der ikke må sælges på BidHamr.",
+  },
+  {
+    label: "Kunst er ikke tilladt",
+    tekst: KUNST_BEGRUNDELSE,
   },
   {
     label: "Vildledende",
@@ -107,6 +117,16 @@ export const INDGREB_FAKTA: readonly Skabelon[] = [
   {
     label: "Kontakt uden om BidHamr",
     tekst: "Auktionen opfordrer til at handle eller betale uden om BidHamr.",
+  },
+];
+
+// Advarsel ved gentagne forsøg på at sælge kunst (vises for brugeren). Følger
+// de almindelige advarselsregler: 3 advarsler = forslag om lukning.
+export const KUNST_ADVARSEL: readonly Skabelon[] = [
+  {
+    label: "Gentagne forsøg med kunst",
+    tekst:
+      "Du har flere gange forsøgt at sælge kunst på BidHamr, selvom kunst ikke er tilladt. Malerier, tegninger, skulpturer og grafiske tryk må ikke sælges. Ved 3 advarsler kan din konto blive lukket.",
   },
 ];
 

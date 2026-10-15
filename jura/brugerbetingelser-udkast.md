@@ -7,6 +7,7 @@
 > - Opdateret 6. oktober 2026 med dagens ændringer: accept af betingelserne gemmes (1.3), og skjulte auktioner sættes på pause, fjernede auktioner åbnes aldrig igen, og en auktion på pause annulleres efter 14 dage (20.7 og 21.5, Filips beslutninger 6. oktober 2026).
 > - Opdateret 7. oktober 2026: auktionen er helt låst efter første bud – intet kan ændres, tilføjes, slettes eller annulleres af sælgeren (4.7, Filips beslutning 7. oktober 2026).
 > - Opdateret 10. oktober 2026: køb fra erhvervssælgere (nyt afsnit 29 – fortrydelsesret, reklamation, ingen BidHamr Beskyttelse, hvem man klager til), firmakonti i 1.1, 1.4, 2.3, 2.4, 5.5 og 17, og BidHamrs firmaoplysninger i 1.2 og 30. Kontakt er flyttet fra 29 til 30. Vilkårene for firmaerne selv står i `jura/erhvervsvilkaar-udkast.md`.
+> - Opdateret 15. oktober 2026: kunst er en forbudt vare (4.6, Filips beslutning 14. oktober 2026). Ny version 0.2 (VILKAAR_VERSION og vilkaar_aktuel_version() i 20261023010000_kunst_forbudt.sql): alle accepterer igen.
 > - `[TODO Filip: …]` = oplysninger eller beslutninger, Filip skal udfylde.
 > - `[ADVOKAT: …]` = juridiske spørgsmål, advokaten skal tage stilling til. Alle spørgsmål er samlet i `jura/noter-til-advokat.md`.
 > - Udkastet er ikke et juridisk løfte. Intet her må vises som endelige betingelser, før advokaten har godkendt det.
@@ -97,6 +98,7 @@ For BidHamrs egne ydelser betaler du gebyrer (se afsnit 5).
 
 4.6 **Forbudte varer.** Du må kun sælge varer, der er lovlige at sælge i Danmark og ikke står på listen over forbudte varer (`/forbudte-varer`). Det gælder fx våben, narkotika, medicin, kopivarer, stjålne varer og levende dyr.
 
+- **Kunst må ikke sælges** på BidHamr: malerier, tegninger, skulpturer, grafiske tryk og litografier – også signerede og nummererede – og kunst, du selv har lavet. Plakater og masseproducerede billeder uden kunstner eller særlig værdi (fx fra IKEA) er ikke kunst og må gerne sælges. Ligner en auktion kunst, bliver den først synlig for andre, og der kan først bydes, når en medarbejder har tjekket den. Tiden løber imens. Kunst bliver fjernet. [ADVOKAT: spørgsmål 135-137 – designerkeramik/-glas, antikviteter og håndhævelse.]
 - Ulovlige varer bliver stoppet med det samme, når du opretter auktionen, og bliver aldrig vist.
 - Nogle lovlige varer (fx billetter, alkohol og tobak) bliver kontrolleret af en medarbejder, efter auktionen er oprettet.
 - Listen er ikke udtømmende. Alt, der er ulovligt at sælge i Danmark, er også forbudt på BidHamr.
