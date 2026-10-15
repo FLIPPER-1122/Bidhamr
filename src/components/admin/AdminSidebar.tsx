@@ -92,6 +92,8 @@ const GRUPPER: MenuGruppe[] = [
       { href: "/admin/betalinger", label: "Betalingsfejl", minRolle: "medarbejder", tal: "betalinger", tone: "gul" },
       // Pengetal og indtjening: KUN chef (siderne giver 404 for alle andre).
       { href: "/admin/penge", label: "Penge", minRolle: "chef", ogsaa: ["/admin/fakturaer", "/admin/dac7"] },
+      // Månedens lodtrækning om et gavekort: KUN chef (siden giver 404 for alle andre).
+      { href: "/admin/konkurrence", label: "Konkurrence", minRolle: "chef" },
     ],
   },
   {

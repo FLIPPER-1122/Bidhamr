@@ -6,6 +6,7 @@ import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import { beregnAfstandKm } from "@/lib/distance";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { logDriftFejl } from "@/lib/drift";
+import { markerPopulaereSaelgere } from "@/lib/populaerSaelger";
 import { læsSortering, type Sortering } from "@/lib/sortering";
 import { escapeLike, escapeRegex } from "@/lib/postgrest";
 import type { TotalType } from "@/lib/soegeTotal";
@@ -29,7 +30,7 @@ const PRAECIST_ANTAL_OP_TIL = 1000;
 // Kun de kolonner, kortet bruger. Typet som string: Supabase-typernes
 // select-parser kan ikke læse "ø" i nuværende_bud.
 const KORT_KOLONNER: string =
-  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv";
+  "id, titel, postnummer, lokation, nuværende_bud, startpris, oprettet, slutter_kl, billeder, antal_bud, erhverv, bruger_id";
 const AFSTAND_KOLONNER: string = "id, lat, lng";
 
 type KortRaekke = Parameters<typeof mapAuctionTilKort>[0];
@@ -122,7 +123,7 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
     const erSkoen = total > PRAECIST_ANTAL_OP_TIL;
     return {
       ok: true,
-      auktioner: rækker.map(mapAuctionTilKort),
+      auktioner: await markerPopulaereSaelgere(rækker.map(mapAuctionTilKort)),
       // Et skøn afrundes til hele hundreder.
       total: erSkoen ? Math.round(total / 100) * 100 : total,
       totalType: erSkoen ? "ca" : "praecis",
@@ -185,5 +186,10 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
     .map((id) => efterId.get(id))
     .filter((r): r is KortRaekke => !!r)
     .map(mapAuctionTilKort);
-  return { ok: true, auktioner, total: indenfor.length, totalType };
+  return {
+    ok: true,
+    auktioner: await markerPopulaereSaelgere(auktioner),
+    total: indenfor.length,
+    totalType,
+  };
 }
