@@ -51,9 +51,11 @@ import { POST } from "@/app/api/fragt/webhook/[firma]/route";
 import {
   _nulstilMigreretCache,
   annullerUdgaaendeForsendelse,
+  gemLeveringsvalg,
   opretUdgaaendeForsendelse,
   soegPakkeshops,
 } from "@/lib/fragt/server";
+import { hentFragtfirma } from "@/lib/fragt";
 import { signerJwtHs256 } from "@/lib/fragt/shipmondo";
 import { logDriftFejl } from "@/lib/drift";
 
@@ -235,5 +237,75 @@ describe("Shipmondo før migrationen 20261024010000", () => {
     delete tabelFejl.forsendelser;
     fetchSvar = [new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } })];
     expect(await soegPakkeshops({ postnummer: "8000" })).toMatchObject({ ok: true, fragtfirma: "shipmondo" });
+  });
+});
+
+// GLS er slået fra, indtil Shipmondo har svaret (Filip, 15. okt. 2026):
+// kun med SHIPMONDO_GLS_AKTIV=true (fail closed). Retur af en pakke, der
+// allerede er sendt med GLS, virker videre.
+describe("GLS slået fra (SHIPMONDO_GLS_AKTIV)", () => {
+  const GLS_LUKKET = "GLS kan ikke vælges lige nu. Vælg DAO eller PostNord.";
+  const doer = (transportoer?: string) => ({
+    maade: "doer",
+    transportoer,
+    modtager: { navn: "Køber Købersen", adresse: "Vejen 1", postnummer: "8000", by: "Aarhus C", telefon: "12345678" },
+  });
+  const tomListe = () => new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+
+  beforeEach(() => {
+    process.env.FRAGTFIRMA = "shipmondo";
+    delete process.env.SHIPMONDO_GLS_AKTIV;
+    rpcSvar.handel_gem_levering = () => ({
+      data: { kode: "ok", fragt_oere: 6000, total_oere: 16000, beskyttelse_oere: 0, afhentning: false, pris_aendret: false },
+      error: null,
+    });
+  });
+  afterEach(() => {
+    delete process.env.FRAGTFIRMA;
+    delete process.env.SHIPMONDO_GLS_AKTIV;
+  });
+
+  it("uden flaget: kun DAO og PostNord kan vælges", () => {
+    expect(hentFragtfirma().transportoerer).toEqual(["dao", "postnord"]);
+    for (const v of ["", "1", "TRUE", "ja", " true"]) {
+      process.env.SHIPMONDO_GLS_AKTIV = v;
+      expect(hentFragtfirma().transportoerer).toEqual(["dao", "postnord"]);
+    }
+  });
+
+  it("uden flaget: GLS i checkout afvises med dansk fejl, og databasen kaldes ikke", async () => {
+    expect(await gemLeveringsvalg("T1", "K1", doer("gls"))).toEqual({ fejl: GLS_LUKKET });
+    expect(fns()).not.toContain("handel_gem_levering");
+  });
+
+  it("uden flaget: pakkeshop-søgning hos GLS afvises", async () => {
+    expect(await soegPakkeshops({ postnummer: "8000", transportoer: "gls" })).toEqual({ fejl: GLS_LUKKET });
+  });
+
+  it("uden flaget: indleveringssteder til retur af en GLS-pakke kan stadig søges", async () => {
+    fetchSvar = [tomListe()];
+    expect(await soegPakkeshops({ postnummer: "8000", transportoer: "gls", indlevering: true })).toMatchObject({
+      ok: true,
+      transportoer: "gls",
+    });
+  });
+
+  it("uden flaget: DAO gemmes, og databasen får gls_aktiv = false", async () => {
+    expect(await gemLeveringsvalg("T1", "K1", doer("dao"))).toMatchObject({ ok: true });
+    const kald = rpcLog.find((r) => r.fn === "handel_gem_levering");
+    expect(kald?.args.p_valg).toMatchObject({ transportoer: "dao", gls_aktiv: false });
+  });
+
+  it("databasens afvisning (gls_lukket) vises som samme danske fejl", async () => {
+    rpcSvar.handel_gem_levering = () => ({ data: { kode: "gls_lukket" }, error: null });
+    expect(await gemLeveringsvalg("T1", "K1", doer("dao"))).toEqual({ fejl: GLS_LUKKET });
+  });
+
+  it("med SHIPMONDO_GLS_AKTIV=true: GLS kan vælges, og databasen får gls_aktiv = true", async () => {
+    process.env.SHIPMONDO_GLS_AKTIV = "true";
+    expect(hentFragtfirma().transportoerer).toEqual(["dao", "gls", "postnord"]);
+    expect(await gemLeveringsvalg("T1", "K1", doer("gls"))).toMatchObject({ ok: true });
+    const kald = rpcLog.find((r) => r.fn === "handel_gem_levering");
+    expect(kald?.args.p_valg).toMatchObject({ transportoer: "gls", gls_aktiv: true });
   });
 });

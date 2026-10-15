@@ -889,10 +889,23 @@ async function fortolk(request: Request): Promise<WebhookResultat> {
 
 // ------------------------------------------------------------ adapter
 
+// GLS er slået fra, indtil Shipmondo har svaret på, om GLS kan sendes
+// labelfrit (Filip, 15. okt. 2026). Slås til med SHIPMONDO_GLS_AKTIV=true
+// (alt andet = fra; fail closed). Uden flaget kan køberen ikke vælge GLS i
+// checkout (hjemmeside og app), og databasen afviser GLS (handel_gem_levering
+// kræver gls_aktiv = true fra serveren, 20261024020000). Forsendelser, der
+// allerede er lavet med GLS (labels, sporing, retur), virker videre.
+export function shipmondoGlsAktiv(): boolean {
+  return process.env.SHIPMONDO_GLS_AKTIV === "true";
+}
+
 export const shipmondoFirma: Fragtfirma = {
   navn: "shipmondo",
   visningsnavn: "Shipmondo",
-  transportoerer: TRANSPORTOERER,
+  // Transportører, køberen kan vælge nu (uden GLS, medmindre flaget er sat).
+  get transportoerer() {
+    return shipmondoGlsAktiv() ? TRANSPORTOERER : TRANSPORTOERER.filter((t) => t !== "gls");
+  },
   erSatOp,
   // Shipmondo har intet efterlysnings-API: staff efterlyser hos
   // transportøren efter 14 dage uden leveringsmelding.

@@ -43,6 +43,52 @@ export const KONKURRENCE_KONTO = {
   konto: "Din konto deltager ikke i lodtrækningen lige nu.",
 };
 
+// Besked til vinderen, så snart der er trukket lod (Filip, 15. okt. 2026).
+// Følger konkurrencebetingelserne (jura/konkurrencebetingelser-udkast.md):
+// 7.1 besked på mail og på BidHamr, og vi beder aldrig om adgangskode, kort
+// eller betaling; 7.2 svar inden for 14 dage og bekræft præmien; 7.3 ellers
+// bortfalder præmien, og der trækkes en ny vinder; 8.1-8.2 vi spørger om
+// samtykke til fornavn og by, og præmien gives uanset svaret.
+// Præmien (butik og beløb) er ikke fastlagt endnu, så den nævnes kun som
+// "et gavekort". frist er en færdig dansk tidsangivelse, fx
+// "29. november 2026 kl. 14.03".
+export const KONKURRENCE_VINDER = {
+  emne: (maaned: string) => `Du har vundet lodtrækningen i ${maanedNavn(maaned)}`,
+  titel: "Du har vundet månedens gavekort",
+  notifikation: (maaned: string, frist: string) =>
+    `Tillykke! Du er trukket som vinder af lodtrækningen om et gavekort for ${maanedNavn(maaned)}. Svar os senest ${frist} i beskeden fra BidHamr, så sender vi præmien.`,
+  notifikationKontakt: (maaned: string, frist: string) =>
+    `Tillykke! Du er trukket som vinder af lodtrækningen om et gavekort for ${maanedNavn(maaned)}. Skriv til os senest ${frist} på support@bidhamr.dk, så sender vi præmien.`,
+  chat: (maaned: string, frist: string) =>
+    [
+      `Tillykke! Du er trukket som vinder af BidHamrs lodtrækning om et gavekort for ${maanedNavn(maaned)}.`,
+      `Svar her i beskeden senest ${frist} (14 dage efter lodtrækningen), og bekræft, at du vil have præmien. Svarer du ikke inden fristen, bortfalder præmien, og vi trækker en ny vinder.`,
+      "Skriv også, om vi må nævne dit fornavn og din by, når vi fortæller, hvem der har vundet. Du får præmien, uanset hvad du svarer.",
+      "Vi spørger aldrig om din adgangskode eller dine kortoplysninger, og du skal ikke betale noget for at få præmien.",
+    ].join("\n\n"),
+  mail: {
+    emne: "Du har vundet månedens gavekort på BidHamr",
+    preheader: (frist: string) => `Svar os senest ${frist}, så sender vi præmien.`,
+    overskrift: "Tillykke – du har vundet!",
+    intro: (maaned: string) =>
+      `Du er trukket som vinder af BidHamrs lodtrækning om et gavekort for ${maanedNavn(maaned)}. Du var med, fordi du har gennemført salg på BidHamr i måneden.`,
+    svarBeskeder: (frist: string) =>
+      `Svar os senest ${frist}, og bekræft, at du vil have præmien. Du svarer i beskeden fra BidHamr – tryk på knappen herunder.`,
+    svarKontakt: (frist: string) =>
+      `Svar os senest ${frist}, og bekræft, at du vil have præmien. Skriv til support@bidhamr.dk.`,
+    frist: "Svarer du ikke inden for 14 dage efter lodtrækningen, bortfalder præmien, og vi trækker en ny vinder.",
+    samtykke:
+      "Skriv også, om vi må nævne dit fornavn og din by, når vi fortæller, hvem der har vundet. Du får præmien, uanset hvad du svarer.",
+    sikkerhed:
+      "Vi spørger aldrig om din adgangskode eller dine kortoplysninger, og du skal ikke betale noget for at få præmien. Får du en besked, der gør det, er den ikke fra os.",
+    infoMaaned: "Lodtrækning",
+    infoFrist: "Svar senest",
+    knapBeskeder: "Svar på beskeden",
+    knapKontakt: "Kontakt BidHamr",
+    aarsag: "Du får denne mail, fordi du er trukket som vinder i BidHamrs månedlige lodtrækning blandt private sælgere.",
+  },
+};
+
 export const KONKURRENCE_ADMIN = {
   titel: "Konkurrence",
   forklaring:
@@ -72,6 +118,29 @@ export const KONKURRENCE_ADMIN = {
   grundNyVinder: {
     svarer_ikke: "Vinderen har ikke svaret inden fristen",
     opfylder_ikke: "Vinderen opfylder ikke betingelserne",
+  } as Record<string, string>,
+  // Den automatiske besked til vinderen (src/lib/konkurrence/vinderBesked.ts).
+  vinderSamtaleFindes: "Vinderen har en samtale med BidHamr, hvor vinderen svarer.",
+  // Mailens faktiske status (notifikation_afsendelser).
+  vinderMail: {
+    sendt: "Mail til vinderen: sendt.",
+    fejl: "Mail til vinderen: kunne ikke sendes. Skriv selv til vinderen.",
+    i_gang: "Mail til vinderen: er ved at blive sendt. Opdatér siden om lidt.",
+    ikke_sendt: "Mail til vinderen: ikke sendt endnu.",
+    ukendt: "Mail til vinderen: status kunne ikke hentes.",
+  } as Record<string, string>,
+  vinderBeskedMangler:
+    "Vinderen har ikke fået en samtale med BidHamr. Send beskeden igen, eller skriv selv til vinderen.",
+  vinderSamtale: "Se samtalen med vinderen",
+  vinderBeskedKnap: "Send besked til vinderen",
+  vinderBeskedForklaring:
+    "Vinderen får en samtale med BidHamr, en notifikation og en mail med svarfristen. Har vinderen allerede fået mailen, sendes den ikke igen.",
+  vinderBeskedKvittering: "Beskeden er sendt til vinderen.",
+  kvitteringTrukket: "Vinderen er trukket og har fået besked.",
+  vinderBesked: {
+    allerede: "Vinderen har allerede fået mailen og notifikationen.",
+    ingen_vinder: "Der er ingen gældende vinder at give besked.",
+    fejl: "Beskeden kunne ikke sendes. Prøv igen om lidt.",
   } as Record<string, string>,
   generisk: "Noget gik galt. Prøv igen, eller kontakt en udvikler.",
 };

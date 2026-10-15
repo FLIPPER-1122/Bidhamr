@@ -11,7 +11,8 @@
 //   "Betal"-knappen er altid PaymentIntentens.
 // - Kun afhentning (auktionen tilbyder ikke forsendelse) kræver intet valg.
 // - Fragt via Shipmondo: køberen vælger selv fragtfirma (DAO, GLS eller
-//   PostNord - checkout.transportoerer). Prisen er den samme for alle tre;
+//   PostNord - checkout.transportoerer; GLS kun med SHIPMONDO_GLS_AKTIV=true,
+//   indtil Shipmondo har svaret). Prisen er den samme for alle;
 //   pakkeshoppen vælges hos det valgte firma (skiftes firmaet, skal der
 //   vælges en ny pakkeshop).
 // - Tilbyder sælgeren både forsendelse og afhentning, kan køberen vælge
@@ -26,6 +27,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { gemLeveringsvalgAction } from "@/app/actions/fragt";
 import { startBetaling, type KoeberBetalingsstatus } from "@/app/actions/betaling";
 import type { Checkout } from "@/lib/fragt/handlinger";
+import { transportoerNavn } from "@/lib/fragt/types";
 import { kroner } from "@/lib/kroner";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { slaaPostnummerOp } from "@/lib/postnumre";
@@ -139,7 +141,11 @@ export default function CheckoutSide({
   // Fragtfirmaer, køberen kan vælge (tom = intet valg).
   const firmaer = checkout.transportoerer ?? [];
   const kendtFirma = (t: string | null | undefined) => (t && firmaer.some((f) => f.kode === t) ? t : null);
+  // Et firma, der ikke kan vælges længere (GLS er slået fra, indtil Shipmondo
+  // har svaret), bevares kun, når labelen allerede er lavet - ellers vælger
+  // køberen et af dem, der kan vælges nu.
   const startTransportoer =
+    (checkout.labelLavet && firmaer.length > 0 && valgt?.maade !== "afhentning" ? valgt?.transportoer : null) ??
     kendtFirma(valgt?.maade !== "afhentning" ? valgt?.transportoer : null) ??
     kendtFirma(forslag?.transportoer) ??
     firmaer[0]?.kode ??
@@ -151,7 +157,9 @@ export default function CheckoutSide({
       ? "pakkeshop"
       : (valgt?.maade ?? (forslag?.maade === "doer" && doerMulig && kanSkifteMaade ? "doer" : "pakkeshop"));
   const startShop: ValgtPakkeshop | null =
-    valgt?.maade === "pakkeshop" && valgt.pakkeshopId
+    valgt?.maade === "pakkeshop" &&
+    valgt.pakkeshopId &&
+    (firmaer.length === 0 || (valgt.transportoer ?? null) === startTransportoer)
       ? {
           transportoer: valgt.transportoer ?? null,
           id: valgt.pakkeshopId,
@@ -221,7 +229,7 @@ export default function CheckoutSide({
   const laas = useRef(false);
 
   const aktuelSignatur = signatur(maade, transportoer, maade === "pakkeshop" ? (shop?.id ?? null) : null, modtager);
-  const firmaNavn = firmaer.find((f) => f.kode === transportoer)?.navn ?? "DAO";
+  const firmaNavn = firmaer.find((f) => f.kode === transportoer)?.navn ?? transportoerNavn(transportoer) ?? "DAO";
 
   // Nyt fragtfirma: pakkeshoppen skal vælges hos det nye firma.
   function vaelgFirma(t: string) {
@@ -574,7 +582,7 @@ export default function CheckoutSide({
                   {maade !== "afhentning" && firmaer.length > 0 && (
                     <fieldset className="mt-5 min-w-0" disabled={travl || !kanSkifteShop}>
                       <legend className="mb-2 text-sm font-medium text-tekst">Fragtfirma</legend>
-                      <div className="grid gap-3 sm:grid-cols-3">
+                      <div className={`grid gap-3 ${firmaer.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
                         {firmaer.map((f) => (
                           <FirmaKort
                             key={f.kode}
