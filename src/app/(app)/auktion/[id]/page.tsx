@@ -30,6 +30,7 @@ import { hentAktiveBoosts } from "@/lib/boost/visning";
 import MitIDMaerke from "@/components/mitid/MitIDMaerke";
 import PopulaerSaelgerMaerke from "@/components/PopulaerSaelgerMaerke";
 import { erPopulaerSaelger } from "@/lib/populaerSaelger";
+import { fragtfirmaNavne } from "@/lib/fragt";
 import { hentMitIdStatus } from "@/lib/mitid/status";
 import { ERHVERVSSAELGER, ERHVERV_GPSR, FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 import { KUNST_TEKST } from "@/lib/kunstForbud";
@@ -592,6 +593,7 @@ export default async function AuktionPage({
               afhentningMulig={auktion.afhentning_mulig === true}
               fragtPakkeshopOere={auktion.fragt_pakkeshop_oere ?? null}
               fragtDoerOere={auktion.fragt_doer_oere ?? null}
+              fragtfirmaer={auktion.forsendelse_mulig ? fragtfirmaNavne() : []}
               status={auktion.status}
               vinderVisning={vinderVisning}
               skjult={skjult}
