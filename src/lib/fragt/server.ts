@@ -121,6 +121,33 @@ export function foerTransportoerMigration(err: { code?: string | null; message?:
   );
 }
 
+// Shipmondo kræver migrationen 20261024010000: uden kolonnen
+// leveret_frigiver kører den gamle handel_auto_frigiv, og så ville
+// Shipmondos "leveret" frigive penge efter 14 dage. Derfor regnes fragt som
+// "ikke sat op", og Shipmondo-labels nægtes, indtil migrationen er kørt.
+// Svaret huskes (migreret: altid; ikke migreret: 1 minut).
+let migreretCache: { ok: boolean; til: number } | null = null;
+export async function shipmondoMigreret(): Promise<boolean> {
+  if (migreretCache && (migreretCache.ok || Date.now() < migreretCache.til)) return migreretCache.ok;
+  const { error } = await createAdminClient().from("forsendelser").select("leveret_frigiver").limit(1);
+  if (error && !foerTransportoerMigration(error) && !/leveret_frigiver/.test(error.message ?? "")) {
+    // Ukendt fejl: nægt (fail closed), men husk ikke svaret.
+    return false;
+  }
+  migreretCache = { ok: !error, til: Date.now() + 60_000 };
+  return migreretCache.ok;
+}
+
+// Kun til test.
+export function _nulstilMigreretCache() {
+  migreretCache = null;
+}
+
+// Fragtfirmaet kan bruges nu (Shipmondo: kun efter migrationen).
+async function firmaKlar(firma: Fragtfirma): Promise<boolean> {
+  return firma.navn !== "shipmondo" || (await shipmondoMigreret());
+}
+
 function brugerFejl(err: unknown): string {
   return err instanceof FragtFejl ? err.brugerbesked : GENERISK_FEJL;
 }
@@ -268,6 +295,7 @@ export async function soegPakkeshops(
   if (!slaaPostnummerOp(postnummer)) return { fejl: "Skriv et gyldigt dansk postnummer." };
   const antal = typeof q.antal === "number" && Number.isInteger(q.antal) ? Math.min(Math.max(q.antal, 1), 20) : 10;
   const firma = hentFragtfirma();
+  if (!(await firmaKlar(firma))) return { fejl: FRAGT_IKKE_SAT_OP };
   const transportoer = valgtTransportoer(firma, q.transportoer);
   if (transportoer && typeof transportoer === "object") return transportoer;
   try {
@@ -419,6 +447,7 @@ export async function gemLeveringsvalg(
 
   const admin = createAdminClient();
   const firma = hentFragtfirma();
+  if (!(await firmaKlar(firma))) return { fejl: FRAGT_IKKE_SAT_OP };
   const transportoer = valgtTransportoer(firma, input.transportoer);
   if (transportoer && typeof transportoer === "object") return transportoer;
 
@@ -574,6 +603,8 @@ async function opretForsendelse(
   },
 ): Promise<{ ok: true; forsendelseId: string } | { fejl: string }> {
   const { tradeId, brugerId, type } = args;
+  // Shipmondo uden migrationen: ingen labels (se shipmondoMigreret).
+  if (!(await firmaKlar(args.firma))) return { fejl: FRAGT_IKKE_SAT_OP };
   const { data: claim, error: claimFejl } = await admin.rpc("forsendelse_claim", {
     p_trade: tradeId,
     p_bruger: brugerId,
@@ -604,7 +635,7 @@ async function opretForsendelse(
   // Genoptag: samme fragtfirma som det første forsøg.
   if (svar.kode === "genoptag" && svar.fragtfirma && svar.fragtfirma !== args.firma.navn) {
     const tidligere = adapterFor(svar.fragtfirma);
-    if (!tidligere) return { fejl: FRAGT_IKKE_SAT_OP };
+    if (!tidligere || !(await firmaKlar(tidligere))) return { fejl: FRAGT_IKKE_SAT_OP };
     args = { ...args, firma: tidligere };
   }
 
@@ -1110,6 +1141,19 @@ export async function staffAfslutHaengendeClaim(
   return { ok: true, tradeId: f.trade_id };
 }
 
+// Markering til staff på en forsendelse. Fejler den, logges det til drift
+// (markeringen er det, der får staff til at se på sagen). Kaster aldrig.
+async function markerTilStaff(admin: Admin, args: { p_id: string; p_note: string }): Promise<void> {
+  const { error } = await admin.rpc("forsendelse_marker_opmaerksomhed", args);
+  if (error) {
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "Fragt: markering til staff",
+      fejl: `Forsendelse ${args.p_id} kunne ikke markeres (${error.message}). Note: ${args.p_note}`,
+    });
+  }
+}
+
 // Annullerer en label hos fragtfirmaet i to trin, så en samtidig "afleveret"
 // ikke giver uoverensstemmelse:
 //   1. forsendelse_annuller_claim sætter status 'annulleres' FØR fragtfirmaet
@@ -1187,7 +1231,7 @@ async function annullerForsendelse(
     // markeres forsendelsen til staff (hændelse på annulleret label).
     if (err instanceof FragtAnnulleringIkkeMulig) {
       const svar = await afslut(true, null);
-      await admin.rpc("forsendelse_marker_opmaerksomhed", {
+      await markerTilStaff(admin, {
         p_id: forsendelseId,
         p_note:
           `Labelen er annulleret i BidHamr, men fragtfirmaet kan ikke annullere den selv (${f.fragtfirma} ${f.forsendelses_id}). ` +
@@ -1224,7 +1268,7 @@ async function annullerForsendelse(
     // returkode giver ikke ret til en ny uden staff - transportøren kan
     // stadig modtage pakken på den.
     if (f.type === "retur") {
-      await admin.rpc("forsendelse_marker_opmaerksomhed", {
+      await markerTilStaff(admin, {
         p_id: forsendelseId,
         p_note:
           `Returkoden er annulleret hos ${adapter.visningsnavn} (${f.forsendelses_id}), men transportøren har ikke bekræftet det. ` +
@@ -1243,7 +1287,7 @@ async function annullerForsendelse(
     // i labelgrænsen. Før migrationen findes funktionen ikke (stille).
     if (!foerTransportoerMigration(bFejl)) {
       await logDriftFejl({ kilde: "server", hvor: "Fragt: annullering bekræftet", fejl: bFejl });
-      await admin.rpc("forsendelse_marker_opmaerksomhed", {
+      await markerTilStaff(admin, {
         p_id: forsendelseId,
         p_note: "Fragtfirmaet har bekræftet annulleringen, men BidHamr kunne ikke gemme det. Tjek labelgrænsen og en evt. returkode.",
       });

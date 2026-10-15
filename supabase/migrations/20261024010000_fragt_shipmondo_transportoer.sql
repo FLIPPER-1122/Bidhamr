@@ -12,8 +12,8 @@
 --      udgående pakkes for en retur) og kan derefter ikke ændres. Gamle
 --      Shipmondo-rækker var altid DAO og får 'dao'.
 --   2. handel_gem_levering gemmer købers transportør ved Shipmondo (mangler
---      den - fx fra gammel kode eller den nuværende app - bruges 'dao', så
---      rækkefølgen af migration og deploy er ligegyldig; en ukendt værdi
+--      den - fx fra gammel kode eller den nuværende app - bruges 'dao', så den gamle
+--      kode virker efter migrationen; en ukendt værdi
 --      afvises); handel_checkout viser den i 'valgt' (appen).
 --   3. Labelgrænsen (forsendelse_claim): en Shipmondo-label, som
 --      transportøren har BEKRÆFTET annulleret (cancelled_at_carrier -
@@ -33,6 +33,10 @@
 --      false for Shipmondo-forsendelser; serveren slår den til ved
 --      oprettelsen (forsendelse_leveret_frigiver), når flaget er sat.
 --      Købers "Jeg har modtaget pakken" (48 timer) er uændret.
+--      Samme krav i handel_ikke_afhentet_registrer: en Shipmondo-"leveret"
+--      uden flaget spærrer ikke staffs "ikke afhentet".
+--   Koden nægter Shipmondo (fragt "ikke sat op"), indtil denne migration er
+--   kørt - kør den FØR FRAGTFIRMA=shipmondo sættes.
 --
 -- Nye funktioner: security definer, search_path = '', kun service_role.
 -- Ændrede funktioner, der ligger i produktion, rettes på stedet med
@@ -400,6 +404,22 @@ $n$men fragtfirmaet har ikke meldt den leveret eller afhentet (eller meldingen k
 end $do$;
 revoke all on function public.handel_auto_frigiv() from public, anon, authenticated;
 grant execute on function public.handel_auto_frigiv() to service_role;
+
+-- handel_ikke_afhentet_registrer: kun en leveret-melding med leveret_frigiver
+-- blokerer "ikke afhentet" (en Shipmondo-"leveret" uden flaget må ikke
+-- spærre for staff).
+do $do$
+begin
+  raise notice 'handel_ikke_afhentet_registrer: %', pg_temp.ps_ret(
+    'public.handel_ikke_afhentet_registrer(uuid,text,uuid,text,uuid,bigint)',
+    '5db7b2d8ccaf053d89a38b4fb9a1cd37',
+    '5b6c7519a0fa3c18a1ca2d1c24937b33',
+    jsonb_build_array(jsonb_build_array(
+$g$                and fo.status not in ('annulleret', 'fejlet') and fo.leveret_kl is not null) then$g$,
+$n$                and fo.status not in ('annulleret', 'fejlet') and fo.leveret_kl is not null
+                -- 20261024010000: Shipmondos leveret uden flaget blokerer ikke.
+                and fo.leveret_frigiver) then$n$, 1)));
+end $do$;
 
 -- Grants som før (uændrede af rettelsen på stedet - gentages for en
 -- sikkerheds skyld).

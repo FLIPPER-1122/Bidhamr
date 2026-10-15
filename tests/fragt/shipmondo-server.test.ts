@@ -10,6 +10,8 @@ const rpcLog: { fn: string; args: Record<string, unknown> }[] = [];
 let rpcSvar: Record<string, (args: Record<string, unknown>) => Svar> = {};
 // Rækker pr. tabel til maybeSingle/single (filtreres ikke - én række pr. test).
 let raekker: Record<string, unknown> = {};
+// Fejl pr. tabel på liste-forespørgsler (fx kolonnen findes ikke).
+let tabelFejl: Record<string, { message: string; code?: string }> = {};
 
 function kaede(tabel: string) {
   const q: Record<string, unknown> = {};
@@ -19,7 +21,11 @@ function kaede(tabel: string) {
   q.maybeSingle = async () => ({ data: raekker[tabel] ?? null, error: null });
   q.single = async () => ({ data: raekker[tabel] ?? null, error: null });
   q.then = (ok: (v: Svar) => unknown, fejl?: (e: unknown) => unknown) =>
-    Promise.resolve({ data: raekker[tabel] ? [raekker[tabel]] : [], error: null }).then(ok, fejl);
+    Promise.resolve(
+      tabelFejl[tabel]
+        ? { data: null, error: tabelFejl[tabel] }
+        : { data: raekker[tabel] ? [raekker[tabel]] : [], error: null },
+    ).then(ok, fejl);
   return q;
 }
 
@@ -42,7 +48,12 @@ vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/ser
 
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/fragt/webhook/[firma]/route";
-import { annullerUdgaaendeForsendelse } from "@/lib/fragt/server";
+import {
+  _nulstilMigreretCache,
+  annullerUdgaaendeForsendelse,
+  opretUdgaaendeForsendelse,
+  soegPakkeshops,
+} from "@/lib/fragt/server";
 import { signerJwtHs256 } from "@/lib/fragt/shipmondo";
 import { logDriftFejl } from "@/lib/drift";
 
@@ -59,6 +70,8 @@ beforeEach(() => {
   process.env.SHIPMONDO_WEBHOOK_NOEGLE = WEBHOOK;
   rpcLog.length = 0;
   raekker = {};
+  tabelFejl = {};
+  _nulstilMigreretCache();
   rpcSvar = {
     forsendelse_registrer_haendelse: () => ({ data: { ny: true }, error: null }),
     fragt_ukendt_kode_registrer: () => ({ data: true, error: null }),
@@ -198,5 +211,29 @@ describe("annullering via Shipmondo", () => {
     expect(await annullerUdgaaendeForsendelse("F1", "S1")).toEqual({ ok: true });
     expect(fns()).toContain("forsendelse_marker_opmaerksomhed");
     expect(fns()).not.toContain("forsendelse_annullering_bekraeftet");
+  });
+});
+
+describe("Shipmondo før migrationen 20261024010000", () => {
+  beforeEach(() => {
+    process.env.FRAGTFIRMA = "shipmondo";
+    tabelFejl.forsendelser = { message: 'column forsendelser.leveret_frigiver does not exist', code: "42703" };
+  });
+  afterEach(() => {
+    delete process.env.FRAGTFIRMA;
+  });
+
+  it("fragt er 'ikke sat op': ingen pakkeshops og ingen label (ellers kunne leveret frigive penge)", async () => {
+    expect(await soegPakkeshops({ postnummer: "8000" })).toEqual({ fejl: "Fragt er ikke sat op endnu." });
+    raekker.handel_levering = { maade: "pakkeshop", fragtfirma: "shipmondo", pakkeshop_id: "1", modtager_navn: "K", modtager_telefon: "+4512345678" };
+    const r = await opretUdgaaendeForsendelse("T1", "S1", { navn: "Sælger", adresse: "Vej 1", postnummer: "5000", by: "Odense C" });
+    expect(r).toEqual({ fejl: "Fragt er ikke sat op endnu." });
+    expect(fns()).not.toContain("forsendelse_claim");
+  });
+
+  it("efter migrationen: pakkeshop-søgningen kører", async () => {
+    delete tabelFejl.forsendelser;
+    fetchSvar = [new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } })];
+    expect(await soegPakkeshops({ postnummer: "8000" })).toMatchObject({ ok: true, fragtfirma: "shipmondo" });
   });
 });

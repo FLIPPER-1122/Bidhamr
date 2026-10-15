@@ -247,7 +247,10 @@ Pr. fragtfirma (sandbox 15. okt. 2026 – oprettet med BidHamrs adapter og annul
   eller modtageren – ellers en markering til staff, og leveret_kl sættes ikke.
 - **Shipmondos leveret frigiver ikke pengene efter 14 dage**, før `SHIPMONDO_LEVERET_FRIGIVER=true`
   (`forsendelser.leveret_frigiver`, sat ved oprettelsen; `handel_auto_frigiv` kræver den). Købers "modtaget" er uændret.
-- Køberens fragtfirma: mangler det (gammel kode, appen), bruges DAO. Koden tåler, at migrationen ikke er kørt endnu.
+- Køberens fragtfirma: mangler det (gammel kode, appen), bruges DAO.
+- **Migrationen `20261024010000` skal køres, FØR `FRAGTFIRMA=shipmondo` sættes.** Uden den nægter koden Shipmondo
+  (fragt "ikke sat op", ingen labels) - ellers ville den gamle `handel_auto_frigiv` lade Shipmondos "leveret"
+  frigive penge efter 14 dage. Den gamle kode virker efter migrationen (alt bliver DAO).
 - "Ikke afhentet" automatisk kun med `SHIPMONDO_RETUR_ER_IKKE_AFHENTET=true` (Shipment Monitor har ingen
   retur-status – det er en tekst). Ellers markering til staff, som trykker "Ikke afhentet".
 - Efterlysning efter 14 dage: Shipmondo har intet API til det – staff får opgaven (`fragt_efterlysninger`, status
