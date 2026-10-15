@@ -125,6 +125,8 @@ describe("POST /api/bud/app", () => {
     const a = await kald(bud());
     const b = await kald(bud());
     expect(b).toEqual(a);
+    // auktion_id med store bogstaver er den samme auktion (gemmes med små).
+    expect(await kald(bud({ auktion_id: AUKTION.toUpperCase() }))).toEqual(a);
     expect(m.afgivBudFor).toHaveBeenCalledTimes(1);
     // Samme nøgle til en anden auktion: afvist.
     const c = await kald(bud({ auktion_id: "99999999-9999-4999-8999-999999999999" }));

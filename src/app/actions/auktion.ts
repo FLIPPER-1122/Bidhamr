@@ -176,11 +176,13 @@ export async function redigerAuktion(
 
     // rediger_auktion lykkes kun på brugerens egen aktive auktion uden bud
     // (og dermed uden handel), så de fjernede billeder er ikke længere i brug
-    // på denne auktion og må slettes.
+    // på denne auktion og må slettes - medmindre en anden af brugerens
+    // auktioner bruger dem, eller brugeren har en åben sag (hele brugeren -
+    // src/lib/auktionBilledOprydning.ts).
     const fjernede = (foer?.billeder ?? []).filter((url) => !input.billeder.includes(url));
     if (fjernede.length > 0) {
       const brugerId = user.id;
-      after(() => sletFjernedeBilleder(brugerId, auktionId, fjernede));
+      after(() => sletFjernedeBilleder(brugerId, fjernede));
     }
 
     revalidatePath(`/auktion/${auktionId}`);

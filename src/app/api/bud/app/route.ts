@@ -66,9 +66,11 @@ export async function POST(req: NextRequest) {
   if ("svar" in k) return k.svar;
   const krop = k.krop;
 
-  const auktionId = krop.auktion_id;
+  if (typeof krop.auktion_id !== "string" || !UUID_RE.test(krop.auktion_id)) return appSvar(400, APP_UGYLDIG);
+  // Små bogstaver, så nøglen gemmes og sammenlignes ens (Postgres giver uuid'er
+  // tilbage med små bogstaver).
+  const auktionId = krop.auktion_id.toLowerCase();
   const noegle = krop.idempotens_noegle;
-  if (typeof auktionId !== "string" || !UUID_RE.test(auktionId)) return appSvar(400, APP_UGYLDIG);
   if (typeof noegle !== "string" || !UUID_RE.test(noegle)) return appSvar(400, APP_UGYLDIG);
   if (krop.beskyttelse !== undefined && typeof krop.beskyttelse !== "boolean") return appSvar(400, APP_UGYLDIG);
   const harBud = krop.beloeb_oere !== undefined && krop.beloeb_oere !== null;

@@ -13,6 +13,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const MIGRATIONER = path.resolve(import.meta.dirname, "../../supabase/migrations");
 const MIGRATION = readFileSync(path.join(MIGRATIONER, "20261025010000_app_endpoints.sql"), "utf8");
+// auktion_billede_laast før migrationen (som i produktion - md5-drift-tjekket).
+const BILLEDE_LAAST = readFileSync(path.resolve(import.meta.dirname, "fixtures/auktion_billede_laast_20261010060000.sql"), "utf8");
 
 // min_auktion_boost præcis som i boost-migrationen (samme krop = samme md5).
 function minAuktionBoostFraBoost(): string {
@@ -48,7 +50,8 @@ create function public.er_staff() returns boolean language sql stable security d
 create table public.auctions (id uuid primary key default gen_random_uuid(), bruger_id uuid, titel text,
   status text default 'aktiv', skjult boolean default false, arkiveret_kl timestamptz, pauset_kl timestamptz,
   slutter_kl timestamptz default now() + interval '3 days', erhverv boolean default false, billeder text[] default '{}', kunst_kontrol text);
-create table public.dsa_afgoerelser (id uuid primary key default gen_random_uuid(), bruger_id uuid not null, auktion_id uuid);
+create table public.dsa_afgoerelser (id uuid primary key default gen_random_uuid(), bruger_id uuid not null, auktion_id uuid,
+  klage_frist_kl timestamptz not null default (now() + interval '6 months'));
 create table public.dsa_anmeldelser (id uuid primary key default gen_random_uuid(), indhold_type text not null,
   indhold_id uuid, auktion_id uuid, anmeldt_bruger_id uuid, status text not null default 'ny', eskaleret_kl timestamptz);
 create table public.dsa_klager (id uuid primary key default gen_random_uuid(), afgoerelse_id uuid, anmeldelse_id uuid,
@@ -65,7 +68,17 @@ create table public.betalingsprofiler (user_id uuid primary key, saelger_frosset
 insert into public.betalingsprofiler (user_id, saelger_frosset_kl, stripe_konto_id) values
   ('${FROSSET}', now(), 'acct_hemmelig'), ('${SAELGER}', null, 'acct_saelger');
 create table public.trades (id uuid primary key default gen_random_uuid(), buyer_id uuid, seller_id uuid,
-  status text default 'betaling_modtaget');
+  auction_id uuid, status text default 'betaling_modtaget');
+-- Storage (som Supabase): objekter i buckets, med RLS. Policyerne for
+-- auktion-billeder som i produktion (20261009020000 og 20261010060000);
+-- storage.foldername og storage_to_trin_ok forenklet.
+create schema storage;
+grant usage on schema storage to anon, authenticated, service_role;
+create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text not null, name text not null);
+grant select, insert, update, delete on storage.objects to authenticated;
+alter table storage.objects enable row level security;
+create function storage.foldername(name text) returns text[] language sql immutable as
+  $$ select string_to_array(name, '/') $$;
 create table public.messages (id uuid primary key default gen_random_uuid(), trade_id uuid not null references public.trades(id),
   sender_id uuid not null, content text not null, created_at timestamptz not null default now(),
   fra_bidhamr boolean not null default false, blokeret_grund text);
@@ -82,6 +95,17 @@ create function public.boost_kunst_afventer(p_auktion uuid) returns boolean lang
   select coalesce((select (to_jsonb(a) ->> 'kunst_kontrol') = 'afventer'
                      from public.auctions a where a.id = p_auktion), false);
 $fn$;
+`;
+
+// Sletning i bucket auktion-billeder (som produktionen): egen mappe (permissiv)
+// og aldrig et låst billede (restriktiv - auktion_billede_laast).
+const POLICYER = `
+create policy auktion_billeder_delete_own on storage.objects for delete to authenticated
+  using (bucket_id = 'auktion-billeder' and (select auth.uid())::text = (storage.foldername(name))[1]);
+create policy auktion_billeder_select_egen on storage.objects for select to authenticated
+  using (bucket_id = 'auktion-billeder' and (select auth.uid())::text = (storage.foldername(name))[1]);
+create policy auktion_billeder_slet_ikke_laast on storage.objects as restrictive for delete to authenticated
+  using (bucket_id <> 'auktion-billeder' or not public.auktion_billede_laast(name));
 `;
 
 let db: PGlite;
@@ -119,6 +143,7 @@ beforeAll(async () => {
   db = new PGlite();
   await db.exec(STUB);
   await db.exec(minAuktionBoostFraBoost());
+  await db.exec(BILLEDE_LAAST + POLICYER);
   await db.exec(MIGRATION);
   // Kan køres igen.
   await db.exec(MIGRATION);
@@ -135,8 +160,11 @@ describe("migrationen", () => {
              has_function_privilege('authenticated', 'public.auktion_budhistorik(uuid)', 'execute') as auth_hist,
              has_function_privilege('anon', 'public.auktion_saelger_kan_saelge(uuid)', 'execute') as anon_frosset,
              to_regprocedure('public.saelger_kan_saelge(uuid)') is null as gammel_fjernet,
-             has_function_privilege('authenticated', 'public.auktion_billeder_sletbare(uuid,uuid,text[])', 'execute') as auth_slet,
-             has_function_privilege('service_role', 'public.auktion_billeder_sletbare(uuid,uuid,text[])', 'execute') as sr_slet,
+             has_function_privilege('authenticated', 'public.auktion_billeder_sletbare(uuid,text[])', 'execute') as auth_slet,
+             has_function_privilege('service_role', 'public.auktion_billeder_sletbare(uuid,text[])', 'execute') as sr_slet,
+             to_regprocedure('public.auktion_billeder_sletbare(uuid,uuid,text[])') is null as gammel_slet_fjernet,
+             has_function_privilege('authenticated', 'public.app_bruger_har_aaben_sag(uuid)', 'execute') as auth_sag,
+             has_function_privilege('service_role', 'public.app_bruger_har_aaben_sag(uuid)', 'execute') as sr_sag,
              has_function_privilege('anon', 'public.app_auktion_synlig(uuid)', 'execute') as anon_synlig,
              has_function_privilege('authenticated', 'public.app_auktion_synlig(uuid)', 'execute') as auth_synlig,
              has_function_privilege('anon', 'public.mine_kunst_kontrol(uuid[])', 'execute') as anon_kunst,
@@ -160,6 +188,9 @@ describe("migrationen", () => {
       gammel_fjernet: true,
       auth_slet: false,
       sr_slet: true,
+      gammel_slet_fjernet: true,
+      auth_sag: false,
+      sr_sag: false,
       anon_synlig: false,
       auth_synlig: false,
       anon_kunst: false,
@@ -185,8 +216,8 @@ describe("migrationen", () => {
        where pronamespace = 'public'::regnamespace
          and proname in ('auktion_budhistorik','mine_kunst_kontrol','auktion_saelger_kan_saelge','app_auktion_synlig',
                          'handel_chat_marker_laest','antal_ulaeste_handelsbeskeder','min_auktion_boost',
-                         'auktion_billeder_sletbare')`);
-    expect(r).toHaveLength(8);
+                         'auktion_billeder_sletbare','app_bruger_har_aaben_sag','auktion_billede_laast')`);
+    expect(r).toHaveLength(10);
     for (const f of r) {
       expect(f.prosecdef).toBe(true);
       expect(f.proconfig).toEqual(['search_path=""']);
@@ -198,6 +229,7 @@ describe("migrationen", () => {
     try {
       await d.exec(STUB);
       await d.exec(minAuktionBoostFraBoost().replace("'slutter_snart'", "'slutter_snart_aendret'"));
+      await d.exec(BILLEDE_LAAST);
       await expect(d.exec(MIGRATION)).rejects.toThrow(/hverken gammel eller ny/);
     } finally {
       await d.close();
@@ -355,15 +387,29 @@ describe("auktion_saelger_kan_saelge", () => {
   });
 });
 
-describe("auktion_billeder_sletbare", () => {
+describe("billeder er bevis i en åben sag", () => {
   const URL = "https://x.supabase.co/storage/v1/object/public/auktion-billeder/";
   const EJER = "00000000-0000-4000-8000-0000000000c5";
-  const sletbare = async (auktionId: string | null, stier: string[]) =>
-    (await en<{ v: { kode: string; stier?: string[] } }>(`select public.auktion_billeder_sletbare($1, $2, $3::text[]) as v`, [
-      EJER,
-      auktionId,
+  const sletbare = async (stier: string[], bruger = EJER) =>
+    (await en<{ v: { kode: string; stier?: string[] } }>(`select public.auktion_billeder_sletbare($1, $2::text[]) as v`, [
+      bruger,
       stier,
     ])).v;
+  const aabenSag = async (bruger = EJER) =>
+    (await en<{ v: boolean }>(`select public.app_bruger_har_aaben_sag($1) as v`, [bruger])).v;
+
+  // Sletter som ejeren selv direkte i Storage (med sit eget token).
+  async function sletIStorage(sti: string): Promise<number> {
+    await db.query(`insert into storage.objects (bucket_id, name) values ('auktion-billeder', $1)`, [sti]);
+    await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [EJER]);
+    await db.exec("set role authenticated");
+    try {
+      return (await db.query(`delete from storage.objects where bucket_id = 'auktion-billeder' and name = $1`, [sti])).affectedRows ?? 0;
+    } finally {
+      await db.exec("reset role");
+      await db.query(`delete from storage.objects where name = $1`, [sti]);
+    }
+  }
 
   it("kun egne stier, som ingen af ejerens auktioner bruger (URL eller sti)", async () => {
     const a = await auktion(EJER);
@@ -371,8 +417,7 @@ describe("auktion_billeder_sletbare", () => {
     // En anden af ejerens auktioner bruger også et billede.
     const b = await auktion(EJER);
     await db.query(`update public.auctions set billeder = $2 where id = $1`, [b, [`${URL}${EJER}/genopsat.jpg`]]);
-    // En fremmed auktion med samme filnavn tæller ikke (andens mappe).
-    const r = await sletbare(a, [
+    const r = await sletbare([
       `${EJER}/gammel.jpg`,
       `${EJER}/i-brug.jpg`,
       `${EJER}/sti-i-brug.jpg`,
@@ -382,58 +427,76 @@ describe("auktion_billeder_sletbare", () => {
       `${EJER}/gammel.jpg`,
     ]);
     expect(r).toEqual({ kode: "ok", stier: [`${EJER}/gammel.jpg`] });
+    expect(await sletIStorage(`${EJER}/fri.jpg`)).toBe(1);
   });
 
-  it("åben sag: per auktion (hjemmesiden) og for hele brugeren (appen)", async () => {
-    const a = await auktion(EJER);
+  it("åbne sager om NOGEN af brugerens auktioner eller brugeren: server og Storage afviser", async () => {
     const andenAuktion = await auktion(EJER);
     const sti = [`${EJER}/fjernet.jpg`];
-    expect((await sletbare(a, sti)).kode).toBe("ok");
+    const tjek = async (forventetAaben: boolean) => {
+      expect(await aabenSag()).toBe(forventetAaben);
+      expect((await sletbare(sti)).kode).toBe(forventetAaben ? "sag_aaben" : "ok");
+      expect(await sletIStorage(`${EJER}/direkte.jpg`)).toBe(forventetAaben ? 0 : 1);
+    };
+    await tjek(false);
 
-    // Videresendt anmeldelse (status 'ny' + eskaleret_kl) om den ANDEN auktion.
+    // Videresendt anmeldelse (status 'ny' + eskaleret_kl) om en ANDEN auktion.
     const anm = (await en<{ id: string }>(
       `insert into public.dsa_anmeldelser (indhold_type, indhold_id, auktion_id, status, eskaleret_kl)
        values ('auktion', $1, $1, 'ny', now()) returning id`,
       [andenAuktion],
     )).id;
-    // Hjemmesiden (p_auktion = a): kun sager om netop a.
-    expect((await sletbare(a, sti)).kode).toBe("ok");
-    // Appen (p_auktion null): en sag om NOGEN af ejerens auktioner stopper alt.
-    expect(await sletbare(null, sti)).toEqual({ kode: "sag_aaben" });
-    expect(await sletbare(andenAuktion, sti)).toEqual({ kode: "sag_aaben" });
+    await tjek(true);
     await db.query(`update public.dsa_anmeldelser set status = 'afgjort' where id = $1`, [anm]);
-    expect((await sletbare(null, sti)).kode).toBe("ok");
+    await tjek(false);
 
     // Åben rapport.
     const rap = (await en<{ id: string }>(
       `insert into public.reports (auction_id, status) values ($1, 'under_behandling') returning id`,
       [andenAuktion],
     )).id;
-    expect((await sletbare(null, sti)).kode).toBe("sag_aaben");
+    await tjek(true);
     await db.query(`update public.reports set status = 'behandlet' where id = $1`, [rap]);
-    expect((await sletbare(null, sti)).kode).toBe("ok");
+    await tjek(false);
 
     // Anmeldelse om brugeren selv (fx profilen).
     const pro = (await en<{ id: string }>(
       `insert into public.dsa_anmeldelser (indhold_type, anmeldt_bruger_id) values ('profil', $1) returning id`,
       [EJER],
     )).id;
-    expect((await sletbare(null, sti)).kode).toBe("sag_aaben");
+    await tjek(true);
     await db.query(`update public.dsa_anmeldelser set status = 'afgjort' where id = $1`, [pro]);
+    await tjek(false);
 
-    // Åben DSA-klage over en afgørelse om brugeren.
+    // Afgørelse om en af brugerens auktioner: åben, så længe klagefristen løber.
     const afg = (await en<{ id: string }>(
       `insert into public.dsa_afgoerelser (bruger_id, auktion_id) values ($1, $2) returning id`,
       [EJER, andenAuktion],
     )).id;
+    await tjek(true);
+    await db.query(`update public.dsa_afgoerelser set klage_frist_kl = now() - interval '1 minute' where id = $1`, [afg]);
+    await tjek(false);
+
+    // Klage, der afventer (selvom klagefristen er udløbet).
     const klage = (await en<{ id: string }>(`insert into public.dsa_klager (afgoerelse_id) values ($1) returning id`, [afg])).id;
-    expect((await sletbare(null, sti)).kode).toBe("sag_aaben");
+    await tjek(true);
     await db.query(`update public.dsa_klager set status = 'afgjort' where id = $1`, [klage]);
-    expect((await sletbare(null, sti)).kode).toBe("ok");
+    await tjek(false);
+  });
+
+  it("billeder fra en auktion med bud er stadig låst i Storage (som før)", async () => {
+    const LAAST = "00000000-0000-4000-8000-0000000000c6";
+    const a = await auktion(LAAST);
+    await db.query(`update public.auctions set billeder = $2 where id = $1`, [a, [`${URL}${LAAST}/med-bud.jpg`]]);
+    await bud(a, KOEBER, 100, 5);
+    const r = await en<{ v: boolean }>(`select public.auktion_billede_laast($1) as v`, [`${LAAST}/med-bud.jpg`]);
+    expect(r.v).toBe(true);
+    // Ugyldig sti (ingen uuid først): ingen fejl.
+    expect((await en<{ v: boolean }>(`select public.auktion_billede_laast('ikke-en-uuid/x.jpg') as v`)).v).toBe(false);
   });
 
   it("uden bruger: ugyldig", async () => {
-    expect((await en<{ v: { kode: string } }>(`select public.auktion_billeder_sletbare(null, null, '{}') as v`)).v.kode).toBe("ugyldig");
+    expect((await en<{ v: { kode: string } }>(`select public.auktion_billeder_sletbare(null, '{}') as v`)).v.kode).toBe("ugyldig");
   });
 });
 

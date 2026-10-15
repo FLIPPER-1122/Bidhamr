@@ -13,15 +13,15 @@ import { logDriftFejl } from "@/lib/drift";
 //   - kun filer i brugerens egen mappe i auktion-billeder,
 //   - kun filer, som INGEN af brugerens auktioner bruger (fx en genopsat
 //     vare) - som offentlig URL eller ren sti,
-//   - intet, mens der er en åben sag: en DSA-anmeldelse, der ikke er afgjort
-//     (status 'ny' - også når den er videresendt til admin), eller en åben
-//     rapport. Billederne kan være bevis.
-// helBruger = false (hjemmesiden): sager om netop den redigerede auktion.
-// helBruger = true (appen): sager om NOGEN af brugerens auktioner, om brugeren
-// selv eller en åben DSA-klage - så et andet auktion_id ikke kan bruges til at
-// slette bevis. Service role, fordi storage-policyen ikke lader brugeren
-// slette - ejeren er tjekket af kalderen (rediger_auktion på hjemmesiden,
-// auctions.bruger_id i appens endpoint). Kaster aldrig.
+//   - intet, mens brugeren har en åben sag (app_bruger_har_aaben_sag): en
+//     DSA-anmeldelse, der ikke er afgjort (også når den er videresendt), en
+//     åben rapport eller DSA-klage, eller en afgørelse, hvor klagefristen
+//     stadig løber - om NOGEN af brugerens auktioner eller brugeren selv.
+//     Billederne kan være bevis. Samme regel låser sletning direkte i
+//     Storage (auktion_billede_laast).
+// Service role, fordi storage-policyen ikke lader brugeren slette - ejeren
+// er tjekket af kalderen (rediger_auktion på hjemmesiden, auctions.bruger_id
+// i appens endpoint). Kaster aldrig.
 
 const BILLEDE_MARKOER = "/storage/v1/object/public/auktion-billeder/";
 
@@ -46,9 +46,7 @@ export type OprydningSvar = { kode: "ok"; slettet: number } | { kode: "sag_aaben
 
 export async function sletFjernedeBilleder(
   brugerId: string,
-  auktionId: string,
   urls: string[],
-  o: { helBruger?: boolean } = {},
 ): Promise<OprydningSvar> {
   try {
     const kandidater = [...new Set(urls.map(tilSti).filter((s): s is string => !!s))];
@@ -57,7 +55,6 @@ export async function sletFjernedeBilleder(
     const admin = createAdminClient();
     const { data, error } = await admin.rpc("auktion_billeder_sletbare", {
       p_bruger: brugerId,
-      p_auktion: o.helBruger ? null : auktionId,
       p_stier: kandidater,
     });
     if (error) throw new Error(`auktion_billeder_sletbare: ${error.message}`);

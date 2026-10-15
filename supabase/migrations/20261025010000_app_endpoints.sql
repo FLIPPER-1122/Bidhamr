@@ -26,10 +26,17 @@
 --   6. app_bud_noegler - idempotens for appens bud (POST /api/bud/app):
 --      samme nøgle fra samme bruger giver samme svar - bundet til auktion,
 --      type (bud/maksimum) og beløb. Kun service_role.
---   7. auktion_billeder_sletbare(p_bruger, p_auktion, p_stier) - hvilke af
---      sælgerens storage-stier der må slettes efter en redigering (ingen af
---      sælgerens auktioner bruger dem), eller 'sag_aaben', hvis der er en
---      åben DSA-sag/rapport. Kun service_role (serveren).
+--   7. Billeder er bevis i en åben sag:
+--      - app_bruger_har_aaben_sag(p_bruger) - intern hjælper: har brugeren
+--        en åben DSA-anmeldelse, rapport eller DSA-klage, eller en
+--        afgørelse, hvor klagefristen stadig løber?
+--      - auktion_billede_laast (storage-policyen auktion_billeder_slet_ikke_laast,
+--        restriktiv) låser nu også alle billeder i mappen hos en bruger med
+--        en åben sag - så sælgeren heller ikke kan slette dem direkte i
+--        Storage med sit eget token. md5-drift-tjek.
+--      - auktion_billeder_sletbare(p_bruger, p_stier) - hvilke af sælgerens
+--        storage-stier serveren må slette efter en redigering (ingen af
+--        sælgerens auktioner bruger dem), eller 'sag_aaben'. Kun service_role.
 --
 -- Nye funktioner: security definer, search_path = '', brugeren udledes af
 -- auth.uid(). Ingen af dem ændrer handelsdata.
@@ -387,23 +394,93 @@ begin
 end $do$;
 
 -- ===========================================================================
--- 7. Billedoprydning efter redigering
+-- 7. Billeder er bevis i en åben sag
 -- ===========================================================================
--- Hvilke af p_stier ("<bruger-id>/<fil>.jpg" i bucket auktion-billeder) må
--- slettes? Kun stier i sælgerens egen mappe, som INGEN af sælgerens
--- auktioner bruger (som offentlig URL eller ren sti) - tjekket i SQL for
--- præcis de stier. Højst 100 stier.
--- Åben sag = intet slettes ({ kode: 'sag_aaben' }) - billederne kan være
--- bevis. En DSA-anmeldelse er åben, til den er afgjort (status 'ny' - også
--- når den er videresendt til admin, eskaleret_kl); en rapport, mens den er
--- 'pending' eller 'under_behandling'; en DSA-klage, mens den afventer.
---   p_auktion sat (hjemmesidens redigering): sager om netop den auktion.
---   p_auktion null (appens /api/auktion/app/fjern-billeder): sager om NOGEN
---   af sælgerens auktioner, om sælgeren selv eller klager over afgørelser
---   om sælgeren - så et andet auktion_id ikke kan bruges til at slette bevis.
+-- Har brugeren en åben sag, hvor billeder af brugerens auktioner kan være
+-- bevis? Gælder HELE brugeren (alle brugerens auktioner), så et andet
+-- auktion_id ikke kan bruges til at slette bevis:
+--   - en DSA-anmeldelse, der ikke er afgjort (status 'ny' - også når den er
+--     videresendt til admin, eskaleret_kl), om brugeren eller en af
+--     brugerens auktioner,
+--   - en rapport ('pending' / 'under_behandling') om en af brugerens auktioner,
+--   - en DSA-klage, der afventer, over en afgørelse/anmeldelse om brugeren
+--     eller en af brugerens auktioner,
+--   - en DSA-afgørelse om brugeren eller en af brugerens auktioner, hvor
+--     klagefristen stadig løber (klage_frist_kl > now()).
+-- Intern hjælper: kun til auktion_billede_laast og auktion_billeder_sletbare.
+create or replace function public.app_bruger_har_aaben_sag(p_bruger uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $fn$
+  select p_bruger is not null and (
+    exists (select 1 from public.dsa_anmeldelser d
+             where d.status <> 'afgjort'
+               and (d.anmeldt_bruger_id = p_bruger
+                    or exists (select 1 from public.auctions a
+                                where a.bruger_id = p_bruger
+                                  and (a.id = d.auktion_id or (d.indhold_type = 'auktion' and a.id = d.indhold_id)))))
+    or exists (select 1 from public.reports r
+                 join public.auctions a on a.id = r.auction_id
+                where a.bruger_id = p_bruger and r.status in ('pending', 'under_behandling'))
+    or exists (select 1 from public.dsa_klager k
+                 left join public.dsa_afgoerelser f on f.id = k.afgoerelse_id
+                 left join public.dsa_anmeldelser d on d.id = k.anmeldelse_id
+                where k.status <> 'afgjort'
+                  and (f.bruger_id = p_bruger or d.anmeldt_bruger_id = p_bruger
+                       or exists (select 1 from public.auctions a
+                                   where a.bruger_id = p_bruger and (a.id = f.auktion_id or a.id = d.auktion_id))))
+    or exists (select 1 from public.dsa_afgoerelser f
+                where f.klage_frist_kl > now()
+                  and (f.bruger_id = p_bruger
+                       or exists (select 1 from public.auctions a where a.bruger_id = p_bruger and a.id = f.auktion_id)))
+  );
+$fn$;
+
+revoke all on function public.app_bruger_har_aaben_sag(uuid) from public, anon, authenticated, service_role;
+
+-- Storage: auktion_billede_laast(name) bruges af den restriktive policy
+-- auktion_billeder_slet_ikke_laast på storage.objects. Før: kun billeder fra
+-- auktioner med bud eller handel. Nu også alle billeder i mappen hos en
+-- bruger med en åben sag (ejeren af mappen = første del af stien).
+-- "gammel" = prod og test før denne migration (hentet med SELECT 16. okt.
+-- 2026), "ny" = efter.
+do $do$
+begin
+  raise notice 'auktion_billede_laast: %', pg_temp.ps_ret(
+    'public.auktion_billede_laast(text)',
+    '274d77676c299040c5661c7e68637893',
+    '088aceada3f89c0cc6568884cb495b7b',
+    jsonb_build_array(jsonb_build_array(
+      $g$  select p_name is not null
+     and exists (
+$g$,
+      $n$  select p_name is not null
+     and public.app_bruger_har_aaben_sag(
+           case when split_part(p_name, '/', 1) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                then split_part(p_name, '/', 1)::uuid end)
+      or p_name is not null
+     and exists (
+$n$,
+      1)));
+end $do$;
+
+revoke all on function public.auktion_billede_laast(text) from public, anon;
+grant execute on function public.auktion_billede_laast(text) to authenticated, service_role;
+
+-- Serverens oprydning efter en redigering (hjemmesiden og appen): hvilke af
+-- p_stier ("<bruger-id>/<fil>.jpg" i bucket auktion-billeder) må slettes?
+-- Kun stier i sælgerens egen mappe, som INGEN af sælgerens auktioner bruger
+-- (som offentlig URL eller ren sti) - tjekket i SQL for præcis de stier.
+-- Højst 100 stier. Åben sag (app_bruger_har_aaben_sag) = intet slettes.
 -- Svar: { kode: 'ok', stier: [...] } | { kode: 'sag_aaben' } | { kode: 'ugyldig' }.
 -- Kun service_role: serveren har verificeret sælgeren (p_bruger).
-create or replace function public.auktion_billeder_sletbare(p_bruger uuid, p_auktion uuid, p_stier text[])
+-- Den første udgave havde p_auktion (tjek af én auktion) - fjernes.
+drop function if exists public.auktion_billeder_sletbare(uuid, uuid, text[]);
+
+create or replace function public.auktion_billeder_sletbare(p_bruger uuid, p_stier text[])
 returns jsonb
 language plpgsql
 stable
@@ -412,38 +489,10 @@ set search_path = ''
 as $fn$
 declare
   v_mark constant text := '/storage/v1/object/public/auktion-billeder/';
-  v_aaben boolean;
   v_stier text[];
 begin
   if p_bruger is null then return jsonb_build_object('kode', 'ugyldig'); end if;
-
-  if p_auktion is not null then
-    v_aaben :=
-      exists (select 1 from public.dsa_anmeldelser d
-               where d.status <> 'afgjort'
-                 and (d.auktion_id = p_auktion or (d.indhold_type = 'auktion' and d.indhold_id = p_auktion)))
-      or exists (select 1 from public.reports r
-                  where r.auction_id = p_auktion and r.status in ('pending', 'under_behandling'));
-  else
-    v_aaben :=
-      exists (select 1 from public.dsa_anmeldelser d
-               where d.status <> 'afgjort'
-                 and (d.anmeldt_bruger_id = p_bruger
-                      or exists (select 1 from public.auctions a
-                                  where a.bruger_id = p_bruger
-                                    and (a.id = d.auktion_id or (d.indhold_type = 'auktion' and a.id = d.indhold_id)))))
-      or exists (select 1 from public.reports r
-                   join public.auctions a on a.id = r.auction_id
-                  where a.bruger_id = p_bruger and r.status in ('pending', 'under_behandling'))
-      or exists (select 1 from public.dsa_klager k
-                   left join public.dsa_afgoerelser f on f.id = k.afgoerelse_id
-                   left join public.dsa_anmeldelser d on d.id = k.anmeldelse_id
-                  where k.status <> 'afgjort'
-                    and (f.bruger_id = p_bruger or d.anmeldt_bruger_id = p_bruger
-                         or exists (select 1 from public.auctions a
-                                     where a.bruger_id = p_bruger and (a.id = f.auktion_id or a.id = d.auktion_id))));
-  end if;
-  if v_aaben then return jsonb_build_object('kode', 'sag_aaben'); end if;
+  if public.app_bruger_har_aaben_sag(p_bruger) then return jsonb_build_object('kode', 'sag_aaben'); end if;
 
   select coalesce(array_agg(distinct s.sti order by s.sti), '{}'::text[]) into v_stier
     from unnest((coalesce(p_stier, '{}'::text[]))[1:100]) as s(sti)
@@ -460,5 +509,5 @@ begin
 end;
 $fn$;
 
-revoke all on function public.auktion_billeder_sletbare(uuid, uuid, text[]) from public, anon, authenticated;
-grant execute on function public.auktion_billeder_sletbare(uuid, uuid, text[]) to service_role;
+revoke all on function public.auktion_billeder_sletbare(uuid, text[]) from public, anon, authenticated;
+grant execute on function public.auktion_billeder_sletbare(uuid, text[]) to service_role;

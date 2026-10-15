@@ -85,10 +85,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
     if (auktion.bruger_id !== bruger.id) {
       return appSvar(403, { fejl: "Det er ikke din auktion.", kode: "ikke_ejer" });
     }
-    // helBruger: en åben sag om NOGEN af brugerens auktioner (eller brugeren
-    // selv) stopper hele kaldet - så et andet auktion_id ikke kan bruges til
-    // at slette bevis.
-    const r = await sletFjernedeBilleder(bruger.id, auktion.id, stier as string[], { helBruger: true });
+    // En åben sag om NOGEN af brugerens auktioner (eller brugeren selv)
+    // stopper hele kaldet - så et andet auktion_id ikke kan bruges til at
+    // slette bevis.
+    const r = await sletFjernedeBilleder(bruger.id, stier as string[]);
     if (r.kode === "sag_aaben") {
       return appSvar(409, {
         fejl: "Billederne kan ikke slettes lige nu, fordi BidHamr behandler en sag om en af dine auktioner.",

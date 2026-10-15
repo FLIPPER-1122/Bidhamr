@@ -139,12 +139,17 @@ hjemmesiden og `rpc("mine_data")`).
 `{ auktion_id, stier: string[] }` (højst 20; storage-stier `<bruger-id>/<fil>.jpg` eller de offentlige URL'er) →
 `200 { ok }`. Kald den efter `rpc("rediger_auktion")`, når sælgeren har fjernet billeder. Kun ejeren (`403 ikke_ejer`,
 `404 ikke_fundet`). Databasen (`auktion_billeder_sletbare`, kun service role) afgør i SQL for præcis de stier, hvad
-der må slettes: kun filer i ejerens egen mappe, som ingen af ejerens auktioner bruger. Er der en åben sag om
-**nogen** af ejerens auktioner eller om ejeren selv - en DSA-anmeldelse, der ikke er afgjort (også når den er
-videresendt til admin), en rapport (`pending`/`under_behandling`) eller en DSA-klage, der afventer - afvises hele
-kaldet med `409 sag_aaben` ("Billederne kan ikke slettes lige nu, fordi BidHamr behandler en sag om en af dine
-auktioner."), og intet slettes. Svaret er `ok`, også når intet blev slettet. (Hjemmesidens egen oprydning efter en
-redigering tjekker som før sager om netop den auktion.)
+der må slettes: kun filer i ejerens egen mappe, som ingen af ejerens auktioner bruger. Har ejeren en åben sag
+(`app_bruger_har_aaben_sag`) - en DSA-anmeldelse, der ikke er afgjort (også når den er videresendt til admin), en
+rapport (`pending`/`under_behandling`) eller en DSA-klage, der afventer, om ejeren eller **nogen** af ejerens
+auktioner, eller en DSA-afgørelse, hvor klagefristen stadig løber - afvises hele kaldet med `409 sag_aaben`
+("Billederne kan ikke slettes lige nu, fordi BidHamr behandler en sag om en af dine auktioner."), og intet slettes.
+Svaret er `ok`, også når intet blev slettet. Samme regel gælder hjemmesidens oprydning efter en redigering.
+
+**Sletning direkte i Storage** (`supabase.storage.from("auktion-billeder").remove(...)` med brugerens token) er låst
+på samme måde: policyen `auktion_billeder_slet_ikke_laast` (`auktion_billede_laast`) afviser sletning af ethvert
+billede i mappen, så længe ejeren har en åben sag (ud over billeder fra auktioner med bud eller handel, som før).
+Svaret er da en tom sletning (intet slettet) - prøv ikke igen.
 
 ## Ændret i eksisterende endpoints
 

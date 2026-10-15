@@ -1,7 +1,7 @@
 // POST /api/auktion/app/fjern-billeder og den fælles oprydning
 // (src/lib/auktionBilledOprydning.ts): kun ejeren; hvad der må slettes,
-// afgør databasen (auktion_billeder_sletbare - testet i PGlite); appen
-// tjekker sager for HELE brugeren, så et andet auktion_id ikke kan bruges
+// afgør databasen (auktion_billeder_sletbare - testet i PGlite), og sager
+// tjekkes altid for HELE brugeren, så et andet auktion_id ikke kan bruges
 // til at slette bevis.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -103,7 +103,7 @@ describe("POST /api/auktion/app/fjern-billeder", () => {
     expect(m.rpcKald).toEqual([
       {
         navn: "auktion_billeder_sletbare",
-        args: { p_bruger: EJER, p_auktion: null, p_stier: [`${EJER}/gammel.jpg`, `${EJER}/i-brug.jpg`] },
+        args: { p_bruger: EJER, p_stier: [`${EJER}/gammel.jpg`, `${EJER}/i-brug.jpg`] },
       },
     ]);
     expect(m.slettet).toEqual([[`${EJER}/gammel.jpg`]]);
@@ -128,9 +128,11 @@ describe("POST /api/auktion/app/fjern-billeder", () => {
 });
 
 describe("hjemmesidens oprydning", () => {
-  it("tjekker sager om netop den redigerede auktion (p_auktion sat)", async () => {
+  it("tjekker også hele brugeren (samme RPC som appen)", async () => {
     m.rpcSvar = { data: { kode: "ok", stier: [`${EJER}/a.jpg`] }, error: null };
-    expect(await sletFjernedeBilleder(EJER, AUKTION, [`${URL_DEL}${EJER}/a.jpg`])).toEqual({ kode: "ok", slettet: 1 });
-    expect((m.rpcKald[0].args as { p_auktion: string }).p_auktion).toBe(AUKTION);
+    expect(await sletFjernedeBilleder(EJER, [`${URL_DEL}${EJER}/a.jpg`])).toEqual({ kode: "ok", slettet: 1 });
+    expect(m.rpcKald[0]).toEqual({ navn: "auktion_billeder_sletbare", args: { p_bruger: EJER, p_stier: [`${EJER}/a.jpg`] } });
+    m.rpcSvar = { data: { kode: "sag_aaben" }, error: null };
+    expect(await sletFjernedeBilleder(EJER, [`${EJER}/b.jpg`])).toEqual({ kode: "sag_aaben" });
   });
 });
