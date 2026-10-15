@@ -59,6 +59,7 @@ create table public.auctions (id uuid primary key default gen_random_uuid(), bru
   pauset_kl timestamptz, slutter_kl timestamptz default now() + interval '3 days', erhverv boolean default false);
 create table public.trades (id uuid primary key default gen_random_uuid(), status text default 'modtaget');
 create table public.betalinger (id uuid primary key default gen_random_uuid(), trade_id uuid, seller_id uuid,
+  buyer_id uuid default gen_random_uuid(), bud_oere bigint not null default 10000,
   status text default 'betalt', frigivet_kl timestamptz, annulleret_kl timestamptz, refusion_anmodet_kl timestamptz,
   refunderet_kl timestamptz, refusion_oere bigint, bidhamr_daekker_kl timestamptz, indsigelse_tabt_kl timestamptz,
   indsigelse_kl timestamptz, indsigelse_status text);
@@ -123,11 +124,19 @@ async function auktion(ejer: string, o: { titel?: string; kategori?: string; slu
   return a.id;
 }
 
-async function frigivetSalg(saelger: string, o: { foer?: boolean } = {}) {
+// Et frigivet salg (standard: ny køber og bud 100 kr.).
+async function frigivetSalg(saelger: string, o: { foer?: boolean; koeber?: string; budOere?: number } = {}) {
   const t = await en<{ id: string }>(`insert into public.trades default values returning id`);
   const b = await en<{ id: string }>(
-    `insert into public.betalinger (trade_id, seller_id, status, frigivet_kl) values ($1, $2, 'betalt', $3) returning id`,
-    [t.id, saelger, o.foer ? new Date(Date.now() - 86_400_000).toISOString() : new Date().toISOString()],
+    `insert into public.betalinger (trade_id, seller_id, status, frigivet_kl, buyer_id, bud_oere)
+     values ($1, $2, 'betalt', $3, $4, $5) returning id`,
+    [
+      t.id,
+      saelger,
+      o.foer ? new Date(Date.now() - 86_400_000).toISOString() : new Date().toISOString(),
+      o.koeber ?? randomUUID(),
+      o.budOere ?? 10_000,
+    ],
   );
   return b.id;
 }
@@ -212,7 +221,7 @@ describe("migrationen", () => {
        where p.pronamespace = 'public'::regnamespace
          and (p.proname like 'boost%' or p.proname in ('mine_point', 'min_auktion_boost', 'aktive_boosts',
               'faktura_planlaeg_boost', 'auktion_boosts_et_aktivt'))
-         and p.proname not in ('boost_forbyd_aendring', 'boost_koeb_forbyd_sletning', 'boost_koeb_laaste_felter', 'boost_laas_bruger')`);
+         and p.proname not in ('boost_forbyd_aendring', 'boost_koeb_forbyd_sletning', 'boost_koeb_laaste_felter', 'boost_laas_bruger', 'boost_min_bud_oere')`);
     expect(rows.length).toBeGreaterThanOrEqual(22);
     for (const r of rows) {
       expect(r.sd, r.proname).toBe(true);
@@ -424,6 +433,42 @@ describe("point ved salg", () => {
     await db.query(`update public.betalinger set indsigelse_status = 'won' where id = $1`, [ind]);
     expect((await j(`select public.boost_point_synk() as v`)).optjent).toBe(1);
     expect(await saldo(PRIVAT)).toBe(20);
+  });
+
+  it("et salg under 50 kr. giver 0 point; 50 kr. præcis giver point", async () => {
+    await nulstil(PRIVAT);
+    const under = await frigivetSalg(PRIVAT, { budOere: 4_999 });
+    const praecis = await frigivetSalg(PRIVAT, { budOere: 5_000 });
+    await j(`select public.boost_point_synk() as v`);
+    const n = async (b: string) =>
+      (await en<{ n: number }>(`select count(*)::int as n from public.boost_posteringer where betaling_id = $1`, [b])).n;
+    expect(await n(under)).toBe(0);
+    expect(await n(praecis)).toBe(1);
+    expect(await saldo(PRIVAT)).toBe(10);
+    expect((await en<{ v: number }>(`select public.boost_min_bud_oere()::int as v`)).v).toBe(5000);
+  });
+
+  it("højst 10 point pr. køber pr. sælger pr. måned: to salg til samme køber giver 10 point", async () => {
+    await nulstil(PRIVAT);
+    const koeber = ADMIN;
+    const b1 = await frigivetSalg(PRIVAT, { koeber });
+    const b2 = await frigivetSalg(PRIVAT, { koeber });
+    const andenKoeber = await frigivetSalg(PRIVAT);
+    await j(`select public.boost_point_synk() as v`);
+    expect(await saldo(PRIVAT)).toBe(20); // 10 fra køberen + 10 fra en anden køber
+    const point = await db.query<{ betaling_id: string }>(
+      `select betaling_id from public.boost_posteringer where betaling_id = any($1) and type = 'optjening'`,
+      [[b1, b2, andenKoeber]],
+    );
+    expect(point.rows.length).toBe(2);
+    const afvist = await db.query<{ betaling_id: string; grund: string }>(
+      `select betaling_id, grund from public.boost_optjening_afvist where betaling_id = any($1)`, [[b1, b2]]);
+    expect(afvist.rows).toHaveLength(1);
+    expect(afvist.rows[0].grund).toBe("maks_pr_koeber");
+    // Ny kørsel: intet nyt, og det afviste salg giver heller ikke point senere.
+    expect(await j(`select public.boost_point_synk() as v`)).toEqual({ optjent: 0, tilbagefoert: 0 });
+    expect(await saldo(PRIVAT)).toBe(20);
+    expect(await fejlkode(`delete from public.boost_optjening_afvist`)).toBe("BHB02");
   });
 
   it("refunderes salget senere, trækkes pointene tilbage - én gang og aldrig under 0", async () => {

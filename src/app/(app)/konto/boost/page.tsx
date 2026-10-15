@@ -18,6 +18,8 @@ type MinePoint = {
   pakke: { point: number; pris_oere: number };
   boost: { point: number; timer: number };
   point_pr_salg: number;
+  min_bud_oere: number;
+  maks_pr_koeber_maaned: number;
   kraev_samtykke: boolean;
   aabent_koeb: { id: string; status: string } | null;
   historik: {
@@ -113,7 +115,15 @@ export default async function BoostSide({
             </h2>
             <p className="mt-1 text-[32px] leading-tight font-bold text-tekst">{BOOST_TEKST.saldo(p.saldo)}</p>
             <ul className="mt-4 space-y-1.5 text-sm text-tekst-daempet">
-              {BOOST_TEKST.saadan(p.pakke.point, p.pakke.pris_oere, p.boost.point, p.boost.timer, p.point_pr_salg).map((t) => (
+              {BOOST_TEKST.saadan(
+                p.pakke.point,
+                p.pakke.pris_oere,
+                p.boost.point,
+                p.boost.timer,
+                p.point_pr_salg,
+                p.min_bud_oere,
+                p.maks_pr_koeber_maaned,
+              ).map((t) => (
                 <li key={t}>{t}</li>
               ))}
             </ul>

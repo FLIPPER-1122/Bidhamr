@@ -21,10 +21,18 @@ export const BOOST_TEKST = {
   koebKnap: (point: number, prisOere: number) => `Køb ${point} point – ${kr(prisOere)} kr.`,
   betalKnap: (prisOere: number) => `Betal ${kr(prisOere)} kr.`,
   boostKnap: (timer: number, point: number) => `Boost i ${timer} timer (${point} point)`,
-  saadan: (pakkePoint: number, prisOere: number, boostPoint: number, timer: number, prSalg: number) => [
+  saadan: (
+    pakkePoint: number,
+    prisOere: number,
+    boostPoint: number,
+    timer: number,
+    prSalg: number,
+    minBudOere: number,
+    maksPrKoeber: number,
+  ) => [
     `Køb ${pakkePoint} point for ${kr(prisOere)} kr. (inkl. moms). Du får en faktura fra BidHamr.`,
     `Et boost koster ${boostPoint} point og lægger din auktion øverst i ${timer} timer.`,
-    `Du får ${prSalg} point for hvert salg, når pengene er udbetalt til dig. Bliver handlen refunderet, trækkes pointene tilbage.`,
+    `Du får ${prSalg} point for hvert salg på mindst ${kr(minBudOere)} kr., når pengene er udbetalt til dig – højst ${maksPrKoeber} point pr. køber pr. måned. Bliver handlen refunderet, trækkes pointene tilbage.`,
   ],
   betalingIntro: "Betalingen håndteres af vores betalingspartner Stripe.",
   betalingBehandles: "Din betaling behandles. Dine point kommer, så snart betalingen er gennemført.",

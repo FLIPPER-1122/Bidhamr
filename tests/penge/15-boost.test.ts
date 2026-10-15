@@ -338,9 +338,38 @@ describe("E. point ved salg", () => {
     await koerBoostCron();
     const { data: post } = await admin()
       .from("boost_posteringer")
-      .select("type, point, bruger_id")
+      .select("type, point, bruger_id, betaling_id")
       .in("betaling_id", [hSalg.betalingId, hRefunderet.betalingId]);
-    expect(post).toEqual([{ type: "optjening", point: 10, bruger_id: SAELGER.id }]);
+    // Det refunderede salg giver aldrig point.
+    expect((post ?? []).filter((p) => p.betaling_id === hRefunderet!.betalingId)).toEqual([]);
+    // Højst 10 point pr. køber pr. sælger pr. måned (Filip, 15. okt. 2026):
+    // andre testfiler (01 ...) har ofte allerede givet SAELGER 10 point fra
+    // KOEBER i denne måned. Så er salget afvist - ellers giver det 10 point.
+    const egne = (post ?? []).filter((p) => p.betaling_id === hSalg!.betalingId);
+    const { data: afvist } = await admin()
+      .from("boost_optjening_afvist")
+      .select("grund")
+      .eq("betaling_id", hSalg.betalingId);
+    // Point, KOEBER allerede har givet SAELGER i måneden (før dette salg).
+    const maaned = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit" }).format(new Date());
+    const start = new Date(`${maaned}-01T00:00:00+02:00`).getTime() - 2 * 3_600_000; // rummelig grænse
+    const { data: alle } = await admin()
+      .from("boost_posteringer")
+      .select("point, betaling_id, betalinger!inner(buyer_id, frigivet_kl)")
+      .eq("type", "optjening")
+      .eq("bruger_id", SAELGER.id)
+      .eq("betalinger.buyer_id", KOEBER.id)
+      .gte("betalinger.frigivet_kl", new Date(start).toISOString())
+      .neq("betaling_id", hSalg.betalingId);
+    const tidligere = (alle ?? []).reduce((s, x) => s + Number(x.point), 0);
+    if (tidligere >= 10) {
+      expect(egne).toEqual([]);
+      expect(afvist).toEqual([{ grund: "maks_pr_koeber" }]);
+    } else {
+      expect(egne).toHaveLength(1);
+      expect(egne[0]).toMatchObject({ type: "optjening", point: 10 - tidligere, bruger_id: SAELGER.id });
+      expect(afvist).toEqual([]);
+    }
   });
 
   it("sluttilstand: udbetalingen af salget betales", async () => {

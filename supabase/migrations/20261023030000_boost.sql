@@ -9,7 +9,9 @@
 --     køen (fakturaer.slags 'boost', salgskonto med moms).
 --   - Et boost koster 50 point og lægger opslaget i toppen i 24 timer.
 --   - 10 point pr. GENNEMFØRT salg (pengene er frigivet til sælgeren - samme
---     definition som gennemfoerte_salg i 20261023020000_badge_konkurrence.sql).
+--     definition som gennemfoerte_salg i 20261023020000_badge_konkurrence.sql),
+--     kun når buddet er mindst 50 kr., og højst 10 point pr. køber pr.
+--     sælger pr. måned (Filip, 15. okt. 2026 - se afsnit 9).
 --     Annullerede og refunderede handler giver ingen point, og point fra en
 --     handel, der senere refunderes, trækkes tilbage, så langt saldoen
 --     rækker (saldoen bliver aldrig negativ).
@@ -809,6 +811,42 @@ $fn$;
 -- ===========================================================================
 -- 9. Optjening og tilbageførsel ved salg (cron, idempotent)
 -- ===========================================================================
+-- Filip, 15. okt. 2026: kun salg med et bud på mindst 50 kr. giver point, og
+-- højst 10 point pr. køber pr. sælger pr. måned (så en køber ikke kan "sælge"
+-- point til sælgeren med mange små handler).
+--
+-- SKAL FØLGES AD med gennemfoerte_salg_min_bud_oere() i
+-- 20261023020000_badge_konkurrence.sql (samme værdi, 5000 øre). Egen
+-- konstant her, så de to migrationer kan flettes uafhængigt af hinanden.
+create or replace function public.boost_min_bud_oere()
+returns bigint language sql immutable set search_path = '' as $fn$
+  select 5000::bigint;
+$fn$;
+
+alter table public.boost_indstillinger add column if not exists maks_point_pr_koeber_maaned integer not null default 10;
+alter table public.boost_indstillinger drop constraint if exists boost_indstillinger_maks_koeber;
+alter table public.boost_indstillinger add constraint boost_indstillinger_maks_koeber
+  check (maks_point_pr_koeber_maaned between 0 and 100000);
+
+-- Salg, der er vurderet og IKKE gav point, fordi køberen allerede har givet
+-- sælgeren det højeste antal point i måneden. Gemmes, så de ikke vurderes
+-- igen ved hver kørsel (og ikke kan give point senere). Append-only.
+create table if not exists public.boost_optjening_afvist (
+  betaling_id uuid primary key references public.betalinger(id) on delete restrict,
+  saelger_id  uuid not null references public.users(id) on delete restrict,
+  koeber_id   uuid references public.users(id) on delete restrict,
+  maaned      text not null,
+  grund       text not null check (grund in ('maks_pr_koeber')),
+  oprettet_kl timestamptz not null default now()
+);
+comment on table public.boost_optjening_afvist is
+  'Boost: gennemførte salg, der ikke gav point, fordi køberen allerede havde givet sælgeren højst maks_point_pr_koeber_maaned point i måneden (Filip, 15. okt. 2026). Kan ikke ændres eller slettes.';
+drop trigger if exists boost_optjening_afvist_laast on public.boost_optjening_afvist;
+create trigger boost_optjening_afvist_laast before update or delete on public.boost_optjening_afvist
+  for each row execute function public.boost_forbyd_aendring();
+alter table public.boost_optjening_afvist enable row level security;
+revoke all on public.boost_optjening_afvist from public, anon, authenticated, service_role;
+grant select on public.boost_optjening_afvist to service_role;
 -- Et GENNEMFØRT salg: samme definition som gennemfoerte_salg
 -- (20261023020000_badge_konkurrence.sql) - betalt, frigivet, ikke annulleret,
 -- intet refunderet/bestilt refunderet, ingen "BidHamr dækker", ingen åben
@@ -827,19 +865,24 @@ declare
   r  record;
   v_optjent integer := 0;
   v_tilbage integer := 0;
+  v_brugt   integer;
+  v_point   integer;
 begin
   select * into s from public.boost_indstillinger where id;
   if not found then return jsonb_build_object('optjent', 0, 'tilbagefoert', 0); end if;
 
   if s.point_pr_salg > 0 then
     for r in
-      select b.id, b.seller_id
+      select b.id, b.seller_id, b.buyer_id,
+             to_char(b.frigivet_kl at time zone 'Europe/Copenhagen', 'YYYY-MM') as maaned
         from public.betalinger b
         join public.users u on u.id = b.seller_id
         left join public.trades t on t.id = b.trade_id
        where b.status = 'betalt'
          and b.frigivet_kl is not null
          and b.frigivet_kl >= s.optjening_fra_kl
+         and b.bud_oere >= public.boost_min_bud_oere()
+         and not exists (select 1 from public.boost_optjening_afvist x where x.betaling_id = b.id)
          and b.seller_id <> public.bidhamr_system_id()
          and b.annulleret_kl is null
          and b.refusion_anmodet_kl is null
@@ -854,7 +897,27 @@ begin
        order by b.frigivet_kl
        limit v_graense
     loop
-      if public.boost_postering_indsaet(r.seller_id, 'optjening', s.point_pr_salg, p_betaling => r.id) then
+      -- Højst maks_point_pr_koeber_maaned pr. køber pr. sælger pr. måned
+      -- (dansk tid for frigivelsen). Brugt = alle optjeninge fra samme køber i
+      -- måneden (brutto - en senere tilbageførsel giver ikke plads igen).
+      -- Låst pr. sælger, så to samtidige kørsler ikke begge giver point.
+      perform public.boost_laas_bruger(r.seller_id);
+      continue when exists (select 1 from public.boost_posteringer p where p.betaling_id = r.id and p.type = 'optjening')
+                 or exists (select 1 from public.boost_optjening_afvist x where x.betaling_id = r.id);
+      select coalesce(sum(p.point), 0)::integer into v_brugt
+        from public.boost_posteringer p
+        join public.betalinger b2 on b2.id = p.betaling_id
+       where p.type = 'optjening' and p.bruger_id = r.seller_id
+         and b2.buyer_id is not distinct from r.buyer_id
+         and to_char(b2.frigivet_kl at time zone 'Europe/Copenhagen', 'YYYY-MM') = r.maaned;
+      v_point := least(s.point_pr_salg, greatest(s.maks_point_pr_koeber_maaned - v_brugt, 0));
+      if v_point <= 0 then
+        insert into public.boost_optjening_afvist (betaling_id, saelger_id, koeber_id, maaned, grund)
+        values (r.id, r.seller_id, r.buyer_id, r.maaned, 'maks_pr_koeber')
+        on conflict do nothing;
+        continue;
+      end if;
+      if public.boost_postering_indsaet(r.seller_id, 'optjening', v_point, p_betaling => r.id) then
         v_optjent := v_optjent + 1;
       end if;
     end loop;
@@ -959,7 +1022,8 @@ $fn$;
 -- 11. Brugeren (også appen)
 -- ===========================================================================
 -- supabase.rpc("mine_point") -> { saldo, kan_bruge, spaerret, pakke: {point,
--- pris_oere}, boost: {point, timer}, point_pr_salg, kraev_samtykke,
+-- pris_oere}, boost: {point, timer}, point_pr_salg, min_bud_oere,
+-- maks_pr_koeber_maaned, kraev_samtykke,
 -- aabent_koeb: {id, status} | null, historik: [{ id, type, point,
 -- oensket_point, saldo_efter, kl, auktion_id, auktion_titel }] } eller null.
 create or replace function public.mine_point()
@@ -979,6 +1043,8 @@ begin
     'pakke', jsonb_build_object('point', s.pakke_point, 'pris_oere', s.pakke_pris_oere),
     'boost', jsonb_build_object('point', s.boost_point, 'timer', s.boost_timer),
     'point_pr_salg', s.point_pr_salg,
+    'min_bud_oere', public.boost_min_bud_oere(),
+    'maks_pr_koeber_maaned', s.maks_point_pr_koeber_maaned,
     'kraev_samtykke', s.kraev_fortrydelse_samtykke,
     'aabent_koeb', (select jsonb_build_object('id', k.id, 'status', k.status)
                       from public.boost_koeb k where k.bruger_id = v_bruger and k.status in ('afventer', 'behandles')
@@ -1253,6 +1319,7 @@ declare
 begin
   foreach f in array array[
     'public.boost_saldo(uuid)',
+    'public.boost_min_bud_oere()',
     'public.boost_bruger_spaerret(uuid)',
     'public.boost_postering_indsaet(uuid, text, integer, uuid, uuid, uuid, uuid, text, uuid, integer)',
     'public.boost_koeb_start(uuid, boolean)',
