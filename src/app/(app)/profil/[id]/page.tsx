@@ -158,7 +158,7 @@ export default async function ProfilPage({
       supabase.rpc("antal_foelgere", { p_bruger: id }),
       // Gennemsnit og antal fra databasen - listen er begrænset til 200.
       hentBedoemmelseOpsummering(supabase, id),
-      erPopulaerSaelger(supabase, id),
+      erPopulaerSaelger(id),
     ]);
 
     const antalRatings = opsummering.antal;
@@ -352,7 +352,7 @@ export default async function ProfilPage({
       : Promise.resolve(false),
     hentBedoemmelseOpsummering(supabase, id),
     hentProfilTal(supabase, id),
-    erPopulaerSaelger(supabase, id),
+    erPopulaerSaelger(id),
   ]);
 
   const aktiveAuktioner = (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort);

@@ -123,7 +123,7 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
     const erSkoen = total > PRAECIST_ANTAL_OP_TIL;
     return {
       ok: true,
-      auktioner: await markerPopulaereSaelgere(supabase, rækker.map(mapAuctionTilKort)),
+      auktioner: await markerPopulaereSaelgere(rækker.map(mapAuctionTilKort)),
       // Et skøn afrundes til hele hundreder.
       total: erSkoen ? Math.round(total / 100) * 100 : total,
       totalType: erSkoen ? "ca" : "praecis",
@@ -188,7 +188,7 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
     .map(mapAuctionTilKort);
   return {
     ok: true,
-    auktioner: await markerPopulaereSaelgere(supabase, auktioner),
+    auktioner: await markerPopulaereSaelgere(auktioner),
     total: indenfor.length,
     totalType,
   };

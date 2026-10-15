@@ -117,7 +117,7 @@ const hentForsideAuktioner = cache(async () => {
     .slice(0, ANTAL_KORT)
     .map(mapAuctionTilKort);
   // "Populær sælger" på kortene: ét samlet opslag for begge lister.
-  const markeret = await markerPopulaereSaelgere(supabase, [...slutterSnart, ...nyeste]);
+  const markeret = await markerPopulaereSaelgere([...slutterSnart, ...nyeste]);
   return { slutterSnart: markeret.slice(0, slutterSnart.length), nyeste: markeret.slice(slutterSnart.length) };
 });
 

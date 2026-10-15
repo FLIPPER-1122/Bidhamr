@@ -273,7 +273,7 @@ export default async function AuktionPage({
     // MitID kræves før første bud (BHV01) - budpanelet viser knappen i stedet.
     mitId && mitId !== auktion.bruger_id ? hentMitIdStatus(mitId) : Promise.resolve(null),
     // "Populær sælger" (mindst 50 gennemførte salg) - offentligt.
-    erPopulaerSaelger(supabase, auktion.bruger_id),
+    erPopulaerSaelger(auktion.bruger_id),
   ]);
   const erhvervAuktion = auktion.erhverv === true;
   const erFirmakonto = minKontoType === "erhverv";

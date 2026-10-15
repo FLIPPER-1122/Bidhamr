@@ -1,10 +1,13 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 
 // Den månedlige konkurrence - de rene regler (samme som databasen,
 // supabase/migrations/20261023020000_badge_konkurrence.sql). Kun til server
 // og tests (node:crypto).
 //
-// Lodtrækningen kan efterregnes af enhver ud fra den fastfrosne liste:
+// Seedet laves af databasen i samme transaktion som trækningen
+// (konkurrence_nyt_seed: 32 kryptografisk tilfældige bytes) og gemmes på
+// trækningen. Lodtrækningen kan efterregnes af enhver ud fra den fastfrosne
+// liste og det gemte seed:
 //   liste_hash = SHA-256("YYYY-MM" + for hver deltager sorteret efter
 //                bruger-id: "\n<bruger_id>:<antal_lod>")
 //   vinderlod  = (SHA-256(seed || liste_hash) som 256-bit heltal) mod N + 1
@@ -12,6 +15,9 @@ import { createHash, randomBytes } from "node:crypto";
 // næste a+1..a+b osv.). Hvert lod har samme chance.
 
 export const POPULAER_SAELGER_GRAENSE = 50;
+
+export const GRUNDE_NY_VINDER = ["svarer_ikke", "opfylder_ikke"] as const;
+export type GrundNyVinder = (typeof GRUNDE_NY_VINDER)[number];
 
 const MAANED = /^(\d{4})-(0[1-9]|1[0-2])$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -28,11 +34,6 @@ export function denneMaaned(nu = new Date()): string {
 export function forrigeMaaned(maaned: string): string {
   const [aar, md] = maaned.split("-").map(Number);
   return md === 1 ? `${aar - 1}-12` : `${aar}-${String(md - 1).padStart(2, "0")}`;
-}
-
-// 32 tilfældige bytes fra den kryptografiske generator (ikke Math.random).
-export function nytSeed(): string {
-  return randomBytes(32).toString("hex");
 }
 
 export type LodRaekke = { bruger_id: string; antal_lod: number };

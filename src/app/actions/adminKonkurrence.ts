@@ -4,15 +4,16 @@ import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { assertRole } from "@/lib/adminAuth";
 import { logDriftFejl } from "@/lib/drift";
-import { erMaaned, nytSeed } from "@/lib/konkurrence/regler";
+import { erMaaned, GRUNDE_NY_VINDER, type GrundNyVinder } from "@/lib/konkurrence/regler";
 import { KONKURRENCE_ADMIN } from "@/lib/tekster/konkurrence";
 
 // Admin → Konkurrence (KUN chef): træk månedens vinder og træk en ny vinder.
-// Rollen tjekkes her OG i databasen (konkurrence_er_chef). Seedet er 32
-// tilfældige bytes fra Node's kryptografiske generator (crypto.randomBytes),
-// og det gemmes sammen med den fastfrosne liste, så trækningen kan
-// efterregnes (20261023020000_badge_konkurrence.sql). Databasen sørger for,
-// at et dobbeltklik ikke giver to trækninger.
+// Rollen tjekkes her OG i databasen (konkurrence_er_chef). Seedet laves af
+// databasen i samme transaktion som trækningen (32 kryptografisk tilfældige
+// bytes) og gemmes sammen med den fastfrosne liste, så trækningen kan
+// efterregnes (20261023020000_badge_konkurrence.sql). Hverken chefen eller
+// serveren kan vælge det. Databasen sørger for, at et dobbeltklik ikke giver
+// to trækninger.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -31,7 +32,6 @@ export async function traekVinder(formData: FormData): Promise<Svar> {
     const { data, error } = await admin.rpc("konkurrence_traek", {
       p_chef: userId,
       p_maaned: maaned,
-      p_seed: nytSeed(),
     });
     if (error) throw new Error(`konkurrence_traek: ${error.code ?? "ukendt"} ${error.message}`);
     revalidatePath("/admin/konkurrence");
@@ -50,16 +50,16 @@ export async function traekNyVinder(formData: FormData): Promise<Svar> {
   try {
     const { userId, admin } = await assertRole("chef");
     const traekning = String(formData.get("traekning") ?? "");
+    const grund = String(formData.get("grund") ?? "") as GrundNyVinder;
     const begrundelse = String(formData.get("begrundelse") ?? "").trim();
     if (!UUID.test(traekning)) return { fejl: KONKURRENCE_ADMIN.koder.findes_ikke };
-    if (begrundelse.length < 10 || begrundelse.length > 2000) {
-      return { fejl: KONKURRENCE_ADMIN.koder.begrundelse_mangler };
-    }
+    if (!GRUNDE_NY_VINDER.includes(grund)) return { fejl: KONKURRENCE_ADMIN.koder.grund_mangler };
+    if (begrundelse.length > 2000) return { fejl: KONKURRENCE_ADMIN.koder.begrundelse_for_lang };
     const { data, error } = await admin.rpc("konkurrence_traek_igen", {
       p_chef: userId,
       p_traekning: traekning,
-      p_begrundelse: begrundelse,
-      p_seed: nytSeed(),
+      p_grund: grund,
+      p_begrundelse: begrundelse || null,
     });
     if (error) throw new Error(`konkurrence_traek_igen: ${error.code ?? "ukendt"} ${error.message}`);
     revalidatePath("/admin/konkurrence");

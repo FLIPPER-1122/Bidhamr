@@ -32,7 +32,9 @@ type Traekning = {
   vinder_id: string;
   vinder_navn: string | null;
   vinder_email: string | null;
+  grund: string | null;
   begrundelse: string | null;
+  svarfrist: string;
   erstattet_kl: string | null;
   erstattet_af_navn: string | null;
 };
@@ -45,6 +47,9 @@ type Oversigt = {
   udelukkede: Udelukket[];
   traekninger: Traekning[];
   gaeldende_id: string | null;
+  start_maaned: string | null;
+  max_nye_vindere: number;
+  svarfrist_dage: number;
 };
 type ListeRaekke = {
   bruger_id: string;
@@ -101,6 +106,9 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
   const fastfrosset = liste.some((r) => r.fastfrosset);
   const lodIalt = liste.reduce((s, r) => s + r.antal_lod, 0);
   const gaeldende = o.traekninger.find((t) => t.id === o.gaeldende_id) ?? null;
+  const foerStart = !o.start_maaned || maaned < o.start_maaned;
+  const nyeVindere = gaeldende ? gaeldende.nr - 1 : 0;
+  const loftNaaet = nyeVindere >= o.max_nye_vindere;
   const tidligereVindere = new Set(o.traekninger.filter((t) => t.erstattet_kl).map((t) => t.vinder_id));
 
   return (
@@ -112,13 +120,14 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
           <>
             <p>
               Lodtrækningen er vægtet: hver lod har samme chance, så en sælger med 6 lod har seks gange så stor chance
-              som en med 1. Når du trækker, fastfryses listen, og serveren laver et tilfældigt seed (32 bytes fra en
-              kryptografisk generator). Vinderloddet = SHA-256(seed + listens hash) modulo antal lod + 1. Tidspunkt,
+              som en med 1. Når du trækker, fastfryses listen, og databasen laver et tilfældigt seed (32 bytes fra
+              en kryptografisk generator) i samme transaktion. Vinderloddet = SHA-256(seed + listens hash) modulo antal lod + 1. Tidspunkt,
               hvem der trak, antal lod, hash, seed og vinder gemmes og kan ikke ændres.
             </p>
             <p>
               Svarer vinderen ikke, eller opfylder vinderen ikke betingelserne, kan du trække en ny vinder med en
-              begrundelse. Den trækkes på den samme fastfrosne liste uden de tidligere vindere.
+              grund. Den trækkes på den samme fastfrosne liste uden de tidligere vindere. &quot;Svarer ikke&quot; kan først
+              vælges, når svarfristen er udløbet, og der kan højst trækkes et fast antal nye vindere pr. måned.
             </p>
           </>
         }
@@ -153,7 +162,13 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
           ["Ikke med", o.udelukkede.length],
           [
             "Status",
-            gaeldende ? "Vinder trukket" : o.maaned_slut ? "Klar til lodtrækning" : "Måneden er i gang",
+            gaeldende
+              ? "Vinder trukket"
+              : foerStart
+                ? "Før konkurrencens start"
+                : o.maaned_slut
+                  ? "Klar til lodtrækning"
+                  : "Måneden er i gang",
           ],
         ].map(([t, n]) => (
           <div key={String(t)} className="rounded-xl border border-kant bg-white p-4">
@@ -179,23 +194,38 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
                 · lod nr. {gaeldende.vinder_lod} af {gaeldende.antal_lod}
               </span>
             </p>
+            <p className="text-tekst-daempet">
+              Svarfrist: {tidspunkt(gaeldende.svarfrist)} ({o.svarfrist_dage} dage efter trækningen). Nye vindere:{" "}
+              {nyeVindere} af højst {o.max_nye_vindere}.
+            </p>
+            {loftNaaet ? (
+              <p className="text-tekst-daempet">{KONKURRENCE_ADMIN.koder.loft_naaet}</p>
+            ) : (
             <ConfirmDialog
               triggerLabel="Træk ny vinder"
               title="Træk en ny vinder"
-              description={`${gaeldende.vinder_navn ?? "Vinderen"} tages ud, og der trækkes en ny vinder blandt de øvrige lod på den fastfrosne liste. Begrundelsen gemmes i loggen.`}
+              description={`${gaeldende.vinder_navn ?? "Vinderen"} tages ud, og der trækkes en ny vinder blandt de øvrige lod på den fastfrosne liste. Grunden gemmes i loggen.`}
               confirmLabel="Træk ny vinder"
               action={traekNyVinder}
               hiddenFields={{ traekning: gaeldende.id }}
+              valgField={{
+                name: "grund",
+                label: "Hvorfor?",
+                valg: Object.entries(KONKURRENCE_ADMIN.grundNyVinder).map(([value, label]) => ({ value, label })),
+              }}
               aarsagField={{
                 name: "begrundelse",
-                label: "Begrundelse",
-                placeholder: "Fx: Vinderen har ikke svaret inden for 14 dage.",
-                required: true,
+                label: "Uddybning (valgfri)",
+                placeholder: "Fx: Skrevet på mail og i beskeder, intet svar.",
+                required: false,
               }}
               kvittering="Der er trukket en ny vinder."
               kanIkkeFortrydes
             />
+            )}
           </div>
+        ) : foerStart ? (
+          <p className="mt-2 text-sm text-tekst-daempet">{KONKURRENCE_ADMIN.koder.foer_start}</p>
         ) : o.maaned_slut ? (
           liste.length === 0 ? (
             <p className="mt-2 text-sm text-tekst-daempet">{KONKURRENCE_ADMIN.koder.ingen_deltagere}</p>
@@ -253,7 +283,12 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
                   · lod nr. {t.vinder_lod} af {t.antal_lod} · {t.antal_deltagere} deltager
                   {t.antal_deltagere === 1 ? "" : "e"}
                 </p>
-                {t.begrundelse && <p className="mt-0.5 text-tekst-daempet">Begrundelse: {t.begrundelse}</p>}
+                {t.grund && (
+                  <p className="mt-0.5 text-tekst-daempet">
+                    Grund: {KONKURRENCE_ADMIN.grundNyVinder[t.grund] ?? t.grund}
+                    {t.begrundelse ? ` – ${t.begrundelse}` : ""}
+                  </p>
+                )}
                 <p className="mt-1 font-mono text-[11.5px] break-all text-tekst-svag">
                   Listens hash: {t.liste_hash}
                   <br />

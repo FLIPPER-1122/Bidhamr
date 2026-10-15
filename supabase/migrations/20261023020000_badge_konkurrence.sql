@@ -34,23 +34,32 @@
 -- (betingelserne: "når lodtrækningen sker").
 --
 -- LODTRÆKNINGEN (kun chef, Admin → Konkurrence):
---   - Kan først ske, når måneden er slut (dansk tid). Én trækning pr. måned;
---     et dobbeltklik giver den samme trækning tilbage.
+--   - Kan først ske, når måneden er slut (dansk tid), og kun for måneder fra
+--     og med konkurrence_start_maaned() (FORELØBIG '2026-11' - Filip
+--     bekræfter; null = der kan ikke trækkes). Én trækning pr. måned; et
+--     dobbeltklik giver den samme trækning tilbage.
 --   - Listen fastfryses i konkurrence_traekning_lod: deltagerne sorteres efter
 --     bruger-id, og hver får et sammenhængende lod-interval (1..N).
 --     liste_hash = SHA-256 af "YYYY-MM\n<bruger_id>:<antal>\n..." (sorteret).
---   - Seed = 32 tilfældige bytes fra serverens kryptografiske generator
---     (Node crypto.randomBytes - ikke Math.random), sendt ind som hex.
+--   - Seed = 32 tilfældige bytes, lavet AF DATABASEN i samme transaktion som
+--     trækningen (extensions.gen_random_bytes - pgcrypto; findes den ikke:
+--     SHA-256 af to gen_random_uuid(), som også bruger Postgres' stærke
+--     tilfældighed). Hverken chefen eller serveren kan vælge seedet.
 --   - Vinderlod = (SHA-256(seed || liste_hash) som 256-bit heltal) mod N + 1.
 --     Hvert lod har samme chance (skævheden er under N/2^256), så chancen er
 --     proportional med antal lod. Alt kan efterregnes ud fra den gemte liste,
---     hash og seed (konkurrence_lod_nr; samme regel i src/lib/konkurrence.ts).
---   - Ny vinder (vinderen svarer ikke / opfylder ikke betingelserne): kræver
---     begrundelse. Den gamle trækning markeres som erstattet (aldrig slettet),
---     og der trækkes på samme fastfrosne liste uden de tidligere vindere, med
---     nyt seed. Dobbeltklik giver ikke to nye vindere.
---   - Trækningerne og listerne kan ikke ændres eller slettes (triggere) og
---     kan kun læses af service role (chefen gennem serveren).
+--     hash og seed (konkurrence_lod_nr; samme regel i
+--     src/lib/konkurrence/regler.ts).
+--   - Ny vinder: grund 'svarer_ikke' (først når svarfristen på
+--     konkurrence_svarfrist_dage() = 14 dage efter trækningen er udløbet) eller
+--     'opfylder_ikke', plus valgfri fritekst. Højst
+--     konkurrence_max_nye_vindere() = 2 nye vindere pr. måned (FORELØBIG -
+--     Filip bekræfter), derefter 'loft_naaet'. Den gamle trækning markeres
+--     som erstattet (aldrig slettet), og der trækkes på samme fastfrosne liste
+--     uden de tidligere vindere, med nyt seed. Dobbeltklik giver ikke to nye
+--     vindere.
+--   - Trækningerne og listerne kan ikke ændres, slettes eller truncates
+--     (triggere) og kan kun læses af service role (chefen gennem serveren).
 --
 -- RETTIGHEDER: alle admin-funktioner er kun service role og tjekker, at
 -- p_chef er chef (serveren tjekker det også). Sælgeren ser kun sit eget
@@ -307,6 +316,37 @@ grant execute on function public.mine_konkurrence_lod() to authenticated, servic
 -- ===========================================================================
 -- 5. Lodtrækningen: fastfrosne lister og log
 -- ===========================================================================
+-- Konstanter. FORELØBIGE værdier (Filip bekræfter - ROADMAP-BESLUTNINGER,
+-- "Nye funktioner"): første måned med konkurrence, højst 2 nye vindere pr.
+-- måned og 14 dages svarfrist (konkurrencebetingelserne 7.2-7.3).
+-- konkurrence_start_maaned() = null betyder, at der slet ikke kan trækkes.
+create or replace function public.konkurrence_start_maaned()
+returns text
+language sql
+immutable
+set search_path = ''
+as $$ select '2026-11'::text $$;
+revoke all on function public.konkurrence_start_maaned() from public, anon, authenticated;
+grant execute on function public.konkurrence_start_maaned() to service_role;
+
+create or replace function public.konkurrence_max_nye_vindere()
+returns integer
+language sql
+immutable
+set search_path = ''
+as $$ select 2 $$;
+revoke all on function public.konkurrence_max_nye_vindere() from public, anon, authenticated;
+grant execute on function public.konkurrence_max_nye_vindere() to service_role;
+
+create or replace function public.konkurrence_svarfrist_dage()
+returns integer
+language sql
+immutable
+set search_path = ''
+as $$ select 14 $$;
+revoke all on function public.konkurrence_svarfrist_dage() from public, anon, authenticated;
+grant execute on function public.konkurrence_svarfrist_dage() to service_role;
+
 create table if not exists public.konkurrence_traekninger (
   id               uuid primary key default gen_random_uuid(),
   maaned           text not null,
@@ -319,6 +359,7 @@ create table if not exists public.konkurrence_traekninger (
   seed             text not null,
   vinder_lod       integer not null,
   vinder_id        uuid not null references public.users(id) on delete restrict,
+  grund            text,
   begrundelse      text,
   erstatter_id     uuid references public.konkurrence_traekninger(id) on delete restrict,
   erstattet_kl     timestamptz,
@@ -328,12 +369,17 @@ create table if not exists public.konkurrence_traekninger (
   constraint konkurrence_traekninger_antal_check check (antal_deltagere >= 1 and antal_lod >= antal_deltagere),
   constraint konkurrence_traekninger_hash_check check (liste_hash ~ '^[0-9a-f]{64}$' and seed ~ '^[0-9a-f]{64}$'),
   constraint konkurrence_traekninger_lod_check check (vinder_lod between 1 and antal_lod),
-  constraint konkurrence_traekninger_ny_check check (
-    (nr = 1 and erstatter_id is null and begrundelse is null)
-    or (nr > 1 and erstatter_id is not null and char_length(btrim(coalesce(begrundelse, ''))) between 10 and 2000)),
   constraint konkurrence_traekninger_erstattet_check check ((erstattet_kl is null) = (erstattet_af is null)),
   constraint konkurrence_traekninger_maaned_nr unique (maaned, nr)
 );
+-- (En tidligere udgave på testdatabasen havde ingen grund-kolonne og krævede
+-- fritekst på mindst 10 tegn.)
+alter table public.konkurrence_traekninger add column if not exists grund text;
+alter table public.konkurrence_traekninger drop constraint if exists konkurrence_traekninger_ny_check;
+alter table public.konkurrence_traekninger add constraint konkurrence_traekninger_ny_check check (
+  (nr = 1 and erstatter_id is null and grund is null and begrundelse is null)
+  or (nr > 1 and erstatter_id is not null and grund in ('svarer_ikke', 'opfylder_ikke')
+      and char_length(coalesce(begrundelse, '')) <= 2000));
 -- Højst én gældende (ikke erstattet) trækning pr. måned.
 create unique index if not exists konkurrence_traekninger_gaeldende
   on public.konkurrence_traekninger (maaned) where erstattet_kl is null;
@@ -371,9 +417,9 @@ grant select on table public.konkurrence_traekninger to service_role;
 grant select on table public.konkurrence_traekning_lod to service_role;
 
 comment on table public.konkurrence_traekninger is
-  'Log over lodtrækninger i den månedlige konkurrence (kun chef). Kan ikke ændres eller slettes - kun markeres som erstattet, når en ny vinder trækkes. Se 20261023020000_badge_konkurrence.sql.';
+  'Log over lodtrækninger i den månedlige konkurrence (kun chef). Kan ikke ændres, slettes eller truncates - kun markeres som erstattet, når en ny vinder trækkes. Se 20261023020000_badge_konkurrence.sql.';
 comment on table public.konkurrence_traekning_lod is
-  'Den fastfrosne deltagerliste for hver trækning: lod-interval pr. sælger. Kan ikke ændres eller slettes.';
+  'Den fastfrosne deltagerliste for hver trækning: lod-interval pr. sælger. Kan ikke ændres, slettes eller truncates.';
 
 -- Trækninger kan ikke slettes, og kun "erstattet" kan sættes (én gang).
 create or replace function public.konkurrence_traekning_laas()
@@ -382,7 +428,7 @@ language plpgsql
 set search_path = ''
 as $$
 begin
-  if tg_op = 'DELETE' then
+  if tg_op in ('DELETE', 'TRUNCATE') then
     raise exception 'En lodtrækning kan ikke slettes' using errcode = '42501';
   end if;
   if old.erstattet_kl is not null
@@ -399,6 +445,11 @@ create trigger konkurrence_traekninger_laas
   before update or delete on public.konkurrence_traekninger
   for each row execute function public.konkurrence_traekning_laas();
 
+drop trigger if exists konkurrence_traekninger_ingen_truncate on public.konkurrence_traekninger;
+create trigger konkurrence_traekninger_ingen_truncate
+  before truncate on public.konkurrence_traekninger
+  for each statement execute function public.konkurrence_traekning_laas();
+
 create or replace function public.konkurrence_lod_laas()
 returns trigger
 language plpgsql
@@ -413,6 +464,11 @@ drop trigger if exists konkurrence_traekning_lod_laas on public.konkurrence_trae
 create trigger konkurrence_traekning_lod_laas
   before update or delete on public.konkurrence_traekning_lod
   for each row execute function public.konkurrence_lod_laas();
+
+drop trigger if exists konkurrence_traekning_lod_ingen_truncate on public.konkurrence_traekning_lod;
+create trigger konkurrence_traekning_lod_ingen_truncate
+  before truncate on public.konkurrence_traekning_lod
+  for each statement execute function public.konkurrence_lod_laas();
 
 -- Vinderloddet: (SHA-256(seed || liste_hash) som 256-bit heltal) mod N + 1.
 -- Ren funktion, så enhver kan efterregne trækningen.
@@ -437,6 +493,29 @@ begin
 end $$;
 revoke all on function public.konkurrence_lod_nr(text, text, integer) from public, anon, authenticated;
 grant execute on function public.konkurrence_lod_nr(text, text, integer) to service_role;
+
+-- Seedet: 32 kryptografisk tilfældige bytes, lavet her i databasen i samme
+-- transaktion som trækningen. pgcrypto (extensions.gen_random_bytes) hos
+-- Supabase; ellers SHA-256 af to gen_random_uuid() (244 tilfældige bit fra
+-- Postgres' stærke generator). Internt - ingen grants.
+create or replace function public.konkurrence_nyt_seed()
+returns text
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v text;
+begin
+  if to_regprocedure('extensions.gen_random_bytes(integer)') is not null then
+    execute 'select encode(extensions.gen_random_bytes(32), ''hex'')' into v;
+  else
+    v := encode(sha256(convert_to(gen_random_uuid()::text || gen_random_uuid()::text, 'UTF8')), 'hex');
+  end if;
+  return v;
+end $$;
+revoke all on function public.konkurrence_nyt_seed() from public, anon, authenticated, service_role;
 
 -- SHA-256 af den fastfrosne liste ("YYYY-MM\n<bruger_id>:<antal>\n...",
 -- sorteret efter bruger-id).
@@ -470,11 +549,16 @@ $$;
 revoke all on function public.konkurrence_er_chef(uuid) from public, anon, authenticated;
 grant execute on function public.konkurrence_er_chef(uuid) to service_role;
 
--- Fælles: træk vinderen på en allerede indsat (fastfrosset) liste og gem
--- trækningen. Internt - kaldes kun af konkurrence_traek/_traek_igen.
+-- Tidligere udgaver (kun testdatabasen) tog seedet som parameter.
+drop function if exists public.konkurrence_gem_traekning(uuid, text, integer, uuid, text, text, uuid);
+drop function if exists public.konkurrence_traek(uuid, text, text);
+drop function if exists public.konkurrence_traek_igen(uuid, uuid, text, text);
+
+-- Fælles: lav seedet, træk vinderen på en allerede indsat (fastfrosset) liste
+-- og gem trækningen. Internt - kaldes kun af konkurrence_traek/_traek_igen.
 create or replace function public.konkurrence_gem_traekning(
-  p_id uuid, p_maaned text, p_nr integer, p_chef uuid, p_seed text,
-  p_begrundelse text, p_erstatter uuid)
+  p_id uuid, p_maaned text, p_nr integer, p_chef uuid,
+  p_grund text, p_begrundelse text, p_erstatter uuid)
 returns jsonb
 language plpgsql
 security definer
@@ -484,6 +568,7 @@ declare
   v_deltagere integer;
   v_lod       integer;
   v_hash      text;
+  v_seed      text := public.konkurrence_nyt_seed();
   v_nr        integer;
   v_vinder    uuid;
 begin
@@ -493,7 +578,7 @@ begin
     raise exception 'Tom liste';
   end if;
   v_hash := public.konkurrence_liste_hash(p_id, p_maaned);
-  v_nr := public.konkurrence_lod_nr(p_seed, v_hash, v_lod);
+  v_nr := public.konkurrence_lod_nr(v_seed, v_hash, v_lod);
   select l.bruger_id into v_vinder
     from public.konkurrence_traekning_lod l
    where l.traekning_id = p_id and v_nr between l.foerste_lod and l.sidste_lod;
@@ -502,19 +587,21 @@ begin
   end if;
   insert into public.konkurrence_traekninger
     (id, maaned, nr, trukket_af, antal_deltagere, antal_lod, liste_hash, seed, vinder_lod, vinder_id,
-     begrundelse, erstatter_id)
+     grund, begrundelse, erstatter_id)
   values
-    (p_id, p_maaned, p_nr, p_chef, v_deltagere, v_lod, v_hash, p_seed, v_nr, v_vinder,
-     nullif(btrim(coalesce(p_begrundelse, '')), ''), p_erstatter);
+    (p_id, p_maaned, p_nr, p_chef, v_deltagere, v_lod, v_hash, v_seed, v_nr, v_vinder,
+     p_grund, nullif(btrim(coalesce(p_begrundelse, '')), ''), p_erstatter);
   return jsonb_build_object('kode', 'ok', 'traekning_id', p_id, 'nr', p_nr, 'vinder_id', v_vinder,
                             'vinder_lod', v_nr, 'antal_lod', v_lod, 'antal_deltagere', v_deltagere,
-                            'liste_hash', v_hash);
+                            'liste_hash', v_hash, 'seed', v_seed);
 end $$;
-revoke all on function public.konkurrence_gem_traekning(uuid, text, integer, uuid, text, text, uuid) from public, anon, authenticated;
+revoke all on function public.konkurrence_gem_traekning(uuid, text, integer, uuid, text, text, uuid)
+  from public, anon, authenticated, service_role;
 
--- Træk månedens vinder (første gang). Kun chef, kun efter månedens slut.
--- Findes der allerede en trækning for måneden: { kode: 'findes' } (ingen ny).
-create or replace function public.konkurrence_traek(p_chef uuid, p_maaned text, p_seed text)
+-- Træk månedens vinder (første gang). Kun chef, kun efter månedens slut og
+-- fra startmåneden. Findes der allerede en trækning for måneden:
+-- { kode: 'findes' } (ingen ny).
+create or replace function public.konkurrence_traek(p_chef uuid, p_maaned text)
 returns jsonb
 language plpgsql
 security definer
@@ -533,8 +620,8 @@ begin
   if v_fra is null then
     return jsonb_build_object('kode', 'ugyldig_maaned');
   end if;
-  if p_seed is null or p_seed !~ '^[0-9a-f]{64}$' then
-    return jsonb_build_object('kode', 'ugyldigt_seed');
+  if public.konkurrence_start_maaned() is null or p_maaned < public.konkurrence_start_maaned() then
+    return jsonb_build_object('kode', 'foer_start');
   end if;
   if p_maaned >= public.konkurrence_denne_maaned() then
     return jsonb_build_object('kode', 'maaned_ikke_slut');
@@ -560,18 +647,19 @@ begin
     return jsonb_build_object('kode', 'ingen_deltagere');
   end if;
 
-  return public.konkurrence_gem_traekning(v_id, p_maaned, 1, p_chef, p_seed, null, null);
+  return public.konkurrence_gem_traekning(v_id, p_maaned, 1, p_chef, null, null, null);
 end $$;
-revoke all on function public.konkurrence_traek(uuid, text, text) from public, anon, authenticated;
-grant execute on function public.konkurrence_traek(uuid, text, text) to service_role;
+revoke all on function public.konkurrence_traek(uuid, text) from public, anon, authenticated;
+grant execute on function public.konkurrence_traek(uuid, text) to service_role;
 
--- Træk en ny vinder (den gældende vinder svarer ikke eller opfylder ikke
--- betingelserne). Kræver begrundelse (10-2000 tegn). Trækker på samme
--- fastfrosne liste uden de tidligere vindere. p_traekning = den gældende
--- trækning, der erstattes; er den allerede erstattet (dobbeltklik), sker
--- intet: { kode: 'allerede_erstattet' }.
+-- Træk en ny vinder. p_grund: 'svarer_ikke' (kun når svarfristen efter den
+-- gældende trækning er udløbet) eller 'opfylder_ikke'; p_begrundelse er
+-- valgfri fritekst (højst 2000 tegn). Højst konkurrence_max_nye_vindere()
+-- nye vindere pr. måned. Trækker på samme fastfrosne liste uden de tidligere
+-- vindere. p_traekning = den gældende trækning, der erstattes; er den
+-- allerede erstattet (dobbeltklik), sker intet: { kode: 'allerede_erstattet' }.
 create or replace function public.konkurrence_traek_igen(
-  p_chef uuid, p_traekning uuid, p_begrundelse text, p_seed text)
+  p_chef uuid, p_traekning uuid, p_grund text, p_begrundelse text)
 returns jsonb
 language plpgsql
 security definer
@@ -585,11 +673,11 @@ begin
   if not public.konkurrence_er_chef(p_chef) then
     return jsonb_build_object('kode', 'ingen_adgang');
   end if;
-  if char_length(btrim(coalesce(p_begrundelse, ''))) not between 10 and 2000 then
-    return jsonb_build_object('kode', 'begrundelse_mangler');
+  if p_grund is null or p_grund not in ('svarer_ikke', 'opfylder_ikke') then
+    return jsonb_build_object('kode', 'grund_mangler');
   end if;
-  if p_seed is null or p_seed !~ '^[0-9a-f]{64}$' then
-    return jsonb_build_object('kode', 'ugyldigt_seed');
+  if char_length(coalesce(p_begrundelse, '')) > 2000 then
+    return jsonb_build_object('kode', 'begrundelse_for_lang');
   end if;
   select t.* into v_gl from public.konkurrence_traekninger t where t.id = p_traekning;
   if not found then
@@ -601,6 +689,15 @@ begin
     return jsonb_build_object('kode', 'allerede_erstattet',
       'traekning_id', (select t.id from public.konkurrence_traekninger t
                         where t.maaned = v_gl.maaned and t.erstattet_kl is null));
+  end if;
+  -- nr 1 = første vinder; nr - 1 = antal nye vindere indtil nu.
+  if v_gl.nr - 1 >= public.konkurrence_max_nye_vindere() then
+    return jsonb_build_object('kode', 'loft_naaet');
+  end if;
+  if p_grund = 'svarer_ikke'
+     and now() < v_gl.trukket_kl + make_interval(days => public.konkurrence_svarfrist_dage()) then
+    return jsonb_build_object('kode', 'svarfrist_ikke_udloebet',
+      'svarfrist', v_gl.trukket_kl + make_interval(days => public.konkurrence_svarfrist_dage()));
   end if;
 
   -- Samme liste uden den hidtidige vinder (de tidligere vindere er allerede
@@ -620,7 +717,7 @@ begin
      set erstattet_kl = now(), erstattet_af = p_chef
    where id = v_gl.id and erstattet_kl is null;
 
-  return public.konkurrence_gem_traekning(v_id, v_gl.maaned, v_gl.nr + 1, p_chef, p_seed, p_begrundelse, v_gl.id);
+  return public.konkurrence_gem_traekning(v_id, v_gl.maaned, v_gl.nr + 1, p_chef, p_grund, p_begrundelse, v_gl.id);
 end $$;
 revoke all on function public.konkurrence_traek_igen(uuid, uuid, text, text) from public, anon, authenticated;
 grant execute on function public.konkurrence_traek_igen(uuid, uuid, text, text) to service_role;
@@ -678,7 +775,8 @@ begin
                  'antal_deltagere', t.antal_deltagere, 'antal_lod', t.antal_lod,
                  'liste_hash', t.liste_hash, 'seed', t.seed, 'vinder_lod', t.vinder_lod,
                  'vinder_id', t.vinder_id, 'vinder_navn', uv.navn, 'vinder_email', uv.email,
-                 'begrundelse', t.begrundelse, 'erstatter_id', t.erstatter_id,
+                 'grund', t.grund, 'begrundelse', t.begrundelse, 'erstatter_id', t.erstatter_id,
+                 'svarfrist', t.trukket_kl + make_interval(days => public.konkurrence_svarfrist_dage()),
                  'erstattet_kl', t.erstattet_kl, 'erstattet_af_navn', ue.navn)
                  order by t.nr desc)
           from public.konkurrence_traekninger t
@@ -686,7 +784,10 @@ begin
           left join public.users uv on uv.id = t.vinder_id
           left join public.users ue on ue.id = t.erstattet_af
          where t.maaned = p_maaned), '[]'::jsonb),
-      'gaeldende_id', v_gaeldende));
+      'gaeldende_id', v_gaeldende,
+      'start_maaned', public.konkurrence_start_maaned(),
+      'max_nye_vindere', public.konkurrence_max_nye_vindere(),
+      'svarfrist_dage', public.konkurrence_svarfrist_dage()));
 end $$;
 revoke all on function public.konkurrence_admin_oversigt(uuid, text) from public, anon, authenticated;
 grant execute on function public.konkurrence_admin_oversigt(uuid, text) to service_role;

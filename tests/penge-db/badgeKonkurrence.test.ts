@@ -10,11 +10,14 @@
 //   hash og vinderlod kan efterregnes (src/lib/konkurrence/regler.ts), ny
 //   vinder kræver begrundelse og udelukker den gamle, intet kan ændres
 // - trækningen er vægtet efter antal lod
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { konkurrenceCsv, listeHash, lodNr, nytSeed, vinderAf } from "@/lib/konkurrence/regler";
+import { konkurrenceCsv, listeHash, lodNr, vinderAf } from "@/lib/konkurrence/regler";
+
+const tilfaeldigHex = () => randomBytes(32).toString("hex");
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261023020000_badge_konkurrence.sql"),
@@ -149,8 +152,10 @@ describe("migrationen", () => {
              has_function_privilege('authenticated', 'public.gennemfoerte_salg(timestamptz,timestamptz,uuid)', 'execute') as auth_salg,
              has_function_privilege('authenticated', 'public.konkurrence_lod_beregn(timestamptz,timestamptz,uuid)', 'execute') as auth_beregn,
              has_function_privilege('authenticated', 'public.konkurrence_admin_oversigt(uuid,text)', 'execute') as auth_oversigt,
-             has_function_privilege('authenticated', 'public.konkurrence_traek(uuid,text,text)', 'execute') as auth_traek,
-             has_function_privilege('service_role', 'public.konkurrence_traek(uuid,text,text)', 'execute') as sr_traek,
+             has_function_privilege('authenticated', 'public.konkurrence_traek(uuid,text)', 'execute') as auth_traek,
+             has_function_privilege('service_role', 'public.konkurrence_traek(uuid,text)', 'execute') as sr_traek,
+             has_function_privilege('service_role', 'public.konkurrence_nyt_seed()', 'execute') as sr_seed,
+             to_regprocedure('public.konkurrence_traek(uuid,text,text)') is null as gammel_traek_vaek,
              has_function_privilege('service_role', 'public.konkurrence_gem_traekning(uuid,text,integer,uuid,text,text,uuid)', 'execute') as sr_gem,
              has_table_privilege('authenticated', 'public.konkurrence_traekninger', 'select') as auth_sel,
              has_table_privilege('anon', 'public.konkurrence_traekning_lod', 'select') as anon_lod,
@@ -167,6 +172,8 @@ describe("migrationen", () => {
       auth_oversigt: false,
       auth_traek: false,
       sr_traek: true,
+      sr_seed: false,
+      gammel_traek_vaek: true,
       sr_gem: false,
       auth_sel: false,
       anon_lod: false,
@@ -371,18 +378,27 @@ describe("lodtrækningen", () => {
     await db.query(`update public.users set suspenderet = true where id = $1`, [pause]);
   });
 
-  const traek = (chef: string, maaned: string, seed: string) =>
-    j(`select public.konkurrence_traek($1, $2, $3) as v`, [chef, maaned, seed]);
-  const igen = (chef: string, id: string, begrundelse: string, seed: string) =>
-    j(`select public.konkurrence_traek_igen($1, $2, $3, $4) as v`, [chef, id, begrundelse, seed]);
+  const traek = (chef: string, maaned: string) =>
+    j(`select public.konkurrence_traek($1, $2) as v`, [chef, maaned]);
+  const igen = (chef: string, id: string, grund: string, begrundelse: string | null = null) =>
+    j(`select public.konkurrence_traek_igen($1, $2, $3, $4) as v`, [chef, id, grund, begrundelse]);
 
-  it("kun chef, kun gyldigt seed og kun afsluttede måneder", async () => {
-    expect(await traek(ADMIN, MAANED, nytSeed())).toEqual({ kode: "ingen_adgang" });
-    expect(await traek(CHEF, MAANED, "abc")).toEqual({ kode: "ugyldigt_seed" });
-    expect(await traek(CHEF, "2026-13", nytSeed())).toEqual({ kode: "ugyldig_maaned" });
+  it("kun chef, kun fra startmåneden og kun afsluttede måneder", async () => {
+    expect((await en<{ m: string }>(`select public.konkurrence_start_maaned() as m`)).m).toBe("2026-11");
+    expect((await en<{ m: number }>(`select public.konkurrence_max_nye_vindere() as m`)).m).toBe(2);
+    expect((await en<{ m: number }>(`select public.konkurrence_svarfrist_dage() as m`)).m).toBe(14);
+    expect(await traek(ADMIN, MAANED)).toEqual({ kode: "ingen_adgang" });
+    expect(await traek(CHEF, "2026-13")).toEqual({ kode: "ugyldig_maaned" });
+    // Juni 2026 er før den foreløbige startmåned (november 2026).
+    expect(await traek(CHEF, MAANED)).toEqual({ kode: "foer_start" });
+
+    // Resten af testene trækker i juni: startmåneden flyttes til januar 2026.
+    await db.exec(`create or replace function public.konkurrence_start_maaned() returns text language sql immutable
+                   set search_path = '' as $$ select '2026-01'::text $$`);
+    expect(await traek(CHEF, "2025-12")).toEqual({ kode: "foer_start" });
     const denne = (await en<{ m: string }>(`select public.konkurrence_denne_maaned() as m`)).m;
-    expect(await traek(CHEF, denne, nytSeed())).toEqual({ kode: "maaned_ikke_slut" });
-    expect(await traek(CHEF, "2025-01", nytSeed())).toEqual({ kode: "ingen_deltagere" });
+    expect(await traek(CHEF, denne)).toEqual({ kode: "maaned_ikke_slut" });
+    expect(await traek(CHEF, "2026-02")).toEqual({ kode: "ingen_deltagere" });
     const o = await j(`select public.konkurrence_admin_oversigt($1, $2) as v`, [ADMIN, MAANED]);
     expect(o).toEqual({ kode: "ingen_adgang" });
   });
@@ -391,6 +407,7 @@ describe("lodtrækningen", () => {
     const o = await j(`select public.konkurrence_admin_oversigt($1, $2) as v`, [CHEF, MAANED]);
     expect(o.kode).toBe("ok");
     expect(o.maaned_slut).toBe(true);
+    expect(o).toMatchObject({ start_maaned: "2026-01", max_nye_vindere: 2, svarfrist_dage: 14 });
     expect(o.deltagere).toEqual([
       { bruger_id: C, navn: "Carl", antal_lod: 6 },
       { bruger_id: B, navn: "Bo", antal_lod: 3 },
@@ -401,20 +418,26 @@ describe("lodtrækningen", () => {
     expect(o.traekninger).toEqual([]);
   });
 
-  it("trækker, fastfryser listen og kan efterregnes; dobbeltklik giver samme trækning", async () => {
-    const seed = nytSeed();
-    const r = await traek(CHEF, MAANED, seed);
+  it("trækker med seed fra databasen, fastfryser listen og kan efterregnes; dobbeltklik giver samme trækning", async () => {
+    const r = await traek(CHEF, MAANED);
     expect(r.kode).toBe("ok");
     expect(r.antal_lod).toBe(10);
     expect(r.antal_deltagere).toBe(3);
+    expect(r.seed).toMatch(/^[0-9a-f]{64}$/);
     const liste = [
       { bruger_id: A, antal_lod: 1 },
       { bruger_id: B, antal_lod: 3 },
       { bruger_id: C, antal_lod: 6 },
     ];
     expect(r.liste_hash).toBe(listeHash(MAANED, liste));
-    expect(r.vinder_lod).toBe(lodNr(seed, r.liste_hash as string, 10));
-    expect(r.vinder_id).toBe(vinderAf(liste, r.vinder_lod as number));
+    // Efterregning fra det gemte seed og listens hash.
+    const gemt = await en<{ seed: string; liste_hash: string; vinder_lod: number; vinder_id: string }>(
+      `select seed, liste_hash, vinder_lod, vinder_id from public.konkurrence_traekninger where id = $1`,
+      [r.traekning_id],
+    );
+    expect(gemt.seed).toBe(r.seed);
+    expect(gemt.vinder_lod).toBe(lodNr(gemt.seed, gemt.liste_hash, 10));
+    expect(gemt.vinder_id).toBe(vinderAf(liste, gemt.vinder_lod));
 
     // Fastfrosset: et nyt salg ændrer ikke listen.
     await salg(A, { frigivet: FRIGIVET });
@@ -428,7 +451,7 @@ describe("lodtrækningen", () => {
     expect(rows[0].foerste_lod).toBe(1);
     expect(rows[rows.length - 1].sidste_lod).toBe(10);
 
-    const igenR = await traek(CHEF, MAANED, nytSeed());
+    const igenR = await traek(CHEF, MAANED);
     expect(igenR).toEqual({ kode: "findes", traekning_id: r.traekning_id });
     const n = await en<{ n: number }>(`select count(*)::int as n from public.konkurrence_traekninger where maaned = $1`, [MAANED]);
     expect(n.n).toBe(1);
@@ -439,14 +462,16 @@ describe("lodtrækningen", () => {
     expect(csv).toContain(";'=Navn;");
   });
 
-  it("ny vinder: kræver begrundelse, udelukker den gamle vinder og logges", async () => {
+  it("ny vinder: fast grund, svarfrist, udelukker den gamle vinder, loft og log", async () => {
     const o = await j(`select public.konkurrence_admin_oversigt($1, $2) as v`, [CHEF, MAANED]);
     const foerste = (o.traekninger as { id: string; vinder_id: string }[])[0];
-    expect(await igen(CHEF, foerste.id, "kort", nytSeed())).toEqual({ kode: "begrundelse_mangler" });
-    expect(await igen(ADMIN, foerste.id, "Vinderen svarede ikke inden 14 dage", nytSeed())).toEqual({ kode: "ingen_adgang" });
+    expect(await igen(CHEF, foerste.id, "andet")).toEqual({ kode: "grund_mangler" });
+    expect(await igen(CHEF, foerste.id, "opfylder_ikke", "x".repeat(2001))).toEqual({ kode: "begrundelse_for_lang" });
+    expect(await igen(ADMIN, foerste.id, "opfylder_ikke")).toEqual({ kode: "ingen_adgang" });
+    // Svarfristen på 14 dage er ikke udløbet.
+    expect((await igen(CHEF, foerste.id, "svarer_ikke")).kode).toBe("svarfrist_ikke_udloebet");
 
-    const seed = nytSeed();
-    const r = await igen(CHEF, foerste.id, "Vinderen svarede ikke inden 14 dage", seed);
+    const r = await igen(CHEF, foerste.id, "opfylder_ikke", "Bor i samme husstand som en medarbejder");
     expect(r.kode).toBe("ok");
     expect(r.nr).toBe(2);
     expect(r.vinder_id).not.toBe(foerste.vinder_id);
@@ -458,48 +483,64 @@ describe("lodtrækningen", () => {
     const lodIalt = rest.reduce((s, x) => s + x.antal_lod, 0);
     expect(r.antal_lod).toBe(lodIalt);
     expect(r.liste_hash).toBe(listeHash(MAANED, rest));
-    expect(r.vinder_lod).toBe(lodNr(seed, r.liste_hash as string, lodIalt));
+    expect(r.vinder_lod).toBe(lodNr(r.seed as string, r.liste_hash as string, lodIalt));
     expect(r.vinder_id).toBe(vinderAf(rest, r.vinder_lod as number));
 
     // Dobbeltklik på den gamle: ingen ny vinder.
-    const dobbelt = await igen(CHEF, foerste.id, "Vinderen svarede ikke inden 14 dage", nytSeed());
+    const dobbelt = await igen(CHEF, foerste.id, "opfylder_ikke");
     expect(dobbelt).toEqual({ kode: "allerede_erstattet", traekning_id: r.traekning_id });
 
     const o2 = await j(`select public.konkurrence_admin_oversigt($1, $2) as v`, [CHEF, MAANED]);
     const t = o2.traekninger as Record<string, unknown>[];
     expect(t.map((x) => x.nr)).toEqual([2, 1]);
-    expect(t[0]).toMatchObject({ begrundelse: "Vinderen svarede ikke inden 14 dage", erstatter_id: foerste.id, erstattet_kl: null, trukket_af_navn: "Chefen" });
+    expect(t[0]).toMatchObject({
+      grund: "opfylder_ikke",
+      begrundelse: "Bor i samme husstand som en medarbejder",
+      erstatter_id: foerste.id,
+      erstattet_kl: null,
+      trukket_af_navn: "Chefen",
+    });
     expect(t[1].erstattet_kl).not.toBeNull();
     expect(t[1].erstattet_af_navn).toBe("Chefen");
     expect(o2.gaeldende_id).toBe(r.traekning_id);
 
-    // Til sidst er der ingen flere at trække.
-    let gaeldende = r.traekning_id as string;
-    for (let i = 0; i < 5; i++) {
-      const x = await igen(CHEF, gaeldende, "Vinderen svarede heller ikke", nytSeed());
-      if (x.kode === "ingen_flere") break;
-      expect(x.kode).toBe("ok");
-      gaeldende = x.traekning_id as string;
-    }
-    expect(await igen(CHEF, gaeldende, "Vinderen svarede heller ikke", nytSeed())).toEqual({ kode: "ingen_flere" });
+    // Svarfristen udløbet (trækningen flyttes 15 dage tilbage, kun i testen):
+    // "svarer ikke" virker, uden fritekst.
+    await db.exec(`alter table public.konkurrence_traekninger disable trigger konkurrence_traekninger_laas`);
+    await db.query(`update public.konkurrence_traekninger set trukket_kl = now() - interval '15 days' where id = $1`, [r.traekning_id]);
+    await db.exec(`alter table public.konkurrence_traekninger enable trigger konkurrence_traekninger_laas`);
+    const r3 = await igen(CHEF, r.traekning_id as string, "svarer_ikke");
+    expect(r3).toMatchObject({ kode: "ok", nr: 3 });
+
+    // Loftet: højst 2 nye vindere pr. måned.
+    expect(await igen(CHEF, r3.traekning_id as string, "opfylder_ikke")).toEqual({ kode: "loft_naaet" });
+
+    // Med et højere loft: til sidst er der ingen flere at trække.
+    await db.exec(`create or replace function public.konkurrence_max_nye_vindere() returns integer language sql immutable
+                   set search_path = '' as $$ select 10 $$`);
+    expect(await igen(CHEF, r3.traekning_id as string, "opfylder_ikke")).toEqual({ kode: "ingen_flere" });
     // "ingen_flere" erstatter ikke den gældende.
     const g = await en<{ id: string }>(`select id from public.konkurrence_traekninger where maaned = $1 and erstattet_kl is null`, [MAANED]);
-    expect(g.id).toBe(gaeldende);
+    expect(g.id).toBe(r3.traekning_id);
+    await db.exec(`create or replace function public.konkurrence_max_nye_vindere() returns integer language sql immutable
+                   set search_path = '' as $$ select 2 $$`);
   });
 
-  it("trækninger og lister kan ikke ændres eller slettes", async () => {
+  it("trækninger og lister kan ikke ændres, slettes eller truncates", async () => {
     await expect(db.query(`update public.konkurrence_traekninger set vinder_lod = 1 where maaned = $1`, [MAANED])).rejects.toThrow(/kan ikke ændres/);
     await expect(db.query(`delete from public.konkurrence_traekninger where maaned = $1`, [MAANED])).rejects.toThrow(/kan ikke slettes/);
     await expect(db.query(`update public.konkurrence_traekning_lod set antal_lod = 99`)).rejects.toThrow(/kan ikke ændres/);
     await expect(db.query(`delete from public.konkurrence_traekning_lod`)).rejects.toThrow(/kan ikke ændres/);
+    await expect(db.query(`truncate public.konkurrence_traekning_lod`)).rejects.toThrow(/kan ikke ændres/);
+    await expect(db.query(`truncate public.konkurrence_traekninger cascade`)).rejects.toThrow(/kan ikke/);
   });
 });
 
 describe("vægtning", () => {
   it("databasen og koden giver samme vinderlod", async () => {
     for (let i = 0; i < 50; i++) {
-      const seed = nytSeed();
-      const hash = nytSeed();
+      const seed = tilfaeldigHex();
+      const hash = tilfaeldigHex();
       const n = 1 + (i * 7919) % 1000;
       const r = await en<{ v: number }>(`select public.konkurrence_lod_nr($1, $2, $3) as v`, [seed, hash, n]);
       expect(r.v).toBe(lodNr(seed, hash, n));
@@ -516,7 +557,7 @@ describe("vægtning", () => {
     const ANTAL = 20_000;
     const vundet = new Map<string, number>();
     for (let i = 0; i < ANTAL; i++) {
-      const v = vinderAf(liste, lodNr(nytSeed(), hash, 10))!;
+      const v = vinderAf(liste, lodNr(tilfaeldigHex(), hash, 10))!;
       vundet.set(v, (vundet.get(v) ?? 0) + 1);
     }
     // Forventet 10 %, 30 %, 60 % (± 1,5 procentpoint - over 6 standardafvigelser).
@@ -535,9 +576,9 @@ describe("vægtning", () => {
     for (const r of rows) expect(Math.abs(r.n / 5000 - 0.1)).toBeLessThan(0.025);
   });
 
-  it("seed er 32 tilfældige bytes i hex", () => {
-    const a = nytSeed();
-    expect(a).toMatch(/^[0-9a-f]{64}$/);
-    expect(nytSeed()).not.toBe(a);
+  it("databasens seed er 32 tilfældige bytes i hex og nyt hver gang", async () => {
+    const { rows } = await db.query<{ s: string }>(`select public.konkurrence_nyt_seed() as s from generate_series(1, 20)`);
+    for (const r of rows) expect(r.s).toMatch(/^[0-9a-f]{64}$/);
+    expect(new Set(rows.map((r) => r.s)).size).toBe(20);
   });
 });

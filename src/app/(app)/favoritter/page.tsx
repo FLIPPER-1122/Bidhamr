@@ -56,7 +56,6 @@ export default async function FavoritterSide() {
   // ligger på favoritlisten. RLS skjuler arkiverede for alle andre end
   // parterne; her fjernes de også for parterne.
   const auktioner = await markerPopulaereSaelgere(
-    supabase,
     (data ?? [])
       .map((f) => f.auctions)
       .filter((a): a is NonNullable<FavoritRow["auctions"]> => !!a && !a.skjult && !a.arkiveret_kl)

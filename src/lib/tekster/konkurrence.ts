@@ -57,14 +57,21 @@ export const KONKURRENCE_ADMIN = {
   koder: {
     ingen_adgang: "Kun chefen kan trække en vinder.",
     ugyldig_maaned: "Vælg en gyldig måned.",
-    ugyldigt_seed: "Lodtrækningen kunne ikke startes. Prøv igen.",
+    foer_start: "Konkurrencen var ikke startet i den måned, så der kan ikke trækkes en vinder.",
     maaned_ikke_slut: "Måneden er ikke slut endnu. Vinderen kan først trækkes, når måneden er slut.",
     ingen_deltagere: "Der er ingen deltagere i måneden, så der trækkes ingen vinder.",
     findes: "Der er allerede trukket en vinder for måneden.",
-    begrundelse_mangler: "Skriv en begrundelse på mindst 10 tegn.",
+    grund_mangler: "Vælg, hvorfor der skal trækkes en ny vinder.",
+    begrundelse_for_lang: "Uddybningen må højst være 2.000 tegn.",
+    loft_naaet: "Der er allerede trukket det højeste antal nye vindere for måneden.",
+    svarfrist_ikke_udloebet: "Vinderens svarfrist er ikke udløbet endnu. Vælg \"Vinderen opfylder ikke betingelserne\", hvis det er grunden.",
     findes_ikke: "Lodtrækningen findes ikke.",
     allerede_erstattet: "Der er allerede trukket en ny vinder.",
     ingen_flere: "Der er ingen andre deltagere at trække blandt.",
+  } as Record<string, string>,
+  grundNyVinder: {
+    svarer_ikke: "Vinderen har ikke svaret inden fristen",
+    opfylder_ikke: "Vinderen opfylder ikke betingelserne",
   } as Record<string, string>,
   generisk: "Noget gik galt. Prøv igen, eller kontakt en udvikler.",
 };
