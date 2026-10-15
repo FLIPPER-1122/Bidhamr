@@ -573,8 +573,12 @@ describe("webhook: statuskoder (fælles for DAO, GLS og PostNord)", () => {
 });
 
 describe("adapterens egenskaber", () => {
-  it("tre transportører, manuel efterlysning, ingen sporing at hente", async () => {
+  it("DAO og PostNord (GLS kun med SHIPMONDO_GLS_AKTIV=true), manuel efterlysning, ingen sporing at hente", async () => {
+    delete process.env.SHIPMONDO_GLS_AKTIV;
+    expect(shipmondoFirma.transportoerer).toEqual(["dao", "postnord"]);
+    process.env.SHIPMONDO_GLS_AKTIV = "true";
     expect(shipmondoFirma.transportoerer).toEqual(["dao", "gls", "postnord"]);
+    delete process.env.SHIPMONDO_GLS_AKTIV;
     expect(shipmondoFirma.efterlysningUdenApi).toBe(true);
     expect(await shipmondoFirma.hentSporing("x")).toEqual([]);
   });
