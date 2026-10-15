@@ -120,7 +120,15 @@ export const KONKURRENCE_ADMIN = {
     opfylder_ikke: "Vinderen opfylder ikke betingelserne",
   } as Record<string, string>,
   // Den automatiske besked til vinderen (src/lib/konkurrence/vinderBesked.ts).
-  vinderBeskedSendt: "Vinderen har automatisk fået besked på mail og i en samtale med BidHamr.",
+  vinderSamtaleFindes: "Vinderen har en samtale med BidHamr, hvor vinderen svarer.",
+  // Mailens faktiske status (notifikation_afsendelser).
+  vinderMail: {
+    sendt: "Mail til vinderen: sendt.",
+    fejl: "Mail til vinderen: kunne ikke sendes. Skriv selv til vinderen.",
+    i_gang: "Mail til vinderen: er ved at blive sendt. Opdatér siden om lidt.",
+    ikke_sendt: "Mail til vinderen: ikke sendt endnu.",
+    ukendt: "Mail til vinderen: status kunne ikke hentes.",
+  } as Record<string, string>,
   vinderBeskedMangler:
     "Vinderen har ikke fået en samtale med BidHamr. Send beskeden igen, eller skriv selv til vinderen.",
   vinderSamtale: "Se samtalen med vinderen",

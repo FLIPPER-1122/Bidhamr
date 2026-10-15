@@ -69,6 +69,7 @@ import {
   FragtFejl,
   FragtUkendtUdfald,
   FRAGT_IKKE_SAT_OP,
+  GLS_LUKKET,
   UKENDT_UDFALD_TEKST,
   erLeveringsmaade,
   erSporingsType,
@@ -275,8 +276,8 @@ export async function hentFragtpriser(): Promise<Fragtpris[]> {
 // ------------------------------------------------------------ pakkeshops
 
 // GLS er slået fra, indtil Shipmondo har svaret (SHIPMONDO_GLS_AKTIV, se
-// shipmondoGlsAktiv i shipmondo.ts).
-export const GLS_LUKKET = "GLS kan ikke vælges lige nu. Vælg DAO eller PostNord.";
+// shipmondoGlsAktiv i shipmondo.ts). Teksten står i types.ts.
+export { GLS_LUKKET };
 
 // Transportøren fra klienten: kun en af dem, køberen kan vælge nu
 // (adapterens transportoerer - Shipmondo uden GLS, medmindre GLS er slået

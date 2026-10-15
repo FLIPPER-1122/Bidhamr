@@ -12,11 +12,17 @@ import "server-only";
 //      dig"), så appen kender den allerede.
 //
 // Idempotent - præcis én besked pr. vinder (pr. trækning):
-//   - samtalen: findes der allerede en samtale om trækningen, genbruges den,
-//     og der skrives ikke igen,
+//   - samtalen: åbnes UDEN besked (staff_chat_aabn med p_besked = null).
+//     Kun det kald, der faktisk oprettede samtalen (kode 'ok'), skriver
+//     beskeden (staff_chat_send). Kører to kald samtidig, får det, der taber
+//     på det unikke indeks, 'findes' og skriver intet - så vinderen aldrig
+//     får chatbeskeden to gange. Findes samtalen allerede, genbruges den.
 //   - notifikation og mail: nøglen konkurrence_vinder:<trækning> claimes i
 //     notifikation_afsendelser, før noget sendes (send() i
 //     src/lib/notifikationer/send.ts) - samme nøgle sendes aldrig to gange.
+//   - "Send besked til vinderen" efter en fejl: åbnes samtalen først nu (den
+//     første besked gik ud uden samtale), sendes en notifikation om samtalen
+//     med sin egen nøgle konkurrence_vinder_chat:<samtale>.
 // Ingen vinder (ingen deltagere = ingen trækning) eller en erstattet
 // trækning: intet sendes.
 //
@@ -36,6 +42,9 @@ type Admin = ReturnType<typeof createAdminClient>;
 
 // staff_samtaler.sag_type for samtalen med vinderen.
 export const KONKURRENCE_CHAT_TYPE = "konkurrence";
+
+export const vinderNoegle = (traekningId: string) => `konkurrence_vinder:${traekningId}`;
+export const vinderChatNoegle = (samtaleId: string) => `konkurrence_vinder_chat:${samtaleId}`;
 
 export type VinderBeskedSvar =
   | { status: "sendt"; samtaleId: string | null; mail: boolean; klokke: boolean }
@@ -65,6 +74,32 @@ export async function vinderSamtale(admin: Admin, traekningId: string): Promise<
   return data?.id ?? null;
 }
 
+// Mailens faktiske status (notifikation_afsendelser) til Admin → Konkurrence:
+//   "sendt"     mailen er sendt (første besked eller beskeden om samtalen)
+//   "fejl"      afsendelsen er afsluttet, men mailen blev ikke sendt
+//   "i_gang"    nøglen er claimet, men afsendelsen er ikke meldt færdig
+//   "ikke_sendt" ingen afsendelse fundet
+//   "ukendt"    status kunne ikke læses
+export type VinderMailStatus = "sendt" | "fejl" | "i_gang" | "ikke_sendt" | "ukendt";
+
+export async function vinderMailStatus(
+  admin: Admin,
+  traekningId: string,
+  samtaleId: string | null,
+): Promise<VinderMailStatus> {
+  const noegler = [vinderNoegle(traekningId), ...(samtaleId ? [vinderChatNoegle(samtaleId)] : [])];
+  const { data, error } = await admin
+    .from("notifikation_afsendelser")
+    .select("status, kanaler")
+    .in("noegle", noegler);
+  if (error) return "ukendt";
+  const raekker = (data ?? []) as { status: string | null; kanaler: Record<string, string> | null }[];
+  if (raekker.length === 0) return "ikke_sendt";
+  if (raekker.some((r) => r.kanaler?.mail === "sendt")) return "sendt";
+  if (raekker.some((r) => r.status === "claimet" || r.status === null)) return "i_gang";
+  return "fejl";
+}
+
 export async function giVinderBesked(admin: Admin, chefId: string, traekningId: string): Promise<VinderBeskedSvar> {
   const fejl = async (hvad: string, err: unknown): Promise<VinderBeskedSvar> => {
     await logDriftFejl({
@@ -90,6 +125,8 @@ export async function giVinderBesked(admin: Admin, chefId: string, traekningId: 
 
     // 1. Samtalen, hvor vinderen svarer (kun én pr. trækning).
     let samtaleId: string | null = null;
+    // true = samtalen blev oprettet af netop dette kald.
+    let nySamtale = false;
     const fundet = await vinderSamtale(admin, t.id);
     if (fundet === "fejl") return await fejl("samtale-opslag", "staff_samtaler kunne ikke læses");
     if (fundet) {
@@ -102,11 +139,13 @@ export async function giVinderBesked(admin: Admin, chefId: string, traekningId: 
         p_trade: null,
         p_sag_type: KONKURRENCE_CHAT_TYPE,
         p_sag_id: t.id,
-        p_besked: KONKURRENCE_VINDER.chat(t.maaned, frist),
+        // Ingen besked her: 'findes' (et samtidigt kald vandt) må ikke skrive igen.
+        p_besked: null,
       });
       const svar = aabn as { kode?: string; samtale_id?: string } | null;
       if (!aFejl && (svar?.kode === "ok" || svar?.kode === "findes") && svar.samtale_id) {
         samtaleId = svar.samtale_id;
+        nySamtale = svar.kode === "ok";
       } else {
         // Uden samtale får vinderen stadig besked - og svarer på mail.
         await logDriftFejl({
@@ -117,25 +156,47 @@ export async function giVinderBesked(admin: Admin, chefId: string, traekningId: 
         });
       }
     }
+    // Kun den, der oprettede samtalen, skriver beskeden.
+    if (samtaleId && nySamtale) {
+      const { data: s, error: sFejl } = await admin.rpc("staff_chat_send", {
+        p_medarbejder: chefId,
+        p_samtale: samtaleId,
+        p_tekst: KONKURRENCE_VINDER.chat(t.maaned, frist),
+      });
+      if (sFejl || (s as { kode?: string } | null)?.kode !== "ok") {
+        await logDriftFejl({
+          kilde: "server",
+          sti: "/admin/konkurrence",
+          hvor: "Konkurrence: beskeden til vinderen kunne ikke skrives i samtalen",
+          fejl: sFejl ?? `staff_chat_send: ${(s as { kode?: string } | null)?.kode ?? "intet svar"}`,
+        });
+      }
+    }
 
     // 2. Notifikation og mail - præcis én gang pr. trækning.
-    const link = samtaleId ? staffSamtaleSti(samtaleId) : "/kontakt";
-    const r = await send(
-      t.vinder_id,
-      "sag",
-      {
-        titel: KONKURRENCE_VINDER.titel,
-        tekst: samtaleId
-          ? KONKURRENCE_VINDER.notifikation(t.maaned, frist)
-          : KONKURRENCE_VINDER.notifikationKontakt(t.maaned, frist),
-        link,
-        // Kun id'er, vinderen selv har adgang til.
-        data: samtaleId ? { staff_samtale_id: samtaleId } : {},
-        mail: konkurrenceVinderMail({ maaned: t.maaned, frist, link: samtaleId ? link : null }),
-        noegle: `konkurrence_vinder:${t.id}`,
-      },
-      { altidMail: true },
-    );
+    const besked = (noegle: string) => {
+      const link = samtaleId ? staffSamtaleSti(samtaleId) : "/kontakt";
+      return send(
+        t.vinder_id!,
+        "sag",
+        {
+          titel: KONKURRENCE_VINDER.titel,
+          tekst: samtaleId
+            ? KONKURRENCE_VINDER.notifikation(t.maaned, frist)
+            : KONKURRENCE_VINDER.notifikationKontakt(t.maaned, frist),
+          link,
+          // Kun id'er, vinderen selv har adgang til.
+          data: samtaleId ? { staff_samtale_id: samtaleId } : {},
+          mail: konkurrenceVinderMail({ maaned: t.maaned, frist, link: samtaleId ? link : null }),
+          noegle,
+        },
+        { altidMail: true },
+      );
+    };
+    let r = await besked(vinderNoegle(t.id));
+    // Den første besked er sendt før (uden samtale), og samtalen er åbnet nu:
+    // vinderen får besked om samtalen med sin egen nøgle.
+    if (r.dublet && samtaleId && nySamtale) r = await besked(vinderChatNoegle(samtaleId));
     if (r.dublet) return { status: "allerede", samtaleId };
     if (!r.mail && !r.klokke && !r.push) {
       return await fejl("notifikation", r.sprunget ? "nøglen kunne ikke claimes" : "ingen kanal blev sendt");

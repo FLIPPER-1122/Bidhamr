@@ -11,7 +11,9 @@
 > GLS vises ikke i `checkout.transportoerer` (hjemmesiden og appen), pakkeshop-søgning og `levering`/`betal`
 > med `transportoer: "gls"` afvises med "GLS kan ikke vælges lige nu. Vælg DAO eller PostNord.", og
 > `handel_gem_levering` afviser GLS med koden `gls_lukket`, medmindre serveren sender `gls_aktiv: true`
-> (migration `20261024020000_fragt_gls_slaaet_fra.sql`). Forsendelser, der allerede er lavet med GLS
+> (migration `20261024020000_fragt_gls_slaaet_fra.sql`). En GLS-levering, der blev gemt før, men ikke er betalt,
+> afvises ved betaling (`sikrPaymentIntent`, også `/api/betaling/app/betal`) med samme tekst og `kode: "vaelg_levering"`,
+> så køberen vælger levering igen (medmindre labelen allerede er lavet). Forsendelser, der allerede er lavet med GLS
 > (labels, sporing, webhooks og retur), virker videre – også søgning efter indleveringssteder til retur.
 
 Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md afsnit 2

@@ -22,7 +22,7 @@ vi.mock("@/lib/notifikationer/send", () => ({
 }));
 vi.mock("@/lib/drift", () => ({ logDriftFejl: vi.fn(async () => "ny") }));
 
-import { giVinderBesked, svarfrist, vinderSamtale } from "@/lib/konkurrence/vinderBesked";
+import { giVinderBesked, svarfrist, vinderMailStatus, vinderSamtale } from "@/lib/konkurrence/vinderBesked";
 import { mailTidspunkt } from "@/lib/mails/konto";
 import { logDriftFejl } from "@/lib/drift";
 
@@ -36,6 +36,9 @@ let traekninger: Traekning[] = [];
 let samtaler: { id: string; sag_type: string; sag_id: string; bruger_id: string; besked: string }[] = [];
 let aabnKald = 0;
 let aabnFejler = false;
+// Et samtidigt kald har vundet på det unikke indeks: staff_chat_aabn svarer 'findes'.
+let andetKaldVandt = false;
+let afsendelser: { noegle: string; status: string; kanaler: Record<string, string> }[] = [];
 
 function kaede(tabel: string) {
   const filtre: [string, unknown][] = [];
@@ -46,6 +49,10 @@ function kaede(tabel: string) {
   q.eq = (k: string, v: unknown) => {
     filtre.push([k, v]);
     return q;
+  };
+  q.in = (k: string, v: unknown[]) => {
+    const data = afsendelser.filter((a) => v.includes((a as Record<string, unknown>)[k]));
+    return Promise.resolve({ data, error: null });
   };
   q.maybeSingle = async () => {
     const kilde: Record<string, unknown>[] = tabel === "konkurrence_traekninger" ? traekninger : tabel === "staff_samtaler" ? samtaler : [];
@@ -58,16 +65,25 @@ function kaede(tabel: string) {
 const admin = {
   from: (tabel: string) => kaede(tabel),
   rpc: async (fn: string, args: Record<string, unknown>) => {
+    if (fn === "staff_chat_send") {
+      const s = samtaler.find((x) => x.id === args.p_samtale);
+      if (!s) return { data: { kode: "ikke_fundet" }, error: null };
+      s.besked += String(args.p_tekst);
+      return { data: { kode: "ok", besked_id: "b1" }, error: null };
+    }
     if (fn !== "staff_chat_aabn") return { data: null, error: { message: `ukendt ${fn}` } };
     aabnKald += 1;
+    // Beskeden må aldrig sendes med, når samtalen åbnes (findes-grenen ville sende igen).
+    expect(args.p_besked).toBeNull();
     if (aabnFejler) return { data: { kode: "ugyldig_bruger" }, error: null };
     const id = `00000000-0000-4000-8000-00000000c${String(aabnKald).padStart(3, "0")}`;
+    if (andetKaldVandt) return { data: { kode: "findes", samtale_id: id }, error: null };
     samtaler.push({
       id,
       sag_type: String(args.p_sag_type),
       sag_id: String(args.p_sag_id),
       bruger_id: String(args.p_bruger),
-      besked: String(args.p_besked),
+      besked: "",
     });
     return { data: { kode: "ok", samtale_id: id }, error: null };
   },
@@ -80,6 +96,8 @@ beforeEach(() => {
   samtaler = [];
   aabnKald = 0;
   aabnFejler = false;
+  andetKaldVandt = false;
+  afsendelser = [];
   vi.mocked(logDriftFejl).mockClear();
 });
 
@@ -160,5 +178,42 @@ describe("besked til vinderen", () => {
     expect(await vinderSamtale(admin, T1)).toBeNull();
     await giVinderBesked(admin, CHEF, T1);
     expect(await vinderSamtale(admin, T1)).toBe(samtaler[0].id);
+  });
+
+  it("samtidigt kald: den, der taber på det unikke indeks ('findes'), skriver ikke beskeden", async () => {
+    andetKaldVandt = true;
+    claimede.add(`konkurrence_vinder:${T1}`); // det andet kald har sendt notifikationen
+    const r = await giVinderBesked(admin, CHEF, T1);
+    expect(r.status).toBe("allerede");
+    expect(samtaler).toHaveLength(0); // ingen staff_chat_send
+    expect(sendKald).toHaveLength(0);
+  });
+
+  it("send igen efter fejl: samtalen åbnes nu, svaret er sendt, og vinderen får besked om samtalen med egen nøgle", async () => {
+    aabnFejler = true;
+    await giVinderBesked(admin, CHEF, T1);
+    expect(sendKald).toHaveLength(1);
+    aabnFejler = false;
+    const r = await giVinderBesked(admin, CHEF, T1);
+    expect(r).toMatchObject({ status: "sendt" });
+    expect(samtaler).toHaveLength(1);
+    expect(samtaler[0].besked).toContain(frist);
+    expect(sendKald).toHaveLength(2);
+    expect(sendKald[1].input.noegle).toBe(`konkurrence_vinder_chat:${samtaler[0].id}`);
+    expect(sendKald[1].input.link).toBe(`/beskeder/bidhamr/${samtaler[0].id}`);
+    // Tredje gang: intet nyt.
+    expect((await giVinderBesked(admin, CHEF, T1)).status).toBe("allerede");
+    expect(sendKald).toHaveLength(2);
+  });
+
+  it("mailens status læses fra notifikation_afsendelser", async () => {
+    expect(await vinderMailStatus(admin, T1, null)).toBe("ikke_sendt");
+    afsendelser = [{ noegle: `konkurrence_vinder:${T1}`, status: "claimet", kanaler: {} }];
+    expect(await vinderMailStatus(admin, T1, null)).toBe("i_gang");
+    afsendelser = [{ noegle: `konkurrence_vinder:${T1}`, status: "delvis", kanaler: { klokke: "sendt", mail: "fejl" } }];
+    expect(await vinderMailStatus(admin, T1, null)).toBe("fejl");
+    afsendelser.push({ noegle: "konkurrence_vinder_chat:S1", status: "sendt", kanaler: { mail: "sendt" } });
+    expect(await vinderMailStatus(admin, T1, null)).toBe("fejl");
+    expect(await vinderMailStatus(admin, T1, "S1")).toBe("sendt");
   });
 });

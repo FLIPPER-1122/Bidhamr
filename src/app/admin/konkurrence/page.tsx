@@ -3,7 +3,7 @@ import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { sendVinderBesked, traekNyVinder, traekVinder } from "@/app/actions/adminKonkurrence";
-import { vinderSamtale } from "@/lib/konkurrence/vinderBesked";
+import { vinderMailStatus, vinderSamtale } from "@/lib/konkurrence/vinderBesked";
 import { denneMaaned, erMaaned, forrigeMaaned } from "@/lib/konkurrence/regler";
 import { KONKURRENCE_ADMIN, maanedNavn } from "@/lib/tekster/konkurrence";
 
@@ -113,6 +113,10 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
   const tidligereVindere = new Set(o.traekninger.filter((t) => t.erstattet_kl).map((t) => t.vinder_id));
   // Samtalen med den gældende vinder (åbnes automatisk ved trækningen).
   const samtale = gaeldende ? await vinderSamtale(admin, gaeldende.id) : null;
+  // Mailens faktiske status (notifikation_afsendelser), ikke bare om samtalen findes.
+  const mailStatus = gaeldende
+    ? await vinderMailStatus(admin, gaeldende.id, samtale && samtale !== "fejl" ? samtale : null)
+    : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
@@ -201,9 +205,14 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
               Svarfrist: {tidspunkt(gaeldende.svarfrist)} ({o.svarfrist_dage} dage efter trækningen). Nye vindere:{" "}
               {nyeVindere} af højst {o.max_nye_vindere}.
             </p>
+            {mailStatus && (
+              <p role={mailStatus === "sendt" ? undefined : "status"} className={mailStatus === "sendt" ? "text-tekst-daempet" : "text-tekst"}>
+                {KONKURRENCE_ADMIN.vinderMail[mailStatus]}
+              </p>
+            )}
             {samtale && samtale !== "fejl" ? (
               <p className="text-tekst-daempet">
-                {KONKURRENCE_ADMIN.vinderBeskedSendt}{" "}
+                {KONKURRENCE_ADMIN.vinderSamtaleFindes}{" "}
                 <Link href={`/admin/chats/${samtale}`} className={LINK}>
                   {KONKURRENCE_ADMIN.vinderSamtale}
                 </Link>
