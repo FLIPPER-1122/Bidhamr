@@ -32,12 +32,20 @@ export function erVilkaarFejl(code: string | null | undefined, message?: string 
   return code === VILKAAR_FEJLKODE || (message ?? "").includes("vilkaar_mangler");
 }
 
+export function erVilkaarVersion(v: unknown): v is string {
+  return typeof v === "string" && /^\d{1,3}\.\d{1,3}$/.test(v);
+}
+
 // true, hvis den accepterede version er mindst den aktuelle ("0.1" < "0.2" < "1.0").
 // NULL eller en ukendt værdi = ikke accepteret. SKAL give samme svar som
 // public.vilkaar_er_accepteret i databasen.
-export function vilkaarErAccepteret(version: string | null | undefined): boolean {
-  if (!version || !/^\d{1,3}\.\d{1,3}$/.test(version)) return false;
+// aktuel: databasens aktuelle version (mine_vilkaar().aktuel_version), så
+// vinduet følger databasen, uanset om migrationen eller koden kom først.
+// VILKAAR_VERSION bruges kun, hvis databasen ikke har svaret.
+export function vilkaarErAccepteret(version: string | null | undefined, aktuel: string = VILKAAR_VERSION): boolean {
+  if (!erVilkaarVersion(version)) return false;
+  const mod = erVilkaarVersion(aktuel) ? aktuel : VILKAAR_VERSION;
   const [a1, a2] = version.split(".").map(Number);
-  const [b1, b2] = VILKAAR_VERSION.split(".").map(Number);
+  const [b1, b2] = mod.split(".").map(Number);
   return a1 > b1 || (a1 === b1 && a2 >= b2);
 }

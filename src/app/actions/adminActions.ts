@@ -342,7 +342,7 @@ async function auktionIndgreb(
   // Skjult/fjernet/stoppet for kunst: kontrollen er afgjort.
   if (f.regel === "kunst") {
     try {
-      await saetKunstKontrol(admin, auktionId, ["afventer"], "afvist");
+      await saetKunstKontrol(admin, auktionId, ["afventer", "godkendt"], "afvist");
     } catch (err) {
       console.error("Kunst-kontrol kunne ikke opdateres:", err);
     }
@@ -598,11 +598,23 @@ async function rapportMarkerBehandletImpl(formData: FormData): Promise<void> {
   }
 
   const rapport = await hentRapport(admin, rapportId);
-  // Kunst: "Ikke kunst" gør auktionen synlig, og der kan bydes.
   if (rapport.category === "kunst") {
-    await saetKunstKontrol(admin, rapport.auction_id, ["afventer"], "godkendt");
+    // "Ikke kunst": anmeldelsen lukkes og auktionen godkendes i én
+    // transaktion i databasen (kunst_ikke_kunst, 20261023010000), så den
+    // aldrig står lukket, mens auktionen stadig er skjult - eller omvendt.
+    if (note.length > 2000) throw new BrugerFejl("Noten er for lang (højst 2000 tegn).");
+    const { data, error } = await admin.rpc("kunst_ikke_kunst", {
+      p_staff: staffId,
+      p_rapport: rapportId,
+      p_note: note,
+    });
+    if (error) throw new Error(error.message);
+    const kode = (data as { kode?: string } | null)?.kode;
+    if (kode === "ingen_adgang") throw new BrugerFejl("Du har ikke adgang til at afgøre anmeldelsen.");
+    if (kode !== "ok" && kode !== "allerede") throw new Error(`kunst_ikke_kunst returnerede ${kode ?? "intet"}`);
+  } else {
+    await afslutRapport(admin, staffId, rapportId, "behandlet", note);
   }
-  await afslutRapport(admin, staffId, rapportId, "behandlet", note);
   revalidatePath("/admin/rapporter");
   revalidatePath("/admin/opklarede-rapporter");
   revalidatePath("/admin/auktioner");
@@ -646,7 +658,7 @@ async function rapportIndgreb(
   // Skjult/fjernet for kunst: kontrollen er afgjort, og skjult styrer nu
   // synligheden (så "Vis igen"/medhold virker som altid).
   if (rapport.category === "kunst" || f.regel === "kunst") {
-    await saetKunstKontrol(admin, rapport.auction_id, ["afventer"], "afvist");
+    await saetKunstKontrol(admin, rapport.auction_id, ["afventer", "godkendt"], "afvist");
   }
 
   await afslutRapport(
@@ -1145,6 +1157,29 @@ export async function cancelAuction(formData: FormData) {
 
 export async function hideAuction(formData: FormData) {
   return koer("hideAuction", () => hideAuctionImpl(formData));
+}
+
+// "Tjek aktive auktioner for kunst" (kun admin/chef): kører ordlisten på de
+// aktive auktioner, der ikke er tjekket, og sætter de fundne til staff-tjek
+// med en anmeldelse (kunst_tjek_aktive, 20261023010000). Kører aldrig af sig
+// selv. Svarer med antallet, så siden kan vise det.
+async function kunstTjekAktiveImpl(): Promise<{ ok: true; tjekket: number; fundet: number }> {
+  const { admin, userId: staffId } = await assertRole("admin");
+  const { data, error } = await admin.rpc("kunst_tjek_aktive", { p_staff: staffId });
+  if (error) throw new Error(error.message);
+  const r = (data ?? {}) as { kode?: string; tjekket?: number; fundet?: number };
+  if (r.kode === "ingen_adgang") throw new BrugerFejl("Kun admin og chef kan tjekke auktionerne for kunst.");
+  if (r.kode !== "ok") throw new Error(`kunst_tjek_aktive returnerede ${r.kode ?? "intet"}`);
+  // De fundne får hver en automatisk anmeldelse (Admin -> Anmeldelser), hvor
+  // afgørelsen logges som altid.
+  revalidatePath("/admin/auktioner");
+  revalidatePath("/admin/rapporter");
+  return { ok: true, tjekket: r.tjekket ?? 0, fundet: r.fundet ?? 0 };
+}
+
+export async function kunstTjekAktive(_formData: FormData) {
+  void _formData;
+  return koer("kunstTjekAktive", () => kunstTjekAktiveImpl());
 }
 
 export async function unhideAuction(formData: FormData) {

@@ -463,6 +463,8 @@ async function slutterSnart(admin: Admin): Promise<number> {
     .select("id, titel, bruger_id")
     .eq("status", "aktiv")
     .eq("skjult", false)
+    // Ikke auktioner, der afventer kunst-kontrol (20261023010000_kunst_forbudt.sql).
+    .or("kunst_kontrol.is.null,kunst_kontrol.neq.afventer")
     .gt("slutter_kl", new Date(nu).toISOString())
     .lte("slutter_kl", new Date(nu + TIME).toISOString())
     .limit(MAKS);
@@ -503,6 +505,8 @@ async function nyAuktionFraFulgt(admin: Admin, start: Date): Promise<number> {
     .select("id, titel, bruger_id, oprettet")
     .eq("status", "aktiv")
     .eq("skjult", false)
+    // Afventer kunst-kontrol: først, når staff har godkendt (inden for 24 timer).
+    .or("kunst_kontrol.is.null,kunst_kontrol.neq.afventer")
     .gte("oprettet", fraTid(start, 24))
     .order("oprettet", { ascending: false })
     .limit(MAKS);

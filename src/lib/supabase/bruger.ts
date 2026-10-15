@@ -12,6 +12,7 @@ import "server-only";
 import { cache } from "react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { VILKAAR_VERSION, erVilkaarVersion } from "@/lib/vilkaar";
 
 // Valideret hos Supabase Auth (getUser - ikke getSession/getClaims), fordi
 // sider og actions bruger id'et til opslag med service-role.
@@ -64,15 +65,21 @@ export const hentKontoFelter = cache(async (brugerId: string): Promise<KontoFelt
 // direkte (ingen select-grant, 20261009050000_vilkaar_accept.sql), så den
 // hentes via mine_vilkaar(), der udleder brugeren af auth.uid(). null, hvis
 // opslaget fejler eller brugeren ikke har en profil.
-export const hentMineVilkaar = cache(async (): Promise<{ version: string | null } | null> => {
+// aktuel: databasens aktuelle version (vilkaar_aktuel_version()) - den, der
+// vises og accepteres. VILKAAR_VERSION er kun en reserve, hvis feltet mangler.
+export const hentMineVilkaar = cache(async (): Promise<{ version: string | null; aktuel: string } | null> => {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("mine_vilkaar");
   if (error) {
     console.error("mine_vilkaar fejlede:", error.message);
     return null;
   }
-  const raekke = ((data ?? []) as { version: string | null }[])[0];
-  return raekke ? { version: raekke.version ?? null } : null;
+  const raekke = ((data ?? []) as { version: string | null; aktuel_version?: string | null }[])[0];
+  if (!raekke) return null;
+  return {
+    version: raekke.version ?? null,
+    aktuel: erVilkaarVersion(raekke.aktuel_version) ? raekke.aktuel_version : VILKAAR_VERSION,
+  };
 });
 
 // Kontotypen ('privat' | 'erhverv'). null, hvis opslaget fejler.

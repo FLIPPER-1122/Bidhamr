@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getStaffRole, harMindstRolle } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { deleteAuction, cancelAuction, hideAuction, unhideAuction } from "@/app/actions/adminActions";
+import { deleteAuction, cancelAuction, hideAuction, unhideAuction, kunstTjekAktive } from "@/app/actions/adminActions";
 import AdminSearchInput from "@/components/admin/AdminSearchInput";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
@@ -178,7 +178,22 @@ export default async function AdminAuktioner({
       <AdminSideHoved
         titel="Auktioner"
         forklaring="Alle auktioner på BidHamr. Brug siden, når du skal finde, skjule eller vise en bestemt auktion."
-        hoejre={<span className="text-sm text-tekst-svag">{auctions?.length ?? 0} resultater</span>}
+        hoejre={
+          <span className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-tekst-svag">{auctions?.length ?? 0} resultater</span>
+            {/* Kun admin/chef (siden kræver admin). Kører aldrig af sig selv. */}
+            <ConfirmDialog
+              triggerLabel="Tjek aktive auktioner for kunst"
+              triggerClassName="btn btn-sekundaer btn-lille"
+              title="Tjek alle aktive auktioner for kunst?"
+              description="Ordlisten for kunst køres på de aktive auktioner, der ikke er tjekket. De, der ligner kunst, bliver skjult for andre, kan ikke bydes på og kommer under Anmeldelser, hvor du afgør dem. Sælgerne får ingen besked."
+              confirmLabel="Ja, tjek auktionerne"
+              action={kunstTjekAktive}
+              hiddenFields={{}}
+              kvittering="Auktionerne er tjekket – de fundne står under Anmeldelser"
+            />
+          </span>
+        }
       />
 
       {(laengePause?.length ?? 0) > 0 && (

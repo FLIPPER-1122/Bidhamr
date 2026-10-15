@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
     // Auktionen bestemmer afsender og tekst - intet fra klienten bruges.
     const { data: auktion } = await supabase
       .from("auctions")
-      .select("id, titel, bruger_id, status, skjult, oprettet")
+      .select("id, titel, bruger_id, status, skjult, oprettet, kunst_kontrol")
       .eq("id", auktionId)
       .maybeSingle();
 
@@ -114,6 +114,9 @@ Deno.serve(async (req) => {
     if (
       auktion.status !== "aktiv" ||
       auktion.skjult === true ||
+      // Afventer kunst-kontrol (20261023010000_kunst_forbudt.sql): følgerne får
+      // besked fra cron (nyAuktionFraFulgt), når staff har godkendt den.
+      auktion.kunst_kontrol === "afventer" ||
       Number.isNaN(oprettet.getTime()) ||
       Date.now() - oprettet.getTime() > MAKS_ALDER_MS
     ) {

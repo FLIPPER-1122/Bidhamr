@@ -43,13 +43,23 @@
 -- 6. Brugerbetingelser: vilkaar_aktuel_version() 0.1 -> 0.2 (kunst er en
 --    forbudt vare). Alle eksisterende brugere skal acceptere igen (vinduet
 --    ved næste besøg, og bud/maksimum/nye auktioner afvises med BHV02,
---    indtil de har). HOLD SYNKRON med VILKAAR_VERSION i src/lib/vilkaar.ts.
---    Hjemmesiden skal deployes lige efter migrationen (den gamle kode sender
---    0.1 og får "Brugerbetingelserne er blevet opdateret").
+--    indtil de har). Hjemmesiden læser den aktuelle version fra databasen
+--    (mine_vilkaar().aktuel_version), så rækkefølgen af migration og deploy
+--    er ligegyldig. vilkaar_aktuel_version og vilkaar_er_accepteret er nu
+--    stable (ikke immutable).
+-- 6b. Staff: dsa_afgoerelser_kunst (skjul/fjern med reglen 'kunst' ->
+--    'afvist'), kunst_ikke_kunst (luk anmeldelse + godkend i én
+--    transaktion), kunst_tjek_aktive ("Tjek aktive auktioner for kunst",
+--    kun admin/chef, aldrig automatisk). Alle kun for service_role.
 -- 7. Ingen kategori må hedde noget med kunst (der findes ingen i dag).
 --
+-- Notifikationer (cron nyAuktionFraFulgt og slutterSnart, edge-funktionen
+-- notificer-foelgere) filtrerer 'afventer' fra i koden.
+-- gemte_soegninger_find_nye findes ikke længere (20261016010000).
+--
 -- Kan køres flere gange (if not exists, create or replace, flettede checks,
--- md5-drift-tjek). Én transaktion. md5 = normaliseret krop (CR og
+-- md5-drift-tjek). Ingen eksplicit begin/commit: filen sendes samlet og kører
+-- som én transaktion (som de øvrige migrationer). md5 = normaliseret krop (CR og
 -- kommentarer fjernet, al whitespace fjernet, små bogstaver) som
 -- 20261020020000. "gammel" = prod og test før denne migration (hentet med
 -- SELECT 15. okt. 2026), "ny" = efter. Policyerne tjekkes på samme måde
@@ -57,8 +67,6 @@
 -- Køres først på testdatabasen (pjiigmzqwlfepxnjdvug). Produktion kræver
 -- Filips "ja".
 -- =============================================================================
-
-begin;
 
 set local lock_timeout = '5s';
 
@@ -185,7 +193,11 @@ select pg_temp.drift_tjek('public.forbudte_varer()', '26f66c209eafd8851d51bc524a
 select pg_temp.drift_tjek('public.dsa_regler()', '3c089e00118b314b50a3b2fcdc988c8d', '020c8c1d1a545e9588430c1b2898721f');
 select pg_temp.drift_tjek('public.dsa_anmeldelse_opret(uuid,text,uuid,text,text,text,text,text,boolean)',
                           '10671a6ecac0d9faaae0518587047ff9', 'ab9150038013a607a91e708f57252322');
+-- vilkaar_aktuel_version: gammel = 0.1 (prod), ny = 0.2. Den tidligere udgave
+-- af denne migration (0.2, immutable - kørt på test) har samme krop og md5
+-- som ny, så test opgraderes (til stable) uden at fejle.
 select pg_temp.drift_tjek('public.vilkaar_aktuel_version()', 'f87f0070b496a88af134964e29b310ce', '26f30051368fb71bd83d82c613eb7216');
+select pg_temp.drift_tjek('public.vilkaar_er_accepteret(text)', '2985fecec0ac4740a4d17ebc244b8020', '2985fecec0ac4740a4d17ebc244b8020');
 select pg_temp.policy_tjek('auctions_select_anon', 'e8ff1c7e4468e4aa59f122841dc1a3fc');
 select pg_temp.policy_tjek('auctions_select_authenticated', '15a38a05e63952aaf613e3cea3111374');
 
@@ -243,19 +255,26 @@ as $fn$
       (2, '(kunstv(æ|ae)rk(et|er|erne)?|originalv(æ|ae)rk(et|er|erne)?|original(t|e)? v(æ|ae)rk(et|er)?)', null, null),
       (3, '(kunst|v(æ|ae)gkunst|billedkunst|fotokunst|kunstfoto|kunstfotografi|kunstgrafik|kunsttryk)', null, null),
       (4, '(kunstner(e|en|ens|ne|nes)?|kunstmaler(e|en|ens|ne|nes)?|kunstnersigneret|kunstnersignatur)', null, '(cd|cder|vinyl|lp|lper|album|plade|plader|single|kassette|koncert|koncerter|musik|musiker|sang|sanger|sangerinde|band|rapper|festival)'),
-      (5, '(l(æ|ae)rred(et|er|erne)?|canvas)', '(olie|akryl|akvarel|gouache|malet|malede|h(å|aa)ndmalet|h(å|aa)ndmalede|kunstner|kunstneren|signeret|signerede|signatur|original|originalt|originalv(æ|ae)rk|unika|oil|acrylic|painted|signed)', '(projektor|projektorl(æ|ae)rred|l(æ|ae)rredssk(æ|ae)rm|blank|blankt|blanke|ubrugt|ubrugte)'),
-      (6, '(akvarel(len|ler|lerne)?|gouache(r|n)?)', null, null),
-      (7, '(litografi(en|er|erne)?|lithografi(en|er|erne)?|lithography|lithographs?|litho|lito|serigrafi(en|er|erne)?|radering(en|er|erne)?|tr(æ|ae)snit(tet|ter|terne)?|linoleumssnit(tet|ter)?|linoleumsnit(tet|ter)?|linosnit(tet|ter)?|kobberstik(ket|ker|kene)?|st(å|aa)lstik(ket|ker)?|xylografi(en|er)?|akvatinta|mezzotinte|giclee|gicl(é|e)e|grafisk(e)? (tryk|blad|blade|v(æ|ae)rk|v(æ|ae)rker))', null, null),
-      (8, 'grafik(ken|ker|kerne)?', '(signeret|signerede|signatur|nummereret|nummererede|original|originalt|kunstner|kunstneren|indrammet|indrammede|tryk|blad|oplag|(æ|ae)tsning)', '(t shirt|tshirt|tr(ø|oe)je|t(ø|oe)j|h(æ|ae)ttetr(ø|oe)je|hoodie|spil|gaming)'),
-      (9, '(signere(t|de)|nummerere(t|de))', '(tryk|trykket|oplag|eksemplar|eksemplarer)', null),
-      (10, '[a-zæøå]*skulptur(en|er|erne)?', null, null),
-      (11, '(buste(n|r|rne)?|byste(n|r|rne)?)', null, '(sy|syning|skr(æ|ae)dder|syerbuste|skr(æ|ae)dderbuste|t(ø|oe)j|kjole|kjoler|bluse|top|mannequin|mannequindukke|udstillingsdukke|smykke|smykker|halsk(æ|ae)de|halsk(æ|ae)der|paryk|parykker|bh|undert(ø|oe)j|str|st(ø|oe)rrelse|cm|m(å|aa)l|vidde|justerbar)'),
-      (12, '((bronze|bronce|marmor) ?(figur|figuren|figurer|statue|statuen|statuer|statuette|statuetter|relief)|(figur|figuren|figurer|statue|statuen|statuer|statuette|statuetter|relief) (i|af|udf(ø|oe)rt i|st(ø|oe)bt i) (bronze|bronce|marmor))', null, null),
-      (13, '(tegning(en|er|erne)?|drawings?)', null, '(teknisk|tekniske|samlevejledning|vejledning|monteringsvejledning|manual|m(ø|oe)nster|m(ø|oe)nstre|strikkem(ø|oe)nster|symønster|sym(ø|oe)nster|byggetegning|plantegning|tegneserie|tegneserier|tegnefilm)'),
-      (14, '(selvmalet|selvmalede|selvtegnet|selvtegnede)', '(billede|billeder|l(æ|ae)rred|motiv|portr(æ|ae)t|ramme|indrammet)', null),
-      (15, '(h(å|aa)ndmalet|h(å|aa)ndmalede|malet|malede|olie|akryl) ?billede(t|r|rne)?', null, null),
-      (16, '((olie|akryl|akvarel|gouache|tempera) p(å|aa) (l(æ|ae)rred|plade|tr(æ|ae)|pap|papir)|(blyant|kul|tusch|bl(æ|ae)k|pastel|pastelkridt|rødkridt) p(å|aa) papir|portr(æ|ae)t(tet|ter)? (i|malet i|udf(ø|oe)rt i) (olie|akryl|akvarel|kul|blyant|pastel))', null, null),
-      (17, '(painting|paintings|oil painting|artwork|artworks|original art|sculpture|sculptures|etching|etchings|watercolou?r|watercolou?rs|art print|signed print|(oil|acrylic) on (canvas|board|paper|panel|wood|linen|card|masonite))', null, null)
+      (5, 'l(æ|ae)rred(et|er|erne)?', '(olie|akryl|akvarel|gouache|malet|malede|h(å|aa)ndmalet|h(å|aa)ndmalede|kunstner|kunstneren|signeret|signerede|signatur|original|originalt|originalv(æ|ae)rk|unika|oil|acrylic|painted|signed)', '(projektor|projektorl(æ|ae)rred|l(æ|ae)rredssk(æ|ae)rm|blank|blankt|blanke|ubrugt|ubrugte)'),
+      (6, 'canvas', '(olie|akryl|akvarel|gouache|malet|malede|h(å|aa)ndmalet|h(å|aa)ndmalede|kunstner|kunstneren|signeret|signerede|signatur|unika|oil|acrylic|painted|signed)', '(sko|sneakers|sneaker|converse|vans|taske|tasker|mulepose|rygs(æ|ae)k|stol|stole|klapstol|telt|telte|bukser|jakke|kasket|b(æ|ae)lte)'),
+      (7, '(akvarel(len|ler|lerne)?|aquarelle?|gouache(r|n)?)', null, null),
+      (8, '(litografi(en|er|erne)?|lithografi(en|er|erne)?|lithography|lithographs?|serigrafi(en|er|erne)?|radering(en|er|erne)?|tr(æ|ae)snit(tet|ter|terne)?|linoleumssnit(tet|ter)?|linoleumsnit(tet|ter)?|linosnit(tet|ter)?|kobberstik(ket|ker|kene)?|st(å|aa)lstik(ket|ker)?|xylografi(en|er)?|akvatinta|mezzotinte|giclee|gicl(é|e)e|(æ|ae)tsning(en|er|erne)?|grafisk(e)? (tryk|blad|blade|v(æ|ae)rk|v(æ|ae)rker))', null, null),
+      (9, '(litho|lithos|lito|litos)', null, '(lampe|lamper|lampen|armatur|armaturer|belysning|loftlampe|pendel|v(æ|ae)glampe|bordlampe|standerlampe)'),
+      (10, 'silketryk(ket|ker|kene)?', null, '(t shirt|tshirt|tr(ø|oe)je|t(ø|oe)j|h(æ|ae)ttetr(ø|oe)je|hoodie|stof|taske|mulepose|reklame|logo|firmalogo|krus|kasket)'),
+      (11, 'grafik(ken|ker|kerne)?', '(signeret|signerede|signatur|nummereret|nummererede|original|originalt|kunstner|kunstneren|indrammet|indrammede|tryk|blad|oplag|(æ|ae)tsning)', '(t shirt|tshirt|tr(ø|oe)je|t(ø|oe)j|h(æ|ae)ttetr(ø|oe)je|hoodie|spil|gaming)'),
+      (12, '(signere(t|de)|nummerere(t|de))', '(tryk|trykket|oplag|eksemplar|eksemplarer)', null),
+      (13, '[a-zæøå]*skulptur(en|er|erne)?', null, null),
+      (14, '(buste(n|r|rne)?|byste(n|r|rne)?)', null, '(sy|syning|skr(æ|ae)dder|syerbuste|skr(æ|ae)dderbuste|t(ø|oe)j|kjole|kjoler|bluse|top|mannequin|mannequindukke|udstillingsdukke|smykke|smykker|halsk(æ|ae)de|halsk(æ|ae)der|paryk|parykker|bh|undert(ø|oe)j|str|st(ø|oe)rrelse|cm|m(å|aa)l|vidde|justerbar)'),
+      (15, '((bronze|bronce|marmor) ?(figur|figuren|figurer|statue|statuen|statuer|statuette|statuetter|relief)|(figur|figuren|figurer|statue|statuen|statuer|statuette|statuetter|relief) (i|af|udf(ø|oe)rt i|st(ø|oe)bt i) (bronze|bronce|marmor))', null, null),
+      (16, '(statue(n|r|rne)?|statuette(n|r|rne)?)', null, '(have|haven|havestatue|udend(ø|oe)rs|plast|plastik|plastic|plastfigur|resin|polyresin|leget(ø|oe)j|lego|actionfigur|samlefigur|funko|souvenir|frihedsgudinden|lampe)'),
+      (17, '([a-zæøå]*tegning(en|er|erne)?|drawings?)', null, '(teknisk|tekniske|samlevejledning|vejledning|monteringsvejledning|manual|m(ø|oe)nster|m(ø|oe)nstre|strikkem(ø|oe)nster|symønster|sym(ø|oe)nster|byggetegning|plantegning|tegneserie|tegneserier|tegnefilm)'),
+      (18, '(selvmalet|selvmalede|selvtegnet|selvtegnede)', '(billede|billeder|l(æ|ae)rred|motiv|portr(æ|ae)t|ramme|indrammet)', null),
+      (19, '(h(å|aa)ndmalet|h(å|aa)ndmalede|malet|malede|olie|akryl) ?billede(t|r|rne)?', null, null),
+      (20, '((billede(t|r|rne)?|motiv(et|er)?) (malet |udf(ø|oe)rt )?i (olie|akryl|akvarel|gouache|tempera)|(olie|akryl)malet|(olie|akryl)malede)', null, null),
+      (21, '(abstrakt|abstrakte|figurativ|figurativt|figurative|moderne) billede(t|r|rne)?', '(olie|akryl|akvarel|gouache|malet|malede|l(æ|ae)rred|signeret|signatur|kunstner)', null),
+      (22, '((olie|akryl|akvarel|gouache|tempera) p(å|aa) (l(æ|ae)rred|plade|tr(æ|ae)|pap|papir)|(blyant|kul|tusch|bl(æ|ae)k|pastel|pastelkridt|rødkridt) p(å|aa) papir|portr(æ|ae)t(tet|ter)? (i|malet i|udf(ø|oe)rt i) (olie|akryl|akvarel|kul|blyant|pastel))', null, null),
+      (23, '(painting|paintings|oil painting|artwork|artworks|original art|fine art|wall art|sculpture|sculptures|etching|etchings|watercolou?r|watercolou?rs|art print|signed print|(oil|acrylic) on (canvas|board|paper|panel|wood|linen|card|masonite))', null, null),
+      (24, '(gem(ä|ae|a)lde|aquarell)', null, null)
       -- KUNST_ORD_SLUT
     ) as v(nr, moenster, kraever, undtagen)
    order by v.nr;
@@ -268,14 +287,17 @@ language sql
 immutable
 set search_path = public
 as $fn$
-  select '(kunst (l(æ|ae)der|gr(æ|ae)s|stof|stoffer|pels|blomst|blomster|plante|planter|silke|ruskind|negle|juletr(æ|ae)|sk(ø|oe)jtel(ø|oe)b|harpiks|is)|kunst (og|&) h(å|aa)ndv(æ|ae)rk|(akvarel|gouache|akryl|olie|pastel|kunstner|kunstmaler|tegne) (farve|farver|farvers(æ|ae)t|maling|pensel|pensler|papir|blok|blokke|s(æ|ae)t|kasse|kasser|(æ|ae)ske|(æ|ae)sker|kursus|kurser|staffeli|staffelier|ler|v(æ|ae)rkt(ø|oe)j|tape|lak|spartel|paletkniv|palet|paletter|udstyr|grej|artikler|forsyninger)|(maleri|kunst|tegning|skulptur|grafik) (kursus|kurser|artikler|udstyr|grej|forsyninger|v(æ|ae)rkt(ø|oe)j)|drawing (tablet|tablets|pad|board|table|book|set|kit)|((farve|farver|farvers(æ|ae)t|maling|pensel|pensler|papir|blok|blokke|s(æ|ae)t|kasse|kasser|(æ|ae)ske|(æ|ae)sker|kursus|kurser|staffeli|staffelier|ler|v(æ|ae)rkt(ø|oe)j|tape|lak|spartel|paletkniv|palet|paletter|udstyr|grej|artikler|forsyninger)|(ramme|rammer|billedramme|billedrammer|lampe|lamper|oph(æ|ae)ng|krog|kroge|lys|l(æ|ae)rred|l(æ|ae)rreder|transportkasse)) (til|for) (et |en |dit |din |mit |min |dine |mine |de )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(bog|b(ø|oe)ger|bogen|b(ø|oe)rnebog|b(ø|oe)rneb(ø|oe)ger|billedbog|billedb(ø|oe)ger|malebog|maleb(ø|oe)ger|dvd|film|filmen|leksikon|katalog|kataloger|udstillingskatalog|tidsskrift|blad|blade|magasin|foredrag|kursus|kurser|puslespil|kort|postkort|kalender|plakatbog) (om|med|af|fra) (et |en |de |det |den )?(kendte |kendt |berømte |berømt |danske |dansk |moderne |gamle )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet) (af|med|fra|efter) (et |en |det |den )?(kendte |kendt |berømte |berømt )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst) (plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet)|(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst) (til|for|i|med) [a-zæøå]+ (plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet)|(ikea|jysk|bilka|s(ø|oe)strene grene|imerco|kop og kande|kop & kande|ilva|bolia|h&m home|zara home|flying tiger|jem og fix|jem & fix|harald nyborg|silvan|bauhaus|desenio|poster store) ((maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|billede|billeder|v(æ|ae)gbillede|v(æ|ae)gbilleder)|((maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|billede|billeder) (fra|k(ø|oe)bt i|k(ø|oe)bt hos|k(ø|oe)bt p(å|aa)) ((ikea|jysk|bilka|s(ø|oe)strene grene|imerco|kop og kande|kop & kande|ilva|bolia|h&m home|zara home|flying tiger|jem og fix|jem & fix|harald nyborg|silvan|bauhaus|desenio|poster store)|tiger|normal)|(signeret|signerede|nummereret|nummererede) (bog|b(ø|oe)ger|bogen|roman|digtsamling|f(ø|oe)rsteudgave|udgave|tr(ø|oe)je|fodboldtr(ø|oe)je|bold|fodbold|kort|samlekort|billet|program|autograf|autografkort)|(bog|b(ø|oe)ger|bogen|roman|digtsamling|f(ø|oe)rsteudgave|udgave|tr(ø|oe)je|fodboldtr(ø|oe)je|bold|fodbold|kort|samlekort|billet|program|autograf|autografkort) (signeret|signerede|nummereret|nummererede)|(sikker |data )?radering (af |i )?(tekst|teksten|data|harddisk|harddiske|disk|filer|fil|ssd)|(buste|byste) (ramme|stativ|form|dukke|holder|top|bh)|(porcel(æ|ae)ns|porcel(æ|ae)n|keramik|stent(ø|oe)js) ?maleri(et|er|erne)?|maleri(et|er|erne)? p(å|aa) porcel(æ|ae)n)'::text;
+  select '(kunst (l(æ|ae)der|gr(æ|ae)s|stof|stoffer|pels|blomst|blomster|plante|planter|silke|ruskind|negle|juletr(æ|ae)|sk(ø|oe)jtel(ø|oe)b|harpiks|is)|kunst (og|&) h(å|aa)ndv(æ|ae)rk|(akvarel|gouache|akryl|olie|pastel|kunstner|kunstmaler|tegne) (farve|farver|farvers(æ|ae)t|maling|pensel|pensler|papir|blok|blokke|s(æ|ae)t|kasse|kasser|(æ|ae)ske|(æ|ae)sker|kursus|kurser|staffeli|staffelier|ler|v(æ|ae)rkt(ø|oe)j|tape|lak|spartel|paletkniv|palet|paletter|udstyr|grej|artikler|forsyninger)|(maleri|kunst|tegning|skulptur|grafik) (kursus|kurser|artikler|udstyr|grej|forsyninger|v(æ|ae)rkt(ø|oe)j)|drawing (tablet|tablets|pad|board|table|book|set|kit)|((farve|farver|farvers(æ|ae)t|maling|pensel|pensler|papir|blok|blokke|s(æ|ae)t|kasse|kasser|(æ|ae)ske|(æ|ae)sker|kursus|kurser|staffeli|staffelier|ler|v(æ|ae)rkt(ø|oe)j|tape|lak|spartel|paletkniv|palet|paletter|udstyr|grej|artikler|forsyninger)|(ramme|rammer|billedramme|billedrammer|lampe|lamper|oph(æ|ae)ng|krog|kroge|lys|l(æ|ae)rred|l(æ|ae)rreder|transportkasse)) (til|for) (et |en |dit |din |mit |min |dine |mine |de )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(bog|b(ø|oe)ger|bogen|b(ø|oe)rnebog|b(ø|oe)rneb(ø|oe)ger|billedbog|billedb(ø|oe)ger|malebog|maleb(ø|oe)ger|dvd|film|filmen|leksikon|katalog|kataloger|udstillingskatalog|tidsskrift|blad|blade|magasin|foredrag|kursus|kurser|puslespil|kort|postkort|kalender|plakatbog) (om|med|af|fra) (et |en |de |det |den )?(kendte |kendt |berømte |berømt |danske |dansk |moderne |gamle )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet) (af|med|fra|efter) (et |en |det |den )?(kendte |kendt |berømte |berømt )?(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst) ?(plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet)|(maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst) (til|for|i|med) [a-zæøå]+ (plakat|plakater|plakaten|plakaterne|poster|posters|kunstplakat|kunstplakater|print|prints|reproduktion|reproduktioner|fototapet)|(ikea|jysk|bilka|s(ø|oe)strene grene|imerco|kop og kande|kop & kande|ilva|bolia|h&m home|zara home|flying tiger|jem og fix|jem & fix|harald nyborg|silvan|bauhaus|desenio|poster store) ?((maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|billede|billeder|v(æ|ae)gbillede|v(æ|ae)gbilleder)|((maleri|malerier|maleriet|malerierne|kunst|kunsten|kunstv(æ|ae)rk|kunstv(æ|ae)rker|kunstv(æ|ae)rket|l(æ|ae)rred|l(æ|ae)rreder|l(æ|ae)rredet|tegning|tegninger|akvarel|akvareller|skulptur|skulpturer|litografi|litografier|grafik|danske malerier|moderne kunst|dansk kunst)|billede|billeder) (fra|k(ø|oe)bt i|k(ø|oe)bt hos|k(ø|oe)bt p(å|aa)) ((ikea|jysk|bilka|s(ø|oe)strene grene|imerco|kop og kande|kop & kande|ilva|bolia|h&m home|zara home|flying tiger|jem og fix|jem & fix|harald nyborg|silvan|bauhaus|desenio|poster store)|tiger|normal)|(signeret|signerede|nummereret|nummererede) (bog|b(ø|oe)ger|bogen|roman|digtsamling|f(ø|oe)rsteudgave|udgave|tr(ø|oe)je|fodboldtr(ø|oe)je|bold|fodbold|kort|samlekort|billet|program|autograf|autografkort)|(bog|b(ø|oe)ger|bogen|roman|digtsamling|f(ø|oe)rsteudgave|udgave|tr(ø|oe)je|fodboldtr(ø|oe)je|bold|fodbold|kort|samlekort|billet|program|autograf|autografkort) (signeret|signerede|nummereret|nummererede)|(sikker |data )?radering (af |i )?(tekst|teksten|data|harddisk|harddiske|disk|filer|fil|ssd)|(buste|byste) (ramme|stativ|form|dukke|holder|top|bh)|(porcel(æ|ae)ns|porcel(æ|ae)n|keramik|stent(ø|oe)js) ?maleri(et|er|erne)?|maleri(et|er|erne)? p(å|aa) porcel(æ|ae)n|(bygge|plan|arbejds|monterings|konstruktions|el|vvs|maskin|snit|facade|samle|udstyknings|matrikel)tegning(en|er|erne)?)'::text;
 $fn$;
 
 -- Afslører simple forsøg på at skjule et ord (kunstSloerVariant i TS):
--- 3/1/0 ved siden af bogstaver -> e/i/o, et stykke på 1-2 bogstaver sættes
--- sammen over en bindestreg/prik ("ma-leri"), normalisering, og 3+
+-- @ -> a, € -> e, accenter fjernes, 3/1/0 ved siden af bogstaver -> e/<p_et>/o,
+-- skilletegn mellem to bogstaver fjernes ("ma-leri"), normalisering, og 3+
 -- enkeltbogstaver i træk sættes sammen ("m a l e r i").
-create or replace function public.kunst_sloer_variant(p_tekst text)
+-- (Den første udgave i denne migration havde kun p_tekst - droppes.)
+drop function if exists public.kunst_sloer_variant(text);
+
+create or replace function public.kunst_sloer_variant(p_tekst text, p_et text default 'i')
 returns text
 language plpgsql
 immutable
@@ -290,14 +312,16 @@ declare
   raekke text[] := '{}';
   ud     text[] := '{}';
 begin
-  for d in select * from (values (1, '3', 'e'), (2, '1', 'i'), (3, '0', 'o')) as x(n, tal, bogstav) order by x.n loop
+  t := replace(replace(t, '@', 'a'), '€', 'e');
+  t := translate(t, 'äöüéèáàâêëíìîïóòôúùûñç', 'aoueeaaaeeiiiiooouuunc');
+  for d in select * from (values (1, '3', 'e'), (2, '1', case when p_et = 'l' then 'l' else 'i' end), (3, '0', 'o'))
+             as x(n, tal, bogstav) order by x.n loop
     for i in 1..2 loop
       t := regexp_replace(t, '([' || b || '])' || d.tal, '\1' || d.bogstav, 'g');
       t := regexp_replace(t, d.tal || '([' || b || '])', d.bogstav || '\1', 'g');
     end loop;
   end loop;
-  t := regexp_replace(t, '(^|[^' || b || '])([' || b || ']{1,2})[-.·_*''](?=[' || b || ']{3})', '\1\2', 'g');
-  t := regexp_replace(t, '([' || b || ']{3})[-.·_*'']([' || b || ']{1,2})(?=$|[^' || b || '])', '\1\2', 'g');
+  t := regexp_replace(t, '([' || b || '])[-.·_*''](?=[' || b || '])', '\1', 'g');
   t := public.forbudt_normaliser(t);
   foreach v_ord in array string_to_array(t, ' ') loop
     if v_ord ~ ('^[' || b || ']$') then
@@ -313,9 +337,50 @@ begin
 end;
 $fn$;
 
--- Tjekker en normaliseret tekst: tilladte fraser fjernes (første forekomst ad
--- gangen, højst 50 gange), og moenster, kraever og undtagen tjekkes som hele
--- ord i den RENSEDE tekst. null = intet træf.
+-- Fjerner de tilladte fraser (første forekomst ad gangen, højst 50 gange).
+create or replace function public.kunst_rens(p_norm text)
+returns text
+language plpgsql
+immutable
+set search_path = public
+as $fn$
+declare
+  g       constant text := '[^a-z0-9æøåäöüéèáàâêëíìîïóòôúùûñçß]';
+  v_tekst text := coalesce(p_norm, '');
+  v_re    text := '(^|' || g || ')(' || public.kunst_fjern() || ')($|' || g || ')';
+begin
+  for i in 1..50 loop
+    exit when v_tekst !~ v_re;
+    v_tekst := regexp_replace(v_tekst, v_re, ' ');
+  end loop;
+  return v_tekst;
+end;
+$fn$;
+
+-- To og to ord sat sammen ("ma leri" -> "maleri") af den RENSEDE tekst; ordene
+-- selv står først. '' ved under to ord. Som kunstPar i TS.
+create or replace function public.kunst_par(p_norm text)
+returns text
+language plpgsql
+immutable
+set search_path = public
+as $fn$
+declare
+  v_ord text[] := array_remove(string_to_array(public.kunst_rens(p_norm), ' '), '');
+  v_par text[] := '{}';
+begin
+  if cardinality(v_ord) < 2 then
+    return '';
+  end if;
+  for i in 1..cardinality(v_ord) - 1 loop
+    v_par := v_par || (v_ord[i] || v_ord[i + 1]);
+  end loop;
+  return array_to_string(v_ord || v_par, ' ');
+end;
+$fn$;
+
+-- Tjekker en normaliseret tekst: moenster, kraever og undtagen tjekkes som
+-- hele ord i den RENSEDE tekst. null = intet træf.
 create or replace function public.kunst_tjek_normaliseret(p_norm text)
 returns jsonb
 language plpgsql
@@ -324,16 +389,10 @@ set search_path = public
 as $fn$
 declare
   g       constant text := '[^a-z0-9æøåäöüéèáàâêëíìîïóòôúùûñçß]';
-  v_tekst text := coalesce(p_norm, '');
-  v_re    text;
+  v_tekst text := public.kunst_rens(p_norm);
   o       record;
   m       text[];
 begin
-  v_re := '(^|' || g || ')(' || public.kunst_fjern() || ')($|' || g || ')';
-  for i in 1..50 loop
-    exit when v_tekst !~ v_re;
-    v_tekst := regexp_replace(v_tekst, v_re, ' ');
-  end loop;
   for o in select * from public.kunst_ord() k order by k.nr loop
     m := regexp_match(v_tekst, '(^|' || g || ')(' || o.moenster || ')($|' || g || ')');
     if m is null then continue; end if;
@@ -352,7 +411,9 @@ end;
 $fn$;
 
 -- {"resultat": "ok"} eller {"resultat": "kunst", "ord", "nr"}. Samme logik
--- som tjekKunstTekst i TypeScript. Højst 5000 tegn.
+-- som tjekKunstTekst i TypeScript: den normaliserede tekst, derefter
+-- varianterne med 1 -> i og 1 -> l - og for hver også to ord samlet. Højst
+-- 5000 tegn.
 create or replace function public.kunst_tekst_tjek(p_tekst text)
 returns jsonb
 language plpgsql
@@ -362,19 +423,25 @@ as $fn$
 declare
   v_raa  text := left(coalesce(p_tekst, ''), 5000);
   v_norm text := public.forbudt_normaliser(v_raa);
-  v_var  text;
+  v_set  text[] := '{}';
+  k      text;
+  v_par  text;
   r      jsonb;
 begin
   if v_norm = '' then
     return jsonb_build_object('resultat', 'ok');
   end if;
-  r := public.kunst_tjek_normaliseret(v_norm);
-  if r is not null then return r; end if;
-  v_var := public.kunst_sloer_variant(v_raa);
-  if v_var <> v_norm and v_var <> '' then
-    r := public.kunst_tjek_normaliseret(v_var);
+  foreach k in array array[v_norm, public.kunst_sloer_variant(v_raa, 'i'), public.kunst_sloer_variant(v_raa, 'l')] loop
+    if k = '' or k = any(v_set) then continue; end if;
+    v_set := v_set || k;
+    r := public.kunst_tjek_normaliseret(k);
     if r is not null then return r; end if;
-  end if;
+    v_par := public.kunst_par(k);
+    if v_par <> '' then
+      r := public.kunst_tjek_normaliseret(v_par);
+      if r is not null then return r; end if;
+    end if;
+  end loop;
   return jsonb_build_object('resultat', 'ok');
 end;
 $fn$;
@@ -382,14 +449,18 @@ $fn$;
 -- Rene funktioner uden dataadgang - appen må gerne tjekke på forhånd.
 revoke all on function public.kunst_ord() from public;
 revoke all on function public.kunst_fjern() from public;
-revoke all on function public.kunst_sloer_variant(text) from public;
+revoke all on function public.kunst_sloer_variant(text, text) from public;
+revoke all on function public.kunst_rens(text) from public;
+revoke all on function public.kunst_par(text) from public;
 revoke all on function public.kunst_tjek_normaliseret(text) from public;
 revoke all on function public.kunst_tekst_tjek(text) from public;
-grant execute on function public.kunst_ord()                    to anon, authenticated, service_role;
-grant execute on function public.kunst_fjern()                  to anon, authenticated, service_role;
-grant execute on function public.kunst_sloer_variant(text)      to anon, authenticated, service_role;
-grant execute on function public.kunst_tjek_normaliseret(text)  to anon, authenticated, service_role;
-grant execute on function public.kunst_tekst_tjek(text)         to anon, authenticated, service_role;
+grant execute on function public.kunst_ord()                      to anon, authenticated, service_role;
+grant execute on function public.kunst_fjern()                    to anon, authenticated, service_role;
+grant execute on function public.kunst_sloer_variant(text, text)  to anon, authenticated, service_role;
+grant execute on function public.kunst_rens(text)                 to anon, authenticated, service_role;
+grant execute on function public.kunst_par(text)                  to anon, authenticated, service_role;
+grant execute on function public.kunst_tjek_normaliseret(text)    to anon, authenticated, service_role;
+grant execute on function public.kunst_tekst_tjek(text)           to anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 3. Triggere
@@ -442,15 +513,24 @@ begin
       -- Samme tekst, som staff allerede har afgjort (lukket anmeldelse):
       -- ingen ny kontrol. Ellers tilbage til tjek, medmindre den er afvist
       -- (skjult/fjernet - så styrer skjult synligheden).
+      -- Afvist og stadig skjult/fjernet: skjult styrer synligheden. Afvist,
+      -- men synlig igen (medhold): tilbage til tjek som alle andre.
       if not (v_md5 is not distinct from old.kunst_tekst_md5
               and exists (select 1 from public.reports r
                            where r.auction_id = new.id and r.category = 'kunst'
                              and r.status not in ('pending', 'under_behandling')))
-         and new.kunst_kontrol is distinct from 'afvist' then
+         and not (new.kunst_kontrol = 'afvist' and coalesce(new.skjult, false)) then
         new.kunst_kontrol := 'afventer';
       end if;
       new.kunst_tekst_md5 := v_md5;
     end if;
+  end if;
+
+  -- Staff/system sætter den til tjek (fx "Tjek aktive auktioner" eller en
+  -- genåbnet anmeldelse): markér den også.
+  if new.kunst_kontrol = 'afventer' and old.kunst_kontrol is distinct from 'afventer' then
+    new.kunst_markeret_kl := coalesce(new.kunst_markeret_kl, now());
+    new.kunst_tekst_md5 := coalesce(new.kunst_tekst_md5, md5(public.forbudt_normaliser(left(v_tekst, 5000))));
   end if;
   return new;
 end;
@@ -684,10 +764,11 @@ grant execute on function public.forbudte_varer() to anon, authenticated, servic
 -- 6. Brugerbetingelser version 0.2 (HOLD SYNKRON med VILKAAR_VERSION i
 --    src/lib/vilkaar.ts). Som 20261009050000 med ny version.
 -- ---------------------------------------------------------------------------
+-- stable (ikke immutable), så planner ikke kan bage den gamle version ind.
 create or replace function public.vilkaar_aktuel_version()
 returns text
 language sql
-immutable
+stable
 parallel safe
 set search_path = ''
 as $fn$
@@ -696,10 +777,154 @@ $fn$;
 
 grant execute on function public.vilkaar_aktuel_version() to anon, authenticated, service_role;
 
+-- vilkaar_er_accepteret (20261017030000) kalder vilkaar_aktuel_version() og
+-- var immutable - også stable nu. Kroppen er uændret (md5 tjekket øverst).
+alter function public.vilkaar_er_accepteret(text) stable;
+
+do $do$
+begin
+  if (select provolatile from pg_proc where oid = 'public.vilkaar_aktuel_version()'::regprocedure) <> 's'
+     or (select provolatile from pg_proc where oid = 'public.vilkaar_er_accepteret(text)'::regprocedure) <> 's' then
+    raise exception 'vilkaar-funktionerne er ikke stable efter migrationen';
+  end if;
+end $do$;
+
 select pg_temp.efter_tjek('public.forbudte_varer()', '2ffa99d5dbcb0dc6d559a77d22047963');
 select pg_temp.efter_tjek('public.dsa_regler()', '020c8c1d1a545e9588430c1b2898721f');
 select pg_temp.efter_tjek('public.dsa_anmeldelse_opret(uuid,text,uuid,text,text,text,text,text,boolean)', 'ab9150038013a607a91e708f57252322');
 select pg_temp.efter_tjek('public.vilkaar_aktuel_version()', '26f30051368fb71bd83d82c613eb7216');
+
+-- ---------------------------------------------------------------------------
+-- 6b. Staff-handlinger
+-- ---------------------------------------------------------------------------
+
+-- Skjul/fjern/stop med reglen 'kunst' (fra Anmeldelser, DSA, Auktioner eller
+-- en brugeranmeldelse): kontrollen er afgjort -> 'afvist' (også en tidligere
+-- 'godkendt'). Sker i databasen, så alle veje til dsa_indgreb er dækket.
+create or replace function public.dsa_afgoerelser_kunst()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+begin
+  if new.regel_kode = 'kunst' and new.indhold_type = 'auktion' and new.indhold_id is not null then
+    update public.auctions a
+       set kunst_kontrol = 'afvist'
+     where a.id = new.indhold_id
+       and (a.kunst_kontrol is null or a.kunst_kontrol in ('afventer', 'godkendt'));
+  end if;
+  return null;
+end;
+$fn$;
+
+revoke all on function public.dsa_afgoerelser_kunst() from public, anon, authenticated;
+
+drop trigger if exists dsa_afgoerelser_kunst on public.dsa_afgoerelser;
+create trigger dsa_afgoerelser_kunst
+  after insert on public.dsa_afgoerelser
+  for each row execute function public.dsa_afgoerelser_kunst();
+
+-- Fælles rolletjek for staff-RPC'erne herunder.
+create or replace function public.kunst_staff_rolle(p_staff uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $fn$
+  select u.rolle from public.users u where u.id = p_staff;
+$fn$;
+
+revoke all on function public.kunst_staff_rolle(uuid) from public, anon, authenticated;
+grant execute on function public.kunst_staff_rolle(uuid) to service_role;
+
+-- "Ikke kunst - godkend" i én transaktion: anmeldelsen lukkes (kun en åben
+-- kunst-anmeldelse), og auktionen godkendes (kun fra 'afventer'). Et
+-- dobbeltklik gør intet anden gang ('allerede'). Kun service_role (serveren);
+-- staff-rollen tjekkes her igen.
+create or replace function public.kunst_ikke_kunst(p_staff uuid, p_rapport uuid, p_note text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_auk uuid;
+begin
+  if coalesce(public.kunst_staff_rolle(p_staff), '') not in ('medarbejder', 'admin', 'chef') then
+    return jsonb_build_object('kode', 'ingen_adgang');
+  end if;
+  if char_length(btrim(coalesce(p_note, ''))) = 0 or char_length(p_note) > 2000 then
+    return jsonb_build_object('kode', 'note');
+  end if;
+  update public.reports r
+     set status = 'behandlet', handled_by = p_staff, handled_note = p_note, handled_at = now()
+   where r.id = p_rapport and r.category = 'kunst' and r.status = 'pending'
+  returning r.auction_id into v_auk;
+  if v_auk is null then
+    return jsonb_build_object('kode', 'allerede');
+  end if;
+  update public.auctions a
+     set kunst_kontrol = 'godkendt'
+   where a.id = v_auk and a.kunst_kontrol = 'afventer';
+  return jsonb_build_object('kode', 'ok', 'auktion_id', v_auk);
+end;
+$fn$;
+
+revoke all on function public.kunst_ikke_kunst(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.kunst_ikke_kunst(uuid, uuid, text) to service_role;
+
+-- "Tjek aktive auktioner for kunst" (kun admin/chef, aldrig automatisk):
+-- kører kunst_tekst_tjek på aktive auktioner uden kontrol og sætter de
+-- fundne til 'afventer' (triggeren markerer og opretter anmeldelsen).
+-- Højst p_maks pr. kørsel. Returnerer antal tjekkede og fundne.
+create or replace function public.kunst_tjek_aktive(p_staff uuid, p_maks integer default 2000)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  a        record;
+  v_tjekket integer := 0;
+  v_fundet  integer := 0;
+begin
+  if coalesce(public.kunst_staff_rolle(p_staff), '') not in ('admin', 'chef') then
+    return jsonb_build_object('kode', 'ingen_adgang');
+  end if;
+  for a in
+    select x.id, x.titel, x.beskrivelse
+      from public.auctions x
+     where x.status = 'aktiv' and x.kunst_kontrol is null and x.arkiveret_kl is null
+     order by x.oprettet desc
+     limit greatest(1, least(coalesce(p_maks, 2000), 10000))
+  loop
+    v_tjekket := v_tjekket + 1;
+    if public.kunst_tekst_tjek(coalesce(a.titel, '') || ' ' || coalesce(a.beskrivelse, ''))->>'resultat' = 'kunst' then
+      update public.auctions set kunst_kontrol = 'afventer' where id = a.id and kunst_kontrol is null;
+      if found then v_fundet := v_fundet + 1; end if;
+    end if;
+  end loop;
+  return jsonb_build_object('kode', 'ok', 'tjekket', v_tjekket, 'fundet', v_fundet);
+end;
+$fn$;
+
+revoke all on function public.kunst_tjek_aktive(uuid, integer) from public, anon, authenticated;
+grant execute on function public.kunst_tjek_aktive(uuid, integer) to service_role;
+
+-- gemte_soegninger_find_nye (20261007011000) sendte nye auktioner til gemte
+-- søgninger. Den er fjernet i 20261016010000_fjern_gemte_soegninger.sql og
+-- findes hverken i prod eller test (tjekket med SELECT 15. okt. 2026), så
+-- den rettes ikke her. Findes den alligevel, stoppes migrationen, så den
+-- kan få filteret på kunst_kontrol.
+do $do$
+begin
+  if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public' and p.proname = 'gemte_soegninger_find_nye') then
+    raise exception 'gemte_soegninger_find_nye findes - kør 20261016010000 først, eller filtrér kunst_kontrol = ''afventer'' fra i den';
+  end if;
+end $do$;
 
 -- ---------------------------------------------------------------------------
 -- 7. Ingen kunst-kategori + test af ordlisten
@@ -799,6 +1024,36 @@ begin
     ('IKEA billede. Akvarel af skib', 'kunst'),
     ('Signeret bog. Litografi signeret', 'kunst'),
     ('Plakat af maleri. Maleri sælges også', 'kunst'),
+    ('Gicleé print signeret', 'kunst'),
+    ('Malerí af skib', 'kunst'),
+    ('M@leri', 'kunst'),
+    ('Akvar€l', 'kunst'),
+    ('Ku1tegning', 'kunst'),
+    ('L1togr@fi', 'kunst'),
+    ('Kunstv-ærk', 'kunst'),
+    ('Male-ri af skib', 'kunst'),
+    ('Skulp.tur i træ', 'kunst'),
+    ('ma leri', 'kunst'),
+    ('mal eri af skib', 'kunst'),
+    ('teg ning af Storm P', 'kunst'),
+    ('Kultegning', 'kunst'),
+    ('Blyantstegning', 'kunst'),
+    ('Portrættegning af kvinde', 'kunst'),
+    ('Billede malet i olie', 'kunst'),
+    ('Billede i akryl', 'kunst'),
+    ('Abstrakt billede, olie', 'kunst'),
+    ('Oliemalet', 'kunst'),
+    ('Silketryk signeret', 'kunst'),
+    ('Silketryk', 'kunst'),
+    ('Ætsning', 'kunst'),
+    ('Statue af kvinde', 'kunst'),
+    ('Bronze statue', 'kunst'),
+    ('Fine art', 'kunst'),
+    ('Wall art', 'kunst'),
+    ('Gemälde', 'kunst'),
+    ('Aquarelle', 'kunst'),
+    ('Aquarell', 'kunst'),
+    ('IKEA-maleri? Nej, oliemaleri', 'kunst'),
     ('Maleritape', 'ok'),
     ('Malerpensel', 'ok'),
     ('Malerpensler 3 stk', 'ok'),
@@ -867,7 +1122,23 @@ begin
     ('PS4 med 3 spil', 'ok'),
     ('T-shirt str. M', 'ok'),
     ('H.C. Andersen eventyr', 'ok'),
-    ('B & O højttaler', 'ok')
+    ('B & O højttaler', 'ok'),
+    ('Canvas sko str 42', 'ok'),
+    ('Canvas sneakers, originale', 'ok'),
+    ('Canvas stol til haven', 'ok'),
+    ('Canvas telt 4 personer', 'ok'),
+    ('Canvas taske original', 'ok'),
+    ('Lito lampe', 'ok'),
+    ('Lito armatur til loft', 'ok'),
+    ('Silketryk på t-shirt', 'ok'),
+    ('Havestatue af løve', 'ok'),
+    ('Statue i plastik', 'ok'),
+    ('Byggetegning til carport', 'ok'),
+    ('Plantegning af hus', 'ok'),
+    ('Lærred til maleri, blankt', 'ok'),
+    ('IKEA-maleri', 'ok'),
+    ('Info@firma.dk', 'ok'),
+    ('Mal er i god stand', 'ok')
   ) as x(tekst, forventet)
   loop
     r := public.kunst_tekst_tjek(t.tekst)->>'resultat';
@@ -887,4 +1158,3 @@ drop function pg_temp.drift_tjek(text, text, text);
 drop function pg_temp.krop_md5(text);
 drop function pg_temp.flet_check(regclass, text, text, text[]);
 
-commit;

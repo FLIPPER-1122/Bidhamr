@@ -22,7 +22,8 @@
 // (supabase/migrations/20261023010000_kunst_forbudt.sql):
 //   KUNST_REGLER (aktive, udfoldet) <-> public.kunst_ord()   (samme rækkefølge = nr)
 //   KUNST_FJERN (udfoldet)          <-> public.kunst_fjern()
-//   kunstSloerVariant               <-> public.kunst_sloer_variant()
+//   kunstSloerVariant               <-> public.kunst_sloer_variant(p_tekst, p_et)
+//   kunstPar                        <-> public.kunst_par()
 //   tjekKunstTekst                  <-> public.kunst_tekst_tjek()
 // Normaliseringen er den samme som for forbudte varer (normaliserTekst <->
 // public.forbudt_normaliser). Testen sammenligner TS-listen med migrationen,
@@ -45,11 +46,12 @@
 //      der, gælder reglen ikke. Ord i en tilladt frase kan derfor hverken
 //      udløse eller undskylde et andet kunst-ord ("Plakat af maleri. Kunstner:
 //      Jorn" fanges).
-//   4. Giver det intet træf, tjekkes en "afsløret" udgave af teksten
-//      (kunstSloerVariant): 3/1/0 ved siden af bogstaver bliver e/i/o
-//      ("mal3ri"), et kort stykke på 1-2 bogstaver sættes sammen over en
-//      bindestreg/prik ("ma-leri"), og 3+ enkeltbogstaver i træk sættes
-//      sammen ("m.a.l.e.r.i", "m a l e r i").
+//   4. Giver det intet træf, tjekkes "to ord samlet" ("ma leri", kunstPar),
+//      og derefter to "afslørede" udgaver af teksten (kunstSloerVariant):
+//      @ -> a, € -> e, accenter fjernes, 3/1/0 ved siden af bogstaver bliver
+//      e/i/o (og e/l/o i den anden udgave: "ku1tegning"), skilletegn mellem
+//      bogstaver fjernes ("ma-leri") og 3+ enkeltbogstaver i træk sættes
+//      sammen ("m.a.l.e.r.i") - hver også med to ord samlet.
 
 import { USYNLIGE, fjernFraser, helOrd, normaliserTekst } from "@/lib/forbudteVarer";
 
@@ -118,19 +120,37 @@ export const KUNST_REGLER_RAA: readonly KunstRegel[] = [
     undtagen:
       "(cd|cder|vinyl|lp|lper|album|plade|plader|single|kassette|koncert|koncerter|musik|musiker|sang|sanger|sangerinde|band|rapper|festival)",
   },
-  // Lærred/canvas kun med kunst-ord - "Billede på lærred", "Projektor lærred"
-  // og "Converse canvas" er ok.
+  // Lærred kun med kunst-ord - "Billede på lærred" og "Projektor lærred" er ok.
   {
-    moenster: "(l(æ|ae)rred(et|er|erne)?|canvas)",
+    moenster: "l(æ|ae)rred(et|er|erne)?",
     kraever:
       "(olie|akryl|akvarel|gouache|malet|malede|h(å|aa)ndmalet|h(å|aa)ndmalede|kunstner|kunstneren|signeret|signerede|signatur|original|originalt|originalv(æ|ae)rk|unika|oil|acrylic|painted|signed)",
     undtagen: "(projektor|projektorl(æ|ae)rred|l(æ|ae)rredssk(æ|ae)rm|blank|blankt|blanke|ubrugt|ubrugte)",
   },
-  { moenster: "(akvarel(len|ler|lerne)?|gouache(r|n)?)" },
+  // Canvas er også et stof (sko, tasker, telte) - kun med maleri-ord.
+  {
+    moenster: "canvas",
+    kraever:
+      "(olie|akryl|akvarel|gouache|malet|malede|h(å|aa)ndmalet|h(å|aa)ndmalede|kunstner|kunstneren|signeret|signerede|signatur|unika|oil|acrylic|painted|signed)",
+    undtagen:
+      "(sko|sneakers|sneaker|converse|vans|taske|tasker|mulepose|rygs(æ|ae)k|stol|stole|klapstol|telt|telte|bukser|jakke|kasket|b(æ|ae)lte)",
+  },
+  { moenster: "(akvarel(len|ler|lerne)?|aquarelle?|gouache(r|n)?)" },
   // Grafiske tryk.
   {
     moenster:
-      "(litografi(en|er|erne)?|lithografi(en|er|erne)?|lithography|lithographs?|litho|lito|serigrafi(en|er|erne)?|radering(en|er|erne)?|tr(æ|ae)snit(tet|ter|terne)?|linoleumssnit(tet|ter)?|linoleumsnit(tet|ter)?|linosnit(tet|ter)?|kobberstik(ket|ker|kene)?|st(å|aa)lstik(ket|ker)?|xylografi(en|er)?|akvatinta|mezzotinte|giclee|gicl(é|e)e|grafisk(e)? (tryk|blad|blade|v(æ|ae)rk|v(æ|ae)rker))",
+      "(litografi(en|er|erne)?|lithografi(en|er|erne)?|lithography|lithographs?|serigrafi(en|er|erne)?|radering(en|er|erne)?|tr(æ|ae)snit(tet|ter|terne)?|linoleumssnit(tet|ter)?|linoleumsnit(tet|ter)?|linosnit(tet|ter)?|kobberstik(ket|ker|kene)?|st(å|aa)lstik(ket|ker)?|xylografi(en|er)?|akvatinta|mezzotinte|giclee|gicl(é|e)e|(æ|ae)tsning(en|er|erne)?|grafisk(e)? (tryk|blad|blade|v(æ|ae)rk|v(æ|ae)rker))",
+  },
+  // "Litho"/"lito" - men ikke lamper og armaturer (Lito-lampe).
+  {
+    moenster: "(litho|lithos|lito|litos)",
+    undtagen: "(lampe|lamper|lampen|armatur|armaturer|belysning|loftlampe|pendel|v(æ|ae)glampe|bordlampe|standerlampe)",
+  },
+  // Silketryk - men ikke på tøj, tasker og reklameting.
+  {
+    moenster: "silketryk(ket|ker|kene)?",
+    undtagen:
+      "(t shirt|tshirt|tr(ø|oe)je|t(ø|oe)j|h(æ|ae)ttetr(ø|oe)je|hoodie|stof|taske|mulepose|reklame|logo|firmalogo|krus|kasket)",
   },
   // "Grafik" kun med kunst-ord - "PS5 med flot grafik" og "Grafikkort" er ok.
   {
@@ -153,9 +173,17 @@ export const KUNST_REGLER_RAA: readonly KunstRegel[] = [
     moenster:
       "((bronze|bronce|marmor) ?(figur|figuren|figurer|statue|statuen|statuer|statuette|statuetter|relief)|(figur|figuren|figurer|statue|statuen|statuer|statuette|statuetter|relief) (i|af|udf(ø|oe)rt i|st(ø|oe)bt i) (bronze|bronce|marmor))",
   },
-  // Tegninger - men ikke tekniske tegninger, samlevejledninger og mønstre.
+  // Statuer - men ikke havestatuer, plastfigurer og legetøj.
   {
-    moenster: "(tegning(en|er|erne)?|drawings?)",
+    moenster: "(statue(n|r|rne)?|statuette(n|r|rne)?)",
+    undtagen:
+      "(have|haven|havestatue|udend(ø|oe)rs|plast|plastik|plastic|plastfigur|resin|polyresin|leget(ø|oe)j|lego|actionfigur|samlefigur|funko|souvenir|frihedsgudinden|lampe)",
+  },
+  // Tegninger, også kultegning, blyantstegning, portrættegning - men ikke
+  // tekniske tegninger, samlevejledninger og mønstre (se også de tilladte
+  // fraser: byggetegning, plantegning ...).
+  {
+    moenster: "([a-zæøå]*tegning(en|er|erne)?|drawings?)",
     undtagen:
       "(teknisk|tekniske|samlevejledning|vejledning|monteringsvejledning|manual|m(ø|oe)nster|m(ø|oe)nstre|strikkem(ø|oe)nster|symønster|sym(ø|oe)nster|byggetegning|plantegning|tegneserie|tegneserier|tegnefilm)",
   },
@@ -164,8 +192,18 @@ export const KUNST_REGLER_RAA: readonly KunstRegel[] = [
     moenster: "(selvmalet|selvmalede|selvtegnet|selvtegnede)",
     kraever: "(billede|billeder|l(æ|ae)rred|motiv|portr(æ|ae)t|ramme|indrammet)",
   },
-  // Malede billeder: "Håndmalet billede", "Oliebillede", "Akryl-billede".
+  // Malede billeder: "Håndmalet billede", "Oliebillede", "Akryl-billede",
+  // "Billede malet i olie", "Oliemalet".
   { moenster: "(h(å|aa)ndmalet|h(å|aa)ndmalede|malet|malede|olie|akryl) ?billede(t|r|rne)?" },
+  {
+    moenster:
+      "((billede(t|r|rne)?|motiv(et|er)?) (malet |udf(ø|oe)rt )?i (olie|akryl|akvarel|gouache|tempera)|(olie|akryl)malet|(olie|akryl)malede)",
+  },
+  // "Abstrakt billede, olie".
+  {
+    moenster: "(abstrakt|abstrakte|figurativ|figurativt|figurative|moderne) billede(t|r|rne)?",
+    kraever: "(olie|akryl|akvarel|gouache|malet|malede|l(æ|ae)rred|signeret|signatur|kunstner)",
+  },
   // Klassiske teknikangivelser.
   {
     moenster:
@@ -174,8 +212,10 @@ export const KUNST_REGLER_RAA: readonly KunstRegel[] = [
   // Engelske ord.
   {
     moenster:
-      "(painting|paintings|oil painting|artwork|artworks|original art|sculpture|sculptures|etching|etchings|watercolou?r|watercolou?rs|art print|signed print|(oil|acrylic) on (canvas|board|paper|panel|wood|linen|card|masonite))",
+      "(painting|paintings|oil painting|artwork|artworks|original art|fine art|wall art|sculpture|sculptures|etching|etchings|watercolou?r|watercolou?rs|art print|signed print|(oil|acrylic) on (canvas|board|paper|panel|wood|linen|card|masonite))",
   },
+  // Tyske ord.
+  { moenster: "(gem(ä|ae|a)lde|aquarell)" },
 ];
 
 // Tilladte fraser, der fjernes, før reglerne tjekkes (kun når ordene står
@@ -197,10 +237,11 @@ export const KUNST_FJERN_RAA =
     // Plakater og reproduktioner: "Plakat af maleri", "Maleri plakat",
     // "Tegning til børneværelse plakat".
     "@plakat (af|med|fra|efter) (et |en |det |den )?(kendte |kendt |berømte |berømt )?@kunstobj",
-    "@kunstobj @plakat",
+    "@kunstobj ?@plakat",
     "@kunstobj (til|for|i|med) [a-zæøå]+ @plakat",
-    // Masseproducerede billeder: "IKEA maleri", "Lærred fra IKEA", "Maleri fra Tiger".
-    "@kaede (@kunstobj|billede|billeder|v(æ|ae)gbillede|v(æ|ae)gbilleder)",
+    // Masseproducerede billeder: "IKEA maleri" (også "IKEA-maleri" skrevet
+    // sammen), "Lærred fra IKEA", "Maleri fra Tiger".
+    "@kaede ?(@kunstobj|billede|billeder|v(æ|ae)gbillede|v(æ|ae)gbilleder)",
     "(@kunstobj|billede|billeder) (fra|k(ø|oe)bt i|k(ø|oe)bt hos|k(ø|oe)bt p(å|aa)) @kaedefra",
     // Signerede ting, der ikke er kunst: "Signeret bog", "LP signeret".
     "(signeret|signerede|nummereret|nummererede) @signting",
@@ -212,6 +253,8 @@ export const KUNST_FJERN_RAA =
     // Porcelæn (designerkeramik er uafklaret - advokat-spørgsmål 135).
     "(porcel(æ|ae)ns|porcel(æ|ae)n|keramik|stent(ø|oe)js) ?maleri(et|er|erne)?",
     "maleri(et|er|erne)? p(å|aa) porcel(æ|ae)n",
+    // Tekniske tegninger.
+    "(bygge|plan|arbejds|monterings|konstruktions|el|vvs|maskin|snit|facade|samle|udstyknings|matrikel)tegning(en|er|erne)?",
   ].join("|") +
   ")";
 
@@ -283,26 +326,40 @@ const KOMPILEREDE = KUNST_REGLER.map((r) => ({
 
 const B = "a-zæøå";
 const SKILLE = "[-.·_*']";
-const LEET: readonly [string, string][] = [
-  ["3", "e"],
-  ["1", "i"],
-  ["0", "o"],
-];
-const KORT_FOER = new RegExp(`(^|[^${B}])([${B}]{1,2})${SKILLE}(?=[${B}]{3})`, "g");
-const KORT_EFTER = new RegExp(`([${B}]{3})${SKILLE}([${B}]{1,2})(?=$|[^${B}])`, "g");
+// Accenter fjernes i varianten (é -> e). HOLD SYNKRON med translate() i
+// public.kunst_sloer_variant.
+const ACCENT_FRA = "äöüéèáàâêëíìîïóòôúùûñç";
+const ACCENT_TIL = "aoueeaaaeeiiiiooouuunc";
+const SAML_SKILLE = new RegExp(`([${B}])${SKILLE}(?=[${B}])`, "g");
 const ET_BOGSTAV = new RegExp(`^[${B}]$`);
 
 // Afslører simple forsøg på at skjule et ord. Samme trin som
-// public.kunst_sloer_variant (se toppen af filen).
-export function kunstSloerVariant(raa: string): string {
+// public.kunst_sloer_variant(p_tekst, p_et):
+//   1. små bogstaver (NFC), usynlige tegn fjernes
+//   2. @ -> a, € -> e, accenter fjernes (é -> e)
+//   3. 3/1/0 ved siden af et bogstav -> e/<et>/o (et = "i" eller "l")
+//   4. skilletegn (- . · _ * ') mellem to bogstaver fjernes ("ma-leri")
+//   5. normalisering, og 3+ enkeltbogstaver i træk sættes sammen ("m a l e r i")
+export function kunstSloerVariant(raa: string, et: "i" | "l" = "i"): string {
   let t = raa.normalize("NFC").toLowerCase().replace(USYNLIGE, "");
-  for (const [tal, bogstav] of LEET) {
+  t = t.replace(/@/g, "a").replace(/€/g, "e");
+  t = Array.from(t)
+    .map((c) => {
+      const i = ACCENT_FRA.indexOf(c);
+      return i >= 0 ? ACCENT_TIL[i] : c;
+    })
+    .join("");
+  for (const [tal, bogstav] of [
+    ["3", "e"],
+    ["1", et],
+    ["0", "o"],
+  ] as const) {
     for (let i = 0; i < 2; i++) {
       t = t.replace(new RegExp(`([${B}])${tal}`, "g"), `$1${bogstav}`);
       t = t.replace(new RegExp(`${tal}([${B}])`, "g"), `${bogstav}$1`);
     }
   }
-  t = t.replace(KORT_FOER, "$1$2").replace(KORT_EFTER, "$1$2");
+  t = t.replace(SAML_SKILLE, "$1");
   t = normaliserTekst(t);
   const ud: string[] = [];
   let raekke: string[] = [];
@@ -322,10 +379,26 @@ export function kunstSloerVariant(raa: string): string {
   return ud.filter((o) => o !== "").join(" ");
 }
 
+// Teksten efter de tilladte fraser er fjernet (som public.kunst_rens).
+function rens(norm: string): string {
+  return fjernFraser(norm, FJERN_RE);
+}
+
+// To og to ord sat sammen ("ma leri" -> "maleri"), bygget af den RENSEDE
+// tekst, så tilladte fraser ikke bliver til kunst-ord. Ordene selv står
+// først, så undtagelser stadig ses. "" ved under to ord. Som public.kunst_par.
+export function kunstPar(norm: string): string {
+  const ord = rens(norm).split(" ").filter((o) => o !== "");
+  if (ord.length < 2) return "";
+  const par: string[] = [];
+  for (let i = 0; i < ord.length - 1; i++) par.push(ord[i] + ord[i + 1]);
+  return [...ord, ...par].join(" ");
+}
+
 export type KunstResultat = { resultat: "ok" } | { resultat: "kunst"; ord: string; nr: number };
 
 function tjekNormaliseret(norm: string): KunstResultat | null {
-  const renset = fjernFraser(norm, FJERN_RE);
+  const renset = rens(norm);
   for (const r of KOMPILEREDE) {
     const m = renset.match(r.re);
     if (!m) continue;
@@ -336,18 +409,24 @@ function tjekNormaliseret(norm: string): KunstResultat | null {
   return null;
 }
 
-// Samme logik som public.kunst_tekst_tjek.
+// Samme logik som public.kunst_tekst_tjek: den normaliserede tekst, derefter
+// varianterne med 1 -> i og 1 -> l - og for hver også to ord samlet.
 export function tjekKunstTekst(...tekster: (string | null | undefined)[]): KunstResultat {
   // Tegn (ikke UTF-16-enheder), som left() i Postgres.
   const raa = Array.from(tekster.filter(Boolean).join(" ")).slice(0, KUNST_MAKS_TEGN).join("");
   const norm = normaliserTekst(raa);
   if (norm === "") return { resultat: "ok" };
-  const r = tjekNormaliseret(norm);
-  if (r) return r;
-  const variant = kunstSloerVariant(raa);
-  if (variant !== norm && variant !== "") {
-    const v = tjekNormaliseret(variant);
-    if (v) return v;
+  const set: string[] = [];
+  for (const k of [norm, kunstSloerVariant(raa, "i"), kunstSloerVariant(raa, "l")]) {
+    if (k === "" || set.includes(k)) continue;
+    set.push(k);
+    const r = tjekNormaliseret(k);
+    if (r) return r;
+    const par = kunstPar(k);
+    if (par !== "") {
+      const p = tjekNormaliseret(par);
+      if (p) return p;
+    }
   }
   return { resultat: "ok" };
 }
