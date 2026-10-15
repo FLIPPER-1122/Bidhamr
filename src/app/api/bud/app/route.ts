@@ -34,8 +34,10 @@ import { afgivBudFor, saetMaksimumFor } from "@/lib/bud/afgivBud";
 //
 // Idempotens: samme idempotens_noegle fra samme bruger giver det samme svar
 // igen (dobbelttryk eller genforsøg efter et tabt svar afgiver ikke et nyt
-// bud). Mens det første kald stadig kører, svarer et nyt kald 409
-// "behandles". Et afvist bud frigiver nøglen, så den kan bruges igen.
+// bud). Nøglen er bundet til auktion, type (bud/maksimum) og beløb - samme
+// nøgle med noget andet giver 409 "noegle_brugt". Mens det første kald
+// stadig kører, svarer et nyt kald 409 "behandles". Et afvist bud frigiver
+// nøglen, så den kan bruges igen.
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -72,7 +74,9 @@ export async function POST(req: NextRequest) {
   const harBud = krop.beloeb_oere !== undefined && krop.beloeb_oere !== null;
   const harMaks = krop.maksimum_oere !== undefined && krop.maksimum_oere !== null;
   if (harBud === harMaks) return appSvar(400, APP_UGYLDIG);
-  const kroner = oereTilKroner(harBud ? krop.beloeb_oere : krop.maksimum_oere);
+  const type = harBud ? "bud" : "maksimum";
+  const beloebOere = harBud ? krop.beloeb_oere : krop.maksimum_oere;
+  const kroner = oereTilKroner(beloebOere);
   if (kroner === null) {
     return appSvar(400, { fejl: harBud ? "Buddet skal være i hele kroner." : "Skriv dit maksimum i hele kroner.", kode: "ugyldig" });
   }
@@ -87,17 +91,22 @@ export async function POST(req: NextRequest) {
     // Nøglen tages, før buddet afgives (primærnøgle: bruger + nøgle).
     const { error: claimFejl } = await admin
       .from("app_bud_noegler")
-      .insert({ bruger_id: bruger.id, noegle: id, auktion_id: auktionId });
+      .insert({ bruger_id: bruger.id, noegle: id, auktion_id: auktionId, type, beloeb_oere: beloebOere });
     if (claimFejl) {
       if (claimFejl.code !== "23505") throw new Error(`app_bud_noegler: ${claimFejl.code} ${claimFejl.message}`);
       const { data: tidligere } = await admin
         .from("app_bud_noegler")
-        .select("auktion_id, svar")
+        .select("auktion_id, type, beloeb_oere, svar")
         .eq("bruger_id", bruger.id)
         .eq("noegle", id)
-        .maybeSingle<{ auktion_id: string; svar: Svar | null }>();
+        .maybeSingle<{ auktion_id: string; type: string | null; beloeb_oere: number | string | null; svar: Svar | null }>();
       if (!tidligere) return appSvar(409, BEHANDLES);
-      if (tidligere.auktion_id !== auktionId) {
+      // Nøglen er bundet til præcis dette bud: samme auktion, type og beløb.
+      if (
+        tidligere.auktion_id !== auktionId ||
+        tidligere.type !== type ||
+        Number(tidligere.beloeb_oere) !== beloebOere
+      ) {
         return appSvar(409, { fejl: "Nøglen er brugt til et andet bud. Prøv igen.", kode: "noegle_brugt" });
       }
       return tidligere.svar ? appSvar(200, tidligere.svar) : appSvar(409, BEHANDLES);

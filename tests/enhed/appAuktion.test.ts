@@ -1,6 +1,8 @@
 // POST /api/auktion/app/fjern-billeder og den fælles oprydning
-// (src/lib/auktionBilledOprydning.ts): kun ejeren, kun egen mappe, kun
-// filer, som ingen af ejerens auktioner bruger, og intet under en åben sag.
+// (src/lib/auktionBilledOprydning.ts): kun ejeren; hvad der må slettes,
+// afgør databasen (auktion_billeder_sletbare - testet i PGlite); appen
+// tjekker sager for HELE brugeren, så et andet auktion_id ikke kan bruges
+// til at slette bevis.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { falskKlient } from "./hjaelpere/falskSupabase";
@@ -14,8 +16,8 @@ const URL_DEL = "https://x.supabase.co/storage/v1/object/public/auktion-billeder
 const m = vi.hoisted(() => ({
   bruger: "11111111-1111-4111-8111-111111111111" as string | null,
   ejer: "11111111-1111-4111-8111-111111111111" as string | null,
-  iBrug: [] as string[],
-  aabenSag: false,
+  rpcSvar: { data: { kode: "ok", stier: [] as string[] } as unknown, error: null as null | { message: string } },
+  rpcKald: [] as { navn: string; args: unknown }[],
   slettet: [] as string[][],
 }));
 
@@ -28,15 +30,13 @@ vi.mock("@/lib/rateLimit", () => ({
 vi.mock("@/lib/drift", () => ({ logDriftFejl: vi.fn(async () => {}) }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => {
-    const k = falskKlient((q) => {
-      if (q.tabel === "auctions" && q.kolonner === "id, bruger_id") {
-        return { data: m.ejer ? { id: AUKTION, bruger_id: m.ejer } : null, error: null };
-      }
-      if (q.tabel === "auctions") return { data: [{ billeder: m.iBrug }], error: null };
-      if (q.tabel === "dsa_anmeldelser") return { data: m.aabenSag ? [{ id: "x" }] : [], error: null };
-      if (q.tabel === "reports") return { data: [], error: null };
-      return undefined;
-    }).klient;
+    const k = falskKlient(
+      (q) => (q.tabel === "auctions" ? { data: m.ejer ? { id: AUKTION, bruger_id: m.ejer } : null, error: null } : undefined),
+      (navn, args) => {
+        m.rpcKald.push({ navn, args });
+        return m.rpcSvar;
+      },
+    ).klient;
     return {
       ...k,
       storage: {
@@ -56,6 +56,7 @@ vi.mock("@/lib/appApi", async (orig) => ({
 }));
 
 const { POST } = await import("@/app/api/auktion/app/[handling]/route");
+const { sletFjernedeBilleder } = await import("@/lib/auktionBilledOprydning");
 
 async function kald(krop: unknown, handling = "fjern-billeder", token: string | null = TOKEN) {
   const headers: Record<string, string> = { "content-type": "application/json", host: "localhost" };
@@ -69,8 +70,8 @@ async function kald(krop: unknown, handling = "fjern-billeder", token: string | 
 beforeEach(() => {
   m.bruger = EJER;
   m.ejer = EJER;
-  m.iBrug = [];
-  m.aabenSag = false;
+  m.rpcSvar = { data: { kode: "ok", stier: [] }, error: null };
+  m.rpcKald = [];
   m.slettet = [];
 });
 
@@ -84,6 +85,7 @@ describe("POST /api/auktion/app/fjern-billeder", () => {
     m.bruger = EJER;
     m.ejer = null;
     expect((await kald({ auktion_id: AUKTION, stier: [] })).status).toBe(404);
+    expect(m.rpcKald).toEqual([]);
     expect(m.slettet).toEqual([]);
   });
 
@@ -94,27 +96,41 @@ describe("POST /api/auktion/app/fjern-billeder", () => {
     expect((await kald({ auktion_id: AUKTION, stier: [] }, "slet-alt")).status).toBe(404);
   });
 
-  it("sletter kun egne, ubrugte filer (stier og URL'er)", async () => {
-    m.iBrug = [`${URL_DEL}${EJER}/i-brug.jpg`, `${EJER}/ogsaa-i-brug.jpg`];
-    const r = await kald({
-      auktion_id: AUKTION,
-      stier: [
-        `${EJER}/gammel.jpg`,
-        `${URL_DEL}${EJER}/gammel2.jpg`,
-        `${EJER}/i-brug.jpg`,
-        `${EJER}/ogsaa-i-brug.jpg`,
-        `${FREMMED}/andens.jpg`,
-        `${EJER}/../${FREMMED}/x.jpg`,
-        "https://ond.example/x.jpg",
-      ],
-    });
+  it("databasen afgør for HELE brugeren (p_auktion null); kun dens stier slettes", async () => {
+    m.rpcSvar = { data: { kode: "ok", stier: [`${EJER}/gammel.jpg`] }, error: null };
+    const r = await kald({ auktion_id: AUKTION, stier: [`${EJER}/gammel.jpg`, `${URL_DEL}${EJER}/i-brug.jpg`] });
     expect(r).toEqual({ status: 200, body: { ok: true } });
-    expect(m.slettet).toEqual([[`${EJER}/gammel.jpg`, `${EJER}/gammel2.jpg`]]);
+    expect(m.rpcKald).toEqual([
+      {
+        navn: "auktion_billeder_sletbare",
+        args: { p_bruger: EJER, p_auktion: null, p_stier: [`${EJER}/gammel.jpg`, `${EJER}/i-brug.jpg`] },
+      },
+    ]);
+    expect(m.slettet).toEqual([[`${EJER}/gammel.jpg`]]);
   });
 
-  it("åben DSA-sag om auktionen: intet slettes", async () => {
-    m.aabenSag = true;
-    expect((await kald({ auktion_id: AUKTION, stier: [`${EJER}/gammel.jpg`] })).status).toBe(200);
+  it("åben sag om nogen af brugerens auktioner: 409 sag_aaben, intet slettes", async () => {
+    m.rpcSvar = { data: { kode: "sag_aaben" }, error: null };
+    const r = await kald({ auktion_id: AUKTION, stier: [`${EJER}/gammel.jpg`] });
+    expect(r.status).toBe(409);
+    expect(r.body).toEqual({
+      fejl: "Billederne kan ikke slettes lige nu, fordi BidHamr behandler en sag om en af dine auktioner.",
+      kode: "sag_aaben",
+    });
     expect(m.slettet).toEqual([]);
+  });
+
+  it("databasefejl: 500, intet slettes", async () => {
+    m.rpcSvar = { data: null, error: { message: "boom" } };
+    expect((await kald({ auktion_id: AUKTION, stier: [`${EJER}/gammel.jpg`] })).status).toBe(500);
+    expect(m.slettet).toEqual([]);
+  });
+});
+
+describe("hjemmesidens oprydning", () => {
+  it("tjekker sager om netop den redigerede auktion (p_auktion sat)", async () => {
+    m.rpcSvar = { data: { kode: "ok", stier: [`${EJER}/a.jpg`] }, error: null };
+    expect(await sletFjernedeBilleder(EJER, AUKTION, [`${URL_DEL}${EJER}/a.jpg`])).toEqual({ kode: "ok", slettet: 1 });
+    expect((m.rpcKald[0].args as { p_auktion: string }).p_auktion).toBe(AUKTION);
   });
 });

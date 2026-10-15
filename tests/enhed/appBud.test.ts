@@ -15,7 +15,7 @@ const m = vi.hoisted(() => ({
   graense: true,
   afgivBudFor: vi.fn(),
   saetMaksimumFor: vi.fn(),
-  noegler: new Map<string, { auktion_id: string; svar: unknown }>(),
+  noegler: new Map<string, { auktion_id: string; type?: string; beloeb_oere?: number; svar: unknown }>(),
   slutterKl: "2026-10-20T10:00:00.000Z",
   log: [] as Forespoergsel[],
 }));
@@ -35,9 +35,9 @@ vi.mock("@/lib/supabase/admin", () => ({
       if (q.tabel !== "app_bud_noegler") return undefined;
       const noegle = String(filter(q, "eq", "noegle") ?? (q.vaerdi as { noegle?: string } | undefined)?.noegle);
       if (q.handling === "insert") {
-        const v = q.vaerdi as { noegle: string; auktion_id: string };
+        const v = q.vaerdi as { noegle: string; auktion_id: string; type: string; beloeb_oere: number };
         if (m.noegler.has(v.noegle)) return { data: null, error: { code: "23505", message: "duplicate key" } };
-        m.noegler.set(v.noegle, { auktion_id: v.auktion_id, svar: null });
+        m.noegler.set(v.noegle, { auktion_id: v.auktion_id, type: v.type, beloeb_oere: v.beloeb_oere, svar: null });
         return { data: null, error: null };
       }
       if (q.handling === "update") {
@@ -130,10 +130,18 @@ describe("POST /api/bud/app", () => {
     const c = await kald(bud({ auktion_id: "99999999-9999-4999-8999-999999999999" }));
     expect(c.status).toBe(409);
     expect(c.body.kode).toBe("noegle_brugt");
+    // Samme nøgle med et andet beløb eller som maksimum: afvist.
+    const d = await kald(bud({ beloeb_oere: 16_000 }));
+    expect(d.body.kode).toBe("noegle_brugt");
+    const e = await kald({ auktion_id: AUKTION, maksimum_oere: 15_000, idempotens_noegle: NOEGLE });
+    expect(e.body.kode).toBe("noegle_brugt");
+    expect(m.afgivBudFor).toHaveBeenCalledTimes(1);
+    expect(m.saetMaksimumFor).not.toHaveBeenCalled();
+    expect(m.noegler.get(NOEGLE)).toMatchObject({ auktion_id: AUKTION, type: "bud", beloeb_oere: 15_000 });
   });
 
   it("mens det første kald stadig kører: 409 behandles", async () => {
-    m.noegler.set(NOEGLE, { auktion_id: AUKTION, svar: null });
+    m.noegler.set(NOEGLE, { auktion_id: AUKTION, type: "bud", beloeb_oere: 15_000, svar: null });
     const r = await kald(bud());
     expect(r.status).toBe(409);
     expect(r.body.kode).toBe("behandles");

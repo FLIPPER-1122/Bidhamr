@@ -23,13 +23,15 @@ import { sletFjernedeBilleder } from "@/lib/auktionBilledOprydning";
 //   { auktion_id, stier: string[] }   (højst 20; storage-stier "<bruger-id>/<fil>.jpg"
 //                                      eller de offentlige URL'er)
 //   200 { ok: true }
+//   409 { fejl, kode: "sag_aaben" }  en åben DSA-sag/rapport om NOGEN af brugerens auktioner
 //   400 ugyldig · 401 ikke_logget_ind · 403 ikke_ejer · 404 ikke_fundet · 429 · 500
 //
 // Kaldes efter en redigering (rpc rediger_auktion), hvor sælgeren har fjernet
 // billeder. Samme oprydning som hjemmesidens redigerAuktion
 // (src/lib/auktionBilledOprydning.ts): kun filer i ejerens egen mappe, kun
-// filer, som ingen af ejerens auktioner bruger, og intet slettes, mens der er
-// en åben DSA-anmeldelse eller rapport om auktionen. Kun ejeren af auktionen.
+// filer, som ingen af ejerens auktioner bruger (tjekket i databasen), og
+// intet slettes, mens der er en åben DSA-anmeldelse, rapport eller klage om
+// NOGEN af ejerens auktioner (409 sag_aaben). Kun ejeren af auktionen.
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -83,7 +85,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
     if (auktion.bruger_id !== bruger.id) {
       return appSvar(403, { fejl: "Det er ikke din auktion.", kode: "ikke_ejer" });
     }
-    if (stier.length > 0) await sletFjernedeBilleder(bruger.id, auktion.id, stier as string[]);
+    // helBruger: en åben sag om NOGEN af brugerens auktioner (eller brugeren
+    // selv) stopper hele kaldet - så et andet auktion_id ikke kan bruges til
+    // at slette bevis.
+    const r = await sletFjernedeBilleder(bruger.id, auktion.id, stier as string[], { helBruger: true });
+    if (r.kode === "sag_aaben") {
+      return appSvar(409, {
+        fejl: "Billederne kan ikke slettes lige nu, fordi BidHamr behandler en sag om en af dine auktioner.",
+        kode: "sag_aaben",
+      });
+    }
+    if (r.kode === "fejl") return appSvar(500, { fejl: APP_GENERISK, kode: "fejl" });
     return appSvar(200, { ok: true });
   } catch (err) {
     await logDriftFejl({ kilde: "server", sti: `/api/auktion/app/${handling}`, fejl: err, brugerId: bruger.id });

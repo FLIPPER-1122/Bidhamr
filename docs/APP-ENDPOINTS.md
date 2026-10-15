@@ -33,8 +33,8 @@ på hjemmesiden:
 | 429 | `for_mange` | Rate limit |
 | 500 | `fejl` | Noget gik galt (logget i /admin/drift) |
 
-Grænser (`src/lib/rateLimit.ts`): `handel_app_ip` (600/time, før login), `handel_app_bruger` (60/10 min, kun
-handlinger - ikke `status`/`andenchance-status`), `bud_app_ip` (600/time) + hjemmesidens `bud_bruger` og `bud_ip`,
+Grænser (`src/lib/rateLimit.ts`): `handel_app_ip` (600/time, før login), `handel_app_bruger` (60/10 min,
+handlinger), `handel_app_laes_bruger` (300/10 min, `status` og `andenchance-status`), `bud_app_ip` (600/time) + hjemmesidens `bud_bruger` og `bud_ip`,
 `konto_app_ip` (60/time) + hjemmesidens `adgangskode_bruger` / `nulstil_ip` / `nulstil_email`, `konto_data_app_ip`
 (60/time), `auktion_app_ip` (300/time) og `auktion_app_bruger` (30/10 min).
 
@@ -55,7 +55,10 @@ Alle handlinger med `trade_id` slår handlen op først: **404 `ikke_fundet`**, h
 | `andenchance-svar` | `{ tilbud_id, ja: boolean }` | `{ trade_id: string \| null }` |
 | `genopsaet` | `{ trade_id, startpris, varighed_dage: 3 \| 5 \| 7 \| 10 }` | `{ auktion_id }` |
 
-- **`status`** (køber og sælger): de oplysninger, handelssiden henter på serveren.
+- **`status`** (køber og sælger): de oplysninger, handelssiden henter på serveren. Årsagen `'ubetalt'` /
+  `'admin_annulleret'` gives til både køber og sælger. Til det er `erAnnulleretUbetalt` (hjemmesiden) ændret, så den
+  slår op for køber ELLER sælger (`annulleretUbetaltAarsag` i `src/lib/handel/handelStatus.ts`); før kun køberen.
+  Hjemmesiden kalder den stadig kun for køberen, så siden er uændret.
   - `annullering` er `null`, når handlen ikke er annulleret. `aarsag`: `'ubetalt'` (vinderen betalte ikke),
     `'admin_annulleret'` (BidHamr annullerede før betaling), `'afsendelsesfrist'` (ikke sendt inden 5 dage),
     `'afhentningsfrist'` (ikke hentet inden fristen), `'ikke_afhentet'` (pakken blev ikke hentet i pakkeshoppen og er
@@ -107,8 +110,9 @@ Alle handlinger med `trade_id` slår handlen op først: **404 `ikke_fundet`**, h
   `minimum_bid`, `maks_for_lavt`, `maks_under_bud`, `maks_ugyldigt`, `beskyttelse_laast`, `auktion_aendret` eller
   `afvist` (fx "Auktionen er allerede slut"). `429 for_mange`.
 - **Idempotens:** samme `idempotens_noegle` fra samme bruger giver det samme svar igen (dobbelttryk eller genforsøg
-  efter et tabt svar afgiver ikke et nyt bud). Lav en ny nøgle pr. tryk på "Byd". Mens det første kald kører:
-  `409 behandles`. Samme nøgle til en anden auktion: `409 noegle_brugt`. Et afvist bud frigiver nøglen.
+  efter et tabt svar afgiver ikke et nyt bud). Lav en ny nøgle pr. tryk på "Byd". Nøglen er bundet til auktion, type
+  (bud eller maksimum) og beløb: samme nøgle med en anden auktion, type eller et andet beløb giver `409
+  noegle_brugt`. Mens det første kald kører: `409 behandles`. Et afvist bud frigiver nøglen.
 - Overbudte bydere og sælgeren får besked som ved bud på hjemmesiden.
 
 ## POST /api/konto/adgangskode
@@ -134,8 +138,13 @@ hjemmesiden og `rpc("mine_data")`).
 
 `{ auktion_id, stier: string[] }` (højst 20; storage-stier `<bruger-id>/<fil>.jpg` eller de offentlige URL'er) →
 `200 { ok }`. Kald den efter `rpc("rediger_auktion")`, når sælgeren har fjernet billeder. Kun ejeren (`403 ikke_ejer`,
-`404 ikke_fundet`). Der slettes kun filer i ejerens egen mappe, som ingen af ejerens auktioner bruger, og intet,
-mens der er en åben DSA-anmeldelse eller rapport om auktionen. Svaret er `ok`, også når intet blev slettet.
+`404 ikke_fundet`). Databasen (`auktion_billeder_sletbare`, kun service role) afgør i SQL for præcis de stier, hvad
+der må slettes: kun filer i ejerens egen mappe, som ingen af ejerens auktioner bruger. Er der en åben sag om
+**nogen** af ejerens auktioner eller om ejeren selv - en DSA-anmeldelse, der ikke er afgjort (også når den er
+videresendt til admin), en rapport (`pending`/`under_behandling`) eller en DSA-klage, der afventer - afvises hele
+kaldet med `409 sag_aaben` ("Billederne kan ikke slettes lige nu, fordi BidHamr behandler en sag om en af dine
+auktioner."), og intet slettes. Svaret er `ok`, også når intet blev slettet. (Hjemmesidens egen oprydning efter en
+redigering tjekker som før sager om netop den auktion.)
 
 ## Ændret i eksisterende endpoints
 
@@ -154,7 +163,7 @@ Direkte fra appen med `supabase.rpc(...)`:
 |---|---|---|
 | `auktion_budhistorik({ p_auktion })` | anon + indlogget | `[{ id, byder, beloeb, oprettet, automatisk, er_mig }]` |
 | `mine_kunst_kontrol({ p_ids })` | indlogget | `[{ auction_id, kunst_kontrol }]` |
-| `saelger_kan_saelge({ p_saelger })` | anon + indlogget | `boolean` |
+| `auktion_saelger_kan_saelge({ p_auktion })` | anon + indlogget | `boolean \| null` |
 | `handel_chat_marker_laest({ p_trade })` | indlogget | `boolean` |
 | `antal_ulaeste_handelsbeskeder()` | indlogget | `integer` |
 | `min_auktion_boost({ p_auktion })` | indlogget (ejeren) | som før; `grund = 'kunst_kontrol'` når auktionen afventer kontrol |
@@ -166,10 +175,11 @@ Direkte fra appen med `supabase.rpc(...)`:
 - **`mine_kunst_kontrol`**: kun kalderens egne auktioner (højst 500 id'er). `kunst_kontrol`: `null`, `'afventer'`
   (vis "Afventer kontrol hos BidHamr" - auktionen er skjult for andre, og der kan ikke bydes), `'godkendt'` eller
   `'afvist'`.
-- **`saelger_kan_saelge`**: `false` = sælgeren er frosset, og der kan ikke bydes på sælgerens auktioner (`BHU03`). Vis
+- **`auktion_saelger_kan_saelge`**: svarer kun for en auktion, kalderen kan se (samme regel som auktionssiden/RLS),
+  ellers `null`. `false` = auktionens sælger er frosset, og der kan ikke bydes (`BHU03`). Vis
   "Der kan ikke bydes lige nu. Sælgeren skal have godkendt sin udbetalingskonto hos Stripe, før der kan bydes på
   sælgerens auktioner igen." (`BUD_SAELGER_FROSSET_*` i `src/lib/betaling/frosset.ts`) i stedet for budknappen. Kun
-  ja/nej. En spærret sælger (`BHU05`) vises ikke her (heller ikke på hjemmesiden) - buddet afvises med `BHU05`.
+  ja/nej. (Den første udgave, `saelger_kan_saelge(p_saelger)`, svarede for en vilkårlig bruger og er fjernet.) En spærret sælger (`BHU05`) vises ikke her (heller ikke på hjemmesiden) - buddet afvises med `BHU05`.
 - **Handelschat læst-status**: kald `handel_chat_marker_laest` når handelschatten vises (og når en ny besked kommer
   ind, mens den er åben). `antal_ulaeste_handelsbeskeder` tæller beskeder fra modparten og fra BidHamr i dine
   handler efter din sidste læsning; spamblokerede beskeder tæller ikke. Rækkerne kan læses med

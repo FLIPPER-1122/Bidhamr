@@ -18,6 +18,7 @@ const TOKEN = "aaa.bbb.ccc";
 const m = vi.hoisted(() => ({
   bruger: null as null | string,
   graense: true,
+  graenser: [] as string[],
   handel: null as null | Record<string, unknown>,
   sendPakkeFor: vi.fn(),
   markerModtagetFor: vi.fn(),
@@ -35,7 +36,10 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-real-ip":
 vi.mock("@/lib/rateLimit", () => ({
   FOR_MANGE_FORSOEG: "For mange forsøg.",
   klientIp: async () => "127.0.0.9",
-  tjekGraenser: async () => m.graense,
+  tjekGraenser: async (t: [string, string][]) => {
+    m.graenser.push(...t.map(([navn]) => navn));
+    return m.graense;
+  },
 }));
 vi.mock("@/lib/drift", () => ({ logDriftFejl: vi.fn(async () => {}) }));
 vi.mock("@/lib/supabase/admin", () => ({
@@ -86,6 +90,7 @@ beforeEach(() => {
   m.bruger = KOEBER;
   m.graense = true;
   m.log = [];
+  m.graenser = [];
   m.handel = { id: HANDEL, auction_id: AUKTION, seller_id: SAELGER, buyer_id: KOEBER, status: "pakke_sendt", afhentning: false };
 });
 
@@ -154,6 +159,23 @@ describe("adgang", () => {
   it("kroppen er for stor: 413", async () => {
     const r = await kald("status", { trade_id: HANDEL, fyld: "x".repeat(5000) });
     expect(r.status).toBe(413);
+  });
+});
+
+describe("grænser", () => {
+  it("læsninger har deres egen grænse pr. bruger; handlinger den strammere", async () => {
+    m.hentHandelAppStatus.mockResolvedValue({ annullering: null, betaling: null, fragt: { labelsAktiv: false, returlabelAktiv: false } });
+    await kald("status", { trade_id: HANDEL });
+    expect(m.graenser).toEqual(["handel_app_ip", "handel_app_laes_bruger"]);
+    m.graenser = [];
+    m.bruger = SAELGER;
+    m.hentAndenchanceStatusFor.mockResolvedValue({ ok: true });
+    await kald("andenchance-status", { trade_id: HANDEL });
+    expect(m.graenser).toEqual(["handel_app_ip", "handel_app_laes_bruger"]);
+    m.graenser = [];
+    m.markerModtagetFor.mockResolvedValue({ ok: true });
+    await kald("modtaget", { trade_id: HANDEL });
+    expect(m.graenser).toEqual(["handel_app_ip", "handel_app_bruger"]);
   });
 });
 

@@ -78,7 +78,7 @@ const HANDLINGER = [
 ] as const;
 type Handling = (typeof HANDLINGER)[number];
 
-// Læsninger tæller ikke mod handlingsgrænsen (som /api/fragt/app).
+// Læsninger tæller ikke mod handlingsgrænsen, men har deres egen.
 const LAESNINGER: Handling[] = ["status", "andenchance-status"];
 
 const IKKE_FUNDET = { fejl: "Handlen findes ikke.", kode: "ikke_fundet" };
@@ -143,7 +143,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
   if (!login) return appSvar(401, APP_IKKE_LOGGET_IND);
   const { bruger, supabase } = login;
 
-  if (!LAESNINGER.includes(handling) && !(await tjekGraenser([["handel_app_bruger", bruger.id]]))) {
+  // Læsninger har deres egen, rummelige grænse pr. bruger; handlinger den
+  // strammere handel_app_bruger.
+  const brugerGraense = LAESNINGER.includes(handling) ? "handel_app_laes_bruger" : "handel_app_bruger";
+  if (!(await tjekGraenser([[brugerGraense, bruger.id]]))) {
     return appSvar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
   }
 

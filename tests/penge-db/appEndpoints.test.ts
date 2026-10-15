@@ -47,7 +47,13 @@ create function public.er_staff() returns boolean language sql stable security d
   $$ select exists (select 1 from public.users u where u.id = auth.uid() and u.rolle in ('medarbejder','admin','chef')) $$;
 create table public.auctions (id uuid primary key default gen_random_uuid(), bruger_id uuid, titel text,
   status text default 'aktiv', skjult boolean default false, arkiveret_kl timestamptz, pauset_kl timestamptz,
-  slutter_kl timestamptz default now() + interval '3 days', erhverv boolean default false, kunst_kontrol text);
+  slutter_kl timestamptz default now() + interval '3 days', erhverv boolean default false, billeder text[] default '{}', kunst_kontrol text);
+create table public.dsa_afgoerelser (id uuid primary key default gen_random_uuid(), bruger_id uuid not null, auktion_id uuid);
+create table public.dsa_anmeldelser (id uuid primary key default gen_random_uuid(), indhold_type text not null,
+  indhold_id uuid, auktion_id uuid, anmeldt_bruger_id uuid, status text not null default 'ny', eskaleret_kl timestamptz);
+create table public.dsa_klager (id uuid primary key default gen_random_uuid(), afgoerelse_id uuid, anmeldelse_id uuid,
+  status text not null default 'afventer');
+create table public.reports (id uuid primary key default gen_random_uuid(), auction_id uuid, status text not null default 'pending');
 create table public.bids (id uuid primary key default gen_random_uuid(), auktion_id uuid, bruger_id uuid,
   "beløb" numeric not null, oprettet timestamptz not null default now(), automatisk boolean default false,
   beskyttelse boolean default false);
@@ -127,7 +133,12 @@ describe("migrationen", () => {
     const r = await en<Record<string, boolean>>(`
       select has_function_privilege('anon', 'public.auktion_budhistorik(uuid)', 'execute') as anon_hist,
              has_function_privilege('authenticated', 'public.auktion_budhistorik(uuid)', 'execute') as auth_hist,
-             has_function_privilege('anon', 'public.saelger_kan_saelge(uuid)', 'execute') as anon_frosset,
+             has_function_privilege('anon', 'public.auktion_saelger_kan_saelge(uuid)', 'execute') as anon_frosset,
+             to_regprocedure('public.saelger_kan_saelge(uuid)') is null as gammel_fjernet,
+             has_function_privilege('authenticated', 'public.auktion_billeder_sletbare(uuid,uuid,text[])', 'execute') as auth_slet,
+             has_function_privilege('service_role', 'public.auktion_billeder_sletbare(uuid,uuid,text[])', 'execute') as sr_slet,
+             has_function_privilege('anon', 'public.app_auktion_synlig(uuid)', 'execute') as anon_synlig,
+             has_function_privilege('authenticated', 'public.app_auktion_synlig(uuid)', 'execute') as auth_synlig,
              has_function_privilege('anon', 'public.mine_kunst_kontrol(uuid[])', 'execute') as anon_kunst,
              has_function_privilege('authenticated', 'public.mine_kunst_kontrol(uuid[])', 'execute') as auth_kunst,
              has_function_privilege('anon', 'public.handel_chat_marker_laest(uuid)', 'execute') as anon_laest,
@@ -146,6 +157,11 @@ describe("migrationen", () => {
       anon_hist: true,
       auth_hist: true,
       anon_frosset: true,
+      gammel_fjernet: true,
+      auth_slet: false,
+      sr_slet: true,
+      anon_synlig: false,
+      auth_synlig: false,
       anon_kunst: false,
       auth_kunst: true,
       anon_laest: false,
@@ -167,9 +183,10 @@ describe("migrationen", () => {
     const r = await alle<{ proname: string; prosecdef: boolean; proconfig: string[] | null }>(`
       select proname, prosecdef, proconfig from pg_proc
        where pronamespace = 'public'::regnamespace
-         and proname in ('auktion_budhistorik','mine_kunst_kontrol','saelger_kan_saelge',
-                         'handel_chat_marker_laest','antal_ulaeste_handelsbeskeder','min_auktion_boost')`);
-    expect(r).toHaveLength(6);
+         and proname in ('auktion_budhistorik','mine_kunst_kontrol','auktion_saelger_kan_saelge','app_auktion_synlig',
+                         'handel_chat_marker_laest','antal_ulaeste_handelsbeskeder','min_auktion_boost',
+                         'auktion_billeder_sletbare')`);
+    expect(r).toHaveLength(8);
     for (const f of r) {
       expect(f.prosecdef).toBe(true);
       expect(f.proconfig).toEqual(['search_path=""']);
@@ -306,15 +323,117 @@ describe("min_auktion_boost", () => {
   });
 });
 
-describe("saelger_kan_saelge", () => {
-  it("false for en frosset sælger, ellers true - kun en boolean", async () => {
+describe("auktion_saelger_kan_saelge", () => {
+  const kan = async (a: string) => (await en<{ v: boolean | null }>(`select public.auktion_saelger_kan_saelge($1) as v`, [a])).v;
+
+  it("false for en frosset sælgers auktion, ellers true", async () => {
+    const frosset = await auktion(FROSSET);
+    const normal = await auktion(SAELGER);
+    const udenProfil = await auktion(KOEBER);
     await som(null);
-    expect((await en<{ v: boolean }>(`select public.saelger_kan_saelge($1) as v`, [FROSSET])).v).toBe(false);
-    expect((await en<{ v: boolean }>(`select public.saelger_kan_saelge($1) as v`, [SAELGER])).v).toBe(true);
-    // Ingen betalingsprofil: kan bydes på.
-    expect((await en<{ v: boolean }>(`select public.saelger_kan_saelge($1) as v`, [KOEBER])).v).toBe(true);
-    const t = await en<{ t: string }>(`select pg_typeof(public.saelger_kan_saelge($1))::text as t`, [FROSSET]);
+    expect(await kan(frosset)).toBe(false);
+    expect(await kan(normal)).toBe(true);
+    expect(await kan(udenProfil)).toBe(true);
+    const t = await en<{ t: string }>(`select pg_typeof(public.auktion_saelger_kan_saelge($1))::text as t`, [frosset]);
     expect(t.t).toBe("boolean");
+  });
+
+  it("null for en auktion, kalderen ikke kan se (skjult, kunst 'afventer', ukendt)", async () => {
+    const skjult = await auktion(FROSSET, { skjult: true });
+    const kunst = await auktion(FROSSET, { kunst: "afventer" });
+    await som(null);
+    expect(await kan(skjult)).toBeNull();
+    expect(await kan(kunst)).toBeNull();
+    expect(await kan("00000000-0000-4000-8000-00000000ffff")).toBeNull();
+    await som(FREMMED);
+    expect(await kan(skjult)).toBeNull();
+    // Sælgeren selv og staff kan se den.
+    await som(FROSSET);
+    expect(await kan(skjult)).toBe(false);
+    await som(STAFF);
+    expect(await kan(kunst)).toBe(false);
+  });
+});
+
+describe("auktion_billeder_sletbare", () => {
+  const URL = "https://x.supabase.co/storage/v1/object/public/auktion-billeder/";
+  const EJER = "00000000-0000-4000-8000-0000000000c5";
+  const sletbare = async (auktionId: string | null, stier: string[]) =>
+    (await en<{ v: { kode: string; stier?: string[] } }>(`select public.auktion_billeder_sletbare($1, $2, $3::text[]) as v`, [
+      EJER,
+      auktionId,
+      stier,
+    ])).v;
+
+  it("kun egne stier, som ingen af ejerens auktioner bruger (URL eller sti)", async () => {
+    const a = await auktion(EJER);
+    await db.query(`update public.auctions set billeder = $2 where id = $1`, [a, [`${URL}${EJER}/i-brug.jpg?v=2`, `${EJER}/sti-i-brug.jpg`]]);
+    // En anden af ejerens auktioner bruger også et billede.
+    const b = await auktion(EJER);
+    await db.query(`update public.auctions set billeder = $2 where id = $1`, [b, [`${URL}${EJER}/genopsat.jpg`]]);
+    // En fremmed auktion med samme filnavn tæller ikke (andens mappe).
+    const r = await sletbare(a, [
+      `${EJER}/gammel.jpg`,
+      `${EJER}/i-brug.jpg`,
+      `${EJER}/sti-i-brug.jpg`,
+      `${EJER}/genopsat.jpg`,
+      `${FREMMED}/andens.jpg`,
+      `${EJER}/../${FREMMED}/x.jpg`,
+      `${EJER}/gammel.jpg`,
+    ]);
+    expect(r).toEqual({ kode: "ok", stier: [`${EJER}/gammel.jpg`] });
+  });
+
+  it("åben sag: per auktion (hjemmesiden) og for hele brugeren (appen)", async () => {
+    const a = await auktion(EJER);
+    const andenAuktion = await auktion(EJER);
+    const sti = [`${EJER}/fjernet.jpg`];
+    expect((await sletbare(a, sti)).kode).toBe("ok");
+
+    // Videresendt anmeldelse (status 'ny' + eskaleret_kl) om den ANDEN auktion.
+    const anm = (await en<{ id: string }>(
+      `insert into public.dsa_anmeldelser (indhold_type, indhold_id, auktion_id, status, eskaleret_kl)
+       values ('auktion', $1, $1, 'ny', now()) returning id`,
+      [andenAuktion],
+    )).id;
+    // Hjemmesiden (p_auktion = a): kun sager om netop a.
+    expect((await sletbare(a, sti)).kode).toBe("ok");
+    // Appen (p_auktion null): en sag om NOGEN af ejerens auktioner stopper alt.
+    expect(await sletbare(null, sti)).toEqual({ kode: "sag_aaben" });
+    expect(await sletbare(andenAuktion, sti)).toEqual({ kode: "sag_aaben" });
+    await db.query(`update public.dsa_anmeldelser set status = 'afgjort' where id = $1`, [anm]);
+    expect((await sletbare(null, sti)).kode).toBe("ok");
+
+    // Åben rapport.
+    const rap = (await en<{ id: string }>(
+      `insert into public.reports (auction_id, status) values ($1, 'under_behandling') returning id`,
+      [andenAuktion],
+    )).id;
+    expect((await sletbare(null, sti)).kode).toBe("sag_aaben");
+    await db.query(`update public.reports set status = 'behandlet' where id = $1`, [rap]);
+    expect((await sletbare(null, sti)).kode).toBe("ok");
+
+    // Anmeldelse om brugeren selv (fx profilen).
+    const pro = (await en<{ id: string }>(
+      `insert into public.dsa_anmeldelser (indhold_type, anmeldt_bruger_id) values ('profil', $1) returning id`,
+      [EJER],
+    )).id;
+    expect((await sletbare(null, sti)).kode).toBe("sag_aaben");
+    await db.query(`update public.dsa_anmeldelser set status = 'afgjort' where id = $1`, [pro]);
+
+    // Åben DSA-klage over en afgørelse om brugeren.
+    const afg = (await en<{ id: string }>(
+      `insert into public.dsa_afgoerelser (bruger_id, auktion_id) values ($1, $2) returning id`,
+      [EJER, andenAuktion],
+    )).id;
+    const klage = (await en<{ id: string }>(`insert into public.dsa_klager (afgoerelse_id) values ($1) returning id`, [afg])).id;
+    expect((await sletbare(null, sti)).kode).toBe("sag_aaben");
+    await db.query(`update public.dsa_klager set status = 'afgjort' where id = $1`, [klage]);
+    expect((await sletbare(null, sti)).kode).toBe("ok");
+  });
+
+  it("uden bruger: ugyldig", async () => {
+    expect((await en<{ v: { kode: string } }>(`select public.auktion_billeder_sletbare(null, null, '{}') as v`)).v.kode).toBe("ugyldig");
   });
 });
 
@@ -392,25 +511,33 @@ describe("handelschat: læst-status", () => {
 
 describe("app_bud_noegler", () => {
   it("én nøgle pr. bruger (primærnøgle), RLS slået til", async () => {
-    await db.query(`insert into public.app_bud_noegler (bruger_id, noegle, auktion_id) values ($1, $2, $3)`, [
+    await db.query(`insert into public.app_bud_noegler (bruger_id, noegle, auktion_id, type, beloeb_oere) values ($1, $2, $3, 'bud', 15000)`, [
       KOEBER,
       "00000000-0000-4000-8000-00000000e001",
       "00000000-0000-4000-8000-00000000e002",
     ]);
     await expect(
-      db.query(`insert into public.app_bud_noegler (bruger_id, noegle, auktion_id) values ($1, $2, $3)`, [
+      db.query(`insert into public.app_bud_noegler (bruger_id, noegle, auktion_id, type, beloeb_oere) values ($1, $2, $3, 'bud', 15000)`, [
         KOEBER,
         "00000000-0000-4000-8000-00000000e001",
         "00000000-0000-4000-8000-00000000e003",
       ]),
     ).rejects.toThrow(/duplicate key/);
     // En anden bruger må gerne bruge samme nøgle.
-    await db.query(`insert into public.app_bud_noegler (bruger_id, noegle, auktion_id) values ($1, $2, $3)`, [
+    await db.query(`insert into public.app_bud_noegler (bruger_id, noegle, auktion_id, type, beloeb_oere) values ($1, $2, $3, 'bud', 15000)`, [
       SAELGER,
       "00000000-0000-4000-8000-00000000e001",
       "00000000-0000-4000-8000-00000000e002",
     ]);
     const rls = await en<{ r: boolean }>(`select relrowsecurity as r from pg_class where oid = 'public.app_bud_noegler'::regclass`);
     expect(rls.r).toBe(true);
+    // Type og beløb er bundet til nøglen og tjekkes.
+    await expect(
+      db.query(`insert into public.app_bud_noegler (bruger_id, noegle, auktion_id, type, beloeb_oere) values ($1, $2, $3, 'andet', 100)`, [
+        BYDER2,
+        "00000000-0000-4000-8000-00000000e004",
+        "00000000-0000-4000-8000-00000000e002",
+      ]),
+    ).rejects.toThrow(/check constraint/);
   });
 });

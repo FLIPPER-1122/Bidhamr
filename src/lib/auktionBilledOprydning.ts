@@ -7,15 +7,22 @@ import { logDriftFejl } from "@/lib/drift";
 // hjemmesiden (redigerAuktion i src/app/actions/auktion.ts) og appen
 // (POST /api/auktion/app/fjern-billeder, docs/APP-ENDPOINTS.md).
 //
-// Sletter billeder, sælgeren har fjernet ved redigering. Kun filer i
-// brugerens egen mappe i auktion-billeder, og kun hvis ingen af brugerens
-// auktioner (fx en genopsat vare) stadig bruger dem - sammenlignet på
-// storage-stien, ikke den præcise URL. Slettes aldrig, mens der er en åben
-// DSA-anmeldelse (ny eller videresendt) eller en åben rapport om auktionen:
-// billederne kan være bevis. Service role, fordi storage-policyen ikke lader
-// brugeren slette - ejeren er tjekket af kalderen (rediger_auktion på
-// hjemmesiden, auctions.bruger_id i appens endpoint). Kaster aldrig.
-export const BILLEDE_STI = /^[0-9a-f-]{36}\/[A-Za-z0-9_-]{1,100}\.[a-z0-9]{1,5}$/;
+// Hvad der må slettes, afgør databasen (auktion_billeder_sletbare,
+// 20261025010000_app_endpoints.sql), i SQL for præcis de stier, der skal
+// slettes:
+//   - kun filer i brugerens egen mappe i auktion-billeder,
+//   - kun filer, som INGEN af brugerens auktioner bruger (fx en genopsat
+//     vare) - som offentlig URL eller ren sti,
+//   - intet, mens der er en åben sag: en DSA-anmeldelse, der ikke er afgjort
+//     (status 'ny' - også når den er videresendt til admin), eller en åben
+//     rapport. Billederne kan være bevis.
+// helBruger = false (hjemmesiden): sager om netop den redigerede auktion.
+// helBruger = true (appen): sager om NOGEN af brugerens auktioner, om brugeren
+// selv eller en åben DSA-klage - så et andet auktion_id ikke kan bruges til at
+// slette bevis. Service role, fordi storage-policyen ikke lader brugeren
+// slette - ejeren er tjekket af kalderen (rediger_auktion på hjemmesiden,
+// auctions.bruger_id i appens endpoint). Kaster aldrig.
+
 const BILLEDE_MARKOER = "/storage/v1/object/public/auktion-billeder/";
 
 export function billedeSti(url: string): string | null {
@@ -29,63 +36,42 @@ export function billedeSti(url: string): string | null {
 }
 
 // En offentlig URL (hjemmesiden) eller en ren storage-sti
-// ("<bruger-id>/<fil>.jpg", appen) -> storage-stien. Andet giver null.
+// ("<bruger-id>/<fil>.jpg", appen) -> storage-stien. Databasen tjekker
+// formatet og mappen igen.
 function tilSti(v: string): string | null {
-  if (v.includes(BILLEDE_MARKOER)) return billedeSti(v);
-  return BILLEDE_STI.test(v) ? v : null;
+  return v.includes(BILLEDE_MARKOER) ? billedeSti(v) : v;
 }
 
-// Returnerer antal slettede filer (0 ved fejl - fejlen logges i drift).
-export async function sletFjernedeBilleder(brugerId: string, auktionId: string, urls: string[]): Promise<number> {
+export type OprydningSvar = { kode: "ok"; slettet: number } | { kode: "sag_aaben" } | { kode: "fejl" };
+
+export async function sletFjernedeBilleder(
+  brugerId: string,
+  auktionId: string,
+  urls: string[],
+  o: { helBruger?: boolean } = {},
+): Promise<OprydningSvar> {
   try {
+    const kandidater = [...new Set(urls.map(tilSti).filter((s): s is string => !!s))];
+    if (kandidater.length === 0) return { kode: "ok", slettet: 0 };
+
     const admin = createAdminClient();
-    const kandidater = urls
-      .map(tilSti)
-      .filter((sti): sti is string => !!sti && BILLEDE_STI.test(sti) && sti.startsWith(`${brugerId.toLowerCase()}/`));
-    if (kandidater.length === 0) return 0;
+    const { data, error } = await admin.rpc("auktion_billeder_sletbare", {
+      p_bruger: brugerId,
+      p_auktion: o.helBruger ? null : auktionId,
+      p_stier: kandidater,
+    });
+    if (error) throw new Error(`auktion_billeder_sletbare: ${error.message}`);
+    const svar = (data ?? {}) as { kode?: string; stier?: unknown };
+    if (svar.kode === "sag_aaben") return { kode: "sag_aaben" };
+    if (svar.kode !== "ok" || !Array.isArray(svar.stier)) throw new Error(`auktion_billeder_sletbare: ${svar.kode}`);
+    const stier = svar.stier.filter((s): s is string => typeof s === "string");
+    if (stier.length === 0) return { kode: "ok", slettet: 0 };
 
-    // Åben sag om auktionen: behold alt.
-    const [anm, rap] = await Promise.all([
-      admin
-        .from("dsa_anmeldelser")
-        .select("id")
-        .eq("status", "ny")
-        .or(`auktion_id.eq.${auktionId},and(indhold_type.eq.auktion,indhold_id.eq.${auktionId})`)
-        .limit(1),
-      admin
-        .from("reports")
-        .select("id")
-        .eq("auction_id", auktionId)
-        .in("status", ["pending", "under_behandling"])
-        .limit(1),
-    ]);
-    if (anm.error || rap.error) throw new Error(anm.error?.message ?? rap.error?.message);
-    if ((anm.data?.length ?? 0) > 0 || (rap.data?.length ?? 0) > 0) return 0;
-
-    // Billederne ligger i brugerens egen mappe og kan kun bruges af
-    // brugerens egne auktioner (auktion_billeder_gyldige). Både URL'er og
-    // rene stier tæller som "i brug".
-    const { data: auktioner, error } = await admin
-      .from("auctions")
-      .select("billeder")
-      .eq("bruger_id", brugerId)
-      .limit(5000);
-    if (error) throw new Error(error.message);
-    const iBrug = new Set<string>();
-    for (const a of (auktioner ?? []) as { billeder: string[] | null }[]) {
-      for (const url of a.billeder ?? []) {
-        const sti = typeof url === "string" ? tilSti(url) : null;
-        if (sti) iBrug.add(sti);
-      }
-    }
-
-    const stier = [...new Set(kandidater)].filter((sti) => !iBrug.has(sti));
-    if (stier.length === 0) return 0;
     const { error: sletFejl } = await admin.storage.from("auktion-billeder").remove(stier);
     if (sletFejl) throw sletFejl;
-    return stier.length;
+    return { kode: "ok", slettet: stier.length };
   } catch (err) {
     await logDriftFejl({ kilde: "action", hvor: "redigerAuktion: slet fjernede billeder", fejl: err });
-    return 0;
+    return { kode: "fejl" };
   }
 }

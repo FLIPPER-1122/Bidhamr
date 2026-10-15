@@ -6,7 +6,7 @@
 //   - POST /api/bud/app på en afsluttet auktion: databasens afvisning og
 //     nøglen frigives; ugyldig krop 400.
 //   - RPC'erne fra 20261025010000_app_endpoints.sql som brugeren selv:
-//     auktion_budhistorik, mine_kunst_kontrol, saelger_kan_saelge,
+//     auktion_budhistorik, mine_kunst_kontrol, auktion_saelger_kan_saelge,
 //     handel_chat_marker_laest og antal_ulaeste_handelsbeskeder.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -112,7 +112,7 @@ describe("POST /api/bud/app", () => {
 });
 
 describe("RPC'erne som brugeren selv", () => {
-  it("auktion_budhistorik, mine_kunst_kontrol og saelger_kan_saelge", async () => {
+  it("auktion_budhistorik, mine_kunst_kontrol og auktion_saelger_kan_saelge", async () => {
     const saelger = await logIndSom(SAELGER.id, SAELGER.email);
     const hist = await saelger.rpc("auktion_budhistorik", { p_auktion: h.auktionId });
     expect(hist.error).toBeNull();
@@ -122,8 +122,12 @@ describe("RPC'erne som brugeren selv", () => {
     expect(kunst.data).toEqual([{ auction_id: h.auktionId, kunst_kontrol: null }]);
     const fremmed = await logIndSom(FREMMED.id, FREMMED.email);
     expect((await fremmed.rpc("mine_kunst_kontrol", { p_ids: [h.auktionId] })).data).toEqual([]);
-    const kan = await fremmed.rpc("saelger_kan_saelge", { p_saelger: SAELGER.id });
+    // Testens auktion er afsluttet og synlig: sælgeren er ikke frosset.
+    const kan = await fremmed.rpc("auktion_saelger_kan_saelge", { p_auktion: h.auktionId });
+    expect(kan.error).toBeNull();
     expect(kan.data).toBe(true);
+    // Ukendt auktion: null (intet om nogen sælger).
+    expect((await fremmed.rpc("auktion_saelger_kan_saelge", { p_auktion: randomUUID() })).data).toBeNull();
   });
 
   it("handelschat: marker læst (kun parterne) og antal ulæste", async () => {
