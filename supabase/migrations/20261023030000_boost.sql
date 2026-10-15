@@ -554,8 +554,14 @@ returns jsonb language plpgsql security definer set search_path = '' as $fn$
 declare
   k record;
   v_k uuid;
+  v_bruger uuid;
 begin
   if p_pi is null then return jsonb_build_object('kode', 'ukendt'); end if;
+  -- LÅSERÆKKEFØLGE (overalt): brugerens pointkonto (boost_laas_bruger) FØR
+  -- rækken i boost_koeb (for update) - ellers deadlock (40P01) med fx en
+  -- samtidig indsigelse, staff-refusion eller boost. Brugeren slås op uden lås.
+  select b.bruger_id into v_bruger from public.boost_koeb b where b.stripe_payment_intent_id = p_pi;
+  if v_bruger is not null then perform public.boost_laas_bruger(v_bruger); end if;
   select b.id, b.status, b.beloeb_oere, b.bruger_id, b.point into k
     from public.boost_koeb b where b.stripe_payment_intent_id = p_pi for update;
   if k.id is null then
@@ -640,11 +646,15 @@ declare
   v_grund text := nullif(btrim(coalesce(p_begrundelse, '')), '');
   k record;
   v_trukket integer;
+  v_bruger uuid;
 begin
   if p_staff is null or not exists (select 1 from public.users u where u.id = p_staff and u.rolle = 'chef') then
     return jsonb_build_object('kode', 'ingen_adgang');
   end if;
   if v_grund is null then return jsonb_build_object('kode', 'begrundelse_mangler'); end if;
+  -- Låserækkefølge: brugerens pointkonto før rækken (se boost_koeb_registrer).
+  select b.bruger_id into v_bruger from public.boost_koeb b where b.id = p_id;
+  if v_bruger is not null then perform public.boost_laas_bruger(v_bruger); end if;
   select b.id, b.bruger_id, b.status, b.point into k from public.boost_koeb b where b.id = p_id for update;
   if k.id is null then return jsonb_build_object('kode', 'ikke_fundet'); end if;
   if k.bruger_id = p_staff then return jsonb_build_object('kode', 'inhabil'); end if;
@@ -711,7 +721,11 @@ create or replace function public.boost_koeb_registrer_charge_refusion(p_charge 
 returns text language plpgsql security definer set search_path = '' as $fn$
 declare
   k record;
+  v_bruger uuid;
 begin
+  -- Låserækkefølge: brugerens pointkonto før rækken (se boost_koeb_registrer).
+  select b.bruger_id into v_bruger from public.boost_koeb b where b.stripe_charge_id = p_charge;
+  if v_bruger is not null then perform public.boost_laas_bruger(v_bruger); end if;
   select b.id, b.status into k from public.boost_koeb b where b.stripe_charge_id = p_charge for update;
   if k.id is null then return 'ukendt'; end if;
   if k.status = 'refunderet' then return 'allerede'; end if;
@@ -763,8 +777,10 @@ declare
   v_bruger uuid;
 begin
   if p_charge is null or p_status is null then return 'ukendt'; end if;
-  -- Lås brugerens pointkonto først (samme lås og rækkefølge som boost_brug
-  -- og ledgeren), så låsen/tilbageførslen ikke kan krydse et samtidigt boost.
+  -- Låserækkefølge (overalt): brugerens pointkonto (boost_laas_bruger) FØR
+  -- rækken i boost_koeb (for update) - som boost_koeb_registrer,
+  -- boost_staff_refusion, boost_koeb_registrer_charge_refusion, boost_brug og
+  -- ledgeren - så der aldrig kan opstå en deadlock (40P01).
   select b.bruger_id into v_bruger from public.boost_koeb b where b.stripe_charge_id = p_charge;
   if v_bruger is null then return 'ukendt'; end if;
   perform public.boost_laas_bruger(v_bruger);

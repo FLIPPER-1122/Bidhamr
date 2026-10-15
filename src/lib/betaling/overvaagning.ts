@@ -365,7 +365,9 @@ export async function opsamlBoostIndsigelser(
     .lte("opdateret", siden(minAlder))
     .limit(100);
   if (error) {
-    if (/does not exist|Could not find|42P01|42703|PGRST20/i.test(`${error.code ?? ""} ${error.message}`)) return 0;
+    // Kun "tabellen findes ikke" (migrationen er ikke kørt): 42P01 fra
+    // Postgres - via PostgREST hedder samme fejl PGRST205. Alt andet kastes.
+    if (error.code === "42P01" || error.code === "PGRST205") return 0;
     throw new Error(`åbne boost-indsigelser: ${error.message}`);
   }
   for (const k of aabne ?? []) {

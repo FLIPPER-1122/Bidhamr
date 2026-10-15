@@ -712,6 +712,57 @@ describe("review-rettelser", () => {
     }
   });
 
+  it("låserækkefølge: brugerens pointkonto låses FØR rækken i boost_koeb (ingen deadlock)", async () => {
+    // Statisk: i hver funktion, der både låser brugeren og en boost_koeb-række,
+    // kommer boost_laas_bruger før den første 'for update'.
+    for (const fn of [
+      "boost_koeb_registrer",
+      "boost_staff_refusion",
+      "boost_koeb_registrer_charge_refusion",
+      "boost_koeb_indsigelse",
+      "boost_koeb_start",
+    ]) {
+      const { def: medKommentarer } = await en<{ def: string }>(
+        `select pg_get_functiondef(p.oid) as def from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = $1`, [fn]);
+      const def = medKommentarer.replace(/--[^\n]*/g, "");
+      const laas = def.indexOf("boost_laas_bruger(");
+      const raekke = def.search(/for update/i);
+      expect(laas, fn).toBeGreaterThan(-1);
+      expect(raekke, fn).toBeGreaterThan(-1);
+      expect(laas, fn).toBeLessThan(raekke);
+    }
+    // Dynamisk: brugerens advisory lock holdes, når registrer/refusion kører.
+    const noegle = (await en<{ n: string }>(`select hashtextextended('bidhamr-boost-point:' || $1::text, 0)::text as n`, [PRIVAT])).n;
+    const holdt = async () =>
+      (await en<{ n: number }>(
+        `select count(*)::int as n from pg_locks
+          where locktype = 'advisory' and ((classid::bigint << 32) | objid::bigint)::text = $1`, [noegle])).n;
+    const s = await koebStart(PRIVAT);
+    const pi = `pi_laas_${String(s.id).slice(0, 8)}`;
+    await en(`select public.boost_koeb_gem_pi($1, $2, $3)`, [s.id, pi, s.pi_forsoeg]);
+    await db.exec("begin");
+    try {
+      await db.query(`select public.boost_koeb_registrer($1, 'succeeded', 'ch_laas', 3900, null)`, [pi]);
+      expect(await holdt()).toBe(1);
+    } finally {
+      await db.exec("commit");
+    }
+    await db.exec("begin");
+    try {
+      await db.query(`select public.boost_koeb_registrer_charge_refusion('ch_laas', 're_laas', false)`);
+      expect(await holdt()).toBe(1);
+    } finally {
+      await db.exec("commit");
+    }
+    await db.exec("begin");
+    try {
+      await db.query(`select public.boost_staff_refusion($1, $2, 'test')`, [CHEF, s.id]);
+      expect(await holdt()).toBe(1);
+    } finally {
+      await db.exec("commit");
+    }
+  });
+
   it("cron og start: 7 dage uden aktivitet annullerer købet (kun med samme PaymentIntent); start laver et nyt", async () => {
     const gammel = await en<{ id: string }>(
       `insert into public.boost_koeb (bruger_id, point, beloeb_oere, oprettet_kl, aktivitet_kl, stripe_payment_intent_id)

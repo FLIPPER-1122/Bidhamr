@@ -353,10 +353,12 @@ export type BoostAfst = {
   stripe_refund_id: string | null;
   tidligere_payment_intents: string[] | null;
   betalt_kl: string | null;
+  stripe_dispute_id: string | null;
+  indsigelse_status: string | null;
 };
 
 const BOOST_KOLONNER =
-  "id, status, beloeb_oere, modtaget_oere, stripe_payment_intent_id, stripe_charge_id, stripe_refund_id, tidligere_payment_intents, betalt_kl";
+  "id, status, beloeb_oere, modtaget_oere, stripe_payment_intent_id, stripe_charge_id, stripe_refund_id, tidligere_payment_intents, betalt_kl, stripe_dispute_id, indsigelse_status";
 
 async function boostVed(
   admin: Admin,
@@ -1528,10 +1530,19 @@ async function afstemIndsigelser(
     if (piId && (kendte.has(piId) || afv.has(piId))) continue; // handel - overvågningen spejler den
     const bk = piId ? bkPi.get(piId) : undefined;
     if (bk) {
-      // Spejl indsigelsen (idempotent): en mistet webhook må ikke lade en
-      // åben indsigelse stå uden lås - eller en tabt uden tilbageførsel.
-      const { spejlIndsigelse } = await import("@/lib/betaling/stripeBetaling");
-      await spejlIndsigelse(d.id);
+      // Spejl indsigelsen, hvis databasen ikke allerede har samme status som
+      // Stripe (en mistet webhook må ikke lade en åben indsigelse stå uden
+      // lås - eller en tabt uden tilbageførsel). Passer den, spejles intet
+      // (ingen ny markering til staff og intet ekstra Stripe-kald). En fejl
+      // logges, og trinnet fortsætter.
+      if (bk.stripe_dispute_id !== d.id || bk.indsigelse_status !== d.status) {
+        try {
+          const { spejlIndsigelse } = await import("@/lib/betaling/stripeBetaling");
+          await spejlIndsigelse(d.id);
+        } catch (err) {
+          await logDriftFejl({ kilde: "cron", sti: "pengeafstemning", hvor: `Pengeafstemning: spejl indsigelse ${d.id} (boost)`, fejl: err });
+        }
+      }
       await registrer({
         noegle: `indsigelse:${d.id}`,
         alarmNoegle: `indsigelse-boost:${d.id}`,
