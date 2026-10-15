@@ -23,6 +23,8 @@ interface AuctionRowMedBudCount {
   antal_bud?: number | null;
   // auctions.erhverv: mærket "Erhvervssælger" på kortet.
   erhverv?: boolean | null;
+  // auctions.bruger_id: til "Populær sælger" (markerPopulaereSaelgere).
+  bruger_id?: string | null;
 }
 
 export function mapAuctionTilKort(
@@ -39,5 +41,6 @@ export function mapAuctionTilKort(
     slutterSnart: erUnderEnTime(auktion.slutter_kl),
     billede: auktion.billeder?.[0] ?? null,
     erhverv: auktion.erhverv === true,
+    ...(auktion.bruger_id ? { saelgerId: auktion.bruger_id } : {}),
   };
 }

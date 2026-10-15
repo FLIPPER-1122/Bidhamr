@@ -3,7 +3,7 @@
 # Konkurrencebetingelser for BidHamrs månedlige lodtrækning om et gavekort
 
 > **Til Filip og advokaten (fjernes, før siden går live):**
-> - Skrevet 13. oktober 2026 ud fra Filips regler (13. okt. 2026) og `ROADMAP-BESLUTNINGER.md` ("Nye funktioner"). Funktionen er ikke bygget endnu.
+> - Skrevet 13. oktober 2026 ud fra Filips regler (13. og 15. okt. 2026) og `ROADMAP-BESLUTNINGER.md` ("Nye funktioner"). Funktionen er bygget (`20261023020000_badge_konkurrence.sql`), men vises ikke som betingelser, før advokaten har godkendt teksten.
 > - `[TODO Filip: …]` = oplysninger eller valg, Filip skal udfylde.
 > - `[ADVOKAT: …]` = juridiske spørgsmål. De er samlet i `jura/noter-til-advokat.md`, afsnittet "Månedlig konkurrence og boost (13. okt. 2026)" (nr. 123–134).
 > - Udkastet er ikke et juridisk løfte. Intet her må vises som endelige betingelser, før advokaten har godkendt det.
@@ -47,7 +47,7 @@
 
 3.1 Konkurrencen kører hver kalendermåned, fra den 1. kl. 00.00 til den sidste dag i måneden kl. 23.59 (dansk tid). Hver måned er en selvstændig konkurrence.
 
-3.2 Konkurrencen begynder [TODO Filip: første måned med konkurrence] og kører, indtil BidHamr ændrer eller stopper den (se afsnit 11).
+3.2 Konkurrencen begynder 1. november 2026 og kører, indtil BidHamr ændrer eller stopper den (se afsnit 11).
 
 ## 4. Sådan deltager du, og sådan tælles lod
 
@@ -55,20 +55,23 @@
 
 4.2 Det koster ikke noget at deltage. Du skal ikke købe noget eller betale noget ekstra – du deltager blot ved at bruge BidHamr som normalt. De almindelige gebyrer for at sælge på BidHamr gælder som altid og har intet med konkurrencen at gøre. [ADVOKAT: Er det korrekt at beskrive deltagelsen som gratis, når man skal sælge for at deltage, og BidHamr tjener gebyrer på salget? Se nr. 123.]
 
-4.3 Du får én lod for hvert gennemført salg i måneden. Sælger du fx fem ting, der alle bliver gennemført, har du fem lod.
+4.3 Du får én lod for hvert gennemført salg i måneden. Du kan dog højst få én lod pr. køber pr. måned, uanset hvor mange ting den samme køber køber af dig. Sælger du fx fem ting til fem forskellige købere, og alle bliver gennemført, har du fem lod. Sælger du fem ting til den samme køber, har du én lod.
 
-4.4 Et salg er gennemført, når køberen har betalt, og handlen er afsluttet, fordi køberen har modtaget eller hentet varen, og pengene er frigivet til dig. Salget tæller i den måned, hvor handlen blev afsluttet – ikke den måned, hvor auktionen sluttede. [TODO Filip: Bekræft, at det er afslutningsdatoen (frigivelsen), der afgør måneden.]
+4.3a Et salg tæller kun, hvis det vindende bud er mindst 50 kr.
+
+4.4 Et salg er gennemført, når køberen har betalt, og handlen er afsluttet, fordi køberen har modtaget eller hentet varen, og pengene er frigivet til dig. Salget tæller i den måned, hvor handlen blev afsluttet, og pengene blev frigivet til dig – ikke den måned, hvor auktionen sluttede.
 
 4.5 Disse handler giver ikke lod:
 
 - annullerede handler (fx hvis køberen ikke betaler),
 - handler, der er refunderet helt eller delvist, fx efter en sag eller en indsigelse fra køberens bank,
 - handler, der stadig har en åben sag eller anke, når lodtrækningen sker,
+- salg, hvor det vindende bud er under 50 kr.,
 - salg fra en firmakonto.
 
 Bliver en handel annulleret eller refunderet før lodtrækningen, fjerner vi lodden. [ADVOKAT: Hvad sker der, hvis vinderens lod bliver refunderet efter lodtrækningen, fx efter en anke? Skal præmien så kunne kræves tilbage, eller skal den være vundet endeligt?]
 
-4.6 Du kan se dine lod for den aktuelle måned på din konto. [TODO Filip: Skal sælgeren kunne se sine lod? Det er ikke besluttet.]
+4.6 Du kan se dine lod for den aktuelle måned under Min konto.
 
 ## 5. Præmien
 
@@ -96,9 +99,9 @@ Bliver en handel annulleret eller refunderet før lodtrækningen, fjerner vi lod
 
 7.1 Vinderen får besked på e-mail og med en besked på BidHamr senest [TODO Filip: fx 3 hverdage] efter lodtrækningen. Vi spørger aldrig om din adgangskode, dine kortoplysninger eller om at betale noget for at få præmien.
 
-7.2 Vinderen skal svare inden for 14 dage og bekræfte, at præmien modtages. [TODO Filip: Bekræft fristen på 14 dage.]
+7.2 Vinderen skal svare inden for 14 dage efter lodtrækningen og bekræfte, at præmien modtages.
 
-7.3 Svarer vinderen ikke inden fristen, eller opfylder vinderen ikke betingelserne, bortfalder præmien. Vi trækker så en ny vinder blandt de øvrige lod for samme måned efter de samme regler. Det sker højst [TODO Filip: fx 2] gange. Er der stadig ingen vinder, bortfalder præmien for den måned.
+7.3 Svarer vinderen ikke inden fristen, eller opfylder vinderen ikke betingelserne, bortfalder præmien. Vi trækker så en ny vinder blandt de øvrige lod for samme måned efter de samme regler. Det sker højst én gang pr. måned. Svarer den nye vinder heller ikke, eller opfylder den nye vinder heller ikke betingelserne, bortfalder præmien for den måned.
 
 ## 8. Offentliggørelse af vinderen
 
