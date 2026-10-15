@@ -354,11 +354,14 @@ export async function spejlBoostPi(pi: Stripe.PaymentIntent): Promise<string> {
 // Returen fra betalingen (hjemmesiden): brugeren kommer tilbage med
 // payment_intent i adressen. Slås op hos Stripe og spejles, men KUN hvis
 // PaymentIntenten er brugerens eget boost-køb. Kaster aldrig.
+// "ikke_fundet": PaymentIntenten findes ikke som boost-køb, eller den er
+// en andens - så vises der ingen kvittering. null: noget fejlede (vises som
+// "behandles", webhooken gør købet færdigt).
 export async function synkBoostRetur(brugerId: string, piId: string): Promise<string | null> {
   try {
-    if (!/^pi_[A-Za-z0-9_]{1,250}$/.test(piId)) return null;
+    if (!/^pi_[A-Za-z0-9_]{1,250}$/.test(piId)) return "ikke_fundet";
     const k = await boostKoebForPi(piId);
-    if (!k || k.bruger_id !== brugerId) return null;
+    if (!k || k.bruger_id !== brugerId) return "ikke_fundet";
     return await spejlBoostPi(await getStripe().paymentIntents.retrieve(piId));
   } catch (err) {
     await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "Boost: retur fra betaling", fejl: err, brugerId });

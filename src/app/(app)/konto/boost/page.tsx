@@ -70,8 +70,9 @@ export default async function BoostSide({
   // Retur fra betalingen: slå PaymentIntenten op hos Stripe med det samme
   // (kun brugerens eget køb), så pointene ikke venter på webhooken.
   let returKode: string | null = null;
-  if (boost === "retur" && typeof payment_intent === "string") {
-    returKode = await synkBoostRetur(authData.user.id, payment_intent);
+  if (boost === "retur") {
+    returKode =
+      typeof payment_intent === "string" ? await synkBoostRetur(authData.user.id, payment_intent) : "ikke_fundet";
   }
 
   const { data, error } = await supabase.rpc("mine_point");
@@ -87,7 +88,8 @@ export default async function BoostSide({
         </p>
       ) : (
         <>
-          {boost === "retur" && (
+          {/* Ingen kvittering for en betaling, der ikke er brugerens eget boost-køb. */}
+          {boost === "retur" && returKode !== "ikke_fundet" && (
             <p
               role="status"
               className={`mt-6 rounded-xl border p-4 text-sm ${
