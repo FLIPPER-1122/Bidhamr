@@ -119,6 +119,9 @@ export async function opretHandel(o: {
     trade_id: t.id,
     maade: "pakkeshop",
     fragtfirma: "shipmondo",
+    // Påkrævet med Shipmondo efter 20261024010000_fragt_shipmondo_transportoer.sql
+    // (kørt på testdatabasen).
+    transportoer: "dao",
     pakkeshop_id: "TEST",
     pakkeshop_navn: "TEST pakkeshop",
     pakkeshop_adresse: "Testvej 1",

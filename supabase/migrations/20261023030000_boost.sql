@@ -174,6 +174,12 @@ create table if not exists public.boost_koeb (
 comment on table public.boost_koeb is
   'Køb af boost-point (Filip, 13. okt. 2026): betaling til BidHamrs platformskonto (BidHamrs egen omsætning med moms). Højst ét åbent køb pr. bruger. Skrives kun af security definer-funktionerne. Brugeren kan læse sine egne køb. Handelsdata - slettes aldrig.';
 
+-- Tabt indsigelse fra køberens bank (pointene trækkes tilbage) og
+-- annullering af et køb, der aldrig blev betalt (7 dage).
+alter table public.boost_koeb add column if not exists indsigelse_tabt_kl timestamptz;
+alter table public.boost_koeb add column if not exists stripe_dispute_id text;
+alter table public.boost_koeb add column if not exists annulleret_kl timestamptz;
+
 create unique index if not exists boost_koeb_et_aabent on public.boost_koeb (bruger_id) where status in ('afventer', 'behandles');
 create unique index if not exists boost_koeb_pi on public.boost_koeb (stripe_payment_intent_id) where stripe_payment_intent_id is not null;
 create index if not exists boost_koeb_charge on public.boost_koeb (stripe_charge_id) where stripe_charge_id is not null;
@@ -712,9 +718,56 @@ begin
 end;
 $fn$;
 
+-- Indsigelse fra køberens bank på et boost-køb er TABT (dispute 'lost',
+-- eller pengene er trukket - funds_withdrawn): banken har givet køberen
+-- pengene, så pointene trækkes tilbage, så langt saldoen rækker, og købet
+-- markeres til staff. Idempotent (tilbageførslen findes højst én gang pr.
+-- køb). Købets status røres ikke (det er ikke en refusion fra BidHamr).
+-- 'tilbagefoert' | 'allerede' | 'ukendt'
+create or replace function public.boost_koeb_indsigelse_tabt(p_charge text, p_dispute text default null)
+returns text language plpgsql security definer set search_path = '' as $fn$
+declare
+  k record;
+begin
+  if p_charge is null then return 'ukendt'; end if;
+  select b.id, b.indsigelse_tabt_kl into k from public.boost_koeb b where b.stripe_charge_id = p_charge for update;
+  if k.id is null then return 'ukendt'; end if;
+  if k.indsigelse_tabt_kl is not null then
+    perform public.boost_koeb_tilbagefoer(k.id); -- no-op, hvis den findes
+    return 'allerede';
+  end if;
+  update public.boost_koeb
+     set indsigelse_tabt_kl = now(), stripe_dispute_id = coalesce(p_dispute, stripe_dispute_id),
+         kraever_opmaerksomhed = true,
+         opmaerksomhed_tekst = left(concat_ws(E'\n', opmaerksomhed_tekst,
+           'Indsigelsen fra køberens bank er tabt - pointene er trukket tilbage, så langt saldoen rakte.'), 4000)
+   where id = k.id;
+  perform public.boost_koeb_tilbagefoer(k.id);
+  return 'tilbagefoert';
+end;
+$fn$;
+
+-- Et køb, der aldrig blev betalt, annulleres (cron, efter 7 dage - efter at
+-- PaymentIntenten er annulleret hos Stripe). Kun fra 'afventer'.
+create or replace function public.boost_koeb_annuller(p_id uuid)
+returns boolean language plpgsql security definer set search_path = '' as $fn$
+begin
+  update public.boost_koeb
+     set status = 'annulleret', annulleret_kl = now(),
+         tidligere_payment_intents = case when stripe_payment_intent_id is null then tidligere_payment_intents
+                                          else array_append(tidligere_payment_intents, stripe_payment_intent_id) end,
+         stripe_payment_intent_id = null
+   where id = p_id and status = 'afventer';
+  return found;
+end;
+$fn$;
+
 -- Cron: hvad skal gøres? (claimet med synket_kl / refusion_naeste_kl)
 --   'synk'      åbent køb med PaymentIntent i over 15 min (mistet webhook)
 --   'refusion'  refusionen er claimet, men ikke gennemført
+--   'annuller'  købet har stået ubetalt ('afventer') i 7 dage: PaymentIntenten
+--               annulleres hos Stripe, og købet annulleres (boost_koeb_annuller)
+-- Rækkefølge: refusioner, så nye køb, der aldrig er synket, så resten.
 create or replace function public.boost_koeb_cron(p_graense integer default 20)
 returns table (id uuid, handling text)
 language plpgsql security definer set search_path = '' as $fn$
@@ -725,24 +778,29 @@ begin
   return query
   with k as (
     select b.id,
-           case when b.status = 'refunderes' then 'refusion' else 'synk' end as handling
+           case when b.status = 'refunderes' then 'refusion'
+                when b.status = 'afventer' and b.oprettet_kl <= now() - interval '7 days' then 'annuller'
+                else 'synk' end as handling,
+           b.status, b.synket_kl, b.refusion_naeste_kl, b.oprettet_kl
       from public.boost_koeb b
      where (b.status = 'refunderes' and b.refusion_forsoeg < 5
             and (b.refusion_naeste_kl is null or b.refusion_naeste_kl <= now())
             and b.refusion_anmodet_kl <= now() - interval '2 minutes')
+        or (b.status = 'afventer' and b.oprettet_kl <= now() - interval '7 days'
+            and (b.synket_kl is null or b.synket_kl <= now() - interval '15 minutes'))
         or (b.status in ('afventer', 'behandles') and b.stripe_payment_intent_id is not null
             and b.opdateret <= now() - interval '15 minutes'
             -- Opgivne betalinger: hvert 15. minut det første døgn, derefter hver 6. time.
             and (b.synket_kl is null
                  or b.synket_kl <= now() - case when b.oprettet_kl > now() - interval '24 hours'
                                                 then interval '15 minutes' else interval '6 hours' end))
-     order by case when b.status = 'refunderes' then 0 else 1 end,
+     order by case when b.status = 'refunderes' then 0 when b.synket_kl is null then 1 else 2 end,
               coalesce(b.refusion_naeste_kl, b.synket_kl, b.oprettet_kl)
      limit v_graense
      for update of b skip locked
   ), u as (
     update public.boost_koeb x
-       set synket_kl = case when k.handling = 'synk' then now() else x.synket_kl end,
+       set synket_kl = case when k.handling in ('synk', 'annuller') then now() else x.synket_kl end,
            refusion_naeste_kl = case when k.handling = 'refusion' then now() + interval '10 minutes' else x.refusion_naeste_kl end
       from k
      where x.id = k.id
@@ -863,6 +921,9 @@ comment on table public.boost_optjening_afvist is
 drop trigger if exists boost_optjening_afvist_laast on public.boost_optjening_afvist;
 create trigger boost_optjening_afvist_laast before update or delete on public.boost_optjening_afvist
   for each row execute function public.boost_forbyd_aendring();
+drop trigger if exists boost_optjening_afvist_ingen_truncate on public.boost_optjening_afvist;
+create trigger boost_optjening_afvist_ingen_truncate before truncate on public.boost_optjening_afvist
+  for each statement execute function public.boost_forbyd_aendring();
 alter table public.boost_optjening_afvist enable row level security;
 revoke all on public.boost_optjening_afvist from public, anon, authenticated, service_role;
 grant select on public.boost_optjening_afvist to service_role;
@@ -897,9 +958,12 @@ begin
       -- ingen åben/tabt indsigelse, ikke annulleret, ikke BidHamrs systemkonto.
       select g.betaling_id as id, g.seller_id, g.buyer_id,
              to_char(g.frigivet_kl at time zone 'Europe/Copenhagen', 'YYYY-MM') as maaned
-        from public.gennemfoerte_salg(s.optjening_fra_kl, null, null) g
-        join public.users u on u.id = g.seller_id
-       where u.konto_type = 'privat'
+        -- Kun de seneste 60 dage (så kørslen ikke bliver langsommere med
+        -- tiden); et salg frigives og synkes langt inden for det vindue.
+        from public.gennemfoerte_salg(greatest(s.optjening_fra_kl, now() - interval '60 days'), null, null) g
+       -- Kun private, og ikke spærrede, lukkede eller suspenderede sælgere
+       -- (boost_bruger_spaerret: null = må bruge boost).
+       where public.boost_bruger_spaerret(g.seller_id) is null
          and not exists (select 1 from public.boost_optjening_afvist x where x.betaling_id = g.betaling_id)
          and not exists (select 1 from public.boost_posteringer p where p.betaling_id = g.betaling_id and p.type = 'optjening')
        order by g.frigivet_kl
@@ -1120,6 +1184,8 @@ language sql stable security definer set search_path = '' as $fn$
     from public.auktion_boosts b
     join public.auctions a on a.id = b.auktion_id
    where b.auktion_id = any ((coalesce(p_auktioner, '{}'::uuid[]))[1:500])
+     -- Kun auktioner, der kan ses (som boost_top).
+     and not coalesce(a.skjult, false) and a.arkiveret_kl is null and a.pauset_kl is null
      and (to_jsonb(a) ->> 'kunst_kontrol') is distinct from 'afventer'
      and b.start_kl <= now() and b.slut_kl > now()
    group by b.auktion_id;
@@ -1172,6 +1238,41 @@ $fn$;
 -- ===========================================================================
 alter table public.fakturaer add column if not exists boost_koeb_id uuid
   references public.boost_koeb(id) on delete restrict;
+
+-- Drift-tjek (md5 af den normaliserede definition, uden mellemrum): de to
+-- CHECK'er erstattes kun, hvis de er præcis den kendte udgave fra
+-- 20261012080000_fakturaer.sql (fakturaer_kilde) og
+-- 20261022010000_returfragt_betaling.sql (fakturaer_slags_check) - eller
+-- allerede er denne fils udgave (genkørsel). Ellers stoppes migrationen, så
+-- en ændring lavet et andet sted ikke overskrives i stilhed.
+do $do$
+declare
+  v_navn text;
+  v_def  text;
+  v_md5  text;
+  v_kendte text[];
+begin
+  foreach v_navn in array array['fakturaer_kilde', 'fakturaer_slags_check'] loop
+    select pg_get_constraintdef(c.oid) into v_def
+      from pg_constraint c where c.conrelid = 'public.fakturaer'::regclass and c.conname = v_navn;
+    if v_def is null then
+      raise exception 'Drift: CHECK % på fakturaer mangler - kontrollér fakturaer, før boost-migrationen køres', v_navn;
+    end if;
+    v_md5 := md5(regexp_replace(v_def, '\s', '', 'g'));
+    v_kendte := case v_navn
+      when 'fakturaer_kilde' then array[
+        md5(regexp_replace($k$CHECK ((((dokument = ANY (ARRAY['faktura'::text, 'kreditnota'::text])) AND (betaling_id IS NOT NULL) AND (firma_regning_id IS NULL) AND (part = ANY (ARRAY['koeber'::text, 'saelger'::text]))) OR ((dokument = ANY (ARRAY['abonnement'::text, 'abonnement_retur'::text])) AND (firma_regning_id IS NOT NULL) AND (betaling_id IS NULL) AND (part = 'firma'::text))))$k$, '\s', '', 'g')),
+        md5(regexp_replace($k$CHECK ((((dokument = ANY (ARRAY['faktura'::text, 'kreditnota'::text])) AND (betaling_id IS NOT NULL) AND (firma_regning_id IS NULL) AND (part = ANY (ARRAY['koeber'::text, 'saelger'::text]))) OR ((dokument = ANY (ARRAY['faktura'::text, 'kreditnota'::text])) AND (slags = 'boost'::text) AND (boost_koeb_id IS NOT NULL) AND (betaling_id IS NULL) AND (firma_regning_id IS NULL) AND (part = 'koeber'::text)) OR ((dokument = ANY (ARRAY['abonnement'::text, 'abonnement_retur'::text])) AND (firma_regning_id IS NOT NULL) AND (betaling_id IS NULL) AND (part = 'firma'::text))))$k$, '\s', '', 'g'))]
+      else array[
+        md5(regexp_replace($k$CHECK (((slags = ANY (ARRAY['salg'::text, 'returfragt'::text, 'sag_returfragt'::text])) AND ((slags = 'salg'::text) OR ((slags = 'returfragt'::text) AND (dokument = 'faktura'::text) AND (part = 'koeber'::text)) OR ((slags = 'sag_returfragt'::text) AND (dokument = ANY (ARRAY['faktura'::text, 'kreditnota'::text])) AND (part = 'koeber'::text)))))$k$, '\s', '', 'g')),
+        md5(regexp_replace($k$CHECK (((slags = ANY (ARRAY['salg'::text, 'returfragt'::text, 'sag_returfragt'::text, 'boost'::text])) AND ((slags = 'salg'::text) OR ((slags = 'returfragt'::text) AND (dokument = 'faktura'::text) AND (part = 'koeber'::text)) OR ((slags = 'sag_returfragt'::text) AND (dokument = ANY (ARRAY['faktura'::text, 'kreditnota'::text])) AND (part = 'koeber'::text)) OR ((slags = 'boost'::text) AND (dokument = ANY (ARRAY['faktura'::text, 'kreditnota'::text])) AND (part = 'koeber'::text)))))$k$, '\s', '', 'g'))]
+      end;
+    if not (v_md5 = any (v_kendte)) then
+      raise exception 'Drift: CHECK % på fakturaer er ændret uden for migrationerne (md5 %) - opdatér boost-migrationen: %',
+        v_navn, v_md5, v_def;
+    end if;
+  end loop;
+end $do$;
 
 alter table public.fakturaer drop constraint if exists fakturaer_kilde;
 alter table public.fakturaer add constraint fakturaer_kilde check (
@@ -1345,6 +1446,8 @@ begin
     'public.boost_koeb_refusion_fejlet(text, text)',
     'public.boost_koeb_registrer_charge_refusion(text, text, boolean)',
     'public.boost_koeb_cron(integer)',
+    'public.boost_koeb_indsigelse_tabt(text, text)',
+    'public.boost_koeb_annuller(uuid)',
     'public.boost_brug(uuid, uuid, uuid)',
     'public.boost_point_synk(integer)',
     'public.boost_staff_justering(uuid, uuid, integer, text, uuid)',

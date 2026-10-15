@@ -1913,7 +1913,14 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
   if (error) throw new Error(`betaling_registrer_indsigelse: ${error.message}`);
   const resultat = String(data);
   if (resultat === "ukendt") {
-    console.error("Indsigelse på ukendt betaling:", d.id, piId, chId);
+    // Køb af boost-point: er indsigelsen tabt (lost / funds_withdrawn),
+    // trækkes pointene tilbage (idempotent). Kaster ved fejl, så webhooken
+    // prøver igen.
+    // Alarmen til chefen sendes stadig (alarmIndsigelse nedenfor).
+    const { spejlBoostIndsigelse } = await import("@/lib/betaling/boost");
+    const bk = await spejlBoostIndsigelse(d, chId);
+    if (bk && bk !== "ukendt") console.log(`Indsigelse ${d.id} på boost-køb (charge ${chId}): ${bk}`);
+    else console.error("Indsigelse på ukendt betaling:", d.id, piId, chId);
   }
   await alarmIndsigelse(d, piId, chId, resultat);
   // Sælgeren får besked, når indsigelsen åbnes (så varen ikke sendes) og når

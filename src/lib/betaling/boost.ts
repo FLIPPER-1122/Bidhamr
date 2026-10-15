@@ -494,6 +494,16 @@ export async function staffRefunderBoostKoeb(
 export async function spejlBoostRefusionsfejl(refund: Stripe.Refund): Promise<string | null> {
   if (refund.metadata?.type !== BOOST_TYPE) return null;
   if (refund.status !== "failed" && refund.status !== "canceled") return refund.status ?? "ukendt";
+  // Refusionen af en dobbeltbetaling (kasseret PaymentIntent) er ikke gemt på
+  // købet og prøves ikke igen af cron'en: staff skal refundere manuelt - nu.
+  if (refund.metadata?.kasseret === "ja") {
+    await alarmPrTilfaelde({
+      noegle: `boost-kasseret-refusion-fejlet:${refund.id}`,
+      hvor: "betaling/boost",
+      fejl: `Refusionen ${refund.id} af en dobbeltbetaling af boost-point (køb ${refund.metadata?.boost_koeb_id || "?"}) ${refund.status === "failed" ? "fejlede" : "blev annulleret"} hos Stripe${refund.failure_reason ? ` (${refund.failure_reason})` : ""}. Køberen har betalt to gange - refundér manuelt i Stripe.`,
+    });
+    return "kasseret_alarm";
+  }
   const { data, error } = await createAdminClient().rpc("boost_koeb_refusion_fejlet", {
     p_refund: refund.id,
     p_fejl: `Refusionen ${refund.status === "failed" ? "fejlede" : "blev annulleret"} hos Stripe${refund.failure_reason ? ` (${refund.failure_reason})` : ""}`,
@@ -530,6 +540,32 @@ export async function spejlBoostChargeRefusion(charge: Stripe.Charge): Promise<s
     });
   }
   return kode;
+}
+
+// Er indsigelsen tabt for BidHamr? Status 'lost', eller pengene er trukket
+// (funds_withdrawn: nettobeløbet af indsigelsens bevægelser er negativt) og
+// ikke vundet tilbage.
+export function boostIndsigelseTabt(d: Pick<Stripe.Dispute, "status" | "balance_transactions">): boolean {
+  if (d.status === "lost") return true;
+  if (d.status === "won") return false;
+  const netto = (d.balance_transactions ?? []).reduce((s, bt) => s + Number(bt.amount ?? 0), 0);
+  return netto < 0;
+}
+
+// Indsigelse på et boost-køb (webhooken): tabes den, trækkes pointene
+// tilbage, så langt saldoen rækker (idempotent i databasen). Svar: kode eller
+// null (ikke tabt / ikke et boost-køb).
+export async function spejlBoostIndsigelse(d: Stripe.Dispute, chargeId: string): Promise<string | null> {
+  if (!boostIndsigelseTabt(d)) return null;
+  const { data, error } = await createAdminClient().rpc("boost_koeb_indsigelse_tabt", {
+    p_charge: chargeId,
+    p_dispute: d.id,
+  });
+  if (error) {
+    if (manglerBoost(error)) return null;
+    throw new Error(`boost_koeb_indsigelse_tabt: ${error.message}`);
+  }
+  return String(data);
 }
 
 // ------------------------------------------------------------------ brug boost
@@ -594,26 +630,43 @@ export async function brugBoost(brugerId: string, auktionId: unknown, noegle: un
 
 // ------------------------------------------------------------------ cron
 
-export type BoostCronResultat = { synket: number; refunderet: number; optjent: number; tilbagefoert: number; fejl: number };
+export type BoostCronResultat = {
+  synket: number;
+  refunderet: number;
+  annulleret: number;
+  optjent: number;
+  tilbagefoert: number;
+  fejl: number;
+};
 
 // Kaldes fra betalings-cron'en: mistede webhooks (åbne køb med PaymentIntent
 // i over 15 min), refusioner, der skal prøves igen, og point ved salg
 // (optjening og tilbageførsel). null = migrationen er ikke kørt.
 export async function koerBoostCron(): Promise<BoostCronResultat | null> {
-  const r: BoostCronResultat = { synket: 0, refunderet: 0, optjent: 0, tilbagefoert: 0, fejl: 0 };
+  const r: BoostCronResultat = { synket: 0, refunderet: 0, annulleret: 0, optjent: 0, tilbagefoert: 0, fejl: 0 };
   const admin = createAdminClient();
 
-  const { data: synk, error: synkFejl } = await admin.rpc("boost_point_synk", { p_graense: 500 });
-  if (synkFejl) {
-    if (manglerBoost(synkFejl)) return null;
-    throw new Error(`boost_point_synk: ${synkFejl.message}`);
+  // Point ved salg: i sin egen try/catch, så en fejl her aldrig stopper
+  // synk og refusioner af køb nedenfor (og omvendt).
+  try {
+    const { data: synk, error: synkFejl } = await admin.rpc("boost_point_synk", { p_graense: 500 });
+    if (synkFejl) {
+      if (manglerBoost(synkFejl)) return null;
+      throw new Error(`boost_point_synk: ${synkFejl.message}`);
+    }
+    const p = synk as { optjent?: number; tilbagefoert?: number } | null;
+    r.optjent = Number(p?.optjent ?? 0);
+    r.tilbagefoert = Number(p?.tilbagefoert ?? 0);
+  } catch (err) {
+    r.fejl++;
+    await logDriftFejl({ kilde: "cron", sti: "boost", hvor: "Boost: point ved salg", fejl: err });
   }
-  const p = synk as { optjent?: number; tilbagefoert?: number } | null;
-  r.optjent = Number(p?.optjent ?? 0);
-  r.tilbagefoert = Number(p?.tilbagefoert ?? 0);
 
   const { data, error } = await admin.rpc("boost_koeb_cron", { p_graense: 20 });
-  if (error) throw new Error(`boost_koeb_cron: ${error.message}`);
+  if (error) {
+    if (manglerBoost(error)) return r;
+    throw new Error(`boost_koeb_cron: ${error.message}`);
+  }
   const opgaver = (data ?? []) as { id: string; handling: string }[];
   if (opgaver.length === 0) return r;
   const stripe = getStripe();
@@ -626,6 +679,26 @@ export async function koerBoostCron(): Promise<BoostCronResultat | null> {
         r.synket++;
       } else if (o.handling === "refusion") {
         if ((await refunderBoostKoeb(k.id)) === "refunderet") r.refunderet++;
+      } else if (o.handling === "annuller") {
+        // Ubetalt i 7 dage: PaymentIntenten annulleres hos Stripe (er den
+        // nået at blive betalt, spejles den i stedet), så købet annulleres.
+        if (k.stripe_payment_intent_id) {
+          const pi = await stripe.paymentIntents.retrieve(k.stripe_payment_intent_id);
+          if (pi.status === "succeeded" || pi.status === "processing") {
+            await spejlBoostPi(pi);
+            continue;
+          }
+          if (pi.status !== "canceled") {
+            await stripe.paymentIntents.cancel(
+              pi.id,
+              { cancellation_reason: "abandoned" },
+              { idempotencyKey: `bidhamr-boost-annuller-${pi.id}` },
+            );
+          }
+        }
+        const { error: aFejl } = await admin.rpc("boost_koeb_annuller", { p_id: k.id });
+        if (aFejl) throw new Error(`boost_koeb_annuller: ${aFejl.message}`);
+        r.annulleret++;
       }
     } catch (err) {
       r.fejl++;

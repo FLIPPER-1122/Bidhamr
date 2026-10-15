@@ -89,7 +89,11 @@ create table public.fakturaer (
   constraint fakturaer_kilde check (
     (dokument in ('faktura', 'kreditnota') and betaling_id is not null and firma_regning_id is null and part in ('koeber', 'saelger'))
     or (dokument in ('abonnement', 'abonnement_retur') and firma_regning_id is not null and betaling_id is null and part = 'firma')),
-  constraint fakturaer_slags_check check (slags in ('salg', 'returfragt', 'sag_returfragt')));
+  -- Som efter 20261022010000_returfragt_betaling.sql (migrationen drift-tjekker den).
+  constraint fakturaer_slags_check check (slags in ('salg', 'returfragt', 'sag_returfragt')
+         and (slags = 'salg'
+              or (slags = 'returfragt' and dokument = 'faktura' and part = 'koeber')
+              or (slags = 'sag_returfragt' and dokument in ('faktura', 'kreditnota') and part = 'koeber'))));
 create function public.faktura_linje(p_kode text, p_tekst text, p_beloeb bigint) returns jsonb language sql immutable as
   $$ select case when p_beloeb is null or p_beloeb <= 0 then null
             else jsonb_build_object('kode', p_kode, 'tekst', p_tekst, 'beloeb_oere', p_beloeb) end $$;
@@ -632,6 +636,78 @@ describe("visning", () => {
   });
 });
 
+describe("review-rettelser", () => {
+  it("tabt indsigelse på et køb: pointene trækkes tilbage én gang (idempotent); kun service role", async () => {
+    await nulstil(PRIVAT2);
+    const k = await koebtPoint(PRIVAT2); // 100
+    await j(`select public.boost_staff_justering($1, $2, -30, 'brugt', $3) as v`, [CHEF, PRIVAT2, randomUUID()]); // 70
+    const ch = (await en<{ c: string }>(`select stripe_charge_id as c from public.boost_koeb where id = $1`, [k.id])).c;
+    expect((await en<{ v: string }>(`select public.boost_koeb_indsigelse_tabt($1, 'dp_1') as v`, [ch])).v).toBe("tilbagefoert");
+    expect(await saldo(PRIVAT2)).toBe(0);
+    expect((await en<{ v: string }>(`select public.boost_koeb_indsigelse_tabt($1, 'dp_1') as v`, [ch])).v).toBe("allerede");
+    expect((await en<{ v: string }>(`select public.boost_koeb_indsigelse_tabt('ch_findes_ikke') as v`)).v).toBe("ukendt");
+    const t = await en(`select point, oensket_point from public.boost_posteringer where boost_koeb_id = $1 and type = 'tilbagefoersel'`, [k.id]);
+    expect(t).toEqual({ point: -70, oensket_point: 100 });
+    const s = await en(`select status, kraever_opmaerksomhed, stripe_dispute_id, (indsigelse_tabt_kl is not null) as tabt
+                          from public.boost_koeb where id = $1`, [k.id]);
+    expect(s).toEqual({ status: "betalt", kraever_opmaerksomhed: true, stripe_dispute_id: "dp_1", tabt: true });
+    const r = await en<Record<string, boolean>>(`
+      select has_function_privilege('service_role', 'public.boost_koeb_indsigelse_tabt(text,text)', 'execute') as sr,
+             has_function_privilege('authenticated', 'public.boost_koeb_indsigelse_tabt(text,text)', 'execute') as auth,
+             has_function_privilege('anon', 'public.boost_koeb_indsigelse_tabt(text,text)', 'execute') as anon`);
+    expect(r).toEqual({ sr: true, auth: false, anon: false });
+  });
+
+  it("cron: et køb, der har stået ubetalt i 7 dage, skal annulleres; nye køb først", async () => {
+    const gammel = await en<{ id: string }>(
+      `insert into public.boost_koeb (bruger_id, point, beloeb_oere, oprettet_kl, stripe_payment_intent_id)
+       values ($1, 100, 3900, now() - interval '8 days', 'pi_gammel_boost') returning id`, [CHEF]);
+    const { rows } = await db.query<{ id: string; handling: string }>(`select * from public.boost_koeb_cron(50)`);
+    expect(rows.find((x) => x.id === gammel.id)?.handling).toBe("annuller");
+    expect((await en<{ v: boolean }>(`select public.boost_koeb_annuller($1) as v`, [gammel.id])).v).toBe(true);
+    const k = await en(`select status, stripe_payment_intent_id, tidligere_payment_intents, (annulleret_kl is not null) as a
+                          from public.boost_koeb where id = $1`, [gammel.id]);
+    expect(k).toEqual({ status: "annulleret", stripe_payment_intent_id: null, tidligere_payment_intents: ["pi_gammel_boost"], a: true });
+    // Betales den annullerede PaymentIntent alligevel: dobbeltbetaling (refunderes).
+    expect((await j(`select public.boost_koeb_registrer('pi_gammel_boost', 'succeeded', 'ch_g', 3900, null) as v`)).kode).toBe("kasseret");
+    expect((await en<{ v: boolean }>(`select public.boost_koeb_annuller($1) as v`, [gammel.id])).v).toBe(false);
+  });
+
+  it("aktive_boosts viser ikke skjulte, arkiverede eller pausede auktioner", async () => {
+    await j(`select public.boost_staff_justering($1, $2, 50, 'test', $3) as v`, [CHEF, PRIVAT2, randomUUID()]);
+    const a = await auktion(PRIVAT2);
+    expect((await brug(PRIVAT2, a)).kode).toBe("ok");
+    const vis = async () => (await db.query(`select auktion_id from public.aktive_boosts($1)`, [[a]])).rows.length;
+    expect(await vis()).toBe(1);
+    await db.query(`update public.auctions set pauset_kl = now() where id = $1`, [a]);
+    expect(await vis()).toBe(0);
+    await db.query(`update public.auctions set pauset_kl = null, arkiveret_kl = now() where id = $1`, [a]);
+    expect(await vis()).toBe(0);
+    await db.query(`update public.auctions set arkiveret_kl = null, skjult = true where id = $1`, [a]);
+    expect(await vis()).toBe(0);
+  });
+
+  it("spærrede sælgere optjener ikke point; afvist-tabellen kan ikke tømmes", async () => {
+    const b = await frigivetSalg(SPAERRET);
+    await j(`select public.boost_point_synk() as v`);
+    const n = await en<{ n: number }>(`select count(*)::int as n from public.boost_posteringer where betaling_id = $1`, [b]);
+    expect(n.n).toBe(0);
+    expect(await fejlkode(`truncate public.boost_optjening_afvist`)).toBe("BHB02");
+  });
+
+  it("drift-tjek: migrationen stopper, hvis fakturaer_kilde er ændret et andet sted", async () => {
+    const anden = new PGlite();
+    try {
+      await anden.exec(STUB);
+      await anden.exec(`alter table public.fakturaer drop constraint fakturaer_kilde;
+                        alter table public.fakturaer add constraint fakturaer_kilde check (part is not null)`);
+      await expect(anden.exec(MIGRATION)).rejects.toThrow(/Drift: CHECK fakturaer_kilde/);
+    } finally {
+      await anden.close();
+    }
+  });
+});
+
 describe("kunst-kontrol (auctions.kunst_kontrol, 20261023010000)", () => {
   it("virker uden kolonnen; med 'afventer' kan auktionen ikke boostes og vises ikke i toppen eller som 'Boostet'", async () => {
     // Uden kolonnen: intet afventer.
@@ -673,6 +749,18 @@ describe("fakturaer", () => {
     // Fakturaen hænger på købet - ikke på en handel.
     expect(await fejlkode(`insert into public.fakturaer (dokument, part, bruger_id, linjer, beloeb_oere, moms_oere, betalt_dato, slags)
                           values ('faktura', 'koeber', '${PRIVAT}', '[]', 1, 0, current_date, 'boost')`)).toBe("23514");
+  });
+});
+
+describe("tabt indsigelse (webhookens regel)", () => {
+  it("lost og trukne penge tæller som tabt; won og genindsatte penge gør ikke", async () => {
+    const { boostIndsigelseTabt } = await import("@/lib/betaling/boost");
+    const bt = (...a: number[]) => a.map((amount) => ({ amount })) as never;
+    expect(boostIndsigelseTabt({ status: "lost", balance_transactions: bt() })).toBe(true);
+    expect(boostIndsigelseTabt({ status: "needs_response", balance_transactions: bt(-3900) })).toBe(true);
+    expect(boostIndsigelseTabt({ status: "under_review", balance_transactions: bt(-3900, 3900) })).toBe(false);
+    expect(boostIndsigelseTabt({ status: "won", balance_transactions: bt(-3900) })).toBe(false);
+    expect(boostIndsigelseTabt({ status: "needs_response", balance_transactions: bt() })).toBe(false);
   });
 });
 
