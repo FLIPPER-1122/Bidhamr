@@ -20,7 +20,6 @@ import { revalidatePath } from "next/cache";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logDriftFejl } from "@/lib/drift";
 import { kategorier } from "@/lib/kategorier";
 import {
   MAKS_BESKRIVELSE,
@@ -35,6 +34,7 @@ import { erStand } from "@/lib/stand";
 import { forbudtBesked } from "@/lib/forbudteVarer";
 import { ERHVERV_FEJL, ERHVERV_GRAENSER, erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { udbetalingskontoFejltekst } from "@/lib/betaling/frossetServer";
+import { sletFjernedeBilleder } from "@/lib/auktionBilledOprydning";
 
 type Fejl = { fejl: string; mitid?: true };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -176,11 +176,13 @@ export async function redigerAuktion(
 
     // rediger_auktion lykkes kun på brugerens egen aktive auktion uden bud
     // (og dermed uden handel), så de fjernede billeder er ikke længere i brug
-    // på denne auktion og må slettes.
+    // på denne auktion og må slettes - medmindre en anden af brugerens
+    // auktioner bruger dem, eller brugeren har en åben sag (hele brugeren -
+    // src/lib/auktionBilledOprydning.ts).
     const fjernede = (foer?.billeder ?? []).filter((url) => !input.billeder.includes(url));
     if (fjernede.length > 0) {
       const brugerId = user.id;
-      after(() => sletFjernedeBilleder(brugerId, auktionId, fjernede));
+      after(() => sletFjernedeBilleder(brugerId, fjernede));
     }
 
     revalidatePath(`/auktion/${auktionId}`);
@@ -189,77 +191,6 @@ export async function redigerAuktion(
   } catch (err) {
     console.error("redigerAuktion fejlede:", err);
     return { fejl: GENERISK };
-  }
-}
-
-// Sletter billeder, sælgeren har fjernet ved redigering. Kun filer i
-// brugerens egen mappe i auktion-billeder, og kun hvis ingen af brugerens
-// auktioner (fx en genopsat vare) stadig bruger dem - sammenlignet på
-// storage-stien, ikke den præcise URL. Slettes aldrig, mens der er en åben
-// DSA-anmeldelse (ny eller videresendt) eller en åben rapport om auktionen:
-// billederne kan være bevis. Service role, fordi storage-policyen ikke lader
-// brugeren slette - ejeren er tjekket af rediger_auktion. Kaster aldrig.
-const BILLEDE_STI = /^[0-9a-f-]{36}\/[A-Za-z0-9_-]{1,100}\.[a-z0-9]{1,5}$/;
-const BILLEDE_MARKOER = "/storage/v1/object/public/auktion-billeder/";
-
-function billedeSti(url: string): string | null {
-  const i = url.indexOf(BILLEDE_MARKOER);
-  if (i < 0) return null;
-  try {
-    return decodeURIComponent(url.slice(i + BILLEDE_MARKOER.length).split("?")[0].split("#")[0]);
-  } catch {
-    return null;
-  }
-}
-
-async function sletFjernedeBilleder(brugerId: string, auktionId: string, urls: string[]) {
-  try {
-    const admin = createAdminClient();
-    const kandidater = urls
-      .map(billedeSti)
-      .filter((sti): sti is string => !!sti && BILLEDE_STI.test(sti) && sti.startsWith(`${brugerId.toLowerCase()}/`));
-    if (kandidater.length === 0) return;
-
-    // Åben sag om auktionen: behold alt.
-    const [anm, rap] = await Promise.all([
-      admin
-        .from("dsa_anmeldelser")
-        .select("id")
-        .eq("status", "ny")
-        .or(`auktion_id.eq.${auktionId},and(indhold_type.eq.auktion,indhold_id.eq.${auktionId})`)
-        .limit(1),
-      admin
-        .from("reports")
-        .select("id")
-        .eq("auction_id", auktionId)
-        .in("status", ["pending", "under_behandling"])
-        .limit(1),
-    ]);
-    if (anm.error || rap.error) throw new Error(anm.error?.message ?? rap.error?.message);
-    if ((anm.data?.length ?? 0) > 0 || (rap.data?.length ?? 0) > 0) return;
-
-    // Billederne ligger i brugerens egen mappe og kan kun bruges af
-    // brugerens egne auktioner (auktion_billeder_gyldige).
-    const { data: auktioner, error } = await admin
-      .from("auctions")
-      .select("billeder")
-      .eq("bruger_id", brugerId)
-      .limit(5000);
-    if (error) throw new Error(error.message);
-    const iBrug = new Set<string>();
-    for (const a of (auktioner ?? []) as { billeder: string[] | null }[]) {
-      for (const url of a.billeder ?? []) {
-        const sti = billedeSti(url);
-        if (sti) iBrug.add(sti);
-      }
-    }
-
-    const stier = [...new Set(kandidater)].filter((sti) => !iBrug.has(sti));
-    if (stier.length === 0) return;
-    const { error: sletFejl } = await admin.storage.from("auktion-billeder").remove(stier);
-    if (sletFejl) throw sletFejl;
-  } catch (err) {
-    await logDriftFejl({ kilde: "action", hvor: "redigerAuktion: slet fjernede billeder", fejl: err });
   }
 }
 

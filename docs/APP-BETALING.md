@@ -9,7 +9,7 @@ Kun Stripes testmiljø indtil fase 6.
 
 | Handling | Krop | Svar (200) |
 |---|---|---|
-| `betal` | `{ trade_id, levering? }` | `{ clientSecret, totalOere, customerId, customerSessionClientSecret, publishableKey, levering? }` |
+| `betal` | `{ trade_id, levering? }` | `{ clientSecret, totalOere, customerId, customerSessionClientSecret, publishableKey, saelgerNavn, levering? }` |
 | `indstillinger` | `{}` | `{ gemtKort: { maerke, sidste4, udloeb } \| null, saelger: { harKonto, detaljerIndsendt, overfoerslerAktiv, udbetalingerAktiv, manglerOplysninger, afvist, frakoblet, frosset, venterPaaBank } }` |
 | `gem-kort` | `{}` | `{ clientSecret (seti_…), customerId, customerSessionClientSecret, publishableKey }` |
 | `bekraeft-kort` | `{ setup_intent_id }` | `{ gemtKort }` |
@@ -21,7 +21,9 @@ Kun Stripes testmiljø indtil fase 6.
 | `boost-brug` | `{ auktion_id, noegle }` | `{ kode: 'ok' \| 'allerede', boostId, slutKl, saldo }` – booster egen auktion |
 
 `levering` i `betal` er valgfri og har samme felter som `/api/fragt/app/levering`
-(`maade`, `pakkeshop_id`, `pakkeshop_postnummer`, `pakkeshop_adresse`, `modtager`, `gem_forslag`). Send den kun, når
+(`maade`, `transportoer`, `pakkeshop_id`, `pakkeshop_postnummer`, `pakkeshop_adresse`, `modtager`, `gem_forslag`).
+`transportoer` er `"dao" | "gls" | "postnord"` fra `checkout.transportoerer` (udeladt = DAO). `saelgerNavn` er
+sælgerens visningsnavn til "Sælger: X" som på hjemmesidens checkout (`null`, hvis det mangler). Send den kun, når
 køberen har ændret valget. Ændrer valget beløbet, annulleres den gamle PaymentIntent, og der laves en ny. Uden
 `levering` genbruges den samme PaymentIntent.
 
@@ -118,12 +120,11 @@ giver ingen data og laver aldrig et nyt link uden login.
 
 Testkort: `4242 4242 4242 4242`, `4000 0027 6000 3184` (3D Secure), `4000 0000 0000 9995` (afvist).
 
-## Mangler stadig (handelstrin, ikke bygget)
+## Handelstrin
 
-Disse går i dag direkte til RPC'en fra appen, og så sendes beskeden eller udbetalingen ikke med det samme:
-- `send-pakke` (`trade_marker_sendt`): køberen får ikke "Din pakke er på vej".
-- `modtaget` (`trade_marker_modtaget`): sælgeren får ikke "Pakken er kommet frem".
-- `godkend` (`handel_godkend_med_bedoemmelse`): afregningsbeskederne sendes ikke, og udbetalingen starter først, når cron kører.
-- `andenchance-tilbud`, `andenchance-svar`, `genopsaet`: kan kun kaldes af serveren. Brug en webvisning af
-  `SITE/andenchance/<id>` indtil videre.
-- `sag-opret` og `anke`: virker direkte fra appen. Cron sender beskederne (`sager.notificeret_kl`).
+Bygget 15. okt. 2026 - se `docs/APP-ENDPOINTS.md`: `POST /api/handel/app/<handling>` (`status`, `send-pakke`,
+`modtaget`, `godkend`, `afhentning-bekraeft`, `andenchance-status`, `andenchance-tilbud`, `andenchance-svar`,
+`genopsaet`), `POST /api/bud/app`, konto (`/api/konto/adgangskode`, `/api/konto/glemt`, `/api/konto/data`) og
+`/api/auktion/app/fjern-billeder`. Kald ikke længere `trade_marker_sendt`, `trade_marker_modtaget`,
+`handel_godkend_med_bedoemmelse` eller `afhentning_bekraeft` direkte - så sendes beskederne og udbetalingen ikke med
+det samme. `sag-opret` og `anke` virker stadig direkte fra appen (cron sender beskederne, `sager.notificeret_kl`).

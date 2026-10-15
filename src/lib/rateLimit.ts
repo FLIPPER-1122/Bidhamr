@@ -163,6 +163,24 @@ export const GRAENSER = {
   // fødselsdatoen) og appens API pr. IP, før tokenet er valideret.
   dac7_gem_bruger: { maks: 10, vindueSek: 60 * 60 },
   dac7_app_ip: { maks: 60, vindueSek: 60 * 60 },
+  // Appens handelstrin (POST /api/handel/app/<handling>) pr. IP, før tokenet
+  // er valideret (rummelig pga. CGNAT), og pr. bruger (handlinger og
+  // læsninger hver for sig). Hjemmesidens server actions har ingen egen grænse - her er
+  // kaldet et åbent API.
+  handel_app_ip: { maks: 600, vindueSek: 60 * 60 },
+  handel_app_bruger: { maks: 60, vindueSek: 10 * 60 },
+  // Læsninger (status, andenchance-status) pr. bruger - rummelig, appen
+  // henter status, hver gang handlen vises.
+  handel_app_laes_bruger: { maks: 300, vindueSek: 10 * 60 },
+  // Appens bud (POST /api/bud/app) pr. IP, før tokenet er valideret. Selve
+  // buddet har samme grænser som hjemmesiden (bud_bruger, bud_ip).
+  bud_app_ip: { maks: 600, vindueSek: 60 * 60 },
+  // Appens auktionshandlinger (POST /api/auktion/app/<handling>) pr. IP og
+  // pr. bruger, og "Download dine data" (POST /api/konto/data) pr. IP
+  // (databasen har selv grænsen én fil i timen pr. bruger).
+  auktion_app_ip: { maks: 300, vindueSek: 60 * 60 },
+  auktion_app_bruger: { maks: 30, vindueSek: 10 * 60 },
+  konto_data_app_ip: { maks: 60, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;

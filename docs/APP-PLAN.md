@@ -800,13 +800,14 @@ Kort og realistisk. Rækkefølgen er vigtigheden. Når kun én ting før torsdag
    `indstillinger`, `gem-kort`, `bekraeft-kort`, `fjern-kort`, `udbetalingskonto`, `udbetalingskonto-status`,
    `stripe-oversigt`. Se `docs/APP-BETALING.md` (gælder også de **[MANGLER PÅ SERVEREN]**-punkter i 4.7 og 4.8).
    Ingen ephemeral key – kun kundesession (`customerSessionClientSecret`).
-2. **Handelstrin fra appen** – `POST /api/handel/app/<handling>`: `send-pakke`, `modtaget`, `godkend`,
+2. **Handelstrin fra appen** – **BYGGET (15. okt. 2026)**, se `docs/APP-ENDPOINTS.md` (også bud, budhistorik,
+   konto og læst-status for handelschat). Oprindelig beskrivelse: `POST /api/handel/app/<handling>`: `send-pakke`, `modtaget`, `godkend`,
    `afhentning-bekraeft`, `sag-opret`, `sag-billeder`, `anke`, `andenchance-tilbud`, `andenchance-svar`, `genopsaet`.
    Hjemmesidens server actions sender mails/push og starter udbetalingen efter RPC'en. Kalder appen RPC'en direkte, sker
    det ikke (cron'en samler kun bud, beskeder, likes, spørgsmål, bedømmelsessvar og fristforlængelser op).
    Ikke bygget endnu – listen står i `docs/APP-BETALING.md` (sag og anke klares allerede af cron).
    *Backend-agent + reviewer.*
-3. **Anonym budhistorik** – en RPC (fx `auktion_budhistorik(p_auktion)`), der giver det samme som auktionssiden på
+3. **Anonym budhistorik** – **BYGGET (15. okt. 2026)**: `rpc("auktion_budhistorik", { p_auktion })`. En RPC (fx `auktion_budhistorik(p_auktion)`), der giver det samme som auktionssiden på
    hjemmesiden ("Byder 1", beløb, tidspunkt, "automatisk") uden byder-id'er. *Backend-agent.*
 4. **Oversigt over push-links** – en lille tabel over alle `link`-stier i notifikationerne og hvilken app-skærm de skal
    åbne, og en test af, at serveren sender Expo-push fra testmiljøet (`EXPO_ACCESS_TOKEN`). *Backend-agent.*

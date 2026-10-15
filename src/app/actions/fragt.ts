@@ -169,7 +169,15 @@ export async function startReturfragtAction(tradeId: string) {
   const u = await bruger();
   if (!u) return { fejl: "Du skal være logget ind." };
   if (!(await tjekGraenser([["fragt_handling_bruger", u.id]]))) return { fejl: FOR_MANGE_FORSOEG };
-  return startReturfragt(tradeId, u.id, null);
+  const r = await startReturfragt(tradeId, u.id, null);
+  if ("fejl" in r) return r;
+  // Payment Element bruger ikke Stripe-kunden (kun appens PaymentSheet).
+  return {
+    ok: true as const,
+    clientSecret: r.clientSecret,
+    beloebOere: r.beloebOere,
+    customerSessionClientSecret: r.customerSessionClientSecret,
+  };
 }
 
 // Køberens adresse og mobil til returkoden - gemmes lige før betalingen.

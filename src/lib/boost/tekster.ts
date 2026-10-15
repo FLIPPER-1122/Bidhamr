@@ -64,6 +64,8 @@ export const BOOST_TEKST = {
   forFaaPoint: (saldo: number, pris: number) =>
     `Du har ${saldo.toLocaleString("da-DK")} point. Et boost koster ${pris} point.`,
   slutterSnart: "Auktionen slutter snart, så den kan ikke boostes.",
+  // min_auktion_boost: grund 'kunst_kontrol' (20261025010000_app_endpoints.sql).
+  kunstKontrol: "Auktionen afventer kontrol hos BidHamr og kan boostes, når den er godkendt.",
   bekraeftTitel: "Boost auktionen?",
   bekraeftTekst: (point: number, timer: number) =>
     `Der trækkes ${point} point fra din saldo, og auktionen ligger øverst i ${timer} timer. Det kan ikke fortrydes.`,

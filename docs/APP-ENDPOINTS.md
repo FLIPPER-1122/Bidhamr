@@ -1,0 +1,205 @@
+# App-endpoints: handelstrin, bud, konto og RPC'er
+
+Bygget 15. okt. 2026. Supplerer `docs/APP-BETALING.md` (betaling), `docs/FRAGT.md` (fragt) og `docs/APP-SIGNUP.md`
+(oprettelse). Alle endpoints genbruger hjemmesidens server-kode, så mails, push, klokke og udbetaling sker præcis som
+på hjemmesiden:
+
+| Endpoint | Fælles kode (samme som hjemmesidens server action) |
+|---|---|
+| `/api/handel/app/send-pakke`, `modtaget`, `godkend`, `afhentning-bekraeft` | `src/lib/handel/handelstrin.ts` (`sendPakke`, `markerModtaget`, `godkendPakke`, `bekraeftAfhentning`) |
+| `/api/handel/app/status` | `src/lib/handel/handelStatus.ts` + `src/lib/betaling/betalingsstatus.ts` (som handelssiden) |
+| `/api/handel/app/andenchance-*`, `genopsaet` | `src/lib/andenchance.ts` (`hentAndenchanceStatus`, `sendAndenchanceTilbud`, `svarAndenchance`, `genopsaetAuktion`) |
+| `/api/bud/app` | `src/lib/bud/afgivBud.ts` (`afgivBud`, `saetMaksimum`) |
+| `/api/konto/adgangskode`, `/api/konto/glemt` | `src/lib/adgangskodeSkift.ts` (`skiftAdgangskode`, `nulstilAdgangskode`) |
+| `/api/konto/data` | `src/lib/mineDataFil.ts` (`/konto/data`) |
+| `/api/auktion/app/fjern-billeder` | `src/lib/auktionBilledOprydning.ts` (`redigerAuktion`) |
+
+## Fælles regler
+
+- `POST`, `Authorization: Bearer <session.access_token>` og `Content-Type: application/json` (undtagen
+  `/api/konto/glemt`, der ikke kræver login, og `/api/konto/data`, der ikke har nogen krop).
+- Tokenet valideres hos Supabase Auth (`getUser`). Brugeren findes altid ud fra tokenet, aldrig fra kroppen. RPC'erne
+  kaldes **som brugeren** (`auth.uid()`), så RLS og databasens regler gælder som på hjemmesiden.
+- Ingen cookies og ingen CORS-headere. Appen sender ingen `Origin`; en fremmed `Origin` afvises (403 `ikke_tilladt`).
+- Svar: `200 { ok: true, ... }` eller `{ fejl, kode }`, hvor `fejl` er dansk og kan vises direkte.
+- Proxyen (`src/lib/supabase/middleware.ts`) lukker stierne igennem uden cookie-login, så de selv svarer med JSON
+  (401 `ikke_logget_ind`) i stedet for proxyens tekst "Log ind først".
+
+| Status | `kode` | Betyder |
+|---|---|---|
+| 400 / 413 | `ugyldig` (og felt-koder herunder) | Forkert krop / for stor krop |
+| 401 | `ikke_logget_ind` | Manglende eller udløbet token |
+| 403 | `ikke_tilladt` | Fremmed `Origin` |
+| 429 | `for_mange` | Rate limit |
+| 500 | `fejl` | Noget gik galt (logget i /admin/drift) |
+
+Grænser (`src/lib/rateLimit.ts`): `handel_app_ip` (600/time, før login), `handel_app_bruger` (60/10 min,
+handlinger), `handel_app_laes_bruger` (300/10 min, `status` og `andenchance-status`), `bud_app_ip` (600/time) + hjemmesidens `bud_bruger` og `bud_ip`,
+`konto_app_ip` (60/time) + hjemmesidens `adgangskode_bruger` / `nulstil_ip` / `nulstil_email`, `konto_data_app_ip`
+(60/time), `auktion_app_ip` (300/time) og `auktion_app_bruger` (30/10 min).
+
+## POST /api/handel/app/&lt;handling&gt;
+
+Alle handlinger med `trade_id` slår handlen op først: **404 `ikke_fundet`**, hvis den ikke findes, og **403
+`ikke_part`**, hvis kalderen hverken er køber eller sælger.
+
+| Handling | Krop | Svar (200) |
+|---|---|---|
+| `status` | `{ trade_id }` | `{ annullering: { aarsag, refunderet } \| null, betaling: { sidsteFejl } \| null, fragt: { labelsAktiv, returlabelAktiv } }` |
+| `send-pakke` | `{ trade_id, tracking, billeder: [{ sti, kategori: "aaben_kasse" \| "lukket_kasse" }] }` | `{ ok }` |
+| `modtaget` | `{ trade_id }` | `{ ok }` |
+| `godkend` | `{ trade_id, stjerner: 1-5, kommentar: string \| null }` | `{ ok }` |
+| `afhentning-bekraeft` | `{ trade_id, kode: "123456" }` | `{ ok }` |
+| `andenchance-status` | `{ trade_id }` | Samme felter som `hentAndenchanceStatus` (se nedenfor) |
+| `andenchance-tilbud` | `{ trade_id }` | `{ tilbudId, budOere, udloeber }` |
+| `andenchance-svar` | `{ tilbud_id, ja: boolean }` | `{ trade_id: string \| null }` |
+| `genopsaet` | `{ trade_id, startpris, varighed_dage: 3 \| 5 \| 7 \| 10 }` | `{ auktion_id }` |
+
+- **`status`** (køber og sælger): de oplysninger, handelssiden henter på serveren. Årsagen `'ubetalt'` /
+  `'admin_annulleret'` gives til både køber og sælger. Til det er `erAnnulleretUbetalt` (hjemmesiden) ændret, så den
+  slår op for køber ELLER sælger (`annulleretUbetaltAarsag` i `src/lib/handel/handelStatus.ts`); før kun køberen.
+  Hjemmesiden kalder den stadig kun for køberen, så siden er uændret.
+  - `annullering` er `null`, når handlen ikke er annulleret. `aarsag`: `'ubetalt'` (vinderen betalte ikke),
+    `'admin_annulleret'` (BidHamr annullerede før betaling), `'afsendelsesfrist'` (ikke sendt inden 5 dage),
+    `'afhentningsfrist'` (ikke hentet inden fristen), `'ikke_afhentet'` (pakken blev ikke hentet i pakkeshoppen og er
+    sendt retur), `'sag'` (annulleret i en sag) eller `null` (anden årsag). `refunderet`: Stripe har gennemført
+    refusionen.
+  - `betaling` er kun sat, mens handlen afventer betaling. `sidsteFejl: true` = køberens seneste betalingsforsøg
+    mislykkedes (vis "Betalingen kunne ikke gennemføres."). Altid `false` for sælgeren.
+  - `fragt.labelsAktiv` (`FRAGT_LABELS_AKTIV`) og `fragt.returlabelAktiv` (`FRAGT_RETURLABEL_AKTIV`).
+- **`send-pakke`** (sælgeren): billederne uploades først til `pakke-billeder` (`<sælger-id>/<handel-id>/<uuid>.jpg`,
+  `upsert: false`). `{}` eller manglende `tracking`/`billeder` giver 400. Fejl fra `trade_marker_sendt` gives som
+  `kode` (`allerede_sendt`, `annulleret`, `afhentning`, `billeder_kraeves`, `ugyldige_billeder`, `billede_mangler`,
+  `for_mange_billeder`, `ugyldigt_tracking`). Køberen får "Din pakke er på vej".
+- **`modtaget`** (køberen): `409 ikke_klar` (ikke sendt), `409 allerede` (dobbelttryk). Sælgeren får "Pakken er
+  kommet frem".
+- **`godkend`** (køberen, uigenkaldeligt - vis en bekræftelse): `400 ugyldige_stjerner` / `kommentar_for_lang`
+  (over 1.000 tegn), `409 ikke_klar` (kvittér først), `409 indsigelse` (bankens indsigelse), `409 ikke_mulig`
+  (allerede godkendt). Afregning til sælgeren, "Tak for handlen" til køberen og udbetalingen starter med det samme.
+- **`afhentning-bekraeft`** (sælgeren): samme tekster som hjemmesiden. `409 forkert` ("Du har N forsøg tilbage i
+  denne time"), `409 laast_midlertidigt`, `409 laast`, `409 ikke_vist`, `400 ugyldig_kode`. Rigtig kode frigiver
+  pengene (afregning + udbetaling).
+- **`andenchance-status`** (sælgeren, 403 for køberen): `{ ubetalt, aarsag, nyHandelId, genopsatAuktionId,
+  aktivtTilbud: { id, budOere, udloeber } | null, tilbud: [{ id, status, budOere, oprettet, udloeber, besvaretKl }],
+  harFlereBydere, naesteBudOere, kanTilbyde, kanGenopsaette }` (+ `ok: true` som alle svar).
+- **`andenchance-tilbud`** (sælgeren): `403 mitid` / `vilkaar` / `dac7` (krav mangler), `409 aktivt_tilbud`,
+  `409 ikke_ubetalt`, `409 solgt`, `409 genopsat`, `409 ingen_flere_bydere`. Byderen får mailen.
+- **`andenchance-svar`** (byderen; databasen tjekker, at kalderen er byderen): `{}` giver 400. `trade_id` er den nye
+  handel ved "ja" (gå til checkout), `null` ved "nej". `404 ikke_fundet`, `409 besvaret` / `udloebet` / `solgt` /
+  `genopsat` / `suspenderet`, `403 vilkaar`.
+- **`genopsaet`** (sælgeren): serveren finder auktionen ud fra handlen - send ikke `auktion_id`. `400
+  ugyldig_startpris` / `ugyldig_varighed`, `403 mitid` / `vilkaar` / `dac7`, `409 mangler_udbetalingskonto`,
+  `409 allerede_genopsat` m.fl.
+
+## POST /api/bud/app
+
+```json
+{ "auktion_id": "…", "beloeb_oere": 15000, "beskyttelse": true, "idempotens_noegle": "<uuid>" }
+{ "auktion_id": "…", "maksimum_oere": 25000, "idempotens_noegle": "<uuid>" }
+```
+
+- Præcis ét af `beloeb_oere` (almindeligt bud) og `maksimum_oere` (automatisk bud). Øre, hele kroner (delelig med
+  100) - ellers 400 `ugyldig`. `beskyttelse` er valgfri (BidHamr Beskyttelse; låst, mens man fører).
+- Valgfrit `auktion_redigeret_kl` (auktionens `redigeret_kl`, som appen viste): afviser buddet, hvis sælgeren har
+  ændret auktionen siden (`409 auktion_aendret`).
+- Svar: `200 { ok: true, foerer: boolean, hoejeste_oere: number | null, forlaenget: boolean }`. `forlaenget` = buddet
+  forlængede auktionen (anti-sniping); hent `slutter_kl` igen.
+- Fejl: `409 { fejl, kode }`, hvor `kode` er databasens BH-kode, når den findes: `BHV01` (MitID), `BHV02`
+  (brugerbetingelser), `BHK01` (kunst-kontrol), `BHE01` (firmakonto), `BHU03` (sælgeren er frosset), `BHU05`
+  (sælgeren er spærret), `BHS02` (suspenderet), `BHB05` (over 500.000 kr.). Ellers `own_auction`, `samme_bud`,
+  `minimum_bid`, `maks_for_lavt`, `maks_under_bud`, `maks_ugyldigt`, `beskyttelse_laast`, `auktion_aendret` eller
+  `afvist` (fx "Auktionen er allerede slut"). `429 for_mange`.
+- **Idempotens:** samme `idempotens_noegle` fra samme bruger giver det samme svar igen (dobbelttryk eller genforsøg
+  efter et tabt svar afgiver ikke et nyt bud). Lav en ny nøgle pr. tryk på "Byd". Nøglen er bundet til auktion, type
+  (bud eller maksimum) og beløb: samme nøgle med en anden auktion, type eller et andet beløb giver `409
+  noegle_brugt`. Mens det første kald kører: `409 behandles`. Et afvist bud frigiver nøglen.
+- Overbudte bydere og sælgeren får besked som ved bud på hjemmesiden.
+
+## POST /api/konto/adgangskode
+
+`{ nuvaerende, ny }` → `200 { ok }`. Samme krav som hjemmesiden (`vurderAdgangskode`: mindst 10 tegn, ikke
+almindelig, ikke e-mail eller navn). Den nuværende adgangskode tjekkes, andre enheder logges ud (denne enhed beholder
+sin session), og brugeren får en sikkerhedsmail. Fejl: `400 adgangskode` / `samme_adgangskode`, `403
+forkert_adgangskode`, `403 genlog_ind` (log ud og ind igen), `429 for_mange`.
+
+## POST /api/konto/glemt
+
+`{ email }` uden login → `200 { ok }` **altid** ved en gyldig e-mail, uanset om den findes. Mailen er den samme som
+fra hjemmesiden; linket åbner hjemmesiden, hvor brugeren vælger en ny adgangskode. `400 email`, `429 for_mange`,
+`503 ikke_tilgaengelig` (grænserne kunne ikke tjekkes).
+
+## POST /api/konto/data?format=pdf
+
+Bearer, ingen krop. `200 application/pdf` (uden `format`: `application/json`) med `Content-Disposition: attachment`.
+Gem med `expo-file-system` og del/vis. `429 vent` = allerede hentet inden for den sidste time (grænsen deles med
+hjemmesiden og `rpc("mine_data")`).
+
+## POST /api/auktion/app/fjern-billeder
+
+`{ auktion_id, stier: string[] }` (højst 20; storage-stier `<bruger-id>/<fil>.jpg` eller de offentlige URL'er) →
+`200 { ok }`. Kald den efter `rpc("rediger_auktion")`, når sælgeren har fjernet billeder. Kun ejeren (`403 ikke_ejer`,
+`404 ikke_fundet`). Databasen (`auktion_billeder_sletbare`, kun service role) afgør i SQL for præcis de stier, hvad
+der må slettes: kun filer i ejerens egen mappe, som ingen af ejerens auktioner bruger. Har ejeren en åben sag
+(`app_bruger_har_aaben_sag`) - en DSA-anmeldelse, der ikke er afgjort (også når den er videresendt til admin), en
+rapport (`pending`/`under_behandling`) eller en DSA-klage, der afventer, om ejeren eller **nogen** af ejerens
+auktioner, eller en DSA-afgørelse, hvor klagefristen stadig løber - afvises hele kaldet med `409 sag_aaben`
+("Billederne kan ikke slettes lige nu, fordi BidHamr behandler en sag om en af dine auktioner."), og intet slettes.
+Svaret er `ok`, også når intet blev slettet. Samme regel gælder hjemmesidens oprydning efter en redigering.
+
+**Sletning direkte i Storage** (`supabase.storage.from("auktion-billeder").remove(...)` med brugerens token) er låst
+på samme måde: policyen `auktion_billeder_slet_ikke_laast` (`auktion_billede_laast`) afviser sletning af ethvert
+billede i mappen, så længe ejeren har en åben sag (ud over billeder fra auktioner med bud eller handel, som før).
+Svaret er da en tom sletning (intet slettet) - prøv ikke igen.
+
+## Ændret i eksisterende endpoints
+
+- `POST /api/betaling/app/betal`: `levering.transportoer` (`"dao" | "gls" | "postnord"`) sendes videre (som
+  `/api/fragt/app/levering`; udeladt = DAO). Svaret har desuden `saelgerNavn` (vis "Sælger: X" som hjemmesidens
+  checkout; `null`, hvis navnet mangler).
+- `POST /api/fragt/app/returfragt`: svaret har nu også `customerId` og `publishableKey` (som `betal`), så et gemt kort
+  kan forudfyldes: `initPaymentSheet({ paymentIntentClientSecret, customerId: customerSessionClientSecret ? customerId
+  : undefined, customerSessionClientSecret })`.
+
+## RPC'er (migration `20261025010000_app_endpoints.sql`)
+
+Direkte fra appen med `supabase.rpc(...)`:
+
+| RPC | Hvem | Svar |
+|---|---|---|
+| `auktion_budhistorik({ p_auktion })` | anon + indlogget | `[{ id, byder, beloeb, oprettet, automatisk, er_mig }]` |
+| `mine_kunst_kontrol({ p_ids })` | indlogget | `[{ auction_id, kunst_kontrol }]` |
+| `auktion_saelger_kan_saelge({ p_auktion })` | anon + indlogget | `boolean \| null` |
+| `handel_chat_marker_laest({ p_trade })` | indlogget | `boolean` |
+| `antal_ulaeste_handelsbeskeder()` | indlogget | `integer` |
+| `min_auktion_boost({ p_auktion })` | indlogget (ejeren) | som før; `grund = 'kunst_kontrol'` når auktionen afventer kontrol |
+
+- **`auktion_budhistorik`**: som auktionssiden. Højeste bud først, højst 50. `byder` er `"Byder 1"`, `"Byder 2"` ... i
+  den rækkefølge, byderne først bød (blandt de viste bud) - og `"Dig"` for egne bud (`er_mig: true`). `beloeb` i hele
+  kroner. `automatisk` = BidHamr bød automatisk (aldrig maksimum). Aldrig byder-id eller navn. Tom liste, hvis
+  auktionen ikke kan ses (skjult, arkiveret eller afventer kunst-kontrol - undtagen for sælgeren, deltagere og staff).
+- **`mine_kunst_kontrol`**: kun kalderens egne auktioner (højst 500 id'er). `kunst_kontrol`: `null`, `'afventer'`
+  (vis "Afventer kontrol hos BidHamr" - auktionen er skjult for andre, og der kan ikke bydes), `'godkendt'` eller
+  `'afvist'`.
+- **`auktion_saelger_kan_saelge`**: svarer kun for en auktion, kalderen kan se (samme regel som auktionssiden/RLS),
+  ellers `null`. `false` = auktionens sælger er frosset, og der kan ikke bydes (`BHU03`). Vis
+  "Der kan ikke bydes lige nu. Sælgeren skal have godkendt sin udbetalingskonto hos Stripe, før der kan bydes på
+  sælgerens auktioner igen." (`BUD_SAELGER_FROSSET_*` i `src/lib/betaling/frosset.ts`) i stedet for budknappen. Kun
+  ja/nej. (Den første udgave, `saelger_kan_saelge(p_saelger)`, svarede for en vilkårlig bruger og er fjernet.) En spærret sælger (`BHU05`) vises ikke her (heller ikke på hjemmesiden) - buddet afvises med `BHU05`.
+- **Handelschat læst-status**: kald `handel_chat_marker_laest` når handelschatten vises (og når en ny besked kommer
+  ind, mens den er åben). `antal_ulaeste_handelsbeskeder` tæller beskeder fra modparten og fra BidHamr i dine
+  handler efter din sidste læsning; spamblokerede beskeder tæller ikke. Rækkerne kan læses med
+  `from("handel_chat_laest").select("trade_id, laest_kl")` (kun egne) - fx til en prik pr. handel ved at sammenligne
+  med den nyeste besked. Ved migrationen blev alle eksisterende handler markeret som læst.
+
+## Anbefaling: direkte bud fra appen
+
+I dag kan appen stadig byde direkte (`from("bids").insert(...)` og `rpc("saet_maksimum")` som `authenticated`). Det
+er lige så sikkert som før (RLS og alle bud-triggere gælder), men uden serverens rate limit pr. bruger og IP og uden
+at de overbudte får besked med det samme (cron'en samler op). Anbefaling, når appen bruger `POST /api/bud/app`:
+
+1. Ny app-version med `/api/bud/app` ude i butikkerne, og de gamle versioner tvunget opdateret.
+2. En migration, der lukker direkte bud: `revoke insert on public.bids from authenticated` (og fjerner
+   `bids_insert_own`), og `revoke execute on function public.saet_maksimum(...) from authenticated`. Hjemmesidens
+   server actions skal så indsætte via en security definer-RPC, der udleder byderen af `auth.uid()` (eller
+   service role med eksplicit bruger) - ellers holder hjemmesidens bud også op med at virke. Det er ikke gjort nu,
+   fordi det bryder den nuværende app.

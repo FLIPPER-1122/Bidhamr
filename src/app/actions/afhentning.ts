@@ -12,9 +12,7 @@ import { after } from "next/server";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { hentBetalingForHandel } from "@/lib/betaling/stripeBetaling";
-import { erSendtTilSaelger, pengeTilSaelger } from "@/lib/betaling/udbetaling";
-import { sendKoeberAfsluttet, sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
+import { bekraeftAfhentningFor } from "@/lib/handel/handelstrin";
 import { notificerAfhentningsfristForlaengelser } from "@/lib/betaling/afhentningsfrist";
 import { AFHENTNING_MAKS_FORLAENGELSER } from "@/lib/afhentningsfrist";
 import { fristDato } from "@/lib/betalingsfrist";
@@ -202,98 +200,19 @@ export async function visAfhentningskode(
   return { kode: svar.afhentningskode };
 }
 
-function klokkeslaet(iso: string) {
-  return new Date(iso).toLocaleTimeString("da-DK", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Copenhagen",
-  });
-}
-
-// Sælgeren indtaster køberens kode. Rigtig kode frigiver pengene.
+// Sælgeren indtaster køberens kode. Rigtig kode frigiver pengene. Logikken
+// (fejltekster, afregning og udbetaling) deles med appen
+// (src/lib/handel/handelstrin.ts).
 export async function bekraeftAfhentning(
   tradeId: string,
   kode: string,
 ): Promise<{ ok: true } | { fejl: string }> {
   if (!UUID.test(tradeId)) return { fejl: "Handlen findes ikke." };
-  const renKode = typeof kode === "string" ? kode.replace(/\s/g, "") : "";
-  if (!/^[0-9]{6}$/.test(renKode)) {
-    return { fejl: "Koden består af 6 cifre." };
-  }
-
   const supabase = await createClient();
   const {
     data: { user },
   } = await hentLoggetIndBruger(supabase);
   if (!user) return { fejl: "Du skal være logget ind." };
-
-  const { data, error } = await supabase.rpc("afhentning_bekraeft", {
-    p_trade: tradeId,
-    p_kode: renKode,
-  });
-  if (error) {
-    console.error("afhentning_bekraeft fejlede:", error);
-    return { fejl: "Noget gik galt. Prøv igen om lidt." };
-  }
-  const svar = (data ?? {}) as { kode?: string; tilbage?: number; laast_til?: string };
-
-  switch (svar.kode) {
-    case "ok":
-      break;
-    case "forkert":
-      return {
-        fejl:
-          svar.tilbage === 1
-            ? "Koden er forkert. Du har 1 forsøg tilbage i denne time."
-            : `Koden er forkert. Du har ${svar.tilbage ?? 0} forsøg tilbage i denne time.`,
-      };
-    case "laast_midlertidigt":
-      return {
-        fejl: svar.laast_til
-          ? `For mange forkerte forsøg. Prøv igen efter kl. ${klokkeslaet(svar.laast_til)}.`
-          : "For mange forkerte forsøg. Prøv igen om en time.",
-      };
-    case "laast":
-      return {
-        fejl: "Koden er låst efter for mange forkerte forsøg. BidHamr kigger på handlen – kontakt support@bidhamr.dk.",
-      };
-    case "ikke_vist":
-      return {
-        fejl: "Køberen har ikke hentet sin kode frem endnu. Bed køberen åbne handlen og trykke \"Vis afhentningskode\".",
-      };
-    case "ugyldig_kode":
-      return { fejl: "Koden består af 6 cifre." };
-    case "ikke_logget_ind":
-      return { fejl: "Du skal være logget ind." };
-    default:
-      return { fejl: "Handlen kan ikke afsluttes lige nu. Genindlæs siden." };
-  }
-
-  // Afregning til sælgeren og "Tak for handlen" til køberen (idempotente
-  // nøgler pr. handel; kaster aldrig).
-  await sendSaelgerAfregning(tradeId, "afhentet");
-  await sendKoeberAfsluttet(tradeId, "afhentet");
-
-  // Pengene overføres til sælgerens Stripe Connect-konto. Fejler det (eller
-  // har sælgeren ingen aktiv konto endnu), prøver cron og account.updated-
-  // webhooken igen - frigivelsen står fast uanset. pengeTilSaelger sender
-  // selv udbetalingsbeskeden til sælgeren.
-  try {
-    const betaling = await hentBetalingForHandel(tradeId);
-    if (betaling) {
-      // Udbetaling fra sælgerens Stripe-konto til banken
-      // (destination - venter evt. 3 dage, udbetal_tidligst).
-      const r = await pengeTilSaelger(betaling.id);
-      if (!erSendtTilSaelger(r)) {
-        console.warn("Overførsel ikke gennemført endnu:", tradeId, r);
-      }
-    }
-  } catch (err) {
-    console.error("Overførsel til sælger fejlede (prøves igen af cron):", tradeId, err);
-  }
-
-  revalidatePath(`/mine-handler/${tradeId}`);
-  revalidatePath("/mine-handler");
-  revalidatePath(`/profil/${user.id}`);
-  return { ok: true };
+  const r = await bekraeftAfhentningFor(supabase, user.id, tradeId, kode);
+  return "fejl" in r ? { fejl: r.fejl } : { ok: true };
 }

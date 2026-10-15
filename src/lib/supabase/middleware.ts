@@ -36,6 +36,13 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 // in-app browser har ingen session, så gaten må ikke stoppe den.
 // /api/dac7/oplysninger er appens DAC7-skatteoplysninger: kun Bearer-token
 // (ingen cookies); login tjekkes i ruten.
+// /api/handel/app (handelstrin), /api/bud/app (bud), /api/auktion/app
+// (billedoprydning), /api/konto/adgangskode og /api/konto/data (dine data)
+// er appens endpoints: kun Bearer-token (ingen cookies); login tjekkes i
+// ruterne, som selv afviser med JSON (401 ikke_logget_ind) - ikke med
+// proxyens tekst "Log ind først". /api/konto/glemt er "Glemt adgangskode":
+// ingen login (som /glemt-adgangskode), grænser i ruten og samme svar,
+// uanset om e-mailen findes. Se docs/APP-ENDPOINTS.md.
 // /robots.txt og /sitemap.xml skal kunne hentes af søgemaskiner; de siger selv
 // "Disallow: /" og er tomme, indtil SEO_INDEKSERING=true (src/lib/seo.ts).
 // Statiske filer (public/, delebilledet opengraph-image.jpg, ikoner) rammer
@@ -82,6 +89,12 @@ const OFFENTLIGE_RUTER = [
   "/api/helbred",
   "/api/mitid",
   "/api/dac7/oplysninger",
+  "/api/handel/app",
+  "/api/bud/app",
+  "/api/auktion/app",
+  "/api/konto/adgangskode",
+  "/api/konto/glemt",
+  "/api/konto/data",
   "/robots.txt",
   "/sitemap.xml",
   "/dsa",

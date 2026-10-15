@@ -8,16 +8,15 @@
 import { revalidatePath } from "next/cache";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
-import { getStripe } from "@/lib/stripe";
 import { logDriftFejl } from "@/lib/drift";
 import { fjernGemtKortForBruger } from "@/lib/betaling/kort";
-import { beskyttelseOere } from "@/lib/betaling/beregn";
-import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import {
-  erOnboardingRetur,
-  hentBetalingForHandel,
-  spejlPaymentIntent,
-} from "@/lib/betaling/stripeBetaling";
+  hentBetalingsstatusFor,
+  type Betalingsstatus,
+  type KoeberBetalingsstatus,
+  type SaelgerBetalingsstatus,
+} from "@/lib/betaling/betalingsstatus";
+import { erOnboardingRetur } from "@/lib/betaling/stripeBetaling";
 import {
   bekraeftGemtKortFor,
   hentBetalingsindstillingerFor,
@@ -42,127 +41,15 @@ async function indloggetBruger() {
 
 // ------------------------------------------------------------------ status
 
-type FaellesBetalingsstatus = {
-  handelId: string;
-  status: "afventer" | "behandles" | "betalt" | "annulleret" | "refunderet";
-  betalSenest: string;
-  // Seneste frist, sælgeren kan forlænge til (7 dage efter fristens start).
-  maksBetalSenest: string;
-  fristOverskredet: boolean;
-  // Betalingsmodel destination: betalingen venter på, at sælgerens Stripe-
-  // konto bliver godkendt. Køberen kan ikke betale endnu, og betalSenest er
-  // IKKE købers frist (den starter, når betalingen åbner) - vis i stedet
-  // "Betalingen åbner, når sælgerens konto er godkendt".
-  venterPaaSaelgerkonto: boolean;
-  budOere: number;
-  betaltKl: string | null;
-  frigivetKl: string | null;
-  overfoertKl: string | null;
-};
+// Logikken deles med appen (src/lib/betaling/betalingsstatus.ts).
+export type { KoeberBetalingsstatus, SaelgerBetalingsstatus, Betalingsstatus };
 
-// Køberens visning: hele beløbet inkl. BidHamr Beskyttelse.
-export type KoeberBetalingsstatus = FaellesBetalingsstatus & {
-  erKoeber: true;
-  koebergebyrOere: number;
-  fragtOere: number;
-  beskyttelse: boolean;
-  beskyttelseOere: number;
-  // Hvad BidHamr Beskyttelse koster på denne handel, hvis den tilvælges.
-  beskyttelsePrisOere: number;
-  totalOere: number;
-  sidsteFejl: string | null;
-};
-
-// Sælgerens visning. Sælgeren må ikke kunne se, om køberen har købt BidHamr
-// Beskyttelse - derfor hverken beskyttelse, købers total eller noget, den
-// kan regnes ud fra.
-export type SaelgerBetalingsstatus = FaellesBetalingsstatus & {
-  erKoeber: false;
-  // Det, der overføres ved frigivelse.
-  saelgergebyrOere: number;
-  udbetalingOere: number;
-};
-
-export type Betalingsstatus = KoeberBetalingsstatus | SaelgerBetalingsstatus;
-
-// Henter betalingsstatus for en handel. Kun køber og sælger (RLS + eksplicit
-// tjek). Står betalingen som ikke-betalt, men har en PaymentIntent, spørges
-// Stripe direkte, så status er korrekt, når køberen vender tilbage fra
-// betalingen, selv om webhooken ikke er nået frem endnu.
 export async function hentBetalingsstatus(
   handelId: string,
 ): Promise<({ ok: true } & KoeberBetalingsstatus) | ({ ok: true } & SaelgerBetalingsstatus) | Fejl> {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
-
-  const supabase = await createClient();
-  const { data: rls } = await supabase
-    .from("betalinger")
-    .select("id, buyer_id, seller_id")
-    .eq("trade_id", handelId)
-    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
-    .maybeSingle<{ id: string; buyer_id: string; seller_id: string }>();
-  if (!rls) return { fejl: "Betalingen findes ikke." };
-
-  try {
-    let b = await hentBetalingForHandel(handelId);
-    if (!b) return { fejl: "Betalingen findes ikke." };
-
-    if (
-      (b.status === "afventer" || b.status === "behandles") &&
-      b.stripe_payment_intent_id
-    ) {
-      const pi = await getStripe().paymentIntents.retrieve(b.stripe_payment_intent_id);
-      await spejlPaymentIntent(pi);
-      b = (await hentBetalingForHandel(handelId)) ?? b;
-    }
-
-    const venter = !!b.venter_paa_saelgerkonto_kl;
-    const faelles: FaellesBetalingsstatus = {
-      handelId,
-      status: b.status,
-      betalSenest: b.betal_senest,
-      // Fristen kan forlænges til 7 dage efter, at betalingen åbnede.
-      maksBetalSenest: maksBetalingsfrist(b.betaling_aabnet_kl ?? b.oprettet),
-      fristOverskredet: !venter && new Date(b.betal_senest).getTime() < Date.now(),
-      venterPaaSaelgerkonto: venter,
-      budOere: Number(b.bud_oere),
-      betaltKl: b.betalt_kl,
-      frigivetKl: b.frigivet_kl,
-      overfoertKl: b.overfoert_kl,
-    };
-    if (b.buyer_id !== user.id) {
-      return {
-        ok: true,
-        ...faelles,
-        erKoeber: false,
-        saelgergebyrOere: Number(b.saelgergebyr_oere),
-        udbetalingOere: Number(b.udbetaling_oere),
-      };
-    }
-    return {
-      ok: true,
-      ...faelles,
-      erKoeber: true,
-      koebergebyrOere: Number(b.koebergebyr_oere),
-      fragtOere: Number(b.fragt_oere),
-      beskyttelse: b.beskyttelse,
-      beskyttelseOere: Number(b.beskyttelse_oere),
-      beskyttelsePrisOere: beskyttelseOere(Number(b.bud_oere)),
-      totalOere: Number(b.total_oere),
-      // Aldrig den interne fejltekst: kun en fast dansk tekst, og kun for et
-      // mislykket betalingsforsøg (ikke for interne markeringer til admin).
-      sidsteFejl:
-        b.sidste_fejl &&
-        !b.kraever_opmaerksomhed &&
-        (b.status === "afventer" || b.status === "behandles")
-          ? "Betalingen kunne ikke gennemføres."
-          : null,
-    };
-  } catch (err) {
-    console.error("hentBetalingsstatus fejlede:", err);
-    return { fejl: GENERISK };
-  }
+  return hentBetalingsstatusFor(await createClient(), user.id, handelId);
 }
 
 // ------------------------------------------------------------------ betal
