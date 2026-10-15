@@ -632,6 +632,28 @@ describe("visning", () => {
   });
 });
 
+describe("kunst-kontrol (auctions.kunst_kontrol, 20261023010000)", () => {
+  it("virker uden kolonnen; med 'afventer' kan auktionen ikke boostes og vises ikke i toppen eller som 'Boostet'", async () => {
+    // Uden kolonnen: intet afventer.
+    const foer = await auktion(PRIVAT, { kategori: "Kunsttest", titel: "Vase" });
+    expect((await en<{ v: boolean }>(`select public.boost_kunst_afventer($1) as v`, [foer])).v).toBe(false);
+    await j(`select public.boost_staff_justering($1, $2, 100, 'test', $3) as v`, [CHEF, PRIVAT, randomUUID()]);
+    expect((await brug(PRIVAT, foer)).kode).toBe("ok");
+
+    await db.exec(`alter table public.auctions add column if not exists kunst_kontrol text`);
+    const afventer = await auktion(PRIVAT, { kategori: "Kunsttest", titel: "Maleri" });
+    await db.query(`update public.auctions set kunst_kontrol = 'afventer' where id = $1`, [afventer]);
+    expect((await brug(PRIVAT, afventer)).kode).toBe("ikke_aktiv");
+    // Et boostet opslag, der bagefter sættes til kontrol, forsvinder fra toppen og mærket.
+    await db.query(`update public.auctions set kunst_kontrol = 'afventer' where id = $1`, [foer]);
+    expect((await db.query(`select * from public.boost_top('Kunsttest', null)`)).rows).toEqual([]);
+    expect((await db.query(`select * from public.aktive_boosts($1)`, [[foer]])).rows).toEqual([]);
+    await db.query(`update public.auctions set kunst_kontrol = 'godkendt' where id = $1`, [foer]);
+    expect((await db.query<{ auktion_id: string }>(`select auktion_id from public.boost_top('Kunsttest', null)`)).rows.map((r) => r.auktion_id)).toEqual([foer]);
+    await nulstil(PRIVAT);
+  });
+});
+
 describe("fakturaer", () => {
   it("faktura ved betaling, kreditnota ved refusion - én gang; forkert beløb kræver handling", async () => {
     const r1 = await j(`select public.faktura_planlaeg_boost() as v`);

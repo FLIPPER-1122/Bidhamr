@@ -415,6 +415,16 @@ returns text language sql stable security definer set search_path = '' as $fn$
     left join public.users u on u.id = p_bruger;
 $fn$;
 
+-- Afventer auktionen kunst-kontrol (auctions.kunst_kontrol = 'afventer',
+-- 20261023010000_kunst_forbudt.sql)? Læses via to_jsonb, så funktionen
+-- virker både før og efter, at kolonnen findes (før: altid false).
+-- Bruges af alle boost-funktioner, der læser auctions uden RLS.
+create or replace function public.boost_kunst_afventer(p_auktion uuid)
+returns boolean language sql stable security definer set search_path = '' as $fn$
+  select coalesce((select (to_jsonb(a) ->> 'kunst_kontrol') = 'afventer'
+                     from public.auctions a where a.id = p_auktion), false);
+$fn$;
+
 -- Indsætter en postering (idempotent via de unikke indeks). Svar: true =
 -- indsat, false = fandtes allerede.
 create or replace function public.boost_postering_indsaet(
@@ -789,6 +799,9 @@ begin
   if a.id is null then return jsonb_build_object('kode', 'ikke_fundet'); end if;
   if a.bruger_id <> p_bruger then return jsonb_build_object('kode', 'ikke_ejer'); end if;
   if a.erhverv then return jsonb_build_object('kode', 'erhverv'); end if;
+  -- Afventer kunst-kontrol (20261023010000_kunst_forbudt.sql): skjult for
+  -- andre og kan ikke få bud - og kan derfor heller ikke boostes.
+  if public.boost_kunst_afventer(p_auktion) then return jsonb_build_object('kode', 'ikke_aktiv'); end if;
   if a.status <> 'aktiv' or a.skjult or a.arkiveret_kl is not null or a.pauset_kl is not null or a.slutter_kl <= now() then
     return jsonb_build_object('kode', 'ikke_aktiv');
   end if;
@@ -1082,6 +1095,7 @@ begin
   v_saldo := public.boost_saldo(v_bruger);
   v_grund := case
     when a.erhverv then 'erhverv'
+    when public.boost_kunst_afventer(p_auktion) then 'ikke_aktiv'
     when public.boost_bruger_spaerret(v_bruger) is not null then coalesce(nullif(public.boost_bruger_spaerret(v_bruger), 'ikke_fundet'), 'spaerret')
     when a.status <> 'aktiv' or a.skjult or a.arkiveret_kl is not null or a.pauset_kl is not null or a.slutter_kl <= now() then 'ikke_aktiv'
     when v_slut is not null then 'boostet'
@@ -1104,7 +1118,9 @@ returns table (auktion_id uuid, slut_kl timestamptz)
 language sql stable security definer set search_path = '' as $fn$
   select b.auktion_id, max(b.slut_kl)
     from public.auktion_boosts b
+    join public.auctions a on a.id = b.auktion_id
    where b.auktion_id = any ((coalesce(p_auktioner, '{}'::uuid[]))[1:500])
+     and (to_jsonb(a) ->> 'kunst_kontrol') is distinct from 'afventer'
      and b.start_kl <= now() and b.slut_kl > now()
    group by b.auktion_id;
 $fn$;
@@ -1138,6 +1154,8 @@ begin
      where b.start_kl <= now() and b.slut_kl > now()
        and a.status = 'aktiv' and not coalesce(a.skjult, false) and a.arkiveret_kl is null
        and a.pauset_kl is null and a.slutter_kl > now()
+       -- Afventer kunst-kontrol: skjult for alle andre (se boost_kunst_afventer).
+       and (to_jsonb(a) ->> 'kunst_kontrol') is distinct from 'afventer'
        and (v_kategori is null or a.kategori = v_kategori)
        and (v_soeg is null or strpos(lower(a.titel), v_soeg) > 0)
   )
@@ -1315,6 +1333,7 @@ begin
   foreach f in array array[
     'public.boost_saldo(uuid)',
     'public.boost_bruger_spaerret(uuid)',
+    'public.boost_kunst_afventer(uuid)',
     'public.boost_postering_indsaet(uuid, text, integer, uuid, uuid, uuid, uuid, text, uuid, integer)',
     'public.boost_koeb_start(uuid, boolean)',
     'public.boost_koeb_gem_pi(uuid, text, integer)',
