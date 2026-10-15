@@ -1,0 +1,20 @@
+{
+  "webhook": "BidHamr sporing (latest)",
+  "data": {
+    "shipment_id": 69835917,
+    "current_status": "EN_ROUTE",
+    "current_state": "PROGRESSING",
+    "current_status_text": "Pakken er indleveret i pakkeshop",
+    "current_status_registered_at": "2026-10-16T09:12:00.000+02:00",
+    "carrier_code": "dao",
+    "carrier_track_id": "00057126960000000015",
+    "weight": "",
+    "length": "",
+    "height": "",
+    "width": "",
+    "location": "",
+    "city": "Odense C",
+    "country_code": "DK"
+  },
+  "url": "https://bidhamr.dk/api/fragt/webhook/shipmondo"
+}

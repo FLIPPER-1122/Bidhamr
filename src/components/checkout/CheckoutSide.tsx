@@ -10,6 +10,10 @@
 //   auktionens låste fragtpris for den valgte levering. Beløbet på
 //   "Betal"-knappen er altid PaymentIntentens.
 // - Kun afhentning (auktionen tilbyder ikke forsendelse) kræver intet valg.
+// - Fragt via Shipmondo: køberen vælger selv fragtfirma (DAO, GLS eller
+//   PostNord - checkout.transportoerer). Prisen er den samme for alle tre;
+//   pakkeshoppen vælges hos det valgte firma (skiftes firmaet, skal der
+//   vælges en ny pakkeshop).
 // - Tilbyder sælgeren både forsendelse og afhentning, kan køberen vælge
 //   "Afhent hos sælger – 0 kr." før betaling. Så er fragten 0, og BidHamr
 //   Beskyttelse trækkes fra (ingen sag ved afhentning); den lægges på igen
@@ -62,13 +66,13 @@ function visTelefon(t: string | null | undefined) {
   return /^\+45\d{8}$/.test(t) ? t.slice(3) : t;
 }
 
-function signatur(maade: Maade, shopId: string | null, m: Modtager) {
+function signatur(maade: Maade, transportoer: string | null, shopId: string | null, m: Modtager) {
   const ren = (s: string) => s.replace(/\s+/g, " ").trim();
   if (maade === "afhentning") return JSON.stringify([maade]);
   return JSON.stringify(
     maade === "doer"
-      ? [maade, ren(m.navn), ren(m.telefon).replace(/\s/g, ""), ren(m.adresse), ren(m.postnummer), ren(m.by)]
-      : [maade, shopId, ren(m.navn), ren(m.telefon).replace(/\s/g, "")],
+      ? [maade, transportoer, ren(m.navn), ren(m.telefon).replace(/\s/g, ""), ren(m.adresse), ren(m.postnummer), ren(m.by)]
+      : [maade, transportoer, shopId, ren(m.navn), ren(m.telefon).replace(/\s/g, "")],
   );
 }
 
@@ -132,6 +136,14 @@ export default function CheckoutSide({
   const kanSkifteShop = !checkout.labelLavet;
   const valgt = checkout.valgt;
   const forslag = checkout.forslag;
+  // Fragtfirmaer, køberen kan vælge (tom = intet valg).
+  const firmaer = checkout.transportoerer ?? [];
+  const kendtFirma = (t: string | null | undefined) => (t && firmaer.some((f) => f.kode === t) ? t : null);
+  const startTransportoer =
+    kendtFirma(valgt?.maade !== "afhentning" ? valgt?.transportoer : null) ??
+    kendtFirma(forslag?.transportoer) ??
+    firmaer[0]?.kode ??
+    null;
 
   // ---------------------------------------------------------------- startværdier
   const startMaade: Maade =
@@ -141,6 +153,7 @@ export default function CheckoutSide({
   const startShop: ValgtPakkeshop | null =
     valgt?.maade === "pakkeshop" && valgt.pakkeshopId
       ? {
+          transportoer: valgt.transportoer ?? null,
           id: valgt.pakkeshopId,
           navn: valgt.pakkeshopNavn ?? "Pakkeshop",
           adresse: valgt.pakkeshopAdresse ?? "",
@@ -149,8 +162,9 @@ export default function CheckoutSide({
           soegPostnummer: valgt.pakkeshopPostnummer ?? "",
           soegAdresse: valgt.pakkeshopAdresse ?? null,
         }
-      : forslag?.pakkeshopId && forslag.pakkeshopPostnummer
+      : forslag?.pakkeshopId && forslag.pakkeshopPostnummer && (forslag.transportoer ?? null) === startTransportoer
         ? {
+            transportoer: forslag.transportoer ?? null,
             id: forslag.pakkeshopId,
             navn: forslag.pakkeshopNavn ?? "Pakkeshop",
             adresse: forslag.pakkeshopAdresse ?? "",
@@ -171,12 +185,13 @@ export default function CheckoutSide({
   };
 
   const [maade, setMaade] = useState<Maade>(startMaade);
+  const [transportoer, setTransportoer] = useState<string | null>(startTransportoer);
   const [shop, setShop] = useState<ValgtPakkeshop | null>(startShop);
   const [modtager, setModtager] = useState<Modtager>(startModtager);
   const [gemForslag, setGemForslag] = useState(true);
   // Signaturen af det valg, der er gemt på serveren (null = intet gemt).
   const [gemt, setGemt] = useState<string | null>(
-    valgt ? signatur(valgt.maade, valgt.pakkeshopId, startModtager) : null,
+    valgt ? signatur(valgt.maade, valgt.transportoer ?? null, valgt.pakkeshopId, startModtager) : null,
   );
   const [feltFejl, setFeltFejl] = useState<FeltFejl>({});
   const [leveringFejl, setLeveringFejl] = useState<string | null>(null);
@@ -205,7 +220,15 @@ export default function CheckoutSide({
   const [knapSynlig, setKnapSynlig] = useState(false);
   const laas = useRef(false);
 
-  const aktuelSignatur = signatur(maade, maade === "pakkeshop" ? (shop?.id ?? null) : null, modtager);
+  const aktuelSignatur = signatur(maade, transportoer, maade === "pakkeshop" ? (shop?.id ?? null) : null, modtager);
+  const firmaNavn = firmaer.find((f) => f.kode === transportoer)?.navn ?? "DAO";
+
+  // Nyt fragtfirma: pakkeshoppen skal vælges hos det nye firma.
+  function vaelgFirma(t: string) {
+    setTransportoer(t);
+    if (shop && (shop.transportoer ?? null) !== t) setShop(null);
+    setFeltFejl((f) => ({ ...f, shop: undefined }));
+  }
   const leveringGemt = kunAfhentning || gemt === aktuelSignatur;
   const afhentningValgt = kunAfhentning || maade === "afhentning";
   const betalingKlar = Boolean(clientSecret) && leveringGemt;
@@ -306,6 +329,7 @@ export default function CheckoutSide({
       if (!leveringGemt) {
         const r = await gemLeveringsvalgAction(tradeId, maade === "afhentning" ? { maade } : {
           maade,
+          transportoer: transportoer ?? undefined,
           pakkeshopId: maade === "pakkeshop" ? shop?.id : undefined,
           pakkeshopPostnummer: maade === "pakkeshop" ? shop?.soegPostnummer || shop?.postnummer : undefined,
           pakkeshopAdresse: maade === "pakkeshop" ? shop?.soegAdresse : undefined,
@@ -391,7 +415,9 @@ export default function CheckoutSide({
   }
 
   const handelSti = `/mine-handler/${tradeId}`;
-  const fragtNavn = afhentningValgt ? "Afhentning hos sælger" : maade === "doer" ? "Fragt – levering hjem" : "Fragt – pakkeshop";
+  const fragtNavn = afhentningValgt
+    ? "Afhentning hos sælger"
+    : `Fragt – ${firmaer.length > 0 ? `${firmaNavn}, ` : ""}${maade === "doer" ? "levering hjem" : "pakkeshop"}`;
 
   // ---------------------------------------------------------------- visning
   return (
@@ -504,7 +530,7 @@ export default function CheckoutSide({
                           navn={`${id}-maade`}
                           ikon="butik"
                           titel="Pakkeshop"
-                          tekst="Du henter pakken i en DAO-pakkeshop, du selv vælger."
+                          tekst={firmaer.length > 0 ? "Du henter pakken i en pakkeshop, du selv vælger." : "Du henter pakken i en DAO-pakkeshop, du selv vælger."}
                           pris={kroner(checkout.pakkeshopOere ?? serverFragt)}
                           valgt={maade === "pakkeshop"}
                           onVaelg={() => setMaade("pakkeshop")}
@@ -515,7 +541,7 @@ export default function CheckoutSide({
                           navn={`${id}-maade`}
                           ikon="hjem"
                           titel="Levering hjem"
-                          tekst="DAO bringer pakken hjem til din dør."
+                          tekst={firmaer.length > 0 ? "Fragtfirmaet bringer pakken hjem til din dør." : "DAO bringer pakken hjem til din dør."}
                           pris={kroner(checkout.doerOere!)}
                           valgt={maade === "doer"}
                           onVaelg={() => setMaade("doer")}
@@ -545,6 +571,31 @@ export default function CheckoutSide({
                     )}
                   </fieldset>
 
+                  {maade !== "afhentning" && firmaer.length > 0 && (
+                    <fieldset className="mt-5 min-w-0" disabled={travl || !kanSkifteShop}>
+                      <legend className="mb-2 text-sm font-medium text-tekst">Fragtfirma</legend>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        {firmaer.map((f) => (
+                          <FirmaKort
+                            key={f.kode}
+                            navn={`${id}-firma`}
+                            firma={f.navn}
+                            leveringstid={f.leveringstid}
+                            pris={kroner(
+                              maade === "doer" ? (checkout.doerOere ?? serverFragt) : (checkout.pakkeshopOere ?? serverFragt),
+                            )}
+                            valgt={transportoer === f.kode}
+                            onVaelg={() => vaelgFirma(f.kode)}
+                          />
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[13px] text-tekst-daempet">
+                        Prisen er den samme hos alle fragtfirmaer.
+                        {!kanSkifteShop && " Fragtfirmaet kan ikke ændres, når sælgeren har lavet fragtlabelen."}
+                      </p>
+                    </fieldset>
+                  )}
+
                   {maade === "afhentning" && (
                     <div className="mt-5 space-y-2 rounded-xl bg-groen-lys p-4 text-sm text-tekst-daempet">
                       <p>
@@ -568,7 +619,9 @@ export default function CheckoutSide({
 
                   {maade === "pakkeshop" && (
                     <div className="mt-5">
-                      <p className="mb-1.5 text-sm font-medium text-tekst">Pakkeshop</p>
+                      <p className="mb-1.5 text-sm font-medium text-tekst">
+                        {firmaer.length > 0 ? `Pakkeshop hos ${firmaNavn}` : "Pakkeshop"}
+                      </p>
                       <div
                         className={`flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center ${
                           feltFejl.shop ? "border-fejl-kant bg-fejl-bg/40" : "border-kant bg-groen-lys"
@@ -670,7 +723,7 @@ export default function CheckoutSide({
                         id={`${id}-telefon`}
                         label="Mobilnummer"
                         fejl={feltFejl.telefon}
-                        hjaelp="DAO bruger nummeret til at give dig besked om pakken."
+                        hjaelp={`${firmaNavn} bruger nummeret til at give dig besked om pakken.`}
                         className="sm:col-span-2"
                       >
                         <input
@@ -880,6 +933,8 @@ export default function CheckoutSide({
             (slaaPostnummerOp(modtager.postnummer) ? `${modtager.adresse ? `${modtager.adresse}, ` : ""}${modtager.postnummer}` : "")
           }
           valgt={shop}
+          transportoer={transportoer}
+          firmaNavn={firmaer.length > 0 ? firmaNavn : null}
         />
       )}
     </main>
@@ -931,6 +986,45 @@ function Felt({
       )}
       {fejl && <FeltFejlTekst id={`${id}-fejl`}>{fejl}</FeltFejlTekst>}
     </div>
+  );
+}
+
+function FirmaKort({
+  navn,
+  firma,
+  leveringstid,
+  pris,
+  valgt,
+  onVaelg,
+}: {
+  navn: string;
+  firma: string;
+  leveringstid: string;
+  pris: string;
+  valgt: boolean;
+  onVaelg: () => void;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-3.5 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-groen sm:flex-col sm:items-start sm:gap-1.5 ${
+        valgt ? "border-groen bg-groen-lys" : "border-kant hover:border-kant-staerk"
+      }`}
+    >
+      <input type="radio" name={navn} checked={valgt} onChange={onVaelg} className="sr-only" />
+      <span className="flex min-w-0 flex-1 items-center gap-3 sm:w-full">
+        <span
+          aria-hidden="true"
+          className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${valgt ? "border-groen" : "border-kant-staerk"}`}
+        >
+          {valgt && <span className="h-2.5 w-2.5 rounded-full bg-groen" />}
+        </span>
+        <span className="text-[15px] font-bold text-tekst">{firma}</span>
+      </span>
+      <span className="shrink-0 text-right text-[13px] text-tekst-daempet sm:text-left">
+        <span className="block">{leveringstid}</span>
+        <span className="block font-semibold text-tekst tabular-nums">{pris}</span>
+      </span>
+    </label>
   );
 }
 

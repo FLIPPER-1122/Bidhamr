@@ -1,0 +1,202 @@
+{
+  "id": 69835919,
+  "created_at": "2026-10-15T18:42:26.084+02:00",
+  "updated_at": "2026-10-15T18:42:26.123+02:00",
+  "carrier_code": "gls",
+  "description": "ShopDelivery",
+  "contents": "Testvare",
+  "product_id": 54,
+  "services": "16,15",
+  "customer_number": null,
+  "product_code": "GLSDK_SD",
+  "service_codes": "EMAIL_NT,SMS_NT",
+  "price": "43.5",
+  "reference": "REFERENCE",
+  "additional_reference": null,
+  "order_id": null,
+  "pkg_no": "056212128940",
+  "parties": [
+    {
+      "type": "sender",
+      "name": "Sælger Test",
+      "attention": null,
+      "address1": "Vestergade 10",
+      "address2": null,
+      "postal_code": "5000",
+      "city": "Odense C",
+      "state": null,
+      "country_code": "DK",
+      "email": "saelger@test.bidhamr.dk",
+      "phone": "+4512345678",
+      "attributes": []
+    },
+    {
+      "type": "receiver",
+      "name": "Køber Test",
+      "attention": null,
+      "address1": "Nørregade 1",
+      "address2": null,
+      "postal_code": "8000",
+      "city": "Aarhus C",
+      "state": null,
+      "country_code": "DK",
+      "email": "koeber@test.bidhamr.dk",
+      "phone": "+4587654321",
+      "attributes": []
+    },
+    {
+      "type": "service_point",
+      "name": "Superbrugsen City",
+      "attention": null,
+      "address1": "Vestergade 76",
+      "address2": "Pakkeshop: 97842",
+      "postal_code": "5000",
+      "city": "Odense C",
+      "state": null,
+      "country_code": "DK",
+      "email": null,
+      "phone": null,
+      "attributes": [
+        {
+          "name": "service_point_id",
+          "value": "97842"
+        }
+      ]
+    }
+  ],
+  "receiver": {
+    "name": "Køber Test",
+    "attention": null,
+    "address1": "Nørregade 1",
+    "address2": null,
+    "zipcode": "8000",
+    "city": "Aarhus C",
+    "country_code": "DK",
+    "vat_id": null,
+    "email": "koeber@test.bidhamr.dk",
+    "mobile": "+4587654321",
+    "telephone": null,
+    "access_code": null,
+    "member_id": null,
+    "date": null,
+    "instruction": null,
+    "from_time": null,
+    "to_time": null
+  },
+  "sender": {
+    "name": "Sælger Test",
+    "attention": null,
+    "address1": "Vestergade 10",
+    "address2": null,
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country_code": "DK",
+    "vat_id": null,
+    "email": "saelger@test.bidhamr.dk",
+    "mobile": "+4512345678",
+    "telephone": "+4512345678"
+  },
+  "service_point": {
+    "id": "97842",
+    "name": "Superbrugsen City",
+    "address1": "Vestergade 76",
+    "address2": "Pakkeshop: 97842",
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country_code": "DK",
+    "shipping_agent": "gls"
+  },
+  "pick_up": {
+    "name": null,
+    "attention": null,
+    "address1": null,
+    "address2": null,
+    "zipcode": null,
+    "city": null,
+    "country_code": null,
+    "telephone": null,
+    "phone": null,
+    "pickup_custom": false,
+    "date": null,
+    "instruction": null,
+    "from_time": null,
+    "to_time": null
+  },
+  "bill_to": {
+    "name": null,
+    "attention": null,
+    "address1": null,
+    "address2": null,
+    "zipcode": null,
+    "city": null,
+    "country_code": null,
+    "vat_id": null,
+    "telephone": null,
+    "mobile": null,
+    "email": null,
+    "customer_number": null,
+    "bill_to_custom": false
+  },
+  "paperless_trade": false,
+  "pallet_exchange": {
+    "pallets1": null,
+    "pallets2": null,
+    "pallets4": null
+  },
+  "source_id": null,
+  "source_type": "api",
+  "return_shipment_id": null,
+  "origin_shipment_id": null,
+  "external_pkg_no": null,
+  "term_of_trade": "DAP",
+  "waybill_reference": null,
+  "labelless_code": null,
+  "carrier_insurance": {
+    "amount": null,
+    "currency_code": null
+  },
+  "parcels": [
+    {
+      "weight": 900,
+      "package_type": null,
+      "stackable": true,
+      "height": null,
+      "width": null,
+      "length": null,
+      "volume": null,
+      "internal_reference": null,
+      "quantity": 1,
+      "weight_kg": "0.9",
+      "content": null,
+      "pkg_no": "056212128940",
+      "pkg_nos": [
+        "056212128940"
+      ],
+      "running_metre": null,
+      "declared_value": {
+        "amount": null,
+        "currency_code": null
+      },
+      "attributes": [],
+      "external_pkg_no": null,
+      "gls_colli_id": null,
+      "labelless_code": null,
+      "dangerous_goods": []
+    }
+  ],
+  "dfm": null,
+  "customs": null,
+  "label_overlay": null,
+  "insurance": {
+    "amount": null,
+    "currency_code": null
+  },
+  "pickup_details": null,
+  "delivery_details": null,
+  "labels": [
+    {
+      "base64": "JVBERi0xLjQKJSBiaWRoYW1yIHRlc3QtbGFiZWwKJSVFT0YK",
+      "file_format": "pdf"
+    }
+  ]
+}

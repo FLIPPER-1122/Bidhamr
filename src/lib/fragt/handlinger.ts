@@ -6,7 +6,7 @@ import "server-only";
 // Bearer-token) - aldrig fra klientens krop. Databasen tjekker igen under lås.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
-import { fragtLabelsAktiv } from "@/lib/fragt";
+import { fragtLabelsAktiv, hentFragtfirma } from "@/lib/fragt";
 import {
   type AdresseInput,
   type Fragtpris,
@@ -14,13 +14,21 @@ import {
   type LeveringsvalgInput,
   FRAGT_LABEL_BUCKET,
   annullerUdgaaendeForsendelse,
+  foerTransportoerMigration,
   gemLeveringsvalg,
   hentFragtpriser,
   opretUdgaaendeForsendelse,
   sikrLabelPdf,
   soegPakkeshops,
 } from "@/lib/fragt/server";
-import { SPORINGS_NAVN, type CheckoutMaade, type SporingsType } from "@/lib/fragt/types";
+import {
+  SPORINGS_NAVN,
+  TRANSPORTOER_INFO,
+  erTransportoer,
+  type CheckoutMaade,
+  type SporingsType,
+  type Transportoer,
+} from "@/lib/fragt/types";
 import {
   proevReturlabelIgen,
   startReturfragtBetaling,
@@ -68,8 +76,20 @@ export { soegPakkeshops };
 
 // ------------------------------------------------------------ checkout (køber)
 
+// Et fragtfirma, køberen kan vælge i checkout (Shipmondo: DAO, GLS og
+// PostNord). Prisen er den samme for alle (pakkeshopOere/doerOere).
+export type TransportoerValg = {
+  kode: Transportoer;
+  navn: string;
+  leveringstid: string;
+  // Sælgeren kan aflevere uden printer (kode eller QR).
+  labelfri: boolean;
+};
+
 export type Checkout = {
   tradeId: string;
+  // Tom = intet valg af fragtfirma (fx DAO direkte eller testfragt).
+  transportoerer: TransportoerValg[];
   // true = afhentning hos sælger er valgt (eller den eneste mulighed).
   afhentning: boolean;
   // true = auktionen tilbyder kun afhentning: intet valg, betal direkte.
@@ -87,6 +107,7 @@ export type Checkout = {
   doerOere: number | null;
   valgt: {
     maade: CheckoutMaade;
+    transportoer: Transportoer | null;
     pakkeshopId: string | null;
     pakkeshopNavn: string | null;
     pakkeshopAdresse: string | null;
@@ -99,6 +120,7 @@ export type Checkout = {
   // Forudfyldning fra sidste køb (kun køberens egne data).
   forslag: {
     maade: string | null;
+    transportoer: Transportoer | null;
     pakkeshopId: string | null;
     pakkeshopNavn: string | null;
     pakkeshopAdresse: string | null;
@@ -120,11 +142,30 @@ export type Checkout = {
   labelLavet: boolean;
 };
 
+type CheckoutLevRaekke = {
+  maade: CheckoutMaade;
+  transportoer?: string | null;
+  pakkeshop_id: string | null;
+  pakkeshop_navn: string | null;
+  pakkeshop_adresse: string | null;
+  pakkeshop_postnummer: string | null;
+  pakkeshop_by: string | null;
+  modtager_navn: string | null;
+  modtager_adresse: string | null;
+  modtager_postnummer: string | null;
+  modtager_by: string | null;
+  modtager_telefon: string | null;
+  fragt_oere: number;
+  beskyttelse_ved_forsendelse_oere: number | null;
+};
+
 export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<{ ok: true; checkout: Checkout } | Fejl> {
   const h = await hentHandel(tradeId, brugerId);
   if (!h || h.buyer_id !== brugerId) return { fejl: "Handlen findes ikke." };
   const admin = createAdminClient();
-  const [a, b, l, f, forslag] = await Promise.all([
+  const levKolonner =
+    "maade, pakkeshop_id, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by, modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, fragt_oere, beskyttelse_ved_forsendelse_oere";
+  const [a, b, l0, f, forslag] = await Promise.all([
     admin
       .from("auctions")
       .select("forsendelse_mulig, afhentning_mulig, pakkestoerrelse, fragt_pakkeshop_oere, fragt_doer_oere")
@@ -137,9 +178,9 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
       .maybeSingle(),
     admin
       .from("handel_levering")
-      .select("maade, pakkeshop_id, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by, modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, fragt_oere, beskyttelse_ved_forsendelse_oere")
+      .select(`${levKolonner}, transportoer`)
       .eq("trade_id", h.id)
-      .maybeSingle(),
+      .maybeSingle<CheckoutLevRaekke>(),
     admin
       .from("forsendelser")
       .select("id")
@@ -149,6 +190,12 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
       .limit(1),
     admin.from("leveringsforslag").select("*").eq("user_id", brugerId).maybeSingle(),
   ]);
+  // Før migrationen 20261024010000 (ingen kolonne transportoer): intet valg
+  // af fragtfirma - alt går som DAO.
+  const foerMigration = foerTransportoerMigration(l0.error);
+  const l = foerMigration
+    ? await admin.from("handel_levering").select(levKolonner).eq("trade_id", h.id).maybeSingle<CheckoutLevRaekke>()
+    : l0;
   if (a.error || b.error || l.error || f.error || forslag.error) {
     await logDriftFejl({
       kilde: "server",
@@ -162,10 +209,17 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
   const fs = forslag.data;
   const afhentning = Boolean(h.afhentning) || Number(bet?.fragt_oere ?? 0) === 0;
   const afhentningMulig = Boolean(a.data?.forsendelse_mulig) && Boolean(a.data?.afhentning_mulig);
+  const transportoerer: TransportoerValg[] = (foerMigration ? [] : (hentFragtfirma().transportoerer ?? [])).map((t) => ({
+    kode: t,
+    navn: TRANSPORTOER_INFO[t].navn,
+    leveringstid: TRANSPORTOER_INFO[t].leveringstid,
+    labelfri: TRANSPORTOER_INFO[t].labelfri !== null,
+  }));
   return {
     ok: true,
     checkout: {
       tradeId: h.id,
+      transportoerer,
       afhentning,
       kunAfhentning: afhentning && !afhentningMulig,
       afhentningMulig,
@@ -178,6 +232,7 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
       valgt: lev
         ? {
             maade: lev.maade,
+            transportoer: erTransportoer(lev.transportoer) ? lev.transportoer : null,
             pakkeshopId: lev.pakkeshop_id,
             pakkeshopNavn: lev.pakkeshop_navn,
             pakkeshopAdresse: lev.pakkeshop_adresse,
@@ -196,6 +251,7 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
       forslag: fs
         ? {
             maade: fs.maade,
+            transportoer: erTransportoer(fs.transportoer) ? fs.transportoer : null,
             pakkeshopId: fs.pakkeshop_id,
             pakkeshopNavn: fs.pakkeshop_navn,
             pakkeshopAdresse: fs.pakkeshop_adresse,
@@ -325,6 +381,8 @@ export type ForsendelseVisning = {
   status: string;
   // Fx "dao" (styrer bl.a. labelgrænsen i FragtlabelBoks).
   fragtfirma: string;
+  // Transportøren (Shipmondo: dao | gls | postnord; DAO direkte: dao).
+  transportoer: Transportoer | null;
   levering: string | null;
   pakkestoerrelse: string;
   sporingsnummer: string | null;
@@ -332,6 +390,9 @@ export type ForsendelseVisning = {
   // for retur): labelen kan hentes, og labelfri-koden (DAO) vises.
   harLabel: boolean;
   labelfriKode: string | null;
+  // QR-kode til indlevering uden printer (PostNord, GLS retur) som
+  // data-URL (PNG). Kun til den part, der skal sende pakken.
+  qrBillede: string | null;
   oprettetKl: string;
   afleveretKl: string | null;
   klarTilAfhentningKl: string | null;
@@ -357,15 +418,40 @@ export async function hentForsendelser(
   const h = await hentHandel(tradeId, brugerId);
   if (!h) return { fejl: "Handlen findes ikke." };
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("forsendelser")
-    .select(
-      "id, type, status, fragtfirma, levering, pakkestoerrelse, sporingsnummer, forsendelses_id, label_sti, qr_kode, oprettet_kl, afleveret_kl, klar_til_afhentning_kl, leveret_kl, returneret_kl, annulleret_kl",
-    )
-    .eq("trade_id", h.id)
-    .neq("status", "fejlet")
-    .order("oprettet_kl", { ascending: false })
-    .limit(10);
+  type Raekke = {
+    id: string;
+    type: "udgaaende" | "retur";
+    status: string;
+    fragtfirma: string;
+    transportoer?: string | null;
+    levering: string | null;
+    pakkestoerrelse: string;
+    sporingsnummer: string | null;
+    forsendelses_id: string | null;
+    label_sti: string | null;
+    qr_kode: string | null;
+    qr_png?: string | null;
+    oprettet_kl: string;
+    afleveret_kl: string | null;
+    klar_til_afhentning_kl: string | null;
+    leveret_kl: string | null;
+    returneret_kl: string | null;
+    annulleret_kl: string | null;
+  };
+  const kolonner =
+    "id, type, status, fragtfirma, levering, pakkestoerrelse, sporingsnummer, forsendelses_id, label_sti, qr_kode, oprettet_kl, afleveret_kl, klar_til_afhentning_kl, leveret_kl, returneret_kl, annulleret_kl";
+  const hent = (k: string) =>
+    admin
+      .from("forsendelser")
+      .select(k)
+      .eq("trade_id", h.id)
+      .neq("status", "fejlet")
+      .order("oprettet_kl", { ascending: false })
+      .limit(10)
+      .returns<Raekke[]>();
+  let { data, error } = await hent(`${kolonner}, transportoer, qr_png`);
+  // Før migrationen 20261024010000: uden transportør og QR.
+  if (error && foerTransportoerMigration(error)) ({ data, error } = await hent(kolonner));
   if (error) {
     await logDriftFejl({ kilde: "server", hvor: "Fragt: hent forsendelser", fejl: error });
     return { fejl: GENERISK };
@@ -388,12 +474,16 @@ export async function hentForsendelser(
         type: f.type,
         status: f.status,
         fragtfirma: f.fragtfirma,
+        transportoer: erTransportoer(f.transportoer) ? f.transportoer : null,
         levering: f.levering,
         pakkestoerrelse: f.pakkestoerrelse,
         sporingsnummer: f.sporingsnummer,
         // DAO uden PDF endnu: knappen vises, og PDF'en hentes ved klik.
         harLabel: maa && (Boolean(f.label_sti) || (f.fragtfirma === "dao" && Boolean(f.forsendelses_id))),
         labelfriKode: maa ? f.qr_kode : null,
+        qrBillede: maa && typeof f.qr_png === "string" && /^iVBORw0KGgo[A-Za-z0-9+/]+=*$/.test(f.qr_png)
+          ? `data:image/png;base64,${f.qr_png}`
+          : null,
         oprettetKl: f.oprettet_kl,
         afleveretKl: f.afleveret_kl,
         klarTilAfhentningKl: f.klar_til_afhentning_kl,

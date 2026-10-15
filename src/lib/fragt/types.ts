@@ -16,6 +16,48 @@ export function labelGraense(fragtfirma: string | null | undefined): number | nu
   return fragtfirma === "dao" ? null : 2;
 }
 
+// Transportøren (det fragtfirma, der kører pakken), når adapteren tilbyder
+// flere - Shipmondo: DAO, GLS og PostNord (Filip, 15. okt. 2026). Køberen
+// vælger selv i checkout; prisen er den samme for alle tre (låst på
+// auktionen pr. pakkestørrelse og leveringsform). Gemmes på handel_levering
+// og forsendelser (kolonnen transportoer).
+export const TRANSPORTOERER = ["dao", "gls", "postnord"] as const;
+export type Transportoer = (typeof TRANSPORTOERER)[number];
+
+export function erTransportoer(v: unknown): v is Transportoer {
+  return typeof v === "string" && (TRANSPORTOERER as readonly string[]).includes(v);
+}
+
+// Til visning (checkout, "Send pakke", retur). labelfri:
+//   "kode"  sælgeren viser/skriver en kode (DAO labelfri)
+//   "qr"    sælgeren viser en QR-kode på mobilen (PostNord)
+//   null    labelen skal printes (GLS via Shipmondo har ingen labelfri
+//           udgående - kun GLS ShopReturn har QR, som bruges til retur)
+export type TransportoerInfo = {
+  navn: string;
+  // Pakkeshoppernes navn i teksterne, fx "daoSHOP".
+  shopNavn: string;
+  leveringstid: string;
+  labelfri: "kode" | "qr" | null;
+  returLabelfri: "kode" | "qr" | null;
+};
+
+export const TRANSPORTOER_INFO: Record<Transportoer, TransportoerInfo> = {
+  dao: { navn: "DAO", shopNavn: "daoSHOP", leveringstid: "1-3 hverdage", labelfri: "kode", returLabelfri: "kode" },
+  gls: { navn: "GLS", shopNavn: "GLS-pakkeshop", leveringstid: "1-2 hverdage", labelfri: null, returLabelfri: "qr" },
+  postnord: {
+    navn: "PostNord",
+    shopNavn: "PostNord-pakkeshop",
+    leveringstid: "1-2 hverdage",
+    labelfri: "qr",
+    returLabelfri: "qr",
+  },
+};
+
+export function transportoerNavn(t: string | null | undefined): string | null {
+  return erTransportoer(t) ? TRANSPORTOER_INFO[t].navn : null;
+}
+
 export const PAKKESTOERRELSER = ["lille", "mellem", "stor"] as const;
 export type Pakkestoerrelse = (typeof PAKKESTOERRELSER)[number];
 
@@ -109,6 +151,11 @@ export type PakkeshopSoegning = {
   by?: string | null;
   adresse?: string | null;
   antal?: number;
+  // Kun adaptere med flere transportører (Shipmondo). Mangler den, bruges DAO.
+  transportoer?: Transportoer | null;
+  // true = shops, hvor man kan AFLEVERE en pakke (retur: køberens nærmeste).
+  // Ellers shops, hvor pakken kan hentes (checkout).
+  indlevering?: boolean;
 };
 
 export type ForsendelseInput = {
@@ -126,6 +173,8 @@ export type ForsendelseInput = {
   pakkeshopId?: string | null;
   // Vægt på labelen i gram (sælgerens vægt eller pakkestørrelsens maksimum).
   vaegtGram?: number | null;
+  // Køberens valgte transportør (Shipmondo). Retur: samme som den udgående.
+  transportoer?: Transportoer | null;
 };
 
 // Labelen som PDF-bytes eller som URL hos fragtfirmaet (hentes og gemmes i
@@ -144,6 +193,9 @@ export type OprettetForsendelse = {
   // Kode til indlevering uden printer, hvis firmaet har det. Shipmondo/DAO:
   // DAO's labelfri-kode (skrives på pakken / vises i pakkeshoppen).
   qrKode?: string | null;
+  // QR-kode som PNG (base64), som sælgeren viser i pakkeshoppen i stedet for
+  // en printet label (PostNord, GLS ShopReturn). null = ingen QR.
+  qrPng?: string | null;
   // Fragtfirmaets pris til BidHamr i øre (omkostning - ikke købers fragt).
   // Shipmondo: prisen inkl. moms fra svaret.
   prisOere?: number | null;
@@ -166,6 +218,9 @@ export type Sporingshaendelse = {
 export type WebhookHaendelse = Sporingshaendelse & {
   sporingsnummer?: string | null;
   forsendelsesId?: string | null;
+  // Transportøren, fragtfirmaet melder (Shipmondo: carrier_code). Passer den
+  // ikke med forsendelsens, gemmes hændelsen ikke (webhook-ruten).
+  transportoer?: Transportoer | null;
 };
 
 // En hændelseskode, som adapteren ikke kender (fx en ny DAO-kode). Ændrer
@@ -190,8 +245,24 @@ export type SporingsFeed = {
 };
 
 export type WebhookResultat =
-  | { ok: true; haendelser: WebhookHaendelse[] }
+  // ukendte: statuskoder, adapteren ikke kender - ændrer aldrig status, men
+  // gemmes i fragt_ukendte_koder (webhook-ruten).
+  | { ok: true; haendelser: WebhookHaendelse[]; ukendte?: UkendtSporingskode[] }
   | { ok: false; status: number; fejl: string };
+
+// Hvad webhook-ruten ved om BidHamrs forsendelse, når en hændelse fra
+// fragtfirmaet vurderes (vurderWebhookHaendelse).
+export type ForsendelseKontekst = {
+  type: "udgaaende" | "retur";
+  // Hvor pakken skal leveres: pakkeshoppen og/eller modtagerens adresse.
+  steder: { by: string | null; postnummer: string | null }[];
+};
+
+// Svar fra annullerForsendelse. bekraeftet: false = labelen er annulleret hos
+// fragtfirmaets mellemmand (Shipmondo), men transportøren har ikke bekræftet
+// det (cancelled_at_carrier). Så tæller labelen stadig i labelgrænsen, og en
+// returkode giver ikke ret til en ny uden staff. void = bekræftet.
+export type AnnulleringSvar = { bekraeftet: boolean };
 
 export interface Fragtfirma {
   navn: FragtfirmaNavn;
@@ -212,6 +283,12 @@ export interface Fragtfirma {
   // Er adapteren sat op (nøgler i env)? Bruges af cron, så et firma uden
   // nøgler ikke kaldes hvert 5. minut. Mangler = antages sat op.
   erSatOp?(): boolean;
+  // Transportører, køberen kan vælge imellem (Shipmondo). Mangler = intet valg.
+  transportoerer?: readonly Transportoer[];
+  // true = fragtfirmaet har sporing (leveret_kl), men intet API til
+  // efterlysning: efter 14 dage uden leveringsmelding får staff opgaven at
+  // efterlyse manuelt (fragt_efterlysninger, status 'manuel').
+  efterlysningUdenApi?: boolean;
   // Pris i øre for en pakke. Postnumre er valgfrie (fast pris i DK).
   beregnPris(
     pakkestoerrelse: Pakkestoerrelse,
@@ -219,13 +296,17 @@ export interface Fragtfirma {
     tilPostnummer?: string | null,
   ): Promise<number>;
   opretForsendelse(input: ForsendelseInput): Promise<OprettetForsendelse>;
-  annullerForsendelse(forsendelsesId: string): Promise<void>;
+  annullerForsendelse(forsendelsesId: string): Promise<void | AnnulleringSvar>;
   hentSporing(sporingsnummer: string): Promise<Sporingshaendelse[]>;
   // Returlabel i sager: afsender = køberen, modtager = sælgeren.
   opretReturforsendelse(input: ForsendelseInput): Promise<OprettetForsendelse>;
   // Verificerer signaturen og oversætter fragtfirmaets webhook til
   // normaliserede hændelser. Læser selv body'en (kun én gang).
   fortolkWebhook(request: Request): Promise<WebhookResultat>;
+  // Valgfri: den endelige hændelse, når forsendelsen er kendt (Shipmondo:
+  // returtekst efter forsendelsens type, og 'leveret' kun på det rigtige
+  // sted). Hændelser med raa.vurderes = true gemmes ALDRIG uden.
+  vurderWebhookHaendelse?(h: WebhookHaendelse, k: ForsendelseKontekst): WebhookHaendelse[];
   // Pakkeshops nær en adresse/et postnummer (nærmeste først).
   soegPakkeshops(q: PakkeshopSoegning): Promise<Pakkeshop[]>;
   // Slår én pakkeshop op (validering af købers valg). null = findes ikke.

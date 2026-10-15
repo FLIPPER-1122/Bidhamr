@@ -21,10 +21,13 @@ import {
 // POST /api/fragt/app/<handling>
 //   Authorization: Bearer <Supabase access token>
 //   Content-Type: application/json
-//   pakkeshops   { postnummer, adresse?, by?, antal? }
+//   pakkeshops   { postnummer, adresse?, by?, antal?, transportoer?, indlevering? }
+//                transportoer: "dao" | "gls" | "postnord" (fra checkout.transportoerer)
 //   checkout     { trade_id }
-//   levering     { trade_id, maade: "pakkeshop" | "doer", pakkeshop_id?, pakkeshop_postnummer?, pakkeshop_adresse?,
-//                  modtager: { navn, adresse?, postnummer?, by?, telefon }, gem_forslag? }
+//   levering     { trade_id, maade: "pakkeshop" | "doer", transportoer?, pakkeshop_id?, pakkeshop_postnummer?,
+//                  pakkeshop_adresse?, modtager: { navn, adresse?, postnummer?, by?, telefon }, gem_forslag? }
+//                transportoer er valgfri: "dao" | "gls" | "postnord" fra checkout.transportoerer.
+//                Sendes den ikke, bruges DAO (standard).
 //                eller { trade_id, maade: "afhentning" } (kun når checkout.afhentningMulig)
 //   book         { trade_id, afsender?: { navn, adresse, postnummer, by, telefon? } }
 //   annuller     { trade_id, forsendelse_id }
@@ -164,6 +167,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
           adresse: krop.adresse,
           by: krop.by,
           antal: krop.antal,
+          transportoer: krop.transportoer,
+          indlevering: krop.indlevering,
         }));
       case "checkout":
         return resultat(await hentCheckout(krop.trade_id, bruger.id));
@@ -175,6 +180,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
           pakkeshopAdresse: krop.pakkeshop_adresse,
           modtager: obj(krop.modtager),
           gemForslag: krop.gem_forslag,
+          transportoer: krop.transportoer,
         }));
       case "book":
         return resultat(await bookPakke(krop.trade_id, bruger.id, obj(krop.afsender)));
