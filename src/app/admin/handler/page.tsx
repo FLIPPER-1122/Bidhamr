@@ -18,7 +18,7 @@ import AdminBadge from "@/components/admin/AdminBadge";
 import AdminListe, { type Kolonne } from "@/components/admin/AdminListe";
 import HandelHandlinger, { AKTIVE, kr } from "@/components/admin/handler/HandelHandlinger";
 import { UUID_RE, handelChatSti } from "@/lib/moderationLog";
-import { SPORINGS_NAVN, erSporingsType } from "@/lib/fragt/types";
+import { SPORINGS_NAVN, erSporingsType, transportoerNavn } from "@/lib/fragt/types";
 import {
   fragtAfslutHaengendeLabel,
   fragtProevSporingIgen,
@@ -58,6 +58,7 @@ type FragtRow = {
   type: "udgaaende" | "retur";
   status: string;
   fragtfirma: string;
+  transportoer: string | null;
   sporingsnummer: string | null;
   opmaerksomhed_tekst: string | null;
   opdateret_kl: string;
@@ -132,12 +133,14 @@ async function HandlerIndhold({
   ] = await Promise.all([
     supabase.from("trades").select(KOLONNER).order("created_at", { ascending: false }).limit(500),
     supabase.rpc("admin_haengende_handler"),
-    supabase
-      .from("forsendelser")
-      .select("id, trade_id, type, status, fragtfirma, sporingsnummer, opmaerksomhed_tekst, opdateret_kl")
-      .eq("kraever_opmaerksomhed", true)
-      .order("opdateret_kl", { ascending: true })
-      .limit(200),
+    // Før migrationen 20261024010000 findes kolonnen transportoer ikke.
+    (async () => {
+      const hent = (k: string) =>
+        supabase.from("forsendelser").select(k).eq("kraever_opmaerksomhed", true).order("opdateret_kl", { ascending: true }).limit(200).returns<FragtRow[]>();
+      const k = "id, trade_id, type, status, fragtfirma, sporingsnummer, opmaerksomhed_tekst, opdateret_kl";
+      const r = await hent(`${k}, transportoer`);
+      return r.error?.code === "42703" ? await hent(k) : r;
+    })(),
   ]);
   if (haengerFejl) console.error("admin_haengende_handler fejlede:", haengerFejl.message);
   if (fragtFejl) console.error("Forsendelser til staff kunne ikke hentes:", fragtFejl.message);
@@ -400,6 +403,7 @@ async function HandlerIndhold({
                     </Link>
                     <p className="mt-0.5 text-xs text-tekst-svag">
                       {f.type === "retur" ? "Returpakke" : "Pakke til køber"} · {forsendelseStatus(f.status)}
+                      {transportoerNavn(f.transportoer) && ` · ${transportoerNavn(f.transportoer)}`}
                       {f.sporingsnummer && (
                         <>
                           {" · Sporing: "}

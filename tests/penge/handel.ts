@@ -41,18 +41,6 @@ export async function forberedSaelger(saelger: PengeBruger = SAELGER): Promise<s
 
 export const PAKKESHOP_FRAGT_OERE = 4000;
 
-// Findes handel_levering.transportoer (20261024010000)? Slås op én gang.
-let transportoerKolonne: Promise<boolean> | null = null;
-function harTransportoerKolonne(): Promise<boolean> {
-  transportoerKolonne ??= Promise.resolve(
-    admin()
-      .from("handel_levering")
-      .select("transportoer")
-      .limit(1),
-  ).then(({ error }) => !error);
-  return transportoerKolonne;
-}
-
 export type TestHandel = {
   navn: string;
   auktionId: string;
@@ -131,9 +119,7 @@ export async function opretHandel(o: {
     trade_id: t.id,
     maade: "pakkeshop",
     fragtfirma: "shipmondo",
-    // Påkrævet med Shipmondo efter 20261024010000_fragt_shipmondo_transportoer.sql -
-    // sættes kun, hvis kolonnen findes (testene virker før og efter migrationen).
-    ...((await harTransportoerKolonne()) ? { transportoer: "dao" } : {}),
+    transportoer: "dao",
     pakkeshop_id: "TEST",
     pakkeshop_navn: "TEST pakkeshop",
     pakkeshop_adresse: "Testvej 1",

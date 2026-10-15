@@ -1,0 +1,202 @@
+{
+  "id": 69835917,
+  "created_at": "2026-10-15T18:42:01.620+02:00",
+  "updated_at": "2026-10-15T18:42:01.960+02:00",
+  "carrier_code": "dao",
+  "description": "daoSHOP (indleveret)",
+  "contents": "Testvare",
+  "product_id": 4856,
+  "services": "17,18",
+  "customer_number": null,
+  "product_code": "DAO_STS",
+  "service_codes": "EMAIL_NT,SMS_NT",
+  "price": "43.5",
+  "reference": "REFERENCE",
+  "additional_reference": null,
+  "order_id": null,
+  "pkg_no": "00057126960000000015",
+  "parties": [
+    {
+      "type": "sender",
+      "name": "Sælger Test",
+      "attention": null,
+      "address1": "Vestergade 10",
+      "address2": null,
+      "postal_code": "5000",
+      "city": "Odense C",
+      "state": null,
+      "country_code": "DK",
+      "email": "saelger@test.bidhamr.dk",
+      "phone": "+4512345678",
+      "attributes": []
+    },
+    {
+      "type": "receiver",
+      "name": "Køber Test",
+      "attention": null,
+      "address1": "Nørregade 1",
+      "address2": null,
+      "postal_code": "8000",
+      "city": "Aarhus C",
+      "state": null,
+      "country_code": "DK",
+      "email": "koeber@test.bidhamr.dk",
+      "phone": "+4587654321",
+      "attributes": []
+    },
+    {
+      "type": "service_point",
+      "name": "SuperBrugsen City",
+      "attention": null,
+      "address1": "Vestergade 76",
+      "address2": null,
+      "postal_code": "5000",
+      "city": "Odense C",
+      "state": null,
+      "country_code": "DK",
+      "email": null,
+      "phone": null,
+      "attributes": [
+        {
+          "name": "service_point_id",
+          "value": "59184"
+        }
+      ]
+    }
+  ],
+  "receiver": {
+    "name": "Køber Test",
+    "attention": null,
+    "address1": "Nørregade 1",
+    "address2": null,
+    "zipcode": "8000",
+    "city": "Aarhus C",
+    "country_code": "DK",
+    "vat_id": null,
+    "email": "koeber@test.bidhamr.dk",
+    "mobile": "+4587654321",
+    "telephone": null,
+    "access_code": null,
+    "member_id": null,
+    "date": null,
+    "instruction": null,
+    "from_time": null,
+    "to_time": null
+  },
+  "sender": {
+    "name": "Sælger Test",
+    "attention": null,
+    "address1": "Vestergade 10",
+    "address2": null,
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country_code": "DK",
+    "vat_id": null,
+    "email": "saelger@test.bidhamr.dk",
+    "mobile": "+4512345678",
+    "telephone": "+4512345678"
+  },
+  "service_point": {
+    "id": "59184",
+    "name": "SuperBrugsen City",
+    "address1": "Vestergade 76",
+    "address2": null,
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country_code": "DK",
+    "shipping_agent": "dao"
+  },
+  "pick_up": {
+    "name": null,
+    "attention": null,
+    "address1": null,
+    "address2": null,
+    "zipcode": null,
+    "city": null,
+    "country_code": null,
+    "telephone": null,
+    "phone": null,
+    "pickup_custom": false,
+    "date": null,
+    "instruction": null,
+    "from_time": null,
+    "to_time": null
+  },
+  "bill_to": {
+    "name": null,
+    "attention": null,
+    "address1": null,
+    "address2": null,
+    "zipcode": null,
+    "city": null,
+    "country_code": null,
+    "vat_id": null,
+    "telephone": null,
+    "mobile": null,
+    "email": null,
+    "customer_number": null,
+    "bill_to_custom": false
+  },
+  "paperless_trade": false,
+  "pallet_exchange": {
+    "pallets1": null,
+    "pallets2": null,
+    "pallets4": null
+  },
+  "source_id": null,
+  "source_type": "api",
+  "return_shipment_id": null,
+  "origin_shipment_id": null,
+  "external_pkg_no": null,
+  "term_of_trade": "DAP",
+  "waybill_reference": null,
+  "labelless_code": "123-456-789",
+  "carrier_insurance": {
+    "amount": null,
+    "currency_code": null
+  },
+  "parcels": [
+    {
+      "weight": 900,
+      "package_type": null,
+      "stackable": true,
+      "height": null,
+      "width": null,
+      "length": null,
+      "volume": null,
+      "internal_reference": null,
+      "quantity": 1,
+      "weight_kg": "0.9",
+      "content": null,
+      "pkg_no": "00057126960000000015",
+      "pkg_nos": [
+        "00057126960000000015"
+      ],
+      "running_metre": null,
+      "declared_value": {
+        "amount": null,
+        "currency_code": null
+      },
+      "attributes": [],
+      "external_pkg_no": null,
+      "gls_colli_id": null,
+      "labelless_code": "123-456-789",
+      "dangerous_goods": []
+    }
+  ],
+  "dfm": null,
+  "customs": null,
+  "label_overlay": null,
+  "insurance": {
+    "amount": null,
+    "currency_code": null
+  },
+  "pickup_details": null,
+  "delivery_details": null,
+  "labels": [
+    {
+      "base64": "JVBERi0xLjQKJSBiaWRoYW1yIHRlc3QtbGFiZWwKJSVFT0YK",
+      "file_format": "pdf"
+    }
+  ]
+}

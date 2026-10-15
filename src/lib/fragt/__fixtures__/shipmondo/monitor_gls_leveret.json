@@ -1,0 +1,20 @@
+{
+  "webhook": "BidHamr sporing (latest)",
+  "data": {
+    "shipment_id": 69835919,
+    "current_status": "DELIVERED",
+    "current_state": "SUCCESS",
+    "current_status_text": "The parcel has been delivered.",
+    "current_status_registered_at": "2026-10-16T09:12:00.000+02:00",
+    "carrier_code": "gls",
+    "carrier_track_id": "056212128940",
+    "weight": "0.9",
+    "length": "",
+    "height": "",
+    "width": "",
+    "location": "",
+    "city": "Aarhus C",
+    "country_code": "DK"
+  },
+  "url": "https://bidhamr.dk/api/fragt/webhook/shipmondo"
+}

@@ -1,0 +1,80 @@
+[
+  {
+    "id": "96089",
+    "name": "City Shoppen",
+    "address": "Nørregade 50",
+    "address2": "Pakkeshop: 96089",
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country": "DK",
+    "distance": 436,
+    "longitude": 10.388482093811,
+    "latitude": 55.399913787842,
+    "carrier_code": "gls",
+    "type": "SP",
+    "type_name": "GLS ParcelShop",
+    "opening_hours": [
+      "Monday: 10:00-21:00",
+      "Tuesday: 10:00-21:00",
+      "Wednesday: 10:00-21:00",
+      "Thursday: 10:00-21:00",
+      "Friday: 10:00-22:00",
+      "Saturday: 10:00-22:00",
+      "Sunday: 10:00-19:00"
+    ],
+    "drop_off_allowed": true,
+    "pickup_allowed": true
+  },
+  {
+    "id": "95066",
+    "name": "Slikparadiset",
+    "address": "Kongensgade 53",
+    "address2": "Pakkeshop: 95066",
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country": "DK",
+    "distance": 622,
+    "longitude": 10.380959510803,
+    "latitude": 55.397438049316,
+    "carrier_code": "gls",
+    "type": "SP",
+    "type_name": "GLS ParcelShop",
+    "opening_hours": [
+      "Monday: 10:30-21:00",
+      "Tuesday: 10:30-21:00",
+      "Wednesday: 10:30-21:00",
+      "Thursday: 10:30-21:00",
+      "Friday: 10:30-22:00",
+      "Saturday: 10:30-22:00",
+      "Sunday: 11:00-21:00"
+    ],
+    "drop_off_allowed": true,
+    "pickup_allowed": true
+  },
+  {
+    "id": "97842",
+    "name": "Superbrugsen City",
+    "address": "Vestergade 76",
+    "address2": "Pakkeshop: 97842",
+    "zipcode": "5000",
+    "city": "Odense C",
+    "country": "DK",
+    "distance": 1906,
+    "longitude": 10.3827036,
+    "latitude": 55.3944554,
+    "carrier_code": "gls",
+    "type": "SP",
+    "type_name": "GLS ParcelShop",
+    "opening_hours": [
+      "Monday: 07:00-21:45",
+      "Tuesday: 07:00-21:45",
+      "Wednesday: 07:00-21:45",
+      "Thursday: 07:00-21:45",
+      "Friday: 07:00-21:45",
+      "Saturday: 07:00-21:45",
+      "Sunday: 07:00-21:45"
+    ],
+    "drop_off_allowed": true,
+    "pickup_allowed": true
+  }
+]
