@@ -21,6 +21,7 @@ import { MitIDIkon, MitIDKnap } from "@/components/mitid/MitIDKraeves";
 import { MITID } from "@/lib/tekster/mitid";
 import { BOOST_TEKST } from "@/lib/boost/tekster";
 import { KONKURRENCE_KONTO } from "@/lib/tekster/konkurrence";
+import { START_MAANED } from "@/lib/konkurrence/regler";
 
 export const dynamic = "force-dynamic";
 
@@ -146,6 +147,9 @@ export default async function KontoSide({
   const paamindelser = (paamindelseData ?? []) as MinPaamindelse[];
   if (lodFejl) console.error("Konto: lod kunne ikke hentes:", lodFejl.message);
   const mineLod = (lodData ?? null) as MineLod | null;
+  // Før konkurrencens første måned er der ingen lodtrækning, så der vises
+  // ingen lod (ellers lover vi lod for en måned uden trækning).
+  const foerStart = !!mineLod && mineLod.maaned < START_MAANED;
   const dac7Anmodning =
     (dac7Data as { anmodning?: { frist: string; spaerret: boolean } | null } | null)?.anmodning ?? null;
 
@@ -287,7 +291,12 @@ export default async function KontoSide({
             </span>
             <div className="min-w-0">
               <h2 className="text-[20px] leading-tight lg:text-[22px]">{KONKURRENCE_KONTO.titel}</h2>
-              {mineLod.deltager ? (
+              {mineLod.deltager && foerStart ? (
+                <>
+                  <p className="mt-1 text-[15px] font-semibold text-tekst">{KONKURRENCE_KONTO.starter(START_MAANED)}</p>
+                  <p className="mt-1 text-sm text-tekst-daempet">{KONKURRENCE_KONTO.starterRegel}</p>
+                </>
+              ) : mineLod.deltager ? (
                 <>
                   <p className="mt-1 text-[15px] font-semibold text-tekst">
                     {KONKURRENCE_KONTO.antal(mineLod.antal_lod, mineLod.maaned)}

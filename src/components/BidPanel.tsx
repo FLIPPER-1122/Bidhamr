@@ -58,6 +58,7 @@ export default function BidPanel({
   afhentningMulig = false,
   fragtPakkeshopOere = null,
   fragtDoerOere = null,
+  fragtfirmaer = [],
   status,
   vinderVisning,
   skjult = false,
@@ -92,6 +93,9 @@ export default function BidPanel({
   // billigste og indgår i totalen; levering til døren vælges i checkout.
   fragtPakkeshopOere?: number | null;
   fragtDoerOere?: number | null;
+  // De fragtfirmaer, køberen kan vælge mellem i checkout (fragtfirmaNavne()
+  // i src/lib/fragt) - tom, når fragt ikke er sat op (testfragt).
+  fragtfirmaer?: string[];
   // Sælgeren tilbyder også afhentning (0 kr. i fragt) - køberen vælger i checkout.
   afhentningMulig?: boolean;
   status: string;
@@ -1008,7 +1012,7 @@ export default function BidPanel({
                 </>
               )}
             </p>
-            <p className="text-[13px] text-tekst-daempet">Sendes med DAO. Du vælger levering, når du betaler. Priserne er inkl. moms.</p>
+            <p className="text-[13px] text-tekst-daempet">{fragtTekst(fragtfirmaer)} Priserne er inkl. moms.</p>
           </div>
         </div>
       )}
@@ -1162,4 +1166,12 @@ export default function BidPanel({
         )}
     </div>
   );
+}
+
+// "Sendes med DAO eller PostNord. Du vælger, når du betaler."
+function fragtTekst(firmaer: string[]): string {
+  if (firmaer.length === 0) return "Du vælger levering, når du betaler.";
+  if (firmaer.length === 1) return `Sendes med ${firmaer[0]}. Du vælger levering, når du betaler.`;
+  const liste = `${firmaer.slice(0, -1).join(", ")} eller ${firmaer[firmaer.length - 1]}`;
+  return `Sendes med ${liste}. Du vælger fragtfirma og levering, når du betaler.`;
 }

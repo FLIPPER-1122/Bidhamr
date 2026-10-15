@@ -26,6 +26,7 @@ import {
   FRAGTFIRMAER,
   FragtFejl,
   FRAGT_IKKE_SAT_OP,
+  TRANSPORTOER_INFO,
 } from "@/lib/fragt/types";
 
 export * from "@/lib/fragt/types";
@@ -127,4 +128,17 @@ export function hentFragtfirma(): Fragtfirma {
     return ikkeSatOpFirma;
   }
   return adapterFor(navn) ?? ikkeSatOpFirma;
+}
+
+// Navnene på de fragtfirmaer, køberen kan sende med nu (til teksten på
+// auktionssiden), fx ["DAO", "PostNord"]. Shipmondo: de transportører, der
+// kan vælges i checkout (GLS kun med SHIPMONDO_GLS_AKTIV). DAO/GLS direkte:
+// det ene firma. Testfragt eller ikke sat op: ingen navne.
+export function fragtfirmaNavne(): string[] {
+  if (!fragtErSatOp()) return [];
+  const firma = hentFragtfirma();
+  if (firma.navn === "test") return [];
+  const valg = firma.transportoerer ?? [];
+  if (valg.length > 0) return valg.map((t) => TRANSPORTOER_INFO[t].navn);
+  return [firma.visningsnavn];
 }

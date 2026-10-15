@@ -205,7 +205,7 @@ describe("A. køb af boost-point", () => {
     // Returen fra betalingen spejler også - intet nyt.
     expect(await synkBoostRetur(KOEBER.id, koebPi)).toBe("allerede");
     // En fremmed kan ikke spejle andres køb via returen.
-    expect(await synkBoostRetur(FREMMED.id, koebPi)).toBeNull();
+    expect(await synkBoostRetur(FREMMED.id, koebPi)).toBe("ikke_fundet");
     expect(await saldo(KOEBER.id)).toBe(saldoFoer + 100);
     const { count } = await admin()
       .from("boost_posteringer")
