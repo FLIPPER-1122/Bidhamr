@@ -11,6 +11,7 @@ export default function AuctionsExplorer({
   initialAuktioner,
   initialTotal,
   initialTotalType,
+  initialNaesteOffset,
   initialQuery,
   initialKategori = "",
   initialSortering,
@@ -21,6 +22,7 @@ export default function AuctionsExplorer({
   initialAuktioner: DummyAuction[];
   initialTotal: number;
   initialTotalType: TotalType;
+  initialNaesteOffset?: number;
   initialQuery: string;
   initialKategori?: string;
   initialSortering?: Sortering;
@@ -86,6 +88,7 @@ export default function AuctionsExplorer({
           initialAuktioner={initialAuktioner}
           initialTotal={initialTotal}
           initialTotalType={initialTotalType}
+          initialNaesteOffset={initialNaesteOffset}
           initialKategori={initialKategori}
           initialQuery={initialQuery}
           initialSortering={initialSortering}

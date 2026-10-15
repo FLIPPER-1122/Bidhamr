@@ -193,6 +193,13 @@ export async function annullerAabneBetalinger(): Promise<Annullering> {
     res.fejlet += rf.fejlet;
     res.igang += rf.igang;
     res.tilbage = Math.max(res.tilbage, rf.tilbage);
+    // Køb af boost-point (boost.ts): åbne boost-PaymentIntents annulleres
+    // på samme måde.
+    const bk = await annullerAabneBoostKoeb(Math.max(0, MAKS - set - rf.annulleret - rf.igang - rf.fejlet), start);
+    res.annulleret += bk.annulleret;
+    res.fejlet += bk.fejlet;
+    res.igang += bk.igang;
+    res.tilbage = Math.max(res.tilbage, bk.tilbage);
   }
 
   if (stoppetTidligt) {
@@ -203,6 +210,77 @@ export async function annullerAabneBetalinger(): Promise<Annullering> {
       .not("stripe_payment_intent_id", "is", null)
       .gt("id", efterId ?? "00000000-0000-0000-0000-000000000000");
     res.tilbage = Math.max(1, count ?? 1);
+  }
+  return res;
+}
+
+// Åbne boost-PaymentIntents (køb af point, status 'afventer') annulleres hos
+// Stripe (idempotency key) og kasseres i databasen (boost_koeb_nulstil_pi,
+// pi_forsoeg + 1) - næste køb efter stoppet laver en ny. 'behandles' røres
+// ikke (kan være på vej igennem banken). Mangler tabellen (migrationen er
+// ikke kørt), springes det over. Kaster aldrig.
+export async function annullerAabneBoostKoeb(maks = MAKS, start = Date.now()): Promise<Annullering> {
+  const res: Annullering = { annulleret: 0, fejlet: 0, igang: 0, tilbage: 0 };
+  maks = Math.max(0, maks);
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("boost_koeb")
+    .select("id, stripe_payment_intent_id")
+    .eq("status", "afventer")
+    .not("stripe_payment_intent_id", "is", null)
+    .order("id", { ascending: true })
+    .limit(maks + 1);
+  if (error) {
+    if (!/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) {
+      console.error("annullerAabneBoostKoeb: kunne ikke hente boost-køb:", error.message);
+      res.fejlet++;
+    }
+    return res;
+  }
+  const raekker = (data ?? []) as { id: string; stripe_payment_intent_id: string }[];
+  if (raekker.length === 0) return res;
+  const stripe = getStripe();
+  let n = 0;
+  for (const r of raekker) {
+    // Budgettet (maks) er brugt, eller tiden er gået: kør igen.
+    if (n >= maks || Date.now() - start > TIDSGRAENSE_MS) {
+      res.tilbage = Math.max(1, raekker.length - n);
+      break;
+    }
+    n++;
+    const piId = r.stripe_payment_intent_id;
+    try {
+      let pi = await stripe.paymentIntents.retrieve(piId);
+      if (pi.status !== "canceled") {
+        if (!AABNE.includes(pi.status)) {
+          res.igang++;
+          continue;
+        }
+        try {
+          pi = await stripe.paymentIntents.cancel(
+            piId,
+            { cancellation_reason: "abandoned" },
+            { idempotencyKey: `bidhamr-noedstop-annuller-${piId}` },
+          );
+        } catch (err) {
+          pi = await stripe.paymentIntents.retrieve(piId);
+          if (pi.status !== "canceled") {
+            if (pi.status === "succeeded" || pi.status === "processing") res.igang++;
+            else {
+              console.error("annullerAabneBoostKoeb: kunne ikke annullere:", piId, err);
+              res.fejlet++;
+            }
+            continue;
+          }
+        }
+      }
+      const { error: nFejl } = await admin.rpc("boost_koeb_nulstil_pi", { p_id: r.id, p_pi: piId });
+      if (nFejl) throw new Error(`boost_koeb_nulstil_pi: ${nFejl.message}`);
+      res.annulleret++;
+    } catch (err) {
+      console.error("annullerAabneBoostKoeb:", piId, err);
+      res.fejlet++;
+    }
   }
   return res;
 }

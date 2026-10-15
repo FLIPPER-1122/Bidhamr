@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { kortNavn } from "@/lib/kortNavn";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
+import { markerBoostede } from "@/lib/boost/visning";
 import AuctionCard from "@/components/AuctionCard";
 import ProfileHeader from "@/components/profile/ProfileHeader";
 import ProfilTryghed from "@/components/tryghed/ProfilTryghed";
@@ -355,7 +356,7 @@ export default async function ProfilPage({
     erPopulaerSaelger(id),
   ]);
 
-  const aktiveAuktioner = (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort);
+  const aktiveAuktioner = await markerBoostede(supabase, (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort));
 
   // Fra databasen (users.rating + count), ikke fra de højst 200 hentede.
   const antalRatings = opsummering.antal;

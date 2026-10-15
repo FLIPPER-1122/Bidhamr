@@ -24,6 +24,9 @@ import { erPaaPause } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
 import { fragtOere } from "@/lib/betaling/beregn";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
+import BoostetMaerke from "@/components/boost/BoostetMaerke";
+import BoostAuktion, { type MinAuktionBoost } from "@/components/boost/BoostAuktion";
+import { hentAktiveBoosts } from "@/lib/boost/visning";
 import MitIDMaerke from "@/components/mitid/MitIDMaerke";
 import PopulaerSaelgerMaerke from "@/components/PopulaerSaelgerMaerke";
 import { erPopulaerSaelger } from "@/lib/populaerSaelger";
@@ -365,6 +368,17 @@ export default async function AuktionPage({
 
   const handel = await handelLoefte;
 
+  // Boost: mærket "Boostet" for alle, og ejerens boks på egen aktive
+  // auktion (status fra min_auktion_boost - kun ejeren får svar).
+  const [boostAktiv, minBoost] = await Promise.all([
+    skjult ? Promise.resolve(false) : hentAktiveBoosts(supabase, [auktion.id]).then((s) => s.has(auktion.id)),
+    kanStyreAuktion && !erhvervAuktion
+      ? Promise.resolve(supabase.rpc("min_auktion_boost", { p_auktion: auktion.id })).then((r) =>
+          r.error ? null : (r.data as MinAuktionBoost | null),
+        )
+      : Promise.resolve(null),
+  ]);
+
   // Kun køberen i handlen bedømmer, og kun sælgeren (ROADMAP-BESLUTNINGER.md
   // afsnit 6). Bedømmelsen afgives samtidig med godkendelsen af varen under
   // Mine handler - her vises kun en kvittering, når den er afgivet.
@@ -502,9 +516,10 @@ export default async function AuktionPage({
             </h1>
             <AuctionTitleActions auktionId={auktion.id} titel={auktion.titel} />
           </div>
-          {erhvervAuktion && (
-            <div className="mt-2">
-              <ErhvervssaelgerMaerke saelgerId={auktion.bruger_id} />
+          {(erhvervAuktion || boostAktiv) && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {boostAktiv && <BoostetMaerke />}
+              {erhvervAuktion && <ErhvervssaelgerMaerke saelgerId={auktion.bruger_id} />}
             </div>
           )}
         </div>
@@ -554,6 +569,7 @@ export default async function AuktionPage({
           {kanStyreAuktion && (
             <SaelgerAuktionHandlinger auktionId={auktion.id} harBud={harBud} />
           )}
+          {minBoost && <BoostAuktion auktionId={auktion.id} status={minBoost} />}
           {spaerbareBydere.length > 0 && <SpaerByder bydere={spaerbareBydere} />}
 
           <div className="lg:sticky lg:top-4">

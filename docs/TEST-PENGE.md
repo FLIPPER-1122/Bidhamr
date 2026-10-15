@@ -5,7 +5,7 @@ To testsæt:
 | Kommando | Kører mod | Tid | Hvad |
 |---|---|---|---|
 | `npm run test:penge` | **testdatabasen** (`.env.local`) og **Stripes testmiljø** | ca. 7-8 min | End-to-end: alle pengescenarierne med rigtige Stripe-betalinger, -refusioner, -indsigelser og -udbetalinger |
-| `npm run test:penge:db` | PGlite (Postgres i processen) | ca. 5 sek | Migrationen `20261019020000_pengeafstemning.sql` (to gange) + afstemningens og CSV'ens regler. Ingen database, intet netværk |
+| `npm run test:penge:db` | PGlite (Postgres i processen) | ca. 5 sek | Migrationerne `20261019020000_pengeafstemning.sql`, `20261022010000_returfragt_betaling.sql` og `20261023030000_boost.sql` (hver to gange) + afstemningens og CSV'ens regler. Boost: dobbelt køb og dobbelt boost, point ved salg og tilbageførsel, firmaer afvist, saldoen kan aldrig blive negativ, append-only ledger, rotation, RLS og fakturaer. Ingen database, intet netværk |
 
 ## Sådan køres de
 
@@ -54,7 +54,8 @@ PENGE_ENV_FIL=C:/Users/jeppe/Desktop/hamr/.env.local npm run test:penge
 | 12 | Beløbsmanipulation (RLS, ændret PaymentIntent rettes før betaling, forkert beløb betalt → ikke registreret, refunderet, ny PaymentIntent) og betaling for en andens handel (fremmed, sælgeren selv, uden login) | 0077 |
 | 13 | Retur i sag: køberen betaler returfragten til platformen (ingen destination charge, 3DS, metadata `type=returfragt`); ingen returkode før webhooken; gentaget webhook/betaling giver intet nyt; label afvist → staff-markering, ingen ny betaling → hele returfragten refunderes én gang; faktura og kreditnota | 0077 |
 | 14 | Appens `/api/betaling/app/*` med rigtig Bearer-session: uden login/fremmed afvist, gem kort (SetupIntent on_session) → betal (destination charge, gebyr, 3DS, samme PaymentIntent igen, kundesession, ingen ephemeral key) → webhook → `betalt` → fuld refusion; fjern kort; onboarding-link og retur-redirect | `pm_card_visa` (gem kort) + 0077 |
-| 98 | Den daglige afstemning mod Stripes rigtige testdata: finder dashboard-refusionen og -tilbageførslen fra 03 og intet på BidHamrs egne bevægelser (se note) | - |
+| 15 | Boost: køb af 100 point for 39 kr. via `/api/betaling/app/boost-koeb` (PaymentIntent på platformen, ingen destination/gebyr, 3DS, metadata `type=boost`, samme PaymentIntent igen) → webhook to gange → point én gang → faktura 39 kr. (moms 7,80); firma afvist; fremmed kan ikke booste; `boost-brug` med samme nøgle trækker point én gang, ny nøgle "allerede boostet"; "Boostet"/`boost_top` uden login; nødstop annullerer et åbent køb; frigivet salg giver 10 point (én gang), refunderet før frigivelse ingen; chefen refunderer købet (point trækkes tilbage, `charge.refunded` giver intet nyt, kreditnota) | 0077 |
+| 98 | Den daglige afstemning mod Stripes rigtige testdata: finder dashboard-refusionen og -tilbageførslen fra 03 og intet på BidHamrs egne bevægelser, returfragt (13) eller boost-køb (15) (se note) | - |
 | 99 | Slutafstemning: saldo hos Stripe = databasen på begge testkonti; overvågningen finder intet | - |
 
 ### Noter

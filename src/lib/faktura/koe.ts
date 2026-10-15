@@ -185,7 +185,20 @@ async function kontekst(admin: Admin, r: FakturaRaekke): Promise<FakturaKontekst
   const handel = r.trade_id ? ` (handels-id ${r.trade_id})` : "";
   const dato = datoTekst(r.betalt_dato);
   let kommentar: string;
-  if (r.dokument === "kreditnota") {
+  if (r.slags === "boost") {
+    // Boost-point: BidHamrs egen ydelse (ingen handel).
+    const point = r.linjer[0]?.tekst ?? "Boost-point";
+    if (r.dokument === "kreditnota") {
+      const { data: m } = await admin
+        .from("fakturaer")
+        .select("dinero_nummer")
+        .eq("id", String(r.krediterer_id))
+        .maybeSingle<{ dinero_nummer: number | null }>();
+      kommentar = `Kreditnota for faktura nr. ${m?.dinero_nummer ?? "-"} - ${point} på BidHamr. Refunderet via vores betalingspartner Stripe den ${dato}.`;
+    } else {
+      kommentar = `Køb af ${point.toLowerCase()} på BidHamr. Betalt via vores betalingspartner Stripe den ${dato}.`;
+    }
+  } else if (r.dokument === "kreditnota") {
     const { data: m } = await admin
       .from("fakturaer")
       .select("dinero_nummer, linjer")
@@ -348,6 +361,16 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
     const t = rf as { fakturaer?: number; kreditnotaer?: number } | null;
     if (t && res.planlagt) {
       res.planlagt = { ...res.planlagt, returfragt_sag: Number(t.fakturaer ?? 0), returfragt_sag_kredit: Number(t.kreditnotaer ?? 0) };
+    }
+  }
+  // Køb af boost-point (20261023030000): faktura ved betaling, kreditnota ved
+  // refusion. Mangler funktionen (migrationen er ikke kørt), springes det over.
+  {
+    const { data: bk, error: bkFejl } = await admin.rpc("faktura_planlaeg_boost", { p_graense: 200 });
+    if (bkFejl && !mangler(bkFejl)) throw new Error(`faktura_planlaeg_boost: ${bkFejl.message}`);
+    const t = bk as { fakturaer?: number; kreditnotaer?: number } | null;
+    if (t && res.planlagt) {
+      res.planlagt = { ...res.planlagt, boost: Number(t.fakturaer ?? 0), boost_kredit: Number(t.kreditnotaer ?? 0) };
     }
   }
 

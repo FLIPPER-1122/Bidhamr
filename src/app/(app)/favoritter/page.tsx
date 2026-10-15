@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import AuctionCard from "@/components/AuctionCard";
 import TomTilstand from "@/components/TomTilstand";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
+import { markerBoostede } from "@/lib/boost/visning";
 import { markerPopulaereSaelgere } from "@/lib/populaerSaelger";
 
 export const dynamic = "force-dynamic";
@@ -56,10 +57,13 @@ export default async function FavoritterSide() {
   // ligger på favoritlisten. RLS skjuler arkiverede for alle andre end
   // parterne; her fjernes de også for parterne.
   const auktioner = await markerPopulaereSaelgere(
-    (data ?? [])
-      .map((f) => f.auctions)
-      .filter((a): a is NonNullable<FavoritRow["auctions"]> => !!a && !a.skjult && !a.arkiveret_kl)
-      .map(mapAuctionTilKort),
+    await markerBoostede(
+      supabase,
+      (data ?? [])
+        .map((f) => f.auctions)
+        .filter((a): a is NonNullable<FavoritRow["auctions"]> => !!a && !a.skjult && !a.arkiveret_kl)
+        .map(mapAuctionTilKort),
+    ),
   );
 
   return (

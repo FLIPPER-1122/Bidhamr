@@ -6,6 +6,7 @@ import Ikon from "@/components/Ikon";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { useFavoritter } from "@/components/FavoritterProvider";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
+import BoostetMaerke from "@/components/boost/BoostetMaerke";
 import PopulaerSaelgerMaerke from "@/components/PopulaerSaelgerMaerke";
 import { ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 
@@ -23,6 +24,8 @@ export interface DummyAuction {
   billede?: string | null;
   // Sælgeren er et firma (auctions.erhverv).
   erhverv?: boolean;
+  // Auktionen er boostet lige nu (aktive_boosts) - vises som "Boostet".
+  boostet?: boolean;
   // auctions.bruger_id (offentligt) - bruges til at slå "Populær sælger" op.
   saelgerId?: string;
   // Sælgeren har mærket "Populær sælger" (src/lib/populaerSaelger.ts).
@@ -78,6 +81,8 @@ export default function AuctionCard({
               </span>
             )
           )}
+
+          {auktion.boostet && <BoostetMaerke lille className="absolute top-3 left-3 shadow-kort" />}
 
           <span
             className={`absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full px-[9px] py-[5px] text-xs font-semibold ${

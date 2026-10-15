@@ -946,6 +946,19 @@ export async function kundeSessionTilCheckout(
     if (pm.allow_redisplay !== "always") {
       await stripe.paymentMethods.update(pm.id, { allow_redisplay: "always" });
     }
+    // Højst ÉT gemt kort (review af app-betalingen): appens
+    // mobile_payment_element har ingen payment_method_redisplay_limit
+    // (docs.stripe.com/api/customer_sessions/create - kun payment_element har
+    // den), og filteret ['always'] viser ALLE kundens kort med 'always'.
+    // Andre kort på kunden (fx et ældre kort, hvis fjernelsen hos Stripe
+    // fejlede) sættes derfor til 'limited', så kun det ene gemte kort kan
+    // vises - i appen og på hjemmesiden. Kan det ikke sikres (over 100 kort
+    // eller fejl), vises intet gemt kort (catch nedenfor -> null).
+    const andre = await stripe.customers.listPaymentMethods(kunde, { allow_redisplay: "always", limit: 100 });
+    if (andre.has_more) throw new Error("Kunden har over 100 gemte betalingsmetoder - gemt kort vises ikke");
+    for (const x of andre.data) {
+      if (x.id !== pm.id) await stripe.paymentMethods.update(x.id, { allow_redisplay: "limited" });
+    }
 
     // Ingen penge flyttes - en CustomerSession giver kun Payment Element
     // adgang til at vise kortet (kortlivet client_secret).
@@ -1806,6 +1819,19 @@ async function alarmIndsigelse(d: Stripe.Dispute, piId: string | null, chId: str
     const { alarmPrTilfaelde } = await import("@/lib/betaling/driftTilfaelde");
     const admin = createAdminClient();
     if (resultat === "ukendt") {
+      // Køb af boost-point (betaling til platformen): staff svarer banken i
+      // Stripe og vurderer, om brugerens point skal justeres (Admin ->
+      // brugeren -> Boost-point).
+      const { boostKoebForCharge } = await import("@/lib/betaling/boost");
+      const bk = await boostKoebForCharge(chId);
+      if (bk) {
+        await alarmPrTilfaelde({
+          noegle: `indsigelse-boost:${d.id}`,
+          hvor: "betaling/indsigelse-boost",
+          fejl: `Indsigelse ${d.id} (status '${d.status}') på et køb af boost-point (køb ${bk.id}, bruger ${bk.bruger_id}, charge ${chId}). Svar banken i Stripe-dashboardet inden fristen. Brugerens boost-point er låst, til indsigelsen er afgjort; tabes den, trækkes pointene fra købet automatisk tilbage, og vindes den, ophæves låsen af sig selv.`,
+        });
+        return;
+      }
       // Returfragt i en sag (betaling til platformen): staff svarer banken i
       // Stripe - returfragten er BidHamrs egen fragt-indtægt.
       const { returfragtForCharge } = await import("@/lib/betaling/returfragt");
@@ -1887,7 +1913,14 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
   if (error) throw new Error(`betaling_registrer_indsigelse: ${error.message}`);
   const resultat = String(data);
   if (resultat === "ukendt") {
-    console.error("Indsigelse på ukendt betaling:", d.id, piId, chId);
+    // Køb af boost-point: åben indsigelse låser brugerens point; 'lost' trækker
+    // pointene tilbage (idempotent); vundet ophæver låsen. Kaster ved fejl, så
+    // webhooken prøver igen.
+    // Alarmen til chefen sendes stadig (alarmIndsigelse nedenfor).
+    const { spejlBoostIndsigelse } = await import("@/lib/betaling/boost");
+    const bk = await spejlBoostIndsigelse(d, chId);
+    if (bk && bk !== "ukendt") console.log(`Indsigelse ${d.id} på boost-køb (charge ${chId}): ${bk}`);
+    else console.error("Indsigelse på ukendt betaling:", d.id, piId, chId);
   }
   await alarmIndsigelse(d, piId, chId, resultat);
   // Sælgeren får besked, når indsigelsen åbnes (så varen ikke sendes) og når

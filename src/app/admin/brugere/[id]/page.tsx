@@ -22,6 +22,7 @@ import { frysSaelgerManuelt } from "@/app/actions/adminPengesikkerhed";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 import { handlingNavn } from "@/lib/moderationLog";
 import MitIdAdminKort, { MitIdBadge } from "@/components/admin/MitIdAdminKort";
+import BoostAdminKort from "@/components/admin/BoostAdminKort";
 import KontoLukningKort, {
   type KontoLukningAdvarsel,
   type KontoLukningForslag,
@@ -62,7 +63,7 @@ export default async function AdminBrugerDetalje({
     : "oversigt";
 
   // Rollen tjekkes paa selve siden (ikke kun i layoutet), foer service-role bruges.
-  const { rolle: staffRolle, admin: supabase } = await kraevSideRolle("medarbejder");
+  const { rolle: staffRolle, admin: supabase, userId: staffId } = await kraevSideRolle("medarbejder");
   // Sletning af auktioner/anmeldelser kræver admin+; medarbejdere ser ikke knapperne.
   const kanModerereIndhold = !!staffRolle && harMindstRolle(staffRolle, "admin");
 
@@ -277,6 +278,10 @@ export default async function AdminBrugerDetalje({
         kanNulstille={kanLukke}
         erLukket={!!kontoLukketKl}
       />
+
+      {erChef && staffId && (
+        <BoostAdminKort admin={supabase} chefId={staffId} brugerId={user.id} brugerNavn={user.navn ?? "brugeren"} />
+      )}
 
       {lukningForslag && (
         <section aria-labelledby="lukning-titel" className="space-y-2">

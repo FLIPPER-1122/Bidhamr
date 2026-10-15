@@ -44,6 +44,7 @@ export default function AuctionBrowser({
   initialAuktioner,
   initialTotal,
   initialTotalType,
+  initialNaesteOffset,
   initialQuery,
   initialKategori = "",
   initialSortering = "slutter_snart",
@@ -62,6 +63,9 @@ export default function AuctionBrowser({
   initialAuktioner: DummyAuction[];
   initialTotal: number;
   initialTotalType: TotalType;
+  // Hvor "Vis flere" fortsætter (de boostede øverst på første side tæller
+  // ikke med i den almindelige liste). Mangler den: antal viste kort.
+  initialNaesteOffset?: number;
   initialQuery: string;
   initialKategori?: string;
   initialSortering?: Sortering;
@@ -134,6 +138,7 @@ export default function AuctionBrowser({
   const [auktioner, setAuktioner] = useState<DummyAuction[]>(initialAuktioner);
   const [total, setTotal] = useState(initialTotal);
   const [totalType, setTotalType] = useState<TotalType>(initialTotalType);
+  const [naesteOffset, setNaesteOffset] = useState<number>(initialNaesteOffset ?? initialAuktioner.length);
   const [loading, setLoading] = useState(false);
   const [henterFlere, setHenterFlere] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
@@ -156,6 +161,7 @@ export default function AuctionBrowser({
     setAuktioner(initialAuktioner);
     setTotal(initialTotal);
     setTotalType(initialTotalType);
+    setNaesteOffset(initialNaesteOffset ?? initialAuktioner.length);
     setHentetNoegle(serverNoegle);
     setFejl(null);
   }
@@ -192,6 +198,7 @@ export default function AuctionBrowser({
           setAuktioner(svar.auktioner);
           setTotal(svar.total);
           setTotalType(svar.totalType);
+          setNaesteOffset(svar.naesteOffset);
         }
       } catch {
         if (nr === forespoergselNr.current) setFejl(FEJL);
@@ -209,16 +216,18 @@ export default function AuctionBrowser({
     setHenterFlere(true);
     setFejl(null);
     try {
-      const svar = await soegAuktioner(filtre(auktioner.length));
+      const svar = await soegAuktioner(filtre(naesteOffset));
       if (nr !== forespoergselNr.current) return;
       if (!svar.ok) {
         setFejl(svar.fejl);
       } else {
-        // Undgå dubletter, hvis listen har flyttet sig imens.
+        // Undgå dubletter, hvis listen har flyttet sig imens (eller en
+        // boostet auktion fra toppen også står længere nede).
         const kendte = new Set(auktioner.map((a) => a.id));
         setAuktioner([...auktioner, ...svar.auktioner.filter((a) => !kendte.has(a.id))]);
         setTotal(svar.total);
         setTotalType(svar.totalType);
+        setNaesteOffset(svar.naesteOffset);
       }
     } catch {
       if (nr === forespoergselNr.current) setFejl(FEJL);
@@ -394,10 +403,10 @@ export default function AuctionBrowser({
         </ul>
       )}
 
-      {!loading && auktioner.length > 0 && auktioner.length < total && (
+      {!loading && auktioner.length > 0 && naesteOffset < total && (
         <div className="mt-6 flex flex-col items-center gap-2">
           <p className="text-sm text-tekst-svag">
-            Viser {auktioner.length} af {antalTekst(total, totalType)}
+            Viser {Math.min(auktioner.length, total)} af {antalTekst(total, totalType)}
           </p>
           <button
             type="button"

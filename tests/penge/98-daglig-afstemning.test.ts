@@ -11,7 +11,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { koerPengeafstemning, type Afstemning } from "@/lib/betaling/afstemning";
 import { admin, kontekst } from "./handel";
-import { CHEF_ID } from "./brugere";
+import { CHEF_ID, KOEBER } from "./brugere";
 
 type Afv = { id: string; type: string; betaling_id: string | null; noegle: string };
 let r: Afstemning;
@@ -93,6 +93,19 @@ describe("daglig afstemning med Stripe", () => {
       .select("stripe_payment_intent_id, stripe_charge_id, stripe_refund_id")
       .in("trade_id", (t ?? []).map((x) => x.id as string));
     const ids = (rf ?? []).flatMap((x) => [x.stripe_payment_intent_id, x.stripe_charge_id, x.stripe_refund_id]).filter((x): x is string => !!x);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(fundne.filter((x) => ids.some((i) => x.noegle.includes(i)))).toEqual([]);
+  });
+
+  it("ingen afvigelser på køb af boost-point (15) - betaling, kasseret PaymentIntent og chefens refusion", async () => {
+    const { data: bk } = await admin()
+      .from("boost_koeb")
+      .select("stripe_payment_intent_id, stripe_charge_id, stripe_refund_id, tidligere_payment_intents")
+      .eq("bruger_id", KOEBER.id)
+      .gte("oprettet_kl", new Date(Date.now() - 86_400_000).toISOString());
+    const ids = (bk ?? [])
+      .flatMap((x) => [x.stripe_payment_intent_id, x.stripe_charge_id, x.stripe_refund_id, ...((x.tidligere_payment_intents as string[] | null) ?? [])])
+      .filter((x): x is string => !!x);
     expect(ids.length).toBeGreaterThan(0);
     expect(fundne.filter((x) => ids.some((i) => x.noegle.includes(i)))).toEqual([]);
   });

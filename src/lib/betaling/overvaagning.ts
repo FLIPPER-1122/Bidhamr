@@ -18,6 +18,7 @@ import "server-only";
 //      slås op hos Stripe (anden status = event mangler), og nye indsigelser
 //      hos Stripe (14 dage), som databasen ikke kender, spejles. Samme for
 //      tidlige svindelvarsler.
+//      Også for køb af boost-point (opsamlBoostIndsigelser).
 //   E. Saldo-afstemning for hver sælgerkonto med betalte, ikke-udbetalte
 //      handler: tilgængelig + afventende saldo skal dække det, der skyldes
 //      (samme regel som før hver udbetaling). Alarmen lukkes, når den passer.
@@ -330,6 +331,80 @@ async function indsigelsesEvents(admin: Admin, r: Overvaagning, alarm: Alarm): P
       fejl: `Indsigelse ${d.id} findes hos Stripe, men var ikke registreret på betalingen - webhooken har ikke leveret charge.dispute.created. Spejlet nu (pengene er frosset). Kontrollér platform-webhooken.`,
     });
   }
+  // D1/D2 for køb af boost-point.
+  r.indsigelserSpejlet += await opsamlBoostIndsigelser(alarm);
+}
+
+// D (boost): indsigelser på køb af boost-point (boost_koeb), som webhooken
+// ikke har leveret. En åben indsigelse låser brugerens point, og kun en tabt
+// trækker dem tilbage - derfor skal status følge Stripe.
+//   D1: åbne i databasen (ikke ændret den seneste time): har Stripe en anden
+//       status? Så spejles den (spejlIndsigelse), og der gives alarm.
+//   D2: indsigelser hos Stripe (14 dage) på et boost-køb uden
+//       indsigelse_status: spejles, og der gives alarm.
+// minAlderMs kan sættes ned i testene. Svar: antal spejlede.
+const BOOST_AABNE_INDSIGELSER = ["needs_response", "under_review", "warning_needs_response", "warning_under_review"];
+
+export async function opsamlBoostIndsigelser(
+  alarm: Alarm = async (o) => {
+    await alarmPrTilfaelde(o);
+  },
+  o: { minAlderMs?: number } = {},
+): Promise<number> {
+  const admin = createAdminClient();
+  const stripe = getStripe();
+  const minAlder = o.minAlderMs ?? 60 * 60_000;
+  let spejlet = 0;
+
+  // D1
+  const { data: aabne, error } = await admin
+    .from("boost_koeb")
+    .select("id, stripe_dispute_id, indsigelse_status")
+    .not("stripe_dispute_id", "is", null)
+    .in("indsigelse_status", BOOST_AABNE_INDSIGELSER)
+    .lte("opdateret", siden(minAlder))
+    .limit(100);
+  if (error) {
+    // Kun "tabellen findes ikke" (migrationen er ikke kørt): 42P01 fra
+    // Postgres - via PostgREST hedder samme fejl PGRST205. Alt andet kastes.
+    if (error.code === "42P01" || error.code === "PGRST205") return 0;
+    throw new Error(`åbne boost-indsigelser: ${error.message}`);
+  }
+  for (const k of aabne ?? []) {
+    const d = await stripe.disputes.retrieve(k.stripe_dispute_id as string, undefined, KALD);
+    if (d.status === k.indsigelse_status) continue;
+    await spejlIndsigelse(d.id);
+    spejlet++;
+    await alarm({
+      noegle: `indsigelse-event:${d.id}:${d.status}`,
+      hvor: "betaling/webhook-udeblev",
+      fejl: `Indsigelse ${d.id} på et køb af boost-point (${k.id}) står som '${d.status}' hos Stripe, men som '${k.indsigelse_status}' i databasen - webhooken har ikke leveret charge.dispute-eventet. Spejlet nu. Kontrollér platform-webhooken i Stripe-dashboardet.`,
+    });
+  }
+
+  // D2
+  const fra = Math.floor((Date.now() - 14 * DAG) / 1000);
+  const til = Math.floor((Date.now() - minAlder) / 1000);
+  let n = 0;
+  for await (const d of stripe.disputes.list({ created: { gte: fra, lte: til }, limit: 100 }, KALD)) {
+    if (++n > 300) break;
+    const chId = typeof d.charge === "string" ? d.charge : d.charge?.id;
+    if (!chId) continue;
+    const { data: k } = await admin
+      .from("boost_koeb")
+      .select("id, indsigelse_status")
+      .eq("stripe_charge_id", chId)
+      .maybeSingle<{ id: string; indsigelse_status: string | null }>();
+    if (!k || k.indsigelse_status) continue;
+    await spejlIndsigelse(d.id);
+    spejlet++;
+    await alarm({
+      noegle: `indsigelse-ukendt:${d.id}`,
+      hvor: "betaling/webhook-udeblev",
+      fejl: `Indsigelse ${d.id} findes hos Stripe på et køb af boost-point (${k.id}), men var ikke registreret - webhooken har ikke leveret charge.dispute.created. Spejlet nu (brugerens point er låst, til den er afgjort). Kontrollér platform-webhooken.`,
+    });
+  }
+  return spejlet;
 }
 
 // D3: tidlige svindelvarsler (14 dage), som databasen ikke kender.

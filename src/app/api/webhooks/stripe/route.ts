@@ -28,6 +28,13 @@ import {
   spejlReturfragtPi,
   spejlReturfragtRefusionsfejl,
 } from "@/lib/betaling/returfragt";
+import {
+  boostKoebForPi,
+  erBoostMetadata,
+  spejlBoostChargeRefusion,
+  spejlBoostPi,
+  spejlBoostRefusionsfejl,
+} from "@/lib/betaling/boost";
 
 // Stripe-webhook for betalingen (destination charges - den eneste model).
 // Spejler Stripes status i databasen - Stripe er sandheden om penge.
@@ -40,6 +47,10 @@ import {
 // særskilt Connect-destination i Stripe ("Events from: Connected accounts")
 // og signeres med STRIPE_CONNECT_WEBHOOK_SECRET (samme rute bruges til begge).
 // Connect-events har event.account = sælgerens Connect-konto.
+//
+// Boost-point (src/lib/betaling/boost.ts): payment_intent.* med metadata
+// type 'boost' krediterer pointene; charge.refunded og refund.failed/updated
+// spejler refusioner af et køb.
 //
 // Erhvervsabonnementer (Stripe Billing, src/lib/erhverv/betaling.ts):
 // customer.subscription.created/updated/deleted/pending_update_expired og
@@ -168,6 +179,27 @@ async function haandter(event: Stripe.Event): Promise<void> {
       // Hent den aktuelle PaymentIntent i stedet for at stole på event-
       // payloaden: events kan komme i forkert rækkefølge.
       const fraEvent = event.data.object as Stripe.PaymentIntent;
+      // Køb af boost-point (betaling til platformen, src/lib/betaling/boost.ts):
+      // pointene krediteres først, når betalingen er bekræftet her (eller af
+      // returen/cron'en) - og kun én gang.
+      if (erBoostMetadata(fraEvent.metadata)) {
+        const pi = await getStripe().paymentIntents.retrieve(fraEvent.id);
+        const resultat = await spejlBoostPi(pi);
+        if (resultat === "ukendt" && pi.status === "succeeded") {
+          if (await erFremmedTestobjekt(piHenvisning(pi))) {
+            logFremmedTestdata("PaymentIntent (boost)", pi.id);
+          } else {
+            await alarmPrTilfaelde({
+              noegle: `ukendt-pi:${pi.id}`,
+              kilde: "webhook",
+              hvor: "betaling/ukendt-betaling",
+              fejl: `PaymentIntent ${pi.id} er et gennemført køb af boost-point hos Stripe, men databasen kender det ikke. Kontrollér og refundér i Stripe.`,
+            });
+          }
+        }
+        console.log(`Stripe ${event.type} (boost): ${pi.id} -> ${resultat}`);
+        return;
+      }
       // Returfragt i en sag (betaling til platformen, src/lib/betaling/returfragt.ts):
       // returkoden laves først, når betalingen er bekræftet her.
       if (erReturfragtMetadata(fraEvent.metadata)) {
@@ -247,6 +279,13 @@ async function haandter(event: Stripe.Event): Promise<void> {
       // aldrig laves en returkode på en refunderet returfragt.
       {
         const piRef = typeof fraEvent.payment_intent === "string" ? fraEvent.payment_intent : fraEvent.payment_intent.id;
+        // Boost-køb: købet markeres refunderet, og pointene trækkes tilbage.
+        if (await boostKoebForPi(piRef)) {
+          const frisk = await getStripe().charges.retrieve(fraEvent.id, { expand: ["refunds"] });
+          const r = await spejlBoostChargeRefusion(frisk);
+          console.log(`Stripe ${event.type} (boost): ${fraEvent.id} -> ${r ?? "kasseret/ukendt"}`);
+          return;
+        }
         if (await returfragtForPi(piRef)) {
           const frisk = await getStripe().charges.retrieve(fraEvent.id, { expand: ["refunds"] });
           const r = await spejlReturfragtChargeRefusion(frisk);
@@ -266,6 +305,12 @@ async function haandter(event: Stripe.Event): Promise<void> {
       // En refusion, der fejler hos Stripe (fx kortet er lukket), markeres til
       // admin. Refusionen hentes frisk i spejlRefusionsfejl.
       const refund = event.data.object as Stripe.Refund;
+      if (refund.metadata?.type === "boost") {
+        const frisk = await getStripe().refunds.retrieve(refund.id);
+        const r = await spejlBoostRefusionsfejl(frisk);
+        console.log(`Stripe ${event.type} (boost): ${refund.id} -> ${r}`);
+        return;
+      }
       if (refund.metadata?.type === "returfragt") {
         const frisk = await getStripe().refunds.retrieve(refund.id);
         const r = await spejlReturfragtRefusionsfejl(frisk);
