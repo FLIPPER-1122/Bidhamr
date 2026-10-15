@@ -34,7 +34,8 @@ import {
 //   forsendelser { trade_id }
 //   label        { forsendelse_id }   -> { url } (gyldig i 5 minutter)
 //   returfragt   { trade_id, afsender: { navn, adresse, postnummer, by, telefon } }
-//                -> { clientSecret, beloebOere, customerSessionClientSecret } til PaymentSheet.
+//                -> { clientSecret, beloebOere, customerId, customerSessionClientSecret, publishableKey }
+//                til PaymentSheet (som betal i /api/betaling/app).
 //                Køberen betaler returfragten (sag med retur) FØR returkoden laves;
 //                koden laves, når Stripe har bekræftet betalingen (webhook). Følg med
 //                via supabase.rpc("min_returfragt", { p_trade }).
@@ -199,7 +200,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
         // "app": kundesessionen laves til PaymentSheet (mobile_payment_element).
         const r = await startReturfragt(krop.trade_id, bruger.id, afsender, "app");
         if ("fejl" in r) return svar(409, { fejl: r.fejl, kode: r.betalt ? "betalt" : "afvist" });
-        return resultat(r);
+        // customerId + customerSessionClientSecret som betal i
+        // /api/betaling/app, så et gemt kort kan forudfyldes i PaymentSheet.
+        // publishableKey er med, når den er sat (valgfri - samme som betal).
+        const k = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+        const publishableKey = /^pk_(test|live)_[A-Za-z0-9]+$/.test(k) ? k : null;
+        return resultat({ ...r, publishableKey });
       }
     }
   } catch (err) {

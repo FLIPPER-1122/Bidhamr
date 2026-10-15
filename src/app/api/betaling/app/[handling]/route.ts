@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { offentligNoegle } from "@/lib/supabase/noegler";
 import { klientIp, tjekGraenser, FOR_MANGE_FORSOEG } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { fjernGemtKortForBruger } from "@/lib/betaling/kort";
 import { gemLevering } from "@/lib/fragt/handlinger";
 import {
@@ -24,7 +25,8 @@ import { brugBoost, startBoostKoeb, type BoostStartFejl } from "@/lib/betaling/b
 // POST /api/betaling/app/<handling>
 //   Authorization: Bearer <Supabase access token>
 //   Content-Type: application/json
-//   betal                    { trade_id, levering? }  -> PaymentSheet-data
+//   betal                    { trade_id, levering? }  -> PaymentSheet-data + saelgerNavn
+//                            levering.transportoer: "dao" | "gls" | "postnord" (valgfri)
 //   indstillinger            {}                       -> gemt kort + udbetalingskontoens status
 //   gem-kort                 {}                       -> SetupIntent til PaymentSheet
 //   bekraeft-kort            { setup_intent_id }
@@ -148,6 +150,17 @@ function offentligStripeNoegle(): string | null {
   return /^pk_(test|live)_[A-Za-z0-9]+$/.test(k) ? k : null;
 }
 
+// Sælgerens visningsnavn (users.navn - som hjemmesidens checkout viser
+// "Sælger: X"). Kun efter at startBetalingFor har godkendt køberen.
+async function saelgerNavnForHandel(tradeId: unknown): Promise<string | null> {
+  if (typeof tradeId !== "string") return null;
+  const admin = createAdminClient();
+  const { data: t } = await admin.from("trades").select("seller_id").eq("id", tradeId).maybeSingle<{ seller_id: string }>();
+  if (!t) return null;
+  const { data: u } = await admin.from("users").select("navn").eq("id", t.seller_id).maybeSingle<{ navn: string | null }>();
+  return u?.navn ?? null;
+}
+
 const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ handling: string }> }) {
@@ -213,6 +226,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
             pakkeshopAdresse: l.pakkeshop_adresse,
             modtager: obj(l.modtager),
             gemForslag: l.gem_forslag,
+            // Valgfri ("dao" | "gls" | "postnord" fra checkout.transportoerer) -
+            // som /api/fragt/app/levering. Udeladt = DAO.
+            ...(l.transportoer !== undefined ? { transportoer: l.transportoer } : {}),
           });
           if ("fejl" in g) return svar(409, { fejl: g.fejl, kode: "levering" });
           levering = { ...g };
@@ -232,6 +248,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
           customerId: r.customerId,
           customerSessionClientSecret: r.customerSessionClientSecret,
           publishableKey,
+          // "Sælger: X" som på hjemmesidens checkout (users.navn).
+          saelgerNavn: await saelgerNavnForHandel(krop.trade_id),
           ...(levering ? { levering } : {}),
         });
       }

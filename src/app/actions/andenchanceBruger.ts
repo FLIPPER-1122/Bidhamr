@@ -6,6 +6,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { annulleretUbetaltAarsag } from "@/lib/handel/handelStatus";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -51,29 +52,18 @@ export async function hentMineAktiveTilbud(): Promise<AktivtTilbud[]> {
 }
 
 // Til køberen af en annulleret handel: blev den annulleret, fordi køberen
-// ikke betalte? Sagstabellen er kun for service-role, så det tjekkes her.
-// Returnerer årsagen ("ubetalt" | "admin_annulleret"), eller null.
+// ikke betalte? Sagstabellen er kun for service-role, så det tjekkes på
+// serveren (src/lib/handel/handelStatus.ts - samme kode som appens
+// /api/handel/app/status). Returnerer årsagen ("ubetalt" |
+// "admin_annulleret"), eller null.
 export async function erAnnulleretUbetalt(
   tradeId: string,
 ): Promise<"ubetalt" | "admin_annulleret" | null> {
-  try {
-    if (!UUID.test(tradeId)) return null;
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await hentLoggetIndBruger(supabase);
-    if (!user) return null;
-
-    const { data } = await createAdminClient()
-      .from("ubetalte_vindere")
-      .select("id, aarsag")
-      .eq("trade_id", tradeId)
-      .eq("buyer_id", user.id)
-      .maybeSingle();
-    if (!data) return null;
-    return data.aarsag === "admin_annulleret" ? "admin_annulleret" : "ubetalt";
-  } catch (err) {
-    console.error("erAnnulleretUbetalt fejlede:", err);
-    return null;
-  }
+  if (!UUID.test(tradeId)) return null;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await hentLoggetIndBruger(supabase);
+  if (!user) return null;
+  return annulleretUbetaltAarsag(tradeId, user.id);
 }

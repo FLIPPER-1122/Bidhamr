@@ -12,13 +12,13 @@ import {
   tjekGraenser,
   tjekGraenserLukket,
 } from "@/lib/rateLimit";
-import { sideUrl } from "@/lib/mails/handel";
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { adgangskodeAendretMail } from "@/lib/mails/konto";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import { registrerLogin } from "@/lib/enheder";
 import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
 import { logDriftFejl } from "@/lib/drift";
+import { sendNulstillingsmail } from "@/lib/adgangskodeSkift";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
 import {
@@ -286,30 +286,12 @@ export async function verificerSignupKode(
   return resultat;
 }
 
+// "Glemt adgangskode". Samme kode som appens /api/konto/glemt
+// (src/lib/adgangskodeSkift.ts): samme grænser og samme svar, uanset om
+// e-mailen findes.
 export async function nulstilAdgangskode(emailInput: string): Promise<Resultat> {
-  const email = renEmail(emailInput);
-  if (!email) return { fejl: "Indtast en gyldig e-mail." };
-
-  const ip = await klientIp();
-  const graense = graenseFejl(await tjekGraenserLukket([["nulstil_ip", ip], ["nulstil_email", email]]));
-  if (graense) return { fejl: graense };
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: sideUrl("/auth/callback?next=/reset-password"),
-  });
-  if (error) {
-    // Kun "for mange forsøg" vises. Alle andre fejl giver samme svar som en
-    // gennemført afsendelse, så svaret ikke afslører, om e-mailen findes.
-    // Fejlen logges i drift uden e-mailadressen.
-    if (error.status === 429) return { fejl: FOR_MANGE_FORSOEG };
-    await logDriftFejl({
-      kilde: "action",
-      hvor: "nulstilAdgangskode",
-      fejl: `${error.status ?? ""} ${error.code ?? ""}: ${error.message}`.replace(/[^\s@]+@[^\s@]+/g, "[e-mail]"),
-    });
-  }
-  return { ok: true };
+  const r = await sendNulstillingsmail(await createClient(), emailInput, await klientIp());
+  return "fejl" in r ? { fejl: r.fejl } : { ok: true };
 }
 
 // Ny adgangskode efter nulstillingslinket (recovery-session). Brugeren

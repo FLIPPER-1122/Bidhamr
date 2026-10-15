@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { logDriftFejl } from "@/lib/drift";
-import { lavMineDataPdf } from "@/lib/pdf/mineDataPdf";
+import { lavMineDataFil } from "@/lib/mineDataFil";
 
 // "Download dine data" (GDPR). Formularen på /konto poster hertil, og svaret
 // er en JSON-fil (art. 20, maskinlæsbar) eller en PDF til at læse
-// (format=pdf). Indholdet bygges af mine_data() i databasen (udleder
+// (format=pdf). Samme kode som appens /api/konto/data (src/lib/mineDataFil.ts).
+// Indholdet bygges af mine_data() i databasen (udleder
 // brugeren af auth.uid(), højst 1 gang i timen) - appen kan bruge samme RPC.
 // PDF og JSON bygger på præcis samme kald, så grænsen deles: én fil i timen,
 // uanset format. Det kræver ingen ny databasefunktion, og PDF'en kan ikke
@@ -56,41 +56,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(`${tilbageSti}#dine-data`)}`, base), 303);
   }
 
-  const { data, error } = await supabase.rpc("mine_data");
-  if (error) {
-    if (error.code === "BHR01") return tilbageMed("vent");
-    await logDriftFejl({ kilde: "server", sti: "/konto/data", fejl: error, brugerId: brugerData.user.id });
-    return tilbageMed("fejl");
-  }
+  const fil = await lavMineDataFil(supabase, brugerData.user.id, somPdf, "/konto/data");
+  if ("fejl" in fil) return tilbageMed(fil.fejl);
 
-  // Egne maksimumbud (automatisk bud) er med i mine_data() under
-  // "mine_maksimumbud" (20261010010000_autobud.sql) - også for appen.
-
-  const dato = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Copenhagen" });
-
-  if (somPdf) {
-    let pdf: Uint8Array;
-    try {
-      pdf = await lavMineDataPdf(data);
-    } catch (e) {
-      await logDriftFejl({ kilde: "server", sti: "/konto/data", fejl: e, brugerId: brugerData.user.id });
-      return tilbageMed("fejl");
-    }
-    return new NextResponse(new Blob([pdf as Uint8Array<ArrayBuffer>], { type: "application/pdf" }), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="bidhamr-dine-data-${dato}.pdf"`,
-        "Cache-Control": "no-store",
-      },
-    });
-  }
-
-  return new NextResponse(JSON.stringify(data, null, 2), {
+  const krop =
+    typeof fil.indhold === "string"
+      ? fil.indhold
+      : new Blob([fil.indhold as Uint8Array<ArrayBuffer>], { type: fil.type });
+  return new NextResponse(krop, {
     status: 200,
     headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Content-Disposition": `attachment; filename="bidhamr-mine-data-${dato}.json"`,
+      "Content-Type": fil.type,
+      "Content-Disposition": `attachment; filename="${fil.filnavn}"`,
       "Cache-Control": "no-store",
     },
   });

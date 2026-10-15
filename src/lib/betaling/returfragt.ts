@@ -160,7 +160,15 @@ const START_FEJL: Record<string, string> = {
 };
 
 export type ReturfragtStart =
-  | { ok: true; clientSecret: string; beloebOere: number; customerSessionClientSecret: string | null }
+  | {
+      ok: true;
+      clientSecret: string;
+      beloebOere: number;
+      // Stripe-kunden på PaymentIntenten (PaymentSheet: customerId sammen med
+      // customerSessionClientSecret, som i betal).
+      customerId: string | null;
+      customerSessionClientSecret: string | null;
+    }
   | { fejl: string; betalt?: true };
 
 // Køberen starter (eller genoptager) betalingen af returfragten. koeberId SKAL
@@ -204,6 +212,7 @@ export async function startReturfragtBetaling(
       ok: true,
       clientSecret: pi.client_secret,
       beloebOere: pi.amount,
+      customerId: typeof pi.customer === "string" ? pi.customer : (pi.customer?.id ?? null),
       customerSessionClientSecret: await kundeSessionTilCheckout(koeberId, pi, kanal),
     };
   } catch (err) {

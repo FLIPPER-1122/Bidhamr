@@ -88,13 +88,15 @@ export default function BoostAuktion({ auktionId, status }: { auktionId: string;
             <p className="mt-3 text-sm text-tekst-daempet">
               {status.grund === "slutter_snart"
                 ? BOOST_TEKST.slutterSnart
-                : status.grund === "erhverv"
-                  ? BOOST_TEKST.kunPrivate
-                  : status.grund === "spaerret"
-                    ? BOOST_TEKST.spaerret
-                    : status.grund === "laast"
-                      ? BOOST_TEKST.fejl.laast
-                      : BOOST_TEKST.fejl.ikke_aktiv}
+                : status.grund === "kunst_kontrol"
+                  ? BOOST_TEKST.kunstKontrol
+                  : status.grund === "erhverv"
+                    ? BOOST_TEKST.kunPrivate
+                    : status.grund === "spaerret"
+                      ? BOOST_TEKST.spaerret
+                      : status.grund === "laast"
+                        ? BOOST_TEKST.fejl.laast
+                        : BOOST_TEKST.fejl.ikke_aktiv}
             </p>
           )}
         </>
