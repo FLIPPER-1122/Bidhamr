@@ -39,16 +39,19 @@ const UUID_REGEX =
 export default async function AdminAuktioner({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string; kunsttjek?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; kunsttjek?: string; kunstkoert?: string }>;
 }) {
   const rolle = await getStaffRole();
   if (!rolle || !harMindstRolle(rolle, "admin")) {
     notFound();
   }
 
-  const { status, q, kunsttjek } = await searchParams;
-  // Resultatet af en tør kørsel af kunst-tjekket ("N-M-T").
-  const toer = /^\d+-\d+-\d+$/.test(kunsttjek ?? "") ? (kunsttjek as string).split("-").map(Number) : null;
+  const { status, q, kunsttjek, kunstkoert } = await searchParams;
+  // Kunst-tjekket: resultat af en tør kørsel og af en kørsel ("N-M-T-X":
+  // uden bud, med bud, tjekket, mangler).
+  const tal4 = (v?: string) => (/^\d+-\d+-\d+-\d+$/.test(v ?? "") ? (v as string).split("-").map(Number) : null);
+  const toer = tal4(kunsttjek);
+  const koert = tal4(kunstkoert);
   const søgetekst = q?.trim() ?? "";
   const aktivStatus = status ?? "alle";
   const supabase = createAdminClient();
@@ -196,6 +199,21 @@ export default async function AdminAuktioner({
         }
       />
 
+      {koert && (
+        <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
+          <p className="font-semibold">Kunst-tjekket er kørt</p>
+          <p className="mt-1">
+            {koert[2]} auktioner er tjekket: {koert[0]} er sat til kontrol, og {koert[1]} med bud har fået en anmeldelse.
+            {koert[3] > 0 ? ` ${koert[3]} mangler – kør igen.` : " Alle aktive auktioner er tjekket."}
+          </p>
+          {koert[3] > 0 && (
+            <div className="mt-3">
+              <AdminActionKnap action={kunstTjekToer} hiddenFields={{}} label="Tjek de næste" className="btn btn-sekundaer btn-lille" />
+            </div>
+          )}
+        </div>
+      )}
+
       {toer && (
         <div role="status" className="rounded-xl border border-info-kant bg-info-bg p-4 text-sm text-info-tekst">
           <p className="font-semibold">Kunst-tjek af aktive auktioner (tør kørsel – intet er ændret endnu)</p>
@@ -203,6 +221,7 @@ export default async function AdminAuktioner({
             {toer[2]} aktive auktioner uden kunst-kontrol er tjekket. {toer[0]} uden bud vil blive sat til kontrol
             (skjult for andre, ingen bud) med en anmeldelse. {toer[1]} med bud får kun en anmeldelse – de forbliver
             synlige, og buddene gælder.
+            {toer[3] > 0 && ` Der er ${toer[3]} flere, der ikke er tjekket – de tages i næste kørsel (ældste først).`}
           </p>
           {toer[0] + toer[1] > 0 && (
             <div className="mt-3">
@@ -214,8 +233,6 @@ export default async function AdminAuktioner({
                 confirmLabel="Ja, kør tjekket"
                 action={kunstTjekKoer}
                 hiddenFields={{}}
-                kvittering="Tjekket er kørt – de fundne står under Anmeldelser"
-                naeste={{ href: "/admin/rapporter", label: "Gå til Anmeldelser" }}
               />
             </div>
           )}

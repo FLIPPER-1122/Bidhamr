@@ -1165,13 +1165,13 @@ export async function hideAuction(formData: FormData) {
 // "Tjek aktive auktioner for kunst" (kun admin/chef, kunst_tjek_aktive,
 // 20261023010000). Kører aldrig af sig selv og altid i to trin:
 //   1. tør kørsel (p_toer = true): tæller kun. Siden viser "N uden bud sættes
-//      til kontrol, M med bud får kun en anmeldelse" (?kunsttjek=N-M-T).
+//      til kontrol, M med bud får kun en anmeldelse" (?kunsttjek=N-M-T-X).
 //   2. kør: auktioner uden bud sættes til kontrol (skjult for andre, ingen
 //      bud) med en anmeldelse; auktioner med bud får KUN en anmeldelse.
 // Højst 500 pr. kørsel.
 const KUNST_TJEK_MAKS = 500;
 
-type KunstTjekSvar = { kode?: string; tjekket?: number; uden_bud?: number; med_bud?: number };
+type KunstTjekSvar = { kode?: string; tjekket?: number; uden_bud?: number; med_bud?: number; mangler?: number };
 
 async function kunstTjekKald(toer: boolean): Promise<KunstTjekSvar> {
   const { admin, userId: staffId } = await assertRole("admin");
@@ -1197,16 +1197,17 @@ async function kunstTjekKald(toer: boolean): Promise<KunstTjekSvar> {
 
 async function kunstTjekToerImpl(): Promise<never> {
   const r = await kunstTjekKald(true);
-  redirect(`/admin/auktioner?kunsttjek=${r.uden_bud ?? 0}-${r.med_bud ?? 0}-${r.tjekket ?? 0}`);
+  redirect(`/admin/auktioner?kunsttjek=${r.uden_bud ?? 0}-${r.med_bud ?? 0}-${r.tjekket ?? 0}-${r.mangler ?? 0}`);
 }
 
-async function kunstTjekKoerImpl(): Promise<{ ok: true }> {
-  await kunstTjekKald(false);
+async function kunstTjekKoerImpl(): Promise<never> {
+  const r = await kunstTjekKald(false);
   // De fundne får hver en automatisk anmeldelse (Admin -> Anmeldelser), hvor
   // afgørelsen logges som altid.
   revalidatePath("/admin/auktioner");
   revalidatePath("/admin/rapporter");
-  return { ok: true };
+  // Resultatet vises på siden ("X mangler - kør igen").
+  redirect(`/admin/auktioner?kunstkoert=${r.uden_bud ?? 0}-${r.med_bud ?? 0}-${r.tjekket ?? 0}-${r.mangler ?? 0}`);
 }
 
 // "Slå brugerbetingelser <VILKAAR_VERSION> til" (kun admin/chef, Admin ->
@@ -1227,6 +1228,7 @@ async function vilkaarSlaaTilImpl(): Promise<{ ok: true }> {
   }
   const kode = (data as { kode?: string } | null)?.kode;
   if (kode === "ingen_adgang") throw new BrugerFejl("Kun admin og chef kan slå en ny version af brugerbetingelserne til.");
+  if (kode === "mangler_indstilling") throw new BrugerFejl("Indstillingen for brugerbetingelserne mangler i databasen. Kontakt en udvikler.");
   if (kode !== "ok" && kode !== "uaendret") throw new Error(`vilkaar_aktiver_version returnerede ${kode ?? "intet"}`);
   revalidatePath("/admin/drift");
   return { ok: true };

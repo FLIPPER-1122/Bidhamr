@@ -37,7 +37,7 @@ begin
      and not attisdropped
      -- Staff-kolonner fra 20261023010000_kunst_forbudt.sql gives heller ikke
      -- (kunst-kontrollen må ikke kunne læses af brugere).
-     and attname not in ('vinder_id', 'kunst_bekraeftet', 'kunst_markeret_kl', 'kunst_kontrol', 'kunst_tekst_md5');
+     and attname not in ('vinder_id', 'kunst_bekraeftet', 'kunst_markeret_kl', 'kunst_kontrol', 'kunst_tekst_md5', 'kunst_tjekket_kl');
 
   revoke select on public.auctions from anon, authenticated;
   execute format('grant select (%s) on public.auctions to anon, authenticated', v_kolonner);

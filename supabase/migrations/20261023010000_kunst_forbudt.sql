@@ -236,7 +236,8 @@ alter table public.auctions
   add column if not exists kunst_bekraeftet boolean not null default false,
   add column if not exists kunst_markeret_kl timestamptz,
   add column if not exists kunst_kontrol text,
-  add column if not exists kunst_tekst_md5 text;
+  add column if not exists kunst_tekst_md5 text,
+  add column if not exists kunst_tjekket_kl timestamptz;
 
 do $do$
 begin
@@ -253,11 +254,13 @@ comment on column public.auctions.kunst_markeret_kl is
   'Sat af databasen (auctions_kunst_kontrol), første gang titel/beskrivelse lignede kunst. Nulstilles aldrig. Ses kun af staff.';
 comment on column public.auctions.kunst_kontrol is
   'Kunst-kontrol: null (ingen), afventer (skjult for andre end sælger/staff/deltagere, ingen bud), godkendt (staff: ikke kunst), afvist (staff skjulte/fjernede den for kunst). Brugere kan ikke ændre den.';
+comment on column public.auctions.kunst_tjekket_kl is
+  'Sidst ordlisten har tjekket titel/beskrivelse (ved oprettelse, rettelse eller "Tjek aktive auktioner"). null = oprettet før kunst-kontrollen og aldrig tjekket.';
 comment on column public.auctions.kunst_tekst_md5 is
   'md5 af den normaliserede tekst, der sidst lignede kunst. Samme tekst, som staff allerede har afgjort, sendes ikke til tjek igen.';
 
 -- Kun staff (service_role) læser kolonnerne (se punkt 1 i toppen om prod).
-revoke select (kunst_bekraeftet, kunst_markeret_kl, kunst_kontrol, kunst_tekst_md5)
+revoke select (kunst_bekraeftet, kunst_markeret_kl, kunst_kontrol, kunst_tekst_md5, kunst_tjekket_kl)
   on public.auctions from anon, authenticated;
 
 create index if not exists auctions_kunst_markeret_idx
@@ -523,6 +526,7 @@ declare
 begin
   if tg_op = 'INSERT' then
     new.kunst_bekraeftet := coalesce(new.kunst_bekraeftet, false);
+    new.kunst_tjekket_kl := now();
     v := public.kunst_tekst_tjek(v_tekst);
     if v->>'resultat' = 'kunst' then
       new.kunst_markeret_kl := now();
@@ -539,12 +543,14 @@ begin
   if coalesce(auth.role(), '') in ('authenticated', 'anon') then
     new.kunst_bekraeftet := old.kunst_bekraeftet;
     new.kunst_kontrol := old.kunst_kontrol;
+    new.kunst_tjekket_kl := old.kunst_tjekket_kl;
   end if;
   new.kunst_bekraeftet := coalesce(new.kunst_bekraeftet, old.kunst_bekraeftet, false);
   new.kunst_markeret_kl := old.kunst_markeret_kl;
   new.kunst_tekst_md5 := old.kunst_tekst_md5;
 
   if new.titel is distinct from old.titel or new.beskrivelse is distinct from old.beskrivelse then
+    new.kunst_tjekket_kl := now();
     v := public.kunst_tekst_tjek(v_tekst);
     if v->>'resultat' = 'kunst' then
       v_md5 := md5(public.forbudt_normaliser(left(v_tekst, 5000)));
@@ -833,6 +839,29 @@ begin
   end if;
 end $do$;
 
+-- Rækken må aldrig slettes (så falder versionen tilbage til 0.1).
+create or replace function public.vilkaar_indstilling_ingen_sletning()
+returns trigger
+language plpgsql
+set search_path = ''
+as $fn$
+begin
+  raise exception 'vilkaar_indstilling kan ikke slettes - skift versionen med vilkaar_aktiver_version'
+    using errcode = '42501';
+end;
+$fn$;
+
+revoke all on function public.vilkaar_indstilling_ingen_sletning() from public, anon, authenticated;
+
+drop trigger if exists vilkaar_indstilling_ingen_sletning on public.vilkaar_indstilling;
+create trigger vilkaar_indstilling_ingen_sletning
+  before delete on public.vilkaar_indstilling
+  for each row execute function public.vilkaar_indstilling_ingen_sletning();
+drop trigger if exists vilkaar_indstilling_ingen_truncate on public.vilkaar_indstilling;
+create trigger vilkaar_indstilling_ingen_truncate
+  before truncate on public.vilkaar_indstilling
+  for each statement execute function public.vilkaar_indstilling_ingen_sletning();
+
 -- stable (ikke immutable), så planner ikke kan bage en gammel version ind.
 create or replace function public.vilkaar_aktuel_version()
 returns text
@@ -864,6 +893,9 @@ begin
     return jsonb_build_object('kode', 'ugyldig_version');
   end if;
   select v.aktiv_version into v_gl from public.vilkaar_indstilling v where v.id for update;
+  if not found then
+    return jsonb_build_object('kode', 'mangler_indstilling');
+  end if;
   if (split_part(p_version, '.', 1)::int, split_part(p_version, '.', 2)::int)
      <= (split_part(v_gl, '.', 1)::int, split_part(v_gl, '.', 2)::int) then
     return jsonb_build_object('kode', 'uaendret', 'version', v_gl);
@@ -982,8 +1014,12 @@ grant execute on function public.kunst_ikke_kunst(uuid, uuid, text) to service_r
 --   p_toer = false: auktioner UDEN bud sættes til 'afventer' (triggeren
 --     markerer og opretter anmeldelsen). Auktioner MED bud ændres IKKE
 --     (ingen skjulning, buddene gælder) - de får kun en kunst-anmeldelse.
--- Kun aktive auktioner uden kunst-kontrol og uden en tidligere
--- kunst-anmeldelse. Højst p_maks pr. kørsel (standard 500, højst 2000).
+-- Kun aktive auktioner, der aldrig er tjekket (kunst_tjekket_kl er null:
+-- oprettet før migrationen og ikke rettet siden) og uden kunst-kontrol eller
+-- kunst-anmeldelse. Ældste først. Højst p_maks pr. kørsel (standard 500,
+-- højst 2000); 'mangler' = hvor mange der er tilbage ("kør igen").
+-- Auktionsrækken låses, før buddene tjekkes, og skjulningen sker kun, hvis
+-- der stadig ikke er bud (review M-a).
 drop function if exists public.kunst_tjek_aktive(uuid, integer);
 
 create or replace function public.kunst_tjek_aktive(p_staff uuid, p_maks integer default 500, p_toer boolean default true)
@@ -995,29 +1031,64 @@ as $fn$
 declare
   a         record;
   v         jsonb;
+  v_toer    boolean := coalesce(p_toer, true);
+  v_total   integer;
   v_tjekket integer := 0;
   v_uden    integer := 0;
   v_med     integer := 0;
+  v_skjult  boolean;
 begin
   if coalesce(public.kunst_staff_rolle(p_staff), '') not in ('admin', 'chef') then
     return jsonb_build_object('kode', 'ingen_adgang');
   end if;
+
+  select count(*) into v_total
+    from public.auctions x
+   where x.status = 'aktiv' and x.kunst_kontrol is null and x.arkiveret_kl is null
+     and x.kunst_tjekket_kl is null
+     and not exists (select 1 from public.reports r where r.auction_id = x.id and r.category = 'kunst');
+
   for a in
     select x.id, x.titel, x.beskrivelse
       from public.auctions x
      where x.status = 'aktiv' and x.kunst_kontrol is null and x.arkiveret_kl is null
+       and x.kunst_tjekket_kl is null
        and not exists (select 1 from public.reports r where r.auction_id = x.id and r.category = 'kunst')
-     order by x.oprettet desc
+     order by x.oprettet asc, x.id
      limit greatest(1, least(coalesce(p_maks, 500), 2000))
   loop
     v_tjekket := v_tjekket + 1;
+    if not v_toer then
+      -- Lås rækken, før buddene tjekkes.
+      perform 1 from public.auctions where id = a.id for update;
+    end if;
     v := public.kunst_tekst_tjek(coalesce(a.titel, '') || ' ' || coalesce(a.beskrivelse, ''));
     if v->>'resultat' is distinct from 'kunst' then
+      if not v_toer then
+        update public.auctions set kunst_tjekket_kl = now() where id = a.id;
+      end if;
       continue;
     end if;
-    if exists (select 1 from public.bids b where b.auktion_id = a.id) then
+
+    v_skjult := false;
+    if not exists (select 1 from public.bids b where b.auktion_id = a.id) then
+      if v_toer then
+        v_skjult := true;
+      else
+        update public.auctions
+           set kunst_kontrol = 'afventer', kunst_tjekket_kl = now()
+         where id = a.id and kunst_kontrol is null
+           and not exists (select 1 from public.bids b where b.auktion_id = a.id);
+        v_skjult := found;
+      end if;
+    end if;
+
+    if v_skjult then
+      v_uden := v_uden + 1;
+    else
       v_med := v_med + 1;
-      if not coalesce(p_toer, true) then
+      if not v_toer then
+        update public.auctions set kunst_tjekket_kl = now() where id = a.id;
         insert into public.reports (auction_id, reporter_id, category, description, status, created_at)
         values (a.id, public.bidhamr_system_id(), 'kunst',
                 left(format('Kontrol (tjek af aktive auktioner): muligvis kunst. Ordet "%s" står i titlen eller beskrivelsen. '
@@ -1025,15 +1096,12 @@ begin
                             v->>'ord'), 1000),
                 'pending', now());
       end if;
-    else
-      v_uden := v_uden + 1;
-      if not coalesce(p_toer, true) then
-        update public.auctions set kunst_kontrol = 'afventer' where id = a.id and kunst_kontrol is null;
-      end if;
     end if;
   end loop;
-  return jsonb_build_object('kode', 'ok', 'toer', coalesce(p_toer, true), 'tjekket', v_tjekket,
-                            'uden_bud', v_uden, 'med_bud', v_med);
+
+  return jsonb_build_object('kode', 'ok', 'toer', v_toer, 'tjekket', v_tjekket,
+                            'uden_bud', v_uden, 'med_bud', v_med,
+                            'mangler', greatest(v_total - v_tjekket, 0));
 end;
 $fn$;
 

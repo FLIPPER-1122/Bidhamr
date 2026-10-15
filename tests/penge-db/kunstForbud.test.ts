@@ -247,6 +247,15 @@ describe("migrationen", () => {
     expect(await slaaTil(ADMIN, "0.2")).toBe("ok");
     expect(await slaaTil(ADMIN, "0.2")).toBe("uaendret");
     expect(await slaaTil(ADMIN, "0.1")).toBe("uaendret");
+    // Rækken kan ikke slettes (heller ikke af postgres/service_role).
+    expect(await fejlkode("delete from public.vilkaar_indstilling", [])).toBe("42501");
+    expect(await fejlkode("truncate public.vilkaar_indstilling", [])).toBe("42501");
+    // Mangler rækken alligevel (fx slået triggeren fra), får admin en fejlkode.
+    await db.exec("alter table public.vilkaar_indstilling disable trigger vilkaar_indstilling_ingen_sletning");
+    await db.exec("delete from public.vilkaar_indstilling");
+    expect(await slaaTil(ADMIN, "0.3")).toBe("mangler_indstilling");
+    await db.exec("insert into public.vilkaar_indstilling (id, aktiv_version) values (true, '0.2')");
+    await db.exec("alter table public.vilkaar_indstilling enable trigger vilkaar_indstilling_ingen_sletning");
     expect(await tal()).toEqual({ v: "0.2", a: false, b: true });
 
     // Versionen kan læses af alle, men ikke ændres direkte.
@@ -498,12 +507,12 @@ describe("kontrol, synlighed og anmeldelse", () => {
     // En gammel auktion fra før kontrollen: ingen markering.
     await som("service_role", null);
     const id = await opret("Litografi af Jorn");
-    await db.query("update public.auctions set kunst_kontrol = null, kunst_markeret_kl = null where id = $1", [id]);
+    await db.query("update public.auctions set kunst_kontrol = null, kunst_markeret_kl = null, kunst_tjekket_kl = null where id = $1", [id]);
     await db.query("delete from public.reports where auction_id = $1", [id]);
 
     // En gammel auktion med bud: må ikke skjules, kun anmeldes.
     const medBud = await opret("Serigrafi af Warhol");
-    await db.query("update public.auctions set kunst_kontrol = null, kunst_markeret_kl = null where id = $1", [medBud]);
+    await db.query("update public.auctions set kunst_kontrol = null, kunst_markeret_kl = null, kunst_tjekket_kl = null where id = $1", [medBud]);
     await db.query("delete from public.reports where auction_id = $1", [medBud]);
     await db.query("insert into public.bids (auktion_id, bruger_id, beloeb) values ($1, $2, 100)", [medBud, ANDEN]);
 
@@ -517,6 +526,12 @@ describe("kontrol, synlighed og anmeldelse", () => {
       ).rows[0].r;
 
     expect((await kald(MEDARBEJDER)).kode).toBe("ingen_adgang");
+    // Kun de to gamle (aldrig tjekkede) auktioner er med - ældste først, og
+    // "mangler" viser resten.
+    const een = (
+      await db.query<{ r: Svar & { mangler: number } }>("select public.kunst_tjek_aktive($1, 1, true) as r", [ADMIN])
+    ).rows[0].r;
+    expect(een).toMatchObject({ tjekket: 1, uden_bud: 1, med_bud: 0, mangler: 1 });
     // Tør kørsel er standard: tæller kun.
     const toerSvar = await kald(ADMIN);
     expect(toerSvar).toMatchObject({ kode: "ok", toer: true });
@@ -542,6 +557,14 @@ describe("kontrol, synlighed og anmeldelse", () => {
     // Igen: intet nyt (de har nu en anmeldelse eller en kontrol).
     const igen = await kald(ADMIN);
     expect(igen.uden_bud + igen.med_bud).toBe(0);
+    expect(igen.tjekket).toBe(0);
+  });
+
+  it("nye og rettede auktioner er allerede tjekket - kun de gamle tages med", async () => {
+    await som("authenticated");
+    const ny = await opret("Sofa i eg");
+    const k = await db.query<{ t: string | null }>("select kunst_tjekket_kl as t from public.auctions where id = $1", [ny]);
+    expect(k.rows[0].t).not.toBeNull();
   });
 
   it("ugyldig kontrol-værdi afvises", async () => {
