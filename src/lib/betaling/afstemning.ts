@@ -1528,6 +1528,10 @@ async function afstemIndsigelser(
     if (piId && (kendte.has(piId) || afv.has(piId))) continue; // handel - overvågningen spejler den
     const bk = piId ? bkPi.get(piId) : undefined;
     if (bk) {
+      // Spejl indsigelsen (idempotent): en mistet webhook må ikke lade en
+      // åben indsigelse stå uden lås - eller en tabt uden tilbageførsel.
+      const { spejlIndsigelse } = await import("@/lib/betaling/stripeBetaling");
+      await spejlIndsigelse(d.id);
       await registrer({
         noegle: `indsigelse:${d.id}`,
         alarmNoegle: `indsigelse-boost:${d.id}`,

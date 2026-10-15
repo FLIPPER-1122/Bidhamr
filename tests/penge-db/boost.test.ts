@@ -696,6 +696,22 @@ describe("review-rettelser", () => {
     expect(r).toEqual({ sr: true, auth: false, anon: false });
   });
 
+  it("boost_koeb_indsigelse låser brugerens pointkonto (samme advisory lock som boost_brug og ledgeren)", async () => {
+    const k = await koebtPoint(PRIVAT);
+    const ch = (await en<{ c: string }>(`select stripe_charge_id as c from public.boost_koeb where id = $1`, [k.id])).c;
+    const noegle = (await en<{ n: string }>(`select hashtextextended('bidhamr-boost-point:' || $1::text, 0)::text as n`, [PRIVAT])).n;
+    await db.exec("begin");
+    try {
+      await db.query(`select public.boost_koeb_indsigelse($1, 'dp_laas', 'won')`, [ch]);
+      const l = await en<{ n: number }>(
+        `select count(*)::int as n from pg_locks
+          where locktype = 'advisory' and ((classid::bigint << 32) | objid::bigint)::text = $1`, [noegle]);
+      expect(l.n).toBe(1);
+    } finally {
+      await db.exec("commit");
+    }
+  });
+
   it("cron og start: 7 dage uden aktivitet annullerer købet (kun med samme PaymentIntent); start laver et nyt", async () => {
     const gammel = await en<{ id: string }>(
       `insert into public.boost_koeb (bruger_id, point, beloeb_oere, oprettet_kl, aktivitet_kl, stripe_payment_intent_id)

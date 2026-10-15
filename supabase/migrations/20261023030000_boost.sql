@@ -760,8 +760,14 @@ create or replace function public.boost_koeb_indsigelse(p_charge text, p_dispute
 returns text language plpgsql security definer set search_path = '' as $fn$
 declare
   k record;
+  v_bruger uuid;
 begin
   if p_charge is null or p_status is null then return 'ukendt'; end if;
+  -- Lås brugerens pointkonto først (samme lås og rækkefølge som boost_brug
+  -- og ledgeren), så låsen/tilbageførslen ikke kan krydse et samtidigt boost.
+  select b.bruger_id into v_bruger from public.boost_koeb b where b.stripe_charge_id = p_charge;
+  if v_bruger is null then return 'ukendt'; end if;
+  perform public.boost_laas_bruger(v_bruger);
   select b.id, b.indsigelse_tabt_kl, b.indsigelse_status into k
     from public.boost_koeb b where b.stripe_charge_id = p_charge for update;
   if k.id is null then return 'ukendt'; end if;

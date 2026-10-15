@@ -42,6 +42,7 @@ import {
   sendWebhook,
   stripe,
   udenTvungen3ds,
+  ventPaa,
   type TestHandel,
 } from "./handel";
 
@@ -375,6 +376,70 @@ describe("E. point ved salg", () => {
   it("sluttilstand: udbetalingen af salget betales", async () => {
     const b = await betaling(hSalg!.betalingId);
     expect(await afslutPayout(konto, b.saelger_udbetaling_id!)).toBe("paid");
+  });
+});
+
+describe("G. indsigelse på et køb - uden webhook (overvågningen)", () => {
+  it("D2 finder den åbne indsigelse og låser pointene; D1 ser, at BidHamr vandt, og ophæver låsen", async () => {
+    const s = await kald("boost-koeb", {}, KOEBER);
+    expect(s.status).toBe(200);
+    const id = String(s.body.koebId);
+    const pi = piId(String(s.body.clientSecret));
+    await udenTvungen3ds(pi);
+    await stripe().paymentIntents.confirm(pi, {
+      payment_method: "pm_card_createDispute",
+      return_url: "https://bidhamr.dk/test-betaling",
+    });
+    const betalt = await stripe().paymentIntents.retrieve(pi);
+    expect((await sendWebhook("payment_intent.succeeded", betalt as unknown as { id: string })).status).toBe(200);
+    const liste = await ventPaa(
+      () => stripe().disputes.list({ payment_intent: pi, limit: 1 }),
+      (l) => l.data.length > 0,
+      120_000,
+    );
+    const dispute = liste.data[0];
+    expect(dispute).toBeTruthy();
+    const laast = async () => {
+      const { data } = await admin().rpc("boost_point_laast", { p_bruger: KOEBER.id });
+      return data === true;
+    };
+    // Ingen charge.dispute-webhook: databasen kender ikke indsigelsen.
+    expect((await koeb(id)).status).toBe("betalt");
+    const { data: foer } = await admin().from("boost_koeb").select("indsigelse_status").eq("id", id).single();
+    expect(foer?.indsigelse_status).toBeNull();
+
+    const { opsamlBoostIndsigelser } = await import("@/lib/betaling/overvaagning");
+    const alarmer: string[] = [];
+    const alarm = async (o: { noegle: string }) => {
+      alarmer.push(o.noegle);
+    };
+    // D2
+    expect(await opsamlBoostIndsigelser(alarm as never, { minAlderMs: 0 })).toBeGreaterThanOrEqual(1);
+    const { data: aaben } = await admin().from("boost_koeb").select("indsigelse_status, stripe_dispute_id").eq("id", id).single();
+    expect(aaben?.stripe_dispute_id).toBe(dispute.id);
+    expect(["needs_response", "warning_needs_response", "under_review", "warning_under_review"]).toContain(aaben?.indsigelse_status);
+    expect(alarmer).toContain(`indsigelse-ukendt:${dispute.id}`);
+    expect(await laast()).toBe(true);
+    const b = await kald("boost-brug", { auktion_id: auktionId, noegle: randomUUID() }, KOEBER);
+    expect(b.status).toBe(409);
+    expect(b.body.kode).toBe("laast");
+    const saldoAaben = await saldo(KOEBER.id);
+
+    // BidHamr vinder (testmiljøet: "winning_evidence") - stadig uden webhook.
+    await stripe().disputes.update(dispute.id, { evidence: { uncategorized_text: "winning_evidence" }, submit: true });
+    const vundet = await ventPaa(
+      () => stripe().disputes.retrieve(dispute.id),
+      (d) => d.status === "won",
+      180_000,
+    );
+    expect(vundet.status).toBe("won");
+    // D1
+    expect(await opsamlBoostIndsigelser(alarm as never, { minAlderMs: 0 })).toBeGreaterThanOrEqual(1);
+    const { data: efter } = await admin().from("boost_koeb").select("indsigelse_status").eq("id", id).single();
+    expect(efter?.indsigelse_status).toBe("won");
+    expect(alarmer).toContain(`indsigelse-event:${dispute.id}:won`);
+    expect(await laast()).toBe(false);
+    expect(await saldo(KOEBER.id)).toBe(saldoAaben); // intet trukket
   });
 });
 
