@@ -55,6 +55,7 @@ import { hentEksisterende } from "@/lib/fragt/shipmondo";
 import {
   type Adresse,
   type ForsendelseInput,
+  type ForsendelseKontekst,
   type Fragtfirma,
   type Label,
   type OprettetForsendelse,
@@ -104,6 +105,20 @@ const FOR_MANGE_LABELS_DAO =
 function claimFejlTekst(kode: string | undefined, firma: string): string {
   if (kode === "for_mange_labels" && (firma === "dao" || firma === "shipmondo")) return FOR_MANGE_LABELS_DAO;
   return CLAIM_FEJL[kode ?? ""] ?? GENERISK_FEJL;
+}
+
+// Kolonnen/funktionen fra 20261024010000 findes ikke endnu (koden er deployet
+// før migrationen): fald stille tilbage til DAO uden valg af fragtfirma.
+// 42703 = ukendt kolonne, 42883/PGRST202 = ukendt funktion.
+export function foerTransportoerMigration(err: { code?: string | null; message?: string | null } | null | undefined): boolean {
+  if (!err) return false;
+  return (
+    err.code === "42703" ||
+    err.code === "42883" ||
+    err.code === "PGRST202" ||
+    /transportoer|forsendelse_gem_qr|forsendelse_annullering_bekraeftet|forsendelse_leveret_frigiver/.test(err.message ?? "") &&
+      /does not exist|could not find/i.test(err.message ?? "")
+  );
 }
 
 function brugerFejl(err: unknown): string {
@@ -480,14 +495,22 @@ type LeveringRaekke = {
 };
 
 async function hentLevering(admin: Admin, tradeId: string): Promise<LeveringRaekke | null> {
-  const { data, error } = await admin
+  const kolonner =
+    "maade, fragtfirma, pakkeshop_id, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by, " +
+    "modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, modtager_email";
+  let { data, error } = await admin
     .from("handel_levering")
-    .select(
-      "maade, fragtfirma, transportoer, pakkeshop_id, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by, " +
-        "modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, modtager_email",
-    )
+    .select(`${kolonner}, transportoer`)
     .eq("trade_id", tradeId)
     .maybeSingle<LeveringRaekke>();
+  if (error && foerTransportoerMigration(error)) {
+    ({ data, error } = await admin
+      .from("handel_levering")
+      .select(kolonner)
+      .eq("trade_id", tradeId)
+      .maybeSingle<LeveringRaekke>());
+    if (data) data = { ...data, transportoer: null };
+  }
   if (error) throw new Error(`handel_levering: ${error.message}`);
   return data;
 }
@@ -568,6 +591,16 @@ async function opretForsendelse(
     return { fejl: claimFejlTekst(svar?.kode, args.firma.navn) };
   }
   const id = svar.id;
+  // Shipmondos "leveret" må kun starte 14-dages-frigivelsen, når Filip har
+  // slået det til (SHIPMONDO_LEVERET_FRIGIVER=true) efter at have set rigtige
+  // webhooks. Databasen sætter leveret_frigiver = false for Shipmondo; her
+  // slås den til ved oprettelsen (før pakken kan være leveret).
+  if (svar.kode === "ok" && args.firma.navn === "shipmondo" && process.env.SHIPMONDO_LEVERET_FRIGIVER === "true") {
+    const { error: fFejl } = await admin.rpc("forsendelse_leveret_frigiver", { p_id: id });
+    if (fFejl && !foerTransportoerMigration(fFejl)) {
+      await logDriftFejl({ kilde: "server", hvor: "Fragt: leveret frigiver", fejl: fFejl });
+    }
+  }
   // Genoptag: samme fragtfirma som det første forsøg.
   if (svar.kode === "genoptag" && svar.fragtfirma && svar.fragtfirma !== args.firma.navn) {
     const tidligere = adapterFor(svar.fragtfirma);
@@ -706,7 +739,7 @@ async function opretForsendelse(
 
 async function gemQr(admin: Admin, forsendelseId: string, qrPng: string): Promise<void> {
   const { error } = await admin.rpc("forsendelse_gem_qr", { p_id: forsendelseId, p_png: qrPng });
-  if (error) await logDriftFejl({ kilde: "server", hvor: "Fragt: gem QR-kode", fejl: error });
+  if (error && !foerTransportoerMigration(error)) await logDriftFejl({ kilde: "server", hvor: "Fragt: gem QR-kode", fejl: error });
 }
 
 // I sælgerens eget forsøg annulleres højst 2 forældreløse (og højst i 30 s),
@@ -828,6 +861,7 @@ async function forsendelseTransportoer(admin: Admin, forsendelseId: string): Pro
     .select("transportoer")
     .eq("id", forsendelseId)
     .maybeSingle<{ transportoer: string | null }>();
+  if (error && foerTransportoerMigration(error)) return null;
   if (error) throw new Error(`forsendelser (transportør): ${error.message}`);
   return erTransportoer(data?.transportoer) ? data.transportoer : null;
 }
@@ -889,8 +923,10 @@ export async function opretUdgaaendeForsendelse(
       }
       // Køberens transportør (Shipmondo) - som databasen gemte den på
       // forsendelsen ved claimet.
-      const transportoer = await forsendelseTransportoer(admin, id);
-      if ((firma.transportoerer?.length ?? 0) > 0 && (!transportoer || transportoer !== lev.transportoer)) {
+      // Før migrationen 20261024010000 findes kolonnen ikke: altid DAO.
+      const harValg = (firma.transportoerer?.length ?? 0) > 0;
+      const transportoer = harValg ? ((await forsendelseTransportoer(admin, id)) ?? "dao") : null;
+      if (harValg && transportoer !== (erTransportoer(lev.transportoer) ? lev.transportoer : "dao")) {
         throw new FragtFejl("Køberens levering er ændret. Prøv igen.");
       }
       const { titel, vaegtGram } = await vaegtOgTitel(admin, tradeId);
@@ -985,7 +1021,7 @@ export async function opretReturForsendelse(
         pakkeshopId: null,
         vaegtGram: vaegtGram ?? MAKS_GRAM_STANDARD[pakkestoerrelse],
         // Samme transportør som den udgående pakke (sat af databasen).
-        transportoer: await forsendelseTransportoer(admin, id),
+        transportoer: (await forsendelseTransportoer(admin, id)) ?? ((firma.transportoerer?.length ?? 0) > 0 ? "dao" : null),
       };
     },
   });
@@ -1201,7 +1237,19 @@ async function annullerForsendelse(
   // labelgrænsen (Shipmondo/DAO, forsendelse_claim), og en returkode kan
   // erstattes uden ny betaling.
   const { error: bFejl } = await admin.rpc("forsendelse_annullering_bekraeftet", { p_id: forsendelseId });
-  if (bFejl) await logDriftFejl({ kilde: "server", hvor: "Fragt: annullering bekræftet", fejl: bFejl });
+  if (bFejl) {
+    // Labelen ER annulleret, men bekræftelsen er ikke gemt: stop her - ingen
+    // ny returkode uden betaling (returBekraeftet), og labelen tæller stadig
+    // i labelgrænsen. Før migrationen findes funktionen ikke (stille).
+    if (!foerTransportoerMigration(bFejl)) {
+      await logDriftFejl({ kilde: "server", hvor: "Fragt: annullering bekræftet", fejl: bFejl });
+      await admin.rpc("forsendelse_marker_opmaerksomhed", {
+        p_id: forsendelseId,
+        p_note: "Fragtfirmaet har bekræftet annulleringen, men BidHamr kunne ikke gemme det. Tjek labelgrænsen og en evt. returkode.",
+      });
+    }
+    return { ok: true };
+  }
   await returBekraeftet();
   return { ok: true };
 }
@@ -1409,16 +1457,39 @@ async function udfoerHandelseffekter(admin: Admin, forsendelseId: string): Promi
 export async function findForsendelseInfo(
   fragtfirma: string,
   ref: { forsendelsesId?: string | null; sporingsnummer?: string | null },
-): Promise<{ id: string; transportoer: string | null } | null> {
+): Promise<({ id: string; transportoer: string | null } & ForsendelseKontekst) | null> {
   const id = await findForsendelse(fragtfirma, ref);
   if (!id) return null;
-  const { data, error } = await createAdminClient()
+  const admin = createAdminClient();
+  type Raekke = { trade_id: string; type: "udgaaende" | "retur"; levering: string | null; modtager: Adresse | null; transportoer?: string | null };
+  let { data, error } = await admin
     .from("forsendelser")
-    .select("transportoer")
+    .select("trade_id, type, levering, modtager, transportoer")
     .eq("id", id)
-    .maybeSingle<{ transportoer: string | null }>();
+    .maybeSingle<Raekke>();
+  if (error && foerTransportoerMigration(error)) {
+    ({ data, error } = await admin
+      .from("forsendelser")
+      .select("trade_id, type, levering, modtager")
+      .eq("id", id)
+      .maybeSingle<Raekke>());
+  }
   if (error) throw new DbFejl(`forsendelser: ${error.message}`, error.code ?? null, null);
-  return { id, transportoer: data?.transportoer ?? null };
+  if (!data) return null;
+  // Hvor pakken skal hen: modtagerens adresse (på labelen) og - ved
+  // pakkeshop - køberens pakkeshop.
+  const steder: ForsendelseKontekst["steder"] = [];
+  if (data.modtager) steder.push({ by: data.modtager.by ?? null, postnummer: data.modtager.postnummer ?? null });
+  if (data.type === "udgaaende" && data.levering === "pakkeshop") {
+    const { data: lev, error: lFejl } = await admin
+      .from("handel_levering")
+      .select("pakkeshop_by, pakkeshop_postnummer")
+      .eq("trade_id", data.trade_id)
+      .maybeSingle<{ pakkeshop_by: string | null; pakkeshop_postnummer: string | null }>();
+    if (lFejl) throw new DbFejl(`handel_levering: ${lFejl.message}`, lFejl.code ?? null, null);
+    if (lev) steder.push({ by: lev.pakkeshop_by, postnummer: lev.pakkeshop_postnummer });
+  }
+  return { id, transportoer: data.transportoer ?? null, type: data.type, steder };
 }
 
 // Statuskoder fra en webhook, adapteren ikke kender: ændrer aldrig status.

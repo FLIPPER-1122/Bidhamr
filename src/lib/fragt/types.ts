@@ -250,6 +250,14 @@ export type WebhookResultat =
   | { ok: true; haendelser: WebhookHaendelse[]; ukendte?: UkendtSporingskode[] }
   | { ok: false; status: number; fejl: string };
 
+// Hvad webhook-ruten ved om BidHamrs forsendelse, når en hændelse fra
+// fragtfirmaet vurderes (vurderWebhookHaendelse).
+export type ForsendelseKontekst = {
+  type: "udgaaende" | "retur";
+  // Hvor pakken skal leveres: pakkeshoppen og/eller modtagerens adresse.
+  steder: { by: string | null; postnummer: string | null }[];
+};
+
 // Svar fra annullerForsendelse. bekraeftet: false = labelen er annulleret hos
 // fragtfirmaets mellemmand (Shipmondo), men transportøren har ikke bekræftet
 // det (cancelled_at_carrier). Så tæller labelen stadig i labelgrænsen, og en
@@ -295,6 +303,10 @@ export interface Fragtfirma {
   // Verificerer signaturen og oversætter fragtfirmaets webhook til
   // normaliserede hændelser. Læser selv body'en (kun én gang).
   fortolkWebhook(request: Request): Promise<WebhookResultat>;
+  // Valgfri: den endelige hændelse, når forsendelsen er kendt (Shipmondo:
+  // returtekst efter forsendelsens type, og 'leveret' kun på det rigtige
+  // sted). Hændelser med raa.vurderes = true gemmes ALDRIG uden.
+  vurderWebhookHaendelse?(h: WebhookHaendelse, k: ForsendelseKontekst): WebhookHaendelse[];
   // Pakkeshops nær en adresse/et postnummer (nærmeste først).
   soegPakkeshops(q: PakkeshopSoegning): Promise<Pakkeshop[]>;
   // Slår én pakkeshop op (validering af købers valg). null = findes ikke.

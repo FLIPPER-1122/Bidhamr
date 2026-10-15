@@ -167,6 +167,21 @@ export default async function HandelDetalje({
   const visFragtlabel = fragtLabelsAktiv() && erSaelger && venterPaaAfsendelse;
   // Forsendelse, leveringsvalg og sporing (køber og sælger), mens pakken er på vej.
   const visFragt = !afhentning && ["betaling_modtaget", "pakke_sendt", "modtaget"].includes(handel.status);
+  // Køberens leveringsvalg (parterne kan læse pakkeshoppen, ikke adressen).
+  const hentLevering = (kolonner: string) =>
+    supabase
+      .from("handel_levering")
+      .select(kolonner)
+      .eq("trade_id", handel.id)
+      .maybeSingle<{
+        maade: string;
+        fragtfirma: string | null;
+        transportoer?: string | null;
+        pakkeshop_navn: string | null;
+        pakkeshop_adresse: string | null;
+        pakkeshop_postnummer: string | null;
+        pakkeshop_by: string | null;
+      }>();
 
   // Alt, der kun afhænger af handlen, hentes samtidig (før: ét opslag ad
   // gangen, op til 12 runder til databasen efter hinanden).
@@ -242,19 +257,12 @@ export default async function HandelDetalje({
     // - til "Send pakke" - sælgerens sidst brugte afsenderadresse (RLS: egen række).
     visFragt
       ? Promise.all([
-          supabase
-            .from("handel_levering")
-            .select("maade, fragtfirma, transportoer, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by")
-            .eq("trade_id", handel.id)
-            .maybeSingle<{
-              maade: string;
-              fragtfirma: string | null;
-              transportoer: string | null;
-              pakkeshop_navn: string | null;
-              pakkeshop_adresse: string | null;
-              pakkeshop_postnummer: string | null;
-              pakkeshop_by: string | null;
-            }>(),
+          // Før migrationen 20261024010000 findes kolonnen transportoer ikke.
+          (async () => {
+            const k = "maade, fragtfirma, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by";
+            const r = await hentLevering(`${k}, transportoer`);
+            return r.error?.code === "42703" ? await hentLevering(k) : r;
+          })(),
           visFragtlabel
             ? supabase
                 .from("leveringsforslag")

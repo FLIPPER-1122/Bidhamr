@@ -26,7 +26,8 @@ import {
 //   checkout     { trade_id }
 //   levering     { trade_id, maade: "pakkeshop" | "doer", transportoer?, pakkeshop_id?, pakkeshop_postnummer?,
 //                  pakkeshop_adresse?, modtager: { navn, adresse?, postnummer?, by?, telefon }, gem_forslag? }
-//                transportoer krævet, når checkout.transportoerer ikke er tom (ellers DAO).
+//                transportoer er valgfri: "dao" | "gls" | "postnord" fra checkout.transportoerer.
+//                Sendes den ikke, bruges DAO (standard).
 //                eller { trade_id, maade: "afhentning" } (kun når checkout.afhentningMulig)
 //   book         { trade_id, afsender?: { navn, adresse, postnummer, by, telefon? } }
 //   annuller     { trade_id, forsendelse_id }

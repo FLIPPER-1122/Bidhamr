@@ -14,6 +14,7 @@ import {
   type LeveringsvalgInput,
   FRAGT_LABEL_BUCKET,
   annullerUdgaaendeForsendelse,
+  foerTransportoerMigration,
   gemLeveringsvalg,
   hentFragtpriser,
   opretUdgaaendeForsendelse,
@@ -141,11 +142,30 @@ export type Checkout = {
   labelLavet: boolean;
 };
 
+type CheckoutLevRaekke = {
+  maade: CheckoutMaade;
+  transportoer?: string | null;
+  pakkeshop_id: string | null;
+  pakkeshop_navn: string | null;
+  pakkeshop_adresse: string | null;
+  pakkeshop_postnummer: string | null;
+  pakkeshop_by: string | null;
+  modtager_navn: string | null;
+  modtager_adresse: string | null;
+  modtager_postnummer: string | null;
+  modtager_by: string | null;
+  modtager_telefon: string | null;
+  fragt_oere: number;
+  beskyttelse_ved_forsendelse_oere: number | null;
+};
+
 export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<{ ok: true; checkout: Checkout } | Fejl> {
   const h = await hentHandel(tradeId, brugerId);
   if (!h || h.buyer_id !== brugerId) return { fejl: "Handlen findes ikke." };
   const admin = createAdminClient();
-  const [a, b, l, f, forslag] = await Promise.all([
+  const levKolonner =
+    "maade, pakkeshop_id, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by, modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, fragt_oere, beskyttelse_ved_forsendelse_oere";
+  const [a, b, l0, f, forslag] = await Promise.all([
     admin
       .from("auctions")
       .select("forsendelse_mulig, afhentning_mulig, pakkestoerrelse, fragt_pakkeshop_oere, fragt_doer_oere")
@@ -158,9 +178,9 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
       .maybeSingle(),
     admin
       .from("handel_levering")
-      .select("maade, transportoer, pakkeshop_id, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by, modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, fragt_oere, beskyttelse_ved_forsendelse_oere")
+      .select(`${levKolonner}, transportoer`)
       .eq("trade_id", h.id)
-      .maybeSingle(),
+      .maybeSingle<CheckoutLevRaekke>(),
     admin
       .from("forsendelser")
       .select("id")
@@ -170,6 +190,12 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
       .limit(1),
     admin.from("leveringsforslag").select("*").eq("user_id", brugerId).maybeSingle(),
   ]);
+  // Før migrationen 20261024010000 (ingen kolonne transportoer): intet valg
+  // af fragtfirma - alt går som DAO.
+  const foerMigration = foerTransportoerMigration(l0.error);
+  const l = foerMigration
+    ? await admin.from("handel_levering").select(levKolonner).eq("trade_id", h.id).maybeSingle<CheckoutLevRaekke>()
+    : l0;
   if (a.error || b.error || l.error || f.error || forslag.error) {
     await logDriftFejl({
       kilde: "server",
@@ -183,7 +209,7 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
   const fs = forslag.data;
   const afhentning = Boolean(h.afhentning) || Number(bet?.fragt_oere ?? 0) === 0;
   const afhentningMulig = Boolean(a.data?.forsendelse_mulig) && Boolean(a.data?.afhentning_mulig);
-  const transportoerer: TransportoerValg[] = (hentFragtfirma().transportoerer ?? []).map((t) => ({
+  const transportoerer: TransportoerValg[] = (foerMigration ? [] : (hentFragtfirma().transportoerer ?? [])).map((t) => ({
     kode: t,
     navn: TRANSPORTOER_INFO[t].navn,
     leveringstid: TRANSPORTOER_INFO[t].leveringstid,
@@ -392,15 +418,40 @@ export async function hentForsendelser(
   const h = await hentHandel(tradeId, brugerId);
   if (!h) return { fejl: "Handlen findes ikke." };
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("forsendelser")
-    .select(
-      "id, type, status, fragtfirma, transportoer, levering, pakkestoerrelse, sporingsnummer, forsendelses_id, label_sti, qr_kode, qr_png, oprettet_kl, afleveret_kl, klar_til_afhentning_kl, leveret_kl, returneret_kl, annulleret_kl",
-    )
-    .eq("trade_id", h.id)
-    .neq("status", "fejlet")
-    .order("oprettet_kl", { ascending: false })
-    .limit(10);
+  type Raekke = {
+    id: string;
+    type: "udgaaende" | "retur";
+    status: string;
+    fragtfirma: string;
+    transportoer?: string | null;
+    levering: string | null;
+    pakkestoerrelse: string;
+    sporingsnummer: string | null;
+    forsendelses_id: string | null;
+    label_sti: string | null;
+    qr_kode: string | null;
+    qr_png?: string | null;
+    oprettet_kl: string;
+    afleveret_kl: string | null;
+    klar_til_afhentning_kl: string | null;
+    leveret_kl: string | null;
+    returneret_kl: string | null;
+    annulleret_kl: string | null;
+  };
+  const kolonner =
+    "id, type, status, fragtfirma, levering, pakkestoerrelse, sporingsnummer, forsendelses_id, label_sti, qr_kode, oprettet_kl, afleveret_kl, klar_til_afhentning_kl, leveret_kl, returneret_kl, annulleret_kl";
+  const hent = (k: string) =>
+    admin
+      .from("forsendelser")
+      .select(k)
+      .eq("trade_id", h.id)
+      .neq("status", "fejlet")
+      .order("oprettet_kl", { ascending: false })
+      .limit(10)
+      .returns<Raekke[]>();
+  let { data, error } = await hent(`${kolonner}, transportoer, qr_png`);
+  // Før migrationen 20261024010000: uden transportør og QR.
+  if (error && foerTransportoerMigration(error)) ({ data, error } = await hent(kolonner));
   if (error) {
     await logDriftFejl({ kilde: "server", hvor: "Fragt: hent forsendelser", fejl: error });
     return { fejl: GENERISK };

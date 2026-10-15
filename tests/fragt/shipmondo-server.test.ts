@@ -93,6 +93,15 @@ function webhook(payload: unknown, noegle = WEBHOOK) {
 }
 const params = { params: Promise.resolve({ firma: "shipmondo" }) };
 
+// En udgående pakke til en pakkeshop i Aarhus (køberen bor i Aarhus).
+const UD = {
+  id: "F1",
+  trade_id: "T1",
+  type: "udgaaende",
+  levering: "pakkeshop",
+  modtager: { navn: "Køber", by: "Aarhus C", postnummer: "8000" },
+};
+
 describe("webhook-ruten /api/fragt/webhook/shipmondo", () => {
   it("forkert signatur: 401, intet gemt", async () => {
     const r = await POST(webhook(fx("monitor_gls_leveret.json"), "forkert-noegle-0123456789"), params);
@@ -101,7 +110,7 @@ describe("webhook-ruten /api/fragt/webhook/shipmondo", () => {
   });
 
   it("leveret med samme transportør som forsendelsen: gemmes", async () => {
-    raekker.forsendelser = { id: "F1", transportoer: "gls" };
+    raekker.forsendelser = { ...UD, transportoer: "gls" };
     const r = await POST(webhook(fx("monitor_gls_leveret.json")), params);
     expect(r.status).toBe(200);
     const reg = rpcLog.filter((x) => x.fn === "forsendelse_registrer_haendelse");
@@ -110,7 +119,7 @@ describe("webhook-ruten /api/fragt/webhook/shipmondo", () => {
   });
 
   it("leveret fra en ANDEN transportør end forsendelsens: gemmes ikke (leveret_kl styrer pengene)", async () => {
-    raekker.forsendelser = { id: "F1", transportoer: "postnord" };
+    raekker.forsendelser = { ...UD, transportoer: "postnord" };
     const r = await POST(webhook(fx("monitor_gls_leveret.json")), params);
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ gemt: 0, forkertTransportoer: 1 });
@@ -118,8 +127,38 @@ describe("webhook-ruten /api/fragt/webhook/shipmondo", () => {
     expect(vi.mocked(logDriftFejl).mock.calls.map((c) => (c[0] as { hvor?: string }).hvor)).toContain("Fragt: forkert transportør");
   });
 
+  it("leveret i en anden by end pakkeshoppen: markering til staff, ALDRIG leveret", async () => {
+    raekker.forsendelser = { ...UD, transportoer: "gls" };
+    raekker.handel_levering = { pakkeshop_by: "Aarhus C", pakkeshop_postnummer: "8000" };
+    const p = fx("monitor_gls_leveret.json") as { data: Record<string, unknown> };
+    const r = await POST(webhook({ ...p, data: { ...p.data, city: "Odense SØ" } }), params);
+    expect(r.status).toBe(200);
+    const reg = rpcLog.filter((x) => x.fn === "forsendelse_registrer_haendelse");
+    expect(reg.map((x) => x.args.p_type)).toEqual(["fejl"]);
+  });
+
+  it("returpakke: returteksten bruges ikke - leveret hos sælgeren gemmes som leveret", async () => {
+    raekker.forsendelser = {
+      ...UD,
+      type: "retur",
+      levering: "retur",
+      modtager: { navn: "Sælger", by: "Odense C", postnummer: "5000" },
+      transportoer: "postnord",
+    };
+    await POST(webhook(fx("monitor_postnord_leveret_retur.json")), params);
+    const reg = rpcLog.filter((x) => x.fn === "forsendelse_registrer_haendelse");
+    expect(reg.map((x) => x.args.p_type)).toEqual(["leveret"]);
+  });
+
+  it("udgående: leveret med returtekst gemmes som returneret", async () => {
+    raekker.forsendelser = { ...UD, transportoer: "postnord" };
+    await POST(webhook(fx("monitor_postnord_leveret_retur.json")), params);
+    const reg = rpcLog.filter((x) => x.fn === "forsendelse_registrer_haendelse");
+    expect(reg.map((x) => x.args.p_type)).toEqual(["returneret"]);
+  });
+
   it("ukendt status: registreres som ukendt kode og ændrer intet", async () => {
-    raekker.forsendelser = { id: "F1", transportoer: "dao" };
+    raekker.forsendelser = { ...UD, transportoer: "dao" };
     const r = await POST(webhook(fx("monitor_ukendt_status.json")), params);
     expect(r.status).toBe(200);
     expect(fns()).toEqual(["fragt_ukendt_kode_registrer"]);

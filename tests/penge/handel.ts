@@ -119,6 +119,7 @@ export async function opretHandel(o: {
     trade_id: t.id,
     maade: "pakkeshop",
     fragtfirma: "shipmondo",
+    transportoer: "dao",
     pakkeshop_id: "TEST",
     pakkeshop_navn: "TEST pakkeshop",
     pakkeshop_adresse: "Testvej 1",

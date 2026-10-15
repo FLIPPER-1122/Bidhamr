@@ -126,10 +126,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ fir
         });
         continue;
       }
-      const { ny } = await registrerForsendelseshaendelse(id, h, "webhook", { effekter: false });
-      if (ny) {
-        gemt++;
-        nye.add(id);
+      // Den endelige hændelse afhænger af forsendelsen (Shipmondo: retur-
+      // tekst efter type, 'leveret' kun på det rigtige sted). En foreløbig
+      // hændelse gemmes aldrig uden vurdering.
+      const endelige = adapter.vurderWebhookHaendelse
+        ? adapter.vurderWebhookHaendelse(h, { type: info.type, steder: info.steder })
+        : (h.raa as { vurderes?: unknown } | null | undefined)?.vurderes === true
+          ? []
+          : [h];
+      for (const e of endelige) {
+        const { ny } = await registrerForsendelseshaendelse(id, e, "webhook", { effekter: false });
+        if (ny) {
+          gemt++;
+          nye.add(id);
+        }
       }
     } catch (err) {
       // Databasefejl: svar 500, så fragtfirmaet leverer igen (idempotent).

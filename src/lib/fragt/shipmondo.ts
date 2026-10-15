@@ -61,6 +61,7 @@ import { beregnAfstandKm } from "@/lib/distance";
 import {
   type Adresse,
   type ForsendelseInput,
+  type ForsendelseKontekst,
   type Fragtfirma,
   type OprettetForsendelse,
   type Pakkeshop,
@@ -355,7 +356,7 @@ async function findMedReference(id: string): Promise<ShipmondoForsendelse | null
   const reference = shipmondoReference(id);
   const liste = await kald<ShipmondoForsendelse[]>(
     "GET",
-    `/shipments?reference=${encodeURIComponent(reference)}&per_page=5`,
+    `/shipments?reference=${encodeURIComponent(reference)}&per_page=50`,
   );
   return (Array.isArray(liste) ? liste : []).find((s) => s.reference === reference || s.reference === id) ?? null;
 }
@@ -453,7 +454,9 @@ async function opret(input: ForsendelseInput, retur: boolean): Promise<OprettetF
     }
   };
   let r = await post(body);
-  if (r.afvist && reserveBody) r = await post(reserveBody);
+  // Reserven (GLS-retur) KUN ved 422: Shipmondo/GLS har afvist netop
+  // ShopReturn. Andre 4xx (fx 401/403/429) giver ikke en ny bestilling.
+  if (r.afvist && r.afvist.status === 422 && reserveBody) r = await post(reserveBody);
   if (r.afvist) {
     throw new FragtFejl(
       r.afvist.status === 422 ? "Fragtfirmaet kunne ikke oprette pakken. Tjek adresserne og prøv igen." : GENERISK,
@@ -665,7 +668,10 @@ type Monitor = {
   carrier_track_id?: string | null;
   weight?: string | null;
   city?: string | null;
+  zipcode?: string | null;
+  postal_code?: string | null;
 };
+
 
 // Shipment Monitor-statusser (shipmondo.dev, "Resources and actions"). Samme
 // for alle transportører - Shipmondo oversætter DAO's, GLS' og PostNords
@@ -702,18 +708,55 @@ function renKode(v: unknown): string {
 // Shipment Monitor-hændelse -> normaliseret type. Ren funktion.
 //   { type } kendt status (type kan være null = ingen statusændring)
 //   { ukendt } ukendt status eller transportør - ændrer aldrig status
-// leveret gives KUN for DELIVERED uden returtekst: leveret_kl styrer
-// frigivelsen af penge. DELIVERED med returtekst (pakken er leveret tilbage
-// til afsenderen) bliver 'returneret' - aldrig 'leveret'.
-export function monitorTilType(m: Monitor): { type: SporingsType | null; ukendt?: undefined } | { ukendt: string; type?: undefined } {
+// forsendelseType styrer returteksten:
+//   - retur (køber -> sælger): teksten bruges ALDRIG (en returpakke kan hedde
+//     "retur" hos fragtfirmaet).
+//   - udgående: kun ved DELIVERED - "leveret" med returtekst er leveret
+//     tilbage til afsenderen og bliver 'returneret', aldrig 'leveret'.
+// leveret_kl styrer frigivelsen af penge; stedet tjekkes desuden i
+// vurderMonitorHaendelse.
+export function monitorTilType(
+  m: Monitor,
+  forsendelseType: "udgaaende" | "retur",
+): { type: SporingsType | null; ukendt?: undefined } | { ukendt: string; type?: undefined } {
   const status = String(m.current_status ?? "").toUpperCase();
   const tekst = String(m.current_status_text ?? "");
   if (!transportoerFraCarrier(m.carrier_code)) return { ukendt: `carrier:${renKode(m.carrier_code) || "tom"}` };
   if (!Object.hasOwn(MONITOR_STATUSSER, status)) return { ukendt: renKode(status) || "tom" };
-  if (RETUR_TEKST.test(tekst)) return { type: "returneret" };
+  if (forsendelseType === "udgaaende" && status === "DELIVERED" && RETUR_TEKST.test(tekst)) return { type: "returneret" };
   return { type: MONITOR_STATUSSER[status] };
 }
 
+// By til sammenligning: første ord, små bogstaver ("ODENSE C" -> "odense",
+// "København Ø" -> "københavn").
+function byNoegle(by: string | null | undefined): string {
+  return String(by ?? "").toLowerCase().replace(/[^a-zæøåäöüé\s-]/g, " ").trim().split(/[\s-]+/)[0] ?? "";
+}
+
+// Passer stedet, Shipmondo melder pakken leveret, med hvor den skulle hen?
+// Postnummer (hvis Shipmondo sender det) eller byen (første ord - også byen
+// fra postnummeret). Uden by fra Shipmondo: nej (staff ser på det).
+export function stedPasser(
+  monitor: { by: string | null; postnummer: string | null },
+  steder: ForsendelseKontekst["steder"],
+): boolean {
+  const pn = (monitor.postnummer ?? "").trim();
+  if (/^\d{4}$/.test(pn) && steder.some((s) => s.postnummer === pn)) return true;
+  const mb = byNoegle(monitor.by);
+  if (!mb) return false;
+  const byer = new Set(
+    steder
+      .flatMap((s) => [s.by, s.postnummer ? (slaaPostnummerOp(s.postnummer)?.by ?? null) : null])
+      .map(byNoegle)
+      .filter(Boolean),
+  );
+  return byer.has(mb);
+}
+
+// Hændelserne fra én Shipment Monitor-besked. Statushændelsen er FORELØBIG
+// (raa.vurderes = true): webhook-ruten slår forsendelsen op og kalder
+// vurderMonitorHaendelse, før noget gemmes. DANGER giver desuden en
+// 'fejl'-hændelse (kun markering).
 export function monitorHaendelser(m: Monitor): { haendelser: WebhookHaendelse[]; ukendte: UkendtSporingskode[] } {
   const ud = { haendelser: [] as WebhookHaendelse[], ukendte: [] as UkendtSporingskode[] };
   if (m.shipment_id === undefined || m.shipment_id === null) return ud;
@@ -725,7 +768,8 @@ export function monitorHaendelser(m: Monitor): { haendelser: WebhookHaendelse[];
   const tekst = m.current_status_text ? String(m.current_status_text).slice(0, 300) : null;
   const transportoer = transportoerFraCarrier(m.carrier_code);
 
-  const r = monitorTilType(m);
+  // Kendt status og transportør? (Typen afgøres først med forsendelsen.)
+  const r = monitorTilType(m, "retur");
   if (r.ukendt !== undefined) {
     ud.ukendte.push({ kode: r.ukendt, liste: transportoer ?? "", beskrivelse: tekst, sporingsnummer });
     return ud;
@@ -734,11 +778,11 @@ export function monitorHaendelser(m: Monitor): { haendelser: WebhookHaendelse[];
     // En ukendt state ændrer ikke noget, men registreres.
     ud.ukendte.push({ kode: `state:${renKode(state)}`, liste: transportoer ?? "", beskrivelse: tekst, sporingsnummer });
   }
-  const tid =
-    m.current_status_registered_at && !Number.isNaN(Date.parse(m.current_status_registered_at))
-      ? new Date(m.current_status_registered_at).toISOString()
-      : new Date().toISOString();
+  const registreret = m.current_status_registered_at ?? null;
+  const harTid = !!registreret && !Number.isNaN(Date.parse(registreret));
+  const tid = harTid ? new Date(registreret!).toISOString() : new Date().toISOString();
   const maaltVaegt = m.weight && /^\d+(\.\d+)?$/.test(m.weight) ? Math.round(Number(m.weight) * 1000) : null;
+  const postnummer = String(m.zipcode ?? m.postal_code ?? "").trim().slice(0, 10) || null;
   const raa = {
     status: status || null,
     state: state || null,
@@ -747,13 +791,17 @@ export function monitorHaendelser(m: Monitor): { haendelser: WebhookHaendelse[];
     // Fragtfirmaets målte vægt i gram (bevis i sager), hvis den er med.
     maalt_vaegt_gram: maaltVaegt,
     by: m.city ? String(m.city).slice(0, 80) : null,
+    postnummer,
   };
   const basis = { forsendelsesId: id, sporingsnummer, transportoer, tidspunkt: tid, beskrivelse: tekst };
   if (r.type) {
-    ud.haendelser.push({ ...basis, type: r.type, noegle: `shipmondo:${id}:${status}:${state}:${tid}`, raa });
+    // Uden tidspunkt fra Shipmondo: nøglen uden tid, så samme besked to
+    // gange stadig er én hændelse.
+    const noegle = `shipmondo:${id}:${status}:${state}:${harTid ? tid : "uden-tid"}`;
+    ud.haendelser.push({ ...basis, type: r.type, noegle, raa: { ...raa, vurderes: true } });
   }
   // DANGER: markering til staff (ændrer ikke status). Én pr. status.
-  if (state === "DANGER" && r.type !== "fejl" && r.type !== "returneret") {
+  if (state === "DANGER") {
     ud.haendelser.push({
       ...basis,
       type: "fejl",
@@ -763,6 +811,49 @@ export function monitorHaendelser(m: Monitor): { haendelser: WebhookHaendelse[];
     });
   }
   return ud;
+}
+
+// Den endelige hændelse, når forsendelsen er kendt (webhook-ruten). Ren
+// funktion; 0 eller 1 hændelse.
+//   - returteksten efter forsendelsens type (monitorTilType)
+//   - 'leveret' kun, når stedet passer med pakkeshoppen/modtageren - ellers
+//     en 'fejl' (markering til staff), og leveret_kl sættes ikke.
+export function vurderMonitorHaendelse(h: WebhookHaendelse, k: ForsendelseKontekst): WebhookHaendelse[] {
+  const raa = (h.raa ?? {}) as Record<string, unknown>;
+  if (raa.vurderes !== true) return [h];
+  const t = erTransportoer(raa.transportoer) ? raa.transportoer : null;
+  const r = monitorTilType(
+    {
+      carrier_code: t ? PRODUKTER[t].carrier : null,
+      current_status: typeof raa.status === "string" ? raa.status : "",
+      current_status_text: typeof raa.tekst === "string" ? raa.tekst : null,
+    },
+    k.type,
+  );
+  if (!r.type) return [];
+  const rest: Record<string, unknown> = { ...raa };
+  delete rest.vurderes;
+  if (r.type === "leveret") {
+    const sted = {
+      by: typeof raa.by === "string" ? raa.by : null,
+      postnummer: typeof raa.postnummer === "string" ? raa.postnummer : null,
+    };
+    if (!stedPasser(sted, k.steder)) {
+      const forventet =
+        k.steder.map((s) => [s.postnummer, s.by].filter(Boolean).join(" ")).filter(Boolean).join(" / ") || "ukendt";
+      const meldt = [sted.postnummer, sted.by].filter(Boolean).join(" ") || "ukendt by";
+      return [
+        {
+          ...h,
+          type: "fejl",
+          noegle: `${h.noegle}:sted`,
+          beskrivelse: `Shipmondo melder pakken leveret i ${meldt}, men den skulle leveres i ${forventet}. Den er ikke registreret som leveret - tjek sporingen hos fragtfirmaet.`.slice(0, 300),
+          raa: rest,
+        },
+      ];
+    }
+  }
+  return [{ ...h, type: r.type, raa: rest }];
 }
 
 async function fortolk(request: Request): Promise<WebhookResultat> {
@@ -848,6 +939,7 @@ export const shipmondoFirma: Fragtfirma = {
   },
 
   fortolkWebhook: fortolk,
+  vurderWebhookHaendelse: vurderMonitorHaendelse,
   soegPakkeshops: soeg,
 
   async hentPakkeshop(id, naer) {

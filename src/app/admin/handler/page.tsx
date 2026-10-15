@@ -133,12 +133,14 @@ async function HandlerIndhold({
   ] = await Promise.all([
     supabase.from("trades").select(KOLONNER).order("created_at", { ascending: false }).limit(500),
     supabase.rpc("admin_haengende_handler"),
-    supabase
-      .from("forsendelser")
-      .select("id, trade_id, type, status, fragtfirma, transportoer, sporingsnummer, opmaerksomhed_tekst, opdateret_kl")
-      .eq("kraever_opmaerksomhed", true)
-      .order("opdateret_kl", { ascending: true })
-      .limit(200),
+    // Før migrationen 20261024010000 findes kolonnen transportoer ikke.
+    (async () => {
+      const hent = (k: string) =>
+        supabase.from("forsendelser").select(k).eq("kraever_opmaerksomhed", true).order("opdateret_kl", { ascending: true }).limit(200).returns<FragtRow[]>();
+      const k = "id, trade_id, type, status, fragtfirma, sporingsnummer, opmaerksomhed_tekst, opdateret_kl";
+      const r = await hent(`${k}, transportoer`);
+      return r.error?.code === "42703" ? await hent(k) : r;
+    })(),
   ]);
   if (haengerFejl) console.error("admin_haengende_handler fejlede:", haengerFejl.message);
   if (fragtFejl) console.error("Forsendelser til staff kunne ikke hentes:", fragtFejl.message);

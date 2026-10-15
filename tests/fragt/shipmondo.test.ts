@@ -17,13 +17,16 @@ import {
   servicekoder,
   shipmondoFirma,
   signerJwtHs256,
+  stedPasser,
   vaelgProdukt,
+  vurderMonitorHaendelse,
 } from "@/lib/fragt/shipmondo";
 import {
   FragtAnnulleringIkkeMulig,
   FragtFejl,
   FragtUkendtUdfald,
   type ForsendelseInput,
+  type ForsendelseKontekst,
   type Transportoer,
 } from "@/lib/fragt/types";
 
@@ -289,6 +292,12 @@ describe("returlabel (køber -> sælger)", () => {
     expect(o.qrPng).toBeNull();
     expect(o.label?.type).toBe("pdf");
   });
+
+  it.each([400, 401, 403, 429])("GLS: %i på ShopReturn giver INGEN reserve-bestilling", async (status) => {
+    saetSvar(json([]), json({ error: "nej" }, status));
+    await expect(shipmondoFirma.opretReturforsendelse(retur("gls"))).rejects.toBeInstanceOf(FragtFejl);
+    expect(kald.filter((k) => k.metode === "POST")).toHaveLength(1);
+  });
 });
 
 // ------------------------------------------------------------ annullering
@@ -398,16 +407,34 @@ describe("webhook: signatur", () => {
     const a = await shipmondoFirma.fortolkWebhook(webhookRequest(p));
     const b = await shipmondoFirma.fortolkWebhook(webhookRequest(JSON.stringify(p)));
     expect(a).toEqual(b);
-    expect(a.ok && a.haendelser[0].type).toBe("leveret");
+    // Foreløbig: endelig type først efter vurdering med forsendelsen.
+    expect(a.ok && a.haendelser[0].raa?.vurderes).toBe(true);
   });
 });
 
 describe("webhook: statuskoder (fælles for DAO, GLS og PostNord)", () => {
-  const typer = async (fil: string) => {
-    const r = await shipmondoFirma.fortolkWebhook(webhookRequest(fx(fil)));
+  // Køberen i Aarhus (pakkeshop i 8000), sælgeren i Odense.
+  const UD: ForsendelseKontekst = { type: "udgaaende", steder: [{ by: "Aarhus C", postnummer: "8000" }] };
+  const RETUR: ForsendelseKontekst = { type: "retur", steder: [{ by: "Odense C", postnummer: "5000" }] };
+
+  const fortolk = async (payload: unknown) => {
+    const r = await shipmondoFirma.fortolkWebhook(webhookRequest(payload));
     if (!r.ok) throw new Error(r.fejl);
     return r;
   };
+  // Som webhook-ruten: hændelserne vurderes med forsendelsen.
+  const typer = async (fil: string, k: ForsendelseKontekst = UD, over: Record<string, unknown> = {}) => {
+    const p = fx(fil) as { data: Record<string, unknown> };
+    const r = await fortolk({ ...p, data: { ...p.data, ...over } });
+    return { ...r, haendelser: r.haendelser.flatMap((h) => vurderMonitorHaendelse(h, k)) };
+  };
+
+  it("foreløbige hændelser er markeret til vurdering (gemmes aldrig uden)", async () => {
+    const r = await fortolk(fx("monitor_gls_leveret.json"));
+    expect(r.haendelser[0].raa?.vurderes).toBe(true);
+    const v = vurderMonitorHaendelse(r.haendelser[0], UD);
+    expect(v[0].raa?.vurderes).toBeUndefined();
+  });
 
   it("DAO EN_ROUTE -> i_transit, AVAILABLE_FOR_DELIVERY -> klar_til_afhentning", async () => {
     const a = await typer("monitor_dao_undervejs.json");
@@ -416,7 +443,7 @@ describe("webhook: statuskoder (fælles for DAO, GLS og PostNord)", () => {
     expect((await typer("monitor_dao_klar.json")).haendelser.map((h) => h.type)).toEqual(["klar_til_afhentning"]);
   });
 
-  it("GLS DELIVERED -> leveret (med målt vægt i gram)", async () => {
+  it("GLS DELIVERED på det rigtige sted -> leveret (med målt vægt i gram)", async () => {
     const r = await typer("monitor_gls_leveret.json");
     expect(r.haendelser).toHaveLength(1);
     expect(r.haendelser[0]).toMatchObject({ type: "leveret", transportoer: "gls", forsendelsesId: "69835919" });
@@ -429,9 +456,69 @@ describe("webhook: statuskoder (fælles for DAO, GLS og PostNord)", () => {
     expect(r.haendelser[0]).toMatchObject({ type: "i_transit", transportoer: "postnord" });
   });
 
-  it("DELIVERED med returtekst bliver ALDRIG leveret (pengene frigives ikke)", async () => {
-    const r = await typer("monitor_postnord_leveret_retur.json");
-    expect(r.haendelser.map((h) => h.type)).toEqual(["returneret"]);
+  describe("leveret_kl: by/postnummer skal passe", () => {
+    it("leveret i en anden by end pakkeshoppen/modtageren -> markering (fejl), aldrig leveret", async () => {
+      const r = await typer("monitor_gls_leveret.json", UD, { city: "Odense SØ" });
+      expect(r.haendelser.map((h) => h.type)).toEqual(["fejl"]);
+      expect(r.haendelser[0].noegle).toMatch(/:sted$/);
+      expect(r.haendelser[0].beskrivelse).toContain("Odense SØ");
+    });
+
+    it("uden by fra Shipmondo -> markering, ikke leveret", async () => {
+      const r = await typer("monitor_gls_leveret.json", UD, { city: "" });
+      expect(r.haendelser.map((h) => h.type)).toEqual(["fejl"]);
+    });
+
+    it("postnummeret passer (selv om byen staves anderledes) -> leveret", async () => {
+      const r = await typer("monitor_gls_leveret.json", UD, { city: "Århus", zipcode: "8000" });
+      expect(r.haendelser.map((h) => h.type)).toEqual(["leveret"]);
+    });
+
+    it("bydel og versaler gør ikke noget (første ord)", () => {
+      expect(stedPasser({ by: "AARHUS N", postnummer: null }, UD.steder)).toBe(true);
+      expect(stedPasser({ by: "København Ø", postnummer: null }, [{ by: null, postnummer: "2100" }])).toBe(true);
+      expect(stedPasser({ by: "Vejle", postnummer: "7100" }, UD.steder)).toBe(false);
+    });
+
+    it("leveret_kl sættes kun ved DELIVERED - aldrig ved andre statusser", async () => {
+      for (const status of ["EN_ROUTE", "AVAILABLE_FOR_DELIVERY", "INFORMED", "GENERAL", "PICKUP_REQUESTED"]) {
+        const r = await typer("monitor_gls_leveret.json", UD, { current_status: status });
+        expect(r.haendelser.map((h) => h.type)).not.toContain("leveret");
+      }
+    });
+  });
+
+  describe("returtekst efter forsendelsens type", () => {
+    it("udgående: DELIVERED med returtekst -> returneret (leveret tilbage til afsenderen), aldrig leveret", async () => {
+      const r = await typer("monitor_postnord_leveret_retur.json", UD);
+      expect(r.haendelser.map((h) => h.type)).toEqual(["returneret"]);
+    });
+
+    it("udgående: returtekst ved EN_ROUTE ændrer intet (kun ved DELIVERED)", async () => {
+      const r = await typer("monitor_postnord_undervejs.json", UD, { current_status_text: "Returned to sender" });
+      expect(r.haendelser.map((h) => h.type)).toEqual(["i_transit"]);
+    });
+
+    it("retur: returteksten bruges aldrig - DELIVERED hos sælgeren er leveret", async () => {
+      const r = await typer("monitor_postnord_leveret_retur.json", RETUR);
+      expect(r.haendelser.map((h) => h.type)).toEqual(["leveret"]);
+    });
+
+    it("retur: DELIVERED et andet sted end hos sælgeren -> markering", async () => {
+      const r = await typer("monitor_postnord_leveret_retur.json", RETUR, { city: "Aarhus C" });
+      expect(r.haendelser.map((h) => h.type)).toEqual(["fejl"]);
+    });
+
+    it("retur: returtekst ved EN_ROUTE -> i_transit (aldrig returneret)", async () => {
+      const r = await typer("monitor_postnord_undervejs.json", RETUR, { current_status_text: "Retur til afsender" });
+      expect(r.haendelser.map((h) => h.type)).toEqual(["i_transit"]);
+    });
+
+    it("monitorTilType med type", () => {
+      const m = { carrier_code: "gls", current_status: "DELIVERED", current_status_text: "Returned to sender" };
+      expect(monitorTilType(m, "udgaaende")).toEqual({ type: "returneret" });
+      expect(monitorTilType(m, "retur")).toEqual({ type: "leveret" });
+    });
   });
 
   it("DANGER giver en ekstra fejl-hændelse (markering), status uændret", async () => {
@@ -462,19 +549,25 @@ describe("webhook: statuskoder (fælles for DAO, GLS og PostNord)", () => {
     expect(r).toEqual({ ok: true, haendelser: [] });
   });
 
-  it("samme hændelse to gange giver samme nøgle (idempotent)", () => {
+  it("samme hændelse to gange giver samme nøgle (idempotent) - også uden tidspunkt", () => {
     const m = (fx("monitor_gls_leveret.json") as { data: Record<string, unknown> }).data;
     expect(monitorHaendelser(m).haendelser[0].noegle).toBe(monitorHaendelser({ ...m }).haendelser[0].noegle);
+    const utenTid = { ...m, current_status_registered_at: null };
+    const a = monitorHaendelser(utenTid).haendelser[0].noegle;
+    expect(a).toBe("shipmondo:69835919:DELIVERED:SUCCESS:uden-tid");
+    expect(monitorHaendelser({ ...utenTid }).haendelser[0].noegle).toBe(a);
   });
 
   it("monitorTilType: kendte statusser pr. transportør", () => {
     for (const carrier of ["dao", "gls", "pdk"]) {
-      expect(monitorTilType({ carrier_code: carrier, current_status: "DELIVERED" })).toEqual({ type: "leveret" });
-      expect(monitorTilType({ carrier_code: carrier, current_status: "EN_ROUTE" })).toEqual({ type: "i_transit" });
-      expect(monitorTilType({ carrier_code: carrier, current_status: "AVAILABLE_FOR_DELIVERY" })).toEqual({ type: "klar_til_afhentning" });
-      expect(monitorTilType({ carrier_code: carrier, current_status: "GENERAL" })).toEqual({ type: null });
-      expect(monitorTilType({ carrier_code: carrier, current_status: "PICKUP_REQUESTED" })).toEqual({ type: null });
-      expect(monitorTilType({ carrier_code: carrier, current_status: "constructor" })).toEqual({ ukendt: "CONSTRUCTOR" });
+      expect(monitorTilType({ carrier_code: carrier, current_status: "DELIVERED" }, "udgaaende")).toEqual({ type: "leveret" });
+      expect(monitorTilType({ carrier_code: carrier, current_status: "EN_ROUTE" }, "udgaaende")).toEqual({ type: "i_transit" });
+      expect(monitorTilType({ carrier_code: carrier, current_status: "AVAILABLE_FOR_DELIVERY" }, "udgaaende")).toEqual({
+        type: "klar_til_afhentning",
+      });
+      expect(monitorTilType({ carrier_code: carrier, current_status: "GENERAL" }, "udgaaende")).toEqual({ type: null });
+      expect(monitorTilType({ carrier_code: carrier, current_status: "PICKUP_REQUESTED" }, "udgaaende")).toEqual({ type: null });
+      expect(monitorTilType({ carrier_code: carrier, current_status: "constructor" }, "udgaaende")).toEqual({ ukendt: "CONSTRUCTOR" });
     }
   });
 });

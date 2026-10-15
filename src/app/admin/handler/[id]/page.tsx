@@ -120,12 +120,14 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
     admin.from("auctions").select("id, titel").eq("id", h.auction_id).maybeSingle<{ id: string; titel: string }>(),
     admin.from("users").select("id, navn, email").in("id", [h.buyer_id, h.seller_id]),
     admin.from("betalinger").select(betalingKolonner).eq("trade_id", h.id).maybeSingle(),
-    admin
-      .from("forsendelser")
-      .select("id, type, status, transportoer, sporingsnummer, opmaerksomhed_tekst, kraever_opmaerksomhed, opdateret_kl, returneret_kl, leveret_kl")
-      .eq("trade_id", h.id)
-      .order("opdateret_kl", { ascending: false })
-      .limit(10),
+    // Før migrationen 20261024010000 findes kolonnen transportoer ikke.
+    (async () => {
+      const hent = (k: string) =>
+        admin.from("forsendelser").select(k).eq("trade_id", h.id).order("opdateret_kl", { ascending: false }).limit(10).returns<Forsendelse[]>();
+      const k = "id, type, status, sporingsnummer, opmaerksomhed_tekst, kraever_opmaerksomhed, opdateret_kl, returneret_kl, leveret_kl";
+      const r = await hent(`${k}, transportoer`);
+      return r.error?.code === "42703" ? await hent(k) : r;
+    })(),
     admin.from("sager").select("id, status, type, oprettet_kl").eq("trade_id", h.id).order("oprettet_kl", { ascending: false }).limit(10),
     admin
       .from("moderation_log")

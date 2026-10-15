@@ -242,6 +242,12 @@ Pr. fragtfirma (sandbox 15. okt. 2026 – oprettet med BidHamrs adapter og annul
   `INFORMED`/`PICKUP_REQUESTED`/`GENERAL` → ingen hændelse; `current_state: DANGER` → en ekstra `fejl`-hændelse
   (markering). En tekst med "retur/return/til afsender" giver `returneret` (også ved `DELIVERED` – leveret tilbage
   til afsenderen må aldrig frigive penge). Ukendte statusser og transportører gemmes i `fragt_ukendte_koder`.
+- Webhook-hændelser vurderes med forsendelsen (`vurderMonitorHaendelse`): på en **returpakke** bruges returteksten
+  aldrig; på en **udgående** kun ved DELIVERED. `leveret` kræver, at Shipmondos by/postnummer passer med pakkeshoppen
+  eller modtageren – ellers en markering til staff, og leveret_kl sættes ikke.
+- **Shipmondos leveret frigiver ikke pengene efter 14 dage**, før `SHIPMONDO_LEVERET_FRIGIVER=true`
+  (`forsendelser.leveret_frigiver`, sat ved oprettelsen; `handel_auto_frigiv` kræver den). Købers "modtaget" er uændret.
+- Køberens fragtfirma: mangler det (gammel kode, appen), bruges DAO. Koden tåler, at migrationen ikke er kørt endnu.
 - "Ikke afhentet" automatisk kun med `SHIPMONDO_RETUR_ER_IKKE_AFHENTET=true` (Shipment Monitor har ingen
   retur-status – det er en tekst). Ellers markering til staff, som trykker "Ikke afhentet".
 - Efterlysning efter 14 dage: Shipmondo har intet API til det – staff får opgaven (`fragt_efterlysninger`, status

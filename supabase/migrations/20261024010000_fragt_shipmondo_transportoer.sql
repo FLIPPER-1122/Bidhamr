@@ -11,8 +11,10 @@
 --      (triggeren forsendelser_transportoer: købers valg for en udgående, den
 --      udgående pakkes for en retur) og kan derefter ikke ændres. Gamle
 --      Shipmondo-rækker var altid DAO og får 'dao'.
---   2. handel_gem_levering gemmer købers transportør (og kræver den ved
---      Shipmondo); handel_checkout viser den i 'valgt' (appen).
+--   2. handel_gem_levering gemmer købers transportør ved Shipmondo (mangler
+--      den - fx fra gammel kode eller den nuværende app - bruges 'dao', så
+--      rækkefølgen af migration og deploy er ligegyldig; en ukendt værdi
+--      afvises); handel_checkout viser den i 'valgt' (appen).
 --   3. Labelgrænsen (forsendelse_claim): en Shipmondo-label, som
 --      transportøren har BEKRÆFTET annulleret (cancelled_at_carrier -
 --      forsendelser.annullering_bekraeftet_kl), tæller ikke i "højst 2 labels
@@ -25,6 +27,12 @@
 --      til den part, der skal sende pakken.
 --   5. fragt_ukendte_koder: Shipmondos statuskoder (tekst, fx "EN_ROUTE") og
 --      transportøren som liste - ukendte koder ændrer aldrig status.
+--   6. forsendelser.leveret_frigiver: Shipmondos "leveret" må ikke starte
+--      14-dages-frigivelsen (handel_auto_frigiv), før Filip har set rigtige
+--      webhooks og slået SHIPMONDO_LEVERET_FRIGIVER=true til. Databasen sætter
+--      false for Shipmondo-forsendelser; serveren slår den til ved
+--      oprettelsen (forsendelse_leveret_frigiver), når flaget er sat.
+--      Købers "Jeg har modtaget pakken" (48 timer) er uændret.
 --
 -- Nye funktioner: security definer, search_path = '', kun service_role.
 -- Ændrede funktioner, der ligger i produktion, rettes på stedet med
@@ -109,12 +117,28 @@ alter table public.forsendelser
   -- QR-koden til indlevering uden printer (PNG i base64).
   add column if not exists qr_png                     text;
 
+-- Må fragtfirmaets 'leveret' starte 14-dages-frigivelsen? Kun første gang:
+-- eksisterende Shipmondo-forsendelser uden leveret-melding frigiver ikke
+-- (genkørsel rører ikke værdier, serveren har slået til).
+do $do$
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'forsendelser'
+                    and column_name = 'leveret_frigiver') then
+    alter table public.forsendelser add column leveret_frigiver boolean not null default true;
+    update public.forsendelser set leveret_frigiver = false
+     where fragtfirma = 'shipmondo' and leveret_kl is null;
+  end if;
+end $do$;
+
 comment on column public.handel_levering.transportoer is
   'Købers valgte transportør ved Shipmondo: dao | gls | postnord (null ved andre fragtfirmaer og afhentning).';
 comment on column public.forsendelser.transportoer is
   'Transportøren, labelen er lavet hos (sat af databasen ved oprettelsen, kan ikke ændres).';
 comment on column public.forsendelser.annullering_bekraeftet_kl is
   'Transportøren har bekræftet annulleringen - labelen tæller ikke i labelgrænsen, og en returkode kan erstattes.';
+comment on column public.forsendelser.leveret_frigiver is
+  'false = fragtfirmaets leveret-melding frigiver ikke penge efter 14 dage (Shipmondo, indtil SHIPMONDO_LEVERET_FRIGIVER=true).';
 comment on column public.forsendelser.qr_png is
   'QR-kode til indlevering uden printer (PNG, base64). Kun service_role.';
 
@@ -156,27 +180,29 @@ set search_path = ''
 as $fn$
 begin
   if tg_op = 'INSERT' then
-    if new.transportoer is null then
-      if new.fragtfirma = 'dao' then
-        new.transportoer := 'dao';
-      elsif new.fragtfirma = 'shipmondo' then
-        if new.type = 'udgaaende' then
-          -- Købers valg (låst, når labelen er lavet: handel_gem_levering 'laast').
-          select hl.transportoer into new.transportoer
-            from public.handel_levering hl
-           where hl.trade_id = new.trade_id and hl.fragtfirma = 'shipmondo';
-        else
-          -- Retur: samme transportør som den udgående pakke (den aktive først).
-          select f.transportoer into new.transportoer
-            from public.forsendelser f
-           where f.trade_id = new.trade_id and f.type = 'udgaaende' and f.fragtfirma = 'shipmondo'
-             and f.transportoer is not null
-           order by (f.status in ('annulleret', 'fejlet')), f.oprettet_kl desc
-           limit 1;
-        end if;
-        -- Gamle Shipmondo-handler (før valget) var altid DAO.
-        new.transportoer := coalesce(new.transportoer, 'dao');
+    -- Databasen bestemmer ALTID transportøren (en klient kan ikke vælge den
+    -- ved indsættelsen): udgående = købers valg, retur = den udgående pakkes.
+    new.transportoer := null;
+    new.leveret_frigiver := new.fragtfirma is distinct from 'shipmondo';
+    if new.fragtfirma = 'dao' then
+      new.transportoer := 'dao';
+    elsif new.fragtfirma = 'shipmondo' then
+      if new.type = 'udgaaende' then
+        -- Købers valg (låst, når labelen er lavet: handel_gem_levering 'laast').
+        select hl.transportoer into new.transportoer
+          from public.handel_levering hl
+         where hl.trade_id = new.trade_id and hl.fragtfirma = 'shipmondo';
+      else
+        -- Retur: samme transportør som den udgående pakke (den aktive først).
+        select f.transportoer into new.transportoer
+          from public.forsendelser f
+         where f.trade_id = new.trade_id and f.type = 'udgaaende' and f.fragtfirma = 'shipmondo'
+           and f.transportoer is not null
+         order by (f.status in ('annulleret', 'fejlet')), f.oprettet_kl desc
+         limit 1;
       end if;
+      -- Gamle Shipmondo-handler (før valget) var altid DAO.
+      new.transportoer := coalesce(new.transportoer, 'dao');
     end if;
     if new.annullering_bekraeftet_kl is not null or new.qr_png is not null then
       raise exception 'forsendelse_ny: annullering og QR-kode sættes først senere' using errcode = '42501';
@@ -194,6 +220,12 @@ begin
   if old.qr_png is not null and new.qr_png is distinct from old.qr_png then
     raise exception 'Forsendelsens QR-kode kan ikke ændres.' using errcode = '42501';
   end if;
+  -- leveret_frigiver kan kun slås til (af forsendelse_leveret_frigiver), og
+  -- kun før pakken er meldt leveret.
+  if new.leveret_frigiver is distinct from old.leveret_frigiver
+     and (not new.leveret_frigiver or old.leveret_kl is not null) then
+    raise exception 'leveret_frigiver kan kun slås til, før pakken er leveret.' using errcode = '42501';
+  end if;
   return new;
 end;
 $fn$;
@@ -201,7 +233,7 @@ revoke all on function public.forsendelser_transportoer() from public, anon, aut
 
 drop trigger if exists forsendelser_transportoer on public.forsendelser;
 create trigger forsendelser_transportoer
-  before insert or update of transportoer, annullering_bekraeftet_kl, qr_png on public.forsendelser
+  before insert or update of transportoer, annullering_bekraeftet_kl, qr_png, leveret_frigiver on public.forsendelser
   for each row execute function public.forsendelser_transportoer();
 
 -- Transportøren har bekræftet annulleringen (kaldes af serveren efter
@@ -221,6 +253,24 @@ end;
 $fn$;
 revoke all on function public.forsendelse_annullering_bekraeftet(uuid) from public, anon, authenticated;
 grant execute on function public.forsendelse_annullering_bekraeftet(uuid) to service_role;
+
+-- SHIPMONDO_LEVERET_FRIGIVER=true: fragtfirmaets 'leveret' må frigive (kaldes
+-- af serveren lige efter claimet, før pakken kan være leveret).
+create or replace function public.forsendelse_leveret_frigiver(p_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+begin
+  update public.forsendelser
+     set leveret_frigiver = true
+   where id = p_id and not leveret_frigiver and leveret_kl is null;
+  return found;
+end;
+$fn$;
+revoke all on function public.forsendelse_leveret_frigiver(uuid) from public, anon, authenticated;
+grant execute on function public.forsendelse_leveret_frigiver(uuid) to service_role;
 
 -- Gemmer QR-koden (PNG, base64) på en aktiv forsendelse - kun én gang.
 -- Svar: true = gemt.
@@ -264,14 +314,14 @@ begin
   raise notice 'handel_gem_levering: %', pg_temp.ps_ret(
     'public.handel_gem_levering(uuid,uuid,jsonb,text)',
     '2b8e1936694bccdf80635b7a9c2e4d5a',
-    '73ae3eb68c501079445e4384881f6f92',
+    'a1f676d61079ed6db44bbea02c7c92b4',
     jsonb_build_array(
       jsonb_build_array(
 $g$     or (v_maade = 'pakkeshop' and (v_shop is null or jsonb_typeof(v_shop) <> 'object')) then$g$,
 $n$     or (v_maade = 'pakkeshop' and (v_shop is null or jsonb_typeof(v_shop) <> 'object'))
-     -- Shipmondo (20261024010000): købers transportør er krævet.
+     -- Shipmondo (20261024010000): købers transportør (mangler den: DAO).
      or (not v_afh and v_firma = 'shipmondo'
-         and coalesce(p_valg->>'transportoer', '') not in ('dao', 'gls', 'postnord')) then$n$, 1),
+         and coalesce(p_valg->>'transportoer', 'dao') not in ('dao', 'gls', 'postnord')) then$n$, 1),
       jsonb_build_array(
 $g$      fragt_oere, beskyttelse_ved_forsendelse_oere)$g$,
 $n$      fragt_oere, beskyttelse_ved_forsendelse_oere, transportoer)$n$, 2),
@@ -280,7 +330,7 @@ $g$      0, v_gemt)$g$,
 $n$      0, v_gemt, null)$n$, 1),
       jsonb_build_array(
 $g$      v_pris, null)$g$,
-$n$      v_pris, null, case when v_firma = 'shipmondo' then p_valg->>'transportoer' end)$n$, 1),
+$n$      v_pris, null, case when v_firma = 'shipmondo' then coalesce(p_valg->>'transportoer', 'dao') end)$n$, 1),
       jsonb_build_array(
 $g$      fragt_oere = 0, beskyttelse_ved_forsendelse_oere = excluded.beskyttelse_ved_forsendelse_oere,$g$,
 $n$      fragt_oere = 0, beskyttelse_ved_forsendelse_oere = excluded.beskyttelse_ved_forsendelse_oere,
@@ -327,6 +377,29 @@ $n$       and not (p_fragtfirma = 'dao' and fragtfirma = 'dao' and status = 'ann
 $g$    if p_fragtfirma = 'dao' then$g$,
 $n$    if p_fragtfirma in ('dao', 'shipmondo') then$n$, 1)));
 end $do$;
+
+-- handel_auto_frigiv: kun en leveret-melding med leveret_frigiver starter
+-- 14-dages-frigivelsen (punkt 6). Ellers får staff opgaven som i dag.
+do $do$
+begin
+  raise notice 'handel_auto_frigiv: %', pg_temp.ps_ret(
+    'public.handel_auto_frigiv()',
+    'f7f45b6858eaa3eb527ba955e45a78f3',
+    'ead6d8ee58a73eed91465aa64f1daf3e',
+    jsonb_build_array(
+      jsonb_build_array(
+$g$                                   and fo.leveret_kl is not null))))$g$,
+$n$                                   and fo.leveret_kl is not null and fo.leveret_frigiver))))$n$, 1),
+      jsonb_build_array(
+$g$               coalesce(bool_or(fo.leveret_kl is not null), false)$g$,
+$n$               -- 20261024010000: Shipmondos leveret frigiver kun med flaget.
+               coalesce(bool_or(fo.leveret_kl is not null and fo.leveret_frigiver), false)$n$, 1),
+      jsonb_build_array(
+$g$men fragtfirmaet har ikke meldt den leveret eller afhentet. Pengene$g$,
+$n$men fragtfirmaet har ikke meldt den leveret eller afhentet (eller meldingen kom fra Shipmondo, som endnu ikke må frigive penge automatisk). Pengene$n$, 1)));
+end $do$;
+revoke all on function public.handel_auto_frigiv() from public, anon, authenticated;
+grant execute on function public.handel_auto_frigiv() to service_role;
 
 -- Grants som før (uændrede af rettelsen på stedet - gentages for en
 -- sikkerheds skyld).
