@@ -7,6 +7,7 @@
 import { useEffect, type FormEvent } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
+import StripeIndlaesningsfejl from "@/components/betaling/StripeIndlaesningsfejl";
 
 import { CHECKOUT_FORM } from "@/components/checkout/konstanter";
 
@@ -77,6 +78,7 @@ function BetalForm({ handelId, sender, onSender, onKlar, onFejl, onGenstart }: P
       <PaymentElement
         options={{ layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: true } }}
       />
+      <StripeIndlaesningsfejl />
     </form>
   );
 }

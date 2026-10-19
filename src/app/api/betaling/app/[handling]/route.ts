@@ -18,6 +18,7 @@ import {
   type HandlingsFejl,
 } from "@/lib/betaling/betalingHandlinger";
 import { brugBoost, startBoostKoeb, type BoostStartFejl } from "@/lib/betaling/boost";
+import { indbyggetOffentligNoegle } from "@/lib/stripeNoegle";
 
 // Betaling fra appen (Expo). Samme kode som hjemmesidens server actions
 // (src/lib/betaling/betalingHandlinger.ts). Dokumentation: docs/APP-BETALING.md.
@@ -146,8 +147,7 @@ function fejlSvar(r: HandlingsFejl) {
 
 // Den offentlige nøgle (pk_test_/pk_live_) til StripeProvider i appen.
 function offentligStripeNoegle(): string | null {
-  const k = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
-  return /^pk_(test|live)_[A-Za-z0-9]+$/.test(k) ? k : null;
+  return indbyggetOffentligNoegle();
 }
 
 // Sælgerens visningsnavn (users.navn - som hjemmesidens checkout viser

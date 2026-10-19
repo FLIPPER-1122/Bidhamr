@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
+import StripeIndlaesningsfejl from "@/components/betaling/StripeIndlaesningsfejl";
 import { FejlBoks } from "@/components/betaling/FejlBoks";
 
 // "Gem et kort" på Min konto. Indlæses dynamisk fra KontoBetaling, så
@@ -43,6 +44,7 @@ function GemKortForm({ onAnnuller }: { onAnnuller: () => void }) {
   return (
     <form onSubmit={gem} method="post" className="space-y-4 rounded-xl border border-kant p-4">
       <PaymentElement options={{ layout: "tabs" }} />
+      <StripeIndlaesningsfejl className="" />
       {fejl && <FejlBoks tekst={fejl} />}
       <div className="flex flex-col gap-2 sm:flex-row">
         <button type="submit" disabled={!stripe || sender} className="btn btn-primaer">

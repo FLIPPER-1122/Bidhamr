@@ -9,6 +9,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
+import StripeIndlaesningsfejl from "@/components/betaling/StripeIndlaesningsfejl";
 import { kroner } from "@/lib/kroner";
 
 type Props = {
@@ -85,6 +86,7 @@ function BetalForm({ tradeId, beloebOere, children, foerBetaling, onFejl, onGens
         <PaymentElement
           options={{ layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: true } }}
         />
+        <StripeIndlaesningsfejl />
       </div>
       <button
         type="submit"

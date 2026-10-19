@@ -3,6 +3,7 @@ import "server-only";
 import Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
+import { indbyggetOffentligNoegle, renOffentligNoegle, STRIPE_NOEGLE_MANGLER } from "@/lib/stripeNoegle";
 
 // Stripes API-version er låst til den, koden er skrevet og testet til
 // (stripe-node 22.2.2's standard). Opgraderes pakken, skal versionen skiftes
@@ -64,22 +65,31 @@ async function alarm(tekst: string) {
 
 // Den offentlige nøgle (betalingsformularen i browseren) skal være i samme
 // tilstand som den hemmelige - ellers kan køberne ikke betale de
-// PaymentIntents, serveren laver (trin 5, F07). null = ikke sat (fx scripts).
+// PaymentIntents, serveren laver (trin 5, F07). null = ikke sat eller
+// ugyldig. Samme rensning som browseren (src/lib/stripeNoegle.ts).
 // Tjekkes af kraevSammeOffentligeNoegle (nedenfor).
 export function offentligNoeglesTilstand(
-  noegle = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
+  noegle: string | null = indbyggetOffentligNoegle(),
 ): StripeTilstand | null {
-  if (/^pk_live_/.test(noegle)) return "live";
-  if (/^pk_test_/.test(noegle)) return "test";
-  return null;
+  const ren = renOffentligNoegle(noegle);
+  if (!ren) return null;
+  return ren.startsWith("pk_live_") ? "live" : "test";
 }
 
 // Kun før en NY betaling (PaymentIntent) - refusioner, udbetalinger og
 // webhooks kører videre, da de ikke bruger den offentlige nøgle.
+// Mangler den offentlige nøgle i buildet, kan betalingsformularen ikke vises
+// (Payment Element, knappen "Betal" forbliver grå) - så laves der heller
+// ingen PaymentIntent, og drift får en alarm (fejlen fra 19. okt. 2026).
 export async function kraevSammeOffentligeNoegle(): Promise<void> {
   const noegle = noeglensTilstand();
   const offentlig = offentligNoeglesTilstand();
-  if (!noegle || !offentlig || offentlig === noegle) return;
+  if (!noegle) return; // kraevSammeStripeTilstand stopper alle kald
+  if (!offentlig) {
+    await alarm(STRIPE_NOEGLE_MANGLER);
+    throw new StripeTilstandFejl(STRIPE_NOEGLE_MANGLER);
+  }
+  if (offentlig === noegle) return;
   const tekst = `Stripe-nøglerne passer ikke sammen: STRIPE_SECRET_KEY er ${noegle.toUpperCase()}, men NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY er ${offentlig.toUpperCase()} - nye betalinger er stoppet. Se docs/GO-LIVE-STRIPE.md.`;
   await alarm(tekst);
   throw new StripeTilstandFejl(tekst);
