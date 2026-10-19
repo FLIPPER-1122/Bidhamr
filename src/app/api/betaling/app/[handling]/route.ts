@@ -17,7 +17,7 @@ import {
   stripeOversigtFor,
   type HandlingsFejl,
 } from "@/lib/betaling/betalingHandlinger";
-import { brugBoost, startBoostKoeb, type BoostStartFejl } from "@/lib/betaling/boost";
+import { brugBoost, PAKKE_ID, startBoostKoeb, type BoostStartFejl } from "@/lib/betaling/boost";
 import { indbyggetOffentligNoegle } from "@/lib/stripeNoegle";
 
 // Betaling fra appen (Expo). Samme kode som hjemmesidens server actions
@@ -35,7 +35,7 @@ import { indbyggetOffentligNoegle } from "@/lib/stripeNoegle";
 //   udbetalingskonto         {}                       -> Stripes onboarding-link (åbnes i in-app browser)
 //   udbetalingskonto-status  {}                       -> henter status frisk fra Stripe
 //   stripe-oversigt          {}                       -> engangs-link til Stripes Express Dashboard
-//   boost-koeb               { samtykke? }            -> PaymentSheet-data til køb af boost-point
+//   boost-koeb               { samtykke?, pakke? }    -> PaymentSheet-data til køb af boost-point (pakke: id, uden = 100 point)
 //   boost-brug               { auktion_id, noegle }   -> booster egen auktion (noegle: uuid, samme = samme boost)
 //
 // Sikkerhed (som /api/fragt/app): kun Bearer-token - cookies bruges ikke
@@ -122,6 +122,8 @@ const BOOST_KOEB_STATUS: Record<BoostStartFejl["kode"], number> = {
   erhverv: 403,
   spaerret: 403,
   samtykke: 409,
+  pakke_ukendt: 409,
+  behandles: 409,
   pause: 503,
   betalt: 409,
   fejl: 500,
@@ -267,15 +269,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
         return svar(200, { ...r, publishableKey });
       }
       case "boost-koeb": {
-        // Køb af boost-point (100 point for 39 kr.): betaling til BidHamrs
-        // platformskonto - samme kode som hjemmesiden (src/lib/betaling/boost.ts).
+        // Køb af boost-point: betaling til BidHamrs platformskonto - samme
+        // kode som hjemmesiden (src/lib/betaling/boost.ts). pakke: valgfrit
+        // pakke-id (mine_point().pakker[].id); uden = 100-point-pakken
+        // (standardpakken), så den nuværende app virker som før.
         if (krop.samtykke !== undefined && typeof krop.samtykke !== "boolean") return svar(400, UGYLDIG);
+        if (
+          krop.pakke !== undefined &&
+          krop.pakke !== null &&
+          (typeof krop.pakke !== "string" || !PAKKE_ID.test(krop.pakke))
+        ) {
+          return svar(400, UGYLDIG);
+        }
         const publishableKey = offentligStripeNoegle();
         if (!publishableKey) {
           await logDriftFejl({ kilde: "server", sti: "/api/betaling/app/boost-koeb", fejl: "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY mangler", brugerId: bruger.id });
           return svar(500, { fejl: GENERISK, kode: "fejl" });
         }
-        const r = await startBoostKoeb(bruger.id, "app", krop.samtykke === true);
+        const r = await startBoostKoeb(
+          bruger.id,
+          "app",
+          krop.samtykke === true,
+          typeof krop.pakke === "string" ? krop.pakke : null,
+        );
         if ("fejl" in r) return svar(BOOST_KOEB_STATUS[r.kode] ?? 500, { fejl: r.fejl, kode: r.kode });
         return svar(200, {
           ok: true,
@@ -283,6 +299,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
           clientSecret: r.clientSecret,
           beloebOere: r.beloebOere,
           point: r.point,
+          pakke: r.pakke,
           customerId: r.customerId,
           customerSessionClientSecret: r.customerSessionClientSecret,
           publishableKey,

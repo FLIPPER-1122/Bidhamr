@@ -19,6 +19,11 @@
 //   F. Sluttilstand for købet: chefen refunderer det (Stripe-refusion med
 //      metadata), pointene trækkes tilbage, charge.refunded giver intet
 //      nyt, kreditnota planlægges.
+//   H. Pakkerne (19. okt. 2026): 300 point for 99 kr. og 700 for 199 kr.
+//      (kun pakkens id sendes), skift af pakke annullerer den gamle
+//      PaymentIntent hos Stripe først, ukendt pakke afvises, 700 point
+//      krediteres én gang, faktura 199 kr., chefens refusion trækker 700
+//      point tilbage.
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -203,9 +208,9 @@ describe("A. køb af boost-point", () => {
     expect(w2.status).toBe(200);
     expect(await saldo(KOEBER.id)).toBe(saldoFoer + 100);
     // Returen fra betalingen spejler også - intet nyt.
-    expect(await synkBoostRetur(KOEBER.id, koebPi)).toBe("allerede");
+    expect(await synkBoostRetur(KOEBER.id, koebPi)).toEqual({ kode: "allerede", point: 100, beloebOere: 3900 });
     // En fremmed kan ikke spejle andres køb via returen.
-    expect(await synkBoostRetur(FREMMED.id, koebPi)).toBe("ikke_fundet");
+    expect((await synkBoostRetur(FREMMED.id, koebPi)).kode).toBe("ikke_fundet");
     expect(await saldo(KOEBER.id)).toBe(saldoFoer + 100);
     const { count } = await admin()
       .from("boost_posteringer")
@@ -277,7 +282,8 @@ describe("C. boost i 24 timer for 50 point", () => {
     expect(await saldo(KOEBER.id)).toBe(foer - 50);
     const timer = (new Date(String(b1.body.slutKl)).getTime() - Date.now()) / 3_600_000;
     expect(timer).toBeGreaterThan(23.9);
-    expect(timer).toBeLessThanOrEqual(24);
+    // Lille tolerance: slut_kl sættes af databasens ur, Date.now() er testmaskinens.
+    expect(timer).toBeLessThanOrEqual(24.01);
   });
 
   it("mærket 'Boostet' og plads i toppen (anon kan læse det)", async () => {
@@ -440,6 +446,88 @@ describe("G. indsigelse på et køb - uden webhook (overvågningen)", () => {
     expect(alarmer).toContain(`indsigelse-event:${dispute.id}:won`);
     expect(await laast()).toBe(false);
     expect(await saldo(KOEBER.id)).toBe(saldoAaben); // intet trukket
+  });
+});
+
+describe("H. større pakker (Filip, 19. okt. 2026)", () => {
+  let id300 = "";
+  let pi300 = "";
+  let id700 = "";
+  let pi700 = "";
+
+  it("300 point for 99 kr.: serveren vælger pris og point ud fra pakkens id", async () => {
+    const s = await kald("boost-koeb", { pakke: "point_300" }, KOEBER);
+    expect(s.status).toBe(200);
+    expect(s.body).toMatchObject({ beloebOere: 9900, point: 300, pakke: "point_300" });
+    id300 = String(s.body.koebId);
+    pi300 = piId(String(s.body.clientSecret));
+    const pi = await stripe().paymentIntents.retrieve(pi300);
+    expect(pi.amount).toBe(9900);
+    expect(pi.metadata.point).toBe("300");
+    expect(pi.payment_method_options?.card?.request_three_d_secure).toBe("any");
+    expect(await koeb(id300)).toMatchObject({ point: 300, beloeb_oere: 9900, status: "afventer" });
+    // Samme pakke igen: samme køb og PaymentIntent.
+    const igen = await kald("boost-koeb", { pakke: "point_300" }, KOEBER);
+    expect(igen.body.koebId).toBe(id300);
+    expect(piId(String(igen.body.clientSecret))).toBe(pi300);
+  });
+
+  it("skift til 700: den gamle PaymentIntent annulleres hos Stripe først, og et nyt køb startes", async () => {
+    const s = await kald("boost-koeb", { pakke: "point_700" }, KOEBER);
+    expect(s.status).toBe(200);
+    expect(s.body).toMatchObject({ beloebOere: 19900, point: 700, pakke: "point_700" });
+    id700 = String(s.body.koebId);
+    pi700 = piId(String(s.body.clientSecret));
+    expect(id700).not.toBe(id300);
+    expect((await stripe().paymentIntents.retrieve(pi300)).status).toBe("canceled");
+    const gl = await koeb(id300);
+    expect(gl.status).toBe("annulleret");
+    expect(gl.tidligere_payment_intents).toContain(pi300);
+    expect((await stripe().paymentIntents.retrieve(pi700)).amount).toBe(19900);
+  });
+
+  it("ukendt pakke: 409 pakke_ukendt; ugyldig værdi: 400 - og intet ændres", async () => {
+    const u = await kald("boost-koeb", { pakke: "point_999" }, KOEBER);
+    expect(u.status).toBe(409);
+    expect(u.body.kode).toBe("pakke_ukendt");
+    const v = await kald("boost-koeb", { pakke: 700 }, KOEBER);
+    expect(v.status).toBe(400);
+    expect((await koeb(id700)).status).toBe("afventer");
+  });
+
+  it("betalt -> 700 point præcis én gang; kvittering og faktura med 199 kr.", async () => {
+    const foer = await saldo(KOEBER.id);
+    await udenTvungen3ds(pi700);
+    await stripe().paymentIntents.confirm(pi700, {
+      payment_method: "pm_card_bypassPending",
+      return_url: "https://bidhamr.dk/test-betaling",
+    });
+    const pi = await stripe().paymentIntents.retrieve(pi700);
+    expect(pi.status).toBe("succeeded");
+    expect((await sendWebhook("payment_intent.succeeded", pi as unknown as { id: string })).status).toBe(200);
+    expect((await sendWebhook("payment_intent.succeeded", pi as unknown as { id: string })).status).toBe(200);
+    expect(await saldo(KOEBER.id)).toBe(foer + 700);
+    expect(await synkBoostRetur(KOEBER.id, pi700)).toEqual({ kode: "allerede", point: 700, beloebOere: 19900 });
+    await admin().rpc("faktura_planlaeg_boost", { p_graense: 200 });
+    const { data } = await admin()
+      .from("fakturaer")
+      .select("dokument, beloeb_oere, moms_oere, linjer")
+      .eq("boost_koeb_id", id700);
+    expect(data).toHaveLength(1);
+    expect(data![0]).toMatchObject({ dokument: "faktura", beloeb_oere: 19900, moms_oere: 3980 });
+    expect((data![0].linjer as { tekst: string }[])[0].tekst).toBe("Boost-point (700 point)");
+  });
+
+  it("chefens refusion: 199 kr. refunderes, og pakkens 700 point trækkes tilbage", async () => {
+    const foer = await saldo(KOEBER.id);
+    const r = await staffRefunderBoostKoeb(CHEF_ID, id700, "TEST pengetest: refusion af 700-pakke");
+    expect(r).toMatchObject({ ok: true, kode: "refunderet", oensket: 700 });
+    const trukket = "ok" in r ? r.trukket : -1;
+    expect(trukket).toBe(Math.min(700, foer));
+    expect(await saldo(KOEBER.id)).toBe(foer - trukket);
+    const k = await koeb(id700);
+    expect(k.status).toBe("refunderet");
+    expect((await stripe().refunds.retrieve(k.stripe_refund_id!)).amount).toBe(19900);
   });
 });
 

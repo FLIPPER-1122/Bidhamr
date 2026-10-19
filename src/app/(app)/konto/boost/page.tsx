@@ -3,8 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import KontoSideHoved from "@/components/konto/KontoSideHoved";
-import BoostKoeb from "@/components/boost/BoostKoeb";
-import { synkBoostRetur } from "@/lib/betaling/boost";
+import BoostKoeb, { type BoostPakke } from "@/components/boost/BoostKoeb";
+import { synkBoostRetur, type BoostRetur } from "@/lib/betaling/boost";
 import { BOOST_TEKST } from "@/lib/boost/tekster";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,10 @@ type MinePoint = {
   kan_bruge: boolean;
   point_laast: boolean;
   spaerret: string | null;
-  pakke: { point: number; pris_oere: number };
+  // Standardpakken (bagudkompatibel). pakker: alle aktive pakker
+  // (20261026010000) - mangler før migrationen.
+  pakke: { id?: string | null; point: number; pris_oere: number };
+  pakker?: BoostPakke[];
   boost: { point: number; timer: number };
   point_pr_salg: number;
   min_bud_oere: number;
@@ -32,8 +35,25 @@ type MinePoint = {
     kl: string;
     auktion_id: string | null;
     auktion_titel: string | null;
+    // Køb: det betalte beløb (20261026010000).
+    beloeb_oere?: number | null;
   }[];
 };
+
+// Pakkerne fra databasen - før migrationen kun standardpakken (uden id).
+function pakkerFra(p: MinePoint): BoostPakke[] {
+  if (Array.isArray(p.pakker) && p.pakker.length > 0) return p.pakker;
+  return [
+    {
+      id: null,
+      point: p.pakke.point,
+      pris_oere: p.pakke.pris_oere,
+      boost: Math.floor(p.pakke.point / Math.max(p.boost.point, 1)),
+      spar_oere: 0,
+      bedste: false,
+    },
+  ];
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -54,7 +74,7 @@ function dato(iso: string) {
   });
 }
 
-// Min konto -> Boost-point: saldo, historik og "Køb 100 point – 39 kr."
+// Min konto -> Boost-point: saldo, pakkerne ("Køb 300 point – 99 kr.") og historik
 // (mine_point udleder brugeren af auth.uid() - man ser kun sit eget).
 export default async function BoostSide({
   searchParams,
@@ -69,11 +89,14 @@ export default async function BoostSide({
 
   // Retur fra betalingen: slå PaymentIntenten op hos Stripe med det samme
   // (kun brugerens eget køb), så pointene ikke venter på webhooken.
-  let returKode: string | null = null;
+  let retursvar: BoostRetur | null = null;
   if (boost === "retur") {
-    returKode =
-      typeof payment_intent === "string" ? await synkBoostRetur(authData.user.id, payment_intent) : "ikke_fundet";
+    retursvar =
+      typeof payment_intent === "string"
+        ? await synkBoostRetur(authData.user.id, payment_intent)
+        : { kode: "ikke_fundet", point: null, beloebOere: null };
   }
+  const returKode = retursvar?.kode ?? null;
 
   const { data, error } = await supabase.rpc("mine_point");
   const p = (error ? null : data) as MinePoint | null;
@@ -99,7 +122,8 @@ export default async function BoostSide({
               }`}
             >
               {returKode === "betalt" || returKode === "allerede"
-                ? BOOST_TEKST.koebGennemfoert(p.pakke.point)
+                ? // Den pakke, der faktisk er købt (købets låste point og beløb).
+                  BOOST_TEKST.koebGennemfoert(retursvar?.point ?? p.pakke.point, retursvar?.beloebOere)
                 : BOOST_TEKST.betalingBehandles}
               {retur && (
                 <>
@@ -138,8 +162,7 @@ export default async function BoostSide({
             <div id="koeb" className="scroll-mt-24">
               {p.kan_bruge ? (
                 <BoostKoeb
-                  point={p.pakke.point}
-                  prisOere={p.pakke.pris_oere}
+                  pakker={pakkerFra(p)}
                   kraevSamtykke={p.kraev_samtykke}
                   retur={retur}
                 />
@@ -175,6 +198,7 @@ export default async function BoostSide({
                       </p>
                       <p className="mt-0.5 text-[13px] text-tekst-svag">
                         {dato(h.kl)}
+                        {h.type === "koeb" && typeof h.beloeb_oere === "number" ? ` · ${BOOST_TEKST.historikKoeb(h.beloeb_oere)}` : ""}
                         {h.type === "tilbagefoersel" && h.oensket_point !== null && -h.point < h.oensket_point
                           ? ` · ${-h.point} af ${h.oensket_point} point (du havde ikke flere)`
                           : ""}
