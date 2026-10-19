@@ -1,3 +1,4 @@
+import { hovedsiteUrl } from "@/lib/adminVaert";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { harMindstRolle, kraevSideRolle } from "@/lib/adminAuth";
@@ -214,7 +215,7 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
               {saelger?.email && <span className="block text-xs text-tekst-daempet">{saelger.email}</span>}
             </Felt>
             <Felt navn="Auktion">
-              <Link href={`/auktion/${h.auction_id}`} className="font-medium text-groen hover:underline">
+              <Link href={hovedsiteUrl(`/auktion/${h.auction_id}`)} className="font-medium text-groen hover:underline">
                 {titel}
               </Link>
             </Felt>

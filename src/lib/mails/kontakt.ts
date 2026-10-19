@@ -1,7 +1,8 @@
 // Intern mail til support@bidhamr.dk, når nogen sender kontaktformularen
 // (/kontakt). Al brugertekst escapes her; emnelinjen renses for linjeskift og
 // kontroltegn, så den ikke kan bruges til header-injektion.
-import { bygMail, escapeHtml, sideUrl } from "./layout";
+import { bygMail, escapeHtml } from "./layout";
+import { adminAbsolutUrl } from "@/lib/adminVaert";
 import { kontaktEmneNavn } from "@/lib/tryghed";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -60,12 +61,12 @@ export function kontaktSupportMail(input: {
     const id = input.tradeId ?? (UUID.test(input.handelsRef) ? input.handelsRef : null);
     const tekst = escapeHtml(input.handelsRef);
     const note = escapeHtml(input.tradeId ? "" : " (ikke knyttet til afsenderens handler)");
-    handelUrl = id ? sideUrl(`/admin/handler/${id.toLowerCase()}`) : null;
+    handelUrl = id ? adminAbsolutUrl(`/admin/handler/${id.toLowerCase()}`) : null;
     handelHtml = handelUrl ? `<a href="${escapeHtml(handelUrl)}">${tekst}</a>${note}` : `${tekst}${note}`;
   }
 
   const brugerUrl =
-    input.brugerId && UUID.test(input.brugerId) ? sideUrl(`/admin/brugere/${input.brugerId}`) : null;
+    input.brugerId && UUID.test(input.brugerId) ? adminAbsolutUrl(`/admin/brugere/${input.brugerId}`) : null;
   const brugerHtml = brugerUrl ? `Ja – <a href="${escapeHtml(brugerUrl)}">se brugeren</a>` : "Nej";
 
   const beskedHtml = input.besked
@@ -92,7 +93,7 @@ export function kontaktSupportMail(input: {
       `<strong>Besked:</strong><br>${beskedHtml}`,
     ],
     info,
-    knap: { tekst: "Åbn henvendelser i admin", url: sideUrl("/admin/kontakt") },
+    knap: { tekst: "Åbn henvendelser i admin", url: adminAbsolutUrl("/admin/kontakt") },
     aarsag: "Intern mail: sendt automatisk fra kontaktformularen på bidhamr.dk.",
   });
 

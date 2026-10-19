@@ -11,7 +11,8 @@
 // - Fejltekster og koder vises kun i lille grå tekst, og links i dem
 //   neutraliseres (renLinks).
 // - Alt escapes.
-import { bygMail, escapeHtml, sideUrl } from "@/lib/mails/layout";
+import { bygMail, escapeHtml } from "@/lib/mails/layout";
+import { adminAbsolutUrl } from "@/lib/adminVaert";
 import { ALARM_TYPER, alarmKode, alarmType, idIEksempel, type AlarmType } from "@/lib/driftAlarmTyper";
 
 // Gentagelser af samme fejl: gule blokke højst én gang pr. time (medmindre
@@ -255,7 +256,7 @@ function blokHtml(b: VistBlok, nu: Date): string {
               ${p(`<strong>Det betyder:</strong> ${escapeHtml(b.type.betyder)}`)}
               ${ekstra ? p(escapeHtml(ekstra)) : ""}
               ${p(`<strong>Det skal du gøre:</strong> ${escapeHtml(b.type.goer)}`, "margin:0;")}
-              ${lilleKnap(b.type.side.tekst, sideUrl(b.type.side.sti))}
+              ${lilleKnap(b.type.side.tekst, adminAbsolutUrl(b.type.side.sti))}
               <p class="bh-graa" style="margin:12px 0 0 0;font-family:${SANS};font-size:12px;line-height:1.5;color:${FARVE.svag};word-break:break-all;overflow-wrap:anywhere;">${graa.map(escapeHtml).join("<br>")}</p>
               </td>
             </tr>
@@ -276,7 +277,7 @@ function blokTekst(b: VistBlok, nu: Date): string {
     `Det betyder: ${b.type.betyder}`,
     ekstra,
     `Det skal du gøre: ${b.type.goer}`,
-    `${b.type.side.tekst}: ${sideUrl(b.type.side.sti)}`,
+    `${b.type.side.tekst}: ${adminAbsolutUrl(b.type.side.sti)}`,
     ider.length ? `Eksempler: ${ider.join(", ")}` : null,
     seneste ? `Seneste fejltekst: ${seneste}` : null,
     `Teknisk: ${tekniskLinje(b)}`,
@@ -317,7 +318,7 @@ export function bygAlarmMail(blokke: AlarmBlok[], nu: Date = new Date()) {
     afsnitHtml: [escapeHtml(status)],
     blokkeHtml: html.join("\n          "),
     blokkeTekst: tekst.join("\n"),
-    knap: { tekst: "Åbn drift-siden", url: sideUrl("/admin/drift") },
+    knap: { tekst: "Åbn drift-siden", url: adminAbsolutUrl("/admin/drift") },
     aarsag: `Du får denne mail, fordi din adresse står i DRIFT_ALARM_MAIL. Nye fejl sendes med det samme. Gentagelser af samme fejl samles: røde højst hvert ${GENSEND_ROED_MIN}. minut, gule højst én gang i timen. Fejl fra brugernes browser vises kun på drift-siden, og links i fejltekster er fjernet.`,
   });
   return { subject: emne, ...mail };

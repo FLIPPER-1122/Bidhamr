@@ -6,12 +6,11 @@ import { useState, useTransition, type FormEvent } from "react";
 import {
   besvarSpoergsmaal,
   saetSpoergsmaalAktiv,
-  skjulSpoergsmaal,
   stilSpoergsmaal,
 } from "@/app/actions/spoergsmaal";
 import { KONTAKTINFO_FEJL, indeholderKontaktinfo } from "@/lib/kontaktInfo";
 import AnmeldKnap from "@/components/dsa/AnmeldKnap";
-import { REGEL_VALG } from "@/lib/dsa/regler";
+import SkjulSpoergsmaal from "@/components/SkjulSpoergsmaal";
 import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
 import { NETVAERKSFEJL, erAuktionLaastBesked } from "@/lib/auktionRegler";
 import {
@@ -70,6 +69,7 @@ export default function SpoergSaelger({
   auktionKoerer,
   erSaelger,
   erStaff,
+  adminLink = null,
   loggetInd,
   kanIkkeSpoerge = false,
   laast = false,
@@ -80,6 +80,8 @@ export default function SpoergSaelger({
   auktionKoerer: boolean;
   erSaelger: boolean;
   erStaff: boolean;
+  /** Admin på egen host: staff skjuler spørgsmål i admin - kun et link her. */
+  adminLink?: string | null;
   loggetInd: boolean;
   /** Blokering/spærring mellem sælger og den indloggede (art afsløres ikke). */
   kanIkkeSpoerge?: boolean;
@@ -264,6 +266,7 @@ export default function SpoergSaelger({
               q={q}
               kanSvare={erSaelger && auktionKoerer && !q.answer && !q.hidden}
               erStaff={erStaff}
+              adminLink={adminLink}
               erSaelger={erSaelger}
               loggetInd={loggetInd}
             />
@@ -283,6 +286,7 @@ function SpoergsmaalPunkt({
   q,
   kanSvare,
   erStaff,
+  adminLink,
   erSaelger,
   loggetInd,
 }: {
@@ -290,6 +294,7 @@ function SpoergsmaalPunkt({
   q: SpoergsmaalVisning;
   kanSvare: boolean;
   erStaff: boolean;
+  adminLink: string | null;
   erSaelger: boolean;
   loggetInd: boolean;
 }) {
@@ -297,11 +302,6 @@ function SpoergsmaalPunkt({
   const [svar, setSvar] = useState("");
   const [fejl, setFejl] = useState<string | null>(null);
   const [sender, startSend] = useTransition();
-  const [skjulAaben, setSkjulAaben] = useState(false);
-  const [grund, setGrund] = useState("");
-  const [regel, setRegel] = useState("chikane");
-  const [skjulFejl, setSkjulFejl] = useState<string | null>(null);
-  const [skjuler, startSkjul] = useTransition();
   // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
   const hydreret = useHydreret();
 
@@ -329,33 +329,6 @@ function SpoergsmaalPunkt({
         return;
       }
       setSvar("");
-      router.refresh();
-    });
-  }
-
-  function skjul(e?: FormEvent) {
-    e?.preventDefault();
-    setSkjulFejl(null);
-    const nyTilstand = !q.hidden;
-    if (nyTilstand && !grund.trim()) {
-      setSkjulFejl("Skriv en begrundelse.");
-      return;
-    }
-    startSkjul(async () => {
-      let r: Awaited<ReturnType<typeof skjulSpoergsmaal>>;
-      try {
-        r = await skjulSpoergsmaal(auktionId, q.id, nyTilstand, grund.trim(), regel);
-      } catch (err) {
-        console.error("skjulSpoergsmaal fejlede:", err);
-        setSkjulFejl(NETVAERKSFEJL);
-        return;
-      }
-      if ("fejl" in r) {
-        setSkjulFejl(r.fejl);
-        return;
-      }
-      setSkjulAaben(false);
-      setGrund("");
       router.refresh();
     });
   }
@@ -437,66 +410,15 @@ function SpoergsmaalPunkt({
         </form>
       )}
 
-      {erStaff && (
+      {!erStaff && adminLink && (
         <div className="mt-3 border-t border-kant pt-3">
-          {q.hidden ? (
-            <button type="button" onClick={() => skjul()} disabled={skjuler} className={sekundaer}>
-              {skjuler && <Spinner />}
-              Vis spørgsmålet igen
-            </button>
-          ) : skjulAaben ? (
-            <form onSubmit={skjul} method="post" noValidate>
-              <label htmlFor={`regel-${q.id}`} className="mb-1.5 block text-sm font-medium text-tekst">
-                Hvilken regel bryder det?
-              </label>
-              <select
-                id={`regel-${q.id}`}
-                value={regel}
-                onChange={(e) => setRegel(e.target.value)}
-                className={`${felt} mb-3 h-11 py-0`}
-              >
-                {REGEL_VALG.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor={`grund-${q.id}`} className="mb-1.5 block text-sm font-medium text-tekst">
-                Begrundelse til den, der skrev det (vises for brugeren, som kan klage)
-              </label>
-              <input
-                id={`grund-${q.id}`}
-                value={grund}
-                onChange={(e) => setGrund(e.target.value)}
-                maxLength={500}
-                className={`${felt} h-11 py-0`}
-              />
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button type="submit" disabled={skjuler || !hydreret} className={sekundaer}>
-                  {skjuler && <Spinner />}
-                  Skjul
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSkjulAaben(false)}
-                  className="inline-flex h-11 items-center px-3 text-sm font-medium text-groen hover:underline"
-                >
-                  Annullér
-                </button>
-              </div>
-            </form>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setSkjulAaben(true)}
-              className="inline-flex min-h-11 items-center text-sm font-medium text-groen hover:underline"
-            >
-              Skjul spørgsmål (staff)
-            </button>
-          )}
-          {skjulFejl && <Fejltekst>{skjulFejl}</Fejltekst>}
+          <a href={`${adminLink}#spoergsmaal-${q.id}`} className="inline-flex min-h-11 items-center text-sm font-medium text-groen hover:underline">
+            Åbn i admin
+          </a>
         </div>
       )}
+
+      {erStaff && <SkjulSpoergsmaal auktionId={auktionId} spoergsmaalId={q.id} skjult={q.hidden} />}
     </li>
   );
 }

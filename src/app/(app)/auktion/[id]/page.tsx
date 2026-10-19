@@ -16,7 +16,8 @@ import SaetOpIgenKnap from "@/components/dsa/SaetOpIgenKnap";
 import SpaerByder, { type ByderValg } from "@/components/tryghed/SpaerByder";
 import { kortNavn } from "@/lib/kortNavn";
 import { standNavn } from "@/lib/stand";
-import { getStaffRole } from "@/lib/adminAuth";
+import { getStaffRole, staffRolleTilVisning } from "@/lib/adminAuth";
+import { adminUrl } from "@/lib/adminVaert";
 import type { SpoergsmaalVisning } from "@/lib/spoergsmaal";
 import { auktionMetadata, hentAuktionRaekke } from "@/lib/auktionSeo";
 import { hentBruger, hentKontoType } from "@/lib/supabase/bruger";
@@ -250,7 +251,7 @@ export default async function AuktionPage({
       : Promise.resolve(false);
   const [
     { data: spoergsmaalData },
-    staffRolle,
+    [staffHandling, staffVisning],
     blokeretMedSaelger,
     { data: minFoelgning },
     { data: saelger },
@@ -259,7 +260,11 @@ export default async function AuktionPage({
     saelgerPopulaer,
   ] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
-    bruger ? getStaffRole() : Promise.resolve(null),
+    // staffHandling: staff-handlinger direkte på siden (kun uden ADMIN_VAERT -
+    // ellers er getStaffRole null uden for admin-hosten). staffVisning:
+    // rollen til tekster og "Åbn i admin" (RLS viser stadig skjulte
+    // auktioner for staff). Giver aldrig adgang i sig selv.
+    bruger ? Promise.all([getStaffRole(), staffRolleTilVisning()]) : Promise.resolve([null, null] as const),
     tjekBlokering,
     // Følger jeg sælgeren? Altid filtreret på follower_id (RLS i produktion
     // kan stadig vise alle følgninger, indtil 20261007012000 er kørt).
@@ -282,6 +287,11 @@ export default async function AuktionPage({
   ]);
   const erhvervAuktion = auktion.erhverv === true;
   const erFirmakonto = minKontoType === "erhverv";
+  // Staff (ikke 'saelger') til tekster og kunst-boksen.
+  const staffRolle = staffVisning === "saelger" ? null : staffVisning;
+  // Med admin på egen host: staff-handlinger sker i admin - siden viser kun
+  // et almindeligt link dertil.
+  const aabnIAdmin = staffRolle && !staffHandling;
 
   // Skjult af BidHamr: sælgeren får et link til begrundelsen (DSA art. 17),
   // hvor han også kan klage. Bydere er ikke part i afgørelsen og ser kun, at
@@ -394,6 +404,13 @@ export default async function AuktionPage({
 
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10">
+      {aabnIAdmin && (
+        <p className="mb-3 text-sm">
+          <a href={adminUrl(`/admin/auktioner?q=${auktion.id}`)} className="font-medium text-groen underline">
+            Åbn auktionen i admin
+          </a>
+        </p>
+      )}
       {kunstAfventer && (
         <div role="status" className="mb-4 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4">
           <p className="font-semibold text-advarsel-tekst">{KUNST_TEKST.afventerTitel}</p>
@@ -768,7 +785,8 @@ export default async function AuktionPage({
                 aktiv={(auktion.spoergsmaal_aktiv as boolean | null | undefined) !== false}
                 auktionKoerer={auktion.status === "aktiv" && !auktionErSlut && !skjult}
                 erSaelger={erSælger}
-                erStaff={!!staffRolle}
+                erStaff={!!staffHandling}
+                adminLink={aabnIAdmin ? adminUrl(`/admin/auktioner/${auktion.id}/spoergsmaal`) : null}
                 loggetInd={!!bruger}
                 kanIkkeSpoerge={blokeretMedSaelger}
                 laast={harBud}
