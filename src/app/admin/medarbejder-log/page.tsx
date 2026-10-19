@@ -13,12 +13,16 @@ import {
   visAarsag,
 } from "@/lib/moderationLog";
 import AdminSide from "@/components/admin/AdminSide";
+import LogBrugerVaelger from "@/components/admin/LogBrugerVaelger";
+import { redirect } from "next/navigation";
 
 // Medarbejder-log: alt fra moderation_log. Admin og chef ser alle; en
 // medarbejder ser kun sin egen log (håndhæves her på serveren – filteret
 // tvinges til medarbejderens eget id). Data via admin_medarbejder_log
 // (service_role). Fritekst om gamle saldo-handlinger (kan indeholde beløb)
-// vises kun for chef.
+// vises kun for chef. Brugerfilteret er kun et id i URL'en (?bruger=<uuid>);
+// navn/e-mail søges via LogBrugerVaelger (server action), så ingen e-mail
+// havner i adresselinjen.
 
 const PR_SIDE = 50;
 const TZ = "Europe/Copenhagen";
@@ -157,7 +161,10 @@ export default async function MedarbejderLog({
   const handling = enkelt(sp.handling);
   const fra = enkelt(sp.fra);
   const til = enkelt(sp.til);
-  const bruger = enkelt(sp.bruger).slice(0, 200);
+  // Kun et bruger-id (uuid) - aldrig fritekst eller e-mail i URL'en (Filip,
+  // 13. okt. 2026). Alt andet giver intet filter.
+  const brugerParam = enkelt(sp.bruger);
+  const bruger = UUID_RE.test(brugerParam) ? brugerParam.toLowerCase() : "";
   const side = Math.max(1, Math.floor(Number(enkelt(sp.side))) || 1);
 
   // Medarbejdere ser kun deres egen log, uanset hvad der står i URL'en.
@@ -170,7 +177,22 @@ export default async function MedarbejderLog({
   const fraIso = fra ? koebenhavnMidnat(fra) : null;
   const tilIso = til ? koebenhavnMidnat(til, 1) : null;
 
-  const [logRes, personerRes] = await Promise.all([
+  const sideHref = (n: number) => {
+    const p = new URLSearchParams();
+    if (kanSeAlle && medarbejder) p.set("medarbejder", medarbejder);
+    if (handlingGyldig) p.set("handling", handlingGyldig);
+    if (fraIso) p.set("fra", fra);
+    if (tilIso) p.set("til", til);
+    if (bruger) p.set("bruger", bruger);
+    if (n > 1) p.set("side", String(n));
+    return `/admin/medarbejder-log${p.size ? `?${p}` : ""}`;
+  };
+
+  // Et gammelt link med e-mail eller fritekst i ?bruger= ryddes ud af
+  // adresselinjen med det samme (værdien logges ikke).
+  if ("bruger" in sp && !bruger) redirect(sideHref(side));
+
+  const [logRes, personerRes, filterBrugerRes] = await Promise.all([
     admin.rpc("admin_medarbejder_log", {
       p_medarbejder: medarbejder || null,
       p_handling: handlingGyldig || null,
@@ -184,6 +206,9 @@ export default async function MedarbejderLog({
     kanSeAlle
       ? admin.rpc("admin_medarbejder_log_personer")
       : Promise.resolve({ data: [] as Person[], error: null }),
+    bruger
+      ? admin.from("users").select("navn, email").eq("id", bruger).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
   if (logRes.error) console.error("admin_medarbejder_log fejlede:", logRes.error);
   if (personerRes.error) console.error("admin_medarbejder_log_personer fejlede:", personerRes.error);
@@ -194,24 +219,9 @@ export default async function MedarbejderLog({
   const chatHandler = await hentChatHandler(admin, raekker);
   const sider = Math.max(1, Math.ceil(total / PR_SIDE));
 
-  const brugerErId = UUID_RE.test(bruger);
-  const filterBrugerRaekke = brugerErId
-    ? raekker.find((r) => (r.bruger_id ?? "").toLowerCase() === bruger.toLowerCase())
-    : undefined;
-  const filterBrugerNavn = filterBrugerRaekke
-    ? filterBrugerRaekke.bruger_navn ?? filterBrugerRaekke.bruger_email ?? null
-    : null;
-
-  const sideHref = (n: number, valg: { udenBruger?: boolean } = {}) => {
-    const p = new URLSearchParams();
-    if (kanSeAlle && medarbejder) p.set("medarbejder", medarbejder);
-    if (handlingGyldig) p.set("handling", handlingGyldig);
-    if (fraIso) p.set("fra", fra);
-    if (tilIso) p.set("til", til);
-    if (bruger && !valg.udenBruger) p.set("bruger", bruger);
-    if (n > 1) p.set("side", String(n));
-    return `/admin/medarbejder-log${p.size ? `?${p}` : ""}`;
-  };
+  if (filterBrugerRes.error) console.error("Medarbejder-log: brugeren i filteret kunne ikke hentes:", filterBrugerRes.error.message);
+  const fb = filterBrugerRes.data as { navn: string | null; email: string | null } | null;
+  const filterBruger = bruger ? { id: bruger, navn: fb?.navn ?? fb?.email ?? "Ukendt bruger" } : null;
 
   const handlinger = Object.entries(HANDLING_NAVNE).sort((a, b) => a[1].localeCompare(b[1], "da"));
   const feltKlasse =
@@ -259,25 +269,8 @@ export default async function MedarbejderLog({
             ))}
           </select>
         </label>
-        {brugerErId ? (
-          // Kommer man fra en brugers side, filtreres der på brugerens id. Vis
-          // navnet i stedet for id'et.
-          <div className="text-xs font-medium text-tekst-daempet">
-            Bruger
-            <input type="hidden" name="bruger" value={bruger} />
-            <p className="mt-1 flex min-h-10 items-center justify-between gap-2 rounded-lg border border-admin-kant bg-neutral-50 px-3 py-2 text-sm font-normal text-tekst">
-              <span className="truncate">{filterBrugerNavn ?? "Én bestemt bruger"}</span>
-              <Link href={sideHref(1, { udenBruger: true })} className="shrink-0 text-xs font-medium text-groen hover:underline">
-                Fjern
-              </Link>
-            </p>
-          </div>
-        ) : (
-          <label className="text-xs font-medium text-tekst-daempet">
-            Bruger (navn eller e-mail)
-            <input name="bruger" type="search" defaultValue={bruger} className={`mt-1 ${feltKlasse}`} />
-          </label>
-        )}
+        {/* key: vælgeren starter forfra, når filteret skifter. */}
+        <LogBrugerVaelger key={bruger || "ingen"} valgt={filterBruger} feltKlasse={feltKlasse} />
         <label className="text-xs font-medium text-tekst-daempet">
           Fra dato
           <input name="fra" type="date" defaultValue={fraIso ? fra : ""} className={`mt-1 ${feltKlasse}`} />
