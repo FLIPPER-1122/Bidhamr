@@ -12,10 +12,12 @@ export const STRIPE_IKKE_INDLAEST =
 // Stripe.js hentes kun på de sider, der bruger Payment Element.
 let stripePromise: Promise<Stripe | null> | null = null;
 
-function rapporter(besked: string) {
+// Fast digest pr. slags fejl, så rapporterne tælles op i samme drift-række.
+function rapporter(besked: string, digest: "stripe-noegle-mangler" | "stripe-js-indlaesning") {
   rapporterKlientFejl({
     sti: typeof window !== "undefined" ? window.location.pathname : null,
     besked,
+    digest,
   }).catch(() => {
     // Serveren svarer ikke - intet at gøre.
   });
@@ -30,11 +32,14 @@ export function hentStripe(): Promise<Stripe | null> {
   if (!stripePromise) {
     const noegle = indbyggetOffentligNoegle();
     if (!noegle) {
-      rapporter("Stripe: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY mangler eller er ugyldig i dette build (Payment Element kan ikke vises)");
+      rapporter(
+        "Stripe: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY mangler eller er ugyldig i dette build (Payment Element kan ikke vises)",
+        "stripe-noegle-mangler",
+      );
       stripePromise = Promise.resolve(null);
     } else {
       stripePromise = loadStripe(noegle, { locale: "da" }).catch((err: unknown) => {
-        rapporter(`Stripe.js kunne ikke indlæses: ${err instanceof Error ? err.message : String(err)}`);
+        rapporter(`Stripe.js kunne ikke indlæses: ${err instanceof Error ? err.message : String(err)}`, "stripe-js-indlaesning");
         // Næste visning prøver igen.
         stripePromise = null;
         return null;

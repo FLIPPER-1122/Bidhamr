@@ -221,8 +221,10 @@ export async function startBoostKoeb(
     // Åbent køb af en anden pakke med en PaymentIntent: annullér den hos
     // Stripe FØRST (er den betalt, spejles den - så får brugeren den gamle
     // pakkes point, og intet refunderes som dobbeltbetaling), og prøv igen.
+    // Kun når brugeren selv har valgt en pakke - uden pakke (den gamle app)
+    // genbruger databasen altid det åbne køb og svarer aldrig 'skift'.
     if (s?.kode === "skift") {
-      if (!s.pi || skiftForsoeg >= 2) return { fejl: GENERISK, kode: "fejl" };
+      if (pakke === null || !s.pi || skiftForsoeg >= 2) return { fejl: GENERISK, kode: "fejl" };
       const gammel = await afslutPiVedSkift(s.pi);
       if (gammel === "betalt") return { fejl: BOOST_TEKST.allerede_betalt, kode: "betalt" };
       if (gammel === "behandles") return START_FEJL.behandles;

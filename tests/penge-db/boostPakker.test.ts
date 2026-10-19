@@ -210,8 +210,26 @@ describe("pakkevalg og låst pris", () => {
     expect((await start(FIRMA, "point_700")).kode).toBe("erhverv");
   });
 
-  it("pakkerne kan ikke slettes", async () => {
+  it("pakkerne kan ikke slettes eller tømmes", async () => {
     await expect(db.query(`delete from public.boost_pakker where id = 'point_50'`)).rejects.toThrow(/slettes ikke/);
+    await expect(db.exec(`truncate public.boost_pakker cascade`)).rejects.toThrow(/append-only|kan ikke/);
+  });
+
+  it("pakke_id kan kun sættes fra null til en pakke med samme point og pris", async () => {
+    // Et (annulleret) køb uden pakke på 300 point / 99 kr.
+    const { id } = await en<{ id: string }>(
+      `insert into public.boost_koeb (bruger_id, point, beloeb_oere, status, annulleret_kl)
+       values ($1, 300, 9900, 'annulleret', now()) returning id`,
+      [PRIVAT3],
+    );
+    await expect(db.query(`update public.boost_koeb set pakke_id = 'point_700' where id = $1`, [id])).rejects.toThrow(
+      /kan ikke ændres/,
+    );
+    await expect(db.query(`update public.boost_koeb set pakke_id = 'point_100' where id = $1`, [id])).rejects.toThrow(
+      /kan ikke ændres/,
+    );
+    await db.query(`update public.boost_koeb set pakke_id = 'point_300' where id = $1`, [id]);
+    expect((await koeb(id)).pakke_id).toBe("point_300");
   });
 });
 
@@ -222,6 +240,15 @@ describe("skift af pakke (idempotens dækker pakken)", () => {
     expect(ny).toMatchObject({ kode: "ok", pakke: "point_700", point: 700, beloeb_oere: 19900 });
     expect(ny.id).not.toBe(gl.id);
     expect((await koeb(gl.id)).status).toBe("annulleret");
+  });
+
+  it("uden pakke (den gamle app) genbruges et åbent køb af en anden pakke - det annulleres ikke", async () => {
+    // Åbent 700-køb uden PaymentIntent: med en anden pakke ville det blive
+    // annulleret - uden pakke genbruges det.
+    const s = await start(PRIVAT, "point_700");
+    const uden = await start(PRIVAT);
+    expect(uden).toMatchObject({ kode: "findes", id: s.id, pakke: "point_700", point: 700, beloeb_oere: 19900 });
+    expect((await koeb(s.id)).status).toBe("afventer");
   });
 
   it("med PaymentIntent: 'skift' - intet ændres, før PaymentIntenten er annulleret hos Stripe", async () => {

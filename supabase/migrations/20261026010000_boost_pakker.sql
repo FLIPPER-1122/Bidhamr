@@ -17,8 +17,9 @@
 --      p_pakke bruges standardpakken (den første aktive = 100 point), så
 --      den nuværende app og den gamle hjemmeside virker som før. Ukendt
 --      eller inaktiv pakke: 'pakke_ukendt'.
---      Idempotens dækker pakken: et åbent køb genbruges KUN, hvis det er
---      samme pakke med samme point og pris. Ellers:
+--      Idempotens dækker pakken: med p_pakke genbruges et åbent køb KUN, hvis
+--      det er samme pakke med samme point og pris. Uden p_pakke (den gamle
+--      app) genbruges et åbent køb altid, uanset pakke. Ellers:
 --        - uden PaymentIntent: det åbne køb annulleres, og der startes et nyt,
 --        - med PaymentIntent: 'skift' (id, pi) - serveren annullerer FØRST
 --          PaymentIntenten hos Stripe (eller spejler den, hvis den nåede at
@@ -150,6 +151,10 @@ drop trigger if exists boost_pakker_forbyd_sletning on public.boost_pakker;
 create trigger boost_pakker_forbyd_sletning before delete on public.boost_pakker
   for each row execute function public.boost_pakker_forbyd_sletning();
 revoke all on function public.boost_pakker_forbyd_sletning() from public, anon, authenticated, service_role;
+-- Heller ikke tømning (som boost_koeb - boost_forbyd_aendring fra 20261023030000).
+drop trigger if exists boost_pakker_ingen_truncate on public.boost_pakker;
+create trigger boost_pakker_ingen_truncate before truncate on public.boost_pakker
+  for each statement execute function public.boost_forbyd_aendring();
 
 comment on column public.boost_indstillinger.pakke_point is
   'Erstattet af boost_pakker (20261026010000) - bruges ikke længere.';
@@ -206,12 +211,16 @@ begin
   raise notice 'boost_koeb_laaste_felter: %', pg_temp.ps_ret(
     'public.boost_koeb_laaste_felter()',
     '23363a4519b436f6851ffddd529a6e40',
-    '79e8b0b1aed6c57b8c2a39dc50e98eb8',
+    '475bb4a8618de7146372e3d69203bf7f',
     jsonb_build_array(jsonb_build_array(
 $g$or new.valuta <> old.valuta or new.oprettet_kl <> old.oprettet_kl then$g$,
 $n$or new.valuta <> old.valuta or new.oprettet_kl <> old.oprettet_kl
-     -- Pakken (20261026010000): kan sættes én gang, aldrig ændres.
-     or (old.pakke_id is not null and new.pakke_id is distinct from old.pakke_id) then$n$, 1)));
+     -- Pakken (20261026010000): kan sættes én gang, aldrig ændres - og kun
+     -- til en pakke, hvis point og pris passer til købets låste tal.
+     or (old.pakke_id is not null and new.pakke_id is distinct from old.pakke_id)
+     or (old.pakke_id is null and new.pakke_id is not null
+         and not exists (select 1 from public.boost_pakker bp
+                          where bp.id = new.pakke_id and bp.point = new.point and bp.pris_oere = new.beloeb_oere)) then$n$, 1)));
 end $do$;
 
 -- ===========================================================================
@@ -271,8 +280,10 @@ begin
     from public.boost_koeb b where b.bruger_id = p_bruger and b.status in ('afventer', 'behandles')
     for update;
   -- Samme pakke = samme id, point og pris (ændres pakkens pris, er det et
-  -- andet køb - som et ændret beløb).
-  v_anden := k.id is not null
+  -- andet køb - som et ændret beløb). Uden p_pakke (fx den gamle app) har
+  -- brugeren ikke valgt en pakke: et åbent køb genbruges, uanset pakke - det
+  -- annulleres aldrig af et kald uden pakke.
+  v_anden := k.id is not null and p_pakke is not null
              and (k.pakke_id is distinct from p.id or k.point <> p.point or k.beloeb_oere <> p.pris_oere);
   -- Et ubetalt køb uden aktivitet i 7 dage er for gammelt (som før): det
   -- annulleres, og der startes et nyt. Serveren annullerer den gamle
