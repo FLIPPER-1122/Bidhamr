@@ -181,6 +181,21 @@ export const GRAENSER = {
   auktion_app_ip: { maks: 300, vindueSek: 60 * 60 },
   auktion_app_bruger: { maks: 30, vindueSek: 10 * 60 },
   konto_data_app_ip: { maks: 60, vindueSek: 60 * 60 },
+  // Admin-hosten (src/app/actions/adgang.ts og adminToTrin.ts) - fail closed.
+  // Login: som på hovedsitet, men strammere. e-mail+IP nulstilles ved et
+  // gennemført login. Koden fra app'en: 5 forkerte pr. medarbejder pr. 15
+  // min. (nulstilles ved en rigtig kode) og et IP-loft. Opsætning og
+  // gendannelseskoder pr. medarbejder/e-mail og IP. Vercel Firewall har
+  // desuden sin egen grænse på /adgang (HUSKELISTE.md).
+  admin_login_ip: { maks: 20, vindueSek: 15 * 60 },
+  admin_login_email_ip: { maks: 5, vindueSek: 15 * 60 },
+  admin_kode_bruger: { maks: 5, vindueSek: 15 * 60 },
+  admin_kode_ip: { maks: 30, vindueSek: 15 * 60 },
+  admin_opsaet_bruger: { maks: 10, vindueSek: 60 * 60 },
+  admin_gendan_ip: { maks: 10, vindueSek: 60 * 60 },
+  admin_gendan_email: { maks: 5, vindueSek: 60 * 60 },
+  // Chefens nulstilling og åbning af tilmelding (hver kan sende en mail).
+  admin_to_trin_chef: { maks: 30, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;
