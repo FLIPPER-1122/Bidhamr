@@ -17,7 +17,7 @@ Kun Stripes testmiljø indtil fase 6.
 | `udbetalingskonto` | `{}` | `{ url }` – Stripes onboarding-link (engangs, kun til brugeren selv) |
 | `udbetalingskonto-status` | `{}` | `{ saelger }` – hentet frisk fra Stripe |
 | `stripe-oversigt` | `{}` | `{ url }` – engangs-link til Stripes Express Dashboard |
-| `boost-koeb` | `{ samtykke? }` | `{ koebId, clientSecret, beloebOere, point, customerId, customerSessionClientSecret, publishableKey }` – køb af boost-point (se nedenfor) |
+| `boost-koeb` | `{ samtykke?, pakke? }` | `{ koebId, clientSecret, beloebOere, point, pakke, customerId, customerSessionClientSecret, publishableKey }` – køb af boost-point; `pakke` = pakkens id fra `mine_point().pakker`, uden = 100-point-pakken (se nedenfor) |
 | `boost-brug` | `{ auktion_id, noegle }` | `{ kode: 'ok' \| 'allerede', boostId, slutKl, saldo }` – booster egen auktion |
 
 `levering` i `betal` er valgfri og har samme felter som `/api/fragt/app/levering`
@@ -63,25 +63,33 @@ await presentPaymentSheet();
 
 ## Boost (køb af point og boost)
 
-Regler (Filip, 13. okt. 2026): 100 point for 39 kr. (BidHamrs egen omsætning med moms, faktura). Et boost koster 50
+Regler (Filip, 13. okt. 2026; pakker 19. okt. 2026): point købes i pakker – **100 point for 39 kr., 300 point for 99 kr. ("Spar 18 kr.") og 700 point for 199 kr. ("Spar 74 kr.", "Bedste køb")** (BidHamrs egen omsætning med moms, faktura). Et boost koster 50
 point og lægger opslaget øverst i 24 timer. 10 point pr. gennemført salg (når pengene er frigivet). Kun private –
 firmaer får `403 erhverv`. Tallene står i databasen (`boost_indstillinger`) – vis dem fra `mine_point`, ikke hårdkodet.
 
+- **Pakker:** vis `mine_point().pakker` (`[{ id, point, pris_oere, boost, spar_oere, bedste }]`, sorteret) som tre
+  valg: point, pris, "= `boost` boost", mærket "Spar X kr." når `spar_oere > 0`, og "Bedste køb" når `bedste`. Send kun
+  `pakke: id` til `boost-koeb` – serveren vælger pris og point og låser dem på købet. Uden `pakke` købes
+  standardpakken (`mine_point().pakke`, 100 point), så den nuværende app virker uændret. Vælger brugeren en anden
+  pakke, mens et køb er åbent, så kald `boost-koeb` igen med den nye pakke og brug det nye `clientSecret`: serveren
+  annullerer den gamle PaymentIntent hos Stripe først (nåede den at blive betalt, får brugeren den gamle pakkes point,
+  og svaret er `409 betalt`). Fejl: `409 pakke_ukendt` (pakken findes ikke længere – hent `mine_point` igen),
+  `409 behandles` (et tidligere køb behandles stadig – vent), `400 ugyldig` (`pakke` er ikke en tekst-id).
 - **Køb:** `boost-koeb` → `initPaymentSheet({ paymentIntentClientSecret: s.clientSecret, customerId/customerSessionClientSecret som i betal, … })`
-  → `presentPaymentSheet()`. Samme PaymentIntent ved gentagne kald, til den er betalt. Betalingen går til BidHamrs
+  → `presentPaymentSheet()`. Samme PaymentIntent ved gentagne kald med samme pakke, til den er betalt. Betalingen går til BidHamrs
   platformskonto (ingen destination charge), 3D Secure er tvunget. **Pointene kommer først, når webhooken har
   registreret betalingen** – hent `mine_point` igen (evt. et par gange med kort pause). `samtykke` bruges kun, hvis
   `mine_point().kraev_samtykke` er `true` (fortrydelsesret – afventer advokaten; i dag `false`).
 - **Boost:** `boost-brug { auktion_id, noegle }`. `noegle` er en uuid, som appen laver én gang pr. skærm: samme
   nøgle giver samme boost (dobbelttryk/genforsøg trækker ikke point to gange). Fejl: `409 boostet` (har allerede et
-  aktivt boost, `slutKl`), `409 laast` (åben indsigelse fra banken på et køb af point – vis `fejl`), `409 for_faa_point` (`saldo`, `pris` – vis "Køb 100 point – 39 kr."), `409 ikke_aktiv` /
+  aktivt boost, `slutKl`), `409 laast` (åben indsigelse fra banken på et køb af point – vis `fejl`), `409 for_faa_point` (`saldo`, `pris` – vis "Køb boost-point – fra 39 kr." og pakkerne), `409 ikke_aktiv` /
   `slutter_snart` (under 1 time tilbage), `403 ikke_ejer` / `erhverv` / `spaerret`.
 - **Læsning direkte fra Supabase** (ingen endpoint nødvendig):
-  - `supabase.rpc("mine_point")` → `{ saldo, kan_bruge, point_laast, spaerret, pakke: { point, pris_oere }, boost: { point, timer },
+  - `supabase.rpc("mine_point")` → `{ saldo, kan_bruge, point_laast, spaerret, pakke: { id, point, pris_oere }, pakker: [{ id, point, pris_oere, boost, spar_oere, bedste }], boost: { point, timer },
     point_pr_salg, kraev_samtykke, aabent_koeb, historik: [{ id, type: 'koeb' | 'optjening' | 'forbrug' |
-    'tilbagefoersel' | 'staff', point, oensket_point, saldo_efter, kl, auktion_id, auktion_titel }] }`.
+    'tilbagefoersel' | 'staff', point, oensket_point, saldo_efter, kl, auktion_id, auktion_titel, beloeb_oere }] }` (`beloeb_oere` kun på køb; `aabent_koeb` har også `pakke`, `point`, `beloeb_oere`).
   - `supabase.rpc("min_auktion_boost", { p_auktion })` → for ejeren `{ boostet, slut_kl, kan_booste, grund, saldo,
-    pris, timer, pakke }`, ellers `null`. Vis knappen "Boost i 24 timer (50 point)", når `kan_booste` er true.
+    pris, timer, pakke, pakker }`, ellers `null`. Vis knappen "Boost i 24 timer (50 point)", når `kan_booste` er true.
   - `supabase.rpc("aktive_boosts", { p_auktioner: [id, …] })` → `[{ auktion_id, slut_kl }]` – vis mærket **"Boostet"**
     på kort og auktionsside (markedsføringsloven). Også uden login.
   - `supabase.rpc("boost_top", { p_kategori, p_soeg })` → højst 4 boostede auktioner (roteret hvert 10. minut,
@@ -107,7 +115,7 @@ giver ingen data og laver aldrig et nyt link uden login.
 | 401 | `ikke_logget_ind` | Manglende eller udløbet token |
 | 403 | `ikke_tilladt` | Fremmed `Origin` |
 | 403 | `erhverv` / `spaerret` / `ikke_ejer` | Boost: firmakonto, spærret konto, eller ikke din auktion |
-| 409 | `boostet` / `laast` / `for_faa_point` / `ikke_aktiv` / `slutter_snart` / `samtykke` | Boost (se ovenfor) |
+| 409 | `boostet` / `laast` / `for_faa_point` / `ikke_aktiv` / `slutter_snart` / `samtykke` / `pakke_ukendt` / `behandles` | Boost (se ovenfor) |
 | 404 | `ugyldig` / `ikke_fundet` | Ukendt handling / handlen findes ikke (eller er ikke din) |
 | 409 | `betalt` | Allerede betalt eller under behandling – hent handlen igen |
 | 409 | `vaelg_levering` | Vælg levering først |
