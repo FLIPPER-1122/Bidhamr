@@ -66,7 +66,26 @@ const nextConfig: NextConfig = {
     formats: ["image/avif", "image/webp"],
   },
   async headers() {
-    return [{ source: "/(.*)", headers: sikkerhedsHeadere }];
+    // Admin på egen host (ADMIN_VAERT, docs/ADMIN-VAERT.md): ingen Referer ud
+    // af admin og aldrig indeksering. Proxyen sætter de samme headere (plus
+    // Cache-Control) - reglen her dækker også de statiske filer, proxyen
+    // springer over. Den sidste regel vinder ved samme header.
+    const adminVaert = (process.env.ADMIN_VAERT ?? "").trim().toLowerCase().split(":")[0];
+    return [
+      { source: "/(.*)", headers: sikkerhedsHeadere },
+      ...(adminVaert
+        ? [
+            {
+              source: "/(.*)",
+              has: [{ type: "host" as const, value: `^${adminVaert.replace(/[^a-z0-9-]/g, (t) => `\\${t}`)}$` }],
+              headers: [
+                { key: "Referrer-Policy", value: "no-referrer" },
+                { key: "X-Robots-Tag", value: "noindex, nofollow" },
+              ],
+            },
+          ]
+        : []),
+    ];
   },
 };
 

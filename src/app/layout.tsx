@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { erAdminVaert } from "@/lib/adminVaert";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidevisning from "@/components/statistik/Sidevisning";
@@ -51,6 +52,9 @@ export default async function RootLayout({
   // Cookie-samtykket læses her, så banneret er med i den første HTML, når der
   // mangler et gyldigt valg (ingen blink efter hydrering).
   const startRaa = gyldigSamtykkeVaerdi((await cookies()).get(SAMTYKKE_COOKIE)?.value);
+  // Admin-hosten (ADMIN_VAERT) har kun nødvendige cookies og ingen
+  // besøgsstatistik - og banneret linker til sider, der ikke findes dér.
+  const adminVaert = erAdminVaert((await headers()).get("host"));
   return (
     <html
       lang="da"
@@ -59,8 +63,8 @@ export default async function RootLayout({
       <body className="font-sans min-h-full flex flex-col" suppressHydrationWarning>
         {children}
         {/* Cookiefri besøgsstatistik (src/app/api/statistik/route.ts). */}
-        <Sidevisning />
-        <CookieBanner startRaa={startRaa} />
+        {!adminVaert && <Sidevisning />}
+        {!adminVaert && <CookieBanner startRaa={startRaa} />}
       </body>
     </html>
   );

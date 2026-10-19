@@ -3,6 +3,18 @@ import { NextResponse, type NextRequest } from "next/server";
 import { foerLancering } from "@/lib/lancering";
 import { ROLLE_COOKIE, laesRolleCookie, lavRolleCookie } from "@/lib/rolleCookie";
 import { offentligNoegle } from "@/lib/supabase/noegler";
+import { adminCookieOptions, adminUrl, adminVaertKonfig, hovedDomaeneLukning } from "@/lib/adminVaert";
+import {
+  ADMIN_HEADERE,
+  ROBOTS_ADMIN,
+  adminGateBeslutning,
+  adminGateKraeverRolle,
+  adminRute,
+  adminSessionTilstand,
+  hovedAdminBeslutning,
+  type GateBeslutning,
+} from "@/lib/adminGateRegler";
+import { toTrinMaksTimer } from "@/lib/staffToTrinRegler";
 
 // Routes der er tilgængelige uden login, mens resten af appen er bag
 // venteliste-gaten. Kun API-ruter med egen adgangskontrol undtages:
@@ -442,6 +454,12 @@ export async function updateSession(
 
   const { pathname } = request.nextUrl;
 
+  // Admin på egen host (ADMIN_VAERT): /adgang findes kun dér, og /admin
+  // lukkes efter ADMIN_LUK_HOVEDDOMAENE (src/lib/adminGateRegler.ts). Uden
+  // ADMIN_VAERT er hovedsitet uændret.
+  const hoved = hovedAdminBeslutning(pathname, request.method, hovedDomaeneLukning());
+  if (hoved) return gateSvar(request, hoved);
+
   // Offentlige ruter skal aldrig redirecte, uanset login-status.
   if (erOffentligLaeseside(pathname, request.method)) {
     return supabaseResponse;
@@ -564,8 +582,116 @@ export async function updateSession(
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new NextResponse("Ingen adgang", { status: 403 });
     }
-    return NextResponse.redirect(new URL("/admin/erhverv", request.url));
+    // Med ADMIN_VAERT ligger Erhverv på admin-hosten.
+    return NextResponse.redirect(tilAdminVaert(request, "/admin/erhverv"));
   }
 
   return medCookie(supabaseResponse);
+}
+
+// --- Admin på egen host (ADMIN_VAERT) -----------------------------------------
+// docs/ADMIN-VAERT.md. Reglerne er rene funktioner i src/lib/adminGateRegler.ts.
+
+// Fuld adresse på admin-hosten (NEXT_PUBLIC_ADMIN_URL, ellers samme protokol
+// og port som forespørgslen med ADMIN_VAERT som host). Uden ADMIN_VAERT: samme
+// host som før.
+function tilAdminVaert(request: NextRequest, sti: string): URL {
+  const vaert = adminVaertKonfig();
+  if (!vaert) return new URL(sti, request.url);
+  const absolut = adminUrl(sti);
+  if (/^https?:\/\//i.test(absolut)) return new URL(absolut);
+  const url = new URL(sti, request.url);
+  url.hostname = vaert;
+  return url;
+}
+
+// videre: svaret med de (evt. fornyede) session-cookies. Ved en omdirigering
+// eller fejl følger cookies med, så en fornyet session ikke tabes (ellers
+// ville næste forespørgsel bruge det gamle refresh-token igen).
+function gateSvar(request: NextRequest, b: GateBeslutning, videre?: NextResponse): NextResponse {
+  const res = gateSvarUdenCookies(request, b, videre);
+  if (videre && res !== videre) {
+    for (const c of videre.cookies.getAll()) res.cookies.set(c);
+  }
+  return res;
+}
+
+function gateSvarUdenCookies(request: NextRequest, b: GateBeslutning, videre?: NextResponse): NextResponse {
+  switch (b.type) {
+    case "videre":
+      return videre ?? NextResponse.next();
+    case "robots":
+      return new NextResponse(ROBOTS_ADMIN, { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    case "omdiriger":
+      // "admin-vaert": samme sti og søgning på admin-hosten (307 - metoden
+      // bevares, men kun GET/HEAD omdirigeres).
+      if (b.til === "admin-vaert") {
+        return NextResponse.redirect(tilAdminVaert(request, `${request.nextUrl.pathname}${request.nextUrl.search}`), 307);
+      }
+      return NextResponse.redirect(new URL(b.til, request.url), 307);
+    case "status":
+      return new NextResponse(b.tekst, { status: b.status, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  }
+}
+
+// Proxyen på admin-hosten. Egen, host-only session-cookie (adminCookieOptions)
+// - hovedsitets session sendes aldrig hertil. Gaten før lancering, firmakonti
+// og beta køres ikke: kun staff kommer længere end /adgang.
+export async function adminGate(
+  request: NextRequest,
+  ekstraHeadere: Record<string, string> = {},
+): Promise<NextResponse> {
+  const naeste = () => {
+    const headers = new Headers(request.headers);
+    for (const [k, v] of Object.entries(ekstraHeadere)) headers.set(k, v);
+    return NextResponse.next({ request: { headers } });
+  };
+  let supabaseResponse = naeste();
+
+  const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, offentligNoegle(), {
+    cookieOptions: adminCookieOptions(),
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        supabaseResponse = naeste();
+        cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options));
+      },
+    },
+  });
+
+  const { pathname, search } = request.nextUrl;
+  // Ukendte stier, Next' egne filer, ikoner, robots og / afgøres uden
+  // session (ingen opslag).
+  const rute = adminRute(pathname);
+  if (rute !== "admin" && rute !== "adgang") {
+    const b = adminGateBeslutning({ pathname, soeg: search, metode: request.method, session: "ingen", rolle: null });
+    return gateSvar(request, b, supabaseResponse);
+  }
+
+  // Lokal JWT-tjek (getClaims fornyer også en udløbet session).
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = !error && data?.claims && typeof data.claims.sub === "string" ? data.claims : null;
+  const session = adminSessionTilstand(claims, toTrinMaksTimer(), Math.floor(Date.now() / 1000));
+
+  let rolle: string | null = null;
+  let nyCookie: { vaerdi: string; maxAge: number } | null = null;
+  if (claims && adminGateKraeverRolle(pathname, request.method, session)) {
+    const id = await hentGateIdentitet(request, supabase, {
+      brugerId: claims.sub as string,
+      sessionId: typeof claims.session_id === "string" ? claims.session_id : null,
+    });
+    rolle = id.rolle;
+    nyCookie = id.nyCookie;
+  }
+
+  const b = adminGateBeslutning({ pathname, soeg: search, metode: request.method, session, rolle });
+  return saetRolleCookie(request, gateSvar(request, b, supabaseResponse), nyCookie);
+}
+
+export function saetAdminHeadere(res: NextResponse): NextResponse {
+  for (const [k, v] of Object.entries(ADMIN_HEADERE)) res.headers.set(k, v);
+  return res;
 }

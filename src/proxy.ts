@@ -1,13 +1,25 @@
 import { type NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/middleware";
+import { adminGate, saetAdminHeadere, updateSession } from "@/lib/supabase/middleware";
 import { lavCsp, lavNonce } from "@/lib/csp";
+import { erAdminVaert } from "@/lib/adminVaert";
 
 export async function proxy(request: NextRequest) {
   // Ny nonce for hver forespoergsel. Den sendes med til renderingen (request-
   // headere) og til browseren (response-header) - ogsaa ved redirects.
   const nonce = lavNonce();
-  const csp = lavCsp(nonce);
 
+  // Admin på egen host (ADMIN_VAERT, docs/ADMIN-VAERT.md): delt tidligt.
+  // Admin-hosten har sin egen tilladelsesliste, sin egen session-cookie og
+  // sin egen CSP-zone - hovedsitets gate (før lancering, firma, beta) køres
+  // ikke dér. Uden ADMIN_VAERT er erAdminVaert altid false.
+  if (erAdminVaert(request.headers.get("host"))) {
+    const csp = lavCsp(nonce, "admin");
+    const response = await adminGate(request, { "x-nonce": nonce, "Content-Security-Policy": csp });
+    response.headers.set("Content-Security-Policy", csp);
+    return saetAdminHeadere(response);
+  }
+
+  const csp = lavCsp(nonce);
   const response = await updateSession(request, { "x-nonce": nonce, "Content-Security-Policy": csp });
   response.headers.set("Content-Security-Policy", csp);
   return response;
@@ -24,6 +36,9 @@ export async function proxy(request: NextRequest) {
 // /brand/x.png). Derfor kører proxyen ALTID, når forespørgslen har en krop
 // (content-type) eller en Next-Action-header - almindelige GET'er af statiske
 // filer har ingen af delene.
+//
+// Admin-hosten: de udeladte statiske filer (brand/, forside/ ...) serveres
+// også dér uden proxy - det er offentlige filer, og alle andre stier giver 404.
 export const config = {
   matcher: [
     "/((?!_next/static|_next/image|favicon\\.ico$|brand/|forside/|(?:file|globe|next|vercel|window|icon)\\.svg$|apple-icon\\.png$|opengraph-image\\.jpg$).*)",
