@@ -12,6 +12,17 @@ I dag viser bidhamr.dk `/coming-soon` for alle uden staff-rolle. Den rigtige for
 - **Opret bruger / Invite user i Supabase-dashboardet virker aldrig** efter migrationen (der er ingen billet). Testbrugere oprettes via `supabase/seed.sql`, firmakonti under Admin → Erhverv.
 - Lokalt (`npm run dev`, testdatabasen) er siden altid "lanceret", så forsiden kan ses på http://localhost:3000. `SIMULER_FOER_LANCERING=true` i `.env.local` viser den lukkede udgave med coming-soon. `LANCERET` har ingen virkning på testdatabasen. `SIMULER_TILMELDING_LUKKET=true` lukker tilmeldingen lokalt, så beta-tilmeldingen kan testes.
 
+## Betalingsformularen vises ikke på bidhamr.dk (19. okt. 2026) – tjek Stripe-nøglen i Vercel
+Lokalt prod-build med prods CSP virker, så fejlen ligger med stor sandsynlighed i Vercel-buildet: `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` bygges ind ved `next build`, og mangler den i buildet, forbliver "Betal"-knappen grå.
+- **Vercel → Project → Settings → Environment Variables:** `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` skal have flueben ved **Production** (ikke kun Preview/Development). Navnet skal stå præcis sådan, og værdien skal starte med `pk_test_` (samme konto som `STRIPE_SECRET_KEY`). Ingen anførselstegn og intet mellemrum.
+- **Deployments → den deployment, bidhamr.dk peger på → ⋯ → Redeploy**, og fjern fluebenet ved "Use existing Build Cache". Tjek, at den nye deployment bliver **Production/Current**. Har du brugt "Instant Rollback", bliver nye deployments ikke sat i drift af sig selv. Så skal du trykke "Promote".
+- Efter deploy af den nye kode: mangler nøglen stadig, viser **/admin** en rød lampe ("Den offentlige Stripe-nøgle mangler i buildet") og **/admin/drift** en fejl. Siden viser "Betalingsformularen kunne ikke indlæses …" i stedet for en grå knap, og der laves ingen betaling.
+- Rammer det også checkout? Ja, samme loader. Test et køb i checkout, når boost virker.
+
+## Boost-pakker (`20261026010000_boost_pakker.sql`)
+- **Kør migrationen i produktion (dit "ja").** Den er kørt to gange på testdatabasen. Den forudsætter `20261025010000_app_endpoints.sql` (min_auktion_boost med "kunst_kontrol" – md5'en i prod er allerede den udgave). Rækkefølgen af migration og deploy er ligegyldig: den gamle kode og appen køber 100-point-pakken som før, og den nye kode viser kun én pakke, indtil migrationen er kørt.
+- Test på hjemmesiden: Min konto → Boost-point → vælg 300 eller 700 point → "Køb … " → betal med 4242 4242 4242 4242.
+
 ## Fragt via Shipmondo – DAO, GLS og PostNord (se docs/FRAGT.md, "Shipmondo")
 - **GLS er slået fra, indtil Shipmondo har svaret. Slå til med `SHIPMONDO_GLS_AKTIV=true`** (Vercel, Production, og deploy igen), når Shipmondo har svaret på spørgsmål (3) herunder, og du vil have GLS med. Indtil da kan køberne kun vælge DAO og PostNord – på hjemmesiden og i appen. Pakker, der allerede er sendt med GLS, virker videre.
 - **Kør migrationen** `supabase/migrations/20261024020000_fragt_gls_slaaet_fra.sql` i produktion (dit "ja") lige efter `20261024010000` herunder. Den lader databasen afvise GLS, så længe flaget ikke er sat. Den er kørt to gange på testdatabasen.

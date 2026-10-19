@@ -1,7 +1,7 @@
 // Tekster om boost (hjemmesiden og appen bør bruge de samme). Ingen
-// hemmeligheder - kan bruges i klient-kode. Tallene (point, pris, timer)
-// kommer fra databasen (boost_indstillinger via mine_point /
-// min_auktion_boost), så de kun står ét sted.
+// hemmeligheder - kan bruges i klient-kode. Tallene (point, pris, timer,
+// pakkerne og besparelsen) kommer fra databasen (boost_indstillinger og
+// boost_pakker via mine_point / min_auktion_boost), så de kun står ét sted.
 
 const kr = (oere: number) =>
   (oere / 100).toLocaleString("da-DK", { minimumFractionDigits: oere % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 });
@@ -30,13 +30,27 @@ export const BOOST_TEKST = {
     minBudOere: number,
     maksPrKoeber: number,
   ) => [
-    `Køb ${pakkePoint} point for ${kr(prisOere)} kr. (inkl. moms). Du får en faktura fra BidHamr.`,
+    `Køb point i pakker fra ${pakkePoint} point for ${kr(prisOere)} kr. (inkl. moms) – jo større pakke, jo billigere er hvert boost. Du får en faktura fra BidHamr.`,
     `Et boost koster ${boostPoint} point og lægger din auktion øverst i ${timer} timer.`,
     `Du får ${prSalg} point for hvert salg på mindst ${kr(minBudOere)} kr., når pengene er udbetalt til dig – højst ${maksPrKoeber} point pr. køber pr. måned. Bliver handlen refunderet, trækkes pointene tilbage.`,
   ],
   betalingIntro: "Betalingen håndteres af vores betalingspartner Stripe.",
   betalingBehandles: "Din betaling behandles. Dine point kommer, så snart betalingen er gennemført.",
-  koebGennemfoert: (point: number) => `Tak for dit køb. Du har fået ${point} point.`,
+  koebGennemfoert: (point: number, beloebOere?: number | null) =>
+    beloebOere ? `Tak for dit køb. Du har fået ${point} point for ${kr(beloebOere)} kr.` : `Tak for dit køb. Du har fået ${point} point.`,
+
+  // Pakkerne (boost_pakker via mine_point.pakker - Filip, 19. okt. 2026).
+  pakkerTitel: "Vælg en pakke",
+  pakkePoint: (point: number) => `${point.toLocaleString("da-DK")} point`,
+  pakkePris: (prisOere: number) => `${kr(prisOere)} kr.`,
+  pakkeBoost: (antal: number) => `= ${antal} boost`,
+  spar: (oere: number) => `Spar ${kr(oere)} kr.`,
+  bedsteKoeb: "Bedste køb",
+  // Auktionens boost-boks: til pakkerne under Min konto -> Boost-point.
+  koebPointKnap: (fraOere: number) => `Køb boost-point – fra ${kr(fraOere)} kr.`,
+  pakkeUkendt: "Pakken findes ikke længere. Genindlæs siden, og vælg en pakke.",
+  koebBehandles: "Dit tidligere køb af point behandles stadig. Vent lidt, og prøv igen.",
+  historikKoeb: (beloebOere: number) => `${kr(beloebOere)} kr.`,
   allerede_betalt: "Købet er allerede betalt. Opdatér siden for at se dine point.",
   historikTitel: "Historik",
   historikTom: "Du har ingen point-bevægelser endnu.",

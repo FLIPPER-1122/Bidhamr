@@ -466,3 +466,11 @@ Bygget i `20261019010000_pengesikkerhed.sql`. Reglen er uændret: penge udbetale
    - en auktion kan kun boostes, hvis der er **mindst 1 time tilbage**,
    - **ingen automatisk tilbagebetaling** af point, hvis en boostet auktion annulleres (chefen kan justere),
    - **ingen point for salg før lanceringen**.
+
+## Boost-pakker (Filip, 19. okt. 2026)
+- Boost-point sælges i **tre pakker med rabat** (priserne er inkl. moms):
+  - **100 point for 39 kr.** (= 2 boost)
+  - **300 point for 99 kr.** (= 6 boost) – mærket **"Spar 18 kr."**
+  - **700 point for 199 kr.** (= 14 boost) – mærkerne **"Spar 74 kr."** og **"Bedste køb"**
+- Et boost koster stadig **50 point** og varer **24 timer**. Alle andre boost-regler er uændrede.
+- *Bygget 19. okt. 2026 (`20261026010000_boost_pakker.sql`, `src/components/boost/BoostKoeb.tsx`, app: docs/APP-BETALING.md):* pakkerne ligger i databasen (`boost_pakker`: id, point, pris, aktiv, sortering, "Bedste køb"). Klienten sender kun pakkens id; databasen vælger pris og point og låser dem (og pakken) på købet. Uden pakke købes 100-point-pakken (appen virker som før). "Spar X kr." regnes af databasen i forhold til 100-point-pakken (3 × 39 kr. − 99 kr. = 18 kr.), så teksten altid passer til priserne. Et åbent, ubetalt køb af en anden pakke genbruges aldrig: dets PaymentIntent annulleres først hos Stripe (blev den betalt imens, får brugeren den pakkes point), og så startes et nyt køb. Refusion, indsigelse og tilbageførsel bruger købets egne point (fx 700). Faktura, kvittering og historik viser købets pakke og beløb. Ingen pakke er valgt på forhånd ud over den billigste (ingen forvalgt dyr pakke). Auktionens boost-boks linker til samme pakkevalg ("Køb boost-point – fra 39 kr."). Pakkerne ændres med en migration (sæt `aktiv = false` i stedet for at slette).

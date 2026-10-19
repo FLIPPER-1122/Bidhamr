@@ -13,6 +13,7 @@ export function register() {
   void (async () => {
     try {
       const { databasensStripeTilstand, noeglensTilstand, offentligNoeglesTilstand } = await import("@/lib/stripe");
+      const { STRIPE_NOEGLE_MANGLER } = await import("@/lib/stripeNoegle");
       const { databasenErDestination } = await import("@/lib/betaling/model");
       const { alarmPrTilfaelde, lukTilfaelde } = await import("@/lib/betaling/driftTilfaelde");
       const tjek = async (noegle: string, ok: boolean, hvor: string, fejl: string) => {
@@ -30,9 +31,11 @@ export function register() {
       );
       await tjek(
         "start:stripe-offentlig",
-        !offentlig || !hemmelig || offentlig === hemmelig,
+        !hemmelig || offentlig === hemmelig,
         "stripe/tilstand",
-        `Start-tjek: den offentlige Stripe-nøgle er ${offentlig}, men den hemmelige er ${hemmelig} - nye betalinger stoppes.`,
+        offentlig
+          ? `Start-tjek: den offentlige Stripe-nøgle er ${offentlig}, men den hemmelige er ${hemmelig} - nye betalinger stoppes.`
+          : `Start-tjek: ${STRIPE_NOEGLE_MANGLER}`,
       );
       await tjek(
         "start:betalingsmodel",

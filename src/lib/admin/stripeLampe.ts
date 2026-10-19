@@ -29,6 +29,17 @@ export function stripeTilstandLampe(
     };
   }
   const vagtGodkender = db === noegle || (db === null && noegle === "test");
+  // Ingen (gyldig) offentlig nøgle i buildet: betalingsformularen kan ikke
+  // vises, og nye betalinger er stoppet (kraevSammeOffentligeNoegle).
+  if (vagtGodkender && !offentlig) {
+    return {
+      navn: "Test eller live",
+      tone: "roed",
+      tekst:
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY mangler eller er ugyldig i buildet – betalingsformularen kan ikke vises, og nye betalinger er stoppet",
+      statusTekst: "Den offentlige Stripe-nøgle mangler i buildet – nye betalinger er stoppet",
+    };
+  }
   // Hemmelig og offentlig nøgle i hver sin tilstand: nye betalinger er stoppet
   // (samme regel som kraevSammeOffentligeNoegle).
   if (vagtGodkender && offentlig && offentlig !== noegle) {

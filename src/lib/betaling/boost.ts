@@ -2,9 +2,14 @@ import "server-only";
 
 // Boost (Filip, 13. okt. 2026). Migration 20261023030000_boost.sql.
 //
-// Pengestrømmen for KØB af point (100 point for 39 kr.):
-//   1. boost_koeb_start låser pris og point på en række i boost_koeb (højst
+// Pengestrømmen for KØB af point (pakkerne i boost_pakker - 100 point for
+// 39 kr., 300 for 99 kr., 700 for 199 kr.; Filip, 19. okt. 2026):
+//   1. boost_koeb_start vælger pakken ud fra id'et (klienten sender kun
+//      id'et) og låser pakke, pris og point på en række i boost_koeb (højst
 //      ét åbent køb pr. bruger). Kun private konti (firmaer: 'erhverv').
+//      Et åbent køb af en ANDEN pakke genbruges aldrig: har det en
+//      PaymentIntent, annulleres den først hos Stripe (eller spejles, hvis
+//      den nåede at blive betalt), og så startes et nyt køb.
 //   2. En PaymentIntent på BidHamrs PLATFORMSKONTO - ingen on_behalf_of,
 //      ingen transfer_data, intet application fee: købet er BidHamrs egen
 //      omsætning (med moms). Kort, MobilePay, Apple Pay og Google Pay
@@ -137,11 +142,26 @@ const START_FEJL: Record<string, { fejl: string; kode: BoostStartFejl["kode"] }>
   erhverv: { fejl: BOOST_TEKST.kunPrivate, kode: "erhverv" },
   spaerret: { fejl: BOOST_TEKST.spaerret, kode: "spaerret" },
   samtykke: { fejl: BOOST_TEKST.samtykkeMangler, kode: "samtykke" },
+  pakke_ukendt: { fejl: BOOST_TEKST.pakkeUkendt, kode: "pakke_ukendt" },
+  behandles: { fejl: BOOST_TEKST.koebBehandles, kode: "behandles" },
 };
+
+// Pakkens id (boost_pakker.id). null = standardpakken.
+export const PAKKE_ID = /^[a-z0-9_]{1,40}$/;
 
 export type BoostStartFejl = {
   fejl: string;
-  kode: "ugyldig" | "ikke_fundet" | "erhverv" | "spaerret" | "samtykke" | "pause" | "betalt" | "fejl";
+  kode:
+    | "ugyldig"
+    | "ikke_fundet"
+    | "erhverv"
+    | "spaerret"
+    | "samtykke"
+    | "pakke_ukendt"
+    | "behandles"
+    | "pause"
+    | "betalt"
+    | "fejl";
 };
 
 export type BoostStart =
@@ -151,6 +171,7 @@ export type BoostStart =
       clientSecret: string;
       beloebOere: number;
       point: number;
+      pakke: string | null;
       customerId: string | null;
       customerSessionClientSecret: string | null;
     }
@@ -158,11 +179,16 @@ export type BoostStart =
 
 // Brugeren starter (eller genoptager) et køb af point. brugerId SKAL være
 // verificeret med auth af kalderen; databasen tjekker igen under lås.
+// pakke: pakkens id fra klienten (kun id'et - pris og point vælger
+// databasen); null = standardpakken (100 point - appen uden pakke).
 export async function startBoostKoeb(
   brugerId: string,
   kanal: BetalingsKanal = "web",
   samtykke = false,
+  pakke: string | null = null,
+  skiftForsoeg = 0,
 ): Promise<BoostStart> {
+  if (pakke !== null && !PAKKE_ID.test(pakke)) return START_FEJL.pakke_ukendt;
   try {
     try {
       await kraevSammeOffentligeNoegle();
@@ -172,13 +198,38 @@ export async function startBoostKoeb(
     }
     if ((await hentNoedstop()).nyeBetalingerStoppet) return { fejl: NYE_BETALINGER_STOPPET_TEKST, kode: "pause" };
     const admin = createAdminClient();
-    const { data, error } = await admin.rpc("boost_koeb_start", { p_bruger: brugerId, p_samtykke: samtykke === true });
+    // Uden pakke kaldes funktionen uden p_pakke - så virker kaldet både før
+    // migrationen 20261026010000 (gammel signatur) og efter (standardpakken).
+    const { data, error } = await admin.rpc(
+      "boost_koeb_start",
+      pakke === null
+        ? { p_bruger: brugerId, p_samtykke: samtykke === true }
+        : { p_bruger: brugerId, p_samtykke: samtykke === true, p_pakke: pakke },
+    );
     if (error) throw new Error(`boost_koeb_start: ${error.message}`);
-    const s = data as { kode?: string; id?: string; gammel_pi?: string | null } | null;
+    const s = data as {
+      kode?: string;
+      id?: string;
+      gammel_pi?: string | null;
+      pi?: string | null;
+      pakke?: string | null;
+    } | null;
     // Et gammelt ubetalt køb (7 dage uden aktivitet) er annulleret i
     // databasen: dets PaymentIntent annulleres også hos Stripe (bliver den
     // alligevel betalt, er den kasseret og refunderes som dobbeltbetaling).
     if (s?.gammel_pi) await annullerGammelPi(s.gammel_pi);
+    // Åbent køb af en anden pakke med en PaymentIntent: annullér den hos
+    // Stripe FØRST (er den betalt, spejles den - så får brugeren den gamle
+    // pakkes point, og intet refunderes som dobbeltbetaling), og prøv igen.
+    // Kun når brugeren selv har valgt en pakke - uden pakke (den gamle app)
+    // genbruger databasen altid det åbne køb og svarer aldrig 'skift'.
+    if (s?.kode === "skift") {
+      if (pakke === null || !s.pi || skiftForsoeg >= 2) return { fejl: GENERISK, kode: "fejl" };
+      const gammel = await afslutPiVedSkift(s.pi);
+      if (gammel === "betalt") return { fejl: BOOST_TEKST.allerede_betalt, kode: "betalt" };
+      if (gammel === "behandles") return START_FEJL.behandles;
+      return startBoostKoeb(brugerId, kanal, samtykke, pakke, skiftForsoeg + 1);
+    }
     if ((s?.kode !== "ok" && s?.kode !== "findes") || !s.id) {
       return START_FEJL[s?.kode ?? ""] ?? { fejl: GENERISK, kode: "fejl" };
     }
@@ -199,6 +250,9 @@ export async function startBoostKoeb(
       clientSecret: pi.client_secret,
       beloebOere: pi.amount,
       point: Number(k.point),
+      // Pakken fra databasens svar (boost_koeb_start) - ikke en kolonne i
+      // KOLONNER, så webhooken virker, uanset om migrationen er kørt.
+      pakke: typeof s.pakke === "string" ? s.pakke : null,
       customerId: typeof pi.customer === "string" ? pi.customer : (pi.customer?.id ?? null),
       customerSessionClientSecret: await kundeSessionTilCheckout(brugerId, pi, kanal),
     };
@@ -228,6 +282,35 @@ async function annullerGammelPi(piId: string): Promise<void> {
   } catch (err) {
     await logDriftFejl({ kilde: "server", hvor: "Boost: annullér gammel PaymentIntent", fejl: err });
   }
+}
+
+// Brugeren skifter pakke, mens et køb af en anden pakke har en
+// PaymentIntent: den annulleres hos Stripe (idempotency key), og resultatet
+// spejles (boost_koeb_registrer: 'canceled' kasserer den på købet, så
+// databasen kan annullere købet og starte det nye). Nåede den at blive betalt
+// (eller behandles den), spejles det i stedet - pointene for den gamle pakke
+// krediteres som normalt. 'annulleret' | 'betalt' | 'behandles'.
+async function afslutPiVedSkift(piId: string): Promise<"annulleret" | "betalt" | "behandles"> {
+  const stripe = getStripe();
+  let pi = await stripe.paymentIntents.retrieve(piId);
+  if (AABNE_PI.includes(pi.status)) {
+    try {
+      pi = await stripe.paymentIntents.cancel(
+        piId,
+        { cancellation_reason: "abandoned" },
+        { idempotencyKey: `bidhamr-boost-skift-${piId}` },
+      );
+    } catch (err) {
+      // Fx betalt i samme øjeblik: slå den op igen og spejl den.
+      pi = await stripe.paymentIntents.retrieve(piId);
+      if (pi.status !== "succeeded" && pi.status !== "processing" && pi.status !== "canceled") throw err;
+    }
+  }
+  await spejlBoostPi(pi);
+  if (pi.status === "succeeded") return "betalt";
+  if (pi.status === "processing") return "behandles";
+  if (pi.status !== "canceled") throw new Error(`Boost-PaymentIntent ${piId} kunne ikke annulleres (${pi.status})`);
+  return "annulleret";
 }
 
 function metadata(k: BoostKoebRaekke): Stripe.MetadataParam {
@@ -356,16 +439,21 @@ export async function spejlBoostPi(pi: Stripe.PaymentIntent): Promise<string> {
 // PaymentIntenten er brugerens eget boost-køb. Kaster aldrig.
 // "ikke_fundet": PaymentIntenten findes ikke som boost-køb, eller den er
 // en andens - så vises der ingen kvittering. null: noget fejlede (vises som
-// "behandles", webhooken gør købet færdigt).
-export async function synkBoostRetur(brugerId: string, piId: string): Promise<string | null> {
+// "behandles", webhooken gør købet færdigt). point/beloebOere: købets låste
+// pakke - kvitteringen viser den pakke, der faktisk er købt.
+export type BoostRetur = { kode: string | null; point: number | null; beloebOere: number | null };
+
+export async function synkBoostRetur(brugerId: string, piId: string): Promise<BoostRetur> {
+  let k: BoostKoebRaekke | null = null;
   try {
-    if (!/^pi_[A-Za-z0-9_]{1,250}$/.test(piId)) return "ikke_fundet";
-    const k = await boostKoebForPi(piId);
-    if (!k || k.bruger_id !== brugerId) return "ikke_fundet";
-    return await spejlBoostPi(await getStripe().paymentIntents.retrieve(piId));
+    if (!/^pi_[A-Za-z0-9_]{1,250}$/.test(piId)) return { kode: "ikke_fundet", point: null, beloebOere: null };
+    k = await boostKoebForPi(piId);
+    if (!k || k.bruger_id !== brugerId) return { kode: "ikke_fundet", point: null, beloebOere: null };
+    const kode = await spejlBoostPi(await getStripe().paymentIntents.retrieve(piId));
+    return { kode, point: Number(k.point), beloebOere: Number(k.beloeb_oere) };
   } catch (err) {
     await logDriftFejl({ kilde: "action", sti: "betaling", hvor: "Boost: retur fra betaling", fejl: err, brugerId });
-    return null;
+    return { kode: null, point: k ? Number(k.point) : null, beloebOere: k ? Number(k.beloeb_oere) : null };
   }
 }
 

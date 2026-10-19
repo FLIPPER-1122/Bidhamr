@@ -353,7 +353,7 @@ describe("webhooken: fremmede testdata giver ingen alarm (kun i testtilstand)", 
 describe("Test eller live-lampen følger Stripe-vagten", () => {
   // kraevSammeStripeTilstand + kraevSammeOffentligeNoegle.
   const vagtGodkender = (n: "test" | "live" | null, d: "test" | "live" | null, o: "test" | "live" | null) =>
-    n !== null && (d === n || (d === null && n === "test")) && (o === null || o === n);
+    n !== null && (d === n || (d === null && n === "test")) && o === n;
 
   it("aldrig rød, når vagterne ville godkende - og altid rød, når de afviser", () => {
     for (const n of ["test", "live", null] as const)
@@ -373,14 +373,17 @@ describe("Test eller live-lampen følger Stripe-vagten", () => {
     expect(stripeTilstandLampe("test", "test", false, "live")).toMatchObject({ tone: "roed" });
     expect(stripeTilstandLampe("live", "live", false, "test")).toMatchObject({ tone: "roed" });
     expect(stripeTilstandLampe("test", "test", false, "test")).toMatchObject({ tone: "blaa" });
+    // Ingen offentlig nøgle i buildet: Payment Element kan ikke vises (19. okt. 2026).
+    expect(stripeTilstandLampe("test", "test", false, null)).toMatchObject({ tone: "roed" });
+    expect(stripeTilstandLampe("test", "test", false)).toMatchObject({ tone: "roed" });
   });
 
   it("teksterne", () => {
-    expect(stripeTilstandLampe("test", "test", false)).toMatchObject({ tone: "blaa", tekst: "Stripe testmiljø (før lancering)" });
-    expect(stripeTilstandLampe("test", "test", true)).toMatchObject({ tone: "blaa", tekst: "testnøgle + testdatabase" });
-    expect(stripeTilstandLampe("live", "live", false)).toMatchObject({ tone: "groen" });
-    expect(stripeTilstandLampe("live", "test", false)).toMatchObject({ tone: "roed", tekst: "Stripe-nøglen passer ikke til databasen" });
-    expect(stripeTilstandLampe("test", "live", true)).toMatchObject({ tone: "roed" });
+    expect(stripeTilstandLampe("test", "test", false, "test")).toMatchObject({ tone: "blaa", tekst: "Stripe testmiljø (før lancering)" });
+    expect(stripeTilstandLampe("test", "test", true, "test")).toMatchObject({ tone: "blaa", tekst: "testnøgle + testdatabase" });
+    expect(stripeTilstandLampe("live", "live", false, "live")).toMatchObject({ tone: "groen" });
+    expect(stripeTilstandLampe("live", "test", false, "live")).toMatchObject({ tone: "roed", tekst: "Stripe-nøglen passer ikke til databasen" });
+    expect(stripeTilstandLampe("test", "live", true, "test")).toMatchObject({ tone: "roed" });
 
   });
 });

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { offentligNoegle } from "@/lib/supabase/noegler";
 import { klientIp, tjekGraenser, FOR_MANGE_FORSOEG, type GraenseNavn } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
+import { indbyggetOffentligNoegle } from "@/lib/stripeNoegle";
 import {
   annullerPakke,
   bookPakke,
@@ -203,8 +204,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
         // customerId + customerSessionClientSecret som betal i
         // /api/betaling/app, så et gemt kort kan forudfyldes i PaymentSheet.
         // publishableKey er med, når den er sat (valgfri - samme som betal).
-        const k = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
-        const publishableKey = /^pk_(test|live)_[A-Za-z0-9]+$/.test(k) ? k : null;
+        const publishableKey = indbyggetOffentligNoegle();
         return resultat({ ...r, publishableKey });
       }
     }

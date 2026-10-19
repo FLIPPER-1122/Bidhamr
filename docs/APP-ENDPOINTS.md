@@ -159,6 +159,14 @@ Svaret er da en tom sletning (intet slettet) - prøv ikke igen.
 - `POST /api/fragt/app/returfragt`: svaret har nu også `customerId` og `publishableKey` (som `betal`), så et gemt kort
   kan forudfyldes: `initPaymentSheet({ paymentIntentClientSecret, customerId: customerSessionClientSecret ? customerId
   : undefined, customerSessionClientSecret })`.
+- `POST /api/betaling/app/boost-koeb` (boost-pakker, Filip 19. okt. 2026 – migration
+  `20261026010000_boost_pakker.sql`): valgfrit `pakke` (pakkens id fra `mine_point().pakker`, fx `"point_300"`).
+  Uden `pakke` købes 100-point-pakken som før, så den nuværende app virker uændret. Serveren vælger pris og point;
+  svaret har desuden `pakke`. Nye fejl: `409 pakke_ukendt`, `409 behandles`, `400 ugyldig` (ikke en tekst-id). Se
+  docs/APP-BETALING.md, "Boost".
+- `mine_point()` og `min_auktion_boost({ p_auktion })` har nu `pakker: [{ id, point, pris_oere, boost, spar_oere,
+  bedste }]`; `pakke` (100-point-pakken, nu også med `id`) er bevaret. `mine_point().historik[].beloeb_oere` = betalt
+  beløb på køb.
 
 ## RPC'er (migration `20261025010000_app_endpoints.sql`)
 

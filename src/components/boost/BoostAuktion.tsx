@@ -23,7 +23,9 @@ export type MinAuktionBoost = {
   saldo: number;
   pris: number;
   timer: number;
-  pakke: { point: number; pris_oere: number };
+  pakke: { id?: string | null; point: number; pris_oere: number };
+  // Alle aktive pakker (20261026010000) - mangler før migrationen.
+  pakker?: { id: string; point: number; pris_oere: number }[];
 };
 
 export function boostTid(iso: string): string {
@@ -60,8 +62,13 @@ export default function BoostAuktion({ auktionId, status }: { auktionId: string;
           {status.grund === "for_faa_point" ? (
             <div className="mt-3">
               <p className="text-sm text-tekst">{BOOST_TEKST.forFaaPoint(status.saldo, status.pris)}</p>
+              {/* Samme pakkevalg som Min konto -> Boost-point (BoostKoeb). */}
               <Link href={koebHref} className="btn btn-primaer btn-lille mt-3">
-                {BOOST_TEKST.koebKnap(status.pakke.point, status.pakke.pris_oere)}
+                {BOOST_TEKST.koebPointKnap(
+                  status.pakker && status.pakker.length > 0
+                    ? Math.min(...status.pakker.map((x) => x.pris_oere))
+                    : status.pakke.pris_oere,
+                )}
               </Link>
             </div>
           ) : status.kan_booste ? (
