@@ -21,7 +21,8 @@ import { maaMeldeBetaFejl } from "@/lib/betaFejlAdgang";
 import { graenseFejl, indenForGraense, tjekGraenserLukket } from "@/lib/rateLimit";
 import { logDriftFejl, renFejltekst, renSti } from "@/lib/drift";
 import { alarmModtagere } from "@/lib/driftAlarm";
-import { bygMail, sideUrl } from "@/lib/mails/layout";
+import { bygMail } from "@/lib/mails/layout";
+import { adminAbsolutUrl } from "@/lib/adminVaert";
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import {
   BETA_FEJL_FEJL,
@@ -66,7 +67,7 @@ async function sendAlarm(fejlId: string) {
     afsnitHtml: [
       "En beta-tester har meldt en fejl, der forhindrer dem i at komme videre. Teksten står kun i admin.",
     ],
-    knap: { tekst: "Åbn Beta-fejl", url: sideUrl("/admin/beta-fejl?alvor=blokerer") },
+    knap: { tekst: "Åbn Beta-fejl", url: adminAbsolutUrl("/admin/beta-fejl?alvor=blokerer") },
     aarsag: "Du får denne mail, fordi din adresse står i DRIFT_ALARM_MAIL. Højst 6 af disse mails i timen.",
   });
   for (const til of modtagere) {

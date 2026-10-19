@@ -1,3 +1,4 @@
+import { hovedsiteUrl } from "@/lib/adminVaert";
 import { Suspense } from "react";
 import Link from "next/link";
 import { kraevSideRolle } from "@/lib/adminAuth";
@@ -360,7 +361,7 @@ export default async function AdminBedommelser({
                     (sælger) · {tid(r.oprettet)}
                   </span>
                   <span className="flex flex-wrap gap-3">
-                    <Link href={`/auktion/${r.auktion_id}`} className="font-medium text-groen hover:underline">
+                    <Link href={hovedsiteUrl(`/auktion/${r.auktion_id}`)} className="font-medium text-groen hover:underline">
                       {titelMap.get(r.auktion_id) ?? "Auktionen"}
                     </Link>
                     {r.trade_id && (

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { nuMs } from "@/lib/dsa/regler";
+import { hovedsiteUrl } from "@/lib/adminVaert";
 
 // Små byggeklodser til /admin/dsa (server components).
 
@@ -69,7 +70,11 @@ export function PlaceringLink({ indholdType, placering }: { indholdType: string;
   // Kendt indhold: placeringen er en intern sti, som serveren har bygget.
   if (indholdType !== "andet" && placering.startsWith("/")) {
     return (
-      <Link href={placering} className="break-all font-medium text-groen hover:underline" target="_blank">
+      <Link
+        href={placering.startsWith("/admin") ? placering : hovedsiteUrl(placering)}
+        className="break-all font-medium text-groen hover:underline"
+        target="_blank"
+      >
         {placering}
         <span className="sr-only"> (åbner i en ny fane)</span>
       </Link>

@@ -9,6 +9,20 @@ import type { Instrumentation } from "next";
 // ikke på svaret (ingen forsinkelse af opstarten) og kaster aldrig.
 export function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // Admin på egen host (docs/ADMIN-VAERT.md): ADMIN_VAERT og
+  // NEXT_PUBLIC_ADMIN_URL skal sættes sammen og passe til hinanden.
+  void (async () => {
+    try {
+      const { adminKonfigFejl } = await import("@/lib/adminVaert");
+      const fejl = adminKonfigFejl();
+      if (!fejl) return;
+      console.error(`Start-tjek: ${fejl}`);
+      const { logDriftFejl } = await import("@/lib/drift");
+      await logDriftFejl({ kilde: "server", sti: "/admin", hvor: "Start-tjek: admin-host", fejl });
+    } catch (err) {
+      console.error("Start-tjek (admin-host) fejlede:", err);
+    }
+  })();
   if (!process.env.STRIPE_SECRET_KEY || !(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return;
   void (async () => {
     try {

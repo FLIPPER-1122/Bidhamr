@@ -1,3 +1,4 @@
+import { hovedsiteUrl } from "@/lib/adminVaert";
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
@@ -149,7 +150,7 @@ export default async function BoostAdminKort({
                   {p.type === "forbrug" && p.auktion_id && (
                     <>
                       {": "}
-                      <Link href={`/auktion/${p.auktion_id}`} className="text-groen underline">
+                      <Link href={hovedsiteUrl(`/auktion/${p.auktion_id}`)} className="text-groen underline">
                         {p.auktion_titel ?? "auktion"}
                       </Link>
                     </>

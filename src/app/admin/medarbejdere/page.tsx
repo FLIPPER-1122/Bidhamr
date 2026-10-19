@@ -1,8 +1,12 @@
 import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import { orVaerdi } from "@/lib/postgrest";
-import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { getStaffRole } from "@/lib/adminAuth";
+import { kraevSideRolle } from "@/lib/adminAuth";
+import { adminVaertAktiv } from "@/lib/adminVaert";
+import { FRISK_KODE_MINUTTER } from "@/lib/staffToTrinRegler";
+import { nuMs } from "@/lib/dsa/regler";
+import { aabnToTrinTilmelding, nulstilToTrin } from "@/app/actions/adminToTrin";
+import ToTrinHandling from "@/components/admin/ToTrinHandling";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { setRolle } from "@/app/actions/adminActions";
 import AdminFilters from "@/components/admin/AdminFilters";
@@ -17,10 +21,7 @@ export default async function AdminMedarbejdere({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const rolle = await getStaffRole();
-  if (rolle !== "chef") {
-    notFound();
-  }
+  const chef = await kraevSideRolle("chef");
 
   const { q } = await searchParams;
   const supabase = createAdminClient();
@@ -33,6 +34,73 @@ export default async function AdminMedarbejdere({
     .neq("rolle", "bruger")
     .order("rolle", { ascending: true })
     .order("navn", { ascending: true });
+
+  // To-trins-login (kun med admin på egen host, ADMIN_VAERT).
+  const toTrinSlaaetTil = adminVaertAktiv();
+  type ToTrin = { bruger_id: string; aktiv: boolean; opsat_kl: string | null; tilmelding_aaben_til: string | null };
+  const toTrin = new Map<string, ToTrin>();
+  if (toTrinSlaaetTil && staff && staff.length > 0) {
+    const { data } = await supabase
+      .from("staff_to_trin")
+      .select("bruger_id, aktiv, opsat_kl, tilmelding_aaben_til")
+      .in("bruger_id", staff.map((u) => u.id));
+    for (const r of (data ?? []) as ToTrin[]) toTrin.set(r.bruger_id, r);
+  }
+  // Chefens seneste kode fra app'en: er den over 15 minutter gammel, vises
+  // kodefeltet med det samme.
+  const nu = nuMs();
+  const kraeverKode =
+    chef.andetTrinSek === null || nu / 1000 - chef.andetTrinSek > FRISK_KODE_MINUTTER * 60;
+  const dato = (iso: string) =>
+    new Date(iso).toLocaleString("da-DK", {
+      timeZone: "Europe/Copenhagen",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  const toTrinCelle = (user: { id: string; rolle: string; navn: string | null }) => {
+    if (!toTrinSlaaetTil || user.rolle === "bruger") return null;
+    const t = toTrin.get(user.id);
+    const aabenTil = t?.tilmelding_aaben_til && new Date(t.tilmelding_aaben_til).getTime() > nu ? t.tilmelding_aaben_til : null;
+    const status = t?.aktiv
+      ? `Sat op${t.opsat_kl ? ` ${dato(t.opsat_kl)}` : ""}`
+      : aabenTil
+        ? `Ikke sat op – tilmelding åben til ${dato(aabenTil)}`
+        : "Ikke sat op – tilmelding lukket";
+    const egen = user.id === chef.userId;
+    return (
+      <div className="space-y-2">
+        <p className={`text-xs ${t?.aktiv ? "text-succes-tekst" : "text-advarsel-tekst"}`}>{status}</p>
+        {!egen && (
+          <div className="flex flex-wrap gap-2">
+            {t?.aktiv ? (
+              <ToTrinHandling
+                userId={user.id}
+                navn={user.navn ?? "medarbejderen"}
+                handling={nulstilToTrin}
+                label="Nulstil to-trins-login"
+                kvittering="To-trins-login er nulstillet. Medarbejderen har fået en mail."
+                bekraeft="Nulstil to-trins-login for {navn}? Den gamle app-kode og gendannelseskoderne holder op med at virke, og der åbnes for en ny opsætning i 24 timer."
+                kraeverKode={kraeverKode}
+                farlig
+              />
+            ) : (
+              <ToTrinHandling
+                userId={user.id}
+                navn={user.navn ?? "medarbejderen"}
+                handling={aabnToTrinTilmelding}
+                label={aabenTil ? "Forlæng tilmelding (24 t)" : "Åbn tilmelding (24 t)"}
+                kvittering="Tilmeldingen er åben i 24 timer. Medarbejderen har fået en mail."
+                kraeverKode={kraeverKode}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   let søgeresultater: typeof staff = null;
   if (q) {
@@ -86,6 +154,7 @@ export default async function AdminMedarbejdere({
               <th className="px-5 py-3 text-left font-medium">E-mail</th>
               <th className="px-5 py-3 text-left font-medium">Rolle</th>
               <th className="px-5 py-3 text-left font-medium">Oprettet</th>
+              {toTrinSlaaetTil && <th className="px-5 py-3 text-left font-medium">To-trins-login</th>}
               <th className="px-5 py-3 text-left font-medium">Handling</th>
             </tr>
           </thead>
@@ -98,12 +167,15 @@ export default async function AdminMedarbejdere({
                 <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-tekst-svag">
                   {new Date(user.oprettet).toLocaleDateString("da-DK")}
                 </td>
+                {toTrinSlaaetTil && (
+                  <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">{toTrinCelle(user)}</td>
+                )}
                 <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">{rolleKnapper(user)}</td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-5 py-10 text-center text-tekst-svag">
+                <td colSpan={toTrinSlaaetTil ? 6 : 5} className="px-5 py-10 text-center text-tekst-svag">
                   {tomBesked}
                 </td>
               </tr>

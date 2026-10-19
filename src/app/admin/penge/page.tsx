@@ -1,3 +1,4 @@
+import { hovedsiteUrl } from "@/lib/adminVaert";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStaffRole } from "@/lib/adminAuth";
@@ -484,7 +485,7 @@ function Holdes({ h, nu }: { h: PengeHoldes; nu: number }) {
                 <div className="min-w-0">
                   {r.auction_id ? (
                     <Link
-                      href={`/auktion/${r.auction_id}`}
+                      href={hovedsiteUrl(`/auktion/${r.auction_id}`)}
                       className="block truncate text-sm font-medium text-neutral-900 hover:underline"
                     >
                       {r.titel ?? "(slettet auktion)"}

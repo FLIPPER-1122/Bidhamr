@@ -12,6 +12,7 @@ import { badgeTekst } from "@/lib/notifikationer/visning";
 import { beskederTekst, useAntalUlaesteBeskeder } from "@/components/topbar/UlaesteBeskeder";
 import { useLogUd } from "@/components/topbar/useLogUd";
 import { ERHVERV_MENU } from "@/lib/tekster/erhverv";
+import { adminUrl } from "@/lib/adminVaert";
 
 const punkt =
   "flex min-h-11 w-full items-center rounded-lg px-3 text-left text-[15px] font-medium text-tekst hover:bg-groen-lys hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen";
@@ -145,7 +146,8 @@ export default function KontoMenu({
               <li><Link href="/konto/notifikationer" onClick={luk} className={punkt}>Notifikationsindstillinger</Link></li>
               <li><Link href="/konto/afgoerelser" onClick={luk} className={punkt}>Afgørelser og anmeldelser</Link></li>
               {erAdmin && (
-                <li><Link href="/admin" onClick={luk} className={`${punkt} text-groen`}>Admin</Link></li>
+                // Almindeligt link: med ADMIN_VAERT ligger admin på sin egen host.
+                <li><a href={adminUrl("/admin")} onClick={luk} className={`${punkt} text-groen`}>Admin</a></li>
               )}
               </>
               )}

@@ -5,6 +5,7 @@ import CookieindstillingerKnap from "@/components/samtykke/CookieindstillingerKn
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { MENU_IKONER } from "@/components/admin/menuIkoner";
+import { hovedsiteUrl } from "@/lib/adminVaert";
 import type { StatusTone } from "@/lib/admin/statuslinje";
 
 // Admin-menuen (docs/ADMIN-REDESIGN.md 2.2 + godkendt showcase): mørk
@@ -194,10 +195,14 @@ export default function AdminSidebar({
   rolle,
   taellere = INGEN_TAELLERE,
   status,
+  paaAdminVaert = false,
 }: {
   rolle: MenuRolle;
   taellere?: MenuTaellere;
   status?: MiniStatus | null;
+  // Admin på egen host (ADMIN_VAERT, sat af layoutet på serveren): log ud
+  // sender til /adgang/login, og "Tilbage til siden" går til hovedsitet.
+  paaAdminVaert?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -236,9 +241,11 @@ export default function AdminSidebar({
     setLoggerUd(true);
     // Supabase-klienten hentes først ved klik, så den ikke ligger i menuens
     // første JavaScript.
+    // scope "local": kun denne session logges ud. Den globale udgave loggede
+    // også medarbejderen ud af appen og hovedsitet.
     const { createClient } = await import("@/lib/supabase/client");
-    await createClient().auth.signOut();
-    router.push("/login");
+    await createClient().auth.signOut({ scope: "local" });
+    router.push(paaAdminVaert ? "/adgang/login" : "/login");
     router.refresh();
   }
 
@@ -336,13 +343,16 @@ export default function AdminSidebar({
           </svg>
           {loggerUd ? "Logger ud…" : "Log ud"}
         </button>
-        <Link href="/" className="flex min-h-9 items-center px-2.5 text-xs text-white/65 transition-colors hover:text-white">
+        <a href={hovedsiteUrl("/")} className="flex min-h-9 items-center px-2.5 text-xs text-white/65 transition-colors hover:text-white">
           ← Tilbage til siden
-        </Link>
-        <CookieindstillingerKnap
-          vedKlik={() => setOpen(false)}
-          className="flex min-h-9 items-center px-2.5 text-left text-xs text-white/65 transition-colors hover:text-white"
-        />
+        </a>
+        {/* Admin-hosten har ingen valgfrie cookies og intet cookie-banner. */}
+        {!paaAdminVaert && (
+          <CookieindstillingerKnap
+            vedKlik={() => setOpen(false)}
+            className="flex min-h-9 items-center px-2.5 text-left text-xs text-white/65 transition-colors hover:text-white"
+          />
+        )}
       </div>
     </div>
   );

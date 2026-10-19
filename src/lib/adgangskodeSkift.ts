@@ -22,7 +22,42 @@ const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const SAMME = "Den nye adgangskode skal være en anden end den nuværende.";
 const GENLOG_IND = "Af sikkerhedshensyn skal du logge ud og ind igen, før du kan skifte adgangskode.";
 
+const TO_TRIN_SKIFT =
+  "Du har to-trins-login som medarbejder. Brug \"Glemt adgangskode\" for at skifte adgangskoden – så får du et link på mail.";
+
 export type AuthFejlInfo = { code?: string | null; status?: number | null; message?: string | null };
+
+// Ny adgangskode fra linket i "Glemt adgangskode"-mailen for en medarbejder
+// med to-trins-login (docs/ADMIN-VAERT.md): Supabase afviser updateUser med
+// insufficient_aal, fordi linkets session er aal1. Er sessionen beviseligt
+// fra et maillink (amr 'otp' eller 'recovery' højst 1 time gammel - tjekket
+// i den verificerede JWT), sættes adgangskoden med admin-API'et. Alle
+// sessioner logges ud (Supabase gør det selv ved updateUserById), ligesom
+// gemNyAdgangskode alligevel logger ud alle steder. Ellers: fejlen som før.
+// Brugere uden to-trins-login får aldrig insufficient_aal og rammer ikke
+// denne vej. Admin (to-trins-login) er stadig beskyttet af koden fra app'en.
+export async function saetAdgangskodeEfterMaillink(
+  supabase: SupabaseClient,
+  brugerId: string,
+  ny: string,
+): Promise<AuthFejlInfo | null> {
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (error || !claims || claims.sub !== brugerId) return { code: "insufficient_aal", status: 401 };
+  const nu = Math.floor(Date.now() / 1000);
+  const amr = Array.isArray(claims.amr) ? (claims.amr as { method?: unknown; timestamp?: unknown }[]) : [];
+  const fraMaillink = amr.some(
+    (e) =>
+      (e?.method === "otp" || e?.method === "recovery") &&
+      typeof e.timestamp === "number" &&
+      nu - e.timestamp <= 3600 &&
+      e.timestamp <= nu + 300,
+  );
+  if (!fraMaillink) return { code: "insufficient_aal", status: 401 };
+  const { error: fejl } = await createAdminClient().auth.admin.updateUserById(brugerId, { password: ny });
+  if (!fejl) return null;
+  return { code: fejl.code ?? null, status: fejl.status ?? null, message: fejl.message };
+}
 
 export type SkiftSvar = { ok: true } | { fejl: string; kode: string };
 
@@ -65,6 +100,10 @@ export async function skiftAdgangskodeFor(args: {
       return { fejl: "Adgangskoden er for svag. Vælg en længere og mindre almindelig adgangskode.", kode: "adgangskode" };
     }
     if (error.code === "reauthentication_needed") return { fejl: GENLOG_IND, kode: "genlog_ind" };
+    // Medarbejder med to-trins-login (admin.bidhamr.dk): Supabase kræver en
+    // aal2-session for at skifte adgangskode, og appen/hjemmesiden er aal1.
+    // "Glemt adgangskode" virker (saetAdgangskodeEfterMaillink herunder).
+    if (error.code === "insufficient_aal") return { fejl: TO_TRIN_SKIFT, kode: "genlog_ind" };
     if (error.status === 429) return { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" };
     console.error("skiftAdgangskode fejlede:", error.code, error.message);
     return { fejl: GENERISK, kode: "fejl" };

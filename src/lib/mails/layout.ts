@@ -12,6 +12,8 @@
 // - Alt, der indsættes som tekst, skal være escapet af kalderen. Felter, der
 //   hedder "Html", forventes at være færdig, sikker HTML.
 
+import { adminAbsolutUrl } from "@/lib/adminVaert";
+
 const FARVE = {
   groen: "#1E5E4A",
   groenMork: "#154537",
@@ -29,7 +31,11 @@ const FARVE = {
 const SANS =
   "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
+// Admin-stier går til admin-hosten (NEXT_PUBLIC_ADMIN_URL), hvis den er sat -
+// et sikkerhedsnet, så et link til /admin i en mail aldrig rammer hovedsitet,
+// når /admin er lukket dér. Mails til staff bruger adminAbsolutUrl direkte.
 export function sideUrl(sti: string) {
+  if (sti === "/admin" || sti.startsWith("/admin/") || sti.startsWith("/admin?")) return adminAbsolutUrl(sti);
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? "https://bidhamr.dk";
   return `${base}${sti}`;
 }

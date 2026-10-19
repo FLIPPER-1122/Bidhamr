@@ -1,3 +1,4 @@
+import { hovedsiteUrl } from "@/lib/adminVaert";
 import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -148,7 +149,7 @@ export default async function AdminOpklaredeRapporter({
                 <tr key={r.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50 align-top">
                   <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
                     <Link
-                      href={`/auktion/${r.auction_id}`}
+                      href={hovedsiteUrl(`/auktion/${r.auction_id}`)}
                       className="font-medium text-tekst hover:text-groen hover:underline"
                     >
                       {titelMap[r.auction_id] ?? "(slettet auktion)"}

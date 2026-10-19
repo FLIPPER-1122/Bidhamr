@@ -1,13 +1,14 @@
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
 import BetaFejlKnap from "@/components/betafejl/BetaFejlKnap";
-import { hentBruger, hentMinRolle } from "@/lib/supabase/bruger";
+import { headers } from "next/headers";
+import { notFound, redirect } from "next/navigation";
+import { adminVaertAktiv, erAdminVaert } from "@/lib/adminVaert";
 import AdminSidebar, { INGEN_TAELLERE, type MiniStatus } from "@/components/admin/AdminSidebar";
 import AdminTopSoeg from "@/components/admin/AdminTopSoeg";
 import Kvittering from "@/components/admin/Kvittering";
 import { hentErhvervNye, hentNoedstopTal } from "@/lib/admin/taellere";
 import { hentAdminStatus } from "@/lib/admin/status";
-import type { StaffRole } from "@/lib/adminAuth";
+import { hentStaffAdgang, kraevSideRolle, type StaffRole } from "@/lib/adminAuth";
 
 // Fælles ramme for hele admin: menu, søgning øverst, nødstop-bjælken og
 // kvitteringen efter en handling (<Kvittering />, så den virker på alle
@@ -18,7 +19,7 @@ import type { StaffRole } from "@/lib/adminAuth";
 // tal og fyldes ud, når tallene er hentet.
 
 // Menuen med tal og statuslampe. Samme beregning som forsiden (hentAdminStatus).
-async function StaffMenu({ rolle }: { rolle: StaffRole }) {
+async function StaffMenu({ rolle, paaAdminVaert }: { rolle: StaffRole; paaAdminVaert: boolean }) {
   const [{ status, tal: t }, antalErhverv] = await Promise.all([
     hentAdminStatus(rolle),
     rolle === "chef" ? hentErhvervNye() : Promise.resolve(0),
@@ -26,6 +27,7 @@ async function StaffMenu({ rolle }: { rolle: StaffRole }) {
   return (
     <AdminSidebar
       rolle={rolle}
+      paaAdminVaert={paaAdminVaert}
       status={{ tone: status.tone, titel: status.titel, href: status.tone === "groen" ? "/admin" : status.href }}
       taellere={{
         handler: t.haenger + t.fragt + t.markeret + t.ubetalte,
@@ -41,7 +43,7 @@ async function StaffMenu({ rolle }: { rolle: StaffRole }) {
   );
 }
 
-async function SaelgerMenu() {
+async function SaelgerMenu({ paaAdminVaert }: { paaAdminVaert: boolean }) {
   const antalErhverv = await hentErhvervNye();
   const status: MiniStatus =
     antalErhverv > 0
@@ -51,7 +53,7 @@ async function SaelgerMenu() {
           href: "/admin/erhverv",
         }
       : { tone: "groen", titel: "Ingen nye henvendelser", href: "/admin/erhverv" };
-  return <AdminSidebar rolle="saelger" taellere={{ ...INGEN_TAELLERE, erhverv: antalErhverv }} status={status} />;
+  return <AdminSidebar rolle="saelger" paaAdminVaert={paaAdminVaert} taellere={{ ...INGEN_TAELLERE, erhverv: antalErhverv }} status={status} />;
 }
 
 // Mens menuens tal hentes: en let, statisk flade i samme størrelse (ingen
@@ -121,21 +123,24 @@ function Ramme({
 }
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  // Bruger og rolle hentes samtidig (højst én gang pr. forespørgsel, delt via
-  // cache() i src/lib/supabase/bruger.ts).
-  const [user, rolle] = await Promise.all([hentBruger(), hentMinRolle()]);
+  // Al adgang går gennem hentStaffAdgang (src/lib/adminAuth.ts): med
+  // ADMIN_VAERT sat kræves admin-hosten, to-trins-login (aal2, kode højst 12
+  // timer gammel), aktiv i databasen og en staff-rolle. Uden ADMIN_VAERT kun
+  // rollen, som før. Svaret deles med siden (cache()).
+  const adgang = await hentStaffAdgang();
+  const paaAdminVaert = erAdminVaert((await headers()).get("host"));
 
   // Rollen 'saelger' (erhvervssælger) kommer ind, men ser KUN Erhverv.
   // Alle andre admin-sider og -actions afviser rollen selv (assertRole/
   // kraevSideRolle kender den ikke), og proxyen sender saelger videre til
   // /admin/erhverv fra alle andre admin-stier (src/lib/supabase/middleware.ts).
-  if (user && rolle === "saelger") {
+  if (adgang.ok && adgang.rolle === "saelger") {
     return (
       <Ramme
         erhverv
         menu={
           <Suspense fallback={<MenuPladsholder />}>
-            <SaelgerMenu />
+            <SaelgerMenu paaAdminVaert={paaAdminVaert} />
           </Suspense>
         }
       >
@@ -144,9 +149,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     );
   }
 
-  if (!user || (rolle !== "chef" && rolle !== "admin" && rolle !== "medarbejder")) {
-    redirect("/");
+  if (!adgang.ok) {
+    // Uden ADMIN_VAERT som før: til forsiden. Med: samme afvisning som
+    // siderne (login- eller kode-siden på admin-hosten, til admin-hosten fra
+    // hovedsitet, ellers "Siden findes ikke").
+    if (!adminVaertAktiv()) redirect("/");
+    await kraevSideRolle("medarbejder");
+    notFound();
   }
+  const rolle = adgang.rolle;
+  if (rolle !== "chef" && rolle !== "admin" && rolle !== "medarbejder") notFound();
 
   return (
     <Ramme
@@ -158,7 +170,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       }
       menu={
         <Suspense fallback={<MenuPladsholder />}>
-          <StaffMenu rolle={rolle} />
+          <StaffMenu rolle={rolle} paaAdminVaert={paaAdminVaert} />
         </Suspense>
       }
     >

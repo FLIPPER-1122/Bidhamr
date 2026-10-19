@@ -15,6 +15,7 @@ import { HJAELP, UDFORSK, kategoriHref } from "@/components/topbar/navigation";
 import { beskederTekst, useAntalUlaesteBeskeder } from "@/components/topbar/UlaesteBeskeder";
 import { useLogUd } from "@/components/topbar/useLogUd";
 import { ERHVERV_MENU } from "@/lib/tekster/erhverv";
+import { adminUrl } from "@/lib/adminVaert";
 import { mitIdStartHref } from "@/components/mitid/MitIDKraeves";
 import { MITID } from "@/lib/tekster/mitid";
 
@@ -213,7 +214,8 @@ export default function MobilMenu({
                   <li><Link href="/konto/notifikationer" className={punkt}><Ikon navn="klokke" />Notifikationsindstillinger</Link></li>
                   <li><Link href="/konto/afgoerelser" className={punkt}><Ikon navn="skjold" />Afgørelser og anmeldelser</Link></li>
                   {erAdmin && (
-                    <li><Link href="/admin" className={`${punkt} text-groen`}><Ikon navn="skjoldLaas" />Admin</Link></li>
+                    // Almindeligt link: med ADMIN_VAERT ligger admin på sin egen host.
+                    <li><a href={adminUrl("/admin")} className={`${punkt} text-groen`}><Ikon navn="skjoldLaas" />Admin</a></li>
                   )}
                 </ul>
               </section>

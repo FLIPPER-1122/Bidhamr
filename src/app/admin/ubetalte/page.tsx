@@ -1,3 +1,4 @@
+import { hovedsiteUrl } from "@/lib/adminVaert";
 import Link from "next/link";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
@@ -137,7 +138,7 @@ export default async function AdminUbetalte({
                   <div className="min-w-0">
                     <p className="text-xs uppercase text-tekst-svag">Auktion</p>
                     <Link
-                      href={`/auktion/${s.auction_id}`}
+                      href={hovedsiteUrl(`/auktion/${s.auction_id}`)}
                       className="block truncate font-medium text-tekst hover:underline"
                     >
                       {titelMap.get(s.auction_id) ?? "(slettet auktion)"}
