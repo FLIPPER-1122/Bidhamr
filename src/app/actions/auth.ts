@@ -18,7 +18,7 @@ import { vurderAdgangskode } from "@/lib/adgangskode";
 import { registrerLogin } from "@/lib/enheder";
 import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
 import { logDriftFejl } from "@/lib/drift";
-import { sendNulstillingsmail } from "@/lib/adgangskodeSkift";
+import { saetAdgangskodeEfterMaillink, sendNulstillingsmail } from "@/lib/adgangskodeSkift";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
 import {
@@ -344,7 +344,13 @@ export async function gemNyAdgangskode(
     }
   }
 
-  const { error } = await supabase.auth.updateUser({ password });
+  const { error: foersteFejl } = await supabase.auth.updateUser({ password });
+  // Medarbejder med to-trins-login: linkets session er aal1 - se
+  // saetAdgangskodeEfterMaillink (src/lib/adgangskodeSkift.ts).
+  const error =
+    foersteFejl?.code === "insufficient_aal"
+      ? await saetAdgangskodeEfterMaillink(supabase, bruger.id, password)
+      : foersteFejl;
   if (error) {
     if (error.code === "same_password") {
       return { fejl: "Den nye adgangskode skal være en anden end den gamle." };
@@ -353,7 +359,7 @@ export async function gemNyAdgangskode(
       return { fejl: "Adgangskoden er for svag. Vælg en længere og mindre almindelig adgangskode." };
     }
     if (error.status === 429) return { fejl: FOR_MANGE_FORSOEG };
-    if (error.code === "reauthentication_needed") {
+    if (error.code === "reauthentication_needed" || error.code === "insufficient_aal") {
       return { fejl: "Linket er for gammelt. Bed om et nyt og prøv igen." };
     }
     console.error("gemNyAdgangskode fejlede:", error.code, error.message);
