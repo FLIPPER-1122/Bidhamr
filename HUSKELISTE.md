@@ -23,6 +23,22 @@ Lokalt prod-build med prods CSP virker, så fejlen ligger med stor sandsynlighed
 - **Kør migrationen i produktion (dit "ja").** Den er kørt to gange på testdatabasen. Den forudsætter `20261025010000_app_endpoints.sql` (min_auktion_boost med "kunst_kontrol" – md5'en i prod er allerede den udgave). Rækkefølgen af migration og deploy er ligegyldig: den gamle kode og appen køber 100-point-pakken som før, og den nye kode viser kun én pakke, indtil migrationen er kørt.
 - Test på hjemmesiden: Min konto → Boost-point → vælg 300 eller 700 point → "Køb … " → betal med 4242 4242 4242 4242.
 
+## Admin på admin.bidhamr.dk med to-trins-login (`20261027010000_staff_to_trin.sql`, docs/ADMIN-VAERT.md)
+Gør det i denne rækkefølge:
+1. **Kør migrationen i produktion (dit "ja")** lige før trin 3 – staff får 14 dage til at sætte to-trins-login op, regnet fra kørslen. Den er kørt to gange på testdatabasen og rører intet, den gamle kode bruger.
+2. **Slå TOTP til i Supabase:** Authentication → Multi-Factor → "TOTP (App Authenticator)" (enroll og verify). Testdatabasen ("Bidhamr Test") har det allerede. Gør det i **Hamr** (produktion).
+3. **Vercel (Production):** tilføj domænet `admin.bidhamr.dk` til projektet (Settings → Domains + DNS-posten hos domæneudbyderen), og sæt `ADMIN_VAERT=admin.bidhamr.dk` og `NEXT_PUBLIC_ADMIN_URL=https://admin.bidhamr.dk`. **Redeploy.** Fra nu af virker admin kun på admin.bidhamr.dk.
+4. **Sæt selv to-trins-login op først** på https://admin.bidhamr.dk (log ind → "Start" → scan QR-koden → skriv koden). **Gem de 10 gendannelseskoder** et sikkert sted (fx 1Password) – de vises kun én gang.
+5. **Al staff sætter to-trins-login op inden for 14 dage.** Har nogen ikke nået det, så tryk "Åbn tilmelding (24 t)" ud for personen under Admin → Medarbejdere (kræver en kode fra din app). Mister en medarbejder sin telefon: "Nulstil to-trins-login" samme sted.
+6. **`ADMIN_LUK_HOVEDDOMAENE=omdiriger`** i Vercel i 2 uger (gamle bogmærker til bidhamr.dk/admin sendes videre), **derefter `=1`** (bidhamr.dk/admin giver 404). Redeploy efter hvert skift.
+7. **Vercel Firewall** (Project → Firewall → Configure → New Rule):
+   - "Kun DK/EU til admin": If **Host** equals `admin.bidhamr.dk` AND **Country** is not any of (Danmark + de EU-lande, I har brug for) → **Deny**.
+   - "Grænse på admin-login": If **Host** equals `admin.bidhamr.dk` AND **Request Path** starts with `/adgang` → **Rate Limit** (fx 30 forespørgsler pr. minut pr. IP) → Deny (429).
+   - Publish. Test bagefter fra en mobil uden wifi (DK) og via en VPN uden for EU (skal afvises).
+- **Vær opmærksom på:** når en medarbejder skriver koden i admin, logger Supabase ham ud af appen og bidhamr.dk (han skal logge ind dér igen). Staff med to-trins-login skifter adgangskode via "Glemt adgangskode". Se docs/ADMIN-VAERT.md, "Kendte konsekvenser".
+- **Låst ude?** Se docs/ADMIN-VAERT.md, "Nødudgang".
+- Fortryd: slet `ADMIN_VAERT` og `ADMIN_LUK_HOVEDDOMAENE` i Vercel og redeploy – så er admin på bidhamr.dk/admin igen uden to-trins-login.
+
 ## Fragt via Shipmondo – DAO, GLS og PostNord (se docs/FRAGT.md, "Shipmondo")
 - **GLS er slået fra, indtil Shipmondo har svaret. Slå til med `SHIPMONDO_GLS_AKTIV=true`** (Vercel, Production, og deploy igen), når Shipmondo har svaret på spørgsmål (3) herunder, og du vil have GLS med. Indtil da kan køberne kun vælge DAO og PostNord – på hjemmesiden og i appen. Pakker, der allerede er sendt med GLS, virker videre.
 - **Kør migrationen** `supabase/migrations/20261024020000_fragt_gls_slaaet_fra.sql` i produktion (dit "ja") lige efter `20261024010000` herunder. Den lader databasen afvise GLS, så længe flaget ikke er sat. Den er kørt to gange på testdatabasen.
