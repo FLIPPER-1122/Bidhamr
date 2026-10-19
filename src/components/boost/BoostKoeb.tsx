@@ -154,39 +154,41 @@ export default function BoostKoeb({
 function PakkeKort({ pakke, valgt, onVaelg }: { pakke: BoostPakke; valgt: boolean; onVaelg: () => void }) {
   return (
     <label
-      className={`relative flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border-2 p-3.5 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-groen has-[:disabled]:cursor-default sm:flex-col sm:items-start sm:gap-2 sm:p-4 ${
+      className={`relative flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border-2 p-3.5 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-groen has-[:disabled]:cursor-default sm:flex-col sm:items-start sm:gap-2 sm:p-4 ${
         valgt ? "border-groen bg-groen-lys" : "border-kant bg-white hover:border-kant-staerk"
       }`}
     >
       <input type="radio" name="boost-pakke" checked={valgt} onChange={onVaelg} className="sr-only" />
-      <span className="flex min-w-0 flex-1 items-center gap-3 sm:w-full sm:flex-none">
+      <span className="flex min-w-0 flex-1 items-start gap-3 sm:w-full sm:flex-none">
         <span
           aria-hidden="true"
-          className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${valgt ? "border-groen" : "border-kant-staerk"}`}
+          className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${valgt ? "border-groen" : "border-kant-staerk"}`}
         >
           {valgt && <span className="h-2.5 w-2.5 rounded-full bg-groen" />}
         </span>
         <span className="min-w-0">
-          <span className="block text-[17px] leading-tight font-bold text-tekst">{BOOST_TEKST.pakkePoint(pakke.point)}</span>
-          <span className="block text-[13px] text-tekst-daempet">{BOOST_TEKST.pakkeBoost(pakke.boost)}</span>
+          <span className="block text-[17px] leading-tight font-bold whitespace-nowrap text-tekst">
+            {BOOST_TEKST.pakkePoint(pakke.point)}
+          </span>
+          <span className="block text-[13px] whitespace-nowrap text-tekst-daempet">{BOOST_TEKST.pakkeBoost(pakke.boost)}</span>
+          {(pakke.spar_oere > 0 || pakke.bedste) && (
+            <span className="mt-1.5 flex flex-wrap gap-1.5">
+              {pakke.spar_oere > 0 && (
+                <span className="rounded-full bg-white px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap text-groen-mork ring-1 ring-groen/30">
+                  {BOOST_TEKST.spar(pakke.spar_oere)}
+                </span>
+              )}
+              {pakke.bedste && (
+                <span className="rounded-full bg-orange-knap px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap text-white">
+                  {BOOST_TEKST.bedsteKoeb}
+                </span>
+              )}
+            </span>
+          )}
         </span>
       </span>
-      <span className="flex shrink-0 flex-col items-end gap-1 sm:w-full sm:items-start sm:pl-8">
-        <span className="text-[17px] font-semibold text-tekst tabular-nums">{BOOST_TEKST.pakkePris(pakke.pris_oere)}</span>
-        {(pakke.spar_oere > 0 || pakke.bedste) && (
-          <span className="flex flex-wrap justify-end gap-1.5 sm:justify-start">
-            {pakke.spar_oere > 0 && (
-              <span className="rounded-full bg-white px-2.5 py-0.5 text-[12px] font-semibold text-groen-mork ring-1 ring-groen/30">
-                {BOOST_TEKST.spar(pakke.spar_oere)}
-              </span>
-            )}
-            {pakke.bedste && (
-              <span className="rounded-full bg-orange-knap px-2.5 py-0.5 text-[12px] font-semibold text-white">
-                {BOOST_TEKST.bedsteKoeb}
-              </span>
-            )}
-          </span>
-        )}
+      <span className="shrink-0 self-start text-[17px] font-semibold whitespace-nowrap text-tekst tabular-nums sm:pl-8">
+        {BOOST_TEKST.pakkePris(pakke.pris_oere)}
       </span>
     </label>
   );
