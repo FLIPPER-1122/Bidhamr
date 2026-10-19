@@ -124,14 +124,27 @@ const ADMIN_MATRIX: Raekke[] = [
   ["/admin/erhverv", "GET", "aal2", "saelger", 200, null],
   ["/admin/sager", "POST", "aal2", "saelger", 403, null],
   ["/admin/erhverv", "GET", "aal1", "saelger", 307, "/adgang/kode?naeste=%2Fadmin%2Ferhverv"],
-  // /adgang: GET for alle. POST (server actions) kun uden session eller for staff.
+  // /adgang: GET for alle. POST kun til route handlerne /adgang/api/* - og
+  // kun uden session eller for staff, der mangler to-trins-login/en ny kode.
   ["/adgang/login", "GET", "ingen", "bruger", 200, null],
   ["/adgang/login", "GET", "aal1", "bruger", 200, null],
-  ["/adgang/login", "POST", "ingen", "bruger", 200, null],
-  ["/adgang/kode", "POST", "aal1", "medarbejder", 200, null],
-  ["/adgang/kode", "POST", "aal1", "saelger", 200, null],
-  ["/adgang/login", "POST", "aal1", "bruger", 403, null],
-  ["/adgang/login", "POST", "aal2", "bruger", 403, null],
+  // Et action-id postet til en login-side: aldrig (heller ikke uden session).
+  ["/adgang/login", "POST", "ingen", "bruger", 404, null],
+  ["/adgang/kode", "POST", "aal1", "medarbejder", 404, null],
+  ["/adgang/kode", "POST", "aal1", "saelger", 404, null],
+  ["/adgang", "POST", "aal1", "saelger", 404, null],
+  ["/adgang/api/login", "POST", "ingen", "bruger", 200, null],
+  ["/adgang/api/gendan", "POST", "ingen", "bruger", 200, null],
+  ["/adgang/api/kode", "POST", "aal1", "medarbejder", 200, null],
+  ["/adgang/api/kode", "POST", "gammel", "chef", 200, null],
+  ["/adgang/api/opsaet-start", "POST", "aal1", "saelger", 200, null],
+  // Fuldt inde (frisk aal2): intet at gøre på /adgang.
+  ["/adgang/api/kode", "POST", "aal2", "chef", 403, null],
+  ["/adgang/api/login", "POST", "aal1", "bruger", 403, null],
+  ["/adgang/api/login", "POST", "aal2", "bruger", 403, null],
+  // Log ud må altid.
+  ["/adgang/api/logud", "POST", "aal2", "chef", 200, null],
+  ["/adgang/api/logud", "POST", "aal1", "bruger", 200, null],
 ];
 
 describe("admin-hosten (ADMIN_VAERT=admin.localhost)", () => {
@@ -177,6 +190,28 @@ describe("admin-hosten (ADMIN_VAERT=admin.localhost)", () => {
     expect(m.cookieNavne.at(-1)).toBe("bh-admin-auth");
     await kald(HOVED, "/auktioner");
     expect(m.cookieNavne.at(-1)).toBeUndefined();
+  });
+
+  it("en admin-cookie uden gyldige claims: ryddes, og alt andet end GET/HEAD får 401", async () => {
+    saetSession("ingen");
+    m.rolle = "chef";
+    for (const [sti, metode, status] of [
+      ["/admin", "POST", 401],
+      ["/adgang/api/login", "POST", 401],
+      ["/adgang/api/logud", "POST", 401],
+      ["/admin/sager", "GET", 307],
+      ["/adgang/login", "GET", 200],
+    ] as const) {
+      const r = await kald(ADMIN, sti, metode, { cookie: "bh-admin-auth.0=forfalsket; bh-admin-auth.1=mere" });
+      expect(r.status, `${metode} ${sti}`).toBe(status);
+      const saet = r.res.headers.getSetCookie().join("\n");
+      expect(saet).toMatch(/bh-admin-auth\.0=;/);
+      expect(saet).toMatch(/bh-admin-auth\.1=;/);
+    }
+    // Uden admin-cookie: intet ryddes, og login virker som før.
+    const r = await kald(ADMIN, "/adgang/api/login", "POST");
+    expect(r.status).toBe(200);
+    expect(r.res.headers.getSetCookie().join("\n")).not.toMatch(/bh-admin-auth/);
   });
 
   it("x-forwarded-host kan ikke gøre hovedsitet til admin-hosten", async () => {

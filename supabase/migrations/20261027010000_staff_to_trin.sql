@@ -10,8 +10,11 @@
 -- er INGEN db_pre_request, ingen ændring af RLS og ingen ændring af er_staff()
 -- (det var den globale pre-request, der lukkede appen 7. okt. - se
 -- 20261009060000_fjern_to_trin.sql). En medarbejder med en faktor kan logge
--- ind i appen og på hovedsitet som før (aal1). RLS med aal2 (migration B)
--- kommer i en senere opgave - se listen i docs/ADMIN-VAERT.md.
+-- ind i appen og på hovedsitet som før (aal1) - men Supabase Auth logger
+-- brugerens aal1-sessioner ud, hver gang en kode bekræftes i admin (Supabases
+-- egen regel, docs/ADMIN-VAERT.md "Kendte konsekvenser"). RLS med aal2
+-- (migration B) kommer i en senere opgave: indtil da beskytter to-trins-login
+-- kun admin-siderne - ikke staff-adgang via API'et.
 --
 --   1. staff_to_trin (én række pr. medarbejder): aktiv, faktor_ider (de
 --      faktorer i auth.mfa_factors, serveren har godkendt - TOTP nu, plads til
@@ -31,8 +34,13 @@
 --   4. Service-role-RPC'er (serveren tjekker host, rolle og frisk kode først):
 --      staff_to_trin_aabn_tilmelding(chef, bruger, timer) - chefen åbner et
 --        vindue (standard 24 t). Ikke sig selv.
+--      staff_to_trin_mail_kode_gem(bruger, hash) / _mail_kode_tjek(bruger,
+--        hash) - før en app kan sættes op, skal medarbejderen bekræfte en
+--        6-cifret engangskode sendt på mail: gælder 15 min., gemmes kun som
+--        sha256-hash, højst 5 forsøg pr. kode. Bekræftelsen gælder 30 min.
 --      staff_to_trin_aktiver(bruger, faktor, hashes) - efter mfa.verify: kun
---        i et åbent vindue, faktoren skal være verificeret, og ingen ANDRE
+--        i et åbent vindue og med en mail-bekræftelse, der højst er 30 min.
+--        gammel, faktoren skal være verificeret, og ingen ANDRE
 --        verificerede faktorer må findes (serveren har slettet dem). Gemmer
 --        faktoren, lukker vinduet og erstatter gendannelseskoderne (præcis
 --        10). Idempotent: 'allerede_aktiv' ved dobbeltklik.
@@ -40,7 +48,8 @@
 --        andens to-trins-login: aktiv=false, faktorerne og brugerens
 --        aal2-sessioner slettes (auth.mfa_factors / auth.sessions - postgres
 --        har rettighederne, tjekket på testdatabasen 19. okt. 2026), koderne
---        slettes, og et nyt vindue åbnes (standard 24 t). Ikke sig selv.
+--        slettes, og et nyt vindue åbnes (standard 24 t). Kun staff som mål
+--        (gerne en anden chef), ikke sig selv.
 --      staff_gendan_brug(bruger, hash) - medarbejderen har mistet sin app:
 --        én ubrugt gendannelseskode bruges (atomisk), faktorerne og
 --        aal2-sessionerne slettes, og et vindue på 2 timer åbnes, så en ny
@@ -53,10 +62,11 @@
 --      i den nuværende liste - mønstret fra 20261009020000:338-370). Før denne
 --      migration var md5(pg_get_constraintdef) 20470dc11b09bc4558a37a28a33a5ec8
 --      i både produktion og test (SELECT 19. okt. 2026).
---   7. Første udrulning: nuværende staff får et tilmeldingsvindue på 14 dage
+--   7. Første udrulning: nuværende staff får et tilmeldingsvindue på 7 dage
 --      (on conflict do nothing - en ny kørsel forlænger det ikke).
---      KØR MIGRATIONEN LIGE FØR ADMIN_VAERT SÆTTES I VERCEL: de 14 dage
---      regnes fra kørslen.
+--      KØR MIGRATIONEN LIGE FØR ADMIN_VAERT SÆTTES I VERCEL: de 7 dage
+--      regnes fra kørslen. Rækkefølge i produktion: 20261026010000 før
+--      denne (20261027010000).
 --
 -- Ingen eksisterende funktioner ændres, så intet md5-drift-tjek på
 -- funktionskroppe er nødvendigt; constrainten flettes og tjekkes bagefter.
@@ -91,6 +101,13 @@ create table if not exists public.staff_to_trin (
   opdateret_kl         timestamptz not null default now(),
   constraint staff_to_trin_aktiv_faktor check (not aktiv or cardinality(faktor_ider) > 0)
 );
+
+-- Engangskoden på mail før opsætning (kun hashen).
+alter table public.staff_to_trin add column if not exists mail_kode_hash text
+  check (mail_kode_hash is null or mail_kode_hash ~ '^[0-9a-f]{64}$');
+alter table public.staff_to_trin add column if not exists mail_kode_udloeber_kl timestamptz;
+alter table public.staff_to_trin add column if not exists mail_kode_forsoeg integer not null default 0;
+alter table public.staff_to_trin add column if not exists mail_bekraeftet_kl timestamptz;
 
 comment on table public.staff_to_trin is
   'To-trins-login for staff på admin-hosten (20261027010000). faktor_ider: de '
@@ -216,6 +233,7 @@ begin
     'ukendte_faktorer', public.staff_to_trin_ukendte_faktorer(v_uid),
     'tilmelding_aaben', coalesce(v_t.tilmelding_aaben_til > now(), false),
     'tilmelding_aaben_til', v_t.tilmelding_aaben_til,
+    'mail_bekraeftet', coalesce(v_t.mail_bekraeftet_kl > now() - interval '30 minutes', false),
     'aal', coalesce(auth.jwt() ->> 'aal', 'aal1')
   );
 end
@@ -331,6 +349,10 @@ begin
   if v_t.tilmelding_aaben_til is null or v_t.tilmelding_aaben_til <= now() then
     return jsonb_build_object('kode', 'vindue_lukket');
   end if;
+  -- Engangskoden fra mailen skal være bekræftet inden for 30 min.
+  if v_t.mail_bekraeftet_kl is null or v_t.mail_bekraeftet_kl <= now() - interval '30 minutes' then
+    return jsonb_build_object('kode', 'mail_mangler');
+  end if;
   if not exists (select 1 from auth.mfa_factors f
                   where f.id = p_faktor and f.user_id = p_bruger and f.status::text = 'verified') then
     return jsonb_build_object('kode', 'faktor_ukendt');
@@ -345,6 +367,8 @@ begin
          faktor_ider = array[p_faktor],
          opsat_kl = now(),
          tilmelding_aaben_til = null,
+         mail_bekraeftet_kl = null,
+         mail_kode_hash = null,
          opdateret_kl = now()
    where t.bruger_id = p_bruger;
   get diagnostics v_n = row_count;
@@ -387,6 +411,10 @@ begin
   if not exists (select 1 from public.users u where u.id = p_bruger) then
     return jsonb_build_object('kode', 'ikke_fundet');
   end if;
+  -- Kun staff som mål (gerne en anden chef).
+  if not exists (select 1 from public.users u where u.id = p_bruger and public.staff_to_trin_er_staff_rolle(u.rolle)) then
+    return jsonb_build_object('kode', 'ikke_staff');
+  end if;
   v_til := now() + make_interval(hours => least(greatest(coalesce(p_timer, 24), 1), 24 * 14));
 
   select coalesce(t.aktiv, false) into v_var from public.staff_to_trin t where t.bruger_id = p_bruger for update;
@@ -404,6 +432,8 @@ begin
          nulstillet_af = p_chef,
          tilmelding_aaben_til = excluded.tilmelding_aaben_til,
          tilmelding_aabnet_af = excluded.tilmelding_aabnet_af,
+         mail_kode_hash = null,
+         mail_bekraeftet_kl = null,
          opdateret_kl = now();
 
   -- Dobbeltklik: intet at nulstille anden gang - ingen ny log-linje.
@@ -458,6 +488,8 @@ begin
          faktor_ider = '{}',
          tilmelding_aaben_til = v_til,
          tilmelding_aabnet_af = p_bruger,
+         mail_kode_hash = null,
+         mail_bekraeftet_kl = null,
          opdateret_kl = now()
    where t.bruger_id = p_bruger;
 
@@ -470,6 +502,82 @@ begin
   return jsonb_build_object('kode', 'ok', 'aaben_til', v_til,
                             'tilbage', (select count(*) from public.staff_gendannelseskoder g
                                          where g.bruger_id = p_bruger and g.brugt_kl is null));
+end
+$fn$;
+
+-- Engangskoden på mail før opsætning. Serveren laver koden (6 cifre), sender
+-- mailen og giver kun hashen hertil. Kun i et åbent vindue og kun, hvis
+-- to-trins-login ikke allerede er aktivt. En ny kode erstatter den gamle.
+create or replace function public.staff_to_trin_mail_kode_gem(p_bruger uuid, p_hash text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_n integer;
+begin
+  if p_bruger is null or p_hash is null or p_hash !~ '^[0-9a-f]{64}$' then
+    return jsonb_build_object('kode', 'ugyldig');
+  end if;
+  if not exists (select 1 from public.users u where u.id = p_bruger and public.staff_to_trin_er_staff_rolle(u.rolle)) then
+    return jsonb_build_object('kode', 'ikke_staff');
+  end if;
+  if public.staff_to_trin_aktiv(p_bruger) then
+    return jsonb_build_object('kode', 'aktiv');
+  end if;
+  update public.staff_to_trin t
+     set mail_kode_hash = p_hash,
+         mail_kode_udloeber_kl = now() + interval '15 minutes',
+         mail_kode_forsoeg = 0,
+         mail_bekraeftet_kl = null,
+         opdateret_kl = now()
+   where t.bruger_id = p_bruger and t.tilmelding_aaben_til > now();
+  get diagnostics v_n = row_count;
+  if v_n = 0 then
+    return jsonb_build_object('kode', 'vindue_lukket');
+  end if;
+  return jsonb_build_object('kode', 'ok');
+end
+$fn$;
+
+-- Tjek af engangskoden: højst 5 forsøg pr. kode (så er koden brugt op), den
+-- udløber efter 15 min., og en rigtig kode kan kun bruges én gang.
+create or replace function public.staff_to_trin_mail_kode_tjek(p_bruger uuid, p_hash text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_t public.staff_to_trin%rowtype;
+begin
+  if p_bruger is null or p_hash is null or p_hash !~ '^[0-9a-f]{64}$' then
+    return jsonb_build_object('kode', 'forkert');
+  end if;
+  select * into v_t from public.staff_to_trin t where t.bruger_id = p_bruger for update;
+  if not found or v_t.mail_kode_hash is null or v_t.mail_kode_udloeber_kl is null
+     or v_t.mail_kode_udloeber_kl <= now() or v_t.tilmelding_aaben_til is null or v_t.tilmelding_aaben_til <= now() then
+    return jsonb_build_object('kode', 'udloebet');
+  end if;
+  if v_t.mail_kode_forsoeg >= 5 then
+    update public.staff_to_trin t set mail_kode_hash = null where t.bruger_id = p_bruger;
+    return jsonb_build_object('kode', 'for_mange');
+  end if;
+  if v_t.mail_kode_hash <> p_hash then
+    update public.staff_to_trin t
+       set mail_kode_forsoeg = t.mail_kode_forsoeg + 1,
+           mail_kode_hash = case when t.mail_kode_forsoeg + 1 >= 5 then null else t.mail_kode_hash end
+     where t.bruger_id = p_bruger;
+    return jsonb_build_object('kode', case when v_t.mail_kode_forsoeg + 1 >= 5 then 'for_mange' else 'forkert' end);
+  end if;
+  update public.staff_to_trin t
+     set mail_kode_hash = null,
+         mail_kode_udloeber_kl = null,
+         mail_bekraeftet_kl = now(),
+         opdateret_kl = now()
+   where t.bruger_id = p_bruger;
+  return jsonb_build_object('kode', 'ok');
 end
 $fn$;
 
@@ -547,10 +655,10 @@ begin
 end $do$;
 
 -- ===========================================================================
--- 7. Første udrulning: 14 dages tilmeldingsvindue for nuværende staff
+-- 7. Første udrulning: 7 dages tilmeldingsvindue for nuværende staff
 -- ===========================================================================
 insert into public.staff_to_trin (bruger_id, tilmelding_aaben_til)
-select u.id, now() + interval '14 days'
+select u.id, now() + interval '7 days'
   from public.users u
  where public.staff_to_trin_er_staff_rolle(u.rolle)
 on conflict (bruger_id) do nothing;
@@ -571,6 +679,8 @@ begin
     'public.staff_to_trin_aktiver(uuid, uuid, text[])',
     'public.staff_to_trin_nulstil(uuid, uuid, integer)',
     'public.staff_gendan_brug(uuid, text)',
+    'public.staff_to_trin_mail_kode_gem(uuid, text)',
+    'public.staff_to_trin_mail_kode_tjek(uuid, text)',
     'public.users_staff_to_trin_rolle()'
   ] loop
     execute format('revoke all on function %s from public, anon, authenticated', f);

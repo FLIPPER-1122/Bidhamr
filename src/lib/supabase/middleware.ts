@@ -676,6 +676,21 @@ export async function adminGate(
   const claims = !error && data?.claims && typeof data.claims.sub === "string" ? data.claims : null;
   const session = adminSessionTilstand(claims, toTrinMaksTimer(), Math.floor(Date.now() / 1000));
 
+  // En admin-cookie uden gyldige claims (forfalsket, udløbet og ikke
+  // fornyelig, logget ud andetsteds): ryddes altid, og alt andet end
+  // GET/HEAD afvises med 401 - aldrig fail open til "uden session".
+  const navn = adminCookieOptions().name;
+  const adminCookies = request.cookies.getAll().filter((c) => c.name === navn || c.name.startsWith(`${navn}.`));
+  if (!claims && adminCookies.length > 0) {
+    const laes = request.method === "GET" || request.method === "HEAD";
+    const res = laes
+      ? gateSvar(request, adminGateBeslutning({ pathname, soeg: search, metode: request.method, session: "ingen", rolle: null }), supabaseResponse)
+      : new NextResponse("Log ind igen", { status: 401, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    const o = adminCookieOptions();
+    for (const c of adminCookies) res.cookies.set(c.name, "", { path: o.path, secure: o.secure, sameSite: o.sameSite, maxAge: 0 });
+    return res;
+  }
+
   let rolle: string | null = null;
   let nyCookie: { vaerdi: string; maxAge: number } | null = null;
   if (claims && adminGateKraeverRolle(pathname, request.method, session)) {

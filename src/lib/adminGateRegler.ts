@@ -72,9 +72,11 @@ export function adminGateKraeverRolle(pathname: string, metode: string, session:
 //   /robots.txt  -> "Disallow: /"
 //   /_next/*, ikoner: kun GET/HEAD
 //   /adgang*     -> login, kode, opsæt, gendan. GET for alle. Andre metoder
-//                   (server actions) kun uden session eller for staff - ellers
-//                   kunne en almindelig bruger poste et vilkårligt action-id
-//                   hertil uden om hovedsitets gate før lancering.
+//                   kun til route handlerne /adgang/api/* (ingen server
+//                   actions - et vilkårligt action-id kan ikke postes hertil
+//                   uden om hovedsitets gate før lancering), og kun uden
+//                   session eller for staff med aal1/en for gammel kode.
+//                   /adgang/api/logud altid.
 //   /admin*      -> uden session: login. Ikke staff: 404. aal1 eller en kode
 //                   ældre end grænsen: kode-siden. 'saelger' kun Erhverv.
 //                   Andre metoder end GET/HEAD får 401/403 i stedet for at
@@ -104,7 +106,16 @@ export function adminGateBeslutning(i: {
     case "rod":
       return laes ? { type: "omdiriger", til: "/admin" } : IKKE_FUNDET;
     case "adgang":
-      if (laes || i.session === "ingen" || staff) return { type: "videre" };
+      if (laes) return { type: "videre" };
+      // Kun route handlerne under /adgang/api/* (de kan ikke køre server
+      // actions) - et action-id postet til en login-side afvises.
+      if (!i.pathname.startsWith("/adgang/api/")) return IKKE_FUNDET;
+      // Log ud må altid.
+      if (i.pathname === "/adgang/api/logud" || i.pathname === "/adgang/api/logud/") return { type: "videre" };
+      // Uden session (login, gendan) eller staff, der mangler to-trins-login
+      // eller en ny kode. Fuldt inde (frisk aal2) har man intet at gøre her.
+      if (i.session === "ingen") return { type: "videre" };
+      if (staff && (i.session === "aal1" || i.session === "aal2_gammel")) return { type: "videre" };
       return { type: "status", status: 403, tekst: "Ingen adgang" };
     case "admin": {
       if (i.session === "ingen") {

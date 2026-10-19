@@ -125,12 +125,35 @@ export function adminVaertFraUrl(): string | null {
   }
 }
 
-// I browseren: er siden åbnet på admin-hosten? Bruges KUN til at vælge
-// cookienavn og log ud-mål i browser-klienten - aldrig til adgang.
+// Opstartstjek (src/instrumentation.ts): ADMIN_VAERT og NEXT_PUBLIC_ADMIN_URL
+// skal sættes sammen og pege på samme host (https i produktion). Ellers
+// sender links og mails staff et forkert sted hen. null = i orden.
+export function adminKonfigFejl(): string | null {
+  const raaVaert = (process.env.ADMIN_VAERT ?? "").trim();
+  const raaUrl = (process.env.NEXT_PUBLIC_ADMIN_URL ?? "").trim();
+  if (!raaVaert && !raaUrl) return null;
+  if (raaVaert && !adminVaertKonfig()) return `ADMIN_VAERT er ugyldig ("${raaVaert.slice(0, 80)}")`;
+  if (!raaVaert) return "NEXT_PUBLIC_ADMIN_URL er sat, men ADMIN_VAERT mangler - links og mails peger på en admin-host, der ikke er slået til";
+  if (!raaUrl) return "ADMIN_VAERT er sat, men NEXT_PUBLIC_ADMIN_URL mangler - links og mails til admin peger på hovedsitet";
+  const urlVaert = adminVaertFraUrl();
+  if (!urlVaert) return "NEXT_PUBLIC_ADMIN_URL er ugyldig (skal være fx https://admin.bidhamr.dk)";
+  if (urlVaert !== adminVaertKonfig()) return `NEXT_PUBLIC_ADMIN_URL (${urlVaert}) passer ikke til ADMIN_VAERT (${adminVaertKonfig()})`;
+  if (erProduktion() && !raaUrl.toLowerCase().startsWith("https://")) return "NEXT_PUBLIC_ADMIN_URL skal være https i produktion";
+  if (erProduktion() && urlVaert.endsWith(".vercel.app")) return "ADMIN_VAERT må ikke være en *.vercel.app-adresse i produktion";
+  return null;
+}
+
+// Serveren fortæller browseren, at siden er på admin-hosten, med et
+// <meta name="bh-admin-cookie"> i root-layoutet (src/app/layout.tsx). Så
+// vælger browser-klienten samme cookie som serveren - uafhængigt af
+// NEXT_PUBLIC_ADMIN_URL.
+export const ADMIN_COOKIE_META = "bh-admin-cookie";
+
+// I browseren: er siden åbnet på admin-hosten (ifølge serveren)? Bruges KUN
+// til at vælge cookienavn i browser-klienten - aldrig til adgang.
 export function erAdminVaertKlient(): boolean {
-  if (typeof window === "undefined") return false;
-  const vaert = adminVaertFraUrl();
-  return !!vaert && normaliserVaert(window.location.host) === vaert;
+  if (typeof document === "undefined") return false;
+  return !!document.querySelector(`meta[name="${ADMIN_COOKIE_META}"]`);
 }
 
 // --- Cookie --------------------------------------------------------------

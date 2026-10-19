@@ -25,5 +25,5 @@ export default async function AdminOpsaet() {
       </div>
     );
   }
-  return <AdminOpsaetForm />;
+  return <AdminOpsaetForm mailBekraeftet={status.mail_bekraeftet} />;
 }

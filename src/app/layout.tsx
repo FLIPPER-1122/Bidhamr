@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
 import { cookies, headers } from "next/headers";
-import { erAdminVaert } from "@/lib/adminVaert";
+import { ADMIN_COOKIE_META, adminCookieNavn, erAdminVaert } from "@/lib/adminVaert";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidevisning from "@/components/statistik/Sidevisning";
@@ -61,6 +61,8 @@ export default async function RootLayout({
       className={`${inter.variable} h-full antialiased`}
     >
       <body className="font-sans min-h-full flex flex-col" suppressHydrationWarning>
+        {/* Admin-hosten: browser-klienten bruger admin-cookien (src/lib/supabase/client.ts). */}
+        {adminVaert && <meta name={ADMIN_COOKIE_META} content={adminCookieNavn()} />}
         {children}
         {/* Cookiefri besøgsstatistik (src/app/api/statistik/route.ts). */}
         {!adminVaert && <Sidevisning />}

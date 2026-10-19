@@ -10,6 +10,22 @@ const AARSAG =
 const IKKE_DIG =
   "<strong>Var det ikke dig?</strong> Skift din adgangskode med det samme, og skriv til chefen eller support@bidhamr.dk.";
 
+export function toTrinMailKodeMail(input: { kode: string }) {
+  return {
+    subject: `${input.kode} er din kode til BidHamr admin`,
+    ...bygMail({
+      preheader: "Din kode til at sætte to-trins-login op. Den gælder i 15 minutter.",
+      overskriftHtml: "Din kode til admin",
+      afsnitHtml: [
+        "Skriv koden herunder på siden, hvor du er ved at sætte to-trins-login op til BidHamr admin. Den gælder i 15 minutter.",
+        `<strong style="font-size:28px;letter-spacing:6px;">${escapeHtml(input.kode)}</strong>`,
+        "<strong>Er det ikke dig?</strong> Så kender en anden din adgangskode. Skift den med det samme, og skriv til chefen.",
+      ],
+      aarsag: AARSAG,
+    }),
+  };
+}
+
 export function toTrinOpsatMail(input: { tidspunkt: Date }) {
   return {
     subject: "To-trins-login er sat op",

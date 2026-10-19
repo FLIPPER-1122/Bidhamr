@@ -5,14 +5,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import {
-  bekraeftAdminKode,
-  bekraeftToTrinOpsaet,
-  gendanAdmin,
-  logIndAdmin,
-  logUdAdmin,
-  startToTrinOpsaet,
-} from "@/app/actions/adgang";
+import type * as A from "@/lib/adgang";
 import { FELT, FORMULAR_FEJL, LABEL, LINK, SUCCES_BOKS } from "@/components/konto/felter";
 import { hovedsiteUrl } from "@/lib/adminVaert";
 import { useHydreret } from "@/lib/useHydreret";
@@ -20,6 +13,21 @@ import { useHydreret } from "@/lib/useHydreret";
 const NETVAERK = "Der er ingen forbindelse lige nu. Prøv igen.";
 const KORT = "rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8";
 const KODEFELT = `${FELT} text-center text-xl tracking-[0.4em] tabular-nums`;
+
+// Handlingerne er route handlers (POST /adgang/api/<handling>), ikke server
+// actions - se src/app/adgang/api/[handling]/route.ts.
+type Svar<F extends (...a: never[]) => Promise<unknown>> = Awaited<ReturnType<F>>;
+async function kald<T>(handling: string, krop: Record<string, string> = {}): Promise<T> {
+  const res = await fetch(`/adgang/api/${handling}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(krop),
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (!res.headers.get("content-type")?.includes("application/json")) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as T;
+}
 
 function Spinner() {
   return <span className="btn-spinner" aria-hidden="true" />;
@@ -43,7 +51,7 @@ export function LogUdLink({ tekst = "Log ud" }: { tekst?: string }) {
       disabled={venter}
       onClick={async () => {
         setVenter(true);
-        await logUdAdmin();
+        await kald("logud").catch(() => null);
         router.push("/adgang/login");
         router.refresh();
       }}
@@ -70,9 +78,9 @@ export function AdminLoginForm({ naeste }: { naeste: string }) {
     setVenter(true);
     setFejl(null);
     setLukket(false);
-    let svar: Awaited<ReturnType<typeof logIndAdmin>>;
+    let svar: Svar<typeof A.logIndAdmin>;
     try {
-      svar = await logIndAdmin(email, password);
+      svar = await kald("login", { email, password });
     } catch {
       setVenter(false);
       setFejl(NETVAERK);
@@ -164,9 +172,9 @@ export function AdminKodeForm({ naeste, fornyelse }: { naeste: string; fornyelse
     e.preventDefault();
     setVenter(true);
     setFejl(null);
-    let svar: Awaited<ReturnType<typeof bekraeftAdminKode>>;
+    let svar: Svar<typeof A.bekraeftAdminKode>;
     try {
-      svar = await bekraeftAdminKode(kode);
+      svar = await kald("kode", { kode });
     } catch {
       setVenter(false);
       setFejl(NETVAERK);
@@ -231,10 +239,54 @@ export function AdminKodeForm({ naeste, fornyelse }: { naeste: string; fornyelse
 
 type Trin = { slags: "start" } | { slags: "scan"; faktorId: string; qr: string; hemmelighed: string } | { slags: "koder"; koder: string[] };
 
-export function AdminOpsaetForm() {
+export function AdminOpsaetForm({ mailBekraeftet }: { mailBekraeftet: boolean }) {
   const router = useRouter();
   const hydreret = useHydreret();
   const [trin, setTrin] = useState<Trin>({ slags: "start" });
+  // Trin 0: engangskoden fra mailen (adgangskoden alene er ikke nok).
+  const [mailOk, setMailOk] = useState(mailBekraeftet);
+  const [mailSendt, setMailSendt] = useState<string | null>(null);
+  const [mailKode, setMailKode] = useState("");
+
+  async function sendMail() {
+    setVenter(true);
+    setFejl(null);
+    let svar: Svar<typeof A.sendMailKode>;
+    try {
+      svar = await kald("mail-kode");
+    } catch {
+      setVenter(false);
+      setFejl(NETVAERK);
+      return;
+    }
+    setVenter(false);
+    if ("fejl" in svar) {
+      setFejl(svar.fejl);
+      return;
+    }
+    setMailSendt(svar.email);
+  }
+
+  async function bekraeftMail(e: FormEvent) {
+    e.preventDefault();
+    setVenter(true);
+    setFejl(null);
+    let svar: Svar<typeof A.bekraeftMailKode>;
+    try {
+      svar = await kald("mail-kode-bekraeft", { kode: mailKode });
+    } catch {
+      setVenter(false);
+      setFejl(NETVAERK);
+      return;
+    }
+    setVenter(false);
+    if ("fejl" in svar) {
+      setMailKode("");
+      setFejl(svar.fejl);
+      return;
+    }
+    setMailOk(true);
+  }
   const [kode, setKode] = useState("");
   const [venter, setVenter] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
@@ -244,9 +296,9 @@ export function AdminOpsaetForm() {
   async function start() {
     setVenter(true);
     setFejl(null);
-    let svar: Awaited<ReturnType<typeof startToTrinOpsaet>>;
+    let svar: Svar<typeof A.startToTrinOpsaet>;
     try {
-      svar = await startToTrinOpsaet();
+      svar = await kald("opsaet-start");
     } catch {
       setVenter(false);
       setFejl(NETVAERK);
@@ -258,6 +310,7 @@ export function AdminOpsaetForm() {
         router.push("/adgang/kode");
         return;
       }
+      if (svar.kode === "mail") setMailOk(false);
       setFejl(svar.fejl);
       return;
     }
@@ -269,9 +322,9 @@ export function AdminOpsaetForm() {
     if (trin.slags !== "scan") return;
     setVenter(true);
     setFejl(null);
-    let svar: Awaited<ReturnType<typeof bekraeftToTrinOpsaet>>;
+    let svar: Svar<typeof A.bekraeftToTrinOpsaet>;
     try {
-      svar = await bekraeftToTrinOpsaet(trin.faktorId, kode);
+      svar = await kald("opsaet-bekraeft", { faktorId: trin.faktorId, kode });
     } catch {
       setVenter(false);
       setFejl(NETVAERK);
@@ -393,6 +446,63 @@ export function AdminOpsaetForm() {
     );
   }
 
+  if (!mailOk) {
+    return (
+      <div className={KORT}>
+        <h1 className="text-[26px] leading-tight sm:text-[30px]">Bekræft din e-mail</h1>
+        <p className="mt-2 text-sm text-tekst-daempet">
+          Før du sætter to-trins-login op, sender vi en kode til din e-mail. Så ved vi, at det er dig – ikke en,
+          der kun kender din adgangskode.
+        </p>
+        {mailSendt && (
+          <p role="status" className={`mt-4 ${SUCCES_BOKS}`}>
+            Vi har sendt en kode til {mailSendt}. Den gælder i 15 minutter.
+          </p>
+        )}
+        {fejl && (
+          <p role="alert" className={`mt-4 ${FORMULAR_FEJL}`}>
+            {fejl}
+          </p>
+        )}
+        {mailSendt ? (
+          <form onSubmit={bekraeftMail} method="post" className="mt-5 space-y-4">
+            <div>
+              <label htmlFor="mailkode" className={LABEL}>
+                Kode fra mailen
+              </label>
+              <input
+                id="mailkode"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                required
+                maxLength={7}
+                value={mailKode}
+                onChange={(e) => setMailKode(e.target.value)}
+                className={`mt-1.5 ${KODEFELT}`}
+              />
+            </div>
+            <button type="submit" disabled={venter || !hydreret} aria-busy={venter || undefined} className="btn btn-primaer btn-stor w-full">
+              {venter && <Spinner />}
+              Bekræft
+            </button>
+            <button type="button" onClick={sendMail} disabled={venter || !hydreret} className={`${LINK} inline-flex min-h-11 items-center text-sm`}>
+              Send en ny kode
+            </button>
+          </form>
+        ) : (
+          <button type="button" onClick={sendMail} disabled={venter || !hydreret} aria-busy={venter || undefined} className="btn btn-primaer btn-stor mt-6 w-full">
+            {venter && <Spinner />}
+            Send kode til min e-mail
+          </button>
+        )}
+        <div className="mt-4 text-center">
+          <LogUdLink />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={KORT}>
       <h1 className="text-[26px] leading-tight sm:text-[30px]">Sæt to-trins-login op</h1>
@@ -435,9 +545,9 @@ export function AdminGendanForm() {
     e.preventDefault();
     setVenter(true);
     setFejl(null);
-    let svar: Awaited<ReturnType<typeof gendanAdmin>>;
+    let svar: Svar<typeof A.gendanAdmin>;
     try {
-      svar = await gendanAdmin(email, password, kode);
+      svar = await kald("gendan", { email, password, gendannelseskode: kode });
     } catch {
       setVenter(false);
       setFejl(NETVAERK);

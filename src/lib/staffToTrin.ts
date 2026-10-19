@@ -30,8 +30,20 @@ export type MinStaffStatus = {
   ukendte_faktorer: boolean;
   tilmelding_aaben: boolean;
   tilmelding_aaben_til: string | null;
+  // Engangskoden fra mailen er bekræftet inden for 30 min.
+  mail_bekraeftet: boolean;
   aal: string;
 };
+
+// Engangskoden på mail før opsætning: 6 cifre, kun hashen gemmes (med
+// bruger-id), gælder 15 min., højst 5 forsøg (databasen).
+export function nyMailKode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
+}
+
+export function hashMailKode(brugerId: string, kode: string): string {
+  return createHash("sha256").update(`bidhamr-staff-mailkode-v1|${brugerId.toLowerCase()}|${kode}`).digest("hex");
+}
 
 export async function minStaffStatus(supabase: SupabaseClient): Promise<MinStaffStatus | null> {
   const { data, error } = await supabase.rpc("min_staff_adgang");
@@ -47,6 +59,7 @@ export async function minStaffStatus(supabase: SupabaseClient): Promise<MinStaff
     ukendte_faktorer: d.ukendte_faktorer === true,
     tilmelding_aaben: d.tilmelding_aaben === true,
     tilmelding_aaben_til: typeof d.tilmelding_aaben_til === "string" ? d.tilmelding_aaben_til : null,
+    mail_bekraeftet: d.mail_bekraeftet === true,
     aal: typeof d.aal === "string" ? d.aal : "aal1",
   };
 }

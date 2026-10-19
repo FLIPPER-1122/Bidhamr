@@ -17,7 +17,9 @@ Filips beslutninger 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bid
 | Proxy | `src/proxy.ts` deler tidligt: `erAdminVaert(host)` → `adminGate` (`src/lib/supabase/middleware.ts`), ellers `updateSession` som før. Reglerne er rene funktioner i `src/lib/adminGateRegler.ts` |
 | Supabase-klienter | `server.ts`, `client.ts` og proxyen bruger `cookieOptions.name` = admin-cookien på admin-hosten, ellers Supabases standard |
 | Adgangstjek | `src/lib/adminAuth.ts` – `hentStaffAdgang()`; `assertRole`, `kraevSideRolle`, `getStaffRole`, `assertErhverv`, `kraevErhvervSide`, `getErhvervRolle` er lag ovenpå. Reglerne: `vurderStaffAdgang` i `src/lib/staffToTrinRegler.ts` |
-| Login-sider | `src/app/adgang/{login,kode,opsaet,gendan}` (uden admin-layoutet), handlinger i `src/app/actions/adgang.ts` |
+| Login-sider | `src/app/adgang/{login,kode,opsaet,gendan}` (uden admin-layoutet). Handlingerne er **route handlers** `POST /adgang/api/<handling>` (`src/app/adgang/api/[handling]/route.ts`, logikken i `src/lib/adgang.ts`) – ikke server actions. Kun samme Origin, JSON, højst 4 KB |
+| Browser-klientens cookie | Root-layoutet skriver `<meta name="bh-admin-cookie">` på admin-hosten; `src/lib/supabase/client.ts` vælger cookie ud fra den, så browser og server altid er enige |
+| Opstartstjek | `src/instrumentation.ts` logger i drift (`logDriftFejl`), hvis kun én af `ADMIN_VAERT`/`NEXT_PUBLIC_ADMIN_URL` er sat, eller de ikke passer sammen (`adminKonfigFejl`) |
 | Chefens knapper | Admin → Medarbejdere: "Nulstil to-trins-login" og "Åbn tilmelding (24 t)" (`src/app/actions/adminToTrin.ts`, `src/components/admin/ToTrinHandling.tsx`) |
 | Server-hjælpere | `src/lib/staffToTrin.ts` (faktorer via admin-API'et, gendannelseskoder, sikkerhedsmails), mails i `src/lib/mails/staffToTrin.ts` |
 | Database | `supabase/migrations/20261027010000_staff_to_trin.sql` (migration A) |
@@ -25,7 +27,9 @@ Filips beslutninger 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bid
 
 ### Proxyen på admin-hosten
 - `/admin*` uden session → `/adgang/login?naeste=…` (GET) / 401. Ikke staff → 404. aal1 eller en kode ældre end grænsen → `/adgang/kode?naeste=…` / 401. Rollen `saelger` kun `/admin/erhverv*`.
-- `/adgang*`: GET for alle. Andre metoder (server actions) kun uden session eller for staff – ellers kunne en almindelig bruger poste et vilkårligt action-id hertil uden om hovedsitets gate før lancering.
+- `/adgang*`: GET for alle. Andre metoder kun til route handlerne `/adgang/api/*` (en route handler kan ikke køre server actions, så et vilkårligt action-id kan ikke postes til login-siderne uden om gaten før lancering – heller ikke af en `saelger`). Og kun uden session eller for staff med aal1/en for gammel kode; fuldt inde (frisk aal2) → 403. `/adgang/api/logud` altid.
+- **En admin-cookie uden gyldige claims** (forfalsket, udløbet og ikke fornyelig, logget ud andetsteds) ryddes altid, og alt andet end GET/HEAD får 401 – aldrig fail open til "uden session".
+- **Tilbage (kendt):** en `saelger` med frisk aal2 kan poste et vilkårligt action-id til `/admin/erhverv*` før lancering – præcis som på bidhamr.dk i dag (proxyen kan ikke skelne action-id'er). Det kræver et tjek i selve brugerhandlingerne (fx i `hentLoggetIndBruger`) og er ikke lavet her.
 - Headere på alle svar: `X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`, `Cache-Control: private, no-store`. `next.config.ts` sætter de to første også på statiske filer (host-regel ud fra `ADMIN_VAERT` ved build).
 - Gaten før lancering, firmakonti og beta køres ikke her.
 - Statiske filer, som proxyens matcher springer over (`/brand/`, `/forside/` …), serveres også på admin-hosten. Det er offentlige filer.
@@ -39,7 +43,7 @@ Filips beslutninger 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bid
 - Links fra admin til auktionssider bruger `hovedsiteUrl`.
 
 ## Forløbene
-- **Første gang (opsæt):** login → `/adgang/opsaet` (kun i et åbent tilmeldingsvindue) → "Start": serveren sletter alle gamle faktorer og laver en ny TOTP (`mfa.enroll`) → QR-kode og hemmelighed → første kode (`mfa.challengeAndVerify`, aal2) → serveren tjekker faktorerne med `auth.admin.mfa.listFactors` (ukendte slettes, drift-alarm) → `staff_to_trin_aktiver` (aktiv, faktoren gemmes, vinduet lukkes, 10 gendannelseskoder) → koderne vises én gang (kopiér/hent som fil) → sikkerhedsmail.
+- **Første gang (opsæt):** login → `/adgang/opsaet` (kun i et åbent tilmeldingsvindue) → **"Send kode til min e-mail"**: en 6-cifret engangskode (gælder 15 min., kun hashen gemmes, højst 5 forsøg pr. kode og 3 mails pr. 15 min.) – adgangskoden alene er ikke nok til at sætte en app op → "Start": serveren sletter alle gamle faktorer og laver en ny TOTP (`mfa.enroll`) → QR-kode og hemmelighed → første kode (`mfa.challengeAndVerify`, aal2) → serveren tjekker faktorerne med `auth.admin.mfa.listFactors` (ukendte slettes, drift-alarm) → `staff_to_trin_aktiver` (aktiv, faktoren gemmes, vinduet lukkes, 10 gendannelseskoder) → koderne vises én gang (kopiér/hent som fil) → sikkerhedsmail.
 - **Login:** e-mail + adgangskode (rate limit, ikke-staff logges ud igen med "Forkert e-mail eller adgangskode") → `/adgang/kode` → admin. Efter 12 timer sender proxyen til `/adgang/kode` igen.
 - **Mistet telefon:** `/adgang/gendan` – e-mail, adgangskode og én gendannelseskode. Koden bruges (atomisk), faktorerne og admin-sessionerne (aal2) slettes, og et vindue på 2 timer åbnes → `/adgang/opsaet`. Mail til medarbejderen.
 - **Chefen nulstiller en anden** (ikke sig selv): kræver en kode fra chefens app, højst 15 minutter gammel (ellers vises et kodefelt). Faktorerne, medarbejderens aal2-sessioner og ubrugte koder slettes, og en ny tilmelding på 24 timer åbnes. Logges (`to_trin_nulstillet`), mail til medarbejderen.
@@ -52,14 +56,18 @@ Filips beslutninger 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bid
 - `min_staff_adgang()` og `staff_aal2_ok(p_maks_timer)` for authenticated (ud fra `auth.uid()`, `auth.jwt()` og `auth.mfa_factors`).
 - Service-role: `staff_to_trin_aabn_tilmelding`, `staff_to_trin_aktiver`, `staff_to_trin_nulstil`, `staff_gendan_brug` (+ hjælperne `staff_to_trin_aktiv`, `staff_to_trin_ukendte_faktorer`, `staff_to_trin_ryd_auth`). `postgres` har delete-rettighed på `auth.sessions` og `auth.mfa_factors` (tjekket på testdatabasen 19. okt. 2026), så nulstillingen sletter selv faktorerne og kun sessioner med `aal = 'aal2'`.
 - Trigger `users_staff_to_trin_rolle` og 4 nye værdier i `moderation_log_handling_check` (flettet ind; md5 før var `20470dc11b09bc4558a37a28a33a5ec8` i både prod og test).
-- 14 dages vindue for nuværende staff (`on conflict do nothing`). **De 14 dage regnes fra kørslen** – kør den lige før `ADMIN_VAERT` sættes.
+- Engangskoden på mail før opsætning: kolonnerne `mail_kode_hash`, `mail_kode_udloeber_kl`, `mail_kode_forsoeg`, `mail_bekraeftet_kl` og RPC'erne `staff_to_trin_mail_kode_gem`/`_tjek` (service_role). `staff_to_trin_aktiver` afviser (`mail_mangler`) uden en mail-bekræftelse, der højst er 30 minutter gammel.
+- `staff_to_trin_nulstil` kræver et staff-mål (gerne en anden chef).
+- 7 dages vindue for nuværende staff (`on conflict do nothing`). **De 7 dage regnes fra kørslen** – kør den lige før `ADMIN_VAERT` sættes.
+- `moderation_log_handling_check` efter migrationen: md5 `ee2d44c457c60644a8762febd38d0bdb` (testdatabasen 19. okt. 2026; produktion får den samme, hvis den stadig er `20470dc1…` før).
+- Rækkefølge i produktion: `20261026010000_boost_pakker.sql` før `20261027010000_staff_to_trin.sql`.
 
 ## Udrulning (Filip)
 1. Kør migration A i produktion (dit "ja"). Den er kørt to gange på testdatabasen.
 2. Slå TOTP til i Supabase → Authentication → Multi-Factor → "TOTP (App Authenticator)" (enroll + verify). Testdatabasen ("Bidhamr Test") har det allerede slået til (tjekket 19. okt. med et `mfa.enroll`). Produktion ("Hamr") skal slås til.
 3. Vercel (Production): `ADMIN_VAERT=admin.bidhamr.dk` og `NEXT_PUBLIC_ADMIN_URL=https://admin.bidhamr.dk`. Tilføj domænet `admin.bidhamr.dk` til samme projekt (Settings → Domains) og DNS hos domæneudbyderen. Redeploy (begge variabler skal med i buildet).
 4. Du sætter selv to-trins-login op først og gemmer gendannelseskoderne (fx i 1Password).
-5. Al staff sætter to-trins-login op inden for 14 dage. Har nogen ikke nået det, åbner du et vindue på 24 timer under Medarbejdere.
+5. Al staff sætter to-trins-login op inden for 7 dage. Har nogen ikke nået det, åbner du et vindue på 24 timer under Medarbejdere.
 6. `ADMIN_LUK_HOVEDDOMAENE=omdiriger` i 2 uger, derefter `=1`. Redeploy efter hvert skift (Vercel bruger først nye værdier efter en ny deploy).
 7. Vercel Firewall: kun DK/EU for `admin.bidhamr.dk` og en rate limit på `/adgang` (se HUSKELISTE.md).
 
@@ -79,11 +87,17 @@ delete from public.staff_gendannelseskoder where bruger_id = '<bruger-id>';
 ```
 Log derefter ind på admin.bidhamr.dk og sæt en ny app op. Brug kun nødudgangen på en verificeret person – det er en ændring i produktion.
 
+## Vigtigt: hvad to-trins-login IKKE beskytter
+**Indtil migration B er kørt, beskytter to-trins-login kun admin-siderne – ikke staff-adgang via API'et.** RLS og databasefunktionerne kender kun rollen (`er_staff()`, `min_rolle()`), så en medarbejder med kun adgangskoden (aal1) kan stadig læse det, staff-rollen giver adgang til, direkte via Supabase (appen, supabase-js). Se listen under "Migration B".
+
+## Anbefaling til Filips beslutning: separate admin-konti
+Supabase logger en medarbejders app- og bidhamr.dk-sessioner ud, hver gang han skriver en kode i admin (se næste afsnit). Anbefalingen er **separate admin-konti**: hver medarbejder har én konto med staff-rollen, der kun bruges til admin.bidhamr.dk (med to-trins-login), og sin almindelige private konto til appen. Så rammer udlogningen ikke den daglige app-brug, og en lækket app-adgangskode er ikke en admin-adgangskode. Det kræver ingen kode – kun at chefen giver rollen til en ny konto (fx `fornavn.admin@bidhamr.dk`) og fjerner den fra den private. Filip beslutter.
+
 ## Kendte konsekvenser (testet på testdatabasen 19. okt. 2026)
 - **Appen fungerer for en medarbejder med en faktor.** Password-login via supabase-js giver aal1 (`nextLevel: aal2`), og RLS, RPC'er og læsning virker som før.
 - **VIGTIGT: Supabase logger brugerens aal1-sessioner ud, hver gang en kode bekræftes** (`mfa.challengeAndVerify` – både ved opsætning og ved hvert login i admin, også efter 12 timer). Appens og bidhamr.dk's refresh-token afvises bagefter (`refresh_token_not_found`); access-tokenet virker højst en time endnu. En medarbejder bliver altså logget ud af appen og hovedsitet, når han logger ind i admin. Det er Supabase Auths egen regel og kan ikke slås fra i koden. Hvis det er uacceptabelt, kræver det en beslutning (fx egen TOTP-kontrol på serveren i stedet for Supabase MFA – så findes aal2 ikke i JWT'en, og migration B skal laves anderledes).
 - **Skift af adgangskode:** Supabase afviser `updateUser({ password })` fra en aal1-session for en bruger med en faktor (`401 insufficient_aal`). Det rammer staff i appen (`POST /api/konto/adgangskode`), på Min konto og efter "Glemt adgangskode". Nu:
-  - "Glemt adgangskode" virker: er sessionen beviseligt fra mail-linket (amr `otp`/`recovery` højst 1 time gammel), sættes adgangskoden med admin-API'et (`saetAdgangskodeEfterMaillink` i `src/lib/adgangskodeSkift.ts`). Alle sessioner logges ud, som før.
+  - "Glemt adgangskode" virker: er sessionen beviseligt fra mail-linket (amr `otp`/`recovery` højst 1 time gammel), sættes adgangskoden med admin-API'et (`saetAdgangskodeEfterMaillink` i `src/lib/adgangskodeSkift.ts`). Alle sessioner logges ud, som før. **Åbent punkt fra review:** reviewer ønsker kun `recovery`. Test 19. okt.: hjemmesidens link (token_hash → `verifyOtp`, `/auth/callback`) giver amr `otp`, ikke `recovery`; PKCE-vejen kunne ikke testes (Supabases mailgrænse `over_email_send_rate_limit`). Kun `recovery` ville derfor lukke "Glemt adgangskode" for staff – afventer beslutning.
   - Min konto og appen svarer "Du har to-trins-login som medarbejder. Brug "Glemt adgangskode" …" (appen: `403 genlog_ind`). Fra en aal2-session (admin) virker `updateUser` direkte.
   - Brugere uden faktor er uberørte.
 - Chefens nulstilling sletter præcis medarbejderens aal2-sessioner; appens aal1-session lever videre (testet).

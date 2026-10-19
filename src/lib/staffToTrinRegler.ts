@@ -5,8 +5,12 @@
 // Filip, 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bidhamr.dk"):
 // Supabase MFA (TOTP) er obligatorisk for alle staff-roller på admin-hosten.
 // Brugere har stadig intet to-trins-login (beslutningen fra 7. okt. gælder
-// dem), og intet uden for admin-hosten kræver aal2 - appen og hovedsitet
-// virker uændret for en medarbejder med en faktor.
+// dem), og intet uden for admin-hosten kræver aal2. MEN: Supabase Auth logger
+// medarbejderens aal1-sessioner (appen og bidhamr.dk) ud, hver gang han
+// bekræfter en kode i admin - Supabases egen regel, som koden ikke kan slå
+// fra (docs/ADMIN-VAERT.md, "Kendte konsekvenser"). Og indtil migration B er
+// kørt, beskytter to-trins-login kun admin-siderne - ikke staff-adgang via
+// API'et (RLS kender kun rollen).
 //
 // Ingen node:crypto her, så filen også kan bruges i proxyen og browseren;
 // tilfældighed og hashing ligger i src/lib/staffToTrin.ts.

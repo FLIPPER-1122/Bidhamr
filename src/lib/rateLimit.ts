@@ -192,6 +192,8 @@ export const GRAENSER = {
   admin_kode_bruger: { maks: 5, vindueSek: 15 * 60 },
   admin_kode_ip: { maks: 30, vindueSek: 15 * 60 },
   admin_opsaet_bruger: { maks: 10, vindueSek: 60 * 60 },
+  // Engangskoden på mail før opsætning (hver koster en mail).
+  admin_mailkode_bruger: { maks: 3, vindueSek: 15 * 60 },
   admin_gendan_ip: { maks: 10, vindueSek: 60 * 60 },
   admin_gendan_email: { maks: 5, vindueSek: 60 * 60 },
   // Chefens nulstilling og åbning af tilmelding (hver kan sende en mail).

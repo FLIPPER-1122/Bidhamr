@@ -5,6 +5,7 @@ import {
   ADMIN_COOKIE_LOKAL,
   ADMIN_COOKIE_PROD,
   adminAbsolutUrl,
+  adminKonfigFejl,
   adminCookieNavn,
   adminCookieOptions,
   adminUrl,
@@ -125,6 +126,37 @@ describe("links", () => {
     expect(sideUrl("/admin")).toBe("https://admin.bidhamr.dk/admin");
     expect(sideUrl("/administrator")).toBe("https://bidhamr.dk/administrator");
     expect(sideUrl("/konto")).toBe("https://bidhamr.dk/konto");
+  });
+});
+
+describe("opstartstjek (adminKonfigFejl)", () => {
+  it.each([
+    ["", "", null],
+    ["admin.bidhamr.dk", "https://admin.bidhamr.dk", null],
+    ["admin.localhost", "http://admin.localhost:3000", null],
+    ["admin.bidhamr.dk", "", /NEXT_PUBLIC_ADMIN_URL mangler/],
+    ["", "https://admin.bidhamr.dk", /ADMIN_VAERT mangler/],
+    ["admin.bidhamr.dk", "https://adm.bidhamr.dk", /passer ikke/],
+    ["admin.bidhamr.dk", "admin.bidhamr.dk", /ugyldig/],
+    ["admin bidhamr", "https://admin.bidhamr.dk", /ADMIN_VAERT er ugyldig/],
+  ] as [string, string, RegExp | null][])("ADMIN_VAERT=%s NEXT_PUBLIC_ADMIN_URL=%s", (vaert, url, fejl) => {
+    vi.stubEnv("ADMIN_VAERT", vaert);
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_URL", url);
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("NODE_ENV", "development");
+    const r = adminKonfigFejl();
+    if (fejl === null) expect(r).toBeNull();
+    else expect(r).toMatch(fejl);
+  });
+
+  it("produktion: https og ingen *.vercel.app", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("ADMIN_VAERT", "admin.bidhamr.dk");
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_URL", "http://admin.bidhamr.dk");
+    expect(adminKonfigFejl()).toMatch(/https/);
+    vi.stubEnv("ADMIN_VAERT", "x.vercel.app");
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_URL", "https://x.vercel.app");
+    expect(adminKonfigFejl()).toMatch(/vercel\.app/);
   });
 });
 

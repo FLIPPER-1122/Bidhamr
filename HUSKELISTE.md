@@ -25,17 +25,19 @@ Lokalt prod-build med prods CSP virker, så fejlen ligger med stor sandsynlighed
 
 ## Admin på admin.bidhamr.dk med to-trins-login (`20261027010000_staff_to_trin.sql`, docs/ADMIN-VAERT.md)
 Gør det i denne rækkefølge:
-1. **Kør migrationen i produktion (dit "ja")** lige før trin 3 – staff får 14 dage til at sætte to-trins-login op, regnet fra kørslen. Den er kørt to gange på testdatabasen og rører intet, den gamle kode bruger.
+1. **Kør migrationen i produktion (dit "ja")** lige før trin 3 – staff får 7 dage til at sætte to-trins-login op, regnet fra kørslen. Den er kørt to gange på testdatabasen og rører intet, den gamle kode bruger. **Rækkefølge: `20261026010000_boost_pakker.sql` (26) før `20261027010000_staff_to_trin.sql` (27).** Tjek bagefter: `select md5(pg_get_constraintdef(oid)) from pg_constraint where conname = 'moderation_log_handling_check'` skal give `ee2d44c457c60644a8762febd38d0bdb` (før: `20470dc11b09bc4558a37a28a33a5ec8`).
 2. **Slå TOTP til i Supabase:** Authentication → Multi-Factor → "TOTP (App Authenticator)" (enroll og verify). Testdatabasen ("Bidhamr Test") har det allerede. Gør det i **Hamr** (produktion).
 3. **Vercel (Production):** tilføj domænet `admin.bidhamr.dk` til projektet (Settings → Domains + DNS-posten hos domæneudbyderen), og sæt `ADMIN_VAERT=admin.bidhamr.dk` og `NEXT_PUBLIC_ADMIN_URL=https://admin.bidhamr.dk`. **Redeploy.** Fra nu af virker admin kun på admin.bidhamr.dk.
 4. **Sæt selv to-trins-login op først** på https://admin.bidhamr.dk (log ind → "Start" → scan QR-koden → skriv koden). **Gem de 10 gendannelseskoder** et sikkert sted (fx 1Password) – de vises kun én gang.
-5. **Al staff sætter to-trins-login op inden for 14 dage.** Har nogen ikke nået det, så tryk "Åbn tilmelding (24 t)" ud for personen under Admin → Medarbejdere (kræver en kode fra din app). Mister en medarbejder sin telefon: "Nulstil to-trins-login" samme sted.
+5. **Al staff sætter to-trins-login op inden for 7 dage** (først en kode på mail, så app'en). Har nogen ikke nået det, så tryk "Åbn tilmelding (24 t)" ud for personen under Admin → Medarbejdere (kræver en kode fra din app). Mister en medarbejder sin telefon: "Nulstil to-trins-login" samme sted.
 6. **`ADMIN_LUK_HOVEDDOMAENE=omdiriger`** i Vercel i 2 uger (gamle bogmærker til bidhamr.dk/admin sendes videre), **derefter `=1`** (bidhamr.dk/admin giver 404). Redeploy efter hvert skift.
 7. **Vercel Firewall** (Project → Firewall → Configure → New Rule):
    - "Kun DK/EU til admin": If **Host** equals `admin.bidhamr.dk` AND **Country** is not any of (Danmark + de EU-lande, I har brug for) → **Deny**.
    - "Grænse på admin-login": If **Host** equals `admin.bidhamr.dk` AND **Request Path** starts with `/adgang` → **Rate Limit** (fx 30 forespørgsler pr. minut pr. IP) → Deny (429).
    - Publish. Test bagefter fra en mobil uden wifi (DK) og via en VPN uden for EU (skal afvises).
-- **Vær opmærksom på:** når en medarbejder skriver koden i admin, logger Supabase ham ud af appen og bidhamr.dk (han skal logge ind dér igen). Staff med to-trins-login skifter adgangskode via "Glemt adgangskode". Se docs/ADMIN-VAERT.md, "Kendte konsekvenser".
+- **Vær opmærksom på:** hver gang en medarbejder skriver koden i admin, logger Supabase ham ud af appen og bidhamr.dk (han skal logge ind dér igen). Det er Supabases egen regel og kan ikke slås fra. Staff med to-trins-login skifter adgangskode via "Glemt adgangskode". Se docs/ADMIN-VAERT.md, "Kendte konsekvenser".
+- **Din beslutning: separate admin-konti?** Anbefalingen er, at hver medarbejder får en egen konto kun til admin (fx `fornavn.admin@bidhamr.dk` med staff-rollen og to-trins-login) og bruger sin private konto i appen. Så bliver de ikke logget ud af appen, og en lækket app-adgangskode er ikke en admin-adgangskode. Ingen kode skal ændres.
+- **Indtil migration B er kørt, beskytter to-trins-login kun admin-siderne – ikke staff-adgang via API'et.** Migration B (RLS med aal2) er en separat opgave.
 - **Låst ude?** Se docs/ADMIN-VAERT.md, "Nødudgang".
 - Fortryd: slet `ADMIN_VAERT` og `ADMIN_LUK_HOVEDDOMAENE` i Vercel og redeploy – så er admin på bidhamr.dk/admin igen uden to-trins-login.
 

@@ -76,7 +76,7 @@ async function nyFaktor(bruger: string, status = "verified"): Promise<string> {
   return (await en<{ id: string }>(`insert into auth.mfa_factors (user_id, status) values ($1, $2) returning id`, [bruger, status])).id;
 }
 async function aabnVindue(bruger: string, timer = 24) {
-  await db.query(`update public.staff_to_trin set tilmelding_aaben_til = now() + make_interval(hours => $2) where bruger_id = $1`, [bruger, timer]);
+  await db.query(`update public.staff_to_trin set tilmelding_aaben_til = now() + make_interval(hours => $2), mail_bekraeftet_kl = now() where bruger_id = $1`, [bruger, timer]);
 }
 async function aktiver(bruger: string): Promise<{ faktor: string; koder: string[] }> {
   await db.query(`delete from auth.mfa_factors where user_id = $1`, [bruger]);
@@ -100,12 +100,12 @@ afterAll(async () => {
 });
 
 describe("første udrulning", () => {
-  it("nuværende staff (alle fire roller) får et vindue på 14 dage - brugere ingen række", async () => {
+  it("nuværende staff (alle fire roller) får et vindue på 7 dage - brugere ingen række", async () => {
     const r = await db.query<{ bruger_id: string; dage: number }>(
       `select bruger_id, round(extract(epoch from tilmelding_aaben_til - now()) / 86400)::int as dage from public.staff_to_trin order by 1`,
     );
     expect(r.rows.map((x) => x.bruger_id).sort()).toEqual([CHEF, CHEF2, MEDARB, SAELGER].sort());
-    expect(r.rows.every((x) => x.dage === 14)).toBe(true);
+    expect(r.rows.every((x) => x.dage === 7)).toBe(true);
   });
 
   it("en ny kørsel forlænger ikke vinduet (on conflict do nothing)", async () => {
@@ -330,5 +330,56 @@ describe("trigger på users.rolle", () => {
     await aktiver(SAELGER);
     await db.query(`update public.users set rolle = 'admin' where id = $1`, [SAELGER]);
     expect((await en<{ aktiv: boolean }>(`select aktiv from public.staff_to_trin where bruger_id = $1`, [SAELGER])).aktiv).toBe(true);
+  });
+});
+
+describe("engangskode på mail før opsætning", () => {
+  it("aktivering kræver en bekræftet mail-kode (højst 30 min. gammel)", async () => {
+    await db.query(`update public.users set rolle = 'medarbejder' where id = $1`, [NY]);
+    await db.query(`delete from auth.mfa_factors where user_id = $1`, [NY]);
+    await db.query(
+      `update public.staff_to_trin set aktiv = false, faktor_ider = '{}', tilmelding_aaben_til = now() + interval '1 hour', mail_bekraeftet_kl = null where bruger_id = $1`,
+      [NY],
+    );
+    const f = await nyFaktor(NY);
+    expect((await j(`select public.staff_to_trin_aktiver($1, $2, $3) as v`, [NY, f, hashes()])).kode).toBe("mail_mangler");
+    await db.query(`update public.staff_to_trin set mail_bekraeftet_kl = now() - interval '31 minutes' where bruger_id = $1`, [NY]);
+    expect((await j(`select public.staff_to_trin_aktiver($1, $2, $3) as v`, [NY, f, hashes()])).kode).toBe("mail_mangler");
+  });
+
+  it("forkert kode tæller, 5 forkerte brænder koden, den rigtige virker én gang", async () => {
+    const rigtig = hash("123456");
+    expect((await j(`select public.staff_to_trin_mail_kode_gem($1, $2) as v`, [NY, rigtig])).kode).toBe("ok");
+    expect((await j(`select public.staff_to_trin_mail_kode_tjek($1, $2) as v`, [NY, hash("000000")])).kode).toBe("forkert");
+    expect((await j(`select public.staff_to_trin_mail_kode_tjek($1, $2) as v`, [NY, rigtig])).kode).toBe("ok");
+    expect((await j(`select public.staff_to_trin_mail_kode_tjek($1, $2) as v`, [NY, rigtig])).kode).toBe("udloebet");
+    const status = await som("authenticated", NY, { aal: "aal1" }, () => j(`select public.min_staff_adgang() as v`));
+    expect(status.mail_bekraeftet).toBe(true);
+
+    expect((await j(`select public.staff_to_trin_mail_kode_gem($1, $2) as v`, [NY, rigtig])).kode).toBe("ok");
+    for (let i = 0; i < 4; i++) {
+      expect((await j(`select public.staff_to_trin_mail_kode_tjek($1, $2) as v`, [NY, hash(`f${i}`)])).kode).toBe("forkert");
+    }
+    expect((await j(`select public.staff_to_trin_mail_kode_tjek($1, $2) as v`, [NY, hash("f5")])).kode).toBe("for_mange");
+    expect((await j(`select public.staff_to_trin_mail_kode_tjek($1, $2) as v`, [NY, rigtig])).kode).toBe("udloebet");
+  });
+
+  it("udløber efter 15 min., kun i et åbent vindue, ikke når to-trins-login er aktivt, ikke for brugere", async () => {
+    const rigtig = hash("654321");
+    expect((await j(`select public.staff_to_trin_mail_kode_gem($1, $2) as v`, [NY, rigtig])).kode).toBe("ok");
+    await db.query(`update public.staff_to_trin set mail_kode_udloeber_kl = now() - interval '1 second' where bruger_id = $1`, [NY]);
+    expect((await j(`select public.staff_to_trin_mail_kode_tjek($1, $2) as v`, [NY, rigtig])).kode).toBe("udloebet");
+    await db.query(`update public.staff_to_trin set tilmelding_aaben_til = null where bruger_id = $1`, [NY]);
+    expect((await j(`select public.staff_to_trin_mail_kode_gem($1, $2) as v`, [NY, rigtig])).kode).toBe("vindue_lukket");
+    await aktiver(MEDARB);
+    expect((await j(`select public.staff_to_trin_mail_kode_gem($1, $2) as v`, [MEDARB, rigtig])).kode).toBe("aktiv");
+    expect((await j(`select public.staff_to_trin_mail_kode_gem($1, $2) as v`, [BRUGER, rigtig])).kode).toBe("ikke_staff");
+    await expect(
+      som("authenticated", NY, {}, () => db.query(`select public.staff_to_trin_mail_kode_tjek($1, $2)`, [NY, rigtig])),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("nulstilling kræver et staff-mål", async () => {
+    expect((await j(`select public.staff_to_trin_nulstil($1, $2, 24) as v`, [CHEF, BRUGER])).kode).toBe("ikke_staff");
   });
 });

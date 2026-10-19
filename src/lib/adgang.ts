@@ -1,9 +1,15 @@
-"use server";
+import "server-only";
 
 // Login og to-trins-login på admin-hosten (/adgang/*) - Filip, 19. okt. 2026
 // (docs/ADMIN-VAERT.md). Supabase MFA (TOTP), obligatorisk for alle
 // staff-roller. Virker KUN på admin-hosten (ADMIN_VAERT): uden flaget eller på
-// hovedsitet afvises alt. Fejl RETURNERES (Next skjuler kastede fejl).
+// hovedsitet afvises alt. Fejl RETURNERES.
+//
+// Kaldes KUN fra route handleren POST /adgang/api/<handling>
+// (src/app/adgang/api/[handling]/route.ts) - ikke som server actions. En
+// route handler kan ikke køre server actions, så proxyen kan nøjes med at
+// lade POST til /adgang/api/* igennem: et vilkårligt action-id (fx afgivBud)
+// kan ikke postes til admin-hostens login-sider uden om gaten før lancering.
 //
 // Sessionen er admin-hostens egen cookie (src/lib/supabase/server.ts vælger
 // navnet ud fra Host). En almindelig bruger kan aldrig komme længere end
@@ -28,14 +34,19 @@ import {
   bekraeftTotp,
   godkendteFaktorer,
   hashGendannelseskode,
+  hashMailKode,
   minStaffStatus,
+  nyMailKode,
   nyeGendannelseskoder,
   rydUkendteFaktorer,
   sendSikkerhedsmail,
   sletAlleFaktorer,
 } from "@/lib/staffToTrin";
 import { renGendannelseskode, renTotpKode } from "@/lib/staffToTrinRegler";
-import { toTrinGendannetMail, toTrinOpsatMail } from "@/lib/mails/staffToTrin";
+import { toTrinGendannetMail, toTrinMailKodeMail, toTrinOpsatMail } from "@/lib/mails/staffToTrin";
+import { sendHandelMailDetaljer } from "@/lib/mails/send";
+
+const MAIL_MANGLER = "Bekræft først koden fra den mail, vi har sendt dig.";
 
 type Fejl = { fejl: string };
 
@@ -141,11 +152,91 @@ export async function bekraeftAdminKode(kodeInput: string): Promise<{ ok: true }
   }
 }
 
+// Trin 0 i opsætningen: en engangskode på mail, så adgangskoden alene ikke
+// er nok til at sætte en app op (fx en lækket adgangskode i et åbent vindue).
+// 6 cifre, gælder 15 min., kun hashen gemmes; højst 3 mails pr. 15 min. pr.
+// medarbejder og 5 forsøg pr. kode (databasen).
+export async function sendMailKode(): Promise<{ ok: true; email: string } | Fejl> {
+  try {
+    if (!(await kunAdminVaert())) return { fejl: IKKE_HER };
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user?.email) return { fejl: "Log ind igen." };
+
+    const graense = graenseFejl(await tjekGraenserLukket([["admin_mailkode_bruger", user.id], ["admin_kode_ip", await klientIp()]]));
+    if (graense) return { fejl: graense };
+
+    const kode = nyMailKode();
+    const { data, error } = await createAdminClient().rpc("staff_to_trin_mail_kode_gem", {
+      p_bruger: user.id,
+      p_hash: hashMailKode(user.id, kode),
+    });
+    const r = (data as { kode?: string } | null)?.kode;
+    if (error || r !== "ok") {
+      if (r === "vindue_lukket") return { fejl: "Tilmeldingen er lukket. Bed chefen om at åbne for den under Medarbejdere." };
+      if (r === "aktiv") return { fejl: "To-trins-login er allerede sat op." };
+      if (r === "ikke_staff") return { fejl: IKKE_HER };
+      console.error("staff_to_trin_mail_kode_gem:", error?.message ?? r);
+      return { fejl: GENERISK };
+    }
+    const sendt = await sendHandelMailDetaljer(user.email, toTrinMailKodeMail({ kode }));
+    if (!sendt.ok) {
+      console.error("Mail-kode kunne ikke sendes:", sendt.fejl);
+      return { fejl: "Mailen kunne ikke sendes. Prøv igen om lidt." };
+    }
+    return { ok: true, email: maskerEmail(user.email) };
+  } catch (err) {
+    console.error("sendMailKode kastede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
+export async function bekraeftMailKode(kodeInput: string): Promise<{ ok: true } | Fejl> {
+  try {
+    if (!(await kunAdminVaert())) return { fejl: IKKE_HER };
+    const kode = renTotpKode(kodeInput);
+    if (!kode) return { fejl: "Skriv de 6 cifre fra mailen." };
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { fejl: "Log ind igen." };
+
+    const graense = graenseFejl(await tjekGraenserLukket([["admin_kode_bruger", user.id], ["admin_kode_ip", await klientIp()]]));
+    if (graense) return { fejl: graense };
+
+    const { data, error } = await createAdminClient().rpc("staff_to_trin_mail_kode_tjek", {
+      p_bruger: user.id,
+      p_hash: hashMailKode(user.id, kode),
+    });
+    const r = (data as { kode?: string } | null)?.kode;
+    if (error) {
+      console.error("staff_to_trin_mail_kode_tjek:", error.message);
+      return { fejl: GENERISK };
+    }
+    if (r === "ok") return { ok: true };
+    if (r === "forkert") return { fejl: "Koden passer ikke. Tjek mailen, og prøv igen." };
+    if (r === "for_mange") return { fejl: "Du har prøvet for mange gange. Bed om en ny kode." };
+    return { fejl: "Koden er udløbet. Bed om en ny kode." };
+  } catch (err) {
+    console.error("bekraeftMailKode kastede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
+function maskerEmail(email: string): string {
+  const [navn, domaene] = email.split("@");
+  if (!domaene) return email;
+  return `${navn.slice(0, 2)}${"•".repeat(Math.max(1, Math.min(navn.length - 2, 6)))}@${domaene}`;
+}
+
 // Trin 1 i opsætningen: en ny TOTP-faktor (QR-kode og hemmelighed til
 // app'en). Kun i et åbent tilmeldingsvindue og kun, hvis to-trins-login ikke
 // allerede er aktivt. Alle gamle faktorer slettes først.
 export async function startToTrinOpsaet(): Promise<
-  { ok: true; faktorId: string; qr: string; hemmelighed: string } | (Fejl & { kode?: "lukket" | "aktiv" })
+  { ok: true; faktorId: string; qr: string; hemmelighed: string } | (Fejl & { kode?: "lukket" | "aktiv" | "mail" })
 > {
   try {
     if (!(await kunAdminVaert())) return { fejl: IKKE_HER };
@@ -165,6 +256,8 @@ export async function startToTrinOpsaet(): Promise<
     if (!status.tilmelding_aaben) {
       return { fejl: "Tilmeldingen er lukket. Bed chefen om at åbne for den under Medarbejdere.", kode: "lukket" };
     }
+    // Ikke kun adgangskoden: engangskoden fra mailen skal være bekræftet.
+    if (!status.mail_bekraeftet) return { fejl: MAIL_MANGLER, kode: "mail" };
 
     if (!(await sletAlleFaktorer(user.id))) return { fejl: GENERISK };
     // Et nyt navn hver gang (Supabase kræver unikke navne pr. bruger).
@@ -215,6 +308,7 @@ export async function bekraeftToTrinOpsaet(
     if (!status.staff) return { fejl: IKKE_HER };
     if (status.aktiv) return { fejl: "To-trins-login er allerede sat op." };
     if (!status.tilmelding_aaben) return { fejl: "Tilmeldingen er lukket. Bed chefen om at åbne for den under Medarbejdere." };
+    if (!status.mail_bekraeftet) return { fejl: MAIL_MANGLER };
 
     const svar = await bekraeftTotp(supabase, faktorId, kodeInput);
     if (svar === "ugyldig") return { fejl: KODE_UGYLDIG };
