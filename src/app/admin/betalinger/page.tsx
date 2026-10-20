@@ -1,4 +1,3 @@
-import { hovedsiteUrl } from "@/lib/adminVaert";
 import Link from "next/link";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
@@ -80,7 +79,7 @@ function AuktionLink({ id, titel, tradeId }: { id: string | null; titel: string 
     <div className="min-w-0">
       <p className="text-xs uppercase text-tekst-svag">Auktion</p>
       {id ? (
-        <Link href={hovedsiteUrl(`/auktion/${id}`)} className="block truncate font-medium text-tekst hover:underline">
+        <Link href={`/admin/auktioner/${id}`} className="block truncate font-medium text-tekst hover:underline">
           {titel ?? "(slettet auktion)"}
         </Link>
       ) : (
@@ -284,7 +283,7 @@ export default async function AdminBetalinger({
                 {udenHandel.map((a) => (
                   <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
                     <Link
-                      href={hovedsiteUrl(`/auktion/${a.id}`)}
+                      href={`/admin/auktioner/${a.id}`}
                       className="min-w-0 flex-1 truncate font-medium text-tekst hover:underline"
                     >
                       {a.titel ?? "(uden titel)"}

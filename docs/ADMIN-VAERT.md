@@ -6,7 +6,7 @@ Filips beslutninger 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bid
 - Samme Vercel-projekt. `ADMIN_VAERT=admin.bidhamr.dk` slår det til; uden den virker alt som før (admin på `/admin`, intet to-trins-login).
 - På admin-hosten: kun `/admin*`, `/adgang*`, Next' egne filer, ikoner og `robots.txt` (Disallow). Alt andet giver 404. `/` sender til `/admin`.
 - Admin har sin egen session-cookie (host-only `__Host-bh-admin-auth`), så hovedsitets session aldrig sendes til admin, og omvendt.
-- Login: e-mail + adgangskode → koden fra app'en (TOTP) → admin. En ny kode kræves efter 12 timer (`STAFF_TO_TRIN_MAKS_TIMER`).
+- Login: e-mail + adgangskode → koden fra app'en (TOTP) → admin. En ny kode kræves efter 12 timer (`STAFF_TO_TRIN_MAKS_TIMER`, 1-12; højere værdier bruges som 12 og giver en drift-fejl ved start).
 - Hver admin-side og -handling tjekker fire ting (`hentStaffAdgang` i `src/lib/adminAuth.ts`): admin-hosten, aal2 med en frisk kode, databasen (aktiv og ingen ukendte faktorer) og rollen.
 
 ## Arkitektur
@@ -22,7 +22,8 @@ Filips beslutninger 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bid
 | Opstartstjek | `src/instrumentation.ts` logger i drift (`logDriftFejl`), hvis kun én af `ADMIN_VAERT`/`NEXT_PUBLIC_ADMIN_URL` er sat, eller de ikke passer sammen (`adminKonfigFejl`) |
 | Chefens knapper | Admin → Medarbejdere: "Nulstil to-trins-login" og "Åbn tilmelding (24 t)" (`src/app/actions/adminToTrin.ts`, `src/components/admin/ToTrinHandling.tsx`) |
 | Server-hjælpere | `src/lib/staffToTrin.ts` (faktorer via admin-API'et, gendannelseskoder, sikkerhedsmails), mails i `src/lib/mails/staffToTrin.ts` |
-| Database | `supabase/migrations/20261027010000_staff_to_trin.sql` (migration A) |
+| Database | `supabase/migrations/20261027010000_staff_to_trin.sql` (migration A), `20261027020000_staff_rls_aal2.sql` (migration B, RLS med aal2) – rollback: `supabase/rollback/20261027020000_staff_rls_aal2.sql` |
+| Staff-visning af en auktion | `src/app/admin/auktioner/[id]/page.tsx` – også skjulte, arkiverede og kunst-afventende (service role). Admin linker hertil i stedet for til auktionssiden |
 | CSP | `lavCsp(nonce, "admin")` i `src/lib/csp.ts`: ingen Stripe, Google, Apple Pay eller kortfliser; `frame-src 'none'` |
 
 ### Proxyen på admin-hosten
@@ -70,6 +71,7 @@ Filips beslutninger 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bid
 5. Al staff sætter to-trins-login op inden for 7 dage. Har nogen ikke nået det, åbner du et vindue på 24 timer under Medarbejdere.
 6. `ADMIN_LUK_HOVEDDOMAENE=omdiriger` i 2 uger, derefter `=1`. Redeploy efter hvert skift (Vercel bruger først nye værdier efter en ny deploy).
 7. Vercel Firewall: kun DK/EU for `admin.bidhamr.dk` og en rate limit på `/adgang` (se HUSKELISTE.md).
+8. Migration B (`20261027020000_staff_rls_aal2.sql`, dit "ja") – **først når al staff har to-trins-login aktivt** (Admin → Medarbejdere) og efter `20261027010000` og trin 3. Se "Migration B" nedenfor.
 
 Rul tilbage: slet `ADMIN_VAERT` (og `ADMIN_LUK_HOVEDDOMAENE`) og redeploy – så er admin på bidhamr.dk/admin igen uden to-trins-login. Tabellerne kan blive liggende.
 
@@ -88,7 +90,7 @@ delete from public.staff_gendannelseskoder where bruger_id = '<bruger-id>';
 Log derefter ind på admin.bidhamr.dk og sæt en ny app op. Brug kun nødudgangen på en verificeret person – det er en ændring i produktion.
 
 ## Vigtigt: hvad to-trins-login IKKE beskytter
-**Indtil migration B er kørt, beskytter to-trins-login kun admin-siderne – ikke staff-adgang via API'et.** RLS og databasefunktionerne kender kun rollen (`er_staff()`, `min_rolle()`), så en medarbejder med kun adgangskoden (aal1) kan stadig læse det, staff-rollen giver adgang til, direkte via Supabase (appen, supabase-js). Se listen under "Migration B".
+**Indtil migration B er kørt, beskytter to-trins-login kun admin-siderne – ikke staff-adgang via API'et.** RLS og databasefunktionerne kender kun rollen, så en medarbejder med kun adgangskoden (aal1) kan læse det, staff-rollen giver adgang til, direkte via Supabase (appen, supabase-js). Migration B lukker det (se nedenfor).
 
 ## Anbefaling til Filips beslutning: separate admin-konti
 Supabase logger en medarbejders app- og bidhamr.dk-sessioner ud, hver gang han skriver en kode i admin (se næste afsnit). Anbefalingen er **separate admin-konti**: hver medarbejder har én konto med staff-rollen, der kun bruges til admin.bidhamr.dk (med to-trins-login), og sin almindelige private konto til appen. Så rammer udlogningen ikke den daglige app-brug, og en lækket app-adgangskode er ikke en admin-adgangskode. Det kræver ingen kode – kun at chefen giver rollen til en ny konto (fx `fornavn.admin@bidhamr.dk`) og fjerner den fra den private. Filip beslutter.
@@ -104,41 +106,55 @@ Supabase logger en medarbejders app- og bidhamr.dk-sessioner ud, hver gang han s
 - `auth.admin.mfa.deleteFactor` logger ikke sessioner ud – derfor sletter databasen selv aal2-sessionerne ved nulstilling og gendannelse.
 - En ny kode opdaterer `amr`-tidsstemplet for `totp` i sessionen, så 12-timers-reglen virker uden nyt login.
 
-## Migration B (RLS med aal2 i `er_staff()`) – IKKE skrevet endnu
-Hentet fra testdatabasen 19. okt. 2026 (`pg_policies` og `pg_proc` med execute for authenticated).
+## Migration B (RLS med aal2) – `20261027020000_staff_rls_aal2.sql`
+Staff-PRIVILEGIER i databasen (se andres data, skjulte auktioner, læse staff-filer, skrive i staff-tabeller) kræver `staff_aal2_ok()` fra migration A: aal2, to-trins-login aktivt i `staff_to_trin`, ingen ukendte faktorer og en kode højst 12 timer gammel. Uden det opfører en medarbejder sig præcis som en almindelig bruger – egne data virker. **Ingen `db_pre_request`** (fejlen fra 7. okt.). `min_rolle()` og `min_profil()` er uændrede (gaten, rolle-cookien, topbaren, `hentStaffAdgang` og appen bruger dem); migrationen afbryder, hvis de er ændret. Service-role-funktioner med `p_staff`/`p_chef` er uændrede.
 
-**Policies, der bruger staff-rollen:**
+**Kør den først, når al staff har to-trins-login aktivt**, efter `20261026010000` og `20261027010000`, og når `ADMIN_VAERT` er sat og deployet. En medarbejder uden aktivt to-trins-login mister med det samme staff-adgangen i databasen.
 
-| Tabel | Policy | Udtryk |
-|---|---|---|
-| andenchance_tilbud | andenchance_select_part (SELECT) | `byder_id = auth.uid() or er_staff()` |
-| auctions | auctions_select_authenticated (SELECT) | synlig, egen, `er_staff()` eller `auktion_arkiv_adgang` |
-| betaling_afvigelser | betaling_afvigelser_select_chef (SELECT) | `min_rolle() = 'chef'` |
-| betalinger | betalinger_select_part (SELECT) | køber, sælger eller `min_rolle() = 'chef'` |
-| employee_complaints | _select_chef / _update_chef | `min_rolle() = 'chef'` |
-| forsendelse_haendelser | forsendelse_haendelser_select_parter | `er_staff()` eller part |
-| forsendelser | forsendelser_select_parter | `er_staff()` eller part |
-| handel_levering | handel_levering_select_parter | `er_staff()` eller part |
-| messages | messages_select_part | `er_staff()` eller part |
-| trades | trades_select_own | part eller `er_staff()` |
+Listen er lavet forfra 20. okt. 2026 med SELECT i både produktion og test (ens): alle `pg_policies` inkl. storage, og alle funktioner, som `authenticated` kan kalde, og som bruger `er_staff`, rollen eller `min_rolle` (også indirekte via `staff_chat_har_rolle`/`erhverv_har_adgang`).
 
-Storage-policies via funktioner: `pakke_billeder_laes_parter`, `sag_billeder_laes_parter`, `fragt_labels_laes`, `beta_fejl_billeder_upload_egen` (+ upload-policies for sag/pakke/erhverv-klage).
+**Ændret** (md5 = normaliseret `prosrc`, hhv. permissive|cmd|roller|using|check uden mellemrum og `public.`):
 
-**Funktioner for authenticated, der læser rollen:** `antal_aabne_sager()`, `antal_ubesvarede_staff_samtaler()`, `auktion_arkiv_adgang(uuid)`, `auktion_spoergsmaal_liste(uuid)`, `beta_fejl_billede_maa_uploade(text)`, `er_staff()`, `fragt_label_maa_laese(text)`, `hent_medarbejdere()`, `min_profil()`, `min_rolle()`, `mine_forsendelse_label(uuid)`, `mit_leveringsvalg(uuid)`, `pakke_billede_maa_laese(text)`, `sag_billede_maa_laese(text)`.
+| Objekt | Før | Efter | md5 før | md5 efter |
+|---|---|---|---|---|
+| `er_staff()` | rollen | rollen **og** `staff_aal2_ok()` | `c60104d50290ed101923d4bb3d059840` | `f87987aa4d8ca499b7cd5cf90fbf31ad` |
+| `auktion_spoergsmaal_liste(uuid)` | `staff_chat_har_rolle(auth.uid(), 'medarbejder')` | `er_staff()` | `38fc55bfba916542f7448e67aaf8bd6e` | `ac39193832d11e663ecbc536355f85bb` |
+| `beta_fejl_billede_maa_uploade(text)` | `er_staff()` | rollen (eget skærmbillede i egen mappe, som `maaMeldeBetaFejl`) | `5a107368fca910d964b4cbfda56c7c78` | `1eef75deb6b4193a474f807a3851edc9` |
+| `firma_faktura_salg(...)` | chef ser andre firmaer | chef kun med `staff_aal2_ok()` (eget firma uændret) | `3e19eebfe328958da847fde4c09febc8` | `7ffab70526bf6f5e5af9d4c8310d7550` |
+| policy `betaling_afvigelser_select_chef` | `min_rolle() = 'chef'` | `(select min_rolle()) = 'chef' and (select staff_aal2_ok())` | `c881bce9511c07a33de7f08341ab9f3d` | `ed7ceff41575845b759f455dd7c20ddb` |
+| policy `betalinger_select_part` | køber, sælger eller `min_rolle() = 'chef'` | køber, sælger eller chef med aal2 | `b6ee707d622710484e14086b0e01ade6` | `278297185e39392396a5bd88934000ad` |
+| policy `employee_complaints_select_chef` | `min_rolle() = 'chef'` | chef med aal2 | `e17d2d7d9152046c5a00c81f4a6b4fe0` | `55342f176933d9e188d6ee2056a542e5` |
+| policy `employee_complaints_update_chef` | `min_rolle() = 'chef'` | chef med aal2 | `9daecf0383eeb2863ceb1c9723d0f9a1` | `c9efc546fd91142b99848f90d1cf6cf3` |
+| policy `trades_select_own` | `... OR er_staff()` (pr. række) | `(select public.er_staff())` (én gang pr. forespørgsel) | `5acc25bf245a92e1288475f1d2d607dc` | `2e89c2643eaa450ea0393cf576d1df5c` |
+| policy `messages_select_part` | `er_staff() OR (part)` | `(select public.er_staff()) or (part)` | `debbc4a7f61cf249e5a71bdef365f86e` | `023c3a5ab71305dac0fa6349b5f28d23` |
+| policy `forsendelser_select_parter` | `er_staff() OR (part)` | `(select public.er_staff()) or (part)` | `9efa06f6919426346483181c255aaca8` | `ab6c6b1d352f25cdeed87e813e2b204e` |
+| policy `forsendelse_haendelser_select_parter` | `er_staff() OR (part)` | `(select public.er_staff()) or (part)` | `152a46d690321bbea1f65955743a1a41` | `62cb6822f345370151e2cd43b7d3b7e2` |
+| policy `handel_levering_select_parter` | `er_staff() OR (part)` | `(select public.er_staff()) or (part)` | `9120622c45684afd1c0751f02dd887f5` | `3b4b7fc55aa1bd3db404a472e2dc8095` |
+| policy `andenchance_select_part` | `... OR er_staff()` | `byder_id = auth.uid() or (select public.er_staff())` | `b91b0b0a4f1c3f76c5405b7ae278aa5b` | `8b0272a18879686a9bbb036c80761865` |
 
-**Hvad går i stykker på hovedsitet og i appen, hvis `er_staff()` kræver aal2:**
-- Staff ser ikke længere skjulte/arkiverede auktioner eller auktioner under kunst-kontrol på auktionssiden (404, medmindre de selv er part) – det er ønsket; de skal bruge "Åbn i admin".
-- Staff ser kun egne handler, beskeder, forsendelser og leveringsvalg i appen og på hovedsitet.
-- Skjulte spørgsmål vises ikke for staff på auktionssiden (`auktion_spoergsmaal_liste`).
-- **"Meld fejl" for staff før lancering** (upload af skærmbillede via `beta_fejl_billede_maa_uploade`) holder op med at virke på hovedsitet – skal undtages eller kun tjekke rollen.
-- `min_rolle()` og `min_profil()` MÅ IKKE kræve aal2: proxyens gate før lancering, rolle-cookien, topbarens "Admin"-link og `hentStaffAdgang` bruger dem. Ændres de, kan staff ikke komme forbi gaten på hovedsitet eller i appen (præcis fejlen fra 7. okt.).
-- Policies med `min_rolle() = 'chef'` (betalinger, afvigelser, klager) bør skifte til et aal2-tjek, hvis de skal med – chefen ser så kun egne betalinger på hovedsitet.
-- Admin selv påvirkes ikke: admin-sider og -handlinger bruger service-role-klienten (`createAdminClient`).
-- Forslag: `er_staff()` → `er_staff() and staff_aal2_ok()` kun i policies (ikke i `min_rolle`), og en egen hjælper til de få steder, staff skal kunne noget på hovedsitet (Meld fejl).
+`er_staff()` havde forskellig formatering i produktion (flere linjer) og test (én linje) med samme normaliserede md5; den skrives derfor helt (`pg_temp.fn_ret`). De tre andre rettes på stedet (`pg_temp.ps_ret`, CR fjernes først – produktion har CRLF). Policies: `pg_temp.pol_ret`. Alt i én transaktion; et uventet md5 afbryder, og intet ændres.
+
+De seks policies med `er_staff()` får aal2 via `er_staff()`; omskrivningen til `(select ...)` er kun for ydelsen (review 20. okt.).
+
+**Arver aal2 via `er_staff()`** (selve funktionen/policyen er uændret): policy `auctions_select_authenticated` (har allerede `(select er_staff())`; også via `auktion_arkiv_adgang`); storage `fragt_labels_laes`, `pakke_billeder_laes_parter`, `sag_billeder_laes_parter` (via `*_maa_laese`); funktionerne `antal_aabne_sager`, `antal_ubesvarede_staff_samtaler`, `auktion_arkiv_adgang`, `fragt_label_maa_laese`, `hent_medarbejdere`, `mine_forsendelse_label`, `mit_leveringsvalg`, `pakke_billede_maa_laese`, `sag_billede_maa_laese` og indirekte `app_auktion_synlig` → `auktion_budhistorik`, `auktion_saelger_kan_saelge`, `rapporter_auktion`.
+
+**Uændret med vilje:** `min_rolle()` (`2e2b6b44f51252f5f292c9748367800c`), `min_profil()` (`5a4b00fa8869ba98b0c54fc56efca1c3`), `min_staff_adgang`, `staff_aal2_ok`; upload-policies for sag/pakke/erhverv-klage (intet staff-tjek); `min_returfragt`, `mit_ikke_afhentet`, `forbudte_varer`, `mine_data_grund`, `konto_sletning_blokeringer_grund` (ordet "rolle", intet privilegium).
+
+**Hovedsitet og appen efter migration B:**
+- Admin-siderne bruger service role (`kraevSideRolle`/`assertRole`) og er upåvirkede. Det eneste admin-kald med brugerens egen klient er badge-tallet `antal_ubesvarede_staff_samtaler` (`src/app/actions/staffChat.ts`) – på admin-hosten er det admin-cookiens aal2-session, så det virker. `STAFF_TO_TRIN_MAKS_TIMER` har et loft på 12 (`toTrinMaksTimer`, databasen kræver en kode højst 12 timer gammel); start-tjekket (`src/instrumentation.ts`) logger en drift-fejl, hvis den er sat over 12 eller ugyldig. Fragt-labels signeres altid med service role.
+- Staff ser skjulte, arkiverede og kunst-afventende auktioner og skjulte spørgsmål kun i admin: ny side `/admin/auktioner/[id]` (alle staff-roller fra medarbejder) med billeder, sælger, priser, status og link til spørgsmålene. Alle admin-links til auktioner (rapporter, sager, handler, betalinger, penge, ubetalte, bedømmelser, boost, DSA-placering) peger dertil.
+- Auktionssiden: kan en medarbejder/admin/chef ikke se auktionen (aal1), sender layoutet til `adminUrl("/admin/auktioner/<id>")` i stedet for 404. "Åbn auktionen i admin" peger på samme side (før `/admin/auktioner?q=`, som kun admin+ kunne åbne).
+- "Meld fejl" før lancering virker for staff uden aal2 (rollen alene, egen mappe).
+- Mine handler, beskeder, kvitteringer, chat osv. på hovedsitet filtrerer allerede eksplicit på køber/sælger – uændret.
+- Appen (`bidhamr-app`, gennemgået 20. okt. 2026) bruger ingen staff-privilegier: kun `min_profil` og `auktion_spoergsmaal_liste` (egne data) og egne handler/billeder.
+
+**Tilbagerulning:** `prod-koersel/rollback-20261027020000.sql` (gitignored kopi til Filip) = `supabase/rollback/20261027020000_staff_rls_aal2.sql`. Kør den som én forespørgsel i SQL Editor. Samme md5-tjek baglæns ("gammel" = efter B, "ny" = før B); den gendanner præcis de gamle kroppe og policies (testet i PGlite og på testdatabasen 20. okt.: alle md5 tilbage til "før"). De gamle kroppe står også i kommentaren øverst i migrationen. Migration B kan køres igen bagefter.
 
 ## Test
 - Lokalt: kopiér `.env.local`, sæt `ADMIN_VAERT=admin.localhost` og `NEXT_PUBLIC_ADMIN_URL=http://admin.localhost:3000`, og kør `npm run dev`. Admin: http://admin.localhost:3000, hovedsitet: http://localhost:3000 (testdatabasen). `allowedDevOrigins` er ikke nødvendig – dev-serveren tillader selv `*.localhost`.
 - Enhedstests: `tests/enhed/adminVaert.test.ts`, `adminGate.test.ts` (routing-matrix host × sti × metode × session × rolle gennem den rigtige proxy), `hentStaffAdgang.test.ts`, `staffToTrin.test.ts` (regler og gendannelseskoder).
 - PGlite: `tests/penge-db/staffToTrin.test.ts` (kørt to gange, rettigheder, trigger, nulstilling, gendannelse, aktivering).
+- PGlite migration B: `tests/penge-db/staffRlsAal2.test.ts` med de rigtige funktioner/policies fra før (`tests/penge-db/fixtures/staff_rls_foer_20261027020000.sql`): `er_staff()` kun ved aal2 + aktivt + frisk kode, RLS på alle 10 tabeller (aal1 kun egne, aal2 alle), storage-funktioner og -policies, `min_rolle`/`min_profil` uændrede, md5-tjekket afviser en uventet krop/policy (og ruller tilbage), kørt to gange, rollback.
+- Migration B på testdatabasen 20. okt. 2026: kørt to gange, rollback kørt og B kørt igen. Snyd med chefens aal1-token mod PostgREST: `trades` 1 (egne) af 502, `messages` 0 af 14, `betalinger` 1 af 489, `handel_levering`/`forsendelser`/`forsendelse_haendelser` 0, `betaling_afvigelser` 0 af 15, skjulte/arkiverede auktioner 0 af 453; med aal2 alle. `er_staff` false/true, `min_rolle` "chef" begge. Storage `sign` på andres label/pakke-/sagsbillede: aal1 400, aal2 200.
 - Browser-test (Chrome, 19. okt. 2026, testdatabasen): opsætning, login med kode, forkert kode, chefens nulstilling, gendannelseskode, log ud, ikke-staff afvist, admin-cookie sendes ikke til localhost, "Åbn i admin"-links på hovedsitet.
 - Snyd: "Nulstil to-trins-login"-action-id'et postet uden Origin til hovedhosten (`/auktioner` og `/admin/medarbejdere`) med hovedsitets cookie → `{"fejl":"Du har ikke adgang til at gøre dette."}`; til admin-hosten med hovedsitets cookie → 401/afvist; med hovedsitets aal1-token kopieret ind som admin-cookie → 401 "Kræver to-trins-login"; `X-Forwarded-Host: admin…` mod hovedhosten → 404. Intet blev nulstillet.

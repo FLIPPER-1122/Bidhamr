@@ -15,6 +15,7 @@ import {
   sikkerAdminSti,
   somStaffRolle,
   toTrinMaksTimer,
+  toTrinMaksTimerFejl,
   vurderStaffAdgang,
   type StaffInput,
 } from "@/lib/staffToTrinRegler";
@@ -49,10 +50,13 @@ describe("amr og frisk kode", () => {
     expect(andetTrinFrisk([{ method: "totp", timestamp: NU + 60 }], maks, NU)).toBe(true);
   });
 
-  it("STAFF_TO_TRIN_MAKS_TIMER: standard 12, ellers 1-168", () => {
+  it("STAFF_TO_TRIN_MAKS_TIMER: standard 12, 1-12, loft 12 (migration B)", () => {
     expect(toTrinMaksTimer(undefined)).toBe(12);
     expect(toTrinMaksTimer("")).toBe(12);
     expect(toTrinMaksTimer("8")).toBe(8);
+    expect(toTrinMaksTimer("12")).toBe(12);
+    expect(toTrinMaksTimer("13")).toBe(12);
+    expect(toTrinMaksTimer("24")).toBe(12);
     expect(toTrinMaksTimer("0")).toBe(12);
     expect(toTrinMaksTimer("169")).toBe(12);
     expect(toTrinMaksTimer("2.5")).toBe(12);
@@ -100,6 +104,16 @@ describe("vurderStaffAdgang", () => {
   it("ukendt faktor vinder over aal1 (og inaktiv over aal1)", () => {
     expect(v({ aal: "aal1", db: { aktiv: true, ukendte_faktorer: true } })).toEqual({ ok: false, grund: "ukendt_faktor" });
     expect(v({ aal: "aal1", db: { aktiv: false, ukendte_faktorer: false } })).toEqual({ ok: false, grund: "ikke_opsat" });
+  });
+
+  it("start-tjekket melder en værdi over 12 eller en ugyldig værdi", () => {
+    expect(toTrinMaksTimerFejl(undefined)).toBeNull();
+    expect(toTrinMaksTimerFejl("")).toBeNull();
+    expect(toTrinMaksTimerFejl("8")).toBeNull();
+    expect(toTrinMaksTimerFejl("12")).toBeNull();
+    expect(toTrinMaksTimerFejl("13")).toMatch(/højst 12/);
+    expect(toTrinMaksTimerFejl("abc")).toMatch(/ugyldig/);
+    expect(toTrinMaksTimerFejl("0")).toMatch(/ugyldig/);
   });
 
   it("STAFF_TO_TRIN_MAKS_TIMER styrer grænsen", () => {
