@@ -21,15 +21,26 @@ import type Stripe from "stripe";
 export const BIDHAMR_MCC = "5931"; // Used Merchandise and Secondhand Stores
 export const BIDHAMR_STATEMENT_DESCRIPTOR = "BIDHAMR.DK";
 // Betalingsmetoder på sælgerens konto (destination charges med on_behalf_of
-// kræver, at metoden er aktiv på den forbundne konto).
-export const KONTO_CAPABILITIES = ["card_payments", "transfers", "mobilepay_payments"] as const;
+// kræver, at metoden er aktiv på den forbundne konto). Svarer til
+// betalingsmetoder.ts (kort, MobilePay, Revolut Pay - Filip 20. okt. 2026).
+// revolut_pay_payments: verificeret 20. okt. 2026 i testmiljøet, at en DK
+// Express-konto kan anmode om den (ingen ekstra oplysningskrav ifølge
+// docs.stripe.com/connect/account-capabilities). Er den ikke aktiv på en
+// sælgers konto, udelades Revolut Pay blot i sælgerens checkout
+// (saelgerMetoder).
+export const KONTO_CAPABILITIES = [
+  "card_payments",
+  "transfers",
+  "mobilepay_payments",
+  "revolut_pay_payments",
+] as const;
 
 export function produktbeskrivelse(erFirma: boolean): string {
   return erFirma ? "Salg af brugte ting på BidHamr" : "Privat salg af brugte ting på BidHamr";
 }
 
 // Parametre til accounts.create for en ny sælgerkonto: card_payments +
-// transfers + mobilepay_payments, business_type 'company' for firmaer, manuel
+// transfers + mobilepay_payments + revolut_pay_payments, business_type 'company' for firmaer, manuel
 // udbetalingsplan og debit_negative_balances, MCC, url, beskrivelse og
 // statement descriptor.
 export function nyKontoParametre(o: {
@@ -70,7 +81,7 @@ export type KontoOpsaetningResultat = {
 
 // Gør en eksisterende sælgerkonto klar. Idempotent: kun det, der mangler,
 // sendes til Stripe; intet kald, hvis kontoen allerede er sat op.
-//   - anmoder om card_payments, transfers og mobilepay_payments. Verificeret
+//   - anmoder om card_payments, transfers, mobilepay_payments og revolut_pay_payments. Verificeret
 //     8. okt. 2026: mangler kontoen oplysninger til card_payments (fx telefon,
 //     nationalitet), bliver transfers og udbetalinger inaktive, indtil
 //     sælgeren har gjort onboardingen færdig (betalinger venter imens).

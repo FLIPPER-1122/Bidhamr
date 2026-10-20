@@ -12,8 +12,8 @@ import "server-only";
 //      den nåede at blive betalt), og så startes et nyt køb.
 //   2. En PaymentIntent på BidHamrs PLATFORMSKONTO - ingen on_behalf_of,
 //      ingen transfer_data, intet application fee: købet er BidHamrs egen
-//      omsætning (med moms). Kort, MobilePay, Apple Pay og Google Pay
-//      (automatic_payment_methods), tvungen 3D Secure ('any'). Idempotency
+//      omsætning (med moms). Kort, Apple Pay, Google Pay, MobilePay og
+//      Revolut Pay (betalingsmetoder.ts), tvungen 3D Secure ('any'). Idempotency
 //      key pr. køb og forsøg. Metadata: type 'boost', boost_koeb_id,
 //      bruger_id, point, bidhamr_db.
 //   3. Webhooken (payment_intent.succeeded) - eller returen fra betalingen,
@@ -42,6 +42,7 @@ import { logDriftFejl, renFejltekst } from "@/lib/drift";
 import { egenDatabase } from "@/lib/betaling/fremmedeTestdata";
 import { hentNoedstop, NYE_BETALINGER_STOPPET_TEKST } from "@/lib/betaling/noedstop";
 import { alarmPrTilfaelde } from "@/lib/betaling/driftTilfaelde";
+import { annullerForkerteMetoder, metodeHandling, metodeNoegle, platformMetoder } from "@/lib/betaling/betalingsmetoder";
 import { kundeSessionTilCheckout, sikrStripeKunde, type BetalingsKanal } from "@/lib/betaling/stripeBetaling";
 import { BOOST_TEKST } from "@/lib/boost/tekster";
 
@@ -341,11 +342,26 @@ async function sikrBoostPi(k: BoostKoebRaekke, forsoeg = 0): Promise<Stripe.Paym
       if (!ny) throw new Error("Boost-købet findes ikke");
       return sikrBoostPi(ny, forsoeg + 1);
     }
+    // Betalingsmetoderne (Filip, 20. okt. 2026): en åben PaymentIntent med
+    // automatic_payment_methods (Klarna, Link ...) kan ikke opdateres til en
+    // eksplicit liste - den annulleres, og næste runde nulstiller købet
+    // (pi_forsoeg + 1 = ny idempotency key) og laver en ny.
+    const metodeValg = metodeHandling(eks, platformMetoder());
+    if (metodeValg === "annuller") {
+      if (k.status !== "afventer" || forsoeg >= 2) throw new Error("Boost-købets PaymentIntent har forkerte betalingsmetoder");
+      const efter = await annullerForkerteMetoder(stripe, eks.id);
+      if (efter.status !== "canceled") return efter; // betalt imens - kalderen spejler
+      return sikrBoostPi(k, forsoeg + 1);
+    }
     // Beløbet er låst i databasen; 3D Secure tvinges også på ældre intents.
     const mangler3ds = eks.payment_method_options?.card?.request_three_d_secure !== "any";
-    if ((eks.amount !== beloeb || mangler3ds || eks.metadata?.boost_koeb_id !== k.id) && OPDATERBARE.includes(eks.status)) {
+    if (
+      (eks.amount !== beloeb || mangler3ds || eks.metadata?.boost_koeb_id !== k.id || metodeValg === "opdater") &&
+      OPDATERBARE.includes(eks.status)
+    ) {
       return stripe.paymentIntents.update(eks.id, {
         amount: beloeb,
+        payment_method_types: platformMetoder(),
         metadata: metadata(k),
         payment_method_options: { card: { request_three_d_secure: "any" } },
       });
@@ -355,16 +371,21 @@ async function sikrBoostPi(k: BoostKoebRaekke, forsoeg = 0): Promise<Stripe.Paym
 
   const kunde = await sikrStripeKunde(k.bruger_id);
   const db = egenDatabase();
-  const noegle = `bidhamr-boost-${k.id}-${k.pi_forsoeg}${db ? `-${db}` : ""}`;
+  // Metoderne er med i nøglen: en PaymentIntent fra før (automatic_payment_
+  // methods) under samme nøgle, men aldrig gemt, giver en ny i stedet for
+  // Stripes idempotensfejl.
+  const metoder = platformMetoder();
+  const noegle = `bidhamr-boost-${k.id}-${k.pi_forsoeg}${db ? `-${db}` : ""}-${metodeNoegle(metoder)}`;
   const pi = await stripe.paymentIntents.create(
     {
       amount: beloeb,
       currency: "dkk",
       customer: kunde,
-      // Kort, MobilePay, Apple Pay, Google Pay - som den øvrige checkout
-      // (styres fra Stripe Dashboard). Betaling til platformen: ingen
-      // on_behalf_of, ingen transfer_data, intet application fee.
-      automatic_payment_methods: { enabled: true },
+      // Kun de tilladte metoder (betalingsmetoder.ts, Filip 20. okt. 2026):
+      // kort (inkl. Apple Pay/Google Pay), MobilePay og Revolut Pay - aldrig
+      // Klarna eller Link. Betaling til platformen: ingen on_behalf_of,
+      // ingen transfer_data, intet application fee.
+      payment_method_types: metoder,
       payment_method_options: { card: { request_three_d_secure: "any" } },
       description: `BidHamr boost-point (${k.point} point)`,
       metadata: metadata(k),

@@ -53,13 +53,24 @@ await presentPaymentSheet();
   Payment Element har), så serveren sætter alle andre kort på kunden til `allow_redisplay: 'limited'`, før
   kundesessionen laves. Kan det ikke sikres, er `customerSessionClientSecret` `null`.
 - 3D Secure er tvunget (`request_three_d_secure: "any"`). PaymentSheet viser selv bankens vindue.
+- **Betalingsmetoder (Filip, 20. okt. 2026): kun kort (inkl. Apple Pay og Google Pay), MobilePay og Revolut Pay –
+  ingen Klarna og ingen Link.** Serveren sætter dem på PaymentIntenten (`payment_method_types`), så PaymentSheet
+  viser kun dem. I checkout vises MobilePay og Revolut Pay kun, når sælgerens Stripe-konto har dem aktive; boost og
+  returfragt har altid alle tre. Appen skal selv:
+  - slå Link fra i PaymentSheet: `link: { display: LinkDisplay.NEVER }` i `initPaymentSheet` (importér
+    `LinkDisplay` fra `@stripe/stripe-react-native`; findes i 0.64.0). Gælder betal, gem kort, boost og returfragt.
+  - beholde `returnURL: "bidhamr://stripe-redirect"`: MobilePay og Revolut Pay sender køberen ud i deres app og
+    tilbage via det link.
+  - beholde `allowsDelayedPaymentMethods: false`.
+  - aldrig sende egne metoder: listen styres kun af serveren (`src/lib/betaling/betalingsmetoder.ts`).
 - Betalingen er først gennemført, når webhooken har registreret den. Hent handlen igen (`betaling_modtaget`).
 
 ## Gem kort
 
 `gem-kort` → `initPaymentSheet({ setupIntentClientSecret, customerId, customerSessionClientSecret, … })` →
 `presentPaymentSheet()` → `bekraeft-kort { setup_intent_id }` (id = `clientSecret` før `_secret_`). Kortet gemmes
-`on_session`, kun kort (Apple Pay/Google Pay gemmes som kort).
+`on_session`, kun kort (Apple Pay/Google Pay gemmes som kort). MobilePay og Revolut Pay kan ikke gemmes
+(SetupIntenten har `payment_method_types: ['card']`), og Link vises ikke (`link: { display: LinkDisplay.NEVER }`).
 
 ## Boost (køb af point og boost)
 

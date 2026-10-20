@@ -832,7 +832,7 @@ export default function CheckoutSide({
                         <span>
                           {gemt && !leveringGemt
                             ? "Du har ændret leveringen. Tryk “Fortsæt til betaling” for at se den nye pris og betale."
-                            : "Vælg levering, og tryk “Fortsæt til betaling”. Du kan betale med kort, MobilePay, Apple Pay og Google Pay."}
+                            : "Vælg levering, og tryk “Fortsæt til betaling”. Du kan betale med kort, MobilePay, Revolut Pay, Apple Pay og Google Pay."}
                         </span>
                       </div>
                     )}

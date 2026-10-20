@@ -14,6 +14,7 @@ import "server-only";
 import { getStripe } from "@/lib/stripe";
 import { logDriftFejl } from "@/lib/drift";
 import { NYE_BETALINGER_STOPPET_TEKST } from "@/lib/betaling/noedstop";
+import { GEM_KORT_METODER, sammeMetoder } from "@/lib/betaling/betalingsmetoder";
 import {
   BetalingsFejl,
   LeveringManglerFejl,
@@ -201,7 +202,9 @@ export async function startGemKortFor(
       }
       // off_session er fra før automatisk betaling blev fjernet: genbruges
       // aldrig (kortet må kun gemmes til on-session brug) - annulleres.
-      if (s.usage === "off_session" || s.created <= graense) {
+      // Kun kort (betalingsmetoder.ts, Filip 20. okt. 2026): en åben
+      // SetupIntent med andre metoder genbruges aldrig.
+      if (s.usage === "off_session" || s.created <= graense || !sammeMetoder(s.payment_method_types, GEM_KORT_METODER)) {
         try {
           await stripe.setupIntents.cancel(s.id);
         } catch (err) {
@@ -224,8 +227,9 @@ export async function startGemKortFor(
           // Kortet bruges kun, når køberen selv betaler i checkout (ingen
           // automatisk betaling, Filip 9. okt. 2026).
           usage: "on_session",
-          // Kort (inkl. Apple Pay / Google Pay, som gemmes som kort).
-          payment_method_types: ["card"],
+          // Kun kort (inkl. Apple Pay / Google Pay, som gemmes som kort).
+          // MobilePay og Revolut Pay gemmes ikke (betalingsmetoder.ts).
+          payment_method_types: [...GEM_KORT_METODER],
           metadata: { bruger_id: brugerId },
         },
         { idempotencyKey: `bidhamr-gemkort-${brugerId}-${vindue}` },

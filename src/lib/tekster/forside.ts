@@ -80,7 +80,7 @@ export const FORSIDE = {
       },
       {
         titel: "Vind og betal",
-        tekst: "Har du højeste bud, når auktionen slutter, har du 48 timer til at betale med kort, MobilePay, Apple Pay eller Google Pay. Betalingen håndteres af Stripe.",
+        tekst: "Har du højeste bud, når auktionen slutter, har du 48 timer til at betale med kort, MobilePay, Revolut Pay, Apple Pay eller Google Pay. Betalingen håndteres af Stripe.",
       },
       {
         titel: "Få varen",

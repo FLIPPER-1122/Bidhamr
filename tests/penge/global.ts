@@ -90,7 +90,14 @@ async function nyKonto(stripe: Stripe, email: string, iban: string, koersel: str
       requirement_collection: "application",
       stripe_dashboard: { type: "none" },
     },
-    capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
+    // Samme betalingsmetoder som sælgernes konti (KONTO_CAPABILITIES):
+    // kort, MobilePay og Revolut Pay (Filip, 20. okt. 2026).
+    capabilities: {
+      card_payments: { requested: true },
+      transfers: { requested: true },
+      mobilepay_payments: { requested: true },
+      revolut_pay_payments: { requested: true },
+    },
     business_type: "individual",
     business_profile: { mcc: "5931", url: "https://bidhamr.dk", product_description: "TEST pengetest" },
     individual: {
@@ -113,7 +120,15 @@ async function ventPaaKonto(stripe: Stripe, id: string): Promise<void> {
   const slut = Date.now() + 240_000;
   for (;;) {
     const a = await stripe.accounts.retrieve(id);
-    if (a.charges_enabled && a.payouts_enabled && a.capabilities?.card_payments === "active") return;
+    if (
+      a.charges_enabled &&
+      a.payouts_enabled &&
+      a.capabilities?.card_payments === "active" &&
+      a.capabilities?.mobilepay_payments === "active" &&
+      a.capabilities?.revolut_pay_payments === "active"
+    ) {
+      return;
+    }
     if (Date.now() > slut) throw new Error(`Stripe-testkontoen ${id} blev ikke klar (${a.requirements?.disabled_reason})`);
     await new Promise((r) => setTimeout(r, 3000));
   }

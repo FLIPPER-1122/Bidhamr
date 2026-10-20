@@ -48,7 +48,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Betal inden 48 timer",
           tekst:
-            "På betalingssiden vælger du levering – en pakkeshop eller levering hjem – og ser den samlede pris. Du betaler selv med kort, MobilePay, Apple Pay, Google Pay eller en anden metode, der vises. Vi trækker aldrig penge automatisk. Sælgeren kan give dig mere tid, hvis I aftaler det.",
+            "På betalingssiden vælger du levering – en pakkeshop eller levering hjem – og ser den samlede pris. Du betaler selv med kort, MobilePay, Revolut Pay, Apple Pay eller Google Pay. Vi trækker aldrig penge automatisk. Sælgeren kan give dig mere tid, hvis I aftaler det.",
         },
         {
           titel: "Få varen",
