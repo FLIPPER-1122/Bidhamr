@@ -243,6 +243,20 @@ const GAMMEL_POL: [string, string, string][] = [
   ["betalinger", "betalinger_select_part", "b6ee707d622710484e14086b0e01ade6"],
   ["employee_complaints", "employee_complaints_select_chef", "e17d2d7d9152046c5a00c81f4a6b4fe0"],
   ["employee_complaints", "employee_complaints_update_chef", "9daecf0383eeb2863ceb1c9723d0f9a1"],
+  ["trades", "trades_select_own", "5acc25bf245a92e1288475f1d2d607dc"],
+  ["messages", "messages_select_part", "debbc4a7f61cf249e5a71bdef365f86e"],
+  ["forsendelser", "forsendelser_select_parter", "9efa06f6919426346483181c255aaca8"],
+  ["forsendelse_haendelser", "forsendelse_haendelser_select_parter", "152a46d690321bbea1f65955743a1a41"],
+  ["handel_levering", "handel_levering_select_parter", "9120622c45684afd1c0751f02dd887f5"],
+  ["andenchance_tilbud", "andenchance_select_part", "b91b0b0a4f1c3f76c5405b7ae278aa5b"],
+];
+const NY_POL: [string, string, string][] = [
+  ["trades", "trades_select_own", "2e89c2643eaa450ea0393cf576d1df5c"],
+  ["messages", "messages_select_part", "023c3a5ab71305dac0fa6349b5f28d23"],
+  ["forsendelser", "forsendelser_select_parter", "ab6c6b1d352f25cdeed87e813e2b204e"],
+  ["forsendelse_haendelser", "forsendelse_haendelser_select_parter", "62cb6822f345370151e2cd43b7d3b7e2"],
+  ["handel_levering", "handel_levering_select_parter", "3b4b7fc55aa1bd3db404a472e2dc8095"],
+  ["andenchance_tilbud", "andenchance_select_part", "8b0272a18879686a9bbb036c80761865"],
 ];
 
 let db: PGlite;
@@ -252,7 +266,7 @@ beforeAll(async () => {
   const noter: string[] = [];
   await db.exec(MIGRATION_B, { onNotice: (n: { message: string }) => noter.push(n.message) } as never);
   expect(noter.filter((n) => n.includes(": ")).every((n) => n.endsWith("allerede"))).toBe(true);
-  expect(noter.filter((n) => n.endsWith("allerede"))).toHaveLength(8);
+  expect(noter.filter((n) => n.endsWith("allerede"))).toHaveLength(14);
 });
 afterAll(async () => {
   await db?.close();
@@ -336,6 +350,18 @@ describe("RLS på tabellerne", () => {
     await db.exec(`grant update on public.employee_complaints to authenticated`);
     expect(await opdater(aal1(CHEF))).toBe(0);
     expect(await opdater(aal2(CHEF))).toBe(1);
+  });
+});
+
+describe("policies med (select er_staff())", () => {
+  it("de seks policies har den nye form (én evaluering pr. forespørgsel)", async () => {
+    for (const [t, p, m] of NY_POL) expect(await md5Pol(db, t, p)).toBe(m);
+    const { rows } = await db.query<{ qual: string }>(
+      `select qual from pg_policies where schemaname = 'public' and policyname = any($1)`,
+      [NY_POL.map((x) => x[1])],
+    );
+    expect(rows).toHaveLength(6);
+    for (const r of rows) expect(r.qual).toMatch(/\( SELECT er_staff\(\) AS er_staff\)/);
   });
 });
 

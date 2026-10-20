@@ -193,4 +193,54 @@ $fn$
          using (min_rolle() = 'chef'::text)$p$);
 end $do$;
 
+-- 8b. De seks policies med er_staff() tilbage til den gamle form.
+do $do$
+begin
+  raise notice 'trades_select_own: %', pg_temp.pol_ret(
+    'public', 'trades', 'trades_select_own',
+    '2e89c2643eaa450ea0393cf576d1df5c', '5acc25bf245a92e1288475f1d2d607dc',
+    $p$create policy trades_select_own on public.trades
+         as permissive for select to public
+         using (((auth.uid() = buyer_id) OR (auth.uid() = seller_id) OR er_staff()))$p$);
+  raise notice 'messages_select_part: %', pg_temp.pol_ret(
+    'public', 'messages', 'messages_select_part',
+    '023c3a5ab71305dac0fa6349b5f28d23', 'debbc4a7f61cf249e5a71bdef365f86e',
+    $p$create policy messages_select_part on public.messages
+         as permissive for select to public
+         using ((er_staff() OR (EXISTS ( SELECT 1
+   FROM trades t
+  WHERE ((t.id = messages.trade_id) AND ((auth.uid() = t.buyer_id) OR (auth.uid() = t.seller_id)) AND ((messages.blokeret_grund IS NULL) OR (messages.sender_id = auth.uid())))))))$p$);
+  raise notice 'forsendelser_select_parter: %', pg_temp.pol_ret(
+    'public', 'forsendelser', 'forsendelser_select_parter',
+    'ab6c6b1d352f25cdeed87e813e2b204e', '9efa06f6919426346483181c255aaca8',
+    $p$create policy forsendelser_select_parter on public.forsendelser
+         as permissive for select to authenticated
+         using ((er_staff() OR (EXISTS ( SELECT 1
+   FROM trades t
+  WHERE ((t.id = forsendelser.trade_id) AND ((t.buyer_id = auth.uid()) OR (t.seller_id = auth.uid())))))))$p$);
+  raise notice 'forsendelse_haendelser_select_parter: %', pg_temp.pol_ret(
+    'public', 'forsendelse_haendelser', 'forsendelse_haendelser_select_parter',
+    '62cb6822f345370151e2cd43b7d3b7e2', '152a46d690321bbea1f65955743a1a41',
+    $p$create policy forsendelse_haendelser_select_parter on public.forsendelse_haendelser
+         as permissive for select to authenticated
+         using ((er_staff() OR (EXISTS ( SELECT 1
+   FROM (forsendelser f
+     JOIN trades t ON ((t.id = f.trade_id)))
+  WHERE ((f.id = forsendelse_haendelser.forsendelse_id) AND ((t.buyer_id = auth.uid()) OR (t.seller_id = auth.uid())))))))$p$);
+  raise notice 'handel_levering_select_parter: %', pg_temp.pol_ret(
+    'public', 'handel_levering', 'handel_levering_select_parter',
+    '3b4b7fc55aa1bd3db404a472e2dc8095', '9120622c45684afd1c0751f02dd887f5',
+    $p$create policy handel_levering_select_parter on public.handel_levering
+         as permissive for select to authenticated
+         using ((er_staff() OR (EXISTS ( SELECT 1
+   FROM trades t
+  WHERE ((t.id = handel_levering.trade_id) AND ((t.buyer_id = auth.uid()) OR (t.seller_id = auth.uid())))))))$p$);
+  raise notice 'andenchance_select_part: %', pg_temp.pol_ret(
+    'public', 'andenchance_tilbud', 'andenchance_select_part',
+    '8b0272a18879686a9bbb036c80761865', 'b91b0b0a4f1c3f76c5405b7ae278aa5b',
+    $p$create policy andenchance_select_part on public.andenchance_tilbud
+         as permissive for select to authenticated
+         using (((byder_id = auth.uid()) OR er_staff()))$p$);
+end $do$;
+
 comment on function public.er_staff() is null;

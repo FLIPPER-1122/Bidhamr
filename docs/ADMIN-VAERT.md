@@ -6,7 +6,7 @@ Filips beslutninger 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bid
 - Samme Vercel-projekt. `ADMIN_VAERT=admin.bidhamr.dk` slår det til; uden den virker alt som før (admin på `/admin`, intet to-trins-login).
 - På admin-hosten: kun `/admin*`, `/adgang*`, Next' egne filer, ikoner og `robots.txt` (Disallow). Alt andet giver 404. `/` sender til `/admin`.
 - Admin har sin egen session-cookie (host-only `__Host-bh-admin-auth`), så hovedsitets session aldrig sendes til admin, og omvendt.
-- Login: e-mail + adgangskode → koden fra app'en (TOTP) → admin. En ny kode kræves efter 12 timer (`STAFF_TO_TRIN_MAKS_TIMER`).
+- Login: e-mail + adgangskode → koden fra app'en (TOTP) → admin. En ny kode kræves efter 12 timer (`STAFF_TO_TRIN_MAKS_TIMER`, 1-12; højere værdier bruges som 12 og giver en drift-fejl ved start).
 - Hver admin-side og -handling tjekker fire ting (`hentStaffAdgang` i `src/lib/adminAuth.ts`): admin-hosten, aal2 med en frisk kode, databasen (aktiv og ingen ukendte faktorer) og rollen.
 
 ## Arkitektur
@@ -125,15 +125,23 @@ Listen er lavet forfra 20. okt. 2026 med SELECT i både produktion og test (ens)
 | policy `betalinger_select_part` | køber, sælger eller `min_rolle() = 'chef'` | køber, sælger eller chef med aal2 | `b6ee707d622710484e14086b0e01ade6` | `278297185e39392396a5bd88934000ad` |
 | policy `employee_complaints_select_chef` | `min_rolle() = 'chef'` | chef med aal2 | `e17d2d7d9152046c5a00c81f4a6b4fe0` | `55342f176933d9e188d6ee2056a542e5` |
 | policy `employee_complaints_update_chef` | `min_rolle() = 'chef'` | chef med aal2 | `9daecf0383eeb2863ceb1c9723d0f9a1` | `c9efc546fd91142b99848f90d1cf6cf3` |
+| policy `trades_select_own` | `... OR er_staff()` (pr. række) | `(select public.er_staff())` (én gang pr. forespørgsel) | `5acc25bf245a92e1288475f1d2d607dc` | `2e89c2643eaa450ea0393cf576d1df5c` |
+| policy `messages_select_part` | `er_staff() OR (part)` | `(select public.er_staff()) or (part)` | `debbc4a7f61cf249e5a71bdef365f86e` | `023c3a5ab71305dac0fa6349b5f28d23` |
+| policy `forsendelser_select_parter` | `er_staff() OR (part)` | `(select public.er_staff()) or (part)` | `9efa06f6919426346483181c255aaca8` | `ab6c6b1d352f25cdeed87e813e2b204e` |
+| policy `forsendelse_haendelser_select_parter` | `er_staff() OR (part)` | `(select public.er_staff()) or (part)` | `152a46d690321bbea1f65955743a1a41` | `62cb6822f345370151e2cd43b7d3b7e2` |
+| policy `handel_levering_select_parter` | `er_staff() OR (part)` | `(select public.er_staff()) or (part)` | `9120622c45684afd1c0751f02dd887f5` | `3b4b7fc55aa1bd3db404a472e2dc8095` |
+| policy `andenchance_select_part` | `... OR er_staff()` | `byder_id = auth.uid() or (select public.er_staff())` | `b91b0b0a4f1c3f76c5405b7ae278aa5b` | `8b0272a18879686a9bbb036c80761865` |
 
 `er_staff()` havde forskellig formatering i produktion (flere linjer) og test (én linje) med samme normaliserede md5; den skrives derfor helt (`pg_temp.fn_ret`). De tre andre rettes på stedet (`pg_temp.ps_ret`, CR fjernes først – produktion har CRLF). Policies: `pg_temp.pol_ret`. Alt i én transaktion; et uventet md5 afbryder, og intet ændres.
 
-**Arver aal2 via `er_staff()`** (selve funktionen/policyen er uændret): policies `andenchance_select_part`, `auctions_select_authenticated` (også via `auktion_arkiv_adgang`), `forsendelse_haendelser_select_parter`, `forsendelser_select_parter`, `handel_levering_select_parter`, `messages_select_part`, `trades_select_own`; storage `fragt_labels_laes`, `pakke_billeder_laes_parter`, `sag_billeder_laes_parter` (via `*_maa_laese`); funktionerne `antal_aabne_sager`, `antal_ubesvarede_staff_samtaler`, `auktion_arkiv_adgang`, `fragt_label_maa_laese`, `hent_medarbejdere`, `mine_forsendelse_label`, `mit_leveringsvalg`, `pakke_billede_maa_laese`, `sag_billede_maa_laese` og indirekte `app_auktion_synlig` → `auktion_budhistorik`, `auktion_saelger_kan_saelge`, `rapporter_auktion`.
+De seks policies med `er_staff()` får aal2 via `er_staff()`; omskrivningen til `(select ...)` er kun for ydelsen (review 20. okt.).
+
+**Arver aal2 via `er_staff()`** (selve funktionen/policyen er uændret): policy `auctions_select_authenticated` (har allerede `(select er_staff())`; også via `auktion_arkiv_adgang`); storage `fragt_labels_laes`, `pakke_billeder_laes_parter`, `sag_billeder_laes_parter` (via `*_maa_laese`); funktionerne `antal_aabne_sager`, `antal_ubesvarede_staff_samtaler`, `auktion_arkiv_adgang`, `fragt_label_maa_laese`, `hent_medarbejdere`, `mine_forsendelse_label`, `mit_leveringsvalg`, `pakke_billede_maa_laese`, `sag_billede_maa_laese` og indirekte `app_auktion_synlig` → `auktion_budhistorik`, `auktion_saelger_kan_saelge`, `rapporter_auktion`.
 
 **Uændret med vilje:** `min_rolle()` (`2e2b6b44f51252f5f292c9748367800c`), `min_profil()` (`5a4b00fa8869ba98b0c54fc56efca1c3`), `min_staff_adgang`, `staff_aal2_ok`; upload-policies for sag/pakke/erhverv-klage (intet staff-tjek); `min_returfragt`, `mit_ikke_afhentet`, `forbudte_varer`, `mine_data_grund`, `konto_sletning_blokeringer_grund` (ordet "rolle", intet privilegium).
 
 **Hovedsitet og appen efter migration B:**
-- Admin-siderne bruger service role (`kraevSideRolle`/`assertRole`) og er upåvirkede. Det eneste admin-kald med brugerens egen klient er badge-tallet `antal_ubesvarede_staff_samtaler` (`src/app/actions/staffChat.ts`) – på admin-hosten er det admin-cookiens aal2-session, så det virker. **`STAFF_TO_TRIN_MAKS_TIMER` må højst være 12** (databasen kræver en kode højst 12 timer gammel). Fragt-labels signeres altid med service role.
+- Admin-siderne bruger service role (`kraevSideRolle`/`assertRole`) og er upåvirkede. Det eneste admin-kald med brugerens egen klient er badge-tallet `antal_ubesvarede_staff_samtaler` (`src/app/actions/staffChat.ts`) – på admin-hosten er det admin-cookiens aal2-session, så det virker. `STAFF_TO_TRIN_MAKS_TIMER` har et loft på 12 (`toTrinMaksTimer`, databasen kræver en kode højst 12 timer gammel); start-tjekket (`src/instrumentation.ts`) logger en drift-fejl, hvis den er sat over 12 eller ugyldig. Fragt-labels signeres altid med service role.
 - Staff ser skjulte, arkiverede og kunst-afventende auktioner og skjulte spørgsmål kun i admin: ny side `/admin/auktioner/[id]` (alle staff-roller fra medarbejder) med billeder, sælger, priser, status og link til spørgsmålene. Alle admin-links til auktioner (rapporter, sager, handler, betalinger, penge, ubetalte, bedømmelser, boost, DSA-placering) peger dertil.
 - Auktionssiden: kan en medarbejder/admin/chef ikke se auktionen (aal1), sender layoutet til `adminUrl("/admin/auktioner/<id>")` i stedet for 404. "Åbn auktionen i admin" peger på samme side (før `/admin/auktioner?q=`, som kun admin+ kunne åbne).
 - "Meld fejl" før lancering virker for staff uden aal2 (rollen alene, egen mappe).

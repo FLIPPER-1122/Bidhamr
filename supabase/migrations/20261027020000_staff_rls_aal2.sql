@@ -39,14 +39,18 @@
 --   7. Policy employee_complaints.employee_complaints_select_chef   gammel e17d2d7d9152046c5a00c81f4a6b4fe0  ny 55342f176933d9e188d6ee2056a542e5
 --   8. Policy employee_complaints.employee_complaints_update_chef   gammel 9daecf0383eeb2863ceb1c9723d0f9a1  ny c9efc546fd91142b99848f90d1cf6cf3
 --      min_rolle() = 'chef'  ->  (select min_rolle()) = 'chef' and (select staff_aal2_ok()).
+--   9. Policy trades.trades_select_own  gammel 5acc25bf245a92e1288475f1d2d607dc  ny 2e89c2643eaa450ea0393cf576d1df5c
+--   10. Policy messages.messages_select_part  gammel debbc4a7f61cf249e5a71bdef365f86e  ny 023c3a5ab71305dac0fa6349b5f28d23
+--   11. Policy forsendelser.forsendelser_select_parter  gammel 9efa06f6919426346483181c255aaca8  ny ab6c6b1d352f25cdeed87e813e2b204e
+--   12. Policy forsendelse_haendelser.forsendelse_haendelser_select_parter  gammel 152a46d690321bbea1f65955743a1a41  ny 62cb6822f345370151e2cd43b7d3b7e2
+--   13. Policy handel_levering.handel_levering_select_parter  gammel 9120622c45684afd1c0751f02dd887f5  ny 3b4b7fc55aa1bd3db404a472e2dc8095
+--   14. Policy andenchance_tilbud.andenchance_select_part  gammel b91b0b0a4f1c3f76c5405b7ae278aa5b  ny 8b0272a18879686a9bbb036c80761865
+--      er_staff() -> (select public.er_staff()): evalueres én gang pr. forespørgsel
+--      i stedet for pr. række (samme opførsel; aal2 kommer fra er_staff()).
 --
 -- ARVER aal2 via er_staff() (ingen ændring i selve funktionen/policyen):
---   policies: andenchance_tilbud.andenchance_select_part,
---     auctions.auctions_select_authenticated (også via auktion_arkiv_adgang),
---     forsendelse_haendelser.forsendelse_haendelser_select_parter,
---     forsendelser.forsendelser_select_parter,
---     handel_levering.handel_levering_select_parter,
---     messages.messages_select_part, trades.trades_select_own;
+--   policies: auctions.auctions_select_authenticated (har allerede
+--     (select er_staff()); også via auktion_arkiv_adgang) og 9.-14. ovenfor;
 --     storage.objects: fragt_labels_laes, pakke_billeder_laes_parter,
 --     sag_billeder_laes_parter (via *_maa_laese).
 --   funktioner (authenticated): antal_aabne_sager, antal_ubesvarede_staff_samtaler,
@@ -81,6 +85,12 @@
 --     using (min_rolle() = 'chef'::text)
 --   employee_complaints_update_chef: as permissive for update to public
 --     using (min_rolle() = 'chef'::text)
+--   trades_select_own (select, public): ((auth.uid() = buyer_id) OR (auth.uid() = seller_id) OR er_staff())
+--   andenchance_select_part (select, authenticated): ((byder_id = auth.uid()) OR er_staff())
+--   messages_select_part (select, public), forsendelser_select_parter,
+--   forsendelse_haendelser_select_parter, handel_levering_select_parter
+--     (select, authenticated): "(er_staff() OR (EXISTS (...part...)))" - de
+--     præcise gamle udtryk står i rollback-filen (8b).
 --
 -- md5-drift-tjek (mønstret fra 20261024010000): "gammel" = produktion og test
 -- før denne migration, "ny" = efter. Andet afbryder migrationen, og intet
@@ -318,6 +328,60 @@ begin
     $p$create policy employee_complaints_update_chef on public.employee_complaints
          as permissive for update to public
          using ((select public.min_rolle()) = 'chef' and (select public.staff_aal2_ok()))$p$);
+end $do$;
+
+-- ===========================================================================
+-- 8b. Policies, der kalder er_staff() pr. række: (select public.er_staff())
+--     evalueres én gang pr. forespørgsel (initplan). Samme opførsel.
+-- ===========================================================================
+do $do$
+begin
+  raise notice 'trades_select_own: %', pg_temp.pol_ret(
+    'public', 'trades', 'trades_select_own',
+    '5acc25bf245a92e1288475f1d2d607dc', '2e89c2643eaa450ea0393cf576d1df5c',
+    $p$create policy trades_select_own on public.trades
+         as permissive for select to public
+         using (auth.uid() = buyer_id or auth.uid() = seller_id or (select public.er_staff()))$p$);
+  raise notice 'messages_select_part: %', pg_temp.pol_ret(
+    'public', 'messages', 'messages_select_part',
+    'debbc4a7f61cf249e5a71bdef365f86e', '023c3a5ab71305dac0fa6349b5f28d23',
+    $p$create policy messages_select_part on public.messages
+         as permissive for select to public
+         using ((select public.er_staff()) or exists (select 1 from public.trades t
+                 where t.id = messages.trade_id
+                   and (auth.uid() = t.buyer_id or auth.uid() = t.seller_id)
+                   and (messages.blokeret_grund is null or messages.sender_id = auth.uid())))$p$);
+  raise notice 'forsendelser_select_parter: %', pg_temp.pol_ret(
+    'public', 'forsendelser', 'forsendelser_select_parter',
+    '9efa06f6919426346483181c255aaca8', 'ab6c6b1d352f25cdeed87e813e2b204e',
+    $p$create policy forsendelser_select_parter on public.forsendelser
+         as permissive for select to authenticated
+         using ((select public.er_staff()) or exists (select 1 from public.trades t
+                 where t.id = forsendelser.trade_id
+                   and (t.buyer_id = auth.uid() or t.seller_id = auth.uid())))$p$);
+  raise notice 'forsendelse_haendelser_select_parter: %', pg_temp.pol_ret(
+    'public', 'forsendelse_haendelser', 'forsendelse_haendelser_select_parter',
+    '152a46d690321bbea1f65955743a1a41', '62cb6822f345370151e2cd43b7d3b7e2',
+    $p$create policy forsendelse_haendelser_select_parter on public.forsendelse_haendelser
+         as permissive for select to authenticated
+         using ((select public.er_staff()) or exists (select 1 from public.forsendelser f
+                   join public.trades t on t.id = f.trade_id
+                 where f.id = forsendelse_haendelser.forsendelse_id
+                   and (t.buyer_id = auth.uid() or t.seller_id = auth.uid())))$p$);
+  raise notice 'handel_levering_select_parter: %', pg_temp.pol_ret(
+    'public', 'handel_levering', 'handel_levering_select_parter',
+    '9120622c45684afd1c0751f02dd887f5', '3b4b7fc55aa1bd3db404a472e2dc8095',
+    $p$create policy handel_levering_select_parter on public.handel_levering
+         as permissive for select to authenticated
+         using ((select public.er_staff()) or exists (select 1 from public.trades t
+                 where t.id = handel_levering.trade_id
+                   and (t.buyer_id = auth.uid() or t.seller_id = auth.uid())))$p$);
+  raise notice 'andenchance_select_part: %', pg_temp.pol_ret(
+    'public', 'andenchance_tilbud', 'andenchance_select_part',
+    'b91b0b0a4f1c3f76c5405b7ae278aa5b', '8b0272a18879686a9bbb036c80761865',
+    $p$create policy andenchance_select_part on public.andenchance_tilbud
+         as permissive for select to authenticated
+         using (byder_id = auth.uid() or (select public.er_staff()))$p$);
 end $do$;
 
 -- ===========================================================================
