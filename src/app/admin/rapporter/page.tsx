@@ -1,4 +1,3 @@
-import { hovedsiteUrl } from "@/lib/adminVaert";
 import Link from "next/link";
 import { Suspense } from "react";
 import { kraevSideRolle, harMindstRolle } from "@/lib/adminAuth";
@@ -178,7 +177,7 @@ export default async function AdminRapporter({
       mobil: "titel",
       celle: (r) => (
         <span className="block min-w-0">
-          <Link href={hovedsiteUrl(`/auktion/${r.auction_id}`)} className="font-semibold text-tekst hover:text-groen hover:underline">
+          <Link href={`/admin/auktioner/${r.auction_id}`} className="font-semibold text-tekst hover:text-groen hover:underline">
             {titelMap.get(r.auction_id) ?? "(slettet auktion)"}
           </Link>
           {r.description && <span className="mt-0.5 block text-[13px] font-normal text-tekst-daempet">{r.description}</span>}

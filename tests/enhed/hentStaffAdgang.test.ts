@@ -96,8 +96,14 @@ describe("hentStaffAdgang med ADMIN_VAERT", () => {
   it("gammel amr (over 12 timer): kode-siden", async () => {
     m.claims = { sub: ID, aal: "aal2", amr: [{ method: "totp", timestamp: NU - 12 * 3600 - 5 }] };
     expect(await auth.hentStaffAdgang()).toEqual({ ok: false, grund: "kraever_kode" });
+    // Loft på 12 timer (migration B): 24 lukker ikke en gammel kode ind.
     vi.stubEnv("STAFF_TO_TRIN_MAKS_TIMER", "24");
+    expect(await auth.hentStaffAdgang()).toEqual({ ok: false, grund: "kraever_kode" });
+    // En lavere grænse gælder: en kode på 9 timer er for gammel ved 8.
+    m.claims = { sub: ID, aal: "aal2", amr: [{ method: "totp", timestamp: NU - 9 * 3600 }] };
     expect((await auth.hentStaffAdgang()).ok).toBe(true);
+    vi.stubEnv("STAFF_TO_TRIN_MAKS_TIMER", "8");
+    expect(await auth.hentStaffAdgang()).toEqual({ ok: false, grund: "kraever_kode" });
   });
 
   it("ukendt faktor: ingen adgang (kode-siden rydder op)", async () => {

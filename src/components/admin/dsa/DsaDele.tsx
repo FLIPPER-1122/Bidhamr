@@ -66,12 +66,21 @@ export function Rolle({ children }: { children: React.ReactNode }) {
   );
 }
 
+// En auktion åbnes i admins egen visning (også skjulte - migration B), resten
+// på hovedsitet.
+const AUKTION_STI = /^\/auktion\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[/?#].*)?$/i;
+function placeringHref(placering: string): string {
+  if (placering.startsWith("/admin")) return placering;
+  const m = AUKTION_STI.exec(placering);
+  return m ? `/admin/auktioner/${m[1]}` : hovedsiteUrl(placering);
+}
+
 export function PlaceringLink({ indholdType, placering }: { indholdType: string; placering: string }) {
   // Kendt indhold: placeringen er en intern sti, som serveren har bygget.
   if (indholdType !== "andet" && placering.startsWith("/")) {
     return (
       <Link
-        href={placering.startsWith("/admin") ? placering : hovedsiteUrl(placering)}
+        href={placeringHref(placering)}
         className="break-all font-medium text-groen hover:underline"
         target="_blank"
       >

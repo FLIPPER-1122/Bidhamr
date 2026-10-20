@@ -116,8 +116,9 @@ export default async function AuktionPage({
   ]);
 
   // layout.tsx har allerede givet 404 (med rigtig status), hvis brugeren
-  // ikke må se auktionen. En skjult auktion når kun hertil for sælgeren,
-  // deltagere (byder, vinder, køber) og staff - RLS på auctions afgør det.
+  // ikke må se auktionen (staff sendes til admin). En skjult auktion når kun
+  // hertil for sælgeren, deltagere (byder, vinder, køber) og staff med
+  // to-trins-login (aal2, migration B) - RLS på auctions afgør det.
   if (!auktion) {
     notFound();
   }
@@ -262,8 +263,9 @@ export default async function AuktionPage({
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     // staffHandling: staff-handlinger direkte på siden (kun uden ADMIN_VAERT -
     // ellers er getStaffRole null uden for admin-hosten). staffVisning:
-    // rollen til tekster og "Åbn i admin" (RLS viser stadig skjulte
-    // auktioner for staff). Giver aldrig adgang i sig selv.
+    // rollen til tekster og "Åbn i admin". Giver aldrig adgang i sig selv:
+    // skjulte auktioner og spørgsmål ser staff kun med to-trins-login
+    // (migration B, 20261027020000) - dvs. i admin.
     bruger ? Promise.all([getStaffRole(), staffRolleTilVisning()]) : Promise.resolve([null, null] as const),
     tjekBlokering,
     // Følger jeg sælgeren? Altid filtreret på follower_id (RLS i produktion
@@ -406,7 +408,7 @@ export default async function AuktionPage({
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10">
       {aabnIAdmin && (
         <p className="mb-3 text-sm">
-          <a href={adminUrl(`/admin/auktioner?q=${auktion.id}`)} className="font-medium text-groen underline">
+          <a href={adminUrl(`/admin/auktioner/${auktion.id}`)} className="font-medium text-groen underline">
             Åbn auktionen i admin
           </a>
         </p>
