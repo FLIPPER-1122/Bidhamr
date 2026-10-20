@@ -55,15 +55,22 @@ const platform: Record<string, { available: boolean }> = {};
 // Simulerer en webhook (payment_intent.canceled), der nulstiller rækken,
 // mens BidHamr annullerer.
 let webhookVedAnnullering: (() => void) | null = null;
+const ekstraKonfigurationer: Record<string, unknown>[] = [];
+let konfigurationFejler = false;
 
 const falskStripe = {
   paymentMethodConfigurations: {
-    list: async () => ({
+    list: async () => {
+      if (konfigurationFejler) throw new Error("Stripe svarer ikke");
+      return {
       data: [
         { id: "pmc_barn", is_default: false, parent: "pmc_x", application: null, mobilepay: { available: true } },
         { id: "pmc_std", is_default: true, parent: null, application: null, ...platform },
+        ...ekstraKonfigurationer,
       ],
-    }),
+      has_more: false,
+      };
+    },
   },
   paymentIntents: {
     create: async (params: Record<string, unknown>, opt?: { idempotencyKey?: string }) => {
@@ -188,7 +195,17 @@ vi.mock("@/lib/drift", () => ({
   },
   renFejltekst: (x: unknown) => String(x),
 }));
-vi.mock("@/lib/betaling/driftTilfaelde", () => ({ alarmPrTilfaelde: async () => {} }));
+const alarmer: string[] = [];
+const lukket: string[] = [];
+vi.mock("@/lib/betaling/driftTilfaelde", () => ({
+  alarmPrTilfaelde: async (o: { noegle: string }) => {
+    alarmer.push(o.noegle);
+    return true;
+  },
+  lukTilfaelde: async (n: string) => {
+    lukket.push(n);
+  },
+}));
 vi.mock("@/lib/betaling/fremmedeTestdata", () => ({ egenDatabase: () => "testdb" }));
 vi.mock("@/lib/fragt", () => ({ fragtReturlabelAktiv: () => true }));
 vi.mock("@/lib/fragt/server", () => ({
@@ -217,6 +234,10 @@ beforeEach(() => {
     link: { available: true },
   });
   webhookVedAnnullering = null;
+  ekstraKonfigurationer.length = 0;
+  konfigurationFejler = false;
+  alarmer.length = 0;
+  lukket.length = 0;
   pis.clear();
   kald.length = 0;
   brugteNoegler.clear();
@@ -348,6 +369,26 @@ for (const f of flows) {
       platform.revolut_pay = { available: false };
       await f.start();
       expect(kald.find((k) => k.navn === "create")!.params!.payment_method_types).toEqual(["card"]);
+    });
+
+    it("to standard-konfigurationer: kun kort, og én drift-alarm med fast nøgle", async () => {
+      ekstraKonfigurationer.push({ id: "pmc_std2", is_default: true, parent: null, application: null, ...platform });
+      const svar = await f.start();
+      expect("ok" in svar && svar.ok).toBe(true);
+      expect(kald.find((k) => k.navn === "create")!.params!.payment_method_types).toEqual(["card"]);
+      expect(alarmer).toEqual(["betalingsmetoder:platform-konfiguration"]);
+    });
+
+    it("Stripe svarer ikke på konfigurationen: kun kort og alarm; virker det igen, lukkes alarmen", async () => {
+      konfigurationFejler = true;
+      await f.start();
+      expect(kald.find((k) => k.navn === "create")!.params!.payment_method_types).toEqual(["card"]);
+      expect(alarmer).toEqual(["betalingsmetoder:platform-konfiguration"]);
+      konfigurationFejler = false;
+      nulstilPlatformMetoderCache();
+      const { hentPlatformMetoder } = await import("@/lib/betaling/platformMetoder");
+      expect(await hentPlatformMetoder()).toEqual(TILLADTE);
+      expect(lukket).toContain("betalingsmetoder:platform-konfiguration");
     });
 
     it("webhooken nulstiller rækken under annulleringen: rækken hentes igen, og der laves en ny uden fejl", async () => {

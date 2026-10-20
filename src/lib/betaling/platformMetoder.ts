@@ -7,29 +7,44 @@ import "server-only";
 // kunne ingen betale boost eller returfragt.
 //
 // Kilden er platformens standard-konfiguration (paymentMethodConfigurations,
-// is_default, uden parent/application). Cachet i 10 minutter pr. proces.
-// Kan den ikke hentes, bruges kun kort (virker altid) i 1 minut, og fejlen
-// logges - betalingen stopper aldrig af den grund.
+// is_default, uden parent/application) - der skal være PRÆCIS én. Cachet i
+// 10 minutter pr. proces. Kan den ikke hentes (eller er der ingen eller flere
+// kandidater), bruges kun kort (virker altid) i 1 minut, og chefen får én
+// drift-alarm (fast nøgle, alarmPrTilfaelde), som lukkes igen, når
+// opslaget virker. Betalingen stopper aldrig af den grund.
 
 import { getStripe } from "@/lib/stripe";
+import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { platformMetoderFra, type Betalingsmetode } from "@/lib/betaling/betalingsmetoder";
 
 const CACHE_MS = 10 * 60_000;
 const FEJL_CACHE_MS = 60_000;
+export const PLATFORM_METODER_ALARM = "betalingsmetoder:platform-konfiguration";
 let cache: { udloeber: number; metoder: Betalingsmetode[] } | null = null;
 
 export async function hentPlatformMetoder(): Promise<Betalingsmetode[]> {
   if (cache && cache.udloeber > Date.now()) return [...cache.metoder];
   try {
     const liste = await getStripe().paymentMethodConfigurations.list({ limit: 100 });
-    const standard = liste.data.find((c) => c.is_default && !c.parent && !c.application) ?? null;
-    if (!standard) throw new Error("Platformens standard-konfiguration for betalingsmetoder blev ikke fundet");
-    const metoder = platformMetoderFra(standard as unknown as Record<string, { available?: boolean | null }>);
+    const kandidater = liste.data.filter((c) => c.is_default && !c.parent && !c.application);
+    if (kandidater.length !== 1) {
+      throw new Error(
+        `Forventede præcis én standard-konfiguration for betalingsmetoder på platformen, fandt ${kandidater.length}${liste.has_more ? " (listen har flere sider)" : ""}`,
+      );
+    }
+    const metoder = platformMetoderFra(kandidater[0] as unknown as Record<string, { available?: boolean | null }>);
     cache = { udloeber: Date.now() + CACHE_MS, metoder };
+    // Lukker alarmen (højst én gang pr. 10 min) - også hvis en anden proces
+    // åbnede den.
+    await lukTilfaelde(PLATFORM_METODER_ALARM);
     return [...metoder];
   } catch (err) {
-    console.warn("Betalingsmetoder for platformen kunne ikke hentes - kun kort:", err instanceof Error ? err.message : err);
     cache = { udloeber: Date.now() + FEJL_CACHE_MS, metoder: ["card"] };
+    await alarmPrTilfaelde({
+      noegle: PLATFORM_METODER_ALARM,
+      hvor: "betaling/platform-metoder",
+      fejl: `Platformens betalingsmetoder kunne ikke afgøres hos Stripe - boost og returfragt tilbyder kun kort (inkl. Apple Pay/Google Pay), indtil det virker igen: ${err instanceof Error ? err.message : String(err)}`,
+    });
     return ["card"];
   }
 }
