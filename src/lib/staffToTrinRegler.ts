@@ -32,14 +32,33 @@ export const ANDET_TRIN_METODER = ["totp"] as const;
 
 // En ny kode kræves efter så mange timer (STAFF_TO_TRIN_MAKS_TIMER).
 export const TO_TRIN_STANDARD_TIMER = 12;
+// Loft: databasen (staff_aal2_ok, migration B 20261027020000) kræver en kode
+// højst 12 timer gammel. En højere værdi ville lukke staff ind i admin, mens
+// databasen afviser deres staff-adgang - derfor aldrig over 12.
+export const TO_TRIN_MAKS_LOFT = 12;
 // Chefens nulstilling af andres to-trins-login kræver en kode, der højst er
 // så gammel.
 export const FRISK_KODE_MINUTTER = 15;
 
 export function toTrinMaksTimer(vaerdi: string | undefined = process.env.STAFF_TO_TRIN_MAKS_TIMER): number {
   const n = Number(vaerdi);
-  if (!vaerdi || !Number.isInteger(n) || n < 1 || n > 168) return TO_TRIN_STANDARD_TIMER;
-  return n;
+  if (!vaerdi || !Number.isInteger(n) || n < 1) return TO_TRIN_STANDARD_TIMER;
+  return Math.min(n, TO_TRIN_MAKS_LOFT);
+}
+
+// Til start-tjekket (src/instrumentation.ts): er STAFF_TO_TRIN_MAKS_TIMER sat
+// til noget, der ikke bruges som skrevet? null = i orden (eller ikke sat).
+export function toTrinMaksTimerFejl(vaerdi: string | undefined = process.env.STAFF_TO_TRIN_MAKS_TIMER): string | null {
+  const raa = (vaerdi ?? "").trim();
+  if (!raa) return null;
+  const n = Number(raa);
+  if (!Number.isInteger(n) || n < 1) {
+    return `STAFF_TO_TRIN_MAKS_TIMER er ugyldig ("${raa.slice(0, 20)}") - der bruges ${TO_TRIN_STANDARD_TIMER} timer`;
+  }
+  if (n > TO_TRIN_MAKS_LOFT) {
+    return `STAFF_TO_TRIN_MAKS_TIMER er ${n}, men højst ${TO_TRIN_MAKS_LOFT} er tilladt (databasen kræver en kode højst ${TO_TRIN_MAKS_LOFT} timer gammel) - der bruges ${TO_TRIN_MAKS_LOFT} timer`;
+  }
+  return null;
 }
 
 // Seneste tidspunkt (sekunder siden 1970) for andet trin i JWT'ens amr-claim,

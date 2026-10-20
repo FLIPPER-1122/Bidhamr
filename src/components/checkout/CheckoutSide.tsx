@@ -10,9 +10,10 @@
 //   auktionens låste fragtpris for den valgte levering. Beløbet på
 //   "Betal"-knappen er altid PaymentIntentens.
 // - Kun afhentning (auktionen tilbyder ikke forsendelse) kræver intet valg.
-// - Fragt via Shipmondo: køberen vælger selv fragtfirma (DAO, GLS eller
-//   PostNord - checkout.transportoerer; GLS kun med SHIPMONDO_GLS_AKTIV=true,
-//   indtil Shipmondo har svaret). Prisen er den samme for alle;
+// - Fragt via Shipmondo: køberen vælger selv fragtfirma (DAO eller GLS -
+//   checkout.transportoerer; PostNord kun med SHIPMONDO_POSTNORD_AKTIV=true,
+//   Filip 20. okt. 2026). Med GLS skal sælgeren printe en label (vises på
+//   kortet og under valget). Prisen er den samme for alle;
 //   pakkeshoppen vælges hos det valgte firma (skiftes firmaet, skal der
 //   vælges en ny pakkeshop).
 // - Tilbyder sælgeren både forsendelse og afhentning, kan køberen vælge
@@ -26,6 +27,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { gemLeveringsvalgAction } from "@/app/actions/fragt";
 import { startBetaling, type KoeberBetalingsstatus } from "@/app/actions/betaling";
+import { metodeTekst } from "@/lib/betaling/betalingsmetoder";
 import type { Checkout } from "@/lib/fragt/handlinger";
 import { transportoerNavn } from "@/lib/fragt/types";
 import { kroner } from "@/lib/kroner";
@@ -113,6 +115,7 @@ export default function CheckoutSide({
   status,
   checkout,
   standardNavn,
+  betalingsmetoder,
 }: {
   tradeId: string;
   // erhverv: firmasalg - ingen chat med sælgeren.
@@ -121,6 +124,9 @@ export default function CheckoutSide({
   status: KoeberBetalingsstatus;
   checkout: Checkout;
   standardNavn: string | null;
+  // Metoderne, køberen kan betale med hos netop denne sælger (fra serveren:
+  // sælgerens Stripe-konto); erstattes af PaymentIntentens, når den er lavet.
+  betalingsmetoder: string[];
 }) {
   const id = useId();
   const bet = checkout.betaling;
@@ -141,9 +147,9 @@ export default function CheckoutSide({
   // Fragtfirmaer, køberen kan vælge (tom = intet valg).
   const firmaer = checkout.transportoerer ?? [];
   const kendtFirma = (t: string | null | undefined) => (t && firmaer.some((f) => f.kode === t) ? t : null);
-  // Et firma, der ikke kan vælges længere (GLS er slået fra, indtil Shipmondo
-  // har svaret), bevares kun, når labelen allerede er lavet - ellers vælger
-  // køberen et af dem, der kan vælges nu.
+  // Et firma, der ikke kan vælges længere (fx PostNord, der er slået fra),
+  // bevares kun, når labelen allerede er lavet - ellers vælger køberen et af
+  // dem, der kan vælges nu.
   const startTransportoer =
     (checkout.labelLavet && firmaer.length > 0 && valgt?.maade !== "afhentning" ? valgt?.transportoer : null) ??
     kendtFirma(valgt?.maade !== "afhentning" ? valgt?.transportoer : null) ??
@@ -214,6 +220,7 @@ export default function CheckoutSide({
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [piTotal, setPiTotal] = useState<number | null>(null);
   const [kundeSession, setKundeSession] = useState<string | null>(null);
+  const [metoder, setMetoder] = useState<string[]>(betalingsmetoder);
   const hentetKl = useRef(0);
   const [stripeKlar, setStripeKlar] = useState(false);
   const [arbejder, setArbejder] = useState(false);
@@ -229,7 +236,8 @@ export default function CheckoutSide({
   const laas = useRef(false);
 
   const aktuelSignatur = signatur(maade, transportoer, maade === "pakkeshop" ? (shop?.id ?? null) : null, modtager);
-  const firmaNavn = firmaer.find((f) => f.kode === transportoer)?.navn ?? transportoerNavn(transportoer) ?? "DAO";
+  const valgtFirma = firmaer.find((f) => f.kode === transportoer) ?? null;
+  const firmaNavn = valgtFirma?.navn ?? transportoerNavn(transportoer) ?? "DAO";
 
   // Nyt fragtfirma: pakkeshoppen skal vælges hos det nye firma.
   function vaelgFirma(t: string) {
@@ -281,6 +289,7 @@ export default function CheckoutSide({
     setPiTotal(svar.totalOere);
     // Gemt kort: Stripe-kundesession, så Payment Element viser kortet forvalgt.
     setKundeSession(svar.customerSessionClientSecret || null);
+    if (svar.betalingsmetoder?.length) setMetoder(svar.betalingsmetoder);
     hentetKl.current = Date.now();
     return true;
   }, [tradeId]);
@@ -589,6 +598,7 @@ export default function CheckoutSide({
                             navn={`${id}-firma`}
                             firma={f.navn}
                             leveringstid={f.leveringstid}
+                            labelfri={f.labelfri}
                             pris={kroner(
                               maade === "doer" ? (checkout.doerOere ?? serverFragt) : (checkout.pakkeshopOere ?? serverFragt),
                             )}
@@ -597,6 +607,12 @@ export default function CheckoutSide({
                           />
                         ))}
                       </div>
+                      {valgtFirma && !valgtFirma.labelfri && (
+                        <p className="mt-3 rounded-xl bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
+                          Med {valgtFirma.navn} skal sælgeren printe en label og sætte den på pakken. Det kan tage lidt
+                          længere, før pakken bliver sendt.
+                        </p>
+                      )}
                       <p className="mt-2 text-[13px] text-tekst-daempet">
                         Prisen er den samme hos alle fragtfirmaer.
                         {!kanSkifteShop && " Fragtfirmaet kan ikke ændres, når sælgeren har lavet fragtlabelen."}
@@ -832,7 +848,7 @@ export default function CheckoutSide({
                         <span>
                           {gemt && !leveringGemt
                             ? "Du har ændret leveringen. Tryk “Fortsæt til betaling” for at se den nye pris og betale."
-                            : "Vælg levering, og tryk “Fortsæt til betaling”. Du kan betale med kort, MobilePay, Apple Pay og Google Pay."}
+                            : `Vælg levering, og tryk “Fortsæt til betaling”. Du kan betale med ${metodeTekst(metoder)}.`}
                         </span>
                       </div>
                     )}
@@ -1001,6 +1017,7 @@ function FirmaKort({
   navn,
   firma,
   leveringstid,
+  labelfri,
   pris,
   valgt,
   onVaelg,
@@ -1008,6 +1025,8 @@ function FirmaKort({
   navn: string;
   firma: string;
   leveringstid: string;
+  // false = sælgeren skal printe en label (GLS).
+  labelfri: boolean;
   pris: string;
   valgt: boolean;
   onVaelg: () => void;
@@ -1030,6 +1049,7 @@ function FirmaKort({
       </span>
       <span className="shrink-0 text-right text-[13px] text-tekst-daempet sm:text-left">
         <span className="block">{leveringstid}</span>
+        <span className="block">{labelfri ? "Sælger skal ikke printe" : "Sælger printer label"}</span>
         <span className="block font-semibold text-tekst tabular-nums">{pris}</span>
       </span>
     </label>

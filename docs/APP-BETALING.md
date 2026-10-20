@@ -9,7 +9,7 @@ Kun Stripes testmiljø indtil fase 6.
 
 | Handling | Krop | Svar (200) |
 |---|---|---|
-| `betal` | `{ trade_id, levering? }` | `{ clientSecret, totalOere, customerId, customerSessionClientSecret, publishableKey, saelgerNavn, levering? }` |
+| `betal` | `{ trade_id, levering? }` | `{ clientSecret, totalOere, customerId, customerSessionClientSecret, betalingsmetoder, publishableKey, saelgerNavn, levering? }` |
 | `indstillinger` | `{}` | `{ gemtKort: { maerke, sidste4, udloeb } \| null, saelger: { harKonto, detaljerIndsendt, overfoerslerAktiv, udbetalingerAktiv, manglerOplysninger, afvist, frakoblet, frosset, venterPaaBank } }` |
 | `gem-kort` | `{}` | `{ clientSecret (seti_…), customerId, customerSessionClientSecret, publishableKey }` |
 | `bekraeft-kort` | `{ setup_intent_id }` | `{ gemtKort }` |
@@ -22,7 +22,12 @@ Kun Stripes testmiljø indtil fase 6.
 
 `levering` i `betal` er valgfri og har samme felter som `/api/fragt/app/levering`
 (`maade`, `transportoer`, `pakkeshop_id`, `pakkeshop_postnummer`, `pakkeshop_adresse`, `modtager`, `gem_forslag`).
-`transportoer` er `"dao" | "gls" | "postnord"` fra `checkout.transportoerer` (udeladt = DAO). `saelgerNavn` er
+`transportoer` er en af `checkout.transportoerer` (udeladt = DAO). **I dag kun `"dao"` og `"gls"`** (Filip, 20. okt.
+2026): PostNord er slået fra (`SHIPMONDO_POSTNORD_AKTIV`), og `"postnord"` giver `409 { fejl: "PostNord kan ikke vælges
+lige nu. Vælg DAO eller GLS.", kode: "levering" }`. En PostNord-levering, der blev gemt før, men ikke er betalt, giver
+ved `betal` `kode: "vaelg_levering"` med samme tekst - send køberen til checkout. Vis teksten fra `fejl`; byg den ikke
+selv. Med GLS (`labelfri: false` i `checkout.transportoerer`) skal sælgeren printe labelen - vis fx "Sælger printer
+label" på GLS-kortet og en linje under valget, som på hjemmesiden. `saelgerNavn` er
 sælgerens visningsnavn til "Sælger: X" som på hjemmesidens checkout (`null`, hvis det mangler). Send den kun, når
 køberen har ændret valget. Ændrer valget beløbet, annulleres den gamle PaymentIntent, og der laves en ny. Uden
 `levering` genbruges den samme PaymentIntent.
@@ -53,13 +58,25 @@ await presentPaymentSheet();
   Payment Element har), så serveren sætter alle andre kort på kunden til `allow_redisplay: 'limited'`, før
   kundesessionen laves. Kan det ikke sikres, er `customerSessionClientSecret` `null`.
 - 3D Secure er tvunget (`request_three_d_secure: "any"`). PaymentSheet viser selv bankens vindue.
+- **Betalingsmetoder (Filip, 20. okt. 2026): kun kort (inkl. Apple Pay og Google Pay), MobilePay og Revolut Pay –
+  ingen Klarna og ingen Link.** Serveren sætter dem på PaymentIntenten (`payment_method_types`), så PaymentSheet
+  viser kun dem. I checkout vises MobilePay og Revolut Pay kun, når sælgerens Stripe-konto har dem aktive; boost og
+  returfragt har dem, der er slået til på BidHamrs Stripe-konto (kort altid). `betal` svarer også med
+  `betalingsmetoder` (fx `["card","mobilepay"]`), så appen kan skrive "Du kan betale med …" ud fra dem. Appen skal selv:
+  - slå Link fra i PaymentSheet: `link: { display: LinkDisplay.NEVER }` i `initPaymentSheet` (importér
+    `LinkDisplay` fra `@stripe/stripe-react-native`; findes i 0.64.0). Gælder betal, gem kort, boost og returfragt.
+  - beholde `returnURL: "bidhamr://stripe-redirect"`: MobilePay og Revolut Pay sender køberen ud i deres app og
+    tilbage via det link.
+  - beholde `allowsDelayedPaymentMethods: false`.
+  - aldrig sende egne metoder: listen styres kun af serveren (`src/lib/betaling/betalingsmetoder.ts`).
 - Betalingen er først gennemført, når webhooken har registreret den. Hent handlen igen (`betaling_modtaget`).
 
 ## Gem kort
 
 `gem-kort` → `initPaymentSheet({ setupIntentClientSecret, customerId, customerSessionClientSecret, … })` →
 `presentPaymentSheet()` → `bekraeft-kort { setup_intent_id }` (id = `clientSecret` før `_secret_`). Kortet gemmes
-`on_session`, kun kort (Apple Pay/Google Pay gemmes som kort).
+`on_session`, kun kort (Apple Pay/Google Pay gemmes som kort). MobilePay og Revolut Pay kan ikke gemmes
+(SetupIntenten har `payment_method_types: ['card']`), og Link vises ikke (`link: { display: LinkDisplay.NEVER }`).
 
 ## Boost (køb af point og boost)
 

@@ -16,6 +16,7 @@ const m = vi.hoisted(() => ({
   gemLevering: vi.fn(),
   startBetalingFor: vi.fn(),
   startReturfragt: vi.fn(),
+  bookPakke: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-real-ip": "127.0.0.9" }) }));
@@ -52,7 +53,7 @@ vi.mock("@/lib/fragt/handlinger", () => ({
   gemLevering: m.gemLevering,
   startReturfragt: m.startReturfragt,
   annullerPakke: vi.fn(),
-  bookPakke: vi.fn(),
+  bookPakke: m.bookPakke,
   hentCheckout: vi.fn(),
   hentForsendelser: vi.fn(),
   hentLabelLink: vi.fn(),
@@ -97,6 +98,46 @@ describe("/api/betaling/app/betal", () => {
     m.startBetalingFor.mockResolvedValue({ clientSecret: "pi_1_secret_2", totalOere: 1, customerId: null, customerSessionClientSecret: null });
     await betaling.POST(req("/api/betaling/app/betal", { trade_id: HANDEL, levering: { maade: "doer" } }), { params: Promise.resolve({ handling: "betal" }) });
     expect(m.gemLevering.mock.calls[0][2]).not.toHaveProperty("transportoer");
+  });
+});
+
+// DAO (Filip, 20. okt. 2026): sælgeren accepterer DAO's handelsbetingelser
+// før første DAO-label. Appen får kode "dao_betingelser" og sender accepten med.
+describe("/api/fragt/app/book og DAO's handelsbetingelser", () => {
+  it("uden accept: 409 kode dao_betingelser med link, version og tekst", async () => {
+    m.bookPakke.mockResolvedValue({ fejl: "Sæt flueben ved DAO's handelsbetingelser, før du laver fragtlabelen.", kode: "dao_betingelser" });
+    const r = await fragt.POST(req("/api/fragt/app/book", { trade_id: HANDEL }), { params: Promise.resolve({ handling: "book" }) });
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({
+      fejl: "Sæt flueben ved DAO's handelsbetingelser, før du laver fragtlabelen.",
+      kode: "dao_betingelser",
+      betingelser: {
+        url: "https://dao.as/handelsbetingelser/",
+        version: "2025-10-21",
+        tekst: "Jeg accepterer DAO's handelsbetingelser for forsendelsen",
+      },
+    });
+    expect(m.bookPakke).toHaveBeenCalledWith(HANDEL, KOEBER, null, false);
+  });
+
+  it("accepter_dao_betingelser: true sendes videre (kun præcis true)", async () => {
+    m.bookPakke.mockResolvedValue({ ok: true, forsendelseId: "F1" });
+    const r = await fragt.POST(req("/api/fragt/app/book", { trade_id: HANDEL, accepter_dao_betingelser: true }), {
+      params: Promise.resolve({ handling: "book" }),
+    });
+    expect(r.status).toBe(200);
+    expect(m.bookPakke).toHaveBeenCalledWith(HANDEL, KOEBER, null, true);
+    await fragt.POST(req("/api/fragt/app/book", { trade_id: HANDEL, accepter_dao_betingelser: "true" }), {
+      params: Promise.resolve({ handling: "book" }),
+    });
+    expect(m.bookPakke).toHaveBeenLastCalledWith(HANDEL, KOEBER, null, false);
+  });
+
+  it("andre fejl er stadig 409 afvist", async () => {
+    m.bookPakke.mockResolvedValue({ fejl: "Handlen findes ikke." });
+    const r = await fragt.POST(req("/api/fragt/app/book", { trade_id: HANDEL }), { params: Promise.resolve({ handling: "book" }) });
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({ fejl: "Handlen findes ikke.", kode: "afvist" });
   });
 });
 

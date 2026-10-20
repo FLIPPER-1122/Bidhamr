@@ -42,6 +42,11 @@ describe("betal -> frigiv -> payout", () => {
     expect(pi.amount).toBe(59_000);
     expect(pi.on_behalf_of).toBe(konto);
     expect(pi.transfer_data?.destination).toBe(konto);
+    // Betalingsmetoder (Filip, 20. okt. 2026): præcis kort, MobilePay og
+    // Revolut Pay - ingen automatic_payment_methods, Klarna eller Link.
+    // Testkontoen har alle tre capabilities aktive (global.ts).
+    expect(pi.payment_method_types).toEqual(["card", "mobilepay", "revolut_pay"]);
+    expect(pi.automatic_payment_methods?.enabled ?? false).toBe(false);
     // Gebyr = købergebyr + sælgergebyr + fragt + Beskyttelse = 25 + 25 + 40 + 25.
     expect(pi.application_fee_amount).toBe(11_500);
     expect(b.application_fee_oere).toBe(11_500);

@@ -15,7 +15,7 @@
 //   node scripts/betalingsmodel-backfill.mts --env .env.production.local --produktion --udfoer
 //
 // Hvad --udfoer ÆNDRER hos Stripe (kun det, der mangler):
-//   - capabilities card_payments, transfers og mobilepay_payments
+//   - capabilities card_payments, transfers, mobilepay_payments og revolut_pay_payments
 //   - debit_negative_balances = true og MANUEL udbetalingsplan (BidHamr
 //     udbetaler først, når handlen er helt færdig)
 //   - business_profile.mcc 5931, hvis kontoen ingen MCC har (en anden MCC

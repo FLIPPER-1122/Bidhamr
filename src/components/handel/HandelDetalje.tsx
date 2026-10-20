@@ -37,6 +37,7 @@ import { kroner } from "@/lib/kroner";
 import { afhentningTilbagebetalKl, afhentningsfristTekst } from "@/lib/afhentningsfrist";
 import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
 import FragtlabelBoks from "@/components/fragt/FragtlabelBoks";
+import { DAO_BETINGELSER, kraeverDaoBetingelser } from "@/lib/fragt/betingelser";
 import { hentForsendelserAction } from "@/app/actions/fragt";
 import type { ForsendelseVisning } from "@/lib/fragt/handlinger";
 import SporingTidslinje from "@/components/fragt/SporingTidslinje";
@@ -279,7 +280,24 @@ export default async function HandelDetalje({
           visFragtlabel
             ? supabase.from("users").select("navn").eq("id", user.id).maybeSingle<{ navn: string | null }>()
             : Promise.resolve({ data: null }),
-        ]).then(([lev, afs, mig]) => ({ levering: lev.data, afsender: afs.data, mitNavn: mig.data?.navn ?? null }))
+          // Har sælgeren accepteret den aktuelle version af DAO's
+          // handelsbetingelser (RLS: egne rækker)? Fejl (fx før migrationen) =
+          // nej - serveren tjekker igen, før labelen laves.
+          visFragtlabel
+            ? supabase
+                .from("fragt_betingelser_accept")
+                .select("version")
+                .eq("bruger_id", user.id)
+                .eq("fragtfirma", DAO_BETINGELSER.fragtfirma)
+                .eq("version", DAO_BETINGELSER.version)
+                .maybeSingle<{ version: string }>()
+            : Promise.resolve({ data: null }),
+        ]).then(([lev, afs, mig, dao]) => ({
+          levering: lev.data,
+          afsender: afs.data,
+          mitNavn: mig.data?.navn ?? null,
+          daoBetingelserAccepteret: dao.data !== null,
+        }))
       : Promise.resolve(null),
     venterPaaAfsendelse
       ? supabase
@@ -943,6 +961,9 @@ export default async function HandelDetalje({
             brugteLabels={udgaaende.length}
             labelGraense={labelGraense(lev?.fragtfirma ?? forsendelse?.fragtfirma)}
             transportoer={lev?.transportoer ?? null}
+            kraeverDaoAccept={
+              !fragtInfo?.daoBetingelserAccepteret && kraeverDaoBetingelser(lev?.fragtfirma, lev?.transportoer ?? null)
+            }
           />
         )}
 

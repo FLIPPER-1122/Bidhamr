@@ -7,6 +7,10 @@
 //      "Hent label (PDF)". GLS via Shipmondo har ingen labelfri udgående -
 //      dér er PDF'en den primære knap.
 //   3. Sporingstidslinje og "Annullér label".
+// DAO (Filip, 20. okt. 2026): første gang (og ved en ny version af
+// betingelserne) skal sælgeren sætte flueben ved DAO's handelsbetingelser,
+// før labelen kan laves. Ingen advarselsboks - kun afkrydsningen og linket.
+// Serveren håndhæver det (kode "dao_betingelser").
 // Pakkestørrelsen er altid auktionens. Fejl fra serveren er danske og vises
 // direkte (fx højst 2 labels pr. handel).
 import Image from "next/image";
@@ -19,6 +23,7 @@ import SporingTidslinje from "@/components/fragt/SporingTidslinje";
 import { annullerFragtlabel, hentFragtlabelLink, lavFragtlabel } from "@/app/actions/fragt";
 import type { ForsendelseVisning } from "@/lib/fragt/handlinger";
 import { TRANSPORTOER_INFO, erTransportoer } from "@/lib/fragt/types";
+import { DAO_BETINGELSER, DAO_BETINGELSER_ACCEPT_TEKST, DAO_BETINGELSER_FEJL, DAO_BETINGELSER_KODE } from "@/lib/fragt/betingelser";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { useHydreret } from "@/lib/useHydreret";
 
@@ -55,6 +60,7 @@ export default function FragtlabelBoks({
   brugteLabels,
   labelGraense = 2,
   transportoer = null,
+  kraeverDaoAccept = false,
 }: {
   tradeId: string;
   // Den aktive udgående forsendelse (ikke annulleret), eller null.
@@ -73,6 +79,9 @@ export default function FragtlabelBoks({
   labelGraense?: number | null;
   // Køberens valgte fragtfirma (Shipmondo: dao | gls | postnord).
   transportoer?: string | null;
+  // DAO: sælgeren har ikke accepteret (den aktuelle version af) DAO's
+  // handelsbetingelser endnu - vis afkrydsningen.
+  kraeverDaoAccept?: boolean;
 }) {
   const id = useId();
   const router = useRouter();
@@ -84,6 +93,12 @@ export default function FragtlabelBoks({
   const hydreret = useHydreret();
   const laas = useRef(false);
   const fejlRef = useRef<HTMLDivElement>(null);
+  // DAO's handelsbetingelser: vises, når siden siger det, eller når serveren
+  // svarer "dao_betingelser" (fx en ny version).
+  const [visDao, setVisDao] = useState(kraeverDaoAccept);
+  const [daoAccept, setDaoAccept] = useState(false);
+  const [daoFejl, setDaoFejl] = useState<string | null>(null);
+  const daoRef = useRef<HTMLInputElement>(null);
 
   function saet<K extends keyof Afsender>(k: K, v: string) {
     setA((x) => {
@@ -99,12 +114,22 @@ export default function FragtlabelBoks({
 
   async function lav(medAdresse: boolean) {
     if (laas.current) return;
+    if (visDao && !daoAccept) {
+      setDaoFejl(DAO_BETINGELSER_FEJL);
+      daoRef.current?.focus();
+      return;
+    }
     laas.current = true;
     setArbejder(true);
     setFejl(null);
     try {
-      const r = await lavFragtlabel(tradeId, medAdresse ? a : undefined);
-      if ("fejl" in r) {
+      const r = await lavFragtlabel(tradeId, medAdresse ? a : undefined, visDao && daoAccept);
+      if ("fejl" in r && r.kode === DAO_BETINGELSER_KODE) {
+        setVisDao(true);
+        setDaoAccept(false);
+        setDaoFejl(r.fejl);
+        requestAnimationFrame(() => daoRef.current?.focus());
+      } else if ("fejl" in r) {
         setFejl(r.fejl);
         requestAnimationFrame(() => fejlRef.current?.focus());
       } else router.refresh();
@@ -148,6 +173,44 @@ export default function FragtlabelBoks({
         <Link href="/kontakt" className="mt-2 block font-semibold underline underline-offset-2">
           Skriv til BidHamr
         </Link>
+      )}
+    </div>
+  );
+
+  // DAO's handelsbetingelser (kun når accepten mangler).
+  const daoAfkrydsning = visDao && (
+    <div className="mt-4">
+      <label htmlFor={`${id}-dao`} className="flex cursor-pointer items-start gap-3 text-sm text-tekst">
+        <input
+          ref={daoRef}
+          id={`${id}-dao`}
+          type="checkbox"
+          checked={daoAccept}
+          onChange={(e) => {
+            setDaoAccept(e.target.checked);
+            if (e.target.checked) setDaoFejl(null);
+          }}
+          aria-invalid={daoFejl ? true : undefined}
+          aria-describedby={daoFejl ? `${id}-dao-fejl` : undefined}
+          className="mt-0.5 h-5 w-5 shrink-0 accent-groen"
+        />
+        <span>
+          {DAO_BETINGELSER_ACCEPT_TEKST} (
+          <a
+            href={DAO_BETINGELSER.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-groen-mork underline underline-offset-2"
+          >
+            læs DAO&apos;s handelsbetingelser
+          </a>
+          ).
+        </span>
+      </label>
+      {daoFejl && (
+        <p id={`${id}-dao-fejl`} className="mt-1.5 text-[13px] font-medium text-fejl-tekst">
+          {daoFejl}
+        </p>
       )}
     </div>
   );
@@ -283,6 +346,7 @@ export default function FragtlabelBoks({
             ? "Opdatér siden om lidt."
             : "Fragtfirmaet har ikke svaret endnu. Vent et minut, og prøv igen. Du får ikke to labels."}
         </p>
+        {!annulleres && daoAfkrydsning}
         <div className="mt-4 flex flex-wrap gap-3">
           {!annulleres && (
             <button
@@ -379,6 +443,7 @@ export default function FragtlabelBoks({
             </Felt>
           </div>
         </fieldset>
+        {daoAfkrydsning}
         {fejlBoks}
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
           <button type="submit" disabled={arbejder || !hydreret} aria-busy={arbejder || undefined} className="btn btn-primaer w-full sm:w-auto">

@@ -1,13 +1,14 @@
 "use client";
 
 // Lille checkout for returfragten i en sag: Stripes Payment Element (kort,
-// MobilePay, Apple Pay, Google Pay - som den øvrige checkout) og knappen
+// MobilePay, Revolut Pay, Apple Pay, Google Pay - som den øvrige checkout) og knappen
 // "Betal returfragt (X kr.)". Beløbet er PaymentIntentens (serveren har låst
 // det). foerBetaling gemmer køberens adresse, før Stripe trækker pengene.
 // Returkoden laves først, når Stripe har bekræftet betalingen (webhook).
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { PAYMENT_ELEMENT_WALLETS } from "@/lib/betaling/betalingsmetoder";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
 import StripeIndlaesningsfejl from "@/components/betaling/StripeIndlaesningsfejl";
 import { kroner } from "@/lib/kroner";
@@ -84,7 +85,11 @@ function BetalForm({ tradeId, beloebOere, children, foerBetaling, onFejl, onGens
       <div className="mt-5">
         <h3 className="mb-2 text-sm font-medium text-tekst">Betaling</h3>
         <PaymentElement
-          options={{ layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: true } }}
+          options={{
+          layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: true },
+          // Link (Stripes "gem mine oplysninger") vises aldrig (betalingsmetoder.ts).
+          wallets: PAYMENT_ELEMENT_WALLETS,
+        }}
         />
         <StripeIndlaesningsfejl />
       </div>

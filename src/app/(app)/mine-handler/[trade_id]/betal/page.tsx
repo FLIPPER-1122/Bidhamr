@@ -7,6 +7,7 @@ import { hentBetalingsstatus } from "@/app/actions/betaling";
 import { hentCheckoutAction } from "@/app/actions/fragt";
 import CheckoutSide from "@/components/checkout/CheckoutSide";
 import CheckoutFejl from "@/components/checkout/CheckoutFejl";
+import { saelgerMetoder } from "@/lib/betaling/betalingsmetoder";
 
 // Checkout for vinderen (ROADMAP-BESLUTNINGER: "Ingen automatisk betaling" -
 // alle vindere ender her): levering (pakkeshop, hjem eller afhentning),
@@ -57,6 +58,15 @@ export default async function BetalPage({ params }: { params: Promise<{ trade_id
       .maybeSingle<{ adresse: string | null }>()
       .then(({ data }) => Boolean(data?.adresse?.trim())),
   ]);
+  // Betalingsmetoderne hos netop denne sælger (spejlet fra sælgerens
+  // Stripe-konto, betalingsprofiler.connect_betalingsmetoder) - kun til
+  // teksten før betalingen. PaymentIntenten afgør de rigtige metoder.
+  const { data: saelgerProfil } = await createAdminClient()
+    .from("betalingsprofiler")
+    .select("connect_betalingsmetoder")
+    .eq("user_id", handel.seller_id)
+    .maybeSingle<{ connect_betalingsmetoder: Record<string, string> | null }>();
+  const betalingsmetoder = saelgerMetoder(saelgerProfil?.connect_betalingsmetoder ?? null);
 
   const vare = {
     titel: (auktion?.titel as string | undefined) ?? "Slettet auktion",
@@ -83,6 +93,7 @@ export default async function BetalPage({ params }: { params: Promise<{ trade_id
       status={betaling}
       checkout={checkoutSvar.checkout}
       standardNavn={mig?.navn ?? null}
+      betalingsmetoder={betalingsmetoder}
     />
   );
 }

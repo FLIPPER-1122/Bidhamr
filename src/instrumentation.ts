@@ -14,7 +14,8 @@ export function register() {
   void (async () => {
     try {
       const { adminKonfigFejl } = await import("@/lib/adminVaert");
-      const fejl = adminKonfigFejl();
+      const { toTrinMaksTimerFejl } = await import("@/lib/staffToTrinRegler");
+      const fejl = [adminKonfigFejl(), toTrinMaksTimerFejl()].filter(Boolean).join(". ");
       if (!fejl) return;
       console.error(`Start-tjek: ${fejl}`);
       const { logDriftFejl } = await import("@/lib/drift");

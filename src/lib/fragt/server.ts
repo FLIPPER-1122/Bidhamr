@@ -53,6 +53,12 @@ import { slaaPostnummerOp } from "@/lib/postnumre";
 import { annullerPaymentIntentForLevering } from "@/lib/betaling/stripeBetaling";
 import { hentEksisterende } from "@/lib/fragt/shipmondo";
 import {
+  DAO_BETINGELSER,
+  DAO_BETINGELSER_FEJL,
+  DAO_BETINGELSER_KODE,
+  kraeverDaoBetingelser,
+} from "@/lib/fragt/betingelser";
+import {
   type Adresse,
   type ForsendelseInput,
   type ForsendelseKontekst,
@@ -69,11 +75,11 @@ import {
   FragtFejl,
   FragtUkendtUdfald,
   FRAGT_IKKE_SAT_OP,
-  GLS_LUKKET,
   UKENDT_UDFALD_TEKST,
   erLeveringsmaade,
   erSporingsType,
   erTransportoer,
+  transportoerLukket,
 } from "@/lib/fragt/types";
 
 export const FRAGT_LABEL_BUCKET = "fragt-labels";
@@ -275,16 +281,13 @@ export async function hentFragtpriser(): Promise<Fragtpris[]> {
 
 // ------------------------------------------------------------ pakkeshops
 
-// GLS er slået fra, indtil Shipmondo har svaret (SHIPMONDO_GLS_AKTIV, se
-// shipmondoGlsAktiv i shipmondo.ts). Teksten står i types.ts.
-export { GLS_LUKKET };
-
 // Transportøren fra klienten: kun en af dem, køberen kan vælge nu
-// (adapterens transportoerer - Shipmondo uden GLS, medmindre GLS er slået
-// til). Adaptere uden valg: null. Mangler den hos en adapter med valg: den
-// første (DAO). alle = true (kun søgning efter indleveringssteder til retur):
-// alle kendte transportører, så retur af en pakke, der allerede er sendt med
-// GLS, virker videre.
+// (adapterens transportoerer - Shipmondo: DAO og GLS, PostNord kun med
+// SHIPMONDO_POSTNORD_AKTIV=true; Filip, 20. okt. 2026). Adaptere uden valg:
+// null. Mangler den hos en adapter med valg: den første (DAO). alle = true
+// (kun søgning efter indleveringssteder til retur): alle kendte
+// transportører, så retur af en pakke, der allerede er sendt med PostNord,
+// virker videre.
 function valgtTransportoer(
   firma: Fragtfirma,
   v: unknown,
@@ -295,7 +298,7 @@ function valgtTransportoer(
   if (v === undefined || v === null || v === "") return muligt[0];
   if (!erTransportoer(v)) return { fejl: "Vælg et fragtfirma." };
   if (alle || muligt.includes(v)) return v;
-  return { fejl: v === "gls" ? GLS_LUKKET : "Vælg et fragtfirma." };
+  return { fejl: transportoerLukket(v, muligt) };
 }
 
 // Pakkeshops nær et postnummer/en adresse hos det aktive fragtfirma (og den
@@ -358,8 +361,6 @@ const LEVERING_FEJL: Record<string, string> = {
   ikke_mulig: "Levering til døren er ikke muligt for denne pakkestørrelse. Vælg en pakkeshop.",
   pris_laast: "Du har allerede betalt. Du kan skifte pakkeshop, men ikke leveringsmåde.",
   ugyldig: "Ugyldigt valg.",
-  // Databasens værn (20261024020000): GLS uden gls_aktiv fra serveren.
-  gls_lukket: GLS_LUKKET,
 };
 
 const AFHENTNING_IKKE_MULIG = "Sælgeren tilbyder ikke afhentning af denne vare. Vælg en pakkeshop eller levering hjem.";
@@ -464,6 +465,7 @@ export async function gemLeveringsvalg(
   const admin = createAdminClient();
   const firma = hentFragtfirma();
   if (!(await firmaKlar(firma))) return { fejl: FRAGT_IKKE_SAT_OP };
+  const tilladte = firma.transportoerer ?? [];
   const transportoer = valgtTransportoer(firma, input.transportoer);
   if (transportoer && typeof transportoer === "object") return transportoer;
 
@@ -497,9 +499,12 @@ export async function gemLeveringsvalg(
     fragtfirma: firma.navn,
     // Kun Shipmondo (databasen kræver den dér og ignorerer den ellers).
     transportoer,
-    // Databasen afviser GLS, medmindre serveren siger, at GLS er slået til
-    // (20261024020000) - fail closed, også for kode, der glemmer tjekket.
-    gls_aktiv: (firma.transportoerer ?? []).includes("gls"),
+    // Databasen afviser en transportør uden for listen (20261028010000) -
+    // fail closed, også for kode, der glemmer tjekket.
+    tilladte: [...tilladte],
+    // Til databasen før 20261028010000 (afviser GLS uden gls_aktiv = true),
+    // så GLS virker, hvis koden deployes før migrationen.
+    gls_aktiv: tilladte.includes("gls"),
     pakkeshop: pakkeshop
       ? {
           id: pakkeshop.id,
@@ -522,7 +527,9 @@ export async function gemLeveringsvalg(
     gem_forslag: input.gemForslag !== false,
   };
 
-  return gemValgIDatabasen(admin, tradeId, koeberId, valg, {});
+  // Databasens værn (20261028010000): transportøren står ikke i listen.
+  const lukket = transportoer ? transportoerLukket(transportoer, tilladte) : "Vælg et fragtfirma.";
+  return gemValgIDatabasen(admin, tradeId, koeberId, valg, { transportoer_lukket: lukket, gls_lukket: lukket });
 }
 
 type LeveringRaekke = {
@@ -931,17 +938,66 @@ async function vaegtOgTitel(admin: Admin, tradeId: string) {
   return { handel, titel: auktion?.titel ?? "Vare fra BidHamr", vaegtGram: auktion?.vaegt_gram ?? null };
 }
 
+// ------------------------------------------------------------ DAO's handelsbetingelser
+
+// Har sælgeren accepteret den aktuelle version af DAO's handelsbetingelser?
+// Kaster ved databasefejl (fx før migrationen 20261028010000).
+export async function harAccepteretDaoBetingelser(admin: Admin, brugerId: string): Promise<boolean> {
+  const { data, error } = await admin
+    .from("fragt_betingelser_accept")
+    .select("version")
+    .eq("bruger_id", brugerId)
+    .eq("fragtfirma", DAO_BETINGELSER.fragtfirma)
+    .eq("version", DAO_BETINGELSER.version)
+    .maybeSingle<{ version: string }>();
+  if (error) throw new Error(`fragt_betingelser_accept: ${error.message}`);
+  return data !== null;
+}
+
+// "ok", når accepten findes eller netop er gemt (accepter = true). Ellers
+// fejlen med kode 'dao_betingelser'. Fail closed: kan accepten ikke læses
+// eller gemmes, laves der ingen DAO-label.
+async function sikrDaoBetingelser(
+  admin: Admin,
+  brugerId: string,
+  accepter: boolean,
+): Promise<"ok" | { fejl: string; kode?: string }> {
+  try {
+    if (await harAccepteretDaoBetingelser(admin, brugerId)) return "ok";
+    if (!accepter) return { fejl: DAO_BETINGELSER_FEJL, kode: DAO_BETINGELSER_KODE };
+    // Idempotent: dobbeltklik giver én række (primærnøglen), tidspunktet er
+    // det første.
+    const { error } = await admin
+      .from("fragt_betingelser_accept")
+      .upsert(
+        { bruger_id: brugerId, fragtfirma: DAO_BETINGELSER.fragtfirma, version: DAO_BETINGELSER.version },
+        { onConflict: "bruger_id,fragtfirma,version", ignoreDuplicates: true },
+      );
+    if (error) throw new Error(`fragt_betingelser_accept (gem): ${error.message}`);
+    return "ok";
+  } catch (err) {
+    await logDriftFejl({ kilde: "server", hvor: "Fragt: DAO's handelsbetingelser", fejl: err, brugerId });
+    return { fejl: GENERISK_FEJL };
+  }
+}
+
 // Laver den udgående fragtlabel ("Send pakke"). saelgerId SKAL være
 // verificeret med auth af kalderen; SQL'en tjekker igen under lås, at han er
 // sælger, at handlen er en betalt forsendelseshandel med købers
 // leveringsvalg, og at der ikke allerede er en aktiv label (dobbeltklik giver
 // samme label). Pakkestørrelsen er auktionens; fragtfirmaet er det, køberen
 // valgte pakkeshop hos.
+//
+// DAO (Filip, 20. okt. 2026): sælgeren skal have accepteret DAO's
+// handelsbetingelser (aktuel version), før labelen laves. Mangler accepten,
+// og sender han den ikke med (accepterDaoBetingelser), afvises kaldet med
+// kode 'dao_betingelser' - før claimet, så intet bestilles.
 export async function opretUdgaaendeForsendelse(
   tradeId: string,
   saelgerId: string,
   afsenderInput: AdresseInput,
-): Promise<{ ok: true; forsendelseId: string } | { fejl: string }> {
+  valg: { accepterDaoBetingelser?: boolean } = {},
+): Promise<{ ok: true; forsendelseId: string } | { fejl: string; kode?: string }> {
   const afs = valideerAdresse(afsenderInput, { kraevAdresse: true, kraevTelefon: false });
   if ("fejl" in afs) return afs;
   const admin = createAdminClient();
@@ -956,6 +1012,12 @@ export async function opretUdgaaendeForsendelse(
   if (!levering) return { fejl: CLAIM_FEJL.mangler_levering };
   const firma = adapterFor(levering.fragtfirma);
   if (!firma) return { fejl: FRAGT_IKKE_SAT_OP };
+  // "Ikke sat op" før accepten (opretForsendelse tjekker igen).
+  if (!(await firmaKlar(firma))) return { fejl: FRAGT_IKKE_SAT_OP };
+  if (kraeverDaoBetingelser(levering.fragtfirma, levering.transportoer)) {
+    const b = await sikrDaoBetingelser(admin, saelgerId, valg.accepterDaoBetingelser === true);
+    if (b !== "ok") return b;
+  }
   const afsender: Adresse = { ...afs.adresse, email: await brugerEmail(admin, saelgerId) };
 
   const svar = await opretForsendelse(admin, {
@@ -978,6 +1040,18 @@ export async function opretUdgaaendeForsendelse(
       const transportoer = harValg ? ((await forsendelseTransportoer(admin, id)) ?? "dao") : null;
       if (harValg && transportoer !== (erTransportoer(lev.transportoer) ? lev.transportoer : "dao")) {
         throw new FragtFejl("Køberens levering er ændret. Prøv igen.");
+      }
+      // DAO's handelsbetingelser igen ud fra det låste valg: køberen kan have
+      // skiftet fx GLS -> DAO mellem tjekket før claimet og claimet. Uden
+      // accept (eller kan den ikke læses): FragtFejl - intet er bestilt.
+      if (kraeverDaoBetingelser(lev.fragtfirma, lev.transportoer)) {
+        let accepteret: boolean;
+        try {
+          accepteret = await harAccepteretDaoBetingelser(admin, saelgerId);
+        } catch (err) {
+          throw new FragtFejl(GENERISK_FEJL, renFejltekst(err, 300));
+        }
+        if (!accepteret) throw new FragtFejl(DAO_BETINGELSER_FEJL);
       }
       const { titel, vaegtGram } = await vaegtOgTitel(admin, tradeId);
       return {

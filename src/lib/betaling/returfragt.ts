@@ -1,7 +1,8 @@
 import "server-only";
 
 // Returfragt i sager (Filip, 13. okt. 2026): køberen betaler selv
-// returfragten med kort, MobilePay, Apple Pay eller Google Pay, FØR returkoden
+// returfragten med kort, Apple Pay, Google Pay, MobilePay eller Revolut Pay
+// (betalingsmetoder.ts), FØR returkoden
 // (DAO Shop2Shop, labelfri) laves. Migration 20261022010000_returfragt_betaling.sql.
 //
 // Pengestrømmen:
@@ -35,6 +36,8 @@ import { logDriftFejl, renFejltekst } from "@/lib/drift";
 import { egenDatabase } from "@/lib/betaling/fremmedeTestdata";
 import { hentNoedstop, NYE_BETALINGER_STOPPET_TEKST } from "@/lib/betaling/noedstop";
 import { alarmPrTilfaelde } from "@/lib/betaling/driftTilfaelde";
+import { annullerForkerteMetoder, metodeHandling, metodeNoegle } from "@/lib/betaling/betalingsmetoder";
+import { hentPlatformMetoder } from "@/lib/betaling/platformMetoder";
 import { kundeSessionTilCheckout, sikrStripeKunde, type BetalingsKanal } from "@/lib/betaling/stripeBetaling";
 import { send } from "@/lib/notifikationer/send";
 import { kroner } from "@/lib/kroner";
@@ -296,11 +299,31 @@ async function sikrReturfragtPi(rf: ReturfragtRaekke, forsoeg = 0): Promise<Stri
       if (!ny) throw new Error("Returfragten findes ikke");
       return sikrReturfragtPi(ny, forsoeg + 1);
     }
+    // Betalingsmetoderne (Filip, 20. okt. 2026): en åben PaymentIntent med
+    // automatic_payment_methods (Klarna, Link ...) kan ikke opdateres til en
+    // eksplicit liste - den annulleres, og næste runde nulstiller rækken
+    // (pi_forsoeg + 1 = ny idempotency key) og laver en ny.
+    const metoder = await hentPlatformMetoder();
+    const metodeValg = metodeHandling(eks, metoder);
+    if (metodeValg === "annuller") {
+      if (rf.status !== "afventer" || forsoeg >= 2) throw new Error("Returfragtens PaymentIntent har forkerte betalingsmetoder");
+      const efter = await annullerForkerteMetoder(stripe, eks.id);
+      if (efter.status !== "canceled") return efter; // betalt imens - kalderen spejler
+      // Rækken hentes igen: webhooken (payment_intent.canceled) kan have
+      // nulstillet den imens, så den gamle række ikke længere passer.
+      const ny = await hentRaekke(admin, rf.id);
+      if (!ny) throw new Error("Returfragten findes ikke");
+      return sikrReturfragtPi(ny, forsoeg + 1);
+    }
     // Beløbet er låst i databasen; 3D Secure tvinges også på ældre intents.
     const mangler3ds = eks.payment_method_options?.card?.request_three_d_secure !== "any";
-    if ((eks.amount !== beloeb || mangler3ds || eks.metadata?.returfragt_id !== rf.id) && OPDATERBARE.includes(eks.status)) {
+    if (
+      (eks.amount !== beloeb || mangler3ds || eks.metadata?.returfragt_id !== rf.id || metodeValg === "opdater") &&
+      OPDATERBARE.includes(eks.status)
+    ) {
       return stripe.paymentIntents.update(eks.id, {
         amount: beloeb,
+        payment_method_types: metoder,
         metadata: metadata(rf),
         payment_method_options: { card: { request_three_d_secure: "any" } },
       });
@@ -310,16 +333,21 @@ async function sikrReturfragtPi(rf: ReturfragtRaekke, forsoeg = 0): Promise<Stri
 
   const kunde = await sikrStripeKunde(rf.koeber_id);
   const db = egenDatabase();
-  const noegle = `bidhamr-returfragt-${rf.id}-${rf.pi_forsoeg}${db ? `-${db}` : ""}`;
+  // Metoderne er med i nøglen: en PaymentIntent fra før (automatic_payment_
+  // methods) under samme nøgle, men aldrig gemt, giver en ny i stedet for
+  // Stripes idempotensfejl.
+  const metoder = await hentPlatformMetoder();
+  const noegle = `bidhamr-returfragt-${rf.id}-${rf.pi_forsoeg}${db ? `-${db}` : ""}-${metodeNoegle(metoder)}`;
   const pi = await stripe.paymentIntents.create(
     {
       amount: beloeb,
       currency: "dkk",
       customer: kunde,
-      // Kort, MobilePay, Apple Pay, Google Pay - som den øvrige checkout
-      // (styres fra Stripe Dashboard). Betaling til platformen: ingen
-      // on_behalf_of, ingen transfer_data, intet application fee.
-      automatic_payment_methods: { enabled: true },
+      // Kun de tilladte metoder (betalingsmetoder.ts, Filip 20. okt. 2026):
+      // kort (inkl. Apple Pay/Google Pay), MobilePay og Revolut Pay - aldrig
+      // Klarna eller Link. Betaling til platformen: ingen on_behalf_of,
+      // ingen transfer_data, intet application fee.
+      payment_method_types: metoder,
       payment_method_options: { card: { request_three_d_secure: "any" } },
       description: `BidHamr returfragt for handel ${rf.trade_id}`,
       metadata: metadata(rf),

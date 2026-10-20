@@ -382,6 +382,15 @@ body {
      #2E7D5B: 5,0:1 - hvid på rød fyld #C23B3B: 5,3:1 - hvid på #334A73: 8,9:1
    - lamper på kort: grøn 4,6, gul 7,0, rød 3,6, blå 3,9, grå 6,4 (grafik ≥3:1)
 */
+/* Bunden bag admin (html/body) er også navy, så der aldrig kan ses en hvid
+   flade - heller ikke ved overscroll på mobil eller mens siden indlæses.
+   Gælder kun sider med admin-indpakningen; hovedsitet og /adgang er lyse. */
+html:has([data-tema="admin-moerk"]),
+html:has([data-tema="admin-moerk"]) body {
+  background: #0b1426;
+  color-scheme: dark;
+}
+
 [data-tema="admin-moerk"] {
   color-scheme: dark;
   color: var(--color-tekst);
