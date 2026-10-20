@@ -6,6 +6,7 @@
 // sammen. Kun den rette PaymentIntent (fra startBetaling) bruges.
 import { useEffect, type FormEvent } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { PAYMENT_ELEMENT_WALLETS } from "@/lib/betaling/betalingsmetoder";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
 import StripeIndlaesningsfejl from "@/components/betaling/StripeIndlaesningsfejl";
 
@@ -76,7 +77,11 @@ function BetalForm({ handelId, sender, onSender, onKlar, onFejl, onGenstart }: P
   return (
     <form id={CHECKOUT_FORM} onSubmit={betal} method="post" aria-busy={sender || undefined}>
       <PaymentElement
-        options={{ layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: true } }}
+        options={{
+          layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: true },
+          // Link (Stripes "gem mine oplysninger") vises aldrig (betalingsmetoder.ts).
+          wallets: PAYMENT_ELEMENT_WALLETS,
+        }}
       />
       <StripeIndlaesningsfejl />
     </form>

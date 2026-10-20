@@ -249,6 +249,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
           totalOere: r.totalOere,
           customerId: r.customerId,
           customerSessionClientSecret: r.customerSessionClientSecret,
+          // Metoderne på PaymentIntenten (kort, evt. MobilePay/Revolut Pay).
+          betalingsmetoder: r.betalingsmetoder,
           publishableKey,
           // "Sælger: X" som på hjemmesidens checkout (users.navn).
           saelgerNavn: await saelgerNavnForHandel(krop.trade_id),

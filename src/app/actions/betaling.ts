@@ -62,7 +62,7 @@ export async function hentBetalingsstatus(
 export async function startBetaling(
   handelId: string,
 ): Promise<
-  | { ok: true; clientSecret: string; totalOere: number; customerSessionClientSecret: string | null }
+  | { ok: true; clientSecret: string; totalOere: number; customerSessionClientSecret: string | null; betalingsmetoder: string[] }
   | (Fejl & { betalt?: true; kode?: "vaelg_levering" })
 > {
   const user = await indloggetBruger();
@@ -78,6 +78,7 @@ export async function startBetaling(
     clientSecret: r.clientSecret,
     totalOere: r.totalOere,
     customerSessionClientSecret: r.customerSessionClientSecret,
+    betalingsmetoder: r.betalingsmetoder,
   };
 }
 

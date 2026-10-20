@@ -5,7 +5,7 @@
 // Filip, 19. okt. 2026) og trykker "Køb 300 point – 99 kr.". Klienten sender
 // KUN pakkens id: serveren vælger pris og point, låser dem på købet og laver
 // PaymentIntenten på BidHamrs platformskonto (startBoostKoebAction). Her
-// vises Stripes Payment Element (kort, MobilePay, Apple Pay, Google Pay - et
+// vises Stripes Payment Element (kort, MobilePay, Revolut Pay, Apple Pay, Google Pay - et
 // gemt kort forudfylder kun). Pointene krediteres først, når Stripe har
 // bekræftet betalingen (webhook eller returen til siden) - aldrig fra
 // browseren. Vælges en anden pakke, skjules betalingen, og der startes et
@@ -14,6 +14,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { PAYMENT_ELEMENT_WALLETS } from "@/lib/betaling/betalingsmetoder";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
 import { startBoostKoebAction } from "@/app/actions/boost";
 import { BOOST_TEKST } from "@/lib/boost/tekster";
@@ -248,7 +249,11 @@ function BetalForm({
   return (
     <form onSubmit={betal} method="post" noValidate aria-busy={sender || undefined} className="mt-5">
       <PaymentElement
-        options={{ layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: true } }}
+        options={{
+          layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: true },
+          // Link (Stripes "gem mine oplysninger") vises aldrig (betalingsmetoder.ts).
+          wallets: PAYMENT_ELEMENT_WALLETS,
+        }}
       />
       <StripeIndlaesningsfejl />
       <button type="submit" disabled={!klar || sender} aria-busy={sender || undefined} className="btn btn-primaer mt-5 w-full sm:w-auto">

@@ -29,6 +29,13 @@ import { sendIndsigelseTilSaelger } from "@/lib/betaling/indsigelseBeskeder";
 import { kontoSpejl, nyKontoParametre, sikrKontoopsaetning } from "@/lib/betaling/connect";
 import { BetalingsmodelFejl, kraevDestination } from "@/lib/betaling/model";
 import { hentNoedstop, NYE_BETALINGER_STOPPET_TEKST } from "@/lib/betaling/noedstop";
+import {
+  GEM_KORT_METODER,
+  metodeHandling,
+  metodeNoegle,
+  saelgerMetoder,
+  type Betalingsmetode,
+} from "@/lib/betaling/betalingsmetoder";
 
 // Offentlig https-adresse til Stripes business_profile.url. Lokalt
 // (http/localhost) bruges produktionsdomaenet, da Stripe afviser andet.
@@ -278,7 +285,10 @@ export class BetalingVenterFejl extends Error {
   }
 }
 
-export type KontoTjek = { ok: true } | { ok: false; aarsag: string };
+// metoder: de betalingsmetoder, sælgerens konto kan tage imod lige nu
+// (betalingsmetoder.ts - kort altid, MobilePay/Revolut Pay kun med aktiv
+// capability).
+export type KontoTjek = { ok: true; metoder: Betalingsmetode[] } | { ok: false; aarsag: string };
 
 // Frisk tjek af sælgerens Connect-konto hos Stripe, før der laves (eller
 // betales) en destination-PaymentIntent: charges_enabled, card_payments aktiv
@@ -320,7 +330,7 @@ export async function kontrollerSaelgerkonto(kontoId: string): Promise<KontoTjek
     });
     return { ok: false, aarsag: "plan_ikke_manual" };
   }
-  return { ok: true };
+  return { ok: true, metoder: saelgerMetoder(konto.capabilities as Record<string, string | undefined> | undefined) };
 }
 
 // Stripe giver ingen adgang til sælgerens konto (StripePermissionError). Ikke
@@ -620,6 +630,28 @@ export async function sikrPaymentIntent(
       if (nulstillet !== true) throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
       return sikrPaymentIntent(await hentBetaling(betaling.id));
     }
+    // Betalingsmetoderne (Filip, 20. okt. 2026): en åben PaymentIntent fra
+    // før, lavet med automatic_payment_methods (Klarna, Link ...), kan ikke
+    // opdateres til en eksplicit liste. Den annulleres og nulstilles
+    // (pi_forsoeg + 1 = ny idempotency key), og der laves en ny. Er den
+    // betalt eller under behandling imens, gives den tilbage (spejles).
+    const metodeValg = metodeHandling(eksisterende, tjek.metoder);
+    if (metodeValg === "annuller" && betaling.status === "afventer" && forsoeg < 2) {
+      const ikkeAnnulleret = await annullerAfventendePi(eksisterende.id);
+      if (ikkeAnnulleret) return ikkeAnnulleret;
+      const { data: nulstillet, error: nFejl } = await createAdminClient().rpc(
+        "betaling_nulstil_annulleret_pi",
+        { p_betaling: betaling.id, p_pi: eksisterende.id },
+      );
+      if (nFejl) throw new Error(`betaling_nulstil_annulleret_pi: ${nFejl.message}`);
+      if (nulstillet !== true) throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
+      return sikrPaymentIntent(await hentBetaling(betaling.id), forsoeg + 1);
+    }
+    if (metodeValg === "annuller") {
+      // Kan ikke laves om (fx betalingen er ikke længere 'afventer'): giv
+      // aldrig en PaymentIntent med andre metoder videre.
+      throw new BetalingsFejl("Betalingen kunne ikke startes. Prøv igen om lidt.");
+    }
     // Sikkerhedsnet for PaymentIntents oprettet før beskyttelsen blev låst ved
     // buddet: beløbet bringes i trit med databasens total. Klienten har
     // aldrig indflydelse på beløbet. Gebyret følger med.
@@ -627,12 +659,16 @@ export async function sikrPaymentIntent(
     // Tvungen 3D Secure (sikkerhedsnet A): også PaymentIntents oprettet før.
     const mangler3ds = eksisterende.payment_method_options?.card?.request_three_d_secure !== "any";
     if (
-      (eksisterende.amount !== beloeb || eksisterende.application_fee_amount !== fee || mangler3ds) &&
+      (eksisterende.amount !== beloeb ||
+        eksisterende.application_fee_amount !== fee ||
+        mangler3ds ||
+        metodeValg === "opdater") &&
       OPDATERBARE.includes(eksisterende.status)
     ) {
       return stripe.paymentIntents.update(eksisterende.id, {
         amount: beloeb,
         application_fee_amount: fee,
+        payment_method_types: [...tjek.metoder],
         // bidhamr_db også på ældre PaymentIntents (fremmedeTestdata.ts). Ingen
         // idempotency-nøgle her - en opdatering kan gentages.
         metadata: { beskyttelse: betaling.beskyttelse ? "ja" : "nej", ...(egenDatabase() ? { bidhamr_db: egenDatabase()! } : {}) },
@@ -649,6 +685,7 @@ export async function sikrPaymentIntent(
   const klar = await klargoerSaelgerkonto(betaling);
   if ("pi" in klar) return klar.pi;
   const b = klar.b;
+  const metoder = klar.metoder;
   const fee = Number(b.application_fee_oere);
   if (
     b.pengemodel !== "destination" ||
@@ -674,15 +711,23 @@ export async function sikrPaymentIntent(
   // idempotent_requests). En PaymentIntent oprettet før opdateringen, men
   // aldrig gemt, giver derfor en ny i stedet for en idempotensfejl i 24 t; den
   // gamle blev aldrig givet til køberen og kan ikke betales via BidHamr.
+  //
+  // Metoderne er også med i nøglen (Filip, 20. okt. 2026): en PaymentIntent
+  // fra før, lavet med automatic_payment_methods under samme nøgle, men aldrig
+  // gemt, giver så en ny i stedet for en idempotensfejl - og skifter sælgerens
+  // capabilities mellem to kald, får de hver sin (kun én kan gemmes).
   const db = egenDatabase();
-  const nøgle = `bidhamr-pi-dest-${b.id}-${b.pi_forsoeg}${db ? `-${db}` : ""}`;
+  const nøgle = `bidhamr-pi-dest-${b.id}-${b.pi_forsoeg}${db ? `-${db}` : ""}-${metodeNoegle(metoder)}`;
   const pi = await stripe.paymentIntents.create(
     {
       amount: beloeb,
       currency: b.valuta,
       customer: kunde,
-      // Kort, MobilePay, Apple Pay, Google Pay - styres fra Stripe Dashboard.
-      automatic_payment_methods: { enabled: true },
+      // Kun de tilladte metoder (betalingsmetoder.ts, Filip 20. okt. 2026):
+      // kort (inkl. Apple Pay/Google Pay), MobilePay og Revolut Pay - de to
+      // sidste kun, hvis sælgerens konto har dem aktive (on_behalf_of).
+      // Aldrig Klarna eller Link, og aldrig styret fra dashboardet.
+      payment_method_types: metoder,
       // Tvungen 3D Secure på alle kortbetalinger (sikkerhedsnet A, 11. okt.
       // 2026): Stripe beder banken om 3D Secure, når kortet understøtter det
       // (helst uden udfordring - banken afgør det). Wallets (Apple Pay,
@@ -771,13 +816,13 @@ export async function sikrPaymentIntent(
 // betalt/igangværende PaymentIntent (spejles af kalderen).
 async function klargoerSaelgerkonto(
   b: BetalingRaekke,
-): Promise<{ b: BetalingRaekke } | { pi: Stripe.PaymentIntent }> {
+): Promise<{ b: BetalingRaekke; metoder: Betalingsmetode[] } | { pi: Stripe.PaymentIntent }> {
   const profil = await hentProfil(b.seller_id);
   const konto = profil?.stripe_account_id ?? null;
   if (!konto) return { pi: await saetVenter(b, "ingen_saelgerkonto") };
   const tjek = await kontrollerSaelgerkonto(konto);
   if (!tjek.ok) return { pi: await saetVenter(b, tjek.aarsag) };
-  return { b: await klargoerDestination(b, konto) };
+  return { b: await klargoerDestination(b, konto), metoder: tjek.metoder };
 }
 
 const OPDATERBARE: Stripe.PaymentIntent.Status[] = [
@@ -2208,6 +2253,13 @@ export async function registrerGemtKort(si: Stripe.SetupIntent): Promise<boolean
   const pm = await stripe.paymentMethods.retrieve(pmId);
   const pmKunde = typeof pm.customer === "string" ? pm.customer : (pm.customer?.id ?? null);
   if (pmKunde !== kundeId) return false; // fjernet (detached) i mellemtiden
+  // Kun kort kan gemmes (betalingsmetoder.ts, Filip 20. okt. 2026) - fx en
+  // Link-, MobilePay- eller Revolut Pay-metode fra en fremmed SetupIntent
+  // på kunden registreres aldrig som det gemte kort.
+  if (!(GEM_KORT_METODER as readonly string[]).includes(pm.type)) {
+    await fjernAfvistKort(profil.user_id, pmId);
+    return false;
+  }
   const kort = pm.card;
 
   // Kun hvis profilen ikke er ændret siden læsningen (samtidigt "Fjern kort"
@@ -2657,7 +2709,7 @@ export async function onboardingLink(
 
   if (!profil?.stripe_account_id) {
     const konto = await stripe.accounts.create(
-      // card_payments + transfers + MobilePay, firma/privat, manuel plan,
+      // card_payments + transfers + MobilePay + Revolut Pay, firma/privat, manuel plan,
       // MCC/url/descriptor - src/lib/betaling/connect.ts.
       nyKontoParametre({ userId, email: bruger?.email, erFirma, url: offentligSideUrl() }),
       // Efter en admin-nulstilling (udbetalingskonto_nulstil) skal der

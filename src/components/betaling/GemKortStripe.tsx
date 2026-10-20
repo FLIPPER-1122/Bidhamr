@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { PAYMENT_ELEMENT_WALLETS } from "@/lib/betaling/betalingsmetoder";
 import { hentStripe, stripeUdseende } from "@/lib/stripeKlient";
 import StripeIndlaesningsfejl from "@/components/betaling/StripeIndlaesningsfejl";
 import { FejlBoks } from "@/components/betaling/FejlBoks";
@@ -43,7 +44,8 @@ function GemKortForm({ onAnnuller }: { onAnnuller: () => void }) {
 
   return (
     <form onSubmit={gem} method="post" className="space-y-4 rounded-xl border border-kant p-4">
-      <PaymentElement options={{ layout: "tabs" }} />
+      {/* Kun kort (SetupIntent); Link vises aldrig (betalingsmetoder.ts). */}
+      <PaymentElement options={{ layout: "tabs", wallets: PAYMENT_ELEMENT_WALLETS }} />
       <StripeIndlaesningsfejl className="" />
       {fejl && <FejlBoks tekst={fejl} />}
       <div className="flex flex-col gap-2 sm:flex-row">

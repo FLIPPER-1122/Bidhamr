@@ -182,6 +182,10 @@ describe("A. køb af boost-point", () => {
     expect(pi.transfer_data ?? null).toBeNull();
     expect(pi.application_fee_amount ?? null).toBeNull();
     expect(pi.payment_method_options?.card?.request_three_d_secure).toBe("any");
+    // Betalingsmetoder (Filip, 20. okt. 2026): præcis kort, MobilePay og
+    // Revolut Pay - ingen Klarna eller Link.
+    expect(pi.payment_method_types).toEqual(["card", "mobilepay", "revolut_pay"]);
+    expect(pi.automatic_payment_methods?.enabled ?? false).toBe(false);
     expect(pi.metadata.type).toBe("boost");
     expect(pi.metadata.boost_koeb_id).toBe(koebId);
     expect(pi.metadata.bruger_id).toBe(KOEBER.id);
