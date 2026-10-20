@@ -22,6 +22,13 @@ const FOER = laes("fixtures/handel_gem_levering_20261024020000.sql");
 
 const STUB = `
 create role anon; create role authenticated; create role service_role;
+create schema auth;
+create function auth.uid() returns uuid language sql stable as
+  $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+grant usage on schema auth to anon, authenticated, service_role;
+grant execute on function auth.uid() to anon, authenticated, service_role;
+grant usage on schema public to anon, authenticated, service_role;
+create table public.users (id uuid primary key);
 create table public.trades (id uuid primary key, buyer_id uuid, seller_id uuid, status text,
   afhentning boolean, auction_id uuid);
 create table public.handel_levering (trade_id uuid primary key, transportoer text);
@@ -29,6 +36,8 @@ create table public.handel_levering (trade_id uuid primary key, transportoer tex
 
 const TRADE = "00000000-0000-4000-8000-000000000001";
 const KOEBER = "00000000-0000-4000-8000-000000000002";
+const SAELGER = "00000000-0000-4000-8000-000000000003";
+const ANDEN = "00000000-0000-4000-8000-000000000004";
 
 let db: PGlite;
 
@@ -54,6 +63,9 @@ beforeAll(async () => {
   // To gange: anden kørsel skal genkende den rettede funktion ("allerede").
   await db.exec(MIGRATION);
   await db.exec(MIGRATION);
+  await db.exec(`insert into public.users (id) values ('${SAELGER}'), ('${ANDEN}');
+    insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values
+      ('${SAELGER}', 'dao', '2025-10-01'), ('${ANDEN}', 'dao', '2025-10-01');`);
 });
 
 afterAll(async () => {
@@ -116,6 +128,40 @@ describe("DAO og GLS, ingen PostNord (20261028010000)", () => {
               has_function_privilege('service_role', 'public.handel_gem_levering(uuid,uuid,jsonb,text)', 'execute') s`,
     );
     expect(r.rows[0]).toEqual({ a: false, b: false, s: true });
+  });
+
+  it("fragt_betingelser_accept: brugeren læser kun sine egne rækker og kan ikke skrive", async () => {
+    await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [SAELGER]);
+    await db.exec("set role authenticated");
+    try {
+      const r = await db.query<{ bruger_id: string }>("select bruger_id from public.fragt_betingelser_accept");
+      expect(r.rows.map((x) => x.bruger_id)).toEqual([SAELGER]);
+      await expect(
+        db.query("insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values ($1, 'dao', '2099-01-01')", [SAELGER]),
+      ).rejects.toThrow(/permission denied/);
+      await expect(db.query("delete from public.fragt_betingelser_accept")).rejects.toThrow(/permission denied/);
+    } finally {
+      await db.exec("reset role");
+    }
+    await db.exec("set role anon");
+    try {
+      await expect(db.query("select 1 from public.fragt_betingelser_accept")).rejects.toThrow(/permission denied/);
+    } finally {
+      await db.exec("reset role");
+    }
+  });
+
+  it("fragt_betingelser_accept: én række pr. sælger, fragtfirma og version; kun dao/gls", async () => {
+    await expect(
+      db.query("insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values ($1, 'dao', '2025-10-01')", [SAELGER]),
+    ).rejects.toThrow(/duplicate key/);
+    await expect(
+      db.query("insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values ($1, 'postnord', 'x')", [SAELGER]),
+    ).rejects.toThrow(/check constraint/);
+    // Ny version = ny række (den gamle bliver stående).
+    await db.query("insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values ($1, 'dao', '2026-01-01')", [SAELGER]);
+    const r = await db.query<{ n: number }>("select count(*)::int n from public.fragt_betingelser_accept where bruger_id = $1", [SAELGER]);
+    expect(r.rows[0].n).toBe(2);
   });
 
   it("en funktion, der er hverken gammel eller ny, afbryder migrationen", async () => {

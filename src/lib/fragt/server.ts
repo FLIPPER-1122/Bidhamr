@@ -53,6 +53,12 @@ import { slaaPostnummerOp } from "@/lib/postnumre";
 import { annullerPaymentIntentForLevering } from "@/lib/betaling/stripeBetaling";
 import { hentEksisterende } from "@/lib/fragt/shipmondo";
 import {
+  DAO_BETINGELSER,
+  DAO_BETINGELSER_FEJL,
+  DAO_BETINGELSER_KODE,
+  kraeverDaoBetingelser,
+} from "@/lib/fragt/betingelser";
+import {
   type Adresse,
   type ForsendelseInput,
   type ForsendelseKontekst,
@@ -932,17 +938,66 @@ async function vaegtOgTitel(admin: Admin, tradeId: string) {
   return { handel, titel: auktion?.titel ?? "Vare fra BidHamr", vaegtGram: auktion?.vaegt_gram ?? null };
 }
 
+// ------------------------------------------------------------ DAO's handelsbetingelser
+
+// Har sælgeren accepteret den aktuelle version af DAO's handelsbetingelser?
+// Kaster ved databasefejl (fx før migrationen 20261028010000).
+export async function harAccepteretDaoBetingelser(admin: Admin, brugerId: string): Promise<boolean> {
+  const { data, error } = await admin
+    .from("fragt_betingelser_accept")
+    .select("version")
+    .eq("bruger_id", brugerId)
+    .eq("fragtfirma", DAO_BETINGELSER.fragtfirma)
+    .eq("version", DAO_BETINGELSER.version)
+    .maybeSingle<{ version: string }>();
+  if (error) throw new Error(`fragt_betingelser_accept: ${error.message}`);
+  return data !== null;
+}
+
+// "ok", når accepten findes eller netop er gemt (accepter = true). Ellers
+// fejlen med kode 'dao_betingelser'. Fail closed: kan accepten ikke læses
+// eller gemmes, laves der ingen DAO-label.
+async function sikrDaoBetingelser(
+  admin: Admin,
+  brugerId: string,
+  accepter: boolean,
+): Promise<"ok" | { fejl: string; kode?: string }> {
+  try {
+    if (await harAccepteretDaoBetingelser(admin, brugerId)) return "ok";
+    if (!accepter) return { fejl: DAO_BETINGELSER_FEJL, kode: DAO_BETINGELSER_KODE };
+    // Idempotent: dobbeltklik giver én række (primærnøglen), tidspunktet er
+    // det første.
+    const { error } = await admin
+      .from("fragt_betingelser_accept")
+      .upsert(
+        { bruger_id: brugerId, fragtfirma: DAO_BETINGELSER.fragtfirma, version: DAO_BETINGELSER.version },
+        { onConflict: "bruger_id,fragtfirma,version", ignoreDuplicates: true },
+      );
+    if (error) throw new Error(`fragt_betingelser_accept (gem): ${error.message}`);
+    return "ok";
+  } catch (err) {
+    await logDriftFejl({ kilde: "server", hvor: "Fragt: DAO's handelsbetingelser", fejl: err, brugerId });
+    return { fejl: GENERISK_FEJL };
+  }
+}
+
 // Laver den udgående fragtlabel ("Send pakke"). saelgerId SKAL være
 // verificeret med auth af kalderen; SQL'en tjekker igen under lås, at han er
 // sælger, at handlen er en betalt forsendelseshandel med købers
 // leveringsvalg, og at der ikke allerede er en aktiv label (dobbeltklik giver
 // samme label). Pakkestørrelsen er auktionens; fragtfirmaet er det, køberen
 // valgte pakkeshop hos.
+//
+// DAO (Filip, 20. okt. 2026): sælgeren skal have accepteret DAO's
+// handelsbetingelser (aktuel version), før labelen laves. Mangler accepten,
+// og sender han den ikke med (accepterDaoBetingelser), afvises kaldet med
+// kode 'dao_betingelser' - før claimet, så intet bestilles.
 export async function opretUdgaaendeForsendelse(
   tradeId: string,
   saelgerId: string,
   afsenderInput: AdresseInput,
-): Promise<{ ok: true; forsendelseId: string } | { fejl: string }> {
+  valg: { accepterDaoBetingelser?: boolean } = {},
+): Promise<{ ok: true; forsendelseId: string } | { fejl: string; kode?: string }> {
   const afs = valideerAdresse(afsenderInput, { kraevAdresse: true, kraevTelefon: false });
   if ("fejl" in afs) return afs;
   const admin = createAdminClient();
@@ -957,6 +1012,12 @@ export async function opretUdgaaendeForsendelse(
   if (!levering) return { fejl: CLAIM_FEJL.mangler_levering };
   const firma = adapterFor(levering.fragtfirma);
   if (!firma) return { fejl: FRAGT_IKKE_SAT_OP };
+  // "Ikke sat op" før accepten (opretForsendelse tjekker igen).
+  if (!(await firmaKlar(firma))) return { fejl: FRAGT_IKKE_SAT_OP };
+  if (kraeverDaoBetingelser(levering.fragtfirma, levering.transportoer)) {
+    const b = await sikrDaoBetingelser(admin, saelgerId, valg.accepterDaoBetingelser === true);
+    if (b !== "ok") return b;
+  }
   const afsender: Adresse = { ...afs.adresse, email: await brugerEmail(admin, saelgerId) };
 
   const svar = await opretForsendelse(admin, {

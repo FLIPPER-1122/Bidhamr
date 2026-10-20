@@ -491,6 +491,20 @@ Indsnævrer "Intet to-trins-login" fra 7. okt. 2026: **brugere har stadig intet 
 - **PostNord er slået fra.** Slås til igen med `SHIPMONDO_POSTNORD_AKTIV=true` (alt andet end præcis `true` = fra; fail closed). Uden flaget vises PostNord ikke i checkout, og pakkeshop-søgning, gem levering og betaling afvises med "PostNord kan ikke vælges lige nu. Vælg DAO eller GLS.". En gemt, ubetalt PostNord-levering afvises ved betaling (kode `vaelg_levering`), så køberen vælger igen – medmindre labelen er lavet. Eksisterende PostNord-forsendelser (labels, sporing, webhooks og retur) virker videre.
 - **Én liste over tilladte fragtfirmaer** (`tilladteTransportoerer`, `src/lib/fragt/types.ts`): `SHIPMONDO_TRANSPORTOERER` (kommasepareret, standard `dao,gls`) + `SHIPMONDO_POSTNORD_AKTIV`. Server, checkout, betaling og databasen bruger den; `handel_gem_levering` afviser alt uden for serverens liste (`p_valg->'tilladte'`, koden `transportoer_lukket` – `20261028010000_fragt_dao_gls_ingen_postnord.sql`; uden listen gælder `dao,gls`). `SHIPMONDO_GLS_AKTIV` er erstattet (`true` virker stadig, men er overflødig).
 
+## DAO (Filip, 20. okt. 2026)
+- **DAO: sælgeren accepterer DAO's handelsbetingelser (maks. 2.500 kr. erstatning, ingen tilkøb) før første DAO-forsendelse – ingen ekstra advarsel (Filip, 20. okt. 2026).**
+  - Første gang en sælger laver en DAO-label (DAO direkte eller Shipmondo med DAO), viser label-siden en afkrydsning: "Jeg accepterer DAO's handelsbetingelser for forsendelsen" med link til https://dao.as/handelsbetingelser/. Labelen kan ikke laves uden accept – på hjemmesiden og i appen (`/api/fragt/app/book` svarer `409 kode: "dao_betingelser"`, appen sender `accepter_dao_betingelser: true`). Ingen advarselsboks.
+  - Accepten gemmes én gang pr. sælger med tidspunkt og version (`fragt_betingelser_accept`, migration `20261028010000`). Versionen er en konstant i koden (`DAO_BETINGELSER.version` i `src/lib/fragt/betingelser.ts`, i dag `2025-10-01` = "gælder fra 1. oktober 2025" på dao.as). Ændres den, skal alle sælgere acceptere igen. Kun brugeren selv kan læse sin accept; kun serveren skriver.
+  - Gælder ikke GLS og PostNord. GLS kan tilføjes som én post i `betingelser.ts`, når Filip siger til.
+- **DAO's svar (Allan, 20. okt. 2026):**
+  - Maks. erstatning **2.500 kr. pr. pakke**; ekstra dækning kan **ikke** tilkøbes; undtagelser følger DAO's handelsbetingelser.
+  - **Skader og efterlysning** anmeldes af afsenderen på **omdeling.info** (ikke via API'et).
+  - **Retur kan ikke oprettes via DAO's API** (daoSHOPRETURN oprettes af køber/sælger privat).
+  - **Ingen QR-koder** via API'et – labels (PDF) og den labelfri kode. Ikke faktureret, før pakken er indleveret og scannet.
+  - **Ingen webhooks** – kun statusopdateringer på forsendelsen (polling). Ingen kendt kaldgrænse.
+  - **Mange forskellige afsendere** må bruge BidHamrs aftale (bekræftet skriftligt).
+  - Kunde-id/API-nøgle oprettes af DAO efter underskrift. daoCONNECT passer ikke til C2C.
+
 ## Betalingsmetoder (Filip, 20. okt. 2026)
 - **Tilladt:** kort (inkl. **Apple Pay** og **Google Pay**, som er wallets på kort), **MobilePay** og **Revolut Pay**.
 - **Ikke tilladt:** **Klarna**, **Link** (Stripes "gem mine oplysninger") og alt andet, Stripe slår til senere. Erstatter svaret fra 1. okt. 2026 ("de øvrige metoder må gerne være slået til").

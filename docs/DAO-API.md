@@ -10,6 +10,28 @@ notatet er planen og dokumentationens indhold, som adapteren bygger på.
 
 ---
 
+## DAO's svar (Allan, 20. okt. 2026)
+
+| Emne | Svar | Betydning for BidHamr |
+|---|---|---|
+| Erstatning | Maks. **2.500 kr. pr. pakke**. Ekstra dækning kan **ikke** tilkøbes. Undtagelser følger DAO's handelsbetingelser. | Sælgeren accepterer DAO's handelsbetingelser før første DAO-label (Filip, 20. okt. 2026 – se nedenfor). |
+| Skader og efterlysning | Anmeldes på **omdeling.info** – ikke via API'et. | `createclaim.php` bruges ikke automatisk; staff/sælger anmelder på omdeling.info. |
+| Retur | **Kan ikke oprettes via DAO's API** – daoSHOPRETURN oprettes af køber/sælger privat. | Vores retur i sager (Shop2Shop med køberen som afsender, `shopid=0`) skal afklares med DAO, før `FRAGT_RETURLABEL_AKTIV` slås til med DAO direkte. |
+| QR-koder | **Ingen QR-koder** via API'et – PDF-label og labelfri kode. Ikke faktureret, før pakken er indleveret og scannet. | Som bygget (labelfri kode + PDF). |
+| Webhooks | **Ingen webhooks** – kun statusopdateringer på forsendelsen (polling). Ingen kendt kaldgrænse. | Som bygget (token-feed i fragt-cron'en). |
+| Mange afsendere | **Bekræftet skriftligt:** mange forskellige afsendere må bruge BidHamrs aftale. | C2C på én aftale er i orden. |
+| Nøgler | Kunde-id/API-nøgle oprettes af Allan efter underskrift. daoCONNECT passer ikke til C2C. | Venter på aftalen. |
+
+**Bygget 20. okt. 2026 – accept af DAO's handelsbetingelser:** første gang en sælger laver en DAO-label (DAO direkte
+eller Shipmondo med `transportoer = 'dao'`), skal han sætte flueben ved "Jeg accepterer DAO's handelsbetingelser for
+forsendelsen" (link: https://dao.as/handelsbetingelser/ – fundet på dao.as' forside 20. okt. 2026; siden siger
+"gælder fra 1. oktober 2025"). Uden accept afviser serveren labelen før claimet (kode `dao_betingelser`, også
+`/api/fragt/app/book`). Accepten gemmes i `fragt_betingelser_accept` (sælger, fragtfirma, version, tidspunkt –
+migration `20261028010000`). Versionen står i `src/lib/fragt/betingelser.ts` (`DAO_BETINGELSER.version =
+"2025-10-01"`); ændres den, skal alle acceptere igen. Ingen advarselsboks.
+
+---
+
 ## Bygget (13. okt. 2026 – mangler nøgler)
 
 | Del | Fil | Status |

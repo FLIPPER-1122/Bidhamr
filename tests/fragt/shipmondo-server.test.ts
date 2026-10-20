@@ -13,12 +13,31 @@ let raekker: Record<string, unknown> = {};
 // Fejl pr. tabel på liste-forespørgsler (fx kolonnen findes ikke).
 let tabelFejl: Record<string, { message: string; code?: string }> = {};
 
+// Skrivninger (upsert) pr. tabel.
+const skrevet: { tabel: string; raekke: Record<string, unknown> }[] = [];
+
 function kaede(tabel: string) {
   const q: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "in", "order", "not", "or", "limit", "gte", "lt", "update", "neq"]) {
+  const filtre: Record<string, unknown> = {};
+  for (const m of ["select", "in", "order", "not", "or", "limit", "gte", "lt", "update", "neq"]) {
     q[m] = () => q;
   }
-  q.maybeSingle = async () => ({ data: raekker[tabel] ?? null, error: null });
+  q.eq = (k: string, v: unknown) => {
+    filtre[k] = v;
+    return q;
+  };
+  q.upsert = (raekke: Record<string, unknown>) => {
+    skrevet.push({ tabel, raekke });
+    return q;
+  };
+  // fragt_betingelser_accept filtreres på eq (version), så en ny version
+  // kræver en ny accept. Andre tabeller: én række pr. test.
+  const raekkeFor = () => {
+    const r = raekker[tabel] as Record<string, unknown> | undefined;
+    if (tabel !== "fragt_betingelser_accept" || !r) return r ?? null;
+    return Object.entries(filtre).every(([k, v]) => r[k] === v) ? r : null;
+  };
+  q.maybeSingle = async () => ({ data: raekkeFor(), error: null });
   q.single = async () => ({ data: raekker[tabel] ?? null, error: null });
   q.then = (ok: (v: Svar) => unknown, fejl?: (e: unknown) => unknown) =>
     Promise.resolve(
@@ -57,6 +76,7 @@ import {
 } from "@/lib/fragt/server";
 import { hentFragtfirma } from "@/lib/fragt";
 import { signerJwtHs256 } from "@/lib/fragt/shipmondo";
+import { DAO_BETINGELSER } from "@/lib/fragt/betingelser";
 import { logDriftFejl } from "@/lib/drift";
 
 const MAPPE = path.resolve(import.meta.dirname, "../../src/lib/fragt/__fixtures__/shipmondo");
@@ -71,6 +91,7 @@ beforeEach(() => {
   process.env.SHIPMONDO_API_NOEGLE = "noegle";
   process.env.SHIPMONDO_WEBHOOK_NOEGLE = WEBHOOK;
   rpcLog.length = 0;
+  skrevet.length = 0;
   raekker = {};
   tabelFejl = {};
   _nulstilMigreretCache();
@@ -339,7 +360,7 @@ describe("DAO og GLS, ingen PostNord (SHIPMONDO_TRANSPORTOERER / SHIPMONDO_POSTN
   // En label til en levering, køberen valgte og betalte, før PostNord blev
   // slået fra: labelen laves stadig med PostNord (QR + PDF).
   const FID = "00000000-0000-4000-8000-0000000000f1";
-  function forbered(transportoer: "postnord" | "gls") {
+  function forbered(transportoer: "postnord" | "gls" | "dao") {
     raekker.handel_levering = {
       maade: "pakkeshop",
       fragtfirma: "shipmondo",
@@ -394,5 +415,73 @@ describe("DAO og GLS, ingen PostNord (SHIPMONDO_TRANSPORTOERER / SHIPMONDO_POSTN
     expect(gemt?.args).toMatchObject({ p_qr_kode: null });
     expect(String(gemt?.args.p_label_sti)).toMatch(/\.pdf$/);
     expect(fns()).not.toContain("forsendelse_gem_qr");
+  });
+
+  // DAO (Filip, 20. okt. 2026): accept af DAO's handelsbetingelser før første
+  // DAO-label. GLS og PostNord kræver den ikke (testene ovenfor har ingen accept).
+  const DAO_FEJL = "Sæt flueben ved DAO's handelsbetingelser, før du laver fragtlabelen.";
+  const daoAccept = (version: string) => ({
+    bruger_id: "S1",
+    fragtfirma: "dao",
+    version,
+    accepteret_kl: "2026-10-20T10:00:00Z",
+  });
+
+  it("DAO uden accept: afvist med kode dao_betingelser, intet claim, intet kald til Shipmondo", async () => {
+    forbered("dao");
+    const r = await opretUdgaaendeForsendelse("T1", "S1", AFSENDER);
+    expect(r).toEqual({ fejl: DAO_FEJL, kode: "dao_betingelser" });
+    expect(fns()).not.toContain("forsendelse_claim");
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    expect(skrevet).toEqual([]);
+  });
+
+  it("DAO med accept i kaldet: accepten gemmes (sælger, dao, version), og labelen laves", async () => {
+    forbered("dao");
+    fetchSvar = [tomListe(), json(fx("opret_dao_pakkeshop.json"))];
+    const r = await opretUdgaaendeForsendelse("T1", "S1", AFSENDER, { accepterDaoBetingelser: true });
+    expect(r).toEqual({ ok: true, forsendelseId: FID });
+    expect(skrevet).toEqual([
+      { tabel: "fragt_betingelser_accept", raekke: { bruger_id: "S1", fragtfirma: "dao", version: DAO_BETINGELSER.version } },
+    ]);
+    expect(postBody()).toMatchObject({ product_code: "DAO_STS" });
+  });
+
+  it("DAO med en gemt accept af den aktuelle version: labelen laves uden ny accept", async () => {
+    forbered("dao");
+    raekker.fragt_betingelser_accept = daoAccept(DAO_BETINGELSER.version);
+    fetchSvar = [tomListe(), json(fx("opret_dao_pakkeshop.json"))];
+    expect(await opretUdgaaendeForsendelse("T1", "S1", AFSENDER)).toEqual({ ok: true, forsendelseId: FID });
+    expect(skrevet).toEqual([]);
+  });
+
+  it("ny version af betingelserne: en gammel accept tæller ikke", async () => {
+    forbered("dao");
+    raekker.fragt_betingelser_accept = daoAccept("2024-01-01");
+    expect(await opretUdgaaendeForsendelse("T1", "S1", AFSENDER)).toEqual({ fejl: DAO_FEJL, kode: "dao_betingelser" });
+    expect(fns()).not.toContain("forsendelse_claim");
+  });
+
+  it("DAO direkte (fragtfirma dao) kræver også accept", async () => {
+    forbered("dao");
+    raekker.handel_levering = { ...(raekker.handel_levering as object), fragtfirma: "dao", transportoer: null };
+    expect(await opretUdgaaendeForsendelse("T1", "S1", AFSENDER)).toEqual({ fejl: DAO_FEJL, kode: "dao_betingelser" });
+  });
+
+  it("kan accepten ikke læses (fx før migrationen): ingen DAO-label (fail closed)", async () => {
+    forbered("dao");
+    const fra = falskAdmin.from;
+    falskAdmin.from = (t: string) =>
+      t === "fragt_betingelser_accept"
+        ? ({ select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: { message: "relation does not exist", code: "42P01" } }) }) }) }) }) } as never)
+        : fra(t);
+    try {
+      expect(await opretUdgaaendeForsendelse("T1", "S1", AFSENDER, { accepterDaoBetingelser: true })).toEqual({
+        fejl: "Noget gik galt. Prøv igen om lidt.",
+      });
+      expect(fns()).not.toContain("forsendelse_claim");
+    } finally {
+      falskAdmin.from = fra;
+    }
   });
 });

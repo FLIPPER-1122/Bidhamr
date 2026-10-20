@@ -72,3 +72,18 @@ describe("fragtfirmaNavne (teksten på auktionssiden)", () => {
     expect(fragtfirmaNavne()).toEqual(["DAO", "GLS", "PostNord"]);
   });
 });
+
+// DAO's handelsbetingelser (Filip, 20. okt. 2026): kun DAO kræver accept.
+describe("kraeverDaoBetingelser", () => {
+  it("DAO direkte og Shipmondo med DAO (eller uden transportør)", async () => {
+    const { kraeverDaoBetingelser, DAO_BETINGELSER } = await import("@/lib/fragt/betingelser");
+    expect(kraeverDaoBetingelser("dao", null)).toBe(true);
+    expect(kraeverDaoBetingelser("shipmondo", "dao")).toBe(true);
+    expect(kraeverDaoBetingelser("shipmondo", null)).toBe(true);
+    expect(kraeverDaoBetingelser("shipmondo", "gls")).toBe(false);
+    expect(kraeverDaoBetingelser("shipmondo", "postnord")).toBe(false);
+    expect(kraeverDaoBetingelser("test", null)).toBe(false);
+    expect(kraeverDaoBetingelser(null, null)).toBe(false);
+    expect(DAO_BETINGELSER.url).toBe("https://dao.as/handelsbetingelser/");
+  });
+});

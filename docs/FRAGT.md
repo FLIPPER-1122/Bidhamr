@@ -70,7 +70,9 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    på igen ved skift tilbage), og `trades.afhentning` sættes til true, så afhentningsflowet bruges (kode ved
    afhentning, 7 dages frist, ingen sag). Samme PaymentIntent-regler som ved prisskift: en gammel PaymentIntent
    annulleres hos Stripe, før beløbet ændres (pi_forsoeg + 1). Efter betaling kan leveringsformen ikke skiftes.
-5. **Send pakke**: sælgeren udfylder sin afsenderadresse → forsendelsen oprettes hos Shipmondo med køberens
+5. **Send pakke**: (DAO: første gang sætter sælgeren flueben ved DAO's handelsbetingelser – Filip, 20. okt. 2026,
+   `src/lib/fragt/betingelser.ts`, tabellen `fragt_betingelser_accept`, app: `book` svarer `kode: "dao_betingelser"`.)
+   Sælgeren udfylder sin afsenderadresse → forsendelsen oprettes hos Shipmondo med køberens
    fragtfirma → PDF-label + labelfri: DAO's kode, PostNords QR-kode (PNG, vises på skærmen) – GLS har ingen
    labelfri udgående via Shipmondo, så dér printes PDF'en. Sælgeren tager stadig de to pakkebilleder og trykker "Send pakke"
    som i dag (labelen flytter ikke handlen). Højst 2 labels pr. handel (også annullerede) – flere kræver,

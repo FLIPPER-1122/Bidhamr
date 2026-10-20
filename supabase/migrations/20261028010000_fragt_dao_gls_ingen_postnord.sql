@@ -29,6 +29,9 @@
 -- og samme pg_get_functiondef), "ny" = efter denne migration. Andet afbryder
 -- migrationen.
 --
+-- Desuden (Filip, 20. okt. 2026): sælgeren accepterer DAO's handelsbetingelser
+-- før første DAO-forsendelse - tabellen fragt_betingelser_accept nederst.
+--
 -- Kræver 20261024020000. Idempotent (kan køres igen). Én transaktion: filen
 -- køres som én samlet forespørgsel. KØRES IKKE i produktion uden Filips "ja".
 
@@ -122,3 +125,39 @@ end $do$;
 -- sikkerheds skyld). Kun service-role.
 revoke all on function public.handel_gem_levering(uuid, uuid, jsonb, text) from public, anon, authenticated;
 grant execute on function public.handel_gem_levering(uuid, uuid, jsonb, text) to service_role;
+
+-- ===========================================================================
+-- DAO's handelsbetingelser: sælgerens accept (Filip, 20. okt. 2026)
+-- ===========================================================================
+-- Før en sælger laver sin første DAO-label (DAO direkte eller Shipmondo med
+-- transportoer = 'dao'), skal han acceptere DAO's handelsbetingelser (maks.
+-- 2.500 kr. erstatning pr. pakke, ingen tilkøb, DAO's undtagelser). Accepten
+-- gemmes én gang pr. sælger og version. Ændres versionen i koden
+-- (DAO_BETINGELSER.version i src/lib/fragt/betingelser.ts), skal han
+-- acceptere igen - de gamle rækker bliver stående som dokumentation.
+--
+--   Skrives KUN af serveren med service-role (src/lib/fragt/server.ts,
+--   opretUdgaaendeForsendelse) - versionen er serverens konstant, aldrig
+--   klientens. Brugeren kan kun læse sine egne rækker (RLS). Ingen sletning
+--   (heller ikke ved sletning af kontoen: on delete restrict - kontoen
+--   anonymiseres, rækken er dokumentation for forsendelser/handelsdata).
+create table if not exists public.fragt_betingelser_accept (
+  bruger_id      uuid        not null references public.users(id) on delete restrict,
+  fragtfirma     text        not null,
+  version        text        not null,
+  accepteret_kl  timestamptz not null default now(),
+  primary key (bruger_id, fragtfirma, version),
+  constraint fragt_betingelser_accept_fragtfirma_check check (fragtfirma in ('dao', 'gls')),
+  constraint fragt_betingelser_accept_version_check check (length(version) between 1 and 40)
+);
+
+comment on table public.fragt_betingelser_accept is
+  'Sælgerens accept af fragtfirmaets handelsbetingelser (DAO - Filip 20. okt. 2026). Én række pr. sælger, fragtfirma og version. Skrives kun af serveren (service-role).';
+
+alter table public.fragt_betingelser_accept enable row level security;
+drop policy if exists fragt_betingelser_accept_egen on public.fragt_betingelser_accept;
+create policy fragt_betingelser_accept_egen on public.fragt_betingelser_accept
+  for select to authenticated using (bruger_id = (select auth.uid()));
+revoke all on public.fragt_betingelser_accept from public, anon, authenticated;
+grant select on public.fragt_betingelser_accept to authenticated;
+grant all on public.fragt_betingelser_accept to service_role;

@@ -131,16 +131,25 @@ export async function hentForsendelserAction(tradeId: string) {
 // telefon). Udelades den (eller sendes den gamle pakkestørrelse som tekst),
 // bruges sælgerens sidst brugte afsenderadresse. Pakkestørrelsen er altid
 // auktionens.
+// accepterDaoBetingelser: fluebenet ved DAO's handelsbetingelser (kræves før
+// første DAO-label). Svaret har kode 'dao_betingelser', når det mangler.
 export async function lavFragtlabel(
   tradeId: string,
   afsender?: AdresseInput | string | null,
-): Promise<{ ok: true } | Fejl> {
+  accepterDaoBetingelser?: boolean,
+): Promise<{ ok: true } | (Fejl & { kode?: string })> {
   const u = await bruger();
   if (!u) return { fejl: "Du skal være logget ind." };
   if (!(await tjekGraenser([["fragt_handling_bruger", u.id]]))) return { fejl: FOR_MANGE_FORSOEG };
-  const r = await bookPakke(tradeId, u.id, typeof afsender === "object" ? afsender : null);
+  const r = await bookPakke(
+    tradeId,
+    u.id,
+    typeof afsender === "object" ? afsender : null,
+    accepterDaoBetingelser === true,
+  );
   genindlaes(tradeId);
-  return "fejl" in r ? { fejl: r.fejl } : { ok: true };
+  if ("fejl" in r) return r.kode ? { fejl: r.fejl, kode: r.kode } : { fejl: r.fejl };
+  return { ok: true };
 }
 
 export async function annullerFragtlabel(tradeId: string, forsendelseId: string): Promise<{ ok: true } | Fejl> {
