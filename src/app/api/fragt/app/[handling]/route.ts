@@ -4,6 +4,7 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 import { klientIp, tjekGraenser, FOR_MANGE_FORSOEG, type GraenseNavn } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
 import { indbyggetOffentligNoegle } from "@/lib/stripeNoegle";
+import { DAO_BETINGELSER, DAO_BETINGELSER_ACCEPT_TEKST, DAO_BETINGELSER_KODE } from "@/lib/fragt/betingelser";
 import {
   annullerPakke,
   bookPakke,
@@ -23,14 +24,17 @@ import {
 //   Authorization: Bearer <Supabase access token>
 //   Content-Type: application/json
 //   pakkeshops   { postnummer, adresse?, by?, antal?, transportoer?, indlevering? }
-//                transportoer: "dao" | "gls" | "postnord" (fra checkout.transportoerer)
+//                transportoer: en af checkout.transportoerer (i dag "dao" | "gls"; "postnord" kun med SHIPMONDO_POSTNORD_AKTIV)
 //   checkout     { trade_id }
 //   levering     { trade_id, maade: "pakkeshop" | "doer", transportoer?, pakkeshop_id?, pakkeshop_postnummer?,
 //                  pakkeshop_adresse?, modtager: { navn, adresse?, postnummer?, by?, telefon }, gem_forslag? }
-//                transportoer er valgfri: "dao" | "gls" | "postnord" fra checkout.transportoerer.
+//                transportoer er valgfri: en af checkout.transportoerer (i dag "dao" | "gls"). Andre: 409 afvist.
 //                Sendes den ikke, bruges DAO (standard).
 //                eller { trade_id, maade: "afhentning" } (kun når checkout.afhentningMulig)
-//   book         { trade_id, afsender?: { navn, adresse, postnummer, by, telefon? } }
+//   book         { trade_id, afsender?: { navn, adresse, postnummer, by, telefon? }, accepter_dao_betingelser? }
+//                DAO: uden accept af DAO's handelsbetingelser (første gang / ny version):
+//                409 { fejl, kode: "dao_betingelser", betingelser: { url, version, tekst } } -
+//                vis afkrydsningen med tekst og link, og send igen med accepter_dao_betingelser: true.
 //   annuller     { trade_id, forsendelse_id }
 //   forsendelser { trade_id }
 //   label        { forsendelse_id }   -> { url } (gyldig i 5 minutter)
@@ -184,8 +188,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
           gemForslag: krop.gem_forslag,
           transportoer: krop.transportoer,
         }));
-      case "book":
-        return resultat(await bookPakke(krop.trade_id, bruger.id, obj(krop.afsender)));
+      case "book": {
+        // DAO (Filip, 20. okt. 2026): accepter_dao_betingelser: true, når
+        // sælgeren har sat flueben. Mangler accepten: 409 kode
+        // "dao_betingelser" med link og tekst til afkrydsningen.
+        const r = await bookPakke(krop.trade_id, bruger.id, obj(krop.afsender), krop.accepter_dao_betingelser === true);
+        if ("fejl" in r && r.kode === DAO_BETINGELSER_KODE) {
+          return svar(409, {
+            fejl: r.fejl,
+            kode: DAO_BETINGELSER_KODE,
+            betingelser: { url: DAO_BETINGELSER.url, version: DAO_BETINGELSER.version, tekst: DAO_BETINGELSER_ACCEPT_TEKST },
+          });
+        }
+        return resultat(r);
+      }
       case "annuller":
         return resultat(await annullerPakke(krop.trade_id, krop.forsendelse_id, bruger.id));
       case "forsendelser":

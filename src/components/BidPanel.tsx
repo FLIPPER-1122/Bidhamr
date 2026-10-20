@@ -1168,7 +1168,7 @@ export default function BidPanel({
   );
 }
 
-// "Sendes med DAO eller PostNord. Du vælger, når du betaler."
+// "Sendes med DAO eller GLS. Du vælger fragtfirma og levering, når du betaler."
 function fragtTekst(firmaer: string[]): string {
   if (firmaer.length === 0) return "Du vælger levering, når du betaler.";
   if (firmaer.length === 1) return `Sendes med ${firmaer[0]}. Du vælger levering, når du betaler.`;

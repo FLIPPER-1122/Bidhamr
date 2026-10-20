@@ -27,7 +27,7 @@ import { indbyggetOffentligNoegle } from "@/lib/stripeNoegle";
 //   Authorization: Bearer <Supabase access token>
 //   Content-Type: application/json
 //   betal                    { trade_id, levering? }  -> PaymentSheet-data + saelgerNavn
-//                            levering.transportoer: "dao" | "gls" | "postnord" (valgfri)
+//                            levering.transportoer: en af checkout.transportoerer (valgfri; i dag "dao" | "gls")
 //   indstillinger            {}                       -> gemt kort + udbetalingskontoens status
 //   gem-kort                 {}                       -> SetupIntent til PaymentSheet
 //   bekraeft-kort            { setup_intent_id }
@@ -228,7 +228,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
             pakkeshopAdresse: l.pakkeshop_adresse,
             modtager: obj(l.modtager),
             gemForslag: l.gem_forslag,
-            // Valgfri ("dao" | "gls" | "postnord" fra checkout.transportoerer) -
+            // Valgfri (en af checkout.transportoerer, i dag "dao" | "gls") -
             // som /api/fragt/app/levering. Udeladt = DAO.
             ...(l.transportoer !== undefined ? { transportoer: l.transportoer } : {}),
           });

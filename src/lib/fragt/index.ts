@@ -9,8 +9,9 @@ import "server-only";
 //   - Tom i produktion: "ikke sat op" - alle kald fejler pænt med
 //     "Fragt er ikke sat op endnu." (ingen falske labels).
 //   - "test" i produktion: kun hvis det er sat eksplicit.
-//   - "shipmondo": standard i produktion (Filip, 15. okt. 2026) - DAO, GLS og
-//     PostNord via Shipmondo, køberen vælger selv (shipmondo.ts). Sættes
+//   - "shipmondo": standard i produktion (Filip, 15. okt. 2026) - DAO og GLS
+//     via Shipmondo (PostNord kun med SHIPMONDO_POSTNORD_AKTIV=true - Filip,
+//     20. okt. 2026), køberen vælger selv (shipmondo.ts). Sættes
 //     eksplicit i Vercel (HUSKELISTE.md), så fragt aldrig slås til af sig selv.
 //   - "dao": DAO direkte (dao.ts). Kræver DAO_KUNDEID og DAO_KODE - mangler de,
 //     fejler kaldene pænt med "Fragt er ikke sat op endnu.". Bliver liggende.
@@ -131,8 +132,9 @@ export function hentFragtfirma(): Fragtfirma {
 }
 
 // Navnene på de fragtfirmaer, køberen kan sende med nu (til teksten på
-// auktionssiden), fx ["DAO", "PostNord"]. Shipmondo: de transportører, der
-// kan vælges i checkout (GLS kun med SHIPMONDO_GLS_AKTIV). DAO/GLS direkte:
+// auktionssiden), fx ["DAO", "GLS"] -> "DAO eller GLS". Shipmondo: de
+// transportører, der kan vælges i checkout (standard DAO og GLS; PostNord kun
+// med SHIPMONDO_POSTNORD_AKTIV=true - Filip, 20. okt. 2026). DAO/GLS direkte:
 // det ene firma. Testfragt eller ikke sat op: ingen navne.
 export function fragtfirmaNavne(): string[] {
   if (!fragtErSatOp()) return [];

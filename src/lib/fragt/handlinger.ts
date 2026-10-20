@@ -312,11 +312,14 @@ async function afsenderForslag(brugerId: string): Promise<AdresseInput | null> {
 
 // "Send pakke": opretter fragtlabelen hos fragtfirmaet. Uden afsender bruges
 // sælgerens sidst brugte afsenderadresse.
+// accepterDaoBetingelser: sælgeren har sat flueben ved DAO's
+// handelsbetingelser (kræves før første DAO-label - src/lib/fragt/betingelser.ts).
 export async function bookPakke(
   tradeId: unknown,
   brugerId: string,
   afsender: AdresseInput | null | undefined,
-): Promise<{ ok: true; forsendelseId: string } | Fejl> {
+  accepterDaoBetingelser = false,
+): Promise<{ ok: true; forsendelseId: string } | (Fejl & { kode?: string })> {
   if (!fragtLabelsAktiv()) return { fejl: IKKE_AKTIV };
   const h = await hentHandel(tradeId, brugerId);
   if (!h) return { fejl: "Handlen findes ikke." };
@@ -327,7 +330,7 @@ export async function bookPakke(
   }
   const afs = afsender && typeof afsender === "object" ? afsender : await afsenderForslag(brugerId);
   if (!afs) return { fejl: "Udfyld din adresse, før du laver fragtlabelen." };
-  return opretUdgaaendeForsendelse(h.id, brugerId, afs);
+  return opretUdgaaendeForsendelse(h.id, brugerId, afs, { accepterDaoBetingelser });
 }
 
 export async function annullerPakke(

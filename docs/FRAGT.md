@@ -1,20 +1,37 @@
-# Fragt – Shipmondo (DAO, GLS og PostNord) eller DAO direkte
+# Fragt – Shipmondo (DAO og GLS; PostNord slået fra) eller DAO direkte
 
 > **Shipmondo igen (Filip, 15. okt. 2026, `FRAGTFIRMA=shipmondo`):** køberen vælger selv fragtfirma i
-> checkout – **DAO, GLS eller PostNord** – til pakkeshop eller døren. Prisen er den samme for alle tre (låst på
+> checkout – **DAO, GLS eller PostNord** (fra 20. okt. 2026 kun **DAO og GLS**, se herunder) – til pakkeshop eller
+> døren. Prisen er den samme for alle (låst på
 > auktionen). Migration `20261024010000_fragt_shipmondo_transportoer.sql` (kolonnen `transportoer`). Se afsnittet
 > **"Shipmondo (verificeret mod sandboxen 9. og 15. okt. 2026)"** nederst for produkter, labelfri, annullering,
 > sporing og retur pr. fragtfirma.
 >
-> **GLS er slået fra, indtil Shipmondo har svaret** (Filip, 15. okt. 2026): GLS kan ikke sendes labelfrit via
-> Shipmondo i dag. **Slå til med `SHIPMONDO_GLS_AKTIV=true`** (alt andet = fra; fail closed). Uden flaget:
-> GLS vises ikke i `checkout.transportoerer` (hjemmesiden og appen), pakkeshop-søgning og `levering`/`betal`
-> med `transportoer: "gls"` afvises med "GLS kan ikke vælges lige nu. Vælg DAO eller PostNord.", og
-> `handel_gem_levering` afviser GLS med koden `gls_lukket`, medmindre serveren sender `gls_aktiv: true`
-> (migration `20261024020000_fragt_gls_slaaet_fra.sql`). En GLS-levering, der blev gemt før, men ikke er betalt,
-> afvises ved betaling (`sikrPaymentIntent`, også `/api/betaling/app/betal`) med samme tekst og `kode: "vaelg_levering"`,
-> så køberen vælger levering igen (medmindre labelen allerede er lavet). Forsendelser, der allerede er lavet med GLS
-> (labels, sporing, webhooks og retur), virker videre – også søgning efter indleveringssteder til retur.
+> **Kun DAO og GLS – ingen PostNord** (Filip, 20. okt. 2026; erstatter "GLS slået fra" fra 15. okt.): GLS er slået
+> til med **printet PDF-label** (GLS ShopDelivery/PrivateDelivery – GLS har ingen labelfri udgående via Shipmondo).
+> Checkout siger "Sælger printer label" på GLS-kortet og "Med GLS skal sælgeren printe en label …" under valget;
+> sælgerens label-side siger, at labelen skal printes. **PostNord er slået fra.** Én liste over tilladte
+> fragtfirmaer (`tilladteTransportoerer` i `src/lib/fragt/types.ts`, brugt via `shipmondoTransportoerer()`):
+>
+> | Env | Betydning |
+> |---|---|
+> | `SHIPMONDO_TRANSPORTOERER` | kommasepareret liste; tom/ukendt = standard **`dao,gls`** |
+> | `SHIPMONDO_POSTNORD_AKTIV=true` | PostNord kan vælges igen (alt andet = fra; fail closed) |
+> | `SHIPMONDO_GLS_AKTIV` | erstattet – `true` virker stadig (no-op), alt andet ignoreres |
+>
+> Uden PostNord i listen: PostNord vises ikke i `checkout.transportoerer` (hjemmesiden og appen), pakkeshop-søgning
+> og `levering`/`betal` med `transportoer: "postnord"` afvises med "PostNord kan ikke vælges lige nu. Vælg DAO eller
+> GLS.", og `handel_gem_levering` afviser alt uden for serverens liste `p_valg->'tilladte'` med koden
+> `transportoer_lukket` (migration `20261028010000_fragt_dao_gls_ingen_postnord.sql`; uden listen – gammel kode under
+> deploy – gælder `dao,gls`). En PostNord-levering, der blev gemt før, men ikke er betalt, afvises ved betaling
+> (`sikrPaymentIntent`, også `/api/betaling/app/betal`) med samme tekst og `kode: "vaelg_levering"`, så køberen vælger
+> levering igen (medmindre labelen allerede er lavet). Forsendelser, der allerede er lavet med PostNord – og betalte
+> PostNord-leveringer uden label endnu – virker videre (labels, QR, sporing, webhooks, retur og søgning efter
+> indleveringssteder til retur).
+>
+> **GLS-retur er uændret:** `GLSDK_SR` (ShopReturn) med QR til sælgerens adresse – køberen behøver ikke printer; afviser
+> Shipmondo/GLS den (422), bruges `GLSDK_SD` til en GLS-pakkeshop nær sælgeren med **printet** label. Køberen ser
+> det i ReturlabelBoks. Mangler stadig: Shipmondos svar på, om ShopReturn må bruges til private sælgere (HUSKELISTE).
 
 Server-delen af fragten (ROADMAP fase 2). Beslutninger: ROADMAP-BESLUTNINGER.md afsnit 2
 ("Fragtfirma og priser", Filip 9. okt. 2026). Migrationer: `supabase/migrations/20261012010000_fragt_dao_shipmondo.sql`
@@ -53,7 +70,9 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    på igen ved skift tilbage), og `trades.afhentning` sættes til true, så afhentningsflowet bruges (kode ved
    afhentning, 7 dages frist, ingen sag). Samme PaymentIntent-regler som ved prisskift: en gammel PaymentIntent
    annulleres hos Stripe, før beløbet ændres (pi_forsoeg + 1). Efter betaling kan leveringsformen ikke skiftes.
-5. **Send pakke**: sælgeren udfylder sin afsenderadresse → forsendelsen oprettes hos Shipmondo med køberens
+5. **Send pakke**: (DAO: første gang sætter sælgeren flueben ved DAO's handelsbetingelser – Filip, 20. okt. 2026,
+   `src/lib/fragt/betingelser.ts`, tabellen `fragt_betingelser_accept`, app: `book` svarer `kode: "dao_betingelser"`.)
+   Sælgeren udfylder sin afsenderadresse → forsendelsen oprettes hos Shipmondo med køberens
    fragtfirma → PDF-label + labelfri: DAO's kode, PostNords QR-kode (PNG, vises på skærmen) – GLS har ingen
    labelfri udgående via Shipmondo, så dér printes PDF'en. Sælgeren tager stadig de to pakkebilleder og trykker "Send pakke"
    som i dag (labelen flytter ikke handlen). Højst 2 labels pr. handel (også annullerede) – flere kræver,
@@ -193,9 +212,10 @@ Direkte fra Supabase i appen (med brugerens session):
 - Fragtfirma (Shipmondo): `checkout.transportoerer` fra `POST /api/fragt/app/checkout`. Køberen vælger ét
   (`transportoer` = `"dao" | "gls" | "postnord"`); pakkeshop-søgningen og `levering` sendes med samme
   `transportoer`. Sendes den ikke, bruges DAO (ældre app). Pakkeshop-id'er gælder kun hos deres eget fragtfirma.
-  Vis kun de firmaer, der står i `checkout.transportoerer` – **GLS er slået fra, indtil Shipmondo har svaret**
-  (`SHIPMONDO_GLS_AKTIV=true` slår det til), og GLS giver ellers `409 { fejl, kode: "afvist" }`
-  (`/api/betaling/app/betal` med levering: `kode: "levering"`).
+  Vis kun de firmaer, der står i `checkout.transportoerer` – **i dag DAO og GLS; PostNord er slået fra**
+  (`SHIPMONDO_POSTNORD_AKTIV=true` slår den til), og PostNord giver ellers `409 { fejl, kode: "afvist" }`
+  (`/api/betaling/app/betal` med levering: `kode: "levering"`). GLS har `labelfri: false` – vis, at sælgeren
+  skal printe en label.
 - Checkout-overblik: `supabase.rpc("handel_checkout", { p_trade })` (kun køberen) →
   `{ afhentning, kun_afhentning, afhentning_mulig, pakkeshop_oere, doer_oere, beskyttelse_ved_forsendelse_oere, valgt, betaling, label_lavet }`.
   `afhentning` = afhentning er valgt (eller eneste mulighed); `kun_afhentning` = intet valg; `afhentning_mulig` = vis
@@ -261,8 +281,9 @@ Pr. fragtfirma (sandbox 15. okt. 2026 – oprettet med BidHamrs adapter og annul
 - **Shipmondos leveret frigiver ikke pengene efter 14 dage**, før `SHIPMONDO_LEVERET_FRIGIVER=true`
   (`forsendelser.leveret_frigiver`, sat ved oprettelsen; `handel_auto_frigiv` kræver den). Købers "modtaget" er uændret.
 - Køberens fragtfirma: mangler det (gammel kode, appen), bruges DAO.
-- **GLS er slået fra, indtil Shipmondo har svaret. Slå til med `SHIPMONDO_GLS_AKTIV=true`** (se øverst).
-  Migrationen `20261024020000_fragt_gls_slaaet_fra.sql` (databasens værn) skal køres efter `20261024010000`.
+- **Kun DAO og GLS (GLS med printet label), PostNord slået fra – `SHIPMONDO_POSTNORD_AKTIV=true` slår den til**
+  (se øverst). Migrationerne `20261024020000_fragt_gls_slaaet_fra.sql` og derefter
+  `20261028010000_fragt_dao_gls_ingen_postnord.sql` (databasens værn) skal køres efter `20261024010000`.
 - **Migrationen `20261024010000` skal køres, FØR `FRAGTFIRMA=shipmondo` sættes.** Uden den nægter koden Shipmondo
   (fragt "ikke sat op", ingen labels) - ellers ville den gamle `handel_auto_frigiv` lade Shipmondos "leveret"
   frigive penge efter 14 dage. Den gamle kode virker efter migrationen (alt bliver DAO).
