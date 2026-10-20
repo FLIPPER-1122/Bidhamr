@@ -21,7 +21,7 @@ const MIGRATION = laes("../../supabase/migrations/20261028010000_fragt_dao_gls_i
 const FOER = laes("fixtures/handel_gem_levering_20261024020000.sql");
 
 const STUB = `
-create role anon; create role authenticated; create role service_role;
+create role anon; create role authenticated; create role service_role bypassrls; -- som i Supabase
 create schema auth;
 create function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
@@ -65,7 +65,7 @@ beforeAll(async () => {
   await db.exec(MIGRATION);
   await db.exec(`insert into public.users (id) values ('${SAELGER}'), ('${ANDEN}');
     insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values
-      ('${SAELGER}', 'dao', '2025-10-01'), ('${ANDEN}', 'dao', '2025-10-01');`);
+      ('${SAELGER}', 'dao', '2025-10-21'), ('${ANDEN}', 'dao', '2025-10-21');`);
 });
 
 afterAll(async () => {
@@ -153,7 +153,7 @@ describe("DAO og GLS, ingen PostNord (20261028010000)", () => {
 
   it("fragt_betingelser_accept: én række pr. sælger, fragtfirma og version; kun dao/gls", async () => {
     await expect(
-      db.query("insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values ($1, 'dao', '2025-10-01')", [SAELGER]),
+      db.query("insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values ($1, 'dao', '2025-10-21')", [SAELGER]),
     ).rejects.toThrow(/duplicate key/);
     await expect(
       db.query("insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values ($1, 'postnord', 'x')", [SAELGER]),
@@ -162,6 +162,32 @@ describe("DAO og GLS, ingen PostNord (20261028010000)", () => {
     await db.query("insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values ($1, 'dao', '2026-01-01')", [SAELGER]);
     const r = await db.query<{ n: number }>("select count(*)::int n from public.fragt_betingelser_accept where bruger_id = $1", [SAELGER]);
     expect(r.rows[0].n).toBe(2);
+  });
+
+  it("fragt_betingelser_accept kan aldrig ændres eller slettes - heller ikke af ejeren eller service_role", async () => {
+    await expect(db.query("update public.fragt_betingelser_accept set version = 'x'")).rejects.toThrow(/kan ikke ændres eller slettes/);
+    await expect(db.query("delete from public.fragt_betingelser_accept")).rejects.toThrow(/kan ikke ændres eller slettes/);
+    await expect(db.query("truncate public.fragt_betingelser_accept")).rejects.toThrow(/kan ikke ændres eller slettes/);
+    await db.exec("set role service_role");
+    try {
+      // Serverens upsert (ignoreDuplicates = on conflict do nothing) virker - også ved dobbeltklik.
+      for (let i = 0; i < 2; i++) {
+        await db.query(
+          "insert into public.fragt_betingelser_accept (bruger_id, fragtfirma, version) values ($1, 'dao', '2026-02-02') on conflict (bruger_id, fragtfirma, version) do nothing",
+          [ANDEN],
+        );
+      }
+      await expect(db.query("update public.fragt_betingelser_accept set version = 'x'")).rejects.toThrow(/permission denied/);
+      await expect(db.query("delete from public.fragt_betingelser_accept")).rejects.toThrow(/permission denied/);
+      await expect(db.query("truncate public.fragt_betingelser_accept")).rejects.toThrow(/permission denied/);
+    } finally {
+      await db.exec("reset role");
+    }
+    const r = await db.query<{ n: number }>(
+      "select count(*)::int n from public.fragt_betingelser_accept where bruger_id = $1 and version = '2026-02-02'",
+      [ANDEN],
+    );
+    expect(r.rows[0].n).toBe(1);
   });
 
   it("en funktion, der er hverken gammel eller ny, afbryder migrationen", async () => {

@@ -1049,7 +1049,7 @@ function FirmaKort({
       </span>
       <span className="shrink-0 text-right text-[13px] text-tekst-daempet sm:text-left">
         <span className="block">{leveringstid}</span>
-        <span className="block">{labelfri ? "Sælger behøver ikke printer" : "Sælger printer label"}</span>
+        <span className="block">{labelfri ? "Sælger skal ikke printe" : "Sælger printer label"}</span>
         <span className="block font-semibold text-tekst tabular-nums">{pris}</span>
       </span>
     </label>

@@ -494,7 +494,7 @@ Indsnævrer "Intet to-trins-login" fra 7. okt. 2026: **brugere har stadig intet 
 ## DAO (Filip, 20. okt. 2026)
 - **DAO: sælgeren accepterer DAO's handelsbetingelser (maks. 2.500 kr. erstatning, ingen tilkøb) før første DAO-forsendelse – ingen ekstra advarsel (Filip, 20. okt. 2026).**
   - Første gang en sælger laver en DAO-label (DAO direkte eller Shipmondo med DAO), viser label-siden en afkrydsning: "Jeg accepterer DAO's handelsbetingelser for forsendelsen" med link til https://dao.as/handelsbetingelser/. Labelen kan ikke laves uden accept – på hjemmesiden og i appen (`/api/fragt/app/book` svarer `409 kode: "dao_betingelser"`, appen sender `accepter_dao_betingelser: true`). Ingen advarselsboks.
-  - Accepten gemmes én gang pr. sælger med tidspunkt og version (`fragt_betingelser_accept`, migration `20261028010000`). Versionen er en konstant i koden (`DAO_BETINGELSER.version` i `src/lib/fragt/betingelser.ts`, i dag `2025-10-01` = "gælder fra 1. oktober 2025" på dao.as). Ændres den, skal alle sælgere acceptere igen. Kun brugeren selv kan læse sin accept; kun serveren skriver.
+  - Accepten gemmes én gang pr. sælger med tidspunkt og version (`fragt_betingelser_accept`, migration `20261028010000`). Versionen er en konstant i koden (`DAO_BETINGELSER.version` i `src/lib/fragt/betingelser.ts`, i dag `2025-10-21` = "træder i kraft 21. oktober 2025" på dao.as). Ændres den, skal alle sælgere acceptere igen. Kun brugeren selv kan læse sin accept; kun serveren skriver.
   - Gælder ikke GLS og PostNord. GLS kan tilføjes som én post i `betingelser.ts`, når Filip siger til.
 - **DAO's svar (Allan, 20. okt. 2026):**
   - Maks. erstatning **2.500 kr. pr. pakke**; ekstra dækning kan **ikke** tilkøbes; undtagelser følger DAO's handelsbetingelser.

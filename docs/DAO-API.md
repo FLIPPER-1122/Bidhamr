@@ -25,10 +25,10 @@ notatet er planen og dokumentationens indhold, som adapteren bygger på.
 **Bygget 20. okt. 2026 – accept af DAO's handelsbetingelser:** første gang en sælger laver en DAO-label (DAO direkte
 eller Shipmondo med `transportoer = 'dao'`), skal han sætte flueben ved "Jeg accepterer DAO's handelsbetingelser for
 forsendelsen" (link: https://dao.as/handelsbetingelser/ – fundet på dao.as' forside 20. okt. 2026; siden siger
-"gælder fra 1. oktober 2025"). Uden accept afviser serveren labelen før claimet (kode `dao_betingelser`, også
+"træder i kraft 21. oktober 2025"). Uden accept afviser serveren labelen før claimet (kode `dao_betingelser`, også
 `/api/fragt/app/book`). Accepten gemmes i `fragt_betingelser_accept` (sælger, fragtfirma, version, tidspunkt –
 migration `20261028010000`). Versionen står i `src/lib/fragt/betingelser.ts` (`DAO_BETINGELSER.version =
-"2025-10-01"`); ændres den, skal alle acceptere igen. Ingen advarselsboks.
+"2025-10-21"`); ændres den, skal alle acceptere igen. Ingen advarselsboks.
 
 ---
 

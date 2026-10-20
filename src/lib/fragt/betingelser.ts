@@ -18,18 +18,18 @@ export type FragtBetingelser = {
   navn: string;
   // Link til betingelserne (åbnes i en ny fane).
   url: string;
-  // Betingelsernes version (DAO: "gælder fra 1. oktober 2025").
+  // Betingelsernes version (DAO: "træder i kraft 21. oktober 2025").
   version: string;
 };
 
 // Fundet på dao.as 20. okt. 2026 (forsidens link "Handelsbetingelser";
-// siden siger, at betingelserne gælder fra 1. oktober 2025 for både privat-
+// siden siger, at betingelserne træder i kraft 21. oktober 2025 og gælder for både privat-
 // og erhvervskunder).
 export const DAO_BETINGELSER: FragtBetingelser = {
   fragtfirma: "dao",
   navn: "DAO",
   url: "https://dao.as/handelsbetingelser/",
-  version: "2025-10-01",
+  version: "2025-10-21",
 };
 
 // Fejlkoden til appen (/api/fragt/app/book svarer 409 { fejl, kode }).

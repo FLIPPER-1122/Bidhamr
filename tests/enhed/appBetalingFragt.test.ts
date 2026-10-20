@@ -113,7 +113,7 @@ describe("/api/fragt/app/book og DAO's handelsbetingelser", () => {
       kode: "dao_betingelser",
       betingelser: {
         url: "https://dao.as/handelsbetingelser/",
-        version: "2025-10-01",
+        version: "2025-10-21",
         tekst: "Jeg accepterer DAO's handelsbetingelser for forsendelsen",
       },
     });

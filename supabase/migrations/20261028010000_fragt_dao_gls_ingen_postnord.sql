@@ -138,9 +138,10 @@ grant execute on function public.handel_gem_levering(uuid, uuid, jsonb, text) to
 --
 --   Skrives KUN af serveren med service-role (src/lib/fragt/server.ts,
 --   opretUdgaaendeForsendelse) - versionen er serverens konstant, aldrig
---   klientens. Brugeren kan kun læse sine egne rækker (RLS). Ingen sletning
---   (heller ikke ved sletning af kontoen: on delete restrict - kontoen
---   anonymiseres, rækken er dokumentation for forsendelser/handelsdata).
+--   klientens. Brugeren kan kun læse sine egne rækker (RLS). Rækker kan
+--   aldrig ændres eller slettes (trigger + truncate-værn, og service_role har
+--   kun select/insert) - heller ikke ved sletning af kontoen (on delete
+--   restrict - kontoen anonymiseres, rækken er dokumentation).
 create table if not exists public.fragt_betingelser_accept (
   bruger_id      uuid        not null references public.users(id) on delete restrict,
   fragtfirma     text        not null,
@@ -158,6 +159,35 @@ alter table public.fragt_betingelser_accept enable row level security;
 drop policy if exists fragt_betingelser_accept_egen on public.fragt_betingelser_accept;
 create policy fragt_betingelser_accept_egen on public.fragt_betingelser_accept
   for select to authenticated using (bruger_id = (select auth.uid()));
-revoke all on public.fragt_betingelser_accept from public, anon, authenticated;
+revoke all on public.fragt_betingelser_accept from public, anon, authenticated, service_role;
 grant select on public.fragt_betingelser_accept to authenticated;
-grant all on public.fragt_betingelser_accept to service_role;
+-- Serveren læser og indsætter kun (upsert med ignoreDuplicates = insert ...
+-- on conflict do nothing - ingen update).
+grant select, insert on public.fragt_betingelser_accept to service_role;
+
+-- Værn i bunden: en accept er dokumentation og kan aldrig ændres eller
+-- slettes - heller ikke af service_role (mønstret fra staff_beskeder,
+-- 20261003000000). Truncate afvises også.
+create or replace function public.fragt_betingelser_accept_ingen_aendring()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $fn$
+begin
+  raise exception 'Accept af fragtfirmaets handelsbetingelser kan ikke ændres eller slettes.'
+    using errcode = '42501';
+end;
+$fn$;
+
+revoke execute on function public.fragt_betingelser_accept_ingen_aendring() from public, anon, authenticated;
+
+drop trigger if exists fragt_betingelser_accept_ingen_aendring on public.fragt_betingelser_accept;
+create trigger fragt_betingelser_accept_ingen_aendring
+  before update or delete on public.fragt_betingelser_accept
+  for each row execute function public.fragt_betingelser_accept_ingen_aendring();
+
+drop trigger if exists fragt_betingelser_accept_ingen_truncate on public.fragt_betingelser_accept;
+create trigger fragt_betingelser_accept_ingen_truncate
+  before truncate on public.fragt_betingelser_accept
+  for each statement execute function public.fragt_betingelser_accept_ingen_aendring();

@@ -1041,6 +1041,18 @@ export async function opretUdgaaendeForsendelse(
       if (harValg && transportoer !== (erTransportoer(lev.transportoer) ? lev.transportoer : "dao")) {
         throw new FragtFejl("Køberens levering er ændret. Prøv igen.");
       }
+      // DAO's handelsbetingelser igen ud fra det låste valg: køberen kan have
+      // skiftet fx GLS -> DAO mellem tjekket før claimet og claimet. Uden
+      // accept (eller kan den ikke læses): FragtFejl - intet er bestilt.
+      if (kraeverDaoBetingelser(lev.fragtfirma, lev.transportoer)) {
+        let accepteret: boolean;
+        try {
+          accepteret = await harAccepteretDaoBetingelser(admin, saelgerId);
+        } catch (err) {
+          throw new FragtFejl(GENERISK_FEJL, renFejltekst(err, 300));
+        }
+        if (!accepteret) throw new FragtFejl(DAO_BETINGELSER_FEJL);
+      }
       const { titel, vaegtGram } = await vaegtOgTitel(admin, tradeId);
       return {
         reference: id,

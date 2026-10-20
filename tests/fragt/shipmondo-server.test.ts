@@ -28,12 +28,15 @@ function kaede(tabel: string) {
   };
   q.upsert = (raekke: Record<string, unknown>) => {
     skrevet.push({ tabel, raekke });
+    raekker[tabel] ??= raekke;
     return q;
   };
   // fragt_betingelser_accept filtreres på eq (version), så en ny version
   // kræver en ny accept. Andre tabeller: én række pr. test.
   const raekkeFor = () => {
-    const r = raekker[tabel] as Record<string, unknown> | undefined;
+    // En funktion giver en ny række ved hvert opslag (fx et valg, der ændres).
+    const v = raekker[tabel];
+    const r = (typeof v === "function" ? v() : v) as Record<string, unknown> | undefined;
     if (tabel !== "fragt_betingelser_accept" || !r) return r ?? null;
     return Object.entries(filtre).every(([k, v]) => r[k] === v) ? r : null;
   };
@@ -460,6 +463,21 @@ describe("DAO og GLS, ingen PostNord (SHIPMONDO_TRANSPORTOERER / SHIPMONDO_POSTN
     raekker.fragt_betingelser_accept = daoAccept("2024-01-01");
     expect(await opretUdgaaendeForsendelse("T1", "S1", AFSENDER)).toEqual({ fejl: DAO_FEJL, kode: "dao_betingelser" });
     expect(fns()).not.toContain("forsendelse_claim");
+  });
+
+  it("køberen skifter GLS -> DAO mellem tjekket og claimet: ingen label uden accept (claimet markeres fejlet)", async () => {
+    forbered("gls");
+    const gls = raekker.handel_levering as Record<string, unknown>;
+    let opslag = 0;
+    // 1. opslag (før claimet): GLS. Derefter (låst efter claimet): DAO.
+    raekker.handel_levering = () => (++opslag === 1 ? gls : { ...gls, transportoer: "dao", pakkeshop_id: "29280" });
+    raekker.forsendelser = { id: FID, transportoer: "dao" };
+    const r = await opretUdgaaendeForsendelse("T1", "S1", AFSENDER);
+    expect(r).toEqual({ fejl: DAO_FEJL });
+    expect(fns()).toContain("forsendelse_claim");
+    expect(rpcLog.find((x) => x.fn === "forsendelse_marker_fejlet")?.args).toMatchObject({ p_id: FID });
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    expect(opslag).toBe(2);
   });
 
   it("DAO direkte (fragtfirma dao) kræver også accept", async () => {
