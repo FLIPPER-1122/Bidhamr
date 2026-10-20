@@ -19,6 +19,15 @@ Lokalt prod-build med prods CSP virker, så fejlen ligger med stor sandsynlighed
 - Efter deploy af den nye kode: mangler nøglen stadig, viser **/admin** en rød lampe ("Den offentlige Stripe-nøgle mangler i buildet") og **/admin/drift** en fejl. Siden viser "Betalingsformularen kunne ikke indlæses …" i stedet for en grå knap, og der laves ingen betaling.
 - Rammer det også checkout? Ja, samme loader. Test et køb i checkout, når boost virker.
 
+## Betalingsmetoder: kort, MobilePay og Revolut Pay – ingen Klarna og Link (20. okt. 2026)
+- **Giv eksisterende sælgerkonti Revolut Pay i produktion (dit "ja").** Kør først en prøvekørsel, der ikke ændrer noget, og derefter den rigtige kørsel:
+  ```
+  node scripts/betalingsmodel-backfill.mts --env .env.production.local --produktion
+  node scripts/betalingsmodel-backfill.mts --env .env.production.local --produktion --udfoer
+  ```
+  Scriptet anmoder om `revolut_pay_payments` på de konti, der mangler den, og rører ikke andet, der allerede er sat op. Det er kørt på testdatabasen 20. okt. 2026: 5 konti fik capability'en, og de aktive konti var stadig aktive bagefter. Uden kørslen ser købere hos de sælgere bare ikke Revolut Pay i checkout (kort, Apple Pay, Google Pay og MobilePay virker som før).
+- Før live (fase 6): slå MobilePay og Revolut Pay til i Stripe-dashboardet for platformen og under Connect → Payment methods (docs/GO-LIVE-STRIPE.md E1). Er de ikke slået til, viser boost og returfragt kun kort, Apple Pay og Google Pay.
+
 ## Boost-pakker (`20261026010000_boost_pakker.sql`)
 - **Kør migrationen i produktion (dit "ja").** Den er kørt to gange på testdatabasen. Den forudsætter `20261025010000_app_endpoints.sql` (min_auktion_boost med "kunst_kontrol" – md5'en i prod er allerede den udgave). Rækkefølgen af migration og deploy er ligegyldig: den gamle kode og appen køber 100-point-pakken som før, og den nye kode viser kun én pakke, indtil migrationen er kørt.
 - Test på hjemmesiden: Min konto → Boost-point → vælg 300 eller 700 point → "Køb … " → betal med 4242 4242 4242 4242.

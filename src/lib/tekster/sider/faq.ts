@@ -62,7 +62,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvordan kan jeg betale?",
-          svar: "Når du har vundet, går du til betalingssiden. Her vælger du levering, ser den samlede pris og betaler med kort, MobilePay, Revolut Pay, Apple Pay eller Google Pay. Du betaler altid selv – vi trækker aldrig penge automatisk, heller ikke hvis du har gemt et kort.",
+          svar: "Når du har vundet, går du til betalingssiden. Her vælger du levering, ser den samlede pris og betaler med kort, Apple Pay, Google Pay og – afhængigt af sælgeren – MobilePay eller Revolut Pay. Du betaler altid selv – vi trækker aldrig penge automatisk, heller ikke hvis du har gemt et kort.",
         },
         {
           spoergsmaal: "Kan jeg gemme mit kort og min adresse?",

@@ -50,7 +50,21 @@ function nyPi(params: Record<string, unknown>): Pi {
   return pi;
 }
 
+// Platformens standard-konfiguration (hvad der er slået til hos Stripe).
+const platform: Record<string, { available: boolean }> = {};
+// Simulerer en webhook (payment_intent.canceled), der nulstiller rækken,
+// mens BidHamr annullerer.
+let webhookVedAnnullering: (() => void) | null = null;
+
 const falskStripe = {
+  paymentMethodConfigurations: {
+    list: async () => ({
+      data: [
+        { id: "pmc_barn", is_default: false, parent: "pmc_x", application: null, mobilepay: { available: true } },
+        { id: "pmc_std", is_default: true, parent: null, application: null, ...platform },
+      ],
+    }),
+  },
   paymentIntents: {
     create: async (params: Record<string, unknown>, opt?: { idempotencyKey?: string }) => {
       kald.push({ navn: "create", params, noegle: opt?.idempotencyKey });
@@ -88,6 +102,7 @@ const falskStripe = {
       const pi = pis.get(id)!;
       if (pi.status === "succeeded") throw new Error("kan ikke annulleres");
       pi.status = "canceled";
+      webhookVedAnnullering?.();
       return { ...pi };
     },
   },
@@ -187,10 +202,21 @@ vi.mock("next/server", () => ({ after: () => {} }));
 const { startBoostKoeb } = await import("@/lib/betaling/boost");
 const { startReturfragtBetaling } = await import("@/lib/betaling/returfragt");
 const { BETALINGSMETODER } = await import("@/lib/betaling/betalingsmetoder");
+const { nulstilPlatformMetoderCache } = await import("@/lib/betaling/platformMetoder");
 
 const TILLADTE = ["card", "mobilepay", "revolut_pay"];
 
 beforeEach(() => {
+  nulstilPlatformMetoderCache();
+  for (const k of Object.keys(platform)) delete platform[k];
+  Object.assign(platform, {
+    card: { available: true },
+    mobilepay: { available: true },
+    revolut_pay: { available: true },
+    klarna: { available: true },
+    link: { available: true },
+  });
+  webhookVedAnnullering = null;
   pis.clear();
   kald.length = 0;
   brugteNoegler.clear();
@@ -306,6 +332,39 @@ for (const f of flows) {
       brugteNoegler.set(`bidhamr-${f.navn}-${id}-0-testdb`, JSON.stringify({ automatic_payment_methods: { enabled: true } }));
       const svar = await f.start();
       expect("ok" in svar && svar.ok).toBe(true);
+    });
+
+    it("Revolut Pay ikke slået til på platformen: udelades (kort altid med), og betalingen kan stadig startes", async () => {
+      platform.revolut_pay = { available: false };
+      const svar = await f.start();
+      expect("ok" in svar && svar.ok).toBe(true);
+      const c = kald.filter((k) => k.navn === "create");
+      expect(c[0].params!.payment_method_types).toEqual(["card", "mobilepay"]);
+      expect(c[0].noegle).toMatch(/-m-card\.mobilepay$/);
+    });
+
+    it("intet slået til ud over kort (eller konfigurationen fejler): kun kort", async () => {
+      platform.mobilepay = { available: false };
+      platform.revolut_pay = { available: false };
+      await f.start();
+      expect(kald.find((k) => k.navn === "create")!.params!.payment_method_types).toEqual(["card"]);
+    });
+
+    it("webhooken nulstiller rækken under annulleringen: rækken hentes igen, og der laves en ny uden fejl", async () => {
+      const id = f.navn === "boost" ? "koeb-1" : "rf-1";
+      const r = raekke(f.tabel, id);
+      const gammel = nyPi({ amount: r.beloeb_oere, customer: "cus_test", automatic_payment_methods: { enabled: true } });
+      r.stripe_payment_intent_id = gammel.id;
+      webhookVedAnnullering = () => {
+        // Som boost_koeb_registrer / returfragt_registrer ved 'canceled'.
+        r.stripe_payment_intent_id = null;
+        r.pi_forsoeg = Number(r.pi_forsoeg) + 1;
+      };
+      const svar = await f.start();
+      expect("ok" in svar && svar.ok).toBe(true);
+      const c = kald.filter((k) => k.navn === "create");
+      expect(c).toHaveLength(1);
+      expect(c[0].noegle).toMatch(/-1-testdb-m-card\.mobilepay\.revolut_pay$/);
     });
   });
 }

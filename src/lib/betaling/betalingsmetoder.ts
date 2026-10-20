@@ -53,9 +53,24 @@ export const METODE_CAPABILITY: Record<Betalingsmetode, string> = {
   revolut_pay: "revolut_pay_payments",
 };
 
-// Betaling til BidHamrs platformskonto (boost, returfragt): hele listen.
+// Hele listen (fx til tests og forklaringer). Betaling til BidHamrs
+// platformskonto bruger platformMetoderFra (via hentPlatformMetoder i
+// platformMetoder.ts), så en metode, der ikke er slået til hos Stripe i live,
+// aldrig får boost og returfragt til at fejle helt.
 export function platformMetoder(): Betalingsmetode[] {
   return [...BETALINGSMETODER];
+}
+
+// Platformens egne metoder ud fra dens standard-konfiguration hos Stripe
+// (paymentMethodConfigurations, is_default). Platformskontoen har ingen
+// capabilities i accounts.retrieve() (verificeret 20. okt. 2026: tom), men
+// konfigurationen har pr. metode `available` - om metoden kan tilbydes (slået
+// til og aktiv). Kort er altid med. Konfigurationen kan kun FJERNE metoder fra
+// listen - aldrig tilføje (Klarna, Link osv. vises aldrig, selv om de står til).
+export function platformMetoderFra(
+  konfiguration: Partial<Record<string, { available?: boolean | null } | null | undefined>> | null | undefined,
+): Betalingsmetode[] {
+  return BETALINGSMETODER.filter((m) => m === "card" || konfiguration?.[m]?.available === true);
 }
 
 // Destination charge på sælgerens vegne: kun metoder, hvis capability er
@@ -73,6 +88,16 @@ export function saelgerMetoder(
 // idempotensfejl.
 export function metodeNoegle(metoder: readonly string[]): string {
   return `m-${[...metoder].sort().join(".")}`;
+}
+
+// Tekst til brugeren ud fra de metoder, der faktisk tilbydes (fx
+// "kort, MobilePay, Apple Pay og Google Pay"). Kort er altid med.
+export function metodeTekst(metoder: readonly string[] | null | undefined): string {
+  const navne = ["kort"];
+  if (metoder?.includes("mobilepay")) navne.push("MobilePay");
+  if (metoder?.includes("revolut_pay")) navne.push("Revolut Pay");
+  navne.push("Apple Pay", "Google Pay");
+  return `${navne.slice(0, -1).join(", ")} og ${navne[navne.length - 1]}`;
 }
 
 export function erTilladtMetode(type: string | null | undefined): type is Betalingsmetode {

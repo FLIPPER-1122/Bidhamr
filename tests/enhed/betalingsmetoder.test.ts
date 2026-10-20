@@ -13,7 +13,9 @@ import {
   erTilladtMetode,
   metodeHandling,
   metodeNoegle,
+  metodeTekst,
   platformMetoder,
+  platformMetoderFra,
   saelgerMetoder,
   sammeMetoder,
 } from "@/lib/betaling/betalingsmetoder";
@@ -62,6 +64,22 @@ describe("listen", () => {
     expect(
       saelgerMetoder({ card_payments: "active", mobilepay_payments: "active", revolut_pay_payments: "active", klarna_payments: "active", link_payments: "active" }),
     ).toEqual(["card", "mobilepay", "revolut_pay"]);
+  });
+
+  it("platformMetoderFra: kort altid; MobilePay/Revolut Pay kun når de er available; aldrig andet", () => {
+    expect(platformMetoderFra(undefined)).toEqual(["card"]);
+    expect(platformMetoderFra({ card: { available: false }, mobilepay: { available: true } })).toEqual(["card", "mobilepay"]);
+    expect(
+      platformMetoderFra({ mobilepay: { available: true }, revolut_pay: { available: true }, klarna: { available: true }, link: { available: true } }),
+    ).toEqual(["card", "mobilepay", "revolut_pay"]);
+    expect(platformMetoderFra({ mobilepay: { available: false }, revolut_pay: null })).toEqual(["card"]);
+  });
+
+  it("metodeTekst bygges af de metoder, der tilbydes", () => {
+    expect(metodeTekst(["card", "mobilepay", "revolut_pay"])).toBe("kort, MobilePay, Revolut Pay, Apple Pay og Google Pay");
+    expect(metodeTekst(["card"])).toBe("kort, Apple Pay og Google Pay");
+    expect(metodeTekst(["card", "mobilepay"])).toBe("kort, MobilePay, Apple Pay og Google Pay");
+    expect(metodeTekst(null)).toBe("kort, Apple Pay og Google Pay");
   });
 
   it("metodeNoegle: samme metoder = samme nøgle (uanset rækkefølge), andre = ny", () => {
@@ -125,8 +143,11 @@ describe("kildekoden bruger den fælles liste overalt", () => {
       "src/lib/betaling/stripeBetaling.ts",
     ]);
     const metoder = (f: string) => KILDE.find((k) => k.f === f)!.t;
-    expect(metoder("src/lib/betaling/boost.ts")).toMatch(/const metoder = platformMetoder\(\)/);
-    expect(metoder("src/lib/betaling/returfragt.ts")).toMatch(/const metoder = platformMetoder\(\)/);
+    // Platformens metoder hentes hos Stripe (kun dem, der er slået til).
+    for (const f of ["src/lib/betaling/boost.ts", "src/lib/betaling/returfragt.ts"]) {
+      expect(metoder(f)).toMatch(/const metoder = await hentPlatformMetoder\(\)/);
+      expect(metoder(f)).not.toMatch(/[^.\w]platformMetoder\(\)/);
+    }
     expect(metoder("src/lib/betaling/stripeBetaling.ts")).toMatch(/const metoder = klar\.metoder/);
   });
 

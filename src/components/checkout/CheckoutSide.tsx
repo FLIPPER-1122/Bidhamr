@@ -26,6 +26,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { gemLeveringsvalgAction } from "@/app/actions/fragt";
 import { startBetaling, type KoeberBetalingsstatus } from "@/app/actions/betaling";
+import { metodeTekst } from "@/lib/betaling/betalingsmetoder";
 import type { Checkout } from "@/lib/fragt/handlinger";
 import { transportoerNavn } from "@/lib/fragt/types";
 import { kroner } from "@/lib/kroner";
@@ -113,6 +114,7 @@ export default function CheckoutSide({
   status,
   checkout,
   standardNavn,
+  betalingsmetoder,
 }: {
   tradeId: string;
   // erhverv: firmasalg - ingen chat med sælgeren.
@@ -121,6 +123,9 @@ export default function CheckoutSide({
   status: KoeberBetalingsstatus;
   checkout: Checkout;
   standardNavn: string | null;
+  // Metoderne, køberen kan betale med hos netop denne sælger (fra serveren:
+  // sælgerens Stripe-konto); erstattes af PaymentIntentens, når den er lavet.
+  betalingsmetoder: string[];
 }) {
   const id = useId();
   const bet = checkout.betaling;
@@ -214,6 +219,7 @@ export default function CheckoutSide({
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [piTotal, setPiTotal] = useState<number | null>(null);
   const [kundeSession, setKundeSession] = useState<string | null>(null);
+  const [metoder, setMetoder] = useState<string[]>(betalingsmetoder);
   const hentetKl = useRef(0);
   const [stripeKlar, setStripeKlar] = useState(false);
   const [arbejder, setArbejder] = useState(false);
@@ -281,6 +287,7 @@ export default function CheckoutSide({
     setPiTotal(svar.totalOere);
     // Gemt kort: Stripe-kundesession, så Payment Element viser kortet forvalgt.
     setKundeSession(svar.customerSessionClientSecret || null);
+    if (svar.betalingsmetoder?.length) setMetoder(svar.betalingsmetoder);
     hentetKl.current = Date.now();
     return true;
   }, [tradeId]);
@@ -832,7 +839,7 @@ export default function CheckoutSide({
                         <span>
                           {gemt && !leveringGemt
                             ? "Du har ændret leveringen. Tryk “Fortsæt til betaling” for at se den nye pris og betale."
-                            : "Vælg levering, og tryk “Fortsæt til betaling”. Du kan betale med kort, MobilePay, Revolut Pay, Apple Pay og Google Pay."}
+                            : `Vælg levering, og tryk “Fortsæt til betaling”. Du kan betale med ${metodeTekst(metoder)}.`}
                         </span>
                       </div>
                     )}

@@ -14,7 +14,7 @@ import "server-only";
 import { getStripe } from "@/lib/stripe";
 import { logDriftFejl } from "@/lib/drift";
 import { NYE_BETALINGER_STOPPET_TEKST } from "@/lib/betaling/noedstop";
-import { GEM_KORT_METODER, sammeMetoder } from "@/lib/betaling/betalingsmetoder";
+import { erTilladtMetode, GEM_KORT_METODER, sammeMetoder } from "@/lib/betaling/betalingsmetoder";
 import {
   BetalingsFejl,
   LeveringManglerFejl,
@@ -58,6 +58,9 @@ export type BetalingStartet = {
   customerId: string | null;
   // Kun når køberen har et gemt kort - forudfylder kun. null = intet kort.
   customerSessionClientSecret: string | null;
+  // PaymentIntentens metoder (betalingsmetoder.ts) - fx til teksten "Du kan
+  // betale med ...". MobilePay/Revolut Pay kun, hvis sælgerens konto har dem.
+  betalingsmetoder: string[];
 };
 
 // Starter (eller genoptager) betalingen for en vundet auktion. Samme
@@ -100,6 +103,7 @@ export async function startBetalingFor(
       totalOere: pi.amount,
       customerId: typeof pi.customer === "string" ? pi.customer : (pi.customer?.id ?? null),
       customerSessionClientSecret: await kundeSessionTilCheckout(brugerId, pi, kanal),
+      betalingsmetoder: (pi.payment_method_types ?? []).filter((t) => erTilladtMetode(t)),
     };
   } catch (err) {
     if (err instanceof LeveringManglerFejl) return { fejl: err.message, kode: "vaelg_levering" };

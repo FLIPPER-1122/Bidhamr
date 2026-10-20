@@ -42,7 +42,8 @@ import { logDriftFejl, renFejltekst } from "@/lib/drift";
 import { egenDatabase } from "@/lib/betaling/fremmedeTestdata";
 import { hentNoedstop, NYE_BETALINGER_STOPPET_TEKST } from "@/lib/betaling/noedstop";
 import { alarmPrTilfaelde } from "@/lib/betaling/driftTilfaelde";
-import { annullerForkerteMetoder, metodeHandling, metodeNoegle, platformMetoder } from "@/lib/betaling/betalingsmetoder";
+import { annullerForkerteMetoder, metodeHandling, metodeNoegle } from "@/lib/betaling/betalingsmetoder";
+import { hentPlatformMetoder } from "@/lib/betaling/platformMetoder";
 import { kundeSessionTilCheckout, sikrStripeKunde, type BetalingsKanal } from "@/lib/betaling/stripeBetaling";
 import { BOOST_TEKST } from "@/lib/boost/tekster";
 
@@ -346,12 +347,17 @@ async function sikrBoostPi(k: BoostKoebRaekke, forsoeg = 0): Promise<Stripe.Paym
     // automatic_payment_methods (Klarna, Link ...) kan ikke opdateres til en
     // eksplicit liste - den annulleres, og næste runde nulstiller købet
     // (pi_forsoeg + 1 = ny idempotency key) og laver en ny.
-    const metodeValg = metodeHandling(eks, platformMetoder());
+    const metoder = await hentPlatformMetoder();
+    const metodeValg = metodeHandling(eks, metoder);
     if (metodeValg === "annuller") {
       if (k.status !== "afventer" || forsoeg >= 2) throw new Error("Boost-købets PaymentIntent har forkerte betalingsmetoder");
       const efter = await annullerForkerteMetoder(stripe, eks.id);
       if (efter.status !== "canceled") return efter; // betalt imens - kalderen spejler
-      return sikrBoostPi(k, forsoeg + 1);
+      // Rækken hentes igen: webhooken (payment_intent.canceled) kan have
+      // nulstillet den imens, så den gamle række ikke længere passer.
+      const ny = await hentKoeb(admin, k.id);
+      if (!ny) throw new Error("Boost-købet findes ikke");
+      return sikrBoostPi(ny, forsoeg + 1);
     }
     // Beløbet er låst i databasen; 3D Secure tvinges også på ældre intents.
     const mangler3ds = eks.payment_method_options?.card?.request_three_d_secure !== "any";
@@ -361,7 +367,7 @@ async function sikrBoostPi(k: BoostKoebRaekke, forsoeg = 0): Promise<Stripe.Paym
     ) {
       return stripe.paymentIntents.update(eks.id, {
         amount: beloeb,
-        payment_method_types: platformMetoder(),
+        payment_method_types: metoder,
         metadata: metadata(k),
         payment_method_options: { card: { request_three_d_secure: "any" } },
       });
@@ -374,7 +380,7 @@ async function sikrBoostPi(k: BoostKoebRaekke, forsoeg = 0): Promise<Stripe.Paym
   // Metoderne er med i nøglen: en PaymentIntent fra før (automatic_payment_
   // methods) under samme nøgle, men aldrig gemt, giver en ny i stedet for
   // Stripes idempotensfejl.
-  const metoder = platformMetoder();
+  const metoder = await hentPlatformMetoder();
   const noegle = `bidhamr-boost-${k.id}-${k.pi_forsoeg}${db ? `-${db}` : ""}-${metodeNoegle(metoder)}`;
   const pi = await stripe.paymentIntents.create(
     {
