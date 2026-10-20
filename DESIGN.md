@@ -128,6 +128,10 @@ Brug derfor de almindelige tokens i admin – **ingen hex-værdier** i komponent
 
 Målte kontraster står i kommentaren over temaet i `globals.css`.
 
+Admin scroller inde i `<main id="admin-indhold">`, ikke i dokumentet. `<main>` er derfor `relative`, så
+absolut placerede elementer (fx `sr-only`) klippes af den og ikke forlænger siden; `html`/`body` er navy på
+admin via `html:has([data-tema="admin-moerk"])`, så en hvid flade aldrig kan ses (20. okt. 2026).
+
 ---
 
 ## 2. Skrifttyper

@@ -98,13 +98,20 @@ function Ramme({
   // egen boks: display: contents) om indholdet og kvitteringen. Tokens får
   // mørke værdier derinde (globals.css), så menuen beholder sin skovgrønne
   // stil, og resten af hjemmesiden ikke påvirkes.
+  //
+  // <main> er "relative", så absolut placerede elementer derinde (fx sr-only-
+  // tekster) har main som ophav og klippes af dens scroll. Uden det regnes de
+  // ud fra <body> og forlænger hele dokumentet med en hvid flade under admin
+  // (fejl set på admin.bidhamr.dk, 20. okt. 2026). Højden bruger dvh, så
+  // mobilens adresselinje ikke giver ekstra scroll; html/body får navy i
+  // globals.css (html:has([data-tema="admin-moerk"])).
   return (
-    <div className="flex h-[calc(100vh-var(--samtykke-hoejde,0px))] bg-groen-mork">
+    <div className="flex h-[calc(100dvh-var(--samtykke-hoejde,0px))] bg-groen-mork">
       {menu}
       <div data-tema="admin-moerk" className="contents">
         <main
           id="admin-indhold"
-          className="min-w-0 flex-1 overflow-auto bg-admin-bg pt-14 lg:border-l lg:border-admin-skel lg:pt-0"
+          className="relative min-w-0 flex-1 overflow-auto bg-admin-bg pt-14 lg:border-l lg:border-admin-skel lg:pt-0"
         >
           {bjaelke}
           <div className="border-b border-admin-kant bg-white/70 px-4 py-2.5 sm:px-6">
