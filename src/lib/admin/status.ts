@@ -25,8 +25,12 @@ export const hentAdminStatus = cache(async (rolle: StaffRole): Promise<AdminStat
   const erAdmin = harMindstRolle(rolle, "admin");
   const [tal, noedstop] = await Promise.all([hentStaffTal(), hentNoedstopTal()]);
   const lamper = (erAdmin ? await hentLamper(createAdminClient(), { noedstop }) : []).map((l) =>
-    // Kun chefen kan åbne Penge.
-    l.navn === "Daglig afstemning" && rolle === "chef" ? { ...l, href: "/admin/penge" } : l,
+    // Kun chefen kan åbne Penge og Fakturaer.
+    l.navn === "Daglig afstemning" && rolle === "chef"
+      ? { ...l, href: "/admin/penge" }
+      : l.navn === "Fakturaer" && rolle === "chef"
+        ? { ...l, href: "/admin/fakturaer" }
+        : l,
   );
 
   const noedstopPunkt: StatusPunkt[] = noedstop.stoppet

@@ -19,6 +19,22 @@ Lokalt prod-build med prods CSP virker, så fejlen ligger med stor sandsynlighed
 - Efter deploy af den nye kode: mangler nøglen stadig, viser **/admin** en rød lampe ("Den offentlige Stripe-nøgle mangler i buildet") og **/admin/drift** en fejl. Siden viser "Betalingsformularen kunne ikke indlæses …" i stedet for en grå knap, og der laves ingen betaling.
 - Rammer det også checkout? Ja, samme loader. Test et køb i checkout, når boost virker.
 
+## Fakturaer i produktion – Dineros testregnskab "BidHamr Test", indtil revisoren har godkendt live (20. okt. 2026)
+I dag laver bidhamr.dk ingen fakturaer: Dinero er ikke sat op i Vercel. Én boost-faktura (99 kr., 20. okt.) venter. **Produktionen skal også bruge testregnskabet "BidHamr Test" (sandkassen) – aldrig "Bidhamr ApS" – indtil revisoren har godkendt Dinero-live.** Det passer med, at produktionen stadig kører med Stripes testnøgle (fase 6): betalingerne er ikke rigtige, så fakturaerne skal heller ikke være det.
+- **Først skal den nye kode være deployet** (commit "Fakturaer: kun BidHamr Test ..."). Den gamle kode nægter at bruge testregnskabet i produktionen.
+- **Vercel → Project → Settings → Environment Variables, kun miljøet *Production*:**
+  - `DINERO_CLIENT_ID` og `DINERO_CLIENT_SECRET`: samme værdier som i `.env.local` (din personlige integration i Dinero).
+  - `DINERO_API_KEY`: API-nøglen til **BidHamr Test** (samme som i `.env.local`).
+  - `DINERO_ORG_ID` = `659420` (organisations-id for **BidHamr Test**).
+  - `DINERO_MILJOE` = `test` (præcis sådan – en tom værdi giver ingen fakturaer i produktionen).
+  - `DINERO_LIVE_ORG_ID`: **lad den være tom** – eller sæt den til **Bidhamr ApS'** organisations-id, hvis du har det ved hånden. Så nægter koden ekstra tydeligt at sende til det rigtige regnskab, så længe `DINERO_MILJOE=test`. Den må aldrig være `659420`.
+  - `DINERO_KONTO_SALG`, `DINERO_KONTO_FRAGT`, `DINERO_KONTO_INDBETALING`: **lad dem være tomme** (så bruges 1000 / 1350 / 55000, som testregnskabet har). Boost-point bogføres på salgskontoen 1000 med moms ligesom gebyrerne.
+- **Deployments → Redeploy** (variablerne virker først efter en ny deploy).
+- **Så sendes den ventende boost-faktura af sig selv** ved næste kørsel af betalings-cron'en (hvert 5. minut): den får et fakturanummer i "BidHamr Test", dateres betalingsdagen og står som betalt. Tjek **Admin → Fakturaer** (står der "Dinero: sat op (testregnskab ...)", og har boost-fakturaen et nummer?) og lampen **Fakturaer** på admin-forsiden (grøn).
+- **Værnet:** før hver kørsel spørger koden Dinero, hvad regnskabet hedder. I test sender den kun, hvis det hedder "BidHamr Test" (eller "BidHamr Test ..." med et tillæg) og ikke har BidHamrs CVR 46836219. Ellers sendes intet, lampen bliver rød, og der kommer en drift-alarm.
+- **Samme testregnskab som testdatabasen?** Det virker teknisk: dokumenterne og kontakterne har hver deres id'er, så intet kolliderer. Men fakturanumrene deles, så produktionens fakturaer kommer til at ligge mellem ca. 1.300 testfakturaer fra testdatabasen (og numrene får huller set fra produktionen), og det er svært at se, hvad der er hvad. **Anbefaling:** opret et ekstra testregnskab i Dinero til produktionen med navnet **"BidHamr Test Produktion"** (navnet skal starte med "BidHamr Test", og der må ikke stå CVR 46836219), lav en API-nøgle til det, og brug dets id og nøgle i Vercel i stedet for `659420`. Så er produktionens fakturaer samlet ét sted. Begge dele er tilladt af værnet.
+- **Når revisoren har godkendt Dinero-live:** se docs/FAKTURA.md afsnit 4 (`DINERO_MILJOE=live`, `DINERO_LIVE_ORG_ID` og det rigtige regnskabs nøgler). Skifter Stripe til live-nøglen (fase 6), nægter koden at bruge testregnskabet (rød lampe, ingen fakturaer) – skift Dinero til live samme dag.
+
 ## Boost-pakker (`20261026010000_boost_pakker.sql`)
 - **Kør migrationen i produktion (dit "ja").** Den er kørt to gange på testdatabasen. Den forudsætter `20261025010000_app_endpoints.sql` (min_auktion_boost med "kunst_kontrol" – md5'en i prod er allerede den udgave). Rækkefølgen af migration og deploy er ligegyldig: den gamle kode og appen køber 100-point-pakken som før, og den nye kode viser kun én pakke, indtil migrationen er kørt.
 - Test på hjemmesiden: Min konto → Boost-point → vælg 300 eller 700 point → "Køb … " → betal med 4242 4242 4242 4242.
