@@ -3,11 +3,11 @@ import AdminSide from "@/components/admin/AdminSide";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import SkjulSpoergsmaal from "@/components/SkjulSpoergsmaal";
 import { kraevSideRolle } from "@/lib/adminAuth";
-import { hovedsiteUrl } from "@/lib/adminVaert";
 
 // Spørgsmål og svar på én auktion, hvor staff kan skjule og vise dem igen.
 // Med admin på egen host (ADMIN_VAERT) er auktionssiden på bidhamr.dk uden
-// staff-knapper - den linker hertil ("Åbn i admin").
+// staff-knapper - den linker hertil ("Åbn i admin"). Skjulte spørgsmål ser
+// staff kun her (migration B: auktion_spoergsmaal_liste kræver aal2).
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Spoergsmaal = {
@@ -53,12 +53,7 @@ export default async function AdminAuktionSpoergsmaal({ params }: { params: Prom
       <AdminSideHoved
         titel="Spørgsmål til sælger"
         forklaring={`${auktion.titel ?? "Auktion"} – skjul et spørgsmål, der bryder reglerne. Den, der skrev det, får en begrundelse og kan klage.`}
-        tilbage={{ href: `/admin/auktioner?q=${auktion.id}`, label: "Auktioner" }}
-        hoejre={
-          <a href={hovedsiteUrl(`/auktion/${auktion.id}`)} className="text-sm font-medium text-groen hover:underline">
-            Se auktionen
-          </a>
-        }
+        tilbage={{ href: `/admin/auktioner/${auktion.id}`, label: "Auktionen" }}
       />
       {spoergsmaal.length === 0 ? (
         <p className="rounded-[14px] border border-admin-kant bg-white p-6 text-sm text-tekst-svag">

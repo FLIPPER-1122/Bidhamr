@@ -535,6 +535,9 @@ export async function antalUbesvaredeStaffSamtaler(): Promise<{ antal: number } 
   return koer("antalUbesvaredeStaffSamtaler", async () => {
     await staff("medarbejder");
     // Brugerens egen session: funktionen tjekker er_staff() via auth.uid().
+    // Efter migration B (20261027020000) kræver er_staff() aal2 - på
+    // admin-hosten er sessionen admin-cookiens (aal2, kode højst 12 timer
+    // gammel), så tallet virker dér. Uden aal2 giver funktionen 0.
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("antal_ubesvarede_staff_samtaler");
     if (error) throw new Error(error.message);
