@@ -1,5 +1,5 @@
 // Systemlampen "Fakturaer" (lamper.ts). Ren funktion (testes i
-// tests/enhed/fakturaLampe.test.ts).
+// tests/enhed/fakturaKonfig.test.ts).
 //
 // Gul, når et dokument har ventet over FAKTURA_GUL_TIMER (samme grænse som
 // drift-alarmen faktura:haenger i src/lib/faktura/koe.ts) eller kræver

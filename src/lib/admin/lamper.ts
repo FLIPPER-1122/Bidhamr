@@ -86,19 +86,22 @@ async function byg(admin: Admin): Promise<Lampe[]> {
       .eq("opgivet", false)
       .eq("manuel", false)
       .lt("oprettet_kl", new Date(nu - timer * 60 * MIN).toISOString());
-  const [fakturaGul, fakturaRoed, fakturaHandling, fakturaTilfaelde] = await Promise.all([
-    fakturaKoe(FAKTURA_GUL_TIMER),
-    fakturaKoe(FAKTURA_ROED_TIMER),
-    admin
-      .from("fakturaer")
-      .select("id", { count: "exact", head: true })
-      .or("status.eq.kraever_handling,opgivet.eq.true")
-      .neq("status", "haandteret_manuelt")
-      .neq("status", "faerdig"),
-    admin.from("drift_tilfaelde").select("noegle").in("noegle", ["faktura:adgang", "faktura:konfiguration"]).is("loest_kl", null),
-  ]);
 
-  const [rute, alarm, webhook, fragt, vagt, afstemning, afvigelser, kritiske, stripeDb] = await Promise.all([
+  const [
+    rute,
+    alarm,
+    webhook,
+    fragt,
+    vagt,
+    afstemning,
+    afvigelser,
+    kritiske,
+    stripeDb,
+    fakturaGul,
+    fakturaRoed,
+    fakturaHandling,
+    fakturaTilfaelde,
+  ] = await Promise.all([
     hentCronRute(admin, nu),
     hentAlarmStatus(admin),
     admin
@@ -126,6 +129,16 @@ async function byg(admin: Admin): Promise<Lampe[]> {
     // Databasens stripe_tilstand (samme opslag og cache som Stripe-vagten;
     // null, hvis den ikke kan læses).
     databasensStripeTilstand(),
+    // Fakturakøen (systemlampen Fakturaer).
+    fakturaKoe(FAKTURA_GUL_TIMER),
+    fakturaKoe(FAKTURA_ROED_TIMER),
+    admin
+      .from("fakturaer")
+      .select("id", { count: "exact", head: true })
+      .or("status.eq.kraever_handling,opgivet.eq.true")
+      .neq("status", "haandteret_manuelt")
+      .neq("status", "faerdig"),
+    admin.from("drift_tilfaelde").select("noegle").in("noegle", ["faktura:adgang", "faktura:konfiguration"]).is("loest_kl", null),
   ]);
   const fragtTilHandling = fragt.count ?? 0;
 

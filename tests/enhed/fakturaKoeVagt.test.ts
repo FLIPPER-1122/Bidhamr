@@ -95,6 +95,30 @@ describe("fakturakøen sender kun til BidHamr Test", () => {
     expect(rpcKald).not.toContain("faktura_claim");
     expect(alarmer.some((a) => a.startsWith("faktura:adgang:"))).toBe(true);
   });
+  it("Dinero svarer midlertidigt ikke: kørslen springes over uden alarm, intet claimes", async () => {
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (url.includes("oauth/token")) return new Response(JSON.stringify({ access_token: "t", expires_in: 3600 }), { status: 200 });
+      return new Response("{}", { status: 503 });
+    });
+    const { koerFakturaKoe } = await import("@/lib/faktura/koe");
+    const r = await koerFakturaKoe();
+    expect(r.springetOver).toBe("forbigaaende");
+    expect(rpcKald).not.toContain("faktura_claim");
+    expect(alarmer).toEqual([]);
+    expect(lukket).not.toContain("faktura:konfiguration");
+  });
+  it("produktion med Stripe-testnøgle og DINERO_MILJOE=live: intet sendes, og der gives alarm", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://lkifkrexeldimmghnsie.supabase.co");
+    vi.stubEnv("DINERO_MILJOE", "live");
+    vi.stubEnv("DINERO_LIVE_ORG_ID", "659420");
+    organisationer = [{ Id: 659420, Name: "Bidhamr ApS", VatNumber: "46836219" }];
+    const { koerFakturaKoe } = await import("@/lib/faktura/koe");
+    const r = await koerFakturaKoe();
+    expect(r.springetOver).toBe("ikke_konfigureret");
+    expect(rpcKald).not.toContain("faktura_claim");
+    expect(dineroKald).toEqual([]);
+    expect(alarmer.some((a) => a.startsWith("faktura:konfiguration:") && a.includes("live-nøgle"))).toBe(true);
+  });
   it("BidHamr Test: køen fortsætter (claim)", async () => {
     organisationer = [
       { Id: 1, Name: "Bidhamr ApS", VatNumber: "46836219" },

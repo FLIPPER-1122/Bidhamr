@@ -14,6 +14,8 @@ import type { DineroKonfig } from "./dinero";
 //                      bruge live. Produktionsdatabasen kræver live - eller
 //                      udtrykkeligt test, så længe Stripe kører med
 //                      testnøgle (så er betalingerne heller ikke rigtige).
+//                      live kræver Stripes live-nøgle (testbetalinger må
+//                      aldrig ende i BidHamrs rigtige regnskab).
 //                      I test skal regnskabet hedde "BidHamr Test..." og må
 //                      ikke have BidHamrs CVR (kontrollerOrganisation, tjekkes
 //                      hos Dinero før hver kørsel).
@@ -73,6 +75,15 @@ export function hentFakturaKonfig(): FakturaKonfig {
       };
     }
   }
+  // Live-regnskabet kun med Stripes LIVE-nøgle: kun testmiljø indtil fase 6,
+  // og testbetalinger må aldrig ende i BidHamrs rigtige regnskab.
+  if (miljoe === "live" && !stripeLivenoegle()) {
+    return {
+      ok: false,
+      grund: "forkert_miljoe",
+      besked: "DINERO_MILJOE=live kræver Stripes live-nøgle - testbetalinger må aldrig ende i BidHamrs rigtige regnskab (brug DINERO_MILJOE=test indtil fase 6).",
+    };
+  }
   // Låst org-id for live: en forkert nøgle/org (fx sandkassen i Vercel)
   // kan aldrig få rigtige kunders fakturaer - og testen aldrig ramme live.
   const liveOrg = (process.env.DINERO_LIVE_ORG_ID ?? "").trim();
@@ -96,7 +107,10 @@ export function hentFakturaKonfig(): FakturaKonfig {
 }
 
 // Samme regel som noeglensTilstand() i src/lib/stripe.ts (her uden at hente
-// Stripe-klienten ind): kun en udtrykkelig testnøgle tæller.
+// Stripe-klienten ind): kun en udtrykkelig test- eller live-nøgle tæller.
+function stripeLivenoegle(): boolean {
+  return /^(sk|rk)_live_/.test((process.env.STRIPE_SECRET_KEY ?? "").trim());
+}
 function stripeTestnoegle(): boolean {
   return /^(sk|rk)_test_/.test((process.env.STRIPE_SECRET_KEY ?? "").trim());
 }

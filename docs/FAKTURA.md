@@ -75,7 +75,7 @@ Verificeret i sandkassen: et genforsøg efter et tabt svar (både efter bogføri
 
 Før det er sat op, laves der ingen fakturaer – men rækkerne planlægges, og de laves alle, når Dinero er sat op (drift-alarm og gul lampe efter 2 timer, rød lampe efter 6 timer).
 
-**Indtil revisoren har godkendt live (20. okt. 2026):** produktionen bruger testregnskabet "BidHamr Test" med `DINERO_MILJOE=test`. Det er kun tilladt, når det er valgt udtrykkeligt (tom værdi afvises i produktionen), og når Stripe kører med testnøgle (`sk_test_`/`rk_test_`) – så er betalingerne heller ikke rigtige. Med Stripes live-nøgle kræver produktionen `DINERO_MILJOE=live`. Vercel-variablerne står i HUSKELISTE.md ("Fakturaer i produktion").
+**Indtil revisoren har godkendt live (20. okt. 2026):** produktionen bruger testregnskabet "BidHamr Test" med `DINERO_MILJOE=test`. Det er kun tilladt, når det er valgt udtrykkeligt (tom værdi afvises i produktionen), og når Stripe kører med testnøgle (`sk_test_`/`rk_test_`) – så er betalingerne heller ikke rigtige. Med Stripes live-nøgle kræver produktionen `DINERO_MILJOE=live` – og omvendt virker `DINERO_MILJOE=live` kun med Stripes live-nøgle (`sk_live_`/`rk_live_`), så testbetalinger aldrig ender i BidHamrs rigtige regnskab. Passer de ikke sammen, sendes intet, og der gives drift-alarm (`faktura:konfiguration`, rød lampe). Svarer Dinero midlertidigt ikke på regnskabs-opslaget (5xx, timeout), springes kørslen over uden alarm (intet sendes); varer det ved, fanger `faktura:haenger` og lampen det. Vercel-variablerne står i HUSKELISTE.md ("Fakturaer i produktion").
 
 ## 5. Abonnementet (chefens valg – Filip kan ændre)
 

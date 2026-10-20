@@ -45,7 +45,7 @@ export type FakturaKoeResultat = {
   faerdige: number;
   fejl: number;
   stoppet: number;
-  springetOver?: "ikke_migreret" | "ikke_konfigureret" | "graense" | "adgang";
+  springetOver?: "ikke_migreret" | "ikke_konfigureret" | "graense" | "adgang" | "forbigaaende";
 };
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -439,6 +439,10 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
   } catch (err) {
     const d = err instanceof DineroFejl ? err : null;
     if (d?.graense) return { ...res, springetOver: "graense" };
+    // Midlertidig fejl (5xx, timeout, netværk): spring kørslen over uden
+    // alarm - stadig fail closed (intet claimes). Varer det ved, giver
+    // faktura:haenger alarm efter 2 timer, og lampen bliver rød efter 6.
+    if (d?.forbigaaende) return { ...res, springetOver: "forbigaaende" };
     await alarmPrTilfaelde({
       noegle: d?.adgang ? "faktura:adgang" : "faktura:konfiguration",
       hvor: "faktura/dinero",

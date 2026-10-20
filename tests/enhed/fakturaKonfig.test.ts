@@ -114,6 +114,16 @@ describe("hentFakturaKonfig - test/live-vagten", () => {
     saet({ NEXT_PUBLIC_SUPABASE_URL: PROD_URL, STRIPE_SECRET_KEY: "sk_live_x", DINERO_MILJOE: "live", DINERO_LIVE_ORG_ID: "659420" });
     expect(hentFakturaKonfig()).toMatchObject({ ok: true, miljoe: "live" });
   });
+  it("live kræver Stripes live-nøgle - testbetalinger aldrig i det rigtige regnskab", () => {
+    for (const STRIPE_SECRET_KEY of ["sk_test_x", "rk_test_x", "", "noget"]) {
+      saet({ NEXT_PUBLIC_SUPABASE_URL: PROD_URL, STRIPE_SECRET_KEY, DINERO_MILJOE: "live", DINERO_LIVE_ORG_ID: "659420" });
+      const k = hentFakturaKonfig();
+      expect(k).toMatchObject({ ok: false, grund: "forkert_miljoe" });
+      if (!k.ok) expect(k.besked).toMatch(/live-nøgle/);
+    }
+    saet({ NEXT_PUBLIC_SUPABASE_URL: PROD_URL, STRIPE_SECRET_KEY: "rk_live_x", DINERO_MILJOE: "live", DINERO_LIVE_ORG_ID: "659420" });
+    expect(hentFakturaKonfig()).toMatchObject({ ok: true, miljoe: "live" });
+  });
 });
 
 describe("systemlampen Fakturaer", () => {
