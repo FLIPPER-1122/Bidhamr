@@ -35,9 +35,17 @@ Gør det i denne rækkefølge:
    - "Kun DK/EU til admin": If **Host** equals `admin.bidhamr.dk` AND **Country** is not any of (Danmark + de EU-lande, I har brug for) → **Deny**.
    - "Grænse på admin-login": If **Host** equals `admin.bidhamr.dk` AND **Request Path** starts with `/adgang` → **Rate Limit** (fx 30 forespørgsler pr. minut pr. IP) → Deny (429).
    - Publish. Test bagefter fra en mobil uden wifi (DK) og via en VPN uden for EU (skal afvises).
+8. **Migration B: `20261027020000_staff_rls_aal2.sql` (dit "ja") – FØRST når al staff har to-trins-login aktivt.** Så kræver staff-adgang i databasen (andres handler, beskeder, betalinger, forsendelser, skjulte auktioner, sags-, pakke- og label-filer) også to-trins-login. Uden den kan en medarbejder med kun adgangskoden læse alt det direkte via Supabase.
+   - Rækkefølge: efter `20261026010000` og `20261027010000`, og efter trin 3 (`ADMIN_VAERT` sat og deployet).
+   - Tjek først under Admin → Medarbejdere, at **alle** har to-trins-login aktivt. En medarbejder uden mister med det samme staff-adgangen i databasen (admin-siderne virker stadig for ham, men han kommer ikke ind uden to-trins-login).
+   - Kør den i SQL Editor på **Hamr** som én forespørgsel. Den afbryder af sig selv (og ændrer intet), hvis en funktion eller policy ikke ser ud som forventet.
+   - Test bagefter: log ind på admin.bidhamr.dk og åbn Handler, Sager, Betalingsfejl, Beskeder og en skjult auktion. Åbn så en skjult auktion på bidhamr.dk (logget ind som staff): du sendes til admin.
+   - Appen og bidhamr.dk påvirkes ikke for brugerne. Staff ser kun egne handler/beskeder i appen og på bidhamr.dk, og skjulte auktioner og spørgsmål kun i admin.
+   - `STAFF_TO_TRIN_MAKS_TIMER` må højst være 12 efter migration B (databasen kræver en kode, der højst er 12 timer gammel).
+   - **Fortryd migration B:** kør `prod-koersel/rollback-20261027020000.sql` (samme indhold som `supabase/rollback/20261027020000_staff_rls_aal2.sql`) i SQL Editor på Hamr. Den gendanner præcis de gamle funktioner og policies. Se docs/ADMIN-VAERT.md, "Migration B".
 - **Vær opmærksom på:** hver gang en medarbejder skriver koden i admin, logger Supabase ham ud af appen og bidhamr.dk (han skal logge ind dér igen). Det er Supabases egen regel og kan ikke slås fra. Staff med to-trins-login skifter adgangskode via "Glemt adgangskode". Se docs/ADMIN-VAERT.md, "Kendte konsekvenser".
 - **Din beslutning: separate admin-konti?** Anbefalingen er, at hver medarbejder får en egen konto kun til admin (fx `fornavn.admin@bidhamr.dk` med staff-rollen og to-trins-login) og bruger sin private konto i appen. Så bliver de ikke logget ud af appen, og en lækket app-adgangskode er ikke en admin-adgangskode. Ingen kode skal ændres.
-- **Indtil migration B er kørt, beskytter to-trins-login kun admin-siderne – ikke staff-adgang via API'et.** Migration B (RLS med aal2) er en separat opgave.
+- **Indtil migration B (trin 8) er kørt, beskytter to-trins-login kun admin-siderne – ikke staff-adgang via API'et.**
 - **Låst ude?** Se docs/ADMIN-VAERT.md, "Nødudgang".
 - Fortryd: slet `ADMIN_VAERT` og `ADMIN_LUK_HOVEDDOMAENE` i Vercel og redeploy – så er admin på bidhamr.dk/admin igen uden to-trins-login.
 
