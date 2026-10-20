@@ -240,21 +240,23 @@ describe("Shipmondo før migrationen 20261024010000", () => {
   });
 });
 
-// GLS er slået fra, indtil Shipmondo har svaret (Filip, 15. okt. 2026):
-// kun med SHIPMONDO_GLS_AKTIV=true (fail closed). Retur af en pakke, der
-// allerede er sendt med GLS, virker videre.
-describe("GLS slået fra (SHIPMONDO_GLS_AKTIV)", () => {
-  const GLS_LUKKET = "GLS kan ikke vælges lige nu. Vælg DAO eller PostNord.";
+// Fragtfirmaer (Filip, 20. okt. 2026): DAO og GLS (GLS med printet label),
+// ingen PostNord - kun med SHIPMONDO_POSTNORD_AKTIV=true (fail closed).
+// Eksisterende PostNord-forsendelser (label, retur) virker videre.
+describe("DAO og GLS, ingen PostNord (SHIPMONDO_TRANSPORTOERER / SHIPMONDO_POSTNORD_AKTIV)", () => {
+  const POSTNORD_LUKKET = "PostNord kan ikke vælges lige nu. Vælg DAO eller GLS.";
+  const ENV = ["SHIPMONDO_GLS_AKTIV", "SHIPMONDO_POSTNORD_AKTIV", "SHIPMONDO_TRANSPORTOERER"] as const;
   const doer = (transportoer?: string) => ({
     maade: "doer",
     transportoer,
     modtager: { navn: "Køber Købersen", adresse: "Vejen 1", postnummer: "8000", by: "Aarhus C", telefon: "12345678" },
   });
-  const tomListe = () => new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+  const json = (v: unknown) => new Response(JSON.stringify(v), { status: 200, headers: { "content-type": "application/json" } });
+  const tomListe = () => json([]);
 
   beforeEach(() => {
     process.env.FRAGTFIRMA = "shipmondo";
-    delete process.env.SHIPMONDO_GLS_AKTIV;
+    for (const k of ENV) delete process.env[k];
     rpcSvar.handel_gem_levering = () => ({
       data: { kode: "ok", fragt_oere: 6000, total_oere: 16000, beskyttelse_oere: 0, afhentning: false, pris_aendret: false },
       error: null,
@@ -262,50 +264,135 @@ describe("GLS slået fra (SHIPMONDO_GLS_AKTIV)", () => {
   });
   afterEach(() => {
     delete process.env.FRAGTFIRMA;
-    delete process.env.SHIPMONDO_GLS_AKTIV;
+    for (const k of ENV) delete process.env[k];
   });
 
-  it("uden flaget: kun DAO og PostNord kan vælges", () => {
-    expect(hentFragtfirma().transportoerer).toEqual(["dao", "postnord"]);
-    for (const v of ["", "1", "TRUE", "ja", " true"]) {
-      process.env.SHIPMONDO_GLS_AKTIV = v;
-      expect(hentFragtfirma().transportoerer).toEqual(["dao", "postnord"]);
+  it("standard: kun DAO og GLS kan vælges", () => {
+    expect(hentFragtfirma().transportoerer).toEqual(["dao", "gls"]);
+    for (const v of ["", "1", "TRUE", "ja", " true", "false"]) {
+      process.env.SHIPMONDO_POSTNORD_AKTIV = v;
+      expect(hentFragtfirma().transportoerer).toEqual(["dao", "gls"]);
     }
   });
 
-  it("uden flaget: GLS i checkout afvises med dansk fejl, og databasen kaldes ikke", async () => {
-    expect(await gemLeveringsvalg("T1", "K1", doer("gls"))).toEqual({ fejl: GLS_LUKKET });
+  it("SHIPMONDO_GLS_AKTIV (gammelt flag) ændrer ikke standarden og slår ikke GLS fra", () => {
+    for (const v of ["true", "false", ""]) {
+      process.env.SHIPMONDO_GLS_AKTIV = v;
+      expect(hentFragtfirma().transportoerer).toEqual(["dao", "gls"]);
+    }
+  });
+
+  it("PostNord i checkout afvises med dansk fejl, og databasen kaldes ikke", async () => {
+    expect(await gemLeveringsvalg("T1", "K1", doer("postnord"))).toEqual({ fejl: POSTNORD_LUKKET });
     expect(fns()).not.toContain("handel_gem_levering");
   });
 
-  it("uden flaget: pakkeshop-søgning hos GLS afvises", async () => {
-    expect(await soegPakkeshops({ postnummer: "8000", transportoer: "gls" })).toEqual({ fejl: GLS_LUKKET });
+  it("pakkeshop-søgning hos PostNord afvises", async () => {
+    expect(await soegPakkeshops({ postnummer: "8000", transportoer: "postnord" })).toEqual({ fejl: POSTNORD_LUKKET });
   });
 
-  it("uden flaget: indleveringssteder til retur af en GLS-pakke kan stadig søges", async () => {
+  it("indleveringssteder til retur af en PostNord-pakke kan stadig søges", async () => {
     fetchSvar = [tomListe()];
-    expect(await soegPakkeshops({ postnummer: "8000", transportoer: "gls", indlevering: true })).toMatchObject({
+    expect(await soegPakkeshops({ postnummer: "8000", transportoer: "postnord", indlevering: true })).toMatchObject({
       ok: true,
-      transportoer: "gls",
+      transportoer: "postnord",
     });
   });
 
-  it("uden flaget: DAO gemmes, og databasen får gls_aktiv = false", async () => {
-    expect(await gemLeveringsvalg("T1", "K1", doer("dao"))).toMatchObject({ ok: true });
-    const kald = rpcLog.find((r) => r.fn === "handel_gem_levering");
-    expect(kald?.args.p_valg).toMatchObject({ transportoer: "dao", gls_aktiv: false });
-  });
-
-  it("databasens afvisning (gls_lukket) vises som samme danske fejl", async () => {
-    rpcSvar.handel_gem_levering = () => ({ data: { kode: "gls_lukket" }, error: null });
-    expect(await gemLeveringsvalg("T1", "K1", doer("dao"))).toEqual({ fejl: GLS_LUKKET });
-  });
-
-  it("med SHIPMONDO_GLS_AKTIV=true: GLS kan vælges, og databasen får gls_aktiv = true", async () => {
-    process.env.SHIPMONDO_GLS_AKTIV = "true";
-    expect(hentFragtfirma().transportoerer).toEqual(["dao", "gls", "postnord"]);
+  it("GLS kan vælges, og databasen får listen ['dao','gls'] (og gls_aktiv til den gamle funktion)", async () => {
     expect(await gemLeveringsvalg("T1", "K1", doer("gls"))).toMatchObject({ ok: true });
     const kald = rpcLog.find((r) => r.fn === "handel_gem_levering");
-    expect(kald?.args.p_valg).toMatchObject({ transportoer: "gls", gls_aktiv: true });
+    expect(kald?.args.p_valg).toMatchObject({ transportoer: "gls", tilladte: ["dao", "gls"], gls_aktiv: true });
+  });
+
+  it("uden transportør (ældre app): DAO", async () => {
+    expect(await gemLeveringsvalg("T1", "K1", doer())).toMatchObject({ ok: true });
+    const kald = rpcLog.find((r) => r.fn === "handel_gem_levering");
+    expect(kald?.args.p_valg).toMatchObject({ transportoer: "dao", tilladte: ["dao", "gls"] });
+  });
+
+  it("databasens afvisning (transportoer_lukket) vises som dansk fejl", async () => {
+    rpcSvar.handel_gem_levering = () => ({ data: { kode: "transportoer_lukket" }, error: null });
+    expect(await gemLeveringsvalg("T1", "K1", doer("gls"))).toEqual({
+      fejl: "GLS kan ikke vælges lige nu. Vælg DAO.",
+    });
+  });
+
+  it("SHIPMONDO_POSTNORD_AKTIV=true slår PostNord til igen", async () => {
+    process.env.SHIPMONDO_POSTNORD_AKTIV = "true";
+    expect(hentFragtfirma().transportoerer).toEqual(["dao", "gls", "postnord"]);
+    expect(await gemLeveringsvalg("T1", "K1", doer("postnord"))).toMatchObject({ ok: true });
+    const kald = rpcLog.find((r) => r.fn === "handel_gem_levering");
+    expect(kald?.args.p_valg).toMatchObject({ transportoer: "postnord", tilladte: ["dao", "gls", "postnord"] });
+  });
+
+  it("SHIPMONDO_TRANSPORTOERER styrer listen (ukendte værdier ignoreres)", async () => {
+    process.env.SHIPMONDO_TRANSPORTOERER = "dao";
+    expect(hentFragtfirma().transportoerer).toEqual(["dao"]);
+    expect(await gemLeveringsvalg("T1", "K1", doer("gls"))).toEqual({ fejl: "GLS kan ikke vælges lige nu. Vælg DAO." });
+    process.env.SHIPMONDO_TRANSPORTOERER = "postnord, DAO ,bring";
+    expect(hentFragtfirma().transportoerer).toEqual(["dao", "postnord"]);
+    process.env.SHIPMONDO_TRANSPORTOERER = "bring";
+    expect(hentFragtfirma().transportoerer).toEqual(["dao", "gls"]);
+  });
+
+  // En label til en levering, køberen valgte og betalte, før PostNord blev
+  // slået fra: labelen laves stadig med PostNord (QR + PDF).
+  const FID = "00000000-0000-4000-8000-0000000000f1";
+  function forbered(transportoer: "postnord" | "gls") {
+    raekker.handel_levering = {
+      maade: "pakkeshop",
+      fragtfirma: "shipmondo",
+      transportoer,
+      pakkeshop_id: "1234",
+      pakkeshop_navn: "Shop",
+      pakkeshop_adresse: "Gade 2",
+      pakkeshop_postnummer: "8000",
+      pakkeshop_by: "Aarhus C",
+      modtager_navn: "Køber",
+      modtager_adresse: null,
+      modtager_postnummer: null,
+      modtager_by: null,
+      modtager_telefon: "+4512345678",
+      modtager_email: "koeber@test.bidhamr.dk",
+    };
+    raekker.forsendelser = { id: FID, transportoer };
+    raekker.trades = { id: "T1", auction_id: "A1", buyer_id: "K1", seller_id: "S1" };
+    raekker.auctions = { titel: "Lampe", vaegt_gram: 800 };
+    raekker.users = { email: "saelger@test.bidhamr.dk" };
+    rpcSvar.forsendelse_claim = () => ({ data: { kode: "ok", id: FID, pakkestoerrelse: "lille" }, error: null });
+    rpcSvar.forsendelse_gem_detaljer = () => ({ data: null, error: null });
+    rpcSvar.forsendelse_gem_oprettet = () => ({ data: true, error: null });
+    (falskAdmin as Record<string, unknown>).storage = {
+      from: () => ({ upload: async () => ({ error: null }) }),
+    };
+  }
+  const postBody = () => {
+    const kald = vi.mocked(fetch).mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST");
+    return JSON.parse(String((kald?.[1] as RequestInit).body)) as Record<string, unknown>;
+  };
+  const AFSENDER = { navn: "Sælger", adresse: "Vej 1", postnummer: "5000", by: "Odense C" };
+
+  it("en betalt PostNord-levering får stadig label og QR-kode (PostNord slået fra)", async () => {
+    forbered("postnord");
+    fetchSvar = [tomListe(), json(fx("opret_postnord_pakkeshop.json")), json(fx("qr_postnord.json"))];
+    const r = await opretUdgaaendeForsendelse("T1", "S1", AFSENDER);
+    expect(r).toEqual({ ok: true, forsendelseId: FID });
+    expect(postBody()).toMatchObject({ product_code: "PDK_MC" });
+    expect(fns()).toContain("forsendelse_gem_qr");
+  });
+
+  it("GLS: labelen er en PDF (ingen labelfri kode, ingen QR)", async () => {
+    forbered("gls");
+    fetchSvar = [tomListe(), json(fx("opret_gls_pakkeshop.json"))];
+    const r = await opretUdgaaendeForsendelse("T1", "S1", AFSENDER);
+    expect(r).toEqual({ ok: true, forsendelseId: FID });
+    const body = postBody();
+    expect(body.product_code).toBe("GLSDK_SD");
+    expect(body.service_codes).not.toContain("QR_CODE");
+    const gemt = rpcLog.find((x) => x.fn === "forsendelse_gem_oprettet");
+    expect(gemt?.args).toMatchObject({ p_qr_kode: null });
+    expect(String(gemt?.args.p_label_sti)).toMatch(/\.pdf$/);
+    expect(fns()).not.toContain("forsendelse_gem_qr");
   });
 });

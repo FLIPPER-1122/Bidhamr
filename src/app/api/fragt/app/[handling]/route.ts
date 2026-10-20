@@ -23,11 +23,11 @@ import {
 //   Authorization: Bearer <Supabase access token>
 //   Content-Type: application/json
 //   pakkeshops   { postnummer, adresse?, by?, antal?, transportoer?, indlevering? }
-//                transportoer: "dao" | "gls" | "postnord" (fra checkout.transportoerer)
+//                transportoer: en af checkout.transportoerer (i dag "dao" | "gls"; "postnord" kun med SHIPMONDO_POSTNORD_AKTIV)
 //   checkout     { trade_id }
 //   levering     { trade_id, maade: "pakkeshop" | "doer", transportoer?, pakkeshop_id?, pakkeshop_postnummer?,
 //                  pakkeshop_adresse?, modtager: { navn, adresse?, postnummer?, by?, telefon }, gem_forslag? }
-//                transportoer er valgfri: "dao" | "gls" | "postnord" fra checkout.transportoerer.
+//                transportoer er valgfri: en af checkout.transportoerer (i dag "dao" | "gls"). Andre: 409 afvist.
 //                Sendes den ikke, bruges DAO (standard).
 //                eller { trade_id, maade: "afhentning" } (kun når checkout.afhentningMulig)
 //   book         { trade_id, afsender?: { navn, adresse, postnummer, by, telefon? } }

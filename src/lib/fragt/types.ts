@@ -24,12 +24,47 @@ export function labelGraense(fragtfirma: string | null | undefined): number | nu
 export const TRANSPORTOERER = ["dao", "gls", "postnord"] as const;
 export type Transportoer = (typeof TRANSPORTOERER)[number];
 
-// GLS er slået fra, indtil Shipmondo har svaret (SHIPMONDO_GLS_AKTIV - se
-// shipmondoGlsAktiv i shipmondo.ts). Fejlteksten bruges af fragt og betaling.
-export const GLS_LUKKET = "GLS kan ikke vælges lige nu. Vælg DAO eller PostNord.";
-
 export function erTransportoer(v: unknown): v is Transportoer {
   return typeof v === "string" && (TRANSPORTOERER as readonly string[]).includes(v);
+}
+
+// Fragtfirmaer, køberen kan vælge (Filip, 20. okt. 2026): DAO og GLS (GLS med
+// printet PDF-label), ingen PostNord indtil videre. Standarden gælder, når
+// SHIPMONDO_TRANSPORTOERER ikke er sat (eller kun har ukendte værdier).
+export const STANDARD_TRANSPORTOERER: readonly Transportoer[] = ["dao", "gls"];
+
+// Den ene liste over tilladte fragtfirmaer - bruges af checkout, pakkeshop-
+// søgning, gem levering, betaling og databasen (p_valg->'tilladte').
+//   SHIPMONDO_TRANSPORTOERER   kommasepareret liste, fx "dao,gls" (standard).
+//                              Ukendte værdier ignoreres.
+//   SHIPMONDO_POSTNORD_AKTIV   præcis "true" slår PostNord til (oven i listen).
+//   SHIPMONDO_GLS_AKTIV        præcis "true" slår GLS til (bagudkompatibelt -
+//                              GLS er med i standarden, så flaget er overflødigt).
+// Rækkefølgen er altid DAO, GLS, PostNord (den første bruges, når en ældre
+// app ikke sender transportoer). Ren funktion: env sendes med (testbar).
+export function tilladteTransportoerer(env: {
+  SHIPMONDO_TRANSPORTOERER?: string;
+  SHIPMONDO_POSTNORD_AKTIV?: string;
+  SHIPMONDO_GLS_AKTIV?: string;
+}): Transportoer[] {
+  const raa = (env.SHIPMONDO_TRANSPORTOERER ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(erTransportoer);
+  const valgt = new Set<Transportoer>(raa.length > 0 ? raa : STANDARD_TRANSPORTOERER);
+  if (env.SHIPMONDO_POSTNORD_AKTIV === "true") valgt.add("postnord");
+  if (env.SHIPMONDO_GLS_AKTIV === "true") valgt.add("gls");
+  return TRANSPORTOERER.filter((t) => valgt.has(t));
+}
+
+// Dansk fejl, når køberen vælger et fragtfirma, der ikke kan vælges nu, fx
+// "PostNord kan ikke vælges lige nu. Vælg DAO eller GLS." Bruges af fragt og
+// betaling (også app-API'et).
+export function transportoerLukket(t: Transportoer, tilladte: readonly Transportoer[]): string {
+  const navne = tilladte.filter((x) => x !== t).map((x) => TRANSPORTOER_INFO[x].navn);
+  const liste =
+    navne.length <= 1 ? (navne[0] ?? "et andet fragtfirma") : `${navne.slice(0, -1).join(", ")} eller ${navne[navne.length - 1]}`;
+  return `${TRANSPORTOER_INFO[t].navn} kan ikke vælges lige nu. Vælg ${liste}.`;
 }
 
 // Til visning (checkout, "Send pakke", retur). labelfri:

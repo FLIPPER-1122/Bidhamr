@@ -22,7 +22,12 @@ Kun Stripes testmiljø indtil fase 6.
 
 `levering` i `betal` er valgfri og har samme felter som `/api/fragt/app/levering`
 (`maade`, `transportoer`, `pakkeshop_id`, `pakkeshop_postnummer`, `pakkeshop_adresse`, `modtager`, `gem_forslag`).
-`transportoer` er `"dao" | "gls" | "postnord"` fra `checkout.transportoerer` (udeladt = DAO). `saelgerNavn` er
+`transportoer` er en af `checkout.transportoerer` (udeladt = DAO). **I dag kun `"dao"` og `"gls"`** (Filip, 20. okt.
+2026): PostNord er slået fra (`SHIPMONDO_POSTNORD_AKTIV`), og `"postnord"` giver `409 { fejl: "PostNord kan ikke vælges
+lige nu. Vælg DAO eller GLS.", kode: "levering" }`. En PostNord-levering, der blev gemt før, men ikke er betalt, giver
+ved `betal` `kode: "vaelg_levering"` med samme tekst - send køberen til checkout. Vis teksten fra `fejl`; byg den ikke
+selv. Med GLS (`labelfri: false` i `checkout.transportoerer`) skal sælgeren printe labelen - vis fx "Sælger printer
+label" på GLS-kortet og en linje under valget, som på hjemmesiden. `saelgerNavn` er
 sælgerens visningsnavn til "Sælger: X" som på hjemmesidens checkout (`null`, hvis det mangler). Send den kun, når
 køberen har ændret valget. Ændrer valget beløbet, annulleres den gamle PaymentIntent, og der laves en ny. Uden
 `levering` genbruges den samme PaymentIntent.

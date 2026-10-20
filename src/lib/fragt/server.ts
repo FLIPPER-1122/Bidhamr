@@ -69,11 +69,11 @@ import {
   FragtFejl,
   FragtUkendtUdfald,
   FRAGT_IKKE_SAT_OP,
-  GLS_LUKKET,
   UKENDT_UDFALD_TEKST,
   erLeveringsmaade,
   erSporingsType,
   erTransportoer,
+  transportoerLukket,
 } from "@/lib/fragt/types";
 
 export const FRAGT_LABEL_BUCKET = "fragt-labels";
@@ -275,16 +275,13 @@ export async function hentFragtpriser(): Promise<Fragtpris[]> {
 
 // ------------------------------------------------------------ pakkeshops
 
-// GLS er slået fra, indtil Shipmondo har svaret (SHIPMONDO_GLS_AKTIV, se
-// shipmondoGlsAktiv i shipmondo.ts). Teksten står i types.ts.
-export { GLS_LUKKET };
-
 // Transportøren fra klienten: kun en af dem, køberen kan vælge nu
-// (adapterens transportoerer - Shipmondo uden GLS, medmindre GLS er slået
-// til). Adaptere uden valg: null. Mangler den hos en adapter med valg: den
-// første (DAO). alle = true (kun søgning efter indleveringssteder til retur):
-// alle kendte transportører, så retur af en pakke, der allerede er sendt med
-// GLS, virker videre.
+// (adapterens transportoerer - Shipmondo: DAO og GLS, PostNord kun med
+// SHIPMONDO_POSTNORD_AKTIV=true; Filip, 20. okt. 2026). Adaptere uden valg:
+// null. Mangler den hos en adapter med valg: den første (DAO). alle = true
+// (kun søgning efter indleveringssteder til retur): alle kendte
+// transportører, så retur af en pakke, der allerede er sendt med PostNord,
+// virker videre.
 function valgtTransportoer(
   firma: Fragtfirma,
   v: unknown,
@@ -295,7 +292,7 @@ function valgtTransportoer(
   if (v === undefined || v === null || v === "") return muligt[0];
   if (!erTransportoer(v)) return { fejl: "Vælg et fragtfirma." };
   if (alle || muligt.includes(v)) return v;
-  return { fejl: v === "gls" ? GLS_LUKKET : "Vælg et fragtfirma." };
+  return { fejl: transportoerLukket(v, muligt) };
 }
 
 // Pakkeshops nær et postnummer/en adresse hos det aktive fragtfirma (og den
@@ -358,8 +355,6 @@ const LEVERING_FEJL: Record<string, string> = {
   ikke_mulig: "Levering til døren er ikke muligt for denne pakkestørrelse. Vælg en pakkeshop.",
   pris_laast: "Du har allerede betalt. Du kan skifte pakkeshop, men ikke leveringsmåde.",
   ugyldig: "Ugyldigt valg.",
-  // Databasens værn (20261024020000): GLS uden gls_aktiv fra serveren.
-  gls_lukket: GLS_LUKKET,
 };
 
 const AFHENTNING_IKKE_MULIG = "Sælgeren tilbyder ikke afhentning af denne vare. Vælg en pakkeshop eller levering hjem.";
@@ -464,6 +459,7 @@ export async function gemLeveringsvalg(
   const admin = createAdminClient();
   const firma = hentFragtfirma();
   if (!(await firmaKlar(firma))) return { fejl: FRAGT_IKKE_SAT_OP };
+  const tilladte = firma.transportoerer ?? [];
   const transportoer = valgtTransportoer(firma, input.transportoer);
   if (transportoer && typeof transportoer === "object") return transportoer;
 
@@ -497,9 +493,12 @@ export async function gemLeveringsvalg(
     fragtfirma: firma.navn,
     // Kun Shipmondo (databasen kræver den dér og ignorerer den ellers).
     transportoer,
-    // Databasen afviser GLS, medmindre serveren siger, at GLS er slået til
-    // (20261024020000) - fail closed, også for kode, der glemmer tjekket.
-    gls_aktiv: (firma.transportoerer ?? []).includes("gls"),
+    // Databasen afviser en transportør uden for listen (20261028010000) -
+    // fail closed, også for kode, der glemmer tjekket.
+    tilladte: [...tilladte],
+    // Til databasen før 20261028010000 (afviser GLS uden gls_aktiv = true),
+    // så GLS virker, hvis koden deployes før migrationen.
+    gls_aktiv: tilladte.includes("gls"),
     pakkeshop: pakkeshop
       ? {
           id: pakkeshop.id,
@@ -522,7 +521,9 @@ export async function gemLeveringsvalg(
     gem_forslag: input.gemForslag !== false,
   };
 
-  return gemValgIDatabasen(admin, tradeId, koeberId, valg, {});
+  // Databasens værn (20261028010000): transportøren står ikke i listen.
+  const lukket = transportoer ? transportoerLukket(transportoer, tilladte) : "Vælg et fragtfirma.";
+  return gemValgIDatabasen(admin, tradeId, koeberId, valg, { transportoer_lukket: lukket, gls_lukket: lukket });
 }
 
 type LeveringRaekke = {

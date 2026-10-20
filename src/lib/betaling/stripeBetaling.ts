@@ -59,8 +59,8 @@ import {
   sideUrl,
 } from "@/lib/mails/handel";
 import { send } from "@/lib/notifikationer/send";
-import { shipmondoGlsAktiv } from "@/lib/fragt/shipmondo";
-import { GLS_LUKKET } from "@/lib/fragt/types";
+import { shipmondoTransportoerer } from "@/lib/fragt/shipmondo";
+import { erTransportoer, transportoerLukket, type Transportoer } from "@/lib/fragt/types";
 import {
   koeberKvittering,
   sendKoeberKvittering,
@@ -486,11 +486,14 @@ export async function annullerPaymentIntentForLevering(
   throw new Error(`PaymentIntent ${piId} kunne ikke annulleres (${pi.status})`);
 }
 
-// "ok" | "mangler" (intet gyldigt valg) | "gls_lukket": køberen valgte GLS
-// via Shipmondo, før GLS blev slået fra (Filip, 15. okt. 2026 -
-// SHIPMONDO_GLS_AKTIV), og labelen er ikke lavet. Så skal køberen vælge
-// levering igen (DAO eller PostNord), før der kan betales.
-async function leveringsvalgStatus(b: BetalingRaekke): Promise<"ok" | "mangler" | "gls_lukket"> {
+// "ok" | "mangler" (intet gyldigt valg) | { lukket }: køberen valgte et
+// fragtfirma via Shipmondo, som ikke kan vælges længere (fx PostNord - Filip,
+// 20. okt. 2026: kun DAO og GLS; SHIPMONDO_TRANSPORTOERER /
+// SHIPMONDO_POSTNORD_AKTIV), og labelen er ikke lavet. Så skal køberen vælge
+// levering igen (DAO eller GLS), før der kan betales.
+async function leveringsvalgStatus(
+  b: BetalingRaekke,
+): Promise<"ok" | "mangler" | { lukket: Transportoer; tilladte: Transportoer[] }> {
   if (Number(b.fragt_oere) <= 0) return "ok";
   const admin = createAdminClient();
   type Lev = { fragt_oere: number; fragtfirma?: string | null; transportoer?: string | null };
@@ -499,7 +502,7 @@ async function leveringsvalgStatus(b: BetalingRaekke): Promise<"ok" | "mangler" 
     .select("fragt_oere, fragtfirma, transportoer")
     .eq("trade_id", b.trade_id)
     .maybeSingle<Lev>();
-  // Før 20261024010000 findes kolonnen transportoer ikke (intet GLS-valg).
+  // Før 20261024010000 findes kolonnen transportoer ikke (altid DAO).
   if (error && (error.code === "42703" || /transportoer/.test(error.message ?? ""))) {
     ({ data, error } = await admin
       .from("handel_levering")
@@ -509,7 +512,9 @@ async function leveringsvalgStatus(b: BetalingRaekke): Promise<"ok" | "mangler" 
   }
   if (error) throw new Error(`handel_levering: ${error.message}`);
   if (data === null || Number(data.fragt_oere) !== Number(b.fragt_oere)) return "mangler";
-  if (data.fragtfirma === "shipmondo" && data.transportoer === "gls" && !shipmondoGlsAktiv()) {
+  const tilladte = shipmondoTransportoerer();
+  if (data.fragtfirma === "shipmondo" && erTransportoer(data.transportoer) && !tilladte.includes(data.transportoer)) {
+    const lukket = data.transportoer;
     const { data: fs, error: fFejl } = await admin
       .from("forsendelser")
       .select("id")
@@ -518,7 +523,7 @@ async function leveringsvalgStatus(b: BetalingRaekke): Promise<"ok" | "mangler" 
       .not("status", "in", "(annulleret,fejlet)")
       .limit(1);
     if (fFejl) throw new Error(`forsendelser: ${fFejl.message}`);
-    if ((fs ?? []).length === 0) return "gls_lukket";
+    if ((fs ?? []).length === 0) return { lukket, tilladte };
   }
   return "ok";
 }
@@ -609,7 +614,9 @@ export async function sikrPaymentIntent(
       });
       if (nFejl) throw new Error("betaling_nulstil_annulleret_pi: " + nFejl.message);
     }
-    throw new LeveringManglerFejl(levering === "gls_lukket" ? GLS_LUKKET : undefined);
+    throw new LeveringManglerFejl(
+      typeof levering === "object" ? transportoerLukket(levering.lukket, levering.tilladte) : undefined,
+    );
   }
 
   if (betaling.stripe_payment_intent_id) {
@@ -838,7 +845,8 @@ export class BetalingsFejl extends Error {}
 export const LEVERING_MANGLER_TEKST = "Vælg levering, før du betaler.";
 export class LeveringManglerFejl extends BetalingsFejl {
   readonly kode = "vaelg_levering";
-  // tekst: fx GLS_LUKKET, når køberen skal vælge et andet fragtfirma.
+  // tekst: fx "PostNord kan ikke vælges lige nu. Vælg DAO eller GLS.", når
+  // køberen skal vælge et andet fragtfirma (transportoerLukket).
   constructor(tekst: string = LEVERING_MANGLER_TEKST) {
     super(tekst);
   }

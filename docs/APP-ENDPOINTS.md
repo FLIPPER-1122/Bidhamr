@@ -153,7 +153,14 @@ Svaret er da en tom sletning (intet slettet) - prøv ikke igen.
 
 ## Ændret i eksisterende endpoints
 
-- `POST /api/betaling/app/betal`: `levering.transportoer` (`"dao" | "gls" | "postnord"`) sendes videre (som
+- **Fragtfirmaer (Filip, 20. okt. 2026): kun DAO og GLS.** `checkout.transportoerer` fra `/api/fragt/app/checkout`
+  indeholder i dag kun `dao` og `gls` (PostNord er slået fra - `SHIPMONDO_POSTNORD_AKTIV=true` slår den til igen).
+  `transportoer: "postnord"` giver `409 { fejl: "PostNord kan ikke vælges lige nu. Vælg DAO eller GLS.", kode: "afvist" }`
+  fra `/api/fragt/app/pakkeshops` og `/levering` (`/api/betaling/app/betal` med levering: `kode: "levering"`); en gemt,
+  ubetalt PostNord-levering giver ved `betal` `kode: "vaelg_levering"`. Pakkeshop-søgning med `indlevering: true`
+  (retur) virker stadig for PostNord, og eksisterende PostNord-forsendelser (label, QR, sporing, retur) virker.
+  GLS har `labelfri: false`: sælgeren skal printe PDF-labelen (`label`); der er ingen kode/QR på GLS-forsendelser.
+- `POST /api/betaling/app/betal`: `levering.transportoer` (en af `checkout.transportoerer`) sendes videre (som
   `/api/fragt/app/levering`; udeladt = DAO). Svaret har desuden `saelgerNavn` (vis "Sælger: X" som hjemmesidens
   checkout; `null`, hvis navnet mangler).
 - `POST /api/fragt/app/returfragt`: svaret har nu også `customerId` og `publishableKey` (som `betal`), så et gemt kort

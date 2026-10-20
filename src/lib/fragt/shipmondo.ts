@@ -79,6 +79,7 @@ import {
   FRAGT_IKKE_SAT_OP,
   TRANSPORTOERER,
   erTransportoer,
+  tilladteTransportoerer,
 } from "@/lib/fragt/types";
 
 export const DAO_PAKKESHOP = "DAO_STS";
@@ -889,22 +890,29 @@ async function fortolk(request: Request): Promise<WebhookResultat> {
 
 // ------------------------------------------------------------ adapter
 
-// GLS er slået fra, indtil Shipmondo har svaret på, om GLS kan sendes
-// labelfrit (Filip, 15. okt. 2026). Slås til med SHIPMONDO_GLS_AKTIV=true
-// (alt andet = fra; fail closed). Uden flaget kan køberen ikke vælge GLS i
-// checkout (hjemmeside og app), og databasen afviser GLS (handel_gem_levering
-// kræver gls_aktiv = true fra serveren, 20261024020000). Forsendelser, der
-// allerede er lavet med GLS (labels, sporing, retur), virker videre.
-export function shipmondoGlsAktiv(): boolean {
-  return process.env.SHIPMONDO_GLS_AKTIV === "true";
+// Fragtfirmaer, køberen kan vælge nu (Filip, 20. okt. 2026): DAO og GLS (GLS
+// med printet PDF-label - GLS har ingen labelfri udgående via Shipmondo),
+// ingen PostNord indtil videre. Listen styres af SHIPMONDO_TRANSPORTOERER
+// (standard dao,gls) og SHIPMONDO_POSTNORD_AKTIV=true (fail closed: alt andet
+// end præcis "true" = PostNord fra) - se tilladteTransportoerer i types.ts.
+// Uden PostNord kan køberen ikke vælge PostNord i checkout (hjemmeside og
+// app), og databasen afviser den (handel_gem_levering kræver, at
+// transportøren står i p_valg->'tilladte', 20261028010000). Forsendelser, der
+// allerede er lavet (labels, sporing, webhooks, retur), virker videre.
+export function shipmondoTransportoerer(): Transportoer[] {
+  return tilladteTransportoerer({
+    SHIPMONDO_TRANSPORTOERER: process.env.SHIPMONDO_TRANSPORTOERER,
+    SHIPMONDO_POSTNORD_AKTIV: process.env.SHIPMONDO_POSTNORD_AKTIV,
+    SHIPMONDO_GLS_AKTIV: process.env.SHIPMONDO_GLS_AKTIV,
+  });
 }
 
 export const shipmondoFirma: Fragtfirma = {
   navn: "shipmondo",
   visningsnavn: "Shipmondo",
-  // Transportører, køberen kan vælge nu (uden GLS, medmindre flaget er sat).
+  // Transportører, køberen kan vælge nu (standard DAO og GLS).
   get transportoerer() {
-    return shipmondoGlsAktiv() ? TRANSPORTOERER : TRANSPORTOERER.filter((t) => t !== "gls");
+    return shipmondoTransportoerer();
   },
   erSatOp,
   // Shipmondo har intet efterlysnings-API: staff efterlyser hos
