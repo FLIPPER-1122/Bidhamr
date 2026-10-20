@@ -20,7 +20,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { DineroFejl, lavDineroKlient, type DineroKlient, type DineroKontaktModel } from "./dinero";
-import { hentFakturaKonfig } from "./konfig";
+import { hentFakturaKonfig, kontrollerOrganisation } from "./konfig";
+import { FAKTURA_GUL_TIMER } from "@/lib/admin/fakturaLampe";
 import {
   behandlDokument,
   type FakturaKontekst,
@@ -30,14 +31,12 @@ import {
 } from "./proces";
 
 const PR_KOERSEL = 8;
-// BidHamrs CVR - live-regnskabet i Dinero skal have det (ROADMAP-BESLUTNINGER
-// "Virksomhedsoplysninger").
-const BIDHAMR_CVR = "46836219";
 // Samlet tidsbudget for trin 11: nye dokumenter påbegyndes ikke efter 20 s
 // (et påbegyndt dokument tager højst få kald à højst 8 s).
 const MAKS_TID_MS = 20_000;
 // Dokumenter, der har ventet så længe uden at blive færdige -> drift-alarm.
-const HAENGER_EFTER_MS = 2 * 60 * 60 * 1000;
+// Samme grænse som den gule systemlampe "Fakturaer" (src/lib/admin/fakturaLampe.ts).
+const HAENGER_EFTER_MS = FAKTURA_GUL_TIMER * 60 * 60 * 1000;
 const MAKS_PDF = 6 * 1024 * 1024;
 
 export type FakturaKoeResultat = {
@@ -46,7 +45,7 @@ export type FakturaKoeResultat = {
   faerdige: number;
   fejl: number;
   stoppet: number;
-  springetOver?: "ikke_migreret" | "ikke_konfigureret" | "graense" | "adgang";
+  springetOver?: "ikke_migreret" | "ikke_konfigureret" | "graense" | "adgang" | "forbigaaende";
 };
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -402,7 +401,7 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
     await alarmPrTilfaelde({
       noegle: "faktura:haenger",
       hvor: "faktura/dinero",
-      fejl: `${haenger} faktura-dokument(er) har ventet over 2 timer uden at blive lavet i Dinero${
+      fejl: `${haenger} faktura-dokument(er) har ventet over ${FAKTURA_GUL_TIMER} timer uden at blive lavet i Dinero${
         konfig.ok ? "" : ` (${konfig.besked})`
       }. Se Admin -> Fakturaer.`,
     });
@@ -420,32 +419,40 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
     return { ...res, springetOver: "ikke_konfigureret" };
   }
   const dinero = lavDineroKlient(konfig.dinero, { maksKald: 45 });
-  // Live: Dinero-regnskabet skal være BidHamrs eget (CVR 46836219) - ellers
-  // laves intet (fx sandkassens nøgler sat i produktionen).
-  if (konfig.miljoe === "live") {
-    try {
-      const org = await dinero.hentOrganisation();
-      if (!org || (org.VatNumber ?? "").replace(/\D/g, "") !== BIDHAMR_CVR) {
-        await alarmPrTilfaelde({
-          noegle: "faktura:konfiguration",
-          hvor: "faktura/dinero",
-          fejl: `Fakturaer laves ikke: Dinero-regnskabet ${konfig.dinero.orgId} har ikke BidHamrs CVR (${BIDHAMR_CVR}). Se docs/FAKTURA.md.`,
-        });
-        return { ...res, springetOver: "ikke_konfigureret" };
-      }
-    } catch (err) {
-      const d = err instanceof DineroFejl ? err : null;
-      if (d?.graense) return { ...res, springetOver: "graense" };
+  // Regnskabet kontrolleres hos Dinero før HVER kørsel (kontrollerOrganisation):
+  //   live: BidHamrs eget (CVR 46836219) - fx aldrig sandkassens nøgler.
+  //   test: kun "BidHamr Test..." og aldrig BidHamrs CVR - så test (og
+  //         produktionen med Stripe-testnøgle) aldrig sender til
+  //         "Bidhamr ApS", det rigtige regnskab (Filip, 20. okt. 2026).
+  // Login-fejl (token/nøgler) giver alarmen faktura:adgang.
+  try {
+    const org = await dinero.hentOrganisation();
+    const afvist = kontrollerOrganisation(konfig.miljoe, konfig.dinero.orgId, org);
+    if (afvist) {
       await alarmPrTilfaelde({
-        noegle: d?.adgang ? "faktura:adgang" : "faktura:konfiguration",
+        noegle: "faktura:konfiguration",
         hvor: "faktura/dinero",
-        fejl: `Fakturaer laves ikke: Dinero-regnskabet kunne ikke kontrolleres (CVR) - ${err instanceof Error ? err.message : String(err)}`,
+        fejl: `Fakturaer laves ikke: ${afvist} Se docs/FAKTURA.md.`,
       });
-      return { ...res, springetOver: d?.adgang ? "adgang" : "ikke_konfigureret" };
+      return { ...res, springetOver: "ikke_konfigureret" };
     }
+  } catch (err) {
+    const d = err instanceof DineroFejl ? err : null;
+    if (d?.graense) return { ...res, springetOver: "graense" };
+    // Midlertidig fejl (5xx, timeout, netværk): spring kørslen over uden
+    // alarm - stadig fail closed (intet claimes). Varer det ved, giver
+    // faktura:haenger alarm efter 2 timer, og lampen bliver rød efter 6.
+    if (d?.forbigaaende) return { ...res, springetOver: "forbigaaende" };
+    await alarmPrTilfaelde({
+      noegle: d?.adgang ? "faktura:adgang" : "faktura:konfiguration",
+      hvor: "faktura/dinero",
+      fejl: `Fakturaer laves ikke: Dinero-regnskabet kunne ikke kontrolleres - ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return { ...res, springetOver: d?.adgang ? "adgang" : "ikke_konfigureret" };
   }
-  // Først nu er opsætningen i orden (test, eller live med BidHamrs CVR).
+  // Først nu er opsætningen og adgangen i orden (login og opslag lykkedes).
   await lukTilfaelde("faktura:konfiguration");
+  await lukTilfaelde("faktura:adgang");
 
   // 3) Behandl køen.
   const { data: claimet, error: claimFejl } = await admin.rpc("faktura_claim", { p_antal: PR_KOERSEL });

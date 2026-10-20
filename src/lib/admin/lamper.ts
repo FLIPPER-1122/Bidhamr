@@ -8,12 +8,14 @@ import { databasensStripeTilstand, noeglensTilstand, offentligNoeglesTilstand } 
 import { stripeTilstandLampe } from "@/lib/admin/stripeLampe";
 import type { NoedstopTal } from "@/lib/admin/taellere";
 import { hentEksternVagt } from "@/lib/admin/healthchecks";
+import { FAKTURA_GUL_TIMER, FAKTURA_ROED_TIMER, fakturaLampe } from "@/lib/admin/fakturaLampe";
 
 // Systemlamper på forsiden (docs/ADMIN-REDESIGN.md 3.2), kun admin og chef.
 // Trin 1-2: KUN de lamper, der kan beregnes ud fra data, vi har i dag
 // (drift-data, miljøet, sikkerhedsnet A's nødstop og sikkerhedsnet B's
-// daglige afstemning). Fakturering og MitID kommer senere - de vises slet ikke
-// indtil da, så der aldrig står en grøn lampe, vi ikke kan stå inde for.
+// daglige afstemning) og fakturakøen til Dinero. MitID kommer senere - den
+// vises slet ikke indtil da, så der aldrig står en grøn lampe, vi ikke kan
+// stå inde for.
 // Ingen nøgler, URL'er eller adresser sendes til siden - kun tone og tekst.
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -76,7 +78,30 @@ async function byg(admin: Admin): Promise<Lampe[]> {
   const test = erTestdatabase();
   const fra24 = new Date(nu - 24 * 60 * MIN).toISOString();
 
-  const [rute, alarm, webhook, fragt, vagt, afstemning, afvigelser, kritiske, stripeDb] = await Promise.all([
+  const fakturaKoe = (timer: number) =>
+    admin
+      .from("fakturaer")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["venter", "kladde", "bogfoert"])
+      .eq("opgivet", false)
+      .eq("manuel", false)
+      .lt("oprettet_kl", new Date(nu - timer * 60 * MIN).toISOString());
+
+  const [
+    rute,
+    alarm,
+    webhook,
+    fragt,
+    vagt,
+    afstemning,
+    afvigelser,
+    kritiske,
+    stripeDb,
+    fakturaGul,
+    fakturaRoed,
+    fakturaHandling,
+    fakturaTilfaelde,
+  ] = await Promise.all([
     hentCronRute(admin, nu),
     hentAlarmStatus(admin),
     admin
@@ -104,6 +129,16 @@ async function byg(admin: Admin): Promise<Lampe[]> {
     // Databasens stripe_tilstand (samme opslag og cache som Stripe-vagten;
     // null, hvis den ikke kan læses).
     databasensStripeTilstand(),
+    // Fakturakøen (systemlampen Fakturaer).
+    fakturaKoe(FAKTURA_GUL_TIMER),
+    fakturaKoe(FAKTURA_ROED_TIMER),
+    admin
+      .from("fakturaer")
+      .select("id", { count: "exact", head: true })
+      .or("status.eq.kraever_handling,opgivet.eq.true")
+      .neq("status", "haandteret_manuelt")
+      .neq("status", "faerdig"),
+    admin.from("drift_tilfaelde").select("noegle").in("noegle", ["faktura:adgang", "faktura:konfiguration"]).is("loest_kl", null),
   ]);
   const fragtTilHandling = fragt.count ?? 0;
 
@@ -217,6 +252,24 @@ async function byg(admin: Admin): Promise<Lampe[]> {
                 : { navn: "Daglig afstemning", tone: "groen", tekst: `stemmer · kørt ${siden(k.startet_kl, nu)}` };
     // Kun chefen kan åbne Penge; admin ser lampen uden link.
     lamper.push(lampe);
+  }
+
+  // Fakturaer (Dinero). Mangler tabellen (migrationen er ikke kørt), vises
+  // lampen ikke. Også rød på testdatabasen: fakturaer, der ikke bliver lavet,
+  // skal ses - de må aldrig stoppe stille.
+  const fFejl = [fakturaGul.error, fakturaRoed.error, fakturaHandling.error, fakturaTilfaelde.error].filter(Boolean);
+  if (fFejl.length > 0) {
+    if (!fFejl.every((e) => mangler(e))) lamper.push(ikkeHentet("Fakturaer"));
+  } else {
+    lamper.push({
+      ...fakturaLampe({
+        ventetGul: fakturaGul.count ?? 0,
+        ventetRoed: fakturaRoed.count ?? 0,
+        kraeverHandling: fakturaHandling.count ?? 0,
+        aabne: (fakturaTilfaelde.data ?? []).map((t: { noegle: string }) => t.noegle),
+      }),
+      href: "/admin/drift",
+    });
   }
 
   // Ekstern vagt (Healthchecks.io).
