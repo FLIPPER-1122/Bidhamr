@@ -45,9 +45,14 @@ export function erStille(status: ReklamationStatus, fremdriftKl: string, nu: num
   return (status === "afventer_saelger" || status === "anmeldt") && d !== null && d >= REKLAMATION_STILLE_DAGE;
 }
 
-// Sagen er ændret, efter sælgeren anmeldte (samme regel som tælleren).
-export function erSagAendret(status: ReklamationStatus, sagAendretKl: string | null): boolean {
-  return !!sagAendretKl && (status === "anmeldt" || status === "godkendt");
+// Sagen er ændret, efter sælgeren anmeldte, og staff har ikke kvitteret
+// (samme regel som tælleren).
+export function erSagAendret(
+  status: ReklamationStatus,
+  sagAendretKl: string | null,
+  kvitteretKl: string | null = null,
+): boolean {
+  return !!sagAendretKl && !kvitteretKl && (status === "anmeldt" || status === "godkendt");
 }
 
 // Navne på reklamationens hændelser i moderation_log (tidslinjen).
@@ -58,6 +63,7 @@ export const REKLAMATION_LOG_NAVN: Record<string, string> = {
   reklamation_genaabnet: "Reklamationen er åbnet igen",
   reklamation_annulleret: "Reklamationen er annulleret",
   reklamation_sag_aendret: "Sagen er ændret efter anmeldelsen",
+  reklamation_sag_aendret_kvitteret: "Kvitteret for den ændrede sag",
   reklamation_note: "Intern note gemt",
   reklamation_gensendt: "Oplysningerne er sendt til sælgeren igen",
   reklamation_status_rettet: "Status rettet af BidHamr",

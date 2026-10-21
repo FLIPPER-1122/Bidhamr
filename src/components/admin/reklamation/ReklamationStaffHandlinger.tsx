@@ -1,14 +1,15 @@
 "use client";
 
 // Staffs knapper på en reklamation: send oplysningerne igen, ret status
-// (påkrævet intern begrundelse), annullér (grund til sælgeren) og den
-// interne note. Databasen tjekker rolle, to-trins-login og inhabilitet igen
+// (påkrævet intern begrundelse), annullér (grund til sælgeren), kvittér for
+// en ændret sag og den interne note. Databasen tjekker rolle, to-trins-login og inhabilitet igen
 // (src/app/actions/adminReklamation.ts).
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   annullerReklamation,
   gemReklamationNote,
+  kvitterSagAendret,
   retReklamationStatus,
   sendReklamationIgen,
   type ReklamationSvar,
@@ -363,6 +364,69 @@ function AnnullerKnap({ reklamationId, sagId }: { reklamationId: string; sagId: 
   );
 }
 
+// ------------------------------------------------------------------ Kvittér
+
+// Sagen er ændret efter sælgerens anmeldelse: "set - reklamationen fortsætter".
+function KvitterKnap({ reklamationId, sagId }: { reklamationId: string; sagId: string }) {
+  const id = useId();
+  const [aaben, setAaben] = useState(false);
+  const luk = () => setAaben(false);
+  const { sender, fejl, setFejl, send } = useSend();
+
+  function indsend(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const begrundelse = String(new FormData(e.currentTarget).get("begrundelse") ?? "").trim();
+    if (!begrundelse) {
+      setFejl("Skriv en intern begrundelse.");
+      return;
+    }
+    void send(() => kvitterSagAendret(reklamationId, begrundelse, sagId), "Kvitteret – reklamationen fortsætter", luk);
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setFejl(null);
+          setAaben(true);
+        }}
+        className="btn btn-sekundaer w-full sm:w-auto"
+      >
+        Kvittér for ændringen
+      </button>
+      <Dialog
+        titel="Kvittér for den ændrede sag"
+        beskrivelse="Reklamationen fortsætter uændret, og sælgeren kan igen registrere, at erstatningen er godkendt. Sælgeren får besked. Skal reklamationen stoppes, så annullér eller ret status i stedet."
+        aaben={aaben}
+        onLuk={luk}
+        laast={sender}
+      >
+        <form onSubmit={indsend} method="post" className="space-y-4">
+          <div>
+            <label htmlFor={`${id}-beg`} className="block text-sm font-medium text-neutral-800">
+              Intern begrundelse
+            </label>
+            <textarea
+              id={`${id}-beg`}
+              name="begrundelse"
+              rows={3}
+              required
+              maxLength={2000}
+              disabled={sender}
+              placeholder="Fx: Refusionen er sendt igen og gennemført – skaden står ved magt."
+              className={FELT}
+            />
+            <p className="mt-1 text-xs text-neutral-500">Kun synlig for BidHamr. Gemmes i loggen.</p>
+          </div>
+          <Fejl fejl={fejl} />
+          <Knapper sender={sender} onLuk={luk} bekraeft="Kvittér" />
+        </form>
+      </Dialog>
+    </>
+  );
+}
+
 // ------------------------------------------------------------------ Note
 
 export function ReklamationNote({
@@ -423,6 +487,7 @@ export default function ReklamationStaffHandlinger({
   kravbeloebOere,
   sagsnummer,
   inhabil,
+  sagAendret = false,
 }: {
   reklamationId: string;
   sagId: string;
@@ -430,6 +495,8 @@ export default function ReklamationStaffHandlinger({
   kravbeloebOere: number;
   sagsnummer: string | null;
   inhabil: boolean;
+  // Sagen er ændret efter anmeldelsen, og ingen har kvitteret.
+  sagAendret?: boolean;
 }) {
   if (inhabil) {
     return (
@@ -441,6 +508,7 @@ export default function ReklamationStaffHandlinger({
   const aaben = status === "afventer_saelger" || status === "anmeldt";
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
+      {sagAendret && <KvitterKnap reklamationId={reklamationId} sagId={sagId} />}
       {aaben && <SendIgenKnap reklamationId={reklamationId} sagId={sagId} />}
       <RetStatusKnap reklamationId={reklamationId} sagId={sagId} status={status} kravbeloebOere={kravbeloebOere} sagsnummer={sagsnummer} />
       {aaben && <AnnullerKnap reklamationId={reklamationId} sagId={sagId} />}

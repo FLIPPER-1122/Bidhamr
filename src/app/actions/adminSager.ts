@@ -976,7 +976,8 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
       const { trade_id: tradeId, sag_id: sid, part, udfald: u } = svar;
       const ps = pengeStatus;
       after(() => notificerAnkeAfgjort(ankeId, tradeId, sid, part, u, slut, begrundelse, ps));
-      // Skadet + ordentlig indpakning: reklamationen oprettes i databasen - sælgeren får besked.
+      // Skadet + ordentlig indpakning: reklamationen oprettes, når køberen er refunderet og
+      // afgørelsen er endelig (trigger/cron) - her synkroniseres og sendes beskeder med det samme.
       after(() => notificerReklamationer());
     }
 
@@ -1131,7 +1132,8 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
       const frist = svar.penge_flyttes_efter_kl ?? null;
       const valg = { endelig: !!svar.endelig, flyttetNu };
       after(() => notificerSagAfgoerelse(sagId, tradeId, type, beskedType, begrundelse, v, frist, valg));
-      // Skadet + ordentlig indpakning: reklamationen oprettes i databasen - sælgeren får besked.
+      // Skadet + ordentlig indpakning: reklamationen oprettes, når køberen er refunderet og
+      // afgørelsen er endelig (trigger/cron) - her synkroniseres og sendes beskeder med det samme.
       after(() => notificerReklamationer());
     }
 

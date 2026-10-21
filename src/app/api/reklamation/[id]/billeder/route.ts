@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const res = await hentSaelgerPakke(req, id, "api/reklamation/billeder");
   if (res instanceof Response) return res;
   try {
-    return await reklamationZipSvar(createAdminClient(), res.pakke, res.filer);
+    return await reklamationZipSvar(createAdminClient(), res.pakke, res.filer, res.brugerId);
   } catch (err) {
     await logDriftFejl({ kilde: "server", hvor: "api/reklamation/billeder", fejl: err, brugerId: res.brugerId });
     return tekstSvar(500, "Billederne kunne ikke hentes. Prøv igen om lidt.");

@@ -98,6 +98,7 @@ export const HANDLING_NAVNE: Record<string, string> = {
   reklamation_genaabnet: "Reklamation hos fragtfirma aktiv igen",
   reklamation_annulleret: "Annullerede reklamation hos fragtfirma",
   reklamation_sag_aendret: "Sagen ændret efter anmeldt reklamation",
+  reklamation_sag_aendret_kvitteret: "Kvitteret for ændret sag (reklamation)",
   reklamation_note: "Skrev intern note på reklamation",
   reklamation_gensendt: "Sendte reklamationspakken til sælger igen",
   reklamation_status_rettet: "Rettede status på reklamation",

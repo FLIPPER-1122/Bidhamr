@@ -64,6 +64,7 @@ type Raekke = {
   oprettet_kl: string;
   fremdrift_kl: string;
   sag_aendret_kl: string | null;
+  sag_aendret_kvitteret_kl: string | null;
   gensendt_antal: number;
 };
 
@@ -82,11 +83,14 @@ export default async function AdminReklamationer({
   let q = admin
     .from("fragt_reklamationer")
     .select(
-      "id, sag_id, trade_id, saelger_id, transportoer, status, kravbeloeb_oere, godkendt_beloeb_oere, oprettet_kl, fremdrift_kl, sag_aendret_kl, gensendt_antal",
+      "id, sag_id, trade_id, saelger_id, transportoer, status, kravbeloeb_oere, godkendt_beloeb_oere, oprettet_kl, fremdrift_kl, sag_aendret_kl, sag_aendret_kvitteret_kl, gensendt_antal",
     );
   if (filter === "aabne") q = q.in("status", ["afventer_saelger", "anmeldt"]);
   else if (filter === "stille") q = q.in("status", ["afventer_saelger", "anmeldt"]).lt("fremdrift_kl", graense);
-  else if (filter === "sag_aendret") q = q.in("status", ["anmeldt", "godkendt"]).not("sag_aendret_kl", "is", null);
+  else if (filter === "sag_aendret") q = q
+      .in("status", ["anmeldt", "godkendt"])
+      .not("sag_aendret_kl", "is", null)
+      .is("sag_aendret_kvitteret_kl", null);
   else if (filter !== "alle") q = q.eq("status", filter);
   // Åbne: den, der har ventet længst, først. Ellers nyeste først.
   const aabenListe = filter === "aabne" || filter === "stille" || filter === "afventer_saelger" || filter === "anmeldt";
@@ -176,7 +180,7 @@ export default async function AdminReklamationer({
         <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
           {raekker.map((r) => {
             const stille = erStille(r.status, r.fremdrift_kl, nu);
-            const aendret = erSagAendret(r.status, r.sag_aendret_kl);
+            const aendret = erSagAendret(r.status, r.sag_aendret_kl, r.sag_aendret_kvitteret_kl);
             const dage = dageSiden(r.fremdrift_kl, nu);
             return (
               <li key={r.id} className="border-t border-admin-kant first:border-t-0">

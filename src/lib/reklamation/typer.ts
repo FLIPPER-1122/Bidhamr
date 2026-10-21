@@ -97,6 +97,9 @@ export type SaelgerReklamation = {
   afgjort_kl: string | null;
   fravalgt_kl: string | null;
   annulleret_kl: string | null;
+  // Sagen er ændret efter anmeldelsen, og BidHamr har ikke kvitteret endnu:
+  // "godkendt" er spærret (mit_fragt_reklamation_godkendt -> sag_aendret).
+  afventer_bidhamr: boolean;
 };
 
 // Hele rækken (kun staff).
@@ -105,6 +108,8 @@ export type StaffReklamation = SaelgerReklamation & {
   forsendelse_id: string | null;
   annulleret_auto: boolean;
   sag_aendret_kl: string | null;
+  sag_aendret_kvitteret_kl: string | null;
+  sag_aendret_kvitteret_af: string | null;
   oprettet_af: string;
   aktiv_fra_kl: string;
   fremdrift_kl: string;
@@ -134,13 +139,54 @@ export function kroner(oere: number | null | undefined): string {
   return `${(oere / 100).toLocaleString("da-DK", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kr.`;
 }
 
-// Kroner fra en formular ("1.234,50", "1234.5", "1234") -> øre. null = ugyldigt.
+// Kroner fra en formular -> øre, eller en dansk fejltekst.
+// Dansk format: komma er decimaltegn (højst 2 decimaler), og punktum eller
+// mellemrum er tusindtalsskilletegn - kun i grupper på præcis 3 cifre:
+//   "1.250" = 1250 kr., "1.250,50", "1250", "1250,5", "1 250", "12 kr."
+// Uden komma tolkes ét punktum efterfulgt af 1-2 cifre som decimaltegn
+// ("1250.5" = 1250,50 kr.). Alt andet afvises (fx "1,250", "1.25,00",
+// "12.50,00", "1.2.3"), så et beløb aldrig gættes forkert.
+export type KronerSvar = { oere: number } | { fejl: string };
+
+const KRONER_FEJL = "Skriv beløbet i kroner, fx 1.250 eller 1.250,50.";
+
+export function fortolkKroner(v: string): KronerSvar {
+  // Mellemrum (også hårde) normaliseres; "kr."/"kr" til sidst fjernes.
+  let ren = String(v ?? "")
+    .replace(/[   ]/g, " ")
+    .trim()
+    .replace(/\s*kr\.?$/i, "")
+    .trim();
+  if (!ren) return { fejl: "Skriv beløbet i kroner." };
+  if (/^-/.test(ren)) return { fejl: "Beløbet skal være større end 0 kr." };
+
+  let heltal: string;
+  let decimaler = "";
+  const komma = ren.split(",");
+  if (komma.length > 2) return { fejl: KRONER_FEJL };
+  if (komma.length === 2) {
+    [ren, decimaler] = komma;
+    if (!/^\d{1,2}$/.test(decimaler)) {
+      return { fejl: "Skriv højst 2 decimaler efter kommaet, fx 1.250,50." };
+    }
+  } else if (/^\d+\.\d{1,2}$/.test(ren)) {
+    // Ingen komma: "1250.5" / "1250.50" (decimalpunktum).
+    [ren, decimaler] = ren.split(".");
+  }
+
+  if (/^\d+$/.test(ren)) heltal = ren;
+  else if (/^\d{1,3}(\.\d{3})+$/.test(ren)) heltal = ren.replace(/\./g, "");
+  else if (/^\d{1,3}( \d{3})+$/.test(ren)) heltal = ren.replace(/ /g, "");
+  else return { fejl: KRONER_FEJL };
+
+  const oere = Number(heltal) * 100 + (decimaler ? Number(decimaler.padEnd(2, "0")) : 0);
+  if (!Number.isSafeInteger(oere)) return { fejl: "Beløbet er for stort." };
+  if (oere <= 0) return { fejl: "Beløbet skal være større end 0 kr." };
+  return { oere };
+}
+
+// Som fortolkKroner, men null ved fejl.
 export function kronerTilOere(v: string): number | null {
-  const ren = v.trim().replace(/\s|kr\.?/gi, "");
-  if (!ren) return null;
-  // Dansk: punktum som tusindtalsskilletegn, komma som decimal.
-  const norm = ren.includes(",") ? ren.replace(/\./g, "").replace(",", ".") : ren;
-  if (!/^\d+(\.\d{1,2})?$/.test(norm)) return null;
-  const oere = Math.round(Number(norm) * 100);
-  return Number.isSafeInteger(oere) && oere > 0 ? oere : null;
+  const r = fortolkKroner(v);
+  return "oere" in r ? r.oere : null;
 }

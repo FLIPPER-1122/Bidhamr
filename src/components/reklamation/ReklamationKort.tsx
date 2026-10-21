@@ -15,6 +15,10 @@ import KopierKnap from "./KopierKnap";
 import ReklamationSaelgerHandlinger from "./ReklamationSaelgerHandlinger";
 import ReklamationMaerke from "./ReklamationMaerke";
 
+// Sagen er ændret efter anmeldelsen, og BidHamr har ikke kvitteret endnu.
+const SAG_AENDRET_TEKST =
+  "Sagen om handlen er ændret, og BidHamr kigger på det. Vent med at registrere, at erstatningen er godkendt, til du har hørt fra os.";
+
 function dato(iso: string | null): string | null {
   if (!iso) return null;
   const t = Date.parse(iso);
@@ -111,6 +115,7 @@ export default function ReklamationKort({
             {navn}s sagsnummer: <span className="font-semibold">{r.transportoerens_sagsnummer}</span>
           </p>
         )}
+        {r.afventer_bidhamr && <p className="mt-2 text-sm font-semibold">{SAG_AENDRET_TEKST}</p>}
       </section>
     );
   }
@@ -154,6 +159,11 @@ export default function ReklamationKort({
         <p className="mt-3 rounded-xl bg-info-bg px-4 py-3 text-sm text-info-tekst">
           {reklamationStatusSaelger(r.status, r.transportoer)}.
           {r.transportoerens_sagsnummer && <> Sagsnummer: <span className="font-semibold">{r.transportoerens_sagsnummer}</span>.</>}
+        </p>
+      )}
+      {r.afventer_bidhamr && (
+        <p role="status" className="mt-3 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+          {SAG_AENDRET_TEKST}
         </p>
       )}
 
