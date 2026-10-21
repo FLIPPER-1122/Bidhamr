@@ -28,6 +28,9 @@ import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { bidhamrDaekkerRefusion } from "@/app/actions/adminPengesikkerhed";
 import { refunderReturfragtAction } from "@/app/actions/adminReturfragt";
 import { BeskyttelseBadge, SagBilleder, SagStatusBadge, sagTid } from "@/components/sager/visning";
+import IndpakningOrdentligKnap from "@/components/admin/reklamation/IndpakningOrdentligKnap";
+import { REKLAMATION_LOG_NAVN, ReklamationStatusBadge, erSagAendret, erStille } from "@/components/admin/reklamation/visning";
+import { kroner as kronerOere, transportoerNavn as reklamationTransportoer, type ReklamationStatus } from "@/lib/reklamation/typer";
 
 // Navne på handlingerne i moderation_log for sager.
 const LOG_NAVN: Record<string, string> = {
@@ -52,7 +55,7 @@ const PENGE_HANDLING_NAVN = {
 } as const;
 
 function logNavn(h: string) {
-  return LOG_NAVN[h] ?? h.replace(/_/g, " ");
+  return LOG_NAVN[h] ?? REKLAMATION_LOG_NAVN[h] ?? h.replace(/_/g, " ");
 }
 
 function Kort({ titel, children }: { titel: string; children: React.ReactNode }) {
@@ -165,6 +168,37 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
     harMindstRolle(rolle, "admin");
   const saelgerNavn = sag.saelger.navn ?? "Uden navn";
 
+  // Reklamation hos fragtfirmaet (migration 20261029010000): staffs vurdering
+  // "indpakningen var ordentlig" og selve reklamationen. Før migrationen er
+  // kørt, giver opslagene ingen data - så vises intet.
+  const [{ data: ordentlig }, { data: reklamation }] = await Promise.all([
+    admin
+      .from("indpakning_ordentlig")
+      .select("tilbagekaldt_kl")
+      .eq("sag_id", sag.id)
+      .maybeSingle<{ tilbagekaldt_kl: string | null }>(),
+    admin
+      .from("fragt_reklamationer")
+      .select("id, status, transportoer, kravbeloeb_oere, godkendt_beloeb_oere, fremdrift_kl, sag_aendret_kl")
+      .eq("sag_id", sag.id)
+      .maybeSingle<{
+        id: string;
+        status: ReklamationStatus;
+        transportoer: string;
+        kravbeloeb_oere: number;
+        godkendt_beloeb_oere: number | null;
+        fremdrift_kl: string;
+        sag_aendret_kl: string | null;
+      }>(),
+  ]);
+  const ordentligAktiv = !!ordentlig && !ordentlig.tilbagekaldt_kl;
+  const reklamationAnmeldt = !!reklamation && ["anmeldt", "godkendt", "afvist"].includes(reklamation.status);
+  // Kun ved skade under fragten, ikke ved afhentning, og ikke hvis indpakningen
+  // allerede er vurderet dårlig (databasen tjekker det samme igen).
+  const kanVurdereOrdentlig =
+    !!rolle && sag.type === "skadet" && !sag.indpakning.afhentning && !sag.indpakning.vurderet && !!sag.saelger.id;
+  const nu = new Date().getTime();
+
   return (
     <AdminSide detalje>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -246,7 +280,21 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
             sagId={sag.id}
             type={sag.type}
             indsigelse={!!b?.indsigelse}
-            kan={sag.kan}
+            kan={{ ...sag.kan, vurdereIndpakning: sag.kan.vurdereIndpakning && !ordentligAktiv }}
+            indpakningOrdentlig={
+              kanVurdereOrdentlig && (!inhabil || ordentligAktiv) ? (
+                inhabil ? (
+                  <span className="text-sm text-neutral-600">Indpakning vurderet: ordentlig.</span>
+                ) : (
+                  <IndpakningOrdentligKnap
+                    sagId={sag.id}
+                    tilstand={ordentligAktiv ? (reklamationAnmeldt ? "laast" : "ordentlig") : "kan_vurdere"}
+                    saelgerNavn={saelgerNavn}
+                    afgjortTilKoeber={sag.status === "afgjort_koeber" || sag.status === "afventer_retur"}
+                  />
+                )
+              ) : null
+            }
             koeber={{ id: sag.koeber.id, navn: koeberNavn, lukket: sag.koeberLukket }}
             saelger={{ id: sag.saelger.id, navn: saelgerNavn, lukket: sag.saelgerLukket }}
             indpakning={sag.indpakning}
@@ -262,6 +310,31 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
             returFristTekst={sag.returFristTekst}
           />
         </div>
+
+        {reklamation && (
+          <div
+            className={`mt-4 flex flex-col gap-2 rounded-lg border px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between ${
+              erStille(reklamation.status, reklamation.fremdrift_kl, nu) || erSagAendret(reklamation.status, reklamation.sag_aendret_kl)
+                ? "border-fejl-kant bg-fejl-bg"
+                : "border-admin-kant bg-admin-bg"
+            }`}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-tekst">Reklamation hos {reklamationTransportoer(reklamation.transportoer)}:</span>
+              <ReklamationStatusBadge status={reklamation.status} />
+              <span className="text-tekst-daempet">
+                Krav {kronerOere(reklamation.kravbeloeb_oere)}
+                {reklamation.godkendt_beloeb_oere != null && <> · godkendt {kronerOere(reklamation.godkendt_beloeb_oere)}</>}
+              </span>
+              {erSagAendret(reklamation.status, reklamation.sag_aendret_kl) && (
+                <span className="font-semibold text-fejl-tekst">Sagen er ændret efter anmeldelsen</span>
+              )}
+            </div>
+            <Link href={`/admin/reklamationer/${reklamation.id}`} className="inline-flex min-h-11 shrink-0 items-center font-semibold text-groen hover:underline sm:min-h-0">
+              Åbn reklamationen →
+            </Link>
+          </div>
+        )}
       </section>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">

@@ -50,6 +50,11 @@ import { foerLancering } from "@/lib/lancering";
 import FirmaKontaktBoks from "@/components/erhverv/FirmaKontaktBoks";
 import KlageBoks from "@/components/erhverv/klager/KlageBoks";
 import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { hentPakkeTilSaelger, type Reklamationspakke } from "@/lib/reklamation/pakke";
+import { REKLAMATION_AABNE, type SaelgerReklamation } from "@/lib/reklamation/typer";
+import ReklamationKort from "@/components/reklamation/ReklamationKort";
+import ReklamationMaerke from "@/components/reklamation/ReklamationMaerke";
 
 // Handelssiden - fælles for /mine-handler/[trade_id] (private) og
 // /firma/salg/[trade_id] (firma-dashboardet, sted="firma"), så handlens
@@ -190,6 +195,14 @@ export default async function HandelDetalje({
   // Sag fra køberen: vises for både køber og sælger. Køberen kan oprette en,
   // hvis der ingen er (mulighederne afgøres på serveren). Seneste besked fra
   // BidHamr om sagen hentes, så snart sagen er kendt.
+  // Sælgerens reklamation hos fragtfirmaet (findes kun ved en sag om
+  // transportskade). Startes nu, så den hentes sammen med resten.
+  const reklamationLoefte =
+    erSaelger && SAG_STATUSSER_HANDEL.includes(handel.status)
+      ? supabase
+          .rpc("mine_fragt_reklamationer", { p_trade: handel.id })
+          .then((r) => ({ data: r.error ? null : (r.data as SaelgerReklamation[] | null) }))
+      : Promise.resolve(null);
   const sagLoefte = SAG_STATUSSER_HANDEL.includes(handel.status)
     ? hentSagForHandel(handel.id)
     : Promise.resolve(null);
@@ -443,6 +456,19 @@ export default async function HandelDetalje({
 
   const afsendSenest = venterPaaAfsendelse ? sendSenest(betaltRaekke?.betalt_kl) : null;
 
+  // Reklamation hos fragtfirmaet (kun sælgeren): oplysningerne hentes kun,
+  // mens den er åben.
+  const reklamationSvar = await reklamationLoefte;
+  const reklamation = (reklamationSvar?.data?.[0] ?? null) as SaelgerReklamation | null;
+  let reklamationPakke: Reklamationspakke | null = null;
+  if (reklamation && (REKLAMATION_AABNE as readonly string[]).includes(reklamation.status)) {
+    try {
+      reklamationPakke = (await hentPakkeTilSaelger(supabase as unknown as SupabaseClient, reklamation.id))?.pakke ?? null;
+    } catch (err) {
+      console.error("Reklamationspakken kunne ikke hentes:", err);
+    }
+  }
+
   return (
     <Ramme className={erFirmaSted ? "" : "flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10"}>
       <div className="mx-auto max-w-3xl space-y-5 sm:space-y-6">
@@ -470,6 +496,11 @@ export default async function HandelDetalje({
           <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             Sagen kunne ikke hentes lige nu. Genindlæs siden om lidt.
           </div>
+        )}
+        {/* Sælgeren kan få erstatning fra fragtfirmaet - står over sagen, fordi
+            det er det, sælgeren skal gøre nu. */}
+        {reklamation && (
+          <ReklamationKort r={reklamation} pakke={reklamationPakke} tradeId={handel.id} kanHandle={!(erFirmaSted && lukket)} />
         )}
         {sag && <SagVisning sag={sag} brugerId={user.id} samtale={sagSamtale} />}
         {visReturlabel && returfragt && returAfsender && (
@@ -526,12 +557,14 @@ export default async function HandelDetalje({
                 {Number(handel.amount).toLocaleString("da-DK")} kr
               </p>
               {/* Mobil: statusmærket under titlen, så titlen har hele bredden. */}
-              <div className="mt-2 sm:hidden">
+              <div className="mt-2 flex flex-wrap gap-2 sm:hidden">
                 <HandelStatusBadge status={handel.status} />
+                {reklamation && <ReklamationMaerke status={reklamation.status} />}
               </div>
             </div>
-            <div className="hidden shrink-0 sm:block">
+            <div className="hidden shrink-0 flex-col items-end gap-1.5 sm:flex">
               <HandelStatusBadge status={handel.status} />
+              {reklamation && <ReklamationMaerke status={reklamation.status} />}
             </div>
           </div>
 

@@ -51,7 +51,14 @@ export const hentAdminStatus = cache(async (rolle: StaffRole): Promise<AdminStat
     [
       ...noedstopPunkt,
       ...lampePunkter.filter((p) => p.tone === "roed"),
-      ...koePunkter({ dsaOverskredet: tal.dsaOverskredet, dsa: tal.dsa, sager: tal.sager, betalinger: tal.betalinger }),
+      ...koePunkter({
+        dsaOverskredet: tal.dsaOverskredet,
+        dsa: tal.dsa,
+        sager: tal.sager,
+        betalinger: tal.betalinger,
+        reklamationStille: tal.reklamationStille,
+        reklamationSagAendret: tal.reklamationSagAendret,
+      }),
       ...lampePunkter.filter((p) => p.tone === "gul"),
     ],
     // "Alt kører" kun, når alle lamper faktisk kunne hentes.

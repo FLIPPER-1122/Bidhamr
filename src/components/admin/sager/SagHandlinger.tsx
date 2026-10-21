@@ -1078,7 +1078,15 @@ export default function SagHandlinger({
   afventerRetur,
   returIkkeTilladt,
   returFristTekst,
-}: SagHandlingerProps & { naesteHref?: string | null; inhabil?: boolean; koeberBeloebOere?: number | null }) {
+  indpakningOrdentlig = null,
+}: SagHandlingerProps & {
+  naesteHref?: string | null;
+  inhabil?: boolean;
+  koeberBeloebOere?: number | null;
+  // "Indpakning var ordentlig" / "Fortryd" (reklamation hos fragtfirmaet) -
+  // vises ved siden af "Dårlig indpakning".
+  indpakningOrdentlig?: ReactNode;
+}) {
   const [resultat, setResultat] = useState<string | null>(null);
 
   return (
@@ -1144,7 +1152,7 @@ export default function SagHandlinger({
       {returFristTekst && <p className="text-sm text-neutral-600">{returFristTekst}</p>}
       {returIkkeTilladt && <p className="text-sm text-neutral-600">{returIkkeTilladt}</p>}
 
-      {(kan.vurdereIndpakning || indpakning.vurderet) && (
+      {(kan.vurdereIndpakning || indpakning.vurderet || indpakningOrdentlig) && (
         <div className="flex flex-wrap items-center gap-3">
           {kan.vurdereIndpakning && !inhabil && (
             <IndpakningKnap sagId={sagId} saelgerNavn={saelger.navn} info={indpakning} onResultat={setResultat} />
@@ -1159,6 +1167,7 @@ export default function SagHandlinger({
               </span>
             </span>
           )}
+          {indpakningOrdentlig}
           {indpakning.vurderet && (
             <span className="text-sm text-neutral-600">
               Indpakning vurderet: sælgeren fik en{" "}

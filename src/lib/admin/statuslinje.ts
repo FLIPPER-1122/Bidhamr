@@ -35,6 +35,9 @@ export type KoeTal = {
   dsa: number;
   sager: number;
   betalinger: number;
+  // Reklamationer hos fragtfirmaet, der kræver staff (begge røde).
+  reklamationStille?: number;
+  reklamationSagAendret?: number;
 };
 
 export function koePunkter(t: KoeTal): StatusPunkt[] {
@@ -44,6 +47,20 @@ export function koePunkter(t: KoeTal): StatusPunkt[] {
       tone: "roed",
       tekst: `${flertal(t.dsaOverskredet, "DSA-sag", "DSA-sager")} over fristen`,
       href: "/admin/dsa",
+    });
+  }
+  if ((t.reklamationSagAendret ?? 0) > 0) {
+    p.push({
+      tone: "roed",
+      tekst: `${flertal(t.reklamationSagAendret ?? 0, "reklamation", "reklamationer")}: sagen er ændret efter anmeldelsen`,
+      href: "/admin/reklamationer?vis=sag_aendret",
+    });
+  }
+  if ((t.reklamationStille ?? 0) > 0) {
+    p.push({
+      tone: "roed",
+      tekst: `${flertal(t.reklamationStille ?? 0, "reklamation", "reklamationer")} har stået stille i 14 dage`,
+      href: "/admin/reklamationer?vis=stille",
     });
   }
   if (t.betalinger > 0) {

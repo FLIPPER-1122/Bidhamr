@@ -12,6 +12,10 @@ import HandelStatusBadge, { AKTIVE_STATUSSER } from "@/components/HandelStatusBa
 import { hentMineAktiveTilbud } from "@/app/actions/andenchanceBruger";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
 import { sagLink, type SagStatus } from "@/lib/sager";
+import ReklamationMaerke from "@/components/reklamation/ReklamationMaerke";
+
+// Åbne reklamationer hos fragtfirmaet (sælgeren skal handle): handel-id -> status.
+type AabneReklamationer = Map<string, "afventer_saelger" | "anmeldt">;
 
 type HandelRaekke = {
   id: string;
@@ -53,6 +57,7 @@ function harAktivSag(h: HandelRaekke) {
 // Aktive handler grupperes efter, hvad der skal ske nu - det, du selv skal
 // gøre, står øverst. Samme regler som handelssiden (/mine-handler/[id]).
 type GruppeId =
+  | "erstatning"
   | "betale"
   | "sende"
   | "afhentning"
@@ -63,6 +68,8 @@ type GruppeId =
   | "paa_vej";
 
 const GRUPPER: { id: GruppeId; titel: string; tekst: string }[] = [
+  // TODO indhold-agenten: kort tekst.
+  { id: "erstatning", titel: "Få erstatning fra fragtfirmaet", tekst: "Varen blev skadet under fragten. Anmeld skaden, og få erstatning." },
   { id: "betale", titel: "Du skal betale", tekst: "Betal inden fristen, så handlen ikke annulleres." },
   { id: "sende", titel: "Du skal sende", tekst: "Køberen har betalt. Send pakken inden fristen." },
   { id: "afhentning", titel: "Skal afhentes", tekst: "Varen er betalt. Aftal afhentningen i handlen." },
@@ -73,7 +80,8 @@ const GRUPPER: { id: GruppeId; titel: string; tekst: string }[] = [
   { id: "paa_vej", titel: "På vej", tekst: "Pakken er sendt." },
 ];
 
-function gruppeFor(h: HandelRaekke, brugerId: string): GruppeId {
+function gruppeFor(h: HandelRaekke, brugerId: string, reklamationer: AabneReklamationer): GruppeId {
+  if (h.seller_id === brugerId && reklamationer.has(h.id)) return "erstatning";
   if (harAktivSag(h)) return "sager";
   const erKoeber = h.buyer_id === brugerId;
   switch (h.status) {
@@ -94,9 +102,11 @@ function gruppeFor(h: HandelRaekke, brugerId: string): GruppeId {
 function HandelKort({
   handel,
   brugerId,
+  reklamation = null,
 }: {
   handel: HandelRaekke;
   brugerId: string;
+  reklamation?: "afventer_saelger" | "anmeldt" | null;
 }) {
   const erKoeber = handel.buyer_id === brugerId;
   const billede = handel.auctions?.billeder?.[0] ?? null;
@@ -105,7 +115,7 @@ function HandelKort({
 
   return (
     <Link
-      href={sagAktiv ? sagLink(handel.id) : `/mine-handler/${handel.id}`}
+      href={reklamation ? `/mine-handler/${handel.id}#reklamation` : sagAktiv ? sagLink(handel.id) : `/mine-handler/${handel.id}`}
       className="flex gap-3 rounded-[14px] border border-kant bg-white p-4 shadow-kort transition-[box-shadow,border-color] duration-200 ease-out hover:border-kant-staerk hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:gap-4"
     >
       <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-groen-lys">
@@ -146,10 +156,11 @@ function HandelKort({
               {SAG_MAERKE[sag.status].tekst}
             </span>
           )}
+          {reklamation && <ReklamationMaerke status={reklamation} />}
           {/* Hele kortet er linket til handelssiden (med chatten); dette er
               en synlig markering. Et <Link> her ville være et link i et link. */}
           <span className="ml-auto inline-flex items-center gap-1 text-[13px] font-semibold text-groen">
-            {sagAktiv ? "Åbn sag" : "Åbn handel"}
+            {reklamation === "afventer_saelger" ? "Få erstatning" : sagAktiv ? "Åbn sag" : "Åbn handel"}
             <Ikon navn="hoejre" className="h-4 w-4" />
           </span>
         </div>
@@ -190,7 +201,7 @@ export default async function MineHandlerListe({
     "id, status, amount, created_at, buyer_id, seller_id, afhentning, auctions(titel, billeder), sager(id, status, oprettet_kl)";
   const aktiveStatusser = `(${AKTIVE_STATUSSER.join(",")})`;
   const egne = `buyer_id.eq.${brugerId},seller_id.eq.${brugerId}`;
-  const [aktiveSvar, afsluttedeSvar, sagSvar, tilbud] = await Promise.all([
+  const [aktiveSvar, afsluttedeSvar, sagSvar, tilbud, reklamationSvar] = await Promise.all([
     supabase
       .from("trades")
       .select(kolonner)
@@ -217,7 +228,30 @@ export default async function MineHandlerListe({
       .order("created_at", { ascending: false })
       .overrideTypes<HandelRaekke[], { merge: false }>(),
     hentMineAktiveTilbud(),
+    // Sælgerens reklamationer hos fragtfirmaet (få - én pr. sag om
+    // transportskade). Fejl (fx før migrationen) = ingen.
+    supabase.rpc("mine_fragt_reklamationer").then((r) => (r.error ? [] : ((r.data ?? []) as { trade_id: string; status: string }[]))),
   ]);
+  const reklamationer: AabneReklamationer = new Map();
+  for (const r of reklamationSvar) {
+    if ((r.status === "afventer_saelger" || r.status === "anmeldt") && !reklamationer.has(r.trade_id)) {
+      reklamationer.set(r.trade_id, r.status);
+    }
+  }
+  // Handler med en åben reklamation, der ikke allerede er med (de er typisk
+  // afsluttede og kan ligge længere nede end den viste side).
+  const kendte = new Set([...(aktiveSvar.data ?? []), ...(sagSvar.data ?? [])].map((h) => h.id));
+  const manglerIds = [...reklamationer.keys()].filter((id) => !kendte.has(id)).slice(0, 50);
+  const reklamationHandler = manglerIds.length
+    ? ((
+        await supabase
+          .from("trades")
+          .select(kolonner)
+          .or(egne)
+          .in("id", manglerIds)
+          .overrideTypes<HandelRaekke[], { merge: false }>()
+      ).data ?? [])
+    : [];
 
   // En tom liste ville fejlagtigt sige "ingen handler" - vis en fejl i stedet.
   if (aktiveSvar.error || afsluttedeSvar.error) {
@@ -239,10 +273,10 @@ export default async function MineHandlerListe({
   const medSag = (sagSvar.data ?? []).filter(harAktivSag);
   const grupper = new Map<GruppeId, HandelRaekke[]>();
   const sete = new Set<string>();
-  for (const h of [...aktive, ...medSag]) {
+  for (const h of [...reklamationHandler, ...aktive, ...medSag, ...afsluttede.filter((a) => reklamationer.has(a.id))]) {
     if (sete.has(h.id)) continue;
     sete.add(h.id);
-    const g = gruppeFor(h, brugerId);
+    const g = gruppeFor(h, brugerId, reklamationer);
     grupper.set(g, [...(grupper.get(g) ?? []), h]);
   }
   const antalAktive = sete.size;
@@ -302,7 +336,7 @@ export default async function MineHandlerListe({
                     </div>
                     <div className="mt-2 space-y-2">
                       {liste.map((h) => (
-                        <HandelKort key={h.id} handel={h} brugerId={brugerId} />
+                        <HandelKort key={h.id} handel={h} brugerId={brugerId} reklamation={h.seller_id === brugerId ? (reklamationer.get(h.id) ?? null) : null} />
                       ))}
                     </div>
                   </section>
@@ -318,7 +352,7 @@ export default async function MineHandlerListe({
               </h2>
               <div className="mt-3 space-y-2">
                 {afsluttede.map((h) => (
-                  <HandelKort key={h.id} handel={h} brugerId={brugerId} />
+                  <HandelKort key={h.id} handel={h} brugerId={brugerId} reklamation={h.seller_id === brugerId ? (reklamationer.get(h.id) ?? null) : null} />
                 ))}
               </div>
               {afsluttede.length < antalAfsluttede && (

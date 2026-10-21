@@ -33,6 +33,9 @@ const ROLLE_NAVN: Record<MenuRolle, string> = {
 export type MenuTaellere = {
   handler: number;
   sager: number;
+  // Reklamationer hos fragtfirmaet. Kritisk = stået stille / sagen ændret -> rødt.
+  reklamationer: number;
+  reklamationerKritisk: boolean;
   betalinger: number;
   brugere: number;
   henvendelser: number;
@@ -45,6 +48,8 @@ export type MenuTaellere = {
 export const INGEN_TAELLERE: MenuTaellere = {
   handler: 0,
   sager: 0,
+  reklamationer: 0,
+  reklamationerKritisk: false,
   betalinger: 0,
   brugere: 0,
   henvendelser: 0,
@@ -53,7 +58,7 @@ export const INGEN_TAELLERE: MenuTaellere = {
   erhverv: 0,
 };
 
-type TalNoegle = Exclude<keyof MenuTaellere, "anmeldelserKritisk">;
+type TalNoegle = Exclude<keyof MenuTaellere, "anmeldelserKritisk" | "reklamationerKritisk">;
 
 type MenuPunkt = {
   href: string;
@@ -90,6 +95,7 @@ const GRUPPER: MenuGruppe[] = [
     punkter: [
       { href: "/admin/handler", label: "Handler", minRolle: "medarbejder", ogsaa: ["/admin/ubetalte"], tal: "handler", tone: "graa" },
       { href: "/admin/sager", label: "Sager", minRolle: "medarbejder", tal: "sager", tone: "gul" },
+      { href: "/admin/reklamationer", label: "Reklamationer", minRolle: "medarbejder", tal: "reklamationer", tone: "graa" },
       { href: "/admin/betalinger", label: "Betalingsfejl", minRolle: "medarbejder", tal: "betalinger", tone: "gul" },
       // Pengetal og indtjening: KUN chef (siderne giver 404 for alle andre).
       { href: "/admin/penge", label: "Penge", minRolle: "chef", ogsaa: ["/admin/fakturaer", "/admin/dac7"] },
@@ -269,7 +275,10 @@ export default function AdminSidebar({
   function punkt(p: MenuPunkt) {
     const aktiv = p.href === aktivHref;
     const antal = p.tal ? taellere[p.tal] : 0;
-    const tone = p.tal === "anmeldelser" && taellere.anmeldelserKritisk ? "roed" : (p.tone ?? "graa");
+    const tone =
+      (p.tal === "anmeldelser" && taellere.anmeldelserKritisk) || (p.tal === "reklamationer" && taellere.reklamationerKritisk)
+        ? "roed"
+        : (p.tone ?? "graa");
     return (
       <Link
         href={p.href}

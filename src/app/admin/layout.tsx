@@ -32,6 +32,9 @@ async function StaffMenu({ rolle, paaAdminVaert }: { rolle: StaffRole; paaAdminV
       taellere={{
         handler: t.haenger + t.fragt + t.markeret + t.ubetalte,
         sager: t.sager,
+        // Rødt, når en reklamation kræver staff; ellers dem, der venter på sælgeren (gråt).
+        reklamationer: t.reklamationStille + t.reklamationSagAendret || t.reklamationAfventer,
+        reklamationerKritisk: t.reklamationStille + t.reklamationSagAendret > 0,
         betalinger: t.betalinger,
         brugere: t.kontolukninger,
         henvendelser: t.kontakt + t.chats,
