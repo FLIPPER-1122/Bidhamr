@@ -21,7 +21,7 @@ import { logDriftFejl } from "@/lib/drift";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { DineroFejl, lavDineroKlient, type DineroKlient, type DineroKontaktModel } from "./dinero";
 import { hentFakturaKonfig, kontrollerOrganisation } from "./konfig";
-import { FAKTURA_GUL_TIMER } from "@/lib/admin/fakturaLampe";
+import { ADGANG_ALARM_PRAEFIKS, FAKTURA_GUL_TIMER, KONFIG_ALARM_PRAEFIKS } from "@/lib/admin/fakturaLampe";
 import {
   behandlDokument,
   type FakturaKontekst,
@@ -46,7 +46,18 @@ export type FakturaKoeResultat = {
   fejl: number;
   stoppet: number;
   springetOver?: "ikke_migreret" | "ikke_konfigureret" | "graense" | "adgang" | "forbigaaende";
+  // Kort grund til springetOver, gemt i drift_cron_koersler.resultat (fx
+  // "adgang: 401", "konfiguration: regnskab afvist"). Kun faste ord og
+  // HTTP-statustal - aldrig Dineros svar, nøgler eller persondata
+  // (kortResultat i src/lib/driftCronResultat.ts gemmer kun den form).
+  grund?: string;
 };
+
+// "adgang: 401", "forbigaaende: 503" / "forbigaaende: timeout".
+function dineroGrund(slags: string, d: DineroFejl | null): string {
+  if (!d) return `${slags}: fejl`;
+  return `${slags}: ${d.status > 0 ? d.status : "timeout"}${d.login ? " login" : ""}`;
+}
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -348,7 +359,7 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
   // 1) Planlæg (også uden Dinero - så intet går tabt, til Dinero er sat op).
   const { data: plan, error: planFejl } = await admin.rpc("faktura_planlaeg", { p_graense: 200 });
   if (planFejl) {
-    if (mangler(planFejl)) return { ...res, springetOver: "ikke_migreret" };
+    if (mangler(planFejl)) return { ...res, springetOver: "ikke_migreret", grund: "ikke_migreret" };
     throw new Error(`faktura_planlaeg: ${planFejl.message}`);
   }
   res.planlagt = plan as Record<string, number>;
@@ -413,10 +424,10 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
       await alarmPrTilfaelde({
         noegle: "faktura:konfiguration",
         hvor: "faktura/dinero",
-        fejl: `Fakturaer laves ikke i Dinero: ${konfig.besked} Se docs/FAKTURA.md.`,
+        fejl: `${KONFIG_ALARM_PRAEFIKS} ${konfig.besked} Se docs/FAKTURA.md.`,
       });
     }
-    return { ...res, springetOver: "ikke_konfigureret" };
+    return { ...res, springetOver: "ikke_konfigureret", grund: `konfiguration: ${konfig.grund}` };
   }
   const dinero = lavDineroKlient(konfig.dinero, { maksKald: 45 });
   // Regnskabet kontrolleres hos Dinero før HVER kørsel (kontrollerOrganisation):
@@ -425,34 +436,41 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
   //         produktionen med Stripe-testnøgle) aldrig sender til
   //         "Bidhamr ApS", det rigtige regnskab (Filip, 20. okt. 2026).
   // Login-fejl (token/nøgler) giver alarmen faktura:adgang.
+  let org: Awaited<ReturnType<DineroKlient["hentOrganisation"]>>;
   try {
-    const org = await dinero.hentOrganisation();
-    const afvist = kontrollerOrganisation(konfig.miljoe, konfig.dinero.orgId, org);
-    if (afvist) {
-      await alarmPrTilfaelde({
-        noegle: "faktura:konfiguration",
-        hvor: "faktura/dinero",
-        fejl: `Fakturaer laves ikke: ${afvist} Se docs/FAKTURA.md.`,
-      });
-      return { ...res, springetOver: "ikke_konfigureret" };
-    }
+    org = await dinero.hentOrganisation();
   } catch (err) {
     const d = err instanceof DineroFejl ? err : null;
-    if (d?.graense) return { ...res, springetOver: "graense" };
+    if (d?.graense) return { ...res, springetOver: "graense", grund: dineroGrund("graense", d) };
     // Midlertidig fejl (5xx, timeout, netværk): spring kørslen over uden
     // alarm - stadig fail closed (intet claimes). Varer det ved, giver
     // faktura:haenger alarm efter 2 timer, og lampen bliver rød efter 6.
-    if (d?.forbigaaende) return { ...res, springetOver: "forbigaaende" };
+    if (d?.forbigaaende) return { ...res, springetOver: "forbigaaende", grund: dineroGrund("forbigaaende", d) };
     await alarmPrTilfaelde({
       noegle: d?.adgang ? "faktura:adgang" : "faktura:konfiguration",
       hvor: "faktura/dinero",
-      fejl: `Fakturaer laves ikke: Dinero-regnskabet kunne ikke kontrolleres - ${err instanceof Error ? err.message : String(err)}`,
+      fejl: `${d?.adgang ? ADGANG_ALARM_PRAEFIKS : KONFIG_ALARM_PRAEFIKS} Dinero-regnskabet kunne ikke kontrolleres - ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     });
-    return { ...res, springetOver: d?.adgang ? "adgang" : "ikke_konfigureret" };
+    return d?.adgang
+      ? { ...res, springetOver: "adgang", grund: dineroGrund("adgang", d) }
+      : { ...res, springetOver: "ikke_konfigureret", grund: dineroGrund("konfiguration", d) };
   }
-  // Først nu er opsætningen og adgangen i orden (login og opslag lykkedes).
-  await lukTilfaelde("faktura:konfiguration");
+  // Login og opslag lykkedes: adgangen virker igen (også selv om regnskabet
+  // afvises nedenfor - så lampen viser den rigtige fejl).
   await lukTilfaelde("faktura:adgang");
+  const afvist = kontrollerOrganisation(konfig.miljoe, konfig.dinero.orgId, org);
+  if (afvist) {
+    await alarmPrTilfaelde({
+      noegle: "faktura:konfiguration",
+      hvor: "faktura/dinero",
+      fejl: `${KONFIG_ALARM_PRAEFIKS} ${afvist} Se docs/FAKTURA.md.`,
+    });
+    return { ...res, springetOver: "ikke_konfigureret", grund: org ? "konfiguration: regnskab afvist" : "konfiguration: regnskab findes ikke" };
+  }
+  // Først nu er opsætningen i orden (login, opslag og regnskab).
+  await lukTilfaelde("faktura:konfiguration");
 
   // 3) Behandl køen.
   const { data: claimet, error: claimFejl } = await admin.rpc("faktura_claim", { p_antal: PR_KOERSEL });
@@ -462,6 +480,7 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
 
   const start = Date.now();
   let stop: FakturaKoeResultat["springetOver"] | undefined;
+  let stopGrund: string | undefined;
 
   for (const r of raekker) {
     const noegle = String(r.laas_noegle);
@@ -532,9 +551,10 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
       const d = err instanceof DineroFejl ? err : null;
       if (d?.graense || d?.adgang) {
         stop = d.graense ? "graense" : "adgang";
+        stopGrund = dineroGrund(stop, d);
         await admin.rpc("faktura_fejl", { p_id: r.id, p_noegle: noegle, p_fejl: besked, p_taeller: false });
         if (d.adgang) {
-          await alarmPrTilfaelde({ noegle: "faktura:adgang", hvor: "faktura/dinero", fejl: besked });
+          await alarmPrTilfaelde({ noegle: "faktura:adgang", hvor: "faktura/dinero", fejl: `${ADGANG_ALARM_PRAEFIKS} ${besked}` });
         }
         continue;
       }
@@ -557,7 +577,9 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
       }
     }
   }
-  if (stop !== "adgang") await lukTilfaelde("faktura:adgang");
-  if (stop) res.springetOver = stop;
+  if (stop) {
+    res.springetOver = stop;
+    res.grund = stopGrund;
+  }
   return res;
 }

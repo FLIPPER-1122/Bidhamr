@@ -39,9 +39,22 @@ export class DineroFejl extends Error {
   graense: boolean;
   // Adgangen virker ikke (token/nøgler) - stop kørslen.
   adgang: boolean;
+  // Fejlen kom fra selve login (token-endpointet), ikke fra et API-kald.
+  login: boolean;
+  // OAuth-fejlkoden fra login-svaret (fx "invalid_client", "invalid_grant"),
+  // kun hvis den er en kort kode med små bogstaver - aldrig resten af svaret.
+  loginKode: string | null;
   constructor(
     besked: string,
-    o: { status: number; kode?: number | null; forbigaaende?: boolean; graense?: boolean; adgang?: boolean },
+    o: {
+      status: number;
+      kode?: number | null;
+      forbigaaende?: boolean;
+      graense?: boolean;
+      adgang?: boolean;
+      login?: boolean;
+      loginKode?: string | null;
+    },
   ) {
     super(besked);
     this.name = "DineroFejl";
@@ -50,6 +63,8 @@ export class DineroFejl extends Error {
     this.forbigaaende = o.forbigaaende ?? false;
     this.graense = o.graense ?? false;
     this.adgang = o.adgang ?? false;
+    this.login = o.login ?? false;
+    this.loginKode = o.loginKode ?? null;
   }
 }
 
@@ -114,16 +129,23 @@ export function lavDineroKlient(k: DineroKonfig, o: { maksKald?: number } = {}) 
       throw new DineroFejl(`Dinero-login svarede ikke (${err instanceof Error ? err.name : "fejl"})`, {
         status: 0,
         forbigaaende: true,
+        login: true,
       });
     }
-    if (svar.status === 429) throw new DineroFejl("Dinero-login: for mange kald", { status: 429, graense: true });
-    if (svar.status >= 500) throw new DineroFejl(`Dinero-login svarede ${svar.status}`, { status: svar.status, forbigaaende: true });
-    const krop = (await svar.json().catch(() => null)) as { access_token?: string; expires_in?: number } | null;
+    if (svar.status === 429) throw new DineroFejl("Dinero-login: for mange kald", { status: 429, graense: true, login: true });
+    if (svar.status >= 500) {
+      throw new DineroFejl(`Dinero-login svarede ${svar.status}`, { status: svar.status, forbigaaende: true, login: true });
+    }
+    const krop = (await svar.json().catch(() => null)) as { access_token?: string; expires_in?: number; error?: unknown } | null;
     if (!svar.ok || !krop?.access_token) {
-      // Aldrig svaret i fejlen (kan indeholde detaljer om nøglerne).
+      // Aldrig svaret i fejlen (kan indeholde detaljer om nøglerne) - kun en
+      // OAuth-fejlkode som "invalid_client", hvis Dinero sender en.
+      const loginKode = typeof krop?.error === "string" && /^[a-z_]{1,40}$/.test(krop.error) ? krop.error : null;
       throw new DineroFejl(`Dinero-login afvist (${svar.status}) - kontrollér DINERO_*-nøglerne`, {
         status: svar.status,
         adgang: true,
+        login: true,
+        loginKode,
       });
     }
     const levetid = Math.max(60, Number(krop.expires_in ?? 3600) - 300) * 1000;
@@ -232,6 +254,16 @@ export function lavDineroKlient(k: DineroKonfig, o: { maksKald?: number } = {}) 
     hentOrganisation: async (): Promise<{ Id: number; Name: string; VatNumber: string | null } | null> => {
       const r = (await kaldApi("GET", "v1.1/organizations")).json as { Id: number; Name: string; VatNumber: string | null }[];
       return (r ?? []).find((o) => String(o.Id) === k.orgId) ?? null;
+    },
+    // Admin -> Fakturaer -> "Test Dinero-forbindelse": et frisk login (aldrig
+    // et gemt token, så en skiftet nøgle afprøves med det samme) og alle de
+    // regnskaber, nøglen har adgang til.
+    testLogin: async (): Promise<void> => {
+      await hentToken(true);
+    },
+    hentOrganisationer: async (): Promise<{ Id: number | string; Name: string | null; VatNumber: string | null }[]> => {
+      const r = (await kaldApi("GET", "v1.1/organizations")).json;
+      return Array.isArray(r) ? (r as { Id: number | string; Name: string | null; VatNumber: string | null }[]) : [];
     },
 
     // ---------------------------------------------------------------- kontakter
