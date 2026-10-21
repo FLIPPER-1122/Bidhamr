@@ -2,7 +2,9 @@ import "server-only";
 
 // Server-only: automatisk frigivelse til sælgeren (ROADMAP-BESLUTNINGER
 // "Sager (Filip, 3. oktober 2026)"):
-//   - 48 timer efter køberen trykkede "modtaget", uden sag.
+//   - 48 timer efter "modtaget", uden sag - køberen trykkede selv, eller
+//     fragtfirmaets leveringsmelding startede uret (fragtUr.ts,
+//     trades.modtaget_kilde = 'fragt').
 //   - 14 dage efter afsendelse, hvis køberen hverken har trykket "modtaget"
 //     eller oprettet en sag - KUN når pakken er sendt med BidHamrs fragtlabel
 //     og fragtfirmaet har meldt den leveret/afhentet (Filip, 11. okt. 2026).
@@ -39,17 +41,27 @@ export async function frigivAutomatisk(): Promise<number> {
   const liste = (Array.isArray(data) ? data : []) as AutoFrigivet[];
   if (liste.length === 0) return 0;
 
-  const { data: auktioner } = await admin
-    .from("auctions")
-    .select("id, titel")
-    .in("id", [...new Set(liste.map((f) => f.auction_id))]);
+  const [{ data: auktioner }, { data: fraFragt }] = await Promise.all([
+    admin
+      .from("auctions")
+      .select("id, titel")
+      .in("id", [...new Set(liste.map((f) => f.auction_id))]),
+    // Uret blev startet af fragtfirmaets leveringsmelding (fragtUr.ts).
+    admin
+      .from("trades")
+      .select("id")
+      .in("id", liste.map((f) => f.trade_id))
+      .eq("modtaget_kilde", "fragt"),
+  ]);
   const titler = new Map((auktioner ?? []).map((a) => [a.id as string, a.titel as string]));
+  const fragt = new Set((fraFragt ?? []).map((t) => t.id as string));
 
   for (const f of liste) {
+    const viaFragt = f.grund === "48_timer" && fragt.has(f.trade_id);
     // Før overførslen, så afregningen får grunden med (kaster aldrig).
     await sendSaelgerAfregning(
       f.trade_id,
-      f.grund === "48_timer" ? "automatisk_48" : "automatisk_14",
+      viaFragt ? "automatisk_fragt" : f.grund === "48_timer" ? "automatisk_48" : "automatisk_14",
     );
     try {
       await pengeTilSaelger(f.betaling_id);
@@ -59,8 +71,9 @@ export async function frigivAutomatisk(): Promise<number> {
     const titel = titler.get(f.auction_id) ?? "din vare";
     await send(f.buyer_id, "pakke_leveret", {
       titel: "Handlen er afsluttet",
-      tekst:
-        f.grund === "48_timer"
+      tekst: viaFragt
+        ? `Der er gået 48 timer, siden fragtfirmaet meldte "${titel}" leveret, uden at der er oprettet en sag. Handlen er afsluttet, og pengene er frigivet til sælgeren.`
+        : f.grund === "48_timer"
           ? `Der er gået 48 timer, siden du modtog "${titel}", uden at der er oprettet en sag. Handlen er afsluttet, og pengene er frigivet til sælgeren.`
           : `Der er gået 14 dage, siden sælgeren sendte "${titel}", uden at du har markeret pakken som modtaget eller oprettet en sag. Handlen er afsluttet automatisk, og pengene er frigivet til sælgeren.`,
       link: `/mine-handler/${f.trade_id}`,

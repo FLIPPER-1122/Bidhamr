@@ -7,6 +7,8 @@
 //   3. Påmindelser 24 og 8 timer før fristen.
 //   3b. Sager, hvor ankefristen (4 dage efter afgørelsen) er udløbet: refusion
 //       til køber / frigivelse til sælger / frysningen fjernes.
+//   3b3. Fragtfirmaets leveringsmelding starter 48-timers uret (handlen går
+//       til "modtaget" - src/lib/betaling/fragtUr.ts).
 //   3c. Automatisk frigivelse: 48 t efter "modtaget" uden sag, eller 14 dage
 //       efter afsendelse uden "modtaget" og uden sag. Køberen får en
 //       påmindelse på dag 12.
@@ -60,6 +62,7 @@ import {
   notificerReturKanSendes,
 } from "@/lib/sagerServer";
 import { frigivAutomatisk, paamindKoeberOmModtagelse } from "@/lib/betaling/autoFrigiv";
+import { startUrFraFragt } from "@/lib/betaling/fragtUr";
 import { annullerIkkeSendte, paamindSaelgerOmAfsendelse } from "@/lib/betaling/afsendelsesfrist";
 import { annullerIkkeHentede, paamindOmAfhentning } from "@/lib/betaling/afhentningsfrist";
 import { koerIkkeAfhentet } from "@/lib/betaling/ikkeAfhentet";
@@ -144,6 +147,7 @@ export async function koerBetalingsCron() {
     ankebeskeder: 0,
     returbeskeder: 0,
     sagsafviklinger: 0,
+    fragtUrStartet: 0,
     autoFrigivet: 0,
     paamindelserModtaget: 0,
     ubetalteAnnulleret: 0,
@@ -355,6 +359,13 @@ export async function koerBetalingsCron() {
   //      frigivelse (som aldrig frigiver en returneret pakke). Refusionen
   //      laves i 5b (lovede refusioner). Kaster aldrig.
   resultat.ikkeAfhentetPakke = await koerIkkeAfhentet();
+
+  // 3b3) Fragtfirmaets leveringsmelding starter 48-timers uret (reserve for
+  //      fragtens handelseffekter, fx når sælgeren markerede pakken sendt
+  //      efter meldingen) + beskeder, der mangler. Før den automatiske
+  //      frigivelse, så en leveret pakke altid får sine 48 timer, før
+  //      14-dages-reglen kan nå den. Kaster aldrig.
+  resultat.fragtUrStartet = await startUrFraFragt();
 
   // 3c) Automatisk frigivelse (48 t efter "modtaget" / 14 dage efter afsendelse).
   //     Først påmindelsen til køberen på dag 12 (kaster aldrig).

@@ -83,6 +83,7 @@ export type FrigivGrund =
   | "godkendt" // køberen godkendte varen
   | "afhentet" // sælgeren tastede køberens afhentningskode
   | "automatisk_48" // 48 timer efter "modtaget" uden sag
+  | "automatisk_fragt" // 48 timer efter fragtfirmaets leveringsmelding uden sag
   | "automatisk_14" // 14 dage efter afsendelse uden "modtaget" eller sag
   | "bidhamr" // admin frigav handlen
   | "sag" // sagen blev afgjort til sælgerens fordel
@@ -104,6 +105,11 @@ function afregningTekst(grund: FrigivGrund, titel: string): { titel: string; tek
       return {
         titel: "Handlen er afsluttet automatisk",
         tekst: `Der er gået 48 timer, siden køberen modtog "${titel}", uden at der er oprettet en sag. Handlen er afsluttet.`,
+      };
+    case "automatisk_fragt":
+      return {
+        titel: "Handlen er afsluttet automatisk",
+        tekst: `Der er gået 48 timer, siden fragtfirmaet meldte "${titel}" leveret til køberen, uden at der er oprettet en sag. Handlen er afsluttet, og pengene er frigivet til dig.`,
       };
     case "automatisk_14":
       return {

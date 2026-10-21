@@ -13,10 +13,16 @@ import "server-only";
 //              markere pakken sendt med billeder, og forsendelsen markeres
 //              til staff (kraever_opmaerksomhed) med afsendelsesfristens dato.
 //              Fristen ændres ikke.
-//   leveret    Køberen får "Pakken er kommet frem" (pakke_leveret, idempotent
-//              nøgle). Ingen penge frigives, og 48-timers uret startes IKKE -
-//              det gør stadig køberens "modtaget" / den eksisterende
-//              automatiske frigivelse, indtil Filip beslutter andet.
+//   leveret    48-timers uret starter af sig selv (src/lib/betaling/fragtUr.ts,
+//              handel_fragt_leveret_start): handlen går til 'modtaget' som
+//              ved købers "modtaget", regnet fra registreringen hos os. Køber
+//              får "Pakken er kommet frem - 48 timer til at melde en fejl",
+//              sælger får fristen. Kun når meldingen må frigive penge
+//              (leveret_frigiver), handlen er 'pakke_sendt', og der hverken
+//              er sag, retur, ikke-afhentet, indsigelse eller refusion -
+//              ellers den gamle besked (pakke_leveret, idempotent nøgle).
+//              Ingen penge flyttes her; handel_auto_frigiv frigiver efter
+//              48 timer uden sag.
 //   returneret Markeres til staff (kraever_opmaerksomhed, sat i SQL). Er
 //              pakken aldrig leveret, og adapteren har returErIkkeAfhentet,
 //              registreres "ikke afhentet" (src/lib/betaling/ikkeAfhentet.ts):
@@ -1559,10 +1565,25 @@ async function udfoerHandelseffekter(admin: Admin, forsendelseId: string): Promi
       await admin.rpc("forsendelse_marker_besked", { p_id: f.id, p_felt: "afleveret", p_note: note });
     }
 
-    // Pakken er kommet frem. Ingen penge flyttes, og 48-timers uret startes
-    // ikke - køberen trykker stadig "modtaget".
+    // Pakken er kommet frem: 48-timers uret starter af sig selv
+    // (src/lib/betaling/fragtUr.ts, 20261030010000), når handlen er sendt,
+    // og meldingen må frigive penge (leveret_frigiver). Ingen penge flyttes
+    // her. Startede uret, sender fragtUr beskeden ("48 timer til at melde en
+    // fejl") - ellers den gamle besked. Står handlen stadig i
+    // 'betaling_modtaget', starter cron-reserven uret, når sælgeren har
+    // markeret pakken sendt.
     if (f.leveret_kl && !f.leveret_besked_kl) {
       let note: string | null = null;
+      if (t.status === "pakke_sendt" || t.status === "modtaget") {
+        const { startUrFraFragt, urStartetAfFragt } = await import("@/lib/betaling/fragtUr");
+        // Idempotent (databasen + nøgle + fragt_ur_besked_kl) - også når
+        // cron gentager efter et nedbrud, og uret allerede er startet.
+        await startUrFraFragt(t.id);
+        if (await urStartetAfFragt(t.id)) {
+          await admin.rpc("forsendelse_marker_besked", { p_id: f.id, p_felt: "leveret", p_note: null });
+          return sendt + 1;
+        }
+      }
       if (t.status === "betaling_modtaget" || t.status === "pakke_sendt") {
         await send(t.buyer_id, "pakke_leveret", {
           titel: "Pakken er kommet frem",

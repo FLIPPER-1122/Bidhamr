@@ -163,7 +163,7 @@ export const SAG_OPRET_FEJL: Record<string, string> = {
   ikke_betalt: "Der kan ikke oprettes en sag på handlen lige nu, fordi pengene allerede er udbetalt eller sendt tilbage til køberen.",
   kraever_beskyttelse:
     "Denne type sag kræver BidHamr Beskyttelse. Uden BidHamr Beskyttelse må du og sælgeren selv finde en løsning.",
-  for_sent: `Fristen er udløbet. En sag skal oprettes inden for ${SAG_FRIST_TIMER_EFTER_MODTAGET} timer, efter du har markeret pakken som modtaget.`,
+  for_sent: `Fristen er udløbet. En sag skal oprettes inden for ${SAG_FRIST_TIMER_EFTER_MODTAGET} timer, efter pakken er markeret som modtaget eller meldt leveret af fragtfirmaet.`,
   for_tidligt: `Du kan melde pakken bortkommet, når der er gået ${SAG_BORTKOMMET_EFTER_DAGE} dage, siden sælgeren sendte den.`,
   forkert_trin: "Den type sag kan ikke oprettes på handlen lige nu.",
   billeder_kraeves: "Tilføj mindst ét billede af pakken, ét af labelen og ét af indholdet.",
