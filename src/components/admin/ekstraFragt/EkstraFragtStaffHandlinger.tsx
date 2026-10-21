@@ -2,8 +2,8 @@
 
 // Staffs knapper på en regning for ekstra fragt: åbn fragtfirmaets
 // dokumentation, frafald (grund vises for sælgeren), afgør sælgerens
-// indsigelse (frafald/fasthold + begrundelse, som sælgeren ser) og den
-// interne note. Ingen dialoger: hver knap folder en kort formular ud på
+// indsigelse (frafald/fasthold + begrundelse, som sælgeren ser), genåbn
+// regningen efter en tabt bankindsigelse og den interne note. Ingen dialoger: hver knap folder en kort formular ud på
 // stedet (færrest klik, virker på mobil). Databasen tjekker rolle,
 // to-trins-login og inhabilitet igen (src/app/actions/adminEkstraFragt.ts).
 import { useRouter } from "next/navigation";
@@ -12,11 +12,12 @@ import {
   afgoerEkstraFragtIndsigelse,
   frafaldEkstraFragt,
   gemEkstraFragtNote,
+  genaabnEkstraFragt,
   hentEkstraFragtDokumentationStaff,
   type EkstraFragtStaffSvar,
 } from "@/app/actions/adminEkstraFragt";
 import { visKvittering } from "@/components/admin/Kvittering";
-import type { EkstraFragtStatus } from "@/lib/ekstraFragt/tekster";
+import { EKSTRA_FRAGT_GENAABNET_FRIST_DAGE, type EkstraFragtStatus } from "@/lib/ekstraFragt/tekster";
 import { useHydreret } from "@/lib/useHydreret";
 
 const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
@@ -212,6 +213,58 @@ function Afgoer({ regningId, onLuk }: { regningId: string; onLuk: () => void }) 
   );
 }
 
+// Genåbn en betalt regning, hvor betalingen er tilbageført efter en tabt
+// bankindsigelse. Begrundelsen vises for sælgeren. Databasen laver
+// kreditnota, ny frist og ny betalingsrunde; der flyttes ingen penge.
+function Genaabn({ regningId, onLuk }: { regningId: string; onLuk: () => void }) {
+  const id = useId();
+  const { sender, fejl, setFejl, send } = useSend();
+  function indsend(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const begrundelse = String(new FormData(e.currentTarget).get("begrundelse") ?? "").trim();
+    if (!begrundelse) return setFejl("Skriv en begrundelse. Den vises for sælgeren.");
+    void send(
+      () => genaabnEkstraFragt(regningId, begrundelse),
+      `Regningen er åbnet igen. Sælgeren har ${EKSTRA_FRAGT_GENAABNET_FRIST_DAGE} dage til at betale og får besked.`,
+      onLuk,
+    );
+  }
+  return (
+    <form onSubmit={indsend} method="post" className="space-y-3 rounded-lg border border-admin-kant p-4">
+      <p className="text-sm text-tekst-daempet">
+        Sælgerens bank har tilbageført betalingen. Regningen åbnes igen med en ny frist på{" "}
+        {EKSTRA_FRAGT_GENAABNET_FRIST_DAGE} dage, og der laves en kreditnota for den tilbageførte betaling.
+      </p>
+      <div>
+        <label htmlFor={`${id}-beg`} className="block text-sm font-medium text-tekst">
+          Begrundelse til sælgeren
+        </label>
+        <textarea
+          id={`${id}-beg`}
+          name="begrundelse"
+          rows={3}
+          required
+          maxLength={1000}
+          disabled={sender}
+          autoFocus
+          placeholder="Fx: Din bank har tilbageført betalingen, men fragtfirmaets måling står ved magt."
+          className={FELT}
+        />
+      </div>
+      <Fejl fejl={fejl} />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <button type="submit" disabled={sender} aria-busy={sender || undefined} className="btn btn-primaer w-full sm:w-auto">
+          {sender && <span className="btn-spinner" aria-hidden="true" />}
+          Genåbn regningen
+        </button>
+        <button type="button" onClick={onLuk} disabled={sender} className="btn btn-sekundaer w-full sm:w-auto">
+          Annullér
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function EkstraFragtNote({ regningId, note }: { regningId: string; note: string | null }) {
   const id = useId();
   const hydreret = useHydreret();
@@ -253,12 +306,15 @@ export default function EkstraFragtStaffHandlinger({
   regningId,
   status,
   inhabil,
+  bankindsigelseTabt = false,
 }: {
   regningId: string;
   status: EkstraFragtStatus;
   inhabil: boolean;
+  // bankindsigelse_tabt_kl er sat: betalingen er tilbageført.
+  bankindsigelseTabt?: boolean;
 }) {
-  const [aaben, setAaben] = useState<"frafald" | "afgoer" | null>(null);
+  const [aaben, setAaben] = useState<"frafald" | "afgoer" | "genaabn" | null>(null);
   if (inhabil) {
     return (
       <p className="rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
@@ -268,13 +324,17 @@ export default function EkstraFragtStaffHandlinger({
   }
   const kanFrafalde = status === "afventer_betaling" || status === "indsigelse";
   const kanAfgoere = status === "indsigelse";
-  // TODO(betaling): "Genåbn regning" efter en tabt bankindsigelse - knappen
-  // kommer her, når genaabnEkstraFragt(id, begrundelse) findes i
-  // src/app/actions/adminEkstraFragt.ts (betaling-agenten tilføjer den).
+  // Genåbn kun en betalt regning efter en tabt bankindsigelse (databasen tjekker igen).
+  const kanGenaabne = status === "betalt" && bankindsigelseTabt;
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
         <EkstraFragtDokumentationKnap regningId={regningId} />
+        {kanGenaabne && aaben !== "genaabn" && (
+          <button type="button" onClick={() => setAaben("genaabn")} className="btn btn-primaer w-full sm:w-auto">
+            Genåbn regning
+          </button>
+        )}
         {kanAfgoere && aaben !== "afgoer" && (
           <button type="button" onClick={() => setAaben("afgoer")} className="btn btn-primaer w-full sm:w-auto">
             Afgør indsigelse
@@ -286,6 +346,7 @@ export default function EkstraFragtStaffHandlinger({
           </button>
         )}
       </div>
+      {aaben === "genaabn" && kanGenaabne && <Genaabn regningId={regningId} onLuk={() => setAaben(null)} />}
       {aaben === "afgoer" && kanAfgoere && <Afgoer regningId={regningId} onLuk={() => setAaben(null)} />}
       {aaben === "frafald" && kanFrafalde && (
         <Frafald regningId={regningId} underIndsigelse={status === "indsigelse"} onLuk={() => setAaben(null)} />

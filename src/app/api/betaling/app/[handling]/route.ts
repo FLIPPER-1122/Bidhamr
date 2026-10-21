@@ -355,7 +355,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
         });
         const r = await gemEkstraFragtIndsigelse(somBruger, krop.regning_id, krop.tekst);
         if ("fejl" in r) return svar(r.kode === "ikke_fundet" ? 404 : 409, { fejl: r.fejl, kode: r.kode });
-        return svar(200, { ok: true });
+        return svar(200, { ok: true, spaerret_til_afgoerelse: r.spaerretTilAfgoerelse });
       }
       case "boost-brug": {
         const r = await brugBoost(bruger.id, krop.auktion_id, krop.noegle);

@@ -35,9 +35,10 @@ async function StaffMenu({ rolle, paaAdminVaert }: { rolle: StaffRole; paaAdminV
         // Rødt, når en reklamation kræver staff; ellers dem, der venter på sælgeren (gråt).
         reklamationer: t.reklamationStille + t.reklamationSagAendret || t.reklamationAfventer,
         reklamationerKritisk: t.reklamationStille + t.reklamationSagAendret > 0,
-        // Rødt: indsigelser venter på afgørelse. Ellers spærrede sælgere (gråt).
-        ekstraFragt: t.ekstraFragtIndsigelser || t.ekstraFragtForfaldne,
-        ekstraFragtKritisk: t.ekstraFragtIndsigelser > 0,
+        // Rødt: indsigelser venter på afgørelse, eller en bankindsigelse er
+        // tabt (betalingen tilbageført). Ellers spærrede sælgere (gråt).
+        ekstraFragt: t.ekstraFragtIndsigelser + t.ekstraFragtTabteBankindsigelser || t.ekstraFragtForfaldne,
+        ekstraFragtKritisk: t.ekstraFragtIndsigelser + t.ekstraFragtTabteBankindsigelser > 0,
         betalinger: t.betalinger,
         brugere: t.kontolukninger,
         henvendelser: t.kontakt + t.chats,

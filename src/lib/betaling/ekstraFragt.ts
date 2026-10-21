@@ -593,7 +593,7 @@ export async function gemEkstraFragtIndsigelse(
   klient: { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> },
   regningId: unknown,
   tekst: unknown,
-): Promise<{ ok: true } | { fejl: string; kode: string }> {
+): Promise<{ ok: true; spaerretTilAfgoerelse: boolean } | { fejl: string; kode: string }> {
   if (typeof regningId !== "string" || !UUID.test(regningId)) {
     return { fejl: EKSTRA_FRAGT_SAELGER_FEJL.ikke_fundet, kode: "ikke_fundet" };
   }
@@ -602,7 +602,7 @@ export async function gemEkstraFragtIndsigelse(
     p_tekst: typeof tekst === "string" ? tekst : "",
   });
   if (error) throw new Error(`mit_ekstra_fragt_indsigelse: ${error.message}`);
-  const svar = (data ?? {}) as { kode?: string; annuller_pi?: string | null };
+  const svar = (data ?? {}) as { kode?: string; annuller_pi?: string | null; spaerret_til_afgoerelse?: boolean };
   const kode = String(svar.kode ?? "fejl");
   if (kode !== "ok") return { fejl: EKSTRA_FRAGT_SAELGER_FEJL[kode] ?? "Noget gik galt. Prøv igen om lidt.", kode };
   if (svar.annuller_pi) {
@@ -610,7 +610,8 @@ export async function gemEkstraFragtIndsigelse(
     efterSvar("annullér betaling ved indsigelse", () => annullerKasseretPi(regningId, pi));
   }
   sendBeskederSnart();
-  return { ok: true };
+  // Indsigelse efter fristen: sælgeren forbliver spærret, til den er afgjort.
+  return { ok: true, spaerretTilAfgoerelse: svar.spaerret_til_afgoerelse === true };
 }
 
 // ------------------------------------------------------------------ cron

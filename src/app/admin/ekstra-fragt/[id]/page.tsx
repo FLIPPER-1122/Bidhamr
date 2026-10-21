@@ -13,8 +13,8 @@ import { ekstraFragtTid, maalingTekst, valgtStoerrelseNavn } from "@/lib/ekstraF
 import { transportoerNavn } from "@/lib/fragt/types";
 
 // Én regning for ekstra fragt: fragtfirmaets måling og dokumentation,
-// sælgerens indsigelse, tidslinje, intern note og knapperne (frafald, afgør
-// indsigelse). Kun staff (kraevSideRolle). Ingen ændringer ved visning.
+// sælgerens indsigelse, bankindsigelse, tidslinje, intern note og knapperne
+// (frafald, afgør indsigelse, genåbn efter tabt bankindsigelse). Kun staff (kraevSideRolle). Ingen ændringer ved visning.
 
 export const metadata = { title: "Ekstra fragt" };
 
@@ -53,10 +53,30 @@ type Regning = {
   opmaerksomhed_tekst: string | null;
   sidste_fejl: string | null;
   intern_note: string | null;
+  runde: number;
+  bankindsigelse_id: string | null;
+  bankindsigelse_status: string | null;
+  bankindsigelse_beloeb_oere: number | null;
+  bankindsigelse_tabt_kl: string | null;
+  genaabnet_kl: string | null;
+  genaabnet_af: string | null;
+  genaabn_begrundelse: string | null;
+};
+
+// Stripes status for en bankindsigelse (dispute) på dansk.
+const BANKINDSIGELSE_STATUS: Record<string, string> = {
+  warning_needs_response: "Forespørgsel – kræver svar",
+  warning_under_review: "Forespørgsel – under behandling",
+  warning_closed: "Forespørgsel – lukket",
+  needs_response: "Åben – kræver svar",
+  under_review: "Under behandling hos banken",
+  won: "Vundet",
+  lost: "Tabt – betalingen er tilbageført",
+  prevented: "Forhindret",
 };
 
 const KOLONNER =
-  "id, trade_id, saelger_id, transportoer, sporingsnummer, valgt_stoerrelse, maalt_stoerrelse, maalt_vaegt_gram, maalt_maal, beloeb_oere, fragtfirma_fakturanummer, forklaring, dokumentation_navn, status, frist, oprettet_af, oprettet_kl, betalt_kl, indsigelse_tekst, indsigelse_kl, afgoerelse, afgoerelse_begrundelse, afgjort_kl, afgjort_af, frafaldet_kl, frafaldet_af, frafald_grund, refunderet_kl, kraever_opmaerksomhed, opmaerksomhed_tekst, sidste_fejl, intern_note";
+  "id, trade_id, saelger_id, transportoer, sporingsnummer, valgt_stoerrelse, maalt_stoerrelse, maalt_vaegt_gram, maalt_maal, beloeb_oere, fragtfirma_fakturanummer, forklaring, dokumentation_navn, status, frist, oprettet_af, oprettet_kl, betalt_kl, indsigelse_tekst, indsigelse_kl, afgoerelse, afgoerelse_begrundelse, afgjort_kl, afgjort_af, frafaldet_kl, frafaldet_af, frafald_grund, refunderet_kl, kraever_opmaerksomhed, opmaerksomhed_tekst, sidste_fejl, intern_note, runde, bankindsigelse_id, bankindsigelse_status, bankindsigelse_beloeb_oere, bankindsigelse_tabt_kl, genaabnet_kl, genaabnet_af, genaabn_begrundelse";
 
 function Kort({ titel, children }: { titel: string; children: React.ReactNode }) {
   return (
@@ -91,7 +111,7 @@ export default async function AdminEkstraFragtRegning({ params }: { params: Prom
     .eq("id", r.trade_id)
     .maybeSingle<{ buyer_id: string | null; seller_id: string | null; auction_id: string | null }>();
   const personIds = [
-    ...new Set([r.saelger_id, r.oprettet_af, r.afgjort_af, r.frafaldet_af].filter((x): x is string => !!x && !erSystem(x))),
+    ...new Set([r.saelger_id, r.oprettet_af, r.afgjort_af, r.frafaldet_af, r.genaabnet_af].filter((x): x is string => !!x && !erSystem(x))),
   ];
   const [{ data: auktion }, { data: personer }, inhabil] = await Promise.all([
     handel?.auction_id
@@ -104,6 +124,8 @@ export default async function AdminEkstraFragtRegning({ params }: { params: Prom
   const hvem = (pid: string | null) => (!pid ? "ukendt" : erSystem(pid) ? "BidHamr (automatisk)" : (navn.get(pid) ?? "ukendt"));
   const firma = transportoerNavn(r.transportoer);
   const spaerrer = r.status === "afventer_betaling" && Date.parse(r.frist) <= new Date().getTime();
+  // Betalt, men tilbageført efter en tabt bankindsigelse: staff kan genåbne.
+  const tabt = r.status === "betalt" && !!r.bankindsigelse_tabt_kl;
 
   // Tidslinjen udledes af regningens egne tidsstempler (præcis for denne regning).
   const tidslinje: { kl: string; titel: string; hvem: string; tekst?: string | null }[] = [
@@ -124,6 +146,12 @@ export default async function AdminEkstraFragtRegning({ params }: { params: Prom
       : []),
     ...(r.betalt_kl ? [{ kl: r.betalt_kl, titel: "Sælgeren betalte", hvem: "Sælgeren" }] : []),
     ...(r.refunderet_kl ? [{ kl: r.refunderet_kl, titel: "Betalingen er refunderet", hvem: "Stripe" }] : []),
+    ...(r.bankindsigelse_tabt_kl
+      ? [{ kl: r.bankindsigelse_tabt_kl, titel: "Bankindsigelsen er tabt – betalingen er tilbageført", hvem: "Stripe" }]
+      : []),
+    ...(r.genaabnet_kl
+      ? [{ kl: r.genaabnet_kl, titel: "Regningen er genåbnet", hvem: hvem(r.genaabnet_af), tekst: r.genaabn_begrundelse }]
+      : []),
   ].sort((a, b) => Date.parse(a.kl) - Date.parse(b.kl));
 
   return (
@@ -134,6 +162,8 @@ export default async function AdminEkstraFragtRegning({ params }: { params: Prom
           <>
             <EkstraFragtStatusBadge status={r.status} spaerrer={spaerrer} />
             {r.kraever_opmaerksomhed && <AdminBadge tone="roed">Kræver opmærksomhed</AdminBadge>}
+            {tabt && <AdminBadge tone="roed">Tabt bankindsigelse</AdminBadge>}
+            {r.runde > 0 && <AdminBadge tone="graa">Genåbnet</AdminBadge>}
             {firma && <AdminBadge tone="graa">{firma}</AdminBadge>}
           </>
         }
@@ -159,8 +189,53 @@ export default async function AdminEkstraFragtRegning({ params }: { params: Prom
         </section>
       )}
 
+      {r.bankindsigelse_id && (
+        <section
+          className={`rounded-[14px] border p-4 sm:p-5 ${
+            r.bankindsigelse_tabt_kl ? "border-fejl-kant bg-fejl-bg text-fejl-tekst" : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"
+          }`}
+        >
+          <h2 className="text-base font-semibold">
+            {r.bankindsigelse_tabt_kl ? "Bankindsigelsen er tabt" : "Sælgeren har en bankindsigelse"}
+          </h2>
+          <p className="mt-1 text-sm">
+            {r.bankindsigelse_tabt_kl
+              ? "Sælgerens bank har tilbageført betalingen. Genåbn regningen, så sælgeren skal betale igen."
+              : "Sælgerens bank undersøger betalingen. Svar på den i Stripe – regningen kan først genåbnes, hvis den tabes."}
+          </p>
+          <dl className="mt-3 grid grid-cols-1 gap-x-5 text-sm sm:grid-cols-3">
+            <div className="py-1">
+              <dt className="text-xs opacity-80">Status</dt>
+              <dd className="font-medium">
+                {BANKINDSIGELSE_STATUS[r.bankindsigelse_status ?? ""] ?? r.bankindsigelse_status ?? "Ukendt"}
+              </dd>
+            </div>
+            <div className="py-1">
+              <dt className="text-xs opacity-80">Beløb</dt>
+              <dd className="font-medium tabular-nums">{oereKr(r.bankindsigelse_beloeb_oere)}</dd>
+            </div>
+            <div className="py-1">
+              <dt className="text-xs opacity-80">Tabt</dt>
+              <dd className="font-medium">{r.bankindsigelse_tabt_kl ? ekstraFragtTid(r.bankindsigelse_tabt_kl) : "–"}</dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-xs opacity-80">
+            Stripe-id: <span className="select-all break-all font-mono">{r.bankindsigelse_id}</span>
+          </p>
+        </section>
+      )}
+
+      {r.genaabnet_kl && r.genaabn_begrundelse && (
+        <p role="note" className="rounded-[14px] border border-admin-kant bg-white px-4 py-3 text-sm text-tekst">
+          <span className="font-semibold">
+            Genåbnet {ekstraFragtTid(r.genaabnet_kl)} af {hvem(r.genaabnet_af)} (betalingsrunde {r.runde + 1}):
+          </span>{" "}
+          <span className="whitespace-pre-wrap break-words">{r.genaabn_begrundelse}</span>
+        </p>
+      )}
+
       <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
-        <EkstraFragtStaffHandlinger regningId={r.id} status={r.status} inhabil={inhabil} />
+        <EkstraFragtStaffHandlinger regningId={r.id} status={r.status} inhabil={inhabil} bankindsigelseTabt={tabt} />
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-admin-kant pt-4 text-sm">
           <Link href={`/admin/handler/${r.trade_id}`} className="inline-flex min-h-11 items-center font-semibold text-groen hover:underline sm:min-h-0">
             Se handlen →
