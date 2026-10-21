@@ -7,7 +7,7 @@ import "server-only";
 // sagen afgøres), så beskederne udledes af tidsstemplerne - samme mønster som
 // advarsler (src/lib/notifikationer/cron.ts). Hver hændelse har en fast nøgle,
 // så den aldrig sendes to gange:
-//   reklamation:<id>:oprettet                 - "Du kan få erstatning ..."
+//   reklamation:<id>:oprettet                 - "Du kan søge erstatning ..."
 //   reklamation:<id>:gensendt:<antal>         - staff har sendt pakken igen
 //   reklamation:<id>:paamind:<aktiv_fra_kl>   - 7 dage uden "anmeldt"
 //   reklamation:<id>:annulleret:<annulleret_kl> - staff har stoppet den
@@ -58,7 +58,7 @@ function anmeldTekst(r: ReklamationBeskedRaekke): string {
   const sted = REKLAMATION_ANMELD[r.transportoer]?.url
     ? ` på ${REKLAMATION_ANMELD[r.transportoer].url!.replace(/^https?:\/\//, "")}`
     : "";
-  return `Anmeld skaden hos ${navn}${sted}. Du kan kræve op til ${kroner(r.kravbeloeb_oere)}. På handlen finder du alle oplysninger og billeder samlet, klar til at sende. Erstatningen udbetaler ${navn} direkte til dig.`;
+  return `Anmeld skaden hos ${navn}${sted}. Du kan kræve op til ${kroner(r.kravbeloeb_oere)}. På handlen ligger alle oplysninger og billeder samlet, så du kan kopiere dem direkte over. Det er ${navn}, der afgør, om du får erstatning, og pengene udbetales direkte fra ${navn} til dig.`;
 }
 
 // Teksterne (eksporteret til test og til indhold-agenten). nu: til test.
@@ -75,25 +75,29 @@ export function reklamationBeskeder(r: ReklamationBeskedRaekke, nu: number = Dat
   if (!(r.status === "annulleret" && r.annulleret_auto)) {
     op(
       "oprettet",
-      `Du kan få erstatning fra ${navn}`,
-      `Varen blev skadet under fragten, og din indpakning var i orden. ${anmeldTekst(r)}`,
+      `Du kan søge erstatning hos ${navn}`,
+      `Varen blev skadet under fragten, og køberen har fået medhold i sagen. Dine pakkebilleder viser, at du pakkede varen ordentligt, så du kan selv søge erstatning hos ${navn}. ${anmeldTekst(r)}`,
     );
   }
   if (aaben && r.gensendt_antal > 0) {
-    op(`gensendt:${r.gensendt_antal}`, `Husk at anmelde skaden hos ${navn}`, anmeldTekst(r));
+    op(
+      `gensendt:${r.gensendt_antal}`,
+      `Oplysninger til din skadeanmeldelse hos ${navn}`,
+      `BidHamr har sendt dig oplysningerne igen. ${anmeldTekst(r)}`,
+    );
   }
   if (r.status === "afventer_saelger" && nu - new Date(r.aktiv_fra_kl).getTime() >= REKLAMATION_PAAMIND_DAGE * DAG) {
     op(
       `paamind:${new Date(r.aktiv_fra_kl).getTime()}`,
       `Har du anmeldt skaden hos ${navn}?`,
-      `${anmeldTekst(r)} Har du allerede anmeldt den, så tryk "Anmeldt" på handlen. Vil du ikke reklamere, kan du også vælge det dér.`,
+      `Vi kan ikke se, at skaden er anmeldt endnu. ${anmeldTekst(r)} Har du allerede anmeldt den, så marker det på handlen. Vil du ikke søge erstatning, kan du også vælge det dér.`,
     );
   }
   if (r.status === "annulleret" && !r.annulleret_auto && r.annulleret_kl) {
     op(
       `annulleret:${new Date(r.annulleret_kl).getTime()}`,
       "Reklamationen er stoppet",
-      `BidHamr har stoppet reklamationen hos ${navn}.${r.annulleret_grund ? ` Begrundelse: ${punktum(r.annulleret_grund)}` : ""} Kontakt support@bidhamr.dk, hvis du har spørgsmål.`,
+      `BidHamr har stoppet reklamationen hos ${navn}.${r.annulleret_grund ? ` Begrundelse: ${punktum(r.annulleret_grund)}` : ""} Har du spørgsmål, så skriv til support@bidhamr.dk.`,
     );
   }
   return ud;

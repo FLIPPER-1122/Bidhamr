@@ -40,11 +40,11 @@ export function transportoerNavn(t: string | null | undefined): string {
 export const REKLAMATION_ANMELD: Record<ReklamationTransportoer, { url: string | null; tekst: string }> = {
   dao: {
     url: "https://omdeling.info",
-    tekst: "Anmeld skaden hos DAO på omdeling.info. Brug trackingnummeret og vedhæft billederne nedenfor.",
+    tekst: "Anmeld skaden hos DAO på omdeling.info. Kopiér oplysningerne nedenfor over i formularen, og vedhæft billederne. Du kan hente alle billederne på én gang som én fil (ZIP).",
   },
   gls: {
     url: null,
-    tekst: "Kontakt GLS' kundeservice og anmeld skaden. Brug trackingnummeret og vedhæft billederne nedenfor.",
+    tekst: "Kontakt GLS' kundeservice, og anmeld skaden. Kopiér oplysningerne nedenfor over, og vedhæft billederne. Du kan hente alle billederne på én gang som én fil (ZIP).",
   },
 };
 
@@ -52,7 +52,7 @@ export const REKLAMATION_ANMELD: Record<ReklamationTransportoer, { url: string |
 export const REKLAMATION_STATUS_STAFF: Record<ReklamationStatus, string> = {
   afventer_saelger: "Venter på sælger",
   anmeldt: "Anmeldt – venter på svar",
-  godkendt: "Godkendt (udbetalt direkte til sælger)",
+  godkendt: "Godkendt – udbetales direkte til sælger",
   afvist: "Afvist af fragtfirmaet",
   fravalgt: "Sælger ønsker ikke at reklamere",
   annulleret: "Annulleret",
@@ -63,13 +63,13 @@ export function reklamationStatusSaelger(status: ReklamationStatus, transportoer
   const navn = transportoerNavn(transportoer);
   switch (status) {
     case "afventer_saelger":
-      return `Du kan få erstatning fra ${navn} – anmeld skaden`;
+      return `Du kan søge erstatning hos ${navn} – anmeld skaden`;
     case "anmeldt":
       return `Anmeldt hos ${navn} – venter på svar`;
     case "godkendt":
       return `${navn} har godkendt erstatningen`;
     case "afvist":
-      return `${navn} har afvist erstatningen`;
+      return `${navn} har afvist din anmeldelse`;
     case "fravalgt":
       return "Du har valgt ikke at reklamere";
     case "annulleret":

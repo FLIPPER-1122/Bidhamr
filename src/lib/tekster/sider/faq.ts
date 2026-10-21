@@ -204,6 +204,10 @@ export const FAQ_SIDE: Tekstside = {
           spoergsmaal: "Hvem har ansvaret, hvis varen går i stykker i posten?",
           svar: "Du har ansvaret for at pakke varen forsvarligt. Du tager billeder af indpakningen, når du sender pakken, og de bruges, hvis der kommer en sag.",
         },
+        {
+          spoergsmaal: "Min vare blev skadet under fragten – får jeg erstatning?",
+          svar: "Afgøres sagen til køberens fordel, får køberen pengene tilbage. Har du pakket varen ordentligt, kan du selv anmelde skaden hos fragtfirmaet. Erstatningen udbetales så direkte fra fragtfirmaet til dig – hos DAO højst 2.500 kr. pr. pakke. BidHamr giver dig alle oplysninger og billeder samlet på handelssiden, så det er nemt at anmelde. Det er fragtfirmaet, der afgør, om du får erstatning. Afviser det, er det dit tab. Viser pakkebillederne, at varen var dårligt pakket, kan der ikke reklameres.",
+        },
       ],
     },
     // Erhverv: regler i ROADMAP-BESLUTNINGER.md "Erhvervskonti" og
