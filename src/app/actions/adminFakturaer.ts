@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { assertRole } from "@/lib/adminAuth";
+import { graenseFejl, tjekGraenserLukket } from "@/lib/rateLimit";
+import { koerDineroForbindelsesTest, type DineroTestResultat } from "@/lib/faktura/forbindelsesTest";
 
 // Admin -> Fakturaer (kun chef): "Prøv igen" og "Markér som håndteret i
 // Dinero" for fakturaer, der er opgivet eller stoppet. Rollen tjekkes her OG
@@ -58,6 +60,28 @@ export async function fakturaHaandteretManuelt(formData: FormData): Promise<{ ok
   } catch (err) {
     unstable_rethrow(err);
     console.error("fakturaHaandteretManuelt fejlede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
+// "Test Dinero-forbindelse" (kun chef): logger ind i Dinero med den opsætning,
+// der kører, og viser, hvad Dinero svarer (src/lib/faktura/forbindelsesTest.ts).
+// Kun læsning; aldrig nøgler, secret eller token i svaret. Højst 10 pr. 10
+// minutter pr. chef (fail closed - hvert tryk kalder Dinero).
+export async function testDineroForbindelse(): Promise<{ ok: true; resultat: DineroTestResultat } | { fejl: string }> {
+  try {
+    let userId: string;
+    try {
+      ({ userId } = await assertRole("chef"));
+    } catch {
+      return { fejl: KODER.ingen_adgang };
+    }
+    const graense = graenseFejl(await tjekGraenserLukket([["dinero_test_chef", userId]]));
+    if (graense) return { fejl: graense };
+    return { ok: true, resultat: await koerDineroForbindelsesTest() };
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error("testDineroForbindelse fejlede:", err instanceof Error ? err.name : "fejl");
     return { fejl: GENERISK };
   }
 }

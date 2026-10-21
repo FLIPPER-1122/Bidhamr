@@ -5,7 +5,7 @@
 // "BidHamr Test" - aldrig til "Bidhamr ApS" (det rigtige regnskab).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BIDHAMR_CVR, TEST_ORG_NAVN, hentFakturaKonfig, kontrollerOrganisation } from "@/lib/faktura/konfig";
-import { FAKTURA_GUL_TIMER, FAKTURA_ROED_TIMER, fakturaLampe } from "@/lib/admin/fakturaLampe";
+import { FAKTURA_GUL_TIMER, FAKTURA_ROED_TIMER, dineroStatus, fakturaLampe } from "@/lib/admin/fakturaLampe";
 
 const TEST_URL = "https://pjiigmzqwlfepxnjdvug.supabase.co";
 const PROD_URL = "https://lkifkrexeldimmghnsie.supabase.co";
@@ -141,5 +141,40 @@ describe("systemlampen Fakturaer", () => {
     expect(fakturaLampe({ ...tom, ventetGul: 5, ventetRoed: 1 })).toMatchObject({ tone: "roed", tekst: "1 dokument har ventet over 6 t" });
     expect(fakturaLampe({ ...tom, aabne: ["faktura:adgang"] })).toMatchObject({ tone: "roed", tekst: "Dinero afviser login" });
     expect(fakturaLampe({ ...tom, aabne: ["faktura:konfiguration"] }).tone).toBe("roed");
+  });
+});
+
+describe("Admin -> Fakturaer: Dinero-status", () => {
+  const sat = { ok: true as const, miljoe: "test" as const, orgId: "660855" };
+  it("'sat op' kun uden åbne tilfælde", () => {
+    expect(dineroStatus({ konfig: sat, aabne: [], konfigurationTekst: null })).toEqual({
+      tone: "groen",
+      tekst: "Dinero: sat op (testregnskab, organisation 660855)",
+      detalje: null,
+    });
+  });
+  it("faktura:adgang åben: rødt 'Dinero afviser login' i stedet for 'sat op' - som lampen", () => {
+    const s = dineroStatus({ konfig: sat, aabne: ["faktura:adgang"], konfigurationTekst: null });
+    expect(s).toMatchObject({ tone: "roed", tekst: "Dinero afviser login" });
+    expect(s.tekst).toBe(fakturaLampe({ ventetGul: 0, ventetRoed: 0, kraeverHandling: 0, aabne: ["faktura:adgang"] }).tekst);
+  });
+  it("faktura:konfiguration åben: rødt med teksten fra tilfældet", () => {
+    const s = dineroStatus({
+      konfig: sat,
+      aabne: ["faktura:konfiguration"],
+      konfigurationTekst: 'Dinero-regnskabet 660855 hedder ikke "BidHamr Test".',
+    });
+    expect(s).toEqual({ tone: "roed", tekst: "Dinero er sat forkert op", detalje: 'Dinero-regnskabet 660855 hedder ikke "BidHamr Test".' });
+  });
+  it("login-fejlen vinder over opsætningsfejlen", () => {
+    expect(dineroStatus({ konfig: sat, aabne: ["faktura:konfiguration", "faktura:adgang"], konfigurationTekst: "x" }).tekst).toBe(
+      "Dinero afviser login",
+    );
+  });
+  it("opsætningen afvist uden tilfælde: konfigurationens egen besked", () => {
+    expect(dineroStatus({ konfig: { ok: false, besked: "Dinero er ikke sat op." }, aabne: [], konfigurationTekst: null })).toMatchObject({
+      tone: "roed",
+      tekst: "Dinero: Dinero er ikke sat op.",
+    });
   });
 });

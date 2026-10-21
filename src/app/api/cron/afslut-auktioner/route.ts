@@ -10,6 +10,7 @@ import { harCronAdgang } from "@/lib/cronAdgang";
 import { koerDac7Cron } from "@/lib/dac7/server";
 import { koerLukOpsigelser } from "@/lib/erhverv/betaling";
 import { koerBetaFejlOprydning } from "@/lib/betaFejlOprydning";
+import { kortResultat } from "@/lib/driftCronResultat";
 
 // Lukker auktioner, opretter handel + betaling (48 timers frist; vinderen
 // betaler selv - ingen automatisk betaling), sender "du vandt"-mails og
@@ -47,23 +48,8 @@ export const maxDuration = 300;
 
 const JOB = "betalings-cron";
 
-// Kun tal og små objekter med tal (resuméet fra koerBetalingsCron) - aldrig
-// tekst, der kunne indeholde persondata.
-function kortResultat(r: unknown): Record<string, unknown> | null {
-  if (!r || typeof r !== "object") return null;
-  const ud: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(r as Record<string, unknown>)) {
-    if (typeof v === "number") ud[k] = v;
-    else if (v && typeof v === "object") {
-      const indre: Record<string, number> = {};
-      for (const [k2, v2] of Object.entries(v as Record<string, unknown>)) {
-        if (typeof v2 === "number") indre[k2] = v2;
-      }
-      ud[k] = indre;
-    }
-  }
-  return ud;
-}
+// Resuméet gemmes med kortResultat (src/lib/driftCronResultat.ts): kun tal,
+// små objekter med tal og korte koder i springetOver/grund.
 
 async function startLog(metode: string): Promise<number | null> {
   try {

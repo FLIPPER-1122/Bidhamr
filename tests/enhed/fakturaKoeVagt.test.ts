@@ -79,6 +79,9 @@ describe("fakturakøen sender kun til BidHamr Test", () => {
     expect(dineroKald.filter((k) => k.startsWith("POST https://api.dinero.dk"))).toEqual([]);
     expect(alarmer.some((a) => a.startsWith("faktura:konfiguration:") && a.includes('hedder ikke "BidHamr Test"'))).toBe(true);
     expect(lukket).not.toContain("faktura:konfiguration");
+    expect(r.grund).toBe("konfiguration: regnskab afvist");
+    // Login lykkedes: faktura:adgang lukkes, så lampen viser den rigtige fejl.
+    expect(lukket).toContain("faktura:adgang");
   });
   it("regnskabet har BidHamrs CVR: intet sendes", async () => {
     organisationer = [{ Id: 659420, Name: "BidHamr Test", VatNumber: "46836219" }];
@@ -92,8 +95,24 @@ describe("fakturakøen sender kun til BidHamr Test", () => {
     const { koerFakturaKoe } = await import("@/lib/faktura/koe");
     const r = await koerFakturaKoe();
     expect(r.springetOver).toBe("adgang");
+    expect(r.grund).toBe("adgang: 400 login");
     expect(rpcKald).not.toContain("faktura_claim");
     expect(alarmer.some((a) => a.startsWith("faktura:adgang:"))).toBe(true);
+    expect(lukket).not.toContain("faktura:adgang");
+  });
+  it("Dinero afviser login med 401: springetOver og grund kommer med i cron-resultatet", async () => {
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ error: "invalid_client" }), { status: 401 }));
+    const { koerFakturaKoe } = await import("@/lib/faktura/koe");
+    const { kortResultat } = await import("@/lib/driftCronResultat");
+    const r = await koerFakturaKoe();
+    const gemt = kortResultat({ fakturaer: r }) as { fakturaer: Record<string, unknown> };
+    expect(gemt.fakturaer).toEqual({ behandlet: 0, faerdige: 0, fejl: 0, stoppet: 0, springetOver: "adgang", grund: "adgang: 401 login" });
+  });
+  it("Dinero virker igen efter et afvist login: faktura:adgang lukkes", async () => {
+    organisationer = [{ Id: 659420, Name: "BidHamr Test", VatNumber: null }];
+    const { koerFakturaKoe } = await import("@/lib/faktura/koe");
+    await koerFakturaKoe();
+    expect(lukket).toContain("faktura:adgang");
   });
   it("Dinero svarer midlertidigt ikke: kørslen springes over uden alarm, intet claimes", async () => {
     vi.stubGlobal("fetch", async (url: string) => {
@@ -103,6 +122,7 @@ describe("fakturakøen sender kun til BidHamr Test", () => {
     const { koerFakturaKoe } = await import("@/lib/faktura/koe");
     const r = await koerFakturaKoe();
     expect(r.springetOver).toBe("forbigaaende");
+    expect(r.grund).toBe("forbigaaende: 503");
     expect(rpcKald).not.toContain("faktura_claim");
     expect(alarmer).toEqual([]);
     expect(lukket).not.toContain("faktura:konfiguration");
@@ -115,6 +135,7 @@ describe("fakturakøen sender kun til BidHamr Test", () => {
     const { koerFakturaKoe } = await import("@/lib/faktura/koe");
     const r = await koerFakturaKoe();
     expect(r.springetOver).toBe("ikke_konfigureret");
+    expect(r.grund).toBe("konfiguration: forkert_miljoe");
     expect(rpcKald).not.toContain("faktura_claim");
     expect(dineroKald).toEqual([]);
     expect(alarmer.some((a) => a.startsWith("faktura:konfiguration:") && a.includes("live-nøgle"))).toBe(true);

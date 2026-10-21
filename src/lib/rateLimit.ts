@@ -198,6 +198,9 @@ export const GRAENSER = {
   admin_gendan_email: { maks: 5, vindueSek: 60 * 60 },
   // Chefens nulstilling og åbning af tilmelding (hver kan sende en mail).
   admin_to_trin_chef: { maks: 30, vindueSek: 60 * 60 },
+  // Admin -> Fakturaer -> "Test Dinero-forbindelse" (hvert tryk logger ind i
+  // Dinero; Dinero tillader 60 kald i minuttet for hele regnskabet).
+  dinero_test_chef: { maks: 10, vindueSek: 10 * 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;

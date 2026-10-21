@@ -28,13 +28,64 @@ export type FakturaLampeData = {
 
 const antal = (x: number, en: string, flere: string) => `${x} ${x === 1 ? en : flere}`;
 
+// Teksterne foran drift-alarmerne faktura:konfiguration og faktura:adgang
+// (src/lib/faktura/koe.ts). Admin -> Fakturaer finder den seneste
+// konfigurationsalarm i drift_fejl ud fra præfikset (src/lib/faktura/tilfaelde.ts).
+export const KONFIG_ALARM_PRAEFIKS = "Fakturaer laves ikke i Dinero - opsætningen er afvist:";
+export const ADGANG_ALARM_PRAEFIKS = "Fakturaer laves ikke i Dinero - login afvist:";
+
+export const DINERO_AFVISER_LOGIN = "Dinero afviser login";
+export const DINERO_SAT_FORKERT_OP = "Dinero er sat forkert op";
+
+// Åbne drift-tilfælde for Dinero -> rød status (null = ingen åbne). Bruges af
+// både systemlampen og Admin -> Fakturaer, så de altid siger det samme.
+export function dineroTilfaeldeStatus(
+  aabne: string[],
+  konfigurationTekst: string | null = null,
+): { tekst: string; detalje: string } | null {
+  if (aabne.includes("faktura:adgang")) {
+    return {
+      tekst: DINERO_AFVISER_LOGIN,
+      detalje: "Fakturakøen kan ikke logge ind i Dinero og sender intet. Tjek Dinero-nøglerne med \"Test Dinero-forbindelse\".",
+    };
+  }
+  if (aabne.includes("faktura:konfiguration")) {
+    return {
+      tekst: DINERO_SAT_FORKERT_OP,
+      detalje: konfigurationTekst || "Fakturakøen sender intet, fordi opsætningen er afvist. Se drift-siden.",
+    };
+  }
+  return null;
+}
+
+// Status-linjen om Dinero på Admin -> Fakturaer ("Dinero: sat op (...)" eller
+// "Dinero afviser login"). Et åbent tilfælde vinder
+// over "sat op" (variablerne kan være udfyldt, uden at de virker).
+export type DineroStatus = { tone: "groen" | "roed"; tekst: string; detalje: string | null };
+
+export function dineroStatus(d: {
+  konfig: { ok: true; miljoe: "test" | "live"; orgId: string } | { ok: false; besked: string };
+  aabne: string[];
+  konfigurationTekst: string | null;
+}): DineroStatus {
+  const t = dineroTilfaeldeStatus(d.aabne, d.konfigurationTekst);
+  if (t) return { tone: "roed", tekst: t.tekst, detalje: t.detalje };
+  if (!d.konfig.ok) return { tone: "roed", tekst: `Dinero: ${d.konfig.besked}`, detalje: null };
+  return {
+    tone: "groen",
+    tekst: `Dinero: sat op (${d.konfig.miljoe === "live" ? "live-regnskab" : "testregnskab"}, organisation ${d.konfig.orgId})`,
+    detalje: null,
+  };
+}
+
 export function fakturaLampe(d: FakturaLampeData): Lampe {
   const navn = "Fakturaer";
-  if (d.aabne.includes("faktura:adgang")) {
-    return { navn, tone: "roed", tekst: "Dinero afviser login", statusTekst: "Fakturaer: Dinero afviser login - tjek Dinero-nøglerne" };
+  const t = dineroTilfaeldeStatus(d.aabne);
+  if (t?.tekst === DINERO_AFVISER_LOGIN) {
+    return { navn, tone: "roed", tekst: t.tekst, statusTekst: "Fakturaer: Dinero afviser login - tjek Dinero-nøglerne" };
   }
-  if (d.aabne.includes("faktura:konfiguration")) {
-    return { navn, tone: "roed", tekst: "Dinero er sat forkert op", statusTekst: "Fakturaer: Dinero er sat forkert op - se drift-siden" };
+  if (t) {
+    return { navn, tone: "roed", tekst: t.tekst, statusTekst: "Fakturaer: Dinero er sat forkert op - se drift-siden" };
   }
   if (d.ventetRoed > 0) {
     const t = antal(d.ventetRoed, "dokument har", "dokumenter har");

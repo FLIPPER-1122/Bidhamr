@@ -1,8 +1,11 @@
 import { kraevSideRolle } from "@/lib/adminAuth";
 import AdminActionKnap from "@/components/admin/AdminActionKnap";
 import FakturaHaandterForm from "@/components/admin/FakturaHaandterForm";
-import { fakturaHaandteretManuelt, proevFakturaIgen } from "@/app/actions/adminFakturaer";
+import DineroTestKnap from "@/components/admin/DineroTestKnap";
+import { fakturaHaandteretManuelt, proevFakturaIgen, testDineroForbindelse } from "@/app/actions/adminFakturaer";
 import { hentFakturaKonfig } from "@/lib/faktura/konfig";
+import { hentFakturaTilfaelde } from "@/lib/faktura/tilfaelde";
+import { dineroStatus } from "@/lib/admin/fakturaLampe";
 
 // Fakturaer i Dinero - KUN chef (beløb). Oversigt over køen og de dokumenter,
 // der er opgivet (5 fejl) eller stoppet, med "Prøv igen" og "Markér som
@@ -59,7 +62,7 @@ export default async function AdminFakturaer() {
   const taelle = () => admin.from("fakturaer").select("id", { count: "exact", head: true });
   // Dokumenter, der har ventet over 2 timer (drift-alarm faktura:haenger).
   const haengerFra = haengerGraense();
-  const [{ data: problemer, error: pFejl }, faerdig, venter, stoppet, manuelt, { data: haenger }] = await Promise.all([
+  const [{ data: problemer, error: pFejl }, faerdig, venter, stoppet, manuelt, { data: haenger }, tilfaelde] = await Promise.all([
     admin
       .from("fakturaer")
       .select("id, dokument, part, trade_id, beloeb_oere, status, manuel, opgivet, forsoeg, sidste_fejl, dinero_nummer, betalt_dato, oprettet_kl")
@@ -80,7 +83,18 @@ export default async function AdminFakturaer() {
       .lt("oprettet_kl", haengerFra)
       .order("oprettet_kl", { ascending: true })
       .limit(100),
+    hentFakturaTilfaelde(admin),
   ]);
+  // Åbne drift-tilfælde (faktura:adgang/faktura:konfiguration) vinder over
+  // "sat op": variablerne kan være udfyldt, uden at Dinero godtager dem.
+  const status = dineroStatus({
+    konfig: konfig.ok ? { ok: true, miljoe: konfig.miljoe, orgId: konfig.dinero.orgId } : { ok: false, besked: konfig.besked },
+    aabne: tilfaelde.ok ? tilfaelde.aabne : [],
+    konfigurationTekst: tilfaelde.ok ? tilfaelde.konfigurationTekst : null,
+  });
+  const aabnetKl = tilfaelde.ok
+    ? (tilfaelde.aabnetKl["faktura:adgang"] ?? tilfaelde.aabnetKl["faktura:konfiguration"] ?? null)
+    : null;
   const aFejl = faerdig.error ?? venter.error ?? stoppet.error ?? manuelt.error;
   const tal = {
     faerdig: faerdig.count ?? 0,
@@ -98,16 +112,21 @@ export default async function AdminFakturaer() {
           (sælgergebyr) ved hver betaling, en kreditnota ved refusion og bogfører betalte abonnementsfakturaer.
           Systemet prøver selv igen ved fejl (5 gange). Her står dem, der kræver dig.
         </p>
-        <p className="mt-2 text-sm">
-          Dinero:{" "}
-          {konfig.ok ? (
-            <span className="font-medium text-green-700">
-              sat op ({konfig.miljoe === "live" ? "live-regnskab" : "testregnskab"}, organisation {konfig.dinero.orgId})
-            </span>
-          ) : (
-            <span className="font-medium text-red-700">{konfig.besked}</span>
-          )}
-        </p>
+        <p className={`mt-2 text-sm font-medium ${status.tone === "groen" ? "text-green-700" : "text-red-700"}`}>{status.tekst}</p>
+        {status.detalje && (
+          <p className="mt-1 max-w-[70ch] text-sm text-red-700">
+            {status.detalje}
+            {aabnetKl
+              ? ` (siden ${new Date(aabnetKl).toLocaleString("da-DK", { timeZone: "Europe/Copenhagen", dateStyle: "short", timeStyle: "short" })})`
+              : ""}
+          </p>
+        )}
+        {!tilfaelde.ok && (
+          <p className="mt-1 text-sm text-amber-700">Drift-tilfældene kunne ikke hentes - status ovenfor er kun opsætningen.</p>
+        )}
+        <div className="mt-3">
+          <DineroTestKnap action={testDineroForbindelse} />
+        </div>
       </div>
 
       {pFejl || aFejl ? (
