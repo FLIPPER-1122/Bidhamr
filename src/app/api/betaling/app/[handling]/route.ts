@@ -39,7 +39,9 @@ import { gemEkstraFragtIndsigelse, startEkstraFragtBetaling, type EkstraFragtSta
 //   boost-koeb               { samtykke?, pakke? }    -> PaymentSheet-data til køb af boost-point (pakke: id, uden = 100 point)
 //   boost-brug               { auktion_id, noegle }   -> booster egen auktion (noegle: uuid, samme = samme boost)
 //   ekstra-fragt-betal       { regning_id }           -> PaymentSheet-data til sælgerens betaling af ekstra fragt
-//   ekstra-fragt-indsigelse  { regning_id, tekst }    -> indsigelse mod fragtfirmaets måling (én gang)
+//   ekstra-fragt-indsigelse  { regning_id, tekst }    -> indsigelse mod fragtfirmaets måling (én gang, kun før
+//                                                     fristen; ellers 409 kode frist_overskredet - appen viser
+//                                                     "kontakt os" som hjemmesiden)
 //   (Listen og fakturaen: rpc mine_ekstra_fragt_regninger og GET /api/ekstra-fragt/<id>/dokumentation.)
 //
 // Sikkerhed (som /api/fragt/app): kun Bearer-token - cookies bruges ikke
@@ -355,7 +357,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
         });
         const r = await gemEkstraFragtIndsigelse(somBruger, krop.regning_id, krop.tekst);
         if ("fejl" in r) return svar(r.kode === "ikke_fundet" ? 404 : 409, { fejl: r.fejl, kode: r.kode });
-        return svar(200, { ok: true, spaerret_til_afgoerelse: r.spaerretTilAfgoerelse });
+        return svar(200, { ok: true });
       }
       case "boost-brug": {
         const r = await brugBoost(bruger.id, krop.auktion_id, krop.noegle);

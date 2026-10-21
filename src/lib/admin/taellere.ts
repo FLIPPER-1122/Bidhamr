@@ -51,7 +51,8 @@ export type StaffTal = {
   ekstraFragtForfaldne: number;
   ekstraFragtIndsigelser: number;
   // Betalte ekstraregninger, hvor betalingen er tilbageført efter en tabt
-  // bankindsigelse (rødt - staff afgør, om regningen skal genåbnes).
+  // bankindsigelse (rødt - staff genåbner eller afslutter uden genåbning;
+  // håndterede tælles ikke).
   ekstraFragtTabteBankindsigelser: number;
 };
 

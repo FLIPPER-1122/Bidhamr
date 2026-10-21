@@ -202,7 +202,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvorfor skal jeg betale ekstra fragt?",
-          svar: "Fragtfirmaet måler og vejer pakken. Er den større eller tungere end den størrelse, du valgte, opkræver fragtfirmaet ekstra, og det betaler du som sælger. Beløbet er fragtfirmaets pris. Du får besked og kan se fragtfirmaets dokumentation på handelssiden, hvor du også betaler. Mener du, at målingen er forkert, kan du gøre indsigelse én gang. Betaler du ikke inden for 14 dage, kan du ikke oprette nye auktioner, før beløbet er betalt. Vælg derfor den rigtige størrelse fra start – Pakkeguiden hjælper dig.",
+          svar: "Fragtfirmaet måler og vejer pakken. Er den større eller tungere end den størrelse, du valgte, opkræver fragtfirmaet ekstra, og det betaler du som sælger. Beløbet er fragtfirmaets pris. Du får besked og kan se fragtfirmaets dokumentation på handelssiden, hvor du også betaler. Mener du, at målingen er forkert, kan du gøre indsigelse én gang inden fristen. Betaler du ikke inden for 14 dage, kan du ikke oprette nye auktioner, før beløbet er betalt. Vælg derfor den rigtige størrelse fra start – Pakkeguiden hjælper dig.",
         },
         {
           spoergsmaal: "Hvem har ansvaret, hvis varen går i stykker i posten?",

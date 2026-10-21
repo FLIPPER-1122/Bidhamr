@@ -220,30 +220,42 @@ Pengestrømmen:
    aldrig Link/Klarna), tvungen 3D Secure, idempotency key pr. regning og forsøg.
 3. Webhooken (`payment_intent.*`, metadata `type = ekstra_fragt`) markerer regningen betalt – idempotent.
    Mistet webhook: returen fra betalingen eller betalings-cron'en (efter 15 min) slår PaymentIntenten op.
-4. Sælgeren kan gøre **indsigelse** mod målingen (én gang, med tekst). En åben betaling annulleres hos
-   Stripe. Staff afgør: **frafald** (sælgeren skal intet betale) eller **fasthold** (tilbage til "afventer
+4. Sælgeren kan gøre **indsigelse** mod målingen (én gang, med tekst) – **kun før fristen** (Filip, 21. okt.
+   2026). Efter fristen afviser databasen med `frist_overskredet`, `kan_goere_indsigelse` er falsk, og kortet
+   viser i stedet "Fristen er overskredet. Er du uenig i målingen, så kontakt os, så ser vi på det." med link
+   til kontaktformularen (`/kontakt?emne=handel&handel=<trade_id>`); staff afgør det manuelt (fx frafald).
+   En åben betaling annulleres hos Stripe. Staff afgør: **frafald** (sælgeren skal intet betale) eller **fasthold** (tilbage til "afventer
    betaling" med mindst 7 dages frist). Begrundelsen vises for sælgeren. Staff kan også frafalde uden
    indsigelse.
 5. **Spærring** (fejlkode `BHX01`, som DAC7's `BHD01`): ubetalt regning efter fristen → databasen afviser
    nye auktioner, "sæt op igen" og "tilbud til næste byder". Ingen spærring, mens en betaling behandles,
-   eller under en indsigelse gjort **før** fristen. En indsigelse gjort **efter** fristen er tilladt, men
-   spærringen gælder, til den er afgjort (`indsigelse_efter_frist`; chefens præcisering 21. okt. 2026).
-   Ophæves i samme øjeblik, regningen er betalt eller frafaldet (beregnes – intet flag).
+   eller under en indsigelse (som kun kan gøres før fristen). Spærringen gælder, indtil regningen er betalt
+   eller frafaldet, og ophæves i samme øjeblik (beregnes – intet flag).
    Aktive auktioner og handler kører videre.
 6. Bogføring: sælgeren får en faktura på fragtkontoen med moms (`fakturaer.slags = 'ekstra_fragt'`,
    `part = 'saelger'`) via fakturakøen (`faktura_planlaeg_ekstra_fragt`). Refunderes betalingen (kun i
    Stripe-dashboardet), spejles regningen som refunderet, og fakturaen krediteres.
 7. Betales en kasseret PaymentIntent alligevel: skyldes regningen stadig, adopteres betalingen; er den
    betalt/frafaldet, refunderes den helt automatisk (dobbeltbetaling) og staff får en alarm.
-8. **Bankindsigelse** (chargeback) på en betalt regning spejles fra Stripe. Tabes den, markeres regningen
-   (`bankindsigelse_tabt_kl`, lampe `tabte_bankindsigelser` i `ekstra_fragt_antal`), og staff får en alarm.
-   Regningen genåbnes **aldrig** automatisk. Staff kan genåbne den (`genaabnEkstraFragt(id, begrundelse)`):
-   kreditnota for rundens faktura (reference = indsigelsens `du_`-id), ny frist 14 dage, ny betalingsrunde
-   (`runde + 1`, ny PaymentIntent med ny idempotency key) og ny faktura, når sælgeren betaler igen. Den
-   tilbageførte PaymentIntent/charge gemmes i `tilbagefoerte_*` og tæller aldrig igen. Kun hvis hele beløbet er
-   tilbageført (ellers `delvis_bankindsigelse` – manuelt).
+8. **Bankindsigelse** (chargeback) på en betalt regning spejles fra Stripe. Tabes den, sker i samme
+   transaktion (`ekstra_fragt_registrer_bankindsigelse`): regningen markeres (`bankindsigelse_tabt_kl`, lampe
+   `tabte_bankindsigelser` i `ekstra_fragt_antal`), og der laves **automatisk en kreditnota** for rundens
+   faktura, dateret på tabsdagen, reference = indsigelsens `du_`-id (`ekstra_fragt_bankindsigelse_kreditnota` –
+   idempotent, aldrig to; fakturakøen er sikkerhedsnet). Dækker indsigelsen kun en del af beløbet, oprettes
+   kreditnotaen som "kræver handling" (manuelt i Dinero). Staff får en alarm. Regningen genåbnes **aldrig**
+   automatisk; staff vælger:
+   - **Genåbn regning** (`genaabnEkstraFragt(id, begrundelse)` – begrundelsen vises for sælgeren): sælgeren
+     skal betale igen – ny frist 14 dage, ny betalingsrunde (`runde + 1`, ny PaymentIntent med ny idempotency
+     key) og ny faktura, når sælgeren betaler. Laver **ikke** en kreditnota igen. Den tilbageførte
+     PaymentIntent/charge gemmes i `tilbagefoerte_*` og tæller aldrig igen. Kun hvis hele beløbet er
+     tilbageført (ellers `delvis_bankindsigelse` – manuelt). En regning kan altid genåbnes – også efter
+     "Afslut uden genåbning".
+   - **Afslut uden genåbning** (`afslutEkstraFragtBankindsigelse(id, begrundelse)` – intern begrundelse):
+     regningen forbliver lukket, sælgeren opkræves ikke igen, og lampen slukkes
+     (`bankindsigelse_haandteret_kl/_af/_begrundelse`).
 9. **Oprydning:** dokumentationsfiler, som ingen regning bruger, og som er over 7 dage gamle, slettes den 1. i
    måneden af hovedcron'en (`src/lib/ekstraFragt/oprydning.ts`; antal i cron-resultatet `ekstraFragtOprydning`).
+   Måneden markeres først som kørt, når oprydningen er lykkedes (ellers prøves igen ved næste cron-kørsel).
 
 Beskeder (fast nøgle, sendes én gang): ny regning (ikke, hvis den allerede er betalt/frafaldet), påmindelse
 efter 7 dage, spærret ved fristen, indsigelse afgjort, frafaldet (også efter en fastholdt indsigelse),
@@ -258,17 +270,19 @@ Til frontend (server actions):
 | Staff | `frafaldEkstraFragt(id, grund)` | `{ ok }` \| `{ fejl }` |
 | Staff | `afgoerEkstraFragtIndsigelse(id, 'frafald' \| 'fasthold', begrundelse)` | `{ ok }` \| `{ fejl }` |
 | Staff | `genaabnEkstraFragt(id, begrundelse)` (kun efter tabt bankindsigelse; begrundelsen vises for sælgeren) | `{ ok }` \| `{ fejl }` |
+| Staff | `afslutEkstraFragtBankindsigelse(id, begrundelse)` (tabt bankindsigelse, uden genåbning; intern begrundelse) | `{ ok }` \| `{ fejl }` |
 | Staff | `gemEkstraFragtNote(id, note)` · `hentEkstraFragtDokumentationStaff(id)` | `{ ok }` · `{ ok, url }` |
 | Staff | `supabase.rpc("ekstra_fragt_antal")` (lampe) + `select` på `ekstra_fragt_regninger` (RLS: staff) | |
 | Sælger | `hentMineEkstraFragtRegninger(tradeId?)` (`src/app/actions/ekstraFragt.ts`) | liste (offentlige felter, `kan_betale`, `kan_goere_indsigelse`, `spaerrer`) |
 | Sælger | `hentMinEkstraFragtStatus()` | `{ spaerret, ubetalte, ubetalt_oere, indsigelser, naeste_frist }` |
 | Sælger | `startEkstraFragtBetalingAction(id)` | `{ ok, regningId, clientSecret, beloebOere, customerId, customerSessionClientSecret }` \| `{ fejl, kode }` |
 | Sælger | `synkEkstraFragtReturAction(paymentIntentId, tradeId?)` | `'betalt'` \| `'allerede'` \| ... |
-| Sælger | `ekstraFragtIndsigelse(id, tekst, tradeId?)` · `ekstraFragtDokumentationLink(id)` | `{ ok }` · `{ ok, url }` |
+| Sælger | `ekstraFragtIndsigelse(id, tekst, tradeId?)` (kun før fristen) · `ekstraFragtDokumentationLink(id)` | `{ ok }` \| `{ fejl, kode }` (fx `frist_overskredet`) · `{ ok, url }` |
 
 Appen: `supabase.rpc("mine_ekstra_fragt_regninger", { p_trade })`, `supabase.rpc("min_ekstra_fragt_status")`,
 `POST /api/betaling/app/ekstra-fragt-betal { regning_id }` (PaymentSheet-data),
-`POST /api/betaling/app/ekstra-fragt-indsigelse { regning_id, tekst }`,
+`POST /api/betaling/app/ekstra-fragt-indsigelse { regning_id, tekst }` (409 `frist_overskredet` efter fristen –
+appen viser "kontakt os" i stedet for "Jeg er uenig", når `kan_goere_indsigelse` er falsk og fristen er overskredet),
 `GET /api/ekstra-fragt/<id>/dokumentation` (Bearer) → `{ ok, url }`. Fejlkoden `BHX01` ved opret auktion.
 
 ## Hjemmesiden (server actions, `src/app/actions/fragt.ts`)

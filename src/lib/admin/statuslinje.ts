@@ -40,8 +40,8 @@ export type KoeTal = {
   reklamationSagAendret?: number;
   // Indsigelser mod ekstra fragt (rødt - staff skal afgøre dem).
   ekstraFragtIndsigelser?: number;
-  // Tabte bankindsigelser på betalte ekstraregninger (rødt - staff afgør, om
-  // regningen skal genåbnes).
+  // Tabte bankindsigelser på betalte ekstraregninger (rødt - staff genåbner
+  // eller afslutter uden genåbning; håndterede tælles ikke).
   ekstraFragtTabteBankindsigelser?: number;
 };
 

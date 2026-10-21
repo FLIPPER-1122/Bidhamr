@@ -116,6 +116,7 @@ export const HANDLING_NAVNE: Record<string, string> = {
   ekstra_fragt_note: "Skrev intern note på ekstraregning for fragt",
   ekstra_fragt_bankindsigelse_tabt: "Bankindsigelse tabt – betaling af ekstra fragt tilbageført",
   ekstra_fragt_genaabnet: "Genåbnede ekstraregning for fragt efter tabt bankindsigelse",
+  ekstra_fragt_bankindsigelse_afsluttet: "Afsluttede tabt bankindsigelse på ekstra fragt uden genåbning",
 };
 
 export function handlingNavn(handling: string): string {

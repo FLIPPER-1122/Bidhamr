@@ -406,7 +406,6 @@ describe("betalingen (spejl fra Stripe)", () => {
     expect(await j(`select public.mit_ekstra_fragt_indsigelse($1, 'Pakken var lille, se mine billeder.') as v`, [r.id])).toEqual({
       kode: "ok",
       annuller_pi: "pi_test_adopt",
-      spaerret_til_afgoerelse: false,
     });
     await som(null);
     expect(await regning(r.id)).toMatchObject({ status: "indsigelse", stripe_payment_intent_id: null, annuller_pi: "pi_test_adopt" });
@@ -641,43 +640,159 @@ describe("M1: tabt bankindsigelse og genåbning", () => {
     await som(null);
     expect((await regning(b.id)).status).toBe("betalt");
   });
+  it("B1: kreditnotaen laves automatisk ved tabet (tabsdagen, indsigelsens id) - kun én, også ved gentagne events og genåbning", async () => {
+    const r = await nyRegning();
+    const { pi } = await betal(r.id);
+    const ch = `ch_${pi}`;
+    // Fakturakøen har IKKE kørt: tabet laver både rundens faktura og kreditnotaen.
+    const svar = await tabt(ch, "du_test_b1");
+    expect(svar).toMatchObject({ kode: "tabt", id: r.id, status: "betalt" });
+    expect(svar.kreditnota_id).toBeTruthy();
+    const tabsdag = (await en<{ d: string }>(
+      `select to_char((bankindsigelse_tabt_kl at time zone 'Europe/Copenhagen')::date, 'YYYY-MM-DD') as d from public.ekstra_fragt_regninger where id = $1`,
+      [r.id],
+    )).d;
+    const f = (await db.query<Record<string, unknown>>(
+      `select id, dokument, coalesce(ekstra_fragt_runde, 0) as runde, beloeb_oere, stripe_reference, krediterer_id, status,
+              to_char(betalt_dato, 'YYYY-MM-DD') as dato
+         from public.fakturaer where ekstra_fragt_id = $1`,
+      [r.id],
+    )).rows;
+    expect(f).toHaveLength(2);
+    const fak = f.find((x) => x.dokument === "faktura")!;
+    const kre = f.find((x) => x.dokument === "kreditnota")!;
+    expect(kre).toMatchObject({
+      id: svar.kreditnota_id, runde: 0, beloeb_oere: 3500, stripe_reference: "du_test_b1",
+      krediterer_id: fak.id, status: "venter", dato: tabsdag,
+    });
+    // Gentaget event, fakturakøen og en senere status: aldrig en kreditnota mere.
+    expect(await tabt(ch, "du_test_b1")).toMatchObject({ kode: "allerede", kreditnota_id: svar.kreditnota_id });
+    await j(`select public.faktura_planlaeg_ekstra_fragt(1000) as v`);
+    expect((await tabt(ch, "du_test_b1", "won")).kode).toBe("registreret");
+    const antal = async () =>
+      (await en<{ n: number }>(`select count(*)::int as n from public.fakturaer where ekstra_fragt_id = $1 and dokument = 'kreditnota'`, [r.id])).n;
+    expect(await antal()).toBe(1);
+    // Genåbn: laver ikke en kreditnota igen.
+    await som(STAFF);
+    expect((await genaabn(r.id)).kode).toBe("ok");
+    await som(null);
+    expect(await antal()).toBe(1);
+    // Ny betaling i ny runde -> ny faktura (ingen ny kreditnota).
+    await betal(r.id, 3500, 1);
+    await j(`select public.faktura_planlaeg_ekstra_fragt(1000) as v`);
+    expect((await fakturaer(r.id)).rows.map((x) => `${x.dokument}:${x.runde}`).sort()).toEqual([
+      "faktura:0", "faktura:1", "kreditnota:0",
+    ]);
+  });
+
+  it("B1: delvis tilbageførsel giver en kreditnota, der kræver manuel handling", async () => {
+    const r = await nyRegning();
+    const { pi } = await betal(r.id);
+    const svar = await tabt(`ch_${pi}`, "du_test_b1d", "lost", 1000);
+    expect(svar.kode).toBe("tabt");
+    const k = await en<Record<string, unknown>>(
+      `select status, manuel, sidste_fejl from public.fakturaer where ekstra_fragt_id = $1 and dokument = 'kreditnota'`,
+      [r.id],
+    );
+    expect(k).toMatchObject({ status: "kraever_handling", manuel: true });
+    expect(String(k.sidste_fejl)).toContain("kun en del");
+  });
+
+  it("B1: Afslut uden genåbning slukker lampen; regningen forbliver lukket; kan stadig genåbnes", async () => {
+    const afslut = (id: string, beg = "Sælgeren har dokumenteret, at målingen var forkert.") =>
+      j(`select public.ekstra_fragt_bankindsigelse_afslut($1, $2) as v`, [id, beg]);
+    const lampe = async () => {
+      await som(STAFF);
+      const n = Number((await j(`select public.ekstra_fragt_antal() as v`)).tabte_bankindsigelser);
+      await som(null);
+      return n;
+    };
+    const r = await nyRegning();
+    const { pi } = await betal(r.id);
+    // Ingen tabt indsigelse endnu.
+    await som(STAFF);
+    expect((await afslut(r.id)).kode).toBe("ingen_tabt_bankindsigelse");
+    await som(null);
+    const foer = await lampe();
+    expect((await tabt(`ch_${pi}`, "du_test_b1a")).kode).toBe("tabt");
+    expect(await lampe()).toBe(foer + 1);
+    // Kun staff, ikke inhabil, med begrundelse.
+    await som(SAELGER);
+    expect((await afslut(r.id)).kode).toBe("ingen_adgang");
+    await som(STAFF);
+    expect((await afslut(r.id, " ")).kode).toBe("begrundelse_mangler");
+    expect((await afslut(r.id, "x".repeat(1001))).kode).toBe("for_lang_tekst");
+    expect(await afslut(r.id)).toMatchObject({ kode: "ok", trade_id: r.tradeId, saelger_id: SAELGER });
+    expect(await afslut(r.id)).toMatchObject({ kode: "ok", uaendret: true });
+    await som(null);
+    expect(await lampe()).toBe(foer);
+    const a = await regning(r.id);
+    expect(a).toMatchObject({ status: "betalt", bankindsigelse_haandteret_af: STAFF, runde: 0 });
+    expect(a.bankindsigelse_haandteret_kl).not.toBeNull();
+    expect(a.bankindsigelse_tabt_kl).not.toBeNull();
+    const log = await en(`select handling, medarbejder_id from public.moderation_log order by ctid desc limit 1`);
+    expect(log).toEqual({ handling: "ekstra_fragt_bankindsigelse_afsluttet", medarbejder_id: STAFF });
+    // Sælgeren opkræves ikke igen: ingen betaling, ingen spærring, én kreditnota.
+    expect((await j(`select public.ekstra_fragt_betal_start($1, $2) as v`, [r.id, SAELGER])).kode).toBe("betalt");
+    expect(await nyAuktion(SAELGER)).toBeNull();
+    expect((await en<{ n: number }>(`select count(*)::int as n from public.fakturaer where ekstra_fragt_id = $1 and dokument = 'kreditnota'`, [r.id])).n).toBe(1);
+    // Inhabil staff kan ikke afslutte.
+    const inh = await nyRegning();
+    await db.query(`update public.trades set buyer_id = $2 where id = $1`, [inh.tradeId, STAFF]);
+    await som(STAFF);
+    expect((await afslut(inh.id)).kode).toBe("inhabil");
+    // En regning kan altid genåbnes - også efter afslutningen (som så ryddes).
+    expect((await genaabn(r.id)).kode).toBe("ok");
+    await som(null);
+    expect(await regning(r.id)).toMatchObject({
+      status: "afventer_betaling", runde: 1, bankindsigelse_haandteret_kl: null, bankindsigelse_haandteret_af: null,
+    });
+    expect((await en<{ n: number }>(`select count(*)::int as n from public.fakturaer where ekstra_fragt_id = $1 and dokument = 'kreditnota'`, [r.id])).n).toBe(1);
+  });
 });
 
-describe("M2: indsigelse efter fristen", () => {
+describe("M2: indsigelse kun før fristen (Filip, 21. okt. 2026)", () => {
   const SAELGER3 = "00000000-0000-4000-8000-0000000000b3";
-  it("tilladt, men spærringen gælder, til indsigelsen er afgjort", async () => {
+  it("efter fristen: afvist (frist_overskredet), kan_goere_indsigelse er falsk, og spærringen gælder til betaling/frafald", async () => {
     await db.query(`insert into public.users (id, navn) values ($1, 'Sælger 3') on conflict do nothing`, [SAELGER3]);
     const r = await nyRegning({ saelger: SAELGER3, fristDage: -1 });
     expect((await nyAuktion(SAELGER3))?.code).toBe("BHX01");
     await som(SAELGER3);
-    expect((await db.query<Record<string, unknown>>(`select * from public.mine_ekstra_fragt_regninger($1)`, [r.tradeId])).rows[0])
-      .toMatchObject({ kan_goere_indsigelse: true, spaerrer: true });
+    const foer = (await db.query<Record<string, unknown>>(`select * from public.mine_ekstra_fragt_regninger($1)`, [r.tradeId])).rows[0];
+    expect(foer).toMatchObject({ kan_goere_indsigelse: false, spaerrer: true, kan_betale: true });
+    expect(foer).not.toHaveProperty("indsigelse_efter_frist");
     expect(await j(`select public.mit_ekstra_fragt_indsigelse($1, 'Pakken vejede kun 900 g, da jeg sendte den.') as v`, [r.id])).toEqual({
-      kode: "ok",
-      annuller_pi: null,
-      spaerret_til_afgoerelse: true,
+      kode: "frist_overskredet",
     });
     const mine = (await db.query<Record<string, unknown>>(`select * from public.mine_ekstra_fragt_regninger($1)`, [r.tradeId])).rows[0];
-    expect(mine).toMatchObject({ status: "indsigelse", spaerrer: true, indsigelse_efter_frist: true, kan_betale: false });
+    expect(mine).toMatchObject({ status: "afventer_betaling", indsigelse_kl: null, spaerrer: true });
     expect((await j(`select public.min_ekstra_fragt_status() as v`)).spaerret).toBe(true);
     await som(null);
     expect((await nyAuktion(SAELGER3))?.code).toBe("BHX01");
     expect((await nytTilbud(SAELGER3))?.code).toBe("BHX01");
-    // Fastholdt: mindst 7 dage fra afgørelsen -> ikke længere spærret.
+    // Sælgeren kontakter BidHamr; staff frafalder -> spærringen ophæves straks.
     await som(STAFF);
-    expect((await j(`select public.ekstra_fragt_afgoer_indsigelse($1, 'fasthold', 'Vejningen er korrekt.') as v`, [r.id])).kode).toBe("ok");
+    expect((await j(`select public.ekstra_fragt_frafald($1, 'Vi har set på det efter din henvendelse.') as v`, [r.id])).kode).toBe("ok");
     await som(null);
     expect(await nyAuktion(SAELGER3)).toBeNull();
   });
 
-  it("frafaldet efter en sen indsigelse ophæver spærringen", async () => {
-    const r = await nyRegning({ saelger: SAELGER3, fristDage: -2 });
+  it("før fristen: tilladt, og ingen spærring, mens den behandles - heller ikke når fristen passerer", async () => {
+    const r = await nyRegning({ saelger: SAELGER3, fristDage: 1 });
     await som(SAELGER3);
-    expect((await j(`select public.mit_ekstra_fragt_indsigelse($1, 'Fragtfirmaet har målt forkert.') as v`, [r.id])).kode).toBe("ok");
+    expect((await db.query<Record<string, unknown>>(`select * from public.mine_ekstra_fragt_regninger($1)`, [r.tradeId])).rows[0])
+      .toMatchObject({ kan_goere_indsigelse: true, spaerrer: false });
+    expect(await j(`select public.mit_ekstra_fragt_indsigelse($1, 'Fragtfirmaet har målt forkert.') as v`, [r.id])).toEqual({
+      kode: "ok",
+      annuller_pi: null,
+    });
     await som(null);
-    expect((await nyAuktion(SAELGER3))?.code).toBe("BHX01");
+    // Fristen passerer, mens indsigelsen behandles: stadig ingen spærring.
+    await db.query(`update public.ekstra_fragt_regninger set frist = now() - interval '1 day' where id = $1`, [r.id]);
+    expect(await nyAuktion(SAELGER3)).toBeNull();
+    // Fastholdt: mindst 7 dage fra afgørelsen -> ikke spærret endnu.
     await som(STAFF);
-    expect((await j(`select public.ekstra_fragt_afgoer_indsigelse($1, 'frafald', 'Du har ret.') as v`, [r.id])).kode).toBe("ok");
+    expect((await j(`select public.ekstra_fragt_afgoer_indsigelse($1, 'fasthold', 'Vejningen er korrekt.') as v`, [r.id])).kode).toBe("ok");
     await som(null);
     expect(await nyAuktion(SAELGER3)).toBeNull();
   });
@@ -739,8 +854,15 @@ describe("L3 og oprydning: dokumentationsfiler", () => {
              has_function_privilege('service_role', 'public.ekstra_fragt_ubrugte_filer(integer)', 'execute') as sr,
              has_function_privilege('authenticated', 'public.ekstra_fragt_registrer_bankindsigelse(text,text,text,bigint)', 'execute') as auth_bi,
              has_function_privilege('authenticated', 'public.ekstra_fragt_genaabn(uuid,text)', 'execute') as auth_gen,
-             has_function_privilege('anon', 'public.ekstra_fragt_genaabn(uuid,text)', 'execute') as anon_gen`);
-    expect(p).toEqual({ auth: false, sr: true, auth_bi: false, auth_gen: true, anon_gen: false });
+             has_function_privilege('anon', 'public.ekstra_fragt_genaabn(uuid,text)', 'execute') as anon_gen,
+             has_function_privilege('authenticated', 'public.ekstra_fragt_bankindsigelse_afslut(uuid,text)', 'execute') as auth_afslut,
+             has_function_privilege('anon', 'public.ekstra_fragt_bankindsigelse_afslut(uuid,text)', 'execute') as anon_afslut,
+             has_function_privilege('authenticated', 'public.ekstra_fragt_bankindsigelse_kreditnota(uuid)', 'execute') as auth_kn,
+             has_function_privilege('service_role', 'public.ekstra_fragt_bankindsigelse_kreditnota(uuid)', 'execute') as svc_kn`);
+    expect(p).toEqual({
+      auth: false, sr: true, auth_bi: false, auth_gen: true, anon_gen: false,
+      auth_afslut: true, anon_afslut: false, auth_kn: false, svc_kn: false,
+    });
   });
 
   it("oprydningen kører kun den 1. i måneden (dansk tid)", () => {

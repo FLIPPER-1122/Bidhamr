@@ -60,8 +60,6 @@ export type MinEkstraFragt = {
   betalt_kl: string | null;
   refunderet_kl: string | null;
   oprettet_kl: string;
-  // Indsigelsen er gjort efter fristen: spærringen gælder, til den er afgjort.
-  indsigelse_efter_frist: boolean;
   // Regningen er åbnet igen, fordi betalingen er tilbageført efter en bankindsigelse.
   genaabnet_kl: string | null;
   genaabn_begrundelse: string | null;
@@ -136,12 +134,13 @@ export async function synkEkstraFragtReturAction(paymentIntentId: string, tradeI
   return kode;
 }
 
-// Indsigelse mod fragtfirmaets måling (én gang). En åben betaling annulleres.
+// Indsigelse mod fragtfirmaets måling (én gang, kun før fristen - ellers
+// kode 'frist_overskredet'). En åben betaling annulleres.
 export async function ekstraFragtIndsigelse(
   regningId: string,
   tekst: string,
   tradeId?: string,
-): Promise<{ ok: true; spaerretTilAfgoerelse: boolean } | { fejl: string }> {
+): Promise<{ ok: true } | { fejl: string; kode?: string }> {
   try {
     if (!UUID.test(String(regningId ?? ""))) return { fejl: EKSTRA_FRAGT_SAELGER_FEJL.ikke_fundet };
     const supabase = await createClient();
@@ -151,9 +150,9 @@ export async function ekstraFragtIndsigelse(
     if (!user) return { fejl: IKKE_LOGGET_IND };
     if (!(await tjekGraenser([["ekstra_fragt_bruger", user.id]]))) return { fejl: FOR_MANGE_FORSOEG };
     const r = await gemEkstraFragtIndsigelse(supabase, regningId, tekst);
-    if ("fejl" in r) return { fejl: r.fejl };
+    if ("fejl" in r) return { fejl: r.fejl, kode: r.kode };
     if (tradeId && UUID.test(tradeId)) revalidatePath(sagSti(tradeId));
-    return { ok: true, spaerretTilAfgoerelse: r.spaerretTilAfgoerelse };
+    return { ok: true };
   } catch (err) {
     unstable_rethrow(err);
     console.error("ekstraFragtIndsigelse fejlede:", err);

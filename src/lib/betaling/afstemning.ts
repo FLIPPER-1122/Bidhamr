@@ -1807,7 +1807,7 @@ async function afstemIndsigelser(
         type: "ukendt_indsigelse",
         tilstand: d.status,
         stripeId: d.id,
-        beskrivelse: `Indsigelse ${d.id} (${d.status}) på sælgerens betaling af ekstra fragt (ekstraregning ${ef.id}) - svar banken i Stripe med regningen og fragtfirmaets faktura. Tabes den, genåbnes regningen ikke automatisk; staff kan genåbne den.`,
+        beskrivelse: `Indsigelse ${d.id} (${d.status}) på sælgerens betaling af ekstra fragt (ekstraregning ${ef.id}) - svar banken i Stripe med regningen og fragtfirmaets faktura. Tabes den, laves kreditnotaen automatisk, og staff vælger "Genåbn regning" eller "Afslut uden genåbning".`,
         beloebStripe: d.amount,
       });
       continue;

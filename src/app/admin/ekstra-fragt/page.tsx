@@ -57,6 +57,7 @@ type Raekke = {
   indsigelse_kl: string | null;
   kraever_opmaerksomhed: boolean;
   bankindsigelse_tabt_kl: string | null;
+  bankindsigelse_haandteret_kl: string | null;
 };
 
 export default async function AdminEkstraFragt({
@@ -73,11 +74,13 @@ export default async function AdminEkstraFragt({
   let q = admin
     .from("ekstra_fragt_regninger")
     .select(
-      "id, trade_id, saelger_id, transportoer, valgt_stoerrelse, maalt_stoerrelse, maalt_vaegt_gram, maalt_maal, beloeb_oere, status, frist, oprettet_kl, indsigelse_kl, kraever_opmaerksomhed, bankindsigelse_tabt_kl",
+      "id, trade_id, saelger_id, transportoer, valgt_stoerrelse, maalt_stoerrelse, maalt_vaegt_gram, maalt_maal, beloeb_oere, status, frist, oprettet_kl, indsigelse_kl, kraever_opmaerksomhed, bankindsigelse_tabt_kl, bankindsigelse_haandteret_kl",
     );
   if (filter === "aabne") q = q.in("status", ["afventer_betaling", "behandles", "indsigelse"]);
   else if (filter === "indsigelse") q = q.eq("status", "indsigelse");
-  else if (filter === "tabt") q = q.eq("status", "betalt").not("bankindsigelse_tabt_kl", "is", null);
+  // Kun dem, staff ikke har håndteret (som lampen).
+  else if (filter === "tabt")
+    q = q.eq("status", "betalt").not("bankindsigelse_tabt_kl", "is", null).is("bankindsigelse_haandteret_kl", null);
   else if (filter === "spaerret") q = q.eq("status", "afventer_betaling").lte("frist", nu);
   else if (filter === "afventer") q = q.eq("status", "afventer_betaling");
   else if (filter === "betalt") q = q.eq("status", "betalt");
@@ -139,8 +142,9 @@ export default async function AdminEkstraFragt({
               den, har sælgeren mindst 7 dage til at betale.
             </p>
             <p>
-              Tabt bankindsigelse betyder, at sælgerens bank har tilbageført en betalt regning. Åbn den, og tryk
-              Genåbn regning – sælgeren får 14 dage til at betale igen.
+              Tabt bankindsigelse betyder, at sælgerens bank har tilbageført en betalt regning. Kreditnotaen er lavet
+              automatisk. Åbn regningen, og vælg Genåbn regning (sælgeren får 14 dage til at betale igen) eller
+              Afslut uden genåbning (sælgeren opkræves ikke igen).
             </p>
           </>
         }
@@ -181,7 +185,7 @@ export default async function AdminEkstraFragt({
         <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
           {raekker.map((r) => {
             const spaerrer = r.status === "afventer_betaling" && Date.parse(r.frist) <= nuMs;
-            const tabt = r.status === "betalt" && !!r.bankindsigelse_tabt_kl;
+            const tabt = r.status === "betalt" && !!r.bankindsigelse_tabt_kl && !r.bankindsigelse_haandteret_kl;
             const roed = r.status === "indsigelse" || r.kraever_opmaerksomhed || tabt;
             return (
               <li key={r.id} className="border-t border-admin-kant first:border-t-0">
