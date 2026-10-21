@@ -6,8 +6,8 @@ import "server-only";
 // (/api/reklamation/<id>/billeder). Adgangen er tjekket af kalderen.
 //
 // Hukommelse: ZIP'en bygges i hukommelsen (stored, ingen komprimering).
-// Værn: højst MAKS_BYTES billeder i alt (tjekkes på filstørrelsen, før
-// billedet læses), ingen ekstra kopi af den færdige ZIP, og højst
+// Værn: højst MAKS_BYTES billeder i alt (tjekkes på filstørrelsen fra
+// storage-metadata, før billedet hentes - og igen efter download), ingen ekstra kopi af den færdige ZIP, og højst
 // MAKS_SAMTIDIGE_BRUGER samtidige ZIP'er pr. bruger og MAKS_SAMTIDIGE i alt
 // pr. serverinstans.
 import { NextResponse } from "next/server";
@@ -32,18 +32,35 @@ export function tekstSvar(status: number, tekst: string) {
 
 const FOR_STOR = "Billederne fylder for meget til én ZIP-fil. Hent dem enkeltvis.";
 
+// Filens størrelse fra storage-metadata (uden at hente indholdet), så et for
+// stort billede afvises, FØR det hentes ind i hukommelsen (download() læser
+// hele filen). null = ukendt (metadata mangler eller opslaget fejlede) -
+// kalderen tjekker så størrelsen efter download.
+export async function filStoerrelse(admin: SupabaseClient, bucket: string, sti: string): Promise<number | null> {
+  try {
+    const { data, error } = await admin.storage.from(bucket).info(sti);
+    if (error || !data) return null;
+    const size = Number((data as { size?: unknown }).size);
+    return Number.isFinite(size) && size >= 0 ? size : null;
+  } catch {
+    return null;
+  }
+}
+
 async function byg(admin: SupabaseClient, pakke: Reklamationspakke, filer: PakkeFiler): Promise<NextResponse> {
   const enc = new TextEncoder();
   const ud: ZipFil[] = [];
   let bytes = 0;
   let mangler = 0;
   for (const f of filer) {
+    const kendt = await filStoerrelse(admin, f.bucket, f.sti);
+    if (kendt !== null && bytes + kendt > MAKS_BYTES) return tekstSvar(413, FOR_STOR);
     const { data, error } = await admin.storage.from(f.bucket).download(f.sti);
     if (error || !data) {
       mangler++;
       continue;
     }
-    // Tjek størrelsen, før indholdet læses ind.
+    // Ukendt størrelse på forhånd: tjek den hentede fil, før den kopieres.
     if (bytes + data.size > MAKS_BYTES) return tekstSvar(413, FOR_STOR);
     const buf = new Uint8Array(await data.arrayBuffer());
     bytes += buf.byteLength;
