@@ -40,6 +40,9 @@ export type KoeTal = {
   reklamationSagAendret?: number;
   // Indsigelser mod ekstra fragt (rødt - staff skal afgøre dem).
   ekstraFragtIndsigelser?: number;
+  // Tabte bankindsigelser på betalte ekstraregninger (rødt - staff afgør, om
+  // regningen skal genåbnes).
+  ekstraFragtTabteBankindsigelser?: number;
 };
 
 export function koePunkter(t: KoeTal): StatusPunkt[] {
@@ -70,6 +73,13 @@ export function koePunkter(t: KoeTal): StatusPunkt[] {
       tone: "roed",
       tekst: `${flertal(t.ekstraFragtIndsigelser ?? 0, "indsigelse", "indsigelser")} mod ekstra fragt venter`,
       href: "/admin/ekstra-fragt?vis=indsigelse",
+    });
+  }
+  if ((t.ekstraFragtTabteBankindsigelser ?? 0) > 0) {
+    p.push({
+      tone: "roed",
+      tekst: `${flertal(t.ekstraFragtTabteBankindsigelser ?? 0, "tabt bankindsigelse", "tabte bankindsigelser")} på ekstra fragt – betalingen er tilbageført`,
+      href: "/admin/ekstra-fragt",
     });
   }
   if (t.betalinger > 0) {
