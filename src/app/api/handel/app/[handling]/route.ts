@@ -103,6 +103,7 @@ const STATUS: Record<string, number> = {
   mitid: 403,
   vilkaar: 403,
   dac7: 403,
+  ekstra_fragt: 403,
   for_mange: 429,
   fejl: 500,
 };
