@@ -365,7 +365,7 @@ export async function koerBetalingsCron() {
   //      efter meldingen) + beskeder, der mangler. Før den automatiske
   //      frigivelse, så en leveret pakke altid får sine 48 timer, før
   //      14-dages-reglen kan nå den. Kaster aldrig.
-  resultat.fragtUrStartet = await startUrFraFragt();
+  resultat.fragtUrStartet = (await startUrFraFragt()).startet;
 
   // 3c) Automatisk frigivelse (48 t efter "modtaget" / 14 dage efter afsendelse).
   //     Først påmindelsen til køberen på dag 12 (kaster aldrig).

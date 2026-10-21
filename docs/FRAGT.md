@@ -152,7 +152,11 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
      lukket) og ingen sag-markering/anke, en aktiv udgående label er meldt leveret, og meldingen må frigive
      penge (`leveret_frigiver` – Shipmondos "leveret" kun med `SHIPMONDO_LEVERET_FRIGIVER=true`), pakken er
      ikke meldt returneret, og "ikke afhentet" er ikke registreret. Ellers sendes den gamle besked, og
-     intet ur startes.
+     intet ur startes. Fejler databasen, sendes ingen besked endnu (cron prøver igen), så køberen aldrig får
+     både den gamle besked og "48 timer til at melde en fejl".
+   - **14-dages-reglen venter 48 timer efter en leveringsmelding**: starter meldingen ikke uret (fx efter en
+     lukket sag), frigiver `handel_auto_frigiv` først, når meldingen er mindst 48 timer gammel – regnet fra
+     det seneste af fragtfirmaets tidspunkt og registreringen hos BidHamr (`handel_leveret_melding_ny`).
    - `handel_fragt_leveret_start(p_trade)` (service_role) låser betaling og handel i samme rækkefølge som
      `sag_opret` og `handel_auto_frigiv` og tjekker alt igen under låsen – en samtidig sag, refusion eller
      frigivelse vinder. Idempotent: samme melding to gange eller parallelle kald giver ingen ny effekt.
@@ -379,6 +383,8 @@ Pr. fragtfirma (sandbox 15. okt. 2026 – oprettet med BidHamrs adapter og annul
 - **Shipmondos leveret frigiver ikke pengene efter 14 dage og starter ikke 48-timers uret** (punkt 10), før
   `SHIPMONDO_LEVERET_FRIGIVER=true` (`forsendelser.leveret_frigiver`, sat ved oprettelsen; `handel_auto_frigiv`
   og `handel_fragt_leveret_start` kræver den). Købers "modtaget" er uændret.
+  **Når flaget slås til, betyder det: Shipmondos leveringsmelding starter 48-timers uret og frigiver pengene
+  efter 48 timer uden sag** (køberen skal ikke trykke noget).
 - Køberens fragtfirma: mangler det (gammel kode, appen), bruges DAO.
 - **Kun DAO og GLS (GLS med printet label), PostNord slået fra – `SHIPMONDO_POSTNORD_AKTIV=true` slår den til**
   (se øverst). Migrationerne `20261024020000_fragt_gls_slaaet_fra.sql` og derefter
