@@ -55,14 +55,23 @@ export default function OpretSagForm({
   const laas = useRef(false);
   useFrigivPreviews(billeder);
 
-  const felter: KategoriFelt[] = muligheder.billederKraeves
+  // "Pakken er ikke kommet frem", når fragtfirmaet har meldt den leveret:
+  // ingen billeder af pakken (køberen har den ikke) - sag_opret er ens.
+  const billederKraeves =
+    muligheder.billederKraeves && !(type && muligheder.billederFriTyper.includes(type));
+  const hjaelp = (t: SagType) =>
+    t === "bortkommet" && muligheder.fragtLeveret
+      ? "Fragtfirmaet melder pakken leveret, men du har ikke fået den."
+      : TYPE_HJAELP[t];
+
+  const felter: KategoriFelt[] = billederKraeves
     ? [
         ...SAG_KRAEVEDE_KATEGORIER.map((k) => ({ ...KATEGORI_FELTER[k], paakraevet: true })),
         { ...KATEGORI_FELTER.andet, paakraevet: false },
       ]
     : [{ ...KATEGORI_FELTER.andet, paakraevet: false }];
 
-  const manglerKategorier = muligheder.billederKraeves
+  const manglerKategorier = billederKraeves
     ? SAG_KRAEVEDE_KATEGORIER.filter((k) => !billeder.some((b) => b.kategori === k))
     : [];
   const tekstLaengde = beskrivelse.trim().length;
@@ -187,7 +196,7 @@ export default function OpretSagForm({
                   />
                   <span>
                     <span className="block font-medium text-tekst">{SAG_TYPE_NAVN[t]}</span>
-                    <span className="block text-tekst-daempet">{TYPE_HJAELP[t]}</span>
+                    <span className="block text-tekst-daempet">{hjaelp(t)}</span>
                   </span>
                 </label>
               ))}
@@ -221,7 +230,7 @@ export default function OpretSagForm({
           <div>
             <h3 className="text-sm font-semibold text-tekst">Billeder</h3>
             <p className="mb-3 mt-1 text-sm text-tekst-daempet">
-              {muligheder.billederKraeves
+              {billederKraeves
                 ? "Tag billeder af pakken, labelen og indholdet. De bruges til at vurdere sagen."
                 : "Har du billeder, der viser problemet, så tilføj dem gerne."}
             </p>

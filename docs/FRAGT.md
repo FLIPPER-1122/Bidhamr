@@ -94,7 +94,7 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    "Pakken er kommet frem" (`pakke_leveret`) til køberen og "Pakken er indleveret" (ny type
    `pakke_indleveret`, påkrævet) til sælgeren. Vejer fragtfirmaet pakken tungere end størrelsens maksimum,
    markeres forsendelsen og betalingen til staff (udbetalingen holdes); modregning hos sælgeren er ikke bygget. **Levering/afhentning udløser aldrig
-   udbetaling** – kun købers bekræftelse eller de eksisterende regler i autoFrigiv.
+   udbetaling direkte** – den starter 48-timers uret (punkt 10).
 8. **Retur i sager**: returlabel (køber → pakkeshop nær sælgeren). Bag `FRAGT_RETURLABEL_AKTIV` (slået fra i
    produktion). DAO: Shop2Shop med køberen som afsender og `shopid=0` (DAO vælger shoppen nærmest sælgeren).
    **Køberen betaler selv returfragten, før returkoden laves** (Filip, 13. okt. 2026 -
@@ -140,6 +140,46 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    - Appen: `supabase.rpc("mit_ikke_afhentet", { p_trade })` → køberen `{ rolle: 'koeber', registreret_kl,
      refusion_oere, koebergebyr_oere, beskyttelse_oere, fragt_oere, returfragt_oere, refunderet }`,
      sælgeren `{ rolle: 'saelger', registreret_kl }`, ellers `null`. Handlen står som `annulleret`.
+10. **Leveringsmeldingen starter 48-timers uret** (`20261030010000_fragt_leveret_starter_48t.sql`,
+   `src/lib/betaling/fragtUr.ts`; ROADMAP-BESLUTNINGER afsnit 1): når fragtfirmaet melder pakken
+   leveret/afhentet (`forsendelser.leveret_kl`), går handlen af sig selv til `modtaget` – præcis som købers
+   "Jeg har modtaget pakken" – med `trades.modtaget_kilde = 'fragt'`. Køberen skal ikke trykke noget.
+   - **Uret regnes fra registreringen hos BidHamr** (`received_at = now()`), ikke fra fragtfirmaets
+     hændelsestidspunkt: DAO's sporing kan være op til 24 timer forsinket, og køberen skal altid have fulde
+     48 timer efter beskeden.
+   - Kun når: handlen er `pakke_sendt` (ikke afhentning), betalingen er betalt og hverken frigivet,
+     overført, udbetalt eller under refusion, ingen blokerende indsigelse, **ingen sag** (heller ikke en
+     lukket) og ingen sag-markering/anke, en aktiv udgående label er meldt leveret, og meldingen må frigive
+     penge (`leveret_frigiver` – Shipmondos "leveret" kun med `SHIPMONDO_LEVERET_FRIGIVER=true`), pakken er
+     ikke meldt returneret, og "ikke afhentet" er ikke registreret. Ellers sendes den gamle besked, og
+     intet ur startes.
+   - `handel_fragt_leveret_start(p_trade)` (service_role) låser betaling og handel i samme rækkefølge som
+     `sag_opret` og `handel_auto_frigiv` og tjekker alt igen under låsen – en samtidig sag, refusion eller
+     frigivelse vinder. Idempotent: samme melding to gange eller parallelle kald giver ingen ny effekt.
+   - Kaldes af fragtens handelseffekter (DAO-feed og Shipmondo-webhook) med det samme, og af
+     betalings-cron'en (trin 3b3, før den automatiske frigivelse) som reserve – fx når sælgeren markerer
+     pakken sendt EFTER leveringsmeldingen, eller serveren døde imellem.
+   - **Beskeder**: køberen "Pakken er kommet frem … du har 48 timer – til <tid> – til at melde en fejl"
+     (nøgle `fragt_ur:<handel>`), sælgeren "… du får pengene, når køberen godkender – eller automatisk <tid>"
+     (`pakke_leveret:<handel>`). `trades.fragt_ur_besked_kl` sættes bagefter (cron sender igen, hvis det
+     mangler). Ved frigivelsen: køberen "48 timer, siden fragtfirmaet meldte … leveret" og sælgerens
+     afregning med grunden `automatisk_fragt`.
+   - **Frigivelsen** sker stadig kun i `handel_auto_frigiv` (uændret): 48 timer efter `received_at` uden
+     sag; frysning, sager, anker, indsigelse, refusion, returneret og ikke afhentet blokerer. Ingen
+     bedømmelse ved automatisk frigivelse. Udbetalingen til banken har sine egne værn (nødstop, frosset
+     sælger, chefens godkendelse fra 10.000 kr.).
+   - **Sager i de 48 timer**: som ved købers "modtaget" (skadet, ikke som beskrevet, svindel – med billeder
+     af pakke, label og indhold), og derudover **"Pakken er ikke kommet frem"** (bortkommet) uden billeder
+     og med `tjek_sporing` til staff – køberen har ikke pakken, selvom fragtfirmaet melder den leveret.
+     Har køberen selv trykket "modtaget", er bortkommet stadig ikke muligt.
+   - Køberens "Jeg har modtaget pakken" efter meldingen svarer "Pakken er allerede kvitteret" og
+     forlænger aldrig uret.
+   - **DAO**: koden for "udleveret/leveret" er endnu ikke kendt (`daoKoder.ts`) – indtil den er tilføjet,
+     melder DAO-feedet aldrig `leveret`, og uret starter ikke af sig selv.
+   - Appen: `trades.modtaget_kilde` kan læses af køber og sælger (`'fragt'` eller `null`). Er den `'fragt'`
+     og status `modtaget`, skal appen vise "Fragtfirmaet melder pakken leveret" og fristen
+     (`received_at` + 48 timer) i stedet for "Køberen har modtaget pakken", og "Opret sag" skal også tilbyde
+     `bortkommet` uden krav om billeder (`sag_opret` accepterer det).
 
 ## Priser – ét sted
 
@@ -278,8 +318,9 @@ Pr. fragtfirma (sandbox 15. okt. 2026 – oprettet med BidHamrs adapter og annul
 - Webhook-hændelser vurderes med forsendelsen (`vurderMonitorHaendelse`): på en **returpakke** bruges returteksten
   aldrig; på en **udgående** kun ved DELIVERED. `leveret` kræver, at Shipmondos by/postnummer passer med pakkeshoppen
   eller modtageren – ellers en markering til staff, og leveret_kl sættes ikke.
-- **Shipmondos leveret frigiver ikke pengene efter 14 dage**, før `SHIPMONDO_LEVERET_FRIGIVER=true`
-  (`forsendelser.leveret_frigiver`, sat ved oprettelsen; `handel_auto_frigiv` kræver den). Købers "modtaget" er uændret.
+- **Shipmondos leveret frigiver ikke pengene efter 14 dage og starter ikke 48-timers uret** (punkt 10), før
+  `SHIPMONDO_LEVERET_FRIGIVER=true` (`forsendelser.leveret_frigiver`, sat ved oprettelsen; `handel_auto_frigiv`
+  og `handel_fragt_leveret_start` kræver den). Købers "modtaget" er uændret.
 - Køberens fragtfirma: mangler det (gammel kode, appen), bruges DAO.
 - **Kun DAO og GLS (GLS med printet label), PostNord slået fra – `SHIPMONDO_POSTNORD_AKTIV=true` slår den til**
   (se øverst). Migrationerne `20261024020000_fragt_gls_slaaet_fra.sql` og derefter

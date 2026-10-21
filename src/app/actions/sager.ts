@@ -155,7 +155,14 @@ export type SagMuligheder = {
   beskyttelse: boolean;
   // Billeder af pakke, label og indhold kræves (pakken er modtaget).
   billederKraeves: boolean;
-  // Sidste frist for at oprette en sag: 48 timer efter "modtaget", eller -
+  // Typer, der ikke kræver billederne, selvom billederKraeves er sat
+  // ("Pakken er ikke kommet frem", når fragtfirmaet har meldt den leveret).
+  billederFriTyper: SagType[];
+  // Fragtfirmaets leveringsmelding startede 48-timers uret (køberen har ikke
+  // selv kvitteret) - trades.modtaget_kilde = 'fragt'.
+  fragtLeveret: boolean;
+  // Sidste frist for at oprette en sag: 48 timer efter "modtaget" (købers
+  // eget tryk eller fragtfirmaets leveringsmelding), eller -
   // når pakken er sendt - 14 dage efter afsendelse (så frigives pengene
   // automatisk).
   fristKl: string | null;
@@ -545,11 +552,13 @@ export async function hentSagMuligheder(
 
     const admin = createAdminClient();
     const [{ data: t }, { data: b }, { count }] = await Promise.all([
-      admin
-        .from("trades")
-        .select("status, received_at, sendt_kl")
-        .eq("id", tradeId)
-        .single<{ status: string; received_at: string | null; sendt_kl: string | null }>(),
+      (async () => {
+        type T = { status: string; received_at: string | null; sendt_kl: string | null; modtaget_kilde?: string | null };
+        const hent = (k: string) => admin.from("trades").select(k).eq("id", tradeId).single<T>();
+        // Før migrationen 20261030010000 findes modtaget_kilde ikke.
+        const r = await hent("status, received_at, sendt_kl, modtaget_kilde");
+        return r.error?.code === "42703" ? await hent("status, received_at, sendt_kl") : r;
+      })(),
       admin
         .from("betalinger")
         .select(
@@ -573,6 +582,8 @@ export async function hentSagMuligheder(
       kraeverBeskyttelse: [],
       beskyttelse: !!b?.beskyttelse,
       billederKraeves: false,
+      billederFriTyper: [],
+      fragtLeveret: false,
       fristKl: null,
       bortkommetFraKl: null,
       harSag: (count ?? 0) > 0,
@@ -595,6 +606,13 @@ export async function hentSagMuligheder(
       tom.fristKl = new Date(frist).toISOString();
       tom.billederKraeves = true;
       if (frist > nu) kandidater = ["skadet", "ikke_som_beskrevet", "svindel"];
+      // Fragtfirmaet meldte pakken leveret (20261030010000): køberen kan også
+      // melde, at han ikke har fået den - uden billeder (sag_opret).
+      if (t.modtaget_kilde === "fragt") {
+        tom.fragtLeveret = true;
+        tom.billederFriTyper = ["bortkommet"];
+        if (frist > nu) kandidater = ["bortkommet", ...kandidater];
+      }
     } else if (t.status === "pakke_sendt") {
       const sendt = t.sendt_kl ?? b.betalt_kl;
       if (sendt) {

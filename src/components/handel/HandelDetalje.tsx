@@ -23,6 +23,7 @@ import { hentSagForHandel, hentSagMuligheder } from "@/app/actions/sager";
 import SagVisning from "@/components/sager/SagVisning";
 import OpretSagForm from "@/components/sager/OpretSagForm";
 import { sagTid } from "@/components/sager/visning";
+import { SAG_FRIST_TIMER_EFTER_MODTAGET } from "@/lib/sager";
 import { hentMinSagSamtale } from "@/app/actions/staffChat";
 import { hentAfhentningInfo } from "@/app/actions/afhentning";
 import { VisAfhentningskode, IndtastAfhentningskode } from "@/components/Afhentning";
@@ -237,6 +238,7 @@ export default async function HandelDetalje({
     saelgerKontoType,
     udbetalingSvar,
     ikkeAfhentet,
+    modtagetViaFragt,
   ] = await Promise.all([
     supabase.from("auctions").select("titel, billeder, startpris, erhverv, pakkestoerrelse, vaegt_gram").eq("id", handel.auction_id).maybeSingle(),
     supabase.from("users").select("navn").eq("id", modpartId).maybeSingle(),
@@ -335,8 +337,27 @@ export default async function HandelDetalje({
       : Promise.resolve(null),
     // Pakken blev ikke afhentet og er sendt retur til sælgeren.
     annulleret && !afhentning ? hentIkkeAfhentet(handel.id, user.id) : Promise.resolve(null),
+    // Fragtfirmaets leveringsmelding startede 48-timers uret (20261030010000).
+    // Fejl (fx før migrationen) = nej.
+    handel.status === "modtaget" && !afhentning
+      ? supabase
+          .from("trades")
+          .select("modtaget_kilde")
+          .eq("id", handel.id)
+          .maybeSingle<{ modtaget_kilde: string | null }>()
+          .then(
+            (r) => r.data?.modtaget_kilde === "fragt",
+            () => false,
+          )
+      : Promise.resolve(false),
   ]);
   const udbetaling = udbetalingSvar && "ok" in udbetalingSvar ? udbetalingSvar.visning : null;
+  // Fristen for en sag og den automatiske frigivelse: 48 timer efter
+  // "modtaget" (her: fragtfirmaets leveringsmelding, registreret hos os).
+  const fragtUrFrist =
+    modtagetViaFragt && handel.received_at && !Number.isNaN(Date.parse(handel.received_at))
+      ? new Date(Date.parse(handel.received_at) + SAG_FRIST_TIMER_EFTER_MODTAGET * 60 * 60 * 1000).toISOString()
+      : null;
 
   // Fragt: den aktive udgående forsendelse, antal labels og visningstekster.
   const forsendelser = forsendelserSvar && "ok" in forsendelserSvar ? forsendelserSvar.forsendelser : [];
@@ -1050,23 +1071,45 @@ export default async function HandelDetalje({
             <h2 className="text-[17px] leading-snug lg:text-lg">
               Tjek varen
             </h2>
-            <p className="mt-1 mb-4 text-sm text-tekst-daempet">
-              Kontrollér at varen svarer til beskrivelsen og ikke er
-              beskadiget. Når du godkender, frigives beløbet til sælgeren.
-            </p>
+            {fragtUrFrist ? (
+              <p className="mt-1 mb-4 text-sm text-tekst-daempet">
+                Fragtfirmaet melder pakken leveret. Kontrollér at varen svarer til beskrivelsen og
+                ikke er beskadiget. Er der noget galt, så meld det senest{" "}
+                <span className="font-semibold text-tekst">{sagTid(fragtUrFrist)}</span> – ellers
+                frigives beløbet automatisk til sælgeren. Når du godkender, frigives det med det samme.
+              </p>
+            ) : (
+              <p className="mt-1 mb-4 text-sm text-tekst-daempet">
+                Kontrollér at varen svarer til beskrivelsen og ikke er
+                beskadiget. Når du godkender, frigives beløbet til sælgeren.
+              </p>
+            )}
             <GodkendPakkeKnap tradeId={handel.id} />
           </div>
         )}
 
         {erSaelger && !afhentning && handel.status === "modtaget" && !sagAktiv && (
           <div className="rounded-[14px] border border-info-kant bg-info-bg p-5 sm:p-6">
-            <p className="font-semibold text-info-tekst">
-              Køberen har modtaget pakken
-            </p>
-            <p className="mt-1 text-sm text-info-tekst">
-              Køberen har modtaget pakken og tjekker varen. Du får pengene, når
-              køberen godkender.
-            </p>
+            {fragtUrFrist ? (
+              <>
+                <p className="font-semibold text-info-tekst">Pakken er leveret</p>
+                <p className="mt-1 text-sm text-info-tekst">
+                  Fragtfirmaet melder pakken leveret til køberen. Du får pengene, når køberen
+                  godkender varen – eller automatisk {sagTid(fragtUrFrist)}, hvis køberen ikke har
+                  meldt en fejl inden da.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold text-info-tekst">
+                  Køberen har modtaget pakken
+                </p>
+                <p className="mt-1 text-sm text-info-tekst">
+                  Køberen har modtaget pakken og tjekker varen. Du får pengene, når
+                  køberen godkender.
+                </p>
+              </>
+            )}
           </div>
         )}
 

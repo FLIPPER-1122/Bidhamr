@@ -154,6 +154,9 @@ export async function markerModtagetFor(
   const handel = await hentHandel(supabase, brugerId, tradeId);
   if (!handel) return IKKE_FUNDET;
   if (handel.buyer_id !== brugerId) return { fejl: "Kun køberen kan kvittere for pakken.", kode: "ikke_koeber" };
+  // Fragtfirmaets leveringsmelding kan have kvitteret for køberen
+  // (src/lib/betaling/fragtUr.ts).
+  if (handel.status === "modtaget") return { fejl: "Pakken er allerede kvitteret.", kode: "allerede" };
   if (handel.status !== "pakke_sendt") {
     return { fejl: "Handlen er ikke klar til at blive kvitteret.", kode: "ikke_klar" };
   }

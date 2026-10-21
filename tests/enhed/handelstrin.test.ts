@@ -106,6 +106,14 @@ describe("markerModtagetFor", () => {
     expect(await markerModtagetFor(k.klient as never, KOEBER, HANDEL)).toMatchObject({ kode: "allerede" });
     expect(m.send).not.toHaveBeenCalled();
   });
+
+  it("fragtfirmaets leveringsmelding har allerede kvitteret: 'allerede', intet RPC-kald, ingen besked", async () => {
+    handel!.status = "modtaget";
+    const k = klient({});
+    expect(await markerModtagetFor(k.klient as never, KOEBER, HANDEL)).toMatchObject({ kode: "allerede" });
+    expect(k.rpcLog).toHaveLength(0);
+    expect(m.send).not.toHaveBeenCalled();
+  });
 });
 
 describe("godkendPakkeFor", () => {
