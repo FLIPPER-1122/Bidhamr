@@ -50,6 +50,7 @@ import {
   type SagUdfaldBesked,
 } from "@/lib/sagerServer";
 import { notificerAdvarsler } from "@/lib/notifikationer/cron";
+import { notificerReklamationer } from "@/lib/reklamation/notifikationer";
 import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
 import {
   SAG_ANKEFRIST_DAGE,
@@ -975,6 +976,8 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
       const { trade_id: tradeId, sag_id: sid, part, udfald: u } = svar;
       const ps = pengeStatus;
       after(() => notificerAnkeAfgjort(ankeId, tradeId, sid, part, u, slut, begrundelse, ps));
+      // Skadet + ordentlig indpakning: reklamationen oprettes i databasen - sælgeren får besked.
+      after(() => notificerReklamationer());
     }
 
     if (svar.sag_id) revalider(svar.sag_id, svar.trade_id);
@@ -1128,6 +1131,8 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
       const frist = svar.penge_flyttes_efter_kl ?? null;
       const valg = { endelig: !!svar.endelig, flyttetNu };
       after(() => notificerSagAfgoerelse(sagId, tradeId, type, beskedType, begrundelse, v, frist, valg));
+      // Skadet + ordentlig indpakning: reklamationen oprettes i databasen - sælgeren får besked.
+      after(() => notificerReklamationer());
     }
 
     revalider(sagId, svar.trade_id);

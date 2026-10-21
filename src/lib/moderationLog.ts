@@ -90,6 +90,21 @@ export const HANDLING_NAVNE: Record<string, string> = {
   beta_aabnet: "Åbnede beta-testen",
   beta_lukket: "Lukkede beta-testen",
   konto_oprettelse_tilladt: "Gav tilladelse til at oprette en konto (fx firmakonto)",
+  // 20261029010000_reklamation_fragtfirma.sql (sælgerens egne registreringer
+  // logges med systembrugeren som afsender).
+  indpakning_ordentlig: "Vurderede indpakningen som ordentlig",
+  indpakning_ordentlig_fortrudt: "Fortrød vurderingen \"ordentlig indpakning\"",
+  reklamation_oprettet: "Reklamation hos fragtfirma oprettet",
+  reklamation_genaabnet: "Reklamation hos fragtfirma aktiv igen",
+  reklamation_annulleret: "Annullerede reklamation hos fragtfirma",
+  reklamation_sag_aendret: "Sagen ændret efter anmeldt reklamation",
+  reklamation_note: "Skrev intern note på reklamation",
+  reklamation_gensendt: "Sendte reklamationspakken til sælger igen",
+  reklamation_status_rettet: "Rettede status på reklamation",
+  reklamation_saelger_anmeldt: "Sælger anmeldte skaden hos fragtfirma",
+  reklamation_saelger_godkendt: "Sælger: fragtfirmaet godkendte erstatning",
+  reklamation_saelger_afvist: "Sælger: fragtfirmaet afviste erstatning",
+  reklamation_saelger_fravalgt: "Sælger ønsker ikke at reklamere",
 };
 
 export function handlingNavn(handling: string): string {
