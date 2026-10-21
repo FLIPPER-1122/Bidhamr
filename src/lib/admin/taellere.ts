@@ -12,6 +12,7 @@ import { hentAntalNyeErhvervHenvendelser } from "@/app/actions/adminErhverv";
 import { hentNoedstopBjaelke } from "@/app/actions/adminPengesikkerhed";
 import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hentReklamationTal } from "@/lib/reklamation/tal";
 
 // Menuens tællere (kun antal - ingen beløb). cache() deler svaret mellem
 // admin/layout.tsx og siden i samme forespørgsel, så forsiden ikke spørger
@@ -36,6 +37,12 @@ export type StaffTal = {
   haenger: number;
   fragt: number;
   markeret: number;
+  // Reklamationer hos fragtfirmaet (fragt_reklamationer_antal): venter på
+  // sælger (til orientering), stået stille i 14 dage og sagen ændret efter
+  // anmeldelsen (begge røde - staff skal se på dem).
+  reklamationAfventer: number;
+  reklamationStille: number;
+  reklamationSagAendret: number;
 };
 
 function n(r: object | null | undefined, k: string): number {
@@ -46,6 +53,7 @@ function n(r: object | null | undefined, k: string): number {
 
 export const hentStaffTal = cache(async (): Promise<StaffTal> => {
   const handler = hentHandlerTal();
+  const reklamation = hentReklamationTaellere();
   const [ubetalte, betalinger, chats, sager, lukninger, tryghed, dsa] = await Promise.all([
     hentAntalUbetalte(),
     hentAntalBetalingerTilHandling(),
@@ -55,9 +63,12 @@ export const hentStaffTal = cache(async (): Promise<StaffTal> => {
     hentAntalTryghed(),
     hentAntalDsa(),
   ]);
-  const h = await handler;
+  const [h, r] = await Promise.all([handler, reklamation]);
   return {
     ...h,
+    reklamationAfventer: r?.afventerSaelger ?? 0,
+    reklamationStille: r?.stille ?? 0,
+    reklamationSagAendret: r?.sagAendret ?? 0,
     ubetalte: n(ubetalte, "antal"),
     betalinger: n(betalinger, "antal"),
     chats: n(chats, "antal"),
@@ -87,6 +98,12 @@ async function hentHandlerTal(): Promise<{ haenger: number; fragt: number; marke
     fragt: fragt.error ? 0 : (fragt.count ?? 0),
     markeret: markeret.error ? 0 : (markeret.count ?? 0),
   };
+}
+
+// Reklamationer hos fragtfirmaet (kun staff; fejl, fx før migrationen, giver null).
+async function hentReklamationTaellere() {
+  if (!(await getStaffRole())) return null;
+  return hentReklamationTal(createAdminClient());
 }
 
 // Nye erhvervshenvendelser (chef og sælger; andre får 0).

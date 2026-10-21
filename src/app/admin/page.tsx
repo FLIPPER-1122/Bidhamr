@@ -155,6 +155,27 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
       href: "/admin/betalinger",
     },
   );
+  // Reklamationer hos fragtfirmaet (sælgeren anmelder selv). Rødt, når staff skal se på dem.
+  if (s.reklamationSagAendret > 0) {
+    r.push({
+      id: "reklamation-aendret",
+      alvor: "roed",
+      titel: "Reklamation: sagen er ændret",
+      antal: s.reklamationSagAendret,
+      forklaring: "Sagen er ændret, efter sælgeren anmeldte skaden – ret reklamationen",
+      href: "/admin/reklamationer?vis=sag_aendret",
+    });
+  }
+  if (s.reklamationStille > 0) {
+    r.push({
+      id: "reklamation-stille",
+      alvor: "roed",
+      titel: "Reklamationer står stille",
+      antal: s.reklamationStille,
+      forklaring: "Intet er sket i 14 dage – send oplysningerne igen, eller kontakt sælgeren",
+      href: "/admin/reklamationer?vis=stille",
+    });
+  }
   if (h && erAdmin) {
     r.push({ id: "anker", alvor: "gul", titel: "Anker", antal: h.anker, forklaring: "En part er uenig i afgørelsen – se på den igen", href: "/admin/sager?vis=anker" });
   }
@@ -185,6 +206,7 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
   if (h) {
     r.push(
       { id: "retur", alvor: "graa", titel: "Returfrist udløbet", antal: h.retur_udloebet, forklaring: "Køber har ikke sendt varen retur inden for 7 dage", href: "/admin/sager?vis=afventer_retur" },
+      { id: "reklamation-venter", alvor: "graa", titel: "Reklamationer venter på sælger", antal: s.reklamationAfventer, forklaring: "Sælgeren har ikke anmeldt skaden hos fragtfirmaet endnu", href: "/admin/reklamationer?vis=afventer_saelger" },
       { id: "ubetalte", alvor: "graa", titel: "Ubetalte vindere", antal: s.ubetalte, forklaring: "Vinderen betalte ikke til tiden – advar eller afvis", href: "/admin/ubetalte" },
       {
         id: "ikke-sendt",
