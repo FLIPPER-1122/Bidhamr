@@ -93,7 +93,7 @@ export default function EkstraFragtKort({
     return (
       <Ramme titelId={titelId} tone="neutral">
         <h2 id={titelId} className="font-sans text-[16px] font-semibold text-tekst">
-          Regningen for ekstra fragt er frafaldet. Du skal ikke betale
+          Regningen for ekstra fragt er frafaldet. Du skal ikke betale.
         </h2>
         {(r.afgoerelse_begrundelse || r.frafald_grund) && (
           <p className="mt-1 text-sm text-tekst-daempet">

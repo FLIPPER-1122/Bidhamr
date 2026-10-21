@@ -556,7 +556,7 @@ begin
     from public.forsendelser fo where fo.id = p_forsendelse for update;
   if f.id is null then return jsonb_build_object('kode', 'ikke_fundet'); end if;
   if f.type <> 'udgaaende' then return jsonb_build_object('kode', 'ikke_udgaaende'); end if;
-  if f.status in ('opretter', 'fejlet') then return jsonb_build_object('kode', 'ikke_sendt'); end if;
+  if f.status in ('opretter', 'fejlet', 'annulleret') then return jsonb_build_object('kode', 'ikke_sendt'); end if;
 
   select tr.id, tr.buyer_id, tr.seller_id, tr.afhentning into t from public.trades tr where tr.id = f.trade_id;
   if t.id is null or t.seller_id is null then return jsonb_build_object('kode', 'ikke_fundet'); end if;
