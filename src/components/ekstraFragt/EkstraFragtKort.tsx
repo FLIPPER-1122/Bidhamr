@@ -9,8 +9,6 @@
 //
 // Alt, der afgør noget (status, frist, spærring, kan_betale,
 // kan_goere_indsigelse), kommer fra databasen (mine_ekstra_fragt_regninger).
-// TODO(indhold): teksterne her er korte pladsholdere - indhold-agenten
-// gennemgår dem (forklaring, indsigelse, kvitteringer).
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
@@ -67,7 +65,7 @@ export default function EkstraFragtKort({
           Ekstra fragt betalt: {beloeb}.
         </h2>
         <p className="mt-1 text-sm">
-          Tak. Du betalte {r.betalt_kl ? `den ${ekstraFragtDato(r.betalt_kl)}` : ""}. Kvitteringen kommer på mail.
+          Tak, vi har fået din betaling{r.betalt_kl ? ` den ${ekstraFragtDato(r.betalt_kl)}` : ""}. Du får en kvittering på mail, og fakturaen kommer under Min konto → Fakturaer.
         </p>
       </Ramme>
     );
@@ -76,7 +74,7 @@ export default function EkstraFragtKort({
     return (
       <Ramme titelId={titelId} tone="neutral">
         <h2 id={titelId} className="font-sans text-[16px] font-semibold text-tekst">
-          Ekstra fragt frafaldet – du skal ikke betale
+          Regningen for ekstra fragt er frafaldet. Du skal ikke betale
         </h2>
         {(r.afgoerelse_begrundelse || r.frafald_grund) && (
           <p className="mt-1 text-sm text-tekst-daempet">
@@ -92,7 +90,7 @@ export default function EkstraFragtKort({
         <h2 id={titelId} className="font-sans text-[16px] font-semibold text-tekst">
           Ekstra fragt refunderet: {beloeb}.
         </h2>
-        <p className="mt-1 text-sm text-tekst-daempet">Pengene er sendt tilbage til dig.</p>
+        <p className="mt-1 text-sm text-tekst-daempet">Vi har sendt pengene tilbage til dig. Der kan gå nogle dage, før de står på din konto.</p>
       </Ramme>
     );
   }
@@ -100,9 +98,9 @@ export default function EkstraFragtKort({
     return (
       <Ramme titelId={titelId} tone="info">
         <h2 id={titelId} className="font-sans text-[16px] font-semibold">
-          Ekstra fragt: {beloeb}. Din betaling behandles
+          Ekstra fragt: {beloeb}. Vi behandler din betaling
         </h2>
-        <p className="mt-1 text-sm">Det tager normalt kun et øjeblik. Genindlæs siden om lidt.</p>
+        <p className="mt-1 text-sm">Det tager som regel kun et øjeblik. Genindlæs siden om lidt.</p>
       </Ramme>
     );
   }
@@ -113,7 +111,7 @@ export default function EkstraFragtKort({
           BidHamr ser på din indsigelse
         </h2>
         <p className="mt-1 text-sm">
-          Ekstra fragt: {beloeb}. Du får besked, når vi har afgjort den.
+          Ekstra fragt: {beloeb}. Du skal ikke betale, mens vi ser på den.{r.spaerrer ? " Fristen var overskredet, da du gjorde indsigelse, så du kan ikke oprette nye auktioner, før vi har afgjort den, eller regningen er betalt." : " Du kan stadig oprette auktioner."} Du får besked, når vi har afgjort den.
         </p>
         {r.indsigelse_tekst && (
           <blockquote className="mt-3 rounded-lg border border-info-kant bg-white/70 px-3 py-2 text-sm whitespace-pre-wrap break-words text-tekst">
@@ -140,9 +138,10 @@ export default function EkstraFragtKort({
         </span>
       </div>
       <p className="mt-2 text-[15px] text-tekst">
-        {firma} målte pakken som <strong className="font-semibold">{maalingTekst(r)}</strong> i stedet for{" "}
-        <strong className="font-semibold">{valgtStoerrelseNavn(r.valgt_stoerrelse)}</strong>, som du valgte. Derfor har{" "}
-        {transportoerNavn(r.transportoer) ?? "fragtfirmaet"} opkrævet {beloeb} ekstra, som du betaler som sælger.
+        Du valgte <strong className="font-semibold">{valgtStoerrelseNavn(r.valgt_stoerrelse)}</strong>, men{" "}
+        {transportoerNavn(r.transportoer) ?? "fragtfirmaet"} målte pakken til{" "}
+        <strong className="font-semibold">{maalingTekst(r)}</strong>. Derfor har{" "}
+        {transportoerNavn(r.transportoer) ?? "fragtfirmaet"} opkrævet {beloeb} ekstra. Det er fragtfirmaets pris, og som sælger betaler du forskellen.
       </p>
       {r.forklaring && <p className="mt-2 text-sm whitespace-pre-wrap break-words text-tekst-daempet">{r.forklaring}</p>}
       {r.afgoerelse === "fastholdt" && r.afgoerelse_begrundelse && (
@@ -359,10 +358,8 @@ function Indsigelse({ r, onLuk }: { r: MinEkstraFragt; onLuk: () => void }) {
         Hvorfor mener du, at målingen er forkert?
       </label>
       <p id={`${id}-hjaelp`} className="mt-1 text-[13px] text-tekst-daempet">
-        Fx hvilken størrelse og vægt pakken havde, da du sendte den. Du kan kun gøre indsigelse én gang.
-        {r.spaerrer
-          ? " Du er spærret, indtil regningen er betalt eller BidHamr har behandlet din indsigelse."
-          : " Du skal ikke betale, mens BidHamr ser på den."}
+        Fx hvor stor pakken var, og hvad den vejede, da du sendte den. Du kan kun gøre indsigelse én gang. Du skal ikke betale, mens vi ser på den.
+        {r.spaerrer ? " Fristen er overskredet, så du kan ikke oprette nye auktioner, før vi har afgjort indsigelsen, eller regningen er betalt." : ""}
       </p>
       <textarea
         ref={feltRef}

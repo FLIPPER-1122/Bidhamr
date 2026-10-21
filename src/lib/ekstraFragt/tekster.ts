@@ -8,7 +8,7 @@
 export const EKSTRA_FRAGT_FEJLKODE = "BHX01";
 
 export const EKSTRA_FRAGT_SPAERRET_TEKST =
-  "Du har en ubetalt regning for ekstra fragt, og betalingsfristen er overskredet. Betal regningen på handlen under Mine handler, før du kan sætte flere varer til salg eller tilbyde en vare til næste byder.";
+  "Fristen for at betale ekstra fragt er overskredet. Indtil regningen er betalt, kan du ikke oprette nye auktioner, sætte en vare op igen eller tilbyde en vare til næste byder. Du betaler på handlen under Mine handler. Dine aktive auktioner og handler fortsætter som normalt.";
 
 export function erEkstraFragtFejl(code: string | null | undefined, message?: string | null): boolean {
   return code === EKSTRA_FRAGT_FEJLKODE || (message ?? "").includes("ekstra_fragt_ubetalt");
@@ -26,7 +26,7 @@ export const EKSTRA_FRAGT_STATUS_NAVN: Record<EkstraFragtStatus, string> = {
   afventer_betaling: "Afventer betaling",
   behandles: "Betalingen behandles",
   betalt: "Betalt",
-  indsigelse: "Indsigelse – BidHamr kigger på den",
+  indsigelse: "Indsigelse – BidHamr ser på den",
   frafaldet: "Frafaldet",
   refunderet: "Refunderet",
 };
@@ -115,7 +115,7 @@ export const EKSTRA_FRAGT_SAELGER_FEJL: Record<string, string> = {
   behandles: "Din betaling behandles lige nu. Vent lidt, og genindlæs siden.",
   forkert_status: "Regningen er ændret i mellemtiden. Genindlæs siden for at se, hvordan den står nu.",
   betalt: "Regningen er allerede betalt.",
-  indsigelse: "Vi behandler din indsigelse. Du kan betale, hvis vi fastholder regningen.",
+  indsigelse: "Vi ser på din indsigelse. Du skal ikke betale, før vi har afgjort den.",
   frafaldet: "Regningen er frafaldet. Du skal ikke betale.",
   refunderet: "Regningen er refunderet. Du skal ikke betale.",
 };

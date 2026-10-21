@@ -84,23 +84,23 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
   // ikke først får "betal" og straks efter "frafaldet").
   if (!(r.status === "frafaldet" && !r.afgoerelse && !r.betalt_kl)) op(
     "oprettet",
-    "Ekstra fragt: pakken var større end den valgte størrelse",
-    `Fragtfirmaet har opkrævet ekstra for en pakke, du har sendt, fordi den var større eller tungere end den størrelse, du valgte (${valgt}${maalt ? `; fragtfirmaet målte ${maalt}` : ""}). Forskellen er ${beloeb}. Betal den på handlen senest ${dato(r.frist)}. Du kan se fragtfirmaets faktura på handlen. Mener du, at målingen er forkert, kan du gøre indsigelse dér. Betaler du ikke inden fristen, kan du ikke sætte flere varer til salg, før beløbet er betalt.`,
+    "Ekstra fragt: din pakke var større end den valgte størrelse",
+    `Fragtfirmaet har målt en pakke, du har sendt. Du valgte ${valgt}${maalt ? `, men fragtfirmaet målte pakken til ${maalt}` : ", men pakken var større eller tungere"}. Derfor har fragtfirmaet opkrævet ekstra. Forskellen er ${beloeb}. Den betaler du som sælger. Betal på handlen senest ${dato(r.frist)}. Dér kan du også se fragtfirmaets dokumentation. Mener du, at målingen er forkert, kan du gøre indsigelse én gang på handlen. Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`,
   );
 
   if (r.status === "afventer_betaling" && nu < frist && nu - new Date(r.oprettet_kl).getTime() >= EKSTRA_FRAGT_PAAMIND_DAGE * DAG) {
     op(
       "paamind",
       "Husk at betale for ekstra fragt",
-      `Du mangler at betale ${beloeb} for ekstra fragt, fordi pakken var større eller tungere end den valgte størrelse. Fristen er ${dato(r.frist)}. Betal på handlen - eller gør indsigelse dér, hvis du mener, at målingen er forkert.`,
+      `Du mangler at betale ${beloeb} for ekstra fragt, fordi pakken var større eller tungere end den størrelse, du valgte. Fristen er ${dato(r.frist)}. Du betaler på handlen.${r.afgoerelse ? "" : " Mener du, at målingen er forkert, kan du gøre indsigelse dér."} Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`,
     );
   }
 
   if (r.status === "afventer_betaling" && nu >= frist) {
     op(
       `spaerret:${frist}`,
-      "Du kan ikke sætte varer til salg, før ekstra fragt er betalt",
-      `Fristen for at betale ${beloeb} for ekstra fragt er overskredet. Indtil beløbet er betalt, kan du ikke sætte nye varer til salg eller tilbyde en vare til næste byder. Dine aktive auktioner og handler fortsætter som normalt. Betal på handlen, så ophæves spærringen med det samme.`,
+      "Du kan ikke oprette nye auktioner, før ekstra fragt er betalt",
+      `Fristen for at betale ${beloeb} for ekstra fragt er overskredet. Indtil beløbet er betalt, kan du ikke oprette nye auktioner, sætte en vare op igen eller tilbyde en vare til næste byder. Dine aktive auktioner og handler fortsætter som normalt. Når du har betalt på handlen, kan du med det samme sætte varer til salg igen.`,
     );
   }
 
@@ -110,13 +110,13 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
       op(
         `afgjort:${new Date(r.afgjort_kl).getTime()}`,
         "Din indsigelse om ekstra fragt er afgjort",
-        `Vi har set på din indsigelse og fastholder regningen på ${beloeb}.${begrundelse} Betal den på handlen senest ${dato(r.frist)}. Betaler du ikke inden fristen, kan du ikke sætte flere varer til salg, før beløbet er betalt.`,
+        `Vi har set på din indsigelse og fastholder regningen på ${beloeb}.${begrundelse} Betal den på handlen senest ${dato(r.frist)}. Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`,
       );
     } else {
       op(
         `afgjort:${new Date(r.afgjort_kl).getTime()}`,
         "Din indsigelse om ekstra fragt er afgjort",
-        `Vi har set på din indsigelse og giver dig medhold: regningen på ${beloeb} er frafaldet, og du skal ikke betale.${begrundelse}`,
+        `Vi har set på din indsigelse og giver dig ret. Regningen på ${beloeb} er frafaldet, og du skal ikke betale.${begrundelse}`,
       );
     }
   } else if (r.status === "frafaldet" && r.frafaldet_kl) {
@@ -131,7 +131,7 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
     op(
       "betalt",
       "Tak – ekstra fragt er betalt",
-      `Vi har modtaget din betaling på ${beloeb} for ekstra fragt. Du kan se fakturaen under Min konto → Fakturaer. Betalingen håndteres af vores betalingspartner Stripe.`,
+      `Vi har fået din betaling på ${beloeb} for ekstra fragt. Fakturaen kommer under Min konto → Fakturaer. Betalingen er håndteret af vores betalingspartner Stripe.`,
     );
   }
   return ud;
