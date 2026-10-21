@@ -29,27 +29,48 @@
 --   indsigelse -> frafaldet                           (staff, begrundelse vises for sælgeren)
 --   afventer_betaling -> frafaldet                    (staff, grund vises for sælgeren)
 --   betalt -> refunderet                              (kun spejlet fra Stripe)
+--   betalt -> afventer_betaling (genåbnet)            (staff, kun efter en TABT
+--                                                     bankindsigelse - se nedenfor)
 -- Frist: 14 dage fra oprettelsen. Fastholdes en indsigelse, er fristen mindst
--- 7 dage fra afgørelsen.
+-- 7 dage fra afgørelsen. Genåbnet: 14 dage fra genåbningen.
 --
 -- Spærring (fejlkode BHX01, som DAC7's BHD01): har sælgeren en regning i
 -- 'afventer_betaling' efter fristen, afviser databasen nye auktioner (også
--- "sæt op igen") og "tilbud til næste byder". Under indsigelse og mens en
--- betaling behandles er der ingen spærring. Ophæves straks ved betaling eller
--- frafald (spærringen beregnes - der er intet flag at nulstille).
+-- "sæt op igen") og "tilbud til næste byder". Mens en betaling behandles er
+-- der ingen spærring. En indsigelse gjort FØR fristen ophæver spærringen,
+-- til den er afgjort; en indsigelse gjort EFTER fristen er tilladt, men
+-- spærringen gælder, til den er afgjort (chefens præcisering, 21. okt. 2026).
+-- Ophæves straks ved betaling eller frafald (spærringen beregnes - der er
+-- intet flag at nulstille).
+--
+-- Bankindsigelse (chargeback) på en betalt regning: spejles fra Stripe
+-- (ekstra_fragt_registrer_bankindsigelse). Tabes den, markeres regningen
+-- (bankindsigelse_tabt_kl - admin-lampen), og staff får en alarm. Regningen
+-- genåbnes ALDRIG automatisk (Filip, 21. okt. 2026). Staff kan genåbne den
+-- (ekstra_fragt_genaabn): ny frist, ny betalingsrunde (runde + 1, ny
+-- PaymentIntent med ny idempotency key), kreditnota for rundens faktura
+-- (dateret på tabsdagen, reference = indsigelsens id), og en ny faktura, når
+-- sælgeren betaler igen. Den tilbageførte PaymentIntent/charge gemmes i
+-- tilbagefoerte_payment_intents/-charges og adopteres ALDRIG igen.
+--
+-- Oprydning: dokumentationsfiler i bucket'en, som ingen regning bruger, og
+-- som er over 7 dage gamle, slettes én gang om måneden
+-- (ekstra_fragt_ubrugte_filer + src/lib/ekstraFragt/oprydning.ts).
 --
 -- Dokumentation: staff uploader fragtfirmaets faktura (PDF/billede - kun
 -- udsnittet med pakken) til den private bucket 'ekstra-fragt-dokumentation'
 -- (kun service role; serveren giver signerede links til staff og til
 -- sælgeren selv). Stien er <handels-id>/<uuid>.<endelse>, og databasen tjekker,
--- at filen findes, før regningen oprettes.
+-- at filen findes, og at dens filtype (storage-metadata) passer, før
+-- regningen oprettes.
 --
 -- Beskeder til sælgeren (ny regning, påmindelse efter 7 dage, spærret ved
 -- fristen, indsigelse afgjort, frafaldet, betalt) sendes fra serveren
 -- (src/lib/ekstraFragt/notifikationer.ts) ud fra tidsstemplerne.
 --
 -- Ændrer INGEN eksisterende funktioner. Ændrer på eksisterende tabeller: nye
--- triggere på auctions og andenchance_tilbud (spærringen), ny kolonne, CHECK
+-- triggere på auctions og andenchance_tilbud (spærringen), nye kolonner
+-- (fakturaer.ekstra_fragt_id og ekstra_fragt_runde), CHECK
 -- og unikke indeks på fakturaer, flettede CHECK'er på moderation_log.
 -- Idempotent (kan køres igen). Én transaktion. KØRES IKKE i produktion uden
 -- Filips "ja".
@@ -193,6 +214,38 @@ comment on table public.ekstra_fragt_regninger is
   'Ekstra fragt ved for lille pakkestørrelse (Filip, 21. okt. 2026; 20261029020000): staff registrerer fragtfirmaets ekstraopkrævning, sælgeren betaler til BidHamrs platformskonto. Aldrig automatisk træk. Én åben pr. forsendelse. Skrives kun af security definer-funktionerne. Staff læser alt; sælgeren kun offentlige felter via mine_ekstra_fragt_regninger(). Handelsdata - slettes aldrig.';
 comment on column public.ekstra_fragt_regninger.intern_note is 'Kun staff. Vises aldrig for sælgeren.';
 
+-- Bankindsigelse og genåbning (tilføjet i samme migration - "add column if
+-- not exists", så filen også kan køres oven på en tidligere udgave).
+alter table public.ekstra_fragt_regninger
+  -- Betalingsrunde: 0 første gang, + 1 ved hver genåbning. Fakturaerne
+  -- hænger på (regning, runde).
+  add column if not exists runde integer not null default 0,
+  -- PaymentIntents/charges, hvis betaling er tilbageført efter en tabt
+  -- bankindsigelse (regningen er genåbnet). Adopteres aldrig igen.
+  add column if not exists tilbagefoerte_payment_intents text[] not null default '{}',
+  add column if not exists tilbagefoerte_charges text[] not null default '{}',
+  -- Seneste bankindsigelse (chargeback) på regningens charge - spejlet fra Stripe.
+  add column if not exists bankindsigelse_id text,
+  add column if not exists bankindsigelse_status text,
+  add column if not exists bankindsigelse_beloeb_oere bigint,
+  -- Sat, når indsigelsen er tabt (admin-lampen). Ryddes ved genåbning.
+  add column if not exists bankindsigelse_tabt_kl timestamptz,
+  -- Seneste genåbning (staff; begrundelsen vises for sælgeren).
+  add column if not exists genaabnet_kl timestamptz,
+  add column if not exists genaabnet_af uuid references public.users(id) on delete restrict,
+  add column if not exists genaabn_begrundelse text;
+
+alter table public.ekstra_fragt_regninger drop constraint if exists ekstra_fragt_genaabn_check;
+alter table public.ekstra_fragt_regninger add constraint ekstra_fragt_genaabn_check check (
+  runde >= 0
+  and ((genaabnet_kl is null) = (genaabnet_af is null))
+  and ((genaabnet_kl is null) = (genaabn_begrundelse is null))
+  and (runde = 0 or genaabnet_kl is not null)
+  and coalesce(char_length(genaabn_begrundelse), 0) <= 1000
+  and coalesce(char_length(bankindsigelse_id), 0) <= 100
+  and coalesce(char_length(bankindsigelse_status), 0) <= 40
+  and (bankindsigelse_tabt_kl is null or bankindsigelse_id is not null));
+
 -- Én åben regning pr. forsendelse.
 create unique index if not exists ekstra_fragt_en_aaben
   on public.ekstra_fragt_regninger (forsendelse_id)
@@ -210,6 +263,10 @@ create index if not exists ekstra_fragt_saelger on public.ekstra_fragt_regninger
 create index if not exists ekstra_fragt_trade on public.ekstra_fragt_regninger (trade_id);
 create index if not exists ekstra_fragt_opdateret on public.ekstra_fragt_regninger (opdateret_kl);
 create index if not exists ekstra_fragt_tidligere on public.ekstra_fragt_regninger using gin (tidligere_payment_intents);
+create index if not exists ekstra_fragt_tilbagefoerte_pi on public.ekstra_fragt_regninger using gin (tilbagefoerte_payment_intents);
+create index if not exists ekstra_fragt_tilbagefoerte_charges on public.ekstra_fragt_regninger using gin (tilbagefoerte_charges);
+create index if not exists ekstra_fragt_bankindsigelse_tabt on public.ekstra_fragt_regninger (bankindsigelse_tabt_kl)
+  where bankindsigelse_tabt_kl is not null;
 
 -- Ingen sletning; faste felter; en indsigelse kan ikke ændres.
 create or replace function public.ekstra_fragt_beskyt()
@@ -234,6 +291,12 @@ begin
   if old.indsigelse_kl is not null and (new.indsigelse_kl is distinct from old.indsigelse_kl
      or new.indsigelse_tekst is distinct from old.indsigelse_tekst) then
     raise exception 'Indsigelsen kan ikke ændres' using errcode = '42501';
+  end if;
+  -- Runden tæller kun op, og tilbageførte betalinger glemmes aldrig.
+  if new.runde < old.runde
+     or not (old.tilbagefoerte_payment_intents <@ new.tilbagefoerte_payment_intents)
+     or not (old.tilbagefoerte_charges <@ new.tilbagefoerte_charges) then
+    raise exception 'Ekstraregningens betalingshistorik kan ikke ændres' using errcode = '42501';
   end if;
   new.opdateret_kl := now();
   return new;
@@ -262,7 +325,8 @@ declare
   v_def  text;
   v_nye  text[] := array[
     'ekstra_fragt_oprettet', 'ekstra_fragt_frafaldet', 'ekstra_fragt_fastholdt',
-    'ekstra_fragt_indsigelse', 'ekstra_fragt_betalt', 'ekstra_fragt_note'];
+    'ekstra_fragt_indsigelse', 'ekstra_fragt_betalt', 'ekstra_fragt_note',
+    'ekstra_fragt_bankindsigelse_tabt', 'ekstra_fragt_genaabnet'];
   v_gl   text[];
   v_vals text[];
 begin
@@ -358,7 +422,23 @@ revoke all on function public.ekstra_fragt_tjek(uuid) from public, anon, authent
 -- ===========================================================================
 -- 5. Spærringen (BHX01)
 -- ===========================================================================
--- Er sælgeren spærret? Ubetalt regning ('afventer_betaling') efter fristen.
+-- Spærrer denne regning? Ubetalt ('afventer_betaling') efter fristen - eller
+-- en indsigelse, der først blev gjort EFTER fristen (spærringen gælder, til
+-- den er afgjort; kun en indsigelse gjort før fristen ophæver den).
+-- Samme regel i ekstra_fragt_spaerret, mine_ekstra_fragt_regninger og
+-- min_ekstra_fragt_status.
+create or replace function public.ekstra_fragt_regning_spaerrer(p_status text, p_frist timestamptz, p_indsigelse_kl timestamptz)
+returns boolean
+language sql
+stable
+set search_path = ''
+as $fn$
+  select coalesce((p_status = 'afventer_betaling' and p_frist <= now())
+                  or (p_status = 'indsigelse' and p_indsigelse_kl >= p_frist), false);
+$fn$;
+revoke all on function public.ekstra_fragt_regning_spaerrer(text, timestamptz, timestamptz) from public, anon, authenticated;
+
+-- Er sælgeren spærret?
 create or replace function public.ekstra_fragt_spaerret(p_bruger uuid)
 returns boolean
 language sql
@@ -368,7 +448,8 @@ set search_path = ''
 as $fn$
   select p_bruger is not null and exists (
     select 1 from public.ekstra_fragt_regninger r
-     where r.saelger_id = p_bruger and r.status = 'afventer_betaling' and r.frist <= now());
+     where r.saelger_id = p_bruger and r.status in ('afventer_betaling', 'indsigelse')
+       and public.ekstra_fragt_regning_spaerrer(r.status, r.frist, r.indsigelse_kl));
 $fn$;
 revoke all on function public.ekstra_fragt_spaerret(uuid) from public, anon, authenticated;
 grant execute on function public.ekstra_fragt_spaerret(uuid) to service_role;
@@ -483,13 +564,18 @@ begin
     return jsonb_build_object('kode', 'for_lang_tekst');
   end if;
 
-  -- Dokumentationen: rigtig sti for handlen, tilladt type, og filen findes.
+  -- Dokumentationen: rigtig sti for handlen, tilladt type, filen findes, og
+  -- dens filtype i Storage (sat ved uploaden) er den angivne (HEIC/HEIF er
+  -- samme format).
   if p_dokumentation_sti is null
      or p_dokumentation_sti !~ ('^' || t.id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png|webp|heic)$')
      or p_dokumentation_type is null
      or p_dokumentation_type not in ('application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif')
      or not exists (select 1 from storage.objects o
-                     where o.bucket_id = 'ekstra-fragt-dokumentation' and o.name = p_dokumentation_sti) then
+                     where o.bucket_id = 'ekstra-fragt-dokumentation' and o.name = p_dokumentation_sti
+                       and (lower(o.metadata->>'mimetype') = p_dokumentation_type
+                            or (p_dokumentation_type in ('image/heic', 'image/heif')
+                                and lower(o.metadata->>'mimetype') in ('image/heic', 'image/heif')))) then
     return jsonb_build_object('kode', 'dokumentation_mangler');
   end if;
 
@@ -558,6 +644,8 @@ begin
          tidligere_payment_intents = case when stripe_payment_intent_id is null then tidligere_payment_intents
                                           else array_append(tidligere_payment_intents, stripe_payment_intent_id) end,
          annuller_pi = coalesce(stripe_payment_intent_id, annuller_pi),
+         -- Ny idempotency key, hvis regningen senere skal betales (genåbning).
+         pi_forsoeg = pi_forsoeg + case when stripe_payment_intent_id is null then 0 else 1 end,
          stripe_payment_intent_id = null
    where id = (c.r).id and status in ('afventer_betaling', 'indsigelse');
   perform public.ekstra_fragt_log(auth.uid(), 'ekstra_fragt_frafaldet', (c.r).trade_id, (c.r).saelger_id,
@@ -631,6 +719,95 @@ begin
 end;
 $fn$;
 
+-- Genåbn en BETALT regning, hvis betaling er tilbageført efter en TABT
+-- bankindsigelse (Filip, 21. okt. 2026: kun staff - aldrig automatisk).
+-- Begrundelsen vises for sælgeren. I én transaktion:
+--   1. rundens faktura sikres (laves nu, hvis fakturakøen ikke har nået det),
+--   2. kreditnota for den (dateret på tabsdagen, reference = indsigelsens id
+--      - pengene er hentet tilbage af kortudstederen),
+--   3. regningen: afventer_betaling, frist 14 dage, runde + 1, den
+--      tilbageførte PaymentIntent/charge flyttes til tilbagefoerte_* (adopteres
+--      aldrig igen), pi_forsoeg + 1 (ny idempotency key), betalingsfelterne og
+--      markeringen ryddes. Betaler sælgeren igen, laver fakturakøen rundens
+--      nye faktura.
+-- Svar ved ok: {kode, frist, runde, trade_id, saelger_id}.
+-- Koder: + begrundelse_mangler | for_lang_tekst | forkert_status (+ status) |
+-- ingen_tabt_bankindsigelse | delvis_bankindsigelse | findes_allerede
+create or replace function public.ekstra_fragt_genaabn(p_regning uuid, p_begrundelse text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  c       record;
+  v_beg   text := nullif(btrim(coalesce(p_begrundelse, '')), '');
+  v_frist timestamptz := now() + interval '14 days';
+  v_fak   record;
+  m       record;
+  v_ok    boolean;
+begin
+  select * into c from public.ekstra_fragt_tjek(p_regning);
+  if c.kode is not null then return jsonb_build_object('kode', c.kode); end if;
+  if v_beg is null then return jsonb_build_object('kode', 'begrundelse_mangler'); end if;
+  if char_length(v_beg) > 1000 then return jsonb_build_object('kode', 'for_lang_tekst'); end if;
+  if (c.r).status <> 'betalt' then
+    return jsonb_build_object('kode', 'forkert_status', 'status', (c.r).status);
+  end if;
+  if (c.r).bankindsigelse_tabt_kl is null or (c.r).stripe_charge_id is null then
+    return jsonb_build_object('kode', 'ingen_tabt_bankindsigelse');
+  end if;
+  -- Kun en tilbageførsel af hele det modtagne beløb (en delvis håndteres manuelt).
+  if (c.r).bankindsigelse_beloeb_oere is distinct from coalesce((c.r).modtaget_oere, (c.r).beloeb_oere) then
+    return jsonb_build_object('kode', 'delvis_bankindsigelse');
+  end if;
+  if exists (select 1 from public.ekstra_fragt_regninger x
+              where x.forsendelse_id = (c.r).forsendelse_id and x.id <> (c.r).id
+                and x.status in ('afventer_betaling', 'behandles', 'indsigelse')) then
+    return jsonb_build_object('kode', 'findes_allerede');
+  end if;
+
+  -- 1-2. Bogføringen: rundens faktura og en kreditnota for den.
+  select * into v_fak from public.ekstra_fragt_lav_faktura((c.r).id);
+  if v_fak.faktura_id is null then raise exception 'Ekstraregningens faktura kunne ikke laves (%)', (c.r).id; end if;
+  select fa.linjer, fa.manuel, fa.status, fa.bruger_id, fa.betaling_id, fa.trade_id into m
+    from public.fakturaer fa where fa.id = v_fak.faktura_id;
+  v_ok := not (m.manuel or m.status in ('kraever_handling', 'haandteret_manuelt'));
+  insert into public.fakturaer (dokument, part, bruger_id, betaling_id, trade_id, krediterer_id, linjer,
+                                beloeb_oere, moms_oere, betalt_dato, stripe_reference, status, manuel, sidste_fejl,
+                                slags, ekstra_fragt_id, ekstra_fragt_runde)
+  values ('kreditnota', 'saelger', m.bruger_id, m.betaling_id, m.trade_id, v_fak.faktura_id, m.linjer,
+          public.faktura_sum(m.linjer), public.faktura_moms(m.linjer),
+          ((c.r).bankindsigelse_tabt_kl at time zone 'Europe/Copenhagen')::date, (c.r).bankindsigelse_id,
+          case when v_ok then 'venter' else 'kraever_handling' end, not v_ok,
+          case when v_ok then null else 'Fakturaen blev håndteret manuelt – lav kreditnotaen manuelt i Dinero.' end,
+          'ekstra_fragt', (c.r).id, (c.r).runde)
+  on conflict do nothing;
+
+  -- 3. Regningen åbnes igen (ny runde).
+  update public.ekstra_fragt_regninger
+     set status = 'afventer_betaling', frist = v_frist, runde = runde + 1,
+         genaabnet_kl = now(), genaabnet_af = auth.uid(), genaabn_begrundelse = v_beg,
+         tilbagefoerte_payment_intents = case when stripe_payment_intent_id is null then tilbagefoerte_payment_intents
+                                              else array_append(tilbagefoerte_payment_intents, stripe_payment_intent_id) end,
+         tilbagefoerte_charges = array_append(tilbagefoerte_charges, stripe_charge_id),
+         stripe_payment_intent_id = null, stripe_charge_id = null,
+         pi_forsoeg = pi_forsoeg + 1,
+         betalt_kl = null, modtaget_oere = null, sidste_fejl = null, synket_kl = null,
+         bankindsigelse_id = null, bankindsigelse_status = null, bankindsigelse_beloeb_oere = null,
+         bankindsigelse_tabt_kl = null
+   where id = (c.r).id and status = 'betalt';
+  if not found then raise exception 'Ekstraregningen blev ændret under genåbningen (%)', (c.r).id; end if;
+
+  perform public.ekstra_fragt_log(auth.uid(), 'ekstra_fragt_genaabnet', (c.r).trade_id, (c.r).saelger_id,
+    'Ekstraregningen (' || public.ekstra_fragt_kr((c.r).beloeb_oere) || ') er genåbnet efter en tabt bankindsigelse ('
+    || (c.r).bankindsigelse_id || '). Kreditnota for runde ' || (c.r).runde || ', ny frist '
+    || to_char(v_frist at time zone 'Europe/Copenhagen', 'DD-MM-YYYY') || ' | Til sælgeren: ' || v_beg);
+  return jsonb_build_object('kode', 'ok', 'frist', v_frist, 'runde', (c.r).runde + 1,
+                            'trade_id', (c.r).trade_id, 'saelger_id', (c.r).saelger_id);
+end;
+$fn$;
+
 -- Dokumentationens sti til staff (serveren laver et signeret link).
 create or replace function public.ekstra_fragt_dokumentation_staff(p_id uuid)
 returns jsonb
@@ -659,21 +836,27 @@ stable
 security definer
 set search_path = ''
 as $fn$
+  -- tabte_bankindsigelser: betalte regninger, hvor betalingen er tilbageført
+  -- efter en tabt bankindsigelse (staff kan genåbne dem).
   select case when not public.er_staff() then
-           jsonb_build_object('afventer_betaling', 0, 'forfaldne', 0, 'indsigelser', 0, 'kraever_opmaerksomhed', 0)
+           jsonb_build_object('afventer_betaling', 0, 'forfaldne', 0, 'indsigelser', 0, 'kraever_opmaerksomhed', 0,
+                              'tabte_bankindsigelser', 0)
          else jsonb_build_object(
            'afventer_betaling', (select count(*) from public.ekstra_fragt_regninger where status = 'afventer_betaling'),
            'forfaldne', (select count(*) from public.ekstra_fragt_regninger
                           where status = 'afventer_betaling' and frist <= now()),
            'indsigelser', (select count(*) from public.ekstra_fragt_regninger where status = 'indsigelse'),
-           'kraever_opmaerksomhed', (select count(*) from public.ekstra_fragt_regninger where kraever_opmaerksomhed))
+           'kraever_opmaerksomhed', (select count(*) from public.ekstra_fragt_regninger where kraever_opmaerksomhed),
+           'tabte_bankindsigelser', (select count(*) from public.ekstra_fragt_regninger
+                                      where bankindsigelse_tabt_kl is not null and status = 'betalt'))
          end;
 $fn$;
 
 -- ===========================================================================
 -- 7. Sælgeren: indsigelse, visning, dokumentation, status
 -- ===========================================================================
--- Indsigelse mod målingen (ÉN gang, kun mens regningen afventer betaling).
+-- Indsigelse mod målingen (ÉN gang, kun mens regningen afventer betaling -
+-- også efter fristen, men så gælder spærringen, til indsigelsen er afgjort).
 -- En åben PaymentIntent kasseres (annuller_pi) - serveren annullerer den.
 -- Koder: ok (+ annuller_pi?) | ingen_adgang | ikke_fundet | tekst_mangler |
 -- for_kort | for_lang_tekst | allerede_indsigelse | behandles | forkert_status
@@ -705,16 +888,31 @@ begin
          tidligere_payment_intents = case when stripe_payment_intent_id is null then tidligere_payment_intents
                                           else array_append(tidligere_payment_intents, stripe_payment_intent_id) end,
          annuller_pi = coalesce(stripe_payment_intent_id, annuller_pi),
+         -- Fastholdes regningen, laves en ny PaymentIntent med en ny
+         -- idempotency key (den kasserede er annulleret hos Stripe).
+         pi_forsoeg = pi_forsoeg + case when stripe_payment_intent_id is null then 0 else 1 end,
          stripe_payment_intent_id = null
    where id = r.id and status = 'afventer_betaling';
   perform public.ekstra_fragt_log(public.bidhamr_system_id(), 'ekstra_fragt_indsigelse', r.trade_id, r.saelger_id,
-    'Sælgeren har gjort indsigelse mod ekstraregningen (' || public.ekstra_fragt_kr(r.beloeb_oere) || '): ' || v_tekst);
-  return jsonb_build_object('kode', 'ok', 'annuller_pi', r.stripe_payment_intent_id);
+    'Sælgeren har gjort indsigelse mod ekstraregningen (' || public.ekstra_fragt_kr(r.beloeb_oere) || ')'
+    || case when r.frist <= now() then ' efter fristen - spærringen gælder, til indsigelsen er afgjort' else '' end
+    || ': ' || v_tekst);
+  -- spaerret_til_afgoerelse: indsigelsen er gjort efter fristen, så sælgeren
+  -- forbliver spærret, til staff har afgjort den.
+  return jsonb_build_object('kode', 'ok', 'annuller_pi', r.stripe_payment_intent_id,
+                            'spaerret_til_afgoerelse', r.frist <= now());
 end;
 $fn$;
 
 -- Sælgerens egne regninger (offentlige felter). p_trade = null: alle.
-create or replace function public.mine_ekstra_fragt_regninger(p_trade uuid default null)
+-- spaerrer: regningen spærrer lige nu (også en indsigelse gjort efter
+-- fristen, til den er afgjort). kan_goere_indsigelse: også efter fristen
+-- (men så ophæver indsigelsen ikke spærringen - indsigelse_efter_frist).
+-- genaabnet_kl/genaabn_begrundelse: regningen er åbnet igen, fordi betalingen
+-- blev tilbageført efter en bankindsigelse.
+-- (Returtypen er udvidet - derfor drop først, så filen kan køres igen.)
+drop function if exists public.mine_ekstra_fragt_regninger(uuid);
+create function public.mine_ekstra_fragt_regninger(p_trade uuid default null)
 returns table (
   id uuid, trade_id uuid, forsendelse_id uuid, titel text, transportoer text, sporingsnummer text,
   valgt_stoerrelse text, maalt_stoerrelse text, maalt_vaegt_gram integer, maalt_maal text,
@@ -722,7 +920,8 @@ returns table (
   status text, frist timestamptz, spaerrer boolean, kan_betale boolean, kan_goere_indsigelse boolean,
   indsigelse_tekst text, indsigelse_kl timestamptz, afgoerelse text, afgoerelse_begrundelse text,
   afgjort_kl timestamptz, frafald_grund text, frafaldet_kl timestamptz, betalt_kl timestamptz,
-  refunderet_kl timestamptz, oprettet_kl timestamptz)
+  refunderet_kl timestamptz, oprettet_kl timestamptz,
+  indsigelse_efter_frist boolean, genaabnet_kl timestamptz, genaabn_begrundelse text)
 language sql
 stable
 security definer
@@ -731,11 +930,13 @@ as $fn$
   select r.id, r.trade_id, r.forsendelse_id, a.titel, r.transportoer, r.sporingsnummer,
          r.valgt_stoerrelse, r.maalt_stoerrelse, r.maalt_vaegt_gram, r.maalt_maal,
          r.beloeb_oere, r.fragtfirma_fakturanummer, r.forklaring, true,
-         r.status, r.frist, r.status = 'afventer_betaling' and r.frist <= now(),
+         r.status, r.frist, public.ekstra_fragt_regning_spaerrer(r.status, r.frist, r.indsigelse_kl),
          r.status = 'afventer_betaling',
          r.status = 'afventer_betaling' and r.indsigelse_kl is null,
          r.indsigelse_tekst, r.indsigelse_kl, r.afgoerelse, r.afgoerelse_begrundelse,
-         r.afgjort_kl, r.frafald_grund, r.frafaldet_kl, r.betalt_kl, r.refunderet_kl, r.oprettet_kl
+         r.afgjort_kl, r.frafald_grund, r.frafaldet_kl, r.betalt_kl, r.refunderet_kl, r.oprettet_kl,
+         coalesce(r.indsigelse_kl >= r.frist, false) and r.status = 'indsigelse',
+         r.genaabnet_kl, r.genaabn_begrundelse
     from public.ekstra_fragt_regninger r
     left join public.trades t on t.id = r.trade_id
     left join public.auctions a on a.id = t.auction_id
@@ -771,7 +972,7 @@ security definer
 set search_path = ''
 as $fn$
   select jsonb_build_object(
-    'spaerret', coalesce(bool_or(r.status = 'afventer_betaling' and r.frist <= now()), false),
+    'spaerret', coalesce(bool_or(public.ekstra_fragt_regning_spaerrer(r.status, r.frist, r.indsigelse_kl)), false),
     'ubetalte', count(*) filter (where r.status in ('afventer_betaling', 'behandles')),
     'ubetalt_oere', coalesce(sum(r.beloeb_oere) filter (where r.status in ('afventer_betaling', 'behandles')), 0),
     'indsigelser', count(*) filter (where r.status = 'indsigelse'),
@@ -853,6 +1054,8 @@ $fn$;
 --   'allerede'        var allerede registreret
 --   'kasseret'        en kasseret PaymentIntent er betalt, men regningen er
 --                     betalt/frafaldet/refunderet: refunderes af koden
+--   'tilbagefoert'    PaymentIntenten er tilbageført efter en tabt
+--                     bankindsigelse (regningen er genåbnet) - intet sker
 --   'behandles' | 'afventer' | 'nulstillet' | 'uaendret' | 'ukendt'
 create or replace function public.ekstra_fragt_registrer(
   p_pi text, p_status text, p_charge text, p_beloeb bigint, p_fejl text)
@@ -868,8 +1071,13 @@ begin
     from public.ekstra_fragt_regninger x where x.stripe_payment_intent_id = p_pi for update;
 
   if r.id is null then
+    -- Tilbageført efter en tabt bankindsigelse (regningen er genåbnet): den
+    -- betaling tæller aldrig igen - heller ikke ved et gentaget event.
+    select x.id into r from public.ekstra_fragt_regninger x
+     where x.tilbagefoerte_payment_intents @> array[p_pi] limit 1;
+    if r.id is not null then return jsonb_build_object('kode', 'tilbagefoert', 'id', r.id); end if;
     select x.id, x.status, x.beloeb_oere, x.stripe_payment_intent_id, x.trade_id, x.saelger_id into r
-      from public.ekstra_fragt_regninger x where p_pi = any(x.tidligere_payment_intents) limit 1 for update;
+      from public.ekstra_fragt_regninger x where x.tidligere_payment_intents @> array[p_pi] limit 1 for update;
     if r.id is null then return jsonb_build_object('kode', 'ukendt'); end if;
     if p_status <> 'succeeded' then return jsonb_build_object('kode', 'uaendret', 'id', r.id); end if;
     -- Regningen skyldes stadig (og beløbet passer): betalingen adopteres, så
@@ -965,6 +1173,59 @@ begin
 end;
 $fn$;
 
+-- Bankindsigelse (chargeback) på regningens charge - spejlet fra Stripe
+-- (webhooken, charge.dispute.*). p_status = disputens status, p_beloeb =
+-- disputens beløb (øre). Idempotent. En tabt indsigelse markeres
+-- (bankindsigelse_tabt_kl) og overskrives ikke af en senere status; regningen
+-- genåbnes ALDRIG her (staff: ekstra_fragt_genaabn).
+-- Svar {kode, id?, status?}: 'tabt' (markeret nu) | 'allerede' (var markeret) |
+-- 'registreret' (åben/vundet indsigelse) | 'genaabnet' (chargen er allerede
+-- tilbageført og regningen genåbnet) | 'ukendt' | 'ugyldig'
+create or replace function public.ekstra_fragt_registrer_bankindsigelse(
+  p_charge text, p_dispute text, p_status text, p_beloeb bigint)
+returns jsonb
+language plpgsql security definer set search_path = '' as $fn$
+declare
+  r record;
+begin
+  if p_charge is null or p_dispute is null or p_dispute !~ '^(du|dp)_[A-Za-z0-9_]{1,90}$'
+     or p_status is null or char_length(p_status) > 40 then
+    return jsonb_build_object('kode', 'ugyldig');
+  end if;
+  select x.id, x.status, x.trade_id, x.saelger_id, x.bankindsigelse_id, x.bankindsigelse_status,
+         x.bankindsigelse_tabt_kl, x.beloeb_oere
+    into r
+    from public.ekstra_fragt_regninger x where x.stripe_charge_id = p_charge for update;
+  if r.id is null then
+    select x.id into r from public.ekstra_fragt_regninger x where x.tilbagefoerte_charges @> array[p_charge] limit 1;
+    if r.id is not null then return jsonb_build_object('kode', 'genaabnet', 'id', r.id); end if;
+    return jsonb_build_object('kode', 'ukendt');
+  end if;
+  if p_status = 'lost' then
+    if r.bankindsigelse_tabt_kl is not null and r.bankindsigelse_id = p_dispute then
+      return jsonb_build_object('kode', 'allerede', 'id', r.id, 'status', r.status);
+    end if;
+    update public.ekstra_fragt_regninger
+       set bankindsigelse_id = p_dispute, bankindsigelse_status = 'lost', bankindsigelse_beloeb_oere = p_beloeb,
+           bankindsigelse_tabt_kl = now()
+     where id = r.id;
+    perform public.ekstra_fragt_log(public.bidhamr_system_id(), 'ekstra_fragt_bankindsigelse_tabt', r.trade_id, r.saelger_id,
+      'Bankindsigelse ' || p_dispute || ' på sælgerens betaling af ekstraregningen ('
+      || public.ekstra_fragt_kr(r.beloeb_oere) || ') er tabt - betalingen ('
+      || public.ekstra_fragt_kr(coalesce(p_beloeb, 0)) || ') er tilbageført. Regningen genåbnes ikke automatisk.');
+    return jsonb_build_object('kode', 'tabt', 'id', r.id, 'status', r.status);
+  end if;
+  -- En tabt indsigelse er endelig: den overskrives ikke af en anden status.
+  if r.bankindsigelse_tabt_kl is null
+     and (r.bankindsigelse_id is distinct from p_dispute or r.bankindsigelse_status is distinct from p_status) then
+    update public.ekstra_fragt_regninger
+       set bankindsigelse_id = p_dispute, bankindsigelse_status = p_status, bankindsigelse_beloeb_oere = p_beloeb
+     where id = r.id;
+  end if;
+  return jsonb_build_object('kode', 'registreret', 'id', r.id, 'status', r.status);
+end;
+$fn$;
+
 -- Cron: rækker, der kræver handling (claimet med synket_kl, så to kørsler
 -- ikke tager den samme):
 --   'synk'      ubetalt med PaymentIntent i over 15 min (mistet webhook)
@@ -1006,6 +1267,8 @@ $fn$;
 -- ===========================================================================
 alter table public.fakturaer add column if not exists ekstra_fragt_id uuid
   references public.ekstra_fragt_regninger(id) on delete restrict;
+-- Regningens betalingsrunde (0, eller 1, 2 ... efter genåbning). null = 0.
+alter table public.fakturaer add column if not exists ekstra_fragt_runde integer;
 
 -- Drift-tjek (md5 af den normaliserede definition, uden mellemrum): CHECK'en
 -- erstattes kun, hvis den er præcis den kendte udgave fra
@@ -1040,6 +1303,9 @@ alter table public.fakturaer add constraint fakturaer_slags_check
 alter table public.fakturaer drop constraint if exists fakturaer_ekstra_fragt_id_check;
 alter table public.fakturaer add constraint fakturaer_ekstra_fragt_id_check
   check ((slags = 'ekstra_fragt') = (ekstra_fragt_id is not null));
+alter table public.fakturaer drop constraint if exists fakturaer_ekstra_fragt_runde_check;
+alter table public.fakturaer add constraint fakturaer_ekstra_fragt_runde_check
+  check (ekstra_fragt_runde is null or (ekstra_fragt_id is not null and ekstra_fragt_runde >= 0));
 
 comment on column public.fakturaer.slags is
   'salg: fakturaen ved betalingen (og kreditnotaen for den). returfragt: køberens faktura på returfragten, der blev trukket fra refusionen, da pakken ikke blev afhentet (20261016030000). sag_returfragt: køberens faktura (og kreditnota ved refusion) på returfragten, køberen betalte i en sag (20261022010000, returfragt_id). boost: købers faktura (og kreditnota ved refusion) på boost-point (20261023030000, boost_koeb_id). ekstra_fragt: sælgerens faktura (og kreditnota ved refusion) på ekstra fragt ved for lille pakkestørrelse (20261029020000, ekstra_fragt_id). Låst.';
@@ -1051,13 +1317,17 @@ create unique index if not exists fakturaer_handel_part_slags_v3
   on public.fakturaer (betaling_id, part, dokument, slags)
   where betaling_id is not null and slags not in ('sag_returfragt', 'ekstra_fragt');
 drop index if exists public.fakturaer_handel_part_slags_v2;
-create unique index if not exists fakturaer_ekstra_fragt_dokument
-  on public.fakturaer (ekstra_fragt_id, dokument) where ekstra_fragt_id is not null;
+-- Én faktura og én kreditnota pr. regning OG betalingsrunde (en genåbnet
+-- regning får en kreditnota for den tilbageførte betaling og en ny faktura).
+create unique index if not exists fakturaer_ekstra_fragt_runde_dokument
+  on public.fakturaer (ekstra_fragt_id, (coalesce(ekstra_fragt_runde, 0)), dokument) where ekstra_fragt_id is not null;
+drop index if exists public.fakturaer_ekstra_fragt_dokument;
 
 create or replace function public.fakturaer_ekstra_fragt_laast()
 returns trigger language plpgsql set search_path = '' as $fn$
 begin
-  if new.ekstra_fragt_id is distinct from old.ekstra_fragt_id then
+  if new.ekstra_fragt_id is distinct from old.ekstra_fragt_id
+     or new.ekstra_fragt_runde is distinct from old.ekstra_fragt_runde then
     raise exception 'Fakturaens indhold kan ikke ændres, når den er oprettet';
   end if;
   return new;
@@ -1068,12 +1338,63 @@ drop trigger if exists fakturaer_ekstra_fragt_laast on public.fakturaer;
 create trigger fakturaer_ekstra_fragt_laast before update on public.fakturaer
   for each row execute function public.fakturaer_ekstra_fragt_laast();
 
+-- Rundens faktura for en betalt regning (intern - fakturakøen og
+-- genåbningen). Laves kun, hvis den mangler. Dateret på betalingsdagen.
+-- Passer det modtagne beløb ikke, oprettes den som "kræver handling".
+-- Svar: faktura_id (null, hvis regningen ikke er betalt), ny (lavet nu).
+create or replace function public.ekstra_fragt_lav_faktura(p_id uuid, out faktura_id uuid, out ny boolean)
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  r        record;
+  v_linjer jsonb;
+  v_ok     boolean;
+  v_fejl   text := 'Ekstraregningen er betalt med et andet beløb end regningen - kontrollér betalingen hos Stripe og lav dokumentet manuelt i Dinero.';
+begin
+  ny := false;
+  select x.id, x.saelger_id, x.trade_id, x.betaling_id, x.beloeb_oere, x.modtaget_oere, x.betalt_kl, x.runde,
+         x.stripe_charge_id, x.stripe_payment_intent_id, x.fragtfirma_fakturanummer
+    into r
+    from public.ekstra_fragt_regninger x
+   where x.id = p_id and x.betalt_kl is not null and x.status in ('betalt', 'refunderet');
+  if r.id is null then faktura_id := null; return; end if;
+  select f.id into faktura_id from public.fakturaer f
+   where f.ekstra_fragt_id = r.id and coalesce(f.ekstra_fragt_runde, 0) = r.runde and f.dokument = 'faktura';
+  if faktura_id is not null then return; end if;
+  v_ok := r.modtaget_oere is not distinct from r.beloeb_oere;
+  v_linjer := jsonb_build_array(public.faktura_linje('fragt',
+    left('Ekstra fragt - pakken var større/tungere end den valgte størrelse (fragtfirmaets faktura ' || r.fragtfirma_fakturanummer || ')', 250),
+    r.beloeb_oere));
+  insert into public.fakturaer (dokument, part, bruger_id, betaling_id, trade_id, linjer, beloeb_oere,
+                                moms_oere, betalt_dato, stripe_reference, status, manuel, sidste_fejl,
+                                slags, ekstra_fragt_id, ekstra_fragt_runde)
+  values ('faktura', 'saelger', r.saelger_id, r.betaling_id, r.trade_id, v_linjer, public.faktura_sum(v_linjer),
+          public.faktura_moms(v_linjer), (r.betalt_kl at time zone 'Europe/Copenhagen')::date,
+          coalesce(r.stripe_charge_id, r.stripe_payment_intent_id),
+          case when v_ok then 'venter' else 'kraever_handling' end, not v_ok,
+          case when v_ok then null else v_fejl end, 'ekstra_fragt', r.id, r.runde)
+  on conflict do nothing
+  returning id into faktura_id;
+  if faktura_id is not null then
+    ny := true;
+  else
+    -- Lavet af en samtidig kørsel.
+    select f.id into faktura_id from public.fakturaer f
+     where f.ekstra_fragt_id = r.id and coalesce(f.ekstra_fragt_runde, 0) = r.runde and f.dokument = 'faktura';
+  end if;
+end;
+$fn$;
+revoke all on function public.ekstra_fragt_lav_faktura(uuid) from public, anon, authenticated;
+
 -- Planlægger fakturaer og kreditnotaer for ekstra fragt (kaldes af
--- fakturakøen efter faktura_planlaeg). Idempotent.
+-- fakturakøen efter faktura_planlaeg). Idempotent. Pr. betalingsrunde:
 --   faktura:    betalt regning (også hvis den senere er refunderet - så
---               bogføres begge). Dateret på betalingsdagen. Passer det
---               modtagne beløb ikke, oprettes den som "kræver handling".
+--               bogføres begge). Dateret på betalingsdagen.
 --   kreditnota: refunderet regning (hele beløbet), dateret på refusionsdagen.
+--               (Kreditnotaen for en tilbageført betaling efter en tabt
+--               bankindsigelse laves af ekstra_fragt_genaabn.)
 create or replace function public.faktura_planlaeg_ekstra_fragt(p_graense integer default 200)
 returns jsonb
 language plpgsql
@@ -1086,60 +1407,50 @@ declare
   v_kredit  integer := 0;
   n         integer;
   r         record;
-  v_linjer  jsonb;
+  v_fak     record;
   v_ok      boolean;
-  v_fejl    text := 'Ekstraregningen er betalt med et andet beløb end regningen - kontrollér betalingen hos Stripe og lav dokumentet manuelt i Dinero.';
 begin
   for r in
-    select x.id, x.saelger_id, x.trade_id, x.betaling_id, x.beloeb_oere, x.modtaget_oere, x.betalt_kl,
-           x.stripe_charge_id, x.stripe_payment_intent_id, x.fragtfirma_fakturanummer
+    select x.id
       from public.ekstra_fragt_regninger x
      where x.betalt_kl is not null
        and x.status in ('betalt', 'refunderet')
-       and not exists (select 1 from public.fakturaer f where f.ekstra_fragt_id = x.id and f.dokument = 'faktura')
+       and not exists (select 1 from public.fakturaer f
+                        where f.ekstra_fragt_id = x.id and coalesce(f.ekstra_fragt_runde, 0) = x.runde
+                          and f.dokument = 'faktura')
      order by x.betalt_kl
      limit v_graense
   loop
-    v_ok := r.modtaget_oere is not distinct from r.beloeb_oere;
-    v_linjer := jsonb_build_array(public.faktura_linje('fragt',
-      left('Ekstra fragt - pakken var større/tungere end den valgte størrelse (fragtfirmaets faktura ' || r.fragtfirma_fakturanummer || ')', 250),
-      r.beloeb_oere));
-    insert into public.fakturaer (dokument, part, bruger_id, betaling_id, trade_id, linjer, beloeb_oere,
-                                  moms_oere, betalt_dato, stripe_reference, status, manuel, sidste_fejl,
-                                  slags, ekstra_fragt_id)
-    values ('faktura', 'saelger', r.saelger_id, r.betaling_id, r.trade_id, v_linjer, public.faktura_sum(v_linjer),
-            public.faktura_moms(v_linjer), (r.betalt_kl at time zone 'Europe/Copenhagen')::date,
-            coalesce(r.stripe_charge_id, r.stripe_payment_intent_id),
-            case when v_ok then 'venter' else 'kraever_handling' end, not v_ok,
-            case when v_ok then null else v_fejl end, 'ekstra_fragt', r.id)
-    on conflict do nothing;
-    get diagnostics n = row_count;
-    v_faktura := v_faktura + n;
+    select * into v_fak from public.ekstra_fragt_lav_faktura(r.id);
+    if v_fak.ny then v_faktura := v_faktura + 1; end if;
   end loop;
 
   for r in
     select fa.id as faktura_id, fa.bruger_id, fa.betaling_id, fa.trade_id, fa.linjer, fa.manuel, fa.status as moder_status,
-           x.id, x.refunderet_kl, x.stripe_refund_id
+           x.id, x.runde, x.refunderet_kl, x.stripe_refund_id
       from public.fakturaer fa
       join public.ekstra_fragt_regninger x on x.id = fa.ekstra_fragt_id
      where fa.dokument = 'faktura'
        and fa.slags = 'ekstra_fragt'
+       and coalesce(fa.ekstra_fragt_runde, 0) = x.runde
        and x.status = 'refunderet'
        and x.refunderet_kl is not null
-       and not exists (select 1 from public.fakturaer k where k.ekstra_fragt_id = x.id and k.dokument = 'kreditnota')
+       and not exists (select 1 from public.fakturaer k
+                        where k.ekstra_fragt_id = x.id and coalesce(k.ekstra_fragt_runde, 0) = x.runde
+                          and k.dokument = 'kreditnota')
      order by x.refunderet_kl
      limit v_graense
   loop
     v_ok := not (r.manuel or r.moder_status in ('kraever_handling', 'haandteret_manuelt'));
     insert into public.fakturaer (dokument, part, bruger_id, betaling_id, trade_id, krediterer_id, linjer,
                                   beloeb_oere, moms_oere, betalt_dato, stripe_reference, status, manuel, sidste_fejl,
-                                  slags, ekstra_fragt_id)
+                                  slags, ekstra_fragt_id, ekstra_fragt_runde)
     values ('kreditnota', 'saelger', r.bruger_id, r.betaling_id, r.trade_id, r.faktura_id, r.linjer,
             public.faktura_sum(r.linjer), public.faktura_moms(r.linjer),
             (r.refunderet_kl at time zone 'Europe/Copenhagen')::date, r.stripe_refund_id,
             case when v_ok then 'venter' else 'kraever_handling' end, not v_ok,
             case when v_ok then null else 'Fakturaen blev håndteret manuelt – lav kreditnotaen manuelt i Dinero.' end,
-            'ekstra_fragt', r.id)
+            'ekstra_fragt', r.id, r.runde)
     on conflict do nothing;
     get diagnostics n = row_count;
     v_kredit := v_kredit + n;
@@ -1147,6 +1458,30 @@ begin
 
   return jsonb_build_object('fakturaer', v_faktura, 'kreditnotaer', v_kredit);
 end;
+$fn$;
+
+-- ===========================================================================
+-- 9b. Oprydning: ubrugte dokumentationsfiler (Filip, 21. okt. 2026)
+-- ===========================================================================
+-- Filer i bucket'en, som ingen regning bruger, og som er over 7 dage gamle
+-- (fx en upload, staff ikke gjorde færdig). Højst p_graense (1-1000) ad
+-- gangen, ældste først. Selve sletningen sker via Storage-API'et
+-- (src/lib/ekstraFragt/oprydning.ts, én gang om måneden), så filen også
+-- forsvinder fra lageret. Dokumentation, en regning bruger, slettes aldrig.
+create or replace function public.ekstra_fragt_ubrugte_filer(p_graense integer default 500)
+returns setof text
+language sql
+stable
+security definer
+set search_path = ''
+as $fn$
+  select o.name
+    from storage.objects o
+   where o.bucket_id = 'ekstra-fragt-dokumentation'
+     and o.created_at < now() - interval '7 days'
+     and not exists (select 1 from public.ekstra_fragt_regninger r where r.dokumentation_sti = o.name)
+   order by o.created_at
+   limit least(greatest(coalesce(p_graense, 500), 1), 1000);
 $fn$;
 
 -- ===========================================================================
@@ -1165,6 +1500,8 @@ begin
     'public.ekstra_fragt_registrer(text, text, text, bigint, text)',
     'public.ekstra_fragt_registrer_charge_refusion(text, text, boolean)',
     'public.ekstra_fragt_cron(integer)',
+    'public.ekstra_fragt_registrer_bankindsigelse(text, text, text, bigint)',
+    'public.ekstra_fragt_ubrugte_filer(integer)',
     'public.faktura_planlaeg_ekstra_fragt(integer)'
   ] loop
     execute format('revoke all on function %s from public, anon, authenticated', f);
@@ -1176,6 +1513,7 @@ begin
     'public.ekstra_fragt_frafald(uuid, text)',
     'public.ekstra_fragt_afgoer_indsigelse(uuid, text, text)',
     'public.ekstra_fragt_gem_note(uuid, text)',
+    'public.ekstra_fragt_genaabn(uuid, text)',
     'public.ekstra_fragt_dokumentation_staff(uuid)',
     'public.ekstra_fragt_antal()',
     'public.mit_ekstra_fragt_indsigelse(uuid, text)',

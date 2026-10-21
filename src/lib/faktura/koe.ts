@@ -217,7 +217,12 @@ async function kontekst(admin: Admin, r: FakturaRaekke): Promise<FakturaKontekst
         .select("dinero_nummer")
         .eq("id", String(r.krediterer_id))
         .maybeSingle<{ dinero_nummer: number | null }>();
-      kommentar = `Kreditnota for faktura nr. ${m?.dinero_nummer ?? "-"} - ekstra fragt for ${varen} på BidHamr${handel}. Refunderet via vores betalingspartner Stripe den ${dato}.`;
+      // Referencen er en Stripe-indsigelse (du_/dp_), når betalingen er
+      // tilbageført efter en tabt bankindsigelse (ekstra_fragt_genaabn).
+      const tilbagefoert = /^(du|dp)_/.test(r.stripe_reference ?? "");
+      kommentar = tilbagefoert
+        ? `Kreditnota for faktura nr. ${m?.dinero_nummer ?? "-"} - ekstra fragt for ${varen} på BidHamr${handel}. Betalingen er tilbageført efter en indsigelse hos betalerens bank eller kortselskab den ${dato}.`
+        : `Kreditnota for faktura nr. ${m?.dinero_nummer ?? "-"} - ekstra fragt for ${varen} på BidHamr${handel}. Refunderet via vores betalingspartner Stripe den ${dato}.`;
     } else {
       kommentar = `Ekstra fragt for ${varen} på BidHamr${handel}. Fragtfirmaet har opkrævet ekstra, fordi pakken var større eller tungere end den valgte størrelse. Betalt via vores betalingspartner Stripe den ${dato}.`;
     }

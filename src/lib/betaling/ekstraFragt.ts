@@ -24,6 +24,13 @@ import "server-only";
 //      adopteres betalingen; ellers refunderes den helt som dobbeltbetaling.
 //   5. Faktura til sælgeren (fragtkonto, med moms) og evt. kreditnota laves af
 //      fakturakøen (faktura_planlaeg_ekstra_fragt).
+//   6. Bankindsigelse (chargeback) på betalingen: spejles
+//      (spejlEkstraFragtBankindsigelse). Tabes den, markeres regningen, og
+//      staff får en alarm - regningen genåbnes ALDRIG automatisk (Filip, 21.
+//      okt. 2026). Staff kan genåbne den (adminEkstraFragt.ts ->
+//      ekstra_fragt_genaabn): kreditnota for den tilbageførte betaling, ny
+//      frist og ny betalingsrunde (ny PaymentIntent, ny idempotency key). Den
+//      tilbageførte PaymentIntent adopteres aldrig igen (kode 'tilbagefoert').
 //
 // Stripe er sandheden: databasen spejler kun. Alle beløb i øre (heltal).
 
@@ -99,15 +106,29 @@ export async function ekstraFragtForPi(piId: string): Promise<EkstraFragtRaekke 
     .limit(1)
     .maybeSingle<EkstraFragtRaekke>();
   if (kFejl) throw new Error(`ekstra_fragt_regninger (kasseret): ${kFejl.message}`);
-  return kasseret;
+  if (kasseret) return kasseret;
+  // Tilbageført efter en tabt bankindsigelse (regningen er genåbnet).
+  const { data: tilbage, error: tFejl } = await admin
+    .from("ekstra_fragt_regninger")
+    .select(KOLONNER)
+    .contains("tilbagefoerte_payment_intents", [piId])
+    .limit(1)
+    .maybeSingle<EkstraFragtRaekke>();
+  if (tFejl) throw new Error(`ekstra_fragt_regninger (tilbageført): ${tFejl.message}`);
+  return tilbage;
 }
 
 // Regningen for en charge (indsigelse, afstemning). null = ikke ekstra fragt.
+// Også en charge, der er tilbageført efter en tabt bankindsigelse (regningen
+// er genåbnet), så senere events på den stadig genkendes.
 export async function ekstraFragtForCharge(chargeId: string): Promise<{ id: string; trade_id: string; saelger_id: string } | null> {
+  // Kun et gyldigt Stripe-id indgår i filteret nedenfor.
+  if (!/^(ch|py)_[A-Za-z0-9_]{1,250}$/.test(chargeId)) return null;
   const { data, error } = await createAdminClient()
     .from("ekstra_fragt_regninger")
     .select("id, trade_id, saelger_id")
-    .eq("stripe_charge_id", chargeId)
+    .or(`stripe_charge_id.eq.${chargeId},tilbagefoerte_charges.cs.{${chargeId}}`)
+    .limit(1)
     .maybeSingle<{ id: string; trade_id: string; saelger_id: string }>();
   if (error) return null;
   return data;
@@ -361,19 +382,23 @@ async function annullerPi(piId: string, grund: string): Promise<Stripe.PaymentIn
 
 // En kasseret PaymentIntent (indsigelse/frafald) annulleres hos Stripe, og
 // annuller_pi ryddes. Nåede den at blive betalt, spejles den (adopteres eller
-// refunderes). Kaster aldrig - cron'en prøver igen.
-export async function annullerKasseretPi(regningId: string, piId: string | null | undefined): Promise<void> {
-  if (!piId) return;
+// refunderes). Kaster aldrig - cron'en prøver igen. Svar: true, når
+// PaymentIntenten ikke længere kan betales, og annuller_pi er ryddet.
+export async function annullerKasseretPi(regningId: string, piId: string | null | undefined): Promise<boolean> {
+  if (!piId) return false;
   try {
     const status = await annullerPi(piId, "kasseret");
     if (status === "succeeded" || status === "processing") {
       await spejlEkstraFragtPi(await getStripe().paymentIntents.retrieve(piId));
     }
-    if (status !== "processing") {
-      await createAdminClient().rpc("ekstra_fragt_pi_annulleret", { p_id: regningId, p_pi: piId });
-    }
+    // Behandles stadig: cron'en tager den igen, når den er afgjort.
+    if (status === "processing") return false;
+    const { error } = await createAdminClient().rpc("ekstra_fragt_pi_annulleret", { p_id: regningId, p_pi: piId });
+    if (error) throw new Error(`ekstra_fragt_pi_annulleret: ${error.message}`);
+    return true;
   } catch (err) {
     await logDriftFejl({ kilde: "server", hvor: "Ekstra fragt: annullér kasseret PaymentIntent", fejl: err });
+    return false;
   }
 }
 
@@ -506,6 +531,46 @@ export async function spejlEkstraFragtRefusionsfejl(refund: Stripe.Refund): Prom
   return "alarm";
 }
 
+// ------------------------------------------------------------------ bankindsigelse
+
+// Bankindsigelse (chargeback) på en ekstraregnings charge (webhooken,
+// charge.dispute.* via spejlIndsigelse). Idempotent. En tabt indsigelse
+// markerer regningen (admin-lampen) og giver staff en alarm - regningen
+// genåbnes ALDRIG automatisk; staff afgør, om den skal genåbnes
+// (genaabnEkstraFragt). Kaster ved databasefejl (webhooken prøver igen).
+// Svar: databasens kode, eller null (ikke en ekstraregning / ikke migreret).
+export async function spejlEkstraFragtBankindsigelse(
+  d: Pick<Stripe.Dispute, "id" | "status" | "amount">,
+  chargeId: string,
+): Promise<string | null> {
+  const { data, error } = await createAdminClient().rpc("ekstra_fragt_registrer_bankindsigelse", {
+    p_charge: chargeId,
+    p_dispute: d.id,
+    p_status: d.status,
+    p_beloeb: Number.isInteger(d.amount) ? d.amount : null,
+  });
+  if (error) {
+    if (manglerEkstraFragt(error)) return null;
+    throw new Error(`ekstra_fragt_registrer_bankindsigelse: ${error.message}`);
+  }
+  const svar = (data ?? {}) as { kode?: string; id?: string; status?: string };
+  const kode = String(svar.kode ?? "ukendt");
+  if (kode === "ukendt" || kode === "ugyldig") return null;
+  if (kode === "tabt" && svar.id) {
+    const r = await ekstraFragtForCharge(chargeId);
+    await alarmPrTilfaelde({
+      noegle: `ekstrafragt-bankindsigelse-tabt:${d.id}`,
+      hvor: "betaling/indsigelse-ekstra-fragt",
+      fejl:
+        svar.status === "betalt"
+          ? `Bankindsigelse ${d.id} på sælgerens betaling af ekstraregning ${svar.id} (charge ${chargeId}) er TABT - betalingen er tilbageført. Regningen genåbnes ikke automatisk. Vurdér sagen, og genåbn regningen under Admin (ekstra fragt), hvis sælgeren skal betale igen; ellers lad den stå.`
+          : `Bankindsigelse ${d.id} på ekstraregning ${svar.id} (charge ${chargeId}, status '${svar.status ?? "?"}') er TABT. Regningen kan ikke genåbnes i den status - kontrollér betalingen i Stripe.`,
+      brugerId: r?.saelger_id ?? null,
+    });
+  }
+  return kode;
+}
+
 // ------------------------------------------------------------------ dokumentation
 
 // Signeret link (10 minutter) til dokumentationen. Kaldes KUN, når adgangen
@@ -574,8 +639,9 @@ export async function koerEkstraFragtCron(): Promise<EkstraFragtCronResultat | n
         await spejlEkstraFragtPi(await stripe.paymentIntents.retrieve(o.pi));
         r.synket++;
       } else if (o.handling === "annuller") {
-        await annullerKasseretPi(o.id, o.pi);
-        r.annulleret++;
+        // Tælles kun, når annulleringen lykkedes (fejlen er logget af annullerKasseretPi).
+        if (await annullerKasseretPi(o.id, o.pi)) r.annulleret++;
+        else r.fejl++;
       }
     } catch (err) {
       r.fejl++;

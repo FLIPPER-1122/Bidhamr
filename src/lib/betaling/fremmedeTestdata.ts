@@ -215,6 +215,23 @@ export async function hentKendte(
     }
     for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) k.pis.add(x);
   }
+  // Tilbageført efter en tabt bankindsigelse (regningen er genåbnet).
+  for (const [kolonne, ids, maal] of [
+    ["tilbagefoerte_payment_intents", pis, k.pis],
+    ["tilbagefoerte_charges", charges, k.charges],
+  ] as const) {
+    for (const del of bidder(ids)) {
+      if (!del.length) continue;
+      const { data, error } = await admin.from("ekstra_fragt_regninger").select(kolonne).overlaps(kolonne, del);
+      if (error) {
+        if (/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) break;
+        throw new Error(`kendte (ekstra fragt ${kolonne}): ${error.message}`);
+      }
+      for (const b of (data ?? []) as Record<string, unknown>[]) {
+        for (const x of (b[kolonne] as string[] | null) ?? []) if (del.includes(x)) maal.add(x);
+      }
+    }
+  }
   await findes(admin, "betalinger", "stripe_charge_id", charges, k.charges);
   await findes(admin, "betaling_afvigelser", "stripe_charge_id", charges, k.charges);
   await findes(admin, "betalingsprofiler", "stripe_account_id", konti, k.konti);

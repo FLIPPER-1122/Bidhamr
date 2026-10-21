@@ -7,6 +7,7 @@
 //   2. opretEkstraFragt({ forsendelseId, sti, ... })      -> regningen oprettes
 //   frafaldEkstraFragt(id, grund)                         -> frafald (grund vises for sælgeren)
 //   afgoerEkstraFragtIndsigelse(id, udfald, begrundelse)  -> frafald/fasthold
+//   genaabnEkstraFragt(id, begrundelse)                   -> genåbn efter tabt bankindsigelse
 //   gemEkstraFragtNote(id, note)                          -> intern note
 //   hentEkstraFragtDokumentationStaff(id)                 -> signeret link (10 min)
 //
@@ -109,11 +110,25 @@ export async function forberedEkstraFragtUpload(input: { tradeId: string; filtyp
   }
 }
 
-// Tjekker den uploadede fil (størrelse og magiske bytes). Er den ugyldig,
-// slettes den (den er aldrig knyttet til en regning).
+// Stien fra forberedEkstraFragtUpload: <handels-id>/<uuid>.<endelse>.
+const DOKUMENTATION_STI =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png|webp|heic)$/;
+
+// Tjekker den uploadede fil (sti, størrelse og magiske bytes). Er den
+// ugyldig, slettes den - men KUN hvis stien er en gyldig upload-sti, og ingen
+// regning bruger filen (staff kan ikke slette andres dokumentation ved at
+// angive dens sti).
 async function tjekFil(admin: ReturnType<typeof createAdminClient>, sti: string, type: string): Promise<string | null> {
   const t = FILTYPER[type];
+  if (!DOKUMENTATION_STI.test(sti)) return "Filen er ikke uploadet. Upload fragtfirmaets faktura igen.";
   if (!t || !sti.endsWith(`.${t.endelse}`)) return "Filtypen passer ikke til filen.";
+  const { data: brugt, error: brugtFejl } = await admin
+    .from("ekstra_fragt_regninger")
+    .select("id")
+    .eq("dokumentation_sti", sti)
+    .limit(1);
+  if (brugtFejl) throw new Error(`ekstra_fragt_regninger (dokumentation): ${brugtFejl.message}`);
+  if ((brugt ?? []).length > 0) return "Filen er allerede brugt til en regning. Upload fragtfirmaets faktura igen.";
   const { data, error } = await admin.storage.from(EKSTRA_FRAGT_BUCKET).download(sti);
   if (error || !data) return "Filen er ikke uploadet. Upload fragtfirmaets faktura igen.";
   const bytes = new Uint8Array(await data.arrayBuffer());
@@ -244,6 +259,18 @@ export async function afgoerEkstraFragtIndsigelse(
     p_udfald: udfald,
     p_begrundelse: tekst(begrundelse) ?? "",
   });
+}
+
+// Genåbn en BETALT regning, hvis betaling er tilbageført efter en TABT
+// bankindsigelse (chargeback). Sker aldrig automatisk (Filip, 21. okt. 2026).
+// Databasen (ekstra_fragt_genaabn - staff med aal2, ikke inhabil, logget)
+// laver i én transaktion: kreditnota for den tilbageførte betaling, ny frist
+// (14 dage) og en ny betalingsrunde (sælgeren får en ny PaymentIntent med ny
+// idempotency key, når han trykker Betal; ny faktura, når han har betalt).
+// begrundelse vises for sælgeren, som får besked. Flytter ingen penge.
+export async function genaabnEkstraFragt(regningId: string, begrundelse: string): Promise<EkstraFragtStaffSvar> {
+  if (!erUuid(regningId)) return { fejl: fejlTekst("ikke_fundet") };
+  return koer("genåbn", "ekstra_fragt_genaabn", { p_regning: regningId, p_begrundelse: tekst(begrundelse) ?? "" });
 }
 
 export async function gemEkstraFragtNote(regningId: string, note: string): Promise<EkstraFragtStaffSvar> {

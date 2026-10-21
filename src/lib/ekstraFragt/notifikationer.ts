@@ -7,12 +7,15 @@ import "server-only";
 // udledes af tidsstemplerne - samme mønster som reklamationer
 // (src/lib/reklamation/notifikationer.ts). Hver hændelse har en fast nøgle,
 // så den aldrig sendes to gange:
-//   ekstrafragt:<id>:oprettet                  - ny regning (beløb, frist)
-//   ekstrafragt:<id>:paamind                   - 7 dage uden betaling (før fristen)
+//   ekstrafragt:<id>:oprettet                  - ny regning (beløb, frist) - ikke,
+//                                                hvis den allerede er betalt/frafaldet
+//   ekstrafragt:<id>:paamind[:<runde>]         - 7 dage uden betaling (før fristen)
 //   ekstrafragt:<id>:spaerret:<frist>          - fristen er overskredet: spærret
 //   ekstrafragt:<id>:afgjort:<afgjort_kl>      - indsigelsen er afgjort (fastholdt/frafaldet)
-//   ekstrafragt:<id>:frafaldet:<frafaldet_kl>  - frafaldet uden indsigelse
-//   ekstrafragt:<id>:betalt                    - kvittering
+//   ekstrafragt:<id>:frafaldet:<frafaldet_kl>  - frafaldet uden indsigelse eller
+//                                                efter en fastholdt indsigelse
+//   ekstrafragt:<id>:genaabnet:<genaabnet_kl>  - genåbnet efter tabt bankindsigelse
+//   ekstrafragt:<id>:betalt[:<runde>]          - kvittering (pr. betalingsrunde)
 // Kaldes fra notifikations-cron'en (hvert 5. minut) og med after() efter
 // staff-handlinger og betalingen. Kaster aldrig. Kun offentlige felter -
 // ALDRIG intern_note eller opmaerksomhed_tekst.
@@ -42,13 +45,17 @@ export type EkstraFragtBeskedRaekke = {
   frafaldet_kl: string | null;
   frafald_grund: string | null;
   betalt_kl: string | null;
+  // Betalingsrunde (0, eller 1, 2 ... efter genåbning) og seneste genåbning.
+  runde?: number | null;
+  genaabnet_kl?: string | null;
+  genaabn_begrundelse?: string | null;
 };
 
 type Opgave = { brugerId: string; input: NotifikationInput & { noegle: string } };
 
 const FELTER =
   "id, trade_id, saelger_id, status, beloeb_oere, valgt_stoerrelse, maalt_stoerrelse, maalt_vaegt_gram, frist, oprettet_kl, " +
-  "afgoerelse, afgoerelse_begrundelse, afgjort_kl, frafaldet_kl, frafald_grund, betalt_kl";
+  "afgoerelse, afgoerelse_begrundelse, afgjort_kl, frafaldet_kl, frafald_grund, betalt_kl, runde, genaabnet_kl, genaabn_begrundelse";
 
 function punktum(t: string): string {
   const s = t.trim();
@@ -80,17 +87,34 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
   const maalt = maaling(r);
   const frist = new Date(r.frist).getTime();
 
-  // Ikke, hvis staff frafaldt regningen, før beskeden blev sendt (så sælgeren
-  // ikke først får "betal" og straks efter "frafaldet").
-  if (!(r.status === "frafaldet" && !r.afgoerelse && !r.betalt_kl)) op(
+  const runde = Number(r.runde ?? 0);
+  const genaabnet = runde > 0 && !!r.genaabnet_kl;
+
+  // "Ny regning" kun, mens den stadig skal betales (eller er under
+  // indsigelse) - ikke, hvis den allerede er betalt, frafaldet eller
+  // refunderet, før beskeden blev sendt (så sælgeren ikke først får "betal" og
+  // straks efter "frafaldet"/"tak"). Kun første runde (en genåbning har sin
+  // egen besked).
+  if (runde === 0 && (r.status === "afventer_betaling" || r.status === "behandles" || r.status === "indsigelse")) op(
     "oprettet",
     "Ekstra fragt: pakken var større end den valgte størrelse",
     `Fragtfirmaet har opkrævet ekstra for en pakke, du har sendt, fordi den var større eller tungere end den størrelse, du valgte (${valgt}${maalt ? `; fragtfirmaet målte ${maalt}` : ""}). Forskellen er ${beloeb}. Betal den på handlen senest ${dato(r.frist)}. Du kan se fragtfirmaets faktura på handlen. Mener du, at målingen er forkert, kan du gøre indsigelse dér. Betaler du ikke inden fristen, kan du ikke sætte flere varer til salg, før beløbet er betalt.`,
   );
 
-  if (r.status === "afventer_betaling" && nu < frist && nu - new Date(r.oprettet_kl).getTime() >= EKSTRA_FRAGT_PAAMIND_DAGE * DAG) {
+  // Genåbnet efter en tabt bankindsigelse (staff): betalingen er tilbageført.
+  if (genaabnet && (r.status === "afventer_betaling" || r.status === "behandles" || r.status === "indsigelse")) {
     op(
-      "paamind",
+      `genaabnet:${new Date(r.genaabnet_kl!).getTime()}`,
+      "Ekstra fragt: din betaling er tilbageført – regningen er åbnet igen",
+      `Din betaling på ${beloeb} for ekstra fragt er blevet tilbageført efter en indsigelse hos din bank eller dit kortselskab. Regningen er derfor åbnet igen. Betal den på handlen senest ${dato(r.frist)}.${r.genaabn_begrundelse ? ` Begrundelse: ${punktum(r.genaabn_begrundelse)}` : ""} Betaler du ikke inden fristen, kan du ikke sætte flere varer til salg, før beløbet er betalt.`,
+    );
+  }
+
+  // Påmindelse 7 dage efter regningen (eller genåbningen), før fristen.
+  const start = new Date(genaabnet ? r.genaabnet_kl! : r.oprettet_kl).getTime();
+  if (r.status === "afventer_betaling" && nu < frist && nu - start >= EKSTRA_FRAGT_PAAMIND_DAGE * DAG) {
+    op(
+      runde === 0 ? "paamind" : `paamind:${runde}`,
       "Husk at betale for ekstra fragt",
       `Du mangler at betale ${beloeb} for ekstra fragt, fordi pakken var større eller tungere end den valgte størrelse. Fristen er ${dato(r.frist)}. Betal på handlen - eller gør indsigelse dér, hvis du mener, at målingen er forkert.`,
     );
@@ -119,7 +143,10 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
         `Vi har set på din indsigelse og giver dig medhold: regningen på ${beloeb} er frafaldet, og du skal ikke betale.${begrundelse}`,
       );
     }
-  } else if (r.status === "frafaldet" && r.frafaldet_kl) {
+  }
+  // Frafaldet uden indsigelse - eller EFTER en fastholdt indsigelse (så er
+  // afgørelsen 'fastholdt', og sælgeren skal stadig have besked om frafaldet).
+  if (r.status === "frafaldet" && r.frafaldet_kl && r.afgoerelse !== "frafaldet") {
     op(
       `frafaldet:${new Date(r.frafaldet_kl).getTime()}`,
       "Regningen for ekstra fragt er frafaldet",
@@ -129,7 +156,7 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
 
   if ((r.status === "betalt" || r.status === "refunderet") && r.betalt_kl) {
     op(
-      "betalt",
+      runde === 0 ? "betalt" : `betalt:${runde}`,
       "Tak – ekstra fragt er betalt",
       `Vi har modtaget din betaling på ${beloeb} for ekstra fragt. Du kan se fakturaen under Min konto → Fakturaer. Betalingen håndteres af vores betalingspartner Stripe.`,
     );
@@ -179,13 +206,15 @@ export async function notificerEkstraFragt(): Promise<number> {
         .gte("opdateret_kl", new Date(nu - 2 * DAG).toISOString())
         .order("opdateret_kl", { ascending: true })
         .limit(MAKS),
-      // Påmindelse og spærring: afventer betaling i 7+ dage (højst 90 dage tilbage).
+      // Påmindelse og spærring: afventer betaling, oprettet for 7+ dage siden
+      // (eller genåbnet - så tæller genåbningen), og fristen er højst 90 dage
+      // gammel.
       admin
         .from("ekstra_fragt_regninger")
         .select(FELTER)
         .eq("status", "afventer_betaling")
         .lte("oprettet_kl", new Date(nu - EKSTRA_FRAGT_PAAMIND_DAGE * DAG).toISOString())
-        .gte("oprettet_kl", new Date(nu - 90 * DAG).toISOString())
+        .gte("frist", new Date(nu - 90 * DAG).toISOString())
         .limit(MAKS),
     ]);
     for (const r of [nye, aabne]) {

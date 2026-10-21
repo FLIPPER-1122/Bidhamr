@@ -246,7 +246,13 @@ async function behandlBilag(r: FakturaRaekke, deps: ProcesDeps): Promise<ProcesR
       RemainderIsFee: false,
       ExternalReference: reference,
       PaymentDate: r.betalt_dato,
-      Description: (kredit ? "Refunderet via Stripe" : "Betalt via Stripe") + (r.stripe_reference ? ` (${r.stripe_reference})` : ""),
+      // du_/dp_: tilbageført efter en tabt bankindsigelse (ekstra fragt).
+      Description:
+        (kredit
+          ? /^(du|dp)_/.test(r.stripe_reference ?? "")
+            ? "Tilbageført via Stripe (bankindsigelse)"
+            : "Refunderet via Stripe"
+          : "Betalt via Stripe") + (r.stripe_reference ? ` (${r.stripe_reference})` : ""),
       Amount: kr(forventet),
     });
   }

@@ -147,6 +147,9 @@ export const GRAENSER = {
   beta_fejl_alarm: { maks: 6, vindueSek: 60 * 60 },
   // Oprydning af ubrugte beta-skærmbilleder i hovedcron'en: højst én gang i timen.
   beta_fejl_oprydning: { maks: 1, vindueSek: 60 * 60 },
+  // Oprydning af ubrugte dokumentationsfiler for ekstra fragt: én gang om
+  // måneden (nøglen er måneden, kørslen sker den 1. - src/lib/ekstraFragt/oprydning.ts).
+  ekstra_fragt_oprydning: { maks: 1, vindueSek: 40 * 24 * 60 * 60 },
   // Fragt: pakkeshop-søgning (rammer fragtfirmaets API) og handlinger
   // (leveringsvalg, label, annullering) pr. bruger; appens API pr. IP, før
   // tokenet er valideret.

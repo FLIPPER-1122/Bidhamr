@@ -2016,7 +2016,12 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
     // Alarmen til chefen sendes stadig (alarmIndsigelse nedenfor).
     const { spejlBoostIndsigelse } = await import("@/lib/betaling/boost");
     const bk = await spejlBoostIndsigelse(d, chId);
+    // Ekstra fragt (sælgerens betaling til platformen): en tabt indsigelse
+    // markerer regningen til staff - den genåbnes aldrig automatisk.
+    const { spejlEkstraFragtBankindsigelse } = await import("@/lib/betaling/ekstraFragt");
+    const ef = bk && bk !== "ukendt" ? null : await spejlEkstraFragtBankindsigelse(d, chId);
     if (bk && bk !== "ukendt") console.log(`Indsigelse ${d.id} på boost-køb (charge ${chId}): ${bk}`);
+    else if (ef) console.log(`Indsigelse ${d.id} på ekstra fragt (charge ${chId}): ${ef}`);
     else console.error("Indsigelse på ukendt betaling:", d.id, piId, chId);
   }
   await alarmIndsigelse(d, piId, chId, resultat);

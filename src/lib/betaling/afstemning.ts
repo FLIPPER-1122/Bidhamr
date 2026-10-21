@@ -479,6 +479,70 @@ async function ekstraFragtKasserede(admin: Admin, ids: string[]): Promise<Map<st
   return ud;
 }
 
+// Ekstra fragt-PaymentIntents, hvis betaling er tilbageført efter en tabt
+// bankindsigelse (regningen er genåbnet): betalt hos Stripe, men tæller ikke
+// længere - ingen afvigelse.
+async function ekstraFragtTilbagefoerte(admin: Admin, ids: string[]): Promise<Set<string>> {
+  const ud = new Set<string>();
+  for (const del of bidder([...new Set(ids)])) {
+    if (!del.length) continue;
+    const { data, error } = await admin
+      .from("ekstra_fragt_regninger")
+      .select("tilbagefoerte_payment_intents")
+      .overlaps("tilbagefoerte_payment_intents", del);
+    if (error) {
+      if (manglerIDatabasen(error)) return ud;
+      throw new Error(`ekstra_fragt_regninger (tilbageførte): ${error.message}`);
+    }
+    for (const r of data ?? []) for (const x of (r.tilbagefoerte_payment_intents as string[] | null) ?? []) if (del.includes(x)) ud.add(x);
+  }
+  return ud;
+}
+
+// Ekstraregninger pr. charge (nuværende eller tilbageført) med regningens
+// spejl af bankindsigelsen.
+type EkstraFragtIndsigelseAfst = {
+  id: string;
+  bankindsigelse_id: string | null;
+  bankindsigelse_status: string | null;
+  bankindsigelse_tabt_kl: string | null;
+  genaabnet: boolean;
+};
+async function ekstraFragtBankindsigelser(admin: Admin, charges: string[]): Promise<Map<string, EkstraFragtIndsigelseAfst>> {
+  const ud = new Map<string, EkstraFragtIndsigelseAfst>();
+  const kol = "id, stripe_charge_id, tilbagefoerte_charges, bankindsigelse_id, bankindsigelse_status, bankindsigelse_tabt_kl";
+  for (const del of bidder([...new Set(charges)])) {
+    if (!del.length) continue;
+    const [nu, tilbage] = await Promise.all([
+      admin.from("ekstra_fragt_regninger").select(kol).in("stripe_charge_id", del),
+      admin.from("ekstra_fragt_regninger").select(kol).overlaps("tilbagefoerte_charges", del),
+    ]);
+    for (const svar of [nu, tilbage]) {
+      if (svar.error) {
+        if (manglerIDatabasen(svar.error)) return ud;
+        throw new Error(`ekstra_fragt_regninger (bankindsigelse): ${svar.error.message}`);
+      }
+    }
+    for (const x of (tilbage.data ?? []) as Record<string, unknown>[]) {
+      for (const ch of (x.tilbagefoerte_charges as string[] | null) ?? []) {
+        if (del.includes(ch)) {
+          ud.set(ch, { id: x.id as string, bankindsigelse_id: null, bankindsigelse_status: null, bankindsigelse_tabt_kl: null, genaabnet: true });
+        }
+      }
+    }
+    for (const x of (nu.data ?? []) as Record<string, unknown>[]) {
+      ud.set(x.stripe_charge_id as string, {
+        id: x.id as string,
+        bankindsigelse_id: (x.bankindsigelse_id as string | null) ?? null,
+        bankindsigelse_status: (x.bankindsigelse_status as string | null) ?? null,
+        bankindsigelse_tabt_kl: (x.bankindsigelse_tabt_kl as string | null) ?? null,
+        genaabnet: false,
+      });
+    }
+  }
+  return ud;
+}
+
 // Hvad Stripe skal have refunderet på regningens charge.
 export function forventetEkstraFragtRefunderet(r: Pick<EkstraFragtAfst, "status" | "beloeb_oere" | "modtaget_oere">): number {
   return r.status === "refunderet" ? Number(r.modtaget_oere ?? r.beloeb_oere) : 0;
@@ -824,6 +888,7 @@ async function afstemBetalinger(
   // Ekstra fragt (sælgerens betaling til platformen).
   const efVed = await ekstraFragtVed(admin, "stripe_payment_intent_id", ids);
   const efKasseret = await ekstraFragtKasserede(admin, ids.filter((x) => !efVed.has(x)));
+  const efTilbage = await ekstraFragtTilbagefoerte(admin, ids.filter((x) => !efVed.has(x) && !efKasseret.has(x)));
   // Testtilstand: hvad kender databasen af det, de ukendte PaymentIntents
   // henviser til (metadata, Connect-konto, kunde)?
   const kendteRef = await hentKendte(
@@ -840,7 +905,8 @@ async function afstemBetalinger(
           !bkVed.has(p.id) &&
           !bkKasseret.has(p.id) &&
           !efVed.has(p.id) &&
-          !efKasseret.has(p.id),
+          !efKasseret.has(p.id) &&
+          !efTilbage.has(p.id),
       )
       .map(piHenvisning),
     firma,
@@ -876,6 +942,8 @@ async function afstemBetalinger(
       }
       continue;
     }
+    // Tilbageført efter en tabt bankindsigelse (regningen er genåbnet).
+    if (efTilbage.has(pi.id)) continue;
     const efGammel = efKasseret.get(pi.id);
     if (efGammel) {
       if (pi.status !== "succeeded") continue;
@@ -1708,10 +1776,42 @@ async function afstemIndsigelser(
     "stripe_payment_intent_id",
     ukendte.map((d) => id(d.payment_intent as string | { id: string } | null)).filter((x): x is string => !!x),
   );
+  // Indsigelser på sælgerens betaling af ekstra fragt (også en charge, der er
+  // tilbageført, og hvor regningen er genåbnet).
+  const efCh = await ekstraFragtBankindsigelser(
+    admin,
+    ukendte.map((d) => id(d.charge as string | { id: string } | null)).filter((x): x is string => !!x),
+  );
   for (const d of disputes) {
     tjekTid(budget);
     const piId = id(d.payment_intent as string | { id: string } | null);
     if (piId && (kendte.has(piId) || afv.has(piId))) continue; // handel - overvågningen spejler den
+    const chId = id(d.charge as string | { id: string } | null);
+    const ef = chId ? efCh.get(chId) : undefined;
+    if (ef) {
+      // Mistet webhook: spejl, hvis databasen ikke har samme indsigelse og
+      // status (en tabt indsigelse skal markeres til staff). Genåbnet
+      // (chargen er tilbageført) - intet at spejle.
+      const tabtMarkeret = ef.bankindsigelse_tabt_kl !== null && ef.bankindsigelse_id === d.id;
+      if (!ef.genaabnet && !tabtMarkeret && (ef.bankindsigelse_id !== d.id || ef.bankindsigelse_status !== d.status)) {
+        try {
+          const { spejlIndsigelse } = await import("@/lib/betaling/stripeBetaling");
+          await spejlIndsigelse(d.id);
+        } catch (err) {
+          await logDriftFejl({ kilde: "cron", sti: "pengeafstemning", hvor: `Pengeafstemning: spejl indsigelse ${d.id} (ekstra fragt)`, fejl: err });
+        }
+      }
+      await registrer({
+        noegle: `indsigelse:${d.id}`,
+        alarmNoegle: `indsigelse-ekstra-fragt:${d.id}`,
+        type: "ukendt_indsigelse",
+        tilstand: d.status,
+        stripeId: d.id,
+        beskrivelse: `Indsigelse ${d.id} (${d.status}) på sælgerens betaling af ekstra fragt (ekstraregning ${ef.id}) - svar banken i Stripe med regningen og fragtfirmaets faktura. Tabes den, genåbnes regningen ikke automatisk; staff kan genåbne den.`,
+        beloebStripe: d.amount,
+      });
+      continue;
+    }
     const bk = piId ? bkPi.get(piId) : undefined;
     if (bk) {
       // Spejl indsigelsen, hvis databasen ikke allerede har samme status som
