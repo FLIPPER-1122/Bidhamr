@@ -68,8 +68,7 @@ type GruppeId =
   | "paa_vej";
 
 const GRUPPER: { id: GruppeId; titel: string; tekst: string }[] = [
-  // TODO indhold-agenten: kort tekst.
-  { id: "erstatning", titel: "Få erstatning fra fragtfirmaet", tekst: "Varen blev skadet under fragten. Anmeld skaden, og få erstatning." },
+  { id: "erstatning", titel: "Få erstatning fra fragtfirmaet", tekst: "Varen blev skadet under fragten. Anmeld skaden hos fragtfirmaet, og søg erstatning." },
   { id: "betale", titel: "Du skal betale", tekst: "Betal inden fristen, så handlen ikke annulleres." },
   { id: "sende", titel: "Du skal sende", tekst: "Køberen har betalt. Send pakken inden fristen." },
   { id: "afhentning", titel: "Skal afhentes", tekst: "Varen er betalt. Aftal afhentningen i handlen." },

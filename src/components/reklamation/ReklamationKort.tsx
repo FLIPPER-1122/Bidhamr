@@ -4,9 +4,6 @@
 // er færrest mulige klik: 1) hent billederne som én ZIP, 2) åbn anmeldelsen,
 // 3) fortæl os, hvordan det gik. Alle felter har deres egen kopiér-knap.
 // Server-komponent - kun kopiér-knapperne og statusknapperne er klientkode.
-//
-// TODO indhold-agenten: forklaringen øverst og hjælpeteksterne er
-// pladsholdere.
 import type { Reklamationspakke, PakkePart } from "@/lib/reklamation/pakke";
 import {
   kroner,
@@ -148,10 +145,10 @@ export default function ReklamationKort({
         </h2>
         <ReklamationMaerke status={r.status} />
       </div>
-      {/* TODO indhold-agenten: endelig forklaring (1-2 sætninger). */}
       <p className="mt-2 text-[15px] text-tekst-daempet">
         Køberen har fået pengene tilbage, fordi varen blev skadet under fragten. Du pakkede ordentligt, så du kan
-        få erstatning direkte fra {navn} – op til {kroner(r.kravbeloeb_oere)}.
+        selv søge erstatning hos {navn} – op til {kroner(r.kravbeloeb_oere)}. Det er {navn}, der afgør sagen, og
+        pengene udbetales direkte til dig.
       </p>
       {r.status === "anmeldt" && (
         <p className="mt-3 rounded-xl bg-info-bg px-4 py-3 text-sm text-info-tekst">
