@@ -79,7 +79,7 @@ export function koePunkter(t: KoeTal): StatusPunkt[] {
     p.push({
       tone: "roed",
       tekst: `${flertal(t.ekstraFragtTabteBankindsigelser ?? 0, "tabt bankindsigelse", "tabte bankindsigelser")} på ekstra fragt – betalingen er tilbageført`,
-      href: "/admin/ekstra-fragt",
+      href: "/admin/ekstra-fragt?vis=tabt",
     });
   }
   if (t.betalinger > 0) {

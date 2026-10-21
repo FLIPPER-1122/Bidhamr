@@ -4,6 +4,7 @@ import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import AdminFilterChips from "@/components/admin/AdminFilterChips";
 import AdminFejl from "@/components/admin/AdminFejl";
 import AdminTom from "@/components/admin/AdminTom";
+import AdminBadge from "@/components/admin/AdminBadge";
 import AdminSideskift, { adminHref, laesSide } from "@/components/admin/AdminSideskift";
 import { EkstraFragtStatusBadge, oereKr } from "@/components/admin/ekstraFragt/visning";
 import { hentStaffTal } from "@/lib/admin/taellere";
@@ -23,6 +24,7 @@ const PR_SIDE = 20;
 const FILTRE = [
   { id: "aabne", label: "Åbne" },
   { id: "indsigelse", label: "Indsigelse" },
+  { id: "tabt", label: "Tabt bankindsigelse" },
   { id: "spaerret", label: "Spærret" },
   { id: "afventer", label: "Afventer betaling" },
   { id: "betalt", label: "Betalt" },
@@ -34,6 +36,7 @@ type Filter = (typeof FILTRE)[number]["id"];
 const TOMT: Partial<Record<Filter, string>> = {
   aabne: "Ingen åbne regninger for ekstra fragt.",
   indsigelse: "Ingen indsigelser venter.",
+  tabt: "Ingen betalinger er tilbageført efter en tabt bankindsigelse.",
   spaerret: "Ingen sælgere er spærret for ubetalt ekstra fragt.",
   afventer: "Ingen regninger afventer betaling.",
 };
@@ -53,6 +56,7 @@ type Raekke = {
   oprettet_kl: string;
   indsigelse_kl: string | null;
   kraever_opmaerksomhed: boolean;
+  bankindsigelse_tabt_kl: string | null;
 };
 
 export default async function AdminEkstraFragt({
@@ -69,10 +73,11 @@ export default async function AdminEkstraFragt({
   let q = admin
     .from("ekstra_fragt_regninger")
     .select(
-      "id, trade_id, saelger_id, transportoer, valgt_stoerrelse, maalt_stoerrelse, maalt_vaegt_gram, maalt_maal, beloeb_oere, status, frist, oprettet_kl, indsigelse_kl, kraever_opmaerksomhed",
+      "id, trade_id, saelger_id, transportoer, valgt_stoerrelse, maalt_stoerrelse, maalt_vaegt_gram, maalt_maal, beloeb_oere, status, frist, oprettet_kl, indsigelse_kl, kraever_opmaerksomhed, bankindsigelse_tabt_kl",
     );
   if (filter === "aabne") q = q.in("status", ["afventer_betaling", "behandles", "indsigelse"]);
   else if (filter === "indsigelse") q = q.eq("status", "indsigelse");
+  else if (filter === "tabt") q = q.eq("status", "betalt").not("bankindsigelse_tabt_kl", "is", null);
   else if (filter === "spaerret") q = q.eq("status", "afventer_betaling").lte("frist", nu);
   else if (filter === "afventer") q = q.eq("status", "afventer_betaling");
   else if (filter === "betalt") q = q.eq("status", "betalt");
@@ -81,7 +86,9 @@ export default async function AdminEkstraFragt({
   q =
     filter === "indsigelse"
       ? q.order("indsigelse_kl", { ascending: true })
-      : filter === "aabne" || filter === "spaerret" || filter === "afventer"
+      : filter === "tabt"
+        ? q.order("bankindsigelse_tabt_kl", { ascending: true })
+        : filter === "aabne" || filter === "spaerret" || filter === "afventer"
         ? q.order("frist", { ascending: true })
         : q.order("oprettet_kl", { ascending: false });
   const fra = (side - 1) * PR_SIDE;
@@ -131,6 +138,10 @@ export default async function AdminEkstraFragt({
               Rød betyder, at sælgeren har gjort indsigelse mod målingen. Afgør den: frafald eller fasthold. Fastholdes
               den, har sælgeren mindst 7 dage til at betale.
             </p>
+            <p>
+              Tabt bankindsigelse betyder, at sælgerens bank har tilbageført en betalt regning. Åbn den, og tryk
+              Genåbn regning – sælgeren får 14 dage til at betale igen.
+            </p>
           </>
         }
       />
@@ -145,12 +156,14 @@ export default async function AdminEkstraFragt({
           antal:
             f.id === "indsigelse"
               ? tal.ekstraFragtIndsigelser
-              : f.id === "spaerret"
+              : f.id === "tabt"
+                ? tal.ekstraFragtTabteBankindsigelser
+                : f.id === "spaerret"
                 ? tal.ekstraFragtForfaldne
                 : f.id === "afventer"
                   ? tal.ekstraFragtAfventer
                   : undefined,
-          tone: f.id === "indsigelse" ? ("roed" as const) : ("graa" as const),
+          tone: f.id === "indsigelse" || f.id === "tabt" ? ("roed" as const) : ("graa" as const),
         }))}
       />
 
@@ -168,7 +181,8 @@ export default async function AdminEkstraFragt({
         <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
           {raekker.map((r) => {
             const spaerrer = r.status === "afventer_betaling" && Date.parse(r.frist) <= nuMs;
-            const roed = r.status === "indsigelse" || r.kraever_opmaerksomhed;
+            const tabt = r.status === "betalt" && !!r.bankindsigelse_tabt_kl;
+            const roed = r.status === "indsigelse" || r.kraever_opmaerksomhed || tabt;
             return (
               <li key={r.id} className="border-t border-admin-kant first:border-t-0">
                 <Link
@@ -180,6 +194,7 @@ export default async function AdminEkstraFragt({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <EkstraFragtStatusBadge status={r.status} spaerrer={spaerrer} />
+                      {tabt && <AdminBadge tone="roed">Tabt bankindsigelse</AdminBadge>}
                       <span className="text-sm font-bold text-tekst tabular-nums">{oereKr(r.beloeb_oere)}</span>
                     </div>
                     <p className="mt-1.5 min-w-0 break-words font-semibold text-tekst">
@@ -194,6 +209,9 @@ export default async function AdminEkstraFragt({
                   <p className="shrink-0 text-xs text-tekst-svag sm:text-right">
                     Oprettet {ekstraFragtTid(r.oprettet_kl)}
                     {r.status === "afventer_betaling" && <span className="block">Frist {ekstraFragtTid(r.frist)}</span>}
+                    {tabt && r.bankindsigelse_tabt_kl && (
+                      <span className="block">Tilbageført {ekstraFragtTid(r.bankindsigelse_tabt_kl)}</span>
+                    )}
                     {r.status === "indsigelse" && r.indsigelse_kl && (
                       <span className="block">Indsigelse {ekstraFragtTid(r.indsigelse_kl)}</span>
                     )}

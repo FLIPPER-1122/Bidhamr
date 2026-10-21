@@ -38,6 +38,26 @@ const EkstraFragtBetaling = dynamic(() => import("@/components/ekstraFragt/Ekstr
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 
+// Indsigelse gjort efter fristen: spærringen gælder, til BidHamr har afgjort den.
+const SPAERRET_TIL_AFGOERELSE =
+  "Din indsigelse er modtaget. Fordi fristen var overskredet, kan du ikke oprette nye auktioner, før vi har afgjort den.";
+
+// Regningen er åbnet igen, fordi sælgerens bank har tilbageført betalingen.
+function Genaabnet({ r }: { r: MinEkstraFragt }) {
+  if (!r.genaabnet_kl) return null;
+  return (
+    <div role="note" className="mt-3 rounded-lg border border-kant bg-white/70 px-3 py-2 text-sm text-tekst">
+      <p>
+        <span className="font-semibold">
+          Regningen er åbnet igen, fordi din bank har tilbageført betalingen{r.genaabn_begrundelse ? ":" : "."}
+        </span>
+        {r.genaabn_begrundelse && <span className="whitespace-pre-wrap break-words"> {r.genaabn_begrundelse}</span>}
+      </p>
+      <p className="mt-0.5 text-[13px] text-tekst-daempet">Åbnet igen den {ekstraFragtDato(r.genaabnet_kl)}.</p>
+    </div>
+  );
+}
+
 type Start = { clientSecret: string; customerSessionClientSecret: string | null; beloebOere: number };
 
 export default function EkstraFragtKort({
@@ -101,18 +121,27 @@ export default function EkstraFragtKort({
           Ekstra fragt: {beloeb}. Vi behandler din betaling
         </h2>
         <p className="mt-1 text-sm">Det tager som regel kun et øjeblik. Genindlæs siden om lidt.</p>
+        <Genaabnet r={r} />
       </Ramme>
     );
   }
   if (r.status === "indsigelse") {
+    // Gjort efter fristen: spærringen gælder, til indsigelsen er afgjort.
+    const efterFrist = r.indsigelse_efter_frist || r.spaerrer;
     return (
       <Ramme titelId={titelId} tone="info">
         <h2 id={titelId} className="font-sans text-[16px] font-semibold">
           BidHamr ser på din indsigelse
         </h2>
         <p className="mt-1 text-sm">
-          Ekstra fragt: {beloeb}. Du skal ikke betale, mens vi ser på den.{r.spaerrer ? " Fristen var overskredet, da du gjorde indsigelse, så du kan ikke oprette nye auktioner, før vi har afgjort den, eller regningen er betalt." : " Du kan stadig oprette auktioner."} Du får besked, når vi har afgjort den.
+          Ekstra fragt: {beloeb}. Du skal ikke betale, mens vi ser på den.{efterFrist ? "" : " Du kan stadig oprette auktioner."} Du får besked, når vi har afgjort den.
         </p>
+        {efterFrist && (
+          <p role="note" className="mt-3 rounded-lg border border-fejl-kant bg-white px-3 py-2 text-sm font-medium text-fejl-tekst">
+            {SPAERRET_TIL_AFGOERELSE}
+          </p>
+        )}
+        <Genaabnet r={r} />
         {r.indsigelse_tekst && (
           <blockquote className="mt-3 rounded-lg border border-info-kant bg-white/70 px-3 py-2 text-sm whitespace-pre-wrap break-words text-tekst">
             {r.indsigelse_tekst}
@@ -144,6 +173,7 @@ export default function EkstraFragtKort({
         {transportoerNavn(r.transportoer) ?? "fragtfirmaet"} opkrævet {beloeb} ekstra. Det er fragtfirmaets pris, og som sælger betaler du forskellen.
       </p>
       {r.forklaring && <p className="mt-2 text-sm whitespace-pre-wrap break-words text-tekst-daempet">{r.forklaring}</p>}
+      <Genaabnet r={r} />
       {r.afgoerelse === "fastholdt" && r.afgoerelse_begrundelse && (
         <p className="mt-2 rounded-lg border border-kant bg-white/70 px-3 py-2 text-sm text-tekst">
           <span className="font-semibold">Vi har set på din indsigelse og fastholder regningen:</span>{" "}
@@ -329,6 +359,7 @@ function Indsigelse({ r, onLuk }: { r: MinEkstraFragt; onLuk: () => void }) {
   const [tekst, setTekst] = useState("");
   const [sender, setSender] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
+  const [modtaget, setModtaget] = useState<string | null>(null);
   const feltRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => feltRef.current?.focus(), []);
 
@@ -344,12 +375,24 @@ function Indsigelse({ r, onLuk }: { r: MinEkstraFragt; onLuk: () => void }) {
     try {
       const res = await ekstraFragtIndsigelse(r.id, tekst, r.trade_id);
       if ("fejl" in res) setFejl(res.fejl);
-      else router.refresh();
+      else {
+        // Efter fristen: sig det med det samme (kortet viser det også efter genindlæsning).
+        if (res.spaerretTilAfgoerelse) setModtaget(SPAERRET_TIL_AFGOERELSE);
+        router.refresh();
+      }
     } catch {
       setFejl(GENERISK);
     } finally {
       setSender(false);
     }
+  }
+
+  if (modtaget) {
+    return (
+      <p role="status" className="mt-3 rounded-xl border border-fejl-kant bg-white p-4 text-sm font-medium text-fejl-tekst">
+        {modtaget}
+      </p>
+    );
   }
 
   return (
