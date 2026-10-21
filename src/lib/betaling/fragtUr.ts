@@ -169,6 +169,13 @@ export async function urStartetAfFragt(tradeId: string): Promise<boolean | null>
     .select("modtaget_kilde")
     .eq("id", tradeId)
     .maybeSingle<{ modtaget_kilde: string | null }>();
-  if (error || !data) return null;
+  // Før migrationen 20261030010000 findes kolonnen ikke: så har fragten
+  // aldrig startet uret, og den gamle besked skal sendes.
+  if (error && (error.code === "42703" || error.code === "PGRST204")) return false;
+  if (error) {
+    await logDriftFejl({ kilde: "cron", hvor: "Fragt: læs om 48-timers uret er startet", fejl: error });
+    return null;
+  }
+  if (!data) return null;
   return data.modtaget_kilde === "fragt";
 }

@@ -2277,6 +2277,9 @@ export async function koerFragtCron(): Promise<{
         "and(afleveret_kl.not.is.null,afleveret_besked_kl.is.null)," +
           "and(leveret_kl.not.is.null,leveret_besked_kl.is.null)",
       )
+      // Nyeste først, så en forsendelse, der bliver ved med at fejle, ikke
+      // blokerer beskeder til nye handler.
+      .order("opdateret_kl", { ascending: false })
       .limit(20);
     for (const m of mangler ?? []) {
       if (Date.now() - start > CRON_BUDGET_MS) break;
