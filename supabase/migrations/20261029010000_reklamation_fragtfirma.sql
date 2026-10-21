@@ -26,16 +26,36 @@
 --      Staff kan rette status (fragt_reklamation_ret_status, kræver
 --      begrundelse), hvis sælgeren har registreret forkert. Slettes aldrig.
 --   4. AUTOMATISK OPRETTELSE (fragt_reklamation_synkroniser): kaldes af en
---      trigger på sager.status OG af indpakning_ordentlig/-_fortryd, så begge
---      rækkefølger virker (indpakning vurderet før eller efter afgørelsen).
---      Betingelser: type 'skadet', status 'afventer_retur' eller
---      'afgjort_koeber', ordentlig indpakning (ikke fortrudt), ikke
---      afhentning, og en udgående forsendelse med DAO eller GLS.
---      Ophører betingelserne (sagen genåbnes, anke omgøres til sælger,
---      vurderingen fortrydes), annulleres en reklamation i 'afventer_saelger'
---      automatisk (annulleret_auto) - og genopstår, hvis betingelserne
---      kommer igen. Har sælgeren allerede anmeldt, røres status ikke, men
---      sag_aendret_kl sættes, så staff ser det.
+--      trigger på sager (status, afviklet_kl, penge_handling), af
+--      indpakning_ordentlig/-_fortryd OG af cron'en
+--      (fragt_reklamationer_synkroniser_alle, hvert 5. minut via
+--      notifikations-cron'en), fordi refusionen bekræftes på betalinger
+--      (webhook) og ankefristen udløber af sig selv.
+--      Betingelserne (fragt_reklamation_betingelser - fælles for
+--      synkroniseringen og staffs ret_status): type 'skadet', ordentlig
+--      indpakning (ikke fortrudt), ikke afhentning, en udgående forsendelse
+--      med DAO eller GLS, OG sagen er ENDELIG til købers fordel:
+--        - køberen HAR fået pengene tilbage (betalinger.status 'refunderet'
+--          med refunderet_kl, eller tabt indsigelse - banken har givet
+--          køberen pengene), og
+--        - 'afgjort_koeber' afviklet med refusion (afviklet_kl), ingen anke
+--          venter, og ankefristen (afgjort_kl + 4 dage) er udløbet eller
+--          anken er afgjort; eller
+--        - 'lukket' af systemet med refusion ("Afsluttet ved refusion" /
+--          tabt indsigelse: penge_handling null, afviklet_kl sat) - kan ikke
+--          ankes.
+--      'afventer_retur' er ALDRIG nok (køberen er ikke refunderet endnu).
+--      Ophører betingelserne (refusionen fejler, sagen ændres, vurderingen
+--      fortrydes), annulleres en reklamation i 'afventer_saelger'
+--      automatisk (annulleret_auto; sælgeren får besked, hvis han fik
+--      "oprettet") - og genopstår, hvis betingelserne kommer igen (ny
+--      besked). Har sælgeren allerede anmeldt/fået godkendt, røres status
+--      ikke, men sag_aendret_kl sættes: sælgeren får besked, og
+--      mit_fragt_reklamation_godkendt er spærret, indtil staff kvitterer
+--      (fragt_reklamation_kvitter_sag_aendret, ret_status eller annullér).
+--      Uventede fejl i synkroniseringen fanges (..._sikker) og logges som
+--      drift-fejl, så en sagsafgørelse aldrig fejler pga. reklamationen;
+--      cron'en retter op bagefter.
 --   5. Sælgerens funktioner (authenticated, sælgeren = auth.uid()):
 --      mit_fragt_reklamation_anmeldt / _godkendt / _afvist / _fravaelg,
 --      mine_fragt_reklamationer (offentlige felter) og
@@ -43,22 +63,25 @@
 --      Køberen ser intet (køberen er refunderet).
 --   6. Staff-funktioner (authenticated, auth.uid() + er_staff() = rolle OG
 --      aal2 - migration B, 20261027020000; inhabil afvises): note, send
---      pakken/påmindelsen igen, annullér, ret status, indpakning ordentlig /
---      fortryd. Alt logges i moderation_log (maal_type 'sag'); sælgerens
---      egne registreringer logges med systembrugeren som afsender.
+--      pakken/påmindelsen igen, annullér, ret status, kvittér for ændret
+--      sag, indpakning ordentlig / fortryd. Alt logges i moderation_log
+--      (maal_type 'sag'); sælgerens egne registreringer logges med
+--      systembrugeren som afsender.
 --   7. fragt_reklamationer_antal(): tællere til admin-lampen (venter på
 --      sælger, stået stille i 14 dage, sagen ændret efter anmeldelse).
 --   8. moderation_log_handling_check flettes med de nye handlinger.
 --
--- Beskeder til sælgeren (notifikation + mail ved oprettelse, påmindelse
--- efter 7 dage uden "anmeldt", gensendt af staff, annulleret af staff)
--- sendes fra serveren (src/lib/reklamation/notifikationer.ts) ud fra
--- tidsstemplerne - samme mønster som advarsler.
+-- Beskeder til sælgeren (notifikation + mail ved oprettelse/genopståen,
+-- påmindelse efter 7 dage uden "anmeldt", gensendt af staff, annulleret af
+-- staff eller systemet, sagen ændret / kvitteret) sendes fra serveren
+-- (src/lib/reklamation/notifikationer.ts) ud fra tidsstemplerne - samme
+-- mønster som advarsler.
 --
 -- Ingen eksisterende funktioner ændres. Nye triggere på sager (AFTER UPDATE
--- OF status), advarsler og paamindelser (BEFORE INSERT, kun grund
--- 'daarlig_indpakning').
--- Idempotent (kan køres igen). KØRES IKKE i produktion uden Filips "ja".
+-- OF status, afviklet_kl, penge_handling), advarsler og paamindelser
+-- (BEFORE INSERT, kun grund 'daarlig_indpakning').
+-- Idempotent (kan køres igen - også oven på en tidligere udgave af denne
+-- fil på testdatabasen). KØRES IKKE i produktion uden Filips "ja".
 
 set local lock_timeout = '5s';
 
@@ -250,6 +273,22 @@ create table if not exists public.fragt_reklamationer (
     status <> 'annulleret' or (annulleret_grund is not null and annulleret_af is not null and annulleret_kl is not null))
 );
 
+-- Staff har kvitteret for, at sagen er ændret efter anmeldelsen (så
+-- sælgeren igen kan registrere "godkendt"). Tilføjet efter første udgave.
+alter table public.fragt_reklamationer
+  add column if not exists sag_aendret_kvitteret_kl timestamptz,
+  add column if not exists sag_aendret_kvitteret_af uuid references public.users(id) on delete restrict;
+
+do $do$
+begin
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.fragt_reklamationer'::regclass
+                    and conname = 'fragt_reklamationer_kvitteret_par') then
+    alter table public.fragt_reklamationer add constraint fragt_reklamationer_kvitteret_par check (
+      (sag_aendret_kvitteret_kl is null) = (sag_aendret_kvitteret_af is null));
+  end if;
+end $do$;
+
 comment on table public.fragt_reklamationer is
   'Reklamation hos fragtfirmaet ved transportskade (20261029010000). Én pr. sag. '
   'Oprettes automatisk (fragt_reklamation_synkroniser). Sælgeren anmelder selv; '
@@ -312,7 +351,8 @@ declare
   v_nye  text[] := array[
     'indpakning_ordentlig', 'indpakning_ordentlig_fortrudt',
     'reklamation_oprettet', 'reklamation_genaabnet', 'reklamation_annulleret',
-    'reklamation_sag_aendret', 'reklamation_note', 'reklamation_gensendt',
+    'reklamation_sag_aendret', 'reklamation_sag_aendret_kvitteret',
+    'reklamation_note', 'reklamation_gensendt',
     'reklamation_status_rettet', 'reklamation_saelger_anmeldt',
     'reklamation_saelger_godkendt', 'reklamation_saelger_afvist', 'reklamation_saelger_fravalgt'];
   v_gl   text[];
@@ -377,33 +417,39 @@ as $fn$
   select to_char(p_oere / 100.0, 'FM999999990.00') || ' kr.';
 $fn$;
 
--- Opretter/annullerer/genopliver sagens reklamation ud fra betingelserne
--- (se toppen). Kaldes af triggeren på sager og af indpakning_ordentlig /
--- indpakning_ordentlig_fortryd. Returnerer hvad der skete:
--- oprettet, genaabnet, annulleret, sag_aendret, uaendret, ikke_relevant.
-create or replace function public.fragt_reklamation_synkroniser(p_sag uuid)
-returns text
+revoke all on function public.fragt_reklamation_kr(bigint) from public, anon, authenticated;
+
+-- Er betingelserne for en reklamation opfyldt for sagen? (se toppen, pkt. 4)
+-- Fælles for fragt_reklamation_synkroniser og fragt_reklamation_ret_status.
+-- ok = true: alle betingelser er opfyldt; ellers aarsag:
+--   ikke_skadet, ingen_handel, afhentning, ingen_forsendelse, indpakning,
+--   ikke_refunderet, ikke_koebers_fordel, anke_venter, ankefrist, ingen_vaerdi.
+-- Læser kun (ingen låse).
+create or replace function public.fragt_reklamation_betingelser(
+  p_sag uuid,
+  out ok boolean, out aarsag text, out trade_id uuid, out saelger_id uuid,
+  out forsendelse_id uuid, out transportoer text, out sporingsnummer text,
+  out vaerdi_oere bigint)
 language plpgsql
+stable
 security definer
 set search_path = public
 as $fn$
 declare
-  sys      constant uuid := public.bidhamr_system_id();
-  s        record;
-  t        record;
-  f        record;
-  r        record;
-  v_ok     boolean;
-  v_findes boolean;
-  v_trans  text;
-  v_vaerdi bigint;
-  v_maks   bigint;
+  s record;
+  t record;
+  b record;
+  f record;
 begin
+  ok := false;
   select * into s from public.sager where id = p_sag;
-  if not found or s.type <> 'skadet' then return 'ikke_relevant'; end if;
+  if not found or s.type <> 'skadet' then aarsag := 'ikke_skadet'; return; end if;
 
   select * into t from public.trades where id = s.trade_id;
-  if not found or t.seller_id is null then return 'ikke_relevant'; end if;
+  if not found or t.seller_id is null then aarsag := 'ingen_handel'; return; end if;
+  trade_id := t.id;
+  saelger_id := t.seller_id;
+  if coalesce(t.afhentning, false) then aarsag := 'afhentning'; return; end if;
 
   -- Den udgående pakke med DAO eller GLS (den seneste aktive).
   select fo.id, fo.sporingsnummer,
@@ -415,37 +461,98 @@ begin
      and coalesce(fo.transportoer, case when fo.fragtfirma in ('dao', 'gls') then fo.fragtfirma end) in ('dao', 'gls')
    order by fo.oprettet_kl desc
    limit 1;
-  if found then v_trans := f.transportoer; end if;
+  if not found then aarsag := 'ingen_forsendelse'; return; end if;
+  forsendelse_id := f.id;
+  transportoer := f.transportoer;
+  sporingsnummer := left(nullif(btrim(coalesce(f.sporingsnummer, t.tracking_number, '')), ''), 100);
 
-  v_ok := s.status in ('afventer_retur', 'afgjort_koeber')
-          and not coalesce(t.afhentning, false)
-          and v_trans is not null
-          and exists (select 1 from public.indpakning_ordentlig o
-                       where o.sag_id = s.id and o.tilbagekaldt_kl is null);
+  if not exists (select 1 from public.indpakning_ordentlig o
+                  where o.sag_id = s.id and o.tilbagekaldt_kl is null) then
+    aarsag := 'indpakning'; return;
+  end if;
 
-  select * into r from public.fragt_reklamationer where sag_id = s.id for update;
+  -- Køberen HAR fået pengene tilbage: refunderet (bekræftet af Stripe -
+  -- samme regel som admin: status 'refunderet' og refunderet_kl) eller tabt
+  -- indsigelse (banken har givet køberen pengene).
+  select * into b from public.betalinger where betalinger.trade_id = t.id;
+  if not found
+     or not ((b.status = 'refunderet' and b.refunderet_kl is not null)
+             or coalesce(b.indsigelse_status, '') = 'lost') then
+    aarsag := 'ikke_refunderet'; return;
+  end if;
+
+  -- Endelig til købers fordel.
+  if s.status = 'afgjort_koeber' and s.penge_handling = 'refunder' and s.afviklet_kl is not null then
+    if exists (select 1 from public.sag_anker a where a.sag_id = s.id and a.status = 'afventer') then
+      aarsag := 'anke_venter'; return;
+    end if;
+    -- Ankefristen (afgjort_kl + 4 dage) er udløbet - eller anken er afgjort
+    -- (endelig). Refunderet hos Stripe før fristen: vent til fristen.
+    if not exists (select 1 from public.sag_anker a where a.sag_id = s.id)
+       and (s.afgjort_kl is null or s.afgjort_kl > now() - interval '4 days') then
+      aarsag := 'ankefrist'; return;
+    end if;
+  elsif s.status = 'lukket' and s.penge_handling is null and s.afviklet_kl is not null then
+    -- Lukket af systemet ved refusion / tabt indsigelse (kan ikke ankes).
+    null;
+  else
+    aarsag := 'ikke_koebers_fordel'; return;
+  end if;
+
+  vaerdi_oere := coalesce(b.bud_oere, round(coalesce(t.amount, 0) * 100)::bigint);
+  if vaerdi_oere is null or vaerdi_oere <= 0 then aarsag := 'ingen_vaerdi'; return; end if;
+
+  ok := true;
+  aarsag := null;
+end;
+$fn$;
+
+revoke all on function public.fragt_reklamation_betingelser(uuid) from public, anon, authenticated;
+grant execute on function public.fragt_reklamation_betingelser(uuid) to service_role;
+
+-- Opretter/annullerer/genopliver sagens reklamation ud fra betingelserne
+-- (fragt_reklamation_betingelser). Kaldes via fragt_reklamation_synkroniser_sikker
+-- af triggeren på sager, af indpakning_ordentlig / -_fortryd og af cron'en.
+-- Returnerer hvad der skete:
+-- oprettet, genaabnet, annulleret, sag_aendret, uaendret, ikke_relevant.
+create or replace function public.fragt_reklamation_synkroniser(p_sag uuid)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  sys      constant uuid := public.bidhamr_system_id();
+  c        record;
+  r        record;
+  v_findes boolean;
+  v_maks   bigint;
+  v_krav   bigint;
+  v_status text;
+begin
+  select * into c from public.fragt_reklamation_betingelser(p_sag);
+
+  select * into r from public.fragt_reklamationer where sag_id = p_sag for update;
   v_findes := found;
 
-  if v_ok then
+  if c.ok then
     if not v_findes then
-      select b.bud_oere into v_vaerdi from public.betalinger b where b.trade_id = t.id;
-      v_vaerdi := coalesce(v_vaerdi, round(coalesce(t.amount, 0) * 100)::bigint);
-      if v_vaerdi is null or v_vaerdi <= 0 then return 'ikke_relevant'; end if;
-      select e.maks_oere into v_maks from public.fragt_transportoer_erstatning e where e.transportoer = v_trans;
+      select e.maks_oere into v_maks from public.fragt_transportoer_erstatning e where e.transportoer = c.transportoer;
+      v_krav := least(c.vaerdi_oere, coalesce(v_maks, c.vaerdi_oere));
 
       insert into public.fragt_reklamationer (
         sag_id, trade_id, saelger_id, forsendelse_id, transportoer, trackingnummer,
         varens_vaerdi_oere, maks_erstatning_oere, kravbeloeb_oere, oprettet_af)
       values (
-        s.id, t.id, t.seller_id, f.id, v_trans,
-        left(nullif(btrim(coalesce(f.sporingsnummer, t.tracking_number, '')), ''), 100),
-        v_vaerdi, v_maks, least(v_vaerdi, coalesce(v_maks, v_vaerdi)), sys)
+        p_sag, c.trade_id, c.saelger_id, c.forsendelse_id, c.transportoer, c.sporingsnummer,
+        c.vaerdi_oere, v_maks, v_krav, sys)
       on conflict (sag_id) do nothing;
       if not found then return 'uaendret'; end if;
 
-      perform public.fragt_reklamation_log(sys, 'reklamation_oprettet', s.id, t.seller_id,
-        'Reklamation hos ' || upper(v_trans) || ' oprettet automatisk (skadet under fragten, ordentlig indpakning). '
-        || 'Sælgeren anmelder selv - kravbeløb ' || public.fragt_reklamation_kr(least(v_vaerdi, coalesce(v_maks, v_vaerdi)))
+      perform public.fragt_reklamation_log(sys, 'reklamation_oprettet', p_sag, c.saelger_id,
+        'Reklamation hos ' || upper(c.transportoer) || ' oprettet automatisk (skadet under fragten, ordentlig '
+        || 'indpakning, køberen er refunderet, og afgørelsen er endelig). Sælgeren anmelder selv - kravbeløb '
+        || public.fragt_reklamation_kr(v_krav)
         || case when v_maks is null then ' (maks. erstatning ukendt - varens værdi)' else '' end);
       return 'oprettet';
     end if;
@@ -453,16 +560,19 @@ begin
     if r.status = 'annulleret' and r.annulleret_auto then
       update public.fragt_reklamationer
          set status = 'afventer_saelger', annulleret_auto = false, annulleret_grund = null,
-             annulleret_af = null, annulleret_kl = null, sag_aendret_kl = null,
+             annulleret_af = null, annulleret_kl = null,
+             sag_aendret_kl = null, sag_aendret_kvitteret_kl = null, sag_aendret_kvitteret_af = null,
              aktiv_fra_kl = now(), fremdrift_kl = now()
        where id = r.id and status = 'annulleret' and annulleret_auto;
-      perform public.fragt_reklamation_log(sys, 'reklamation_genaabnet', s.id, r.saelger_id,
-        'Reklamationen er aktiv igen: sagen er igen afgjort til køber med ordentlig indpakning');
+      perform public.fragt_reklamation_log(sys, 'reklamation_genaabnet', p_sag, r.saelger_id,
+        'Reklamationen er aktiv igen: køberen er refunderet, afgørelsen er endelig, og indpakningen er ordentlig');
       return 'genaabnet';
     end if;
 
     if r.sag_aendret_kl is not null then
-      update public.fragt_reklamationer set sag_aendret_kl = null where id = r.id;
+      update public.fragt_reklamationer
+         set sag_aendret_kl = null, sag_aendret_kvitteret_kl = null, sag_aendret_kvitteret_af = null
+       where id = r.id;
     end if;
     return 'uaendret';
   end if;
@@ -470,21 +580,27 @@ begin
   -- Betingelserne er ikke (længere) opfyldt.
   if not v_findes then return 'ikke_relevant'; end if;
 
+  select status into v_status from public.sager where id = p_sag;
+
   if r.status = 'afventer_saelger' then
     update public.fragt_reklamationer
        set status = 'annulleret', annulleret_auto = true, annulleret_af = sys, annulleret_kl = now(),
-           annulleret_grund = 'Sagen er ændret (genåbnet, omgjort eller indpakningen er vurderet på ny).'
+           annulleret_grund = 'Sagen er ændret (refusionen, afgørelsen eller vurderingen af indpakningen).'
      where id = r.id and status = 'afventer_saelger';
-    perform public.fragt_reklamation_log(sys, 'reklamation_annulleret', s.id, r.saelger_id,
-      'Reklamationen er annulleret automatisk, før sælgeren anmeldte: sagens status er nu ' || s.status);
+    perform public.fragt_reklamation_log(sys, 'reklamation_annulleret', p_sag, r.saelger_id,
+      'Reklamationen er annulleret automatisk, før sælgeren anmeldte (' || coalesce(c.aarsag, '?')
+      || ', sagens status ' || coalesce(v_status, '?') || ')');
     return 'annulleret';
   end if;
 
   if r.status in ('anmeldt', 'godkendt') and r.sag_aendret_kl is null then
-    update public.fragt_reklamationer set sag_aendret_kl = now() where id = r.id;
-    perform public.fragt_reklamation_log(sys, 'reklamation_sag_aendret', s.id, r.saelger_id,
-      'OBS: sagen er ændret (status ' || s.status || '), efter sælgeren har anmeldt skaden hos '
-      || upper(r.transportoer) || '. Tjek reklamationen.');
+    update public.fragt_reklamationer
+       set sag_aendret_kl = now(), sag_aendret_kvitteret_kl = null, sag_aendret_kvitteret_af = null
+     where id = r.id;
+    perform public.fragt_reklamation_log(sys, 'reklamation_sag_aendret', p_sag, r.saelger_id,
+      'OBS: sagen er ændret (' || coalesce(c.aarsag, '?') || ', status ' || coalesce(v_status, '?')
+      || '), efter sælgeren har anmeldt skaden hos ' || upper(r.transportoer)
+      || '. Sælgeren kan ikke registrere "godkendt", før staff har kvitteret.');
     return 'sag_aendret';
   end if;
 
@@ -495,6 +611,88 @@ $fn$;
 revoke all on function public.fragt_reklamation_synkroniser(uuid) from public, anon, authenticated;
 grant execute on function public.fragt_reklamation_synkroniser(uuid) to service_role;
 
+-- Som fragt_reklamation_synkroniser, men fejler aldrig: en uventet fejl
+-- rulles tilbage (kun reklamationens del), logges som drift-fejl
+-- (/admin/drift + alarm-mail) og giver 'fejl'. Cron'en
+-- (fragt_reklamationer_synkroniser_alle) prøver igen hvert 5. minut.
+create or replace function public.fragt_reklamation_synkroniser_sikker(p_sag uuid)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+begin
+  begin
+    return public.fragt_reklamation_synkroniser(p_sag);
+  exception when others then
+    begin
+      perform public.drift_fejl_log(
+        'server', '/admin/reklamationer',
+        left('Reklamation hos fragtfirma: automatisk oprettelse/opdatering fejlede for sag '
+             || coalesce(p_sag::text, '?') || ' (' || sqlstate || '): ' || sqlerrm
+             || '. Prøves igen automatisk hvert 5. minut.', 1000),
+        'reklamation_synk_' || sqlstate);
+    exception when others then
+      raise warning 'fragt_reklamation_synkroniser_sikker: kunne ikke logge fejlen (%)', sqlerrm;
+    end;
+    return 'fejl';
+  end;
+end;
+$fn$;
+
+revoke all on function public.fragt_reklamation_synkroniser_sikker(uuid) from public, anon, authenticated;
+grant execute on function public.fragt_reklamation_synkroniser_sikker(uuid) to service_role;
+
+-- Cron (src/lib/reklamation/notifikationer.ts, før beskederne): synkroniserer
+-- sager, hvor betingelserne kan have ændret sig uden en ændring på sagen
+-- (refusionen bekræftet/fejlet på betalinger, ankefristen udløbet):
+--   - skadede sager med ordentlig indpakning, afviklet, uden reklamation
+--   - åbne reklamationer (afventer_saelger, anmeldt)
+--   - godkendte og auto-annullerede (højst 180 dage tilbage)
+-- Svar: {"<resultat>": antal, ...}. Kun service_role.
+create or replace function public.fragt_reklamationer_synkroniser_alle(p_graense integer default 200)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_sag uuid;
+  v_res text;
+  v_ud  jsonb := '{}'::jsonb;
+begin
+  for v_sag in
+    select x.sag_id from (
+      select o.sag_id, 0 as prio
+        from public.indpakning_ordentlig o
+        join public.sager s on s.id = o.sag_id
+       where o.tilbagekaldt_kl is null and s.type = 'skadet'
+         and s.status in ('afgjort_koeber', 'lukket') and s.afviklet_kl is not null
+         and not exists (select 1 from public.fragt_reklamationer r where r.sag_id = o.sag_id)
+      union all
+      select r.sag_id, 1
+        from public.fragt_reklamationer r
+       where r.status in ('afventer_saelger', 'anmeldt')
+          or (r.status = 'godkendt' and r.fremdrift_kl > now() - interval '180 days')
+          or (r.status = 'annulleret' and r.annulleret_auto and r.annulleret_kl > now() - interval '180 days')
+    ) x
+    order by x.prio, random()
+    limit greatest(1, least(coalesce(p_graense, 200), 1000))
+  loop
+    v_res := public.fragt_reklamation_synkroniser_sikker(v_sag);
+    if v_res <> 'uaendret' and v_res <> 'ikke_relevant' then
+      v_ud := v_ud || jsonb_build_object(v_res, coalesce((v_ud->>v_res)::integer, 0) + 1);
+    end if;
+  end loop;
+  return v_ud;
+end;
+$fn$;
+
+revoke all on function public.fragt_reklamationer_synkroniser_alle(integer) from public, anon, authenticated;
+grant execute on function public.fragt_reklamationer_synkroniser_alle(integer) to service_role;
+
+-- Triggeren fejler aldrig (..._sikker): en sagsafgørelse må ikke rulles
+-- tilbage pga. reklamationen.
 create or replace function public.sager_fragt_reklamation()
 returns trigger
 language plpgsql
@@ -503,7 +701,7 @@ set search_path = public
 as $fn$
 begin
   if new.type = 'skadet' then
-    perform public.fragt_reklamation_synkroniser(new.id);
+    perform public.fragt_reklamation_synkroniser_sikker(new.id);
   end if;
   return null;
 end;
@@ -513,8 +711,10 @@ revoke execute on function public.sager_fragt_reklamation() from public, anon, a
 
 drop trigger if exists sager_fragt_reklamation on public.sager;
 create trigger sager_fragt_reklamation
-  after update of status on public.sager
-  for each row when (new.status is distinct from old.status)
+  after update of status, afviklet_kl, penge_handling on public.sager
+  for each row when (new.status is distinct from old.status
+                     or new.afviklet_kl is distinct from old.afviklet_kl
+                     or new.penge_handling is distinct from old.penge_handling)
   execute function public.sager_fragt_reklamation();
 
 -- Fælles tjek for staff: kalderen (auth.uid()) er staff med aal2,
@@ -595,6 +795,11 @@ begin
   if s.type <> 'skadet' then return jsonb_build_object('kode', 'ikke_skadet'); end if;
   if coalesce(t.afhentning, false) then return jsonb_build_object('kode', 'afhentning'); end if;
 
+  -- Dårlig indpakning blokerer. Påmindelser og advarsler kan ikke
+  -- tilbagekaldes i dag (paamindelser er uforanderlige - trigger
+  -- paamindelser_uforanderlig; advarsler har hverken tilbagekaldelse eller
+  -- sletning), så alle rækker tæller. Får de en tilbagekaldelse senere, skal
+  -- den udelades her og i indpakning_daarlig_ikke_ordentlig.
   if exists (select 1 from public.paamindelser where sag_id = s.id and grund = 'daarlig_indpakning') then
     return jsonb_build_object('kode', 'allerede_vurderet', 'resultat', 'paamindelse');
   end if;
@@ -620,7 +825,7 @@ begin
   perform public.fragt_reklamation_log(v_uid, 'indpakning_ordentlig', s.id, t.seller_id,
     'Indpakningen vurderet ordentlig' || coalesce(' | Intern note: ' || v_note, ''));
 
-  v_res := public.fragt_reklamation_synkroniser(s.id);
+  v_res := public.fragt_reklamation_synkroniser_sikker(s.id);
   return jsonb_build_object('kode', 'ok', 'reklamation', v_res);
 end;
 $fn$;
@@ -668,7 +873,7 @@ begin
   perform public.fragt_reklamation_log(v_uid, 'indpakning_ordentlig_fortrudt', s.id, t.seller_id,
     'Vurderingen "ordentlig indpakning" er fortrudt | ' || v_grund);
 
-  v_res := public.fragt_reklamation_synkroniser(s.id);
+  v_res := public.fragt_reklamation_synkroniser_sikker(s.id);
   return jsonb_build_object('kode', 'ok', 'reklamation', v_res);
 end;
 $fn$;
@@ -722,7 +927,8 @@ $fn$;
 
 -- "Godkendt" (+ beløb, som fragtfirmaet udbetaler direkte til sælgeren).
 -- Fra afventer_saelger eller anmeldt. Beløb 1 øre .. kravbeløbet.
--- Koder: + ugyldigt_beloeb (+ maks_oere).
+-- Spærret, mens sagen er ændret efter anmeldelsen og staff ikke har kvitteret.
+-- Koder: + ugyldigt_beloeb (+ maks_oere), sag_aendret.
 create or replace function public.mit_fragt_reklamation_godkendt(p_reklamation uuid, p_beloeb_oere bigint)
 returns jsonb
 language plpgsql
@@ -739,6 +945,10 @@ begin
   end if;
   if (c.r).status not in ('afventer_saelger', 'anmeldt') then
     return jsonb_build_object('kode', 'forkert_status', 'status', (c.r).status);
+  end if;
+  -- Sagen er ændret efter anmeldelsen, og staff har ikke kvitteret endnu.
+  if (c.r).sag_aendret_kl is not null and (c.r).sag_aendret_kvitteret_kl is null then
+    return jsonb_build_object('kode', 'sag_aendret');
   end if;
   if p_beloeb_oere is null or p_beloeb_oere <= 0 or p_beloeb_oere > (c.r).kravbeloeb_oere then
     return jsonb_build_object('kode', 'ugyldigt_beloeb', 'maks_oere', (c.r).kravbeloeb_oere);
@@ -900,9 +1110,14 @@ begin
   if (c.r).status not in ('afventer_saelger', 'anmeldt') then
     return jsonb_build_object('kode', 'forkert_status', 'status', (c.r).status);
   end if;
+  -- Annulleringen er også staffs kvittering for en ændret sag.
   update public.fragt_reklamationer
      set status = 'annulleret', annulleret_auto = false, annulleret_grund = v_grund,
-         annulleret_af = auth.uid(), annulleret_kl = now()
+         annulleret_af = auth.uid(), annulleret_kl = now(),
+         sag_aendret_kvitteret_kl = case when sag_aendret_kl is not null
+                                         then coalesce(sag_aendret_kvitteret_kl, now()) end,
+         sag_aendret_kvitteret_af = case when sag_aendret_kl is not null
+                                         then coalesce(sag_aendret_kvitteret_af, auth.uid()) end
    where id = (c.r).id and status in ('afventer_saelger', 'anmeldt');
   if not found then return jsonb_build_object('kode', 'forkert_status'); end if;
   perform public.fragt_reklamation_log(auth.uid(), 'reklamation_annulleret', (c.r).sag_id, (c.r).saelger_id,
@@ -915,8 +1130,12 @@ $fn$;
 -- p_status: afventer_saelger | anmeldt | godkendt (kræver p_beloeb_oere) |
 -- afvist (p_grund valgfri) | fravalgt. p_sagsnummer: valgfrit (bevares ellers).
 -- p_begrundelse: intern, påkrævet - logges.
+-- Til afventer_saelger/anmeldt/godkendt kun, når betingelserne er opfyldt
+-- (samme tjek som synkroniseringen: køberen refunderet, endelig afgørelse,
+-- ordentlig indpakning ...). afvist/fravalgt altid. Rettelsen er også staffs
+-- kvittering for en ændret sag.
 -- Koder: + ugyldig_status, begrundelse_mangler, for_lang_tekst,
--- ugyldigt_beloeb (+ maks_oere), uaendret.
+-- ugyldigt_beloeb (+ maks_oere), uaendret, betingelser_ikke_opfyldt (+ aarsag).
 create or replace function public.fragt_reklamation_ret_status(
   p_reklamation uuid, p_status text, p_beloeb_oere bigint, p_sagsnummer text,
   p_grund text, p_begrundelse text)
@@ -927,9 +1146,11 @@ set search_path = public
 as $fn$
 declare
   c       record;
+  b       record;
   v_nr    text := nullif(btrim(coalesce(p_sagsnummer, '')), '');
   v_grund text := nullif(btrim(coalesce(p_grund, '')), '');
   v_beg   text := nullif(btrim(coalesce(p_begrundelse, '')), '');
+  v_kvit  boolean;
 begin
   select * into c from public.fragt_reklamation_tjek(p_reklamation);
   if c.kode is not null then return jsonb_build_object('kode', c.kode); end if;
@@ -952,6 +1173,15 @@ begin
     return jsonb_build_object('kode', 'uaendret');
   end if;
 
+  if p_status in ('afventer_saelger', 'anmeldt', 'godkendt') then
+    select * into b from public.fragt_reklamation_betingelser((c.r).sag_id);
+    if not b.ok then
+      return jsonb_build_object('kode', 'betingelser_ikke_opfyldt', 'aarsag', b.aarsag);
+    end if;
+  end if;
+
+  v_kvit := (c.r).sag_aendret_kl is not null and (c.r).sag_aendret_kvitteret_kl is null;
+
   update public.fragt_reklamationer
      set status = p_status,
          transportoerens_sagsnummer = coalesce(v_nr, transportoerens_sagsnummer),
@@ -963,6 +1193,15 @@ begin
          afgjort_af = case when p_status in ('godkendt', 'afvist') then auth.uid() end,
          fravalgt_kl = case when p_status = 'fravalgt' then now() end,
          annulleret_auto = false, annulleret_grund = null, annulleret_af = null, annulleret_kl = null,
+         -- Betingelserne er opfyldt igen (tjekket ovenfor): ingen ændret sag.
+         sag_aendret_kl = case when p_status in ('afventer_saelger', 'anmeldt', 'godkendt') then null
+                               else sag_aendret_kl end,
+         sag_aendret_kvitteret_kl = case
+           when p_status in ('afventer_saelger', 'anmeldt', 'godkendt') then null
+           when v_kvit then now() else sag_aendret_kvitteret_kl end,
+         sag_aendret_kvitteret_af = case
+           when p_status in ('afventer_saelger', 'anmeldt', 'godkendt') then null
+           when v_kvit then auth.uid() else sag_aendret_kvitteret_af end,
          aktiv_fra_kl = case when p_status = 'afventer_saelger' then now() else aktiv_fra_kl end,
          fremdrift_kl = now()
    where id = (c.r).id and status = (c.r).status;
@@ -972,7 +1211,42 @@ begin
     'Status rettet: ' || (c.r).status || ' -> ' || p_status
     || case when p_status = 'godkendt' then ' (' || public.fragt_reklamation_kr(p_beloeb_oere) || ')' else '' end
     || coalesce(' | Sagsnummer: ' || v_nr, '') || coalesce(' | Grund: ' || v_grund, '')
+    || case when v_kvit then ' | Kvitterer for den ændrede sag' else '' end
     || ' | Begrundelse: ' || v_beg);
+  return jsonb_build_object('kode', 'ok');
+end;
+$fn$;
+
+-- Staff kvitterer for, at sagen er ændret efter sælgerens anmeldelse
+-- ("set - sælgeren må fortsætte"). Status røres ikke; sælgeren kan igen
+-- registrere "godkendt" og får besked (anmeldt). Vil staff i stedet stoppe
+-- reklamationen: annullér eller ret status (det kvitterer også).
+-- Koder: + begrundelse_mangler, for_lang_tekst, ikke_aendret.
+create or replace function public.fragt_reklamation_kvitter_sag_aendret(p_reklamation uuid, p_begrundelse text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  c     record;
+  v_beg text := nullif(btrim(coalesce(p_begrundelse, '')), '');
+begin
+  select * into c from public.fragt_reklamation_tjek(p_reklamation);
+  if c.kode is not null then return jsonb_build_object('kode', c.kode); end if;
+  if v_beg is null then return jsonb_build_object('kode', 'begrundelse_mangler'); end if;
+  if char_length(v_beg) > 2000 then return jsonb_build_object('kode', 'for_lang_tekst'); end if;
+  if (c.r).sag_aendret_kl is null or (c.r).sag_aendret_kvitteret_kl is not null
+     or (c.r).status not in ('anmeldt', 'godkendt') then
+    return jsonb_build_object('kode', 'ikke_aendret');
+  end if;
+  update public.fragt_reklamationer
+     set sag_aendret_kvitteret_kl = now(), sag_aendret_kvitteret_af = auth.uid(), fremdrift_kl = now()
+   where id = (c.r).id and sag_aendret_kl is not null and sag_aendret_kvitteret_kl is null
+     and status in ('anmeldt', 'godkendt');
+  if not found then return jsonb_build_object('kode', 'ikke_aendret'); end if;
+  perform public.fragt_reklamation_log(auth.uid(), 'reklamation_sag_aendret_kvitteret', (c.r).sag_id, (c.r).saelger_id,
+    'Kvitteret for den ændrede sag - reklamationen fortsætter (status ' || (c.r).status || ') | Begrundelse: ' || v_beg);
   return jsonb_build_object('kode', 'ok');
 end;
 $fn$;
@@ -989,7 +1263,8 @@ begin
     'public.fragt_reklamation_gem_note(uuid,text)',
     'public.fragt_reklamation_send_igen(uuid)',
     'public.fragt_reklamation_annuller(uuid,text)',
-    'public.fragt_reklamation_ret_status(uuid,text,bigint,text,text,text)'] loop
+    'public.fragt_reklamation_ret_status(uuid,text,bigint,text,text,text)',
+    'public.fragt_reklamation_kvitter_sag_aendret(uuid,text)'] loop
     execute format('revoke all on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
@@ -999,6 +1274,10 @@ end $do$;
 -- 9. Sælgerens visning, pakke-adgang og admin-tællere
 -- ===========================================================================
 -- Kun offentlige felter. Sælgeren udledes af auth.uid(). p_trade = null: alle.
+-- afventer_bidhamr: sagen er ændret efter anmeldelsen, og staff har ikke
+-- kvitteret endnu ("godkendt" er spærret). Returtypen er udvidet efter
+-- første udgave - derfor drop først (genkørsel).
+drop function if exists public.mine_fragt_reklamationer(uuid);
 create or replace function public.mine_fragt_reklamationer(p_trade uuid default null)
 returns table (
   id uuid, sag_id uuid, trade_id uuid, transportoer text, status text,
@@ -1006,7 +1285,7 @@ returns table (
   maks_erstatning_oere bigint, godkendt_beloeb_oere bigint,
   afvisningsgrund text, annulleret_grund text, transportoerens_sagsnummer text,
   oprettet_kl timestamptz, anmeldt_kl timestamptz, afgjort_kl timestamptz,
-  fravalgt_kl timestamptz, annulleret_kl timestamptz)
+  fravalgt_kl timestamptz, annulleret_kl timestamptz, afventer_bidhamr boolean)
 language sql
 stable
 security definer
@@ -1016,7 +1295,8 @@ as $fn$
          r.trackingnummer, r.varens_vaerdi_oere, r.kravbeloeb_oere,
          r.maks_erstatning_oere, r.godkendt_beloeb_oere,
          r.afvisningsgrund, r.annulleret_grund, r.transportoerens_sagsnummer,
-         r.oprettet_kl, r.anmeldt_kl, r.afgjort_kl, r.fravalgt_kl, r.annulleret_kl
+         r.oprettet_kl, r.anmeldt_kl, r.afgjort_kl, r.fravalgt_kl, r.annulleret_kl,
+         (r.sag_aendret_kl is not null and r.sag_aendret_kvitteret_kl is null) as afventer_bidhamr
     from public.fragt_reklamationer r
    where auth.uid() is not null
      and r.saelger_id = auth.uid()
@@ -1052,7 +1332,8 @@ grant execute on function public.min_reklamationspakke_adgang(uuid) to authentic
 -- Admin-lampe (alle staff). Ikke-staff: alt 0.
 --   afventer_saelger: sælgeren har ikke anmeldt endnu.
 --   stille:           åben (afventer_saelger/anmeldt) uden fremdrift i 14 dage.
---   sag_aendret:      sagen er ændret, efter sælgeren anmeldte.
+--   sag_aendret:      sagen er ændret, efter sælgeren anmeldte, og staff har
+--                     ikke kvitteret.
 create or replace function public.fragt_reklamationer_antal()
 returns jsonb
 language sql
@@ -1068,7 +1349,8 @@ as $fn$
                        where status in ('afventer_saelger', 'anmeldt')
                          and fremdrift_kl < now() - interval '14 days'),
            'sag_aendret', (select count(*) from public.fragt_reklamationer
-                            where status in ('anmeldt', 'godkendt') and sag_aendret_kl is not null))
+                            where status in ('anmeldt', 'godkendt') and sag_aendret_kl is not null
+                              and sag_aendret_kvitteret_kl is null))
          end;
 $fn$;
 
@@ -1078,3 +1360,9 @@ grant execute on function public.fragt_reklamationer_antal() to authenticated;
 -- Eksisterende sager: en skadet sag, der allerede er afgjort til køber, får
 -- først en reklamation, når staff vurderer indpakningen som ordentlig
 -- (indpakning_ordentlig er ny, så ingen opfylder betingelserne i dag).
+-- Genkørsel oven på en tidligere udgave: reklamationer, der blev oprettet
+-- for tidligt (fx ved afventer_retur), rettes af cron'en
+-- (fragt_reklamationer_synkroniser_alle) - de annulleres automatisk eller
+-- markeres "sag ændret", indtil betingelserne er opfyldt.
+
+select public.fragt_reklamationer_synkroniser_alle(1000);

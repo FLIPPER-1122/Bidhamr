@@ -11,7 +11,7 @@ import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { sagSti } from "@/lib/sager";
-import { kroner, kronerTilOere } from "@/lib/reklamation/typer";
+import { fortolkKroner, kroner } from "@/lib/reklamation/typer";
 
 export type MinReklamationSvar = { ok: true; uaendret?: boolean } | { fejl: string };
 
@@ -23,6 +23,8 @@ const KODE: Record<string, string> = {
   ikke_fundet: "Vi kan ikke finde reklamationen. Genindlæs siden, og prøv igen.",
   forkert_status: "Reklamationen er ændret i mellemtiden. Genindlæs siden for at se, hvordan den står nu.",
   for_lang_tekst: "Teksten er for lang. Gør den kortere, og prøv igen.",
+  sag_aendret:
+    "Sagen om handlen er ændret, og BidHamr kigger på det. Vent med at registrere erstatningen, til du har hørt fra os.",
 };
 
 async function koer(navn: string, rpc: string, args: Record<string, unknown>, tradeId?: string): Promise<MinReklamationSvar> {
@@ -62,9 +64,9 @@ export async function reklamationAnmeldt(reklamationId: string, sagsnummer?: str
 // beloebKr: dansk format, fx "1.250,00".
 export async function reklamationGodkendt(reklamationId: string, beloebKr: string, tradeId?: string) {
   if (!UUID.test(reklamationId)) return { fejl: KODE.ikke_fundet };
-  const oere = kronerTilOere(String(beloebKr ?? ""));
-  if (oere === null) return { fejl: "Skriv det godkendte beløb i kroner, fx 1.250,00." };
-  return koer("godkendt", "mit_fragt_reklamation_godkendt", { p_reklamation: reklamationId, p_beloeb_oere: oere }, tradeId);
+  const b = fortolkKroner(String(beloebKr ?? ""));
+  if ("fejl" in b) return { fejl: b.fejl };
+  return koer("godkendt", "mit_fragt_reklamation_godkendt", { p_reklamation: reklamationId, p_beloeb_oere: b.oere }, tradeId);
 }
 
 export async function reklamationAfvist(reklamationId: string, grund?: string, tradeId?: string) {

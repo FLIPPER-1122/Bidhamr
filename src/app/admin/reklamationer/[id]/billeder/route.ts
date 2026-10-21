@@ -2,14 +2,18 @@ import { type NextRequest } from "next/server";
 import { assertRole } from "@/lib/adminAuth";
 import { logDriftFejl } from "@/lib/drift";
 import { hentReklamationspakke } from "@/lib/reklamation/pakke";
+import { FOR_MANGE, reklamationIndenForGraense } from "@/lib/reklamation/saelgerRute";
+import { reklamationStaffAdgang } from "@/lib/reklamation/staffAdgang";
 import { reklamationZipSvar, tekstSvar } from "@/lib/reklamation/zipSvar";
 
 // Staff: alle billeder til en reklamation som én ZIP (sælgers pakkebilleder +
 // købers skadebilleder + oplysninger.txt).
 //
 // GET /admin/reklamationer/<id>/billeder
-// KUN staff (medarbejder+) med to-trins-login (assertRole -> hentStaffAdgang).
-// Alle andre får 404. Ingen ændringer. Sælgerens udgave:
+// KUN staff (medarbejder+) med to-trins-login (assertRole -> hentStaffAdgang),
+// som ikke er inhabil (part i handlen eller har handlet med en af parterne).
+// Alle andre får 404 (inhabil: 403 med forklaring). Grænse: 60 ZIP'er i
+// timen pr. medarbejder (fejler lukket). Ingen ændringer. Sælgerens udgave:
 // /api/reklamation/<id>/billeder.
 
 export const dynamic = "force-dynamic";
@@ -25,11 +29,18 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   }
   const { id } = await ctx.params;
   if (!UUID.test(id)) return tekstSvar(404, "Reklamationen findes ikke.");
+  const rid = id.toLowerCase();
 
   try {
-    const res = await hentReklamationspakke(adgang.admin, id.toLowerCase(), "staff");
+    const a = await reklamationStaffAdgang(adgang.admin, adgang.userId, rid);
+    if (a === "ikke_fundet") return tekstSvar(404, "Reklamationen findes ikke.");
+    if (a === "inhabil") {
+      return tekstSvar(403, "Du er inhabil i denne handel og kan ikke hente billederne. Lad en kollega tage den.");
+    }
+    if (!(await reklamationIndenForGraense(adgang.userId, "staff_zip"))) return tekstSvar(429, FOR_MANGE);
+    const res = await hentReklamationspakke(adgang.admin, rid, "staff");
     if (!res) return tekstSvar(404, "Reklamationen findes ikke.");
-    return await reklamationZipSvar(adgang.admin, res.pakke, res.filer);
+    return await reklamationZipSvar(adgang.admin, res.pakke, res.filer, adgang.userId);
   } catch (err) {
     await logDriftFejl({ kilde: "server", hvor: "admin/reklamationer/billeder", fejl: err, brugerId: adgang.userId });
     return tekstSvar(500, "Billederne kunne ikke hentes. Prøv igen om lidt.");

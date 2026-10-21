@@ -18,7 +18,7 @@ import { assertRole } from "@/lib/adminAuth";
 import { createClient } from "@/lib/supabase/server";
 import { adminSagSti, sagSti } from "@/lib/sager";
 import { notificerReklamationer } from "@/lib/reklamation/notifikationer";
-import { erRetStatus, kroner, kronerTilOere } from "@/lib/reklamation/typer";
+import { erRetStatus, fortolkKroner, kroner } from "@/lib/reklamation/typer";
 
 export type ReklamationSvar = { ok: true; uaendret?: boolean } | { fejl: string };
 
@@ -43,6 +43,22 @@ const KODE: Record<string, string> = {
   ikke_vurderet: "Indpakningen er ikke vurderet som ordentlig.",
   reklamation_anmeldt: "Sælgeren har allerede anmeldt skaden. Ret reklamationens status i stedet.",
   uaendret: "Intet at ændre.",
+  ikke_aendret: "Der er ingen ændret sag at kvittere for. Genindlæs siden.",
+};
+
+// Hvorfor reklamationen ikke kan være åben/anmeldt/godkendt
+// (fragt_reklamation_betingelser).
+const BETINGELSE: Record<string, string> = {
+  ikke_refunderet: "køberen har ikke fået pengene tilbage (refusionen er ikke bekræftet)",
+  ikke_koebers_fordel: "sagen er ikke endeligt afgjort til køberens fordel",
+  anke_venter: "en anke venter på afgørelse",
+  ankefrist: "ankefristen er ikke udløbet endnu",
+  indpakning: "indpakningen er ikke vurderet som ordentlig",
+  ingen_forsendelse: "der er ingen pakke med DAO eller GLS på handlen",
+  afhentning: "varen blev afhentet",
+  ikke_skadet: "sagen handler ikke om skade under fragten",
+  ingen_handel: "handlen findes ikke",
+  ingen_vaerdi: "varens værdi kan ikke findes",
 };
 
 function erUuid(v: unknown): v is string {
@@ -59,6 +75,10 @@ function fejlTekst(svar: Record<string, unknown>): string {
   }
   if (kode === "allerede_vurderet") {
     return "Indpakningen er allerede vurderet som dårlig i denne sag.";
+  }
+  if (kode === "betingelser_ikke_opfyldt") {
+    const grund = BETINGELSE[String(svar.aarsag ?? "")];
+    return `Reklamationen kan ikke åbnes igen, fordi ${grund ?? "betingelserne ikke er opfyldt"}. Vælg afvist, fravalgt eller annullér.`;
   }
   return KODE[kode] ?? GENERISK;
 }
@@ -100,8 +120,9 @@ async function koer(
 
 // --- Indpakning (på sagen) ---------------------------------------------------
 
-// "Indpakningen er ordentlig". Opretter reklamationen automatisk, hvis sagen
-// allerede er afgjort til køber (ellers ved afgørelsen).
+// "Indpakningen er ordentlig". Reklamationen oprettes automatisk, når sagen
+// er endelig til købers fordel, og køberen er refunderet (med det samme,
+// hvis det allerede er sket - ellers af triggeren/cron'en).
 export async function vurderIndpakningOrdentlig(sagId: string, internNote?: string): Promise<ReklamationSvar> {
   if (!erUuid(sagId)) return { fejl: "Sagen findes ikke." };
   return koer("vurderIndpakningOrdentlig", "indpakning_ordentlig", {
@@ -144,6 +165,17 @@ export async function annullerReklamation(reklamationId: string, grund: string, 
   }, { sagId: erUuid(sagId) ? sagId : undefined });
 }
 
+// Sagen er ændret efter sælgerens anmeldelse: staff kvitterer ("set -
+// reklamationen fortsætter"). Sælgeren kan så igen registrere "godkendt" og
+// får besked. begrundelse er intern og påkrævet.
+export async function kvitterSagAendret(reklamationId: string, begrundelse: string, sagId?: string): Promise<ReklamationSvar> {
+  if (!erUuid(reklamationId)) return { fejl: KODE.ikke_fundet };
+  return koer("kvitterSagAendret", "fragt_reklamation_kvitter_sag_aendret", {
+    p_reklamation: reklamationId,
+    p_begrundelse: typeof begrundelse === "string" ? begrundelse : "",
+  }, { sagId: erUuid(sagId) ? sagId : undefined });
+}
+
 // Ret status, hvis sælgeren har registreret forkert. beloebKr kræves ved
 // "godkendt" (dansk format, fx "1.250,00"). begrundelse er intern og påkrævet.
 export async function retReklamationStatus(input: {
@@ -159,8 +191,9 @@ export async function retReklamationStatus(input: {
   if (!erRetStatus(input.status)) return { fejl: KODE.ugyldig_status };
   let beloeb: number | null = null;
   if (input.status === "godkendt") {
-    beloeb = kronerTilOere(String(input.beloebKr ?? ""));
-    if (beloeb === null) return { fejl: "Skriv det godkendte beløb i kroner, fx 1.250,00." };
+    const b = fortolkKroner(String(input.beloebKr ?? ""));
+    if ("fejl" in b) return { fejl: b.fejl };
+    beloeb = b.oere;
   }
   return koer("retReklamationStatus", "fragt_reklamation_ret_status", {
     p_reklamation: input.reklamationId,
