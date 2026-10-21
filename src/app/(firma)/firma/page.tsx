@@ -11,6 +11,8 @@ import {
   FIRMA_BETALING,
 } from "@/lib/tekster/erhverv";
 import { kr, krFraOere } from "@/lib/erhverv/visning";
+import { hentMineEkstraFragtRegninger } from "@/app/actions/ekstraFragt";
+import EkstraFragtBjaelke from "@/components/ekstraFragt/EkstraFragtBjaelke";
 
 // Overblik (/firma): nøgletal og "Venter på dig" med store knapper direkte
 // til handlingen. Resten har hver sin side i menuen (layout.tsx).
@@ -19,7 +21,7 @@ import { kr, krFraOere } from "@/lib/erhverv/visning";
 export const metadata = { title: D.overblik.titel };
 
 export default async function FirmaOverblik() {
-  const { oversigt: o } = await kraevFirma("/firma");
+  const [{ oversigt: o }, ekstraFragt] = await Promise.all([kraevFirma("/firma"), hentMineEkstraFragtRegninger()]);
   const lukket = foerLancering();
   const k = o.ugekvote;
   const opret = opretStatus(o, lukket);
@@ -28,6 +30,8 @@ export default async function FirmaOverblik() {
   return (
     <FirmaSide titel={D.overblik.titel} intro={D.overblik.intro}>
       {lukket && <LukketBoks />}
+      {/* Ubetalt ekstra fragt (for lille pakke) - knappen går direkte til betalingen. */}
+      <EkstraFragtBjaelke regninger={ekstraFragt} firma />
       {!abonnementAktivt(o) && <Advarsel titel={T.ikkeAktiv.titel} tekst={ikkeAktivTekst(o)} />}
       {o.firma.abonnement_status === "afventer_betaling" && (
         <Link href="/firma/abonnement" className={`${E_KNAP_PRIMAER} w-full sm:w-auto`}>

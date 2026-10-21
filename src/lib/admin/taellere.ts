@@ -13,6 +13,7 @@ import { hentNoedstopBjaelke } from "@/app/actions/adminPengesikkerhed";
 import { getStaffRole } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hentReklamationTal } from "@/lib/reklamation/tal";
+import { createClient } from "@/lib/supabase/server";
 
 // Menuens tællere (kun antal - ingen beløb). cache() deler svaret mellem
 // admin/layout.tsx og siden i samme forespørgsel, så forsiden ikke spørger
@@ -43,6 +44,12 @@ export type StaffTal = {
   reklamationAfventer: number;
   reklamationStille: number;
   reklamationSagAendret: number;
+  // Ekstra fragt (ekstra_fragt_antal): afventer betaling (til orientering),
+  // spærrede sælgere (fristen overskredet) og indsigelser (rødt - staff skal
+  // afgøre dem).
+  ekstraFragtAfventer: number;
+  ekstraFragtForfaldne: number;
+  ekstraFragtIndsigelser: number;
 };
 
 function n(r: object | null | undefined, k: string): number {
@@ -54,6 +61,7 @@ function n(r: object | null | undefined, k: string): number {
 export const hentStaffTal = cache(async (): Promise<StaffTal> => {
   const handler = hentHandlerTal();
   const reklamation = hentReklamationTaellere();
+  const ekstraFragt = hentEkstraFragtTal();
   const [ubetalte, betalinger, chats, sager, lukninger, tryghed, dsa] = await Promise.all([
     hentAntalUbetalte(),
     hentAntalBetalingerTilHandling(),
@@ -63,9 +71,12 @@ export const hentStaffTal = cache(async (): Promise<StaffTal> => {
     hentAntalTryghed(),
     hentAntalDsa(),
   ]);
-  const [h, r] = await Promise.all([handler, reklamation]);
+  const [h, r, ef] = await Promise.all([handler, reklamation, ekstraFragt]);
   return {
     ...h,
+    ekstraFragtAfventer: n(ef, "afventer_betaling"),
+    ekstraFragtForfaldne: n(ef, "forfaldne"),
+    ekstraFragtIndsigelser: n(ef, "indsigelser"),
     reklamationAfventer: r?.afventerSaelger ?? 0,
     reklamationStille: r?.stille ?? 0,
     reklamationSagAendret: r?.sagAendret ?? 0,
@@ -104,6 +115,19 @@ async function hentHandlerTal(): Promise<{ haenger: number; fragt: number; marke
 async function hentReklamationTaellere() {
   if (!(await getStaffRole())) return null;
   return hentReklamationTal(createAdminClient());
+}
+
+// Ekstra fragt (ekstra_fragt_antal). Kaldes med BRUGERENS session: databasen
+// tjekker selv er_staff() (rolle + to-trins-login) og giver 0 ellers. Fejl
+// (fx før migrationen 20261029020000) giver null = 0.
+async function hentEkstraFragtTal(): Promise<object | null> {
+  if (!(await getStaffRole())) return null;
+  try {
+    const { data, error } = await (await createClient()).rpc("ekstra_fragt_antal");
+    return error || !data || typeof data !== "object" ? null : (data as object);
+  } catch {
+    return null;
+  }
 }
 
 // Nye erhvervshenvendelser (chef og sælger; andre får 0).

@@ -38,6 +38,12 @@ export const MENU_IKONER: Record<string, ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 21l-8 -4.5v-9l8 -4.5l8 4.5v4.5M12 12l8 -4.5M12 12v9M12 12l-8 -4.5M15 19l2 2l4 -4" />
     </svg>
   ),
+  // Pakke med plus: ekstra fragt (for lille pakkestørrelse).
+  "/admin/ekstra-fragt": (
+    <svg className="h-5 w-5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21l-8 -4.5v-9l8 -4.5l8 4.5v4.5M12 12l8 -4.5M12 12v9M12 12l-8 -4.5M16 19h6M19 16v6" />
+    </svg>
+  ),
   "/admin/handler": (
     <svg className="h-5 w-5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
