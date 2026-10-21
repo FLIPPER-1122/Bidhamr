@@ -31,6 +31,7 @@
 --   betalt -> refunderet                              (kun spejlet fra Stripe)
 --   betalt -> afventer_betaling (genåbnet)            (staff, kun efter en TABT
 --                                                     bankindsigelse - se nedenfor)
+--   betalt (tabt bankindsigelse) forbliver betalt     (staff: "Afslut uden genåbning")
 -- Frist: 14 dage fra oprettelsen. Fastholdes en indsigelse, er fristen mindst
 -- 7 dage fra afgørelsen. Genåbnet: 14 dage fra genåbningen.
 --
@@ -44,13 +45,20 @@
 -- intet flag at nulstille).
 --
 -- Bankindsigelse (chargeback) på en betalt regning: spejles fra Stripe
--- (ekstra_fragt_registrer_bankindsigelse). Tabes den, markeres regningen
--- (bankindsigelse_tabt_kl - admin-lampen), og staff får en alarm. Regningen
--- genåbnes ALDRIG automatisk (Filip, 21. okt. 2026). Staff kan genåbne den
--- (ekstra_fragt_genaabn): ny frist, ny betalingsrunde (runde + 1, ny
--- PaymentIntent med ny idempotency key), kreditnota for rundens faktura
--- (dateret på tabsdagen, reference = indsigelsens id), og en ny faktura, når
--- sælgeren betaler igen. Den tilbageførte PaymentIntent/charge gemmes i
+-- (ekstra_fragt_registrer_bankindsigelse). Tabes den, sker i samme
+-- transaktion: regningen markeres (bankindsigelse_tabt_kl - admin-lampen), og
+-- der laves AUTOMATISK en kreditnota for rundens faktura (dateret på
+-- tabsdagen, reference = indsigelsens id - pengene er hentet tilbage af
+-- kortudstederen; idempotent: aldrig to kreditnotaer). Staff får en alarm.
+-- Regningen genåbnes ALDRIG automatisk (Filip, 21. okt. 2026). Staff vælger:
+--   "Genåbn regning" (ekstra_fragt_genaabn): sælgeren skal betale igen - ny
+--     frist, ny betalingsrunde (runde + 1, ny PaymentIntent med ny
+--     idempotency key) og en ny faktura, når sælgeren betaler. Laver ikke en
+--     kreditnota igen.
+--   "Afslut uden genåbning" (ekstra_fragt_bankindsigelse_afslut): regningen
+--     forbliver lukket, sælgeren opkræves ikke igen, lampen slukkes
+--     (bankindsigelse_haandteret_kl/_af/_begrundelse - intern begrundelse).
+-- Den tilbageførte PaymentIntent/charge gemmes ved genåbning i
 -- tilbagefoerte_payment_intents/-charges og adopteres ALDRIG igen.
 --
 -- Oprydning: dokumentationsfiler i bucket'en, som ingen regning bruger, og
@@ -233,7 +241,12 @@ alter table public.ekstra_fragt_regninger
   -- Seneste genåbning (staff; begrundelsen vises for sælgeren).
   add column if not exists genaabnet_kl timestamptz,
   add column if not exists genaabnet_af uuid references public.users(id) on delete restrict,
-  add column if not exists genaabn_begrundelse text;
+  add column if not exists genaabn_begrundelse text,
+  -- Staff har afsluttet den tabte bankindsigelse UDEN genåbning (sælgeren
+  -- opkræves ikke igen; lampen slukkes). Intern begrundelse (kun staff).
+  add column if not exists bankindsigelse_haandteret_kl timestamptz,
+  add column if not exists bankindsigelse_haandteret_af uuid references public.users(id) on delete restrict,
+  add column if not exists bankindsigelse_haandteret_begrundelse text;
 
 alter table public.ekstra_fragt_regninger drop constraint if exists ekstra_fragt_genaabn_check;
 alter table public.ekstra_fragt_regninger add constraint ekstra_fragt_genaabn_check check (
@@ -244,7 +257,11 @@ alter table public.ekstra_fragt_regninger add constraint ekstra_fragt_genaabn_ch
   and coalesce(char_length(genaabn_begrundelse), 0) <= 1000
   and coalesce(char_length(bankindsigelse_id), 0) <= 100
   and coalesce(char_length(bankindsigelse_status), 0) <= 40
-  and (bankindsigelse_tabt_kl is null or bankindsigelse_id is not null));
+  and (bankindsigelse_tabt_kl is null or bankindsigelse_id is not null)
+  and ((bankindsigelse_haandteret_kl is null) = (bankindsigelse_haandteret_af is null))
+  and ((bankindsigelse_haandteret_kl is null) = (bankindsigelse_haandteret_begrundelse is null))
+  and (bankindsigelse_haandteret_kl is null or bankindsigelse_tabt_kl is not null)
+  and coalesce(char_length(bankindsigelse_haandteret_begrundelse), 0) <= 1000);
 
 -- Én åben regning pr. forsendelse.
 create unique index if not exists ekstra_fragt_en_aaben
@@ -326,7 +343,7 @@ declare
   v_nye  text[] := array[
     'ekstra_fragt_oprettet', 'ekstra_fragt_frafaldet', 'ekstra_fragt_fastholdt',
     'ekstra_fragt_indsigelse', 'ekstra_fragt_betalt', 'ekstra_fragt_note',
-    'ekstra_fragt_bankindsigelse_tabt', 'ekstra_fragt_genaabnet'];
+    'ekstra_fragt_bankindsigelse_tabt', 'ekstra_fragt_genaabnet', 'ekstra_fragt_bankindsigelse_afsluttet'];
   v_gl   text[];
   v_vals text[];
 begin
@@ -721,18 +738,19 @@ $fn$;
 
 -- Genåbn en BETALT regning, hvis betaling er tilbageført efter en TABT
 -- bankindsigelse (Filip, 21. okt. 2026: kun staff - aldrig automatisk).
--- Begrundelsen vises for sælgeren. I én transaktion:
---   1. rundens faktura sikres (laves nu, hvis fakturakøen ikke har nået det),
---   2. kreditnota for den (dateret på tabsdagen, reference = indsigelsens id
---      - pengene er hentet tilbage af kortudstederen),
---   3. regningen: afventer_betaling, frist 14 dage, runde + 1, den
---      tilbageførte PaymentIntent/charge flyttes til tilbagefoerte_* (adopteres
---      aldrig igen), pi_forsoeg + 1 (ny idempotency key), betalingsfelterne og
---      markeringen ryddes. Betaler sælgeren igen, laver fakturakøen rundens
---      nye faktura.
+-- Begrundelsen vises for sælgeren. Kreditnotaen for den tilbageførte betaling
+-- er allerede lavet, da den tabte indsigelse blev registreret
+-- (ekstra_fragt_registrer_bankindsigelse) - her sikres kun, at den findes
+-- (idempotent: aldrig en kreditnota mere). I én transaktion: regningen sættes
+-- til afventer_betaling, frist 14 dage, runde + 1, den tilbageførte
+-- PaymentIntent/charge flyttes til tilbagefoerte_* (adopteres aldrig igen),
+-- pi_forsoeg + 1 (ny idempotency key), betalingsfelterne og markeringen
+-- ryddes. Betaler sælgeren igen, laver fakturakøen rundens nye faktura.
+-- Er indsigelsen afsluttet uden genåbning, kan regningen ikke genåbnes.
 -- Svar ved ok: {kode, frist, runde, trade_id, saelger_id}.
 -- Koder: + begrundelse_mangler | for_lang_tekst | forkert_status (+ status) |
--- ingen_tabt_bankindsigelse | delvis_bankindsigelse | findes_allerede
+-- ingen_tabt_bankindsigelse | delvis_bankindsigelse | findes_allerede |
+-- bankindsigelse_afsluttet
 create or replace function public.ekstra_fragt_genaabn(p_regning uuid, p_begrundelse text)
 returns jsonb
 language plpgsql
@@ -743,9 +761,6 @@ declare
   c       record;
   v_beg   text := nullif(btrim(coalesce(p_begrundelse, '')), '');
   v_frist timestamptz := now() + interval '14 days';
-  v_fak   record;
-  m       record;
-  v_ok    boolean;
 begin
   select * into c from public.ekstra_fragt_tjek(p_regning);
   if c.kode is not null then return jsonb_build_object('kode', c.kode); end if;
@@ -757,6 +772,9 @@ begin
   if (c.r).bankindsigelse_tabt_kl is null or (c.r).stripe_charge_id is null then
     return jsonb_build_object('kode', 'ingen_tabt_bankindsigelse');
   end if;
+  if (c.r).bankindsigelse_haandteret_kl is not null then
+    return jsonb_build_object('kode', 'bankindsigelse_afsluttet');
+  end if;
   -- Kun en tilbageførsel af hele det modtagne beløb (en delvis håndteres manuelt).
   if (c.r).bankindsigelse_beloeb_oere is distinct from coalesce((c.r).modtaget_oere, (c.r).beloeb_oere) then
     return jsonb_build_object('kode', 'delvis_bankindsigelse');
@@ -767,24 +785,13 @@ begin
     return jsonb_build_object('kode', 'findes_allerede');
   end if;
 
-  -- 1-2. Bogføringen: rundens faktura og en kreditnota for den.
-  select * into v_fak from public.ekstra_fragt_lav_faktura((c.r).id);
-  if v_fak.faktura_id is null then raise exception 'Ekstraregningens faktura kunne ikke laves (%)', (c.r).id; end if;
-  select fa.linjer, fa.manuel, fa.status, fa.bruger_id, fa.betaling_id, fa.trade_id into m
-    from public.fakturaer fa where fa.id = v_fak.faktura_id;
-  v_ok := not (m.manuel or m.status in ('kraever_handling', 'haandteret_manuelt'));
-  insert into public.fakturaer (dokument, part, bruger_id, betaling_id, trade_id, krediterer_id, linjer,
-                                beloeb_oere, moms_oere, betalt_dato, stripe_reference, status, manuel, sidste_fejl,
-                                slags, ekstra_fragt_id, ekstra_fragt_runde)
-  values ('kreditnota', 'saelger', m.bruger_id, m.betaling_id, m.trade_id, v_fak.faktura_id, m.linjer,
-          public.faktura_sum(m.linjer), public.faktura_moms(m.linjer),
-          ((c.r).bankindsigelse_tabt_kl at time zone 'Europe/Copenhagen')::date, (c.r).bankindsigelse_id,
-          case when v_ok then 'venter' else 'kraever_handling' end, not v_ok,
-          case when v_ok then null else 'Fakturaen blev håndteret manuelt – lav kreditnotaen manuelt i Dinero.' end,
-          'ekstra_fragt', (c.r).id, (c.r).runde)
-  on conflict do nothing;
+  -- Rundens kreditnota er lavet ved tabet; findes den ikke (fx en regning
+  -- markeret før denne udgave), laves den nu. Aldrig to.
+  if public.ekstra_fragt_bankindsigelse_kreditnota((c.r).id) is null then
+    raise exception 'Kreditnotaen for den tilbageførte betaling kunne ikke laves (%)', (c.r).id;
+  end if;
 
-  -- 3. Regningen åbnes igen (ny runde).
+  -- Regningen åbnes igen (ny runde).
   update public.ekstra_fragt_regninger
      set status = 'afventer_betaling', frist = v_frist, runde = runde + 1,
          genaabnet_kl = now(), genaabnet_af = auth.uid(), genaabn_begrundelse = v_beg,
@@ -801,10 +808,57 @@ begin
 
   perform public.ekstra_fragt_log(auth.uid(), 'ekstra_fragt_genaabnet', (c.r).trade_id, (c.r).saelger_id,
     'Ekstraregningen (' || public.ekstra_fragt_kr((c.r).beloeb_oere) || ') er genåbnet efter en tabt bankindsigelse ('
-    || (c.r).bankindsigelse_id || '). Kreditnota for runde ' || (c.r).runde || ', ny frist '
+    || (c.r).bankindsigelse_id || '). Runde ' || (c.r).runde || ' er krediteret, ny frist '
     || to_char(v_frist at time zone 'Europe/Copenhagen', 'DD-MM-YYYY') || ' | Til sælgeren: ' || v_beg);
   return jsonb_build_object('kode', 'ok', 'frist', v_frist, 'runde', (c.r).runde + 1,
                             'trade_id', (c.r).trade_id, 'saelger_id', (c.r).saelger_id);
+end;
+$fn$;
+
+-- Afslut en tabt bankindsigelse UDEN genåbning (staff): regningen forbliver
+-- lukket (betalt - betalingen er tilbageført og krediteret ved tabet), sælgeren
+-- opkræves ikke igen, og admin-lampen slukkes. Begrundelsen er intern (kun
+-- staff). Kreditnotaen sikres (idempotent - laves kun, hvis den mangler).
+-- Svar ved ok: {kode, trade_id, saelger_id} (+ uaendret, hvis allerede afsluttet).
+-- Koder: + begrundelse_mangler | for_lang_tekst | forkert_status (+ status) |
+-- ingen_tabt_bankindsigelse
+create or replace function public.ekstra_fragt_bankindsigelse_afslut(p_regning uuid, p_begrundelse text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  c     record;
+  v_beg text := nullif(btrim(coalesce(p_begrundelse, '')), '');
+begin
+  select * into c from public.ekstra_fragt_tjek(p_regning);
+  if c.kode is not null then return jsonb_build_object('kode', c.kode); end if;
+  if v_beg is null then return jsonb_build_object('kode', 'begrundelse_mangler'); end if;
+  if char_length(v_beg) > 1000 then return jsonb_build_object('kode', 'for_lang_tekst'); end if;
+  if (c.r).status <> 'betalt' then
+    return jsonb_build_object('kode', 'forkert_status', 'status', (c.r).status);
+  end if;
+  if (c.r).bankindsigelse_tabt_kl is null then
+    return jsonb_build_object('kode', 'ingen_tabt_bankindsigelse');
+  end if;
+  if (c.r).bankindsigelse_haandteret_kl is not null then
+    return jsonb_build_object('kode', 'ok', 'uaendret', true,
+                              'trade_id', (c.r).trade_id, 'saelger_id', (c.r).saelger_id);
+  end if;
+  if public.ekstra_fragt_bankindsigelse_kreditnota((c.r).id) is null then
+    raise exception 'Kreditnotaen for den tilbageførte betaling kunne ikke laves (%)', (c.r).id;
+  end if;
+  update public.ekstra_fragt_regninger
+     set bankindsigelse_haandteret_kl = now(), bankindsigelse_haandteret_af = auth.uid(),
+         bankindsigelse_haandteret_begrundelse = v_beg
+   where id = (c.r).id and status = 'betalt' and bankindsigelse_haandteret_kl is null;
+  if not found then raise exception 'Ekstraregningen blev ændret under afslutningen (%)', (c.r).id; end if;
+  perform public.ekstra_fragt_log(auth.uid(), 'ekstra_fragt_bankindsigelse_afsluttet', (c.r).trade_id, (c.r).saelger_id,
+    'Tabt bankindsigelse ' || (c.r).bankindsigelse_id || ' på ekstraregningen ('
+    || public.ekstra_fragt_kr((c.r).beloeb_oere) || ') er afsluttet uden genåbning - sælgeren opkræves ikke igen. Begrundelse: '
+    || v_beg);
+  return jsonb_build_object('kode', 'ok', 'trade_id', (c.r).trade_id, 'saelger_id', (c.r).saelger_id);
 end;
 $fn$;
 
@@ -837,7 +891,8 @@ security definer
 set search_path = ''
 as $fn$
   -- tabte_bankindsigelser: betalte regninger, hvor betalingen er tilbageført
-  -- efter en tabt bankindsigelse (staff kan genåbne dem).
+  -- efter en tabt bankindsigelse, og som staff ikke har håndteret endnu
+  -- (genåbn eller afslut uden genåbning).
   select case when not public.er_staff() then
            jsonb_build_object('afventer_betaling', 0, 'forfaldne', 0, 'indsigelser', 0, 'kraever_opmaerksomhed', 0,
                               'tabte_bankindsigelser', 0)
@@ -848,7 +903,8 @@ as $fn$
            'indsigelser', (select count(*) from public.ekstra_fragt_regninger where status = 'indsigelse'),
            'kraever_opmaerksomhed', (select count(*) from public.ekstra_fragt_regninger where kraever_opmaerksomhed),
            'tabte_bankindsigelser', (select count(*) from public.ekstra_fragt_regninger
-                                      where bankindsigelse_tabt_kl is not null and status = 'betalt'))
+                                      where bankindsigelse_tabt_kl is not null and status = 'betalt'
+                                        and bankindsigelse_haandteret_kl is null))
          end;
 $fn$;
 
@@ -1176,9 +1232,12 @@ $fn$;
 -- Bankindsigelse (chargeback) på regningens charge - spejlet fra Stripe
 -- (webhooken, charge.dispute.*). p_status = disputens status, p_beloeb =
 -- disputens beløb (øre). Idempotent. En tabt indsigelse markeres
--- (bankindsigelse_tabt_kl) og overskrives ikke af en senere status; regningen
--- genåbnes ALDRIG her (staff: ekstra_fragt_genaabn).
--- Svar {kode, id?, status?}: 'tabt' (markeret nu) | 'allerede' (var markeret) |
+-- (bankindsigelse_tabt_kl) og overskrives ikke af en senere status, og i samme
+-- transaktion laves kreditnotaen for rundens faktura (dateret på tabsdagen,
+-- reference = indsigelsens id; aldrig to - ekstra_fragt_bankindsigelse_kreditnota).
+-- Regningen genåbnes ALDRIG her (staff: ekstra_fragt_genaabn eller
+-- ekstra_fragt_bankindsigelse_afslut).
+-- Svar {kode, id?, status?, kreditnota_id?}: 'tabt' (markeret nu) | 'allerede' (var markeret) |
 -- 'registreret' (åben/vundet indsigelse) | 'genaabnet' (chargen er allerede
 -- tilbageført og regningen genåbnet) | 'ukendt' | 'ugyldig'
 create or replace function public.ekstra_fragt_registrer_bankindsigelse(
@@ -1186,7 +1245,8 @@ create or replace function public.ekstra_fragt_registrer_bankindsigelse(
 returns jsonb
 language plpgsql security definer set search_path = '' as $fn$
 declare
-  r record;
+  r        record;
+  v_kredit uuid;
 begin
   if p_charge is null or p_dispute is null or p_dispute !~ '^(du|dp)_[A-Za-z0-9_]{1,90}$'
      or p_status is null or char_length(p_status) > 40 then
@@ -1203,17 +1263,26 @@ begin
   end if;
   if p_status = 'lost' then
     if r.bankindsigelse_tabt_kl is not null and r.bankindsigelse_id = p_dispute then
-      return jsonb_build_object('kode', 'allerede', 'id', r.id, 'status', r.status);
+      -- Gentaget event: kreditnotaen sikres (laves kun, hvis den mangler).
+      return jsonb_build_object('kode', 'allerede', 'id', r.id, 'status', r.status,
+                                'kreditnota_id', public.ekstra_fragt_bankindsigelse_kreditnota(r.id));
     end if;
+    -- (En ny tabt indsigelse på samme charge tænder lampen igen.)
     update public.ekstra_fragt_regninger
        set bankindsigelse_id = p_dispute, bankindsigelse_status = 'lost', bankindsigelse_beloeb_oere = p_beloeb,
-           bankindsigelse_tabt_kl = now()
+           bankindsigelse_tabt_kl = now(),
+           bankindsigelse_haandteret_kl = null, bankindsigelse_haandteret_af = null,
+           bankindsigelse_haandteret_begrundelse = null
      where id = r.id;
+    v_kredit := public.ekstra_fragt_bankindsigelse_kreditnota(r.id);
     perform public.ekstra_fragt_log(public.bidhamr_system_id(), 'ekstra_fragt_bankindsigelse_tabt', r.trade_id, r.saelger_id,
       'Bankindsigelse ' || p_dispute || ' på sælgerens betaling af ekstraregningen ('
       || public.ekstra_fragt_kr(r.beloeb_oere) || ') er tabt - betalingen ('
-      || public.ekstra_fragt_kr(coalesce(p_beloeb, 0)) || ') er tilbageført. Regningen genåbnes ikke automatisk.');
-    return jsonb_build_object('kode', 'tabt', 'id', r.id, 'status', r.status);
+      || public.ekstra_fragt_kr(coalesce(p_beloeb, 0)) || ') er tilbageført. '
+      || case when v_kredit is null then 'Kreditnotaen kunne ikke laves automatisk - lav den manuelt. '
+              else 'Kreditnota er lavet automatisk. ' end
+      || 'Regningen genåbnes ikke automatisk.');
+    return jsonb_build_object('kode', 'tabt', 'id', r.id, 'status', r.status, 'kreditnota_id', v_kredit);
   end if;
   -- En tabt indsigelse er endelig: den overskrives ikke af en anden status.
   if r.bankindsigelse_tabt_kl is null
@@ -1388,13 +1457,78 @@ end;
 $fn$;
 revoke all on function public.ekstra_fragt_lav_faktura(uuid) from public, anon, authenticated;
 
+-- Kreditnota for rundens faktura, når betalingen er tilbageført efter en TABT
+-- bankindsigelse (intern - ekstra_fragt_registrer_bankindsigelse ved tabet,
+-- og som sikkerhedsnet fakturakøen, genåbningen og "afslut uden genåbning").
+-- Dateret på tabsdagen, reference = indsigelsens id. Idempotent: findes
+-- rundens kreditnota allerede (også en refusions-kreditnota), returneres den -
+-- aldrig to (unikt indeks pr. regning, runde og dokument). Rundens faktura
+-- laves først, hvis fakturakøen ikke har nået det. Dækker indsigelsen ikke
+-- hele det modtagne beløb, eller er fakturaen håndteret manuelt, oprettes
+-- kreditnotaen som "kræver handling" (laves manuelt i Dinero).
+-- Svar: kreditnotaens id (null, hvis regningen ikke har en tabt indsigelse).
+create or replace function public.ekstra_fragt_bankindsigelse_kreditnota(p_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  r      record;
+  v_fak  record;
+  m      record;
+  v_id   uuid;
+  v_ok   boolean;
+  v_fuld boolean;
+begin
+  select x.id, x.runde, x.bankindsigelse_id, x.bankindsigelse_tabt_kl, x.bankindsigelse_beloeb_oere,
+         x.modtaget_oere, x.beloeb_oere
+    into r
+    from public.ekstra_fragt_regninger x
+   where x.id = p_id and x.bankindsigelse_tabt_kl is not null and x.bankindsigelse_id is not null
+     and x.betalt_kl is not null and x.status in ('betalt', 'refunderet');
+  if r.id is null then return null; end if;
+  select k.id into v_id from public.fakturaer k
+   where k.ekstra_fragt_id = r.id and coalesce(k.ekstra_fragt_runde, 0) = r.runde and k.dokument = 'kreditnota';
+  if v_id is not null then return v_id; end if;
+  select * into v_fak from public.ekstra_fragt_lav_faktura(r.id);
+  if v_fak.faktura_id is null then return null; end if;
+  select fa.linjer, fa.manuel, fa.status, fa.bruger_id, fa.betaling_id, fa.trade_id into m
+    from public.fakturaer fa where fa.id = v_fak.faktura_id;
+  v_fuld := r.bankindsigelse_beloeb_oere is not distinct from coalesce(r.modtaget_oere, r.beloeb_oere);
+  v_ok := v_fuld and not (m.manuel or m.status in ('kraever_handling', 'haandteret_manuelt'));
+  insert into public.fakturaer (dokument, part, bruger_id, betaling_id, trade_id, krediterer_id, linjer,
+                                beloeb_oere, moms_oere, betalt_dato, stripe_reference, status, manuel, sidste_fejl,
+                                slags, ekstra_fragt_id, ekstra_fragt_runde)
+  values ('kreditnota', 'saelger', m.bruger_id, m.betaling_id, m.trade_id, v_fak.faktura_id, m.linjer,
+          public.faktura_sum(m.linjer), public.faktura_moms(m.linjer),
+          (r.bankindsigelse_tabt_kl at time zone 'Europe/Copenhagen')::date, r.bankindsigelse_id,
+          case when v_ok then 'venter' else 'kraever_handling' end, not v_ok,
+          case when v_ok then null
+               when not v_fuld then 'Bankindsigelsen dækker kun en del af betalingen (' || public.ekstra_fragt_kr(coalesce(r.bankindsigelse_beloeb_oere, 0))
+                                    || ') – lav kreditnotaen for det tilbageførte beløb manuelt i Dinero.'
+               else 'Fakturaen blev håndteret manuelt – lav kreditnotaen manuelt i Dinero.' end,
+          'ekstra_fragt', r.id, r.runde)
+  on conflict do nothing
+  returning id into v_id;
+  if v_id is null then
+    -- Lavet af en samtidig kørsel.
+    select k.id into v_id from public.fakturaer k
+     where k.ekstra_fragt_id = r.id and coalesce(k.ekstra_fragt_runde, 0) = r.runde and k.dokument = 'kreditnota';
+  end if;
+  return v_id;
+end;
+$fn$;
+revoke all on function public.ekstra_fragt_bankindsigelse_kreditnota(uuid) from public, anon, authenticated;
+
 -- Planlægger fakturaer og kreditnotaer for ekstra fragt (kaldes af
 -- fakturakøen efter faktura_planlaeg). Idempotent. Pr. betalingsrunde:
 --   faktura:    betalt regning (også hvis den senere er refunderet - så
 --               bogføres begge). Dateret på betalingsdagen.
 --   kreditnota: refunderet regning (hele beløbet), dateret på refusionsdagen.
---               (Kreditnotaen for en tilbageført betaling efter en tabt
---               bankindsigelse laves af ekstra_fragt_genaabn.)
+--               Tilbageført betaling efter en tabt bankindsigelse: laves ved
+--               tabet (ekstra_fragt_registrer_bankindsigelse); her kun som
+--               sikkerhedsnet, hvis den mangler (dateret på tabsdagen).
 create or replace function public.faktura_planlaeg_ekstra_fragt(p_graense integer default 200)
 returns jsonb
 language plpgsql
@@ -1456,6 +1590,21 @@ begin
     v_kredit := v_kredit + n;
   end loop;
 
+  -- Sikkerhedsnet: tabt bankindsigelse uden kreditnota i runden.
+  for r in
+    select x.id
+      from public.ekstra_fragt_regninger x
+     where x.bankindsigelse_tabt_kl is not null
+       and x.status = 'betalt'
+       and not exists (select 1 from public.fakturaer k
+                        where k.ekstra_fragt_id = x.id and coalesce(k.ekstra_fragt_runde, 0) = x.runde
+                          and k.dokument = 'kreditnota')
+     order by x.bankindsigelse_tabt_kl
+     limit v_graense
+  loop
+    if public.ekstra_fragt_bankindsigelse_kreditnota(r.id) is not null then v_kredit := v_kredit + 1; end if;
+  end loop;
+
   return jsonb_build_object('fakturaer', v_faktura, 'kreditnotaer', v_kredit);
 end;
 $fn$;
@@ -1514,6 +1663,7 @@ begin
     'public.ekstra_fragt_afgoer_indsigelse(uuid, text, text)',
     'public.ekstra_fragt_gem_note(uuid, text)',
     'public.ekstra_fragt_genaabn(uuid, text)',
+    'public.ekstra_fragt_bankindsigelse_afslut(uuid, text)',
     'public.ekstra_fragt_dokumentation_staff(uuid)',
     'public.ekstra_fragt_antal()',
     'public.mit_ekstra_fragt_indsigelse(uuid, text)',
