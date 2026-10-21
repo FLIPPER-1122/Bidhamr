@@ -200,6 +200,64 @@ Igangværende auktioner beholder den pris, byderne har set. DAO's kostpris (eksk
 `fragt_kostpriser` + `fragt_tillaeg` og gemmes pr. forsendelse i `forsendelser.forventet_kostpris_oere`.
 `admin_fragt_tilskud(fra, til)` (kun service_role, efter `assertRole('chef')`) giver BidHamrs fragttilskud.
 
+## Ekstra fragt – for lille pakkestørrelse (Filip, 21. okt. 2026)
+
+Migration `20261029020000_ekstra_fragt.sql`, kode `src/lib/betaling/ekstraFragt.ts`,
+`src/lib/ekstraFragt/` (tekster, beskeder). Opkræver fragtfirmaet ekstra, fordi pakken var større/tungere
+end den valgte størrelse, registrerer staff en **ekstraregning** på handlens udgående forsendelse.
+Sælgeren betaler selv med ét tryk – der trækkes **aldrig** automatisk i sælgerens penge.
+
+Pengestrømmen:
+
+1. Staff uploader fragtfirmaets faktura (PDF/billede – **kun udsnittet med pakken**, ikke hele
+   månedsfakturaen med andre sælgeres pakker) til den private bucket `ekstra-fragt-dokumentation` og opretter
+   regningen: beløb (øre inkl. moms, 3–10.000 kr.), fragtfirmaets måling (størrelse og/eller vægt, mål),
+   fakturanummer, evt. forklaring til sælgeren. Frist 14 dage. Én åben regning pr. forsendelse; samme
+   fakturanummer kan ikke opkræves to gange for samme pakke.
+2. Sælgeren får besked (type `betalingsfrist`, altid mail) og trykker **Betal**: én PaymentIntent på
+   BidHamrs **platformskonto** (ingen destination charge, intet application fee – det er BidHamrs
+   fragtindtægt), samme metoder som returfragt (kort inkl. Apple Pay/Google Pay, MobilePay, Revolut Pay –
+   aldrig Link/Klarna), tvungen 3D Secure, idempotency key pr. regning og forsøg.
+3. Webhooken (`payment_intent.*`, metadata `type = ekstra_fragt`) markerer regningen betalt – idempotent.
+   Mistet webhook: returen fra betalingen eller betalings-cron'en (efter 15 min) slår PaymentIntenten op.
+4. Sælgeren kan gøre **indsigelse** mod målingen (én gang, med tekst). En åben betaling annulleres hos
+   Stripe. Staff afgør: **frafald** (sælgeren skal intet betale) eller **fasthold** (tilbage til "afventer
+   betaling" med mindst 7 dages frist). Begrundelsen vises for sælgeren. Staff kan også frafalde uden
+   indsigelse.
+5. **Spærring** (fejlkode `BHX01`, som DAC7's `BHD01`): ubetalt regning efter fristen → databasen afviser
+   nye auktioner, "sæt op igen" og "tilbud til næste byder". Ingen spærring under indsigelse, eller mens en
+   betaling behandles. Ophæves i samme øjeblik, regningen er betalt eller frafaldet (beregnes – intet flag).
+   Aktive auktioner og handler kører videre.
+6. Bogføring: sælgeren får en faktura på fragtkontoen med moms (`fakturaer.slags = 'ekstra_fragt'`,
+   `part = 'saelger'`) via fakturakøen (`faktura_planlaeg_ekstra_fragt`). Refunderes betalingen (kun i
+   Stripe-dashboardet), spejles regningen som refunderet, og fakturaen krediteres.
+7. Betales en kasseret PaymentIntent alligevel: skyldes regningen stadig, adopteres betalingen; er den
+   betalt/frafaldet, refunderes den helt automatisk (dobbeltbetaling) og staff får en alarm.
+
+Beskeder (fast nøgle, sendes én gang): ny regning, påmindelse efter 7 dage, spærret ved fristen, indsigelse
+afgjort, frafaldet, betalt (kvittering).
+
+Til frontend (server actions):
+
+| Hvem | Funktion | Svar |
+|---|---|---|
+| Staff | `forberedEkstraFragtUpload({ tradeId, filtype })` (`src/app/actions/adminEkstraFragt.ts`) | `{ ok, sti, token, signedUrl }` – browseren uploader med `supabase.storage.from('ekstra-fragt-dokumentation').uploadToSignedUrl(sti, token, fil)` |
+| Staff | `opretEkstraFragt({ forsendelseId, beloebKr, maaltStoerrelse?, maaltVaegtKg?, maaltMaal?, fakturanummer, forklaring?, dokumentationSti, dokumentationType, dokumentationNavn? })` | `{ ok, id }` \| `{ fejl }` |
+| Staff | `frafaldEkstraFragt(id, grund)` | `{ ok }` \| `{ fejl }` |
+| Staff | `afgoerEkstraFragtIndsigelse(id, 'frafald' \| 'fasthold', begrundelse)` | `{ ok }` \| `{ fejl }` |
+| Staff | `gemEkstraFragtNote(id, note)` · `hentEkstraFragtDokumentationStaff(id)` | `{ ok }` · `{ ok, url }` |
+| Staff | `supabase.rpc("ekstra_fragt_antal")` (lampe) + `select` på `ekstra_fragt_regninger` (RLS: staff) | |
+| Sælger | `hentMineEkstraFragtRegninger(tradeId?)` (`src/app/actions/ekstraFragt.ts`) | liste (offentlige felter, `kan_betale`, `kan_goere_indsigelse`, `spaerrer`) |
+| Sælger | `hentMinEkstraFragtStatus()` | `{ spaerret, ubetalte, ubetalt_oere, indsigelser, naeste_frist }` |
+| Sælger | `startEkstraFragtBetalingAction(id)` | `{ ok, regningId, clientSecret, beloebOere, customerId, customerSessionClientSecret }` \| `{ fejl, kode }` |
+| Sælger | `synkEkstraFragtReturAction(paymentIntentId, tradeId?)` | `'betalt'` \| `'allerede'` \| ... |
+| Sælger | `ekstraFragtIndsigelse(id, tekst, tradeId?)` · `ekstraFragtDokumentationLink(id)` | `{ ok }` · `{ ok, url }` |
+
+Appen: `supabase.rpc("mine_ekstra_fragt_regninger", { p_trade })`, `supabase.rpc("min_ekstra_fragt_status")`,
+`POST /api/betaling/app/ekstra-fragt-betal { regning_id }` (PaymentSheet-data),
+`POST /api/betaling/app/ekstra-fragt-indsigelse { regning_id, tekst }`,
+`GET /api/ekstra-fragt/<id>/dokumentation` (Bearer) → `{ ok, url }`. Fejlkoden `BHX01` ved opret auktion.
+
 ## Hjemmesiden (server actions, `src/app/actions/fragt.ts`)
 
 | Action | Hvem | Svar |

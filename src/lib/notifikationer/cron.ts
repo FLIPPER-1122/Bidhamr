@@ -36,6 +36,7 @@ import {
 } from "@/lib/notifikationer/bedoemmelse";
 import { IKKE_KUNST_AFVENTER, manglerKunstSkema } from "@/lib/kunstSkema";
 import { notificerReklamationer } from "@/lib/reklamation/notifikationer";
+import { notificerEkstraFragt } from "@/lib/ekstraFragt/notifikationer";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -795,6 +796,7 @@ export async function koerNotifikationsCron() {
     afhentningsfristForlaengelser: 0,
     auktionPauser: 0,
     reklamationer: 0,
+    ekstraFragt: 0,
   };
   let start: Date | null = null;
   try {
@@ -827,6 +829,8 @@ export async function koerNotifikationsCron() {
   trin.push(["auktionPauser", () => notificerAuktionPauser()]);
   // Reklamation hos fragtfirma (tabellen er ny, 21. okt. 2026).
   trin.push(["reklamationer", () => notificerReklamationer()]);
+  // Ekstra fragt ved for lille pakkestørrelse (tabellen er ny, 21. okt. 2026).
+  trin.push(["ekstraFragt", () => notificerEkstraFragt()]);
   if (start) {
     const s = start;
     trin.push(

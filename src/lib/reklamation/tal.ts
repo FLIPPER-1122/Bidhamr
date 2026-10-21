@@ -21,7 +21,8 @@ export async function hentReklamationTal(admin: SupabaseClient): Promise<Reklama
         .from("fragt_reklamationer")
         .select("id", { count: "exact", head: true })
         .in("status", ["anmeldt", "godkendt"])
-        .not("sag_aendret_kl", "is", null),
+        .not("sag_aendret_kl", "is", null)
+        .is("sag_aendret_kvitteret_kl", null),
     ]);
     if (a.error || s.error || g.error) return null;
     return { afventerSaelger: a.count ?? 0, stille: s.count ?? 0, sagAendret: g.count ?? 0 };

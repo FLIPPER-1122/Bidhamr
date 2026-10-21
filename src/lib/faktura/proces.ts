@@ -29,7 +29,9 @@ export type FakturaRaekke = {
   // 'sag_returfragt': købers faktura (og kreditnota) på returfragten, køberen
   // betalte i en sag (20261022010000).
   // 'boost': købers faktura (og kreditnota) på boost-point (20261023030000).
-  slags?: "salg" | "returfragt" | "sag_returfragt" | "boost";
+  // 'ekstra_fragt': sælgerens faktura (og kreditnota) på ekstra fragt ved for
+  // lille pakkestørrelse (20261029020000).
+  slags?: "salg" | "returfragt" | "sag_returfragt" | "boost" | "ekstra_fragt";
   part: "koeber" | "saelger" | "firma";
   bruger_id: string;
   betaling_id: string | null;

@@ -112,7 +112,7 @@ Formål: sporing kører af sig selv, og sælgerne får deres penge uden manuel i
 - [ ] Filip: aftal vægtgrænse med fragtfirmaet – alt over grænsen kan kun afhentes
 - [~] Håndhæv vægtgrænsen ved opret auktion: over grænsen kan kun "afhentning" vælges *(bygget: BHT01–05)*
 - [~] Fragtberegner: sælger vælger pakkestørrelse (Lille/Mellem/Stor) ved oprettelse, prisen hentes fra GLS og vises på auktionssiden. Findes også som selvstændig side *(bygget med faste priser 40/50/65 og 60/85 kr.)*
-- [ ] Vælger sælger en for lille pakkestørrelse, og fragtfirmaet opkræver ekstra, betaler sælgeren forskellen
+- [~] Vælger sælger en for lille pakkestørrelse, og fragtfirmaet opkræver ekstra, betaler sælgeren forskellen *(backend + betaling bygget 21. okt. 2026: `20261029020000_ekstra_fragt.sql` (kørt på testdatabasen) – staff registrerer ekstraregning med fragtfirmaets faktura, sælgeren betaler med kort/MobilePay/Revolut Pay til platformen, indsigelse én gang, frafald/fasthold, spærring BHX01 efter 14 dage, faktura til sælgeren; se docs/FRAGT.md. Mangler: UI (admin + handelssiden), review, prod-migration)*
 - [~] Ikke-afhentet pakke (GLS returnerer efter 7 dage): sælger beholder varen og får fragten dækket, køber refunderes minus gebyrer og fragt begge veje. Afhentning udløser aldrig udbetaling – kun købers bekræftelse (eller 48 timer uden sag) gør *(logikken bygget 10. okt. 2026; DAO's returhændelse koblet på 13. okt. 2026, men slået fra (DAO_RETUR_ER_IKKE_AFHENTET), til koden er set på en rigtig pakke; mangler nøgler)*
 
 ## Fase 3 – Nyt design og forside

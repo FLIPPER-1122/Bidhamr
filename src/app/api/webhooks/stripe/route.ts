@@ -35,6 +35,13 @@ import {
   spejlBoostPi,
   spejlBoostRefusionsfejl,
 } from "@/lib/betaling/boost";
+import {
+  ekstraFragtForPi,
+  erEkstraFragtMetadata,
+  spejlEkstraFragtChargeRefusion,
+  spejlEkstraFragtPi,
+  spejlEkstraFragtRefusionsfejl,
+} from "@/lib/betaling/ekstraFragt";
 
 // Stripe-webhook for betalingen (destination charges - den eneste model).
 // Spejler Stripes status i databasen - Stripe er sandheden om penge.
@@ -51,6 +58,10 @@ import {
 // Boost-point (src/lib/betaling/boost.ts): payment_intent.* med metadata
 // type 'boost' krediterer pointene; charge.refunded og refund.failed/updated
 // spejler refusioner af et køb.
+//
+// Ekstra fragt (src/lib/betaling/ekstraFragt.ts): payment_intent.* med
+// metadata type 'ekstra_fragt' markerer sælgerens ekstraregning betalt (og
+// ophæver spærringen); charge.refunded spejler en refusion i dashboardet.
 //
 // Erhvervsabonnementer (Stripe Billing, src/lib/erhverv/betaling.ts):
 // customer.subscription.created/updated/deleted/pending_update_expired og
@@ -220,6 +231,26 @@ async function haandter(event: Stripe.Event): Promise<void> {
         console.log(`Stripe ${event.type} (returfragt): ${pi.id} -> ${resultat}`);
         return;
       }
+      // Ekstra fragt (sælgeren betaler forskellen til platformen,
+      // src/lib/betaling/ekstraFragt.ts).
+      if (erEkstraFragtMetadata(fraEvent.metadata)) {
+        const pi = await getStripe().paymentIntents.retrieve(fraEvent.id);
+        const resultat = await spejlEkstraFragtPi(pi);
+        if (resultat === "ukendt" && pi.status === "succeeded") {
+          if (await erFremmedTestobjekt(piHenvisning(pi))) {
+            logFremmedTestdata("PaymentIntent (ekstra fragt)", pi.id);
+          } else {
+            await alarmPrTilfaelde({
+              noegle: `ukendt-pi:${pi.id}`,
+              kilde: "webhook",
+              hvor: "betaling/ukendt-betaling",
+              fejl: `PaymentIntent ${pi.id} er en gennemført betaling af ekstra fragt hos Stripe, men databasen kender den ikke. Kontrollér og refundér i Stripe.`,
+            });
+          }
+        }
+        console.log(`Stripe ${event.type} (ekstra fragt): ${pi.id} -> ${resultat}`);
+        return;
+      }
       if (!fraEvent.metadata?.betaling_id) {
         // Ikke en BidHamr-handel. En gennemført betaling, som hverken er en
         // handel eller et firmas abonnement, er ukendt for databasen: alarm
@@ -292,6 +323,12 @@ async function haandter(event: Stripe.Event): Promise<void> {
           console.log(`Stripe ${event.type} (returfragt): ${fraEvent.id} -> ${r ?? "kasseret/ukendt"}`);
           return;
         }
+        if (await ekstraFragtForPi(piRef)) {
+          const frisk = await getStripe().charges.retrieve(fraEvent.id, { expand: ["refunds"] });
+          const r = await spejlEkstraFragtChargeRefusion(frisk);
+          console.log(`Stripe ${event.type} (ekstra fragt): ${fraEvent.id} -> ${r ?? "kasseret/ukendt"}`);
+          return;
+        }
       }
       const charge = await getStripe().charges.retrieve(fraEvent.id);
       const resultat = await spejlRefusion(charge);
@@ -315,6 +352,12 @@ async function haandter(event: Stripe.Event): Promise<void> {
         const frisk = await getStripe().refunds.retrieve(refund.id);
         const r = await spejlReturfragtRefusionsfejl(frisk);
         console.log(`Stripe ${event.type} (returfragt): ${refund.id} -> ${r}`);
+        return;
+      }
+      if (refund.metadata?.type === "ekstra_fragt") {
+        const frisk = await getStripe().refunds.retrieve(refund.id);
+        const r = await spejlEkstraFragtRefusionsfejl(frisk);
+        console.log(`Stripe ${event.type} (ekstra fragt): ${refund.id} -> ${r}`);
         return;
       }
       const resultat = await spejlRefusionsfejl(refund.id);

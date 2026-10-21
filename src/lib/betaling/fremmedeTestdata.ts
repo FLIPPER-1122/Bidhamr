@@ -23,6 +23,7 @@ import "server-only";
 //            betaling   (PaymentIntent, også kasseret, eller charge)
 //            returfragt (returfragt_betalinger: PaymentIntent, også kasseret, eller charge)
 //            boost      (boost_koeb: PaymentIntent, også kasseret, eller charge)
+//            ekstra fragt (ekstra_fragt_regninger: PaymentIntent, også kasseret, eller charge)
 //            afvigelse  (betaling_afvigelser: PaymentIntent eller charge)
 //            udbetaling (metadata saelger_udbetaling_id)
 //            Connect-konto (betalingsprofiler, betalinger, saelger_udbetalinger)
@@ -195,6 +196,22 @@ export async function hentKendte(
     if (error) {
       if (/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) break;
       throw new Error(`kendte (boost tidligere_payment_intents): ${error.message}`);
+    }
+    for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) k.pis.add(x);
+  }
+  // Ekstra fragt (sælgerens betaling til platformen, ekstraFragt.ts) - også
+  // kasserede PaymentIntents (adopteres eller refunderes, hvis de betales).
+  await findesHvisTabel(admin, "ekstra_fragt_regninger", "stripe_payment_intent_id", pis, k.pis);
+  await findesHvisTabel(admin, "ekstra_fragt_regninger", "stripe_charge_id", charges, k.charges);
+  for (const del of bidder(pis)) {
+    if (!del.length) continue;
+    const { data, error } = await admin
+      .from("ekstra_fragt_regninger")
+      .select("tidligere_payment_intents")
+      .overlaps("tidligere_payment_intents", del);
+    if (error) {
+      if (/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) break;
+      throw new Error(`kendte (ekstra fragt tidligere_payment_intents): ${error.message}`);
     }
     for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) k.pis.add(x);
   }

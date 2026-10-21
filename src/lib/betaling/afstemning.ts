@@ -10,8 +10,9 @@ import "server-only";
 // Vindue: de seneste 30 dage hos Stripe.
 //   1. Platformens PaymentIntents: forældreløse (ukendte) betalinger, betalt
 //      hos Stripe men ikke i databasen (eller omvendt), forkert beløb.
-//      Returfragt i sager (returfragt_betalinger) og køb af boost-point
-//      (boost_koeb) afstemmes mod deres række.
+//      Returfragt i sager (returfragt_betalinger), køb af boost-point
+//      (boost_koeb) og ekstra fragt (ekstra_fragt_regninger) afstemmes mod
+//      deres række.
 //      Abonnementer (firmaets Stripe-kunde) er ikke handler og springes over.
 //   2. Application fees: hvert gebyr og hver gebyr-refusion mod betalingens
 //      application_fee_oere og refusionsplanens G - og summen (Stripe:
@@ -423,6 +424,77 @@ export function boostStatusAfviger(piStatus: string, dbStatus: string): boolean 
   return piStatus === "succeeded" ? !dbBetalt : dbBetalt;
 }
 
+// Ekstra fragt (ekstraFragt.ts, 20261029020000): sælgerens betaling til
+// platformen (BidHamrs fragtindtægt). BidHamr refunderer kun kasserede
+// dobbeltbetalinger selv; alt andet er en refusion uden om BidHamr.
+export type EkstraFragtAfst = {
+  id: string;
+  status: string;
+  beloeb_oere: number;
+  modtaget_oere: number | null;
+  stripe_payment_intent_id: string | null;
+  stripe_charge_id: string | null;
+  stripe_refund_id: string | null;
+  betalt_kl: string | null;
+};
+
+const EKSTRA_FRAGT_KOLONNER = "id, status, beloeb_oere, modtaget_oere, stripe_payment_intent_id, stripe_charge_id, stripe_refund_id, betalt_kl";
+
+async function ekstraFragtVed(
+  admin: Admin,
+  kolonne: "stripe_payment_intent_id" | "stripe_charge_id",
+  ids: string[],
+): Promise<Map<string, EkstraFragtAfst>> {
+  const ud = new Map<string, EkstraFragtAfst>();
+  for (const del of bidder([...new Set(ids)])) {
+    if (!del.length) continue;
+    const { data, error } = await admin.from("ekstra_fragt_regninger").select(EKSTRA_FRAGT_KOLONNER).in(kolonne, del);
+    if (error) {
+      if (manglerIDatabasen(error)) return ud;
+      throw new Error(`ekstra_fragt_regninger (${kolonne}): ${error.message}`);
+    }
+    for (const r of (data ?? []) as EkstraFragtAfst[]) {
+      const v = r[kolonne];
+      if (v) ud.set(v, r);
+    }
+  }
+  return ud;
+}
+
+// Kasserede ekstra fragt-PaymentIntents (pi -> regningens id).
+async function ekstraFragtKasserede(admin: Admin, ids: string[]): Promise<Map<string, string>> {
+  const ud = new Map<string, string>();
+  for (const del of bidder([...new Set(ids)])) {
+    if (!del.length) continue;
+    const { data, error } = await admin
+      .from("ekstra_fragt_regninger")
+      .select("id, tidligere_payment_intents")
+      .overlaps("tidligere_payment_intents", del);
+    if (error) {
+      if (manglerIDatabasen(error)) return ud;
+      throw new Error(`ekstra_fragt_regninger (tidligere): ${error.message}`);
+    }
+    for (const r of data ?? []) for (const x of (r.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) ud.set(x, r.id as string);
+  }
+  return ud;
+}
+
+// Hvad Stripe skal have refunderet på regningens charge.
+export function forventetEkstraFragtRefunderet(r: Pick<EkstraFragtAfst, "status" | "beloeb_oere" | "modtaget_oere">): number {
+  return r.status === "refunderet" ? Number(r.modtaget_oere ?? r.beloeb_oere) : 0;
+}
+
+// BidHamrs automatiske refusion af en kasseret, betalt PaymentIntent?
+export function erKasseretEkstraFragtRefusion(x: { metadata?: Record<string, string> | null }, regningId: string | null): boolean {
+  return !!regningId && x.metadata?.type === "ekstra_fragt" && x.metadata?.kasseret === "ja" && x.metadata?.ekstra_fragt_id === regningId;
+}
+
+// Afviger databasens status fra PaymentIntentens hos Stripe?
+export function ekstraFragtStatusAfviger(piStatus: string, dbStatus: string): boolean {
+  const dbBetalt = ["betalt", "refunderet"].includes(dbStatus);
+  return piStatus === "succeeded" ? !dbBetalt : dbBetalt;
+}
+
 async function firmaKunder(admin: Admin): Promise<Set<string>> {
   const { data, error } = await admin.from("firmaer").select("stripe_customer_id").not("stripe_customer_id", "is", null);
   if (error) {
@@ -749,6 +821,9 @@ async function afstemBetalinger(
   // Køb af boost-point (betalinger til platformen - BidHamrs egen omsætning).
   const bkVed = await boostVed(admin, "stripe_payment_intent_id", ids);
   const bkKasseret = await boostKasserede(admin, ids.filter((x) => !bkVed.has(x)));
+  // Ekstra fragt (sælgerens betaling til platformen).
+  const efVed = await ekstraFragtVed(admin, "stripe_payment_intent_id", ids);
+  const efKasseret = await ekstraFragtKasserede(admin, ids.filter((x) => !efVed.has(x)));
   // Testtilstand: hvad kender databasen af det, de ukendte PaymentIntents
   // henviser til (metadata, Connect-konto, kunde)?
   const kendteRef = await hentKendte(
@@ -763,7 +838,9 @@ async function afstemBetalinger(
           !rfVed.has(p.id) &&
           !rfKasseret.has(p.id) &&
           !bkVed.has(p.id) &&
-          !bkKasseret.has(p.id),
+          !bkKasseret.has(p.id) &&
+          !efVed.has(p.id) &&
+          !efKasseret.has(p.id),
       )
       .map(piHenvisning),
     firma,
@@ -774,6 +851,45 @@ async function afstemBetalinger(
     const b = kendte.get(pi.id);
     const kunde = id(pi.customer as string | { id: string } | null);
     if (afv.has(pi.id)) continue; // forkert beløb - refunderes af betalings-cron'en
+    const ef = efVed.get(pi.id);
+    if (ef) {
+      if (pi.status === "succeeded" && ekstraFragtStatusAfviger(pi.status, ef.status)) {
+        await registrer({
+          noegle: `betaling-status:${pi.id}`,
+          type: "betaling_status",
+          stripeId: pi.id,
+          beskrivelse: `Ekstra fragt-PaymentIntent ${pi.id} er betalt hos Stripe, men ekstraregning ${ef.id} står som '${ef.status}' i databasen.`,
+          tilstand: `${pi.status}|${ef.status}`,
+          beloebStripe: pi.amount_received,
+          beloebDb: Number(ef.beloeb_oere),
+        });
+      }
+      if (pi.status === "succeeded" && pi.amount_received !== Number(ef.beloeb_oere)) {
+        await registrer({
+          noegle: `betaling-beloeb:${pi.id}`,
+          type: "betaling_beloeb",
+          stripeId: pi.id,
+          beskrivelse: `Ekstra fragt-PaymentIntent ${pi.id} har modtaget et andet beløb end ekstraregning ${ef.id}.`,
+          beloebStripe: pi.amount_received,
+          beloebDb: Number(ef.beloeb_oere),
+        });
+      }
+      continue;
+    }
+    const efGammel = efKasseret.get(pi.id);
+    if (efGammel) {
+      if (pi.status !== "succeeded") continue;
+      const ch = pi.latest_charge ? await stripe.charges.retrieve(id(pi.latest_charge as string)!, {}, KALD) : null;
+      if (ch?.refunded) continue;
+      await registrer({
+        noegle: `betaling-kasseret-betalt:${pi.id}`,
+        type: "betaling_status",
+        stripeId: pi.id,
+        beskrivelse: `En kasseret ekstra fragt-PaymentIntent (${pi.id}) for ekstraregning ${efGammel} er betalt hos Stripe og ikke refunderet - mulig dobbeltbetaling.`,
+        beloebStripe: pi.amount_received,
+      });
+      continue;
+    }
     const bk = bkVed.get(pi.id);
     if (bk) {
       if (pi.status === "succeeded" && boostStatusAfviger(pi.status, bk.status)) {
@@ -952,6 +1068,27 @@ async function afstemBetalinger(
       });
     }
   }
+  // Og for ekstra fragt: betalt i databasen, men ikke hos Stripe.
+  {
+    const { data: efDb, error: efFejl } = await admin
+      .from("ekstra_fragt_regninger")
+      .select("id, stripe_payment_intent_id, status")
+      .gte("betalt_kl", fraIso)
+      .not("stripe_payment_intent_id", "is", null)
+      .limit(MAKS_OBJEKTER);
+    if (efFejl && !manglerIDatabasen(efFejl)) throw new Error(`betalte ekstraregninger: ${efFejl.message}`);
+    for (const x of efDb ?? []) {
+      const st = stripeStatus.get(x.stripe_payment_intent_id as string);
+      if (!st || !ekstraFragtStatusAfviger(st, x.status as string)) continue;
+      await registrer({
+        noegle: `betaling-status:${x.stripe_payment_intent_id}`,
+        type: "betaling_status",
+        stripeId: x.stripe_payment_intent_id as string,
+        beskrivelse: `Ekstraregning ${x.id} står som '${x.status}' i databasen, men PaymentIntent ${x.stripe_payment_intent_id} er '${st}' hos Stripe.`,
+        tilstand: `${st}|${x.status}`,
+      });
+    }
+  }
   // Og for boost-køb: betalt i databasen, men ikke hos Stripe.
   {
     const { data: bkDb, error: bkFejl } = await admin
@@ -1092,13 +1229,15 @@ async function afstemRefusioner(
   const rfCharge = await returfragtVed(admin, "stripe_charge_id", charges);
   // Boost-køb: refusioner på købets charge.
   const bkCharge = await boostVed(admin, "stripe_charge_id", charges);
+  // Ekstra fragt: refusioner på regningens charge (kun uden om BidHamr).
+  const efCharge = await ekstraFragtVed(admin, "stripe_charge_id", charges);
   // Refusioner på charges, databasen ikke kender: deres PaymentIntent hentes
   // én gang (abonnement? og i testtilstand: henviser den til noget, vi kender?).
   const piVed = new Map<string, Stripe.PaymentIntent>();
   const ukendte: Stripe.Refund[] = [];
   for (const x of refusioner) {
     const ch = id(x.charge as string | { id: string } | null);
-    if (ch && (vedCharge.has(ch) || afv.has(ch) || rfCharge.has(ch) || bkCharge.has(ch))) continue;
+    if (ch && (vedCharge.has(ch) || afv.has(ch) || rfCharge.has(ch) || bkCharge.has(ch) || efCharge.has(ch))) continue;
     ukendte.push(x);
     const piId = id(x.payment_intent as string | { id: string } | null);
     if (piId && !piVed.has(piId)) {
@@ -1131,10 +1270,35 @@ async function afstemRefusioner(
     admin,
     ukendte.map((x) => id(x.payment_intent as string | { id: string } | null)).filter((x): x is string => !!x),
   );
+  // Kasserede ekstra fragt-PaymentIntents, der blev betalt alligevel,
+  // refunderes automatisk af ekstraFragt.ts (metadata type=ekstra_fragt, kasseret=ja).
+  const efKasseret = await ekstraFragtKasserede(
+    admin,
+    ukendte.map((x) => id(x.payment_intent as string | { id: string } | null)).filter((x): x is string => !!x),
+  );
   const udenom = new Set<string>();
   for (const x of refusioner) {
     tjekTid(budget);
     const ch = id(x.charge as string | { id: string } | null);
+    const ef = ch ? efCharge.get(ch) : undefined;
+    if (ch && ef) {
+      // BidHamr refunderer aldrig en skyldig ekstraregning selv: en refusion
+      // her er lavet i Stripe-dashboardet (regningen spejles som refunderet).
+      if (ef.status === "refunderet" && ef.stripe_refund_id === x.id) continue;
+      udenom.add(ch);
+      await registrer({
+        noegle: `refusion:${x.id}`,
+        type: "refusion_udenom",
+        stripeId: x.id,
+        beskrivelse: `Refusion ${x.id} på ekstraregningens charge ${ch} er lavet uden om BidHamr (ekstraregning ${ef.id}, status '${ef.status}'). Kontrollér, at det var meningen - fakturaen krediteres kun ved fuld refusion.`,
+        beloebStripe: x.amount,
+      });
+      continue;
+    }
+    {
+      const piE = id(x.payment_intent as string | { id: string } | null);
+      if (piE && erKasseretEkstraFragtRefusion(x, efKasseret.get(piE) ?? null)) continue;
+    }
     const b = ch ? vedCharge.get(ch) : undefined;
     const a = ch ? afv.get(ch) : undefined;
     const bk = ch ? bkCharge.get(ch) : undefined;
@@ -1203,6 +1367,26 @@ async function afstemRefusioner(
     tjekTid(budget);
     const b = vedCharge.get(ch) ?? null;
     const a = afv.get(ch) ?? null;
+    const ef = efCharge.get(ch) ?? null;
+    if (ef) {
+      const forv = forventetEkstraFragtRefunderet(ef);
+      let sumEf = 0;
+      for await (const x of stripe.refunds.list({ charge: ch, limit: 100 }, KALD)) {
+        if (x.status === "failed" || x.status === "canceled") continue;
+        sumEf += x.amount;
+      }
+      if (sumEf !== forv) {
+        await registrer({
+          noegle: `refusion-beloeb:${ch}`,
+          type: "refusion_beloeb",
+          stripeId: ch,
+          beskrivelse: `Der er refunderet et andet beløb på ekstraregningens charge ${ch} hos Stripe, end databasen forventer (ekstraregning ${ef.id}, status '${ef.status}').`,
+          beloebStripe: sumEf,
+          beloebDb: forv,
+        });
+      }
+      continue;
+    }
     const bk = bkCharge.get(ch) ?? null;
     if (bk) {
       const forv = forventetBoostRefunderet(bk);

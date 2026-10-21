@@ -47,7 +47,10 @@ export type PakkeBillede = {
   kilde: "saelger_pakke" | "koeber_skade";
   kategori: string;
   kategoriNavn: string;
-  // Signeret link (1 time). null, hvis det ikke kunne laves.
+  // Staff: signeret link (1 time). Sælger: BidHamrs egen rute
+  // (/api/reklamation/<id>/billede/<nr>, samme adgangstjek) - aldrig et
+  // storage-link, fordi stien til købers billeder indeholder købers id.
+  // null, hvis linket ikke kunne laves.
   url: string | null;
   filnavn: string;
   oprettetKl: string;
@@ -82,7 +85,10 @@ export type Reklamationspakke = {
   tekst: string;
 };
 
-// Til ZIP'en: hvor billederne ligger (vises aldrig - stien indeholder købers id).
+// Til ZIP'en og billed-ruten: hvor billederne ligger. Forlader ALDRIG
+// serveren - stien til købers skadebilleder (sag-billeder) indeholder købers
+// id (<koeber-id>/<handel-id>/<fil>). Samme rækkefølge som billeder:
+// filer[nr - 1] hører til billedet med nummer nr.
 export type PakkeFiler = { bucket: string; sti: string; filnavn: string; oprettetKl: string }[];
 
 type Json = Record<string, unknown> | null;
@@ -93,6 +99,11 @@ const SAELGER_FELTER = [
   "annulleret_grund", "transportoerens_sagsnummer", "oprettet_kl", "anmeldt_kl", "afgjort_kl",
   "fravalgt_kl", "annulleret_kl",
 ] as const;
+
+// Sælgerens billed-link (nr = 1, 2, ... i pakkens rækkefølge).
+export function reklamationBilledeSti(reklamationId: string, nr: number): string {
+  return `/api/reklamation/${reklamationId}/billede/${nr}`;
+}
 
 function felt(j: Json, ...navne: string[]): string | null {
   if (!j) return null;
@@ -272,9 +283,10 @@ export async function hentReklamationspakke(
   const pakkeRaekker = ((pakkeR.data ?? []) as BRaekke[]).filter((b) => erPakkeBilledeKategori(b.kategori));
   const sagRaekker = ((sagBR.data ?? []) as BRaekke[]).filter((b) => erSagBilledeKategori(b.kategori));
 
+  // Kun staff får signerede storage-links (sælgeren får billed-ruten).
   const signer = async (bucket: string, stier: string[]) => {
     const m = new Map<string, string>();
-    if (stier.length === 0) return m;
+    if (!erStaff || stier.length === 0) return m;
     const { data } = await admin.storage.from(bucket).createSignedUrls(stier, URL_SEK);
     for (const s of data ?? []) if (s.path && s.signedUrl) m.set(s.path, s.signedUrl);
     return m;
@@ -290,7 +302,8 @@ export async function hentReklamationspakke(
   const tilfoej = (b: BRaekke, kilde: PakkeBillede["kilde"], kategoriNavn: string, bucket: string, url?: string) => {
     nr++;
     const navn = filnavn(kilde, kategoriNavn, b.sti, nr);
-    billeder.push({ id: b.id, kilde, kategori: b.kategori, kategoriNavn, url: url ?? null, filnavn: navn, oprettetKl: b.oprettet_kl });
+    const link = erStaff ? (url ?? null) : reklamationBilledeSti(r.id, nr);
+    billeder.push({ id: b.id, kilde, kategori: b.kategori, kategoriNavn, url: link, filnavn: navn, oprettetKl: b.oprettet_kl });
     filer.push({ bucket, sti: b.sti, filnavn: navn, oprettetKl: b.oprettet_kl });
   };
   for (const b of pakkeRaekker) {
@@ -309,7 +322,10 @@ export async function hentReklamationspakke(
       .filter(Boolean)
       .join("\n") || null;
 
-  const offentlig = Object.fromEntries(SAELGER_FELTER.map((k) => [k, r[k]])) as SaelgerReklamation;
+  const offentlig = {
+    ...Object.fromEntries(SAELGER_FELTER.map((k) => [k, r[k]])),
+    afventer_bidhamr: !!r.sag_aendret_kl && !r.sag_aendret_kvitteret_kl,
+  } as SaelgerReklamation;
   const anmeld = REKLAMATION_ANMELD[r.transportoer];
 
   const uden: Omit<Reklamationspakke, "tekst"> = {

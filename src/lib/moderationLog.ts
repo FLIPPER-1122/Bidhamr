@@ -98,6 +98,7 @@ export const HANDLING_NAVNE: Record<string, string> = {
   reklamation_genaabnet: "Reklamation hos fragtfirma aktiv igen",
   reklamation_annulleret: "Annullerede reklamation hos fragtfirma",
   reklamation_sag_aendret: "Sagen ændret efter anmeldt reklamation",
+  reklamation_sag_aendret_kvitteret: "Kvitteret for ændret sag (reklamation)",
   reklamation_note: "Skrev intern note på reklamation",
   reklamation_gensendt: "Sendte reklamationspakken til sælger igen",
   reklamation_status_rettet: "Rettede status på reklamation",
@@ -105,6 +106,14 @@ export const HANDLING_NAVNE: Record<string, string> = {
   reklamation_saelger_godkendt: "Sælger: fragtfirmaet godkendte erstatning",
   reklamation_saelger_afvist: "Sælger: fragtfirmaet afviste erstatning",
   reklamation_saelger_fravalgt: "Sælger ønsker ikke at reklamere",
+  // 20261029020000_ekstra_fragt.sql (sælgerens indsigelse og betaling logges
+  // med systembrugeren som afsender).
+  ekstra_fragt_oprettet: "Oprettede ekstraregning for fragt (for lille pakke)",
+  ekstra_fragt_frafaldet: "Frafaldt ekstraregning for fragt",
+  ekstra_fragt_fastholdt: "Fastholdt ekstraregning for fragt (indsigelse afvist)",
+  ekstra_fragt_indsigelse: "Sælger gjorde indsigelse mod ekstraregning for fragt",
+  ekstra_fragt_betalt: "Sælger betalte ekstraregning for fragt",
+  ekstra_fragt_note: "Skrev intern note på ekstraregning for fragt",
 };
 
 export function handlingNavn(handling: string): string {

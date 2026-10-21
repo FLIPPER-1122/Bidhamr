@@ -38,8 +38,10 @@ import { toTrinMaksTimer } from "@/lib/staffToTrinRegler";
 // onboarding-retur videre til appens deep link - ingen data, ingen login.
 // /api/faktura/<id> er PDF'en af en faktura (hjemmesiden med cookie, appen
 // med Bearer-token); login og ejerskab tjekkes i ruten. Kun GET.
-// /api/reklamation/<id> (+ /billeder) er sælgerens reklamationspakke (cookie
+// /api/reklamation/<id> (+ /billeder, /billede/<nr>) er sælgerens reklamationspakke (cookie
 // eller Bearer-token; login og adgang tjekkes i ruten).
+// /api/ekstra-fragt/<id>/dokumentation er sælgerens link til fragtfirmaets
+// faktura (cookie eller Bearer-token; login og ejerskab tjekkes i ruten).
 // /api/fragt/app er appens fragt (pakkeshops, leveringsvalg, label): kun
 // Bearer-token (ingen cookies); login tjekkes i ruten.
 // /api/helbred er sundhedstjekket til uptime-tjenesten: svarer kun {ok}, ingen
@@ -100,6 +102,7 @@ const OFFENTLIGE_RUTER = [
   "/api/betaling/app",
   "/api/faktura",
   "/api/reklamation",
+  "/api/ekstra-fragt",
   "/api/fragt/app",
   "/api/helbred",
   "/api/mitid",

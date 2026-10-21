@@ -20,6 +20,7 @@ import { erInhabil } from "@/lib/admin/sagTaget";
 import { erSystem } from "@/lib/moderationLog";
 import { adminSagSti } from "@/lib/sager";
 import { hentReklamationspakke, type PakkeBillede, type PakkePart } from "@/lib/reklamation/pakke";
+import { reklamationStaffAdgang } from "@/lib/reklamation/staffAdgang";
 import { kroner } from "@/lib/reklamation/typer";
 
 // Én reklamation hos fragtfirmaet: hele pakken (som sælgeren ser den - plus
@@ -68,6 +69,22 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
   const { id } = await params;
   if (!UUID.test(id)) notFound();
 
+  // Inhabil: ingen pakke (købers kontaktoplysninger, billeder, intern note) -
+  // kun en forklaring. Databasen afviser også alle handlinger (inhabil).
+  const adgang = await reklamationStaffAdgang(admin, userId, id.toLowerCase());
+  if (adgang === "ikke_fundet") notFound();
+  if (adgang === "inhabil") {
+    return (
+      <AdminSide detalje>
+        <AdminSideHoved tilbage={{ href: "/admin/reklamationer", label: "Reklamationer" }} titel="Reklamation" />
+        <p role="note" className="rounded-[14px] border border-orange-300 bg-orange-lys px-4 py-3 text-sm text-advarsel-tekst">
+          Du er inhabil: du er part i handlen eller har handlet med en af parterne. Derfor kan du ikke se
+          reklamationen. Lad en kollega tage den.
+        </p>
+      </AdminSide>
+    );
+  }
+
   const res = await hentReklamationspakke(admin, id.toLowerCase(), "staff");
   if (!res || !res.pakke.staff) notFound();
   const p = res.pakke;
@@ -106,7 +123,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
 
   const nu = new Date().getTime();
   const stille = erStille(r.status, r.fremdrift_kl, nu);
-  const aendret = erSagAendret(r.status, r.sag_aendret_kl);
+  const aendret = erSagAendret(r.status, r.sag_aendret_kl, r.sag_aendret_kvitteret_kl);
   const saelgerBilleder = p.billeder.filter((b) => b.kilde === "saelger_pakke");
   const koeberBilleder = p.billeder.filter((b) => b.kilde === "koeber_skade");
 
@@ -134,8 +151,9 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
 
       {aendret && (
         <p role="note" className="rounded-[14px] border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
-          Sagen er ændret {reklamationTid(r.sag_aendret_kl)}, efter sælgeren anmeldte skaden. Tjek sagen, og ret
-          reklamationens status, hvis det er nødvendigt.
+          Sagen er ændret {reklamationTid(r.sag_aendret_kl)}, efter sælgeren anmeldte skaden. Sælgeren har fået
+          besked og kan ikke registrere &quot;godkendt&quot;, før du har kvitteret. Tjek sagen: kvittér, hvis reklamationen
+          kan fortsætte – ellers ret status eller annullér.
         </p>
       )}
 
@@ -147,6 +165,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
           kravbeloebOere={r.kravbeloeb_oere}
           sagsnummer={r.transportoerens_sagsnummer}
           inhabil={inhabil}
+          sagAendret={aendret}
         />
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-admin-kant pt-4 text-sm">
           <Link href={adminSagSti(r.sag_id)} className="inline-flex min-h-11 items-center font-semibold text-groen hover:underline sm:min-h-0">

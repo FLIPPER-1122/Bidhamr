@@ -179,7 +179,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
       .maybeSingle<{ tilbagekaldt_kl: string | null }>(),
     admin
       .from("fragt_reklamationer")
-      .select("id, status, transportoer, kravbeloeb_oere, godkendt_beloeb_oere, fremdrift_kl, sag_aendret_kl")
+      .select("id, status, transportoer, kravbeloeb_oere, godkendt_beloeb_oere, fremdrift_kl, sag_aendret_kl, sag_aendret_kvitteret_kl")
       .eq("sag_id", sag.id)
       .maybeSingle<{
         id: string;
@@ -189,6 +189,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
         godkendt_beloeb_oere: number | null;
         fremdrift_kl: string;
         sag_aendret_kl: string | null;
+        sag_aendret_kvitteret_kl: string | null;
       }>(),
   ]);
   const ordentligAktiv = !!ordentlig && !ordentlig.tilbagekaldt_kl;
@@ -314,7 +315,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
         {reklamation && (
           <div
             className={`mt-4 flex flex-col gap-2 rounded-lg border px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between ${
-              erStille(reklamation.status, reklamation.fremdrift_kl, nu) || erSagAendret(reklamation.status, reklamation.sag_aendret_kl)
+              erStille(reklamation.status, reklamation.fremdrift_kl, nu) || erSagAendret(reklamation.status, reklamation.sag_aendret_kl, reklamation.sag_aendret_kvitteret_kl)
                 ? "border-fejl-kant bg-fejl-bg"
                 : "border-admin-kant bg-admin-bg"
             }`}
@@ -326,7 +327,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
                 Krav {kronerOere(reklamation.kravbeloeb_oere)}
                 {reklamation.godkendt_beloeb_oere != null && <> · godkendt {kronerOere(reklamation.godkendt_beloeb_oere)}</>}
               </span>
-              {erSagAendret(reklamation.status, reklamation.sag_aendret_kl) && (
+              {erSagAendret(reklamation.status, reklamation.sag_aendret_kl, reklamation.sag_aendret_kvitteret_kl) && (
                 <span className="font-semibold text-fejl-tekst">Sagen er ændret efter anmeldelsen</span>
               )}
             </div>

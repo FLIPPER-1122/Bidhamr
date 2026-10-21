@@ -19,6 +19,7 @@ import {
 } from "@/lib/betaling/betalingHandlinger";
 import { brugBoost, PAKKE_ID, startBoostKoeb, type BoostStartFejl } from "@/lib/betaling/boost";
 import { indbyggetOffentligNoegle } from "@/lib/stripeNoegle";
+import { gemEkstraFragtIndsigelse, startEkstraFragtBetaling, type EkstraFragtStartFejl } from "@/lib/betaling/ekstraFragt";
 
 // Betaling fra appen (Expo). Samme kode som hjemmesidens server actions
 // (src/lib/betaling/betalingHandlinger.ts). Dokumentation: docs/APP-BETALING.md.
@@ -37,6 +38,9 @@ import { indbyggetOffentligNoegle } from "@/lib/stripeNoegle";
 //   stripe-oversigt          {}                       -> engangs-link til Stripes Express Dashboard
 //   boost-koeb               { samtykke?, pakke? }    -> PaymentSheet-data til køb af boost-point (pakke: id, uden = 100 point)
 //   boost-brug               { auktion_id, noegle }   -> booster egen auktion (noegle: uuid, samme = samme boost)
+//   ekstra-fragt-betal       { regning_id }           -> PaymentSheet-data til sælgerens betaling af ekstra fragt
+//   ekstra-fragt-indsigelse  { regning_id, tekst }    -> indsigelse mod fragtfirmaets måling (én gang)
+//   (Listen og fakturaen: rpc mine_ekstra_fragt_regninger og GET /api/ekstra-fragt/<id>/dokumentation.)
 //
 // Sikkerhed (som /api/fragt/app): kun Bearer-token - cookies bruges ikke
 // (ingen CSRF); ingen CORS-headere, og en fremmed Origin afvises. Brugeren
@@ -60,6 +64,8 @@ const HANDLINGER = [
   "stripe-oversigt",
   "boost-koeb",
   "boost-brug",
+  "ekstra-fragt-betal",
+  "ekstra-fragt-indsigelse",
 ] as const;
 type Handling = (typeof HANDLINGER)[number];
 
@@ -126,6 +132,18 @@ const BOOST_KOEB_STATUS: Record<BoostStartFejl["kode"], number> = {
   behandles: 409,
   pause: 503,
   betalt: 409,
+  fejl: 500,
+};
+
+const EKSTRA_FRAGT_STATUS: Record<EkstraFragtStartFejl["kode"], number> = {
+  ugyldig: 400,
+  ikke_fundet: 404,
+  betalt: 409,
+  behandles: 409,
+  indsigelse: 409,
+  frafaldet: 409,
+  refunderet: 409,
+  pause: 503,
   fejl: 500,
 };
 
@@ -306,6 +324,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
           customerSessionClientSecret: r.customerSessionClientSecret,
           publishableKey,
         });
+      }
+      case "ekstra-fragt-betal": {
+        // Sælgerens betaling af ekstra fragt (for lille pakkestørrelse) - til
+        // BidHamrs platformskonto, samme kode som hjemmesiden
+        // (src/lib/betaling/ekstraFragt.ts). Beløbet kommer fra databasen.
+        const publishableKey = offentligStripeNoegle();
+        if (!publishableKey) {
+          await logDriftFejl({ kilde: "server", sti: "/api/betaling/app/ekstra-fragt-betal", fejl: "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY mangler", brugerId: bruger.id });
+          return svar(500, { fejl: GENERISK, kode: "fejl" });
+        }
+        const r = await startEkstraFragtBetaling(krop.regning_id, bruger.id, "app");
+        if ("fejl" in r) return svar(EKSTRA_FRAGT_STATUS[r.kode] ?? 500, { fejl: r.fejl, kode: r.kode });
+        return svar(200, {
+          ok: true,
+          regningId: r.regningId,
+          clientSecret: r.clientSecret,
+          beloebOere: r.beloebOere,
+          customerId: r.customerId,
+          customerSessionClientSecret: r.customerSessionClientSecret,
+          publishableKey,
+        });
+      }
+      case "ekstra-fragt-indsigelse": {
+        if (typeof krop.tekst !== "string") return svar(400, UGYLDIG);
+        // Kører som sælgeren (tokenet), så databasen afgør adgangen (auth.uid()).
+        const somBruger = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, offentligNoegle(), {
+          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+          global: { headers: { Authorization: `Bearer ${m[1]}` } },
+        });
+        const r = await gemEkstraFragtIndsigelse(somBruger, krop.regning_id, krop.tekst);
+        if ("fejl" in r) return svar(r.kode === "ikke_fundet" ? 404 : 409, { fejl: r.fejl, kode: r.kode });
+        return svar(200, { ok: true });
       }
       case "boost-brug": {
         const r = await brugBoost(bruger.id, krop.auktion_id, krop.noegle);
