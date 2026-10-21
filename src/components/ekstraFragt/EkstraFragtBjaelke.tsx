@@ -46,7 +46,7 @@ export default function EkstraFragtBjaelke({
           <p className="mt-1 text-sm">
             {spaerret
               ? EKSTRA_FRAGT_SPAERRET_TEKST
-              : `Fragtfirmaet målte en pakke større end den størrelse, du valgte. Betal senest ${ekstraFragtDato(foerste.frist)}.`}
+              : `Fragtfirmaet har målt ${flere ? "pakker" : "en pakke"}, du har sendt, som større eller tungere end den størrelse, du valgte. Betal senest ${ekstraFragtDato(foerste.frist)}.`}
           </p>
         </div>
         <Link

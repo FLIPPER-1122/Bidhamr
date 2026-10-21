@@ -201,6 +201,10 @@ export const FAQ_SIDE: Tekstside = {
           svar: "Den mindste, varen kan sendes i: Lille (op til 1 kg), Mellem (op til 5 kg) eller Stor (op til 15 kg). Vægten er med kasse og fyld. Vejer varen mere end 15 kg, kan den kun afhentes.",
         },
         {
+          spoergsmaal: "Hvorfor skal jeg betale ekstra fragt?",
+          svar: "Fragtfirmaet måler og vejer pakken. Er den større eller tungere end den størrelse, du valgte, opkræver fragtfirmaet ekstra, og det betaler du som sælger. Beløbet er fragtfirmaets pris. Du får besked og kan se fragtfirmaets dokumentation på handelssiden, hvor du også betaler. Mener du, at målingen er forkert, kan du gøre indsigelse én gang. Betaler du ikke inden for 14 dage, kan du ikke oprette nye auktioner, før beløbet er betalt. Vælg derfor den rigtige størrelse fra start – Pakkeguiden hjælper dig.",
+        },
+        {
           spoergsmaal: "Hvem har ansvaret, hvis varen går i stykker i posten?",
           svar: "Du har ansvaret for at pakke varen forsvarligt. Du tager billeder af indpakningen, når du sender pakken, og de bruges, hvis der kommer en sag.",
         },
