@@ -11,6 +11,7 @@ import { harCronAdgang } from "@/lib/cronAdgang";
 import { koerDac7Cron } from "@/lib/dac7/server";
 import { koerLukOpsigelser } from "@/lib/erhverv/betaling";
 import { koerBetaFejlOprydning } from "@/lib/betaFejlOprydning";
+import { koerEkstraFragtOprydning } from "@/lib/ekstraFragt/oprydning";
 import { kortResultat } from "@/lib/driftCronResultat";
 
 // Lukker auktioner, opretter handel + betaling (48 timers frist; vinderen
@@ -236,7 +237,16 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Beta-fejl: oprydning af billeder", fejl: err });
     }
-    const r = { ...betaling, fragt, returfragt, boost, ekstraFragt, dac7, erhvervLuk, betaFejlOprydning };
+    // Ubrugte dokumentationsfiler for ekstra fragt (over 7 dage, ingen
+    // regning) slettes den 1. i måneden, én gang. Flytter ingen penge - fejl
+    // tæller ikke som trinfejl, men logges i drift_fejl.
+    let ekstraFragtOprydning: Awaited<ReturnType<typeof koerEkstraFragtOprydning>> = null;
+    try {
+      ekstraFragtOprydning = await koerEkstraFragtOprydning();
+    } catch (err) {
+      await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Ekstra fragt: oprydning af dokumentation", fejl: err });
+    }
+    const r = { ...betaling, fragt, returfragt, boost, ekstraFragt, dac7, erhvervLuk, betaFejlOprydning, ekstraFragtOprydning };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);

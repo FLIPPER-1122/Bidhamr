@@ -50,6 +50,9 @@ export type StaffTal = {
   ekstraFragtAfventer: number;
   ekstraFragtForfaldne: number;
   ekstraFragtIndsigelser: number;
+  // Betalte ekstraregninger, hvor betalingen er tilbageført efter en tabt
+  // bankindsigelse (rødt - staff afgør, om regningen skal genåbnes).
+  ekstraFragtTabteBankindsigelser: number;
 };
 
 function n(r: object | null | undefined, k: string): number {
@@ -77,6 +80,7 @@ export const hentStaffTal = cache(async (): Promise<StaffTal> => {
     ekstraFragtAfventer: n(ef, "afventer_betaling"),
     ekstraFragtForfaldne: n(ef, "forfaldne"),
     ekstraFragtIndsigelser: n(ef, "indsigelser"),
+    ekstraFragtTabteBankindsigelser: n(ef, "tabte_bankindsigelser"),
     reklamationAfventer: r?.afventerSaelger ?? 0,
     reklamationStille: r?.stille ?? 0,
     reklamationSagAendret: r?.sagAendret ?? 0,

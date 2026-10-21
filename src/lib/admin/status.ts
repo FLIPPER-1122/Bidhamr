@@ -59,6 +59,7 @@ export const hentAdminStatus = cache(async (rolle: StaffRole): Promise<AdminStat
         reklamationStille: tal.reklamationStille,
         reklamationSagAendret: tal.reklamationSagAendret,
         ekstraFragtIndsigelser: tal.ekstraFragtIndsigelser,
+        ekstraFragtTabteBankindsigelser: tal.ekstraFragtTabteBankindsigelser,
       }),
       ...lampePunkter.filter((p) => p.tone === "gul"),
     ],

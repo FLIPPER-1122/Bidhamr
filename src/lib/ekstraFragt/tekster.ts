@@ -102,7 +102,13 @@ export const EKSTRA_FRAGT_STAFF_FEJL: Record<string, string> = {
   ugyldigt_udfald: "Vælg frafald eller fasthold.",
   behandles: "Sælgerens betaling behandles lige nu. Prøv igen om lidt.",
   forkert_status: "Regningen har ændret status. Genindlæs siden.",
+  ingen_tabt_bankindsigelse: "Regningen kan kun genåbnes, når betalingen er tilbageført efter en tabt bankindsigelse.",
+  delvis_bankindsigelse:
+    "Kun en del af betalingen er tilbageført. Regningen kan ikke genåbnes her – håndtér den manuelt, og kontakt en udvikler.",
 };
+
+// Genåbnes en regning efter en tabt bankindsigelse, har sælgeren så mange dage.
+export const EKSTRA_FRAGT_GENAABNET_FRIST_DAGE = 14;
 
 // Fejlkoder fra databasen -> dansk tekst (sælgeren).
 export const EKSTRA_FRAGT_SAELGER_FEJL: Record<string, string> = {

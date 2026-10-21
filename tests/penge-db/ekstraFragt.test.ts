@@ -18,6 +18,7 @@ import {
 } from "@/lib/betaling/afstemning";
 import { erEkstraFragtFejl, kgTilGram, kronerTilOere } from "@/lib/ekstraFragt/tekster";
 import { ekstraFragtBeskeder, type EkstraFragtBeskedRaekke } from "@/lib/ekstraFragt/notifikationer";
+import { erOprydningsdag } from "@/lib/ekstraFragt/oprydning";
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261029020000_ekstra_fragt.sql"),
@@ -41,7 +42,8 @@ grant usage on schema auth to anon, authenticated, service_role;
 grant execute on function auth.uid() to anon, authenticated, service_role;
 create schema storage;
 create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
-create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
+create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text,
+  metadata jsonb, created_at timestamptz not null default now());
 create table public.users (id uuid primary key, navn text, rolle text not null default 'bruger');
 insert into public.users values ('${KOEBER}', 'Køber', 'bruger'), ('${SAELGER}', 'Sælger', 'bruger'),
   ('${SAELGER2}', 'Sælger 2', 'bruger'), ('${FREMMED}', 'Fremmed', 'bruger'), ('${STAFF}', 'Medarbejder', 'medarbejder'),
@@ -133,10 +135,14 @@ async function handel(o: { saelger?: string; afhentning?: boolean; status?: stri
 }
 
 // Uploadet dokumentation for handlen.
-async function dok(tradeId: string, endelse = "pdf") {
+const MIME: Record<string, string> = { pdf: "application/pdf", jpg: "image/jpeg", png: "image/png", webp: "image/webp", heic: "image/heic" };
+async function dok(tradeId: string, endelse = "pdf", mimetype = MIME[endelse]) {
   n++;
   const sti = `${tradeId}/00000000-0000-4000-8000-${String(n).padStart(12, "0")}.${endelse}`;
-  await db.query(`insert into storage.objects (bucket_id, name) values ('ekstra-fragt-dokumentation', $1)`, [sti]);
+  await db.query(`insert into storage.objects (bucket_id, name, metadata) values ('ekstra-fragt-dokumentation', $1, $2)`, [
+    sti,
+    JSON.stringify({ mimetype }),
+  ]);
   return sti;
 }
 
@@ -309,9 +315,9 @@ describe("spærringen (BHX01)", () => {
     expect(await nytTilbud(SAELGER)).toBeNull();
   });
 
-  it("ingen spærring under indsigelse; fastholdt: ny frist mindst 7 dage; frafald ophæver", async () => {
-    const r = await nyRegning({ saelger: SAELGER2, fristDage: -1 });
-    expect((await nyAuktion(SAELGER2))?.code).toBe("BHX01");
+  it("ingen spærring under indsigelse gjort før fristen; fastholdt: ny frist mindst 7 dage; frafald ophæver", async () => {
+    const r = await nyRegning({ saelger: SAELGER2, fristDage: 2 });
+    expect(await nyAuktion(SAELGER2)).toBeNull();
     await som(SAELGER2);
     expect((await j(`select public.mit_ekstra_fragt_indsigelse($1, 'kort') as v`, [r.id])).kode).toBe("for_kort");
     expect((await j(`select public.mit_ekstra_fragt_indsigelse($1, 'Pakken vejede kun 900 g, da jeg sendte den.') as v`, [r.id])).kode).toBe("ok");
@@ -400,6 +406,7 @@ describe("betalingen (spejl fra Stripe)", () => {
     expect(await j(`select public.mit_ekstra_fragt_indsigelse($1, 'Pakken var lille, se mine billeder.') as v`, [r.id])).toEqual({
       kode: "ok",
       annuller_pi: "pi_test_adopt",
+      spaerret_til_afgoerelse: false,
     });
     await som(null);
     expect(await regning(r.id)).toMatchObject({ status: "indsigelse", stripe_payment_intent_id: null, annuller_pi: "pi_test_adopt" });
@@ -511,6 +518,239 @@ describe("fakturaer", () => {
   });
 });
 
+describe("M1: tabt bankindsigelse og genåbning", () => {
+  const tabt = (ch: string, du: string, status = "lost", beloeb = 3500) =>
+    j(`select public.ekstra_fragt_registrer_bankindsigelse($1, $2, $3, $4) as v`, [ch, du, status, beloeb]);
+  const genaabn = (id: string, beg = "Din bank har tilbageført betalingen.") =>
+    j(`select public.ekstra_fragt_genaabn($1, $2) as v`, [id, beg]);
+  const fakturaer = (id: string) =>
+    db.query<Record<string, unknown>>(
+      `select dokument, coalesce(ekstra_fragt_runde, 0) as runde, beloeb_oere, stripe_reference, krediterer_id, id, status
+         from public.fakturaer where ekstra_fragt_id = $1 order by oprettet_kl, dokument desc`,
+      [id],
+    );
+
+  it("markeres (ikke genåbnet automatisk); staff genåbner: kreditnota, ny frist, ny runde, ny PaymentIntent, ny faktura", async () => {
+    const r = await nyRegning();
+    const { pi } = await betal(r.id);
+    const ch = `ch_${pi}`;
+    await j(`select public.faktura_planlaeg_ekstra_fragt(1000) as v`);
+
+    // Ingen tabt indsigelse: kan ikke genåbnes.
+    await som(STAFF);
+    expect((await genaabn(r.id)).kode).toBe("ingen_tabt_bankindsigelse");
+    await som(null);
+    // Åben indsigelse spejles, men regningen er stadig betalt.
+    expect((await tabt(ch, "du_test_m1", "needs_response")).kode).toBe("registreret");
+    expect(await regning(r.id)).toMatchObject({ status: "betalt", bankindsigelse_status: "needs_response", bankindsigelse_tabt_kl: null });
+    await som(STAFF);
+    expect((await genaabn(r.id)).kode).toBe("ingen_tabt_bankindsigelse");
+    await som(null);
+
+    // Tabt: markeret, idempotent - og en senere status overskriver den ikke.
+    expect(await tabt(ch, "du_test_m1")).toMatchObject({ kode: "tabt", id: r.id, status: "betalt" });
+    expect((await tabt(ch, "du_test_m1")).kode).toBe("allerede");
+    expect((await tabt(ch, "du_test_m1", "won")).kode).toBe("registreret");
+    const markeret = await regning(r.id);
+    expect(markeret).toMatchObject({ status: "betalt", bankindsigelse_id: "du_test_m1", bankindsigelse_status: "lost" });
+    expect(markeret.bankindsigelse_tabt_kl).not.toBeNull();
+    // Ugyldige id'er og ukendte charges.
+    expect((await tabt(ch, "x_ugyldig")).kode).toBe("ugyldig");
+    expect((await tabt("ch_ukendt", "du_test_x")).kode).toBe("ukendt");
+    // Admin-lampen.
+    await som(STAFF);
+    expect(Number((await j(`select public.ekstra_fragt_antal() as v`)).tabte_bankindsigelser)).toBeGreaterThanOrEqual(1);
+
+    // Kun staff, med begrundelse.
+    await som(SAELGER);
+    expect((await genaabn(r.id)).kode).toBe("ingen_adgang");
+    await som(STAFF);
+    expect((await genaabn(r.id, "  ")).kode).toBe("begrundelse_mangler");
+    const ok = await genaabn(r.id);
+    expect(ok).toMatchObject({ kode: "ok", runde: 1, trade_id: r.tradeId, saelger_id: SAELGER });
+    expect((await genaabn(r.id)).kode).toBe("forkert_status");
+    await som(null);
+
+    const g = await regning(r.id);
+    expect(g).toMatchObject({
+      status: "afventer_betaling",
+      runde: 1,
+      pi_forsoeg: 1,
+      stripe_payment_intent_id: null,
+      stripe_charge_id: null,
+      betalt_kl: null,
+      modtaget_oere: null,
+      bankindsigelse_tabt_kl: null,
+      tilbagefoerte_payment_intents: [pi],
+      tilbagefoerte_charges: [ch],
+      genaabnet_af: STAFF,
+    });
+    const fristDage = (new Date(g.frist as string).getTime() - Date.now()) / 86_400_000;
+    expect(Math.round(fristDage)).toBe(14);
+    const log = await en(`select handling, medarbejder_id from public.moderation_log order by ctid desc limit 1`);
+    expect(log).toEqual({ handling: "ekstra_fragt_genaabnet", medarbejder_id: STAFF });
+
+    // Bogføringen: faktura (runde 0) + kreditnota for den (reference = indsigelsen).
+    const f1 = (await fakturaer(r.id)).rows;
+    expect(f1).toHaveLength(2);
+    const faktura0 = f1.find((x) => x.dokument === "faktura")!;
+    const kredit0 = f1.find((x) => x.dokument === "kreditnota")!;
+    expect(kredit0).toMatchObject({ runde: 0, beloeb_oere: 3500, stripe_reference: "du_test_m1", krediterer_id: faktura0.id, status: "venter" });
+
+    // Den tilbageførte betaling tæller aldrig igen (gentaget webhook/cron).
+    expect((await j(`select public.ekstra_fragt_registrer($1, 'succeeded', $2, 3500, null) as v`, [pi, ch])).kode).toBe("tilbagefoert");
+    expect((await regning(r.id)).status).toBe("afventer_betaling");
+    expect((await tabt(ch, "du_test_m1")).kode).toBe("genaabnet");
+    // Spærret efter den nye frist, som enhver ubetalt regning.
+    await db.query(`update public.ekstra_fragt_regninger set frist = now() - interval '1 minute' where id = $1`, [r.id]);
+    expect((await nyAuktion(SAELGER))?.code).toBe("BHX01");
+
+    // Ny betaling (ny runde, nyt forsøg = ny idempotency key) -> ny faktura.
+    const { r: reg2 } = await betal(r.id, 3500, 1);
+    expect(reg2.kode).toBe("betalt");
+    expect(await nyAuktion(SAELGER)).toBeNull();
+    await j(`select public.faktura_planlaeg_ekstra_fragt(1000) as v`);
+    const f2 = (await fakturaer(r.id)).rows;
+    expect(f2).toHaveLength(3);
+    expect(f2.filter((x) => x.dokument === "faktura").map((x) => Number(x.runde)).sort()).toEqual([0, 1]);
+    // Igen: intet nyt.
+    await j(`select public.faktura_planlaeg_ekstra_fragt(1000) as v`);
+    expect((await fakturaer(r.id)).rows).toHaveLength(3);
+    // Historikken kan ikke slettes.
+    expect(
+      (await fejl(`update public.ekstra_fragt_regninger set tilbagefoerte_payment_intents = '{}' where id = $1`, [r.id]))?.code,
+    ).toBe("42501");
+    expect((await fejl(`update public.ekstra_fragt_regninger set runde = 0 where id = $1`, [r.id]))?.code).toBe("42501");
+  });
+
+  it("genåbning før fakturakøen: rundens faktura laves først; delvis tilbageførsel kan ikke genåbnes", async () => {
+    const a = await nyRegning();
+    const { pi } = await betal(a.id);
+    expect((await tabt(`ch_${pi}`, "du_test_m1b")).kode).toBe("tabt");
+    await som(STAFF);
+    expect((await genaabn(a.id)).kode).toBe("ok");
+    await som(null);
+    const f = (await fakturaer(a.id)).rows;
+    expect(f.map((x) => x.dokument).sort()).toEqual(["faktura", "kreditnota"]);
+
+    const b = await nyRegning();
+    const { pi: pib } = await betal(b.id);
+    expect((await tabt(`ch_${pib}`, "du_test_m1c", "lost", 1000)).kode).toBe("tabt");
+    await som(STAFF);
+    expect((await genaabn(b.id)).kode).toBe("delvis_bankindsigelse");
+    await som(null);
+    expect((await regning(b.id)).status).toBe("betalt");
+  });
+});
+
+describe("M2: indsigelse efter fristen", () => {
+  const SAELGER3 = "00000000-0000-4000-8000-0000000000b3";
+  it("tilladt, men spærringen gælder, til indsigelsen er afgjort", async () => {
+    await db.query(`insert into public.users (id, navn) values ($1, 'Sælger 3') on conflict do nothing`, [SAELGER3]);
+    const r = await nyRegning({ saelger: SAELGER3, fristDage: -1 });
+    expect((await nyAuktion(SAELGER3))?.code).toBe("BHX01");
+    await som(SAELGER3);
+    expect((await db.query<Record<string, unknown>>(`select * from public.mine_ekstra_fragt_regninger($1)`, [r.tradeId])).rows[0])
+      .toMatchObject({ kan_goere_indsigelse: true, spaerrer: true });
+    expect(await j(`select public.mit_ekstra_fragt_indsigelse($1, 'Pakken vejede kun 900 g, da jeg sendte den.') as v`, [r.id])).toEqual({
+      kode: "ok",
+      annuller_pi: null,
+      spaerret_til_afgoerelse: true,
+    });
+    const mine = (await db.query<Record<string, unknown>>(`select * from public.mine_ekstra_fragt_regninger($1)`, [r.tradeId])).rows[0];
+    expect(mine).toMatchObject({ status: "indsigelse", spaerrer: true, indsigelse_efter_frist: true, kan_betale: false });
+    expect((await j(`select public.min_ekstra_fragt_status() as v`)).spaerret).toBe(true);
+    await som(null);
+    expect((await nyAuktion(SAELGER3))?.code).toBe("BHX01");
+    expect((await nytTilbud(SAELGER3))?.code).toBe("BHX01");
+    // Fastholdt: mindst 7 dage fra afgørelsen -> ikke længere spærret.
+    await som(STAFF);
+    expect((await j(`select public.ekstra_fragt_afgoer_indsigelse($1, 'fasthold', 'Vejningen er korrekt.') as v`, [r.id])).kode).toBe("ok");
+    await som(null);
+    expect(await nyAuktion(SAELGER3)).toBeNull();
+  });
+
+  it("frafaldet efter en sen indsigelse ophæver spærringen", async () => {
+    const r = await nyRegning({ saelger: SAELGER3, fristDage: -2 });
+    await som(SAELGER3);
+    expect((await j(`select public.mit_ekstra_fragt_indsigelse($1, 'Fragtfirmaet har målt forkert.') as v`, [r.id])).kode).toBe("ok");
+    await som(null);
+    expect((await nyAuktion(SAELGER3))?.code).toBe("BHX01");
+    await som(STAFF);
+    expect((await j(`select public.ekstra_fragt_afgoer_indsigelse($1, 'frafald', 'Du har ret.') as v`, [r.id])).kode).toBe("ok");
+    await som(null);
+    expect(await nyAuktion(SAELGER3)).toBeNull();
+  });
+});
+
+describe("L2: kasseret PaymentIntent giver nyt forsøg (ny idempotency key)", () => {
+  it("indsigelse og frafald tæller pi_forsoeg op, når der var en PaymentIntent", async () => {
+    const r = await nyRegning();
+    await j(`select public.ekstra_fragt_betal_start($1, $2) as v`, [r.id, SAELGER]);
+    await en(`select public.ekstra_fragt_gem_pi($1, 'pi_test_l2_0', 0)`, [r.id]);
+    await som(SAELGER);
+    await j(`select public.mit_ekstra_fragt_indsigelse($1, 'Pakken var lille, se billederne.') as v`, [r.id]);
+    await som(STAFF);
+    await j(`select public.ekstra_fragt_afgoer_indsigelse($1, 'fasthold', 'Målingen står ved magt.') as v`, [r.id]);
+    await som(null);
+    expect(await regning(r.id)).toMatchObject({ pi_forsoeg: 1, stripe_payment_intent_id: null });
+    // Næste PaymentIntent gemmes kun med det nye forsøg.
+    expect(await en(`select public.ekstra_fragt_gem_pi($1, 'pi_test_l2_x', 0) as v`, [r.id])).toEqual({ v: false });
+    expect(await en(`select public.ekstra_fragt_gem_pi($1, 'pi_test_l2_1', 1) as v`, [r.id])).toEqual({ v: true });
+    await som(STAFF);
+    await j(`select public.ekstra_fragt_frafald($1, 'Vi frafalder alligevel.') as v`, [r.id]);
+    await som(null);
+    expect(await regning(r.id)).toMatchObject({ pi_forsoeg: 2, status: "frafaldet", annuller_pi: "pi_test_l2_1" });
+    // Uden PaymentIntent: uændret.
+    const u = await nyRegning();
+    await som(STAFF);
+    await j(`select public.ekstra_fragt_frafald($1, 'Fejl.') as v`, [u.id]);
+    await som(null);
+    expect((await regning(u.id)).pi_forsoeg).toBe(0);
+  });
+});
+
+describe("L3 og oprydning: dokumentationsfiler", () => {
+  it("filtypen i Storage skal passe til den angivne (HEIC/HEIF er samme format)", async () => {
+    const h = await handel();
+    await som(STAFF);
+    expect((await opret(h.forsendelseId, h.tradeId, { sti: await dok(h.tradeId, "pdf", "text/html") })).kode).toBe("dokumentation_mangler");
+    expect((await opret(h.forsendelseId, h.tradeId, { sti: await dok(h.tradeId, "pdf", "image/png") })).kode).toBe("dokumentation_mangler");
+    expect(
+      (await opret(h.forsendelseId, h.tradeId, { sti: await dok(h.tradeId, "heic", "image/heif"), type: "image/heic" })).kode,
+    ).toBe("ok");
+    await som(null);
+  });
+
+  it("ekstra_fragt_ubrugte_filer: kun ubrugte filer over 7 dage", async () => {
+    const r = await nyRegning();
+    const brugt = (await regning(r.id)).dokumentation_sti as string;
+    const gammel = await dok(r.tradeId);
+    const ny = await dok(r.tradeId);
+    await db.query(`update storage.objects set created_at = now() - interval '8 days' where name = any($1)`, [[brugt, gammel]]);
+    await db.query(`insert into storage.objects (bucket_id, name, created_at) values ('andet', 'x/y.pdf', now() - interval '30 days')`);
+    const ud = (await db.query<{ v: string }>(`select v from public.ekstra_fragt_ubrugte_filer(1000) as v`)).rows.map((x) => x.v);
+    expect(ud).toContain(gammel);
+    expect(ud).not.toContain(brugt);
+    expect(ud).not.toContain(ny);
+    expect(ud).not.toContain("x/y.pdf");
+    const p = await en(`
+      select has_function_privilege('authenticated', 'public.ekstra_fragt_ubrugte_filer(integer)', 'execute') as auth,
+             has_function_privilege('service_role', 'public.ekstra_fragt_ubrugte_filer(integer)', 'execute') as sr,
+             has_function_privilege('authenticated', 'public.ekstra_fragt_registrer_bankindsigelse(text,text,text,bigint)', 'execute') as auth_bi,
+             has_function_privilege('authenticated', 'public.ekstra_fragt_genaabn(uuid,text)', 'execute') as auth_gen,
+             has_function_privilege('anon', 'public.ekstra_fragt_genaabn(uuid,text)', 'execute') as anon_gen`);
+    expect(p).toEqual({ auth: false, sr: true, auth_bi: false, auth_gen: true, anon_gen: false });
+  });
+
+  it("oprydningen kører kun den 1. i måneden (dansk tid)", () => {
+    expect(erOprydningsdag(new Date("2026-11-01T10:00:00Z"))).toBe(true);
+    // 31. okt. kl. 23:30 UTC er 1. nov. i Danmark (vintertid, UTC+1).
+    expect(erOprydningsdag(new Date("2026-10-31T23:30:00Z"))).toBe(true);
+    expect(erOprydningsdag(new Date("2026-11-02T10:00:00Z"))).toBe(false);
+  });
+});
+
 describe("rene regler", () => {
   it("kroner og kg til heltal (ingen kommatal)", () => {
     expect(kronerTilOere("35")).toBe(3500);
@@ -571,10 +811,60 @@ describe("rene regler", () => {
     ]);
     const fastholdt = { ...base, afgoerelse: "fastholdt" as const, afgoerelse_begrundelse: "Vejningen er korrekt", afgjort_kl: "2026-11-19T10:00:00Z" };
     expect(noegler(fastholdt)).toContain(`ekstrafragt:r1:afgjort:${Date.parse("2026-11-19T10:00:00Z")}`);
+    // L8: allerede betalt, før "ny regning" blev sendt - kun kvitteringen.
     const betalt = { ...base, status: "betalt" as const, betalt_kl: "2026-11-19T10:00:00Z" };
-    expect(noegler(betalt)).toEqual(["ekstrafragt:r1:oprettet", "ekstrafragt:r1:betalt"]);
+    expect(noegler(betalt)).toEqual(["ekstrafragt:r1:betalt"]);
     // Frafaldet før beskeden blev sendt: ingen "betal"-besked.
     const frafaldet = { ...base, status: "frafaldet" as const, frafaldet_kl: "2026-11-10T13:00:00Z", frafald_grund: "Fejl" };
     expect(noegler(frafaldet)).toEqual([`ekstrafragt:r1:frafaldet:${Date.parse("2026-11-10T13:00:00Z")}`]);
+    // L1: frafaldet EFTER en fastholdt indsigelse - besked om både afgørelsen og frafaldet.
+    const fastholdtFrafaldet = { ...fastholdt, status: "frafaldet" as const, frafaldet_kl: "2026-11-20T09:00:00Z", frafald_grund: "Ny vurdering" };
+    expect(noegler(fastholdtFrafaldet)).toEqual([
+      `ekstrafragt:r1:afgjort:${Date.parse("2026-11-19T10:00:00Z")}`,
+      `ekstrafragt:r1:frafaldet:${Date.parse("2026-11-20T09:00:00Z")}`,
+    ]);
+    // Indsigelsen frafaldet: kun afgørelsen (ingen dobbeltbesked).
+    const medhold = {
+      ...base,
+      status: "frafaldet" as const,
+      afgoerelse: "frafaldet" as const,
+      afgoerelse_begrundelse: "Du har ret",
+      afgjort_kl: "2026-11-19T10:00:00Z",
+      frafaldet_kl: "2026-11-19T10:00:00Z",
+      frafald_grund: "Du har ret",
+    };
+    expect(noegler(medhold)).toEqual([`ekstrafragt:r1:afgjort:${Date.parse("2026-11-19T10:00:00Z")}`]);
+  });
+
+  it("beskederne ved genåbning: egen besked, påmindelse og kvittering pr. runde", () => {
+    const g: EkstraFragtBeskedRaekke = {
+      id: "r2",
+      trade_id: "t2",
+      saelger_id: SAELGER,
+      status: "afventer_betaling",
+      beloeb_oere: 3500,
+      valgt_stoerrelse: "lille",
+      maalt_stoerrelse: "mellem",
+      maalt_vaegt_gram: null,
+      frist: "2026-12-15T12:00:00Z",
+      oprettet_kl: "2026-10-01T12:00:00Z",
+      afgoerelse: null,
+      afgoerelse_begrundelse: null,
+      afgjort_kl: null,
+      frafaldet_kl: null,
+      frafald_grund: null,
+      betalt_kl: null,
+      runde: 1,
+      genaabnet_kl: "2026-12-01T12:00:00Z",
+      genaabn_begrundelse: "Din bank har tilbageført betalingen",
+    };
+    const noegler = (r: EkstraFragtBeskedRaekke, t: number) => ekstraFragtBeskeder(r, t).map((o) => o.input.noegle);
+    const gk = `ekstrafragt:r2:genaabnet:${Date.parse("2026-12-01T12:00:00Z")}`;
+    expect(noegler(g, Date.parse("2026-12-02T12:00:00Z"))).toEqual([gk]);
+    expect(ekstraFragtBeskeder(g, Date.parse("2026-12-02T12:00:00Z"))[0].input.tekst).toContain("tilbageført");
+    expect(noegler(g, Date.parse("2026-12-09T12:00:00Z"))).toEqual([gk, "ekstrafragt:r2:paamind:1"]);
+    expect(noegler({ ...g, status: "betalt", betalt_kl: "2026-12-10T12:00:00Z" }, Date.parse("2026-12-10T13:00:00Z"))).toEqual([
+      "ekstrafragt:r2:betalt:1",
+    ]);
   });
 });
