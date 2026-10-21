@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { hentSaelgerPakke } from "@/lib/reklamation/saelgerRute";
-import { tekstSvar } from "@/lib/reklamation/zipSvar";
+import { filStoerrelse, tekstSvar } from "@/lib/reklamation/zipSvar";
 
 // Ét billede fra sælgerens reklamationspakke (sælgers pakkebillede eller
 // købers skadebillede) - så sælgeren aldrig får et storage-link, hvis sti
@@ -36,7 +36,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   const fil = res.filer[Number(rawNr) - 1];
   if (!fil) return tekstSvar(404, "Billedet findes ikke.");
   try {
-    const { data, error } = await createAdminClient().storage.from(fil.bucket).download(fil.sti);
+    const admin = createAdminClient();
+    // Afvis et for stort billede, før det hentes ind i hukommelsen
+    // (storage-metadata); ukendt størrelse tjekkes efter download.
+    const kendt = await filStoerrelse(admin, fil.bucket, fil.sti);
+    if (kendt !== null && kendt > MAKS_BYTES) return tekstSvar(413, "Billedet er for stort til at blive vist.");
+    const { data, error } = await admin.storage.from(fil.bucket).download(fil.sti);
     if (error || !data) return tekstSvar(404, "Billedet kunne ikke hentes.");
     if (data.size > MAKS_BYTES) return tekstSvar(413, "Billedet er for stort til at blive vist.");
     const endelse = (/\.([a-z0-9]{2,5})$/i.exec(fil.filnavn)?.[1] ?? "").toLowerCase();

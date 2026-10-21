@@ -18,6 +18,8 @@ import { visKvittering } from "@/components/admin/Kvittering";
 import {
   REKLAMATION_RET_STATUSSER,
   REKLAMATION_STATUS_STAFF,
+  betingelseTekst,
+  kanKvittere,
   kroner,
   type ReklamationRetStatus,
   type ReklamationStatus,
@@ -367,8 +369,14 @@ function AnnullerKnap({ reklamationId, sagId }: { reklamationId: string; sagId: 
 // ------------------------------------------------------------------ Kvittér
 
 // Sagen er ændret efter sælgerens anmeldelse: "set - reklamationen fortsætter".
-function KvitterKnap({ reklamationId, sagId }: { reklamationId: string; sagId: string }) {
+// aarsag: hvorfor sagen er ændret (fragt_reklamation_betingelser): null =
+// betingelserne er opfyldt igen, undefined = ukendt. Er årsagen ikke
+// midlertidig (anke), afviser databasen kvitteringen - så vises kun årsagen
+// og henvisningen til annullér/ret status.
+function KvitterKnap({ reklamationId, sagId, aarsag }: { reklamationId: string; sagId: string; aarsag?: string | null }) {
   const id = useId();
+  const kendt = aarsag !== undefined;
+  const tilladt = !kendt || kanKvittere(aarsag);
   const [aaben, setAaben] = useState(false);
   const luk = () => setAaben(false);
   const { sender, fejl, setFejl, send } = useSend();
@@ -402,6 +410,27 @@ function KvitterKnap({ reklamationId, sagId }: { reklamationId: string; sagId: s
         onLuk={luk}
         laast={sender}
       >
+        {kendt && (
+          <p
+            role="note"
+            className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
+              tilladt ? "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst" : "border-fejl-kant bg-fejl-bg text-fejl-tekst"
+            }`}
+          >
+            {aarsag === null
+              ? "Betingelserne er opfyldt igen: køberen er refunderet, afgørelsen er endelig, og indpakningen er ordentlig."
+              : tilladt
+                ? `Årsag: ${betingelseTekst(aarsag)}. Du kan lade sælgeren fortsætte. Ender sagen alligevel ikke til købers fordel, markeres den som ændret igen.`
+                : `Årsag: ${betingelseTekst(aarsag)}. Sælgeren kan derfor ikke fortsætte. Annullér reklamationen, eller ret status.`}
+          </p>
+        )}
+        {!tilladt ? (
+          <div className="flex justify-end">
+            <button type="button" onClick={luk} className="btn btn-sekundaer">
+              Luk
+            </button>
+          </div>
+        ) : (
         <form onSubmit={indsend} method="post" className="space-y-4">
           <div>
             <label htmlFor={`${id}-beg`} className="block text-sm font-medium text-neutral-800">
@@ -414,7 +443,7 @@ function KvitterKnap({ reklamationId, sagId }: { reklamationId: string; sagId: s
               required
               maxLength={2000}
               disabled={sender}
-              placeholder="Fx: Refusionen er sendt igen og gennemført – skaden står ved magt."
+              placeholder="Fx: Anken handler kun om returfragten – skaden og refusionen står ved magt."
               className={FELT}
             />
             <p className="mt-1 text-xs text-neutral-500">Kun synlig for BidHamr. Gemmes i loggen.</p>
@@ -422,6 +451,7 @@ function KvitterKnap({ reklamationId, sagId }: { reklamationId: string; sagId: s
           <Fejl fejl={fejl} />
           <Knapper sender={sender} onLuk={luk} bekraeft="Kvittér" />
         </form>
+        )}
       </Dialog>
     </>
   );
@@ -488,6 +518,7 @@ export default function ReklamationStaffHandlinger({
   sagsnummer,
   inhabil,
   sagAendret = false,
+  sagAendretAarsag,
 }: {
   reklamationId: string;
   sagId: string;
@@ -497,6 +528,8 @@ export default function ReklamationStaffHandlinger({
   inhabil: boolean;
   // Sagen er ændret efter anmeldelsen, og ingen har kvitteret.
   sagAendret?: boolean;
+  // Hvorfor (fragt_reklamation_betingelser): null = opfyldt igen, undefined = ukendt.
+  sagAendretAarsag?: string | null;
 }) {
   if (inhabil) {
     return (
@@ -508,7 +541,7 @@ export default function ReklamationStaffHandlinger({
   const aaben = status === "afventer_saelger" || status === "anmeldt";
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
-      {sagAendret && <KvitterKnap reklamationId={reklamationId} sagId={sagId} />}
+      {sagAendret && <KvitterKnap reklamationId={reklamationId} sagId={sagId} aarsag={sagAendretAarsag} />}
       {aaben && <SendIgenKnap reklamationId={reklamationId} sagId={sagId} />}
       <RetStatusKnap reklamationId={reklamationId} sagId={sagId} status={status} kravbeloebOere={kravbeloebOere} sagsnummer={sagsnummer} />
       {aaben && <AnnullerKnap reklamationId={reklamationId} sagId={sagId} />}

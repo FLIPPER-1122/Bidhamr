@@ -18,7 +18,7 @@ import { assertRole } from "@/lib/adminAuth";
 import { createClient } from "@/lib/supabase/server";
 import { adminSagSti, sagSti } from "@/lib/sager";
 import { notificerReklamationer } from "@/lib/reklamation/notifikationer";
-import { erRetStatus, fortolkKroner, kroner } from "@/lib/reklamation/typer";
+import { betingelseTekst, erRetStatus, fortolkKroner, kroner } from "@/lib/reklamation/typer";
 
 export type ReklamationSvar = { ok: true; uaendret?: boolean } | { fejl: string };
 
@@ -46,26 +46,12 @@ const KODE: Record<string, string> = {
   ikke_aendret: "Der er ingen ændret sag at kvittere for. Genindlæs siden.",
 };
 
-// Hvorfor reklamationen ikke kan være åben/anmeldt/godkendt
-// (fragt_reklamation_betingelser).
-const BETINGELSE: Record<string, string> = {
-  ikke_refunderet: "køberen har ikke fået pengene tilbage (refusionen er ikke bekræftet)",
-  ikke_koebers_fordel: "sagen er ikke endeligt afgjort til køberens fordel",
-  anke_venter: "en anke venter på afgørelse",
-  ankefrist: "ankefristen er ikke udløbet endnu",
-  indpakning: "indpakningen er ikke vurderet som ordentlig",
-  ingen_forsendelse: "der er ingen pakke med DAO eller GLS på handlen",
-  afhentning: "varen blev afhentet",
-  ikke_skadet: "sagen handler ikke om skade under fragten",
-  ingen_handel: "handlen findes ikke",
-  ingen_vaerdi: "varens værdi kan ikke findes",
-};
-
 function erUuid(v: unknown): v is string {
   return typeof v === "string" && UUID.test(v);
 }
 
-function fejlTekst(svar: Record<string, unknown>): string {
+// handling: hvilken knap - betingelser_ikke_opfyldt betyder noget forskelligt.
+function fejlTekst(svar: Record<string, unknown>, handling?: "kvitter"): string {
   const kode = String(svar.kode ?? "");
   if (kode === "ugyldigt_beloeb" && typeof svar.maks_oere === "number") {
     return `Beløbet skal være mellem 0,01 kr. og ${kroner(svar.maks_oere)}.`;
@@ -77,8 +63,11 @@ function fejlTekst(svar: Record<string, unknown>): string {
     return "Indpakningen er allerede vurderet som dårlig i denne sag.";
   }
   if (kode === "betingelser_ikke_opfyldt") {
-    const grund = BETINGELSE[String(svar.aarsag ?? "")];
-    return `Reklamationen kan ikke åbnes igen, fordi ${grund ?? "betingelserne ikke er opfyldt"}. Vælg afvist, fravalgt eller annullér.`;
+    const grund = betingelseTekst(typeof svar.aarsag === "string" ? svar.aarsag : null);
+    if (handling === "kvitter") {
+      return `Sælgeren kan ikke fortsætte, fordi ${grund}. Annullér reklamationen, eller ret status.`;
+    }
+    return `Reklamationen kan ikke åbnes igen, fordi ${grund}. Vælg afvist, fravalgt eller annullér.`;
   }
   return KODE[kode] ?? GENERISK;
 }
@@ -88,6 +77,7 @@ async function koer(
   rpc: string,
   args: Record<string, unknown>,
   stier: { sagId?: string; tradeId?: string } = {},
+  handling?: "kvitter",
 ): Promise<ReklamationSvar> {
   try {
     await assertRole("medarbejder");
@@ -100,7 +90,7 @@ async function koer(
       throw new Error(error.message);
     }
     const svar = (data ?? {}) as Record<string, unknown>;
-    if (svar.kode !== "ok") return { fejl: fejlTekst(svar) };
+    if (svar.kode !== "ok") return { fejl: fejlTekst(svar, handling) };
     // Besked til sælgeren (oprettet, gensendt, annulleret) med det samme -
     // cron'en tager den ellers inden for 5 minutter.
     after(() => notificerReklamationer());
@@ -173,7 +163,7 @@ export async function kvitterSagAendret(reklamationId: string, begrundelse: stri
   return koer("kvitterSagAendret", "fragt_reklamation_kvitter_sag_aendret", {
     p_reklamation: reklamationId,
     p_begrundelse: typeof begrundelse === "string" ? begrundelse : "",
-  }, { sagId: erUuid(sagId) ? sagId : undefined });
+  }, { sagId: erUuid(sagId) ? sagId : undefined }, "kvitter");
 }
 
 // Ret status, hvis sælgeren har registreret forkert. beloebKr kræves ved
