@@ -43,13 +43,18 @@
 --      tjek af sporingen for staff. Ellers ville en køber, hvis pakke er
 --      meldt leveret forkert, miste retten til at melde den bortkommet (som
 --      han havde fra dag 7 i 'pakke_sendt').
+--   5. handel_auto_frigiv: 14-dages-grenen frigiver ikke, før
+--      leveringsmeldingen er mindst 48 timer gammel (seneste af
+--      fragtfirmaets tidspunkt og registreringen hos BidHamr -
+--      handel_leveret_melding_ny), så en sen melding altid giver køberen 48
+--      timer.
 --
 -- Ingen penge flyttes her. Frigivelsen sker stadig kun i handel_auto_frigiv
--- (uændret: frysning, sager, anker, indsigelse, refusion, returneret og ikke
+-- (uændret bortset fra punkt 5: frysning, sager, anker, indsigelse, refusion, returneret og ikke
 -- afhentet blokerer), og udbetalingen til banken har sine egne værn
 -- (nødstop, frosset sælger, chefens godkendelse fra 10.000 kr.).
 --
--- sag_opret ligger i produktion og rettes på stedet med md5-drift-tjek
+-- sag_opret og handel_auto_frigiv ligger i produktion og rettes på stedet med md5-drift-tjek
 -- (mønstret fra 20261021010000): "gammel" = testdatabasen før denne
 -- migration (hentet 21. okt. 2026), "ny" = efter. Andet afbryder migrationen.
 --
@@ -176,6 +181,14 @@ begin
        and bt.refusion_anmodet_kl is null
        and bt.overfoersel_paabegyndt_kl is null
        and bt.stripe_transfer_id is null and bt.saelger_udbetaling_id is null
+       -- Frasorteres her (som i handel_auto_frigiv), så handler, der aldrig
+       -- kan få uret, ikke fylder de 200 pladser hver gang. Tjekkes igen
+       -- under låsen nedenfor.
+       and not public.betaling_indsigelse_blokerer(bt.indsigelse_kl, bt.indsigelse_status)
+       and not exists (select 1 from public.sager s where s.trade_id = tr.id)
+       and not exists (select 1 from public.handel_ikke_afhentet ia where ia.trade_id = tr.id)
+       and not exists (select 1 from public.forsendelser fo
+                        where fo.trade_id = tr.id and fo.type = 'udgaaende' and fo.returneret_kl is not null)
        and exists (select 1 from public.forsendelser fo
                     where fo.trade_id = tr.id and fo.type = 'udgaaende'
                       and fo.status not in ('opretter', 'annulleres', 'annulleret', 'fejlet')
@@ -279,3 +292,61 @@ $g$            t.status = 'pakke_sendt')$g$,
 $n$            t.status = 'pakke_sendt' or p_type = 'bortkommet')$n$, 1)));
 end $do$;
 -- (create or replace bevarer rettighederne på sag_opret - uændrede.)
+
+-- ===========================================================================
+-- 5. handel_auto_frigiv: 14-dages-grenen venter 48 timer efter en
+--    leveringsmelding
+-- ===========================================================================
+-- Kommer fragtfirmaets leveringsmelding sent (fx dag 13), og starter den ikke
+-- uret (fx fordi der har været en sag, som er lukket), må 14-dages-grenen
+-- ikke frigive pengene minutter efter meldingen. Køberen skal altid have 48
+-- timer efter leveringsmeldingen.
+--
+-- Meldingens tidspunkt er det SENESTE af fragtfirmaets hændelsestidspunkt
+-- (forsendelser.leveret_kl) og registreringen hos BidHamr (første
+-- 'leveret'-hændelse i forsendelse_haendelser.modtaget_kl) - det mest
+-- købervenlige: DAO's sporing kan være op til 24 timer forsinket.
+create or replace function public.handel_leveret_melding_ny(p_trade uuid)
+returns boolean
+language sql
+stable
+security invoker
+set search_path = ''
+as $f$
+  select exists (
+    select 1 from public.forsendelser fo
+     where fo.trade_id = p_trade and fo.type = 'udgaaende'
+       and fo.status not in ('annulleret', 'fejlet')
+       and fo.leveret_kl is not null and fo.leveret_frigiver
+       and greatest(fo.leveret_kl,
+                    coalesce((select min(h.modtaget_kl) from public.forsendelse_haendelser h
+                               where h.forsendelse_id = fo.id and h.type = 'leveret'),
+                             fo.leveret_kl)) >= now() - interval '48 hours');
+$f$;
+
+comment on function public.handel_leveret_melding_ny(uuid) is
+  'true = handlen har en leveringsmelding (der må frigive penge), som er under 48 timer gammel (seneste af fragtfirmaets tidspunkt og registreringen hos BidHamr). handel_auto_frigiv frigiver ikke efter 14 dage, før køberen har haft 48 timer (20261030010000).';
+
+revoke all on function public.handel_leveret_melding_ny(uuid) from public, anon, authenticated;
+grant execute on function public.handel_leveret_melding_ny(uuid) to service_role;
+
+do $do$
+begin
+  raise notice 'handel_auto_frigiv: %', pg_temp.ps_ret(
+    'public.handel_auto_frigiv()',
+    'ead6d8ee58a73eed91465aa64f1daf3e',
+    'a8da0c29700cd1aca4be80724084e3d3',
+    jsonb_build_array(
+      jsonb_build_array(
+$g$                and coalesce(tr.sendt_kl, bt.betalt_kl) < now() - interval '14 days'$g$,
+$n$                and coalesce(tr.sendt_kl, bt.betalt_kl) < now() - interval '14 days'
+                -- 20261030010000: 48 timer efter en leveringsmelding.
+                and not public.handel_leveret_melding_ny(tr.id)$n$, 1),
+      jsonb_build_array(
+$g$            and coalesce(t.sendt_kl, b.betalt_kl) < now() - interval '14 days' then$g$,
+$n$            and coalesce(t.sendt_kl, b.betalt_kl) < now() - interval '14 days'
+            -- 20261030010000: 48 timer efter en leveringsmelding (ellers venter
+            -- handlen - ingen opgave til staff endnu).
+            and not public.handel_leveret_melding_ny(t.id) then$n$, 1)));
+end $do$;
+-- (create or replace bevarer rettighederne på handel_auto_frigiv - uændrede.)

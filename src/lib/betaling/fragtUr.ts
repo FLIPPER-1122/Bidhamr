@@ -112,17 +112,21 @@ const KOLONNER = "id, auction_id, buyer_id, seller_id, status, received_at, modt
 // Starter uret for én handel (efter en ny leveringsmelding) eller - uden
 // tradeId - for alle handler, hvor det mangler (cron-reserven, fx når
 // sælgeren markerede pakken sendt EFTER leveringsmeldingen), og sender
-// beskeder, der mangler. Returnerer antal handler, hvor uret blev startet nu.
-// Kaster aldrig.
-export async function startUrFraFragt(tradeId?: string): Promise<number> {
+// beskeder, der mangler. Returnerer, om databasen svarede (ok), og antal
+// handler, hvor uret blev startet nu. ok = false: databasen fejlede, så ingen
+// ved, om uret er startet - fragtens handelseffekter sender da IKKE den gamle
+// besked (så køberen ikke får to), men lader cron prøve igen. Kaster aldrig.
+export type UrStart = { ok: boolean; startet: number };
+
+export async function startUrFraFragt(tradeId?: string): Promise<UrStart> {
   try {
     const admin = createAdminClient();
     const { data, error } = await admin.rpc("handel_fragt_leveret_start", { p_trade: tradeId ?? null });
     // Før migrationen 20261030010000: intet at gøre (ingen alarm hver kørsel).
-    if (error && (error.code === "PGRST202" || error.code === "42883")) return 0;
+    if (error && (error.code === "PGRST202" || error.code === "42883")) return { ok: true, startet: 0 };
     if (error) {
       await logDriftFejl({ kilde: "cron", hvor: "Fragt: start 48-timers uret", fejl: error });
-      return 0;
+      return { ok: false, startet: 0 };
     }
     const startet = (Array.isArray(data) ? data : []) as { trade_id: string }[];
 
@@ -138,7 +142,7 @@ export async function startUrFraFragt(tradeId?: string): Promise<number> {
     const { data: mangler, error: mFejl } = await q;
     if (mFejl) {
       await logDriftFejl({ kilde: "cron", hvor: "Fragt: beskeder om 48-timers uret", fejl: mFejl });
-      return startet.length;
+      return { ok: true, startet: startet.length };
     }
     const liste = (mangler ?? []) as HandelRaekke[];
     if (liste.length > 0) {
@@ -149,20 +153,22 @@ export async function startUrFraFragt(tradeId?: string): Promise<number> {
       const titler = new Map((auktioner ?? []).map((a) => [a.id as string, (a.titel as string) ?? "din vare"]));
       for (const t of liste) await sendBesked(admin, t, titler);
     }
-    return startet.length;
+    return { ok: true, startet: startet.length };
   } catch (err) {
     await logDriftFejl({ kilde: "cron", hvor: "Fragt: start 48-timers uret", fejl: err });
-    return 0;
+    return { ok: false, startet: 0 };
   }
 }
 
 // Til fragtens handelseffekter: blev handlen startet af fragtfirmaet (så
 // sendes "Pakken er kommet frem" herfra i stedet for den gamle besked)?
-export async function urStartetAfFragt(tradeId: string): Promise<boolean> {
-  const { data } = await createAdminClient()
+// null = databasen svarede ikke (ukendt - send ingen besked nu).
+export async function urStartetAfFragt(tradeId: string): Promise<boolean | null> {
+  const { data, error } = await createAdminClient()
     .from("trades")
     .select("modtaget_kilde")
     .eq("id", tradeId)
     .maybeSingle<{ modtaget_kilde: string | null }>();
-  return data?.modtaget_kilde === "fragt";
+  if (error || !data) return null;
+  return data.modtaget_kilde === "fragt";
 }
