@@ -435,13 +435,21 @@ $fn$;
 
 revoke all on function public.fragt_reklamation_log(uuid, text, uuid, uuid, text) from public, anon, authenticated;
 
+-- Dansk beløb til loggen/tidslinjen: "2.500 kr.", "1.250,50 kr.", "-12,05 kr.".
+-- Uafhængig af databasens lc_numeric (punktum som tusindtalsskilletegn,
+-- komma som decimaltegn; øre kun, når de ikke er 0).
 create or replace function public.fragt_reklamation_kr(p_oere bigint)
 returns text
 language sql
 immutable
 set search_path = public
 as $fn$
-  select to_char(p_oere / 100.0, 'FM999999990.00') || ' kr.';
+  select case when p_oere is null then '–'
+    else case when p_oere < 0 then '-' else '' end
+      || regexp_replace((abs(p_oere) / 100)::text, '(\d)(?=(\d{3})+$)', '\1.', 'g')
+      || case when abs(p_oere) % 100 = 0 then '' else ',' || lpad((abs(p_oere) % 100)::text, 2, '0') end
+      || ' kr.'
+  end;
 $fn$;
 
 revoke all on function public.fragt_reklamation_kr(bigint) from public, anon, authenticated;
@@ -625,13 +633,20 @@ begin
       return 'oprettet';
     end if;
 
+    -- Genåbnet inden for 1 time efter den automatiske annullering (fx staff
+    -- fortryder "ordentlig" og vurderer igen): aktiv_fra_kl beholdes, så
+    -- sælgeren ikke får "Du kan søge erstatning" igen (samme nøgle), og
+    -- "stoppet"-beskeden er heller ikke sendt endnu (den venter 1 time -
+    -- AUTO_STOP_VENT i src/lib/reklamation/notifikationer.ts). Senere: ny
+    -- aktivering og ny besked.
     if r.status = 'annulleret' and r.annulleret_auto then
       update public.fragt_reklamationer
          set status = 'afventer_saelger', annulleret_auto = false, annulleret_grund = null,
              annulleret_af = null, annulleret_kl = null,
              sag_aendret_kl = null, sag_aendret_kvitteret_kl = null, sag_aendret_kvitteret_af = null,
              sag_aendret_kvitteret_aarsag = null,
-             aktiv_fra_kl = now(), fremdrift_kl = now()
+             aktiv_fra_kl = case when r.annulleret_kl > now() - interval '1 hour' then r.aktiv_fra_kl else now() end,
+             fremdrift_kl = now()
        where id = r.id and status = 'annulleret' and annulleret_auto;
       perform public.fragt_reklamation_log(sys, 'reklamation_genaabnet', p_sag, r.saelger_id,
         'Reklamationen er aktiv igen: køberen er refunderet, afgørelsen er endelig, og indpakningen er ordentlig');

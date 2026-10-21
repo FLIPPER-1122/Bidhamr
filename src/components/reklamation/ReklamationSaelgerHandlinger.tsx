@@ -183,7 +183,7 @@ export default function ReklamationSaelgerHandlinger({
                 className={FELT}
               />
               <p id={`${id}-beloeb-hj`} className="mt-1.5 text-[13px] text-tekst-daempet">
-                Højst {kroner(kravbeloebOere)}. {transportoerNavn} betaler direkte til dig.
+                Højst {kroner(kravbeloebOere)} {transportoerNavn} betaler direkte til dig.
               </p>
               {sendKnap("Gem")}
             </>

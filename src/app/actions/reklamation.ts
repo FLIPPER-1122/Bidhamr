@@ -40,7 +40,7 @@ async function koer(navn: string, rpc: string, args: Record<string, unknown>, tr
     const svar = (data ?? {}) as Record<string, unknown>;
     if (svar.kode !== "ok") {
       if (svar.kode === "ugyldigt_beloeb" && typeof svar.maks_oere === "number") {
-        return { fejl: `Beløbet kan højst være ${kroner(svar.maks_oere)}. Skriv det beløb, fragtfirmaet har godkendt.` };
+        return { fejl: `Beløbet kan højst være ${kroner(svar.maks_oere)} Skriv det beløb, fragtfirmaet har godkendt.` };
       }
       return { fejl: KODE[String(svar.kode ?? "")] ?? GENERISK };
     }

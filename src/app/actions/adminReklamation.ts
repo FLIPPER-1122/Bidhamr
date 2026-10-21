@@ -54,7 +54,7 @@ function erUuid(v: unknown): v is string {
 function fejlTekst(svar: Record<string, unknown>, handling?: "kvitter"): string {
   const kode = String(svar.kode ?? "");
   if (kode === "ugyldigt_beloeb" && typeof svar.maks_oere === "number") {
-    return `Beløbet skal være mellem 0,01 kr. og ${kroner(svar.maks_oere)}.`;
+    return `Beløbet skal være mellem 0,01 kr. og ${kroner(svar.maks_oere)}`;
   }
   if (kode === "allerede_vurderet" && svar.resultat === "ordentlig") {
     return "Indpakningen er allerede vurderet som ordentlig.";
