@@ -5,11 +5,14 @@
 // Fragtfirmaet har målt pakken større/tungere end den valgte størrelse, og
 // sælgeren betaler forskellen. Færrest klik: "Betal X kr." viser Stripes
 // betaling direkte i kortet; "Jeg er uenig" er en diskret tekstknap
-// (indsigelse, kun én gang). Der trækkes aldrig automatisk i sælgerens penge.
+// (indsigelse, kun én gang og kun før fristen - Filip, 21. okt. 2026; efter
+// fristen henvises sælgeren til at kontakte BidHamr). Der trækkes aldrig
+// automatisk i sælgerens penge.
 //
 // Alt, der afgør noget (status, frist, spærring, kan_betale,
 // kan_goere_indsigelse), kommer fra databasen (mine_ekstra_fragt_regninger).
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
@@ -18,7 +21,7 @@ import {
   startEkstraFragtBetalingAction,
   type MinEkstraFragt,
 } from "@/app/actions/ekstraFragt";
-import { EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
+import { EKSTRA_FRAGT_FRIST_OVERSKREDET_UENIG, EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
 import { ekstraFragtDato, maalingTekst, valgtStoerrelseNavn } from "@/lib/ekstraFragt/visning";
 import { transportoerNavn } from "@/lib/fragt/types";
 import { kroner } from "@/lib/kroner";
@@ -37,10 +40,6 @@ const EkstraFragtBetaling = dynamic(() => import("@/components/ekstraFragt/Ekstr
 });
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
-
-// Indsigelse gjort efter fristen: spærringen gælder, til BidHamr har afgjort den.
-const SPAERRET_TIL_AFGOERELSE =
-  "Din indsigelse er modtaget. Fordi fristen var overskredet, kan du ikke oprette nye auktioner, før vi har afgjort den.";
 
 // Regningen er åbnet igen, fordi sælgerens bank har tilbageført betalingen.
 function Genaabnet({ r }: { r: MinEkstraFragt }) {
@@ -126,21 +125,14 @@ export default function EkstraFragtKort({
     );
   }
   if (r.status === "indsigelse") {
-    // Gjort efter fristen: spærringen gælder, til indsigelsen er afgjort.
-    const efterFrist = r.indsigelse_efter_frist || r.spaerrer;
     return (
       <Ramme titelId={titelId} tone="info">
         <h2 id={titelId} className="font-sans text-[16px] font-semibold">
           BidHamr ser på din indsigelse
         </h2>
         <p className="mt-1 text-sm">
-          Ekstra fragt: {beloeb}. Du skal ikke betale, mens vi ser på den.{efterFrist ? "" : " Du kan stadig oprette auktioner."} Du får besked, når vi har afgjort den.
+          Ekstra fragt: {beloeb}. Du skal ikke betale, mens vi ser på den. Du kan stadig oprette auktioner. Du får besked, når vi har afgjort den.
         </p>
-        {efterFrist && (
-          <p role="note" className="mt-3 rounded-lg border border-fejl-kant bg-white px-3 py-2 text-sm font-medium text-fejl-tekst">
-            {SPAERRET_TIL_AFGOERELSE}
-          </p>
-        )}
         <Genaabnet r={r} />
         {r.indsigelse_tekst && (
           <blockquote className="mt-3 rounded-lg border border-info-kant bg-white/70 px-3 py-2 text-sm whitespace-pre-wrap break-words text-tekst">
@@ -348,6 +340,18 @@ function Handlinger({ r, returSti, autoBetal }: { r: MinEkstraFragt; returSti: s
           )}
         </div>
       )}
+      {/* Efter fristen kan der ikke gøres indsigelse: henvis til kontakt. */}
+      {!start && !r.kan_goere_indsigelse && r.spaerrer && (
+        <p className="mt-2 text-sm text-tekst-daempet">
+          {EKSTRA_FRAGT_FRIST_OVERSKREDET_UENIG}{" "}
+          <Link
+            href={`/kontakt?emne=handel&handel=${encodeURIComponent(r.trade_id)}`}
+            className="font-medium text-groen underline-offset-2 hover:underline"
+          >
+            Kontakt os
+          </Link>
+        </p>
+      )}
       {uenig && !start && <Indsigelse r={r} onLuk={() => setUenig(false)} />}
     </div>
   );
@@ -359,7 +363,6 @@ function Indsigelse({ r, onLuk }: { r: MinEkstraFragt; onLuk: () => void }) {
   const [tekst, setTekst] = useState("");
   const [sender, setSender] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
-  const [modtaget, setModtaget] = useState<string | null>(null);
   const feltRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => feltRef.current?.focus(), []);
 
@@ -374,25 +377,16 @@ function Indsigelse({ r, onLuk }: { r: MinEkstraFragt; onLuk: () => void }) {
     setFejl(null);
     try {
       const res = await ekstraFragtIndsigelse(r.id, tekst, r.trade_id);
-      if ("fejl" in res) setFejl(res.fejl);
-      else {
-        // Efter fristen: sig det med det samme (kortet viser det også efter genindlæsning).
-        if (res.spaerretTilAfgoerelse) setModtaget(SPAERRET_TIL_AFGOERELSE);
-        router.refresh();
-      }
+      if ("fejl" in res) {
+        setFejl(res.fejl);
+        // Fristen er overskredet imens: kortet viser henvisningen til kontakt.
+        if (res.kode === "frist_overskredet") router.refresh();
+      } else router.refresh();
     } catch {
       setFejl(GENERISK);
     } finally {
       setSender(false);
     }
-  }
-
-  if (modtaget) {
-    return (
-      <p role="status" className="mt-3 rounded-xl border border-fejl-kant bg-white p-4 text-sm font-medium text-fejl-tekst">
-        {modtaget}
-      </p>
-    );
   }
 
   return (
@@ -401,8 +395,7 @@ function Indsigelse({ r, onLuk }: { r: MinEkstraFragt; onLuk: () => void }) {
         Hvorfor mener du, at målingen er forkert?
       </label>
       <p id={`${id}-hjaelp`} className="mt-1 text-[13px] text-tekst-daempet">
-        Fx hvor stor pakken var, og hvad den vejede, da du sendte den. Du kan kun gøre indsigelse én gang. Du skal ikke betale, mens vi ser på den.
-        {r.spaerrer ? " Fristen er overskredet, så du kan ikke oprette nye auktioner, før vi har afgjort indsigelsen, eller regningen er betalt." : ""}
+        Fx hvor stor pakken var, og hvad den vejede, da du sendte den. Du kan kun gøre indsigelse én gang, og kun før fristen. Du skal ikke betale, mens vi ser på den.
       </p>
       <textarea
         ref={feltRef}

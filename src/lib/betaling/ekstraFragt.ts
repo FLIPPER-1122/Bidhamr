@@ -535,9 +535,12 @@ export async function spejlEkstraFragtRefusionsfejl(refund: Stripe.Refund): Prom
 
 // Bankindsigelse (chargeback) på en ekstraregnings charge (webhooken,
 // charge.dispute.* via spejlIndsigelse). Idempotent. En tabt indsigelse
-// markerer regningen (admin-lampen) og giver staff en alarm - regningen
-// genåbnes ALDRIG automatisk; staff afgør, om den skal genåbnes
-// (genaabnEkstraFragt). Kaster ved databasefejl (webhooken prøver igen).
+// markerer regningen (admin-lampen), og databasen laver i samme transaktion
+// kreditnotaen for den tilbageførte betaling (aldrig to). Staff får en alarm
+// - regningen genåbnes ALDRIG automatisk; staff vælger "Genåbn regning"
+// (genaabnEkstraFragt) eller "Afslut uden genåbning"
+// (afslutEkstraFragtBankindsigelse). Kaster ved databasefejl (webhooken
+// prøver igen).
 // Svar: databasens kode, eller null (ikke en ekstraregning / ikke migreret).
 export async function spejlEkstraFragtBankindsigelse(
   d: Pick<Stripe.Dispute, "id" | "status" | "amount">,
@@ -553,7 +556,7 @@ export async function spejlEkstraFragtBankindsigelse(
     if (manglerEkstraFragt(error)) return null;
     throw new Error(`ekstra_fragt_registrer_bankindsigelse: ${error.message}`);
   }
-  const svar = (data ?? {}) as { kode?: string; id?: string; status?: string };
+  const svar = (data ?? {}) as { kode?: string; id?: string; status?: string; kreditnota_id?: string | null };
   const kode = String(svar.kode ?? "ukendt");
   if (kode === "ukendt" || kode === "ugyldig") return null;
   if (kode === "tabt" && svar.id) {
@@ -563,7 +566,7 @@ export async function spejlEkstraFragtBankindsigelse(
       hvor: "betaling/indsigelse-ekstra-fragt",
       fejl:
         svar.status === "betalt"
-          ? `Bankindsigelse ${d.id} på sælgerens betaling af ekstraregning ${svar.id} (charge ${chargeId}) er TABT - betalingen er tilbageført. Regningen genåbnes ikke automatisk. Vurdér sagen, og genåbn regningen under Admin (ekstra fragt), hvis sælgeren skal betale igen; ellers lad den stå.`
+          ? `Bankindsigelse ${d.id} på sælgerens betaling af ekstraregning ${svar.id} (charge ${chargeId}) er TABT - betalingen er tilbageført. ${svar.kreditnota_id ? "Kreditnotaen for betalingen er lavet automatisk." : "Kreditnotaen kunne IKKE laves automatisk - kontrollér fakturaerne."} Regningen genåbnes ikke automatisk. Vurdér sagen under Admin -> Ekstra fragt, og vælg enten "Genåbn regning" (sælgeren skal betale igen) eller "Afslut uden genåbning" (sælgeren opkræves ikke igen).`
           : `Bankindsigelse ${d.id} på ekstraregning ${svar.id} (charge ${chargeId}, status '${svar.status ?? "?"}') er TABT. Regningen kan ikke genåbnes i den status - kontrollér betalingen i Stripe.`,
       brugerId: r?.saelger_id ?? null,
     });
@@ -593,7 +596,7 @@ export async function gemEkstraFragtIndsigelse(
   klient: { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> },
   regningId: unknown,
   tekst: unknown,
-): Promise<{ ok: true; spaerretTilAfgoerelse: boolean } | { fejl: string; kode: string }> {
+): Promise<{ ok: true } | { fejl: string; kode: string }> {
   if (typeof regningId !== "string" || !UUID.test(regningId)) {
     return { fejl: EKSTRA_FRAGT_SAELGER_FEJL.ikke_fundet, kode: "ikke_fundet" };
   }
@@ -602,7 +605,7 @@ export async function gemEkstraFragtIndsigelse(
     p_tekst: typeof tekst === "string" ? tekst : "",
   });
   if (error) throw new Error(`mit_ekstra_fragt_indsigelse: ${error.message}`);
-  const svar = (data ?? {}) as { kode?: string; annuller_pi?: string | null; spaerret_til_afgoerelse?: boolean };
+  const svar = (data ?? {}) as { kode?: string; annuller_pi?: string | null };
   const kode = String(svar.kode ?? "fejl");
   if (kode !== "ok") return { fejl: EKSTRA_FRAGT_SAELGER_FEJL[kode] ?? "Noget gik galt. Prøv igen om lidt.", kode };
   if (svar.annuller_pi) {
@@ -610,8 +613,7 @@ export async function gemEkstraFragtIndsigelse(
     efterSvar("annullér betaling ved indsigelse", () => annullerKasseretPi(regningId, pi));
   }
   sendBeskederSnart();
-  // Indsigelse efter fristen: sælgeren forbliver spærret, til den er afgjort.
-  return { ok: true, spaerretTilAfgoerelse: svar.spaerret_til_afgoerelse === true };
+  return { ok: true };
 }
 
 // ------------------------------------------------------------------ cron

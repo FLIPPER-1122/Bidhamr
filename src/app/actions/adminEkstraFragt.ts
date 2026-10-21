@@ -8,6 +8,7 @@
 //   frafaldEkstraFragt(id, grund)                         -> frafald (grund vises for sælgeren)
 //   afgoerEkstraFragtIndsigelse(id, udfald, begrundelse)  -> frafald/fasthold
 //   genaabnEkstraFragt(id, begrundelse)                   -> genåbn efter tabt bankindsigelse
+//   afslutEkstraFragtBankindsigelse(id, begrundelse)      -> afslut tabt bankindsigelse uden genåbning
 //   gemEkstraFragtNote(id, note)                          -> intern note
 //   hentEkstraFragtDokumentationStaff(id)                 -> signeret link (10 min)
 //
@@ -115,12 +116,20 @@ const DOKUMENTATION_STI =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(pdf|jpg|png|webp|heic)$/;
 
 // Tjekker den uploadede fil (sti, størrelse og magiske bytes). Er den
-// ugyldig, slettes den - men KUN hvis stien er en gyldig upload-sti, og ingen
-// regning bruger filen (staff kan ikke slette andres dokumentation ved at
-// angive dens sti).
-async function tjekFil(admin: ReturnType<typeof createAdminClient>, sti: string, type: string): Promise<string | null> {
+// ugyldig, slettes den - men KUN hvis stien er en gyldig upload-sti under
+// forsendelsens egen handel (<trade_id>/), og ingen regning bruger filen
+// (staff kan ikke slette andres dokumentation ved at angive dens sti).
+async function tjekFil(
+  admin: ReturnType<typeof createAdminClient>,
+  sti: string,
+  type: string,
+  tradeId: string,
+): Promise<string | null> {
   const t = FILTYPER[type];
   if (!DOKUMENTATION_STI.test(sti)) return "Filen er ikke uploadet. Upload fragtfirmaets faktura igen.";
+  if (!erUuid(tradeId) || !sti.startsWith(`${tradeId.toLowerCase()}/`)) {
+    return "Filen hører ikke til denne handel. Upload fragtfirmaets faktura igen.";
+  }
   if (!t || !sti.endsWith(`.${t.endelse}`)) return "Filtypen passer ikke til filen.";
   const { data: brugt, error: brugtFejl } = await admin
     .from("ekstra_fragt_regninger")
@@ -171,7 +180,15 @@ export async function opretEkstraFragt(input: OpretEkstraFragtInput): Promise<Ek
     }
     const sti = String(input.dokumentationSti ?? "");
     const type = String(input.dokumentationType ?? "").toLowerCase();
-    const filFejl = await tjekFil(adgang.admin, sti, type);
+    // Forsendelsens handel: filen skal ligge under <trade_id>/ (før noget slettes).
+    const { data: fs, error: fsFejl } = await adgang.admin
+      .from("forsendelser")
+      .select("trade_id")
+      .eq("id", input.forsendelseId)
+      .maybeSingle<{ trade_id: string | null }>();
+    if (fsFejl) throw new Error(`forsendelser: ${fsFejl.message}`);
+    if (!fs?.trade_id) return { fejl: fejlTekst("ikke_fundet") };
+    const filFejl = await tjekFil(adgang.admin, sti, type, fs.trade_id);
     if (filFejl) return { fejl: filFejl };
 
     const supabase = await createClient();
@@ -263,14 +280,27 @@ export async function afgoerEkstraFragtIndsigelse(
 
 // Genåbn en BETALT regning, hvis betaling er tilbageført efter en TABT
 // bankindsigelse (chargeback). Sker aldrig automatisk (Filip, 21. okt. 2026).
+// Kreditnotaen for den tilbageførte betaling er lavet automatisk ved tabet.
 // Databasen (ekstra_fragt_genaabn - staff med aal2, ikke inhabil, logget)
-// laver i én transaktion: kreditnota for den tilbageførte betaling, ny frist
-// (14 dage) og en ny betalingsrunde (sælgeren får en ny PaymentIntent med ny
-// idempotency key, når han trykker Betal; ny faktura, når han har betalt).
-// begrundelse vises for sælgeren, som får besked. Flytter ingen penge.
+// giver i én transaktion en ny frist (14 dage) og en ny betalingsrunde
+// (sælgeren får en ny PaymentIntent med ny idempotency key, når han trykker
+// Betal; ny faktura, når han har betalt). Kan også bruges efter "Afslut uden
+// genåbning". begrundelse vises for sælgeren, som får besked. Flytter ingen penge.
 export async function genaabnEkstraFragt(regningId: string, begrundelse: string): Promise<EkstraFragtStaffSvar> {
   if (!erUuid(regningId)) return { fejl: fejlTekst("ikke_fundet") };
   return koer("genåbn", "ekstra_fragt_genaabn", { p_regning: regningId, p_begrundelse: tekst(begrundelse) ?? "" });
+}
+
+// Afslut en TABT bankindsigelse UDEN genåbning: regningen forbliver lukket,
+// sælgeren opkræves ikke igen, og admin-lampen slukkes. Databasen
+// (ekstra_fragt_bankindsigelse_afslut - staff med aal2, ikke inhabil,
+// logget). begrundelse er intern (vises ikke for sælgeren). Flytter ingen penge.
+export async function afslutEkstraFragtBankindsigelse(regningId: string, begrundelse: string): Promise<EkstraFragtStaffSvar> {
+  if (!erUuid(regningId)) return { fejl: fejlTekst("ikke_fundet") };
+  return koer("afslut bankindsigelse", "ekstra_fragt_bankindsigelse_afslut", {
+    p_regning: regningId,
+    p_begrundelse: tekst(begrundelse) ?? "",
+  });
 }
 
 export async function gemEkstraFragtNote(regningId: string, note: string): Promise<EkstraFragtStaffSvar> {

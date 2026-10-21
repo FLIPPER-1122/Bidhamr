@@ -2,14 +2,16 @@
 
 // Staffs knapper på en regning for ekstra fragt: åbn fragtfirmaets
 // dokumentation, frafald (grund vises for sælgeren), afgør sælgerens
-// indsigelse (frafald/fasthold + begrundelse, som sælgeren ser), genåbn
-// regningen efter en tabt bankindsigelse og den interne note. Ingen dialoger: hver knap folder en kort formular ud på
+// indsigelse (frafald/fasthold + begrundelse, som sælgeren ser), efter en tabt
+// bankindsigelse enten "Genåbn regning" eller "Afslut uden genåbning", og den
+// interne note. Ingen dialoger: hver knap folder en kort formular ud på
 // stedet (færrest klik, virker på mobil). Databasen tjekker rolle,
 // to-trins-login og inhabilitet igen (src/app/actions/adminEkstraFragt.ts).
 import { useRouter } from "next/navigation";
 import { useId, useRef, useState, type FormEvent } from "react";
 import {
   afgoerEkstraFragtIndsigelse,
+  afslutEkstraFragtBankindsigelse,
   frafaldEkstraFragt,
   gemEkstraFragtNote,
   genaabnEkstraFragt,
@@ -214,8 +216,9 @@ function Afgoer({ regningId, onLuk }: { regningId: string; onLuk: () => void }) 
 }
 
 // Genåbn en betalt regning, hvor betalingen er tilbageført efter en tabt
-// bankindsigelse. Begrundelsen vises for sælgeren. Databasen laver
-// kreditnota, ny frist og ny betalingsrunde; der flyttes ingen penge.
+// bankindsigelse. Begrundelsen vises for sælgeren. Kreditnotaen er lavet
+// automatisk ved tabet; databasen giver ny frist og ny betalingsrunde. Der
+// flyttes ingen penge.
 function Genaabn({ regningId, onLuk }: { regningId: string; onLuk: () => void }) {
   const id = useId();
   const { sender, fejl, setFejl, send } = useSend();
@@ -232,8 +235,8 @@ function Genaabn({ regningId, onLuk }: { regningId: string; onLuk: () => void })
   return (
     <form onSubmit={indsend} method="post" className="space-y-3 rounded-lg border border-admin-kant p-4">
       <p className="text-sm text-tekst-daempet">
-        Sælgerens bank har tilbageført betalingen. Regningen åbnes igen med en ny frist på{" "}
-        {EKSTRA_FRAGT_GENAABNET_FRIST_DAGE} dage, og der laves en kreditnota for den tilbageførte betaling.
+        Sælgerens bank har tilbageført betalingen, og kreditnotaen er lavet. Regningen åbnes igen, og sælgeren skal
+        betale igen inden for {EKSTRA_FRAGT_GENAABNET_FRIST_DAGE} dage.
       </p>
       <div>
         <label htmlFor={`${id}-beg`} className="block text-sm font-medium text-tekst">
@@ -256,6 +259,58 @@ function Genaabn({ regningId, onLuk }: { regningId: string; onLuk: () => void })
         <button type="submit" disabled={sender} aria-busy={sender || undefined} className="btn btn-primaer w-full sm:w-auto">
           {sender && <span className="btn-spinner" aria-hidden="true" />}
           Genåbn regningen
+        </button>
+        <button type="button" onClick={onLuk} disabled={sender} className="btn btn-sekundaer w-full sm:w-auto">
+          Annullér
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// Afslut en tabt bankindsigelse uden genåbning: regningen forbliver lukket,
+// sælgeren opkræves ikke igen, og lampen slukkes. Begrundelsen er intern.
+function AfslutBankindsigelse({ regningId, onLuk }: { regningId: string; onLuk: () => void }) {
+  const id = useId();
+  const { sender, fejl, setFejl, send } = useSend();
+  function indsend(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const begrundelse = String(new FormData(e.currentTarget).get("begrundelse") ?? "").trim();
+    if (!begrundelse) return setFejl("Skriv en kort intern begrundelse.");
+    void send(
+      () => afslutEkstraFragtBankindsigelse(regningId, begrundelse),
+      "Bankindsigelsen er afsluttet. Sælgeren opkræves ikke igen.",
+      onLuk,
+    );
+  }
+  return (
+    <form onSubmit={indsend} method="post" className="space-y-3 rounded-lg border border-admin-kant p-4">
+      <p className="text-sm text-tekst-daempet">
+        Regningen forbliver lukket, og sælgeren skal ikke betale igen. Kreditnotaen for den tilbageførte betaling er
+        lavet. Du kan stadig genåbne regningen senere.
+      </p>
+      <div>
+        <label htmlFor={`${id}-beg`} className="block text-sm font-medium text-tekst">
+          Intern begrundelse
+        </label>
+        <textarea
+          id={`${id}-beg`}
+          name="begrundelse"
+          rows={3}
+          required
+          maxLength={1000}
+          disabled={sender}
+          autoFocus
+          placeholder="Fx: Sælgeren har vist, at fragtfirmaets måling var forkert."
+          className={FELT}
+        />
+        <p className="mt-1 text-xs text-tekst-svag">Kun synlig for BidHamr – vises ikke for sælgeren.</p>
+      </div>
+      <Fejl fejl={fejl} />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <button type="submit" disabled={sender} aria-busy={sender || undefined} className="btn btn-primaer w-full sm:w-auto">
+          {sender && <span className="btn-spinner" aria-hidden="true" />}
+          Afslut uden genåbning
         </button>
         <button type="button" onClick={onLuk} disabled={sender} className="btn btn-sekundaer w-full sm:w-auto">
           Annullér
@@ -307,14 +362,17 @@ export default function EkstraFragtStaffHandlinger({
   status,
   inhabil,
   bankindsigelseTabt = false,
+  bankindsigelseAfsluttet = false,
 }: {
   regningId: string;
   status: EkstraFragtStatus;
   inhabil: boolean;
   // bankindsigelse_tabt_kl er sat: betalingen er tilbageført.
   bankindsigelseTabt?: boolean;
+  // Allerede afsluttet uden genåbning (kan stadig genåbnes).
+  bankindsigelseAfsluttet?: boolean;
 }) {
-  const [aaben, setAaben] = useState<"frafald" | "afgoer" | "genaabn" | null>(null);
+  const [aaben, setAaben] = useState<"frafald" | "afgoer" | "genaabn" | "afslut" | null>(null);
   if (inhabil) {
     return (
       <p className="rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
@@ -324,8 +382,10 @@ export default function EkstraFragtStaffHandlinger({
   }
   const kanFrafalde = status === "afventer_betaling" || status === "indsigelse";
   const kanAfgoere = status === "indsigelse";
-  // Genåbn kun en betalt regning efter en tabt bankindsigelse (databasen tjekker igen).
+  // Genåbn kun en betalt regning efter en tabt bankindsigelse - også efter
+  // "Afslut uden genåbning" (databasen tjekker igen).
   const kanGenaabne = status === "betalt" && bankindsigelseTabt;
+  const kanAfslutte = kanGenaabne && !bankindsigelseAfsluttet;
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
@@ -333,6 +393,11 @@ export default function EkstraFragtStaffHandlinger({
         {kanGenaabne && aaben !== "genaabn" && (
           <button type="button" onClick={() => setAaben("genaabn")} className="btn btn-primaer w-full sm:w-auto">
             Genåbn regning
+          </button>
+        )}
+        {kanAfslutte && aaben !== "afslut" && (
+          <button type="button" onClick={() => setAaben("afslut")} className="btn btn-sekundaer w-full sm:w-auto">
+            Afslut uden genåbning
           </button>
         )}
         {kanAfgoere && aaben !== "afgoer" && (
@@ -347,6 +412,7 @@ export default function EkstraFragtStaffHandlinger({
         )}
       </div>
       {aaben === "genaabn" && kanGenaabne && <Genaabn regningId={regningId} onLuk={() => setAaben(null)} />}
+      {aaben === "afslut" && kanAfslutte && <AfslutBankindsigelse regningId={regningId} onLuk={() => setAaben(null)} />}
       {aaben === "afgoer" && kanAfgoere && <Afgoer regningId={regningId} onLuk={() => setAaben(null)} />}
       {aaben === "frafald" && kanFrafalde && (
         <Frafald regningId={regningId} underIndsigelse={status === "indsigelse"} onLuk={() => setAaben(null)} />

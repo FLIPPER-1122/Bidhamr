@@ -102,9 +102,14 @@ export const EKSTRA_FRAGT_STAFF_FEJL: Record<string, string> = {
   ugyldigt_udfald: "Vælg frafald eller fasthold.",
   behandles: "Sælgerens betaling behandles lige nu. Prøv igen om lidt.",
   forkert_status: "Regningen har ændret status. Genindlæs siden.",
-  ingen_tabt_bankindsigelse: "Regningen kan kun genåbnes, når betalingen er tilbageført efter en tabt bankindsigelse.",
+  ingen_tabt_bankindsigelse: "Det kan kun gøres, når betalingen er tilbageført efter en tabt bankindsigelse.",
   delvis_bankindsigelse: "Bankindsigelsen gælder kun en del af beløbet – håndtér den manuelt.",
 };
+
+// Efter fristen kan sælgeren ikke gøre indsigelse (Filip, 21. okt. 2026) -
+// er han uenig, kontakter han BidHamr (linket står efter teksten).
+export const EKSTRA_FRAGT_FRIST_OVERSKREDET_UENIG =
+  "Fristen er overskredet. Er du uenig i målingen, så kontakt os, så ser vi på det.";
 
 // Genåbnes en regning efter en tabt bankindsigelse, har sælgeren så mange dage.
 export const EKSTRA_FRAGT_GENAABNET_FRIST_DAGE = 14;
@@ -117,6 +122,8 @@ export const EKSTRA_FRAGT_SAELGER_FEJL: Record<string, string> = {
   for_kort: "Skriv lidt mere om, hvorfor du mener, at målingen er forkert.",
   for_lang_tekst: "Teksten er for lang. Gør den kortere, og prøv igen.",
   allerede_indsigelse: "Du har allerede gjort indsigelse mod denne regning.",
+  frist_overskredet:
+    "Fristen er overskredet, så du kan ikke længere gøre indsigelse. Er du uenig i målingen, så kontakt os, så ser vi på det.",
   behandles: "Din betaling behandles lige nu. Vent lidt, og genindlæs siden.",
   forkert_status: "Regningen er ændret i mellemtiden. Genindlæs siden for at se, hvordan den står nu.",
   betalt: "Regningen er allerede betalt.",

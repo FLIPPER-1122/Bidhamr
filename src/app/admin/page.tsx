@@ -187,14 +187,14 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
       href: "/admin/ekstra-fragt?vis=indsigelse",
     });
   }
-  // Tabt bankindsigelse: betalingen er tilbageført - genåbn regningen (rødt).
+  // Tabt bankindsigelse: betalingen er tilbageført - genåbn eller afslut (rødt).
   if (s.ekstraFragtTabteBankindsigelser > 0) {
     r.push({
       id: "ekstra-fragt-tabt-bankindsigelse",
       alvor: "roed",
       titel: "Tabte bankindsigelser på ekstra fragt",
       antal: s.ekstraFragtTabteBankindsigelser,
-      forklaring: "Sælgerens bank har tilbageført betalingen – genåbn regningen",
+      forklaring: "Sælgerens bank har tilbageført betalingen – genåbn regningen eller afslut uden genåbning",
       href: "/admin/ekstra-fragt?vis=tabt",
     });
   }

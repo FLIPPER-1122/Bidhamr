@@ -98,7 +98,7 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
   if (runde === 0 && (r.status === "afventer_betaling" || r.status === "behandles" || r.status === "indsigelse")) op(
     "oprettet",
     "Ekstra fragt: din pakke var større end den valgte størrelse",
-    `Fragtfirmaet har målt en pakke, du har sendt. Du valgte ${valgt}${maalt ? `, men fragtfirmaet målte pakken til ${maalt}` : ", men pakken var større eller tungere"}. Derfor har fragtfirmaet opkrævet ekstra. Forskellen er ${beloeb}. Den betaler du som sælger. Betal på handlen senest ${dato(r.frist)}. Dér kan du også se fragtfirmaets dokumentation. Mener du, at målingen er forkert, kan du gøre indsigelse én gang på handlen. Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`,
+    `Fragtfirmaet har målt en pakke, du har sendt. Du valgte ${valgt}${maalt ? `, men fragtfirmaet målte pakken til ${maalt}` : ", men pakken var større eller tungere"}. Derfor har fragtfirmaet opkrævet ekstra. Forskellen er ${beloeb}. Den betaler du som sælger. Betal på handlen senest ${dato(r.frist)}. Dér kan du også se fragtfirmaets dokumentation. Mener du, at målingen er forkert, kan du gøre indsigelse én gang på handlen inden fristen. Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`,
   );
 
   // Genåbnet efter en tabt bankindsigelse (staff): betalingen er tilbageført.

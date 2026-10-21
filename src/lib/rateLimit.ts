@@ -273,6 +273,28 @@ async function logLukketFejl(navne: GraenseNavn[]): Promise<void> {
   });
 }
 
+// Er der forsøg tilbage, UDEN at tælle op (rate_limit_status)? Til "kør én
+// gang"-opgaver, der først markeres (indenForGraense), når de er lykkedes.
+// Fail open (true ved fejl).
+export async function graenseLedig(navn: GraenseNavn, id: string): Promise<boolean> {
+  const g = GRAENSER[navn];
+  try {
+    const { data, error } = await createAdminClient().rpc("rate_limit_status", {
+      p_noegle: `${navn}:${id.toLowerCase()}`,
+      p_maks: g.maks,
+      p_vindue_sek: g.vindueSek,
+    });
+    if (error) {
+      console.error(`[rate-limit] status fejl (${navn}):`, error.message);
+      return true;
+    }
+    return data !== false;
+  } catch (err) {
+    console.error(`[rate-limit] status fejl (${navn}):`, err);
+    return true;
+  }
+}
+
 // Returnerer true, hvis forespoergslen er inden for graensen. Fail open.
 export async function indenForGraense(navn: GraenseNavn, id: string): Promise<boolean> {
   return (await tjekEtForsoeg(navn, id)) !== "for_mange";

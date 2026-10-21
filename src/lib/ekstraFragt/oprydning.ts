@@ -10,10 +10,11 @@ import "server-only";
 //
 // Kaldes af hovedcron'en (/api/cron/afslut-auktioner), men kører kun den 1. i
 // måneden (dansk tid) og kun én gang pr. måned (rate limit med måneden som
-// nøgle). Fejl logges i drift_fejl af kalderen. Antallet slettede står i
+// nøgle). Måneden markeres som kørt FØRST, når oprydningen er lykkedes - en
+// fejl prøves igen ved næste cron-kørsel. Fejl logges i drift_fejl af kalderen. Antallet slettede står i
 // cron-resultatet og i serverloggen.
 import { createAdminClient } from "@/lib/supabase/admin";
-import { indenForGraense } from "@/lib/rateLimit";
+import { graenseLedig, indenForGraense } from "@/lib/rateLimit";
 import { EKSTRA_FRAGT_BUCKET } from "@/lib/betaling/ekstraFragt";
 
 const PR_KOERSEL = 1000;
@@ -33,7 +34,8 @@ export function erOprydningsdag(nu: Date = new Date()): boolean {
 export async function koerEkstraFragtOprydning(nu: Date = new Date()): Promise<{ slettet: number } | null> {
   if (!erOprydningsdag(nu)) return null;
   const maaned = danskDato(nu).slice(0, 7);
-  if (!(await indenForGraense("ekstra_fragt_oprydning", maaned))) return null;
+  // Kun et kig: tæller ikke op (markeres nederst, når det er lykkedes).
+  if (!(await graenseLedig("ekstra_fragt_oprydning", maaned))) return null;
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("ekstra_fragt_ubrugte_filer", { p_graense: PR_KOERSEL });
   if (error) {
@@ -49,6 +51,8 @@ export async function koerEkstraFragtOprydning(nu: Date = new Date()): Promise<{
     if (sletFejl) throw new Error(`Ubrugte dokumentationsfiler (ekstra fragt) kunne ikke slettes: ${sletFejl.message} (${slettet} slettet før fejlen)`);
     slettet += (ud ?? []).length;
   }
+  // Lykkedes: måneden er kørt.
+  await indenForGraense("ekstra_fragt_oprydning", maaned);
   console.log(`Ekstra fragt: månedlig oprydning slettede ${slettet} ubrugte dokumentationsfiler (${maaned}).`);
   return { slettet };
 }

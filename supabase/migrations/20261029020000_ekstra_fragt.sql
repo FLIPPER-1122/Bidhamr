@@ -24,7 +24,8 @@
 --
 -- Status:
 --   afventer_betaling -> behandles -> betalt          (sælgeren betaler)
---   afventer_betaling -> indsigelse                   (sælgeren, ÉN gang, med tekst)
+--   afventer_betaling -> indsigelse                   (sælgeren, ÉN gang, med tekst,
+--                                                     kun FØR fristen)
 --   indsigelse -> afventer_betaling (fastholdt)       (staff, begrundelse vises for sælgeren)
 --   indsigelse -> frafaldet                           (staff, begrundelse vises for sælgeren)
 --   afventer_betaling -> frafaldet                    (staff, grund vises for sælgeren)
@@ -38,11 +39,11 @@
 -- Spærring (fejlkode BHX01, som DAC7's BHD01): har sælgeren en regning i
 -- 'afventer_betaling' efter fristen, afviser databasen nye auktioner (også
 -- "sæt op igen") og "tilbud til næste byder". Mens en betaling behandles er
--- der ingen spærring. En indsigelse gjort FØR fristen ophæver spærringen,
--- til den er afgjort; en indsigelse gjort EFTER fristen er tilladt, men
--- spærringen gælder, til den er afgjort (chefens præcisering, 21. okt. 2026).
--- Ophæves straks ved betaling eller frafald (spærringen beregnes - der er
--- intet flag at nulstille).
+-- der ingen spærring, og heller ikke under en indsigelse (som kun kan gøres
+-- FØR fristen - Filip, 21. okt. 2026; efter fristen afvises den med
+-- 'frist_overskredet', og er sælgeren uenig, kontakter han BidHamr, og staff
+-- afgør det manuelt, fx ved frafald). Spærringen gælder, indtil regningen er
+-- betalt eller frafaldet (den beregnes - der er intet flag at nulstille).
 --
 -- Bankindsigelse (chargeback) på en betalt regning: spejles fra Stripe
 -- (ekstra_fragt_registrer_bankindsigelse). Tabes den, sker i samme
@@ -439,21 +440,21 @@ revoke all on function public.ekstra_fragt_tjek(uuid) from public, anon, authent
 -- ===========================================================================
 -- 5. Spærringen (BHX01)
 -- ===========================================================================
--- Spærrer denne regning? Ubetalt ('afventer_betaling') efter fristen - eller
--- en indsigelse, der først blev gjort EFTER fristen (spærringen gælder, til
--- den er afgjort; kun en indsigelse gjort før fristen ophæver den).
+-- Spærrer denne regning? Ubetalt ('afventer_betaling') efter fristen. En
+-- indsigelse (kun mulig før fristen) spærrer ikke, mens den behandles.
 -- Samme regel i ekstra_fragt_spaerret, mine_ekstra_fragt_regninger og
--- min_ekstra_fragt_status.
-create or replace function public.ekstra_fragt_regning_spaerrer(p_status text, p_frist timestamptz, p_indsigelse_kl timestamptz)
+-- min_ekstra_fragt_status. (En tidligere udgave havde en tredje parameter -
+-- den fjernes; alle kaldere genskabes nedenfor i samme transaktion.)
+drop function if exists public.ekstra_fragt_regning_spaerrer(text, timestamptz, timestamptz);
+create or replace function public.ekstra_fragt_regning_spaerrer(p_status text, p_frist timestamptz)
 returns boolean
 language sql
 stable
 set search_path = ''
 as $fn$
-  select coalesce((p_status = 'afventer_betaling' and p_frist <= now())
-                  or (p_status = 'indsigelse' and p_indsigelse_kl >= p_frist), false);
+  select coalesce(p_status = 'afventer_betaling' and p_frist <= now(), false);
 $fn$;
-revoke all on function public.ekstra_fragt_regning_spaerrer(text, timestamptz, timestamptz) from public, anon, authenticated;
+revoke all on function public.ekstra_fragt_regning_spaerrer(text, timestamptz) from public, anon, authenticated;
 
 -- Er sælgeren spærret?
 create or replace function public.ekstra_fragt_spaerret(p_bruger uuid)
@@ -465,8 +466,8 @@ set search_path = ''
 as $fn$
   select p_bruger is not null and exists (
     select 1 from public.ekstra_fragt_regninger r
-     where r.saelger_id = p_bruger and r.status in ('afventer_betaling', 'indsigelse')
-       and public.ekstra_fragt_regning_spaerrer(r.status, r.frist, r.indsigelse_kl));
+     where r.saelger_id = p_bruger and r.status = 'afventer_betaling'
+       and public.ekstra_fragt_regning_spaerrer(r.status, r.frist));
 $fn$;
 revoke all on function public.ekstra_fragt_spaerret(uuid) from public, anon, authenticated;
 grant execute on function public.ekstra_fragt_spaerret(uuid) to service_role;
@@ -746,11 +747,11 @@ $fn$;
 -- PaymentIntent/charge flyttes til tilbagefoerte_* (adopteres aldrig igen),
 -- pi_forsoeg + 1 (ny idempotency key), betalingsfelterne og markeringen
 -- ryddes. Betaler sælgeren igen, laver fakturakøen rundens nye faktura.
--- Er indsigelsen afsluttet uden genåbning, kan regningen ikke genåbnes.
+-- En regning kan altid genåbnes - også efter "Afslut uden genåbning" (Filip,
+-- 21. okt. 2026); afslutningen ryddes så (historikken står i moderation_log).
 -- Svar ved ok: {kode, frist, runde, trade_id, saelger_id}.
 -- Koder: + begrundelse_mangler | for_lang_tekst | forkert_status (+ status) |
--- ingen_tabt_bankindsigelse | delvis_bankindsigelse | findes_allerede |
--- bankindsigelse_afsluttet
+-- ingen_tabt_bankindsigelse | delvis_bankindsigelse | findes_allerede
 create or replace function public.ekstra_fragt_genaabn(p_regning uuid, p_begrundelse text)
 returns jsonb
 language plpgsql
@@ -771,9 +772,6 @@ begin
   end if;
   if (c.r).bankindsigelse_tabt_kl is null or (c.r).stripe_charge_id is null then
     return jsonb_build_object('kode', 'ingen_tabt_bankindsigelse');
-  end if;
-  if (c.r).bankindsigelse_haandteret_kl is not null then
-    return jsonb_build_object('kode', 'bankindsigelse_afsluttet');
   end if;
   -- Kun en tilbageførsel af hele det modtagne beløb (en delvis håndteres manuelt).
   if (c.r).bankindsigelse_beloeb_oere is distinct from coalesce((c.r).modtaget_oere, (c.r).beloeb_oere) then
@@ -802,7 +800,9 @@ begin
          pi_forsoeg = pi_forsoeg + 1,
          betalt_kl = null, modtaget_oere = null, sidste_fejl = null, synket_kl = null,
          bankindsigelse_id = null, bankindsigelse_status = null, bankindsigelse_beloeb_oere = null,
-         bankindsigelse_tabt_kl = null
+         bankindsigelse_tabt_kl = null,
+         bankindsigelse_haandteret_kl = null, bankindsigelse_haandteret_af = null,
+         bankindsigelse_haandteret_begrundelse = null
    where id = (c.r).id and status = 'betalt';
   if not found then raise exception 'Ekstraregningen blev ændret under genåbningen (%)', (c.r).id; end if;
 
@@ -911,11 +911,13 @@ $fn$;
 -- ===========================================================================
 -- 7. Sælgeren: indsigelse, visning, dokumentation, status
 -- ===========================================================================
--- Indsigelse mod målingen (ÉN gang, kun mens regningen afventer betaling -
--- også efter fristen, men så gælder spærringen, til indsigelsen er afgjort).
+-- Indsigelse mod målingen (ÉN gang, kun mens regningen afventer betaling, og
+-- kun FØR fristen - Filip, 21. okt. 2026). Efter fristen: 'frist_overskredet'
+-- (sælgeren kontakter BidHamr; staff kan frafalde regningen).
 -- En åben PaymentIntent kasseres (annuller_pi) - serveren annullerer den.
 -- Koder: ok (+ annuller_pi?) | ingen_adgang | ikke_fundet | tekst_mangler |
--- for_kort | for_lang_tekst | allerede_indsigelse | behandles | forkert_status
+-- for_kort | for_lang_tekst | allerede_indsigelse | behandles | forkert_status |
+-- frist_overskredet
 create or replace function public.mit_ekstra_fragt_indsigelse(p_id uuid, p_tekst text)
 returns jsonb
 language plpgsql
@@ -939,6 +941,7 @@ begin
   if r.status <> 'afventer_betaling' then
     return jsonb_build_object('kode', 'forkert_status', 'status', r.status);
   end if;
+  if r.frist <= now() then return jsonb_build_object('kode', 'frist_overskredet'); end if;
   update public.ekstra_fragt_regninger
      set status = 'indsigelse', indsigelse_tekst = v_tekst, indsigelse_kl = now(),
          tidligere_payment_intents = case when stripe_payment_intent_id is null then tidligere_payment_intents
@@ -950,20 +953,14 @@ begin
          stripe_payment_intent_id = null
    where id = r.id and status = 'afventer_betaling';
   perform public.ekstra_fragt_log(public.bidhamr_system_id(), 'ekstra_fragt_indsigelse', r.trade_id, r.saelger_id,
-    'Sælgeren har gjort indsigelse mod ekstraregningen (' || public.ekstra_fragt_kr(r.beloeb_oere) || ')'
-    || case when r.frist <= now() then ' efter fristen - spærringen gælder, til indsigelsen er afgjort' else '' end
-    || ': ' || v_tekst);
-  -- spaerret_til_afgoerelse: indsigelsen er gjort efter fristen, så sælgeren
-  -- forbliver spærret, til staff har afgjort den.
-  return jsonb_build_object('kode', 'ok', 'annuller_pi', r.stripe_payment_intent_id,
-                            'spaerret_til_afgoerelse', r.frist <= now());
+    'Sælgeren har gjort indsigelse mod ekstraregningen (' || public.ekstra_fragt_kr(r.beloeb_oere) || '): ' || v_tekst);
+  return jsonb_build_object('kode', 'ok', 'annuller_pi', r.stripe_payment_intent_id);
 end;
 $fn$;
 
 -- Sælgerens egne regninger (offentlige felter). p_trade = null: alle.
--- spaerrer: regningen spærrer lige nu (også en indsigelse gjort efter
--- fristen, til den er afgjort). kan_goere_indsigelse: også efter fristen
--- (men så ophæver indsigelsen ikke spærringen - indsigelse_efter_frist).
+-- spaerrer: regningen spærrer lige nu (ubetalt efter fristen).
+-- kan_goere_indsigelse: kun før fristen og kun én gang.
 -- genaabnet_kl/genaabn_begrundelse: regningen er åbnet igen, fordi betalingen
 -- blev tilbageført efter en bankindsigelse.
 -- (Returtypen er udvidet - derfor drop først, så filen kan køres igen.)
@@ -977,7 +974,7 @@ returns table (
   indsigelse_tekst text, indsigelse_kl timestamptz, afgoerelse text, afgoerelse_begrundelse text,
   afgjort_kl timestamptz, frafald_grund text, frafaldet_kl timestamptz, betalt_kl timestamptz,
   refunderet_kl timestamptz, oprettet_kl timestamptz,
-  indsigelse_efter_frist boolean, genaabnet_kl timestamptz, genaabn_begrundelse text)
+  genaabnet_kl timestamptz, genaabn_begrundelse text)
 language sql
 stable
 security definer
@@ -986,12 +983,11 @@ as $fn$
   select r.id, r.trade_id, r.forsendelse_id, a.titel, r.transportoer, r.sporingsnummer,
          r.valgt_stoerrelse, r.maalt_stoerrelse, r.maalt_vaegt_gram, r.maalt_maal,
          r.beloeb_oere, r.fragtfirma_fakturanummer, r.forklaring, true,
-         r.status, r.frist, public.ekstra_fragt_regning_spaerrer(r.status, r.frist, r.indsigelse_kl),
+         r.status, r.frist, public.ekstra_fragt_regning_spaerrer(r.status, r.frist),
          r.status = 'afventer_betaling',
-         r.status = 'afventer_betaling' and r.indsigelse_kl is null,
+         r.status = 'afventer_betaling' and r.indsigelse_kl is null and r.frist > now(),
          r.indsigelse_tekst, r.indsigelse_kl, r.afgoerelse, r.afgoerelse_begrundelse,
          r.afgjort_kl, r.frafald_grund, r.frafaldet_kl, r.betalt_kl, r.refunderet_kl, r.oprettet_kl,
-         coalesce(r.indsigelse_kl >= r.frist, false) and r.status = 'indsigelse',
          r.genaabnet_kl, r.genaabn_begrundelse
     from public.ekstra_fragt_regninger r
     left join public.trades t on t.id = r.trade_id
@@ -1028,7 +1024,7 @@ security definer
 set search_path = ''
 as $fn$
   select jsonb_build_object(
-    'spaerret', coalesce(bool_or(public.ekstra_fragt_regning_spaerrer(r.status, r.frist, r.indsigelse_kl)), false),
+    'spaerret', coalesce(bool_or(public.ekstra_fragt_regning_spaerrer(r.status, r.frist)), false),
     'ubetalte', count(*) filter (where r.status in ('afventer_betaling', 'behandles')),
     'ubetalt_oere', coalesce(sum(r.beloeb_oere) filter (where r.status in ('afventer_betaling', 'behandles')), 0),
     'indsigelser', count(*) filter (where r.status = 'indsigelse'),
