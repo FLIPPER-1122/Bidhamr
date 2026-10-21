@@ -297,6 +297,25 @@ begin
   end if;
 end $do$;
 
+-- Betingelsernes årsag, da der blev kvitteret (fragt_reklamation_betingelser):
+-- null = betingelserne var opfyldt (systemets kvittering, eller staff
+-- kvitterede efter fx en gennemført refusion); ellers den midlertidige årsag
+-- (fx anke_venter/ankefrist), staff kvitterede under. Bruges af
+-- fragt_reklamation_synkroniser til at afgøre, om en senere ændring skal
+-- markeres igen.
+alter table public.fragt_reklamationer
+  add column if not exists sag_aendret_kvitteret_aarsag text;
+
+do $do$
+begin
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.fragt_reklamationer'::regclass
+                    and conname = 'fragt_reklamationer_kvitteret_aarsag') then
+    alter table public.fragt_reklamationer add constraint fragt_reklamationer_kvitteret_aarsag check (
+      sag_aendret_kvitteret_aarsag is null or sag_aendret_kvitteret_kl is not null);
+  end if;
+end $do$;
+
 comment on table public.fragt_reklamationer is
   'Reklamation hos fragtfirmaet ved transportskade (20261029010000). Én pr. sag. '
   'Oprettes automatisk (fragt_reklamation_synkroniser). Sælgeren anmelder selv; '
@@ -485,9 +504,19 @@ begin
   -- indsigelse (banken har givet køberen pengene).
   -- OG sælgeren beholder ikke salgsbeløbet (ellers får han erstatning oven i
   -- salgsbeløbet):
-  --   - refunderet: intet er givet til sælgeren (separat: ingen transfer;
-  --     destination: ingen udbetaling til banken - refusionsplanen har
-  --     hentet udbetaling_oere tilbage fra sælgerens Connect-konto).
+  --   - refunderet: intet er givet til sælgeren. Separat: ingen transfer er
+  --     sat i gang. Destination: ingen udbetaling til banken, OG hele
+  --     sælgerens andel er hentet tilbage fra Connect-kontoen
+  --     (refusion_tilbagefoert_kl sat og refusion_fra_saelger_oere =
+  --     udbetaling_oere). Ellers (tilbageførslen mangler, eller planen tog
+  --     kun en del af sælgerens andel) kan sælgeren have beholdt penge ->
+  --     'saelger_beholder'. Ikke-afhentet pakke (S = R < U) rammes også, men
+  --     er aldrig en skadet-sag; det fejler den sikre vej.
+  --     NB (separat): er en transfer sendt og derefter hentet tilbage af
+  --     staff, er stripe_transfer_id/overfoersel_paabegyndt_kl stadig sat, så
+  --     handlen giver 'saelger_beholder' (ingen reklamation). Det fejler
+  --     bevidst den sikre vej: hellere ingen reklamation end erstatning til
+  --     en sælger, der måske har beholdt salgsbeløbet.
   --   - tabt indsigelse: separat - ingen transfer er sat i gang (pengene
   --     blev aldrig sendt til sælgeren); destination - hele udbetaling_oere
   --     er hentet tilbage fra sælgerens Connect-konto (tilbageførslen er
@@ -498,7 +527,10 @@ begin
   if not found then aarsag := 'ikke_refunderet'; return; end if;
   if b.status = 'refunderet' and b.refunderet_kl is not null then
     if b.stripe_transfer_id is not null or b.saelger_udbetaling_id is not null
-       or b.overfoersel_paabegyndt_kl is not null then
+       or b.overfoersel_paabegyndt_kl is not null
+       or (b.pengemodel = 'destination'
+           and (b.refusion_tilbagefoert_kl is null
+                or b.refusion_fra_saelger_oere is distinct from b.udbetaling_oere)) then
       aarsag := 'saelger_beholder'; return;
     end if;
   elsif coalesce(b.indsigelse_status, '') = 'lost' then
@@ -598,6 +630,7 @@ begin
          set status = 'afventer_saelger', annulleret_auto = false, annulleret_grund = null,
              annulleret_af = null, annulleret_kl = null,
              sag_aendret_kl = null, sag_aendret_kvitteret_kl = null, sag_aendret_kvitteret_af = null,
+             sag_aendret_kvitteret_aarsag = null,
              aktiv_fra_kl = now(), fremdrift_kl = now()
        where id = r.id and status = 'annulleret' and annulleret_auto;
       perform public.fragt_reklamation_log(sys, 'reklamation_genaabnet', p_sag, r.saelger_id,
@@ -613,7 +646,8 @@ begin
     if r.sag_aendret_kl is not null and r.sag_aendret_kvitteret_kl is null
        and r.status in ('anmeldt', 'godkendt') then
       update public.fragt_reklamationer
-         set sag_aendret_kvitteret_kl = now(), sag_aendret_kvitteret_af = sys, fremdrift_kl = now()
+         set sag_aendret_kvitteret_kl = now(), sag_aendret_kvitteret_af = sys,
+             sag_aendret_kvitteret_aarsag = null, fremdrift_kl = now()
        where id = r.id and sag_aendret_kl is not null and sag_aendret_kvitteret_kl is null;
       perform public.fragt_reklamation_log(sys, 'reklamation_sag_aendret_kvitteret', p_sag, r.saelger_id,
         'Betingelserne er opfyldt igen (køberen er refunderet, afgørelsen er endelig, indpakningen er '
@@ -640,16 +674,19 @@ begin
   end if;
 
   -- Ny markering, når sagen ikke er markeret, ELLER når den er kvitteret og
-  -- er ændret igen bagefter: systemets kvittering (betingelserne var
-  -- opfyldt) eller staffs kvittering under en midlertidig årsag (anke /
-  -- ankefrist), og årsagen nu er en anden.
+  -- er ændret igen bagefter:
+  --   - kvitteret under opfyldte betingelser (sag_aendret_kvitteret_aarsag
+  --     null - systemets eller staffs kvittering): altid markeres igen.
+  --   - kvitteret af staff under en midlertidig årsag (anke_venter /
+  --     ankefrist): kun når årsagen nu er en anden end de midlertidige.
   if r.status in ('anmeldt', 'godkendt')
      and (r.sag_aendret_kl is null
           or (r.sag_aendret_kvitteret_kl is not null
-              and (r.sag_aendret_kvitteret_af = sys
+              and (r.sag_aendret_kvitteret_aarsag is null
                    or coalesce(c.aarsag, '') not in ('anke_venter', 'ankefrist')))) then
     update public.fragt_reklamationer
-       set sag_aendret_kl = now(), sag_aendret_kvitteret_kl = null, sag_aendret_kvitteret_af = null
+       set sag_aendret_kl = now(), sag_aendret_kvitteret_kl = null, sag_aendret_kvitteret_af = null,
+           sag_aendret_kvitteret_aarsag = null
      where id = r.id;
     perform public.fragt_reklamation_log(sys, 'reklamation_sag_aendret', p_sag, r.saelger_id,
       'OBS: sagen er ændret (' || coalesce(c.aarsag, '?') || ', status ' || coalesce(v_status, '?')
@@ -1203,7 +1240,10 @@ begin
          sag_aendret_kvitteret_kl = case when sag_aendret_kl is not null
                                          then coalesce(sag_aendret_kvitteret_kl, now()) end,
          sag_aendret_kvitteret_af = case when sag_aendret_kl is not null
-                                         then coalesce(sag_aendret_kvitteret_af, auth.uid()) end
+                                         then coalesce(sag_aendret_kvitteret_af, auth.uid()) end,
+         sag_aendret_kvitteret_aarsag = case when sag_aendret_kl is not null
+                                             and sag_aendret_kvitteret_kl is not null
+                                             then sag_aendret_kvitteret_aarsag end
    where id = (c.r).id and status in ('afventer_saelger', 'anmeldt');
   if not found then return jsonb_build_object('kode', 'forkert_status'); end if;
   perform public.fragt_reklamation_log(auth.uid(), 'reklamation_annulleret', (c.r).sag_id, (c.r).saelger_id,
@@ -1288,6 +1328,11 @@ begin
          sag_aendret_kvitteret_af = case
            when p_status in ('afventer_saelger', 'anmeldt', 'godkendt') then null
            when v_kvit then auth.uid() else sag_aendret_kvitteret_af end,
+         -- afvist/fravalgt: kvitteringen er ikke givet under en midlertidig
+         -- årsag (status er ikke anmeldt/godkendt, så der markeres ikke igen).
+         sag_aendret_kvitteret_aarsag = case
+           when p_status in ('afventer_saelger', 'anmeldt', 'godkendt') then null
+           when v_kvit then null else sag_aendret_kvitteret_aarsag end,
          aktiv_fra_kl = case when p_status = 'afventer_saelger' then now() else aktiv_fra_kl end,
          fremdrift_kl = now()
    where id = (c.r).id and status = (c.r).status;
@@ -1338,7 +1383,9 @@ begin
     return jsonb_build_object('kode', 'betingelser_ikke_opfyldt', 'aarsag', b.aarsag);
   end if;
   update public.fragt_reklamationer
-     set sag_aendret_kvitteret_kl = now(), sag_aendret_kvitteret_af = auth.uid(), fremdrift_kl = now()
+     set sag_aendret_kvitteret_kl = now(), sag_aendret_kvitteret_af = auth.uid(),
+         sag_aendret_kvitteret_aarsag = case when b.ok then null else b.aarsag end,
+         fremdrift_kl = now()
    where id = (c.r).id and sag_aendret_kl is not null and sag_aendret_kvitteret_kl is null
      and status in ('anmeldt', 'godkendt');
   if not found then return jsonb_build_object('kode', 'ikke_aendret'); end if;
