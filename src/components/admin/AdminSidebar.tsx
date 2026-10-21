@@ -36,6 +36,9 @@ export type MenuTaellere = {
   // Reklamationer hos fragtfirmaet. Kritisk = stået stille / sagen ændret -> rødt.
   reklamationer: number;
   reklamationerKritisk: boolean;
+  // Årsagerne til det røde tal (til skærmlæsere).
+  reklamationerStille?: number;
+  reklamationerSagAendret?: number;
   // Ekstra fragt (for lille pakke). Kritisk = indsigelser venter på afgørelse -> rødt.
   ekstraFragt: number;
   ekstraFragtKritisk: boolean;
@@ -63,7 +66,10 @@ export const INGEN_TAELLERE: MenuTaellere = {
   erhverv: 0,
 };
 
-type TalNoegle = Exclude<keyof MenuTaellere, "anmeldelserKritisk" | "reklamationerKritisk" | "ekstraFragtKritisk">;
+type TalNoegle = Exclude<
+  keyof MenuTaellere,
+  "anmeldelserKritisk" | "reklamationerKritisk" | "ekstraFragtKritisk" | "reklamationerStille" | "reklamationerSagAendret"
+>;
 
 type MenuPunkt = {
   href: string;
@@ -192,15 +198,26 @@ function Logo() {
   );
 }
 
-function Tal({ antal, tone }: { antal: number; tone: "roed" | "gul" | "graa" }) {
+function Tal({ antal, tone, sr }: { antal: number; tone: "roed" | "gul" | "graa"; sr?: string }) {
   if (!antal) return null;
   const cls = tone === "roed" ? "bg-tal-roed text-white" : tone === "gul" ? "bg-tal-gul text-tekst" : "bg-white/20 text-white";
   return (
     <span className={`relative min-w-[22px] rounded-full px-[7px] py-px text-center text-[11.5px] font-bold tabular-nums ${cls}`}>
       {antal}
-      <span className="sr-only">{tone === "roed" ? " – over fristen" : " venter"}</span>
+      <span className="sr-only">{sr ?? (tone === "roed" ? " – over fristen" : " venter")}</span>
     </span>
   );
+}
+
+// Skærmlæsertekst til reklamationernes tal: årsagen til det røde tal
+// ("sag ændret" / "stille"), ellers at de venter på sælgeren.
+function reklamationSr(t: MenuTaellere, tone: string): string {
+  if (tone !== "roed") return " venter på sælgeren";
+  const dele = [
+    t.reklamationerSagAendret ? `${t.reklamationerSagAendret} sag ændret` : null,
+    t.reklamationerStille ? `${t.reklamationerStille} stille` : null,
+  ].filter(Boolean);
+  return dele.length ? ` – ${dele.join(", ")}` : " – kræver handling";
 }
 
 export default function AdminSidebar({
@@ -299,7 +316,7 @@ export default function AdminSidebar({
       >
         <span className={aktiv ? "text-white" : "text-white/70"}>{MENU_IKONER[p.ikon ?? p.href]}</span>
         <span className="min-w-0 flex-1 truncate">{p.label}</span>
-        <Tal antal={antal} tone={tone} />
+        <Tal antal={antal} tone={tone} sr={p.tal === "reklamationer" ? reklamationSr(taellere, tone) : undefined} />
       </Link>
     );
   }

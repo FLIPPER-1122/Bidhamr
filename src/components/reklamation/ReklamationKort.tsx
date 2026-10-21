@@ -33,9 +33,22 @@ function dato(iso: string | null): string | null {
   });
 }
 
-function partTekst(p: PakkePart): string | null {
+function partDele(p: PakkePart): string[] {
   const by = [p.postnummer, p.by].filter(Boolean).join(" ");
-  return [p.navn, p.adresse, by, p.telefon, p.email].filter(Boolean).join(", ") || null;
+  return [p.navn, p.adresse, by, p.telefon, p.email].filter((x): x is string => !!x);
+}
+
+function partTekst(p: PakkePart): string | null {
+  return partDele(p).join(", ") || null;
+}
+
+// Koder (trackingnummer, telefon, postnummer + by) må ikke knække midt i på
+// smalle skærme. Korte dele holdes samlet (kommaet hænger på delen, så det
+// aldrig står først på en linje); kun lange ord uden mellemrum (fx en lang
+// e-mail eller kode) må brydes hvor som helst, så de ikke flyder ud.
+function Udelelig({ tekst }: { tekst: string }) {
+  const lang = tekst.length > 28 && !/\s/.test(tekst);
+  return <span className={lang ? "break-all" : "whitespace-nowrap"}>{tekst}</span>;
 }
 
 function Trin({ nr, titel, children }: { nr: number; titel: string; children: React.ReactNode }) {
@@ -58,13 +71,40 @@ function Trin({ nr, titel, children }: { nr: number; titel: string; children: Re
   );
 }
 
-function FeltRaekke({ navn, vaerdi, lang = false }: { navn: string; vaerdi: string | null; lang?: boolean }) {
+function FeltRaekke({
+  navn,
+  vaerdi,
+  lang = false,
+  kode = false,
+  dele,
+}: {
+  navn: string;
+  vaerdi: string | null;
+  lang?: boolean;
+  // Én kode (trackingnummer o.l.), der ikke må knække.
+  kode?: boolean;
+  // Vises som adskilte, udelelige dele (adresse, telefon ...). vaerdi kopieres.
+  dele?: string[];
+}) {
   return (
     <div className="flex items-start gap-3 border-t border-kant py-3 first:border-t-0">
       <div className="min-w-0 flex-1">
         <dt className="text-[13px] text-tekst-daempet">{navn}</dt>
         <dd className={`mt-0.5 break-words text-[15px] text-tekst ${lang ? "whitespace-pre-wrap" : "font-medium"}`}>
-          {vaerdi ?? <span className="text-tekst-svag">Ikke oplyst</span>}
+          {vaerdi == null ? (
+            <span className="text-tekst-svag">Ikke oplyst</span>
+          ) : dele && dele.length > 0 ? (
+            dele.map((d, i) => (
+              <span key={i}>
+                <Udelelig tekst={i < dele.length - 1 ? `${d},` : d} />
+                {i < dele.length - 1 ? " " : null}
+              </span>
+            ))
+          ) : kode ? (
+            <Udelelig tekst={vaerdi} />
+          ) : (
+            vaerdi
+          )}
         </dd>
       </div>
       {vaerdi && <KopierKnap tekst={vaerdi} label={navn.toLowerCase()} />}
@@ -104,7 +144,7 @@ export default function ReklamationKort({
         </h2>
         <p className="mt-1 text-sm">
           {r.status === "godkendt" && r.godkendt_beloeb_oere != null && (
-            <>Godkendt beløb: {kroner(r.godkendt_beloeb_oere)}. {navn} betaler direkte til dig.</>
+            <>Godkendt beløb: {kroner(r.godkendt_beloeb_oere)} {navn} betaler direkte til dig.</>
           )}
           {r.status === "afvist" && (r.afvisningsgrund ? <>Begrundelse: {r.afvisningsgrund}</> : <>Du får ikke erstatning for varen.</>)}
           {r.status === "fravalgt" && <>Du får ikke erstatning for varen.</>}
@@ -123,12 +163,12 @@ export default function ReklamationKort({
   const p = pakke;
   const antalBilleder = p?.billeder.length ?? 0;
   const anmeldUrl = p?.anmeldUrl ?? (r.transportoer === "dao" ? "https://omdeling.info" : null);
-  const felter: { navn: string; vaerdi: string | null; lang?: boolean }[] = p
+  const felter: { navn: string; vaerdi: string | null; lang?: boolean; kode?: boolean; dele?: string[] }[] = p
     ? [
-        { navn: "Trackingnummer", vaerdi: p.trackingnummer },
-        ...(p.forsendelsesId ? [{ navn: "Forsendelses-id", vaerdi: p.forsendelsesId }] : []),
-        { navn: "Afsender", vaerdi: partTekst(p.afsender) },
-        { navn: "Modtager", vaerdi: partTekst(p.modtager) },
+        { navn: "Trackingnummer", vaerdi: p.trackingnummer, kode: true },
+        ...(p.forsendelsesId ? [{ navn: "Forsendelses-id", vaerdi: p.forsendelsesId, kode: true }] : []),
+        { navn: "Afsender", vaerdi: partTekst(p.afsender), dele: partDele(p.afsender) },
+        { navn: "Modtager", vaerdi: partTekst(p.modtager), dele: partDele(p.modtager) },
         { navn: "Afsendt", vaerdi: dato(p.afsendtKl) },
         { navn: "Leveret", vaerdi: dato(p.leveretKl) },
         { navn: "Vare", vaerdi: p.varetitel },
@@ -148,17 +188,25 @@ export default function ReklamationKort({
         <h2 id="reklamation-titel" className="text-[20px] leading-tight lg:text-[22px]">
           Få erstatning fra {navn}
         </h2>
-        <ReklamationMaerke status={r.status} />
+        {/* "Få erstatning" gentager overskriften - mærket vises kun, når det siger noget nyt. */}
+        {r.status !== "afventer_saelger" && <ReklamationMaerke status={r.status} />}
       </div>
       <p className="mt-2 text-[15px] text-tekst-daempet">
         Køberen har fået pengene tilbage, fordi varen blev skadet under fragten. Du pakkede ordentligt, så du kan
-        selv søge erstatning hos {navn} – op til {kroner(r.kravbeloeb_oere)}. Det er {navn}, der afgør sagen, og
+        selv søge erstatning hos {navn} – op til {kroner(r.kravbeloeb_oere)} Det er {navn}, der afgør sagen, og
         pengene udbetales direkte til dig.
       </p>
       {r.status === "anmeldt" && (
         <p className="mt-3 rounded-xl bg-info-bg px-4 py-3 text-sm text-info-tekst">
           {reklamationStatusSaelger(r.status, r.transportoer)}.
-          {r.transportoerens_sagsnummer && <> Sagsnummer: <span className="font-semibold">{r.transportoerens_sagsnummer}</span>.</>}
+          {r.transportoerens_sagsnummer && (
+            <>
+              {" "}
+              Sagsnummer: <span className="font-semibold">
+                <Udelelig tekst={`${r.transportoerens_sagsnummer}.`} />
+              </span>
+            </>
+          )}
         </p>
       )}
       {r.afventer_bidhamr && (
@@ -210,7 +258,7 @@ export default function ReklamationKort({
               </div>
               <dl className="px-4">
                 {felter.map((f) => (
-                  <FeltRaekke key={f.navn} navn={f.navn} vaerdi={f.vaerdi} lang={f.lang} />
+                  <FeltRaekke key={f.navn} navn={f.navn} vaerdi={f.vaerdi} lang={f.lang} kode={f.kode} dele={f.dele} />
                 ))}
               </dl>
               {p.maksErstatningOere != null && (

@@ -119,7 +119,9 @@ describe("tekster", () => {
     ]);
     for (const x of b) {
       expect(`${x.input.titel} ${x.input.tekst}`.toLowerCase()).not.toContain("forsikring");
-      expect(x.input.link).toBe(`/mine-handler/${raekke.trade_id}#sag`);
+      expect(x.input.link).toBe(`/mine-handler/${raekke.trade_id}#reklamation`);
+      // Aldrig "kr.." (kroner() slutter selv med punktum).
+      expect(x.input.tekst).not.toContain("kr..");
     }
     expect(b[0].input.tekst).toContain("omdeling.info");
     expect(b[0].input.tekst).toContain("køberen har fået pengene tilbage");
@@ -127,9 +129,18 @@ describe("tekster", () => {
     // L5: ingen "oprettet" efter annullering; auto-annullering kun, hvis
     // "oprettet" for samme aktivering er sendt.
     const annKl = new Date().toISOString();
-    const auto = reklamationBeskeder({ ...raekke, status: "annulleret", annulleret_auto: true, annulleret_kl: annKl });
+    // Auto-annulleringen meldes først efter en time (en hurtig fortrydelse og
+    // genvurdering giver ingen "stoppet" og intet nyt "Du kan søge").
+    expect(
+      reklamationBeskeder({ ...raekke, status: "annulleret", annulleret_auto: true, annulleret_kl: annKl }),
+    ).toEqual([]);
+    const auto = reklamationBeskeder(
+      { ...raekke, status: "annulleret", annulleret_auto: true, annulleret_kl: annKl },
+      Date.now() + 3600 * 1000,
+    );
     expect(auto.map((x) => x.input.noegle.split(":")[2])).toEqual(["auto_annulleret"]);
     expect(auto[0].kraever).toBe(`reklamation:${raekke.id}:oprettet:${aktiv}`);
+    expect(auto[0].input.link).toBe(`/mine-handler/${raekke.trade_id}#sag`);
     const staff = reklamationBeskeder({ ...raekke, status: "annulleret", annulleret_kl: annKl, annulleret_grund: "Test" });
     expect(staff.map((x) => x.input.noegle.split(":")[2])).toEqual(["annulleret"]);
     expect(reklamationBeskeder({ ...raekke, status: "anmeldt" }).map((x) => x.input.noegle.split(":")[2])).toEqual(["gensendt"]);
@@ -151,6 +162,34 @@ describe("tekster", () => {
     });
     expect(kvit.map((x) => x.input.noegle.split(":")[2])).toEqual(["kvitteret"]);
     expect(kvit[0].kraever).toBe(`reklamation:${raekke.id}:sag_aendret:${new Date(aendretKl).getTime()}`);
+    expect(kvit[0].input.tekst).toContain("BidHamr har kigget på sagen");
+    // Systemets kvittering: neutral tekst.
+    const kvitSys = reklamationBeskeder({
+      ...raekke,
+      status: "anmeldt",
+      gensendt_antal: 0,
+      sag_aendret_kl: aendretKl,
+      sag_aendret_kvitteret_kl: aendretKl,
+      sag_aendret_kvitteret_af: "00000000-0000-4000-8000-0000000b1d00",
+    });
+    expect(kvitSys[0].input.tekst).not.toContain("kigget");
+    expect(kvitSys[0].input.tekst).toContain("Du kan fortsætte med din skadeanmeldelse");
+
+    // Kvitteret før "sag ændret" nåede ud, og markeret igen: ny nøgle bundet
+    // til den nye markering, og "Du kan fortsætte" kræver netop den.
+    const nyMarkering = new Date(Date.now() + 60_000).toISOString();
+    const igen = reklamationBeskeder({ ...raekke, status: "anmeldt", gensendt_antal: 0, sag_aendret_kl: nyMarkering });
+    expect(igen.map((x) => x.input.noegle)).toEqual([
+      `reklamation:${raekke.id}:sag_aendret:${new Date(nyMarkering).getTime()}`,
+    ]);
+    const igenKvit = reklamationBeskeder({
+      ...raekke,
+      status: "anmeldt",
+      gensendt_antal: 0,
+      sag_aendret_kl: nyMarkering,
+      sag_aendret_kvitteret_kl: new Date(Date.now() + 120_000).toISOString(),
+    });
+    expect(igenKvit[0].kraever).toBe(`reklamation:${raekke.id}:sag_aendret:${new Date(nyMarkering).getTime()}`);
 
     for (const x of [...auto, ...staff, ...aendret, ...kvit]) {
       expect(`${x.input.titel} ${x.input.tekst}`.toLowerCase()).not.toContain("forsikring");
