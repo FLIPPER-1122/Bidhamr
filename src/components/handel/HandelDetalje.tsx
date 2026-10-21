@@ -56,6 +56,10 @@ import { hentPakkeTilSaelger, type Reklamationspakke } from "@/lib/reklamation/p
 import { REKLAMATION_AABNE, type SaelgerReklamation } from "@/lib/reklamation/typer";
 import ReklamationKort from "@/components/reklamation/ReklamationKort";
 import ReklamationMaerke from "@/components/reklamation/ReklamationMaerke";
+import { hentMineEkstraFragtRegninger, type MinEkstraFragt } from "@/app/actions/ekstraFragt";
+import { synkEkstraFragtRetur } from "@/lib/betaling/ekstraFragt";
+import EkstraFragtKort from "@/components/ekstraFragt/EkstraFragtKort";
+import EkstraFragtMaerke from "@/components/ekstraFragt/EkstraFragtMaerke";
 
 // Handelssiden - fælles for /mine-handler/[trade_id] (private) og
 // /firma/salg/[trade_id] (firma-dashboardet, sted="firma"), så handlens
@@ -91,6 +95,8 @@ export default async function HandelDetalje({
   sted = "mine-handler",
   visHandel = false,
   returfragtRetur = false,
+  ekstraFragtParam,
+  ekstraFragtPi,
 }: {
   trade_id: string;
   betalingParam?: string;
@@ -100,6 +106,10 @@ export default async function HandelDetalje({
   sted?: "mine-handler" | "firma";
   // Køberen er lige vendt tilbage fra betalingen af returfragten.
   returfragtRetur?: boolean;
+  // Ekstra fragt (for lille pakke): ?ekstrafragt=betal åbner betalingen med
+  // det samme; ?ekstrafragt=retur&payment_intent=pi_... er returen fra Stripe.
+  ekstraFragtParam?: string;
+  ekstraFragtPi?: string;
 }) {
   const erFirmaSted = sted === "firma";
   // Firma-dashboardets layout har selv <main>.
@@ -203,6 +213,16 @@ export default async function HandelDetalje({
       ? supabase
           .rpc("mine_fragt_reklamationer", { p_trade: handel.id })
           .then((r) => ({ data: r.error ? null : (r.data as SaelgerReklamation[] | null) }))
+      : Promise.resolve(null);
+  // Sælgerens regninger for ekstra fragt (fragtfirmaet målte pakken større
+  // end den valgte størrelse). Lige tilbage fra Stripe spejles betalingen
+  // først, så kortet viser "Betalt" uden at vente på webhooken.
+  const ekstraFragtLoefte: Promise<MinEkstraFragt[] | null> =
+    erSaelger && !afhentning
+      ? (async () => {
+          if (ekstraFragtParam === "retur" && ekstraFragtPi) await synkEkstraFragtRetur(user.id, ekstraFragtPi);
+          return hentMineEkstraFragtRegninger(handel.id);
+        })()
       : Promise.resolve(null);
   const sagLoefte = SAG_STATUSSER_HANDEL.includes(handel.status)
     ? hentSagForHandel(handel.id)
@@ -480,6 +500,12 @@ export default async function HandelDetalje({
   // Reklamation hos fragtfirmaet (kun sælgeren): oplysningerne hentes kun,
   // mens den er åben.
   const reklamationSvar = await reklamationLoefte;
+  const ekstraFragt = (await ekstraFragtLoefte) ?? [];
+  // Mærket i overblikket: den åbne regning (der er højst én pr. pakke).
+  const aabenEkstraFragt =
+    ekstraFragt.find((r) => r.status === "afventer_betaling") ??
+    ekstraFragt.find((r) => r.status === "behandles" || r.status === "indsigelse") ??
+    null;
   const reklamation = (reklamationSvar?.data?.[0] ?? null) as SaelgerReklamation | null;
   let reklamationPakke: Reklamationspakke | null = null;
   if (reklamation && (REKLAMATION_AABNE as readonly string[]).includes(reklamation.status)) {
@@ -520,6 +546,20 @@ export default async function HandelDetalje({
         )}
         {/* Sælgeren kan få erstatning fra fragtfirmaet - står over sagen, fordi
             det er det, sælgeren skal gøre nu. */}
+        {/* Ekstra fragt: det, sælgeren skal betale nu, står øverst. */}
+        {ekstraFragt.length > 0 && (
+          <div id="ekstra-fragt" className="scroll-mt-24 space-y-5 sm:space-y-6">
+            {ekstraFragt.map((r) => (
+              <EkstraFragtKort
+                key={r.id}
+                r={r}
+                returSti={`${grundsti}/${handel.id}`}
+                autoBetal={ekstraFragtParam === "betal" && r.id === aabenEkstraFragt?.id}
+                kanHandle={!(erFirmaSted && lukket)}
+              />
+            ))}
+          </div>
+        )}
         {reklamation && (
           <ReklamationKort r={reklamation} pakke={reklamationPakke} tradeId={handel.id} kanHandle={!(erFirmaSted && lukket)} />
         )}
@@ -581,11 +621,17 @@ export default async function HandelDetalje({
               <div className="mt-2 flex flex-wrap gap-2 sm:hidden">
                 <HandelStatusBadge status={handel.status} />
                 {reklamation && <ReklamationMaerke status={reklamation.status} />}
+                {aabenEkstraFragt && (
+                  <EkstraFragtMaerke status={aabenEkstraFragt.status} beloebOere={Number(aabenEkstraFragt.beloeb_oere)} spaerrer={aabenEkstraFragt.spaerrer} />
+                )}
               </div>
             </div>
             <div className="hidden shrink-0 flex-col items-end gap-1.5 sm:flex">
               <HandelStatusBadge status={handel.status} />
               {reklamation && <ReklamationMaerke status={reklamation.status} />}
+              {aabenEkstraFragt && (
+                <EkstraFragtMaerke status={aabenEkstraFragt.status} beloebOere={Number(aabenEkstraFragt.beloeb_oere)} spaerrer={aabenEkstraFragt.spaerrer} />
+              )}
             </div>
           </div>
 

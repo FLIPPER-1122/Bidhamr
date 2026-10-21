@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { crc32, lavZip, sikkertZipNavn } from "@/lib/reklamation/zip";
-import { fortolkKroner, kronerTilOere, reklamationStatusSaelger } from "@/lib/reklamation/typer";
+import { betingelseTekst, fortolkKroner, kanKvittere, kronerTilOere, reklamationStatusSaelger } from "@/lib/reklamation/typer";
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/notifikationer/send", () => ({ send: vi.fn() }));
@@ -158,5 +158,22 @@ describe("tekster", () => {
     for (const s of ["afventer_saelger", "anmeldt", "godkendt", "afvist", "fravalgt", "annulleret"] as const) {
       expect(reklamationStatusSaelger(s, "gls").toLowerCase()).not.toContain("forsikring");
     }
+  });
+});
+
+describe("Kvittering for ændret sag", () => {
+  it("tillader kun kvittering, når betingelserne er opfyldt, eller årsagen er midlertidig", () => {
+    expect(kanKvittere(null)).toBe(true);
+    expect(kanKvittere("anke_venter")).toBe(true);
+    expect(kanKvittere("ankefrist")).toBe(true);
+    for (const a of ["ikke_refunderet", "saelger_beholder", "ikke_koebers_fordel", "indpakning", "ingen_forsendelse", ""]) {
+      expect(kanKvittere(a)).toBe(false);
+    }
+  });
+
+  it("har en tekst for hver årsag og en reserve for ukendte", () => {
+    expect(betingelseTekst("saelger_beholder")).toContain("sælgeren");
+    expect(betingelseTekst("noget_nyt")).toBe("betingelserne ikke er opfyldt");
+    expect(betingelseTekst(null)).toBe("betingelserne ikke er opfyldt");
   });
 });

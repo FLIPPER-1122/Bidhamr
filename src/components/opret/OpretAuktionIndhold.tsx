@@ -6,6 +6,8 @@ import UdbetalingskontoKraeves from "@/components/betaling/UdbetalingskontoKraev
 import MitIDKraeves from "@/components/mitid/MitIDKraeves";
 import { hentMitIdStatus } from "@/lib/mitid/status";
 import { DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
+import { hentMineEkstraFragtRegninger } from "@/app/actions/ekstraFragt";
+import EkstraFragtBjaelke from "@/components/ekstraFragt/EkstraFragtBjaelke";
 import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA } from "@/lib/tekster/erhverv";
 import { naesteLedigeTekst } from "@/lib/erhverv/visning";
 import type { Ugekvote } from "@/lib/erhverv/regler";
@@ -22,7 +24,7 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
 
   // Firmakonto? Så gælder ugekvote og abonnement (databasen håndhæver det
   // også, BHE02/BHE03) - vis det her, før firmaet udfylder hele formularen.
-  const [kontoType, { data: kvoteData }, { data: profil }, mitid, { data: dac7Data }] = await Promise.all([
+  const [kontoType, { data: kvoteData }, { data: profil }, mitid, { data: dac7Data }, ekstraFragt] = await Promise.all([
     hentKontoType(brugerId),
     supabase.rpc("firma_ugekvote"),
     // RLS: brugeren kan kun læse sin egen betalingsprofil.
@@ -45,7 +47,11 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
     // DAC7: spærret for nye auktioner, når skatteoplysningerne mangler efter
     // fristen (databasen håndhæver det, BHD01).
     supabase.rpc("dac7_min_status"),
+    // Ekstra fragt: spærret for nye auktioner, når en regning ikke er betalt
+    // efter fristen (databasen håndhæver det, BHX01).
+    hentMineEkstraFragtRegninger(),
   ]);
+  const ekstraFragtSpaerret = (ekstraFragt ?? []).some((r) => r.spaerrer);
   const dac7Spaerret = !!(dac7Data as { anmodning?: { spaerret?: boolean } | null } | null)?.anmodning?.spaerret;
   const erFirma = kontoType === "erhverv";
   const kvote = erFirma ? ((kvoteData as Ugekvote | null) ?? null) : null;
@@ -95,6 +101,11 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
       </div>
     );
   }
+  // Spærret for ubetalt ekstra fragt: bjælken med BHX01-teksten og en knap
+  // direkte til betalingen.
+  if (ekstraFragtSpaerret) {
+    return <EkstraFragtBjaelke regninger={(ekstraFragt ?? []).filter((r) => r.spaerrer)} firma={erFirma} />;
+  }
   if (frakoblet) {
     return (
       <p className="rounded-lg border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
@@ -126,6 +137,8 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
   if (kanSaelge && stripe !== "retur") {
     return (
       <>
+        {/* Ubetalt regning inden fristen: påmind, men lad sælgeren oprette. */}
+        <EkstraFragtBjaelke regninger={ekstraFragt} firma={erFirma} className="mb-6" />
         {!aktiv && (
           <p className="mb-6 rounded-lg border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
             Stripe behandler din udbetalingskonto. Du kan godt sætte varer til salg imens.

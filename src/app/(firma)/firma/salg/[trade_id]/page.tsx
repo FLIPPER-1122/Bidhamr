@@ -20,8 +20,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const metadata: Metadata = { title: FIRMA_DASHBOARD.salg.titel };
 
-export default async function FirmaHandel({ params }: { params: Promise<{ trade_id: string }> }) {
+export default async function FirmaHandel({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ trade_id: string }>;
+  searchParams: Promise<{ ekstrafragt?: string; payment_intent?: string }>;
+}) {
   const { trade_id } = await params;
+  const { ekstrafragt, payment_intent } = await searchParams;
   await kraevFirma(`/firma/salg/${trade_id}`);
   if (!UUID.test(trade_id)) notFound();
   // Oplysninger til firmaets egen faktura (kun firmaets egne, betalte salg -
@@ -30,7 +37,12 @@ export default async function FirmaHandel({ params }: { params: Promise<{ trade_
   const salg = faktura?.salg[0];
   return (
     <>
-      <HandelDetalje trade_id={trade_id} sted="firma" />
+      <HandelDetalje
+        trade_id={trade_id}
+        sted="firma"
+        ekstraFragtParam={typeof ekstrafragt === "string" ? ekstrafragt : undefined}
+        ekstraFragtPi={ekstrafragt === "retur" && typeof payment_intent === "string" ? payment_intent : undefined}
+      />
       {faktura && salg && (
         <div className="mx-auto mt-6 max-w-3xl">
           <Kort id="faktura-oplysninger" titel={FAKTURA_TEKST.titel} forklaring={FAKTURA_TEKST.forklaring}>

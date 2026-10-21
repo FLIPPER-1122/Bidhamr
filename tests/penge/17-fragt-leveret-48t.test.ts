@@ -13,7 +13,11 @@
 //   - Aldrig når der er en sag, når pakken er returneret, eller når meldingen
 //     kommer fra Shipmondo uden SHIPMONDO_LEVERET_FRIGIVER.
 //   - Når fragtfirmaet startede uret, kan køberen melde pakken bortkommet
-//     (uden billeder) inden for 48 timer, og så frigives intet.
+//     (uden billeder) inden for 48 timer, og så frigives intet. Efter 48
+//     timer: for_sent.
+//   - Intet ur ved blokerende indsigelse, refusion, afhentning hos sælger,
+//     lukket sag eller registreret "ikke afhentet".
+//   - 14-dages-reglen frigiver ikke før 48 timer efter leveringsmeldingen.
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { registrerForsendelseshaendelse } from "@/lib/fragt/server";
@@ -21,6 +25,7 @@ import { frigivAutomatisk } from "@/lib/betaling/autoFrigiv";
 import { startUrFraFragt } from "@/lib/betaling/fragtUr";
 import { admin, betal, betaling, forberedSaelger, opretHandel, pakkeSendt, rydOp, type TestHandel } from "./handel";
 import { logIndSom } from "./session";
+import { CHEF_ID } from "./brugere";
 
 const TIME = 60 * 60 * 1000;
 
@@ -29,6 +34,9 @@ let hB: TestHandel; // sag (bortkommet) før leveringsmeldingen -> intet ur
 let hC: TestHandel; // uret startet -> køberen melder bortkommet -> intet frigives
 let hD: TestHandel; // returneret, derefter "leveret" -> intet ur
 let hE: TestHandel; // Shipmondo uden flaget -> intet ur
+let hF: TestHandel; // indsigelse, refusion, lukket sag -> intet ur; 14 dage venter 48 t
+let hG: TestHandel; // "ikke afhentet" registreret -> intet ur
+let hH: TestHandel; // afhentning hos sælgeren -> intet ur
 
 beforeAll(async () => {
   await forberedSaelger();
@@ -37,10 +45,13 @@ beforeAll(async () => {
   hC = await opretHandel({ navn: "fragt-48t-bortkommet", budOere: 20_000 });
   hD = await opretHandel({ navn: "fragt-48t-retur", budOere: 20_000 });
   hE = await opretHandel({ navn: "fragt-48t-shipmondo", budOere: 20_000 });
+  hF = await opretHandel({ navn: "fragt-48t-blokeret", budOere: 20_000 });
+  hG = await opretHandel({ navn: "fragt-48t-ikke-afhentet", budOere: 20_000 });
+  hH = await opretHandel({ navn: "fragt-48t-afhentning", budOere: 20_000, afhentning: true });
 });
 
 afterAll(async () => {
-  for (const h of [hA, hB, hC, hD, hE]) if (h) await rydOp(h);
+  for (const h of [hA, hB, hC, hD, hE, hF, hG, hH]) if (h) await rydOp(h);
 });
 
 type Handel = {
@@ -140,7 +151,7 @@ describe("fragtfirmaets leveringsmelding starter 48-timers uret", () => {
     ]);
     expect(a.data).toEqual([]);
     expect(b.data).toEqual([]);
-    expect(await startUrFraFragt(hA.tradeId)).toBe(0);
+    expect(await startUrFraFragt(hA.tradeId)).toEqual({ ok: true, startet: 0 });
     expect(await handel(hA)).toEqual(foer);
   });
 
@@ -170,8 +181,16 @@ describe("fragtfirmaets leveringsmelding starter 48-timers uret", () => {
     expect((await handel(hA)).status).toBe("modtaget");
   });
 
-  it("48 timer uden sag: pengene frigives automatisk én gang, uden bedømmelse", async () => {
+  it("48 timer uden sag: bortkommet er for sent, og pengene frigives automatisk én gang, uden bedømmelse", async () => {
     await fristUdloebet(hA);
+    const klient = await logIndSom(hA.koeber.id, hA.koeber.email);
+    const { data: sag } = await klient.rpc("sag_opret", {
+      p_trade: hA.tradeId,
+      p_type: "bortkommet",
+      p_beskrivelse: "TEST pengetest: bortkommet efter de 48 timer.",
+      p_billeder: [],
+    });
+    expect((sag as { kode: string }).kode).toBe("for_sent");
     await frigivAutomatisk();
     const b = await betaling(hA.betalingId);
     expect(b.frigivet_kl).not.toBeNull();
@@ -271,7 +290,7 @@ describe("fragtfirmaets leveringsmelding starter 48-timers uret", () => {
     const t = await handel(hD);
     expect(t.status).toBe("pakke_sendt");
     expect(t.modtaget_kilde).toBeNull();
-    expect(await startUrFraFragt(hD.tradeId)).toBe(0);
+    expect(await startUrFraFragt(hD.tradeId)).toEqual({ ok: true, startet: 0 });
   });
 
   it("Shipmondo uden SHIPMONDO_LEVERET_FRIGIVER: uret starter ikke (Filip, 15. okt. 2026)", async () => {
@@ -284,5 +303,173 @@ describe("fragtfirmaets leveringsmelding starter 48-timers uret", () => {
     expect(t.modtaget_kilde).toBeNull();
     // Den gamle besked ("Tryk Jeg har modtaget pakken").
     expect(await noegler(hE.tradeId)).toEqual([`fragt_leveret:${hE.tradeId}`]);
+  });
+
+  // Kalder starten direkte (leveret_kl er allerede sat) og tjekker, at intet
+  // ur blev startet.
+  async function ingenUr(h: TestHandel) {
+    const { data, error } = await admin().rpc("handel_fragt_leveret_start", { p_trade: h.tradeId });
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
+    const t = await handel(h);
+    expect(t.status).toBe("pakke_sendt");
+    expect(t.modtaget_kilde).toBeNull();
+  }
+
+  async function opdaterBetaling(h: TestHandel, felter: Record<string, unknown>) {
+    const { error } = await admin().from("betalinger").update(felter).eq("id", h.betalingId);
+    if (error) throw new Error(`betalinger: ${error.message}`);
+  }
+
+  async function opdaterHandel(h: TestHandel, felter: Record<string, unknown>) {
+    const { error } = await admin().from("trades").update(felter).eq("id", h.tradeId);
+    if (error) throw new Error(`trades: ${error.message}`);
+  }
+
+  it("blokerende indsigelse: leveringsmeldingen starter ikke uret", async () => {
+    await betal(hF);
+    await pakkeSendt(hF);
+    const fid = await forsendelse(hF);
+    await opdaterBetaling(hF, { indsigelse_kl: new Date().toISOString(), indsigelse_status: "needs_response" });
+    try {
+      await registrerForsendelseshaendelse(fid, leveret("test-leveret-F"), "sporing");
+      const t = await handel(hF);
+      expect(t.status).toBe("pakke_sendt");
+      expect(t.modtaget_kilde).toBeNull();
+      await ingenUr(hF);
+    } finally {
+      await opdaterBetaling(hF, { indsigelse_kl: null, indsigelse_status: null });
+    }
+  });
+
+  it("afhentning hos sælgeren: intet ur (heller ikke med en leveringsmelding)", async () => {
+    // trades.afhentning er låst fra auktionen, så det kræver sin egen handel.
+    await betal(hH);
+    await pakkeSendt(hH);
+    const { data: t0 } = await admin().from("trades").select("afhentning").eq("id", hH.tradeId).single();
+    expect(t0?.afhentning).toBe(true);
+    const { data: f, error } = await admin()
+      .from("forsendelser")
+      .insert({
+        trade_id: hH.tradeId,
+        type: "udgaaende",
+        fragtfirma: "dao",
+        status: "oprettet",
+        pakkestoerrelse: "lille",
+        sporingsnummer: `TEST${randomUUID().replace(/-/g, "").slice(0, 16)}`,
+        levering: "pakkeshop",
+      })
+      .select("id")
+      .single<{ id: string }>();
+    if (error || !f) {
+      // Databasen tillader ingen label på en afhentningshandel - så kan
+      // leveringsmeldingen slet ikke komme.
+      expect(error).not.toBeNull();
+    } else {
+      await registrerForsendelseshaendelse(f.id, leveret("test-leveret-H"), "sporing");
+    }
+    await ingenUr(hH);
+  });
+
+  it("refusion anmodet: intet ur", async () => {
+    await opdaterBetaling(hF, { refusion_anmodet_kl: new Date().toISOString() });
+    try {
+      await ingenUr(hF);
+    } finally {
+      await opdaterBetaling(hF, { refusion_anmodet_kl: null });
+    }
+  });
+
+  it("lukket sag: intet ur", async () => {
+    const nu = new Date().toISOString();
+    const { error } = await admin().from("sager").insert({
+      trade_id: hF.tradeId,
+      oprettet_af: hF.koeber.id,
+      type: "bortkommet",
+      beskrivelse: "TEST pengetest: lukket sag før leveringsmeldingen.",
+      status: "lukket",
+      beskyttelse: false,
+      handel_status_ved_oprettelse: "pakke_sendt",
+      afgjort_af: CHEF_ID,
+      afgjort_kl: nu,
+      begrundelse: "TEST pengetest: sagen er lukket.",
+    });
+    expect(error).toBeNull();
+    await ingenUr(hF);
+  });
+
+  it("14-dages-reglen: frigiver ikke før 48 timer efter leveringsmeldingen", async () => {
+    // Sendt for 15 dage siden; leveringsmeldingen er registreret lige nu
+    // (fragtfirmaets tidspunkt 20 timer siden) og startede ikke uret (lukket sag).
+    await opdaterHandel(hF, { sendt_kl: new Date(Date.now() - 15 * 24 * TIME).toISOString() });
+    await frigivAutomatisk();
+    let b = await betaling(hF.betalingId);
+    expect(b.frigivet_kl).toBeNull();
+    // Ingen staff-opgave ("ikke meldt leveret") - handlen venter bare.
+    expect(b.auto_frigiv_opgave_kl ?? null).toBeNull();
+    expect((await handel(hF)).status).toBe("pakke_sendt");
+
+    // Fragtfirmaets tidspunkt er over 48 timer gammelt, men registreringen
+    // hos os er ny: stadig intet (det seneste af de to tæller).
+    const { data: f } = await admin().from("forsendelser").select("id").eq("trade_id", hF.tradeId).single();
+    const fid = f!.id as string;
+    const { error: lFejl } = await admin()
+      .from("forsendelser")
+      .update({ leveret_kl: new Date(Date.now() - 50 * TIME).toISOString() })
+      .eq("id", fid);
+    expect(lFejl).toBeNull();
+    await frigivAutomatisk();
+    expect((await betaling(hF.betalingId)).frigivet_kl).toBeNull();
+
+    // Fixture: leveringsmeldingen blev først registreret for 50 timer siden
+    // (den første registrering tæller). Nu frigives pengene efter 14 dage.
+    const gammel = new Date(Date.now() - 50 * TIME).toISOString();
+    const { error: hFejl } = await admin().from("forsendelse_haendelser").insert({
+      forsendelse_id: fid,
+      type: "leveret",
+      tidspunkt: gammel,
+      noegle: `test-leveret-F-gammel-${randomUUID()}`,
+      beskrivelse: "TEST: leveringsmelding registreret for 50 timer siden",
+      kilde: "test",
+      modtaget_kl: gammel,
+    });
+    expect(hFejl).toBeNull();
+    await frigivAutomatisk();
+    b = await betaling(hF.betalingId);
+    expect(b.frigivet_kl).not.toBeNull();
+    expect((await handel(hF)).status).toBe("leveret");
+  });
+
+  it('"ikke afhentet" registreret: leveringsmeldingen starter ikke uret', async () => {
+    await betal(hG);
+    await pakkeSendt(hG);
+    const b = await betaling(hG.betalingId);
+    const total = Number(b.total_oere);
+    const gebyr = Number(b.koebergebyr_oere);
+    const besk = Number(b.beskyttelse_oere ?? 0);
+    const fragt = Number(b.fragt_oere);
+    // Fixture direkte i tabellen (ingen refusion sat i gang), så det kun er
+    // registreringen, der blokerer.
+    const { error } = await admin().from("handel_ikke_afhentet").insert({
+      trade_id: hG.tradeId,
+      betaling_id: hG.betalingId,
+      kilde: "staff",
+      medarbejder_id: CHEF_ID,
+      begrundelse: "TEST pengetest: pakken kom retur uden at være hentet.",
+      total_oere: total,
+      koebergebyr_oere: gebyr,
+      beskyttelse_oere: besk,
+      fragt_oere: fragt,
+      returfragt_oere: fragt,
+      refusion_oere: Math.max(0, total - gebyr - besk - fragt - fragt),
+    });
+    expect(error).toBeNull();
+    expect((await betaling(hG.betalingId)).refusion_anmodet_kl ?? null).toBeNull();
+    const fid = await forsendelse(hG);
+    await registrerForsendelseshaendelse(fid, leveret("test-leveret-G"), "sporing");
+    const t = await handel(hG);
+    expect(t.status).toBe("pakke_sendt");
+    expect(t.modtaget_kilde).toBeNull();
+    expect(await startUrFraFragt(hG.tradeId)).toEqual({ ok: true, startet: 0 });
   });
 });

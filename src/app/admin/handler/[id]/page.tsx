@@ -12,6 +12,10 @@ import { UUID_RE, handlingNavn, visAarsag } from "@/lib/moderationLog";
 import { sidsteStaffBeskedOmHandel } from "@/lib/admin/paamindelse";
 import { SAG_TYPE_NAVN, adminSagSti, type SagStatus, type SagType } from "@/lib/sager";
 import { SAG_STATUS_KORT } from "@/components/sager/visning";
+import RegistrerEkstraFragt, { type EkstraFragtForsendelse } from "@/components/admin/ekstraFragt/RegistrerEkstraFragt";
+import { EkstraFragtStatusBadge, oereKr as efKr } from "@/components/admin/ekstraFragt/visning";
+import { erAabenEkstraFragt, maalingTekst } from "@/lib/ekstraFragt/visning";
+import type { EkstraFragtStatus } from "@/lib/ekstraFragt/tekster";
 
 // Detaljeside for én handel (docs/ADMIN-REDESIGN.md 4.5, punkt 23): samler
 // handel, betaling, fragt, sager, chat og log ét sted. Tidligere linkede man
@@ -60,6 +64,7 @@ type Forsendelse = {
   id: string;
   type: "udgaaende" | "retur";
   status: string;
+  pakkestoerrelse: string | null;
   transportoer: string | null;
   sporingsnummer: string | null;
   opmaerksomhed_tekst: string | null;
@@ -116,7 +121,7 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
     erChef ? ", total_oere, udbetaling_oere, fragt_oere, koebergebyr_oere, beskyttelse_oere" : ""
   }`;
 
-  const [auktion, brugere, betaling, forsendelser, sager, log, haengende] = await Promise.all([
+  const [auktion, brugere, betaling, forsendelser, sager, log, haengende, ekstraFragtSvar] = await Promise.all([
     admin.from("auctions").select("id, titel").eq("id", h.auction_id).maybeSingle<{ id: string; titel: string }>(),
     admin.from("users").select("id, navn, email").in("id", [h.buyer_id, h.seller_id]),
     admin.from("betalinger").select(betalingKolonner).eq("trade_id", h.id).maybeSingle(),
@@ -124,7 +129,7 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
     (async () => {
       const hent = (k: string) =>
         admin.from("forsendelser").select(k).eq("trade_id", h.id).order("opdateret_kl", { ascending: false }).limit(10).returns<Forsendelse[]>();
-      const k = "id, type, status, sporingsnummer, opmaerksomhed_tekst, kraever_opmaerksomhed, opdateret_kl, returneret_kl, leveret_kl";
+      const k = "id, type, status, pakkestoerrelse, sporingsnummer, opmaerksomhed_tekst, kraever_opmaerksomhed, opdateret_kl, returneret_kl, leveret_kl";
       const r = await hent(`${k}, transportoer`);
       return r.error?.code === "42703" ? await hent(k) : r;
     })(),
@@ -137,6 +142,13 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
       .order("oprettet_kl", { ascending: false })
       .limit(30),
     admin.rpc("admin_haengende_handler"),
+    // Ekstra fragt (for lille pakke). Fejl (fx før migrationen) = ingen.
+    admin
+      .from("ekstra_fragt_regninger")
+      .select("id, forsendelse_id, status, beloeb_oere, frist, maalt_stoerrelse, maalt_vaegt_gram, maalt_maal, oprettet_kl")
+      .eq("trade_id", h.id)
+      .order("oprettet_kl", { ascending: false })
+      .limit(20),
   ]);
 
   const navne = new Map(((brugere.data ?? []) as { id: string; navn: string | null; email: string }[]).map((u) => [u.id, u]));
@@ -158,6 +170,32 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
   const sidstPaamindet = paamindBruger
     ? ((await sidsteStaffBeskedOmHandel(admin, [{ tradeId: h.id, brugerId: paamindBruger }]))?.get(`${h.id}:${paamindBruger}`) ?? null)
     : null;
+  type EkstraFragtRaekke = {
+    id: string;
+    forsendelse_id: string;
+    status: EkstraFragtStatus;
+    beloeb_oere: number;
+    frist: string;
+    maalt_stoerrelse: string | null;
+    maalt_vaegt_gram: number | null;
+    maalt_maal: string | null;
+    oprettet_kl: string;
+  };
+  const ekstraFragtMangler = !!ekstraFragtSvar.error;
+  const ekstraFragt = (ekstraFragtSvar.data ?? []) as EkstraFragtRaekke[];
+  // Pakker, der kan få en regning: sælgerens udgående pakke, labelen er lavet.
+  const ekstraFragtPakker: EkstraFragtForsendelse[] = h.afhentning
+    ? []
+    : fs
+        .filter((f) => f.type === "udgaaende" && f.status !== "opretter" && f.status !== "fejlet" && f.status !== "annulleret")
+        .map((f) => ({
+          id: f.id,
+          sporingsnummer: f.sporingsnummer,
+          transportoer: f.transportoer ?? null,
+          pakkestoerrelse: f.pakkestoerrelse ?? null,
+          harAabenRegning: ekstraFragt.some((r) => r.forsendelse_id === f.id && erAabenEkstraFragt(r.status)),
+        }));
+  const nuMs = new Date().getTime();
   const returMeldt = fs.some(
     (f) => f.type === "udgaaende" && f.status !== "annulleret" && f.status !== "fejlet" && !!f.returneret_kl && !f.leveret_kl,
   );
@@ -292,6 +330,32 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
           <Link href="/admin/handler?vis=fragt" className="mt-3 inline-flex text-sm font-semibold text-groen hover:underline">
             Løs det under Fragt →
           </Link>
+        )}
+      </Kort>
+
+      <Kort titel={`Ekstra fragt (${ekstraFragt.length})`}>
+        {ekstraFragtMangler ? (
+          <p className="text-sm text-tekst-daempet">Kræver migrationen 20261029020000_ekstra_fragt.sql.</p>
+        ) : (
+          <div className="space-y-3">
+            {ekstraFragt.length > 0 && (
+              <ul className="space-y-2">
+                {ekstraFragt.map((r) => (
+                  <li key={r.id}>
+                    <Link
+                      href={`/admin/ekstra-fragt/${r.id}`}
+                      className="flex flex-wrap items-center gap-2 rounded-lg border border-admin-kant px-3 py-2 text-sm hover:bg-admin-bg"
+                    >
+                      <EkstraFragtStatusBadge status={r.status} spaerrer={r.status === "afventer_betaling" && Date.parse(r.frist) <= nuMs} />
+                      <span className="font-semibold text-tekst tabular-nums">{efKr(r.beloeb_oere)}</span>
+                      <span className="text-tekst-daempet">· målt {maalingTekst(r)} · {tid(r.oprettet_kl)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <RegistrerEkstraFragt tradeId={h.id} forsendelser={ekstraFragtPakker} />
+          </div>
         )}
       </Kort>
 

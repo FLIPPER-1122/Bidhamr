@@ -190,3 +190,34 @@ export function kronerTilOere(v: string): number | null {
   const r = fortolkKroner(v);
   return "oere" in r ? r.oere : null;
 }
+
+// Hvorfor reklamationen ikke kan være åben/anmeldt/godkendt - årsagerne fra
+// fragt_reklamation_betingelser (migration 20261029010000). Bruges i staffs
+// fejlbeskeder og i dialogen "Kvittér for den ændrede sag".
+export const REKLAMATION_BETINGELSE: Record<string, string> = {
+  ikke_refunderet: "køberen har ikke fået pengene tilbage (refusionen er ikke bekræftet)",
+  saelger_beholder: "sælgeren har fået eller beholder salgsbeløbet (pengene er ikke hentet tilbage fra sælgeren)",
+  ikke_koebers_fordel: "sagen er ikke endeligt afgjort til køberens fordel",
+  anke_venter: "en anke venter på afgørelse",
+  ankefrist: "ankefristen er ikke udløbet endnu",
+  indpakning: "indpakningen er ikke vurderet som ordentlig",
+  ingen_forsendelse: "der er ingen pakke med DAO eller GLS på handlen",
+  afhentning: "varen blev afhentet",
+  ikke_skadet: "sagen handler ikke om skade under fragten",
+  ingen_handel: "handlen findes ikke",
+  ingen_vaerdi: "varens værdi kan ikke findes",
+};
+
+// Midlertidige årsager: staff må kvittere (sælgeren fortsætter), og systemet
+// markerer sagen ændret igen, hvis anken/fristen ender anderledes. Alle andre
+// årsager afviser kvitteringen (databasen: betingelser_ikke_opfyldt).
+export const REKLAMATION_KVITTER_TILLADT: readonly string[] = ["anke_venter", "ankefrist"];
+
+export function betingelseTekst(aarsag: string | null | undefined): string {
+  return (aarsag && REKLAMATION_BETINGELSE[aarsag]) || "betingelserne ikke er opfyldt";
+}
+
+// Må staff kvittere for den ændrede sag? null = betingelserne er opfyldt.
+export function kanKvittere(aarsag: string | null): boolean {
+  return aarsag === null || REKLAMATION_KVITTER_TILLADT.includes(aarsag);
+}

@@ -124,6 +124,16 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
   const nu = new Date().getTime();
   const stille = erStille(r.status, r.fremdrift_kl, nu);
   const aendret = erSagAendret(r.status, r.sag_aendret_kl, r.sag_aendret_kvitteret_kl);
+  // Hvorfor sagen er ændret (samme tjek som databasen bruger, når staff
+  // kvitterer). undefined = ukendt (opslaget fejlede), null = opfyldt igen.
+  let aendretAarsag: string | null | undefined;
+  if (aendret) {
+    const { data: bet, error: betFejl } = await admin
+      .rpc("fragt_reklamation_betingelser", { p_sag: r.sag_id })
+      .maybeSingle<{ ok: boolean; aarsag: string | null }>();
+    if (betFejl) console.error("Reklamation: betingelserne kunne ikke hentes:", betFejl.message);
+    else if (bet) aendretAarsag = bet.ok ? null : (bet.aarsag ?? "");
+  }
   const saelgerBilleder = p.billeder.filter((b) => b.kilde === "saelger_pakke");
   const koeberBilleder = p.billeder.filter((b) => b.kilde === "koeber_skade");
 
@@ -166,6 +176,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
           sagsnummer={r.transportoerens_sagsnummer}
           inhabil={inhabil}
           sagAendret={aendret}
+          sagAendretAarsag={aendretAarsag}
         />
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-admin-kant pt-4 text-sm">
           <Link href={adminSagSti(r.sag_id)} className="inline-flex min-h-11 items-center font-semibold text-groen hover:underline sm:min-h-0">

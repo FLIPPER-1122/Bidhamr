@@ -1578,8 +1578,14 @@ async function udfoerHandelseffekter(admin: Admin, forsendelseId: string): Promi
         const { startUrFraFragt, urStartetAfFragt } = await import("@/lib/betaling/fragtUr");
         // Idempotent (databasen + nøgle + fragt_ur_besked_kl) - også når
         // cron gentager efter et nedbrud, og uret allerede er startet.
-        await startUrFraFragt(t.id);
-        if (await urStartetAfFragt(t.id)) {
+        const start = await startUrFraFragt(t.id);
+        const fraFragt = start.ok ? await urStartetAfFragt(t.id) : null;
+        // Ukendt (databasen fejlede): ingen besked og ingen markering nu -
+        // ellers kunne køberen få både den gamle besked og (når cron senere
+        // starter uret) "48 timer til at melde en fejl". Cron prøver igen,
+        // fordi leveret_besked_kl stadig er tom.
+        if (fraFragt === null) return sendt;
+        if (fraFragt) {
           await admin.rpc("forsendelse_marker_besked", { p_id: f.id, p_felt: "leveret", p_note: null });
           return sendt + 1;
         }
@@ -2271,6 +2277,9 @@ export async function koerFragtCron(): Promise<{
         "and(afleveret_kl.not.is.null,afleveret_besked_kl.is.null)," +
           "and(leveret_kl.not.is.null,leveret_besked_kl.is.null)",
       )
+      // Nyeste først, så en forsendelse, der bliver ved med at fejle, ikke
+      // blokerer beskeder til nye handler.
+      .order("opdateret_kl", { ascending: false })
       .limit(20);
     for (const m of mangler ?? []) {
       if (Date.now() - start > CRON_BUDGET_MS) break;

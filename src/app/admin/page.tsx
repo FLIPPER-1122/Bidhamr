@@ -176,6 +176,17 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
       href: "/admin/reklamationer?vis=stille",
     });
   }
+  // Ekstra fragt (for lille pakke): indsigelser skal afgøres (rødt).
+  if (s.ekstraFragtIndsigelser > 0) {
+    r.push({
+      id: "ekstra-fragt-indsigelse",
+      alvor: "roed",
+      titel: "Indsigelser mod ekstra fragt",
+      antal: s.ekstraFragtIndsigelser,
+      forklaring: "Sælgeren er uenig i fragtfirmaets måling – frafald eller fasthold",
+      href: "/admin/ekstra-fragt?vis=indsigelse",
+    });
+  }
   if (h && erAdmin) {
     r.push({ id: "anker", alvor: "gul", titel: "Anker", antal: h.anker, forklaring: "En part er uenig i afgørelsen – se på den igen", href: "/admin/sager?vis=anker" });
   }
@@ -207,6 +218,7 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
     r.push(
       { id: "retur", alvor: "graa", titel: "Returfrist udløbet", antal: h.retur_udloebet, forklaring: "Køber har ikke sendt varen retur inden for 7 dage", href: "/admin/sager?vis=afventer_retur" },
       { id: "reklamation-venter", alvor: "graa", titel: "Reklamationer venter på sælger", antal: s.reklamationAfventer, forklaring: "Sælgeren har ikke anmeldt skaden hos fragtfirmaet endnu", href: "/admin/reklamationer?vis=afventer_saelger" },
+      { id: "ekstra-fragt-spaerret", alvor: "graa", titel: "Ekstra fragt ikke betalt", antal: s.ekstraFragtForfaldne, forklaring: "Fristen er overskredet – sælgeren er spærret for nye auktioner", href: "/admin/ekstra-fragt?vis=spaerret" },
       { id: "ubetalte", alvor: "graa", titel: "Ubetalte vindere", antal: s.ubetalte, forklaring: "Vinderen betalte ikke til tiden – advar eller afvis", href: "/admin/ubetalte" },
       {
         id: "ikke-sendt",
