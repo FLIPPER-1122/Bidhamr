@@ -65,6 +65,8 @@ export async function opretHandel(o: {
   beskyttelse?: boolean;
   saelger?: PengeBruger;
   koeber?: PengeBruger;
+  // Kun afhentning hos sælgeren (auktion uden forsendelse, ingen fragt).
+  afhentning?: boolean;
 }): Promise<TestHandel> {
   const saelger = o.saelger ?? SAELGER;
   const koeber = o.koeber ?? KOEBER;
@@ -85,14 +87,14 @@ export async function opretHandel(o: {
       kategori: "Andet",
       postnummer: "2100",
       lokation: "København Ø",
-      forsendelse_mulig: true,
-      afhentning_mulig: false,
+      forsendelse_mulig: !o.afhentning,
+      afhentning_mulig: !!o.afhentning,
       stand: "god",
       varighed_dage: 3,
       forbudt_bekraeftet: true,
       pakkestoerrelse: "lille",
       vaegt_gram: 500,
-      fragt_pakkeshop_oere: PAKKESHOP_FRAGT_OERE,
+      fragt_pakkeshop_oere: o.afhentning ? null : PAKKESHOP_FRAGT_OERE,
       slutter_kl: slut,
       status: "afsluttet",
       vinder_id: koeber.id,
@@ -115,7 +117,8 @@ export async function opretHandel(o: {
     .single<{ id: string }>();
   if (tFejl || !t) throw new Error(`handel: ${tFejl?.message}`);
 
-  const { error: lFejl } = await db.from("handel_levering").insert({
+  const fragtOere = o.afhentning ? 0 : PAKKESHOP_FRAGT_OERE;
+  const { error: lFejl } = o.afhentning ? { error: null } : await db.from("handel_levering").insert({
     trade_id: t.id,
     maade: "pakkeshop",
     fragtfirma: "shipmondo",
@@ -132,7 +135,7 @@ export async function opretHandel(o: {
   });
   if (lFejl) throw new Error(`levering: ${lFejl.message}`);
 
-  const x = beregn(o.budOere, !!o.beskyttelse, PAKKESHOP_FRAGT_OERE);
+  const x = beregn(o.budOere, !!o.beskyttelse, fragtOere);
   const { data: b, error: bFejl } = await db
     .from("betalinger")
     .insert({
@@ -142,7 +145,7 @@ export async function opretHandel(o: {
       seller_id: saelger.id,
       bud_oere: o.budOere,
       koebergebyr_oere: x.koeb,
-      fragt_oere: PAKKESHOP_FRAGT_OERE,
+      fragt_oere: fragtOere,
       beskyttelse: !!o.beskyttelse,
       beskyttelse_oere: x.besk,
       total_oere: x.total,

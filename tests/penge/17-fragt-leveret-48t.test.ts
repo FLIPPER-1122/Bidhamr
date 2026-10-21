@@ -34,8 +34,9 @@ let hB: TestHandel; // sag (bortkommet) før leveringsmeldingen -> intet ur
 let hC: TestHandel; // uret startet -> køberen melder bortkommet -> intet frigives
 let hD: TestHandel; // returneret, derefter "leveret" -> intet ur
 let hE: TestHandel; // Shipmondo uden flaget -> intet ur
-let hF: TestHandel; // indsigelse, afhentning, refusion, lukket sag -> intet ur; 14 dage venter 48 t
+let hF: TestHandel; // indsigelse, refusion, lukket sag -> intet ur; 14 dage venter 48 t
 let hG: TestHandel; // "ikke afhentet" registreret -> intet ur
+let hH: TestHandel; // afhentning hos sælgeren -> intet ur
 
 beforeAll(async () => {
   await forberedSaelger();
@@ -46,10 +47,11 @@ beforeAll(async () => {
   hE = await opretHandel({ navn: "fragt-48t-shipmondo", budOere: 20_000 });
   hF = await opretHandel({ navn: "fragt-48t-blokeret", budOere: 20_000 });
   hG = await opretHandel({ navn: "fragt-48t-ikke-afhentet", budOere: 20_000 });
+  hH = await opretHandel({ navn: "fragt-48t-afhentning", budOere: 20_000, afhentning: true });
 });
 
 afterAll(async () => {
-  for (const h of [hA, hB, hC, hD, hE, hF, hG]) if (h) await rydOp(h);
+  for (const h of [hA, hB, hC, hD, hE, hF, hG, hH]) if (h) await rydOp(h);
 });
 
 type Handel = {
@@ -340,13 +342,33 @@ describe("fragtfirmaets leveringsmelding starter 48-timers uret", () => {
     }
   });
 
-  it("afhentning hos sælgeren: intet ur", async () => {
-    await opdaterHandel(hF, { afhentning: true });
-    try {
-      await ingenUr(hF);
-    } finally {
-      await opdaterHandel(hF, { afhentning: false });
+  it("afhentning hos sælgeren: intet ur (heller ikke med en leveringsmelding)", async () => {
+    // trades.afhentning er låst fra auktionen, så det kræver sin egen handel.
+    await betal(hH);
+    await pakkeSendt(hH);
+    const { data: t0 } = await admin().from("trades").select("afhentning").eq("id", hH.tradeId).single();
+    expect(t0?.afhentning).toBe(true);
+    const { data: f, error } = await admin()
+      .from("forsendelser")
+      .insert({
+        trade_id: hH.tradeId,
+        type: "udgaaende",
+        fragtfirma: "dao",
+        status: "oprettet",
+        pakkestoerrelse: "lille",
+        sporingsnummer: `TEST${randomUUID().replace(/-/g, "").slice(0, 16)}`,
+        levering: "pakkeshop",
+      })
+      .select("id")
+      .single<{ id: string }>();
+    if (error || !f) {
+      // Databasen tillader ingen label på en afhentningshandel - så kan
+      // leveringsmeldingen slet ikke komme.
+      expect(error).not.toBeNull();
+    } else {
+      await registrerForsendelseshaendelse(f.id, leveret("test-leveret-H"), "sporing");
     }
+    await ingenUr(hH);
   });
 
   it("refusion anmodet: intet ur", async () => {
