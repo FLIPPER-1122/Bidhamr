@@ -20,9 +20,9 @@ const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 
 const KODE: Record<string, string> = {
   ingen_adgang: "Log ind, og prøv igen.",
-  ikke_fundet: "Reklamationen findes ikke.",
-  forkert_status: "Reklamationen er allerede afsluttet. Genindlæs siden.",
-  for_lang_tekst: "Teksten er for lang.",
+  ikke_fundet: "Vi kan ikke finde reklamationen. Genindlæs siden, og prøv igen.",
+  forkert_status: "Reklamationen er ændret i mellemtiden. Genindlæs siden for at se, hvordan den står nu.",
+  for_lang_tekst: "Teksten er for lang. Gør den kortere, og prøv igen.",
 };
 
 async function koer(navn: string, rpc: string, args: Record<string, unknown>, tradeId?: string): Promise<MinReklamationSvar> {
@@ -38,7 +38,7 @@ async function koer(navn: string, rpc: string, args: Record<string, unknown>, tr
     const svar = (data ?? {}) as Record<string, unknown>;
     if (svar.kode !== "ok") {
       if (svar.kode === "ugyldigt_beloeb" && typeof svar.maks_oere === "number") {
-        return { fejl: `Beløbet kan højst være ${kroner(svar.maks_oere)}.` };
+        return { fejl: `Beløbet kan højst være ${kroner(svar.maks_oere)}. Skriv det beløb, fragtfirmaet har godkendt.` };
       }
       return { fejl: KODE[String(svar.kode ?? "")] ?? GENERISK };
     }
@@ -63,7 +63,7 @@ export async function reklamationAnmeldt(reklamationId: string, sagsnummer?: str
 export async function reklamationGodkendt(reklamationId: string, beloebKr: string, tradeId?: string) {
   if (!UUID.test(reklamationId)) return { fejl: KODE.ikke_fundet };
   const oere = kronerTilOere(String(beloebKr ?? ""));
-  if (oere === null) return { fejl: "Skriv beløbet i kroner, fx 1.250,00." };
+  if (oere === null) return { fejl: "Skriv det godkendte beløb i kroner, fx 1.250,00." };
   return koer("godkendt", "mit_fragt_reklamation_godkendt", { p_reklamation: reklamationId, p_beloeb_oere: oere }, tradeId);
 }
 

@@ -146,21 +146,23 @@ function byggTekst(p: Omit<Reklamationspakke, "tekst">): string {
   const linjer = [
     `Skadeanmeldelse – pakke sendt med ${p.transportoerNavn}`,
     "",
+    `Jeg anmelder en skade på en pakke, som jeg har sendt med ${p.transportoerNavn} via BidHamr (bidhamr.dk). Varen var pakket forsvarligt, da jeg sendte den, men den var skadet, da modtageren fik pakken.`,
+    "",
     `Trackingnummer: ${p.trackingnummer ?? "–"}`,
     p.forsendelsesId ? `Forsendelses-id: ${p.forsendelsesId}` : null,
-    `Afsender: ${partTekst(p.afsender)}`,
+    `Afsender (mig): ${partTekst(p.afsender)}`,
     `Modtager: ${partTekst(p.modtager)}`,
     `Afsendt: ${datoTid(p.afsendtKl)}`,
     `Leveret: ${datoTid(p.leveretKl)}`,
     "",
     `Indhold: ${p.varetitel ?? "–"}`,
     `Varens værdi: ${kroner(p.varensVaerdiOere)}`,
-    `Krav: ${kroner(p.kravbeloebOere)}`,
+    `Jeg kræver i erstatning: ${kroner(p.kravbeloebOere)}`,
     "",
-    "Skadebeskrivelse (fra modtageren):",
+    "Modtagerens beskrivelse af skaden:",
     p.skadebeskrivelse ?? "–",
     "",
-    `Vedlagt: ${antal("saelger_pakke")} billeder af indpakningen (taget af afsenderen før afsendelse) og ${antal("koeber_skade")} billeder af skaden (taget af modtageren).`,
+    `Vedlagt: ${antal("saelger_pakke")} billeder af indpakningen, som jeg tog, før jeg sendte pakken, og ${antal("koeber_skade")} billeder af skaden, som modtageren tog.`,
   ];
   return linjer.filter((l) => l !== null).join("\n");
 }
