@@ -13,6 +13,13 @@ import { hentMineAktiveTilbud } from "@/app/actions/andenchanceBruger";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
 import { sagLink, type SagStatus } from "@/lib/sager";
 import ReklamationMaerke from "@/components/reklamation/ReklamationMaerke";
+import { hentMineEkstraFragtRegninger, type MinEkstraFragt } from "@/app/actions/ekstraFragt";
+import EkstraFragtMaerke from "@/components/ekstraFragt/EkstraFragtMaerke";
+import EkstraFragtBjaelke from "@/components/ekstraFragt/EkstraFragtBjaelke";
+import { ekstraFragtHref, erAabenEkstraFragt } from "@/lib/ekstraFragt/visning";
+
+// Åbne regninger for ekstra fragt (for lille pakke): handel-id -> regning.
+type AabneEkstraFragt = Map<string, MinEkstraFragt>;
 
 // Åbne reklamationer hos fragtfirmaet (sælgeren skal handle): handel-id -> status.
 type AabneReklamationer = Map<string, "afventer_saelger" | "anmeldt">;
@@ -57,6 +64,7 @@ function harAktivSag(h: HandelRaekke) {
 // Aktive handler grupperes efter, hvad der skal ske nu - det, du selv skal
 // gøre, står øverst. Samme regler som handelssiden (/mine-handler/[id]).
 type GruppeId =
+  | "ekstra_fragt"
   | "erstatning"
   | "betale"
   | "sende"
@@ -68,6 +76,7 @@ type GruppeId =
   | "paa_vej";
 
 const GRUPPER: { id: GruppeId; titel: string; tekst: string }[] = [
+  { id: "ekstra_fragt", titel: "Betal ekstra fragt", tekst: "Fragtfirmaet målte pakken større end den størrelse, du valgte." },
   { id: "erstatning", titel: "Få erstatning fra fragtfirmaet", tekst: "Varen blev skadet under fragten. Anmeld skaden hos fragtfirmaet, og søg erstatning." },
   { id: "betale", titel: "Du skal betale", tekst: "Betal inden fristen, så handlen ikke annulleres." },
   { id: "sende", titel: "Du skal sende", tekst: "Køberen har betalt. Send pakken inden fristen." },
@@ -79,7 +88,8 @@ const GRUPPER: { id: GruppeId; titel: string; tekst: string }[] = [
   { id: "paa_vej", titel: "På vej", tekst: "Pakken er sendt." },
 ];
 
-function gruppeFor(h: HandelRaekke, brugerId: string, reklamationer: AabneReklamationer): GruppeId {
+function gruppeFor(h: HandelRaekke, brugerId: string, reklamationer: AabneReklamationer, ekstraFragt: AabneEkstraFragt): GruppeId {
+  if (h.seller_id === brugerId && ekstraFragt.get(h.id)?.status === "afventer_betaling") return "ekstra_fragt";
   if (h.seller_id === brugerId && reklamationer.has(h.id)) return "erstatning";
   if (harAktivSag(h)) return "sager";
   const erKoeber = h.buyer_id === brugerId;
@@ -102,11 +112,14 @@ function HandelKort({
   handel,
   brugerId,
   reklamation = null,
+  ekstraFragt = null,
 }: {
   handel: HandelRaekke;
   brugerId: string;
   reklamation?: "afventer_saelger" | "anmeldt" | null;
+  ekstraFragt?: MinEkstraFragt | null;
 }) {
+  const skalBetaleEkstra = ekstraFragt?.status === "afventer_betaling";
   const erKoeber = handel.buyer_id === brugerId;
   const billede = handel.auctions?.billeder?.[0] ?? null;
   const sag = nyesteSag(handel);
@@ -114,7 +127,15 @@ function HandelKort({
 
   return (
     <Link
-      href={reklamation ? `/mine-handler/${handel.id}#reklamation` : sagAktiv ? sagLink(handel.id) : `/mine-handler/${handel.id}`}
+      href={
+        ekstraFragt
+          ? ekstraFragtHref(handel.id, { betal: skalBetaleEkstra })
+          : reklamation
+            ? `/mine-handler/${handel.id}#reklamation`
+            : sagAktiv
+              ? sagLink(handel.id)
+              : `/mine-handler/${handel.id}`
+      }
       className="flex gap-3 rounded-[14px] border border-kant bg-white p-4 shadow-kort transition-[box-shadow,border-color] duration-200 ease-out hover:border-kant-staerk hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:gap-4"
     >
       <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-groen-lys">
@@ -156,10 +177,19 @@ function HandelKort({
             </span>
           )}
           {reklamation && <ReklamationMaerke status={reklamation} />}
+          {ekstraFragt && (
+            <EkstraFragtMaerke status={ekstraFragt.status} beloebOere={Number(ekstraFragt.beloeb_oere)} spaerrer={ekstraFragt.spaerrer} />
+          )}
           {/* Hele kortet er linket til handelssiden (med chatten); dette er
               en synlig markering. Et <Link> her ville være et link i et link. */}
           <span className="ml-auto inline-flex items-center gap-1 text-[13px] font-semibold text-groen">
-            {reklamation === "afventer_saelger" ? "Få erstatning" : sagAktiv ? "Åbn sag" : "Åbn handel"}
+            {skalBetaleEkstra
+              ? "Betal ekstra fragt"
+              : reklamation === "afventer_saelger"
+                ? "Få erstatning"
+                : sagAktiv
+                  ? "Åbn sag"
+                  : "Åbn handel"}
             <Ikon navn="hoejre" className="h-4 w-4" />
           </span>
         </div>
@@ -200,7 +230,7 @@ export default async function MineHandlerListe({
     "id, status, amount, created_at, buyer_id, seller_id, afhentning, auctions(titel, billeder), sager(id, status, oprettet_kl)";
   const aktiveStatusser = `(${AKTIVE_STATUSSER.join(",")})`;
   const egne = `buyer_id.eq.${brugerId},seller_id.eq.${brugerId}`;
-  const [aktiveSvar, afsluttedeSvar, sagSvar, tilbud, reklamationSvar] = await Promise.all([
+  const [aktiveSvar, afsluttedeSvar, sagSvar, tilbud, reklamationSvar, ekstraFragtSvar] = await Promise.all([
     supabase
       .from("trades")
       .select(kolonner)
@@ -230,7 +260,16 @@ export default async function MineHandlerListe({
     // Sælgerens reklamationer hos fragtfirmaet (få - én pr. sag om
     // transportskade). Fejl (fx før migrationen) = ingen.
     supabase.rpc("mine_fragt_reklamationer").then((r) => (r.error ? [] : ((r.data ?? []) as { trade_id: string; status: string }[]))),
+    // Sælgerens regninger for ekstra fragt (få). null ved fejl = ingen.
+    hentMineEkstraFragtRegninger(),
   ]);
+  const ekstraFragt: AabneEkstraFragt = new Map();
+  for (const r of ekstraFragtSvar ?? []) {
+    if (!erAabenEkstraFragt(r.status)) continue;
+    const kendt = ekstraFragt.get(r.trade_id);
+    // Den, der skal betales, vinder over en, der behandles/er under indsigelse.
+    if (!kendt || (kendt.status !== "afventer_betaling" && r.status === "afventer_betaling")) ekstraFragt.set(r.trade_id, r);
+  }
   const reklamationer: AabneReklamationer = new Map();
   for (const r of reklamationSvar) {
     if ((r.status === "afventer_saelger" || r.status === "anmeldt") && !reklamationer.has(r.trade_id)) {
@@ -240,7 +279,7 @@ export default async function MineHandlerListe({
   // Handler med en åben reklamation, der ikke allerede er med (de er typisk
   // afsluttede og kan ligge længere nede end den viste side).
   const kendte = new Set([...(aktiveSvar.data ?? []), ...(sagSvar.data ?? [])].map((h) => h.id));
-  const manglerIds = [...reklamationer.keys()].filter((id) => !kendte.has(id)).slice(0, 50);
+  const manglerIds = [...new Set([...ekstraFragt.keys(), ...reklamationer.keys()])].filter((id) => !kendte.has(id)).slice(0, 50);
   const reklamationHandler = manglerIds.length
     ? ((
         await supabase
@@ -272,16 +311,22 @@ export default async function MineHandlerListe({
   const medSag = (sagSvar.data ?? []).filter(harAktivSag);
   const grupper = new Map<GruppeId, HandelRaekke[]>();
   const sete = new Set<string>();
-  for (const h of [...reklamationHandler, ...aktive, ...medSag, ...afsluttede.filter((a) => reklamationer.has(a.id))]) {
+  for (const h of [
+    ...reklamationHandler,
+    ...aktive,
+    ...medSag,
+    ...afsluttede.filter((a) => reklamationer.has(a.id) || ekstraFragt.has(a.id)),
+  ]) {
     if (sete.has(h.id)) continue;
     sete.add(h.id);
-    const g = gruppeFor(h, brugerId, reklamationer);
+    const g = gruppeFor(h, brugerId, reklamationer, ekstraFragt);
     grupper.set(g, [...(grupper.get(g) ?? []), h]);
   }
   const antalAktive = sete.size;
 
   return (
     <div>
+      <EkstraFragtBjaelke regninger={ekstraFragtSvar} className="mb-6" />
       {tilbud.length > 0 && (
         <section className="mb-8" aria-labelledby="tilbud-titel">
           <h2 id="tilbud-titel" className="text-[20px] leading-tight lg:text-[22px]">Tilbud til dig</h2>
@@ -335,7 +380,7 @@ export default async function MineHandlerListe({
                     </div>
                     <div className="mt-2 space-y-2">
                       {liste.map((h) => (
-                        <HandelKort key={h.id} handel={h} brugerId={brugerId} reklamation={h.seller_id === brugerId ? (reklamationer.get(h.id) ?? null) : null} />
+                        <HandelKort key={h.id} handel={h} brugerId={brugerId} reklamation={h.seller_id === brugerId ? (reklamationer.get(h.id) ?? null) : null} ekstraFragt={h.seller_id === brugerId ? (ekstraFragt.get(h.id) ?? null) : null} />
                       ))}
                     </div>
                   </section>
@@ -351,7 +396,7 @@ export default async function MineHandlerListe({
               </h2>
               <div className="mt-3 space-y-2">
                 {afsluttede.map((h) => (
-                  <HandelKort key={h.id} handel={h} brugerId={brugerId} reklamation={h.seller_id === brugerId ? (reklamationer.get(h.id) ?? null) : null} />
+                  <HandelKort key={h.id} handel={h} brugerId={brugerId} reklamation={h.seller_id === brugerId ? (reklamationer.get(h.id) ?? null) : null} ekstraFragt={h.seller_id === brugerId ? (ekstraFragt.get(h.id) ?? null) : null} />
                 ))}
               </div>
               {afsluttede.length < antalAfsluttede && (

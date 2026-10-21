@@ -36,6 +36,9 @@ export type MenuTaellere = {
   // Reklamationer hos fragtfirmaet. Kritisk = stået stille / sagen ændret -> rødt.
   reklamationer: number;
   reklamationerKritisk: boolean;
+  // Ekstra fragt (for lille pakke). Kritisk = indsigelser venter på afgørelse -> rødt.
+  ekstraFragt: number;
+  ekstraFragtKritisk: boolean;
   betalinger: number;
   brugere: number;
   henvendelser: number;
@@ -50,6 +53,8 @@ export const INGEN_TAELLERE: MenuTaellere = {
   sager: 0,
   reklamationer: 0,
   reklamationerKritisk: false,
+  ekstraFragt: 0,
+  ekstraFragtKritisk: false,
   betalinger: 0,
   brugere: 0,
   henvendelser: 0,
@@ -58,7 +63,7 @@ export const INGEN_TAELLERE: MenuTaellere = {
   erhverv: 0,
 };
 
-type TalNoegle = Exclude<keyof MenuTaellere, "anmeldelserKritisk" | "reklamationerKritisk">;
+type TalNoegle = Exclude<keyof MenuTaellere, "anmeldelserKritisk" | "reklamationerKritisk" | "ekstraFragtKritisk">;
 
 type MenuPunkt = {
   href: string;
@@ -96,6 +101,7 @@ const GRUPPER: MenuGruppe[] = [
       { href: "/admin/handler", label: "Handler", minRolle: "medarbejder", ogsaa: ["/admin/ubetalte"], tal: "handler", tone: "graa" },
       { href: "/admin/sager", label: "Sager", minRolle: "medarbejder", tal: "sager", tone: "gul" },
       { href: "/admin/reklamationer", label: "Reklamationer", minRolle: "medarbejder", tal: "reklamationer", tone: "graa" },
+      { href: "/admin/ekstra-fragt", label: "Ekstra fragt", minRolle: "medarbejder", tal: "ekstraFragt", tone: "graa" },
       { href: "/admin/betalinger", label: "Betalingsfejl", minRolle: "medarbejder", tal: "betalinger", tone: "gul" },
       // Pengetal og indtjening: KUN chef (siderne giver 404 for alle andre).
       { href: "/admin/penge", label: "Penge", minRolle: "chef", ogsaa: ["/admin/fakturaer", "/admin/dac7"] },
@@ -276,7 +282,8 @@ export default function AdminSidebar({
     const aktiv = p.href === aktivHref;
     const antal = p.tal ? taellere[p.tal] : 0;
     const tone =
-      (p.tal === "anmeldelser" && taellere.anmeldelserKritisk) || (p.tal === "reklamationer" && taellere.reklamationerKritisk)
+      (p.tal === "anmeldelser" && taellere.anmeldelserKritisk) || (p.tal === "reklamationer" && taellere.reklamationerKritisk) ||
+      (p.tal === "ekstraFragt" && taellere.ekstraFragtKritisk)
         ? "roed"
         : (p.tone ?? "graa");
     return (

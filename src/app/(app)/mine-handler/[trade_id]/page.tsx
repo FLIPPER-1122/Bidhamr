@@ -16,16 +16,18 @@ export default async function HandelDetaljePage({
   searchParams,
 }: {
   params: Promise<{ trade_id: string }>;
-  searchParams: Promise<{ betaling?: string; vis?: string; returfragt?: string }>;
+  searchParams: Promise<{ betaling?: string; vis?: string; returfragt?: string; ekstrafragt?: string; payment_intent?: string }>;
 }) {
   const { trade_id } = await params;
-  const { betaling, vis, returfragt } = await searchParams;
+  const { betaling, vis, returfragt, ekstrafragt, payment_intent } = await searchParams;
   return (
     <HandelDetalje
       trade_id={trade_id}
       betalingParam={betaling}
       visHandel={vis === "handel"}
       returfragtRetur={returfragt === "retur"}
+      ekstraFragtParam={typeof ekstrafragt === "string" ? ekstrafragt : undefined}
+      ekstraFragtPi={ekstrafragt === "retur" && typeof payment_intent === "string" ? payment_intent : undefined}
     />
   );
 }

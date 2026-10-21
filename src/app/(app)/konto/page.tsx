@@ -22,6 +22,8 @@ import { MITID } from "@/lib/tekster/mitid";
 import { BOOST_TEKST } from "@/lib/boost/tekster";
 import { KONKURRENCE_KONTO } from "@/lib/tekster/konkurrence";
 import { START_MAANED } from "@/lib/konkurrence/regler";
+import { hentMineEkstraFragtRegninger } from "@/app/actions/ekstraFragt";
+import EkstraFragtBjaelke from "@/components/ekstraFragt/EkstraFragtBjaelke";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +92,7 @@ export default async function KontoSide({
     { data: dac7Data },
     { data: pointData },
     { data: lodData, error: lodFejl },
+    ekstraFragt,
   ] = await Promise.all([
     sessionId ? bekraeftetBruger(sessionId) : hentBruger(),
     hentBetalingsindstillinger(),
@@ -114,6 +117,8 @@ export default async function KontoSide({
     supabase.rpc("mine_point"),
     // Månedens lodtrækning: egne lod i den aktuelle måned (auth.uid()).
     supabase.rpc("mine_konkurrence_lod"),
+    // Ubetalt ekstra fragt (for lille pakke): bjælke øverst (kun egne, auth.uid()).
+    hentMineEkstraFragtRegninger(),
   ]);
   const point = pointData as
     | { saldo: number; kan_bruge: boolean; pakke: { point: number; pris_oere: number } }
@@ -157,6 +162,7 @@ export default async function KontoSide({
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
       <h1 className="text-[26px] leading-tight sm:text-[32px]">Min konto</h1>
       <KontoNavigation />
+      <EkstraFragtBjaelke regninger={ekstraFragt} className="mt-6" />
 
       {/* Ikke MitID-verificeret: fremtrædende kort øverst (kræves før første
           bud og første auktion). Firmakonti når aldrig hertil (proxyen sender

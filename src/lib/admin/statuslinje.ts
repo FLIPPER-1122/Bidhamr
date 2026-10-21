@@ -38,6 +38,8 @@ export type KoeTal = {
   // Reklamationer hos fragtfirmaet, der kræver staff (begge røde).
   reklamationStille?: number;
   reklamationSagAendret?: number;
+  // Indsigelser mod ekstra fragt (rødt - staff skal afgøre dem).
+  ekstraFragtIndsigelser?: number;
 };
 
 export function koePunkter(t: KoeTal): StatusPunkt[] {
@@ -61,6 +63,13 @@ export function koePunkter(t: KoeTal): StatusPunkt[] {
       tone: "roed",
       tekst: `${flertal(t.reklamationStille ?? 0, "reklamation", "reklamationer")} har stået stille i 14 dage`,
       href: "/admin/reklamationer?vis=stille",
+    });
+  }
+  if ((t.ekstraFragtIndsigelser ?? 0) > 0) {
+    p.push({
+      tone: "roed",
+      tekst: `${flertal(t.ekstraFragtIndsigelser ?? 0, "indsigelse", "indsigelser")} mod ekstra fragt venter`,
+      href: "/admin/ekstra-fragt?vis=indsigelse",
     });
   }
   if (t.betalinger > 0) {
