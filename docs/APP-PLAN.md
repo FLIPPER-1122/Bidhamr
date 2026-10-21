@@ -482,6 +482,7 @@ WebBrowser.openAuthSessionAsync(url, "bidhamr://mitid")
 | `BHU01` | "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg." |
 | `BHU02` / `BHU04` | Udbetalingskontoen er ikke godkendt / sælgeren er spærret |
 | `BHD01` | DAC7-oplysninger mangler (`dac7_mangler: …`) + link til Skatteoplysninger |
+| `BHX01` | Ubetalt regning for ekstra fragt efter fristen (`ekstra_fragt_ubetalt: …`) + link til handlen (`mine_ekstra_fragt_regninger`) |
 | `BHV01` / `BHV02` | MitID / brugerbetingelser |
 | `BHB05` | Startprisen kan højst være 500.000 kr. |
 | `BHE02` / `BHE03` / `BHE04` | Firma: intet abonnement / ugekvote brugt / GPSR-felter mangler |

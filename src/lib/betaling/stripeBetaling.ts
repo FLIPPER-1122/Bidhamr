@@ -1927,6 +1927,20 @@ async function alarmIndsigelse(d: Stripe.Dispute, piId: string | null, chId: str
         });
         return;
       }
+      // Ekstra fragt (sælgerens betaling til platformen): staff svarer banken i
+      // Stripe med regningen og fragtfirmaets faktura som bevis. Tabes
+      // indsigelsen, trækkes intet fra sælgeren automatisk - staff afgør.
+      const { ekstraFragtForCharge } = await import("@/lib/betaling/ekstraFragt");
+      const ef = await ekstraFragtForCharge(chId);
+      if (ef) {
+        await alarmPrTilfaelde({
+          noegle: `indsigelse-ekstra-fragt:${d.id}`,
+          hvor: "betaling/indsigelse-ekstra-fragt",
+          fejl: `Indsigelse ${d.id} (status '${d.status}') på sælgerens betaling af ekstra fragt ${ef.id} (handel ${ef.trade_id}, charge ${chId}). Svar banken i Stripe-dashboardet inden fristen med ekstraregningen og fragtfirmaets faktura som bevis.`,
+          brugerId: ef.saelger_id,
+        });
+        return;
+      }
       const charge = await getStripe().charges.retrieve(chId);
       const kunde = typeof charge.customer === "string" ? charge.customer : (charge.customer?.id ?? null);
       const { data: firma } = kunde

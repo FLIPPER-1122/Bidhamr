@@ -14,6 +14,7 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 import { erMitIdFejl } from "@/lib/mitid/fejl";
 import { erDac7Fejl, DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
+import { erEkstraFragtFejl, EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
 import { MITID } from "@/lib/tekster/mitid";
 import { erVilkaarFejl } from "@/lib/vilkaar";
 import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
@@ -173,6 +174,8 @@ function kravFejl(code: string | undefined, message: string | undefined, medDac7
   if (erMitIdFejl(code, message)) return { fejl: MITID.fejlMangler, kode: "mitid", mitid: true };
   if (erVilkaarFejl(code, message)) return { fejl: VILKAAR_TEKST.fejlMangler, kode: "vilkaar" };
   if (medDac7 && erDac7Fejl(code, message)) return { fejl: DAC7_FEJL_TEKST, kode: "dac7" };
+  // Ubetalt ekstra fragt efter fristen (BHX01) - samme sted som DAC7.
+  if (medDac7 && erEkstraFragtFejl(code, message)) return { fejl: EKSTRA_FRAGT_SPAERRET_TEKST, kode: "ekstra_fragt" };
   return null;
 }
 

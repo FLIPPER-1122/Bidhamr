@@ -208,6 +208,19 @@ async function kontekst(admin: Admin, r: FakturaRaekke): Promise<FakturaKontekst
     } else {
       kommentar = `Køb af ${point.toLowerCase()} på BidHamr. Betalt via vores betalingspartner Stripe den ${dato}.`;
     }
+  } else if (r.slags === "ekstra_fragt") {
+    // Ekstra fragt: sælgeren betaler forskellen, fordi pakken var større/
+    // tungere end den valgte størrelse (BidHamrs fragtindtægt).
+    if (r.dokument === "kreditnota") {
+      const { data: m } = await admin
+        .from("fakturaer")
+        .select("dinero_nummer")
+        .eq("id", String(r.krediterer_id))
+        .maybeSingle<{ dinero_nummer: number | null }>();
+      kommentar = `Kreditnota for faktura nr. ${m?.dinero_nummer ?? "-"} - ekstra fragt for ${varen} på BidHamr${handel}. Refunderet via vores betalingspartner Stripe den ${dato}.`;
+    } else {
+      kommentar = `Ekstra fragt for ${varen} på BidHamr${handel}. Fragtfirmaet har opkrævet ekstra, fordi pakken var større eller tungere end den valgte størrelse. Betalt via vores betalingspartner Stripe den ${dato}.`;
+    }
   } else if (r.dokument === "kreditnota") {
     const { data: m } = await admin
       .from("fakturaer")
@@ -371,6 +384,16 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
     const t = rf as { fakturaer?: number; kreditnotaer?: number } | null;
     if (t && res.planlagt) {
       res.planlagt = { ...res.planlagt, returfragt_sag: Number(t.fakturaer ?? 0), returfragt_sag_kredit: Number(t.kreditnotaer ?? 0) };
+    }
+  }
+  // Ekstra fragt (20261029020000): sælgerens faktura ved betaling, kreditnota
+  // ved refusion. Mangler funktionen (migrationen er ikke kørt), springes det over.
+  {
+    const { data: ef, error: efFejl } = await admin.rpc("faktura_planlaeg_ekstra_fragt", { p_graense: 200 });
+    if (efFejl && !mangler(efFejl)) throw new Error(`faktura_planlaeg_ekstra_fragt: ${efFejl.message}`);
+    const t = ef as { fakturaer?: number; kreditnotaer?: number } | null;
+    if (t && res.planlagt) {
+      res.planlagt = { ...res.planlagt, ekstra_fragt: Number(t.fakturaer ?? 0), ekstra_fragt_kredit: Number(t.kreditnotaer ?? 0) };
     }
   }
   // Køb af boost-point (20261023030000): faktura ved betaling, kreditnota ved

@@ -26,6 +26,7 @@ import { erStand, standNavn } from "@/lib/stand";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { erMitIdFejl } from "@/lib/mitid/fejl";
 import { erDac7Fejl, DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
+import { erEkstraFragtFejl, EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
 import { MITID } from "@/lib/tekster/mitid";
 import { erVilkaarFejl } from "@/lib/vilkaar";
 import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
@@ -423,6 +424,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         else if (erVilkaarFejl(insertError.code, insertError.message)) besked = VILKAAR_TEKST.fejlMangler;
         // DAC7-oplysninger mangler efter fristen (BHD01).
         else if (erDac7Fejl(insertError.code, insertError.message)) besked = DAC7_FEJL_TEKST;
+        // Ubetalt ekstra fragt efter fristen (BHX01).
+        else if (erEkstraFragtFejl(insertError.code, insertError.message)) besked = EKSTRA_FRAGT_SPAERRET_TEKST;
         else if (insertError.code === "BHU01") besked = "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.";
         else if (insertError.code === "22023") besked = "Tjek startpris og varighed (3, 5, 7 eller 10 dage), og prøv igen.";
         else if (insertError.code === "BHA01") besked = "Et af billederne kunne ikke bruges. Fjern det, tilføj det igen, og prøv igen.";

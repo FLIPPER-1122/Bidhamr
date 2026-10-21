@@ -122,6 +122,8 @@ export const GRAENSER = {
   betaling_app_bruger: { maks: 60, vindueSek: 10 * 60 },
   // Boost på hjemmesiden (køb af point og "Boost i 24 timer").
   boost_bruger: { maks: 30, vindueSek: 10 * 60 },
+  // Ekstra fragt på hjemmesiden (betal, indsigelse, faktura-link) pr. sælger.
+  ekstra_fragt_bruger: { maks: 30, vindueSek: 10 * 60 },
   betaling_app_retur_ip: { maks: 120, vindueSek: 60 * 60 },
   cvr_opslag_staff: { maks: 60, vindueSek: 60 * 60 },
   // Admin → Beta-invitationer: invitationsmails (nye og "Send igen") pr.

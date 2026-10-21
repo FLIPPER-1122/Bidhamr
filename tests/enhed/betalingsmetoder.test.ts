@@ -136,15 +136,17 @@ describe("kildekoden bruger den fælles liste overalt", () => {
         expect(blok, f).toMatch(/payment_method_types:\s*metoder\b/);
       }
     }
-    // Checkout (destination), boost og returfragt (inkl. sagens returfragt).
+    // Checkout (destination), boost, returfragt (inkl. sagens returfragt) og
+    // sælgerens ekstra fragt.
     expect(steder.sort()).toEqual([
       "src/lib/betaling/boost.ts",
+      "src/lib/betaling/ekstraFragt.ts",
       "src/lib/betaling/returfragt.ts",
       "src/lib/betaling/stripeBetaling.ts",
     ]);
     const metoder = (f: string) => KILDE.find((k) => k.f === f)!.t;
     // Platformens metoder hentes hos Stripe (kun dem, der er slået til).
-    for (const f of ["src/lib/betaling/boost.ts", "src/lib/betaling/returfragt.ts"]) {
+    for (const f of ["src/lib/betaling/boost.ts", "src/lib/betaling/returfragt.ts", "src/lib/betaling/ekstraFragt.ts"]) {
       expect(metoder(f)).toMatch(/const metoder = await hentPlatformMetoder\(\)/);
       expect(metoder(f)).not.toMatch(/[^.\w]platformMetoder\(\)/);
     }
