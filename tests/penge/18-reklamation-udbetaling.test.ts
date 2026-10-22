@@ -275,6 +275,19 @@ describe("reklamation: BidHamr anmelder, chefen udbetaler", () => {
     await tilbagedaterBank(24 * 3600_000);
     expect(await bankStart()).toMatchObject({ kode: "ok", forsoeg: 1 });
     expect(await reklamationsPayouts()).toHaveLength(0);
+    // Et "frigiv" uden forsøg eller fra et andet forsøg frigør aldrig
+    // bank-claimen (ingen ny nøgle).
+    for (const p_forsoeg of [null, 0, 2]) {
+      const { data, error } = await admin().rpc("fragt_reklamation_bank_fejl", {
+        p_reklamation: rekId,
+        p_fejl: "TEST forsinket frigiv",
+        p_frigiv: true,
+        p_forsoeg,
+      });
+      expect(error).toBeNull();
+      expect(data).toBe(false);
+    }
+    expect(await rek()).toMatchObject({ bank_status: "claimet", bank_forsoeg: 1 });
     // Klar til serveren: claimet for over 10 minutter siden, ingen payout.
     await tilbagedaterBank(11 * 60_000);
   });
