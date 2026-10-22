@@ -1,25 +1,27 @@
 // Reklamation hos fragtfirma ved transportskade (ROADMAP-BESLUTNINGER
 // afsnit 4; migration 20261029010000_reklamation_fragtfirma.sql).
-// SÆLGEREN anmelder selv skaden; erstatningen går direkte fra fragtfirmaet
-// til sælgeren (Filip, 21. okt. 2026). Fælles typer og tekster - må bruges i
-// både server- og klientkode.
+// BIDHAMR (staff) anmelder skaden hos fragtfirmaet; fragtfirmaet udbetaler
+// erstatningen til BidHamr, og KUN chefen udbetaler den til sælgeren via
+// Stripe (Filip, 22. okt. 2026 - DAO's svar). Sælgeren ser kun status.
+// Fælles typer og tekster - må bruges i både server- og klientkode.
 
 export const REKLAMATION_STATUSSER = [
-  "afventer_saelger",
+  "afventer_bidhamr",
   "anmeldt",
   "godkendt",
   "afvist",
-  "fravalgt",
+  "udbetalt",
   "annulleret",
 ] as const;
 export type ReklamationStatus = (typeof REKLAMATION_STATUSSER)[number];
 
-// De statusser, staff kan rette til (fragt_reklamation_ret_status).
-export const REKLAMATION_RET_STATUSSER = ["afventer_saelger", "anmeldt", "godkendt", "afvist", "fravalgt"] as const;
+// De statusser, staff kan rette til (fragt_reklamation_ret_status). Aldrig
+// til eller fra "udbetalt".
+export const REKLAMATION_RET_STATUSSER = ["afventer_bidhamr", "anmeldt", "godkendt", "afvist"] as const;
 export type ReklamationRetStatus = (typeof REKLAMATION_RET_STATUSSER)[number];
 
-// Åben = sælgeren kan stadig registrere, og pakken kan hentes.
-export const REKLAMATION_AABNE: readonly ReklamationStatus[] = ["afventer_saelger", "anmeldt"];
+// Åben = venter på BidHamr eller på fragtfirmaets svar.
+export const REKLAMATION_AABNE: readonly ReklamationStatus[] = ["afventer_bidhamr", "anmeldt"];
 
 export type ReklamationTransportoer = "dao" | "gls";
 
@@ -35,77 +37,105 @@ export function transportoerNavn(t: string | null | undefined): string {
   return t === "dao" ? "DAO" : t === "gls" ? "GLS" : "fragtfirmaet";
 }
 
-// Hvor sælgeren anmelder skaden. DAO: omdeling.info (DAO, 20. okt. 2026).
-// GLS: TODO - Filip venter på GLS' svar om deres anmeldelsesvej.
+// Hvor STAFF anmelder skaden (kun admin - vises aldrig for sælgeren).
+// DAO: omdeling.info (DAO, 20. og 22. okt. 2026 - kun til BidHamrs interne
+// brug). GLS: TODO - Filip venter på GLS' svar om deres anmeldelsesvej.
 export const REKLAMATION_ANMELD: Record<ReklamationTransportoer, { url: string | null; tekst: string }> = {
   dao: {
     url: "https://omdeling.info",
-    tekst: "Anmeld skaden hos DAO på omdeling.info. Kopiér oplysningerne nedenfor over i formularen, og vedhæft billederne. Du kan hente alle billederne på én gang som én fil (ZIP).",
+    tekst:
+      "Anmeld skaden på omdeling.info (kun til BidHamrs interne brug – giv aldrig adgangen eller linket til sælgeren). Kopiér felterne over, vedhæft billederne fra ZIP-filen, og skriv DAO's sagsnummer her bagefter.",
   },
   gls: {
     url: null,
-    tekst: "Kontakt GLS' kundeservice, og anmeld skaden. Kopiér oplysningerne nedenfor over, og vedhæft billederne. Du kan hente alle billederne på én gang som én fil (ZIP).",
+    tekst: "Anmeld skaden hos GLS' kundeservice. Kopiér felterne over, vedhæft billederne fra ZIP-filen, og skriv GLS' sagsnummer her bagefter.",
   },
 };
 
 // Status til staff (admin).
 export const REKLAMATION_STATUS_STAFF: Record<ReklamationStatus, string> = {
-  afventer_saelger: "Venter på sælger",
-  anmeldt: "Anmeldt – venter på svar",
-  godkendt: "Godkendt – udbetales direkte til sælger",
+  afventer_bidhamr: "Venter på anmeldelse (BidHamr)",
+  anmeldt: "Anmeldt – venter på fragtfirmaets svar",
+  godkendt: "Godkendt – venter på chefens udbetaling",
   afvist: "Afvist af fragtfirmaet",
-  fravalgt: "Sælger ønsker ikke at reklamere",
+  udbetalt: "Udbetalt til sælger",
   annulleret: "Annulleret",
 };
 
-// Status til sælgeren (handelssiden).
+// Status til sælgeren (handelssiden). Ingen omtale af omdeling.info.
 export function reklamationStatusSaelger(status: ReklamationStatus, transportoer: string): string {
   const navn = transportoerNavn(transportoer);
   switch (status) {
-    case "afventer_saelger":
-      return `Du kan søge erstatning hos ${navn} – anmeld skaden`;
+    case "afventer_bidhamr":
+      return `Vi reklamerer hos ${navn} for dig`;
     case "anmeldt":
-      return `Anmeldt hos ${navn} – venter på svar`;
+      return `Skaden er anmeldt hos ${navn} – vi venter på svar`;
     case "godkendt":
       return `${navn} har godkendt erstatningen`;
     case "afvist":
-      return `${navn} har afvist din anmeldelse`;
-    case "fravalgt":
-      return "Du har valgt ikke at reklamere";
+      return `${navn} har afvist reklamationen`;
+    case "udbetalt":
+      return "Erstatningen er udbetalt til dig";
     case "annulleret":
       return "Reklamationen er stoppet";
   }
 }
 
-// Det sælgeren må se (mine_fragt_reklamationer). Ingen noter eller staff-id'er.
+// Sælgerens trin på handelssiden (kun visning).
+export const REKLAMATION_TRIN_SAELGER = ["Vi anmelder skaden", "Fragtfirmaet svarer", "Vi udbetaler erstatningen"] as const;
+
+// Hvilket trin (0-2) sælgeren er nået til, og om forløbet er slut.
+export function reklamationTrin(status: ReklamationStatus): { trin: number; faerdig: boolean } {
+  switch (status) {
+    case "afventer_bidhamr":
+      return { trin: 0, faerdig: false };
+    case "anmeldt":
+      return { trin: 1, faerdig: false };
+    case "godkendt":
+      return { trin: 2, faerdig: false };
+    case "udbetalt":
+      return { trin: 2, faerdig: true };
+    case "afvist":
+      return { trin: 1, faerdig: true };
+    case "annulleret":
+      return { trin: 0, faerdig: true };
+  }
+}
+
+// Det sælgeren må se (mine_fragt_reklamationer). Ingen noter, staff-id'er,
+// sagsnummer, Stripe-id'er eller pakke.
 export type SaelgerReklamation = {
   id: string;
   sag_id: string;
   trade_id: string;
   transportoer: ReklamationTransportoer;
   status: ReklamationStatus;
-  trackingnummer: string | null;
-  varens_vaerdi_oere: number;
   kravbeloeb_oere: number;
-  maks_erstatning_oere: number | null;
   godkendt_beloeb_oere: number | null;
   afvisningsgrund: string | null;
   annulleret_grund: string | null;
-  transportoerens_sagsnummer: string | null;
   oprettet_kl: string;
   anmeldt_kl: string | null;
   afgjort_kl: string | null;
-  fravalgt_kl: string | null;
   annulleret_kl: string | null;
-  // Sagen er ændret efter anmeldelsen, og BidHamr har ikke kvitteret endnu:
-  // "godkendt" er spærret (mit_fragt_reklamation_godkendt -> sag_aendret).
-  afventer_bidhamr: boolean;
+  udbetalt_kl: string | null;
+  // Udbetalingen til sælgerens bank er gennemført (payout paid).
+  bank_betalt_kl: string | null;
+  // Sagen er ændret efter anmeldelsen, og BidHamr har ikke kvitteret endnu
+  // (udbetalingen venter).
+  sag_aendret: boolean;
 };
 
+export type ReklamationBankStatus = "claimet" | "oprettet" | "paid" | "failed" | "canceled";
+
 // Hele rækken (kun staff).
-export type StaffReklamation = SaelgerReklamation & {
+export type StaffReklamation = Omit<SaelgerReklamation, "sag_aendret" | "bank_betalt_kl"> & {
   saelger_id: string;
   forsendelse_id: string | null;
+  trackingnummer: string | null;
+  varens_vaerdi_oere: number;
+  maks_erstatning_oere: number | null;
+  transportoerens_sagsnummer: string | null;
   annulleret_auto: boolean;
   sag_aendret_kl: string | null;
   sag_aendret_kvitteret_kl: string | null;
@@ -115,24 +145,51 @@ export type StaffReklamation = SaelgerReklamation & {
   fremdrift_kl: string;
   afgjort_af: string | null;
   annulleret_af: string | null;
-  gensendt_kl: string | null;
-  gensendt_af: string | null;
-  gensendt_antal: number;
   intern_note: string | null;
   opdateret_kl: string;
+  erstatning_modtaget_kl: string | null;
+  erstatning_modtaget_af: string | null;
+  udbetaling_paabegyndt_kl: string | null;
+  udbetaling_paabegyndt_af: string | null;
+  udbetaling_forsoeg: number;
+  udbetaling_stripe_konto: string | null;
+  stripe_transfer_id: string | null;
+  udbetalt_af: string | null;
+  udbetaling_fejl: string | null;
+  transfer_tilbagefoert_kl: string | null;
+  bank_status: ReklamationBankStatus | null;
+  bank_payout_id: string | null;
+  bank_forsoeg: number;
+  bank_claimet_kl: string | null;
+  bank_sidst_sendt_kl: string | null;
+  bank_oprettet_kl: string | null;
+  bank_betalt_kl: string | null;
+  bank_fejlet_kl: string | null;
+  bank_fejlkode: string | null;
+  bank_fejl: string | null;
 };
 
-// Tællere til admin-lampen (fragt_reklamationer_antal / hentReklamationTal).
+// Tællere til admin-lamperne (fragt_reklamationer_antal / hentReklamationTal).
 export type ReklamationTal = {
-  afventerSaelger: number;
-  // Åben uden fremdrift i REKLAMATION_STILLE_DAGE dage -> lampe.
+  // Venter på, at staff anmelder (til orientering).
+  afventer: number;
+  // ... i over REKLAMATION_ANMELD_ROED_DAGE dage -> rød.
+  afventerRoed: number;
+  // Anmeldt uden svar fra fragtfirmaet i REKLAMATION_STILLE_DAGE dage -> grå.
   stille: number;
-  // Sagen er ændret, efter sælgeren anmeldte.
+  // Sagen er ændret efter anmeldelsen -> rød.
   sagAendret: number;
+  // Chefen: godkendt, venter på udbetaling.
+  venterUdbetaling: number;
+  // Chefen: udbetalingen hænger eller er fejlet -> rød.
+  udbetalingFejl: number;
 };
 
-export const REKLAMATION_PAAMIND_DAGE = 7;
-export const REKLAMATION_STILLE_DAGE = 14;
+export const REKLAMATION_ANMELD_ROED_DAGE = 3;
+export const REKLAMATION_STILLE_DAGE = 30;
+// Et påbegyndt Stripe-kald uden svar regnes som hængende efter (min.) -
+// samme grænse som fragt_reklamationer_antal.
+export const REKLAMATION_UDBETALING_HAENGER_MIN = 10;
 
 export function kroner(oere: number | null | undefined): string {
   if (oere == null) return "–";
@@ -191,9 +248,9 @@ export function kronerTilOere(v: string): number | null {
   return "oere" in r ? r.oere : null;
 }
 
-// Hvorfor reklamationen ikke kan være åben/anmeldt/godkendt - årsagerne fra
-// fragt_reklamation_betingelser (migration 20261029010000). Bruges i staffs
-// fejlbeskeder og i dialogen "Kvittér for den ændrede sag".
+// Hvorfor reklamationen ikke kan være åben/anmeldt/godkendt/udbetales -
+// årsagerne fra fragt_reklamation_betingelser (migration 20261029010000).
+// Bruges i staffs fejlbeskeder og i dialogen "Kvittér for den ændrede sag".
 export const REKLAMATION_BETINGELSE: Record<string, string> = {
   ikke_refunderet: "køberen har ikke fået pengene tilbage (refusionen er ikke bekræftet)",
   saelger_beholder: "sælgeren har fået eller beholder salgsbeløbet (pengene er ikke hentet tilbage fra sælgeren)",
@@ -208,9 +265,11 @@ export const REKLAMATION_BETINGELSE: Record<string, string> = {
   ingen_vaerdi: "varens værdi kan ikke findes",
 };
 
-// Midlertidige årsager: staff må kvittere (sælgeren fortsætter), og systemet
-// markerer sagen ændret igen, hvis anken/fristen ender anderledes. Alle andre
-// årsager afviser kvitteringen (databasen: betingelser_ikke_opfyldt).
+// Midlertidige årsager: staff må kvittere (reklamationen fortsætter), og
+// systemet markerer sagen ændret igen, hvis anken/fristen ender anderledes.
+// Alle andre årsager afviser kvitteringen (databasen:
+// betingelser_ikke_opfyldt). Chefens udbetaling kræver HELT opfyldte
+// betingelser.
 export const REKLAMATION_KVITTER_TILLADT: readonly string[] = ["anke_venter", "ankefrist"];
 
 export function betingelseTekst(aarsag: string | null | undefined): string {

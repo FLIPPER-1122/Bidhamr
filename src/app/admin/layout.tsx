@@ -32,11 +32,16 @@ async function StaffMenu({ rolle, paaAdminVaert }: { rolle: StaffRole; paaAdminV
       taellere={{
         handler: t.haenger + t.fragt + t.markeret + t.ubetalte,
         sager: t.sager,
-        // Rødt, når en reklamation kræver staff; ellers dem, der venter på sælgeren (gråt).
-        reklamationer: t.reklamationStille + t.reklamationSagAendret || t.reklamationAfventer,
-        reklamationerKritisk: t.reklamationStille + t.reklamationSagAendret > 0,
-        reklamationerStille: t.reklamationStille,
+        // Rødt, når en reklamation kræver staff (ikke anmeldt efter 3 dage,
+        // sagen ændret, chefen: udbetalingen hænger); ellers dem, der skal
+        // anmeldes, og (chefen) dem, der venter på udbetaling (gråt).
+        reklamationer:
+          t.reklamationAfventerRoed + t.reklamationSagAendret + t.reklamationUdbetalingFejl ||
+          t.reklamationAfventer + t.reklamationVenterUdbetaling,
+        reklamationerKritisk: t.reklamationAfventerRoed + t.reklamationSagAendret + t.reklamationUdbetalingFejl > 0,
+        reklamationerAfventerRoed: t.reklamationAfventerRoed,
         reklamationerSagAendret: t.reklamationSagAendret,
+        reklamationerUdbetalingFejl: t.reklamationUdbetalingFejl,
         // Rødt: indsigelser venter på afgørelse, eller en bankindsigelse er
         // tabt (betalingen tilbageført). Ellers spærrede sælgere (gråt).
         ekstraFragt: t.ekstraFragtIndsigelser + t.ekstraFragtTabteBankindsigelser || t.ekstraFragtForfaldne,

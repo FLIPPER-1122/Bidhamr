@@ -6,12 +6,15 @@ import AdminBadge from "@/components/admin/AdminBadge";
 import { SagBilleder, type VistSagBillede } from "@/components/sager/visning";
 import ReklamationStaffHandlinger, { ReklamationNote } from "@/components/admin/reklamation/ReklamationStaffHandlinger";
 import {
+  REKLAMATION_BANK_TEKST,
   REKLAMATION_LOG_HANDLINGER,
   REKLAMATION_LOG_NAVN,
   ReklamationStatusBadge,
   dageSiden,
+  erAnmeldRoed,
   erSagAendret,
   erStille,
+  erUdbetalingFejl,
   reklamationTid,
 } from "@/components/admin/reklamation/visning";
 import KopierKnap from "@/components/reklamation/KopierKnap";
@@ -23,9 +26,10 @@ import { hentReklamationspakke, type PakkeBillede, type PakkePart } from "@/lib/
 import { reklamationStaffAdgang } from "@/lib/reklamation/staffAdgang";
 import { kroner } from "@/lib/reklamation/typer";
 
-// Én reklamation hos fragtfirmaet: hele pakken (som sælgeren ser den - plus
-// købers kontaktoplysninger), billeder, tidslinje, intern note og knapperne.
-// Kun staff (kraevSideRolle). Ingen ændringer ved visning.
+// Én reklamation hos fragtfirmaet: hele pakken til anmeldelsen (BidHamr
+// anmelder - Filip, 22. okt. 2026), billeder, tidslinje, intern note og
+// knapperne. Kun staff (kraevSideRolle); "Udbetal til sælger" kun for chefen.
+// Ingen ændringer ved visning.
 
 export const metadata = { title: "Reklamation" };
 
@@ -65,7 +69,7 @@ function somVist(b: PakkeBillede): VistSagBillede {
 }
 
 export default async function AdminReklamation({ params }: { params: Promise<{ id: string }> }) {
-  const { admin, userId } = await kraevSideRolle("medarbejder");
+  const { admin, userId, rolle } = await kraevSideRolle("medarbejder");
   const { id } = await params;
   if (!UUID.test(id)) notFound();
 
@@ -85,10 +89,11 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
     );
   }
 
-  const res = await hentReklamationspakke(admin, id.toLowerCase(), "staff");
-  if (!res || !res.pakke.staff) notFound();
+  const res = await hentReklamationspakke(admin, id.toLowerCase());
+  if (!res) notFound();
   const p = res.pakke;
-  const r = p.staff!;
+  const r = p.reklamation;
+  const erChef = rolle === "chef";
 
   const [{ data: handel }, { data: log }] = await Promise.all([
     admin
@@ -108,7 +113,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
   const logRaekker = (log ?? []) as { medarbejder_id: string | null; handling: string; aarsag: string | null; oprettet_kl: string }[];
   const personIds = [
     ...new Set(
-      [r.saelger_id, handel?.buyer_id, ...logRaekker.map((l) => l.medarbejder_id)].filter(
+      [r.saelger_id, handel?.buyer_id, r.erstatning_modtaget_af, ...logRaekker.map((l) => l.medarbejder_id)].filter(
         (x): x is string => !!x && !erSystem(x),
       ),
     ),
@@ -122,8 +127,10 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
     !id ? "ukendt" : erSystem(id) ? "BidHamr (automatisk)" : (navn.get(id) ?? "ukendt");
 
   const nu = new Date().getTime();
+  const roed = erAnmeldRoed(r.status, r.aktiv_fra_kl, nu);
   const stille = erStille(r.status, r.fremdrift_kl, nu);
   const aendret = erSagAendret(r.status, r.sag_aendret_kl, r.sag_aendret_kvitteret_kl);
+  const udbetalingFejl = erUdbetalingFejl(r, nu);
   // Hvorfor sagen er ændret (samme tjek som databasen bruger, når staff
   // kvitterer). undefined = ukendt (opslaget fejlede), null = opfyldt igen.
   let aendretAarsag: string | null | undefined;
@@ -136,6 +143,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
   }
   const saelgerBilleder = p.billeder.filter((b) => b.kilde === "saelger_pakke");
   const koeberBilleder = p.billeder.filter((b) => b.kilde === "koeber_skade");
+  const udbetalingIGang = r.status === "godkendt" && !!r.udbetaling_paabegyndt_kl;
 
   return (
     <AdminSide detalje>
@@ -144,8 +152,10 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
         badges={
           <>
             <ReklamationStatusBadge status={r.status} lang />
+            {roed && <AdminBadge tone="roed">Ikke anmeldt i {dageSiden(r.aktiv_fra_kl, nu)} dage</AdminBadge>}
             {aendret && <AdminBadge tone="roed">Sagen er ændret efter anmeldelsen</AdminBadge>}
-            {stille && <AdminBadge tone="roed">Stille i {dageSiden(r.fremdrift_kl, nu)} dage</AdminBadge>}
+            {stille && <AdminBadge tone="graa">Intet svar i {dageSiden(r.fremdrift_kl, nu)} dage</AdminBadge>}
+            {erChef && udbetalingFejl && <AdminBadge tone="roed">Udbetalingen kræver handling</AdminBadge>}
             <AdminBadge tone="graa">{p.transportoerNavn}</AdminBadge>
           </>
         }
@@ -161,9 +171,24 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
 
       {aendret && (
         <p role="note" className="rounded-[14px] border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
-          Sagen er ændret {reklamationTid(r.sag_aendret_kl)}, efter sælgeren anmeldte skaden. Sælgeren har fået
-          besked og kan ikke registrere &quot;godkendt&quot;, før du har kvitteret. Tjek sagen: kvittér, hvis reklamationen
-          kan fortsætte – ellers ret status eller annullér.
+          Sagen er ændret {reklamationTid(r.sag_aendret_kl)}, efter skaden blev anmeldt. &quot;Godkendt&quot; og
+          udbetalingen er spærret, til nogen har kvitteret. Tjek sagen: kvittér, hvis reklamationen kan fortsætte –
+          ellers ret status eller annullér.
+        </p>
+      )}
+
+      {r.status === "afventer_bidhamr" && (
+        <p role="note" className="rounded-[14px] border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
+          {p.anmeldTekst}
+        </p>
+      )}
+
+      {r.status === "godkendt" && (
+        <p role="note" className="rounded-[14px] border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+          {erChef
+            ? `Når erstatningen på ${kroner(r.godkendt_beloeb_oere)} er modtaget fra ${p.transportoerNavn}, så tryk "Udbetal til sælger".`
+            : `Venter på, at chefen udbetaler ${kroner(r.godkendt_beloeb_oere)}, når erstatningen er modtaget fra ${p.transportoerNavn}.`}
+          {r.udbetaling_fejl && <span className="mt-1 block font-semibold">Seneste forsøg: {r.udbetaling_fejl}</span>}
         </p>
       )}
 
@@ -173,8 +198,13 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
           sagId={r.sag_id}
           status={r.status}
           kravbeloebOere={r.kravbeloeb_oere}
+          godkendtBeloebOere={r.godkendt_beloeb_oere}
           sagsnummer={r.transportoerens_sagsnummer}
+          transportoerNavn={p.transportoerNavn}
+          anmeldUrl={p.anmeldUrl}
           inhabil={inhabil}
+          erChef={erChef}
+          udbetalingIGang={udbetalingIGang}
           sagAendret={aendret}
           sagAendretAarsag={aendretAarsag}
         />
@@ -190,11 +220,34 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
           </a>
           {p.anmeldUrl && (
             <a href={p.anmeldUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center font-semibold text-groen hover:underline sm:min-h-0">
-              Åbn {p.transportoerNavn}s anmeldelse ↗
+              Åbn {p.transportoerNavn}s anmeldelse ↗<span className="sr-only"> (åbner i et nyt vindue)</span>
             </a>
           )}
         </div>
       </section>
+
+      {(r.status === "udbetalt" || r.erstatning_modtaget_kl) && (
+        <Kort titel="Udbetaling til sælgeren">
+          <dl>
+            <Felt
+              navn="Erstatningen modtaget fra fragtfirmaet"
+              vaerdi={r.erstatning_modtaget_kl ? `${reklamationTid(r.erstatning_modtaget_kl)} · bekræftet af ${hvem(r.erstatning_modtaget_af)}` : null}
+              kopier={false}
+            />
+            <Felt navn="Udbetalt til sælgerens Stripe-konto" vaerdi={r.udbetalt_kl ? reklamationTid(r.udbetalt_kl) : null} kopier={false} />
+            {erChef && <Felt navn="Stripe-transfer" vaerdi={r.stripe_transfer_id} />}
+            <Felt
+              navn="Sælgerens bank"
+              vaerdi={r.status === "udbetalt" ? (r.bank_status ? REKLAMATION_BANK_TEKST[r.bank_status] : "Sendes til sælgerens bank") : null}
+              kopier={false}
+            />
+            {erChef && r.bank_fejl && <Felt navn="Seneste fejl (bank)" vaerdi={r.bank_fejl} kopier={false} />}
+            {r.transfer_tilbagefoert_kl && (
+              <Felt navn="OBS" vaerdi={`Transferen er tilbageført hos Stripe ${reklamationTid(r.transfer_tilbagefoert_kl)} – kontrollér i Stripe`} kopier={false} />
+            )}
+          </dl>
+        </Kort>
+      )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Kort titel="Oplysninger til anmeldelsen" hoejre={<KopierKnap tekst={p.tekst} label="alle oplysninger" />}>

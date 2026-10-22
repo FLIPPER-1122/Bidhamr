@@ -1,9 +1,9 @@
 import "server-only";
 
 // Bygger ZIP-svaret med reklamationspakken: oplysninger.txt + sælgers
-// pakkebilleder + købers skadebilleder. Bruges af staff-ruten
-// (/admin/reklamationer/<id>/billeder) og sælgerens rute
-// (/api/reklamation/<id>/billeder). Adgangen er tjekket af kalderen.
+// pakkebilleder + købers skadebilleder. Bruges KUN af staff-ruten
+// (/admin/reklamationer/<id>/billeder) - sælgeren har ingen adgang til
+// pakken (Filip, 22. okt. 2026). Adgangen er tjekket af kalderen.
 //
 // Hukommelse: ZIP'en bygges i hukommelsen (stored, ingen komprimering).
 // Værn: højst MAKS_BYTES billeder i alt (tjekkes på filstørrelsen fra

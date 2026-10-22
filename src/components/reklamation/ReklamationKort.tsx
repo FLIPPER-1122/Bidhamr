@@ -1,290 +1,153 @@
-// "Få erstatning fra DAO/GLS" på sælgerens handelsside (ROADMAP-BESLUTNINGER
-// afsnit 4, "Reklamation – sælger anmelder selv", Filip 21. okt. 2026).
-// Sælgeren anmelder selv skaden hos fragtfirmaet; BidHamr samler alt, så det
-// er færrest mulige klik: 1) hent billederne som én ZIP, 2) åbn anmeldelsen,
-// 3) fortæl os, hvordan det gik. Alle felter har deres egen kopiér-knap.
-// Server-komponent - kun kopiér-knapperne og statusknapperne er klientkode.
-import type { Reklamationspakke, PakkePart } from "@/lib/reklamation/pakke";
+// "Vi reklamerer hos DAO for dig" på sælgerens handelsside
+// (ROADMAP-BESLUTNINGER afsnit 4, "Reklamation – BidHamr anmelder, chefen
+// udbetaler", Filip 22. okt. 2026). Kun en statusvisning: BidHamr anmelder
+// skaden og udbetaler erstatningen, når fragtfirmaet har betalt BidHamr.
+// Sælgeren skal ikke gøre noget og ser aldrig anmeldelsens oplysninger,
+// billederne eller fragtfirmaets anmeldelsesside.
+// Server-komponent uden klientkode.
 import {
+  REKLAMATION_TRIN_SAELGER,
   kroner,
   reklamationStatusSaelger,
+  reklamationTrin,
   transportoerNavn,
   type SaelgerReklamation,
 } from "@/lib/reklamation/typer";
-import KopierKnap from "./KopierKnap";
-import ReklamationSaelgerHandlinger from "./ReklamationSaelgerHandlinger";
 import ReklamationMaerke from "./ReklamationMaerke";
-
-// Sagen er ændret efter anmeldelsen, og BidHamr har ikke kvitteret endnu.
-const SAG_AENDRET_TEKST =
-  "Sagen om handlen er ændret, og BidHamr kigger på det. Vent med at registrere, at erstatningen er godkendt, til du har hørt fra os.";
 
 function dato(iso: string | null): string | null {
   if (!iso) return null;
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return null;
-  return new Date(t).toLocaleString("da-DK", {
+  return new Date(t).toLocaleDateString("da-DK", {
     day: "numeric",
     month: "long",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
     timeZone: "Europe/Copenhagen",
   });
 }
 
-function partDele(p: PakkePart): string[] {
-  const by = [p.postnummer, p.by].filter(Boolean).join(" ");
-  return [p.navn, p.adresse, by, p.telefon, p.email].filter((x): x is string => !!x);
-}
-
-function partTekst(p: PakkePart): string | null {
-  return partDele(p).join(", ") || null;
-}
-
-// Koder (trackingnummer, telefon, postnummer + by) må ikke knække midt i på
-// smalle skærme. Korte dele holdes samlet (kommaet hænger på delen, så det
-// aldrig står først på en linje); kun lange ord uden mellemrum (fx en lang
-// e-mail eller kode) må brydes hvor som helst, så de ikke flyder ud.
-function Udelelig({ tekst }: { tekst: string }) {
-  const lang = tekst.length > 28 && !/\s/.test(tekst);
-  return <span className={lang ? "break-all" : "whitespace-nowrap"}>{tekst}</span>;
-}
-
-function Trin({ nr, titel, children }: { nr: number; titel: string; children: React.ReactNode }) {
-  return (
-    <li className="flex gap-3 sm:gap-4">
-      <span
-        aria-hidden="true"
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-groen text-sm font-bold text-white"
-      >
-        {nr}
-      </span>
-      <div className="min-w-0 flex-1 pt-0.5">
-        <h3 className="font-sans text-[16px] font-semibold text-tekst">
-          <span className="sr-only">Trin {nr}: </span>
-          {titel}
-        </h3>
-        <div className="mt-2">{children}</div>
-      </div>
-    </li>
-  );
-}
-
-function FeltRaekke({
-  navn,
-  vaerdi,
-  lang = false,
-  kode = false,
-  dele,
-}: {
-  navn: string;
-  vaerdi: string | null;
-  lang?: boolean;
-  // Én kode (trackingnummer o.l.), der ikke må knække.
-  kode?: boolean;
-  // Vises som adskilte, udelelige dele (adresse, telefon ...). vaerdi kopieres.
-  dele?: string[];
-}) {
-  return (
-    <div className="flex items-start gap-3 border-t border-kant py-3 first:border-t-0">
-      <div className="min-w-0 flex-1">
-        <dt className="text-[13px] text-tekst-daempet">{navn}</dt>
-        <dd className={`mt-0.5 break-words text-[15px] text-tekst ${lang ? "whitespace-pre-wrap" : "font-medium"}`}>
-          {vaerdi == null ? (
-            <span className="text-tekst-svag">Ikke oplyst</span>
-          ) : dele && dele.length > 0 ? (
-            dele.map((d, i) => (
-              <span key={i}>
-                <Udelelig tekst={i < dele.length - 1 ? `${d},` : d} />
-                {i < dele.length - 1 ? " " : null}
-              </span>
-            ))
-          ) : kode ? (
-            <Udelelig tekst={vaerdi} />
-          ) : (
-            vaerdi
-          )}
-        </dd>
-      </div>
-      {vaerdi && <KopierKnap tekst={vaerdi} label={navn.toLowerCase()} />}
-    </div>
-  );
-}
-
-export default function ReklamationKort({
-  r,
-  pakke,
-  tradeId,
-  kanHandle = true,
-}: {
-  r: SaelgerReklamation;
-  // null, når reklamationen er afsluttet (pakken kan kun hentes, mens den er åben)
-  // eller ikke kunne hentes.
-  pakke: Reklamationspakke | null;
-  tradeId: string;
-  // false i firma-dashboardet før lancering (server actions er lukket).
-  kanHandle?: boolean;
-}) {
+function Forklaring({ r }: { r: SaelgerReklamation }) {
   const navn = transportoerNavn(r.transportoer);
-  const aaben = r.status === "afventer_saelger" || r.status === "anmeldt";
-
-  // Afsluttet: kun en kort status.
-  if (!aaben) {
-    const tone =
-      r.status === "godkendt"
-        ? "border-succes-kant bg-succes-bg text-succes-tekst"
-        : r.status === "afvist"
-          ? "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"
-          : "border-kant bg-white text-tekst-daempet";
-    return (
-      <section id="reklamation" aria-labelledby="reklamation-titel" className={`scroll-mt-24 rounded-[14px] border p-5 sm:p-6 ${tone}`}>
-        <h2 id="reklamation-titel" className="font-sans text-[16px] font-semibold">
-          {reklamationStatusSaelger(r.status, r.transportoer)}
-        </h2>
-        <p className="mt-1 text-sm">
-          {r.status === "godkendt" && r.godkendt_beloeb_oere != null && (
-            <>Godkendt beløb: {kroner(r.godkendt_beloeb_oere)} {navn} betaler direkte til dig.</>
-          )}
-          {r.status === "afvist" && (r.afvisningsgrund ? <>Begrundelse: {r.afvisningsgrund}</> : <>Du får ikke erstatning for varen.</>)}
-          {r.status === "fravalgt" && <>Du får ikke erstatning for varen.</>}
-          {r.status === "annulleret" && (r.annulleret_grund ? <>Begrundelse fra BidHamr: {r.annulleret_grund}</> : null)}
-        </p>
-        {r.transportoerens_sagsnummer && (
-          <p className="mt-1 text-sm">
-            {navn}s sagsnummer: <span className="font-semibold">{r.transportoerens_sagsnummer}</span>
-          </p>
-        )}
-        {r.afventer_bidhamr && <p className="mt-2 text-sm font-semibold">{SAG_AENDRET_TEKST}</p>}
-      </section>
-    );
+  switch (r.status) {
+    case "afventer_bidhamr":
+      return (
+        <>
+          Varen blev skadet under fragten, og køberen har fået pengene tilbage. Du pakkede varen ordentligt, så vi
+          reklamerer hos {navn} for dig – du skal ikke selv gøre noget. Vi kræver op til {kroner(r.kravbeloeb_oere)} Du
+          hører fra os, når der er nyt.
+        </>
+      );
+    case "anmeldt":
+      return (
+        <>
+          Vi har anmeldt skaden hos {navn}{r.anmeldt_kl ? ` ${dato(r.anmeldt_kl)}` : ""}. Det er {navn}, der afgør, om du
+          får erstatning. Vi giver dig besked, når {navn} har svaret.
+        </>
+      );
+    case "godkendt":
+      return (
+        <>
+          {navn} har godkendt en erstatning på {kroner(r.godkendt_beloeb_oere)} Vi udbetaler pengene til dig, når {navn} har
+          betalt os. Du får besked, når pengene er på vej.
+        </>
+      );
+    case "udbetalt":
+      return r.bank_betalt_kl ? (
+        <>
+          Vi har udbetalt {kroner(r.godkendt_beloeb_oere)} i erstatning til dig, og pengene er sendt til din bankkonto.
+        </>
+      ) : (
+        <>
+          Vi har udbetalt {kroner(r.godkendt_beloeb_oere)} i erstatning til dig. Vores betalingspartner Stripe sender
+          pengene til din bankkonto – der går normalt 1-3 bankdage.
+        </>
+      );
+    case "afvist":
+      return (
+        <>
+          {navn} har afvist reklamationen, så du får desværre ikke erstatning for varen.
+          {r.afvisningsgrund ? ` Begrundelse fra ${navn}: ${r.afvisningsgrund}` : ""}
+        </>
+      );
+    case "annulleret":
+      return <>Vi har stoppet reklamationen.{r.annulleret_grund ? ` Begrundelse: ${r.annulleret_grund}` : ""}</>;
   }
+}
 
-  const p = pakke;
-  const antalBilleder = p?.billeder.length ?? 0;
-  const anmeldUrl = p?.anmeldUrl ?? (r.transportoer === "dao" ? "https://omdeling.info" : null);
-  const felter: { navn: string; vaerdi: string | null; lang?: boolean; kode?: boolean; dele?: string[] }[] = p
-    ? [
-        { navn: "Trackingnummer", vaerdi: p.trackingnummer, kode: true },
-        ...(p.forsendelsesId ? [{ navn: "Forsendelses-id", vaerdi: p.forsendelsesId, kode: true }] : []),
-        { navn: "Afsender", vaerdi: partTekst(p.afsender), dele: partDele(p.afsender) },
-        { navn: "Modtager", vaerdi: partTekst(p.modtager), dele: partDele(p.modtager) },
-        { navn: "Afsendt", vaerdi: dato(p.afsendtKl) },
-        { navn: "Leveret", vaerdi: dato(p.leveretKl) },
-        { navn: "Vare", vaerdi: p.varetitel },
-        { navn: "Varens værdi", vaerdi: kroner(p.varensVaerdiOere) },
-        { navn: "Kravbeløb", vaerdi: kroner(p.kravbeloebOere) },
-        { navn: "Skadebeskrivelse", vaerdi: p.skadebeskrivelse, lang: true },
-      ]
-    : [];
+function Trinliste({ status }: { status: SaelgerReklamation["status"] }) {
+  const { trin, faerdig } = reklamationTrin(status);
+  const stoppet = status === "afvist" || status === "annulleret";
+  return (
+    <ol className="mt-4 flex flex-col gap-2 sm:flex-row sm:gap-3" aria-label="Reklamationens forløb">
+      {REKLAMATION_TRIN_SAELGER.map((tekst, i) => {
+        const gjort = i < trin || (i === trin && faerdig && !stoppet);
+        const nu = i === trin && !faerdig;
+        return (
+          <li
+            key={tekst}
+            aria-current={nu ? "step" : undefined}
+            className={`flex flex-1 items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
+              gjort
+                ? "border-succes-kant bg-succes-bg text-succes-tekst"
+                : nu
+                  ? "border-groen bg-groen-lys font-semibold text-tekst"
+                  : "border-kant bg-white text-tekst-svag"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${
+                gjort ? "bg-succes-tekst text-white" : nu ? "bg-groen text-white" : "bg-kant text-tekst-daempet"
+              }`}
+            >
+              {gjort ? "✓" : i + 1}
+            </span>
+            <span>
+              <span className="sr-only">{gjort ? "Gjort: " : nu ? "Nu: " : "Senere: "}</span>
+              {tekst}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+export default function ReklamationKort({ r }: { r: SaelgerReklamation }) {
+  const navn = transportoerNavn(r.transportoer);
+  const slut = r.status === "afvist" || r.status === "annulleret";
+  const tone =
+    r.status === "udbetalt"
+      ? "border-succes-kant bg-succes-bg"
+      : slut
+        ? "border-kant bg-white"
+        : "border-groen bg-white";
 
   return (
     <section
       id="reklamation"
       aria-labelledby="reklamation-titel"
-      className="scroll-mt-24 rounded-[14px] border-2 border-orange bg-white p-5 sm:p-6"
+      className={`scroll-mt-24 rounded-[14px] border-2 p-5 sm:p-6 ${tone}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="reklamation-titel" className="text-[20px] leading-tight lg:text-[22px]">
-          Få erstatning fra {navn}
+          {r.status === "afventer_bidhamr" ? `Vi reklamerer hos ${navn} for dig` : reklamationStatusSaelger(r.status, r.transportoer)}
         </h2>
-        {/* "Få erstatning" gentager overskriften - mærket vises kun, når det siger noget nyt. */}
-        {r.status !== "afventer_saelger" && <ReklamationMaerke status={r.status} />}
+        {r.status !== "afventer_bidhamr" && <ReklamationMaerke status={r.status} />}
       </div>
       <p className="mt-2 text-[15px] text-tekst-daempet">
-        Køberen har fået pengene tilbage, fordi varen blev skadet under fragten. Du pakkede ordentligt, så du kan
-        selv søge erstatning hos {navn} – op til {kroner(r.kravbeloeb_oere)} Det er {navn}, der afgør sagen, og
-        pengene udbetales direkte til dig.
+        <Forklaring r={r} />
       </p>
-      {r.status === "anmeldt" && (
-        <p className="mt-3 rounded-xl bg-info-bg px-4 py-3 text-sm text-info-tekst">
-          {reklamationStatusSaelger(r.status, r.transportoer)}.
-          {r.transportoerens_sagsnummer && (
-            <>
-              {" "}
-              Sagsnummer: <span className="font-semibold">
-                <Udelelig tekst={`${r.transportoerens_sagsnummer}.`} />
-              </span>
-            </>
-          )}
+      {!slut && <Trinliste status={r.status} />}
+      {r.sag_aendret && !slut && r.status !== "udbetalt" && (
+        <p role="status" className="mt-4 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+          Sagen om handlen er ændret, og vi kigger på, hvad det betyder for reklamationen. Du hører fra os.
         </p>
       )}
-      {r.afventer_bidhamr && (
-        <p role="status" className="mt-3 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
-          {SAG_AENDRET_TEKST}
-        </p>
+      {slut && (
+        <p className="mt-3 text-sm text-tekst-daempet">Har du spørgsmål, så skriv til support@bidhamr.dk.</p>
       )}
-
-      {!p && (
-        <p role="alert" className="mt-4 rounded-xl border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
-          Oplysningerne kunne ikke hentes lige nu. Genindlæs siden om lidt.
-        </p>
-      )}
-
-      <ol className="mt-5 space-y-6">
-        <Trin nr={1} titel="Hent billederne">
-          <p className="mb-3 text-sm text-tekst-daempet">
-            Dine billeder af indpakningen og køberens billeder af skaden – samlet i én fil, klar til at vedhæfte.
-          </p>
-          <a
-            href={`/api/reklamation/${r.id}/billeder`}
-            download
-            className="btn btn-sekundaer w-full sm:w-auto"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2M7 11l5 5l5 -5M12 4v12" />
-            </svg>
-            Hent billeder{p ? ` (${antalBilleder})` : ""}
-          </a>
-        </Trin>
-
-        <Trin nr={2} titel={`Anmeld skaden hos ${navn}`}>
-          <p className="mb-3 text-sm text-tekst-daempet">{p?.anmeldTekst}</p>
-          {anmeldUrl && (
-            <a href={anmeldUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primaer w-full sm:w-auto">
-              Åbn anmeldelsen hos {navn}
-              <span className="sr-only"> (åbner i et nyt vindue)</span>
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6M11 13l9 -9M15 4h5v5" />
-              </svg>
-            </a>
-          )}
-
-          {p && (
-            <div className="mt-4 rounded-xl border border-kant bg-white">
-              <div className="flex flex-col gap-2 border-b border-kant px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm font-semibold text-tekst">Oplysninger til anmeldelsen</p>
-                <KopierKnap tekst={p.tekst} label="alle oplysninger" stor />
-              </div>
-              <dl className="px-4">
-                {felter.map((f) => (
-                  <FeltRaekke key={f.navn} navn={f.navn} vaerdi={f.vaerdi} lang={f.lang} kode={f.kode} dele={f.dele} />
-                ))}
-              </dl>
-              {p.maksErstatningOere != null && (
-                <p className="border-t border-kant px-4 py-3 text-[13px] text-tekst-daempet">
-                  {navn} erstatter højst {kroner(p.maksErstatningOere)} pr. pakke.
-                </p>
-              )}
-            </div>
-          )}
-        </Trin>
-
-        <Trin nr={3} titel="Fortæl os, hvordan det gik">
-          {kanHandle ? (
-            <ReklamationSaelgerHandlinger
-              reklamationId={r.id}
-              tradeId={tradeId}
-              status={r.status === "anmeldt" ? "anmeldt" : "afventer_saelger"}
-              transportoerNavn={navn}
-              kravbeloebOere={r.kravbeloeb_oere}
-              sagsnummer={r.transportoerens_sagsnummer}
-            />
-          ) : (
-            <p className="text-sm text-tekst-daempet">Du kan registrere svaret, når BidHamr er åbnet.</p>
-          )}
-        </Trin>
-      </ol>
     </section>
   );
 }

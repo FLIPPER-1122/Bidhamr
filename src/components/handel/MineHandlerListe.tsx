@@ -21,8 +21,8 @@ import { ekstraFragtHref, erAabenEkstraFragt } from "@/lib/ekstraFragt/visning";
 // Åbne regninger for ekstra fragt (for lille pakke): handel-id -> regning.
 type AabneEkstraFragt = Map<string, MinEkstraFragt>;
 
-// Åbne reklamationer hos fragtfirmaet (sælgeren skal handle): handel-id -> status.
-type AabneReklamationer = Map<string, "afventer_saelger" | "anmeldt">;
+// Reklamationer i gang hos fragtfirmaet (BidHamr reklamerer for sælgeren): handel-id -> status.
+type AabneReklamationer = Map<string, "afventer_bidhamr" | "anmeldt" | "godkendt">;
 
 type HandelRaekke = {
   id: string;
@@ -77,12 +77,13 @@ type GruppeId =
 
 const GRUPPER: { id: GruppeId; titel: string; tekst: string }[] = [
   { id: "ekstra_fragt", titel: "Betal ekstra fragt", tekst: "Fragtfirmaet målte pakken større end den størrelse, du valgte." },
-  { id: "erstatning", titel: "Få erstatning fra fragtfirmaet", tekst: "Varen blev skadet under fragten. Anmeld skaden hos fragtfirmaet, og søg erstatning." },
   { id: "betale", titel: "Du skal betale", tekst: "Betal inden fristen, så handlen ikke annulleres." },
   { id: "sende", titel: "Du skal sende", tekst: "Køberen har betalt. Send pakken inden fristen." },
   { id: "afhentning", titel: "Skal afhentes", tekst: "Varen er betalt. Aftal afhentningen i handlen." },
   { id: "godkende", titel: "Du skal godkende varen", tekst: "Tjek varen. Sælgeren får pengene, når du godkender." },
   { id: "sager", titel: "Sager i gang", tekst: "BidHamr ser på sagen. Følg med og svar i sagen." },
+  // BidHamr reklamerer for sælgeren - intet at gøre, kun status.
+  { id: "erstatning", titel: "Reklamation hos fragtfirmaet", tekst: "Varen blev skadet under fragten. Vi reklamerer for dig – du skal ikke gøre noget." },
   { id: "venter_saelger", titel: "Venter på sælgeren", tekst: "Du har betalt. Sælgeren sender pakken." },
   { id: "venter_koeber", titel: "Venter på køberen", tekst: "Køberen skal betale eller godkende varen." },
   { id: "paa_vej", titel: "På vej", tekst: "Pakken er sendt." },
@@ -116,7 +117,7 @@ function HandelKort({
 }: {
   handel: HandelRaekke;
   brugerId: string;
-  reklamation?: "afventer_saelger" | "anmeldt" | null;
+  reklamation?: "afventer_bidhamr" | "anmeldt" | "godkendt" | null;
   ekstraFragt?: MinEkstraFragt | null;
 }) {
   const skalBetaleEkstra = ekstraFragt?.status === "afventer_betaling";
@@ -185,8 +186,8 @@ function HandelKort({
           <span className="ml-auto inline-flex items-center gap-1 text-[13px] font-semibold text-groen">
             {skalBetaleEkstra
               ? "Betal ekstra fragt"
-              : reklamation === "afventer_saelger"
-                ? "Få erstatning"
+              : reklamation
+                ? "Se reklamation"
                 : sagAktiv
                   ? "Åbn sag"
                   : "Åbn handel"}
@@ -272,7 +273,7 @@ export default async function MineHandlerListe({
   }
   const reklamationer: AabneReklamationer = new Map();
   for (const r of reklamationSvar) {
-    if ((r.status === "afventer_saelger" || r.status === "anmeldt") && !reklamationer.has(r.trade_id)) {
+    if ((r.status === "afventer_bidhamr" || r.status === "anmeldt" || r.status === "godkendt") && !reklamationer.has(r.trade_id)) {
       reklamationer.set(r.trade_id, r.status);
     }
   }

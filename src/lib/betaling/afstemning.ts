@@ -22,6 +22,10 @@ import "server-only";
 //      er tilbageført et andet beløb, end databasen har registreret.
 //   4. Udbetalinger: payouts på sælgerkonti mod saelger_udbetalinger (ukendte,
 //      andet beløb/status, eller registreret men ukendt hos Stripe).
+//      Chefens udbetalinger af erstatninger (reklamation hos fragtfirma,
+//      metadata type=reklamation) afstemmes mod fragt_reklamationer - både
+//      transferen fra platformen (beløb, konto, aldrig tilbageført) og
+//      payouten til banken. De er ikke BidHamrs indtægt (ingen faktura).
 //   5. Indsigelser, der ikke er på en handel: abonnementsfakturaer (firma)
 //      og helt ukendte. (Indsigelser på handler spejles af overvågningen.)
 // Til sidst gemmes platformens saldo (snapshot) til økonomioverblikket.
@@ -1573,8 +1577,50 @@ async function afstemTilbagefoersler(
     transfers.filter((t) => !dest.has(t.id) && !gammel.has(t.id) && t.amount_reversed > 0).map(transferHenvisning),
     firma,
   );
+  // Chefens udbetalinger af erstatninger (reklamation hos fragtfirma,
+  // 20261029010000): transfers fra platformen til sælgeren med metadata
+  // type=reklamation. Må aldrig være tilbageført og skal have det godkendte
+  // beløb. Er ikke handler (ingen betaling) og ikke BidHamrs indtægt.
+  const reklamationer = new Map<string, { id: string; godkendt_beloeb_oere: number | null; udbetaling_stripe_konto: string | null }>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await admin
+      .from("fragt_reklamationer")
+      .select("id, stripe_transfer_id, godkendt_beloeb_oere, udbetaling_stripe_konto")
+      .in("stripe_transfer_id", ids.slice(i, i + 200));
+    if (error) {
+      if (["42P01", "PGRST205", "42703"].includes(error.code ?? "")) break; // migrationen er ikke kørt
+      throw new Error(`fragt_reklamationer: ${error.message}`);
+    }
+    for (const x of data ?? []) reklamationer.set(x.stripe_transfer_id as string, x as never);
+  }
   for (const t of transfers) {
     tjekTid(budget);
+    const rek = reklamationer.get(t.id);
+    if (rek) {
+      if (t.amount_reversed > 0) {
+        await registrer({
+          noegle: `tilbagefoersel:${t.id}`,
+          type: "tilbagefoersel_udenom",
+          stripeId: t.id,
+          stripeKonto: id(t.destination as string | { id: string } | null),
+          beskrivelse: `Transfer ${t.id} (erstatning til sælgeren, reklamation ${rek.id}) er (delvist) tilbageført hos Stripe. BidHamr tilbagefører aldrig erstatninger selv - kontrollér i Stripe.`,
+          beloebStripe: t.amount_reversed,
+          beloebDb: 0,
+        });
+      }
+      if (t.amount !== Number(rek.godkendt_beloeb_oere) || id(t.destination as string | { id: string } | null) !== rek.udbetaling_stripe_konto) {
+        await registrer({
+          noegle: `reklamation-transfer:${t.id}`,
+          type: "udbetaling_afviger",
+          stripeId: t.id,
+          stripeKonto: id(t.destination as string | { id: string } | null),
+          beskrivelse: `Transfer ${t.id} (erstatning, reklamation ${rek.id}) har et andet beløb eller en anden konto hos Stripe end i databasen.`,
+          beloebStripe: t.amount,
+          beloebDb: Number(rek.godkendt_beloeb_oere),
+        });
+      }
+      continue;
+    }
     const b = dest.get(t.id);
     if (!b) {
       // Den gamle model (separat) eller en transfer, databasen ikke kender:
@@ -1609,6 +1655,25 @@ async function afstemTilbagefoersler(
       });
     }
   }
+}
+
+// En payout på en sælgerkonto, som er chefens udbetaling af en erstatning
+// (reklamation, 20261029010000)? Fejl (fx migrationen ikke kørt) = nej.
+async function reklamationsPayout(
+  admin: Admin,
+  p: Stripe.Payout,
+  konto: string,
+): Promise<{ id: string; godkendt_beloeb_oere: number | null; bank_status: string | null } | null> {
+  const felter = "id, godkendt_beloeb_oere, bank_status, udbetaling_stripe_konto";
+  type R = { id: string; godkendt_beloeb_oere: number | null; bank_status: string | null; udbetaling_stripe_konto: string | null };
+  const { data: kendt } = await admin.from("fragt_reklamationer").select(felter).eq("bank_payout_id", p.id).maybeSingle<R>();
+  let r = kendt ?? null;
+  const md = p.metadata?.type === "reklamation" ? p.metadata?.reklamation_id : null;
+  if (!r && md && /^[0-9a-f-]{36}$/i.test(md)) {
+    const { data } = await admin.from("fragt_reklamationer").select(felter).eq("id", md.toLowerCase()).maybeSingle<R>();
+    r = data ?? null;
+  }
+  return r && r.udbetaling_stripe_konto === konto ? r : null;
 }
 
 // 4. Payouts på sælgerkonti.
@@ -1673,6 +1738,25 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
           .select("id, status, beloeb_oere")
           .eq("stripe_payout_id", p.id)
           .maybeSingle();
+        // Chefens udbetaling af en erstatning (reklamation): BidHamrs egen
+        // payout - genkendes på id eller metadata + samme konto (en ældre,
+        // fejlet payout står kun i metadata).
+        const rek = aeldre ? null : await reklamationsPayout(admin, p, konto);
+        if (rek) {
+          if (p.amount !== Number(rek.godkendt_beloeb_oere)) {
+            await registrer({
+              noegle: `payout-afviger:${p.id}`,
+              type: "udbetaling_afviger",
+              tilstand: `${p.status}|${rek.bank_status ?? "-"}`,
+              stripeId: p.id,
+              stripeKonto: konto,
+              beskrivelse: `Payout ${p.id} (erstatning, reklamation ${rek.id}) har et andet beløb hos Stripe end i databasen.`,
+              beloebStripe: p.amount,
+              beloebDb: Number(rek.godkendt_beloeb_oere),
+            });
+          }
+          continue;
+        }
         if (!aeldre) {
           await registrer({
             noegle: `payout-ukendt:${p.id}`,

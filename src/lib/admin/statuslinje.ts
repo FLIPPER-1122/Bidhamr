@@ -35,9 +35,14 @@ export type KoeTal = {
   dsa: number;
   sager: number;
   betalinger: number;
-  // Reklamationer hos fragtfirmaet, der kræver staff (begge røde).
-  reklamationStille?: number;
+  // Reklamationer hos fragtfirmaet, der kræver staff (røde): ikke anmeldt
+  // efter 3 dage, sagen ændret efter anmeldelsen. Kun chefen (0 for andre):
+  // udbetalinger, der hænger/er fejlet (rødt), og godkendte, der venter på
+  // udbetaling (gult).
+  reklamationAfventerRoed?: number;
   reklamationSagAendret?: number;
+  reklamationUdbetalingFejl?: number;
+  reklamationVenterUdbetaling?: number;
   // Indsigelser mod ekstra fragt (rødt - staff skal afgøre dem).
   ekstraFragtIndsigelser?: number;
   // Tabte bankindsigelser på betalte ekstraregninger (rødt - staff genåbner
@@ -61,11 +66,18 @@ export function koePunkter(t: KoeTal): StatusPunkt[] {
       href: "/admin/reklamationer?vis=sag_aendret",
     });
   }
-  if ((t.reklamationStille ?? 0) > 0) {
+  if ((t.reklamationAfventerRoed ?? 0) > 0) {
     p.push({
       tone: "roed",
-      tekst: `${flertal(t.reklamationStille ?? 0, "reklamation", "reklamationer")} har stået stille i 14 dage`,
-      href: "/admin/reklamationer?vis=stille",
+      tekst: `${flertal(t.reklamationAfventerRoed ?? 0, "reklamation", "reklamationer")} er ikke anmeldt efter 3 dage`,
+      href: "/admin/reklamationer?vis=afventer_bidhamr",
+    });
+  }
+  if ((t.reklamationUdbetalingFejl ?? 0) > 0) {
+    p.push({
+      tone: "roed",
+      tekst: `${flertal(t.reklamationUdbetalingFejl ?? 0, "udbetaling af erstatning", "udbetalinger af erstatning")} kræver handling`,
+      href: "/admin/reklamationer?vis=udbetaling_fejl",
     });
   }
   if ((t.ekstraFragtIndsigelser ?? 0) > 0) {
@@ -87,6 +99,13 @@ export function koePunkter(t: KoeTal): StatusPunkt[] {
   }
   if (t.sager > 0) {
     p.push({ tone: "gul", tekst: flertal(t.sager, "åben sag venter", "åbne sager venter"), href: "/admin/sager" });
+  }
+  if ((t.reklamationVenterUdbetaling ?? 0) > 0) {
+    p.push({
+      tone: "gul",
+      tekst: `${flertal(t.reklamationVenterUdbetaling ?? 0, "godkendt erstatning venter", "godkendte erstatninger venter")} på udbetaling`,
+      href: "/admin/reklamationer?vis=godkendt",
+    });
   }
   const dsaInden = t.dsa - t.dsaOverskredet;
   if (dsaInden > 0) {

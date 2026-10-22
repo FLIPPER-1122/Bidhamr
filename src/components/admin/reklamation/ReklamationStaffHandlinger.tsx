@@ -1,17 +1,23 @@
 "use client";
 
-// Staffs knapper på en reklamation: send oplysningerne igen, ret status
-// (påkrævet intern begrundelse), annullér (grund til sælgeren), kvittér for
-// en ændret sag og den interne note. Databasen tjekker rolle, to-trins-login og inhabilitet igen
-// (src/app/actions/adminReklamation.ts).
+// Staffs knapper på en reklamation (BidHamr anmelder - Filip, 22. okt. 2026):
+// Anmeld (fragtfirmaets sagsnummer + link til anmeldelsen), Godkendt
+// (beløb), Afvist (grund til sælgeren), kvittér for en ændret sag, ret
+// status (påkrævet intern begrundelse), annullér (grund til sælgeren) og den
+// interne note. KUN CHEFEN: "Udbetal til sælger" med fluebenet "Erstatningen
+// er modtaget fra DAO". Databasen tjekker rolle, to-trins-login og
+// inhabilitet igen (src/app/actions/adminReklamation.ts).
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
+  afvisReklamation,
+  anmeldReklamation,
   annullerReklamation,
   gemReklamationNote,
+  godkendReklamation,
   kvitterSagAendret,
   retReklamationStatus,
-  sendReklamationIgen,
+  udbetalReklamation,
   type ReklamationSvar,
 } from "@/app/actions/adminReklamation";
 import { visKvittering } from "@/components/admin/Kvittering";
@@ -123,13 +129,13 @@ function Dialog({
   );
 }
 
-function Knapper({ sender, onLuk, bekraeft, fare = false }: { sender: boolean; onLuk: () => void; bekraeft: string; fare?: boolean }) {
+function Knapper({ sender, onLuk, bekraeft, fare = false, spaerret = false }: { sender: boolean; onLuk: () => void; bekraeft: string; fare?: boolean; spaerret?: boolean }) {
   const hydreret = useHydreret();
   return (
     <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:justify-end">
       <button
         type="submit"
-        disabled={sender || !hydreret}
+        disabled={sender || !hydreret || spaerret}
         aria-busy={sender}
         className={`btn order-1 sm:order-2 ${fare ? "btn-fare-fyldt" : "btn-primaer"}`}
       >
@@ -143,24 +149,258 @@ function Knapper({ sender, onLuk, bekraeft, fare = false }: { sender: boolean; o
   );
 }
 
-// ------------------------------------------------------------------ Send igen
-
-function SendIgenKnap({ reklamationId, sagId }: { reklamationId: string; sagId: string }) {
-  const { sender, fejl, send } = useSend();
+// En knap, der åbner en dialog med en formular.
+function DialogKnap({
+  tekst,
+  stil = "btn-sekundaer",
+  titel,
+  beskrivelse,
+  children,
+}: {
+  tekst: string;
+  stil?: string;
+  titel: string;
+  beskrivelse?: ReactNode;
+  children: (s: ReturnType<typeof useSend> & { luk: () => void }) => ReactNode;
+}) {
+  const [aaben, setAaben] = useState(false);
+  const s = useSend();
+  const luk = () => setAaben(false);
   return (
-    <span className="flex flex-col gap-1">
+    <>
       <button
         type="button"
-        onClick={() => void send(() => sendReklamationIgen(reklamationId, sagId), "Oplysningerne er sendt til sælgeren igen")}
-        disabled={sender}
-        aria-busy={sender}
-        className="btn btn-primaer w-full sm:w-auto"
+        onClick={() => {
+          s.setFejl(null);
+          setAaben(true);
+        }}
+        className={`btn ${stil} w-full sm:w-auto`}
       >
-        {sender && <span className="btn-spinner" aria-hidden="true" />}
-        Send oplysninger igen
+        {tekst}
       </button>
-      <Fejl fejl={fejl} />
-    </span>
+      <Dialog titel={titel} beskrivelse={beskrivelse} aaben={aaben} onLuk={luk} laast={s.sender}>
+        {children({ ...s, luk })}
+      </Dialog>
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ Anmeld
+
+function AnmeldKnap({
+  reklamationId,
+  sagId,
+  transportoerNavn,
+  anmeldUrl,
+  sagsnummer,
+  ret = false,
+}: {
+  reklamationId: string;
+  sagId: string;
+  transportoerNavn: string;
+  anmeldUrl: string | null;
+  sagsnummer: string | null;
+  // Kun ret sagsnummeret (status anmeldt).
+  ret?: boolean;
+}) {
+  const id = useId();
+  return (
+    <DialogKnap
+      tekst={ret ? "Ret sagsnummer" : `Anmeldt hos ${transportoerNavn}`}
+      stil={ret ? "btn-sekundaer" : "btn-primaer"}
+      titel={ret ? "Ret fragtfirmaets sagsnummer" : `Skaden er anmeldt hos ${transportoerNavn}`}
+      beskrivelse={
+        ret ? undefined : (
+          <>
+            Anmeld skaden hos {transportoerNavn} med oplysningerne og billederne nedenfor, og skriv {transportoerNavn}s
+            sagsnummer her. Sælgeren får besked om, at skaden er anmeldt (aldrig sagsnummeret eller linket).
+          </>
+        )
+      }
+    >
+      {({ sender, fejl, setFejl, send, luk }) => (
+        <form
+          method="post"
+          className="space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            const nr = String(new FormData(e.currentTarget).get("sagsnummer") ?? "").trim();
+            if (!nr) {
+              setFejl(`Skriv ${transportoerNavn}s sagsnummer.`);
+              return;
+            }
+            void send(() => anmeldReklamation(reklamationId, nr, sagId), ret ? "Sagsnummeret er rettet" : "Registreret som anmeldt", luk);
+          }}
+        >
+          {!ret && anmeldUrl && (
+            <a href={anmeldUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center font-semibold text-groen hover:underline">
+              Åbn {transportoerNavn}s anmeldelse ↗<span className="sr-only"> (åbner i et nyt vindue)</span>
+            </a>
+          )}
+          <div>
+            <label htmlFor={`${id}-nr`} className="block text-sm font-medium text-neutral-800">
+              {transportoerNavn}s sagsnummer
+            </label>
+            <input id={`${id}-nr`} name="sagsnummer" defaultValue={sagsnummer ?? ""} required maxLength={100} autoComplete="off" disabled={sender} className={FELT} />
+            <p className="mt-1 text-xs text-neutral-500">Står i kvitteringen fra {transportoerNavn}. Kun synligt for BidHamr.</p>
+          </div>
+          <Fejl fejl={fejl} />
+          <Knapper sender={sender} onLuk={luk} bekraeft={ret ? "Gem sagsnummer" : "Registrér som anmeldt"} />
+        </form>
+      )}
+    </DialogKnap>
+  );
+}
+
+// ------------------------------------------------------------------ Godkendt
+
+function GodkendKnap({ reklamationId, sagId, transportoerNavn, kravbeloebOere }: { reklamationId: string; sagId: string; transportoerNavn: string; kravbeloebOere: number }) {
+  const id = useId();
+  return (
+    <DialogKnap
+      tekst="Godkendt"
+      stil="btn-primaer"
+      titel={`${transportoerNavn} har godkendt erstatningen`}
+      beskrivelse={`Skriv det beløb, ${transportoerNavn} har godkendt. Sælgeren får besked om, at pengene udbetales, når ${transportoerNavn} har betalt BidHamr. Chefen udbetaler bagefter.`}
+    >
+      {({ sender, fejl, setFejl, send, luk }) => (
+        <form
+          method="post"
+          className="space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            const beloeb = String(new FormData(e.currentTarget).get("beloeb") ?? "").trim();
+            if (!beloeb) {
+              setFejl("Skriv det godkendte beløb i kroner, fx 1.250,00.");
+              return;
+            }
+            void send(() => godkendReklamation(reklamationId, beloeb, sagId), "Registreret som godkendt", luk);
+          }}
+        >
+          <div>
+            <label htmlFor={`${id}-beloeb`} className="block text-sm font-medium text-neutral-800">
+              Godkendt beløb i kr.
+            </label>
+            <input id={`${id}-beloeb`} name="beloeb" inputMode="decimal" autoComplete="off" required placeholder="Fx 1.250,00" disabled={sender} className={FELT} />
+            <p className="mt-1 text-xs text-neutral-500">Højst {kroner(kravbeloebOere)} (kravbeløbet).</p>
+          </div>
+          <Fejl fejl={fejl} />
+          <Knapper sender={sender} onLuk={luk} bekraeft="Registrér som godkendt" />
+        </form>
+      )}
+    </DialogKnap>
+  );
+}
+
+// ------------------------------------------------------------------ Afvist
+
+function AfvisKnap({ reklamationId, sagId, transportoerNavn }: { reklamationId: string; sagId: string; transportoerNavn: string }) {
+  const id = useId();
+  return (
+    <DialogKnap
+      tekst="Afvist"
+      titel={`${transportoerNavn} har afvist reklamationen`}
+      beskrivelse="Så er det sælgerens tab – BidHamr dækker ikke. Sælgeren får besked med begrundelsen."
+    >
+      {({ sender, fejl, setFejl, send, luk }) => (
+        <form
+          method="post"
+          className="space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            const grund = String(new FormData(e.currentTarget).get("grund") ?? "").trim();
+            if (!grund) {
+              setFejl("Skriv fragtfirmaets begrundelse. Den vises for sælgeren.");
+              return;
+            }
+            void send(() => afvisReklamation(reklamationId, grund, sagId), "Registreret som afvist", luk);
+          }}
+        >
+          <div>
+            <label htmlFor={`${id}-grund`} className="block text-sm font-medium text-neutral-800">
+              {transportoerNavn}s begrundelse <span className="font-normal text-neutral-500">(vises for sælgeren)</span>
+            </label>
+            <textarea id={`${id}-grund`} name="grund" rows={3} required maxLength={1000} disabled={sender} className={FELT} placeholder="Fx: Skaden kan ikke henføres til transporten." />
+          </div>
+          <Fejl fejl={fejl} />
+          <Knapper sender={sender} onLuk={luk} bekraeft="Registrér som afvist" fare />
+        </form>
+      )}
+    </DialogKnap>
+  );
+}
+
+// ------------------------------------------------------------------ Udbetal (chef)
+
+function UdbetalKnap({
+  reklamationId,
+  sagId,
+  transportoerNavn,
+  godkendtBeloebOere,
+  genoptag,
+}: {
+  reklamationId: string;
+  sagId: string;
+  transportoerNavn: string;
+  godkendtBeloebOere: number;
+  // Et tidligere forsøg er sat i gang uden et sikkert svar fra Stripe.
+  genoptag: boolean;
+}) {
+  const id = useId();
+  const [modtaget, setModtaget] = useState(false);
+  return (
+    <DialogKnap
+      tekst={genoptag ? "Udbetal til sælger (prøv igen)" : "Udbetal til sælger"}
+      stil="btn-primaer"
+      titel={`Udbetal ${kroner(godkendtBeloebOere)} til sælgeren`}
+      beskrivelse={
+        <>
+          Hele det godkendte beløb sendes via Stripe fra BidHamrs Stripe-saldo til sælgerens Stripe-konto og derfra til
+          sælgerens bank. BidHamr beholder intet. Gør det kun, når erstatningen fra {transportoerNavn} er modtaget (på
+          banken eller modregnet på fakturaen).
+          {genoptag && " Et tidligere forsøg fik ikke et sikkert svar fra Stripe – vi slår det op først, så der aldrig udbetales to gange."}
+        </>
+      }
+    >
+      {({ sender, fejl, setFejl, send, luk }) => (
+        <form
+          method="post"
+          className="space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            if (!modtaget) {
+              setFejl(`Sæt flueben ved, at erstatningen er modtaget fra ${transportoerNavn}.`);
+              return;
+            }
+            void send(
+              () => udbetalReklamation(reklamationId, { erstatningModtaget: true }, sagId),
+              "Erstatningen er udbetalt til sælgeren",
+              () => {
+                setModtaget(false);
+                luk();
+              },
+            );
+          }}
+        >
+          <label htmlFor={`${id}-modtaget`} className="flex min-h-11 items-start gap-3 rounded-lg border border-neutral-300 p-3 text-sm text-neutral-800">
+            <input
+              id={`${id}-modtaget`}
+              type="checkbox"
+              checked={modtaget}
+              onChange={(e) => setModtaget(e.target.checked)}
+              disabled={sender}
+              className="mt-0.5 h-5 w-5 shrink-0 accent-groen"
+            />
+            <span>
+              Erstatningen er modtaget fra {transportoerNavn}
+              <span className="block text-xs text-neutral-500">Gemmes med dit navn og tidspunktet.</span>
+            </span>
+          </label>
+          <Fejl fejl={fejl} />
+          <Knapper sender={sender} onLuk={luk} bekraeft={`Udbetal ${kroner(godkendtBeloebOere)}`} spaerret={!modtaget} />
+        </form>
+      )}
+    </DialogKnap>
   );
 }
 
@@ -180,63 +420,48 @@ function RetStatusKnap({
   sagsnummer: string | null;
 }) {
   const id = useId();
-  const [aaben, setAaben] = useState(false);
   const standard: ReklamationRetStatus = (REKLAMATION_RET_STATUSSER as readonly string[]).includes(status)
     ? (status as ReklamationRetStatus)
-    : "afventer_saelger";
+    : "afventer_bidhamr";
   const [ny, setNy] = useState<ReklamationRetStatus>(standard);
-  const luk = () => setAaben(false);
-  const { sender, fejl, setFejl, send } = useSend();
-
-  function indsend(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const v = (k: string) => String(fd.get(k) ?? "").trim();
-    if (!v("begrundelse")) {
-      setFejl("Skriv en intern begrundelse for rettelsen.");
-      return;
-    }
-    if (ny === "godkendt" && !v("beloeb")) {
-      setFejl("Skriv det godkendte beløb i kroner, fx 1.250,00.");
-      return;
-    }
-    void send(
-      () =>
-        retReklamationStatus({
-          reklamationId,
-          status: ny,
-          beloebKr: v("beloeb"),
-          sagsnummer: v("sagsnummer"),
-          grund: v("grund"),
-          begrundelse: v("begrundelse"),
-          sagId,
-        }),
-      "Status er rettet",
-      luk,
-    );
-  }
-
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          setFejl(null);
-          setNy(standard);
-          setAaben(true);
-        }}
-        className="btn btn-sekundaer w-full sm:w-auto"
-      >
-        Ret status
-      </button>
-      <Dialog
-        titel="Ret reklamationens status"
-        beskrivelse="Brug det, hvis sælgeren har registreret forkert, eller hvis du har fået svaret fra fragtfirmaet på anden vis. Sælgeren får ingen besked."
-        aaben={aaben}
-        onLuk={luk}
-        laast={sender}
-      >
-        <form onSubmit={indsend} method="post" className="space-y-4">
+    <DialogKnap
+      tekst="Ret status"
+      titel="Ret reklamationens status"
+      beskrivelse="Brug det, hvis noget er registreret forkert, eller svaret er kommet på anden vis. Sælgeren får ingen besked. Kan ikke bruges, når erstatningen er udbetalt."
+    >
+      {({ sender, fejl, setFejl, send, luk }) => (
+        <form
+          method="post"
+          className="space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            const v = (k: string) => String(fd.get(k) ?? "").trim();
+            if (!v("begrundelse")) {
+              setFejl("Skriv en intern begrundelse for rettelsen.");
+              return;
+            }
+            if (ny === "godkendt" && !v("beloeb")) {
+              setFejl("Skriv det godkendte beløb i kroner, fx 1.250,00.");
+              return;
+            }
+            void send(
+              () =>
+                retReklamationStatus({
+                  reklamationId,
+                  status: ny,
+                  beloebKr: v("beloeb"),
+                  sagsnummer: v("sagsnummer"),
+                  grund: v("grund"),
+                  begrundelse: v("begrundelse"),
+                  sagId,
+                }),
+              "Status er rettet",
+              luk,
+            );
+          }}
+        >
           <div>
             <label htmlFor={`${id}-status`} className="block text-sm font-medium text-neutral-800">
               Ny status
@@ -268,7 +493,7 @@ function RetStatusKnap({
           {(ny === "anmeldt" || ny === "godkendt" || ny === "afvist") && (
             <div>
               <label htmlFor={`${id}-nr`} className="block text-sm font-medium text-neutral-800">
-                Fragtfirmaets sagsnummer <span className="font-normal text-neutral-500">(valgfrit)</span>
+                Fragtfirmaets sagsnummer {sagsnummer ? <span className="font-normal text-neutral-500">(valgfrit – bevares ellers)</span> : null}
               </label>
               <input id={`${id}-nr`} name="sagsnummer" defaultValue={sagsnummer ?? ""} maxLength={100} autoComplete="off" disabled={sender} className={FELT} />
             </div>
@@ -276,7 +501,7 @@ function RetStatusKnap({
           {ny === "afvist" && (
             <div>
               <label htmlFor={`${id}-grund`} className="block text-sm font-medium text-neutral-800">
-                Fragtfirmaets begrundelse <span className="font-normal text-neutral-500">(valgfri – vises for sælgeren)</span>
+                Fragtfirmaets begrundelse <span className="font-normal text-neutral-500">(vises for sælgeren)</span>
               </label>
               <textarea id={`${id}-grund`} name="grund" rows={2} maxLength={1000} disabled={sender} className={FELT} />
             </div>
@@ -292,7 +517,7 @@ function RetStatusKnap({
               required
               maxLength={2000}
               disabled={sender}
-              placeholder="Fx: Sælgeren skrev i chatten, at DAO har godkendt 1.200 kr."
+              placeholder="Fx: DAO svarede på mail, at de har godkendt 1.200 kr."
               className={FELT}
             />
             <p className="mt-1 text-xs text-neutral-500">Kun synlig for BidHamr. Gemmes i loggen.</p>
@@ -300,8 +525,8 @@ function RetStatusKnap({
           <Fejl fejl={fejl} />
           <Knapper sender={sender} onLuk={luk} bekraeft="Ret status" />
         </form>
-      </Dialog>
-    </>
+      )}
+    </DialogKnap>
   );
 }
 
@@ -309,40 +534,27 @@ function RetStatusKnap({
 
 function AnnullerKnap({ reklamationId, sagId }: { reklamationId: string; sagId: string }) {
   const id = useId();
-  const [aaben, setAaben] = useState(false);
-  const luk = () => setAaben(false);
-  const { sender, fejl, setFejl, send } = useSend();
-
-  function indsend(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const grund = String(new FormData(e.currentTarget).get("grund") ?? "").trim();
-    if (!grund) {
-      setFejl("Skriv en begrundelse. Den vises for sælgeren.");
-      return;
-    }
-    void send(() => annullerReklamation(reklamationId, grund, sagId), "Reklamationen er annulleret", luk);
-  }
-
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          setFejl(null);
-          setAaben(true);
-        }}
-        className="btn btn-fare w-full sm:w-auto"
-      >
-        Annullér
-      </button>
-      <Dialog
-        titel="Annullér reklamationen"
-        beskrivelse="Sælgeren kan så ikke længere hente oplysningerne og får en besked med din begrundelse."
-        aaben={aaben}
-        onLuk={luk}
-        laast={sender}
-      >
-        <form onSubmit={indsend} method="post" className="space-y-4">
+    <DialogKnap
+      tekst="Annullér"
+      stil="btn-fare"
+      titel="Annullér reklamationen"
+      beskrivelse="Reklamationen stoppes, og sælgeren får en besked med din begrundelse."
+    >
+      {({ sender, fejl, setFejl, send, luk }) => (
+        <form
+          method="post"
+          className="space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            const grund = String(new FormData(e.currentTarget).get("grund") ?? "").trim();
+            if (!grund) {
+              setFejl("Skriv en begrundelse. Den vises for sælgeren.");
+              return;
+            }
+            void send(() => annullerReklamation(reklamationId, grund, sagId), "Reklamationen er annulleret", luk);
+          }}
+        >
           <div>
             <label htmlFor={`${id}-grund`} className="block text-sm font-medium text-neutral-800">
               Begrundelse til sælgeren
@@ -361,14 +573,14 @@ function AnnullerKnap({ reklamationId, sagId }: { reklamationId: string; sagId: 
           <Fejl fejl={fejl} />
           <Knapper sender={sender} onLuk={luk} bekraeft="Annullér reklamationen" fare />
         </form>
-      </Dialog>
-    </>
+      )}
+    </DialogKnap>
   );
 }
 
 // ------------------------------------------------------------------ Kvittér
 
-// Sagen er ændret efter sælgerens anmeldelse: "set - reklamationen fortsætter".
+// Sagen er ændret efter anmeldelsen: "set - reklamationen fortsætter".
 // aarsag: hvorfor sagen er ændret (fragt_reklamation_betingelser): null =
 // betingelserne er opfyldt igen, undefined = ukendt. Er årsagen ikke
 // midlertidig (anke), afviser databasen kvitteringen - så vises kun årsagen
@@ -377,83 +589,71 @@ function KvitterKnap({ reklamationId, sagId, aarsag }: { reklamationId: string; 
   const id = useId();
   const kendt = aarsag !== undefined;
   const tilladt = !kendt || kanKvittere(aarsag);
-  const [aaben, setAaben] = useState(false);
-  const luk = () => setAaben(false);
-  const { sender, fejl, setFejl, send } = useSend();
-
-  function indsend(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const begrundelse = String(new FormData(e.currentTarget).get("begrundelse") ?? "").trim();
-    if (!begrundelse) {
-      setFejl("Skriv en intern begrundelse.");
-      return;
-    }
-    void send(() => kvitterSagAendret(reklamationId, begrundelse, sagId), "Kvitteret – reklamationen fortsætter", luk);
-  }
-
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          setFejl(null);
-          setAaben(true);
-        }}
-        className="btn btn-sekundaer w-full sm:w-auto"
-      >
-        Kvittér for ændringen
-      </button>
-      <Dialog
-        titel="Kvittér for den ændrede sag"
-        beskrivelse="Reklamationen fortsætter uændret, og sælgeren kan igen registrere, at erstatningen er godkendt. Sælgeren får besked. Skal reklamationen stoppes, så annullér eller ret status i stedet."
-        aaben={aaben}
-        onLuk={luk}
-        laast={sender}
-      >
-        {kendt && (
-          <p
-            role="note"
-            className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
-              tilladt ? "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst" : "border-fejl-kant bg-fejl-bg text-fejl-tekst"
-            }`}
-          >
-            {aarsag === null
-              ? "Betingelserne er opfyldt igen: køberen er refunderet, afgørelsen er endelig, og indpakningen er ordentlig."
-              : tilladt
-                ? `Årsag: ${betingelseTekst(aarsag)}. Du kan lade sælgeren fortsætte. Ender sagen alligevel ikke til købers fordel, markeres den som ændret igen.`
-                : `Årsag: ${betingelseTekst(aarsag)}. Sælgeren kan derfor ikke fortsætte. Annullér reklamationen, eller ret status.`}
-          </p>
-        )}
-        {!tilladt ? (
-          <div className="flex justify-end">
-            <button type="button" onClick={luk} className="btn btn-sekundaer">
-              Luk
-            </button>
-          </div>
-        ) : (
-        <form onSubmit={indsend} method="post" className="space-y-4">
-          <div>
-            <label htmlFor={`${id}-beg`} className="block text-sm font-medium text-neutral-800">
-              Intern begrundelse
-            </label>
-            <textarea
-              id={`${id}-beg`}
-              name="begrundelse"
-              rows={3}
-              required
-              maxLength={2000}
-              disabled={sender}
-              placeholder="Fx: Anken handler kun om returfragten – skaden og refusionen står ved magt."
-              className={FELT}
-            />
-            <p className="mt-1 text-xs text-neutral-500">Kun synlig for BidHamr. Gemmes i loggen.</p>
-          </div>
-          <Fejl fejl={fejl} />
-          <Knapper sender={sender} onLuk={luk} bekraeft="Kvittér" />
-        </form>
-        )}
-      </Dialog>
-    </>
+    <DialogKnap
+      tekst="Kvittér for ændringen"
+      titel="Kvittér for den ændrede sag"
+      beskrivelse={'Reklamationen fortsætter uændret, og "Godkendt" og udbetalingen er igen mulige (udbetalingen kræver dog, at betingelserne er helt opfyldt). Sælgeren får besked. Skal reklamationen stoppes, så annullér eller ret status i stedet.'}
+    >
+      {({ sender, fejl, setFejl, send, luk }) => (
+        <>
+          {kendt && (
+            <p
+              role="note"
+              className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
+                tilladt ? "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst" : "border-fejl-kant bg-fejl-bg text-fejl-tekst"
+              }`}
+            >
+              {aarsag === null
+                ? "Betingelserne er opfyldt igen: køberen er refunderet, afgørelsen er endelig, og indpakningen er ordentlig."
+                : tilladt
+                  ? `Årsag: ${betingelseTekst(aarsag)}. Du kan lade reklamationen fortsætte. Ender sagen alligevel ikke til købers fordel, markeres den som ændret igen.`
+                  : `Årsag: ${betingelseTekst(aarsag)}. Reklamationen kan derfor ikke fortsætte. Annullér den, eller ret status.`}
+            </p>
+          )}
+          {!tilladt ? (
+            <div className="flex justify-end">
+              <button type="button" onClick={luk} className="btn btn-sekundaer">
+                Luk
+              </button>
+            </div>
+          ) : (
+            <form
+              method="post"
+              className="space-y-4"
+              onSubmit={(e: FormEvent<HTMLFormElement>) => {
+                e.preventDefault();
+                const begrundelse = String(new FormData(e.currentTarget).get("begrundelse") ?? "").trim();
+                if (!begrundelse) {
+                  setFejl("Skriv en intern begrundelse.");
+                  return;
+                }
+                void send(() => kvitterSagAendret(reklamationId, begrundelse, sagId), "Kvitteret – reklamationen fortsætter", luk);
+              }}
+            >
+              <div>
+                <label htmlFor={`${id}-beg`} className="block text-sm font-medium text-neutral-800">
+                  Intern begrundelse
+                </label>
+                <textarea
+                  id={`${id}-beg`}
+                  name="begrundelse"
+                  rows={3}
+                  required
+                  maxLength={2000}
+                  disabled={sender}
+                  placeholder="Fx: Anken handler kun om returfragten – skaden og refusionen står ved magt."
+                  className={FELT}
+                />
+                <p className="mt-1 text-xs text-neutral-500">Kun synlig for BidHamr. Gemmes i loggen.</p>
+              </div>
+              <Fejl fejl={fejl} />
+              <Knapper sender={sender} onLuk={luk} bekraeft="Kvittér" />
+            </form>
+          )}
+        </>
+      )}
+    </DialogKnap>
   );
 }
 
@@ -493,7 +693,7 @@ export function ReklamationNote({
         rows={4}
         maxLength={4000}
         disabled={sender || inhabil}
-        placeholder="Fx: Ringede til sælgeren 3. nov. – anmelder i weekenden."
+        placeholder="Fx: Anmeldt på omdeling.info 3. nov. – DAO svarer inden for 14 dage."
         className={FELT}
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -515,8 +715,13 @@ export default function ReklamationStaffHandlinger({
   sagId,
   status,
   kravbeloebOere,
+  godkendtBeloebOere,
   sagsnummer,
+  transportoerNavn,
+  anmeldUrl,
   inhabil,
+  erChef,
+  udbetalingIGang = false,
   sagAendret = false,
   sagAendretAarsag,
 }: {
@@ -524,8 +729,15 @@ export default function ReklamationStaffHandlinger({
   sagId: string;
   status: ReklamationStatus;
   kravbeloebOere: number;
+  godkendtBeloebOere: number | null;
   sagsnummer: string | null;
+  transportoerNavn: string;
+  anmeldUrl: string | null;
   inhabil: boolean;
+  // Kun chefen ser "Udbetal til sælger" (databasen tjekker rollen igen).
+  erChef: boolean;
+  // Chefens udbetaling er sat i gang uden et sikkert svar fra Stripe.
+  udbetalingIGang?: boolean;
   // Sagen er ændret efter anmeldelsen, og ingen har kvitteret.
   sagAendret?: boolean;
   // Hvorfor (fragt_reklamation_betingelser): null = opfyldt igen, undefined = ukendt.
@@ -538,13 +750,36 @@ export default function ReklamationStaffHandlinger({
       </p>
     );
   }
-  const aaben = status === "afventer_saelger" || status === "anmeldt";
+  if (status === "udbetalt") {
+    return <p className="text-sm text-neutral-600">Erstatningen er udbetalt til sælgeren. Der er ikke mere at gøre.</p>;
+  }
+  const kanAnnullere = (status === "afventer_bidhamr" || status === "anmeldt" || status === "godkendt") && !udbetalingIGang;
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
       {sagAendret && <KvitterKnap reklamationId={reklamationId} sagId={sagId} aarsag={sagAendretAarsag} />}
-      {aaben && <SendIgenKnap reklamationId={reklamationId} sagId={sagId} />}
-      <RetStatusKnap reklamationId={reklamationId} sagId={sagId} status={status} kravbeloebOere={kravbeloebOere} sagsnummer={sagsnummer} />
-      {aaben && <AnnullerKnap reklamationId={reklamationId} sagId={sagId} />}
+      {status === "afventer_bidhamr" && (
+        <AnmeldKnap reklamationId={reklamationId} sagId={sagId} transportoerNavn={transportoerNavn} anmeldUrl={anmeldUrl} sagsnummer={sagsnummer} />
+      )}
+      {status === "anmeldt" && !sagAendret && (
+        <GodkendKnap reklamationId={reklamationId} sagId={sagId} transportoerNavn={transportoerNavn} kravbeloebOere={kravbeloebOere} />
+      )}
+      {status === "anmeldt" && <AfvisKnap reklamationId={reklamationId} sagId={sagId} transportoerNavn={transportoerNavn} />}
+      {status === "anmeldt" && (
+        <AnmeldKnap reklamationId={reklamationId} sagId={sagId} transportoerNavn={transportoerNavn} anmeldUrl={anmeldUrl} sagsnummer={sagsnummer} ret />
+      )}
+      {status === "godkendt" && erChef && !sagAendret && godkendtBeloebOere != null && (
+        <UdbetalKnap
+          reklamationId={reklamationId}
+          sagId={sagId}
+          transportoerNavn={transportoerNavn}
+          godkendtBeloebOere={godkendtBeloebOere}
+          genoptag={udbetalingIGang}
+        />
+      )}
+      {!udbetalingIGang && (
+        <RetStatusKnap reklamationId={reklamationId} sagId={sagId} status={status} kravbeloebOere={kravbeloebOere} sagsnummer={sagsnummer} />
+      )}
+      {kanAnnullere && <AnnullerKnap reklamationId={reklamationId} sagId={sagId} />}
     </div>
   );
 }

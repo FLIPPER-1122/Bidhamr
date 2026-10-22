@@ -38,12 +38,17 @@ export type StaffTal = {
   haenger: number;
   fragt: number;
   markeret: number;
-  // Reklamationer hos fragtfirmaet (fragt_reklamationer_antal): venter på
-  // sælger (til orientering), stået stille i 14 dage og sagen ændret efter
-  // anmeldelsen (begge røde - staff skal se på dem).
+  // Reklamationer hos fragtfirmaet (src/lib/reklamation/tal.ts): venter på
+  // at blive anmeldt af BidHamr (til orientering; rødt efter 3 dage), anmeldt
+  // uden svar i 30 dage (gråt) og sagen ændret efter anmeldelsen (rødt).
+  // Kun chefen: godkendte, der venter på udbetaling, og udbetalinger, der
+  // hænger eller er fejlet (rødt) - 0 for alle andre.
   reklamationAfventer: number;
+  reklamationAfventerRoed: number;
   reklamationStille: number;
   reklamationSagAendret: number;
+  reklamationVenterUdbetaling: number;
+  reklamationUdbetalingFejl: number;
   // Ekstra fragt (ekstra_fragt_antal): afventer betaling (til orientering),
   // spærrede sælgere (fristen overskredet) og indsigelser (rødt - staff skal
   // afgøre dem).
@@ -82,9 +87,12 @@ export const hentStaffTal = cache(async (): Promise<StaffTal> => {
     ekstraFragtForfaldne: n(ef, "forfaldne"),
     ekstraFragtIndsigelser: n(ef, "indsigelser"),
     ekstraFragtTabteBankindsigelser: n(ef, "tabte_bankindsigelser"),
-    reklamationAfventer: r?.afventerSaelger ?? 0,
-    reklamationStille: r?.stille ?? 0,
-    reklamationSagAendret: r?.sagAendret ?? 0,
+    reklamationAfventer: r?.tal.afventer ?? 0,
+    reklamationAfventerRoed: r?.tal.afventerRoed ?? 0,
+    reklamationStille: r?.tal.stille ?? 0,
+    reklamationSagAendret: r?.tal.sagAendret ?? 0,
+    reklamationVenterUdbetaling: r?.chef ? r.tal.venterUdbetaling : 0,
+    reklamationUdbetalingFejl: r?.chef ? r.tal.udbetalingFejl : 0,
     ubetalte: n(ubetalte, "antal"),
     betalinger: n(betalinger, "antal"),
     chats: n(chats, "antal"),
@@ -118,8 +126,10 @@ async function hentHandlerTal(): Promise<{ haenger: number; fragt: number; marke
 
 // Reklamationer hos fragtfirmaet (kun staff; fejl, fx før migrationen, giver null).
 async function hentReklamationTaellere() {
-  if (!(await getStaffRole())) return null;
-  return hentReklamationTal(createAdminClient());
+  const rolle = await getStaffRole();
+  if (!rolle) return null;
+  const tal = await hentReklamationTal(createAdminClient());
+  return tal ? { tal, chef: rolle === "chef" } : null;
 }
 
 // Ekstra fragt (ekstra_fragt_antal). Kaldes med BRUGERENS session: databasen

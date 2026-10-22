@@ -51,9 +51,7 @@ import { foerLancering } from "@/lib/lancering";
 import FirmaKontaktBoks from "@/components/erhverv/FirmaKontaktBoks";
 import KlageBoks from "@/components/erhverv/klager/KlageBoks";
 import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { hentPakkeTilSaelger, type Reklamationspakke } from "@/lib/reklamation/pakke";
-import { REKLAMATION_AABNE, type SaelgerReklamation } from "@/lib/reklamation/typer";
+import type { SaelgerReklamation } from "@/lib/reklamation/typer";
 import ReklamationKort from "@/components/reklamation/ReklamationKort";
 import ReklamationMaerke from "@/components/reklamation/ReklamationMaerke";
 import { hentMineEkstraFragtRegninger, type MinEkstraFragt } from "@/app/actions/ekstraFragt";
@@ -497,8 +495,8 @@ export default async function HandelDetalje({
 
   const afsendSenest = venterPaaAfsendelse ? sendSenest(betaltRaekke?.betalt_kl) : null;
 
-  // Reklamation hos fragtfirmaet (kun sælgeren): oplysningerne hentes kun,
-  // mens den er åben.
+  // Reklamation hos fragtfirmaet (kun sælgeren - kun status; BidHamr
+  // anmelder og udbetaler).
   const reklamationSvar = await reklamationLoefte;
   const ekstraFragt = (await ekstraFragtLoefte) ?? [];
   // Mærket i overblikket: den åbne regning (der er højst én pr. pakke).
@@ -507,14 +505,6 @@ export default async function HandelDetalje({
     ekstraFragt.find((r) => r.status === "behandles" || r.status === "indsigelse") ??
     null;
   const reklamation = (reklamationSvar?.data?.[0] ?? null) as SaelgerReklamation | null;
-  let reklamationPakke: Reklamationspakke | null = null;
-  if (reklamation && (REKLAMATION_AABNE as readonly string[]).includes(reklamation.status)) {
-    try {
-      reklamationPakke = (await hentPakkeTilSaelger(supabase as unknown as SupabaseClient, reklamation.id))?.pakke ?? null;
-    } catch (err) {
-      console.error("Reklamationspakken kunne ikke hentes:", err);
-    }
-  }
 
   return (
     <Ramme className={erFirmaSted ? "" : "flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10"}>
@@ -561,7 +551,7 @@ export default async function HandelDetalje({
           </div>
         )}
         {reklamation && (
-          <ReklamationKort r={reklamation} pakke={reklamationPakke} tradeId={handel.id} kanHandle={!(erFirmaSted && lukket)} />
+          <ReklamationKort r={reklamation} />
         )}
         {sag && <SagVisning sag={sag} brugerId={user.id} samtale={sagSamtale} />}
         {visReturlabel && returfragt && returAfsender && (

@@ -90,8 +90,8 @@ export const HANDLING_NAVNE: Record<string, string> = {
   beta_aabnet: "Åbnede beta-testen",
   beta_lukket: "Lukkede beta-testen",
   konto_oprettelse_tilladt: "Gav tilladelse til at oprette en konto (fx firmakonto)",
-  // 20261029010000_reklamation_fragtfirma.sql (sælgerens egne registreringer
-  // logges med systembrugeren som afsender).
+  // 20261029010000_reklamation_fragtfirma.sql (BidHamr anmelder, chefen
+  // udbetaler; systemets hændelser logges med systembrugeren som afsender).
   indpakning_ordentlig: "Vurderede indpakningen som ordentlig",
   indpakning_ordentlig_fortrudt: "Fortrød vurderingen \"ordentlig indpakning\"",
   reklamation_oprettet: "Reklamation hos fragtfirma oprettet",
@@ -100,8 +100,16 @@ export const HANDLING_NAVNE: Record<string, string> = {
   reklamation_sag_aendret: "Sagen ændret efter anmeldt reklamation",
   reklamation_sag_aendret_kvitteret: "Kvitteret for ændret sag (reklamation)",
   reklamation_note: "Skrev intern note på reklamation",
-  reklamation_gensendt: "Sendte reklamationspakken til sælger igen",
   reklamation_status_rettet: "Rettede status på reklamation",
+  reklamation_anmeldt: "Anmeldte skaden hos fragtfirma",
+  reklamation_godkendt: "Registrerede: fragtfirmaet godkendte erstatning",
+  reklamation_afvist: "Registrerede: fragtfirmaet afviste erstatning",
+  reklamation_udbetaling_startet: "Bekræftede modtaget erstatning og startede udbetaling",
+  reklamation_udbetaling_fejlet: "Udbetaling af erstatning fejlede",
+  reklamation_udbetalt: "Udbetalte erstatning til sælger (Stripe)",
+  reklamation_bank_udbetaling: "Erstatning sendt til sælgers bank (Stripe)",
+  // Første udgave (sælgeren anmeldte selv) - kun historik på testdatabasen.
+  reklamation_gensendt: "Sendte reklamationspakken til sælger igen",
   reklamation_saelger_anmeldt: "Sælger anmeldte skaden hos fragtfirma",
   reklamation_saelger_godkendt: "Sælger: fragtfirmaet godkendte erstatning",
   reklamation_saelger_afvist: "Sælger: fragtfirmaet afviste erstatning",
