@@ -1,21 +1,27 @@
 import "server-only";
 
 // Beskeder til SÆLGEREN om reklamationen hos fragtfirmaet (type 'sag' -
-// påkrævet; altid også mail, Filip 21. okt. 2026). Køberen får ingen.
+// påkrævet; altid også mail). Køberen får ingen. BidHamr anmelder, og
+// chefen udbetaler (Filip, 22. okt. 2026) - sælgeren skal ikke gøre noget,
+// men får besked ved hvert trin. Ingen omtale af omdeling.info.
 //
 // Reklamationen oprettes i databasen (trigger på sager + cron, først når
 // køberen er refunderet, og afgørelsen er endelig), så beskederne udledes af
 // tidsstemplerne - samme mønster som advarsler (src/lib/notifikationer/cron.ts).
 // Hver hændelse har en fast nøgle, så den aldrig sendes to gange:
-//   reklamation:<id>:oprettet:<aktiv_fra_kl>      - "Du kan søge erstatning ..."
+//   reklamation:<id>:oprettet:<aktiv_fra_kl>      - "Vi reklamerer hos DAO for dig"
 //                                                   (ny nøgle, når den genopstår)
-//   reklamation:<id>:gensendt:<antal>             - staff har sendt pakken igen
-//   reklamation:<id>:paamind:<aktiv_fra_kl>       - 7 dage uden "anmeldt"
+//   reklamation:<id>:anmeldt:<anmeldt_kl>         - skaden er anmeldt
+//   reklamation:<id>:godkendt:<afgjort_kl>        - godkendt (beløb; udbetales,
+//                                                   når fragtfirmaet har betalt os)
+//   reklamation:<id>:afvist:<afgjort_kl>          - afvist (grund)
+//   reklamation:<id>:udbetalt:<udbetalt_kl>       - udbetalt til sælgeren
+//   reklamation:<id>:bank_fejlet:<bank_fejlet_kl> - udbetalingen til banken fejlede
 //   reklamation:<id>:annulleret:<annulleret_kl>   - staff har stoppet den
 //   reklamation:<id>:auto_annulleret:<annulleret_kl> - systemet har stoppet den
 //                                                   (kun hvis "oprettet" blev sendt)
 //   reklamation:<id>:sag_aendret:<sag_aendret_kl> - sagen er ændret efter anmeldelsen
-//   reklamation:<id>:kvitteret:<kvitteret_kl>     - du kan fortsætte (anmeldt; kun
+//   reklamation:<id>:kvitteret:<kvitteret_kl>     - reklamationen fortsætter (kun
 //                                                   hvis "sag_aendret" for samme
 //                                                   markering blev sendt)
 // En hurtig fortrydelse (fx staff fortryder "ordentlig" og vurderer igen)
@@ -25,22 +31,13 @@ import "server-only";
 // så "oprettet"-nøglen er den samme.
 // Kaldes fra notifikations-cron'en (hvert 5. minut) og med after() efter
 // staff-handlinger og sagsafgørelser. Før beskederne synkroniseres
-// reklamationerne i databasen (fragt_reklamationer_synkroniser_alle), så en
-// reklamation oprettes, når refusionen er bekræftet, eller ankefristen er
-// udløbet. Kaster aldrig.
-// Kun offentlige felter - ALDRIG intern_note.
+// reklamationerne i databasen (fragt_reklamationer_synkroniser_alle).
+// Kaster aldrig. Kun offentlige felter - ALDRIG intern_note eller sagsnummer.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { send, type NotifikationInput } from "@/lib/notifikationer/send";
 import { sagLink } from "@/lib/sager";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
-import {
-  REKLAMATION_ANMELD,
-  REKLAMATION_PAAMIND_DAGE,
-  kroner,
-  transportoerNavn,
-  type ReklamationStatus,
-  type ReklamationTransportoer,
-} from "@/lib/reklamation/typer";
+import { kroner, transportoerNavn, type ReklamationStatus, type ReklamationTransportoer } from "@/lib/reklamation/typer";
 
 const DAG = 24 * 3600 * 1000;
 // Skal matche vinduet i fragt_reklamation_synkroniser (genåbning inden for
@@ -55,11 +52,17 @@ export type ReklamationBeskedRaekke = {
   transportoer: ReklamationTransportoer;
   status: ReklamationStatus;
   kravbeloeb_oere: number;
+  godkendt_beloeb_oere?: number | null;
+  afvisningsgrund?: string | null;
   annulleret_grund: string | null;
   annulleret_auto: boolean;
   annulleret_kl: string | null;
   aktiv_fra_kl: string;
-  gensendt_antal: number;
+  anmeldt_kl?: string | null;
+  afgjort_kl?: string | null;
+  udbetalt_kl?: string | null;
+  bank_status?: string | null;
+  bank_fejlet_kl?: string | null;
   sag_aendret_kl: string | null;
   sag_aendret_kvitteret_kl: string | null;
   // Hvem der kvitterede (systemet eller staff) - styrer teksten.
@@ -70,7 +73,9 @@ export type ReklamationBeskedRaekke = {
 type Opgave = { brugerId: string; input: NotifikationInput & { noegle: string }; kraever?: string };
 
 const FELTER =
-  "id, trade_id, saelger_id, transportoer, status, kravbeloeb_oere, annulleret_grund, annulleret_auto, annulleret_kl, aktiv_fra_kl, gensendt_antal, sag_aendret_kl, sag_aendret_kvitteret_kl, sag_aendret_kvitteret_af";
+  "id, trade_id, saelger_id, transportoer, status, kravbeloeb_oere, godkendt_beloeb_oere, afvisningsgrund, annulleret_grund, annulleret_auto, annulleret_kl, aktiv_fra_kl, anmeldt_kl, afgjort_kl, udbetalt_kl, bank_status, bank_fejlet_kl, sag_aendret_kl, sag_aendret_kvitteret_kl, sag_aendret_kvitteret_af";
+
+const SPOERGSMAAL = "Har du spørgsmål, så skriv til support@bidhamr.dk.";
 
 function punktum(t: string): string {
   const s = t.trim();
@@ -79,14 +84,6 @@ function punktum(t: string): string {
 
 function ms(iso: string): number {
   return new Date(iso).getTime();
-}
-
-function anmeldTekst(r: ReklamationBeskedRaekke): string {
-  const navn = transportoerNavn(r.transportoer);
-  const sted = REKLAMATION_ANMELD[r.transportoer]?.url
-    ? ` på ${REKLAMATION_ANMELD[r.transportoer].url!.replace(/^https?:\/\//, "")}`
-    : "";
-  return `Anmeld skaden hos ${navn}${sted}. Du kan kræve op til ${kroner(r.kravbeloeb_oere)} På handlen ligger alle oplysninger og billeder samlet, så du kan kopiere dem direkte over. Det er ${navn}, der afgør, om du får erstatning, og pengene udbetales direkte fra ${navn} til dig.`;
 }
 
 // Teksterne (eksporteret til test og til indhold-agenten). nu: til test.
@@ -100,50 +97,72 @@ export function reklamationBeskeder(r: ReklamationBeskedRaekke, nu: number = Dat
   const noegle = (n: string) => `reklamation:${r.id}:${n}`;
   const op = (n: string, titel: string, tekst: string, kraever?: string, til: string = link) =>
     ud.push({ brugerId: r.saelger_id, input: { titel, tekst, link: til, data, noegle: noegle(n) }, kraever });
-  const aaben = r.status === "afventer_saelger" || r.status === "anmeldt";
   const oprettetNoegle = `oprettet:${ms(r.aktiv_fra_kl)}`;
   const aendretUkvitteret = !!r.sag_aendret_kl && !r.sag_aendret_kvitteret_kl;
+  const beloeb = r.godkendt_beloeb_oere != null ? kroner(r.godkendt_beloeb_oere) : null;
 
-  // Kun mens den venter på sælgeren (ikke efter annullering eller
-  // registrering). Ny nøgle pr. aktivering, så en genopstået reklamation
-  // giver en ny besked.
-  if (r.status === "afventer_saelger") {
+  // Kun mens den venter på BidHamr. Ny nøgle pr. aktivering, så en
+  // genopstået reklamation giver en ny besked.
+  if (r.status === "afventer_bidhamr") {
     op(
       oprettetNoegle,
-      `Du kan søge erstatning hos ${navn}`,
-      `Varen blev skadet under fragten, og køberen har fået pengene tilbage. Dine pakkebilleder viser, at du pakkede varen ordentligt, så du kan selv søge erstatning hos ${navn}. ${anmeldTekst(r)}`,
+      `Vi reklamerer hos ${navn} for dig`,
+      `Varen blev skadet under fragten, og køberen har fået pengene tilbage. Dine pakkebilleder viser, at du pakkede varen ordentligt, så BidHamr reklamerer hos ${navn} for dig – du skal ikke selv gøre noget. Vi kræver op til ${kroner(r.kravbeloeb_oere)} i erstatning. Det er ${navn}, der afgør, om du får erstatning. Du hører fra os, når der er nyt.`,
     );
   }
-  if (aaben && r.gensendt_antal > 0) {
+  if (r.status === "anmeldt" && r.anmeldt_kl) {
     op(
-      `gensendt:${r.gensendt_antal}`,
-      `Oplysninger til din skadeanmeldelse hos ${navn}`,
-      `BidHamr har sendt dig oplysningerne igen. ${anmeldTekst(r)}`,
+      `anmeldt:${ms(r.anmeldt_kl)}`,
+      `Skaden er anmeldt hos ${navn}`,
+      `Vi har anmeldt skaden hos ${navn} og sendt dine og køberens billeder med. Vi giver dig besked, når ${navn} har svaret.`,
     );
   }
-  if (r.status === "afventer_saelger" && nu - ms(r.aktiv_fra_kl) >= REKLAMATION_PAAMIND_DAGE * DAG) {
+  if (r.status === "godkendt" && r.afgjort_kl && beloeb) {
     op(
-      `paamind:${ms(r.aktiv_fra_kl)}`,
-      `Har du anmeldt skaden hos ${navn}?`,
-      `Vi kan ikke se, at skaden er anmeldt endnu. ${anmeldTekst(r)} Har du allerede anmeldt den, så marker det på handlen. Vil du ikke søge erstatning, kan du også vælge det dér.`,
+      `godkendt:${ms(r.afgjort_kl)}`,
+      `${navn} har godkendt erstatningen`,
+      `${navn} har godkendt en erstatning på ${beloeb} Vi udbetaler pengene til dig, når ${navn} har betalt os. Du får besked, når pengene er på vej.`,
+    );
+  }
+  if (r.status === "afvist" && r.afgjort_kl) {
+    op(
+      `afvist:${ms(r.afgjort_kl)}`,
+      `${navn} har afvist reklamationen`,
+      `${navn} har afvist reklamationen, så du får desværre ikke erstatning for varen.${r.afvisningsgrund ? ` Begrundelse fra ${navn}: ${punktum(r.afvisningsgrund)}` : ""} ${SPOERGSMAAL}`,
+    );
+  }
+  if (r.status === "udbetalt" && r.udbetalt_kl && beloeb) {
+    op(
+      `udbetalt:${ms(r.udbetalt_kl)}`,
+      "Vi har udbetalt erstatningen",
+      `Vi har udbetalt ${beloeb} i erstatning til dig. Vores betalingspartner Stripe sender pengene til din bankkonto – der går normalt 1-3 bankdage.`,
+    );
+  }
+  if (r.status === "udbetalt" && r.bank_status === "failed" && r.bank_fejlet_kl) {
+    op(
+      `bank_fejlet:${ms(r.bank_fejlet_kl)}`,
+      "Udbetalingen til din bank fejlede",
+      "Vores betalingspartner Stripe kunne ikke sende erstatningen til din bankkonto. Ret dine bankoplysninger hos Stripe – du finder dem under Min konto. Når bankkontoen er rettet, sendes pengene automatisk igen.",
+      undefined,
+      "/konto#udbetaling",
     );
   }
   if (r.status === "annulleret" && !r.annulleret_auto && r.annulleret_kl) {
     op(
       `annulleret:${ms(r.annulleret_kl)}`,
       "Reklamationen er stoppet",
-      `BidHamr har stoppet reklamationen hos ${navn}.${r.annulleret_grund ? ` Begrundelse: ${punktum(r.annulleret_grund)}` : ""} Har du spørgsmål, så skriv til support@bidhamr.dk.`,
+      `BidHamr har stoppet reklamationen hos ${navn}.${r.annulleret_grund ? ` Begrundelse: ${punktum(r.annulleret_grund)}` : ""} ${SPOERGSMAAL}`,
     );
   }
-  // Systemet har stoppet den (sagen er ændret, før sælgeren anmeldte). Kun
+  // Systemet har stoppet den (sagen er ændret, før skaden blev anmeldt). Kun
   // hvis sælgeren fik "oprettet" for netop denne aktivering.
   // Først efter AUTO_STOP_VENT: genåbnes den inden da, får sælgeren hverken
-  // "stoppet" eller et nyt "Du kan søge erstatning".
+  // "stoppet" eller et nyt "Vi reklamerer for dig".
   if (r.status === "annulleret" && r.annulleret_auto && r.annulleret_kl && nu - ms(r.annulleret_kl) >= AUTO_STOP_VENT) {
     op(
       `auto_annulleret:${ms(r.annulleret_kl)}`,
       "Reklamationen er stoppet",
-      `Sagen om handlen er ændret, så du skal ikke anmelde skaden hos ${navn} alligevel. Har du spørgsmål, så skriv til support@bidhamr.dk.`,
+      `Sagen om handlen er ændret, så vi reklamerer ikke hos ${navn} alligevel. ${SPOERGSMAAL}`,
       noegle(oprettetNoegle),
       sagLink(r.trade_id),
     );
@@ -152,21 +171,19 @@ export function reklamationBeskeder(r: ReklamationBeskedRaekke, nu: number = Dat
     op(
       `sag_aendret:${ms(r.sag_aendret_kl!)}`,
       "Sagen om din handel er ændret",
-      r.status === "anmeldt"
-        ? `Sagen om handlen er ændret, efter du anmeldte skaden hos ${navn}. BidHamr kigger på det og kontakter dig. Vent med at registrere, at erstatningen er godkendt, til du har hørt fra os.`
-        : `Sagen om handlen er ændret, efter ${navn} godkendte din erstatning. BidHamr kigger på det og kontakter dig, hvis det får betydning for dig.`,
+      `Sagen om handlen er ændret, efter vi anmeldte skaden hos ${navn}. Vi kigger på, hvad det betyder for reklamationen, og giver dig besked.`,
     );
   }
   // Kun hvis "sag_aendret" for netop denne markering er sendt. Teksten
   // afhænger af, om staff eller systemet (betingelserne opfyldt igen) kvitterede.
-  if (r.status === "anmeldt" && r.sag_aendret_kl && r.sag_aendret_kvitteret_kl) {
+  if ((r.status === "anmeldt" || r.status === "godkendt") && r.sag_aendret_kl && r.sag_aendret_kvitteret_kl) {
     const afSystemet = (r.sag_aendret_kvitteret_af ?? "").toLowerCase() === BIDHAMR_SYSTEM_ID;
     op(
       `kvitteret:${ms(r.sag_aendret_kvitteret_kl)}`,
-      `Du kan fortsætte din anmeldelse hos ${navn}`,
+      `Reklamationen hos ${navn} fortsætter`,
       afSystemet
-        ? `Du kan fortsætte med din skadeanmeldelse hos ${navn}. Når ${navn} har svaret, så registrer svaret på handlen.`
-        : `BidHamr har kigget på sagen, og din anmeldelse hos ${navn} kan fortsætte. Når ${navn} har svaret, så registrer svaret på handlen.`,
+        ? `Reklamationen hos ${navn} fortsætter som før. Du hører fra os, når der er nyt.`
+        : `Vi har kigget på sagen, og reklamationen hos ${navn} fortsætter som før. Du hører fra os, når der er nyt.`,
       noegle(`sag_aendret:${ms(r.sag_aendret_kl)}`),
     );
   }
@@ -214,26 +231,18 @@ export async function notificerReklamationer(): Promise<number> {
     const admin = createAdminClient();
     await synkroniser(admin);
     const nu = Date.now();
-    const [nye, gamle, spaerrede] = await Promise.all([
-      // Ændret inden for 48 timer: oprettet, gensendt, annulleret, sag ændret.
-      // Nyeste først, så en stor bunke aldrig skubber de seneste ændringer ud
-      // (de ældre er behandlet i tidligere kørsler).
+    const [nye, spaerrede] = await Promise.all([
+      // Ændret inden for 48 timer: alle trin. Nyeste først, så en stor bunke
+      // aldrig skubber de seneste ændringer ud (de ældre er behandlet i
+      // tidligere kørsler).
       admin
         .from("fragt_reklamationer")
         .select(FELTER)
         .gte("opdateret_kl", new Date(nu - 2 * DAG).toISOString())
         .order("opdateret_kl", { ascending: false })
         .limit(MAKS),
-      // Påmindelse: venter på sælgeren i 7+ dage (højst 60 dage tilbage).
-      admin
-        .from("fragt_reklamationer")
-        .select(FELTER)
-        .eq("status", "afventer_saelger")
-        .lte("aktiv_fra_kl", new Date(nu - REKLAMATION_PAAMIND_DAGE * DAG).toISOString())
-        .gte("aktiv_fra_kl", new Date(nu - 60 * DAG).toISOString())
-        .limit(MAKS),
-      // Spærret for "godkendt" (sagen ændret, ikke kvitteret) - uanset alder,
-      // så sælgeren aldrig står spærret uden at have fået besked.
+      // Sagen ændret, ikke kvitteret - uanset alder, så sælgeren altid får
+      // besked.
       admin
         .from("fragt_reklamationer")
         .select(FELTER)
@@ -242,7 +251,7 @@ export async function notificerReklamationer(): Promise<number> {
         .is("sag_aendret_kvitteret_kl", null)
         .limit(MAKS),
     ]);
-    for (const r of [nye, gamle, spaerrede]) {
+    for (const r of [nye, spaerrede]) {
       if (r.error) {
         // 42P01/PGRST205: migrationen er ikke kørt endnu.
         if (r.error.code !== "42P01" && r.error.code !== "PGRST205") {
@@ -252,7 +261,7 @@ export async function notificerReklamationer(): Promise<number> {
       }
     }
     const raekker = new Map<string, ReklamationBeskedRaekke>();
-    for (const r of [...(nye.data ?? []), ...(gamle.data ?? []), ...(spaerrede.data ?? [])] as ReklamationBeskedRaekke[]) raekker.set(r.id, r);
+    for (const r of [...(nye.data ?? []), ...(spaerrede.data ?? [])] as ReklamationBeskedRaekke[]) raekker.set(r.id, r);
     const opgaver = [...raekker.values()].flatMap((r) => reklamationBeskeder(r, nu));
     return await sendOpgaver(admin, opgaver);
   } catch (err) {

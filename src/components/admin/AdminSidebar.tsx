@@ -33,12 +33,14 @@ const ROLLE_NAVN: Record<MenuRolle, string> = {
 export type MenuTaellere = {
   handler: number;
   sager: number;
-  // Reklamationer hos fragtfirmaet. Kritisk = stået stille / sagen ændret -> rødt.
+  // Reklamationer hos fragtfirmaet. Kritisk = ikke anmeldt efter 3 dage /
+  // sagen ændret / (chefen) udbetalingen hænger -> rødt.
   reklamationer: number;
   reklamationerKritisk: boolean;
   // Årsagerne til det røde tal (til skærmlæsere).
-  reklamationerStille?: number;
+  reklamationerAfventerRoed?: number;
   reklamationerSagAendret?: number;
+  reklamationerUdbetalingFejl?: number;
   // Ekstra fragt (for lille pakke). Kritisk = indsigelser venter på afgørelse -> rødt.
   ekstraFragt: number;
   ekstraFragtKritisk: boolean;
@@ -68,7 +70,12 @@ export const INGEN_TAELLERE: MenuTaellere = {
 
 type TalNoegle = Exclude<
   keyof MenuTaellere,
-  "anmeldelserKritisk" | "reklamationerKritisk" | "ekstraFragtKritisk" | "reklamationerStille" | "reklamationerSagAendret"
+  | "anmeldelserKritisk"
+  | "reklamationerKritisk"
+  | "ekstraFragtKritisk"
+  | "reklamationerAfventerRoed"
+  | "reklamationerSagAendret"
+  | "reklamationerUdbetalingFejl"
 >;
 
 type MenuPunkt = {
@@ -210,12 +217,13 @@ function Tal({ antal, tone, sr }: { antal: number; tone: "roed" | "gul" | "graa"
 }
 
 // Skærmlæsertekst til reklamationernes tal: årsagen til det røde tal
-// ("sag ændret" / "stille"), ellers at de venter på sælgeren.
+// ("ikke anmeldt" / "sag ændret" / "udbetaling"), ellers at de venter på os.
 function reklamationSr(t: MenuTaellere, tone: string): string {
-  if (tone !== "roed") return " venter på sælgeren";
+  if (tone !== "roed") return " venter på BidHamr";
   const dele = [
+    t.reklamationerAfventerRoed ? `${t.reklamationerAfventerRoed} ikke anmeldt` : null,
     t.reklamationerSagAendret ? `${t.reklamationerSagAendret} sag ændret` : null,
-    t.reklamationerStille ? `${t.reklamationerStille} stille` : null,
+    t.reklamationerUdbetalingFejl ? `${t.reklamationerUdbetalingFejl} udbetaling kræver handling` : null,
   ].filter(Boolean);
   return dele.length ? ` – ${dele.join(", ")}` : " – kræver handling";
 }

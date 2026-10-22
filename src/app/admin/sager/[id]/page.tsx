@@ -29,7 +29,7 @@ import { bidhamrDaekkerRefusion } from "@/app/actions/adminPengesikkerhed";
 import { refunderReturfragtAction } from "@/app/actions/adminReturfragt";
 import { BeskyttelseBadge, SagBilleder, SagStatusBadge, sagTid } from "@/components/sager/visning";
 import IndpakningOrdentligKnap from "@/components/admin/reklamation/IndpakningOrdentligKnap";
-import { REKLAMATION_LOG_NAVN, ReklamationStatusBadge, erSagAendret, erStille } from "@/components/admin/reklamation/visning";
+import { REKLAMATION_LOG_NAVN, ReklamationStatusBadge, erAnmeldRoed, erSagAendret } from "@/components/admin/reklamation/visning";
 import { kroner as kronerOere, transportoerNavn as reklamationTransportoer, type ReklamationStatus } from "@/lib/reklamation/typer";
 
 // Navne på handlingerne i moderation_log for sager.
@@ -179,7 +179,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
       .maybeSingle<{ tilbagekaldt_kl: string | null }>(),
     admin
       .from("fragt_reklamationer")
-      .select("id, status, transportoer, kravbeloeb_oere, godkendt_beloeb_oere, fremdrift_kl, sag_aendret_kl, sag_aendret_kvitteret_kl")
+      .select("id, status, transportoer, kravbeloeb_oere, godkendt_beloeb_oere, aktiv_fra_kl, sag_aendret_kl, sag_aendret_kvitteret_kl")
       .eq("sag_id", sag.id)
       .maybeSingle<{
         id: string;
@@ -187,13 +187,13 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
         transportoer: string;
         kravbeloeb_oere: number;
         godkendt_beloeb_oere: number | null;
-        fremdrift_kl: string;
+        aktiv_fra_kl: string;
         sag_aendret_kl: string | null;
         sag_aendret_kvitteret_kl: string | null;
       }>(),
   ]);
   const ordentligAktiv = !!ordentlig && !ordentlig.tilbagekaldt_kl;
-  const reklamationAnmeldt = !!reklamation && ["anmeldt", "godkendt", "afvist"].includes(reklamation.status);
+  const reklamationAnmeldt = !!reklamation && ["anmeldt", "godkendt", "afvist", "udbetalt"].includes(reklamation.status);
   // Kun ved skade under fragten, ikke ved afhentning, og ikke hvis indpakningen
   // allerede er vurderet dårlig (databasen tjekker det samme igen).
   const kanVurdereOrdentlig =
@@ -315,7 +315,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
         {reklamation && (
           <div
             className={`mt-4 flex flex-col gap-2 rounded-lg border px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between ${
-              erStille(reklamation.status, reklamation.fremdrift_kl, nu) || erSagAendret(reklamation.status, reklamation.sag_aendret_kl, reklamation.sag_aendret_kvitteret_kl)
+              erAnmeldRoed(reklamation.status, reklamation.aktiv_fra_kl, nu) || erSagAendret(reklamation.status, reklamation.sag_aendret_kl, reklamation.sag_aendret_kvitteret_kl)
                 ? "border-fejl-kant bg-fejl-bg"
                 : "border-admin-kant bg-admin-bg"
             }`}

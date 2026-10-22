@@ -2627,6 +2627,11 @@ export async function spejlUdbetaling(
   const { spejlBidhamrPayout } = await import("@/lib/betaling/udbetaling");
   const bidhamr = await spejlBidhamrPayout(stripeAccountId, payout);
   if (bidhamr !== null) return bidhamr;
+  // Chefens udbetaling af en erstatning (reklamation hos fragtfirma,
+  // 20261029010000) - BidHamrs egen payout, ikke en fremmed.
+  const { spejlReklamationPayout } = await import("@/lib/reklamation/udbetaling");
+  const reklamation = await spejlReklamationPayout(stripeAccountId, payout);
+  if (reklamation !== null) return reklamation;
 
   const { alarmPrTilfaelde } = await import("@/lib/betaling/driftTilfaelde");
   // Negativ udbetaling (amount < 0): Stripe henter et underskud på sælgerens

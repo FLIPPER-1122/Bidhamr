@@ -2,7 +2,7 @@ import { type NextRequest } from "next/server";
 import { assertRole } from "@/lib/adminAuth";
 import { logDriftFejl } from "@/lib/drift";
 import { hentReklamationspakke } from "@/lib/reklamation/pakke";
-import { FOR_MANGE, reklamationIndenForGraense } from "@/lib/reklamation/saelgerRute";
+import { FOR_MANGE, reklamationZipIndenForGraense } from "@/lib/reklamation/graense";
 import { reklamationStaffAdgang } from "@/lib/reklamation/staffAdgang";
 import { reklamationZipSvar, tekstSvar } from "@/lib/reklamation/zipSvar";
 
@@ -13,8 +13,8 @@ import { reklamationZipSvar, tekstSvar } from "@/lib/reklamation/zipSvar";
 // KUN staff (medarbejder+) med to-trins-login (assertRole -> hentStaffAdgang),
 // som ikke er inhabil (part i handlen eller har handlet med en af parterne).
 // Alle andre får 404 (inhabil: 403 med forklaring). Grænse: 60 ZIP'er i
-// timen pr. medarbejder (fejler lukket). Ingen ændringer. Sælgerens udgave:
-// /api/reklamation/<id>/billeder.
+// timen pr. medarbejder (fejler lukket). Ingen ændringer. Sælgeren har
+// ingen adgang til pakken eller billederne (Filip, 22. okt. 2026).
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +37,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     if (a === "inhabil") {
       return tekstSvar(403, "Du er inhabil i denne handel og kan ikke hente billederne. Lad en kollega tage den.");
     }
-    if (!(await reklamationIndenForGraense(adgang.userId, "staff_zip"))) return tekstSvar(429, FOR_MANGE);
-    const res = await hentReklamationspakke(adgang.admin, rid, "staff");
+    if (!(await reklamationZipIndenForGraense(adgang.userId))) return tekstSvar(429, FOR_MANGE);
+    const res = await hentReklamationspakke(adgang.admin, rid);
     if (!res) return tekstSvar(404, "Reklamationen findes ikke.");
     return await reklamationZipSvar(adgang.admin, res.pakke, res.filer, adgang.userId);
   } catch (err) {

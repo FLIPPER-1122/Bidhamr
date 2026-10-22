@@ -1,21 +1,16 @@
 import "server-only";
 
 // "Reklamationspakken": alt, hvad omdeling.info (DAO) eller GLS typisk beder
-// om ved en skadeanmeldelse, samlet ét sted, så sælgeren kan kopiere felterne
+// om ved en skadeanmeldelse, samlet ét sted, så STAFF kan kopiere felterne
 // over og vedhæfte billederne med ét klik (Filip: færrest mulige klik).
 //
-// To modtagere:
-//   "staff"   - alt, inkl. interne felter og købers kontaktoplysninger fra
-//               leveringsvalget. Kalderen har tjekket assertRole/kraevSideRolle.
-//   "saelger" - kun det, sælgeren må se: modtageren som på fragtlabelen
-//               (navn og adresse fra forsendelsen - aldrig købers e-mail eller
-//               telefon), ingen interne felter. Kalderen har tjekket
-//               min_reklamationspakke_adgang med SÆLGERENS session (se
-//               hentPakkeTilSaelger nedenfor).
+// KUN staff (Filip, 22. okt. 2026 - DAO: sælgeren må ikke få adgang til
+// omdeling.info, og BidHamr anmelder). Kalderen har tjekket
+// assertRole/kraevSideRolle og inhabilitet (reklamationStaffAdgang).
+// Indeholder købers kontaktoplysninger fra leveringsvalget og interne felter.
 // Bygges med service-role-klienten. Kaster ikke ved manglende billeder/
 // sporing - felterne er så null/tomme.
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { PAKKE_BUCKET, PAKKE_KATEGORI_NAVN, erPakkeBilledeKategori } from "@/lib/pakkebilleder";
 import { SAG_BUCKET, SAG_KATEGORI_NAVN, erSagBilledeKategori } from "@/lib/sager";
 import {
@@ -23,13 +18,10 @@ import {
   kroner,
   transportoerNavn,
   type ReklamationTransportoer,
-  type SaelgerReklamation,
   type StaffReklamation,
 } from "@/lib/reklamation/typer";
 
 const URL_SEK = 3600;
-
-export type PakkeModtager = "staff" | "saelger";
 
 export type PakkePart = {
   navn: string | null;
@@ -47,19 +39,14 @@ export type PakkeBillede = {
   kilde: "saelger_pakke" | "koeber_skade";
   kategori: string;
   kategoriNavn: string;
-  // Staff: signeret link (1 time). Sælger: BidHamrs egen rute
-  // (/api/reklamation/<id>/billede/<nr>, samme adgangstjek) - aldrig et
-  // storage-link, fordi stien til købers billeder indeholder købers id.
-  // null, hvis linket ikke kunne laves.
+  // Signeret link (1 time). null, hvis linket ikke kunne laves.
   url: string | null;
   filnavn: string;
   oprettetKl: string;
 };
 
 export type Reklamationspakke = {
-  reklamation: SaelgerReklamation;
-  // Kun for staff.
-  staff: StaffReklamation | null;
+  reklamation: StaffReklamation;
   transportoer: ReklamationTransportoer;
   transportoerNavn: string;
   anmeldUrl: string | null;
@@ -85,25 +72,11 @@ export type Reklamationspakke = {
   tekst: string;
 };
 
-// Til ZIP'en og billed-ruten: hvor billederne ligger. Forlader ALDRIG
-// serveren - stien til købers skadebilleder (sag-billeder) indeholder købers
-// id (<koeber-id>/<handel-id>/<fil>). Samme rækkefølge som billeder:
-// filer[nr - 1] hører til billedet med nummer nr.
+// Til ZIP'en: hvor billederne ligger. Forlader ALDRIG serveren. Samme
+// rækkefølge som billeder.
 export type PakkeFiler = { bucket: string; sti: string; filnavn: string; oprettetKl: string }[];
 
 type Json = Record<string, unknown> | null;
-
-const SAELGER_FELTER = [
-  "id", "sag_id", "trade_id", "transportoer", "status", "trackingnummer", "varens_vaerdi_oere",
-  "kravbeloeb_oere", "maks_erstatning_oere", "godkendt_beloeb_oere", "afvisningsgrund",
-  "annulleret_grund", "transportoerens_sagsnummer", "oprettet_kl", "anmeldt_kl", "afgjort_kl",
-  "fravalgt_kl", "annulleret_kl",
-] as const;
-
-// Sælgerens billed-link (nr = 1, 2, ... i pakkens rækkefølge).
-export function reklamationBilledeSti(reklamationId: string, nr: number): string {
-  return `/api/reklamation/${reklamationId}/billede/${nr}`;
-}
 
 function felt(j: Json, ...navne: string[]): string | null {
   if (!j) return null;
@@ -114,14 +87,14 @@ function felt(j: Json, ...navne: string[]): string | null {
   return null;
 }
 
-function part(j: Json, medKontakt: boolean): PakkePart {
+function part(j: Json): PakkePart {
   return {
     navn: felt(j, "navn", "name"),
     adresse: felt(j, "adresse", "address1"),
     postnummer: felt(j, "postnummer", "zipcode"),
     by: felt(j, "by", "city"),
-    telefon: medKontakt ? felt(j, "telefon", "mobile") : null,
-    email: medKontakt ? felt(j, "email") : null,
+    telefon: felt(j, "telefon", "mobile"),
+    email: felt(j, "email"),
   };
 }
 
@@ -152,28 +125,29 @@ function filnavn(kilde: PakkeBillede["kilde"], kategoriNavn: string, sti: string
   return `${String(nr).padStart(2, "0")}-${k}-${kat}.${endelse}`;
 }
 
+// Teksten er skrevet fra BidHamr (fragten er booket på BidHamrs aftale).
 function byggTekst(p: Omit<Reklamationspakke, "tekst">): string {
   const antal = (k: PakkeBillede["kilde"]) => p.billeder.filter((b) => b.kilde === k).length;
   const linjer = [
-    `Skadeanmeldelse – pakke sendt med ${p.transportoerNavn}`,
+    `Skadeanmeldelse – pakke sendt med ${p.transportoerNavn} via BidHamr`,
     "",
-    `Jeg anmelder en skade på en pakke, som jeg har sendt med ${p.transportoerNavn} via BidHamr (bidhamr.dk). Varen var pakket forsvarligt, da jeg sendte den, men den var skadet, da modtageren fik pakken.`,
+    `BidHamr (bidhamr.dk) anmelder en skade på en pakke, der er sendt med ${p.transportoerNavn} på BidHamrs aftale. Afsenderen pakkede varen forsvarligt, men den var skadet, da modtageren fik pakken.`,
     "",
     `Trackingnummer: ${p.trackingnummer ?? "–"}`,
     p.forsendelsesId ? `Forsendelses-id: ${p.forsendelsesId}` : null,
-    `Afsender (mig): ${partTekst(p.afsender)}`,
+    `Afsender: ${partTekst(p.afsender)}`,
     `Modtager: ${partTekst(p.modtager)}`,
     `Afsendt: ${datoTid(p.afsendtKl)}`,
     `Leveret: ${datoTid(p.leveretKl)}`,
     "",
     `Indhold: ${p.varetitel ?? "–"}`,
     `Varens værdi: ${kroner(p.varensVaerdiOere)}`,
-    `Jeg kræver i erstatning: ${kroner(p.kravbeloebOere)}`,
+    `Krav om erstatning: ${kroner(p.kravbeloebOere)}`,
     "",
     "Modtagerens beskrivelse af skaden:",
     p.skadebeskrivelse ?? "–",
     "",
-    `Vedlagt: ${antal("saelger_pakke")} billeder af indpakningen, som jeg tog, før jeg sendte pakken, og ${antal("koeber_skade")} billeder af skaden, som modtageren tog.`,
+    `Vedlagt: ${antal("saelger_pakke")} billeder af indpakningen, som afsenderen tog, før pakken blev sendt, og ${antal("koeber_skade")} billeder af skaden, som modtageren tog.`,
   ];
   return linjer.filter((l) => l !== null).join("\n");
 }
@@ -182,7 +156,6 @@ function byggTekst(p: Omit<Reklamationspakke, "tekst">): string {
 export async function hentReklamationspakke(
   admin: SupabaseClient,
   reklamationId: string,
-  til: PakkeModtager,
 ): Promise<{ pakke: Reklamationspakke; filer: PakkeFiler } | null> {
   const { data: r, error } = await admin
     .from("fragt_reklamationer")
@@ -191,7 +164,6 @@ export async function hentReklamationspakke(
     .maybeSingle<StaffReklamation>();
   if (error) throw new Error(`Reklamationen kunne ikke hentes: ${error.message}`);
   if (!r) return null;
-  const erStaff = til === "staff";
 
   const [sagR, handelR, fR, levR, pakkeR, sagBR] = await Promise.all([
     admin.from("sager").select("beskrivelse").eq("id", r.sag_id).maybeSingle<{ beskrivelse: string }>(),
@@ -220,14 +192,12 @@ export async function hentReklamationspakke(
             leveret_kl: string | null;
           }>()
       : Promise.resolve({ data: null }),
-    // Købers leveringsvalg (med kontaktoplysninger) - KUN til staff.
-    erStaff
-      ? admin
-          .from("handel_levering")
-          .select("modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, modtager_email")
-          .eq("trade_id", r.trade_id)
-          .maybeSingle<Record<string, string | null>>()
-      : Promise.resolve({ data: null }),
+    // Købers leveringsvalg (med kontaktoplysninger) som reserve.
+    admin
+      .from("handel_levering")
+      .select("modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, modtager_telefon, modtager_email")
+      .eq("trade_id", r.trade_id)
+      .maybeSingle<Record<string, string | null>>(),
     admin
       .from("pakke_billeder")
       .select("id, sti, kategori, oprettet_kl")
@@ -264,11 +234,10 @@ export async function hentReklamationspakke(
   ]);
   const auktion = auktionR.data;
 
-  // Modtager: som på fragtlabelen (forsendelsen). Staff får også købers
-  // telefon/e-mail og leveringsvalget som reserve.
-  let modtager = part(f?.modtager ?? null, erStaff);
+  // Modtager: som på fragtlabelen (forsendelsen) - leveringsvalget som reserve.
+  let modtager = part(f?.modtager ?? null);
   const lev = levR.data;
-  if (erStaff && lev) {
+  if (lev) {
     modtager = {
       navn: modtager.navn ?? lev.modtager_navn ?? null,
       adresse: modtager.adresse ?? lev.modtager_adresse ?? null,
@@ -283,10 +252,9 @@ export async function hentReklamationspakke(
   const pakkeRaekker = ((pakkeR.data ?? []) as BRaekke[]).filter((b) => erPakkeBilledeKategori(b.kategori));
   const sagRaekker = ((sagBR.data ?? []) as BRaekke[]).filter((b) => erSagBilledeKategori(b.kategori));
 
-  // Kun staff får signerede storage-links (sælgeren får billed-ruten).
   const signer = async (bucket: string, stier: string[]) => {
     const m = new Map<string, string>();
-    if (!erStaff || stier.length === 0) return m;
+    if (stier.length === 0) return m;
     const { data } = await admin.storage.from(bucket).createSignedUrls(stier, URL_SEK);
     for (const s of data ?? []) if (s.path && s.signedUrl) m.set(s.path, s.signedUrl);
     return m;
@@ -302,8 +270,7 @@ export async function hentReklamationspakke(
   const tilfoej = (b: BRaekke, kilde: PakkeBillede["kilde"], kategoriNavn: string, bucket: string, url?: string) => {
     nr++;
     const navn = filnavn(kilde, kategoriNavn, b.sti, nr);
-    const link = erStaff ? (url ?? null) : reklamationBilledeSti(r.id, nr);
-    billeder.push({ id: b.id, kilde, kategori: b.kategori, kategoriNavn, url: link, filnavn: navn, oprettetKl: b.oprettet_kl });
+    billeder.push({ id: b.id, kilde, kategori: b.kategori, kategoriNavn, url: url ?? null, filnavn: navn, oprettetKl: b.oprettet_kl });
     filer.push({ bucket, sti: b.sti, filnavn: navn, oprettetKl: b.oprettet_kl });
   };
   for (const b of pakkeRaekker) {
@@ -322,22 +289,17 @@ export async function hentReklamationspakke(
       .filter(Boolean)
       .join("\n") || null;
 
-  const offentlig = {
-    ...Object.fromEntries(SAELGER_FELTER.map((k) => [k, r[k]])),
-    afventer_bidhamr: !!r.sag_aendret_kl && !r.sag_aendret_kvitteret_kl,
-  } as SaelgerReklamation;
   const anmeld = REKLAMATION_ANMELD[r.transportoer];
 
   const uden: Omit<Reklamationspakke, "tekst"> = {
-    reklamation: offentlig,
-    staff: erStaff ? r : null,
+    reklamation: r,
     transportoer: r.transportoer,
     transportoerNavn: transportoerNavn(r.transportoer),
     anmeldUrl: anmeld?.url ?? null,
     anmeldTekst: anmeld?.tekst ?? "",
     trackingnummer: r.trackingnummer ?? f?.sporingsnummer ?? null,
     forsendelsesId: f?.forsendelses_id ?? null,
-    afsender: part(f?.afsender ?? null, true),
+    afsender: part(f?.afsender ?? null),
     modtager,
     levering: f?.levering ?? null,
     pakkestoerrelse: f?.pakkestoerrelse ?? null,
@@ -358,18 +320,4 @@ export async function hentReklamationspakke(
     billeder,
   };
   return { pakke: { ...uden, tekst: byggTekst(uden) }, filer };
-}
-
-// Sælgerens adgang: tjekkes i databasen med SÆLGERENS egen klient (cookie-
-// session eller Bearer-token fra appen) - auth.uid() afgør. Pakken bygges
-// derefter med service-role uden købers kontaktoplysninger.
-// null = ingen adgang (ikke din, findes ikke eller er lukket).
-export async function hentPakkeTilSaelger(
-  brugerKlient: SupabaseClient,
-  reklamationId: string,
-): Promise<{ pakke: Reklamationspakke; filer: PakkeFiler } | null> {
-  const { data, error } = await brugerKlient.rpc("min_reklamationspakke_adgang", { p_reklamation: reklamationId });
-  if (error) throw new Error(`min_reklamationspakke_adgang fejlede: ${error.message}`);
-  if (data !== true) return null;
-  return hentReklamationspakke(createAdminClient(), reklamationId, "saelger");
 }

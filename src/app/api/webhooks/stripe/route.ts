@@ -17,6 +17,7 @@ import {
 } from "@/lib/betaling/stripeBetaling";
 import { aabnVentende } from "@/lib/betaling/betalingInd";
 import { bankKontoRettet, spejlReview, udbetalForKonto, udbetalVentende } from "@/lib/betaling/udbetaling";
+import { spejlReklamationTransfer, udbetalReklamationerTilBank } from "@/lib/reklamation/udbetaling";
 import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/betaling";
 import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
 import { alarmPrTilfaelde } from "@/lib/betaling/driftTilfaelde";
@@ -146,6 +147,8 @@ async function spejlKonto(kontoId: string, eventType: string): Promise<void> {
   if (brugerId && !(await bankKontoRettet(konto, brugerId)) && konto.payouts_enabled) {
     await udbetalVentende(brugerId);
   }
+  // Erstatninger (reklamation), der venter på at blive sendt til banken.
+  if (brugerId && konto.payouts_enabled) await udbetalReklamationerTilBank(brugerId);
 }
 
 // En gennemført PaymentIntent uden BidHamr-metadata. Firmaers abonnementer
@@ -421,7 +424,28 @@ async function haandter(event: Stripe.Event): Promise<void> {
       // udbetal handler, der er helt færdige.
       if (!event.account) return;
       const antal = await udbetalForKonto(event.account);
-      console.log(`Stripe ${event.type}: ${event.account} -> ${antal} udbetaling(er)`);
+      // Erstatninger (reklamation), der venter på saldoen.
+      const { data: profil } = await createAdminClient()
+        .from("betalingsprofiler")
+        .select("user_id")
+        .eq("stripe_account_id", event.account)
+        .maybeSingle<{ user_id: string }>();
+      const rekl = profil ? await udbetalReklamationerTilBank(profil.user_id) : 0;
+      console.log(`Stripe ${event.type}: ${event.account} -> ${antal} udbetaling(er), ${rekl} erstatning(er)`);
+      return;
+    }
+
+    case "transfer.reversed":
+    case "transfer.updated": {
+      // Platform: kun chefens udbetalinger af erstatninger (reklamation)
+      // spejles her - BidHamr tilbagefører dem aldrig selv, så en
+      // tilbageførsel giver drift-alarm. Andre transfers (tilbageførsler ved
+      // refusion/indsigelse) håndteres som før af deres egne flows.
+      const t = event.data.object as Stripe.Transfer;
+      if (t.metadata?.type !== "reklamation") return;
+      const frisk = await getStripe().transfers.retrieve(t.id);
+      const resultat = await spejlReklamationTransfer(frisk);
+      console.log(`Stripe ${event.type}: ${t.id} -> ${resultat ?? "ingen ændring"}`);
       return;
     }
 

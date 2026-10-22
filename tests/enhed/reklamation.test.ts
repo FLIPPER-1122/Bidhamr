@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { crc32, lavZip, sikkertZipNavn } from "@/lib/reklamation/zip";
-import { betingelseTekst, fortolkKroner, kanKvittere, kronerTilOere, reklamationStatusSaelger } from "@/lib/reklamation/typer";
+import { betingelseTekst, fortolkKroner, kanKvittere, kronerTilOere, reklamationStatusSaelger, reklamationTrin } from "@/lib/reklamation/typer";
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/notifikationer/send", () => ({ send: vi.fn() }));
+vi.mock("@/lib/stripe", () => ({ getStripe: () => ({}), StripeTilstandFejl: class extends Error {} }));
 
 describe("ZIP", () => {
   it("crc32 matcher kendt værdi", () => {
@@ -92,111 +93,171 @@ describe("kronerTilOere", () => {
   });
 });
 
-describe("tekster", () => {
-  it("bruger aldrig ordet forsikring", async () => {
+describe("tekster til sælgeren", () => {
+  const raekke = {
+    id: "00000000-0000-4000-8000-000000000001",
+    trade_id: "00000000-0000-4000-8000-000000000002",
+    saelger_id: "00000000-0000-4000-8000-000000000003",
+    transportoer: "dao" as const,
+    status: "afventer_bidhamr" as const,
+    kravbeloeb_oere: 250000,
+    godkendt_beloeb_oere: null,
+    afvisningsgrund: null,
+    annulleret_grund: null,
+    annulleret_auto: false,
+    annulleret_kl: null,
+    aktiv_fra_kl: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString(),
+    anmeldt_kl: null,
+    afgjort_kl: null,
+    udbetalt_kl: null,
+    bank_status: null,
+    bank_fejlet_kl: null,
+    sag_aendret_kl: null,
+    sag_aendret_kvitteret_kl: null,
+  };
+  const trin = (b: { input: { noegle: string } }[]) => b.map((x) => x.input.noegle.split(":")[2]);
+
+  it("giver én besked pr. trin med faste nøgler - aldrig omdeling.info eller forsikring", async () => {
     const { reklamationBeskeder } = await import("@/lib/reklamation/notifikationer");
-    const raekke = {
-      id: "00000000-0000-4000-8000-000000000001",
-      trade_id: "00000000-0000-4000-8000-000000000002",
-      saelger_id: "00000000-0000-4000-8000-000000000003",
-      transportoer: "dao" as const,
-      status: "afventer_saelger" as const,
-      kravbeloeb_oere: 250000,
-      annulleret_grund: null,
-      annulleret_auto: false,
-      annulleret_kl: null,
-      aktiv_fra_kl: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString(),
-      gensendt_antal: 1,
-      sag_aendret_kl: null,
-      sag_aendret_kvitteret_kl: null,
-    };
     const aktiv = new Date(raekke.aktiv_fra_kl).getTime();
-    const b = reklamationBeskeder(raekke);
-    expect(b.map((x) => x.input.noegle.split(":").slice(2).join(":"))).toEqual([
-      `oprettet:${aktiv}`,
-      "gensendt:1",
-      `paamind:${aktiv}`,
-    ]);
-    for (const x of b) {
-      expect(`${x.input.titel} ${x.input.tekst}`.toLowerCase()).not.toContain("forsikring");
-      expect(x.input.link).toBe(`/mine-handler/${raekke.trade_id}#reklamation`);
+    const kl = new Date().toISOString();
+    const t = new Date(kl).getTime();
+
+    const opr = reklamationBeskeder(raekke);
+    expect(opr.map((x) => x.input.noegle)).toEqual([`reklamation:${raekke.id}:oprettet:${aktiv}`]);
+    expect(opr[0].input.titel).toBe("Vi reklamerer hos DAO for dig");
+    expect(opr[0].input.tekst).toContain("du skal ikke selv gøre noget");
+    expect(opr[0].input.tekst).toContain("køberen har fået pengene tilbage");
+    expect(opr[0].input.tekst).toContain("2.500 kr.");
+
+    const anmeldt = reklamationBeskeder({ ...raekke, status: "anmeldt", anmeldt_kl: kl });
+    expect(anmeldt.map((x) => x.input.noegle)).toEqual([`reklamation:${raekke.id}:anmeldt:${t}`]);
+
+    const godkendt = reklamationBeskeder({ ...raekke, status: "godkendt", anmeldt_kl: kl, afgjort_kl: kl, godkendt_beloeb_oere: 125050 });
+    expect(trin(godkendt)).toEqual(["godkendt"]);
+    expect(godkendt[0].input.tekst).toContain("1.250,5 kr.");
+    expect(godkendt[0].input.tekst).toContain("Vi udbetaler pengene til dig, når DAO har betalt os");
+
+    const afvist = reklamationBeskeder({ ...raekke, status: "afvist", afgjort_kl: kl, afvisningsgrund: "Ikke transportskade" });
+    expect(trin(afvist)).toEqual(["afvist"]);
+    expect(afvist[0].input.tekst).toContain("Begrundelse fra DAO: Ikke transportskade.");
+
+    const udbetalt = reklamationBeskeder({ ...raekke, status: "udbetalt", udbetalt_kl: kl, godkendt_beloeb_oere: 250000 });
+    expect(trin(udbetalt)).toEqual(["udbetalt"]);
+    expect(udbetalt[0].input.tekst).toContain("Vi har udbetalt 2.500 kr. i erstatning");
+
+    const bankFejl = reklamationBeskeder({
+      ...raekke,
+      status: "udbetalt",
+      udbetalt_kl: kl,
+      godkendt_beloeb_oere: 250000,
+      bank_status: "failed",
+      bank_fejlet_kl: kl,
+    });
+    expect(trin(bankFejl)).toEqual(["udbetalt", "bank_fejlet"]);
+    expect(bankFejl[1].input.link).toBe("/konto#udbetaling");
+
+    const staff = reklamationBeskeder({ ...raekke, status: "annulleret", annulleret_kl: kl, annulleret_grund: "Test" });
+    expect(trin(staff)).toEqual(["annulleret"]);
+
+    for (const x of [...opr, ...anmeldt, ...godkendt, ...afvist, ...udbetalt, ...bankFejl, ...staff]) {
+      const alt = `${x.input.titel} ${x.input.tekst}`.toLowerCase();
+      expect(alt).not.toContain("forsikring");
+      expect(alt).not.toContain("omdeling");
       // Aldrig "kr.." (kroner() slutter selv med punktum).
       expect(x.input.tekst).not.toContain("kr..");
     }
-    expect(b[0].input.tekst).toContain("omdeling.info");
-    expect(b[0].input.tekst).toContain("køberen har fået pengene tilbage");
+    for (const x of [...opr, ...anmeldt, ...godkendt, ...afvist, ...udbetalt, ...staff]) {
+      expect(x.input.link).toBe(`/mine-handler/${raekke.trade_id}#reklamation`);
+    }
+  });
 
-    // L5: ingen "oprettet" efter annullering; auto-annullering kun, hvis
-    // "oprettet" for samme aktivering er sendt.
+  it("auto-annullering, genopståen og ændret sag", async () => {
+    const { reklamationBeskeder } = await import("@/lib/reklamation/notifikationer");
+    const aktiv = new Date(raekke.aktiv_fra_kl).getTime();
     const annKl = new Date().toISOString();
-    // Auto-annulleringen meldes først efter en time (en hurtig fortrydelse og
-    // genvurdering giver ingen "stoppet" og intet nyt "Du kan søge").
-    expect(
-      reklamationBeskeder({ ...raekke, status: "annulleret", annulleret_auto: true, annulleret_kl: annKl }),
-    ).toEqual([]);
+    // Auto-annulleringen meldes først efter en time.
+    expect(reklamationBeskeder({ ...raekke, status: "annulleret", annulleret_auto: true, annulleret_kl: annKl })).toEqual([]);
     const auto = reklamationBeskeder(
       { ...raekke, status: "annulleret", annulleret_auto: true, annulleret_kl: annKl },
       Date.now() + 3600 * 1000,
     );
-    expect(auto.map((x) => x.input.noegle.split(":")[2])).toEqual(["auto_annulleret"]);
+    expect(trin(auto)).toEqual(["auto_annulleret"]);
     expect(auto[0].kraever).toBe(`reklamation:${raekke.id}:oprettet:${aktiv}`);
     expect(auto[0].input.link).toBe(`/mine-handler/${raekke.trade_id}#sag`);
-    const staff = reklamationBeskeder({ ...raekke, status: "annulleret", annulleret_kl: annKl, annulleret_grund: "Test" });
-    expect(staff.map((x) => x.input.noegle.split(":")[2])).toEqual(["annulleret"]);
-    expect(reklamationBeskeder({ ...raekke, status: "anmeldt" }).map((x) => x.input.noegle.split(":")[2])).toEqual(["gensendt"]);
 
     // Genopstået: ny nøgle.
-    const ny = reklamationBeskeder({ ...raekke, aktiv_fra_kl: annKl, gensendt_antal: 0 });
+    const ny = reklamationBeskeder({ ...raekke, aktiv_fra_kl: annKl });
     expect(ny.map((x) => x.input.noegle)).toEqual([`reklamation:${raekke.id}:oprettet:${new Date(annKl).getTime()}`]);
 
-    // Sagen ændret efter anmeldelsen -> besked; kvitteret -> ny besked.
+    // Sagen ændret efter anmeldelsen -> besked; kvitteret -> "fortsætter".
     const aendretKl = new Date().toISOString();
-    const aendret = reklamationBeskeder({ ...raekke, status: "anmeldt", gensendt_antal: 0, sag_aendret_kl: aendretKl });
-    expect(aendret.map((x) => x.input.noegle.split(":")[2])).toEqual(["sag_aendret"]);
-    const kvit = reklamationBeskeder({
-      ...raekke,
-      status: "anmeldt",
-      gensendt_antal: 0,
-      sag_aendret_kl: aendretKl,
-      sag_aendret_kvitteret_kl: aendretKl,
-    });
-    expect(kvit.map((x) => x.input.noegle.split(":")[2])).toEqual(["kvitteret"]);
+    const aendret = reklamationBeskeder({ ...raekke, status: "godkendt", sag_aendret_kl: aendretKl });
+    expect(trin(aendret)).toEqual(["sag_aendret"]);
+    const kvit = reklamationBeskeder({ ...raekke, status: "anmeldt", sag_aendret_kl: aendretKl, sag_aendret_kvitteret_kl: aendretKl });
+    expect(trin(kvit)).toEqual(["kvitteret"]);
     expect(kvit[0].kraever).toBe(`reklamation:${raekke.id}:sag_aendret:${new Date(aendretKl).getTime()}`);
-    expect(kvit[0].input.tekst).toContain("BidHamr har kigget på sagen");
-    // Systemets kvittering: neutral tekst.
+    expect(kvit[0].input.tekst).toContain("Vi har kigget på sagen");
     const kvitSys = reklamationBeskeder({
       ...raekke,
       status: "anmeldt",
-      gensendt_antal: 0,
       sag_aendret_kl: aendretKl,
       sag_aendret_kvitteret_kl: aendretKl,
       sag_aendret_kvitteret_af: "00000000-0000-4000-8000-0000000b1d00",
     });
     expect(kvitSys[0].input.tekst).not.toContain("kigget");
-    expect(kvitSys[0].input.tekst).toContain("Du kan fortsætte med din skadeanmeldelse");
+  });
 
-    // Kvitteret før "sag ændret" nåede ud, og markeret igen: ny nøgle bundet
-    // til den nye markering, og "Du kan fortsætte" kræver netop den.
-    const nyMarkering = new Date(Date.now() + 60_000).toISOString();
-    const igen = reklamationBeskeder({ ...raekke, status: "anmeldt", gensendt_antal: 0, sag_aendret_kl: nyMarkering });
-    expect(igen.map((x) => x.input.noegle)).toEqual([
-      `reklamation:${raekke.id}:sag_aendret:${new Date(nyMarkering).getTime()}`,
-    ]);
-    const igenKvit = reklamationBeskeder({
-      ...raekke,
-      status: "anmeldt",
-      gensendt_antal: 0,
-      sag_aendret_kl: nyMarkering,
-      sag_aendret_kvitteret_kl: new Date(Date.now() + 120_000).toISOString(),
-    });
-    expect(igenKvit[0].kraever).toBe(`reklamation:${raekke.id}:sag_aendret:${new Date(nyMarkering).getTime()}`);
+  it("statustekster og trin til sælgeren", () => {
+    for (const s of ["afventer_bidhamr", "anmeldt", "godkendt", "afvist", "udbetalt", "annulleret"] as const) {
+      const t = reklamationStatusSaelger(s, "dao").toLowerCase();
+      expect(t).not.toContain("forsikring");
+      expect(t).not.toContain("omdeling");
+    }
+    expect(reklamationStatusSaelger("afventer_bidhamr", "dao")).toBe("Vi reklamerer hos DAO for dig");
+    expect(reklamationTrin("afventer_bidhamr")).toEqual({ trin: 0, faerdig: false });
+    expect(reklamationTrin("anmeldt")).toEqual({ trin: 1, faerdig: false });
+    expect(reklamationTrin("godkendt")).toEqual({ trin: 2, faerdig: false });
+    expect(reklamationTrin("udbetalt")).toEqual({ trin: 2, faerdig: true });
+    expect(reklamationTrin("afvist").faerdig).toBe(true);
+  });
+});
 
-    for (const x of [...auto, ...staff, ...aendret, ...kvit]) {
-      expect(`${x.input.titel} ${x.input.tekst}`.toLowerCase()).not.toContain("forsikring");
-    }
-    for (const s of ["afventer_saelger", "anmeldt", "godkendt", "afvist", "fravalgt", "annulleret"] as const) {
-      expect(reklamationStatusSaelger(s, "gls").toLowerCase()).not.toContain("forsikring");
-    }
+describe("chefens udbetaling", () => {
+  it("idempotency-nøgler er bundet til reklamationen og forsøget", async () => {
+    const { payoutNoegle, transferGruppe, transferNoegle } = await import("@/lib/reklamation/udbetaling");
+    const id = "00000000-0000-4000-8000-000000000001";
+    expect(transferNoegle(id, 0)).toBe(`bidhamr-reklamation-transfer-${id}-0`);
+    expect(transferNoegle(id, 1)).not.toBe(transferNoegle(id, 0));
+    expect(payoutNoegle(id, 0)).toBe(`bidhamr-reklamation-payout-${id}-0`);
+    expect(payoutNoegle(id, 0)).not.toBe(transferNoegle(id, 0));
+    // Samme transfer_group som handlens betaling (stripeBetaling.ts).
+    expect(transferGruppe("abc")).toBe("handel_abc");
+  }, 60_000);
+
+  it("markerer udbetalinger, der hænger eller er fejlet (samme regel som databasen)", async () => {
+    const { erUdbetalingFejl } = await import("@/components/admin/reklamation/visning");
+    const nu = Date.now();
+    const iso = (msSiden: number) => new Date(nu - msSiden).toISOString();
+    const tom = {
+      status: "godkendt" as const,
+      udbetaling_paabegyndt_kl: null,
+      bank_status: null,
+      transfer_tilbagefoert_kl: null,
+      udbetalt_kl: null,
+      bank_claimet_kl: null,
+      bank_oprettet_kl: null,
+    };
+    expect(erUdbetalingFejl(tom, nu)).toBe(false);
+    expect(erUdbetalingFejl({ ...tom, udbetaling_paabegyndt_kl: iso(60_000) }, nu)).toBe(false);
+    expect(erUdbetalingFejl({ ...tom, udbetaling_paabegyndt_kl: iso(11 * 60_000) }, nu)).toBe(true);
+    const udb = { ...tom, status: "udbetalt" as const, udbetalt_kl: iso(60_000) };
+    expect(erUdbetalingFejl(udb, nu)).toBe(false);
+    expect(erUdbetalingFejl({ ...udb, udbetalt_kl: iso(2 * 3600_000) }, nu)).toBe(true);
+    expect(erUdbetalingFejl({ ...udb, bank_status: "oprettet" as const, bank_oprettet_kl: iso(3600_000) }, nu)).toBe(false);
+    expect(erUdbetalingFejl({ ...udb, bank_status: "paid" as const }, nu)).toBe(false);
+    expect(erUdbetalingFejl({ ...udb, bank_status: "failed" as const }, nu)).toBe(true);
+    expect(erUdbetalingFejl({ ...udb, bank_status: "paid" as const, transfer_tilbagefoert_kl: iso(0) }, nu)).toBe(true);
   });
 });
 

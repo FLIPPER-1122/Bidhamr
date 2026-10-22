@@ -1,24 +1,29 @@
 "use server";
 
-// Staff: reklamation hos fragtfirma (migration 20261029010000). Sælgeren
-// anmelder selv; staff ser alt, skriver noter, sender pakken/påmindelsen
-// igen, annullerer, retter status og vurderer indpakningen som ordentlig.
-// Én action pr. knap.
+// Staff: reklamation hos fragtfirma (migration 20261029010000). BidHamr
+// anmelder (Filip, 22. okt. 2026): staff registrerer anmeldelsen
+// (sagsnummer), fragtfirmaets svar (godkendt + beløb / afvist + grund),
+// annullerer, retter status, kvitterer for en ændret sag, skriver noter og
+// vurderer indpakningen som ordentlig. KUN CHEFEN udbetaler erstatningen til
+// sælgeren (udbetalReklamation). Én action pr. knap.
 //
-// Adgang: assertRole("medarbejder") (rolle + to-trins-login på admin-hosten),
-// og databasen tjekker igen med BRUGERENS session: auth.uid() + er_staff()
-// (rolle OG aal2) + inhabilitet. Derfor kaldes RPC'erne med createClient()
-// - ikke service-role. NB: uden ADMIN_VAERT (ingen aal2-session) svarer
-// databasen ingen_adgang.
+// Adgang: assertRole("medarbejder") / assertRole("chef") (rolle +
+// to-trins-login på admin-hosten), og databasen tjekker igen med BRUGERENS
+// session: auth.uid() + er_staff() (rolle OG aal2) + inhabilitet (+ rollen
+// 'chef' ved udbetaling). Derfor kaldes RPC'erne med createClient() - ikke
+// service-role. NB: uden ADMIN_VAERT (ingen aal2-session) svarer databasen
+// ingen_adgang.
 // Fejl RETURNERES som { fejl } (Next skjuler kastede fejl i produktion).
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { assertRole } from "@/lib/adminAuth";
 import { createClient } from "@/lib/supabase/server";
+import { logDriftFejl } from "@/lib/drift";
 import { adminSagSti, sagSti } from "@/lib/sager";
 import { notificerReklamationer } from "@/lib/reklamation/notifikationer";
 import { betingelseTekst, erRetStatus, fortolkKroner, kroner } from "@/lib/reklamation/typer";
+import { udbetalReklamationTilBank, udfoerReklamationTransfer, type UdbetalClaim } from "@/lib/reklamation/udbetaling";
 
 export type ReklamationSvar = { ok: true; uaendret?: boolean } | { fejl: string };
 
@@ -34,16 +39,42 @@ const KODE: Record<string, string> = {
   for_lang_tekst: "Teksten er for lang. Gør den kortere.",
   grund_mangler: "Skriv en begrundelse. Den vises for sælgeren.",
   begrundelse_mangler: "Skriv en intern begrundelse for rettelsen.",
+  sagsnummer_mangler: "Skriv fragtfirmaets sagsnummer.",
   ugyldig_status: "Vælg en status.",
   ugyldigt_beloeb: "Beløbet er ugyldigt.",
-  for_hurtigt: "Beskeden er lige sendt. Vent et minut, og prøv igen.",
   ikke_skadet: "Indpakningen vurderes kun i sager om skade under fragten.",
   afhentning: "Varen blev afhentet – der er ingen indpakning at vurdere.",
   allerede_vurderet: "Indpakningen er allerede vurderet i denne sag.",
   ikke_vurderet: "Indpakningen er ikke vurderet som ordentlig.",
-  reklamation_anmeldt: "Sælgeren har allerede anmeldt skaden. Ret reklamationens status i stedet.",
+  reklamation_anmeldt: "Skaden er allerede anmeldt hos fragtfirmaet. Ret reklamationens status i stedet.",
   uaendret: "Intet at ændre.",
   ikke_aendret: "Der er ingen ændret sag at kvittere for. Genindlæs siden.",
+  sag_aendret: "Sagen er ændret efter anmeldelsen. Kvittér for ændringen først (eller ret status/annullér).",
+  udbetaling_i_gang: "Chefens udbetaling er sat i gang. Vent, til den er afsluttet, og genindlæs siden.",
+  // Chefens udbetaling.
+  kun_chef: "Kun chefen kan udbetale erstatningen til sælgeren.",
+  bekraeftelse_mangler: "Sæt flueben ved, at erstatningen er modtaget fra fragtfirmaet.",
+  allerede_udbetalt: "Erstatningen er allerede udbetalt til sælgeren. Genindlæs siden.",
+  stoppet: "Udbetalinger er stoppet med nødstoppet. Ingen penge er flyttet. Genoptag udbetalinger under Penge først.",
+  frosset: "Sælgerens udbetalinger er frosset. Ingen penge er flyttet. Se på sælgeren under Penge først.",
+  ingen_konto: "Sælgeren har ingen aktiv Stripe-konto. Ingen penge er flyttet. Sælgeren skal sætte sin udbetalingskonto op igen.",
+  konto_aendret: "Sælgerens Stripe-konto er en anden end på betalingen. Ingen penge er flyttet. Kontrollér sælgeren, før du udbetaler.",
+};
+
+// Resultatet af Stripe-delen (udfoerReklamationTransfer).
+const TRANSFER: Record<string, string> = {
+  stoppet: KODE.stoppet,
+  frosset: KODE.frosset,
+  konto_ikke_klar: "Sælgerens Stripe-konto kan ikke modtage penge lige nu. Ingen penge er flyttet. Prøv igen senere.",
+  saelger_saldo_negativ:
+    "Sælgerens Stripe-konto har en negativ saldo, så erstatningen ville gå til at dække underskuddet. Ingen penge er flyttet. Se på kontoen i Stripe først.",
+  platform_saldo:
+    "Der er ikke nok penge på BidHamrs Stripe-saldo lige nu. Ingen penge er flyttet. Prøv igen, når der er penge nok på saldoen.",
+  afvist: "Stripe afviste udbetalingen. Ingen penge er flyttet. Se drift-loggen.",
+  usikker:
+    "Vi fik ikke et sikkert svar fra Stripe, så det er uvist, om pengene er sendt. Tryk \"Udbetal til sælger\" igen om lidt – der udbetales aldrig to gange.",
+  proev_igen: "Udbetalingen blev ikke gennemført, og ingen penge er flyttet. Bekræft og tryk igen.",
+  afviger: "Udbetalingen hos Stripe passer ikke med reklamationen. Se drift-loggen, før du gør mere.",
 };
 
 function erUuid(v: unknown): v is string {
@@ -51,7 +82,7 @@ function erUuid(v: unknown): v is string {
 }
 
 // handling: hvilken knap - betingelser_ikke_opfyldt betyder noget forskelligt.
-function fejlTekst(svar: Record<string, unknown>, handling?: "kvitter"): string {
+function fejlTekst(svar: Record<string, unknown>, handling?: "kvitter" | "anmeld" | "udbetal"): string {
   const kode = String(svar.kode ?? "");
   if (kode === "ugyldigt_beloeb" && typeof svar.maks_oere === "number") {
     return `Beløbet skal være mellem 0,01 kr. og ${kroner(svar.maks_oere)}`;
@@ -65,19 +96,36 @@ function fejlTekst(svar: Record<string, unknown>, handling?: "kvitter"): string 
   if (kode === "betingelser_ikke_opfyldt") {
     const grund = betingelseTekst(typeof svar.aarsag === "string" ? svar.aarsag : null);
     if (handling === "kvitter") {
-      return `Sælgeren kan ikke fortsætte, fordi ${grund}. Annullér reklamationen, eller ret status.`;
+      return `Reklamationen kan ikke fortsætte, fordi ${grund}. Annullér reklamationen, eller ret status.`;
     }
-    return `Reklamationen kan ikke åbnes igen, fordi ${grund}. Vælg afvist, fravalgt eller annullér.`;
+    if (handling === "anmeld") {
+      return `Skaden kan ikke anmeldes, fordi ${grund}. Genindlæs siden.`;
+    }
+    if (handling === "udbetal") {
+      return `Erstatningen kan ikke udbetales, fordi ${grund}. Ingen penge er flyttet.`;
+    }
+    return `Reklamationen kan ikke åbnes igen, fordi ${grund}. Vælg afvist, eller annullér.`;
   }
   return KODE[kode] ?? GENERISK;
+}
+
+function stier(sagId?: string, tradeId?: string) {
+  revalidatePath("/admin/reklamationer");
+  revalidatePath("/admin/sager");
+  if (sagId) revalidatePath(adminSagSti(sagId));
+  if (tradeId) revalidatePath(sagSti(tradeId));
+}
+
+function erAdgangsfejl(err: unknown): boolean {
+  return err instanceof Error && ["Ingen adgang", "Ikke logget ind", "Kræver to-trins-login"].includes(err.message);
 }
 
 async function koer(
   navn: string,
   rpc: string,
   args: Record<string, unknown>,
-  stier: { sagId?: string; tradeId?: string } = {},
-  handling?: "kvitter",
+  s: { sagId?: string; tradeId?: string } = {},
+  handling?: "kvitter" | "anmeld",
 ): Promise<ReklamationSvar> {
   try {
     await assertRole("medarbejder");
@@ -91,22 +139,20 @@ async function koer(
     }
     const svar = (data ?? {}) as Record<string, unknown>;
     if (svar.kode !== "ok") return { fejl: fejlTekst(svar, handling) };
-    // Besked til sælgeren (oprettet, gensendt, annulleret) med det samme -
-    // cron'en tager den ellers inden for 5 minutter.
+    // Besked til sælgeren med det samme - cron'en tager den ellers inden for
+    // 5 minutter.
     after(() => notificerReklamationer());
-    revalidatePath("/admin/sager");
-    if (stier.sagId) revalidatePath(adminSagSti(stier.sagId));
-    if (stier.tradeId) revalidatePath(sagSti(stier.tradeId));
+    stier(s.sagId, s.tradeId);
     return svar.uaendret === true ? { ok: true, uaendret: true } : { ok: true };
   } catch (err) {
     unstable_rethrow(err);
-    if (err instanceof Error && ["Ingen adgang", "Ikke logget ind", "Kræver to-trins-login"].includes(err.message)) {
-      return { fejl: INGEN_ADGANG };
-    }
+    if (erAdgangsfejl(err)) return { fejl: INGEN_ADGANG };
     console.error(`Reklamation: ${navn} fejlede:`, err);
     return { fejl: GENERISK };
   }
 }
+
+const sag = (sagId?: string) => ({ sagId: erUuid(sagId) ? sagId : undefined });
 
 // --- Indpakning (på sagen) ---------------------------------------------------
 
@@ -136,15 +182,32 @@ export async function gemReklamationNote(reklamationId: string, note: string, sa
   return koer("gemReklamationNote", "fragt_reklamation_gem_note", {
     p_reklamation: reklamationId,
     p_note: typeof note === "string" ? note : "",
-  }, { sagId: erUuid(sagId) ? sagId : undefined });
+  }, sag(sagId));
 }
 
-// Send pakken/påmindelsen til sælgeren igen (notifikation + mail).
-export async function sendReklamationIgen(reklamationId: string, sagId?: string): Promise<ReklamationSvar> {
+// Staff har anmeldt skaden hos fragtfirmaet: fragtfirmaets sagsnummer
+// (påkrævet). Kaldt igen på en anmeldt reklamation rettes sagsnummeret.
+export async function anmeldReklamation(reklamationId: string, sagsnummer: string, sagId?: string): Promise<ReklamationSvar> {
   if (!erUuid(reklamationId)) return { fejl: KODE.ikke_fundet };
-  return koer("sendReklamationIgen", "fragt_reklamation_send_igen", { p_reklamation: reklamationId }, {
-    sagId: erUuid(sagId) ? sagId : undefined,
-  });
+  const nr = typeof sagsnummer === "string" ? sagsnummer.trim() : "";
+  if (!nr) return { fejl: KODE.sagsnummer_mangler };
+  return koer("anmeldReklamation", "fragt_reklamation_anmeld", { p_reklamation: reklamationId, p_sagsnummer: nr }, sag(sagId), "anmeld");
+}
+
+// Fragtfirmaet har godkendt: beløbet (dansk format, fx "1.250,00").
+export async function godkendReklamation(reklamationId: string, beloebKr: string, sagId?: string): Promise<ReklamationSvar> {
+  if (!erUuid(reklamationId)) return { fejl: KODE.ikke_fundet };
+  const b = fortolkKroner(String(beloebKr ?? ""));
+  if ("fejl" in b) return { fejl: b.fejl };
+  return koer("godkendReklamation", "fragt_reklamation_godkend", { p_reklamation: reklamationId, p_beloeb_oere: b.oere }, sag(sagId));
+}
+
+// Fragtfirmaet har afvist: grunden (vises for sælgeren - påkrævet).
+export async function afvisReklamation(reklamationId: string, grund: string, sagId?: string): Promise<ReklamationSvar> {
+  if (!erUuid(reklamationId)) return { fejl: KODE.ikke_fundet };
+  const g = typeof grund === "string" ? grund.trim() : "";
+  if (!g) return { fejl: KODE.grund_mangler };
+  return koer("afvisReklamation", "fragt_reklamation_afvis", { p_reklamation: reklamationId, p_grund: g }, sag(sagId));
 }
 
 export async function annullerReklamation(reklamationId: string, grund: string, sagId?: string): Promise<ReklamationSvar> {
@@ -152,22 +215,22 @@ export async function annullerReklamation(reklamationId: string, grund: string, 
   return koer("annullerReklamation", "fragt_reklamation_annuller", {
     p_reklamation: reklamationId,
     p_grund: typeof grund === "string" ? grund : "",
-  }, { sagId: erUuid(sagId) ? sagId : undefined });
+  }, sag(sagId));
 }
 
-// Sagen er ændret efter sælgerens anmeldelse: staff kvitterer ("set -
-// reklamationen fortsætter"). Sælgeren kan så igen registrere "godkendt" og
-// får besked. begrundelse er intern og påkrævet.
+// Sagen er ændret efter anmeldelsen: staff kvitterer ("set - reklamationen
+// fortsætter"). begrundelse er intern og påkrævet.
 export async function kvitterSagAendret(reklamationId: string, begrundelse: string, sagId?: string): Promise<ReklamationSvar> {
   if (!erUuid(reklamationId)) return { fejl: KODE.ikke_fundet };
   return koer("kvitterSagAendret", "fragt_reklamation_kvitter_sag_aendret", {
     p_reklamation: reklamationId,
     p_begrundelse: typeof begrundelse === "string" ? begrundelse : "",
-  }, { sagId: erUuid(sagId) ? sagId : undefined }, "kvitter");
+  }, sag(sagId), "kvitter");
 }
 
-// Ret status, hvis sælgeren har registreret forkert. beloebKr kræves ved
-// "godkendt" (dansk format, fx "1.250,00"). begrundelse er intern og påkrævet.
+// Ret status (fx forkert registreret). beloebKr kræves ved "godkendt" (dansk
+// format), sagsnummer ved anmeldt/godkendt (hvis der ikke er et), grund ved
+// afvist. begrundelse er intern og påkrævet.
 export async function retReklamationStatus(input: {
   reklamationId: string;
   status: string;
@@ -192,5 +255,74 @@ export async function retReklamationStatus(input: {
     p_sagsnummer: typeof input.sagsnummer === "string" ? input.sagsnummer : null,
     p_grund: typeof input.grund === "string" ? input.grund : null,
     p_begrundelse: typeof input.begrundelse === "string" ? input.begrundelse : "",
-  }, { sagId: erUuid(input.sagId) ? input.sagId : undefined });
+  }, sag(input.sagId));
+}
+
+// --- Chefens udbetaling ------------------------------------------------------
+
+// KUN chefen: erstatningen er modtaget fra fragtfirmaet -> hele det godkendte
+// beløb sendes via Stripe fra BidHamrs platformssaldo til sælgerens
+// Stripe-konto (og derfra til sælgerens bank). erstatningModtaget skal være
+// true (flueben "Erstatningen er modtaget fra DAO" - logges med hvem/hvornår).
+// Databasen tjekker rolle, aal2, inhabilitet, "sag ændret", betingelserne,
+// nødstop, frysning og sælgerens konto (fragt_reklamation_udbetal_claim);
+// derefter Stripe (src/lib/reklamation/udbetaling.ts).
+export async function udbetalReklamation(
+  reklamationId: string,
+  valg: { erstatningModtaget: boolean },
+  sagId?: string,
+): Promise<ReklamationSvar> {
+  if (!erUuid(reklamationId)) return { fejl: KODE.ikke_fundet };
+  if (valg?.erstatningModtaget !== true) return { fejl: KODE.bekraeftelse_mangler };
+  let chefId: string | null = null;
+  try {
+    ({ userId: chefId } = await assertRole("chef"));
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("fragt_reklamation_udbetal_claim", {
+      p_reklamation: reklamationId,
+      p_erstatning_modtaget: true,
+    });
+    if (error) {
+      if (["PGRST202", "42883"].includes(error.code ?? "")) {
+        return { fejl: "Udbetaling kræver migrationen 20261029010000_reklamation_fragtfirma.sql." };
+      }
+      throw new Error(error.message);
+    }
+    const svar = (data ?? {}) as Record<string, unknown>;
+    if (svar.kode !== "ok") return { fejl: fejlTekst(svar, "udbetal") };
+    const claim = svar as unknown as UdbetalClaim;
+    const res = await udfoerReklamationTransfer(reklamationId.toLowerCase(), {
+      beloeb_oere: Number(claim.beloeb_oere),
+      konto: String(claim.konto),
+      forsoeg: Number(claim.forsoeg ?? 0),
+      trade_id: String(claim.trade_id),
+      sag_id: String(claim.sag_id),
+      saelger_id: String(claim.saelger_id),
+      sagsnummer: claim.sagsnummer ?? null,
+      transportoer: String(claim.transportoer),
+      genoptag: claim.genoptag === true,
+      paabegyndt_kl: String(claim.paabegyndt_kl),
+    });
+    stier(erUuid(sagId) ? sagId : String(claim.sag_id), String(claim.trade_id));
+    if (res !== "udbetalt") return { fejl: TRANSFER[res] ?? GENERISK };
+    // Videre til sælgerens bank og besked til sælgeren (fejl her ændrer ikke,
+    // at pengene er sendt - cron'en prøver igen).
+    after(async () => {
+      try {
+        await udbetalReklamationTilBank(reklamationId.toLowerCase());
+      } catch (err) {
+        await logDriftFejl({ kilde: "server", hvor: "reklamation/bank", fejl: err, brugerId: String(claim.saelger_id) });
+      }
+      await notificerReklamationer();
+    });
+    return { ok: true };
+  } catch (err) {
+    unstable_rethrow(err);
+    if (erAdgangsfejl(err)) return { fejl: KODE.kun_chef };
+    console.error("Reklamation: udbetalReklamation fejlede:", err);
+    await logDriftFejl({ kilde: "action", hvor: "reklamation/udbetaling", fejl: err, brugerId: chefId });
+    return {
+      fejl: "Noget gik galt under udbetalingen. Det er uvist, om pengene er sendt – tryk igen om lidt (der udbetales aldrig to gange), eller se drift-loggen.",
+    };
+  }
 }

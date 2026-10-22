@@ -14,6 +14,8 @@
 //       påmindelse på dag 12.
 //   4. Udbetal frigivne beløb fra sælgerens Connect-konto til banken
 //      (udbetalVentende - F03, saldo-afstemning, udbetal_tidligst).
+//   4b. Erstatninger (reklamation), chefen har udbetalt: videre fra
+//       sælgerens Connect-konto til banken (src/lib/reklamation/udbetaling.ts).
 //   5. Refundér betalinger med afvigende beløb.
 //   5b. Alle lovede refusioner (uanset årsag), der er claimet, men ikke
 //       gennemført hos Stripe - med backoff (Niels F05).
@@ -78,6 +80,7 @@ import {
 } from "@/lib/mails/handel";
 import { behandlVentendeBetalinger } from "@/lib/betaling/betalingInd";
 import { udbetalVentende } from "@/lib/betaling/udbetaling";
+import { udbetalReklamationerTilBank } from "@/lib/reklamation/udbetaling";
 import { tilbagefoerTabteIndsigelserVentende, varslIndsigelsesfrister } from "@/lib/betaling/indsigelse";
 import {
   type BetalingRaekke,
@@ -139,6 +142,7 @@ export async function koerBetalingsCron() {
     vundetMails: 0,
     paamindelser: 0,
     udbetalinger: 0,
+    reklamationUdbetalinger: 0,
     afvigelsesrefusioner: 0,
     sagsrefusioner: 0,
     indsigelseTilbagefoersler: 0,
@@ -379,6 +383,10 @@ export async function koerBetalingsCron() {
   // 4) Udbetaling fra sælgerens Stripe-konto til banken for handler, der er
   //    helt færdige (samlet pr. sælger).
   resultat.udbetalinger = await udbetalVentende();
+  // 4b) Erstatninger fra fragtfirmaet (reklamation), som chefen har udbetalt
+  //     til sælgerens Stripe-konto: videre til sælgerens bank (egen payout),
+  //     opfølgning på payouts og uafklarede transfers. Kaster aldrig.
+  resultat.reklamationUdbetalinger = await udbetalReklamationerTilBank();
 
   // 5) Betalinger med afvigende beløb, der endnu ikke er refunderet.
   resultat.afvigelsesrefusioner = await refunderAfvigelserVentende();

@@ -285,6 +285,76 @@ Appen: `supabase.rpc("mine_ekstra_fragt_regninger", { p_trade })`, `supabase.rpc
 appen viser "kontakt os" i stedet for "Jeg er uenig", når `kan_goere_indsigelse` er falsk og fristen er overskredet),
 `GET /api/ekstra-fragt/<id>/dokumentation` (Bearer) → `{ ok, url }`. Fejlkoden `BHX01` ved opret auktion.
 
+## Reklamation hos fragtfirma – BidHamr anmelder, chefen udbetaler (Filip, 22. okt. 2026)
+
+Migration `20261029010000_reklamation_fragtfirma.sql` (ikke kørt i prod), kode `src/lib/reklamation/`,
+`src/app/actions/adminReklamation.ts`, admin `src/app/admin/reklamationer`. Erstatter "sælger anmelder selv"
+(21. okt.): DAO (Allan, 22. okt.) – sælgeren må ikke få adgang til omdeling.info, og erstatning udbetales altid til
+BidHamr.
+
+**Oprettelse (uændret):** automatisk (trigger på `sager` + notifikations-cron'en hvert 5. min.), når
+`fragt_reklamation_betingelser` er opfyldt: skadet under fragten, endelig til købers fordel (ankefrist udløbet/anke
+afgjort, eller lukket ved refusion), køberen ER refunderet, sælgeren beholder intet, indpakningen vurderet ordentlig,
+DAO/GLS-pakke. Kravbeløb = varens værdi, højst DAO's 2.500 kr. (GLS ukendt).
+
+**Status:** `afventer_bidhamr` → `anmeldt` (staff, sagsnummer påkrævet) → `godkendt` (beløb ≤ kravbeløbet) |
+`afvist` (grund til sælgeren) → `udbetalt` (kun chefen). `annulleret` (staff med grund; systemet automatisk, hvis
+sagen ændres før anmeldelsen – genopstår, hvis betingelserne kommer igen). "Sag ændret" efter anmeldelsen spærrer
+"Godkendt" og udbetalingen, til nogen kvitterer.
+
+**Staff (alle med to-trins-login, ikke inhabile – databasen tjekker `er_staff()` + `penge_inhabil`):** RPC'erne
+`fragt_reklamation_anmeld`, `_godkend`, `_afvis`, `_annuller`, `_ret_status` (aldrig til/fra `udbetalt`),
+`_kvitter_sag_aendret`, `_gem_note`. Admin viser hele pakken (felter med kopiér-knap, "Kopiér alle oplysninger",
+ZIP med alle billeder via `/admin/reklamationer/<id>/billeder`) og linket til omdeling.info.
+
+**Sælgeren:** kun `mine_fragt_reklamationer` (status, transportør, kravbeløb, godkendt beløb, afvisnings-/
+annulleringsgrund, udbetalt/sendt til bank). Ingen pakke, ingen billed-ruter, intet link – `/api/reklamation/*` og
+`mit_fragt_reklamation_*`/`min_reklamationspakke_adgang` er fjernet. Handelssiden viser "Vi reklamerer hos DAO for
+dig" med tre trin. Beskeder (notifikation + mail, faste nøgler `reklamation:<id>:<trin>:<tid>`): oprettet, anmeldt,
+godkendt (beløb, "vi udbetaler, når DAO har betalt os"), afvist (grund), udbetalt, udbetalingen til banken fejlede,
+annulleret (staff/system), sag ændret/fortsætter. Ingen omtale af omdeling.info.
+
+**Pengene (chefen – `udbetalReklamation(id, { erstatningModtaget: true })`):**
+1. DAO betaler erstatningen til BidHamr (bank eller modregnet på fakturaen) – uden om Stripe.
+2. Chefen sætter flueben "Erstatningen er modtaget fra DAO" og trykker "Udbetal til sælger".
+   `fragt_reklamation_udbetal_claim` (chefens egen session): rollen `chef`, aal2, ikke inhabil, status `godkendt`,
+   "sag ændret" ikke ukvitteret, betingelserne HELT opfyldt, intet nødstop for udbetalinger, sælgeren ikke frosset,
+   sælgerens Connect-konto findes og er den samme som på betalingen. Bekræftelsen gemmes med hvem/hvornår.
+3. `src/lib/reklamation/udbetaling.ts`: frisk tjek (nødstop, frysning, kontoen: `transfers` aktiv, udbetalinger
+   aktive, ingen negativ saldo; BidHamrs tilgængelige saldo ≥ beløbet – ellers "Der er ikke nok penge på BidHamrs
+   Stripe-saldo lige nu", intet flyttet) → **Stripe Transfer** fra platformssaldoen til sælgerens Connect-konto:
+   hele det godkendte beløb, `transfer_group = handel_<trade>`, metadata `type=reklamation`, `reklamation_id`,
+   `trade_id`, `sag_id`, `transportoer_sagsnummer`; idempotency key
+   `bidhamr-reklamation-transfer-<id>-<forsøg>`. Et usikkert svar slås op hos Stripe (metadata), før der prøves igen
+   – samme nøgle; forsøget tælles kun op, når Stripe med sikkerhed ikke har lavet en transfer. Gemmer
+   `stripe_transfer_id`, `udbetalt_kl`/`udbetalt_af`.
+4. **Payout** fra sælgerens Connect-konto til sælgerens bank – en egen payout (metadata `type=reklamation`, nøgle
+   `bidhamr-reklamation-payout-<id>-<forsøg>`), ikke en del af `saelger_udbetalinger`. Valget: de almindelige
+   udbetalinger summerer kun handler og er bundet til hver betalings charge (F03, `saelger_udbetaling_claim`), og en
+   sælger har måske aldrig et salg mere – så erstatningen ville blive stående på kontoen. Payouten sendes med det
+   samme efter transferen (og af betalings-cron'en trin 4b, `balance.available` og bankkonto rettet); samme værn som
+   de andre udbetalinger (nødstop, frosset sælger, "venter på bank", manuel plan, saldoen). `payout.*`-webhooken
+   genkender den (`spejlReklamationPayout` i `spejlUdbetaling`), så den aldrig regnes som en fremmed udbetaling og
+   fryser sælgeren. Fejler den i banken, "venter sælgeren på bank" som ved de andre udbetalinger.
+
+**Afstemning og bogføring:** erstatningen er ikke BidHamrs indtægt – der laves **ingen faktura** (fakturamodulet,
+`src/lib/faktura`, bygger kun på BidHamrs gebyrer, fragt, Beskyttelse og abonnementer). Pengene ind fra DAO bogføres
+manuelt som et mellemværende (modtaget erstatning på vegne af sælgeren), og udbetalingen via Stripe udligner det.
+Transfers og payouts med `type=reklamation` kan skelnes overalt: den daglige afstemning
+(`src/lib/betaling/afstemning.ts`) afstemmer dem mod `fragt_reklamationer` (beløb, konto, aldrig tilbageført – en
+tilbageførsel er en afvigelse), og `transfer.reversed`/`transfer.updated` giver drift-alarm
+(`fragt_reklamation_transfer_tilbagefoert`). **Filip:** tilføj `transfer.reversed` og `transfer.updated` til
+platform-webhooken i Stripe. BidHamrs platformssaldo skal have penge nok (gebyrerne) – står platformen til
+automatisk udbetaling, kan saldoen være tom; så venter udbetalingen (tydelig fejl, intet flyttet).
+
+**Lamper:** staff – ikke anmeldt efter 3 dage (rød), anmeldt uden svar i 30 dage (grå), sag ændret (rød); chefen –
+godkendte, der venter på udbetaling (gul), udbetalingen hænger/er fejlet (rød).
+
+**Test:** `tests/enhed/reklamation.test.ts` (tekster, trin, nøgler, lamper), `tests/penge/18-reklamation-udbetaling.test.ts`
+(rigtig Stripe Transfer + payout mod testmiljøet, gentaget forsøg = én transfer, webhooken genkender payouten). OBS:
+testserveren (test.bidhamr.dk) skal køre den nye kode, før der udbetales på testdatabasen – ellers ser dens webhook
+erstatnings-payouten som fremmed og fryser sælgeren (pengetesten rydder det op).
+
 ## Hjemmesiden (server actions, `src/app/actions/fragt.ts`)
 
 | Action | Hvem | Svar |

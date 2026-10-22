@@ -210,7 +210,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Min vare blev skadet under fragten – får jeg erstatning?",
-          svar: "Afgøres sagen til køberens fordel, får køberen pengene tilbage. Har du pakket varen ordentligt, kan du selv anmelde skaden hos fragtfirmaet. Erstatningen udbetales så direkte fra fragtfirmaet til dig – hos DAO højst 2.500 kr. pr. pakke. BidHamr giver dig alle oplysninger og billeder samlet på handelssiden, så det er nemt at anmelde. Det er fragtfirmaet, der afgør, om du får erstatning. Afviser det, er det dit tab. Viser pakkebillederne, at varen var dårligt pakket, kan der ikke reklameres.",
+          svar: "Afgøres sagen til køberens fordel, får køberen pengene tilbage. Har du pakket varen ordentligt, reklamerer BidHamr hos fragtfirmaet for dig – du skal ikke selv gøre noget, og du kan følge det på handelssiden. Hos DAO er erstatningen højst 2.500 kr. pr. pakke. Det er fragtfirmaet, der afgør, om du får erstatning. Godkender det, betaler fragtfirmaet erstatningen til BidHamr, og vi udbetaler hele beløbet til dig via vores betalingspartner Stripe. Afviser det, er det dit tab. Viser pakkebillederne, at varen var dårligt pakket, kan der ikke reklameres.",
         },
       ],
     },

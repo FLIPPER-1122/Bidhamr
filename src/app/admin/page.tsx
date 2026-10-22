@@ -155,25 +155,46 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
       href: "/admin/betalinger",
     },
   );
-  // Reklamationer hos fragtfirmaet (sælgeren anmelder selv). Rødt, når staff skal se på dem.
+  // Reklamationer hos fragtfirmaet (BidHamr anmelder, chefen udbetaler).
+  // Rødt, når staff skal se på dem; chefens tal er 0 for andre roller.
+  if (s.reklamationAfventerRoed > 0) {
+    r.push({
+      id: "reklamation-anmeld",
+      alvor: "roed",
+      titel: "Reklamationer er ikke anmeldt",
+      antal: s.reklamationAfventerRoed,
+      forklaring: "Har ventet over 3 dage – anmeld skaden hos fragtfirmaet",
+      href: "/admin/reklamationer?vis=afventer_bidhamr",
+    });
+  }
   if (s.reklamationSagAendret > 0) {
     r.push({
       id: "reklamation-aendret",
       alvor: "roed",
       titel: "Reklamation: sagen er ændret",
       antal: s.reklamationSagAendret,
-      forklaring: "Sagen er ændret, efter sælgeren anmeldte skaden – ret reklamationen",
+      forklaring: "Sagen er ændret, efter skaden blev anmeldt – kvittér, ret status eller annullér",
       href: "/admin/reklamationer?vis=sag_aendret",
     });
   }
-  if (s.reklamationStille > 0) {
+  if (s.reklamationUdbetalingFejl > 0) {
     r.push({
-      id: "reklamation-stille",
+      id: "reklamation-udbetaling-fejl",
       alvor: "roed",
-      titel: "Reklamationer står stille",
-      antal: s.reklamationStille,
-      forklaring: "Intet er sket i 14 dage – send oplysningerne igen, eller kontakt sælgeren",
-      href: "/admin/reklamationer?vis=stille",
+      titel: "Udbetaling af erstatning kræver handling",
+      antal: s.reklamationUdbetalingFejl,
+      forklaring: "Udbetalingen til sælgeren hænger eller er fejlet hos Stripe",
+      href: "/admin/reklamationer?vis=udbetaling_fejl",
+    });
+  }
+  if (s.reklamationVenterUdbetaling > 0) {
+    r.push({
+      id: "reklamation-udbetal",
+      alvor: "gul",
+      titel: "Erstatninger venter på udbetaling",
+      antal: s.reklamationVenterUdbetaling,
+      forklaring: "Fragtfirmaet har godkendt – udbetal, når erstatningen er modtaget",
+      href: "/admin/reklamationer?vis=godkendt",
     });
   }
   // Ekstra fragt (for lille pakke): indsigelser skal afgøres (rødt).
@@ -228,7 +249,8 @@ async function HandlingSektion({ rolle }: { rolle: StaffRole }) {
   if (h) {
     r.push(
       { id: "retur", alvor: "graa", titel: "Returfrist udløbet", antal: h.retur_udloebet, forklaring: "Køber har ikke sendt varen retur inden for 7 dage", href: "/admin/sager?vis=afventer_retur" },
-      { id: "reklamation-venter", alvor: "graa", titel: "Reklamationer venter på sælger", antal: s.reklamationAfventer, forklaring: "Sælgeren har ikke anmeldt skaden hos fragtfirmaet endnu", href: "/admin/reklamationer?vis=afventer_saelger" },
+      { id: "reklamation-venter", alvor: "graa", titel: "Reklamationer skal anmeldes", antal: s.reklamationAfventer, forklaring: "Anmeld skaden hos fragtfirmaet med den færdige pakke", href: "/admin/reklamationer?vis=afventer_bidhamr" },
+      { id: "reklamation-stille", alvor: "graa", titel: "Reklamationer uden svar", antal: s.reklamationStille, forklaring: "Anmeldt for over 30 dage siden uden svar – ryk fragtfirmaet", href: "/admin/reklamationer?vis=stille" },
       { id: "ekstra-fragt-spaerret", alvor: "graa", titel: "Ekstra fragt ikke betalt", antal: s.ekstraFragtForfaldne, forklaring: "Fristen er overskredet – sælgeren er spærret for nye auktioner", href: "/admin/ekstra-fragt?vis=spaerret" },
       { id: "ubetalte", alvor: "graa", titel: "Ubetalte vindere", antal: s.ubetalte, forklaring: "Vinderen betalte ikke til tiden – advar eller afvis", href: "/admin/ubetalte" },
       {
