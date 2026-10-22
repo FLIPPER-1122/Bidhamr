@@ -3,6 +3,8 @@
 // (src/lib/pdf/mineDataPdf.ts). Nøglerne er dem, mine_data() returnerer.
 // Ordet "forsikring" bruges aldrig - det hedder BidHamr Beskyttelse.
 
+import { FIRMA } from "@/lib/firmaoplysninger";
+
 export const DINE_DATA = {
   // Boksen under Min konto -> Dine data.
   titel: "Download dine data",
@@ -17,7 +19,7 @@ export const DINE_DATA = {
 
 export const DINE_DATA_PDF = {
   titel: "Dine data hos BidHamr",
-  afsender: "BidHamr ApS · CVR 46836219 · support@bidhamr.dk",
+  afsender: `${FIRMA.navn} · CVR ${FIRMA.cvr} · ${FIRMA.email}`,
   navn: "Navn",
   email: "E-mail",
   dannet: "Udtræk lavet",

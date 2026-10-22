@@ -28,9 +28,9 @@
 
 Dataansvarlig for behandlingen af dine personoplysninger på bidhamr.dk og i BidHamr-appen er:
 
-- [TODO Filip: firmanavn]
-- CVR-nr.: [TODO Filip: CVR-nummer]
-- Adresse: [TODO Filip: adresse]
+- BidHamr ApS
+- CVR-nr.: 46836219
+- Adresse: Ellegårdsvej 40, 4684 Holmegaard
 - E-mail: support@bidhamr.dk [TODO Filip: overvej en særskilt adresse, fx privatliv@bidhamr.dk]
 
 [ADVOKAT: Skal BidHamr have en databeskyttelsesrådgiver (DPO)? Vi antager nej, men vurdér det i lyset af svindelforebyggelse og moderation.]
@@ -335,4 +335,4 @@ Vi opdaterer politikken, når vi ændrer, hvordan vi behandler oplysninger – f
 
 Har du spørgsmål om dine oplysninger, så skriv til support@bidhamr.dk eller brug kontaktformularen på `/kontakt`.
 
-[TODO Filip: firmanavn, CVR og adresse]
+BidHamr ApS · CVR 46836219 · Ellegårdsvej 40, 4684 Holmegaard · support@bidhamr.dk

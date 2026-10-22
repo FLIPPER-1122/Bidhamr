@@ -23,8 +23,9 @@
 
 1.2 BidHamr drives af:
 
-- BidHamr
+- BidHamr ApS
 - CVR-nr.: 46836219
+- Momsnr.: DK46836219
 - Adresse: Ellegårdsvej 40, 4684 Holmegaard
 - E-mail: support@bidhamr.dk
 - Henvendelser om ulovligt indhold (DSA): dsa@bidhamr.dk [TODO Filip: opret postkassen]
@@ -589,4 +590,4 @@ Vi behandler dine personoplysninger efter privatlivspolitikken (`/privatliv`). V
 - Kundeservice: support@bidhamr.dk eller kontaktformularen på `/kontakt`
 - Erhverv og firmakonti: erhverv@bidhamr.dk
 - Ulovligt indhold og DSA: dsa@bidhamr.dk eller `/dsa`
-- Post: BidHamr, Ellegårdsvej 40, 4684 Holmegaard
+- Post: BidHamr ApS, Ellegårdsvej 40, 4684 Holmegaard

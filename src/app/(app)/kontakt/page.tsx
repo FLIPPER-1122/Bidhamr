@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import KontaktForm from "@/components/tryghed/KontaktForm";
 import { erKontaktEmne } from "@/lib/tryghed";
+import { FIRMA, FIRMA_ADRESSE } from "@/lib/firmaoplysninger";
 
 export const dynamic = "force-dynamic";
 
@@ -48,8 +49,8 @@ export default async function KontaktSide({
 
       <p className="mt-6 text-sm text-tekst-svag">
         Du kan også skrive til{" "}
-        <a href="mailto:support@bidhamr.dk" className="font-medium text-groen hover:underline">
-          support@bidhamr.dk
+        <a href={`mailto:${FIRMA.email}`} className="font-medium text-groen hover:underline">
+          {FIRMA.email}
         </a>
         .
       </p>
@@ -64,6 +65,29 @@ export default async function KontaktSide({
         </Link>
         .
       </p>
+
+      {/* Firmaoplysninger (e-handelsloven § 7) - fra src/lib/firmaoplysninger.ts */}
+      <section aria-labelledby="firmaoplysninger" className="mt-8 rounded-[14px] bg-groen-lys p-5 sm:p-6">
+        <h2 id="firmaoplysninger" className="font-sans text-base font-semibold text-tekst">
+          Firmaoplysninger
+        </h2>
+        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+          <dt className="text-tekst-daempet">Firma</dt>
+          <dd className="min-w-0 text-tekst">{FIRMA.navn}</dd>
+          <dt className="text-tekst-daempet">CVR</dt>
+          <dd className="min-w-0 text-tekst">{FIRMA.cvr}</dd>
+          <dt className="text-tekst-daempet">Momsnr.</dt>
+          <dd className="min-w-0 text-tekst">{FIRMA.momsnr}</dd>
+          <dt className="text-tekst-daempet">Adresse</dt>
+          <dd className="min-w-0 text-tekst">{FIRMA_ADRESSE}</dd>
+          <dt className="text-tekst-daempet">E-mail</dt>
+          <dd className="min-w-0 break-words">
+            <a href={`mailto:${FIRMA.email}`} className="font-medium text-groen hover:underline">
+              {FIRMA.email}
+            </a>
+          </dd>
+        </dl>
+      </section>
     </main>
   );
 }

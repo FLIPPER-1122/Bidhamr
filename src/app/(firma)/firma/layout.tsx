@@ -7,6 +7,7 @@ import { hentFirmaTilstand } from "@/lib/erhverv/firmaData";
 import { foerLancering } from "@/lib/lancering";
 import FirmaMenu from "@/components/firma/FirmaMenu";
 import FirmaLogUd from "@/components/firma/FirmaLogUd";
+import FirmaLinje from "@/components/FirmaLinje";
 import { FIRMA_DASHBOARD as D, FIRMA_OVERSIGT } from "@/lib/tekster/erhverv";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
 
@@ -48,6 +49,11 @@ export default async function FirmaLayout({ children }: { children: React.ReactN
             .
           </p>
         </main>
+      <footer className="border-t border-kant bg-white">
+        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+          <FirmaLinje className="text-sm text-tekst-svag" />
+        </div>
+      </footer>
       </div>
     );
   }
@@ -101,6 +107,11 @@ export default async function FirmaLayout({ children }: { children: React.ReactN
           {children}
         </main>
       </div>
+      <footer className="border-t border-kant bg-white">
+        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+          <FirmaLinje className="text-sm text-tekst-svag" />
+        </div>
+      </footer>
       {/* Brugerbetingelserne (Filip, 11. okt. 2026): firmakonti skal også
           acceptere dem, før de kan oprette auktioner (BHV02). Accepten
           gemmes uden server action (virker også før lancering). */}

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { erTestdatabase } from "@/lib/miljoe";
+import { FIRMA } from "@/lib/firmaoplysninger";
 import type { DineroKonfig } from "./dinero";
 
 // Dinero-opsætning fra miljøvariablerne (aldrig i klient-kode eller git):
@@ -117,7 +118,7 @@ function stripeTestnoegle(): boolean {
 
 // BidHamrs CVR - live-regnskabet i Dinero skal have det, testregnskabet må
 // aldrig have det (ROADMAP-BESLUTNINGER "Virksomhedsoplysninger").
-export const BIDHAMR_CVR = "46836219";
+export const BIDHAMR_CVR: string = FIRMA.cvr;
 // Dineros testregnskab hedder "BidHamr Test" (Filip, 20. okt. 2026: fakturaer
 // må i test KUN sendes dertil - aldrig til "Bidhamr ApS", det rigtige
 // regnskab). Et særskilt testregnskab til produktionen skal også starte med

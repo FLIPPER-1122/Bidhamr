@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Ikon, { type IkonNavn } from "@/components/Ikon";
 import { DSA_KONTAKT_EMAIL } from "@/lib/dsa/regler";
+import { FIRMA, FIRMA_ADRESSE } from "@/lib/firmaoplysninger";
 
 // Kontaktpunkt og forklaring efter EU's forordning om digitale tjenester
 // (DSA art. 11, 12, 16, 17 og 20). Teksten er foreslået af Claude og skal
@@ -128,10 +129,13 @@ export default function DsaSide() {
             dansk eller engelsk:
           </p>
           <p className="mt-3 text-[15px] text-tekst">
-            {/* TODO Filip: opret postkassen, og tilføj firmanavn, adresse og CVR, når de er på plads. */}
+            {/* TODO Filip: opret postkassen. */}
             <a href={`mailto:${DSA_KONTAKT_EMAIL}`} className="font-semibold text-groen hover:underline">
               {DSA_KONTAKT_EMAIL}
             </a>
+          </p>
+          <p className="mt-1 text-sm text-tekst-daempet">
+            {FIRMA.navn} · CVR {FIRMA.cvr} · {FIRMA_ADRESSE}
           </p>
         </section>
 

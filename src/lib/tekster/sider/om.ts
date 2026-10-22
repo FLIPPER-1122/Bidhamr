@@ -6,6 +6,7 @@
 // brugere står under "Tryghed".
 
 import type { Tekstside } from "./typer";
+import { FIRMA_LINJE } from "@/lib/firmaoplysninger";
 
 export const OM: Tekstside = {
   titel: "Om BidHamr",
@@ -60,7 +61,7 @@ export const OM: Tekstside = {
       overskrift: "Kontakt",
       tekst: [
         "Har du spørgsmål eller forslag, så skriv til support@bidhamr.dk.",
-        "BidHamr · CVR 46836219 · support@bidhamr.dk",
+        FIRMA_LINJE,
       ],
       links: [{ tekst: "Spørgsmål og svar", href: "/faq" }],
     },

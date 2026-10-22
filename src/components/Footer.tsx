@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import Ikon from "@/components/Ikon";
 import CookieindstillingerKnap from "@/components/samtykke/CookieindstillingerKnap";
+import FirmaLinje from "@/components/FirmaLinje";
 
 // Lys footer: logoet findes kun i en grøn variant, så det må ikke lægges på
 // en skovgrøn flade (DESIGN.md afsnit 10).
@@ -104,6 +105,7 @@ export default function Footer() {
           <span>&copy; {new Date().getFullYear()} BidHamr</span>
           <span>Bud er bindende. Betalingen håndteres sikkert af Stripe.</span>
         </div>
+        <FirmaLinje className="mt-3 text-xs text-tekst-svag" />
       </div>
     </footer>
   );
