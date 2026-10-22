@@ -207,6 +207,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
           udbetalingIGang={udbetalingIGang}
           sagAendret={aendret}
           sagAendretAarsag={aendretAarsag}
+          bankAnnulleret={r.status === "udbetalt" && r.bank_status === "canceled" && !r.transfer_tilbagefoert_kl}
         />
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-admin-kant pt-4 text-sm">
           <Link href={adminSagSti(r.sag_id)} className="inline-flex min-h-11 items-center font-semibold text-groen hover:underline sm:min-h-0">
@@ -243,7 +244,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
             />
             {erChef && r.bank_fejl && <Felt navn="Seneste fejl (bank)" vaerdi={r.bank_fejl} kopier={false} />}
             {r.transfer_tilbagefoert_kl && (
-              <Felt navn="OBS" vaerdi={`Transferen er tilbageført hos Stripe ${reklamationTid(r.transfer_tilbagefoert_kl)} – kontrollér i Stripe`} kopier={false} />
+              <Felt navn="OBS" vaerdi={`Transferen er tilbageført eller passer ikke med reklamationen hos Stripe (${reklamationTid(r.transfer_tilbagefoert_kl)}). Intet sendes til sælgerens bank – kontrollér i Stripe og drift-loggen`} kopier={false} />
             )}
           </dl>
         </Kort>

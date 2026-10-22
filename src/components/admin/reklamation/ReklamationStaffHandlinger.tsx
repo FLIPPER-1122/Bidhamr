@@ -17,6 +17,7 @@ import {
   godkendReklamation,
   kvitterSagAendret,
   retReklamationStatus,
+  sendReklamationTilBankIgen,
   udbetalReklamation,
   type ReklamationSvar,
 } from "@/app/actions/adminReklamation";
@@ -404,6 +405,32 @@ function UdbetalKnap({
   );
 }
 
+// Udbetalingen til sælgerens bank er annulleret hos Stripe (kun chefen).
+function SendTilBankIgenKnap({ reklamationId, sagId, godkendtBeloebOere }: { reklamationId: string; sagId: string; godkendtBeloebOere: number }) {
+  return (
+    <DialogKnap
+      tekst="Send til banken igen"
+      stil="btn-primaer"
+      titel={`Send ${kroner(godkendtBeloebOere)} til sælgerens bank igen`}
+      beskrivelse="Udbetalingen til sælgerens bank blev annulleret hos Stripe – ikke af BidHamr. Pengene står stadig på sælgerens Stripe-konto. Kontrollér i Stripe, hvorfor den blev annulleret, før du sender igen. Der sendes aldrig mere end det godkendte beløb."
+    >
+      {({ sender, fejl, send, luk }) => (
+        <form
+          method="post"
+          className="space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            void send(() => sendReklamationTilBankIgen(reklamationId, sagId), "Erstatningen er sendt til sælgerens bank igen", luk);
+          }}
+        >
+          <Fejl fejl={fejl} />
+          <Knapper sender={sender} onLuk={luk} bekraeft="Send igen" />
+        </form>
+      )}
+    </DialogKnap>
+  );
+}
+
 // ------------------------------------------------------------------ Ret status
 
 function RetStatusKnap({
@@ -724,6 +751,7 @@ export default function ReklamationStaffHandlinger({
   udbetalingIGang = false,
   sagAendret = false,
   sagAendretAarsag,
+  bankAnnulleret = false,
 }: {
   reklamationId: string;
   sagId: string;
@@ -742,12 +770,30 @@ export default function ReklamationStaffHandlinger({
   sagAendret?: boolean;
   // Hvorfor (fragt_reklamation_betingelser): null = opfyldt igen, undefined = ukendt.
   sagAendretAarsag?: string | null;
+  // Udbetalingen til sælgerens bank er annulleret hos Stripe (og transferen
+  // er ikke tilbageført) - chefen kan sende igen.
+  bankAnnulleret?: boolean;
 }) {
   if (inhabil) {
     return (
       <p className="rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
         Du er inhabil: du er part i handlen eller har handlet med en af parterne. Lad en kollega tage den.
       </p>
+    );
+  }
+  if (status === "udbetalt" && bankAnnulleret) {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="rounded-lg border border-fejl-kant bg-fejl-bg px-3 py-2 text-sm text-fejl-tekst">
+          Udbetalingen til sælgerens bank blev annulleret hos Stripe. Pengene står på sælgerens Stripe-konto og sendes
+          ikke automatisk igen.{!erChef && " Kun chefen kan sende dem igen."}
+        </p>
+        {erChef && godkendtBeloebOere != null && (
+          <div>
+            <SendTilBankIgenKnap reklamationId={reklamationId} sagId={sagId} godkendtBeloebOere={godkendtBeloebOere} />
+          </div>
+        )}
+      </div>
     );
   }
   if (status === "udbetalt") {
