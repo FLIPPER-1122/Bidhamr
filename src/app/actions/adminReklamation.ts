@@ -59,6 +59,26 @@ const KODE: Record<string, string> = {
   frosset: "Sælgerens udbetalinger er frosset. Ingen penge er flyttet. Se på sælgeren under Penge først.",
   ingen_konto: "Sælgeren har ingen aktiv Stripe-konto. Ingen penge er flyttet. Sælgeren skal sætte sin udbetalingskonto op igen.",
   konto_aendret: "Sælgerens Stripe-konto er en anden end på betalingen. Ingen penge er flyttet. Kontrollér sælgeren, før du udbetaler.",
+  i_gang: "Udbetalingen er i gang lige nu (startet for under 10 minutter siden). Vent lidt, og genindlæs siden – der udbetales aldrig to gange.",
+  // Send til banken igen (annulleret payout).
+  ikke_annulleret: "Udbetalingen til sælgerens bank er ikke annulleret. Genindlæs siden.",
+  tilbagefoert:
+    "Overførslen til sælgerens Stripe-konto er tilbageført eller passer ikke med reklamationen, så intet sendes til banken. Se drift-loggen og kontrollér i Stripe.",
+};
+
+// Resultatet af "send til banken igen" (udbetalReklamationTilBank).
+const BANK: Record<string, string> = {
+  stoppet: "Udbetalinger er stoppet med nødstoppet. Erstatningen sendes, når udbetalinger er genoptaget.",
+  frosset: "Sælgerens udbetalinger er frosset. Erstatningen sendes, når frysningen er ophævet.",
+  venter_paa_bank: "Sælgeren skal rette sin bankkonto hos Stripe først. Erstatningen sendes automatisk bagefter.",
+  konto_ikke_klar: "Sælgerens Stripe-konto kan ikke udbetale lige nu. Erstatningen sendes automatisk, når den kan.",
+  venter_saldo: "Pengene er ikke tilgængelige på sælgerens Stripe-konto endnu. Erstatningen sendes automatisk, når de er.",
+  saldo_afviger:
+    "Sælgerens Stripe-konto har mindre på saldoen, end erstatningen og sælgerens handler kræver. Intet er sendt – se drift-loggen og kontrollér kontoen i Stripe.",
+  tilbagefoert: KODE.tilbagefoert,
+  afvist: "Stripe afviste udbetalingen til banken. Den prøves igen automatisk – se drift-loggen.",
+  usikker: "Vi fik ikke et sikkert svar fra Stripe. Det slås op og prøves igen automatisk – der udbetales aldrig to gange.",
+  i_gang: KODE.i_gang,
 };
 
 // Resultatet af Stripe-delen (udfoerReklamationTransfer).
@@ -302,6 +322,7 @@ export async function udbetalReklamation(
       transportoer: String(claim.transportoer),
       genoptag: claim.genoptag === true,
       paabegyndt_kl: String(claim.paabegyndt_kl),
+      oprettet_kl: String(claim.oprettet_kl),
     });
     stier(erUuid(sagId) ? sagId : String(claim.sag_id), String(claim.trade_id));
     if (res !== "udbetalt") return { fejl: TRANSFER[res] ?? GENERISK };
@@ -324,5 +345,40 @@ export async function udbetalReklamation(
     return {
       fejl: "Noget gik galt under udbetalingen. Det er uvist, om pengene er sendt – tryk igen om lidt (der udbetales aldrig to gange), eller se drift-loggen.",
     };
+  }
+}
+
+// KUN chefen: udbetalingen af erstatningen til sælgerens bank er annulleret
+// hos Stripe (BidHamr annullerer aldrig selv, så den sendes ikke automatisk
+// igen - rød lampe). Chefen har set på det i Stripe og sender igen: databasen
+// tjekker rolle, aal2 og inhabilitet med chefens session og nulstiller
+// (fragt_reklamation_bank_send_igen, nyt forsøg = ny idempotency-nøgle);
+// derefter sendes den ad den almindelige vej med alle dens værn
+// (udbetalReklamationTilBank - cron'en tager den også, hvis den venter).
+export async function sendReklamationTilBankIgen(reklamationId: string, sagId?: string): Promise<ReklamationSvar> {
+  if (!erUuid(reklamationId)) return { fejl: KODE.ikke_fundet };
+  let chefId: string | null = null;
+  try {
+    ({ userId: chefId } = await assertRole("chef"));
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("fragt_reklamation_bank_send_igen", { p_reklamation: reklamationId });
+    if (error) {
+      if (["PGRST202", "42883"].includes(error.code ?? "")) {
+        return { fejl: "Kræver migrationen 20261029010000_reklamation_fragtfirma.sql." };
+      }
+      throw new Error(error.message);
+    }
+    const svar = (data ?? {}) as Record<string, unknown>;
+    if (svar.kode !== "ok") return { fejl: fejlTekst(svar) };
+    stier(erUuid(sagId) ? sagId : String(svar.sag_id), String(svar.trade_id));
+    const res = await udbetalReklamationTilBank(reklamationId.toLowerCase());
+    if (res === "oprettet" || res === "faerdig") return { ok: true };
+    return { fejl: BANK[res] ?? GENERISK };
+  } catch (err) {
+    unstable_rethrow(err);
+    if (erAdgangsfejl(err)) return { fejl: "Kun chefen kan sende erstatningen til banken igen." };
+    console.error("Reklamation: sendReklamationTilBankIgen fejlede:", err);
+    await logDriftFejl({ kilde: "action", hvor: "reklamation/bank", fejl: err, brugerId: chefId });
+    return { fejl: "Noget gik galt. Det slås op og prøves igen automatisk – der udbetales aldrig to gange. Se drift-loggen." };
   }
 }

@@ -337,6 +337,25 @@ annulleret (staff/system), sag ændret/fortsætter. Ingen omtale af omdeling.inf
    genkender den (`spejlReklamationPayout` i `spejlUdbetaling`), så den aldrig regnes som en fremmed udbetaling og
    fryser sælgeren. Fejler den i banken, "venter sælgeren på bank" som ved de andre udbetalinger.
 
+**Værn om pengene (rettet efter review, 22. okt. 2026):**
+- Transfer-claimen er låst: en claim under 10 minutter gammel svarer `i_gang` (to tryk/faner får den aldrig begge).
+  Serveren slår ALTID op hos Stripe (metadata `reklamation_id`, fra reklamationens oprettelse), før den laver en
+  transfer – også ved en frisk claim. `fragt_reklamation_udbetal_afvist` frigør kun, når `p_forsoeg` er det aktuelle
+  forsøg (et forsinket svar fra et ældre forsøg frigør aldrig et nyere). Cron'en frigør en claim uden transfer hos
+  Stripe, når nøglen er over 24 timer gammel (drift-log; chefen trykker igen).
+- Payouten til banken tager aldrig andre penge: databasen afviser, når transferen er markeret tilbageført
+  (`tilbagefoert`); serveren henter transferen frisk før hver payout (ikke tilbageført, beløb = det godkendte, samme
+  konto – ellers markeres den med `fragt_reklamation_transfer_tilbagefoert` og der alarmeres), og sælgerens saldo
+  (tilgængelig + afventende) minus erstatningen skal dække de betalte, ikke-udbetalte handler (`skyldigOere`) og
+  andre erstatninger, der ikke er sendt til banken – ellers alarm og intet sendt.
+- `fragt_reklamation_bank_start` afgør nøglen under lås: `i_gang` under 10 minutter; forsøget tælles kun op efter en
+  fejlet payout eller et usikkert kald over 23 timer gammelt. Payouten har `bank_forsoeg` i metadata, og opslaget
+  matcher kun det aktuelle forsøg.
+- En anden payout mærket med reklamationen, der ikke er fejlet/annulleret, mens den aktuelle er i live (eller fra et
+  andet forsøg): alarm "udbetaling afviger" (webhook og afstemning) – den kan være sendt to gange.
+- Annulleret payout (BidHamr annullerer aldrig selv): rød lampe og alarm; chefen trykker "Send til banken igen"
+  (`fragt_reklamation_bank_send_igen` – chef, aal2; nyt forsøg) – derefter den almindelige bank-vej.
+
 **Afstemning og bogføring:** erstatningen er ikke BidHamrs indtægt – der laves **ingen faktura** (fakturamodulet,
 `src/lib/faktura`, bygger kun på BidHamrs gebyrer, fragt, Beskyttelse og abonnementer). Pengene ind fra DAO bogføres
 manuelt som et mellemværende (modtaget erstatning på vegne af sælgeren), og udbetalingen via Stripe udligner det.

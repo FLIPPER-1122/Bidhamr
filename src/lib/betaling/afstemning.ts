@@ -45,6 +45,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { dkk } from "@/lib/betaling/udbetaling";
+import { erDobbeltReklamationPayout, type ReklamationBankStatus } from "@/lib/reklamation/typer";
 // Fremmede testdata (delt Stripe-testkonto før fase 6) - reglen står i
 // fremmedeTestdata.ts og bruges også af webhooken.
 import { erFremmedTestdata, flet, hentKendte, piHenvisning, type Henvisning } from "@/lib/betaling/fremmedeTestdata";
@@ -1597,7 +1598,10 @@ async function afstemTilbagefoersler(
     tjekTid(budget);
     const rek = reklamationer.get(t.id);
     if (rek) {
-      if (t.amount_reversed > 0) {
+      if (t.amount_reversed > 0 || t.reversed) {
+        // Markeres på reklamationen (som webhooken), så erstatningen aldrig
+        // sendes videre til sælgerens bank (den ville tage andre penge).
+        await markerReklamationTransfer(admin, t.id, null);
         await registrer({
           noegle: `tilbagefoersel:${t.id}`,
           type: "tilbagefoersel_udenom",
@@ -1609,6 +1613,7 @@ async function afstemTilbagefoersler(
         });
       }
       if (t.amount !== Number(rek.godkendt_beloeb_oere) || id(t.destination as string | { id: string } | null) !== rek.udbetaling_stripe_konto) {
+        await markerReklamationTransfer(admin, t.id, "har et andet beløb eller en anden konto hos Stripe end reklamationen");
         await registrer({
           noegle: `reklamation-transfer:${t.id}`,
           type: "udbetaling_afviger",
@@ -1657,15 +1662,31 @@ async function afstemTilbagefoersler(
   }
 }
 
+// En reklamations-transfer er tilbageført eller afviger hos Stripe: markeres
+// på reklamationen (fragt_reklamation_transfer_tilbagefoert - idempotent), så
+// payouten til banken aldrig sendes. Fejl (fx migrationen ikke kørt) logges
+// kun - afvigelsen registreres alligevel.
+async function markerReklamationTransfer(admin: Admin, transferId: string, grund: string | null): Promise<void> {
+  const { error } = await admin.rpc("fragt_reklamation_transfer_tilbagefoert", {
+    p_transfer: transferId,
+    ...(grund ? { p_grund: grund } : {}),
+  });
+  if (error) console.error("fragt_reklamation_transfer_tilbagefoert:", error.message);
+}
+
 // En payout på en sælgerkonto, som er chefens udbetaling af en erstatning
 // (reklamation, 20261029010000)? Fejl (fx migrationen ikke kørt) = nej.
-async function reklamationsPayout(
-  admin: Admin,
-  p: Stripe.Payout,
-  konto: string,
-): Promise<{ id: string; godkendt_beloeb_oere: number | null; bank_status: string | null } | null> {
-  const felter = "id, godkendt_beloeb_oere, bank_status, udbetaling_stripe_konto";
-  type R = { id: string; godkendt_beloeb_oere: number | null; bank_status: string | null; udbetaling_stripe_konto: string | null };
+type ReklamationsPayout = {
+  id: string;
+  godkendt_beloeb_oere: number | null;
+  bank_status: ReklamationBankStatus | null;
+  bank_payout_id: string | null;
+  bank_forsoeg: number;
+  udbetaling_stripe_konto: string | null;
+};
+async function reklamationsPayout(admin: Admin, p: Stripe.Payout, konto: string): Promise<ReklamationsPayout | null> {
+  const felter = "id, godkendt_beloeb_oere, bank_status, bank_payout_id, bank_forsoeg, udbetaling_stripe_konto";
+  type R = ReklamationsPayout;
   const { data: kendt } = await admin.from("fragt_reklamationer").select(felter).eq("bank_payout_id", p.id).maybeSingle<R>();
   let r = kendt ?? null;
   const md = p.metadata?.type === "reklamation" ? p.metadata?.reklamation_id : null;
@@ -1753,6 +1774,20 @@ async function afstemUdbetalinger(admin: Admin, stripe: Stripe, fra: number, r: 
               beskrivelse: `Payout ${p.id} (erstatning, reklamation ${rek.id}) har et andet beløb hos Stripe end i databasen.`,
               beloebStripe: p.amount,
               beloebDb: Number(rek.godkendt_beloeb_oere),
+            });
+          }
+          // En anden payout end den aktuelle, der ikke er fejlet/annulleret,
+          // mens den aktuelle er i live: erstatningen kan være sendt to gange.
+          if (erDobbeltReklamationPayout(rek, p)) {
+            await registrer({
+              noegle: `reklamation-payout-dobbelt:${p.id}`,
+              type: "udbetaling_afviger",
+              tilstand: `${p.status}|${rek.bank_status ?? "-"}`,
+              stripeId: p.id,
+              stripeKonto: konto,
+              beskrivelse: `Payout ${p.id} ('${p.status}') er mærket som erstatning (reklamation ${rek.id}), men reklamationens aktuelle payout er ${rek.bank_payout_id ?? "ingen"} ('${rek.bank_status ?? "-"}'). Erstatningen kan være sendt to gange - kontrollér i Stripe.`,
+              beloebStripe: p.amount,
+              beloebDb: 0,
             });
           }
           continue;

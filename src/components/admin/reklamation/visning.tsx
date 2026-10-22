@@ -96,7 +96,7 @@ export const REKLAMATION_BANK_TEKST: Record<string, string> = {
   oprettet: "På vej til sælgerens bank",
   paid: "Sendt til sælgerens bank",
   failed: "Udbetalingen til banken fejlede – venter på, at sælgeren retter bankkontoen",
-  canceled: "Udbetalingen til banken blev annulleret hos Stripe – kontrollér i Stripe",
+  canceled: "Udbetalingen til banken blev annulleret hos Stripe – kontrollér i Stripe, og send igen",
 };
 
 // Navne på reklamationens hændelser i moderation_log (tidslinjen). De gamle

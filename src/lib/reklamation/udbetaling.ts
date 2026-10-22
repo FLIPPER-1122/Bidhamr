@@ -36,16 +36,19 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { hentNoedstop } from "@/lib/betaling/noedstop";
-import { dkk } from "@/lib/betaling/udbetaling";
-import { transportoerNavn, type StaffReklamation } from "@/lib/reklamation/typer";
+import { dkk, skyldigOere } from "@/lib/betaling/udbetaling";
+import { erDobbeltReklamationPayout, transportoerNavn, type StaffReklamation } from "@/lib/reklamation/typer";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
 const KALD: Stripe.RequestOptions = { timeout: 30_000, maxNetworkRetries: 1 };
 // Et kald, der er sendt for nylig, kan stadig være i gang hos Stripe.
 const I_GANG_MS = 10 * 60_000;
-// Stripes idempotency-nøgler udløber efter 24 timer.
+// Stripes idempotency-nøgler udløber efter 24 timer (vi regner med 23).
 const NOEGLE_LEVETID_MS = 23 * 60 * 60_000;
+// En claim uden transfer hos Stripe, hvis nøgle med sikkerhed er udløbet:
+// cron'en frigør den (chefen trykker igen - ny nøgle).
+const FASTLAAST_MS = 24 * 60 * 60_000;
 
 export const REKLAMATION_METADATA_TYPE = "reklamation";
 
@@ -97,6 +100,8 @@ export type UdbetalClaim = {
   transportoer: string;
   genoptag: boolean;
   paabegyndt_kl: string;
+  // Reklamationens oprettelse: Stripe slås op herfra (metadata reklamation_id).
+  oprettet_kl: string;
 };
 
 export type TransferResultat =
@@ -111,22 +116,38 @@ export type TransferResultat =
   | "proev_igen"
   | "afviger";
 
-// Frigør claimen (Stripe har med sikkerhed ikke lavet en transfer).
-async function frigiv(admin: Admin, id: string, tekst: string): Promise<void> {
-  const { error } = await admin.rpc("fragt_reklamation_udbetal_afvist", { p_reklamation: id, p_fejl: tekst, p_frigiv: true });
+// Frigør claimen (Stripe har med sikkerhed ikke lavet en transfer). Kun når
+// forsøget stadig er det aktuelle (databasen tjekker p_forsoeg under lås).
+async function frigiv(admin: Admin, id: string, tekst: string, forsoeg: number): Promise<boolean> {
+  const { data, error } = await admin.rpc("fragt_reklamation_udbetal_afvist", {
+    p_reklamation: id,
+    p_fejl: tekst,
+    p_frigiv: true,
+    p_forsoeg: forsoeg,
+  });
   if (error) throw new Error(`fragt_reklamation_udbetal_afvist: ${error.message}`);
+  return data === true;
 }
 
-async function usikker(admin: Admin, id: string, tekst: string): Promise<void> {
-  const { error } = await admin.rpc("fragt_reklamation_udbetal_afvist", { p_reklamation: id, p_fejl: tekst, p_frigiv: false });
+async function usikker(admin: Admin, id: string, tekst: string, forsoeg: number): Promise<void> {
+  const { error } = await admin.rpc("fragt_reklamation_udbetal_afvist", {
+    p_reklamation: id,
+    p_fejl: tekst,
+    p_frigiv: false,
+    p_forsoeg: forsoeg,
+  });
   if (error) console.error("fragt_reklamation_udbetal_afvist (usikker):", error.message);
 }
 
-// Findes transferen allerede (svaret gik tabt)? Slås op via metadata.
-async function findTransfer(stripe: Stripe, id: string, c: { konto: string; trade_id: string; paabegyndt_kl: string }) {
-  const fra = Math.floor(new Date(c.paabegyndt_kl).getTime() / 1000) - 3600;
+// Findes en transfer for reklamationen allerede (et tidligere forsøg, hvis
+// svar gik tabt)? Slås op via metadata fra reklamationens oprettelse - uanset
+// destination, så også en transfer til en anden konto findes (og giver
+// "afviger" i stedet for en ny transfer).
+export async function findTransfer(stripe: Stripe, id: string, c: { trade_id: string; oprettet_kl: string }) {
+  const ms = new Date(c.oprettet_kl).getTime();
+  const fra = Number.isFinite(ms) ? Math.floor(ms / 1000) - 3600 : 0;
   for await (const t of stripe.transfers.list(
-    { destination: c.konto, transfer_group: transferGruppe(c.trade_id), created: { gte: fra }, limit: 100 },
+    { transfer_group: transferGruppe(c.trade_id), created: { gte: fra }, limit: 100 },
     KALD,
   )) {
     if (t.metadata?.type === REKLAMATION_METADATA_TYPE && t.metadata?.reklamation_id === id) return t;
@@ -176,19 +197,23 @@ export async function udfoerReklamationTransfer(id: string, c: UdbetalClaim): Pr
   // Stop før Stripe-kaldet. Er et tidligere kald (måske) nået frem
   // (genoptag), beholdes claimen, så næste forsøg bruger samme nøgle - ellers
   // frigøres den (intet er sendt til Stripe).
-  const stopFoer = (tekst: string) => (c.genoptag ? usikker(admin, id, tekst) : frigiv(admin, id, tekst));
+  const stopFoer = async (tekst: string) => {
+    if (c.genoptag) await usikker(admin, id, tekst, c.forsoeg);
+    else await frigiv(admin, id, tekst, c.forsoeg);
+  };
 
-  // Et tidligere forsøg uden svar: findes transferen allerede?
-  if (c.genoptag) {
-    const fundet = await findTransfer(stripe, id, c);
-    if (fundet) return registrerTransfer(admin, id, c, fundet);
-    // Nøglen kan stadig være gemt hos Stripe (under 24 t) - samme nøgle
-    // bruges igen. Er den udløbet, frigøres claimen, og chefen trykker igen
-    // (ny nøgle) - transferen findes med sikkerhed ikke (opslaget ovenfor).
-    if (Date.now() - new Date(c.paabegyndt_kl).getTime() > NOEGLE_LEVETID_MS) {
-      await frigiv(admin, id, "Ingen transfer fundet hos Stripe efter et usikkert svar - prøv igen");
-      return "proev_igen";
-    }
+  // Altid først (også ved en frisk claim): findes en transfer for
+  // reklamationen allerede hos Stripe (et tidligere forsøg, hvis svar gik
+  // tabt)? Så registreres den - der laves aldrig en ny.
+  const fundet = await findTransfer(stripe, id, c);
+  if (fundet) return registrerTransfer(admin, id, c, fundet);
+  // Et tidligere forsøg uden svar: nøglen kan stadig være gemt hos Stripe
+  // (under 24 t) - samme nøgle bruges igen. Er den udløbet, frigøres claimen,
+  // og chefen trykker igen (ny nøgle) - transferen findes med sikkerhed ikke
+  // (opslaget ovenfor).
+  if (c.genoptag && Date.now() - new Date(c.paabegyndt_kl).getTime() > NOEGLE_LEVETID_MS) {
+    await frigiv(admin, id, "Ingen transfer fundet hos Stripe efter et usikkert svar - prøv igen", c.forsoeg);
+    return "proev_igen";
   }
 
   // Sidste tjek lige før Stripe: nødstop eller frysning sat efter claimen.
@@ -265,7 +290,7 @@ export async function udfoerReklamationTransfer(id: string, c: UdbetalClaim): Pr
   } catch (err) {
     const kode = fejlKode(err);
     if (erEndelig(err)) {
-      await frigiv(admin, id, `Stripe afviste udbetalingen (${kode})`);
+      await frigiv(admin, id, `Stripe afviste udbetalingen (${kode})`, c.forsoeg);
       if (kode === "balance_insufficient") return "platform_saldo";
       await logDriftFejl({
         kilde: "server",
@@ -275,7 +300,7 @@ export async function udfoerReklamationTransfer(id: string, c: UdbetalClaim): Pr
       });
       return "afvist";
     }
-    await usikker(admin, id, `Usikkert svar fra Stripe (${kode}) - slås op før nyt forsøg`);
+    await usikker(admin, id, `Usikkert svar fra Stripe (${kode}) - slås op før nyt forsøg`, c.forsoeg);
     await alarmPrTilfaelde({
       noegle: `reklamation-transfer-haenger:${id}`,
       hvor: "reklamation/udbetaling",
@@ -299,6 +324,8 @@ export type BankResultat =
   | "venter_paa_bank"
   | "konto_ikke_klar"
   | "venter_saldo"
+  | "saldo_afviger"
+  | "tilbagefoert"
   | "afvist"
   | "usikker"
   | "ikke_fundet";
@@ -309,13 +336,28 @@ async function hentRaekke(admin: Admin, id: string): Promise<StaffReklamation | 
   return data;
 }
 
+// Payouten for reklamationens AKTUELLE forsøg (svaret gik tabt)? Metadata
+// bank_forsoeg skal være det aktuelle forsøg; en payout uden bank_forsoeg
+// (ældre kode) tæller kun, hvis det ikke er den kendte (ældre) payout, og den
+// ikke er fejlet/annulleret - ellers kunne en ældre, fejlet payout få et nyt
+// forsøg til at se afsluttet ud.
+export function erAktuelPayout(
+  r: Pick<StaffReklamation, "id" | "bank_payout_id" | "bank_forsoeg">,
+  p: { id: string; status: string; metadata?: Record<string, string> | null },
+): boolean {
+  if (p.metadata?.type !== REKLAMATION_METADATA_TYPE || p.metadata?.reklamation_id !== r.id) return false;
+  const fp = p.metadata?.bank_forsoeg;
+  if (fp !== undefined) return fp === String(r.bank_forsoeg);
+  return p.id !== r.bank_payout_id && p.status !== "failed" && p.status !== "canceled";
+}
+
 async function findPayout(stripe: Stripe, r: StaffReklamation): Promise<Stripe.Payout | null> {
   const fra = Math.floor(new Date(r.bank_claimet_kl ?? r.udbetalt_kl ?? Date.now()).getTime() / 1000) - 3600;
   for await (const p of stripe.payouts.list(
     { created: { gte: fra }, limit: 100 },
     { ...KALD, stripeAccount: r.udbetaling_stripe_konto! },
   )) {
-    if (p.metadata?.type === REKLAMATION_METADATA_TYPE && p.metadata?.reklamation_id === r.id) return p;
+    if (erAktuelPayout(r, p)) return p;
   }
   return null;
 }
@@ -341,15 +383,61 @@ async function spejl(admin: Admin, r: StaffReklamation, konto: string, p: Stripe
         konto,
         `Udbetaling af en erstatning (reklamation) til sælgerens bank fejlede hos Stripe (${p.failure_code ?? "ukendt årsag"}, ${p.id}). Nye udbetalinger venter, til sælgeren har rettet sin bankkonto hos Stripe.`,
       );
+      await logDriftFejl({
+        kilde: "server",
+        hvor: "reklamation/bank",
+        fejl: `Reklamation ${r.id}: udbetalingen af erstatningen (${p.id}) til sælgerens bank er fejlet hos Stripe (${p.failure_code ?? "ukendt"}). Pengene er tilbage på sælgerens Stripe-konto og sendes igen, når sælgeren har rettet bankkontoen.`,
+        brugerId: r.saelger_id,
+      });
+    } else {
+      // BidHamr annullerer aldrig selv en payout - den sendes ikke automatisk
+      // igen. Rød lampe (udbetaling_fejl) + én alarm; chefen sender igen.
+      await alarmPrTilfaelde({
+        noegle: `reklamation-bank-annulleret:${p.id}`,
+        hvor: "reklamation/bank",
+        fejl: `Reklamation ${r.id}: udbetalingen af erstatningen (${p.id}) til sælgerens bank er annulleret hos Stripe - ikke af BidHamr. Pengene er tilbage på sælgerens Stripe-konto. Kontrollér i Stripe, og tryk "Send til banken igen" på reklamationen.`,
+        brugerId: r.saelger_id,
+      });
     }
-    await logDriftFejl({
-      kilde: "server",
-      hvor: "reklamation/bank",
-      fejl: `Reklamation ${r.id}: udbetalingen af erstatningen (${p.id}) til sælgerens bank er ${svar.til === "failed" ? "fejlet" : "annulleret"} hos Stripe (${p.failure_code ?? "ukendt"}). Pengene er tilbage på sælgerens Stripe-konto${svar.til === "failed" ? " og sendes igen, når sælgeren har rettet bankkontoen" : " - kontrollér i Stripe"}.`,
-      brugerId: r.saelger_id,
-    });
   }
   return String(svar.kode ?? "ukendt");
+}
+
+// H1: transferen skal stadig stå på sælgerens konto med præcis det godkendte
+// beløb - ellers ville payouten tage andre penge (fx sælgerens handler) fra
+// kontoen. Hentes frisk hos Stripe. null = i orden.
+async function tjekTransfer(stripe: Stripe, r: StaffReklamation, konto: string): Promise<string | null> {
+  const t = await stripe.transfers.retrieve(r.stripe_transfer_id!, undefined, KALD);
+  const destination = stripeId(t.destination as string | { id: string } | null);
+  if (t.reversed || Number(t.amount_reversed) !== 0) return "er tilbageført hos Stripe - ikke af BidHamr";
+  if (Number(t.amount) !== Number(r.godkendt_beloeb_oere) || t.currency !== "dkk") {
+    return "har et andet beløb hos Stripe end det godkendte";
+  }
+  if (destination !== konto) return "er sendt til en anden Stripe-konto end reklamationens";
+  return null;
+}
+
+// Det, der i forvejen skal blive på sælgerens konto: handlerne (skyldigOere -
+// samme værn som udbetalSaelger) og andre erstatninger, der endnu ikke er
+// sendt til banken (en payout for dem er ikke oprettet, eller den er
+// fejlet/annulleret, så pengene er tilbage).
+async function skalBliveOere(admin: Admin, r: StaffReklamation, konto: string): Promise<number> {
+  let sum = await skyldigOere(admin, r.saelger_id, konto);
+  const { data, error } = await admin
+    .from("fragt_reklamationer")
+    .select("id, godkendt_beloeb_oere, bank_status")
+    .eq("saelger_id", r.saelger_id)
+    .eq("udbetaling_stripe_konto", konto)
+    .eq("status", "udbetalt")
+    .is("transfer_tilbagefoert_kl", null)
+    .neq("id", r.id)
+    .limit(1000);
+  if (error) throw new Error(`fragt_reklamationer: ${error.message}`);
+  for (const x of data ?? []) {
+    if (x.bank_status === "oprettet" || x.bank_status === "paid") continue;
+    sum += Number(x.godkendt_beloeb_oere ?? 0);
+  }
+  return sum;
 }
 
 // Sender den udbetalte erstatning videre fra sælgerens Connect-konto til
@@ -360,10 +448,13 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
   const r = await hentRaekke(admin, id);
   if (!r) return "ikke_fundet";
   if (r.status !== "udbetalt" || !r.stripe_transfer_id || !r.udbetaling_stripe_konto) return "ikke_udbetalt";
+  if (r.transfer_tilbagefoert_kl) return "tilbagefoert";
   if (r.bank_status === "oprettet" || r.bank_status === "paid" || r.bank_status === "canceled") return "faerdig";
   const konto = r.udbetaling_stripe_konto;
 
-  let nyNoegle = false;
+  // Et tidligere kald (måske) uden svar: findes payouten for forsøget? (Om
+  // der bagefter bruges samme eller en ny nøgle, afgør databasen under lås i
+  // fragt_reklamation_bank_start.)
   if (r.bank_status === "claimet") {
     const sidst = r.bank_sidst_sendt_kl ? new Date(r.bank_sidst_sendt_kl).getTime() : 0;
     if (Date.now() - sidst < I_GANG_MS) return "i_gang";
@@ -372,10 +463,27 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
       await spejl(admin, r, konto, fundet);
       return "oprettet";
     }
-    nyNoegle = Date.now() - sidst > NOEGLE_LEVETID_MS;
   }
 
   if ((await hentNoedstop(true)).udbetalingerStoppet) return "stoppet";
+
+  // H1: transferen frisk hos Stripe - tilbageført, andet beløb eller anden
+  // konto: aldrig en payout (den ville tage andre penge), markeres og alarmeres.
+  const transferFejl = await tjekTransfer(stripe, r, konto);
+  if (transferFejl) {
+    const { error } = await admin.rpc("fragt_reklamation_transfer_tilbagefoert", {
+      p_transfer: r.stripe_transfer_id,
+      p_grund: transferFejl,
+    });
+    if (error) throw new Error(`fragt_reklamation_transfer_tilbagefoert: ${error.message}`);
+    await alarmPrTilfaelde({
+      noegle: `reklamation-transfer-tilbagefoert:${r.stripe_transfer_id}`,
+      hvor: "reklamation/bank",
+      fejl: `Reklamation ${r.id}: Stripe-transferen ${r.stripe_transfer_id} (erstatning til sælgeren) ${transferFejl}. Erstatningen sendes IKKE videre til sælgerens bank - kontrollér i Stripe.`,
+      brugerId: r.saelger_id,
+    });
+    return "tilbagefoert";
+  }
 
   let acc: Stripe.Account;
   try {
@@ -386,8 +494,9 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
   }
   if (!acc.payouts_enabled || acc.settings?.payouts?.schedule?.interval !== "manual") return "konto_ikke_klar";
 
+  const beloeb = Number(r.godkendt_beloeb_oere);
   const saldo = await stripe.balance.retrieve({}, { ...KALD, stripeAccount: konto });
-  if (dkk(saldo.available, true) < Number(r.godkendt_beloeb_oere)) {
+  if (dkk(saldo.available, true) < beloeb) {
     if (r.udbetalt_kl && Date.now() - new Date(r.udbetalt_kl).getTime() > 3600_000) {
       await alarmPrTilfaelde({
         noegle: `reklamation-bank-saldo:${r.id}`,
@@ -398,16 +507,33 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
     }
     return "venter_saldo";
   }
+  // H1: efter payouten skal der stadig være mindst det, sælgerens handler og
+  // andre erstatninger kræver (samme saldo-afstemning som udbetalSaelger).
+  const iAlt = dkk(saldo.available, false) + dkk(saldo.pending, false);
+  const skalBlive = await skalBliveOere(admin, r, konto);
+  if (iAlt - beloeb < skalBlive) {
+    await alarmPrTilfaelde({
+      noegle: `reklamation-bank-skyldig:${r.id}`,
+      hvor: "reklamation/bank",
+      fejl: `Reklamation ${r.id}: sælgerkonto ${konto} har mindre på saldoen (tilgængelig + afventende), end erstatningen plus sælgerens betalte, ikke-udbetalte handler og andre erstatninger kræver. Erstatningen sendes ikke til banken (den ville tage andre penge) - kontrollér kontoen i Stripe.`,
+      brugerId: r.saelger_id,
+    });
+    return "saldo_afviger";
+  }
+  await lukTilfaelde(`reklamation-bank-skyldig:${r.id}`);
 
-  const { data: start, error: sFejl } = await admin.rpc("fragt_reklamation_bank_start", {
-    p_reklamation: r.id,
-    p_ny_noegle: nyNoegle,
-  });
+  const { data: start, error: sFejl } = await admin.rpc("fragt_reklamation_bank_start", { p_reklamation: r.id });
   if (sFejl) throw new Error(`fragt_reklamation_bank_start: ${sFejl.message}`);
   const s = (start ?? {}) as { kode?: string; forsoeg?: number; beloeb_oere?: number; konto?: string };
-  if (s.kode !== "ok") return (s.kode === "faerdig" ? "faerdig" : (s.kode as BankResultat)) ?? "afvist";
-  if (s.konto !== konto || Number(s.beloeb_oere) !== Number(r.godkendt_beloeb_oere)) {
-    await admin.rpc("fragt_reklamation_bank_fejl", { p_reklamation: r.id, p_fejl: "Konto/beløb passer ikke", p_frigiv: true });
+  if (s.kode !== "ok") return ((s.kode as BankResultat | undefined) ?? "afvist");
+  const forsoeg = Number(s.forsoeg ?? 0);
+  if (s.konto !== konto || Number(s.beloeb_oere) !== beloeb) {
+    await admin.rpc("fragt_reklamation_bank_fejl", {
+      p_reklamation: r.id,
+      p_fejl: "Konto/beløb passer ikke",
+      p_frigiv: true,
+      p_forsoeg: forsoeg,
+    });
     return "afvist";
   }
 
@@ -415,7 +541,7 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
   try {
     payout = await stripe.payouts.create(
       {
-        amount: Number(s.beloeb_oere),
+        amount: beloeb,
         currency: "dkk",
         description: "BidHamr: erstatning (reklamation)",
         metadata: {
@@ -423,9 +549,10 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
           reklamation_id: r.id,
           trade_id: r.trade_id,
           saelger_id: r.saelger_id,
+          bank_forsoeg: String(forsoeg),
         },
       },
-      { ...KALD, stripeAccount: konto, idempotencyKey: payoutNoegle(r.id, Number(s.forsoeg ?? 0)) },
+      { ...KALD, stripeAccount: konto, idempotencyKey: payoutNoegle(r.id, forsoeg) },
     );
   } catch (err) {
     const kode = fejlKode(err);
@@ -434,6 +561,7 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
         p_reklamation: r.id,
         p_fejl: `Stripe afviste udbetalingen til banken (${kode})`,
         p_frigiv: true,
+        p_forsoeg: forsoeg,
       });
       await logDriftFejl({
         kilde: "server",
@@ -447,6 +575,7 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
       p_reklamation: r.id,
       p_fejl: `Usikkert svar fra Stripe (${kode}) - slås op før nyt forsøg`,
       p_frigiv: false,
+      p_forsoeg: forsoeg,
     });
     await logDriftFejl({
       kilde: "server",
@@ -487,6 +616,18 @@ export async function spejlReklamationPayout(konto: string, payout: Stripe.Payou
     });
     return "reklamation_afviger";
   }
+  // M2: en anden payout end den aktuelle, som ikke er fejlet/annulleret, mens
+  // den aktuelle er i live (eller den er fra et andet forsøg): erstatningen er
+  // måske sendt to gange. Spejles ikke (databasen beholder den aktuelle).
+  if (erDobbeltReklamationPayout(r, payout)) {
+    await alarmPrTilfaelde({
+      noegle: `reklamation-payout-dobbelt:${payout.id}`,
+      hvor: "reklamation/bank",
+      fejl: `Udbetaling afviger: payout ${payout.id} ('${payout.status}') på sælgerkonto ${konto} er mærket som reklamation ${r.id}, men reklamationens aktuelle payout er ${r.bank_payout_id ?? "ingen"} ('${r.bank_status ?? "-"}', forsøg ${r.bank_forsoeg}). Erstatningen kan være sendt to gange - kontrollér i Stripe.`,
+      brugerId: r.saelger_id,
+    });
+    return "reklamation_dobbelt";
+  }
   return `reklamation_${await spejl(admin, r, konto, payout)}`;
 }
 
@@ -505,7 +646,7 @@ export async function spejlReklamationTransfer(t: Stripe.Transfer): Promise<stri
   await alarmPrTilfaelde({
     noegle: `reklamation-transfer-tilbagefoert:${t.id}`,
     hvor: "reklamation/udbetaling",
-    fejl: `Stripe-transfer ${t.id} (erstatning til en sælger, reklamation ${String(data)}) er tilbageført hos Stripe - ikke af BidHamr. Kontrollér i Stripe.`,
+    fejl: `Stripe-transfer ${t.id} (erstatning til en sælger, reklamation ${String(data)}) er tilbageført hos Stripe - ikke af BidHamr. Erstatningen sendes ikke til sælgerens bank. Kontrollér i Stripe.`,
   });
   return "reklamation_tilbagefoert";
 }
@@ -524,6 +665,7 @@ export async function udbetalReklamationerTilBank(saelgerId?: string): Promise<n
       .from("fragt_reklamationer")
       .select("id, saelger_id")
       .eq("status", "udbetalt")
+      .is("transfer_tilbagefoert_kl", null)
       .or("bank_status.is.null,bank_status.eq.claimet,bank_status.eq.failed")
       .order("udbetalt_kl", { ascending: true })
       .limit(50);
@@ -566,7 +708,9 @@ export async function udbetalReklamationerTilBank(saelgerId?: string): Promise<n
     }
 
     // Transfers med et usikkert svar (påbegyndt for over 10 min. siden):
-    // findes den hos Stripe, registreres den; ellers én alarm til chefen.
+    // findes den hos Stripe, registreres den. Ellers: er nøglen over 24 timer
+    // gammel (Stripe har glemt den), frigøres claimen, så chefen kan trykke
+    // igen (ny nøgle); ellers én alarm til chefen.
     const { data: haenger } = await admin
       .from("fragt_reklamationer")
       .select("*")
@@ -576,10 +720,14 @@ export async function udbetalReklamationerTilBank(saelgerId?: string): Promise<n
       .limit(20);
     for (const r of (haenger ?? []) as StaffReklamation[]) {
       try {
+        // Genoptaget for nylig: kaldet kan være i gang.
+        const sidst = new Date(r.udbetaling_sidst_sendt_kl ?? r.udbetaling_paabegyndt_kl!).getTime();
+        if (Date.now() - sidst < I_GANG_MS) continue;
         const c = {
           konto: r.udbetaling_stripe_konto!,
           trade_id: r.trade_id,
           paabegyndt_kl: r.udbetaling_paabegyndt_kl!,
+          oprettet_kl: r.oprettet_kl,
         };
         const t = await findTransfer(getStripe(), r.id, c);
         if (t) {
@@ -596,6 +744,25 @@ export async function udbetalReklamationerTilBank(saelgerId?: string): Promise<n
           if (res === "udbetalt") {
             antal++;
             await udbetalReklamationTilBank(r.id);
+          }
+          continue;
+        }
+        if (Date.now() - new Date(r.udbetaling_paabegyndt_kl!).getTime() > FASTLAAST_MS) {
+          const frigjort = await frigiv(
+            admin,
+            r.id,
+            "Ingen transfer fundet hos Stripe over 24 timer efter et usikkert svar - claimen er frigjort, tryk Udbetal igen",
+            r.udbetaling_forsoeg,
+          );
+          if (frigjort) {
+            await lukTilfaelde(`reklamation-transfer-haenger:${r.id}`);
+            await logDriftFejl({
+              kilde: "cron",
+              sti: "betalings-cron",
+              hvor: "reklamation/udbetaling",
+              fejl: `Reklamation ${r.id}: chefens udbetaling hang i over 24 timer uden en transfer hos Stripe. Claimen er frigjort (ingen penge er flyttet) - chefen skal bekræfte og trykke "Udbetal til sælger" igen.`,
+              brugerId: r.saelger_id,
+            });
           }
           continue;
         }

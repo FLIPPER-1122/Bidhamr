@@ -151,6 +151,7 @@ export type StaffReklamation = Omit<SaelgerReklamation, "sag_aendret" | "bank_be
   erstatning_modtaget_af: string | null;
   udbetaling_paabegyndt_kl: string | null;
   udbetaling_paabegyndt_af: string | null;
+  udbetaling_sidst_sendt_kl: string | null;
   udbetaling_forsoeg: number;
   udbetaling_stripe_konto: string | null;
   stripe_transfer_id: string | null;
@@ -168,6 +169,23 @@ export type StaffReklamation = Omit<SaelgerReklamation, "sag_aendret" | "bank_be
   bank_fejlkode: string | null;
   bank_fejl: string | null;
 };
+
+// En payout (fra Stripe) på sælgerens konto, mærket med reklamationen, som
+// IKKE er reklamationens aktuelle payout - og som ikke er fejlet/annulleret
+// (dvs. pengene er - eller bliver - sendt til banken). Er reklamationens
+// aktuelle payout også i live (oprettet/paid), eller er den mærket med et
+// andet forsøg end det aktuelle, er erstatningen (måske) sendt to gange.
+// Ren funktion: bruges af webhooken (spejlReklamationPayout) og afstemningen.
+export function erDobbeltReklamationPayout(
+  r: Pick<StaffReklamation, "bank_payout_id" | "bank_status" | "bank_forsoeg">,
+  p: { id: string; status: string; metadata?: Record<string, string> | null },
+): boolean {
+  if (p.id === r.bank_payout_id) return false;
+  if (p.status === "failed" || p.status === "canceled") return false;
+  if (r.bank_status === "oprettet" || r.bank_status === "paid") return true;
+  const fp = p.metadata?.bank_forsoeg;
+  return fp !== undefined && fp !== String(r.bank_forsoeg);
+}
 
 // Tællere til admin-lamperne (fragt_reklamationer_antal / hentReklamationTal).
 export type ReklamationTal = {

@@ -13,7 +13,9 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { udfoerSagAfvikling, type SagAfvikling } from "@/lib/sagerServer";
+import type Stripe from "stripe";
 import {
+  spejlReklamationPayout,
   transferGruppe,
   udbetalReklamationTilBank,
   udfoerReklamationTransfer,
@@ -47,6 +49,7 @@ async function claim(): Promise<UdbetalClaim> {
         erstatning_modtaget_af: CHEF_ID,
         udbetaling_paabegyndt_kl: nu,
         udbetaling_paabegyndt_af: CHEF_ID,
+        udbetaling_sidst_sendt_kl: nu,
         udbetaling_stripe_konto: konto,
       })
       .eq("id", rekId);
@@ -64,7 +67,24 @@ async function claim(): Promise<UdbetalClaim> {
     transportoer: "dao",
     genoptag: !!r.udbetaling_paabegyndt_kl,
     paabegyndt_kl: String(e.udbetaling_paabegyndt_kl),
+    oprettet_kl: String(e.oprettet_kl),
   };
+}
+
+async function reklamationsPayouts(): Promise<string[]> {
+  const liste = await stripe().payouts.list({ limit: 100 }, { stripeAccount: konto });
+  return liste.data.filter((p) => p.metadata?.type === "reklamation" && p.metadata?.reklamation_id === rekId).map((p) => p.id);
+}
+
+async function bankStart(): Promise<{ kode: string; forsoeg?: number }> {
+  const { data, error } = await admin().rpc("fragt_reklamation_bank_start", { p_reklamation: rekId });
+  expect(error).toBeNull();
+  return data as { kode: string; forsoeg?: number };
+}
+
+async function tilbagedaterBank(ms: number): Promise<void> {
+  const kl = new Date(Date.now() - ms).toISOString();
+  expect((await admin().from("fragt_reklamationer").update({ bank_sidst_sendt_kl: kl }).eq("id", rekId)).error).toBeNull();
 }
 
 beforeAll(async () => {
@@ -198,8 +218,24 @@ describe("reklamation: BidHamr anmelder, chefen udbetaler", () => {
       });
     }
     const foer = await saldo(konto);
-    const res = await udfoerReklamationTransfer(rekId, await claim());
-    expect(res).toBe("udbetalt");
+    const c = await claim();
+    // M3: et forsinket "frigiv" fra et andet (ældre) forsøg - eller uden
+    // forsøg - frigør aldrig claimen.
+    for (const p_forsoeg of [c.forsoeg + 1, c.forsoeg - 1, null]) {
+      const { data, error } = await admin().rpc("fragt_reklamation_udbetal_afvist", {
+        p_reklamation: rekId,
+        p_fejl: "TEST forsinket frigiv",
+        p_frigiv: true,
+        p_forsoeg,
+      });
+      expect(error).toBeNull();
+      expect(data).toBe(false);
+    }
+    expect((await rek()).udbetaling_paabegyndt_kl).not.toBeNull();
+    // To samtidige kald med samme claim (fx to faner): én transfer.
+    const res = await Promise.all([udfoerReklamationTransfer(rekId, c), udfoerReklamationTransfer(rekId, c)]);
+    expect(res).toContain("udbetalt");
+    for (const x of res) expect(["udbetalt", "usikker"]).toContain(x);
     const r = await rek();
     expect(r.status).toBe("udbetalt");
     expect(r.udbetalt_af).toBe(CHEF_ID);
@@ -222,14 +258,39 @@ describe("reklamation: BidHamr anmelder, chefen udbetaler", () => {
     expect(liste.data.filter((t) => t.metadata?.reklamation_id === rekId)).toHaveLength(1);
   });
 
+  it("bank_start afgøres under lås: samtidige kald giver én claim, forsøget tælles kun op efter 23 timer", async () => {
+    expect((await rek()).bank_status).toBeNull();
+    // To samtidige: den ene får claimen, den anden 'i_gang'.
+    const [a, b] = await Promise.all([bankStart(), bankStart()]);
+    expect([a.kode, b.kode].sort()).toEqual(["i_gang", "ok"]);
+    expect(Number((await rek()).bank_forsoeg)).toBe(0);
+    // Igen inden for 10 minutter: i_gang (også via serveren - ingen payout).
+    expect((await bankStart()).kode).toBe("i_gang");
+    expect(await udbetalReklamationTilBank(rekId)).toBe("i_gang");
+    // 11 minutter senere: samme forsøg (samme idempotency-nøgle).
+    await tilbagedaterBank(11 * 60_000);
+    const c = await bankStart();
+    expect(c).toMatchObject({ kode: "ok", forsoeg: 0 });
+    // Over 23 timer: Stripes nøgle er (snart) udløbet - nyt forsøg.
+    await tilbagedaterBank(24 * 3600_000);
+    expect(await bankStart()).toMatchObject({ kode: "ok", forsoeg: 1 });
+    expect(await reklamationsPayouts()).toHaveLength(0);
+    // Klar til serveren: claimet for over 10 minutter siden, ingen payout.
+    await tilbagedaterBank(11 * 60_000);
+  });
+
   it("videre til sælgerens bank: egen payout, genkendt af webhooken (ikke en fremmed udbetaling)", async () => {
-    expect(await udbetalReklamationTilBank(rekId)).toBe("oprettet");
+    // To samtidige kald (cron + webhook): én payout.
+    const res = await Promise.all([udbetalReklamationTilBank(rekId), udbetalReklamationTilBank(rekId)]);
+    expect(res).toContain("oprettet");
+    for (const x of res) expect(["oprettet", "i_gang", "faerdig"]).toContain(x);
+    expect(await reklamationsPayouts()).toHaveLength(1);
     const r = await rek();
     expect(r.bank_status).toBe("oprettet");
     const payoutId = String(r.bank_payout_id);
     const p = await stripe().payouts.retrieve(payoutId, undefined, { stripeAccount: konto });
     expect(p.amount).toBe(GODKENDT);
-    expect(p.metadata).toMatchObject({ type: "reklamation", reklamation_id: rekId });
+    expect(p.metadata).toMatchObject({ type: "reklamation", reklamation_id: rekId, bank_forsoeg: "1" });
     // payout.* via den rigtige spejling: BidHamrs egen - ikke "fremmed".
     expect(await spejlUdbetaling(konto, payoutId)).toMatch(/^reklamation_/);
     const svar = await sendWebhook("payout.created", p as unknown as { id: string }, { konto });
@@ -251,5 +312,33 @@ describe("reklamation: BidHamr anmelder, chefen udbetaler", () => {
     if (betalt.status === "paid") expect((await rek()).bank_status).toBe("paid");
     const s = await saldo(konto);
     expect(s.tilgaengelig + s.afventer).toBe(0);
+  });
+
+  it("en anden live payout mærket med reklamationen giver alarm (måske sendt to gange) og spejles ikke", async () => {
+    const r = await rek();
+    const falsk = {
+      id: "po_test_pengetest_dobbelt",
+      status: "pending",
+      amount: GODKENDT,
+      metadata: { type: "reklamation", reklamation_id: rekId, bank_forsoeg: "0" },
+    } as unknown as Stripe.Payout;
+    expect(await spejlReklamationPayout(konto, falsk)).toBe("reklamation_dobbelt");
+    const efter = await rek();
+    expect(efter.bank_payout_id).toBe(r.bank_payout_id);
+    expect(efter.bank_status).toBe(r.bank_status);
+    // En ældre, fejlet payout er kun historik - ingen alarm.
+    expect(await spejlReklamationPayout(konto, { ...falsk, status: "failed" } as Stripe.Payout)).not.toBe("reklamation_dobbelt");
+    expect((await rek()).bank_status).toBe(r.bank_status);
+  });
+
+  it("en tilbageført transfer sendes aldrig til banken (databasen stopper)", async () => {
+    const db = admin();
+    expect((await db.from("fragt_reklamationer").update({ transfer_tilbagefoert_kl: new Date().toISOString() }).eq("id", rekId)).error).toBeNull();
+    try {
+      expect((await bankStart()).kode).toBe("tilbagefoert");
+      expect(await udbetalReklamationTilBank(rekId)).toBe("tilbagefoert");
+    } finally {
+      await db.from("fragt_reklamationer").update({ transfer_tilbagefoert_kl: null }).eq("id", rekId);
+    }
   });
 });
