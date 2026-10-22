@@ -3,6 +3,7 @@ import Link from "next/link";
 import WaitlistForm from "@/components/landing/WaitlistForm";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
 import CookieindstillingerKnap from "@/components/samtykke/CookieindstillingerKnap";
+import FirmaLinje from "@/components/FirmaLinje";
 import type { Metadata } from "next";
 import { ERHVERV_COMING_SOON } from "@/lib/tekster/erhverv";
 
@@ -308,7 +309,7 @@ export default function ComingSoonPage() {
       </main>
 
       <footer className="border-t border-kant bg-white">
-        <div className="mx-auto flex max-w-[1280px] flex-col gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-[1280px] flex-col gap-4 px-4 pt-8 pb-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <Image
             src="/brand/bidhamr-logo.svg"
             alt="BidHamr"
@@ -339,6 +340,9 @@ export default function ComingSoonPage() {
             </Link>
             <CookieindstillingerKnap className="text-groen hover:underline" />
           </nav>
+        </div>
+        <div className="mx-auto max-w-[1280px] px-4 pb-8 sm:px-6 lg:px-8">
+          <FirmaLinje className="text-xs text-tekst-svag" />
         </div>
       </footer>
     </div>

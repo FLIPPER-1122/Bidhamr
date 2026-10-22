@@ -3,6 +3,7 @@
 // egne beløb. Samme opdeling som i mailen (kvitteringLinjer).
 import Image from "next/image";
 import Link from "next/link";
+import { FIRMA, FIRMA_LINJE } from "@/lib/firmaoplysninger";
 import {
   kvitteringFakturaTekst,
   KVITTERING_STRIPE,
@@ -111,7 +112,7 @@ export function KvitteringFuld({ k }: { k: Kvittering }) {
         )}
         <p>{kvitteringFakturaTekst(k)}</p>
         <p>{KVITTERING_STRIPE}</p>
-        <p>BidHamr · bidhamr.dk · support@bidhamr.dk</p>
+        <p>{FIRMA_LINJE} · Momsnr. {FIRMA.momsnr}</p>
       </div>
     </article>
   );

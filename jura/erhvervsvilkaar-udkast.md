@@ -19,7 +19,7 @@
 
 1.1 Vilkårene gælder for firmaer, der sælger på BidHamr med en firmakonto. De gælder sammen med BidHamrs brugerbetingelser (`/betingelser`). Står der noget andet her end i brugerbetingelserne, gælder disse vilkår for firmakontoen.
 
-1.2 BidHamr drives af BidHamr, CVR-nr. 46836219, Ellegårdsvej 40, 4684 Holmegaard. Kontakt om firmakonti: erhverv@bidhamr.dk.
+1.2 BidHamr drives af BidHamr ApS, CVR-nr. 46836219, Ellegårdsvej 40, 4684 Holmegaard. Kontakt om firmakonti: erhverv@bidhamr.dk.
 
 1.3 "Firmaet" og "du" betyder den virksomhed, der har en firmakonto. "Køber" er den, der vinder en af firmaets auktioner. Købere på BidHamr er privatpersoner (forbrugere).
 
@@ -292,4 +292,4 @@ Køberne er forbrugere. Derfor har de flere rettigheder, når de køber af et fi
 
 - Erhverv og firmakonti: erhverv@bidhamr.dk
 - Kundeservice: support@bidhamr.dk
-- Post: BidHamr, Ellegårdsvej 40, 4684 Holmegaard
+- Post: BidHamr ApS, Ellegårdsvej 40, 4684 Holmegaard

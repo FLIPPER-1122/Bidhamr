@@ -13,6 +13,7 @@
 //   hedder "Html", forventes at være færdig, sikker HTML.
 
 import { adminAbsolutUrl } from "@/lib/adminVaert";
+import { FIRMA, FIRMA_ADRESSE, FIRMA_LINJE } from "@/lib/firmaoplysninger";
 
 const FARVE = {
   groen: "#1E5E4A",
@@ -201,7 +202,8 @@ export function mailTekst(input: MailLayoutInput): string {
   if (input.indstillingsLink) {
     dele.push(`Vælg, hvilke beskeder du får: ${sideUrl("/konto/notifikationer")}`);
   }
-  dele.push("BidHamr · support@bidhamr.dk");
+  // Firmaoplysninger i bundteksten (e-handelsloven § 7).
+  dele.push(FIRMA_LINJE);
   return dele.join("\n");
 }
 
@@ -282,7 +284,7 @@ export function mailLayout(input: MailLayoutInput): string {
             <tr>
               <td class="bh-footer" style="padding:24px 8px 0 8px;">
                 <p class="bh-footer-tekst" style="margin:0 0 8px 0;font-family:${SANS};font-size:12px;line-height:1.5;color:${FARVE.tekstSvag};">${escapeHtml(input.aarsag)}${indstillinger}</p>
-                <p class="bh-footer-tekst" style="margin:0;font-family:${SANS};font-size:12px;line-height:1.5;color:${FARVE.tekstSvag};">BidHamr · <a href="mailto:support@bidhamr.dk" style="color:${FARVE.tekstSvag};text-decoration:underline;">support@bidhamr.dk</a></p>
+                <p class="bh-footer-tekst" style="margin:0;font-family:${SANS};font-size:12px;line-height:1.5;color:${FARVE.tekstSvag};">${escapeHtml(`${FIRMA.navn} · CVR ${FIRMA.cvr} · ${FIRMA_ADRESSE}`)} · <a href="mailto:${FIRMA.email}" style="color:${FARVE.tekstSvag};text-decoration:underline;">${FIRMA.email}</a></p>
               </td>
             </tr>
           </table>
