@@ -534,8 +534,6 @@ export default async function HandelDetalje({
             Sagen kunne ikke hentes lige nu. Genindlæs siden om lidt.
           </div>
         )}
-        {/* Sælgeren kan få erstatning fra fragtfirmaet - står over sagen, fordi
-            det er det, sælgeren skal gøre nu. */}
         {/* Ekstra fragt: det, sælgeren skal betale nu, står øverst. */}
         {ekstraFragt.length > 0 && (
           <div id="ekstra-fragt" className="scroll-mt-24 space-y-5 sm:space-y-6">
@@ -550,6 +548,8 @@ export default async function HandelDetalje({
             ))}
           </div>
         )}
+        {/* Reklamation hos fragtfirmaet: BidHamr anmelder og udbetaler -
+            sælgeren følger kun status. Står over sagen. */}
         {reklamation && (
           <ReklamationKort r={reklamation} />
         )}

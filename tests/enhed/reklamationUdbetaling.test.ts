@@ -59,7 +59,7 @@ let rpcLog: { navn: string; args: Record<string, unknown> }[];
 // afvikles ét ad gangen ligesom under låsen).
 function bankStart(): Svar {
   if (raekke.transfer_tilbagefoert_kl) return { data: { kode: "tilbagefoert" }, error: null };
-  if (["oprettet", "paid", "canceled"].includes(String(raekke.bank_status))) return { data: { kode: "faerdig" }, error: null };
+  if (["oprettet", "paid", "canceled", "afvist"].includes(String(raekke.bank_status))) return { data: { kode: "faerdig" }, error: null };
   const sidst = raekke.bank_sidst_sendt_kl ? Date.parse(String(raekke.bank_sidst_sendt_kl)) : 0;
   if (raekke.bank_status === "claimet" && Date.now() - sidst < 10 * 60_000) return { data: { kode: "i_gang" }, error: null };
   if (raekke.bank_status === "failed" || (raekke.bank_status === "claimet" && Date.now() - sidst > 23 * 3600_000)) {
@@ -92,6 +92,15 @@ function rpc(navn: string, args: unknown): Svar {
       if (a.p_frigiv) {
         raekke.udbetaling_paabegyndt_kl = null;
         raekke.udbetaling_forsoeg = Number(raekke.udbetaling_forsoeg) + 1;
+      }
+      return { data: true, error: null };
+    }
+    case "fragt_reklamation_bank_fejl": {
+      if (raekke.bank_status !== "claimet") return { data: false, error: null };
+      if (a.p_frigiv && a.p_forsoeg !== raekke.bank_forsoeg) return { data: false, error: null };
+      if (a.p_frigiv) {
+        raekke.bank_status = a.p_endelig ? "afvist" : null;
+        raekke.bank_forsoeg = Number(raekke.bank_forsoeg) + 1;
       }
       return { data: true, error: null };
     }
@@ -524,5 +533,36 @@ describe("L1: cron'en frigør en fastlåst claim", () => {
     await udbetalReklamationerTilBank();
     expect(raekke.stripe_transfer_id).toBe(TR);
     expect(rpcLog.some((r) => r.navn === "fragt_reklamation_udbetal_afvist")).toBe(false);
+  });
+});
+
+describe("amount_too_small ved payouten: endelig fejl, ingen endeløse genforsøg", () => {
+  const stripeFejl = async (code: string) =>
+    new (await import("stripe")).default.errors.StripeInvalidRequestError({ type: "invalid_request_error", message: "for lille", code } as never);
+
+  it("afvist endeligt: bank_status afvist, alarm (rød lampe), og cron'en sender ikke igen", async () => {
+    raekke = udbetaltRaekke();
+    transfers = [rigtigTransfer()];
+    S().payouts.create.mockRejectedValueOnce(await stripeFejl("amount_too_small"));
+    expect(await udbetalReklamationTilBank(ID)).toBe("afvist_endeligt");
+    const fejl = rpcLog.find((r) => r.navn === "fragt_reklamation_bank_fejl");
+    expect(fejl?.args).toMatchObject({ p_frigiv: true, p_endelig: true, p_forsoeg: 0, p_fejlkode: "amount_too_small" });
+    expect(raekke.bank_status).toBe("afvist");
+    expect(m.alarm).toHaveBeenCalledWith(expect.objectContaining({ noegle: `reklamation-bank-afvist:${ID}:0` }));
+    // Næste kørsel (cron/webhook): intet nyt forsøg hos Stripe.
+    expect(await udbetalReklamationTilBank(ID)).toBe("faerdig");
+    expect(S().payouts.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("andre afvisninger frigives og prøves igen (ikke endelige)", async () => {
+    raekke = udbetaltRaekke();
+    transfers = [rigtigTransfer()];
+    S().payouts.create.mockRejectedValueOnce(await stripeFejl("x"));
+    expect(await udbetalReklamationTilBank(ID)).toBe("afvist");
+    const fejl = rpcLog.find((r) => r.navn === "fragt_reklamation_bank_fejl");
+    expect(fejl?.args.p_endelig).toBeUndefined();
+    expect(raekke.bank_status).toBeNull();
+    expect(await udbetalReklamationTilBank(ID)).toBe("oprettet");
+    expect(S().payouts.create).toHaveBeenCalledTimes(2);
   });
 });

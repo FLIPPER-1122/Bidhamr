@@ -63,7 +63,13 @@ export const REKLAMATION_STATUS_STAFF: Record<ReklamationStatus, string> = {
 };
 
 // Status til sælgeren (handelssiden). Ingen omtale af omdeling.info.
-export function reklamationStatusSaelger(status: ReklamationStatus, transportoer: string): string {
+// udbetaling: reklamationUdbetalingTrin - "udbetalt" vises først, når
+// payouten til banken er sendt; ellers "Udbetalingen behandles".
+export function reklamationStatusSaelger(
+  status: ReklamationStatus,
+  transportoer: string,
+  udbetaling: ReklamationUdbetalingTrin | null = null,
+): string {
   const navn = transportoerNavn(transportoer);
   switch (status) {
     case "afventer_bidhamr":
@@ -75,7 +81,7 @@ export function reklamationStatusSaelger(status: ReklamationStatus, transportoer
     case "afvist":
       return `${navn} har afvist reklamationen`;
     case "udbetalt":
-      return "Erstatningen er udbetalt til dig";
+      return udbetaling === "betalt" || udbetaling === "sendt" ? "Erstatningen er udbetalt til dig" : "Udbetalingen behandles";
     case "annulleret":
       return "Reklamationen er stoppet";
   }
@@ -121,15 +127,55 @@ export type SaelgerReklamation = {
   udbetalt_kl: string | null;
   // Udbetalingen til sælgerens bank er gennemført (payout paid).
   bank_betalt_kl: string | null;
+  // Payouten til sælgerens bank er oprettet (eller betalt) - "sendt til din
+  // bank". null: ikke sendt endnu (eller transferen er tilbageført).
+  bank_sendt_kl: string | null;
+  // Payouten fejlede hos banken - sælgeren retter bankkontoen hos Stripe.
+  bank_fejlet: boolean;
+  // Transferen er tilbageført, eller payouten er fejlet endeligt
+  // (annulleret/afvist hos Stripe) - BidHamr kigger på det.
+  udbetaling_problem: boolean;
   // Sagen er ændret efter anmeldelsen, og BidHamr har ikke kvitteret endnu
   // (udbetalingen venter).
   sag_aendret: boolean;
 };
 
-export type ReklamationBankStatus = "claimet" | "oprettet" | "paid" | "failed" | "canceled";
+// afvist: Stripe afviste payouts.create endeligt (fx amount_too_small) -
+// ingen automatiske genforsøg; chefen sender igen.
+export type ReklamationBankStatus = "claimet" | "oprettet" | "paid" | "failed" | "canceled" | "afvist";
+
+// Mindste erstatning, der kan registreres som godkendt og udbetales (øre).
+// Stripes mindste udbetaling (payout) i Danmark er 20 kr.
+// (docs.stripe.com/payouts, "Minimum payout amounts", 22. okt. 2026) - rundet
+// op til 25 kr. Skal matche fragt_reklamation_min_oere() i migrationen.
+export const REKLAMATION_MIN_OERE = 2500;
+export const REKLAMATION_MIN_TEKST = `Det mindste beløb, vi kan udbetale, er ${REKLAMATION_MIN_OERE / 100} kr.`;
+
+// Hvor langt udbetalingen er nået for sælgeren (kun ved status "udbetalt"):
+//   betalt     payouten er betalt af Stripe (pengene er i banken)
+//   sendt      payouten er oprettet (på vej til banken)
+//   bank_fejlet payouten fejlede hos banken - sælgeren retter bankkontoen
+//   problem    transferen er tilbageført, eller payouten er fejlet endeligt
+//   behandles  transferen er lavet, payouten er ikke oprettet endnu
+// Sælgeren får først at vide, at pengene er udbetalt, når payouten er sendt.
+export type ReklamationUdbetalingTrin = "betalt" | "sendt" | "bank_fejlet" | "problem" | "behandles";
+
+export function reklamationUdbetalingTrin(
+  r: Pick<SaelgerReklamation, "status" | "bank_betalt_kl" | "bank_sendt_kl" | "bank_fejlet" | "udbetaling_problem">,
+): ReklamationUdbetalingTrin | null {
+  if (r.status !== "udbetalt") return null;
+  if (r.udbetaling_problem) return "problem";
+  if (r.bank_betalt_kl) return "betalt";
+  if (r.bank_sendt_kl) return "sendt";
+  if (r.bank_fejlet) return "bank_fejlet";
+  return "behandles";
+}
 
 // Hele rækken (kun staff).
-export type StaffReklamation = Omit<SaelgerReklamation, "sag_aendret" | "bank_betalt_kl"> & {
+export type StaffReklamation = Omit<
+  SaelgerReklamation,
+  "sag_aendret" | "bank_betalt_kl" | "bank_sendt_kl" | "bank_fejlet" | "udbetaling_problem"
+> & {
   saelger_id: string;
   forsendelse_id: string | null;
   trackingnummer: string | null;

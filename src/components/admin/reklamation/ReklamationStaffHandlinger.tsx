@@ -23,9 +23,12 @@ import {
 } from "@/app/actions/adminReklamation";
 import { visKvittering } from "@/components/admin/Kvittering";
 import {
+  REKLAMATION_MIN_OERE,
+  REKLAMATION_MIN_TEKST,
   REKLAMATION_RET_STATUSSER,
   REKLAMATION_STATUS_STAFF,
   betingelseTekst,
+  fortolkKroner,
   kanKvittere,
   kroner,
   type ReklamationRetStatus,
@@ -255,6 +258,13 @@ function AnmeldKnap({
 
 // ------------------------------------------------------------------ Godkendt
 
+// Under Stripes mindste udbetaling (databasen tjekker igen). Ugyldigt format
+// afgøres af serveren (fortolkKroner).
+function forLilleBeloeb(v: string): string | null {
+  const b = fortolkKroner(v);
+  return "oere" in b && b.oere < REKLAMATION_MIN_OERE ? REKLAMATION_MIN_TEKST : null;
+}
+
 function GodkendKnap({ reklamationId, sagId, transportoerNavn, kravbeloebOere }: { reklamationId: string; sagId: string; transportoerNavn: string; kravbeloebOere: number }) {
   const id = useId();
   return (
@@ -275,6 +285,11 @@ function GodkendKnap({ reklamationId, sagId, transportoerNavn, kravbeloebOere }:
               setFejl("Skriv det godkendte beløb i kroner, fx 1.250,00.");
               return;
             }
+            const minFejl = forLilleBeloeb(beloeb);
+            if (minFejl) {
+              setFejl(minFejl);
+              return;
+            }
             void send(() => godkendReklamation(reklamationId, beloeb, sagId), "Registreret som godkendt", luk);
           }}
         >
@@ -283,7 +298,9 @@ function GodkendKnap({ reklamationId, sagId, transportoerNavn, kravbeloebOere }:
               Godkendt beløb i kr.
             </label>
             <input id={`${id}-beloeb`} name="beloeb" inputMode="decimal" autoComplete="off" required placeholder="Fx 1.250,00" disabled={sender} className={FELT} />
-            <p className="mt-1 text-xs text-neutral-500">Højst {kroner(kravbeloebOere)} (kravbeløbet).</p>
+            <p className="mt-1 text-xs text-neutral-500">
+                Mindst {kroner(REKLAMATION_MIN_OERE)} (Stripes mindste udbetaling) og højst {kroner(kravbeloebOere)} (kravbeløbet).
+              </p>
           </div>
           <Fejl fejl={fejl} />
           <Knapper sender={sender} onLuk={luk} bekraeft="Registrér som godkendt" />
@@ -406,13 +423,29 @@ function UdbetalKnap({
 }
 
 // Udbetalingen til sælgerens bank er annulleret hos Stripe (kun chefen).
-function SendTilBankIgenKnap({ reklamationId, sagId, godkendtBeloebOere }: { reklamationId: string; sagId: string; godkendtBeloebOere: number }) {
+function SendTilBankIgenKnap({
+  reklamationId,
+  sagId,
+  godkendtBeloebOere,
+  afvist = false,
+}: {
+  reklamationId: string;
+  sagId: string;
+  godkendtBeloebOere: number;
+  // Stripe afviste udbetalingen endeligt (fx under mindste udbetaling) -
+  // ellers blev den annulleret hos Stripe.
+  afvist?: boolean;
+}) {
   return (
     <DialogKnap
       tekst="Send til banken igen"
       stil="btn-primaer"
       titel={`Send ${kroner(godkendtBeloebOere)} til sælgerens bank igen`}
-      beskrivelse="Udbetalingen til sælgerens bank blev annulleret hos Stripe – ikke af BidHamr. Pengene står stadig på sælgerens Stripe-konto. Kontrollér i Stripe, hvorfor den blev annulleret, før du sender igen. Der sendes aldrig mere end det godkendte beløb."
+      beskrivelse={
+        afvist
+          ? "Stripe afviste udbetalingen til sælgerens bank, og den prøves ikke igen automatisk. Pengene står stadig på sælgerens Stripe-konto. Se fejlen og drift-loggen, og kontrollér i Stripe, før du sender igen. Der sendes aldrig mere end det godkendte beløb."
+          : "Udbetalingen til sælgerens bank blev annulleret hos Stripe – ikke af BidHamr. Pengene står stadig på sælgerens Stripe-konto. Kontrollér i Stripe, hvorfor den blev annulleret, før du sender igen. Der sendes aldrig mere end det godkendte beløb."
+      }
     >
       {({ sender, fejl, send, luk }) => (
         <form
@@ -473,6 +506,11 @@ function RetStatusKnap({
               setFejl("Skriv det godkendte beløb i kroner, fx 1.250,00.");
               return;
             }
+            const minFejl = ny === "godkendt" ? forLilleBeloeb(v("beloeb")) : null;
+            if (minFejl) {
+              setFejl(minFejl);
+              return;
+            }
             void send(
               () =>
                 retReklamationStatus({
@@ -514,7 +552,9 @@ function RetStatusKnap({
                 Godkendt beløb i kr.
               </label>
               <input id={`${id}-beloeb`} name="beloeb" inputMode="decimal" autoComplete="off" required placeholder="Fx 1.250,00" disabled={sender} className={FELT} />
-              <p className="mt-1 text-xs text-neutral-500">Højst {kroner(kravbeloebOere)} (kravbeløbet).</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                Mindst {kroner(REKLAMATION_MIN_OERE)} (Stripes mindste udbetaling) og højst {kroner(kravbeloebOere)} (kravbeløbet).
+              </p>
             </div>
           )}
           {(ny === "anmeldt" || ny === "godkendt" || ny === "afvist") && (
@@ -752,6 +792,7 @@ export default function ReklamationStaffHandlinger({
   sagAendret = false,
   sagAendretAarsag,
   bankAnnulleret = false,
+  bankAfvist = false,
 }: {
   reklamationId: string;
   sagId: string;
@@ -770,9 +811,12 @@ export default function ReklamationStaffHandlinger({
   sagAendret?: boolean;
   // Hvorfor (fragt_reklamation_betingelser): null = opfyldt igen, undefined = ukendt.
   sagAendretAarsag?: string | null;
-  // Udbetalingen til sælgerens bank er annulleret hos Stripe (og transferen
-  // er ikke tilbageført) - chefen kan sende igen.
+  // Udbetalingen til sælgerens bank er annulleret hos Stripe eller afvist
+  // endeligt af Stripe (og transferen er ikke tilbageført) - chefen kan
+  // sende igen.
   bankAnnulleret?: boolean;
+  // ... og det var en endelig afvisning (fx amount_too_small).
+  bankAfvist?: boolean;
 }) {
   if (inhabil) {
     return (
@@ -785,12 +829,14 @@ export default function ReklamationStaffHandlinger({
     return (
       <div className="flex flex-col gap-2">
         <p className="rounded-lg border border-fejl-kant bg-fejl-bg px-3 py-2 text-sm text-fejl-tekst">
-          Udbetalingen til sælgerens bank blev annulleret hos Stripe. Pengene står på sælgerens Stripe-konto og sendes
-          ikke automatisk igen.{!erChef && " Kun chefen kan sende dem igen."}
+          {bankAfvist
+            ? "Stripe afviste udbetalingen til sælgerens bank endeligt (se fejlen nedenfor)."
+            : "Udbetalingen til sælgerens bank blev annulleret hos Stripe."}{" "}
+          Pengene står på sælgerens Stripe-konto og sendes ikke automatisk igen.{!erChef && " Kun chefen kan sende dem igen."}
         </p>
         {erChef && godkendtBeloebOere != null && (
           <div>
-            <SendTilBankIgenKnap reklamationId={reklamationId} sagId={sagId} godkendtBeloebOere={godkendtBeloebOere} />
+            <SendTilBankIgenKnap reklamationId={reklamationId} sagId={sagId} godkendtBeloebOere={godkendtBeloebOere} afvist={bankAfvist} />
           </div>
         )}
       </div>

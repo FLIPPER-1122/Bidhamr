@@ -10,6 +10,7 @@ import {
   kroner,
   reklamationStatusSaelger,
   reklamationTrin,
+  reklamationUdbetalingTrin,
   transportoerNavn,
   type SaelgerReklamation,
 } from "@/lib/reklamation/typer";
@@ -53,16 +54,43 @@ function Forklaring({ r }: { r: SaelgerReklamation }) {
         </>
       );
     case "udbetalt":
-      return r.bank_betalt_kl ? (
-        <>
-          Vi har udbetalt {kroner(r.godkendt_beloeb_oere)} i erstatning til dig, og pengene er sendt til din bankkonto.
-        </>
-      ) : (
-        <>
-          Vi har udbetalt {kroner(r.godkendt_beloeb_oere)} i erstatning til dig. Vores betalingspartner Stripe sender
-          pengene til din bankkonto – der går normalt 1-3 bankdage.
-        </>
-      );
+      // "Udbetalt" og "1-3 bankdage" først, når payouten til banken er sendt.
+      switch (reklamationUdbetalingTrin(r)) {
+        case "betalt":
+          return (
+            <>
+              Vi har udbetalt {kroner(r.godkendt_beloeb_oere)} i erstatning til dig, og pengene er sendt til din
+              bankkonto.
+            </>
+          );
+        case "sendt":
+          return (
+            <>
+              Erstatningen på {kroner(r.godkendt_beloeb_oere)} er sendt til din bank via vores betalingspartner Stripe.
+              Der går normalt 1-3 bankdage, før pengene står på din konto.
+            </>
+          );
+        case "bank_fejlet":
+          return (
+            <>
+              Vores betalingspartner Stripe kunne ikke sende erstatningen på {kroner(r.godkendt_beloeb_oere)} til din
+              bankkonto. Ret dine bankoplysninger under Min konto – så sendes pengene automatisk igen.
+            </>
+          );
+        case "problem":
+          return (
+            <>
+              Der er opstået et problem med udbetalingen af din erstatning – vi kigger på det og giver dig besked.
+            </>
+          );
+        default:
+          return (
+            <>
+              {navn} har betalt erstatningen på {kroner(r.godkendt_beloeb_oere)}, og vi er ved at sende pengene til din
+              bankkonto. Du får besked, når pengene er sendt.
+            </>
+          );
+      }
     case "afvist":
       return (
         <>
@@ -75,8 +103,11 @@ function Forklaring({ r }: { r: SaelgerReklamation }) {
   }
 }
 
-function Trinliste({ status }: { status: SaelgerReklamation["status"] }) {
-  const { trin, faerdig } = reklamationTrin(status);
+function Trinliste({ status, ikkeSendt }: { status: SaelgerReklamation["status"]; ikkeSendt: boolean }) {
+  const t = reklamationTrin(status);
+  const trin = t.trin;
+  // Udbetalt hos BidHamr, men ikke sendt til banken endnu: sidste trin er i gang.
+  const faerdig = t.faerdig && !ikkeSendt;
   const stoppet = status === "afvist" || status === "annulleret";
   return (
     <ol className="mt-4 flex flex-col gap-2 sm:flex-row sm:gap-3" aria-label="Reklamationens forløb">
@@ -117,8 +148,10 @@ function Trinliste({ status }: { status: SaelgerReklamation["status"] }) {
 export default function ReklamationKort({ r }: { r: SaelgerReklamation }) {
   const navn = transportoerNavn(r.transportoer);
   const slut = r.status === "afvist" || r.status === "annulleret";
+  const udbetaling = reklamationUdbetalingTrin(r);
+  const sendt = udbetaling === "betalt" || udbetaling === "sendt";
   const tone =
-    r.status === "udbetalt"
+    sendt
       ? "border-succes-kant bg-succes-bg"
       : slut
         ? "border-kant bg-white"
@@ -132,14 +165,14 @@ export default function ReklamationKort({ r }: { r: SaelgerReklamation }) {
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="reklamation-titel" className="text-[20px] leading-tight lg:text-[22px]">
-          {r.status === "afventer_bidhamr" ? `Vi reklamerer hos ${navn} for dig` : reklamationStatusSaelger(r.status, r.transportoer)}
+          {r.status === "afventer_bidhamr" ? `Vi reklamerer hos ${navn} for dig` : reklamationStatusSaelger(r.status, r.transportoer, udbetaling)}
         </h2>
         {r.status !== "afventer_bidhamr" && <ReklamationMaerke status={r.status} />}
       </div>
       <p className="mt-2 text-[15px] text-tekst-daempet">
         <Forklaring r={r} />
       </p>
-      {!slut && <Trinliste status={r.status} />}
+      {!slut && <Trinliste status={r.status} ikkeSendt={udbetaling !== null && !sendt} />}
       {r.sag_aendret && !slut && r.status !== "udbetalt" && (
         <p role="status" className="mt-4 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
           Sagen om handlen er ændret, og vi kigger på, hvad det betyder for reklamationen. Du hører fra os.

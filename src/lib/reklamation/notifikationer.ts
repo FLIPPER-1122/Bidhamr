@@ -15,8 +15,17 @@ import "server-only";
 //   reklamation:<id>:godkendt:<afgjort_kl>        - godkendt (beløb; udbetales,
 //                                                   når fragtfirmaet har betalt os)
 //   reklamation:<id>:afvist:<afgjort_kl>          - afvist (grund)
-//   reklamation:<id>:udbetalt:<udbetalt_kl>       - udbetalt til sælgeren
+//   reklamation:<id>:sendt:<bank_payout_id>       - "Erstatningen er sendt til din
+//                                                   bank" - først når payouten er
+//                                                   oprettet/paid (én pr. payout;
+//                                                   intet ved transferen alene)
 //   reklamation:<id>:bank_fejlet:<bank_fejlet_kl> - udbetalingen til banken fejlede
+//                                                   (sælgeren retter bankkontoen)
+//   reklamation:<id>:bank_problem:<bank_fejlet_kl> - payouten er fejlet endeligt
+//                                                   (annulleret/afvist hos Stripe)
+//   reklamation:<id>:transfer_problem:<transfer_tilbagefoert_kl> - transferen er
+//                                                   tilbageført hos Stripe
+//     (begge: neutral besked - "vi kigger på det")
 //   reklamation:<id>:annulleret:<annulleret_kl>   - staff har stoppet den
 //   reklamation:<id>:auto_annulleret:<annulleret_kl> - systemet har stoppet den
 //                                                   (kun hvis "oprettet" blev sendt)
@@ -62,7 +71,9 @@ export type ReklamationBeskedRaekke = {
   afgjort_kl?: string | null;
   udbetalt_kl?: string | null;
   bank_status?: string | null;
+  bank_payout_id?: string | null;
   bank_fejlet_kl?: string | null;
+  transfer_tilbagefoert_kl?: string | null;
   sag_aendret_kl: string | null;
   sag_aendret_kvitteret_kl: string | null;
   // Hvem der kvitterede (systemet eller staff) - styrer teksten.
@@ -73,7 +84,7 @@ export type ReklamationBeskedRaekke = {
 type Opgave = { brugerId: string; input: NotifikationInput & { noegle: string }; kraever?: string };
 
 const FELTER =
-  "id, trade_id, saelger_id, transportoer, status, kravbeloeb_oere, godkendt_beloeb_oere, afvisningsgrund, annulleret_grund, annulleret_auto, annulleret_kl, aktiv_fra_kl, anmeldt_kl, afgjort_kl, udbetalt_kl, bank_status, bank_fejlet_kl, sag_aendret_kl, sag_aendret_kvitteret_kl, sag_aendret_kvitteret_af";
+  "id, trade_id, saelger_id, transportoer, status, kravbeloeb_oere, godkendt_beloeb_oere, afvisningsgrund, annulleret_grund, annulleret_auto, annulleret_kl, aktiv_fra_kl, anmeldt_kl, afgjort_kl, udbetalt_kl, bank_status, bank_payout_id, bank_fejlet_kl, transfer_tilbagefoert_kl, sag_aendret_kl, sag_aendret_kvitteret_kl, sag_aendret_kvitteret_af";
 
 const SPOERGSMAAL = "Har du spørgsmål, så skriv til support@bidhamr.dk.";
 
@@ -131,14 +142,36 @@ export function reklamationBeskeder(r: ReklamationBeskedRaekke, nu: number = Dat
       `${navn} har afvist reklamationen, så du får desværre ikke erstatning for varen.${r.afvisningsgrund ? ` Begrundelse fra ${navn}: ${punktum(r.afvisningsgrund)}` : ""} ${SPOERGSMAAL}`,
     );
   }
-  if (r.status === "udbetalt" && r.udbetalt_kl && beloeb) {
+  const tilbagefoert = !!r.transfer_tilbagefoert_kl;
+  // Først når payouten til banken er oprettet (eller betalt) - én pr. payout.
+  if (
+    r.status === "udbetalt" &&
+    !tilbagefoert &&
+    (r.bank_status === "oprettet" || r.bank_status === "paid") &&
+    r.bank_payout_id &&
+    beloeb
+  ) {
     op(
-      `udbetalt:${ms(r.udbetalt_kl)}`,
-      "Vi har udbetalt erstatningen",
-      `Vi har udbetalt ${beloeb} i erstatning til dig. Vores betalingspartner Stripe sender pengene til din bankkonto – der går normalt 1-3 bankdage.`,
+      `sendt:${r.bank_payout_id}`,
+      "Erstatningen er sendt til din bank",
+      `Vi har sendt ${beloeb} i erstatning til din bankkonto via vores betalingspartner Stripe. Der går normalt 1-3 bankdage, før pengene står på din konto.`,
     );
   }
-  if (r.status === "udbetalt" && r.bank_status === "failed" && r.bank_fejlet_kl) {
+  // Transferen er tilbageført, eller payouten er fejlet endeligt: neutral
+  // besked (aldrig Stripe-detaljer) - chefen har en rød lampe.
+  const problem = "Der er opstået et problem med udbetalingen af din erstatning – vi kigger på det og giver dig besked.";
+  if (r.status === "udbetalt" && tilbagefoert) {
+    op(`transfer_problem:${ms(r.transfer_tilbagefoert_kl!)}`, "Udbetalingen af din erstatning behandles", problem);
+  }
+  if (
+    r.status === "udbetalt" &&
+    !tilbagefoert &&
+    (r.bank_status === "canceled" || r.bank_status === "afvist") &&
+    r.bank_fejlet_kl
+  ) {
+    op(`bank_problem:${ms(r.bank_fejlet_kl)}`, "Udbetalingen af din erstatning behandles", problem);
+  }
+  if (r.status === "udbetalt" && !tilbagefoert && r.bank_status === "failed" && r.bank_fejlet_kl) {
     op(
       `bank_fejlet:${ms(r.bank_fejlet_kl)}`,
       "Udbetalingen til din bank fejlede",

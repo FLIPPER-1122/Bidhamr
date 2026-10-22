@@ -22,7 +22,7 @@ export function udbetalingFejlFilter(nu: number): string {
   const uge = new Date(nu - 7 * DAG).toISOString();
   return [
     `and(status.eq.godkendt,udbetaling_paabegyndt_kl.lt."${transfer}")`,
-    `and(status.eq.udbetalt,bank_status.in.(failed,canceled))`,
+    `and(status.eq.udbetalt,bank_status.in.(failed,canceled,afvist))`,
     `and(status.eq.udbetalt,transfer_tilbagefoert_kl.not.is.null)`,
     `and(status.eq.udbetalt,bank_status.is.null,udbetalt_kl.lt."${time}")`,
     `and(status.eq.udbetalt,bank_status.eq.claimet,bank_claimet_kl.lt."${time}")`,

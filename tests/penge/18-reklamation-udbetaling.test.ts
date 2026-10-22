@@ -288,6 +288,35 @@ describe("reklamation: BidHamr anmelder, chefen udbetaler", () => {
       expect(data).toBe(false);
     }
     expect(await rek()).toMatchObject({ bank_status: "claimet", bank_forsoeg: 1 });
+    // En endelig afvisning fra Stripe (fx amount_too_small): 'afvist' -
+    // hverken bank_start eller serveren prøver igen af sig selv.
+    {
+      const { data, error } = await admin().rpc("fragt_reklamation_bank_fejl", {
+        p_reklamation: rekId,
+        p_fejl: "TEST endelig afvisning",
+        p_frigiv: true,
+        p_forsoeg: 1,
+        p_endelig: true,
+        p_fejlkode: "amount_too_small",
+      });
+      expect(error).toBeNull();
+      expect(data).toBe(true);
+      const r = await rek();
+      expect(r).toMatchObject({ bank_status: "afvist", bank_forsoeg: 2, bank_fejlkode: "amount_too_small" });
+      expect(r.bank_fejlet_kl).not.toBeNull();
+      expect((await bankStart()).kode).toBe("faerdig");
+      expect(await udbetalReklamationTilBank(rekId)).toBe("faerdig");
+      expect(await reklamationsPayouts()).toHaveLength(0);
+      // Tilbage til claimen (forsøg 1), så resten af scenariet kører videre.
+      expect(
+        (
+          await admin()
+            .from("fragt_reklamationer")
+            .update({ bank_status: "claimet", bank_forsoeg: 1, bank_fejlet_kl: null, bank_fejlkode: null, bank_fejl: null })
+            .eq("id", rekId)
+        ).error,
+      ).toBeNull();
+    }
     // Klar til serveren: claimet for over 10 minutter siden, ingen payout.
     await tilbagedaterBank(11 * 60_000);
   });
