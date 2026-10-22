@@ -1623,7 +1623,7 @@ begin
        set udbetaling_sidst_sendt_kl = now()
      where id = (c.r).id and status = 'godkendt' and udbetaling_paabegyndt_kl is not null;
     perform public.fragt_reklamation_log(auth.uid(), 'reklamation_udbetaling_startet', (c.r).sag_id, (c.r).saelger_id,
-      'Udbetalingen genoptages (forsøg ' || ((c.r).udbetaling_forsoeg + 1) || ') - Stripe slås op først');
+      'Udbetalingen genoptages (forsøg ' || (c.r).udbetaling_forsoeg || ') - Stripe slås op først');
   else
     update public.fragt_reklamationer
        set erstatning_modtaget_kl = now(), erstatning_modtaget_af = auth.uid(),
@@ -1908,7 +1908,9 @@ begin
        set bank_status = null, bank_forsoeg = bank_forsoeg + 1,
            bank_fejl = left(coalesce(p_fejl, 'Stripe afviste udbetalingen'), 500)
      where id = p_reklamation and status = 'udbetalt' and bank_status = 'claimet'
-       and (p_forsoeg is null or bank_forsoeg = p_forsoeg);
+       -- Frigiv kræver forsøget (som fragt_reklamation_udbetal_afvist): et
+       -- kald uden forsøg kan aldrig give en ny nøgle.
+       and p_forsoeg is not null and bank_forsoeg = p_forsoeg;
   else
     update public.fragt_reklamationer
        set bank_fejl = left(coalesce(p_fejl, 'Usikkert svar fra Stripe'), 500)

@@ -53,6 +53,7 @@ const TR = "tr_reklamation1";
 type Raekke = Record<string, unknown>;
 let raekke: Raekke;
 let andre: Raekke[];
+let udbetalinger: Raekke[];
 let rpcLog: { navn: string; args: Record<string, unknown> }[];
 // bank_start som i databasen (rækken låses - JS er én tråd, så kaldene
 // afvikles ét ad gangen ligesom under låsen).
@@ -105,6 +106,15 @@ function rpc(navn: string, args: unknown): Svar {
 function handler(q: Forespoergsel): Svar {
   if (q.tabel === "betalingsprofiler") {
     return { data: { udbetaling_frosset_kl: null, stripe_account_id: KONTO, connect_frakoblet_kl: null }, error: null };
+  }
+  if (q.tabel === "saelger_udbetalinger") {
+    // skalBliveOere: sælgerens claimede/usikre almindelige udbetalinger.
+    const v = (f: string) => q.filtre.find((x) => x[0] === "eq" && x[1] === f)?.[2];
+    const statusser = (q.filtre.find((x) => x[0] === "in" && x[1] === "status")?.[2] ?? []) as string[];
+    return {
+      data: udbetalinger.filter((u) => u.seller_id === v("seller_id") && u.stripe_konto === v("stripe_konto") && statusser.includes(String(u.status))),
+      error: null,
+    };
   }
   if (q.tabel !== "fragt_reklamationer") return { data: null, error: null };
   // skalBliveOere: andre erstatninger på kontoen.
@@ -185,6 +195,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   rpcLog = [];
   andre = [];
+  udbetalinger = [];
   transfers = [];
   payouts = [];
   saldo = { available: BELOEB, pending: 0 };
@@ -268,6 +279,29 @@ describe("H1: payouten til banken tager aldrig andre penge", () => {
     ];
     expect(await udbetalReklamationTilBank(ID)).toBe("saldo_afviger");
     expect(S().payouts.create).not.toHaveBeenCalled();
+  });
+
+  it("sælgerens claimede/usikre almindelige udbetalinger på kontoen tæller med", async () => {
+    raekke = udbetaltRaekke();
+    transfers = [rigtigTransfer()];
+    const saelger = String(raekke.saelger_id);
+    saldo = { available: BELOEB + 30_000 - 1, pending: 0 };
+    udbetalinger = [
+      { id: "u1", seller_id: saelger, stripe_konto: KONTO, status: "claimet", beloeb_oere: 20_000 },
+      { id: "u2", seller_id: saelger, stripe_konto: KONTO, status: "usikker", beloeb_oere: 10_000 },
+      // Tæller ikke: allerede ude af kontoen / anden konto / anden sælger.
+      { id: "u3", seller_id: saelger, stripe_konto: KONTO, status: "oprettet", beloeb_oere: 99_999 },
+      { id: "u4", seller_id: saelger, stripe_konto: KONTO, status: "paid", beloeb_oere: 99_999 },
+      { id: "u5", seller_id: saelger, stripe_konto: "acct_anden", status: "claimet", beloeb_oere: 99_999 },
+      { id: "u6", seller_id: "anden-saelger", stripe_konto: KONTO, status: "claimet", beloeb_oere: 99_999 },
+    ];
+    expect(await udbetalReklamationTilBank(ID)).toBe("saldo_afviger");
+    expect(S().payouts.create).not.toHaveBeenCalled();
+    expect(m.alarm).toHaveBeenCalledWith(expect.objectContaining({ noegle: `reklamation-bank-skyldig:${ID}` }));
+    // Med én øre mere dækker saldoen præcis: payout.
+    saldo = { available: BELOEB + 30_000, pending: 0 };
+    expect(await udbetalReklamationTilBank(ID)).toBe("oprettet");
+    expect(S().payouts.create).toHaveBeenCalledTimes(1);
   });
 
   it("præcis dækket: payout med det godkendte beløb og forsøget i metadata", async () => {
@@ -419,6 +453,18 @@ describe("M3: transfer-claimen", () => {
     expect(await udfoerReklamationTransfer(ID, claim())).toBe("udbetalt");
     expect(S().transfers.create).toHaveBeenCalledTimes(1);
     expect(S().transfers.create.mock.calls[0][1]).toMatchObject({ idempotencyKey: `bidhamr-reklamation-transfer-${ID}-2` });
+  });
+
+  it("en afvigende transfer (anden konto) registreres ikke; én alarm pr. reklamation", async () => {
+    raekke = claimRaekke();
+    transfers = [rigtigTransfer({ destination: "acct_anden" })];
+    expect(await udfoerReklamationTransfer(ID, claim())).toBe("afviger");
+    expect(await udfoerReklamationTransfer(ID, claim())).toBe("afviger");
+    expect(S().transfers.create).not.toHaveBeenCalled();
+    expect(raekke.stripe_transfer_id ?? null).toBeNull();
+    const noegler = m.alarm.mock.calls.map((c) => c[0].noegle);
+    expect(noegler.filter((n) => n === `reklamation-transfer-afviger:${ID}`)).toHaveLength(2);
+    expect(m.log).not.toHaveBeenCalled();
   });
 
   it("samtidige kald med samme claim: én transfer", async () => {

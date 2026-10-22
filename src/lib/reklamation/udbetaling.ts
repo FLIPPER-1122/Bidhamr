@@ -158,8 +158,8 @@ export async function findTransfer(stripe: Stripe, id: string, c: { trade_id: st
 async function registrerTransfer(admin: Admin, id: string, c: UdbetalClaim, t: Stripe.Transfer): Promise<TransferResultat> {
   const destination = stripeId(t.destination as string | { id: string } | null);
   if (Number(t.amount) !== Number(c.beloeb_oere) || t.currency !== "dkk" || destination !== c.konto) {
-    await logDriftFejl({
-      kilde: "server",
+    await alarmPrTilfaelde({
+      noegle: `reklamation-transfer-afviger:${id}`,
       hvor: "reklamation/udbetaling",
       fejl: `Reklamation ${id}: Stripe-transfer ${t.id} har et andet beløb, en anden valuta eller en anden konto end chefens udbetaling. Udbetalingen er IKKE registreret - kontrollér transferen i Stripe.`,
       brugerId: c.saelger_id,
@@ -176,10 +176,11 @@ async function registrerTransfer(admin: Admin, id: string, c: UdbetalClaim, t: S
   const svar = String(data);
   if (svar === "ok" || svar === "allerede") {
     await lukTilfaelde(`reklamation-transfer-haenger:${id}`);
+    await lukTilfaelde(`reklamation-transfer-afviger:${id}`);
     return "udbetalt";
   }
-  await logDriftFejl({
-    kilde: "server",
+  await alarmPrTilfaelde({
+    noegle: `reklamation-transfer-afviger:${id}`,
     hvor: "reklamation/udbetaling",
     fejl: `Reklamation ${id}: Stripe-transfer ${t.id} er lavet, men kunne ikke registreres (${svar}). Kontrollér reklamationen og transferen i Stripe.`,
     brugerId: c.saelger_id,
@@ -418,11 +419,22 @@ async function tjekTransfer(stripe: Stripe, r: StaffReklamation, konto: string):
 }
 
 // Det, der i forvejen skal blive på sælgerens konto: handlerne (skyldigOere -
-// samme værn som udbetalSaelger) og andre erstatninger, der endnu ikke er
-// sendt til banken (en payout for dem er ikke oprettet, eller den er
-// fejlet/annulleret, så pengene er tilbage).
+// samme værn som udbetalSaelger), sælgerens almindelige udbetalinger, der er
+// claimet eller usikre (deres betalinger har saelger_udbetaling_id og tæller
+// derfor ikke i skyldigOere, men payouten kan stadig være på vej), og andre
+// erstatninger, der endnu ikke er sendt til banken (en payout for dem er ikke
+// oprettet, eller den er fejlet/annulleret, så pengene er tilbage).
 async function skalBliveOere(admin: Admin, r: StaffReklamation, konto: string): Promise<number> {
   let sum = await skyldigOere(admin, r.saelger_id, konto);
+  const { data: udb, error: uFejl } = await admin
+    .from("saelger_udbetalinger")
+    .select("id, beloeb_oere")
+    .eq("seller_id", r.saelger_id)
+    .eq("stripe_konto", konto)
+    .in("status", ["claimet", "usikker"])
+    .limit(1000);
+  if (uFejl) throw new Error(`saelger_udbetalinger: ${uFejl.message}`);
+  for (const u of udb ?? []) sum += Number(u.beloeb_oere ?? 0);
   const { data, error } = await admin
     .from("fragt_reklamationer")
     .select("id, godkendt_beloeb_oere, bank_status")
