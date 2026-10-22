@@ -83,6 +83,7 @@ export function erUdbetalingFejl(
   return (
     r.bank_status === "failed" ||
     r.bank_status === "canceled" ||
+    r.bank_status === "afvist" ||
     !!r.transfer_tilbagefoert_kl ||
     (r.bank_status === null && foer(r.udbetalt_kl, 3600_000)) ||
     (r.bank_status === "claimet" && foer(r.bank_claimet_kl, 3600_000)) ||
@@ -97,6 +98,7 @@ export const REKLAMATION_BANK_TEKST: Record<string, string> = {
   paid: "Sendt til sælgerens bank",
   failed: "Udbetalingen til banken fejlede – venter på, at sælgeren retter bankkontoen",
   canceled: "Udbetalingen til banken blev annulleret hos Stripe – kontrollér i Stripe, og send igen",
+  afvist: "Stripe afviste udbetalingen til banken endeligt – prøves ikke igen automatisk; kontrollér i Stripe, og send igen",
 };
 
 // Navne på reklamationens hændelser i moderation_log (tidslinjen). De gamle

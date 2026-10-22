@@ -22,7 +22,14 @@ import { createClient } from "@/lib/supabase/server";
 import { logDriftFejl } from "@/lib/drift";
 import { adminSagSti, sagSti } from "@/lib/sager";
 import { notificerReklamationer } from "@/lib/reklamation/notifikationer";
-import { betingelseTekst, erRetStatus, fortolkKroner, kroner } from "@/lib/reklamation/typer";
+import {
+  REKLAMATION_MIN_OERE,
+  REKLAMATION_MIN_TEKST,
+  betingelseTekst,
+  erRetStatus,
+  fortolkKroner,
+  kroner,
+} from "@/lib/reklamation/typer";
 import { udbetalReklamationTilBank, udfoerReklamationTransfer, type UdbetalClaim } from "@/lib/reklamation/udbetaling";
 
 export type ReklamationSvar = { ok: true; uaendret?: boolean } | { fejl: string };
@@ -42,6 +49,7 @@ const KODE: Record<string, string> = {
   sagsnummer_mangler: "Skriv fragtfirmaets sagsnummer.",
   ugyldig_status: "Vælg en status.",
   ugyldigt_beloeb: "Beløbet er ugyldigt.",
+  for_lille_beloeb: REKLAMATION_MIN_TEKST,
   ikke_skadet: "Indpakningen vurderes kun i sager om skade under fragten.",
   afhentning: "Varen blev afhentet – der er ingen indpakning at vurdere.",
   allerede_vurderet: "Indpakningen er allerede vurderet i denne sag.",
@@ -77,6 +85,8 @@ const BANK: Record<string, string> = {
     "Sælgerens Stripe-konto har mindre på saldoen, end erstatningen og sælgerens handler kræver. Intet er sendt – se drift-loggen og kontrollér kontoen i Stripe.",
   tilbagefoert: KODE.tilbagefoert,
   afvist: "Stripe afviste udbetalingen til banken. Den prøves igen automatisk – se drift-loggen.",
+  afvist_endeligt:
+    "Stripe afviste udbetalingen til banken endeligt (fx er beløbet under Stripes mindste udbetaling). Den prøves ikke igen automatisk – kontrollér i Stripe og se drift-loggen.",
   usikker: "Vi fik ikke et sikkert svar fra Stripe. Det slås op og prøves igen automatisk – der udbetales aldrig to gange.",
   i_gang: KODE.i_gang,
 };
@@ -105,7 +115,13 @@ function erUuid(v: unknown): v is string {
 function fejlTekst(svar: Record<string, unknown>, handling?: "kvitter" | "anmeld" | "udbetal"): string {
   const kode = String(svar.kode ?? "");
   if (kode === "ugyldigt_beloeb" && typeof svar.maks_oere === "number") {
-    return `Beløbet skal være mellem 0,01 kr. og ${kroner(svar.maks_oere)}`;
+    return svar.maks_oere < REKLAMATION_MIN_OERE
+      ? `Beløbet kan højst være ${kroner(svar.maks_oere)}. ${REKLAMATION_MIN_TEKST} Reklamationen kan derfor ikke udbetales – annullér den i stedet.`
+      : `Beløbet skal være mellem ${kroner(REKLAMATION_MIN_OERE)} og ${kroner(svar.maks_oere)}`;
+  }
+  if (kode === "for_lille_beloeb") {
+    const min = typeof svar.min_oere === "number" ? svar.min_oere : REKLAMATION_MIN_OERE;
+    return `Det mindste beløb, vi kan udbetale, er ${kroner(min)}`;
   }
   if (kode === "allerede_vurderet" && svar.resultat === "ordentlig") {
     return "Indpakningen er allerede vurderet som ordentlig.";
@@ -219,6 +235,7 @@ export async function godkendReklamation(reklamationId: string, beloebKr: string
   if (!erUuid(reklamationId)) return { fejl: KODE.ikke_fundet };
   const b = fortolkKroner(String(beloebKr ?? ""));
   if ("fejl" in b) return { fejl: b.fejl };
+  if (b.oere < REKLAMATION_MIN_OERE) return { fejl: REKLAMATION_MIN_TEKST };
   return koer("godkendReklamation", "fragt_reklamation_godkend", { p_reklamation: reklamationId, p_beloeb_oere: b.oere }, sag(sagId));
 }
 
@@ -266,6 +283,7 @@ export async function retReklamationStatus(input: {
   if (input.status === "godkendt") {
     const b = fortolkKroner(String(input.beloebKr ?? ""));
     if ("fejl" in b) return { fejl: b.fejl };
+    if (b.oere < REKLAMATION_MIN_OERE) return { fejl: REKLAMATION_MIN_TEKST };
     beloeb = b.oere;
   }
   return koer("retReklamationStatus", "fragt_reklamation_ret_status", {

@@ -2,7 +2,8 @@
 
 // "Indpakning var ordentlig" / "Fortryd" på sagens side i admin - ved siden
 // af "Dårlig indpakning". Er sagen (eller bliver den) afgjort til køberen,
-// opretter databasen reklamationen hos fragtfirmaet, og sælgeren får besked
+// opretter databasen reklamationen hos BidHamr. BidHamr anmelder skaden hos
+// fragtfirmaet, når sagen er endelig; sælgeren får besked og følger status
 // (src/app/actions/adminReklamation.ts).
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
@@ -21,8 +22,8 @@ export default function IndpakningOrdentligKnap({
 }: {
   sagId: string;
   // "kan_vurdere": knappen "Indpakning var ordentlig". "ordentlig": vurderet -
-  // "Fortryd" (kun så længe sælgeren ikke har anmeldt). "laast": vurderet, og
-  // sælgeren har anmeldt - kan ikke fortrydes.
+  // "Fortryd" (kun så længe BidHamr ikke har anmeldt skaden hos fragtfirmaet).
+  // "laast": vurderet, og BidHamr har anmeldt skaden - kan ikke fortrydes.
   tilstand: "kan_vurdere" | "ordentlig" | "laast";
   saelgerNavn: string;
   // Sagen er allerede afgjort til køberen -> reklamationen oprettes med det samme.
@@ -87,7 +88,7 @@ export default function IndpakningOrdentligKnap({
   }
 
   if (tilstand === "laast") {
-    return <span className="text-sm text-neutral-600">Indpakning vurderet: ordentlig. Sælgeren har anmeldt skaden.</span>;
+    return <span className="text-sm text-neutral-600">Indpakning vurderet: ordentlig. Skaden er anmeldt hos fragtfirmaet.</span>;
   }
 
   return (
@@ -137,10 +138,10 @@ export default function IndpakningOrdentligKnap({
             </h2>
             <p className="mt-1.5 text-sm text-neutral-600">
               {fortryd
-                ? `Reklamationen stoppes, hvis ${saelgerNavn} ikke har anmeldt skaden endnu.`
+                ? "Reklamationen stoppes, hvis skaden ikke er anmeldt hos fragtfirmaet endnu."
                 : afgjortTilKoeber
-                  ? `Skaden skete under fragten. ${saelgerNavn} får nu besked og alle oplysninger, så sælgeren kan få erstatning direkte fra fragtfirmaet.`
-                  : `Skaden skete under fragten. Når sagen afgøres til køberen, får ${saelgerNavn} besked og alle oplysninger, så sælgeren kan få erstatning direkte fra fragtfirmaet.`}
+                  ? `Skaden skete under fragten. Reklamationen oprettes nu hos BidHamr, og vi anmelder skaden hos fragtfirmaet, når sagen er endelig. ${saelgerNavn} får besked og kan følge status på handlen.`
+                  : `Skaden skete under fragten. Når sagen afgøres til køberen, oprettes reklamationen hos BidHamr, og vi anmelder skaden hos fragtfirmaet, når sagen er endelig. ${saelgerNavn} får besked og kan følge status på handlen.`}
             </p>
             <form onSubmit={indsend} method="post" className="mt-4 space-y-4">
               <div>

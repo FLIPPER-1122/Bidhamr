@@ -96,17 +96,34 @@
 --      payout - src/lib/reklamation/udbetaling.ts) og spejler resultatet med
 --      service-role-funktionerne fragt_reklamation_udbetal_registrer /
 --      _udbetal_afvist og fragt_reklamation_bank_start / _bank_spejl /
---      _bank_fejl. En annulleret payout sendes kun igen, når chefen beder om
---      det (fragt_reklamation_bank_send_igen - authenticated, chef, aal2).
+--      _bank_fejl. En annulleret payout - eller en payout, Stripe afviste
+--      endeligt (bank_status 'afvist', fx amount_too_small) - sendes kun igen,
+--      når chefen beder om det (fragt_reklamation_bank_send_igen -
+--      authenticated, chef, aal2); cron'en prøver ikke igen af sig selv.
 --      Payouten til banken sendes aldrig, når transferen er tilbageført.
 --   8. fragt_reklamationer_antal(): tællere til admin-lamperne.
 --   9. moderation_log_handling_check flettes med de nye handlinger.
 --
--- Beskeder til sælgeren (notifikation + mail: oprettet, anmeldt, godkendt,
--- afvist, udbetalt, sendt til banken, udbetaling til banken fejlet,
--- annulleret af staff eller systemet) sendes fra serveren
+-- Beskeder til sælgeren (notifikation + mail) sendes fra serveren
 -- (src/lib/reklamation/notifikationer.ts) ud fra tidsstemplerne - samme
--- mønster som advarsler. Ingen omtale af omdeling.info.
+-- mønster som advarsler, én fast nøgle pr. hændelse:
+--   "Vi reklamerer hos DAO/GLS for dig" (oprettet/genopstået), "Skaden er
+--   anmeldt", "... har godkendt erstatningen" (beløb; udbetales, når
+--   fragtfirmaet har betalt BidHamr), "... har afvist reklamationen" (grund),
+--   "Erstatningen er sendt til din bank" (først når payouten til banken er
+--   oprettet eller betalt - én pr. payout; ingen besked alene ved transferen),
+--   "Udbetalingen til din bank fejlede" (payout failed - sælgeren retter
+--   bankkontoen, så sendes den igen automatisk), en neutral besked "Der er
+--   opstået et problem med udbetalingen af din erstatning - vi kigger på
+--   det", når transferen er tilbageført, eller payouten er fejlet endeligt
+--   (annulleret hos Stripe eller afvist af Stripe, fx amount_too_small),
+--   "Reklamationen er stoppet" (staff, eller systemet når sagen er ændret
+--   før anmeldelsen), "Sagen om din handel er ændret" og "Reklamationen
+--   fortsætter". Ingen omtale af omdeling.info, sagsnummer eller Stripe-id'er.
+--
+-- Mindste beløb (fragt_reklamation_min_oere): Stripes mindste udbetaling
+-- (payout) i Danmark er 20 kr. (docs.stripe.com/payouts, 22. okt. 2026);
+-- "Godkendt" og chefens udbetaling kræver mindst 25 kr.
 --
 -- Ingen funktioner fra andre migrationer ændres. Nye triggere på sager (AFTER
 -- UPDATE OF status, afviklet_kl, penge_handling), advarsler og paamindelser
@@ -343,6 +360,8 @@ alter table public.fragt_reklamationer
   --   claimet   payouts.create er (måske) kaldt - afklares før nyt forsøg
   --   oprettet  payout oprettet hos Stripe (pending/in_transit)
   --   paid | failed | canceled  (spejlet fra Stripe)
+  --   afvist    Stripe afviste payouts.create endeligt (fx amount_too_small) -
+  --             ingen payout, ingen automatiske genforsøg; chefen sender igen
   add column if not exists bank_status               text,
   add column if not exists bank_payout_id            text,
   add column if not exists bank_forsoeg              integer not null default 0,
@@ -418,7 +437,7 @@ begin
       ('fragt_reklamationer_forsoeg_check',
        $c$check (udbetaling_forsoeg between 0 and 1000 and bank_forsoeg between 0 and 1000)$c$),
       ('fragt_reklamationer_bank_check',
-       $c$check ((bank_status is null or bank_status in ('claimet', 'oprettet', 'paid', 'failed', 'canceled'))
+       $c$check ((bank_status is null or bank_status in ('claimet', 'oprettet', 'paid', 'failed', 'canceled', 'afvist'))
                 and (bank_status is null or status = 'udbetalt')
                 and (bank_status not in ('oprettet', 'paid') or bank_payout_id is not null))$c$),
       ('fragt_reklamationer_tekst_check',
@@ -614,6 +633,21 @@ as $fn$
 $fn$;
 
 revoke all on function public.fragt_reklamation_kr(bigint) from public, anon, authenticated;
+
+-- Mindste erstatning, der kan registreres som godkendt og udbetales (øre).
+-- Stripes mindste udbetaling (payout) i Danmark er 20 kr.
+-- (docs.stripe.com/payouts, "Minimum payout amounts", 22. okt. 2026) - rundet
+-- op til 25 kr. Skal matche REKLAMATION_MIN_OERE i src/lib/reklamation/typer.ts.
+create or replace function public.fragt_reklamation_min_oere()
+returns bigint
+language sql
+immutable
+set search_path = public
+as $fn$
+  select 2500::bigint;
+$fn$;
+
+revoke all on function public.fragt_reklamation_min_oere() from public, anon, authenticated;
 
 -- Er betingelserne for en reklamation opfyldt for sagen? (se toppen, pkt. 4)
 -- Fælles for fragt_reklamation_synkroniser og fragt_reklamation_ret_status.
@@ -1263,6 +1297,10 @@ begin
   if p_beloeb_oere is null or p_beloeb_oere <= 0 or p_beloeb_oere > (c.r).kravbeloeb_oere then
     return jsonb_build_object('kode', 'ugyldigt_beloeb', 'maks_oere', (c.r).kravbeloeb_oere);
   end if;
+  -- Under Stripes mindste udbetaling kan beløbet aldrig sendes til banken.
+  if p_beloeb_oere < public.fragt_reklamation_min_oere() then
+    return jsonb_build_object('kode', 'for_lille_beloeb', 'min_oere', public.fragt_reklamation_min_oere());
+  end if;
   update public.fragt_reklamationer
      set status = 'godkendt', godkendt_beloeb_oere = p_beloeb_oere,
          afgjort_kl = now(), afgjort_af = auth.uid(), fremdrift_kl = now()
@@ -1403,6 +1441,9 @@ begin
   if p_status = 'godkendt'
      and (p_beloeb_oere is null or p_beloeb_oere <= 0 or p_beloeb_oere > (c.r).kravbeloeb_oere) then
     return jsonb_build_object('kode', 'ugyldigt_beloeb', 'maks_oere', (c.r).kravbeloeb_oere);
+  end if;
+  if p_status = 'godkendt' and p_beloeb_oere < public.fragt_reklamation_min_oere() then
+    return jsonb_build_object('kode', 'for_lille_beloeb', 'min_oere', public.fragt_reklamation_min_oere());
   end if;
   if p_status in ('anmeldt', 'godkendt') and coalesce(v_nr, (c.r).transportoerens_sagsnummer) is null then
     return jsonb_build_object('kode', 'sagsnummer_mangler');
@@ -1554,8 +1595,9 @@ end $do$;
 -- sagsnummer, transportoer, genoptag, paabegyndt_kl, oprettet_kl), i_gang,
 -- ingen_adgang,
 -- ikke_fundet, inhabil, kun_chef, bekraeftelse_mangler, allerede_udbetalt,
--- forkert_status (+ status), sag_aendret, betingelser_ikke_opfyldt (+ aarsag),
--- stoppet, frosset, ingen_konto, konto_aendret.
+-- forkert_status (+ status), for_lille_beloeb (+ min_oere), sag_aendret,
+-- betingelser_ikke_opfyldt (+ aarsag), stoppet, frosset, ingen_konto,
+-- konto_aendret.
 create or replace function public.fragt_reklamation_udbetal_claim(p_reklamation uuid, p_erstatning_modtaget boolean)
 returns jsonb
 language plpgsql
@@ -1582,6 +1624,10 @@ begin
   end if;
   if (c.r).status <> 'godkendt' then
     return jsonb_build_object('kode', 'forkert_status', 'status', (c.r).status);
+  end if;
+  -- Under Stripes mindste udbetaling (godkendt før grænsen): ret status.
+  if (c.r).udbetaling_paabegyndt_kl is null and (c.r).godkendt_beloeb_oere < public.fragt_reklamation_min_oere() then
+    return jsonb_build_object('kode', 'for_lille_beloeb', 'min_oere', public.fragt_reklamation_min_oere());
   end if;
   if (c.r).sag_aendret_kl is not null and (c.r).sag_aendret_kvitteret_kl is null then
     return jsonb_build_object('kode', 'sag_aendret');
@@ -1786,7 +1832,9 @@ begin
   if r.transfer_tilbagefoert_kl is not null then
     return jsonb_build_object('kode', 'tilbagefoert');
   end if;
-  if r.bank_status in ('oprettet', 'paid', 'canceled') then
+  -- canceled/afvist: sendes kun igen, når chefen beder om det
+  -- (fragt_reklamation_bank_send_igen).
+  if r.bank_status in ('oprettet', 'paid', 'canceled', 'afvist') then
     return jsonb_build_object('kode', 'faerdig', 'bank_status', r.bank_status);
   end if;
   if public.udbetalinger_stoppet() then return jsonb_build_object('kode', 'stoppet'); end if;
@@ -1847,7 +1895,9 @@ begin
   -- forsøg starte, mens det nye kald er i gang).
   -- Det samme gælder, når et nyt forsøg venter (bank_status null efter en
   -- afvist payout eller "send igen" efter en annulleret).
-  if (r.bank_status is null or r.bank_status = 'claimet') and r.bank_payout_id = p_payout then
+  -- Og når Stripe har afvist det nye forsøg endeligt ('afvist' - chefen
+  -- sender igen).
+  if (r.bank_status is null or r.bank_status in ('claimet', 'afvist')) and r.bank_payout_id = p_payout then
     return jsonb_build_object('kode', 'allerede', 'fra', r.bank_status, 'til', r.bank_status);
   end if;
   -- En anden payout er den aktuelle (en ældre, fejlet): kun historik.
@@ -1892,18 +1942,38 @@ grant execute on function public.fragt_reklamation_bank_spejl(uuid, text, text, 
 
 -- payouts.create fejlede. p_frigiv = true: Stripe afviste med sikkerhed
 -- (ingen payout) - bank_status nulstilles, og næste forsøg får en ny nøgle.
+-- p_endelig = true (kun med p_frigiv): afvisningen løser sig ikke af sig
+-- selv (fx amount_too_small) - bank_status 'afvist', ingen automatiske
+-- genforsøg (rød lampe; chefen sender igen med fragt_reklamation_bank_send_igen).
 -- p_frigiv = false: usikkert - 'claimet' beholdes (opslag før nyt forsøg).
 -- p_forsoeg: forsøget, kalderen sendte; ændrer kun, når det er det aktuelle.
 drop function if exists public.fragt_reklamation_bank_fejl(uuid, text, boolean);
+drop function if exists public.fragt_reklamation_bank_fejl(uuid, text, boolean, integer);
 create or replace function public.fragt_reklamation_bank_fejl(
-  p_reklamation uuid, p_fejl text, p_frigiv boolean, p_forsoeg integer default null)
+  p_reklamation uuid, p_fejl text, p_frigiv boolean, p_forsoeg integer default null,
+  p_endelig boolean default false, p_fejlkode text default null)
 returns boolean
 language plpgsql
 security definer
 set search_path = public
 as $fn$
+declare
+  r record;
 begin
-  if coalesce(p_frigiv, false) then
+  if coalesce(p_frigiv, false) and coalesce(p_endelig, false) then
+    update public.fragt_reklamationer
+       set bank_status = 'afvist', bank_forsoeg = bank_forsoeg + 1,
+           bank_fejlet_kl = now(), bank_fejlkode = left(p_fejlkode, 100),
+           bank_fejl = left(coalesce(p_fejl, 'Stripe afviste udbetalingen endeligt'), 500)
+     where id = p_reklamation and status = 'udbetalt' and bank_status = 'claimet'
+       and p_forsoeg is not null and bank_forsoeg = p_forsoeg
+    returning sag_id, saelger_id into r;
+    if not found then return false; end if;
+    perform public.fragt_reklamation_log(public.bidhamr_system_id(), 'reklamation_bank_udbetaling', r.sag_id, r.saelger_id,
+      left('Stripe afviste udbetalingen af erstatningen til sælgerens bank endeligt'
+           || coalesce(' (' || p_fejlkode || ')', '') || ' - sendes ikke igen automatisk', 4000));
+    return true;
+  elsif coalesce(p_frigiv, false) then
     update public.fragt_reklamationer
        set bank_status = null, bank_forsoeg = bank_forsoeg + 1,
            bank_fejl = left(coalesce(p_fejl, 'Stripe afviste udbetalingen'), 500)
@@ -1921,8 +1991,8 @@ begin
 end;
 $fn$;
 
-revoke all on function public.fragt_reklamation_bank_fejl(uuid, text, boolean, integer) from public, anon, authenticated;
-grant execute on function public.fragt_reklamation_bank_fejl(uuid, text, boolean, integer) to service_role;
+revoke all on function public.fragt_reklamation_bank_fejl(uuid, text, boolean, integer, boolean, text) from public, anon, authenticated;
+grant execute on function public.fragt_reklamation_bank_fejl(uuid, text, boolean, integer, boolean, text) to service_role;
 
 -- Transferen er tilbageført hos Stripe (webhook transfer.reversed eller
 -- afstemningen), eller den passer ikke længere med reklamationen (beløb/
@@ -1960,7 +2030,8 @@ grant execute on function public.fragt_reklamation_transfer_tilbagefoert(text, t
 
 -- KUN CHEFEN (egen session, aal2, ikke inhabil): payouten til sælgerens bank
 -- er annulleret hos Stripe (bank_status canceled - BidHamr annullerer aldrig
--- selv, så den sendes ikke automatisk igen). Chefen har set på det i Stripe
+-- selv, så den sendes ikke automatisk igen), eller Stripe har afvist den
+-- endeligt (bank_status afvist, fx amount_too_small). Chefen har set på det i Stripe
 -- og sender igen: bank_status nulstilles, og forsøget tælles op (ny
 -- idempotency-nøgle) - serveren sender derefter ad den almindelige vej
 -- (fragt_reklamation_bank_start med alle dens tjek; cron'en tager den også).
@@ -1983,15 +2054,21 @@ begin
   if (c.r).transfer_tilbagefoert_kl is not null then
     return jsonb_build_object('kode', 'tilbagefoert');
   end if;
-  if (c.r).status <> 'udbetalt' or (c.r).bank_status is distinct from 'canceled' then
+  if (c.r).status <> 'udbetalt' or coalesce((c.r).bank_status, '') not in ('canceled', 'afvist') then
     return jsonb_build_object('kode', 'ikke_annulleret');
   end if;
+  -- canceled: forsøget tælles op (ny nøgle). afvist: forsøget er allerede
+  -- talt op af fragt_reklamation_bank_fejl.
   update public.fragt_reklamationer
-     set bank_status = null, bank_forsoeg = bank_forsoeg + 1, bank_fejl = null
-   where id = (c.r).id and status = 'udbetalt' and bank_status = 'canceled';
+     set bank_status = null, bank_fejl = null,
+         bank_forsoeg = bank_forsoeg + case when bank_status = 'canceled' then 1 else 0 end
+   where id = (c.r).id and status = 'udbetalt' and bank_status in ('canceled', 'afvist');
   perform public.fragt_reklamation_log(auth.uid(), 'reklamation_bank_udbetaling', (c.r).sag_id, (c.r).saelger_id,
-    'Chefen sender erstatningen til sælgerens bank igen efter en annulleret udbetaling (payout '
-    || coalesce((c.r).bank_payout_id, '?') || ')');
+    case when (c.r).bank_status = 'afvist'
+         then 'Chefen sender erstatningen til sælgerens bank igen, efter Stripe afviste udbetalingen'
+              || coalesce(' (' || (c.r).bank_fejlkode || ')', '')
+         else 'Chefen sender erstatningen til sælgerens bank igen efter en annulleret udbetaling (payout '
+              || coalesce((c.r).bank_payout_id, '?') || ')' end);
   return jsonb_build_object('kode', 'ok', 'saelger_id', (c.r).saelger_id, 'trade_id', (c.r).trade_id, 'sag_id', (c.r).sag_id);
 end;
 $fn$;
@@ -2014,6 +2091,7 @@ returns table (
   afvisningsgrund text, annulleret_grund text,
   oprettet_kl timestamptz, anmeldt_kl timestamptz, afgjort_kl timestamptz,
   annulleret_kl timestamptz, udbetalt_kl timestamptz, bank_betalt_kl timestamptz,
+  bank_sendt_kl timestamptz, bank_fejlet boolean, udbetaling_problem boolean,
   sag_aendret boolean)
 language sql
 stable
@@ -2024,7 +2102,16 @@ as $fn$
          r.kravbeloeb_oere, r.godkendt_beloeb_oere,
          r.afvisningsgrund, r.annulleret_grund,
          r.oprettet_kl, r.anmeldt_kl, r.afgjort_kl, r.annulleret_kl, r.udbetalt_kl,
-         case when r.bank_status = 'paid' then r.bank_betalt_kl end,
+         case when r.bank_status = 'paid' and r.transfer_tilbagefoert_kl is null then r.bank_betalt_kl end,
+         -- Payouten til banken er oprettet (eller betalt): "sendt til din bank".
+         case when r.bank_status in ('oprettet', 'paid') and r.transfer_tilbagefoert_kl is null
+              then r.bank_oprettet_kl end,
+         -- Payouten fejlede (sælgeren retter bankkontoen - sendes igen).
+         (r.status = 'udbetalt' and r.bank_status = 'failed' and r.transfer_tilbagefoert_kl is null),
+         -- Transferen er tilbageført, eller payouten er fejlet endeligt
+         -- (annulleret/afvist hos Stripe): "Udbetalingen behandles".
+         (r.status = 'udbetalt'
+          and (r.transfer_tilbagefoert_kl is not null or r.bank_status in ('canceled', 'afvist'))),
          (r.sag_aendret_kl is not null and r.sag_aendret_kvitteret_kl is null) as sag_aendret
     from public.fragt_reklamationer r
    where auth.uid() is not null
@@ -2070,7 +2157,7 @@ as $fn$
            'udbetaling_fejl', (select count(*) from public.fragt_reklamationer
                                 where (status = 'godkendt' and udbetaling_paabegyndt_kl < now() - interval '10 minutes')
                                    or (status = 'udbetalt'
-                                       and (bank_status in ('failed', 'canceled')
+                                       and (bank_status in ('failed', 'canceled', 'afvist')
                                             or transfer_tilbagefoert_kl is not null
                                             or (bank_status is null and udbetalt_kl < now() - interval '1 hour')
                                             or (bank_status = 'claimet' and bank_claimet_kl < now() - interval '1 hour')

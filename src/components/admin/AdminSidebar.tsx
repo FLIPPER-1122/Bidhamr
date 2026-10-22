@@ -41,6 +41,10 @@ export type MenuTaellere = {
   reklamationerAfventerRoed?: number;
   reklamationerSagAendret?: number;
   reklamationerUdbetalingFejl?: number;
+  // Det grå tal (til skærmlæsere): skal anmeldes / (chefen) venter på
+  // chefens udbetaling.
+  reklamationerAfventer?: number;
+  reklamationerVenterUdbetaling?: number;
   // Ekstra fragt (for lille pakke). Kritisk = indsigelser venter på afgørelse -> rødt.
   ekstraFragt: number;
   ekstraFragtKritisk: boolean;
@@ -76,6 +80,8 @@ type TalNoegle = Exclude<
   | "reklamationerAfventerRoed"
   | "reklamationerSagAendret"
   | "reklamationerUdbetalingFejl"
+  | "reklamationerAfventer"
+  | "reklamationerVenterUdbetaling"
 >;
 
 type MenuPunkt = {
@@ -217,9 +223,16 @@ function Tal({ antal, tone, sr }: { antal: number; tone: "roed" | "gul" | "graa"
 }
 
 // Skærmlæsertekst til reklamationernes tal: årsagen til det røde tal
-// ("ikke anmeldt" / "sag ændret" / "udbetaling"), ellers at de venter på os.
+// ("ikke anmeldt" / "sag ændret" / "udbetaling"), ellers hvad de venter på
+// (at blive anmeldt / chefens udbetaling - tallet vises for chefen).
 function reklamationSr(t: MenuTaellere, tone: string): string {
-  if (tone !== "roed") return " venter på BidHamr";
+  if (tone !== "roed") {
+    const dele = [
+      t.reklamationerAfventer ? `${t.reklamationerAfventer} skal anmeldes` : null,
+      t.reklamationerVenterUdbetaling ? `${t.reklamationerVenterUdbetaling} venter på din udbetaling` : null,
+    ].filter(Boolean);
+    return dele.length ? ` – ${dele.join(", ")}` : " venter";
+  }
   const dele = [
     t.reklamationerAfventerRoed ? `${t.reklamationerAfventerRoed} ikke anmeldt` : null,
     t.reklamationerSagAendret ? `${t.reklamationerSagAendret} sag ændret` : null,

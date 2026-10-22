@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { crc32, lavZip, sikkertZipNavn } from "@/lib/reklamation/zip";
-import { betingelseTekst, fortolkKroner, kanKvittere, kronerTilOere, reklamationStatusSaelger, reklamationTrin } from "@/lib/reklamation/typer";
+import {
+  REKLAMATION_MIN_OERE,
+  REKLAMATION_MIN_TEKST,
+  betingelseTekst,
+  fortolkKroner,
+  kanKvittere,
+  kronerTilOere,
+  reklamationStatusSaelger,
+  reklamationTrin,
+  reklamationUdbetalingTrin,
+} from "@/lib/reklamation/typer";
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/notifikationer/send", () => ({ send: vi.fn() }));
@@ -111,7 +121,9 @@ describe("tekster til sælgeren", () => {
     afgjort_kl: null,
     udbetalt_kl: null,
     bank_status: null,
+    bank_payout_id: null,
     bank_fejlet_kl: null,
+    transfer_tilbagefoert_kl: null,
     sag_aendret_kl: null,
     sag_aendret_kvitteret_kl: null,
   };
@@ -142,32 +154,54 @@ describe("tekster til sælgeren", () => {
     expect(trin(afvist)).toEqual(["afvist"]);
     expect(afvist[0].input.tekst).toContain("Begrundelse fra DAO: Ikke transportskade.");
 
-    const udbetalt = reklamationBeskeder({ ...raekke, status: "udbetalt", udbetalt_kl: kl, godkendt_beloeb_oere: 250000 });
-    expect(trin(udbetalt)).toEqual(["udbetalt"]);
-    expect(udbetalt[0].input.tekst).toContain("Vi har udbetalt 2.500 kr. i erstatning");
+    // Transferen alene (payouten er ikke sendt): ingen besked, intet løfte
+    // om bankdage.
+    const udb = { ...raekke, status: "udbetalt" as const, udbetalt_kl: kl, godkendt_beloeb_oere: 250000 };
+    expect(reklamationBeskeder(udb)).toEqual([]);
+    expect(reklamationBeskeder({ ...udb, bank_status: "claimet" })).toEqual([]);
 
-    const bankFejl = reklamationBeskeder({
-      ...raekke,
-      status: "udbetalt",
-      udbetalt_kl: kl,
-      godkendt_beloeb_oere: 250000,
-      bank_status: "failed",
-      bank_fejlet_kl: kl,
-    });
-    expect(trin(bankFejl)).toEqual(["udbetalt", "bank_fejlet"]);
-    expect(bankFejl[1].input.link).toBe("/konto#udbetaling");
+    // Payouten er oprettet: "sendt til din bank" - én nøgle pr. payout.
+    const udbetalt = reklamationBeskeder({ ...udb, bank_status: "oprettet", bank_payout_id: "po_1" });
+    expect(udbetalt.map((x) => x.input.noegle)).toEqual([`reklamation:${raekke.id}:sendt:po_1`]);
+    expect(udbetalt[0].input.titel).toBe("Erstatningen er sendt til din bank");
+    expect(udbetalt[0].input.tekst).toContain("2.500 kr.");
+    expect(udbetalt[0].input.tekst).toContain("1-3 bankdage");
+    // paid: samme nøgle (ingen ny besked).
+    expect(reklamationBeskeder({ ...udb, bank_status: "paid", bank_payout_id: "po_1" }).map((x) => x.input.noegle)).toEqual([
+      `reklamation:${raekke.id}:sendt:po_1`,
+    ]);
+
+    const bankFejl = reklamationBeskeder({ ...udb, bank_status: "failed", bank_payout_id: "po_1", bank_fejlet_kl: kl });
+    expect(trin(bankFejl)).toEqual(["bank_fejlet"]);
+    expect(bankFejl[0].input.link).toBe("/konto#udbetaling");
+
+    // Nyt forsøg efter rettet bankkonto: ny payout -> ny "sendt".
+    expect(trin(reklamationBeskeder({ ...udb, bank_status: "oprettet", bank_payout_id: "po_2", bank_fejlet_kl: kl }))).toEqual(["sendt"]);
+
+    // Endelig fejl (annulleret/afvist hos Stripe) og tilbageført transfer:
+    // neutral besked, aldrig "sendt".
+    const problemer = [
+      reklamationBeskeder({ ...udb, bank_status: "canceled", bank_payout_id: "po_1", bank_fejlet_kl: kl }),
+      reklamationBeskeder({ ...udb, bank_status: "afvist", bank_fejlet_kl: kl }),
+      reklamationBeskeder({ ...udb, bank_status: "paid", bank_payout_id: "po_1", transfer_tilbagefoert_kl: kl }),
+    ];
+    expect(problemer.map(trin)).toEqual([["bank_problem"], ["bank_problem"], ["transfer_problem"]]);
+    for (const b of problemer) {
+      expect(b[0].input.tekst).toContain("Der er opstået et problem med udbetalingen af din erstatning – vi kigger på det");
+      expect(b[0].input.tekst).not.toMatch(/stripe|po_|tr_/i);
+    }
 
     const staff = reklamationBeskeder({ ...raekke, status: "annulleret", annulleret_kl: kl, annulleret_grund: "Test" });
     expect(trin(staff)).toEqual(["annulleret"]);
 
-    for (const x of [...opr, ...anmeldt, ...godkendt, ...afvist, ...udbetalt, ...bankFejl, ...staff]) {
+    for (const x of [...opr, ...anmeldt, ...godkendt, ...afvist, ...udbetalt, ...bankFejl, ...problemer.flat(), ...staff]) {
       const alt = `${x.input.titel} ${x.input.tekst}`.toLowerCase();
       expect(alt).not.toContain("forsikring");
       expect(alt).not.toContain("omdeling");
       // Aldrig "kr.." (kroner() slutter selv med punktum).
       expect(x.input.tekst).not.toContain("kr..");
     }
-    for (const x of [...opr, ...anmeldt, ...godkendt, ...afvist, ...udbetalt, ...staff]) {
+    for (const x of [...opr, ...anmeldt, ...godkendt, ...afvist, ...udbetalt, ...problemer.flat(), ...staff]) {
       expect(x.input.link).toBe(`/mine-handler/${raekke.trade_id}#reklamation`);
     }
   });
@@ -220,6 +254,26 @@ describe("tekster til sælgeren", () => {
     expect(reklamationTrin("godkendt")).toEqual({ trin: 2, faerdig: false });
     expect(reklamationTrin("udbetalt")).toEqual({ trin: 2, faerdig: true });
     expect(reklamationTrin("afvist").faerdig).toBe(true);
+  });
+
+  it("udbetalt vises først, når payouten til banken er sendt", () => {
+    const b = { status: "udbetalt" as const, bank_betalt_kl: null, bank_sendt_kl: null, bank_fejlet: false, udbetaling_problem: false };
+    expect(reklamationUdbetalingTrin({ ...b, status: "godkendt" })).toBeNull();
+    expect(reklamationUdbetalingTrin(b)).toBe("behandles");
+    expect(reklamationUdbetalingTrin({ ...b, bank_sendt_kl: "x" })).toBe("sendt");
+    expect(reklamationUdbetalingTrin({ ...b, bank_sendt_kl: "x", bank_betalt_kl: "x" })).toBe("betalt");
+    expect(reklamationUdbetalingTrin({ ...b, bank_fejlet: true })).toBe("bank_fejlet");
+    expect(reklamationUdbetalingTrin({ ...b, bank_sendt_kl: "x", udbetaling_problem: true })).toBe("problem");
+    expect(reklamationStatusSaelger("udbetalt", "dao", "behandles")).toBe("Udbetalingen behandles");
+    expect(reklamationStatusSaelger("udbetalt", "dao", "problem")).toBe("Udbetalingen behandles");
+    expect(reklamationStatusSaelger("udbetalt", "dao", "sendt")).toBe("Erstatningen er udbetalt til dig");
+    expect(reklamationStatusSaelger("udbetalt", "dao", "betalt")).toBe("Erstatningen er udbetalt til dig");
+  });
+
+  it("mindste beløb følger Stripes mindste udbetaling i Danmark (20 kr.)", () => {
+    expect(REKLAMATION_MIN_OERE).toBeGreaterThanOrEqual(2000);
+    expect(REKLAMATION_MIN_OERE % 100).toBe(0);
+    expect(REKLAMATION_MIN_TEKST).toBe("Det mindste beløb, vi kan udbetale, er 25 kr.");
   });
 });
 

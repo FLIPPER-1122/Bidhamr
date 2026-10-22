@@ -42,6 +42,8 @@ async function StaffMenu({ rolle, paaAdminVaert }: { rolle: StaffRole; paaAdminV
         reklamationerAfventerRoed: t.reklamationAfventerRoed,
         reklamationerSagAendret: t.reklamationSagAendret,
         reklamationerUdbetalingFejl: t.reklamationUdbetalingFejl,
+        reklamationerAfventer: t.reklamationAfventer,
+        reklamationerVenterUdbetaling: t.reklamationVenterUdbetaling,
         // Rødt: indsigelser venter på afgørelse, eller en bankindsigelse er
         // tabt (betalingen tilbageført). Ellers spærrede sælgere (gråt).
         ekstraFragt: t.ekstraFragtIndsigelser + t.ekstraFragtTabteBankindsigelser || t.ekstraFragtForfaldne,

@@ -37,7 +37,7 @@ import { logDriftFejl } from "@/lib/drift";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { hentNoedstop } from "@/lib/betaling/noedstop";
 import { dkk, skyldigOere } from "@/lib/betaling/udbetaling";
-import { erDobbeltReklamationPayout, transportoerNavn, type StaffReklamation } from "@/lib/reklamation/typer";
+import { erDobbeltReklamationPayout, kroner, transportoerNavn, type StaffReklamation } from "@/lib/reklamation/typer";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -328,8 +328,15 @@ export type BankResultat =
   | "saldo_afviger"
   | "tilbagefoert"
   | "afvist"
+  | "afvist_endeligt"
   | "usikker"
   | "ikke_fundet";
+
+// Stripe-fejl ved payouts.create, der ikke løser sig ved et nyt forsøg
+// (docs.stripe.com/error-codes: amount_too_small - "less than the minimum
+// amount allowed"). Stripes mindste udbetaling i Danmark er 20 kr.; "Godkendt"
+// kræver mindst REKLAMATION_MIN_OERE, så den bør aldrig ske.
+export const ENDELIGE_PAYOUT_FEJL: ReadonlySet<string> = new Set(["amount_too_small"]);
 
 async function hentRaekke(admin: Admin, id: string): Promise<StaffReklamation | null> {
   const { data, error } = await admin.from("fragt_reklamationer").select("*").eq("id", id).maybeSingle<StaffReklamation>();
@@ -461,7 +468,10 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
   if (!r) return "ikke_fundet";
   if (r.status !== "udbetalt" || !r.stripe_transfer_id || !r.udbetaling_stripe_konto) return "ikke_udbetalt";
   if (r.transfer_tilbagefoert_kl) return "tilbagefoert";
-  if (r.bank_status === "oprettet" || r.bank_status === "paid" || r.bank_status === "canceled") return "faerdig";
+  // canceled/afvist: sendes kun igen, når chefen beder om det.
+  if (r.bank_status === "oprettet" || r.bank_status === "paid" || r.bank_status === "canceled" || r.bank_status === "afvist") {
+    return "faerdig";
+  }
   const konto = r.udbetaling_stripe_konto;
 
   // Et tidligere kald (måske) uden svar: findes payouten for forsøget? (Om
@@ -568,6 +578,27 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
     );
   } catch (err) {
     const kode = fejlKode(err);
+    // Løser sig ikke af sig selv (beløbet er under Stripes mindste
+    // udbetaling): bank_status 'afvist' - ingen automatiske genforsøg, rød
+    // lampe og én alarm til chefen, der sender igen fra reklamationen.
+    if (erEndelig(err) && ENDELIGE_PAYOUT_FEJL.has(kode)) {
+      const { error: fFejl } = await admin.rpc("fragt_reklamation_bank_fejl", {
+        p_reklamation: r.id,
+        p_fejl: `Stripe afviste udbetalingen til banken endeligt (${kode})`,
+        p_frigiv: true,
+        p_forsoeg: forsoeg,
+        p_endelig: true,
+        p_fejlkode: kode,
+      });
+      if (fFejl) throw new Error(`fragt_reklamation_bank_fejl: ${fFejl.message}`);
+      await alarmPrTilfaelde({
+        noegle: `reklamation-bank-afvist:${r.id}:${forsoeg}`,
+        hvor: "reklamation/bank",
+        fejl: `Reklamation ${r.id}: Stripe afviste udbetalingen af erstatningen (${kroner(beloeb)}) til sælgerens bank endeligt (${kode}). Pengene står på sælgerens Stripe-konto, og der prøves IKKE igen automatisk - kontrollér i Stripe, og tryk "Send til banken igen" på reklamationen.`,
+        brugerId: r.saelger_id,
+      });
+      return "afvist_endeligt";
+    }
     if (erEndelig(err)) {
       await admin.rpc("fragt_reklamation_bank_fejl", {
         p_reklamation: r.id,
