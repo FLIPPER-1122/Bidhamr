@@ -4,8 +4,23 @@
     {
       "name": "hamr-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "eksempel-toemrer",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4321",
+        "--directory",
+        "C:/Users/jeppe/Desktop/eksempel-toemrer/out"
+      ],
+      "port": 4321
     }
   ]
 }
