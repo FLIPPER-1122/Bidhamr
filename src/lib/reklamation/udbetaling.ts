@@ -582,7 +582,7 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
     // udbetaling): bank_status 'afvist' - ingen automatiske genforsøg, rød
     // lampe og én alarm til chefen, der sender igen fra reklamationen.
     if (erEndelig(err) && ENDELIGE_PAYOUT_FEJL.has(kode)) {
-      const { error: fFejl } = await admin.rpc("fragt_reklamation_bank_fejl", {
+      const { data: frigjort, error: fFejl } = await admin.rpc("fragt_reklamation_bank_fejl", {
         p_reklamation: r.id,
         p_fejl: `Stripe afviste udbetalingen til banken endeligt (${kode})`,
         p_frigiv: true,
@@ -591,6 +591,8 @@ export async function udbetalReklamationTilBank(id: string): Promise<BankResulta
         p_fejlkode: kode,
       });
       if (fFejl) throw new Error(`fragt_reklamation_bank_fejl: ${fFejl.message}`);
+      // Et andet forsøg har overtaget rækken - den samles op igen senere.
+      if (frigjort !== true) return "usikker";
       await alarmPrTilfaelde({
         noegle: `reklamation-bank-afvist:${r.id}:${forsoeg}`,
         hvor: "reklamation/bank",
