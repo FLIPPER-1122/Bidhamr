@@ -6,6 +6,7 @@ import { driftFejlSamler, logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
 import { koerReturfragtCron } from "@/lib/betaling/returfragt";
 import { koerBoostCron } from "@/lib/betaling/boost";
+import { koerUgensButikCron } from "@/lib/betaling/ugensButik";
 import { koerEkstraFragtCron } from "@/lib/betaling/ekstraFragt";
 import { harCronAdgang } from "@/lib/cronAdgang";
 import { koerDac7Cron } from "@/lib/dac7/server";
@@ -196,6 +197,17 @@ async function haandter(req: NextRequest) {
         logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Boost-cron", fejl: err }),
       );
     }
+    // Ugens butik (firmaets betaling til platformen): udløbne reservationer
+    // (PaymentIntenten annulleres hos Stripe, før ugen frigives), mistede
+    // webhooks og refusioner. Flytter penge (refusioner) - fejl tæller som trinfejl.
+    let ugensButik: Awaited<ReturnType<typeof koerUgensButikCron>> = null;
+    try {
+      ugensButik = await driftFejlSamler.run(trinFejl, () => koerUgensButikCron());
+    } catch (err) {
+      await driftFejlSamler.run(trinFejl, () =>
+        logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Ugens butik-cron", fejl: err }),
+      );
+    }
     // Ekstra fragt (sælgerens betaling til platformen): mistede webhooks og
     // kasserede PaymentIntents, der skal annulleres hos Stripe. Fejl tæller
     // som trinfejl (en betalt regning skal spejles, så spærringen ophører).
@@ -246,7 +258,7 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Ekstra fragt: oprydning af dokumentation", fejl: err });
     }
-    const r = { ...betaling, fragt, returfragt, boost, ekstraFragt, dac7, erhvervLuk, betaFejlOprydning, ekstraFragtOprydning };
+    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, betaFejlOprydning, ekstraFragtOprydning };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);

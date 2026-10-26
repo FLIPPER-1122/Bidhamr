@@ -195,7 +195,7 @@ function refusionHvadTekst(prismodel: string | null | undefined): string {
   if (prismodel === "ny") return "kun buddet – gebyr og fragt refunderes ikke";
   // Erhverv har ingen BidHamr Beskyttelse: køberen får alle pengene tilbage
   // (samme ord som beskeden til køberen - refusionTekster i sagerServer.ts).
-  if (prismodel === "erhverv") return "alle pengene";
+  if (prismodel === "erhverv" || prismodel === "erhverv2") return "alle pengene";
   if (prismodel === "gammel") return "alt undtagen BidHamr Beskyttelse";
   return "nye handler: kun buddet, erhverv: alle pengene, gamle handler: alt undtagen BidHamr Beskyttelse";
 }

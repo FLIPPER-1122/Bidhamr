@@ -8,7 +8,9 @@
 //     købergebyr 7 % + 5 kr., højst 300 kr.; sælgergebyr 5 % + 5 kr., højst 95 kr.
 //   Privat, salgspris over 7.500,00 kr.:
 //     købergebyr 3 % + 15 kr., højst 650 kr.; sælgergebyr 2 % + 15 kr., højst 450 kr.
-//   Erhverv (auctions.erhverv): 5 % / 5 % uden min/maks.
+//   Erhverv (auctions.erhverv): købergebyr 5 % uden min/maks og INTET
+//   sælgergebyr (Filip, 26. okt. 2026 - firmaer betaler allerede abonnement;
+//   20261101010000_erhverv_intet_saelgergebyr.sql). Udbetaling = hele buddet.
 //   Alle gebyrer er inkl. moms og rundes til hele øre (halv op).
 //   BidHamr Beskyttelse er ikke et tilkøb længere: ved forsendelse (privat) er
 //   handlen altid beskyttet, og prisen ligger i købergebyret
@@ -24,7 +26,9 @@
 //
 // Gamle betalinger (betalinger.prismodel = 'gammel', før 26. okt. 2026) har
 // 5 %/5 % og evt. et tilkøbt BidHamr Beskyttelse-beløb (beskyttelse_oere > 0)
-// - de vises og kontrolleres med de gamle formler.
+// - de vises og kontrolleres med de gamle formler. Erhvervshandler fra før
+// 20261101010000 (prismodel 'erhverv') havde 5 %/5 % og beholder det; nye
+// erhvervshandler er 'erhverv2' (5 % købergebyr, 0 kr. sælgergebyr).
 
 // Grænsen mellem de to satser: 7.500,00 kr. (til og med = lav sats).
 export const GEBYR_GRAENSE_OERE = 750_000;
@@ -34,7 +38,9 @@ export const KOEBERGEBYR_LAV = { procent: 7, fastOere: 500, maksOere: 30_000 } a
 export const KOEBERGEBYR_HOEJ = { procent: 3, fastOere: 1_500, maksOere: 65_000 } as const;
 export const SAELGERGEBYR_LAV = { procent: 5, fastOere: 500, maksOere: 9_500 } as const;
 export const SAELGERGEBYR_HOEJ = { procent: 2, fastOere: 1_500, maksOere: 45_000 } as const;
-// Erhvervsauktioner: den gamle model (uden fast beløb og loft).
+// Erhvervsauktioner: købergebyret i den gamle model (uden fast beløb og
+// loft). Sælgergebyret er 0 for nye erhvervshandler (20261101010000); gamle
+// erhvervshandler (prismodel 'erhverv') havde også 5 % sælgergebyr.
 export const ERHVERV_GEBYR_PROCENT = 5;
 
 // Beløbsloft for startpris, bud og maksimum (hele kroner) - også erhverv.
@@ -58,8 +64,13 @@ export const CHEF_BELOEBSGRAENSE_OERE = 1_000_000;
 // public.saelger_naeste_udbetaling_kl).
 export const UDBETALING_INTERVAL_DAGE = 14;
 
-// betalinger.prismodel (20261031010000).
-export type Prismodel = "gammel" | "ny" | "erhverv";
+// betalinger.prismodel (20261031010000; 'erhverv2' fra 20261101010000).
+export type Prismodel = "gammel" | "ny" | "erhverv" | "erhverv2";
+
+// Er betalingen en erhvervshandel (gammel 5 %/5 % eller ny uden sælgergebyr)?
+export function erErhvervPrismodel(m: Prismodel | string | null | undefined): boolean {
+  return m === "erhverv" || m === "erhverv2";
+}
 
 // Halv op til nærmeste øre, som Postgres' round() på positive tal.
 function procentAf(oere: number, procent: number): number {
@@ -75,8 +86,9 @@ export function koebergebyrOere(budOere: number, erhverv: boolean): number {
   return sats(budOere, budOere <= GEBYR_GRAENSE_OERE ? KOEBERGEBYR_LAV : KOEBERGEBYR_HOEJ);
 }
 
+// Firmaer betaler intet sælgergebyr (20261101010000): erhverv = 0.
 export function saelgergebyrOere(budOere: number, erhverv: boolean): number {
-  if (erhverv) return procentAf(budOere, ERHVERV_GEBYR_PROCENT);
+  if (erhverv) return 0;
   return sats(budOere, budOere <= GEBYR_GRAENSE_OERE ? SAELGERGEBYR_LAV : SAELGERGEBYR_HOEJ);
 }
 
@@ -138,14 +150,21 @@ export function forventetTotalOere(b: BetalingsBeloeb): number | null {
     if (besk !== 0 && besk !== gammelBeskyttelseOere(bud)) return null;
     return bud + koeb + fragt + besk;
   }
-  const erhverv = model === "erhverv";
+  if (model === "erhverv") {
+    // Gamle erhvervshandler (før 20261101010000): 5 %/5 %, ingen Beskyttelse.
+    const p = ERHVERV_GEBYR_PROCENT;
+    if (besk !== 0 || koeb !== procentAf(bud, p) || saelg !== procentAf(bud, p)) return null;
+    return bud + koeb + fragt;
+  }
+  if (model !== "ny" && model !== "erhverv2") return null;
+  const erhverv = model === "erhverv2";
   if (besk !== 0 || koeb !== koebergebyrOere(bud, erhverv) || saelg !== saelgergebyrOere(bud, erhverv)) return null;
   return bud + koeb + fragt;
 }
 
 // Refusion ved medhold i en sag (public.sag_refusion_oere): ny model = kun
-// buddet (Filip, 26. okt. 2026 - gebyr og fragt refunderes ikke); gammel og
-// erhverv = alt undtagen BidHamr Beskyttelse.
+// buddet (Filip, 26. okt. 2026 - gebyr og fragt refunderes ikke); gammel,
+// erhverv og erhverv2 = alt undtagen BidHamr Beskyttelse.
 export function sagRefusionOere(b: {
   prismodel?: Prismodel | null;
   bud_oere: number;

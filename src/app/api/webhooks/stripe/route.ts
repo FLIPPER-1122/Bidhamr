@@ -37,6 +37,13 @@ import {
   spejlBoostRefusionsfejl,
 } from "@/lib/betaling/boost";
 import {
+  erUgensButikMetadata,
+  spejlUgensButikChargeRefusion,
+  spejlUgensButikPi,
+  spejlUgensButikRefusionsfejl,
+  ugensButikForPi,
+} from "@/lib/betaling/ugensButik";
+import {
   ekstraFragtForPi,
   erEkstraFragtMetadata,
   spejlEkstraFragtChargeRefusion,
@@ -59,6 +66,10 @@ import {
 // Boost-point (src/lib/betaling/boost.ts): payment_intent.* med metadata
 // type 'boost' krediterer pointene; charge.refunded og refund.failed/updated
 // spejler refusioner af et køb.
+//
+// Ugens butik (src/lib/betaling/ugensButik.ts): payment_intent.* med metadata
+// type 'ugens_butik' giver firmaet ugen (eller refunderer, hvis den er
+// taget/for sent); charge.refunded og refund.failed/updated spejler refusioner.
 //
 // Ekstra fragt (src/lib/betaling/ekstraFragt.ts): payment_intent.* med
 // metadata type 'ekstra_fragt' markerer sælgerens ekstraregning betalt (og
@@ -214,6 +225,27 @@ async function haandter(event: Stripe.Event): Promise<void> {
         console.log(`Stripe ${event.type} (boost): ${pi.id} -> ${resultat}`);
         return;
       }
+      // Ugens butik (firmaets betaling til platformen, src/lib/betaling/ugensButik.ts):
+      // firmaet har først ugen, når betalingen er bekræftet her (eller af
+      // returen/cron'en).
+      if (erUgensButikMetadata(fraEvent.metadata)) {
+        const pi = await getStripe().paymentIntents.retrieve(fraEvent.id);
+        const resultat = await spejlUgensButikPi(pi);
+        if (resultat === "ukendt" && pi.status === "succeeded") {
+          if (await erFremmedTestobjekt(piHenvisning(pi))) {
+            logFremmedTestdata("PaymentIntent (Ugens butik)", pi.id);
+          } else {
+            await alarmPrTilfaelde({
+              noegle: `ukendt-pi:${pi.id}`,
+              kilde: "webhook",
+              hvor: "betaling/ukendt-betaling",
+              fejl: `PaymentIntent ${pi.id} er en gennemført betaling af Ugens butik hos Stripe, men databasen kender den ikke. Kontrollér og refundér i Stripe.`,
+            });
+          }
+        }
+        console.log(`Stripe ${event.type} (Ugens butik): ${pi.id} -> ${resultat}`);
+        return;
+      }
       // Returfragt i en sag (betaling til platformen, src/lib/betaling/returfragt.ts):
       // returkoden laves først, når betalingen er bekræftet her.
       if (erReturfragtMetadata(fraEvent.metadata)) {
@@ -320,6 +352,13 @@ async function haandter(event: Stripe.Event): Promise<void> {
           console.log(`Stripe ${event.type} (boost): ${fraEvent.id} -> ${r ?? "kasseret/ukendt"}`);
           return;
         }
+        // Ugens butik: bookingen markeres refunderet (ugen frigives).
+        if (await ugensButikForPi(piRef)) {
+          const frisk = await getStripe().charges.retrieve(fraEvent.id, { expand: ["refunds"] });
+          const r = await spejlUgensButikChargeRefusion(frisk);
+          console.log(`Stripe ${event.type} (Ugens butik): ${fraEvent.id} -> ${r ?? "kasseret/ukendt"}`);
+          return;
+        }
         if (await returfragtForPi(piRef)) {
           const frisk = await getStripe().charges.retrieve(fraEvent.id, { expand: ["refunds"] });
           const r = await spejlReturfragtChargeRefusion(frisk);
@@ -349,6 +388,12 @@ async function haandter(event: Stripe.Event): Promise<void> {
         const frisk = await getStripe().refunds.retrieve(refund.id);
         const r = await spejlBoostRefusionsfejl(frisk);
         console.log(`Stripe ${event.type} (boost): ${refund.id} -> ${r}`);
+        return;
+      }
+      if (refund.metadata?.type === "ugens_butik") {
+        const frisk = await getStripe().refunds.retrieve(refund.id);
+        const r = await spejlUgensButikRefusionsfejl(frisk);
+        console.log(`Stripe ${event.type} (Ugens butik): ${refund.id} -> ${r}`);
         return;
       }
       if (refund.metadata?.type === "returfragt") {

@@ -3,6 +3,7 @@ import { gemNyAdgangskode } from "@/app/actions/auth";
 import { anmeldIndhold, klagOverAfgoerelse, klagSomAnmelder } from "@/app/actions/dsa";
 import { saetFirmaBrugtmoms, sendErhvervHenvendelse, skiftFirmaPakke } from "@/app/actions/erhverv";
 import { betalForPakke, skiftBetalingskort } from "@/lib/erhverv/betalingHandlinger";
+import { annullerUgensButik, koebUgensButik } from "@/lib/erhverv/ugensButikHandlinger";
 
 // De få handlinger, som en indlogget ALMINDELIG bruger skal kunne udføre på
 // en offentlig side, mens siden er lukket for alle andre end staff:
@@ -18,6 +19,12 @@ import { betalForPakke, skiftBetalingskort } from "@/lib/erhverv/betalingHandlin
 //   firma-betalingskort   /firma/abonnement "Skift betalingskort" -> Stripes
 //                         kundeportal (kun kort og fakturaer)
 //   firma-brugtmoms       /firma/oplysninger "Vi bruger brugtmomsordningen"
+//   firma-ugens-butik-koeb     Ugens butik: reservér ugen (felt "uge" =
+//                         mandag ÅÅÅÅ-MM-DD) -> { ok, bookingId, uge,
+//                         clientSecret, beloebOere, reserveretTil } til
+//                         Stripes Payment Element, eller { fejl, kode }
+//   firma-ugens-butik-annuller Ugens butik: annullér firmaets åbne betaling
+//                         (felt "bookingId") -> { ok } eller { fejl, kode }
 //
 // Hvorfor ikke bare server actions: gaten i src/lib/supabase/middleware.ts
 // afviser alle POST'er fra indloggede almindelige brugere på offentlige
@@ -64,6 +71,10 @@ const HANDLINGER: Record<string, Handling> = {
   "firma-betalingskort": (_fd, origin) => skiftBetalingskort(origin),
   // firma_saet_brugtmoms afviser alle andre end firmakontoen selv.
   // Kræver et eksplicit "ja" eller "nej" - alt andet afvises.
+  // Kræver login som aktiv firmakonto (src/lib/erhverv/ugensButikHandlinger.ts
+  // og ugens_butik_koeb_start i databasen).
+  "firma-ugens-butik-koeb": (fd) => koebUgensButik(tekst(fd, "uge")),
+  "firma-ugens-butik-annuller": (fd) => annullerUgensButik(tekst(fd, "bookingId")),
   "firma-brugtmoms": async (fd) => {
     const v = tekst(fd, "brugtmoms");
     if (v !== "ja" && v !== "nej") return { fejl: GENERISK, kode: "ugyldig" };

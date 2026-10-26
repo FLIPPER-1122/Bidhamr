@@ -1946,6 +1946,19 @@ async function alarmIndsigelse(d: Stripe.Dispute, piId: string | null, chId: str
         });
         return;
       }
+      // Ugens butik (firmaets betaling til platformen): staff svarer banken i
+      // Stripe med bookingen og fakturaen som bevis. Intet flyttes automatisk.
+      const { ugensButikForCharge } = await import("@/lib/betaling/ugensButik");
+      const ub = await ugensButikForCharge(chId);
+      if (ub) {
+        await alarmPrTilfaelde({
+          noegle: `indsigelse-ugens-butik:${d.id}`,
+          hvor: "betaling/indsigelse-ugens-butik",
+          fejl: `Indsigelse ${d.id} (status '${d.status}') på et firmas betaling af Ugens butik (booking ${ub.id}, charge ${chId}). Svar banken i Stripe-dashboardet inden fristen med bookingen og fakturaen som bevis.`,
+          brugerId: ub.bruger_id,
+        });
+        return;
+      }
       const charge = await getStripe().charges.retrieve(chId);
       const kunde = typeof charge.customer === "string" ? charge.customer : (charge.customer?.id ?? null);
       const { data: firma } = kunde
@@ -2025,8 +2038,12 @@ export async function spejlIndsigelse(disputeId: string): Promise<string> {
     // markerer regningen til staff - den genåbnes aldrig automatisk.
     const { spejlEkstraFragtBankindsigelse } = await import("@/lib/betaling/ekstraFragt");
     const ef = bk && bk !== "ukendt" ? null : await spejlEkstraFragtBankindsigelse(d, chId);
+    // Ugens butik: bookingen markeres til staff (intet flyttes automatisk).
+    const { spejlUgensButikIndsigelse } = await import("@/lib/betaling/ugensButik");
+    const ub = (bk && bk !== "ukendt") || ef ? null : await spejlUgensButikIndsigelse(d, chId);
     if (bk && bk !== "ukendt") console.log(`Indsigelse ${d.id} på boost-køb (charge ${chId}): ${bk}`);
     else if (ef) console.log(`Indsigelse ${d.id} på ekstra fragt (charge ${chId}): ${ef}`);
+    else if (ub && ub !== "ukendt") console.log(`Indsigelse ${d.id} på Ugens butik (charge ${chId}): ${ub}`);
     else console.error("Indsigelse på ukendt betaling:", d.id, piId, chId);
   }
   await alarmIndsigelse(d, piId, chId, resultat);
