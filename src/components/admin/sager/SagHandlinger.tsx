@@ -193,8 +193,11 @@ type Udfald = "koeber" | "saelger" | "lukket";
 // Beskyttelse. Ukendt model (fx før migrationen) = begge regler nævnes.
 function refusionHvadTekst(prismodel: string | null | undefined): string {
   if (prismodel === "ny") return "kun buddet – gebyr og fragt refunderes ikke";
-  if (prismodel === "gammel" || prismodel === "erhverv") return "alt undtagen BidHamr Beskyttelse";
-  return "nye handler: kun buddet, gamle handler: alt undtagen BidHamr Beskyttelse";
+  // Erhverv har ingen BidHamr Beskyttelse: køberen får alle pengene tilbage
+  // (samme ord som beskeden til køberen - refusionTekster i sagerServer.ts).
+  if (prismodel === "erhverv") return "alle pengene";
+  if (prismodel === "gammel") return "alt undtagen BidHamr Beskyttelse";
+  return "nye handler: kun buddet, erhverv: alle pengene, gamle handler: alt undtagen BidHamr Beskyttelse";
 }
 
 function konsekvens(udfald: Udfald, type: SagType, refusionHvad: string): string {

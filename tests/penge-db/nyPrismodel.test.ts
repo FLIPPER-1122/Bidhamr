@@ -12,6 +12,9 @@
 // Rettelserne (20261031020000_prismodel_rettelser.sql, også kørt to gange):
 // samme kørsel må lave flere payouts, til køen er tom (B1), og cron'ens liste
 // over sælgere, der er klar (B2).
+// 20261031030000_udbetaling_fortsaet.sql: en afbrudt kørsel fortsættes af
+// næste kald (kørsels-id'et slås op i databasen). Alle tre filer køres også
+// igen i rækkefølge bagefter (en genkørsel overskriver ikke nyere versioner).
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
@@ -28,6 +31,7 @@ import {
 const MIG = path.resolve(import.meta.dirname, "../../supabase/migrations");
 const MIGRATION = readFileSync(path.join(MIG, "20261031010000_ny_prismodel.sql"), "utf8");
 const RETTELSER = readFileSync(path.join(MIG, "20261031020000_prismodel_rettelser.sql"), "utf8");
+const FORTSAET = readFileSync(path.join(MIG, "20261031030000_udbetaling_fortsaet.sql"), "utf8");
 const FIX = path.resolve(import.meta.dirname, "fixtures");
 
 // "create or replace function <start>..." til og med det afsluttende dollar-tag.
@@ -231,6 +235,14 @@ beforeAll(async () => {
   await db.exec(MIGRATION);
   await db.exec(RETTELSER);
   await db.exec(RETTELSER);
+  await db.exec(FORTSAET);
+  await db.exec(FORTSAET);
+  // Genkørsel af alle tre efter hinanden (B2): 20261031010000 må ikke fejle
+  // på det droppede 3-parameter-claim eller overskrive den nyere
+  // saelger_naeste_udbetaling_kl (20261031030000 tjekker md5'erne).
+  await db.exec(MIGRATION);
+  await db.exec(RETTELSER);
+  await db.exec(FORTSAET);
 }, 60_000);
 
 describe("gebyrfunktionerne", () => {
@@ -633,6 +645,194 @@ describe("udbetaling hver 14. dag", () => {
     expect(liste.indexOf(aeldreS)).toBeLessThan(liste.indexOf(nyS));
     const en1 = await db.query<{ seller_id: string }>(`select seller_id from public.saelgere_klar_til_udbetaling(1)`);
     expect(en1.rows.length).toBe(1);
+  });
+
+  // 20261031030000: en kørsel, der blev afbrudt efter første payout
+  // (Stripe-fejl, saldo, konto, tidsgrænse), fortsættes af næste kald.
+  async function fortsaettelig(saelger: string): Promise<string | null> {
+    return (await en<{ k: string | null }>(`select public.saelger_fortsaettelig_koersel($1) as k`, [saelger])).k;
+  }
+  async function fortsatListe(): Promise<string[]> {
+    const r = await db.query<{ seller_id: string }>(`select seller_id from public.saelgere_klar_til_udbetaling_fortsat(500)`);
+    return r.rows.map((x) => x.seller_id);
+  }
+  async function klarListe(): Promise<string[]> {
+    const r = await db.query<{ seller_id: string }>(`select seller_id from public.saelgere_klar_til_udbetaling(500)`);
+    return r.rows.map((x) => x.seller_id);
+  }
+
+  it("afbrudt kørsel: næste kald finder kørslen i databasen og fortsætter, til køen er tom", async () => {
+    const S = "00000000-0000-4000-8000-0000000000b7";
+    const k1 = "00000000-0000-4000-8000-00000000c007";
+    const [b1, b2, b3] = [await frigivet(S), await frigivet(S), await frigivet(S)];
+    // Ingen payout endnu: intet at fortsætte - første kørsel er en ny.
+    expect(await fortsaettelig(S)).toBeNull();
+    expect(await klarListe()).toContain(S);
+    const c1 = await claim(S, b1, k1);
+    expect(c1.kode).toBe("ok");
+    // Uafklaret claim: endnu intet at fortsætte.
+    expect(await fortsaettelig(S)).toBeNull();
+    await oprettet(c1.udbetaling_id!, "now() - interval '10 minutes'");
+    // Kørslen blev afbrudt her. Sælgeren har nu ventetid - han er ikke på
+    // den almindelige liste, men på listen over fortsættelige kørsler.
+    expect(await klarListe()).not.toContain(S);
+    expect(await fortsatListe()).toContain(S);
+    // Næste kald (cron) slår kørslen op og fortsætter den.
+    const k = await fortsaettelig(S);
+    expect(k).toBe(k1);
+    // En ny kørsel (et andet id) får stadig 'interval'.
+    expect((await claim(S, b2, "00000000-0000-4000-8000-00000000c0ff")).kode).toBe("interval");
+    const c2 = await claim(S, b2, k);
+    expect(c2.kode).toBe("ok");
+    expect((await en<{ k: string }>(`select koersel k from public.saelger_udbetalinger where id = $1`, [c2.udbetaling_id])).k).toBe(k1);
+    await oprettet(c2.udbetaling_id!);
+    // Intervallet regnes stadig fra kørslens første payout.
+    const n = await en<{ min: string }>(
+      `select round(extract(epoch from public.saelger_naeste_udbetaling_kl($1) - now()) / 60) as min`,
+      [S],
+    );
+    expect(Number(n.min)).toBe(14 * 24 * 60 - 10);
+    // En handel, der kræver opmærksomhed, tæller ikke: køen er tom.
+    await db.query(`update public.betalinger set kraever_opmaerksomhed = true where id = $1`, [b3]);
+    expect(await fortsatListe()).not.toContain(S);
+    await db.query(`update public.betalinger set kraever_opmaerksomhed = false where id = $1`, [b3]);
+    expect(await fortsatListe()).toContain(S);
+    const c3 = await claim(S, b3, await fortsaettelig(S));
+    expect(c3.kode).toBe("ok");
+    await oprettet(c3.udbetaling_id!);
+    // Køen er tom: ikke på nogen liste.
+    expect(await fortsatListe()).not.toContain(S);
+    expect(await klarListe()).not.toContain(S);
+  });
+
+  it("afbrudt kørsel: claimets værn er uændrede (nødstop, frysning, i_gang, blokering under lås)", async () => {
+    const S = "00000000-0000-4000-8000-0000000000b8";
+    const k1 = "00000000-0000-4000-8000-00000000c008";
+    const [b1, b2, b3] = [await frigivet(S), await frigivet(S), await frigivet(S)];
+    const c1 = await claim(S, b1, k1);
+    await oprettet(c1.udbetaling_id!, "now() - interval '5 minutes'");
+    expect(await fortsaettelig(S)).toBe(k1);
+    // Nødstop.
+    await db.exec(`create or replace function public.udbetalinger_stoppet() returns boolean language sql as $$ select true $$`);
+    expect((await claim(S, b2, k1)).kode).toBe("stoppet");
+    await db.exec(`create or replace function public.udbetalinger_stoppet() returns boolean language sql as $$ select false $$`);
+    // Frosset sælger.
+    await db.query(`insert into public.betalingsprofiler (user_id, udbetaling_frosset_kl) values ($1, now())`, [S]);
+    expect((await claim(S, b2, k1)).kode).toBe("frosset");
+    await db.query(`delete from public.betalingsprofiler where user_id = $1`, [S]);
+    // Blokering pr. betaling under rækkelås (sag, indsigelse, chefens
+    // godkendelse fra 10.000 kr., fortrydelsesfrist m.m.): intet claimes.
+    await db.exec(`create or replace function public.betaling_udbetaling_blokeret(p_betaling uuid) returns text language sql as
+      $$ select case when exists (select 1 from public.betalinger where id = p_betaling and indsigelse_kl is not null)
+                     then 'indsigelse' end $$`);
+    await db.query(`update public.betalinger set indsigelse_kl = now() where id = $1`, [b2]);
+    expect(await fortsatListe()).toContain(S); // b3 er stadig klar
+    const blok = await en<{ r: { kode: string; afvist: { grund: string }[] } }>(
+      `select public.saelger_udbetaling_claim($1, 'acct_test', array[$2]::uuid[], $3::uuid) as r`,
+      [S, b2, k1],
+    );
+    expect(blok.r.kode).toBe("intet");
+    expect(blok.r.afvist[0].grund).toBe("indsigelse");
+    await db.query(`update public.betalinger set indsigelse_kl = null where id = $1`, [b2]);
+    await db.exec(
+      `create or replace function public.betaling_udbetaling_blokeret(p_betaling uuid) returns text language sql as $$ select null::text $$`,
+    );
+    // En uafklaret claim i den fortsatte kørsel: næste giver 'i_gang'.
+    const c2 = await claim(S, b2, k1);
+    expect(c2.kode).toBe("ok");
+    expect((await claim(S, b3, k1)).kode).toBe("i_gang");
+    await oprettet(c2.udbetaling_id!);
+    expect((await claim(S, b3, await fortsaettelig(S))).kode).toBe("ok");
+  });
+
+  it("afbrudt kørsel fortsættes ikke efter 1 time, ved 20 payouts eller med en anden payout inden for 14 dage", async () => {
+    // Over 1 time siden kørslens første payout.
+    const S1 = "00000000-0000-4000-8000-0000000000b9";
+    const k1 = "00000000-0000-4000-8000-00000000c009";
+    const [a1, a2] = [await frigivet(S1), await frigivet(S1)];
+    const c1 = await claim(S1, a1, k1);
+    await oprettet(c1.udbetaling_id!, "now() - interval '61 minutes'");
+    expect(await fortsaettelig(S1)).toBeNull();
+    expect(await fortsatListe()).not.toContain(S1);
+    expect(await klarListe()).not.toContain(S1);
+    expect((await claim(S1, a2, k1)).kode).toBe("interval");
+    // Lige under 1 time: må fortsætte.
+    await db.query(`update public.saelger_udbetalinger set oprettet = now() - interval '59 minutes' where id = $1`, [
+      c1.udbetaling_id,
+    ]);
+    expect(await fortsaettelig(S1)).toBe(k1);
+
+    // 20 payouts i kørslen.
+    const S2 = "00000000-0000-4000-8000-0000000000ba";
+    const k2 = "00000000-0000-4000-8000-00000000c00a";
+    await db.query(
+      `insert into public.saelger_udbetalinger (seller_id, stripe_konto, beloeb_oere, valuta, status, betaling_ids, koersel)
+       select $1, 'acct_test', 1, 'dkk', 'oprettet', '{}', $2::uuid from generate_series(1, 20)`,
+      [S2, k2],
+    );
+    await frigivet(S2);
+    expect(await fortsaettelig(S2)).toBeNull();
+    expect(await fortsatListe()).not.toContain(S2);
+    await db.query(
+      `update public.saelger_udbetalinger set status = 'failed' where id = (select id from public.saelger_udbetalinger where koersel = $1 limit 1)`,
+      [k2],
+    );
+    expect(await fortsaettelig(S2)).toBe(k2);
+
+    // En payout fra en anden kørsel (eller uden kørsel) inden for 14 dage.
+    const S3 = "00000000-0000-4000-8000-0000000000bb";
+    const k3 = "00000000-0000-4000-8000-00000000c00b";
+    const d1 = await frigivet(S3);
+    await db.query(
+      `insert into public.saelger_udbetalinger (seller_id, stripe_konto, beloeb_oere, valuta, status, betaling_ids, oprettet)
+       values ($1, 'acct_test', 1, 'dkk', 'paid', '{}', now() - interval '13 days')`,
+      [S3],
+    );
+    await db.query(
+      `insert into public.saelger_udbetalinger (seller_id, stripe_konto, beloeb_oere, valuta, status, betaling_ids, koersel, oprettet)
+       values ($1, 'acct_test', 1, 'dkk', 'oprettet', '{}', $2::uuid, now() - interval '5 minutes')`,
+      [S3, k3],
+    );
+    expect(await fortsaettelig(S3)).toBeNull();
+    expect(await fortsatListe()).not.toContain(S3);
+    expect((await claim(S3, d1, k3)).kode).toBe("interval");
+    // Over 14 dage gammel: tæller ikke - kørslen må fortsætte.
+    await db.query(
+      `update public.saelger_udbetalinger set oprettet = now() - interval '14 days 1 minute' where seller_id = $1 and koersel is null`,
+      [S3],
+    );
+    expect(await fortsaettelig(S3)).toBe(k3);
+
+    // Kun den SENESTE kørsel - en ældre kørsel kan aldrig fortsættes.
+    const S4 = "00000000-0000-4000-8000-0000000000bc";
+    const kGl = "00000000-0000-4000-8000-00000000c00c";
+    const kNy = "00000000-0000-4000-8000-00000000c00d";
+    await frigivet(S4);
+    await db.query(
+      `insert into public.saelger_udbetalinger (seller_id, stripe_konto, beloeb_oere, valuta, status, betaling_ids, koersel, oprettet)
+       values ($1, 'acct_test', 1, 'dkk', 'paid', '{}', $2::uuid, now() - interval '20 days'),
+              ($1, 'acct_test', 1, 'dkk', 'oprettet', '{}', $3::uuid, now() - interval '2 minutes')`,
+      [S4, kGl, kNy],
+    );
+    expect(await fortsaettelig(S4)).toBe(kNy);
+    // Fejlede/annullerede payouts tæller ikke som kørslens payouts.
+    await db.query(`update public.saelger_udbetalinger set status = 'failed' where seller_id = $1 and koersel = $2`, [S4, kNy]);
+    expect(await fortsaettelig(S4)).toBeNull();
+    expect(await fortsaettelig("00000000-0000-4000-8000-0000000000ff")).toBeNull();
+  });
+
+  it("genkørsel: 3-parameter-claimet er væk, og funktionerne er de nyeste versioner", async () => {
+    expect((await en<{ f: string | null }>(`select to_regprocedure('public.saelger_udbetaling_claim(uuid,text,uuid[])')::text as f`)).f).toBeNull();
+    const md5 = async (fn: string) =>
+      (
+        await en<{ h: string }>(
+          `select md5(lower(regexp_replace(regexp_replace(replace(p.prosrc, chr(13), ''), '--[^\\n]*', '', 'g'), '\\s', '', 'g'))) as h
+             from pg_proc p where p.oid = to_regprocedure($1)`,
+          [fn],
+        )
+      ).h;
+    expect(await md5("public.saelger_naeste_udbetaling_kl(uuid)")).toBe("64b69eb837c12279e8e2c60d3423bd58");
+    expect(await md5("public.saelger_udbetaling_claim(uuid,text,uuid[],uuid)")).toBe("3ab66db65625a200d0cdd97b7d8d3544");
   });
 });
 

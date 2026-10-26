@@ -42,8 +42,11 @@ import "server-only";
 // 'interval'); tjekket her (trin 1b) sparer kun Stripe-kaldene. Er der over
 // 50 handler klar, må den SAMME kørsel (p_koersel) lave flere payouts efter
 // hinanden, så der aldrig opstår et efterslæb; intervallet regnes fra
-// kørslens første payout. Alle andre værn er uændrede og tjekkes før hver
-// payout. Se docs/BETALINGSMODEL-PLAN.md 1.4a.
+// kørslens første payout. Afbrydes kørslen (fejl, saldo, konto, tidsgrænse),
+// fortsætter næste kald (cron) den samme kørsel, så længe dens første payout
+// er under 1 time gammel og den har under 20 payouts (20261031030000).
+// Alle andre værn er uændrede og tjekkes før hver payout. Se
+// docs/BETALINGSMODEL-PLAN.md 1.4a.
 //
 // Destination er den eneste model (trin 5): alt her virker kun på betalinger
 // med pengemodel 'destination'. Historiske rækker fra den gamle model
@@ -70,7 +73,9 @@ import {
 
 const MAKS_PR_UDBETALING = 50;
 // Højst så mange payouts i én kørsel (samme grænse i saelger_udbetaling_claim,
-// 20261031020000) og højst så mange kandidater set pr. kørsel (Stripe-kald).
+// 20261031020000) og højst så mange kandidater set pr. kald af udbetalSaelger
+// (Stripe-kald). Dvs. højst 20 x 50 = 1.000 handler pr. kørsel
+// (docs/BETALINGSMODEL-PLAN.md 1.4a, "Grænser").
 const MAKS_PAYOUTS_PR_KOERSEL = 20;
 const MAKS_GENNEMSET_PR_KOERSEL = 1000;
 // Højst så mange sælgere pr. cron-kørsel (saelgere_klar_til_udbetaling -
@@ -487,16 +492,27 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
   }
 
   // 1b. Udbetaling hver 14. dag: venter, til der er gået 14 dage siden
-  // sælgerens seneste payout (databasen tjekker igen ved claim).
+  // sælgerens seneste payout (databasen tjekker igen ved claim) - medmindre
+  // sælgerens seneste kørsel blev afbrudt og stadig må fortsætte
+  // (20261031030000): første payout under 1 time gammel, under 20 payouts,
+  // ingen anden payout inden for 14 dage. Kørsels-id'et slås op i databasen;
+  // claimet tjekker betingelserne igen under sælgerlåsen.
   const { data: naeste, error: nFejl } = await admin.rpc("saelger_naeste_udbetaling_kl", { p_saelger: saelgerId });
   if (nFejl && !manglerIDatabasen(nFejl)) throw new Error(`saelger_naeste_udbetaling_kl: ${nFejl.message}`);
-  if (typeof naeste === "string" && new Date(naeste).getTime() > Date.now()) return "interval";
+  let fortsat: string | null = null;
+  if (typeof naeste === "string" && new Date(naeste).getTime() > Date.now()) {
+    const { data: k, error: kFejl } = await admin.rpc("saelger_fortsaettelig_koersel", { p_saelger: saelgerId });
+    if (kFejl && !manglerIDatabasen(kFejl)) throw new Error(`saelger_fortsaettelig_koersel: ${kFejl.message}`);
+    if (typeof k !== "string" || !k) return "interval";
+    fortsat = k;
+  }
 
   // 2-6. Én kørsel: payouts med højst MAKS_PR_UDBETALING handler hver, efter
   // hinanden, til sælgerens kø er tom (20261031020000, B1). Databasen lader
   // kun SAMME kørsel fortsætte inden for 14-dages-intervallet (claim med
-  // p_koersel); alle værn tjekkes igen før hver payout.
-  const koersel = crypto.randomUUID();
+  // p_koersel); alle værn tjekkes igen før hver payout. En afbrudt kørsel
+  // fortsættes her med sit eget id (fortsat), ellers er det en ny kørsel.
+  const koersel = fortsat ?? crypto.randomUUID();
   const sted: Kandidatsted = { efter: null, gennemset: 0 };
   for (let runde = 0; runde < MAKS_PAYOUTS_PR_KOERSEL; runde++) {
     let r: { resultat: string; flere: boolean };
@@ -505,7 +521,10 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
     } catch (err) {
       if (runde === 0) throw err;
       // En tidligere portion er sendt: den skal ikke skjules af en fejl i den
-      // næste (som prøves igen af cron'en).
+      // næste. Resten af køen tages af næste kald (cron hvert 5. minut), der
+      // fortsætter denne kørsel (saelger_fortsaettelig_koersel) - så længe
+      // kørslens første payout er under 1 time gammel og kørslen har under 20
+      // payouts. Ellers venter resten til næste 14-dages-interval.
       await logDriftFejl({ kilde: "server", hvor: "betaling/udbetaling", fejl: err, brugerId: saelgerId });
       return "udbetalt";
     }
@@ -1025,6 +1044,15 @@ export async function udbetalVentende(saelgerId?: string): Promise<number> {
       return 0;
     }
     for (const r of (data ?? []) as { seller_id: string }[]) saelgere.add(r.seller_id);
+    // Sælgere, hvis seneste kørsel blev afbrudt og stadig må fortsætte
+    // (20261031030000) - de har ventetid og er derfor ikke med ovenfor.
+    const { data: fortsat, error: fFejl } = await admin.rpc("saelgere_klar_til_udbetaling_fortsat", {
+      p_graense: MAKS_SAELGERE_PR_CRON,
+    });
+    if (fFejl && !manglerIDatabasen(fFejl)) {
+      await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Udbetaling til sælger", fejl: fFejl });
+    }
+    for (const r of (fortsat ?? []) as { seller_id: string }[]) saelgere.add(r.seller_id);
     const { data: uaf, error: uafFejl } = await admin
       .from("saelger_udbetalinger")
       .select("seller_id")

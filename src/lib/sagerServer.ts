@@ -60,6 +60,8 @@ function refusionTekster(h: { beskyttelse: boolean; prismodel: Prismodel }): { h
   if (h.prismodel === "gammel" && h.beskyttelse) {
     return { hvad: "pengene for varen, gebyret og fragten", note: " Prisen for BidHamr Beskyttelse får du ikke tilbage." };
   }
+  // Erhverv (ingen BidHamr Beskyttelse) og gamle handler uden Beskyttelse.
+  // Samme ord i admin (refusionHvadTekst i SagHandlinger.tsx).
   return { hvad: "alle pengene", note: "" };
 }
 

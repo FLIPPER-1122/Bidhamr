@@ -63,7 +63,9 @@
 -- "ny" = efter rettelsen. Afviger kroppen, afbrydes migrationen (intet
 -- ændres).
 --
--- Idempotent (kan køres igen). Én transaktion: filen har bevidst ingen egen
+-- Idempotent (kan køres igen - også efter 20261031020000 og 20261031030000:
+-- claimet og saelger_naeste_udbetaling_kl springes så over, så de nyere
+-- versioner bevares; de andre funktioner giver 'allerede'). Én transaktion: filen har bevidst ingen egen
 -- begin;/commit; (repoets mønster) - `npx supabase db query -f` kører den som
 -- én implicit transaktion, og prod-koersel/-filen har begin;/commit; omkring
 -- (se 20261031020000, S5). KØRES IKKE i produktion uden Filips "ja".
@@ -339,6 +341,16 @@ end $do$;
 -- er oprettet hos Stripe eller gennemført. Fejlede, annullerede og afviste
 -- tæller ikke (pengene er tilbage på kontoen og skal kunne sendes igen).
 -- null = ingen begrænsning.
+-- Genkørsel efter 20261031020000 (der har erstattet funktionen med en, der
+-- regner fra kørslens første payout, og claimet med en 4-parameter-version):
+-- den nyere version overskrives IKKE.
+do $do$
+begin
+  if to_regprocedure('public.saelger_udbetaling_claim(uuid,text,uuid[],uuid)') is not null then
+    raise notice 'saelger_naeste_udbetaling_kl: springes over (20261031020000 er kørt - den nyere version bevares)';
+    return;
+  end if;
+  execute $sql$
 create or replace function public.saelger_naeste_udbetaling_kl(p_saelger uuid)
 returns timestamptz
 language sql
@@ -350,7 +362,9 @@ as $fn$
     from public.saelger_udbetalinger u
    where u.seller_id = p_saelger
      and u.status in ('oprettet', 'paid');
-$fn$;
+$fn$
+$sql$;
+end $do$;
 revoke all on function public.saelger_naeste_udbetaling_kl(uuid) from public, anon, authenticated;
 grant execute on function public.saelger_naeste_udbetaling_kl(uuid) to service_role;
 
@@ -474,6 +488,11 @@ $g$        then b.total_oere - coalesce(b.beskyttelse_oere, 0)$g$,
 $n$        -- 20261031010000: ny prismodel = kun buddet (public.sag_refusion_oere).
         then public.sag_refusion_oere(b.prismodel, b.bud_oere, b.total_oere, b.beskyttelse_oere)$n$, 1)));
 
+  -- Genkørsel efter 20261031020000: den har droppet 3-parameter-claimet og
+  -- lavet én med p_koersel (som allerede har intervallet) - springes over.
+  if to_regprocedure('public.saelger_udbetaling_claim(uuid,text,uuid[],uuid)') is not null then
+    raise notice 'saelger_udbetaling_claim: springes over (20261031020000 er kørt - 4-parameter-versionen bevares)';
+  else
   raise notice 'saelger_udbetaling_claim: %', pg_temp.ps_ret(
     'public.saelger_udbetaling_claim(uuid,text,uuid[])',
     '788c61fb8c93db6f68d69902555763c7',
@@ -493,6 +512,7 @@ $n$              where u.seller_id = p_saelger and u.status in ('claimet', 'usik
     return jsonb_build_object('kode', 'interval', 'afvist', v_afvist,
                               'naeste_kl', public.saelger_naeste_udbetaling_kl(p_saelger));
   end if;$n$, 1)));
+  end if;
 
   raise notice 'handel_udbetalingsstatus: %', pg_temp.ps_ret(
     'public.handel_udbetalingsstatus(uuid)',
