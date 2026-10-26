@@ -77,8 +77,10 @@ export async function sendErhvervHenvendelse(
     if (!EMAIL.test(email) || email.length > G.email) {
       return { fejl: "Skriv en gyldig e-mailadresse.", felt: "email" };
     }
+    if (!adresse) return { fejl: "Skriv firmaets adresse.", felt: "adresse" };
     if (adresse.length > G.adresse) return { fejl: "Adressen er for lang.", felt: "adresse" };
-    if (postnummer && !POSTNUMMER.test(postnummer)) return { fejl: "Postnummeret skal have 4 cifre.", felt: "postnummer" };
+    if (!POSTNUMMER.test(postnummer)) return { fejl: "Postnummeret skal have 4 cifre.", felt: "postnummer" };
+    if (!by) return { fejl: "Skriv byen.", felt: "by" };
     if (by.length > G.by) return { fejl: "Bynavnet er for langt.", felt: "by" };
     if (hvad.length < 3) return { fejl: "Skriv kort, hvad du sælger.", felt: "hvad_saelger_i" };
     if (hvad.length > G.hvadSaelgerI) {

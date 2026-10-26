@@ -43,9 +43,9 @@ const FELTER: Felt[] = [
   { navn: "kontaktperson", tekst: F.felter.kontaktperson, autoComplete: "name", maks: G.kontaktperson },
   { navn: "telefon", tekst: F.felter.telefon, type: "tel", inputMode: "tel", autoComplete: "tel", maks: G.telefonMaks },
   { navn: "email", tekst: F.felter.email, type: "email", inputMode: "email", autoComplete: "email", maks: G.email },
-  { navn: "adresse", tekst: F.felter.adresse, valgfri: true, autoComplete: "street-address", maks: G.adresse },
-  { navn: "postnummer", tekst: F.felter.postnummer, valgfri: true, inputMode: "numeric", autoComplete: "postal-code", maks: 4 },
-  { navn: "by", tekst: F.felter.by, valgfri: true, autoComplete: "address-level2", maks: G.by },
+  { navn: "adresse", tekst: F.felter.adresse, autoComplete: "street-address", maks: G.adresse },
+  { navn: "postnummer", tekst: F.felter.postnummer, inputMode: "numeric", autoComplete: "postal-code", maks: 4 },
+  { navn: "by", tekst: F.felter.by, autoComplete: "address-level2", maks: G.by },
   { navn: "hvad_saelger_i", tekst: F.felter.hvadSaelger, lang: true, maks: G.hvadSaelgerI },
   { navn: "besked", tekst: F.felter.besked, valgfri: true, lang: true, maks: G.besked },
 ];
@@ -146,9 +146,9 @@ export default function ErhvervFormular() {
   if (sendt) {
     return (
       <div role="status" className="rounded-none border border-succes-kant bg-succes-bg p-6 sm:p-8">
-        <h2 ref={kvitteringRef} tabIndex={-1} className="text-[26px] leading-tight text-succes-tekst outline-none">
+        <h1 ref={kvitteringRef} tabIndex={-1} className="text-[26px] leading-tight text-succes-tekst outline-none">
           {F.kvittering.titel}
-        </h2>
+        </h1>
         <p className="mt-3 text-[18px] leading-relaxed text-tekst">{F.kvittering.tekst}</p>
         <p className="mt-2 text-[18px] leading-relaxed text-tekst">{F.kvittering.tekst2}</p>
         <Link href="/" className={`${E_KNAP_PRIMAER} mt-6 w-full sm:w-auto`}>
@@ -159,6 +159,9 @@ export default function ErhvervFormular() {
   }
 
   return (
+    <>
+    <h1 className="text-[30px] leading-tight sm:text-[36px]">{F.titel}</h1>
+    <p className="mt-3 mb-8 text-[18px] leading-relaxed text-tekst-daempet">{F.intro}</p>
     <form onSubmit={send} method="post" noValidate className="space-y-7">
       {forsoegt && antalFejl > 0 && !serverFejl && (
         <div role="alert" className="rounded-xl border-2 border-fejl-kant bg-fejl-bg p-4 text-[18px] font-semibold text-fejl-tekst">
@@ -247,5 +250,6 @@ export default function ErhvervFormular() {
         {sender ? F.knapSender : F.knapSend}
       </button>
     </form>
+    </>
   );
 }

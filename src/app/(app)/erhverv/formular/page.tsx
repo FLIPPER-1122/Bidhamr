@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import ErhvervFormular from "@/components/erhverv/ErhvervFormular";
-import { ERHVERV_FORMULAR, ERHVERV_SIDE_EKSTRA } from "@/lib/tekster/erhverv";
+import { ERHVERV_SIDE_EKSTRA } from "@/lib/tekster/erhverv";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
 import { robotsFoerLancering } from "@/lib/seo";
 
@@ -24,10 +24,8 @@ export default function ErhvervFormularSide() {
         >
           ← {ERHVERV_SIDE_EKSTRA.formularTilbage}
         </Link>
-        <h1 className="mt-2 text-[30px] leading-tight sm:text-[36px]">{ERHVERV_FORMULAR.titel}</h1>
-        <p className="mt-3 text-[18px] leading-relaxed text-tekst-daempet">{ERHVERV_FORMULAR.intro}</p>
-
-        <div className="mt-8">
+        {/* Overskrift og intro ligger i ErhvervFormular, så de forsvinder, når formularen er sendt. */}
+        <div className="mt-2">
           <ErhvervFormular />
         </div>
 
