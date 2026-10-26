@@ -299,8 +299,14 @@ export default function UgensButikKoeb({ data }: { data: FirmaUgensButikData }) 
                 {T.valgtUge(valgtUge.uge_nr, kortDato(valgtUge.uge_start), kortDato(soendag(valgtUge.uge_start)))}
               </p>
               <p className={E_TEKST_DAEMPET}>
-                {T.prisEkskl(krFraOere(valgtUge.pris_ekskl_moms_oere))} · {T.prisInkl(krFraOere(valgtUge.pris_inkl_moms_oere))}
-                {valgtUge.rabat_procent > 0 && ` · ${T.rabatIUgen(valgtUge.rabat_procent)}`}
+                {valgtUge.status === "din_reservation" && aabenReserveret ? (
+                  T.reservationPris(krFraOere(aabenReserveret.beloeb_oere))
+                ) : (
+                  <>
+                    {T.prisEkskl(krFraOere(valgtUge.pris_ekskl_moms_oere))} · {T.prisInkl(krFraOere(valgtUge.pris_inkl_moms_oere))}
+                    {valgtUge.rabat_procent > 0 && ` · ${T.rabatIUgen(valgtUge.rabat_procent)}`}
+                  </>
+                )}
               </p>
               <button
                 type="button"

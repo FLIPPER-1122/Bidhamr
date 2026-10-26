@@ -50,7 +50,7 @@ export function kr(beloeb: number): string {
   return `${Math.round(beloeb).toLocaleString("da-DK")} kr.`;
 }
 
-// Øre -> "1.250,50 kr."
+// Øre -> "1.250 kr." eller "1.250,50 kr." (aldrig "1.250,5 kr.")
 export function krFraOere(oere: number): string {
-  return `${(oere / 100).toLocaleString("da-DK", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kr.`;
+  return `${(oere / 100).toLocaleString("da-DK", { minimumFractionDigits: oere % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 })} kr.`;
 }

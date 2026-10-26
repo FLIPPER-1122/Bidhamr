@@ -48,12 +48,13 @@ export const UGENS_FIRMA = {
   prisEkskl: (kr: string) => `${kr} pr. uge ekskl. moms`,
   prisInkl: (kr: string) => `${kr} inkl. moms`,
   rabatLinje: (pct: number, antal: number) =>
-    `Din pakke giver ${pct} % rabat de første ${antal === 1 ? "uge" : `${antal} uger`} hvert år.`,
+    `Du har ${pct} % rabat de første ${antal === 1 ? "uge" : `${antal} uger`} hvert år.`,
   rabatTilbage: (tilbage: number, aar: number) =>
     tilbage === 0
       ? `Du har brugt alle rabatterne i ${aar}.`
       : `Du har ${tilbage === 1 ? "1 rabat" : `${tilbage} rabatter`} tilbage i ${aar}.`,
-  ingenRabat: "Din pakke giver ingen rabat på Ugens butik.",
+  ingenRabat: "Du har ingen rabat på Ugens butik.",
+  reservationPris: (kr: string) => `${kr} inkl. moms – prisen er låst på reservationen.`,
   rabatIUgen: (pct: number) => `${pct} % rabat`,
 
   kalenderTitel: "Vælg en uge",
