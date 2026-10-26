@@ -58,6 +58,10 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
   - **Udbetaling til sælgers bank hver 14. dag** (samler flere handler i én udbetaling for at spare Stripes 5 kr. pr. udbetaling).
   - Begrundelse: billigere end Tradera fra ca. 300 kr. og altid billigere for sælger; overskud på alle salg fra ca. 300 kr.; bevidst lille tab (ca. 2–10 kr.) på de mindste salg, indtil fragtpriserne falder ved højere volumen (DAO: ny pris over 2.500 pakker/år). Alle gebyrer vises som totalpris før buddet (EU-regler mod "drip pricing").
   - Afhentning: samme gebyrer, ingen fragt.
+  - **Afklaret med Filip 26. okt. 2026:**
+    - **Afhentning:** samme gebyrer, men BidHamr Beskyttelse gælder kun pakker, der sendes (køber tjekker selv varen ved afhentning) – som før.
+    - **Erhvervsauktioner beholder den gamle model indtil videre: 5 % købergebyr og 5 % sælgergebyr, uden minimum/maksimum**, og ingen BidHamr Beskyttelse (fortrydelsesret i stedet). Beløbsloftet på 25.000 kr. gælder også erhverv.
+    - **Overgang:** de nye priser gælder alle auktioner, der slutter efter opdateringen (også auktioner oprettet før). Handler, der allerede er vundet, beholder deres beløb.
 - (Historik: før 26. okt. 2026 var det 5 % for sælger og 5 % for køber uden minimum/maksimum.)
 
 ## 4. BidHamr Beskyttelse (tilkøb for køber)
