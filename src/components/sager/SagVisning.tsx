@@ -217,10 +217,20 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
   const dato = sag.pengeFlyttesEfterKl ? datoITekst(sag.pengeFlyttesEfterKl) : "";
   const venter = !sag.afvikletKl && !!dato;
   const tidligst = dato ? ` – tidligst ${dato}` : "";
-  // Med BidHamr Beskyttelse er Beskyttelsen "brugt" og refunderes ikke.
-  // Returfragten betaler køberen selv direkte til fragtfirmaet.
-  const hvad = sag.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
-  const beskyttelseNote = sag.beskyttelse ? " Prisen for BidHamr Beskyttelse får du ikke tilbage." : "";
+  // Samme regel som public.sag_refusion_oere (beregn.ts sagRefusionOere):
+  // ny prismodel = kun buddet; gammel handel med tilkøbt BidHamr Beskyttelse =
+  // alt undtagen Beskyttelsen. Returfragten betaler køberen selv direkte til
+  // fragtfirmaet.
+  const hvad = sag.nyPrismodel
+    ? "prisen for varen (dit bud)"
+    : sag.beskyttelse
+      ? "pengene for varen, gebyret og fragten"
+      : "alle pengene";
+  const beskyttelseNote = sag.nyPrismodel
+    ? " Gebyr og fragt får du ikke tilbage."
+    : sag.beskyttelse
+      ? " Prisen for BidHamr Beskyttelse får du ikke tilbage."
+      : "";
 
   switch (sag.status) {
     case "aaben":

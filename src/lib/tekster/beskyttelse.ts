@@ -120,10 +120,8 @@ export const FAQ: FaqPunkt[] = [
 ];
 
 // Tekster til budfeltet. Ingen procenter her – kun beløb i kroner (vises af koden).
-// beskyttelseLabel bruges af det gamle flueben i BidPanel. Fluebenet skal fjernes
-// (frontend-agenten), og så bruges beskyttelseInkluderet i stedet.
+// beskyttelseInkluderet vises ved forsendelse (privat) i stedet for det gamle flueben.
 export const BIDPANEL = {
-  beskyttelseLabel: "Tilføj BidHamr Beskyttelse",
   beskyttelseInkluderet: "BidHamr Beskyttelse er med i gebyret, når varen sendes.",
   gebyrLabel: "Gebyr",
   laesMere: "Læs mere",

@@ -82,11 +82,6 @@ describe("afgivBudFor", () => {
 
 describe("saetMaksimumFor", () => {
   it("fejl fra saet_maksimum: samme tekster, kode til appen", async () => {
-    m.insertFejl = { code: "P0001", message: "beskyttelse_laast" };
-    expect(await saetMaksimumFor(brugerKlient().klient as never, BYDER, "ip", AUKTION, 300, false)).toMatchObject({
-      kode: "beskyttelse_laast",
-      fejl: "Du fører allerede. BidHamr Beskyttelse følger dit bud og kan ikke ændres, mens du fører.",
-    });
     m.insertFejl = { code: "P0001", message: "maks_for_lavt: Dit maksimum skal være mindst 200 kr" };
     expect(await saetMaksimumFor(brugerKlient().klient as never, BYDER, "ip", AUKTION, 100, false)).toMatchObject({
       kode: "maks_for_lavt",

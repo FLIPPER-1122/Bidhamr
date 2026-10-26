@@ -264,7 +264,7 @@ export function pengeCsv(rows: Postering[]): string {
     "BidHamrs saldo +/- (kr)",
     "Købergebyr (kr)",
     "Sælgergebyr (kr)",
-    "BidHamr Beskyttelse (kr)",
+    "BidHamr Beskyttelse, gamle tilkøb (kr)",
     "Fragt (kr)",
     "Sælgers konto +/- (kr)",
   ];

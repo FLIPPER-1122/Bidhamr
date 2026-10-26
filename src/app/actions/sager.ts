@@ -96,6 +96,9 @@ export type MinSag = {
   status: SagStatus;
   // Kun for køberen (sælgeren får altid false - han må ikke se det).
   beskyttelse: boolean;
+  // Kun for køberen: handlen følger den nye prismodel (20261031010000) - ved
+  // medhold får køberen kun buddet tilbage (beregn.ts sagRefusionOere).
+  nyPrismodel: boolean;
   oprettetKl: string;
   afgjortKl: string | null;
   // Begrundelsen fra BidHamr til køber og sælger.
@@ -400,13 +403,16 @@ export async function hentSagForHandel(
     // læsbar for brugere). Hentes med service-role, kun når kalderen er køber.
     const erKoeber = handel.buyer_id === user.id;
     let beskyttelse = false;
+    let nyPrismodel = false;
     if (erKoeber) {
-      const { data: b } = await createAdminClient()
-        .from("sager")
-        .select("beskyttelse")
-        .eq("id", sag.id)
-        .maybeSingle<{ beskyttelse: boolean }>();
+      const admin = createAdminClient();
+      const [{ data: b }, model] = await Promise.all([
+        admin.from("sager").select("beskyttelse").eq("id", sag.id).maybeSingle<{ beskyttelse: boolean }>(),
+        // prismodel findes først efter 20261031010000 - fejl = gammel model.
+        admin.from("betalinger").select("prismodel").eq("trade_id", tradeId).maybeSingle<{ prismodel: string | null }>(),
+      ]);
       beskyttelse = !!b?.beskyttelse;
+      nyPrismodel = !model.error && model.data?.prismodel === "ny";
     }
 
     // Anken (RLS: kun parterne) og om brugeren kan anke lige nu.
@@ -458,6 +464,7 @@ export async function hentSagForHandel(
         beskrivelse: sag.beskrivelse,
         status: sag.status,
         beskyttelse,
+        nyPrismodel,
         oprettetKl: sag.oprettet_kl,
         afgjortKl: sag.afgjort_kl,
         begrundelse: sag.begrundelse,

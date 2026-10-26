@@ -6,7 +6,7 @@
 //   betalingen startes. Serveren retter betalingens fragt og total og afviser
 //   betaling uden valg (startBetaling svarer kode "vaelg_levering").
 // - Prisen, der vises, regnes kun ud fra serverens tal: betalingens total
-//   minus dens fragt (bud + købergebyr + evt. BidHamr Beskyttelse) plus
+//   minus dens fragt (bud + gebyr + evt. gammel BidHamr Beskyttelse) plus
 //   auktionens låste fragtpris for den valgte levering. Beløbet på
 //   "Betal"-knappen er altid PaymentIntentens.
 // - Kun afhentning (auktionen tilbyder ikke forsendelse) kræver intet valg.
@@ -18,9 +18,12 @@
 //   vælges en ny pakkeshop).
 // - Tilbyder sælgeren både forsendelse og afhentning, kan køberen vælge
 //   "Afhent hos sælger – 0 kr." før betaling. Så er fragten 0, og BidHamr
-//   Beskyttelse trækkes fra (ingen sag ved afhentning); den lægges på igen
-//   ved skift tilbage til forsendelse. Serveren retter beløbet og annullerer
-//   en gammel PaymentIntent (samme regler som ved prisskift).
+//   Beskyttelse gælder ikke (ingen sag ved afhentning). Ny prismodel
+//   (20261031010000): Beskyttelse er inkluderet i gebyret ved forsendelse
+//   (privat) og har ingen særskilt pris. Gamle handler (prismodel 'gammel')
+//   med tilkøbt Beskyttelse: beløbet trækkes fra ved afhentning og lægges på
+//   igen ved skift tilbage. Serveren retter beløbet og annullerer en gammel
+//   PaymentIntent (samme regler som ved prisskift).
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
@@ -31,6 +34,8 @@ import { metodeTekst } from "@/lib/betaling/betalingsmetoder";
 import type { Checkout } from "@/lib/fragt/handlinger";
 import { transportoerNavn } from "@/lib/fragt/types";
 import { kroner } from "@/lib/kroner";
+import { erBeskyttet, koebergebyrTekst } from "@/lib/betaling/beregn";
+import { BIDPANEL } from "@/lib/tekster/beskyttelse";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { BETINGELSER_STI } from "@/lib/vilkaar";
@@ -265,8 +270,14 @@ export default function CheckoutSide({
       : (checkout.pakkeshopOere ?? serverFragt);
   const beskVist = kunAfhentning || betalingKlar ? serverBesk : maade === "afhentning" ? 0 : beskForsendelse;
   const totalVist = betalingKlar && piTotal !== null ? piTotal : grundOere + fragtVist + beskVist;
-  // Køberen har BidHamr Beskyttelse, men har valgt afhentning: den gælder ikke.
-  const beskFjernet = maade === "afhentning" && !kunAfhentning && beskForsendelse > 0;
+  // Gammel handel: køberen har tilkøbt BidHamr Beskyttelse, men har valgt
+  // afhentning - den gælder ikke og er trukket fra.
+  const gammelModel = status.prismodel === "gammel";
+  const beskFjernet = gammelModel && maade === "afhentning" && !kunAfhentning && beskForsendelse > 0;
+  // Ny prismodel: BidHamr Beskyttelse er med i gebyret, når varen sendes (privat).
+  const erhvervHandel = vare.erhverv || status.prismodel === "erhverv";
+  const beskyttetVist = gammelModel ? beskVist > 0 : erBeskyttet(erhvervHandel, !afhentningValgt);
+  const gebyrNavn = koebergebyrTekst(status.prismodel, beskyttetVist);
 
   // ---------------------------------------------------------------- handlinger
   const visBetalFejl = useCallback((tekst: string | null, betalt?: boolean) => {
@@ -632,11 +643,16 @@ export default function CheckoutSide({
                             ? "Aftal tidspunktet med sælgeren i chatten."
                             : aftalAfhentning}
                       </p>
-                      {beskFjernet && (
+                      {beskFjernet ? (
                         <p>
                           BidHamr Beskyttelse gælder ikke ved afhentning, så den er trukket fra prisen. Du ser varen,
                           før du viser koden.
                         </p>
+                      ) : (
+                        !gammelModel &&
+                        !erhvervHandel && (
+                          <p>BidHamr Beskyttelse gælder kun, når varen sendes. Du ser varen, før du viser koden.</p>
+                        )
                       )}
                     </div>
                   )}
@@ -867,9 +883,9 @@ export default function CheckoutSide({
               </h2>
               <dl className="mt-4 space-y-2 text-sm" aria-live="polite">
                 <Linje navn="Vinderbud" vaerdi={kroner(status.budOere)} />
-                <Linje navn="Købergebyr" vaerdi={kroner(status.koebergebyrOere)} />
+                <Linje navn={gebyrNavn} vaerdi={kroner(status.koebergebyrOere)} />
                 <Linje navn={fragtNavn} vaerdi={kroner(fragtVist)} />
-                {beskVist > 0 && <Linje navn="BidHamr Beskyttelse" vaerdi={kroner(beskVist)} />}
+                {gammelModel && beskVist > 0 && <Linje navn="BidHamr Beskyttelse" vaerdi={kroner(beskVist)} />}
                 <div className="flex items-baseline justify-between gap-4 border-t border-kant pt-3">
                   <dt className="text-[15px] font-semibold text-tekst">Samlet beløb</dt>
                   <dd className="text-lg font-bold text-tekst tabular-nums">{kroner(totalVist)}</dd>
@@ -907,8 +923,10 @@ export default function CheckoutSide({
                   {afhentningValgt
                     ? "Pengene udbetales, når du har set varen og vist sælgeren din afhentningskode. Vis kun koden, hvis varen er, som den skal være."
                     : `Pengene udbetales, når du har godkendt varen, eller når fristen for at oprette en sag er gået. ${
-                        beskVist > 0
-                          ? "Du har valgt BidHamr Beskyttelse, så vi hjælper dig, hvis varen går i stykker under forsendelsen."
+                        beskyttetVist
+                          ? gammelModel
+                            ? "Du har valgt BidHamr Beskyttelse, så vi hjælper dig, hvis varen går i stykker under forsendelsen."
+                            : BIDPANEL.beskyttelseInkluderet
                           : "Kommer pakken ikke frem, hjælper vi dig."
                       }`}{" "}
                   <Link
