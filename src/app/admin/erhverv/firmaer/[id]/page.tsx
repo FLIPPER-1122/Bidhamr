@@ -2,13 +2,50 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { kraevErhvervSide } from "@/lib/adminAuth";
 import { hentErhvervPakker, hentFirmaer } from "@/app/actions/adminErhverv";
+import { hentErhvervKlager } from "@/app/actions/adminErhvervKlager";
+import AdminSide from "@/components/admin/AdminSide";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
+import AdminFaner from "@/components/admin/AdminFaner";
 import { dato, datoTid } from "@/components/admin/erhverv/ErhvervFaner";
 import FirmaRedigering from "@/components/admin/erhverv/FirmaRedigering";
 import FirmaAbonnementStripe from "@/components/admin/erhverv/FirmaAbonnementStripe";
 import FirmaKontoSektion, { type FirmaKontoTilstand } from "@/components/admin/erhverv/FirmaKontoSektion";
+import AdvarselForslagHandlinger from "@/components/admin/erhverv/AdvarselForslagHandlinger";
+import {
+  FaneLink,
+  FirmaHurtighandlinger,
+  FirmaKraeverHandling,
+  FirmaStatuslinje,
+  StatusLampe,
+  type KraeverPunkt,
+  type Lampe,
+} from "@/components/admin/erhverv/firma/FirmaOverblik";
+import {
+  FaneKvoter,
+  FaneRegninger,
+  FaneSalg,
+  FaneUgensButik,
+  Felt,
+  KlageListe,
+  LogListe,
+  Raekker,
+  UgeHandlinger,
+} from "@/components/admin/erhverv/firma/FirmaFaner";
+import { EtKlikKnap, FirmaNote, type LedigUge } from "@/components/admin/erhverv/firma/FirmaHandlinger";
+import { ugeNr } from "@/components/admin/erhverv/firma/stil";
+import {
+  hentFirmaAuktionerOgSalg,
+  hentFirmaKvote,
+  hentFirmaLog,
+  hentFirmaRegninger,
+  hentFirmaUgensButik,
+} from "@/lib/admin/firmaSide";
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_BETALING as AB, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
+import { ADMIN_FIRMA as T } from "@/lib/tekster/adminFirma";
+import { KLAGE_ADMIN } from "@/lib/tekster/erhvervKlager";
 import { ABONNEMENT_STATUS_NAVN } from "@/lib/erhverv/regler";
+import { KLAGE_FORSLAG_ANTAL, KLAGE_FORSLAG_MAANEDER } from "@/lib/erhverv/klager";
+import { kr, visTelefon } from "@/lib/erhverv/visning";
 import { firmaTitel } from "@/lib/admin/erhvervTitel";
 
 // Browserfanen hedder det samme som overskriften.
@@ -18,19 +55,33 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function FirmaSide({ params }: { params: Promise<{ id: string }> }) {
-  const { admin } = await kraevErhvervSide();
-  const { id } = await params;
+const FANER = ["abonnement", "kvoter", "ugens-butik", "oplysninger", "salg", "regninger", "log"] as const;
+type Fane = (typeof FANER)[number];
+
+// Admin -> Erhverv -> Firmaer -> [firma]. Chef og sælger-rollen kan det samme
+// her (Filip, 26. okt. 2026); kun pakkernes standardpriser og et firmas
+// købsoplysninger (firma_faktura_salg) er kun for chefen - ingen af dem står
+// på siden, kun linket til Pakker for chefen. Alle handlinger tjekker rollen
+// igen i server actions og i databasen.
+export default async function FirmaSide({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ fane?: string }>;
+}) {
+  const { admin, userId, rolle } = await kraevErhvervSide();
+  const [{ id }, { fane: raaFane }] = await Promise.all([params, searchParams]);
   if (!UUID.test(id)) notFound();
+  const fane: Fane = (FANER as readonly string[]).includes(raaFane ?? "") ? (raaFane as Fane) : "abonnement";
 
   const [res, pakkerSvar] = await Promise.all([hentFirmaer(), hentErhvervPakker()]);
   if ("fejl" in res) throw new Error(res.fejl);
   const f = res.firmaer.find((x) => x.id === id);
   if (!f) notFound();
 
-  // Firmakontoens tilstand og et evt. forslag om lukning (chef og
-  // sælger-rollen - kraevErhvervSide ovenfor).
-  const [{ data: konto }, { data: lukningForslag }] = await Promise.all([
+  // Det, toppen af siden altid bruger (status, kræver handling, hurtighandlinger).
+  const [{ data: konto }, { data: lukningForslag }, kvote, ugensSvar, klagerSvar] = await Promise.all([
     admin
       .from("users")
       .select("suspenderet, suspenderet_til, suspenderet_aarsag, konto_lukket_kl")
@@ -42,105 +93,353 @@ export default async function FirmaSide({ params }: { params: Promise<{ id: stri
       .eq("bruger_id", f.bruger_id)
       .eq("status", "afventer")
       .maybeSingle<{ id: string; advarsler_antal: number }>(),
+    hentFirmaKvote(admin, f.bruger_id),
+    hentFirmaUgensButik(admin, userId, f.id),
+    hentErhvervKlager({ status: null, firma: f.id }),
   ]);
   const pakker = "fejl" in pakkerSvar ? [] : pakkerSvar.pakker;
+  const ugens = "fejl" in ugensSvar ? null : ugensSvar;
+  const klager = "fejl" in klagerSvar ? [] : klagerSvar.klager;
+  const forslag = "fejl" in klagerSvar ? [] : klagerSvar.forslag.filter((x) => x.firma_id === f.id);
+  const aabneKlager = "fejl" in klagerSvar ? 0 : klagerSvar.antal.aaben + klagerSvar.antal.under_behandling;
 
-  const info: [string, string][] = [
-    [X.felter.loginEmail, f.login_email],
-    [X.felter.loggetInd, f.har_logget_ind ? X.ja : X.nej],
-    [A.firmaer.kolonnePakke, f.pakke?.navn ?? "–"],
-    [X.feltStatus, ABONNEMENT_STATUS_NAVN[f.abonnement_status] ?? f.abonnement_status],
-    [X.aktiveAuktioner, String(f.aktive_auktioner)],
-    [X.oprettetAf, `${f.oprettet_af_navn ?? "–"} (${datoTid(f.oprettet_kl)})`],
-  ];
+  // Kun den aktive fanes ekstra data.
+  const [regninger, salg, log] = await Promise.all([
+    fane === "regninger" ? hentFirmaRegninger(admin, f.id) : Promise.resolve(null),
+    fane === "salg" ? hentFirmaAuktionerOgSalg(admin, f.bruger_id) : Promise.resolve(null),
+    fane === "log" ? hentFirmaLog(admin, f.id, f.bruger_id) : Promise.resolve(null),
+  ]);
+
+  // --- Tilstand ---------------------------------------------------------------
+  // eslint-disable-next-line react-hooks/purity -- serverkomponent: tidspunktet for denne visning
+  const nu = Date.now();
+  const lukket = !!konto?.konto_lukket_kl;
+  const suspenderet =
+    !!konto?.suspenderet && (konto.suspenderet_til === null || new Date(konto.suspenderet_til).getTime() > nu);
+  const status = f.abonnement_status;
+  const opsiges = !!f.opsiges_fra && status !== "opsagt";
+  const lampe: Lampe =
+    lukket || suspenderet || status === "opsagt"
+      ? "roed"
+      : status === "aktiv" && !opsiges && !f.betaling_mislykket_kl
+        ? "groen"
+        : "gul";
+  const statusTekst = lukket ? T.status.lukket : suspenderet ? T.status.suspenderet : (ABONNEMENT_STATUS_NAVN[status] ?? status);
+  const pris = f.pakke?.maanedspris ?? null;
+  const naesteDato = f.periode_slut ?? f.betalt_til;
+
+  const ledigeUger: LedigUge[] = ugens
+    ? ugens.uger
+        .filter((u) => !u.booking_id)
+        .map((u) => ({
+          uge_start: u.uge_start,
+          uge_nr: u.uge_nr,
+          aar: u.aar,
+          inkl_oere: ugens.priser[u.uge_start]?.inkl_oere ?? null,
+          rabat_procent: ugens.priser[u.uge_start]?.rabat_procent ?? 0,
+          denne_uge: u.uge_start === ugens.denneUge,
+        }))
+    : [];
+  // Som ugens_butik_staff_book: kun aktive firmaer, der ikke er lukket/suspenderet.
+  const ugeSpaerret = lukket || suspenderet || status !== "aktiv" ? T.hurtig.uge.underIkkeAktiv : null;
+
+  const fanHref = (x: Fane) => `/admin/erhverv/firmaer/${f.id}?fane=${x}`;
+
+  // --- Kræver handling -----------------------------------------------------------
+  const punkter: KraeverPunkt[] = [];
+  if (lukket) punkter.push({ id: "lukket", tone: "roed", tekst: T.kraever.lukket, handling: <FaneLink href={`${fanHref("log")}#firmakonto`}>{T.kraever.seNoterOgLog}</FaneLink> });
+  else if (suspenderet)
+    punkter.push({ id: "susp", tone: "roed", tekst: T.kraever.suspenderet, handling: <FaneLink href={`${fanHref("log")}#firmakonto`}>{T.kraever.seNoterOgLog}</FaneLink> });
+  if (lukningForslag && !lukket)
+    punkter.push({ id: "lukforslag", tone: "roed", tekst: T.kraever.lukningForslag, handling: <FaneLink href={`${fanHref("log")}#firmakonto`}>{T.kraever.seNoterOgLog}</FaneLink> });
+  if (f.betaling_mislykket_kl)
+    punkter.push({
+      id: "betaling",
+      tone: "roed",
+      tekst: T.kraever.betalingFejlet(datoTid(f.betaling_mislykket_kl)),
+      handling: <FaneLink href={fanHref("regninger")}>{T.kraever.seRegninger}</FaneLink>,
+    });
+  if (status === "pauset")
+    punkter.push({
+      id: "pause",
+      tone: "gul",
+      tekst: f.pauset_aarsag === "betaling" ? T.kraever.pauseBetaling : T.kraever.pauseBidhamr,
+      handling: f.pauset_aarsag === "betaling" ? undefined : <EtKlikKnap firmaId={f.id} handling="genaktiver" label={T.kraever.genaktiver} />,
+    });
+  if (status === "afventer_betaling") punkter.push({ id: "afventer", tone: "gul", tekst: T.kraever.afventerBetaling });
+  if (opsiges && f.opsiges_fra)
+    punkter.push({
+      id: "opsiges",
+      tone: "gul",
+      tekst: T.kraever.opsiges(dato(f.opsiges_fra)),
+      handling: <FirmaAbonnementStripe firmaId={f.id} harAbonnement={!!f.stripe_subscription_id} opsiges={dato(f.opsiges_fra)} opsagt={false} />,
+    });
+  if (!f.har_logget_ind && !lukket)
+    punkter.push({
+      id: "login",
+      tone: "gul",
+      tekst: T.kraever.ikkeLoggetInd,
+      handling: <EtKlikKnap firmaId={f.id} handling="gensendVelkomst" label={T.kraever.sendVelkomst} className="btn btn-sekundaer btn-lille" />,
+    });
+  if (f.afventende_opgradering) punkter.push({ id: "opgradering", tone: "gul", tekst: T.kraever.afventerOpgradering(f.afventende_opgradering.navn) });
+  if (aabneKlager > 0)
+    punkter.push({
+      id: "klager",
+      tone: "gul",
+      tekst: T.kraever.aabneKlager(aabneKlager),
+      handling: <FaneLink href={`/admin/erhverv/klager?status=aaben&firma=${f.id}`}>{T.kraever.seKlager}</FaneLink>,
+    });
+  if (forslag.length > 0)
+    punkter.push({ id: "advarsel", tone: "gul", tekst: T.kraever.advarselForslag, handling: <FaneLink href={`${fanHref("log")}#forslag`}>{T.kraever.seNoterOgLog}</FaneLink> });
+  for (const b of ugens?.bookinger ?? []) {
+    if (b.status === "reserveret" && b.reserveret_til && new Date(b.reserveret_til).getTime() > nu) {
+      punkter.push({
+        id: `uge-${b.id}`,
+        tone: "gul",
+        tekst: T.kraever.ugeVenter(ugeNr(b.uge_start), datoTid(b.reserveret_til)),
+        handling: <UgeHandlinger b={b} />,
+      });
+    }
+    if (b.kraever_opmaerksomhed) {
+      punkter.push({
+        id: `uge-ops-${b.id}`,
+        tone: "roed",
+        tekst: (
+          <>
+            {T.kraever.ugeOpmaerksomhed(ugeNr(b.uge_start))}
+            {b.opmaerksomhed_tekst && <span className="block text-tekst-daempet">{b.opmaerksomhed_tekst}</span>}
+          </>
+        ),
+        handling: <FaneLink href={fanHref("ugens-butik")}>{T.kraever.seUgensButik}</FaneLink>,
+      });
+    }
+  }
+
+  const adresse = [f.adresse, `${f.postnummer} ${f.bynavn}`].filter(Boolean).join(", ");
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
-      <Link href="/admin/erhverv/firmaer" className="inline-flex min-h-11 items-center text-sm font-medium text-groen hover:underline">
-        ← {X.tilbageTilFirmaer}
-      </Link>
-      <AdminSideHoved titel={f.firmanavn} forklaring={`${A.firmaer.kolonneCvr} ${f.cvr}`} />
+    <AdminSide>
+      <AdminSideHoved
+        tilbage={{ href: "/admin/erhverv/firmaer", label: X.tilbageTilFirmaer }}
+        titel={f.firmanavn}
+        forklaring={
+          <span className="break-words">
+            {A.firmaer.kolonneCvr} {f.cvr} · {adresse} · {f.kontakt_email} · {visTelefon(f.telefon)}
+          </span>
+        }
+        handlinger={
+          <>
+            <Link href={`/erhvervssaelger/${f.bruger_id}`} className="btn btn-sekundaer btn-lille">
+              {T.seButik}
+            </Link>
+            <a href={`mailto:${f.kontakt_email}`} className="btn btn-sekundaer btn-lille">
+              {T.sendMail}
+            </a>
+          </>
+        }
+      />
 
-      <section className="rounded-xl border border-neutral-200 bg-white p-5">
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-          {info.map(([k, v]) => (
-            <div key={k} className="min-w-0">
-              <dt className="text-xs font-medium text-neutral-500">{k}</dt>
-              <dd className="break-words text-[15px] text-neutral-900">{v}</dd>
-            </div>
-          ))}
-        </dl>
-        {f.afventende_opgradering && (
-          <p className="mt-4 rounded-lg border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
-            {X.afventerOpgradering(f.afventende_opgradering.navn)}
-          </p>
-        )}
-        {f.naeste_pakke && f.naeste_pakke_fra && (
-          <p className="mt-4 rounded-lg border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
-            {X.planlagtSkift(f.naeste_pakke.navn, dato(f.naeste_pakke_fra))}
-          </p>
-        )}
-        {f.henvendelse_id && (
-          <Link href={`/admin/erhverv/henvendelser/${f.henvendelse_id}`} className="mt-4 inline-flex min-h-11 items-center text-sm font-medium text-groen hover:underline">
-            {A.henvendelser.titel} →
-          </Link>
-        )}
-      </section>
+      <FirmaStatuslinje
+        celler={[
+          {
+            label: T.status.titel,
+            vaerdi: (
+              <>
+                <StatusLampe tone={lampe} />
+                {statusTekst}
+              </>
+            ),
+            under: opsiges && f.opsiges_fra ? T.status.opsigesFra(dato(f.opsiges_fra)) : f.betaling_mislykket_kl ? T.status.betalingFejlet : undefined,
+          },
+          {
+            label: T.status.pakke,
+            vaerdi: f.pakke?.navn ?? T.status.ingenPakke,
+            under: pris != null ? `${kr(pris)} ${T.status.eksklMoms}` : undefined,
+          },
+          {
+            label: T.status.auktioner,
+            vaerdi: kvote ? T.status.brugtAf(kvote.brugt, kvote.max) : "–",
+            under: `${f.aktive_auktioner} ${X.aktiveAuktioner.toLowerCase()}`,
+          },
+          {
+            label: T.status.naesteBetaling,
+            vaerdi:
+              lukket || status === "opsagt" || opsiges || !f.stripe_subscription_id
+                ? T.status.ingenBetaling
+                : pris != null
+                  ? `${kr(pris)}`
+                  : "–",
+            under:
+              lukket || status === "opsagt"
+                ? T.status.opsagt
+                : opsiges && f.opsiges_fra
+                  ? T.status.opsigesFra(dato(f.opsiges_fra))
+                  : !f.stripe_subscription_id
+                    ? T.status.ikkeIStripe
+                    : naesteDato
+                      ? `${dato(naesteDato)} · ${T.status.eksklMoms}`
+                      : T.status.eksklMoms,
+          },
+        ]}
+      />
 
-      <section aria-labelledby="stripe-titel" className="rounded-xl border border-neutral-200 bg-white p-5">
-        <h2 id="stripe-titel" className="text-lg font-semibold text-neutral-900">
-          {AB.titel}
-        </h2>
-        {f.stripe_subscription_id ? (
-          <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-medium text-neutral-500">{AB.stripeStatus}</dt>
-              <dd className="text-[15px] text-neutral-900">{f.stripe_abonnement_status ?? "–"}</dd>
+      <FirmaKraeverHandling punkter={punkter} />
+
+      <FirmaHurtighandlinger
+        firmaId={f.id}
+        pakkeId={f.pakke_id}
+        pakker={pakker}
+        status={status}
+        opsiges={opsiges}
+        ledigeUger={ugens ? ledigeUger : null}
+        kanBookeUge={ugeSpaerret}
+      />
+
+      <AdminFaner
+        label="Firma"
+        aktiv={fane}
+        faner={[
+          { id: "abonnement", label: T.faner.abonnement, href: fanHref("abonnement") },
+          { id: "kvoter", label: T.faner.kvoter, href: fanHref("kvoter") },
+          { id: "ugens-butik", label: T.faner.ugensButik, href: fanHref("ugens-butik") },
+          { id: "oplysninger", label: T.faner.oplysninger, href: fanHref("oplysninger") },
+          { id: "salg", label: T.faner.salg, href: fanHref("salg") },
+          { id: "regninger", label: T.faner.regninger, href: fanHref("regninger") },
+          { id: "log", label: T.faner.log, href: fanHref("log"), antal: forslag.length + (lukningForslag ? 1 : 0), tone: "gul" },
+        ]}
+      />
+
+      {fane === "abonnement" && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Felt titel={T.abonnement.titel}>
+            <Raekker
+              raekker={[
+                [T.abonnement.pakke, f.pakke?.navn ?? T.status.ingenPakke],
+                [T.abonnement.standardpris, pris != null ? `${kr(pris)} ${T.status.eksklMoms}` : X.prisIkkeSat],
+                [T.abonnement.status, statusTekst],
+                [T.abonnement.start, dato(f.abonnement_start)],
+                [
+                  T.abonnement.naesteSkift,
+                  f.naeste_pakke && f.naeste_pakke_fra
+                    ? X.planlagtSkift(f.naeste_pakke.navn, dato(f.naeste_pakke_fra))
+                    : f.afventende_opgradering
+                      ? X.afventerOpgradering(f.afventende_opgradering.navn)
+                      : T.abonnement.ingen,
+                ],
+              ]}
+            />
+            {rolle === "chef" && (
+              <Link href="/admin/erhverv/pakker" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-groen hover:underline sm:min-h-9">
+                {T.abonnement.retPriser} →
+              </Link>
+            )}
+          </Felt>
+          <Felt titel={T.abonnement.stripeTitel}>
+            {f.stripe_subscription_id ? (
+              <Raekker
+                raekker={[
+                  [AB.stripeStatus, f.stripe_abonnement_status ?? "–"],
+                  [AB.betaltTil, f.betalt_til ? dato(f.betalt_til) : "–"],
+                  [T.abonnement.periodeSlut, f.periode_slut ? dato(f.periode_slut) : "–"],
+                ]}
+              />
+            ) : (
+              <p className="text-sm text-tekst-daempet">{AB.ingenAbonnement}</p>
+            )}
+            {f.opsiges_fra && (
+              <p className="mt-3 border border-info-kant bg-info-bg px-3 py-2 text-sm text-info-tekst">{AB.opsigesFra(dato(f.opsiges_fra))}</p>
+            )}
+            <div className="mt-3">
+              <FirmaAbonnementStripe
+                firmaId={f.id}
+                harAbonnement={!!f.stripe_subscription_id}
+                opsiges={f.opsiges_fra ? dato(f.opsiges_fra) : null}
+                opsagt={status === "opsagt"}
+              />
             </div>
-            <div>
-              <dt className="text-xs font-medium text-neutral-500">{AB.betaltTil}</dt>
-              <dd className="text-[15px] text-neutral-900">{f.betalt_til ? dato(f.betalt_til) : "–"}</dd>
-            </div>
-          </dl>
-        ) : (
-          <p className="mt-2 text-sm text-neutral-700">{AB.ingenAbonnement}</p>
-        )}
-        {f.opsiges_fra && (
-          <p className="mt-3 rounded-lg border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
-            {AB.opsigesFra(dato(f.opsiges_fra))}
-          </p>
-        )}
-        <div className="mt-4">
-          <FirmaAbonnementStripe
-            firmaId={f.id}
-            harAbonnement={!!f.stripe_subscription_id}
-            opsiges={f.opsiges_fra ? dato(f.opsiges_fra) : null}
-            opsagt={f.abonnement_status === "opsagt"}
-          />
+          </Felt>
         </div>
-      </section>
+      )}
 
-      <section className="rounded-xl border border-neutral-200 bg-white p-5">
-        <FirmaRedigering
-          firmaId={f.id}
-          harLoggetInd={f.har_logget_ind}
-          pakkeId={f.pakke_id}
-          status={f.abonnement_status}
-          pakker={pakker}
-          start={{
-            firmanavn: f.firmanavn,
-            cvr: f.cvr,
-            adresse: f.adresse,
-            postnummer: f.postnummer,
-            by: f.bynavn,
-            telefon: f.telefon,
-            kontaktEmail: f.kontakt_email,
-            kontaktperson: f.kontaktperson,
-          }}
-        />
-      </section>
+      {fane === "kvoter" && <FaneKvoter kvote={kvote} ugens={ugens} />}
 
-      {konto && <FirmaKontoSektion firmaId={f.id} konto={konto} forslag={lukningForslag ?? null} />}
-    </div>
+      {fane === "ugens-butik" && (
+        <FaneUgensButik firmaId={f.id} ugens={ugensSvar} ledigeUger={ledigeUger} kanBooke={!ugeSpaerret} />
+      )}
+
+      {fane === "oplysninger" && (
+        <div className="space-y-4">
+          <Felt titel={T.oplysninger.konto}>
+            <Raekker
+              raekker={[
+                [X.felter.loginEmail, f.login_email],
+                [X.felter.loggetInd, f.har_logget_ind ? X.ja : X.nej],
+                [X.oprettetAf, `${f.oprettet_af_navn ?? "–"} (${datoTid(f.oprettet_kl)})`],
+              ]}
+            />
+            {f.henvendelse_id && (
+              <Link
+                href={`/admin/erhverv/henvendelser/${f.henvendelse_id}`}
+                className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-groen hover:underline sm:min-h-9"
+              >
+                {A.henvendelser.titel} →
+              </Link>
+            )}
+          </Felt>
+          <Felt titel={T.oplysninger.titel}>
+            <FirmaRedigering
+              firmaId={f.id}
+              harLoggetInd={f.har_logget_ind}
+              start={{
+                firmanavn: f.firmanavn,
+                cvr: f.cvr,
+                adresse: f.adresse,
+                postnummer: f.postnummer,
+                by: f.bynavn,
+                telefon: f.telefon,
+                kontaktEmail: f.kontakt_email,
+                kontaktperson: f.kontaktperson,
+              }}
+            />
+          </Felt>
+        </div>
+      )}
+
+      {fane === "salg" && <FaneSalg data={salg} />}
+
+      {fane === "regninger" && <FaneRegninger regninger={regninger} ugens={ugens} />}
+
+      {fane === "log" && (
+        <div className="space-y-4">
+          <Felt titel={T.log.noteTitel}>
+            <FirmaNote firmaId={f.id} />
+          </Felt>
+          {forslag.length > 0 && (
+            <Felt titel={`${T.log.forslagTitel} (${forslag.length})`} id="forslag">
+              <p className="mb-3 text-sm text-tekst-daempet">{KLAGE_ADMIN.forslagForklaring(KLAGE_FORSLAG_ANTAL, KLAGE_FORSLAG_MAANEDER)}</p>
+              <ul className="space-y-3">
+                {forslag.map((x) => (
+                  <li key={x.id} className="border border-kant p-3">
+                    <p className="text-sm text-tekst-daempet">
+                      {KLAGE_ADMIN.forslagGrundlag[x.grundlag](x.antal_klager)} · {KLAGE_ADMIN.advarslerAntal(x.advarsler_antal)} · {datoTid(x.oprettet_kl)}
+                    </p>
+                    <div className="mt-3">
+                      <AdvarselForslagHandlinger forslagId={x.id} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Felt>
+          )}
+          <Felt titel={T.log.klagerTitel}>
+            <KlageListe klager={klager} firmaId={f.id} />
+          </Felt>
+          {konto && <FirmaKontoSektion firmaId={f.id} konto={konto} forslag={lukningForslag ?? null} />}
+          <Felt titel={T.log.logTitel}>
+            <LogListe log={log} />
+          </Felt>
+        </div>
+      )}
+    </AdminSide>
   );
 }
