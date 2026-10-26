@@ -8,6 +8,7 @@ import Sidevisning from "@/components/statistik/Sidevisning";
 import CookieBanner from "@/components/samtykke/CookieBanner";
 import { seoIndeksering } from "@/lib/seo";
 import { SAMTYKKE_COOKIE, gyldigSamtykkeVaerdi } from "@/lib/samtykke";
+import { visLukketUdgave } from "@/lib/lukketUdgave";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -55,6 +56,10 @@ export default async function RootLayout({
   // Admin-hosten (ADMIN_VAERT) har kun nødvendige cookies og ingen
   // besøgsstatistik - og banneret linker til sider, der ikke findes dér.
   const adminVaert = erAdminVaert((await headers()).get("host"));
+  // Før lancering ser besøgende uden adgang til den lukkede app kun coming
+  // soon, erhverv og de lovpligtige sider, og dér bruges kun nødvendige
+  // cookies - så intet banner (src/lib/lukketUdgave.ts). Efter lancering som før.
+  const visBanner = !adminVaert && !(await visLukketUdgave());
   return (
     <html
       lang="da"
@@ -66,7 +71,7 @@ export default async function RootLayout({
         {children}
         {/* Cookiefri besøgsstatistik (src/app/api/statistik/route.ts). */}
         {!adminVaert && <Sidevisning />}
-        {!adminVaert && <CookieBanner startRaa={startRaa} />}
+        {visBanner && <CookieBanner startRaa={startRaa} />}
       </body>
     </html>
   );

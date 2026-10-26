@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import JuraSide from "@/components/jura/JuraSide";
 import { hentPrivatlivspolitik } from "@/lib/jura/juraDokument";
-import { seoIndeksering } from "@/lib/seo";
+import { robotsFoerLancering } from "@/lib/seo";
 import { BETINGELSER_STI } from "@/lib/vilkaar";
 
 // Privatlivspolitik (jura/privatlivspolitik-udkast.md). Offentlig side
@@ -11,7 +11,8 @@ export const metadata: Metadata = {
   title: "Privatlivspolitik",
   description:
     "Sådan behandler BidHamr dine personoplysninger: hvad vi gemmer, hvorfor, hvem vi deler med, hvor længe – og dine rettigheder.",
-  ...(seoIndeksering() ? {} : { robots: { index: false, follow: false } }),
+  ...robotsFoerLancering("/privatliv"),
+  alternates: { canonical: "/privatliv" },
 };
 
 export default function PrivatlivSide() {

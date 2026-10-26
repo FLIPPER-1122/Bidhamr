@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { Blok, Inline, JuraDokument } from "@/lib/jura/juraDokument";
 import { PLADSHOLDER } from "@/lib/jura/juraDokument";
 import { VILKAAR_DATO, VILKAAR_ER_UDKAST, VILKAAR_VERSION } from "@/lib/vilkaar";
+import { visLukketUdgave } from "@/lib/lukketUdgave";
+import { linkTilladtILukketUdgave } from "@/lib/lukketUdgaveRegler";
 
 // Visning af brugerbetingelser og privatlivspolitik (jura/*-udkast.md).
 // Samme udtryk som Tekstside (src/components/Tekstside.tsx): kort pr. afsnit,
@@ -157,15 +159,50 @@ function BlokVisning({ blok, afsnitTitel }: { blok: Blok; afsnitTitel: string })
 
 export type KrydsLink = { href: string; tekst: string };
 
-export default function JuraSide({
-  dokument,
+// Før lancering (den lukkede udgave, src/lib/lukketUdgave.ts) sender de fleste
+// interne links til /coming-soon. De vises derfor som almindelig tekst, og
+// krydslinks dertil skjules. Eksterne links og mailto: beholdes.
+function udenLukkedeLinks(dele: Inline[]): Inline[] {
+  return dele.map((d) => {
+    if (d.type === "link" && d.href.startsWith("/") && !linkTilladtILukketUdgave(d.href)) {
+      return { type: "tekst", tekst: d.tekst };
+    }
+    if (d.type === "fed") return { ...d, indhold: udenLukkedeLinks(d.indhold) };
+    return d;
+  });
+}
+
+function blokUdenLukkedeLinks(b: Blok): Blok {
+  switch (b.type) {
+    case "afsnit":
+      return { ...b, indhold: udenLukkedeLinks(b.indhold) };
+    case "liste":
+      return { ...b, punkter: b.punkter.map(udenLukkedeLinks) };
+    case "tabel":
+      return {
+        ...b,
+        kolonner: b.kolonner.map(udenLukkedeLinks),
+        raekker: b.raekker.map((r) => r.map(udenLukkedeLinks)),
+      };
+    default:
+      return b;
+  }
+}
+
+export default async function JuraSide({
+  dokument: raaDokument,
   intro,
-  krydslinks,
+  krydslinks: alleKrydslinks,
 }: {
   dokument: JuraDokument;
   intro: string;
   krydslinks: KrydsLink[];
 }) {
+  const lukket = await visLukketUdgave();
+  const dokument = lukket
+    ? { ...raaDokument, afsnit: raaDokument.afsnit.map((a) => ({ ...a, blokke: a.blokke.map(blokUdenLukkedeLinks) })) }
+    : raaDokument;
+  const krydslinks = lukket ? alleKrydslinks.filter((l) => linkTilladtILukketUdgave(l.href)) : alleKrydslinks;
   return (
     <main className="mx-auto w-full max-w-[880px] flex-1 px-4 py-8 sm:px-6 lg:py-10">
       {VILKAAR_ER_UDKAST && (

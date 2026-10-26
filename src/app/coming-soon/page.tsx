@@ -2,15 +2,25 @@ import Image from "next/image";
 import Link from "next/link";
 import WaitlistForm from "@/components/landing/WaitlistForm";
 import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
-import CookieindstillingerKnap from "@/components/samtykke/CookieindstillingerKnap";
-import FirmaLinje from "@/components/FirmaLinje";
+import LukketFooter from "@/components/lukket/LukketFooter";
 import type { Metadata } from "next";
 import { ERHVERV_COMING_SOON } from "@/lib/tekster/erhverv";
+import { delingMetadata, robotsFoerLancering } from "@/lib/seo";
+import { comingSoonJsonLd } from "@/lib/jsonLd";
+
+// Før lancering vises siden direkte på forsiden "/" (rewrite i
+// src/lib/supabase/middleware.ts), så canonical er altid "/".
+// TODO indhold-agenten: gennemgå titel og beskrivelse.
+const META_TITEL = "BidHamr – auktioner mellem private i Danmark";
+const META_BESKRIVELSE =
+  "BidHamr åbner snart: dansk auktionsplatform for brugte ting. Sikker betaling, fragt eller afhentning og BidHamr Beskyttelse. Tilmeld dig ventelisten.";
 
 export const metadata: Metadata = {
-  title: "BidHamr åbner snart",
-  description:
-    "BidHamr er en ny dansk auktionsplatform for brugte ting mellem private. Skriv dig op, og få besked, når vi åbner.",
+  title: { absolute: META_TITEL },
+  description: META_BESKRIVELSE,
+  alternates: { canonical: "/" },
+  ...delingMetadata("/", META_TITEL, META_BESKRIVELSE),
+  ...robotsFoerLancering("/"),
 };
 
 // Server-komponent: ingen interaktion ud over ventelisteformularen, som er
@@ -101,6 +111,7 @@ const TRYGHED = [
 export default function ComingSoonPage() {
   return (
     <div className="flex flex-1 flex-col bg-white text-tekst">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: comingSoonJsonLd() }} />
       {/* Fanger auth-tokens der lander her som hash-fragment. Må ikke fjernes. */}
       <AuthHashRedirect />
 
@@ -208,11 +219,6 @@ export default function ComingSoonPage() {
               </div>
             ))}
           </div>
-          <p className="mt-4 text-sm">
-            <Link href="/bidhamr-beskyttelse" className="font-medium text-groen hover:underline">
-              Læs om BidHamr Beskyttelse – og hvad vi altid hjælper med →
-            </Link>
-          </p>
         </section>
 
         {/* Sådan virker det */}
@@ -308,43 +314,9 @@ export default function ComingSoonPage() {
         </section>
       </main>
 
-      <footer className="border-t border-kant bg-white">
-        <div className="mx-auto flex max-w-[1280px] flex-col gap-4 px-4 pt-8 pb-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <Image
-            src="/brand/bidhamr-logo.svg"
-            alt="BidHamr"
-            width={230}
-            height={60}
-            unoptimized
-            loading="lazy"
-            className="h-7 w-auto"
-          />
-          <p className="text-[13px] text-tekst-svag">
-            &copy; {new Date().getFullYear()} BidHamr
-          </p>
-          <nav aria-label="Footer" className="flex flex-wrap gap-6 text-[13px] font-medium">
-            <a href="#saadan" className="text-groen hover:underline">
-              Sådan virker det
-            </a>
-            <a href="#hvorfor" className="text-groen hover:underline">
-              Hvorfor BidHamr
-            </a>
-            <a href="#venteliste" className="text-groen hover:underline">
-              Venteliste
-            </a>
-            <Link href="/bidhamr-beskyttelse" className="text-groen hover:underline">
-              BidHamr Beskyttelse
-            </Link>
-            <Link href="/cookies" className="text-groen hover:underline">
-              Cookies
-            </Link>
-            <CookieindstillingerKnap className="text-groen hover:underline" />
-          </nav>
-        </div>
-        <div className="mx-auto max-w-[1280px] px-4 pb-8 sm:px-6 lg:px-8">
-          <FirmaLinje className="text-xs text-tekst-svag" />
-        </div>
-      </footer>
+      {/* Samme minimale footer som erhverv før lancering: kun firmaoplysninger,
+          privatlivspolitik og DSA-kontaktpunkt (src/components/lukket). */}
+      <LukketFooter />
     </div>
   );
 }
