@@ -1,19 +1,25 @@
-// Scenarie: køberen har BidHamr Beskyttelse, opretter en sag (varen er gået i
-// stykker), staff giver køberen medhold, og ankefristen udløber. Køberen får
-// alt undtagen BidHamr Beskyttelse tilbage (delvis refusion i tre trin hos
-// Stripe), sælgeren står med 0, og BidHamr beholder kun Beskyttelsen.
+// Scenarie: handlen er sendt (BidHamr Beskyttelse er inkluderet), køberen
+// opretter en sag (varen er gået i stykker), staff giver køberen medhold, og
+// ankefristen udløber. Ny prismodel (Filip, 26. okt. 2026 - som Trendsales):
+// køberen får KUN buddet tilbage (delvis refusion i tre trin hos Stripe),
+// sælgeren står med 0, og BidHamr beholder købergebyr og fragt
+// (refusionsplanen: S = U, G = R - S = sælgergebyret).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { udfoerSagAfvikling, type SagAfvikling } from "@/lib/sagerServer";
-import { betal, betaling, forberedSaelger, opretHandel, admin, rydOp, saldo, stripeTal, type TestHandel } from "./handel";
+import { betal, betaling, forberedSaelger, forventet, opretHandel, admin, rydOp, saldo, stripeTal, type TestHandel } from "./handel";
 import { CHEF_ID } from "./brugere";
 
 let h: TestHandel;
 let konto: string;
 let sagId: string;
+// Bud 500 kr.: total 582 kr. (gebyr 40 + fragt 42), application fee 112 kr.,
+// udbetaling 470 kr., sælgergebyr 30 kr.
+const BUD = 50_000;
+const X = forventet(BUD);
 
 beforeAll(async () => {
   konto = await forberedSaelger();
-  h = await opretHandel({ navn: "sag-medhold", budOere: 50_000, beskyttelse: true });
+  h = await opretHandel({ navn: "sag-medhold", budOere: BUD });
 });
 
 afterAll(async () => {
@@ -49,7 +55,7 @@ describe("sag med medhold og refusion", () => {
     expect(blokeret).not.toBeNull();
   });
 
-  it("afgjort til køberen + ankefristen udløbet: refusion af alt undtagen Beskyttelsen", async () => {
+  it("afgjort til køberen + ankefristen udløbet: køberen får buddet tilbage", async () => {
     const db = admin();
     const nu = new Date().toISOString();
     const { error } = await db
@@ -73,17 +79,20 @@ describe("sag med medhold og refusion", () => {
 
     const b = await betaling(h.betalingId);
     expect(b.status).toBe("refunderet");
-    // T = 590 kr., Beskyttelse 25 kr. -> køberen får 565 kr.
-    expect(b.refusion_oere).toBe(56_500);
+    // Ny model: R = buddet = 500 kr. (gebyr og fragt refunderes ikke).
+    expect(b.refusion_oere).toBe(BUD);
     const t = await stripeTal(b);
-    expect(t.refunderet).toBe(56_500);
-    // Gebyret (115 kr.) refunderes undtagen Beskyttelsen: 90 kr.
-    expect(t.gebyr).toBe(11_500);
-    expect(t.gebyrRefunderet).toBe(9_000);
-    // Tilbageført fra sælgeren: hans del + det refunderede gebyr.
-    expect(t.tilbagefoert).toBe(56_500);
-    // BidHamr står med Beskyttelsen: gebyr - gebyr-refusion + tilbageført - refunderet.
-    expect(t.gebyr - t.gebyrRefunderet + t.tilbagefoert - t.refunderet).toBe(2_500);
+    expect(t.refunderet).toBe(BUD);
+    // Af gebyret (112 kr.) refunderes kun sælgergebyret (G = R - U = 30 kr.).
+    expect(t.gebyr).toBe(X.gebyr);
+    expect(t.gebyrRefunderet).toBe(X.saelg);
+    expect(t.gebyrRefunderet).toBe(BUD - X.udbetaling);
+    // Tilbageført fra sælgeren: hans del + det refunderede gebyr = 470 + 30 kr.
+    expect(t.tilbagefoert).toBe(X.udbetaling + X.saelg);
+    // BidHamr står med købergebyr + fragt (40 + 42 = 82 kr.):
+    // gebyr - gebyr-refusion + tilbageført - refunderet.
+    expect(t.gebyr - t.gebyrRefunderet + t.tilbagefoert - t.refunderet).toBe(X.koeb + X.fragt);
+    expect(X.koeb + X.fragt).toBe(8_200);
     const s = await saldo(konto);
     expect(s.tilgaengelig + s.afventer).toBe(0);
     expect(b.saelger_udbetaling_id).toBeNull();
@@ -94,7 +103,7 @@ describe("sag med medhold og refusion", () => {
     expect((a as { kode: string }).kode).toBe("intet");
     const b = await betaling(h.betalingId);
     const t = await stripeTal(b);
-    expect(t.refunderet).toBe(56_500);
-    expect(t.tilbagefoert).toBe(56_500);
+    expect(t.refunderet).toBe(BUD);
+    expect(t.tilbagefoert).toBe(X.udbetaling + X.saelg);
   });
 });

@@ -113,6 +113,7 @@ export function gammelBeskyttelseOere(budOere: number): number {
 export type BetalingsBeloeb = {
   bud_oere: number;
   koebergebyr_oere: number;
+  saelgergebyr_oere: number;
   fragt_oere: number;
   beskyttelse_oere: number;
   // Mangler kolonnen (migrationen 20261031010000 er ikke kørt): den gamle
@@ -121,20 +122,24 @@ export type BetalingsBeloeb = {
 };
 
 // Kontrol af en gemt betaling: totalen, som formlerne giver for rækkens
-// prismodel - eller null, hvis købergebyret/Beskyttelsen ikke passer med
-// formlen (så må der ikke betales). Bruges før en PaymentIntent oprettes.
+// prismodel - eller null, hvis købergebyret, sælgergebyret eller Beskyttelsen
+// ikke passer med formlen (så må der ikke betales). Bruges før en
+// PaymentIntent oprettes. Sælgergebyret tjekkes også her (forsvar i dybden):
+// det indgår i BidHamrs application fee og dermed i sælgerens udbetaling.
 export function forventetTotalOere(b: BetalingsBeloeb): number | null {
   const bud = Number(b.bud_oere);
   const koeb = Number(b.koebergebyr_oere);
+  const saelg = Number(b.saelgergebyr_oere);
   const fragt = Number(b.fragt_oere);
   const besk = Number(b.beskyttelse_oere);
   const model = b.prismodel ?? "gammel";
   if (model === "gammel") {
-    if (koeb !== procentAf(bud, 5)) return null;
+    if (koeb !== procentAf(bud, 5) || saelg !== procentAf(bud, 5)) return null;
     if (besk !== 0 && besk !== gammelBeskyttelseOere(bud)) return null;
     return bud + koeb + fragt + besk;
   }
-  if (besk !== 0 || koeb !== koebergebyrOere(bud, model === "erhverv")) return null;
+  const erhverv = model === "erhverv";
+  if (besk !== 0 || koeb !== koebergebyrOere(bud, erhverv) || saelg !== saelgergebyrOere(bud, erhverv)) return null;
   return bud + koeb + fragt;
 }
 

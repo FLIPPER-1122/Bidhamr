@@ -5,6 +5,7 @@ import {
   betal,
   betaling,
   forberedSaelger,
+  forventet,
   koeberGodkender,
   opretHandel,
   rydOp,
@@ -20,12 +21,16 @@ let h: TestHandel;
 let konto: string;
 // Sælgerens saldo før testen (andre testfiler bruger samme testkonto).
 let start = 0;
+// Bud 500 kr. (ny prismodel): købergebyr 7 % + 5 = 40 kr., sælgergebyr 5 % + 5
+// = 30 kr., fragt 42 kr. -> total 582 kr., gebyr 112 kr., udbetaling 470 kr.
+const BUD = 50_000;
+const X = forventet(BUD);
 
 beforeAll(async () => {
   konto = await forberedSaelger();
   const s = await saldo(konto);
   start = s.tilgaengelig + s.afventer;
-  h = await opretHandel({ navn: "betal-frigiv-udbetal", budOere: 50_000, beskyttelse: true });
+  h = await opretHandel({ navn: "betal-frigiv-udbetal", budOere: BUD });
 });
 
 afterAll(async () => {
@@ -37,9 +42,10 @@ describe("betal -> frigiv -> payout", () => {
     const pi = await betal(h);
     expect(pi.status).toBe("succeeded");
     const b = await betaling(h.betalingId);
-    // bud 500 + købergebyr 25 + fragt 40 + Beskyttelse 25 = 590 kr.
-    expect(b.total_oere).toBe(59_000);
-    expect(pi.amount).toBe(59_000);
+    // bud 500 + gebyr 40 (BidHamr Beskyttelse inkluderet) + fragt 42 = 582 kr.
+    expect(X.total).toBe(58_200);
+    expect(b.total_oere).toBe(X.total);
+    expect(pi.amount).toBe(X.total);
     expect(pi.on_behalf_of).toBe(konto);
     expect(pi.transfer_data?.destination).toBe(konto);
     // Betalingsmetoder (Filip, 20. okt. 2026): præcis kort, MobilePay og
@@ -47,16 +53,18 @@ describe("betal -> frigiv -> payout", () => {
     // Testkontoen har alle tre capabilities aktive (global.ts).
     expect(pi.payment_method_types).toEqual(["card", "mobilepay", "revolut_pay"]);
     expect(pi.automatic_payment_methods?.enabled ?? false).toBe(false);
-    // Gebyr = købergebyr + sælgergebyr + fragt + Beskyttelse = 25 + 25 + 40 + 25.
-    expect(pi.application_fee_amount).toBe(11_500);
-    expect(b.application_fee_oere).toBe(11_500);
+    // Gebyr = købergebyr + sælgergebyr + fragt = 40 + 30 + 42 = 112 kr.
+    expect(X.gebyr).toBe(11_200);
+    expect(pi.application_fee_amount).toBe(X.gebyr);
+    expect(b.application_fee_oere).toBe(X.gebyr);
     expect(b.status).toBe("betalt");
     // Sælgeren står med total - gebyr = bud - sælgergebyr.
     expect(pi.amount - (pi.application_fee_amount ?? 0)).toBe(b.udbetaling_oere);
-    expect(b.udbetaling_oere).toBe(47_500);
+    expect(X.udbetaling).toBe(47_000);
+    expect(b.udbetaling_oere).toBe(X.udbetaling);
     expect(b.stripe_destination_transfer_id).toBeTruthy();
     const s = await saldo(konto);
-    expect(s.tilgaengelig + s.afventer - start).toBe(47_500);
+    expect(s.tilgaengelig + s.afventer - start).toBe(X.udbetaling);
   });
 
   it("frigivelse: køberen godkender, og udbetalingen sendes til sælgerens bank", async () => {
@@ -68,10 +76,10 @@ describe("betal -> frigiv -> payout", () => {
     expect(b.overfoert_kl).toBeTruthy();
     const u = await saelgerUdbetaling(b.saelger_udbetaling_id!);
     expect(u.status).toBe("oprettet");
-    expect(u.beloeb_oere).toBe(47_500);
+    expect(u.beloeb_oere).toBe(X.udbetaling);
     expect(u.betaling_ids).toContain(h.betalingId);
     const p = await stripe().payouts.retrieve(u.stripe_payout_id!, undefined, { stripeAccount: konto });
-    expect(p.amount).toBe(47_500);
+    expect(p.amount).toBe(X.udbetaling);
     expect(p.metadata?.saelger_udbetaling_id).toBe(u.id);
   });
 

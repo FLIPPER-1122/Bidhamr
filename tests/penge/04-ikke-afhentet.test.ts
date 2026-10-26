@@ -9,6 +9,7 @@ import {
   betal,
   betaling,
   forberedSaelger,
+  forventet,
   opretHandel,
   pakkeSendt,
   rydOp,
@@ -22,13 +23,19 @@ import { CHEF_ID } from "./brugere";
 let rNul: TestHandel;
 let rMindre: TestHandel;
 let konto: string;
+// Ny prismodel (forventet = beregn.ts). Bud 30 kr.: købergebyr 7,10 kr.,
+// sælgergebyr 6,50 kr., fragt 42 kr. -> T = 79,10 kr., U = 23,50 kr.
+const NUL = { bud: 3_000, ...forventet(3_000) };
+// Bud 500 kr.: T = 582 kr., gebyr 112 kr., U = 470 kr., R = bud - returfragt.
+const MINDRE = { bud: 50_000, ...forventet(50_000) };
+const R_MINDRE = MINDRE.bud - PAKKESHOP_FRAGT_OERE;
 
 beforeAll(async () => {
   konto = await forberedSaelger();
-  // Bud 30 kr. < returfragt 40 kr. -> R = 0.
-  rNul = await opretHandel({ navn: "ikke-afhentet-R0", budOere: 3_000 });
-  // Bud 500 kr. -> R = 460 kr. < U = 475 kr.
-  rMindre = await opretHandel({ navn: "ikke-afhentet-R<U", budOere: 50_000 });
+  // Bud 30 kr. < returfragt 42 kr. -> R = 0.
+  rNul = await opretHandel({ navn: "ikke-afhentet-R0", budOere: NUL.bud });
+  // Bud 500 kr. -> R = 500 - 42 = 458 kr. < U = 470 kr.
+  rMindre = await opretHandel({ navn: "ikke-afhentet-R<U", budOere: MINDRE.bud });
 });
 
 afterAll(async () => {
@@ -57,13 +64,15 @@ describe("ikke-afhentet pakke", () => {
     const b = await betaling(rNul.betalingId);
     const t = await stripeTal(b);
     expect(t.refunderet).toBe(0);
-    // U = 30 - 1,50 = 28,50 kr. tilbageført; intet gebyr refunderet.
-    expect(t.tilbagefoert).toBe(2_850);
+    // U = 30 - 6,50 = 23,50 kr. tilbageført; intet gebyr refunderet.
+    expect(NUL.udbetaling).toBe(2_350);
+    expect(t.tilbagefoert).toBe(NUL.udbetaling);
     expect(t.gebyrRefunderet).toBe(0);
     const efter = await saldo(konto);
-    expect(foer.tilgaengelig + foer.afventer - (efter.tilgaengelig + efter.afventer)).toBe(2_850);
-    // BidHamr står med hele betalingen (T = 30 + 1,50 + 40 = 71,50 kr.).
-    expect(t.gebyr - t.gebyrRefunderet + t.tilbagefoert - t.refunderet).toBe(7_150);
+    expect(foer.tilgaengelig + foer.afventer - (efter.tilgaengelig + efter.afventer)).toBe(NUL.udbetaling);
+    // BidHamr står med hele betalingen (T = 30 + 7,10 + 42 = 79,10 kr.).
+    expect(NUL.total).toBe(7_910);
+    expect(t.gebyr - t.gebyrRefunderet + t.tilbagefoert - t.refunderet).toBe(NUL.total);
   });
 
   it("R < U: køberen får bud - returfragt, sælger står med 0", async () => {
@@ -71,24 +80,26 @@ describe("ikke-afhentet pakke", () => {
     await pakkeSendt(rMindre);
     const svar = await ikkeAfhentet(rMindre);
     expect(svar.kode).toBe("ok");
-    expect(svar.refusionOere).toBe(46_000);
+    expect(R_MINDRE).toBe(45_800);
+    expect(svar.refusionOere).toBe(R_MINDRE);
     const b = await betaling(rMindre.betalingId);
     expect(b.status).toBe("refunderet");
     const t = await stripeTal(b);
-    expect(t.refunderet).toBe(46_000);
-    // Hele sælgerens del (U = 475 kr.) tilbageføres; G = 0.
-    expect(t.tilbagefoert).toBe(47_500);
+    expect(t.refunderet).toBe(R_MINDRE);
+    // Hele sælgerens del (U = 470 kr.) tilbageføres; G = 0.
+    expect(t.tilbagefoert).toBe(MINDRE.udbetaling);
     expect(t.gebyrRefunderet).toBe(0);
-    // BidHamr: T - R = 565 - 460 = 105 kr. (gebyr 90 + U - R 15).
-    expect(t.gebyr - t.gebyrRefunderet + t.tilbagefoert - t.refunderet).toBe(10_500);
+    // BidHamr: T - R = 582 - 458 = 124 kr. (gebyr 112 + U - R 12).
+    expect(MINDRE.total - R_MINDRE).toBe(12_400);
+    expect(t.gebyr - t.gebyrRefunderet + t.tilbagefoert - t.refunderet).toBe(MINDRE.total - R_MINDRE);
   });
 
   it("gentaget registrering ændrer intet", async () => {
     const svar = await ikkeAfhentet(rMindre);
     expect(svar.kode).toBe("allerede");
     const t = await stripeTal(await betaling(rMindre.betalingId));
-    expect(t.refunderet).toBe(46_000);
-    expect(t.tilbagefoert).toBe(47_500);
+    expect(t.refunderet).toBe(R_MINDRE);
+    expect(t.tilbagefoert).toBe(MINDRE.udbetaling);
     const s = await saldo(konto);
     expect(s.tilgaengelig + s.afventer).toBeGreaterThanOrEqual(0);
   });

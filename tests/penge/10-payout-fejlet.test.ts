@@ -9,6 +9,7 @@ import {
   betal,
   betaling,
   forberedSaelger,
+  forventet,
   koeberGodkender,
   opretHandel,
   rydOp,
@@ -25,6 +26,8 @@ import { SAELGER_BANK_FEJLER } from "./brugere";
 let h: TestHandel;
 let konto: string;
 let foersteUdbetaling: string;
+// Bud 50 kr.: sælgergebyr 5 % + 5 = 7,50 kr. -> U = 42,50 kr.
+const X = forventet(5_000);
 
 beforeAll(async () => {
   konto = await forberedSaelger(SAELGER_BANK_FEJLER);
@@ -55,8 +58,9 @@ describe("payout.failed", () => {
       .eq("user_id", SAELGER_BANK_FEJLER.id)
       .single<{ connect_udbetaling_fejlet_kl: string | null }>();
     expect(profil?.connect_udbetaling_fejlet_kl).toBeTruthy();
-    const s = await ventPaa(() => saldo(konto), (x) => x.tilgaengelig >= 4_750, 120_000);
-    expect(s.tilgaengelig).toBeGreaterThanOrEqual(4_750);
+    expect(X.udbetaling).toBe(4_250);
+    const s = await ventPaa(() => saldo(konto), (x) => x.tilgaengelig >= X.udbetaling, 120_000);
+    expect(s.tilgaengelig).toBeGreaterThanOrEqual(X.udbetaling);
   });
 
   it("samme event igen og cron'en: ingen ny udbetaling til den fejlede bank", async () => {

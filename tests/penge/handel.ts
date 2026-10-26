@@ -31,17 +31,82 @@ export function kontoFor(saelger: PengeBruger): string {
   return k;
 }
 
-// Sælgerens Connect-konto spejles med den rigtige kode (som account.updated).
+// Sælgerens Connect-konto spejles med den rigtige kode (som account.updated),
+// og 14-dages-intervallet nulstilles for testsælgeren (se nedenfor).
 export async function forberedSaelger(saelger: PengeBruger = SAELGER): Promise<string> {
   const konto = kontoFor(saelger);
   const a = await stripe().accounts.retrieve(konto);
   const bruger = await spejlConnectKonto(a);
   if (bruger !== saelger.id) throw new Error(`Spejlet af ${konto} gav ${bruger}, ikke ${saelger.id}`);
+  await nulstilUdbetalingsinterval(saelger);
   return konto;
+}
+
+const DAG_MS = 24 * 60 * 60_000;
+
+// Udbetaling hver 14. dag (20261031010000/20261031020000): de faste
+// testsælgere får en payout i mange scenarier - i samme kørsel og i kørsler
+// med under 14 dages mellemrum - så intervallet ville blokere næste scenarie.
+// KUN TESTDATABASEN: testsælgerens payouts (oprettet/paid) fra de seneste 15
+// dage flyttes 15 dage tilbage i tiden (saelger_udbetalinger.oprettet).
+// Payouts slettes aldrig (handelsdata), status og beløb røres ikke, og
+// afstemningen finder dem stadig via payout-id'et. En payout, der stadig står
+// som 'oprettet', afsluttes først, som Stripe har den (payout-webhooken), så
+// overvågningen ikke ser en hængende udbetaling.
+export async function nulstilUdbetalingsinterval(saelger: PengeBruger): Promise<void> {
+  if (!String(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").includes("pjiigmzqwlfepxnjdvug")) {
+    throw new Error("nulstilUdbetalingsinterval: kun testdatabasen");
+  }
+  const db = admin();
+  const graense = new Date(Date.now() - 15 * DAG_MS).toISOString();
+  type Raekke = { id: string; status: string; oprettet: string; stripe_konto: string; stripe_payout_id: string | null };
+  const { data, error } = await db
+    .from("saelger_udbetalinger")
+    .select("id, status, oprettet, stripe_konto, stripe_payout_id")
+    .eq("seller_id", saelger.id)
+    .in("status", ["oprettet", "paid"])
+    .gt("oprettet", graense)
+    .overrideTypes<Raekke[], { merge: false }>();
+  if (error) throw new Error(`nulstilUdbetalingsinterval: ${error.message}`);
+  for (const u of data ?? []) {
+    if (u.status === "oprettet" && u.stripe_payout_id) {
+      try {
+        const p = await ventPaaPayout(u.stripe_konto, u.stripe_payout_id, 60_000);
+        if (p.status === "paid" || p.status === "failed" || p.status === "canceled") {
+          await sendWebhook(`payout.${p.status}`, p as unknown as { id: string }, { konto: u.stripe_konto });
+        }
+      } catch (err) {
+        // Fx en gammel testkonto uden adgang: payouten flyttes alligevel (testdata).
+        console.error("nulstilUdbetalingsinterval: payout kunne ikke afsluttes", u.id, err);
+      }
+    }
+    const { error: oFejl } = await db
+      .from("saelger_udbetalinger")
+      .update({ oprettet: new Date(new Date(u.oprettet).getTime() - 15 * DAG_MS).toISOString() })
+      .eq("id", u.id);
+    if (oFejl) throw new Error(`nulstilUdbetalingsinterval: ${oFejl.message}`);
+  }
+  const { data: naeste, error: nFejl } = await db.rpc("saelger_naeste_udbetaling_kl", { p_saelger: saelger.id });
+  if (nFejl) throw new Error(`saelger_naeste_udbetaling_kl: ${nFejl.message}`);
+  if (typeof naeste === "string" && new Date(naeste).getTime() > Date.now()) {
+    throw new Error(`Testsælgeren ${saelger.email} har stadig ventetid til ${naeste}`);
+  }
 }
 
 // Lille pakkeshop (fragt_pakkestoerrelser, 20261031010000: 42 kr.).
 export const PAKKESHOP_FRAGT_OERE = 4200;
+
+// De beløb, en privat TEST-handel skal ende med (ny prismodel - samme formler
+// som databasen, src/lib/betaling/beregn.ts). Øre.
+//   total = bud + købergebyr + fragt (BidHamr Beskyttelse er i gebyret)
+//   gebyr (application fee) = købergebyr + sælgergebyr + fragt
+//   udbetaling = bud - sælgergebyr = total - gebyr
+export function forventet(budOere: number, o: { afhentning?: boolean } = {}) {
+  const fragt = o.afhentning ? 0 : PAKKESHOP_FRAGT_OERE;
+  const koeb = koebergebyrOere(budOere, false);
+  const saelg = saelgergebyrOere(budOere, false);
+  return { koeb, saelg, fragt, total: budOere + koeb + fragt, gebyr: koeb + saelg + fragt, udbetaling: budOere - saelg };
+}
 
 export type TestHandel = {
   navn: string;

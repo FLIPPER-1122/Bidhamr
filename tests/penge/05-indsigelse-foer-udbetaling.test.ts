@@ -9,6 +9,7 @@ import {
   betal,
   betaling,
   forberedSaelger,
+  forventet,
   koeberGodkender,
   opretHandel,
   rydOp,
@@ -24,6 +25,8 @@ let h: TestHandel;
 let konto: string;
 let start = 0;
 let dispute: Stripe.Dispute;
+// Bud 200 kr.: sælgergebyr 5 % + 5 = 15 kr. -> U = 185 kr.
+const X = forventet(20_000);
 
 beforeAll(async () => {
   konto = await forberedSaelger();
@@ -74,8 +77,9 @@ describe("indsigelse tabt før udbetaling", () => {
     expect(b.indsigelse_status).toBe("lost");
     expect(b.indsigelse_tabt_afklaret).toBe("tilbagefoert");
     const t = await stripeTal(b);
-    // U = 200 - 10 = 190 kr. hentet tilbage.
-    expect(t.tilbagefoert).toBe(19_000);
+    // U = 200 - 15 = 185 kr. hentet tilbage.
+    expect(X.udbetaling).toBe(18_500);
+    expect(t.tilbagefoert).toBe(X.udbetaling);
     const s = await saldo(konto);
     expect(s.tilgaengelig + s.afventer).toBe(start);
     expect(b.saelger_udbetaling_id).toBeNull();
@@ -87,6 +91,6 @@ describe("indsigelse tabt før udbetaling", () => {
     const { tilbagefoerTabteIndsigelserVentende } = await import("@/lib/betaling/indsigelse");
     await tilbagefoerTabteIndsigelserVentende();
     const t = await stripeTal(await betaling(h.betalingId));
-    expect(t.tilbagefoert).toBe(19_000);
+    expect(t.tilbagefoert).toBe(X.udbetaling);
   });
 });

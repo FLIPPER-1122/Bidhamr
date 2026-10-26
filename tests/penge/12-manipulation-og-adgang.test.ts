@@ -13,6 +13,7 @@ import {
   admin,
   betaling,
   forberedSaelger,
+  forventet,
   fuldRefusion,
   leverBetalingsWebhooks,
   opretHandel,
@@ -27,6 +28,9 @@ import { logIndSom } from "./session";
 
 let manip: TestHandel;
 let anden: TestHandel;
+// Bud 100 kr.: købergebyr 7 % + 5 = 12 kr., sælgergebyr 5 % + 5 = 10 kr.,
+// fragt 42 kr. -> total 154 kr., gebyr 64 kr.
+const X = forventet(10_000);
 
 beforeAll(async () => {
   await forberedSaelger();
@@ -62,7 +66,8 @@ describe("beløbsmanipulation afvises", () => {
     });
     expect(ny.error).not.toBeNull();
     const b = await betaling(manip.betalingId);
-    expect(b.total_oere).toBe(10_000 + 500 + 4_000);
+    expect(X.total).toBe(10_000 + 1_200 + 4_200);
+    expect(b.total_oere).toBe(X.total);
     expect(b.status).toBe("afventer");
   });
 
@@ -75,10 +80,11 @@ describe("beløbsmanipulation afvises", () => {
     await stripe().paymentIntents.update(id, { amount: 1_000, application_fee_amount: 100 });
     const s2 = await startBetaling(manip.tradeId);
     if (!("ok" in s2)) throw new Error(s2.fejl);
-    expect(s2.totalOere).toBe(14_500);
+    expect(s2.totalOere).toBe(X.total);
     const pi = await stripe().paymentIntents.retrieve(id);
-    expect(pi.amount).toBe(14_500);
-    expect(pi.application_fee_amount).toBe(500 + 500 + 4_000);
+    expect(pi.amount).toBe(X.total);
+    expect(X.gebyr).toBe(1_200 + 1_000 + 4_200);
+    expect(pi.application_fee_amount).toBe(X.gebyr);
     // Og den tvungne 3D Secure (sikkerhedsnet A) står på.
     expect(pi.payment_method_options?.card?.request_three_d_secure).toBe("any");
   });
@@ -104,14 +110,14 @@ describe("beløbsmanipulation afvises", () => {
       .eq("stripe_payment_intent_id", id)
       .single<{ modtaget_oere: number; forventet_oere: number; refunderet_kl: string | null }>();
     expect(afv?.modtaget_oere).toBe(1_000);
-    expect(afv?.forventet_oere).toBe(14_500);
+    expect(afv?.forventet_oere).toBe(X.total);
     expect(afv?.refunderet_kl).toBeTruthy();
     const ch = await stripe().charges.retrieve(pi.latest_charge as string);
     expect(ch.refunded).toBe(true);
     // Handlen fortsætter: køberen kan betale det rigtige beløb.
     const s = await startBetaling(manip.tradeId);
     if (!("ok" in s)) throw new Error(s.fejl);
-    expect(s.totalOere).toBe(14_500);
+    expect(s.totalOere).toBe(X.total);
     expect(piId(s.clientSecret)).not.toBe(id);
   });
 });

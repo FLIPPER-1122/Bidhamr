@@ -8,6 +8,7 @@ import {
   betal,
   betaling,
   forberedSaelger,
+  forventet,
   koeberGodkenderUdenUdbetaling,
   opretHandel,
   rydOp,
@@ -20,6 +21,9 @@ import {
 let a: TestHandel;
 let b: TestHandel;
 let konto: string;
+// Bud 40 kr. og 60 kr.: sælgergebyr 7 kr. og 8 kr. -> U = 33 + 52 = 85 kr.
+const UA = forventet(4_000).udbetaling;
+const UB = forventet(6_000).udbetaling;
 
 beforeAll(async () => {
   konto = await forberedSaelger();
@@ -49,11 +53,12 @@ describe("to samtidige cron-kørsler", () => {
     expect(ba.saelger_udbetaling_id).toBeTruthy();
     expect(ba.saelger_udbetaling_id).toBe(bb.saelger_udbetaling_id);
     const u = await saelgerUdbetaling(ba.saelger_udbetaling_id!);
-    expect(u.beloeb_oere).toBe(3_800 + 5_700);
+    expect([UA, UB]).toEqual([3_300, 5_200]);
+    expect(u.beloeb_oere).toBe(UA + UB);
     const efter = await stripe().payouts.list({ limit: 100 }, { stripeAccount: konto });
     const nye = efter.data.filter((p) => !foer.data.some((f) => f.id === p.id));
     expect(nye.length).toBe(1);
-    expect(nye[0].amount).toBe(9_500);
+    expect(nye[0].amount).toBe(UA + UB);
     const { count } = await admin()
       .from("saelger_udbetalinger")
       .select("id", { count: "exact", head: true })

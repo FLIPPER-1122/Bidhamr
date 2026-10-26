@@ -10,13 +10,16 @@
 --   gebyr: 100=1200/1000 200=1900/1500 7500=30000/9500 7501=24003/16502
 --          10000=31500/21500 25000=65000/45000 erhverv(1000 kr.)=5000/5000
 --   fragt: lille=4200 mellem=5200 stor=6700 (dør 6000/8500/null)
---   send: ny koeb=1200 saelg=1000 fragt=4200 besk=true/0 total=15400 udb=9000 fee=ok
+--   send: ny koeb=1200 saelg=1000 fragt=4200 besk=true/0 total=15400 udb=9000
+--         fee=ok(15400-9000=6400)  (forkert gebyr rettes af betalinger_trin2_vedligehold)
 --   afhent: ny fragt=0 besk=false/0 total=774103 (bud 7.501 kr.: 750100 + 24003)
 --   erhverv: erhverv koeb=125000 saelg=125000 besk=false/0
 --   skift: til_afhentning besk=false, tilbage besk=true, prismodel=ny
 --   sag: ny=10000 (kun buddet)
 --   loft: bud 25001 afvist (BHB05 "Det højeste tilladte bud er 25.000 kr.")
---   fmd5: alle 8 funktioner har "ny" md5 (se migrationen)
+--   fmd5: alle 8 funktioner har "ny" md5 (se migrationen). Efter
+--         20261031020000 har saelger_udbetaling_claim 4 parametre og md5
+--         3ab66db65625a200d0cdd97b7d8d3544 (se den migration).
 do $t$
 declare
   v_saelger uuid := '11111111-1111-4111-8111-0000000005e1';
@@ -63,7 +66,12 @@ begin
           true, false, 'god', 3, true, 'stor', 9000, now() - interval '8 days', 'afsluttet', v_koeber, now() - interval '8 days')
   returning id into a3;
   -- Erhverv-flaget sættes direkte (testen tester gebyret, ikke firmaflowet).
+  -- auctions_zz_erhverv bevarer ellers det gamle flag ved UPDATE (det følger
+  -- sælgerens kontotype ved oprettelse) - den slås fra omkring opdateringen
+  -- (rulles tilbage med resten).
+  alter table public.auctions disable trigger auctions_zz_erhverv;
   update public.auctions set erhverv = true where id = a3;
+  alter table public.auctions enable trigger auctions_zz_erhverv;
 
   insert into public.trades (auction_id, seller_id, buyer_id, amount, status)
   values (a1, v_saelger, v_koeber, 100, 'afventer_betaling') returning id into t1;
@@ -75,24 +83,28 @@ begin
   -- Gamle 5 %-beløb og et tilkøbt Beskyttelse-beløb: skal regnes om.
   insert into public.betalinger (trade_id, auction_id, buyer_id, seller_id, bud_oere, koebergebyr_oere, fragt_oere,
                                  beskyttelse, beskyttelse_oere, total_oere, saelgergebyr_oere, udbetaling_oere,
-                                 betal_senest, vundet_mail_sendt_kl)
-  values (t1, a1, v_koeber, v_saelger, 10000, 500, 3500, true, 2500, 16500, 500, 9500, now() + interval '48 hours', now()),
-         (t2, a2, v_koeber, v_saelger, 750100, 37505, 0, false, 0, 787605, 37505, 712595, now() + interval '48 hours', now()),
-         (t3, a3, v_koeber, v_saelger, 2500000, 125000, 3500, true, 25000, 2653500, 125000, 2375000, now() + interval '48 hours', now());
+                                 betal_senest, vundet_mail_sendt_kl, pengemodel)
+  values (t1, a1, v_koeber, v_saelger, 10000, 500, 3500, true, 2500, 16500, 500, 9500, now() + interval '48 hours', now(), 'destination'),
+         (t2, a2, v_koeber, v_saelger, 750100, 37505, 0, false, 0, 787605, 37505, 712595, now() + interval '48 hours', now(), 'destination'),
+         (t3, a3, v_koeber, v_saelger, 2500000, 125000, 3500, true, 25000, 2653500, 125000, 2375000, now() + interval '48 hours', now(), 'destination');
 
   select * into b from public.betalinger where trade_id = t1;
   ud := ud || format('send: %s koeb=%s saelg=%s fragt=%s besk=%s/%s total=%s udb=%s ',
                      b.prismodel, b.koebergebyr_oere, b.saelgergebyr_oere, b.fragt_oere, b.beskyttelse,
                      b.beskyttelse_oere, b.total_oere, b.udbetaling_oere);
-  -- Application fee (CHECK betalinger_destination_gebyr_stemmer).
-  update public.betalinger set application_fee_oere = koebergebyr_oere + saelgergebyr_oere + fragt_oere + beskyttelse_oere
-   where id = b.id;
-  begin
-    update public.betalinger set application_fee_oere = application_fee_oere + 1 where id = b.id;
-    ud := ud || 'fee=FEJL(forkert gebyr accepteret) | ';
-  exception when check_violation then
-    ud := ud || 'fee=ok | ';
-  end;
+  -- Application fee: før betalingen (status 'afventer', ingen charge) retter
+  -- betalinger_trin2_vedligehold et forkert gebyr til formlen (købergebyr +
+  -- sælgergebyr + fragt + Beskyttelse); CHECK betalinger_destination_gebyr_
+  -- stemmer sikrer resten. Gebyret skal ende på den rigtige værdi, og
+  -- sælgeren står med total - gebyr = udbetaling.
+  update public.betalinger set application_fee_oere = 1 where id = b.id;
+  select * into b from public.betalinger where id = b.id;
+  if b.application_fee_oere = b.koebergebyr_oere + b.saelgergebyr_oere + b.fragt_oere + b.beskyttelse_oere
+     and b.total_oere - b.application_fee_oere = b.udbetaling_oere then
+    ud := ud || format('fee=ok(%s-%s=%s) | ', b.total_oere, b.udbetaling_oere, b.application_fee_oere);
+  else
+    ud := ud || format('fee=FEJL(%s) | ', b.application_fee_oere);
+  end if;
 
   select * into b from public.betalinger where trade_id = t2;
   ud := ud || format('afhent: %s fragt=%s besk=%s/%s total=%s | ', b.prismodel, b.fragt_oere, b.beskyttelse,
@@ -135,7 +147,8 @@ begin
                      'public.saet_maksimum(uuid,numeric,boolean,timestamp with time zone)'::regprocedure,
                      'public.sag_claim_refusion(uuid)'::regprocedure,
                      'public.betaling_bidhamr_daekker_claim(uuid,uuid,text,uuid)'::regprocedure,
-                     'public.saelger_udbetaling_claim(uuid,text,uuid[])'::regprocedure,
+                     coalesce(to_regprocedure('public.saelger_udbetaling_claim(uuid,text,uuid[],uuid)'),
+                              to_regprocedure('public.saelger_udbetaling_claim(uuid,text,uuid[])')),
                      'public.handel_udbetalingsstatus(uuid)'::regprocedure,
                      'public.faktura_planlaeg(integer)'::regprocedure)
      order by 1
