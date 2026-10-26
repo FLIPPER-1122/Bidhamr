@@ -30,6 +30,15 @@ import "server-only";
 //      bidhamr-payout-<udbetaling>-<forsøg>.
 // Flere handler samles i én payout pr. sælger pr. kørsel (højst 50).
 //
+// Udbetaling hver 14. dag (Filip, 26. okt. 2026 - 20261031010000): en sælger
+// får højst én payout pr. 14 dage, regnet fra hans seneste payout, der er
+// oprettet hos Stripe eller gennemført (fejlede/annullerede tæller ikke).
+// Første frigivne handel udbetales straks; handler frigivet inden for de 14
+// dage venter på sælgerens Stripe-konto og samles i næste payout (cron).
+// Databasen afgør det under sælgerlåsen (saelger_udbetaling_claim -> kode
+// 'interval'); tjekket her (trin 1b) sparer kun Stripe-kaldene. Alle andre
+// værn er uændrede. Se docs/BETALINGSMODEL-PLAN.md 1.4a.
+//
 // Destination er den eneste model (trin 5): alt her virker kun på betalinger
 // med pengemodel 'destination'. Historiske rækker fra den gamle model
 // (separat) udbetales aldrig herfra (drift-alarm - staff).
@@ -218,6 +227,9 @@ export async function udbetalTilSaelger(betalingId: string): Promise<string> {
   const r = await udbetalSaelger(b.seller_id);
   const efter = await hentBetaling(admin, b.id);
   if (efter?.saelger_udbetaling_id && efter.overfoert_kl) return "udbetalt";
+  // Sælgeren har fået en udbetaling inden for 14 dage: handlen kommer med i
+  // den næste (cron).
+  if (r === "interval") return "venter_interval";
   return r === "udbetalt" ? "venter_naeste_udbetaling" : r;
 }
 
@@ -460,6 +472,12 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
     const r = await opretPayout(admin, u);
     if (r !== "udbetalt" && r !== "afvist") return r;
   }
+
+  // 1b. Udbetaling hver 14. dag: venter, til der er gået 14 dage siden
+  // sælgerens seneste payout (databasen tjekker igen ved claim).
+  const { data: naeste, error: nFejl } = await admin.rpc("saelger_naeste_udbetaling_kl", { p_saelger: saelgerId });
+  if (nFejl && !manglerIDatabasen(nFejl)) throw new Error(`saelger_naeste_udbetaling_kl: ${nFejl.message}`);
+  if (typeof naeste === "string" && new Date(naeste).getTime() > Date.now()) return "interval";
 
   // 2. Kandidater.
   const { data: raekker, error: kFejl } = await admin

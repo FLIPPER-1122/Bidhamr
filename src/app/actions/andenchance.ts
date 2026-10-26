@@ -11,7 +11,7 @@
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { beskyttelseOere, fragtOere, KOEBERGEBYR_PROCENT } from "@/lib/betaling/beregn";
+import { erBeskyttet, fragtOere, koebergebyrOere } from "@/lib/betaling/beregn";
 import {
   genopsaetAuktionFor,
   hentAndenchanceStatusFor,
@@ -107,14 +107,18 @@ export async function hentMitTilbud(tilbudId: string): Promise<MitTilbud | Fejl>
     // Byderen har adgang via tilbuddet, også hvis auktionen senere er skjult.
     const { data: a } = await createAdminClient()
       .from("auctions")
-      .select("titel, billeder, forsendelse_mulig, fragt_pakkeshop_oere")
+      .select("titel, billeder, forsendelse_mulig, fragt_pakkeshop_oere, erhverv")
       .eq("id", t.auction_id)
       .maybeSingle();
 
     const bud = Number(t.bud_oere);
-    const koeb = Math.round((bud * KOEBERGEBYR_PROCENT) / 100);
+    // Ny prismodel (20261031010000): samme gebyr som databasen giver, når
+    // byderen siger ja. BidHamr Beskyttelse er inkluderet i gebyret ved
+    // forsendelse (privat) - tilbuddets gamle valg (t.beskyttelse) ignoreres.
+    const erhverv = Boolean(a?.erhverv);
+    const koeb = koebergebyrOere(bud, erhverv);
     const fragt = fragtOere(Boolean(a?.forsendelse_mulig), a?.fragt_pakkeshop_oere as number | null | undefined);
-    const besk = t.beskyttelse ? beskyttelseOere(bud) : 0;
+    const besk = 0;
     // Tilbuddet er udløbet, selv om cron endnu ikke har markeret det.
     const status: AndenchanceTilbudStatus =
       t.status === "afventer" && new Date(t.udloeber as string).getTime() <= Date.now()
@@ -155,7 +159,7 @@ export async function hentMitTilbud(tilbudId: string): Promise<MitTilbud | Fejl>
         budOere: bud,
         koebergebyrOere: koeb,
         fragtOere: fragt,
-        beskyttelse: Boolean(t.beskyttelse),
+        beskyttelse: erBeskyttet(erhverv, Boolean(a?.forsendelse_mulig)),
         beskyttelseOere: besk,
         totalOere: bud + koeb + fragt + besk,
         nyTradeId: (t.ny_trade_id as string | null) ?? null,

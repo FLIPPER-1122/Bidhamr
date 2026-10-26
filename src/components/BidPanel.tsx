@@ -11,12 +11,7 @@ import { afgivBud, saetMaksimum } from "@/app/actions/bud";
 import { AUTOBUD } from "@/lib/tekster/autobud";
 import { formatNedtælling, pauseTekst } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
-import {
-  KOEBERGEBYR_PROCENT,
-  beskyttelseOere,
-  fragtOere,
-  totalOere,
-} from "@/lib/betaling/beregn";
+import { fragtOere, koebergebyrOere, koeberTotalOere } from "@/lib/betaling/beregn";
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
 import { ERHVERV_BIDPANEL, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import { BINDENDE_BUD_TEKST, mindsteNaesteBud } from "@/lib/auktionRegler";
@@ -323,24 +318,15 @@ export default function BidPanel({
     Number.isFinite(budTal) && budTal >= mindsteGyldige
       ? (() => {
           const budOere = Math.round(budTal * 100);
-          return (
-            totalOere(
-              {
-                bud_oere: budOere,
-                koebergebyr_oere: Math.round((budOere * KOEBERGEBYR_PROCENT) / 100),
-                fragt_oere: fragtOere(forsendelseMulig, fragtPakkeshopOere),
-              },
-              beskyttelseValgt && beskyttelseMulig,
-            )
-          );
+          // Ny prismodel (20261031010000): BidHamr Beskyttelse er i gebyret.
+          return koeberTotalOere(budOere, erhvervAuktion, fragtOere(forsendelseMulig, fragtPakkeshopOere));
         })()
       : null;
 
   // Kun visning: prisen for BidHamr Beskyttelse på det indtastede bud.
-  const beskyttelsePrisOere =
-    beløb.trim() !== "" && Number.isFinite(budTal) && budTal > 0
-      ? beskyttelseOere(Math.round(budTal * 100))
-      : null;
+  // Ny prismodel (20261031010000): intet tilkøb længere - prisen er i gebyret.
+  // TODO(frontend): fjern afkrydsningen for BidHamr Beskyttelse.
+  const beskyttelsePrisOere: number | null = null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -554,23 +540,14 @@ export default function BidPanel({
   // sin linje og totalen nederst. Kun visning - serveren beregner beløbet.
   const gyldigtBud = estimatOere !== null;
   const budOereVist = gyldigtBud ? Math.round(budTal * 100) : null;
-  const gebyrOereVist =
-    budOereVist !== null ? Math.round((budOereVist * KOEBERGEBYR_PROCENT) / 100) : null;
-  const beskyttelseVist = beskyttelseValgt && beskyttelseMulig && budOereVist !== null
-    ? beskyttelseOere(budOereVist)
-    : null;
+  const gebyrOereVist = budOereVist !== null ? koebergebyrOere(budOereVist, erhvervAuktion) : null;
+  // Ny prismodel: ingen særskilt linje for BidHamr Beskyttelse (den er i gebyret).
+  const beskyttelseVist: number | null = null;
 
   // Hvad det mindste bud koster i alt - vises i budbjælken på mobil.
   const mindsteTotalOere = (() => {
     const budOere = Math.round(minimumBud * 100);
-    return totalOere(
-      {
-        bud_oere: budOere,
-        koebergebyr_oere: Math.round((budOere * KOEBERGEBYR_PROCENT) / 100),
-        fragt_oere: fragtOere(forsendelseMulig, fragtPakkeshopOere),
-      },
-      false,
-    );
+    return koeberTotalOere(budOere, erhvervAuktion, fragtOere(forsendelseMulig, fragtPakkeshopOere));
   })();
 
   function gaaTilBud() {

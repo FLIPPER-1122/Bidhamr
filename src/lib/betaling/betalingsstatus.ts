@@ -8,7 +8,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getStripe } from "@/lib/stripe";
-import { beskyttelseOere } from "@/lib/betaling/beregn";
+import { gammelBeskyttelseOere, type Prismodel } from "@/lib/betaling/beregn";
 import { maksBetalingsfrist } from "@/lib/betalingsfrist";
 import { hentBetalingForHandel, spejlPaymentIntent } from "@/lib/betaling/stripeBetaling";
 
@@ -40,8 +40,12 @@ export type KoeberBetalingsstatus = FaellesBetalingsstatus & {
   fragtOere: number;
   beskyttelse: boolean;
   beskyttelseOere: number;
-  // Hvad BidHamr Beskyttelse koster på denne handel, hvis den tilvælges.
+  // Hvad BidHamr Beskyttelse koster særskilt på denne handel ved forsendelse.
+  // Ny prismodel (20261031010000): 0 - den er inkluderet i købergebyret.
   beskyttelsePrisOere: number;
+  // Gebyrmodellen (gammel = før 26. okt. 2026: "Købergebyr (5 %)" og evt.
+  // tilkøbt Beskyttelse). Til den rigtige gebyrtekst (beregn.ts koebergebyrTekst).
+  prismodel: Prismodel;
   totalOere: number;
   sidsteFejl: string | null;
 };
@@ -120,7 +124,8 @@ export async function hentBetalingsstatusFor(
       fragtOere: Number(b.fragt_oere),
       beskyttelse: b.beskyttelse,
       beskyttelseOere: Number(b.beskyttelse_oere),
-      beskyttelsePrisOere: beskyttelseOere(Number(b.bud_oere)),
+      beskyttelsePrisOere: (b.prismodel ?? "gammel") === "gammel" ? gammelBeskyttelseOere(Number(b.bud_oere)) : 0,
+      prismodel: b.prismodel ?? "gammel",
       totalOere: Number(b.total_oere),
       // Aldrig den interne fejltekst: kun en fast dansk tekst, og kun for et
       // mislykket betalingsforsøg (ikke for interne markeringer til admin).

@@ -6,6 +6,7 @@
 // selve handlen (auktion, handel, leveringsvalg og betalingsrække) skrives
 // direkte med service role - det samme, som afslut_udloebne_auktioner og
 // checkout gør - så testene ikke afhænger af budgivning og timing.
+import { koebergebyrOere, saelgergebyrOere } from "@/lib/betaling/beregn";
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { inject } from "vitest";
@@ -39,7 +40,8 @@ export async function forberedSaelger(saelger: PengeBruger = SAELGER): Promise<s
   return konto;
 }
 
-export const PAKKESHOP_FRAGT_OERE = 4000;
+// Lille pakkeshop (fragt_pakkestoerrelser, 20261031010000: 42 kr.).
+export const PAKKESHOP_FRAGT_OERE = 4200;
 
 export type TestHandel = {
   navn: string;
@@ -50,13 +52,15 @@ export type TestHandel = {
   koeber: PengeBruger;
 };
 
-// Gebyrer som afslut_udloebne_auktioner (5 % + 5 %, Beskyttelse 5 % min 25
-// maks 250 kr.). Alle beløb i øre.
-function beregn(budOere: number, beskyttelse: boolean, fragtOere: number) {
-  const koeb = Math.round((budOere * 5) / 100);
-  const saelg = Math.round((budOere * 5) / 100);
-  const besk = beskyttelse ? Math.min(25_000, Math.max(2_500, Math.round((budOere * 5) / 100))) : 0;
-  return { koeb, saelg, besk, total: budOere + koeb + fragtOere + besk, udbetaling: budOere - saelg };
+// Gebyrer som databasen (ny prismodel, 20261031010000 - triggeren
+// betalinger_b_prismodel regner dem alligevel om ved oprettelse): privat
+// auktion, BidHamr Beskyttelse inkluderet i købergebyret (intet særskilt
+// beløb). "beskyttelse" ignoreres (bevaret for de eksisterende kald). Øre.
+function beregn(budOere: number, _beskyttelse: boolean, fragtOere: number) {
+  const koeb = koebergebyrOere(budOere, false);
+  const saelg = saelgergebyrOere(budOere, false);
+  const besk = 0;
+  return { koeb, saelg, besk, total: budOere + koeb + fragtOere, udbetaling: budOere - saelg };
 }
 
 export async function opretHandel(o: {
@@ -146,7 +150,7 @@ export async function opretHandel(o: {
       bud_oere: o.budOere,
       koebergebyr_oere: x.koeb,
       fragt_oere: fragtOere,
-      beskyttelse: !!o.beskyttelse,
+      beskyttelse: !o.afhentning,
       beskyttelse_oere: x.besk,
       total_oere: x.total,
       saelgergebyr_oere: x.saelg,

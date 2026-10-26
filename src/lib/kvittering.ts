@@ -7,6 +7,8 @@
 // (server) og af kvitteringsvisningen (server-komponent). Data hentes i
 // src/lib/betaling/kvittering.ts.
 
+import { koebergebyrTekst, type Prismodel } from "@/lib/betaling/beregn";
+
 export const KVITTERING_IKKE_FAKTURA =
   "Varen sælges mellem private. Dette er en kvittering/handelsbekræftelse – ikke en faktura.";
 // Sælgeren er et firma (erhvervskonto): firmanavn og CVR til teksten om, at
@@ -40,6 +42,8 @@ export type KoeberKvittering = {
   fragtOere: number;
   beskyttelse: boolean;
   beskyttelseOere: number;
+  // 20261031010000: gebyrmodellen (gammel = før 26. okt. 2026).
+  prismodel: Prismodel;
   totalOere: number;
   // Sat, når betalingen er refunderet (helt eller delvist).
   refunderetOere: number | null;
@@ -62,6 +66,7 @@ export type SaelgerKvittering = {
   budOere: number;
   saelgergebyrOere: number;
   udbetalingOere: number;
+  prismodel: Prismodel;
   overfoertKl: string | null;
   // Sat, når sælgeren (brugeren selv) er et firma.
   firma: KvitteringFirma | null;
@@ -83,10 +88,12 @@ export function kvitteringLinjer(k: Kvittering): KvitteringLinje[] {
   if (k.rolle === "koeber") {
     const linjer: KvitteringLinje[] = [
       { tekst: "Varepris (vindende bud)", oere: k.budOere },
-      { tekst: "Købergebyr (5 %)", oere: k.koebergebyrOere },
+      // Ny prismodel: "Gebyr (inkl. BidHamr Beskyttelse)" / "Gebyr"; gamle handler "Købergebyr (5 %)".
+      { tekst: koebergebyrTekst(k.prismodel, k.beskyttelse), oere: k.koebergebyrOere },
       { tekst: k.afhentning ? "Fragt (afhentning)" : "Fragt", oere: k.fragtOere },
     ];
-    if (k.beskyttelse) linjer.push({ tekst: "BidHamr Beskyttelse", oere: k.beskyttelseOere });
+    // Kun gamle handler har et særskilt (tilkøbt) beløb for BidHamr Beskyttelse.
+    if (k.beskyttelse && k.beskyttelseOere > 0) linjer.push({ tekst: "BidHamr Beskyttelse", oere: k.beskyttelseOere });
     linjer.push({ tekst: "I alt betalt", oere: k.totalOere, fremhaev: true });
     if (k.refunderetOere !== null) {
       linjer.push({ tekst: "Betalt tilbage til dig", oere: k.refunderetOere, fratraek: true });
@@ -95,7 +102,7 @@ export function kvitteringLinjer(k: Kvittering): KvitteringLinje[] {
   }
   return [
     { tekst: "Salgspris (vindende bud)", oere: k.budOere },
-    { tekst: "Sælgergebyr (5 %)", oere: k.saelgergebyrOere, fratraek: true },
+    { tekst: k.prismodel === "gammel" ? "Sælgergebyr (5 %)" : "Sælgergebyr", oere: k.saelgergebyrOere, fratraek: true },
     { tekst: "Udbetaling til dig", oere: k.udbetalingOere, fremhaev: true },
   ];
 }

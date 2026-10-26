@@ -157,7 +157,7 @@ function TilbudVisning({ t }: { t: Extract<Awaited<ReturnType<typeof hentMitTilb
           <Linje label="Dit bud" vaerdi={kroner(t.budOere)} />
           <Linje label="Købergebyr" vaerdi={kroner(t.koebergebyrOere)} />
           <Linje label="Fragt" vaerdi={t.fragtOere > 0 ? kroner(t.fragtOere) : "Afhentning"} />
-          {t.beskyttelse && <Linje label="BidHamr Beskyttelse" vaerdi={kroner(t.beskyttelseOere)} />}
+          {t.beskyttelseOere > 0 && <Linje label="BidHamr Beskyttelse" vaerdi={kroner(t.beskyttelseOere)} />}
           <div className="flex justify-between border-t border-kant pt-3 text-lg font-bold text-tekst">
             <dt>I alt</dt>
             <dd className="tabular-nums">{kroner(t.totalOere)}</dd>

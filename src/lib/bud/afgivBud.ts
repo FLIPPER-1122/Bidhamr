@@ -55,9 +55,9 @@ const KENDTE_BUDFEJL = [
   "Sælgeren har spærret dig fra at byde på sine auktioner.",
   "Du skal være logget ind.",
   "Du har prøvet for mange gange. Vent lidt, og prøv så igen.",
-  // Beløbsloft (20261019010000, chefens valg): højst 500.000 kr.
-  "Det højeste tilladte bud er 500.000 kr.",
-  "Dit maksimum kan højst være 500.000 kr.",
+  // Beløbsloft (Filip, 26. okt. 2026 - 20261031010000): højst 25.000 kr.
+  "Det højeste tilladte bud er 25.000 kr.",
+  "Dit maksimum kan højst være 25.000 kr.",
   // Sælgeren er frosset (fremmed udbetaling, 20261019010000).
   "Der kan ikke bydes på sælgerens auktioner lige nu.",
   AUKTION_AENDRET,
@@ -153,7 +153,7 @@ export async function afgivBudFor(
   ) {
     return { fejl: "Ugyldigt bud.", kode: "ugyldig" };
   }
-  if (beloeb > MAKS_BUD) return { fejl: "Det højeste tilladte bud er 500.000 kr.", kode: "BHB05" };
+  if (beloeb > MAKS_BUD) return { fejl: "Det højeste tilladte bud er 25.000 kr.", kode: "BHB05" };
   const version = versionFra(redigeretKl);
 
   if (!(await tjekGraenser([["bud_bruger", brugerId], ["bud_ip", ip]]))) {
@@ -232,7 +232,7 @@ export async function saetMaksimumFor(
   ) {
     return { fejl: "Skriv dit maksimum i hele kroner.", kode: "ugyldig" };
   }
-  if (maks > MAKS_BUD) return { fejl: "Dit maksimum kan højst være 500.000 kr.", kode: "BHB05" };
+  if (maks > MAKS_BUD) return { fejl: "Dit maksimum kan højst være 25.000 kr.", kode: "BHB05" };
   const version = versionFra(redigeretKl);
 
   if (!(await tjekGraenser([["bud_bruger", brugerId], ["bud_ip", ip]]))) {

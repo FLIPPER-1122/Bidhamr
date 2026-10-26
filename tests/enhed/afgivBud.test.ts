@@ -70,8 +70,11 @@ describe("afgivBudFor", () => {
     }
   });
 
-  it("over 500.000 kr.: BHB05; rate limit: for_mange", async () => {
-    expect(await afgivBudFor(brugerKlient().klient as never, BYDER, "ip", AUKTION, 500_001, false)).toMatchObject({ kode: "BHB05" });
+  it("over 25.000 kr.: BHB05; rate limit: for_mange", async () => {
+    expect(await afgivBudFor(brugerKlient().klient as never, BYDER, "ip", AUKTION, 25_001, false)).toMatchObject({
+      kode: "BHB05",
+      fejl: "Det højeste tilladte bud er 25.000 kr.",
+    });
     m.graense = false;
     expect(await afgivBudFor(brugerKlient().klient as never, BYDER, "ip", AUKTION, 150, false)).toMatchObject({ kode: "for_mange" });
   });

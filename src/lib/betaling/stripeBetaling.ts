@@ -23,7 +23,7 @@ import Stripe from "stripe";
 import { getStripe, kraevSammeOffentligeNoegle, StripeTilstandFejl } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
-import { applicationFeeOere, totalOere } from "@/lib/betaling/beregn";
+import { applicationFeeOere, forventetTotalOere, type Prismodel } from "@/lib/betaling/beregn";
 import { egenDatabase } from "@/lib/betaling/fremmedeTestdata";
 import { sendIndsigelseTilSaelger } from "@/lib/betaling/indsigelseBeskeder";
 import { kontoSpejl, nyKontoParametre, sikrKontoopsaetning } from "@/lib/betaling/connect";
@@ -81,6 +81,9 @@ export type BetalingRaekke = {
   total_oere: number;
   saelgergebyr_oere: number;
   udbetaling_oere: number;
+  // 20261031010000: gebyrmodel (gammel = før 26. okt. 2026). Mangler, før
+  // migrationen er kørt.
+  prismodel?: Prismodel;
   valuta: string;
   status: "afventer" | "behandles" | "betalt" | "annulleret" | "refunderet";
   betal_senest: string;
@@ -684,7 +687,9 @@ export async function sikrPaymentIntent(
     }
     return eksisterende;
   }
-  if (totalOere(betaling, betaling.beskyttelse) !== beloeb) {
+  // Gebyr og Beskyttelse skal passe med formlen for betalingens prismodel
+  // (beregn.ts / public.koebergebyr_oere), og totalen med beløbene.
+  if (forventetTotalOere(betaling) !== beloeb) {
     // Databasen og TS-beregningen er uenige - betal aldrig et forkert beløb.
     throw new Error(`Beløb stemmer ikke for betaling ${betaling.id}`);
   }

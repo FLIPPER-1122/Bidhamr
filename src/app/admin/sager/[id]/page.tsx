@@ -126,7 +126,7 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
   const taget = aabenSag ? ((await hentSagTaget(admin, [sag.id])).get(sag.id) ?? null) : null;
   // Beløb til dialogen "Medhold til køber" - kun når man må se beløb (chef).
   const koeberBeloebOere =
-    sag.kan.seBeloeb && sag.betaling?.totalOere != null ? sag.betaling.totalOere - (sag.betaling.beskyttelseOere ?? 0) : null;
+    sag.kan.seBeloeb && sag.betaling?.medholdRefusionOere != null ? sag.betaling.medholdRefusionOere : null;
   const b = sag.betaling;
   const kanSkriveFaelles = rolle ? harMindstRolle(rolle, "admin") : false;
   const koeberNavn = sag.koeber.navn ?? "Uden navn";

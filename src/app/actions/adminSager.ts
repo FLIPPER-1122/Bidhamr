@@ -37,6 +37,7 @@ import {
   indsigelseBlokerer,
   refunderBetaling,
 } from "@/lib/betaling/stripeBetaling";
+import { sagRefusionOere } from "@/lib/betaling/beregn";
 import { REFUSION_I_GANG, REFUSION_KONFLIKT } from "@/lib/betaling/refusionTekster";
 import { aabnChat } from "@/app/actions/staffChat";
 import {
@@ -292,6 +293,10 @@ export type SagDetalje = SagListeRaekke & {
     totalOere: number | null;
     beskyttelseOere: number | null;
     refusionOere: number | null;
+    // Kun for chef - ellers null. Det køberen får tilbage ved medhold
+    // (beregn.ts sagRefusionOere / public.sag_refusion_oere): ny prismodel =
+    // kun buddet; gamle handler = alt undtagen BidHamr Beskyttelse.
+    medholdRefusionOere: number | null;
   } | null;
   // Konti (til "Luk konto permanent").
   koeberLukket: boolean;
@@ -777,6 +782,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
               totalOere: seBeloeb ? Number(betaling.total_oere) : null,
               beskyttelseOere: seBeloeb ? Number(betaling.beskyttelse_oere) : null,
               refusionOere: seBeloeb && s.refusion_oere !== null ? Number(s.refusion_oere) : null,
+              medholdRefusionOere: seBeloeb ? sagRefusionOere(betaling) : null,
             }
           : null,
         koeberLukket: lukket.get(liste.koeber.id) ?? false,

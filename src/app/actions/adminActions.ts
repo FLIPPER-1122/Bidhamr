@@ -1400,6 +1400,9 @@ const OVERFOERSEL_TEKST: Record<string, string> = {
   venter_udbetalinger_inaktive: "Udbetalinger er ikke aktive på sælgerens Stripe-konto. Sælger skal gøre kontoen færdig hos Stripe.",
   venter_plan_ikke_manuel: "Sælgerens Stripe-konto står ikke til manuel udbetaling. Den sættes tilbage automatisk - prøv igen om lidt.",
   venter_saldo: "Saldoen på sælgerens Stripe-konto dækker ikke udbetalingen endnu. Den prøves igen automatisk.",
+  // Udbetaling hver 14. dag (20261031010000).
+  venter_interval:
+    "Sælgeren har fået en udbetaling inden for de sidste 14 dage. Handlen kommer automatisk med i den næste udbetaling.",
   saldo_afviger: "Saldoen på sælgerens Stripe-konto passer ikke med handlerne. Udbetalinger er stoppet - se /admin/drift.",
   afvist: "Stripe afviste udbetalingen. Se fejlen på betalingen.",
   // Sikkerhedsnet A (20261019010000).

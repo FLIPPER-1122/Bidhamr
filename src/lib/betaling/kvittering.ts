@@ -13,6 +13,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { KoeberKvittering, Kvittering, SaelgerKvittering } from "@/lib/kvittering";
+import type { Prismodel } from "@/lib/betaling/beregn";
 
 type Raekke = {
   trade_id: string;
@@ -34,12 +35,12 @@ type Raekke = {
   refusion_oere: number | null;
   refunderet_kl: string | null;
   refusion_anmodet_kl: string | null;
+  // 20261031010000 (mangler, før migrationen er kørt = gammel).
+  prismodel?: Prismodel;
 };
 
-const KOLONNER =
-  "trade_id, auction_id, buyer_id, seller_id, bud_oere, koebergebyr_oere, fragt_oere, " +
-  "beskyttelse, beskyttelse_oere, total_oere, saelgergebyr_oere, udbetaling_oere, status, " +
-  "betalt_kl, frigivet_kl, overfoert_kl, refusion_oere, refunderet_kl, refusion_anmodet_kl";
+// "*": prismodel (20261031010000) findes først, når migrationen er kørt.
+const KOLONNER = "*";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -102,6 +103,7 @@ export async function bygKvittering(
       fragtOere: Number(b.fragt_oere),
       beskyttelse: b.beskyttelse,
       beskyttelseOere: Number(b.beskyttelse_oere),
+      prismodel: b.prismodel ?? "gammel",
       totalOere: Number(b.total_oere),
       refunderetOere: refunderet ? Number(b.refusion_oere ?? b.total_oere) : null,
       refunderetKl: refunderet ? b.refunderet_kl : null,
@@ -120,6 +122,7 @@ export async function bygKvittering(
     budOere: Number(b.bud_oere),
     saelgergebyrOere: Number(b.saelgergebyr_oere),
     udbetalingOere: Number(b.udbetaling_oere),
+    prismodel: b.prismodel ?? "gammel",
     overfoertKl: b.overfoert_kl,
     firma,
   };
