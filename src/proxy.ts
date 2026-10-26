@@ -27,7 +27,7 @@ export async function proxy(request: NextRequest) {
 
 // Kun rigtige statiske filer springes over: Next' egne filer, favicon, filerne
 // i public/ (brand/, forside/ og de løse svg'er) og metadata-filerne i
-// src/app (icon.svg, apple-icon.png, opengraph-image.jpg). Tidligere blev
+// src/app (icon.svg, icon1.png, apple-icon.png, opengraph-image.jpg). Tidligere blev
 // ALLE stier, der endte på .png/.jpg osv., sprunget over - så kunne en server
 // action kaldes via POST /auktion/x.jpg helt uden om gaten. Tilføjes en fil i
 // public/, skal den med her, ellers går den bare gennem gaten.
@@ -41,7 +41,7 @@ export async function proxy(request: NextRequest) {
 // også dér uden proxy - det er offentlige filer, og alle andre stier giver 404.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico$|brand/|forside/|(?:file|globe|next|vercel|window|icon)\\.svg$|apple-icon\\.png$|opengraph-image\\.jpg$).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico$|brand/|forside/|(?:file|globe|next|vercel|window|icon)\\.svg$|(?:apple-icon|icon1)\\.png$|opengraph-image\\.jpg$).*)",
     { source: "/:path*", has: [{ type: "header", key: "content-type" }] },
     { source: "/:path*", has: [{ type: "header", key: "next-action" }] },
   ],

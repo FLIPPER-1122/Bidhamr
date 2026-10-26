@@ -66,7 +66,7 @@ function forsideJsonLd(): string {
         "@id": `${url}/#organisation`,
         name: "BidHamr",
         url,
-        logo: `${url}/brand/bidhamr-logo.svg`,
+        logo: { "@type": "ImageObject", url: `${url}/brand/bidhamr-logo-512.png`, width: 512, height: 512 },
       },
       {
         "@type": "WebSite",
