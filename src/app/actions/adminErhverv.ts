@@ -94,6 +94,7 @@ const KODE_FEJL: Record<string, string> = {
   ugyldig_pris: "Prisen skal være et helt antal kroner (eller tom, hvis den ikke er sat).",
   ugyldigt_antal: `Antal auktioner pr. uge skal være mellem 1 og ${G.auktionerPrUgeMaks}.`,
   navn_findes: "Der findes allerede en pakke med det navn.",
+  ugyldig_rabat: "Rabatten på Ugens butik skal være 0-90 % og 0-52 uger pr. år - udfyld begge eller ingen af dem.",
   bruger_findes_ikke: "Kontoen kunne ikke oprettes. Prøv igen.",
   ikke_ny_konto: "E-mailen har allerede en konto hos BidHamr. Brug en anden e-mail til firmakontoen.",
   ugyldigt_cvr: "CVR-nummeret skal have 8 cifre.",
@@ -208,6 +209,9 @@ export async function hentErhvervPakker() {
 }
 
 // Kun chef. id udeladt = ny pakke. maanedspris null = ikke sat endnu.
+// ugensButikRabatProcent/-Antal: pakkens rabat på Ugens butik (fx Butik 50 %
+// de første 3 uger pr. kalenderår); begge udeladt = uændret (ny pakke: ingen
+// rabat). Databasen tjekker og logger (20261101060000).
 export async function gemErhvervPakke(input: {
   id?: string | null;
   navn: string;
@@ -216,6 +220,8 @@ export async function gemErhvervPakke(input: {
   auktionerPrUge: number;
   aktiv?: boolean;
   sortering?: number;
+  ugensButikRabatProcent?: number | null;
+  ugensButikRabatAntal?: number | null;
 }) {
   return koer("gemErhvervPakke", async () => {
     const { admin, userId } = await assertErhverv(true);
@@ -227,6 +233,15 @@ export async function gemErhvervPakke(input: {
     const antal = input.auktionerPrUge;
     if (!Number.isInteger(antal) || antal < 1 || antal > G.auktionerPrUgeMaks) kodeFejl("ugyldigt_antal");
     const sortering = Number.isInteger(input.sortering) ? input.sortering! : 0;
+    const rabatPct = input.ugensButikRabatProcent ?? null;
+    const rabatAntal = input.ugensButikRabatAntal ?? null;
+    if (
+      (rabatPct === null) !== (rabatAntal === null) ||
+      (rabatPct !== null && (!Number.isInteger(rabatPct) || rabatPct < 0 || rabatPct > 90)) ||
+      (rabatAntal !== null && (!Number.isInteger(rabatAntal) || rabatAntal < 0 || rabatAntal > 52))
+    ) {
+      kodeFejl("ugyldig_rabat");
+    }
 
     // Den gamle pris: ændres den, laves en ny pris i Stripe (priser kan ikke
     // ændres i Stripe). Eksisterende abonnementer beholder den gamle pris,
@@ -247,6 +262,8 @@ export async function gemErhvervPakke(input: {
       p_auktioner_pr_uge: antal,
       p_aktiv: input.aktiv !== false,
       p_sortering: sortering,
+      p_ugens_butik_rabat_procent: rabatPct,
+      p_ugens_butik_rabat_antal: rabatAntal,
     });
     if (error) throw new Error(error.message);
     const svar = data as { kode?: string; id?: string } | null;

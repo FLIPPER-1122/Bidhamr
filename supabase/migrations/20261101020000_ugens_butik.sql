@@ -41,9 +41,12 @@
 --   - Staff: chef og sælger-rollen kan booke en uge manuelt (med betaling =
 --     en reservation, firmaet betaler i Firma oversigt inden for 48 timer;
 --     uden betaling = 'manuel', fx efter en aftale), og annullere bookinger,
---     der ikke er betalt. En BETALT booking kan kun chefen annullere - med
---     eller uden refusion (som boost: kun chefen refunderer). Alt logges i
+--     der ikke er betalt. En BETALT booking kunne her kun chefen annullere -
+--     RETTET i 20261101060000: chef OG sælger-rollen annullerer og
+--     refunderer betalte uger (Filip, 26. okt. 2026). Alt logges i
 --     moderation_log (maal_type 'ugens_butik').
+--     Se også 20261101060000 for den igangværende uge, loftet (4 uger i
+--     træk), rabat pr. firma og sen betaling på en uge, der er slut.
 --   - Forsiden: forside_ugens_butik() (anon) giver den aktive uges firma
 --     (navn, link til firmaprofilen, billede) og højst 8 aktive auktioner -
 --     intet resultat uden aktive auktioner. Kun offentlige felter. Feltet
@@ -711,7 +714,7 @@ end;
 $fn$;
 
 -- ===========================================================================
--- 5. Refusion (hele beløbet) - kun chefen eller automatisk
+-- 5. Refusion (hele beløbet) - chef og sælger-rollen (20261101060000) eller automatisk
 -- ===========================================================================
 -- Resultat af et refusionsforsøg hos Stripe (som boost).
 -- 'refunderet' | 'allerede' | 'igen' | 'opgivet' | 'forkert_status'
@@ -858,7 +861,8 @@ $fn$;
 -- ===========================================================================
 -- 6. Staff: book, annullér, refundér, pris og oversigt
 -- ===========================================================================
--- Chef og sælger-rollen (Erhverv). Kun chefen: betalte bookinger og prisen.
+-- Chef og sælger-rollen (Erhverv). Kun chefen: prisen (betalte bookinger:
+-- også sælger-rollen fra 20261101060000).
 create or replace function public.ugens_butik_staff_rolle(p_staff uuid)
 returns text language sql stable security definer set search_path = '' as $fn$
   select u.rolle from public.users u
@@ -954,7 +958,7 @@ end;
 $fn$;
 
 -- Annullér en booking. Chef og sælger: manuelle og ubetalte (reserveret).
--- Kun chefen: betalte - med refusion (p_refunder = true: 'refunderes', serveren
+-- Kun chefen (RETTET i 20261101060000: også sælger-rollen): betalte - med refusion (p_refunder = true: 'refunderes', serveren
 -- refunderer hos Stripe; cron'en prøver igen) eller uden (pengene beholdes,
 -- fx efter aftale med firmaet). Begrundelse påkrævet; logges. Svar {kode:
 -- 'ok', status, pi?} | 'ingen_adgang' | 'kun_chef' | 'begrundelse_mangler' |
