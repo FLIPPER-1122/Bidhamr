@@ -47,6 +47,7 @@ import {
   renTelefon,
   type AbonnementStatus,
   type ErhvervPakke,
+  type FirmaAbonnement,
   type HenvendelseStatus,
 } from "@/lib/erhverv/regler";
 
@@ -92,14 +93,18 @@ const KODE_FEJL: Record<string, string> = {
   ugyldigt_navn: `Pakkens navn skal være 1-${G.pakkeNavn} tegn.`,
   ugyldig_beskrivelse: `Beskrivelsen må højst være ${G.pakkeBeskrivelse} tegn.`,
   ugyldig_pris: "Prisen skal være et helt antal kroner (eller tom, hvis den ikke er sat).",
-  ugyldigt_antal: `Antal auktioner pr. uge skal være mellem 1 og ${G.auktionerPrUgeMaks}.`,
+  ugyldigt_antal: `Antal auktioner pr. måned skal være mellem 1 og ${G.auktionerPrMaanedMaks} (eller ubegrænset).`,
+  ugyldige_fremhaevninger: "Antal fremhævninger pr. måned skal være mellem 0 og 1000.",
+  ugyldig_statistik: "Vælg statistik: ingen, statistik eller fuld.",
+  arkiveret: "Pakken er arkiveret og kan ikke ændres.",
   navn_findes: "Der findes allerede en pakke med det navn.",
   ugyldig_rabat: "Rabatten på Ugens butik skal være 0-90 % og 0-52 uger pr. år - udfyld begge eller ingen af dem.",
   bruger_findes_ikke: "Kontoen kunne ikke oprettes. Prøv igen.",
   ikke_ny_konto: "E-mailen har allerede en konto hos BidHamr. Brug en anden e-mail til firmakontoen.",
   ugyldigt_cvr: "CVR-nummeret skal have 8 cifre.",
   cvr_findes: "Der findes allerede en aktiv firmakonto med det CVR-nummer.",
-  ugyldig_pakke: "Vælg en pakke.",
+  ugyldig_pakke: "Vælg en pakke (arkiverede pakker kan ikke vælges).",
+  ugyldig_rabat_intro: "Introrabatten skal være 1-100 % i 1-24 måneder - udfyld begge eller ingen af dem.",
   henvendelse_findes_ikke: "Henvendelsen findes ikke længere.",
   henvendelse_brugt: "Der er allerede oprettet en firmakonto ud fra denne henvendelse.",
   ugyldige_felter: "Tjek felterne og prøv igen.",
@@ -197,14 +202,24 @@ export async function opdaterErhvervHenvendelse(input: {
 
 // --- Pakker ---------------------------------------------------------------------
 
-export type ErhvervPakkeAdmin = ErhvervPakke & { sortering: number; antal_firmaer: number };
+// auktioner_pr_uge: KUN for de gamle admin-komponenter (pakke-editor og
+// "Skift pakke"), der endnu viser ét tal - her er det auktioner pr. MÅNED,
+// 0 = ubegrænset. Nye komponenter skal bruge auktioner_pr_maaned/ubegraenset.
+export type ErhvervPakkeAdmin = Omit<ErhvervPakke, "auktioner_pr_uge"> & {
+  auktioner_pr_uge: number;
+  sortering: number;
+  antal_firmaer: number;
+};
 
 export async function hentErhvervPakker() {
   return koer("hentErhvervPakker", async () => {
     const { admin, userId } = await assertErhverv();
     const { data, error } = await admin.rpc("erhverv_pakker_liste", { p_staff: userId });
     if (error) throw new Error(error.message);
-    return { ok: true as const, pakker: (data ?? []) as ErhvervPakkeAdmin[] };
+    const pakker = ((data ?? []) as (ErhvervPakke & { sortering: number; antal_firmaer: number })[]).map(
+      (p): ErhvervPakkeAdmin => ({ ...p, auktioner_pr_uge: p.auktioner_pr_maaned ?? (p.ubegraenset ? 0 : (p.auktioner_pr_uge ?? 0)) }),
+    );
+    return { ok: true as const, pakker };
   });
 }
 
@@ -217,7 +232,13 @@ export async function gemErhvervPakke(input: {
   navn: string;
   beskrivelse?: string | null;
   maanedspris: number | null;
-  auktionerPrUge: number;
+  // Auktioner pr. kalendermåned; null = ubegrænset. (auktionerPrUge er det
+  // gamle navn fra pakke-editoren og læses som auktioner pr. måned.)
+  auktionerPrMaaned?: number | null;
+  auktionerPrUge?: number;
+  fremhaevningerPrMaaned?: number | null;
+  statistik?: "ingen" | "statistik" | "fuld" | null;
+  fastKontaktperson?: boolean | null;
   aktiv?: boolean;
   sortering?: number;
   ugensButikRabatProcent?: number | null;
@@ -230,8 +251,15 @@ export async function gemErhvervPakke(input: {
     const beskrivelse = tekstFelt(input.beskrivelse, G.pakkeBeskrivelse, KODE_FEJL.ugyldig_beskrivelse, false);
     const pris = input.maanedspris;
     if (pris !== null && (!Number.isInteger(pris) || pris < 0 || pris > G.pakkePrisMaks)) kodeFejl("ugyldig_pris");
-    const antal = input.auktionerPrUge;
-    if (!Number.isInteger(antal) || antal < 1 || antal > G.auktionerPrUgeMaks) kodeFejl("ugyldigt_antal");
+    const ubegraenset = input.auktionerPrMaaned === null;
+    const antal = input.auktionerPrMaaned ?? input.auktionerPrUge ?? null;
+    if (!ubegraenset && (antal === null || !Number.isInteger(antal) || antal < 1 || antal > G.auktionerPrMaanedMaks)) {
+      kodeFejl("ugyldigt_antal");
+    }
+    const fremh = input.fremhaevningerPrMaaned ?? null;
+    if (fremh !== null && (!Number.isInteger(fremh) || fremh < 0 || fremh > 1000)) kodeFejl("ugyldige_fremhaevninger");
+    const statistik = input.statistik ?? null;
+    if (statistik !== null && !["ingen", "statistik", "fuld"].includes(statistik)) kodeFejl("ugyldig_statistik");
     const sortering = Number.isInteger(input.sortering) ? input.sortering! : 0;
     const rabatPct = input.ugensButikRabatProcent ?? null;
     const rabatAntal = input.ugensButikRabatAntal ?? null;
@@ -259,7 +287,11 @@ export async function gemErhvervPakke(input: {
       p_navn: navn,
       p_beskrivelse: beskrivelse,
       p_maanedspris: pris,
-      p_auktioner_pr_uge: antal,
+      p_auktioner_pr_maaned: ubegraenset ? null : antal,
+      p_ubegraenset: ubegraenset,
+      p_fremhaevninger_pr_maaned: fremh,
+      p_statistik: statistik,
+      p_fast_kontaktperson: typeof input.fastKontaktperson === "boolean" ? input.fastKontaktperson : null,
       p_aktiv: input.aktiv !== false,
       p_sortering: sortering,
       p_ugens_butik_rabat_procent: rabatPct,
@@ -349,7 +381,12 @@ export type FirmaAdmin = {
   afventende_opgradering: (ErhvervPakke & { skift_id: string }) | null;
   aktive_auktioner: number;
   oprettet_af_navn: string | null;
-};
+  // 20261102010000 (erhverv_firma_abonnement_json): gratis periode,
+  // introrabat, særpris, kort, månedskvote og fremhævninger.
+  proeve_maaneder: number;
+  proeve_slut: string | null;
+  saerpris_aftale: string | null;
+} & FirmaAbonnement;
 
 export async function hentFirmaer() {
   return koer("hentFirmaer", async () => {
@@ -433,7 +470,15 @@ async function rydTomKonto(
 }
 
 export async function opretFirmakonto(
-  input: FirmaFelter & { loginEmail: string; pakkeId: string; henvendelseId?: string | null },
+  input: FirmaFelter & {
+    loginEmail: string;
+    pakkeId: string;
+    henvendelseId?: string | null;
+    // Introrabat efter den gratis måned (fx INTRO_STANDARD: 50 % i 6 måneder).
+    // Begge eller ingen. 1 måned gratis får alle nye firmaer automatisk.
+    introProcent?: number | null;
+    introMaaneder?: number | null;
+  },
 ) {
   return koer("opretFirmakonto", async () => {
     const { admin, userId } = await assertErhverv();
@@ -446,6 +491,15 @@ export async function opretFirmakonto(
     }
     const pakkeId = tjekUuid(input.pakkeId, KODE_FEJL.ugyldig_pakke);
     const henvendelseId = input.henvendelseId ? tjekUuid(input.henvendelseId) : null;
+    const introProcent = input.introProcent ?? null;
+    const introMaaneder = input.introMaaneder ?? null;
+    if (
+      (introProcent === null) !== (introMaaneder === null) ||
+      (introProcent !== null && (!Number.isInteger(introProcent) || introProcent < 1 || introProcent > 100)) ||
+      (introMaaneder !== null && (!Number.isInteger(introMaaneder) || introMaaneder < 1 || introMaaneder > 24))
+    ) {
+      kodeFejl("ugyldig_rabat_intro");
+    }
 
     // Forhåndstjek FØR auth-brugeren oprettes (en auth-bruger kan ikke
     // slettes igen, når users-rækken findes - handelsdata/arkiv). Databasen
@@ -453,7 +507,7 @@ export async function opretFirmakonto(
     const [eksisterende, cvrAktiv, pakke, brugtHenv] = await Promise.all([
       admin.from("users").select("id").eq("email", loginEmail).limit(1),
       admin.from("firmaer").select("id").eq("cvr", felter.cvr).neq("abonnement_status", "opsagt").limit(1),
-      admin.from("erhverv_pakker").select("id").eq("id", pakkeId).maybeSingle(),
+      admin.from("erhverv_pakker").select("id").eq("id", pakkeId).is("arkiveret_kl", null).maybeSingle(),
       henvendelseId
         ? admin.from("firmaer").select("id").eq("henvendelse_id", henvendelseId).limit(1)
         : Promise.resolve({ data: [], error: null }),
@@ -526,6 +580,8 @@ export async function opretFirmakonto(
       p_kontaktperson: felter.kontaktperson,
       p_pakke: pakkeId,
       p_henvendelse: henvendelseId,
+      p_intro_procent: introProcent,
+      p_intro_maaneder: introMaaneder,
     });
     const svar = data as { kode?: string; firma_id?: string } | null;
     if (error || svar?.kode !== "ok" || !svar.firma_id) {
@@ -540,6 +596,7 @@ export async function opretFirmakonto(
         fejl: `Firmakonto ikke oprettet efter generateLink (bruger ${link.user.id}): ${error?.message ?? svar?.kode ?? "ukendt"}. Tom konto ${ryddet ? "slettet igen" : "IKKE slettet - ryd op manuelt"}.`,
         brugerId: userId,
       });
+      if (svar?.kode === "ugyldig_rabat") svar.kode = "ugyldig_rabat_intro";
       if (svar?.kode && KODE_FEJL[svar.kode]) {
         throw new BrugerFejl(
           ryddet
@@ -550,7 +607,8 @@ export async function opretFirmakonto(
       throw new Error(error?.message ?? `erhverv_firma_opret: ${svar?.kode ?? "intet svar"}`);
     }
 
-    // Abonnementet (Stripe, på pause) - i dag 'afventer_betaling'.
+    // Stripe-kunden laves nu; abonnementet (1 måned gratis + evt.
+    // introrabat) starter, når firmaet trykker "Betal for din pakke".
     const betaling = await startAbonnement(svar.firma_id);
 
     const mail = firmaVelkomstMail({

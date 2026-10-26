@@ -12,7 +12,18 @@ type Admin = ReturnType<typeof createAdminClient>;
 
 // --- Kvote (erhverv_kvote: nuværende ugekvote) --------------------------------
 
-export type FirmaKvote = { brugt: number; max: number; naeste_uge: string };
+// Kvoten er pr. KALENDERMÅNED (20261102010000). maks: null = ubegrænset.
+// max/naeste_uge er de gamle felter (max = maks, 0 ved ubegrænset;
+// naeste_uge = den 1. i næste måned) - brug maks/naeste_maaned.
+export type FirmaKvote = {
+  brugt: number;
+  max: number;
+  maks: number | null;
+  ekstra: number;
+  ubegraenset: boolean;
+  naeste_uge: string;
+  naeste_maaned: string;
+};
 
 export async function hentFirmaKvote(admin: Admin, brugerId: string): Promise<FirmaKvote | null> {
   const { data, error } = await admin.rpc("erhverv_kvote", { p_bruger: brugerId, p_laas: false });
@@ -20,8 +31,18 @@ export async function hentFirmaKvote(admin: Admin, brugerId: string): Promise<Fi
     if (error) console.error("erhverv_kvote:", error.message);
     return null;
   }
-  const k = data as { brugt?: number; max?: number; naeste_uge?: string };
-  return { brugt: Number(k.brugt ?? 0), max: Number(k.max ?? 0), naeste_uge: String(k.naeste_uge ?? "") };
+  const k = data as { brugt?: number; max?: number | null; ekstra?: number; ubegraenset?: boolean; naeste_maaned?: string; naeste_uge?: string };
+  const maks = k.max == null ? null : Number(k.max);
+  const naeste = String(k.naeste_maaned ?? k.naeste_uge ?? "");
+  return {
+    brugt: Number(k.brugt ?? 0),
+    max: maks ?? 0,
+    maks,
+    ekstra: Number(k.ekstra ?? 0),
+    ubegraenset: !!k.ubegraenset,
+    naeste_uge: naeste,
+    naeste_maaned: naeste,
+  };
 }
 
 // --- Ugens butik ---------------------------------------------------------------

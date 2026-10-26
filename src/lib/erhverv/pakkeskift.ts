@@ -10,7 +10,7 @@ import {
   type BetalingsStatus,
   type Tilbagerul,
 } from "@/lib/erhverv/betaling";
-import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA } from "@/lib/tekster/erhverv";
+import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
 
 // Firmaets pakkeskift - ÉN vej for både hjemmesiden (/api/offentlig
 // firma-skift-pakke -> skiftFirmaPakke) og appen (POST /api/firma/skift-pakke
@@ -32,6 +32,8 @@ export type SkiftPakkeSvar =
   // Betalingen gik igennem med det samme, og pakken er aktiveret.
   | { ok: true; kode: "opgraderet"; pakke: ErhvervPakke; besked: string }
   | { ok: true; kode: "nedgradering_planlagt"; pakke: ErhvervPakke; gaelderFra: string; besked: string }
+  // I den gratis periode: en mindre pakke gælder med det samme (20261102010000).
+  | { ok: true; kode: "skiftet"; pakke: ErhvervPakke; besked: string }
   | { ok: true; kode: "uaendret"; besked: string }
   | { fejl: string; kode?: string };
 
@@ -122,6 +124,10 @@ async function stripeDel(brugerId: string, svar: DbSvar | null): Promise<SkiftPa
     if (plan.status === "fejl") {
       await logDriftFejl({ kilde: "action", hvor: "skiftPakke/startNedgradering", fejl: plan.fejl, brugerId });
       return stripeFejl(plan);
+    }
+    // I den gratis periode er skiftet gennemført med det samme.
+    if (plan.status === "betalt" && plan.straks) {
+      return { ok: true, kode: "skiftet", pakke: svar.pakke, besked: FIRMA_PAKKER.skiftetIGratisPeriode(svar.pakke.navn) };
     }
     // Datoen følger Stripes periode (startNedgradering har rettet den).
     const { data: s } = await createAdminClient()

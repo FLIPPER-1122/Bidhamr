@@ -1,7 +1,7 @@
 // Kan firmaet oprette en auktion lige nu - og hvis ikke, hvorfor?
 // Fælles for Overblik, Auktioner og "Opret auktion" i firma-dashboardet.
 // Databasen håndhæver det samme (BHE02 intet abonnement, BHE03 ugekvote).
-import type { FirmaOversigt } from "@/lib/erhverv/regler";
+import { kvoteBrugt, type FirmaOversigt } from "@/lib/erhverv/regler";
 import { naesteLedigeTekst } from "@/lib/erhverv/visning";
 import {
   FIRMA_BETALING,
@@ -51,7 +51,7 @@ export function salgStatus(s: { status: string; afhentning: boolean; retur: bool
 export function opretStatus(o: FirmaOversigt, lukket: boolean): { kan: boolean; forklaring: string | null } {
   if (lukket) return { kan: false, forklaring: FIRMA_FOER_LANCERING.kanIkkeOprette };
   if (!abonnementAktivt(o)) return { kan: false, forklaring: ikkeAktivTekst(o) };
-  const k = o.ugekvote;
-  if (k && k.brugt >= k.max) return { kan: false, forklaring: FIRMA_OVERSIGT.auktioner.alleBrugt(naesteLedigeTekst(k)) };
+  const k = o.kvote ?? o.ugekvote;
+  if (k && kvoteBrugt(k)) return { kan: false, forklaring: FIRMA_OVERSIGT.auktioner.alleBrugt(naesteLedigeTekst(k)) };
   return { kan: true, forklaring: null };
 }

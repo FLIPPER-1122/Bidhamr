@@ -582,7 +582,7 @@ describe("firmapakker (20261102010000)", () => {
 
   describe("firma_oversigt og statistik", () => {
     it("viser pakke, kvote, fremhævninger og abonnement; kun aktive, ikke-arkiverede pakker", async () => {
-      const o = await som(B.basis, () => rpc<Record<string, any>>(`public.firma_oversigt()`));
+      const o = await som(B.basis, () => rpc<{ pakke: Record<string, unknown>; pakker: { navn: string }[]; kvote: unknown; ugekvote: unknown; abonnement: Record<string, unknown> }>(`public.firma_oversigt()`));
       expect(o.pakke).toMatchObject({ navn: "Butik", auktioner_pr_maaned: 30, fremhaevninger_pr_maaned: 5, statistik: "statistik" });
       expect(o.pakker.map((p: { navn: string }) => p.navn)).toEqual(["Start", "Butik", "Pro"]);
       expect(o.kvote).toEqual(o.ugekvote);
@@ -602,7 +602,7 @@ describe("firmapakker (20261102010000)", () => {
     });
 
     it("admin-listen har gratis periode, introrabat, særpris, kvote og fremhævninger", async () => {
-      const liste = await rpc<Record<string, any>[]>(`public.erhverv_firmaer_liste($1)`, [SAELGERROLLE]);
+      const liste = await rpc<(Record<string, unknown> & { id: string })[]>(`public.erhverv_firmaer_liste($1)`, [SAELGERROLLE]);
       const b = liste.find((x) => x.id === F.basis)!;
       expect(b.kvote).toMatchObject({ brugt: 20, max: 32, ekstra: 2, ubegraenset: false });
       expect(b.fremhaevninger).toMatchObject({ maks: 6 });

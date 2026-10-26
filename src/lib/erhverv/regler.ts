@@ -54,6 +54,7 @@ export const ERHVERV_GRAENSER = {
   pakkeBeskrivelse: 1000,
   pakkePrisMaks: 1_000_000,
   auktionerPrUgeMaks: 1000,
+  auktionerPrMaanedMaks: 100000,
   producent: 500,
   sikkerhedsoplysninger: 2000,
 } as const;
@@ -85,17 +86,88 @@ export type ErhvervPakke = {
   beskrivelse: string | null;
   // Hele kroner pr. måned. null = Filip har ikke sat prisen endnu.
   maanedspris: number | null;
-  auktioner_pr_uge: number;
+  // Gammel ugekvote (null for pakkerne fra 26. okt. 2026).
+  auktioner_pr_uge: number | null;
+  // Pakkerne fra 26. okt. 2026 (20261102010000). null = ubegrænset.
+  auktioner_pr_maaned: number | null;
+  ubegraenset: boolean;
+  fremhaevninger_pr_maaned: number;
+  statistik: "ingen" | "statistik" | "fuld";
+  fast_kontaktperson: boolean;
+  ugens_butik_rabat_procent: number;
+  ugens_butik_rabat_antal: number;
   aktiv: boolean;
+  arkiveret: boolean;
 };
 
+// Rækkefølge mellem pakker (som erhverv_pakke_rang i databasen): flere
+// auktioner (ubegrænset størst), så flere fremhævninger, så højere pris.
+type RangFelter = Pick<ErhvervPakke, "auktioner_pr_maaned" | "fremhaevninger_pr_maaned" | "maanedspris">;
+export function pakkeRang(p: RangFelter): number[] {
+  return [p.auktioner_pr_maaned ?? 1_000_000_000, p.fremhaevninger_pr_maaned ?? 0, p.maanedspris ?? 0];
+}
+export function erStoerrePakke(a: RangFelter, b: RangFelter): boolean {
+  const x = pakkeRang(a);
+  const y = pakkeRang(b);
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+
+// Fremhævninger i måneden (pakke + ekstra fra BidHamr).
+export type FremhaevningKvote = { pakke: number; ekstra: number; maks: number; brugt: number; tilbage: number };
+
+// firma_kvote() (og det gamle navn firma_ugekvote()): kvoten er pr.
+// KALENDERMÅNED (dansk tid) fra 20261102010000. uge_start/naeste_uge er de
+// gamle navne og er nu månedens start og næste måned.
 export type Ugekvote = {
   brugt: number;
-  max: number;
+  // null = ubegrænset (Pro).
+  max: number | null;
+  ekstra: number;
+  ubegraenset: boolean;
+  kan_oprette: boolean;
   naeste_ledige: string | null;
+  maaned_start: string;
+  naeste_maaned: string;
   uge_start: string;
   naeste_uge: string;
   aktivt_abonnement: boolean;
+  fremhaevninger: FremhaevningKvote;
+};
+export type Maanedskvote = Ugekvote;
+
+// Er månedens auktioner brugt? (Ubegrænset = aldrig.)
+export function kvoteBrugt(k: Pick<Ugekvote, "brugt" | "max">): boolean {
+  return k.max != null && k.brugt >= k.max;
+}
+
+// Firmaets abonnement (erhverv_firma_abonnement_json - i firma_oversigt.abonnement
+// og i admin-listen erhverv_firmaer_liste).
+export type FirmaAbonnement = {
+  // Hele kroner ekskl. moms, som firmaet betaler (særpris eller pakkens pris).
+  pris: number | null;
+  saerpris: number | null;
+  gratis_til: string | null;
+  gratis_maaneder_ved_start: number;
+  gratis_brugt: boolean;
+  introrabat: {
+    procent: number;
+    maaneder: number;
+    fra: "efter_gratis" | "straks";
+    status: "planlagt" | "aktiv";
+    til: string | null;
+  } | null;
+  kort: { maerke: string | null; sidste4: string; udloeb: string; udloeber_snart: boolean } | null;
+  kvote: {
+    brugt: number;
+    max: number | null;
+    pakke_max: number | null;
+    ekstra: number;
+    ubegraenset: boolean;
+    periode_start: string;
+    periode_slut: string;
+  };
+  fremhaevninger: FremhaevningKvote;
 };
 
 // Svar fra firma_oversigt() (se migrationen for alle felter).
@@ -125,7 +197,11 @@ export type FirmaOversigt = {
   naeste_pakke: (ErhvervPakke & { fra: string }) | null;
   afventende_opgradering: (ErhvervPakke & { skift_id: string; anmodet_kl: string; faktura_url: string | null }) | null;
   pakker: ErhvervPakke[];
+  kvote: Ugekvote | null;
+  // Gammelt navn (samme indhold som kvote).
   ugekvote: Ugekvote | null;
+  // Uden saerpris_aftale (den interne aftaletekst vises kun i admin).
+  abonnement: Omit<FirmaAbonnement, "saerpris_aftale"> | null;
   auktioner: { aktive: number; i_alt: number; visninger: number; visninger_aktive: number; bud: number };
   salg: {
     solgte_i_alt: number;
@@ -253,7 +329,7 @@ export const ERHVERV_FEJL = {
   skalBetale: "Betal for din pakke under Abonnement i Firma oversigt. Så kan du oprette auktioner.",
   intetAbonnement: `Firmaet har ikke et aktivt abonnement. Kontakt BidHamr på ${ERHVERV_EMAIL}.`,
   gpsr: "Når varen er ny, skal du udfylde producent (navn og adresse) og sikkerhedsoplysninger.",
-  kvote: "Du har brugt ugens auktioner. Du kan oprette den næste mandag.",
+  kvote: "Du har brugt månedens auktioner. Du kan oprette den næste den 1. i næste måned.",
   kontoSpaerret: `Din konto er spærret, så du kan ikke skifte pakke. Skriv til ${ERHVERV_EMAIL}.`,
   skiftIGang: "Vi er ved at skifte din pakke. Vent et øjeblik, og opdater siden.",
   opsagtNedgradering: `Dit abonnement er opsagt, så du kan ikke skifte til en mindre pakke. Skriv til ${ERHVERV_EMAIL}, hvis du vil fortsætte.`,
@@ -279,9 +355,11 @@ export function erhvervFejlTekst(besked: string | null | undefined, kode?: strin
   if (kode === "BHE04" || b.includes("erhverv_gpsr")) return ERHVERV_FEJL.gpsr;
   if (kode === "BHE05" || b.includes("erhverv_ingen_beskeder")) return ERHVERV_FEJL.ingenBeskeder;
   if (kode === "BHE03" || b.includes("erhverv_kvote")) {
-    const m = b.match(/oprettet (\d+) af (\d+) auktioner.*mandag den (\d{2}\.\d{2}\.\d{4})/);
+    // 20261102010000: "Du har oprettet X af Y auktioner i denne måned. Du kan
+    // oprette den næste den 1. <måned>."
+    const m = b.match(/oprettet (\d+) af (\d+) auktioner i denne måned\. Du kan oprette den næste den 1\. ([a-zæøå]+)\./);
     return m
-      ? `Du har oprettet ${m[1]} af ${m[2]} auktioner i denne uge. Du kan oprette den næste mandag den ${m[3]}.`
+      ? `Du har oprettet ${m[1]} af ${m[2]} auktioner i denne måned. Du kan oprette den næste den 1. ${m[3]}.`
       : ERHVERV_FEJL.kvote;
   }
   return null;

@@ -27,7 +27,7 @@ import {
   type FirmaOversigt,
 } from "@/lib/erhverv/regler";
 import { skiftPakkeForBruger, type SkiftPakkeSvar } from "@/lib/erhverv/pakkeskift";
-import { ERHVERV_FORMULAR } from "@/lib/tekster/erhverv";
+import { ERHVERV_FORMULAR, FIRMA_FREMHAEVNING } from "@/lib/tekster/erhverv";
 import { revalidatePath } from "next/cache";
 
 // Udfyldes formularen hurtigere end dette, er det næsten altid en robot.
@@ -216,5 +216,40 @@ export async function saetFirmaBrugtmoms(
   } catch (err) {
     await logDriftFejl({ kilde: "action", hvor: "saetFirmaBrugtmoms", fejl: err });
     return { fejl: GENERISK };
+  }
+}
+
+// Fremhæv en af firmaets aktive auktioner i 7 dage (inden for månedens kvote).
+// Databasen (firma_fremhaev_auktion) håndhæver alle regler. Appen kan kalde
+// supabase.rpc("firma_fremhaev_auktion", { p_auktion }) direkte.
+export type FremhaevSvar =
+  | { ok: true; id: string; slutKl: string; tilbage: number }
+  | { fejl: string; kode: string };
+
+export async function fremhaevFirmaAuktion(auktionId: string): Promise<FremhaevSvar> {
+  try {
+    if (typeof auktionId !== "string" || !/^[0-9a-f-]{36}$/i.test(auktionId)) {
+      return { fejl: FIRMA_FREMHAEVNING.fejl.ikke_fundet, kode: "ikke_fundet" };
+    }
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await hentLoggetIndBruger(supabase);
+    if (!user) return { fejl: "Du skal være logget ind.", kode: "ikke_logget_ind" };
+    const { data, error } = await supabase.rpc("firma_fremhaev_auktion", { p_auktion: auktionId });
+    if (error) {
+      await logDriftFejl({ kilde: "action", hvor: "fremhaevFirmaAuktion", fejl: error, brugerId: user.id });
+      return { fejl: FIRMA_FREMHAEVNING.fejl.generisk, kode: "fejl" };
+    }
+    const svar = (data ?? {}) as { kode?: string; id?: string; slut_kl?: string; tilbage?: number; besked?: string };
+    if (svar.kode !== "ok" || !svar.id || !svar.slut_kl) {
+      const kode = svar.kode ?? "fejl";
+      return { fejl: svar.besked ?? FIRMA_FREMHAEVNING.fejl[kode] ?? FIRMA_FREMHAEVNING.fejl.generisk, kode };
+    }
+    revalidatePath("/firma", "layout");
+    return { ok: true, id: svar.id, slutKl: svar.slut_kl, tilbage: Number(svar.tilbage ?? 0) };
+  } catch (err) {
+    await logDriftFejl({ kilde: "action", hvor: "fremhaevFirmaAuktion", fejl: err });
+    return { fejl: FIRMA_FREMHAEVNING.fejl.generisk, kode: "fejl" };
   }
 }

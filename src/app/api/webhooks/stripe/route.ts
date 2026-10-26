@@ -18,7 +18,7 @@ import {
 import { aabnVentende } from "@/lib/betaling/betalingInd";
 import { bankKontoRettet, spejlReview, udbetalForKonto, udbetalVentende } from "@/lib/betaling/udbetaling";
 import { spejlReklamationTransfer, udbetalReklamationerTilBank } from "@/lib/reklamation/udbetaling";
-import { synkAbonnement, synkFaktura, udloebetOpgradering } from "@/lib/erhverv/betaling";
+import { synkAbonnement, synkFaktura, synkKortForKunde, udloebetOpgradering } from "@/lib/erhverv/betaling";
 import { databasensBetalingsmodelStatus } from "@/lib/betaling/model";
 import { alarmPrTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { erFremmedTestCharge, erFremmedTestobjekt, logFremmedTestdata, piHenvisning } from "@/lib/betaling/fremmedeTestdata";
@@ -534,6 +534,23 @@ async function haandter(event: Stripe.Event): Promise<void> {
       const sub = await getStripe().subscriptions.retrieve(fraEvent.id);
       const resultat = await udloebetOpgradering(sub);
       console.log(`Stripe ${event.type}: ${sub.id} -> ${resultat}`);
+      return;
+    }
+
+    // Firmaets betalingskort kan være skiftet (kundeportalen, kortopdatering
+    // fra banken): mærke, sidste 4 cifre og udløb spejles (20261102010000).
+    case "customer.updated": {
+      const kunde = event.data.object as Stripe.Customer;
+      const resultat = await synkKortForKunde(kunde.id);
+      console.log(`Stripe ${event.type}: ${kunde.id} -> ${resultat}`);
+      return;
+    }
+    case "payment_method.attached":
+    case "payment_method.automatically_updated": {
+      const pm = event.data.object as Stripe.PaymentMethod;
+      const kunde = typeof pm.customer === "string" ? pm.customer : (pm.customer?.id ?? null);
+      const resultat = await synkKortForKunde(kunde);
+      console.log(`Stripe ${event.type}: ${pm.id} -> ${resultat}`);
       return;
     }
 

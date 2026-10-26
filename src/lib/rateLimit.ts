@@ -102,6 +102,10 @@ export const GRAENSER = {
   // pr. medarbejder.
   erhverv_opret_staff: { maks: 30, vindueSek: 60 * 60 },
   erhverv_velkomst_firma: { maks: 5, vindueSek: 24 * 60 * 60 },
+  // Admin -> Firma: hurtighandlinger på abonnementet pr. medarbejder (hver
+  // kan kalde Stripe) og mails om nyt kort pr. firma.
+  erhverv_abonnement_staff: { maks: 120, vindueSek: 60 * 60 },
+  erhverv_kort_mail: { maks: 3, vindueSek: 24 * 60 * 60 },
   // Firma oversigt -> Abonnement: "Betal for din pakke" / "Skift
   // betalingskort" (hvert tryk laver et kald til Stripe).
   firma_stripe_link: { maks: 20, vindueSek: 60 * 60 },
