@@ -18,6 +18,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
           // Præcise stier: "/erhverv$" og "/erhverv/" - ikke præfikset "/erhverv",
           // som også ville matche fx /erhvervssaelger.
           ...SEO_FOER_LANCERING.flatMap((s) => (s.sti === "/" ? ["/$"] : [`${s.sti}$`, `${s.sti}/`])),
+          "/sitemap.xml",
           "/_next/static/",
           "/_next/image",
           "/brand/",
