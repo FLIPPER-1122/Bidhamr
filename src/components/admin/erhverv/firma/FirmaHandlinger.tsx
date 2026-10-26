@@ -10,8 +10,8 @@
 // som flere komponenter efter samme mønster som SkiftPakkeKort og lægges i
 // gitteret i FirmaHurtighandlinger (FirmaOverblik.tsx).
 import { useRouter } from "next/navigation";
-import { useId, useState, useTransition, type ReactNode } from "react";
-import BekraeftDialog from "@/components/BekraeftDialog";
+import { useId, useRef, useState, useTransition, type ReactNode } from "react";
+import BekraeftDialog, { type BekraeftSvar } from "@/components/BekraeftDialog";
 import { visKvittering } from "@/components/admin/Kvittering";
 import {
   fortrydFirmaOpsigelse,
@@ -120,6 +120,39 @@ function Begrundelse({
       />
     </div>
   );
+}
+
+// --- Klik-id mod dobbeltklik (20261102020000) ----------------------------------
+//
+// Et nyt klik-id dannes, hver gang dialogen åbnes (foerAabning). Et genforsøg
+// i samme dialog (fx efter en netværksfejl) bruger det samme id, så serveren
+// kan se, at det er samme klik og aldrig gør det to gange. Efter en
+// gennemført handling lukker dialogen, og næste åbning får et nyt id.
+function nytKlikId(): string | null {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : null;
+}
+
+function useKlikId() {
+  const ref = useRef<string | null>(null);
+  return {
+    // Til foerAabning: returnerer true, så dialogen åbnes.
+    nyt: () => {
+      ref.current = nytKlikId();
+      return true;
+    },
+    hent: () => (ref.current ??= nytKlikId()),
+  };
+}
+
+// "Det er allerede gjort" (samme klik sendt to gange) er ikke en fejl - det
+// vises som en rolig besked med en knap, der opdaterer siden.
+function klikSvar(svar: { fejl: string; kode?: string } | { ok: true; besked: string }): BekraeftSvar {
+  if (!("fejl" in svar)) {
+    visKvittering(svar.besked);
+    return;
+  }
+  if (svar.kode === "allerede_udfoert" || svar.fejl.startsWith("Det er allerede gjort")) return { rolig: svar.fejl };
+  return { fejl: svar.fejl };
 }
 
 // --- Ét klik --------------------------------------------------------------------
@@ -340,6 +373,7 @@ export function GratisPeriodeKort({ firmaId, gratisTil, vedStart }: { firmaId: s
   const G = T.hurtig.gratis;
   const [maaneder, setMaaneder] = useState("1");
   const [grund, setGrund] = useState("");
+  const klik = useKlikId();
   return (
     <BekraeftDialog
       triggerClassName={KORT}
@@ -349,11 +383,10 @@ export function GratisPeriodeKort({ firmaId, gratisTil, vedStart }: { firmaId: s
       description={G.forklaring}
       confirmLabel={G.bekraeft}
       confirmDisabled={!begrundelseOk(grund)}
-      onConfirm={async () => {
-        const svar = await givFirmaGratisPeriode({ firmaId, maaneder: Number(maaneder), begrundelse: grund });
-        if ("fejl" in svar) return { fejl: svar.fejl };
-        visKvittering(svar.besked);
-      }}
+      foerAabning={klik.nyt}
+      onConfirm={async () =>
+        klikSvar(await givFirmaGratisPeriode({ firmaId, maaneder: Number(maaneder), begrundelse: grund, klikId: klik.hent() }))
+      }
       onSuccess={() => {
         setGrund("");
         setMaaneder("1");
@@ -394,6 +427,7 @@ export function IntrorabatKort({ firmaId, intro }: { firmaId: string; intro: Int
   const [maaneder, setMaaneder] = useState(String(intro?.maaneder ?? INTRO_STANDARD.maaneder));
   const [fra, setFra] = useState<"efter_gratis" | "straks">(intro?.fra ?? "efter_gratis");
   const [grund, setGrund] = useState("");
+  const klik = useKlikId();
   const p = Number(procent);
   const m = Number(maaneder);
   const gyldig =
@@ -410,13 +444,14 @@ export function IntrorabatKort({ firmaId, intro }: { firmaId: string; intro: Int
       description={I.forklaring}
       confirmLabel={valg === "fjern" ? I.bekraeftFjern : I.bekraeft}
       confirmDisabled={!gyldig || !begrundelseOk(grund)}
+      foerAabning={klik.nyt}
       onConfirm={async () => {
-        const svar =
+        const klikId = klik.hent();
+        return klikSvar(
           valg === "fjern"
-            ? await fjernFirmaIntrorabat({ firmaId, begrundelse: grund })
-            : await saetFirmaIntrorabat({ firmaId, procent: p, maaneder: m, fra, begrundelse: grund });
-        if ("fejl" in svar) return { fejl: svar.fejl };
-        visKvittering(svar.besked);
+            ? await fjernFirmaIntrorabat({ firmaId, begrundelse: grund, klikId })
+            : await saetFirmaIntrorabat({ firmaId, procent: p, maaneder: m, fra, begrundelse: grund, klikId }),
+        );
       }}
       onSuccess={() => {
         setGrund("");
@@ -483,6 +518,7 @@ export function SaerprisKort({
   const [pris, setPris] = useState(saerpris != null ? String(saerpris) : "");
   const [fra, setFra] = useState<"naeste_betaling" | "straks">("naeste_betaling");
   const [aftale, setAftale] = useState("");
+  const klik = useKlikId();
   const n = Number(pris);
   const gyldig = valg === "fjern" || (/^\d+$/.test(pris) && n >= 1 && n <= 1_000_000);
   return (
@@ -494,16 +530,18 @@ export function SaerprisKort({
       description={S.forklaring}
       confirmLabel={valg === "fjern" ? S.bekraeftFjern : S.bekraeft}
       confirmDisabled={!gyldig || !begrundelseOk(aftale) || (valg === "saet" && n === saerpris)}
-      onConfirm={async () => {
-        const svar = await saetFirmaSaerpris({
-          firmaId,
-          maanedsprisEksklMoms: valg === "fjern" ? null : n,
-          fra,
-          aftale,
-        });
-        if ("fejl" in svar) return { fejl: svar.fejl };
-        visKvittering(svar.besked);
-      }}
+      foerAabning={klik.nyt}
+      onConfirm={async () =>
+        klikSvar(
+          await saetFirmaSaerpris({
+            firmaId,
+            maanedsprisEksklMoms: valg === "fjern" ? null : n,
+            fra,
+            aftale,
+            klikId: klik.hent(),
+          }),
+        )
+      }
       onSuccess={() => {
         setAftale("");
         setValg("saet");
@@ -560,6 +598,7 @@ export function EkstraKort({ firmaId, hvad, ekstra }: { firmaId: string; hvad: "
   const E = T.hurtig.ekstra;
   const [antal, setAntal] = useState("");
   const [grund, setGrund] = useState("");
+  const klik = useKlikId();
   const n = Number(antal);
   const gyldig = /^-?\d+$/.test(antal) && n !== 0 && Math.abs(n) <= (hvad === "auktioner" ? 1000 : 100);
   const titel = hvad === "auktioner" ? E.auktionerTitel : E.fremhTitel;
@@ -572,11 +611,10 @@ export function EkstraKort({ firmaId, hvad, ekstra }: { firmaId: string; hvad: "
       description={E.forklaring}
       confirmLabel={E.bekraeft}
       confirmDisabled={!gyldig || !begrundelseOk(grund)}
+      foerAabning={klik.nyt}
       onConfirm={async () => {
-        const input = { firmaId, antal: n, begrundelse: grund };
-        const svar = hvad === "auktioner" ? await givFirmaEkstraAuktioner(input) : await givFirmaEkstraFremhaevninger(input);
-        if ("fejl" in svar) return { fejl: svar.fejl };
-        visKvittering(svar.besked);
+        const input = { firmaId, antal: n, begrundelse: grund, klikId: klik.hent() };
+        return klikSvar(hvad === "auktioner" ? await givFirmaEkstraAuktioner(input) : await givFirmaEkstraFremhaevninger(input));
       }}
       onSuccess={() => {
         setAntal("");

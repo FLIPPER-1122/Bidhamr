@@ -7,9 +7,10 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import FirmaFelter, { ADMIN_FELT, ADMIN_LABEL, type FirmaVaerdier } from "@/components/admin/erhverv/FirmaFelter";
-import { opretFirmakonto, slaaCvrOp } from "@/app/actions/adminErhverv";
+import { opretFirmakonto, slaaCvrOp, type CvrTidligereFirma } from "@/app/actions/adminErhverv";
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
-import { EMAIL, POSTNUMMER, type ErhvervPakke } from "@/lib/erhverv/regler";
+import { ABONNEMENT_STATUS_NAVN, EMAIL, POSTNUMMER, erAbonnementStatus, type ErhvervPakke } from "@/lib/erhverv/regler";
+import { langDato } from "@/lib/erhverv/visning";
 import { INTRO_GRAENSER, INTRO_STANDARD } from "@/lib/erhverv/abonnementRegler";
 
 export default function OpretFirmakonto({
@@ -34,6 +35,9 @@ export default function OpretFirmakonto({
   const [slaarOp, startOpslag] = useTransition();
   const [feltFejl, setFeltFejl] = useState<Partial<Record<keyof FirmaVaerdier, string>>>({});
   const [resultat, setResultat] = useState<{ firmaId: string; besked: string; mailSendt: boolean } | null>(null);
+  // CVR'et har haft et abonnement før: advarslen vises i dialogen, og næste
+  // tryk ("Opret alligevel") sender bekræftelsen med.
+  const [tidligere, setTidligere] = useState<CvrTidligereFirma[] | null>(null);
 
   // Rettes CVR-nummeret, passer en gammel besked fra CVR-opslaget ikke
   // længere (fx "ikke fundet") - så fjernes den.
@@ -232,9 +236,13 @@ export default function OpretFirmakonto({
         triggerClassName="btn btn-primaer btn-stor w-full sm:w-auto disabled:opacity-50"
         title={X.bekraeftOpretTitel}
         description={`${X.bekraeftOpret(loginEmail.trim())} ${medIntro ? A.opret.introOpsummering(ip, im) : A.opret.udenIntro}`}
-        confirmLabel={A.opret.knapOpret}
+        confirmLabel={tidligere ? X.cvrTidligere.knap : A.opret.knapOpret}
         confirmDisabled={!klar}
-        foerAabning={tjekFelter}
+        foerAabning={() => {
+          // Ny åbning = nyt tjek (felterne kan være rettet siden).
+          setTidligere(null);
+          return tjekFelter();
+        }}
         onConfirm={async () => {
           if (!pakkeId) return { fejl: A.opret.fejl.ingenPakke };
           const svar = await opretFirmakonto({
@@ -244,12 +252,49 @@ export default function OpretFirmakonto({
             henvendelseId,
             introProcent: medIntro ? ip : null,
             introMaaneder: medIntro ? im : null,
+            cvrBekraeftet: tidligere !== null,
           });
           if ("fejl" in svar) return { fejl: svar.fejl };
+          if ("cvrTidligere" in svar) {
+            setTidligere(svar.firmaer ?? []);
+            return { bliv: true };
+          }
           // Ingen router.refresh her: så ville siden skifte væk fra resultatet.
           setResultat({ firmaId: svar.firmaId, besked: svar.besked, mailSendt: svar.mailSendt });
         }}
-      />
+      >
+        {tidligere && <CvrTidligere firmaer={tidligere} />}
+      </BekraeftDialog>
+    </div>
+  );
+}
+
+function CvrTidligere({ firmaer }: { firmaer: CvrTidligereFirma[] }) {
+  const C = X.cvrTidligere;
+  const dato = (iso: string | null) => (iso ? langDato(iso) : C.ingenDato);
+  return (
+    <div role="alert" className="border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
+      <p className="font-bold">{C.titel}</p>
+      <p className="mt-1">{C.tekst}</p>
+      <ul className="mt-3 space-y-2">
+        {firmaer.map((f, i) => (
+          <li key={i} className="border border-advarsel-kant bg-white p-2.5 text-tekst">
+            <p className="break-words font-semibold">{f.firmanavn || "–"}</p>
+            <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[13px]">
+              <dt className="text-tekst-daempet">{C.status}</dt>
+              <dd>{erAbonnementStatus(f.abonnement_status) ? ABONNEMENT_STATUS_NAVN[f.abonnement_status] : f.abonnement_status}</dd>
+              <dt className="text-tekst-daempet">{C.start}</dt>
+              <dd>{dato(f.abonnement_start)}</dd>
+              <dt className="text-tekst-daempet">{C.opsagt}</dt>
+              <dd>{dato(f.opsagt_kl)}</dd>
+              <dt className="text-tekst-daempet">{C.gratis}</dt>
+              <dd>{f.havde_gratis_periode ? C.ja : C.nej}</dd>
+              <dt className="text-tekst-daempet">{C.regninger}</dt>
+              <dd className="tabular-nums">{f.betalte_regninger}</dd>
+            </dl>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import AdminBadge, { type BadgeTone } from "@/components/admin/AdminBadge";
 import AdminFejl from "@/components/admin/AdminFejl";
+import LoftMaerker from "@/components/admin/erhverv/LoftMaerker";
+import { UGENS_ADMIN } from "@/lib/tekster/ugensButik";
 import { dato, datoTid } from "@/components/admin/erhverv/ErhvervFaner";
 import {
   AnnullerUgeKnap,
@@ -252,6 +254,8 @@ export function FaneUgensButik({
                 <span className="font-semibold">
                   {dette ? `${U.dette} · ${U.status[u.status ?? ""] ?? ""}` : andet ? U.andet : U.ledig}
                 </span>
+                {dette && Number(u.i_traek) > 1 && u.nr_i_traek != null && <span>{UGENS_ADMIN.iTraek(u.nr_i_traek)}</span>}
+                {dette && <LoftMaerker brudt={!!u.loft_brudt} omgaaet={!!u.loft_omgaaet} maks={4} />}
                 {ledig && kanBooke && (
                   <span className="mt-auto">
                     <BookUgeKnap

@@ -695,6 +695,21 @@ export const ADMIN_ERHVERV_EKSTRA = {
   bekraeftOpretTitel: "Opret firmakontoen?",
   bekraeftOpret: (email: string) =>
     `Kontoen oprettes, og velkomstmailen sendes til ${email}. Kontoen kan ikke slettes bagefter.`,
+  // Advarsel, når CVR'et har haft et abonnement før (erhverv_cvr_tidligere).
+  // TODO indhold-agenten: gennemlæs teksterne.
+  cvrTidligere: {
+    titel: "CVR'et har haft et abonnement før",
+    tekst: "Tjek, at firmaet ikke bare vil have en ny gratis periode. Der er ikke oprettet noget endnu.",
+    status: "Status",
+    start: "Startet",
+    opsagt: "Opsagt",
+    gratis: "Gratis periode",
+    regninger: "Betalte regninger",
+    ja: "Ja",
+    nej: "Nej",
+    ingenDato: "–",
+    knap: "Opret alligevel",
+  },
   tilbageTilFirmaer: "Tilbage til firmaer",
   knapGemFirma: "Gem ændringer",
   firmaGemt: "Firmaet er gemt.",

@@ -183,6 +183,10 @@ export const UGENS_ADMIN = {
   afStaff: (navn: string | null) => `Booket af ${navn ?? "staff"}`,
   afFirma: "Købt af firmaet",
   loftOmgaaet: "Loftet er omgået",
+  // Loft-status pr. booket uge i kalenderen (ugens_butik_admin -> uger).
+  iTraek: (n: number) => `${n}. uge i træk`,
+  overLoftet: (maks: number) => `Over loftet (${maks} uger i træk)`,
+  loftTilsidesat: "Loft tilsidesat af chef",
   rabat: (pct: number) => `${pct} % rabat`,
   seFirma: "Åbn firma",
   visFlere: "Vis flere",

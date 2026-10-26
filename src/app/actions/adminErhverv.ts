@@ -103,6 +103,7 @@ const KODE_FEJL: Record<string, string> = {
   ikke_ny_konto: "E-mailen har allerede en konto hos BidHamr. Brug en anden e-mail til firmakontoen.",
   ugyldigt_cvr: "CVR-nummeret skal have 8 cifre.",
   cvr_findes: "Der findes allerede en aktiv firmakonto med det CVR-nummer.",
+  cvr_tidligere: "CVR'et har haft et abonnement før. Prøv igen, og bekræft, at kontoen skal oprettes alligevel.",
   ugyldig_pakke: "Vælg en pakke (arkiverede pakker kan ikke vælges).",
   ugyldig_rabat_intro: "Introrabatten skal være 1-100 % i 1-24 måneder - udfyld begge eller ingen af dem.",
   henvendelse_findes_ikke: "Henvendelsen findes ikke længere.",
@@ -469,6 +470,33 @@ async function rydTomKonto(
   }
 }
 
+// Tidligere firmakonto med samme CVR, der har haft et abonnement
+// (erhverv_cvr_tidligere, 20261102020000).
+export type CvrTidligereFirma = {
+  firmanavn: string;
+  abonnement_status: string;
+  abonnement_start: string | null;
+  opsagt_kl: string | null;
+  havde_gratis_periode: boolean;
+  betalte_regninger: number;
+};
+
+// Svar, når CVR'et har haft et abonnement før, og staff ikke har bekræftet:
+// intet er oprettet. Formularen viser listen og "Opret alligevel".
+export type CvrTidligereSvar = { cvrTidligere: true; firmaer: CvrTidligereFirma[] };
+
+function tidligereListe(v: unknown): CvrTidligereFirma[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((f: Record<string, unknown>) => ({
+    firmanavn: String(f.firmanavn ?? ""),
+    abonnement_status: String(f.abonnement_status ?? ""),
+    abonnement_start: typeof f.abonnement_start === "string" ? f.abonnement_start : null,
+    opsagt_kl: typeof f.opsagt_kl === "string" ? f.opsagt_kl : null,
+    havde_gratis_periode: f.havde_gratis_periode === true,
+    betalte_regninger: Number(f.betalte_regninger ?? 0) || 0,
+  }));
+}
+
 export async function opretFirmakonto(
   input: FirmaFelter & {
     loginEmail: string;
@@ -478,6 +506,9 @@ export async function opretFirmakonto(
     // Begge eller ingen. 1 måned gratis får alle nye firmaer automatisk.
     introProcent?: number | null;
     introMaaneder?: number | null;
+    // Staff har set advarslen om, at CVR'et har haft et abonnement før, og
+    // trykket "Opret alligevel".
+    cvrBekraeftet?: boolean;
   },
 ) {
   return koer("opretFirmakonto", async () => {
@@ -517,6 +548,25 @@ export async function opretFirmakonto(
     if ((cvrAktiv.data ?? []).length > 0) kodeFejl("cvr_findes");
     if (!pakke.data) kodeFejl("ugyldig_pakke");
     if ((brugtHenv.data ?? []).length > 0) kodeFejl("henvendelse_brugt");
+
+    // Har CVR'et haft et abonnement før (fx opsagt efter en gratis periode)?
+    // Så skal staff bekræfte, før noget oprettes - også før auth-brugeren.
+    // PGRST202: migrationen 20261102020000 er ikke kørt - så intet tjek, og
+    // erhverv_firma_opret kaldes som før (uden p_cvr_bekraeftet).
+    const cvrBekraeftet = input.cvrBekraeftet === true;
+    const { data: tidl, error: tidlFejl } = await admin.rpc("erhverv_cvr_tidligere", {
+      p_staff: userId,
+      p_cvr: felter.cvr,
+    });
+    const medCvrTjek = tidlFejl?.code !== "PGRST202";
+    if (tidlFejl && medCvrTjek) throw new Error(`erhverv_cvr_tidligere: ${tidlFejl.message}`);
+    if (medCvrTjek) {
+      const t = tidl as { kode?: string; tidligere?: boolean; firmaer?: unknown } | null;
+      if (!t || t.kode !== "ok") kodeFejl(t?.kode);
+      if (t.tidligere && !cvrBekraeftet) {
+        return { cvrTidligere: true as const, firmaer: tidligereListe(t.firmaer) };
+      }
+    }
 
     // Databasen afviser enhver ny konto uden en billet fra serveren, bundet
     // til netop dette kald med et engangs-nonce (handle_new_user,
@@ -582,8 +632,9 @@ export async function opretFirmakonto(
       p_henvendelse: henvendelseId,
       p_intro_procent: introProcent,
       p_intro_maaneder: introMaaneder,
+      ...(medCvrTjek ? { p_cvr_bekraeftet: cvrBekraeftet } : {}),
     });
-    const svar = data as { kode?: string; firma_id?: string } | null;
+    const svar = data as { kode?: string; firma_id?: string; firmaer?: unknown } | null;
     if (error || svar?.kode !== "ok" || !svar.firma_id) {
       // Auth-brugeren findes nu som en tom (privat) konto uden firma. Den
       // slettes igen automatisk (ingen handelsdata) - databasen tjekker, at
@@ -596,6 +647,13 @@ export async function opretFirmakonto(
         fejl: `Firmakonto ikke oprettet efter generateLink (bruger ${link.user.id}): ${error?.message ?? svar?.kode ?? "ukendt"}. Tom konto ${ryddet ? "slettet igen" : "IKKE slettet - ryd op manuelt"}.`,
         brugerId: userId,
       });
+      // CVR'et har fået et abonnement siden forhåndstjekket: vis advarslen
+      // (den tomme konto er ryddet væk). Kunne den ikke ryddes, falder vi
+      // igennem til fejlen med besked om den tomme konto.
+      if (svar?.kode === "cvr_tidligere_abonnement" && ryddet) {
+        return { cvrTidligere: true as const, firmaer: tidligereListe(svar.firmaer) };
+      }
+      if (svar?.kode === "cvr_tidligere_abonnement") svar.kode = "cvr_tidligere";
       if (svar?.kode === "ugyldig_rabat") svar.kode = "ugyldig_rabat_intro";
       if (svar?.kode && KODE_FEJL[svar.kode]) {
         throw new BrugerFejl(

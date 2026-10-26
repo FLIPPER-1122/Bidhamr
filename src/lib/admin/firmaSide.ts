@@ -7,6 +7,7 @@ import "server-only";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { manglerUgensButik } from "@/lib/betaling/ugensButik";
 import { erSystem } from "@/lib/moderationLog";
+import { nrITraek } from "@/lib/erhverv/ugensButikStribe";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -55,6 +56,12 @@ export type UgeCelle = {
   status: string | null;
   firma_id: string | null;
   firmanavn: string | null;
+  // Loft-status for en booket uge (20261102020000).
+  i_traek?: number | null;
+  loft_brudt?: boolean | null;
+  loft_omgaaet?: boolean | null;
+  // Ugens plads i striben (1 = første uge i træk) - regnet af nrITraek.
+  nr_i_traek?: number | null;
 };
 
 export type UgensBooking = {
@@ -135,7 +142,10 @@ export async function hentFirmaUgensButik(
     firmaer?: AdminFirmaRaekke[];
   } | null;
   if (!o) return { fejl: "fejl" };
-  const uger = (o.uger ?? []).slice(0, UGER_I_KALENDER);
+  // Ugens plads i striben regnes på hele listen, før den kortes.
+  const alleUger = o.uger ?? [];
+  const nr = nrITraek(alleUger);
+  const uger = alleUger.map((u, i) => ({ ...u, nr_i_traek: nr[i] })).slice(0, UGER_I_KALENDER);
 
   // Pris for hver ledig uge (rabatten tælles pr. kalenderår) og årets rabat.
   const ledige = uger.filter((u) => !u.booking_id);

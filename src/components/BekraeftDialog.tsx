@@ -9,6 +9,8 @@ import { NETVAERKSFEJL } from "@/lib/auktionRegler";
 // almindeligt kald frem for en form action, og en fejl lukker ikke dialogen -
 // den vises inde i den, så brugeren kan prøve igen uden at miste konteksten.
 
+export type BekraeftSvar = { fejl?: string; rolig?: string; bliv?: boolean } | void;
+
 type Props = {
   triggerLabel: string;
   triggerClassName?: string;
@@ -17,14 +19,20 @@ type Props = {
   description?: string;
   confirmLabel: string;
   cancelLabel?: string;
-  /** Returnér { fejl } for at vise en fejl i dialogen i stedet for at lukke. */
-  onConfirm: () => Promise<{ fejl?: string } | void>;
+  /** Returnér { fejl } for at vise en fejl i dialogen i stedet for at lukke.
+   *  { rolig }: en rolig besked (fx "Det er allerede gjort") med en knap,
+   *  der lukker dialogen og kalder onSuccess (som opdaterer siden).
+   *  { bliv: true }: dialogen bliver åben uden besked (fx fordi den nu viser
+   *  en advarsel, der skal bekræftes). */
+  onConfirm: () => Promise<BekraeftSvar>;
   /** Kaldes når handlingen er gået godt og dialogen er lukket. */
   onSuccess?: () => void;
   /** Ekstra indhold (fx felter) mellem beskrivelsen og knapperne. */
   children?: ReactNode;
   /** Deaktiverer bekræft-knappen, fx indtil et påkrævet felt er udfyldt. */
   confirmDisabled?: boolean;
+  /** Tekst på knappen ved en rolig besked. */
+  roligKnap?: string;
   /** Tjek før dialogen åbnes. Returnér false for at blive i formularen
    *  (fx fordi et felt er ugyldigt og nu er markeret). */
   foerAabning?: () => boolean;
@@ -43,9 +51,11 @@ export default function BekraeftDialog({
   children,
   confirmDisabled = false,
   foerAabning,
+  roligKnap = "Opdater siden",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [fejl, setFejl] = useState<string | null>(null);
+  const [rolig, setRolig] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const bekraeftRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -90,12 +100,14 @@ export default function BekraeftDialog({
   function luk() {
     setOpen(false);
     setFejl(null);
+    setRolig(null);
   }
 
   function bekraeft() {
     setFejl(null);
+    setRolig(null);
     startTransition(async () => {
-      let svar: { fejl?: string } | void;
+      let svar: BekraeftSvar;
       try {
         svar = await onConfirm();
       } catch (err) {
@@ -105,10 +117,15 @@ export default function BekraeftDialog({
         setFejl(NETVAERKSFEJL);
         return;
       }
-      if (svar && "fejl" in svar && svar.fejl) {
+      if (svar && svar.fejl) {
         setFejl(svar.fejl);
         return;
       }
+      if (svar && svar.rolig) {
+        setRolig(svar.rolig);
+        return;
+      }
+      if (svar && svar.bliv) return;
       setOpen(false);
       onSuccess?.();
     });
@@ -163,6 +180,22 @@ export default function BekraeftDialog({
               </p>
             )}
 
+            {rolig && (
+              <div role="status" className="mt-4 border border-info-kant bg-info-bg px-3 py-3 text-sm text-info-tekst">
+                <p>{rolig}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    luk();
+                    onSuccess?.();
+                  }}
+                  className="btn btn-sekundaer btn-lille mt-3"
+                >
+                  {roligKnap}
+                </button>
+              </div>
+            )}
+
             {/* Mobil: knapperne under hinanden i fuld bredde (lange danske
                 knaptekster må ikke skubbe "Annullér" ud af dialogen). */}
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
@@ -178,7 +211,7 @@ export default function BekraeftDialog({
                 ref={bekraeftRef}
                 type="button"
                 onClick={bekraeft}
-                disabled={pending || confirmDisabled}
+                disabled={pending || confirmDisabled || !!rolig}
                 className="btn btn-primaer h-auto min-h-11 whitespace-normal"
               >
                 {pending ? "Arbejder…" : confirmLabel}

@@ -7,10 +7,12 @@ import AdminBadge, { type BadgeTone } from "@/components/admin/AdminBadge";
 import AdminFejl from "@/components/admin/AdminFejl";
 import ErhvervFaner, { datoTid } from "@/components/admin/erhverv/ErhvervFaner";
 import UgensButikPris from "@/components/admin/erhverv/UgensButikPris";
+import LoftMaerker from "@/components/admin/erhverv/LoftMaerker";
 import { Felt, UgeHandlinger } from "@/components/admin/erhverv/firma/FirmaFaner";
 import { mandag } from "@/components/admin/erhverv/firma/stil";
 import type { UgensBooking } from "@/lib/admin/firmaSide";
 import { krFraOere } from "@/lib/erhverv/visning";
+import { nrITraek } from "@/lib/erhverv/ugensButikStribe";
 import { ADMIN_FIRMA } from "@/lib/tekster/adminFirma";
 import { UGENS_ADMIN as T } from "@/lib/tekster/ugensButik";
 
@@ -31,6 +33,11 @@ type AdminUge = {
   status: string | null;
   firma_id: string | null;
   firmanavn: string | null;
+  // Loft-status for en booket uge (20261102020000): uger i træk inkl. denne,
+  // om firmaets uger omkring denne bryder loftet, og om staff omgik loftet.
+  i_traek?: number | null;
+  loft_brudt?: boolean | null;
+  loft_omgaaet?: boolean | null;
 };
 
 type AdminBooking = {
@@ -60,6 +67,7 @@ type AdminData = {
   rolle: string;
   pris: { ekskl_moms_oere: number; inkl_moms_oere: number; opdateret_kl: string | null };
   denne_uge: string;
+  loft?: { maks_uger_i_traek: number; pause_uger: number };
   uger: AdminUge[];
   bookinger: AdminBooking[];
 };
@@ -94,6 +102,7 @@ export default async function UgensButikAdmin({
   if (error) console.error("ugens_butik_admin:", error.message);
 
   const U = ADMIN_FIRMA.uger;
+  const nr = nrITraek(d?.uger ?? []);
   const alle = d?.bookinger ?? [];
   const filtreret = alle.filter((b) =>
     filter === "alle"
@@ -135,7 +144,7 @@ export default async function UgensButikAdmin({
 
           <Felt titel={T.ugerTitel}>
             <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-              {d.uger.map((u) => (
+              {d.uger.map((u, i) => (
                 <li
                   key={u.uge_start}
                   className={`flex min-h-[84px] flex-col gap-0.5 border p-2 text-center text-xs ${
@@ -148,13 +157,18 @@ export default async function UgensButikAdmin({
                   </span>
                   <span>{mandag(u.uge_start)}</span>
                   {u.booking_id && u.firma_id ? (
-                    <Link
-                      href={`/admin/erhverv/firmaer/${u.firma_id}?fane=ugens-butik`}
-                      className="mt-auto font-semibold break-words underline underline-offset-2"
-                    >
-                      {u.firmanavn ?? "–"}
-                      <span className="block font-normal">{U.status[u.status ?? ""] ?? u.status}</span>
-                    </Link>
+                    <span className="mt-auto flex flex-col gap-0.5">
+                      <Link
+                        href={`/admin/erhverv/firmaer/${u.firma_id}?fane=ugens-butik`}
+                        className="font-semibold break-words underline underline-offset-2"
+                      >
+                        {u.firmanavn ?? "–"}
+                        <span className="block font-normal">{U.status[u.status ?? ""] ?? u.status}</span>
+                      </Link>
+                      {/* Kun i en stribe på mindst 2 uger ("1. uge i træk" siger intet). */}
+                      {Number(u.i_traek) > 1 && nr[i] != null && <span>{T.iTraek(nr[i]!)}</span>}
+                      <LoftMaerker brudt={!!u.loft_brudt} omgaaet={!!u.loft_omgaaet} maks={d.loft?.maks_uger_i_traek ?? 4} />
+                    </span>
                   ) : (
                     <span className="mt-auto font-semibold">{T.ledig}</span>
                   )}
